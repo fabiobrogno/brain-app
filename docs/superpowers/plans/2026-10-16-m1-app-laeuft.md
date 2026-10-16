@@ -31,6 +31,14 @@
 4. **Brücke stürzt ab / Node fehlt mitten im Betrieb:** Keine hängende Anfrage, kein App-Absturz (auch kein SIGPIPE); die nächste Anfrage startet die Brücke neu. → Tests in Task 11.
 5. **`brain status` hängt oder ist langsam (großes Brain):** Menüleiste friert nicht ein; nach Zeitlimit Zustand „unbekannt“ (?). → Tests in Task 9.
 
+## Abweichungen von der Spec (bewusst)
+
+- **Nachrichtenkanal statt `brain://api/…`:** api.js spricht die Brücke über `WKScriptMessageHandlerWithReply` an; über das Schema `brain://app` werden nur Seiten und Dateien ausgeliefert (`/api/` ist dort gesperrt).
+- **Swift Testing statt XCTest** für die Tests in BrainCore.
+- **Shell-Rauchtest statt XCUITest/Playwright** (`scripts/rauchtest.sh`).
+- **`--json` in M1 nur für `brain status`**; feste Pfade (Homebrew u. ä.) werden nur über `BRAIN_NODE` gelöst.
+- **BRAIN_NODE-Rückfall auf das App-Node (M6) ist offen** und wird in M4/M5 geklärt.
+
 ## Dateistruktur
 
 **Kit** (Worktree `~/brain-kit-v0.6`, Pfade relativ dazu):
