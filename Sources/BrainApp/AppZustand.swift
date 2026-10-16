@@ -35,7 +35,7 @@ final class AppZustand: ObservableObject {
         signal(SIGPIPE, SIG_IGN)
         log.schreibe("start")
         do {
-            node = try laufzeit()
+            node = try await laufzeit()
         } catch {
             anzeige = .problem("Die mitgelieferte Laufzeit fehlt oder ist beschädigt — bitte die App neu installieren.")
             log.schreibe("laufzeit-fehler \(error)")
@@ -59,12 +59,14 @@ final class AppZustand: ObservableObject {
         if let s = argumente.beendenNach { Task { try? await Task.sleep(for: s); NSApp.terminate(nil) } }
     }
 
-    private func laufzeit() throws -> URL {
+    /// Die Prüfsumme der Node-Datei (rund 120 MB) wird abseits des Main-Threads gerechnet.
+    private func laufzeit() async throws -> URL {
         if let dev = ProcessInfo.processInfo.environment["BRAIN_APP_NODE"], dev.hasPrefix("/") {
             return URL(fileURLWithPath: dev)
         }
         guard let ressourcen = Bundle.main.resourceURL else { throw LaufzeitFehler.manifestFehlt }
-        return try NodeLaufzeit(quelle: ressourcen.appendingPathComponent("node-runtime"), pfade: pfade).installiere()
+        let laufzeit = NodeLaufzeit(quelle: ressourcen.appendingPathComponent("node-runtime"), pfade: pfade)
+        return try await Task.detached { try laufzeit.installiere() }.value
     }
 
     func verbinde(_ ordner: URL, merken: Bool = true) async {
