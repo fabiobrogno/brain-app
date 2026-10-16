@@ -65,8 +65,10 @@ final class Kanal: NSObject, WKScriptMessageHandlerWithReply {
 
     func userContentController(_ controller: WKUserContentController, didReceive nachricht: WKScriptMessage) async -> (Any?, String?) {
         guard nachricht.frameInfo.isMainFrame,
-              nachricht.frameInfo.request.url?.scheme == NavigationsRegel.schema,
-              let a = SchemaAntwort.anfrage(ausNachricht: nachricht.body) else { return (nil, "ungültige Anfrage") }
+              nachricht.frameInfo.request.url?.scheme == NavigationsRegel.schema else { return (nil, SchemaAntwort.AnfrageFehler.ungueltig.meldung) }
+        let a: (methode: String, pfad: String, body: Data?)
+        do { a = try SchemaAntwort.anfrage(ausNachricht: nachricht.body) }
+        catch { return (nil, (error as? SchemaAntwort.AnfrageFehler)?.meldung ?? SchemaAntwort.AnfrageFehler.ungueltig.meldung) }
         do {
             let r = try await anfrageMitNeuversuch(bruecke, methode: a.methode, pfad: a.pfad, body: a.body)
             return (SchemaAntwort.kanalAntwort(r), nil)

@@ -49,14 +49,24 @@ private func url(_ s: String) -> URL { URL(string: s)! }
 }
 
 @Test func kanalNachrichtenWerdenStrengGeprueft() throws {
-    let get = try #require(SchemaAntwort.anfrage(ausNachricht: ["methode": "get", "pfad": "/api/daten", "daten": NSNull()]))
+    let get = try SchemaAntwort.anfrage(ausNachricht: ["methode": "get", "pfad": "/api/daten", "daten": NSNull()])
     #expect(get.methode == "GET")
     #expect(get.body == nil)
-    let put = try #require(SchemaAntwort.anfrage(ausNachricht: ["methode": "PUT", "pfad": "/api/einstellungen", "daten": ["werte": ["a": 1]]]))
+    let put = try SchemaAntwort.anfrage(ausNachricht: ["methode": "PUT", "pfad": "/api/einstellungen", "daten": ["werte": ["a": 1]]])
     #expect(String(decoding: try #require(put.body), as: UTF8.self) == #"{"werte":{"a":1}}"#)
-    #expect(SchemaAntwort.anfrage(ausNachricht: ["methode": "GET", "pfad": "/index.html"]) == nil)
-    #expect(SchemaAntwort.anfrage(ausNachricht: ["methode": "DELETE", "pfad": "/api/daten"]) == nil)
-    #expect(SchemaAntwort.anfrage(ausNachricht: "kein objekt") == nil)
+    #expect(throws: SchemaAntwort.AnfrageFehler.ungueltig) { try SchemaAntwort.anfrage(ausNachricht: ["methode": "GET", "pfad": "/index.html"]) }
+    #expect(throws: SchemaAntwort.AnfrageFehler.ungueltig) { try SchemaAntwort.anfrage(ausNachricht: ["methode": "DELETE", "pfad": "/api/daten"]) }
+    #expect(throws: SchemaAntwort.AnfrageFehler.ungueltig) { try SchemaAntwort.anfrage(ausNachricht: "kein objekt") }
+}
+
+@Test func zuGrosserKoerperWirdSofortAbgelehnt() throws {
+    let gross = String(repeating: "a", count: SchemaAntwort.maxKoerper)
+    #expect(throws: SchemaAntwort.AnfrageFehler.zuGross) {
+        try SchemaAntwort.anfrage(ausNachricht: ["methode": "PUT", "pfad": "/api/einstellungen", "daten": ["text": gross]])
+    }
+    let klein = String(repeating: "a", count: 1000)
+    _ = try SchemaAntwort.anfrage(ausNachricht: ["methode": "PUT", "pfad": "/api/einstellungen", "daten": ["text": klein]])
+    #expect(SchemaAntwort.AnfrageFehler.zuGross.meldung.contains("zu groß"))
 }
 
 @Test func fehlerSeiteIstAlltagssprachlichOhneTechnik() throws {
