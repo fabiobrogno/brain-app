@@ -33,6 +33,8 @@ final class AppZustand: ObservableObject {
 
     func starte() async {
         signal(SIGPIPE, SIG_IGN)
+        // Nach Aktionen im Fenster (Vorschlag übernehmen, Konflikt entscheiden) den Menüstatus auffrischen.
+        fenster.beiGeschlossen = { [weak self] in Task { await self?.aktualisiere() } }
         log.schreibe("start")
         do {
             node = try await laufzeit()

@@ -126,6 +126,8 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
     private var bereitAufgabe: Task<Void, Never>?
 
     var istOffen: Bool { fenster != nil }
+    /// Wird nach dem Schließen aufgerufen (z. B. um den Menüstatus aufzufrischen).
+    var beiGeschlossen: (() -> Void)?
 
     init(log: AppLog) { self.log = log }
 
@@ -201,5 +203,6 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
         if let b = bruecke { Task { await b.beende() } }
         bruecke = nil
         log.schreibe("fenster-zu")
+        beiGeschlossen?()
     }
 }
