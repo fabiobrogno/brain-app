@@ -1,10 +1,14 @@
 # Brain-App — Design-Spezifikation v1
 
 - **Stand:** 16.10.2026 · **Status:** Entwurf zur Freigabe durch Fabio
-- **Arbeitstitel:** „Brain“ (endgültiger Name wird vor der ersten öffentlichen Beta entschieden, siehe §15)
+- **Arbeitstitel:** „Brain“ (endgültiger Name wird vor der Verteilung an Kollegen entschieden, siehe §15)
 - **Grundlagen:** Brainstorming 12.10. (Teil 1–3) und 16.10. (Teil 3 komplett, Teil 4), Recherche
   `~/brain/00_inbox/2026-10-16_brain-app-recherche.md` und `…/2026-10-16_brain-aufbau-beste-quellen.md`,
   bestehendes Kit (`fbrogno/second-brain-kit`, v0.5.0)
+- **Nachtrag 16.10.2026 (nach M1):** Zielgruppe Fabio + Kollegen (§2) · Kern v2 um K11–K15 erweitert, K2 korrigiert
+  (§12.2) · Alltags-Wirkung als Messung (§13.2) · Meilenstein „Erlebnis & Design“ vorgemerkt (§14). Grundlagen:
+  Auswertung von 193 eigenen Sitzungen, Web-Recherche Schmerzpunkte 2026, Prüfung der Claude-Code-Hook-Doku
+  (Stand v2.1.302).
 
 ---
 
@@ -13,7 +17,7 @@
 **„Ein Wissen, dem deine KI trauen kann — und jede KI fragt es gratis ab.“**
 
 Die App macht das bestehende Second Brain (Karpathy-Muster: Rohquellen → KI-gepflegtes Wiki → Schema) für
-jeden Mac-Nutzer mit wenigen Klicks nutzbar und hält es im Hintergrund sauber. Drei Säulen:
+jeden Mac-Nutzer (zunächst: Fabio und Kollegen, §2) mit wenigen Klicks nutzbar und hält es im Hintergrund sauber. Drei Säulen:
 
 | Säule | Bedeutung | Woran man es misst |
 |---|---|---|
@@ -33,8 +37,12 @@ Mensch-entscheidet-Karten + Autopilot aus Sitzungen + sparsame native Mac-App oh
 - **Preis:** **komplett kostenlos**, kein Premium, keine Lizenzprüfung. Quelltext unter **MIT** (wie das Kit).
 - **Ohne Server:** kein eigener Backend-Dienst, kein offener Netzwerk-Port, keine Telemetrie. Internet nur für
   optionale Dinge (§8).
-- **Verteilung:** außerhalb des App Store, Developer-ID-signiert und notarisiert, DMG über GitHub Releases.
-- **Repo:** privates Repo unter dem GitHub-Account **fbrogno** (Veröffentlichung des Quelltexts zum Beta-Start).
+- **Zielgruppe (Nachtrag):** Fabio und Kollegen aus der Firma — **jeder mit eigenem, persönlichem Brain**. Kein
+  gemeinsames Firmen-Brain; Firmenwissen bleibt im Knowledge Collective (Brogno-MCP). Hauptnutzen der Verteilung:
+  **einmal veröffentlichen → alle bekommen das Update** (App und Kit, §9.4). Priorität 1 bleibt Claude im Terminal
+  (richtiges Wissen, 0 Tokens); die App ist der bequeme Zugang dazu.
+- **Verteilung:** außerhalb des App Store, Developer-ID-signiert und notarisiert, DMG + Update-Feed (Quelle siehe §15).
+- **Repo:** privates Repo unter dem GitHub-Account **fbrogno**; Veröffentlichung des Quelltexts ist kein Ziel mehr.
 
 ## 3. Nicht-Ziele v1
 
@@ -310,7 +318,7 @@ Entwicklung **nicht direkt auf `main` des Live-Brains**, sondern in einem eigene
 | # | Baustein | Wirkt auf | Quelle/Begründung |
 |---|---|---|---|
 | K1 | **Wahrheits-Regeln W1–W7** (§4a): Schema-Felder `gilt_seit`, `ersetzt_durch`, `kritisch`, Herkunft je Fakt; Lint-Regeln dazu | Richtig | Zep, crajah, Singh, OWASP ASI06 |
-| K2 | **Drei Momente:** Sitzungsstart liefert Ich-Karte + Kurzfassung der Projektseite (Beschreibung + Fallen, gedeckelt ~300 Tokens; heute nur der Pfad) · Hinweis je Prompt (besteht) · **vor Edit/Write** passende Regeln/Lektionen für genau diese Datei (PreToolUse) | Wirksam | Gist suwonleee: 0/8 → 8/8 |
+| K2 | **Drei Momente:** Sitzungsstart liefert Ich-Karte + Projekt-Steckbrief (K14, gedeckelt ~300 Tokens; heute nur der Pfad) · Hinweis je Prompt (besteht) · **beim Lesen einer Datei** passende Regeln/Lektionen für genau diese Datei (PreToolUse auf `Read`, `additionalContext`). *Korrektur:* Kontext aus PreToolUse erreicht Claude erst zusammen mit dem Werkzeug-Ergebnis — ein Hinweis an `Edit`/`Write` käme nach der Änderung. Claude muss eine Datei vor `Edit` lesen; am `Read` kommt die Regel daher rechtzeitig. | Wirksam | Gist suwonleee: 0/8 → 8/8; Hook-Doku |
 | K3 | **Intent-Gate:** Prompts ohne Wissensbedarf („ok“, „ja“, „weiter“) bekommen keinen Hinweis | Sparsam | Agent Zero Memory |
 | K4 | **Drift-Linter:** Liste ausgemusterter Begriffe; lebende Erwähnungen werden gemeldet (Lint + pre-commit) | Richtig | Tuszynski |
 | K5 | **Entitäts-Aliasse + Namens-Dubletten-Check** | Richtig | Tuszynski |
@@ -319,6 +327,11 @@ Entwicklung **nicht direkt auf `main` des Live-Brains**, sondern in einem eigene
 | K8 | **Fehler-Signal W7** (Korrektur nach Hinweis → PRÜFBEDÜRFTIG + Karte) | Richtig | eigene Idee |
 | K9 | **Regelbasiertes Routing** beim Einarbeiten (Suche + Aliasse + Index statt LLM) | Sparsam | Gist sassarini-marco (~72 % der Ingest-Tokens im Routing) |
 | K10 | **Karten-Deckel:** max. 10 offene Karten, Ein-Tipp-Entscheidung mit Quelle | Richtig (Mensch ist Engpass) | eigene Idee |
+| K11 | **Was war zuletzt:** Sitzungsstart (`startup`/`resume`/`clear`) liefert je Projekt höchstens ~600 Zeichen: die letzten 3 Sitzungen dieses Projekts (Datum + Titel aus dem Transkript, sonst erster Prompt gekürzt), Commits seit der letzten Sitzung (höchstens 5) und den Abschnitt „Offen“ der jüngsten `session_*`-Datei — nur wörtliche Auszüge mit Quelle, nichts von einer KI zusammengefasst | Vollständig | eigene Sitzungen: „was haben wir gestern gemacht“ mehrfach wortgleich; `/recap` deckt nur die laufende Sitzung ab |
+| K12 | **Arbeitsstand über die Kompaktierung retten:** `PreCompact` schreibt (nur Seiteneffekt) `.logs/sitzungen/<session_id>.md`: Ziel der Sitzung (erste Nutzer-Nachricht), letzte Vorgaben/Entscheidungen des Nutzers (wörtlich, gekürzt), Commits der Sitzung, geänderte Dateien (aus `Edit`/`Write`-Aufrufen), offene Aufgaben (Aufgabenliste im Transkript) — durch den Secret-Riegel, git-ignoriert. `SessionStart` mit Matcher `compact` spielt sie wörtlich ein (≤ 8.000 Zeichen, Limit 10.000). Dazu ein Abschnitt `# Compact instructions` in der gerenderten `AGENTS.md`/CLAUDE.md (Entscheidungen, Pfade, offene Punkte erhalten). Ersetzt den heutigen Hinweis „Skill handoff“. | Vollständig | eigene Sitzungen: 27 Auto- + 16 manuelle Kompaktierungen, „merk dir das, damit ich compacten kann“; Issue #75759 (07/2026); Hook-Doku „what survives compaction“ |
+| K13 | **Was läuft parallel:** `SessionStart` trägt die Sitzung in `.logs/laufend/` ein (Repo/Ordner, Titel, Start), jeder Prompt erneuert den Zeitstempel, `SessionEnd` trägt aus; Einträge ohne Lebenszeichen > 2 h zählen nicht. Beim Start — und beim Prompt nur, wenn neu — Hinweis „Parallel im selben Repo: ‚<Titel>‘ seit 20:14“, mit Verweis auf das eingebaute Cross-Session-Messaging. Nur gleiches Git-Repo bzw. gleicher Vault zählt. | Richtig | 16.10.: fremder Commit in `~/brain` während des Kit-Merges; Claude Code warnt nicht von selbst |
+| K14 | **Projekt-Steckbrief:** Projektseiten bekommen feste Felder `pruefen` (Test-/Lint-/Rauchtest-Befehle), `ziel` (test/prod + Freigaberegel) und `fallen`; Stack und Versionen werden **nicht gepflegt, sondern beim Sitzungsstart aus dem Repo gelesen** (`package.json`, `Package.swift`, `go.mod`, `pyproject.toml` …, 0 Tokens, immer aktuell). Lint meldet Projektseiten ohne `pruefen`. Firmen-Fachwissen bleibt im Knowledge Collective. | Richtig/Wirksam | eigene Sitzungen: größte Gruppe „ungeprüft/kaputt“ (55 Nachrichten / 28 Sitzungen); Issue #53993 erfundene API-Aufrufe |
+| K15 | **Alltags-Wirkung messen:** `brain wirkung` wertet lokal die Transkripte der letzten 30 Tage aus (nur Nutzer-Nachrichten, Musterlisten): Korrekturen je 100 Nachrichten nach Gruppe, „wo waren wir“-Fragen, Wiederholungen, Kompaktierungen, Brain-Hinweise mit folgender Korrektur. Gespeichert werden nur Zahlen, keine Zitate; monatlich im Pflegebericht; Ausgangswert vom 16.10.2026 als Messprotokoll | alle drei | ohne Messung kein Beleg, dass das Brain im Alltag hilft |
 
 ## 13. Tests und Messungen
 
@@ -358,6 +371,12 @@ Entwicklung **nicht direkt auf `main` des Live-Brains**, sondern in einem eigene
 - **Frischer Mac:** Einrichtung in einer frischen VM ohne git/Homebrew/Node, offline und online.
 - **Robustheit:** Abbruch mitten im Autopilot-Commit, Mac schläft ein, Speicherdruck künstlich erzeugt,
   Netz weg beim Abgleich, zwei Macs ändern dieselbe Seite.
+- **Alltags-Wirkung (K15, monatlich):** Ausgangswert 16.10.2026 — 193 Hauptsitzungen, 2.600 Nutzer-Nachrichten,
+  u. a. „ungeprüft/kaputt“ 55, „inhaltlich falsch“ 39, Wiederholungen 37, Regelbruch 20, Gedächtnisverlust 10,
+  43 Kompaktierungen. Ziel ist ein **Trend nach unten** bei Gedächtnisverlust, Regelbruch und Wiederholungen nach
+  K2/K11/K12; die Musterzählung ist grob (Rauschen bekannt) und wird daher nur mit sich selbst verglichen.
+- **Hook-Laufzeit:** Sitzungsstart- und Prompt-Hooks bleiben unter ihrem Zeitlimit (Ausgabe wird sonst verworfen);
+  gemessen je Hook im Kit-Test, Ziel < 300 ms beim Prompt.
 - **Update-Kette:** signieren → notarisieren → stapeln → Appcast → Update von Version n auf n+1 in der VM.
 
 ### 13.3 Freigabekriterien Beta
@@ -375,10 +394,11 @@ kommt erst, wenn W1–W7 umgesetzt und getestet sind.
 | Meilenstein | Inhalt | Ergebnis |
 |---|---|---|
 | **M1 – App läuft** | Brain.app: Menüleiste mit Status, Fenster mit `brain://` + Ansicht-Brücke (kein Port), mitgelieferte Laufzeit, Einrichtung „vorhandenes Brain verbinden“ inkl. Quell-Vault-Schutz; dafür nötige Kit-Teile (feste Pfade weg, `--json`, Brücken-Modus der Ansicht); erste RAM-Messung mit der echten App (Footprint auf dem Arbeits-Mac) | Fabio nutzt die App täglich mit seinem echten Brain (lesend: Ansicht, Status, Pflege, Karten aus dem Bestand) |
-| **M2 – Wahrheit + Kern v2** | §4a W1–W7, §12.1 Härtung, §12.2 K1–K10, Korrektheits-Prüfset (Kit v0.6, Worktree) | Brain richtiger, wirksamer, sparsamer — auch ohne App |
+| **M2 – Wahrheit + Kern v2** | §4a W1–W7, §12.1 Härtung, §12.2 K1–K15, Korrektheits-Prüfset, Ausgangsmessung Alltags-Wirkung (Kit v0.6, Worktree) | Brain richtiger, wirksamer, sparsamer — auch ohne App; Claude weiß, was zuletzt lief, und verliert über die Kompaktierung nichts |
 | **M3 – Messen + Autopilot** | `brain-fm` + Autopilot-Eval (Apple-Modell vs. Haiku); LaunchAgent, Warteschlange, Stufen 0–2, Vorschlagsmodus, Karten, Budget, Mitteilungen | Autopilot im Vorschlagsmodus |
 | **M4 – Neues Brain + Abgleich** | Einrichtung „neues Brain anlegen“ inkl. Startwissen + Kurz-Interview; Device Flow, Credential-Helper, Sync, Haupt-Mac | App für andere einrichtbar, mehrere Macs |
-| **M5 – Verteilung** | Developer ID, Notarisierung, Sparkle, DMG, Beta + Anfänger-Test | öffentliche Beta |
+| **ME – Erlebnis & Design** (nach M3, vor M4) | Aus der Menüleisten-App wird eine **richtige Dock-App mit Hauptfenster** (Vorbild MXTerm Pro): Seitenleiste mit Start · Gehirn (3D) · Wissen · Entscheiden · Eingang · Einstellungen, Statusleiste, Themes, Logo, Animationen, „Einstieg & Tour“; die Menüleiste bleibt als Zusatz. Ändert §5.2 (`LSUIElement`). Vor dem Start eigene Brainstorming-Runde + Spec-Ergänzung | App fühlt sich wie ein fertiges Produkt an; Kollegen finden sich ohne Hilfe zurecht |
+| **M5 – Verteilung** | Developer ID, Notarisierung, Sparkle (App **und** Kit-Update), DMG, Test mit einem Kollegen | interne Verteilung an Kollegen mit automatischen Updates |
 
 Jeder Meilenstein bekommt einen eigenen Umsetzungsplan; die Messung in M3 entscheidet, ob Stufe 1 (Apple-Modell)
 standardmäßig an ist.
@@ -390,8 +410,10 @@ standardmäßig an ist.
 | App-Name | Fabio | vor M5 |
 | Zertifikat „Developer ID Application“ anlegen (bisher nur „Apple Development“ vorhanden) + `notarytool`-Profil | Fabio (Secrets nur selbst eingeben) | vor M5 |
 | Mitgliedschaft im Apple Developer Program aktiv? (zeigt sich daran, ob Xcode „Developer ID Application“ anbietet) | Fabio | vor M5 |
-| Anfänger-Testperson (beliebiger Mac) für den Einrichtungstest | Fabio | vor Beta |
+| Test-Kollege (eigener Mac, ohne Terminal-Erfahrung) für den Einrichtungstest | Fabio | vor M5 |
 | GitHub App für Device Flow registrieren (Client-ID ist öffentlich, kein Secret) | Fabio + Claude | vor M4 |
+| Update-Quelle: Das Repo ist privat, Updates müssen aber ohne Anmeldung ladbar sein — öffentliches Repo nur mit Release-Dateien, oder ein Firmen-Speicherort | Fabio + Claude | vor M5 |
+| Speicherziele nach M1-Messung (Fenster offen 640 MB vs. ≤ 600, zu 64 MB vs. ≤ 60) bestätigen oder anpassen | Fabio | vor M3 |
 
 ## 16. Später (nicht v1)
 
