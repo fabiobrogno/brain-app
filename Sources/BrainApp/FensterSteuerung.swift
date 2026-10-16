@@ -106,10 +106,11 @@ final class Navigation: NSObject, WKNavigationDelegate {
         meldeFehler(webView, error)
     }
 
-    /// Abbrüche durch die Navigationsregel (-999) sind gewollt; alles andere zeigt die Fehlerseite statt Weiß.
+    /// Abbrüche durch die Navigationsregel (-999, WebKit 102) sind gewollt; alles andere zeigt die Fehlerseite statt Weiß.
     private func meldeFehler(_ webView: WKWebView, _ error: any Error) {
         let e = error as NSError
         if e.domain == NSURLErrorDomain && e.code == NSURLErrorCancelled { return }
+        if e.domain == "WebKitErrorDomain" && e.code == 102 { return }
         beiFehler?("\(e.domain) \(e.code)")
         webView.loadSimulatedRequest(URLRequest(url: NavigationsRegel.startURL), responseHTML: SchemaAntwort.fehlerSeiteHTML)
     }
