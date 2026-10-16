@@ -68,6 +68,7 @@ public actor BrueckenVerbindung {
         var env = ProcessInfo.processInfo.environment
         env["BRAIN_VAULT"] = vault.path
         for (k, v) in umgebung { env[k] = v }
+        env["PATH"] = BrainBefehl.pfadMitStandardOrdnern(env["PATH"])
         p.environment = env
         p.currentDirectoryURL = vault
         let ein = Pipe(), aus = Pipe()

@@ -167,4 +167,15 @@ struct BrueckenVerbindungTests {
         #expect(starts == 1)
         #expect(await b.pid == nil)
     }
+
+    @Test func brueckeErhaeltStandardOrdnerImPfad() async throws {
+        let ordner = tempOrdner("PfadTest")
+        let node = skript("#!/bin/sh\nprintf '{\"bereit\":true,\"version\":\"%s\"}\\n' \"$PATH\"\nexec cat > /dev/null\n",
+                          name: "node", in: ordner)
+        let b = BrueckenVerbindung(node: node, vault: ordner, umgebung: ["PATH": "/usr/bin:/bin"])
+        try await b.starte()
+        let pfad = try #require(await b.version)
+        #expect(pfad == "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin")
+        await b.beende()
+    }
 }

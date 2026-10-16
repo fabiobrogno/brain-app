@@ -13,7 +13,7 @@ public struct BrainBefehl: Sendable {
     }
 
     /// Eine GUI-App startet mit Minimal-PATH — Homebrew- und /usr/local-Programme (z. B. git) müssen auffindbar sein.
-    static func pfadMitStandardOrdnern(_ pfad: String?) -> String {
+    public static func pfadMitStandardOrdnern(_ pfad: String?) -> String {
         let vorhanden = (pfad ?? "").split(separator: ":").map(String.init)
         let fehlend = ["/opt/homebrew/bin", "/usr/local/bin"].filter { !vorhanden.contains($0) }
         return (fehlend + vorhanden).joined(separator: ":")
