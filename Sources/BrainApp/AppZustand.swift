@@ -19,6 +19,7 @@ final class AppZustand: ObservableObject {
     private var brainNode = ""
     private var einrichtung: NSWindow?
     private var taktgeber: Task<Void, Never>?
+    private var statusLauf = 0
 
     init() {
         let p = AppPfade.standard()
@@ -88,6 +89,9 @@ final class AppZustand: ObservableObject {
 
     func aktualisiere() async {
         guard let vault, let node else { return }
+        // Nur das Ergebnis des neuesten Laufs für den aktuellen Ordner gilt (langsame ältere Läufe werden verworfen).
+        statusLauf += 1
+        let lauf = statusLauf
         guard VaultAuswahl.pruefe(vault) == .ok else {
             status = nil
             anzeige = .problem("Brain-Ordner nicht gefunden")
@@ -95,10 +99,12 @@ final class AppZustand: ObservableObject {
         }
         do {
             let s = try await BrainBefehl(node: node, vault: vault, umgebung: umgebung).status()
+            guard lauf == statusLauf, self.vault == vault else { return }
             status = s
             anzeige = .fuer(s)
             log.schreibe("status \(s.zustand.rawValue)")
         } catch {
+            guard lauf == statusLauf, self.vault == vault else { return }
             status = nil
             anzeige = .fuer(nil, fehler: "Status gerade nicht abrufbar")
             log.schreibe("status-fehler \(error)")
