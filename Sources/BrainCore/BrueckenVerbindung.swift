@@ -9,6 +9,8 @@ public struct BrueckenAntwort: Sendable, Equatable {
 public enum BrueckenFehler: Error, Equatable {
     case startFehlgeschlagen(String)
     case beendet
+    /// Die Verbindung wurde bewusst geschlossen (Fenster zu) — kein Neuversuch, kein neuer Prozess.
+    case geschlossen
     case zeitUeberschritten
 }
 
@@ -35,6 +37,7 @@ public actor BrueckenVerbindung {
     private var prozess: Process?
     private var eingang: FileHandle?
     private var leser: Task<Void, Never>?
+    private var geschlossen = false
     private var naechsteId = 0
     private var wartend: [Int: CheckedContinuation<BrueckenAntwort, Error>] = [:]
     private var zeitwaechter: [Int: Task<Void, Never>] = [:]
@@ -53,6 +56,7 @@ public actor BrueckenVerbindung {
     var offeneAnfragen: Int { wartend.count }
 
     public func starte(zeitlimit: Duration = .seconds(15)) async throws {
+        if geschlossen { throw BrueckenFehler.geschlossen }
         if laeuft { return }
         // Alte, noch wartende Anfragen sofort abschließen — sie bekämen von einem neuen Prozess nie eine Antwort.
         verwerfeAlles()
@@ -112,8 +116,9 @@ public actor BrueckenVerbindung {
     public func anfrage(methode: String, pfad: String, body: Data? = nil, zeitlimit: Duration = .seconds(30)) async throws -> BrueckenAntwort {
         // Zweiter Versuch nur, wenn das Schreiben in eine (noch nicht als tot gemeldete) Brücke scheitert.
         for versuch in 0..<2 {
+            if geschlossen { throw BrueckenFehler.geschlossen }
             if !laeuft { try await starte() }
-            guard let eingang else { throw BrueckenFehler.beendet }
+            guard let eingang else { throw geschlossen ? BrueckenFehler.geschlossen : BrueckenFehler.beendet }
             naechsteId += 1
             let id = naechsteId
             let objekt: [String: Any] = ["id": id, "methode": methode, "pfad": pfad,
@@ -140,7 +145,11 @@ public actor BrueckenVerbindung {
         throw BrueckenFehler.beendet
     }
 
+    /// Schließt die Verbindung endgültig: wartende und spätere Anfragen scheitern mit `.geschlossen`, es startet
+    /// nie wieder ein Prozess. Ein neues Fenster legt eine neue Verbindung an.
     public func beende() {
+        geschlossen = true
+        for id in Array(wartend.keys) { schliesse(id, .failure(BrueckenFehler.geschlossen)) }
         try? eingang?.close() // stdin zu → die Brücke beendet sich selbst, nachdem alles geschrieben ist
         eingang = nil
         if let p = prozess {

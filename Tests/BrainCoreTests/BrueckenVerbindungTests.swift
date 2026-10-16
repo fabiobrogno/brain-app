@@ -144,4 +144,27 @@ struct BrueckenVerbindungTests {
         #expect(await b.offeneAnfragen == 0)
         await b.beende()
     }
+
+    @Test func beendenSchliesstWartendeAnfrageMitGeschlossenUndStartetNichtNeu() async throws {
+        let ordner = tempOrdner("Zaehler")
+        let zaehler = ordner.appendingPathComponent("starts.txt")
+        let node = skript("#!/bin/sh\necho x >> '\(zaehler.path)'\necho '{\"bereit\":true,\"version\":\"attrappe\"}'\nexec cat > /dev/null\n",
+                          name: "node", in: ordner)
+        let b = BrueckenVerbindung(node: node, vault: ordner)
+        try await b.starte()
+        let laufend = Task { () -> BrueckenFehler? in
+            do { _ = try await b.anfrage(methode: "GET", pfad: "/", zeitlimit: .seconds(60)); return nil }
+            catch { return error as? BrueckenFehler }
+        }
+        while await b.offeneAnfragen == 0 { await Task.yield() }
+        await b.beende()
+        #expect(await laufend.value == .geschlossen)
+        // Auch spaetere Anfragen scheitern sofort mit .geschlossen (nicht .beendet) — der Aufrufer versucht nichts neu.
+        await #expect(throws: BrueckenFehler.geschlossen) { _ = try await b.anfrage(methode: "GET", pfad: "/") }
+        await #expect(throws: BrueckenFehler.geschlossen) { try await b.starte() }
+        try await Task.sleep(for: .milliseconds(300))
+        let starts = try String(contentsOf: zaehler, encoding: .utf8).split(separator: "\n").count
+        #expect(starts == 1)
+        #expect(await b.pid == nil)
+    }
 }
