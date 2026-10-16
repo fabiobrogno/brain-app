@@ -23,7 +23,8 @@ final class SchemaHandler: NSObject, WKURLSchemeHandler {
     func webView(_ webView: WKWebView, start aufgabe: any WKURLSchemeTask) {
         let kennung = ObjectIdentifier(aufgabe)
         let methode = aufgabe.request.httpMethod ?? "GET"
-        guard let url = aufgabe.request.url, url.host == NavigationsRegel.host, methode == "GET" || methode == "HEAD" else {
+        guard let url = aufgabe.request.url, url.host == NavigationsRegel.host,
+              !SchemaAntwort.istApiPfad(url), methode == "GET" || methode == "HEAD" else {
             aufgabe.didFailWithError(URLError(.badURL))
             return
         }
@@ -64,7 +65,9 @@ final class Kanal: NSObject, WKScriptMessageHandlerWithReply {
     init(bruecke: BrueckenVerbindung) { self.bruecke = bruecke }
 
     func userContentController(_ controller: WKUserContentController, didReceive nachricht: WKScriptMessage) async -> (Any?, String?) {
+        let herkunft = nachricht.frameInfo.securityOrigin
         guard nachricht.frameInfo.isMainFrame,
+              herkunft.protocol == NavigationsRegel.schema, herkunft.host == NavigationsRegel.host,
               nachricht.frameInfo.request.url?.scheme == NavigationsRegel.schema else { return (nil, SchemaAntwort.AnfrageFehler.ungueltig.meldung) }
         let a: (methode: String, pfad: String, body: Data?)
         do { a = try SchemaAntwort.anfrage(ausNachricht: nachricht.body) }

@@ -19,6 +19,12 @@ public enum SchemaAntwort {
     /// Ist das die Startseite (Hauptdokument) der Ansicht?
     public static func istHauptdokument(_ url: URL) -> Bool { ["", "/", "/index.html"].contains(url.path) }
 
+    /// API-Pfade gehören dem Nachrichtenkanal; über das Schema (Seitenabruf) sind sie nicht erreichbar.
+    public static func istApiPfad(_ url: URL) -> Bool {
+        let p = url.path.lowercased()
+        return p == "/api" || p.hasPrefix("/api/")
+    }
+
     /// Kleine Fehlerseite in Alltagssprache, wenn die Ansicht nicht starten kann (statt eines leeren weißen Fensters).
     public static let fehlerSeiteHTML = """
     <!doctype html><html lang="de"><head><meta charset="utf-8"><title>Brain</title>

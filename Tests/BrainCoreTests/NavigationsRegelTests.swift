@@ -82,3 +82,12 @@ private func url(_ s: String) -> URL { URL(string: s)! }
     #expect(text.contains("&#10005;"))
     #expect(!text.contains("Error") && !text.contains("<script"))
 }
+
+@Test func apiPfadeSindUeberDasSchemaNichtErreichbar() throws {
+    for p in ["brain://app/api/daten", "brain://app/api", "brain://app/API/daten", "brain://app/api/gelesen?seit=1"] {
+        #expect(SchemaAntwort.istApiPfad(try #require(URL(string: p))), "\(p)")
+    }
+    for p in ["brain://app/index.html", "brain://app/apiary.js", "brain://app/vendor/api.js"] {
+        #expect(!SchemaAntwort.istApiPfad(try #require(URL(string: p))), "\(p)")
+    }
+}
