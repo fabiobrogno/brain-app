@@ -67,6 +67,8 @@ final class AppZustand: ObservableObject {
     }
 
     func verbinde(_ ordner: URL, merken: Bool = true) async {
+        // Anderer Ordner bei offenem Fenster: Fenster (samt Brücke) zu, sonst zeigt es weiter das alte Brain.
+        if let alt = vault, alt.standardizedFileURL.path != ordner.standardizedFileURL.path { fenster.schliesse() }
         let pruefung = VaultAuswahl.pruefe(ordner)
         guard pruefung == .ok else {
             vault = nil
