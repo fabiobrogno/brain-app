@@ -16,6 +16,25 @@ public enum SchemaAntwort {
         return HTTPURLResponse(url: url, statusCode: a.status, httpVersion: "HTTP/1.1", headerFields: kopf)!
     }
 
+    /// Ist das die Startseite (Hauptdokument) der Ansicht?
+    public static func istHauptdokument(_ url: URL) -> Bool { ["", "/", "/index.html"].contains(url.path) }
+
+    /// Kleine Fehlerseite in Alltagssprache, wenn die Ansicht nicht starten kann (statt eines leeren weißen Fensters).
+    public static let fehlerSeiteHTML = """
+    <!doctype html><html lang="de"><head><meta charset="utf-8"><title>Brain</title>
+    <style>body{font:16px -apple-system,system-ui,sans-serif;display:flex;align-items:center;justify-content:center;\
+    height:100vh;margin:0;background:Canvas;color:CanvasText}main{max-width:30em;text-align:center;padding:2em}\
+    .symbol{font-size:3em;color:#c0392b}</style></head><body><main><div class="symbol">&#10005;</div>\
+    <p>Die Ansicht konnte nicht starten. Ist der Brain-Ordner noch da und das Kit aktuell?</p></main></body></html>
+    """
+
+    public static func fehlerSeite(url: URL) -> (antwort: HTTPURLResponse, body: Data) {
+        let body = Data(fehlerSeiteHTML.utf8)
+        let kopf = ["Content-Type": "text/html; charset=utf-8", "Content-Length": String(body.count),
+                    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'"]
+        return (HTTPURLResponse(url: url, statusCode: 503, httpVersion: "HTTP/1.1", headerFields: kopf)!, body)
+    }
+
     /// Antwort für den Nachrichtenkanal von api.js: { status, body } mit body als Text (JSON).
     public static func kanalAntwort(_ a: BrueckenAntwort) -> [String: Any] {
         ["status": a.status, "body": String(decoding: a.body, as: UTF8.self)]

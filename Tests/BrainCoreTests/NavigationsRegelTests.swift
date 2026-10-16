@@ -58,3 +58,17 @@ private func url(_ s: String) -> URL { URL(string: s)! }
     #expect(SchemaAntwort.anfrage(ausNachricht: ["methode": "DELETE", "pfad": "/api/daten"]) == nil)
     #expect(SchemaAntwort.anfrage(ausNachricht: "kein objekt") == nil)
 }
+
+@Test func fehlerSeiteIstAlltagssprachlichOhneTechnik() throws {
+    let url = try #require(URL(string: "brain://app/index.html"))
+    #expect(SchemaAntwort.istHauptdokument(url))
+    #expect(SchemaAntwort.istHauptdokument(try #require(URL(string: "brain://app/"))))
+    #expect(!SchemaAntwort.istHauptdokument(try #require(URL(string: "brain://app/app.js"))))
+    let seite = SchemaAntwort.fehlerSeite(url: url)
+    #expect(seite.antwort.statusCode == 503)
+    #expect(seite.antwort.value(forHTTPHeaderField: "Content-Length") == String(seite.body.count))
+    let text = String(decoding: seite.body, as: UTF8.self)
+    #expect(text.contains("Die Ansicht konnte nicht starten."))
+    #expect(text.contains("&#10005;"))
+    #expect(!text.contains("Error") && !text.contains("<script"))
+}

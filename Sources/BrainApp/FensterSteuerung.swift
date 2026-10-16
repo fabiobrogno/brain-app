@@ -37,7 +37,15 @@ final class SchemaHandler: NSObject, WKURLSchemeHandler {
                 aufgabe.didFinish()
             } catch {
                 guard !gestoppt.contains(kennung) else { return }
-                aufgabe.didFailWithError(error)
+                if SchemaAntwort.istHauptdokument(url) {
+                    // Kein leeres Fenster: Fehlerseite unter derselben brain://app-URL ausliefern.
+                    let seite = SchemaAntwort.fehlerSeite(url: url)
+                    aufgabe.didReceive(seite.antwort)
+                    aufgabe.didReceive(seite.body)
+                    aufgabe.didFinish()
+                } else {
+                    aufgabe.didFailWithError(error)
+                }
             }
         }
     }
@@ -72,6 +80,7 @@ final class Kanal: NSObject, WKScriptMessageHandlerWithReply {
 @MainActor
 final class Navigation: NSObject, WKNavigationDelegate {
     var beiGeladen: (() -> Void)?
+    var beiFehler: ((String) -> Void)?
 
     func webView(_ webView: WKWebView, decidePolicyFor aktion: WKNavigationAction) async -> WKNavigationActionPolicy {
         let hauptrahmen = aktion.targetFrame?.isMainFrame ?? true
@@ -83,6 +92,22 @@ final class Navigation: NSObject, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { beiGeladen?() }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: any Error) {
+        meldeFehler(webView, error)
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: any Error) {
+        meldeFehler(webView, error)
+    }
+
+    /// Abbrüche durch die Navigationsregel (-999) sind gewollt; alles andere zeigt die Fehlerseite statt Weiß.
+    private func meldeFehler(_ webView: WKWebView, _ error: any Error) {
+        let e = error as NSError
+        if e.domain == NSURLErrorDomain && e.code == NSURLErrorCancelled { return }
+        beiFehler?("\(e.domain) \(e.code)")
+        webView.loadSimulatedRequest(URLRequest(url: NavigationsRegel.startURL), responseHTML: SchemaAntwort.fehlerSeiteHTML)
+    }
 }
 
 /// Das Brain-Fenster (App-Spec §5.2, §7.2): beim Schließen werden WebView, Kanal und Brücke beendet.
@@ -112,6 +137,7 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
         let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 1200, height: 800), configuration: config)
         let navigation = Navigation()
         navigation.beiGeladen = { [weak self] in self?.warteAufBereit() }
+        navigation.beiFehler = { [weak self] grund in self?.log.schreibe("fenster-ladefehler \(grund)") }
         web.navigationDelegate = navigation
 
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800),
