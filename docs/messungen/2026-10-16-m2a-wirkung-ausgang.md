@@ -59,3 +59,23 @@ Kompaktierungen 14 automatisch + 13 manuell · Brain-Hinweise 200 in
 - Regex statt Lesen: Treffer enthalten Rauschen; Gruppen überlappen. Deshalb nur Trends gegen Teil B, nie Absolutwerte.
 - Zeitfenster über die Datei-Änderungszeit: Sitzungen, die nach dem Stichtag weiterliefen, fehlen in Teil B.
 - Kausalität (Brain-Hinweis → Korrektur) ist nicht belegbar; die Zahl ist ein Signal für M2b (W7).
+
+## D. Live-Prüfung nach dem Zusammenführen (17.10.2026)
+
+Zusammengeführt: `~/brain` per Fast-Forward 98fa83e → a089540; Hooks in beiden Profilen registriert
+(Installer-Backups `settings.json.bak-20261017-101034`). Live-Suite in `~/brain`: 767 pass / 0 fail, alle Shell-Tests OK,
+Arbeitsbaum ohne getrackte Änderungen.
+
+| Baustein | Ergebnis | Beleg |
+|---|---|---|
+| K15 Messung | ok — 175 Sitzungen, 2.599 Nachrichten, große Ausgaben 24,2 % (Ausgang 23,9 %) | `.logs/wirkung.jsonl`, Zeile vom 17.10.2026 |
+| K12 /compact | offen — braucht neue Sitzung im Ordner `~/brain` mit `/compact` | `.logs/sitzungen/<sid>.md` |
+| K11 Zuletzt | offen — braucht neue Sitzung | Sitzungsstart |
+| K13 Parallel | offen — braucht zwei Sitzungen in brain-app | `.logs/laufend/` |
+| K2/K14 Read | live nicht prüfbar, keine Daten (0 Projektseiten mit `repo:`, 0 Lektionen mit „Gilt für“) | `09_wiki/` |
+| K3 Gate | offen — braucht neue Sitzung | `.logs/intent-gate.log` |
+
+Die Laufzeit-Hooks wirken erst in neu gestarteten Sitzungen; die Sitzung, die zusammengeführt hat, lief noch mit den alten Hooks.
+
+Nächste Vergleichsmessung: automatisch nach 30 Tagen (session-hintergrund) bzw. `brain wirkung --tage=30`;
+Bewertung nur mit dem Rauschband aus Teil B.
