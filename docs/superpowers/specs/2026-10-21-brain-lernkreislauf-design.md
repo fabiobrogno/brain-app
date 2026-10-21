@@ -171,6 +171,8 @@ Ein Vorschlag bekommt drei neue Frontmatter-Felder:
      Transkripts (Stufe-0-Zerlegung, ≤ 30 000 Zeichen je Aufruf, sonst in Teilen).
    - Antwort: ein Zitat je Vorschlag. Danach prüft `findeZitat`.
    - Kein Treffer oder Transkript fehlt → aussortiert (`kein-beleg`).
+   - Transkripte sucht der Lauf zuerst in `.logs/transkript-sicherung/` (am 21.10. von Fabio angelegt, 53
+     Sitzungen des Altbestands), dann unter `~/.claude*/projects/`.
 3. **Einordnen (0 Tokens, K9).**
    - Zielseite über die lokale Suche (`minisuche`/BM25 über Titel, `description`, `fragen`, `auch_genannt`).
      Treffer nur über einer Mindestgüte.
@@ -357,7 +359,9 @@ verschoben oder gemerged. Der Bericht sagt „würde …“. Startzustand nach d
 - **Entwicklung:** neuer Worktree `~/brain-kit-v0.7`, Branch `kit-v0.7` vom aktuellen `main` des Brains. Merge
   je Bauabschnitt nach grünen Tests, und vor dem Live-Schalten ein Opus-Review je Bauabschnitt (bei B2 mit
   Probelauf-Bericht).
-- **Termin für B2:** vor dem 05.11.2026. Bis dahin liegen die Transkripte des Altbestands noch vor; Claude Code
+- **Termin für B2:** entschärft — die 53 Transkripte des Altbestands sind seit 21.10. in
+  `.logs/transkript-sicherung/` gesichert. Trotzdem zügig, weil neue Vorschläge täglich dazukommen.
+- ~~Termin für B2: vor dem 05.11.2026.~~ Bis dahin liegen die Transkripte des Altbestands noch vor; Claude Code
   räumt sie nach etwa 30 Tagen ab. Gehen sie verloren, kann der Altbestand nicht belegt werden und wird
   aussortiert.
 - **KI-Kosten:** über `claude -p` (Fabios Claude-Zugang, kein API-Schlüssel). Haiku für Ernte, Belege, Abgleich
