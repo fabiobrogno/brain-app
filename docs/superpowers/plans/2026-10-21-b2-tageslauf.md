@@ -4726,6 +4726,8 @@ Denselben Befehl wie in Step 1 nach `/tmp/b2-nachher.txt` schreiben; `diff /tmp/
 
 20 zufällige Zeilen `stufe: uebernehmen` aus `~/brain/.logs/tageslauf/probe-aktionen.jsonl` (haiku-Subagent, nur lesend): je Zeile Zitat im Transkript (`fundstelle`) nachschlagen, Aussage gegen Zitat und Zielseite prüfen. Ergebnis: Anzahl „richtig / falsche Seite / Aussage nicht gedeckt". Abnahme (Spec §8): **20/20 richtig** — erst dann darf der Schalter auf `an`; sonst Ursache benennen, beheben, Probelauf wiederholen.
 
+> **Geändert 21.10.2026:** Die Probeläufe lieferten nur 4–11 🟢 — zu wenig für 20 Stichproben. Stattdessen: alle 🟢-Kandidaten des Probelaufs prüfen (jeder Fehler wird vor `an` behoben), danach schützt die **Einschwingphase** (`automatik.einschwingen`, Standard 20) den Live-Betrieb: Übernahmen nur so viele, wie Prüfplätze frei sind, bis 20 mit „stimmt“ beantwortet sind (Spec §8).
+
 - [ ] **Step 5: `MIN_GUETE` kalibrieren**
 
 Aus `probe-aktionen.jsonl` die `guete` der 🟢 (Feld `guete`) und der Wartenden mit Grund `keine-seite`/`mehrdeutig` gegenüberstellen. Liegen falsch zugeordnete 🟢 unter einer klaren Schwelle, `MIN_GUETE` in `.tools/tageslauf/einordnen.mjs` anheben (eigener Commit `kit(B2): MIN_GUETE nach Probelauf`). Den Probelauf danach einmal wiederholen (Cache macht ihn billig).

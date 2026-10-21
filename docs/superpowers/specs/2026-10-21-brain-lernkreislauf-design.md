@@ -353,7 +353,7 @@ verschoben oder gemerged. Der Bericht sagt „würde …“. Startzustand nach d
 | Abschnitt | Ergebnis | Abnahme |
 |---|---|---|
 | **B1 Wahrheit** | Ernte mit Zitat + Herkunft, Schema/Lint W3/W5, `heikel`, W7-Erkennung, Aliasse | Tests grün; Zitat-Treue im Prüfset 100 %; eine echte Ernte nach Merge hat Zitate |
-| **B2 Tageslauf** | Schritte 1–10, Rückfragen + Skill, `zurueck`, Dienst, Sitzungsstart-Zeile, Probemodus | Tests grün; **Probelauf über den Altbestand**; Claude prüft 20 zufällige 🟢-Entscheidungen gegen die Transkripte; erst bei 20/20 → Schalter `an` |
+| **B2 Tageslauf** | Schritte 1–10, Rückfragen + Skill, `zurueck`, Dienst, Sitzungsstart-Zeile, Probemodus | Tests grün; **Probelauf über den Altbestand** (Brain nachweislich unverändert, Claude prüft alle 🟢-Kandidaten gegen die Transkripte, jeder Fehler wird vor `an` behoben); danach Schalter `an` mit **Einschwingphase** (geändert 21.10.: der Altbestand lieferte zu wenige 🟢 für 20 Stichproben) — die ersten N = 20 automatischen Übernahmen prüft Fabio einzeln per Rückfrage; solange weniger als N mit „stimmt“ beantwortet sind, schreibt der Lauf höchstens so viele Übernahmen, wie Prüfplätze frei sind (≤ 10 offen), „stimmt nicht“ stellt die Autostufe sofort auf die vorsichtigste Stufe |
 | **B3 Pflege** | Inbox headless, Konsolidieren, neue Seiten, Entscheidungen, K4, K7, Härtung | Tests grün; Probe an einer Kopie des Vaults; Diff-Prüfung |
 
 - **Entwicklung:** neuer Worktree `~/brain-kit-v0.7`, Branch `kit-v0.7` vom aktuellen `main` des Brains. Merge
