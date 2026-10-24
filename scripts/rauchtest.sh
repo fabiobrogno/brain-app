@@ -6,7 +6,7 @@
 # Port-Check: App-PID, Kinder und alle NEU hinzugekommenen com.apple.WebKit.*-Prozesse (XPC-Dienste, keine Kinder).
 set -euo pipefail
 W="$(cd "$(dirname "$0")/.." && pwd)"
-APP="$W/build/Brain.app"
+APP="${BRAIN_TEST_APP:-$W/build/Brain.app}"
 KIT="${BRAIN_TEST_KIT:-}"
 if [ -z "$KIT" ]; then
   for k in "$HOME/brain-kit-v0.6" "$HOME/brain-kit-v0.9-integ"; do [ -f "$k/.tools/ansicht/bruecke.mjs" ] && { KIT="$k"; break; }; done
