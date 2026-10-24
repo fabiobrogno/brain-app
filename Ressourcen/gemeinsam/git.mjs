@@ -126,7 +126,10 @@ export async function commit(wurzel, { nachricht, dateien }) {
   if (a.code !== 0) throw new HttpFehler(422, "Die Dateien konnten nicht vorgemerkt werden.", { ausgabe: ausgabeVon(a) });
   // --only + Pfade: committet genau diese Dateien, auch wenn sonst etwas vorgemerkt wäre
   const c = await git(wurzel, ["commit", "-m", nachricht, "--only", "--", ...pfade]);
-  if (c.code !== 0) throw new HttpFehler(422, "Der Commit wurde abgelehnt. Die Meldung steht unten.", { ausgabe: ausgabeVon(c) });
+  if (c.code !== 0) {
+    await git(wurzel, ["reset", "-q", "--", ...pfade]); // Vormerkung zurücknehmen: alles bleibt wie vorher
+    throw new HttpFehler(422, "Der Commit wurde abgelehnt. Die Meldung steht unten.", { ausgabe: ausgabeVon(c) });
+  }
   const h = await git(wurzel, ["rev-parse", "HEAD"]);
   return { sha: h.stdout.trim() };
 }
