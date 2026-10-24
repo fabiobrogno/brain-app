@@ -46,8 +46,15 @@ public enum SchemaAntwort {
         ["status": a.status, "body": String(decoding: a.body, as: UTF8.self)]
     }
 
-    /// Größter Anfragekörper, den die Brücke annimmt (Kit: MAX_KOERPER); größere lehnt die App gleich ab.
+    /// Größter Anfragekörper der Kit-Brücke (Kit: MAX_KOERPER, Ansicht „Übersicht“); größere lehnt die App gleich ab.
     public static let maxKoerper = 64 * 1024
+    /// Größter Anfragekörper der Werkstatt-Brücke (Studio); Node erlaubt ebenfalls 8 MB.
+    public static let maxKoerperStudio = 8 * 1024 * 1024
+
+    /// Grenze je Oberfläche: Studio 8 MB, Kit-Ansicht 64 KB.
+    public static func maxKoerper(fuer oberflaeche: Oberflaeche) -> Int {
+        oberflaeche == .studio ? maxKoerperStudio : maxKoerper
+    }
 
     public enum AnfrageFehler: Error, Equatable {
         case ungueltig
@@ -57,13 +64,13 @@ public enum SchemaAntwort {
         public var meldung: String {
             switch self {
             case .ungueltig: return "ungültige Anfrage"
-            case .zuGross: return "✕ Die Eingabe ist zu groß (mehr als 64 KB)."
+            case .zuGross: return "✕ Die Eingabe ist zu groß."
             }
         }
     }
 
-    /// Nachricht von api.js → Anfrage an die Brücke. Nur /api/…, nur GET/POST/PUT, Daten als JSON-Objekt, Körper ≤ 64 KB.
-    public static func anfrage(ausNachricht nachricht: Any) throws -> (methode: String, pfad: String, body: Data?) {
+    /// Nachricht von api.js → Anfrage an die Brücke. Nur /api/…, nur GET/POST/PUT, Daten als JSON-Objekt, Körper ≤ Grenze der Oberfläche (Studio 8 MB, Übersicht 64 KB).
+    public static func anfrage(ausNachricht nachricht: Any, oberflaeche: Oberflaeche = .app) throws -> (methode: String, pfad: String, body: Data?) {
         guard let d = nachricht as? [String: Any], let pfad = d["pfad"] as? String, pfad.hasPrefix("/api/") else { throw AnfrageFehler.ungueltig }
         let methode = ((d["methode"] as? String) ?? "GET").uppercased()
         guard ["GET", "POST", "PUT"].contains(methode) else { throw AnfrageFehler.ungueltig }
@@ -71,7 +78,7 @@ public enum SchemaAntwort {
         if let daten = d["daten"], !(daten is NSNull) {
             guard JSONSerialization.isValidJSONObject(daten),
                   let kodiert = try? JSONSerialization.data(withJSONObject: daten, options: [.sortedKeys]) else { throw AnfrageFehler.ungueltig }
-            guard kodiert.count <= maxKoerper else { throw AnfrageFehler.zuGross }
+            guard kodiert.count <= maxKoerper(fuer: oberflaeche) else { throw AnfrageFehler.zuGross }
             body = kodiert
         }
         return (methode, pfad, body)

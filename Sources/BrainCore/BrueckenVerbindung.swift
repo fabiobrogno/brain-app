@@ -39,6 +39,8 @@ public actor BrueckenVerbindung {
     private var eingang: FileHandle?
     private var leser: Task<Void, Never>?
     private var geschlossen = false
+    /// Zählt Prozessstarts; ersetzt ObjectIdentifier (die Adresse eines freigegebenen Process kann wiederverwendet werden).
+    private var generation = 0
     private var naechsteId = 0
     private var wartend: [Int: CheckedContinuation<BrueckenAntwort, Error>] = [:]
     private var zeitwaechter: [Int: Task<Void, Never>] = [:]
@@ -77,11 +79,7 @@ public actor BrueckenVerbindung {
         let p = Process()
         p.executableURL = node
         p.arguments = argumente
-        var env = ProcessInfo.processInfo.environment
-        env["BRAIN_VAULT"] = vault.path
-        for (k, v) in umgebung { env[k] = v }
-        env["PATH"] = BrainBefehl.pfadMitStandardOrdnern(env["PATH"])
-        p.environment = env
+        p.environment = NodeUmgebung.fuerKind(vault: vault, vorgaben: umgebung)
         p.currentDirectoryURL = vault
         let ein = Pipe(), aus = Pipe()
         p.standardInput = ein
@@ -92,7 +90,8 @@ public actor BrueckenVerbindung {
             let d = h.availableData
             if d.isEmpty { h.readabilityHandler = nil; fortsetzung.finish() } else { fortsetzung.yield(d) }
         }
-        let kennung = ObjectIdentifier(p)
+        generation += 1
+        let kennung = generation
         p.terminationHandler = { [weak self] _ in Task { await self?.prozessEnde(kennung) } }
         do { try p.run() } catch {
             aus.fileHandleForReading.readabilityHandler = nil
@@ -102,21 +101,25 @@ public actor BrueckenVerbindung {
         prozess = p
         eingang = ein.fileHandleForWriting
         leser = Task { [weak self] in
+            // Zeilen bis ~12 MB (8-MB-Körper als base64 + Hülle): nur neu eingetroffene Bytes nach dem Zeilenende absuchen.
             var puffer = Data()
+            var gesucht = 0
             for await stueck in strom {
                 puffer.append(stueck)
-                while let nl = puffer.firstIndex(of: 0x0A) {
+                while let nl = puffer[(puffer.startIndex + gesucht)...].firstIndex(of: 0x0A) {
                     let zeile = Data(puffer[puffer.startIndex..<nl])
                     puffer.removeSubrange(puffer.startIndex...nl)
+                    gesucht = 0
                     await self?.verarbeite(zeile)
                 }
+                gesucht = puffer.count
             }
         }
         let frist = ContinuousClock.now + zeitlimit
         while version == nil {
             // Wurde der Prozess unterdessen ersetzt oder beendet, ist dieser Start gescheitert.
-            guard let aktuell = prozess, ObjectIdentifier(aktuell) == kennung, aktuell.isRunning, ContinuousClock.now < frist else {
-                if let aktuell = prozess, ObjectIdentifier(aktuell) == kennung {
+            guard generation == kennung, let aktuell = prozess, aktuell.isRunning, ContinuousClock.now < frist else {
+                if generation == kennung, let aktuell = prozess {
                     if aktuell.isRunning { aktuell.terminate() }
                     verwerfeAlles()
                 }
@@ -126,7 +129,31 @@ public actor BrueckenVerbindung {
         }
     }
 
-    public func anfrage(methode: String, pfad: String, body: Data? = nil, zeitlimit: Duration = .seconds(30)) async throws -> BrueckenAntwort {
+    /// Zeitlimit je Pfad: Git-Abgleich (`/api/git/sync`) 400 s, übrige `/api/git/…` 90 s, alles andere 30 s.
+    public static func zeitlimit(fuerPfad pfad: String) -> Duration {
+        let ohneQuery = pfad.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? pfad
+        let p = ohneQuery.lowercased()
+        if p == "/api/git/sync" || p == "/api/git/sync/" { return .seconds(400) }
+        if p.hasPrefix("/api/git/") { return .seconds(90) }
+        return .seconds(30)
+    }
+
+    /// Nur lesende Methoden dürfen nach einem Brückenabsturz erneut gesendet werden — ein wiederholtes POST/PUT/DELETE
+    /// könnte eine Notiz oder einen Commit doppelt anlegen.
+    public static func darfWiederholen(methode: String) -> Bool { ["GET", "HEAD"].contains(methode.uppercased()) }
+
+    /// Fragt an; endet die Anfrage mit `.beendet` (Brücke kurz zuvor abgestürzt), wird bei GET/HEAD GENAU EINMAL neu
+    /// angefragt (startet die Brücke neu). Schreibende Methoden nie; der Fehler geht an den Aufrufer.
+    public func anfrageMitNeuversuch(methode: String, pfad: String, body: Data? = nil) async throws -> BrueckenAntwort {
+        do {
+            return try await anfrage(methode: methode, pfad: pfad, body: body)
+        } catch BrueckenFehler.beendet where Self.darfWiederholen(methode: methode) {
+            return try await anfrage(methode: methode, pfad: pfad, body: body)
+        }
+    }
+
+    public func anfrage(methode: String, pfad: String, body: Data? = nil, zeitlimit: Duration? = nil) async throws -> BrueckenAntwort {
+        let zeitlimit = zeitlimit ?? Self.zeitlimit(fuerPfad: pfad)
         // Zweiter Versuch nur, wenn das Schreiben in eine (noch nicht als tot gemeldete) Brücke scheitert.
         for versuch in 0..<2 {
             if geschlossen { throw BrueckenFehler.geschlossen }
@@ -203,10 +230,10 @@ public actor BrueckenVerbindung {
 
     /// Ende eines Brücken-Prozesses. Erst alle noch gelesenen Antworten zustellen, dann den Rest scheitern lassen.
     /// Gehört das Ende zu einem älteren Prozess (schon neu gestartet), wird es ignoriert.
-    private func prozessEnde(_ kennung: ObjectIdentifier) async {
-        guard let p = prozess, ObjectIdentifier(p) == kennung else { return }
+    private func prozessEnde(_ kennung: Int) async {
+        guard prozess != nil, generation == kennung else { return }
         await leser?.value
-        guard let jetzt = prozess, ObjectIdentifier(jetzt) == kennung else { return }
+        guard prozess != nil, generation == kennung else { return }
         verwerfeAlles()
     }
 }

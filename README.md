@@ -22,13 +22,13 @@ und erhält deinen Text Byte für Byte.
 
 ## Voraussetzungen
 
-- Mac mit Apple Silicon (M1 oder neuer)
+- **Nur Apple Silicon (arm64: M1 oder neuer)** — Intel-Macs werden nicht unterstützt
 - macOS 26 oder neuer
 - Git (bei den Xcode-Kommandozeilentools dabei: `xcode-select --install`)
 
 ## Installation
 
-1. Die neueste `Brain-<Version>.dmg` unter **Releases** laden.
+1. Die neueste `Brain-<Version>.dmg` (nur Apple Silicon, arm64) unter **Releases** laden.
 2. Öffnen und **Brain** auf **Programme** ziehen.
 3. Starten und ein neues Brain anlegen oder einen vorhandenen Ordner verbinden.
 

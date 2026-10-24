@@ -20,10 +20,7 @@ public struct BrainBefehl: Sendable {
     }
 
     public func fuehreAus(_ argumente: [String], zeitlimit: Duration = .seconds(20)) async throws -> BefehlErgebnis {
-        var env = ProcessInfo.processInfo.environment
-        env["BRAIN_VAULT"] = vault.path
-        for (k, v) in umgebung { env[k] = v }
-        env["PATH"] = Self.pfadMitStandardOrdnern(env["PATH"])
+        let env = NodeUmgebung.fuerKind(vault: vault, vorgaben: umgebung)
         return try await ProzessLauf.starte(node, [vault.appendingPathComponent(".tools/brain.mjs").path] + argumente,
                                             umgebung: env, ordner: vault, zeitlimit: zeitlimit)
     }

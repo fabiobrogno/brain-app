@@ -34,15 +34,19 @@ final class AppZustand: ObservableObject {
         uebersicht = FensterSteuerung(log: l, oberflaeche: .app)
     }
 
-    /// Werkstatt-Skript im App-Paket (`BRAIN_APP_WERKSTATT` lenkt für Entwicklung um).
+    /// Werkstatt-Skript im App-Paket (`BRAIN_APP_WERKSTATT` lenkt nur in Debug-Builds für Entwicklung um).
     private var werkstattSkript: URL? {
+        #if DEBUG
         if let dev = ProcessInfo.processInfo.environment["BRAIN_APP_WERKSTATT"], dev.hasPrefix("/") { return URL(fileURLWithPath: dev) }
+        #endif
         return Bundle.main.resourceURL?.appendingPathComponent("werkstatt/werkstatt.mjs")
     }
 
     var istStudioOffen: Bool { studio.istOffen }
 
     private var umgebung: [String: String] { ["BRAIN_NODE": brainNode] }
+    /// Die Werkstatt legt ihren Kit-Vertrauens-Merker (`vertrauen.json`) im echten Application-Support-Ordner der App ab.
+    private var werkstattUmgebung: [String: String] { umgebung.merging(["BRAIN_APP_SUPPORT": pfade.basis.path]) { _, neu in neu } }
 
     func starte() async {
         signal(SIGPIPE, SIG_IGN)
@@ -81,9 +85,11 @@ final class AppZustand: ObservableObject {
 
     /// Die Prüfsumme der Node-Datei (rund 120 MB) wird abseits des Main-Threads gerechnet.
     private func laufzeit() async throws -> URL {
+        #if DEBUG
         if let dev = ProcessInfo.processInfo.environment["BRAIN_APP_NODE"], dev.hasPrefix("/") {
             return URL(fileURLWithPath: dev)
         }
+        #endif
         guard let ressourcen = Bundle.main.resourceURL else { throw LaufzeitFehler.manifestFehlt }
         let laufzeit = NodeLaufzeit(quelle: ressourcen.appendingPathComponent("node-runtime"), pfade: pfade)
         return try await Task.detached { try laufzeit.installiere() }.value
@@ -145,7 +151,7 @@ final class AppZustand: ObservableObject {
 
     func oeffneStudio() {
         guard let vault, let node, VaultAuswahl.pruefe(vault) == .ok else { zeigeEinrichtung(); return }
-        studio.oeffne(node: node, vault: vault, skript: werkstattSkript, umgebung: umgebung)
+        studio.oeffne(node: node, vault: vault, skript: werkstattSkript, umgebung: werkstattUmgebung)
     }
 
     /// Menübefehl (⌘N, ⌘⇧M, ⌘⌥I) an die Studio-Oberfläche; öffnet das Studio, wenn es zu ist.
@@ -193,6 +199,9 @@ final class AppZustand: ObservableObject {
         panel.directoryURL = vault ?? VaultAuswahl.vorschlag() ?? FileManager.default.homeDirectoryForCurrentUser
         if panel.runModal() == .OK, let url = panel.url { Task { await verbinde(url) } }
     }
+
+    /// Vor ⌘Q: das Studio sichert zuerst seine Eingaben (siehe `FensterSteuerung.darfSchliessen`).
+    func darfBeenden() async -> Bool { await studio.darfSchliessen() }
 
     func beende() {
         taktgeber?.cancel()

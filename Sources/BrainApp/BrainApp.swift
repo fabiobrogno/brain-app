@@ -11,6 +11,21 @@ final class AppDelegat: NSObject, NSApplicationDelegate {
         Task { await zustand.starte() }
     }
 
+    private var beendenLaeuft = false
+
+    /// ⌘Q mit offenem Studio: erst die Oberfläche sichern lassen, dann beenden (oder auf Wunsch abbrechen).
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard zustand.istStudioOffen else { return .terminateNow }
+        if beendenLaeuft { return .terminateCancel }
+        beendenLaeuft = true
+        Task { @MainActor in
+            let ja = await zustand.darfBeenden()
+            beendenLaeuft = false
+            sender.reply(toApplicationShouldTerminate: ja)
+        }
+        return .terminateLater
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         zustand.beende()
     }

@@ -2,16 +2,6 @@ import AppKit
 import WebKit
 import BrainCore
 
-/// Fragt die Brücke an; endet die Anfrage mit `.beendet` (Brücke kurz zuvor abgestürzt), wird GENAU EINMAL neu
-/// angefragt — die neue Anfrage startet die Brücke neu. Scheitert auch das, geht der Fehler an den Aufrufer.
-func anfrageMitNeuversuch(_ bruecke: BrueckenVerbindung, methode: String, pfad: String, body: Data? = nil) async throws -> BrueckenAntwort {
-    do {
-        return try await bruecke.anfrage(methode: methode, pfad: pfad, body: body)
-    } catch BrueckenFehler.beendet {
-        return try await bruecke.anfrage(methode: methode, pfad: pfad, body: body)
-    }
-}
-
 /// Liefert brain://<host>/… über die Brücke des Fensters aus (nur GET/HEAD). Gestoppte Aufgaben werden nie mehr bedient.
 @MainActor
 final class SchemaHandler: NSObject, WKURLSchemeHandler {
@@ -35,7 +25,7 @@ final class SchemaHandler: NSObject, WKURLSchemeHandler {
         Task { @MainActor in
             defer { gestoppt.remove(kennung) }
             do {
-                let a = try await anfrageMitNeuversuch(bruecke, methode: "GET", pfad: SchemaAntwort.pfad(von: url))
+                let a = try await bruecke.anfrageMitNeuversuch(methode: "GET", pfad: SchemaAntwort.pfad(von: url))
                 guard !gestoppt.contains(kennung) else { return }
                 aufgabe.didReceive(SchemaAntwort.antwort(url: url, aus: a))
                 aufgabe.didReceive(a.body)
@@ -84,10 +74,10 @@ final class Kanal: NSObject, WKScriptMessageHandlerWithReply {
     func userContentController(_ controller: WKUserContentController, didReceive nachricht: WKScriptMessage) async -> (Any?, String?) {
         guard stammtVonEigenerOberflaeche(nachricht, oberflaeche) else { return (nil, SchemaAntwort.AnfrageFehler.ungueltig.meldung) }
         let a: (methode: String, pfad: String, body: Data?)
-        do { a = try SchemaAntwort.anfrage(ausNachricht: nachricht.body) }
+        do { a = try SchemaAntwort.anfrage(ausNachricht: nachricht.body, oberflaeche: oberflaeche) }
         catch { return (nil, (error as? SchemaAntwort.AnfrageFehler)?.meldung ?? SchemaAntwort.AnfrageFehler.ungueltig.meldung) }
         do {
-            let r = try await anfrageMitNeuversuch(bruecke, methode: a.methode, pfad: a.pfad, body: a.body)
+            let r = try await bruecke.anfrageMitNeuversuch(methode: a.methode, pfad: a.pfad, body: a.body)
             return (SchemaAntwort.kanalAntwort(r), nil)
         } catch {
             return (nil, "Dienst nicht erreichbar")
@@ -228,11 +218,105 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
 
     func schliesse() { fenster?.close() }
 
-    /// Menübefehl an die Studio-Oberfläche (`window.studio.befehl`); Fenster nach vorn.
+    /// Menübefehl an die Studio-Oberfläche (`window.studio.befehl`); Fenster nach vorn. War das Fenster eben erst zu,
+    /// ist die Oberfläche noch nicht geladen: der Befehl wartet (höchstens 5 s), bis `window.studio.bereit === true`.
     func sende(_ befehl: StudioBefehl) {
-        guard let web = webView else { return }
+        guard webView != nil else { return }
         fenster?.makeKeyAndOrderFront(nil)
-        web.evaluateJavaScript(befehl.skript, completionHandler: nil)
+        Task { @MainActor [weak self] in
+            for _ in 0..<50 {
+                guard let self, let web = self.webView else { return }
+                let bereit = try? await web.evaluateJavaScript("window.studio?.bereit === true")
+                if (bereit as? NSNumber)?.boolValue == true {
+                    _ = try? await web.evaluateJavaScript(befehl.skript)
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            self?.log.schreibe("befehl-verworfen \(befehl.rawValue) oberflaeche-nicht-bereit")
+        }
+    }
+
+    // MARK: Schließen mit Rückfrage an die Oberfläche (Studio-Spec: ungespeicherte Eingaben)
+
+    private enum VorSchliessen {
+        case ok
+        case nichtGespeichert(String?)
+        case nichtVerfuegbar(String)
+    }
+
+    /// Wartet genau einmal auf das erste Ergebnis (Antwort der Seite oder Zeitablauf).
+    @MainActor private final class Einmal {
+        private var fortsetzung: CheckedContinuation<VorSchliessen, Never>?
+        init(_ f: CheckedContinuation<VorSchliessen, Never>) { fortsetzung = f }
+        func fertig(_ r: VorSchliessen) { fortsetzung?.resume(returning: r); fortsetzung = nil }
+    }
+
+    private static let vorSchliessenSkript = """
+    if (!window.studio || typeof window.studio.vorSchliessen !== 'function') { return { nicht: true }; }
+    return await window.studio.vorSchliessen();
+    """
+
+    /// Fragt `window.studio.vorSchliessen()` (liefert `{ok:true}` oder `{ok:false, grund}`), höchstens 5 s.
+    private func frageOberflaeche() async -> VorSchliessen {
+        guard let web = webView else { return .ok }
+        return await withCheckedContinuation { (f: CheckedContinuation<VorSchliessen, Never>) in
+            let einmal = Einmal(f)
+            Task { @MainActor in
+                do {
+                    let wert = try await web.callAsyncJavaScript(Self.vorSchliessenSkript, arguments: [:], in: nil, contentWorld: .page)
+                    guard let d = wert as? [String: Any] else { einmal.fertig(.nichtVerfuegbar("unerwartete Antwort")); return }
+                    if d["nicht"] as? Bool == true { einmal.fertig(.nichtVerfuegbar("vorSchliessen fehlt")); return }
+                    if d["ok"] as? Bool == true { einmal.fertig(.ok) } else { einmal.fertig(.nichtGespeichert(d["grund"] as? String)) }
+                } catch {
+                    einmal.fertig(.nichtVerfuegbar("Fehler \(error.localizedDescription)"))
+                }
+            }
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(5))
+                einmal.fertig(.nichtVerfuegbar("Zeitüberschreitung"))
+            }
+        }
+    }
+
+    /// Darf das Studio jetzt geschlossen werden? Die Oberfläche sichert zuerst; meldet sie „nicht gespeichert“,
+    /// entscheidet der Nutzer. Ältere Oberfläche oder Zeitüberschreitung: schließen, Hinweis im Log.
+    func darfSchliessen() async -> Bool {
+        guard oberflaeche == .studio, fenster != nil else { return true }
+        switch await frageOberflaeche() {
+        case .ok:
+            return true
+        case .nichtVerfuegbar(let grund):
+            log.schreibe("schliessen-ohne-pruefung \(name) \(grund)")
+            return true
+        case .nichtGespeichert(let grund):
+            let alert = NSAlert()
+            alert.messageText = "Änderungen nicht gespeichert"
+            alert.informativeText = grund?.isEmpty == false ? grund! : "Das Studio konnte nicht alles sichern."
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "Trotzdem schließen")
+            alert.addButton(withTitle: "Abbrechen")
+            NSApp.activate()
+            let trotzdem = alert.runModal() == .alertFirstButtonReturn
+            log.schreibe("schliessen-nicht-gespeichert \(name) \(trotzdem ? "trotzdem" : "abgebrochen")")
+            return trotzdem
+        }
+    }
+
+    private var schliessenLaeuft = false
+    private var schliessenFreigegeben = false
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard oberflaeche == .studio, !schliessenFreigegeben else { return true }
+        if schliessenLaeuft { return false }
+        schliessenLaeuft = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let ja = await self.darfSchliessen()
+            self.schliessenLaeuft = false
+            if ja { self.schliessenFreigegeben = true; self.fenster?.close() }
+        }
+        return false
     }
 
     func windowWillClose(_ notification: Notification) { aufraeumen() }
@@ -271,6 +355,8 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
         navigation = nil
         fenster?.delegate = nil
         fenster = nil
+        schliessenFreigegeben = false
+        schliessenLaeuft = false
         if let b = bruecke { Task { await b.beende() } }
         bruecke = nil
         log.schreibe("fenster-zu \(name)")
