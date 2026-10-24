@@ -61,7 +61,8 @@ export const api = {
   verlauf: (pfad, max) => anfrage("GET", "/api/git/verlauf" + q({ pfad, max })),
   diff: (pfad, sha) => anfrage("GET", "/api/git/diff" + q({ pfad, sha })),
   fassung: (pfad, sha) => anfrage("GET", "/api/git/fassung" + q({ pfad, sha })),
-  kitVertrauen: (erlauben) => anfrage("POST", "/api/kit/vertrauen", { erlauben: !!erlauben }),
+  // vault = der Pfad, den die Frage gezeigt hat: die Werkstatt erlaubt nur, wenn DAS ihr offener Vault ist (sonst 409 art „anderer-vault“)
+  kitVertrauen: (erlauben, vault) => anfrage("POST", "/api/kit/vertrauen", { erlauben: !!erlauben, ...(typeof vault === "string" && vault ? { vault } : {}) }),
   mcpVerbinden: ({ umstellen } = {}) => anfrage("POST", "/api/mcp/verbinden", umstellen ? { ziel: "claude", umstellen: true } : { ziel: "claude" }),
   // ---- v2: Index, Typen, Ansichten, Kontext, Verlauf des Repos
   notizen: () => anfrage("GET", "/api/notizen"),
@@ -99,6 +100,8 @@ export async function aktionMitAntwort(name, wert) {
 // ---- Fehlerformen
 // Git gesperrt (Spec §8): die Git-Routen antworten 409 { fehler, gitGesperrt: true }, bis der Nutzer dem Vault vertraut.
 export const gitGesperrt = (e) => e?.status === 409 && e?.daten?.gitGesperrt === true;
+// Vertrauen für einen anderen Vault als den offenen: die Werkstatt hat nichts erlaubt (409 { fehler, art: "anderer-vault" }).
+export const andererVault = (e) => e?.status === 409 && e?.daten?.art === "anderer-vault";
 // Ausgang unklar: status 0 = die Brücke hat die Frist gerissen (oder der Dienst ist weg), 504 = die Werkstatt hat ihre Frist gerissen und zurückgenommen.
 export const ausgangUnklar = (e) => e?.status === 0 || e?.status === 504;
 // Text dazu: die Werkstatt sagt bei 504 selbst, was passiert ist („nichts verändert“); sonst der allgemeine Satz

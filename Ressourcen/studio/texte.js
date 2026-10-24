@@ -137,7 +137,16 @@ export const T = {
     erlauben: "Vertrauen", spaeter: "Nicht jetzt", speichert: "Wird gespeichert …",
     erteilt: "Vertrauen gespeichert.",
     nichtGespeichert: "Das Vertrauen wurde nicht gespeichert. Versuche es noch einmal.",
+    andererVault: "Das Vertrauen wurde nicht gespeichert: Inzwischen ist ein anderer Vault geöffnet. Die Frage gilt jetzt für ihn.",
     schon: "Du vertraust diesem Vault schon.",
+  },
+  // Antwort der App auf „Übersicht öffnen“, wenn sie nicht aufgeht (grund „kein-kit“, „nicht-vertraut“ oder „pruefung-fehlgeschlagen“)
+  uebersicht: {
+    keinKit: "Für diesen Vault gibt es keine Übersicht: Es fehlt das Brain-Kit (.tools).",
+    nichtVertraut: "Die Übersicht öffnet sich erst, wenn du diesem Vault vertraust.",
+    nichtBestaetigt: "Die Übersicht öffnet sich nicht: Brain konnte das Vertrauen zu diesem Vault gerade nicht bestätigen.",
+    pruefung: "Die Übersicht öffnet sich nicht: Brain konnte gerade nicht prüfen, ob du diesem Vault vertraust. Versuche es gleich noch einmal.",
+    nichtGeoeffnet: "Die Übersicht ließ sich nicht öffnen.",
   },
   speicherFehler: { titel: "Änderungen konnten nicht gespeichert werden", text: "Wechselst du jetzt, geht der ungespeicherte Text verloren.", nochmal: "Nochmal versuchen", kopieren: "Text kopieren", verwerfen: "Verwerfen und wechseln", kopiert: "Text kopiert.", kopierFehler: "Kopieren war nicht möglich." },
   merken: { entwurf: "Entwurf bleibt erhalten.", titel: "Schnell merken", text: "Was willst du festhalten?", titelFeld: "Titel (optional)", sichern: "In die Inbox", fertig: "In der Inbox abgelegt.", offen: "Öffnen" },
@@ -173,13 +182,18 @@ export const T = {
     dauertLaenger: "Das dauert länger als erwartet. Ich habe den Stand neu geladen – prüfe bitte, ob es geklappt hat.",
     gitGesperrt: "Git ist für diesen Vault gesperrt, bis du ihm vertraust. Klicke unten auf „Git gesperrt“, um das zu prüfen.",
   },
-  // Antwort von vorSchliessen, wenn beim Schließen noch etwas läuft (die App fragt dann nach)
+  // Antwort von vorSchliessen, wenn beim Schließen noch etwas läuft (die App fragt dann nach). Der Schlüssel ist die Art der Arbeit
+  // (arbeitBeginnt): willkommen.js meldet oeffnen (Ordner öffnen, Versionsverlauf einschalten), neu (leerer Vault, Vorlage) und klonen.
   laeuft: {
     sync: "Ein Abgleich läuft noch. Wenn du jetzt schließt, wird er abgebrochen.",
     commit: "Das Sichern läuft noch. Wenn du jetzt schließt, wird es abgebrochen.",
     klonen: "Das Klonen läuft noch. Wenn du jetzt schließt, wird es abgebrochen.",
     remote: "Das Verbinden mit dem Remote läuft noch. Wenn du jetzt schließt, wird es abgebrochen.",
+    oeffnen: "Das Öffnen des Ordners läuft noch. Wenn du jetzt schließt, wird es abgebrochen.",
+    neu: "Das Anlegen des Vaults läuft noch. Wenn du jetzt schließt, wird es abgebrochen.",
     vault: "Das Öffnen des Vaults läuft noch. Wenn du jetzt schließt, wird es abgebrochen.",
+    // Rückfall für jede Arbeit ohne eigenen Satz: nie die Worte einer anderen Arbeit
+    sonst: "Es läuft noch etwas. Wenn du jetzt schließt, wird es abgebrochen.",
   },
   schliessen: "Schließen",
   esc: "Esc",

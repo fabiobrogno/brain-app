@@ -95,18 +95,23 @@ export const GRUENDE_ALLE = [
 // opt.alt: ältere Werkstatt ohne info.vertrauen (nur kit: { vorhanden, vertraut })
 // opt.postFehler: { status, fehler } → POST /api/kit/vertrauen scheitert
 // stand.post = Anfragen an /api/kit/vertrauen, stand.anfragen = Zähler je Route (info, notizen, gitStatus, gesundheit), stand.gitGesperrtAnfragen = abgewiesene Git-Aufrufe
+// POST /api/kit/vertrauen wie die Werkstatt (Spec §8, Vertrauen v2): { erlauben, vault } — ohne vault 400, mit dem Pfad eines anderen Vaults
+// als dem offenen (stand.vault, aus /api/info) 409 { fehler, art: "anderer-vault" } und nichts wird erlaubt.
 export async function mockeVertrauen(page, { vertrauen = vertrauenAntwort(), alt = false, postFehler = null } = {}) {
-  const stand = { vertrauen: { ...vertrauen }, post: [], anfragen: { info: 0, notizen: 0, gitStatus: 0, gesundheit: 0 }, gitGesperrtAnfragen: [] };
+  const stand = { vertrauen: { ...vertrauen }, post: [], anfragen: { info: 0, notizen: 0, gitStatus: 0, gesundheit: 0 }, gitGesperrtAnfragen: [], vault: null };
   const kitVon = (v) => ({ vorhanden: !!v.noetig, vertraut: !!v.erlaubt });
   await page.route("**/api/info", async (route) => {
     stand.anfragen.info++;
     const r = await route.fetch(); const { vertrauen: _echt, ...j } = await r.json(); // die echte Werkstatt liefert info.vertrauen schon: für „ältere Werkstatt“ weglassen, sonst ersetzen
+    stand.vault = j.vault || stand.vault;
     await route.fulfill({ response: r, json: { ...j, kit: kitVon(stand.vertrauen), ...(alt ? {} : { vertrauen: stand.vertrauen }) } });
   });
   await page.route("**/api/kit/vertrauen", async (route) => {
     const body = route.request().postDataJSON();
     stand.post.push(body);
     if (postFehler) return route.fulfill({ status: postFehler.status, json: { fehler: postFehler.fehler } });
+    if (typeof body.vault !== "string") return route.fulfill({ status: 400, json: { fehler: "Der Vault fehlt: die Frage muss den gezeigten Pfad mitschicken." } });
+    if (stand.vault && body.vault !== stand.vault) return route.fulfill({ status: 409, json: { fehler: "Das ist nicht der Vault, der in der Werkstatt offen ist.", art: "anderer-vault" } });
     stand.vertrauen = { ...stand.vertrauen, erlaubt: !!body.erlauben, geaendert: false, gitGesperrt: body.erlauben ? false : stand.vertrauen.gitGesperrt };
     await route.fulfill({ json: { kit: kitVon(stand.vertrauen), vertrauen: stand.vertrauen } });
   });

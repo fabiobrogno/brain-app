@@ -26,7 +26,8 @@ export function arbeitBeginnt(art) {
 export const laufendeArbeiten = () => [...arbeiten.values()];
 
 let dialogZaehler = 0;
-// Öffnet einen Dialog. Gibt { schliessen } zurück. Esc schließt.
+const offeneDialoge = new Set(); // die Schließen-Funktionen aller offenen Dialoge
+// Öffnet einen Dialog. Gibt { schliessen } zurück. Esc schließt. Mehrfaches Schließen ist harmlos (beiSchliessen läuft nur einmal).
 export function dialog({ titel, rumpf, knoepfe = [], breit = false, beiSchliessen, eigen }) {
   const host = document.getElementById("dialog-host");
   const davor = document.activeElement;
@@ -40,7 +41,11 @@ export function dialog({ titel, rumpf, knoepfe = [], breit = false, beiSchliesse
       knoepfe.length ? h("div", { klasse: "dialog-fuss" }, knoepfe) : null);
   }
   const schleier = h("div", { klasse: "schleier" }, box);
+  let geschlossen = false;
   const zu = () => {
+    if (geschlossen) return;
+    geschlossen = true;
+    offeneDialoge.delete(zu);
     schleier.remove();
     document.removeEventListener("keydown", taste, true);
     beiSchliessen?.();
@@ -59,11 +64,15 @@ export function dialog({ titel, rumpf, knoepfe = [], breit = false, beiSchliesse
   schleier.addEventListener("mousedown", (e) => { if (e.target === schleier) zu(); });
   document.addEventListener("keydown", taste, true);
   host.append(schleier);
+  offeneDialoge.add(zu);
   const erst = box.querySelector("[autofocus], input[type=text], textarea, input") || box.querySelector("button.primaer");
   setTimeout(() => erst?.focus(), 0);
   return { schliessen: zu, box };
 }
 export const dialogOffen = () => !!document.querySelector("#dialog-host .schleier");
+// Beim Wechsel des Vaults: alle offenen Dialoge zu. Sie gehören zum alten Vault (Sichern, Neue Notiz, Vertrauen, Palette …);
+// was jemand getippt hat, bleibt über beiSchliessen erhalten (z. B. der Entwurf bei „Schnell merken“).
+export function schliesseDialoge() { for (const zu of [...offeneDialoge]) zu(); }
 
 export function toast(text, { fehler = false, aktion, ms = 4200 } = {}) {
   const host = document.getElementById("toast-host");

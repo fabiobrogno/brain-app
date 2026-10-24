@@ -16,15 +16,16 @@ export async function erteileVertrauen(vault, support) {
   writeFileSync(join(support, "vertrauen.json"), JSON.stringify({ [realpathSync(vault)]: { seit: new Date().toISOString() } }));
 }
 // Eigener Support-Ordner je Server (nie der echte). Standard: Vault ist vertraut (Kit läuft); { vertraut: false } = unvertraut.
+// vault = null: Werkstatt ohne Vault (Willkommen), der Vault-Ordner wird dann über die Oberfläche geöffnet. Das Ergebnis nennt auch den support-Ordner.
 export async function starteServer(vault, { vertraut = true } = {}) {
   const support = mkdtempSync(join(tmpdir(), "brain-ui-support-"));
-  if (vertraut) await erteileVertrauen(vault, support);
+  if (vault && vertraut) await erteileVertrauen(vault, support);
   return new Promise((ok, nein) => {
-    const p = spawn(process.execPath, [join(wurzel, "Ressourcen/werkstatt/entwicklung.mjs"), vault, "0"],
-      { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, BRAIN_APP_SUPPORT: support, BRAIN_TESTMODUS: "1" } });
+    const p = spawn(process.execPath, [join(wurzel, "Ressourcen/werkstatt/entwicklung.mjs"), vault || "-", "0"],
+      { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, BRAIN_APP_SUPPORT: support, BRAIN_TESTMODUS: "1", BRAIN_VAULT: "" } }); // BRAIN_VAULT leer: ohne Vault-Argument nie der Vault aus der Umgebung des Entwicklers
     let puffer = "";
     const frist = setTimeout(() => nein(new Error("Server startet nicht: " + puffer)), 10000);
-    const lies = (d) => { puffer += d; const m = /Bereit: (http:\/\/127\.0\.0\.1:\d+\/)/.exec(puffer); if (m) { clearTimeout(frist); ok({ url: m[1], stopp: () => p.kill() }); } };
+    const lies = (d) => { puffer += d; const m = /Bereit: (http:\/\/127\.0\.0\.1:\d+\/)/.exec(puffer); if (m) { clearTimeout(frist); ok({ url: m[1], support, stopp: () => p.kill() }); } };
     p.stdout.on("data", lies); p.stderr.on("data", lies);
     p.on("exit", (c) => nein(new Error("Server beendet: " + c + " " + puffer)));
   });

@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { readFileSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, rmSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { baueVault, git } from "./vault.mjs";
 import { starteServer } from "./start.mjs";
@@ -430,7 +430,7 @@ test("Kit-Vertrauen: Frage, Vertrauen lädt Gesundheit/Rückfragen sofort", asyn
   const vorher = stand.gesundheit;
   await page.click('[data-aktion="vertrauen-erlauben"]');
   await expect(frage).toHaveCount(0);
-  expect(stand.post).toEqual([{ erlauben: true }]);
+  expect(stand.post).toEqual([{ erlauben: true, vault: realpathSync(vault) }]); // Vertrauen v2: der gezeigte Vault geht mit
   await expect(page.locator('[data-st="gesundheit"]')).toBeVisible();
   await expect(page.locator('[data-bereich="rueckfragen"] .zahl')).toHaveText("2");
   expect(stand.gesundheit).toBeGreaterThan(vorher);
@@ -496,15 +496,64 @@ test("W3: antwortet die Werkstatt danach auch nicht, bleibt die Verbindungsmeldu
   await expect(page.locator(".toast")).not.toContainText(DAUERT);
 });
 
-test("W3: Frist der Werkstatt (504) zeigt deren Satz und lädt trotzdem neu", async ({ page }) => {
+// Geänderte Erwartung (UI-6): Bei 504 hat die Werkstatt zurückgenommen („Es wurde nichts verändert“), der Ausgang ist also nicht unklar.
+// Früher schloss der Dialog und der Satz stand nur in einem Toast; die Nachricht war weg. Jetzt bleibt der Dialog offen und der Satz steht darin.
+// Die Prüfung „Stand wird trotzdem neu geladen“ bleibt unverändert.
+const ZEIT_SICHERN = "Das Sichern hat zu lange gedauert. Es wurde nichts verändert.";
+test("W3: Frist der Werkstatt (504) zeigt deren Satz im offenen Dialog und lädt trotzdem neu", async ({ page }) => {
   writeFileSync(join(vault, "00_inbox/neu.md"), "Neu\n");
   await oeffne(page, DATEI_A);
   await expect(page.locator('[data-st="geaendert"]')).toContainText("geändert");
-  await page.route("**/api/git/commit", (r) => r.fulfill({ status: 504, json: { fehler: "Das Sichern hat zu lange gedauert. Es wurde nichts verändert." } }));
+  await page.route("**/api/git/commit", (r) => r.fulfill({ status: 504, json: { fehler: ZEIT_SICHERN } }));
   await page.click('[data-st="geaendert"]');
   await page.fill('[data-feld="nachricht"]', "Neu");
   const log = merkeAnfragen(page);
   await page.click('[data-aktion="commit"]');
-  await expect(page.locator(".toast")).toContainText("Das Sichern hat zu lange gedauert. Es wurde nichts verändert.");
+  await expect(page.locator(".dialog .fehlertext")).toHaveText(ZEIT_SICHERN);
   await expect.poll(() => log.includes("/api/info") && log.includes("/api/git/status")).toBe(true);
+});
+
+// UI-6: der Commit-Dialog bleibt bei 504 offen. Nachricht und Auswahl bleiben, der Knopf ist wieder frei, ein zweiter Versuch sichert.
+test("UI-6: Sichern läuft in die Frist der Werkstatt (504): Dialog offen, Nachricht und Auswahl bleiben, zweiter Versuch sichert", async ({ page }) => {
+  writeFileSync(join(vault, "00_inbox/neu.md"), "Neu\n");
+  writeFileSync(join(vault, "00_inbox/zweite.md"), "Zwei\n");
+  await oeffne(page, DATEI_A);
+  await expect(page.locator('[data-st="geaendert"]')).toContainText("geändert");
+  const bodies = [];
+  await page.route("**/api/git/commit", (r) => { bodies.push(r.request().postDataJSON()); return bodies.length === 1 ? r.fulfill({ status: 504, json: { fehler: ZEIT_SICHERN } }) : r.fallback(); });
+  await page.click('[data-st="geaendert"]');
+  await page.fill('[data-feld="nachricht"]', "Meine eigene Nachricht");
+  await page.locator('[data-datei="00_inbox/zweite.md"]').uncheck(); // die Auswahl wurde angepasst
+  await page.click('[data-aktion="commit"]');
+  const dialog = page.locator(".dialog").filter({ has: page.locator('[data-feld="nachricht"]') });
+  await expect(dialog.locator(".fehlertext")).toHaveText(ZEIT_SICHERN);
+  await expect(dialog).toBeVisible();
+  await expect(page.locator('[data-feld="nachricht"]')).toHaveValue("Meine eigene Nachricht");
+  await expect(page.locator('[data-datei="00_inbox/zweite.md"]')).not.toBeChecked();
+  await expect(page.locator('[data-datei="00_inbox/neu.md"]')).toBeChecked();
+  await expect(page.locator('[data-aktion="commit"]')).toBeEnabled();
+  await expect(page.locator(".toast")).toHaveCount(0); // der Satz steht im Dialog, nicht zusätzlich als Meldung
+  expect(await page.evaluate(() => window.studio.vorSchliessen())).toEqual({ ok: true }); // die Arbeit gilt als beendet
+  // zweiter Versuch mit denselben Eingaben: die echte Werkstatt sichert genau die gewählte Datei
+  await page.click('[data-aktion="commit"]');
+  await expect(page.locator(".toast")).toContainText("Gesichert.");
+  await expect(dialog).toHaveCount(0);
+  expect(bodies).toHaveLength(2);
+  expect(bodies[1]).toEqual(bodies[0]);
+  expect(bodies[1].nachricht).toBe("Meine eigene Nachricht");
+  expect(bodies[1].dateien).toEqual(["00_inbox/neu.md"]);
+  expect(git(vault, "log", "-1", "--format=%s").trim()).toBe("Meine eigene Nachricht");
+  expect(git(vault, "show", "--name-only", "--format=", "HEAD").trim()).toBe("00_inbox/neu.md");
+});
+
+test("UI-6: bei status 0 (die Brücke gibt auf) bleibt es beim bisherigen Weg: Dialog zu, Stand neu, ehrlicher Satz", async ({ page }) => {
+  writeFileSync(join(vault, "00_inbox/neu.md"), "Neu\n");
+  await oeffne(page, DATEI_A);
+  await expect(page.locator('[data-st="geaendert"]')).toContainText("geändert");
+  await page.route("**/api/git/commit", (r) => r.abort("failed"));
+  await page.click('[data-st="geaendert"]');
+  await page.fill('[data-feld="nachricht"]', "Neu");
+  await page.click('[data-aktion="commit"]');
+  await expect(page.locator(".toast")).toContainText("Das dauert länger als erwartet.");
+  await expect(page.locator('[data-feld="nachricht"]')).toHaveCount(0);
 });
