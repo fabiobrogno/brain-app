@@ -4,10 +4,11 @@ import { spawn } from "node:child_process";
 import { chromium } from "@playwright/test";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { chromiumPfad } from "./browser.mjs";
 import { mockeV2 } from "./mocks.mjs";
+import { erteileVertrauen } from "./start.mjs";
 
 const [vault, aus = "screenshots", seite, bereich] = process.argv.slice(2);
 const startPfad = process.env.START_PFAD || ""; // Notiz, die im Hauptfenster-Bild schon offen ist
@@ -15,7 +16,7 @@ const HIER = dirname(fileURLToPath(import.meta.url));
 mkdirSync(aus, { recursive: true });
 // eigener Support-Ordner, Vault vertraut (kein Kit-Hinweis im Bild)
 const support = mkdtempSync(join(tmpdir(), "brain-bilder-support-"));
-writeFileSync(join(support, "vertrauen.json"), JSON.stringify({ [realpathSync(vault)]: { seit: new Date().toISOString() } }));
+await erteileVertrauen(vault, support);
 const dienst = spawn(process.execPath, [join(process.env.BRAIN_WURZEL || join(HIER, "../.."), "Ressourcen/werkstatt/entwicklung.mjs"), vault, "0"], { stdio: ["ignore", "pipe", "inherit"], env: { ...process.env, BRAIN_APP_SUPPORT: support, BRAIN_TESTMODUS: "1" } });
 const url = await new Promise((ok) => dienst.stdout.on("data", (d) => { const m = String(d).match(/Bereit: (\S+)/); if (m) ok(m[1]); }));
 const browser = await chromium.launch({ executablePath: chromiumPfad() });
