@@ -6,6 +6,7 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { tmp, schreibe, repo, g, pfad } from "./hilfe.mjs";
 
+const { oeffneVault } = await import(pfad("gemeinsam", "vault.mjs"));
 const kinder = [];
 after(() => { for (const k of kinder) k.kill("SIGKILL"); }); // auch nach einem Fehlschlag keine Waisen
 const SKRIPT = pfad("mcp", "brain-mcp.mjs");
@@ -134,6 +135,10 @@ test("MCP: brain_gesundheit ohne Kit und mit Kit (Kurzfassung)", async () => {
   schreibe(d, ".tools/brain.mjs", `console.log(JSON.stringify({version:1,ampel:"rot",warnungen:2,pruefungen:[
     {id:"a",name:"Messlatte",stufe:"rot",text:"verfehlt 0/97",befunde:[{stufe:"rot",kurz:"Messlatte verfehlt"}]},
     {id:"b",name:"Suchindex",stufe:"gruen",text:"alles gut",befunde:[]}]}));`);
+  const s1 = starte(d);
+  assert.match(textVon(await s1.rufe("brain_gesundheit", {})), /In der App einmal erlauben/);
+  s1.p.stdin.end(); await s1.ende;
+  oeffneVault(d).vertrauen(true);
   const s2 = starte(d);
   const t = textVon(await s2.rufe("brain_gesundheit", {}));
   assert.match(t, /Ampel: rot · 2 Warnung/); assert.match(t, /Messlatte \[rot\]: verfehlt 0\/97/); assert.match(t, /Messlatte verfehlt/); assert.doesNotMatch(t, /Suchindex/);
@@ -162,4 +167,13 @@ test("MCP: Stapel (Array) und stdin zu → sauberes Ende; ohne Vault Exit 2", as
   assert.equal(await s.ende, 0);
   const code = await new Promise((ok) => spawn(process.execPath, [SKRIPT, join(tmp(), "nix")], { stdio: "ignore" }).on("close", ok));
   assert.equal(code, 2);
+});
+
+test("MCP: leere Batch [] → JSON-RPC-Fehler -32600 (eine Antwort, kein Absturz)", async () => {
+  const s = starte(wiki());
+  s.p.stdin.write("[]\n");
+  const a = await s.naechste();
+  assert.equal(a.error.code, -32600); assert.equal(a.id, null); assert.ok(!Array.isArray(a));
+  assert.equal((await s.frage("ping")).jsonrpc, "2.0");
+  s.p.stdin.end(); await s.ende;
 });

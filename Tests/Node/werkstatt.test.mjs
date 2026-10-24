@@ -39,7 +39,7 @@ test("Handler: info, baum, datei GET/PUT, 409, neu, merken, suche, pruefung", as
   const rufe = aufruf(erzeugeHandler({ vault: d, studioDir: studioOrdner(), appVersion: "9.9.9" }));
   let r = await rufe("GET", "/api/info");
   assert.equal(r.status, 200);
-  assert.deepEqual(Object.keys(r.j).sort(), ["appVersion", "git", "kitVersion", "mcpBefehl", "name", "vault"]);
+  assert.deepEqual(Object.keys(r.j).sort(), ["appVersion", "git", "kit", "kitVersion", "mcpBefehl", "name", "vault"]);
   assert.equal(r.j.appVersion, "9.9.9"); assert.equal(r.j.kitVersion, null); assert.equal(r.j.git, false); assert.equal(r.j.vault, realpathSync(d));
   assert.match(r.headers["Content-Type"], /application\/json; charset=utf-8/);
 
@@ -289,8 +289,20 @@ test("entwicklung.mjs: Startzeile, nur 127.0.0.1, API und Statisches, Host-Prüf
     let r = await fetch(url + "api/info"); assert.equal(r.status, 200); assert.equal((await r.json()).name.length > 0, true);
     r = await fetch(url); assert.match(await r.text(), /Kopie/);
     r = await fetch(url + "api/datei?pfad=00_inbox%2Falt.md"); const j = await r.json();
-    r = await fetch(url + "api/datei", { method: "PUT", body: JSON.stringify({ pfad: "00_inbox/alt.md", inhalt: "# Http\n", basisHash: j.hash }) });
+    r = await fetch(url + "api/datei", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pfad: "00_inbox/alt.md", inhalt: "# Http\n", basisHash: j.hash }) });
     assert.equal(r.status, 200);
+    // CSRF: fremder Origin → 403; text/plain mit Inhalt → 415; eigener Origin und ohne Origin gehen
+    const koerper = JSON.stringify({ pfad: "00_inbox/alt.md", inhalt: "# Böse\n", basisHash: "x" });
+    const eigen = new URL(url).origin;
+    r = await fetch(url + "api/datei", { method: "PUT", headers: { "Content-Type": "application/json", Origin: "https://boese.example" }, body: koerper }); assert.equal(r.status, 403);
+    r = await fetch(url + "api/info", { headers: { Origin: "https://boese.example" } }); assert.equal(r.status, 403);
+    r = await fetch(url + "api/info", { headers: { Origin: "null" } }); assert.equal(r.status, 403);
+    r = await fetch(url + "api/datei", { method: "PUT", headers: { "Content-Type": "text/plain" }, body: koerper }); assert.equal(r.status, 415);
+    r = await fetch(url + "api/neu", { method: "POST", body: koerper }); assert.equal(r.status, 415);
+    r = await fetch(url + "api/info", { headers: { Origin: eigen } }); assert.equal(r.status, 200);
+    r = await fetch(url + "api/info", { headers: { Origin: eigen.replace("127.0.0.1", "localhost") } }); assert.equal(r.status, 200);
+    r = await fetch(url + "api/datei", { method: "PUT", headers: { "Content-Type": "application/json; charset=utf-8", Origin: eigen }, body: koerper }); assert.equal(r.status, 409);
+    assert.equal(readFileSync(join(d, "00_inbox/alt.md"), "utf8"), "# Http\n");
     assert.equal(readFileSync(join(d, "00_inbox/alt.md"), "utf8"), "# Http\n");
     r = await fetch(url + "api/datei?pfad=..%2Fx.md"); assert.equal(r.status, 403);
     // fremder Host (DNS-Rebinding) wird abgewiesen

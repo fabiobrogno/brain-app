@@ -261,6 +261,9 @@ test("Gesundheit: ohne Kit {verfuegbar:false}; mit Kit durchgereicht und 120 s g
   schreibe(d, ".tools/brain.mjs", `import {appendFileSync} from "node:fs"; appendFileSync(process.cwd()+"/aufrufe.log","x");\nconsole.log(JSON.stringify({version:1,ampel:"gelb",warnungen:1,pruefungen:[]}));\n`);
   schreibe(d, ".tools/VERSION", "9.9.9\n");
   const w = oeffneVault(d);
+  assert.deepEqual(await w.gesundheit(), { verfuegbar: false, grund: "nicht-vertraut" }, "ohne Freigabe läuft kein Kit-Code");
+  assert.equal(existsSync(join(d, "aufrufe.log")), false);
+  w.vertrauen(true);
   assert.equal(w.kitVersion(), "9.9.9");
   assert.equal((await w.gesundheit()).ampel, "gelb");
   assert.equal((await w.gesundheit()).ampel, "gelb");
@@ -299,12 +302,15 @@ test("Rückfragen: ohne Kit nicht verfügbar; mit Kit offen = fragen + wartend, 
   assert.deepEqual(await oeffneVault(d).rueckfragen(), { verfuegbar: false });
   schreibe(d, ".tools/rueckfragen.mjs", `import {appendFileSync} from "node:fs"; export function sichtbare(v){ appendFileSync(v+"/aufrufe.log","x"); return { fragen: [{},{},{}], wartend: 4 }; }\n`);
   const v = oeffneVault(d);
+  assert.deepEqual(await v.rueckfragen(), { verfuegbar: false, grund: "nicht-vertraut" });
+  v.vertrauen(true);
   assert.deepEqual(await v.rueckfragen(), { verfuegbar: true, offen: 7 });
   assert.deepEqual(await v.rueckfragen(), { verfuegbar: true, offen: 7 });
   assert.equal(readFileSync(join(d, "aufrufe.log"), "utf8"), "x", "zweiter Aufruf kam aus dem Cache");
   const e = tmp();
   schreibe(e, ".tools/rueckfragen.mjs", "export const nichts = 1;\n");
-  assert.deepEqual(await oeffneVault(e).rueckfragen(), { verfuegbar: false });
+  const ve = oeffneVault(e); ve.vertrauen(true);
+  assert.deepEqual(await ve.rueckfragen(), { verfuegbar: false });
 });
 
 test("Baum: Titel je Datei aus H1 (auch nach Frontmatter), sonst Frontmatter title/titel/name, sonst Dateiname", () => {

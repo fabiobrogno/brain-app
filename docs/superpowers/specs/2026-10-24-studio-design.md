@@ -49,13 +49,18 @@ Node ist das mitgelieferte der App (`~/Library/Application Support/Brain/bin/nod
 
 Pfade sind relativ zum Vault mit `/`. **Pfad-Schutz:** normalisieren, kein `..`, Ziel (realpath) muss im Vault liegen,
 kein Symlink nach draußen. Gesperrt (403): `.git/`, `.tools/`, `.logs/`, alles mit führendem Punkt, `node_modules/`.
+Alle Namensvergleiche (Sperren, Schreibschutz, vorhandene Dateien) ohne Groß/klein und nach Unicode-NFC (APFS): `index.md` ist
+dieselbe Datei wie `INDEX.md`, `NODE_MODULES/` ist gesperrt; die vorhandene Schreibweise wird übernommen.
+**Links:** Symlink im Vault → geschrieben wird atomar auf das per realpath aufgelöste Ziel (muss im Vault liegen, nicht gesperrt/generiert),
+der Link bleibt; Hash/409 gelten für das Ziel. Mehrfach verknüpfte Dateien (`nlink>1`) sind `schreibschutz:true`, Schreiben → **423**
+(sonst würde das atomare Ersetzen die Namen auseinanderlaufen lassen).
 **Nur lesbar** (`schreibschutz:true`): generierte Dateien — `INDEX.md`, `_index.md`, `graph.json`, `_<ordner>.md`
 in `09_wiki`, jede Datei, deren erste 3 Zeilen „generiert — nicht editieren“ enthalten.
 Bearbeitbar sind nur `.md` und `.txt`.
 
 | Methode + Pfad | Eingabe | Antwort |
 |---|---|---|
-| `GET /api/info` | — | `{vault, name, appVersion, kitVersion\|null, git:bool, mcpBefehl:string\|null}` |
+| `GET /api/info` | — | `{vault, name, appVersion, kitVersion\|null, git:bool, mcpBefehl:string\|null, kit:{vorhanden, vertraut}}` |
 | `GET /api/baum` | — | `{eintraege:[{pfad, art:"ordner"\|"datei", geaendert, groesse, schreibschutz}]}` (sortiert, Ordner zuerst) |
 | `GET /api/datei?pfad=` | — | `{pfad, inhalt, hash, geaendert, schreibschutz}` · hash = sha256-hex der Bytes |
 | `PUT /api/datei` | `{pfad, inhalt, basisHash}` | 200 `{hash, geaendert}` · `basisHash:null` = neu anlegen (409 wenn vorhanden) · 409 `{fehler, aktuellerHash}` wenn die Datei sich auf der Platte geändert hat · atomar (Temp-Datei + rename), Bytes exakt wie gesendet |
@@ -63,7 +68,8 @@ Bearbeitbar sind nur `.md` und `.txt`.
 | `POST /api/merken` | `{text, titel?}` | `{pfad}` · neue Datei in `00_inbox/JJJJ-MM-TT_<slug>.md` im Format der bestehenden Inbox-Dateien (vorher ansehen); nie überschreiben, bei Namensgleichheit `-2`, `-3` |
 | `GET /api/suche?q=` | — | `{treffer:[{pfad, titel, auszug, zeile}]}` · max. 30, Titel-Treffer zuerst, Groß/klein egal, Umlaute normal |
 | `GET /api/pruefung?pfad=` | — | `{stufe:"gruen"\|"gelb"\|"rot"\|"grau", zusammenfassung, signale:[{art, text, zeile?}]}` (§6) |
-| `GET /api/gesundheit` | — | Kit `brain.mjs gesundheit --json` durchgereicht (Cache 120 s, Zeitlimit 20 s) oder `{verfuegbar:false}` |
+| `POST /api/kit/vertrauen` | `{erlauben:bool}` | schreibt/entfernt den Vertrauens-Merker → `{kit:{vorhanden, vertraut}}` (kein Boolean → 400) |
+| `GET /api/gesundheit` | — | Kit `brain.mjs gesundheit --json` durchgereicht (Cache 120 s, Zeitlimit 20 s) oder `{verfuegbar:false}`; Kit da, Vault nicht vertraut → `{verfuegbar:false, grund:"nicht-vertraut"}` (nichts wird ausgeführt) |
 | `GET /api/git/status` | — | `{repo, zweig, upstream\|null, vor, zurueck, geaendert:[{pfad, code}], letzterCommit:{sha,kurz,nachricht,zeit}\|null, letzterSync\|null, remote:bool}` |
 | `POST /api/git/commit` | `{nachricht, dateien:[pfad…]}` | `{sha}` · staged NUR genau diese Pfade (`git add -- <pfade>`), nie `-A`; pre-commit-Ablehnung → 422 `{fehler, ausgabe}` (Ausgabe gekürzt) |
 | `POST /api/git/sync` | — | `{ergebnis:"aktuell"\|"geholt"\|"gesendet"\|"beides", letzterSync}` · `fetch`; hinterher: `merge --ff-only`, sonst normaler Merge; Konflikt → `merge --abort`, 409 `{fehler, dateien}`; danach `push`, nie `--force`; ohne Remote 400 |
@@ -73,7 +79,20 @@ Bearbeitbar sind nur `.md` und `.txt`.
 | `POST /api/mcp/verbinden` | `{ziel:"claude"}` | führt `claude mcp add -s user brain -- <node> <brain-mcp.mjs> <vault>` aus, wenn `claude` gefunden; sonst 404 mit dem Befehl zum Kopieren |
 | `POST /api/stopp` | — | `{ok:true}`, danach Ende |
 
-Git immer per `execFile` (keine Shell), Pfade nach `--`, Umgebung `GIT_TERMINAL_PROMPT=0`, Zeitlimit 60 s (Sync 120 s).
+Git immer per `execFile` (keine Shell), Pfade nach `--` **und** `GIT_LITERAL_PATHSPECS=1` (Dateinamen wie `*.md` oder `notiz[1].md` sind nie Muster),
+Umgebung `GIT_TERMINAL_PROMPT=0`, Zeitlimit 60 s (Sync 120 s). Commit sichert vorher den Index (`git write-tree`) und stellt ihn bei
+Ablehnung per `git read-tree` exakt wieder her. Zeitlimit beim Merge → `merge --abort`, eine `index.lock` wird nur entfernt, wenn sie
+nach Start unseres Aufrufs entstand und in diesem Vault kein git-Prozess mehr läuft (sonst 409 mit Erklärung). Je Vault läuft nur ein
+Abgleich/Commit gleichzeitig (zweiter → 409 „Abgleich läuft schon“).
+
+**Kit-Vertrauen (W-5):** Kit-Code (`<vault>/.tools/brain.mjs`, `rueckfragen.mjs`) läuft erst, wenn der Nutzer den Vault erlaubt hat. Merker:
+`<support>/vertrauen.json` = `{ "<realpath des Vaults>": {seit} }`, `<support>` = `BRAIN_APP_SUPPORT` oder `~/Library/Application Support/Brain`
+(gilt auch für den MCP-Server). `rueckfragen` läuft als Kindprozess (Zeitlimit 20 s), nie per `import()` im eigenen Prozess.
+**Umgebung der Kindprozesse** (git, Kit, claude): ohne `NODE_*` (außer `NODE_EXTRA_CA_CERTS`), `ELECTRON_*`, `DYLD_*`, `LD_*`.
+Test-Schalter (`BRAIN_CLAUDE_EXTRA`) wirken nur mit `BRAIN_TESTMODUS=1`.
+**HTTP-Entwicklungsserver:** fremder `Origin` → 403 (nur `http://127.0.0.1:<port>` / `localhost:<port>` oder ohne Origin); schreibende
+Anfragen mit Inhalt brauchen `Content-Type: application/json` (sonst 415). CSP: `default-src 'self'` … `base-uri 'none'; object-src 'none';
+form-action 'none'; frame-ancestors 'none'`.
 Der Zeitpunkt des letzten Abgleichs liegt in `.git/brain-studio.json`.
 
 ## 6. Prüf-Signale je Seite (0 Tokens, nur Regeln)
@@ -90,14 +109,14 @@ Die Oberfläche zeigt die Stufe in Kopfzeile und Dateibaum; Zeilen-Signale als R
 ## 7. MCP-Werkzeuge (`brain-mcp.mjs`)
 
 Protokoll: `initialize` (Version des Clients übernehmen, wenn unterstützt: `2025-06-18`, `2025-03-26`, `2024-11-05`),
-`notifications/initialized`, `tools/list`, `tools/call`, `ping`. Nur stdout für JSON-RPC, Logs nach stderr.
+`notifications/initialized`, `tools/list`, `tools/call`, `ping`; leere Batch `[]` → Fehler -32600. Nur stdout für JSON-RPC, Logs nach stderr.
 
 | Werkzeug | Eingabe | Wirkung |
 |---|---|---|
 | `brain_suchen` | `frage`, `anzahl?` (≤ 20) | Treffer mit Pfad, Titel, Auszug, Prüf-Stufe |
 | `brain_lesen` | `pfad` | Inhalt + Prüf-Signale + Stand |
 | `brain_merken` | `text`, `titel?` | neue Datei in `00_inbox/` (wie `/api/merken`); **schreibt nie ins Wiki** |
-| `brain_gesundheit` | — | Kurzfassung der Kit-Gesundheit (Ampel + Befunde) |
+| `brain_gesundheit` | — | Kurzfassung der Kit-Gesundheit (Ampel + Befunde); Vault nicht vertraut → Hinweis „In der App einmal erlauben“ |
 | `brain_verlauf` | `pfad`, `max?` | Git-Verlauf der Datei |
 
 ## 8. Oberfläche (`brain://studio/`)

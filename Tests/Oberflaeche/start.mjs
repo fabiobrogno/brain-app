@@ -2,10 +2,16 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 const wurzel = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-export function starteServer(vault) {
+// Eigener Support-Ordner je Server (nie der echte). Standard: Vault ist vertraut (Kit läuft); { vertraut: false } = unvertraut.
+export function starteServer(vault, { vertraut = true } = {}) {
+  const support = mkdtempSync(join(tmpdir(), "brain-ui-support-"));
+  if (vertraut) writeFileSync(join(support, "vertrauen.json"), JSON.stringify({ [realpathSync(vault)]: { seit: new Date().toISOString() } }));
   return new Promise((ok, nein) => {
-    const p = spawn(process.execPath, [join(wurzel, "Ressourcen/werkstatt/entwicklung.mjs"), vault, "0"], { stdio: ["ignore", "pipe", "pipe"] });
+    const p = spawn(process.execPath, [join(wurzel, "Ressourcen/werkstatt/entwicklung.mjs"), vault, "0"],
+      { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, BRAIN_APP_SUPPORT: support, BRAIN_TESTMODUS: "1" } });
     let puffer = "";
     const frist = setTimeout(() => nein(new Error("Server startet nicht: " + puffer)), 10000);
     const lies = (d) => { puffer += d; const m = /Bereit: (http:\/\/127\.0\.0\.1:\d+\/)/.exec(puffer); if (m) { clearTimeout(frist); ok({ url: m[1], stopp: () => p.kill() }); } };

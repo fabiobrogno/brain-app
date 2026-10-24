@@ -1,30 +1,32 @@
 // gemeinsam/git.mjs — Git-Aufrufe für Studio (Spec §5): immer execFile (keine Shell), Pfade nach `--`,
 // GIT_TERMINAL_PROMPT=0, Zeitlimits (60 s, Sync 120 s), nie --force, nie -A.
 import { execFile } from "node:child_process";
-import { realpathSync, readFileSync, writeFileSync, statSync, renameSync } from "node:fs";
+import { realpathSync, readFileSync, writeFileSync, statSync, renameSync, lstatSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
-import { HttpFehler, sauber } from "./basis.mjs";
+import { HttpFehler, sauber, kindUmgebung } from "./basis.mjs";
 
 const LIMIT = 60_000, LIMIT_SYNC = 120_000;
 const REPO_GEBUNDEN = ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
   "GIT_COMMON_DIR", "GIT_PREFIX", "GIT_NAMESPACE", "GIT_QUARANTINE_PATH"];
 
 function umgebung() {
-  const e = { ...process.env };
+  const e = kindUmgebung();
   for (const k of REPO_GEBUNDEN) delete e[k]; // laufen wir in einem Hook, darf kein fremdes Repo durchschlagen
   e.GIT_TERMINAL_PROMPT = "0";
+  e.GIT_LITERAL_PATHSPECS = "1"; // Pfade nach `--` sind Dateinamen, nie Muster (*, [..], :(glob))
   e.LC_ALL = "C";
   if (!e.GIT_SSH_COMMAND) e.GIT_SSH_COMMAND = "ssh -o BatchMode=yes"; // nie nach Passwort fragen
   return e;
 }
 
-// → {code, stdout, stderr}; wirft nur bei Zeitüberschreitung oder wenn git fehlt.
+// → {code, stdout, stderr}; wirft nur bei Zeitüberschreitung (HttpFehler 504, extra.gestartet = Startzeit ms) oder wenn git fehlt.
 export function git(cwd, args, { timeout = LIMIT, buffer = false } = {}) {
+  const gestartet = Date.now();
   return new Promise((aufloesen, ablehnen) => {
     execFile("git", ["-c", "core.quotepath=false", ...args],
       { cwd, env: umgebung(), timeout, maxBuffer: 64 * 1024 * 1024, encoding: buffer ? "buffer" : "utf8", killSignal: "SIGKILL" },
       (err, stdout, stderr) => {
-        if (err && err.killed) return ablehnen(new HttpFehler(504, "Git hat zu lange gebraucht und wurde abgebrochen."));
+        if (err && err.killed) return ablehnen(new HttpFehler(504, "Git hat zu lange gebraucht und wurde abgebrochen.", { gestartet }));
         if (err && err.code === "ENOENT") return ablehnen(new HttpFehler(500, "Git ist auf diesem Mac nicht installiert."));
         aufloesen({ code: err ? (typeof err.code === "number" ? err.code : 1) : 0, stdout, stderr: String(stderr || "") });
       });
@@ -111,7 +113,17 @@ export async function status(wurzel) {
     letzterSync: letzterSync(wurzel), remote: rem.length > 0 };
 }
 
-export async function commit(wurzel, { nachricht, dateien }) {
+// Je Vault nur ein Abgleich/Commit gleichzeitig (Sperre im Prozess). Wird synchron beim Aufruf genommen.
+const laufend = new Set();
+async function exklusiv(wurzel, fn) {
+  if (laufend.has(wurzel)) throw new HttpFehler(409, "Abgleich läuft schon. Bitte kurz warten.");
+  laufend.add(wurzel);
+  try { return await fn(); } finally { laufend.delete(wurzel); }
+}
+
+export function commit(wurzel, a) { return exklusiv(wurzel, () => commitOhneSperre(wurzel, a || {})); }
+
+async function commitOhneSperre(wurzel, { nachricht, dateien }) {
   await brauchtRepo(wurzel);
   if (typeof nachricht !== "string" || !nachricht.trim()) throw new HttpFehler(400, "Bitte eine Commit-Nachricht eingeben.");
   if (!Array.isArray(dateien) || !dateien.length || dateien.some((d) => typeof d !== "string")) throw new HttpFehler(400, "Bitte mindestens eine Datei auswählen.");
@@ -122,16 +134,35 @@ export async function commit(wurzel, { nachricht, dateien }) {
     if (p.split("/").some((s) => s === ".." || s === ".git") || p.startsWith("/")) throw new HttpFehler(403, "Dieser Pfad ist gesperrt.");
     if (!offen.has(p)) throw new HttpFehler(400, `„${p}“ hat keine offenen Änderungen.`);
   }
+  const sicherung = await indexSichern(wurzel);
   const a = await git(wurzel, ["add", "--", ...pfade]);
-  if (a.code !== 0) throw new HttpFehler(422, "Die Dateien konnten nicht vorgemerkt werden.", { ausgabe: ausgabeVon(a) });
+  if (a.code !== 0) {
+    await indexZurueck(wurzel, sicherung);
+    throw new HttpFehler(422, "Die Dateien konnten nicht vorgemerkt werden.", { ausgabe: ausgabeVon(a) });
+  }
   // --only + Pfade: committet genau diese Dateien, auch wenn sonst etwas vorgemerkt wäre
   const c = await git(wurzel, ["commit", "-m", nachricht, "--only", "--", ...pfade]);
   if (c.code !== 0) {
-    await git(wurzel, ["reset", "-q", "--", ...pfade]); // Vormerkung zurücknehmen: alles bleibt wie vorher
+    await indexZurueck(wurzel, sicherung); // Vormerkung exakt wie vorher (auch teilweise Vorgemerktes bleibt)
     throw new HttpFehler(422, "Der Commit wurde abgelehnt. Die Meldung steht unten.", { ausgabe: ausgabeVon(c) });
   }
   const h = await git(wurzel, ["rev-parse", "HEAD"]);
   return { sha: h.stdout.trim() };
+}
+
+// Index vor dem Vormerken sichern: Baum-SHA (git write-tree; im leeren Repo der leere Baum). Geht das nicht
+// (z. B. ungelöste Einträge), bleibt die Index-Datei als Kopie.
+async function indexSichern(wurzel) {
+  const w = await git(wurzel, ["write-tree"]);
+  if (w.code === 0 && /^[0-9a-f]{40,64}$/.test(w.stdout.trim())) return { baum: w.stdout.trim() };
+  try {
+    const p = (await git(wurzel, ["rev-parse", "--path-format=absolute", "--git-path", "index"])).stdout.trim();
+    return { datei: p, inhalt: readFileSync(p) };
+  } catch { return { baum: null }; }
+}
+async function indexZurueck(wurzel, s) {
+  if (s.baum) await git(wurzel, ["read-tree", s.baum]);
+  else if (s.datei) { try { writeFileSync(s.datei, s.inhalt); } catch { /* nur Komfort */ } }
 }
 
 async function konfliktDateien(wurzel) {
@@ -139,12 +170,47 @@ async function konfliktDateien(wurzel) {
   return r.stdout.split("\n").map((s) => s.trim()).filter(Boolean);
 }
 
-export async function sync(wurzel) {
+export function sync(wurzel, opt = {}) { return exklusiv(wurzel, () => syncOhneSperre(wurzel, opt)); }
+
+// Läuft git in die Zeitüberschreitung (SIGKILL), kann Git eine halbe Zusammenführung und index.lock hinterlassen.
+// Die Sperrdatei wird nur entfernt, wenn sie nach dem Start unseres Aufrufs entstand und kein git-Prozess mehr läuft.
+// Läuft in genau diesem Vault noch ein git-Prozess? (lsof: Arbeitsordner aller git-Prozesse; lsof fehlt → „ja“, also vorsichtig)
+function gitLaeuft(wurzel) {
+  return new Promise((ok) => {
+    execFile("lsof", ["-a", "-d", "cwd", "-c", "git", "-Fn"], { env: kindUmgebung(), maxBuffer: 4 * 1024 * 1024 }, (err, out) => {
+      if (err && err.code === "ENOENT") return ok(true);
+      const orte = String(out || "").split("\n").filter((z) => z.startsWith("n")).map((z) => z.slice(1));
+      ok(orte.some((o) => o === wurzel || o.startsWith(wurzel + "/")));
+    });
+  });
+}
+async function nachAbbruchAufraeumen(wurzel, gestartet) {
+  const lock = join(wurzel, ".git", "index.lock");
+  let lockZeit = null;
+  try { lockZeit = lstatSync(lock).mtimeMs; } catch { /* keine Sperrdatei */ }
+  if (lockZeit !== null) {
+    if (lockZeit >= gestartet - 1000 && !(await gitLaeuft(wurzel))) { try { unlinkSync(lock); } catch { /* weg */ } }
+    else throw new HttpFehler(409, "Git ist noch beschäftigt oder hat eine Sperrdatei hinterlassen (.git/index.lock). Bitte kurz warten und erneut versuchen; bleibt es so, schließe andere Git-Programme.");
+  }
+  await git(wurzel, ["merge", "--abort"]); // schlägt harmlos fehl, wenn keine Zusammenführung läuft
+}
+async function mitAbbruchSchutz(wurzel, lauf) {
+  try { return await lauf(); }
+  catch (e) {
+    if (e instanceof HttpFehler && e.status === 504) {
+      await nachAbbruchAufraeumen(wurzel, e.extra.gestartet || Date.now());
+      throw new HttpFehler(504, "Der Abgleich hat zu lange gebraucht und wurde abgebrochen. Es wurde nichts verändert — bitte später noch einmal versuchen.");
+    }
+    throw e;
+  }
+}
+
+async function syncOhneSperre(wurzel, { limitSync = LIMIT_SYNC } = {}) {
   await brauchtRepo(wurzel);
   const rem = await remotes(wurzel);
   if (!rem.length) throw new HttpFehler(400, "Es ist noch kein Remote (Server) eingetragen. Trage zuerst eins in Git ein.");
   const remote = rem.includes("origin") ? "origin" : rem[0];
-  const f = await git(wurzel, ["fetch", "--quiet", remote], { timeout: LIMIT_SYNC });
+  const f = await git(wurzel, ["fetch", "--quiet", remote], { timeout: limitSync });
   if (f.code !== 0) throw new HttpFehler(502, "Der Server war nicht erreichbar.", { ausgabe: ausgabeVon(f) });
   if (!(await hatCommits(wurzel))) throw new HttpFehler(400, "Es gibt noch keinen Commit zum Abgleichen.");
   const z = await zweig(wurzel);
@@ -163,8 +229,8 @@ export async function sync(wurzel) {
     const { zurueck } = await vorZurueck(wurzel);
     if (zurueck > 0) {
       geholt = true;
-      let m = await git(wurzel, ["merge", "--ff-only", "--quiet", "@{u}"], { timeout: LIMIT_SYNC });
-      if (m.code !== 0) m = await git(wurzel, ["merge", "--no-edit", "--quiet", "@{u}"], { timeout: LIMIT_SYNC });
+      let m = await mitAbbruchSchutz(wurzel, () => git(wurzel, ["merge", "--ff-only", "--quiet", "@{u}"], { timeout: limitSync }));
+      if (m.code !== 0) m = await mitAbbruchSchutz(wurzel, () => git(wurzel, ["merge", "--no-edit", "--quiet", "@{u}"], { timeout: limitSync }));
       if (m.code !== 0) {
         const dateien = await konfliktDateien(wurzel);
         await git(wurzel, ["merge", "--abort"]); // Arbeitsstand wie vorher
@@ -174,12 +240,12 @@ export async function sync(wurzel) {
     }
     const nach = await vorZurueck(wurzel);
     if (nach.vor > 0) {
-      const p = await git(wurzel, ["push", "--quiet"], { timeout: LIMIT_SYNC });
+      const p = await git(wurzel, ["push", "--quiet"], { timeout: limitSync });
       if (p.code !== 0) throw new HttpFehler(409, "Der Server hat das Senden abgelehnt (es gab dort inzwischen Neues). Bitte noch einmal abgleichen.", { dateien: [], ausgabe: ausgabeVon(p) });
       gesendet = true;
     }
   } else if (neuerZweig) {
-    const p = await git(wurzel, ["push", "--quiet", "-u", remote, z], { timeout: LIMIT_SYNC });
+    const p = await git(wurzel, ["push", "--quiet", "-u", remote, z], { timeout: limitSync });
     if (p.code !== 0) throw new HttpFehler(409, "Der Server hat das Senden abgelehnt.", { dateien: [], ausgabe: ausgabeVon(p) });
     gesendet = true;
   }

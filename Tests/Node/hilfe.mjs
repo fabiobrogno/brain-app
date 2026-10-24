@@ -8,6 +8,10 @@ import { fileURLToPath } from "node:url";
 export const WURZEL = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "Ressourcen");
 export const pfad = (...t) => join(WURZEL, ...t);
 const aufraeumen = [];
+// Tests nie gegen echte Nutzerdaten: eigener Support-Ordner (Vertrauens-Merker), Test-Schalter an.
+process.env.BRAIN_TESTMODUS = "1";
+process.env.BRAIN_APP_SUPPORT = realpathSync(mkdtempSync(join(tmpdir(), "brain-support-")));
+aufraeumen.push(process.env.BRAIN_APP_SUPPORT);
 process.on("exit", () => { for (const d of aufraeumen) try { rmSync(d, { recursive: true, force: true }); } catch { /* egal */ } });
 
 export function tmp(praefix = "brain-test-") {

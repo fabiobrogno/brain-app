@@ -4,18 +4,24 @@ import {
   realpathSync, statSync, lstatSync, readdirSync, readFileSync, writeFileSync, openSync, readSync, closeSync,
   mkdirSync, renameSync, linkSync, unlinkSync, existsSync,
 } from "node:fs";
-import { join, basename } from "node:path";
+import { join, basename, relative, sep } from "node:path";
+import { homedir } from "node:os";
 import { createHash, randomBytes } from "node:crypto";
 import { execFile } from "node:child_process";
 import { pathToFileURL } from "node:url";
-import { HttpFehler, MAX_DATEI, loese, imVault } from "./basis.mjs";
+import { HttpFehler, MAX_DATEI, loese, imVault, falte, kindUmgebung } from "./basis.mjs";
 import { pruefeText, berlinHeute, leseKopf } from "./pruefung.mjs";
 import * as gitFn from "./git.mjs";
 
 export { HttpFehler, pruefeText, berlinHeute };
 
 const BEARBEITBAR = /\.(md|txt)$/i;
-const GENERIERT_NAMEN = new Set(["INDEX.md", "_index.md", "graph.json"]);
+const GENERIERT_NAMEN = new Set(["index.md", "_index.md", "graph.json"]); // gefaltet (ohne Groß/klein, NFC)
+const generiertName = (name) => GENERIERT_NAMEN.has(falte(name));
+// 09_wiki/_*.md ist generiert — außer _schema.md und _log.md (Vergleich ohne Groß/klein, NFC)
+const wikiGeneriert = (rel, name) => { const f = falte(rel); return f.startsWith("09_wiki/") && falte(name).startsWith("_") && falte(name) !== "_schema.md" && falte(name) !== "_log.md"; };
+const gesperrterName = (n) => n.startsWith(".") || falte(n) === "node_modules";
+export const supportOrdner = () => process.env.BRAIN_APP_SUPPORT || join(homedir(), "Library", "Application Support", "Brain");
 const HASH = (buf) => createHash("sha256").update(buf).digest("hex");
 
 export function slug(s, max = 50) {
@@ -42,13 +48,14 @@ export function oeffneVault(vaultPfad, opts = {}) {
   // „generiert — nicht editieren“ in den ersten 3 Zeilen, bekannte generierte Namen, _*.md unter 09_wiki
   function istGeneriert(rel, abs) {
     const name = rel.split("/").pop();
-    if (GENERIERT_NAMEN.has(name)) return true;
-    if (rel.startsWith("09_wiki/") && name.startsWith("_") && name !== "_schema.md" && name !== "_log.md") return true;
+    if (generiertName(name)) return true;
+    if (wikiGeneriert(rel, name)) return true;
     if (!abs || !BEARBEITBAR.test(name)) return false;
     const kopf = kopfBytes(abs).split(/\r?\n/).slice(0, 3).join("\n");
     return /generiert\s+—\s+nicht\s+editieren/i.test(kopf);
   }
-  const schreibgeschuetzt = (rel, abs) => !BEARBEITBAR.test(rel) || istGeneriert(rel, abs);
+  const mehrfachVerknuepft = (st) => st.isFile() && st.nlink > 1;
+  const schreibgeschuetzt = (rel, abs, st) => !BEARBEITBAR.test(rel) || istGeneriert(rel, abs) || (st ? mehrfachVerknuepft(st) : false);
 
   // ---------- Baum ----------
   // Titel je Datei (H1, sonst Frontmatter title/titel/name) für die Befehlspalette; Cache je Pfad+Änderungszeit+Größe.
@@ -70,7 +77,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
       try { liste = readdirSync(abs, { withFileTypes: true }); } catch { return; }
       const ordner = [], dateien = [];
       for (const d of liste) {
-        if (d.name.startsWith(".") || d.name === "node_modules") continue;
+        if (gesperrterName(d.name)) continue;
         const rel = relOrdner ? `${relOrdner}/${d.name}` : d.name;
         let istOrdner = d.isDirectory(), istDatei = d.isFile();
         if (d.isSymbolicLink()) { // nur Dateien, die im Vault bleiben; Ordner-Symlinks nie (Schleifen)
@@ -89,7 +96,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
       for (const f of dateien) {
         const a = join(wurzel, f.rel);
         let st; try { st = statSync(a); } catch { continue; }
-        eintraege.push({ pfad: f.rel, art: "datei", geaendert: st.mtime.toISOString(), groesse: st.size, schreibschutz: schreibgeschuetzt(f.rel, a), titel: titelFuerBaum(f.rel, a, st) });
+        eintraege.push({ pfad: f.rel, art: "datei", geaendert: st.mtime.toISOString(), groesse: st.size, schreibschutz: schreibgeschuetzt(f.rel, a, st), titel: titelFuerBaum(f.rel, a, st) });
       }
     };
     geh("");
@@ -105,7 +112,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
     catch (e) { if (e instanceof HttpFehler) throw e; throw new HttpFehler(404, "Diese Datei gibt es nicht."); }
     const inhalt = buf.toString("utf8");
     if (Buffer.compare(Buffer.from(inhalt, "utf8"), buf) !== 0) throw new HttpFehler(415, "Diese Datei ist kein gültiger UTF-8-Text und wird nicht geöffnet.");
-    return { pfad: sauber, inhalt, hash: HASH(buf), geaendert: st.mtime.toISOString(), schreibschutz: schreibgeschuetzt(sauber, abs) };
+    return { pfad: sauber, inhalt, hash: HASH(buf), geaendert: st.mtime.toISOString(), schreibschutz: schreibgeschuetzt(sauber, abs, st) };
   }
 
   function tmpName(abs) { return join(abs, "..", `.brain-tmp-${process.pid}-${randomBytes(4).toString("hex")}`); }
@@ -113,12 +120,26 @@ export function oeffneVault(vaultPfad, opts = {}) {
   function schreibe({ pfad, inhalt, basisHash }) {
     if (typeof inhalt !== "string") throw new HttpFehler(400, "Der Inhalt fehlt.");
     if (basisHash !== null && typeof basisHash !== "string") throw new HttpFehler(400, "basisHash fehlt (null = neu anlegen).");
-    const { abs, rel } = loese(wurzel, pfad);
+    let { abs, rel } = loese(wurzel, pfad);
     if (!BEARBEITBAR.test(rel)) throw new HttpFehler(403, "Nur Markdown- und Textdateien lassen sich bearbeiten.");
     const buf = Buffer.from(inhalt, "utf8");
     if (buf.length > MAX_DATEI) throw new HttpFehler(413, "Die Datei ist zu groß.");
+    // Symlink im Vault: geschrieben wird atomar auf das (per realpath aufgelöste) Ziel, das im Vault liegen muss —
+    // der Link selbst bleibt ein Link; Schutz und Hash gelten für das Ziel.
+    try {
+      if (lstatSync(abs).isSymbolicLink()) {
+        let echt;
+        try { echt = realpathSync(abs); } catch { throw new HttpFehler(403, "Dieser Verweis führt ins Leere."); }
+        if (!imVault(echt, wurzel)) throw new HttpFehler(403, "Dieser Pfad liegt außerhalb des Vaults.");
+        const zielRel = relative(wurzel, echt).split(sep);
+        if (zielRel.some(gesperrterName)) throw new HttpFehler(403, "Dieser Ort ist gesperrt.");
+        if (!BEARBEITBAR.test(echt)) throw new HttpFehler(403, "Nur Markdown- und Textdateien lassen sich bearbeiten.");
+        abs = echt; rel = zielRel.join("/");
+      }
+    } catch (e) { if (e instanceof HttpFehler) throw e; /* gibt es noch nicht */ }
     let alt = null;
-    try { const st = lstatSync(abs); if (!st.isFile() && !st.isSymbolicLink()) throw new HttpFehler(400, "Das ist ein Ordner, keine Datei."); alt = readFileSync(abs); } catch (e) { if (e instanceof HttpFehler) throw e; }
+    try { const st = lstatSync(abs); if (!st.isFile()) throw new HttpFehler(400, "Das ist ein Ordner, keine Datei."); if (mehrfachVerknuepft(st)) throw new HttpFehler(423, "Diese Datei ist mehrfach verknüpft (derselbe Inhalt liegt unter einem zweiten Namen). Beim Speichern würden die Namen auseinanderlaufen — bitte nicht hier bearbeiten.");
+      alt = readFileSync(abs); } catch (e) { if (e instanceof HttpFehler) throw e; }
     if (alt && istGeneriert(rel, abs)) throw new HttpFehler(403, "Diese Datei wird automatisch erzeugt und ist schreibgeschützt.");
     if (!alt && istGeneriert(rel, null)) throw new HttpFehler(403, "Diese Datei wird automatisch erzeugt und ist schreibgeschützt.");
     if (basisHash === null) {
@@ -181,10 +202,10 @@ export function oeffneVault(vaultPfad, opts = {}) {
     const geh = (relOrdner) => {
       let liste; try { liste = readdirSync(relOrdner ? join(wurzel, relOrdner) : wurzel, { withFileTypes: true }); } catch { return; }
       for (const d of liste) {
-        if (d.name.startsWith(".") || d.name === "node_modules") continue;
+        if (gesperrterName(d.name)) continue;
         const rel = relOrdner ? `${relOrdner}/${d.name}` : d.name;
         if (d.isDirectory()) geh(rel);
-        else if (d.isFile() && BEARBEITBAR.test(d.name) && !GENERIERT_NAMEN.has(d.name) && !(rel.startsWith("09_wiki/") && d.name.startsWith("_") && d.name !== "_schema.md" && d.name !== "_log.md")) aus.push(rel);
+        else if (d.isFile() && BEARBEITBAR.test(d.name) && !generiertName(d.name) && !wikiGeneriert(rel, d.name)) aus.push(rel);
       }
     };
     geh("");
@@ -234,13 +255,38 @@ export function oeffneVault(vaultPfad, opts = {}) {
   }
 
   // ---------- Kit ----------
+  // Kit-Code (<vault>/.tools/*.mjs) läuft erst, wenn der Nutzer den Vault in der App einmal erlaubt hat. Der Merker liegt
+  // außerhalb des Vaults: <support>/vertrauen.json = { "<realpath des Vaults>": { seit } } (wirkt auch für den MCP-Server).
+  const merkerDatei = () => join(opts.support || supportOrdner(), "vertrauen.json");
+  const leseMerker = () => { try { const j = JSON.parse(readFileSync(merkerDatei(), "utf8")); return j && typeof j === "object" && !Array.isArray(j) ? j : {}; } catch { return {}; } };
+  const vertraut = () => { const e = leseMerker()[wurzel]; return !!e && typeof e === "object"; };
+  const rueckfragenPfad = join(wurzel, ".tools", "rueckfragen.mjs");
+  const kitVorhanden = () => existsSync(kitPfad) || existsSync(rueckfragenPfad);
+  const kit = () => ({ vorhanden: kitVorhanden(), vertraut: vertraut() });
+  function vertrauen(erlauben) {
+    if (typeof erlauben !== "boolean") throw new HttpFehler(400, "„erlauben“ muss true oder false sein.");
+    const m = leseMerker();
+    if (erlauben) m[wurzel] = { seit: new Date().toISOString() }; else delete m[wurzel];
+    const datei = merkerDatei();
+    try {
+      mkdirSync(join(datei, ".."), { recursive: true });
+      const tmp = `${datei}.${process.pid}.tmp`;
+      writeFileSync(tmp, JSON.stringify(m, null, 2) + "\n", { mode: 0o600 });
+      renameSync(tmp, datei);
+    } catch { throw new HttpFehler(500, "Die Freigabe konnte nicht gespeichert werden."); }
+    gesCache = null; rfCache = null;
+    return { kit: kit() };
+  }
+  const NICHT_VERTRAUT = { verfuegbar: false, grund: "nicht-vertraut" };
+
   const kitVersion = () => { try { return readFileSync(join(wurzel, ".tools", "VERSION"), "utf8").trim() || null; } catch { return null; } };
   let gesCache = null;
   function gesundheit() {
-    if (gesCache && Date.now() - gesCache.t < 120_000) return Promise.resolve(gesCache.wert);
     if (!existsSync(kitPfad)) return Promise.resolve({ verfuegbar: false });
+    if (!vertraut()) return Promise.resolve({ ...NICHT_VERTRAUT });
+    if (gesCache && Date.now() - gesCache.t < 120_000) return Promise.resolve(gesCache.wert);
     return new Promise((ok) => {
-      execFile(process.execPath, [kitPfad, "gesundheit", "--json"], { cwd: wurzel, timeout: 20_000, maxBuffer: 8 * 1024 * 1024, env: { ...process.env, NO_COLOR: "1" } },
+      execFile(process.execPath, [kitPfad, "gesundheit", "--json"], { cwd: wurzel, timeout: 20_000, maxBuffer: 8 * 1024 * 1024, env: kindUmgebung({ NO_COLOR: "1" }) },
         (err, stdout) => {
           let wert = { verfuegbar: false };
           try { const j = JSON.parse(String(stdout)); if (j && typeof j === "object") wert = j; } catch { /* Kit fehlt/defekt/Zeitlimit */ }
@@ -252,27 +298,30 @@ export function oeffneVault(vaultPfad, opts = {}) {
 
   // Offene Rückfragen: rein lesend über die Kit-Funktion sichtbare() (nicht über `brain rueckfragen liste` — das
   // schreibt `gezeigt` in die Rückfragen und würde die Verfallsfrist auslösen). Zahl = so viele, wie der Skill zeigt.
+  // Läuft als eigener Kindprozess (nie im eigenen Prozess importiert): ein Kit-Update gilt sofort, Kit-Fehler bleiben draußen.
+  const RF_SKRIPT = `import(process.argv[1]).then((m) => { const s = typeof m.sichtbare === "function" ? m.sichtbare(process.argv[2]) : null;
+    process.stdout.write(JSON.stringify(s && Array.isArray(s.fragen) && Number.isFinite(s.wartend) ? { f: s.fragen.length, w: s.wartend } : null)); }).catch(() => process.stdout.write("null"));`;
   let rfCache = null;
   async function rueckfragen() {
+    if (!existsSync(rueckfragenPfad)) return { verfuegbar: false };
+    if (!vertraut()) return { ...NICHT_VERTRAUT };
     if (rfCache && Date.now() - rfCache.t < 120_000) return rfCache.wert;
-    let wert = { verfuegbar: false };
-    try {
-      const modul = join(wurzel, ".tools", "rueckfragen.mjs");
-      if (existsSync(modul)) {
-        const m = await import(pathToFileURL(modul).href);
-        const s = typeof m.sichtbare === "function" ? m.sichtbare(wurzel) : null;
-        if (s && Array.isArray(s.fragen) && Number.isFinite(s.wartend)) wert = { verfuegbar: true, offen: s.fragen.length + s.wartend };
-      }
-    } catch { /* Kit fehlt oder ist anders aufgebaut → keine Zahl statt einer falschen */ }
+    const wert = await new Promise((ok) => {
+      execFile(process.execPath, ["--input-type=module", "-e", RF_SKRIPT, pathToFileURL(rueckfragenPfad).href, wurzel],
+        { cwd: wurzel, timeout: 20_000, maxBuffer: 1024 * 1024, env: kindUmgebung() }, (err, stdout) => {
+          try { const j = JSON.parse(String(stdout)); if (j && Number.isFinite(j.f) && Number.isFinite(j.w)) return ok({ verfuegbar: true, offen: j.f + j.w }); } catch { /* keine Zahl statt einer falschen */ }
+          ok({ verfuegbar: false });
+        });
+    });
     if (wert.verfuegbar) rfCache = { t: Date.now(), wert };
     return wert;
   }
 
   return {
-    wurzel, name: basename(wurzel), rueckfragen, kitVersion, baum, lies, schreibe, neu, merken, suche, pruefung, gesundheit,
+    wurzel, name: basename(wurzel), rueckfragen, kitVersion, kit, vertrauen, baum, lies, schreibe, neu, merken, suche, pruefung, gesundheit,
     gitStatus: () => gitFn.status(wurzel),
     gitCommit: (a) => gitFn.commit(wurzel, a || {}),
-    gitSync: () => gitFn.sync(wurzel),
+    gitSync: () => gitFn.sync(wurzel, { limitSync: opts.gitLimitSync }),
     gitVerlauf: (pfad, max) => gitFn.verlauf(wurzel, pfad, max),
     gitDiff: (pfad, sha) => gitFn.diff(wurzel, pfad, sha),
     gitFassung: (pfad, sha) => gitFn.fassung(wurzel, pfad, sha),

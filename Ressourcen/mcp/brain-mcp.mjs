@@ -50,6 +50,7 @@ async function rufe(v, name, a) {
     }
     case "brain_gesundheit": {
       const g = await v.gesundheit();
+      if (g.grund === "nicht-vertraut") return text("Das Brain-Kit in diesem Vault ist noch nicht freigegeben. In der App einmal erlauben (Brain Studio → Kit erlauben), dann klappt die Gesundheitsprüfung.");
       if (g.verfuegbar === false) return text("Die Gesundheitsprüfung ist nicht verfügbar (kein Brain-Kit in diesem Vault).");
       const zeilen = [`Ampel: ${g.ampel}${g.warnungen !== undefined ? ` · ${g.warnungen} Warnung(en)` : ""}`];
       for (const p of g.pruefungen || []) {
@@ -117,6 +118,7 @@ function haupt() {
     (async () => {
       let m;
       try { m = JSON.parse(zeile); } catch { return sende({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }); }
+      if (Array.isArray(m) && !m.length) return sende({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "Invalid Request" } });
       if (Array.isArray(m)) {
         const r = (await Promise.all(m.map((x) => bearbeite(v, x)))).filter(Boolean);
         if (r.length) sende(r);

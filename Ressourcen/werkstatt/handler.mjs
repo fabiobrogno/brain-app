@@ -7,11 +7,12 @@ import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import { execFile } from "node:child_process";
 import { oeffneVault, HttpFehler } from "../gemeinsam/vault.mjs";
+import { kindUmgebung, testmodus } from "../gemeinsam/basis.mjs";
 
 const HIER = dirname(fileURLToPath(import.meta.url));
 export const MAX_KOERPER = 8 * 1024 * 1024;
 
-const CSP = "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'";
+const CSP = "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self'; base-uri 'none'; object-src 'none'; form-action 'none'; frame-ancestors 'none'";
 const TYPEN = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".map": "application/json; charset=utf-8",
@@ -35,8 +36,9 @@ const shellText = (s) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `
 
 // `claude` im PATH suchen; zusätzlich die üblichen Orte (eine GUI-App hat nur einen knappen PATH).
 // BRAIN_CLAUDE_EXTRA (Doppelpunkt-Liste, auch leer) ersetzt diese Zusatzorte — so bleiben Tests vom echten claude fern.
+// Wirksam nur mit BRAIN_TESTMODUS=1; sonst ließe sich die Suche von außen umlenken.
 export function findeClaude(env = process.env) {
-  const extra = env.BRAIN_CLAUDE_EXTRA !== undefined
+  const extra = env.BRAIN_TESTMODUS === "1" && env.BRAIN_CLAUDE_EXTRA !== undefined
     ? env.BRAIN_CLAUDE_EXTRA.split(delimiter).filter(Boolean)
     : [join(homedir(), ".local", "bin"), join(homedir(), ".claude", "local"), "/opt/homebrew/bin", "/usr/local/bin"];
   for (const d of [...(env.PATH || "").split(delimiter).filter(Boolean), ...extra]) {
@@ -84,7 +86,8 @@ export function erzeugeHandler(o) {
     const nur = (erlaubt) => { if (methode !== erlaubt) throw new HttpFehler(405, "Diese Methode ist hier nicht erlaubt."); };
     switch (pfad) {
       case "/api/info": nur("GET");
-        return { vault: v.wurzel, name: v.name, appVersion, kitVersion: v.kitVersion(), git: await v.istGitRepo(), mcpBefehl: mcpBefehl() };
+        return { vault: v.wurzel, name: v.name, appVersion, kitVersion: v.kitVersion(), git: await v.istGitRepo(), mcpBefehl: mcpBefehl(), kit: v.kit() };
+      case "/api/kit/vertrauen": nur("POST"); return v.vertrauen(eingabe().erlauben);
       case "/api/baum": nur("GET"); return v.baum();
       case "/api/datei":
         if (methode === "GET") return v.lies(q.get("pfad"));
@@ -115,7 +118,7 @@ export function erzeugeHandler(o) {
     const claude = findeClaude();
     if (!claude) throw new HttpFehler(404, "Claude Code wurde nicht gefunden. Kopiere den Befehl und führe ihn im Terminal aus.", { befehl });
     return new Promise((ok, nein) => {
-      execFile(claude, ["mcp", "add", "-s", "user", "brain", "--", ...a], { timeout: 30_000, env: { ...process.env, CI: "1" } }, (err, stdout, stderr) => {
+      execFile(claude, ["mcp", "add", "-s", "user", "brain", "--", ...a], { timeout: 30_000, env: kindUmgebung({ CI: "1" }) }, (err, stdout, stderr) => {
         const ausgabe = (String(stdout || "") + String(stderr || "")).trim().slice(0, 2000);
         if (!err) return ok({ ok: true, ausgabe });
         if (/already exists/i.test(ausgabe)) return nein(new HttpFehler(409, "Brain ist bei Claude Code schon eingetragen.", { befehl, ausgabe }));

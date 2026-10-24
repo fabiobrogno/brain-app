@@ -16,9 +16,18 @@ const server = createServer(async (req, res) => {
   const host = String(req.headers.host || "");
   const port = server.address().port;
   if (host !== `127.0.0.1:${port}` && host !== `localhost:${port}`) { res.writeHead(403); return res.end("Host nicht erlaubt"); } // gegen DNS-Rebinding
+  // CSRF: Browser schicken bei fremden Seiten einen Origin mit — nur die eigene Adresse ist erlaubt (ohne Origin = kein Browser-Querzugriff).
+  const origin = req.headers.origin;
+  if (origin !== undefined && origin !== `http://127.0.0.1:${port}` && origin !== `http://localhost:${port}`) {
+    res.writeHead(403, { "Content-Type": "application/json; charset=utf-8" }); return res.end('{"fehler":"Herkunft nicht erlaubt"}');
+  }
   const teile = [];
   let groesse = 0, zuGross = false;
   for await (const stueck of req) { groesse += stueck.length; if (groesse > MAX_KOERPER) { zuGross = true; break; } teile.push(stueck); }
+  // Schreibende Anfragen mit Inhalt müssen JSON sein (kein Formular/text/plain von fremden Seiten).
+  if (!["GET", "HEAD", "OPTIONS"].includes(req.method) && teile.length && !/^application\/json\s*(;|$)/i.test(String(req.headers["content-type"] || ""))) {
+    res.writeHead(415, { "Content-Type": "application/json; charset=utf-8" }); return res.end('{"fehler":"Nur JSON erlaubt"}');
+  }
   if (zuGross) { res.writeHead(413, { "Content-Type": "application/json; charset=utf-8" }); return res.end('{"fehler":"Anfrage zu groß"}'); }
   const url = new URL(req.url, "http://127.0.0.1");
   let r;
