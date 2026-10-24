@@ -86,7 +86,15 @@ final class AppZustand: ObservableObject {
         oeffneStudio()
         if argumente.fensterOeffnen { oeffneFenster() }
         if let s = argumente.schliessenNach { Task { try? await Task.sleep(for: s); studio.schliesse(); uebersicht.schliesse() } }
-        if let s = argumente.beendenNach { Task { try? await Task.sleep(for: s); NSApp.terminate(nil) } }
+        if let s = argumente.beendenNach {
+            // Per Timer statt Task: Bei offenem Studio wartet `terminate` in einer eigenen Schleife auf die Antwort der
+            // Oberfläche (`applicationShouldTerminate` → terminateLater). Aus einem Task heraus (Block der Haupt-Warteschlange)
+            // käme diese Antwort nie an — die App bliebe hängen. ⌘Q aus dem Menü hat das Problem nicht.
+            let timer = Timer(timeInterval: Double(s.components.seconds), repeats: false) { _ in
+                MainActor.assumeIsolated { NSApp.terminate(nil) }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+        }
         await aktualisiere()
     }
 

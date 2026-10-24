@@ -6,7 +6,7 @@
 #  B) OHNE --vault mit leerem Support-Ordner: das Studio öffnet trotzdem („Willkommen“), die Werkstatt läuft ohne
 #     Vault-Argument, es erscheint kein Einrichtungsdialog.
 #  C) OHNE --vault, aber mit vaults.json im Support-Ordner: die App liest den aktiven Vault daraus (Status) und startet
-#     die Werkstatt trotzdem ohne Vault-Argument (die Werkstatt liest vaults.json selbst).
+#     die Werkstatt trotzdem ohne Vault-Argument (die Werkstatt liest vaults.json selbst); beendet wird bei offenem Studio.
 # Port-Check (A): App-PID, Kinder und alle NEU hinzugekommenen com.apple.WebKit.*-Prozesse (XPC-Dienste, keine Kinder).
 set -euo pipefail
 W="$(cd "$(dirname "$0")/.." && pwd)"
@@ -103,15 +103,16 @@ phase_c() {
   mkdir -p "$BRAIN_APP_SUPPORT"
   printf '{"vaults":[{"name":"Test Brain","pfad":"%s","farbe":"#3b82f6"}],"aktiv":"%s"}\n' "$VAULT" "$VAULT" > "$BRAIN_APP_SUPPORT/vaults.json"
   LOG="$BRAIN_APP_SUPPORT/logs/app.log"
-  "$APP/Contents/MacOS/BrainApp" --test-fenster-schliessen-nach 25 --test-beenden-nach 45 &
+  # Kein --test-fenster-schliessen-nach: Die App wird bei OFFENEM Studio beendet (der ⌘Q-Weg: die Oberfläche sichert zuerst).
+  "$APP/Contents/MacOS/BrainApp" --test-beenden-nach 22 &
   PID=$!
   warte "^[^ ]+ vault /.*Test Brain$" 80 || fehl "C: aktiver Vault wurde nicht aus vaults.json gelesen"
   warte "status (ok|hinweis|problem)" 80 || fehl "C: Status des Vaults aus vaults.json wurde nicht gelesen"
   warte "fenster-bereit studio" 120 || fehl "C: Studio wurde nicht bereit"
   werkstatt_ohne_argument
-  warte "fenster-zu studio" 200 || fehl "C: Studio wurde nicht geschlossen"
+  warte "fenster-zu studio" 200 || fehl "C: Beenden bei offenem Studio ist hängen geblieben"
   nichts_uebrig "$BASIS_C"
-  echo "OK C: Vault aus vaults.json (Status gelesen, Werkstatt ohne Vault-Argument)"
+  echo "OK C: Vault aus vaults.json (Status gelesen, Werkstatt ohne Vault-Argument, Beenden bei offenem Studio)"
 }
 
 # Phasen wählen: BRAIN_RAUCHTEST_PHASEN="A" (Standard: "A B C"), z. B. solange das Backend ohne Vault-Argument noch fehlt.

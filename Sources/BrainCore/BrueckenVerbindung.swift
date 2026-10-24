@@ -144,11 +144,17 @@ public actor BrueckenVerbindung {
         }
     }
 
-    /// Zeitlimit je Pfad: Git-Abgleich (`/api/git/sync`) 400 s, übrige `/api/git/…` 90 s, alles andere 30 s.
+    /// Zeitlimit je Pfad (immer etwas über der längsten Laufzeit der Werkstatt): Vault klonen (`/api/vaults/klonen`, bis 300 s)
+    /// 330 s, Remote hinzufügen (`/api/git/remote`: Historien-Prüfung und erster Push, bis ~120 s) 150 s, Git-Abgleich
+    /// (`/api/git/sync`) 400 s, übrige `/api/git/…` 90 s, alles andere 30 s. Die Zuordnung gilt für den Pfad ohne Query;
+    /// die ersten drei nur für genau diesen Pfad (auch mit „/“ am Ende), nicht für Unterpfade.
     public static func zeitlimit(fuerPfad pfad: String) -> Duration {
         let ohneQuery = pfad.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? pfad
         let p = ohneQuery.lowercased()
-        if p == "/api/git/sync" || p == "/api/git/sync/" { return .seconds(400) }
+        func ist(_ ziel: String) -> Bool { p == ziel || p == ziel + "/" }
+        if ist("/api/vaults/klonen") { return .seconds(330) }
+        if ist("/api/git/sync") { return .seconds(400) }
+        if ist("/api/git/remote") { return .seconds(150) }
         if p.hasPrefix("/api/git/") { return .seconds(90) }
         return .seconds(30)
     }

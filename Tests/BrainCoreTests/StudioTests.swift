@@ -198,6 +198,40 @@ private func url(_ s: String) -> URL { URL(string: s)! }
     #expect(AppAktion.pruefe(["aktion": "extern", "wert": "https://example.com"], vault: nil, oberflaeche: .studio) != nil)
 }
 
+// MARK: Zeitlimits je Pfad (Studio v2)
+
+@Test func zeitlimitsDerStudioRouten() {
+    func limit(_ pfad: String) -> Duration { BrueckenVerbindung.zeitlimit(fuerPfad: pfad) }
+    // lang laufende Routen: Vault klonen 330 s, Remote hinzufügen 150 s, Abgleich 400 s
+    #expect(limit("/api/vaults/klonen") == .seconds(330))
+    #expect(limit("/api/git/remote") == .seconds(150))
+    #expect(limit("/api/git/sync") == .seconds(400))
+    // Query, Schrägstrich am Ende und Groß/klein ändern die Zuordnung nicht
+    #expect(limit("/api/vaults/klonen?x=1") == .seconds(330))
+    #expect(limit("/api/vaults/klonen/") == .seconds(330))
+    #expect(limit("/API/Vaults/Klonen") == .seconds(330))
+    #expect(limit("/api/git/remote?x=1") == .seconds(150))
+    #expect(limit("/api/git/remote/") == .seconds(150))
+    #expect(limit("/api/git/sync?x=1") == .seconds(400))
+    // Unterpfade und ähnliche Namen bekommen NICHT die lange Frist
+    #expect(limit("/api/vaults/klonen/x") == .seconds(30))
+    #expect(limit("/api/vaults/klonenx") == .seconds(30))
+    #expect(limit("/api/git/remote/x") == .seconds(90))
+    #expect(limit("/api/git/remotes") == .seconds(90))
+    #expect(limit("/api/git/sync/x") == .seconds(90))
+    // übrige Git-Routen 90 s, alles andere 30 s (auch die übrigen Vault-Routen)
+    for pfad in ["/api/git/status", "/api/git/commit", "/api/git/verlauf?pfad=a.md", "/api/git/log?max=50", "/api/git/diff"] {
+        #expect(limit(pfad) == .seconds(90), "\(pfad)")
+    }
+    for pfad in ["/api/vaults", "/api/vaults/aktiv", "/api/vaults/neu", "/api/vaults/oeffnen", "/api/vaults/entfernen",
+                 "/api/info", "/api/notizen", "/api/notiz/kontext?pfad=a.md", "/api/probe", "/api/ki/erkennen", "/index.html"] {
+        #expect(limit(pfad) == .seconds(30), "\(pfad)")
+    }
+    // Schreibende Anfragen werden nach einem Brückenabsturz nie wiederholt (kein doppeltes Klonen/Pushen)
+    #expect(!BrueckenVerbindung.darfWiederholen(methode: "POST"))
+    #expect(!BrueckenVerbindung.darfWiederholen(methode: "PUT"))
+}
+
 // MARK: Fenstermaße
 
 @Test func studioFensterMasseUndStartgroesse() {
