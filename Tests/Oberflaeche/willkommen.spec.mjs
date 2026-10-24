@@ -40,6 +40,10 @@ const TREFFER = [
   { pfad: "09_wiki/wissen/Mühle.md", titel: "Mühle" }, { pfad: "10_notizen/Reise.md", titel: "Reise nach Lissabon" },
 ];
 const BEFEHL = "claude mcp add -s user brain -- node /Applications/Brain.app/Contents/Resources/mcp.mjs";
+// Der 504-Satz der Werkstatt beim Einschalten (gemeinsam/vaults.mjs, ZEIT_EINSCHALTEN): er sagt „nicht in der Liste eingetragen“, die Karte darf ihn nicht zeigen
+const ZEIT_EINSCHALTEN = "Das Einschalten des Versionsverlaufs hat zu lange gedauert und wurde abgebrochen. Dein Ordner ist unverändert und nicht in der Liste eingetragen — bitte später noch einmal versuchen.";
+// Der eigene Satz der Karte (texte-willkommen.js, TW.git.zeit)
+const GIT_ZEIT = "Das Einschalten des Versionsverlaufs hat zu lange gedauert. Dein Ordner ist geöffnet, der Verlauf aber nicht eingeschaltet. Versuche es noch einmal oder arbeite ohne Verlauf weiter.";
 
 // Mock-Rahmen: Zustandsobjekt + Aufzeichnung aller Anfragen.
 async function rahmen(page, o = {}) {
@@ -64,11 +68,20 @@ async function rahmen(page, o = {}) {
         z.vault = `/Users/test/Brain/${body.name}`;
         return json(200, { pfad: z.vault });
       case "/api/vaults/oeffnen":
-        await warte(100);
+        await warte(z.oeffnenVerzoegerung ?? 100);
         if (z.oeffnenFehler) return json(z.oeffnenFehler.status, { fehler: z.oeffnenFehler.fehler });
         z.vault = body.pfad;
         // Spec §5a: der Schlüssel heißt gitEinschalten; z.gitEinschaltenFehlt = Werkstatt schaltet nicht ein und meldet git:false
-        if (body.gitEinschalten) z.git = !z.gitEinschaltenFehlt; else z.git = z.gitBeimOeffnen ?? true;
+        if (body.gitEinschalten) {
+          // z.gitEinschaltenAusgang = Liste, je „Einschalten“-Klick ein Eintrag: "zeit" = die Werkstatt reißt ihre Frist und nimmt zurück (504, Verlauf bleibt aus),
+          // "abbruch" = die Brücke gibt auf (status 0), "zeit-doch" = 504, aber der Verlauf ist inzwischen da, "zeit-anderer" = 504, und die Werkstatt hat einen anderen Vault offen
+          const aus = z.gitEinschaltenAusgang?.shift();
+          if (aus === "abbruch") return route.abort("failed");
+          if (aus === "zeit-doch") z.git = true;
+          if (aus === "zeit-anderer") { z.vault = "/Users/test/Anderer"; z.git = true; }
+          if (aus?.startsWith("zeit")) return json(504, { fehler: ZEIT_EINSCHALTEN });
+          z.git = !z.gitEinschaltenFehlt;
+        } else z.git = z.gitBeimOeffnen ?? true;
         return json(200, { pfad: body.pfad, git: z.git });
       case "/api/vaults/klonen":
         await warte(z.verzoegerung ?? 700);
@@ -313,6 +326,135 @@ test("Ordner öffnen ohne Git: „Ohne Verlauf weiter“ und Escape fragen nicht
   await knopf(page, "git-ohne").click();
   await deckend(schritt(page, "ki"));
   expect(aufgezeichnet(z, "/api/vaults/oeffnen")).toHaveLength(1);
+});
+
+// ---------------------------------------------------------------- UI-2: Zeitüberschreitung beim Einschalten des Versionsverlaufs
+// Der Ordner ist durch den ersten Schritt schon offen und aktiv: dass die Werkstatt „einen Vault hat, den die App noch nicht kennt“, sagt hier nichts.
+// Wie in der App meldet beiStandNeu darum true, sobald die Werkstatt einen Vault hat — im Git-Schritt darf das nie als Erfolg gelten.
+async function zeigeWieApp(page) {
+  await page.evaluate(async () => {
+    window.__fertig = null; window.__stand = 0;
+    const mod = await import("/willkommen.js");
+    await mod.zeigeWillkommen({ modus: "start", beiFertig: (a) => { window.__fertig = a; }, beiStandNeu: async (st) => { window.__stand++; return !!st.info?.vault; } });
+  });
+}
+// Ordner wählen (App-Simulation) bis zur Rückfrage „Versionsverlauf einschalten?“
+async function bisGitSchritt(page) {
+  await deckend(weg(page, "ordner"));
+  await weg(page, "ordner").click();
+  await deckend(schritt(page, "git"));
+}
+const ALT = "/Users/test/Alt";
+const fehlerBox = (page) => page.locator("#willkommen-host .w-fehlerbox");
+
+test("UI-2: „Einschalten“ läuft in die Frist der Werkstatt (504): kein Erfolg, eigener Satz, Schritt bleibt, Wiederholen geht", async ({ page }) => {
+  const z = await rahmen(page, { gitBeimOeffnen: false, gitEinschaltenAusgang: ["zeit"] });
+  await appKanal(page, { pfad: ALT });
+  await oeffneSeite(page);
+  await zeigeWieApp(page);
+  await bisGitSchritt(page);
+  await knopf(page, "git-einschalten").click();
+  await expect(fehlerBox(page)).toHaveText(GIT_ZEIT);
+  await expect(fehlerBox(page)).not.toContainText("nicht in der Liste eingetragen"); // der Satz der Werkstatt wäre falsch: der Ordner ist ja eingetragen
+  await expect(fehlerBox(page)).toHaveAttribute("role", "alert");
+  // kein Erfolg: der Schritt bleibt, der KI-Schritt kommt nicht, die App hört nicht „fertig“
+  await expect(schritt(page, "git")).toBeVisible();
+  await expect(schritt(page, "ki")).toHaveCount(0);
+  expect(await page.evaluate(() => window.__fertig)).toBeNull();
+  expect(aufgezeichnet(z, "/api/info").length).toBeGreaterThan(1); // der Stand wurde neu gelesen: erst die Info sagt, ob der Verlauf da ist
+  // nichts bleibt gesperrt: noch einmal versuchen geht, diesmal klappt es
+  await expect(knopf(page, "git-einschalten")).toBeEnabled();
+  await expect(knopf(page, "git-ohne")).toBeEnabled();
+  await knopf(page, "git-einschalten").click();
+  await deckend(schritt(page, "ki"));
+  expect(aufgezeichnet(z, "/api/vaults/oeffnen").map((a) => a.body)).toEqual([{ pfad: ALT }, { pfad: ALT, gitEinschalten: true }, { pfad: ALT, gitEinschalten: true }]);
+  expect(await page.evaluate(() => window.__fertig)).toBeNull(); // fertig wird erst nach dem KI-Schritt gemeldet
+});
+
+test("UI-2: reißt die Brücke beim Einschalten ab (status 0) und der Verlauf ist aus, ist auch das kein Erfolg; „Ohne Verlauf weiter“ geht", async ({ page }) => {
+  await rahmen(page, { gitBeimOeffnen: false, gitEinschaltenAusgang: ["abbruch"] });
+  await appKanal(page, { pfad: ALT });
+  await oeffneSeite(page);
+  await zeigeWieApp(page);
+  await bisGitSchritt(page);
+  await knopf(page, "git-einschalten").click();
+  await expect(fehlerBox(page)).toHaveText(GIT_ZEIT);
+  await expect(schritt(page, "git")).toBeVisible();
+  await expect(schritt(page, "ki")).toHaveCount(0);
+  expect(await page.evaluate(() => window.__fertig)).toBeNull();
+  await knopf(page, "git-ohne").click(); // bewusst ohne Verlauf: das war immer erlaubt
+  await deckend(schritt(page, "ki"));
+});
+
+test("UI-2: kam die Antwort zu spät, der Verlauf ist aber da: die Karte macht weiter wie nach Erfolg", async ({ page }) => {
+  await rahmen(page, { gitBeimOeffnen: false, gitEinschaltenAusgang: ["zeit-doch"] });
+  await appKanal(page, { pfad: ALT });
+  await oeffneSeite(page);
+  await zeigeWieApp(page);
+  await bisGitSchritt(page);
+  await knopf(page, "git-einschalten").click();
+  await deckend(schritt(page, "ki"));
+  await expect(fehlerBox(page)).toHaveCount(0);
+});
+
+test("UI-2: hat die Werkstatt inzwischen einen ANDEREN Vault (mit Verlauf) offen, zählt das nicht für diesen Ordner", async ({ page }) => {
+  await rahmen(page, { gitBeimOeffnen: false, gitEinschaltenAusgang: ["zeit-anderer"] });
+  await appKanal(page, { pfad: ALT });
+  await oeffneSeite(page);
+  await zeigeWieApp(page);
+  await bisGitSchritt(page);
+  await knopf(page, "git-einschalten").click();
+  await expect(fehlerBox(page)).toHaveText(GIT_ZEIT);
+  await expect(schritt(page, "ki")).toHaveCount(0);
+  expect(await page.evaluate(() => window.__fertig)).toBeNull();
+});
+
+test("UI-2: antwortet die Werkstatt danach gar nicht mehr: status 0 bleibt die Verbindungsmeldung, 504 der Zeit-Satz", async ({ page }) => {
+  const z = await rahmen(page, { gitBeimOeffnen: false, gitEinschaltenAusgang: ["abbruch", "zeit"] });
+  await appKanal(page, { pfad: ALT });
+  await oeffneSeite(page);
+  await zeigeWieApp(page);
+  await bisGitSchritt(page);
+  z.infoAbbruch = true; // ab jetzt antwortet auch /api/info nicht mehr
+  await knopf(page, "git-einschalten").click();
+  await expect(fehlerBox(page)).toHaveText("Die Verbindung zum Hintergrunddienst ist abgebrochen. Starte die App neu, falls das bleibt.");
+  await expect(knopf(page, "git-einschalten")).toBeEnabled();
+  await knopf(page, "git-einschalten").click();
+  await expect(fehlerBox(page)).toHaveText(GIT_ZEIT); // nicht der Satz der Werkstatt („nicht in der Liste eingetragen“)
+  await expect(schritt(page, "ki")).toHaveCount(0);
+  expect(await page.evaluate(() => window.__fertig)).toBeNull();
+});
+
+// ---------------------------------------------------------------- UI-3: das Schließen nennt die laufende Arbeit beim Namen
+test("UI-3: Ordner öffnen meldet „oeffnen“ (nicht den Abgleich) und gibt danach wieder frei", async ({ page }) => {
+  await rahmen(page, { oeffnenVerzoegerung: 900 });
+  await appKanal(page, { pfad: ALT });
+  await oeffneSeite(page);
+  await zeigeWillkommen(page);
+  const arbeiten = () => page.evaluate(async () => (await import("/hilfen.js")).laufendeArbeiten());
+  await deckend(weg(page, "ordner"));
+  await weg(page, "ordner").click();
+  await expect(page.locator("#willkommen-host .w-arbeit")).toBeVisible();
+  expect(await arbeiten()).toEqual(["oeffnen"]);
+  expect(await page.evaluate(async () => (await import("/texte.js")).T.laeuft.oeffnen)).toBe("Das Öffnen des Ordners läuft noch. Wenn du jetzt schließt, wird es abgebrochen.");
+  await deckend(schritt(page, "ki"));
+  expect(await arbeiten()).toEqual([]);
+});
+
+test("UI-3: Vault anlegen meldet „neu“, nicht den Abgleich", async ({ page }) => {
+  await rahmen(page, { verzoegerung: 900 });
+  await oeffneSeite(page);
+  await zeigeWillkommen(page);
+  await deckend(weg(page, "leer"));
+  await weg(page, "leer").click();
+  await deckend(schritt(page, "name"));
+  await page.locator('[data-feld="name"]').fill("Privat");
+  await knopf(page, "anlegen").click();
+  await expect(page.locator("#willkommen-host .w-arbeit")).toBeVisible();
+  expect(await page.evaluate(async () => (await import("/hilfen.js")).laufendeArbeiten())).toEqual(["neu"]);
+  expect(await page.evaluate(async () => (await import("/texte.js")).T.laeuft.neu)).toBe("Das Anlegen des Vaults läuft noch. Wenn du jetzt schließt, wird es abgebrochen.");
+  await deckend(schritt(page, "ki"));
+  expect(await page.evaluate(async () => (await import("/hilfen.js")).laufendeArbeiten())).toEqual([]);
 });
 
 test("Ordner öffnen: Abbruch im Ordner-Dialog (null) bleibt still, Fehler erscheint in der Karte", async ({ page }) => {

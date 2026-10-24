@@ -65,6 +65,8 @@ export const TW = {
     ohne: "Ohne Verlauf weiter",
     arbeit: "Der Versionsverlauf wird eingeschaltet …",
     fehlgeschlagen: "Der Versionsverlauf ließ sich nicht einschalten. Du kannst trotzdem ohne Verlauf weiterarbeiten.",
+    // Zeitüberschreitung beim Einschalten: der Ordner ist durch den ersten Schritt schon geöffnet, nur der Verlauf fehlt
+    zeit: "Das Einschalten des Versionsverlaufs hat zu lange gedauert. Dein Ordner ist geöffnet, der Verlauf aber nicht eingeschaltet. Versuche es noch einmal oder arbeite ohne Verlauf weiter.",
   },
 
   pfad: {

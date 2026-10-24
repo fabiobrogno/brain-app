@@ -580,9 +580,22 @@ async function starteKarte({ modus = "start", beiFertig, beiAbbruch, beiStandNeu
         // Eingeschaltet werden sollte es, ist es aber nicht (git:false): nie still zum nächsten Schritt, sondern sagen, was los ist
         if (r?.git === false) { zeigeFehler(s, TW.git.fehlgeschlagen); return; }
         await nachVault(pfad);
-      } catch (e) { await behandleFehler(s, e); }
+      } catch (e) { await behandleGitFehler(s, e, pfad); }
     }, "oeffnen"));
     return s;
+  }
+
+  // Unklarer Ausgang beim Einschalten (die Brücke hat aufgegeben, oder die Werkstatt hat ihre Frist gerissen und zurückgenommen).
+  // Der Ordner ist durch den ersten Schritt schon offen und aktiv: dass die Werkstatt „einen anderen Vault als die App“ hat, sagt hier
+  // also nichts (die App kennt ihn noch nicht) und darf nie als Erfolg gelten. Entscheidend ist, ob jetzt wirklich ein Verlauf da ist.
+  async function behandleGitFehler(s, e, pfad) {
+    if (!API.ausgangUnklar(e)) return behandleFehler(s, e);
+    const stand = await API.ladeStandNeu();
+    // Die Werkstatt antwortet nicht mehr: bei status 0 bleibt es bei der Verbindungsmeldung; ihr 504-Satz spräche von „nicht eingetragen“ (falsch: der Ordner ist es)
+    if (!stand.ok) return zeigeFehler(s, e?.status === 504 ? TW.git.zeit : e);
+    const inzwischenEin = stand.info?.git === true && (!z.pfad || stand.info.vault === z.pfad);
+    if (!inzwischenEin) return zeigeFehler(s, TW.git.zeit); // der Schritt bleibt stehen, „Ohne Verlauf weiter“ geht weiter
+    try { await nachVault(pfad); } catch (x) { zeigeFehler(s, x); }
   }
 
   // ------------------------------------------------------------ Schritt: Arbeit / Fehler (nur Ordner-Flow)
