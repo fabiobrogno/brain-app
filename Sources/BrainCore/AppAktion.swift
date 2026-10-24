@@ -13,8 +13,8 @@ public enum AppAktion: Equatable, Sendable {
     /// Das Backend hat den aktiven Vault gewechselt (steht in vaults.json): Menüleiste auffrischen, Übersicht schließen.
     case vaultGewechselt
     /// Das Backend hat das Vertrauen in den Vault geändert (`POST /api/kit/vertrauen`, Studio-v2-Spec §8): die App prüft neu und
-    /// aktualisiert Status und Übersicht. Nur das Studio darf das melden — die Übersicht ist Kit-Code aus dem Vault und könnte
-    /// sich sonst selbst „neu prüfen“ lassen (die Prüfung ändert nichts, aber sie startet Node).
+    /// aktualisiert Status und Übersicht. Nur das Studio darf das melden — die Übersicht ist Kit-Code aus dem Vault und soll
+    /// keine Prüfungen oder Status-Läufe anstoßen können.
     case vertrauenGeaendert
     /// Fenstertitel des Studios (nil = Standardtitel).
     case titel(String?)
@@ -142,7 +142,7 @@ public enum AppAktion: Equatable, Sendable {
 
     /// Symlinks auflösen, auch wenn die Datei selbst (noch) fehlt: der tiefste vorhandene Ordner wird aufgelöst,
     /// der Rest angehängt (`resolvingSymlinksInPath` allein löst nicht vorhandene Pfade nicht zuverlässig auf).
-    private static func aufgeloest(_ url: URL) -> URL {
+    static func aufgeloest(_ url: URL) -> URL {
         var vorhanden = url.standardizedFileURL
         var rest: [String] = []
         while !FileManager.default.fileExists(atPath: vorhanden.path), vorhanden.path != "/" {

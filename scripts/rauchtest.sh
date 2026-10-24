@@ -1,23 +1,45 @@
 #!/bin/bash
-# Rauchtest (App-Spec §13.1/§13.3, Studio-Spec §11, Studio-v2-Spec §2): startet build/Brain.app dreimal.
-#  A) mit --vault auf ein Wegwerf-Brain mit Leerzeichen im Namen (nie das Live-Brain): Status gelesen, Studio-Fenster
-#     erscheint und ist bereit, Werkstatt-Prozess läuft, KEIN Netzwerk-Port, mit Kit-Worktree zusätzlich die Übersicht
-#     (Kit-Brücke); Fenster zu → Brücken beendet; App beenden → keine Node-Prozesse der App übrig.
+# Rauchtest (App-Spec §13.1/§13.3, Studio-Spec §11, Studio-v2-Spec §2/§8): startet eine Kopie von build/Brain.app (mit eigener
+# Bundle-ID, damit die echte App unberührt bleibt) viermal.
+#  A) mit --vault auf ein Wegwerf-Brain mit Leerzeichen im Namen (nie das Live-Brain) UND mit Freigabe (Vertrauen) im
+#     Wegwerf-Support-Ordner: Status gelesen, Studio-Fenster erscheint und ist bereit, Werkstatt-Prozess läuft, KEIN Netzwerk-Port,
+#     mit Kit-Worktree zusätzlich die Übersicht (Kit-Brücke); Fenster zu → Brücken beendet; App beenden → keine Node-Prozesse der
+#     App übrig. Fehlt die Vertrauensprüfung (werkstatt/vertrauen-pruefen.mjs) noch, läuft A ohne Freigabe: dann gilt „Kit nicht
+#     erlaubt“, die Übersicht wird abgelehnt, und der Freigabe-Teil steht als `SKIP: CLI fehlt` im Ergebnis (nicht still bestanden).
 #  B) OHNE --vault mit leerem Support-Ordner: das Studio öffnet trotzdem („Willkommen“), die Werkstatt läuft ohne
 #     Vault-Argument, es erscheint kein Einrichtungsdialog.
-#  C) OHNE --vault, aber mit vaults.json im Support-Ordner: die App liest den aktiven Vault daraus (Status) und startet
-#     die Werkstatt trotzdem ohne Vault-Argument (die Werkstatt liest vaults.json selbst); beendet wird bei offenem Studio.
+#  C) OHNE --vault, aber mit vaults.json im Support-Ordner (und Freigabe): die App liest den aktiven Vault daraus (Status) und
+#     startet die Werkstatt trotzdem ohne Vault-Argument (die Werkstatt liest vaults.json selbst); beendet wird bei offenem Studio.
+#  D) OHNE Freigabe mit einem Marken-Kit (brain.mjs und bruecke.mjs schreiben eine Marke, falls sie je laufen): „Kit nicht erlaubt“,
+#     Übersicht abgelehnt, KEINE Marke — nichts aus dem Vault läuft ohne Vertrauen. Gilt auch, wenn die CLI fehlt.
+# Die Freigabe erteilt `vertrauen-pruefen.mjs --erlauben <vault>` (nur mit BRAIN_TESTMODUS=1) im Wegwerf-Support-Ordner.
+# Keine Spuren (k11): am Ende steht unter der Test-Bundle-ID weder ein gemerkter Fensterrahmen noch ein Ordner in ~/Library/WebKit.
 # Port-Check (A): App-PID, Kinder und alle NEU hinzugekommenen com.apple.WebKit.*-Prozesse (XPC-Dienste, keine Kinder).
+# Umgebung (optional): BRAIN_TEST_APP (andere .app), BRAIN_TEST_KIT (Kit-Worktree), BRAIN_RAUCHTEST_PHASEN (Standard "A B C D"),
+# BRAIN_RAUCHTEST_STRENG=1 (Übersprungenes zählt als Fehler).
 set -euo pipefail
 W="$(cd "$(dirname "$0")/.." && pwd)"
-APP="${BRAIN_TEST_APP:-$W/build/Brain.app}"
+ORIGINAL="${BRAIN_TEST_APP:-$W/build/Brain.app}"
 KIT="${BRAIN_TEST_KIT:-}"
 if [ -z "$KIT" ]; then
   for k in "$HOME/brain-kit-v0.6" "$HOME/brain-kit-v0.9-integ"; do [ -f "$k/.tools/ansicht/bruecke.mjs" ] && { KIT="$k"; break; }; done
 fi
-[ -x "$APP/Contents/MacOS/BrainApp" ] || { echo "FAIL: zuerst bash scripts/baue-app.sh"; exit 1; }
-[ -f "$APP/Contents/Resources/werkstatt/werkstatt.mjs" ] || { echo "FAIL: werkstatt.mjs fehlt im Paket"; exit 1; }
+[ -x "$ORIGINAL/Contents/MacOS/BrainApp" ] || { echo "FAIL: zuerst bash scripts/baue-app.sh"; exit 1; }
+[ -f "$ORIGINAL/Contents/Resources/werkstatt/werkstatt.mjs" ] || { echo "FAIL: werkstatt.mjs fehlt im Paket"; exit 1; }
 [ -n "$KIT" ] && [ -f "$KIT/.tools/brain.mjs" ] || { echo "FAIL: Kit-Worktree fehlt (BRAIN_TEST_KIT setzen)"; exit 1; }
+# Eigene Kopie mit eigener Bundle-ID: Die Einstellungen und WebKit-Daten der installierten App bleiben unberührt, und ein
+# Neubau von build/Brain.app während des Laufs stört nicht.
+ARBEIT="$(mktemp -d)"
+APP="$ARBEIT/Brain.app"
+KENNUNG="io.github.fbrogno.brain.rauchtest.$$"
+cp -R "$ORIGINAL" "$APP"
+/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $KENNUNG" "$APP/Contents/Info.plist"
+codesign --force --sign - "$APP" 2>/dev/null
+aufraeumen() {
+  defaults delete "$KENNUNG" 2>/dev/null || true
+  rm -rf "$HOME/Library/WebKit/$KENNUNG" "$HOME/Library/Caches/$KENNUNG" "$ARBEIT" 2>/dev/null || true
+}
+trap aufraeumen EXIT
 BASIS="$(mktemp -d)"
 VAULT="$BASIS/Test Brain"
 mkdir -p "$VAULT"
@@ -25,10 +47,14 @@ cp -R "$KIT/.tools/tests/fixture/." "$VAULT/"
 ln -s "$KIT/.tools" "$VAULT/.tools"
 PID=""
 LOG=""
+CLI="$APP/Contents/Resources/werkstatt/vertrauen-pruefen.mjs"
+RNODE="$APP/Contents/Resources/node-runtime/bin/node"
+UEBERSPRUNGEN=()
 webkit() { pgrep -f "com.apple.WebKit" | sort || true; }
 warte() { for _ in $(seq 1 "$2"); do grep -Eq "$1" "$LOG" 2>/dev/null && return 0; sleep 0.25; done; return 1; }
 fehl() { echo "FAIL: $1"; tail -20 "$LOG" 2>/dev/null || true; [ -n "$PID" ] && kill "$PID" 2>/dev/null || true; exit 1; }
 lauf() { pgrep -P "$PID" -f "$1" >/dev/null; }
+ueberspringe() { echo "SKIP: $1"; UEBERSPRUNGEN+=("$1"); }
 # Kommandozeile der Werkstatt endet auf werkstatt.mjs, wenn KEIN Vault-Argument übergeben wurde.
 werkstatt_ohne_argument() {
   local wk args
@@ -43,19 +69,42 @@ nichts_uebrig() {
   sleep 2
   if pgrep -f "$APP/Contents/Resources/(werkstatt|node-runtime)|$1" >/dev/null; then fehl "Nach dem Beenden laufen noch Prozesse der App"; fi
 }
+# Gibt es die Vertrauensprüfung (die CLI entsteht mit dem Backend)? Ohne sie gibt es keine Freigabe — und es gilt „nicht erlaubt“.
+cli_da() { [ -f "$CLI" ] && [ -x "$RNODE" ]; }
+sauber() { env -i PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" HOME="$HOME" "$@"; }
+# Freigabe wie der Nutzer sie erteilt — nur in den Wegwerf-Support-Ordner, nie in den echten (BRAIN_TESTMODUS=1 schaltet --erlauben frei).
+freigabe_erteilen() { # <support> <vault>
+  local antwort
+  sauber BRAIN_TESTMODUS=1 BRAIN_APP_SUPPORT="$1" "$RNODE" "$CLI" --erlauben "$2" >/dev/null 2>&1 || fehl "Freigabe (vertrauen-pruefen.mjs --erlauben) ist gescheitert"
+  antwort="$(sauber BRAIN_APP_SUPPORT="$1" "$RNODE" "$CLI" "$2" 2>/dev/null || true)"
+  [ "$antwort" = '{"erlaubt":true}' ] || fehl "Nach --erlauben antwortet die Prüfung nicht {\"erlaubt\":true}, sondern: ${antwort:-nichts}"
+}
 
-# ---------- A) mit --vault ----------
+# ---------- A) mit --vault, mit Freigabe ----------
 phase_a() {
   export BRAIN_APP_SUPPORT="$BASIS/support"
+  mkdir -p "$BRAIN_APP_SUPPORT"
   LOG="$BRAIN_APP_SUPPORT/logs/app.log"
+  local frei=0
+  if cli_da; then freigabe_erteilen "$BRAIN_APP_SUPPORT" "$VAULT"; frei=1; fi
   VORHER="$(webkit)"
   # Übersicht (Kit-Brücke) nur mit --test-fenster; das Studio öffnet beim Start von selbst.
   "$APP/Contents/MacOS/BrainApp" --vault "$VAULT" --test-fenster --test-fenster-schliessen-nach 40 --test-beenden-nach 60 &
   PID=$!
-  warte "status (ok|hinweis|problem)" 80 || fehl "Status wurde nicht gelesen"
+  if [ "$frei" = 1 ]; then
+    warte "status (ok|hinweis|problem)" 80 || fehl "Status wurde nicht gelesen"
+  else
+    warte "status kit-nicht-erlaubt" 80 || fehl "Ohne Freigabe fehlt „Kit nicht erlaubt“ im Log"
+    ueberspringe "A: CLI fehlt ($CLI) — Status lesen, Übersicht und Kit-Brücke mit Freigabe nicht geprüft; geprüft: ohne Freigabe gilt „Kit nicht erlaubt“"
+  fi
   warte "fenster-auf studio" 80 || fehl "Studio-Fenster ist nicht erschienen"
   warte "fenster-bereit studio" 120 || fehl "Studio wurde nicht bereit"
-  warte "fenster-bereit uebersicht" 120 || fehl "Übersicht wurde nicht bereit"
+  if [ "$frei" = 1 ]; then
+    warte "fenster-bereit uebersicht" 120 || fehl "Übersicht wurde nicht bereit"
+  else
+    warte "uebersicht-abgelehnt" 80 || fehl "Ohne Freigabe wurde die Übersicht nicht abgelehnt"
+    if grep -q "fenster-auf uebersicht" "$LOG"; then fehl "Ohne Freigabe hat sich die Übersicht geöffnet"; fi
+  fi
   KINDER="$(pgrep -P "$PID" | paste -sd, - || true)"
   NEUWK="$(comm -13 <(echo "$VORHER") <(webkit) | paste -sd, - || true)"
   ALLE="$PID${KINDER:+,$KINDER}${NEUWK:+,$NEUWK}"
@@ -67,16 +116,20 @@ phase_a() {
   if [ -n "$AUSSEN" ]; then echo "$AUSSEN"; fehl "Verbindung nach außen"; fi
   if [ -n "$(echo "$VERB" | awk 'NR>1')" ]; then echo "HINWEIS: lokale/unbound Sockets ohne LISTEN:"; echo "$VERB"; else echo "Port-Check: keine Netzwerk-Sockets"; fi
   lauf "werkstatt.mjs" || fehl "Werkstatt läuft nicht, obwohl das Studio offen ist"
-  lauf "bruecke.mjs" || fehl "Kit-Brücke läuft nicht, obwohl die Übersicht offen ist"
+  if [ "$frei" = 1 ]; then
+    lauf "bruecke.mjs" || fehl "Kit-Brücke läuft nicht, obwohl die Übersicht offen ist"
+  elif lauf "bruecke.mjs"; then
+    fehl "Ohne Freigabe läuft die Kit-Brücke"
+  fi
   warte "fenster-zu studio" 200 || fehl "Studio wurde nicht geschlossen"
-  warte "fenster-zu uebersicht" 40 || fehl "Übersicht wurde nicht geschlossen"
+  if [ "$frei" = 1 ]; then warte "fenster-zu uebersicht" 40 || fehl "Übersicht wurde nicht geschlossen"; fi
   sleep 3
   if lauf "werkstatt.mjs"; then fehl "Werkstatt läuft nach dem Schließen weiter"; fi
   if lauf "bruecke.mjs"; then fehl "Kit-Brücke läuft nach dem Schließen weiter"; fi
   # Dock-Klick ersetzt: App läuft nach „Fenster zu“ weiter, Beenden räumt auf
   kill -0 "$PID" 2>/dev/null || fehl "App hat sich mit dem letzten Fenster beendet"
   nichts_uebrig "$BASIS"
-  echo "OK A: mit --vault"
+  if [ "$frei" = 1 ]; then echo "OK A: mit --vault, mit Freigabe"; else echo "OK A: mit --vault, ohne Freigabe (Freigabe-Teil übersprungen)"; fi
 }
 
 # ---------- B) ohne --vault, leerer Support-Ordner ----------
@@ -103,21 +156,88 @@ phase_c() {
   mkdir -p "$BRAIN_APP_SUPPORT"
   printf '{"vaults":[{"name":"Test Brain","pfad":"%s","farbe":"#3b82f6"}],"aktiv":"%s"}\n' "$VAULT" "$VAULT" > "$BRAIN_APP_SUPPORT/vaults.json"
   LOG="$BRAIN_APP_SUPPORT/logs/app.log"
+  local frei=0
+  if cli_da; then freigabe_erteilen "$BRAIN_APP_SUPPORT" "$VAULT"; frei=1; fi
   # Kein --test-fenster-schliessen-nach: Die App wird bei OFFENEM Studio beendet (der ⌘Q-Weg: die Oberfläche sichert zuerst).
   "$APP/Contents/MacOS/BrainApp" --test-beenden-nach 22 &
   PID=$!
   warte "^[^ ]+ vault /.*Test Brain$" 80 || fehl "C: aktiver Vault wurde nicht aus vaults.json gelesen"
-  warte "status (ok|hinweis|problem)" 80 || fehl "C: Status des Vaults aus vaults.json wurde nicht gelesen"
+  if [ "$frei" = 1 ]; then
+    warte "status (ok|hinweis|problem)" 80 || fehl "C: Status des Vaults aus vaults.json wurde nicht gelesen"
+  else
+    warte "status kit-nicht-erlaubt" 80 || fehl "C: Ohne Freigabe fehlt „Kit nicht erlaubt“ im Log"
+    ueberspringe "C: CLI fehlt ($CLI) — Status des Vaults mit Freigabe nicht geprüft; geprüft: ohne Freigabe gilt „Kit nicht erlaubt“"
+  fi
   warte "fenster-bereit studio" 120 || fehl "C: Studio wurde nicht bereit"
   werkstatt_ohne_argument
   warte "fenster-zu studio" 200 || fehl "C: Beenden bei offenem Studio ist hängen geblieben"
   nichts_uebrig "$BASIS_C"
-  echo "OK C: Vault aus vaults.json (Status gelesen, Werkstatt ohne Vault-Argument, Beenden bei offenem Studio)"
+  echo "OK C: Vault aus vaults.json (Status gelesen oder „Kit nicht erlaubt“, Werkstatt ohne Vault-Argument, Beenden bei offenem Studio)"
 }
 
-# Phasen wählen: BRAIN_RAUCHTEST_PHASEN="A" (Standard: "A B C"), z. B. solange das Backend ohne Vault-Argument noch fehlt.
-PHASEN=" ${BRAIN_RAUCHTEST_PHASEN:-A B C} "
+# ---------- D) ohne Freigabe: nichts aus dem Vault läuft ----------
+phase_d() {
+  BASIS_D="$(mktemp -d)"
+  export BRAIN_APP_SUPPORT="$BASIS_D/support"
+  mkdir -p "$BRAIN_APP_SUPPORT"
+  LOG="$BRAIN_APP_SUPPORT/logs/app.log"
+  local vd="$BASIS_D/Marken Brain" marke="$BASIS_D/kit-marke.txt"
+  mkdir -p "$vd/.tools/ansicht"
+  # Marken-Kit: schreibt eine Zeile in RAUCHTEST_MARKE, sobald die App es startet (brain status oder Kit-Brücke)
+  cat > "$vd/.tools/brain.mjs" <<'JS'
+import { appendFileSync } from "node:fs";
+appendFileSync(process.env.RAUCHTEST_MARKE, "brain.mjs\n");
+console.log(JSON.stringify({ version: "marke", quellVault: false, zustand: "ok", meldungen: [], zahlen: { vorschlaege: 0, konflikte: 0, abgelaufen: 0, zuTun: 0 } }));
+JS
+  cat > "$vd/.tools/ansicht/bruecke.mjs" <<'JS'
+import { appendFileSync } from "node:fs";
+appendFileSync(process.env.RAUCHTEST_MARKE, "bruecke.mjs\n");
+process.stdout.write(JSON.stringify({ bereit: true, version: "marke" }) + "\n");
+process.stdin.resume();
+JS
+  # Kontrolle: Das Marken-Kit schreibt seine Marke wirklich (sonst bewiese „keine Marke“ nichts)
+  RAUCHTEST_MARKE="$BASIS_D/kontrolle.txt" "$RNODE" "$vd/.tools/brain.mjs" >/dev/null 2>&1 || fehl "D: Marken-Kit lässt sich nicht starten"
+  [ -s "$BASIS_D/kontrolle.txt" ] || fehl "D: Marken-Kit schreibt keine Marke"
+  export RAUCHTEST_MARKE="$marke"
+  "$APP/Contents/MacOS/BrainApp" --vault "$vd" --test-fenster --test-fenster-schliessen-nach 12 --test-beenden-nach 18 &
+  PID=$!
+  warte "status kit-nicht-erlaubt" 80 || fehl "D: Ohne Freigabe fehlt „Kit nicht erlaubt“ im Log"
+  warte "uebersicht-abgelehnt" 80 || fehl "D: Ohne Freigabe wurde die Übersicht nicht abgelehnt"
+  warte "fenster-bereit studio" 120 || fehl "D: Studio wurde nicht bereit"
+  warte "fenster-zu studio" 200 || fehl "D: Studio wurde nicht geschlossen"
+  nichts_uebrig "$BASIS_D"
+  unset RAUCHTEST_MARKE
+  if [ -e "$marke" ]; then cat "$marke"; fehl "D: Kit-Code ist ohne Freigabe gelaufen (Marke geschrieben)"; fi
+  if grep -q "fenster-auf uebersicht" "$LOG"; then fehl "D: Ohne Freigabe hat sich die Übersicht geöffnet"; fi
+  if grep -Eq " status (ok|hinweis|problem)$" "$LOG"; then fehl "D: Ohne Freigabe wurde ein Kit-Status gelesen"; fi
+  local grund
+  grund="$(sed -n 's/.* status kit-nicht-erlaubt \(.*\)$/\1/p' "$LOG" | head -1)"
+  echo "OK D: ohne Freigabe läuft nichts aus dem Vault (Grund im Log: ${grund:-?}; Marken-Kit unberührt, Übersicht abgelehnt)"
+}
+
+# Keine Spuren in der echten App (k11): unter der Test-Bundle-ID steht kein gemerkter Fensterrahmen, und WebKit hat nichts angelegt.
+keine_spuren() {
+  if defaults read "$KENNUNG" 2>/dev/null | grep -qE 'NSWindow Frame (StudioFenster|BrainFenster)'; then
+    defaults read "$KENNUNG" 2>/dev/null | grep -E 'NSWindow Frame' || true
+    fehl "Ein Testlauf hat einen Fensterrahmen in den Einstellungen gemerkt ($KENNUNG)"
+  fi
+  [ ! -e "$HOME/Library/WebKit/$KENNUNG" ] || fehl "Ein Testlauf hat WebKit-Daten angelegt (~/Library/WebKit/$KENNUNG)"
+  echo "OK Keine Spuren: kein gemerkter Fensterrahmen, keine WebKit-Daten ($KENNUNG)"
+}
+
+# Phasen wählen: BRAIN_RAUCHTEST_PHASEN="A" (Standard: "A B C D"), z. B. solange das Backend ohne Vault-Argument noch fehlt.
+PHASEN=" ${BRAIN_RAUCHTEST_PHASEN:-A B C D} "
 [[ "$PHASEN" == *" A "* ]] && phase_a
 [[ "$PHASEN" == *" B "* ]] && phase_b
 [[ "$PHASEN" == *" C "* ]] && phase_c
-echo "OK Rauchtest"
+[[ "$PHASEN" == *" D "* ]] && phase_d
+keine_spuren
+if [ "${#UEBERSPRUNGEN[@]}" -gt 0 ]; then
+  echo
+  echo "ÜBERSPRUNGEN (${#UEBERSPRUNGEN[@]}):"
+  for u in "${UEBERSPRUNGEN[@]}"; do echo "  - $u"; done
+  if [ "${BRAIN_RAUCHTEST_STRENG:-0}" = 1 ]; then echo "FAIL Rauchtest: Übersprungenes zählt im strengen Modus als Fehler"; exit 1; fi
+  echo "OK Rauchtest (NICHT vollständig: siehe ÜBERSPRUNGEN)"
+else
+  echo "OK Rauchtest"
+fi

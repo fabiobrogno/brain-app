@@ -54,7 +54,9 @@ BILDER=()
 JSFEHLER=""
 WARNUNGEN=""
 # Diagnosezeilen der Testschalter und der Oberfläche, die man sehen will, auch wenn das Bild fehlt.
-MUSTER=' (fenster-nicht-bereit|fenster-ladefehler|laufzeit-fehler|test-nicht-bereit|test-bild-fehler|test-skript-fehler|test-skript-uebersprungen|test-schalter-ignoriert|status-fehler)'
+# `status kit-nicht-erlaubt`: Der frische Support-Ordner jedes Laufs enthält keine Freigabe — das Kit des Vaults läuft dann nicht
+# (Studio-v2-Spec §8); das Studio selbst ist davon nicht betroffen.
+MUSTER=' (fenster-nicht-bereit|fenster-ladefehler|laufzeit-fehler|test-nicht-bereit|test-bild-fehler|test-skript-fehler|test-skript-uebersprungen|test-schalter-ignoriert|status-fehler|status kit-nicht-erlaubt|befehl-verworfen)'
 
 lauf() { # hell | dunkel
   local modus="$1" basis png log pid ende kinder k zeile

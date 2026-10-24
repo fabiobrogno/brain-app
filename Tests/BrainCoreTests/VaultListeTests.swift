@@ -87,15 +87,45 @@ private func schreibe(_ json: String, nach datei: URL) {
 
 // MARK: Lesen wie die Werkstatt (k5)
 
-@Test func vaultsAlsKeinArrayErgibtLeereListeOhneAktiven() {
+@Test func vaultsAlsKeinArrayErgibtLeereListeOhneAktiven() throws {
     let p = AppPfade(basis: tempOrdner("Support"))
     for vaults in [#""x""#, "5", "null", "{}", #"{"pfad":"/a"}"#, "true"] {
         schreibe(#"{"vaults":\#(vaults),"aktiv":"/p"}"#, nach: p.vaultListe)
         let liste = VaultListe.lade(p)
         #expect(liste?.vaults.isEmpty == true, "\(vaults)")
         #expect(liste?.aktiv == nil, "\(vaults)")
+        #expect(liste?.defekt == true, "\(vaults): wie in der Werkstatt „defekt“")
         #expect(VaultListe.aktiverVault(p) == nil, "\(vaults)")
     }
+    // „defekt“ wie „fehlt“: der Vault aus config.json gilt (die Werkstatt nimmt ihn ebenso), nie das `aktiv` der defekten Datei
+    try AppEinstellungen(vault: "/Users/x/Altes Brain").speichere(p)
+    schreibe(#"{"vaults":"x","aktiv":"/p"}"#, nach: p.vaultListe)
+    #expect(VaultListe.aktiverVault(p) == URL(fileURLWithPath: "/Users/x/Altes Brain", isDirectory: true))
+    // eine leere, aber gültige Liste ist NICHT defekt: dort bleibt config.json außen vor
+    for json in [#"{"vaults":[],"aktiv":null}"#, #"{"vaults":[]}"#, "{}"] {
+        schreibe(json, nach: p.vaultListe)
+        #expect(VaultListe.lade(p)?.defekt == false, "\(json)")
+        #expect(VaultListe.aktiverVault(p) == nil, "\(json)")
+    }
+}
+
+@Test func gleicherOrdnerUeberSymlinkOderSchreibweiseZaehltEinmal() throws {
+    let p = AppPfade(basis: tempOrdner("Support"))
+    let basis = tempOrdner("Orte")
+    let echt = basis.appendingPathComponent("Echter Vault", isDirectory: true)
+    try FileManager.default.createDirectory(at: echt, withIntermediateDirectories: true)
+    let link = basis.appendingPathComponent("Verweis", isDirectory: false)
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: echt)
+    // Verweis zuerst, dann der echte Ordner (auch in anderer Groß-/Kleinschreibung) und ein weiterer Ordner
+    let json = #"{"vaults":[{"name":"Per Verweis","pfad":"\#(link.path)"},{"name":"Echt","pfad":"\#(echt.path)"},{"pfad":"\#(echt.path.uppercased())"},{"name":"Anderer","pfad":"\#(basis.path)/Anderer"}],"aktiv":"\#(echt.path)"}"#
+    schreibe(json, nach: p.vaultListe)
+    let liste = try #require(VaultListe.lade(p))
+    // derselbe Ordner zählt einmal — der erste Eintrag bleibt
+    #expect(liste.vaults.map(\.name) == ["Per Verweis", "Anderer"])
+    #expect(liste.vaults.first?.pfad == link.path)
+    // `aktiv` meint den Ordner über seinen echten Pfad → es wird zum `pfad` des Eintrags (hier: der Verweis)
+    #expect(liste.aktiv == link.path)
+    #expect(liste.anzeigename(fuer: echt) == "Per Verweis")
 }
 
 @Test func aktivGiltNurWennEsEinemEintragEntspricht() {
@@ -154,4 +184,52 @@ private func schreibe(_ json: String, nach datei: URL) {
     #expect(liste.anzeigename(fuer: URL(fileURLWithPath: "/users/X/mein brain")) == "Privat")
     #expect(liste.anzeigename(fuer: URL(fileURLWithPath: "/Users/x/./Mein Brain/")) == "Privat")
     #expect(liste.anzeigename(fuer: URL(fileURLWithPath: "/Users/x/Mein Brain 2")) == "Mein Brain 2")
+}
+
+// MARK: Ortsregeln wie in der Werkstatt (pruefeRegeln)
+
+@Test func eintraegeAnUnzulaessigenOrtenZaehlenNicht() {
+    let p = AppPfade(basis: tempOrdner("Support"))
+    let home = URL(fileURLWithPath: "/Users/test", isDirectory: true)
+    let verboten = ["/", "/Users", "/Volumes", "/users", "/System/Library/x", "/usr", "/usr/local/Brain", "/private", "/private/var",
+                    "/var", "/opt/brain", "/Applications/Brain", "/bin", "/etc/x", "/Library/Caches/x", "/cores",
+                    "/Users/test", "/Users/test/Library/Foo", "/Users/test/Library", "/Users/test/Library/Application Support/Brain",
+                    "/x/.git/y", "/x/node_modules", "/x/Foo.app/y", "/Users/test/.versteckt/Brain", "/Users/test/Dokumente/.stille/Brain",
+                    p.basis.path, p.basis.path + "/unter"]
+    for pfad in verboten {
+        schreibe(#"{"vaults":[{"pfad":"\#(pfad)"}],"aktiv":"\#(pfad)"}"#, nach: p.vaultListe)
+        let liste = VaultListe.lade(p, home: home)
+        #expect(liste?.vaults.isEmpty == true, "\(pfad)")
+        #expect(liste?.aktiv == nil, "\(pfad): aktiv muss ein gültiger Eintrag sein")
+    }
+    let erlaubt = ["/Users/test/Dokumente/Brain", "/Users/test/Brain", "/Users/test/Library/Mobile Documents/com~apple~CloudDocs/Brain",
+                   "/Users/test/Library/CloudStorage/Dropbox/Brain", "/Volumes/Stick/Brain", "/Users/anderer/.config/Brain", "/a/Eins",
+                   "/var/folders/xy/T/Brain", "/Users/test/Brain.git2", "/Users/test/Applications/Brain"]
+    for pfad in erlaubt {
+        schreibe(#"{"vaults":[{"pfad":"\#(pfad)"}],"aktiv":"\#(pfad)"}"#, nach: p.vaultListe)
+        let liste = VaultListe.lade(p, home: home)
+        #expect(liste?.vaults.map(\.pfad) == [pfad], "\(pfad)")
+        #expect(liste?.aktiv == pfad, "\(pfad)")
+    }
+}
+
+@Test func ortsregelnGeltenAuchFuerDenAufgeloestenPfad() throws {
+    // Ein harmlos aussehender Verweis auf einen verbotenen Ort zählt nicht (Werkstatt: geschriebene UND aufgelöste Form)
+    let p = AppPfade(basis: tempOrdner("Support"))
+    let basis = tempOrdner("Orte")
+    let verweis = basis.appendingPathComponent("Mein Brain", isDirectory: false)
+    try FileManager.default.createSymbolicLink(at: verweis, withDestinationURL: URL(fileURLWithPath: "/usr/local", isDirectory: true))
+    let home = URL(fileURLWithPath: "/Users/test", isDirectory: true)
+    schreibe(#"{"vaults":[{"pfad":"\#(verweis.path)"}],"aktiv":"\#(verweis.path)"}"#, nach: p.vaultListe)
+    #expect(VaultListe.lade(p, home: home)?.vaults.isEmpty == true)
+    #expect(VaultListe.lade(p, home: home)?.aktiv == nil)
+}
+
+@Test func unzulaessigerEintragLaesstDieUebrigenUndDasAktiveUnberuehrt() {
+    let p = AppPfade(basis: tempOrdner("Support"))
+    let home = URL(fileURLWithPath: "/Users/test", isDirectory: true)
+    schreibe(#"{"vaults":[{"pfad":"/usr/local"},{"name":"Gut","pfad":"/Users/test/Brain"},{"pfad":"/Users/test"}],"aktiv":"/Users/test/Brain"}"#, nach: p.vaultListe)
+    let liste = try! #require(VaultListe.lade(p, home: home))
+    #expect(liste.vaults.map(\.pfad) == ["/Users/test/Brain"])
+    #expect(liste.aktiv == "/Users/test/Brain")
 }

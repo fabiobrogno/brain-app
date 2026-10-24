@@ -19,6 +19,11 @@ window.studio = { bereit: false, befehl: (n) => meld({ befehl: n }), vorSchliess
     e.titel = JSON.stringify(await A.postMessage({ aktion: "titel", wert: "Stub Vault" }));
     e.ungueltig = await A.postMessage({ aktion: "loeschen" }).then(() => "angenommen", (x) => "abgewiesen:" + x);
     e.ohneWert = await A.postMessage({ aktion: "extern" }).then(() => "angenommen", (x) => "abgewiesen:" + x);
+    // Ohne Vertrauen öffnet die Übersicht nicht (Studio-v2-Spec §8); dann gibt das Backend frei und meldet es der App.
+    e.ansichtOhneVertrauen = JSON.stringify(await A.postMessage({ aktion: "ansicht" }));
+    await meld({ gewaehreVertrauen: true });
+    e.vertrauenGeaendert = JSON.stringify(await A.postMessage({ aktion: "vertrauen-geaendert" }));
+    await new Promise((r) => setTimeout(r, 2000)); // die App liest Erlaubnis und Status im Hintergrund neu
     e.ansicht = JSON.stringify(await A.postMessage({ aktion: "ansicht" }));
     await meld({ schreibeVaults: true });
     e.gewechselt = JSON.stringify(await A.postMessage({ aktion: "vault-gewechselt" }));
@@ -41,7 +46,10 @@ rl.on("line", (z) => {
   const body = a.body ? JSON.parse(Buffer.from(a.body, "base64").toString()) : null;
   if (a.pfad === "/" || a.pfad === "/index.html") return sende({ id: a.id, status: 200, headers: { "Content-Type": "text/html; charset=utf-8" }, body: b64(SEITE) });
   if (a.pfad === "/api/stub") {
-    if (body?.schreibeVaults) {
+    if (body?.gewaehreVertrauen) {
+      // Wie das Backend nach „Vertrauen erlauben“: die Attrappen-CLI (vertrauen-pruefen.mjs) liest diese Datei
+      writeFileSync(`${SUPPORT}/stub-vertrauen`, "ja");
+    } else if (body?.schreibeVaults) {
       // Wie das Backend: vaults.json auf einen anderen aktiven Vault stellen
       const neu = process.env.STUB_NEUER_VAULT;
       writeFileSync(`${SUPPORT}/vaults.json`, JSON.stringify({ vaults: [{ name: "Zweiter Vault", pfad: neu }], aktiv: neu }));
