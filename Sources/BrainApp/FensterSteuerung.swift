@@ -198,8 +198,9 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
         navigation.beiFehler = { [weak self] grund in self?.log.schreibe("fenster-ladefehler \(self?.name ?? "") \(grund)") }
         web.navigationDelegate = navigation
 
-        var maske: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .resizable]
-        if oberflaeche == .studio { maske.insert(.fullSizeContentView) }
+        // Ohne fullSizeContentView: Die WebView fängt sonst alle Klicks in der Titelleiste ab (Fenster nicht
+        // verschiebbar) und die Ampel-Knöpfe lägen über der Seitenleiste.
+        let maske: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .resizable]
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800), styleMask: maske, backing: .buffered, defer: false)
         w.isReleasedWhenClosed = false
         w.contentView = web

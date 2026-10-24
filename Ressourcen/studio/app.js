@@ -687,6 +687,9 @@ window.addEventListener("beforeunload", () => { if (S.dirty) { clearTimeout(spei
 window.addEventListener("focus", () => { planeGitRefresh(); ladeBaum(); });
 // Schnittstelle für Menüs der App
 window.studio = { neu: oeffneNeu, merken: oeffneMerken, commit: oeffneCommit, info: umschalteInfo, palette: () => oeffnePalette(), sync, suche: fokusSuche };
+// Menübefehle der App (StudioBefehl in AppAktion.swift): window.studio.befehl("<name>")
+const MENUE_BEFEHLE = { neu: oeffneNeu, merken: oeffneMerken, infospalte: umschalteInfo };
+window.studio.befehl = (name) => { const f = MENUE_BEFEHLE[name]; if (f) f(); };
 
 // ======================================================= Start
 function zuletztMerken(p) { S.zuletzt = [p, ...S.zuletzt.filter((x) => x !== p)].slice(0, 12); speichereLokal("zuletzt", S.zuletzt); }
