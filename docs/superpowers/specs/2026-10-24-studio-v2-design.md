@@ -135,3 +135,42 @@ Was die Vergleichsseite unter „bei uns besser“ verspricht, gehört in die We
 | KI-Einstellungen | Keine API-Schlüssel in der App; „Mit Claude verbinden“ trägt MCP und Hooks selbst ein und lässt sich mit einem Klick zurücknehmen; KI-Flächen ganz abschaltbar | 4 |
 
 Dazu aus der Sichtprüfung mit echten Daten (24.10. abends): fest umbrochene Absätze fließend anzeigen (Datei bleibt gleich, aktiver Absatz roh), Eigenschaften-Spalte klappt bei schmalem Fenster von selbst ein, „Verweist auf“ (Links im Text) im Eigenschaften-Panel, Maschinen-Ordner/Vorlagen/Agenten-Anweisungen nicht in „Alle Notizen“.
+
+## 8. Vertrauen v2 (aus dem Opus-Review 24.10., K1/K2/W1)
+
+Grundsatz: Nichts aus einem Vault startet ein Programm, bevor der Nutzer diesem Vault vertraut hat – weder Kit-Code (`.tools`)
+noch Git-Hooks noch Git-Einstellungen, die Programme starten. Gilt für Werkstatt, MCP-Server und Swift gleich.
+
+**Merker** `<support>/vertrauen.json`: `{ "<realpath des Vaults>": { seit, ordner: "<dev>:<ino>:<birthtimeMs>", code: "<sha256>" } }`.
+- `ordner` bindet an genau diesen Ordner (gelöscht und neu geklont = neue Frage).
+- `code` = sha256 über alle Code-Dateien unter `.tools/` (Endungen mjs/js/cjs/ts/sh/py/rb/pl/bash/zsh oder Ausführbar-Bit; ohne
+  `node_modules`, ohne Dateien > 2 MB; Symlinks: Ziel-Text statt Inhalt) plus die Hook-Dateien, die Git ausführen würde
+  (`core.hooksPath` aus der lokalen Konfiguration, sonst `.git/hooks/*` ohne `.sample`). Sortierte relative Pfade, je Datei Pfad + Größe + sha256.
+  Geänderter Code (z. B. nach einem Abgleich) = neue Frage.
+- Einträge im alten Format (nur `seit`) gelten als ungültig (`geaendert: true`).
+- `klonen`, `neu` und `entfernen` löschen den Eintrag des Zielpfads.
+
+**Git ohne Vertrauen:** jeder Aufruf mit `-c core.fsmonitor=false -c protocol.ext.allow=never` (immer, auch mit Vertrauen), Diff/Log/Show mit
+`--no-ext-diff --no-textconv` (immer), Umgebung `GIT_EDITOR=:` und `GIT_SEQUENCE_EDITOR=:` (immer); ohne Vertrauen zusätzlich
+`-c core.hooksPath=/dev/null` und unser `GIT_SSH_COMMAND`. Enthält die lokale Konfiguration (mit `include.path`) einen Schlüssel, den wir
+nicht entschärfen können – `credential.helper`, `core.askPass`, `core.gitProxy`, `core.alternateRefsCommand`, `gpg.program`,
+`gpg.*.program`, `merge.*.driver`, `filter.*.clean|smudge|process`, `remote.*.uploadpack|receivepack`, `protocol.*.allow` (außer never) –,
+ist Git für diesen Vault **gesperrt**, bis er vertraut ist. Mit Vertrauen läuft Git mit der Konfiguration des Repos (Hooks wie gewohnt);
+`GIT_SSH_COMMAND` setzen wir dann nur, wenn weder global noch lokal `core.sshCommand` steht.
+
+**Schnittstelle**
+- `GET /api/info` → zusätzlich `vertrauen: { erlaubt, noetig, geaendert, gitGesperrt, gruende: [{ art: "kit"|"hooks"|"git", text }] }`
+  (ohne Vault `null`); `kit.vertraut` === `vertrauen.erlaubt`. `mcpBefehl` ohne Vault-Pfad (der MCP folgt dem aktiven Vault).
+- `POST /api/kit/vertrauen { erlauben }` → `{ kit, vertrauen }`.
+- Git gesperrt: `GET /api/git/status` → 200 `{ repo: true, gesperrt: true, grund }`; übrige Git-Routen → 409 `{ fehler, gitGesperrt: true }`;
+  der Notiz-Index nutzt dann mtime statt Git-Zeiten.
+- `node Ressourcen/werkstatt/vertrauen-pruefen.mjs <vault>` → stdout `{"erlaubt":true|false}`, Exit 0 (für Swift; liest denselben Merker
+  mit derselben Logik, startet nichts aus dem Vault). Swift startet `brain.mjs status` und die Übersicht nur bei `erlaubt: true`.
+- Aktion `vertrauen-geaendert` (Oberfläche → Swift, nur Studio) nach erfolgreichem `POST /api/kit/vertrauen`: Swift prüft neu,
+  aktualisiert Status und Übersicht. `ansicht` ohne Vertrauen → `{ ok: false, grund: "nicht-vertraut" }`.
+- `POST /api/mcp/verbinden`: Eintrag ohne Vault-Pfad; gibt es schon einen Server `brain` mit anderem Befehl → 409
+  `{ fehler, art: "anders" }` (ohne Details des fremden Eintrags); mit `{ umstellen: true }` wird er ersetzt. `/api/probe` fragt über den
+  MCP-Server selbst (stdio, `brain_suchen`), nicht direkt im Vault.
+- Gesamtfristen in Node je Route (jeder Git-Aufruf bekommt nur das Restbudget): `git/remote` 120 s, `git/commit` 75 s,
+  `vaults/oeffnen`/`vaults/neu` 300 s, `vaults/klonen` 300 s, `mcp/verbinden` 25 s. Swift: oeffnen/neu/klonen 330 s, git/remote 150 s,
+  git/commit 90 s, sync 400 s, übrige git 90 s, Rest 30 s. Läuft die Frist ab, wird zurückgenommen (kein Vault-Wechsel, kein halbes Remote).
