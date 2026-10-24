@@ -2,6 +2,13 @@
 import { h } from "./hilfen.js";
 import { symbol } from "./symbole.js";
 
+// Vault-Farbe (aus der Vault-Liste, also Daten): nur #RRGGBB oder var(--akzent), direkt als CSS-Variable gesetzt
+const vaultFarbe = (farbe) => {
+  const el = h("span", { klasse: "m-farbe" });
+  if (/^#[0-9a-fA-F]{6}$/.test(String(farbe))) el.style.setProperty("--vault-farbe", farbe);
+  return el;
+};
+
 let offen = null;
 export const menueOffen = () => !!offen;
 export function schliesseMenue() { offen?.zu(); }
@@ -24,7 +31,7 @@ export function oeffneMenue(anker, eintraege, { rechts = false, oben = false, br
     }
     const b = h("button", { type: "button", klasse: "m-eintrag" + (e.gefahr ? " gefahr" : ""), role: "menuitem", "data-menue": e.id || e.name, "data-aktiv": "false",
       aufClick: () => { zu(); e.tun?.(e.daten); } },
-      e.farbe ? h("span", { klasse: "m-farbe", style: `--vault-farbe:${e.farbe}` }) : e.symbol ? symbol(e.symbol, 16) : null,
+      e.farbe ? vaultFarbe(e.farbe) : e.symbol ? symbol(e.symbol, 16) : null,
       h("span", { klasse: "m-name", text: e.name }),
       e.sub ? h("span", { klasse: "m-sub", text: e.sub }) : null,
       e.haken !== undefined ? h("span", { klasse: "m-haken" }, e.haken ? symbol("haken", 14) : null) : null);

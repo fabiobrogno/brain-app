@@ -54,7 +54,8 @@ async function rahmen(page, o = {}) {
     const json = (status, wert) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(wert) });
     const warte = (ms) => new Promise((ok) => setTimeout(ok, ms));
     switch (pfad) {
-      case "/api/info": return json(200, z.vault
+      case "/api/info": if (z.infoAbbruch) return route.abort("failed");
+        return json(200, z.vault
         ? { vault: z.vault, name: z.vault.split("/").pop(), appVersion: "0.2.0", git: z.git, kit: z.kit ?? { vorhanden: false, vertraut: false }, mcpBefehl: BEFEHL }
         : { vault: null, name: null, appVersion: "0.2.0", git: false, kit: null, mcpBefehl: null });
       case "/api/vaults/neu":
@@ -66,10 +67,13 @@ async function rahmen(page, o = {}) {
         await warte(100);
         if (z.oeffnenFehler) return json(z.oeffnenFehler.status, { fehler: z.oeffnenFehler.fehler });
         z.vault = body.pfad;
-        if (body.git) z.git = true; else z.git = z.gitBeimOeffnen ?? true;
+        // Spec §5a: der Schlüssel heißt gitEinschalten; z.gitEinschaltenFehlt = Werkstatt schaltet nicht ein und meldet git:false
+        if (body.gitEinschalten) z.git = !z.gitEinschaltenFehlt; else z.git = z.gitBeimOeffnen ?? true;
         return json(200, { pfad: body.pfad, git: z.git });
       case "/api/vaults/klonen":
         await warte(z.verzoegerung ?? 700);
+        // Zeitüberschreitung der Brücke: die Anfrage reißt ab (status 0). „trotzdem“ = die Werkstatt hat den Vault inzwischen doch geöffnet
+        if (z.klonenAbbruch) { const m = z.klonenAbbruch; z.klonenAbbruch = null; if (m === "trotzdem") z.vault = "/Users/test/Brain/vault"; return route.abort("failed"); }
         { const f = z.klonenFehler?.shift(); if (f) return json(f.status, { fehler: f.fehler }); }
         z.vault = "/Users/test/Brain/vault";
         return json(200, { pfad: z.vault });
@@ -78,6 +82,8 @@ async function rahmen(page, o = {}) {
       case "/api/mcp/verbinden":
         if (z.mcp === "befehl") return json(404, { fehler: "Claude Code wurde nicht gefunden. Kopiere den Befehl und führe ihn im Terminal aus.", befehl: BEFEHL });
         if (z.mcp === "fehler") return json(500, { fehler: "Die Konfiguration von Claude konnte nicht geschrieben werden." });
+        if (z.mcp === "anders" && !body?.umstellen) return json(409, { fehler: "In Claude gibt es schon einen Server brain.", art: "anders" });
+        if (z.mcp === "schon") return json(200, { ok: true, schonVerbunden: true });
         return json(200, { ok: true });
       case "/api/kit/hooks":
         if (z.hooks === "fehlt") return json(404, { fehler: "nicht gefunden" });
@@ -273,7 +279,27 @@ test("Ordner öffnen ohne Git: Rückfrage, „Einschalten“ ruft erneut mit git
   await knopf(page, "git-einschalten").click();
   await deckend(schritt(page, "ki"));
   const offen = aufgezeichnet(z, "/api/vaults/oeffnen");
-  expect(offen.map((a) => a.body)).toEqual([{ pfad: "/Users/test/Alt" }, { pfad: "/Users/test/Alt", git: true }]);
+  expect(offen.map((a) => a.body)).toEqual([{ pfad: "/Users/test/Alt" }, { pfad: "/Users/test/Alt", gitEinschalten: true }]); // Spec §5a: gitEinschalten, nicht git
+});
+
+test("Ordner öffnen ohne Git: antwortet die Werkstatt nach „Einschalten“ mit git:false, ist das ein Fehlschlag (nicht still weiter zum KI-Schritt)", async ({ page }) => {
+  const z = await rahmen(page, { gitBeimOeffnen: false, gitEinschaltenFehlt: true });
+  await appKanal(page, { pfad: "/Users/test/Alt" });
+  await oeffneSeite(page);
+  await zeigeWillkommen(page);
+  await deckend(weg(page, "ordner"));
+  await weg(page, "ordner").click();
+  await deckend(schritt(page, "git"));
+  await knopf(page, "git-einschalten").click();
+  const fehler = page.locator("#willkommen-host .w-fehlerbox");
+  await expect(fehler).toHaveText("Der Versionsverlauf ließ sich nicht einschalten. Du kannst trotzdem ohne Verlauf weiterarbeiten.");
+  await expect(fehler).toHaveAttribute("role", "alert");
+  await expect(schritt(page, "git")).toBeVisible();
+  await expect(schritt(page, "ki")).toHaveCount(0);
+  expect(aufgezeichnet(z, "/api/vaults/oeffnen").map((a) => a.body)).toEqual([{ pfad: "/Users/test/Alt" }, { pfad: "/Users/test/Alt", gitEinschalten: true }]);
+  // bewusst ohne Verlauf weiter geht weiterhin
+  await knopf(page, "git-ohne").click();
+  await deckend(schritt(page, "ki"));
 });
 
 test("Ordner öffnen ohne Git: „Ohne Verlauf weiter“ und Escape fragen nicht erneut", async ({ page }) => {
@@ -341,6 +367,105 @@ test("Klonen: Fortschritt, Fehler in Alltagssprache mit Anmelde-Hinweis, Eingabe
   await deckend(schritt(page, "ki"));
   const k = aufgezeichnet(z, "/api/vaults/klonen");
   expect(k.map((a) => a.body)).toEqual([{ url: "git@github.com:name/vault.git" }, { url: "git@github.com:name/vault.git" }]);
+});
+
+// Zeitüberschreitung der Brücke = die Anfrage reißt ab (status 0). Danach: Info, Vault-Liste und Git-Status neu laden und ehrlich melden.
+const DAUERT = "Das dauert länger als erwartet. Ich habe den Stand neu geladen – prüfe bitte, ob es geklappt hat.";
+test("Klonen: Zeitüberschreitung lädt Info, Vault-Liste und Git-Status neu und sagt, dass der Ausgang unklar ist; Eingaben bleiben", async ({ page }) => {
+  const z = await rahmen(page, { klonenAbbruch: "ja", verzoegerung: 100 });
+  await oeffneSeite(page);
+  await page.evaluate(async () => { const mod = await import("/willkommen.js"); window.__stand = null; mod.zeigeWillkommen({ modus: "start", beiFertig: (a) => { window.__fertig = a; }, beiStandNeu: (st) => { window.__stand = { ok: st.ok, vault: st.info?.vault ?? null }; return false; } }); });
+  await deckend(weg(page, "klonen"));
+  await weg(page, "klonen").click();
+  await deckend(schritt(page, "klonen"));
+  await page.locator('[data-feld="url"]').fill("git@github.com:name/vault.git");
+  await knopf(page, "klonen").click();
+  const fehler = page.locator("#willkommen-host .w-fehlerbox");
+  await expect(fehler).toHaveText(DAUERT);
+  await expect(page.locator('[data-feld="url"]')).toHaveValue("git@github.com:name/vault.git");
+  await expect(knopf(page, "klonen")).toBeEnabled();
+  for (const pfad of ["/api/info", "/api/vaults", "/api/git/status"]) expect(aufgezeichnet(z, pfad).length, pfad).toBeGreaterThan(0);
+  expect(await page.evaluate(() => window.__stand)).toEqual({ ok: true, vault: null });
+  expect(await page.evaluate(() => window.__fertig)).toBeUndefined();
+});
+
+test("Klonen: reißt die Brücke ab und antwortet auch die Werkstatt nicht, bleibt es bei der Verbindungsmeldung", async ({ page }) => {
+  const z = await rahmen(page, { klonenAbbruch: "ja", verzoegerung: 100, infoAbbruch: true });
+  await oeffneSeite(page);
+  await zeigeWillkommen(page);
+  await weg(page, "klonen").click();
+  await deckend(schritt(page, "klonen"));
+  await page.locator('[data-feld="url"]').fill("git@github.com:name/vault.git");
+  await knopf(page, "klonen").click();
+  await expect(page.locator("#willkommen-host .w-fehlerbox")).toHaveText("Die Verbindung zum Hintergrunddienst ist abgebrochen. Starte die App neu, falls das bleibt.");
+  expect(aufgezeichnet(z, "/api/vaults/klonen")).toHaveLength(1);
+});
+
+test("Klonen: hat die Werkstatt den Vault trotz Zeitüberschreitung geöffnet, macht die Karte wie nach Erfolg weiter", async ({ page }) => {
+  await rahmen(page, { klonenAbbruch: "trotzdem", verzoegerung: 100 });
+  await oeffneSeite(page);
+  await page.evaluate(async () => { const mod = await import("/willkommen.js"); window.__fertig = null; mod.zeigeWillkommen({ modus: "start", beiFertig: (a) => { window.__fertig = a; }, beiStandNeu: async (st) => !!st.info?.vault }); });
+  await weg(page, "klonen").click();
+  await deckend(schritt(page, "klonen"));
+  await page.locator('[data-feld="url"]').fill("git@github.com:name/vault.git");
+  await knopf(page, "klonen").click();
+  await expect(page.locator("#willkommen-host")).toBeHidden();
+  expect(await page.evaluate(() => window.__fertig)).toEqual({ pfad: "/Users/test/Brain/vault" });
+  expect(await page.evaluate(() => document.getElementById("app").inert)).toBe(false);
+});
+
+test("Arbeit läuft: Klonen wird für vorSchliessen gemeldet und danach wieder freigegeben", async ({ page }) => {
+  await rahmen(page, { verzoegerung: 900 });
+  await oeffneSeite(page);
+  await zeigeWillkommen(page);
+  await weg(page, "klonen").click();
+  await deckend(schritt(page, "klonen"));
+  await page.locator('[data-feld="url"]').fill("git@github.com:name/vault.git");
+  await knopf(page, "klonen").click();
+  await expect(page.locator("#willkommen-host .w-arbeit")).toBeVisible();
+  expect(await page.evaluate(async () => (await import("/hilfen.js")).laufendeArbeiten())).toEqual(["klonen"]);
+  await deckend(schritt(page, "ki"));
+  expect(await page.evaluate(async () => (await import("/hilfen.js")).laufendeArbeiten())).toEqual([]);
+});
+
+// W4: „verbunden“ erst nach Erfolg
+test("KI-Dialog: beiVerbunden kommt nur nach geglücktem Verbinden, nicht beim Schließen; Umstellen fragt nach", async ({ page }) => {
+  await rahmen(page, { vault: "/Users/test/Brain/Privat", mcp: "anders" });
+  await oeffneSeite(page);
+  await page.evaluate(async () => { window.__zu = 0; window.__verbunden = 0; await (await import("/willkommen.js")).oeffneKiDialog({ beiFertig: () => { window.__zu++; }, beiVerbunden: () => { window.__verbunden++; } }); });
+  const d = page.locator("#dialog-host .dialog");
+  await deckend(d);
+  await d.locator('[data-aktion="claude-verbinden"]').click();
+  const frage = d.locator('[data-bereich="umstellen"]');
+  await expect(frage).toContainText("In Claude gibt es schon einen Eintrag „brain“, der woanders hinzeigt. Auf dieses Brain umstellen?");
+  await frage.locator('[data-aktion="nicht-umstellen"]').click();
+  await d.locator('[data-aktion="ki-fertig"]').click(); // schließen, ohne verbunden zu sein
+  await expect(d).toHaveCount(0);
+  expect(await page.evaluate(() => [window.__zu, window.__verbunden])).toEqual([1, 0]);
+});
+
+test("Umstellen: zweiter Aufruf mit umstellen:true, danach Erfolg und beiVerbunden", async ({ page }) => {
+  const z = await rahmen(page, { vault: "/Users/test/Brain/Privat", mcp: "anders" });
+  await oeffneSeite(page);
+  await page.evaluate(async () => { window.__verbunden = 0; await (await import("/willkommen.js")).oeffneKiDialog({ beiVerbunden: () => { window.__verbunden++; } }); });
+  const d = page.locator("#dialog-host .dialog");
+  await deckend(d);
+  await d.locator('[data-aktion="claude-verbinden"]').click();
+  await d.locator('[data-aktion="umstellen"]').click();
+  await expect(d.locator('[data-zeile="verbinden"] .w-ok')).toHaveText("Verbunden. Claude kann jetzt auf dein Wissen zugreifen.");
+  expect(aufgezeichnet(z, "/api/mcp/verbinden").map((a) => a.body)).toEqual([{ ziel: "claude" }, { ziel: "claude", umstellen: true }]);
+  expect(await page.evaluate(() => window.__verbunden)).toBe(1);
+});
+
+test("{ schonVerbunden: true } gilt als Erfolg", async ({ page }) => {
+  await rahmen(page, { vault: "/Users/test/Brain/Privat", mcp: "schon" });
+  await oeffneSeite(page);
+  await page.evaluate(async () => { window.__verbunden = 0; await (await import("/willkommen.js")).oeffneKiDialog({ beiVerbunden: () => { window.__verbunden++; } }); });
+  const d = page.locator("#dialog-host .dialog");
+  await deckend(d);
+  await d.locator('[data-aktion="claude-verbinden"]').click();
+  await expect(d.locator('[data-zeile="verbinden"] .w-ok')).toBeVisible();
+  expect(await page.evaluate(() => window.__verbunden)).toBe(1);
 });
 
 test("Weg gibt es im Backend noch nicht (404): freundlicher Satz statt roher Meldung", async ({ page }) => {
@@ -471,7 +596,7 @@ test("Probe bei leerem Vault: Hinweis, keine Suche", async ({ page }) => {
   expect(aufgezeichnet(z, "/api/probe")).toHaveLength(0);
 });
 
-test("Brain-Hinweise einschalten: nur mit Kit, nur auf Klick; fehlender Weg freundlich", async ({ page }) => {
+test("Brain-Hinweise einschalten: der Knopf bleibt aus, solange es /api/kit/hooks nicht gibt (auch mit Kit)", async ({ page }) => {
   const z = await rahmen(page, { kit: { vorhanden: true, vertraut: true }, hooks: "fehlt" });
   await oeffneSeite(page);
   await zeigeWillkommen(page);
@@ -479,15 +604,12 @@ test("Brain-Hinweise einschalten: nur mit Kit, nur auf Klick; fehlender Weg freu
   await weg(page, "leer").click();
   await knopf(page, "anlegen").click();
   await deckend(schritt(page, "ki"));
-  await expect(knopf(page, "hinweise-einschalten")).toHaveText("Brain-Hinweise einschalten");
+  await expect(knopf(page, "claude-verbinden")).toBeVisible(); // die übrigen Zeilen sind da
+  await expect(page.locator('[data-zeile="probe"]')).toBeVisible();
+  await expect(knopf(page, "hinweise-einschalten")).toHaveCount(0);
+  await expect(page.locator('[data-zeile="hinweise"]')).toHaveCount(0);
   await page.waitForTimeout(250);
-  expect(aufgezeichnet(z, "/api/kit/hooks")).toHaveLength(0); // nie automatisch
-  await knopf(page, "hinweise-einschalten").click();
-  await expect(page.locator('[data-zeile="hinweise"] .w-fehlerbox')).toHaveText("Das geht in dieser Version noch nicht.");
-  expect(aufgezeichnet(z, "/api/kit/hooks")[0].body).toEqual({});
-  z.hooks = "ok";
-  await knopf(page, "hinweise-einschalten").click();
-  await expect(page.locator('[data-zeile="hinweise"] .w-ok')).toHaveText("Die Hinweise sind eingeschaltet.");
+  expect(aufgezeichnet(z, "/api/kit/hooks")).toHaveLength(0);
 });
 
 test("Weiter und Später schließen die Karte und rufen beiFertig mit dem Pfad", async ({ page }) => {
@@ -576,7 +698,7 @@ test("oeffneKiDialog zeigt dieselben Inhalte im Dialog und ruft beim Schließen 
   await expect(d.locator(".dialog-kopf")).toHaveText("KI verbinden");
   await expect(d.locator(".w-agent")).toHaveCount(2);
   await expect(d.locator('[data-aktion="claude-verbinden"]')).toBeVisible();
-  await expect(d.locator('[data-aktion="hinweise-einschalten"]')).toBeVisible();
+  await expect(d.locator('[data-aktion="hinweise-einschalten"]')).toHaveCount(0); // Route /api/kit/hooks fehlt noch
   await expect(d.locator('[data-aktion="ki-weiter"]')).toHaveCount(0);
   await expect(d.locator('[data-aktion="ki-spaeter"]')).toHaveCount(0);
   await d.locator('[data-aktion="ki-fertig"]').click();

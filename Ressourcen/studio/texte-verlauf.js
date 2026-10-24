@@ -36,6 +36,11 @@ export const TV = {
     titel: "Dieser Ordner hat noch keinen Versionsverlauf",
     text: "Wenn du die Versionierung einschaltest, merkt sich Brain jede Fassung deiner Notizen.",
   },
+  gesperrt: {
+    titel: "Git ist für diesen Vault gesperrt",
+    text: "Der Verlauf erscheint, sobald du diesem Vault vertraust.",
+    knopf: "Vertrauen prüfen",
+  },
   fehler: {
     titel: "Der Verlauf konnte nicht geladen werden",
     text: "Bitte versuche es gleich noch einmal.",
@@ -47,6 +52,7 @@ export const TV = {
     leer: "Keine Änderung an dieser Datei.",
     laedt: "Lade Änderung …",
     fehler: "Die Änderung konnte nicht geladen werden.",
+    gesperrt: "Git ist für diesen Vault gesperrt. Die Änderung erscheint, sobald du dem Vault vertraust.",
     keinText: "Diese Datei ist keine Textdatei. Ein Vergleich ist hier nicht möglich.",
     gekuerzt: (gesamt, gezeigt) => `Diese Änderung ist sehr lang (${gesamt.toLocaleString("de-DE")} Zeilen). Gezeigt werden die ersten ${gezeigt.toLocaleString("de-DE")}.`,
     bereich: "Änderungen in der Datei",
@@ -79,5 +85,6 @@ export const TV = {
       zweigname: "Die Zweige heißen unterschiedlich.",
     },
     fehler: "Das Remote konnte nicht verbunden werden.",
+    gesperrt: "Git ist für diesen Vault gesperrt, bis du ihm vertraust. Prüfe das unten in der Statusleiste unter „Git gesperrt“.",
   },
 };

@@ -369,6 +369,86 @@ test("Liste: Mehr laden bei Fehler zeigt Hinweis und lässt es nochmal zu", asyn
   await expect(page.locator('button[data-aktion="mehr"]')).toHaveCount(0);
 });
 
+// k1: Die Werkstatt liefert `weitere` und `naechste` (Spec §5a), nicht `mehr`.
+test("Liste: „Mehr laden“ folgt `weitere`; die nächste Seite fragt mit `naechste`, nicht mit dem letzten Commit der Seite", async ({ page }) => {
+  const protokoll = [];
+  const seite1 = [];
+  for (let i = 0; i < 60; i++) seite1.push(commit(i + 10, "Commit " + (i + 1), vor(Math.floor(i / 3) + 1, 18 - (i % 3), 5), [{ pfad: `n${i}.md`, status: "M" }]));
+  const seite2 = [commit(200, "Ganz alt", vor(40, 8, 0), [{ pfad: "alt.md", status: "A" }])];
+  const naechste = sha(50); // bewusst NICHT der letzte Commit der Seite: die Werkstatt bestimmt den Zeiger
+  await mocke(page, { protokoll, status: { ...STATUS_A, geaendert: [] }, log: (u) => (u.searchParams.get("vor") ? { tage: tage(seite2), weitere: false, naechste: null } : { tage: tage(seite1), weitere: true, naechste }) });
+  await oeffneSeite(page); await montiereListe(page);
+  await expect(page.locator(".vl-commitzeile")).toHaveCount(60);
+  const mehr = page.locator('button[data-aktion="mehr"]');
+  await sichtbar(mehr); // weitere:true
+  await mehr.click();
+  await expect(page.locator(".vl-commitzeile")).toHaveCount(61);
+  expect(protokoll[1]).toEqual({ max: "60", vor: naechste });
+  await expect(page.locator('button[data-aktion="mehr"]')).toHaveCount(0); // weitere:false
+});
+
+test("Liste: eine kurze Seite mit `weitere: true` wird beim Laden bis zur gewünschten Zahl aufgefüllt (nach `naechste`)", async ({ page }) => {
+  const protokoll = [];
+  const seite1 = [];
+  for (let i = 0; i < 10; i++) seite1.push(commit(i + 10, "Commit " + (i + 1), vor(i + 1, 12, 5), [{ pfad: `n${i}.md`, status: "M" }]));
+  const seite2 = [commit(200, "Ganz alt", vor(40, 8, 0), [{ pfad: "alt.md", status: "A" }])];
+  const naechste = sha(5);
+  await mocke(page, { protokoll, status: { ...STATUS_A, geaendert: [] }, log: (u) => (u.searchParams.get("vor") ? { tage: tage(seite2), weitere: false, naechste: null } : { tage: tage(seite1), weitere: true, naechste }) });
+  await oeffneSeite(page); await montiereListe(page);
+  await expect(page.locator(".vl-commitzeile")).toHaveCount(11);
+  expect(protokoll[1]).toEqual({ max: "50", vor: naechste }); // 60 gewünscht, 10 da, also 50 nach `naechste`
+  await expect(page.locator('button[data-aktion="mehr"]')).toHaveCount(0);
+});
+
+test("Liste: `weitere: false` beendet die Liste, auch wenn genau 60 Commits kamen", async ({ page }) => {
+  const seite1 = [];
+  for (let i = 0; i < 60; i++) seite1.push(commit(i + 10, "Commit " + (i + 1), vor(Math.floor(i / 3) + 1, 18 - (i % 3), 5), [{ pfad: `n${i}.md`, status: "M" }]));
+  await mocke(page, { status: { ...STATUS_A, geaendert: [] }, log: { tage: tage(seite1), weitere: false, naechste: null } });
+  await oeffneSeite(page); await montiereListe(page);
+  await expect(page.locator(".vl-commitzeile")).toHaveCount(60);
+  await expect(page.locator('button[data-aktion="mehr"]')).toHaveCount(0);
+});
+
+test("Aktualisieren holt auch mehr als 200 geladene Commits wieder: seitenweise nach, höchstens 200 je Aufruf", async ({ page }) => {
+  const protokoll = [];
+  const alle = [];
+  for (let i = 0; i < 250; i++) alle.push(commit(i + 1, "Commit " + (i + 1), vor(Math.floor(i / 3) + 1, 18 - (i % 3), 5), [{ pfad: `n${i}.md`, status: "M" }]));
+  // wie die Werkstatt: max höchstens 200, vor = Zeiger, weitere/naechste
+  const log = (u) => {
+    const vorSha = u.searchParams.get("vor");
+    const start = vorSha ? alle.findIndex((c) => c.sha === vorSha) + 1 : 0;
+    const n = Math.min(200, Number(u.searchParams.get("max")) || 50);
+    const seite = alle.slice(start, start + n);
+    const weitere = start + n < alle.length;
+    return { tage: tage(seite), weitere, naechste: weitere ? seite[seite.length - 1].sha : null };
+  };
+  await mocke(page, { protokoll, status: { ...STATUS_A, geaendert: [] }, log });
+  await oeffneSeite(page); await montiereListe(page);
+  await expect(page.locator(".vl-commitzeile")).toHaveCount(60);
+  for (const erwartet of [120, 180, 240, 250]) {
+    await page.locator('button[data-aktion="mehr"]').click();
+    await expect(page.locator(".vl-commitzeile")).toHaveCount(erwartet);
+  }
+  await expect(page.locator('button[data-aktion="mehr"]')).toHaveCount(0);
+  const vorher = protokoll.length;
+  await page.evaluate(() => window.__vl.aktualisieren());
+  await expect.poll(() => protokoll.length).toBe(vorher + 2);
+  expect(protokoll[vorher]).toEqual({ max: "200", vor: null });
+  expect(protokoll[vorher + 1]).toEqual({ max: "50", vor: alle[199].sha });
+  await expect(page.locator(".vl-commitzeile")).toHaveCount(250); // nichts geht beim Aktualisieren verloren
+  await expect(page.locator('button[data-aktion="mehr"]')).toHaveCount(0);
+});
+
+for (const [wie, status] of [["Git-Status meldet gesperrt", { repo: true, gesperrt: true, grund: "x" }], ["Verlauf-Aufruf antwortet 409", STATUS_A]]) {
+  test(`Liste: Git gesperrt (${wie}) zeigt einen erklärenden Block statt des rohen Fehlers`, async ({ page }) => {
+    await mocke(page, { status });
+    await page.route(/\/api\/git\/log(\?|$)/, (route) => route.fulfill({ status: 409, json: { fehler: "Roher Backend-Text: Git ist gesperrt.", gitGesperrt: true } }));
+    await oeffneSeite(page); await montiereListe(page);
+    await expect(page.locator(".vl-leer-titel")).toHaveText("Git ist für diesen Vault gesperrt");
+    await expect(page.locator(".vl-leer")).not.toContainText("Roher Backend-Text");
+  });
+}
+
 // ================================================================= Diff
 const DIFF = [
   "diff --git a/09_wiki/wissen/Kaffee.md b/09_wiki/wissen/Kaffee.md",
@@ -713,4 +793,55 @@ test.describe("Bilder", () => {
       }
     });
   }
+});
+
+// W3 / Git gesperrt im Remote-Dialog
+test("Remote-Dialog: Zeitüberschreitung lädt Info, Vault-Liste und Git-Status neu und sagt, dass der Ausgang unklar ist", async ({ page }) => {
+  const abgerufen = [];
+  await page.route(/\/api\/git\/remote$/, (route) => route.abort("failed"));
+  await page.route("**/api/info", (route) => { abgerufen.push("info"); route.fulfill({ json: { vault: "/x/vault", name: "vault", git: true } }); });
+  await page.route("**/api/vaults", (route) => { abgerufen.push("vaults"); route.fulfill({ json: { vaults: [], aktiv: "/x/vault" } }); });
+  await mocke(page, { status: () => { abgerufen.push("status"); return STATUS_A; } });
+  await oeffneSeite(page);
+  await page.evaluate(async () => {
+    const { oeffneRemoteDialog } = await import("/remote.js");
+    window.__stand = null;
+    oeffneRemoteDialog({ beiFertig: () => window.__ereignis.push({ art: "fertig" }), beiStandNeu: (st) => { window.__stand = { ok: st.ok, vault: st.info?.vault, git: st.git?.zweig }; } });
+  });
+  const dlg = page.locator('[data-dialog="remote"]');
+  await dlg.locator("input").fill("git@github.com:name/brain.git");
+  await dlg.locator('[data-aktion="verbinden"]').click();
+  await expect(dlg.locator(".rm-meldung")).toHaveText("Das dauert länger als erwartet. Ich habe den Stand neu geladen – prüfe bitte, ob es geklappt hat.");
+  await expect(dlg.locator("input")).toBeEnabled();
+  expect([...new Set(abgerufen)].sort()).toEqual(["info", "status", "vaults"]);
+  expect(await page.evaluate(() => window.__stand)).toEqual({ ok: true, vault: "/x/vault", git: "main" });
+  expect(await page.evaluate(() => window.__ereignis)).toEqual([]);
+});
+
+test("Remote-Dialog: Frist der Werkstatt (504) zeigt deren Satz („nichts verändert“), Git gesperrt einen eigenen Satz", async ({ page }) => {
+  let n = 0;
+  await page.route("**/api/info", (route) => route.fulfill({ json: { vault: "/x/vault" } }));
+  await page.route("**/api/vaults", (route) => route.fulfill({ json: { vaults: [] } }));
+  await page.route(/\/api\/git\/remote$/, (route) => { n++; if (n === 1) route.fulfill({ status: 504, json: { fehler: "Der Server hat nicht rechtzeitig geantwortet. Es wurde nichts verändert — bitte später noch einmal versuchen." } }); else route.fulfill({ status: 409, json: { fehler: "Roher Backend-Text: Git ist gesperrt.", gitGesperrt: true } }); });
+  await mocke(page);
+  await oeffneSeite(page); await oeffneRemote(page);
+  const dlg = page.locator('[data-dialog="remote"]');
+  await dlg.locator("input").fill("git@github.com:name/brain.git");
+  await dlg.locator('[data-aktion="verbinden"]').click();
+  await expect(dlg.locator(".rm-meldung")).toHaveText("Der Server hat nicht rechtzeitig geantwortet. Es wurde nichts verändert — bitte später noch einmal versuchen.");
+  await dlg.locator('[data-aktion="verbinden"]').click();
+  await expect(dlg.locator(".rm-meldung")).toContainText("Git ist für diesen Vault gesperrt, bis du ihm vertraust.");
+  await expect(dlg.locator(".rm-meldung")).not.toContainText("Roher Backend-Text");
+});
+
+test("Arbeit läuft: das Remote-Verbinden wird für vorSchliessen gemeldet", async ({ page }) => {
+  await page.route(/\/api\/git\/remote$/, async (route) => { await new Promise((r) => setTimeout(r, 700)); route.fulfill({ json: { ok: true, zweig: "main" } }); });
+  await oeffneSeite(page); await oeffneRemote(page);
+  const dlg = page.locator('[data-dialog="remote"]');
+  await dlg.locator("input").fill("git@github.com:name/brain.git");
+  await dlg.locator('[data-aktion="verbinden"]').click();
+  await expect(dlg.locator(".rm-meldung")).toContainText("Prüfe die Adresse");
+  expect(await page.evaluate(async () => (await import("/hilfen.js")).laufendeArbeiten())).toEqual(["remote"]);
+  await expect(dlg.locator(".rm-meldung.erfolg")).toBeVisible();
+  expect(await page.evaluate(async () => (await import("/hilfen.js")).laufendeArbeiten())).toEqual([]);
 });

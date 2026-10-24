@@ -1,7 +1,7 @@
 // Dialog „Remote hinzufügen“: Adresse eingeben, prüfen lassen, verbinden.
-import { h, dialog } from "./hilfen.js";
+import { h, dialog, arbeitBeginnt, ausTabelle } from "./hilfen.js";
 import { symbol } from "./symbole.js";
-import { api } from "./api.js";
+import { api, gitGesperrt, ausgangUnklar, zeitText, ladeStandNeu } from "./api.js";
 import { TV } from "./texte-verlauf.js";
 
 const CSS_URL = new URL("./verlauf.css", import.meta.url).href;
@@ -20,7 +20,8 @@ export function istGitAdresse(s) {
 
 const zeichen = (name, groesse) => { const s = symbol(name, groesse); s.setAttribute("aria-hidden", "true"); return s; };
 
-export function oeffneRemoteDialog({ beiFertig } = {}) {
+// beiStandNeu(stand): die App frischt nach unklarem Ausgang (Zeitüberschreitung) Info, Vault-Liste und Git-Status auf.
+export function oeffneRemoteDialog({ beiFertig, beiStandNeu } = {}) {
   ladeCss();
   let verbunden = false;
   let gemeldet = false;
@@ -73,6 +74,7 @@ export function oeffneRemoteDialog({ beiFertig } = {}) {
     meldung.replaceChildren(h("span", { klasse: "rm-spinner", "aria-hidden": "true" }), wartetext);
     // große Vaults können bis zu zwei Minuten brauchen: nach ein paar Sekunden sagen, dass es normal ist
     const spaet = setTimeout(() => { wartetext.textContent = `${TV.remote.prueft} ${TV.remote.dauert}`; }, 6000);
+    const ende = arbeitBeginnt("remote"); // Schließen des Fensters fragt nach, solange das läuft
     try {
       const r = await api.gitRemote(url);
       clearTimeout(spaet);
@@ -83,10 +85,16 @@ export function oeffneRemoteDialog({ beiFertig } = {}) {
       setTimeout(() => { melde(); d.schliessen(); }, r?.ergebnis === "gesendet" || r?.ergebnis === "geholt" ? 1600 : 800);
     } catch (err) {
       clearTimeout(spaet);
+      if (gitGesperrt(err)) zeige("fehlertext", TV.remote.gesperrt, "warnung");
+      else if (ausgangUnklar(err)) {
+        // Ob es geklappt hat, ist unklar: Stand neu holen (die Statusleiste zeigt dann das Remote) und ehrlich sagen
+        const stand = await ladeStandNeu();
+        if (stand.ok) { try { await beiStandNeu?.(stand); } catch (x) { console.error(x); } zeige("hinweis", zeitText(err), "info"); }
+        else zeige("fehlertext", err?.message || TV.remote.fehler, "warnung");
+      } else zeige("fehlertext", err?.daten?.fehler || err?.message || TV.remote.fehler, "warnung", ausTabelle(TV.remote.arten, err?.daten?.art));
       beschaeftigt(false);
-      zeige("fehlertext", err?.daten?.fehler || err?.message || TV.remote.fehler, "warnung", TV.remote.arten[err?.daten?.art]);
       eingabe.focus();
-    }
+    } finally { ende(); }
   });
   return d;
 }

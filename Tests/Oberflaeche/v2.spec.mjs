@@ -1,7 +1,7 @@
 // Studio v2: Seitenleiste, Bereiche, Typen, Ansichten, Karten, Verlauf-Modus, Eigenschaften, Vault-Wechsel, Spalten.
 // Die v2-Routen des Backends werden mit Attrappen aus dem Vault-Ordner gespeist (erzwungen = unabhängig vom Backend-Stand).
 import { test, expect } from "@playwright/test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { baueVault } from "./vault.mjs";
 import { starteServer } from "./start.mjs";
@@ -387,4 +387,84 @@ test("Tastenkürzel-Übersicht per ⌘/ zeigt Gruppen mit Kürzeln, Esc schließ
   await expect(dlg).toContainText("Schnell merken");
   await page.keyboard.press("Escape");
   await expect(page.locator(".dialog")).toHaveCount(0);
+});
+
+// ---------------------------------------------------------------- W6: Vault entfernen und wechseln
+const NOTIZ_A = "10_notizen/Reise nach Lissabon.md";
+async function zweiVaults(page, zweite, stand) {
+  await page.route("**/api/vaults", (r) => { if (r.request().method() !== "GET") return r.fallback(); stand.liste++; return r.fulfill({ json: { vaults: [{ name: "Brain Test", pfad: vault, farbe: "#5b4ed6" }, { name: "Zweiter", pfad: zweite, farbe: "#2a9ba8" }], aktiv: vault } }); });
+  await page.route("**/api/vaults/aktiv", (r) => { stand.aktiv.push(r.request().postDataJSON()); r.fulfill({ json: { ok: true } }); });
+  await page.route("**/api/vaults/entfernen", (r) => { stand.datei = readFileSync(join(vault, NOTIZ_A), "utf8"); r.fulfill({ json: { ok: true } }); });
+}
+
+test("W6: Vault entfernen sichert IMMER zuerst; ein nicht offener Vault lässt Editor und Eingaben unberührt (nur die Liste wird neu geladen)", async ({ page }) => {
+  const zweite = baueVault({ leer: true }).vault;
+  const stand = { liste: 0, aktiv: [], datei: null };
+  await zweiVaults(page, zweite, stand);
+  await start(page, NOTIZ_A);
+  await page.locator(".cm-content").click();
+  await page.keyboard.press("Meta+ArrowDown");
+  await page.keyboard.type(" EINGABE-VOR-ENTFERNEN");
+  await page.click("#vault-wechsler"); // sofort, noch vor dem Auto-Speichern
+  await page.locator('.menue [data-menue="entfernen"]').click();
+  await page.locator('.menue [data-menue="entf"]').nth(1).click(); // „Zweiter“ ist nicht der offene Vault
+  await page.locator('.dialog [data-aktion="entfernen"]').click();
+  await expect(page.locator(".toast")).toContainText("Aus der Liste entfernt");
+  expect(stand.datei, "die Eingabe war vor dem Entfernen gesichert").toContain("EINGABE-VOR-ENTFERNEN");
+  await expect.poll(() => stand.liste).toBeGreaterThanOrEqual(2); // Menü + nach dem Entfernen
+  // Editor nicht zurückgesetzt: Notiz offen, Text da, und der Rückgängig-Verlauf lebt noch (ein neu geladener Editor hätte keinen)
+  await expect(page.locator("#pfad .krume.aktuell")).toHaveText("Reise nach Lissabon");
+  await expect(page.locator(".cm-content")).toContainText("EINGABE-VOR-ENTFERNEN");
+  await page.locator(".cm-content").click();
+  await page.keyboard.press("Meta+z");
+  await expect(page.locator(".cm-content")).not.toContainText("EINGABE-VOR-ENTFERNEN");
+  expect(stand.aktiv).toEqual([]);
+});
+
+test("W6: Vault wechseln im Konfliktzustand bricht nicht still ab, sondern sagt warum", async ({ page }) => {
+  const zweite = baueVault({ leer: true }).vault;
+  const stand = { liste: 0, aktiv: [], datei: null };
+  await zweiVaults(page, zweite, stand);
+  await start(page, NOTIZ_A);
+  await page.waitForSelector(".cm-content .cm-line"); // erst wenn die Notiz geladen ist, von außen ändern (sonst lädt sie schon die neue Fassung)
+  writeFileSync(join(vault, NOTIZ_A), "# Von außen geändert\n");
+  await page.locator(".cm-content").click();
+  await page.keyboard.press("Meta+ArrowDown");
+  await page.keyboard.type("meine Eingabe");
+  await expect(page.locator('[data-banner="konflikt"]')).toBeVisible({ timeout: 5000 });
+  await page.click("#vault-wechsler");
+  await page.locator('.menue [data-menue="vault"]').nth(1).click();
+  const toast = page.locator(".toast.fehler");
+  await expect(toast).toContainText("Erst den Konflikt dieser Notiz lösen");
+  await expect(toast).toContainText("Reise nach Lissabon");
+  expect(stand.aktiv).toEqual([]); // nichts gewechselt
+  await expect(page.locator(".cm-content")).toContainText("meine Eingabe");
+});
+
+// ---------------------------------------------------------------- k8: Daten nie als Stil-Text oder Programm
+test("k8: Typfarben gelten nur als #RRGGBB (oder Palettenname); alles andere fällt auf die Standardfarbe; gesetzt als CSS-Variable", async ({ page }) => {
+  const typen = [
+    { name: "thema", anzahl: 1, farbe: "red;background:url(http://x.invalid/a)", symbol: "buch" },
+    { name: "projekt", anzahl: 1, farbe: "#E0693F", symbol: "rakete" },
+    { name: "person", anzahl: 1, farbe: "rgb(0 0 0); position: fixed", symbol: "person" },
+  ];
+  await start(page, undefined, { ueberschreibe: { typen } });
+  const lies = (typ) => page.locator(`[data-typ="${typ}"]`).evaluate((e) => ({ attr: e.getAttribute("style"), typ: e.style.getPropertyValue("--typ"), text: e.style.getPropertyValue("--typ-text") }));
+  const a = await lies("thema"), b = await lies("projekt"), c = await lies("person");
+  for (const x of [a, c]) { expect(x.attr).not.toMatch(/url\(|fixed|rgb\(/); expect(x.typ).toMatch(/^#[0-9a-f]{6}$/i); expect(x.text).toContain("color-mix"); }
+  expect(b.typ).toBe("#E0693F");
+  const f = await page.evaluate(async () => { const m = await import("/format.js"); return ["#4f7df3", "#4F7DF3", "#fff", "#12345678", "rgb(1,2,3)", "hsl(0 0% 0%)", "red; x:y", "constructor", "__proto__", "blau", " Blau "].map((x) => m.typFarbe(x)); });
+  expect(f).toEqual(["#4f7df3", "#4F7DF3", null, null, null, null, null, null, null, "#4a78e0", "#4a78e0"]);
+  expect(await page.evaluate(async () => (await import("/format.js")).typName("constructor"))).toBe("Constructor");
+});
+
+test("k8: Feldnamen aus dem Datei-Kopf wie „constructor“ bleiben Text; h() kennt keinen html-Zweig mehr", async ({ page }) => {
+  await start(page);
+  await page.route("**/api/notiz/kontext**", (r) => r.fulfill({ json: { felder: { constructor: "x", toString: "y", name: "Eigenname" }, beziehungen: [], verweise: [], rueckverweise: [], info: { woerter: 1, bytes: 1, geaendert: null, erstellt: null } } }));
+  await karte(page, "09_wiki/wissen/Kaffee.md").click();
+  await expect(page.locator('#info [data-feld="constructor"] .k')).toHaveText("Constructor");
+  await expect(page.locator('#info [data-feld="toString"] .k')).toHaveText("ToString");
+  await expect(page.locator('#info [data-feld="name"] .k')).toHaveText("Name"); // bekannte Namen aus der Tabelle bleiben
+  const r = await page.evaluate(async () => { const { h } = await import("/hilfen.js"); const e = h("div", { html: "<img src=x onerror=alert(1)>" }); return { kinder: e.children.length, innen: e.innerHTML }; });
+  expect(r).toEqual({ kinder: 0, innen: "" });
 });

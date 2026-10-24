@@ -3,8 +3,10 @@
 import { h, dateiName, ohneEndung, ordnerVon } from "./hilfen.js";
 import { symbol } from "./symbole.js";
 import { TV } from "./texte-verlauf.js";
+import { gitGesperrt } from "./api.js";
 
 const SEITE = 60;
+const MAX_SEITE = 200; // so viele Commits liefert /api/git/log höchstens je Aufruf
 const MAX_DIFF_ZEILEN = 4000;
 const UNGESICHERT = "__ungesichert";
 
@@ -105,9 +107,10 @@ const DIFFS = new WeakMap();
 // =============================================================================================
 //  Verlauf-Liste
 // =============================================================================================
-export function zeichneVerlauf(host, { api, beiDatei, beiCommitOeffnen } = {}) {
+export function zeichneVerlauf(host, { api, beiDatei, beiCommitOeffnen, beiGesperrt } = {}) {
   LISTEN.get(host)?.zerstoere();
-  const z = { phase: "laedt", fehler: null, tage: [], ungesichert: [], ende: false, laedtMehr: false, mehrFehler: false };
+  // naechste = „vor“-Wert für die nächste Seite, so wie die Werkstatt ihn liefert (fehlt er: der letzte geladene Commit)
+  const z = { phase: "laedt", fehler: null, tage: [], ungesichert: [], ende: false, naechste: null, laedtMehr: false, mehrFehler: false };
   const eingeklappt = new Set();   // Tage (Datum), die zu sind
   const offen = new Set();         // Commits (sha), die aufgeklappt sind
   let gewaehlt = null;             // Schlüssel der gewählten Datei
@@ -127,6 +130,7 @@ export function zeichneVerlauf(host, { api, beiDatei, beiCommitOeffnen } = {}) {
     const teile = [];
     if (z.phase === "laedt") teile.push(skelett());
     else if (z.phase === "keinGit") teile.push(leerBlock("verlauf", TV.keinGit.titel, TV.keinGit.text));
+    else if (z.phase === "gesperrt") teile.push(leerBlock("schild", TV.gesperrt.titel, TV.gesperrt.text, { knopf: beiGesperrt ? { name: "vertrauen", text: TV.gesperrt.knopf } : null }));
     else if (z.phase === "fehler") teile.push(leerBlock("warnung", TV.fehler.titel, z.fehler || TV.fehler.text, { nochmal: true }));
     else {
       if (z.ungesichert.length) teile.push(h("div", { klasse: "vl-ungesichert" }, commitBlock(ungesichertCommit(), { ungesichert: true })));
@@ -151,12 +155,13 @@ export function zeichneVerlauf(host, { api, beiDatei, beiCommitOeffnen } = {}) {
     return h("div", { klasse: "vl-skelett", "aria-busy": "true", "aria-label": TV.laedt }, h("div", { klasse: "vl-sk-kopf" }), zeile(78), zeile(62), h("div", { klasse: "vl-sk-kopf" }), zeile(70), zeile(84), zeile(55));
   }
 
-  function leerBlock(symbolName, titel, text, { nochmal = false } = {}) {
+  function leerBlock(symbolName, titel, text, { nochmal = false, knopf = null } = {}) {
     return h("div", { klasse: "vl-leer", role: "status" },
       h("span", { klasse: "vl-leer-zeichen" }, zeichen(symbolName, 20)),
       h("div", { klasse: "vl-leer-titel", text: titel }),
       h("p", { klasse: "vl-leer-text", text }),
-      nochmal ? h("button", { klasse: "knopf", type: "button", "data-aktion": "nochmal", text: TV.fehler.nochmal }) : null);
+      nochmal ? h("button", { klasse: "knopf", type: "button", "data-aktion": "nochmal", text: TV.fehler.nochmal }) : null,
+      knopf ? h("button", { klasse: "knopf", type: "button", "data-aktion": knopf.name, text: knopf.text }) : null);
   }
 
   function mehrBlock() {
@@ -285,6 +290,7 @@ export function zeichneVerlauf(host, { api, beiDatei, beiCommitOeffnen } = {}) {
     if (!knopf) return;
     if (knopf.dataset.aktion === "nochmal") { if (z.phase === "fehler") aktualisieren(); else ladeMehr(); }
     else if (knopf.dataset.aktion === "mehr") ladeMehr();
+    else if (knopf.dataset.aktion === "vertrauen") beiGesperrt?.();
   });
 
   wurzel.addEventListener("keydown", (e) => {
@@ -327,8 +333,24 @@ export function zeichneVerlauf(host, { api, beiDatei, beiCommitOeffnen } = {}) {
     }
   }
   const letzterCommit = () => { const t = z.tage[z.tage.length - 1]; return t?.commits[t.commits.length - 1] || null; };
-  const istEnde = (r, anzahl, angefordert) => r?.mehr === false || (r?.mehr !== true && anzahl < angefordert) || anzahl === 0;
-
+  // „weitere“ sagt die Werkstatt selbst; fehlt es (ältere Antwort), entscheidet die Zahl der gelieferten Commits
+  const istEnde = (r, anzahl, angefordert) => r?.weitere === false || (r?.weitere !== true && anzahl < angefordert) || anzahl === 0;
+  const letzteSha = (tage) => { const t = tage[tage.length - 1]; return t?.commits?.[t.commits.length - 1]?.sha || null; };
+  // Holt mindestens `ziel` Commits. Die Werkstatt liefert je Aufruf höchstens 200: der Rest kommt seitenweise nach (vor = naechste).
+  async function ladeBis(ziel) {
+    const erste = await api.gitLog({ max: Math.min(ziel, MAX_SEITE) });
+    const tage = [...(erste?.tage || [])];
+    let letzte = erste, anzahl = zaehleCommits(erste?.tage);
+    for (let runde = 0; runde < 50 && anzahl < ziel && letzte?.weitere === true; runde++) {
+      const vor = letzte.naechste || letzteSha(tage);
+      if (!vor) break;
+      letzte = await api.gitLog({ max: Math.min(ziel - anzahl, MAX_SEITE), vor });
+      tage.push(...(letzte?.tage || []));
+      anzahl += zaehleCommits(letzte?.tage);
+      if (!zaehleCommits(letzte?.tage)) break;
+    }
+    return { tage, weitere: letzte?.weitere, naechste: letzte?.naechste ?? null };
+  }
   async function aktualisieren() {
     if (tot) return;
     const meine = ++nr;
@@ -337,12 +359,13 @@ export function zeichneVerlauf(host, { api, beiDatei, beiCommitOeffnen } = {}) {
     await cssBereit;
     const geladen = Math.max(SEITE, z.tage.reduce((s, t) => s + t.commits.length, 0));
     const [log, st] = await Promise.allSettled([
-      Promise.resolve().then(() => api.gitLog({ max: geladen })),
+      Promise.resolve().then(() => ladeBis(geladen)),
       Promise.resolve().then(() => api.status?.()),
     ]);
     if (tot || meine !== nr) return;
     const stand = st.status === "fulfilled" ? st.value : null;
     if (stand && stand.repo === false) { z.phase = "keinGit"; z.tage = []; z.ungesichert = []; zeichne(); return; }
+    if ((stand && stand.gesperrt === true) || (log.status === "rejected" && gitGesperrt(log.reason))) { z.phase = "gesperrt"; z.tage = []; z.ungesichert = []; zeichne(); return; }
     if (log.status === "rejected") {
       if (hatDaten) return;
       z.phase = "fehler";
@@ -354,6 +377,7 @@ export function zeichneVerlauf(host, { api, beiDatei, beiCommitOeffnen } = {}) {
     z.fehler = null;
     z.tage = [];
     mische(log.value?.tage);
+    z.naechste = log.value?.naechste ?? null;
     z.ende = istEnde(log.value, zaehleCommits(log.value?.tage), geladen);
     z.laedtMehr = false; z.mehrFehler = false;
     z.ungesichert = (stand?.geaendert || []).map((g) => ({ pfad: String(g.pfad), status: statusAusCode(g.code) }));
@@ -368,20 +392,23 @@ export function zeichneVerlauf(host, { api, beiDatei, beiCommitOeffnen } = {}) {
     const hatteFokus = wurzel.contains(document.activeElement) && document.activeElement.matches?.("button[data-aktion]");
     z.laedtMehr = true; z.mehrFehler = false; zeichne();
     try {
-      const r = await api.gitLog({ max: SEITE, vor: letzter.sha });
+      const r = await api.gitLog({ max: SEITE, vor: z.naechste || letzter.sha });
       if (tot) return;
       if (meine !== nr) { z.laedtMehr = false; return; }
       const vorher = letzter.sha;
       mische(r?.tage);
+      z.naechste = r?.naechste ?? null;
       z.ende = istEnde(r, zaehleCommits(r?.tage), SEITE);
       z.laedtMehr = false;
       let erster = null;
       let gefunden = false;
       for (const t of z.tage) for (const c of t.commits) { if (gefunden && !erster) erster = c.sha; if (c.sha === vorher) gefunden = true; }
       zeichne({ fokusNach: hatteFokus && erster ? "c:" + erster : undefined });
-    } catch {
+    } catch (e) {
       if (tot) return;
-      z.laedtMehr = false; z.mehrFehler = true; zeichne();
+      z.laedtMehr = false;
+      if (gitGesperrt(e)) { z.phase = "gesperrt"; z.tage = []; z.ungesichert = []; } else z.mehrFehler = true;
+      zeichne();
     }
   }
 
@@ -506,7 +533,7 @@ export function zeigeDiff(host, { api, sha, kurz, nachricht, pfad, status, zeit,
     try { text = (await api.diff(pfad, sha || undefined))?.diff; }
     catch (e) {
       if (tot) return;
-      koerper.replaceChildren(h("p", { klasse: "vd-hinweis fehlertext", text: e?.message || TV.diff.fehler }));
+      koerper.replaceChildren(h("p", { klasse: "vd-hinweis fehlertext", text: gitGesperrt(e) ? TV.diff.gesperrt : (e?.message || TV.diff.fehler) }));
       return;
     }
     if (tot) return;

@@ -1,6 +1,6 @@
 // Einstieg ohne Vault: Willkommen-Karte (vier Wege), Name/Ort, Klonen, Versionsverlauf-Rückfrage, KI verbinden.
 // Wird per dynamischem import() geladen und hat beim Import keine Nebenwirkungen.
-import { h, dialog, speichereLokal, leseLokal } from "./hilfen.js";
+import { h, dialog, speichereLokal, leseLokal, arbeitBeginnt } from "./hilfen.js";
 import * as API from "./api.js";
 import { symbol } from "./symbole.js";
 import { TW } from "./texte-willkommen.js";
@@ -8,6 +8,8 @@ import { TW } from "./texte-willkommen.js";
 const api = API.api;
 const STANDARD_ORDNER = "~/Brain";
 const KI_GESEHEN = "ki-schritt-gesehen";
+// „Brain-Hinweise einschalten“ (POST /api/kit/hooks): die Werkstatt hat diese Route noch nicht. Der Knopf bleibt aus, bis es sie gibt.
+const HINWEISE_VERFUEGBAR = false;
 
 let zaehler = 0;
 const nid = (p) => `${p}-${++zaehler}`;
@@ -134,7 +136,7 @@ function meldeZone() {
   };
 }
 
-function baueKiInhalt({ kompakt = false } = {}) {
+function baueKiInhalt({ kompakt = false, beiVerbunden } = {}) {
   const titelId = nid("w-t");
   const titel = h("h2", { klasse: "w-titel", id: titelId, text: TW.ki.titel });
   const text = h("p", { klasse: "w-untertitel", text: TW.ki.text });
@@ -166,8 +168,8 @@ function baueKiInhalt({ kompakt = false } = {}) {
     // Claude verbinden: nur wenn Claude gefunden wurde (oder die Erkennung selbst nicht antwortet).
     const claudeDa = d.erkannt ? d.agenten.some((a) => a.id === "claude") : true;
     const zeilen = [];
-    if (claudeDa) zeilen.push(baueVerbinden());
-    if (claudeDa && d.info?.kit?.vorhanden) zeilen.push(baueHinweise());
+    if (claudeDa) zeilen.push(baueVerbinden({ beiVerbunden }));
+    if (HINWEISE_VERFUEGBAR && claudeDa && d.info?.kit?.vorhanden) zeilen.push(baueHinweise());
     if (claudeDa || hatAgenten) zeilen.push(baueProbe(d.notizen));
     if (zeilen.length) teile.push(h("div", { klasse: "w-gruppe", "data-gruppe": "aktionen" }, zeilen.map((x) => x.knoten)));
     inhalt.replaceChildren(...teile);
@@ -182,26 +184,44 @@ function zeigeOk(beschreibung, zone, text) {
   beschreibung.replaceChildren(h("div", { klasse: "w-ok" }, symbol("kreis-haken", 15), h("span", { text })));
 }
 
-function baueVerbinden() {
+// beiVerbunden: wird erst nach geglücktem Verbinden gerufen (200, auch { schonVerbunden: true }), nie beim bloßen Schließen.
+function baueVerbinden({ beiVerbunden } = {}) {
   const zone = meldeZone();
   const knopf = h("button", { klasse: "knopf primaer", type: "button", "data-aktion": "claude-verbinden", text: TW.ki.verbinden });
   const beschreibung = h("div", { klasse: "w-aktion-text", "aria-live": "polite", text: TW.ki.verbindenText });
-  knopf.addEventListener("click", async () => {
+  const erfolg = () => {
+    knopf.disabled = false;
+    knopf.className = "knopf fertig";
+    knopf.replaceChildren(symbol("haken", 14), TW.ki.verbundenKnopf);
+    zeigeOk(beschreibung, zone, TW.ki.verbunden);
+    try { beiVerbunden?.(); } catch (e) { console.error(e); }
+  };
+  // Es gibt schon einen Eintrag „brain“, der woanders hinzeigt (409 art „anders“): erst fragen, dann mit { umstellen: true } ersetzen
+  const frage = () => {
+    const nein = h("button", { klasse: "knopf", type: "button", "data-aktion": "nicht-umstellen", text: TW.ki.nichtUmstellen });
+    const ja = h("button", { klasse: "knopf primaer", type: "button", "data-aktion": "umstellen", text: TW.ki.umstellen });
+    nein.addEventListener("click", () => { zone.leer(); knopf.focus(); });
+    ja.addEventListener("click", () => verbinde(true));
+    zone.knoten.replaceChildren(h("div", { klasse: "w-frage", "data-bereich": "umstellen", role: "group" },
+      h("div", { klasse: "w-aktion-text", text: TW.ki.anders }), h("div", { klasse: "w-frage-knoepfe" }, nein, ja)));
+    setTimeout(() => nein.focus(), 0);
+  };
+  async function verbinde(umstellen) {
     knopf.disabled = true;
     zone.arbeit(TW.ki.verbindet);
     try {
-      await api.mcpVerbinden();
-      knopf.className = "knopf fertig";
-      knopf.replaceChildren(symbol("haken", 14), TW.ki.verbundenKnopf);
-      zeigeOk(beschreibung, zone, TW.ki.verbunden);
+      await api.mcpVerbinden(umstellen ? { umstellen: true } : undefined);
+      erfolg();
     } catch (e) {
       knopf.disabled = false;
       const befehl = typeof e?.daten?.befehl === "string" ? e.daten.befehl : null;
+      if (!umstellen && e?.status === 409 && e?.daten?.art === "anders") { frage(); return; }
       if (befehl) zone.knoten.replaceChildren(befehlBlock(befehl));
       else zone.fehler(meldungVon(e));
       knopf.focus();
     }
-  });
+  }
+  knopf.addEventListener("click", () => verbinde(false));
   return { knoten: h("div", { klasse: "w-aktion", "data-zeile": "verbinden" }, beschreibung, knopf, zone.knoten), knopf };
 }
 
@@ -263,9 +283,10 @@ function baueProbe(notizen) {
   return { knoten: h("div", { klasse: "w-aktion", "data-zeile": "probe" }, text, knopf, zone.knoten), knopf };
 }
 
-export async function oeffneKiDialog({ beiFertig } = {}) {
+// beiFertig: beim Schließen des Dialogs (egal wie). beiVerbunden: nur nach geglücktem Verbinden mit Claude.
+export async function oeffneKiDialog({ beiFertig, beiVerbunden } = {}) {
   await ladeStil();
-  const ki = baueKiInhalt({ kompakt: true });
+  const ki = baueKiInhalt({ kompakt: true, beiVerbunden });
   const fertig = h("button", { klasse: "knopf primaer", type: "button", "data-aktion": "ki-fertig", text: TW.ki.fertig });
   const d = dialog({ titel: TW.ki.dialogTitel, rumpf: ki.knoten, knoepfe: [fertig], breit: true, beiSchliessen: () => { try { beiFertig?.({}); } catch (e) { console.error(e); } } });
   fertig.addEventListener("click", () => d.schliessen());
@@ -282,9 +303,9 @@ const WEGE = [
 
 let aktiv = null;
 
-async function starteKarte({ modus = "start", beiFertig, beiAbbruch, anfang } = {}) {
+async function starteKarte({ modus = "start", beiFertig, beiAbbruch, beiStandNeu, beiVerbunden, anfang } = {}) {
   await ladeStil();
-  if (aktiv) { aktiv.fokus(); return aktiv; }
+  if (aktiv && aktiv.karte?.isConnected) { aktiv.fokus(); return aktiv; }
   const host = holeHost();
   const app = document.getElementById("app");
   const davor = document.activeElement;
@@ -339,15 +360,18 @@ async function starteKarte({ modus = "start", beiFertig, beiAbbruch, anfang } = 
     setTimeout(() => { if (z.aktuell === s) s.fokus?.(); }, 0);
   }
 
-  async function mitFortschritt(s, text, fn) {
+  // art: was gerade läuft („oeffnen“, „neu“, „klonen“) – das Schließen des Fensters fragt nach, solange es läuft
+  async function mitFortschritt(s, text, fn, art = "vault") {
     if (z.beschaeftigt) return;
     z.beschaeftigt = true;
+    const ende = arbeitBeginnt(art);
     karte.setAttribute("aria-busy", "true");
     const gesperrt = [...karte.querySelectorAll("button, input")].filter((e) => !e.disabled);
     gesperrt.forEach((e) => { e.disabled = true; });
     s.meldung.replaceChildren(h("div", { klasse: "w-arbeit" }, spinner(), h("span", { text })));
     try { await fn(); }
     finally {
+      ende();
       z.beschaeftigt = false;
       karte.setAttribute("aria-busy", "false");
       gesperrt.forEach((e) => { e.disabled = false; });
@@ -358,6 +382,20 @@ async function starteKarte({ modus = "start", beiFertig, beiAbbruch, anfang } = 
     setTimeout(() => { if (z.aktuell === s) s.fokusNachFehler?.(); }, 0);
   }
   const leereMeldung = (s) => s.meldung.replaceChildren();
+
+  // Unklarer Ausgang (Zeitüberschreitung der Brücke): Stand neu holen (Info, Vault-Liste, Git-Status) und ehrlich melden.
+  // Hat die Werkstatt inzwischen einen anderen Vault geöffnet, hat der Weg geklappt: wie nach Erfolg weitermachen.
+  async function behandleFehler(s, e) {
+    if (API.ausgangUnklar(e)) {
+      const stand = await API.ladeStandNeu();
+      if (stand.ok) {
+        const gewechselt = !!(await sicher(() => beiStandNeu?.(stand)));
+        if (gewechselt) { z.pfad = pfadVon(stand.info?.vault) || z.pfad; return abschluss(); }
+        e = new Error(API.zeitText(e));
+      }
+    }
+    if (s) zeigeFehler(s, e); else zeige(schrittFehler(e));
+  }
 
   // Nach jedem Erfolg Info neu lesen: ist jetzt ein Vault aktiv?
   async function nachVault(hinweis) {
@@ -413,7 +451,7 @@ async function starteKarte({ modus = "start", beiFertig, beiAbbruch, anfang } = 
   async function ordnerWeg(s) {
     const pfad = await waehleOrdner(TW.ordner.dialogTitel);
     if (!pfad) { s.fokusNachFehler?.(); return; } // Abbruch: still zurück
-    await mitFortschritt(s, TW.ordner.arbeit, () => oeffnePfad(pfad, s));
+    await mitFortschritt(s, TW.ordner.arbeit, () => oeffnePfad(pfad, s), "oeffnen");
   }
   async function oeffnePfad(pfad, s) {
     try {
@@ -423,10 +461,7 @@ async function starteKarte({ modus = "start", beiFertig, beiAbbruch, anfang } = 
       z.pfad = pfadVon(info?.vault) || pfadAusAntwort(r) || pfad;
       if (r?.git === false || info?.git === false) { zeige(schrittGit(pfad)); return; }
       await nachVault(pfadAusAntwort(r) || pfad);
-    } catch (e) {
-      if (s) zeigeFehler(s, e);
-      else zeige(schrittFehler(e));
-    }
+    } catch (e) { await behandleFehler(s, e); }
   }
 
   // ------------------------------------------------------------ Schritt: Name und Ort (Weg 1/2)
@@ -467,8 +502,8 @@ async function starteKarte({ modus = "start", beiFertig, beiAbbruch, anfang } = 
       z.name = name;
       mitFortschritt(s, t.arbeit, async () => {
         try { const r = await api.vaultNeu(art, name, z.ordner); await nachVault(pfadAusAntwort(r)); }
-        catch (e) { zeigeFehler(s, e); }
-      });
+        catch (e) { await behandleFehler(s, e); }
+      }, "neu");
     };
     knopf.addEventListener("click", tun);
     eingabe.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); tun(); } });
@@ -512,8 +547,8 @@ async function starteKarte({ modus = "start", beiFertig, beiAbbruch, anfang } = 
       z.url = url;
       mitFortschritt(s, TW.klonen.arbeit, async () => {
         try { const r = await api.vaultKlonen(url, z.ordner); await nachVault(pfadAusAntwort(r)); }
-        catch (e) { zeigeFehler(s, e); }
-      });
+        catch (e) { await behandleFehler(s, e); }
+      }, "klonen");
     };
     knopf.addEventListener("click", tun);
     eingabe.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); tun(); } });
@@ -540,9 +575,13 @@ async function starteKarte({ modus = "start", beiFertig, beiAbbruch, anfang } = 
       fokusNachFehler: () => ein.focus(),
     };
     ein.addEventListener("click", () => mitFortschritt(s, TW.git.arbeit, async () => {
-      try { await api.vaultOeffnen(pfad, { git: true }); await nachVault(pfad); }
-      catch (e) { zeigeFehler(s, e); }
-    }));
+      try {
+        const r = await api.vaultOeffnen(pfad, { gitEinschalten: true });
+        // Eingeschaltet werden sollte es, ist es aber nicht (git:false): nie still zum nächsten Schritt, sondern sagen, was los ist
+        if (r?.git === false) { zeigeFehler(s, TW.git.fehlgeschlagen); return; }
+        await nachVault(pfad);
+      } catch (e) { await behandleFehler(s, e); }
+    }, "oeffnen"));
     return s;
   }
 
@@ -566,8 +605,8 @@ async function starteKarte({ modus = "start", beiFertig, beiAbbruch, anfang } = 
       if (!p) { nochmal.focus(); return; }
       zeige(schrittArbeit(TW.ordner.arbeitTitel, TW.ordner.arbeit));
       z.beschaeftigt = true;
-      await oeffnePfad(p, null);
-      z.beschaeftigt = false;
+      const ende = arbeitBeginnt("oeffnen");
+      try { await oeffnePfad(p, null); } finally { ende(); z.beschaeftigt = false; }
     } });
     return {
       name: "fehler", titelId, meldung, escape: () => abbrechen(),
@@ -582,7 +621,7 @@ async function starteKarte({ modus = "start", beiFertig, beiAbbruch, anfang } = 
 
   // ------------------------------------------------------------ Schritt: KI verbinden
   function schrittKi() {
-    const ki = baueKiInhalt({ kompakt: false });
+    const ki = baueKiInhalt({ kompakt: false, beiVerbunden });
     const weiter = () => { speichereLokal(KI_GESEHEN, true); abschluss(); };
     const spaeter = h("button", { klasse: "knopf gross", type: "button", "data-aktion": "ki-spaeter", text: TW.ki.spaeter, aufClick: weiter });
     const fertig = h("button", { klasse: "knopf primaer gross", type: "button", "data-aktion": "ki-weiter", text: TW.ki.weiter, aufClick: weiter });
@@ -597,26 +636,29 @@ async function starteKarte({ modus = "start", beiFertig, beiAbbruch, anfang } = 
   host.addEventListener("keydown", beiTaste);
   host.hidden = false;
   if (app) app.inert = true;
-  aktiv = { fokus: () => z.aktuell?.fokus?.(), schliessen: abbrechen, ende: endePromise };
+  aktiv = { karte, fokus: () => z.aktuell?.fokus?.(), schliessen: abbrechen, ende: endePromise };
   if (anfang?.oeffnen) {
     zeige(schrittArbeit(TW.ordner.arbeitTitel, TW.ordner.arbeit));
     z.beschaeftigt = true;
-    oeffnePfad(anfang.oeffnen, null).finally(() => { z.beschaeftigt = false; });
+    const ende = arbeitBeginnt("oeffnen");
+    oeffnePfad(anfang.oeffnen, null).finally(() => { ende(); z.beschaeftigt = false; });
   } else zeige(schrittWahl());
   return aktiv;
 }
 
 // ---------------------------------------------------------------- Öffentliche Einstiege
 // modus "start": kein Vault vorhanden (kein Abbrechen). modus "neu": aus dem Vault-Wechsler, mit „Abbrechen“.
-export async function zeigeWillkommen({ modus = "start", beiFertig, beiAbbruch } = {}) {
-  const k = await starteKarte({ modus, beiFertig, beiAbbruch });
+// beiStandNeu(stand): die App frischt nach unklarem Ausgang (Zeitüberschreitung) ihre Anzeige auf und meldet true, wenn ein anderer Vault aktiv ist.
+// beiVerbunden: nur nach geglücktem „Mit Claude verbinden“.
+export async function zeigeWillkommen({ modus = "start", beiFertig, beiAbbruch, beiStandNeu, beiVerbunden } = {}) {
+  const k = await starteKarte({ modus, beiFertig, beiAbbruch, beiStandNeu, beiVerbunden });
   return { schliessen: k.schliessen, ende: k.ende };
 }
 
 // „Vault öffnen …“ aus dem Wechsler: Ordner wählen, öffnen, ggf. Versionsverlauf anbieten. Löst nach Abschluss auf: {pfad} | null.
-export async function oeffneOrdnerFlow({ beiFertig } = {}) {
+export async function oeffneOrdnerFlow({ beiFertig, beiStandNeu, beiVerbunden } = {}) {
   const pfad = await waehleOrdner(TW.ordner.dialogTitel);
   if (!pfad) return null;
-  const k = await starteKarte({ modus: "ordner", beiFertig, anfang: { oeffnen: pfad } });
+  const k = await starteKarte({ modus: "ordner", beiFertig, beiStandNeu, beiVerbunden, anfang: { oeffnen: pfad } });
   return k.ende;
 }

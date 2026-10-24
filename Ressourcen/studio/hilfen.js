@@ -6,13 +6,24 @@ export function h(tag, attrs, ...kinder) {
     if (k === "klasse") e.className = v;
     else if (k.startsWith("auf")) e.addEventListener(k.slice(3).toLowerCase(), v);
     else if (k === "text") e.textContent = v;
-    else if (k === "html") e.innerHTML = v;
     else if (v === true) e.setAttribute(k, "");
     else e.setAttribute(k, v);
   }
   for (const k of kinder.flat()) if (k !== null && k !== undefined && k !== false) e.append(k.nodeType ? k : document.createTextNode(String(k)));
   return e;
 }
+
+// Wert aus einer festen Tabelle, nur wenn der Schlüssel wirklich darin steht (Schlüssel aus Daten wie „constructor“ liefern sonst Funktionen)
+export const ausTabelle = (tabelle, schluessel) => (Object.hasOwn(tabelle, schluessel) ? tabelle[schluessel] : undefined);
+
+// Arbeiten, die ein Schließen des Fensters abbrechen würde (Abgleich, Sichern, Klonen, Remote): vorSchliessen meldet sie wie ungespeicherte Eingaben.
+const arbeiten = new Map();
+export function arbeitBeginnt(art) {
+  const id = Symbol(art);
+  arbeiten.set(id, art);
+  return () => { arbeiten.delete(id); };
+}
+export const laufendeArbeiten = () => [...arbeiten.values()];
 
 let dialogZaehler = 0;
 // Öffnet einen Dialog. Gibt { schliessen } zurück. Esc schließt.

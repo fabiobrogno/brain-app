@@ -78,3 +78,50 @@ export async function mockeV2(page, vault, { erzwingen = false, ueberschreibe = 
     return { felder: n.felder, beziehungen: bez, verweise: [...new Set(n.links)], rueckverweise: rueck, info: { woerter: text.split(/\s+/).filter(Boolean).length, bytes: Buffer.byteLength(text), geaendert: n.geaendert, erstellt: n.erstellt } };
   }));
 }
+
+// ---- Vertrauen v2 (Spec §8): info.vertrauen, POST /api/kit/vertrauen → { kit, vertrauen }, Git gesperrt.
+// Antwortform genau nach §8: vertrauen = { erlaubt, noetig, geaendert, gitGesperrt, gruende: [{ art: "kit"|"hooks"|"git", text }] }.
+export const vertrauenAntwort = (o = {}) => ({
+  erlaubt: false, noetig: true, geaendert: false, gitGesperrt: false,
+  gruende: [{ art: "kit", text: "Brain-Werkzeuge (.tools) mit 3 Programmdateien" }], ...o,
+});
+export const GRUENDE_ALLE = [
+  { art: "kit", text: "Brain-Werkzeuge (.tools) mit 3 Programmdateien" },
+  { art: "hooks", text: "Git-Hooks: pre-commit" },
+  { art: "git", text: "Git-Einstellungen, die Programme starten: core.gitProxy" },
+];
+
+// opt.vertrauen: Anfangszustand (veränderlich über das zurückgegebene stand.vertrauen)
+// opt.alt: ältere Werkstatt ohne info.vertrauen (nur kit: { vorhanden, vertraut })
+// opt.postFehler: { status, fehler } → POST /api/kit/vertrauen scheitert
+// stand.post = Anfragen an /api/kit/vertrauen, stand.anfragen = Zähler je Route (info, notizen, gitStatus, gesundheit), stand.gitGesperrtAnfragen = abgewiesene Git-Aufrufe
+export async function mockeVertrauen(page, { vertrauen = vertrauenAntwort(), alt = false, postFehler = null } = {}) {
+  const stand = { vertrauen: { ...vertrauen }, post: [], anfragen: { info: 0, notizen: 0, gitStatus: 0, gesundheit: 0 }, gitGesperrtAnfragen: [] };
+  const kitVon = (v) => ({ vorhanden: !!v.noetig, vertraut: !!v.erlaubt });
+  await page.route("**/api/info", async (route) => {
+    stand.anfragen.info++;
+    const r = await route.fetch(); const { vertrauen: _echt, ...j } = await r.json(); // die echte Werkstatt liefert info.vertrauen schon: für „ältere Werkstatt“ weglassen, sonst ersetzen
+    await route.fulfill({ response: r, json: { ...j, kit: kitVon(stand.vertrauen), ...(alt ? {} : { vertrauen: stand.vertrauen }) } });
+  });
+  await page.route("**/api/kit/vertrauen", async (route) => {
+    const body = route.request().postDataJSON();
+    stand.post.push(body);
+    if (postFehler) return route.fulfill({ status: postFehler.status, json: { fehler: postFehler.fehler } });
+    stand.vertrauen = { ...stand.vertrauen, erlaubt: !!body.erlauben, geaendert: false, gitGesperrt: body.erlauben ? false : stand.vertrauen.gitGesperrt };
+    await route.fulfill({ json: { kit: kitVon(stand.vertrauen), vertrauen: stand.vertrauen } });
+  });
+  // Git gesperrt: Status 200 { repo, gesperrt, grund }, alle übrigen Git-Routen 409 { fehler, gitGesperrt: true }
+  await page.route(/\/api\/git\/(status|sync|commit|log|verlauf|diff|fassung|remote)(\?|$)/, async (route) => {
+    const name = new URL(route.request().url()).pathname.split("/").pop();
+    if (name === "status") stand.anfragen.gitStatus++;
+    if (!stand.vertrauen.gitGesperrt) return route.fallback();
+    if (name === "status") return route.fulfill({ json: { repo: true, gesperrt: true, grund: "Die Git-Einstellungen dieses Vaults können Programme starten." } });
+    stand.gitGesperrtAnfragen.push(name);
+    return route.fulfill({ status: 409, json: { fehler: "Roher Backend-Text: Git ist gesperrt (core.gitProxy).", gitGesperrt: true } });
+  });
+  await page.route("**/api/notizen", (route) => { stand.anfragen.notizen++; return route.fallback(); });
+  // Ohne Vertrauen läuft das Kit nicht: Gesundheit und Rückfragen sind „nicht verfügbar“
+  await page.route("**/api/gesundheit", (route) => { stand.anfragen.gesundheit++; return route.fulfill({ json: stand.vertrauen.erlaubt || !stand.vertrauen.noetig ? { ampel: "gruen", warnungen: [], pruefungen: [] } : { verfuegbar: false, grund: "nicht-vertraut" } }); });
+  await page.route("**/api/rueckfragen", (route) => route.fulfill({ json: stand.vertrauen.erlaubt || !stand.vertrauen.noetig ? { offen: 2 } : { verfuegbar: false, grund: "nicht-vertraut" } }));
+  return stand;
+}

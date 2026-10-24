@@ -1,4 +1,6 @@
 // Formatierung: Datum, Größe, Typ-Farben. Alles deutsch (Berliner Zeit der Anzeige = Zeit des Geräts).
+import { ausTabelle } from "./hilfen.js";
+
 const DE = "de-DE";
 const fmtKurz = new Intl.DateTimeFormat(DE, { day: "numeric", month: "short", year: "numeric" });
 const fmtLang = new Intl.DateTimeFormat(DE, { day: "numeric", month: "long", year: "numeric" });
@@ -39,15 +41,18 @@ export function bytesText(n) {
   return `${(n / 1024 / 1024).toLocaleString(DE, { maximumFractionDigits: 1 })} MB`;
 }
 
-// Typ-Farben: die Schnittstelle liefert Hex oder einen Namen; Namen werden auf eine ruhige Palette abgebildet.
+// Typ-Farben: die Schnittstelle liefert #RRGGBB (oder einen Namen aus unserer ruhigen Palette). Alles andere – auch rgb(…), hsl(…)
+// oder Text mit Anhang – gilt nicht und fällt auf die aus dem Namen abgeleitete Standardfarbe zurück.
 const PALETTE = {
   blau: "#4a78e0", gruen: "#3a9a68", gelb: "#c99a1e", orange: "#d9772b", rot: "#cc5144", rosa: "#cf5f94",
   violett: "#7a5fd6", lila: "#7a5fd6", tuerkis: "#2a9ba8", grau: "#8b877f", braun: "#9a7350", indigo: "#5b4ed6",
 };
+const HEX6 = /^#[0-9a-fA-F]{6}$/;
 export function typFarbe(f) {
   if (!f || typeof f !== "string") return null;
-  if (/^(#|rgb|hsl|oklch)/i.test(f.trim())) return f.trim();
-  return PALETTE[f.trim().toLowerCase()] || null;
+  const t = f.trim();
+  if (HEX6.test(t)) return t;
+  return ausTabelle(PALETTE, t.toLowerCase()) || null;
 }
 // Ableitung aus dem Namen, wenn die Schnittstelle keine Farbe liefert (stabil je Name)
 export function farbeAusName(name) {
@@ -56,11 +61,13 @@ export function farbeAusName(name) {
   for (const z of String(name || "")) s = (s * 31 + z.codePointAt(0)) >>> 0;
   return liste[s % liste.length];
 }
-// CSS-Variablen für Karten, Chips und Zeilen eines Typs
-export function typStil(typ) {
+// CSS-Variablen für Karten, Chips und Zeilen eines Typs: direkt auf dem Element gesetzt, nie als zusammengesetzter Stil-Text aus Daten
+export function setzeTypFarbe(el, typ) {
   const farbe = typFarbe(typ?.farbe) || (typ?.name ? farbeAusName(typ.name) : null);
-  if (!farbe) return "";
-  return `--typ:${farbe};--typ-text:color-mix(in srgb, ${farbe} 82%, light-dark(#000, #fff) 18%)`;
+  if (!farbe) return el;
+  el.style.setProperty("--typ", farbe);
+  el.style.setProperty("--typ-text", `color-mix(in srgb, ${farbe} 82%, light-dark(#000, #fff) 18%)`);
+  return el;
 }
 // Symbolnamen der Schnittstelle auf vorhandene Symbole (Unbekanntes → notiz)
 export const TYP_SYMBOLE = new Set(["buch", "zitat", "wuerfel", "rakete", "person", "waage", "notiz", "ordner", "thema"]);
@@ -77,7 +84,7 @@ export function hexNachRgb(hex) { const m = /^#([0-9a-f]{6})$/i.exec(hex || "");
 const TYP_NAMEN = { thema: "Thema", quelle: "Quelle", entitaet: "Entität", projekt: "Projekt", person: "Person", entscheidung: "Entscheidung", vorschlag: "Vorschlag", ueberblick: "Überblick", notiz: "Notiz" };
 export function typName(name) {
   const s = String(name || "");
-  return TYP_NAMEN[s.toLowerCase()] || (s ? s[0].toUpperCase() + s.slice(1) : s);
+  return ausTabelle(TYP_NAMEN, s.toLowerCase()) || (s ? s[0].toUpperCase() + s.slice(1) : s);
 }
 
 // Vorschautext für Karten: Markdown-Zeichen weg, Leerraum geglättet (reine Anzeige, ändert nie die Datei)

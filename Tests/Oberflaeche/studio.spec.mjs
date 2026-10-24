@@ -218,8 +218,8 @@ test("Seitenleiste zeigt Rückfragen n, wenn das Kit sie liefert", async ({ page
   mkdirSync(join(vault, ".tools"), { recursive: true });
   writeFileSync(join(vault, ".tools/rueckfragen.mjs"), "export function sichtbare(){ return { fragen: [{},{}], wartend: 1 }; }\n");
   await oeffne(page, "09_wiki/wissen/Kaffee.md");
-  // Das Kit liegt im Ordner: erst nach „Erlauben“ wird es ausgeführt
-  if (await page.locator('[data-aktion="kit-erlauben"]').count()) await page.click('[data-aktion="kit-erlauben"]');
+  // Das Kit liegt im Ordner: erst nach „Vertrauen“ wird es ausgeführt (die Frage heißt seit Vertrauen v2 vertrauen-erlauben, vorher kit-erlauben)
+  if (await page.locator('[data-aktion="vertrauen-erlauben"]').count()) await page.click('[data-aktion="vertrauen-erlauben"]');
   await expect(page.locator('[data-bereich="rueckfragen"] .zahl')).toHaveText("3", { timeout: 5000 });
 });
 
@@ -400,7 +400,7 @@ test("Menübefehl vor fertigem Start wird gemerkt und danach ausgeführt; bereit
 async function kitRouten(page, { vorhanden = true, vertraut = false } = {}) {
   const stand = { vertraut, post: [], gesundheit: 0 };
   await page.route("**/api/info", async (route) => {
-    const r = await route.fetch(); const j = await r.json();
+    const r = await route.fetch(); const { vertrauen: _echt, ...j } = await r.json(); // ältere Werkstatt: ohne info.vertrauen (die echte liefert es inzwischen)
     await route.fulfill({ response: r, json: { ...j, kit: { vorhanden, vertraut: stand.vertraut } } });
   });
   await page.route("**/api/kit/vertrauen", async (route) => { stand.post.push(route.request().postDataJSON()); stand.vertraut = true; await route.fulfill({ json: { ok: true } }); });
@@ -412,36 +412,93 @@ async function kitRouten(page, { vorhanden = true, vertraut = false } = {}) {
   return stand;
 }
 
-test("Kit-Vertrauen: Hinweis, Erlauben lädt Gesundheit/Rückfragen sofort", async ({ page }) => {
+// Ältere Werkstatt: nur info.kit ({ vorhanden, vertraut }), ohne info.vertrauen. Die Frage ist seit Vertrauen v2 ein Dialog (vorher ein Hinweisband).
+test("Kit-Vertrauen: Frage, Vertrauen lädt Gesundheit/Rückfragen sofort", async ({ page }) => {
   const stand = await kitRouten(page);
   await oeffne(page, DATEI_A);
-  const hinweis = page.locator('[data-banner="kit"]');
-  await expect(hinweis).toBeVisible();
-  await expect(hinweis).toContainText("Brain-Werkzeuge (.tools)");
+  const frage = page.locator('.dialog[data-dialog="vertrauen"]');
+  await expect(frage).toBeVisible();
+  await expect(frage).toContainText("Brain-Werkzeuge (.tools)");
   await expect(page.locator('[data-st="gesundheit"]')).toHaveCount(0);
   await page.screenshot({ path: "screenshots/kit-vertrauen-light.png" });
   const vorher = stand.gesundheit;
-  await page.click('[data-aktion="kit-erlauben"]');
-  await expect(hinweis).toHaveCount(0);
+  await page.click('[data-aktion="vertrauen-erlauben"]');
+  await expect(frage).toHaveCount(0);
   expect(stand.post).toEqual([{ erlauben: true }]);
   await expect(page.locator('[data-st="gesundheit"]')).toBeVisible();
   await expect(page.locator('[data-bereich="rueckfragen"] .zahl')).toHaveText("2");
   expect(stand.gesundheit).toBeGreaterThan(vorher);
 });
 
-test("Kit-Vertrauen: Nicht jetzt blendet aus; vertraut oder ohne kit-Feld: kein Hinweis", async ({ page }) => {
+test("Kit-Vertrauen: Nicht jetzt schließt die Frage; vertraut oder ohne kit-Feld: keine Frage", async ({ page }) => {
   await kitRouten(page);
   await oeffne(page, DATEI_A);
-  await page.click('[data-aktion="kit-spaeter"]');
-  await expect(page.locator('[data-banner="kit"]')).toHaveCount(0);
+  await page.click('[data-aktion="vertrauen-spaeter"]');
+  await expect(page.locator('[data-dialog="vertrauen"]')).toHaveCount(0);
+  await expect(page.locator('[data-st="vertrauen"]')).toBeVisible(); // später über die Statusleiste erreichbar
   const p2 = await page.context().newPage();
   await mocke(p2);
   await kitRouten(p2, { vertraut: true });
   await p2.goto(server.url + "?pfad=" + encodeURIComponent(DATEI_A)); await p2.waitForSelector(".cm-content .cm-line");
-  await expect(p2.locator('[data-banner="kit"]')).toHaveCount(0);
+  await expect(p2.locator('[data-dialog="vertrauen"]')).toHaveCount(0);
   const p3 = await page.context().newPage(); // echtes Backend, evtl. ohne kit-Feld
   await mocke(p3);
   await p3.goto(server.url + "?pfad=" + encodeURIComponent(DATEI_A)); await p3.waitForSelector(".cm-content .cm-line");
   await p3.waitForTimeout(500);
-  await expect(p3.locator('[data-banner="kit"]')).toHaveCount(0);
+  await expect(p3.locator('[data-dialog="vertrauen"]')).toHaveCount(0);
+});
+
+// ---------------------------------------------------------------- W3: Zeitüberschreitung der Brücke (die Anfrage reißt ab, status 0)
+const DAUERT = "Das dauert länger als erwartet. Ich habe den Stand neu geladen – prüfe bitte, ob es geklappt hat.";
+function merkeAnfragen(page) {
+  const log = [];
+  page.on("request", (r) => { const p = new URL(r.url()).pathname; if (["/api/info", "/api/vaults", "/api/git/status"].includes(p)) log.push(p); });
+  return log;
+}
+
+test("W3: Sichern reißt ab → Dialog zu, Info, Vault-Liste und Git-Status neu geladen, ehrlicher Satz", async ({ page }) => {
+  writeFileSync(join(vault, "00_inbox/neu.md"), "Neu\n");
+  await oeffne(page, DATEI_A);
+  await expect(page.locator('[data-st="geaendert"]')).toContainText("geändert");
+  await page.route("**/api/git/commit", (r) => r.abort("failed"));
+  await page.click('[data-st="geaendert"]');
+  await page.fill('[data-feld="nachricht"]', "Neu");
+  const log = merkeAnfragen(page);
+  await page.click('[data-aktion="commit"]');
+  await expect(page.locator(".toast")).toContainText(DAUERT);
+  await expect(page.locator('[data-feld="nachricht"]')).toHaveCount(0);
+  for (const p of ["/api/info", "/api/vaults", "/api/git/status"]) expect(log, p).toContain(p);
+  await expect(page.locator(".toast.fehler")).toHaveCount(0); // keine rohe Verbindungsmeldung
+});
+
+test("W3: Abgleich reißt ab → gleicher ehrlicher Satz, kein Fehlerzustand in der Statusleiste", async ({ page }) => {
+  await oeffne(page, DATEI_A);
+  await page.route("**/api/git/sync", (r) => r.abort("failed"));
+  const log = merkeAnfragen(page);
+  await page.click('[data-st="sync"]');
+  await expect(page.locator(".toast")).toContainText(DAUERT);
+  for (const p of ["/api/info", "/api/vaults", "/api/git/status"]) expect(log, p).toContain(p);
+  await expect(page.locator('[data-st="sync"]')).not.toContainText("Fehler");
+});
+
+test("W3: antwortet die Werkstatt danach auch nicht, bleibt die Verbindungsmeldung", async ({ page }) => {
+  await oeffne(page, DATEI_A);
+  await page.route("**/api/git/sync", (r) => r.abort("failed"));
+  await page.route("**/api/info", (r) => r.abort("failed"));
+  await page.click('[data-st="sync"]');
+  await expect(page.locator(".toast.fehler")).toContainText("Die Verbindung zum Hintergrunddienst ist abgebrochen");
+  await expect(page.locator(".toast")).not.toContainText(DAUERT);
+});
+
+test("W3: Frist der Werkstatt (504) zeigt deren Satz und lädt trotzdem neu", async ({ page }) => {
+  writeFileSync(join(vault, "00_inbox/neu.md"), "Neu\n");
+  await oeffne(page, DATEI_A);
+  await expect(page.locator('[data-st="geaendert"]')).toContainText("geändert");
+  await page.route("**/api/git/commit", (r) => r.fulfill({ status: 504, json: { fehler: "Das Sichern hat zu lange gedauert. Es wurde nichts verändert." } }));
+  await page.click('[data-st="geaendert"]');
+  await page.fill('[data-feld="nachricht"]', "Neu");
+  const log = merkeAnfragen(page);
+  await page.click('[data-aktion="commit"]');
+  await expect(page.locator(".toast")).toContainText("Das Sichern hat zu lange gedauert. Es wurde nichts verändert.");
+  await expect.poll(() => log.includes("/api/info") && log.includes("/api/git/status")).toBe(true);
 });

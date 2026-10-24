@@ -1,13 +1,13 @@
 // Brain Studio v2 — Oberfläche. Vier Spalten: Seitenleiste · Notizliste · Editor · Eigenschaften, Statusleiste.
 // Zustand, Navigation, Editor-Anbindung (verlustfrei), Speichern/Konflikt, Dialoge, Vault-Verwaltung.
 import { T, PRODUKT } from "./texte.js";
-import { api, aktion, inApp } from "./api.js";
+import { api, aktion, inApp, gitGesperrt, ausgangUnklar, zeitText as zeitFehlerText, ladeStandNeu } from "./api.js";
 import { erstelleEditor } from "./editor.js";
-import { h, dialog, dialogOffen, toast, vorMinuten, dateiName, ohneEndung, ordnerVon, istBearbeitbar, speichereLokal, leseLokal, leseEntwurf, speichereEntwurf, sucheGrad, suchFormen } from "./hilfen.js";
+import { h, dialog, dialogOffen, toast, vorMinuten, dateiName, ohneEndung, ordnerVon, istBearbeitbar, speichereLokal, leseLokal, leseEntwurf, speichereEntwurf, sucheGrad, suchFormen, ausTabelle, arbeitBeginnt, laufendeArbeiten } from "./hilfen.js";
 import { symbol } from "./symbole.js";
 import { diffAnsicht } from "./diff.js";
 import { oeffneMenue, schliesseMenue } from "./menue.js";
-import { datumKurz, datumLang, datumZeit, istDatumText, bytesText, typStil, typSymbol, typName, wortAnzahl, relativ, pluralisiere, vorschauText, typTextFarbe } from "./format.js";
+import { datumKurz, datumLang, datumZeit, istDatumText, bytesText, setzeTypFarbe, typSymbol, typName, wortAnzahl, relativ, pluralisiere, vorschauText, typTextFarbe } from "./format.js";
 
 const $ = (id) => document.getElementById(id);
 const MOD_META = /Mac|iPhone|iPad/.test(navigator.platform || "");
@@ -188,7 +188,10 @@ async function sichereVorWechsel() {
   clearTimeout(speicherTimer);
   for (;;) {
     if (await speichereAlles()) return true;
-    if (S.konflikt) return false;
+    if (S.konflikt) { // nicht still abbrechen: sagen, warum der Wechsel nicht geht
+      toast(T.konflikt.erstLoesen(S.nMap.get(S.pfad)?.titel || ohneEndung(dateiName(S.pfad || ""))), { fehler: true });
+      return false;
+    }
     const wahl = await fragSpeicherFehler();
     if (wahl === "verwerfen") { clearTimeout(speicherTimer); S.dirty = false; return true; }
     if (wahl !== "nochmal") return false;
@@ -391,9 +394,10 @@ function abschnitt(id, titel, inhalt, { zaehlerText } = {}) {
         S.zu.has(id) ? S.zu.delete(id) : S.zu.add(id); lokal.schreib("zu", [...S.zu]); zeichneSeite(); } }, symbol("chevron-unten", 12), h("span", { text: titel }))),
     h("div", { klasse: "abschnitt-inhalt" }, inhalt));
 }
-function eintragEl({ id, data, symbolName, name, zahl, aktiv, stil, zahlKlasse, tun, titel }) {
-  return h("button", { klasse: "eintrag", type: "button", ...data, "aria-current": aktiv ? "true" : "false", style: stil || null, title: titel || null, aufClick: tun },
+function eintragEl({ id, data, symbolName, name, zahl, aktiv, typ, zahlKlasse, tun, titel }) {
+  const el = h("button", { klasse: "eintrag", type: "button", ...data, "aria-current": aktiv ? "true" : "false", title: titel || null, aufClick: tun },
     symbol(symbolName, 16), h("span", { klasse: "name", text: name }), zahl !== undefined && zahl !== null ? h("span", { klasse: "zahl" + (zahlKlasse ? " " + zahlKlasse : ""), text: String(zahl) }) : null);
+  return typ ? setzeTypFarbe(el, typ) : el;
 }
 function zeichneBereiche() {
   const z = zaehler();
@@ -421,7 +425,7 @@ function zeichneAnsichten() {
 }
 function zeichneTypen() {
   const zeilen = S.typen.length ? S.typen.map((t) =>
-    eintragEl({ data: { "data-typ": t.name }, symbolName: typSymbol(t.symbol), name: typName(t.name), zahl: t.anzahl, stil: typStil(t), aktiv: S.sicht.art === "typ" && S.sicht.id === t.name, tun: () => waehleSicht({ art: "typ", id: t.name }) }))
+    eintragEl({ data: { "data-typ": t.name }, symbolName: typSymbol(t.symbol), name: typName(t.name), zahl: t.anzahl, typ: t, aktiv: S.sicht.art === "typ" && S.sicht.id === t.name, tun: () => waehleSicht({ art: "typ", id: t.name }) }))
     : [h("div", { klasse: "hinweis-leer", text: "Noch keine Typen. Gib einer Notiz im Datei-Kopf ein Feld „typ:“." })];
   abschnitt("typen", T.abschnitte.typen, zeilen);
 }
@@ -495,8 +499,8 @@ function leerZustand() {
 function baueKarte(n) {
   const typ = n.typ ? (S.typMap.get(n.typ) || { name: n.typ }) : null;
   const stufe = n.stufe && n.stufe !== "grau" ? n.stufe : null;
-  return h("div", { klasse: "karte" + (n.generiert ? " schutz" : "") + (n.bereich === "archiv" ? " archiv" : ""), role: "option", "data-karte": "", "data-pfad": n.pfad, title: n.pfad,
-    "aria-selected": String(S.pfad === n.pfad), style: typ ? typStil(typ) : null,
+  const karte = h("div", { klasse: "karte" + (n.generiert ? " schutz" : "") + (n.bereich === "archiv" ? " archiv" : ""), role: "option", "data-karte": "", "data-pfad": n.pfad, title: n.pfad,
+    "aria-selected": String(S.pfad === n.pfad),
     aufClick: () => oeffneAusListe(n.pfad) },
     h("div", { klasse: "karte-kopf" },
       h("div", { klasse: "karte-titel", text: n.titel || T.liste.ohneTitel }),
@@ -505,6 +509,7 @@ function baueKarte(n) {
         stufe ? h("span", { klasse: "punkt " + stufe, "data-punkt": n.pfad, title: T.stufen[stufe] || "" }) : null)),
     h("div", { klasse: "karte-vorschau", text: vorschauText(n.vorschau) }),
     h("div", { klasse: "karte-fuss" }, h("span", { text: datumKurz(n.geaendert) }), n.erstellt ? h("span", { text: `${T.liste.erstellt} ${datumKurz(n.erstellt)}` }) : null));
+  return typ ? setzeTypFarbe(karte, typ) : karte;
 }
 const CHUNK = 120;
 function rendereMehr(bis) {
@@ -637,9 +642,10 @@ function zeichneSuchergebnisse() {
   host.replaceChildren(...S.suche.treffer.map((t, i) => {
     const n = S.nMap.get(t.pfad);
     const typ = n?.typ ? (S.typMap.get(n.typ) || { name: n.typ }) : null;
-    return h("div", { klasse: "karte", role: "option", "data-suche": "treffer", "data-karte": "", "data-pfad": t.pfad, "aria-selected": String(i === S.suche.auswahl), style: typ ? typStil(typ) : null, aufClick: () => oeffne(t.pfad, { zeile: t.zeile }) },
+    const karte = h("div", { klasse: "karte", role: "option", "data-suche": "treffer", "data-karte": "", "data-pfad": t.pfad, "aria-selected": String(i === S.suche.auswahl), aufClick: () => oeffne(t.pfad, { zeile: t.zeile }) },
       h("div", { klasse: "karte-kopf" }, h("div", { klasse: "karte-titel", text: t.titel || ohneEndung(dateiName(t.pfad)) }), h("div", { klasse: "karte-marken" }, symbol(typ ? typSymbol(typ.symbol) : "notiz", 15))),
       t.auszug ? h("div", { klasse: "auszug", text: t.auszug }) : null, h("div", { klasse: "pfadzeile", text: t.pfad }));
+    return typ ? setzeTypFarbe(karte, typ) : karte;
   }));
   host.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
 }
@@ -654,7 +660,7 @@ async function zeichneVerlauf() {
     const m = await import("./verlauf.js");
     if (S.sicht.art !== "verlauf") return;
     host.replaceChildren();
-    verlaufInst = m.zeichneVerlauf(host, { api, beiDatei: zeigeDiff });
+    verlaufInst = m.zeichneVerlauf(host, { api, beiDatei: zeigeDiff, beiGesperrt: oeffneVertrauen });
   } catch (e) {
     host.replaceChildren(h("div", { klasse: "leer-liste" }, h("div", { klasse: "zeichen" }, symbol("verlauf", 22)), h("h3", { text: T.liste.verlauf }), h("p", { text: "Der Verlauf ist gerade nicht verfügbar." })));
   }
@@ -775,7 +781,7 @@ const IM_WAHRHEITSBLOCK = new Set(["stand", "pruefen_bis", "quelle", "herkunft",
 const FELD_NAMEN = { name: "Name", description: "Beschreibung", fragen: "Fragen", quellen: "Quellen", rev: "Revision", verfall: "Verfällt nach", ersetzt_durch: "Ersetzt durch", zweifel: "Zweifel" };
 const hatWiki = (w) => (typeof w === "string" && /\[\[[^\]]+\]\]/.test(w)) || (Array.isArray(w) && w.some(hatWiki));
 const wikiZiel = (s) => { const m = /\[\[([^\]|#]+)/.exec(String(s)); return m ? m[1].trim() : String(s).trim(); };
-const schoenerName = (k) => FELD_NAMEN[k] || (() => { const s = String(k).replace(/[_-]+/g, " ").trim(); return s ? s[0].toUpperCase() + s.slice(1) : k; })();
+const schoenerName = (k) => ausTabelle(FELD_NAMEN, k) || (() => { const s = String(k).replace(/[_-]+/g, " ").trim(); return s ? s[0].toUpperCase() + s.slice(1) : k; })();
 function reihe(k, wert, opts = {}) {
   return h("div", { klasse: "reihe" + (opts.dim ? " dim" : ""), "data-feld": opts.feld || null }, h("div", { klasse: "k", title: typeof k === "string" ? k : null }, opts.symbol ? symbol(opts.symbol, 14) : null, h("span", { text: k })),
     h("div", { klasse: "w" + (opts.rechts ? " rechts" : "") + (opts.leise ? " leise" : "") }, wert));
@@ -809,7 +815,8 @@ function zielKnopf(ziel) {
   const n = pfad ? S.nMap.get(pfad) : null;
   if (!pfad) return h("div", { klasse: "ziel fehlt", "data-ziel-fehlt": ziel, title: T.eigenschaften.offenEntfernt }, symbol("link", 14), h("span", { klasse: "t", text: ohneEndung(dateiName(ziel)) }));
   const typ = n?.typ ? (S.typMap.get(n.typ) || { name: n.typ }) : null;
-  return h("button", { klasse: "ziel", type: "button", "data-ziel": pfad, style: typ ? typStil(typ) : null, title: pfad, aufClick: () => oeffne(pfad, { ausListe: true }) }, symbol(typ ? typSymbol(typ.symbol) : "notiz", 14), h("span", { klasse: "t", text: n?.titel || ohneEndung(dateiName(pfad)) }));
+  const knopf = h("button", { klasse: "ziel", type: "button", "data-ziel": pfad, title: pfad, aufClick: () => oeffne(pfad, { ausListe: true }) }, symbol(typ ? typSymbol(typ.symbol) : "notiz", 14), h("span", { klasse: "t", text: n?.titel || ohneEndung(dateiName(pfad)) }));
+  return typ ? setzeTypFarbe(knopf, typ) : knopf;
 }
 function infoGeruest() {
   const kopf = h("div", { klasse: "info-kopf" }, symbol("zahnrad", 16), h("h2", { text: T.eigenschaften.titel }),
@@ -885,7 +892,7 @@ async function ladeInfo() {
     const felder = k.felder || {};
     const typId = n?.typ || felder.typ || felder.type || null;
     const typ = typId ? (S.typMap.get(typId) || { name: typId }) : null;
-    const zeilen = [reihe(T.eigenschaften.typ, typ ? h("span", { klasse: "chip", style: typStil(typ), "data-typ-chip": typ.name }, symbol(typSymbol(typ.symbol), 13), typName(typ.name)) : h("span", { text: T.eigenschaften.keinTyp }), { symbol: "thema", leise: !typ, feld: "typ" })];
+    const zeilen = [reihe(T.eigenschaften.typ, typ ? setzeTypFarbe(h("span", { klasse: "chip", "data-typ-chip": typ.name }, symbol(typSymbol(typ.symbol), 13), typName(typ.name)), typ) : h("span", { text: T.eigenschaften.keinTyp }), { symbol: "thema", leise: !typ, feld: "typ" })];
     const wissen = n?.bereich === "wissen";
     const rest = Object.entries(felder).filter(([key, w]) => !SCHUTZ_FELDER.has(key.toLowerCase()) && !key.startsWith("_") && !hatWiki(w) && !(wissen && IM_WAHRHEITSBLOCK.has(key.toLowerCase())));
     for (const [key, w] of rest) { const f = feldWert(w); zeilen.push(reihe(schoenerName(key), f.n, { leise: f.leise, feld: key })); }
@@ -917,7 +924,8 @@ async function ladeInfo() {
   });
 
   // Verlauf dieser Notiz
-  if (S.info && !S.info.git) verlaufSek.append(h("p", { klasse: "leise", text: T.info.keinGit }));
+  if (istGitGesperrt()) verlaufSek.append(h("p", { klasse: "leise", text: T.info.gitGesperrt }));
+  else if (S.info && !S.info.git) verlaufSek.append(h("p", { klasse: "leise", text: T.info.keinGit }));
   else api.verlauf(pfad, 30).then((r) => {
     if (nr !== infoNr) return;
     const liste = r.eintraege || [];
@@ -927,7 +935,7 @@ async function ladeInfo() {
     liste.forEach((x) => offenMit.push(fassung(x, pfad)));
     if (!offenMit.length) verlaufSek.append(h("p", { klasse: "leise", style: "margin:0", text: T.info.keinVerlauf }));
     else verlaufSek.append(...offenMit);
-  }).catch((e) => { if (nr === infoNr) verlaufSek.append(h("p", { klasse: "leise", style: "margin:0", text: e.status === 400 || e.status === 404 ? T.info.keinVerlauf : e.message })); });
+  }).catch((e) => { if (nr === infoNr) verlaufSek.append(h("p", { klasse: "leise", style: "margin:0", text: gitGesperrt(e) ? T.info.gitGesperrt : e.status === 400 || e.status === 404 ? T.info.keinVerlauf : e.message })); });
 }
 const signalStufe = (s) => s.stufe || (/konflikt|zweifel|pruefbed|prüfbed|rot/i.test(s.art || "") ? "rot" : s.art === "belegt" ? "gruen" : /^(stand|kritisch)$/.test(s.art || "") ? "grau" : "gelb");
 
@@ -950,7 +958,7 @@ function fassung(x, pfad) {
         const d = await api.diff(pfad, x.arbeitsstand ? undefined : x.sha);
         rumpf.replaceChildren(diffAnsicht(d.diff));
         if (!x.arbeitsstand) rumpf.append(h("button", { klasse: "knopf", "data-aktion": "wiederherstellen", text: T.info.wiederherstellen, aufClick: () => stelleWiederHer(pfad, x.sha) }));
-      } catch (e) { rumpf.replaceChildren(h("div", { klasse: "fehlertext", text: e.message })); }
+      } catch (e) { rumpf.replaceChildren(h("div", { klasse: "fehlertext", text: gitGesperrt(e) ? T.fehler.gitGesperrt : e.message })); }
     }
   } }, h("span", { klasse: "nachricht", text: x.nachricht }), h("span", { klasse: "meta", text: x.arbeitsstand ? "" : [x.autor, zeitText(x.zeit)].filter(Boolean).join(" · ") }));
   kopf.addEventListener("keydown", (e) => { if (e.key === "Enter") kopf.click(); });
@@ -964,7 +972,7 @@ async function stelleWiederHer(pfad, sha) {
     if (f.inhalt.includes("\r") && ed.view.state.lineBreak === "\n") { ed.setzeText(f.inhalt); S.dirty = true; ed.view.dispatch({}); zeigeStand("ungespeichert"); clearTimeout(speicherTimer); speicherTimer = setTimeout(speichere, 800); }
     else ed.ersetzeAlles(f.inhalt);
     toast(T.info.wiederhergestellt);
-  } catch (e) { toast(e.message, { fehler: true }); }
+  } catch (e) { toast(gitGesperrt(e) ? T.fehler.gitGesperrt : e.message, { fehler: true }); }
 }
 
 // ======================================================= Statusleiste
@@ -989,7 +997,11 @@ function zeichneStatus() {
   k.push(st("vault", [symbol("vault", 14), h("span", { text: S.info.name || PRODUKT })], { titel: S.info.vault }));
   if (S.info.appVersion) k.push(st("version", [symbol("info", 14), h("span", { text: S.info.appVersion })], { titel: T.status.version(S.info.appVersion) }));
   k.push(h("span", { klasse: "trenner" }));
-  if (!S.info.git || (g && !g.repo)) {
+  const vertrauen = vertrauenVon(S.info);
+  if (istGitGesperrt()) {
+    // Statt der Git-Angaben: gesperrt, bis der Nutzer dem Vault vertraut (Klick öffnet die Frage)
+    k.push(st("git-gesperrt", [symbol("schild", 14), h("span", { text: T.status.gitGesperrt })], { klick: oeffneVertrauen, titel: T.status.gitGesperrtTitel, klasse: "warn" }));
+  } else if (!S.info.git || (g && !g.repo)) {
     k.push(st("kein-git", [punktEl("grau"), h("span", { text: T.status.keinGit })], { titel: "Dieser Ordner ist nicht mit Git gesichert." }));
   } else if (g) {
     k.push(st("zweig", [symbol("zweig", 14), h("span", { text: g.zweig || "–" }), ...(g.upstream ? [h("span", { text: `↑${g.vor} ↓${g.zurueck}` })] : [])], { titel: g.upstream ? `Verbunden mit ${g.upstream}` : "Kein Remote-Zweig" }));
@@ -1004,6 +1016,9 @@ function zeichneStatus() {
     k.push(st("verlauf", [symbol("verlauf", 14), h("span", { text: T.status.verlauf })], { klick: oeffneVerlauf, titel: T.status.verlaufTitel, klasse: S.sicht.art === "verlauf" ? "aktiv" : "" }));
   }
   k.push(h("span", { klasse: "sp" }));
+  if (vertrauen && vertrauen.noetig && !vertrauen.erlaubt && !istGitGesperrt()) {
+    k.push(st("vertrauen", [symbol("schild", 14), h("span", { text: T.status.nichtVertraut })], { klick: oeffneVertrauen, titel: T.status.nichtVertrautTitel, klasse: "warn" }));
+  }
   const verbunden = S.kiVerbunden || S.ki?.agenten?.some((a) => a.id === "claude" && a.verbunden === true);
   k.push(st("claude", [symbol("claude", 14), h("span", { text: T.status.claude }), symbol(verbunden ? "haken" : "schliessen", 12)], { klick: oeffneKi, titel: verbunden ? T.status.claudeVerbunden : T.status.claudeNicht, klasse: verbunden ? "gut" : "" }));
   const gs = S.gesundheit;
@@ -1022,7 +1037,8 @@ setInterval(() => { if (S.git) zeichneStatus(); }, 30000);
 
 let gitTimer = null, baumTimer = null;
 async function ladeGit() {
-  try { S.git = await api.status(); } catch { S.git = null; }
+  try { S.git = await api.status(); }
+  catch (e) { S.git = gitGesperrt(e) ? { repo: true, gesperrt: true, grund: e.daten?.fehler || null } : null; }
   zeichneStatus();
 }
 function planeGitRefresh() { clearTimeout(gitTimer); gitTimer = setTimeout(ladeGit, 1200); }
@@ -1039,8 +1055,10 @@ async function ladeKi() {
 
 async function sync() {
   if (S.syncLaeuft) return;
+  if (istGitGesperrt()) { await zeigeGitGesperrt(); return; }
   if (S.dirty) { clearTimeout(speicherTimer); await speichereAlles(); }
   S.syncLaeuft = true; S.syncFehler = null; zeichneStatus();
+  const ende = arbeitBeginnt("sync"); // Schließen des Fensters fragt nach, solange das läuft
   try {
     const r = await api.sync();
     toast(T.status.abgeglichen[r.ergebnis] || T.status.abgeglichen.aktuell);
@@ -1055,18 +1073,48 @@ async function sync() {
       }
     }
   } catch (e) {
-    S.syncFehler = e.status === 409 ? "konflikt" : "fehler";
-    toast(e.status === 409 && e.daten?.dateien?.length ? `${e.message} Betroffen: ${e.daten.dateien.slice(0, 3).join(", ")}` : e.message, { fehler: true });
-  } finally { S.syncLaeuft = false; await ladeGit(); if (S.sicht.art === "verlauf") verlaufInst?.aktualisieren?.(); }
+    if (gitGesperrt(e)) { S.syncFehler = null; await zeigeGitGesperrt(); }
+    else if (ausgangUnklar(e)) { S.syncFehler = null; await nachZeitueberschreitung(e); } // Ausgang unklar: keinen Fehlerzustand behaupten, der neu geladene Git-Status zeigt es
+    else {
+      S.syncFehler = e.status === 409 ? "konflikt" : "fehler";
+      toast(e.status === 409 && e.daten?.dateien?.length ? `${e.message} Betroffen: ${e.daten.dateien.slice(0, 3).join(", ")}` : e.message, { fehler: true });
+    }
+  } finally { ende(); S.syncLaeuft = false; await ladeGit(); ladeInfoLeise().then(() => fragVertrauenEinmal()); if (S.sicht.art === "verlauf") verlaufInst?.aktualisieren?.(); }
+}
+
+// Unklarer Ausgang (die Brücke hat die Frist gerissen, oder die Werkstatt hat zurückgenommen): Info, Vault-Liste und Git-Status
+// neu holen und ehrlich sagen, dass wir nicht wissen, ob es geklappt hat. Antwortet die Werkstatt gar nicht, bleibt die Verbindungsmeldung.
+async function nachZeitueberschreitung(e) {
+  const stand = await ladeStandNeu();
+  if (!stand.ok) { toast(e.message, { fehler: true }); return false; }
+  if (vaultGewechselt(stand)) { aktion("vault-gewechselt"); await ladeAlles(); }
+  else uebernehmeStand(stand);
+  toast(zeitFehlerText(e), { ms: 12000 });
+  return true;
+}
+const vaultGewechselt = (stand) => (stand?.info?.vault || null) !== (S.info?.vault || null);
+// Gleicher Vault: nur die Anzeige auffrischen (Name, Vault-Liste, Git-Status); Editor und Eingaben bleiben unberührt
+function uebernehmeStand(stand) {
+  if (stand.info) S.info = stand.info;
+  if (stand.vaults) S.vaultListe = stand.vaults;
+  if (stand.git) S.git = stand.git;
+  vaultKopf(); zeichneStatus();
+}
+// Für die Willkommen-Karte: Anzeige auffrischen; true = die Werkstatt hat inzwischen einen anderen Vault geöffnet (die Karte macht dann wie nach Erfolg weiter)
+async function karteStandNeu(stand) {
+  if (vaultGewechselt(stand)) return true;
+  uebernehmeStand(stand);
+  return false;
 }
 
 // ======================================================= Remote, KI, Einstellungen (Module laden bei Bedarf)
 async function oeffneRemote() {
-  try { const m = await import("./remote.js"); m.oeffneRemoteDialog({ beiFertig: () => { ladeGit(); } }); }
+  try { const m = await import("./remote.js"); m.oeffneRemoteDialog({ beiFertig: () => { ladeGit(); }, beiStandNeu: (stand) => { uebernehmeStand(stand); } }); }
   catch { toast("Das geht in dieser Version noch nicht.", { fehler: true }); }
 }
 async function oeffneKi() {
-  try { const m = await import("./willkommen.js"); m.oeffneKiDialog({ beiFertig: () => { S.kiVerbunden = true; ladeKi(); } }); }
+  // „verbunden“ gilt erst nach geglücktem Verbinden, nicht schon beim bloßen Schließen des Dialogs
+  try { const m = await import("./willkommen.js"); m.oeffneKiDialog({ beiFertig: () => { ladeKi(); }, beiVerbunden: () => { S.kiVerbunden = true; zeichneStatus(); } }); }
   catch { try { await api.mcpVerbinden(); S.kiVerbunden = true; toast(T.mcp.ok); zeichneStatus(); } catch (e) { toast(e.daten?.befehl ? `${T.mcp.befehl} ${e.daten.befehl}` : e.message, { fehler: !e.daten?.befehl, ms: 12000 }); } }
 }
 function oeffneEinstellungen(anker) {
@@ -1088,8 +1136,9 @@ async function oeffneCommit() {
   clearTimeout(speicherTimer);
   await speichereAlles();
   await ladeGit();
+  if (istGitGesperrt()) { await zeigeGitGesperrt(); return; }
   if (!S.git?.repo) { toast(T.status.keinGit); return; }
-  const liste = S.git.geaendert;
+  const liste = S.git.geaendert || [];
   if (!liste.length) { toast(T.commit.nichts); return; }
   const haken = new Map(liste.map((g) => [g.pfad, true]));
   const msg = h("input", { type: "text", "data-feld": "nachricht", value: T.commit.vorbelegt(liste.map((g) => ohneEndung(dateiName(g.pfad))), liste.length) });
@@ -1115,8 +1164,13 @@ async function oeffneCommit() {
     if (!gewaehlt.length) { fehlerEl.hidden = false; fehlerEl.textContent = T.commit.nichtsGewaehlt; return; }
     if (!msg.value.trim()) { fehlerEl.hidden = false; fehlerEl.textContent = T.commit.keineNachricht; return; }
     knopf.disabled = true;
+    const ende = arbeitBeginnt("commit"); // Schließen des Fensters fragt nach, solange das läuft
     try { await api.commit(msg.value.trim(), gewaehlt); d.schliessen(); toast(T.commit.fertig); await ladeGit(); ladeInfo(); if (S.sicht.art === "verlauf") verlaufInst?.aktualisieren?.(); }
-    catch (e) { fehlerEl.hidden = false; fehlerEl.replaceChildren(document.createTextNode(e.message), ...(e.daten?.ausgabe ? [h("pre", { text: e.daten.ausgabe })] : [])); knopf.disabled = false; }
+    catch (e) {
+      if (gitGesperrt(e)) { d.schliessen(); await zeigeGitGesperrt(); }
+      else if (ausgangUnklar(e)) { d.schliessen(); await nachZeitueberschreitung(e); ladeInfo(); if (S.sicht.art === "verlauf") verlaufInst?.aktualisieren?.(); }
+      else { fehlerEl.hidden = false; fehlerEl.replaceChildren(document.createTextNode(e.message), ...(e.daten?.ausgabe ? [h("pre", { text: e.daten.ausgabe })] : [])); knopf.disabled = false; }
+    } finally { ende(); }
   };
   knopf.addEventListener("click", tun);
   msg.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); tun(); } });
@@ -1332,13 +1386,13 @@ window.addEventListener("keydown", (e) => {
 }, true);
 
 window.addEventListener("beforeunload", () => { if (S.dirty) { clearTimeout(speicherTimer); speichere(); } });
-window.addEventListener("focus", () => { planeGitRefresh(); if (S.info?.vault) ladeBaum(); });
+window.addEventListener("focus", () => { planeGitRefresh(); if (S.info?.vault) { ladeBaum(); ladeInfoLeise().then(() => fragVertrauenEinmal()); } });
 
 // ======================================================= Vaults
 async function ladeVaults() {
   try { S.vaultListe = await api.vaults(); } catch { S.vaultListe = null; }
   const aktiv = (S.vaultListe?.vaults || []).find((v) => v.pfad === (S.vaultListe?.aktiv || S.info?.vault));
-  if (aktiv?.farbe) $("vault-farbe").style.setProperty("--vault-farbe", aktiv.farbe);
+  if (aktiv?.farbe && /^#[0-9a-fA-F]{6}$/.test(aktiv.farbe)) $("vault-farbe").style.setProperty("--vault-farbe", aktiv.farbe);
 }
 function vaultKopf() {
   const name = S.info?.name || PRODUKT;
@@ -1371,12 +1425,12 @@ async function oeffneVaultMenue() {
 $("vault-wechsler").addEventListener("click", oeffneVaultMenue);
 async function vaultOeffnen() {
   if (!(await sichereVorWechsel())) return;
-  try { const m = await import("./willkommen.js"); m.oeffneOrdnerFlow({ beiFertig: async () => { aktion("vault-gewechselt"); await ladeAlles(); } }); }
+  try { const m = await import("./willkommen.js"); m.oeffneOrdnerFlow({ beiFertig: async () => { aktion("vault-gewechselt"); await ladeAlles(); }, beiStandNeu: karteStandNeu, beiVerbunden: () => { S.kiVerbunden = true; } }); }
   catch { toast("Das geht in dieser Version noch nicht.", { fehler: true }); }
 }
 async function vaultNeu() {
   if (!(await sichereVorWechsel())) return;
-  try { const m = await import("./willkommen.js"); m.zeigeWillkommen({ modus: "neu", beiFertig: async () => { aktion("vault-gewechselt"); await ladeAlles(); }, beiAbbruch: () => {} }); }
+  try { const m = await import("./willkommen.js"); m.zeigeWillkommen({ modus: "neu", beiFertig: async () => { aktion("vault-gewechselt"); await ladeAlles(); }, beiAbbruch: () => {}, beiStandNeu: karteStandNeu, beiVerbunden: () => { S.kiVerbunden = true; } }); }
   catch { toast("Das geht in dieser Version noch nicht.", { fehler: true }); }
 }
 function vaultEntfernenMenue() {
@@ -1387,8 +1441,14 @@ function bestaetigeEntfernen(v) {
   const d = dialog({ titel: T.vault.entfernenFrage(v.name), rumpf: [h("p", { text: T.vault.entfernenText }), h("p", { klasse: "mini", text: v.pfad })],
     knoepfe: [h("button", { klasse: "knopf", text: T.commit.abbrechen, aufClick: () => d.schliessen() }), h("button", { klasse: "knopf primaer", "data-aktion": "entfernen", text: T.vault.entfernen, aufClick: async () => {
       try {
-        if (v.pfad === (S.vaultListe?.aktiv || S.info?.vault) && !(await sichereVorWechsel())) return;
-        await api.vaultEntfernen(v.pfad); d.schliessen(); toast(T.vault.entfernt); aktion("vault-gewechselt"); await ladeAlles();
+        // IMMER zuerst sichern: ob der offene Vault betroffen ist, entscheidet erst die Werkstatt (Pfade können verschieden geschrieben sein)
+        if (!(await sichereVorWechsel())) return;
+        const vorher = S.info?.vault || null;
+        await api.vaultEntfernen(v.pfad); d.schliessen(); toast(T.vault.entfernt); aktion("vault-gewechselt");
+        let neu = null;
+        try { neu = await api.info(); } catch { /* unten */ }
+        // Der offene Vault war es (oder die Werkstatt antwortet nicht): alles neu laden. Sonst nur die Liste – Editor und Eingaben bleiben.
+        if (!neu || (neu.vault || null) !== vorher) await ladeAlles(); else await ladeVaults();
       } catch (e) { toast(e.message, { fehler: true }); }
     } })] });
 }
@@ -1418,8 +1478,11 @@ window.studio.befehl = (name) => {
 window.studio.vorSchliessen = () => {
   const arbeit = (async () => {
     clearTimeout(speicherTimer);
-    if (await speichereAlles()) return { ok: true };
-    return { ok: false, grund: S.konflikt ? "konflikt" : letzterFehler || T.fehler.speichern };
+    if (!(await speichereAlles())) return { ok: false, grund: S.konflikt ? "konflikt" : letzterFehler || T.fehler.speichern };
+    // Läuft noch ein Abgleich, Sichern, Klonen oder Remote-Verbinden, geht es wie bei ungespeicherten Eingaben: die App fragt nach
+    const laeuft = laufendeArbeiten()[0];
+    if (laeuft) return { ok: false, grund: ausTabelle(T.laeuft, laeuft) || T.laeuft.sync };
+    return { ok: true };
   })().catch((e) => ({ ok: false, grund: e?.message || "fehler" }));
   const frist = new Promise((r) => setTimeout(() => r({ ok: false, grund: "zeitueberschreitung" }), 5000));
   return Promise.race([arbeit, frist]);
@@ -1429,26 +1492,101 @@ function markiereBereit() {
   while (wartendeBefehle.length) { try { fuehreBefehlAus(wartendeBefehle.shift()); } catch { /* ein Befehl darf die anderen nicht stoppen */ } }
 }
 
-// ======================================================= Kit-Vertrauen (W-5)
-// Nur sichtbar, wenn das Backend das Feld liefert; ohne `kit` verhält sich die Oberfläche wie bisher.
-function zeigeKitHinweis() {
-  const host = $("kit-host");
-  host.replaceChildren();
-  const kit = S.info?.kit;
-  if (!kit || !kit.vorhanden || kit.vertraut || S.kitJetztNicht) return;
-  const zu = (erlauben) => async () => {
-    if (!erlauben) { S.kitJetztNicht = true; zeigeKitHinweis(); return; }
-    try {
-      await api.kitVertrauen(true);
-      S.info.kit = { ...kit, vertraut: true };
-      zeigeKitHinweis();
-      await ladeGesundheit();
-    } catch (e) { toast(e.message, { fehler: true }); }
-  };
-  host.append(h("div", { klasse: "banner kit", role: "status", "data-banner": "kit" },
-    h("div", { klasse: "b-text" }, h("div", { klasse: "b-sub", text: T.kit.hinweis })),
-    h("button", { klasse: "knopf", "data-aktion": "kit-spaeter", text: T.kit.spaeter, aufClick: zu(false) }),
-    h("button", { klasse: "knopf primaer", "data-aktion": "kit-erlauben", text: T.kit.erlauben, aufClick: zu(true) })));
+// ======================================================= Vertrauen (Spec §8)
+// Nichts aus einem Vault startet ein Programm, bevor der Nutzer ihm vertraut hat: Kit-Werkzeuge (.tools), Git-Hooks, Git-Einstellungen.
+// info.vertrauen = { erlaubt, noetig, geaendert, gitGesperrt, gruende: [{ art, text }] }; eine ältere Werkstatt kennt nur info.kit.
+function vertrauenVon(info) {
+  if (!info?.vault) return null;
+  const v = info.vertrauen;
+  if (v && typeof v === "object") {
+    return { erlaubt: !!v.erlaubt, noetig: !!v.noetig, geaendert: !!v.geaendert, gitGesperrt: !!v.gitGesperrt,
+      gruende: (Array.isArray(v.gruende) ? v.gruende : []).filter((g) => g && typeof g === "object") };
+  }
+  const kit = info.kit;
+  if (kit && kit.vorhanden) return { erlaubt: !!kit.vertraut, noetig: true, geaendert: false, gitGesperrt: false, gruende: [{ art: "kit" }] };
+  return null;
+}
+const istGitGesperrt = () => !!(S.info?.vertrauen?.gitGesperrt || S.git?.gesperrt);
+const grundText = (g) => (typeof g.text === "string" && g.text.trim() ? g.text.trim() : ausTabelle(T.vertrauen.gruende, g.art) || T.vertrauen.gruende.sonst);
+
+// Von selbst fragen wir je Vault und Sitzung einmal (und noch einmal, wenn sich der Code danach ändert); später geht es über die Statusleiste.
+const vertrauenGefragt = new Set();
+function fragVertrauenEinmal() {
+  const v = vertrauenVon(S.info);
+  if (!v || !v.noetig || v.erlaubt) return;
+  const schluessel = S.info.vault + (v.geaendert ? "|geaendert" : "");
+  if (vertrauenGefragt.has(schluessel)) return;
+  vertrauenGefragt.add(schluessel);
+  oeffneVertrauen();
+}
+
+function oeffneVertrauen() {
+  const v = vertrauenVon(S.info);
+  if (!v) return;
+  if (v.erlaubt) { toast(T.vertrauen.schon); return; }
+  if (document.querySelector('[data-dialog="vertrauen"]')) return;
+  const gruende = v.gruende.length ? v.gruende : [{ art: istGitGesperrt() ? "git" : "sonst" }];
+  const fehlerEl = h("div", { klasse: "fehlertext", role: "alert", hidden: true });
+  // „Nicht jetzt“ hat den Fokus: ein versehentliches Enter erteilt kein Vertrauen
+  const nein = h("button", { klasse: "knopf", type: "button", "data-aktion": "vertrauen-spaeter", text: T.vertrauen.spaeter, autofocus: true, aufClick: () => d.schliessen() });
+  const ja = h("button", { klasse: "knopf primaer", type: "button", "data-aktion": "vertrauen-erlauben", text: T.vertrauen.erlauben });
+  const d = dialog({
+    titel: T.vertrauen.titel, breit: true,
+    rumpf: [
+      v.geaendert ? h("p", { klasse: "vt-geaendert", "data-vertrauen": "geaendert", text: T.vertrauen.geaendert }) : null,
+      h("p", { klasse: "mini vt-vault", title: S.info.vault, text: `${S.info.name || PRODUKT} · ${S.info.vault.replace(/^\/Users\/[^/]+(?=\/|$)/, "~")}` }),
+      h("p", { text: T.vertrauen.intro }),
+      h("ul", { klasse: "vt-gruende", "data-liste": "gruende" }, gruende.map((g) =>
+        h("li", { "data-grund": typeof g.art === "string" ? g.art : "sonst" }, symbol(g.art === "kit" ? "code" : "zweig", 14), h("span", { text: grundText(g) })))),
+      h("p", { klasse: "leise", text: T.vertrauen.folge }),
+      v.gitGesperrt || istGitGesperrt() ? h("p", { klasse: "vt-git", "data-vertrauen": "git-gesperrt", text: T.vertrauen.gitGesperrt }) : null,
+      h("p", { klasse: "mini", text: T.vertrauen.vorsicht }),
+      fehlerEl,
+    ],
+    knoepfe: [nein, ja],
+  });
+  d.box.setAttribute("data-dialog", "vertrauen");
+  ja.addEventListener("click", async () => {
+    ja.disabled = nein.disabled = true; ja.textContent = T.vertrauen.speichert; fehlerEl.hidden = true;
+    let fehler = null;
+    try { if (!(await vertrauenSetzen(true))) fehler = T.vertrauen.nichtGespeichert; }
+    catch (e) { fehler = e.message || T.vertrauen.nichtGespeichert; }
+    if (!fehler) { d.schliessen(); toast(T.vertrauen.erteilt); return; }
+    fehlerEl.hidden = false; fehlerEl.textContent = fehler;
+    ja.disabled = nein.disabled = false; ja.textContent = T.vertrauen.erlauben;
+  });
+  return d;
+}
+
+// POST /api/kit/vertrauen → { kit, vertrauen }. Danach sagt die App Bescheid (Swift prüft neu), und Info, Git-Status, Index und Gesundheit werden neu geladen.
+// true = der Vault ist jetzt vertraut.
+async function vertrauenSetzen(erlauben) {
+  const r = await api.kitVertrauen(erlauben); // wirft bei Fehler: dann ist nichts passiert
+  aktion("vertrauen-geaendert");
+  if (r?.vertrauen && S.info) S.info = { ...S.info, vertrauen: r.vertrauen, ...(r.kit ? { kit: r.kit } : {}) };
+  zeichneStatus();
+  const nachAntwort = vertrauenVon(S.info);
+  const [infoOk] = await Promise.all([ladeInfoLeise(), ladeGit(), ladeBaum(), ladeGesundheit()]);
+  const jetzt = infoOk ? vertrauenVon(S.info) : nachAntwort;
+  return !erlauben || !jetzt || jetzt.erlaubt;
+}
+
+// Info der Werkstatt leise auffrischen (Vertrauen, Git-Kennzeichen): nur für denselben Vault
+async function ladeInfoLeise() {
+  if (!S.info?.vault) return false;
+  try {
+    const i = await api.info();
+    if ((i.vault || null) !== S.info.vault) return false;
+    S.info = i; zeichneStatus();
+    return true;
+  } catch { return false; }
+}
+
+// Eine Git-Aktion wurde abgewiesen, weil der Vault noch nicht vertraut ist: Stand auffrischen, dann die Frage zeigen
+async function zeigeGitGesperrt() {
+  await ladeInfoLeise(); await ladeGit();
+  const v = vertrauenVon(S.info);
+  if (v && !v.erlaubt) oeffneVertrauen(); else toast(T.fehler.gitGesperrt, { fehler: true });
 }
 
 // ======================================================= Start
@@ -1478,7 +1616,7 @@ async function zeigeWillkommenFlow() {
   const host = $("willkommen-host");
   try {
     const m = await import("./willkommen.js");
-    m.zeigeWillkommen({ modus: "start", beiFertig: async () => { aktion("vault-gewechselt"); await ladeAlles(); } });
+    m.zeigeWillkommen({ modus: "start", beiFertig: async () => { aktion("vault-gewechselt"); await ladeAlles(); }, beiStandNeu: karteStandNeu, beiVerbunden: () => { S.kiVerbunden = true; } });
   } catch {
     host.hidden = false;
     host.replaceChildren(h("div", { klasse: "leer", style: "position:static;min-height:100vh" }, h("h2", { text: `Willkommen bei ${PRODUKT}` }), h("p", { text: "Der Einstieg ist gerade nicht verfügbar." })));
@@ -1490,11 +1628,11 @@ function zuruecksetzen() {
   clearTimeout(speicherTimer); clearTimeout(gitTimer); clearTimeout(baumTimer);
   S.pfad = null; S.hash = null; S.dirty = false; S.konflikt = null; S.schutz = false; S.speichert = false; S.aktuellePruefung = null;
   S.notizen = []; S.nMap = new Map(); S.baum = []; S.eintraege = new Map(); S.git = null; S.gesundheit = null; S.rueckfragen = null; S.syncFehler = null;
-  S.suche = { aktiv: false, treffer: [], auswahl: 0, frage: "" }; S.vorVerlauf = null; S.kitJetztNicht = false;
+  S.suche = { aktiv: false, treffer: [], auswahl: 0, frage: "" }; S.vorVerlauf = null;
   S.sichtListe = []; S.gerendert = 0;
   ed.setzeText("", { nurLesen: false });
   schliesseDiff(); schliesseSuche(false);
-  $("kit-host").replaceChildren(); $("banner-host").replaceChildren(); $("pille").hidden = true; $("speicherstand").textContent = "";
+  $("banner-host").replaceChildren(); $("pille").hidden = true; $("speicherstand").textContent = "";
   $("pfad").replaceChildren(); $("info").replaceChildren();
 }
 async function ladeAlles() {
@@ -1516,7 +1654,7 @@ async function ladeAlles() {
   if (S.sicht.art === "ordner" && !S.eintraege.has(S.sicht.id)) S.sicht = { art: "bereich", id: "alle" };
   if (S.sicht.art === "typ" && !S.typMap.has(S.sicht.id)) S.sicht = { art: "bereich", id: "alle" };
   zeichneSeite(); zeichneListe();
-  zeigeKitHinweis();
+  fragVertrauenEinmal();
   ladeGit(); ladeGesundheit(); ladeKi(); ladeVaults();
   if (!intervalle) { intervalle = true; setInterval(ladeGit, 15000); setInterval(ladeGesundheit, 120000); }
   ladeInfo();

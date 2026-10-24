@@ -62,7 +62,7 @@ export const api = {
   diff: (pfad, sha) => anfrage("GET", "/api/git/diff" + q({ pfad, sha })),
   fassung: (pfad, sha) => anfrage("GET", "/api/git/fassung" + q({ pfad, sha })),
   kitVertrauen: (erlauben) => anfrage("POST", "/api/kit/vertrauen", { erlauben: !!erlauben }),
-  mcpVerbinden: () => anfrage("POST", "/api/mcp/verbinden", { ziel: "claude" }),
+  mcpVerbinden: ({ umstellen } = {}) => anfrage("POST", "/api/mcp/verbinden", umstellen ? { ziel: "claude", umstellen: true } : { ziel: "claude" }),
   // ---- v2: Index, Typen, Ansichten, Kontext, Verlauf des Repos
   notizen: () => anfrage("GET", "/api/notizen"),
   notizKontext: (pfad) => anfrage("GET", "/api/notiz/kontext" + q({ pfad })),
@@ -94,4 +94,19 @@ export async function aktionMitAntwort(name, wert) {
   if (!hnd) return undefined;
   try { return await hnd.postMessage(wert === undefined ? { aktion: name } : { aktion: name, wert }); }
   catch { return undefined; }
+}
+
+// ---- Fehlerformen
+// Git gesperrt (Spec §8): die Git-Routen antworten 409 { fehler, gitGesperrt: true }, bis der Nutzer dem Vault vertraut.
+export const gitGesperrt = (e) => e?.status === 409 && e?.daten?.gitGesperrt === true;
+// Ausgang unklar: status 0 = die Brücke hat die Frist gerissen (oder der Dienst ist weg), 504 = die Werkstatt hat ihre Frist gerissen und zurückgenommen.
+export const ausgangUnklar = (e) => e?.status === 0 || e?.status === 504;
+// Text dazu: die Werkstatt sagt bei 504 selbst, was passiert ist („nichts verändert“); sonst der allgemeine Satz
+export const zeitText = (e) => (e?.status === 504 && e.message && e.message !== T.fehler.allgemein ? e.message : T.fehler.dauertLaenger);
+// Nach unklarem Ausgang den Stand neu holen: Info, Vault-Liste, Git-Status. ok = die Werkstatt antwortet wieder.
+export async function ladeStandNeu() {
+  const [info, vaults, git] = await Promise.allSettled([api.info(), api.vaults(), api.status()]);
+  const wert = (r) => (r.status === "fulfilled" ? r.value : null);
+  const gesperrt = git.status === "rejected" && gitGesperrt(git.reason) ? { repo: true, gesperrt: true, grund: git.reason.daten?.fehler || null } : null;
+  return { ok: info.status === "fulfilled" && !!info.value, info: wert(info), vaults: wert(vaults), git: wert(git) || gesperrt };
 }

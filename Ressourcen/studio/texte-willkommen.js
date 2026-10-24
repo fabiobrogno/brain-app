@@ -64,6 +64,7 @@ export const TW = {
     einschalten: "Einschalten",
     ohne: "Ohne Verlauf weiter",
     arbeit: "Der Versionsverlauf wird eingeschaltet …",
+    fehlgeschlagen: "Der Versionsverlauf ließ sich nicht einschalten. Du kannst trotzdem ohne Verlauf weiterarbeiten.",
   },
 
   pfad: {
@@ -92,6 +93,9 @@ export const TW = {
     verbindet: "Wird verbunden …",
     verbunden: "Verbunden. Claude kann jetzt auf dein Wissen zugreifen.",
     verbundenKnopf: "Verbunden",
+    anders: "In Claude gibt es schon einen Eintrag „brain“, der woanders hinzeigt. Auf dieses Brain umstellen?",
+    umstellen: "Umstellen",
+    nichtUmstellen: "Nicht ändern",
     befehl: "Das geht von hier aus noch nicht. Führe diesen Befehl im Terminal aus:",
     befehlKopieren: "Befehl kopieren",
     befehlKopiert: "Befehl kopiert.",
