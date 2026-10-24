@@ -66,7 +66,6 @@ lauf() { # leer | mit-vault
   pruefe "Aktion ohne Pflichtwert wird abgewiesen" "$STUB_LOG" '"ohneWert":"abgewiesen:Error: ungültige Aktion"'
   pruefe "vault-gewechselt antwortet {ok:true}" "$STUB_LOG" '"gewechselt":"{\"ok\":true}"'
   pruefe "zweiter gleichzeitiger Ordner-Dialog antwortet null" "$STUB_LOG" '"zweiterDialog":"null"'
-  pruefe "Fenstertitel gesetzt" "$log" "aktion titel Stub Vault"
   pruefe "Vault-Wechsel erkannt (vaults.json)" "$log" "vault-wechsel $v2"
   pruefe "Status des neuen Vaults (ohne Kit)" "$log" "status ohne-kit"
   pruefe "Ordner-Dialog endet mit dem Fenster" "$log" "ordner-dialog abgebrochen"

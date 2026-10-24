@@ -223,7 +223,7 @@ final class AppZustand: ObservableObject {
             vaultGewechselt()
             return ok
         case .titel(let text):
-            log.schreibe("aktion titel \(text ?? "-")")
+            // Bewusst ohne Log: Die Oberfläche meldet den Titel bei jeder Notiz (Notiztitel gehören nicht ins Protokoll).
             studio.setzeTitel(text)
             return ok
         }
