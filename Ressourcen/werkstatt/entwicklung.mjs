@@ -5,6 +5,7 @@
 import { createServer } from "node:http";
 import { erzeugeHandler, MAX_KOERPER } from "./handler.mjs";
 import { HttpFehler } from "../gemeinsam/vault.mjs";
+import { beendeLaufendes } from "../gemeinsam/git.mjs";
 
 const vaultArg = process.argv[2];
 const vault = (vaultArg && vaultArg !== "-" ? vaultArg : undefined) || process.env.BRAIN_VAULT || undefined;
@@ -42,5 +43,6 @@ server.listen(portWunsch, "127.0.0.1", () => {
   process.stdout.write(`Bereit: http://127.0.0.1:${server.address().port}/\n`);
 });
 server.on("error", (e) => { process.stderr.write(`Start fehlgeschlagen: ${e.message}\n`); process.exit(1); });
-process.on("SIGTERM", () => process.exit(0));
-process.on("SIGINT", () => process.exit(0));
+const abraeumenUndEnde = () => { try { beendeLaufendes(); } catch { /* beenden wir trotzdem */ } process.exit(0); };
+process.on("SIGTERM", abraeumenUndEnde);
+process.on("SIGINT", abraeumenUndEnde);

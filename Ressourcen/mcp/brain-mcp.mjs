@@ -8,6 +8,7 @@ import { realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { oeffneVault, HttpFehler, STUFE_TEXT as STUFE } from "../gemeinsam/vault.mjs";
 import { leseVaults, aktiverVaultPfad } from "../gemeinsam/vaults.mjs";
+import { beendeLaufendes } from "../gemeinsam/git.mjs";
 
 const VERSIONEN = ["2025-06-18", "2025-03-26", "2024-11-05"];
 export const WERKZEUGE = [
@@ -47,7 +48,11 @@ async function rufe(vArg, name, a) {
   if (!v) return fehlerText(KEIN_VAULT);
   const arg = (k) => { if (typeof a[k] !== "string" || !a[k].trim()) throw new HttpFehler(400, `Der Parameter „${k}“ fehlt.`); return a[k]; };
   switch (name) {
-    case "brain_suchen": return text(v.suchenFuerKi(arg("frage"), a.anzahl).text);
+    case "brain_suchen": {
+      const r = v.suchenFuerKi(arg("frage"), a.anzahl);
+      // _meta ist für Clients tabu (die KI sieht nur den Text); die Probe-Frage der App liest hier die Treffer strukturiert statt den Text zu zerlegen.
+      return { ...text(r.text), _meta: { "brain-studio/treffer": r.treffer } };
+    }
     case "brain_lesen": {
       const d = v.lies(arg("pfad"));
       const p = v.pruefung(d.pfad);
@@ -61,7 +66,12 @@ async function rufe(vArg, name, a) {
     }
     case "brain_gesundheit": {
       const g = await v.gesundheit();
-      if (g.grund === "nicht-vertraut") return text("Das Brain-Kit in diesem Vault ist noch nicht freigegeben. In der App einmal erlauben (Brain Studio → Kit erlauben), dann klappt die Gesundheitsprüfung.");
+      if (g.grund === "nicht-vertraut") {
+        const geaendert = v.vertrauenStand().geaendert;
+        return text(geaendert
+          ? "Das Brain-Kit in diesem Vault hat sich seit der Freigabe geändert (oder der Ordner ist ein anderer). In der App neu erlauben (Brain Studio → Kit erlauben), dann klappt die Gesundheitsprüfung."
+          : "Das Brain-Kit in diesem Vault ist noch nicht freigegeben. In der App einmal erlauben (Brain Studio → Kit erlauben), dann klappt die Gesundheitsprüfung.");
+      }
       if (g.verfuegbar === false) return text("Die Gesundheitsprüfung ist nicht verfügbar (kein Brain-Kit in diesem Vault).");
       const zeilen = [`Ampel: ${g.ampel}${g.warnungen !== undefined ? ` · ${g.warnungen} Warnung(en)` : ""}`];
       for (const p of g.pruefungen || []) {
@@ -146,7 +156,7 @@ function haupt() {
     })().catch((e) => process.stderr.write(`brain-mcp: ${e}\n`)).finally(() => { offen--; ende(); });
   });
   rl.on("close", () => { zu = true; ende(); });
-  process.on("SIGTERM", () => process.exit(0));
+  process.on("SIGTERM", () => { try { beendeLaufendes(); } catch { /* egal */ } process.exit(0); }); // laufende Git-Prozesse nicht verwaisen lassen
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) haupt();

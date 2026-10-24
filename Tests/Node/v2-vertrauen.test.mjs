@@ -413,3 +413,201 @@ test("MCP: brain_verlauf bei gesperrtem Git → Hinweis statt Verlauf, ohne Git-
   const b = await bearbeite(v, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "brain_verlauf", arguments: { pfad: "start.md" } } });
   assert.match(b.result.content[0].text, /Start/);
 });
+
+// ───────────────────────────── MCP verbinden, Probe, Entfernen ─────────────────────────────
+
+const { spawn } = await import("node:child_process");
+const { createInterface } = await import("node:readline");
+const { realpathSync } = await import("node:fs");
+
+// Attrappe für `claude` (NIE das echte `claude mcp add/remove`): Zustand in einer Datei (Zeile 1 Befehl, Zeile 2 Argumente), jeder Aufruf im Log.
+// `mcp get` gibt im Format von Claude Code aus — samt einem „Geheimnis“ im Environment, das nie in einer Antwort stehen darf.
+function fakeClaude({ haengt = false } = {}) {
+  const bin = tmp("brain-bin-"), zustand = join(bin, "zustand.txt"), log = join(bin, "aufrufe.log"), pids = join(bin, "pids.txt");
+  writeFileSync(join(bin, "claude"), `#!/bin/sh
+echo "$*" >> '${log}'
+case "$1 $2" in
+  "mcp get")
+    ${haengt ? `echo $$ > '${pids}'; sleep 30 & echo $! >> '${pids}'; wait` : ""}
+    if [ -f '${zustand}' ]; then
+      echo "brain:"; echo "  Scope: User config (available in all your projects)"; echo "  Status: ✓ Connected"; echo "  Type: stdio"
+      echo "  Command: $(sed -n 1p '${zustand}')"; echo "  Args: $(sed -n 2p '${zustand}')"; echo "  Environment:"; echo "    API_KEY=geheim-123"
+      exit 0
+    fi
+    echo "No MCP server found with name: brain" >&2; exit 1;;
+  "mcp remove") rm -f '${zustand}'; echo "Removed MCP server brain from user config"; exit 0;;
+  "mcp add")
+    if [ -f '${zustand}' ]; then echo "MCP server brain already exists in user config" >&2; exit 1; fi
+    shift 6; printf '%s\\n' "$1" > '${zustand}'; shift; printf '%s\\n' "$*" >> '${zustand}'
+    echo "Added stdio MCP server brain to user config"; exit 0;;
+esac
+exit 3
+`);
+  chmodSync(join(bin, "claude"), 0o755);
+  const aufrufe = () => (existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : []);
+  return { bin, zustand, log, pids, aufrufe };
+}
+async function mitClaude(bin, fn) {
+  const alt = { PATH: process.env.PATH, EXTRA: process.env.BRAIN_CLAUDE_EXTRA };
+  process.env.PATH = `${bin}:${alt.PATH}`; process.env.BRAIN_CLAUDE_EXTRA = "";
+  try { return await fn(); } finally { process.env.PATH = alt.PATH; if (alt.EXTRA === undefined) delete process.env.BRAIN_CLAUDE_EXTRA; else process.env.BRAIN_CLAUDE_EXTRA = alt.EXTRA; }
+}
+const lebt = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+const warteBis = async (f, ms = 3000) => { const ende = Date.now() + ms; while (Date.now() < ende) { if (f()) return true; await new Promise((r) => setTimeout(r, 25)); } return f(); };
+
+test("MCP verbinden: nicht vorhanden → eintragen; gleicher Befehl → schonVerbunden; anderer → 409 „anders“ ohne Details; umstellen → ersetzt", async () => {
+  const d = kitVault();
+  const mcp = tmp("brain-mcpdir-"); schreibe(mcp, "brain-mcp.mjs", "// fake\n");
+  const mcpReal = realpathSync(join(mcp, "brain-mcp.mjs"));
+  const c = fakeClaude();
+  const rufe = aufruf(erzeugeHandler({ vault: d, mcpPfad: join(mcp, "brain-mcp.mjs"), vaultOptionen: { support: neuerSupport() } }));
+  await mitClaude(c.bin, async () => {
+    let r = await rufe("POST", "/api/mcp/verbinden", { ziel: "claude" });
+    assert.equal(r.status, 200); assert.equal(r.j.ok, true); assert.match(r.j.ausgabe, /Added/);
+    assert.deepEqual(c.aufrufe(), ["mcp get brain", `mcp add -s user brain -- ${process.execPath} ${mcpReal}`]);
+    assert.equal(readFileSync(c.zustand, "utf8"), `${process.execPath}\n${mcpReal}\n`, "Eintrag ohne Vault-Pfad");
+
+    r = await rufe("POST", "/api/mcp/verbinden", { ziel: "claude" });
+    assert.equal(r.status, 200); assert.deepEqual(r.j, { ok: true, schonVerbunden: true });
+    assert.deepEqual(c.aufrufe().slice(2), ["mcp get brain"], "weder remove noch add");
+
+    // fremder Eintrag mit Geheimnis: 409, nichts davon in der Antwort, nichts verändert
+    writeFileSync(c.zustand, "/usr/local/bin/anderes-programm\n--key=geheim-456 /pfad/fremd.js\n");
+    const vorher = c.aufrufe().length;
+    r = await rufe("POST", "/api/mcp/verbinden", { ziel: "claude" });
+    assert.equal(r.status, 409); assert.equal(r.j.art, "anders"); assert.ok(r.j.fehler.length > 10);
+    const roh = r.body.toString("utf8");
+    for (const geheim of ["geheim-123", "geheim-456", "anderes-programm", "fremd.js", "API_KEY"]) assert.ok(!roh.includes(geheim), `„${geheim}“ darf nie in der Antwort stehen`);
+    assert.equal(readFileSync(c.zustand, "utf8"), "/usr/local/bin/anderes-programm\n--key=geheim-456 /pfad/fremd.js\n", "unverändert");
+    assert.deepEqual(c.aufrufe().slice(vorher), ["mcp get brain"], "ohne umstellen weder remove noch add");
+
+    r = await rufe("POST", "/api/mcp/verbinden", { ziel: "claude", umstellen: true });
+    assert.equal(r.status, 200); assert.equal(r.j.ok, true);
+    assert.ok(!r.body.toString("utf8").includes("geheim"), "auch hier nichts vom alten Eintrag");
+    assert.deepEqual(c.aufrufe().slice(-3), ["mcp get brain", "mcp remove -s user brain", `mcp add -s user brain -- ${process.execPath} ${mcpReal}`]);
+    assert.equal(readFileSync(c.zustand, "utf8"), `${process.execPath}\n${mcpReal}\n`);
+  });
+});
+
+test("MCP verbinden: Gesamtfrist — hängendes claude wird samt Prozessgruppe beendet, 504 mit Alltagsmeldung, nichts verändert", async () => {
+  const d = kitVault();
+  const mcp = tmp("brain-mcpdir-"); schreibe(mcp, "brain-mcp.mjs", "// fake\n");
+  const c = fakeClaude({ haengt: true });
+  const rufe = aufruf(erzeugeHandler({ vault: d, mcpPfad: join(mcp, "brain-mcp.mjs"), fristen: { mcpVerbinden: 700 }, vaultOptionen: { support: neuerSupport() } }));
+  await mitClaude(c.bin, async () => {
+    const t0 = Date.now();
+    const r = await rufe("POST", "/api/mcp/verbinden", { ziel: "claude" });
+    assert.equal(r.status, 504); assert.match(r.j.fehler, /nicht rechtzeitig/); assert.ok(r.j.befehl);
+    assert.ok(Date.now() - t0 < 5000, `dauerte ${Date.now() - t0} ms`);
+    assert.ok(!existsSync(c.zustand), "nichts eingetragen");
+    const pids = readFileSync(c.pids, "utf8").trim().split("\n").map(Number);
+    assert.equal(pids.length, 2);
+    assert.ok(await warteBis(() => pids.every((p) => !lebt(p))), "claude und sein Kindprozess sind beendet (Prozessgruppe)");
+  });
+});
+
+// ── Probe über den MCP-Server ──
+const listeMit = (support, vaults, aktiv) => writeFileSync(join(support, "vaults.json"), JSON.stringify({ vaults: vaults.map((p, i) => ({ name: `v${i}`, pfad: realpathSync(p), farbe: "#5B8DEF" })), aktiv: aktiv ? realpathSync(aktiv) : null }));
+const notizVault = (text) => { const d = tmp(); schreibe(d, "00_inbox/n.md", `# Notiz\n\n${text}\n`); return d; };
+
+test("Probe: läuft über den MCP-Server (eigener Kindprozess, JSON-RPC), liefert Treffer strukturiert und den Text, den die KI sieht", async () => {
+  const support = neuerSupport();
+  const d = notizVault("Das Zebra frisst Gras.");
+  listeMit(support, [d], d);
+  const rufe = aufruf(erzeugeHandler({ vault: d, vaultOptionen: { support } }));
+  const r = await rufe("POST", "/api/probe", { frage: "zebra" });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.j.treffer.map((t) => t.pfad), ["00_inbox/n.md"]);
+  assert.deepEqual(Object.keys(r.j.treffer[0]).sort(), ["auszug", "pfad", "stufe", "titel", "zeile"]);
+  assert.match(r.j.text, /^1\. 00_inbox\/n\.md — Notiz \[grau\]\n {3}Das Zebra/);
+  assert.equal(r.j.text, oeffneVault(d, { support }).suchenFuerKi("zebra").text, "derselbe Text wie die direkte Suche");
+  assert.equal((await rufe("POST", "/api/probe", { frage: "zzzgibtesnicht" })).j.text, "Keine Treffer.");
+  // dieser Vault ist in der App nicht der aktive → die Probe könnte ihn über den MCP-Weg nicht finden
+  const anderer = notizVault("x"); listeMit(support, [d, anderer], anderer);
+  const n = await rufe("POST", "/api/probe", { frage: "zebra" });
+  assert.equal(n.status, 409); assert.equal(n.j.art, "nicht-aktiv");
+});
+
+test("Probe: stummer, abstürzender und fehlermeldender MCP-Server → klare Fehler, Frist 10 s (hier kürzer), Prozess beendet", async () => {
+  const support = neuerSupport();
+  const d = notizVault("x"); listeMit(support, [d], d);
+  const skripte = tmp("brain-fakemcp-");
+  schreibe(skripte, "stumm.mjs", "process.stdin.resume(); setInterval(() => {}, 1000); require_pid: ; \n".replace(" require_pid: ;", "") + "import('node:fs').then((f) => f.writeFileSync(process.env.PIDDATEI || '/dev/null', String(process.pid)));\n");
+  schreibe(skripte, "absturz.mjs", "process.exit(1);\n");
+  schreibe(skripte, "fehler.mjs", `import { createInterface } from "node:readline";
+createInterface({ input: process.stdin }).on("line", (z) => { const m = JSON.parse(z);
+  if (m.method === "initialize") console.log(JSON.stringify({ jsonrpc: "2.0", id: m.id, result: { protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "x", version: "1" } } }));
+  if (m.method === "tools/call") console.log(JSON.stringify({ jsonrpc: "2.0", id: m.id, result: { isError: true, content: [{ type: "text", text: "Es ist noch kein Vault eingerichtet." }] } })); });\n`);
+  const pidDatei = join(skripte, "pid.txt");
+  const alt = process.env.PIDDATEI; process.env.PIDDATEI = pidDatei;
+  try {
+    const mit = (datei) => aufruf(erzeugeHandler({ vault: d, mcpPfad: join(skripte, datei), fristen: { probe: 800 }, vaultOptionen: { support } }));
+    let t0 = Date.now();
+    let r = await mit("stumm.mjs")("POST", "/api/probe", { frage: "x" });
+    assert.equal(r.status, 504); assert.equal(r.j.art, "mcp"); assert.match(r.j.fehler, /nicht rechtzeitig/); assert.ok(Date.now() - t0 < 5000);
+    const pid = Number(readFileSync(pidDatei, "utf8"));
+    assert.ok(await warteBis(() => !lebt(pid)), "der hängende MCP-Server wurde beendet");
+    r = await mit("absturz.mjs")("POST", "/api/probe", { frage: "x" });
+    assert.equal(r.status, 502); assert.equal(r.j.art, "mcp");
+    r = await mit("fehler.mjs")("POST", "/api/probe", { frage: "x" });
+    assert.equal(r.status, 502); assert.match(r.j.fehler, /noch kein Vault eingerichtet/);
+  } finally { if (alt === undefined) delete process.env.PIDDATEI; else process.env.PIDDATEI = alt; }
+});
+
+test("MCP-Server ohne Argument folgt dem aktiven Vault aus vaults.json (bei jedem Aufruf neu geprüft) — W4", async () => {
+  const support = neuerSupport();
+  const A = notizVault("Alpha Quokka"), B = notizVault("Beta Wombat");
+  listeMit(support, [A, B], A);
+  const env = { ...process.env, BRAIN_APP_SUPPORT: support }; delete env.BRAIN_VAULT;
+  const p = spawn(process.execPath, [pfad("mcp", "brain-mcp.mjs")], { stdio: ["pipe", "pipe", "pipe"], env });
+  const antworten = [], wartende = [];
+  createInterface({ input: p.stdout }).on("line", (z) => { const o = JSON.parse(z); const w = wartende.shift(); if (w) w(o); else antworten.push(o); });
+  let nr = 0;
+  const frage = (method, params) => new Promise((ok) => { const id = ++nr; wartende.push(ok); p.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n"); });
+  const suche = async (q) => (await frage("tools/call", { name: "brain_suchen", arguments: { frage: q } })).result.content[0].text;
+  try {
+    assert.match(await suche("quokka"), /00_inbox\/n\.md/);
+    assert.equal(await suche("wombat"), "Keine Treffer.");
+    listeMit(support, [A, B], B); // in der App den anderen Vault aktiv gemacht
+    assert.equal(await suche("quokka"), "Keine Treffer.");
+    assert.match(await suche("wombat"), /00_inbox\/n\.md/);
+    const v = (await frage("tools/call", { name: "brain_vaults", arguments: {} })).result.content[0].text;
+    assert.match(v, /\* v1 —/); assert.match(v, /v0 .*\(in der App aktiv\)|v0 —/);
+    listeMit(support, [A, B], null);
+    assert.match(await suche("quokka"), /noch kein Vault/);
+  } finally { p.kill("SIGKILL"); }
+});
+
+test("Entfernen: aktiver Vault → Nachfolger oder Willkommen (200, aktiv: null); defekt wird durchgereicht", async () => {
+  const support = neuerSupport();
+  const A = notizVault("a"), B = notizVault("b");
+  listeMit(support, [A, B], A);
+  const rufe = aufruf(erzeugeHandler({ vaultOptionen: { support } }));
+  assert.equal((await rufe("GET", "/api/info")).j.vault, realpathSync(A));
+  let r = await rufe("POST", "/api/vaults/entfernen", { pfad: A });
+  assert.equal(r.status, 200); assert.equal(r.j.aktiv, realpathSync(B)); assert.equal(r.j.vaults.length, 1);
+  assert.equal((await rufe("GET", "/api/info")).j.vault, realpathSync(B));
+  r = await rufe("POST", "/api/vaults/entfernen", { pfad: B });
+  assert.equal(r.status, 200); assert.equal(r.j.aktiv, null); assert.deepEqual(r.j.vaults, []);
+  assert.equal((await rufe("GET", "/api/info")).j.vault, null, "Willkommen");
+
+  // defekte vaults.json: gesichert und ersetzt → die Antworten tragen defekt:true
+  writeFileSync(join(support, "vaults.json"), "{ kaputt");
+  const neu = notizVault("c");
+  r = await rufe("POST", "/api/vaults/oeffnen", { pfad: neu });
+  assert.equal(r.status, 200); assert.equal(r.j.defekt, true);
+  r = await rufe("GET", "/api/vaults");
+  assert.equal(r.j.defekt, true);
+  listeMit(support, [neu], neu); // heil überschrieben
+  assert.equal((await rufe("GET", "/api/vaults")).j.defekt, undefined);
+});
+
+test("istRepo und sorgeFuerIdentitaet nehmen { timeout, frist } entgegen (Budget für Prüfungen in vaults.mjs)", async () => {
+  const { istRepo, neueFrist } = await import(pfad("gemeinsam", "git.mjs"));
+  const { sorgeFuerIdentitaet } = await import(pfad("gemeinsam", "gitwerkzeug.mjs"));
+  const d = repo();
+  assert.equal(await istRepo(d, { timeout: 5000 }), true);
+  await sorgeFuerIdentitaet(d, { timeout: 5000 });
+  assert.equal((await wirft(istRepo(d, { frist: neueFrist(0) }))).status, 504, "abgelaufene Frist: kein Git-Start, 504");
+  assert.equal((await wirft(sorgeFuerIdentitaet(d, { frist: neueFrist(0) }))).status, 504);
+});

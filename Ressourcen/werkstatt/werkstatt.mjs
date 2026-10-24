@@ -12,6 +12,7 @@ import { realpathSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { erzeugeHandler, appVersionLesen, MAX_KOERPER } from "./handler.mjs";
 import { HttpFehler } from "../gemeinsam/vault.mjs";
+import { beendeLaufendes } from "../gemeinsam/git.mjs";
 
 const vault = process.argv[2] || process.env.BRAIN_VAULT || undefined; // das Argument hat Vorrang vor vaults.json
 let handler;
@@ -63,6 +64,9 @@ rl.on("line", (zeile) => {
   bearbeite(zeile).finally(() => { offen--; vielleichtEnde(); });
 });
 rl.on("close", () => { stdinZu = true; vielleichtEnde(); });
-process.on("SIGTERM", beende);
-process.on("SIGINT", beende);
+// SIGTERM/SIGINT (die App beendet uns nach 2 s): zuerst laufende Git-Prozessgruppen beenden und einen gerade laufenden Merge des Abgleichs
+// mit `git merge --abort` zurücknehmen (synchron, höchstens ~1,5 s) — sonst bliebe der Vault halb zusammengeführt —, dann beenden.
+const abraeumenUndEnde = () => { try { beendeLaufendes(); } catch { /* beenden wir trotzdem */ } beende(); };
+process.on("SIGTERM", abraeumenUndEnde);
+process.on("SIGINT", abraeumenUndEnde);
 sende({ bereit: true, version: appVersionLesen(), vaultId });

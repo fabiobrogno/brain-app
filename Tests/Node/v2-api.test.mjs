@@ -65,7 +65,11 @@ test("Probe: dieselbe Suche wie MCP brain_suchen; leere Frage → 400", async ()
   await loescheListe();
   const d = vaultMitNotizen();
   const rufe = aufruf(erzeugeHandler({ vault: d }));
+  // Vertrauen v2 (§8): die Probe läuft über den MCP-Server, und der folgt dem AKTIVEN Vault aus vaults.json — ohne Eintrag 409.
   let r = await rufe("POST", "/api/probe", { frage: "fakt" });
+  assert.equal(r.status, 409); assert.equal(r.j.art, "nicht-aktiv");
+  schreibeListe([{ name: "t", pfad: realpathSync(d), farbe: "#5B8DEF" }], realpathSync(d));
+  r = await rufe("POST", "/api/probe", { frage: "fakt" });
   assert.equal(r.status, 200);
   assert.deepEqual(r.j.treffer.map((t) => t.pfad), ["09_wiki/firma/thema_a.md"]);
   assert.deepEqual(Object.keys(r.j.treffer[0]).sort(), ["auszug", "pfad", "stufe", "titel", "zeile"]);

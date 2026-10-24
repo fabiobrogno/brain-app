@@ -32,14 +32,16 @@ export function pruefeGitUrl(roh) {
 
 // Frisch angelegte Repos brauchen eine Identität, sonst scheitert der erste Commit (viele Macs haben Git ohne user.name/user.email).
 // Fehlt sie überall (system/global/lokal), wird sie NUR in diesem Repo gesetzt: Mac-Benutzername und <name>@localhost.
-export async function sorgeFuerIdentitaet(wurzel) {
-  const lies = async (k) => { const r = await git(wurzel, ["config", "--get", k]); return r.code === 0 ? r.stdout.trim() : ""; };
+// opt: { timeout, frist } wie bei git() — jeder der Aufrufe bekommt höchstens das Restbudget der Frist.
+export async function sorgeFuerIdentitaet(wurzel, opt = {}) {
+  const G = (args) => git(wurzel, args, { timeout: opt.timeout, frist: opt.frist });
+  const lies = async (k) => { const r = await G(["config", "--get", k]); return r.code === 0 ? r.stdout.trim() : ""; };
   const [n, e] = [await lies("user.name"), await lies("user.email")];
   if (n && e) return;
   let konto = "brain";
   try { konto = userInfo().username || konto; } catch { /* Standardname */ }
-  if (!n) await git(wurzel, ["config", "user.name", konto]);
-  if (!e) await git(wurzel, ["config", "user.email", `${konto}@localhost`]);
+  if (!n) await G(["config", "user.name", konto]);
+  if (!e) await G(["config", "user.email", `${konto}@localhost`]);
 }
 
 // Git-Fehlerausgabe (stderr) → { status, meldung } in Alltagssprache. Reihenfolge zählt: Anmeldung vor „nicht gefunden“.

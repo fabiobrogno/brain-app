@@ -61,6 +61,7 @@ async function istRepoG(G, wurzel) {
     return r.code === 0 && realpathSync(r.stdout.trim()) === wurzel;
   } catch (e) { if (e instanceof HttpFehler && e.status === 500) return false; throw e; }
 }
+// ctx wie bei git(): { timeout, frist, vertraut, sshEigen } — z. B. istRepo(p, { timeout: 5000 }) für Prüfungen mit Budget.
 export function istRepo(wurzel, ctx = {}) { return istRepoG(binde(wurzel, ctx), wurzel); }
 async function brauchtRepo(G, wurzel) {
   if (!(await istRepoG(G, wurzel))) throw new HttpFehler(400, "Dieser Ordner ist (noch) kein Git-Repository.");
