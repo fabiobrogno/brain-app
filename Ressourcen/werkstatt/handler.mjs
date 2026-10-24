@@ -104,9 +104,12 @@ export function erzeugeHandler(o) {
     const V = () => { if (!v) throw new HttpFehler(409, "Es ist noch kein Vault geöffnet.", { keinVault: true }); return v; };
     const neuerStand = (r) => { wechsleZu(r.vault.pfad); return { ...vaultListe(aktuell), vault: r.vault, git: r.git }; };
     switch (pfad) {
-      case "/api/info": nur("GET");
-        if (!v) return { vault: null, name: null, appVersion, kitVersion: null, git: false, mcpBefehl: null, kit: { vorhanden: false, vertraut: false } };
-        return { vault: v.wurzel, name: v.name, appVersion, kitVersion: v.kitVersion(), git: await v.istGitRepo(), mcpBefehl: mcpBefehl(v), kit: v.kit() };
+      case "/api/info": {
+        nur("GET");
+        if (!v) return { vault: null, name: null, appVersion, kitVersion: null, git: false, mcpBefehl: null, kit: { vorhanden: false, vertraut: false }, vertrauen: null };
+        const stand = v.vertrauenStand(); // einmal prüfen: kit.vertraut === vertrauen.erlaubt
+        return { vault: v.wurzel, name: v.name, appVersion, kitVersion: v.kitVersion(), git: await v.istGitRepo(), mcpBefehl: mcpBefehl(v), kit: v.kit(stand), vertrauen: stand };
+      }
       case "/api/kit/vertrauen": nur("POST"); return V().vertrauen(eingabe().erlauben);
       case "/api/baum": nur("GET"); return V().baum();
       case "/api/datei":

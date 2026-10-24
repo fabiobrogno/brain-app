@@ -214,15 +214,17 @@ test("Vertrauen: Kit läuft erst nach Erlaubnis; Merker mit realpath im Support-
   r = await rufe("POST", "/api/kit/vertrauen", { erlauben: "ja" }); assert.equal(r.status, 400);
   r = await rufe("GET", "/api/kit/vertrauen"); assert.equal(r.status, 405);
   r = await rufe("POST", "/api/kit/vertrauen", { erlauben: true });
-  assert.equal(r.status, 200); assert.deepEqual(r.j, { kit: { vorhanden: true, vertraut: true } });
+  assert.equal(r.status, 200); assert.deepEqual(r.j.kit, { vorhanden: true, vertraut: true });
+  assert.equal(r.j.vertrauen.erlaubt, true); // Vertrauen v2: Antwort { kit, vertrauen }
   const merker = JSON.parse(readFileSync(join(support(), "vertrauen.json"), "utf8"));
   assert.match(merker[oeffneVault(d).wurzel].seit, /^\d{4}-\d\d-\d\dT/);
+  assert.match(merker[oeffneVault(d).wurzel].ordner, /^\d+:\d+:[\d.]+$/); assert.match(merker[oeffneVault(d).wurzel].code, /^[0-9a-f]{64}$/);
   assert.equal((await rufe("GET", "/api/info")).j.kit.vertraut, true);
   assert.equal((await rufe("GET", "/api/gesundheit")).j.ampel, "gruen");
   assert.equal(readFileSync(join(d, "gelaufen.log"), "utf8"), "x");
 
   r = await rufe("POST", "/api/kit/vertrauen", { erlauben: false });
-  assert.deepEqual(r.j, { kit: { vorhanden: true, vertraut: false } });
+  assert.deepEqual(r.j.kit, { vorhanden: true, vertraut: false }); assert.equal(r.j.vertrauen.erlaubt, false);
   assert.equal(JSON.parse(readFileSync(join(support(), "vertrauen.json"), "utf8"))[oeffneVault(d).wurzel], undefined);
   assert.deepEqual((await rufe("GET", "/api/gesundheit")).j, { verfuegbar: false, grund: "nicht-vertraut" });
   assert.equal(readFileSync(join(d, "gelaufen.log"), "utf8"), "x", "nach Widerruf kein weiterer Lauf");

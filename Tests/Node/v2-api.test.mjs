@@ -81,7 +81,7 @@ test("Ohne Vault: info mit vault:null, Vault-Routen und Statisches gehen, alle a
   const studio = tmp(); schreibe(studio, "index.html", "<title>Studio</title>");
   const rufe = aufruf(erzeugeHandler({ studioDir: studio, appVersion: "9.9.9" }));
   let r = await rufe("GET", "/api/info");
-  assert.deepEqual(r.j, { vault: null, name: null, appVersion: "9.9.9", kitVersion: null, git: false, mcpBefehl: null, kit: { vorhanden: false, vertraut: false } });
+  assert.deepEqual(r.j, { vault: null, name: null, appVersion: "9.9.9", kitVersion: null, git: false, mcpBefehl: null, kit: { vorhanden: false, vertraut: false }, vertrauen: null });
   r = await rufe("GET", "/api/vaults"); assert.deepEqual(r.j, { vaults: [], aktiv: null });
   r = await rufe("GET", "/"); assert.equal(r.status, 200);
   r = await rufe("GET", "/api/ki/erkennen"); assert.equal(r.status, 200); assert.equal(r.j.agenten.length, 5);

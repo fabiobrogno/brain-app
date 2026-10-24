@@ -11,6 +11,7 @@ import { pathToFileURL } from "node:url";
 import { HttpFehler, MAX_DATEI, loese, imVault, falte, kindUmgebung, supportOrdner, BEARBEITBAR, generiertName, wikiGeneriert, gesperrterName } from "./basis.mjs";
 import { pruefeText, berlinHeute, leseKopf } from "./pruefung.mjs";
 import * as gitFn from "./git.mjs";
+import * as vertrauenFn from "./vertrauen.mjs";
 import { erzeugeNotizIndex, titelAus } from "./notizen.mjs";
 
 export { HttpFehler, pruefeText, berlinHeute, supportOrdner };
@@ -242,28 +243,22 @@ export function oeffneVault(vaultPfad, opts = {}) {
     return pruefeText(d.pfad, d.inhalt, { heute: opts.heute || berlinHeute(jetzt()) });
   }
 
-  // ---------- Kit ----------
-  // Kit-Code (<vault>/.tools/*.mjs) läuft erst, wenn der Nutzer den Vault in der App einmal erlaubt hat. Der Merker liegt
-  // außerhalb des Vaults: <support>/vertrauen.json = { "<realpath des Vaults>": { seit } } (wirkt auch für den MCP-Server).
-  const merkerDatei = () => join(opts.support || supportOrdner(), "vertrauen.json");
-  const leseMerker = () => { try { const j = JSON.parse(readFileSync(merkerDatei(), "utf8")); return j && typeof j === "object" && !Array.isArray(j) ? j : {}; } catch { return {}; } };
-  const vertraut = () => { const e = leseMerker()[wurzel]; return !!e && typeof e === "object"; };
+  // ---------- Kit und Vertrauen (Spec v2 §8) ----------
+  // Kit-Code (<vault>/.tools) und Git-Hooks laufen erst, wenn der Nutzer diesem Vault in der App vertraut hat. Der Merker liegt
+  // außerhalb des Vaults (<support>/vertrauen.json, siehe vertrauen.mjs) und bindet an genau diesen Ordner und diesen Code; er wirkt
+  // auch für den MCP-Server und die CLI von Swift. Ohne gültigen Eintrag läuft nichts aus dem Vault.
+  const stuetze = () => ({ support: opts.support });
+  const stand = () => vertrauenFn.pruefeVertrauen(wurzel, stuetze());
+  const vertraut = () => stand().erlaubt;
   const rueckfragenPfad = join(wurzel, ".tools", "rueckfragen.mjs");
   const kitVorhanden = () => existsSync(kitPfad) || existsSync(rueckfragenPfad);
-  const kit = () => ({ vorhanden: kitVorhanden(), vertraut: vertraut() });
+  const kit = (s) => ({ vorhanden: kitVorhanden(), vertraut: (s || stand()).erlaubt });
   function vertrauen(erlauben) {
     if (typeof erlauben !== "boolean") throw new HttpFehler(400, "„erlauben“ muss true oder false sein.");
-    const m = leseMerker();
-    if (erlauben) m[wurzel] = { seit: new Date().toISOString() }; else delete m[wurzel];
-    const datei = merkerDatei();
-    try {
-      mkdirSync(join(datei, ".."), { recursive: true });
-      const tmp = `${datei}.${process.pid}.tmp`;
-      writeFileSync(tmp, JSON.stringify(m, null, 2) + "\n", { mode: 0o600 });
-      renameSync(tmp, datei);
-    } catch { throw new HttpFehler(500, "Die Freigabe konnte nicht gespeichert werden."); }
+    if (erlauben) vertrauenFn.erlaube(wurzel, stuetze()); else vertrauenFn.widerrufe(wurzel, stuetze());
     gesCache = null; rfCache = null;
-    return { kit: kit() };
+    const s = stand();
+    return { kit: kit(s), vertrauen: s };
   }
   const NICHT_VERTRAUT = { verfuegbar: false, grund: "nicht-vertraut" };
 
@@ -320,7 +315,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
   }
 
   return {
-    wurzel, name: basename(wurzel), rueckfragen, kitVersion, kit, vertrauen, baum, lies, schreibe, neu, merken, suche, suchenFuerKi, pruefung, gesundheit,
+    wurzel, name: basename(wurzel), rueckfragen, kitVersion, kitVorhanden, kit, vertrauen, vertrauenStand: stand, baum, lies, schreibe, neu, merken, suche, suchenFuerKi, pruefung, gesundheit,
     notizen: notizIndex.notizen, notizKontext: notizIndex.kontext, typen: notizIndex.typen, ansichten: notizIndex.ansichten,
     gitLog: (a) => gitFn.log(wurzel, a || {}),
     gitRemote: (url) => gitFn.remoteHinzufuegen(wurzel, url),

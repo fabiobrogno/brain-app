@@ -269,6 +269,8 @@ test("Gesundheit: ohne Kit {verfuegbar:false}; mit Kit durchgereicht und 120 s g
   assert.equal((await w.gesundheit()).ampel, "gelb");
   assert.equal(readFileSync(join(d, "aufrufe.log"), "utf8"), "x", "zweiter Aufruf kam aus dem Cache");
   schreibe(d, ".tools/brain.mjs", "console.log('kein json');");
+  assert.deepEqual(await oeffneVault(d).gesundheit(), { verfuegbar: false, grund: "nicht-vertraut" }, "geänderter Kit-Code = neue Frage (Vertrauen v2, §8)");
+  oeffneVault(d).vertrauen(true); // neu erlaubt: jetzt zählt wieder nur, ob das Kit brauchbar antwortet
   assert.deepEqual(await oeffneVault(d).gesundheit(), { verfuegbar: false });
 });
 
