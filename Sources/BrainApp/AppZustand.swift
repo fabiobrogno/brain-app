@@ -105,7 +105,13 @@ final class AppZustand: ObservableObject {
     // MARK: Aktiver Vault
 
     /// Der aktive Vault jetzt: `--vault` (nur Entwicklung/Rauchtest), sonst `aktiv` aus vaults.json, sonst config.json.
-    private func vaultFrisch() -> URL? { vaultVorgabe ?? VaultListe.aktiverVault(pfade) }
+    /// Ist vaults.json da, aber gerade nicht lesbar (das Backend schreibt sie eben), bleibt der bisherige Vault — kein
+    /// kurzer Sprung auf den Vault aus config.json.
+    private func vaultFrisch() -> URL? {
+        if let vorgabe = vaultVorgabe { return vorgabe }
+        if vault != nil, FileManager.default.fileExists(atPath: pfade.vaultListe.path), VaultListe.lade(pfade) == nil { return vault }
+        return VaultListe.aktiverVault(pfade)
+    }
 
     /// Liest den aktiven Vault neu. Wechselt er, gehört die offene Übersicht (Kit-Brücke) zum alten Vault und wird
     /// geschlossen; der Status wird zurückgesetzt. Gibt zurück, ob sich der Vault geändert hat.
@@ -194,25 +200,32 @@ final class AppZustand: ObservableObject {
 
     /// Geprüfte Aktion aus dem Nachrichtenkanal `aktion` (Prüfung in `AppAktion`); der Rückgabewert geht als Antwort an die Seite.
     private func fuehreAus(_ aktion: AppAktion) async -> Any? {
+        let ok: [String: Any] = ["ok": true]
         switch aktion {
         case .ansicht:
-            let antwort: [String: Any] = oeffneFenster() ? ["ok": true] : ["ok": false, "grund": "kein-kit"]
+            log.schreibe("aktion ansicht")
+            let antwort: [String: Any] = oeffneFenster() ? ok : ["ok": false, "grund": "kein-kit"]
             return antwort
         case .ordnerZeigen(let url):
+            log.schreibe("aktion ordner-zeigen")
             NSWorkspace.shared.activateFileViewerSelecting([url])
-            return ["ok": true]
+            return ok
         case .extern(let url):
+            log.schreibe("aktion extern")
             NSWorkspace.shared.open(url)
-            return ["ok": true]
+            return ok
         case .ordnerWaehlen(let titel, let vorschlag):
+            log.schreibe("aktion ordner-waehlen")
             guard let url = await studio.waehleOrdner(titel: titel, vorschlag: vorschlag) else { return nil }
             return ["pfad": url.path]
         case .vaultGewechselt:
+            log.schreibe("aktion vault-gewechselt")
             vaultGewechselt()
-            return ["ok": true]
+            return ok
         case .titel(let text):
+            log.schreibe("aktion titel \(text ?? "-")")
             studio.setzeTitel(text)
-            return ["ok": true]
+            return ok
         }
     }
 

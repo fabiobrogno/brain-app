@@ -1,6 +1,6 @@
 #!/bin/bash
 # Baut build/Brain.app (nur arm64): Release-Build, Paket-Struktur, mitgelieferte Node-Laufzeit, Studio-Ressourcen
-# (studio, werkstatt, mcp, gemeinsam), Ad-hoc-Signatur.
+# (alle Ordner unter Ressourcen/: studio, werkstatt, mcp, gemeinsam, …), Ad-hoc-Signatur.
 # Das Node behält seine Original-Signatur (Prüfsumme im Manifest bleibt gültig); Developer-ID-Signatur und
 # Notarisierung kommen in M5.
 set -euo pipefail
@@ -21,7 +21,9 @@ mkdir -p "$NEU/Contents/MacOS" "$NEU/Contents/Resources"
 cp "$BIN" "$NEU/Contents/MacOS/BrainApp"
 cp Ressourcen/Info.plist "$NEU/Contents/Info.plist"
 cp -R build/node-runtime "$NEU/Contents/Resources/node-runtime"
-for ordner in studio werkstatt mcp gemeinsam; do
+# Alle Ressourcen-Ordner ins Paket (studio, werkstatt, mcp, gemeinsam und was das Backend sonst mitbringt, z. B. Vorlagen)
+for d in Ressourcen/*/; do
+  ordner="$(basename "$d")"
   cp -R "Ressourcen/$ordner" "$NEU/Contents/Resources/$ordner"
 done
 codesign --force --sign - "$NEU"
