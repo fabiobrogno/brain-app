@@ -14,27 +14,43 @@ final class AppZustand: ObservableObject {
     let pfade: AppPfade
     let log: AppLog
     private let argumente = StartArgumente.lies(CommandLine.arguments)
-    private let fenster: FensterSteuerung
+    /// Studio (Editor, Werkstatt-Brücke) und Übersicht (Kit-Ansicht, Kit-Brücke).
+    private let studio: FensterSteuerung
+    private let uebersicht: FensterSteuerung
     private var node: URL?
     private var brainNode = ""
     private var einrichtung: NSWindow?
     private var taktgeber: Task<Void, Never>?
     private var statusLauf = 0
+    /// Erst nach dem Start öffnet ein späteres Verbinden (Einrichtung) das Studio selbst.
+    private var gestartet = false
 
     init() {
         let p = AppPfade.standard()
         let l = AppLog(pfade: p)
         pfade = p
         log = l
-        fenster = FensterSteuerung(log: l)
+        studio = FensterSteuerung(log: l, oberflaeche: .studio)
+        uebersicht = FensterSteuerung(log: l, oberflaeche: .app)
     }
+
+    /// Werkstatt-Skript im App-Paket (`BRAIN_APP_WERKSTATT` lenkt für Entwicklung um).
+    private var werkstattSkript: URL? {
+        if let dev = ProcessInfo.processInfo.environment["BRAIN_APP_WERKSTATT"], dev.hasPrefix("/") { return URL(fileURLWithPath: dev) }
+        return Bundle.main.resourceURL?.appendingPathComponent("werkstatt/werkstatt.mjs")
+    }
+
+    var istStudioOffen: Bool { studio.istOffen }
 
     private var umgebung: [String: String] { ["BRAIN_NODE": brainNode] }
 
     func starte() async {
         signal(SIGPIPE, SIG_IGN)
         // Nach Aktionen im Fenster (Vorschlag übernehmen, Konflikt entscheiden) den Menüstatus auffrischen.
-        fenster.beiGeschlossen = { [weak self] in Task { await self?.aktualisiere() } }
+        for f in [studio, uebersicht] {
+            f.beiGeschlossen = { [weak self] in Task { await self?.aktualisiere() } }
+            f.beiAktion = { [weak self] in self?.fuehreAus($0) }
+        }
         log.schreibe("start")
         do {
             node = try await laufzeit()
@@ -50,14 +66,16 @@ final class AppZustand: ObservableObject {
         } else {
             zeigeEinrichtung()
         }
+        gestartet = true
         taktgeber = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(15 * 60))
                 await self?.aktualisiere()
             }
         }
+        if vault != nil { oeffneStudio() }
         if argumente.fensterOeffnen { oeffneFenster() }
-        if let s = argumente.schliessenNach { Task { try? await Task.sleep(for: s); fenster.schliesse() } }
+        if let s = argumente.schliessenNach { Task { try? await Task.sleep(for: s); studio.schliesse(); uebersicht.schliesse() } }
         if let s = argumente.beendenNach { Task { try? await Task.sleep(for: s); NSApp.terminate(nil) } }
     }
 
@@ -73,7 +91,10 @@ final class AppZustand: ObservableObject {
 
     func verbinde(_ ordner: URL, merken: Bool = true) async {
         // Anderer Ordner bei offenem Fenster: Fenster (samt Brücke) zu, sonst zeigt es weiter das alte Brain.
-        if let alt = vault, alt.standardizedFileURL.path != ordner.standardizedFileURL.path { fenster.schliesse() }
+        if let alt = vault, alt.standardizedFileURL.path != ordner.standardizedFileURL.path {
+            studio.schliesse()
+            uebersicht.schliesse()
+        }
         let pruefung = VaultAuswahl.pruefe(ordner)
         guard pruefung == .ok else {
             vault = nil
@@ -89,6 +110,7 @@ final class AppZustand: ObservableObject {
         einrichtung?.close()
         einrichtung = nil
         await aktualisiere()
+        if gestartet { oeffneStudio() }
     }
 
     func aktualisiere() async {
@@ -115,9 +137,30 @@ final class AppZustand: ObservableObject {
         }
     }
 
+    /// Übersicht = bisherige Kit-Ansicht (3D/Karten).
     func oeffneFenster() {
         guard let vault, let node, VaultAuswahl.pruefe(vault) == .ok else { zeigeEinrichtung(); return }
-        fenster.oeffne(node: node, vault: vault, umgebung: umgebung)
+        uebersicht.oeffne(node: node, vault: vault, umgebung: umgebung)
+    }
+
+    func oeffneStudio() {
+        guard let vault, let node, VaultAuswahl.pruefe(vault) == .ok else { zeigeEinrichtung(); return }
+        studio.oeffne(node: node, vault: vault, skript: werkstattSkript, umgebung: umgebung)
+    }
+
+    /// Menübefehl (⌘N, ⌘⇧M, ⌘⌥I) an die Studio-Oberfläche; öffnet das Studio, wenn es zu ist.
+    func sende(_ befehl: StudioBefehl) {
+        if !studio.istOffen { oeffneStudio() }
+        studio.sende(befehl)
+    }
+
+    /// Geprüfte Aktion aus dem Nachrichtenkanal `aktion` (Prüfung in `AppAktion`).
+    private func fuehreAus(_ aktion: AppAktion) {
+        switch aktion {
+        case .ansicht: oeffneFenster()
+        case .ordnerZeigen(let url): NSWorkspace.shared.activateFileViewerSelecting([url])
+        case .extern(let url): NSWorkspace.shared.open(url)
+        }
     }
 
     func zeigeOrdner() {
@@ -153,6 +196,7 @@ final class AppZustand: ObservableObject {
 
     func beende() {
         taktgeber?.cancel()
-        fenster.schliesse()
+        studio.schliesse()
+        uebersicht.schliesse()
     }
 }

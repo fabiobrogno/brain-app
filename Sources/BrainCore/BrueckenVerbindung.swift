@@ -14,7 +14,7 @@ public enum BrueckenFehler: Error, Equatable {
     case zeitUeberschritten
 }
 
-/// Hält den Node-Prozess der Ansicht-Brücke (Kit: .tools/ansicht/bruecke.mjs) und ordnet Antworten über die id zu
+/// Hält den Node-Prozess einer Brücke (Kit: .tools/ansicht/bruecke.mjs oder Werkstatt: werkstatt.mjs) und ordnet Antworten über die id zu
 /// (App-Spec §5.2 Baustein 4). Stirbt die Brücke, scheitern offene Anfragen mit `.beendet`; die nächste Anfrage
 /// startet sie neu (Review-Fokus 4) und schließt dabei zuerst alle noch wartenden Anfragen ab, damit keine bis zum
 /// Zeitlimit hängt. Schreiben in eine tote Brücke darf die App nie beenden (SIGPIPE aus).
@@ -33,6 +33,7 @@ public actor BrueckenVerbindung {
 
     private let node: URL
     private let vault: URL
+    private let argumente: [String]
     private let umgebung: [String: String]
     private var prozess: Process?
     private var eingang: FileHandle?
@@ -43,10 +44,21 @@ public actor BrueckenVerbindung {
     private var zeitwaechter: [Int: Task<Void, Never>] = [:]
     public private(set) var version: String?
 
-    public init(node: URL, vault: URL, umgebung: [String: String] = [:]) {
+    /// Standard ist die Kit-Brücke des Vaults; mit `skript` startet stattdessen dieses Skript (z. B. die Werkstatt).
+    /// Beide sprechen dasselbe JSON-Zeilen-Protokoll und bekommen den Vault-Pfad als ersten Argument nach dem Skript.
+    public init(node: URL, vault: URL, skript: URL? = nil, umgebung: [String: String] = [:]) {
         self.node = node
         self.vault = vault
+        self.argumente = Self.startArgumente(skript: skript, vault: vault)
         self.umgebung = umgebung
+    }
+
+    /// Pfad der Kit-Brücke (Ansicht „Übersicht“) im Vault.
+    public static func kitSkript(vault: URL) -> URL { vault.appendingPathComponent(".tools/ansicht/bruecke.mjs") }
+
+    /// Argumente für Node: `<skript> <vault>`; ohne Skript die Kit-Brücke.
+    static func startArgumente(skript: URL?, vault: URL) -> [String] {
+        [(skript ?? kitSkript(vault: vault)).path, vault.path]
     }
 
     /// Prozess läuft und nimmt Anfragen an (nach `beende()` nicht mehr).
@@ -64,7 +76,7 @@ public actor BrueckenVerbindung {
         version = nil
         let p = Process()
         p.executableURL = node
-        p.arguments = [vault.appendingPathComponent(".tools/ansicht/bruecke.mjs").path, vault.path]
+        p.arguments = argumente
         var env = ProcessInfo.processInfo.environment
         env["BRAIN_VAULT"] = vault.path
         for (k, v) in umgebung { env[k] = v }

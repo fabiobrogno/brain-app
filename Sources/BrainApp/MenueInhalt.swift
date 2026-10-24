@@ -14,7 +14,8 @@ struct MenueInhalt: View {
             Text("Entwickler-Brain — keine Kit-Updates")
         }
         Divider()
-        Button("Brain öffnen") { zustand.oeffneFenster() }.keyboardShortcut("o")
+        Button("Studio öffnen") { zustand.oeffneStudio() }.keyboardShortcut("o")
+        Button("Übersicht öffnen") { zustand.oeffneFenster() }
         Button("Ordner im Finder zeigen") { zustand.zeigeOrdner() }.disabled(zustand.vault == nil)
         Button("Status aktualisieren") { Task { await zustand.aktualisiere() } }.keyboardShortcut("r")
         Button("Anderen Brain-Ordner wählen …") { zustand.waehleOrdner() }
