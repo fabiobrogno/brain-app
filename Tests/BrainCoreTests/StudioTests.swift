@@ -191,6 +191,61 @@ private func url(_ s: String) -> URL { URL(string: s)! }
     #expect(AppAktion.pruefe(["aktion": "ansicht"], vault: nil) == .ansicht)
 }
 
+// MARK: Fehlerhaken (Aktion `fehler`)
+
+@Test func aktionFehlerNimmtTextUndOrtAn() {
+    let wert: [String: Any] = ["text": "TypeError: undefined is not an object", "ort": "app.js:1411:5"]
+    #expect(AppAktion.pruefe(["aktion": "fehler", "wert": wert], vault: nil, oberflaeche: .studio)
+            == .fehler(text: "TypeError: undefined is not an object", ort: "app.js:1411:5"))
+    // ohne Vault ebenso (Willkommen), Ort fehlt oder ist unbrauchbar → „unbekannt“
+    #expect(AppAktion.pruefe(["aktion": "fehler", "wert": ["text": "x"]], vault: nil, oberflaeche: .studio) == .fehler(text: "x", ort: "unbekannt"))
+    for ort in [5, "", "   ", "?x=1"] as [Any] {
+        #expect(AppAktion.pruefe(["aktion": "fehler", "wert": ["text": "x", "ort": ort]], vault: nil, oberflaeche: .studio)
+                == .fehler(text: "x", ort: "unbekannt"), "\(ort)")
+    }
+}
+
+@Test func aktionFehlerKuerztTextUndOrtUndEntferntQueryUndZeilenumbrueche() {
+    // Text: einzeilig, Steuer-/Format-Zeichen weg, auf 300 Zeichen gekürzt; leer → Platzhalter
+    #expect(AppAktion.pruefe(["aktion": "fehler", "wert": ["text": "Zeile 1\nZeile\u{202E}2\t3"]], vault: nil, oberflaeche: .studio)
+            == .fehler(text: "Zeile 1 Zeile2 3", ort: "unbekannt"))
+    #expect(AppAktion.pruefe(["aktion": "fehler", "wert": ["text": "  \n "]], vault: nil, oberflaeche: .studio) == .fehler(text: "(ohne Text)", ort: "unbekannt"))
+    if case .fehler(let t, _)? = AppAktion.pruefe(["aktion": "fehler", "wert": ["text": String(repeating: "ä", count: 1000)]], vault: nil, oberflaeche: .studio) {
+        #expect(t.count == AppAktion.maxFehlertext)
+        #expect(AppAktion.maxFehlertext == 300)
+    } else {
+        Issue.record("langer Fehlertext wurde nicht gekürzt übernommen")
+    }
+    // Ort: nur bis zum ersten Leerzeichen/Query/Fragment (ein Ort mit Notiztitel in der Query oder Leerzeichen bleibt draußen), gekürzt
+    #expect(AppAktion.pruefe(["aktion": "fehler", "wert": ["text": "x", "ort": "app.js?pfad=Meine Notiz.md:3:4"]], vault: nil, oberflaeche: .studio)
+            == .fehler(text: "x", ort: "app.js"))
+    #expect(AppAktion.pruefe(["aktion": "fehler", "wert": ["text": "x", "ort": "editor.js:12:7 in Meine Notiz"]], vault: nil, oberflaeche: .studio)
+            == .fehler(text: "x", ort: "editor.js:12:7"))
+    if case .fehler(_, let o)? = AppAktion.pruefe(["aktion": "fehler", "wert": ["text": "x", "ort": String(repeating: "a", count: 500)]], vault: nil, oberflaeche: .studio) {
+        #expect(o.count == AppAktion.maxFehlerort)
+    } else {
+        Issue.record("langer Ort wurde nicht gekürzt übernommen")
+    }
+}
+
+@Test func aktionFehlerVerwirftFalscheFormen() {
+    // ohne Wert, kein Objekt, Text fehlt oder ist kein Text → verworfen
+    for wert in [nil, NSNull(), "text", 5, ["x"], ["ort": "app.js:1:1"], ["text": 5], ["text": NSNull()]] as [Any?] {
+        var nachricht: [String: Any] = ["aktion": "fehler"]
+        if let wert { nachricht["wert"] = wert }
+        #expect(AppAktion.pruefe(nachricht, vault: nil, oberflaeche: .studio) == nil, "\(String(describing: wert))")
+    }
+}
+
+@Test func aktionFehlerGiltNurFuerDasStudio() {
+    // Die Übersicht ist Kit-Code aus dem Vault und darf nichts ins App-Log schreiben; ohne Herkunftsangabe gilt dasselbe.
+    let v = tempOrdner("Vault")
+    let nachricht: [String: Any] = ["aktion": "fehler", "wert": ["text": "x", "ort": "app.js:1:1"]]
+    #expect(AppAktion.pruefe(nachricht, vault: v, oberflaeche: .app) == nil)
+    #expect(AppAktion.pruefe(nachricht, vault: v) == nil)
+    #expect(AppAktion.pruefe(nachricht, vault: v, oberflaeche: .studio) == .fehler(text: "x", ort: "app.js:1:1"))
+}
+
 @Test func ordnerZeigenBrauchtEinenVault() {
     #expect(AppAktion.pruefe(["aktion": "ordner-zeigen", "wert": "09_wiki/seite.md"], vault: nil, oberflaeche: .studio) == nil)
     // andere Aktionen brauchen keinen

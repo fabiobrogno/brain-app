@@ -2,8 +2,8 @@ import Foundation
 
 /// Aktionen der Oberfläche an die App (Nachrichtenkanal `aktion`, mit Antwort an die Seite, aber kein Datenweg). Die Prüfung
 /// hier ist die einzige Stelle, die Werte der Seite in etwas Ausführbares verwandelt: nur bekannte Aktionen, Pfade nur im Vault,
-/// nur https. `ordner-waehlen`, `vault-gewechselt` und `titel` gelten nur für das Studio — die Übersicht (Kit-Seite aus dem
-/// Vault) darf nur `ansicht`, `ordner-zeigen` und `extern`.
+/// nur https. `ordner-waehlen`, `vault-gewechselt`, `titel` und `fehler` gelten nur für das Studio — die Übersicht (Kit-Seite
+/// aus dem Vault) darf nur `ansicht`, `ordner-zeigen` und `extern`.
 public enum AppAktion: Equatable, Sendable {
     case ansicht
     case ordnerZeigen(URL)
@@ -14,13 +14,19 @@ public enum AppAktion: Equatable, Sendable {
     case vaultGewechselt
     /// Fenstertitel des Studios (nil = Standardtitel).
     case titel(String?)
+    /// JavaScript-Fehler der Studio-Oberfläche (Fehlerhaken, `fehlerhaken.js`): nur fürs App-Log, kein Datenweg.
+    /// `ort` = Datei:Zeile:Spalte ohne Query und ohne Leerzeichen, `text` einzeilig und gekürzt.
+    case fehler(text: String, ort: String)
 
     /// Längen- und Zeichenbegrenzung für Texte der Seite (Fenstertitel, Dialog-Hinweis).
     static let maxTitel = 120
     static let maxHinweis = 200
+    static let maxFehlertext = 300
+    static let maxFehlerort = 120
 
     /// `{aktion:"ansicht"}`, `{aktion:"ordner-zeigen", wert:<rel. Pfad>}`, `{aktion:"extern", wert:<https-URL>}`,
-    /// `{aktion:"ordner-waehlen", wert:{titel?, vorschlag?}}`, `{aktion:"vault-gewechselt"}`, `{aktion:"titel", wert:<Text>}`.
+    /// `{aktion:"ordner-waehlen", wert:{titel?, vorschlag?}}`, `{aktion:"vault-gewechselt"}`, `{aktion:"titel", wert:<Text>}`,
+    /// `{aktion:"fehler", wert:{text, ort?}}`.
     /// Ohne Angabe gilt die strengste Herkunft (Übersicht): die Studio-Aktionen muss man ausdrücklich freischalten.
     public static func pruefe(_ nachricht: Any, vault: URL?, oberflaeche: Oberflaeche = .app) -> AppAktion? {
         guard let d = nachricht as? [String: Any], let name = d["aktion"] as? String else { return nil }
@@ -41,6 +47,8 @@ public enum AppAktion: Equatable, Sendable {
             return oberflaeche == .studio ? .vaultGewechselt : nil
         case "titel":
             return oberflaeche == .studio ? pruefeTitel(wert) : nil
+        case "fehler":
+            return oberflaeche == .studio ? pruefeFehler(wert) : nil
         default:
             return nil
         }
@@ -61,6 +69,21 @@ public enum AppAktion: Equatable, Sendable {
         guard let wert, !(wert is NSNull) else { return .titel(nil) }
         guard let s = wert as? String else { return nil }
         return .titel(einzeilig(s, max: maxTitel))
+    }
+
+    /// `wert` = Objekt mit `text` (Pflicht, sonst verworfen) und `ort` (fehlt oder unbrauchbar → „unbekannt“). Nur Text, der in
+    /// eine Logzeile kommt: einzeilig und gekürzt, der Ort ohne Leerzeichen und ohne Query/Fragment (Notiztitel gehören nicht ins Protokoll).
+    private static func pruefeFehler(_ wert: Any?) -> AppAktion? {
+        guard let d = wert as? [String: Any], let text = d["text"] as? String else { return nil }
+        let ort = (d["ort"] as? String).flatMap { fehlerort($0) } ?? "unbekannt"
+        return .fehler(text: einzeilig(text, max: maxFehlertext) ?? "(ohne Text)", ort: ort)
+    }
+
+    /// Ort einer Meldung für die Logzeile `js-fehler <ort> <text>`: der erste Teil bis zu einem Leerzeichen, `?` oder `#`.
+    static func fehlerort(_ text: String) -> String? {
+        guard let einzeiler = einzeilig(text, max: maxFehlerort) else { return nil }
+        let ort = einzeiler.prefix { $0 != " " && $0 != "?" && $0 != "#" }
+        return ort.isEmpty ? nil : String(ort)
     }
 
     /// Text für Fenster und Dialoge: Steuer-, Format- (u. a. Rechts-nach-links-Umschalter) und Zeilentrennzeichen entfallen

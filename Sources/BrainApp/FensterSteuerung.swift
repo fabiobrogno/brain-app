@@ -158,6 +158,10 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
     private var navigation: Navigation?
     private var bruecke: BrueckenVerbindung?
     private var bereitAufgabe: Task<Void, Never>?
+    /// Testschalter fürs Studio (`--test-bild` & Co., nur wenn die App damit gestartet wurde) und der Lauf dazu.
+    private var test: StartArgumente?
+    private var testAufgabe: Task<Void, Never>?
+    private var testGestartet = false
 
     var istOffen: Bool { fenster != nil }
     /// Wird nach dem Schließen aufgerufen (z. B. um den Menüstatus aufzufrischen).
@@ -180,7 +184,8 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
 
     /// `skript`: nil = Kit-Brücke des Vaults, sonst z. B. die Werkstatt aus dem App-Paket. `vault` nil nur mit `skript`
     /// (Studio vor der Vault-Wahl: die Werkstatt liest dann vaults.json); `arbeitsordner` gilt dann als Arbeitsverzeichnis.
-    func oeffne(node: URL, vault: URL?, skript: URL? = nil, umgebung: [String: String], arbeitsordner: URL? = nil) {
+    /// `test`: Testschalter des Studios (Größe, Bild, Skript) — nur für das Studio, die Übersicht ignoriert sie.
+    func oeffne(node: URL, vault: URL?, skript: URL? = nil, umgebung: [String: String], arbeitsordner: URL? = nil, test: StartArgumente? = nil) {
         if let fenster {
             if fenster.isMiniaturized { fenster.deminiaturize(nil) }
             fenster.makeKeyAndOrderFront(nil)
@@ -189,6 +194,13 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
         }
         let bruecke = BrueckenVerbindung(node: node, vault: vault, skript: skript, umgebung: umgebung, arbeitsordner: arbeitsordner)
         let config = WKWebViewConfiguration()
+        let test = oberflaeche == .studio ? test : nil
+        // Testlauf: flüchtiger Web-Speicher — die Seite liest und schreibt sonst den localStorage der echten App (Theme,
+        // letzte Notiz, Spaltenbreiten), das Bild hinge dann vom letzten Lauf ab.
+        if test != nil {
+            config.websiteDataStore = .nonPersistent()
+            config.userContentController.addUserScript(StudioTestlauf.ruhigeAnimationen())
+        }
         config.setURLSchemeHandler(SchemaHandler(bruecke: bruecke, oberflaeche: oberflaeche), forURLScheme: NavigationsRegel.schema)
         config.userContentController.addScriptMessageHandler(Kanal(bruecke: bruecke, oberflaeche: oberflaeche), contentWorld: .page, name: "brain")
         let aktionsKanal = AktionsKanal(oberflaeche: oberflaeche, vault: { [weak self] in self?.aktuellerVault?() }) { [weak self] aktion in
@@ -213,9 +225,10 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
             w.titlebarAppearsTransparent = true
             w.minSize = StudioFenster.minimum
             // Erster Start (noch keine gemerkte Position): Standardgröße, mittig. Danach gilt die gemerkte Größe — aber nie
-            // unter dem heutigen Minimum (ältere Versionen erlaubten 900×600).
-            let ersterStart = UserDefaults.standard.string(forKey: "NSWindow Frame \(StudioFenster.rahmenName)") == nil
-            w.setFrameAutosaveName(StudioFenster.rahmenName)
+            // unter dem heutigen Minimum (ältere Versionen erlaubten 900×600). Testlauf: immer wie beim ersten Start, und die
+            // Position der echten App wird weder gelesen noch überschrieben.
+            let ersterStart = test != nil || UserDefaults.standard.string(forKey: "NSWindow Frame \(StudioFenster.rahmenName)") == nil
+            if test == nil { w.setFrameAutosaveName(StudioFenster.rahmenName) }
             var rahmen = w.frame
             if ersterStart {
                 let sichtbar = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame.size ?? StudioFenster.standard
@@ -224,6 +237,7 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
                 rahmen.size = StudioFenster.mindestens(rahmen.size)
             }
             if rahmen.size != w.frame.size { w.setFrame(rahmen, display: false) }
+            if let g = test?.testFenster { w.setContentSize(g) } // `--test-fenster`: Inhaltsgröße in Punkten (mindestens die Mindestgröße)
             if ersterStart { w.center() }
         } else {
             w.setFrameAutosaveName("BrainFenster")
@@ -234,11 +248,13 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
         self.bruecke = bruecke
         self.webView = web
         self.navigation = navigation
+        self.test = test
         self.fenster = w
         w.makeKeyAndOrderFront(nil)
         NSApp.activate()
         web.load(URLRequest(url: oberflaeche.startURL))
         log.schreibe("fenster-auf \(name) \(Int(w.frame.width))x\(Int(w.frame.height))")
+        if test != nil { log.schreibe("fenster-inhalt \(name) \(Int(web.bounds.width))x\(Int(web.bounds.height))") }
     }
 
     func schliesse() { fenster?.close() }
@@ -388,6 +404,9 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
     /// Bereit = Übersicht: app.js hat die Daten geladen (window.__brain.ladezeit); Studio: window.studio ist da und
     /// die Seite fertig geladen. Höchstens 30 s warten.
     private func warteAufBereit() {
+        // Der Testlauf startet schon mit dem ersten fertig geladenen Dokument: Wird die Oberfläche nie bereit (kaputtes
+        // app.js), soll das Bild trotzdem entstehen — es zeigt dann, was der Nutzer sähe.
+        if let web = webView { starteTestlauf(web) }
         bereitAufgabe?.cancel()
         let pruefung = oberflaeche == .studio
             ? "window.studio && document.readyState === 'complete' ? 1 : null"
@@ -406,9 +425,20 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
         }
     }
 
+    /// Testschalter `--test-skript` / `--test-bild`: genau einmal je App-Lauf, sobald das erste Dokument des Studios geladen
+    /// ist (Ablauf und Logzeilen: `StudioTestlauf`).
+    private func starteTestlauf(_ web: WKWebView) {
+        guard let t = test, !testGestartet, t.testBild != nil || t.testSkript != nil else { return }
+        testGestartet = true
+        let log = self.log
+        testAufgabe = Task { @MainActor in await StudioTestlauf.fuehreAus(t, web: web, log: log) }
+    }
+
     private func aufraeumen() {
         bereitAufgabe?.cancel()
         bereitAufgabe = nil
+        testAufgabe?.cancel()
+        testAufgabe = nil
         // Ein offener Ordner-Dialog endet mit dem Fenster; die wartende Seite bekommt „abgebrochen“.
         if let d = ordnerDialog {
             ordnerDialog = nil

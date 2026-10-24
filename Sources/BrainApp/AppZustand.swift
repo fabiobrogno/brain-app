@@ -65,6 +65,12 @@ final class AppZustand: ObservableObject {
             f.aktuellerVault = { [weak self] in self?.vaultFrisch() }
         }
         log.schreibe("start")
+        // Testschalter (Selbstfoto): abgelehnte Werte ins Log, Erscheinungsbild gilt gleich für die ganze App.
+        for hinweis in argumente.hinweise { log.schreibe(hinweis) }
+        if let b = argumente.testErscheinungsbild {
+            NSApp.appearance = NSAppearance(named: b == .dunkel ? .darkAqua : .aqua)
+            log.schreibe("test-erscheinungsbild \(b.rawValue)")
+        }
         do {
             node = try await laufzeit()
         } catch {
@@ -197,7 +203,8 @@ final class AppZustand: ObservableObject {
     /// so bleibt der Vault auch nach einem Neustart der Werkstatt der zuletzt in der Oberfläche gewählte.
     func oeffneStudio() {
         guard let node else { zeigeEinrichtung(); return }
-        studio.oeffne(node: node, vault: vaultVorgabe, skript: werkstattSkript, umgebung: werkstattUmgebung, arbeitsordner: pfade.basis)
+        studio.oeffne(node: node, vault: vaultVorgabe, skript: werkstattSkript, umgebung: werkstattUmgebung, arbeitsordner: pfade.basis,
+                      test: argumente.studioTestlauf ? argumente : nil)
     }
 
     /// Menübefehl (⌘N, ⌘⇧M, Vault …, Gehe zu …) an die Studio-Oberfläche; öffnet das Studio, wenn es zu ist.
@@ -233,6 +240,10 @@ final class AppZustand: ObservableObject {
         case .titel(let text):
             // Bewusst ohne Log: Die Oberfläche meldet den Titel bei jeder Notiz (Notiztitel gehören nicht ins Protokoll).
             studio.setzeTitel(text)
+            return ok
+        case .fehler(let text, let ort):
+            // JavaScript-Fehler der Studio-Oberfläche (Fehlerhaken): ohne Hinweis darauf bliebe ein weißes Fenster stumm.
+            log.schreibe("js-fehler \(ort) \(text)")
             return ok
         }
     }

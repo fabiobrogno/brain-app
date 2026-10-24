@@ -60,6 +60,7 @@ swift build                      # Swift-Teil bauen
 swift test                       # Swift-Tests
 bash scripts/teste-node.sh       # Node-Tests (Brücke, MCP, Dateizugriff, Git)
 bash scripts/baue-app.sh         # baut build/Brain.app (arm64)
+bash scripts/selbstfoto.sh <vault-kopie> <ordner>   # Studio fotografiert sich selbst (hell/dunkel) und meldet js-fehler
 ```
 
 Die Oberflächen-Tests (Playwright) liegen in `Tests/Oberflaeche` und laufen gegen den Entwicklungsserver mit einem
