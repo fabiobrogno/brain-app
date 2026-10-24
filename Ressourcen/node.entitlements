@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Rechte für die mitgelieferte Node-Laufzeit unter Hardened Runtime.
+  - allow-jit: V8 erzeugt zur Laufzeit Maschinencode (JIT). Ohne dieses Recht stürzt Node mit Hardened Runtime ab.
+  - allow-unsigned-executable-memory: V8 (und WebAssembly) legt ausführbaren Speicher an, der nicht signiert ist.
+  Bewusst NICHT gesetzt: disable-library-validation (wir liefern keine fremden nativen Module),
+  allow-dyld-environment-variables, get-task-allow (Debug-Recht, die Notarisierung lehnt es ab).
+-->
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.cs.allow-jit</key><true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>
+</dict>
+</plist>
