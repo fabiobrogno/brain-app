@@ -513,7 +513,7 @@ test("Remote: Wettlauf — bekommt der Server zwischen Prüfung und Senden Neues
   const haken = join(a, ".git", "hooks", "pre-push");
   writeFileSync(haken, `#!/bin/sh\nunset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE\ngit -C "${k}" push -q origin HEAD:main >/dev/null 2>&1\nexit 0\n`);
   chmodSync(haken, 0o755);
-  const e = await wirft(remoteHinzufuegen(a, bare));
+  const e = await wirft(remoteHinzufuegen(a, bare, { vertraut: true })); // der pre-push-Haken läuft nur mit Vertrauen (Vertrauen v2, §8)
   assert.equal(e.status, 409);
   assert.equal(spitze(bare), dazwischen, "der Commit der anderen Person bleibt, nichts wurde überschrieben");
   assert.equal(remotesVon(a), ""); assert.equal(tempRefs(a), "");

@@ -300,8 +300,17 @@ export function oeffneVault(vaultPfad, opts = {}) {
     return wert;
   }
 
+  // ---------- Git unter Vertrauen v2 (Spec v2 §8) ----------
+  // Jeder Git-Aufruf läuft gehärtet (git.mjs); ohne Vertrauen zusätzlich ohne Hooks. Enthält die lokale Git-Konfiguration einen Schlüssel,
+  // der Programme starten kann (credential.helper, filter.*.clean, merge.*.driver …), ist Git gesperrt, bis dem Vault vertraut wird:
+  // status meldet es, alle anderen Git-Routen antworten 409 { gitGesperrt: true }, der Notiz-Index fragt Git dann gar nicht.
+  const gitSicht = () => vertrauenFn.gitSicht(wurzel, stuetze());
+  const gesperrtFehler = (s) => new HttpFehler(409, `Git ist für diesen Vault gesperrt. ${s.grund}`, { gitGesperrt: true, grund: s.grund });
+  const gitCtx = (extra = {}) => { const s = gitSicht(); if (s.gesperrt) throw gesperrtFehler(s); return { vertraut: s.vertraut, sshEigen: s.sshEigen, ...extra }; };
+
   // ---------- Notiz-Index (Spec v2 §5) ----------
-  const notizIndex = erzeugeNotizIndex({ wurzel, jetzt, heute: () => opts.heute || berlinHeute(jetzt()) });
+  const notizIndex = erzeugeNotizIndex({ wurzel, jetzt, heute: () => opts.heute || berlinHeute(jetzt()),
+    gitKontext: () => { const s = gitSicht(); return s.gesperrt ? null : { vertraut: s.vertraut, sshEigen: s.sshEigen }; } });
 
   // Dieselbe Suche für MCP brain_suchen und die Probe-Frage: strukturiert (treffer) und als Text, wie ihn die KI sieht.
   function suchenFuerKi(frage, anzahl) {
@@ -317,14 +326,18 @@ export function oeffneVault(vaultPfad, opts = {}) {
   return {
     wurzel, name: basename(wurzel), rueckfragen, kitVersion, kitVorhanden, kit, vertrauen, vertrauenStand: stand, baum, lies, schreibe, neu, merken, suche, suchenFuerKi, pruefung, gesundheit,
     notizen: notizIndex.notizen, notizKontext: notizIndex.kontext, typen: notizIndex.typen, ansichten: notizIndex.ansichten,
-    gitLog: (a) => gitFn.log(wurzel, a || {}),
-    gitRemote: (url) => gitFn.remoteHinzufuegen(wurzel, url),
-    gitStatus: () => gitFn.status(wurzel),
-    gitCommit: (a) => gitFn.commit(wurzel, a || {}),
-    gitSync: () => gitFn.sync(wurzel, { limitSync: opts.gitLimitSync }),
-    gitVerlauf: (pfad, max) => gitFn.verlauf(wurzel, pfad, max),
-    gitDiff: (pfad, sha) => gitFn.diff(wurzel, pfad, sha),
-    gitFassung: (pfad, sha) => gitFn.fassung(wurzel, pfad, sha),
-    istGitRepo: () => gitFn.istRepo(wurzel),
+    gitLog: async (a) => gitFn.log(wurzel, a || {}, gitCtx()),
+    gitRemote: async (url) => gitFn.remoteHinzufuegen(wurzel, url, gitCtx({ limit: opts.gitLimitRemote })),
+    gitStatus: async () => {
+      const s = gitSicht();
+      if (s.gesperrt) return { repo: true, gesperrt: true, grund: s.grund };
+      return gitFn.status(wurzel, { vertraut: s.vertraut, sshEigen: s.sshEigen });
+    },
+    gitCommit: async (a) => gitFn.commit(wurzel, a || {}, gitCtx({ limit: opts.gitLimitCommit })),
+    gitSync: async () => gitFn.sync(wurzel, gitCtx({ limitSync: opts.gitLimitSync, limitGesamt: opts.gitLimitAbgleich })),
+    gitVerlauf: async (pfad, max) => gitFn.verlauf(wurzel, pfad, max, gitCtx()),
+    gitDiff: async (pfad, sha) => gitFn.diff(wurzel, pfad, sha, gitCtx()),
+    gitFassung: async (pfad, sha) => gitFn.fassung(wurzel, pfad, sha, gitCtx()),
+    istGitRepo: async () => { const s = gitSicht(); return gitFn.istRepo(wurzel, { vertraut: s.vertraut, sshEigen: s.sshEigen }); }, // rev-parse ist auch bei gesperrtem Git harmlos
   };
 }

@@ -88,6 +88,7 @@ test("Commit: pre-commit-Hook mit exit 1 → 422 mit Ausgabe, nichts committet, 
   const hook = join(d, ".git", "hooks", "pre-commit");
   writeFileSync(hook, "#!/bin/sh\necho 'FAKT-BELEG: Zeile 3 hat keinen Beleg'\nexit 1\n");
   chmodSync(hook, 0o755);
+  v.vertrauen(true); // Hooks laufen nur, wenn dem Vault vertraut ist (Vertrauen v2, Spec §8)
   schreibe(d, "a.md", "# a\n");
   const vorher = g(d, "rev-parse", "HEAD");
   const e = await wirft(v.gitCommit({ nachricht: "Soll scheitern", dateien: ["a.md"] }));
@@ -105,7 +106,8 @@ test("Commit: lange Hook-Ausgabe wird gekürzt", async () => {
   writeFileSync(hook, "#!/bin/sh\nyes 'zeile' | head -n 5000\nexit 1\n");
   chmodSync(hook, 0o755);
   schreibe(d, "a.md", "# a\n");
-  const e = await wirft(oeffneVault(d).gitCommit({ nachricht: "x", dateien: ["a.md"] }));
+  const v = oeffneVault(d); v.vertrauen(true); // Hooks laufen nur mit Vertrauen (§8)
+  const e = await wirft(v.gitCommit({ nachricht: "x", dateien: ["a.md"] }));
   assert.equal(e.status, 422); assert.ok(e.extra.ausgabe.length < 4100); assert.match(e.extra.ausgabe, /gekürzt/);
 });
 

@@ -278,7 +278,9 @@ export function typStil(name) {
 // ---------- Index ----------
 const gleichRang = (a, b) => { for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] - b[i]; return 0; };
 
-export function erzeugeNotizIndex({ wurzel, jetzt = () => new Date(), heute }) {
+// gitKontext (optional): Funktion, die den Git-Kontext der Anfrage liefert ({ vertraut, sshEigen }) — oder null, wenn Git für diesen
+// Vault gesperrt ist (Vertrauen v2, §8): dann fragt der Index Git gar nicht und nimmt überall die Dateizeiten.
+export function erzeugeNotizIndex({ wurzel, jetzt = () => new Date(), heute, gitKontext }) {
   const heuteJetzt = () => (typeof heute === "function" ? heute() : heute) || berlinHeute(jetzt());
   const cache = new Map(); // rel → { k, heute, ...analysiere() }
 
@@ -347,11 +349,11 @@ export function erzeugeNotizIndex({ wurzel, jetzt = () => new Date(), heute }) {
       }
     }
   }
-  async function ladeGitKarte() {
+  async function ladeGitKarte(ctx) {
     if (!existsSync(join(wurzel, ".git")) || existsSync(join(wurzel, ".git", "shallow"))) return null;
     let head;
     try {
-      const h = await git(wurzel, ["rev-parse", "--verify", "-q", "HEAD"]);
+      const h = await git(wurzel, ["rev-parse", "--verify", "-q", "HEAD"], ctx);
       if (h.code !== 0) return null;
       head = h.stdout.trim();
     } catch { return null; }
@@ -360,8 +362,8 @@ export function erzeugeNotizIndex({ wurzel, jetzt = () => new Date(), heute }) {
     const p = (async () => {
       try {
         let karte = new Map(), bereich = head;
-        if (gk.karte && gk.head && (await git(wurzel, ["merge-base", "--is-ancestor", gk.head, head])).code === 0) { karte = new Map(gk.karte); bereich = `${gk.head}..${head}`; }
-        const r = await git(wurzel, ["log", "--reverse", "--no-color", "-z", "-M", "--name-status", "--format=%x1e%cI", bereich], { timeout: 120_000 });
+        if (gk.karte && gk.head && (await git(wurzel, ["merge-base", "--is-ancestor", gk.head, head], ctx)).code === 0) { karte = new Map(gk.karte); bereich = `${gk.head}..${head}`; }
+        const r = await git(wurzel, ["log", "--reverse", "--no-color", "--no-ext-diff", "--no-textconv", "-z", "-M", "--name-status", "--format=%x1e%cI", bereich], { ...ctx, timeout: 120_000 });
         if (r.code !== 0) return null;
         wendeAn(karte, r.stdout);
         gk.head = head; gk.karte = karte;
@@ -377,13 +379,13 @@ export function erzeugeNotizIndex({ wurzel, jetzt = () => new Date(), heute }) {
   // Es läuft höchstens ein Status gleichzeitig; gleichzeitige Anfragen teilen sich seine Antwort. Das ist sicher, weil eine Datei
   // nur als sauber gilt, wenn sie seit dem Start dieses Status nicht mehr geschrieben wurde (Änderungszeit ≤ start).
   const gs = { laeuft: null };
-  function ladeGitStatus() {
+  function ladeGitStatus(ctx) {
     if (!existsSync(join(wurzel, ".git")) || existsSync(join(wurzel, ".git", "shallow"))) return Promise.resolve(null);
     if (gs.laeuft) return gs.laeuft;
     const start = Date.now();
     const p = (async () => {
       try {
-        const r = await git(wurzel, ["--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames"]);
+        const r = await git(wurzel, ["--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames"], ctx);
         if (r.code !== 0) return null;
         const unsauber = new Set(); // "XY pfad" — ohne Umbenennungserkennung steht je Eintrag genau ein Pfad da
         for (const e of r.stdout.split("\0")) if (e.length > 3) unsauber.add(e.slice(3).normalize("NFC"));
@@ -471,7 +473,8 @@ export function erzeugeNotizIndex({ wurzel, jetzt = () => new Date(), heute }) {
 
     // Karte und Status laufen gleichzeitig und starten erst nach dem Lesen der Dateizeiten (st). Ist schon ein Status unterwegs,
     // gilt er auch für diese Anfrage — die Prüfung der Dateizeit unten (≤ status.start) macht das sicher.
-    const [karte, status] = await Promise.all([mitFrist(ladeGitKarte()), mitFrist(ladeGitStatus())]);
+    const gctx = typeof gitKontext === "function" ? gitKontext() : {}; // null = Git gesperrt: nichts fragen, nur Dateizeiten
+    const [karte, status] = gctx === null ? [null, null] : await Promise.all([mitFrist(ladeGitKarte(gctx)), mitFrist(ladeGitStatus(gctx))]);
     const hatInbox = roh.some((e) => falte(e.teile[0]) === "00_inbox") || existsSync(join(wurzel, "00_inbox"));
     const zuletztAb = jetztMs - SIEBEN_TAGE;
 

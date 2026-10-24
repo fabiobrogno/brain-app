@@ -219,3 +219,197 @@ test("API: /api/info nennt vertrauen (kit.vertraut === vertrauen.erlaubt); POST 
   const ohne = aufruf(erzeugeHandler({ vaultOptionen: { support: tmp("brain-leer-support-") } }));
   assert.equal((await ohne("GET", "/api/info")).j.vertrauen, null);
 });
+
+// ───────────────────────────── Git ohne Vertrauen ─────────────────────────────
+
+const { git, gitUmgebung } = await import(pfad("gemeinsam", "git.mjs"));
+const skript = (inhalt) => { const p = join(tmp("brain-skript-"), "s.sh"); writeFileSync(p, `#!/bin/sh\n${inhalt}\n`); chmodSync(p, 0o755); return p; };
+const konfig = (d, text) => appendFileSync(join(d, ".git", "config"), text); // roh angehängt: so kommt eine fremde .git/config an
+const mitSupport = (d, support = neuerSupport(), extra = {}) => oeffneVault(d, { support, ...extra });
+const filterKonfig = (marke) => `[filter "probe"]\n\tclean = "sh -c 'touch ${marke}; cat'"\n`; // ohne Anführungszeichen risse „;“ den Wert als Kommentar ab
+
+test("Härtung: fsmonitor- und diff.external-Befehl aus .git/config laufen NICHT (notizen, status, diff, verlauf, log) — Probe p2", async () => {
+  const d = repo();
+  const m1 = join(tmp("brain-marke-"), "FSMONITOR"), m2 = join(tmp("brain-marke-"), "EXTDIFF"), m3 = join(tmp("brain-marke-"), "TEXTCONV");
+  const fsm = skript(`touch '${m1}'\nexit 1`), ext = skript(`touch '${m2}'`), txt = skript(`touch '${m3}'\ncat "$1"`);
+  schreibe(d, ".gitattributes", "*.md diff=probe\n"); g(d, "add", "--", ".gitattributes"); g(d, "commit", "-q", "-m", "Attribute");
+  konfig(d, `[core]\n\tfsmonitor = ${fsm}\n[diff]\n\texternal = ${ext}\n[diff "probe"]\n\ttextconv = ${txt}\n`);
+  writeFileSync(join(d, "start.md"), "# Start\nneu\n");
+  // Vorprobe: ohne unsere Härtung liefen alle drei (sonst beweist der Test nichts)
+  const roh = (...a) => { try { execFileSync("git", a, { cwd: d, stdio: "ignore", env: { ...process.env, GIT_PAGER: "cat" } }); } catch { /* egal */ } };
+  roh("diff", "HEAD", "--", "start.md"); roh("diff", "--no-ext-diff", "HEAD", "--", "start.md"); roh("status", "--porcelain");
+  assert.ok(existsSync(m1) && existsSync(m2) && existsSync(m3), "Vorprobe: fsmonitor, diff.external und textconv laufen bei einem ungehärteten git");
+  for (const m of [m1, m2, m3]) rmSync(m);
+  const v = mitSupport(d);
+  await v.notizen(); await v.gitStatus(); await v.gitDiff("start.md"); await v.gitVerlauf("start.md"); await v.gitLog();
+  const sha = g(d, "rev-parse", "HEAD").trim();
+  await v.gitDiff("start.md", sha); await v.gitFassung("start.md", sha); await v.istGitRepo();
+  assert.deepEqual([existsSync(m1), existsSync(m2), existsSync(m3)], [false, false, false], "weder fsmonitor noch diff.external noch textconv");
+});
+
+test("Härtung: gitUmgebung — GIT_EDITOR und GIT_SEQUENCE_EDITOR sind „:“; GIT_SSH_COMMAND nach Vertrauen und eigener core.sshCommand", () => {
+  const alt = process.env.GIT_SSH_COMMAND; delete process.env.GIT_SSH_COMMAND;
+  try {
+    const e = gitUmgebung();
+    assert.equal(e.GIT_EDITOR, ":"); assert.equal(e.GIT_SEQUENCE_EDITOR, ":"); assert.equal(e.GIT_TERMINAL_PROMPT, "0"); assert.equal(e.GIT_LITERAL_PATHSPECS, "1");
+    assert.equal(e.GIT_SSH_COMMAND, "ssh -o BatchMode=yes", "ohne Vertrauen immer unser Befehl");
+    assert.equal(gitUmgebung({ vertraut: false, sshEigen: true }).GIT_SSH_COMMAND, "ssh -o BatchMode=yes", "ohne Vertrauen übersteuert unser Befehl auch eine core.sshCommand");
+    assert.equal(gitUmgebung({ vertraut: true, sshEigen: false }).GIT_SSH_COMMAND, "ssh -o BatchMode=yes");
+    assert.equal(gitUmgebung({ vertraut: true, sshEigen: true }).GIT_SSH_COMMAND, undefined, "mit Vertrauen und eigener core.sshCommand setzen wir nichts");
+    process.env.GIT_SSH_COMMAND = "mein-ssh -x";
+    assert.equal(gitUmgebung().GIT_SSH_COMMAND, "mein-ssh -x", "eine GIT_SSH_COMMAND des Nutzers bleibt");
+  } finally { if (alt === undefined) delete process.env.GIT_SSH_COMMAND; else process.env.GIT_SSH_COMMAND = alt; }
+});
+
+test("Härtung: ext::-Transport ist bei jedem Aufruf aus (protocol.ext.allow=never), auch wenn die Vault-Konfiguration ihn erlaubt", async () => {
+  const d = repo();
+  const marke = join(tmp("brain-marke-"), "EXT");
+  konfig(d, "[protocol \"ext\"]\n\tallow = always\n");
+  const r = await git(d, ["ls-remote", `ext::sh -c "touch ${marke}" x`]);
+  assert.notEqual(r.code, 0); assert.equal(existsSync(marke), false);
+});
+
+test("Hooks: ohne Vertrauen läuft kein Hook (auch nicht über core.hooksPath), mit Vertrauen laufen sie wie gewohnt", async () => {
+  const d = repo();
+  const marke = join(tmp("brain-marke-"), "HOOK");
+  schreibe(d, ".git/hooks/pre-commit", `#!/bin/sh\necho x >> '${marke}'\nexit 0\n`); chmodSync(join(d, ".git/hooks/pre-commit"), 0o755);
+  schreibe(d, ".githooks/pre-commit", `#!/bin/sh\necho y >> '${marke}'\nexit 0\n`); chmodSync(join(d, ".githooks/pre-commit"), 0o755);
+  const support = neuerSupport();
+  const v = mitSupport(d, support);
+  schreibe(d, "a.md", "# a\n");
+  await v.gitCommit({ nachricht: "ohne Vertrauen", dateien: ["a.md"] });
+  assert.equal(existsSync(marke), false, "ohne Vertrauen kein Hook");
+  g(d, "config", "core.hooksPath", ".githooks");
+  schreibe(d, "b.md", "# b\n");
+  await v.gitCommit({ nachricht: "hooksPath ohne Vertrauen", dateien: ["b.md"] });
+  assert.equal(existsSync(marke), false, "auch core.hooksPath aus dem Vault läuft ohne Vertrauen nicht");
+  v.vertrauen(true);
+  schreibe(d, "c.md", "# c\n");
+  await v.gitCommit({ nachricht: "mit Vertrauen", dateien: ["c.md"] });
+  assert.equal(readFileSync(marke, "utf8"), "y\n", "mit Vertrauen läuft der Hook aus core.hooksPath");
+  g(d, "config", "--unset", "core.hooksPath");
+  const v2 = mitSupport(d, support); // Hook-Ordner hat sich geändert → Vertrauen weg → Hook läuft wieder nicht
+  schreibe(d, "d.md", "# d\n");
+  await v2.gitCommit({ nachricht: "Konfiguration geändert", dateien: ["d.md"] });
+  assert.equal(readFileSync(marke, "utf8"), "y\n", "geänderte Hook-Lage = neue Frage: nichts läuft");
+  v2.vertrauen(true);
+  schreibe(d, "e.md", "# e\n");
+  await v2.gitCommit({ nachricht: "neu erlaubt", dateien: ["e.md"] });
+  assert.equal(readFileSync(marke, "utf8"), "y\nx\n", ".git/hooks/pre-commit läuft nach neuer Erlaubnis");
+});
+
+test("Git gesperrt: filter.*.clean lokal → status 200 { repo, gesperrt, grund }, übrige Routen 409 { gitGesperrt }, nichts läuft; nach Erlauben normal", async () => {
+  const d = repo();
+  const marke = join(tmp("brain-marke-"), "FILTER");
+  schreibe(d, ".gitattributes", "*.md filter=probe\n"); g(d, "add", "--", ".gitattributes"); g(d, "commit", "-q", "-m", "Attribute");
+  konfig(d, filterKonfig(marke));
+  schreibe(d, "a.md", "# a\n");
+  const support = neuerSupport();
+  const rufe = aufruf(erzeugeHandler({ vault: d, vaultOptionen: { support } }));
+  let r = await rufe("GET", "/api/git/status");
+  assert.equal(r.status, 200); assert.equal(r.j.repo, true); assert.equal(r.j.gesperrt, true); assert.match(r.j.grund, /filter\.probe\.clean/);
+  assert.deepEqual(Object.keys(r.j).sort(), ["gesperrt", "grund", "repo"]);
+  for (const [m, p, daten, q] of [["POST", "/api/git/commit", { nachricht: "x", dateien: ["a.md"] }], ["POST", "/api/git/sync", undefined], ["GET", "/api/git/verlauf", undefined, "pfad=a.md"],
+    ["GET", "/api/git/log", undefined], ["POST", "/api/git/remote", { url: "https://example.org/x.git" }], ["GET", "/api/git/diff", undefined, "pfad=a.md"],
+    ["GET", "/api/git/fassung", undefined, "pfad=a.md&sha=abcdef1"]]) {
+    r = await rufe(m, p, daten, q);
+    assert.equal(r.status, 409, `${m} ${p}`); assert.equal(r.j.gitGesperrt, true, p); assert.equal(typeof r.j.fehler, "string"); assert.match(r.j.fehler, /gesperrt/);
+  }
+  r = await rufe("GET", "/api/info");
+  assert.equal(r.j.git, true, "es ist ein Repo"); assert.equal(r.j.vertrauen.gitGesperrt, true); assert.equal(r.j.vertrauen.noetig, true);
+  assert.ok(r.j.vertrauen.gruende.some((x) => x.art === "git" && /filter\.probe\.clean/.test(x.text)));
+  assert.equal((await rufe("GET", "/api/notizen")).status, 200);
+  assert.equal(existsSync(marke), false, "kein Git-Aufruf hat den Filter gestartet (auch der Notiz-Index nicht)");
+  r = await rufe("POST", "/api/kit/vertrauen", { erlauben: true });
+  assert.equal(r.j.vertrauen.gitGesperrt, false);
+  r = await rufe("GET", "/api/git/status");
+  assert.equal(r.status, 200); assert.equal(r.j.gesperrt, undefined); assert.equal(r.j.repo, true); assert.equal(r.j.zweig, "main");
+  r = await rufe("POST", "/api/git/commit", { nachricht: "geht wieder", dateien: ["a.md"] });
+  assert.equal(r.status, 200);
+  assert.equal(existsSync(marke), true, "mit Vertrauen läuft Git mit der Konfiguration des Repos");
+});
+
+test("Git gesperrt: jede Zeile aus §8 sperrt (auch über include.path und config.worktree); protocol.*.allow=never und harmlose Schlüssel nicht", () => {
+  const sperrt = (zeilen, extra = () => {}) => {
+    const d = repo(); extra(d); konfig(d, zeilen);
+    return V.gitSicht(d, { support: neuerSupport() });
+  };
+  const faelle = {
+    "credential.helper": "[credential]\n\thelper = !echo\n", "credential.<url>.helper": "[credential \"https://example.org\"]\n\thelper = store\n",
+    "core.askPass": "[core]\n\taskPass = /bin/echo\n", "core.gitProxy": "[core]\n\tgitProxy = /bin/echo\n", "core.alternateRefsCommand": "[core]\n\talternateRefsCommand = /bin/echo\n",
+    "gpg.program": "[gpg]\n\tprogram = /bin/echo\n", "gpg.ssh.program": "[gpg \"ssh\"]\n\tprogram = /bin/echo\n", "merge.x.driver": "[merge \"x\"]\n\tdriver = /bin/echo\n",
+    "filter.x.smudge": "[filter \"x\"]\n\tsmudge = /bin/cat\n", "filter.x.process": "[filter \"x\"]\n\tprocess = /bin/cat\n", "remote.o.uploadpack": "[remote \"o\"]\n\tuploadpack = /bin/echo\n",
+    "remote.o.receivepack": "[remote \"o\"]\n\treceivepack = /bin/echo\n", "protocol.file.allow": "[protocol \"file\"]\n\tallow = always\n", "protocol.allow": "[protocol]\n\tallow = user\n",
+  };
+  for (const [name, zeilen] of Object.entries(faelle)) {
+    const s = sperrt(zeilen);
+    assert.equal(s.gesperrt, true, name); assert.equal(s.vertraut, false); assert.match(s.grund, /gesperrt/i);
+  }
+  for (const [name, zeilen] of Object.entries({ "protocol.ext.allow=never": "[protocol \"ext\"]\n\tallow = never\n", "core.sshCommand": "[core]\n\tsshCommand = ssh -x\n",
+    "core.fsmonitor": "[core]\n\tfsmonitor = /bin/echo\n", "diff.external": "[diff]\n\texternal = /bin/echo\n", "user": "[user]\n\tname = X\n" })) {
+    assert.equal(sperrt(zeilen).gesperrt, false, `${name} sperrt nicht (wird entschärft)`);
+  }
+  // über include.path
+  const s1 = sperrt("[include]\n\tpath = extra.cfg\n", (d) => writeFileSync(join(d, ".git", "extra.cfg"), "[filter \"i\"]\n\tclean = /bin/cat\n"));
+  assert.equal(s1.gesperrt, true, "include.path");
+  // über config.worktree
+  const s2 = sperrt("[extensions]\n\tworktreeConfig = true\n", (d) => writeFileSync(join(d, ".git", "config.worktree"), "[merge \"w\"]\n\tdriver = /bin/cat\n"));
+  assert.equal(s2.gesperrt, true, "config.worktree");
+  // unlesbare Konfiguration: lieber gesperrt
+  const s3 = sperrt("[kaputt\n");
+  assert.equal(s3.gesperrt, true); assert.match(s3.grund, /nicht lesen/);
+});
+
+test("SSH: eigene core.sshCommand (global per GIT_CONFIG_GLOBAL) bleibt mit Vertrauen wirksam; ohne Vertrauen gilt unser GIT_SSH_COMMAND", async () => {
+  const marke = join(tmp("brain-marke-"), "CONFIG-SSH");
+  const sshSkript = skript(`echo lief >> '${marke}'\nexit 1`);
+  const globalDatei = join(tmp("brain-gcfg-"), "gitconfig");
+  writeFileSync(globalDatei, `[core]\n\tsshCommand = ${sshSkript}\n[user]\n\tname = T\n\temail = t@example.org\n`);
+  const alt = { g: process.env.GIT_CONFIG_GLOBAL, s: process.env.GIT_SSH_COMMAND };
+  process.env.GIT_CONFIG_GLOBAL = globalDatei; delete process.env.GIT_SSH_COMMAND;
+  try {
+    const d = repo();
+    const support = neuerSupport();
+    const v = mitSupport(d, support, { gitLimitRemote: 15_000 });
+    await v.gitRemote("ssh://git@example.invalid/team/x.git").catch(() => {});
+    assert.equal(existsSync(marke), false, "ohne Vertrauen ist unser GIT_SSH_COMMAND gesetzt: die eigene Konfiguration läuft nicht");
+    v.vertrauen(true);
+    assert.equal(V.gitSicht(d, { support }).sshEigen, true);
+    await v.gitRemote("ssh://git@example.invalid/team/x.git").catch(() => {});
+    assert.equal(existsSync(marke), true, "mit Vertrauen und eigener core.sshCommand setzen wir kein eigenes GIT_SSH_COMMAND");
+  } finally {
+    if (alt.g === undefined) delete process.env.GIT_CONFIG_GLOBAL; else process.env.GIT_CONFIG_GLOBAL = alt.g;
+    if (alt.s !== undefined) process.env.GIT_SSH_COMMAND = alt.s;
+  }
+});
+
+test("Notiz-Index: bei gesperrtem Git nur Dateizeiten, nach Erlauben die Git-Zeiten", async () => {
+  const d = tmp();
+  g(d, "init", "-q", "-b", "main"); g(d, "config", "user.name", "T"); g(d, "config", "user.email", "t@example.org");
+  schreibe(d, "a.md", "# A\n");
+  g(d, "add", "--", "a.md");
+  execFileSync("git", ["commit", "-q", "-m", "alt"], { cwd: d, env: { ...process.env, GIT_AUTHOR_DATE: "2020-01-01T10:00:00Z", GIT_COMMITTER_DATE: "2020-01-01T10:00:00Z" } });
+  const marke = join(tmp("brain-marke-"), "FILTER");
+  konfig(d, filterKonfig(marke));
+  const v = mitSupport(d);
+  let n = (await v.notizen()).notizen.find((x) => x.pfad === "a.md");
+  assert.ok(n.geaendert > "2026-", `gesperrt: Dateizeit statt Git-Zeit (${n.geaendert})`);
+  assert.equal(existsSync(marke), false);
+  v.vertrauen(true);
+  n = (await v.notizen()).notizen.find((x) => x.pfad === "a.md");
+  assert.match(n.geaendert, /^2020-01-01T10:00:00/, "mit Vertrauen die Zeit des letzten Commits");
+});
+
+test("MCP: brain_verlauf bei gesperrtem Git → Hinweis statt Verlauf, ohne Git-Start", async () => {
+  const { bearbeite } = await import(pfad("mcp", "brain-mcp.mjs"));
+  const d = repo();
+  const marke = join(tmp("brain-marke-"), "FILTER");
+  konfig(d, filterKonfig(marke));
+  const v = mitSupport(d);
+  const a = await bearbeite(v, { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "brain_verlauf", arguments: { pfad: "start.md" } } });
+  assert.equal(a.result.isError, true); assert.match(a.result.content[0].text, /gesperrt/);
+  assert.equal(existsSync(marke), false);
+  v.vertrauen(true);
+  const b = await bearbeite(v, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "brain_verlauf", arguments: { pfad: "start.md" } } });
+  assert.match(b.result.content[0].text, /Start/);
+});

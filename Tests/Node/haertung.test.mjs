@@ -41,7 +41,8 @@ test("Commit: Hook lehnt ab (422) → Index exakt wie vorher, auch teilweise Vor
   const vorher = indexStand(d);
   assert.match(vorher.status, /^MM start\.md$/m);
   hook(d);
-  const e = await wirft(oeffneVault(d).gitCommit({ nachricht: "x", dateien: ["start.md", "neu.md"] }));
+  const v = oeffneVault(d); v.vertrauen(true); // der Hook läuft nur mit Vertrauen (Vertrauen v2, §8)
+  const e = await wirft(v.gitCommit({ nachricht: "x", dateien: ["start.md", "neu.md"] }));
   assert.equal(e.status, 422); assert.match(e.extra.ausgabe, /abgelehnt/);
   assert.deepEqual(indexStand(d), vorher, "Index und Status unverändert");
   assert.equal(g(d, "show", ":start.md"), "# Start\nX\n");
@@ -54,7 +55,8 @@ test("Commit: Hook lehnt ab im Repo ohne Commit → Index wie vorher", async () 
   schreibe(d, "b.md", "# b\n");
   const vorher = indexStand(d);
   hook(d);
-  const e = await wirft(oeffneVault(d).gitCommit({ nachricht: "x", dateien: ["b.md"] }));
+  const v = oeffneVault(d); v.vertrauen(true); // der Hook läuft nur mit Vertrauen (§8)
+  const e = await wirft(v.gitCommit({ nachricht: "x", dateien: ["b.md"] }));
   assert.equal(e.status, 422);
   assert.deepEqual(indexStand(d), vorher);
 });
@@ -158,6 +160,7 @@ function divergiert() {
 test("Sync: Zeitlimit beim Zusammenführen → 504, keine halbe Zusammenführung, keine liegengebliebene index.lock", async () => {
   const a = divergiert();
   const v = oeffneVault(a, { gitLimitSync: 1500 });
+  v.vertrauen(true); // merge.langsam.driver in der lokalen Konfiguration sperrt Git, solange dem Vault nicht vertraut ist (§8)
   const e = await wirft(v.gitSync());
   assert.equal(e.status, 504); assert.match(e.message, /zu lange/);
   assert.equal(existsSync(join(a, ".git/index.lock")), false, "Sperrdatei entfernt");
@@ -175,7 +178,8 @@ test("Sync: fremde Sperrdatei (nicht von unserem Kind) bleibt, klarer Fehlertext
   g(a, "config", "merge.langsam.driver", "sleep 4");
   writeFileSync(lock, "");
   const alt = new Date(Date.now() - 3600_000); (await import("node:fs")).utimesSync(lock, alt, alt);
-  const e = await wirft(oeffneVault(a, { gitLimitSync: 1500 }).gitSync());
+  const v = oeffneVault(a, { gitLimitSync: 1500 }); v.vertrauen(true); // sonst wäre Git wegen merge.*.driver gesperrt (§8)
+  const e = await wirft(v.gitSync());
   assert.ok(e.status === 409 || e.status === 504, String(e.status));
   assert.equal(existsSync(lock), true, "fremde Sperre bleibt");
 });
@@ -275,8 +279,9 @@ test("Git-Kindprozesse: wörtliche Pathspecs gesetzt, NODE_OPTIONS nicht durchge
   const d = repo();
   hook(d, `#!/bin/sh\necho "$GIT_LITERAL_PATHSPECS|\${NODE_OPTIONS:--}" > "${d}/hookumgebung.txt"\nexit 0\n`);
   schreibe(d, "n.md", "# n\n");
+  const vn = oeffneVault(d); vn.vertrauen(true); // Hooks laufen nur mit Vertrauen (§8)
   const alt = process.env.NODE_OPTIONS; process.env.NODE_OPTIONS = "--max-old-space-size=100";
-  try { await oeffneVault(d).gitCommit({ nachricht: "n", dateien: ["n.md"] }); } finally { if (alt === undefined) delete process.env.NODE_OPTIONS; else process.env.NODE_OPTIONS = alt; }
+  try { await vn.gitCommit({ nachricht: "n", dateien: ["n.md"] }); } finally { if (alt === undefined) delete process.env.NODE_OPTIONS; else process.env.NODE_OPTIONS = alt; }
   assert.equal(readFileSync(join(d, "hookumgebung.txt"), "utf8").trim(), "1|-");
 });
 
