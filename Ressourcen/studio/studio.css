@@ -222,7 +222,10 @@ button:focus-visible, [tabindex]:focus-visible, a:focus-visible { outline: 2px s
 .cm-signal-gelb { background: var(--gelb); } .cm-signal-rot { background: var(--rot); } .cm-signal-gruen { background: var(--gruen); } .cm-signal-grau, .cm-signal-ohne { background: var(--grau); }
 
 .cm-h1, .cm-h2, .cm-h3, .cm-h4, .cm-h5, .cm-h6 { font-family: var(--schrift); font-weight: 700; letter-spacing: -.02em; line-height: 1.25; }
-.cm-h1 { font-size: 2.1333em; line-height: 1.2; letter-spacing: -.028em; padding-top: 4px !important; padding-bottom: 16px !important; margin-bottom: 14px; border-bottom: 1px solid var(--linie); }
+/* Keine margin/border an Zeilen: CodeMirror misst Zeilenhöhen ohne Außenabstand, sonst landen Klicks und Home/End eine Zeile daneben.
+   Gleiche Optik wie 16 px Abstand + 1 px Linie + 14 px Luft, nur innen gezeichnet. */
+.cm-h1 { font-size: 2.1333em; line-height: 1.2; letter-spacing: -.028em; padding-top: 4px !important; padding-bottom: 31px !important;
+  background: linear-gradient(var(--linie), var(--linie)) no-repeat 0 calc(100% - 14px) / 100% 1px; }
 .cm-h2 { font-size: 1.8em; line-height: 1.4; font-weight: 600; padding-top: 22px !important; padding-bottom: 2px !important; letter-spacing: -.02em; }
 .cm-h3 { font-size: 1.3333em; line-height: 1.4; font-weight: 600; padding-top: 14px !important; }
 .cm-h4, .cm-h5, .cm-h6 { font-size: 1em; color: var(--text-2); text-transform: none; padding-top: 8px !important; }
@@ -242,8 +245,8 @@ button:focus-visible, [tabindex]:focus-visible, a:focus-visible { outline: 2px s
 .cm-wiki-fehlt { color: var(--text-2); border-bottom: 1px dashed var(--text-3); }
 .cm-wiki-klammer { color: var(--text-3); }
 .cm-fm { font-family: var(--mono); font-size: 12.5px; line-height: 1.7; color: var(--text-2); background: var(--seite); padding: 0 16px !important; }
-.cm-fm-zu, .cm-fm-auf { display: flex; align-items: center; gap: 8px; font-family: var(--schrift); font-size: 12px; color: var(--text-3); cursor: pointer; height: 28px; padding: 0 12px; margin: 0 0 12px -12px; border-radius: var(--r-s); width: max-content; }
-.cm-fm-auf { margin-bottom: 0; }
+.cm-fm-zu, .cm-fm-auf { display: flex; align-items: center; gap: 8px; font-family: var(--schrift); font-size: 12px; color: var(--text-3); cursor: pointer; height: 28px; padding: 0 12px; margin: 0 0 0 -12px; border-radius: var(--r-s); width: max-content; }
+.cm-fm-huelle { padding-bottom: 12px; }
 .cm-fm-zu:hover, .cm-fm-auf:hover { background: var(--seite); color: var(--text-2); }
 .cm-fm-pfeil { display: inline-block; transition: transform var(--t); font-size: 14px; line-height: 1; }
 .cm-fm-pfeil.offen { transform: rotate(90deg); }

@@ -92,3 +92,29 @@ test("Verweist auf: Links im Text, ohne Beziehungen, lange Listen gekürzt", asy
   await expect(sek.locator(`[data-ziel="${andere[0]}"]`)).toHaveCount(0); // steht schon unter Beziehungen
   await expect(sek.locator('[data-ziel-fehlt="Gibt es nicht"]')).toHaveCount(erwartet > 8 ? 1 : 0);
 });
+
+test("Datei-Kopf klappt per Klick auf und zu", async ({ page }) => {
+  await start(page, "09_wiki/wissen/Mühle.md");
+  await expect(page.locator(".cm-fm-zu")).toBeVisible();
+  await page.locator(".cm-fm-zu").click();
+  await expect(page.locator(".cm-fm-auf")).toBeVisible();
+  await expect(page.locator(".cm-line.cm-fm").first()).toBeVisible();
+  await page.locator(".cm-fm-auf").click();
+  await expect(page.locator(".cm-fm-zu")).toBeVisible();
+  await expect(page.locator(".cm-line.cm-fm")).toHaveCount(0);
+});
+
+test("Klick unter Datei-Kopf und H1 trifft die angeklickte Zeile (keine versetzten Zeilenhöhen)", async ({ page }) => {
+  await start(page, "09_wiki/wissen/Mühle.md");
+  const zeile = page.locator(".cm-line", { hasText: "Kaffeemühle" });
+  await expect(zeile).toBeVisible();
+  const b = await zeile.boundingBox();
+  await page.mouse.click(b.x + 4, b.y + b.height / 2);
+  await page.keyboard.press("End");
+  await page.keyboard.type("§");
+  await expect(page.locator(".cm-line", { hasText: "§" })).toContainText("Kaffeemühle");
+  // Home springt an den Anfang derselben Zeile, nicht in die Nachbarzeile
+  await page.keyboard.press("Home");
+  await page.keyboard.type("¶");
+  await expect(page.locator(".cm-line", { hasText: "¶" })).toContainText("Kaffeemühle");
+});

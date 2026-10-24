@@ -21,7 +21,7 @@ export function frontmatterBereich(text) {
   return { von: 0, bis: ende.index + ende[0].length, felder };
 }
 
-const fmUmschalten = StateEffect.define();
+const fmUmschalten = StateEffect.define(); // Wert = zugeklappt (true) oder offen (false)
 
 class FmWidget extends WidgetType {
   constructor(n) { super(); this.n = n; }
@@ -32,10 +32,14 @@ class FmWidget extends WidgetType {
     d.setAttribute("role", "button");
     d.tabIndex = 0;
     d.innerHTML = `<span class="cm-fm-pfeil">›</span><span>${T.editor.frontmatter(this.n)}</span>`;
-    const auf = () => view.dispatch({ effects: fmUmschalten.of(true) });
+    const auf = () => view.dispatch({ effects: fmUmschalten.of(false) });
     d.addEventListener("mousedown", (e) => { e.preventDefault(); auf(); });
     d.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); auf(); } });
-    return d;
+    // Abstand nach unten als Innenabstand einer Hülle: CodeMirror misst Block-Widgets ohne Außenabstand
+    const huelle = document.createElement("div");
+    huelle.className = "cm-fm-huelle";
+    huelle.append(d);
+    return huelle;
   }
   ignoreEvent() { return true; }
 }
@@ -47,7 +51,7 @@ class FmKopf extends WidgetType {
     d.className = "cm-fm-auf";
     d.setAttribute("role", "button");
     d.innerHTML = `<span class="cm-fm-pfeil offen">›</span><span>${T.editor.frontmatter(this.n)}</span>`;
-    d.addEventListener("mousedown", (e) => { e.preventDefault(); view.dispatch({ effects: fmUmschalten.of(false) }); });
+    d.addEventListener("mousedown", (e) => { e.preventDefault(); view.dispatch({ effects: fmUmschalten.of(true) }); });
     return d;
   }
   ignoreEvent() { return true; }
