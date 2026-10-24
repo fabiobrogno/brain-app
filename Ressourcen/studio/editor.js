@@ -3,7 +3,7 @@
 import * as CM from "./vendor/codemirror.bundle.js";
 import { T } from "./texte.js";
 
-const { EditorState, EditorView, Decoration, ViewPlugin, WidgetType, StateField, StateEffect, GutterMarker, gutter, keymap } = CM;
+const { EditorState, EditorSelection, EditorView, Decoration, ViewPlugin, WidgetType, StateField, StateEffect, GutterMarker, gutter, keymap } = CM;
 
 const WIKI = /\[\[([^\[\]\n|#]+)(#[^\[\]\n|]*)?(\|[^\[\]\n]*)?\]\]/g;
 
@@ -262,6 +262,133 @@ const signalRand = gutter({
   initialSpacer: () => new SignalMarke({ stufe: "gelb" }),
 });
 
+// ---------- Fließende Absätze ----------
+// Fest umbrochene Absätze (Zeilen à ~100 Zeichen, Fortsetzungen eingerückt) werden als fließender Text gezeigt: jeder weiche
+// Zeilenumbruch samt Einrückung der Folgezeile erscheint als EIN Leerzeichen. Reine Darstellung, der Text im Dokument bleibt
+// wie er ist (Speichern, Zeilenenden, Rückgängig). Ersetzungen über Zeilenumbrüche dürfen nicht aus einem ViewPlugin kommen,
+// darum ein StateField; der Fokus gehört nicht zum State und kommt per focusChangeEffect hinein.
+const fokusGeaendert = StateEffect.define();
+
+class Leerzeichen extends WidgetType {
+  eq() { return true; }
+  toDOM() { const s = document.createElement("span"); s.className = "cm-umbruch"; s.textContent = " "; return s; }
+  ignoreEvent() { return false; } // Klick darauf setzt den Cursor wie in Text
+}
+const weicherUmbruch = Decoration.replace({ widget: new Leerzeichen() });
+
+// Hier wird nie verbunden: Zitate/Callouts, Code, HTML, Tabellen, Link-Definitionen. Überschriften sind keine Absatz-Knoten,
+// der Datei-Kopf wird unten ausgespart.
+const KEIN_FLIESSTEXT = new Set(["Blockquote", "FencedCode", "CodeBlock", "HTMLBlock", "CommentBlock", "ProcessingInstructionBlock", "Table", "LinkReference"]);
+const ABSATZ_KNOTEN = new Set(["Paragraph", "Task"]); // Task = Text eines Aufgaben-Listenpunkts („- [ ] …“)
+const leerzeichen = (z) => z === " " || z === "\t";
+
+// Alle Absätze mit weichen Umbrüchen, unabhängig von Auswahl und Fokus: [{ von, bis, umbrueche: [[von, bis], …] }].
+// Ein Bereich reicht vom Ende der Zeile (samt Leerzeichen davor, es bleibt genau eines sichtbar) bis zum Text der Folgezeile.
+function absatzSpannen(state) {
+  const doc = state.doc;
+  const signale = state.field(signaleFeld);
+  const fm = doc.sliceString(0, 3) === "---" ? frontmatterBereich(doc.toString()) : null;
+  const fmBis = fm ? fm.bis : -1;
+  const liste = [];
+  let harte = null; // Enden der harten Umbrüche (HardBreak) im Absatz, den wir gerade durchlaufen
+  CM.syntaxTree(state).iterate({
+    enter: (n) => {
+      if (harte) { if (n.name === "HardBreak") harte.add(n.to); return; }
+      if (KEIN_FLIESSTEXT.has(n.name)) return false;
+      if (ABSATZ_KNOTEN.has(n.name)) harte = new Set();
+    },
+    leave: (n) => {
+      if (!harte || !ABSATZ_KNOTEN.has(n.name)) return;
+      const hart = harte;
+      harte = null;
+      if (n.from <= fmBis) return; // Datei-Kopf
+      const z1 = doc.lineAt(n.from).number, z2 = doc.lineAt(n.to).number;
+      if (z1 === z2) return;
+      for (let nr = z1; nr <= z2; nr++) if (signale.has(nr)) return; // Prüf-Signal: Randmarke und Hervorhebung bleiben sichtbar
+      const umbrueche = [];
+      for (let nr = z1; nr < z2; nr++) {
+        const z = doc.line(nr), folge = doc.line(nr + 1);
+        if (hart.has(z.to + 1)) continue; // harter Umbruch bleibt sichtbar
+        let a = z.text.length;
+        while (a > 0 && leerzeichen(z.text[a - 1])) a--;
+        let b = 0;
+        while (b < folge.text.length && leerzeichen(folge.text[b])) b++;
+        if (b === folge.text.length) continue; // leere Zeile gehört nie zu einem Absatz
+        umbrueche.push([Math.max(z.from + a, n.from), folge.from + b]);
+      }
+      if (umbrueche.length) liste.push({ von: n.from, bis: n.to, umbrueche });
+    },
+  });
+  return liste;
+}
+
+// Aktiver Absatz bleibt roh: Auswahl im Absatz bei Fokus im Editor; Rohmodus verbindet gar nichts.
+const absatzAktiv = (w, state, a) => w.fokus && state.selection.ranges.some((r) => r.from <= a.bis && r.to >= a.von);
+function absatzDeko(w, state) {
+  if (w.roh) return Decoration.none;
+  const bereiche = [];
+  for (const a of w.absaetze) {
+    if (absatzAktiv(w, state, a)) continue;
+    for (const [von, bis] of a.umbrueche) bereiche.push(weicherUmbruch.range(von, bis));
+  }
+  return Decoration.set(bereiche, true);
+}
+
+// Doppel-/Dreifachklick in einem verbundenen Absatz: der erste Klick schaltet ihn auf roh, der Text darunter springt. Ab dem
+// zweiten Klick träfe man sonst das neue Bild statt des Wortes, auf das man gezeigt hat; darum zählt die Stelle des ersten Klicks
+// (Doppelklick = Wort, Dreifachklick = der Absatz, wie ihn der erste Klick zeigte). Alles andere bleibt Standard.
+function mehrfachKlick(feld) {
+  let erster = null; // { pos, x, y, absatz } des ersten Klicks einer Folge; absatz nur, wenn er in einen verbundenen Absatz ging
+  return [
+    EditorView.domEventHandlers({
+      mousedown(e, view) {
+        if (e.button !== 0 || e.detail !== 1) return false;
+        const w = view.state.field(feld);
+        const pos = view.posAtCoords({ x: e.clientX, y: e.clientY }, false);
+        const a = pos == null ? null : w.absaetze.find((x) => x.von <= pos && pos <= x.bis);
+        erster = { pos, x: e.clientX, y: e.clientY, absatz: a && !w.roh && !absatzAktiv(w, view.state, a) ? a : null };
+        return false;
+      },
+    }),
+    EditorView.mouseSelectionStyle.of((view, e) => {
+      if (e.button !== 0 || e.detail < 2 || !erster?.absatz || Math.hypot(e.clientX - erster.x, e.clientY - erster.y) > 6) return null;
+      const bereich = e.detail === 2 ? view.state.wordAt(erster.pos) : { from: erster.absatz.von, to: Math.min(erster.absatz.bis + 1, view.state.doc.length) };
+      if (!bereich) return null;
+      return { get: () => EditorSelection.single(bereich.from, bereich.to), update: () => false };
+    }),
+  ];
+}
+
+function absatzFeld(ctx) {
+  return StateField.define({
+    create(state) {
+      const w = { roh: !!ctx.roh?.(), fokus: false, signale: state.field(signaleFeld), absaetze: absatzSpannen(state) };
+      w.deko = absatzDeko(w, state);
+      return w;
+    },
+    update(w, tr) {
+      let { roh, fokus } = w, neuDeko = false;
+      for (const e of tr.effects) {
+        if (e.is(fokusGeaendert) && e.value !== fokus) { fokus = e.value; neuDeko = true; }
+        else if (e.is(neuZeichnen)) { roh = !!ctx.roh?.(); neuDeko = true; }
+      }
+      const signale = tr.state.field(signaleFeld);
+      const neuBerechnen = tr.docChanged || signale !== w.signale || CM.syntaxTree(tr.state) !== CM.syntaxTree(tr.startState);
+      const auswahl = fokus && !roh && !tr.startState.selection.eq(tr.state.selection);
+      if (!neuBerechnen && !neuDeko && !auswahl) return w;
+      const neu = { roh, fokus, signale, absaetze: neuBerechnen ? absatzSpannen(tr.state) : w.absaetze };
+      neu.deko = absatzDeko(neu, tr.state);
+      return neu;
+    },
+    provide: (f) => [
+      EditorView.decorations.from(f, (w) => w.deko),
+      EditorView.atomicRanges.of((view) => view.state.field(f).deko), // Cursor springt über den versteckten Umbruch samt Einrückung
+      EditorView.focusChangeEffect.of((_state, fokus) => fokusGeaendert.of(fokus)),
+      mehrfachKlick(f),
+    ],
+  });
+}
+
 // ---------- Autovervollständigung für [[ ----------
 function wikiQuelle(ctx) {
   return (cc) => {
@@ -313,6 +440,7 @@ export function erstelleEditor(eltern, ctx) {
     fmFeld,
     signaleFeld,
     signalRand,
+    absatzFeld(ctx),
     vorschauPlugin(ctx),
     CM.autocompletion({ override: [wikiQuelle(ctx)], icons: false, tooltipClass: () => "cm-wikiliste" }),
     keymap.of([
@@ -355,7 +483,8 @@ export function erstelleEditor(eltern, ctx) {
       });
       view.setState(state);
       if (ctx.roh?.()) view.dispatch({ effects: fmUmschalten.of(false) });
-      view.dispatch({ effects: schreibschutzFeld.reconfigure(nurLesen ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []) });
+      // Der neue State kennt den Fokus noch nicht: den Ist-Stand eintragen (sonst bliebe der Absatz am Cursor verbunden)
+      view.dispatch({ effects: [schreibschutzFeld.reconfigure(nurLesen ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []), fokusGeaendert.of(view.hasFocus)] });
     },
     // Originaltext mit ursprünglichen Zeilenenden
     text() { return view.state.sliceDoc(0, view.state.doc.length, view.state.lineBreak); },
