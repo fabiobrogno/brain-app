@@ -5,7 +5,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { baueVault } from "./vault.mjs";
 import { starteServer } from "./start.mjs";
-import { mockeV2 } from "./mocks.mjs";
+import { mockeV2, baueIndex } from "./mocks.mjs";
 
 let vault, server;
 test.beforeEach(async () => { ({ vault } = baueVault()); server = await starteServer(vault); });
@@ -365,4 +365,14 @@ test("Ohne Vault: bereit-Flag steht nach dem Willkommen, vault-oeffnen geht, and
   // ein späterer Befehl geht sofort durch (bereit), ohne Fehler
   await page.evaluate(() => { window.studio.befehl("alle"); window.studio.befehl("hell-dunkel"); });
   expect(fehler).toEqual([]);
+});
+
+test("Ansichten: Mitglieder und Zähler kommen aus dem Feld ansichten der Notizen (Werkstatt-Index)", async ({ page }) => {
+  const notizen = baueIndex(vault).filter((n) => !n.generiert).map((n, i) => ({ ...n, ansichten: i === 0 ? ["zuletzt", "strittig"] : i === 1 ? ["zuletzt"] : [] }));
+  await start(page, undefined, { ueberschreibe: { notizen } });
+  await expect(page.locator('[data-ansicht="zuletzt"] .zahl')).toHaveText("2");
+  await expect(page.locator('[data-ansicht="strittig"] .zahl')).toHaveText("1");
+  await expect(page.locator('[data-ansicht="ungeprueft"] .zahl')).toHaveText("0");
+  await page.click('[data-ansicht="zuletzt"]');
+  await expect(page.locator("#liste-koerper [data-karte]")).toHaveCount(2);
 });

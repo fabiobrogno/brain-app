@@ -284,6 +284,10 @@ function leiteAnsichtenAb(apiAnsichten) {
     ungeprueft: basis.filter((n) => n.bereich === "wissen" && n.stufe === "gelb" && !abgelaufen(n)),
     zuletzt: [...basis].sort(neuesteZuerst).slice(0, 25),
   };
+  // Trägt jede Notiz ihre Ansichten selbst (Feld `ansichten`, so liefert es der Werkstatt-Index), gilt das und nicht die Ableitung
+  if (S.notizen.some((n) => Array.isArray(n.ansichten))) {
+    for (const id of Object.keys(S.ansichtMitglieder)) S.ansichtMitglieder[id] = S.notizen.filter((n) => Array.isArray(n.ansichten) && n.ansichten.includes(id));
+  }
   // Liefert die Schnittstelle selbst Mitglieder (pfade), gelten diese
   S.ansichtAusApi = false;
   for (const a of apiAnsichten || []) {
