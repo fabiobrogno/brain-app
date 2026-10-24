@@ -86,7 +86,7 @@ test("Typ: typ > type, klein, [[Link]] und Liste werden aufgelöst", () => {
   assert.equal(analysiere("a.md", "# nur Text\n", HEUTE).typ, "");
 });
 
-test("Bereich: inbox · wissen · archiv (90_*, archiviert) · notiz; _-Ordner im Posteingang gehören nicht dazu", async () => {
+test("Bereich: inbox · wissen · archiv (90_*, archiviert) · notiz; _-Ordner im Posteingang sind maschine", async () => {
   const d = tmp();
   schreibe(d, "00_inbox/lose.md", "# Lose\n");
   schreibe(d, "00_inbox/_rueckfragen/rf-1.md", "---\ntyp: rueckfrage\n---\n# RF\n");
@@ -99,7 +99,7 @@ test("Bereich: inbox · wissen · archiv (90_*, archiviert) · notiz; _-Ordner i
   const v = vault(d);
   const nach = Object.fromEntries((await v.notizen()).notizen.map((n) => [n.pfad, n.bereich]));
   assert.deepEqual(nach, {
-    "00_inbox/lose.md": "inbox", "00_inbox/_rueckfragen/rf-1.md": "notiz", "09_wiki/firma/thema_a.md": "wissen", "09_wiki/_index.md": "wissen",
+    "00_inbox/lose.md": "inbox", "00_inbox/_rueckfragen/rf-1.md": "maschine", "09_wiki/firma/thema_a.md": "wissen", "09_wiki/_index.md": "wissen",
     "90_archiv/alt.md": "archiv", "projekte/neu.md": "notiz", "projekte/weg.md": "archiv", "09_wiki/firma/thema_b.md": "archiv",
   });
 });
@@ -118,6 +118,47 @@ test("Bereich: Vault ohne 00_inbox — lose Notizen ohne Typ und ohne Verknüpfu
   mkdirSync(join(d, "00_inbox"));
   const nach2 = Object.fromEntries((await v.notizen()).notizen.map((n) => [n.pfad, n.bereich]));
   assert.equal(nach2["lose.md"], "notiz");
+});
+
+test("Bereich: maschine (00_inbox/_*/) · vorlage (01_vorlagen/) · system (CLAUDE/AGENTS/GEMINI.md in der Wurzel); Vorrang archiv > maschine > vorlage > system > inbox", async () => {
+  const d = tmp();
+  schreibe(d, "00_inbox/lose.md", "# Lose\n");
+  schreibe(d, "00_inbox/_warten.md", "# Datei mit Unterstrich, kein Ordner\n");
+  schreibe(d, "00_inbox/_rueckfragen/rf-1.md", "---\ntyp: rueckfrage\n---\n# RF\n");
+  schreibe(d, "00_inbox/_vorschlaege/tief/unter/v-1.md", "# V\n");
+  schreibe(d, "00_inbox/_lektionen/alt.md", "---\narchiviert: true\n---\n# Archiviert vor maschine\n");
+  schreibe(d, "01_vorlagen/notiz.md", "# Vorlage\n");
+  schreibe(d, "01_vorlagen/unter/recherche.md", "# Tief\n");
+  schreibe(d, "01_vorlagen/alt.md", "---\narchived: yes\n---\n# Archiviert vor vorlage\n");
+  schreibe(d, "01_vorlagen/_index.md", "# Verzeichnis\n");
+  schreibe(d, "claude.md", "@AGENTS.md\n"); // klein geschrieben
+  schreibe(d, "AGENTS.md", "# Agenten\n");
+  schreibe(d, "Gemini.md", "# Gemini\n");
+  schreibe(d, "GEMINI.txt", "Nur Text\n"); // kein Markdown
+  schreibe(d, "README.md", "# Readme\n");
+  schreibe(d, "projekte/CLAUDE.md", "# Projektregeln\n"); // nicht in der Wurzel
+  schreibe(d, "09_wiki/_index.md", "# Verzeichnis\n");
+  const n = Object.fromEntries((await vault(d).notizen()).notizen.map((x) => [x.pfad, x]));
+  assert.deepEqual(Object.fromEntries(Object.entries(n).map(([p, x]) => [p, x.bereich])), {
+    "00_inbox/lose.md": "inbox", "00_inbox/_warten.md": "inbox", "00_inbox/_rueckfragen/rf-1.md": "maschine", "00_inbox/_vorschlaege/tief/unter/v-1.md": "maschine",
+    "00_inbox/_lektionen/alt.md": "archiv", "01_vorlagen/notiz.md": "vorlage", "01_vorlagen/unter/recherche.md": "vorlage", "01_vorlagen/alt.md": "archiv",
+    "01_vorlagen/_index.md": "vorlage", "claude.md": "system", "AGENTS.md": "system", "Gemini.md": "system", "GEMINI.txt": "notiz", "README.md": "notiz",
+    "projekte/CLAUDE.md": "notiz", "09_wiki/_index.md": "wissen",
+  });
+  // generierte Dateien behalten ihre Markierung zusätzlich zum Bereich
+  assert.equal(n["01_vorlagen/_index.md"].generiert, true);
+  assert.equal(n["09_wiki/_index.md"].generiert, true);
+  assert.equal(n["01_vorlagen/notiz.md"].generiert, false);
+});
+
+test("Bereich: Vault ohne 00_inbox — vorlage und system gehen vor der Regel für lose Notizen", async () => {
+  const d = tmp();
+  schreibe(d, "README.md", "# Readme\n");
+  schreibe(d, "CLAUDE.md", "# Regeln\n");
+  schreibe(d, "01_vorlagen/leer.md", "# Vorlage\n");
+  schreibe(d, "ordner/lose.md", "# Lose\n");
+  const nach = Object.fromEntries((await vault(d).notizen()).notizen.map((n) => [n.pfad, n.bereich]));
+  assert.deepEqual(nach, { "README.md": "inbox", "CLAUDE.md": "system", "01_vorlagen/leer.md": "vorlage", "ordner/lose.md": "inbox" });
 });
 
 test("Stufe nur im Wiki; generiert-Markierung (Namen, Kopfzeile)", async () => {
@@ -249,6 +290,119 @@ test("erstellt: erster Commit je Datei, Umbenennung behält den Anfang; Ungetrac
   assert.ok(e && Math.abs(Date.parse(e) - Date.now()) < 60_000);
 });
 
+// ---------- Geändert (Git) ----------
+test("geaendert: saubere Dateien zeigen den letzten Commit (nicht die Dateizeit), geänderte/vorgemerkte/neue die Dateizeit; Umbenennung behält die Zeiten; Klon", async () => {
+  const TA = "2026-09-15T10:00:00Z", T1 = "2026-10-01T10:00:00Z", T2 = "2026-10-05T10:00:00Z", T3 = "2026-10-10T10:00:00Z", T4 = "2026-10-20T10:00:00Z", T5 = "2026-10-21T10:00:00Z";
+  const zeit = (t) => new Date(t).toISOString();
+  const lang = (t) => `# ${t}\n\nein längerer Text, damit eine Umbenennung erkannt wird.\nzweite Zeile\ndritte Zeile\nvierte Zeile\nfünfte Zeile\n`;
+  const d = tmp();
+  g(d, "init", "-q", "-b", "main");
+  g(d, "config", "core.precomposeunicode", "false"); // Git meldet Namen so, wie sie gespeichert sind (hier NFD)
+  schreibe(d, "A\u0308rger.md", lang("Ärger")); // Dateiname in NFD (Git und Index-Lauf vergleichen in NFC)
+  gDatum(d, TA, "add", "--", "A\u0308rger.md"); gDatum(d, TA, "commit", "-q", "-m", "umlaut");
+  const dateien1 = ["rein.md", "a.md", "b.md", "c.md", "d.md", "e.md"];
+  for (const p of dateien1) schreibe(d, p, lang(p));
+  gDatum(d, T1, "add", "--", ...dateien1); gDatum(d, T1, "commit", "-q", "-m", "eins");
+  writeFileSync(join(d, "a.md"), lang("a.md") + "Neu im zweiten Commit.\n");
+  gDatum(d, T2, "commit", "-q", "-am", "a geändert");
+  mkdirSync(join(d, "neu"));
+  gDatum(d, T3, "mv", "c.md", "neu/c-umbenannt.md"); // reine Umbenennung
+  gDatum(d, T3, "mv", "d.md", "neu/d-umbenannt.md");
+  writeFileSync(join(d, "neu/d-umbenannt.md"), lang("d.md") + "Im selben Commit geändert.\n"); // Umbenennung mit Änderung
+  gDatum(d, T3, "add", "--", "neu/d-umbenannt.md"); gDatum(d, T3, "commit", "-q", "-m", "umbenannt");
+  // „touch“: alle Dateizeiten sind neu und stimmen mit keinem Commit überein
+  const vorEinerSekunde = new Date(Date.now() - 1000);
+  const alle = ["rein.md", "a.md", "b.md", "e.md", "neu/c-umbenannt.md", "neu/d-umbenannt.md", "A\u0308rger.md"];
+  for (const p of alle) utimesSync(join(d, p), vorEinerSekunde, vorEinerSekunde);
+
+  const v = vault(d);
+  const hole = async () => Object.fromEntries((await v.notizen()).notizen.map((x) => [x.pfad.normalize("NFC"), x]));
+  let n = await hole();
+  assert.equal(n["rein.md"].geaendert, zeit(T1));
+  assert.equal(n["b.md"].geaendert, zeit(T1), "unverändert seit dem ersten Commit");
+  assert.equal(n["a.md"].geaendert, zeit(T2)); assert.equal(n["a.md"].erstellt, zeit(T1));
+  assert.equal(n["Ärger.md"].geaendert, zeit(TA), "Umlaut-Dateiname in anderer Normalform"); assert.equal(n["Ärger.md"].erstellt, zeit(TA));
+  assert.equal(n["neu/c-umbenannt.md"].geaendert, zeit(T1), "reine Umbenennung: beide Zeiten bleiben"); assert.equal(n["neu/c-umbenannt.md"].erstellt, zeit(T1));
+  assert.equal(n["neu/d-umbenannt.md"].geaendert, zeit(T3), "Umbenennung mit Änderung: der Commit zählt"); assert.equal(n["neu/d-umbenannt.md"].erstellt, zeit(T1));
+  assert.notEqual(n["rein.md"].geaendert, statSync(join(d, "rein.md")).mtime.toISOString(), "nicht die Dateizeit");
+  assert.equal((await v.notizKontext("a.md")).info.geaendert, zeit(T2), "Eigenschaften zeigen dieselbe Zeit wie die Liste");
+
+  // neue Commits werden inkrementell nachgeladen: Änderung und Umbenennung (beide Zeiten wandern mit)
+  writeFileSync(join(d, "rein.md"), lang("rein.md") + "Später geändert.\n");
+  gDatum(d, T4, "commit", "-q", "-am", "rein geändert");
+  gDatum(d, T5, "mv", "a.md", "a-neu.md"); gDatum(d, T5, "commit", "-q", "-m", "a umbenannt");
+  n = await hole();
+  assert.equal(n["rein.md"].geaendert, zeit(T4)); assert.equal(n["rein.md"].erstellt, zeit(T1));
+  assert.equal(n["a-neu.md"].geaendert, zeit(T2)); assert.equal(n["a-neu.md"].erstellt, zeit(T1));
+  assert.equal(n["a.md"], undefined);
+
+  // Arbeitsstand: b ungesichert geändert, e vorgemerkt, frisch.md neu (ungetrackt) → Dateizeit
+  const gestern = new Date("2026-10-23T12:00:00Z");
+  writeFileSync(join(d, "b.md"), lang("b.md") + "Ungesichert.\n");
+  writeFileSync(join(d, "e.md"), lang("e.md") + "Vorgemerkt.\n"); g(d, "add", "--", "e.md");
+  schreibe(d, "frisch.md", "# Frisch\n");
+  for (const p of ["b.md", "e.md", "frisch.md"]) utimesSync(join(d, p), gestern, gestern);
+  const vorgestern = new Date("2026-10-22T12:00:00Z");
+  writeFileSync(join(d, "A\u0308rger.md"), lang("Ärger") + "Ungesichert.\n"); utimesSync(join(d, "A\u0308rger.md"), vorgestern, vorgestern);
+  const liste = (await v.notizen()).notizen;
+  n = Object.fromEntries(liste.map((x) => [x.pfad.normalize("NFC"), x]));
+  for (const p of ["b.md", "e.md", "frisch.md"]) assert.equal(n[p].geaendert, zeit(gestern), `${p}: Dateizeit`);
+  assert.equal(n["Ärger.md"].geaendert, zeit(vorgestern), "Umlaut-Dateiname: Status und Index vergleichen in NFC");
+  assert.equal(n["b.md"].erstellt, zeit(T1), "erstellt kommt weiter aus Git");
+  assert.equal(n["rein.md"].geaendert, zeit(T4));
+  // Sortierung und Ansicht „zuletzt“ (7 Tage vor JETZT = ab 17.10.) benutzen dieselbe Zeit
+  assert.deepEqual(liste.map((x) => x.pfad.normalize("NFC")), ["b.md", "e.md", "frisch.md", "Ärger.md", "rein.md", "neu/d-umbenannt.md", "a-neu.md", "neu/c-umbenannt.md"]);
+  assert.deepEqual(liste.filter((x) => x.ansichten.includes("zuletzt")).map((x) => x.pfad.normalize("NFC")), ["b.md", "e.md", "frisch.md", "Ärger.md", "rein.md"]);
+  assert.equal((await v.ansichten()).ansichten.find((a) => a.id === "zuletzt").anzahl, 5);
+  // gleichzeitige Anfragen teilen sich den laufenden Status und liefern untereinander stimmige Zahlen
+  const [pn, pa] = await Promise.all([v.notizen(), v.ansichten(), v.typen(), v.notizKontext("rein.md")]);
+  assert.deepEqual(pn.notizen.map((x) => [x.pfad, x.geaendert]), liste.map((x) => [x.pfad, x.geaendert]));
+  assert.equal(pa.ansichten.find((a) => a.id === "zuletzt").anzahl, 5);
+
+  // frischer Klon: alle Dateien haben die Zeit des Klonens, die Notizen behalten die Zeit ihrer Commits
+  const klon = join(tmp("brain-klon-"), "klon");
+  g(d, "clone", "-q", "-c", "core.precomposeunicode=false", d, klon); // gleiche Namensform wie im Original, sonst hielte Git den NFD-Namen selbst für ungetrackt
+  const vk = vault(klon);
+  const k = Object.fromEntries((await vk.notizen()).notizen.map((x) => [x.pfad.normalize("NFC"), x]));
+  assert.equal(k["rein.md"].geaendert, zeit(T4)); assert.equal(k["a-neu.md"].geaendert, zeit(T2)); assert.equal(k["neu/c-umbenannt.md"].geaendert, zeit(T1));
+  assert.equal(k["e.md"].geaendert, zeit(T1), "im Klon steht der eingecheckte Stand");
+  assert.equal((await vk.ansichten()).ansichten.find((a) => a.id === "zuletzt").anzahl, 1, "nur rein.md ist jünger als 7 Tage");
+});
+
+test("geaendert: ohne Git, ohne Commit und bei unlesbarem Status gilt die Dateizeit; erstellt bleibt aus Git", async () => {
+  const mtimeVon = (d, p) => statSync(join(d, p)).mtime.toISOString();
+  // kein Repo
+  const d1 = tmp();
+  schreibe(d1, "x.md", "# X\n");
+  assert.equal((await holeNotiz(vault(d1), "x.md")).geaendert, mtimeVon(d1, "x.md"));
+  // Repo ohne Commit
+  const d2 = tmp();
+  g(d2, "init", "-q", "-b", "main");
+  schreibe(d2, "x.md", "# X\n");
+  assert.equal((await holeNotiz(vault(d2), "x.md")).geaendert, mtimeVon(d2, "x.md"));
+  // Status schlägt fehl (kaputter Index): Dateizeit, die Karte (nur Verlauf) funktioniert weiter
+  const d3 = tmp();
+  g(d3, "init", "-q", "-b", "main");
+  schreibe(d3, "y.md", "# Y\n");
+  gDatum(d3, "2026-10-01T10:00:00Z", "add", "--", "y.md"); gDatum(d3, "2026-10-01T10:00:00Z", "commit", "-q", "-m", "y");
+  const heil = await holeNotiz(vault(d3), "y.md");
+  assert.equal(heil.geaendert, "2026-10-01T10:00:00.000Z");
+  writeFileSync(join(d3, ".git", "index"), "kaputt");
+  const kaputt = await holeNotiz(vault(d3), "y.md");
+  assert.equal(kaputt.geaendert, mtimeVon(d3, "y.md"), "ohne Status keine Git-Änderungszeit");
+  assert.equal(kaputt.erstellt, "2026-10-01T10:00:00.000Z");
+  // Eine saubere Datei, die jünger ist als der Status (hier: Zeit in der Zukunft), behält ihre Dateizeit — der Status gilt für sie nicht
+  const d4 = tmp();
+  g(d4, "init", "-q", "-b", "main");
+  schreibe(d4, "z.md", "# Z\n"); schreibe(d4, "alt.md", "# Alt\n");
+  gDatum(d4, "2026-10-01T10:00:00Z", "add", "--", "z.md", "alt.md"); gDatum(d4, "2026-10-01T10:00:00Z", "commit", "-q", "-m", "z");
+  const spaeter = new Date(Date.now() + 3600_000);
+  utimesSync(join(d4, "z.md"), spaeter, spaeter);
+  const n4 = Object.fromEntries((await vault(d4).notizen()).notizen.map((x) => [x.pfad, x]));
+  assert.equal(n4["z.md"].geaendert, spaeter.toISOString());
+  assert.equal(n4["alt.md"].geaendert, "2026-10-01T10:00:00.000Z");
+});
+
 // ---------- Cache ----------
 test("Cache: geänderte, neue und gelöschte Dateien erscheinen sofort; unveränderte werden nicht neu gelesen", async () => {
   const d = tmp();
@@ -355,6 +509,27 @@ test("Ansichten: abgelaufen (pruefen_bis / stand+verfall), strittig, ungeprüft 
   assert.deepEqual(n["09_wiki/w/thema_stand.md"], []);
   assert.deepEqual(n["notizen/frei.md"], ["abgelaufen", "zuletzt"]);
   assert.deepEqual(n["09_wiki/_index.md"], []); assert.deepEqual(n["09_wiki/_schema.md"], []); assert.deepEqual(n["09_wiki/w/belege/2026-09/b.md"], []);
+});
+
+test("Ansichten und Typen zählen nur inbox · notiz · wissen — nicht maschine, vorlage, system, archiv", async () => {
+  const d = tmp();
+  const kopf = (z = "") => `---\ntyp: thema\npruefen_bis: 2026-09-30\nstand: 2026-10-20\n${z}---\n`; // abgelaufen, mit Stand (nie „ungeprüft“)
+  const mitzaehlen = ["00_inbox/lose.md", "projekte/notiz.md", "09_wiki/w/thema_x.md"];
+  const beiwerk = ["00_inbox/_rueckfragen/rf.md", "01_vorlagen/vorlage.md", "CLAUDE.md", "90_archiv/alt.md", "projekte/weg.md"];
+  for (const p of mitzaehlen) schreibe(d, p, kopf() + "# Zählt\n");
+  for (const p of beiwerk) schreibe(d, p, kopf(p === "projekte/weg.md" ? "archiviert: true\n" : "") + "# Beiwerk\n");
+  const gestern = new Date(Date.parse("2026-10-23T12:00:00Z")); // innerhalb der 7 Tage
+  for (const p of [...mitzaehlen, ...beiwerk]) utimesSync(join(d, p), gestern, gestern);
+  const v = vault(d);
+  const n = Object.fromEntries((await v.notizen()).notizen.map((x) => [x.pfad, x]));
+  assert.deepEqual(Object.fromEntries(beiwerk.map((p) => [p, n[p].bereich])),
+    { "00_inbox/_rueckfragen/rf.md": "maschine", "01_vorlagen/vorlage.md": "vorlage", "CLAUDE.md": "system", "90_archiv/alt.md": "archiv", "projekte/weg.md": "archiv" });
+  for (const p of mitzaehlen) assert.deepEqual(n[p].ansichten, ["abgelaufen", "zuletzt"], p);
+  for (const p of beiwerk) assert.deepEqual(n[p].ansichten, [], p);
+  const a = Object.fromEntries((await v.ansichten()).ansichten.map((x) => [x.id, x.anzahl]));
+  assert.deepEqual(a, { abgelaufen: 3, strittig: 0, ungeprueft: 0, zuletzt: 3 });
+  const t = await v.typen();
+  assert.deepEqual(t.typen.map((x) => [x.name, x.anzahl]), [["thema", 3]], "Typen zählen über dieselben Bereiche wie die Ansichten");
 });
 
 // ---------- Unicode, BOM, Zeilenenden ----------

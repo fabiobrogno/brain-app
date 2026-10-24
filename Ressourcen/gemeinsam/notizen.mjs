@@ -1,5 +1,5 @@
 // gemeinsam/notizen.mjs — Notiz-Index für Brain Studio v2 (Spec v2 §1/§5): Titel, Vorschau, Typ, Bereich, Prüf-Stufe, Links
-// (aufgelöst auf Pfade), Entstehungszeit aus Git, Kontext einer Notiz (Beziehungen, Rückverweise, Info), Typen und Ansichten.
+// (aufgelöst auf Pfade), Entstehungs- und Änderungszeit aus Git, Kontext einer Notiz (Beziehungen, Rückverweise, Info), Typen und Ansichten.
 // Je Datei wird nur neu gelesen, wenn sich Änderungszeit oder Größe geändert haben; die Verknüpfungen werden bei jeder Anfrage
 // aus den (gecachten) Rohlinks neu aufgelöst, weil eine neue Datei ein bisher loses [[Ziel]] erfüllen kann. Keine Abhängigkeiten.
 import { readdirSync, statSync, realpathSync, readFileSync, openSync, readSync, closeSync, existsSync } from "node:fs";
@@ -12,6 +12,11 @@ const GROSS = 1024 * 1024;        // größere Dateien: nur der Anfang wird gele
 const ANFANG = 64 * 1024;
 const MAX_FELDER = 40, MAX_WERT = 300, MAX_LISTE = 20, VORSCHAU = 200;
 const SIEBEN_TAGE = 7 * 24 * 3600 * 1000;
+const FRIST_GIT = 1500; // so lange wartet eine Anfrage höchstens auf die Git-Karte und den Git-Status (danach: Dateizeiten)
+// Bereiche, die in Ansichten und Typen mitzählen; maschine (00_inbox/_*/), vorlage (01_vorlagen/), system (CLAUDE/AGENTS/GEMINI.md
+// in der Wurzel) und archiv sind Beiwerk und bleiben außen vor.
+const ZAEHLT_MIT = new Set(["inbox", "notiz", "wissen"]);
+const SYSTEM_DATEIEN = new Set(["claude.md", "agents.md", "gemini.md"]);
 
 // ---------- Kopf (Frontmatter) ----------
 const SCHLUESSEL = /^([^\s:#\-\[{][^:]*?)\s*:(?:\s+(.*))?$/;
@@ -308,7 +313,9 @@ export function erzeugeNotizIndex({ wurzel, jetzt = () => new Date(), heute }) {
     finally { if (fd !== undefined) try { closeSync(fd); } catch { /* egal */ } }
   }
 
-  // ----- Entstehungszeit: erster Git-Commit je Datei (Umbenennungen verfolgt), gecacht je HEAD -----
+  // ----- Git-Zeiten: je Datei der erste und der letzte Commit (Umbenennungen verfolgt), gecacht je HEAD -----
+  // karte: Pfad (NFC) → { erste, letzte } (ISO-Zeiten der Commits). Die Einträge werden nie verändert, nur ersetzt — die
+  // inkrementell fortgeschriebene Karte ist eine flache Kopie, und eine laufende Anfrage darf die alte weiter lesen.
   const gk = { head: null, karte: null, laeuft: null };
   function wendeAn(karte, roh) {
     const t = roh.split("\0");
@@ -321,12 +328,22 @@ export function erzeugeNotizIndex({ wurzel, jetzt = () => new Date(), heute }) {
       const s = tok[0];
       if (s === "R" || s === "C") {
         const alt = (t[++i] ?? "").normalize("NFC"), neu = (t[++i] ?? "").normalize("NFC");
-        if (s === "R") { const z = karte.get(alt) ?? zeit; karte.delete(alt); karte.set(neu, z); }
-        else if (!karte.has(neu)) karte.set(neu, zeit);
+        if (s === "R") {
+          // Reine Umbenennung (R100) trägt beide Zeiten weiter; mit Änderung im selben Commit (R0xx) zählt der Commit als letzte Berührung.
+          const vorher = karte.get(alt);
+          karte.delete(alt);
+          karte.set(neu, { erste: vorher ? vorher.erste : zeit, letzte: vorher && tok === "R100" ? vorher.letzte : zeit });
+        } else {
+          const da = karte.get(neu);
+          karte.set(neu, { erste: da ? da.erste : zeit, letzte: zeit });
+        }
       } else {
         const p = (t[++i] ?? "").normalize("NFC");
-        if (s === "A") { if (!karte.has(p)) karte.set(p, zeit); }
-        else if (s === "D") karte.delete(p);
+        if (s === "D") karte.delete(p);
+        else if (s === "A" || s === "M" || s === "T") { // neu oder geändert: erste bleibt, letzte rückt vor
+          const da = karte.get(p);
+          karte.set(p, { erste: da ? da.erste : zeit, letzte: zeit });
+        }
       }
     }
   }
@@ -354,11 +371,34 @@ export function erzeugeNotizIndex({ wurzel, jetzt = () => new Date(), heute }) {
     gk.laeuft = { head, p };
     return p;
   }
-  // Höchstens 1,5 s warten; danach liefert diese Anfrage Ersatzwerte (Datei-Erstellzeit), und die Karte wird im Hintergrund fertig.
-  async function gitKarteMitFrist() {
-    const p = ladeGitKarte();
+  // ----- Sauber oder geändert: ein `git status` je Indexlauf -----
+  // Was dort steht (geändert, vorgemerkt, neu, umbenannt, in Konflikt), ist gegenüber HEAD nicht sauber und behält die Dateizeit.
+  // Ohne Sperre (--no-optional-locks): ein Lesevorgang im Hintergrund darf nie einen Commit des Nutzers oder des Studios ausbremsen.
+  // Es läuft höchstens ein Status gleichzeitig; gleichzeitige Anfragen teilen sich seine Antwort. Das ist sicher, weil eine Datei
+  // nur als sauber gilt, wenn sie seit dem Start dieses Status nicht mehr geschrieben wurde (Änderungszeit ≤ start).
+  const gs = { laeuft: null };
+  function ladeGitStatus() {
+    if (!existsSync(join(wurzel, ".git")) || existsSync(join(wurzel, ".git", "shallow"))) return Promise.resolve(null);
+    if (gs.laeuft) return gs.laeuft;
+    const start = Date.now();
+    const p = (async () => {
+      try {
+        const r = await git(wurzel, ["--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames"]);
+        if (r.code !== 0) return null;
+        const unsauber = new Set(); // "XY pfad" — ohne Umbenennungserkennung steht je Eintrag genau ein Pfad da
+        for (const e of r.stdout.split("\0")) if (e.length > 3) unsauber.add(e.slice(3).normalize("NFC"));
+        return { start, unsauber };
+      } catch { return null; }
+    })().finally(() => { gs.laeuft = null; });
+    gs.laeuft = p;
+    return p;
+  }
+  // Höchstens 1,5 s warten; danach liefert diese Anfrage Ersatzwerte (Dateizeiten), und die Arbeit wird im Hintergrund fertig.
+  function mitFrist(p) {
     p.catch(() => {});
-    return Promise.race([p, new Promise((ok) => setTimeout(() => ok(null), 1500).unref())]);
+    let uhr;
+    const frist = new Promise((ok) => { uhr = setTimeout(() => ok(null), FRIST_GIT); uhr.unref(); });
+    return Promise.race([p, frist]).finally(() => clearTimeout(uhr));
   }
   const iso = (v) => { const d = new Date(v); return Number.isNaN(d.getTime()) ? null : d.toISOString(); };
 
@@ -429,7 +469,9 @@ export function erzeugeNotizIndex({ wurzel, jetzt = () => new Date(), heute }) {
       if (!e.c.generiert) for (const r of ziele) if (r !== e.rel) { const s = rueck.get(r); if (s) s.add(e.rel); else rueck.set(r, new Set([e.rel])); }
     }
 
-    const karte = await gitKarteMitFrist();
+    // Karte und Status laufen gleichzeitig und starten erst nach dem Lesen der Dateizeiten (st). Ist schon ein Status unterwegs,
+    // gilt er auch für diese Anfrage — die Prüfung der Dateizeit unten (≤ status.start) macht das sicher.
+    const [karte, status] = await Promise.all([mitFrist(ladeGitKarte()), mitFrist(ladeGitStatus())]);
     const hatInbox = roh.some((e) => falte(e.teile[0]) === "00_inbox") || existsSync(join(wurzel, "00_inbox"));
     const zuletztAb = jetztMs - SIEBEN_TAGE;
 
@@ -437,22 +479,35 @@ export function erzeugeNotizIndex({ wurzel, jetzt = () => new Date(), heute }) {
       const { c } = e;
       const oben = falte(e.teile[0]);
       const unterhalb = e.teile.slice(1, -1);
+      // Vorrang: archiv · maschine · vorlage · system · inbox · wissen · notiz
       let bereich;
       if (c.archiviert || /^90_/.test(oben)) bereich = "archiv";
-      else if (oben === "00_inbox" && !unterhalb.some((s) => s.startsWith("_"))) bereich = "inbox"; // _-Ordner im Posteingang = maschinell verwaltet (Rückfragen, Vorschläge)
+      else if (oben === "00_inbox" && e.teile.length > 2 && e.teile[1].startsWith("_")) bereich = "maschine"; // _-Ordner direkt im Posteingang: maschinell verwaltet (Rückfragen, Vorschläge, …)
+      else if (oben === "01_vorlagen") bereich = "vorlage";
+      else if (e.teile.length === 1 && SYSTEM_DATEIEN.has(falte(e.rel))) bereich = "system"; // CLAUDE.md, AGENTS.md, GEMINI.md in der Wurzel (Groß/klein egal)
+      else if (oben === "00_inbox" && !unterhalb.some((s) => s.startsWith("_"))) bereich = "inbox";
       else if (oben === "09_wiki") bereich = "wissen";
       else if (!hatInbox && !c.typ && !c.links.length && !rueck.has(e.rel)) bereich = "inbox"; // Vault ohne 00_inbox: lose Notizen ohne Typ und Verknüpfung
       else bereich = "notiz";
+
+      // Änderungszeit: sauber in Git (nicht geändert, nicht neu, seit dem Status nicht mehr geschrieben) → Zeit des letzten Commits, sonst Dateizeit.
+      // So gilt nach einem frischen `git clone` oder einem Abgleich nicht jede Notiz als „gerade geändert“.
+      const nfc = e.rel.normalize("NFC");
+      const git1 = karte ? karte.get(nfc) : undefined;
+      const sauber = !!git1 && !!status && !status.unsauber.has(nfc) && Math.floor(e.st.mtimeMs) <= status.start;
+      const gitZeit = sauber ? iso(git1.letzte) : null;
+      const geaendert = gitZeit || e.st.mtime.toISOString();
+      const geaendertMs = gitZeit ? Date.parse(gitZeit) : e.st.mtimeMs;
+      const erstellt = (git1 && iso(git1.erste)) || (e.st.birthtimeMs > 0 ? iso(e.st.birthtimeMs) : null);
+
       const ansichten = [];
-      if (!c.generiert) {
+      if (!c.generiert && ZAEHLT_MIT.has(bereich)) {
         if (c.abgelaufen) ansichten.push("abgelaufen");
         if (c.stufe === "rot") ansichten.push("strittig");
         if (c.istSeite && !c.belegt && !c.hatStand) ansichten.push("ungeprueft");
-        if (e.st.mtimeMs >= zuletztAb) ansichten.push("zuletzt");
+        if (geaendertMs >= zuletztAb) ansichten.push("zuletzt");
       }
-      const git1 = karte ? karte.get(e.rel.normalize("NFC")) : undefined;
-      const erstellt = (git1 && iso(git1)) || (e.st.birthtimeMs > 0 ? iso(e.st.birthtimeMs) : null);
-      return { pfad: e.rel, titel: c.titel, vorschau: c.vorschau, typ: c.typ, bereich, geaendert: e.st.mtime.toISOString(), erstellt, stufe: c.stufe,
+      return { pfad: e.rel, titel: c.titel, vorschau: c.vorschau, typ: c.typ, bereich, geaendert, erstellt, stufe: c.stufe,
         links: e.ziele, felder: c.felder, generiert: c.generiert, ansichten, _offen: e.offen };
     });
     zeilen.sort((a, b) => (a.geaendert < b.geaendert ? 1 : a.geaendert > b.geaendert ? -1 : a.pfad < b.pfad ? -1 : 1));
@@ -469,7 +524,7 @@ export function erzeugeNotizIndex({ wurzel, jetzt = () => new Date(), heute }) {
   async function typen() {
     const { zeilen } = await index();
     const zaehl = new Map();
-    for (const z of zeilen) if (z.typ && !z.generiert) zaehl.set(z.typ, (zaehl.get(z.typ) || 0) + 1);
+    for (const z of zeilen) if (z.typ && !z.generiert && ZAEHLT_MIT.has(z.bereich)) zaehl.set(z.typ, (zaehl.get(z.typ) || 0) + 1); // wie die Ansichten: nur inbox/notiz/wissen
     const liste = [...zaehl].map(([name, anzahl]) => ({ name, anzahl, ...typStil(name) }));
     liste.sort((a, b) => b.anzahl - a.anzahl || a.name.localeCompare(b.name, "de"));
     return { typen: liste, standard: { ...STANDARD_STIL } };
@@ -511,7 +566,7 @@ export function erzeugeNotizIndex({ wurzel, jetzt = () => new Date(), heute }) {
     const mich = zeilen.find((z) => z.pfad === rel);
     return {
       felder: k.felder, beziehungen, verweise, rueckverweise,
-      info: { woerter: (koerperText.match(/\S+/g) || []).length, bytes: st.size, geaendert: st.mtime.toISOString(), erstellt: mich ? mich.erstellt : null },
+      info: { woerter: (koerperText.match(/\S+/g) || []).length, bytes: st.size, geaendert: mich ? mich.geaendert : st.mtime.toISOString(), erstellt: mich ? mich.erstellt : null }, // geaendert wie in der Liste (Git-Zeit, wenn sauber)
     };
   }
 
