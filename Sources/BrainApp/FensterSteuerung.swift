@@ -238,7 +238,7 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
         w.makeKeyAndOrderFront(nil)
         NSApp.activate()
         web.load(URLRequest(url: oberflaeche.startURL))
-        log.schreibe("fenster-auf \(name)")
+        log.schreibe("fenster-auf \(name) \(Int(w.frame.width))x\(Int(w.frame.height))")
     }
 
     func schliesse() { fenster?.close() }

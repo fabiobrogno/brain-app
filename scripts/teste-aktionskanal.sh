@@ -21,13 +21,20 @@ cp -R "$W/build/Brain.app" "$APP"
 for d in studio mcp gemeinsam werkstatt; do rm -rf "$APP/Contents/Resources/$d"; done
 mkdir "$APP/Contents/Resources/werkstatt"
 cp "$W/Tests/Aktionskanal/stub-werkstatt.mjs" "$APP/Contents/Resources/werkstatt/werkstatt.mjs"
-codesign --force --sign - "$APP" 2>/dev/null
 FEHLER=0
+# Je Lauf eine eigene Bundle-ID: so zählt jeder Lauf als erster Start (keine gemerkte Fensterposition) und die echten
+# Einstellungen der installierten App bleiben unberührt.
+neue_kennung() {
+  KENNUNG="io.github.fbrogno.brain.kanaltest.$$.$1"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $KENNUNG" "$APP/Contents/Info.plist"
+  codesign --force --sign - "$APP" 2>/dev/null
+}
 pruefe() { # <Beschreibung> <Datei> <fester Text>
   if grep -qF -- "$3" "$2"; then echo "  ok   $1"; else echo "  FAIL $1 (fehlt: $3)"; FEHLER=1; fi
 }
 lauf() { # leer | mit-vault
-  local basis v1 v2 log stublog zeilen_a zeilen_b
+  local basis v1 v2 log stublog zeilen_a zeilen_b breite hoehe
+  neue_kennung "$1"
   basis="$(mktemp -d "$ARBEIT/lauf.XXXX")"
   v1="$basis/Vault Eins"; v2="$basis/Vault Zwei"
   mkdir -p "$v1" "$v2"
@@ -46,6 +53,13 @@ lauf() { # leer | mit-vault
   echo "Lauf: $1"
   [ "$code" = 0 ] && echo "  ok   App beendet sich sauber (Exit 0)" || { echo "  FAIL App-Exit=$code"; FEHLER=1; }
   [ -f "$log" ] && [ -f "$STUB_LOG" ] || { echo "  FAIL kein Log (App oder Attrappe nicht gestartet)"; FEHLER=1; return; }
+  breite="$(sed -n 's/.* fenster-auf studio \([0-9]*\)x\([0-9]*\)$/\1/p' "$log" | head -1)"
+  hoehe="$(sed -n 's/.* fenster-auf studio \([0-9]*\)x\([0-9]*\)$/\2/p' "$log" | head -1)"
+  if [ -n "$breite" ] && [ "$breite" -ge 1100 ] && [ "$hoehe" -ge 700 ]; then
+    echo "  ok   Erster Start: Fenster ${breite}x${hoehe} (mindestens 1100x700, Standard 1440x900 bei genug Platz)"
+  else
+    echo "  FAIL Fenstergröße beim ersten Start: ${breite:-?}x${hoehe:-?}"; FEHLER=1
+  fi
   pruefe "Attrappe startet ohne Vault-Argument und ohne BRAIN_VAULT" "$STUB_LOG" '"argv":[],"brainVault":null,"support":"'"$BRAIN_APP_SUPPORT"'"'
   pruefe "titel antwortet {ok:true}" "$STUB_LOG" '"titel":"{\"ok\":true}"'
   pruefe "Ungültiges wird abgewiesen" "$STUB_LOG" '"ungueltig":"abgewiesen:Error: ungültige Aktion"'
@@ -73,5 +87,7 @@ lauf() { # leer | mit-vault
 }
 lauf leer
 lauf mit-vault
+defaults delete "io.github.fbrogno.brain.kanaltest.$$.leer" 2>/dev/null || true
+defaults delete "io.github.fbrogno.brain.kanaltest.$$.mit-vault" 2>/dev/null || true
 rm -rf "$ARBEIT"
 [ "$FEHLER" = 0 ] && echo "OK Aktionskanal" || { echo "FAIL Aktionskanal"; exit 1; }

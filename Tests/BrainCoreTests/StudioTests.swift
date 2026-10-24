@@ -99,31 +99,31 @@ private func url(_ s: String) -> URL { URL(string: s)! }
 
 @Test func aktionOrdnerWaehlenMitUndOhneWerte() {
     let v = tempOrdner("Vault")
-    #expect(AppAktion.pruefe(["aktion": "ordner-waehlen"], vault: v) == .ordnerWaehlen(titel: nil, vorschlag: nil))
-    #expect(AppAktion.pruefe(["aktion": "ordner-waehlen", "wert": NSNull()], vault: nil) == .ordnerWaehlen(titel: nil, vorschlag: nil))
-    #expect(AppAktion.pruefe(["aktion": "ordner-waehlen", "wert": [String: Any]()], vault: nil) == .ordnerWaehlen(titel: nil, vorschlag: nil))
-    let a = AppAktion.pruefe(["aktion": "ordner-waehlen", "wert": ["titel": "Wo soll dein Brain liegen?", "vorschlag": "/Users/x/Mein Brain"]], vault: nil)
+    #expect(AppAktion.pruefe(["aktion": "ordner-waehlen"], vault: v, oberflaeche: .studio) == .ordnerWaehlen(titel: nil, vorschlag: nil))
+    #expect(AppAktion.pruefe(["aktion": "ordner-waehlen", "wert": NSNull()], vault: nil, oberflaeche: .studio) == .ordnerWaehlen(titel: nil, vorschlag: nil))
+    #expect(AppAktion.pruefe(["aktion": "ordner-waehlen", "wert": [String: Any]()], vault: nil, oberflaeche: .studio) == .ordnerWaehlen(titel: nil, vorschlag: nil))
+    let a = AppAktion.pruefe(["aktion": "ordner-waehlen", "wert": ["titel": "Wo soll dein Brain liegen?", "vorschlag": "/Users/x/Mein Brain"]], vault: nil, oberflaeche: .studio)
     #expect(a == .ordnerWaehlen(titel: "Wo soll dein Brain liegen?", vorschlag: URL(fileURLWithPath: "/Users/x/Mein Brain", isDirectory: true)))
     // ohne Vault ist ordner-waehlen möglich (Willkommen)
-    #expect(AppAktion.pruefe(["aktion": "ordner-waehlen"], vault: nil) != nil)
+    #expect(AppAktion.pruefe(["aktion": "ordner-waehlen"], vault: nil, oberflaeche: .studio) != nil)
 }
 
 @Test func aktionOrdnerWaehlenVerwirftFalscheFormenUndIgnoriertUnbrauchbaresEinzelnes() {
     // Wert ist kein Objekt → verworfen
     for wert in ["~/Brain", 5, ["a"], true] as [Any] {
-        #expect(AppAktion.pruefe(["aktion": "ordner-waehlen", "wert": wert], vault: nil) == nil, "\(wert)")
+        #expect(AppAktion.pruefe(["aktion": "ordner-waehlen", "wert": wert], vault: nil, oberflaeche: .studio) == nil, "\(wert)")
     }
     // Unbrauchbarer Vorschlag (relativ, kein Text, NUL) → ohne Vorschlag, der Dialog kommt trotzdem
     for vorschlag in ["relativ/pfad", "", 7, "/x\0y"] as [Any] {
-        #expect(AppAktion.pruefe(["aktion": "ordner-waehlen", "wert": ["vorschlag": vorschlag]], vault: nil)
+        #expect(AppAktion.pruefe(["aktion": "ordner-waehlen", "wert": ["vorschlag": vorschlag]], vault: nil, oberflaeche: .studio)
                 == .ordnerWaehlen(titel: nil, vorschlag: nil), "\(vorschlag)")
     }
     // Hinweis: einzeilig, ohne Steuer-/Format-Zeichen, gekürzt, leer → nil
-    let titel = AppAktion.pruefe(["aktion": "ordner-waehlen", "wert": ["titel": "Zeile 1\nZeile\u{202E}2"]], vault: nil)
+    let titel = AppAktion.pruefe(["aktion": "ordner-waehlen", "wert": ["titel": "Zeile 1\nZeile\u{202E}2"]], vault: nil, oberflaeche: .studio)
     #expect(titel == .ordnerWaehlen(titel: "Zeile 1 Zeile2", vorschlag: nil))
-    #expect(AppAktion.pruefe(["aktion": "ordner-waehlen", "wert": ["titel": "  \n "]], vault: nil) == .ordnerWaehlen(titel: nil, vorschlag: nil))
-    #expect(AppAktion.pruefe(["aktion": "ordner-waehlen", "wert": ["titel": 5]], vault: nil) == .ordnerWaehlen(titel: nil, vorschlag: nil))
-    if case .ordnerWaehlen(let lang?, _)? = AppAktion.pruefe(["aktion": "ordner-waehlen", "wert": ["titel": String(repeating: "x", count: 500)]], vault: nil) {
+    #expect(AppAktion.pruefe(["aktion": "ordner-waehlen", "wert": ["titel": "  \n "]], vault: nil, oberflaeche: .studio) == .ordnerWaehlen(titel: nil, vorschlag: nil))
+    #expect(AppAktion.pruefe(["aktion": "ordner-waehlen", "wert": ["titel": 5]], vault: nil, oberflaeche: .studio) == .ordnerWaehlen(titel: nil, vorschlag: nil))
+    if case .ordnerWaehlen(let lang?, _)? = AppAktion.pruefe(["aktion": "ordner-waehlen", "wert": ["titel": String(repeating: "x", count: 500)]], vault: nil, oberflaeche: .studio) {
         #expect(lang.count == AppAktion.maxHinweis)
     } else {
         Issue.record("langer Hinweis wurde nicht gekürzt übernommen")
@@ -154,16 +154,16 @@ private func url(_ s: String) -> URL { URL(string: s)! }
 }
 
 @Test func aktionVaultGewechseltUndTitel() {
-    #expect(AppAktion.pruefe(["aktion": "vault-gewechselt"], vault: nil) == .vaultGewechselt)
-    #expect(AppAktion.pruefe(["aktion": "titel", "wert": "Mein Brain"], vault: nil) == .titel("Mein Brain"))
-    #expect(AppAktion.pruefe(["aktion": "titel", "wert": "  Mein\tBrain \n"], vault: nil) == .titel("Mein Brain"))
+    #expect(AppAktion.pruefe(["aktion": "vault-gewechselt"], vault: nil, oberflaeche: .studio) == .vaultGewechselt)
+    #expect(AppAktion.pruefe(["aktion": "titel", "wert": "Mein Brain"], vault: nil, oberflaeche: .studio) == .titel("Mein Brain"))
+    #expect(AppAktion.pruefe(["aktion": "titel", "wert": "  Mein\tBrain \n"], vault: nil, oberflaeche: .studio) == .titel("Mein Brain"))
     // leer/ohne Wert/null → Standardtitel; falscher Typ → verworfen
-    #expect(AppAktion.pruefe(["aktion": "titel", "wert": "   "], vault: nil) == .titel(nil))
-    #expect(AppAktion.pruefe(["aktion": "titel"], vault: nil) == .titel(nil))
-    #expect(AppAktion.pruefe(["aktion": "titel", "wert": NSNull()], vault: nil) == .titel(nil))
-    #expect(AppAktion.pruefe(["aktion": "titel", "wert": 5], vault: nil) == nil)
-    #expect(AppAktion.pruefe(["aktion": "titel", "wert": ["a": 1]], vault: nil) == nil)
-    if case .titel(let t?)? = AppAktion.pruefe(["aktion": "titel", "wert": String(repeating: "ä", count: 400)], vault: nil) {
+    #expect(AppAktion.pruefe(["aktion": "titel", "wert": "   "], vault: nil, oberflaeche: .studio) == .titel(nil))
+    #expect(AppAktion.pruefe(["aktion": "titel"], vault: nil, oberflaeche: .studio) == .titel(nil))
+    #expect(AppAktion.pruefe(["aktion": "titel", "wert": NSNull()], vault: nil, oberflaeche: .studio) == .titel(nil))
+    #expect(AppAktion.pruefe(["aktion": "titel", "wert": 5], vault: nil, oberflaeche: .studio) == nil)
+    #expect(AppAktion.pruefe(["aktion": "titel", "wert": ["a": 1]], vault: nil, oberflaeche: .studio) == nil)
+    if case .titel(let t?)? = AppAktion.pruefe(["aktion": "titel", "wert": String(repeating: "ä", count: 400)], vault: nil, oberflaeche: .studio) {
         #expect(t.count == AppAktion.maxTitel)
     } else {
         Issue.record("langer Titel wurde nicht gekürzt übernommen")
@@ -183,11 +183,19 @@ private func url(_ s: String) -> URL { URL(string: s)! }
     #expect(AppAktion.pruefe(["aktion": "ordner-zeigen", "wert": "a.md"], vault: v, oberflaeche: .app) != nil)
 }
 
-@Test func ordnerZeigenBrauchtEinenVault() {
-    #expect(AppAktion.pruefe(["aktion": "ordner-zeigen", "wert": "09_wiki/seite.md"], vault: nil) == nil)
-    // andere Aktionen brauchen keinen
+@Test func ohneAngabeGiltDieStrengsteHerkunft() {
+    // Wer die Herkunft vergisst, bekommt nur die drei alten Aktionen — nie Ordner-Dialog, Vault-Wechsel oder Titel.
+    for aktion in ["ordner-waehlen", "vault-gewechselt", "titel"] {
+        #expect(AppAktion.pruefe(["aktion": aktion], vault: nil) == nil, "\(aktion)")
+    }
     #expect(AppAktion.pruefe(["aktion": "ansicht"], vault: nil) == .ansicht)
-    #expect(AppAktion.pruefe(["aktion": "extern", "wert": "https://example.com"], vault: nil) != nil)
+}
+
+@Test func ordnerZeigenBrauchtEinenVault() {
+    #expect(AppAktion.pruefe(["aktion": "ordner-zeigen", "wert": "09_wiki/seite.md"], vault: nil, oberflaeche: .studio) == nil)
+    // andere Aktionen brauchen keinen
+    #expect(AppAktion.pruefe(["aktion": "ansicht"], vault: nil, oberflaeche: .studio) == .ansicht)
+    #expect(AppAktion.pruefe(["aktion": "extern", "wert": "https://example.com"], vault: nil, oberflaeche: .studio) != nil)
 }
 
 // MARK: Fenstermaße

@@ -21,7 +21,8 @@ public enum AppAktion: Equatable, Sendable {
 
     /// `{aktion:"ansicht"}`, `{aktion:"ordner-zeigen", wert:<rel. Pfad>}`, `{aktion:"extern", wert:<https-URL>}`,
     /// `{aktion:"ordner-waehlen", wert:{titel?, vorschlag?}}`, `{aktion:"vault-gewechselt"}`, `{aktion:"titel", wert:<Text>}`.
-    public static func pruefe(_ nachricht: Any, vault: URL?, oberflaeche: Oberflaeche = .studio) -> AppAktion? {
+    /// Ohne Angabe gilt die strengste Herkunft (Übersicht): die Studio-Aktionen muss man ausdrücklich freischalten.
+    public static func pruefe(_ nachricht: Any, vault: URL?, oberflaeche: Oberflaeche = .app) -> AppAktion? {
         guard let d = nachricht as? [String: Any], let name = d["aktion"] as? String else { return nil }
         let wert = d["wert"]
         switch name {
