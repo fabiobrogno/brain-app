@@ -3,13 +3,17 @@ import { readFileSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { baueVault, git } from "./vault.mjs";
 import { starteServer } from "./start.mjs";
+import { mockeV2 } from "./mocks.mjs";
 
 let vault, server;
 test.beforeEach(async () => { ({ vault } = baueVault()); server = await starteServer(vault); });
 test.afterEach(() => server?.stopp());
 
 const lese = (p) => readFileSync(join(vault, p));
+const gemockt = new WeakSet();
+async function mocke(page) { if (!gemockt.has(page)) { gemockt.add(page); await mockeV2(page, vault); } }
 async function oeffne(page, pfad) {
+  await mocke(page);
   await page.goto(server.url + "?pfad=" + encodeURIComponent(pfad));
   await page.waitForSelector(".cm-content .cm-line");
 }
@@ -139,16 +143,15 @@ test("Statusleiste zeigt Zweig und geändert; Sync-Knopf", async ({ page }) => {
   await expect(page.locator('[data-st="zweig"]')).toContainText("main");
   await expect(page.locator('[data-st="zweig"]')).toContainText("↑0 ↓0");
   await expect(page.locator('[data-st="geaendert"]')).toContainText("1 geändert");
-  await expect(page.locator('[data-st="inbox"]')).toContainText("Inbox 4");
+  await expect(page.locator('[data-bereich="inbox"] .zahl')).toHaveText("4");
   await page.click('[data-st="sync"]');
   await expect(page.locator('[data-st="sync"]')).toContainText(/Gesichert (vor \d+ Min|gerade eben)/, { timeout: 8000 });
 });
 
-test("Schreibschutz-Banner bei generierter Datei; Prüf-Punkt im Baum", async ({ page }) => {
+test("Schreibschutz-Banner bei generierter Datei; Prüf-Punkt an der Karte", async ({ page }) => {
   await oeffne(page, "09_wiki/INDEX.md");
   await expect(page.locator('[data-banner="schutz"]')).toBeVisible();
-  await page.click('[data-bereich="wiki"]');
-  await page.click('[data-pfad="09_wiki/wissen"]');
+  await page.click('[data-bereich="wissen"]');
   await expect(page.locator('[data-punkt="09_wiki/wissen/Espresso.md"]')).toHaveClass(/rot/, { timeout: 5000 });
 });
 
@@ -156,7 +159,7 @@ test("Hell/Dunkel und Palette; Infospalte per Tastenkürzel", async ({ page }) =
   await page.emulateMedia({ colorScheme: "dark" });
   await oeffne(page, "09_wiki/wissen/Kaffee.md");
   const bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
-  expect(bg).toBe("rgb(25, 25, 27)");
+  expect(bg).toBe("rgb(27, 27, 30)");
   await page.keyboard.press("Meta+k");
   await page.waitForSelector(".palette input:focus");
   await page.keyboard.type("Mühle");
@@ -164,14 +167,14 @@ test("Hell/Dunkel und Palette; Infospalte per Tastenkürzel", async ({ page }) =
   await expect(page.locator("#pfad")).toContainText("Mühle");
   await page.keyboard.press("Meta+Alt+i");
   await expect(page.locator("#app")).toHaveAttribute("data-info", "aus");
-  const breite = await page.evaluate(() => document.getElementById("info").getBoundingClientRect().width);
-  expect(breite).toBe(0);
+  await expect.poll(() => page.evaluate(() => document.getElementById("info").getBoundingClientRect().width)).toBe(0);
 });
 
 test("Leerer Vault: freundlicher Zustand", async ({ page }) => {
   server.stopp();
   const leer = baueVault({ leer: true });
   server = await starteServer(leer.vault);
+  await mockeV2(page, leer.vault);
   await page.goto(server.url);
   await expect(page.locator("#leer h2")).toHaveText("Dein Vault ist noch leer");
   const op = await page.evaluate(() => getComputedStyle(document.getElementById("leer")).opacity);
@@ -193,7 +196,7 @@ test("Palette findet tiefe Seite per Titel, Dateiname und Wortanfang; Enter ohne
     if (eingabe === "Claude Mods" || eingabe === "thema_claude-mods") await expect(page.locator('.palette [data-pal="notiz"] .r').first()).toHaveText(tief);
     else await page.locator('.palette [data-pal="notiz"]').filter({ hasText: tief }).click();
     if (eingabe === "Claude Mods" || eingabe === "thema_claude-mods") await page.keyboard.press("Enter");
-    await expect(page.locator("#pfad")).toContainText("thema_claude-mods");
+    await expect(page.locator("#pfad")).toContainText("Claude Mods");
     await oeffne(page, "09_wiki/wissen/Kaffee.md");
   }
   // kein Treffer: nur der ausdrückliche Anlegen-Eintrag, Enter tut nichts
@@ -211,19 +214,19 @@ test("Palette findet tiefe Seite per Titel, Dateiname und Wortanfang; Enter ohne
   await expect(page.locator('[data-feld="titel"]')).toHaveValue("zzzqqq");
 });
 
-test("Statusleiste zeigt Rückfragen n, wenn das Kit sie liefert", async ({ page }) => {
+test("Seitenleiste zeigt Rückfragen n, wenn das Kit sie liefert", async ({ page }) => {
   mkdirSync(join(vault, ".tools"), { recursive: true });
   writeFileSync(join(vault, ".tools/rueckfragen.mjs"), "export function sichtbare(){ return { fragen: [{},{}], wartend: 1 }; }\n");
   await oeffne(page, "09_wiki/wissen/Kaffee.md");
   // Das Kit liegt im Ordner: erst nach „Erlauben“ wird es ausgeführt
   if (await page.locator('[data-aktion="kit-erlauben"]').count()) await page.click('[data-aktion="kit-erlauben"]');
-  await expect(page.locator('[data-st="rueckfragen"]')).toHaveText("Rückfragen 3", { timeout: 5000 });
+  await expect(page.locator('[data-bereich="rueckfragen"] .zahl')).toHaveText("3", { timeout: 5000 });
 });
 
-test("Statusleiste: ohne Kit keine Rückfragen-Anzeige", async ({ page }) => {
+test("Seitenleiste: ohne Kit keine Rückfragen-Anzeige", async ({ page }) => {
   await oeffne(page, "09_wiki/wissen/Kaffee.md");
   await page.waitForTimeout(800);
-  await expect(page.locator('[data-st="rueckfragen"]')).toHaveCount(0);
+  await expect(page.locator('[data-bereich="rueckfragen"]')).toHaveCount(0);
 });
 
 test("Prüf-Signal: Kaffee ist gelb mit passendem Text, Mühle/Espresso behalten Stufen", async ({ page }) => {
@@ -231,15 +234,15 @@ test("Prüf-Signal: Kaffee ist gelb mit passendem Text, Mühle/Espresso behalten
   await expect(page.locator("#pille")).toHaveAttribute("data-stufe", "gelb", { timeout: 5000 });
 });
 
-test("Notizen: echte Struktur ohne Inbox/Wiki, 90_* ausgegraut am Ende, fehlende Inbox stört nicht", async ({ page }) => {
+test("Ordner: echte Struktur, 90_* ausgegraut am Ende, fehlende Inbox stört nicht", async ({ page }) => {
   for (const [p, t] of [["01_vorlagen/vorlage.md", "# Vorlage\n"], ["10_projekte/p.md", "# P\n"], ["40_persoenlich/x.md", "# X\n"], ["90_archiv/alt.md", "# Alt\n"], ["wurzel.md", "# Wurzel\n"]]) {
     mkdirSync(join(vault, p, ".."), { recursive: true }); writeFileSync(join(vault, p), t);
   }
   rmSync(join(vault, "00_inbox"), { recursive: true, force: true });
   await oeffne(page, "09_wiki/wissen/Kaffee.md");
-  await page.click('[data-bereich="notizen"]');
-  const namen = await page.locator("#baum .zeile").evaluateAll((els) => els.map((e) => e.dataset.pfad));
-  expect(namen).toEqual(["01_vorlagen", "10_notizen", "10_projekte", "30_wissen", "40_persoenlich", "wurzel.md", "90_archiv"]);
+  await expect(page.locator("#baum .zeile").first()).toBeVisible();
+  const namen = await page.locator("#baum .zeile").evaluateAll((els) => els.filter((e) => e.style.getPropertyValue("--tiefe") === "0").map((e) => e.dataset.pfad));
+  expect(namen).toEqual(["01_vorlagen", "09_wiki", "10_notizen", "10_projekte", "30_wissen", "40_persoenlich", "90_archiv"]);
   await expect(page.locator('#baum [data-pfad="90_archiv"]')).toHaveClass(/archiv/);
   expect(Number(await page.locator('#baum [data-pfad="90_archiv"]').evaluate((e) => getComputedStyle(e).opacity))).toBeLessThan(1);
   await expect(page.locator('#baum [data-pfad="01_vorlagen"]')).not.toHaveClass(/archiv/);
@@ -255,11 +258,9 @@ test("Palette: sofort nach ⌘K getippte Zeichen gehen nicht verloren", async ({
 
 // ---------------------------------------------------------------- Review-Befunde
 const DATEI_A = "10_notizen/Reise nach Lissabon.md";
-const wechsle = (page, pfad) => page.evaluate((p) => document.querySelector(`[data-pfad="${p}"]`)?.click(), pfad);
-async function sichtbareDatei(page, pfad) { // Baum auf „Alle“ und Ordner offen lassen
-  await page.click('[data-bereich="wiki"]');
-  if (!(await page.locator(`#baum [data-pfad="${pfad}"]`).count())) await page.click('#baum [data-pfad="09_wiki/wissen"]');
-  await expect(page.locator(`#baum [data-pfad="${pfad}"]`)).toBeVisible();
+const wechsle = (page, pfad) => page.evaluate((p) => document.querySelector(`[data-karte][data-pfad="${p}"]`)?.click(), pfad);
+async function sichtbareDatei(page, pfad) { // „Alle Notizen“ zeigt jede Karte
+  await expect(page.locator(`#liste-koerper [data-karte][data-pfad="${pfad}"]`)).toBeVisible();
 }
 
 for (const status of [500, 413]) {
@@ -374,17 +375,19 @@ test("Ordner zeigen: nur in der App, mit Pfad der offenen Datei", async ({ page 
   await expect(page.locator('.palette [data-pal="befehl"]')).toHaveCount(0); // Browser: ausgeblendet
   await page.keyboard.press("Escape");
   const page2 = await page.context().newPage();
+  await mocke(page2);
   await page2.addInitScript(() => { window.__aktionen = []; window.webkit = { messageHandlers: { aktion: { postMessage: (m) => window.__aktionen.push(m) } } }; });
   await page2.goto(server.url + "?pfad=" + encodeURIComponent(DATEI_A));
   await page2.waitForSelector(".cm-content .cm-line");
   await page2.keyboard.press("Meta+k");
   await page2.keyboard.type(">Finder");
   await page2.keyboard.press("Enter");
-  await expect.poll(() => page2.evaluate(() => window.__aktionen)).toEqual([{ aktion: "ordner-zeigen", wert: DATEI_A }]);
+  await expect.poll(() => page2.evaluate(() => window.__aktionen.filter((a) => a.aktion === "ordner-zeigen"))).toEqual([{ aktion: "ordner-zeigen", wert: DATEI_A }]);
 });
 
 test("Menübefehl vor fertigem Start wird gemerkt und danach ausgeführt; bereit-Flag", async ({ page }) => {
   await page.route("**/api/info", async (route) => { await new Promise((r) => setTimeout(r, 700)); await route.fallback(); });
+  await mocke(page);
   await page.addInitScript(() => {
     const iv = setInterval(() => { if (window.studio?.befehl) { clearInterval(iv); window.__bereitBeiBefehl = window.studio.bereit; window.studio.befehl("merken"); } }, 5);
   });
@@ -422,7 +425,7 @@ test("Kit-Vertrauen: Hinweis, Erlauben lädt Gesundheit/Rückfragen sofort", asy
   await expect(hinweis).toHaveCount(0);
   expect(stand.post).toEqual([{ erlauben: true }]);
   await expect(page.locator('[data-st="gesundheit"]')).toBeVisible();
-  await expect(page.locator('[data-st="rueckfragen"]')).toHaveText("Rückfragen 2");
+  await expect(page.locator('[data-bereich="rueckfragen"] .zahl')).toHaveText("2");
   expect(stand.gesundheit).toBeGreaterThan(vorher);
 });
 
@@ -432,10 +435,12 @@ test("Kit-Vertrauen: Nicht jetzt blendet aus; vertraut oder ohne kit-Feld: kein 
   await page.click('[data-aktion="kit-spaeter"]');
   await expect(page.locator('[data-banner="kit"]')).toHaveCount(0);
   const p2 = await page.context().newPage();
+  await mocke(p2);
   await kitRouten(p2, { vertraut: true });
   await p2.goto(server.url + "?pfad=" + encodeURIComponent(DATEI_A)); await p2.waitForSelector(".cm-content .cm-line");
   await expect(p2.locator('[data-banner="kit"]')).toHaveCount(0);
   const p3 = await page.context().newPage(); // echtes Backend, evtl. ohne kit-Feld
+  await mocke(p3);
   await p3.goto(server.url + "?pfad=" + encodeURIComponent(DATEI_A)); await p3.waitForSelector(".cm-content .cm-line");
   await p3.waitForTimeout(500);
   await expect(p3.locator('[data-banner="kit"]')).toHaveCount(0);

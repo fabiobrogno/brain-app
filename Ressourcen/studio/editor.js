@@ -99,7 +99,8 @@ function vorschau(view, ctx) {
   const aktiv = aktiveZeilen(state);
   const fokus = view.hasFocus;
   const liste = [];
-  const zeileAktiv = (pos) => fokus && aktiv.has(doc.lineAt(pos).number);
+  const roh = !!ctx.roh?.();
+  const zeileAktiv = (pos) => roh || (fokus && aktiv.has(doc.lineAt(pos).number));
   const fm = frontmatterBereich(doc.toString());
   const fmBis = fm ? fm.bis : -1;
   const zeilenKlasse = new Map(); // Zeilenanfang -> Klassen
@@ -352,6 +353,7 @@ export function erstelleEditor(eltern, ctx) {
         extensions: erweiterungen(ende),
       });
       view.setState(state);
+      if (ctx.roh?.()) view.dispatch({ effects: fmUmschalten.of(false) });
       view.dispatch({ effects: schreibschutzFeld.reconfigure(nurLesen ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []) });
     },
     // Originaltext mit ursprünglichen Zeilenenden
@@ -369,5 +371,7 @@ export function erstelleEditor(eltern, ctx) {
     },
     suchen() { view.focus(); CM.openSearchPanel(view); },
     fokus() { view.focus(); },
+    // Rohtext: alle Markierungen sichtbar, Datei-Kopf aufgeklappt (der Text selbst bleibt unverändert)
+    setzeRoh() { view.dispatch({ effects: [fmUmschalten.of(!ctx.roh?.()), neuZeichnen.of(null)] }); },
   };
 }

@@ -4,7 +4,8 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-const wurzel = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+// BRAIN_WURZEL: alternative Wurzel mit Ressourcen/werkstatt (z. B. fester Backend-Stand), sonst dieses Repo
+const wurzel = process.env.BRAIN_WURZEL || join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 // Eigener Support-Ordner je Server (nie der echte). Standard: Vault ist vertraut (Kit läuft); { vertraut: false } = unvertraut.
 export function starteServer(vault, { vertraut = true } = {}) {
   const support = mkdtempSync(join(tmpdir(), "brain-ui-support-"));

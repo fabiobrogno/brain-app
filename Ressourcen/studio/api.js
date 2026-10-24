@@ -63,6 +63,23 @@ export const api = {
   fassung: (pfad, sha) => anfrage("GET", "/api/git/fassung" + q({ pfad, sha })),
   kitVertrauen: (erlauben) => anfrage("POST", "/api/kit/vertrauen", { erlauben: !!erlauben }),
   mcpVerbinden: () => anfrage("POST", "/api/mcp/verbinden", { ziel: "claude" }),
+  // ---- v2: Index, Typen, Ansichten, Kontext, Verlauf des Repos
+  notizen: () => anfrage("GET", "/api/notizen"),
+  notizKontext: (pfad) => anfrage("GET", "/api/notiz/kontext" + q({ pfad })),
+  typen: () => anfrage("GET", "/api/typen"),
+  ansichten: () => anfrage("GET", "/api/ansichten"),
+  gitLog: ({ max, vor } = {}) => anfrage("GET", "/api/git/log" + q({ max, vor })),
+  gitRemote: (url) => anfrage("POST", "/api/git/remote", { url }),
+  // ---- v2: Vaults, KI, Probe
+  vaults: () => anfrage("GET", "/api/vaults"),
+  vaultAktiv: (pfad) => anfrage("POST", "/api/vaults/aktiv", { pfad }),
+  vaultNeu: (art, name, ordner) => anfrage("POST", "/api/vaults/neu", ordner ? { art, name, ordner } : { art, name }),
+  vaultOeffnen: (pfad, extra) => anfrage("POST", "/api/vaults/oeffnen", { pfad, ...(extra || {}) }),
+  vaultKlonen: (url, ordner) => anfrage("POST", "/api/vaults/klonen", ordner ? { url, ordner } : { url }),
+  vaultEntfernen: (pfad) => anfrage("POST", "/api/vaults/entfernen", { pfad }),
+  kiErkennen: () => anfrage("GET", "/api/ki/erkennen"),
+  kitHooks: () => anfrage("POST", "/api/kit/hooks", {}),
+  probe: (frage) => anfrage("POST", "/api/probe", { frage }),
 };
 
 // Aktion an die App (kein Datenweg); im Browser still ohne Wirkung.
@@ -71,3 +88,10 @@ export function aktion(name, wert) {
   catch { return false; }
 }
 export const inApp = () => !!window.webkit?.messageHandlers?.aktion;
+// Aktion mit Antwort der App (z. B. "ordner-waehlen" → {pfad}|null). Im Browser: undefined.
+export async function aktionMitAntwort(name, wert) {
+  const hnd = window.webkit?.messageHandlers?.aktion;
+  if (!hnd) return undefined;
+  try { return await hnd.postMessage(wert === undefined ? { aktion: name } : { aktion: name, wert }); }
+  catch { return undefined; }
+}
