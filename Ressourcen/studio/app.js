@@ -261,7 +261,11 @@ function setzeFenstertitel() {
 }
 
 // ======================================================= Index (Notizen, Typen, Ansichten)
-const bereichVonPfad = (p) => (p.startsWith("00_inbox/") ? "inbox" : p.startsWith("09_wiki/") ? "wissen" : /^90_/.test(p) ? "archiv" : "notiz");
+// Wie der Werkstatt-Index: _-Ordner im Posteingang sind maschinell, Vorlagen und Agenten-Anweisungen in der Wurzel keine Notizen
+const bereichVonPfad = (p) => (/^90_/.test(p) ? "archiv" : /^00_inbox\/_/.test(p) ? "maschine" : p.startsWith("01_vorlagen/") ? "vorlage"
+  : /^(claude|agents|gemini)\.md$/i.test(p) ? "system" : p.startsWith("00_inbox/") ? "inbox" : p.startsWith("09_wiki/") ? "wissen" : "notiz");
+const SICHTBAR = new Set(["inbox", "notiz", "wissen"]); // erscheinen in „Alle Notizen“, Typen und Ansichten
+const istNotiz = (n) => SICHTBAR.has(n.bereich) && !n.generiert;
 function notizenAusBaum() {
   return dateien().map((e) => ({
     pfad: e.pfad, titel: e.titel || ohneEndung(dateiName(e.pfad)), vorschau: "", typ: null, bereich: bereichVonPfad(e.pfad),
@@ -270,13 +274,13 @@ function notizenAusBaum() {
 }
 function typenAusNotizen() {
   const m = new Map();
-  for (const n of S.notizen) if (n.typ) m.set(n.typ, (m.get(n.typ) || 0) + 1);
+  for (const n of S.notizen) if (n.typ && istNotiz(n)) m.set(n.typ, (m.get(n.typ) || 0) + 1);
   return [...m].map(([name, anzahl]) => ({ name, anzahl, farbe: null, symbol: "notiz" })).sort((a, b) => b.anzahl - a.anzahl);
 }
 const neuesteZuerst = (a, b) => (Date.parse(b.geaendert) || 0) - (Date.parse(a.geaendert) || 0);
 function leiteAnsichtenAb(apiAnsichten) {
   const heute = new Date().toLocaleDateString("sv-SE");
-  const basis = S.notizen.filter((n) => !n.generiert && n.bereich !== "archiv");
+  const basis = S.notizen.filter(istNotiz);
   const abgelaufen = (n) => [n.felder?.pruefen_bis, n.felder?.verfall].some((d) => typeof d === "string" && /^\d{4}-\d{2}-\d{2}/.test(d) && d.slice(0, 10) < heute);
   S.ansichtMitglieder = {
     abgelaufen: basis.filter((n) => n.bereich === "wissen" && abgelaufen(n)),
@@ -286,7 +290,7 @@ function leiteAnsichtenAb(apiAnsichten) {
   };
   // Trägt jede Notiz ihre Ansichten selbst (Feld `ansichten`, so liefert es der Werkstatt-Index), gilt das und nicht die Ableitung
   if (S.notizen.some((n) => Array.isArray(n.ansichten))) {
-    for (const id of Object.keys(S.ansichtMitglieder)) S.ansichtMitglieder[id] = S.notizen.filter((n) => Array.isArray(n.ansichten) && n.ansichten.includes(id));
+    for (const id of Object.keys(S.ansichtMitglieder)) S.ansichtMitglieder[id] = S.notizen.filter((n) => istNotiz(n) && Array.isArray(n.ansichten) && n.ansichten.includes(id));
   }
   // Liefert die Schnittstelle selbst Mitglieder (pfade), gelten diese
   S.ansichtAusApi = false;
@@ -338,7 +342,7 @@ function zaehler() {
   const z = { inbox: 0, alle: 0, wissen: 0, archiv: 0 };
   for (const n of S.notizen) {
     if (n.bereich === "archiv") z.archiv++;
-    else if (!n.generiert) { z.alle++; if (n.bereich === "inbox") z.inbox++; if (n.bereich === "wissen") z.wissen++; }
+    else if (istNotiz(n)) { z.alle++; if (n.bereich === "inbox") z.inbox++; if (n.bereich === "wissen") z.wissen++; }
   }
   return z;
 }
@@ -347,12 +351,12 @@ function sichtNotizen() {
   const l = S.notizen;
   if (art === "bereich") {
     if (id === "inbox") return l.filter((n) => n.bereich === "inbox" && !n.generiert);
-    if (id === "alle") return l.filter((n) => n.bereich !== "archiv" && !n.generiert);
+    if (id === "alle") return l.filter(istNotiz);
     if (id === "wissen") return l.filter((n) => n.bereich === "wissen" && !n.generiert);
     if (id === "archiv") return l.filter((n) => n.bereich === "archiv");
   }
   if (art === "ansicht") return S.ansichtMitglieder[id] || [];
-  if (art === "typ") return l.filter((n) => n.typ === id && !n.generiert);
+  if (art === "typ") return l.filter((n) => n.typ === id && istNotiz(n));
   if (art === "ordner") return l.filter((n) => n.pfad.startsWith(id + "/"));
   if (art === "favoriten") return l.filter((n) => S.favoriten.has(n.pfad));
   return l;
@@ -691,9 +695,12 @@ function zeichnePfad() {
   const n = S.nMap.get(S.pfad);
   const bereich = n?.bereich || bereichVonPfad(S.pfad);
   const teile = ordnerVon(S.pfad) ? ordnerVon(S.pfad).split("/") : [];
-  const bereichWurzel = bereich === "inbox" ? "00_inbox" : bereich === "wissen" ? "09_wiki" : null;
-  const bereichText = bereich === "inbox" ? T.bereiche.inbox : bereich === "wissen" ? T.bereiche.wissen : bereich === "archiv" ? T.bereiche.archiv : "Notizen";
-  const kinder = [h("span", { klasse: "krume link", text: bereichText, aufClick: () => waehleSicht({ art: "bereich", id: bereich === "notiz" ? "alle" : bereich }) })];
+  const bereichWurzel = bereich === "inbox" || bereich === "maschine" ? "00_inbox" : bereich === "wissen" ? "09_wiki" : bereich === "vorlage" ? "01_vorlagen" : null;
+  const bereichText = bereich === "inbox" || bereich === "maschine" ? T.bereiche.inbox : bereich === "wissen" ? T.bereiche.wissen : bereich === "archiv" ? T.bereiche.archiv
+    : bereich === "vorlage" ? T.bereiche.vorlagen : "Notizen";
+  const zuBereich = () => (bereich === "vorlage" ? waehleSicht({ art: "ordner", id: "01_vorlagen" })
+    : waehleSicht({ art: "bereich", id: bereich === "maschine" ? "inbox" : ["inbox", "wissen", "archiv"].includes(bereich) ? bereich : "alle" }));
+  const kinder = [h("span", { klasse: "krume link", text: bereichText, aufClick: zuBereich })];
   let acc = "";
   teile.forEach((t) => {
     acc = acc ? acc + "/" + t : t;
@@ -726,7 +733,7 @@ function zeichneWerkzeuge() {
     k.push(werkzeugKnopf("w-breit", "breite", S.breit ? T.werkzeuge.schmal : T.werkzeuge.breit, umschalteBreit, { gedrueckt: S.breit }));
     k.push(werkzeugKnopf("w-gliederung", "gliederung", T.werkzeuge.gliederung, (e) => zeigeGliederung(e.currentTarget)));
   }
-  k.push(werkzeugKnopf("knopf-info", "eigenschaften", T.werkzeuge.eigenschaften, umschalteInfo, { gedrueckt: S.infoAn, label: T.eigenschaften.titel }));
+  k.push(werkzeugKnopf("knopf-info", "eigenschaften", T.werkzeuge.eigenschaften, umschalteInfo, { gedrueckt: $("app").dataset.info === "an", label: T.eigenschaften.titel }));
   $("werkzeuge").replaceChildren(...k);
   $("haupt").dataset.breite = S.breit ? "breit" : "normal";
   $("editor").dataset.roh = S.roh ? "an" : "aus";
@@ -831,11 +838,12 @@ async function ladeInfo() {
   const wahrheit = sektion("pruefung", T.eigenschaften.wahrheit, h("div", { klasse: "status-karte" }, h("div", { klasse: "leise", text: T.eigenschaften.zuPruefen })));
   const feldSek = sektion("felder", null);
   const bezSek = sektion("beziehungen", T.eigenschaften.beziehungen);
+  const verwSek = sektion("verweise", T.eigenschaften.verweise);
   const rueckSek = sektion("rueck", T.eigenschaften.rueck);
   const infoSek = sektion("info", T.eigenschaften.info);
   const verlaufSek = sektion("verlauf", T.eigenschaften.verlauf);
-  bezSek.hidden = rueckSek.hidden = true;
-  inhalt.append(wahrheit, feldSek, bezSek, rueckSek, infoSek, verlaufSek);
+  bezSek.hidden = verwSek.hidden = rueckSek.hidden = true;
+  inhalt.append(wahrheit, feldSek, bezSek, verwSek, rueckSek, infoSek, verlaufSek);
 
   // Wahrheitsstatus
   api.pruefung(pfad).then((pr) => {
@@ -886,6 +894,15 @@ async function ladeInfo() {
     const bez = (k.beziehungen || []).filter((b) => (b.ziele || []).length);
     bezSek.hidden = !bez.length;
     if (bez.length) bezSek.replaceChildren(h("h3", { text: T.eigenschaften.beziehungen }), ...bez.map((b) => h("div", { klasse: "beziehung", "data-beziehung": b.feld }, h("div", { klasse: "k", text: schoenerName(b.feld) }), h("div", { klasse: "ziele" }, b.ziele.map(zielKnopf)))));
+    // Links im Text (ohne die schon als Beziehung gezeigten); lange Listen erst gekürzt
+    const schonGezeigt = new Set(bez.flatMap((b) => b.ziele));
+    const vw = (k.verweise || []).filter((z) => !schonGezeigt.has(z) && z !== pfad);
+    verwSek.hidden = !vw.length;
+    if (vw.length) {
+      const kurz = 8, ziele = h("div", { klasse: "ziele" }, vw.slice(0, kurz).map(zielKnopf));
+      const mehr = vw.length > kurz ? h("button", { klasse: "wert-mehr", type: "button", text: T.eigenschaften.alleVerweise(vw.length), aufClick: () => { ziele.replaceChildren(...vw.map(zielKnopf)); mehr.remove(); } }) : null;
+      verwSek.replaceChildren(h("h3", { text: T.eigenschaften.verweise }), ziele, ...(mehr ? [mehr] : []));
+    }
     const rv = k.rueckverweise || [];
     rueckSek.hidden = false;
     rueckSek.replaceChildren(h("h3", { text: T.eigenschaften.rueck }), ...(rv.length ? [h("div", { klasse: "ziele" }, rv.map((x) => zielKnopf(x.pfad)))] : [h("p", { klasse: "leise", style: "margin:0", text: T.info.keineRueck })]));
@@ -1221,10 +1238,12 @@ function oeffnePalette(vorgabe = "") {
 }
 
 // ======================================================= Eigenschaften ein/aus
+// Ist das Fenster zu schmal, klappt die Spalte von selbst ein (die Einstellung bleibt); ein Klick holt sie trotzdem.
+const infoSichtbar = () => S.infoAn && (!S.infoEng || S.infoErzwungen);
 function umschalteInfo() {
-  S.infoAn = !S.infoAn; speichereLokal("infoAn", S.infoAn);
-  $("app").dataset.info = S.infoAn ? "an" : "aus";
-  $("knopf-info")?.setAttribute("aria-pressed", String(S.infoAn));
+  if (infoSichtbar()) { S.infoAn = false; S.infoErzwungen = false; }
+  else { S.infoAn = true; S.infoErzwungen = !!S.infoEng; }
+  speichereLokal("infoAn", S.infoAn);
   begrenzeBreiten();
 }
 $("app").dataset.info = S.infoAn ? "an" : "aus";
@@ -1235,21 +1254,28 @@ $("fuss-merken").addEventListener("click", oeffneMerken);
 // ======================================================= Spaltenbreiten (Ziehen, Tastatur, Doppelklick = Standard)
 const GRENZEN = { seite: [200, 380], liste: [248, 560], info: [248, 520] };
 const standardBreite = (n) => (window.innerWidth < 1200 ? { seite: 224, liste: 272, info: 272 } : { seite: 252, liste: 308, info: 304 })[n];
-const W = { seite: 252, liste: 308, info: 304 };
+const W = { seite: 252, liste: 308, info: 304 }; // gewünschte Breiten (gezogen, gespeichert)
+const E = { ...W }; // tatsächliche Breiten, wenn das Fenster nicht für alle Wünsche reicht
+const EDITOR_MIN = 420, EDITOR_MIN_MIT_INFO = 560;
 function wendeBreitenAn() {
   const app = $("app");
-  app.style.setProperty("--b-seite", W.seite + "px"); app.style.setProperty("--b-liste", W.liste + "px"); app.style.setProperty("--b-info-voll", W.info + "px");
+  app.style.setProperty("--b-seite", E.seite + "px"); app.style.setProperty("--b-liste", E.liste + "px"); app.style.setProperty("--b-info-voll", E.info + "px");
 }
 function begrenzeBreiten() {
-  const platz = window.innerWidth - 420 - (S.infoAn ? 0 : 0);
   for (const n of ["seite", "liste", "info"]) W[n] = Math.min(GRENZEN[n][1], Math.max(GRENZEN[n][0], W[n]));
-  // Der Editor behält mindestens 420 px
-  let uebrig = window.innerWidth - W.seite - W.liste - (S.infoAn ? W.info : 0) - 420;
-  for (const n of S.infoAn ? ["info", "liste", "seite"] : ["liste", "seite"]) {
+  // Neben der Eigenschaften-Spalte soll der Editor mindestens 560 px behalten, sonst klappt sie ein
+  S.infoEng = window.innerWidth < GRENZEN.seite[0] + GRENZEN.liste[0] + GRENZEN.info[0] + EDITOR_MIN_MIT_INFO;
+  if (!S.infoEng) S.infoErzwungen = false;
+  const zeige = infoSichtbar();
+  Object.assign(E, W);
+  let uebrig = window.innerWidth - E.seite - E.liste - (zeige ? E.info : 0) - (zeige && !S.infoErzwungen ? EDITOR_MIN_MIT_INFO : EDITOR_MIN);
+  for (const n of zeige ? ["info", "liste", "seite"] : ["liste", "seite"]) {
     if (uebrig >= 0) break;
-    const kann = W[n] - GRENZEN[n][0]; const nimm = Math.min(kann, -uebrig); W[n] -= nimm; uebrig += nimm;
+    const nimm = Math.min(E[n] - GRENZEN[n][0], -uebrig); E[n] -= nimm; uebrig += nimm;
   }
-  void platz; wendeBreitenAn();
+  $("app").dataset.info = zeige ? "an" : "aus";
+  $("knopf-info")?.setAttribute("aria-pressed", String(zeige));
+  wendeBreitenAn();
 }
 const speichereBreiten = () => speichereLokal("breiten", W);
 function richteGriffeEin() {
@@ -1262,7 +1288,7 @@ function richteGriffeEin() {
     g.addEventListener("pointerdown", (e) => {
       if (e.button !== 0) return;
       e.preventDefault(); g.setPointerCapture(e.pointerId);
-      const start = e.clientX, b0 = W[name];
+      const start = e.clientX, b0 = E[name]; // vom sichtbaren Stand aus ziehen
       app.classList.add("zieht"); g.classList.add("aktiv");
       const move = (ev) => { W[name] = b0 + (name === "info" ? start - ev.clientX : ev.clientX - start); begrenzeBreiten(); };
       const up = () => { g.removeEventListener("pointermove", move); g.removeEventListener("pointerup", up); g.removeEventListener("pointercancel", up); app.classList.remove("zieht"); g.classList.remove("aktiv"); speichereBreiten(); };
@@ -1272,7 +1298,7 @@ function richteGriffeEin() {
     g.addEventListener("keydown", (e) => {
       if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
       e.preventDefault();
-      W[name] += (e.key === "ArrowRight" ? 16 : -16) * (name === "info" ? -1 : 1); begrenzeBreiten(); speichereBreiten();
+      W[name] = E[name] + (e.key === "ArrowRight" ? 16 : -16) * (name === "info" ? -1 : 1); begrenzeBreiten(); speichereBreiten();
     });
   });
   window.addEventListener("resize", begrenzeBreiten);

@@ -4,7 +4,7 @@ export const PRODUKT = "Brain";
 export const T = {
   produkt: PRODUKT,
   suche: { platzhalter: "Suchen", keine: "Nichts gefunden.", zeile: "Zeile" },
-  bereiche: { inbox: "Posteingang", rueckfragen: "Rückfragen", alle: "Alle Notizen", wissen: "Wissen", archiv: "Archiv" },
+  bereiche: { inbox: "Posteingang", rueckfragen: "Rückfragen", alle: "Alle Notizen", wissen: "Wissen", archiv: "Archiv", vorlagen: "Vorlagen" },
   abschnitte: { favoriten: "Favoriten", ansichten: "Ansichten", typen: "Typen", ordner: "Ordner" },
   ansichten: { abgelaufen: "Abgelaufen", strittig: "Strittig", ungeprueft: "Ungeprüft", zuletzt: "Zuletzt geändert" },
   ansichtenHinweis: {
@@ -60,7 +60,7 @@ export const T = {
     behalten: "Meine Fassung behalten",
   },
   eigenschaften: {
-    titel: "Eigenschaften", schliessen: "Eigenschaften ausblenden", wahrheit: "Wahrheitsstatus", typ: "Typ", felder: "Felder", beziehungen: "Beziehungen", rueck: "Rückverweise", info: "Info", verlauf: "Verlauf",
+    titel: "Eigenschaften", schliessen: "Eigenschaften ausblenden", wahrheit: "Wahrheitsstatus", typ: "Typ", felder: "Felder", beziehungen: "Beziehungen", verweise: "Verweist auf", alleVerweise: (n) => `Alle ${n} anzeigen`, rueck: "Rückverweise", info: "Info", verlauf: "Verlauf",
     stand: "Stand", pruefenBis: "Prüfen bis", herkunft: "Herkunft", belege: "Belege", kritisch: "Kritisch", keinTyp: "Kein Typ", keineFelder: "Diese Notiz hat keinen Datei-Kopf.", keineBeziehungen: "Noch keine Verknüpfungen.",
     geaendert: "Geändert", erstellt: "Erstellt", woerter: "Wörter", groesse: "Größe", offenEntfernt: "nicht gefunden", leer: "Wähle links eine Notiz, dann stehen hier ihre Eigenschaften.",
     zuPruefen: "Wird geprüft …",

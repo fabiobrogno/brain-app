@@ -118,3 +118,20 @@ App → Oberfläche: Aktion `ordner-waehlen` (Kanal `aktion` mit Antwort) öffne
 
 Node-, Swift-, Playwright-Tests grün · Screenshots hell+dunkel bei 1440×900 neben die Tolaria-Bilder gelegt und selbst geprüft ·
 Echtdaten-Lauf gegen eine Kopie von `~/brain` · am Ende EIN Opus-Review über Welle 1+2.
+
+## 7. Zusagen aus dem Bauplan (Vergleichsseite, Fassung 2)
+
+Was die Vergleichsseite unter „bei uns besser“ verspricht, gehört in die Wellen 3 und 4:
+
+| Ablauf | Zusage | Welle |
+|---|---|---|
+| Commit | Commit-Dialog vorbelegt mit den Titeln der Notizen („Amazon Nachtlauf, Heimnetz Mesh aktualisiert“, ab 3: „… und 2 weitere“), ⌘↵ schickt ab; nur angehakte Dateien | 4 |
+| Push abgelehnt | Klartext-Satz plus Knopf „Holen und erneut senden“ (fetch → ff/merge → push), Statusleiste „Pull nötig“ | 4 |
+| Konflikt | Konflikt-Karte: beide Fassungen nebeneinander, absatzweise, mit Stand/Beleg, je Absatz „Diese gilt / Andere gilt“; Merge wird bei Fehler ganz abgebrochen (heute schon so) | 4 |
+| Git aus | Ordner ohne Git: Frage „Git für diesen Vault einschalten?“ mit „Nie für diesen Vault / Später / Git einschalten“; danach nur „Git aus“ in der Statusleiste | 2 (Rest) |
+| KI-Antwort | Quellen in der Antwort als Notiz-Chips mit Wahrheitspunkt; Schreiben nur als Vorschlag mit Diff und „Übernehmen“ | 4 |
+| Palette | Leerzeichen am Anfang = Frage an Claude | 4 |
+| Editor | Slash-Menü in Gruppen mit Kürzeln; Wikilink-Vorschläge mit Typ-Marke; Linkfarbe nach Zieltyp; kaputte Links grau; Link auf abgelaufene/strittige Seite zeigt das beim Schreiben | 3 |
+| KI-Einstellungen | Keine API-Schlüssel in der App; „Mit Claude verbinden“ trägt MCP und Hooks selbst ein und lässt sich mit einem Klick zurücknehmen; KI-Flächen ganz abschaltbar | 4 |
+
+Dazu aus der Sichtprüfung mit echten Daten (24.10. abends): fest umbrochene Absätze fließend anzeigen (Datei bleibt gleich, aktiver Absatz roh), Eigenschaften-Spalte klappt bei schmalem Fenster von selbst ein, „Verweist auf“ (Links im Text) im Eigenschaften-Panel, Maschinen-Ordner/Vorlagen/Agenten-Anweisungen nicht in „Alle Notizen“.

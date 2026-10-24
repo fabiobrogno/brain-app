@@ -32,7 +32,8 @@ export function baueIndex(vault) {
     const h1 = /^#\s+(.+)$/m.exec(rest)?.[1]?.trim();
     const titel = h1 || felder.title || felder.titel || felder.name || basename(pfad).replace(/\.(md|txt)$/i, "");
     const absaetze = rest.split(/\n\s*\n/).map((a) => a.replace(/^#.*$/gm, "").trim()).filter(Boolean);
-    const bereich = pfad.startsWith("00_inbox/") ? "inbox" : pfad.startsWith("09_wiki/") ? "wissen" : /^90_/.test(pfad) ? "archiv" : "notiz";
+    const bereich = /^90_/.test(pfad) ? "archiv" : /^00_inbox\/_/.test(pfad) ? "maschine" : pfad.startsWith("01_vorlagen/") ? "vorlage"
+      : /^(claude|agents|gemini)\.md$/i.test(pfad) ? "system" : pfad.startsWith("00_inbox/") ? "inbox" : pfad.startsWith("09_wiki/") ? "wissen" : "notiz";
     const st = statSync(join(vault, pfad));
     return {
       pfad, titel, vorschau: (felder.description || absaetze[0] || "").slice(0, 200), typ: felder.typ || felder.type || null, bereich,
@@ -47,21 +48,24 @@ export function baueTypen(index) {
   return [...m].map(([name, anzahl]) => ({ name, anzahl, farbe: (BEKANNT[name] || ["#8b877f", "notiz"])[0], symbol: (BEKANNT[name] || ["", "notiz"])[1] }));
 }
 
+// Lädt die Seite neu, während eine Anfrage noch läuft, ist die Anfrage verworfen; nur dann still aufgeben
+const verworfen = (e) => { if (!/disposed|closed|already handled/i.test(String(e?.message))) throw e; };
+
 // opts.erzwingen: true = immer die Attrappe (auch wenn das Backend antwortet)
 export async function mockeV2(page, vault, { erzwingen = false, ueberschreibe = {} } = {}) {
   const versuche = async (route, bauer) => {
-    if (!erzwingen) { try { const r = await route.fetch(); if (r.status() !== 404) return route.fulfill({ response: r }); } catch { /* weiter mit Attrappe */ } }
-    return route.fulfill({ json: bauer() });
+    if (!erzwingen) { try { const r = await route.fetch(); if (r.status() !== 404) return await route.fulfill({ response: r }); } catch { /* weiter mit Attrappe */ } }
+    return route.fulfill({ json: bauer() }).catch(verworfen);
   };
   await page.route("**/api/notizen", async (route) => {
-    if (!erzwingen) { try { const r = await route.fetch(); if (r.status() !== 404) return route.fulfill({ response: r }); } catch { /* weiter mit Attrappe */ } }
+    if (!erzwingen) { try { const r = await route.fetch(); if (r.status() !== 404) return await route.fulfill({ response: r }); } catch { /* weiter mit Attrappe */ } }
     const notizen = ueberschreibe.notizen || baueIndex(vault);
     // Prüf-Stufe der Wiki-Seiten über die echte Prüf-Route (die gibt es schon)
     const ursprung = new URL(route.request().url()).origin;
     await Promise.all(notizen.filter((n) => n.bereich === "wissen").map(async (n) => {
       try { const r = await page.request.get(`${ursprung}/api/pruefung?pfad=${encodeURIComponent(n.pfad)}`); if (r.ok()) n.stufe = (await r.json()).stufe || n.stufe; } catch { /* bleibt */ }
     }));
-    return route.fulfill({ json: { notizen } });
+    return route.fulfill({ json: { notizen } }).catch(verworfen);
   });
   await page.route("**/api/typen", (route) => versuche(route, () => ({ typen: ueberschreibe.typen || baueTypen(ueberschreibe.notizen || baueIndex(vault)) })));
   await page.route("**/api/ansichten", (route) => versuche(route, () => ({ ansichten: ueberschreibe.ansichten || [] })));
@@ -71,6 +75,6 @@ export async function mockeV2(page, vault, { erzwingen = false, ueberschreibe = 
     const bez = Object.entries(n.felder).filter(([, w]) => /\[\[/.test(w)).map(([feld, w]) => ({ feld, ziele: [...String(w).matchAll(/\[\[([^\]|#]+)/g)].map((x) => x[1].trim()) }));
     const rueck = baueIndex(vault).filter((x) => x.pfad !== pfad && x.links.some((l) => l === basename(pfad || "").replace(/\.md$/i, ""))).map((x) => ({ pfad: x.pfad, titel: x.titel }));
     const text = pfad ? readFileSync(join(vault, pfad), "utf8") : "";
-    return { felder: n.felder, beziehungen: bez, rueckverweise: rueck, info: { woerter: text.split(/\s+/).filter(Boolean).length, bytes: Buffer.byteLength(text), geaendert: n.geaendert, erstellt: n.erstellt } };
+    return { felder: n.felder, beziehungen: bez, verweise: [...new Set(n.links)], rueckverweise: rueck, info: { woerter: text.split(/\s+/).filter(Boolean).length, bytes: Buffer.byteLength(text), geaendert: n.geaendert, erstellt: n.erstellt } };
   }));
 }
