@@ -218,8 +218,14 @@ test("Seitenleiste zeigt Rückfragen n, wenn das Kit sie liefert", async ({ page
   mkdirSync(join(vault, ".tools"), { recursive: true });
   writeFileSync(join(vault, ".tools/rueckfragen.mjs"), "export function sichtbare(){ return { fragen: [{},{}], wartend: 1 }; }\n");
   await oeffne(page, "09_wiki/wissen/Kaffee.md");
-  // Das Kit liegt im Ordner: erst nach „Vertrauen“ wird es ausgeführt (die Frage heißt seit Vertrauen v2 vertrauen-erlauben, vorher kit-erlauben)
-  if (await page.locator('[data-aktion="vertrauen-erlauben"]').count()) await page.click('[data-aktion="vertrauen-erlauben"]');
+  // Echte Werkstatt, kein Attrappen-Vertrauen: Der Vault war vertraut, dann kam Code dazu → „geändert“, die Frage erscheint,
+  // erst nach „Vertrauen“ läuft das Kit (der Knopf hieß vor Vertrauen v2 kit-erlauben)
+  const frage = page.locator('.dialog[data-dialog="vertrauen"]');
+  await expect(frage).toBeVisible();
+  await expect(frage).toContainText("Die Werkzeuge in diesem Vault haben sich seit deiner Freigabe geändert.");
+  await expect(page.locator('[data-bereich="rueckfragen"]')).toHaveCount(0); // vorher läuft nichts
+  await page.click('[data-aktion="vertrauen-erlauben"]');
+  await expect(frage).toHaveCount(0);
   await expect(page.locator('[data-bereich="rueckfragen"] .zahl')).toHaveText("3", { timeout: 5000 });
 });
 
