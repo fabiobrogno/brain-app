@@ -273,14 +273,15 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
                 }
             }
             Task { @MainActor in
-                try? await Task.sleep(for: .seconds(5))
-                einmal.fertig(.nichtVerfuegbar("Zeitüberschreitung"))
+                // Länger als die 5-s-Frist der Oberfläche, damit deren Antwort gewinnt; bleibt sie aus, fragt der Nutzer.
+                try? await Task.sleep(for: .seconds(8))
+                einmal.fertig(.nichtGespeichert("Das Sichern dauert zu lange."))
             }
         }
     }
 
     /// Darf das Studio jetzt geschlossen werden? Die Oberfläche sichert zuerst; meldet sie „nicht gespeichert“,
-    /// entscheidet der Nutzer. Ältere Oberfläche oder Zeitüberschreitung: schließen, Hinweis im Log.
+    /// entscheidet der Nutzer (auch bei Zeitüberschreitung). Ältere Oberfläche: schließen, Hinweis im Log.
     func darfSchliessen() async -> Bool {
         guard oberflaeche == .studio, fenster != nil else { return true }
         switch await frageOberflaeche() {

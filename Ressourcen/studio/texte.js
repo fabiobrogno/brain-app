@@ -27,7 +27,7 @@ export const T = {
   konflikt: {
     titel: "Diese Datei wurde außerhalb geändert.",
     text: "Jemand oder etwas anderes hat die Datei auf der Platte verändert, seit du sie geöffnet hast. Deine Eingaben sind noch da.",
-    neuLaden: "Neu laden",
+    neuLaden: "Neu laden (meine Eingaben verwerfen)",
     behalten: "Meine Fassung behalten",
   },
   info: {
