@@ -611,3 +611,125 @@ test("istRepo und sorgeFuerIdentitaet nehmen { timeout, frist } entgegen (Budget
   assert.equal((await wirft(istRepo(d, { frist: neueFrist(0) }))).status, 504, "abgelaufene Frist: kein Git-Start, 504");
   assert.equal((await wirft(sorgeFuerIdentitaet(d, { frist: neueFrist(0) }))).status, 504);
 });
+
+// ───────────────────────────── Fristen und Beenden ─────────────────────────────
+
+// Skript, das seine Prozess-Nummern (eigene und die eines Kindprozesses) in eine Datei schreibt und dann „hängt“.
+const haengtSkript = (pidDatei, vorspann = "") => skript(`${vorspann}echo $$ >> '${pidDatei}'\nsleep 30 &\necho $! >> '${pidDatei}'\nwait`);
+const pidsVon = (datei) => readFileSync(datei, "utf8").trim().split("\n").filter(Boolean).map(Number);
+const bareRepo = () => { const b = tmp("brain-bare-"); g(b, "init", "-q", "--bare", "-b", "main"); return b; };
+
+test("Frist git/commit: hängender Hook → Prozessgruppe beendet, Index wie vorher, keine Sperrdatei, 504 mit Alltagsmeldung; danach geht es wieder", async () => {
+  const d = repo();
+  const pids = join(tmp("brain-pid-"), "pids.txt");
+  const hook = join(d, ".git/hooks/pre-commit");
+  writeFileSync(hook, `#!/bin/sh\necho $$ >> '${pids}'\nsleep 30 &\necho $! >> '${pids}'\nwait\n`); chmodSync(hook, 0o755);
+  schreibe(d, "a.md", "# a\n"); schreibe(d, "b.md", "# b\n");
+  g(d, "add", "--", "b.md"); // b ist vorgemerkt und soll es danach genauso sein
+  const vorher = { baum: g(d, "write-tree").trim(), status: g(d, "status", "--porcelain=v1"), kopf: g(d, "rev-parse", "HEAD") };
+  const v = mitSupport(d, neuerSupport(), { gitLimitCommit: 900 });
+  v.vertrauen(true); // der Hook läuft nur mit Vertrauen
+  const t0 = Date.now();
+  const e = await wirft(v.gitCommit({ nachricht: "hängt", dateien: ["a.md"] }));
+  assert.equal(e.status, 504); assert.match(e.message, /zu lange gebraucht/); assert.match(e.message, /nichts gesichert/i);
+  assert.ok(Date.now() - t0 < 6000, `dauerte ${Date.now() - t0} ms`);
+  const p = pidsVon(pids); assert.equal(p.length, 2);
+  assert.ok(await warteBis(() => p.every((x) => !lebt(x))), "Hook und sein Kindprozess sind beendet");
+  assert.equal(existsSync(join(d, ".git/index.lock")), false, "keine liegengebliebene Sperrdatei");
+  assert.equal(g(d, "rev-parse", "HEAD"), vorher.kopf, "kein Commit");
+  assert.deepEqual({ baum: g(d, "write-tree").trim(), status: g(d, "status", "--porcelain=v1") }, { baum: vorher.baum, status: vorher.status }, "Index wie vorher (b vorgemerkt, a neu)");
+  writeFileSync(hook, "#!/bin/sh\nexit 0\n"); v.vertrauen(true); // schneller Hook, neu erlaubt
+  const ok = await v.gitCommit({ nachricht: "geht wieder", dateien: ["a.md"] });
+  assert.match(ok.sha, /^[0-9a-f]{40}$/);
+});
+
+test("Frist git/remote ist eine GESAMTfrist: langsamer Server-Haken (Prozessgruppe wird beendet), origin wird zurückgenommen, 504", async () => {
+  const bare = bareRepo();
+  const pids = join(tmp("brain-pid-"), "pids.txt");
+  const h = join(bare, "hooks", "pre-receive");
+  writeFileSync(h, `#!/bin/sh\necho $$ >> '${pids}'\nsleep 30 &\necho $! >> '${pids}'\nwait\n`); chmodSync(h, 0o755);
+  const a = repo();
+  const t0 = Date.now();
+  const e = await wirft(gitRemoteDirekt(a, bare, 1500));
+  assert.equal(e.status, 504); assert.match(e.message, /zu lange|nicht rechtzeitig/);
+  assert.ok(Date.now() - t0 < 8000, `dauerte ${Date.now() - t0} ms`);
+  assert.equal(g(a, "remote").trim(), "", "origin zurückgenommen");
+  assert.equal(g(a, "for-each-ref", "refs/brain-studio").trim(), "", "Prüf-Ref aufgeräumt");
+  assert.equal(g(bare, "for-each-ref").trim(), "", "nichts auf dem Server");
+  const p = pidsVon(pids);
+  assert.ok(await warteBis(() => p.every((x) => !lebt(x))), "der Haken des Servers wurde mit der Gruppe beendet");
+});
+const gitRemoteDirekt = async (a, bare, limit) => (await import(pfad("gemeinsam", "git.mjs"))).remoteHinzufuegen(a, bare, { limit });
+
+test("Frist Abgleich: Gesamtfrist (limitGesamt) beendet auch einen hängenden Push samt Gruppe; 504", async () => {
+  const bare = bareRepo();
+  const a = repo(); g(a, "remote", "add", "origin", bare);
+  g(a, "push", "-q", "-u", "origin", "main");
+  const pids = join(tmp("brain-pid-"), "pids.txt");
+  const h = join(bare, "hooks", "pre-receive");
+  writeFileSync(h, `#!/bin/sh\necho $$ >> '${pids}'\nsleep 30 &\necho $! >> '${pids}'\nwait\n`); chmodSync(h, 0o755);
+  schreibe(a, "neu.md", "# neu\n"); g(a, "add", "--", "neu.md"); g(a, "commit", "-q", "-m", "lokal");
+  const v = mitSupport(a, neuerSupport(), { gitLimitAbgleich: 1200 });
+  const t0 = Date.now();
+  const e = await wirft(v.gitSync());
+  assert.equal(e.status, 504); assert.ok(Date.now() - t0 < 8000);
+  const p = pidsVon(pids);
+  assert.ok(await warteBis(() => p.every((x) => !lebt(x))), "Push und Haken beendet");
+  assert.equal(g(bare, "for-each-ref", "refs/heads").split("\n").filter((z) => /main/.test(z)).length, 1);
+  assert.equal(g(bare, "rev-parse", "main").trim(), g(a, "rev-parse", "origin/main").trim(), "der Server hat nichts bekommen");
+});
+
+// Aufbau für Merge-Tests: lokaler Commit und Commit auf dem Server ändern dieselbe Zeile, ein langsamer Merge-Treiber (hängt) für *.md.
+function haengenderMerge() {
+  const bare = bareRepo();
+  const a = repo(); g(a, "remote", "add", "origin", bare);
+  const treiber = join(tmp("brain-treiber-"), "langsam.sh"), pids = join(tmp("brain-pid-"), "pids.txt");
+  writeFileSync(treiber, `#!/bin/sh\necho $$ >> '${pids}'\nsleep 30 &\necho $! >> '${pids}'\nwait\nexit 1\n`); chmodSync(treiber, 0o755);
+  schreibe(a, ".gitattributes", "*.md merge=langsam\n");
+  g(a, "config", "merge.langsam.driver", `${treiber} %O %A %B`);
+  g(a, "add", "--", ".gitattributes"); g(a, "commit", "-q", "-m", "Attribute"); g(a, "push", "-q", "-u", "origin", "main");
+  const b = tmp("brain-klon-"); g(b, "clone", "-q", bare, "."); g(b, "config", "user.name", "B"); g(b, "config", "user.email", "b@example.org");
+  schreibe(b, "start.md", "# Start\nvon B\n"); g(b, "add", "--", "start.md"); g(b, "commit", "-q", "-m", "B"); g(b, "push", "-q");
+  schreibe(a, "start.md", "# Start\nvon A\n"); g(a, "add", "--", "start.md"); g(a, "commit", "-q", "-m", "A");
+  return { a, pids, kopf: g(a, "rev-parse", "HEAD") };
+}
+const nichtsHalbes = async ({ a, pids, kopf }) => {
+  const kinder = pidsVon(pids);
+  assert.ok(await warteBis(() => kinder.every((x) => !lebt(x))), "Treiber und Kindprozess sind beendet");
+  assert.equal(existsSync(join(a, ".git/MERGE_HEAD")), false, "Merge zurückgenommen");
+  assert.equal(existsSync(join(a, ".git/index.lock")), false, "keine Sperrdatei");
+  assert.equal(g(a, "rev-parse", "HEAD"), kopf, "HEAD unverändert");
+  assert.equal(readFileSync(join(a, "start.md"), "utf8"), "# Start\nvon A\n", "Arbeitsstand wie vorher");
+  assert.equal(g(a, "status", "--porcelain").trim(), "", "nichts Halbes im Vault (auch keine .merge_file_*-Hilfsdateien)");
+};
+
+test("Frist Abgleich: hängender Merge-Treiber → Frist je Git-Aufruf, 504 mit Alltagsmeldung, Merge zurückgenommen, keine Hilfsdateien", async () => {
+  const s = haengenderMerge();
+  const v = mitSupport(s.a, neuerSupport(), { gitLimitSync: 1500 });
+  v.vertrauen(true); // merge.*.driver sperrt Git, solange dem Vault nicht vertraut ist
+  const t0 = Date.now();
+  const e = await wirft(v.gitSync());
+  assert.equal(e.status, 504); assert.match(e.message, /zu lange gebraucht/); assert.match(e.message, /nichts verändert/);
+  assert.ok(Date.now() - t0 < 10_000, `dauerte ${Date.now() - t0} ms`);
+  assert.ok(existsSync(s.pids) && pidsVon(s.pids).length >= 2, "der Treiber lief wirklich");
+  await nichtsHalbes(s);
+});
+
+test("SIGTERM der Werkstatt mitten im Abgleich-Merge: Git-Prozesse beendet, Merge zurückgenommen (kein MERGE_HEAD, keine Sperre, keine Hilfsdateien), Ende ohne Verzögerung", async () => {
+  const s = haengenderMerge();
+  const support = neuerSupport();
+  oeffneVault(s.a, { support }).vertrauen(true); // merge.*.driver sperrt Git, solange dem Vault nicht vertraut ist
+  const p = spawn(process.execPath, [pfad("werkstatt", "werkstatt.mjs"), s.a], { stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, BRAIN_APP_SUPPORT: support } });
+  try {
+    const zeilen = []; createInterface({ input: p.stdout }).on("line", (z) => zeilen.push(JSON.parse(z)));
+    const ende = new Promise((ok) => p.on("close", (code, sig) => ok({ code, sig })));
+    assert.ok(await warteBis(() => zeilen.some((z) => z.bereit), 5000), "Brücke ist bereit");
+    p.stdin.write(JSON.stringify({ id: 1, methode: "POST", pfad: "/api/git/sync", query: null, body: null }) + "\n");
+    assert.ok(await warteBis(() => existsSync(s.pids) && pidsVon(s.pids).length >= 2, 15_000), "der Merge-Treiber läuft");
+    const t0 = Date.now();
+    p.kill("SIGTERM");
+    const r = await ende;
+    assert.deepEqual(r, { code: 0, sig: null }); assert.ok(Date.now() - t0 < 4000, `Ende nach ${Date.now() - t0} ms`);
+    await nichtsHalbes(s);
+  } finally { p.kill("SIGKILL"); }
+});

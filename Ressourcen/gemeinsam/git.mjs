@@ -4,7 +4,7 @@
 // GIT_SSH_COMMAND. Zeitlimits: je Aufruf und als Gesamtfrist je Route (ctx.frist) — bei Ablauf wird die ganze Prozessgruppe beendet.
 // ctx = { vertraut, sshEigen, frist } kommt von vault.mjs (aus vertrauen.mjs); ohne Angabe gilt „nicht vertraut“.
 import { execFile, execFileSync } from "node:child_process";
-import { realpathSync, readFileSync, writeFileSync, statSync, renameSync, lstatSync, unlinkSync } from "node:fs";
+import { realpathSync, readFileSync, writeFileSync, statSync, renameSync, lstatSync, unlinkSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { HttpFehler, sauber, kindUmgebung, falte } from "./basis.mjs";
 import { berlinHeute } from "./pruefung.mjs";
@@ -218,6 +218,20 @@ async function konfliktDateien(G) {
 const merges = new Map();
 const mergeMarke = (wurzel) => { merges.set(wurzel, Date.now()); return () => merges.delete(wurzel); };
 
+// Für externe Merge-Treiber legt Git die Hilfsdateien `.merge_file_XXXXXX` (%O, %A, %B) im Arbeitsordner an und räumt sie selbst weg —
+// nur nicht, wenn es mit SIGKILL beendet wird (Zeitüberschreitung, Beenden der Werkstatt). Entfernt werden ausschließlich reguläre Dateien
+// im Wurzelordner mit genau diesem Namensmuster, die nach dem Start des beendeten Aufrufs entstanden sind.
+const MERGE_HILFSDATEI = /^\.merge_file_[A-Za-z0-9]{6}$/;
+function mergeReste(wurzel, ab) {
+  let namen;
+  try { namen = readdirSync(wurzel); } catch { return; }
+  for (const n of namen) {
+    if (!MERGE_HILFSDATEI.test(n)) continue;
+    const p = join(wurzel, n);
+    try { const s = lstatSync(p); if (s.isFile() && s.mtimeMs >= ab - 1000) unlinkSync(p); } catch { /* schon weg */ }
+  }
+}
+
 export function sync(wurzel, opt = {}) { return exklusiv(wurzel, () => syncOhneSperre(wurzel, opt)); }
 
 // Läuft git in die Zeitüberschreitung (SIGKILL), kann Git eine halbe Zusammenführung und index.lock hinterlassen.
@@ -243,6 +257,7 @@ async function sperreAufraeumen(wurzel, gestartet) {
 async function nachAbbruchAufraeumen(G, wurzel, gestartet) {
   await sperreAufraeumen(wurzel, gestartet);
   await G(["merge", "--abort"], rueckweg); // schlägt harmlos fehl, wenn keine Zusammenführung läuft
+  if (!(await gitLaeuft(wurzel))) mergeReste(wurzel, gestartet);
 }
 async function mitAbbruchSchutz(G, wurzel, lauf) {
   try { return await lauf(); }
@@ -372,6 +387,7 @@ export function beendeLaufendes(budgetMs = 1500) {
   for (const [ort, start] of orte) { // Sperrdatei, die erst nach dem Start dieses (jetzt beendeten) Prozesses entstand, gehört uns
     const lock = join(ort, ".git", "index.lock");
     try { if (lstatSync(lock).mtimeMs >= start - 1000) unlinkSync(lock); } catch { /* keine */ }
+    mergeReste(ort, start);
   }
   for (const [w] of merges) {
     const rest = ende - Date.now();
