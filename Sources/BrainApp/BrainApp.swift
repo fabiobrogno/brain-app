@@ -41,17 +41,28 @@ final class AppDelegat: NSObject, NSApplicationDelegate {
 
     // MARK: Menüs
 
-    @objc private func neu() { zustand.sende(.neu) }
-    @objc private func merken() { zustand.sende(.merken) }
-    @objc private func infospalte() { zustand.sende(.infospalte) }
     @objc private func studioOeffnen() { zustand.oeffneStudio() }
     @objc private func uebersichtOeffnen() { zustand.oeffneFenster() }
+
+    /// Alle Befehle an die Studio-Oberfläche laufen über einen Eintrag mit dem Namen in `representedObject`
+    /// (`StudioBefehl.rawValue` — die Namensliste steht nur dort).
+    @objc private func sendeBefehl(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String, let befehl = StudioBefehl(rawValue: name) else { return }
+        zustand.sende(befehl)
+    }
 
     /// Eintrag mit eigener Aktion der App.
     private func eintrag(_ titel: String, _ aktion: Selector, _ taste: String = "", _ masken: NSEvent.ModifierFlags = [.command]) -> NSMenuItem {
         let e = NSMenuItem(title: titel, action: aktion, keyEquivalent: taste)
         e.keyEquivalentModifierMask = masken
         e.target = self
+        return e
+    }
+
+    /// Eintrag, der einen `StudioBefehl` an die Oberfläche schickt.
+    private func befehl(_ titel: String, _ befehl: StudioBefehl, _ taste: String = "", _ masken: NSEvent.ModifierFlags = [.command]) -> NSMenuItem {
+        let e = eintrag(titel, #selector(sendeBefehl(_:)), taste, masken)
+        e.representedObject = befehl.rawValue
         return e
     }
 
@@ -63,7 +74,7 @@ final class AppDelegat: NSObject, NSApplicationDelegate {
         return oben
     }
 
-    /// Hauptmenü: Brain, Ablage, Bearbeiten (nötig für Kopieren/Einfügen im WebView), Darstellung, Fenster.
+    /// Hauptmenü: Brain, Ablage, Bearbeiten (nötig für Kopieren/Einfügen im WebView), Darstellung, Gehe zu, Fenster.
     private func baueMenue() {
         let haupt = NSMenu()
         haupt.addItem(menue("Brain", [
@@ -72,8 +83,11 @@ final class AppDelegat: NSObject, NSApplicationDelegate {
             standard("Brain beenden", #selector(NSApplication.terminate(_:)), "q"),
         ]))
         haupt.addItem(menue("Ablage", [
-            eintrag("Neu", #selector(neu), "n"),
-            eintrag("Schnell merken", #selector(merken), "m", [.command, .shift]),
+            befehl("Neue Notiz", .neu, "n"),
+            befehl("Schnell merken", .merken, "m", [.command, .shift]),
+            .separator(),
+            befehl("Vault öffnen …", .vaultOeffnen, "o", [.command, .shift]),
+            befehl("Vault wechseln", .vaultWechseln, "v", [.control, .command]),
             .separator(),
             standard("Fenster schließen", #selector(NSWindow.performClose(_:)), "w"),
         ]))
@@ -87,11 +101,22 @@ final class AppDelegat: NSObject, NSApplicationDelegate {
             standard("Alles auswählen", #selector(NSText.selectAll(_:)), "a"),
         ]))
         haupt.addItem(menue("Darstellung", [
-            eintrag("Infospalte ein-/ausblenden", #selector(infospalte), "i", [.command, .option]),
+            befehl("Eigenschaften ein-/ausblenden", .infospalte, "i", [.command, .option]),
+            befehl("Verlauf ein-/ausblenden", .verlauf, "h", [.command, .shift]),
+            .separator(),
+            befehl("Hell/Dunkel umschalten", .hellDunkel),
         ]))
+        haupt.addItem(menue("Gehe zu", [
+            befehl("Posteingang", .posteingang, "1"),
+            befehl("Alle Notizen", .alle, "2"),
+            befehl("Wissen", .wissen, "3"),
+            .separator(),
+            befehl("Befehlspalette", .palette, "k"),
+        ]))
+        // Studio und Übersicht mit ⌥⌘1/⌥⌘2 — ⌘1/⌘2 gehören zu „Gehe zu“.
         let fensterMenue = menue("Fenster", [
-            eintrag("Studio", #selector(studioOeffnen), "1"),
-            eintrag("Übersicht", #selector(uebersichtOeffnen), "2"),
+            eintrag("Studio", #selector(studioOeffnen), "1", [.command, .option]),
+            eintrag("Übersicht", #selector(uebersichtOeffnen), "2", [.command, .option]),
             .separator(),
             standard("Im Dock ablegen", #selector(NSWindow.performMiniaturize(_:)), "m"),
         ])
@@ -105,6 +130,14 @@ final class AppDelegat: NSObject, NSApplicationDelegate {
         let e = NSMenuItem(title: titel, action: aktion, keyEquivalent: taste)
         e.keyEquivalentModifierMask = masken
         return e
+    }
+}
+
+/// Die Übersicht braucht das Brain-Kit im aktiven Vault — ohne ist ihr Eintrag ausgegraut.
+extension AppDelegat: NSMenuItemValidation {
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if item.action == #selector(uebersichtOeffnen) { return zustand.kitVorhanden }
+        return true
     }
 }
 

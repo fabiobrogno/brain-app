@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import CoreGraphics
 @testable import BrainCore
 
 private func url(_ s: String) -> URL { URL(string: s)! }
@@ -77,7 +78,131 @@ private func url(_ s: String) -> URL { URL(string: s)! }
     #expect(StudioBefehl.neu.skript == "window.studio?.befehl('neu')")
     #expect(StudioBefehl.merken.skript == "window.studio?.befehl('merken')")
     #expect(StudioBefehl.infospalte.skript == "window.studio?.befehl('infospalte')")
-    #expect(StudioBefehl.allCases.count == 3)
+    #expect(StudioBefehl.vaultOeffnen.skript == "window.studio?.befehl('vault-oeffnen')")
+    // Die Namensliste ist der Vertrag mit der Oberfläche — jede Änderung hier muss dort nachgezogen werden.
+    #expect(StudioBefehl.allCases.map(\.rawValue) == [
+        "neu", "merken", "vault-oeffnen", "vault-wechseln", "infospalte", "verlauf", "hell-dunkel",
+        "posteingang", "alle", "wissen", "palette",
+    ])
+    #expect(StudioBefehl(rawValue: "vault-wechseln") == .vaultWechseln)
+    #expect(StudioBefehl(rawValue: "unbekannt") == nil)
+}
+
+@Test func befehlsNamenKoennenNieAusDemSkriptTextAusbrechen() {
+    for b in StudioBefehl.allCases {
+        #expect(b.rawValue.range(of: "^[a-z]+(-[a-z]+)*$", options: .regularExpression) != nil, "\(b.rawValue)")
+        #expect(b.skript == "window.studio?.befehl('\(b.rawValue)')")
+    }
+}
+
+// MARK: Aktionen mit Antwort (Studio v2)
+
+@Test func aktionOrdnerWaehlenMitUndOhneWerte() {
+    let v = tempOrdner("Vault")
+    #expect(AppAktion.pruefe(["aktion": "ordner-waehlen"], vault: v) == .ordnerWaehlen(titel: nil, vorschlag: nil))
+    #expect(AppAktion.pruefe(["aktion": "ordner-waehlen", "wert": NSNull()], vault: nil) == .ordnerWaehlen(titel: nil, vorschlag: nil))
+    #expect(AppAktion.pruefe(["aktion": "ordner-waehlen", "wert": [String: Any]()], vault: nil) == .ordnerWaehlen(titel: nil, vorschlag: nil))
+    let a = AppAktion.pruefe(["aktion": "ordner-waehlen", "wert": ["titel": "Wo soll dein Brain liegen?", "vorschlag": "/Users/x/Mein Brain"]], vault: nil)
+    #expect(a == .ordnerWaehlen(titel: "Wo soll dein Brain liegen?", vorschlag: URL(fileURLWithPath: "/Users/x/Mein Brain", isDirectory: true)))
+    // ohne Vault ist ordner-waehlen möglich (Willkommen)
+    #expect(AppAktion.pruefe(["aktion": "ordner-waehlen"], vault: nil) != nil)
+}
+
+@Test func aktionOrdnerWaehlenVerwirftFalscheFormenUndIgnoriertUnbrauchbaresEinzelnes() {
+    // Wert ist kein Objekt → verworfen
+    for wert in ["~/Brain", 5, ["a"], true] as [Any] {
+        #expect(AppAktion.pruefe(["aktion": "ordner-waehlen", "wert": wert], vault: nil) == nil, "\(wert)")
+    }
+    // Unbrauchbarer Vorschlag (relativ, kein Text, NUL) → ohne Vorschlag, der Dialog kommt trotzdem
+    for vorschlag in ["relativ/pfad", "", 7, "/x\0y"] as [Any] {
+        #expect(AppAktion.pruefe(["aktion": "ordner-waehlen", "wert": ["vorschlag": vorschlag]], vault: nil)
+                == .ordnerWaehlen(titel: nil, vorschlag: nil), "\(vorschlag)")
+    }
+    // Hinweis: einzeilig, ohne Steuer-/Format-Zeichen, gekürzt, leer → nil
+    let titel = AppAktion.pruefe(["aktion": "ordner-waehlen", "wert": ["titel": "Zeile 1\nZeile\u{202E}2"]], vault: nil)
+    #expect(titel == .ordnerWaehlen(titel: "Zeile 1 Zeile2", vorschlag: nil))
+    #expect(AppAktion.pruefe(["aktion": "ordner-waehlen", "wert": ["titel": "  \n "]], vault: nil) == .ordnerWaehlen(titel: nil, vorschlag: nil))
+    #expect(AppAktion.pruefe(["aktion": "ordner-waehlen", "wert": ["titel": 5]], vault: nil) == .ordnerWaehlen(titel: nil, vorschlag: nil))
+    if case .ordnerWaehlen(let lang?, _)? = AppAktion.pruefe(["aktion": "ordner-waehlen", "wert": ["titel": String(repeating: "x", count: 500)]], vault: nil) {
+        #expect(lang.count == AppAktion.maxHinweis)
+    } else {
+        Issue.record("langer Hinweis wurde nicht gekürzt übernommen")
+    }
+}
+
+@Test func vorschlagKenntTildeUndWirdAbsolut() {
+    let home = URL(fileURLWithPath: "/Users/test", isDirectory: true)
+    #expect(AppAktion.absoluterOrdner("~", home: home)?.path == "/Users/test")
+    #expect(AppAktion.absoluterOrdner("~/Brain", home: home)?.path == "/Users/test/Brain")
+    #expect(AppAktion.absoluterOrdner("/a/b/../c", home: home)?.path == "/a/c")
+    #expect(AppAktion.absoluterOrdner("Brain", home: home) == nil)
+    #expect(AppAktion.absoluterOrdner("~andere/x", home: home) == nil)
+    #expect(AppAktion.absoluterOrdner("", home: home) == nil)
+}
+
+@Test func startortIstDerTiefsteVorhandeneOrdner() throws {
+    let home = tempOrdner("Home")
+    let fallback = tempOrdner("Fallback")
+    #expect(AppAktion.startort(fuer: nil, fallback: fallback) == fallback)
+    #expect(AppAktion.startort(fuer: home, fallback: fallback).path == home.standardizedFileURL.path)
+    // „~/Brain“ gibt es noch nicht → der Ordner darüber
+    #expect(AppAktion.startort(fuer: home.appendingPathComponent("Brain/tief/drin"), fallback: fallback).path == home.standardizedFileURL.path)
+    // eine Datei ist kein Ordner → der Ordner, in dem sie liegt
+    let datei = home.appendingPathComponent("datei.txt")
+    try "x".write(to: datei, atomically: true, encoding: .utf8)
+    #expect(AppAktion.startort(fuer: datei, fallback: fallback).path == home.standardizedFileURL.path)
+}
+
+@Test func aktionVaultGewechseltUndTitel() {
+    #expect(AppAktion.pruefe(["aktion": "vault-gewechselt"], vault: nil) == .vaultGewechselt)
+    #expect(AppAktion.pruefe(["aktion": "titel", "wert": "Mein Brain"], vault: nil) == .titel("Mein Brain"))
+    #expect(AppAktion.pruefe(["aktion": "titel", "wert": "  Mein\tBrain \n"], vault: nil) == .titel("Mein Brain"))
+    // leer/ohne Wert/null → Standardtitel; falscher Typ → verworfen
+    #expect(AppAktion.pruefe(["aktion": "titel", "wert": "   "], vault: nil) == .titel(nil))
+    #expect(AppAktion.pruefe(["aktion": "titel"], vault: nil) == .titel(nil))
+    #expect(AppAktion.pruefe(["aktion": "titel", "wert": NSNull()], vault: nil) == .titel(nil))
+    #expect(AppAktion.pruefe(["aktion": "titel", "wert": 5], vault: nil) == nil)
+    #expect(AppAktion.pruefe(["aktion": "titel", "wert": ["a": 1]], vault: nil) == nil)
+    if case .titel(let t?)? = AppAktion.pruefe(["aktion": "titel", "wert": String(repeating: "ä", count: 400)], vault: nil) {
+        #expect(t.count == AppAktion.maxTitel)
+    } else {
+        Issue.record("langer Titel wurde nicht gekürzt übernommen")
+    }
+}
+
+@Test func neueAktionenGeltenNurFuerDasStudio() {
+    // Die Übersicht ist Kit-Code aus dem Vault: kein Ordner-Dialog, kein Vault-Wechsel, kein Fenstertitel.
+    let v = tempOrdner("Vault")
+    for aktion in ["ordner-waehlen", "vault-gewechselt", "titel"] {
+        #expect(AppAktion.pruefe(["aktion": aktion, "wert": "x"], vault: v, oberflaeche: .app) == nil, "\(aktion)")
+        #expect(AppAktion.pruefe(["aktion": aktion], vault: v, oberflaeche: .studio) != nil, "\(aktion)")
+    }
+    // Die bisherigen drei bleiben in beiden Fenstern erlaubt
+    #expect(AppAktion.pruefe(["aktion": "ansicht"], vault: v, oberflaeche: .app) == .ansicht)
+    #expect(AppAktion.pruefe(["aktion": "extern", "wert": "https://example.com"], vault: v, oberflaeche: .app) != nil)
+    #expect(AppAktion.pruefe(["aktion": "ordner-zeigen", "wert": "a.md"], vault: v, oberflaeche: .app) != nil)
+}
+
+@Test func ordnerZeigenBrauchtEinenVault() {
+    #expect(AppAktion.pruefe(["aktion": "ordner-zeigen", "wert": "09_wiki/seite.md"], vault: nil) == nil)
+    // andere Aktionen brauchen keinen
+    #expect(AppAktion.pruefe(["aktion": "ansicht"], vault: nil) == .ansicht)
+    #expect(AppAktion.pruefe(["aktion": "extern", "wert": "https://example.com"], vault: nil) != nil)
+}
+
+// MARK: Fenstermaße
+
+@Test func studioFensterMasseUndStartgroesse() {
+    #expect(StudioFenster.minimum == CGSize(width: 1100, height: 700))
+    #expect(StudioFenster.standard == CGSize(width: 1440, height: 900))
+    // großer Bildschirm: Standard; kleiner: nie größer als sichtbar; winzig: nie unter dem Minimum
+    #expect(StudioFenster.startgroesse(sichtbar: CGSize(width: 2560, height: 1415)) == CGSize(width: 1440, height: 900))
+    #expect(StudioFenster.startgroesse(sichtbar: CGSize(width: 1280, height: 775)) == CGSize(width: 1280, height: 775))
+    #expect(StudioFenster.startgroesse(sichtbar: CGSize(width: 1000, height: 600)) == CGSize(width: 1100, height: 700))
+    // gemerkte Größe aus 0.2.0 (Minimum war 900×600) wird angehoben, größere bleibt
+    #expect(StudioFenster.mindestens(CGSize(width: 900, height: 600)) == CGSize(width: 1100, height: 700))
+    #expect(StudioFenster.mindestens(CGSize(width: 1600, height: 650)) == CGSize(width: 1600, height: 700))
+    #expect(StudioFenster.standardTitel == "Brain Studio")
 }
 
 // MARK: Brücken-Argumente
@@ -86,6 +211,13 @@ private func url(_ s: String) -> URL { URL(string: s)! }
     let v = URL(fileURLWithPath: "/tmp/Mein Brain", isDirectory: true)
     #expect(BrueckenVerbindung.startArgumente(skript: nil, vault: v) == ["/tmp/Mein Brain/.tools/ansicht/bruecke.mjs", "/tmp/Mein Brain"])
     #expect(BrueckenVerbindung.kitSkript(vault: v).path == "/tmp/Mein Brain/.tools/ansicht/bruecke.mjs")
+}
+
+@Test func ohneVaultGibtEsNurDasSkript() {
+    let w = URL(fileURLWithPath: "/Applications/Brain.app/Contents/Resources/werkstatt/werkstatt.mjs")
+    #expect(BrueckenVerbindung.startArgumente(skript: w, vault: nil) == [w.path])
+    // Kit-Brücke ohne Vault gibt es nicht; ohne alles: nichts zu starten
+    #expect(BrueckenVerbindung.startArgumente(skript: nil, vault: nil) == [])
 }
 
 @Test func eigenesSkriptErsetztDieKitBruecke() {
@@ -119,6 +251,41 @@ struct EigenesSkriptTests {
         let antwort = try #require(try JSONSerialization.jsonObject(with: a.body) as? [String: String])
         #expect(antwort["pfad"] == "/api/info")
         #expect(antwort["vault"] == vault.path)
+        await b.beende()
+    }
+
+    /// Studio vor der Vault-Wahl: kein Vault-Argument, kein BRAIN_VAULT, BRAIN_APP_SUPPORT bleibt.
+    @Test func werkstattStartetOhneVaultArgumentUndOhneBrainVault() async throws {
+        let ordner = tempOrdner()
+        let ohne = """
+        process.stdout.write(JSON.stringify({bereit:true,version:"test"})+"\\n");
+        let puffer="";
+        process.stdin.on("data",d=>{puffer+=d;let i;while((i=puffer.indexOf("\\n"))>=0){const z=puffer.slice(0,i);puffer=puffer.slice(i+1);
+        const a=JSON.parse(z);const b=Buffer.from(JSON.stringify({argv:process.argv.slice(2),brainVault:process.env.BRAIN_VAULT??null,support:process.env.BRAIN_APP_SUPPORT??null,cwd:process.cwd()})).toString("base64");
+        process.stdout.write(JSON.stringify({id:a.id,status:200,headers:{},body:b})+"\\n");}});
+        process.stdin.on("end",()=>process.exit(0));
+        """
+        let skriptURL = ordner.appendingPathComponent("werkstatt.mjs")
+        try ohne.write(to: skriptURL, atomically: true, encoding: .utf8)
+        let support = tempOrdner("Support mit Leerzeichen")
+        // (Kein setenv im Test: Tests laufen parallel und starten selbst Prozesse. Das Entfernen eines geerbten BRAIN_VAULT
+        // prüft `kindUmgebungOhneVaultEntferntAuchGeerbtesBrainVault` mit eigener Basis-Umgebung.)
+        let b = BrueckenVerbindung(node: BrueckenUmgebung.node!, vault: nil, skript: skriptURL,
+                                   umgebung: ["BRAIN_APP_SUPPORT": support.path], arbeitsordner: support)
+        let a = try await b.anfrage(methode: "GET", pfad: "/api/info")
+        let antwort = try #require(try JSONSerialization.jsonObject(with: a.body) as? [String: Any])
+        #expect((antwort["argv"] as? [String]) == [])
+        #expect(antwort["brainVault"] is NSNull)
+        #expect(antwort["support"] as? String == support.path)
+        // Arbeitsverzeichnis = Support-Ordner (macOS liefert evtl. den aufgelösten /private-Pfad)
+        let cwd = try #require(antwort["cwd"] as? String)
+        #expect(URL(fileURLWithPath: cwd).resolvingSymlinksInPath().path == support.resolvingSymlinksInPath().path)
+        await b.beende()
+    }
+
+    @Test func ohneVaultUndOhneSkriptStartetNichts() async throws {
+        let b = BrueckenVerbindung(node: BrueckenUmgebung.node!, vault: nil)
+        await #expect(throws: BrueckenFehler.self) { try await b.starte() }
         await b.beende()
     }
 }

@@ -32,7 +32,8 @@ public actor BrueckenVerbindung {
     private struct SchreibFehler: Error {}
 
     private let node: URL
-    private let vault: URL
+    private let vault: URL?
+    private let arbeitsordner: URL?
     private let argumente: [String]
     private let umgebung: [String: String]
     private var prozess: Process?
@@ -48,9 +49,12 @@ public actor BrueckenVerbindung {
 
     /// Standard ist die Kit-Brücke des Vaults; mit `skript` startet stattdessen dieses Skript (z. B. die Werkstatt).
     /// Beide sprechen dasselbe JSON-Zeilen-Protokoll und bekommen den Vault-Pfad als ersten Argument nach dem Skript.
-    public init(node: URL, vault: URL, skript: URL? = nil, umgebung: [String: String] = [:]) {
+    /// Ohne `vault` (nur mit `skript`: die Werkstatt vor der Vault-Wahl) gibt es kein Vault-Argument und kein
+    /// `BRAIN_VAULT`; die Werkstatt liest dann `<support>/vaults.json`. `arbeitsordner` ist dann das Arbeitsverzeichnis.
+    public init(node: URL, vault: URL?, skript: URL? = nil, umgebung: [String: String] = [:], arbeitsordner: URL? = nil) {
         self.node = node
         self.vault = vault
+        self.arbeitsordner = arbeitsordner
         self.argumente = Self.startArgumente(skript: skript, vault: vault)
         self.umgebung = umgebung
     }
@@ -58,9 +62,19 @@ public actor BrueckenVerbindung {
     /// Pfad der Kit-Brücke (Ansicht „Übersicht“) im Vault.
     public static func kitSkript(vault: URL) -> URL { vault.appendingPathComponent(".tools/ansicht/bruecke.mjs") }
 
-    /// Argumente für Node: `<skript> <vault>`; ohne Skript die Kit-Brücke.
-    static func startArgumente(skript: URL?, vault: URL) -> [String] {
-        [(skript ?? kitSkript(vault: vault)).path, vault.path]
+    /// Argumente für Node: `<skript> <vault>`; ohne Skript die Kit-Brücke; ohne Vault nur `<skript>`.
+    /// Ohne Skript und ohne Vault gibt es nichts zu starten (leere Liste).
+    static func startArgumente(skript: URL?, vault: URL?) -> [String] {
+        guard let ziel = skript ?? vault.map({ kitSkript(vault: $0) }) else { return [] }
+        return [ziel.path] + (vault.map { [$0.path] } ?? [])
+    }
+
+    /// Arbeitsverzeichnis des Prozesses: der Vault, sonst `arbeitsordner` (nur wenn es ihn gibt), sonst das der App.
+    private var startOrdner: URL? {
+        if let vault { return vault }
+        guard let a = arbeitsordner else { return nil }
+        var istOrdner: ObjCBool = false
+        return FileManager.default.fileExists(atPath: a.path, isDirectory: &istOrdner) && istOrdner.boolValue ? a : nil
     }
 
     /// Prozess läuft und nimmt Anfragen an (nach `beende()` nicht mehr).
@@ -72,6 +86,7 @@ public actor BrueckenVerbindung {
     public func starte(zeitlimit: Duration = .seconds(15)) async throws {
         if geschlossen { throw BrueckenFehler.geschlossen }
         if laeuft { return }
+        guard !argumente.isEmpty else { throw BrueckenFehler.startFehlgeschlagen("Die Ansicht konnte nicht gestartet werden.") }
         // Alte, noch wartende Anfragen sofort abschließen — sie bekämen von einem neuen Prozess nie eine Antwort.
         verwerfeAlles()
         signal(SIGPIPE, SIG_IGN)
@@ -80,7 +95,7 @@ public actor BrueckenVerbindung {
         p.executableURL = node
         p.arguments = argumente
         p.environment = NodeUmgebung.fuerKind(vault: vault, vorgaben: umgebung)
-        p.currentDirectoryURL = vault
+        p.currentDirectoryURL = startOrdner
         let ein = Pipe(), aus = Pipe()
         p.standardInput = ein
         p.standardOutput = aus

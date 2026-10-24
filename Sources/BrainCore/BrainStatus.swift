@@ -41,6 +41,12 @@ public struct StatusAnzeige: Equatable, Sendable {
         StatusAnzeige(symbol: "xmark.octagon", zeichen: "✕", titel: text)
     }
 
+    /// Studio läuft, aber es ist noch kein Vault gewählt (Willkommen).
+    public static let keinVault = StatusAnzeige(symbol: "questionmark.circle", zeichen: "?", titel: "Kein Vault gewählt")
+
+    /// Vault ohne Brain-Kit (`.tools/brain.mjs` fehlt): für das Studio völlig in Ordnung, es gibt nur keine Kit-Prüfungen.
+    public static let ohneKit = StatusAnzeige(symbol: "checkmark.circle", zeichen: "✓", titel: "Vault ohne Kit — nur Studio")
+
     public static func fuer(_ status: BrainStatus?, fehler: String? = nil) -> StatusAnzeige {
         guard let s = status else {
             return StatusAnzeige(symbol: "questionmark.circle", zeichen: "?", titel: fehler ?? "Status unbekannt")

@@ -7,6 +7,9 @@ struct MenueInhalt: View {
 
     var body: some View {
         Label("\(zustand.anzeige.zeichen) \(zustand.anzeige.titel)", systemImage: zustand.anzeige.symbol)
+        if let name = zustand.vaultName {
+            Text("Vault: \(name)")
+        }
         if let z = zustand.status?.zahlen {
             Text("Vorschläge \(z.vorschlaege) · Konflikte \(z.konflikte) · abgelaufen \(z.abgelaufen)")
         }
@@ -15,10 +18,10 @@ struct MenueInhalt: View {
         }
         Divider()
         Button("Studio öffnen") { zustand.oeffneStudio() }.keyboardShortcut("o")
-        Button("Übersicht öffnen") { zustand.oeffneFenster() }
+        Button("Übersicht öffnen") { zustand.oeffneFenster() }.disabled(!zustand.kitVorhanden)
         Button("Ordner im Finder zeigen") { zustand.zeigeOrdner() }.disabled(zustand.vault == nil)
         Button("Status aktualisieren") { Task { await zustand.aktualisiere() } }.keyboardShortcut("r")
-        Button("Anderen Brain-Ordner wählen …") { zustand.waehleOrdner() }
+        Button("Vault öffnen …") { zustand.sende(.vaultOeffnen) }
         Divider()
         Button("Beenden") { NSApp.terminate(nil) }.keyboardShortcut("q")
     }

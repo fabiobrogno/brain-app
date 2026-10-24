@@ -19,10 +19,12 @@ public enum NodeUmgebung {
     }
 
     /// Basis: bereinigte Prozessumgebung; danach die Vorgaben der App (immer gültig) und PATH mit Standardordnern.
+    /// Ohne Vault (Studio vor der Vault-Wahl) wird auch ein geerbtes `BRAIN_VAULT` entfernt: die Werkstatt liest dann
+    /// ausschließlich `<support>/vaults.json`, nie einen zufällig aus der Shell geerbten Pfad.
     public static func fuerKind(basis: [String: String] = ProcessInfo.processInfo.environment,
-                                vault: URL, vorgaben: [String: String]) -> [String: String] {
+                                vault: URL?, vorgaben: [String: String]) -> [String: String] {
         var env = bereinigt(basis)
-        env["BRAIN_VAULT"] = vault.path
+        env["BRAIN_VAULT"] = vault?.path
         for (k, v) in vorgaben { env[k] = v }
         env["PATH"] = BrainBefehl.pfadMitStandardOrdnern(env["PATH"])
         return env

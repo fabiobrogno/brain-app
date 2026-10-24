@@ -85,24 +85,27 @@ final class Kanal: NSObject, WKScriptMessageHandlerWithReply {
     }
 }
 
-/// Nachrichtenkanal `aktion` (window.webkit.messageHandlers.aktion): nur Hauptrahmen der eigenen Herkunft; die
-/// Prüfung der Werte liegt in `AppAktion` (BrainCore). Ungültiges wird still verworfen.
+/// Nachrichtenkanal `aktion` (window.webkit.messageHandlers.aktion) MIT Antwort: nur Hauptrahmen der eigenen Herkunft; die
+/// Prüfung der Werte liegt in `AppAktion` (BrainCore). Die Seite bekommt ein Promise: `{ok:true}` (bzw. `{ok:false, grund}`),
+/// bei `ordner-waehlen` `{pfad}` oder `null`. Ungültiges (oder fremde Herkunft) weist das Promise mit einem Text ab.
 @MainActor
-final class AktionsKanal: NSObject, WKScriptMessageHandler {
+final class AktionsKanal: NSObject, WKScriptMessageHandlerWithReply {
     private let oberflaeche: Oberflaeche
-    private let vault: URL
-    private let ausfuehren: (AppAktion) -> Void
+    private let vault: () -> URL?
+    private let ausfuehren: (AppAktion) async -> Any?
 
-    init(oberflaeche: Oberflaeche, vault: URL, ausfuehren: @escaping (AppAktion) -> Void) {
+    /// `vault`: der aktuelle Vault für die Pfadprüfung (wechselt im Studio ohne Neustart des Fensters).
+    init(oberflaeche: Oberflaeche, vault: @escaping () -> URL?, ausfuehren: @escaping (AppAktion) async -> Any?) {
         self.oberflaeche = oberflaeche
         self.vault = vault
         self.ausfuehren = ausfuehren
     }
 
-    func userContentController(_ controller: WKUserContentController, didReceive nachricht: WKScriptMessage) {
-        guard stammtVonEigenerOberflaeche(nachricht, oberflaeche),
-              let aktion = AppAktion.pruefe(nachricht.body, vault: vault) else { return }
-        ausfuehren(aktion)
+    func userContentController(_ controller: WKUserContentController, didReceive nachricht: WKScriptMessage) async -> (Any?, String?) {
+        guard stammtVonEigenerOberflaeche(nachricht, oberflaeche) else { return (nil, SchemaAntwort.AnfrageFehler.ungueltig.meldung) }
+        guard let aktion = AppAktion.pruefe(nachricht.body, vault: vault(), oberflaeche: oberflaeche) else { return (nil, "ungültige Aktion") }
+        // NSNull = ausdrücklich `null` für die Seite (nil würde als „undefined“ ankommen).
+        return ((await ausfuehren(aktion)) ?? NSNull(), nil)
     }
 }
 
@@ -159,8 +162,13 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
     var istOffen: Bool { fenster != nil }
     /// Wird nach dem Schließen aufgerufen (z. B. um den Menüstatus aufzufrischen).
     var beiGeschlossen: (() -> Void)?
-    /// Führt eine geprüfte Aktion der Oberfläche aus (Übersicht öffnen, Finder, Browser).
-    var beiAktion: ((AppAktion) -> Void)?
+    /// Führt eine geprüfte Aktion der Oberfläche aus (Übersicht öffnen, Finder, Browser, Vault-Wechsel …) und liefert die
+    /// Antwort an die Seite (nil → `null`).
+    var beiAktion: ((AppAktion) async -> Any?)?
+    /// Der aktive Vault für die Pfadprüfung der Aktionen (nil = keiner gewählt).
+    var aktuellerVault: (() -> URL?)?
+    /// Der offene Ordner-Dialog (Sheet) samt Antwort-Wächter — höchstens einer je Fenster.
+    private var ordnerDialog: (panel: NSOpenPanel, antwort: PanelAntwort)?
 
     init(log: AppLog, oberflaeche: Oberflaeche) {
         self.log = log
@@ -168,20 +176,26 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
     }
 
     private var name: String { oberflaeche == .studio ? "studio" : "uebersicht" }
+    private var standardTitel: String { oberflaeche == .studio ? StudioFenster.standardTitel : "Übersicht" }
 
-    /// `skript`: nil = Kit-Brücke des Vaults, sonst z. B. die Werkstatt aus dem App-Paket.
-    func oeffne(node: URL, vault: URL, skript: URL? = nil, umgebung: [String: String]) {
+    /// `skript`: nil = Kit-Brücke des Vaults, sonst z. B. die Werkstatt aus dem App-Paket. `vault` nil nur mit `skript`
+    /// (Studio vor der Vault-Wahl: die Werkstatt liest dann vaults.json); `arbeitsordner` gilt dann als Arbeitsverzeichnis.
+    func oeffne(node: URL, vault: URL?, skript: URL? = nil, umgebung: [String: String], arbeitsordner: URL? = nil) {
         if let fenster {
+            if fenster.isMiniaturized { fenster.deminiaturize(nil) }
             fenster.makeKeyAndOrderFront(nil)
             NSApp.activate()
             return
         }
-        let bruecke = BrueckenVerbindung(node: node, vault: vault, skript: skript, umgebung: umgebung)
+        let bruecke = BrueckenVerbindung(node: node, vault: vault, skript: skript, umgebung: umgebung, arbeitsordner: arbeitsordner)
         let config = WKWebViewConfiguration()
         config.setURLSchemeHandler(SchemaHandler(bruecke: bruecke, oberflaeche: oberflaeche), forURLScheme: NavigationsRegel.schema)
         config.userContentController.addScriptMessageHandler(Kanal(bruecke: bruecke, oberflaeche: oberflaeche), contentWorld: .page, name: "brain")
-        config.userContentController.add(AktionsKanal(oberflaeche: oberflaeche, vault: vault) { [weak self] in self?.beiAktion?($0) },
-                                         contentWorld: .page, name: "aktion")
+        let aktionsKanal = AktionsKanal(oberflaeche: oberflaeche, vault: { [weak self] in self?.aktuellerVault?() }) { [weak self] aktion in
+            guard let self, let f = self.beiAktion else { return nil }
+            return await f(aktion)
+        }
+        config.userContentController.addScriptMessageHandler(aktionsKanal, contentWorld: .page, name: "aktion")
         let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 1200, height: 800), configuration: config)
         let navigation = Navigation(oberflaeche: oberflaeche)
         navigation.beiGeladen = { [weak self] in self?.warteAufBereit() }
@@ -194,16 +208,27 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800), styleMask: maske, backing: .buffered, defer: false)
         w.isReleasedWhenClosed = false
         w.contentView = web
+        w.title = standardTitel
         if oberflaeche == .studio {
-            w.title = "Studio"
             w.titlebarAppearsTransparent = true
-            w.minSize = NSSize(width: 900, height: 600)
-            w.setFrameAutosaveName("StudioFenster")
+            w.minSize = StudioFenster.minimum
+            // Erster Start (noch keine gemerkte Position): Standardgröße, mittig. Danach gilt die gemerkte Größe — aber nie
+            // unter dem heutigen Minimum (ältere Versionen erlaubten 900×600).
+            let ersterStart = UserDefaults.standard.string(forKey: "NSWindow Frame \(StudioFenster.rahmenName)") == nil
+            w.setFrameAutosaveName(StudioFenster.rahmenName)
+            var rahmen = w.frame
+            if ersterStart {
+                let sichtbar = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame.size ?? StudioFenster.standard
+                rahmen.size = StudioFenster.startgroesse(sichtbar: sichtbar)
+            } else {
+                rahmen.size = StudioFenster.mindestens(rahmen.size)
+            }
+            if rahmen.size != w.frame.size { w.setFrame(rahmen, display: false) }
+            if ersterStart { w.center() }
         } else {
-            w.title = "Übersicht"
             w.setFrameAutosaveName("BrainFenster")
+            if w.frame.origin == .zero { w.center() }
         }
-        if w.frame.origin == .zero { w.center() }
         w.delegate = self
 
         self.bruecke = bruecke
@@ -217,6 +242,44 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
     }
 
     func schliesse() { fenster?.close() }
+
+    /// Fenstertitel (Studio: Name des aktiven Vaults, von der Oberfläche gemeldet); nil = Standardtitel.
+    func setzeTitel(_ titel: String?) { fenster?.title = titel ?? standardTitel }
+
+    /// Wartet genau einmal auf die Wahl im Ordner-Dialog (Antwort des Sheets oder Abbruch beim Schließen des Fensters).
+    @MainActor private final class PanelAntwort {
+        private var fortsetzung: CheckedContinuation<URL?, Never>?
+        init(_ f: CheckedContinuation<URL?, Never>) { fortsetzung = f }
+        func fertig(_ url: URL?) { fortsetzung?.resume(returning: url); fortsetzung = nil }
+    }
+
+    /// Ordner-Dialog als Sheet am Fenster (nur Ordner, „Neuer Ordner“ erlaubt). Liefert den gewählten Ordner oder nil
+    /// (Abbruch, kein Fenster, es ist schon ein Dialog offen). Startort: `vorschlag` (oder der tiefste vorhandene Ordner
+    /// darüber), sonst Home.
+    func waehleOrdner(titel: String?, vorschlag: URL?) async -> URL? {
+        guard let fenster, ordnerDialog == nil else { return nil }
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Wählen"
+        if let titel { panel.message = titel }
+        panel.directoryURL = AppAktion.startort(fuer: vorschlag, fallback: FileManager.default.homeDirectoryForCurrentUser)
+        if fenster.isMiniaturized { fenster.deminiaturize(nil) }
+        fenster.makeKeyAndOrderFront(nil)
+        NSApp.activate()
+        let gewaehlt: URL? = await withCheckedContinuation { (f: CheckedContinuation<URL?, Never>) in
+            let antwort = PanelAntwort(f)
+            ordnerDialog = (panel, antwort)
+            panel.beginSheetModal(for: fenster) { antwortCode in
+                antwort.fertig(antwortCode == .OK ? panel.url?.standardizedFileURL : nil)
+            }
+        }
+        ordnerDialog = nil
+        log.schreibe("ordner-dialog \(gewaehlt == nil ? "abgebrochen" : "gewaehlt")")
+        return gewaehlt
+    }
 
     /// Menübefehl an die Studio-Oberfläche (`window.studio.befehl`); Fenster nach vorn. War das Fenster eben erst zu,
     /// ist die Oberfläche noch nicht geladen: der Befehl wartet (höchstens 5 s), bis `window.studio.bereit === true`.
@@ -346,6 +409,12 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
     private func aufraeumen() {
         bereitAufgabe?.cancel()
         bereitAufgabe = nil
+        // Ein offener Ordner-Dialog endet mit dem Fenster; die wartende Seite bekommt „abgebrochen“.
+        if let d = ordnerDialog {
+            ordnerDialog = nil
+            fenster?.endSheet(d.panel, returnCode: .cancel)
+            d.antwort.fertig(nil)
+        }
         if let web = webView {
             web.stopLoading()
             web.navigationDelegate = nil
