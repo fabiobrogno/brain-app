@@ -376,3 +376,15 @@ test("Ansichten: Mitglieder und Zähler kommen aus dem Feld ansichten der Notize
   await page.click('[data-ansicht="zuletzt"]');
   await expect(page.locator("#liste-koerper [data-karte]")).toHaveCount(2);
 });
+
+test("Tastenkürzel-Übersicht per ⌘/ zeigt Gruppen mit Kürzeln, Esc schließt", async ({ page }) => {
+  await start(page);
+  await page.keyboard.press("Meta+/");
+  const dlg = page.locator(".dialog");
+  await expect(dlg).toContainText("Tastenkürzel");
+  await expect(dlg.locator(".kuerzel section")).toHaveCount(3);
+  await expect(dlg.locator("kbd").first()).toBeVisible();
+  await expect(dlg).toContainText("Schnell merken");
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".dialog")).toHaveCount(0);
+});

@@ -1279,6 +1279,16 @@ function richteGriffeEin() {
 }
 
 // ======================================================= Tastatur
+function oeffneKuerzel() {
+  if (dialogOffen()) return;
+  const K = T.kuerzel;
+  const d = dialog({
+    titel: K.titel, breit: true,
+    rumpf: [h("div", { klasse: "kuerzel" }, ...K.gruppen.map((g) => h("section", null, h("h3", { text: g.name }),
+      h("dl", null, ...g.zeilen.flatMap(([tasten, was]) => [h("dt", null, ...tasten.split(" ").map((x) => h("kbd", { text: x }))), h("dd", { text: was })])))))],
+    knoepfe: [h("button", { klasse: "knopf primaer", text: K.schliessen, aufClick: () => d.schliessen() })],
+  });
+}
 window.addEventListener("keydown", (e) => {
   const mod = MOD_META ? e.metaKey : e.ctrlKey;
   if (!mod || e.isComposing) return;
@@ -1292,6 +1302,7 @@ window.addEventListener("keydown", (e) => {
   else if (k === "f" && !e.shiftKey && !e.altKey && !dialogOffen() && S.pfad && !e.target.closest?.("input, textarea, select")) tun(() => ed.suchen());
   else if ((k === "i" || e.code === "KeyI") && e.altKey) tun(umschalteInfo);
   else if (k === "g" && e.shiftKey) tun(oeffneCommit);
+  else if ((k === "/" || e.code === "Slash") && !e.shiftKey && !e.altKey) tun(oeffneKuerzel);
 }, true);
 
 window.addEventListener("beforeunload", () => { if (S.dirty) { clearTimeout(speicherTimer); speichere(); } });

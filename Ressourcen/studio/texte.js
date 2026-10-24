@@ -126,6 +126,15 @@ export const T = {
     ordner: "Vault im Finder zeigen", ansicht: "Übersicht öffnen", mcp: "KI (Claude) verbinden",
     inNotiz: "In der Notiz suchen",
   },
+  kuerzel: {
+    titel: "Tastenkürzel",
+    gruppen: [
+      { name: "Allgemein", zeilen: [["⌘K", "Springen und Befehle"], ["⌘N", "Neue Notiz"], ["⌘⇧M", "Schnell merken"], ["⌘⇧F", "Im ganzen Vault suchen"], ["⌘/", "Diese Übersicht"]] },
+      { name: "Notiz", zeilen: [["⌘S", "Jetzt speichern"], ["⌘F", "In der Notiz suchen"], ["⌘⌥I", "Eigenschaften ein- oder ausblenden"], ["⌘⇧G", "Änderungen sichern"]] },
+      { name: "Liste", zeilen: [["↑ ↓", "Nächste oder vorige Notiz öffnen"], ["↵", "In die Notiz springen"], ["Esc", "Suche oder Dialog schließen"]] },
+    ],
+    schliessen: "Schließen",
+  },
   gesundheit: { titel: "Gesundheit des Wissens", keine: "Noch keine Auswertung verfügbar.", ok: "Keine Befunde." },
   mcp: { ok: "Verbunden. Claude kann jetzt auf dein Wissen zugreifen.", befehl: "Claude wurde nicht gefunden. Führe diesen Befehl im Terminal aus:", kopiert: "Befehl kopiert." },
   leer: {
