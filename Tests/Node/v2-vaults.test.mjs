@@ -2,7 +2,7 @@
 // Hermetisch: eigenes Home (Git liest keine echte ~/.gitconfig), eigener Support-Ordner (hilfe.mjs), kein Netzwerk.
 import test, { beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync, existsSync, readdirSync, symlinkSync, mkdirSync, rmSync, chmodSync, lstatSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, readdirSync, symlinkSync, mkdirSync, rmSync, chmodSync, lstatSync, statSync } from "node:fs";
 import { join, basename } from "node:path";
 import { userInfo } from "node:os";
 import { execFileSync } from "node:child_process";
@@ -27,7 +27,13 @@ const HEUTE = "2026-10-24";
 const OPT = { heute: HEUTE };
 const LEER = { vaults: [], aktiv: null };
 
-beforeEach(() => { for (const f of ["vaults.json", "vaults.json.defekt", "config.json"]) rmSync(join(SUPPORT(), f), { force: true }); });
+const VAULTS_JSON = () => join(SUPPORT(), "vaults.json");
+const VERTRAUEN_JSON = () => join(SUPPORT(), "vertrauen.json");
+// Sicherungen defekter Listen (neue Namen mit Zeit, alte Einzeldatei) liegen im Support-Ordner und werden je Test weggeräumt.
+const sicherungen = () => readdirSync(SUPPORT()).filter((n) => /^vaults\.json\.defekt-/.test(n)).sort();
+beforeEach(() => {
+  for (const f of ["vaults.json", "vaults.json.defekt", "config.json", "vertrauen.json", ...sicherungen()]) rmSync(join(SUPPORT(), f), { recursive: true, force: true });
+});
 
 const wirft = (fn) => { try { fn(); } catch (e) { assert.ok(e instanceof HttpFehler, String(e && e.stack)); return e; } assert.fail("kein Fehler"); };
 const wirftAsync = async (p) => { try { await p; } catch (e) { assert.ok(e instanceof HttpFehler, String(e && e.stack)); return e; } assert.fail("kein Fehler"); };
@@ -60,6 +66,21 @@ function bareMitInhalt() {
   g(w, "remote", "add", "origin", bare); g(w, "push", "-q", "origin", "main");
   return bare;
 }
+// Allgemeine Git-Attrappe (alles andere geht an das echte Git): je Unterbefehl ein Shell-Stück, z. B. { init: 'exec sleep 30' }.
+// `vorher` läuft vor jedem Aufruf (z. B. "sleep 0.5"); $D ist der Ordner der Attrappe; jeder Aufruf steht in aufrufe().
+function attrappeMit(zweige, { vorher = "" } = {}) {
+  const dir = tmp("brain-fakegit2-");
+  const echtes = execFileSync("which", ["git"], { encoding: "utf8" }).trim();
+  const protokoll = join(dir, "aufrufe.log");
+  const faelle = Object.entries(zweige).map(([unterbefehl, skript]) => `*" ${unterbefehl} "*) ${skript} ;;`).join("\n");
+  writeFileSync(join(dir, "git"), `#!/bin/sh\nD="$(dirname "$0")"\necho "$*" >> "$D/aufrufe.log"\n${vorher}\ncase " $* " in\n${faelle}\nesac\nexec "${echtes}" "$@"\n`);
+  chmodSync(join(dir, "git"), 0o755);
+  return { dir, aufrufe: () => (existsSync(protokoll) ? readFileSync(protokoll, "utf8").split("\n").filter(Boolean) : []), pid: () => (existsSync(join(dir, "pid")) ? readFileSync(join(dir, "pid"), "utf8").trim() : "") };
+}
+const HAENGT = 'echo $$ > "$D/pid"; exec sleep 30'; // hängender Git-Aufruf; $$ ist (nach exec) die PID des hängenden Prozesses
+const prozessTot = async (pid) => { if (!pid) return true; /* der hängende Aufruf wurde gar nicht erst gestartet */ for (let i = 0; i < 60; i++) { try { process.kill(Number(pid), 0); } catch (e) { return e.code === "ESRCH"; } await new Promise((r) => setTimeout(r, 50)); } return false; };
+const schreibeJson = (datei, wert) => writeFileSync(datei, typeof wert === "string" ? wert : JSON.stringify(wert, null, 2) + "\n");
+const leseJson = (datei) => JSON.parse(readFileSync(datei, "utf8"));
 
 // ---------------------------------------------------------------- Liste
 
@@ -101,16 +122,17 @@ test("Liste: defekte vaults.json zählt als leer, wird beim Lesen nie überschri
   assert.deepEqual(leseVaults(), LEER);
   assert.equal(aktiverVaultPfad(), null);
   assert.equal(readFileSync(join(SUPPORT(), "vaults.json"), "utf8"), kaputt);
-  assert.equal(existsSync(join(SUPPORT(), "vaults.json.defekt")), false);
+  assert.deepEqual(sicherungen(), [], "Lesen sichert nichts");
   const d = tmp();
   registriere(d);
-  assert.equal(readFileSync(join(SUPPORT(), "vaults.json.defekt"), "utf8"), kaputt);
+  assert.equal(sicherungen().length, 1);
+  assert.match(sicherungen()[0], /^vaults\.json\.defekt-\d{8}-\d{6}$/);
+  assert.equal(readFileSync(join(SUPPORT(), sicherungen()[0]), "utf8"), kaputt);
   assert.deepEqual(leseVaults().vaults.map((v) => v.pfad), [d]);
-  // gültiges JSON in falscher Form ist ebenfalls defekt
-  for (const roh of ["[]", "\"x\"", "null", "5", "{\"vaults\": 5}"]) {
-    rmSync(join(SUPPORT(), "vaults.json.defekt"), { force: true });
+  // gültiges JSON in falscher Form ist ebenfalls defekt (Lesen: leer und unverändert)
+  for (const roh of ["[]", "\"x\"", "null", "5", "{\"vaults\": 5}", "{\"vaults\": \"x\", \"aktiv\": \"/p\"}", "{\"vaults\": null}"]) {
     writeFileSync(join(SUPPORT(), "vaults.json"), roh);
-    assert.deepEqual(leseVaults(), LEER, roh);
+    assert.deepEqual({ vaults: leseVaults().vaults, aktiv: leseVaults().aktiv }, LEER, roh);
     assert.equal(readFileSync(join(SUPPORT(), "vaults.json"), "utf8"), roh, "beim Lesen unverändert");
   }
 });
@@ -742,8 +764,9 @@ test("klone: Zeitlimit → 504 „zu lange gedauert“, Ziel wird entfernt", asy
   const basis = tmp("brain-kl8-");
   const e = await mitPfad(dir, () => wirftAsync(klone({ url: "/irgendein/pfad", ordner: join(basis, "Ziel") }, { ...OPT, limitKlon: 600 })));
   assert.equal(e.status, 504);
-  assert.equal(e.message, "Das Herunterladen hat zu lange gedauert.");
+  assert.match(e.message, /^Das Herunterladen hat zu lange gedauert\. Es wurde nichts angelegt/);
   assert.deepEqual(readdirSync(basis), []);
+  assert.deepEqual(leseVaults(), LEER);
 });
 
 test("klone: Anmeldung/Netz werden in Alltagssprache übersetzt (403, 502)", async () => {
@@ -764,4 +787,379 @@ test("klone: scheitert das Registrieren, wird der fertige Klon wieder entfernt",
   const e = await wirftAsync(klone({ url: bare, ordner: join(basis, "Z") }, { ...OPT, support }));
   assert.equal(e.status, 500);
   assert.deepEqual(readdirSync(basis), ["support-ist-eine-datei"]);
+});
+
+// ---------------------------------------------------------------- Vertrauen vergessen (Spec §8: klonen, neu und entfernen löschen den Eintrag des Zielpfads)
+
+test("klone: eine alte Freigabe für den Zielpfad wird vergessen (echter und geschriebener Pfad, andere Schreibweise); andere Einträge bleiben", async () => {
+  const bare = bareMitInhalt();
+  const basis = tmp("brain-vg1-");
+  const echt = join(basis, "Ziel");
+  const link = join(tmp("brain-vg1-l-"), "verweis"); symlinkSync(basis, link);
+  const andere = tmp("brain-vg1-a-");
+  const bleibt = { seit: "2026-10-02T00:00:00Z", ordner: "1:2:3", code: "abc" };
+  schreibeJson(VERTRAUEN_JSON(), { [echt]: { seit: "2026-10-01T00:00:00Z" }, [join(link, "Ziel")]: { seit: "x" }, [echt.toUpperCase()]: { seit: "y" }, [andere]: bleibt });
+  const r = await klone({ url: bare, ordner: join(link, "Ziel") }, OPT);
+  assert.equal(r.vault.pfad, echt);
+  assert.deepEqual(leseJson(VERTRAUEN_JSON()), { [andere]: bleibt }, "nur die Einträge des Zielpfads fallen weg");
+  assert.equal(statSync(VERTRAUEN_JSON()).mode & 0o777, 0o600);
+  assert.deepEqual(readdirSync(SUPPORT()).filter((n) => n.includes(".tmp")), [], "keine Reste");
+});
+
+test("klone und neuesVault ohne Ordner: die alte Freigabe für <home>/Brain wird vergessen (der Fall des früher vertrauten ~/Brain)", async () => {
+  const bare = bareMitInhalt();
+  const home = tmp("brain-vg2-");
+  const brain = join(home, "Brain"), anderes = tmp();
+  schreibeJson(VERTRAUEN_JSON(), { [brain]: { seit: "x" }, [anderes]: { seit: "y" } });
+  const r = await klone({ url: bare }, { ...OPT, home });
+  assert.equal(r.vault.pfad, brain);
+  assert.deepEqual(leseJson(VERTRAUEN_JSON()), { [anderes]: { seit: "y" } });
+  schreibeJson(VERTRAUEN_JSON(), { [join(home, "Brain 2")]: { seit: "x" }, [anderes]: { seit: "y" } });
+  const n = await neuesVault({ art: "leer" }, { ...OPT, home });
+  assert.equal(n.vault.pfad, join(home, "Brain 2"));
+  assert.deepEqual(leseJson(VERTRAUEN_JSON()), { [anderes]: { seit: "y" } });
+});
+
+test("neuesVault (vorlage und leer): die alte Freigabe für den Zielordner wird vergessen, andere bleiben", async () => {
+  const andere = tmp();
+  for (const art of ["vorlage", "leer"]) {
+    const ziel = join(tmp("brain-vg3-"), "V");
+    schreibeJson(VERTRAUEN_JSON(), { [ziel]: { seit: "x" }, [andere]: { seit: "y" } });
+    await neuesVault({ art, ordner: ziel }, OPT);
+    assert.deepEqual(leseJson(VERTRAUEN_JSON()), { [andere]: { seit: "y" } }, art);
+  }
+});
+
+test("entferne: nimmt die Freigabe des Vaults zurück (echter Pfad und Eingabe über einen Verweis), andere bleiben; ohne Merker-Datei wird keine angelegt", () => {
+  const d = tmp(), andere = tmp();
+  const link = join(tmp(), "ln"); symlinkSync(d, link);
+  registriere(d); registriere(andere);
+  schreibeJson(VERTRAUEN_JSON(), { [d]: { seit: "x" }, [link]: { seit: "l" }, [andere]: { seit: "y" } });
+  entferne(link);
+  assert.deepEqual(leseJson(VERTRAUEN_JSON()), { [andere]: { seit: "y" } });
+  assert.deepEqual(leseVaults().vaults.map((v) => v.pfad), [andere]);
+  rmSync(VERTRAUEN_JSON());
+  entferne(andere);
+  assert.equal(existsSync(VERTRAUEN_JSON()), false, "nichts zu vergessen → keine Datei");
+});
+
+test("Freigabe bleibt, wenn der Vorgang schon an der Prüfung scheitert (nicht leerer Ordner, unzulässige Adresse, unbekannter Vault)", async () => {
+  const bare = bareMitInhalt();
+  const voll = tmp("brain-vg5-"); schreibe(voll, "x.md", "# x\n");
+  const alt = { [voll]: { seit: "x" } };
+  schreibeJson(VERTRAUEN_JSON(), alt);
+  assert.equal((await wirftAsync(klone({ url: bare, ordner: voll }, OPT))).status, 409);
+  assert.equal((await wirftAsync(neuesVault({ art: "leer", ordner: voll }, OPT))).status, 409);
+  assert.equal((await wirftAsync(klone({ url: "http://example.org/x.git", ordner: voll }, OPT))).status, 400);
+  assert.equal(wirft(() => entferne(voll)).status, 404);
+  assert.deepEqual(leseJson(VERTRAUEN_JSON()), alt);
+});
+
+test("kaputte vertrauen.json: klone, neu und entfernen brechen mit Fehler ab — Datei unberührt, nichts angelegt, Liste unverändert", async () => {
+  const bare = bareMitInhalt();
+  for (const roh of ["{ kein json", "[]", "\"x\"", "null", "5", ""]) {
+    writeFileSync(VERTRAUEN_JSON(), roh);
+    const basis = tmp("brain-vg6-");
+    const a = tmp(); registriere(a);
+    const vorher = leseVaults();
+    for (const e of [await wirftAsync(klone({ url: bare, ordner: join(basis, "K") }, OPT)), await wirftAsync(neuesVault({ art: "vorlage", ordner: join(basis, "N") }, OPT))]) {
+      assert.equal(e.status, 500, roh);
+      assert.match(e.message, /vertrauen\.json.*beschädigt/); assert.match(e.message, /nichts angelegt/);
+    }
+    const e = wirft(() => entferne(a));
+    assert.equal(e.status, 500); assert.match(e.message, /nicht aus der Liste genommen/);
+    assert.deepEqual(readdirSync(basis), [], `nichts angelegt (${roh})`);
+    assert.deepEqual(leseVaults(), vorher, "Liste unverändert");
+    assert.equal(readFileSync(VERTRAUEN_JSON(), "utf8"), roh, "die kaputte Datei bleibt, wie sie ist");
+  }
+  rmSync(VERTRAUEN_JSON(), { force: true }); mkdirSync(VERTRAUEN_JSON()); // ein Ordner statt einer Datei ist ebenso kaputt
+  const basis = tmp("brain-vg7-");
+  assert.equal((await wirftAsync(neuesVault({ art: "leer", ordner: join(basis, "V") }, OPT))).status, 500);
+  assert.deepEqual(readdirSync(basis), []);
+});
+
+// ---------------------------------------------------------------- Entfernen: nur ein aktiver Vault, dessen Ordner es gibt
+
+test("entferne: war er aktiv, wird der erste verbleibende mit vorhandenem Ordner aktiv — fehlende Ordner werden übersprungen, sonst keiner", () => {
+  const [a, b] = [tmp(), tmp()];
+  const weg = join(tmp(), "abgezogener-stick"); // diesen Ordner gibt es nicht
+  schreibeJson(VAULTS_JSON(), { vaults: [{ name: "Weg", pfad: weg }, { name: "A", pfad: a }, { name: "B", pfad: b }], aktiv: a });
+  let l = entferne(a);
+  assert.equal(l.aktiv, b, "„Weg“ steht vorn, gibt es aber nicht");
+  assert.equal(leseJson(VAULTS_JSON()).aktiv, b);
+  l = entferne(b);
+  assert.equal(l.aktiv, null);
+  assert.deepEqual(leseJson(VAULTS_JSON()), { vaults: [{ name: "Weg", pfad: weg, farbe: PALETTE[0] }], aktiv: null });
+  assert.equal(leseVaults().aktiv, null);
+  assert.equal(aktiverVaultPfad(), null);
+});
+
+test("Liste speichern: ein aktiv ohne vorhandenen Ordner wird nie gespeichert; gelesen bleibt es (ein abgezogener Stick bleibt Eintrag)", () => {
+  const [a, c] = [tmp(), tmp()];
+  const weg = join(tmp(), "gone");
+  schreibeJson(VAULTS_JSON(), { vaults: [{ name: "Weg", pfad: weg }, { name: "A", pfad: a }], aktiv: weg });
+  assert.equal(leseVaults().aktiv, weg);
+  assert.equal(aktiverVaultPfad(), null, "ohne Ordner kein aktiver Vault");
+  registriere(c); // irgendein Schreibvorgang
+  assert.equal(leseJson(VAULTS_JSON()).aktiv, null);
+  assert.deepEqual(leseVaults().vaults.map((v) => v.pfad), [weg, a, c]);
+  assert.equal(waehleAktiv(a).aktiv, a);
+  assert.equal(leseJson(VAULTS_JSON()).aktiv, a);
+  rmSync(a, { recursive: true });
+  registriere(tmp()); // a ist inzwischen weg
+  assert.equal(leseJson(VAULTS_JSON()).aktiv, null);
+});
+
+// ---------------------------------------------------------------- Gesamtfristen (Spec §8: je Git-Aufruf nur das Restbudget)
+
+test("neuesVault: hängt Git, endet der Vorgang nach der Gesamtfrist (504), der Kindprozess ist beendet, neue Ordner sind weg, nichts eingetragen, aktiver Vault bleibt", async () => {
+  const basis = tmp("brain-frist1-");
+  const a = tmp(); registriere(a); waehleAktiv(a);
+  const f = attrappeMit({ init: HAENGT });
+  const t0 = Date.now();
+  const e = await mitPfad(f.dir, () => wirftAsync(neuesVault({ art: "vorlage", ordner: join(basis, "x", "y", "V") }, { ...OPT, frist: 800 })));
+  assert.ok(Date.now() - t0 < 10_000, "kein Warten auf den hängenden Aufruf");
+  assert.equal(e.status, 504);
+  assert.match(e.message, /^Das Anlegen hat zu lange gedauert und wurde abgebrochen\. Es wurde nichts angelegt/);
+  assert.ok(await prozessTot(f.pid()), "der hängende git-Prozess wurde beendet");
+  assert.deepEqual(readdirSync(basis), [], "neue Ordner samt Elternordnern weg");
+  assert.deepEqual(leseVaults().vaults.map((v) => v.pfad), [a]);
+  assert.equal(leseVaults().aktiv, a, "kein Wechsel des aktiven Vaults");
+});
+
+test("Gesamtfrist gilt für alle Git-Aufrufe zusammen, nicht je Aufruf; ein vorher leerer Ordner bleibt (leer) bestehen", async () => {
+  const leer = tmp("brain-frist2-"); writeFileSync(join(leer, ".DS_Store"), "x");
+  const f = attrappeMit({}, { vorher: "sleep 0.5" }); // jeder Aufruf allein ist weit unter der Frist …
+  const e = await mitPfad(f.dir, () => wirftAsync(neuesVault({ art: "leer", ordner: leer }, { ...OPT, frist: 1600 })));
+  assert.equal(e.status, 504);
+  assert.ok(f.aufrufe().length <= 5, `… zusammen aber nicht: ${f.aufrufe().length} Aufrufe (ein voller Lauf braucht 7)`);
+  assert.deepEqual(readdirSync(leer), [".DS_Store"]);
+  assert.deepEqual(leseVaults(), LEER);
+});
+
+test("oeffneOrdner mit Git-Einschalten: läuft die Frist ab, wird nur Eigenes zurückgenommen (.git, neue .gitignore) — Dateien des Nutzers bleiben, kein Eintrag", async () => {
+  const a = tmp(); registriere(a); waehleAktiv(a);
+  const ohneIgnore = tmp("brain-frist3-"), mitIgnore = tmp("brain-frist3b-");
+  for (const d of [ohneIgnore, mitIgnore]) { schreibe(d, "a.md", "# a\n"); schreibe(d, "sub/b.txt", "b"); }
+  schreibe(mitIgnore, ".gitignore", "*.tmp\n"); // die eigene Datei des Nutzers
+  for (const d of [ohneIgnore, mitIgnore]) {
+    const vorher = momentaufnahme(d);
+    const f = attrappeMit({ add: HAENGT }); // init und Identität laufen durch, beim Vormerken hängt Git
+    const e = await mitPfad(f.dir, () => wirftAsync(oeffneOrdner({ pfad: d, gitEinschalten: true }, { ...OPT, frist: 1200 })));
+    assert.equal(e.status, 504);
+    assert.match(e.message, /^Das Einschalten des Versionsverlaufs hat zu lange gedauert und wurde abgebrochen\. Dein Ordner ist unverändert/);
+    if (f.aufrufe().some((z) => /\badd\b/.test(z))) assert.ok(await prozessTot(f.pid()), "der hängende git-Prozess wurde beendet");
+    assert.deepEqual(momentaufnahme(d), vorher, "kein .git, die .gitignore nur wenn sie schon da war — nichts vom Nutzer verloren");
+    assert.deepEqual(leseVaults().vaults.map((v) => v.pfad), [a]);
+    assert.equal(leseVaults().aktiv, a);
+  }
+});
+
+test("oeffneOrdner ohne Git-Wunsch: hängt schon die Repo-Prüfung, kommt nach der Frist ein klarer Fehler und kein Eintrag", async () => {
+  const d = tmp("brain-frist4-"); schreibe(d, "a.md", "# a\n");
+  const f = attrappeMit({ "rev-parse": HAENGT });
+  const e = await mitPfad(f.dir, () => wirftAsync(oeffneOrdner({ pfad: d }, { ...OPT, frist: 700 })));
+  assert.equal(e.status, 504);
+  assert.match(e.message, /^Git hat nicht rechtzeitig geantwortet\. Es wurde nichts verändert/);
+  assert.ok(await prozessTot(f.pid()));
+  assert.deepEqual(leseVaults(), LEER);
+});
+
+test("klone: die Gesamtfrist gilt auch nach dem Herunterladen (Einrichten) — Ablauf entfernt den fertigen Klon wieder", async () => {
+  const bare = bareMitInhalt();
+  const basis = tmp("brain-frist5-");
+  const f = attrappeMit({ config: HAENGT }); // das Herunterladen klappt, die Identität im neuen Klon hängt
+  const e = await mitPfad(f.dir, () => wirftAsync(klone({ url: bare, ordner: join(basis, "Z") }, { ...OPT, limitKlon: 1500 })));
+  assert.equal(e.status, 504);
+  assert.match(e.message, /^Das Herunterladen hat zu lange gedauert\./);
+  assert.ok(await prozessTot(f.pid()));
+  assert.deepEqual(readdirSync(basis), []);
+  assert.deepEqual(leseVaults(), LEER);
+});
+
+test("Gesamtfrist: opt.frist und opt.limitKlon wirken nur im Testmodus, ungültige Werte nie — sonst gelten 300 s", async () => {
+  const alt = process.env.BRAIN_TESTMODUS;
+  delete process.env.BRAIN_TESTMODUS;
+  try { // eine Frist von 1 ms hätte sofort 504 ergeben
+    const r = await neuesVault({ art: "leer", ordner: join(tmp("brain-frist6-"), "V") }, { ...OPT, frist: 1, limitKlon: 1 });
+    assert.equal(r.git, true);
+  } finally { process.env.BRAIN_TESTMODUS = alt; }
+  for (const frist of [0, -5, NaN, "kurz", null, Infinity]) {
+    const r = await neuesVault({ art: "leer", ordner: join(tmp("brain-frist7-"), "V") }, { ...OPT, frist });
+    assert.equal(r.git, true, String(frist));
+  }
+});
+
+// ---------------------------------------------------------------- Feldname: gitEinschalten (hat Vorrang) oder git (ältere Oberfläche)
+
+test("oeffneOrdner: Git-Wunsch als gitEinschalten oder git — gitEinschalten hat Vorrang, nur true zählt", async () => {
+  const faelle = [
+    [{ git: true }, true], [{ gitEinschalten: true }, true], [{ gitEinschalten: true, git: false }, true],
+    [{ gitEinschalten: false, git: true }, false], [{ git: false }, false], [{}, false], [{ git: "ja" }, false], [{ git: 1 }, false], [{ gitEinschalten: null, git: true }, false],
+  ];
+  for (const [felder, erwartet] of faelle) {
+    const d = tmp("brain-feld-"); schreibe(d, "a.md", "# a\n");
+    const r = await oeffneOrdner({ pfad: d, ...felder }, OPT);
+    assert.equal(r.git, erwartet, JSON.stringify(felder));
+    assert.equal(r.vault.git, erwartet, JSON.stringify(felder));
+    assert.equal(existsSync(join(d, ".git")), erwartet, JSON.stringify(felder));
+  }
+});
+
+// ---------------------------------------------------------------- Defekte vaults.json: Sicherungen mit Zeit, höchstens 5, Hinweis defekt
+
+test("defekte vaults.json: jede Sicherung hat einen eigenen Namen (Berliner Zeit), nichts wird überschrieben, höchstens die 5 neuesten bleiben", () => {
+  const sommer = Date.UTC(2026, 9, 24, 21, 15, 2); // 24.10.2026 23:15:02 in Berlin (Sommerzeit)
+  const winter = Date.UTC(2026, 11, 1, 10, 0, 0);  // 01.12.2026 11:00:00 in Berlin (Winterzeit)
+  const einzeln = join(SUPPORT(), "vaults.json.defekt");
+  writeFileSync(einzeln, "alte Einzeldatei"); // aus der Zeit vor den Zeitstempeln: bleibt unberührt und zählt nicht mit
+  const kaputtUndSchreibe = (n, jetzt) => { writeFileSync(VAULTS_JSON(), `{ kaputt ${n}`); registriere(tmp(), { jetzt }); };
+  const inhalte = () => sicherungen().map((n) => readFileSync(join(SUPPORT(), n), "utf8"));
+
+  kaputtUndSchreibe(1, sommer);
+  assert.deepEqual(sicherungen(), ["vaults.json.defekt-20261024-231502"]);
+  kaputtUndSchreibe(2, sommer); // dieselbe Sekunde → nächste Nummer, nichts überschrieben
+  kaputtUndSchreibe(3, sommer);
+  kaputtUndSchreibe(4, sommer);
+  assert.deepEqual(sicherungen(), ["vaults.json.defekt-20261024-231502", "vaults.json.defekt-20261024-231502-2", "vaults.json.defekt-20261024-231502-3", "vaults.json.defekt-20261024-231502-4"]);
+  assert.deepEqual(inhalte(), ["{ kaputt 1", "{ kaputt 2", "{ kaputt 3", "{ kaputt 4"]);
+  kaputtUndSchreibe(5, winter);
+  assert.ok(sicherungen().includes("vaults.json.defekt-20261201-110000"), "Winterzeit: 10:00 UTC = 11:00 in Berlin");
+  assert.equal(sicherungen().length, 5);
+  kaputtUndSchreibe(6, winter + 1000); // sechste → die älteste (…-231502 ohne Nummer) fällt weg
+  assert.deepEqual(inhalte(), ["{ kaputt 2", "{ kaputt 3", "{ kaputt 4", "{ kaputt 5", "{ kaputt 6"]);
+  kaputtUndSchreibe(7, winter + 2000); // siebte → …-2 fällt weg (Nummern zählen als Reihenfolge, nicht als Text)
+  assert.deepEqual(inhalte(), ["{ kaputt 3", "{ kaputt 4", "{ kaputt 5", "{ kaputt 6", "{ kaputt 7"]);
+  assert.equal(readFileSync(einzeln, "utf8"), "alte Einzeldatei");
+  assert.equal(leseVaults().vaults.length, 1, "nach jedem Defekt beginnt die Liste neu (die alte steht in der Sicherung)");
+});
+
+test("defekte vaults.json: viele Defekte in derselben Sekunde — die neuesten bleiben (auch wenn der erste Name längst aufgeräumt ist); eine zurückgestellte Uhr ändert die Reihenfolge nicht", () => {
+  const jetzt = Date.UTC(2026, 9, 24, 21, 15, 2);
+  const kaputtUndSchreibe = (n, t) => { writeFileSync(VAULTS_JSON(), `{ kaputt ${n}`); registriere(tmp(), { jetzt: t }); };
+  const nummern = () => sicherungen().map((n) => Number(readFileSync(join(SUPPORT(), n), "utf8").slice("{ kaputt ".length))).sort((a, b) => a - b);
+  for (let n = 1; n <= 9; n++) kaputtUndSchreibe(n, jetzt);
+  assert.deepEqual(nummern(), [5, 6, 7, 8, 9]);
+  assert.deepEqual(sicherungen(), [5, 6, 7, 8, 9].map((n) => `vaults.json.defekt-20261024-231502-${n}`));
+  kaputtUndSchreibe(10, jetzt - 3_600_000); // Uhr eine Stunde zurück: der Zeitstempel fällt nie unter den neuesten vorhandenen
+  assert.deepEqual(nummern(), [6, 7, 8, 9, 10], "die neue Sicherung ist die neueste und bleibt");
+  assert.ok(sicherungen().includes("vaults.json.defekt-20261024-231502-10"));
+});
+
+test("defekte vaults.json: scheitert die Sicherung (hier: vaults.json ist ein Ordner), wird nichts geschrieben", () => {
+  mkdirSync(VAULTS_JSON());
+  assert.equal(wirft(() => registriere(tmp())).status, 500);
+  assert.ok(statSync(VAULTS_JSON()).isDirectory(), "unverändert");
+  assert.deepEqual(sicherungen(), []);
+});
+
+test("Hinweis defekt: leseVaults() trägt defekt:true, solange vaults.json die nach der Sicherung geschriebene Datei ist — nie sonst", () => {
+  const hat = () => "defekt" in leseVaults();
+  writeFileSync(VAULTS_JSON(), "{ kaputt");
+  assert.equal(hat(), false, "bloßes Lesen ersetzt nichts und meldet nichts");
+  const a = tmp(); registriere(a);
+  assert.equal(sicherungen().length, 1);
+  assert.equal(leseVaults().defekt, true);
+  assert.equal(leseVaults().defekt, true, "bleibt, solange die Datei so ist");
+  assert.deepEqual(leseVaults().vaults.map((v) => v.pfad), [a]);
+  registriere(tmp()); // die heile Datei wird sauber weitergeschrieben → der Hinweis ist erledigt
+  assert.equal(hat(), false);
+
+  writeFileSync(VAULTS_JSON(), "{ kaputt"); registriere(tmp());
+  assert.equal(leseVaults().defekt, true);
+  schreibeJson(VAULTS_JSON(), { vaults: [], aktiv: null }); // von Hand oder von einem anderen Prozess repariert
+  assert.equal(hat(), false);
+  assert.equal(leseVaults().vaults.length, 0);
+
+  writeFileSync(VAULTS_JSON(), "{ kaputt"); registriere(tmp());
+  assert.equal(leseVaults().defekt, true);
+  rmSync(VAULTS_JSON()); // Datei weg
+  assert.equal(hat(), false);
+  assert.deepEqual(leseVaults(), LEER);
+
+  // anderer Support-Ordner: eigener Merker
+  const s2 = tmp("brain-sup-hinweis-");
+  writeFileSync(join(s2, "vaults.json"), "{ kaputt"); registriere(tmp(), { support: s2 });
+  assert.equal(leseVaults({ support: s2 }).defekt, true);
+  assert.equal("defekt" in leseVaults(), false);
+});
+
+// ---------------------------------------------------------------- Laden: Ortsregeln, Doppelte, aktiv
+
+test("Laden: Einträge mit unzulässigem Ort werden übersprungen (wie beim Hinzufügen) und bleiben bis zum nächsten Schreiben in der Datei", () => {
+  const gut = tmp(), gut2 = tmp();
+  const unzul = ["/", "/Users", HOME, join(HOME, ".ssh"), join(HOME, "Library", "Caches", "x"), "/System", "/usr/local/x", "/private/etc/ssh", "/Library", "/Applications/Foo",
+    "/Volumes", "/opt/homebrew", "/private", "/var", SUPPORT(), join(SUPPORT(), "x"), join(gut, ".git", "x"), join(gut, "node_modules"), join(gut, "Programm.app")];
+  const roh = JSON.stringify({ vaults: [...unzul.map((pfad, i) => ({ name: `U${i}`, pfad })), { name: "Gut", pfad: gut }, { name: "Gut2", pfad: gut2 }], aktiv: gut });
+  writeFileSync(VAULTS_JSON(), roh);
+  const l = leseVaults();
+  assert.deepEqual(l.vaults.map((v) => v.pfad), [gut, gut2]);
+  assert.equal(l.aktiv, gut);
+  assert.equal(aktiverVaultPfad(), gut);
+  assert.equal(readFileSync(VAULTS_JSON(), "utf8"), roh, "Lesen ändert die Datei nicht");
+  const neu = tmp(); registriere(neu);
+  assert.deepEqual(leseJson(VAULTS_JSON()).vaults.map((v) => v.pfad), [gut, gut2, neu], "das erste Schreiben gibt nur die brauchbaren Einträge aus");
+  // ein Verweis auf einen unzulässigen Ort zählt nach dem Auflösen
+  const t = tmp(); symlinkSync("/etc", join(t, "nach-etc")); symlinkSync(HOME, join(t, "nach-home"));
+  schreibeJson(VAULTS_JSON(), { vaults: [{ pfad: join(t, "nach-etc") }, { pfad: join(t, "nach-home") }, { pfad: gut }], aktiv: join(t, "nach-etc") });
+  assert.deepEqual(leseVaults(), { vaults: [{ name: basename(gut), pfad: gut, farbe: PALETTE[0] }], aktiv: null });
+});
+
+test("Laden: ein Eintrag mit fehlendem Ordner oder nur einem Verweis ins Leere bleibt Eintrag (abgezogener Stick)", () => {
+  const t = tmp(); const weg = join(t, "stick", "Brain"); symlinkSync(join(t, "gibts-nicht"), join(t, "kaputt"));
+  schreibeJson(VAULTS_JSON(), { vaults: [{ name: "Stick", pfad: weg }, { name: "Alias", pfad: join(t, "kaputt") }], aktiv: weg });
+  const l = leseVaults();
+  assert.deepEqual(l.vaults.map((v) => v.name), ["Stick", "Alias"]);
+  assert.equal(l.aktiv, weg);
+  assert.equal(aktiverVaultPfad(), null);
+});
+
+test("Laden: Doppelte (Schrägstrich, .., Verweis, Groß/klein) zählen einmal — der erste bleibt, aktiv wird zu seinem pfad", () => {
+  const d = tmp(), e = tmp();
+  const link = join(tmp(), "ln"); symlinkSync(d, link);
+  const gross = d.toUpperCase(); // auf APFS derselbe Ordner
+  const eintraege = [{ name: "Erster", pfad: d }, { name: "Slash", pfad: d + "/" }, { name: "Punkte", pfad: join(d, "..", basename(d)) }, { name: "Link", pfad: link }, { name: "Anderer", pfad: e }];
+  if (existsSync(gross)) eintraege.splice(4, 0, { name: "Gross", pfad: gross });
+  schreibeJson(VAULTS_JSON(), { vaults: eintraege, aktiv: link });
+  const l = leseVaults();
+  assert.deepEqual(l.vaults.map((v) => [v.name, v.pfad]), [["Erster", d], ["Anderer", e]]);
+  assert.equal(l.aktiv, d, "aktiv meinte den Verweis → wird zum pfad des übernommenen Eintrags");
+  // der erste ist der Verweis: dann bleibt der Verweis als pfad stehen, der echte Ordner ist das Doppelte
+  schreibeJson(VAULTS_JSON(), { vaults: [{ name: "Link", pfad: link }, { name: "Echt", pfad: d }], aktiv: d });
+  const l2 = leseVaults();
+  assert.deepEqual(l2.vaults.map((v) => [v.name, v.pfad]), [["Link", link]]);
+  assert.equal(l2.aktiv, link);
+});
+
+test("Laden: aktiv muss einer der übernommenen Einträge sein, sonst null; Grenzfälle der Struktur", () => {
+  const d = tmp(), e = tmp();
+  const link = join(tmp(), "ln"); symlinkSync(d, link);
+  const liest = (wert) => { schreibeJson(VAULTS_JSON(), wert); return leseVaults(); };
+  assert.equal(liest({ vaults: [{ pfad: d }, { pfad: e }], aktiv: e }).aktiv, e);
+  assert.equal(liest({ vaults: [{ pfad: d }], aktiv: e }).aktiv, null, "gehört nicht zur Liste");
+  assert.equal(liest({ vaults: [{ pfad: d }], aktiv: "/etc" }).aktiv, null);
+  assert.equal(liest({ vaults: [{ pfad: d }, { pfad: "/etc" }], aktiv: "/etc" }).aktiv, null, "der Eintrag ist unzulässig");
+  assert.equal(liest({ vaults: [{ pfad: d }], aktiv: "relativ/pfad" }).aktiv, null);
+  assert.equal(liest({ vaults: [{ pfad: d }], aktiv: 5 }).aktiv, null);
+  assert.equal(liest({ vaults: [{ pfad: d }], aktiv: null }).aktiv, null);
+  assert.equal(liest({ vaults: [{ pfad: d }] }).aktiv, null);
+  assert.equal(liest({ vaults: [{ pfad: d }], aktiv: link }).aktiv, d, "über einen Verweis gemeint");
+  assert.equal(liest({ vaults: [{ pfad: d }], aktiv: d + "/./" }).aktiv, d);
+  assert.deepEqual(liest({ vaults: [], aktiv: e }), LEER, "leere Liste → kein aktiver Vault");
+  assert.deepEqual(liest({ aktiv: e }), LEER);
+  assert.deepEqual(liest({}), LEER);
+  // vaults da, aber kein Array: defekt → leer, aktiv null (auch wenn aktiv gültig aussieht)
+  for (const wert of [{ vaults: "x", aktiv: "/p" }, { vaults: "x", aktiv: e }, { vaults: {}, aktiv: e }, { vaults: 5, aktiv: e }, { vaults: null, aktiv: e }]) {
+    assert.deepEqual(liest(wert), LEER, JSON.stringify(wert));
+    assert.equal(aktiverVaultPfad(), null);
+  }
+});
+
+test("config.json-Übernahme: ein unzulässiger Ort (Home selbst, Systemordner, versteckter Ordner) wird nicht übernommen", () => {
+  mkdirSync(join(HOME, ".ssh"), { recursive: true });
+  for (const v of [HOME, "/usr", "/", join(HOME, ".ssh"), "/System"]) {
+    writeFileSync(join(SUPPORT(), "config.json"), JSON.stringify({ vault: v }));
+    assert.deepEqual(leseVaults(), LEER, v);
+    assert.equal(existsSync(VAULTS_JSON()), false, v);
+  }
 });

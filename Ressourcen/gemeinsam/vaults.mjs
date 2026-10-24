@@ -4,15 +4,36 @@
 //
 // Alle Funktionen nehmen als letztes Argument `opt`: support (Standard supportOrdner()), home (Standard os.homedir()) und
 // heute ("JJJJ-MM-TT", für Tests). Sie werden bei JEDEM Aufruf frisch gelesen — nie als Modul-Konstante.
+// Nur für Tests: frist (ms, Gesamtfrist je Vorgang; beim Klonen auch limitKlon) und jetzt (Zeitpunkt für den Namen der Sicherung).
+//
+// LESEREGEL für <support>/vaults.json — gilt für dieses Modul UND für Swift (VaultListe.swift liest dieselbe Datei):
+//  1. Zustand: „fehlt“ (gibt es nicht) · „defekt“ (nicht lesbar, kein JSON-Objekt, oder „vaults“ ist da, aber kein Array) · sonst
+//     „ok“ (auch {} und {"vaults":[]}: leere Liste). Bei „fehlt“/„defekt“ gilt der Vault der alten config.json (nur wenn sein Ordner
+//     existiert und die Ortsregeln ihn erlauben), sonst eine leere Liste ohne aktiven Vault. Beim Lesen wird eine defekte Datei nie
+//     überschrieben (nur bei „fehlt“ wird die Übernahme der config.json gespeichert).
+//  2. Ein Eintrag zählt nur, wenn er ein Objekt mit Text „pfad“ ist: absolut („/…“), ohne NUL-Zeichen, und die Ortsregeln von
+//     pruefeRegeln ihn erlauben (Spec §5a „Pfadregeln“: nicht /, /Users, /Volumes, nicht das Home selbst, kein Systemordner und kein
+//     Vorfahr davon, nicht ~/Library außer Mobile Documents/CloudStorage, nicht der App-Ordner, kein „.git“/„node_modules“/„.app“ im
+//     Pfad, kein versteckter Ordner unter dem Home) — für die geschriebene Form UND den aufgelösten Pfad (Symlinks). Unbrauchbare
+//     Einträge werden übersprungen; in der Datei bleiben sie, bis das nächste Schreiben die Liste neu ausgibt. Ob der Ordner
+//     existiert, gehört nicht dazu (ein abgezogener Stick bleibt Eintrag, „vorhanden: false“).
+//  3. Einträge für denselben Ordner (gleicher aufgelöster Pfad, ohne Groß/klein und Unicode-Form) zählen einmal: der erste bleibt.
+//  4. „aktiv“ gilt nur, wenn es (geschrieben oder aufgelöst) einen der gültigen Einträge meint, und wird zu dessen „pfad“; sonst
+//     null. Gespeichert wird ein „aktiv“ ohne vorhandenen Ordner nie (dann null).
+//  5. Name fehlt oder ist leer → Ordnername. Ungültige Farbe → nächste Palettenfarbe (nur Node).
+// SCHREIBEN: atomar (Temp-Datei + rename). Eine defekte Datei wird vorher nach vaults.json.defekt-<JJJJMMTT-HHMMSS> (Berliner Zeit)
+// gesichert, nie überschrieben; die 5 neuesten bleiben. Danach trägt leseVaults() `defekt: true`, solange vaults.json noch die Datei
+// ist, die dieser Prozess nach der Sicherung geschrieben hat (Merker im Prozess, an Datei-Identität gebunden: kein weiterer
+// Dateityp, den Swift kennen müsste, kein Rest nach einem Neustart oder einer Reparatur von Hand).
 import {
-  realpathSync, statSync, lstatSync, readdirSync, readFileSync, writeFileSync, mkdirSync, renameSync, rmSync, copyFileSync,
+  realpathSync, statSync, lstatSync, readdirSync, readFileSync, writeFileSync, mkdirSync, renameSync, rmSync, copyFileSync, constants,
 } from "node:fs";
 import { join, resolve, dirname, basename, isAbsolute } from "node:path";
-import { homedir } from "node:os";
+import { homedir, userInfo } from "node:os";
 import { randomBytes } from "node:crypto";
 import { HttpFehler, supportOrdner, testmodus, falte, BEARBEITBAR } from "./basis.mjs";
-import { git, istRepo } from "./git.mjs";
-import { pruefeGitUrl, sorgeFuerIdentitaet, uebersetzeGitFehler } from "./gitwerkzeug.mjs";
+import { git } from "./git.mjs";
+import { pruefeGitUrl, uebersetzeGitFehler } from "./gitwerkzeug.mjs";
 import { berlinHeute } from "./pruefung.mjs";
 import { legeVorlageAn, GITIGNORE } from "./vorlage.mjs";
 
@@ -27,7 +48,7 @@ const MELDUNG_NICHT_LEER = "Der Ordner ist nicht leer. Wähle einen neuen oder l
 
 function optionen(opt) {
   const o = opt || {};
-  return { support: o.support || supportOrdner(), home: o.home || homedir(), heute: o.heute || null, limitKlon: o.limitKlon };
+  return { support: o.support || supportOrdner(), home: o.home || homedir(), heute: o.heute || null, limitKlon: o.limitKlon, frist: o.frist, jetzt: o.jetzt };
 }
 
 const objekt = (x) => (x && typeof x === "object" && !Array.isArray(x) ? x : {});
@@ -162,9 +183,67 @@ export function standardOrdner(opt = {}) {
   throw new HttpFehler(409, "Es gibt schon zu viele Ordner namens „Brain“. Bitte wähle selbst einen Ordner.");
 }
 
+// ---------- Vertrauen vergessen ----------
+
+// Der Pfad wie geschrieben, nur mit ~ aufgelöst und bereinigt (Symlinks bleiben stehen) — null, wenn er nicht absolut ist.
+function lexikalisch(pfad, o) {
+  if (typeof pfad !== "string") return null;
+  let p = pfad.trim();
+  if (p === "~" || p.startsWith("~/")) p = join(o.home, p.slice(1));
+  return isAbsolute(p) && !p.includes("\0") ? resolve(p) : null;
+}
+
+// Das Kit-Vertrauen klebt am Pfad: <support>/vertrauen.json = { "<realpath des Vaults>": { … } } (schreibt vault.mjs / das
+// Vertrauensmodul). Ein neuer Vault am Ort eines alten (neu angelegt, geklont, nach „Entfernen“ wieder hineingelegt) darf die alte
+// Freigabe nie erben. Hier wird nur GELÖSCHT, ohne das Vertrauensmodul zu kennen: jeder Schlüssel, der einen der Pfade meint (ohne
+// Groß/klein und Unicode-Form), fällt weg; alle anderen Einträge bleiben, geschrieben wird atomar mit Modus 0600. Eine kaputte Datei
+// wird nie überschrieben — dann Fehler (der Vorgang bricht ab, `folge` sagt, was nicht geschehen ist). Gibt es die Datei nicht → nichts zu tun.
+function vergissVertrauen(o, pfade, folge) {
+  const datei = join(o.support, "vertrauen.json");
+  const kaputt = (grund) => new HttpFehler(500, `Die Liste der freigegebenen Vaults (Datei vertrauen.json im App-Ordner) ist beschädigt. ${folge} ` +
+    "Lösche die Datei und versuche es noch einmal — Vaults mit Kit müssen dann erneut freigegeben werden.", { ausgabe: grund });
+  let text;
+  try { text = readFileSync(datei, "utf8"); }
+  catch (e) {
+    if (e && (e.code === "ENOENT" || e.code === "ENOTDIR")) return false;
+    throw kaputt(String((e && e.code) || (e && e.message) || e));
+  }
+  let merker;
+  try { merker = JSON.parse(text); } catch { throw kaputt("kein JSON"); }
+  if (!merker || typeof merker !== "object" || Array.isArray(merker)) throw kaputt("kein JSON-Objekt");
+  const formen = pfade.filter((p) => typeof p === "string" && p);
+  const weg = Object.keys(merker).filter((k) => formen.some((f) => istGleich(k, f)));
+  if (!weg.length) return false;
+  for (const k of weg) delete merker[k];
+  const tmp = `${datei}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
+  try { writeFileSync(tmp, JSON.stringify(merker, null, 2) + "\n", { mode: 0o600 }); renameSync(tmp, datei); }
+  catch (e) {
+    try { rmSync(tmp, { force: true }); } catch { /* weg */ }
+    throw new HttpFehler(500, `Die alte Freigabe für diesen Ordner konnte nicht zurückgenommen werden. ${folge}`, { ausgabe: String((e && e.code) || (e && e.message) || e) });
+  }
+  return true;
+}
+
 // ---------- Die Liste (vaults.json) ----------
 
-// Liest nur — nie schreiben. zustand: "ok" | "fehlt" | "defekt" (Rechte o. Ä. und kaputtes JSON zählen als defekt).
+// Dieselben Ortsregeln wie beim Hinzufügen (pruefeRegeln) für die geschriebene und die aufgelöste Form; legt nichts an, wirft nie.
+function ortsPruefer(o) {
+  let r = null;
+  return (lex) => {
+    try {
+      r ??= (() => { const h = resolve(o.home), s = resolve(o.support); return { h, s, hEcht: versuchEchter(h), sEcht: versuchEchter(s) }; })();
+      pruefeRegeln(lex, r.h, r.s);
+      pruefeRegeln(versuchEchter(lex), r.hEcht, r.sEcht);
+      return true;
+    } catch { return false; }
+  };
+}
+
+// Die gefalteten Formen eines Pfads (geschrieben, aufgelöst) — gleiche Ordner haben mindestens eine Form gemeinsam.
+const formenVon = (pfad) => [...new Set([teile(pfad).join("/"), teile(versuchEchter(pfad)).join("/")])];
+const teilenForm = (a, b) => a.some((x) => b.includes(x));
+
+// Liest nur — nie schreiben. zustand: "ok" | "fehlt" | "defekt" (Rechte o. Ä. und kaputtes JSON zählen als defekt). Leseregel: siehe Kopf.
 function leseDatei(o) {
   let text;
   try { text = readFileSync(join(o.support, "vaults.json"), "utf8"); }
@@ -172,30 +251,41 @@ function leseDatei(o) {
   let wurzel;
   try { wurzel = JSON.parse(text); } catch { return { zustand: "defekt" }; }
   if (!wurzel || typeof wurzel !== "object" || Array.isArray(wurzel) || (wurzel.vaults !== undefined && !Array.isArray(wurzel.vaults))) return { zustand: "defekt" };
-  const gesehen = new Set();
+  const erlaubt = ortsPruefer(o);
   const vaults = [];
+  const formen = []; // je übernommenem Eintrag seine Formen (für Doppelte und für aktiv)
   for (const v of wurzel.vaults || []) {
     if (!v || typeof v !== "object" || typeof v.pfad !== "string" || v.pfad.includes("\0") || !isAbsolute(v.pfad)) continue; // kaputte Einträge überspringen
     const pfad = resolve(v.pfad);
-    if (gesehen.has(teile(pfad).join("/"))) continue;
-    gesehen.add(teile(pfad).join("/"));
+    if (!erlaubt(pfad)) continue; // Ort nicht zulässig: überspringen (bleibt in der Datei, bis das nächste Schreiben sie neu ausgibt)
+    const f = formenVon(pfad);
+    if (formen.some((x) => teilenForm(x, f))) continue; // derselbe Ordner noch einmal
+    formen.push(f);
     vaults.push({
       name: typeof v.name === "string" && v.name.trim() ? v.name : standardName(pfad),
       pfad,
       farbe: typeof v.farbe === "string" && /^#[0-9a-f]{6}$/i.test(v.farbe) ? v.farbe : PALETTE[vaults.length % PALETTE.length],
     });
   }
-  const aktiv = typeof wurzel.aktiv === "string" && !wurzel.aktiv.includes("\0") && isAbsolute(wurzel.aktiv) ? resolve(wurzel.aktiv) : null;
+  let aktiv = null; // muss einer der übernommenen Einträge sein und wird zu dessen pfad
+  if (typeof wurzel.aktiv === "string" && !wurzel.aktiv.includes("\0") && isAbsolute(wurzel.aktiv)) {
+    const f = formenVon(resolve(wurzel.aktiv));
+    const i = formen.findIndex((x) => teilenForm(x, f));
+    if (i >= 0) aktiv = vaults[i].pfad;
+  }
   return { zustand: "ok", liste: { vaults, aktiv } };
 }
 
-// Der Vault aus der alten config.json der App ({"vault":"<pfad>"}) — nur wenn der Ordner noch da ist.
+// Der Vault aus der alten config.json der App ({"vault":"<pfad>"}) — nur wenn der Ordner noch da ist und die Ortsregeln ihn erlauben.
 function altVault(o) {
   try {
     const c = JSON.parse(readFileSync(join(o.support, "config.json"), "utf8"));
     const v = c && typeof c.vault === "string" ? c.vault.trim() : "";
     if (!v || v.includes("\0") || !isAbsolute(v) || !istOrdner(v)) return null;
-    return { pfad: realpathSync.native(v), name: standardName(v) };
+    const pfad = realpathSync.native(v);
+    const erlaubt = ortsPruefer(o);
+    if (!erlaubt(resolve(v)) || !erlaubt(pfad)) return null;
+    return { pfad, name: standardName(v) };
   } catch { return null; }
 }
 
@@ -210,15 +300,76 @@ function ladeListe(o, uebernahmeSpeichern) {
   return { zustand: r.zustand, liste };
 }
 
-// Atomar: Temp-Datei im selben Ordner + rename. Eine defekte Datei wird vorher als vaults.json.defekt gesichert.
+// Sicherung einer defekten vaults.json: vaults.json.defekt-<JJJJMMTT-HHMMSS> (Berliner Zeit), nie überschreibend; es bleiben die
+// 5 neuesten. Die Namen steigen immer (die Reihenfolge der Namen ist die der Sicherungen, danach richtet sich das Aufräumen): zweimal
+// in derselben Sekunde → …-2, …-3 (immer eine Nummer über der höchsten vorhandenen), und nie ein Zeitstempel unter dem neuesten
+// vorhandenen (Zeitumstellung im Herbst, zurückgestellte Uhr). Die ältere Einzeldatei vaults.json.defekt wird nicht angefasst.
+const SICHERUNG = /^vaults\.json\.defekt-(\d{8}-\d{6})(?:-(\d+))?$/;
+const MAX_SICHERUNGEN = 5;
+const BERLIN_ZEIT = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Berlin", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
+function zeitstempel(jetzt) {
+  let d = jetzt === undefined || jetzt === null ? new Date() : new Date(jetzt);
+  if (Number.isNaN(d.getTime())) d = new Date();
+  const t = Object.fromEntries(BERLIN_ZEIT.formatToParts(d).map((p) => [p.type, p.value]));
+  return `${t.year}${t.month}${t.day}-${t.hour}${t.minute}${t.second}`;
+}
+const sicherungen = (o) => { try { return readdirSync(o.support).map((n) => ({ n, m: SICHERUNG.exec(n) })).filter((x) => x.m); } catch { return []; } };
+function sichereDefekte(o, ziel) {
+  const vorhandene = sicherungen(o);
+  let stempel = zeitstempel(o.jetzt);
+  for (const { m } of vorhandene) if (m[1] > stempel) stempel = m[1];
+  const hoechste = Math.max(0, ...vorhandene.filter(({ m }) => m[1] === stempel).map(({ m }) => Number(m[2] || 1)));
+  for (let nr = hoechste + 1; ; nr++) {
+    try { copyFileSync(ziel, join(o.support, `vaults.json.defekt-${stempel}${nr === 1 ? "" : `-${nr}`}`), constants.COPYFILE_EXCL); break; }
+    catch (e) { if (!(e && e.code === "EEXIST") || nr > hoechste + 1000) throw e; } // der Name ist belegt (anderer Prozess) → nächste Nummer; alles andere bricht das Schreiben ab
+  }
+  try { // nur die 5 neuesten behalten (Name = Zeit, bei Gleichstand die Nummer); beste Mühe
+    const alle = sicherungen(o).sort((a, b) => (a.m[1] < b.m[1] ? -1 : a.m[1] > b.m[1] ? 1 : Number(a.m[2] || 1) - Number(b.m[2] || 1)));
+    for (const x of alle.slice(0, Math.max(0, alle.length - MAX_SICHERUNGEN))) rmSync(join(o.support, x.n), { force: true });
+  } catch { /* beste Mühe */ }
+}
+
+// Merker „von der defekten Liste gibt es eine Sicherung“: je Support-Ordner die Identität von vaults.json, seit wir gesichert haben —
+// erst die der defekten Datei (scheitert das Schreiben danach, ist sie ja noch defekt), nach dem Schreiben die der neuen. Er gilt nur,
+// solange vaults.json genau diese Datei ist: jedes weitere Schreiben (auch von Hand oder durch einen anderen Prozess) beendet den
+// Hinweis. Im Prozess statt in einer Marker-Datei: kein weiterer Dateityp für Swift, kein Hinweis, der nach einem Neustart oder einer
+// Reparatur von Hand hängen bleibt; die Sicherung selbst liegt dauerhaft daneben.
+const ersetzt = new Map();
+const merkerSchluessel = (o) => (typeof o.support === "string" ? resolve(o.support) : "");
+function dateiKennung(ziel) { try { const s = statSync(ziel); return { ino: s.ino, size: s.size, mtimeMs: s.mtimeMs }; } catch { return null; } }
+function defektHinweis(o) {
+  const k = ersetzt.get(merkerSchluessel(o));
+  if (!k) return false;
+  const jetztDa = dateiKennung(join(o.support, "vaults.json"));
+  if (jetztDa && jetztDa.ino === k.ino && jetztDa.size === k.size && jetztDa.mtimeMs === k.mtimeMs) return true;
+  ersetzt.delete(merkerSchluessel(o));
+  return false;
+}
+
+// Gespeichert wird nie ein aktiv, das nicht zur Liste gehört oder auf einen fehlenden Ordner zeigt (dann null).
+function gueltigAktiv(liste) {
+  const a = liste.aktiv;
+  if (typeof a !== "string" || !a) return null;
+  const e = liste.vaults.find((v) => istGleich(v.pfad, a) || istGleich(versuchEchter(v.pfad), versuchEchter(a)));
+  return e && istOrdner(e.pfad) ? e.pfad : null;
+}
+
+// Atomar: Temp-Datei im selben Ordner + rename. Eine defekte Datei wird vorher gesichert (siehe oben), nie überschrieben.
 function schreibeListe(o, liste, zustand) {
   const ziel = join(o.support, "vaults.json");
   mkdirSync(o.support, { recursive: true });
-  if (zustand === "defekt") copyFileSync(ziel, ziel + ".defekt");
+  liste.aktiv = gueltigAktiv(liste);
+  if (zustand === "defekt") { // scheitert die Sicherung, wird nichts geschrieben
+    sichereDefekte(o, ziel);
+    const defekteDatei = dateiKennung(ziel);
+    if (defekteDatei) ersetzt.set(merkerSchluessel(o), defekteDatei);
+  }
   const tmp = `${ziel}.tmp-${process.pid}-${randomBytes(4).toString("hex")}`;
   const inhalt = JSON.stringify({ vaults: liste.vaults.map(({ name, pfad, farbe }) => ({ name, pfad, farbe })), aktiv: liste.aktiv ?? null }, null, 2) + "\n";
   try { writeFileSync(tmp, inhalt); renameSync(tmp, ziel); }
   catch (e) { try { rmSync(tmp, { force: true }); } catch { /* weg */ } throw e; }
+  const kennung = zustand === "defekt" ? dateiKennung(ziel) : null;
+  if (kennung) ersetzt.set(merkerSchluessel(o), kennung); else ersetzt.delete(merkerSchluessel(o));
 }
 function speichere(o, liste, zustand) {
   try { schreibeListe(o, liste, zustand); }
@@ -227,8 +378,13 @@ function speichere(o, liste, zustand) {
 
 const kopie = (liste) => ({ vaults: liste.vaults.map((v) => ({ ...v })), aktiv: liste.aktiv ?? null });
 
+// { vaults, aktiv } — dazu `defekt: true`, wenn dieser Prozess eine defekte vaults.json ersetzt hat und die Datei seither unverändert ist
+// (die alte Liste liegt dann als vaults.json.defekt-… im App-Ordner; die Oberfläche soll das melden).
 export function leseVaults(opt = {}) {
-  return kopie(ladeListe(optionen(opt), true).liste);
+  const o = optionen(opt);
+  const liste = kopie(ladeListe(o, true).liste);
+  if (defektHinweis(o)) liste.defekt = true;
+  return liste;
 }
 
 // Pfad des aktiven Vaults, nur wenn der Ordner existiert. Wirft nie (der MCP-Server verlässt sich darauf).
@@ -299,13 +455,18 @@ export function waehleAktiv(pfad, opt = {}) {
   return kopie(liste);
 }
 
-// Nur aus der Liste — Dateien bleiben unangetastet. War er aktiv, wird der erste verbleibende aktiv (sonst keiner).
+// Nur aus der Liste — Dateien bleiben unangetastet. War er aktiv, wird der erste verbleibende aktiv, dessen Ordner es gibt (sonst keiner).
+// Die Freigabe (Kit-Vertrauen) für den Ordner wird vorher zurückgenommen; geht das nicht, bleibt alles wie es war.
 export function entferne(pfad, opt = {}) {
   const o = optionen(opt);
   const { liste, zustand } = ladeListe(o, false);
-  const [weg] = liste.vaults.splice(finde(liste, pfad, o), 1);
+  const i = finde(liste, pfad, o);
+  const weg = liste.vaults[i];
+  vergissVertrauen(o, [weg.pfad, versuchEchter(weg.pfad), lexikalisch(pfad, o)], "Der Vault wurde nicht aus der Liste genommen.");
+  liste.vaults.splice(i, 1);
   if (liste.aktiv && (istGleich(liste.aktiv, weg.pfad) || istGleich(liste.aktiv, versuchEchter(weg.pfad)))) {
-    liste.aktiv = liste.vaults.length ? liste.vaults[0].pfad : null;
+    const naechster = liste.vaults.find((v) => istOrdner(v.pfad));
+    liste.aktiv = naechster ? naechster.pfad : null;
   }
   speichere(o, liste, zustand);
   return kopie(liste);
@@ -355,49 +516,95 @@ function raeumeAuf(z) {
   } catch { /* beste Mühe */ }
 }
 
-async function gitOk(cwd, args, meldung) {
-  const r = await git(cwd, args);
+// Gesamtfrist je Vorgang (Spec §8): neu anlegen, Ordner öffnen (mit Git einschalten) und klonen dürfen zusammen höchstens 300 s dauern —
+// nicht je Git-Aufruf. Jeder Aufruf bekommt nur das, was vom Budget übrig ist; ist es aufgebraucht, startet keiner mehr.
+const FRIST_MS = 300_000;
+const neueFrist = (gesamt) => { const ende = Date.now() + gesamt; return { rest: () => ende - Date.now() }; };
+// Nur im Test kürzer: opt.frist für alle Wege, opt.limitKlon nur fürs Klonen.
+const gesamtfrist = (o, nurDieserWeg) => (testmodus() ? [nurDieserWeg, o.frist].find((x) => Number.isFinite(x) && x > 0) : undefined) ?? FRIST_MS;
+
+// Ein Git-Aufruf mit dem Restbudget. Läuft es im Aufruf ab, beendet git() den Kindprozess (SIGKILL); ist es schon aufgebraucht,
+// wird gar nichts mehr gestartet. Beides → HttpFehler 504; die Wege nehmen zurück, was sie angelegt haben, und übersetzen ihn (zeitFehler).
+async function gitMit(frist, cwd, args) {
+  const rest = frist.rest();
+  if (rest < 1) throw new HttpFehler(504, "Die Frist ist abgelaufen.");
+  return git(cwd, args, { timeout: Math.ceil(rest) });
+}
+async function gitOk(frist, cwd, args, meldung) {
+  const r = await gitMit(frist, cwd, args);
   if (r.code !== 0) throw new HttpFehler(500, meldung, { ausgabe: kuerze(r.stdout + r.stderr) });
   return r;
 }
+const zeitFehler = (e, meldung) => (e instanceof HttpFehler && e.status === 504 ? new HttpFehler(504, meldung) : e);
+const ZEIT_NEU = "Das Anlegen hat zu lange gedauert und wurde abgebrochen. Es wurde nichts angelegt und nichts in die Liste eingetragen — bitte später noch einmal versuchen.";
+const ZEIT_EINSCHALTEN = "Das Einschalten des Versionsverlaufs hat zu lange gedauert und wurde abgebrochen. Dein Ordner ist unverändert und nicht in der Liste eingetragen — bitte später noch einmal versuchen.";
+const ZEIT_GIT = "Git hat nicht rechtzeitig geantwortet. Es wurde nichts verändert und nichts in die Liste eingetragen — bitte später noch einmal versuchen.";
+const ZEIT_KLONEN = "Das Herunterladen hat zu lange gedauert. Es wurde nichts angelegt und nichts in die Liste eingetragen — bitte später noch einmal versuchen.";
+
+// Wie git.istRepo und gitwerkzeug.sorgeFuerIdentitaet — beide nehmen kein Zeitlimit je Aufruf, hier muss aber jeder Aufruf mit dem
+// Restbudget laufen (und bei Ablauf wirklich beendet werden). Git nicht installiert → „kein Repo“ (der Aufrufer meldet es später selbst).
+async function istRepoMit(frist, wurzel) {
+  try {
+    const r = await gitMit(frist, wurzel, ["rev-parse", "--show-toplevel"]);
+    return r.code === 0 && realpathSync(r.stdout.trim()) === wurzel;
+  } catch (e) { if (e instanceof HttpFehler && e.status === 500) return false; throw e; }
+}
+// Fehlt user.name/user.email überall (system/global/lokal), wird sie NUR in diesem Repo gesetzt: Mac-Benutzername und <name>@localhost.
+async function sorgeFuerIdentitaetMit(frist, wurzel) {
+  const lies = async (k) => { const r = await gitMit(frist, wurzel, ["config", "--get", k]); return r.code === 0 ? r.stdout.trim() : ""; };
+  const [n, e] = [await lies("user.name"), await lies("user.email")];
+  if (n && e) return;
+  let konto = "brain";
+  try { konto = userInfo().username || konto; } catch { /* Standardname */ }
+  if (!n) await gitMit(frist, wurzel, ["config", "user.name", konto]);
+  if (!e) await gitMit(frist, wurzel, ["config", "user.email", `${konto}@localhost`]);
+}
+
 // Eigene Commits beim Anlegen laufen ohne Hooks und ohne Signierzwang aus der Git-Einstellung des Nutzers.
 const COMMIT = ["-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", "commit", "-q"];
 const imBloecken = (liste, n = 400) => { const b = []; for (let i = 0; i < liste.length; i += n) b.push(liste.slice(i, i + n)); return b; };
 
-async function starteRepo(pfad, dateien, nachricht) {
-  await gitOk(pfad, ["init", "-q", "-b", "main"], "Der Versionsverlauf (Git) konnte nicht angelegt werden.");
-  await sorgeFuerIdentitaet(pfad);
+async function starteRepo(pfad, dateien, nachricht, frist) {
+  await gitOk(frist, pfad, ["init", "-q", "-b", "main"], "Der Versionsverlauf (Git) konnte nicht angelegt werden.");
+  await sorgeFuerIdentitaetMit(frist, pfad);
   // --force: das sind genau unsere Gerüstdateien; eine globale Ignore-Datei des Nutzers (manche ignorieren CLAUDE.md) darf sie nicht ausschließen
-  for (const block of imBloecken(dateien)) await gitOk(pfad, ["add", "--force", "--", ...block], "Die Dateien konnten nicht für den Versionsverlauf vorgemerkt werden.");
-  await gitOk(pfad, [...COMMIT, "-m", nachricht], "Der erste Eintrag im Versionsverlauf konnte nicht angelegt werden.");
+  for (const block of imBloecken(dateien)) await gitOk(frist, pfad, ["add", "--force", "--", ...block], "Die Dateien konnten nicht für den Versionsverlauf vorgemerkt werden.");
+  await gitOk(frist, pfad, [...COMMIT, "-m", nachricht], "Der erste Eintrag im Versionsverlauf konnte nicht angelegt werden.");
 }
 
-const zielOrdner = (ordner, o, liste) => pruefeVaultPfad(ordner === undefined || ordner === null ? standardOrdner(o) : ordner, { vaults: liste.vaults, ...o });
+// → { pfad: bereinigter Zielpfad (Symlinks aufgelöst), lex: derselbe Pfad wie geschrieben (nur ~ und .. bereinigt) }
+const zielOrdner = (ordner, o, liste) => {
+  const roh = ordner === undefined || ordner === null ? standardOrdner(o) : ordner;
+  return { pfad: pruefeVaultPfad(roh, { vaults: liste.vaults, ...o }), lex: lexikalisch(roh, o) };
+};
 
 // art "vorlage": Brain-Gerüst + git init + erster Commit „Brain angelegt“; art "leer": nur .gitignore + Commit „Vault angelegt“.
+// Gesamtfrist 300 s; läuft sie ab, wird zurückgenommen, was dieser Aufruf angelegt hat (kein Eintrag, kein Wechsel des aktiven Vaults).
 export async function neuesVault(eingabe, opt = {}) {
   const { art, name, ordner } = objekt(eingabe);
   const o = optionen(opt);
   if (art !== "vorlage" && art !== "leer") throw new HttpFehler(400, "Bitte „vorlage“ oder „leer“ als Art wählen.");
   const wunsch = pruefeName(name);
   const { liste } = ladeListe(o, false);
-  const pfad = zielOrdner(ordner, o, liste);
+  const { pfad, lex } = zielOrdner(ordner, o, liste);
   const vaultName = wunsch ?? standardName(pfad); // erscheint in den Vorlagetexten
   return mitSperre(pfad, async () => {
+    const frist = neueFrist(gesamtfrist(o));
     let z;
     try { z = bereiteZiel(pfad); } catch (e) { throw wandleFehler(e); }
     try {
+      vergissVertrauen(o, [pfad, lex], "Es wurde nichts angelegt."); // der Ort ist neu oder leer: eine alte Freigabe für ihn erbt der neue Vault nie
       if (art === "vorlage") {
         const dateien = await legeVorlageAn(pfad, { name: vaultName, heute: o.heute || berlinHeute() });
-        await starteRepo(pfad, dateien, "Brain angelegt");
+        await starteRepo(pfad, dateien, "Brain angelegt", frist);
       } else {
         writeFileSync(join(pfad, ".gitignore"), GITIGNORE, { flag: "wx" });
-        await starteRepo(pfad, [".gitignore"], "Vault angelegt");
+        await starteRepo(pfad, [".gitignore"], "Vault angelegt", frist);
       }
       return ergebnis(registriereAktiv(o, pfad, wunsch), true);
     } catch (e) {
       raeumeAuf(z);
-      throw wandleFehler(e, "Der Vault konnte nicht angelegt werden.");
+      throw wandleFehler(zeitFehler(e, ZEIT_NEU), "Der Vault konnte nicht angelegt werden.");
     }
   });
 }
@@ -410,8 +617,9 @@ function istTextPfad(rel) {
   return BEARBEITBAR.test(segs[segs.length - 1]);
 }
 
-async function schalteGitEin(p) {
-  const oben = await git(p, ["rev-parse", "--show-toplevel"]);
+// Nur was dieser Aufruf selbst angelegt hat (.git, eine fehlende .gitignore) wird bei jedem Abbruch — auch bei Ablauf der Frist — wieder entfernt.
+async function schalteGitEin(p, frist) {
+  const oben = await gitMit(frist, p, ["rev-parse", "--show-toplevel"]);
   if (oben.code === 0) { // ein Repo, aber nicht dieser Ordner als Wurzel → nie verschachtelt anlegen
     let top = null;
     try { top = realpathSync(oben.stdout.trim()); } catch { /* unbekannt */ }
@@ -423,14 +631,14 @@ async function schalteGitEin(p) {
   try {
     if (!gibtEs(ignorieren)) { writeFileSync(ignorieren, GITIGNORE, { flag: "wx" }); ignoreAngelegt = true; }
     gitAngelegt = true; // schon vor dem Aufruf: scheitert git init halb, gehört das Übriggebliebene uns (.git gab es vorher nicht)
-    await gitOk(p, ["init", "-q", "-b", "main"], "Der Versionsverlauf (Git) konnte nicht eingeschaltet werden.");
-    await sorgeFuerIdentitaet(p);
+    await gitOk(frist, p, ["init", "-q", "-b", "main"], "Der Versionsverlauf (Git) konnte nicht eingeschaltet werden.");
+    await sorgeFuerIdentitaetMit(frist, p);
     // Git sagt, was nicht ignoriert ist (auch .gitignore des Nutzers); davon nehmen wir nur Textdateien, keine Verweise.
-    const roh = (await gitOk(p, ["ls-files", "--others", "--exclude-standard", "-z"], "Die Dateien konnten nicht gelesen werden.")).stdout;
+    const roh = (await gitOk(frist, p, ["ls-files", "--others", "--exclude-standard", "-z"], "Die Dateien konnten nicht gelesen werden.")).stdout;
     const dateien = roh.split("\0").filter(Boolean).filter(istTextPfad).filter((rel) => { try { return lstatSync(join(p, rel)).isFile(); } catch { return false; } });
-    for (const block of imBloecken(dateien)) await gitOk(p, ["add", "--", ...block], "Die Dateien konnten nicht für den Versionsverlauf vorgemerkt werden.");
-    const nichts = (await git(p, ["diff", "--cached", "--quiet"])).code === 0;
-    await gitOk(p, [...COMMIT, ...(nichts ? ["--allow-empty"] : []), "-m", "Versionsverlauf eingeschaltet"], "Der erste Eintrag im Versionsverlauf konnte nicht angelegt werden.");
+    for (const block of imBloecken(dateien)) await gitOk(frist, p, ["add", "--", ...block], "Die Dateien konnten nicht für den Versionsverlauf vorgemerkt werden.");
+    const nichts = (await gitMit(frist, p, ["diff", "--cached", "--quiet"])).code === 0;
+    await gitOk(frist, p, [...COMMIT, ...(nichts ? ["--allow-empty"] : []), "-m", "Versionsverlauf eingeschaltet"], "Der erste Eintrag im Versionsverlauf konnte nicht angelegt werden.");
   } catch (e) {
     if (gitAngelegt) loesche(join(p, ".git"));
     if (ignoreAngelegt) loesche(ignorieren);
@@ -438,52 +646,55 @@ async function schalteGitEin(p) {
   }
 }
 
-// Vorhandenen Ordner öffnen: registrieren + aktiv. Ohne gitEinschalten wird nichts angelegt (git:false, wenn kein Repo).
+// Vorhandenen Ordner öffnen: registrieren + aktiv. Ohne Git-Wunsch wird nichts angelegt (git:false, wenn kein Repo).
+// Git-Wunsch: gitEinschalten (hat Vorrang) oder „git“ — so hieß das Feld in der älteren Oberfläche. Mit Git-Wunsch gilt die Gesamtfrist 300 s.
 export async function oeffneOrdner(eingabe, opt = {}) {
-  const { pfad, gitEinschalten } = objekt(eingabe);
+  const e = objekt(eingabe);
+  const { pfad } = e;
+  const gitWunsch = (e.gitEinschalten !== undefined ? e.gitEinschalten : e.git) === true;
   const o = optionen(opt);
   const { liste } = ladeListe(o, false);
   const p = pruefeVaultPfad(pfad, { vaults: liste.vaults, ...o });
   if (!istOrdner(p)) throw new HttpFehler(404, "Diesen Ordner gibt es nicht (mehr).");
   return mitSperre(p, async () => {
-    let istGit = await istRepo(p);
-    if (gitEinschalten === true && !istGit) { await schalteGitEin(p); istGit = true; }
-    return ergebnis(registriereAktiv(o, p, undefined), istGit);
+    const frist = neueFrist(gesamtfrist(o));
+    try {
+      let istGit = await istRepoMit(frist, p);
+      if (gitWunsch && !istGit) { await schalteGitEin(p, frist); istGit = true; }
+      return ergebnis(registriereAktiv(o, p, undefined), istGit);
+    } catch (err) { throw zeitFehler(err, gitWunsch ? ZEIT_EINSCHALTEN : ZEIT_GIT); }
   });
 }
 
 // Von GitHub (oder einem anderen Server) klonen. Nur https/ssh (im Test auch lokale Pfade); Anmeldung macht Git selbst.
+// Gesamtfrist 300 s für Klonen und Einrichten; läuft sie ab, verschwindet das Ziel wieder.
 export async function klone(eingabe, opt = {}) {
   const { url, ordner, name } = objekt(eingabe);
   const o = optionen(opt);
   const adresse = pruefeGitUrl(url);
   const wunsch = pruefeName(name);
   const { liste } = ladeListe(o, false);
-  const ziel = zielOrdner(ordner, o, liste);
-  const limit = testmodus() && Number.isFinite(o.limitKlon) ? o.limitKlon : 300_000; // nur im Test kürzer
+  const { pfad: ziel, lex } = zielOrdner(ordner, o, liste);
   return mitSperre(ziel, async () => {
+    const frist = neueFrist(gesamtfrist(o, o.limitKlon));
     const z = { pfad: ziel, vorherDa: false, erstAngelegt: null };
     try {
       Object.assign(z, bereiteZiel(ziel)); // neu anlegen (leer) oder einen vorhandenen leeren Ordner nehmen; sonst 409
       if (z.vorherDa) rmSync(join(ziel, ".DS_Store"), { force: true }); // Git klont nicht in einen Ordner mit Inhalt; die Finder-Datei entsteht von selbst neu
     } catch (e) { throw wandleFehler(e); }
     try {
+      vergissVertrauen(o, [ziel, lex], "Es wurde nichts angelegt."); // der Ort ist neu oder leer: eine alte Freigabe für ihn erbt der Klon nie
       const protokolle = testmodus() ? ["-c", "protocol.file.allow=always"] : ["-c", "protocol.allow=never", "-c", "protocol.https.allow=always", "-c", "protocol.ssh.allow=always"];
-      let r;
-      try { r = await git(dirname(ziel), ["-c", "protocol.ext.allow=never", ...protokolle, "clone", "--quiet", "--", adresse, ziel], { timeout: limit }); }
-      catch (e) {
-        if (e instanceof HttpFehler && e.status === 504) throw new HttpFehler(504, "Das Herunterladen hat zu lange gedauert.");
-        throw e;
-      }
+      const r = await gitMit(frist, dirname(ziel), ["-c", "protocol.ext.allow=never", ...protokolle, "clone", "--quiet", "--", adresse, ziel]);
       if (r.code !== 0) {
         const u = uebersetzeGitFehler(r.stderr, "Das Repository konnte nicht geklont werden.");
         throw new HttpFehler(u.status, u.meldung, { ausgabe: kuerze(r.stderr) });
       }
-      await sorgeFuerIdentitaet(ziel); // damit auch der erste eigene Commit in Studio gelingt
+      await sorgeFuerIdentitaetMit(frist, ziel); // damit auch der erste eigene Commit in Studio gelingt
       return ergebnis(registriereAktiv(o, ziel, wunsch ?? standardName(ziel, true)), true);
     } catch (e) {
       raeumeAuf(z);
-      throw wandleFehler(e, "Das Repository konnte nicht geklont werden.");
+      throw wandleFehler(zeitFehler(e, ZEIT_KLONEN), "Das Repository konnte nicht geklont werden.");
     }
   });
 }
