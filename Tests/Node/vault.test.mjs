@@ -221,8 +221,9 @@ test("Prüfung: rot bei Konflikt-Kasten (mit Zeile) und PRÜFBEDÜRFTIG, nicht i
   assert.equal(k.stufe, "rot");
   const s = k.signale.find((x) => x.art === "konflikt");
   assert.equal(s.zeile, 11);
-  const p = pruefeText(WIKI, kopf() + "# X\n\nDas hier ist PRÜFBEDÜRFTIG (Zweifel).\n", heute);
+  const p = pruefeText(WIKI, kopf() + "# X\n\n**PRÜFBEDÜRFTIG:** nur Kapitel ausgewertet.\n", heute);
   assert.equal(p.stufe, "rot"); assert.deepEqual(arten(p), ["pruefbeduerftig"]);
+  assert.equal(pruefeText(WIKI, kopf() + "# X\n\nLint meldet den Befund **PRÜFBEDÜRFTIG** und die Seite ist prüfbedürftig.\n", heute).stufe, "gruen", "bloße Erwähnung zählt nicht");
   assert.equal(pruefeText(WIKI, kopf() + "# X\n\n```\n> [!KONFLIKT] x\nPRÜFBEDÜRFTIG\n```\n", heute).stufe, "gruen");
   const z = pruefeText(WIKI, kopf('zweifel: "2026-10-23: Korrektur"\n') + "# X\n", heute);
   assert.equal(z.stufe, "rot"); assert.ok(arten(z).includes("zweifel"));

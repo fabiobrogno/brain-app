@@ -31,7 +31,9 @@ const plusTage = (iso, tage) => {
 };
 
 const KONFLIKT = /^\s*>\s*\[!KONFLIKT\]/i;
-const PRUEFBEDUERFTIG = /PR(?:Ü|UE)FBED(?:Ü|UE)RFTIG/i;
+// Markierung steht am Zeilenanfang (ggf. nach Listenzeichen, > oder **) und in Großbuchstaben — so wie Lint sie setzt;
+// Fließtext, der das Wort nur erwähnt („Befund **PRÜFBEDÜRFTIG**“), zählt nicht.
+const PRUEFBEDUERFTIG = /^\s*(?:[-*+>]\s+)*\**\s*PR(?:Ü|UE)FBED(?:Ü|UE)RFTIG\b/;
 const FAKT = /^\s*[-*+]\s.*·\s*Stand\s+\d{1,2}\.\d{1,2}\.\d{4}/;
 const BELEG = /\[\[[^\]]*\/belege\/[^\]]*\]\]/;
 
