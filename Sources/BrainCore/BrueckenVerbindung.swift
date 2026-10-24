@@ -12,6 +12,8 @@ public enum BrueckenFehler: Error, Equatable {
     /// Die Verbindung wurde bewusst geschlossen (Fenster zu) — kein Neuversuch, kein neuer Prozess.
     case geschlossen
     case zeitUeberschritten
+    /// Die Vorab-Prüfung vor dem Prozessstart (`vorStart`, Kit-Brücke: Vertrauen in den Vault) hat „nein“ gesagt — es lief nichts an.
+    case nichtErlaubt
 }
 
 /// Hält den Node-Prozess einer Brücke (Kit: .tools/ansicht/bruecke.mjs oder Werkstatt: werkstatt.mjs) und ordnet Antworten über die id zu
@@ -32,10 +34,15 @@ public actor BrueckenVerbindung {
     private struct SchreibFehler: Error {}
 
     private let node: URL
-    private let vault: URL?
+    /// Nur für Brücken mit eigenem Skript änderbar (`ohneVaultArgument`): die Kit-Brücke braucht ihren Vault.
+    private var vault: URL?
+    private let skript: URL?
     private let arbeitsordner: URL?
-    private let argumente: [String]
+    private var argumente: [String]
     private let umgebung: [String: String]
+    private let vorStart: (@Sendable () async -> Bool)?
+    /// Die laufende Vorab-Prüfung: gleichzeitige Starts (die Seite lädt viele Dateien auf einmal) teilen sich EINE Prüfung.
+    private var pruefung: Task<Bool, Never>?
     private var prozess: Process?
     private var eingang: FileHandle?
     private var leser: Task<Void, Never>?
@@ -51,12 +58,17 @@ public actor BrueckenVerbindung {
     /// Beide sprechen dasselbe JSON-Zeilen-Protokoll und bekommen den Vault-Pfad als ersten Argument nach dem Skript.
     /// Ohne `vault` (nur mit `skript`: die Werkstatt vor der Vault-Wahl) gibt es kein Vault-Argument und kein
     /// `BRAIN_VAULT`; die Werkstatt liest dann `<support>/vaults.json`. `arbeitsordner` ist dann das Arbeitsverzeichnis.
-    public init(node: URL, vault: URL?, skript: URL? = nil, umgebung: [String: String] = [:], arbeitsordner: URL? = nil) {
+    /// `vorStart` läuft vor JEDEM Prozessstart (auch nach einem Absturz) und muss `true` liefern, sonst startet nichts und die
+    /// Anfrage scheitert mit `.nichtErlaubt` — so läuft Kit-Code aus dem Vault nur mit Vertrauen (Studio-v2-Spec §8).
+    public init(node: URL, vault: URL?, skript: URL? = nil, umgebung: [String: String] = [:], arbeitsordner: URL? = nil,
+                vorStart: (@Sendable () async -> Bool)? = nil) {
         self.node = node
         self.vault = vault
+        self.skript = skript
         self.arbeitsordner = arbeitsordner
         self.argumente = Self.startArgumente(skript: skript, vault: vault)
         self.umgebung = umgebung
+        self.vorStart = vorStart
     }
 
     /// Pfad der Kit-Brücke (Ansicht „Übersicht“) im Vault.
@@ -83,10 +95,35 @@ public actor BrueckenVerbindung {
     /// Anzahl der Anfragen, die noch auf eine Antwort warten (für Tests und Diagnose).
     var offeneAnfragen: Int { wartend.count }
 
+    /// Ohne `vorStart` immer ja; sonst genau eine gemeinsame Prüfung für alle gleichzeitig wartenden Starts.
+    private func startErlaubt() async -> Bool {
+        guard let vorStart else { return true }
+        if let laufend = pruefung { return await laufend.value }
+        let aufgabe = Task { await vorStart() }
+        pruefung = aufgabe
+        let ergebnis = await aufgabe.value
+        pruefung = nil
+        return ergebnis
+    }
+
+    /// Ab jetzt ohne Vault-Argument (und ohne `BRAIN_VAULT`) starten — nur für Brücken mit eigenem Skript (die Werkstatt). Wechselt
+    /// die Oberfläche den Vault, steht der gewählte in `vaults.json`; ein Neustart nach einem Absturz darf nicht mit dem alten
+    /// `--vault` zurückkehren. Der laufende Prozess bleibt unberührt.
+    public func ohneVaultArgument() {
+        guard skript != nil, vault != nil else { return }
+        vault = nil
+        argumente = Self.startArgumente(skript: skript, vault: nil)
+    }
+
     public func starte(zeitlimit: Duration = .seconds(15)) async throws {
         if geschlossen { throw BrueckenFehler.geschlossen }
         if laeuft { return }
         guard !argumente.isEmpty else { throw BrueckenFehler.startFehlgeschlagen("Die Ansicht konnte nicht gestartet werden.") }
+        // Vor jedem Start fragen, ob der Code laufen darf; währenddessen kann die Brücke geschlossen oder von einem
+        // gleichzeitigen Aufruf schon gestartet worden sein.
+        guard await startErlaubt() else { throw BrueckenFehler.nichtErlaubt }
+        if geschlossen { throw BrueckenFehler.geschlossen }
+        if laeuft { return }
         // Alte, noch wartende Anfragen sofort abschließen — sie bekämen von einem neuen Prozess nie eine Antwort.
         verwerfeAlles()
         signal(SIGPIPE, SIG_IGN)
@@ -144,17 +181,20 @@ public actor BrueckenVerbindung {
         }
     }
 
-    /// Zeitlimit je Pfad (immer etwas über der längsten Laufzeit der Werkstatt): Vault klonen (`/api/vaults/klonen`, bis 300 s)
-    /// 330 s, Remote hinzufügen (`/api/git/remote`: Historien-Prüfung und erster Push, bis ~120 s) 150 s, Git-Abgleich
-    /// (`/api/git/sync`) 400 s, übrige `/api/git/…` 90 s, alles andere 30 s. Die Zuordnung gilt für den Pfad ohne Query;
-    /// die ersten drei nur für genau diesen Pfad (auch mit „/“ am Ende), nicht für Unterpfade.
+    /// Zeitlimit je Pfad, immer etwas über der Gesamtfrist, die die Werkstatt selbst einhält (Studio-v2-Spec §8): Vault öffnen,
+    /// neu anlegen und klonen (`/api/vaults/oeffnen`, `…/neu`, `…/klonen`; Node-Frist je 300 s) 330 s, Remote hinzufügen
+    /// (`/api/git/remote`; Node-Gesamtfrist 120 s, darin Historien-Prüfung und erster Push) 150 s, Commit (`/api/git/commit`;
+    /// Node-Frist 75 s) 90 s, Git-Abgleich (`/api/git/sync`) 400 s, übrige `/api/git/…` 90 s, alles andere 30 s. Die Zuordnung
+    /// gilt für den Pfad ohne Query; die Einzelpfade nur für genau diesen Pfad (auch mit „/“ am Ende), nicht für Unterpfade.
+    /// Läuft ein Limit ab, wird die Anfrage nie wiederholt (`darfWiederholen`): ein zweites POST könnte doppelt klonen oder pushen.
     public static func zeitlimit(fuerPfad pfad: String) -> Duration {
         let ohneQuery = pfad.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? pfad
         let p = ohneQuery.lowercased()
         func ist(_ ziel: String) -> Bool { p == ziel || p == ziel + "/" }
-        if ist("/api/vaults/klonen") { return .seconds(330) }
+        if ist("/api/vaults/oeffnen") || ist("/api/vaults/neu") || ist("/api/vaults/klonen") { return .seconds(330) }
         if ist("/api/git/sync") { return .seconds(400) }
         if ist("/api/git/remote") { return .seconds(150) }
+        if ist("/api/git/commit") { return .seconds(90) }
         if p.hasPrefix("/api/git/") { return .seconds(90) }
         return .seconds(30)
     }

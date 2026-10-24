@@ -173,6 +173,13 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
     var aktuellerVault: (() -> URL?)?
     /// Der offene Ordner-Dialog (Sheet) samt Antwort-Wächter — höchstens einer je Fenster.
     private var ordnerDialog: (panel: NSOpenPanel, antwort: PanelAntwort)?
+    /// Menübefehle, die noch auf die Oberfläche warten — in der Reihenfolge, in der sie kamen, jeder mit seiner Frist — und der
+    /// eine Lauf, der sie abarbeitet.
+    private var wartendeBefehle: [(befehl: StudioBefehl, frist: ContinuousClock.Instant)] = []
+    private var befehlsAufgabe: Task<Void, Never>?
+    /// So lange wartet ein Menübefehl auf eine noch nicht bereite Oberfläche (Fenster eben erst geöffnet, Seite lädt, Vault wird
+    /// geöffnet); danach steht er als `befehl-verworfen` im Log.
+    static let befehlsFrist = Duration.seconds(30)
 
     init(log: AppLog, oberflaeche: Oberflaeche) {
         self.log = log
@@ -185,22 +192,26 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
     /// `skript`: nil = Kit-Brücke des Vaults, sonst z. B. die Werkstatt aus dem App-Paket. `vault` nil nur mit `skript`
     /// (Studio vor der Vault-Wahl: die Werkstatt liest dann vaults.json); `arbeitsordner` gilt dann als Arbeitsverzeichnis.
     /// `test`: Testschalter des Studios (Größe, Bild, Skript) — nur für das Studio, die Übersicht ignoriert sie.
-    func oeffne(node: URL, vault: URL?, skript: URL? = nil, umgebung: [String: String], arbeitsordner: URL? = nil, test: StartArgumente? = nil) {
+    /// `fluechtig`: irgendein Testschalter ist aktiv (`StartArgumente.fluechtig`) — gilt für beide Fenster: flüchtiger Web-Speicher,
+    /// keine gemerkte Fensterposition. `vorStart`: Prüfung vor jedem Start der Brücke (Kit-Brücke: Vertrauen in den Vault).
+    func oeffne(node: URL, vault: URL?, skript: URL? = nil, umgebung: [String: String], arbeitsordner: URL? = nil,
+                test: StartArgumente? = nil, fluechtig: Bool = false, vorStart: (@Sendable () async -> Bool)? = nil) {
         if let fenster {
             if fenster.isMiniaturized { fenster.deminiaturize(nil) }
             fenster.makeKeyAndOrderFront(nil)
             NSApp.activate()
             return
         }
-        let bruecke = BrueckenVerbindung(node: node, vault: vault, skript: skript, umgebung: umgebung, arbeitsordner: arbeitsordner)
+        let bruecke = BrueckenVerbindung(node: node, vault: vault, skript: skript, umgebung: umgebung, arbeitsordner: arbeitsordner,
+                                         vorStart: vorStart)
         let config = WKWebViewConfiguration()
         let test = oberflaeche == .studio ? test : nil
         // Testlauf: flüchtiger Web-Speicher — die Seite liest und schreibt sonst den localStorage der echten App (Theme,
-        // letzte Notiz, Spaltenbreiten), das Bild hinge dann vom letzten Lauf ab.
-        if test != nil {
-            config.websiteDataStore = .nonPersistent()
-            config.userContentController.addUserScript(StudioTestlauf.ruhigeAnimationen())
-        }
+        // letzte Notiz, Spaltenbreiten), das Bild hinge dann vom letzten Lauf ab; und WebKit legte Daten unter
+        // ~/Library/WebKit/<Bundle-ID> der installierten App an.
+        let fluechtig = fluechtig || test != nil
+        if fluechtig { config.websiteDataStore = .nonPersistent() }
+        if test != nil { config.userContentController.addUserScript(StudioTestlauf.ruhigeAnimationen()) }
         config.setURLSchemeHandler(SchemaHandler(bruecke: bruecke, oberflaeche: oberflaeche), forURLScheme: NavigationsRegel.schema)
         config.userContentController.addScriptMessageHandler(Kanal(bruecke: bruecke, oberflaeche: oberflaeche), contentWorld: .page, name: "brain")
         let aktionsKanal = AktionsKanal(oberflaeche: oberflaeche, vault: { [weak self] in self?.aktuellerVault?() }) { [weak self] aktion in
@@ -227,8 +238,8 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
             // Erster Start (noch keine gemerkte Position): Standardgröße, mittig. Danach gilt die gemerkte Größe — aber nie
             // unter dem heutigen Minimum (ältere Versionen erlaubten 900×600). Testlauf: immer wie beim ersten Start, und die
             // Position der echten App wird weder gelesen noch überschrieben.
-            let ersterStart = test != nil || UserDefaults.standard.string(forKey: "NSWindow Frame \(StudioFenster.rahmenName)") == nil
-            if test == nil { w.setFrameAutosaveName(StudioFenster.rahmenName) }
+            let ersterStart = fluechtig || UserDefaults.standard.string(forKey: "NSWindow Frame \(StudioFenster.rahmenName)") == nil
+            if !fluechtig { w.setFrameAutosaveName(StudioFenster.rahmenName) }
             var rahmen = w.frame
             if ersterStart {
                 let sichtbar = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame.size ?? StudioFenster.standard
@@ -240,7 +251,7 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
             if let g = test?.testFenster { w.setContentSize(g) } // `--test-fenster`: Inhaltsgröße in Punkten (mindestens die Mindestgröße)
             if ersterStart { w.center() }
         } else {
-            w.setFrameAutosaveName("BrainFenster")
+            if !fluechtig { w.setFrameAutosaveName("BrainFenster") }
             if w.frame.origin == .zero { w.center() }
         }
         w.delegate = self
@@ -298,22 +309,44 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
     }
 
     /// Menübefehl an die Studio-Oberfläche (`window.studio.befehl`); Fenster nach vorn. War das Fenster eben erst zu,
-    /// ist die Oberfläche noch nicht geladen: der Befehl wartet (höchstens 5 s), bis `window.studio.bereit === true`.
+    /// ist die Oberfläche noch nicht geladen: der Befehl wartet (höchstens `befehlsFrist`, 30 s), bis `window.studio.bereit === true`.
+    /// Mehrere Befehle in kurzer Folge laufen in der Reihenfolge ihres Eintreffens; was die Frist überschreitet oder beim
+    /// Schließen des Fensters noch wartet, steht als `befehl-verworfen` im Log.
     func sende(_ befehl: StudioBefehl) {
         guard webView != nil else { return }
         fenster?.makeKeyAndOrderFront(nil)
-        Task { @MainActor [weak self] in
-            for _ in 0..<50 {
-                guard let self, let web = self.webView else { return }
-                let bereit = try? await web.evaluateJavaScript("window.studio?.bereit === true")
-                if (bereit as? NSNumber)?.boolValue == true {
-                    _ = try? await web.evaluateJavaScript(befehl.skript)
-                    return
-                }
+        wartendeBefehle.append((befehl, ContinuousClock.now + Self.befehlsFrist))
+        guard befehlsAufgabe == nil else { return } // der laufende Lauf nimmt den neuen Befehl der Reihe nach mit
+        befehlsAufgabe = Task { @MainActor [weak self] in await self?.arbeiteBefehleAb() }
+    }
+
+    /// Führt die wartenden Befehle der Reihe nach aus, sobald die Oberfläche bereit ist. Ein Abbruch (Fenster zu) räumt
+    /// `aufraeumen` auf; nur ein normales Ende (Liste leer) gibt den Lauf frei — ohne Unterbrechung zwischen Prüfung und Freigabe.
+    private func arbeiteBefehleAb() async {
+        while !Task.isCancelled, let naechster = wartendeBefehle.first {
+            guard let web = webView else { return }
+            if ContinuousClock.now >= naechster.frist {
+                wartendeBefehle.removeFirst()
+                log.schreibe("befehl-verworfen \(naechster.befehl.rawValue) oberflaeche-nicht-bereit")
+                continue
+            }
+            let bereit = try? await web.evaluateJavaScript("window.studio?.bereit === true")
+            guard !Task.isCancelled else { return }
+            if (bereit as? NSNumber)?.boolValue == true {
+                wartendeBefehle.removeFirst()
+                _ = try? await web.evaluateJavaScript(naechster.befehl.skript)
+            } else {
                 try? await Task.sleep(for: .milliseconds(100))
             }
-            self?.log.schreibe("befehl-verworfen \(befehl.rawValue) oberflaeche-nicht-bereit")
         }
+        if !Task.isCancelled { befehlsAufgabe = nil }
+    }
+
+    /// Ab jetzt startet die Werkstatt dieses Fensters ohne `--vault` (nach `vault-gewechselt`: ein Neustart nach einem Absturz liest
+    /// dann `vaults.json` und kehrt nicht zum alten `--vault` zurück).
+    func vaultArgumentEntfernen() {
+        guard let b = bruecke else { return }
+        Task { await b.ohneVaultArgument() }
     }
 
     // MARK: Schließen mit Rückfrage an die Oberfläche (Studio-Spec: ungespeicherte Eingaben)
@@ -439,6 +472,11 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
         bereitAufgabe = nil
         testAufgabe?.cancel()
         testAufgabe = nil
+        // Menübefehle, die noch auf die Oberfläche warteten, sind mit dem Fenster hinfällig — nicht still verschwinden lassen.
+        befehlsAufgabe?.cancel()
+        befehlsAufgabe = nil
+        for b in wartendeBefehle { log.schreibe("befehl-verworfen \(b.befehl.rawValue) fenster-zu") }
+        wartendeBefehle.removeAll()
         // Ein offener Ordner-Dialog endet mit dem Fenster; die wartende Seite bekommt „abgebrochen“.
         if let d = ordnerDialog {
             ordnerDialog = nil

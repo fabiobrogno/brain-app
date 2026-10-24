@@ -27,6 +27,7 @@ private func lies(_ argumente: [String], umgebung: [String: String] = [:]) -> St
     #expect(a.schliessenNach == .seconds(40))
     #expect(a.beendenNach == .seconds(60))
     #expect(!a.studioTestlauf)
+    #expect(a.fluechtig, "Rauchtest-Aufruf: keine Spuren in der echten App")
     #expect(a.hinweise.isEmpty)
     // relativer Vault und Unbekanntes werden ignoriert
     #expect(lies(["--vault", "relativ", "--gibt-es-nicht"]).vault == nil)
@@ -162,4 +163,37 @@ private func lies(_ argumente: [String], umgebung: [String: String] = [:]) -> St
     #expect(!a.fensterOeffnen)
     #expect(a.studioTestlauf)
     #expect(a.hinweise.isEmpty)
+}
+
+// MARK: Flüchtig: Testschalter hinterlassen nichts in der echten App (k11)
+
+@Test func fluechtigBeiJedemGueltigenTestschalter() {
+    #expect(!lies([]).fluechtig)
+    #expect(!lies(["--vault", "/tmp/Mein Brain"]).fluechtig, "--vault allein ist Entwicklung, kein Testlauf")
+    #expect(!lies(["--test-bild-warten", "5"]).fluechtig)
+    // Jeder gültige Schalter genügt — auch die, die nur die App beenden oder die Übersicht öffnen (Rauchtest, Aktionskanal-Test)
+    let faelle: [[String]] = [["--test-beenden-nach", "60"], ["--test-fenster-schliessen-nach", "14"], ["--test-fenster"],
+                              ["--test-fenster", "1440x900"], ["--test-bild", "/tmp/a.png"], ["--test-dunkel"], ["--test-hell"]]
+    for f in faelle { #expect(lies(f).fluechtig, "\(f)") }
+    #expect(lies(["--test-skript", "/tmp/s.js"], umgebung: testmodus).fluechtig)
+    // Die Schalter von rauchtest.sh, teste-aktionskanal.sh und selbstfoto.sh
+    #expect(lies(["--vault", "/tmp/Test Brain", "--test-fenster", "--test-fenster-schliessen-nach", "40", "--test-beenden-nach", "60"]).fluechtig)
+    #expect(lies(["--test-fenster-schliessen-nach", "25", "--test-beenden-nach", "45"]).fluechtig)
+    #expect(lies(["--test-beenden-nach", "22"]).fluechtig)
+    // Ungültige Werte zählen nicht (der Schalter wird ignoriert)
+    for f in [["--test-beenden-nach", "abc"], ["--test-fenster-schliessen-nach", "x"], ["--test-bild", "bild.png"],
+              ["--test-fenster", "0x0"], ["--test-skript", "/tmp/s.js"], ["--gibt-es-nicht"]] {
+        #expect(!lies(f).fluechtig, "\(f)")
+    }
+}
+
+@Test func fluechtigIstImmerWahrWennDasStudioAlsTestlaufGilt() {
+    // `studioTestlauf` (Größe, Bild, Skript, Erscheinungsbild) ist eine Teilmenge von `fluechtig`
+    for f in [["--test-fenster", "800x600"], ["--test-bild", "/tmp/a.png"], ["--test-dunkel"], ["--test-hell"]] {
+        let a = lies(f)
+        #expect(a.studioTestlauf && a.fluechtig, "\(f)")
+    }
+    // und `fluechtig` allein (nur beenden/schließen/Übersicht) macht aus dem Studio noch keinen Foto-Testlauf
+    let a = lies(["--test-beenden-nach", "5"])
+    #expect(a.fluechtig && !a.studioTestlauf)
 }

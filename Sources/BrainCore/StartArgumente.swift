@@ -40,6 +40,14 @@ public struct StartArgumente: Equatable, Sendable {
         testFenster != nil || testBild != nil || testErscheinungsbild != nil || testSkript != nil
     }
 
+    /// Läuft die App mit irgendeinem gültigen Testschalter (Rauchtest, Aktionskanal-Test, Selbstfoto: Fenstergröße, Bild, Skript,
+    /// Erscheinungsbild, Übersicht öffnen, automatisch schließen oder beenden)? Dann hinterlassen BEIDE Fenster nichts in der
+    /// echten App: flüchtiger Web-Speicher und keine gemerkte Fensterposition — sonst schreibt jeder Testlauf in die Einstellungen
+    /// (`io.github.fbrogno.brain`) und nach `~/Library/WebKit/…` der installierten App. Ein ungültiger Wert zählt nicht.
+    public var fluechtig: Bool {
+        studioTestlauf || fensterOeffnen || schliessenNach != nil || beendenNach != nil
+    }
+
     /// Größte erlaubte Fensterkante (Punkte) und längste Wartezeit (Sekunden) für die Testschalter.
     static let maxKante = 4000
     static let maxWarten = 120.0

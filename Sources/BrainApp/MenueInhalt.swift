@@ -16,9 +16,12 @@ struct MenueInhalt: View {
         if zustand.status?.quellVault == true {
             Text("Entwickler-Brain — keine Kit-Updates")
         }
+        if zustand.kitVorhanden && !zustand.kitErlaubt && zustand.anzeige == .kitNichtErlaubt {
+            Text("Im Studio freigeben, dann läuft das Kit")
+        }
         Divider()
         Button("Studio öffnen") { zustand.oeffneStudio() }.keyboardShortcut("o")
-        Button("Übersicht öffnen") { zustand.oeffneFenster() }.disabled(!zustand.kitVorhanden)
+        Button("Übersicht öffnen") { Task { await zustand.oeffneFenster() } }.disabled(!zustand.uebersichtMoeglich)
         Button("Ordner im Finder zeigen") { zustand.zeigeOrdner() }.disabled(zustand.vault == nil)
         Button("Status aktualisieren") { Task { await zustand.aktualisiere() } }.keyboardShortcut("r")
         Button("Vault öffnen …") { zustand.sende(.vaultOeffnen) }

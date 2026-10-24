@@ -47,6 +47,10 @@ public struct StatusAnzeige: Equatable, Sendable {
     /// Vault ohne Brain-Kit (`.tools/brain.mjs` fehlt): für das Studio völlig in Ordnung, es gibt nur keine Kit-Prüfungen.
     public static let ohneKit = StatusAnzeige(symbol: "checkmark.circle", zeichen: "✓", titel: "Vault ohne Kit — nur Studio")
 
+    /// Vault mit Kit, dem der Nutzer noch nicht vertraut hat (Studio-v2-Spec §8): nichts aus `.tools` läuft. Ein eigener Zustand,
+    /// kein Fehler — es ist nichts kaputt, es fehlt nur die Freigabe.
+    public static let kitNichtErlaubt = StatusAnzeige(symbol: "lock", zeichen: "🔒", titel: "Kit nicht erlaubt")
+
     public static func fuer(_ status: BrainStatus?, fehler: String? = nil) -> StatusAnzeige {
         guard let s = status else {
             return StatusAnzeige(symbol: "questionmark.circle", zeichen: "?", titel: fehler ?? "Status unbekannt")

@@ -173,7 +173,7 @@ private func url(_ s: String) -> URL { URL(string: s)! }
 @Test func neueAktionenGeltenNurFuerDasStudio() {
     // Die Übersicht ist Kit-Code aus dem Vault: kein Ordner-Dialog, kein Vault-Wechsel, kein Fenstertitel.
     let v = tempOrdner("Vault")
-    for aktion in ["ordner-waehlen", "vault-gewechselt", "titel"] {
+    for aktion in ["ordner-waehlen", "vault-gewechselt", "vertrauen-geaendert", "titel"] {
         #expect(AppAktion.pruefe(["aktion": aktion, "wert": "x"], vault: v, oberflaeche: .app) == nil, "\(aktion)")
         #expect(AppAktion.pruefe(["aktion": aktion], vault: v, oberflaeche: .studio) != nil, "\(aktion)")
     }
@@ -183,9 +183,23 @@ private func url(_ s: String) -> URL { URL(string: s)! }
     #expect(AppAktion.pruefe(["aktion": "ordner-zeigen", "wert": "a.md"], vault: v, oberflaeche: .app) != nil)
 }
 
+@Test func aktionVertrauenGeaendertNurImStudio() {
+    #expect(AppAktion.pruefe(["aktion": "vertrauen-geaendert"], vault: nil, oberflaeche: .studio) == .vertrauenGeaendert)
+    #expect(AppAktion.pruefe(["aktion": "vertrauen-geaendert"], vault: tempOrdner("Vault"), oberflaeche: .studio) == .vertrauenGeaendert)
+    // ein Wert dazu ändert nichts — die Aktion trägt keine Daten
+    #expect(AppAktion.pruefe(["aktion": "vertrauen-geaendert", "wert": "egal"], vault: nil, oberflaeche: .studio) == .vertrauenGeaendert)
+    // Die Übersicht ist Kit-Code aus dem Vault: sie darf das nicht melden — auch ohne Angabe der Herkunft nicht
+    #expect(AppAktion.pruefe(["aktion": "vertrauen-geaendert"], vault: nil, oberflaeche: .app) == nil)
+    #expect(AppAktion.pruefe(["aktion": "vertrauen-geaendert"], vault: nil) == nil)
+    // ähnlich geschriebene Namen sind unbekannt
+    for name in ["vertrauen_geaendert", "vertrauenGeaendert", "Vertrauen-geaendert", "vertrauen-geändert", "vertrauen"] {
+        #expect(AppAktion.pruefe(["aktion": name], vault: nil, oberflaeche: .studio) == nil, "\(name)")
+    }
+}
+
 @Test func ohneAngabeGiltDieStrengsteHerkunft() {
     // Wer die Herkunft vergisst, bekommt nur die drei alten Aktionen — nie Ordner-Dialog, Vault-Wechsel oder Titel.
-    for aktion in ["ordner-waehlen", "vault-gewechselt", "titel"] {
+    for aktion in ["ordner-waehlen", "vault-gewechselt", "vertrauen-geaendert", "titel"] {
         #expect(AppAktion.pruefe(["aktion": aktion], vault: nil) == nil, "\(aktion)")
     }
     #expect(AppAktion.pruefe(["aktion": "ansicht"], vault: nil) == .ansicht)
@@ -257,29 +271,39 @@ private func url(_ s: String) -> URL { URL(string: s)! }
 
 @Test func zeitlimitsDerStudioRouten() {
     func limit(_ pfad: String) -> Duration { BrueckenVerbindung.zeitlimit(fuerPfad: pfad) }
-    // lang laufende Routen: Vault klonen 330 s, Remote hinzufügen 150 s, Abgleich 400 s
-    #expect(limit("/api/vaults/klonen") == .seconds(330))
+    // lang laufende Routen (Spec §8: Node-Gesamtfristen plus Reserve): Vault öffnen/neu/klonen 330 s, Remote hinzufügen 150 s
+    // (Node 120 s), Commit 90 s (Node 75 s), Abgleich 400 s
+    for pfad in ["/api/vaults/oeffnen", "/api/vaults/neu", "/api/vaults/klonen"] {
+        #expect(limit(pfad) == .seconds(330), "\(pfad)")
+    }
     #expect(limit("/api/git/remote") == .seconds(150))
+    #expect(limit("/api/git/commit") == .seconds(90))
     #expect(limit("/api/git/sync") == .seconds(400))
     // Query, Schrägstrich am Ende und Groß/klein ändern die Zuordnung nicht
-    #expect(limit("/api/vaults/klonen?x=1") == .seconds(330))
-    #expect(limit("/api/vaults/klonen/") == .seconds(330))
-    #expect(limit("/API/Vaults/Klonen") == .seconds(330))
+    for pfad in ["/api/vaults/klonen?x=1", "/api/vaults/klonen/", "/API/Vaults/Klonen",
+                 "/api/vaults/oeffnen?x=1", "/api/vaults/oeffnen/", "/API/Vaults/Oeffnen",
+                 "/api/vaults/neu?x=1", "/api/vaults/neu/", "/API/VAULTS/NEU"] {
+        #expect(limit(pfad) == .seconds(330), "\(pfad)")
+    }
     #expect(limit("/api/git/remote?x=1") == .seconds(150))
     #expect(limit("/api/git/remote/") == .seconds(150))
+    #expect(limit("/api/git/commit?x=1") == .seconds(90))
+    #expect(limit("/api/git/commit/") == .seconds(90))
     #expect(limit("/api/git/sync?x=1") == .seconds(400))
     // Unterpfade und ähnliche Namen bekommen NICHT die lange Frist
-    #expect(limit("/api/vaults/klonen/x") == .seconds(30))
-    #expect(limit("/api/vaults/klonenx") == .seconds(30))
+    for pfad in ["/api/vaults/klonen/x", "/api/vaults/klonenx", "/api/vaults/oeffnen/x", "/api/vaults/oeffnenx",
+                 "/api/vaults/neu/x", "/api/vaults/neue"] {
+        #expect(limit(pfad) == .seconds(30), "\(pfad)")
+    }
     #expect(limit("/api/git/remote/x") == .seconds(90))
     #expect(limit("/api/git/remotes") == .seconds(90))
     #expect(limit("/api/git/sync/x") == .seconds(90))
     // übrige Git-Routen 90 s, alles andere 30 s (auch die übrigen Vault-Routen)
-    for pfad in ["/api/git/status", "/api/git/commit", "/api/git/verlauf?pfad=a.md", "/api/git/log?max=50", "/api/git/diff"] {
+    for pfad in ["/api/git/status", "/api/git/commit/x", "/api/git/verlauf?pfad=a.md", "/api/git/log?max=50", "/api/git/diff"] {
         #expect(limit(pfad) == .seconds(90), "\(pfad)")
     }
-    for pfad in ["/api/vaults", "/api/vaults/aktiv", "/api/vaults/neu", "/api/vaults/oeffnen", "/api/vaults/entfernen",
-                 "/api/info", "/api/notizen", "/api/notiz/kontext?pfad=a.md", "/api/probe", "/api/ki/erkennen", "/index.html"] {
+    for pfad in ["/api/vaults", "/api/vaults/aktiv", "/api/vaults/entfernen", "/api/info", "/api/kit/vertrauen", "/api/mcp/verbinden",
+                 "/api/notizen", "/api/notiz/kontext?pfad=a.md", "/api/probe", "/api/ki/erkennen", "/index.html"] {
         #expect(limit(pfad) == .seconds(30), "\(pfad)")
     }
     // Schreibende Anfragen werden nach einem Brückenabsturz nie wiederholt (kein doppeltes Klonen/Pushen)

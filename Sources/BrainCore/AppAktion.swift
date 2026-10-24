@@ -2,8 +2,8 @@ import Foundation
 
 /// Aktionen der Oberfläche an die App (Nachrichtenkanal `aktion`, mit Antwort an die Seite, aber kein Datenweg). Die Prüfung
 /// hier ist die einzige Stelle, die Werte der Seite in etwas Ausführbares verwandelt: nur bekannte Aktionen, Pfade nur im Vault,
-/// nur https. `ordner-waehlen`, `vault-gewechselt`, `titel` und `fehler` gelten nur für das Studio — die Übersicht (Kit-Seite
-/// aus dem Vault) darf nur `ansicht`, `ordner-zeigen` und `extern`.
+/// nur https. `ordner-waehlen`, `vault-gewechselt`, `vertrauen-geaendert`, `titel` und `fehler` gelten nur für das Studio — die
+/// Übersicht (Kit-Seite aus dem Vault) darf nur `ansicht`, `ordner-zeigen` und `extern`.
 public enum AppAktion: Equatable, Sendable {
     case ansicht
     case ordnerZeigen(URL)
@@ -12,6 +12,10 @@ public enum AppAktion: Equatable, Sendable {
     case ordnerWaehlen(titel: String?, vorschlag: URL?)
     /// Das Backend hat den aktiven Vault gewechselt (steht in vaults.json): Menüleiste auffrischen, Übersicht schließen.
     case vaultGewechselt
+    /// Das Backend hat das Vertrauen in den Vault geändert (`POST /api/kit/vertrauen`, Studio-v2-Spec §8): die App prüft neu und
+    /// aktualisiert Status und Übersicht. Nur das Studio darf das melden — die Übersicht ist Kit-Code aus dem Vault und könnte
+    /// sich sonst selbst „neu prüfen“ lassen (die Prüfung ändert nichts, aber sie startet Node).
+    case vertrauenGeaendert
     /// Fenstertitel des Studios (nil = Standardtitel).
     case titel(String?)
     /// JavaScript-Fehler der Studio-Oberfläche (Fehlerhaken, `fehlerhaken.js`): nur fürs App-Log, kein Datenweg.
@@ -25,8 +29,8 @@ public enum AppAktion: Equatable, Sendable {
     static let maxFehlerort = 120
 
     /// `{aktion:"ansicht"}`, `{aktion:"ordner-zeigen", wert:<rel. Pfad>}`, `{aktion:"extern", wert:<https-URL>}`,
-    /// `{aktion:"ordner-waehlen", wert:{titel?, vorschlag?}}`, `{aktion:"vault-gewechselt"}`, `{aktion:"titel", wert:<Text>}`,
-    /// `{aktion:"fehler", wert:{text, ort?}}`.
+    /// `{aktion:"ordner-waehlen", wert:{titel?, vorschlag?}}`, `{aktion:"vault-gewechselt"}`, `{aktion:"vertrauen-geaendert"}`,
+    /// `{aktion:"titel", wert:<Text>}`, `{aktion:"fehler", wert:{text, ort?}}`.
     /// Ohne Angabe gilt die strengste Herkunft (Übersicht): die Studio-Aktionen muss man ausdrücklich freischalten.
     public static func pruefe(_ nachricht: Any, vault: URL?, oberflaeche: Oberflaeche = .app) -> AppAktion? {
         guard let d = nachricht as? [String: Any], let name = d["aktion"] as? String else { return nil }
@@ -45,6 +49,8 @@ public enum AppAktion: Equatable, Sendable {
             return oberflaeche == .studio ? pruefeOrdnerWaehlen(wert) : nil
         case "vault-gewechselt":
             return oberflaeche == .studio ? .vaultGewechselt : nil
+        case "vertrauen-geaendert":
+            return oberflaeche == .studio ? .vertrauenGeaendert : nil
         case "titel":
             return oberflaeche == .studio ? pruefeTitel(wert) : nil
         case "fehler":

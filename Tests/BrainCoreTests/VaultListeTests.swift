@@ -84,3 +84,74 @@ private func schreibe(_ json: String, nach datei: URL) {
     #expect(StatusAnzeige.ohneKit.zeichen == "✓")
     #expect(StatusAnzeige.ohneKit.titel.contains("ohne Kit"))
 }
+
+// MARK: Lesen wie die Werkstatt (k5)
+
+@Test func vaultsAlsKeinArrayErgibtLeereListeOhneAktiven() {
+    let p = AppPfade(basis: tempOrdner("Support"))
+    for vaults in [#""x""#, "5", "null", "{}", #"{"pfad":"/a"}"#, "true"] {
+        schreibe(#"{"vaults":\#(vaults),"aktiv":"/p"}"#, nach: p.vaultListe)
+        let liste = VaultListe.lade(p)
+        #expect(liste?.vaults.isEmpty == true, "\(vaults)")
+        #expect(liste?.aktiv == nil, "\(vaults)")
+        #expect(VaultListe.aktiverVault(p) == nil, "\(vaults)")
+    }
+}
+
+@Test func aktivGiltNurWennEsEinemEintragEntspricht() {
+    let p = AppPfade(basis: tempOrdner("Support"))
+    // steht nicht in der Liste → kein aktiver Vault (auch nicht über config.json: vaults.json ist maßgeblich)
+    schreibe(#"{"vaults":[{"pfad":"/a/Eins"}],"aktiv":"/b/Zwei"}"#, nach: p.vaultListe)
+    #expect(VaultListe.lade(p)?.vaults.map(\.pfad) == ["/a/Eins"])
+    #expect(VaultListe.lade(p)?.aktiv == nil)
+    #expect(VaultListe.aktiverVault(p) == nil)
+    // Liste leer, aktiv gesetzt
+    schreibe(#"{"vaults":[],"aktiv":"/a/Eins"}"#, nach: p.vaultListe)
+    #expect(VaultListe.lade(p)?.aktiv == nil)
+    // dieselbe Stelle, anders geschrieben (Schrägstrich am Ende, ./.., doppelte Schrägstriche, Groß/klein): gilt — und zwar
+    // als der Eintrag der Liste
+    for aktiv in ["/a/Eins/", "/a/./Eins", "/a/x/../Eins", "//a//Eins", "/A/EINS", "/a/eins"] {
+        schreibe(#"{"vaults":[{"pfad":"/a/Eins"}],"aktiv":"\#(aktiv)"}"#, nach: p.vaultListe)
+        #expect(VaultListe.lade(p)?.aktiv == "/a/Eins", "\(aktiv)")
+        #expect(VaultListe.aktiverVault(p) == URL(fileURLWithPath: "/a/Eins", isDirectory: true), "\(aktiv)")
+    }
+    // ein Ordner darüber oder darunter ist ein anderer Vault
+    for aktiv in ["/a", "/a/Eins/unter", "/a/Eins2"] {
+        schreibe(#"{"vaults":[{"pfad":"/a/Eins"}],"aktiv":"\#(aktiv)"}"#, nach: p.vaultListe)
+        #expect(VaultListe.lade(p)?.aktiv == nil, "\(aktiv)")
+    }
+}
+
+@Test func aktivMitFalschemTypOderRelativerPfadIstNil() {
+    let p = AppPfade(basis: tempOrdner("Support"))
+    for aktiv in ["5", "null", "true", "[]", #"["/a/Eins"]"#, "{}", #""relativ/Eins""#, #""""#, #""/a/E\u0000ins""#] {
+        schreibe(#"{"vaults":[{"pfad":"/a/Eins"}],"aktiv":\#(aktiv)}"#, nach: p.vaultListe)
+        #expect(VaultListe.lade(p)?.aktiv == nil, "\(aktiv)")
+    }
+    // fehlt ganz
+    schreibe(#"{"vaults":[{"pfad":"/a/Eins"}]}"#, nach: p.vaultListe)
+    #expect(VaultListe.lade(p)?.aktiv == nil)
+}
+
+@Test func eintraegeNurMitAbsolutemTextPfadDoppelteNurEinmalPfadeBereinigt() {
+    let p = AppPfade(basis: tempOrdner("Support"))
+    schreibe("""
+    {"vaults":[null,"x",5,[],{"pfad":5},{"pfad":null},{"pfad":["/a"]},{"pfad":"relativ"},{"pfad":""},{"pfad":"/x\\u0000y"},
+               {"name":"Eins","pfad":"/ok/Eins"},{"name":"Doppelt","pfad":"/ok/eins/"},{"pfad":"/OK/EINS"},
+               {"pfad":"/ok/Zwei/../Drei"},{"pfad":"/ok/./Vier//Fuenf/"}],"aktiv":"/ok/Drei"}
+    """, nach: p.vaultListe)
+    let liste = try! #require(VaultListe.lade(p))
+    // Doppelte (ohne Groß/klein): der erste Eintrag gewinnt; Pfade sind lexikalisch bereinigt wie `path.resolve` in Node
+    #expect(liste.vaults.map(\.pfad) == ["/ok/Eins", "/ok/Drei", "/ok/Vier/Fuenf"])
+    #expect(liste.vaults.first?.name == "Eins")
+    #expect(liste.aktiv == "/ok/Drei")
+}
+
+@Test func anzeigenameVergleichtWieDieListe() {
+    let p = AppPfade(basis: tempOrdner("Support"))
+    schreibe(#"{"vaults":[{"name":"Privat","pfad":"/Users/x/Mein Brain"}],"aktiv":null}"#, nach: p.vaultListe)
+    let liste = try! #require(VaultListe.lade(p))
+    #expect(liste.anzeigename(fuer: URL(fileURLWithPath: "/users/X/mein brain")) == "Privat")
+    #expect(liste.anzeigename(fuer: URL(fileURLWithPath: "/Users/x/./Mein Brain/")) == "Privat")
+    #expect(liste.anzeigename(fuer: URL(fileURLWithPath: "/Users/x/Mein Brain 2")) == "Mein Brain 2")
+}

@@ -42,7 +42,7 @@ final class AppDelegat: NSObject, NSApplicationDelegate {
     // MARK: Menüs
 
     @objc private func studioOeffnen() { zustand.oeffneStudio() }
-    @objc private func uebersichtOeffnen() { zustand.oeffneFenster() }
+    @objc private func uebersichtOeffnen() { Task { await zustand.oeffneFenster() } }
 
     /// Alle Befehle an die Studio-Oberfläche laufen über einen Eintrag mit dem Namen in `representedObject`
     /// (`StudioBefehl.rawValue` — die Namensliste steht nur dort).
@@ -133,10 +133,11 @@ final class AppDelegat: NSObject, NSApplicationDelegate {
     }
 }
 
-/// Die Übersicht braucht das Brain-Kit im aktiven Vault — ohne ist ihr Eintrag ausgegraut.
+/// Die Übersicht braucht das Brain-Kit im aktiven Vault und das Vertrauen des Nutzers in diesen Vault — ohne eins von beiden ist
+/// ihr Eintrag ausgegraut.
 extension AppDelegat: NSMenuItemValidation {
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
-        if item.action == #selector(uebersichtOeffnen) { return zustand.kitVorhanden }
+        if item.action == #selector(uebersichtOeffnen) { return zustand.uebersichtMoeglich }
         return true
     }
 }
