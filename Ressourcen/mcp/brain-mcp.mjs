@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 // mcp/brain-mcp.mjs — lokaler MCP-Server für Brain Studio (Spec §7): stdio, JSON-RPC 2.0 zeilengetrennt, ohne
-// Abhängigkeiten. Nur stdout für JSON-RPC, Logs nach stderr. Aufruf: node brain-mcp.mjs <vault>
+// Abhängigkeiten. Nur stdout für JSON-RPC, Logs nach stderr. Aufruf: node brain-mcp.mjs [<vault>]
+// Mit Vault-Argument (oder BRAIN_VAULT) ist der Server an diesen Vault gebunden. Ohne Argument folgt er dem aktiven Vault aus
+// <support>/vaults.json (bei jedem Werkzeugaufruf geprüft) — gibt es keinen, antworten die Werkzeuge mit einem Hinweis.
 import { createInterface } from "node:readline";
 import { realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { oeffneVault, HttpFehler } from "../gemeinsam/vault.mjs";
+import { oeffneVault, HttpFehler, STUFE_TEXT as STUFE } from "../gemeinsam/vault.mjs";
+import { leseVaults, aktiverVaultPfad } from "../gemeinsam/vaults.mjs";
 
 const VERSIONEN = ["2025-06-18", "2025-03-26", "2024-11-05"];
 export const WERKZEUGE = [
@@ -16,27 +19,35 @@ export const WERKZEUGE = [
     inputSchema: { type: "object", properties: { text: { type: "string" }, titel: { type: "string" } }, required: ["text"], additionalProperties: false } },
   { name: "brain_gesundheit", description: "Kurzfassung der Brain-Gesundheit (Ampel und Befunde), falls das Kit installiert ist.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false } },
+  { name: "brain_vaults", description: "Listet die in der App eingerichteten Vaults (Brains) und nennt den, den dieser Server gerade nutzt.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false } },
   { name: "brain_verlauf", description: "Git-Verlauf einer Datei (neueste zuerst).",
     inputSchema: { type: "object", properties: { pfad: { type: "string" }, max: { type: "integer", minimum: 1, maximum: 100, description: "Standard 20" } }, required: ["pfad"], additionalProperties: false } },
 ];
 
-const STUFE = { gruen: "grün", gelb: "gelb", rot: "rot", grau: "grau", ohne: "ohne Befund" };
 const text = (t) => ({ content: [{ type: "text", text: t }] });
 const fehlerText = (t) => ({ content: [{ type: "text", text: t }], isError: true });
 const zeit = (iso) => String(iso || "").slice(0, 16).replace("T", " ");
 
-async function rufe(v, name, a) {
+const KEIN_VAULT = "Es ist noch kein Vault eingerichtet. Lege in Brain Studio einen an (Willkommen → Brain-Vorlage) und versuche es dann noch einmal.";
+
+function vaultText(v) {
+  const l = leseVaults();
+  const dieser = v ? v.wurzel : null;
+  if (!l.vaults.length && !dieser) return KEIN_VAULT;
+  const zeilen = l.vaults.map((e, i) => `${i + 1}. ${e.pfad === dieser ? "*" : " "} ${e.name} — ${e.pfad}${l.aktiv === e.pfad && e.pfad !== dieser ? " (in der App aktiv)" : ""}`);
+  if (dieser && !l.vaults.some((e) => e.pfad === dieser)) zeilen.push(`*  ${v.name} — ${dieser} (nicht in der Liste der App)`);
+  return `Vaults (* = von diesem Server genutzt):\n${zeilen.join("\n")}`;
+}
+
+// v: ein geöffneter Vault, eine Funktion, die den aktuellen liefert (Server ohne Vault-Argument), oder null.
+async function rufe(vArg, name, a) {
+  const v = typeof vArg === "function" ? vArg() : vArg;
+  if (name === "brain_vaults") return text(vaultText(v));
+  if (!v) return fehlerText(KEIN_VAULT);
   const arg = (k) => { if (typeof a[k] !== "string" || !a[k].trim()) throw new HttpFehler(400, `Der Parameter „${k}“ fehlt.`); return a[k]; };
   switch (name) {
-    case "brain_suchen": {
-      const n = Math.min(20, Math.max(1, Number.parseInt(a.anzahl, 10) || 10));
-      const { treffer } = v.suche(arg("frage"));
-      if (!treffer.length) return text("Keine Treffer.");
-      return text(treffer.slice(0, n).map((t, i) => {
-        let stufe = "grau"; try { stufe = v.pruefung(t.pfad).stufe; } catch { /* unlesbar → grau */ }
-        return `${i + 1}. ${t.pfad} — ${t.titel} [${STUFE[stufe]}]\n   ${t.auszug}`;
-      }).join("\n"));
-    }
+    case "brain_suchen": return text(v.suchenFuerKi(arg("frage"), a.anzahl).text);
     case "brain_lesen": {
       const d = v.lies(arg("pfad"));
       const p = v.pruefung(d.pfad);
@@ -103,10 +114,16 @@ export async function bearbeite(v, msg, version = "0.2.0") {
 }
 
 function haupt() {
-  const vaultPfad = process.argv[2] || process.env.BRAIN_VAULT;
-  if (!vaultPfad) { process.stderr.write("Aufruf: node brain-mcp.mjs <vault>\n"); process.exit(2); }
-  let v;
-  try { v = oeffneVault(vaultPfad); } catch (e) { process.stderr.write(`${e.message}\n`); process.exit(2); }
+  const gebunden = process.argv[2] || process.env.BRAIN_VAULT || "";
+  let aktuell = null, aktuellPfad;
+  if (gebunden) { try { aktuell = oeffneVault(gebunden); } catch (e) { process.stderr.write(`${e.message}\n`); process.exit(2); } }
+  // Ohne Argument: aktiven Vault der App nehmen; wechselt er, wird neu geöffnet (billig: nur vaults.json lesen).
+  const v = () => {
+    if (gebunden) return aktuell;
+    let p = null; try { p = aktiverVaultPfad(); } catch { /* keine Liste → kein Vault */ }
+    if (p !== aktuellPfad) { aktuellPfad = p; aktuell = null; if (p) { try { aktuell = oeffneVault(p); } catch { /* nicht lesbar → kein Vault */ } } }
+    return aktuell;
+  };
   process.stdout.on("error", () => process.exit(0));
   const sende = (o) => process.stdout.write(JSON.stringify(o) + "\n");
   let offen = 0, zu = false;

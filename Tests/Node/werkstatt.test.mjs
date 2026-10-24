@@ -269,11 +269,11 @@ test("Brücke: POST /api/stopp antwortet und beendet; SIGTERM beendet", async ()
   assert.equal((await b.ende).code, 0);
 });
 
-test("Brücke: ohne Vault / falscher Vault → Exit 2", async () => {
+test("Brücke: falscher Vault-Ordner → Exit 2; ohne Argument startet sie (ohne Vault, Ende bei geschlossenem stdin)", async () => {
   const anlage = kopieAnlage();
   const code = (args) => new Promise((ok) => { const p = spawn(process.execPath, [join(anlage, "werkstatt", "werkstatt.mjs"), ...args], { stdio: "ignore", env: { ...process.env, BRAIN_VAULT: "" } }); p.on("close", ok); });
-  assert.equal(await code([]), 2);
   assert.equal(await code([join(tmp(), "gibtsnicht")]), 2);
+  assert.equal(await code([]), 0);
 });
 
 // ---------- Entwicklung über HTTP ----------

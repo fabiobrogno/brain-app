@@ -1,6 +1,7 @@
 // gemeinsam/basis.mjs — Fehlerart mit HTTP-Status und der Pfad-Schutz (Studio-Spec §5). Keine Abhängigkeiten.
 import { realpathSync, lstatSync, readdirSync } from "node:fs";
 import { join, sep, dirname } from "node:path";
+import { homedir } from "node:os";
 
 // Fehler, die bis zur Oberfläche durchgereicht werden: Status + Alltagsmeldung (+ Zusatzfelder wie aktuellerHash).
 export class HttpFehler extends Error {
@@ -12,6 +13,9 @@ export class HttpFehler extends Error {
 }
 
 export const MAX_DATEI = 5 * 1024 * 1024;
+
+// Ablageort der App (Vault-Liste, Vertrauens-Merker): BRAIN_APP_SUPPORT oder ~/Library/Application Support/Brain.
+export const supportOrdner = () => process.env.BRAIN_APP_SUPPORT || join(homedir(), "Library", "Application Support", "Brain");
 
 // Vergleichsform für Namen: APFS unterscheidet weder Groß/klein noch NFC/NFD — Sperren und Schreibschutz dürfen es auch nicht.
 export const falte = (s) => String(s).normalize("NFC").toLowerCase();
@@ -26,6 +30,14 @@ export function kindUmgebung(zusatz = {}) {
   return { ...e, ...zusatz };
 }
 export const testmodus = () => process.env.BRAIN_TESTMODUS === "1";
+
+// Namensregeln, die Baum, Suche, Notiz-Index und Schreibschutz gemeinsam nutzen (Vergleich ohne Groß/klein, NFC).
+export const BEARBEITBAR = /\.(md|txt)$/i;
+const GENERIERT_NAMEN = new Set(["index.md", "_index.md", "graph.json"]);
+export const generiertName = (name) => GENERIERT_NAMEN.has(falte(name));
+// 09_wiki/_*.md ist generiert — außer _schema.md und _log.md
+export const wikiGeneriert = (rel, name) => { const f = falte(rel); return f.startsWith("09_wiki/") && falte(name).startsWith("_") && falte(name) !== "_schema.md" && falte(name) !== "_log.md"; };
+export const gesperrterName = (n) => n.startsWith(".") || falte(n) === "node_modules";
 
 // Lexikalische Prüfung (ohne Plattenzugriff): relativer Vault-Pfad mit "/" → bereinigte Segmente.
 // 400 bei Unsinn, 403 bei Ausbruch (.., absolut) und bei gesperrten Orten (führender Punkt, node_modules).

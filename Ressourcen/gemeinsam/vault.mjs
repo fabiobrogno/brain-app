@@ -5,23 +5,17 @@ import {
   mkdirSync, renameSync, linkSync, unlinkSync, existsSync,
 } from "node:fs";
 import { join, basename, relative, sep } from "node:path";
-import { homedir } from "node:os";
 import { createHash, randomBytes } from "node:crypto";
 import { execFile } from "node:child_process";
 import { pathToFileURL } from "node:url";
-import { HttpFehler, MAX_DATEI, loese, imVault, falte, kindUmgebung } from "./basis.mjs";
+import { HttpFehler, MAX_DATEI, loese, imVault, falte, kindUmgebung, supportOrdner, BEARBEITBAR, generiertName, wikiGeneriert, gesperrterName } from "./basis.mjs";
 import { pruefeText, berlinHeute, leseKopf } from "./pruefung.mjs";
 import * as gitFn from "./git.mjs";
+import { erzeugeNotizIndex, titelAus } from "./notizen.mjs";
 
-export { HttpFehler, pruefeText, berlinHeute };
+export { HttpFehler, pruefeText, berlinHeute, supportOrdner };
+export const STUFE_TEXT = { gruen: "grün", gelb: "gelb", rot: "rot", grau: "grau", ohne: "ohne Befund" };
 
-const BEARBEITBAR = /\.(md|txt)$/i;
-const GENERIERT_NAMEN = new Set(["index.md", "_index.md", "graph.json"]); // gefaltet (ohne Groß/klein, NFC)
-const generiertName = (name) => GENERIERT_NAMEN.has(falte(name));
-// 09_wiki/_*.md ist generiert — außer _schema.md und _log.md (Vergleich ohne Groß/klein, NFC)
-const wikiGeneriert = (rel, name) => { const f = falte(rel); return f.startsWith("09_wiki/") && falte(name).startsWith("_") && falte(name) !== "_schema.md" && falte(name) !== "_log.md"; };
-const gesperrterName = (n) => n.startsWith(".") || falte(n) === "node_modules";
-export const supportOrdner = () => process.env.BRAIN_APP_SUPPORT || join(homedir(), "Library", "Application Support", "Brain");
 const HASH = (buf) => createHash("sha256").update(buf).digest("hex");
 
 export function slug(s, max = 50) {
@@ -65,7 +59,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
     const schluessel = `${st.mtimeMs}:${st.size}`;
     const c = titelCache.get(rel);
     if (c && c.k === schluessel) return c.t;
-    const t = titelVon(rel, kopfBytes(abs, 8192));
+    const t = titelAus(rel, kopfBytes(abs, 8192));
     titelCache.set(rel, { k: schluessel, t });
     return t;
   }
@@ -213,12 +207,6 @@ export function oeffneVault(vaultPfad, opts = {}) {
   }
   const norm = (s) => s.normalize("NFC").toLowerCase();
 
-  function titelVon(rel, text) {
-    const { felder, bis } = leseKopf(text);
-    const zeilen = text.split(/\r?\n/);
-    for (let i = bis; i < Math.min(zeilen.length, bis + 40); i++) { const m = /^#\s+(.+?)\s*#*\s*$/.exec(zeilen[i]); if (m) return m[1]; }
-    return felder.title || felder.titel || felder.name || basename(rel).replace(/\.(md|txt)$/i, "");
-  }
 
   function suche(q) {
     const woerter = norm(String(q || "")).split(/\s+/).filter(Boolean);
@@ -227,7 +215,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
     for (const rel of alleTexte()) {
       let buf; try { const a = join(wurzel, rel); const st = statSync(a); if (st.size > 1024 * 1024) continue; buf = readFileSync(a); } catch { continue; }
       const text = buf.toString("utf8");
-      const titel = titelVon(rel, text);
+      const titel = titelAus(rel, text);
       const kopf = norm(titel + " " + rel);
       const klein = norm(text);
       if (woerter.every((w) => kopf.includes(w))) { titelTreffer.push({ rel, text, titel, klein, score: 0 }); continue; }
@@ -317,8 +305,25 @@ export function oeffneVault(vaultPfad, opts = {}) {
     return wert;
   }
 
+  // ---------- Notiz-Index (Spec v2 §5) ----------
+  const notizIndex = erzeugeNotizIndex({ wurzel, jetzt, heute: () => opts.heute || berlinHeute(jetzt()) });
+
+  // Dieselbe Suche für MCP brain_suchen und die Probe-Frage: strukturiert (treffer) und als Text, wie ihn die KI sieht.
+  function suchenFuerKi(frage, anzahl) {
+    const n = Math.min(20, Math.max(1, Number.parseInt(anzahl, 10) || 10));
+    const treffer = suche(frage).treffer.slice(0, n).map((t) => {
+      let stufe = "grau"; try { stufe = pruefung(t.pfad).stufe; } catch { /* unlesbar → grau */ }
+      return { ...t, stufe };
+    });
+    const text = treffer.length ? treffer.map((t, i) => `${i + 1}. ${t.pfad} — ${t.titel} [${STUFE_TEXT[t.stufe]}]\n   ${t.auszug}`).join("\n") : "Keine Treffer.";
+    return { treffer, text };
+  }
+
   return {
-    wurzel, name: basename(wurzel), rueckfragen, kitVersion, kit, vertrauen, baum, lies, schreibe, neu, merken, suche, pruefung, gesundheit,
+    wurzel, name: basename(wurzel), rueckfragen, kitVersion, kit, vertrauen, baum, lies, schreibe, neu, merken, suche, suchenFuerKi, pruefung, gesundheit,
+    notizen: notizIndex.notizen, notizKontext: notizIndex.kontext, typen: notizIndex.typen, ansichten: notizIndex.ansichten,
+    gitLog: (a) => gitFn.log(wurzel, a || {}),
+    gitRemote: (url) => gitFn.remoteHinzufuegen(wurzel, url),
     gitStatus: () => gitFn.status(wurzel),
     gitCommit: (a) => gitFn.commit(wurzel, a || {}),
     gitSync: () => gitFn.sync(wurzel, { limitSync: opts.gitLimitSync }),

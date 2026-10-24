@@ -1,13 +1,14 @@
 // werkstatt/handler.mjs — die Routen von Brain Studio (Spec §5) als reine Funktion, ohne Socket:
 //   erzeugeHandler({vault, ...}) → async ({methode, pfad, query, body}) => ({status, headers, body: Buffer, stopp?})
 // Genutzt von werkstatt.mjs (Brücke zur App) und entwicklung.mjs (HTTP für Tests). Statische Dateien kommen aus ../studio/.
-import { readFileSync, realpathSync, statSync, accessSync, constants } from "node:fs";
-import { join, dirname, sep, delimiter } from "node:path";
+import { readFileSync, realpathSync, statSync, existsSync } from "node:fs";
+import { join, dirname, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { homedir } from "node:os";
 import { execFile } from "node:child_process";
 import { oeffneVault, HttpFehler } from "../gemeinsam/vault.mjs";
-import { kindUmgebung, testmodus } from "../gemeinsam/basis.mjs";
+import { kindUmgebung } from "../gemeinsam/basis.mjs";
+import { findeProgramm, erkenneAgenten } from "../gemeinsam/ki.mjs";
+import * as vaultsFn from "../gemeinsam/vaults.mjs";
 
 const HIER = dirname(fileURLToPath(import.meta.url));
 export const MAX_KOERPER = 8 * 1024 * 1024;
@@ -34,19 +35,8 @@ export function appVersionLesen() {
 
 const shellText = (s) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`);
 
-// `claude` im PATH suchen; zusätzlich die üblichen Orte (eine GUI-App hat nur einen knappen PATH).
-// BRAIN_CLAUDE_EXTRA (Doppelpunkt-Liste, auch leer) ersetzt diese Zusatzorte — so bleiben Tests vom echten claude fern.
-// Wirksam nur mit BRAIN_TESTMODUS=1; sonst ließe sich die Suche von außen umlenken.
-export function findeClaude(env = process.env) {
-  const extra = env.BRAIN_TESTMODUS === "1" && env.BRAIN_CLAUDE_EXTRA !== undefined
-    ? env.BRAIN_CLAUDE_EXTRA.split(delimiter).filter(Boolean)
-    : [join(homedir(), ".local", "bin"), join(homedir(), ".claude", "local"), "/opt/homebrew/bin", "/usr/local/bin"];
-  for (const d of [...(env.PATH || "").split(delimiter).filter(Boolean), ...extra]) {
-    const p = join(d, "claude");
-    try { accessSync(p, constants.X_OK); if (statSync(p).isFile()) return p; } catch { /* weiter */ }
-  }
-  return null;
-}
+// `claude` im PATH und an den üblichen Orten suchen (Logik und Test-Schalter BRAIN_CLAUDE_EXTRA/BRAIN_TESTMODUS: gemeinsam/ki.mjs).
+export const findeClaude = (env = process.env) => findeProgramm("claude", env);
 
 function statisch(pfad, studioDir) {
   const nicht = fehler(404, "nicht gefunden");
@@ -68,52 +58,114 @@ function statisch(pfad, studioDir) {
   } catch { return nicht; }
 }
 
+const STANDARD_FARBE = "#7C8798";
+const istOrdner = (p) => { try { return statSync(p).isDirectory(); } catch { return false; } };
+const echterPfad = (p) => { try { return realpathSync(p); } catch { return p; } };
+
 export function erzeugeHandler(o) {
-  const v = oeffneVault(o.vault, o.vaultOptionen || {});
+  const vaultOpt = o.vaultOptionen || {};
+  const optV = () => (vaultOpt.support ? { support: vaultOpt.support } : {});
   const studioDir = o.studioDir || join(HIER, "..", "studio");
   const appVersion = o.appVersion || appVersionLesen();
   const mcpPfad = o.mcpPfad || join(HIER, "..", "mcp", "brain-mcp.mjs");
   const nodePfad = o.nodePfad || process.execPath;
-  const mcpArgs = () => { try { statSync(mcpPfad); } catch { return null; } return [nodePfad, realpathSync(mcpPfad), v.wurzel]; };
-  const mcpBefehl = () => { const a = mcpArgs(); return a ? `claude mcp add -s user brain -- ${a.map(shellText).join(" ")}` : null; };
 
-  async function api(methode, pfad, q, koerper) {
+  // Der offene Vault kann zur Laufzeit wechseln (POST /api/vaults/…): jede Anfrage hält den bei ihrem Start offenen Vault fest.
+  // Start: Vault-Argument hat Vorrang; sonst der aktive Vault aus vaults.json; sonst ohne Vault (Willkommen).
+  let aktuell = null;
+  const oeffne = (pfad) => oeffneVault(pfad, vaultOpt);
+  const wechsleZu = (pfad) => { aktuell = pfad ? oeffne(pfad) : null; };
+  if (o.vault) aktuell = oeffne(o.vault); // falscher Ordner → HttpFehler wie bisher
+  else {
+    const p = vaultsFn.aktiverVaultPfad(optV());
+    if (p) { try { aktuell = oeffne(p); } catch { aktuell = null; } }
+  }
+
+  const mcpArgs = (v) => { try { statSync(mcpPfad); } catch { return null; } return [nodePfad, realpathSync(mcpPfad), v.wurzel]; };
+  const mcpBefehl = (v) => { const a = mcpArgs(v); return a ? `claude mcp add -s user brain -- ${a.map(shellText).join(" ")}` : null; };
+
+  // Liste für die Oberfläche: gespeicherte Vaults (+ ein nur für diesen Start geöffneter, der nicht in vaults.json steht).
+  function vaultListe(v) {
+    const l = vaultsFn.leseVaults(optV());
+    const aktivPfad = v ? v.wurzel : null;
+    const vaults = l.vaults.map((e) => ({ name: e.name, pfad: e.pfad, farbe: e.farbe, aktiv: echterPfad(e.pfad) === aktivPfad, vorhanden: istOrdner(e.pfad), git: existsSync(join(e.pfad, ".git")) }));
+    if (v && !vaults.some((e) => e.aktiv)) vaults.unshift({ name: v.name, pfad: v.wurzel, farbe: STANDARD_FARBE, aktiv: true, vorhanden: true, git: existsSync(join(v.wurzel, ".git")), temporaer: true });
+    return { vaults, aktiv: aktivPfad };
+  }
+
+  async function api(methode, pfad, q, koerper, v) {
     const eingabe = () => {
       if (!koerper || !koerper.length) throw new HttpFehler(400, "Die Anfrage hat keinen Inhalt.");
       try { const j = JSON.parse(koerper.toString("utf8")); if (j && typeof j === "object" && !Array.isArray(j)) return j; } catch { /* unten */ }
       throw new HttpFehler(400, "Die Anfrage ist kein gültiges JSON.");
     };
     const nur = (erlaubt) => { if (methode !== erlaubt) throw new HttpFehler(405, "Diese Methode ist hier nicht erlaubt."); };
+    // Routen ohne Vault: info, vaults/*, ki/erkennen, stopp. Alle anderen brauchen einen offenen Vault.
+    const V = () => { if (!v) throw new HttpFehler(409, "Es ist noch kein Vault geöffnet.", { keinVault: true }); return v; };
+    const neuerStand = (r) => { wechsleZu(r.vault.pfad); return { ...vaultListe(aktuell), vault: r.vault, git: r.git }; };
     switch (pfad) {
       case "/api/info": nur("GET");
-        return { vault: v.wurzel, name: v.name, appVersion, kitVersion: v.kitVersion(), git: await v.istGitRepo(), mcpBefehl: mcpBefehl(), kit: v.kit() };
-      case "/api/kit/vertrauen": nur("POST"); return v.vertrauen(eingabe().erlauben);
-      case "/api/baum": nur("GET"); return v.baum();
+        if (!v) return { vault: null, name: null, appVersion, kitVersion: null, git: false, mcpBefehl: null, kit: { vorhanden: false, vertraut: false } };
+        return { vault: v.wurzel, name: v.name, appVersion, kitVersion: v.kitVersion(), git: await v.istGitRepo(), mcpBefehl: mcpBefehl(v), kit: v.kit() };
+      case "/api/kit/vertrauen": nur("POST"); return V().vertrauen(eingabe().erlauben);
+      case "/api/baum": nur("GET"); return V().baum();
       case "/api/datei":
-        if (methode === "GET") return v.lies(q.get("pfad"));
-        if (methode === "PUT") { const e = eingabe(); return v.schreibe({ pfad: e.pfad, inhalt: e.inhalt, basisHash: e.basisHash }); }
+        if (methode === "GET") return V().lies(q.get("pfad"));
+        if (methode === "PUT") { const e = eingabe(); return V().schreibe({ pfad: e.pfad, inhalt: e.inhalt, basisHash: e.basisHash }); }
         throw new HttpFehler(405, "Diese Methode ist hier nicht erlaubt.");
-      case "/api/neu": nur("POST"); return v.neu(eingabe());
-      case "/api/merken": nur("POST"); return v.merken(eingabe());
-      case "/api/suche": nur("GET"); return v.suche(q.get("q"));
-      case "/api/pruefung": nur("GET"); return v.pruefung(q.get("pfad"));
-      case "/api/gesundheit": nur("GET"); return v.gesundheit();
-      case "/api/rueckfragen": nur("GET"); return v.rueckfragen();
-      case "/api/git/status": nur("GET"); return v.gitStatus();
-      case "/api/git/commit": nur("POST"); return v.gitCommit(eingabe());
-      case "/api/git/sync": nur("POST"); return v.gitSync();
-      case "/api/git/verlauf": nur("GET"); return v.gitVerlauf(q.get("pfad"), q.get("max"));
-      case "/api/git/diff": nur("GET"); return v.gitDiff(q.get("pfad"), q.get("sha") || undefined);
-      case "/api/git/fassung": nur("GET"); return v.gitFassung(q.get("pfad"), q.get("sha"));
-      case "/api/mcp/verbinden": { nur("POST"); return verbinde(eingabe()); }
+      case "/api/neu": nur("POST"); return V().neu(eingabe());
+      case "/api/merken": nur("POST"); return V().merken(eingabe());
+      case "/api/suche": nur("GET"); return V().suche(q.get("q"));
+      case "/api/pruefung": nur("GET"); return V().pruefung(q.get("pfad"));
+      case "/api/gesundheit": nur("GET"); return V().gesundheit();
+      case "/api/rueckfragen": nur("GET"); return V().rueckfragen();
+      case "/api/notizen": nur("GET"); return V().notizen();
+      case "/api/notiz/kontext": nur("GET"); return V().notizKontext(q.get("pfad"));
+      case "/api/typen": nur("GET"); return V().typen();
+      case "/api/ansichten": nur("GET"); return V().ansichten();
+      case "/api/probe": {
+        nur("POST");
+        const e = eingabe();
+        if (typeof e.frage !== "string" || !e.frage.trim() || e.frage.length > 500) throw new HttpFehler(400, "Bitte eine Frage eingeben (höchstens 500 Zeichen).");
+        const r = V().suchenFuerKi(e.frage, e.anzahl);
+        return { frage: e.frage.trim(), treffer: r.treffer, text: r.text };
+      }
+      case "/api/git/status": nur("GET"); return V().gitStatus();
+      case "/api/git/commit": nur("POST"); return V().gitCommit(eingabe());
+      case "/api/git/sync": nur("POST"); return V().gitSync();
+      case "/api/git/verlauf": nur("GET"); return V().gitVerlauf(q.get("pfad"), q.get("max"));
+      case "/api/git/log": nur("GET"); return V().gitLog({ max: q.get("max"), vor: q.get("vor") || undefined });
+      case "/api/git/remote": nur("POST"); return V().gitRemote(eingabe().url);
+      case "/api/git/diff": nur("GET"); return V().gitDiff(q.get("pfad"), q.get("sha") || undefined);
+      case "/api/git/fassung": nur("GET"); return V().gitFassung(q.get("pfad"), q.get("sha"));
+      case "/api/mcp/verbinden": { nur("POST"); return verbinde(V(), eingabe()); }
+      case "/api/ki/erkennen": nur("GET"); return erkenneAgenten({ neu: q.get("neu") === "1" });
+      case "/api/vaults": nur("GET"); return vaultListe(v);
+      case "/api/vaults/aktiv": {
+        nur("POST");
+        const l = vaultsFn.waehleAktiv(eingabe().pfad, optV());
+        wechsleZu(l.aktiv);
+        return vaultListe(aktuell);
+      }
+      case "/api/vaults/neu": nur("POST"); return neuerStand(await vaultsFn.neuesVault(eingabe(), optV()));
+      case "/api/vaults/oeffnen": nur("POST"); return neuerStand(await vaultsFn.oeffneOrdner(eingabe(), optV()));
+      case "/api/vaults/klonen": nur("POST"); return neuerStand(await vaultsFn.klone(eingabe(), optV()));
+      case "/api/vaults/entfernen": {
+        nur("POST");
+        const e = eingabe();
+        let weg = e.pfad; try { weg = realpathSync(e.pfad); } catch { /* Ordner schon weg: Pfad wie gegeben */ }
+        const l = vaultsFn.entferne(e.pfad, optV());
+        if (v && weg === v.wurzel) wechsleZu(l.aktiv); // der offene Vault wurde aus der Liste genommen → nächster oder Willkommen
+        return vaultListe(aktuell);
+      }
       case "/api/stopp": nur("POST"); return { __stopp: true };
       default: throw new HttpFehler(404, "nicht gefunden");
     }
   }
 
-  function verbinde(e) {
+  function verbinde(v, e) {
     if (e.ziel !== "claude") throw new HttpFehler(400, "Unbekanntes Ziel — möglich ist: claude.");
-    const a = mcpArgs(), befehl = mcpBefehl();
+    const a = mcpArgs(v), befehl = mcpBefehl(v);
     if (!a) throw new HttpFehler(404, "Der MCP-Server wurde nicht gefunden.", { befehl: null });
     const claude = findeClaude();
     if (!claude) throw new HttpFehler(404, "Claude Code wurde nicht gefunden. Kopiere den Befehl und führe ihn im Terminal aus.", { befehl });
@@ -127,20 +179,23 @@ export function erzeugeHandler(o) {
     });
   }
 
-  return async function behandle({ methode = "GET", pfad = "/", query, body }) {
+  async function behandle({ methode = "GET", pfad = "/", query, body }) {
     methode = String(methode).toUpperCase();
     if (!pfad.startsWith("/api/") && pfad !== "/api") {
       if (methode !== "GET" && methode !== "HEAD") return fehler(405, "Diese Methode ist hier nicht erlaubt.");
       return statisch(pfad, studioDir);
     }
     const q = query instanceof URLSearchParams ? query : new URLSearchParams(query || "");
+    const v = aktuell; // dieser Vault gilt für die ganze Anfrage, auch wenn währenddessen gewechselt wird
     try {
-      const erg = await api(methode, pfad, q, body);
+      const erg = await api(methode, pfad, q, body, v);
       if (erg && erg.__stopp) return { ...json(200, { ok: true }), stopp: true };
       return json(200, erg === undefined ? { ok: true } : erg);
     } catch (e) {
       if (e instanceof HttpFehler) return fehler(e.status, e.message, e.extra);
       return fehler(500, "Interner Fehler");
     }
-  };
+  }
+  behandle.aktuellerVaultPfad = () => (aktuell ? aktuell.wurzel : null);
+  return behandle;
 }

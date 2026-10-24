@@ -19,13 +19,13 @@ export function leseKopf(text) {
 export const berlinHeute = (d = new Date()) =>
   new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Berlin", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
 
-function istDatum(s) {
+export function istDatum(s) {
   const m = ISO.exec(s || "");
   if (!m) return false;
   const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
   return d.getUTCFullYear() === +m[1] && d.getUTCMonth() === +m[2] - 1 && d.getUTCDate() === +m[3];
 }
-const plusTage = (iso, tage) => {
+export const plusTage = (iso, tage) => {
   const m = ISO.exec(iso);
   return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3] + tage)).toISOString().slice(0, 10);
 };

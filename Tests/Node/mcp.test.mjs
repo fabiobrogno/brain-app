@@ -58,10 +58,10 @@ test("MCP: initialize übernimmt unterstützte Version, sonst die neueste; Benac
   assert.equal(s.stderr(), "");
 });
 
-test("MCP: tools/list nennt genau die fünf Werkzeuge mit Schema", async () => {
+test("MCP: tools/list nennt genau die sechs Werkzeuge mit Schema", async () => {
   const s = starte(wiki());
   const a = await s.frage("tools/list");
-  assert.deepEqual(a.result.tools.map((t) => t.name).sort(), ["brain_gesundheit", "brain_lesen", "brain_merken", "brain_suchen", "brain_verlauf"]);
+  assert.deepEqual(a.result.tools.map((t) => t.name).sort(), ["brain_gesundheit", "brain_lesen", "brain_merken", "brain_suchen", "brain_vaults", "brain_verlauf"]);
   for (const t of a.result.tools) { assert.equal(t.inputSchema.type, "object"); assert.ok(t.description.length > 10); }
   assert.deepEqual(a.result.tools.find((t) => t.name === "brain_suchen").inputSchema.required, ["frage"]);
   s.p.stdin.end(); await s.ende;

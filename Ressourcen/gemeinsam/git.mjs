@@ -3,7 +3,9 @@
 import { execFile } from "node:child_process";
 import { realpathSync, readFileSync, writeFileSync, statSync, renameSync, lstatSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
-import { HttpFehler, sauber, kindUmgebung } from "./basis.mjs";
+import { HttpFehler, sauber, kindUmgebung, falte } from "./basis.mjs";
+import { berlinHeute } from "./pruefung.mjs";
+import { pruefeGitUrl, uebersetzeGitFehler } from "./gitwerkzeug.mjs"; // (gitwerkzeug importiert git() von hier — Kreis ist harmlos: nur Funktionen, nichts beim Laden)
 
 const LIMIT = 60_000, LIMIT_SYNC = 120_000;
 const REPO_GEBUNDEN = ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
@@ -296,4 +298,285 @@ export async function fassung(wurzel, rel, sha) {
   const text = r.stdout.toString("utf8");
   if (Buffer.compare(Buffer.from(text, "utf8"), r.stdout) !== 0) throw new HttpFehler(415, "Diese Fassung ist kein lesbarer Text.");
   return { inhalt: text };
+}
+
+// ══ Studio v2 ════════════════════════════════════════════════════════════════════════════════════════════════════════
+// Ab hier nur Ergänzungen (v2-Spec §1 „Verlauf-Modus“, §2 „Remote hinzufügen“); alles darüber ist unverändert.
+
+// ── Verlauf des ganzen Repos nach Tagen ──────────────────────────────────────────────────────────────────────────────
+const LOG_STANDARD = 50, LOG_OBERGRENZE = 200, DATEIEN_JE_COMMIT = 300;
+const TAG_NAME = new Intl.DateTimeFormat("de-DE", { timeZone: "Europe/Berlin", weekday: "long", day: "numeric", month: "long", year: "numeric" });
+// Kopfzeile je Commit: \x1e leitet sie ein, \x1f trennt die Felder; Freitext (Autor, Nachricht) steht hinten.
+const LOG_FORMAT = "%x1e%H%x1f%h%x1f%P%x1f%cI%x1f%an%x1f%s";
+const ROH_EINTRAG = /^:\d{6} \d{6} [0-9a-f]+ [0-9a-f]+ ([A-Za-z])\d*$/;
+const ZAHLEN_EINTRAG = /^(\d+|-)\t(\d+|-)\t([\s\S]*)$/;
+// Gesperrt wie in basis.sauber(): ein Segment beginnt mit „.“ oder ist node_modules (NFC/klein verglichen, wie APFS).
+const istGesperrt = (pfad) => pfad.split("/").some((s) => s.startsWith(".") || falte(s) === "node_modules");
+
+// Ausgabe von `git log -z --raw --numstat -M` zerlegen (Format per Versuch belegt): je Commit die Kopfzeile + NUL, dann —
+// nach einem Zeilenumbruch — die Raw-Einträge und ohne Trennung die Numstat-Einträge, alles NUL-getrennt:
+//   Raw:     ":100644 100644 aaa bbb M" NUL pfad NUL                (R/C: zwei Pfade, alt dann neu)
+//   Numstat: "plus TAB minus TAB pfad" NUL                          (Umbenennung: "plus TAB minus TAB" NUL alt NUL neu NUL; Binärdatei: „-“)
+// Pfade werden nie geraten: Nach einem Info-Eintrag steht fest, wie viele Pfad-Teile folgen (Tabs, „->“, Zeilenumbrüche im Namen sind egal).
+// Merges und leere Commits haben keine Einträge.
+function zerlegeLog(roh) {
+  const teile = roh.split("\0");
+  const commits = [];
+  let akt = null;
+  for (let i = 0; i < teile.length; i++) {
+    let t = teile[i];
+    if (t.startsWith("\x1e")) {
+      const f = t.slice(1).split("\x1f");
+      akt = { sha: f[0], kurz: f[1], eltern: (f[2] || "").split(" ").filter(Boolean), zeit: f[3] || "", autor: f[4] || "",
+        nachricht: f.slice(5).join("\x1f"), eintraege: [], zahlen: new Map() };
+      commits.push(akt);
+      continue;
+    }
+    if (!akt) continue;
+    if (t.startsWith("\n")) t = t.slice(1);
+    let m = ROH_EINTRAG.exec(t);
+    if (m) {
+      const zwei = m[1] === "R" || m[1] === "C"; // Umbenennung/Kopie: alter und neuer Pfad
+      const erster = teile[++i] ?? "", zweiter = zwei ? (teile[++i] ?? "") : null;
+      akt.eintraege.push({ code: m[1].toUpperCase(), von: zwei ? erster : undefined, pfad: zwei ? zweiter : erster });
+      continue;
+    }
+    m = ZAHLEN_EINTRAG.exec(t);
+    if (m) {
+      let von, pfad = m[3];
+      if (pfad === "") { von = teile[++i] ?? ""; pfad = teile[++i] ?? ""; }
+      akt.zahlen.set(von === undefined ? pfad : `${von}\0${pfad}`, { plus: m[1] === "-" ? 0 : Number(m[1]), minus: m[2] === "-" ? 0 : Number(m[2]) });
+    }
+  }
+  return commits;
+}
+
+function baueCommit(c) {
+  const merge = c.eltern.length >= 2; // bei Merges keine Dateien (egal, was Git geliefert hätte)
+  const dateien = [];
+  let plus = 0, geaendert = 0, geloescht = 0, zeilenPlus = 0, zeilenMinus = 0, versteckt = 0, gesamt = 0;
+  if (!merge) {
+    for (const e of c.eintraege) {
+      const z = c.zahlen.get(e.von === undefined ? e.pfad : `${e.von}\0${e.pfad}`) || { plus: 0, minus: 0 };
+      let status = e.code === "R" ? "R" : e.code === "A" || e.code === "C" ? "A" : e.code === "D" ? "D" : "M"; // C zählt als A, T und Rest als M
+      let pfad = e.pfad, von = e.von;
+      if (status === "R") {
+        const neuGesperrt = istGesperrt(e.pfad), altGesperrt = istGesperrt(e.von);
+        if (neuGesperrt && altGesperrt) { versteckt++; continue; }
+        // Nur eine Seite gesperrt: die gesperrte Seite wird nie genannt — von außen ist die Datei neu (A) bzw. verschwunden (D),
+        // genau wie `git show <sha> -- <pfad>` sie zeigen würde; die gesperrte Seite zählt zusätzlich als versteckt.
+        if (neuGesperrt || altGesperrt) { versteckt++; status = neuGesperrt ? "D" : "A"; pfad = neuGesperrt ? e.von : e.pfad; von = undefined; }
+      } else if (istGesperrt(pfad)) { versteckt++; continue; }
+      if (status === "A") plus++; else if (status === "D") geloescht++; else geaendert++;
+      zeilenPlus += z.plus; zeilenMinus += z.minus; gesamt++;
+      if (dateien.length < DATEIEN_JE_COMMIT) dateien.push({ pfad, status, ...(von !== undefined ? { von } : {}), plus: z.plus, minus: z.minus });
+    }
+  }
+  return { sha: c.sha, kurz: c.kurz, nachricht: c.nachricht, zeit: c.zeit, autor: c.autor, plus, geaendert, geloescht, zeilenPlus, zeilenMinus,
+    merge, dateien, dateienGesamt: gesamt, versteckt };
+}
+
+// Commits des ganzen Repos nach Berliner Tagen gruppiert, neueste zuerst (Reihenfolge wie `git log`), seitenweise.
+// vor = sha: geliefert werden die Commits NACH diesem in der Reihenfolge von `git rev-list HEAD` (Position + 1 als --skip, nicht
+// über vor^ — wegen Merges). HEAD wird einmal aufgelöst und für beide Aufrufe benutzt, damit ein Commit zwischendurch nichts verschiebt.
+export async function log(wurzel, { max, vor } = {}) {
+  await brauchtRepo(wurzel);
+  const n = Math.min(LOG_OBERGRENZE, Math.max(1, Number.parseInt(max, 10) || LOG_STANDARD));
+  const hatVor = vor !== undefined && vor !== null && vor !== "";
+  if (hatVor) pruefeSha(vor);
+  if (!(await hatCommits(wurzel))) return { tage: [], weitere: false, naechste: null };
+  const k = await git(wurzel, ["rev-parse", "--verify", "-q", "HEAD^{commit}"]);
+  if (k.code !== 0) return { tage: [], weitere: false, naechste: null };
+  const kopf = k.stdout.trim();
+
+  let ueberspringen = 0;
+  if (hatVor) {
+    const unbekannt = () => new HttpFehler(404, "Diese Version gibt es nicht.");
+    const a = await git(wurzel, ["rev-parse", "--verify", "-q", `${vor}^{commit}`]);
+    const voll = a.code === 0 ? a.stdout.trim() : "";
+    // Ein Zweig- oder Tag-Name, der zufällig wie eine Hex-Zahl aussieht, ist keine Versionsnummer.
+    if (!voll || !voll.startsWith(vor.toLowerCase())) throw unbekannt();
+    const alle = await git(wurzel, ["rev-list", kopf]);
+    if (alle.code !== 0) throw new HttpFehler(500, "Der Verlauf war nicht lesbar.", { ausgabe: ausgabeVon(alle) });
+    const pos = alle.stdout.split("\n").indexOf(voll);
+    if (pos < 0) throw unbekannt(); // gibt es, gehört aber nicht zum Verlauf dieses Zweigs
+    ueberspringen = pos + 1;
+  }
+
+  const r = await git(wurzel, ["log", "-z", "--raw", "--numstat", "-M", "--root", "--no-color", "--no-show-signature", "--encoding=UTF-8",
+    `--skip=${ueberspringen}`, `--max-count=${n + 1}`, `--format=${LOG_FORMAT}`, kopf, "--"]);
+  if (r.code !== 0) throw new HttpFehler(500, "Der Verlauf war nicht lesbar.", { ausgabe: ausgabeVon(r) });
+  const commits = zerlegeLog(r.stdout);
+  const weitere = commits.length > n;
+  const seite = commits.slice(0, n);
+
+  const tage = [];
+  for (const c of seite) {
+    const d = new Date(c.zeit);
+    const gueltig = !Number.isNaN(d.getTime());
+    const datum = gueltig ? berlinHeute(d) : "0000-00-00";
+    let tag = tage[tage.length - 1];
+    if (!tag || tag.datum !== datum) { tag = { datum, beschriftung: gueltig ? TAG_NAME.format(d) : "Ohne Datum", commits: [] }; tage.push(tag); }
+    tag.commits.push(baueCommit(c));
+  }
+  return { tage, weitere, naechste: weitere && seite.length ? seite[seite.length - 1].sha : null };
+}
+
+// ── Remote hinzufügen mit Historien-Prüfung ──────────────────────────────────────────────────────────────────────────
+const TEMP_REF = "refs/brain-studio/remote-pruefung"; // nur für die Prüfung; wird immer wieder gelöscht
+const zeigeUrl = (u) => String(u || "").replace(/^([A-Za-z][A-Za-z0-9+.-]*:\/\/)[^/@]*@/, "$1"); // Zugangsdaten nie anzeigen
+
+const zeitFehler = (e, meldung) => (e instanceof HttpFehler && e.status === 504 ? new HttpFehler(504, meldung) : e);
+const LESEN_ZU_LANGE = "Der Server hat nicht rechtzeitig geantwortet. Es wurde nichts verändert — bitte später noch einmal versuchen.";
+const gitFehler = (r, standard) => { const u = uebersetzeGitFehler(r.stderr, standard); return new HttpFehler(u.status, u.meldung, { ausgabe: ausgabeVon(r) }); };
+function sendenFehler(r) {
+  const u = uebersetzeGitFehler(r.stderr, "");
+  if (u.meldung) return new HttpFehler(u.status, u.meldung, { ausgabe: ausgabeVon(r) });
+  if (/rejected|non-fast-forward|fetch first|declined|denied|protected branch|hook/i.test(String(r.stderr || ""))) {
+    return new HttpFehler(409, "Der Server hat das Senden abgelehnt (dort gibt es inzwischen Neues, oder eine Regel verbietet es). Es wurde nichts überschrieben und nichts eingetragen.", { ausgabe: ausgabeVon(r) });
+  }
+  return new HttpFehler(502, "Das Senden zum Server hat nicht geklappt. Es wurde nichts eingetragen.", { ausgabe: ausgabeVon(r) });
+}
+
+// → { zweige: Map(name → sha), haupt: Name des Hauptzweigs (Symref von HEAD) | null }; leere Map = leeres Repository.
+async function remoteZweige(wurzel, url, limit) {
+  let r;
+  try { r = await git(wurzel, ["ls-remote", "--symref", "--", url, "HEAD", "refs/heads/*"], { timeout: limit }); }
+  catch (e) { throw zeitFehler(e, LESEN_ZU_LANGE); }
+  if (r.code !== 0) throw gitFehler(r, "Der Server war nicht erreichbar.");
+  const zweige = new Map();
+  let haupt = null;
+  for (const zeile of r.stdout.split("\n")) {
+    let m = /^ref: refs\/heads\/(.+)\tHEAD$/.exec(zeile);
+    if (m) { haupt = m[1]; continue; }
+    m = /^([0-9a-f]{40,64})\trefs\/heads\/(.+)$/.exec(zeile);
+    if (m) zweige.set(m[2], m[1]);
+  }
+  return { zweige, haupt };
+}
+
+export function remoteHinzufuegen(wurzel, url, opt = {}) { return exklusiv(wurzel, () => remoteHinzufuegenOhneSperre(wurzel, url, opt || {})); }
+
+async function remoteHinzufuegenOhneSperre(wurzel, rohUrl, opt) {
+  await brauchtRepo(wurzel);
+  const url = pruefeGitUrl(rohUrl);
+  const limit = opt.limit > 0 ? opt.limit : LIMIT, limitSenden = opt.limit > 0 ? opt.limit : LIMIT_SYNC;
+  const z = await zweig(wurzel);
+  if (z === "(losgelöst)") throw new HttpFehler(400, "Du bist auf keinem Zweig — bitte zuerst einen Zweig wählen.");
+
+  // b) Schon ein Remote? Nur „origin mit derselben Adresse“ geht weiter (idempotent), alles andere ist ein Konflikt.
+  let originSchonDa = false;
+  const vorhandene = await remotes(wurzel);
+  if (vorhandene.length) {
+    const name = vorhandene.includes("origin") ? "origin" : vorhandene[0];
+    const u = await git(wurzel, ["config", "--get", `remote.${name}.url`]);
+    const alt = u.code === 0 ? u.stdout.trim() : "";
+    if (name !== "origin" || alt !== url) {
+      throw new HttpFehler(409, `Es ist schon ein Remote eingetragen (${name}: ${zeigeUrl(alt) || "ohne Adresse"}). Dieser Vault verbindet sich mit genau einem Server — ` +
+        "entferne das vorhandene Remote zuerst in Git, wenn du wechseln möchtest.", { remote: name, url: zeigeUrl(alt) });
+    }
+    originSchonDa = true;
+  }
+
+  // c) Was liegt auf dem Server? (nur lesend)
+  const { zweige, haupt } = await remoteZweige(wurzel, url, limit);
+  const serverLeer = zweige.size === 0;
+  const hat = await hatCommits(wurzel);
+
+  // Origin wird erst gesetzt, wenn alle Prüfungen bestanden sind; schlägt danach etwas fehl, wird es zurückgenommen (nur, wenn wir es gesetzt haben).
+  let neuGesetzt = false;
+  const setzeOrigin = async () => {
+    if (originSchonDa || neuGesetzt) return;
+    const a = await git(wurzel, ["remote", "add", "origin", url]);
+    if (a.code !== 0) throw new HttpFehler(500, "Das Remote konnte nicht eingetragen werden.", { ausgabe: ausgabeVon(a) });
+    neuGesetzt = true;
+  };
+  const zuruecknehmen = async () => {
+    if (!neuGesetzt) return;
+    neuGesetzt = false;
+    try { await git(wurzel, ["remote", "remove", "origin"]); } catch { /* nichts mehr zu tun */ }
+  };
+  const senden = async () => { // nie --force: ein abgelehntes Senden lässt den Server unverändert
+    let p;
+    try { p = await git(wurzel, ["push", "--quiet", "-u", "origin", `refs/heads/${z}:refs/heads/${z}`], { timeout: limitSenden }); }
+    catch (e) { throw zeitFehler(e, "Das Senden hat zu lange gebraucht und wurde abgebrochen. Es wurde nichts eingetragen — bitte später noch einmal versuchen."); }
+    if (p.code !== 0) throw sendenFehler(p);
+  };
+  const sendenMitRueckweg = async () => { try { await senden(); } catch (e) { await zuruecknehmen(); throw e; } };
+  const fertig = async (ergebnis, nochHolen = true) => {
+    if (nochHolen) { try { await git(wurzel, ["fetch", "--quiet", "origin"], { timeout: limit }); } catch { /* nur Komfort: damit origin/* existiert */ } }
+    return { ok: true, ergebnis, remote: "origin", zweig: z, letzterSync: merkeSync(wurzel) };
+  };
+
+  // d) Lokal noch kein Commit
+  if (!hat) {
+    if (!serverLeer) throw new HttpFehler(409, "Dein Vault hat noch keinen Commit, das Repository enthält schon Inhalte. Lege zuerst einen Commit an.");
+    await setzeOrigin();
+    return fertig("verbunden");
+  }
+
+  // e) Server leer → alles senden
+  if (serverLeer) {
+    await setzeOrigin();
+    await sendenMitRueckweg();
+    return fertig("gesendet");
+  }
+
+  // f) Server hat Inhalte: Historien vergleichen. Zielzweig = gleichnamiger Zweig, sonst Hauptzweig des Servers, sonst der erste.
+  const ziel = zweige.has(z) ? z : haupt && zweige.has(haupt) ? haupt : [...zweige.keys()][0];
+  const tempLoeschen = async () => { try { await git(wurzel, ["update-ref", "-d", TEMP_REF]); } catch { /* war ohnehin nicht da */ } };
+  await tempLoeschen(); // Rest eines früheren Abbruchs
+  try {
+    let f;
+    // „+“ gilt nur für unseren privaten Prüf-Ref (kein Senden, kein Force-Push)
+    try { f = await git(wurzel, ["fetch", "--no-tags", "--quiet", "--no-recurse-submodules", "--", url, `+refs/heads/${ziel}:${TEMP_REF}`], { timeout: limit }); }
+    catch (e) { throw zeitFehler(e, LESEN_ZU_LANGE); }
+    if (f.code !== 0) throw gitFehler(f, "Der Server war nicht erreichbar.");
+    const s = await git(wurzel, ["rev-parse", "--verify", "-q", `${TEMP_REF}^{commit}`]);
+    const l = await git(wurzel, ["rev-parse", "--verify", "-q", "HEAD^{commit}"]);
+    if (s.code !== 0 || l.code !== 0) throw new HttpFehler(502, "Der Server hat keinen lesbaren Stand geliefert.");
+    const spitze = s.stdout.trim(), lokal = l.stdout.trim();
+    const istVorfahr = async (a, b) => {
+      const r = await git(wurzel, ["merge-base", "--is-ancestor", a, b]);
+      if (r.code === 0) return true;
+      if (r.code === 1) return false;
+      throw new HttpFehler(500, "Die beiden Historien ließen sich nicht vergleichen.", { ausgabe: ausgabeVon(r) });
+    };
+
+    // Server ist gleich oder älter → senden (setzt notfalls nur den Upstream)
+    if (await istVorfahr(spitze, lokal)) {
+      await setzeOrigin();
+      await sendenMitRueckweg();
+      return fertig(spitze === lokal && ziel === z ? "verbunden" : "gesendet");
+    }
+
+    // Wir sind älter → vorspulen (der Arbeitsstand muss nicht sauber sein, aber das Vorspulen muss gehen)
+    if (await istVorfahr(lokal, spitze)) {
+      if (ziel !== z) {
+        throw new HttpFehler(409, `Das Repository hat schon Inhalte, aber unter dem Zweig „${ziel}“, dein Vault arbeitet auf „${z}“. ` +
+          "Die Namen passen nicht zusammen — benenne in Git einen der beiden Zweige um und versuche es dann noch einmal.", { art: "zweigname", server: ziel, lokal: z });
+      }
+      const m = await mitAbbruchSchutz(wurzel, () => git(wurzel, ["merge", "--ff-only", "--quiet", TEMP_REF], { timeout: limitSenden }));
+      if (m.code !== 0) throw new HttpFehler(409, "Ungesicherte Änderungen stehen im Weg. Bitte zuerst committen (oder sichern) und es dann noch einmal versuchen. Es wurde nichts verändert.", { ausgabe: ausgabeVon(m) });
+      await setzeOrigin();
+      let geholt = false;
+      try { geholt = (await git(wurzel, ["fetch", "--quiet", "origin"], { timeout: limit })).code === 0; } catch { /* unten: Verfolgungs-Ref selbst anlegen */ }
+      if (!geholt) await git(wurzel, ["update-ref", `refs/remotes/origin/${z}`, spitze]); // der Stand ist gerade geprüft worden
+      const u = await git(wurzel, ["branch", "--set-upstream-to", `origin/${z}`]);
+      if (u.code !== 0) throw new HttpFehler(500, "Der Server wurde verbunden, aber der Abgleich-Zweig konnte nicht eingetragen werden.", { ausgabe: ausgabeVon(u) });
+      return fertig("geholt", false);
+    }
+
+    // Beide haben Eigenes: verwandt (gemeinsamer Vorfahr) oder fremd?
+    const mb = await git(wurzel, ["merge-base", lokal, spitze]);
+    if (mb.code === 0 && mb.stdout.trim()) {
+      throw new HttpFehler(409, "Die Historien sind verwandt, aber auseinandergelaufen. Dieses Repository und dein Vault haben denselben Ursprung, doch beide haben seitdem Neues. " +
+        "Führe sie zuerst in Git zusammen und verbinde danach noch einmal. Es wurde nichts verändert.", { art: "auseinander" });
+    }
+    if (mb.code !== 1) throw new HttpFehler(500, "Die beiden Historien ließen sich nicht vergleichen.", { ausgabe: ausgabeVon(mb) });
+    throw new HttpFehler(409, "Dieses Repository hat eine andere Geschichte. Es hat mit deinem Vault nichts gemeinsam und gehört vermutlich zu einem anderen Projekt. " +
+      "Prüfe die Adresse. Es wurde nichts verändert.", { art: "fremd" });
+  } finally {
+    await tempLoeschen(); // immer aufräumen, auch bei Fehlern
+  }
 }

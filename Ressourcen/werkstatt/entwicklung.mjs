@@ -1,15 +1,16 @@
 #!/usr/bin/env node
 // werkstatt/entwicklung.mjs — derselbe Handler über HTTP, nur 127.0.0.1 (Entwicklung und Playwright-Tests; die App
-// startet das nie). Aufruf: node entwicklung.mjs <vault> [port]   (Port auch per BRAIN_PORT, Standard 4517, 0 = frei)
+// startet das nie). Aufruf: node entwicklung.mjs [<vault>] [port]   (Port auch per BRAIN_PORT, Standard 4517, 0 = frei)
+// Ohne Vault-Argument (oder mit "-" als Platzhalter vor dem Port) gilt der aktive Vault aus <support>/vaults.json, sonst „kein Vault“.
 import { createServer } from "node:http";
 import { erzeugeHandler, MAX_KOERPER } from "./handler.mjs";
 import { HttpFehler } from "../gemeinsam/vault.mjs";
 
-const vault = process.argv[2] || process.env.BRAIN_VAULT;
-if (!vault) { process.stderr.write("Aufruf: node entwicklung.mjs <vault> [port]\n"); process.exit(2); }
+const vaultArg = process.argv[2];
+const vault = (vaultArg && vaultArg !== "-" ? vaultArg : undefined) || process.env.BRAIN_VAULT || undefined;
 const portWunsch = Number(process.argv[3] ?? process.env.BRAIN_PORT ?? 4517);
 let handler;
-try { handler = erzeugeHandler({ vault }); }
+try { handler = erzeugeHandler(vault ? { vault } : {}); }
 catch (e) { process.stderr.write(`${e instanceof HttpFehler ? e.message : e}\n`); process.exit(2); }
 
 const server = createServer(async (req, res) => {

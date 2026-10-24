@@ -5,21 +5,22 @@
 //   Anfrage: ← {"id":1,"methode":"GET","pfad":"/api/datei","query":"pfad=a.md"|null,"body":"<base64>"|null}
 //   Antwort: → {"id":1,"status":200,"headers":{…},"body":"<base64>"}
 // Pfade ohne /api/ = statische Datei aus ../studio/. Ende: stdin zu, SIGTERM/SIGINT oder POST /api/stopp —
-// immer erst nach dem Schreiben aller Antworten. Aufruf: node werkstatt.mjs <vault>
+// immer erst nach dem Schreiben aller Antworten. Aufruf: node werkstatt.mjs [<vault>] — ohne Argument gilt der aktive Vault aus
+// <support>/vaults.json, und gibt es keinen, startet die Werkstatt ohne Vault (/api/info → {vault:null}, vaultId null).
 import { createInterface } from "node:readline";
 import { realpathSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { erzeugeHandler, appVersionLesen, MAX_KOERPER } from "./handler.mjs";
 import { HttpFehler } from "../gemeinsam/vault.mjs";
 
-const vault = process.argv[2] || process.env.BRAIN_VAULT;
-if (!vault) { process.stderr.write("Aufruf: node werkstatt.mjs <vault>\n"); process.exit(2); }
+const vault = process.argv[2] || process.env.BRAIN_VAULT || undefined; // das Argument hat Vorrang vor vaults.json
 let handler;
-try { handler = erzeugeHandler({ vault }); }
+try { handler = erzeugeHandler(vault ? { vault } : {}); }
 catch (e) { process.stderr.write(`${e instanceof HttpFehler ? e.message : e}\n`); process.exit(2); }
 
 const MAX_ZEILE = 2 * MAX_KOERPER + 4096; // base64 (×4/3) + JSON-Hülle; größere Zeilen sind nie gültig
-const vaultId = createHash("sha256").update(realpathSync(vault)).digest("hex").slice(0, 16);
+const aktiverPfad = handler.aktuellerVaultPfad();
+const vaultId = aktiverPfad ? createHash("sha256").update(realpathSync(aktiverPfad)).digest("hex").slice(0, 16) : null;
 const JSON_TYP = { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" };
 
 process.stdout.on("error", () => process.exit(0)); // App weg → still beenden
