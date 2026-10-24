@@ -2,7 +2,7 @@
 import { T, PRODUKT } from "./texte.js";
 import { api, aktion, inApp } from "./api.js";
 import { erstelleEditor } from "./editor.js";
-import { h, dialog, dialogOffen, toast, vorMinuten, dateiName, ohneEndung, ordnerVon, istBearbeitbar, speichereLokal, leseLokal, sucheGrad, suchFormen } from "./hilfen.js";
+import { h, dialog, dialogOffen, toast, vorMinuten, dateiName, ohneEndung, ordnerVon, istBearbeitbar, speichereLokal, leseLokal, leseEntwurf, speichereEntwurf, sucheGrad, suchFormen } from "./hilfen.js";
 
 const $ = (id) => document.getElementById(id);
 const MOD_META = /Mac|iPhone|iPad/.test(navigator.platform || "");
@@ -83,14 +83,18 @@ async function legeWikiZielAn(ziel) {
 async function oeffne(pfad, { zeile } = {}) {
   if (pfad === S.pfad) { if (zeile) ed.springeZu(zeile); else ed.fokus(); return true; }
   if (S.konflikt) { toast(`Löse zuerst den Konflikt in „${ohneEndung(dateiName(S.pfad))}“.`, { fehler: true }); return false; }
-  clearTimeout(speicherTimer);
-  if (S.dirty) await speichere();
-  if (S.konflikt) return false;
   const nr = ++S.ladeNr;
+  // Erst sichern: gewechselt wird nur, wenn nichts verloren geht (K-1)
+  if (!(await sichereVorWechsel())) return false;
+  if (nr !== S.ladeNr || S.konflikt) return false;
   let d;
   try { d = await api.datei(pfad); }
   catch (e) { toast(e.status === 403 || e.status === 404 ? T.fehler.laden : e.message, { fehler: true }); return false; }
   if (nr !== S.ladeNr) return false;
+  if (S.dirty) { // während des Ladens weitergetippt: nicht überschreiben
+    clearTimeout(speicherTimer);
+    if (!(await sichereVorWechsel()) || nr !== S.ladeNr) return false;
+  }
   S.pfad = d.pfad; S.hash = d.hash; S.schutz = !!d.schreibschutz; S.dirty = false; S.konflikt = null;
   S.bearbeitbar = istBearbeitbar(d.pfad);
   ed.setzeText(d.inhalt, { nurLesen: S.schutz || !S.bearbeitbar });
@@ -107,11 +111,20 @@ async function oeffne(pfad, { zeile } = {}) {
   return true;
 }
 
-async function speichere() {
-  if (!S.pfad || S.schutz || !S.bearbeitbar || S.konflikt || !S.dirty) return;
-  if (S.speichert) { S.nochmal = true; return; }
+// Speichern ist immer EINE laufende Promise; Aufrufer können sie abwarten.
+let laufendesSpeichern = null, letzterFehler = null;
+function speichere() {
+  if (!S.pfad || S.schutz || !S.bearbeitbar || S.konflikt || !S.dirty) return laufendesSpeichern || Promise.resolve();
+  if (laufendesSpeichern) { S.nochmal = true; return laufendesSpeichern; }
+  laufendesSpeichern = speichereEinmal().finally(() => {
+    laufendesSpeichern = null;
+    if (S.nochmal) { S.nochmal = false; if (S.dirty && !S.konflikt && !letzterFehler) speichere(); }
+  });
+  return laufendesSpeichern;
+}
+async function speichereEinmal() {
   const pfad = S.pfad, text = ed.text();
-  S.speichert = true; zeigeStand("speichert");
+  S.speichert = true; letzterFehler = null; zeigeStand("speichert");
   try {
     const r = await api.speichern(pfad, text, S.hash);
     if (S.pfad === pfad) {
@@ -121,11 +134,52 @@ async function speichere() {
     planeGitRefresh(); planeBaumRefresh();
   } catch (e) {
     if (e.status === 409 && S.pfad === pfad) { S.konflikt = { aktuellerHash: e.daten?.aktuellerHash || null }; zeigeBanner(); zeigeStand("konflikt"); }
-    else zeigeStand("fehler", false, e.message && e.message !== T.fehler.allgemein ? e.message : T.fehler.speichern);
-  } finally {
-    S.speichert = false;
-    if (S.nochmal) { S.nochmal = false; if (S.dirty && !S.konflikt) speichere(); }
+    else {
+      letzterFehler = e.message && e.message !== T.fehler.allgemein ? e.message : T.fehler.speichern;
+      zeigeStand("fehler", false, letzterFehler);
+    }
+  } finally { S.speichert = false; }
+}
+// Wartet laufendes Speichern ab und speichert, bis nichts mehr offen ist. true = alles gesichert.
+async function speichereAlles() {
+  for (let i = 0; i < 8; i++) {
+    while (laufendesSpeichern) await laufendesSpeichern;
+    if (!S.dirty) return true;
+    if (!S.pfad || S.schutz || !S.bearbeitbar || S.konflikt) return false;
+    clearTimeout(speicherTimer);
+    await speichere();
+    if (letzterFehler) return false;
   }
+  return !S.dirty;
+}
+// Vor jedem Dateiwechsel: gesichert oder bewusst verworfen. false = nicht wechseln.
+async function sichereVorWechsel() {
+  clearTimeout(speicherTimer);
+  for (;;) {
+    if (await speichereAlles()) return true;
+    if (S.konflikt) return false;
+    const wahl = await fragSpeicherFehler();
+    if (wahl === "verwerfen") { clearTimeout(speicherTimer); S.dirty = false; return true; }
+    if (wahl !== "nochmal") return false;
+  }
+}
+function fragSpeicherFehler() {
+  return new Promise((fertig) => {
+    let wahl = null;
+    const zu = (w) => { wahl = w; d.schliessen(); };
+    const d = dialog({
+      titel: T.speicherFehler.titel,
+      rumpf: [h("p", { text: letzterFehler || T.speicherFehler.text }), h("p", { klasse: "leise", text: T.speicherFehler.text })],
+      knoepfe: [
+        h("button", { klasse: "knopf", "data-aktion": "verwerfen", text: T.speicherFehler.verwerfen, aufClick: () => zu("verwerfen") }),
+        h("button", { klasse: "knopf", "data-aktion": "kopieren", text: T.speicherFehler.kopieren, aufClick: async () => {
+          try { await navigator.clipboard.writeText(ed.text()); toast(T.speicherFehler.kopiert); } catch { toast(T.speicherFehler.kopierFehler, { fehler: true }); } } }),
+        h("button", { klasse: "knopf primaer", "data-aktion": "nochmal", text: T.speicherFehler.nochmal, aufClick: () => zu("nochmal") }),
+      ],
+      beiSchliessen: () => fertig(wahl),
+    });
+    d.box.setAttribute("data-dialog", "speicherfehler");
+  });
 }
 
 async function konfliktNeuLaden() {
@@ -508,13 +562,21 @@ async function ladeGesundheit() {
 
 async function sync() {
   if (S.syncLaeuft) return;
-  if (S.dirty) { clearTimeout(speicherTimer); await speichere(); }
+  if (S.dirty) { clearTimeout(speicherTimer); await speichereAlles(); }
   S.syncLaeuft = true; zeichneStatus();
   try {
     const r = await api.sync();
     toast(T.status.abgeglichen[r.ergebnis] || T.status.abgeglichen.aktuell);
     await ladeBaum();
-    if (!S.dirty && S.pfad) { const d = await api.datei(S.pfad).catch(() => null); if (d && d.hash !== S.hash) { S.hash = d.hash; ed.setzeText(d.inhalt, { nurLesen: !!d.schreibschutz }); } }
+    const pfad = S.pfad;
+    if (pfad) {
+      const d = await api.datei(pfad).catch(() => null);
+      // erst NACH dem Laden prüfen: inzwischen getippt oder Datei gewechselt?
+      if (d && S.pfad === pfad && d.hash !== S.hash) {
+        if (S.dirty || S.speichert) { if (!S.konflikt) { S.konflikt = { aktuellerHash: d.hash }; zeigeBanner(); zeigeStand("konflikt"); } }
+        else { S.hash = d.hash; ed.setzeText(d.inhalt, { nurLesen: !!d.schreibschutz }); }
+      }
+    }
   } catch (e) {
     toast(e.status === 409 && e.daten?.dateien?.length ? `${e.message} Betroffen: ${e.daten.dateien.slice(0, 3).join(", ")}` : e.message, { fehler: true });
   } finally { S.syncLaeuft = false; await ladeGit(); }
@@ -524,7 +586,7 @@ async function sync() {
 async function oeffneCommit() {
   if (dialogOffen()) return;
   clearTimeout(speicherTimer);
-  await speichere();
+  await speichereAlles();
   await ladeGit();
   if (!S.git?.repo) { toast(T.status.keinGit); return; }
   const liste = S.git.geaendert;
@@ -580,18 +642,23 @@ function oeffneNeu(vorTitel) {
 }
 function oeffneMerken() {
   if (dialogOffen()) return;
-  const text = h("textarea", { "data-feld": "text", placeholder: T.merken.text, autofocus: true });
-  const titel = h("input", { type: "text", "data-feld": "titel", placeholder: T.merken.titelFeld });
+  const entwurf = leseEntwurf("merken") || {};
+  const text = h("textarea", { "data-feld": "text", placeholder: T.merken.text, autofocus: true, text: entwurf.text || "" });
+  const titel = h("input", { type: "text", "data-feld": "titel", placeholder: T.merken.titelFeld, value: entwurf.titel || "" });
+  let abgelegt = false;
   const fehlerEl = h("div", { klasse: "fehlertext", hidden: true });
   const tun = async () => {
     if (!text.value.trim()) { text.focus(); return; }
     try {
       const r = await api.merken(text.value, titel.value.trim() || undefined);
-      d.schliessen(); toast(T.merken.fertig, { aktion: { text: T.merken.offen, tun: () => oeffne(r.pfad) } });
+      abgelegt = true; d.schliessen(); toast(T.merken.fertig, { aktion: { text: T.merken.offen, tun: () => oeffne(r.pfad) } });
       await ladeBaum(); planeGitRefresh();
     } catch (e) { fehlerEl.hidden = false; fehlerEl.textContent = e.message; }
   };
-  const d = dialog({ titel: T.merken.titel, rumpf: [h("div", { klasse: "feld" }, text), h("div", { klasse: "feld" }, titel), fehlerEl, h("div", { klasse: "mini", text: "⌘↩ zum Ablegen" })],
+  const d = dialog({ titel: T.merken.titel,
+    // Esc/Klick daneben verliert nichts: der Text bleibt als Entwurf, bis er abgelegt wird
+    beiSchliessen: () => { if (abgelegt || !text.value.trim()) { speichereEntwurf("merken", null); } else { speichereEntwurf("merken", { text: text.value, titel: titel.value }); toast(T.merken.entwurf); } },
+    rumpf: [h("div", { klasse: "feld" }, text), h("div", { klasse: "feld" }, titel), fehlerEl, h("div", { klasse: "mini", text: "⌘↩ zum Ablegen" })],
     knoepfe: [h("button", { klasse: "knopf", text: T.commit.abbrechen, aufClick: () => d.schliessen() }), h("button", { klasse: "knopf primaer", text: T.merken.sichern, "data-aktion": "merken", aufClick: tun })] });
   text.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); tun(); } });
 }
@@ -614,7 +681,7 @@ function oeffnePalette(vorgabe = "") {
   const befehle = [
     [T.befehle.neu, "⌘N", oeffneNeu], [T.befehle.merken, "⌘⇧M", oeffneMerken], [T.befehle.commit, "⌘⇧G", oeffneCommit], [T.befehle.sync, "", sync],
     [T.befehle.suche, "⌘⇧F", fokusSuche], [T.befehle.inNotiz, "⌘F", () => ed.suchen()], [T.befehle.info, "⌘⌥I", umschalteInfo], [T.befehle.gesundheit, "", oeffneGesundheit],
-    ...(inApp() ? [[T.befehle.ordner, "", () => aktion("ordner-zeigen")], [T.befehle.ansicht, "", () => aktion("ansicht")]] : []),
+    ...(inApp() ? [[T.befehle.ordner, "", () => aktion("ordner-zeigen", S.pfad || undefined)], [T.befehle.ansicht, "", () => aktion("ansicht")]] : []),
     [T.befehle.mcp, "", verbindeMcp],
   ];
   const eingabe = h("input", { type: "text", placeholder: T.palette.platzhalter, "aria-label": T.palette.platzhalter, autocomplete: "off", spellcheck: "false", value: vorgabe, role: "combobox" });
@@ -709,10 +776,53 @@ window.addEventListener("keydown", (e) => {
 window.addEventListener("beforeunload", () => { if (S.dirty) { clearTimeout(speicherTimer); speichere(); } });
 window.addEventListener("focus", () => { planeGitRefresh(); ladeBaum(); });
 // Schnittstelle für Menüs der App
-window.studio = { neu: oeffneNeu, merken: oeffneMerken, commit: oeffneCommit, info: umschalteInfo, palette: () => oeffnePalette(), sync, suche: fokusSuche };
-// Menübefehle der App (StudioBefehl in AppAktion.swift): window.studio.befehl("<name>")
-const MENUE_BEFEHLE = { neu: oeffneNeu, merken: oeffneMerken, infospalte: umschalteInfo };
-window.studio.befehl = (name) => { const f = MENUE_BEFEHLE[name]; if (f) f(); };
+window.studio = { bereit: false, neu: oeffneNeu, merken: oeffneMerken, commit: oeffneCommit, info: umschalteInfo, palette: () => oeffnePalette(), sync, suche: fokusSuche };
+// Menübefehle der App (StudioBefehl in AppAktion.swift): window.studio.befehl("<name>").
+// Kommt ein Befehl vor dem fertigen Start, wartet er in einer Schlange.
+const MENUE_BEFEHLE = { neu: oeffneNeu, merken: oeffneMerken, infospalte: umschalteInfo, palette: () => oeffnePalette(), commit: oeffneCommit, sync, suche: fokusSuche };
+const wartendeBefehle = [];
+window.studio.befehl = (name) => {
+  const f = MENUE_BEFEHLE[name];
+  if (!f) return;
+  if (!window.studio.bereit) { wartendeBefehle.push(f); return; }
+  f();
+};
+// Vor Schließen/Beenden der App: sichert alles und meldet, ob nichts verloren geht (max. 5 s).
+window.studio.vorSchliessen = () => {
+  const arbeit = (async () => {
+    clearTimeout(speicherTimer);
+    if (await speichereAlles()) return { ok: true };
+    return { ok: false, grund: S.konflikt ? "konflikt" : letzterFehler || T.fehler.speichern };
+  })().catch((e) => ({ ok: false, grund: e?.message || "fehler" }));
+  const frist = new Promise((r) => setTimeout(() => r({ ok: false, grund: "zeitueberschreitung" }), 5000));
+  return Promise.race([arbeit, frist]);
+};
+function markiereBereit() {
+  window.studio.bereit = true; window.__studioBereit = true;
+  while (wartendeBefehle.length) { try { wartendeBefehle.shift()(); } catch { /* ein Befehl darf die anderen nicht stoppen */ } }
+}
+
+// ======================================================= Kit-Vertrauen (W-5)
+// Nur sichtbar, wenn das Backend das Feld liefert; ohne `kit` verhält sich die Oberfläche wie bisher.
+function zeigeKitHinweis() {
+  const host = $("kit-host");
+  host.replaceChildren();
+  const kit = S.info?.kit;
+  if (!kit || !kit.vorhanden || kit.vertraut || S.kitJetztNicht) return;
+  const zu = (erlauben) => async () => {
+    if (!erlauben) { S.kitJetztNicht = true; zeigeKitHinweis(); return; }
+    try {
+      await api.kitVertrauen(true);
+      S.info.kit = { ...kit, vertraut: true };
+      zeigeKitHinweis();
+      await ladeGesundheit();
+    } catch (e) { toast(e.message, { fehler: true }); }
+  };
+  host.append(h("div", { klasse: "banner kit", role: "status", "data-banner": "kit" },
+    h("div", { klasse: "b-text" }, h("div", { klasse: "b-sub", text: T.kit.hinweis })),
+    h("button", { klasse: "knopf", "data-aktion": "kit-spaeter", text: T.kit.spaeter, aufClick: zu(false) }),
+    h("button", { klasse: "knopf primaer", "data-aktion": "kit-erlauben", text: T.kit.erlauben, aufClick: zu(true) })));
+}
 
 // ======================================================= Start
 function zuletztMerken(p) { S.zuletzt = [p, ...S.zuletzt.filter((x) => x !== p)].slice(0, 12); speichereLokal("zuletzt", S.zuletzt); }
@@ -752,10 +862,11 @@ async function start() {
   catch (e) { $("leer").hidden = false; $("leer").replaceChildren(h("h2", { text: T.fehler.verbindung }), h("p", { text: e.message })); return; }
   $("vault-name").textContent = S.info.name || PRODUKT;
   await ladeBaum();
+  zeigeKitHinweis();
   ladeGit(); ladeGesundheit();
   setInterval(ladeGit, 15000); setInterval(ladeGesundheit, 120000);
   const wunsch = new URLSearchParams(location.search).get("pfad") || leseLokal("pfad", null);
-  if (wunsch && S.eintraege.has(wunsch)) oeffne(wunsch);
-  window.__studioBereit = true;
+  if (wunsch && S.eintraege.has(wunsch)) await oeffne(wunsch);
+  markiereBereit();
 }
 start();

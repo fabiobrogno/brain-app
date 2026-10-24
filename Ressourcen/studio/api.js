@@ -61,6 +61,7 @@ export const api = {
   verlauf: (pfad, max) => anfrage("GET", "/api/git/verlauf" + q({ pfad, max })),
   diff: (pfad, sha) => anfrage("GET", "/api/git/diff" + q({ pfad, sha })),
   fassung: (pfad, sha) => anfrage("GET", "/api/git/fassung" + q({ pfad, sha })),
+  kitVertrauen: (erlauben) => anfrage("POST", "/api/kit/vertrauen", { erlauben: !!erlauben }),
   mcpVerbinden: () => anfrage("POST", "/api/mcp/verbinden", { ziel: "claude" }),
 };
 

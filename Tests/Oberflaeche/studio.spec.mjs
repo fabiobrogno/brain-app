@@ -215,6 +215,8 @@ test("Statusleiste zeigt Rückfragen n, wenn das Kit sie liefert", async ({ page
   mkdirSync(join(vault, ".tools"), { recursive: true });
   writeFileSync(join(vault, ".tools/rueckfragen.mjs"), "export function sichtbare(){ return { fragen: [{},{}], wartend: 1 }; }\n");
   await oeffne(page, "09_wiki/wissen/Kaffee.md");
+  // Das Kit liegt im Ordner: erst nach „Erlauben“ wird es ausgeführt
+  if (await page.locator('[data-aktion="kit-erlauben"]').count()) await page.click('[data-aktion="kit-erlauben"]');
   await expect(page.locator('[data-st="rueckfragen"]')).toHaveText("Rückfragen 3", { timeout: 5000 });
 });
 
@@ -249,4 +251,192 @@ test("Palette: sofort nach ⌘K getippte Zeichen gehen nicht verloren", async ({
   await page.keyboard.type("Claude Mods", { delay: 0 });
   await expect(page.locator(".palette input")).toHaveValue("Claude Mods");
   await expect(page.locator('.palette [data-pal="notiz"]').first()).toContainText("Claude Mods");
+});
+
+// ---------------------------------------------------------------- Review-Befunde
+const DATEI_A = "10_notizen/Reise nach Lissabon.md";
+const wechsle = (page, pfad) => page.evaluate((p) => document.querySelector(`[data-pfad="${p}"]`)?.click(), pfad);
+async function sichtbareDatei(page, pfad) { // Baum auf „Alle“ und Ordner offen lassen
+  await page.click('[data-bereich="wiki"]');
+  if (!(await page.locator(`#baum [data-pfad="${pfad}"]`).count())) await page.click('#baum [data-pfad="09_wiki/wissen"]');
+  await expect(page.locator(`#baum [data-pfad="${pfad}"]`)).toBeVisible();
+}
+
+for (const status of [500, 413]) {
+  test(`K-1: Speichern scheitert (${status}) -> Wechsel blockiert, Dialog, Text bleibt`, async ({ page }) => {
+    await oeffne(page, DATEI_A);
+    await sichtbareDatei(page, "09_wiki/wissen/Kaffee.md");
+    await page.route("**/api/datei", (route) => route.request().method() === "PUT"
+      ? route.fulfill({ status, contentType: "application/json", body: JSON.stringify({ fehler: "Server sagt nein" }) }) : route.fallback());
+    await ans_ende(page);
+    await page.keyboard.type("WICHTIGER TEXT");
+    await wechsle(page, "09_wiki/wissen/Kaffee.md"); // sofort, vor dem Debounce
+    await expect(page.locator('[data-dialog="speicherfehler"]')).toBeVisible({ timeout: 5000 });
+    await expect(page.locator("#pfad")).toContainText("Reise nach Lissabon");
+    await expect(page.locator(".cm-content")).toContainText("WICHTIGER TEXT");
+    // Nochmal versuchen scheitert weiter -> Dialog erscheint wieder
+    await page.click('[data-aktion="nochmal"]');
+    await expect(page.locator('[data-dialog="speicherfehler"]')).toBeVisible();
+    // Esc: bleibt in der Datei
+    await page.keyboard.press("Escape");
+    await expect(page.locator('[data-dialog="speicherfehler"]')).toHaveCount(0);
+    await expect(page.locator(".cm-content")).toContainText("WICHTIGER TEXT");
+    // Server wieder gesund: Nochmal versuchen sichert und wechselt
+    await page.unroute("**/api/datei");
+    await wechsle(page, "09_wiki/wissen/Kaffee.md");
+    await expect(page.locator('[data-dialog="speicherfehler"]')).toBeVisible({ timeout: 5000 }).catch(() => {});
+    if (await page.locator('[data-dialog="speicherfehler"]').count()) await page.click('[data-aktion="nochmal"]');
+    await expect(page.locator("#pfad")).toContainText("Kaffee", { timeout: 5000 });
+    expect(lese(DATEI_A).toString()).toContain("WICHTIGER TEXT");
+  });
+}
+
+test("K-1: Verwerfen und wechseln wechselt bewusst", async ({ page }) => {
+  await oeffne(page, DATEI_A);
+  await sichtbareDatei(page, "09_wiki/wissen/Kaffee.md");
+  await page.route("**/api/datei", (route) => route.request().method() === "PUT" ? route.fulfill({ status: 500, contentType: "application/json", body: "{}" }) : route.fallback());
+  await ans_ende(page);
+  await page.keyboard.type("WEG");
+  await wechsle(page, "09_wiki/wissen/Kaffee.md");
+  await page.click('[data-aktion="verwerfen"]');
+  await expect(page.locator("#pfad")).toContainText("Kaffee");
+  expect(lese(DATEI_A).toString()).not.toContain("WEG");
+});
+
+test("K-1: laufendes (langsames) Speichern wird beim Wechsel abgewartet, nichts geht verloren", async ({ page }) => {
+  await oeffne(page, DATEI_A);
+  await sichtbareDatei(page, "09_wiki/wissen/Kaffee.md");
+  await page.route("**/api/datei", async (route) => {
+    if (route.request().method() !== "PUT") return route.fallback();
+    await new Promise((r) => setTimeout(r, 1500));
+    await route.fallback();
+  });
+  await ans_ende(page);
+  await page.keyboard.type("ERSTER");
+  await page.waitForTimeout(900); // Debounce ausgelöst, Antwort hängt
+  await expect(page.locator("#speicherstand")).toHaveText("Speichert …");
+  await page.keyboard.type(" ZWEITER"); // noch während das erste läuft
+  await wechsle(page, "09_wiki/wissen/Kaffee.md");
+  await expect(page.locator("#pfad")).toContainText("Kaffee", { timeout: 8000 });
+  expect(lese(DATEI_A).toString()).toContain("ERSTER ZWEITER");
+});
+
+test("W-1: vorSchliessen sichert Ausstehendes sofort und meldet ok / Fehlergrund", async ({ page }) => {
+  await oeffne(page, DATEI_A);
+  await ans_ende(page);
+  await page.keyboard.type("VOR DEM SCHLIESSEN");
+  const r = await page.evaluate(() => window.studio.vorSchliessen());
+  expect(r).toEqual({ ok: true });
+  expect(lese(DATEI_A).toString()).toContain("VOR DEM SCHLIESSEN");
+  await page.route("**/api/datei", (route) => route.request().method() === "PUT" ? route.fulfill({ status: 500, contentType: "application/json", body: '{"fehler":"kaputt"}' }) : route.fallback());
+  await page.keyboard.type("X");
+  const f = await page.evaluate(() => window.studio.vorSchliessen());
+  expect(f.ok).toBe(false);
+  expect(f.grund).toContain("kaputt");
+});
+
+test("Sync-Neuladen überschreibt Getipptes nicht: Konflikt-Hinweis", async ({ page }) => {
+  await oeffne(page, DATEI_A);
+  await page.waitForSelector('[data-st="sync"]');
+  writeFileSync(join(vault, DATEI_A), "# Von außen\n"); // Datei ändert sich während des Abgleichs
+  await page.route("**/api/git/sync", async (route) => {
+    await new Promise((r) => setTimeout(r, 600));
+    await route.fallback();
+  });
+  await page.click('[data-st="sync"]');
+  await ans_ende(page);
+  await page.keyboard.type("TIPP WÄHREND SYNC"); // wird dirty, bevor Sync fertig ist
+  await page.route("**/api/datei", (route) => route.request().method() === "PUT" ? route.fulfill({ status: 500, contentType: "application/json", body: '{"fehler":"offline"}' }) : route.fallback());
+  await expect(page.locator('[data-banner="konflikt"]')).toBeVisible({ timeout: 8000 });
+  await expect(page.locator(".cm-content")).toContainText("TIPP WÄHREND SYNC");
+});
+
+test("Schnell merken: Esc behält den Entwurf, Ablegen löscht ihn", async ({ page }) => {
+  await oeffne(page, DATEI_A);
+  await page.keyboard.press("Meta+Shift+m");
+  await page.fill('[data-feld="text"]', "Gedanke, der nicht verloren gehen darf");
+  await page.fill('[data-feld="titel"]', "Titelchen");
+  await page.keyboard.press("Escape");
+  await expect(page.locator('[data-feld="text"]')).toHaveCount(0);
+  await page.keyboard.press("Meta+Shift+m");
+  await expect(page.locator('[data-feld="text"]')).toHaveValue("Gedanke, der nicht verloren gehen darf");
+  await expect(page.locator('[data-feld="titel"]')).toHaveValue("Titelchen");
+  await page.click('[data-aktion="merken"]');
+  await expect(page.locator(".toast").filter({ hasText: "Inbox" })).toBeVisible();
+  await page.keyboard.press("Meta+Shift+m");
+  await expect(page.locator('[data-feld="text"]')).toHaveValue("");
+});
+
+test("Ordner zeigen: nur in der App, mit Pfad der offenen Datei", async ({ page }) => {
+  await oeffne(page, DATEI_A);
+  await page.keyboard.press("Meta+k");
+  await page.keyboard.type(">Finder");
+  await expect(page.locator('.palette [data-pal="befehl"]')).toHaveCount(0); // Browser: ausgeblendet
+  await page.keyboard.press("Escape");
+  const page2 = await page.context().newPage();
+  await page2.addInitScript(() => { window.__aktionen = []; window.webkit = { messageHandlers: { aktion: { postMessage: (m) => window.__aktionen.push(m) } } }; });
+  await page2.goto(server.url + "?pfad=" + encodeURIComponent(DATEI_A));
+  await page2.waitForSelector(".cm-content .cm-line");
+  await page2.keyboard.press("Meta+k");
+  await page2.keyboard.type(">Finder");
+  await page2.keyboard.press("Enter");
+  await expect.poll(() => page2.evaluate(() => window.__aktionen)).toEqual([{ aktion: "ordner-zeigen", wert: DATEI_A }]);
+});
+
+test("Menübefehl vor fertigem Start wird gemerkt und danach ausgeführt; bereit-Flag", async ({ page }) => {
+  await page.route("**/api/info", async (route) => { await new Promise((r) => setTimeout(r, 700)); await route.fallback(); });
+  await page.addInitScript(() => {
+    const iv = setInterval(() => { if (window.studio?.befehl) { clearInterval(iv); window.__bereitBeiBefehl = window.studio.bereit; window.studio.befehl("merken"); } }, 5);
+  });
+  await page.goto(server.url);
+  await expect(page.locator('[data-feld="text"]')).toBeVisible({ timeout: 8000 });
+  expect(await page.evaluate(() => window.__bereitBeiBefehl)).toBe(false);
+  expect(await page.evaluate(() => window.studio.bereit)).toBe(true);
+});
+
+async function kitRouten(page, { vorhanden = true, vertraut = false } = {}) {
+  const stand = { vertraut, post: [], gesundheit: 0 };
+  await page.route("**/api/info", async (route) => {
+    const r = await route.fetch(); const j = await r.json();
+    await route.fulfill({ response: r, json: { ...j, kit: { vorhanden, vertraut: stand.vertraut } } });
+  });
+  await page.route("**/api/kit/vertrauen", async (route) => { stand.post.push(route.request().postDataJSON()); stand.vertraut = true; await route.fulfill({ json: { ok: true } }); });
+  await page.route("**/api/gesundheit", async (route) => {
+    stand.gesundheit++;
+    await route.fulfill({ json: stand.vertraut ? { ampel: "gruen", warnungen: [], pruefungen: [] } : { verfuegbar: false, grund: "nicht-vertraut" } });
+  });
+  await page.route("**/api/rueckfragen", (route) => route.fulfill({ json: stand.vertraut ? { offen: 2 } : { verfuegbar: false, grund: "nicht-vertraut" } }));
+  return stand;
+}
+
+test("Kit-Vertrauen: Hinweis, Erlauben lädt Gesundheit/Rückfragen sofort", async ({ page }) => {
+  const stand = await kitRouten(page);
+  await oeffne(page, DATEI_A);
+  const hinweis = page.locator('[data-banner="kit"]');
+  await expect(hinweis).toBeVisible();
+  await expect(hinweis).toContainText("Brain-Werkzeuge (.tools)");
+  await expect(page.locator('[data-st="gesundheit"]')).toHaveCount(0);
+  await page.screenshot({ path: "screenshots/kit-vertrauen-light.png" });
+  const vorher = stand.gesundheit;
+  await page.click('[data-aktion="kit-erlauben"]');
+  await expect(hinweis).toHaveCount(0);
+  expect(stand.post).toEqual([{ erlauben: true }]);
+  await expect(page.locator('[data-st="gesundheit"]')).toBeVisible();
+  await expect(page.locator('[data-st="rueckfragen"]')).toHaveText("Rückfragen 2");
+  expect(stand.gesundheit).toBeGreaterThan(vorher);
+});
+
+test("Kit-Vertrauen: Nicht jetzt blendet aus; vertraut oder ohne kit-Feld: kein Hinweis", async ({ page }) => {
+  await kitRouten(page);
+  await oeffne(page, DATEI_A);
+  await page.click('[data-aktion="kit-spaeter"]');
+  await expect(page.locator('[data-banner="kit"]')).toHaveCount(0);
+  const p2 = await page.context().newPage();
+  await kitRouten(p2, { vertraut: true });
+  await p2.goto(server.url + "?pfad=" + encodeURIComponent(DATEI_A)); await p2.waitForSelector(".cm-content .cm-line");
+  await expect(p2.locator('[data-banner="kit"]')).toHaveCount(0);
+  const p3 = await page.context().newPage(); // echtes Backend, evtl. ohne kit-Feld
+  await p3.goto(server.url + "?pfad=" + encodeURIComponent(DATEI_A)); await p3.waitForSelector(".cm-content .cm-line");
+  await p3.waitForTimeout(500);
+  await expect(p3.locator('[data-banner="kit"]')).toHaveCount(0);
 });

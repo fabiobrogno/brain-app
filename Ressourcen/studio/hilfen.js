@@ -101,3 +101,7 @@ export function sucheGrad(text, frage) {
   }
   return best;
 }
+
+// Entwürfe überleben das Schließen eines Dialogs (nur diese Sitzung).
+export function speichereEntwurf(k, v) { try { v === null ? sessionStorage.removeItem("brain-studio.entwurf." + k) : sessionStorage.setItem("brain-studio.entwurf." + k, JSON.stringify(v)); } catch { /* ohne Speicher */ } }
+export function leseEntwurf(k) { try { const v = sessionStorage.getItem("brain-studio.entwurf." + k); return v === null ? null : JSON.parse(v); } catch { return null; } }

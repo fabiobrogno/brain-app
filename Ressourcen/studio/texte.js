@@ -78,7 +78,9 @@ export const T = {
     vorbelegt: (liste, n) => (n === 1 ? `Aktualisiert: ${liste[0]}` : `${n} Dateien aktualisiert: ${liste.slice(0, 3).join(", ")}${n > 3 ? " …" : ""}`),
   },
   neu: { titel: "Neue Notiz", ordner: "Ordner", name: "Titel", anlegen: "Anlegen", platzhalter: "Wie soll sie heißen?" },
-  merken: { titel: "Schnell merken", text: "Was willst du festhalten?", titelFeld: "Titel (optional)", sichern: "In die Inbox", fertig: "In der Inbox abgelegt.", offen: "Öffnen" },
+  kit: { hinweis: "Dieser Ordner enthält Brain-Werkzeuge (.tools). Gesundheit und Rückfragen nutzen sie — ausführen erlauben?", erlauben: "Erlauben", spaeter: "Nicht jetzt" },
+  speicherFehler: { titel: "Änderungen konnten nicht gespeichert werden", text: "Wechselst du jetzt, geht der ungespeicherte Text verloren.", nochmal: "Nochmal versuchen", kopieren: "Text kopieren", verwerfen: "Verwerfen und wechseln", kopiert: "Text kopiert.", kopierFehler: "Kopieren war nicht möglich." },
+  merken: { entwurf: "Entwurf bleibt erhalten.", titel: "Schnell merken", text: "Was willst du festhalten?", titelFeld: "Titel (optional)", sichern: "In die Inbox", fertig: "In der Inbox abgelegt.", offen: "Öffnen" },
   palette: { platzhalter: "Notiz suchen oder Befehl eingeben …", notizen: "Notizen", befehle: "Befehle", nichts: "Nichts passt.", nichtsGefunden: "Nichts gefunden", anlegen: (t) => `Neue Notiz „${t}“ anlegen` },
   befehle: {
     neu: "Neue Notiz", merken: "Schnell merken", commit: "Änderungen sichern …", sync: "Mit Remote abgleichen",

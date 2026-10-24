@@ -186,6 +186,7 @@ kbd { font: 11px var(--schrift); }
 .banner .b-sub { color: var(--text-2); margin-top: 2px; }
 .banner.warn { background: color-mix(in srgb, var(--gelb) 12%, var(--papier)); }
 .banner.fehler { background: color-mix(in srgb, var(--rot) 10%, var(--papier)); }
+.banner.kit { padding: 8px 24px; background: color-mix(in srgb, var(--akzent, var(--text-2)) 8%, var(--papier)); }
 .banner.schutz { padding: 8px 24px; color: var(--text-2); }
 .knopf { height: 28px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--linie-stark); background: var(--erhoben); cursor: pointer; white-space: nowrap; }
 .knopf:hover { border-color: var(--text-3); }
