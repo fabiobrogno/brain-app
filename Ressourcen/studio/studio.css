@@ -85,6 +85,7 @@ kbd { font: 11px var(--schrift); }
 .baum::-webkit-scrollbar-thumb, #info::-webkit-scrollbar-thumb { background: var(--linie-stark); border-radius: 6px; border: 3px solid transparent; background-clip: content-box; }
 .zeile { display: flex; align-items: center; gap: 4px; height: 28px; padding: 0 8px 0 calc(8px + var(--tiefe, 0) * 14px); border-radius: 6px; cursor: pointer; white-space: nowrap; }
 .zeile:hover { background: var(--leiste-2); }
+.zeile.archiv:not([aria-selected="true"]) { opacity: .5; }
 .zeile[aria-selected="true"] { background: var(--akzent); color: var(--akzent-text); }
 .zeile[aria-selected="true"] .dim, .zeile[aria-selected="true"] .pfeil { color: inherit; opacity: .75; }
 .zeile .pfeil { width: 12px; flex: none; color: var(--text-3); font-size: 11px; transition: transform .12s; text-align: center; }
@@ -93,7 +94,7 @@ kbd { font: 11px var(--schrift); }
 .zeile.ordner { font-weight: 500; color: var(--text); }
 .zeile .dim { color: var(--text-3); font-size: 12px; }
 .punkt { width: 7px; height: 7px; border-radius: 50%; flex: none; background: transparent; }
-.punkt.gruen { background: var(--gruen); } .punkt.gelb { background: var(--gelb); } .punkt.rot { background: var(--rot); } .punkt.grau { background: var(--grau); opacity: .55; }
+.punkt.gruen { background: var(--gruen); } .punkt.gelb { background: var(--gelb); } .punkt.rot { background: var(--rot); } .punkt.grau { background: var(--grau); opacity: .55; } .punkt.ohne { background: transparent; box-shadow: inset 0 0 0 1.5px var(--grau); }
 .zeile[aria-selected="true"] .punkt { box-shadow: 0 0 0 1.5px rgba(255,255,255,.85); }
 .zeile.schutz .name { color: var(--text-2); }
 .treffer { display: flex; flex-direction: column; gap: 2px; padding: 8px; border-radius: 6px; cursor: pointer; }
@@ -121,7 +122,7 @@ kbd { font: 11px var(--schrift); }
 .speicherstand.fehler { color: var(--rot); }
 .pille { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px 0 8px; border-radius: 12px; font-size: 12px; font-weight: 500; background: var(--leiste); border: 1px solid var(--linie); }
 .pille i { width: 7px; height: 7px; border-radius: 50%; display: block; }
-.pille.gruen i { background: var(--gruen); } .pille.gelb i { background: var(--gelb); } .pille.rot i { background: var(--rot); } .pille.grau i { background: var(--grau); }
+.pille.gruen i { background: var(--gruen); } .pille.gelb i { background: var(--gelb); } .pille.rot i { background: var(--rot); } .pille.grau i { background: var(--grau); } .pille.ohne i { background: transparent; box-shadow: inset 0 0 0 2px var(--grau); }
 
 #editor { flex: 1; min-height: 0; overflow: hidden; }
 #editor .cm-editor { height: 100%; background: var(--papier); color: var(--text); outline: 0; }
@@ -134,7 +135,7 @@ kbd { font: 11px var(--schrift); }
 #editor .cm-gutters { background: transparent; border: 0; }
 #editor .cm-signale { width: 16px; }
 .cm-signal { display: block; width: 6px; height: 6px; border-radius: 50%; margin: 13px 0 0 6px; }
-.cm-signal-gelb { background: var(--gelb); } .cm-signal-rot { background: var(--rot); } .cm-signal-gruen { background: var(--gruen); } .cm-signal-grau { background: var(--grau); }
+.cm-signal-gelb { background: var(--gelb); } .cm-signal-rot { background: var(--rot); } .cm-signal-gruen { background: var(--gruen); } .cm-signal-grau, .cm-signal-ohne { background: var(--grau); }
 
 .cm-h1, .cm-h2, .cm-h3, .cm-h4, .cm-h5, .cm-h6 { font-family: var(--schrift); font-weight: 700; letter-spacing: -.02em; line-height: 1.25; }
 .cm-h1 { font-size: 2em; padding-top: 12px !important; padding-bottom: 4px !important; }
@@ -208,7 +209,7 @@ kbd { font: 11px var(--schrift); }
 .info-sektion h3 { margin: 0 0 8px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); }
 .stufe-kopf { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; }
 .stufe-kopf i { width: 9px; height: 9px; border-radius: 50%; display: block; }
-.stufe-kopf.gruen i { background: var(--gruen); } .stufe-kopf.gelb i { background: var(--gelb); } .stufe-kopf.rot i { background: var(--rot); } .stufe-kopf.grau i { background: var(--grau); }
+.stufe-kopf.gruen i { background: var(--gruen); } .stufe-kopf.gelb i { background: var(--gelb); } .stufe-kopf.rot i { background: var(--rot); } .stufe-kopf.grau i { background: var(--grau); } .stufe-kopf.ohne i { background: transparent; box-shadow: inset 0 0 0 2px var(--grau); }
 .stufe-text { color: var(--text-2); margin: 4px 0 0; }
 .signal-liste { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .signal-liste li { display: flex; gap: 8px; padding: 6px 8px; margin: 0 -8px; border-radius: 6px; color: var(--text-2); }

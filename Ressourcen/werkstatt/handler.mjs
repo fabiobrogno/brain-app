@@ -95,6 +95,7 @@ export function erzeugeHandler(o) {
       case "/api/suche": nur("GET"); return v.suche(q.get("q"));
       case "/api/pruefung": nur("GET"); return v.pruefung(q.get("pfad"));
       case "/api/gesundheit": nur("GET"); return v.gesundheit();
+      case "/api/rueckfragen": nur("GET"); return v.rueckfragen();
       case "/api/git/status": nur("GET"); return v.gitStatus();
       case "/api/git/commit": nur("POST"); return v.gitCommit(eingabe());
       case "/api/git/sync": nur("POST"); return v.gitSync();

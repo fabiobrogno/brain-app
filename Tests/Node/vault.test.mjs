@@ -223,8 +223,8 @@ test("Prüfung: rot bei Konflikt-Kasten (mit Zeile) und PRÜFBEDÜRFTIG, nicht i
   assert.equal(s.zeile, 11);
   const p = pruefeText(WIKI, kopf() + "# X\n\n**PRÜFBEDÜRFTIG:** nur Kapitel ausgewertet.\n", heute);
   assert.equal(p.stufe, "rot"); assert.deepEqual(arten(p), ["pruefbeduerftig"]);
-  assert.equal(pruefeText(WIKI, kopf() + "# X\n\nLint meldet den Befund **PRÜFBEDÜRFTIG** und die Seite ist prüfbedürftig.\n", heute).stufe, "gruen", "bloße Erwähnung zählt nicht");
-  assert.equal(pruefeText(WIKI, kopf() + "# X\n\n```\n> [!KONFLIKT] x\nPRÜFBEDÜRFTIG\n```\n", heute).stufe, "gruen");
+  assert.equal(pruefeText(WIKI, kopf() + "# X\n\nLint meldet den Befund **PRÜFBEDÜRFTIG** und die Seite ist prüfbedürftig.\n", heute).stufe, "ohne", "bloße Erwähnung zählt nicht");
+  assert.equal(pruefeText(WIKI, kopf() + "# X\n\n```\n> [!KONFLIKT] x\nPRÜFBEDÜRFTIG\n```\n", heute).stufe, "ohne");
   const z = pruefeText(WIKI, kopf('zweifel: "2026-10-23: Korrektur"\n') + "# X\n", heute);
   assert.equal(z.stufe, "rot"); assert.ok(arten(z).includes("zweifel"));
 });
@@ -232,16 +232,16 @@ test("Prüfung: rot bei Konflikt-Kasten (mit Zeile) und PRÜFBEDÜRFTIG, nicht i
 test("Prüfung: gelb bei abgelaufener Frist, Verfall, Fakt ohne Beleg, quelle_ ohne quellen_sha", () => {
   const a = pruefeText(WIKI, kopf("pruefen_bis: 2026-10-23\n") + "# X\n", heute);
   assert.equal(a.stufe, "gelb"); assert.deepEqual(arten(a), ["abgelaufen"]);
-  assert.equal(pruefeText(WIKI, kopf("pruefen_bis: 2026-10-24\n") + "# X\n", heute).stufe, "gruen", "heute ist noch nicht abgelaufen");
+  assert.equal(pruefeText(WIKI, kopf("pruefen_bis: 2026-10-24\n") + "# X\n", heute).stufe, "ohne", "heute ist noch nicht abgelaufen");
   const v = pruefeText(WIKI, kopf("stand: 2026-09-01\nverfall: 30\n") + "# X\n", heute);
   assert.equal(v.stufe, "gelb"); assert.ok(arten(v).includes("verfall"));
-  assert.equal(pruefeText(WIKI, kopf("stand: 2026-10-10\nverfall: 30\n") + "# X\n", heute).stufe, "gruen");
+  assert.equal(pruefeText(WIKI, kopf("stand: 2026-10-10\nverfall: 30\n") + "# X\n", heute).stufe, "ohne");
   const f = pruefeText(WIKI, kopf() + "# X\n\n- Fakt ohne Link · Stand 21.10.2026\n- Fakt mit falschem Link · Stand 21.10.2026 · [[firma/x]]\n", heute);
   assert.equal(f.stufe, "gelb");
   assert.deepEqual(f.signale.filter((s) => s.art === "beleg_fehlt").map((s) => s.zeile), [11, 12]);
   const q = pruefeText("09_wiki/firma/quelle_y.md", "---\nname: y\ntyp: quelle\nquellen: [\"a\"]\nrev: 1\n---\n# Y\n", heute);
   assert.equal(q.stufe, "gelb"); assert.deepEqual(arten(q), ["quellen_sha"]);
-  assert.equal(pruefeText("09_wiki/firma/quelle_y.md", kopf() + "# Y\n", heute).stufe, "gruen");
+  assert.equal(pruefeText("09_wiki/firma/quelle_y.md", kopf() + "# Y\n", heute).stufe, "ohne");
 });
 
 test("Prüfung: rot schlägt gelb; Route über Vault liest die Datei", () => {
@@ -267,4 +267,53 @@ test("Gesundheit: ohne Kit {verfuegbar:false}; mit Kit durchgereicht und 120 s g
   assert.equal(readFileSync(join(d, "aufrufe.log"), "utf8"), "x", "zweiter Aufruf kam aus dem Cache");
   schreibe(d, ".tools/brain.mjs", "console.log('kein json');");
   assert.deepEqual(await oeffneVault(d).gesundheit(), { verfuegbar: false });
+});
+
+test("Prüfung: Kaffee-Fall (eine belegte, eine unbelegte Zeile unter ## Fakten) ist gelb, Text passt", () => {
+  const t = kopf() + "# Kaffee\n\n## Fakten\n\n- Arabica enthält weniger Koffein · [[09_wiki/belege/kaffee-1]]\n- Die Röstung beeinflusst den Geschmack stark.\n";
+  const r = pruefeText(WIKI, t, heute);
+  assert.equal(r.stufe, "gelb");
+  assert.deepEqual(r.signale.filter((s) => s.art === "beleg_fehlt").map((s) => s.zeile), [kopf().split("\n").length - 1 + 6]);
+  assert.match(r.zusammenfassung, /1 Fakt-Zeile ohne Beleg/);
+  assert.match(r.zusammenfassung, /1 belegte Fakt-Zeile/);
+  assert.doesNotMatch(r.zusammenfassung, /keine belegten/i);
+});
+
+test("Prüfung: handgeschriebene Stichpunkte unter ## Fakten (echte Seiten) sind Ohne Befund, nicht gelb", () => {
+  const t = kopf() + "# Revolor\n\n## Fakten\n\n- Shop auf **Shopify**; Theme Dawn.\n- 48 Produkte (Stand 19.10.).\n";
+  const r = pruefeText(WIKI, t, heute);
+  assert.equal(r.stufe, "ohne");
+  assert.match(r.zusammenfassung, /^Ohne Befund/);
+  assert.deepEqual(arten(r), []);
+});
+
+test("Prüfung: grün nur mit belegter Zeile und ohne unbelegte; ersetzte Zeilen zählen nicht", () => {
+  const ok = kopf() + "# X\n\n## Fakten\n\n- A · Stand 21.10.2026 · [[firma/belege/2026-10/a]]\n- ~~B~~ · ersetzt am 23.10.2026 durch die Zeile darunter\n- B2 · Stand 23.10.2026 · [[firma/belege/2026-10/b]]\n";
+  assert.equal(pruefeText(WIKI, ok, heute).stufe, "gruen");
+  const schlecht = kopf() + "# X\n\n- A · Stand 21.10.2026 · [[firma/belege/2026-10/a]]\n- B · Stand 22.10.2026\n";
+  assert.equal(pruefeText(WIKI, schlecht, heute).stufe, "gelb");
+});
+
+test("Rückfragen: ohne Kit nicht verfügbar; mit Kit offen = fragen + wartend, rein lesend; defektes Kit → keine Zahl", async () => {
+  const d = tmp();
+  assert.deepEqual(await oeffneVault(d).rueckfragen(), { verfuegbar: false });
+  schreibe(d, ".tools/rueckfragen.mjs", `import {appendFileSync} from "node:fs"; export function sichtbare(v){ appendFileSync(v+"/aufrufe.log","x"); return { fragen: [{},{},{}], wartend: 4 }; }\n`);
+  const v = oeffneVault(d);
+  assert.deepEqual(await v.rueckfragen(), { verfuegbar: true, offen: 7 });
+  assert.deepEqual(await v.rueckfragen(), { verfuegbar: true, offen: 7 });
+  assert.equal(readFileSync(join(d, "aufrufe.log"), "utf8"), "x", "zweiter Aufruf kam aus dem Cache");
+  const e = tmp();
+  schreibe(e, ".tools/rueckfragen.mjs", "export const nichts = 1;\n");
+  assert.deepEqual(await oeffneVault(e).rueckfragen(), { verfuegbar: false });
+});
+
+test("Baum: Titel je Datei aus H1 (auch nach Frontmatter), sonst Frontmatter title/titel/name, sonst Dateiname", () => {
+  const d = tmp();
+  schreibe(d, "09_wiki/a/b/thema_x.md", "---\nname: x\ndescription: lang\n---\n# Echter Titel\n\ntext\n");
+  schreibe(d, "09_wiki/y.md", "---\ntitle: Kopftitel\n---\nohne Überschrift\n");
+  schreibe(d, "z.md", "nur Text\n");
+  const t = Object.fromEntries(oeffneVault(d).baum().eintraege.filter((e) => e.art === "datei").map((e) => [e.pfad, e.titel]));
+  assert.equal(t["09_wiki/a/b/thema_x.md"], "Echter Titel");
+  assert.equal(t["09_wiki/y.md"], "Kopftitel");
+  assert.equal(t["z.md"], "z");
 });

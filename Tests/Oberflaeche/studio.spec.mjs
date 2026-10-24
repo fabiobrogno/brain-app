@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { baueVault, git } from "./vault.mjs";
 import { starteServer } from "./start.mjs";
@@ -180,4 +180,73 @@ test("Leerer Vault: freundlicher Zustand", async ({ page }) => {
   await page.fill('[data-feld="titel"]', "Erste Notiz");
   await page.click('[data-aktion="anlegen"]');
   await expect(page.locator(".cm-content")).toContainText("Erste Notiz");
+});
+
+test("Palette findet tiefe Seite per Titel, Dateiname und Wortanfang; Enter ohne Treffer legt nichts an", async ({ page }) => {
+  await oeffne(page, "09_wiki/wissen/Kaffee.md");
+  const tief = "09_wiki/wissen/agentic-os/tief/thema_claude-mods.md";
+  for (const eingabe of ["Claude Mods", "thema_claude-mods", "clau mod", "thema claude"]) {
+    await page.keyboard.press("Meta+k");
+    await page.waitForSelector(".palette input:focus");
+    await page.keyboard.type(eingabe);
+    await expect(page.locator('.palette [data-pal="notiz"] .r').filter({ hasText: tief })).toHaveCount(1);
+    if (eingabe === "Claude Mods" || eingabe === "thema_claude-mods") await expect(page.locator('.palette [data-pal="notiz"] .r').first()).toHaveText(tief);
+    else await page.locator('.palette [data-pal="notiz"]').filter({ hasText: tief }).click();
+    if (eingabe === "Claude Mods" || eingabe === "thema_claude-mods") await page.keyboard.press("Enter");
+    await expect(page.locator("#pfad")).toContainText("thema_claude-mods");
+    await oeffne(page, "09_wiki/wissen/Kaffee.md");
+  }
+  // kein Treffer: nur der ausdrückliche Anlegen-Eintrag, Enter tut nichts
+  await page.keyboard.press("Meta+k");
+  await page.waitForSelector(".palette input:focus");
+  await page.keyboard.type("zzzqqq");
+  await expect(page.locator('.palette [data-pal="notiz"]')).toHaveCount(0);
+  await expect(page.locator('.palette [data-pal="anlegen"]')).toHaveText(/Neue Notiz „zzzqqq“ anlegen/);
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".palette")).toBeVisible();
+  await expect(page.locator('[data-feld="titel"]')).toHaveCount(0);
+  // ausdrücklich gewählt: Dialog mit vorbelegtem Titel
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  await expect(page.locator('[data-feld="titel"]')).toHaveValue("zzzqqq");
+});
+
+test("Statusleiste zeigt Rückfragen n, wenn das Kit sie liefert", async ({ page }) => {
+  mkdirSync(join(vault, ".tools"), { recursive: true });
+  writeFileSync(join(vault, ".tools/rueckfragen.mjs"), "export function sichtbare(){ return { fragen: [{},{}], wartend: 1 }; }\n");
+  await oeffne(page, "09_wiki/wissen/Kaffee.md");
+  await expect(page.locator('[data-st="rueckfragen"]')).toHaveText("Rückfragen 3", { timeout: 5000 });
+});
+
+test("Statusleiste: ohne Kit keine Rückfragen-Anzeige", async ({ page }) => {
+  await oeffne(page, "09_wiki/wissen/Kaffee.md");
+  await page.waitForTimeout(800);
+  await expect(page.locator('[data-st="rueckfragen"]')).toHaveCount(0);
+});
+
+test("Prüf-Signal: Kaffee ist gelb mit passendem Text, Mühle/Espresso behalten Stufen", async ({ page }) => {
+  await oeffne(page, "09_wiki/wissen/Kaffee.md");
+  await expect(page.locator("#pille")).toHaveAttribute("data-stufe", "gelb", { timeout: 5000 });
+});
+
+test("Notizen: echte Struktur ohne Inbox/Wiki, 90_* ausgegraut am Ende, fehlende Inbox stört nicht", async ({ page }) => {
+  for (const [p, t] of [["01_vorlagen/vorlage.md", "# Vorlage\n"], ["10_projekte/p.md", "# P\n"], ["40_persoenlich/x.md", "# X\n"], ["90_archiv/alt.md", "# Alt\n"], ["wurzel.md", "# Wurzel\n"]]) {
+    mkdirSync(join(vault, p, ".."), { recursive: true }); writeFileSync(join(vault, p), t);
+  }
+  rmSync(join(vault, "00_inbox"), { recursive: true, force: true });
+  await oeffne(page, "09_wiki/wissen/Kaffee.md");
+  await page.click('[data-bereich="notizen"]');
+  const namen = await page.locator("#baum .zeile").evaluateAll((els) => els.map((e) => e.dataset.pfad));
+  expect(namen).toEqual(["01_vorlagen", "10_notizen", "10_projekte", "30_wissen", "40_persoenlich", "wurzel.md", "90_archiv"]);
+  await expect(page.locator('#baum [data-pfad="90_archiv"]')).toHaveClass(/archiv/);
+  expect(Number(await page.locator('#baum [data-pfad="90_archiv"]').evaluate((e) => getComputedStyle(e).opacity))).toBeLessThan(1);
+  await expect(page.locator('#baum [data-pfad="01_vorlagen"]')).not.toHaveClass(/archiv/);
+});
+
+test("Palette: sofort nach ⌘K getippte Zeichen gehen nicht verloren", async ({ page }) => {
+  await oeffne(page, "09_wiki/wissen/Kaffee.md");
+  await page.keyboard.press("Meta+k");
+  await page.keyboard.type("Claude Mods", { delay: 0 });
+  await expect(page.locator(".palette input")).toHaveValue("Claude Mods");
+  await expect(page.locator('.palette [data-pal="notiz"]').first()).toContainText("Claude Mods");
 });

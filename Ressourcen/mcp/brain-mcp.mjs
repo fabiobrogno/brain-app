@@ -20,7 +20,7 @@ export const WERKZEUGE = [
     inputSchema: { type: "object", properties: { pfad: { type: "string" }, max: { type: "integer", minimum: 1, maximum: 100, description: "Standard 20" } }, required: ["pfad"], additionalProperties: false } },
 ];
 
-const STUFE = { gruen: "grün", gelb: "gelb", rot: "rot", grau: "grau" };
+const STUFE = { gruen: "grün", gelb: "gelb", rot: "rot", grau: "grau", ohne: "ohne Befund" };
 const text = (t) => ({ content: [{ type: "text", text: t }] });
 const fehlerText = (t) => ({ content: [{ type: "text", text: t }], isError: true });
 const zeit = (iso) => String(iso || "").slice(0, 16).replace("T", " ");

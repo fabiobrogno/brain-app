@@ -18,6 +18,8 @@ const SEITEN = {
   "09_wiki/wissen/Kaffee.md": "---\ntitel: Kaffee\nstand: 2026-10-01\nverfall: 2027-10-01\nquelle: quelle_buch\nquellen_sha: abc123\n---\n# Kaffee\n\nKaffee ist ein **Heißgetränk** aus gerösteten Bohnen. Siehe auch [[Espresso]] und [[Mühle|die Mühle]].\n\n## Fakten\n\n- Arabica enthält weniger Koffein als Robusta · [[09_wiki/belege/kaffee-1]]\n- Die Röstung beeinflusst den Geschmack stark.\n\n> Ein Zitat über Kaffee.\n\n```js\nconst tasse = 1;\n```\n",
   "09_wiki/wissen/Espresso.md": "---\ntitel: Espresso\nstand: 2026-09-01\n---\n# Espresso\n\nZubereitung unter hohem Druck. Mehr in [[Kaffee]].\n\n> [!konflikt] PRÜFBEDÜRFTIG\n",
   "09_wiki/wissen/Mühle.md": "---\ntitel: Mühle\npruefen_bis: 2020-01-01\n---\n# Mühle\n\nEine Kaffeemühle mahlt Bohnen. Zurück zu [[Kaffee]].\n",
+  "09_wiki/wissen/agentic-os/tief/thema_claude-mods.md": "---\nname: claude-mods\ndescription: Plugins, die Claude Code selbst ändern\ntyp: thema\nstand: 2026-10-08\n---\n# Claude Mods\n\nText zu den Mods.\n",
+  "30_wissen/yt-claude-mods.md": "# Claude Mods Is The Biggest Claude Code Upgrade\n\nTranskript.\n",
   "09_wiki/belege/kaffee-1.md": "# Beleg 1\n\nQuelle: Buch.\n",
 };
 export function baueVault({ leer = false, mitRemote = true } = {}) {

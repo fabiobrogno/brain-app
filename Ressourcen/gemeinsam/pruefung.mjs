@@ -34,8 +34,15 @@ const KONFLIKT = /^\s*>\s*\[!KONFLIKT\]/i;
 // Markierung steht am Zeilenanfang (ggf. nach Listenzeichen, > oder **) und in Großbuchstaben — so wie Lint sie setzt;
 // Fließtext, der das Wort nur erwähnt („Befund **PRÜFBEDÜRFTIG**“), zählt nicht.
 const PRUEFBEDUERFTIG = /^\s*(?:[-*+>]\s+)*\**\s*PR(?:Ü|UE)FBED(?:Ü|UE)RFTIG\b/;
-const FAKT = /^\s*[-*+]\s.*·\s*Stand\s+\d{1,2}\.\d{1,2}\.\d{4}/;
+// Fakt-Zeile laut Schema (09_wiki/_schema.md): Listenzeile mit „ · Stand TT.MM.JJJJ“ und Beleg-Link auf …/belege/….
+// Handgeschriebene Stichpunkte (auch unter „## Fakten“) ohne eines dieser beiden Merkmale sind keine Fakt-Zeilen.
+// Sobald unter „## Fakten“ mindestens eine Zeile eines der Merkmale trägt, gilt der Abschnitt als Fakt-Format:
+// dann zählt jede weitere Listenzeile dort als Fakt-Zeile (ohne Beleg-Link = unbelegt). Ersetzte Zeilen (~~…~~) zählen nicht.
+const FAKT_STAND = /^\s*[-*+]\s.*·\s*Stand\s+\d{1,2}\.\d{1,2}\.\d{4}/;
+const LISTE = /^\s*[-*+]\s+\S/;
+const ERSETZT = /^\s*[-*+]\s+~~/;
 const BELEG = /\[\[[^\]]*\/belege\/[^\]]*\]\]/;
+const FAKTEN_KOPF = /^##\s+Fakten\s*$/i;
 
 // pfad: Vault-relativ ("/"), text: Dateiinhalt, opts.heute: "JJJJ-MM-TT" (für Tests).
 export function pruefeText(pfad, text, opts = {}) {
@@ -67,17 +74,25 @@ export function pruefeText(pfad, text, opts = {}) {
 
   // Textkörper: Zeilen unter dem Kopf, Code-Blöcke ausgenommen; Zeilennummern bleiben die der ganzen Datei.
   const zeilen = text.split(/\r?\n/);
-  let imCode = false, belegt = 0, ohneBeleg = 0;
+  let imCode = false, belegt = 0, ohneBeleg = 0, imFakten = false;
+  const kandidaten = []; // { zeile, hatMerkmal, belegt, imFakten }
   for (let i = bis; i < zeilen.length; i++) {
     const z = zeilen[i];
     if (/^\s*(```|~~~)/.test(z)) { imCode = !imCode; continue; }
     if (imCode) continue;
+    if (/^#{1,6}\s/.test(z)) imFakten = FAKTEN_KOPF.test(z);
     if (KONFLIKT.test(z)) { signale.push({ art: "konflikt", text: "Offener Konflikt-Kasten — du entscheidest", zeile: i + 1 }); rot.push("offener Konflikt"); }
     else if (PRUEFBEDUERFTIG.test(z)) { signale.push({ art: "pruefbeduerftig", text: "Als prüfbedürftig markiert", zeile: i + 1 }); rot.push("prüfbedürftig markiert"); }
-    if (FAKT.test(z)) {
-      if (BELEG.test(z)) belegt++;
-      else { ohneBeleg++; signale.push({ art: "beleg_fehlt", text: "Fakt-Zeile ohne Beleg-Link", zeile: i + 1 }); }
-    }
+    if (!LISTE.test(z) || ERSETZT.test(z)) continue;
+    const hatBeleg = BELEG.test(z);
+    const merkmal = FAKT_STAND.test(z) || hatBeleg;
+    if (merkmal || imFakten) kandidaten.push({ zeile: i + 1, merkmal, hatBeleg, imFakten });
+  }
+  const faktenFormat = kandidaten.some((k) => k.imFakten && k.merkmal);
+  for (const k of kandidaten) {
+    if (!k.merkmal && !(k.imFakten && faktenFormat)) continue;
+    if (k.hatBeleg) belegt++;
+    else { ohneBeleg++; signale.push({ art: "beleg_fehlt", text: "Fakt-Zeile ohne Beleg-Link", zeile: k.zeile }); }
   }
   if (ohneBeleg) gelb.push(`${ohneBeleg} Fakt-Zeile${ohneBeleg > 1 ? "n" : ""} ohne Beleg`);
 
@@ -87,11 +102,12 @@ export function pruefeText(pfad, text, opts = {}) {
   if (belegt) signale.push({ art: "belegt", text: `${belegt} belegte Fakt-Zeile${belegt > 1 ? "n" : ""}` });
   if (felder.ersetzt_durch) signale.push({ art: "ersetzt", text: `Überholt, ersetzt durch ${felder.ersetzt_durch}` });
 
-  const stufe = rot.length ? "rot" : gelb.length ? "gelb" : "gruen";
+  const faktenText = `${belegt} belegte Fakt-Zeile${belegt > 1 ? "n" : ""}`;
+  const stufe = rot.length ? "rot" : gelb.length ? "gelb" : belegt ? "gruen" : "ohne";
   const zusammenfassung =
     stufe === "rot" ? `Braucht deine Entscheidung: ${[...new Set(rot)].join(", ")}`
-    : stufe === "gelb" ? `Ungeprüft oder abgelaufen: ${[...new Set(gelb)].join(", ")}`
-    : belegt ? `Keine offenen Signale · ${belegt} belegte Fakt-Zeile${belegt > 1 ? "n" : ""}`
-    : "Keine offenen Signale (noch keine belegten Fakt-Zeilen)";
+    : stufe === "gelb" ? `Ungeprüft oder abgelaufen: ${[...new Set(gelb)].join(", ")}${belegt ? ` · ${faktenText}` : ""}`
+    : stufe === "gruen" ? `Alle ${faktenText}, keine offenen Signale`
+    : "Ohne Befund: keine Fakt-Zeilen mit Beleg-Format, keine offenen Signale";
   return { stufe, zusammenfassung, signale };
 }

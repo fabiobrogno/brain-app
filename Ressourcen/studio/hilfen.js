@@ -74,3 +74,30 @@ export const istBearbeitbar = (pfad) => /\.(md|txt)$/i.test(pfad);
 
 export function speichereLokal(k, v) { try { localStorage.setItem("brain-studio." + k, JSON.stringify(v)); } catch { /* ohne Speicher */ } }
 export function leseLokal(k, fallback) { try { const v = localStorage.getItem("brain-studio." + k); return v === null ? fallback : JSON.parse(v); } catch { return fallback; } }
+
+// ---- Unscharfe Suche für die Befehlspalette
+// Kleinschreibung, Umlaute (ä = ae oder a), Akzente weg, Unterstrich/Bindestrich/Schrägstrich/Punkt = Leerzeichen.
+const trenner = (s) => s.replace(/[_\-/.\\]+/g, " ").replace(/\s+/g, " ").trim();
+export function suchFormen(s) {
+  const klein = String(s || "").normalize("NFC").toLowerCase();
+  const ae = klein.replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss");
+  const a = klein.replace(/ä/g, "a").replace(/ö/g, "o").replace(/ü/g, "u").replace(/ß/g, "ss");
+  const fix = (t) => trenner(t.normalize("NFD").replace(/[̀-ͯ]/g, ""));
+  return [...new Set([fix(ae), fix(a)])];
+}
+// 0 = kein Treffer, 1 = alle Suchwörter beginnen ein Wort, 2 = alle kommen irgendwo vor
+export function sucheGrad(text, frage) {
+  const woerter = suchFormen(frage)[0].split(" ").filter(Boolean);
+  if (!woerter.length) return 0;
+  let best = 0;
+  const frageFormen = suchFormen(frage);
+  for (const q of frageFormen) {
+    const ws = q.split(" ").filter(Boolean);
+    for (const t of suchFormen(text)) {
+      const tw = t.split(" ");
+      if (ws.every((w) => tw.some((x) => x.startsWith(w)))) return 1;
+      if (ws.every((w) => t.includes(w))) best = 2;
+    }
+  }
+  return best;
+}

@@ -126,6 +126,9 @@ DOWNLOAD_URL="https://github.com/$REPO/releases/download/v$VERSION/$DMG_NAME"
 schritt "1/6 Signieren (Developer ID, Hardened Runtime, Zeitstempel)"
 SIGN=(codesign --force --timestamp --options runtime --sign "$SIGNIER_ID")
 
+# 0) Original-Node gegen nodejs.org prüfen, solange es noch unsigniert ist (danach ändert die Signatur die Bytes)
+if [ "$TROCKEN" = 1 ]; then echo "  würde ausführen: bash scripts/node-manifest.sh pruefe-original $APP"; else bash "$W/scripts/node-manifest.sh" pruefe-original "$APP"; fi
+
 # a) einzelne Programmdateien (Mach-O), tiefste Pfade zuerst. Node bekommt seine Rechte (siehe node.entitlements).
 MACHO_LISTE="$(mktemp)"
 trap 'rm -f "$MACHO_LISTE"' EXIT
@@ -140,6 +143,10 @@ while IFS= read -r f; do
     *) tun "${SIGN[@]}" "$f" ;;
   esac
 done < "$MACHO_LISTE"
+
+# a2) Manifest auf die Prüfsumme des signierten Node setzen (sonst lehnt die App ihr eigenes Node ab);
+#     muss vor der App-Signatur passieren, damit diese das Manifest mit absichert.
+if [ "$TROCKEN" = 1 ]; then echo "  würde ausführen: bash scripts/node-manifest.sh nachziehen $APP"; else bash "$W/scripts/node-manifest.sh" nachziehen "$APP"; fi
 
 # b) verschachtelte Pakete (z. B. Sparkle.framework mit XPC-Diensten), tiefste zuerst
 find "$APP/Contents" \( -name '*.xpc' -o -name '*.app' -o -name '*.framework' \) -print 2>/dev/null \

@@ -83,7 +83,7 @@ Grundlage: `09_wiki/_schema.md` des Vaults. Nur Seiten unter `09_wiki/` werden b
 - `rot`: Konflikt-Kasten in der Seite · Markierung PRÜFBEDÜRFTIG/Zweifel.
 - `gelb`: `pruefen_bis` überschritten oder `stand` + `verfall` abgelaufen · Fakt-Zeilen ohne Beleg-Link
   (`· [[…/belege/…]]`) · `quellen_sha` fehlt bei `quelle_*`.
-- `gruen`: sonst. Zusatz-Signale (nicht wertend): `kritisch: true` („nur von Hand“), Stand-Datum, Zahl belegter Fakten.
+- `gruen` („Belegt“): mindestens eine belegte Fakt-Zeile und keine unbelegte. Fakt-Zeile = Listenzeile mit `· Stand TT.MM.JJJJ` oder Beleg-Link; unter `## Fakten` zählen dann alle Listenzeilen. `ohne` („Ohne Befund“, neutral): keine Fakt-Zeilen im Beleg-Format und keine Signale (z. B. handgeschriebene Stichpunkte). Zusatz-Signale (nicht wertend): `kritisch: true` („nur von Hand“), Stand-Datum, Zahl belegter Fakten.
 Die Oberfläche zeigt die Stufe in Kopfzeile und Dateibaum; Zeilen-Signale als Randmarken im Editor.
 **Ehrlichkeit:** Studio behauptet nie „stimmt“, sondern „belegt“/„ungeprüft“ — Wahrheit entscheidet der Mensch.
 

@@ -17,7 +17,8 @@ try {
     await p.waitForTimeout(1200);
     if (seite) {
       await p.keyboard.press("Meta+k");
-      await p.keyboard.type(seite.replace(/\.md$/, "").split("/").pop());
+      await p.waitForSelector(".palette input:focus");
+      await p.keyboard.type(seite);
       await p.waitForTimeout(400);
       await p.keyboard.press("Enter");
       await p.waitForTimeout(1500);

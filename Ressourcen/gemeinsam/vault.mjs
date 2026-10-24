@@ -7,6 +7,7 @@ import {
 import { join, basename } from "node:path";
 import { createHash, randomBytes } from "node:crypto";
 import { execFile } from "node:child_process";
+import { pathToFileURL } from "node:url";
 import { HttpFehler, MAX_DATEI, loese, imVault } from "./basis.mjs";
 import { pruefeText, berlinHeute, leseKopf } from "./pruefung.mjs";
 import * as gitFn from "./git.mjs";
@@ -50,6 +51,17 @@ export function oeffneVault(vaultPfad, opts = {}) {
   const schreibgeschuetzt = (rel, abs) => !BEARBEITBAR.test(rel) || istGeneriert(rel, abs);
 
   // ---------- Baum ----------
+  // Titel je Datei (H1, sonst Frontmatter title/titel/name) für die Befehlspalette; Cache je Pfad+Änderungszeit+Größe.
+  const titelCache = new Map();
+  function titelFuerBaum(rel, abs, st) {
+    if (!BEARBEITBAR.test(rel) || st.size > 1024 * 1024) return "";
+    const schluessel = `${st.mtimeMs}:${st.size}`;
+    const c = titelCache.get(rel);
+    if (c && c.k === schluessel) return c.t;
+    const t = titelVon(rel, kopfBytes(abs, 8192));
+    titelCache.set(rel, { k: schluessel, t });
+    return t;
+  }
   function baum() {
     const eintraege = [];
     const geh = (relOrdner) => {
@@ -77,7 +89,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
       for (const f of dateien) {
         const a = join(wurzel, f.rel);
         let st; try { st = statSync(a); } catch { continue; }
-        eintraege.push({ pfad: f.rel, art: "datei", geaendert: st.mtime.toISOString(), groesse: st.size, schreibschutz: schreibgeschuetzt(f.rel, a) });
+        eintraege.push({ pfad: f.rel, art: "datei", geaendert: st.mtime.toISOString(), groesse: st.size, schreibschutz: schreibgeschuetzt(f.rel, a), titel: titelFuerBaum(f.rel, a, st) });
       }
     };
     geh("");
@@ -184,7 +196,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
     const { felder, bis } = leseKopf(text);
     const zeilen = text.split(/\r?\n/);
     for (let i = bis; i < Math.min(zeilen.length, bis + 40); i++) { const m = /^#\s+(.+?)\s*#*\s*$/.exec(zeilen[i]); if (m) return m[1]; }
-    return felder.name || basename(rel).replace(/\.(md|txt)$/i, "");
+    return felder.title || felder.titel || felder.name || basename(rel).replace(/\.(md|txt)$/i, "");
   }
 
   function suche(q) {
@@ -238,8 +250,26 @@ export function oeffneVault(vaultPfad, opts = {}) {
     });
   }
 
+  // Offene Rückfragen: rein lesend über die Kit-Funktion sichtbare() (nicht über `brain rueckfragen liste` — das
+  // schreibt `gezeigt` in die Rückfragen und würde die Verfallsfrist auslösen). Zahl = so viele, wie der Skill zeigt.
+  let rfCache = null;
+  async function rueckfragen() {
+    if (rfCache && Date.now() - rfCache.t < 120_000) return rfCache.wert;
+    let wert = { verfuegbar: false };
+    try {
+      const modul = join(wurzel, ".tools", "rueckfragen.mjs");
+      if (existsSync(modul)) {
+        const m = await import(pathToFileURL(modul).href);
+        const s = typeof m.sichtbare === "function" ? m.sichtbare(wurzel) : null;
+        if (s && Array.isArray(s.fragen) && Number.isFinite(s.wartend)) wert = { verfuegbar: true, offen: s.fragen.length + s.wartend };
+      }
+    } catch { /* Kit fehlt oder ist anders aufgebaut → keine Zahl statt einer falschen */ }
+    if (wert.verfuegbar) rfCache = { t: Date.now(), wert };
+    return wert;
+  }
+
   return {
-    wurzel, name: basename(wurzel), kitVersion, baum, lies, schreibe, neu, merken, suche, pruefung, gesundheit,
+    wurzel, name: basename(wurzel), rueckfragen, kitVersion, baum, lies, schreibe, neu, merken, suche, pruefung, gesundheit,
     gitStatus: () => gitFn.status(wurzel),
     gitCommit: (a) => gitFn.commit(wurzel, a || {}),
     gitSync: () => gitFn.sync(wurzel),

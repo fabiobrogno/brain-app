@@ -54,6 +54,7 @@ export const api = {
   suche: (frage) => anfrage("GET", "/api/suche" + q({ q: frage })),
   pruefung: (pfad) => anfrage("GET", "/api/pruefung" + q({ pfad })),
   gesundheit: () => anfrage("GET", "/api/gesundheit"),
+  rueckfragen: () => anfrage("GET", "/api/rueckfragen"),
   status: () => anfrage("GET", "/api/git/status"),
   commit: (nachricht, dateien) => anfrage("POST", "/api/git/commit", { nachricht, dateien }),
   sync: () => anfrage("POST", "/api/git/sync", {}),

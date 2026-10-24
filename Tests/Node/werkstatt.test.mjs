@@ -70,7 +70,7 @@ test("Handler: info, baum, datei GET/PUT, 409, neu, merken, suche, pruefung", as
   assert.deepEqual(r.j.treffer.map((t) => t.pfad), ["09_wiki/firma/thema_a.md"]);
   assert.deepEqual(Object.keys(r.j.treffer[0]).sort(), ["auszug", "pfad", "titel", "zeile"]);
   r = await rufe("GET", "/api/pruefung", undefined, "pfad=09_wiki/firma/thema_a.md");
-  assert.ok(["gruen", "gelb", "rot", "grau"].includes(r.j.stufe)); assert.ok(Array.isArray(r.j.signale)); assert.ok(r.j.zusammenfassung);
+  assert.ok(["gruen", "ohne", "gelb", "rot", "grau"].includes(r.j.stufe)); assert.ok(Array.isArray(r.j.signale)); assert.ok(r.j.zusammenfassung);
   r = await rufe("GET", "/api/gesundheit");
   assert.deepEqual(r.j, { verfuegbar: false });
 });

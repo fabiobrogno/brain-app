@@ -2,7 +2,7 @@
 import { T, PRODUKT } from "./texte.js";
 import { api, aktion, inApp } from "./api.js";
 import { erstelleEditor } from "./editor.js";
-import { h, dialog, dialogOffen, toast, vorMinuten, dateiName, ohneEndung, ordnerVon, istBearbeitbar, speichereLokal, leseLokal } from "./hilfen.js";
+import { h, dialog, dialogOffen, toast, vorMinuten, dateiName, ohneEndung, ordnerVon, istBearbeitbar, speichereLokal, leseLokal, sucheGrad, suchFormen } from "./hilfen.js";
 
 const $ = (id) => document.getElementById(id);
 const MOD_META = /Mac|iPhone|iPad/.test(navigator.platform || "");
@@ -14,7 +14,7 @@ const S = {
   pfad: null, hash: null, schutz: false, dirty: false, konflikt: null, speichert: false, nochmal: false, bearbeitbar: true,
   pruef: new Map(),      // "pfad|geaendert" -> stufe
   aktuellePruefung: null,
-  git: null, gesundheit: null, syncLaeuft: false,
+  git: null, gesundheit: null, rueckfragen: null, syncLaeuft: false,
   zuletzt: leseLokal("zuletzt", []),
   suche: { aktiv: false, treffer: [], auswahl: 0 },
   infoAn: leseLokal("infoAn", true),
@@ -214,6 +214,9 @@ function baueBaum() {
     k.kinder.forEach((c) => sortiere(c, invers));
   };
   sortiere(wurzel, S.bereich === "inbox");
+  // Archiv-Ordner (90_*) ganz ans Ende der obersten Ebene
+  const istArchiv = (k) => k.art === "ordner" && /^90_/.test(k.name);
+  if (!praefix) wurzel.kinder.sort((a, b) => Number(istArchiv(a)) - Number(istArchiv(b)));
   let start = wurzel;
   if (praefix) start = knoten.get(praefix) || { kinder: [] };
   return start;
@@ -227,18 +230,19 @@ function zeichneBaum() {
   if (S.suche.aktiv) return zeichneSuche();
   const wurzel = baueBaum();
   const zeilen = [];
-  const tief = (k, t) => {
+  const tief = (k, t, archiv = false) => {
     for (const c of k.kinder) {
+      const arch = archiv || (t === 0 && c.art === "ordner" && /^90_/.test(c.name));
       if (c.art === "ordner") {
         const offen = S.offen.has(c.pfad);
-        zeilen.push(h("div", { klasse: "zeile ordner", role: "treeitem", "aria-expanded": String(offen), style: `--tiefe:${t}`, "data-pfad": c.pfad,
+        zeilen.push(h("div", { klasse: "zeile ordner" + (arch ? " archiv" : ""), role: "treeitem", "aria-expanded": String(offen), style: `--tiefe:${t}`, "data-pfad": c.pfad,
           aufClick: () => { offen ? S.offen.delete(c.pfad) : S.offen.add(c.pfad); speichereLokal("offen", [...S.offen]); zeichneBaum(); } },
           h("span", { klasse: "pfeil" + (offen ? " offen" : ""), text: "›" }), h("span", { klasse: "name", text: c.name }), h("span", { klasse: "dim", text: String(zaehleDateien(c)) })));
-        if (offen) tief(c, t + 1);
+        if (offen) tief(c, t + 1, arch);
       } else {
         const e = S.eintraege.get(c.pfad);
         const stufe = pruefStufeFuer(c.pfad, e);
-        zeilen.push(h("div", { klasse: "zeile datei" + (c.schutz ? " schutz" : ""), role: "treeitem", "aria-selected": String(S.pfad === c.pfad), style: `--tiefe:${t}`, "data-pfad": c.pfad, title: c.pfad,
+        zeilen.push(h("div", { klasse: "zeile datei" + (c.schutz ? " schutz" : "") + (arch ? " archiv" : ""), role: "treeitem", "aria-selected": String(S.pfad === c.pfad), style: `--tiefe:${t}`, "data-pfad": c.pfad, title: c.pfad,
           aufClick: () => oeffne(c.pfad) },
           h("span", { klasse: "pfeil" }), h("span", { klasse: "name", text: ohneEndung(c.name) }),
           h("span", { klasse: "punkt " + (stufe || ""), "data-punkt": c.pfad })));
@@ -473,9 +477,11 @@ function zeichneStatus() {
   kinder.push(h("span", { klasse: "trenner" }));
   kinder.push(h("button", { klasse: "st", "data-st": "inbox", aufClick: () => { S.bereich = "inbox"; speichereLokal("bereich", "inbox"); loescheSuche(); zeichneBereiche(); zeichneBaum(); } }, h("span", { text: T.status.inbox(inboxN) })));
   const gs = S.gesundheit;
+  if (S.rueckfragen && S.rueckfragen.verfuegbar !== false && Number.isFinite(S.rueckfragen.offen)) {
+    kinder.push(h("span", { klasse: "trenner" }));
+    kinder.push(h("span", { klasse: "st" + (S.rueckfragen.offen ? " hervor" : ""), "data-st": "rueckfragen", title: T.status.rueckfragenHinweis }, h("span", { text: T.status.rueckfragen(S.rueckfragen.offen) })));
+  }
   if (gs && gs.verfuegbar !== false) {
-    const rf = (gs.pruefungen || []).find((p) => /rueckfrage|rückfrage/i.test(p.id || p.name || ""));
-    if (rf) kinder.push(h("button", { klasse: "st", "data-st": "rueckfragen", aufClick: oeffneGesundheit }, h("span", { text: T.status.rueckfragen((rf.befunde || []).length) })));
     const w = Array.isArray(gs.warnungen) ? gs.warnungen.length : Number(gs.warnungen) || 0;
     const ampel = String(gs.ampel || "").toLowerCase();
     const farbe = /rot|red/.test(ampel) ? "rot" : /gelb|yellow|orange/.test(ampel) || w ? "gelb" : "";
@@ -494,7 +500,11 @@ async function ladeGit() {
 }
 function planeGitRefresh() { clearTimeout(gitTimer); gitTimer = setTimeout(ladeGit, 1200); }
 function planeBaumRefresh() { clearTimeout(baumTimer); baumTimer = setTimeout(ladeBaum, 1500); }
-async function ladeGesundheit() { try { S.gesundheit = await api.gesundheit(); } catch { S.gesundheit = null; } zeichneStatus(); }
+async function ladeGesundheit() {
+  try { S.gesundheit = await api.gesundheit(); } catch { S.gesundheit = null; }
+  try { S.rueckfragen = await api.rueckfragen(); } catch { S.rueckfragen = null; }
+  zeichneStatus();
+}
 
 async function sync() {
   if (S.syncLaeuft) return;
@@ -552,12 +562,12 @@ async function oeffneCommit() {
 }
 
 // ======================================================= Neu / Merken / Gesundheit
-function oeffneNeu() {
+function oeffneNeu(vorTitel) {
   if (dialogOffen()) return;
   const ordner = S.baum.filter((e) => e.art === "ordner" && !e.schreibschutz).map((e) => e.pfad);
   const vorgabe = S.pfad && ordnerVon(S.pfad) ? ordnerVon(S.pfad) : ordner.includes("00_inbox") ? "00_inbox" : ordner[0] || "";
   const sel = h("select", { "data-feld": "ordner" }, ordner.length ? ordner.map((o) => h("option", { value: o, selected: o === vorgabe, text: o })) : h("option", { value: "", text: "Hauptordner" }));
-  const titel = h("input", { type: "text", "data-feld": "titel", placeholder: T.neu.platzhalter });
+  const titel = h("input", { type: "text", "data-feld": "titel", placeholder: T.neu.platzhalter, value: typeof vorTitel === "string" ? vorTitel : "" });
   const fehlerEl = h("div", { klasse: "fehlertext", hidden: true });
   const tun = async () => {
     if (!titel.value.trim()) { titel.focus(); return; }
@@ -610,32 +620,44 @@ function oeffnePalette(vorgabe = "") {
   const eingabe = h("input", { type: "text", placeholder: T.palette.platzhalter, "aria-label": T.palette.platzhalter, autocomplete: "off", spellcheck: "false", value: vorgabe, role: "combobox" });
   const liste = h("div", { klasse: "pal-liste", role: "listbox" });
   let eintraege = [], idx = 0;
-  const passt = (text, q) => { text = text.toLowerCase(); if (text.includes(q)) return 1; let i = 0; for (const c of q) { i = text.indexOf(c, i); if (i < 0) return 0; i++; } return 2; };
+  const grad = (d, q) => {
+    const gleich = (x) => suchFormen(x).some((f) => suchFormen(q).includes(f));
+    if (gleich(d.titel || "") || gleich(ohneEndung(dateiName(d.pfad)))) return -1; // genau getroffen
+    const t = sucheGrad(d.titel || "", q);
+    if (t) return t - 1; // Titel zählt vor Dateiname/Pfad
+    const n = sucheGrad(ohneEndung(dateiName(d.pfad)), q);
+    if (n) return 2 + n - 1;
+    return sucheGrad(ohneEndung(d.pfad), q) ? 4 : 5;
+  };
   const zeichne = () => {
-    const q = eingabe.value.trim().toLowerCase();
+    const q = eingabe.value.trim();
     const nur = q.startsWith(">");
     const qq = nur ? q.slice(1).trim() : q;
-    const notizen = nur ? [] : (qq ? dateien().map((d) => ({ d, r: passt(ohneEndung(d.pfad), qq) })).filter((x) => x.r).sort((a, b) => a.r - b.r || a.d.pfad.length - b.d.pfad.length).slice(0, 12).map((x) => x.d.pfad)
-      : S.zuletzt.filter((p) => S.eintraege.has(p)).slice(0, 6));
-    const bef = befehle.filter(([t]) => !qq || passt(t, qq));
-    eintraege = [...notizen.map((p) => ({ typ: "notiz", p })), ...bef.map(([t, k, f]) => ({ typ: "befehl", t, k, f }))];
-    idx = Math.min(idx, Math.max(0, eintraege.length - 1));
+    const notizen = nur ? [] : (qq ? dateien().map((d) => ({ d, r: grad(d, qq) })).filter((x) => x.r < 5).sort((a, b) => a.r - b.r || a.d.pfad.length - b.d.pfad.length || a.d.pfad.localeCompare(b.d.pfad)).slice(0, 12).map((x) => x.d)
+      : S.zuletzt.filter((p) => S.eintraege.has(p)).slice(0, 6).map((p) => S.eintraege.get(p)));
+    const bef = befehle.filter(([t]) => !qq || sucheGrad(t, qq));
+    eintraege = [...notizen.map((d) => ({ typ: "notiz", p: d.pfad, titel: d.titel })), ...bef.map(([t, k, f]) => ({ typ: "befehl", t, k, f }))];
+    // Ausdrücklicher Eintrag am Ende: nie still „Neue Notiz“ öffnen
+    if (qq && !nur) eintraege.push({ typ: "anlegen", t: T.palette.anlegen(qq), k: "", titel: qq });
+    const nurAnlegen = eintraege.length === 1 && eintraege[0].typ === "anlegen";
+    idx = nurAnlegen ? -1 : Math.min(Math.max(idx, 0), Math.max(0, eintraege.length - 1));
     const teile = [];
     if (notizen.length) teile.push(h("div", { klasse: "pal-gruppe", text: qq ? T.palette.notizen : "Zuletzt" }));
     let i = 0;
     for (const e of eintraege) {
       if (e.typ === "befehl" && i === notizen.length) teile.push(h("div", { klasse: "pal-gruppe", text: T.palette.befehle }));
+      if (e.typ === "anlegen" && (i > 0 || nurAnlegen)) teile.push(h("div", { klasse: "pal-gruppe", text: T.palette.nichtsGefunden && nurAnlegen ? T.palette.nichtsGefunden : "Anlegen" }));
       const mein = i;
+      const name = e.typ === "notiz" ? (e.titel || ohneEndung(dateiName(e.p))) : e.t;
       teile.push(h("div", { klasse: "pal-eintrag", role: "option", "aria-selected": String(i === idx), "data-pal": e.typ, aufMouseenter: () => { idx = mein; markiere(); }, aufClick: () => waehle(mein) },
-        h("span", { klasse: "n", text: e.typ === "notiz" ? ohneEndung(dateiName(e.p)) : e.t }),
-        h("span", { klasse: "r", text: e.typ === "notiz" ? ordnerVon(e.p) : e.k })));
+        h("span", { klasse: "n", text: name }),
+        h("span", { klasse: "r", text: e.typ === "notiz" ? e.p : e.k })));
       i++;
     }
-    if (!eintraege.length) teile.push(h("div", { klasse: "hinweis-leer", text: T.palette.nichts }));
     liste.replaceChildren(...teile);
   };
   const markiere = () => { [...liste.querySelectorAll(".pal-eintrag")].forEach((el, i) => el.setAttribute("aria-selected", String(i === idx))); liste.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" }); };
-  const waehle = (i) => { const e = eintraege[i]; if (!e) return; d.schliessen(); setTimeout(() => (e.typ === "notiz" ? oeffne(e.p) : e.f()), 0); };
+  const waehle = (i) => { const e = eintraege[i]; if (!e) return; d.schliessen(); setTimeout(() => (e.typ === "notiz" ? oeffne(e.p) : e.typ === "anlegen" ? oeffneNeu(e.titel) : e.f()), 0); };
   eingabe.addEventListener("input", () => { idx = 0; zeichne(); });
   eingabe.addEventListener("keydown", (e) => {
     if (e.key === "ArrowDown") { e.preventDefault(); idx = (idx + 1) % Math.max(1, eintraege.length); markiere(); }
@@ -643,6 +665,7 @@ function oeffnePalette(vorgabe = "") {
     else if (e.key === "Enter") { e.preventDefault(); waehle(idx); }
   });
   const d = dialog({ eigen: h("div", { klasse: "palette", role: "dialog", "aria-modal": "true" }, eingabe, liste) });
+  eingabe.focus(); // sofort, nicht erst im nächsten Takt: schnell getippte Zeichen dürfen nicht verloren gehen
   zeichne();
 }
 async function verbindeMcp() {
