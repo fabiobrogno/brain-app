@@ -37,7 +37,7 @@ export function baueIndex(vault) {
     return {
       pfad, titel, vorschau: (felder.description || absaetze[0] || "").slice(0, 200), typ: felder.typ || felder.type || null, bereich,
       geaendert: st.mtime.toISOString(), erstellt: st.birthtime.toISOString(), stufe: bereich === "wissen" ? "gelb" : "grau",
-      links: [...text.matchAll(/\[\[([^\]|#]+)/g)].map((x) => x[1].trim()), felder, generiert: /(^|\/)(INDEX|_index)\.md$/i.test(pfad) || /generiert/.test(text.split("\n").slice(0, 3).join(" ")),
+      links: [...text.matchAll(/\[\[([^\]|#]+)/g)].map((x) => x[1].trim()), felder, generiert: /(^|\/)(INDEX|_index)\.md$/i.test(pfad) || /generiert\s*—\s*nicht editieren/.test(text.split("\n").slice(0, 3).join(" ")),
     };
   });
 }

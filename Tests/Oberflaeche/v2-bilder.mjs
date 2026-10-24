@@ -4,14 +4,19 @@ import { spawn } from "node:child_process";
 import { chromium } from "@playwright/test";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { chromiumPfad } from "./browser.mjs";
 import { mockeV2 } from "./mocks.mjs";
 
 const [vault, aus = "screenshots", seite, bereich] = process.argv.slice(2);
+const startPfad = process.env.START_PFAD || ""; // Notiz, die im Hauptfenster-Bild schon offen ist
 const HIER = dirname(fileURLToPath(import.meta.url));
 mkdirSync(aus, { recursive: true });
-const dienst = spawn(process.execPath, [join(process.env.BRAIN_WURZEL || join(HIER, "../.."), "Ressourcen/werkstatt/entwicklung.mjs"), vault, "0"], { stdio: ["ignore", "pipe", "inherit"], env: { ...process.env, BRAIN_TESTMODUS: "1" } });
+// eigener Support-Ordner, Vault vertraut (kein Kit-Hinweis im Bild)
+const support = mkdtempSync(join(tmpdir(), "brain-bilder-support-"));
+writeFileSync(join(support, "vertrauen.json"), JSON.stringify({ [realpathSync(vault)]: { seit: new Date().toISOString() } }));
+const dienst = spawn(process.execPath, [join(process.env.BRAIN_WURZEL || join(HIER, "../.."), "Ressourcen/werkstatt/entwicklung.mjs"), vault, "0"], { stdio: ["ignore", "pipe", "inherit"], env: { ...process.env, BRAIN_APP_SUPPORT: support, BRAIN_TESTMODUS: "1" } });
 const url = await new Promise((ok) => dienst.stdout.on("data", (d) => { const m = String(d).match(/Bereit: (\S+)/); if (m) ok(m[1]); }));
 const browser = await chromium.launch({ executablePath: chromiumPfad() });
 const ruhe = (p, ms = 700) => p.waitForTimeout(ms);
@@ -22,10 +27,12 @@ try {
     p.on("pageerror", (e) => console.log("FEHLER:", e.message));
     p.on("console", (m) => { if (m.type() === "error") console.log("konsole:", m.text()); });
     await mockeV2(p, vault);
-    await p.goto(url);
+    await p.goto(startPfad ? `${url}?pfad=${encodeURIComponent(startPfad)}` : url);
     await p.waitForSelector("[data-karte]", { timeout: 15000 }).catch(() => {});
     await ruhe(p, 1500);
     if (bereich) { await p.click(`[data-bereich="${bereich}"]`); await ruhe(p); }
+    if (startPfad) await p.waitForSelector(".cm-content", { timeout: 8000 }).catch(() => {});
+    await ruhe(p, 600);
     await p.screenshot({ path: join(aus, `v2-hauptfenster-${name}.png`) });
     if (seite) {
       await p.keyboard.press("Meta+k");

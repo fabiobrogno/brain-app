@@ -7,7 +7,7 @@ import { h, dialog, dialogOffen, toast, vorMinuten, dateiName, ohneEndung, ordne
 import { symbol } from "./symbole.js";
 import { diffAnsicht } from "./diff.js";
 import { oeffneMenue, schliesseMenue } from "./menue.js";
-import { datumKurz, datumLang, datumZeit, istDatumText, bytesText, typStil, typSymbol, typName, wortAnzahl, relativ, pluralisiere } from "./format.js";
+import { datumKurz, datumLang, datumZeit, istDatumText, bytesText, typStil, typSymbol, typName, wortAnzahl, relativ, pluralisiere, vorschauText, typTextFarbe } from "./format.js";
 
 const $ = (id) => document.getElementById(id);
 const MOD_META = /Mac|iPhone|iPad/.test(navigator.platform || "");
@@ -58,6 +58,7 @@ let speicherTimer = null;
 const ed = erstelleEditor($("editor"), {
   roh: () => S.roh,
   wikiAufloesen: (ziel) => loeseWikiAuf(ziel),
+  wikiFarbe: (pfad) => { const n = S.nMap.get(pfad); const typ = n?.typ ? (S.typMap.get(n.typ) || { name: n.typ }) : null; return typ ? typTextFarbe(typ) : null; },
   wikiZiele: () => wikiZiele(),
   wikiOeffnen: (ziel) => { const d = loeseWikiAuf(ziel); if (d) oeffne(d); else toast(`„${ziel}“ gibt es noch nicht.`, { aktion: { text: "Anlegen", tun: () => legeWikiZielAn(ziel) } }); },
   speichernJetzt: () => { clearTimeout(speicherTimer); speichere(); },
@@ -480,7 +481,8 @@ function leerZustand() {
   const { art, id } = S.sicht;
   const t = art === "favoriten" ? T.liste.leerFavoriten : art === "ansicht" ? T.liste.leerAnsicht : art === "bereich" && id === "inbox" ? T.liste.leerInbox : T.liste.leer;
   return h("div", { klasse: "leer-liste", "data-leer": "liste" }, h("div", { klasse: "zeichen" }, symbol(art === "ansicht" ? "kreis-haken" : "notiz", 22)), h("h3", { text: t.titel }), h("p", { text: t.text }),
-    art === "bereich" && (id === "inbox" || id === "alle") ? h("button", { klasse: "knopf primaer", text: T.seitenleiste.neu, aufClick: () => oeffneNeu() }) : null);
+    art === "bereich" && (id === "inbox" || id === "alle") ? h("button", { klasse: "knopf primaer", text: T.seitenleiste.neu, aufClick: () => oeffneNeu() }) : null,
+    h("div", { klasse: "kurz" }, h("span", null, h("kbd", { text: "⌘K" }), "suchen"), h("span", null, h("kbd", { text: "⌘N" }), "neu")));
 }
 function baueKarte(n) {
   const typ = n.typ ? (S.typMap.get(n.typ) || { name: n.typ }) : null;
@@ -493,7 +495,7 @@ function baueKarte(n) {
       h("div", { klasse: "karte-marken" },
         symbol(typ ? typSymbol(typ.symbol) : "notiz", 15),
         stufe ? h("span", { klasse: "punkt " + stufe, "data-punkt": n.pfad, title: T.stufen[stufe] || "" }) : null)),
-    h("div", { klasse: "karte-vorschau", text: n.vorschau || "" }),
+    h("div", { klasse: "karte-vorschau", text: vorschauText(n.vorschau) }),
     h("div", { klasse: "karte-fuss" }, h("span", { text: datumKurz(n.geaendert) }), n.erstellt ? h("span", { text: `${T.liste.erstellt} ${datumKurz(n.erstellt)}` }) : null));
 }
 const CHUNK = 120;
@@ -779,6 +781,12 @@ function feldWert(w) {
     return { n: h("div", null, knopf, liste) };
   }
   if (typeof w === "string" && istDatumText(w)) return { n: h("span", { text: datumKurz(w) }) };
+  if (typeof w === "string" && w.length > 110) {
+    // lange Texte: vier Zeilen, der Rest klappt auf
+    const t = h("div", { klasse: "wert-text zu", text: w });
+    const knopf = h("button", { type: "button", klasse: "wert-mehr", "aria-expanded": "false", text: "Mehr anzeigen", aufClick: () => { const zu = t.classList.toggle("zu"); knopf.textContent = zu ? "Mehr anzeigen" : "Weniger anzeigen"; knopf.setAttribute("aria-expanded", String(!zu)); } });
+    return { n: h("div", null, t, knopf) };
+  }
   if (typeof w === "object") return { n: h("span", { text: JSON.stringify(w) }) };
   return { n: h("span", { text: String(w) }) };
 }
@@ -863,8 +871,8 @@ async function ladeInfo() {
   holeKontext(pfad).then((k) => {
     if (nr !== infoNr) return;
     const felder = k.felder || {};
-    const typName = n?.typ || felder.typ || felder.type || null;
-    const typ = typName ? (S.typMap.get(typName) || { name: typName }) : null;
+    const typId = n?.typ || felder.typ || felder.type || null;
+    const typ = typId ? (S.typMap.get(typId) || { name: typId }) : null;
     const zeilen = [reihe(T.eigenschaften.typ, typ ? h("span", { klasse: "chip", style: typStil(typ), "data-typ-chip": typ.name }, symbol(typSymbol(typ.symbol), 13), typName(typ.name)) : h("span", { text: T.eigenschaften.keinTyp }), { symbol: "thema", leise: !typ, feld: "typ" })];
     const wissen = n?.bereich === "wissen";
     const rest = Object.entries(felder).filter(([key, w]) => !SCHUTZ_FELDER.has(key.toLowerCase()) && !key.startsWith("_") && !hatWiki(w) && !(wissen && IM_WAHRHEITSBLOCK.has(key.toLowerCase())));
@@ -1028,7 +1036,7 @@ async function sync() {
   } catch (e) {
     S.syncFehler = e.status === 409 ? "konflikt" : "fehler";
     toast(e.status === 409 && e.daten?.dateien?.length ? `${e.message} Betroffen: ${e.daten.dateien.slice(0, 3).join(", ")}` : e.message, { fehler: true });
-  } finally { S.syncLaeuft = false; await ladeGit(); }
+  } finally { S.syncLaeuft = false; await ladeGit(); if (S.sicht.art === "verlauf") verlaufInst?.aktualisieren?.(); }
 }
 
 // ======================================================= Remote, KI, Einstellungen (Module laden bei Bedarf)
@@ -1086,7 +1094,7 @@ async function oeffneCommit() {
     if (!gewaehlt.length) { fehlerEl.hidden = false; fehlerEl.textContent = T.commit.nichtsGewaehlt; return; }
     if (!msg.value.trim()) { fehlerEl.hidden = false; fehlerEl.textContent = T.commit.keineNachricht; return; }
     knopf.disabled = true;
-    try { await api.commit(msg.value.trim(), gewaehlt); d.schliessen(); toast(T.commit.fertig); await ladeGit(); ladeInfo(); }
+    try { await api.commit(msg.value.trim(), gewaehlt); d.schliessen(); toast(T.commit.fertig); await ladeGit(); ladeInfo(); if (S.sicht.art === "verlauf") verlaufInst?.aktualisieren?.(); }
     catch (e) { fehlerEl.hidden = false; fehlerEl.replaceChildren(document.createTextNode(e.message), ...(e.daten?.ausgabe ? [h("pre", { text: e.daten.ausgabe })] : [])); knopf.disabled = false; }
   };
   knopf.addEventListener("click", tun);
@@ -1349,14 +1357,21 @@ const MENUE_BEFEHLE = {
   neu: () => oeffneNeu(), merken: oeffneMerken, infospalte: umschalteInfo, palette: () => oeffnePalette(), commit: oeffneCommit, sync, suche: fokusSuche,
   "vault-oeffnen": vaultOeffnen, "vault-wechseln": oeffneVaultMenue, verlauf: oeffneVerlauf,
   posteingang: () => waehleSicht({ art: "bereich", id: "inbox" }), alle: () => waehleSicht({ art: "bereich", id: "alle" }), wissen: () => waehleSicht({ art: "bereich", id: "wissen" }),
+  "hell-dunkel": () => setzeTheme(istDunkel() ? "hell" : "dunkel"),
 };
+// Ohne Vault gelten nur der Einstieg (Ordner öffnen) und die Darstellung; alles andere wird still verworfen
+const OHNE_VAULT_ERLAUBT = new Set(["vault-oeffnen", "hell-dunkel"]);
 const wartendeBefehle = [];
+function fuehreBefehlAus(name) {
+  const f = MENUE_BEFEHLE[name];
+  if (!f || (!S.info?.vault && !OHNE_VAULT_ERLAUBT.has(name))) return;
+  f();
+}
 window.studio = { bereit: false, neu: () => oeffneNeu(), merken: oeffneMerken, commit: oeffneCommit, info: umschalteInfo, palette: () => oeffnePalette(), sync, suche: fokusSuche };
 window.studio.befehl = (name) => {
-  const f = MENUE_BEFEHLE[name];
-  if (!f) return;
-  if (!window.studio.bereit) { wartendeBefehle.push(f); return; }
-  f();
+  if (!MENUE_BEFEHLE[name]) return;
+  if (!window.studio.bereit) { wartendeBefehle.push(name); return; }
+  fuehreBefehlAus(name);
 };
 // Vor Schließen/Beenden der App: sichert alles und meldet, ob nichts verloren geht (max. 5 s).
 window.studio.vorSchliessen = () => {
@@ -1370,7 +1385,7 @@ window.studio.vorSchliessen = () => {
 };
 function markiereBereit() {
   window.studio.bereit = true; window.__studioBereit = true;
-  while (wartendeBefehle.length) { try { wartendeBefehle.shift()(); } catch { /* ein Befehl darf die anderen nicht stoppen */ } }
+  while (wartendeBefehle.length) { try { fuehreBefehlAus(wartendeBefehle.shift()); } catch { /* ein Befehl darf die anderen nicht stoppen */ } }
 }
 
 // ======================================================= Kit-Vertrauen (W-5)
@@ -1447,7 +1462,7 @@ async function ladeAlles() {
   $("app").hidden = false;
   try { S.info = await api.info(); }
   catch (e) { $("leer").hidden = false; $("leer").replaceChildren(h("h2", { text: T.fehler.verbindung }), h("p", { text: e.message })); return; }
-  if (!S.info.vault) { await zeigeWillkommenFlow(); return; }
+  if (!S.info.vault) { await zeigeWillkommenFlow(); markiereBereit(); return; } // auch der Einstieg ist „bereit“: Menübefehle (Ordner öffnen) gehen sofort
   $("willkommen-host").hidden = true; $("willkommen-host").replaceChildren();
   S.offen = new Set(lokal.lies("offen", [])); S.zu = new Set(lokal.lies("zu", [])); S.favoriten = new Set(lokal.lies("favoriten", [])); S.zuletzt = lokal.lies("zuletzt", []);
   S.sortierung = lokal.lies("sort", "geaendert");

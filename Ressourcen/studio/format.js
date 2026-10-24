@@ -79,3 +79,26 @@ export function typName(name) {
   const s = String(name || "");
   return TYP_NAMEN[s.toLowerCase()] || (s ? s[0].toUpperCase() + s.slice(1) : s);
 }
+
+// Vorschautext für Karten: Markdown-Zeichen weg, Leerraum geglättet (reine Anzeige, ändert nie die Datei)
+export function vorschauText(s) {
+  return String(s || "")
+    .replace(/^---\r?\n[\s\S]*?\r?\n---[ \t]*(\r?\n|$)/, "")
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/\[\[[^\]|]*\|([^\]]+)\]\]/g, "$1")
+    .replace(/\[\[([^\]#|]+)(?:#[^\]]*)?\]\]/g, "$1")
+    .replace(/^[ \t]{0,3}(?:#{1,6}[ \t]+|>[ \t]?|[-*+][ \t]+(?:\[[ xX]\][ \t]+)?|\d+[.)][ \t]+)/gm, "")
+    .replace(/(\*\*|__)(.+?)\1/g, "$2")
+    .replace(/(^|[^\w*])[*_]([^*_\n]+)[*_](?![\w*])/g, "$1$2")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ").trim();
+}
+
+// Textfarbe eines Typs (für Wikilinks im Editor): wie --typ-text der Karten
+export function typTextFarbe(typ) {
+  const farbe = typFarbe(typ?.farbe) || (typ?.name ? farbeAusName(typ.name) : null);
+  return farbe ? `color-mix(in srgb, ${farbe} 82%, light-dark(#000, #fff) 18%)` : null;
+}

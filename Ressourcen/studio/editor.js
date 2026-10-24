@@ -125,7 +125,8 @@ function vorschau(view, ctx) {
       const da = ctx.wikiAufloesen(ziel);
       const innen = zeileAktiv(a);
       const klassen = "cm-wiki" + (da ? "" : " cm-wiki-fehlt");
-      liste.push(Decoration.mark({ class: klassen, attributes: { "data-ziel": ziel } }).range(a + 2, b - 2));
+      const wf = da ? ctx.wikiFarbe?.(da) : null;
+      liste.push(Decoration.mark({ class: klassen, attributes: wf ? { "data-ziel": ziel, style: `--wiki:${wf}` } : { "data-ziel": ziel } }).range(a + 2, b - 2));
       if (!innen) {
         liste.push(verstecken.range(a, a + 2));
         liste.push(verstecken.range(b - 2, b));

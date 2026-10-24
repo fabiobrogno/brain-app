@@ -159,7 +159,7 @@ test("Hell/Dunkel und Palette; Infospalte per Tastenkürzel", async ({ page }) =
   await page.emulateMedia({ colorScheme: "dark" });
   await oeffne(page, "09_wiki/wissen/Kaffee.md");
   const bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
-  expect(bg).toBe("rgb(27, 27, 30)");
+  expect(bg).toBe("rgb(31, 30, 27)");
   await page.keyboard.press("Meta+k");
   await page.waitForSelector(".palette input:focus");
   await page.keyboard.type("Mühle");
