@@ -8,7 +8,7 @@ import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { createInterface } from "node:readline";
 import { oeffneVault, HttpFehler } from "../gemeinsam/vault.mjs";
-import { kindUmgebung, supportOrdner } from "../gemeinsam/basis.mjs";
+import { kindUmgebung, supportOrdner, falte } from "../gemeinsam/basis.mjs";
 import { starte, neueFrist, registriere, beendeGruppe } from "../gemeinsam/prozess.mjs";
 import { findeProgramm, erkenneAgenten } from "../gemeinsam/ki.mjs";
 import * as vaultsFn from "../gemeinsam/vaults.mjs";
@@ -64,6 +64,8 @@ function statisch(pfad, studioDir) {
 const STANDARD_FARBE = "#7C8798";
 const istOrdner = (p) => { try { return statSync(p).isDirectory(); } catch { return false; } };
 const echterPfad = (p) => { try { return realpathSync(p); } catch { return p; } };
+// Derselbe Ordner? (kanonische Pfade, ohne Groß/klein und Unicode-Form; ein Pfad, den es nicht gibt, ist nie derselbe)
+const gleicherOrdner = (a, b) => { try { return falte(realpathSync.native(a)) === falte(realpathSync.native(b)); } catch { return false; } };
 
 export function erzeugeHandler(o) {
   const vaultOpt = o.vaultOptionen || {};
@@ -116,7 +118,19 @@ export function erzeugeHandler(o) {
         const stand = v.vertrauenStand(); // einmal prüfen: kit.vertraut === vertrauen.erlaubt
         return { vault: v.wurzel, name: v.name, appVersion, kitVersion: v.kitVersion(), git: await v.istGitRepo(), mcpBefehl: mcpBefehl(), kit: v.kit(stand), vertrauen: stand };
       }
-      case "/api/kit/vertrauen": nur("POST"); return V().vertrauen(eingabe().erlauben);
+      case "/api/kit/vertrauen": {
+        // { erlauben, vault }: vault ist der Pfad, den der Dialog gezeigt hat. Der offene Vault kann zwischen Anzeige und Klick gewechselt haben
+        // (Vault-Wechsel, Abgleich, anderes Fenster) — freigegeben (oder widerrufen) wird nie ein Vault, den der Nutzer nicht vor sich hatte.
+        nur("POST");
+        const e = eingabe();
+        if (typeof e.erlauben !== "boolean") throw new HttpFehler(400, "„erlauben“ muss true oder false sein.");
+        const offen = V();
+        if (typeof e.vault !== "string" || !e.vault.trim()) throw new HttpFehler(400, "Der Vault fehlt: Die Anfrage nennt den Ordner, den der Dialog gezeigt hat.");
+        if (!gleicherOrdner(e.vault, offen.wurzel)) {
+          throw new HttpFehler(409, "Der geöffnete Vault ist inzwischen ein anderer als der, für den die Frage galt. Es wurde nichts geändert — bitte noch einmal prüfen.", { art: "anderer-vault" });
+        }
+        return offen.vertrauen(e.erlauben);
+      }
       case "/api/baum": nur("GET"); return V().baum();
       case "/api/datei":
         if (methode === "GET") return V().lies(q.get("pfad"));

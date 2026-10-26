@@ -278,7 +278,7 @@ export function typStil(name) {
 // ---------- Index ----------
 const gleichRang = (a, b) => { for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] - b[i]; return 0; };
 
-// gitKontext (optional): Funktion, die den Git-Kontext der Anfrage liefert ({ vertraut, sshEigen }) — oder null, wenn Git für diesen
+// gitKontext (optional): Funktion, die den Git-Kontext der Anfrage liefert ({ vertraut, sshEigen, sshGlobal, gpgGlobal }) — oder null, wenn Git für diesen
 // Vault gesperrt ist (Vertrauen v2, §8): dann fragt der Index Git gar nicht und nimmt überall die Dateizeiten.
 export function erzeugeNotizIndex({ wurzel, jetzt = () => new Date(), heute, gitKontext }) {
   const heuteJetzt = () => (typeof heute === "function" ? heute() : heute) || berlinHeute(jetzt());
@@ -385,7 +385,7 @@ export function erzeugeNotizIndex({ wurzel, jetzt = () => new Date(), heute, git
     const start = Date.now();
     const p = (async () => {
       try {
-        const r = await git(wurzel, ["--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames"], ctx);
+        const r = await git(wurzel, ["--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames", "--ignore-submodules=all"], ctx);
         if (r.code !== 0) return null;
         const unsauber = new Set(); // "XY pfad" — ohne Umbenennungserkennung steht je Eintrag genau ein Pfad da
         for (const e of r.stdout.split("\0")) if (e.length > 3) unsauber.add(e.slice(3).normalize("NFC"));

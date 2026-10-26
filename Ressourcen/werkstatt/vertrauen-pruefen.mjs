@@ -6,8 +6,9 @@
 // Liest denselben Merker (<support>/vertrauen.json, Support-Ordner wie die Werkstatt: BRAIN_APP_SUPPORT bzw. Standard) mit derselben
 // Logik wie Werkstatt und MCP-Server (gemeinsam/vertrauen.mjs) und startet nichts aus dem Vault. Jeder Fehler ist ein „nein“.
 import { pruefeVertrauen, erlaube } from "../gemeinsam/vertrauen.mjs";
-import { testmodus, HttpFehler } from "../gemeinsam/basis.mjs";
+import { testmodus, HttpFehler, bereinigePfad } from "../gemeinsam/basis.mjs";
 
+bereinigePfad(); // kein leerer oder relativer PATH-Eintrag: schon das Lesen der Git-Einstellungen startet `git` im Vault-Ordner
 const args = process.argv.slice(2);
 const ausgabe = (erlaubt) => process.stdout.write(JSON.stringify({ erlaubt }) + "\n");
 

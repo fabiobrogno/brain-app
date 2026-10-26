@@ -1,6 +1,6 @@
 // gemeinsam/basis.mjs — Fehlerart mit HTTP-Status und der Pfad-Schutz (Studio-Spec §5). Keine Abhängigkeiten.
-import { realpathSync, lstatSync, readdirSync } from "node:fs";
-import { join, sep, dirname } from "node:path";
+import { realpathSync, lstatSync, readdirSync, accessSync, statSync, constants } from "node:fs";
+import { join, sep, dirname, delimiter, isAbsolute } from "node:path";
 import { homedir } from "node:os";
 
 // Fehler, die bis zur Oberfläche durchgereicht werden: Status + Alltagsmeldung (+ Zusatzfelder wie aktuellerHash).
@@ -20,14 +20,54 @@ export const supportOrdner = () => process.env.BRAIN_APP_SUPPORT || join(homedir
 // Vergleichsform für Namen: APFS unterscheidet weder Groß/klein noch NFC/NFD — Sperren und Schreibschutz dürfen es auch nicht.
 export const falte = (s) => String(s).normalize("NFC").toLowerCase();
 
+// ───────────────────────────── PATH und Programme ─────────────────────────────
+// Ein leerer oder relativer PATH-Eintrag ("", ".", "node_modules/.bin") meint den ARBEITSORDNER des Kindprozesses — und der ist bei
+// Git (cwd = Vault) der Ordner eines womöglich fremden Vaults: ein dort liegendes `git` würde gestartet, bevor jemand vertraut hat
+// (Vertrauen v2 §8). Deshalb gilt in Node nur, was absolut ist.
+export const bereinigterPfad = (pfad) => String(pfad ?? "").split(delimiter).filter((d) => d !== "" && isAbsolute(d)).join(delimiter);
+
+// Entfernt leere und relative Einträge aus process.env.PATH (jeder Einstiegspunkt ruft das beim Start). Bleibt nichts übrig, fällt PATH
+// ganz weg (Kindprozesse nehmen dann den Standardpfad des Systems) — ein leerer PATH-Text wäre selbst ein leerer Eintrag.
+export function bereinigePfad() {
+  const alt = process.env.PATH;
+  if (alt === undefined) return;
+  const neu = bereinigterPfad(alt);
+  if (neu === alt) return;
+  if (neu) process.env.PATH = neu; else delete process.env.PATH;
+}
+
+// Absoluter Pfad der ausführbaren Datei `name` (nur über absolute PATH-Einträge; nie ein Ordner) oder null. Gemerkt je PATH; ein
+// gemerkter Treffer wird bei jedem Aufruf neu geprüft (die Datei kann verschwinden), PATH wird bei jedem Aufruf frisch gelesen.
+const programmCache = new Map();
+const ausfuehrbar = (p) => { try { accessSync(p, constants.X_OK); return statSync(p).isFile(); } catch { return false; } };
+export function absoluterPfad(name) {
+  const pfad = process.env.PATH ?? "";
+  const schluessel = `${name}\0${pfad}`;
+  const gemerkt = programmCache.get(schluessel);
+  if (gemerkt !== undefined && (gemerkt === null || ausfuehrbar(gemerkt))) return gemerkt;
+  let treffer = null;
+  for (const d of new Set(bereinigterPfad(pfad).split(delimiter).filter(Boolean))) {
+    const p = join(d, name);
+    if (ausfuehrbar(p)) { treffer = p; break; }
+  }
+  if (programmCache.size > 50) programmCache.clear();
+  programmCache.set(schluessel, treffer);
+  return treffer;
+}
+// Git wird nur über diesen einmal aufgelösten absoluten Pfad gestartet (nie der nackte Name: der würde nach dem Wechsel in den Vault gesucht).
+export const absoluterGitPfad = () => absoluterPfad("git");
+
 // Umgebung für Kindprozesse (git, Kit, claude): nichts, womit sich fremder Code einschleusen ließe (NODE_OPTIONS,
-// NODE_PATH, ELECTRON_RUN_AS_NODE, DYLD_*/LD_*). NODE_EXTRA_CA_CERTS bleibt (Firmen-Zertifikate für claude).
+// NODE_PATH, ELECTRON_RUN_AS_NODE, DYLD_*/LD_*) und kein leerer oder relativer PATH-Eintrag.
+// NODE_EXTRA_CA_CERTS bleibt (Firmen-Zertifikate für claude).
 export function kindUmgebung(zusatz = {}) {
   const e = { ...process.env };
   for (const k of Object.keys(e)) {
     if ((k.startsWith("NODE_") && k !== "NODE_EXTRA_CA_CERTS") || k.startsWith("ELECTRON_") || k.startsWith("DYLD_") || k.startsWith("LD_")) delete e[k];
   }
-  return { ...e, ...zusatz };
+  const aus = { ...e, ...zusatz };
+  if (typeof aus.PATH === "string") { const p = bereinigterPfad(aus.PATH); if (p) aus.PATH = p; else delete aus.PATH; }
+  return aus;
 }
 export const testmodus = () => process.env.BRAIN_TESTMODUS === "1";
 

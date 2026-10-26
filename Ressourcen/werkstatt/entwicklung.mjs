@@ -6,7 +6,10 @@ import { createServer } from "node:http";
 import { erzeugeHandler, MAX_KOERPER } from "./handler.mjs";
 import { HttpFehler } from "../gemeinsam/vault.mjs";
 import { beendeLaufendes } from "../gemeinsam/git.mjs";
+import { beendeVorgaenge } from "../gemeinsam/vaults.mjs";
+import { bereinigePfad } from "../gemeinsam/basis.mjs";
 
+bereinigePfad(); // kein leerer oder relativer PATH-Eintrag (Vertrauen v2, §8)
 const vaultArg = process.argv[2];
 const vault = (vaultArg && vaultArg !== "-" ? vaultArg : undefined) || process.env.BRAIN_VAULT || undefined;
 const portWunsch = Number(process.argv[3] ?? process.env.BRAIN_PORT ?? 4517);
@@ -43,6 +46,10 @@ server.listen(portWunsch, "127.0.0.1", () => {
   process.stdout.write(`Bereit: http://127.0.0.1:${server.address().port}/\n`);
 });
 server.on("error", (e) => { process.stderr.write(`Start fehlgeschlagen: ${e.message}\n`); process.exit(1); });
-const abraeumenUndEnde = () => { try { beendeLaufendes(); } catch { /* beenden wir trotzdem */ } process.exit(0); };
+const abraeumenUndEnde = () => {
+  try { beendeLaufendes(); } catch { /* beenden wir trotzdem */ }
+  try { beendeVorgaenge(); } catch { /* beenden wir trotzdem */ } // halbes Anlegen/Klonen/„Git einschalten“ zurücknehmen
+  process.exit(0);
+};
 process.on("SIGTERM", abraeumenUndEnde);
 process.on("SIGINT", abraeumenUndEnde);

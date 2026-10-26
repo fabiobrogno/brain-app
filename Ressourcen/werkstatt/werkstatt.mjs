@@ -13,7 +13,10 @@ import { createHash } from "node:crypto";
 import { erzeugeHandler, appVersionLesen, MAX_KOERPER } from "./handler.mjs";
 import { HttpFehler } from "../gemeinsam/vault.mjs";
 import { beendeLaufendes } from "../gemeinsam/git.mjs";
+import { beendeVorgaenge } from "../gemeinsam/vaults.mjs";
+import { bereinigePfad } from "../gemeinsam/basis.mjs";
 
+bereinigePfad(); // kein leerer oder relativer PATH-Eintrag: ein `git` (oder anderes Programm) aus einem fremden Vault startet nie (Vertrauen v2, §8)
 const vault = process.argv[2] || process.env.BRAIN_VAULT || undefined; // das Argument hat Vorrang vor vaults.json
 let handler;
 try { handler = erzeugeHandler(vault ? { vault } : {}); }
@@ -65,8 +68,13 @@ rl.on("line", (zeile) => {
 });
 rl.on("close", () => { stdinZu = true; vielleichtEnde(); });
 // SIGTERM/SIGINT (die App beendet uns nach 2 s): zuerst laufende Git-Prozessgruppen beenden und einen gerade laufenden Merge des Abgleichs
-// mit `git merge --abort` zurücknehmen (synchron, höchstens ~1,5 s) — sonst bliebe der Vault halb zusammengeführt —, dann beenden.
-const abraeumenUndEnde = () => { try { beendeLaufendes(); } catch { /* beenden wir trotzdem */ } beende(); };
+// mit `git merge --abort` zurücknehmen (synchron, höchstens ~1,5 s) — sonst bliebe der Vault halb zusammengeführt —, dann zurücknehmen, was
+// ein laufendes Anlegen/Klonen/„Git einschalten“ schon im Dateisystem angelegt hat (dessen catch läuft nach dem Beenden nie mehr), dann beenden.
+const abraeumenUndEnde = () => {
+  try { beendeLaufendes(); } catch { /* beenden wir trotzdem */ }
+  try { beendeVorgaenge(); } catch { /* beenden wir trotzdem */ }
+  beende();
+};
 process.on("SIGTERM", abraeumenUndEnde);
 process.on("SIGINT", abraeumenUndEnde);
 sende({ bereit: true, version: appVersionLesen(), vaultId });

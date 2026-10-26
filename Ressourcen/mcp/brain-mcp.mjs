@@ -9,6 +9,7 @@ import { pathToFileURL } from "node:url";
 import { oeffneVault, HttpFehler, STUFE_TEXT as STUFE } from "../gemeinsam/vault.mjs";
 import { leseVaults, aktiverVaultPfad } from "../gemeinsam/vaults.mjs";
 import { beendeLaufendes } from "../gemeinsam/git.mjs";
+import { bereinigePfad } from "../gemeinsam/basis.mjs";
 
 const VERSIONEN = ["2025-06-18", "2025-03-26", "2024-11-05"];
 export const WERKZEUGE = [
@@ -124,6 +125,9 @@ export async function bearbeite(v, msg, version = "0.2.0") {
 }
 
 function haupt() {
+  // Claude Code startet uns mit seiner eigenen Umgebung: ein leerer oder relativer PATH-Eintrag ließe `git` aus dem Vault laufen, noch bevor
+  // jemand diesem Vault vertraut hat (Vertrauen v2, §8). Danach gilt in Node nur noch, was absolut ist.
+  bereinigePfad();
   const gebunden = process.argv[2] || process.env.BRAIN_VAULT || "";
   let aktuell = null, aktuellPfad;
   if (gebunden) { try { aktuell = oeffneVault(gebunden); } catch (e) { process.stderr.write(`${e.message}\n`); process.exit(2); } }

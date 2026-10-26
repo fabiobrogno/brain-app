@@ -86,21 +86,46 @@ test("Vertrauen v2: .tools-Code geändert → geaendert:true; Daten-Datei ohne C
   assert.equal(V.pruefeVertrauen(d, { support }).geaendert, true);
 });
 
-test("Vertrauen v2: Ausführbar-Bit ohne Endung zählt als Code; node_modules zählt nicht; große Code-Datei: Änderung wird bemerkt", () => {
+// Geändert (Befund K2b, Review Studio v2): Der Test sagte früher „node_modules zählt nicht“ (§8 nahm den Ordner aus). Das war die Lücke: Kit-Code lädt
+// Pakete aus .tools/node_modules, ein dort ausgetauschtes Paket lief nach der Freigabe ohne neue Frage. node_modules zählt jetzt mit
+// Pfad, Größe und Änderungszeit (eigener Test unten); hier bleibt, was dieser Test sonst prüft.
+test("Vertrauen v2: Ausführbar-Bit ohne Endung zählt als Code; große Code-Datei: Änderung wird bemerkt", () => {
   const support = neuerSupport();
   const d = kitVault();
   schreibe(d, ".tools/lauf", "#!/bin/sh\necho 1\n"); chmodSync(join(d, ".tools/lauf"), 0o755);
-  schreibe(d, ".tools/node_modules/x/index.js", "1\n");
   const gross = join(d, ".tools/gross.mjs"); writeFileSync(gross, Buffer.alloc(3 * 1024 * 1024, 97));
   V.erlaube(d, { support });
-  schreibe(d, ".tools/node_modules/x/index.js", "2\n");
-  assert.equal(V.pruefeVertrauen(d, { support }).erlaubt, true, "node_modules ist ausgenommen (§8)");
   writeFileSync(join(d, ".tools/lauf"), "#!/bin/sh\necho 2\n");
   assert.equal(V.pruefeVertrauen(d, { support }).geaendert, true, "Ausführbar-Bit ohne Endung");
   V.erlaube(d, { support });
   const neu = new Date(Date.now() + 5000);
   utimesSync(gross, neu, neu);
   assert.equal(V.pruefeVertrauen(d, { support }).geaendert, true, "Datei > 2 MB: Größe + Änderungszeit statt Inhalt, nie einfach ausgelassen");
+});
+
+test("Vertrauen v2: .tools/node_modules zählt mit (Pfad, Größe, Änderungszeit) — ein ausgetauschtes Paket gleicher Größe, ein neues und ein gelöschtes ändern den Fingerabdruck (K2b)", () => {
+  const support = neuerSupport();
+  const d = kitVault();
+  const paket = join(d, ".tools/node_modules/x/index.js");
+  schreibe(d, ".tools/node_modules/x/index.js", "1\n");
+  const frueh = new Date("2026-01-01T00:00:00Z"); utimesSync(paket, frueh, frueh);
+  V.erlaube(d, { support });
+  assert.equal(V.pruefeVertrauen(d, { support }).erlaubt, true);
+  writeFileSync(paket, "2\n"); // gleiche Größe wie vorher …
+  assert.equal(V.pruefeVertrauen(d, { support }).geaendert, true, "… aber neue Änderungszeit: ausgetauscht");
+  V.erlaube(d, { support });
+  schreibe(d, ".tools/node_modules/x/zusatz.js", "// neu\n");
+  assert.equal(V.pruefeVertrauen(d, { support }).geaendert, true, "neue Datei im Paket");
+  V.erlaube(d, { support });
+  schreibe(d, ".tools/node_modules/neu/index.js", "x\n");
+  assert.equal(V.pruefeVertrauen(d, { support }).geaendert, true, "neues Paket");
+  V.erlaube(d, { support });
+  rmSync(join(d, ".tools/node_modules/neu"), { recursive: true });
+  assert.equal(V.pruefeVertrauen(d, { support }).geaendert, true, "Paket entfernt");
+  V.erlaube(d, { support });
+  // ein node_modules AUSSERHALB von .tools (z. B. in einem Notiz-Ordner) gehört nicht zum Kit
+  schreibe(d, "notizen/node_modules/y/index.js", "1\n");
+  assert.equal(V.pruefeVertrauen(d, { support }).erlaubt, true, "außerhalb von .tools nicht gezählt");
 });
 
 test("Vertrauen v2: Verweise unter .tools zählen mit Ziel-Text und Inhalt des Ziels", () => {
@@ -188,10 +213,10 @@ test("CLI liest denselben Merker wie die Werkstatt (Einstellungen → Erlauben i
   const env = { BRAIN_APP_SUPPORT: support };
   assert.equal(cli([d], env).stdout, '{"erlaubt":false}\n');
   const rufe = aufruf(erzeugeHandler({ vault: d, vaultOptionen: { support } }));
-  const r = await rufe("POST", "/api/kit/vertrauen", { erlauben: true });
+  const r = await rufe("POST", "/api/kit/vertrauen", { erlauben: true, vault: d });
   assert.equal(r.status, 200);
   assert.equal(cli([d], env).stdout, '{"erlaubt":true}\n');
-  await rufe("POST", "/api/kit/vertrauen", { erlauben: false });
+  await rufe("POST", "/api/kit/vertrauen", { erlauben: false, vault: d });
   assert.equal(cli([d], env).stdout, '{"erlaubt":false}\n');
 });
 
@@ -204,7 +229,7 @@ test("API: /api/info nennt vertrauen (kit.vertraut === vertrauen.erlaubt); POST 
   let r = await rufe("GET", "/api/info");
   assert.deepEqual(Object.keys(r.j.vertrauen).sort(), ["erlaubt", "geaendert", "gitGesperrt", "gruende", "noetig"]);
   assert.equal(r.j.vertrauen.erlaubt, false); assert.equal(r.j.vertrauen.noetig, true); assert.equal(r.j.kit.vertraut, false);
-  r = await rufe("POST", "/api/kit/vertrauen", { erlauben: true });
+  r = await rufe("POST", "/api/kit/vertrauen", { erlauben: true, vault: d });
   assert.deepEqual(Object.keys(r.j).sort(), ["kit", "vertrauen"]);
   assert.equal(r.j.vertrauen.erlaubt, true); assert.equal(r.j.kit.vertraut, true);
   r = await rufe("GET", "/api/info");
@@ -214,7 +239,7 @@ test("API: /api/info nennt vertrauen (kit.vertraut === vertrauen.erlaubt); POST 
   r = await rufe("GET", "/api/info");
   assert.equal(r.j.vertrauen.erlaubt, false); assert.equal(r.j.vertrauen.geaendert, true); assert.equal(r.j.kit.vertraut, false);
   assert.deepEqual((await rufe("GET", "/api/gesundheit")).j, { verfuegbar: false, grund: "nicht-vertraut" });
-  assert.equal((await rufe("POST", "/api/kit/vertrauen", { erlauben: "ja" })).status, 400);
+  assert.equal((await rufe("POST", "/api/kit/vertrauen", { erlauben: "ja", vault: d })).status, 400);
 
   const ohne = aufruf(erzeugeHandler({ vaultOptionen: { support: tmp("brain-leer-support-") } }));
   assert.equal((await ohne("GET", "/api/info")).j.vertrauen, null);
@@ -320,7 +345,7 @@ test("Git gesperrt: filter.*.clean lokal → status 200 { repo, gesperrt, grund 
   assert.ok(r.j.vertrauen.gruende.some((x) => x.art === "git" && /filter\.probe\.clean/.test(x.text)));
   assert.equal((await rufe("GET", "/api/notizen")).status, 200);
   assert.equal(existsSync(marke), false, "kein Git-Aufruf hat den Filter gestartet (auch der Notiz-Index nicht)");
-  r = await rufe("POST", "/api/kit/vertrauen", { erlauben: true });
+  r = await rufe("POST", "/api/kit/vertrauen", { erlauben: true, vault: d });
   assert.equal(r.j.vertrauen.gitGesperrt, false);
   r = await rufe("GET", "/api/git/status");
   assert.equal(r.status, 200); assert.equal(r.j.gesperrt, undefined); assert.equal(r.j.repo, true); assert.equal(r.j.zweig, "main");
@@ -360,23 +385,48 @@ test("Git gesperrt: jede Zeile aus §8 sperrt (auch über include.path und confi
   assert.equal(s3.gesperrt, true); assert.match(s3.grund, /nicht lesen/);
 });
 
-test("SSH: eigene core.sshCommand (global per GIT_CONFIG_GLOBAL) bleibt mit Vertrauen wirksam; ohne Vertrauen gilt unser GIT_SSH_COMMAND", async () => {
-  const marke = join(tmp("brain-marke-"), "CONFIG-SSH");
-  const sshSkript = skript(`echo lief >> '${marke}'\nexit 1`);
+// Geändert (Befunde V1/B2, Review Studio v2): Der Test erwartete, dass ohne Vertrauen unser BatchMode-Befehl sogar die core.sshCommand des NUTZERS
+// (~/.gitconfig) übersteuert. Das ließ Klonen und Abgleich scheitern, obwohl `git clone` im Terminal klappt (zweites GitHub-Konto mit eigenem
+// Schlüssel) — und ein schlichter Vault ohne Kit wird nie „vertraut“. Geschützt werden muss nur vor der Einstellung aus dem VAULT: sie läuft ohne
+// Vertrauen weiterhin nie (GIT_SSH_COMMAND schlägt core.sshCommand; ohne Vertrauen bekommt es den globalen Wert des Nutzers, sonst BatchMode).
+test("SSH: die globale core.sshCommand des Nutzers gilt auch ohne Vertrauen; eine core.sshCommand aus dem Vault läuft ohne Vertrauen nie, mit Vertrauen schon", async () => {
+  const marken = tmp("brain-marke-");
+  const markeGlobal = join(marken, "GLOBAL-SSH"), markeLokal = join(marken, "LOKAL-SSH");
+  const sshGlobal = skript(`echo lief >> '${markeGlobal}'\nexit 1`), sshLokal = skript(`echo lief >> '${markeLokal}'\nexit 1`);
   const globalDatei = join(tmp("brain-gcfg-"), "gitconfig");
-  writeFileSync(globalDatei, `[core]\n\tsshCommand = ${sshSkript}\n[user]\n\tname = T\n\temail = t@example.org\n`);
+  writeFileSync(globalDatei, `[core]\n\tsshCommand = ${sshGlobal}\n[user]\n\tname = T\n\temail = t@example.org\n`);
   const alt = { g: process.env.GIT_CONFIG_GLOBAL, s: process.env.GIT_SSH_COMMAND };
   process.env.GIT_CONFIG_GLOBAL = globalDatei; delete process.env.GIT_SSH_COMMAND;
+  const adresse = "ssh://git@example.invalid/team/x.git";
+  const weg = () => { for (const m of [markeGlobal, markeLokal]) rmSync(m, { force: true }); };
   try {
-    const d = repo();
+    // (a) nur die globale Einstellung des Nutzers: gilt ohne und mit Vertrauen
+    let d = repo();
     const support = neuerSupport();
-    const v = mitSupport(d, support, { gitLimitRemote: 15_000 });
-    await v.gitRemote("ssh://git@example.invalid/team/x.git").catch(() => {});
-    assert.equal(existsSync(marke), false, "ohne Vertrauen ist unser GIT_SSH_COMMAND gesetzt: die eigene Konfiguration läuft nicht");
+    let v = mitSupport(d, support, { gitLimitRemote: 15_000 });
+    assert.equal(V.gitSicht(d, { support }).sshGlobal, sshGlobal, "gitSicht kennt den Wert des Nutzers");
+    await v.gitRemote(adresse).catch(() => {});
+    assert.equal(existsSync(markeGlobal), true, "ohne Vertrauen läuft die core.sshCommand des Nutzers (sonst scheitert ein Klon, der im Terminal klappt)");
+    weg(); v.vertrauen(true);
+    await v.gitRemote(adresse).catch(() => {});
+    assert.equal(existsSync(markeGlobal), true, "mit Vertrauen ebenso");
+    // (b) zusätzlich eine core.sshCommand im Vault: ohne Vertrauen gewinnt die des Nutzers, die des Vaults läuft nie
+    weg(); d = repo(); g(d, "config", "core.sshCommand", sshLokal);
+    v = mitSupport(d, neuerSupport(), { gitLimitRemote: 15_000 });
+    await v.gitRemote(adresse).catch(() => {});
+    assert.equal(existsSync(markeLokal), false, "ohne Vertrauen läuft die core.sshCommand aus dem Vault nie");
+    assert.equal(existsSync(markeGlobal), true, "stattdessen gilt die des Nutzers");
+    // (c) ohne Einstellung des Nutzers und mit einer im Vault: ohne Vertrauen läuft auch hier nur unser BatchMode-Befehl
+    writeFileSync(globalDatei, "[user]\n\tname = T\n\temail = t@example.org\n");
+    weg(); d = repo(); g(d, "config", "core.sshCommand", sshLokal);
+    const support3 = neuerSupport();
+    v = mitSupport(d, support3, { gitLimitRemote: 15_000 });
+    await v.gitRemote(adresse).catch(() => {});
+    assert.equal(existsSync(markeLokal), false, "keine globale Einstellung: unser BatchMode-Befehl, nie die aus dem Vault");
     v.vertrauen(true);
-    assert.equal(V.gitSicht(d, { support }).sshEigen, true);
-    await v.gitRemote("ssh://git@example.invalid/team/x.git").catch(() => {});
-    assert.equal(existsSync(marke), true, "mit Vertrauen und eigener core.sshCommand setzen wir kein eigenes GIT_SSH_COMMAND");
+    assert.equal(V.gitSicht(d, { support: support3 }).sshEigen, true);
+    await v.gitRemote(adresse).catch(() => {});
+    assert.equal(existsSync(markeLokal), true, "mit Vertrauen und eigener core.sshCommand setzen wir kein eigenes GIT_SSH_COMMAND");
   } finally {
     if (alt.g === undefined) delete process.env.GIT_CONFIG_GLOBAL; else process.env.GIT_CONFIG_GLOBAL = alt.g;
     if (alt.s !== undefined) process.env.GIT_SSH_COMMAND = alt.s;

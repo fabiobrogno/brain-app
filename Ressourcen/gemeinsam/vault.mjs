@@ -269,7 +269,9 @@ export function oeffneVault(vaultPfad, opts = {}) {
     if (!vertraut()) return Promise.resolve({ ...NICHT_VERTRAUT });
     if (gesCache && Date.now() - gesCache.t < 120_000) return Promise.resolve(gesCache.wert);
     return new Promise((ok) => {
-      execFile(process.execPath, [kitPfad, "gesundheit", "--json"], { cwd: wurzel, timeout: 20_000, maxBuffer: 8 * 1024 * 1024, env: kindUmgebung({ NO_COLOR: "1" }) },
+      // BRAIN_VAULT = dieser Vault: das Kit bevorzugt die Variable vor dem eigenen Ort — eine vom Start geerbte (anderer Vault nach einem Wechsel
+      // in der Oberfläche) ließe das Kit von diesem Vault auf den Startvault arbeiten.
+      execFile(process.execPath, [kitPfad, "gesundheit", "--json"], { cwd: wurzel, timeout: 20_000, maxBuffer: 8 * 1024 * 1024, env: kindUmgebung({ NO_COLOR: "1", BRAIN_VAULT: wurzel }) },
         (err, stdout) => {
           let wert = { verfuegbar: false };
           try { const j = JSON.parse(String(stdout)); if (j && typeof j === "object") wert = j; } catch { /* Kit fehlt/defekt/Zeitlimit */ }
@@ -291,7 +293,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
     if (rfCache && Date.now() - rfCache.t < 120_000) return rfCache.wert;
     const wert = await new Promise((ok) => {
       execFile(process.execPath, ["--input-type=module", "-e", RF_SKRIPT, pathToFileURL(rueckfragenPfad).href, wurzel],
-        { cwd: wurzel, timeout: 20_000, maxBuffer: 1024 * 1024, env: kindUmgebung() }, (err, stdout) => {
+        { cwd: wurzel, timeout: 20_000, maxBuffer: 1024 * 1024, env: kindUmgebung({ BRAIN_VAULT: wurzel }) }, (err, stdout) => {
           try { const j = JSON.parse(String(stdout)); if (j && Number.isFinite(j.f) && Number.isFinite(j.w)) return ok({ verfuegbar: true, offen: j.f + j.w }); } catch { /* keine Zahl statt einer falschen */ }
           ok({ verfuegbar: false });
         });
@@ -304,13 +306,18 @@ export function oeffneVault(vaultPfad, opts = {}) {
   // Jeder Git-Aufruf läuft gehärtet (git.mjs); ohne Vertrauen zusätzlich ohne Hooks. Enthält die lokale Git-Konfiguration einen Schlüssel,
   // der Programme starten kann (credential.helper, filter.*.clean, merge.*.driver …), ist Git gesperrt, bis dem Vault vertraut wird:
   // status meldet es, alle anderen Git-Routen antworten 409 { gitGesperrt: true }, der Notiz-Index fragt Git dann gar nicht.
-  const gitSicht = () => vertrauenFn.gitSicht(wurzel, stuetze());
+  const gitSicht = (extra = {}) => vertrauenFn.gitSicht(wurzel, { ...stuetze(), ...extra });
   const gesperrtFehler = (s) => new HttpFehler(409, `Git ist für diesen Vault gesperrt. ${s.grund}`, { gitGesperrt: true, grund: s.grund });
-  const gitCtx = (extra = {}) => { const s = gitSicht(); if (s.gesperrt) throw gesperrtFehler(s); return { vertraut: s.vertraut, sshEigen: s.sshEigen, ...extra }; };
+  // Kontext eines Git-Aufrufs: vertraut/sshEigen und, was der Nutzer selbst eingestellt hat (sshGlobal, gpgGlobal) — ohne Vertrauen ersetzen wir
+  // nur die Einstellungen des Vaults, nie seine eigenen.
+  const ctxVon = (s) => ({ vertraut: s.vertraut, sshEigen: s.sshEigen, sshGlobal: s.sshGlobal, gpgGlobal: s.gpgGlobal });
+  const gitCtx = (extra = {}) => { const s = gitSicht(); if (s.gesperrt) throw gesperrtFehler(s); return { ...ctxVon(s), ...extra }; };
+  // Nach dem Holen im Abgleich: Vertrauen NEU bewerten (Konfiguration frisch gelesen) — das Geholte kann Hooks oder Kit-Code geändert haben.
+  const neuBewerten = () => { const s = gitSicht({ frisch: true }); return { vertraut: s.vertraut, gesperrt: s.gesperrt }; };
 
   // ---------- Notiz-Index (Spec v2 §5) ----------
   const notizIndex = erzeugeNotizIndex({ wurzel, jetzt, heute: () => opts.heute || berlinHeute(jetzt()),
-    gitKontext: () => { const s = gitSicht(); return s.gesperrt ? null : { vertraut: s.vertraut, sshEigen: s.sshEigen }; } });
+    gitKontext: () => { const s = gitSicht(); return s.gesperrt ? null : ctxVon(s); } });
 
   // Dieselbe Suche für MCP brain_suchen und die Probe-Frage: strukturiert (treffer) und als Text, wie ihn die KI sieht.
   function suchenFuerKi(frage, anzahl) {
@@ -331,13 +338,13 @@ export function oeffneVault(vaultPfad, opts = {}) {
     gitStatus: async () => {
       const s = gitSicht();
       if (s.gesperrt) return { repo: true, gesperrt: true, grund: s.grund };
-      return gitFn.status(wurzel, { vertraut: s.vertraut, sshEigen: s.sshEigen });
+      return gitFn.status(wurzel, ctxVon(s));
     },
     gitCommit: async (a) => gitFn.commit(wurzel, a || {}, gitCtx({ limit: opts.gitLimitCommit })),
-    gitSync: async () => gitFn.sync(wurzel, gitCtx({ limitSync: opts.gitLimitSync, limitGesamt: opts.gitLimitAbgleich })),
+    gitSync: async () => gitFn.sync(wurzel, gitCtx({ limitSync: opts.gitLimitSync, limitGesamt: opts.gitLimitAbgleich, neuBewerten })),
     gitVerlauf: async (pfad, max) => gitFn.verlauf(wurzel, pfad, max, gitCtx()),
     gitDiff: async (pfad, sha) => gitFn.diff(wurzel, pfad, sha, gitCtx()),
     gitFassung: async (pfad, sha) => gitFn.fassung(wurzel, pfad, sha, gitCtx()),
-    istGitRepo: async () => { const s = gitSicht(); return gitFn.istRepo(wurzel, { vertraut: s.vertraut, sshEigen: s.sshEigen }); }, // rev-parse ist auch bei gesperrtem Git harmlos
+    istGitRepo: async () => { const s = gitSicht(); return gitFn.istRepo(wurzel, ctxVon(s)); }, // rev-parse ist auch bei gesperrtem Git harmlos
   };
 }

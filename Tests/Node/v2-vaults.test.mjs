@@ -31,8 +31,10 @@ const VAULTS_JSON = () => join(SUPPORT(), "vaults.json");
 const VERTRAUEN_JSON = () => join(SUPPORT(), "vertrauen.json");
 // Sicherungen defekter Listen (neue Namen mit Zeit, alte Einzeldatei) liegen im Support-Ordner und werden je Test weggeräumt.
 const sicherungen = () => readdirSync(SUPPORT()).filter((n) => /^vaults\.json\.defekt-/.test(n)).sort();
+// Ebenso die Sicherungen einer kaputten vertrauen.json (Befund V4): vertrauen.json.defekt-<Zeit>.
+const vertrauenSicherungen = () => readdirSync(SUPPORT()).filter((n) => /^vertrauen\.json\.defekt-/.test(n)).sort();
 beforeEach(() => {
-  for (const f of ["vaults.json", "vaults.json.defekt", "config.json", "vertrauen.json", ...sicherungen()]) rmSync(join(SUPPORT(), f), { recursive: true, force: true });
+  for (const f of ["vaults.json", "vaults.json.defekt", "config.json", "vertrauen.json", ...sicherungen(), ...vertrauenSicherungen()]) rmSync(join(SUPPORT(), f), { recursive: true, force: true });
 });
 
 const wirft = (fn) => { try { fn(); } catch (e) { assert.ok(e instanceof HttpFehler, String(e && e.stack)); return e; } assert.fail("kein Fehler"); };
@@ -855,27 +857,60 @@ test("Freigabe bleibt, wenn der Vorgang schon an der Prüfung scheitert (nicht l
   assert.deepEqual(leseJson(VERTRAUEN_JSON()), alt);
 });
 
-test("kaputte vertrauen.json: klone, neu und entfernen brechen mit Fehler ab — Datei unberührt, nichts angelegt, Liste unverändert", async () => {
+// Befund V4 (Review Studio v2): Früher brachen klone, neu und entfernen bei einer kaputten vertrauen.json mit 500 ab — der Nutzer war damit
+// ausgesperrt, bis er eine Datei im App-Ordner von Hand löschte. Eine kaputte Datei schützt aber nichts („nichts freigegeben“ = neue Frage):
+// die Vorgänge laufen, und damit nichts still verloren geht, liegt der kaputte Inhalt danach als vertrauen.json.defekt-<Zeit> daneben.
+// Nur ein LESEFEHLER (Ordner statt Datei, keine Rechte) bricht weiter ab: der Inhalt könnte später wieder lesbar sein.
+test("kaputte vertrauen.json: klone, neu und entfernen laufen — der kaputte Inhalt wird als vertrauen.json.defekt-<Zeit> gesichert, die Frage beginnt neu", async () => {
   const bare = bareMitInhalt();
-  for (const roh of ["{ kein json", "[]", "\"x\"", "null", "5", ""]) {
+  let nr = 0;
+  for (const roh of ["{ kein json", "[]", "\"x\"", "null", "5", "", "   \n"]) {
     writeFileSync(VERTRAUEN_JSON(), roh);
     const basis = tmp("brain-vg6-");
     const a = tmp(); registriere(a);
-    const vorher = leseVaults();
-    for (const e of [await wirftAsync(klone({ url: bare, ordner: join(basis, "K") }, OPT)), await wirftAsync(neuesVault({ art: "vorlage", ordner: join(basis, "N") }, OPT))]) {
-      assert.equal(e.status, 500, roh);
-      assert.match(e.message, /vertrauen\.json.*beschädigt/); assert.match(e.message, /nichts angelegt/);
-    }
-    const e = wirft(() => entferne(a));
-    assert.equal(e.status, 500); assert.match(e.message, /nicht aus der Liste genommen/);
-    assert.deepEqual(readdirSync(basis), [], `nichts angelegt (${roh})`);
-    assert.deepEqual(leseVaults(), vorher, "Liste unverändert");
-    assert.equal(readFileSync(VERTRAUEN_JSON(), "utf8"), roh, "die kaputte Datei bleibt, wie sie ist");
+    const k = await klone({ url: bare, ordner: join(basis, "K") }, OPT);
+    const n = await neuesVault({ art: "vorlage", ordner: join(basis, "N") }, OPT);
+    assert.equal(k.vault.pfad, join(basis, "K"), `klone läuft (${JSON.stringify(roh)})`);
+    assert.equal(n.vault.pfad, join(basis, "N"), "neuesVault läuft");
+    assert.deepEqual(readdirSync(basis).sort(), ["K", "N"]);
+    entferne(a); // läuft ebenfalls
+    assert.ok(!leseVaults().vaults.some((v) => v.pfad === a), "aus der Liste genommen");
+    const s = vertrauenSicherungen();
+    if (roh.trim()) {
+      assert.equal(s.length, 1, `genau eine Sicherung (${JSON.stringify(roh)}): ${s}`);
+      assert.match(s[0], /^vertrauen\.json\.defekt-\d{8}-\d{6}$/);
+      assert.equal(readFileSync(join(SUPPORT(), s[0]), "utf8"), roh, "der kaputte Inhalt steht unverändert in der Sicherung");
+      assert.equal(existsSync(VERTRAUEN_JSON()), false, "die kaputte Datei liegt beiseite — am alten Ort steht nichts mehr, das als Freigabe gelten könnte");
+    } else assert.deepEqual(s, [], "eine leere Datei hat nichts zu bewahren");
+    for (const f of vertrauenSicherungen()) rmSync(join(SUPPORT(), f)); // je Fall frisch zählen
+    nr++;
   }
-  rmSync(VERTRAUEN_JSON(), { force: true }); mkdirSync(VERTRAUEN_JSON()); // ein Ordner statt einer Datei ist ebenso kaputt
+  assert.equal(nr, 7);
+  // Ein Lesefehler (ein Ordner statt einer Datei) bricht ab und lässt alles, wie es war — mit der ehrlichen Meldung „nicht lesen“ statt „beschädigt“.
+  rmSync(VERTRAUEN_JSON(), { force: true }); mkdirSync(VERTRAUEN_JSON());
   const basis = tmp("brain-vg7-");
-  assert.equal((await wirftAsync(neuesVault({ art: "leer", ordner: join(basis, "V") }, OPT))).status, 500);
-  assert.deepEqual(readdirSync(basis), []);
+  const a = tmp(); registriere(a);
+  const vorher = leseVaults();
+  for (const e of [await wirftAsync(neuesVault({ art: "leer", ordner: join(basis, "V") }, OPT)), await wirftAsync(klone({ url: bare, ordner: join(basis, "W") }, OPT))]) {
+    assert.equal(e.status, 500); assert.match(e.message, /vertrauen\.json.*lässt sich nicht lesen/); assert.match(e.message, /nichts angelegt/);
+  }
+  const e = wirft(() => entferne(a));
+  assert.equal(e.status, 500); assert.match(e.message, /nicht aus der Liste genommen/);
+  assert.deepEqual(readdirSync(basis), [], "nichts angelegt");
+  assert.deepEqual(leseVaults(), vorher, "Liste unverändert");
+  assert.deepEqual(vertrauenSicherungen(), [], "ein Lesefehler sichert nichts");
+});
+
+test("kaputte vertrauen.json: ein Eintrag für den Zielpfad in einer kaputten Datei geht nicht still verloren — er steht in der Sicherung, die neue Datei kennt ihn nicht", async () => {
+  const basis = tmp("brain-vg8-");
+  const ziel = join(basis, "V");
+  const inhalt = `{ "${ziel}": { "seit": "2026-10-01T00:00:00Z" `; // abgeschnitten, wie nach einem Absturz beim Schreiben
+  writeFileSync(VERTRAUEN_JSON(), inhalt);
+  await neuesVault({ art: "leer", ordner: ziel }, OPT);
+  const s = vertrauenSicherungen();
+  assert.equal(s.length, 1);
+  assert.equal(readFileSync(join(SUPPORT(), s[0]), "utf8"), inhalt);
+  assert.equal(existsSync(VERTRAUEN_JSON()), false, "keine Freigabe für den neuen Vault");
 });
 
 // ---------------------------------------------------------------- Entfernen: nur ein aktiver Vault, dessen Ordner es gibt

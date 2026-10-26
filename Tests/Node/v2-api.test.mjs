@@ -137,7 +137,7 @@ test("Vault-Wechsel ohne Neustart: Öffnen, Wechseln, Vertrauen je Vault, Entfer
   assert.equal(r.status, 200); assert.equal(r.j.git, false); assert.equal(r.j.vault.pfad, realpathSync(a)); assert.equal(r.j.aktiv, realpathSync(a));
   assert.equal((await rufe("GET", "/api/info")).j.vault, realpathSync(a));
   assert.equal((await rufe("GET", "/api/notizen")).j.notizen.length, 4);
-  assert.equal((await rufe("POST", "/api/kit/vertrauen", { erlauben: true })).j.kit.vertraut, true);
+  assert.equal((await rufe("POST", "/api/kit/vertrauen", { erlauben: true, vault: a })).j.kit.vertraut, true);
   r = await rufe("POST", "/api/vaults/oeffnen", { pfad: b });
   assert.equal(r.j.vaults.length, 2); assert.deepEqual(r.j.vaults.map((v) => v.aktiv), [false, true]);
   assert.deepEqual((await rufe("GET", "/api/notizen")).j.notizen.map((n) => n.pfad), ["00_inbox/b-lose.md"]);

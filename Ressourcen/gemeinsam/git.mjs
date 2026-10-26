@@ -1,12 +1,15 @@
 // gemeinsam/git.mjs — Git-Aufrufe für Studio (Spec §5, v2 §8): nie eine Shell, Pfade nach `--`, GIT_TERMINAL_PROMPT=0, nie --force,
-// nie -A. Jeder Aufruf läuft gehärtet: ohne core.fsmonitor und ohne ext::-Transport, mit GIT_EDITOR=: ; Diff/Log/Show ohne externe
-// Diff-Programme und Textconv. Solange dem Vault nicht vertraut ist (ctx.vertraut), laufen zusätzlich keine Hooks und Git nutzt unser
-// GIT_SSH_COMMAND. Zeitlimits: je Aufruf und als Gesamtfrist je Route (ctx.frist) — bei Ablauf wird die ganze Prozessgruppe beendet.
-// ctx = { vertraut, sshEigen, frist } kommt von vault.mjs (aus vertrauen.mjs); ohne Angabe gilt „nicht vertraut“.
+// nie -A. Git startet nur über einen einmal aufgelösten absoluten Pfad (nie ein `git` aus dem Vault). Jeder Aufruf läuft gehärtet: ohne
+// core.fsmonitor und ohne ext::-Transport, ohne Submodule (status/diff ignorieren sie, nichts holt oder sendet in ihnen), mit GIT_EDITOR=: ;
+// Diff/Log/Show ohne externe Diff-Programme und Textconv. Solange dem Vault nicht vertraut ist (ctx.vertraut), laufen zusätzlich keine Hooks,
+// keine Signierung aus der Vault-Konfiguration und Git nutzt unser (bzw. des Nutzers globales) GIT_SSH_COMMAND. Der Abgleich holt fremde
+// Commits in den Arbeitsbaum und läuft deshalb immer ohne Hooks (siehe sync). Zeitlimits: je Aufruf und als Gesamtfrist je Route
+// (ctx.frist) — bei Ablauf wird die ganze Prozessgruppe beendet.
+// ctx = { vertraut, sshEigen, sshGlobal, gpgGlobal, frist } kommt von vault.mjs (aus vertrauen.mjs); ohne Angabe gilt „nicht vertraut“.
 import { execFile, execFileSync } from "node:child_process";
 import { realpathSync, readFileSync, writeFileSync, statSync, renameSync, lstatSync, unlinkSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { HttpFehler, sauber, kindUmgebung, falte } from "./basis.mjs";
+import { HttpFehler, sauber, kindUmgebung, falte, absoluterGitPfad, absoluterPfad } from "./basis.mjs";
 import { berlinHeute } from "./pruefung.mjs";
 import { starte, neueFrist, beendeAlleProzesse } from "./prozess.mjs";
 import { pruefeGitUrl, uebersetzeGitFehler } from "./gitwerkzeug.mjs"; // (gitwerkzeug importiert git() von hier — Kreis ist harmlos: nur Funktionen, nichts beim Laden)
@@ -19,37 +22,55 @@ const REPO_GEBUNDEN = ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT
   "GIT_COMMON_DIR", "GIT_PREFIX", "GIT_NAMESPACE", "GIT_QUARANTINE_PATH"];
 
 // Für JEDEN Aufruf: Pfade unverfälscht, kein Dateisystem-Beobachter (core.fsmonitor ist sonst ein beliebiger Befehl), kein ext::-Transport.
-const GRUND = ["-c", "core.quotepath=false", "-c", "core.fsmonitor=false", "-c", "protocol.ext.allow=never"];
+// Submodule: Git geht für status/diff, fetch, push und die Checkout-Befehle in eingerichtete Submodule und nähme dort DEREN Konfiguration
+// (clean-Filter, credential.helper, uploadpack …), die Vertrauen v2 nie prüft — also nirgends hinein (zusätzlich --ignore-submodules=all
+// bei status/diff und --no-recurse-submodules beim Holen).
+const GRUND = ["-c", "core.quotepath=false", "-c", "core.fsmonitor=false", "-c", "protocol.ext.allow=never",
+  "-c", "submodule.recurse=false", "-c", "fetch.recurseSubmodules=false", "-c", "push.recurseSubmodules=no",
+  "-c", "diff.ignoreSubmodules=all", "-c", "status.submoduleSummary=false"];
 const OHNE_HOOKS = ["-c", "core.hooksPath=/dev/null"];
+const OHNE_SUBMODULE = ["--ignore-submodules=all"];
+// Ohne Vertrauen darf die Vault-Konfiguration nichts signieren lassen (Git riefe gpg/ssh-keygen aus der Vault-Konfiguration heraus): der
+// Wert kommt vom Nutzer (System/global), sonst „false“. gpg = { commit, tag, push } aus vertrauen.mjs (nur gesetzte Werte).
+const OHNE_SIGNIEREN = (gpg) => ["-c", `commit.gpgSign=${(gpg && gpg.commit) ?? "false"}`, "-c", `tag.gpgSign=${(gpg && gpg.tag) ?? "false"}`,
+  "-c", `push.gpgSign=${(gpg && gpg.push) ?? "false"}`];
 // Für Diff/Log/Show: keine externen Diff-Programme (diff.external, diff.*.command) und kein Textconv (diff.*.textconv).
 const OHNE_EXTERN = ["--no-ext-diff", "--no-textconv"];
 
 // Umgebung eines Git-Aufrufs. Laufen wir in einem Hook, darf kein fremdes Repo durchschlagen. GIT_SSH_COMMAND schlägt core.sshCommand:
-// ohne Vertrauen setzen wir unseres immer (eine core.sshCommand aus dem Vault bliebe sonst wirksam); mit Vertrauen nur, wenn weder global
-// noch lokal eine core.sshCommand steht (ctx.sshEigen) — wer sich eine eigene eingerichtet hat, behält sie. Eine GIT_SSH_COMMAND aus der
-// Umgebung des Nutzers bleibt in jedem Fall.
-export function gitUmgebung({ vertraut = false, sshEigen = false } = {}) {
+// ohne Vertrauen setzen wir den Wert der Nutzer-Einstellung (sshGlobal: System/global — sie ist nicht die des Vaults), sonst unseren
+// BatchMode-Befehl; eine core.sshCommand aus dem Vault bleibt so nie wirksam. Mit Vertrauen setzen wir nichts, wenn irgendwo eine
+// core.sshCommand steht (ctx.sshEigen) — wer sich eine eigene eingerichtet hat, behält sie. Eine GIT_SSH_COMMAND aus der Umgebung des
+// Nutzers bleibt in jedem Fall. BRAIN_VAULT: Das Kit (auch in einem Hook) soll mit dem Vault arbeiten, in dem Git läuft — nicht mit
+// dem, mit dem die Werkstatt gestartet wurde (Wechsel in der Oberfläche); ohne vault entfällt die Variable.
+export function gitUmgebung({ vertraut = false, sshEigen = false, sshGlobal = null, vault = null } = {}) {
   const e = kindUmgebung();
   for (const k of REPO_GEBUNDEN) delete e[k];
+  delete e.BRAIN_VAULT;
+  if (vault) e.BRAIN_VAULT = vault;
   e.GIT_TERMINAL_PROMPT = "0";
   e.GIT_LITERAL_PATHSPECS = "1"; // Pfade nach `--` sind Dateinamen, nie Muster (*, [..], :(glob))
   e.LC_ALL = "C";
   e.GIT_EDITOR = ":"; e.GIT_SEQUENCE_EDITOR = ":"; // nie ein Editor (weder core.editor noch sequence.editor aus der Vault-Konfiguration)
-  if (!e.GIT_SSH_COMMAND && !(vertraut && sshEigen)) e.GIT_SSH_COMMAND = "ssh -o BatchMode=yes"; // nie nach Passwort fragen
+  if (!e.GIT_SSH_COMMAND && !(vertraut && sshEigen)) e.GIT_SSH_COMMAND = (!vertraut && sshGlobal) || "ssh -o BatchMode=yes"; // nie nach Passwort fragen
   return e;
 }
 
 // → {code, stdout, stderr}; wirft nur bei Zeitüberschreitung (HttpFehler 504, extra.gestartet = Startzeit ms; die ganze Prozessgruppe
 // ist dann beendet) oder wenn git fehlt. frist = Gesamtfrist der Route: der Aufruf bekommt höchstens das Restbudget.
-export function git(cwd, args, { timeout = LIMIT, buffer = false, vertraut = false, sshEigen = false, frist = null } = {}) {
-  return starte("git", [...GRUND, ...(vertraut ? [] : OHNE_HOOKS), ...args],
-    { cwd, env: gitUmgebung({ vertraut, sshEigen }), timeout, frist, buffer,
+// ohneHooks: auch in einem vertrauten Vault ohne Hooks (Abgleich, Rückweg). vault: Wert für BRAIN_VAULT (Standard: cwd; null = keiner,
+// z. B. beim Klonen, wo cwd der Elternordner ist). sshGlobal/gpgGlobal: Einstellungen des Nutzers (siehe gitUmgebung, OHNE_SIGNIEREN).
+export function git(cwd, args, { timeout = LIMIT, buffer = false, vertraut = false, sshEigen = false, sshGlobal = null, gpgGlobal = null, ohneHooks = false, frist = null, vault = cwd } = {}) {
+  const programm = absoluterGitPfad(); // nie der nackte Name „git“: der würde nach dem Wechsel in den (womöglich fremden) Vault gesucht
+  if (!programm) return Promise.reject(new HttpFehler(500, "Git ist auf diesem Mac nicht installiert."));
+  return starte(programm, [...GRUND, ...(vertraut ? [] : OHNE_SIGNIEREN(gpgGlobal)), ...(vertraut && !ohneHooks ? [] : OHNE_HOOKS), ...args],
+    { cwd, env: gitUmgebung({ vertraut, sshEigen, sshGlobal, vault }), timeout, frist, buffer,
       fehlt: "Git ist auf diesem Mac nicht installiert.", zuLange: "Git hat zu lange gebraucht und wurde abgebrochen." });
 }
 // Git-Aufruf mit dem Kontext einer Route (Vertrauen, Frist); extra überschreibt (z. B. { frist: null, timeout: GNADE } für den Rückweg).
 const binde = (wurzel, ctx = {}) => (args, extra) => git(wurzel, args, { ...ctx, ...extra });
-const kontext = (o = {}, frist) => ({ vertraut: !!o.vertraut, sshEigen: !!o.sshEigen, frist });
-const rueckweg = { frist: null, timeout: GNADE };
+const kontext = (o = {}, frist) => ({ vertraut: !!o.vertraut, sshEigen: !!o.sshEigen, sshGlobal: o.sshGlobal ?? null, gpgGlobal: o.gpgGlobal ?? null, frist });
+const rueckweg = { frist: null, timeout: GNADE, ohneHooks: true };
 
 const kuerze = (s, n = 4000) => (s.length > n ? s.slice(0, n) + "\n… (gekürzt)" : s);
 const ausgabeVon = (r) => kuerze((String(r.stdout || "") + String(r.stderr || "")).trim());
@@ -114,7 +135,7 @@ function parseStatus(roh) {
   return out.sort((a, b) => (a.pfad < b.pfad ? -1 : 1));
 }
 async function geaendert(G) {
-  const r = await G(["status", "--porcelain=v1", "-z", "-uall", "--no-renames"]);
+  const r = await G(["status", "--porcelain=v1", "-z", "-uall", "--no-renames", ...OHNE_SUBMODULE]);
   if (r.code !== 0) throw new HttpFehler(500, "Git-Status war nicht lesbar.");
   return parseStatus(r.stdout);
 }
@@ -210,7 +231,7 @@ async function indexZurueck(G, s) { // läuft auch nach abgelaufener Frist (eige
 }
 
 async function konfliktDateien(G) {
-  const r = await G(["diff", "--name-only", "--diff-filter=U", ...OHNE_EXTERN]);
+  const r = await G(["diff", "--name-only", "--diff-filter=U", ...OHNE_EXTERN, ...OHNE_SUBMODULE]);
   return r.stdout.split("\n").map((s) => s.trim()).filter(Boolean);
 }
 
@@ -239,7 +260,7 @@ export function sync(wurzel, opt = {}) { return exklusiv(wurzel, () => syncOhneS
 // Läuft in genau diesem Vault noch ein git-Prozess? (lsof: Arbeitsordner aller git-Prozesse; lsof fehlt → „ja“, also vorsichtig)
 function gitLaeuft(wurzel) {
   return new Promise((ok) => {
-    execFile("lsof", ["-a", "-d", "cwd", "-c", "git", "-Fn"], { env: kindUmgebung(), maxBuffer: 4 * 1024 * 1024 }, (err, out) => {
+    execFile(absoluterPfad("lsof") || "/usr/sbin/lsof", ["-a", "-d", "cwd", "-c", "git", "-Fn"], { env: kindUmgebung(), maxBuffer: 4 * 1024 * 1024 }, (err, out) => {
       if (err && err.code === "ENOENT") return ok(true);
       const orte = String(out || "").split("\n").filter((z) => z.startsWith("n")).map((z) => z.slice(1));
       ok(orte.some((o) => o === wurzel || o.startsWith(wurzel + "/")));
@@ -270,16 +291,23 @@ async function mitAbbruchSchutz(G, wurzel, lauf) {
   }
 }
 
-// opt: limitSync = Frist je Git-Aufruf (Standard 120 s), limitGesamt = Gesamtfrist der Route (Standard 360 s), vertraut/sshEigen aus vault.mjs.
+// opt: limitSync = Frist je Git-Aufruf (Standard 120 s), limitGesamt = Gesamtfrist der Route (Standard 360 s), vertraut/sshEigen/… aus vault.mjs,
+// neuBewerten = () => { vertraut, gesperrt } (Vertrauen NEU lesen; ohne Angabe wird nach dem Holen nicht neu bewertet).
+// Der Abgleich bringt fremde Commits in den Arbeitsbaum — auch Hook-Dateien und Kit-Code (z. B. bei core.hooksPath=.tools/git-hooks). Holen und
+// Zusammenführen laufen deshalb IMMER ohne Hooks, auch in einem vertrauten Vault: ein vom Server geholter Hook liefe sonst, bevor die Frage nach
+// dem Vertrauen neu gestellt wird (§8). Nach dem Holen wird das Vertrauen neu bewertet; gilt es nicht mehr, wird nichts gesendet (der Hook
+// pre-push wäre der neue, nicht freigegebene Code) und das Ergebnis trägt vertrauenGeaendert: die Oberfläche fragt neu, danach sendet der
+// nächste Abgleich. Gilt es noch, laufen beim Senden die Hooks wie gewohnt.
 async function syncOhneSperre(wurzel, opt = {}) {
   const limitSync = opt.limitSync > 0 ? opt.limitSync : LIMIT_SYNC;
   const frist = opt.frist || neueFrist(opt.limitGesamt > 0 ? opt.limitGesamt : LIMIT_ABGLEICH);
   const G = binde(wurzel, kontext(opt, frist));
+  const OH = { ohneHooks: true };
   await brauchtRepo(G, wurzel);
   const rem = await remotes(G);
   if (!rem.length) throw new HttpFehler(400, "Es ist noch kein Remote (Server) eingetragen. Trage zuerst eins in Git ein.");
   const remote = rem.includes("origin") ? "origin" : rem[0];
-  const f = await G(["fetch", "--quiet", remote], { timeout: limitSync });
+  const f = await G(["fetch", "--quiet", "--no-recurse-submodules", remote], { ...OH, timeout: limitSync });
   if (f.code !== 0) throw new HttpFehler(502, "Der Server war nicht erreichbar.", { ausgabe: ausgabeVon(f) });
   if (!(await hatCommits(G))) throw new HttpFehler(400, "Es gibt noch keinen Commit zum Abgleichen.");
   const z = await zweig(G);
@@ -289,19 +317,19 @@ async function syncOhneSperre(wurzel, opt = {}) {
   let neuerZweig = false;
   if (!up) {
     const gibts = await G(["rev-parse", "--verify", "-q", `refs/remotes/${remote}/${z}`]);
-    if (gibts.code === 0) { await G(["branch", "--set-upstream-to", `${remote}/${z}`]); up = `${remote}/${z}`; }
+    if (gibts.code === 0) { await G(["branch", "--set-upstream-to", `${remote}/${z}`], OH); up = `${remote}/${z}`; }
     else neuerZweig = true;
   }
 
-  let geholt = false, gesendet = false;
+  let geholt = false, gesendet = false, vertrauenGeaendert = false;
   if (up) {
     const { zurueck } = await vorZurueck(G);
     if (zurueck > 0) {
       geholt = true;
       const markeWeg = mergeMarke(wurzel);
       try {
-        let m = await mitAbbruchSchutz(G, wurzel, () => G(["merge", "--ff-only", "--quiet", "@{u}"], { timeout: limitSync }));
-        if (m.code !== 0) m = await mitAbbruchSchutz(G, wurzel, () => G(["merge", "--no-edit", "--quiet", "@{u}"], { timeout: limitSync }));
+        let m = await mitAbbruchSchutz(G, wurzel, () => G(["merge", "--ff-only", "--quiet", "@{u}"], { ...OH, timeout: limitSync }));
+        if (m.code !== 0) m = await mitAbbruchSchutz(G, wurzel, () => G(["merge", "--no-edit", "--quiet", "@{u}"], { ...OH, timeout: limitSync }));
         if (m.code !== 0) {
           const dateien = await konfliktDateien(G);
           await G(["merge", "--abort"], rueckweg); // Arbeitsstand wie vorher
@@ -309,9 +337,14 @@ async function syncOhneSperre(wurzel, opt = {}) {
           throw new HttpFehler(409, "Ungesicherte Änderungen stehen im Weg. Bitte zuerst committen, dann abgleichen.", { dateien: [], ausgabe: ausgabeVon(m) });
         }
       } finally { markeWeg(); }
+      if (opt.vertraut && typeof opt.neuBewerten === "function") { // das Geholte kann Hooks, Kit-Code oder Git-Einstellungen geändert haben
+        let neu = null;
+        try { neu = opt.neuBewerten(); } catch { /* nicht prüfbar: wie „nicht mehr vertraut“ */ }
+        if (!neu || !neu.vertraut || neu.gesperrt) vertrauenGeaendert = true;
+      }
     }
     const nach = await vorZurueck(G);
-    if (nach.vor > 0) {
+    if (nach.vor > 0 && !vertrauenGeaendert) {
       const p = await G(["push", "--quiet"], { timeout: limitSync });
       if (p.code !== 0) throw new HttpFehler(409, "Der Server hat das Senden abgelehnt (es gab dort inzwischen Neues). Bitte noch einmal abgleichen.", { dateien: [], ausgabe: ausgabeVon(p) });
       gesendet = true;
@@ -322,7 +355,7 @@ async function syncOhneSperre(wurzel, opt = {}) {
     gesendet = true;
   }
   const ergebnis = geholt && gesendet ? "beides" : geholt ? "geholt" : gesendet ? "gesendet" : "aktuell";
-  return { ergebnis, letzterSync: merkeSync(wurzel) };
+  return { ergebnis, letzterSync: merkeSync(wurzel), ...(vertrauenGeaendert ? { vertrauenGeaendert: true } : {}) };
 }
 
 const SHA = /^[0-9a-f]{4,64}$/i;
@@ -355,7 +388,7 @@ export async function diff(wurzel, rel, sha, ctx = {}) {
     if (r.code !== 0) throw new HttpFehler(404, "Diese Version gibt es nicht.");
   } else {
     const verfolgt = (await G(["ls-files", "--error-unmatch", "--", p])).code === 0;
-    if (verfolgt && (await hatCommits(G))) r = await G(["diff", "--no-color", ...OHNE_EXTERN, "HEAD", "--", p]);
+    if (verfolgt && (await hatCommits(G))) r = await G(["diff", "--no-color", ...OHNE_EXTERN, ...OHNE_SUBMODULE, "HEAD", "--", p]);
     else r = await G(["diff", "--no-color", "--no-index", ...OHNE_EXTERN, "--", "/dev/null", p]); // neu: Exit 1 ist normal
   }
   return { diff: r.stdout.length > MAX ? r.stdout.slice(0, MAX) + "\n… (gekürzt)\n" : r.stdout };
@@ -389,11 +422,12 @@ export function beendeLaufendes(budgetMs = 1500) {
     try { if (lstatSync(lock).mtimeMs >= start - 1000) unlinkSync(lock); } catch { /* keine */ }
     mergeReste(ort, start);
   }
+  const programm = absoluterGitPfad();
   for (const [w] of merges) {
     const rest = ende - Date.now();
-    if (rest <= 50) break;
+    if (rest <= 50 || !programm) break;
     try {
-      execFileSync("git", [...GRUND, ...OHNE_HOOKS, "merge", "--abort"], { cwd: w, env: gitUmgebung(), timeout: Math.min(1500, rest), killSignal: "SIGKILL", stdio: "ignore" });
+      execFileSync(programm, [...GRUND, ...OHNE_HOOKS, "merge", "--abort"], { cwd: w, env: gitUmgebung({ vault: w }), timeout: Math.min(1500, rest), killSignal: "SIGKILL", stdio: "ignore" });
     } catch { /* keine Zusammenführung oder nicht rechtzeitig: dann bleibt es wie es ist */ }
   }
   merges.clear();
@@ -562,6 +596,7 @@ export function remoteHinzufuegen(wurzel, url, opt = {}) { return exklusiv(wurze
 async function remoteHinzufuegenOhneSperre(wurzel, rohUrl, opt) {
   const frist = opt.frist || neueFrist(opt.limit > 0 ? opt.limit : LIMIT_REMOTE);
   const G = binde(wurzel, kontext(opt, frist));
+  const Gh = (args, extra) => G(args, { ohneHooks: true, ...extra }); // Holen und Zusammenführen bringen fremde Commits (auch Hooks): ohne Hooks, wie im Abgleich
   await brauchtRepo(G, wurzel);
   const url = pruefeGitUrl(rohUrl);
   const limit = LIMIT, limitSenden = LIMIT_SYNC; // je Aufruf; gekappt durch das Restbudget der Frist
@@ -611,7 +646,7 @@ async function remoteHinzufuegenOhneSperre(wurzel, rohUrl, opt) {
     };
     const sendenMitRueckweg = async () => { try { await senden(); } catch (e) { await zuruecknehmen(); throw e; } };
     const fertig = async (ergebnis, nochHolen = true) => {
-      if (nochHolen) { try { await G(["fetch", "--quiet", "origin"], { timeout: limit }); } catch { /* nur Komfort: damit origin/* existiert */ } }
+      if (nochHolen) { try { await Gh(["fetch", "--quiet", "--no-recurse-submodules", "origin"], { timeout: limit }); } catch { /* nur Komfort: damit origin/* existiert */ } }
       return { ok: true, ergebnis, remote: "origin", zweig: z, letzterSync: merkeSync(wurzel) };
     };
 
@@ -635,7 +670,7 @@ async function remoteHinzufuegenOhneSperre(wurzel, rohUrl, opt) {
     try {
       let f;
       // „+“ gilt nur für unseren privaten Prüf-Ref (kein Senden, kein Force-Push)
-      try { f = await G(["fetch", "--no-tags", "--quiet", "--no-recurse-submodules", "--", url, `+refs/heads/${ziel}:${TEMP_REF}`], { timeout: limit }); }
+      try { f = await Gh(["fetch", "--no-tags", "--quiet", "--no-recurse-submodules", "--", url, `+refs/heads/${ziel}:${TEMP_REF}`], { timeout: limit }); }
       catch (e) { throw zeitFehler(e, LESEN_ZU_LANGE); }
       if (f.code !== 0) throw gitFehler(f, "Der Server war nicht erreichbar.");
       const s = await G(["rev-parse", "--verify", "-q", `${TEMP_REF}^{commit}`]);
@@ -662,13 +697,13 @@ async function remoteHinzufuegenOhneSperre(wurzel, rohUrl, opt) {
           throw new HttpFehler(409, `Das Repository hat schon Inhalte, aber unter dem Zweig „${ziel}“, dein Vault arbeitet auf „${z}“. ` +
             "Die Namen passen nicht zusammen — benenne in Git einen der beiden Zweige um und versuche es dann noch einmal.", { art: "zweigname", server: ziel, lokal: z });
         }
-        const m = await mitAbbruchSchutz(G, wurzel, () => G(["merge", "--ff-only", "--quiet", TEMP_REF], { timeout: limitSenden }));
+        const m = await mitAbbruchSchutz(G, wurzel, () => Gh(["merge", "--ff-only", "--quiet", TEMP_REF], { timeout: limitSenden }));
         if (m.code !== 0) throw new HttpFehler(409, "Ungesicherte Änderungen stehen im Weg. Bitte zuerst committen (oder sichern) und es dann noch einmal versuchen. Es wurde nichts verändert.", { ausgabe: ausgabeVon(m) });
         await setzeOrigin();
         let geholt = false;
-        try { geholt = (await G(["fetch", "--quiet", "origin"], { timeout: limit })).code === 0; } catch { /* unten: Verfolgungs-Ref selbst anlegen */ }
-        if (!geholt) await G(["update-ref", `refs/remotes/origin/${z}`, spitze]); // der Stand ist gerade geprüft worden
-        const u = await G(["branch", "--set-upstream-to", `origin/${z}`]);
+        try { geholt = (await Gh(["fetch", "--quiet", "--no-recurse-submodules", "origin"], { timeout: limit })).code === 0; } catch { /* unten: Verfolgungs-Ref selbst anlegen */ }
+        if (!geholt) await Gh(["update-ref", `refs/remotes/origin/${z}`, spitze]); // der Stand ist gerade geprüft worden
+        const u = await Gh(["branch", "--set-upstream-to", `origin/${z}`]);
         if (u.code !== 0) throw new HttpFehler(500, "Der Server wurde verbunden, aber der Abgleich-Zweig konnte nicht eingetragen werden.", { ausgabe: ausgabeVon(u) });
         return await fertig("geholt", false);
       }
