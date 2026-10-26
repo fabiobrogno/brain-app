@@ -128,7 +128,10 @@ for (const [name, ende] of [["mit --- geschlossen", "---"], ["mit ... geschlosse
     await oeffne(page, "10_notizen/kopf.md");
     await expect.poll(() => zeilen(page)).toEqual(["", "Text mit zwei Zeilen.", ""]); // der Kopf ist eingeklappt (Block-Widget): sichtbar sind Leerzeile und Text
     const nachText = text.indexOf("Text mit") + "Text mit".length;
-    expect(await versteckt(page)).toEqual([[nachText, nachText + 1]]); // kein Bereich im Datei-Kopf
+    const kopfBis = text.indexOf("\n" + ende) + 1 + ende.length;
+    // Der zugeklappte Kopf ist seit der K1-Korrektur selbst atomar ([0, Ende der schließenden Zeile]: der Cursor kann nicht hinein);
+    // verbundene Umbrüche gibt es weiterhin nur im Text danach, keinen im Kopf.
+    expect(await versteckt(page)).toEqual([[0, kopfBis], [nachText, nachText + 1]]);
   });
 }
 

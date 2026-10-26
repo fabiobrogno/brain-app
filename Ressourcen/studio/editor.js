@@ -3,7 +3,7 @@
 import * as CM from "./vendor/codemirror.bundle.js";
 import { T } from "./texte.js";
 
-const { EditorState, EditorSelection, EditorView, Decoration, ViewPlugin, WidgetType, StateField, StateEffect, GutterMarker, gutter, keymap } = CM;
+const { EditorState, EditorSelection, EditorView, Decoration, ViewPlugin, WidgetType, StateField, StateEffect, GutterMarker, MapMode, gutter, keymap } = CM;
 
 const WIKI = /\[\[([^\[\]\n|#]+)(#[^\[\]\n|]*)?(\|[^\[\]\n]*)?\]\]/g;
 
@@ -23,6 +23,23 @@ export function frontmatterBereich(text) {
 
 const fmUmschalten = StateEffect.define(); // Wert = zugeklappt (true) oder offen (false)
 
+// Bereich des Datei-Kopfs im Dokument (oder null). Beginnt das Dokument nicht mit „---“, wird der Text gar nicht erst zusammengesetzt.
+const kopfBereich = (doc) => (doc.sliceString(0, 3) === "---" ? frontmatterBereich(doc.toString()) : null);
+
+// Steht ein Cursor im Datei-Kopf? Die Ränder zählen dazu (Position 0 und das Ende der schließenden Zeile): wer dort tippt, ändert den Kopf.
+// Steht hinter dem Kopf kein Zeichen mehr, ist sein Ende zugleich der einzige Platz dahinter und zählt nicht.
+const cursorImKopf = (b, auswahl, laenge) => auswahl.ranges.some((r) => r.head >= b.von && r.head <= b.bis && !(b.bis >= laenge && r.head >= laenge));
+
+// Ein zugeklappter Kopf nimmt nie einen Cursor auf: Steht er darin, kommt er in derselben Änderung hinter den Kopf (Anfang der ersten Zeile danach).
+function klappeKopfZu(view, effekte = []) {
+  const { doc, selection } = view.state;
+  const b = kopfBereich(doc);
+  view.dispatch({
+    effects: [fmUmschalten.of(true), ...effekte],
+    ...(b && cursorImKopf(b, selection, doc.length) ? { selection: EditorSelection.cursor(Math.min(doc.length, b.bis + 1)) } : {}),
+  });
+}
+
 class FmWidget extends WidgetType {
   constructor(n) { super(); this.n = n; }
   eq(a) { return a.n === this.n; }
@@ -30,11 +47,13 @@ class FmWidget extends WidgetType {
     const d = document.createElement("div");
     d.className = "cm-fm-zu";
     d.setAttribute("role", "button");
+    d.setAttribute("aria-expanded", "false");
     d.tabIndex = 0;
     d.innerHTML = `<span class="cm-fm-pfeil">›</span><span>${T.editor.frontmatter(this.n)}</span>`;
     const auf = () => view.dispatch({ effects: fmUmschalten.of(false) });
     d.addEventListener("mousedown", (e) => { e.preventDefault(); auf(); });
-    d.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); auf(); } });
+    // Der Schalter verschwindet beim Umschalten: der Fokus geht zurück in den Editor, damit die Tastatur nicht ins Leere läuft
+    d.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); auf(); view.focus(); } });
     // Abstand nach unten als Innenabstand einer Hülle: CodeMirror misst Block-Widgets ohne Außenabstand
     const huelle = document.createElement("div");
     huelle.className = "cm-fm-huelle";
@@ -50,35 +69,61 @@ class FmKopf extends WidgetType {
     const d = document.createElement("div");
     d.className = "cm-fm-auf";
     d.setAttribute("role", "button");
+    d.setAttribute("aria-expanded", "true");
+    d.tabIndex = 0;
     d.innerHTML = `<span class="cm-fm-pfeil offen">›</span><span>${T.editor.frontmatter(this.n)}</span>`;
-    d.addEventListener("mousedown", (e) => { e.preventDefault(); view.dispatch({ effects: fmUmschalten.of(true) }); });
+    d.addEventListener("mousedown", (e) => { e.preventDefault(); klappeKopfZu(view); });
+    d.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); klappeKopfZu(view); view.focus(); } });
     return d;
   }
   ignoreEvent() { return true; }
 }
 
-function fmDekos(state, eingeklappt) {
-  const text = state.doc.toString();
-  const b = frontmatterBereich(text);
+function fmDekos(doc, b, eingeklappt) {
   if (!b) return Decoration.none;
   if (eingeklappt) {
     return Decoration.set([Decoration.replace({ widget: new FmWidget(b.felder), block: true }).range(b.von, b.bis)]);
   }
   const liste = [Decoration.widget({ widget: new FmKopf(b.felder), block: true, side: -1 }).range(0)];
-  const l1 = state.doc.lineAt(b.von).number, l2 = state.doc.lineAt(b.bis).number;
-  for (let n = l1; n <= l2; n++) liste.push(Decoration.line({ class: "cm-fm" }).range(state.doc.line(n).from));
+  const l1 = doc.lineAt(b.von).number, l2 = doc.lineAt(b.bis).number;
+  for (let n = l1; n <= l2; n++) liste.push(Decoration.line({ class: "cm-fm" }).range(doc.line(n).from));
   return Decoration.set(liste, true);
 }
 
+// Zugeklappt ist der Kopf unsichtbar und darf darum nie unsichtbar geändert werden (Spec §8, Review K1):
+// - Ein Cursor im Kopf klappt ihn auf (Sprung aus Suche oder Signalliste, Rückgängig, Pfeil nach oben, Wechsel aus dem Rohmodus).
+// - Ein Kopf, der erst durch Tippen entsteht („---“ … „---“), bleibt offen, statt unter dem Cursor zuzuklappen.
+// - Der zugeklappte Kopf ist atomar; Zuklappen mit Cursor darin setzt ihn hinter den Kopf (klappeKopfZu).
+// - Nutzereingaben, die ihn nur zum Teil treffen, werden abgewiesen (Rückwärts-Löschen am Anfang der ersten Zeile würde den Zeilenumbruch
+//   hinter der schließenden Zeile nehmen) oder klappen ihn auf (z. B. „Alle ersetzen“). Auswahl über alles (⌘A) bleibt erlaubt.
 const fmFeld = StateField.define({
-  create(state) { return { zu: true, deko: fmDekos(state, true) }; },
-  update(w, tr) {
-    let zu = w.zu;
-    for (const e of tr.effects) if (e.is(fmUmschalten)) zu = e.value;
-    if (zu === w.zu && !tr.docChanged) return w;
-    return { zu, deko: fmDekos(tr.state, zu) };
+  create(state) {
+    const b = kopfBereich(state.doc);
+    return { zu: true, b, deko: fmDekos(state.doc, b, true) };
   },
-  provide: (f) => EditorView.decorations.from(f, (w) => w.deko),
+  update(w, tr) {
+    let { zu, b } = w;
+    if (tr.docChanged) b = kopfBereich(tr.newDoc);
+    for (const e of tr.effects) if (e.is(fmUmschalten)) zu = e.value;
+    if (zu && b && (!w.b || cursorImKopf(b, tr.newSelection, tr.newDoc.length))) zu = false;
+    if (zu === w.zu && !tr.docChanged) return w;
+    return { zu, b, deko: fmDekos(tr.newDoc, b, zu) };
+  },
+  provide: (f) => [
+    EditorView.decorations.from(f, (w) => w.deko),
+    EditorView.atomicRanges.of((view) => { const w = view.state.field(f); return w.zu && w.b ? w.deko : Decoration.none; }),
+    EditorState.transactionFilter.of((tr) => {
+      if (!tr.docChanged || !(tr.isUserEvent("delete") || tr.isUserEvent("input"))) return tr;
+      const w = tr.startState.field(f, false);
+      if (!w || !w.zu || !w.b) return tr;
+      const bis = w.b.bis, ganz = Math.min(tr.startState.doc.length, bis + 1); // der Kopf samt Zeilenumbruch dahinter
+      let teilweise = false;
+      tr.changes.iterChangedRanges((von, bisA) => { if (von <= bis && !(von <= 0 && bisA >= ganz)) teilweise = true; });
+      // Bleiben Kopf und Zeilenumbruch dahinter, wie sie waren, ist alles gut (z. B. „Zeile löschen“ in der ersten Zeile danach)
+      if (!teilweise || tr.newDoc.sliceString(0, ganz) === tr.startState.doc.sliceString(0, ganz)) return tr;
+      return tr.isUserEvent("delete") ? [] : [tr, { effects: fmUmschalten.of(false) }];
+    }),
+  ],
 });
 
 // ---------- Live-Vorschau ----------
@@ -105,7 +150,7 @@ function vorschau(view, ctx) {
   const liste = [];
   const roh = !!ctx.roh?.();
   const zeileAktiv = (pos) => roh || (fokus && aktiv.has(doc.lineAt(pos).number));
-  const fm = frontmatterBereich(doc.toString());
+  const fm = kopfBereich(doc);
   const fmBis = fm ? fm.bis : -1;
   const zeilenKlasse = new Map(); // Zeilenanfang -> Klassen
 
@@ -233,16 +278,20 @@ function vorschauPlugin(ctx) {
 const neuZeichnen = StateEffect.define();
 
 // ---------- Prüf-Randmarken ----------
-const signaleSetzen = StateEffect.define();
+// Die Signale kommen als Zeilennummern des Backends (Stand beim Öffnen). Sie werden sofort in Positionen (Zeilenanfänge) umgerechnet und
+// von jeder Änderung mitgeführt: Wer oberhalb Zeilen einfügt, schiebt Randmarke und Signal-Absatz mit, statt sie auf eine andere Zeile fallen zu lassen.
+// Wird der Zeilenanfang überschrieben oder gelöscht (Zeile löschen, alles ersetzen), entfällt das Signal: Es gehört zu einem Text, den es nicht mehr gibt.
+const signaleSetzen = StateEffect.define(); // Wert = [{ pos, s }]
+const signalZeilen = (doc, eintraege) => { const m = new Map(); for (const { pos, s } of eintraege) m.set(doc.lineAt(pos).from, s); return m; }; // Zeilenanfang -> Signal
 const signaleFeld = StateField.define({
-  create: () => new Map(),
+  create: () => ({ eintraege: [], zeilen: new Map() }),
   update(w, tr) {
-    for (const e of tr.effects) if (e.is(signaleSetzen)) {
-      const m = new Map();
-      for (const s of e.value) if (s.zeile) m.set(s.zeile, s);
-      return m;
-    }
-    return w;
+    for (const e of tr.effects) if (e.is(signaleSetzen)) return { eintraege: e.value, zeilen: signalZeilen(tr.newDoc, e.value) };
+    if (!tr.docChanged || !w.eintraege.length) return w;
+    // assoc 1: Enter am Zeilenanfang schiebt die Zeile samt Signal nach unten, die Position folgt dem Text
+    const eintraege = [];
+    for (const x of w.eintraege) { const pos = tr.changes.mapPos(x.pos, 1, MapMode.TrackDel); if (pos != null) eintraege.push({ pos, s: x.s }); }
+    return { eintraege, zeilen: signalZeilen(tr.newDoc, eintraege) };
   },
 });
 class SignalMarke extends GutterMarker {
@@ -258,13 +307,33 @@ class SignalMarke extends GutterMarker {
 const signalRand = gutter({
   class: "cm-signale",
   lineMarker(view, line) {
-    const nr = view.state.doc.lineAt(line.from).number;
-    const s = view.state.field(signaleFeld).get(nr);
+    const s = view.state.field(signaleFeld).zeilen.get(view.state.doc.lineAt(line.from).from);
     return s ? new SignalMarke(s) : null;
   },
-  lineMarkerChange: (u) => u.transactions.some((t) => t.effects.some((e) => e.is(signaleSetzen))),
+  lineMarkerChange: (u) => u.docChanged || u.transactions.some((t) => t.effects.some((e) => e.is(signaleSetzen))),
   initialSpacer: () => new SignalMarke({ stufe: "gelb" }),
 });
+
+// Zeilen der Datei so gezählt wie im Backend und in der Gliederung (jedes \n, \r\n beginnt eine Zeile) -> { anzahl, start(nr) = Position des Zeilenanfangs }.
+// Im Dokument trennt nur das Zeilenende der Datei (CRLF) Zeilen; ein fremdes \n (gemischte Datei) liegt als Zeichen mitten in einer Dokumentzeile.
+// Ohne solche Zeichen ist die Datei-Zeile schlicht die Dokumentzeile.
+function dateiZeilen(state) {
+  const doc = state.doc;
+  if (state.lineBreak === "\r\n") {
+    let fremd = false;
+    for (let i = 1; i <= doc.lines && !fremd; i++) fremd = doc.line(i).text.includes("\n");
+    if (fremd) {
+      const starts = [];
+      for (let i = 1; i <= doc.lines; i++) {
+        const l = doc.line(i);
+        starts.push(l.from);
+        for (let k = l.text.indexOf("\n"); k !== -1; k = l.text.indexOf("\n", k + 1)) starts.push(l.from + k + 1);
+      }
+      return { anzahl: starts.length, start: (nr) => starts[nr - 1] };
+    }
+  }
+  return { anzahl: doc.lines, start: (nr) => doc.line(nr).from };
+}
 
 // ---------- Fließende Absätze ----------
 // Fest umbrochene Absätze (Zeilen à ~100 Zeichen, Fortsetzungen eingerückt) werden als fließender Text gezeigt: jeder weiche
@@ -286,12 +355,23 @@ const KEIN_FLIESSTEXT = new Set(["Blockquote", "FencedCode", "CodeBlock", "HTMLB
 const ABSATZ_KNOTEN = new Set(["Paragraph", "Task"]); // Task = Text eines Aufgaben-Listenpunkts („- [ ] …“)
 const leerzeichen = (z) => z === " " || z === "\t";
 
+// Formel- ($$ … $$) und Kommentarblöcke (%% … %%) kennt lezer nicht, für ihn sind es Absätze: sie werden nie verbunden. Als solche gelten Absätze mit
+// einer Zeile, die nur aus der Marke besteht, oder mit der Marke am Anfang der ersten bzw. am Ende der letzten Zeile (z1, z2 = erste und letzte Zeile).
+const BLOCK_MARKE = /^\s*(\$\$|%%)\s*$/;
+function blockMitMarke(doc, n, z1, z2) {
+  if (/^(\$\$|%%)/.test(doc.sliceString(n.from, z1.to)) || /(\$\$|%%)\s*$/.test(z2.text)) return true;
+  for (let nr = z1.number; nr <= z2.number; nr++) if (BLOCK_MARKE.test(doc.line(nr).text)) return true;
+  return false;
+}
+
 // Alle Absätze mit weichen Umbrüchen, unabhängig von Auswahl und Fokus: [{ von, bis, umbrueche: [[von, bis], …] }].
-// Ein Bereich reicht vom Ende der Zeile (samt Leerzeichen davor, es bleibt genau eines sichtbar) bis zum Text der Folgezeile.
+// von/bis sind zeilengenau (Anfang der ersten, Ende der letzten Zeile des Absatzes, also samt Listenmarke und Einrückung): ein Cursor am
+// Zeilenanfang zählt als im Absatz, ein Dreifachklick wählt ganze Zeilen. Ein Umbruch-Bereich reicht vom Ende der Zeile (samt Leerzeichen davor,
+// es bleibt genau eines sichtbar) bis zum Text der Folgezeile.
 function absatzSpannen(state) {
   const doc = state.doc;
-  const signale = state.field(signaleFeld);
-  const fm = doc.sliceString(0, 3) === "---" ? frontmatterBereich(doc.toString()) : null;
+  const signale = state.field(signaleFeld).zeilen;
+  const fm = kopfBereich(doc);
   const fmBis = fm ? fm.bis : -1;
   const liste = [];
   let harte = null; // Enden der harten Umbrüche (HardBreak) im Absatz, den wir gerade durchlaufen
@@ -306,9 +386,11 @@ function absatzSpannen(state) {
       const hart = harte;
       harte = null;
       if (n.from <= fmBis) return; // Datei-Kopf
-      const z1 = doc.lineAt(n.from).number, z2 = doc.lineAt(n.to).number;
+      const l1 = doc.lineAt(n.from), l2 = doc.lineAt(n.to);
+      const z1 = l1.number, z2 = l2.number;
       if (z1 === z2) return;
-      for (let nr = z1; nr <= z2; nr++) if (signale.has(nr)) return; // Prüf-Signal: Randmarke und Hervorhebung bleiben sichtbar
+      for (let nr = z1; nr <= z2; nr++) if (signale.has(doc.line(nr).from)) return; // Prüf-Signal: Randmarke und Hervorhebung bleiben sichtbar
+      if (blockMitMarke(doc, n, l1, l2)) return;
       const umbrueche = [];
       for (let nr = z1; nr < z2; nr++) {
         const z = doc.line(nr), folge = doc.line(nr + 1);
@@ -320,7 +402,7 @@ function absatzSpannen(state) {
         if (b === folge.text.length) continue; // leere Zeile gehört nie zu einem Absatz
         umbrueche.push([Math.max(z.from + a, n.from), folge.from + b]);
       }
-      if (umbrueche.length) liste.push({ von: n.from, bis: n.to, umbrueche });
+      if (umbrueche.length) liste.push({ von: l1.from, bis: l2.to, umbrueche });
     },
   });
   return liste;
@@ -356,6 +438,7 @@ function mehrfachKlick(feld) {
     }),
     EditorView.mouseSelectionStyle.of((view, e) => {
       if (e.button !== 0 || e.detail < 2 || !erster?.absatz || Math.hypot(e.clientX - erster.x, e.clientY - erster.y) > 6) return null;
+      // Dreifachklick: alle Zeilen des Absatzes samt Zeilenumbruch dahinter (wie die Zeilenauswahl von CodeMirror), also mit Listenmarke und Einrückung
       const bereich = e.detail === 2 ? view.state.wordAt(erster.pos) : { from: erster.absatz.von, to: Math.min(erster.absatz.bis + 1, view.state.doc.length) };
       if (!bereich) return null;
       return { get: () => EditorSelection.single(bereich.from, bereich.to), update: () => false };
@@ -429,6 +512,26 @@ function wikiQuelle(ctx) {
   };
 }
 
+// ---------- Zeilenende der Datei ----------
+// Eingefügter, abgelegter oder getippter Text bekommt das Zeilenende der Datei, nie ein fremdes. Im Dokument trennt nur dieses Zeilen: Ein \n in
+// einer CRLF-Datei (die Zwischenablage liefert auf macOS LF) bliebe als Zeichen mitten in einer Zeile, würde mit LF gespeichert, und Backend
+// und Editor zählten die Zeilen danach verschieden (Randmarke, Signal-Absatz und Sprünge säßen versetzt). LF-Dateien brauchen nichts:
+// CodeMirror trennt dort bei jedem \r\n, \r und \n.
+const einheitlich = (text, ende) => text.replace(/\r\n|\r|\n/g, ende);
+const hatFremdesEnde = (t) => { for (let i = 1; i <= t.lines; i++) if (/[\r\n]/.test(t.line(i).text)) return true; return false; };
+const zeilenendeEinfuegen = EditorView.clipboardInputFilter.of((text, state) => (state.lineBreak === "\n" ? text : einheitlich(text, state.lineBreak))); // Einfügen und Ablegen
+const zeilenendeEingabe = EditorState.transactionFilter.of((tr) => { // Rest der Eingaben: Tippen, Diktat, „Ersetzen“ der Suche …
+  const ende = tr.startState.lineBreak;
+  if (ende === "\n" || !tr.docChanged || !tr.isUserEvent("input")) return tr;
+  let fremd = false;
+  tr.changes.iterChanges((_a, _b, _c, _d, eingefuegt) => { if (hatFremdesEnde(eingefuegt)) fremd = true; });
+  if (!fremd) return tr;
+  const aenderungen = [];
+  // Gleich lang wie vorher (ein Zeilenumbruch zählt immer eine Position): Auswahl und Effekte bleiben gültig
+  tr.changes.iterChanges((von, bis, _c, _d, eingefuegt) => aenderungen.push({ from: von, to: bis, insert: hatFremdesEnde(eingefuegt) ? tr.startState.toText(einheitlich(eingefuegt.sliceString(0, eingefuegt.length, ende), ende)) : eingefuegt }));
+  return [{ changes: aenderungen, selection: tr.selection, effects: tr.effects, annotations: tr.annotations, scrollIntoView: tr.scrollIntoView }];
+});
+
 // ---------- Aufbau ----------
 export function erstelleEditor(eltern, ctx) {
   let schreibschutzFeld = new CM.Compartment();
@@ -441,6 +544,8 @@ export function erstelleEditor(eltern, ctx) {
     CM.search({ top: true }),
     CM.markdown({ base: CM.markdownLanguage }),
     EditorView.lineWrapping,
+    zeilenendeEinfuegen,
+    zeilenendeEingabe,
     fmFeld,
     signaleFeld,
     signalRand,
@@ -479,12 +584,11 @@ export function erstelleEditor(eltern, ctx) {
     // Lädt Text als neuen Zustand (eigene Rückgängig-Liste). Zeilenende wird erkannt.
     setzeText(text, { nurLesen = false } = {}) {
       ende = text.includes("\r\n") ? "\r\n" : (text.includes("\r") && !text.includes("\n") ? "\r" : "\n");
-      const b = frontmatterBereich(text);
-      const state = EditorState.create({
-        doc: text,
-        selection: { anchor: b ? Math.min(text.length, b.bis + 1) : 0 },
-        extensions: erweiterungen(ende),
-      });
+      let state = EditorState.create({ doc: text, extensions: erweiterungen(ende) });
+      // Der Cursor beginnt hinter dem (zugeklappten) Datei-Kopf. Die Position kommt aus dem Dokument, nicht aus dem Rohtext: dort zählt jedes
+      // CRLF zwei Zeichen, der Cursor säße in einer CRLF-Datei mitten in der ersten Zeile oder, bei einer reinen Kopf-Datei, hinter dem Ende.
+      const b = kopfBereich(state.doc);
+      if (b) state = state.update({ selection: { anchor: Math.min(state.doc.length, b.bis + 1) } }).state;
       view.setState(state);
       if (ctx.roh?.()) view.dispatch({ effects: fmUmschalten.of(false) });
       // Der neue State kennt den Fokus noch nicht: den Ist-Stand eintragen (sonst bliebe der Absatz am Cursor verbunden)
@@ -492,20 +596,31 @@ export function erstelleEditor(eltern, ctx) {
     },
     // Originaltext mit ursprünglichen Zeilenenden
     text() { return view.state.sliceDoc(0, view.state.doc.length, view.state.lineBreak); },
+    // Ganz anderer Text (Fassung wiederherstellen): die Signale gehörten zum alten und entfallen bis zur nächsten Prüfung
     ersetzeAlles(text) {
-      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text }, userEvent: "input.wiederherstellen" });
+      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text }, effects: signaleSetzen.of([]), userEvent: "input.wiederherstellen" });
     },
-    setzeSignale(liste) { view.dispatch({ effects: signaleSetzen.of(liste || []) }); },
+    // liste: [{ zeile, stufe, text }] mit Zeilennummern der Datei; intern Positionen, die Änderungen mitmachen
+    setzeSignale(liste) {
+      const zeilen = dateiZeilen(view.state), eintraege = [];
+      for (const s of liste || []) if (s.zeile >= 1 && s.zeile <= zeilen.anzahl) eintraege.push({ pos: zeilen.start(s.zeile), s });
+      view.dispatch({ effects: signaleSetzen.of(eintraege) });
+    },
     zeichneNeu() { view.dispatch({ effects: neuZeichnen.of(null) }); },
+    // Liegt die Zeile im Datei-Kopf, klappt er auf (der Cursor ist dann darin, siehe fmFeld): ein Treffer dort soll man sehen
     springeZu(zeile) {
-      const n = Math.max(1, Math.min(view.state.doc.lines, zeile));
-      const l = view.state.doc.line(n);
-      view.dispatch({ selection: { anchor: l.from }, effects: EditorView.scrollIntoView(l.from, { y: "center" }) });
+      const zeilen = dateiZeilen(view.state);
+      const pos = zeilen.start(Math.max(1, Math.min(zeilen.anzahl, zeile)));
+      view.dispatch({ selection: { anchor: pos }, effects: EditorView.scrollIntoView(pos, { y: "center" }) });
       view.focus();
     },
     suchen() { view.focus(); CM.openSearchPanel(view); },
     fokus() { view.focus(); },
     // Rohtext: alle Markierungen sichtbar, Datei-Kopf aufgeklappt (der Text selbst bleibt unverändert)
-    setzeRoh() { view.dispatch({ effects: [fmUmschalten.of(!ctx.roh?.()), neuZeichnen.of(null)] }); },
+    // Zurück zur Vorschau klappt der Kopf zu; ein Cursor darin kommt dabei hinter ihn
+    setzeRoh() {
+      if (ctx.roh?.()) view.dispatch({ effects: [fmUmschalten.of(false), neuZeichnen.of(null)] });
+      else klappeKopfZu(view, [neuZeichnen.of(null)]);
+    },
   };
 }
