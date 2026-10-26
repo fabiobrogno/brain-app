@@ -12,9 +12,17 @@ public struct BrainBefehl: Sendable {
         self.umgebung = umgebung
     }
 
+    /// Wohin die Kindprozesse greifen dürfen, wenn vom PATH des Starters nichts Brauchbares übrig bleibt.
+    static let systemOrdner = ["/usr/bin", "/bin", "/usr/sbin", "/sbin"]
+
     /// Eine GUI-App startet mit Minimal-PATH — Homebrew- und /usr/local-Programme (z. B. git) müssen auffindbar sein.
+    /// Übernommen werden nur absolute Einträge. Ein leerer oder relativer Eintrag (`.`, `node_modules/.bin`, `~/bin`) löst Node
+    /// (libuv) und jede Shell gegen das Arbeitsverzeichnis des KINDES auf — und das ist bei der Vertrauensprüfung und bei den
+    /// Git-Aufrufen der Werkstatt ein fremder, noch nie freigegebener Vault: Läge dort ein `git`, liefe es vor dem echten, schon
+    /// bevor der Nutzer vertraut hat (Studio-v2-Spec §8, Review SW-3). Bleibt nichts übrig, gelten die Systemordner.
     public static func pfadMitStandardOrdnern(_ pfad: String?) -> String {
-        let vorhanden = (pfad ?? "").split(separator: ":").map(String.init)
+        var vorhanden = (pfad ?? "").split(separator: ":").map(String.init).filter { $0.hasPrefix("/") }
+        if vorhanden.isEmpty { vorhanden = systemOrdner }
         let fehlend = ["/opt/homebrew/bin", "/usr/local/bin"].filter { !vorhanden.contains($0) }
         return (fehlend + vorhanden).joined(separator: ":")
     }

@@ -10,8 +10,14 @@
 #     Vault-Argument, es erscheint kein Einrichtungsdialog.
 #  C) OHNE --vault, aber mit vaults.json im Support-Ordner (und Freigabe): die App liest den aktiven Vault daraus (Status) und
 #     startet die Werkstatt trotzdem ohne Vault-Argument (die Werkstatt liest vaults.json selbst); beendet wird bei offenem Studio.
-#  D) OHNE Freigabe mit einem Marken-Kit (brain.mjs und bruecke.mjs schreiben eine Marke, falls sie je laufen): „Kit nicht erlaubt“,
-#     Übersicht abgelehnt, KEINE Marke — nichts aus dem Vault läuft ohne Vertrauen. Gilt auch, wenn die CLI fehlt.
+#  D) OHNE Freigabe mit einem Marken-Vault: Kit (brain.mjs, bruecke.mjs), Git-Hooks, core.fsmonitor und eine `node_modules/.bin/git`
+#     schreiben je eine Marke, falls sie je laufen. Zwei Läufe, beide mit relativem PATH-Eintrag („node_modules/.bin:$PATH“) und mit
+#     den Aktionen `vertrauen-geaendert` und `ansicht` aus der Studio-Oberfläche (--test-skript, BRAIN_TESTMODUS=1):
+#       haken    — Git-Einstellungen, die die App entschärft (Hooks, fsmonitor): Die Werkstatt committet sogar (Hooks aus), Marken: KEINE.
+#       gesperrt — Git-Einstellungen, die Programme starten und sich nicht entschärfen lassen (filter.*.clean, remote.*.uploadpack):
+#                  Git bleibt gesperrt (409), Marken: KEINE.
+#     Der Markenpfad steht fest in den Marken-Skripten (keine Umgebungsvariable, die eine bereinigte Umgebung verschluckt), und eine
+#     Kontrolle an einer Kopie des Vaults beweist vorher, dass jede Marke wirklich schreibt. Gilt auch, wenn die CLI fehlt.
 # Die Freigabe erteilt `vertrauen-pruefen.mjs --erlauben <vault>` (nur mit BRAIN_TESTMODUS=1) im Wegwerf-Support-Ordner.
 # Keine Spuren (k11): am Ende steht unter der Test-Bundle-ID weder ein gemerkter Fensterrahmen noch ein Ordner in ~/Library/WebKit.
 # Port-Check (A): App-PID, Kinder und alle NEU hinzugekommenen com.apple.WebKit.*-Prozesse (XPC-Dienste, keine Kinder).
@@ -94,8 +100,8 @@ phase_a() {
   if [ "$frei" = 1 ]; then
     warte "status (ok|hinweis|problem)" 80 || fehl "Status wurde nicht gelesen"
   else
-    warte "status kit-nicht-erlaubt" 80 || fehl "Ohne Freigabe fehlt „Kit nicht erlaubt“ im Log"
-    ueberspringe "A: CLI fehlt ($CLI) — Status lesen, Übersicht und Kit-Brücke mit Freigabe nicht geprüft; geprüft: ohne Freigabe gilt „Kit nicht erlaubt“"
+    warte "status kit-(nicht-erlaubt|pruefung-fehlgeschlagen)" 80 || fehl "Ohne Freigabe fehlt „Kit nicht erlaubt“ (bzw. „Prüfung fehlgeschlagen“) im Log"
+    ueberspringe "A: CLI fehlt ($CLI) — Status lesen, Übersicht und Kit-Brücke mit Freigabe nicht geprüft; geprüft: ohne Prüfung läuft nichts („Prüfung fehlgeschlagen“)"
   fi
   warte "fenster-auf studio" 80 || fehl "Studio-Fenster ist nicht erschienen"
   warte "fenster-bereit studio" 120 || fehl "Studio wurde nicht bereit"
@@ -165,8 +171,8 @@ phase_c() {
   if [ "$frei" = 1 ]; then
     warte "status (ok|hinweis|problem)" 80 || fehl "C: Status des Vaults aus vaults.json wurde nicht gelesen"
   else
-    warte "status kit-nicht-erlaubt" 80 || fehl "C: Ohne Freigabe fehlt „Kit nicht erlaubt“ im Log"
-    ueberspringe "C: CLI fehlt ($CLI) — Status des Vaults mit Freigabe nicht geprüft; geprüft: ohne Freigabe gilt „Kit nicht erlaubt“"
+    warte "status kit-(nicht-erlaubt|pruefung-fehlgeschlagen)" 80 || fehl "C: Ohne Freigabe fehlt „Kit nicht erlaubt“ (bzw. „Prüfung fehlgeschlagen“) im Log"
+    ueberspringe "C: CLI fehlt ($CLI) — Status des Vaults mit Freigabe nicht geprüft; geprüft: ohne Prüfung läuft nichts („Prüfung fehlgeschlagen“)"
   fi
   warte "fenster-bereit studio" 120 || fehl "C: Studio wurde nicht bereit"
   werkstatt_ohne_argument
@@ -176,43 +182,138 @@ phase_c() {
 }
 
 # ---------- D) ohne Freigabe: nichts aus dem Vault läuft ----------
-phase_d() {
-  BASIS_D="$(mktemp -d)"
-  export BRAIN_APP_SUPPORT="$BASIS_D/support"
-  mkdir -p "$BRAIN_APP_SUPPORT"
+# Git für den Aufbau und die Kontrollen: ohne globale und Systemkonfiguration des Nutzers (keine fremden Hooks, Vorlagen, Aliase).
+d_git() { GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git "$@"; }
+# Marken-Skript: schreibt <name> in die Markendatei. Der Pfad steht FEST im Skript, nicht in einer Umgebungsvariablen: Bei einer
+# bereinigten Umgebung wäre sie leer, und ein Kit, das doch läuft, schriebe still nichts — D bestünde zu Unrecht (Review SW-6).
+d_marke_sh() { # <datei> <name> <markendatei> [ende]   (ende: ok = Exit 0 | filter = stdin durchreichen, wie ein clean-Filter es muss | sonst Exit 1)
+  local ende
+  case "${4:-}" in ok) ende="exit 0" ;; filter) ende="cat" ;; *) ende="exit 1" ;; esac
+  printf '#!/bin/sh\necho %s >> "%s"\n%s\n' "$2" "$3" "$ende" > "$1"
+  chmod +x "$1"
+}
+d_marke_mjs() { # <datei> <name> <markendatei> <stdout-js>
+  printf 'import { appendFileSync } from "node:fs";\nappendFileSync("%s", "%s\\n");\n%s\n' "$3" "$2" "$4" > "$1"
+}
+
+# Ein Lauf: <art> = haken | gesperrt (siehe Kopf)
+d_lauf() {
+  local art="$1" basis marke vd k probe erwartet m ergebnis
+  basis="$(mktemp -d)"
+  export BRAIN_APP_SUPPORT="$basis/support"
+  mkdir -p "$BRAIN_APP_SUPPORT" "$basis/marken"
   LOG="$BRAIN_APP_SUPPORT/logs/app.log"
-  local vd="$BASIS_D/Marken Brain" marke="$BASIS_D/kit-marke.txt"
+  vd="$basis/Marken Brain"
+  marke="$basis/marken/marke.txt"
   mkdir -p "$vd/.tools/ansicht"
-  # Marken-Kit: schreibt eine Zeile in RAUCHTEST_MARKE, sobald die App es startet (brain status oder Kit-Brücke)
-  cat > "$vd/.tools/brain.mjs" <<'JS'
-import { appendFileSync } from "node:fs";
-appendFileSync(process.env.RAUCHTEST_MARKE, "brain.mjs\n");
-console.log(JSON.stringify({ version: "marke", quellVault: false, zustand: "ok", meldungen: [], zahlen: { vorschlaege: 0, konflikte: 0, abgelaufen: 0, zuTun: 0 } }));
+  # Kit-Code aus dem Vault (brain status, Kit-Brücke der Übersicht)
+  d_marke_mjs "$vd/.tools/brain.mjs" brain.mjs "$marke" 'console.log(JSON.stringify({ version: "marke", quellVault: false, zustand: "ok", meldungen: [], zahlen: { vorschlaege: 0, konflikte: 0, abgelaufen: 0, zuTun: 0 } }));'
+  d_marke_mjs "$vd/.tools/ansicht/bruecke.mjs" bruecke.mjs "$marke" 'process.stdout.write(JSON.stringify({ bereit: true, version: "marke" }) + "\n");
+process.stdin.resume();'
+  # Git-Wege: ein echtes Repo mit einem Commit (die Marken kommen erst danach, der erste Commit löst keine aus)
+  d_git init -q "$vd" && d_git -C "$vd" config user.name Probe && d_git -C "$vd" config user.email probe@example.invalid || fehl "D/$art: git init ist gescheitert"
+  printf '# Notiz\n' > "$vd/notiz.md"; printf '# Neu\n' > "$vd/neu.md"
+  d_git -C "$vd" add notiz.md && d_git -C "$vd" commit -q -m Start || fehl "D/$art: erster Commit ist gescheitert"
+  # Ein `git` im Vault, das nur ein relativer PATH-Eintrag („node_modules/.bin“) vor das echte setzt — schon das Lesen der
+  # Git-Einstellungen bei der Vertrauensprüfung startet git im Vault-Ordner (Review SW-3).
+  mkdir -p "$vd/node_modules/.bin"; d_marke_sh "$vd/node_modules/.bin/git" fremdes-git "$marke"
+  case "$art" in
+    haken)
+      # Einstellungen, die die App entschärft (-c core.hooksPath=/dev/null, -c core.fsmonitor=false).
+      for h in pre-commit commit-msg post-commit post-checkout post-merge pre-push; do d_marke_sh "$vd/.git/hooks/$h" "hook-$h" "$marke" ok; done
+      d_marke_sh "$basis/marken/fsmonitor.sh" fsmonitor "$marke"
+      d_git -C "$vd" config core.fsmonitor "$basis/marken/fsmonitor.sh"
+      erwartet="brain.mjs bruecke.mjs fremdes-git hook-pre-commit hook-commit-msg hook-post-commit fsmonitor"
+      ;;
+    gesperrt)
+      # Einstellungen, die Programme starten und sich nicht entschärfen lassen: Git bleibt gesperrt, bis der Nutzer vertraut.
+      d_marke_sh "$basis/marken/clean.sh" filter-clean "$marke" filter
+      d_marke_sh "$basis/marken/uploadpack.sh" uploadpack "$marke"
+      printf '* filter=marke\n' > "$vd/.gitattributes"
+      d_git -C "$vd" config filter.marke.clean "$basis/marken/clean.sh"
+      d_git init -q --bare "$basis/gegenstelle.git"
+      d_git -C "$vd" config remote.origin.url "$basis/gegenstelle.git"
+      d_git -C "$vd" config remote.origin.uploadpack "$basis/marken/uploadpack.sh"
+      erwartet="brain.mjs bruecke.mjs fremdes-git filter-clean uploadpack"
+      ;;
+  esac
+  # Kontrolle: Jede Marke schreibt wirklich, wenn man das Programm ohne die Vorsicht der App laufen lässt (an einer KOPIE des Vaults).
+  # Sonst bewiese „keine Marke“ nichts.
+  k="$basis/kontrolle"; cp -R "$vd" "$k"
+  ( cd "$k" && "$RNODE" .tools/brain.mjs >/dev/null 2>&1; "$RNODE" .tools/ansicht/bruecke.mjs </dev/null >/dev/null 2>&1 ) || true
+  ( cd "$k" && PATH="node_modules/.bin:$PATH" git --version >/dev/null 2>&1 ) || true
+  if [ "$art" = haken ]; then
+    ( cd "$k" && printf 'x\n' >> notiz.md && d_git status -s >/dev/null 2>&1; d_git add notiz.md >/dev/null 2>&1; d_git commit -q -m Kontrolle >/dev/null 2>&1 ) || true
+  else
+    ( cd "$k" && printf 'x\n' >> notiz.md && d_git add notiz.md >/dev/null 2>&1; d_git fetch -q origin >/dev/null 2>&1 ) || true
+  fi
+  for m in $erwartet; do
+    grep -qx "$m" "$marke" 2>/dev/null || { echo "Markendatei der Kontrolle:"; cat "$marke" 2>/dev/null || true; fehl "D/$art: Marke „$m“ schreibt in der Kontrolle nicht — der Test würde nichts beweisen"; }
+  done
+  rm -rf "$k" "$marke"
+  # Die Probe im Studio: vertrauen-geaendert und ansicht aus der Oberfläche, dazu die Git-Wege der Werkstatt (nur mit BRAIN_TESTMODUS=1)
+  probe="$basis/probe.js"
+  cat > "$probe" <<'JS'
+const A = window.webkit.messageHandlers.aktion;
+const K = window.webkit.messageHandlers.brain;
+const web = async (methode, pfad, daten) => {
+  try {
+    const r = await K.postMessage({ methode, pfad, daten: daten ?? null });
+    let w = null; try { w = JSON.parse(r.body); } catch (e) { w = null; }
+    return r.status + (w && w.gesperrt === true ? "/gesperrt" : "") + (w && w.gitGesperrt === true ? "/gitGesperrt" : "");
+  } catch (e) { return "fehler"; }
+};
+const t = [];
+const g = await A.postMessage({ aktion: "vertrauen-geaendert" });
+t.push("geaendert=" + (g && g.ok === true ? "ok" : "?"));
+const a = await A.postMessage({ aktion: "ansicht" });
+t.push("ansicht=" + (a && a.ok === false ? a.grund : "offen"));
+t.push("status=" + await web("GET", "/api/git/status"));
+t.push("sync=" + await web("POST", "/api/git/sync", {}));
+t.push("commit=" + await web("POST", "/api/git/commit", { nachricht: "Probe", dateien: ["neu.md"] }));
+t.push("verlauf=" + await web("GET", "/api/git/verlauf?pfad=notiz.md"));
+return t.join(" ");
 JS
-  cat > "$vd/.tools/ansicht/bruecke.mjs" <<'JS'
-import { appendFileSync } from "node:fs";
-appendFileSync(process.env.RAUCHTEST_MARKE, "bruecke.mjs\n");
-process.stdout.write(JSON.stringify({ bereit: true, version: "marke" }) + "\n");
-process.stdin.resume();
-JS
-  # Kontrolle: Das Marken-Kit schreibt seine Marke wirklich (sonst bewiese „keine Marke“ nichts)
-  RAUCHTEST_MARKE="$BASIS_D/kontrolle.txt" "$RNODE" "$vd/.tools/brain.mjs" >/dev/null 2>&1 || fehl "D: Marken-Kit lässt sich nicht starten"
-  [ -s "$BASIS_D/kontrolle.txt" ] || fehl "D: Marken-Kit schreibt keine Marke"
-  export RAUCHTEST_MARKE="$marke"
-  "$APP/Contents/MacOS/BrainApp" --vault "$vd" --test-fenster --test-fenster-schliessen-nach 12 --test-beenden-nach 18 &
+  # PATH mit relativem Eintrag: Ohne die Bereinigung fände jeder Kindprozess im Vault das git aus node_modules/.bin zuerst.
+  ( export BRAIN_TESTMODUS=1 PATH="node_modules/.bin:$PATH"
+    exec "$APP/Contents/MacOS/BrainApp" --vault "$vd" --test-fenster --test-skript "$probe" --test-fenster-schliessen-nach 16 --test-beenden-nach 22 >/dev/null 2>&1 ) &
   PID=$!
-  warte "status kit-nicht-erlaubt" 80 || fehl "D: Ohne Freigabe fehlt „Kit nicht erlaubt“ im Log"
-  warte "uebersicht-abgelehnt" 80 || fehl "D: Ohne Freigabe wurde die Übersicht nicht abgelehnt"
-  warte "fenster-bereit studio" 120 || fehl "D: Studio wurde nicht bereit"
-  warte "fenster-zu studio" 200 || fehl "D: Studio wurde nicht geschlossen"
-  nichts_uebrig "$BASIS_D"
-  unset RAUCHTEST_MARKE
-  if [ -e "$marke" ]; then cat "$marke"; fehl "D: Kit-Code ist ohne Freigabe gelaufen (Marke geschrieben)"; fi
-  if grep -q "fenster-auf uebersicht" "$LOG"; then fehl "D: Ohne Freigabe hat sich die Übersicht geöffnet"; fi
-  if grep -Eq " status (ok|hinweis|problem)$" "$LOG"; then fehl "D: Ohne Freigabe wurde ein Kit-Status gelesen"; fi
+  warte "status kit-(nicht-erlaubt|pruefung-fehlgeschlagen)" 80 || fehl "D/$art: Ohne Freigabe fehlt „Kit nicht erlaubt“ (bzw. „Prüfung fehlgeschlagen“) im Log"
+  warte "uebersicht-abgelehnt" 80 || fehl "D/$art: Ohne Freigabe wurde die Übersicht nicht abgelehnt"
+  warte "fenster-bereit studio" 120 || fehl "D/$art: Studio wurde nicht bereit"
+  warte "test-skript(-fehler| ok) probe.js" 120 || fehl "D/$art: Die Probe im Studio ist nicht gelaufen"
+  warte "fenster-zu studio" 200 || fehl "D/$art: Studio wurde nicht geschlossen"
+  nichts_uebrig "$basis"
+  if [ -e "$marke" ]; then cat "$marke"; fehl "D/$art: Code aus dem Vault ist ohne Freigabe gelaufen (Marke geschrieben)"; fi
+  if grep -q "fenster-auf uebersicht" "$LOG"; then fehl "D/$art: Ohne Freigabe hat sich die Übersicht geöffnet"; fi
+  if grep -Eq " status (ok|hinweis|problem)$" "$LOG"; then fehl "D/$art: Ohne Freigabe wurde ein Kit-Status gelesen"; fi
+  grep -q "aktion vertrauen-geaendert" "$LOG" || fehl "D/$art: Die Aktion vertrauen-geaendert kam nicht an"
+  grep -q "aktion ansicht" "$LOG" || fehl "D/$art: Die Aktion ansicht kam nicht an"
+  ergebnis="$(sed -n 's/.* test-skript ok probe.js [0-9]*ms ergebnis=\(.*\)$/\1/p' "$LOG" | head -1)"
+  [ -n "$ergebnis" ] || { grep "test-skript" "$LOG" || true; fehl "D/$art: Die Probe im Studio meldet kein Ergebnis"; }
+  case " $ergebnis " in *" geaendert=ok "*) ;; *) fehl "D/$art: vertrauen-geaendert antwortet nicht {ok:true}: $ergebnis" ;; esac
+  case " $ergebnis " in
+    *" ansicht=nicht-vertraut "*|*" ansicht=pruefung-fehlgeschlagen "*) ;;
+    *) fehl "D/$art: ansicht ohne Freigabe öffnet oder antwortet falsch: $ergebnis" ;;
+  esac
+  if [ "$art" = haken ]; then
+    # Der Commit erreicht Git wirklich (200) und löst trotzdem keinen Hook aus — sonst bewiese „keine Marke“ nichts.
+    case " $ergebnis " in *" commit=200 "*) ;; *) fehl "D/$art: Der Commit der Werkstatt ging nicht bis Git (erwartet 200, ohne Hooks): $ergebnis" ;; esac
+  fi
+  if [ "$art" = gesperrt ]; then
+    case " $ergebnis " in *" status=200/gesperrt "*) ;; *) fehl "D/$art: Git-Status meldet nicht „gesperrt“: $ergebnis" ;; esac
+    case " $ergebnis " in *" sync=409/gitGesperrt "*) ;; *) fehl "D/$art: Der Abgleich ist trotz gefährlicher Git-Einstellung nicht gesperrt: $ergebnis" ;; esac
+    case " $ergebnis " in *" commit=409/gitGesperrt "*) ;; *) fehl "D/$art: Der Commit ist trotz gefährlicher Git-Einstellung nicht gesperrt: $ergebnis" ;; esac
+  fi
   local grund
-  grund="$(sed -n 's/.* status kit-nicht-erlaubt \(.*\)$/\1/p' "$LOG" | head -1)"
-  echo "OK D: ohne Freigabe läuft nichts aus dem Vault (Grund im Log: ${grund:-?}; Marken-Kit unberührt, Übersicht abgelehnt)"
+  grund="$(sed -n 's/.* status \(kit-[a-z-]*\) \(.*\)$/\1 \2/p' "$LOG" | head -1)"
+  echo "OK D/$art: ohne Freigabe läuft nichts aus dem Vault (Grund im Log: ${grund:-?}; Probe: $ergebnis; Marken unberührt, Übersicht abgelehnt)"
+}
+
+phase_d() {
+  command -v git >/dev/null 2>&1 || { ueberspringe "D: git fehlt auf diesem Mac — Git-Wege (Hooks, fsmonitor, git aus dem Vault, Sperre) nicht geprüft"; return 0; }
+  d_lauf haken
+  d_lauf gesperrt
 }
 
 # Keine Spuren in der echten App (k11): unter der Test-Bundle-ID steht kein gemerkter Fensterrahmen, und WebKit hat nichts angelegt.

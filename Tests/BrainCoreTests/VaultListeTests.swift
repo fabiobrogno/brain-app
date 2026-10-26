@@ -32,24 +32,29 @@ private func schreibe(_ json: String, nach datei: URL) {
     #expect(liste.anzeigename(fuer: URL(fileURLWithPath: "/irgendwo/Unbekannt")) == "Unbekannt")
 }
 
+/// Der Ordner, den eine config.json meint, so wie die App ihn zurückgibt: aufgelöst (wie `realpathSync.native` in der Werkstatt).
+private func aufgeloest(_ u: URL) -> URL { AppAktion.aufgeloest(u) }
+
 @Test func ohneVaultsJsonGiltConfigJson() throws {
     let p = AppPfade(basis: tempOrdner("Support"))
     #expect(VaultListe.lade(p) == nil)
     #expect(VaultListe.aktiverVault(p) == nil)
-    try AppEinstellungen(vault: "/Users/x/Altes Brain").speichere(p)
-    #expect(VaultListe.aktiverVault(p) == URL(fileURLWithPath: "/Users/x/Altes Brain", isDirectory: true))
+    // Der Rückfall verlangt einen vorhandenen Ordner (wie `altVault` in der Werkstatt) — also ein echter Ordner statt eines Wunschpfads.
+    let alt = tempOrdner("Altes Brain")
+    try AppEinstellungen(vault: alt.path).speichere(p)
+    #expect(VaultListe.aktiverVault(p) == aufgeloest(alt))
     // kaputte vaults.json zählt wie fehlend → Rückfall config.json
     schreibe("{ kaputt", nach: p.vaultListe)
     #expect(VaultListe.lade(p) == nil)
-    #expect(VaultListe.aktiverVault(p) == URL(fileURLWithPath: "/Users/x/Altes Brain", isDirectory: true))
+    #expect(VaultListe.aktiverVault(p) == aufgeloest(alt))
     schreibe("[1,2]", nach: p.vaultListe)
-    #expect(VaultListe.aktiverVault(p) == URL(fileURLWithPath: "/Users/x/Altes Brain", isDirectory: true))
+    #expect(VaultListe.aktiverVault(p) == aufgeloest(alt))
 }
 
 @Test func vaultsJsonIstMassgeblichAuchOhneAktivenVault() throws {
-    // Vault entfernt, nichts gewählt: ein alter config.json-Eintrag darf nicht wiederkehren.
+    // Vault entfernt, nichts gewählt: ein alter config.json-Eintrag darf nicht wiederkehren — auch einer, der gültig wäre.
     let p = AppPfade(basis: tempOrdner("Support"))
-    try AppEinstellungen(vault: "/Users/x/Altes Brain").speichere(p)
+    try AppEinstellungen(vault: tempOrdner("Altes Brain").path).speichere(p)
     for json in [#"{"vaults":[],"aktiv":null}"#, #"{"vaults":[]}"#, #"{}"#] {
         schreibe(json, nach: p.vaultListe)
         #expect(VaultListe.lade(p) != nil, "\(json)")
@@ -98,9 +103,10 @@ private func schreibe(_ json: String, nach datei: URL) {
         #expect(VaultListe.aktiverVault(p) == nil, "\(vaults)")
     }
     // „defekt“ wie „fehlt“: der Vault aus config.json gilt (die Werkstatt nimmt ihn ebenso), nie das `aktiv` der defekten Datei
-    try AppEinstellungen(vault: "/Users/x/Altes Brain").speichere(p)
+    let alt = tempOrdner("Altes Brain")
+    try AppEinstellungen(vault: alt.path).speichere(p)
     schreibe(#"{"vaults":"x","aktiv":"/p"}"#, nach: p.vaultListe)
-    #expect(VaultListe.aktiverVault(p) == URL(fileURLWithPath: "/Users/x/Altes Brain", isDirectory: true))
+    #expect(VaultListe.aktiverVault(p) == aufgeloest(alt))
     // eine leere, aber gültige Liste ist NICHT defekt: dort bleibt config.json außen vor
     for json in [#"{"vaults":[],"aktiv":null}"#, #"{"vaults":[]}"#, "{}"] {
         schreibe(json, nach: p.vaultListe)
@@ -232,4 +238,103 @@ private func schreibe(_ json: String, nach datei: URL) {
     let liste = try! #require(VaultListe.lade(p, home: home))
     #expect(liste.vaults.map(\.pfad) == ["/Users/test/Brain"])
     #expect(liste.aktiv == "/Users/test/Brain")
+}
+
+// MARK: Rückfall config.json mit denselben Regeln wie in der Werkstatt (Review V5, Leseregel 1)
+
+/// config.json mit `{"vault": <wert>}` (auch Nicht-Texte) in einem frischen Support-Ordner.
+private func supportMitConfig(_ wert: String) -> AppPfade {
+    let p = AppPfade(basis: tempOrdner("Support"))
+    schreibe(#"{"vault":\#(wert)}"#, nach: p.konfiguration)
+    return p
+}
+
+/// Ein Text als JSON-Wert (mit Anführungszeichen und Escapes), für `supportMitConfig`.
+private func jsonText(_ s: String) -> String {
+    String(decoding: try! JSONSerialization.data(withJSONObject: s, options: [.fragmentsAllowed]), as: UTF8.self)
+}
+
+@Test func configJsonRueckfallNimmtKeinenVerbotenenOrt() throws {
+    // Ein Home, in dem es die Ordner wirklich gibt — sonst bewiese „nil“ nur „fehlt“, nicht „verboten“.
+    let home = tempOrdner("Home")
+    for sub in ["Brain", ".ssh", "Library/Foo", "Dokumente/.stille/Brain"] {
+        try FileManager.default.createDirectory(at: home.appendingPathComponent(sub), withIntermediateDirectories: true)
+    }
+    let verboten = [home.path, "/", "/usr", "/Users", "/Volumes", "/private/etc", "/Applications", home.path + "/.ssh",
+                    home.path + "/Library/Foo", home.path + "/Library", home.path + "/Dokumente/.stille/Brain"]
+    for pfad in verboten {
+        let p = supportMitConfig(jsonText(pfad))
+        #expect(VaultListe.aktiverVault(p, home: home) == nil, "\(pfad)")
+        // Gegenprobe: derselbe Eintrag wäre als Eintrag von vaults.json ebenso verboten — beide Wege sagen dasselbe
+        schreibe(#"{"vaults":[{"pfad":"\#(pfad)"}],"aktiv":"\#(pfad)"}"#, nach: p.vaultListe)
+        #expect(VaultListe.lade(p, home: home)?.aktiv == nil, "\(pfad)")
+    }
+    // ein Ordner im Support-Ordner der App selbst
+    let p = supportMitConfig("null")
+    let intern = p.basis.appendingPathComponent("intern", isDirectory: true)
+    try FileManager.default.createDirectory(at: intern, withIntermediateDirectories: true)
+    schreibe(#"{"vault":\#(jsonText(intern.path))}"#, nach: p.konfiguration)
+    #expect(VaultListe.aktiverVault(p, home: home) == nil)
+    // Gegenprobe: der erlaubte Ordner aus demselben Home gilt
+    let gut = home.appendingPathComponent("Brain", isDirectory: true)
+    #expect(VaultListe.aktiverVault(supportMitConfig(jsonText(gut.path)), home: home) == aufgeloest(gut))
+}
+
+@Test func configJsonRueckfallBrauchtEinenVorhandenenAbsolutenOrdner() throws {
+    let home = tempOrdner("Home")
+    let datei = home.appendingPathComponent("datei.txt")
+    try "x".write(to: datei, atomically: true, encoding: .utf8)
+    let gut = home.appendingPathComponent("Mein Brän", isDirectory: true)
+    try FileManager.default.createDirectory(at: gut, withIntermediateDirectories: true)
+    // fehlender Ordner, relativer Pfad, eine Datei, leerer Text, NUL, kein Text
+    for wert in [jsonText(home.path + "/Gibt es nicht"), jsonText("relativ/Brain"), jsonText("Brain"), jsonText(datei.path), jsonText(""),
+                 jsonText("   "), jsonText("/ok\u{0}x"), "5", "true", "null", "[]", #"{"a":1}"#] {
+        #expect(VaultListe.aktiverVault(supportMitConfig(wert), home: home) == nil, "\(wert)")
+    }
+    // Ränder weg (wie `.trim()` in der Werkstatt): ein Zeilenumbruch oder Leerzeichen am Ende sind kein Teil des Pfads
+    for wert in [" \(gut.path)", "\(gut.path)\n", "  \(gut.path)\t "] {
+        #expect(VaultListe.aktiverVault(supportMitConfig(jsonText(wert)), home: home) == aufgeloest(gut), "\(wert)")
+    }
+    // fehlt config.json oder ist sie kaputt: kein Vault
+    let leer = AppPfade(basis: tempOrdner("Support"))
+    #expect(VaultListe.aktiverVault(leer, home: home) == nil)
+    schreibe("{ kaputt", nach: leer.konfiguration)
+    #expect(VaultListe.aktiverVault(leer, home: home) == nil)
+}
+
+@Test func configJsonRueckfallLoestVerweiseAufUndPruftDasZiel() throws {
+    let home = tempOrdner("Home")
+    let echt = home.appendingPathComponent("Echt", isDirectory: true)
+    try FileManager.default.createDirectory(at: echt, withIntermediateDirectories: true)
+    let verweis = home.appendingPathComponent("Verweis", isDirectory: false)
+    try FileManager.default.createSymbolicLink(at: verweis, withDestinationURL: echt)
+    // harmloser Verweis: der Vault ist der aufgelöste Ordner (wie `realpathSync.native` in der Werkstatt)
+    #expect(VaultListe.aktiverVault(supportMitConfig(jsonText(verweis.path)), home: home) == aufgeloest(echt))
+    // ein Verweis auf einen verbotenen Ort zählt nicht: die Ortsregeln gelten für die aufgelöste Form
+    let boese = home.appendingPathComponent("Mein Brain", isDirectory: false)
+    try FileManager.default.createSymbolicLink(at: boese, withDestinationURL: URL(fileURLWithPath: "/usr", isDirectory: true))
+    #expect(VaultListe.aktiverVault(supportMitConfig(jsonText(boese.path)), home: home) == nil)
+    // ... auch einer auf das Home selbst
+    let aufHome = home.appendingPathComponent("Zuhause", isDirectory: false)
+    try FileManager.default.createSymbolicLink(at: aufHome, withDestinationURL: home)
+    #expect(VaultListe.aktiverVault(supportMitConfig(jsonText(aufHome.path)), home: home) == nil)
+}
+
+@Test func configJsonRueckfallGiltAuchBeiDefekterVaultsJsonNurMitDenselbenRegeln() throws {
+    let home = tempOrdner("Home")
+    let gut = home.appendingPathComponent("Brain", isDirectory: true)
+    try FileManager.default.createDirectory(at: gut, withIntermediateDirectories: true)
+    let p = supportMitConfig(jsonText(home.path)) // das Home selbst
+    // fehlende, defekte und „vaults ist kein Array“-Datei: der Rückfall greift, lehnt das Home aber ab
+    for datei in [nil, "{ kaputt", "[1,2]", #"{"vaults":"x","aktiv":"/p"}"#] as [String?] {
+        if let datei { schreibe(datei, nach: p.vaultListe) } else { try? FileManager.default.removeItem(at: p.vaultListe) }
+        #expect(VaultListe.aktiverVault(p, home: home) == nil, "\(String(describing: datei))")
+    }
+    // mit gültigem Ordner in config.json greift derselbe Rückfall
+    schreibe(#"{"vault":\#(jsonText(gut.path))}"#, nach: p.konfiguration)
+    schreibe(#"{"vaults":"x"}"#, nach: p.vaultListe)
+    #expect(VaultListe.aktiverVault(p, home: home) == aufgeloest(gut))
+    // eine gültige (auch leere) vaults.json bleibt maßgeblich: config.json spielt dann keine Rolle
+    schreibe(#"{"vaults":[],"aktiv":null}"#, nach: p.vaultListe)
+    #expect(VaultListe.aktiverVault(p, home: home) == nil)
 }

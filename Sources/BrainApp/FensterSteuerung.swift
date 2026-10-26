@@ -162,6 +162,9 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
     private var test: StartArgumente?
     private var testAufgabe: Task<Void, Never>?
     private var testGestartet = false
+    /// Zählt die Meldungen `fehler` dieses Fensterlebens (neu mit jedem `oeffne`): Mehr als `AppAktion.maxFehlerJeFenster` schreibt
+    /// die App nicht ins Protokoll (Review SW-7).
+    private var fehlerDrossel = MeldungsDrossel(grenze: AppAktion.maxFehlerJeFenster)
 
     var istOffen: Bool { fenster != nil }
     /// Wird nach dem Schließen aufgerufen (z. B. um den Menüstatus aufzufrischen).
@@ -214,8 +217,10 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
         if test != nil { config.userContentController.addUserScript(StudioTestlauf.ruhigeAnimationen()) }
         config.setURLSchemeHandler(SchemaHandler(bruecke: bruecke, oberflaeche: oberflaeche), forURLScheme: NavigationsRegel.schema)
         config.userContentController.addScriptMessageHandler(Kanal(bruecke: bruecke, oberflaeche: oberflaeche), contentWorld: .page, name: "brain")
+        fehlerDrossel = MeldungsDrossel(grenze: AppAktion.maxFehlerJeFenster)
         let aktionsKanal = AktionsKanal(oberflaeche: oberflaeche, vault: { [weak self] in self?.aktuellerVault?() }) { [weak self] aktion in
             guard let self, let f = self.beiAktion else { return nil }
+            if case .fehler = aktion, !self.laesstFehlerDurch() { return ["ok": false, "grund": "gedrosselt"] as [String: Any] }
             return await f(aktion)
         }
         config.userContentController.addScriptMessageHandler(aktionsKanal, contentWorld: .page, name: "aktion")
@@ -269,6 +274,21 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
     }
 
     func schliesse() { fenster?.close() }
+
+    /// Höchstens `AppAktion.maxFehlerJeFenster` Meldungen `fehler` je Fensterleben kommen durch; die erste darüber steht als
+    /// `js-fehler gedrosselt` im Protokoll, der Rest wird verworfen. Die Seite kann sonst mit `postMessage` in einer Schleife das
+    /// Protokoll wegrotieren und die Diagnosezeilen verdrängen (Review SW-7).
+    private func laesstFehlerDurch() -> Bool {
+        switch fehlerDrossel.melde() {
+        case .durchlassen:
+            return true
+        case .ersteDrosselung:
+            log.schreibe("js-fehler gedrosselt nach \(fehlerDrossel.grenze) Meldungen — weitere werden verworfen")
+            return false
+        case .verwerfen:
+            return false
+        }
+    }
 
     /// Fenstertitel (Studio: Name des aktiven Vaults, von der Oberfläche gemeldet); nil = Standardtitel.
     func setzeTitel(_ titel: String?) { fenster?.title = titel ?? standardTitel }

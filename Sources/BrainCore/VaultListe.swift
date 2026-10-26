@@ -51,12 +51,25 @@ public struct VaultListe: Equatable, Sendable {
 
     /// Der aktive Vault der App: `aktiv` aus vaults.json. Nur wenn es vaults.json noch nicht gibt (oder sie unlesbar oder defekt
     /// ist), gilt der Vault aus `config.json` — danach ist vaults.json maßgeblich, auch mit `aktiv: null` (Vault entfernt,
-    /// nichts gewählt; ein alter config.json-Eintrag darf nicht wiederkehren).
-    public static func aktiverVault(_ pfade: AppPfade) -> URL? {
-        let pfad: String?
-        if let liste = lade(pfade), !liste.defekt { pfad = liste.aktiv } else { pfad = AppEinstellungen.lade(pfade).vault }
-        guard let pfad, istAbsolut(pfad) else { return nil }
-        return URL(fileURLWithPath: pfad, isDirectory: true)
+    /// nichts gewählt; ein alter config.json-Eintrag darf nicht wiederkehren). Der Rückfall folgt den Regeln der Werkstatt
+    /// (`altVault`), sonst nennten Werkstatt („Willkommen“) und Menüleiste verschiedene aktive Vaults (Review V5).
+    public static func aktiverVault(_ pfade: AppPfade, home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL? {
+        if let liste = lade(pfade, home: home), !liste.defekt { return liste.aktiv.map { URL(fileURLWithPath: $0, isDirectory: true) } }
+        return altVault(pfade, home: home)
+    }
+
+    /// Der Vault aus der alten `config.json` (`{"vault":"<pfad>"}`), wie `altVault` in `gemeinsam/vaults.mjs` (Leseregel 1 im Kopf
+    /// dieser Datei): ein Text, Ränder weg, absolut und ohne NUL, der Ordner existiert, und die Ortsregeln erlauben ihn — nicht das
+    /// Home selbst, nicht `/`, kein Systemordner, kein versteckter Ordner unter dem Home … (`ortErlaubt` prüft die geschriebene UND
+    /// die aufgelöste Form). Das Ergebnis ist der aufgelöste Pfad (dort `realpathSync.native`). Sonst nil: Die Werkstatt zeigt dann
+    /// „Willkommen“, und die App darf nicht den Status eines anderen Ordners zeigen — oder gar `vertrauen-pruefen.mjs` danach fragen.
+    static func altVault(_ pfade: AppPfade, home: URL) -> URL? {
+        guard let roh = AppEinstellungen.lade(pfade).vault else { return nil }
+        let v = roh.trimmingCharacters(in: .whitespacesAndNewlines)
+        var istOrdner: ObjCBool = false
+        guard !v.isEmpty, istAbsolut(v), FileManager.default.fileExists(atPath: v, isDirectory: &istOrdner), istOrdner.boolValue,
+              ortErlaubt(bereinigt(v), home: home, support: pfade.basis) else { return nil }
+        return AppAktion.aufgeloest(URL(fileURLWithPath: v, isDirectory: true))
     }
 
     /// Anzeigename: der Name aus der Liste, sonst der Ordnername.

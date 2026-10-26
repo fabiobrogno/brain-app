@@ -30,6 +30,60 @@ private let statusJSON = #"{"version":"0.5.1","quellVault":true,"zustand":"hinwe
     #expect(teils.ausgabe == "/opt/homebrew/bin:/usr/local/bin:/usr/bin")
 }
 
+// MARK: PATH ohne leere und relative Einträge (Studio-v2-Spec §8, Review SW-3)
+
+@Test func pfadVerwirftLeereUndRelativeEintraege() {
+    func pfad(_ p: String?) -> String { BrainBefehl.pfadMitStandardOrdnern(p) }
+    // Der Fall aus der Probe: ein `node_modules/.bin` vor dem echten git löste gegen das Arbeitsverzeichnis des Kindes (den Vault) auf.
+    #expect(pfad("node_modules/.bin:/opt/homebrew/bin:/usr/bin:/bin") == "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin")
+    #expect(pfad("./node_modules/.bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin") == "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin")
+    // ein einzelner Punkt, ein leerer Eintrag (= aktueller Ordner), `~` (keine Shell-Erweiterung bei execvp), Zeilen mit Leerzeichen
+    #expect(pfad(".:/usr/bin:/bin") == "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin")
+    #expect(pfad("/usr/bin::/bin:") == "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin")
+    #expect(pfad("~/bin:/usr/bin") == "/opt/homebrew/bin:/usr/local/bin:/usr/bin")
+    #expect(pfad("bin/../bin:../x:/usr/bin") == "/opt/homebrew/bin:/usr/local/bin:/usr/bin")
+    #expect(pfad(" /usr/bin:/bin") == "/opt/homebrew/bin:/usr/local/bin:/bin", "ein Eintrag mit führendem Leerzeichen ist relativ")
+    // absolute Einträge bleiben in ihrer Reihenfolge, auch ungewöhnliche
+    #expect(pfad("/b:/a:/usr/bin") == "/opt/homebrew/bin:/usr/local/bin:/b:/a:/usr/bin")
+    #expect(pfad("/usr/bin:/bin:/usr/sbin:/sbin") == "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin")
+}
+
+@Test func pfadOhneBrauchbareEintraegeFaelltAufDieSystemordnerZurueck() {
+    // Es bleibt nichts übrig (oder es gab nichts): Das Kind darf nicht ohne /usr/bin dastehen — dort liegt git.
+    let erwartet = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+    for p in [nil, "", ":", ".", "bin", "node_modules/.bin:.:", "~/bin"] as [String?] {
+        #expect(BrainBefehl.pfadMitStandardOrdnern(p) == erwartet, "\(String(describing: p))")
+    }
+}
+
+/// Ein Programm im Arbeitsverzeichnis darf nicht vor dem echten laufen: Der Prozess sieht nur absolute PATH-Einträge.
+@Test func kindprozessErhaeltKeinenRelativenPfad() async throws {
+    let node = skript("#!/bin/bash\nprintf '%s' \"$PATH\"\n", name: "node", in: tempOrdner())
+    let vault = tempOrdner()
+    // Ohne die Korrektur stünde hier `/opt/homebrew/bin:/usr/local/bin:node_modules/.bin:/usr/bin:.`
+    let r = try await BrainBefehl(node: node, vault: vault, umgebung: ["PATH": "node_modules/.bin:/usr/bin:.:"]).fuehreAus([])
+    #expect(r.ausgabe == "/opt/homebrew/bin:/usr/local/bin:/usr/bin")
+    for eintrag in r.ausgabe.split(separator: ":") { #expect(eintrag.hasPrefix("/"), "\(eintrag)") }
+}
+
+/// Der Fall aus dem Review (SW-3): ein fremder Vault mit `node_modules/.bin/git` und ein App-Start mit relativem PATH-Eintrag. Das
+/// Programm heißt hier anders als `git`, damit der Test nicht davon abhängt, ob und wo auf diesem Mac ein echtes `git` liegt.
+@Test func eingeschleustesProgrammImVaultLaeuftNicht() async throws {
+    let vault = tempOrdner("Fremder Vault")
+    let bin = vault.appendingPathComponent("node_modules/.bin", isDirectory: true)
+    try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+    skript("#!/bin/sh\necho fremdes-programm-gelaufen\n", name: "brain-test-fremd", in: bin)
+    let sh = URL(fileURLWithPath: "/bin/sh")
+    // Kontrolle: Mit dem relativen Eintrag und dem Vault als Arbeitsverzeichnis läuft die Attrappe wirklich (sonst bewiese unten nichts)
+    let roh = try await ProzessLauf.starte(sh, ["-c", "brain-test-fremd"], umgebung: ["PATH": "node_modules/.bin:/usr/bin:/bin"], ordner: vault)
+    #expect(roh.ausgabe.contains("fremdes-programm-gelaufen"))
+    // Mit der Umgebung, die die App ihren Kindprozessen gibt: Der Name wird nicht aufgelöst — nichts aus dem Vault läuft
+    let env = NodeUmgebung.fuerKind(basis: ["PATH": "node_modules/.bin:/usr/bin:/bin"], vault: vault, vorgaben: [:])
+    let sauber = try await ProzessLauf.starte(sh, ["-c", "brain-test-fremd"], umgebung: env, ordner: vault)
+    #expect(!sauber.ausgabe.contains("fremdes-programm-gelaufen"), "Programm aus dem Vault ist gelaufen: \(sauber.ausgabe)")
+    #expect(sauber.code == 127, "nicht gefunden (127), nicht ausgeführt")
+}
+
 @Test func zeitlimitBrichtAbOhneZuHaengen() async {
     let node = skript("#!/bin/bash\nsleep 5\n", name: "node", in: tempOrdner())
     let start = ContinuousClock.now

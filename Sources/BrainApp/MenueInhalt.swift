@@ -16,8 +16,18 @@ struct MenueInhalt: View {
         if zustand.status?.quellVault == true {
             Text("Entwickler-Brain — keine Kit-Updates")
         }
-        if zustand.kitVorhanden && !zustand.kitErlaubt && zustand.anzeige == .kitNichtErlaubt {
-            Text("Im Studio freigeben, dann läuft das Kit")
+        if zustand.kitVorhanden {
+            switch zustand.kitStand {
+            case .nichtFreigegeben:
+                Text("Im Studio freigeben, dann läuft das Kit")
+            case .pruefungFehlgeschlagen:
+                // Kein „bitte freigeben“: Dem Vault ist vielleicht längst vertraut, nur die Prüfung selbst ging schief. Gestartet wird
+                // trotzdem nichts aus dem Vault; der Grund steht im Protokoll.
+                Text("Die Prüfung ließ sich nicht ausführen — siehe Protokoll")
+                Button("Protokoll zeigen") { zustand.zeigeProtokoll() }
+            case .unbekannt, .erlaubt:
+                EmptyView()
+            }
         }
         Divider()
         Button("Studio öffnen") { zustand.oeffneStudio() }.keyboardShortcut("o")

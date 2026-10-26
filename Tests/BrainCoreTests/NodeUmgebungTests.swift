@@ -57,6 +57,19 @@ import Foundation
     #expect(env["PATH"]?.hasSuffix("/usr/bin") == true)
 }
 
+@Test func kindUmgebungGibtNurAbsolutePfadEintraegeWeiter() {
+    // aus der Umgebung des Starters (App aus einem Terminal gestartet, `open --env PATH=…`)
+    let geerbt = NodeUmgebung.fuerKind(basis: ["PATH": "node_modules/.bin:/opt/homebrew/bin:/usr/bin:/bin"], vault: nil, vorgaben: [:])
+    #expect(geerbt["PATH"] == "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin")
+    // ... und ebenso aus den Vorgaben der App, die den geerbten Wert überschreiben
+    let vorgabe = NodeUmgebung.fuerKind(basis: ["PATH": "/usr/bin"], vault: URL(fileURLWithPath: "/tmp/Mein Brain"), vorgaben: ["PATH": ".:./bin:/usr/bin"])
+    #expect(vorgabe["PATH"] == "/opt/homebrew/bin:/usr/local/bin:/usr/bin")
+    // fehlt PATH ganz, gelten die Systemordner
+    #expect(NodeUmgebung.fuerKind(basis: [:], vault: nil, vorgaben: [:])["PATH"] == "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin")
+    // sonst kommt nichts dazu (ohne Vault auch kein BRAIN_VAULT)
+    #expect(Set(geerbt.keys) == ["PATH"])
+}
+
 @Test func zeitlimitJePfad() {
     #expect(BrueckenVerbindung.zeitlimit(fuerPfad: "/api/git/sync") == .seconds(400))
     #expect(BrueckenVerbindung.zeitlimit(fuerPfad: "/api/git/sync?x=1") == .seconds(400))

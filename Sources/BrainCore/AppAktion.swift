@@ -27,6 +27,9 @@ public enum AppAktion: Equatable, Sendable {
     static let maxHinweis = 200
     static let maxFehlertext = 300
     static let maxFehlerort = 120
+    /// So viele `fehler`-Meldungen schreibt die App je Fensterleben ins Protokoll (wie `MAX_MELDUNGEN` in `fehlerhaken.js`), danach
+    /// einmal „js-fehler gedrosselt“ und der Rest wird verworfen (`MeldungsDrossel`, Review SW-7).
+    public static let maxFehlerJeFenster = 20
 
     /// `{aktion:"ansicht"}`, `{aktion:"ordner-zeigen", wert:<rel. Pfad>}`, `{aktion:"extern", wert:<https-URL>}`,
     /// `{aktion:"ordner-waehlen", wert:{titel?, vorschlag?}}`, `{aktion:"vault-gewechselt"}`, `{aktion:"vertrauen-geaendert"}`,

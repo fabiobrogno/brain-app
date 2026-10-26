@@ -29,7 +29,9 @@ public enum NodeUmgebung {
         }
     }
 
-    /// Basis: bereinigte Prozessumgebung; danach die Vorgaben der App (immer gültig) und PATH mit Standardordnern.
+    /// Basis: bereinigte Prozessumgebung; danach die Vorgaben der App (immer gültig) und PATH mit Standardordnern — und NUR mit
+    /// absoluten Einträgen: leere und relative Einträge (`.`, `node_modules/.bin`) fliegen auch aus einem PATH, den die Vorgaben
+    /// setzen, denn die Kindprozesse laufen oft mit einem fremden Vault als Arbeitsverzeichnis (`BrainBefehl.pfadMitStandardOrdnern`).
     /// Ohne Vault (Studio vor der Vault-Wahl) wird auch ein geerbtes `BRAIN_VAULT` entfernt: die Werkstatt liest dann
     /// ausschließlich `<support>/vaults.json`, nie einen zufällig aus der Shell geerbten Pfad.
     public static func fuerKind(basis: [String: String] = ProcessInfo.processInfo.environment,

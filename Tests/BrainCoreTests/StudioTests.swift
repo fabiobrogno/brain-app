@@ -260,6 +260,43 @@ private func url(_ s: String) -> URL { URL(string: s)! }
     #expect(AppAktion.pruefe(nachricht, vault: v, oberflaeche: .studio) == .fehler(text: "x", ort: "app.js:1:1"))
 }
 
+// MARK: Drosselung der Meldung `fehler` (Review SW-7)
+
+@Test func drosselLaesstDieGrenzeDurchUndMeldetDieDrosselungEinmal() {
+    var d = MeldungsDrossel(grenze: 3)
+    #expect(d.melde() == .durchlassen)
+    #expect(d.melde() == .durchlassen)
+    #expect(d.melde() == .durchlassen)
+    #expect(d.durchgelassen == 3)
+    // die vierte ist die erste zu viel: verwerfen und EINMAL melden; danach nur noch stillschweigend verwerfen
+    #expect(d.melde() == .ersteDrosselung)
+    for _ in 0..<1000 { #expect(d.melde() == .verwerfen) }
+    #expect(d.durchgelassen == 3, "die Zahl der durchgelassenen Meldungen wächst nie über die Grenze")
+    #expect(d.gedrosselt)
+}
+
+@Test func drosselHatJeFensterEinenEigenenZaehler() {
+    // Jedes Fenster legt seine Drossel neu an (`FensterSteuerung.oeffne`): Die alte Zählung gilt für das neue Fenster nicht.
+    var a = MeldungsDrossel(grenze: 2)
+    _ = a.melde(); _ = a.melde(); _ = a.melde()
+    var b = MeldungsDrossel(grenze: 2)
+    #expect(b.melde() == .durchlassen)
+    #expect(a.melde() == .verwerfen)
+    // Grenze 0 lässt nichts durch; eine negative Grenze zählt als 0
+    var null = MeldungsDrossel(grenze: 0)
+    #expect(null.melde() == .ersteDrosselung)
+    #expect(MeldungsDrossel(grenze: -5).grenze == 0)
+}
+
+@Test func fehlerJeFensterSindWieImFehlerhakenAuf20Begrenzt() {
+    // Dieselbe Zahl wie `MAX_MELDUNGEN` in `fehlerhaken.js` — aber hier gilt sie je Fensterleben, nicht je Seitenladen.
+    #expect(AppAktion.maxFehlerJeFenster == 20)
+    var d = MeldungsDrossel(grenze: AppAktion.maxFehlerJeFenster)
+    var durch = 0
+    for _ in 0..<500 where d.melde() == .durchlassen { durch += 1 }
+    #expect(durch == 20)
+}
+
 @Test func ordnerZeigenBrauchtEinenVault() {
     #expect(AppAktion.pruefe(["aktion": "ordner-zeigen", "wert": "09_wiki/seite.md"], vault: nil, oberflaeche: .studio) == nil)
     // andere Aktionen brauchen keinen

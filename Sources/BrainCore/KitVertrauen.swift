@@ -16,9 +16,21 @@ public enum KitErlaubnis: Equatable, Sendable {
         case zeitueberschreitung = "zeitueberschreitung"
         /// Exit-Code ≠ 0 oder eine Ausgabe, die nicht genau `{"erlaubt":true}` bzw. `{"erlaubt":false}` ist.
         case unerwarteteAusgabe = "unerwartete-ausgabe"
+
+        /// Nur `nichtFreigegeben` ist eine Antwort der Prüfung („der Nutzer vertraut diesem Vault nicht [mehr]“); alles andere
+        /// ist ein technischer Fehler beim Prüfen selbst.
+        public var istTechnisch: Bool { self != .nichtFreigegeben }
     }
 
     public var istErlaubt: Bool { self == .erlaubt }
+
+    /// Ein „nein“ aus technischem Grund: Die Prüfung konnte nichts über das Vertrauen sagen (fehlt, Start, Zeit, unerwartete
+    /// Ausgabe). Gestartet wird dann genauso nichts — aber es ist keine Antwort des Nutzers, und die Oberfläche darf nicht „bitte
+    /// freigeben“ sagen (Review SW-5).
+    public var istTechnischerFehler: Bool {
+        if case .nein(let g) = self { return g.istTechnisch }
+        return false
+    }
 
     /// Kurztext für Logzeilen: `erlaubt` oder `nein <grund>`.
     public var logText: String {
@@ -46,6 +58,10 @@ public struct KitVertrauen: Sendable {
     public let pruefSkript: URL
     public let umgebung: [String: String]
     public let arbeitsordner: URL?
+    /// Wie lange eine Prüfung höchstens dauern darf (Standard `zeitlimit`, 5 s). Die App nimmt immer den Standard; nur Tests geben
+    /// mehr: Auf einem ausgelasteten Mac braucht schon der erste Start eines frisch geschriebenen Skripts mitunter Sekunden, und ein
+    /// Test, der etwas anderes prüft, soll daran nicht scheitern.
+    public let pruefZeitlimit: Duration
 
     public static let skriptName = "vertrauen-pruefen.mjs"
     public static let zeitlimit = Duration.seconds(5)
@@ -53,11 +69,13 @@ public struct KitVertrauen: Sendable {
     static let ausgabeErlaubt = #"{"erlaubt":true}"#
     static let ausgabeNichtErlaubt = #"{"erlaubt":false}"#
 
-    public init(node: URL, pruefSkript: URL, umgebung: [String: String] = [:], arbeitsordner: URL? = nil) {
+    public init(node: URL, pruefSkript: URL, umgebung: [String: String] = [:], arbeitsordner: URL? = nil,
+                pruefZeitlimit: Duration = KitVertrauen.zeitlimit) {
         self.node = node
         self.pruefSkript = pruefSkript
         self.umgebung = umgebung
         self.arbeitsordner = arbeitsordner
+        self.pruefZeitlimit = pruefZeitlimit
     }
 
     /// Die Prüfung liegt neben der Werkstatt: `<Ressourcen>/werkstatt/vertrauen-pruefen.mjs`.
@@ -75,13 +93,15 @@ public struct KitVertrauen: Sendable {
         }
     }
 
-    /// Fragt die Prüfung für diesen Vault (frisch, ohne Zwischenspeicher). Wirft nie: jeder Fehler ist ein „nein“.
-    public func pruefe(vault: URL, zeitlimit: Duration = KitVertrauen.zeitlimit) async -> KitErlaubnis {
+    /// Fragt die Prüfung für diesen Vault (frisch, ohne Zwischenspeicher). Wirft nie: jeder Fehler ist ein „nein“. `zeitlimit` nil =
+    /// `pruefZeitlimit` (Standard 5 s).
+    public func pruefe(vault: URL, zeitlimit: Duration? = nil) async -> KitErlaubnis {
         guard FileManager.default.isReadableFile(atPath: pruefSkript.path) else { return .nein(.pruefungFehlt) }
         // Ohne Vault in der Umgebung: der Vault ist nur das Argument, ein geerbtes BRAIN_VAULT soll hier nichts lenken.
         let env = NodeUmgebung.fuerKind(vault: nil, vorgaben: umgebung)
         do {
-            let r = try await ProzessLauf.starte(node, [pruefSkript.path, vault.path], umgebung: env, ordner: arbeitsordner, zeitlimit: zeitlimit)
+            let r = try await ProzessLauf.starte(node, [pruefSkript.path, vault.path], umgebung: env, ordner: arbeitsordner,
+                                                 zeitlimit: zeitlimit ?? pruefZeitlimit)
             return Self.auswerten(code: r.code, ausgabe: r.ausgabe)
         } catch BefehlFehler.zeitUeberschritten {
             return .nein(.zeitueberschreitung)

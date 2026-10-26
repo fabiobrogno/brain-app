@@ -151,6 +151,81 @@ private struct KitAttrappe {
     #expect(ContinuousClock.now - start < .seconds(3), "die Prüfung darf nicht bis zum Ende der Attrappe hängen")
 }
 
+@Test func vertrauenStartetDiePruefungOhneRelativenPfad() async throws {
+    // Die Prüfung liest in Git-Konfiguration und startet dafür `git` — mit dem Vault als Arbeitsverzeichnis, bevor jemand vertraut
+    // hat. Ein relativer PATH-Eintrag (App aus dem Terminal gestartet) ließe dort ein fremdes `git` laufen (Review SW-3).
+    let a = KitAttrappe(rumpf: """
+    printf '%s' "$PATH" > "$(dirname "$0")/pfad.txt"
+    echo '{"erlaubt":true}'
+    """)
+    let vertrauen = KitVertrauen(node: a.node, pruefSkript: a.cli,
+                                 umgebung: ["BRAIN_APP_SUPPORT": a.ordner.path, "PATH": "node_modules/.bin:.:/usr/bin:/bin"],
+                                 arbeitsordner: a.ordner)
+    #expect(await vertrauen.pruefe(vault: a.vault) == .erlaubt)
+    let pfad = try String(contentsOf: a.ordner.appendingPathComponent("pfad.txt"), encoding: .utf8)
+    #expect(pfad == "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin")
+}
+
+// MARK: Technische Prüffehler sind keine Antwort des Nutzers (Review SW-5)
+
+@Test func nurNichtFreigegebenIstEineAntwortDerPruefung() {
+    #expect(!KitErlaubnis.Grund.nichtFreigegeben.istTechnisch)
+    for g in [KitErlaubnis.Grund.pruefungFehlt, .startFehlgeschlagen, .zeitueberschreitung, .unerwarteteAusgabe] {
+        #expect(g.istTechnisch, "\(g)")
+        #expect(KitErlaubnis.nein(g).istTechnischerFehler, "\(g)")
+    }
+    #expect(!KitErlaubnis.nein(.nichtFreigegeben).istTechnischerFehler)
+    #expect(!KitErlaubnis.erlaubt.istTechnischerFehler)
+}
+
+@Test func kitStandUnterscheidetFreigabeUndPruefFehler() {
+    #expect(KitStand(.erlaubt) == .erlaubt)
+    #expect(KitStand(.nein(.nichtFreigegeben)) == .nichtFreigegeben)
+    for g in [KitErlaubnis.Grund.pruefungFehlt, .startFehlgeschlagen, .zeitueberschreitung, .unerwarteteAusgabe] {
+        #expect(KitStand(.nein(g)) == .pruefungFehlgeschlagen, "\(g)")
+    }
+}
+
+@Test func pruefFehlerSindEinEigenerStandAuchBeiEchtenAufrufen() async {
+    // fehlende CLI, Absturz, Müll, Zeitüberschreitung → Prüfung fehlgeschlagen; ausdrückliches „nein“ → nicht freigegeben
+    #expect(KitStand(await KitAttrappe(ohneCli: true).vertrauen.pruefe(vault: tempOrdner("V"))) == .pruefungFehlgeschlagen)
+    for rumpf in ["echo '{\"erlaubt\":true}'\nexit 3\n", "echo kaputt\n", "exit 0\n"] {
+        let a = KitAttrappe(rumpf: rumpf)
+        #expect(KitStand(await a.vertrauen.pruefe(vault: a.vault)) == .pruefungFehlgeschlagen, "\(rumpf)")
+    }
+    let langsam = KitAttrappe(rumpf: "sleep 5\n")
+    #expect(KitStand(await langsam.vertrauen.pruefe(vault: langsam.vault, zeitlimit: .milliseconds(300))) == .pruefungFehlgeschlagen)
+    let nein = KitAttrappe() // ohne Freigabe-Datei: {"erlaubt":false}
+    #expect(KitStand(await nein.vertrauen.pruefe(vault: nein.vault)) == .nichtFreigegeben)
+    nein.erlaube(true)
+    #expect(KitStand(await nein.vertrauen.pruefe(vault: nein.vault)) == .erlaubt)
+}
+
+@Test func uebersichtRegelSchliesstBeiNeinUndWiederholtTechnischeFehlerEinmal() {
+    // erlaubt: nichts zu tun, egal in welchem Versuch
+    for zweiter in [false, true] { #expect(UebersichtRegel.folge(fuer: .erlaubt, zweiterVersuch: zweiter) == .offenLassen) }
+    // ausdrückliches „nein“ (Abgleich hat Kit-Code geändert, Freigabe entzogen): sofort zu, ohne Wiederholung
+    for zweiter in [false, true] { #expect(UebersichtRegel.folge(fuer: .nein(.nichtFreigegeben), zweiterVersuch: zweiter) == .schliessen) }
+    // technischer Fehler: der erste Versuch lässt die Übersicht offen und plant EINE Wiederholung, der zweite schließt
+    for g in [KitErlaubnis.Grund.pruefungFehlt, .startFehlgeschlagen, .zeitueberschreitung, .unerwarteteAusgabe] {
+        #expect(UebersichtRegel.folge(fuer: .nein(g), zweiterVersuch: false) == .spaeterNochmalPruefen, "\(g)")
+        #expect(UebersichtRegel.folge(fuer: .nein(g), zweiterVersuch: true) == .schliessen, "\(g)")
+    }
+    #expect(UebersichtRegel.wiederholungsFrist == .seconds(10))
+}
+
+@Test func anzeigePruefungFehlgeschlagenIstEinEigenerZustandOhneBittePreiszugeben() {
+    let a = StatusAnzeige.kitPruefungFehlgeschlagen
+    #expect(a.titel == "Kit-Prüfung fehlgeschlagen")
+    #expect(!a.symbol.isEmpty && !a.zeichen.isEmpty, "immer Symbol + Text, nie nur Farbe")
+    // nicht „freigeben“: Der Nutzer kann nichts freigeben, was vielleicht längst freigegeben ist
+    #expect(!a.titel.lowercased().contains("freig") && !a.titel.lowercased().contains("erlaubt"))
+    for andere in [StatusAnzeige.kitNichtErlaubt, .problem("x"), .ohneKit, .keinVault, .fuer(nil)] {
+        #expect(a != andere)
+        #expect(a.symbol != andere.symbol)
+    }
+}
+
 // MARK: Kein Kit-Start ohne Erlaubnis
 
 @Test func kitStatusStartetOhneErlaubnisKeinKit() async {
