@@ -26,11 +26,14 @@ Alle Pakete sind nur ad-hoc signiert, nicht notarisiert (siehe „Signieren + No
 
 ## Signieren + Notarisieren (noch nicht aktiv)
 `release-pruefung.yml` enthält einen deaktivierten Schritt (`if: false`), der später `scripts/veroeffentlichen.sh`
-(aus `studio-v2`) aufruft. Dafür wären diese Repo-Secrets nötig (aktuell **nicht** angelegt):
-- `DEVELOPER_ID_CERT_P12` (base64) und `DEVELOPER_ID_CERT_PASSWORD`: Developer-ID-Application-Zertifikat
-- `KEYCHAIN_PASSWORD`: temporäre Keychain auf dem Runner
-- `NOTARY_APPLE_ID`, `NOTARY_TEAM_ID`, `NOTARY_APP_PASSWORD`: App-spezifisches Passwort für `notarytool`
-Die genauen Namen richten sich nach `veroeffentlichen.sh`, wenn es übernommen wird (FBL-25).
+(aus `studio-v2`) aufruft. Dafür sind diese Repo-Secrets vorgesehen (Fabio legt sie an, siehe FBL-26; Notarisierung per API-Schlüssel):
+- `MACOS_CERT_P12_BASE64` und `MACOS_CERT_PASSWORD`: Developer-ID-Application-Zertifikat (base64) und sein Passwort
+- `BRAIN_SIGNIER_ID`: Signier-Identität
+- `NOTAR_KEY_P8_BASE64`, `NOTAR_KEY_ID`, `NOTAR_ISSUER_ID`: App-Store-Connect-API-Schlüssel für `notarytool`
+- `SPARKLE_ED_PRIVATE_KEY`: EdDSA-Schlüssel zum Signieren der Sparkle-Updates
+
+Die CI legt daraus Keychain und `notarytool`-Profil an; `veroeffentlichen.sh` liest `BRAIN_SIGNIER_ID` und
+`BRAIN_NOTAR_PROFIL`. Das Keychain-Passwort erzeugt der Runner zufällig, es ist kein Secret.
 
 ## Node-Tests
 Der Job `node-test` in `ci.yml` läuft nur, wenn `scripts/teste-node.sh` existiert (kommt mit `studio-v2`, FBL-25).
