@@ -1,0 +1,59 @@
+name: Rauchtest
+
+# macOS-Minuten sind teuer: nur bei Änderungen an der App selbst (nicht bei Doku, nicht bei Tests allein).
+on:
+  pull_request:
+    paths: ['Sources/**', 'Ressourcen/**', 'scripts/**', 'Package.swift', '.github/workflows/rauchtest.yml']
+  push:
+    branches: [main]
+    paths: ['Sources/**', 'Ressourcen/**', 'scripts/**', 'Package.swift', '.github/workflows/rauchtest.yml']
+
+concurrency:
+  group: rauchtest-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  rauchtest:
+    runs-on: macos-26
+    timeout-minutes: 30
+    env:
+      # rauchtest.sh und teste-aktionskanal.sh brauchen ein Kit-Worktree (.tools/brain.mjs, Fixture). Das Kit liegt in einem
+      # anderen Repo; ohne Secret gibt es hier keins. Wird BRAIN_TEST_KIT gesetzt, laufen beide Skripte mit.
+      BRAIN_TEST_KIT: ${{ vars.BRAIN_TEST_KIT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain anzeigen
+        id: toolchain
+        run: |
+          xcodebuild -version
+          echo "xcode=$(xcodebuild -version | tr -s '\n ' '-')" >> "$GITHUB_OUTPUT"
+      - name: SwiftPM-Cache
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: spm-release-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+          restore-keys: |
+            spm-release-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-
+      - name: App bauen (unsigniert/ad-hoc)
+        run: bash scripts/baue-app.sh
+      - name: Selbstfoto hell/dunkel (Willkommen-Bildschirm, ohne Kit)
+        run: bash scripts/selbstfoto.sh - selbstfoto
+      - name: Rauchtest
+        if: env.BRAIN_TEST_KIT != ''
+        run: bash scripts/rauchtest.sh
+      - name: Aktionskanal-Test
+        if: env.BRAIN_TEST_KIT != ''
+        run: bash scripts/teste-aktionskanal.sh
+      - name: Hinweis, wenn Kit-Tests entfallen
+        if: env.BRAIN_TEST_KIT == ''
+        run: echo "::notice::rauchtest.sh und teste-aktionskanal.sh übersprungen — kein Kit-Worktree (BRAIN_TEST_KIT) in der CI."
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: selbstfoto-${{ github.sha }}
+          path: selbstfoto/
+          retention-days: 14
+          if-no-files-found: warn
