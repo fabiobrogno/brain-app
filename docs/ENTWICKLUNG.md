@@ -37,7 +37,10 @@ als Stable ausgeliefert. Repo-Secrets (Fabio legt sie selbst an, nie in Kommenta
 Der Runner legt einen temporären Schlüsselbund mit zufälligem Kennwort an und löscht ihn und alle Schlüsseldateien am Ende immer
 (`if: always()`). In `veroeffentlichen.sh` gilt die CI-Variante, sobald `BRAIN_NOTAR_KEY_PFAD`/`BRAIN_NOTAR_KEY_ID`/`BRAIN_NOTAR_ISSUER`
 gesetzt sind (sonst `BRAIN_NOTAR_PROFIL` aus dem Schlüsselbund); `SPARKLE_ED_KEY_DATEI` ersetzt dort den Schlüsselbund für Sparkle.
-Sparkle-Werkzeuge 2.10.0 werden mit fester SHA-256 geladen. Die `appcast.xml` aus CI enthält nur die jeweils neue Version. Vor dem Signieren prüft CI, dass der Stable-Tag `v<Version>` der `CFBundleShortVersionString` aus `Ressourcen/Info.plist` entspricht, sonst Abbruch. Feed-Adresse: `https://github.com/<repo>/releases/latest/download/appcast.xml`; `SUFeedURL` ist in der App noch nicht gesetzt (Sparkle-Einbau offen) und muss beim Einbau genau darauf zeigen. `releases/latest` ignoriert Entwürfe: Der Stable-Entwurf muss veröffentlicht sein, damit der Feed greift.
+Sparkle 2.10.0 steckt als SwiftPM-Abhängigkeit in der App (`SUPublicEDKey` und `SUFeedURL` in `Ressourcen/Info.plist`,
+Feed: `https://github.com/fabiobrogno/brain-app/releases/latest/download/appcast.xml`); `baue-app.sh` legt `Sparkle.framework` nach
+`Contents/Frameworks`, `veroeffentlichen.sh` signiert dessen XPC-Dienste, Autoupdate und Updater.app von innen nach außen mit Hardened Runtime.
+Sparkle-Werkzeuge 2.10.0 werden mit fester SHA-256 geladen. Die `appcast.xml` aus CI enthält nur die jeweils neue Version. Vor dem Signieren prüft CI, dass der Stable-Tag `v<Version>` der `CFBundleShortVersionString` aus `Ressourcen/Info.plist` entspricht, sonst Abbruch. `releases/latest` ignoriert Entwürfe: Der Stable-Entwurf muss veröffentlicht sein, damit der Feed greift.
 
 **Probelauf:** Actions, „Release-Prüfung“, Run workflow, `signier_probe` anhaken. Das führt `veroeffentlichen.sh --trocken` aus
 (Secrets, Zertifikat, Apple-Anmeldung werden geprüft, nichts wird signiert oder veröffentlicht).
