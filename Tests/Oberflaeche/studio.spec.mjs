@@ -133,6 +133,8 @@ test("Wikilink-Klick öffnet Ziel, Autovervollständigung", async ({ page }) => 
   await ans_ende(page);
   await page.keyboard.type("\n[[Müh");
   await expect(page.locator(".cm-tooltip-autocomplete")).toContainText("Mühle");
+  // Die Liste aktualisiert sich verzögert: erst Enter, wenn sie zum getippten „Müh“ passt (die Stufe „[[“ listet alles).
+  await expect(page.locator(".cm-tooltip-autocomplete")).not.toContainText("Espresso");
   await page.keyboard.press("Enter");
   await expect(page.locator(".cm-content")).toContainText("[[Mühle]]");
 });
