@@ -37,6 +37,9 @@ als Stable ausgeliefert. Repo-Secrets (Fabio legt sie selbst an, nie in Kommenta
 Der Runner legt einen temporären Schlüsselbund mit zufälligem Kennwort an und löscht ihn und alle Schlüsseldateien am Ende immer
 (`if: always()`). In `veroeffentlichen.sh` gilt die CI-Variante, sobald `BRAIN_NOTAR_KEY_PFAD`/`BRAIN_NOTAR_KEY_ID`/`BRAIN_NOTAR_ISSUER`
 gesetzt sind (sonst `BRAIN_NOTAR_PROFIL` aus dem Schlüsselbund); `SPARKLE_ED_KEY_DATEI` ersetzt dort den Schlüsselbund für Sparkle.
+Sparkle 2.10.0 steckt als SwiftPM-Abhängigkeit in der App (`SUPublicEDKey` und `SUFeedURL` in `Ressourcen/Info.plist`,
+Feed: `https://github.com/fabiobrogno/brain-app/releases/latest/download/appcast.xml`); `baue-app.sh` legt `Sparkle.framework` nach
+`Contents/Frameworks`, `veroeffentlichen.sh` signiert dessen XPC-Dienste, Autoupdate und Updater.app von innen nach außen mit Hardened Runtime.
 Sparkle-Werkzeuge 2.10.0 werden mit fester SHA-256 geladen. Die `appcast.xml` aus CI enthält nur die jeweils neue Version.
 
 **Probelauf:** Actions, „Release-Prüfung“, Run workflow, `signier_probe` anhaken. Das führt `veroeffentlichen.sh --trocken` aus

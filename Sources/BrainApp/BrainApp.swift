@@ -1,10 +1,15 @@
 import AppKit
 import SwiftUI
+import Sparkle
 import BrainCore
 
 @MainActor
 final class AppDelegat: NSObject, NSApplicationDelegate {
     let zustand = AppZustand()
+    /// Sparkle-Updates. Läuft nur im gebauten Paket (mit `SUFeedURL`); bei `swift run` ohne Info.plist startet er nicht.
+    let updater = SPUStandardUpdaterController(
+        startingUpdater: Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") != nil,
+        updaterDelegate: nil, userDriverDelegate: nil)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         baueMenue()
@@ -77,7 +82,11 @@ final class AppDelegat: NSObject, NSApplicationDelegate {
     /// Hauptmenü: Brain, Ablage, Bearbeiten (nötig für Kopieren/Einfügen im WebView), Darstellung, Gehe zu, Fenster.
     private func baueMenue() {
         let haupt = NSMenu()
+        let suchen = NSMenuItem(title: "Nach Updates suchen …", action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)), keyEquivalent: "")
+        suchen.target = updater
         haupt.addItem(menue("Kortex", [
+            suchen,
+            .separator(),
             standard("Kortex ausblenden", #selector(NSApplication.hide(_:)), "h"),
             .separator(),
             standard("Kortex beenden", #selector(NSApplication.terminate(_:)), "q"),
@@ -148,7 +157,7 @@ struct BrainApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            MenueInhalt(zustand: delegat.zustand)
+            MenueInhalt(zustand: delegat.zustand, updater: delegat.updater)
         } label: {
             MenueSymbol(zustand: delegat.zustand)
         }

@@ -1,9 +1,11 @@
 import SwiftUI
+import Sparkle
 import BrainCore
 
 /// Menü der Menüleiste: Zustand immer als Symbol + Text (✓ ⚠ ✕ ?), dann Aktionen.
 struct MenueInhalt: View {
     @ObservedObject var zustand: AppZustand
+    let updater: SPUStandardUpdaterController
 
     var body: some View {
         Label("\(zustand.anzeige.zeichen) \(zustand.anzeige.titel)", systemImage: zustand.anzeige.symbol)
@@ -40,6 +42,7 @@ struct MenueInhalt: View {
         Button("Status aktualisieren") { Task { await zustand.aktualisiere() } }.keyboardShortcut("r")
         Button("Vault öffnen …") { zustand.sende(.vaultOeffnen) }
         Divider()
+        Button("Nach Updates suchen …") { updater.checkForUpdates(nil) }
         Button("Beenden") { NSApp.terminate(nil) }.keyboardShortcut("q")
     }
 }
