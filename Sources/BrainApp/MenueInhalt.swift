@@ -19,7 +19,7 @@ struct MenueInhalt: View {
         Divider()
         Button(RueckfragenText.zaehler(zustand.rueckfragenAnzahl)) { zustand.oeffneRueckfragen() }
             .keyboardShortcut("f")
-            .disabled(zustand.vault == nil)
+            .disabled(zustand.vault == nil || !zustand.kitErlaubt)
         if zustand.kitVorhanden {
             switch zustand.kitStand {
             case .nichtFreigegeben:

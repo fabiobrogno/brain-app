@@ -440,8 +440,24 @@ final class AppZustand: ObservableObject {
     /// Offene Rückfragen laut letztem Status (kein eigenes Polling); nil = unbekannt oder älteres Kit.
     var rueckfragenAnzahl: Int? { status?.zahlen.rueckfragen }
 
+    /// Startet `.tools/brain.mjs` aus dem Vault — also Kit-Code: nur nach frischer Vertrauensprüfung (Vertrauen v2, Review FBL-34).
     func oeffneRueckfragen() {
-        guard let vault, let node, VaultAuswahl.pruefe(vault) == .ok else { zeigeEinrichtung(); return }
+        guard let vault = vaultFrisch(), node != nil, VaultAuswahl.pruefe(vault) == .ok else { zeigeEinrichtung(); return }
+        Task {
+            let erlaubnis: KitErlaubnis
+            if let vertrauen { erlaubnis = await vertrauen.pruefe(vault: vault) } else { erlaubnis = .nein(.pruefungFehlt) }
+            guard Self.gleich(vaultFrisch(), vault) else { return }
+            uebernehme(erlaubnis)
+            guard erlaubnis.istErlaubt else {
+                log.schreibe("rueckfragen-abgelehnt kit-\(erlaubnis.logText)")
+                return
+            }
+            zeigeRueckfragenFenster(vault: vault)
+        }
+    }
+
+    private func zeigeRueckfragenFenster(vault: URL) {
+        guard let node else { return }
         if let rueckfragenFenster {
             rueckfragenFenster.makeKeyAndOrderFront(nil)
             NSApp.activate()
