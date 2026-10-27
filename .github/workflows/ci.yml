@@ -90,7 +90,8 @@ jobs:
             const fs = require('fs');
             const t = fs.existsSync('/tmp/ui-test.log') ? fs.readFileSync('/tmp/ui-test.log', 'utf8') : '(kein Log)';
             const zeilen = t.split('\n');
-            const fehler = zeilen.filter(z => /✘|failed|passed|skipped|Error:|flaky/.test(z)).slice(0, 80).join('\n');
+            const i = zeilen.findIndex(z => /^\s+1\) /.test(z));
+            const fehler = zeilen.filter(z => /✘|failed|passed|skipped|flaky/.test(z)).slice(0, 60).join('\n') + '\n=== Details ===\n' + (i >= 0 ? zeilen.slice(i, i + 150).join('\n') : '');
             await github.rest.issues.createComment({ ...context.repo, issue_number: context.issue.number,
               body: 'ui-test Diagnose (' + context.sha.slice(0, 7) + ')\n```\n' + (fehler + '\n---\n' + zeilen.slice(0, 40).join('\n')).slice(0, 60000) + '\n```' });
       - name: Bericht und Traces hochladen

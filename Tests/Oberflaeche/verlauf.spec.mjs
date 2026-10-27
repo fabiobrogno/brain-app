@@ -1,6 +1,6 @@
 // Verlauf-Modus, Diff-Ansicht und Remote-Dialog. /api/git/log, /api/git/remote und /api/git/diff werden hier gemockt;
 // die Module werden in eine eigene Seite montiert (unabhängig von app.js).
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./basis.mjs";
 import { mkdirSync, readFileSync, existsSync, statSync } from "node:fs";
 import { join, dirname, extname } from "node:path";
 import { fileURLToPath } from "node:url";

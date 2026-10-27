@@ -4,7 +4,7 @@
 //
 // UI-2: Ist das Einschalten des Versionsverlaufs in eine Zeitüberschreitung gelaufen, darf der Einstieg das nur dann als Erfolg werten, wenn es
 // den Verlauf wirklich gibt. Dass die Werkstatt „einen Vault hat, den die App noch nicht kennt“, ist nach dem ersten Schritt immer so.
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./basis.mjs";
 import { mkdtempSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";

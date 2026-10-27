@@ -1,7 +1,7 @@
 // Korrekturen aus dem Opus-Review (Paket „editor“): Datei-Kopf (K1, k5), Dreifachklick auf Listenpunkte (W1), Cursor am Zeilenanfang (W2),
 // CRLF-Dateien (W3), Prüf-Signale über Positionen (k1), Formel-/Kommentarblöcke (k6).
 // Echter Server, echter Vault (Wegwerf-Kopie), echter Editor; die View wird über das Bundle erreicht (dasselbe Modul wie die App).
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./basis.mjs";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { baueVault } from "./vault.mjs";

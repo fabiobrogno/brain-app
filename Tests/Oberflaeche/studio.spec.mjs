@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./basis.mjs";
 import { readFileSync, writeFileSync, mkdirSync, rmSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { baueVault, git } from "./vault.mjs";

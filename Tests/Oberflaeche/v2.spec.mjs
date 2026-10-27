@@ -1,6 +1,6 @@
 // Studio v2: Seitenleiste, Bereiche, Typen, Ansichten, Karten, Verlauf-Modus, Eigenschaften, Vault-Wechsel, Spalten.
 // Die v2-Routen des Backends werden mit Attrappen aus dem Vault-Ordner gespeist (erzwungen = unabhängig vom Backend-Stand).
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./basis.mjs";
 import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { baueVault } from "./vault.mjs";

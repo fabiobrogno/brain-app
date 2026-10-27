@@ -1,6 +1,6 @@
 // Fließende Absätze: fest umbrochene Absätze erscheinen als ein Textfluss, die Datei bleibt Byte für Byte gleich.
 // Echter Server, echter Vault (Wegwerf-Kopie), echter Editor; die View wird über das Bundle erreicht (dasselbe Modul wie die App).
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./basis.mjs";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { baueVault } from "./vault.mjs";

@@ -1,6 +1,6 @@
 // Einstieg ohne Vault: Willkommen-Karte, Name/Ort, Klonen, Versionsverlauf-Rückfrage, KI verbinden.
 // Die Vault-Routen gibt es im Backend noch nicht überall: alle /api/-Aufrufe werden gemockt, app.js wird durch ein leeres Modul ersetzt.
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./basis.mjs";
 import { mkdirSync, readFileSync, existsSync, statSync } from "node:fs";
 import { createServer } from "node:http";
 import { join, extname, normalize } from "node:path";
