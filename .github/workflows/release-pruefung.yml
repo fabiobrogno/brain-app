@@ -41,6 +41,13 @@ jobs:
         run: swift test
       - name: App bauen (Node mit Prüfsumme)
         run: bash scripts/baue-app.sh
+      # DEAKTIVIERT (if: false) — kommt später in die CI, Entscheidung CEO/Fabio (FBL-22).
+      # Hier würde nach dem Bauen signiert + notarisiert: scripts/veroeffentlichen.sh aus studio-v2
+      # (Developer-ID-Signatur, notarytool, stapler). Benötigte Secrets: siehe docs/ENTWICKLUNG.md.
+      # Zum Aktivieren: if auf true setzen und die Secrets im Repo anlegen. Jetzt existiert keines davon.
+      - name: Signieren + notarisieren (deaktiviert)
+        if: false
+        run: bash scripts/veroeffentlichen.sh build/Kortex.app
       - name: Zippen
         run: |
           NAME="${GITHUB_REF_TYPE}-${GITHUB_REF_NAME//\//-}"

@@ -1,7 +1,8 @@
 # Entwicklung
 
 ## Branches
-- `main` ist immer grün und wird nur per PR geändert. Direkte Pushes gibt es nicht.
+- `main` ist immer grün und wird nur per PR geändert. **Verbindliche Regel für Agenten: nie direkt auf `main` pushen.**
+  GitHub erzwingt das nicht (kein Branch-Schutz); die Regel gilt trotzdem.
 - Namen: `feat/fbl-<n>-<kurz>`, `fix/fbl-<n>-<kurz>`, `ci/<kurz>`, `docs/<kurz>`.
 
 ## Commits
@@ -20,8 +21,19 @@ Deutsch, Imperativ oder Substantivstil, die Aufgabe steht in Klammern.
 | beta | Tag `vX.Y.Z-beta.N` | GitHub-Prerelease mit Zip, Workflow `release-pruefung` |
 | stable | Tag `vX.Y.Z` | Release-Entwurf (draft); Veröffentlichen von Hand |
 
-Alle Pakete sind nur ad-hoc signiert, nicht notarisiert (kommt mit M5). Ein manueller Lauf von
+Alle Pakete sind nur ad-hoc signiert, nicht notarisiert (siehe „Signieren + Notarisieren“). Ein manueller Lauf von
 `release-pruefung` (`workflow_dispatch`) baut und testet, veröffentlicht aber nichts.
+
+## Signieren + Notarisieren (noch nicht aktiv)
+`release-pruefung.yml` enthält einen deaktivierten Schritt (`if: false`), der später `scripts/veroeffentlichen.sh`
+(aus `studio-v2`) aufruft. Dafür wären diese Repo-Secrets nötig (aktuell **nicht** angelegt):
+- `DEVELOPER_ID_CERT_P12` (base64) und `DEVELOPER_ID_CERT_PASSWORD`: Developer-ID-Application-Zertifikat
+- `KEYCHAIN_PASSWORD`: temporäre Keychain auf dem Runner
+- `NOTARY_APPLE_ID`, `NOTARY_TEAM_ID`, `NOTARY_APP_PASSWORD`: App-spezifisches Passwort für `notarytool`
+Die genauen Namen richten sich nach `veroeffentlichen.sh`, wenn es übernommen wird (FBL-25).
+
+## Node-Tests
+Der Job `node-test` in `ci.yml` läuft nur, wenn `scripts/teste-node.sh` existiert (kommt mit `studio-v2`, FBL-25).
 
 ## Tags
 Tags werden nie verschoben oder ersetzt. Ist ein Release fehlerhaft, folgt eine neue Version

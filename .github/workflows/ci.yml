@@ -24,6 +24,25 @@ jobs:
       - name: shellcheck scripts/*.sh
         run: shellcheck scripts/*.sh
 
+  # Platzhalter für die Node-Tests aus studio-v2 (FBL-25): läuft nur, wenn scripts/teste-node.sh existiert.
+  # Fehlt das Skript, endet der Job grün ohne Arbeit; mit dem Skript ist er sofort aktiv.
+  node-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: teste-node.sh vorhanden?
+        id: erkennen
+        run: |
+          if [ -f scripts/teste-node.sh ]; then echo "vorhanden=true" >> "$GITHUB_OUTPUT"; else echo "scripts/teste-node.sh fehlt — Node-Tests übersprungen."; fi
+      - uses: actions/setup-node@v4
+        if: steps.erkennen.outputs.vorhanden == 'true'
+        with:
+          node-version: '22'
+      - name: Node-Tests
+        if: steps.erkennen.outputs.vorhanden == 'true'
+        run: bash scripts/teste-node.sh
+
   build-test:
     # Package.swift verlangt swift-tools 6.2 und macOS 26 -> macos-26-Image (Xcode 26).
     runs-on: macos-26
