@@ -1,5 +1,5 @@
 // Studio v2 nach dem Zusammenbau: Bereiche ohne Maschinen-/Vorlagen-/Systemdateien, Eigenschaften-Spalte bei schmalem Fenster, „Verweist auf“.
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./basis.mjs";
 import { baueVault } from "./vault.mjs";
 import { starteServer } from "./start.mjs";
 import { mockeV2, baueIndex } from "./mocks.mjs";

@@ -1,6 +1,6 @@
 // Vertrauen v2 in der Oberfläche (Spec §8): Frage „Diesem Vault vertrauen?“, Statusleiste, Git gesperrt, Aktion an die App.
 // Die Werkstatt-Antworten (info.vertrauen, POST /api/kit/vertrauen, Git gesperrt) sind Attrappen aus mocks.mjs; der Rest läuft gegen die echte Werkstatt.
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./basis.mjs";
 import { writeFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { baueVault } from "./vault.mjs";

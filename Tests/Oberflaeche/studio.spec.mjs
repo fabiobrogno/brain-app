@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./basis.mjs";
 import { readFileSync, writeFileSync, mkdirSync, rmSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { baueVault, git } from "./vault.mjs";
@@ -133,6 +133,12 @@ test("Wikilink-Klick öffnet Ziel, Autovervollständigung", async ({ page }) => 
   await ans_ende(page);
   await page.keyboard.type("\n[[Müh");
   await expect(page.locator(".cm-tooltip-autocomplete")).toContainText("Mühle");
+  // Die Liste aktualisiert sich verzögert: erst Enter, wenn sie zum getippten „Müh“ passt (die Stufe „[[“ listet alles).
+  await expect(page.locator(".cm-tooltip-autocomplete")).not.toContainText("Espresso");
+  // Ein Eintrag muss gewählt sein; CodeMirror ignoriert Enter kurz (interactionDelay) nach dem Öffnen/Aktualisieren der Liste,
+  // dann entsteht nur ein Zeilenumbruch („[[Müh⏎]]“).
+  await expect(page.locator('.cm-tooltip-autocomplete [aria-selected="true"]')).toContainText("Mühle");
+  await page.waitForTimeout(400);
   await page.keyboard.press("Enter");
   await expect(page.locator(".cm-content")).toContainText("[[Mühle]]");
 });

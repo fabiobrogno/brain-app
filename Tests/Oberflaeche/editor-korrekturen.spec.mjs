@@ -1,7 +1,7 @@
 // Korrekturen aus dem Opus-Review (Paket „editor“): Datei-Kopf (K1, k5), Dreifachklick auf Listenpunkte (W1), Cursor am Zeilenanfang (W2),
 // CRLF-Dateien (W3), Prüf-Signale über Positionen (k1), Formel-/Kommentarblöcke (k6).
 // Echter Server, echter Vault (Wegwerf-Kopie), echter Editor; die View wird über das Bundle erreicht (dasselbe Modul wie die App).
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./basis.mjs";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { baueVault } from "./vault.mjs";
@@ -374,10 +374,15 @@ test("W3: Ablegen (Drop) von LF-Text in eine CRLF-Datei bleibt CRLF", async ({ p
   schreibe("10_notizen/crlf.md", "# CRLF\r\n\r\nErste Zeile\r\nzweite Zeile\r\n");
   await oeffne(page, "10_notizen/crlf.md");
   const r = await page.locator(".cm-line", { hasText: "Erste Zeile" }).boundingBox();
-  await page.evaluate(({ x, y }) => {
+  // Ablegen genau zwischen „E“ und „r“: die Schriftbreite ist je Plattform verschieden, daher aus dem Text gemessen.
+  await page.evaluate(({ y }) => {
+    const zeile = [...document.querySelectorAll(".cm-line")].find((l) => l.textContent.includes("Erste Zeile"));
+    const walker = document.createTreeWalker(zeile, NodeFilter.SHOW_TEXT);
+    const t = walker.nextNode(); const g = document.createRange(); g.setStart(t, 1); g.setEnd(t, 1);
+    const x = g.getBoundingClientRect().left;
     const dt = new DataTransfer(); dt.setData("text/plain", "p\nq");
     document.querySelector(".cm-content").dispatchEvent(new DragEvent("drop", { dataTransfer: dt, clientX: x, clientY: y, bubbles: true, cancelable: true }));
-  }, { x: r.x + 5, y: r.y + r.height / 2 });
+  }, { y: r.y + r.height / 2 });
   expect(await docText(page)).toBe("# CRLF\r\n\r\nEp\r\nqrste Zeile\r\nzweite Zeile\r\n");
   expect(await imEditor(page, ({ view }) => view.state.doc.lines)).toBe(6);
 });
