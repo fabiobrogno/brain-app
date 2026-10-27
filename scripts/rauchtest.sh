@@ -1,10 +1,10 @@
 #!/bin/bash
-# Rauchtest M1 (App-Spec §13.1/§13.3): startet build/Brain.app gegen ein Test-Brain mit Leerzeichen im Namen,
+# Rauchtest M1 (App-Spec §13.1/§13.3): startet build/Kortex.app gegen ein Test-Brain mit Leerzeichen im Namen,
 # öffnet das Fenster und prüft: Status gelesen, Fenster bereit, KEIN Netzwerk-Port, Fenster zu → Brücke beendet.
 # Port-Check: App-PID, Kinder und alle NEU hinzugekommenen com.apple.WebKit.*-Prozesse (XPC-Dienste, keine Kinder).
 set -euo pipefail
 W="$(cd "$(dirname "$0")/.." && pwd)"
-APP="$W/build/Brain.app"
+APP="$W/build/Kortex.app"
 KIT="${BRAIN_TEST_KIT:-$HOME/brain-kit-v0.6}"
 [ -x "$APP/Contents/MacOS/BrainApp" ] || { echo "FAIL: zuerst bash scripts/baue-app.sh"; exit 1; }
 [ -f "$KIT/.tools/ansicht/bruecke.mjs" ] || { echo "FAIL: Kit-Worktree fehlt: $KIT"; exit 1; }

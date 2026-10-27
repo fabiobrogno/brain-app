@@ -14,7 +14,7 @@ struct MenueInhalt: View {
             Text("Entwickler-Brain — keine Kit-Updates")
         }
         Divider()
-        Button("Brain öffnen") { zustand.oeffneFenster() }.keyboardShortcut("o")
+        Button("Kortex öffnen") { zustand.oeffneFenster() }.keyboardShortcut("o")
         Button("Ordner im Finder zeigen") { zustand.zeigeOrdner() }.disabled(zustand.vault == nil)
         Button("Status aktualisieren") { Task { await zustand.aktualisiere() } }.keyboardShortcut("r")
         Button("Anderen Brain-Ordner wählen …") { zustand.waehleOrdner() }
@@ -29,6 +29,6 @@ struct MenueSymbol: View {
 
     var body: some View {
         Image(systemName: zustand.anzeige.symbol)
-            .accessibilityLabel("Brain: \(zustand.anzeige.titel)")
+            .accessibilityLabel("Kortex: \(zustand.anzeige.titel)")
     }
 }

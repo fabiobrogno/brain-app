@@ -132,7 +132,7 @@ final class AppZustand: ObservableObject {
             return
         }
         let w = NSWindow(contentViewController: NSHostingController(rootView: EinrichtungsAnsicht(zustand: self)))
-        w.title = "Brain verbinden"
+        w.title = "Kortex verbinden"
         w.styleMask = [.titled, .closable]
         w.isReleasedWhenClosed = false
         w.center()

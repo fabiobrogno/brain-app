@@ -1,7 +1,7 @@
 # Brain-App — Design-Spezifikation v1
 
 - **Stand:** 16.10.2026 · **Status:** Entwurf zur Freigabe durch Fabio
-- **Arbeitstitel:** „Brain“ (endgültiger Name wird vor der Verteilung an Kollegen entschieden, siehe §15)
+- **App-Name:** **Kortex** (Entscheidung Fabio, FBL-16). Bundle-ID `io.github.fbrogno.brain`, Module `BrainApp`/`BrainCore`, Repo- und CLI-Name `brain` bleiben bewusst. Ältere Textstellen unten sagen noch „Brain.app“.
 - **Grundlagen:** Brainstorming 12.10. (Teil 1–3) und 16.10. (Teil 3 komplett, Teil 4), Recherche
   `~/brain/00_inbox/2026-10-16_brain-app-recherche.md` und `…/2026-10-16_brain-aufbau-beste-quellen.md`,
   bestehendes Kit (`fbrogno/second-brain-kit`, v0.5.0)
