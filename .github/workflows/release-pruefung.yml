@@ -1,0 +1,88 @@
+name: Release-Prüfung
+
+# Build, Tests und App-Paket. Kein Signieren, keine Notarisierung, keine Secrets außer GITHUB_TOKEN.
+# v*-beta.N -> GitHub-Prerelease mit Zip; vX.Y.Z -> nur Release-Entwurf (draft).
+# workflow_dispatch prüft nur und veröffentlicht nichts. Tags werden nie ersetzt (docs/ENTWICKLUNG.md).
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+concurrency:
+  group: release-pruefung-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  paket:
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain anzeigen
+        id: toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+          echo "xcode=$(xcodebuild -version | tr -s '\n ' '-')" >> "$GITHUB_OUTPUT"
+      - name: SwiftPM-Cache
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: spm-release-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+          restore-keys: |
+            spm-release-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-
+      - name: Build
+        run: swift build
+      - name: Test
+        run: swift test
+      - name: App bauen (Node mit Prüfsumme)
+        run: bash scripts/baue-app.sh
+      - name: Zippen
+        run: |
+          NAME="${GITHUB_REF_TYPE}-${GITHUB_REF_NAME//\//-}"
+          ditto -c -k --keepParent build/Kortex.app "Kortex-${NAME}.zip"
+          shasum -a 256 "Kortex-${NAME}.zip" | tee "Kortex-${NAME}.zip.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Kortex-paket
+          path: |
+            Kortex-*.zip
+            Kortex-*.zip.sha256
+          retention-days: 14
+          if-no-files-found: error
+
+  veroeffentlichen:
+    # Nur für Tags; ein Tag, der weder -beta.N noch X.Y.Z ist, bleibt bei Build und Tests.
+    if: github.ref_type == 'tag'
+    needs: paket
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Kortex-paket
+      - name: Release anlegen
+        run: |
+          if [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
+            ART=(--prerelease)
+          elif [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            ART=(--draft)
+          else
+            echo "Tag $TAG ist weder vX.Y.Z noch vX.Y.Z-beta.N — kein Release."
+            exit 0
+          fi
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG existiert schon; Tags werden nie ersetzt." >&2
+            exit 1
+          fi
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" \
+            --generate-notes "${ART[@]}" Kortex-*.zip Kortex-*.zip.sha256
