@@ -7,6 +7,9 @@
 # Umgebungsvariablen (keine Geheimnisse im Skript; Kennwörter liegen im Schlüsselbund):
 #   BRAIN_SIGNIER_ID    Name des Zertifikats, z. B. "Developer ID Application: Vorname Name (TEAMID)"
 #   BRAIN_NOTAR_PROFIL  Name des mit `xcrun notarytool store-credentials` angelegten Schlüsselbund-Profils
+#   BRAIN_NOTAR_KEY_PFAD, BRAIN_NOTAR_KEY_ID, BRAIN_NOTAR_ISSUER   CI-Variante statt BRAIN_NOTAR_PROFIL:
+#                       App-Store-Connect-API-Schlüssel (.p8-Datei, Key-ID, Issuer-ID) für notarytool
+#   SPARKLE_ED_KEY_DATEI  optional (CI): Datei mit dem privaten Sparkle-EdDSA-Schlüssel; sonst liest sign_update den Schlüsselbund
 #   SPARKLE_BIN         Ordner mit Sparkles Werkzeugen (darin sign_update)
 #   BRAIN_GITHUB_REPO   "konto/repo" des öffentlichen Repos, auf dem die Releases liegen
 #
@@ -22,7 +25,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --trocken) TROCKEN=1 ;;
     --app) shift; APP="${1:?--app braucht einen Pfad}" ;;
-    -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
     *) echo "Unbekannte Option: $1" >&2; exit 2 ;;
   esac
   shift
@@ -39,6 +42,10 @@ tun() {  # führt aus oder zeigt nur an
 ENTITLEMENTS="$W/Ressourcen/node.entitlements"
 SIGNIER_ID="${BRAIN_SIGNIER_ID:-}"
 PROFIL="${BRAIN_NOTAR_PROFIL:-}"
+NOTAR_KEY="${BRAIN_NOTAR_KEY_PFAD:-}"
+NOTAR_KEY_ID="${BRAIN_NOTAR_KEY_ID:-}"
+NOTAR_ISSUER="${BRAIN_NOTAR_ISSUER:-}"
+SPARKLE_KEY_DATEI="${SPARKLE_ED_KEY_DATEI:-}"
 SPARKLE_BIN="${SPARKLE_BIN:-}"
 REPO="${BRAIN_GITHUB_REPO:-}"
 
@@ -82,21 +89,43 @@ else
   fi
 fi
 
-if [ -z "$PROFIL" ]; then
+# Notar-Zugang: CI-Variante (API-Schlüssel) hat Vorrang, sonst Schlüsselbund-Profil
+NOTAR_ARGS=()
+if [ -n "$NOTAR_KEY" ] || [ -n "$NOTAR_KEY_ID" ] || [ -n "$NOTAR_ISSUER" ]; then
+  [ -n "$NOTAR_KEY" ] && [ -f "$NOTAR_KEY" ] || fehlt "BRAIN_NOTAR_KEY_PFAD fehlt oder zeigt auf keine Datei (App-Store-Connect-Schlüssel .p8)."
+  [ -n "$NOTAR_KEY_ID" ] || fehlt "BRAIN_NOTAR_KEY_ID ist nicht gesetzt (Key-ID des App-Store-Connect-Schlüssels)."
+  [ -n "$NOTAR_ISSUER" ] || fehlt "BRAIN_NOTAR_ISSUER ist nicht gesetzt (Issuer-ID aus App Store Connect)."
+  NOTAR_ARGS=(--key "$NOTAR_KEY" --key-id "$NOTAR_KEY_ID" --issuer "$NOTAR_ISSUER")
+  ok "Notar-Zugang per API-Schlüssel (Key-ID $NOTAR_KEY_ID)"
+elif [ -z "$PROFIL" ]; then
   fehlt "BRAIN_NOTAR_PROFIL ist nicht gesetzt. Es ist der Name, den du bei 'xcrun notarytool store-credentials' vergeben hast (Schritt 3)."
-elif [ "$TROCKEN" = 1 ]; then
-  echo "  hinweis: Das Profil '$PROFIL' wird beim echten Lauf von Apple geprüft (eine lesende Abfrage)."
-  if xcrun notarytool history --keychain-profile "$PROFIL" >/dev/null 2>&1; then ok "Notar-Profil '$PROFIL' funktioniert"; else
-    fehlt "Das Notar-Profil '$PROFIL' wurde nicht gefunden oder Apple lehnt die Anmeldung ab (oder es gibt kein Netz). Neu anlegen: xcrun notarytool store-credentials $PROFIL"
-  fi
 else
-  ok "Notar-Profil '$PROFIL' wird beim Einreichen geprüft"
+  NOTAR_ARGS=(--keychain-profile "$PROFIL")
+  if [ "$TROCKEN" = 1 ]; then
+    echo "  hinweis: Das Profil '$PROFIL' wird beim echten Lauf von Apple geprüft (eine lesende Abfrage)."
+    if xcrun notarytool history "${NOTAR_ARGS[@]}" >/dev/null 2>&1; then ok "Notar-Profil '$PROFIL' funktioniert"; else
+      fehlt "Das Notar-Profil '$PROFIL' wurde nicht gefunden oder Apple lehnt die Anmeldung ab (oder es gibt kein Netz). Neu anlegen: xcrun notarytool store-credentials $PROFIL"
+    fi
+  else
+    ok "Notar-Profil '$PROFIL' wird beim Einreichen geprüft"
+  fi
+fi
+if [ "${#NOTAR_ARGS[@]}" -gt 0 ] && [ -n "$NOTAR_KEY" ] && [ "$TROCKEN" = 1 ]; then
+  if xcrun notarytool history "${NOTAR_ARGS[@]}" >/dev/null 2>&1; then ok "Apple akzeptiert den API-Schlüssel"; else
+    fehlt "Apple lehnt den API-Schlüssel ab (Key-ID/Issuer-ID/Schlüssel passen nicht zusammen, oder es gibt kein Netz)."
+  fi
 fi
 
 if [ -z "$SPARKLE_BIN" ]; then
   fehlt "SPARKLE_BIN ist nicht gesetzt. Es ist der Ordner mit Sparkles Werkzeugen (darin sign_update), siehe Schritt 4."
 elif [ -x "$SPARKLE_BIN/sign_update" ]; then ok "Sparkle sign_update gefunden"; else
   fehlt "In SPARKLE_BIN ($SPARKLE_BIN) liegt kein ausführbares sign_update."
+fi
+SIGN_UPDATE_ARGS=()
+if [ -n "$SPARKLE_KEY_DATEI" ]; then
+  if [ -f "$SPARKLE_KEY_DATEI" ]; then SIGN_UPDATE_ARGS=(--ed-key-file "$SPARKLE_KEY_DATEI"); ok "Sparkle-Schlüssel aus Datei"; else
+    fehlt "SPARKLE_ED_KEY_DATEI zeigt auf keine Datei."
+  fi
 fi
 
 if [ -z "$REPO" ]; then
@@ -160,7 +189,7 @@ tun codesign --verify --strict --verbose=2 "$APP"
 # ---------- 2. App notarisieren ----------
 schritt "2/6 App bei Apple notarisieren (dauert meist 2-10 Minuten)"
 tun ditto -c -k --keepParent "$APP" "$ZIP"
-tun xcrun notarytool submit "$ZIP" --keychain-profile "$PROFIL" --wait
+tun xcrun notarytool submit "$ZIP" "${NOTAR_ARGS[@]}" --wait
 tun xcrun stapler staple "$APP"
 
 # ---------- 3. DMG ----------
@@ -175,16 +204,16 @@ tun "${SIGN[@]}" "$DMG"
 
 # ---------- 4. DMG notarisieren ----------
 schritt "4/6 DMG notarisieren und heften"
-tun xcrun notarytool submit "$DMG" --keychain-profile "$PROFIL" --wait
+tun xcrun notarytool submit "$DMG" "${NOTAR_ARGS[@]}" --wait
 tun xcrun stapler staple "$DMG"
 
 # ---------- 5. Appcast ----------
 schritt "5/6 Sparkle-Appcast ergänzen (EdDSA-Signatur über die DMG)"
 if [ "$TROCKEN" = 1 ]; then
-  echo "  würde ausführen: $SPARKLE_BIN/sign_update $DMG   (privater Schlüssel kommt aus dem Schlüsselbund)"
+  echo "  würde ausführen: $SPARKLE_BIN/sign_update $DMG   (privater Schlüssel kommt aus ${SPARKLE_KEY_DATEI:-dem Schlüsselbund})"
   echo "  würde $APPCAST ergänzen: Version $VERSION, Download $DOWNLOAD_URL"
 else
-  SIG_ZEILE="$("$SPARKLE_BIN/sign_update" "$DMG")"   # Form: sparkle:edSignature="..." length="..."
+  SIG_ZEILE="$("$SPARKLE_BIN/sign_update" ${SIGN_UPDATE_ARGS[@]+"${SIGN_UPDATE_ARGS[@]}"} "$DMG")"   # Form: sparkle:edSignature="..." length="..."
   case "$SIG_ZEILE" in
     *edSignature=*length=*) ;;
     *) echo "Abbruch: sign_update lieferte keine Signatur. Ist der Sparkle-Schlüssel im Schlüsselbund (generate_keys)?" >&2; exit 1 ;;

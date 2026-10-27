@@ -24,16 +24,24 @@ Deutsch, Imperativ oder Substantivstil, die Aufgabe steht in Klammern.
 Alle Pakete sind nur ad-hoc signiert, nicht notarisiert (siehe „Signieren + Notarisieren“). Ein manueller Lauf von
 `release-pruefung` (`workflow_dispatch`) baut und testet, veröffentlicht aber nichts.
 
-## Signieren + Notarisieren (noch nicht aktiv)
-`release-pruefung.yml` enthält einen deaktivierten Schritt (`if: false`), der später `scripts/veroeffentlichen.sh`
-(aus `studio-v2`) aufruft. Dafür sind diese Repo-Secrets vorgesehen (Fabio legt sie an, siehe FBL-26; Notarisierung per API-Schlüssel):
+## Signieren + Notarisieren (nur Stable-Tags)
+`release-pruefung.yml` signiert und notarisiert nur bei Tags `vX.Y.Z` (Betas bleiben ad-hoc signiert). Der Schritt ruft
+`scripts/veroeffentlichen.sh` auf: Developer-ID-Signatur, Notarisierung, DMG, Sparkle-Appcast. Das Release (Entwurf) bekommt
+Zip, DMG und `appcast.xml`. Fehlt ein Secret, bricht der Lauf mit dem Namen des fehlenden Secrets ab; es wird nie unsigniert
+als Stable ausgeliefert. Repo-Secrets (Fabio legt sie selbst an, nie in Kommentare oder Chats):
 - `MACOS_CERT_P12_BASE64` und `MACOS_CERT_PASSWORD`: Developer-ID-Application-Zertifikat (base64) und sein Passwort
-- `BRAIN_SIGNIER_ID`: Signier-Identität
-- `NOTAR_KEY_P8_BASE64`, `NOTAR_KEY_ID`, `NOTAR_ISSUER_ID`: App-Store-Connect-API-Schlüssel für `notarytool`
-- `SPARKLE_ED_PRIVATE_KEY`: EdDSA-Schlüssel zum Signieren der Sparkle-Updates
+- `BRAIN_SIGNIER_ID`: voller Zertifikatsname „Developer ID Application: … (TEAMID)“
+- `NOTAR_KEY_P8_BASE64`, `NOTAR_KEY_ID`, `NOTAR_ISSUER_ID`: App-Store-Connect-API-Schlüssel (Rolle Developer) für `notarytool`
+- `SPARKLE_ED_PRIVATE_KEY`: EdDSA-Schlüssel (`generate_keys -x`); derselbe wie lokal, sonst passen Updates nicht
 
-Die CI legt daraus Keychain und `notarytool`-Profil an; `veroeffentlichen.sh` liest `BRAIN_SIGNIER_ID` und
-`BRAIN_NOTAR_PROFIL`. Das Keychain-Passwort erzeugt der Runner zufällig, es ist kein Secret.
+Der Runner legt einen temporären Schlüsselbund mit zufälligem Kennwort an und löscht ihn und alle Schlüsseldateien am Ende immer
+(`if: always()`). In `veroeffentlichen.sh` gilt die CI-Variante, sobald `BRAIN_NOTAR_KEY_PFAD`/`BRAIN_NOTAR_KEY_ID`/`BRAIN_NOTAR_ISSUER`
+gesetzt sind (sonst `BRAIN_NOTAR_PROFIL` aus dem Schlüsselbund); `SPARKLE_ED_KEY_DATEI` ersetzt dort den Schlüsselbund für Sparkle.
+Sparkle-Werkzeuge 2.10.0 werden mit fester SHA-256 geladen. Die `appcast.xml` aus CI enthält nur die jeweils neue Version.
+
+**Probelauf:** Actions, „Release-Prüfung“, Run workflow, `signier_probe` anhaken. Das führt `veroeffentlichen.sh --trocken` aus
+(Secrets, Zertifikat, Apple-Anmeldung werden geprüft, nichts wird signiert oder veröffentlicht).
+Stable-Tags setzt nur der CEO nach Fabios Freigabe.
 
 ## Node-Tests
 Der Job `node-test` in `ci.yml` läuft nur, wenn `scripts/teste-node.sh` existiert (kommt mit `studio-v2`, FBL-25).
