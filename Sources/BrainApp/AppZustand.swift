@@ -18,6 +18,8 @@ final class AppZustand: ObservableObject {
     private var node: URL?
     private var brainNode = ""
     private var einrichtung: NSWindow?
+    private var rueckfragenFenster: NSWindow?
+    private var rueckfragenModell: RueckfragenModell?
     private var taktgeber: Task<Void, Never>?
     private var statusLauf = 0
 
@@ -120,6 +122,40 @@ final class AppZustand: ObservableObject {
         fenster.oeffne(node: node, vault: vault, umgebung: umgebung)
     }
 
+    /// Offene Rückfragen laut letztem Status (kein eigenes Polling); nil = unbekannt oder älteres Kit.
+    var rueckfragenAnzahl: Int? { status?.zahlen.rueckfragen }
+
+    func oeffneRueckfragen() {
+        guard let vault, let node, VaultAuswahl.pruefe(vault) == .ok else { zeigeEinrichtung(); return }
+        if let rueckfragenFenster {
+            rueckfragenFenster.makeKeyAndOrderFront(nil)
+            NSApp.activate()
+            return
+        }
+        let modell = RueckfragenModell(befehl: BrainBefehl(node: node, vault: vault, umgebung: umgebung),
+                                       tageslauf: status?.tageslauf, log: log) { [weak self] in
+            Task { await self?.aktualisiere() }
+        }
+        let w = NSWindow(contentViewController: NSHostingController(rootView: RueckfragenAnsicht(modell: modell)))
+        w.title = "Rückfragen"
+        w.styleMask = [.titled, .closable]
+        w.isReleasedWhenClosed = false
+        w.center()
+        rueckfragenModell = modell
+        rueckfragenFenster = w
+        NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: w, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let m = self.rueckfragenModell
+                self.rueckfragenFenster = nil
+                self.rueckfragenModell = nil
+                Task { await m?.schliesse() }
+            }
+        }
+        w.makeKeyAndOrderFront(nil)
+        NSApp.activate()
+    }
+
     func zeigeOrdner() {
         if let vault { NSWorkspace.shared.activateFileViewerSelecting([vault]) }
     }
@@ -154,5 +190,6 @@ final class AppZustand: ObservableObject {
     func beende() {
         taktgeber?.cancel()
         fenster.schliesse()
+        rueckfragenFenster?.close()
     }
 }
