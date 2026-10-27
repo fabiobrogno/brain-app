@@ -13,6 +13,9 @@ struct MenueInhalt: View {
         if zustand.status?.quellVault == true {
             Text("Entwickler-Brain — keine Kit-Updates")
         }
+        Button(RueckfragenText.zaehler(zustand.rueckfragenAnzahl)) { zustand.oeffneRueckfragen() }
+            .keyboardShortcut("f")
+            .disabled(zustand.vault == nil)
         Divider()
         Button("Brain öffnen") { zustand.oeffneFenster() }.keyboardShortcut("o")
         Button("Ordner im Finder zeigen") { zustand.zeigeOrdner() }.disabled(zustand.vault == nil)

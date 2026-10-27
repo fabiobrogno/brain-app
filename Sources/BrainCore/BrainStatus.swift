@@ -3,19 +3,23 @@ import Foundation
 public enum StatusFehler: Error, Equatable { case leereAusgabe }
 
 /// Ergebnis von `brain status --json` (Kit, status.mjs).
-public struct BrainStatus: Codable, Equatable, Sendable {
+public struct BrainStatus: Decodable, Equatable, Sendable {
     public enum Zustand: String, Codable, Sendable { case ok, hinweis, problem }
-    public struct Zahlen: Codable, Equatable, Sendable {
+    public struct Zahlen: Decodable, Equatable, Sendable {
         public let vorschlaege: Int
         public let konflikte: Int
         public let abgelaufen: Int
         public let zuTun: Int
+        /// Offene Rückfragen (B2-Kit); fehlt bei älteren Kits.
+        public let rueckfragen: Int?
     }
     public let version: String
     public let quellVault: Bool
     public let zustand: Zustand
     public let meldungen: [String]
     public let zahlen: Zahlen
+    /// Letzter Tageslauf (B2-Kit); fehlt bei älteren Kits oder wenn noch keiner lief.
+    public let tageslauf: TageslaufKurz?
 
     /// Liest die letzte nicht-leere Zeile (frühere Zeilen könnten Hinweise anderer Module sein).
     public static func aus(ausgabe: String) throws -> BrainStatus {
