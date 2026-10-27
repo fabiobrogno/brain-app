@@ -1,10 +1,15 @@
 name: Release-Prüfung
 
-# Build, Tests und App-Paket. Kein Signieren, keine Notarisierung, keine Secrets außer GITHUB_TOKEN.
-# v*-beta.N -> GitHub-Prerelease mit Zip; vX.Y.Z -> nur Release-Entwurf (draft).
+# Build, Tests und App-Paket. Signiert + notarisiert wird nur bei Stable-Tags vX.Y.Z (Secrets, siehe docs/ENTWICKLUNG.md).
+# v*-beta.N -> GitHub-Prerelease mit Zip (unsigniert); vX.Y.Z -> Release-Entwurf (draft) mit Zip, DMG und appcast.xml.
 # workflow_dispatch prüft nur und veröffentlicht nichts. Tags werden nie ersetzt (docs/ENTWICKLUNG.md).
 on:
   workflow_dispatch:
+    inputs:
+      signier_probe:
+        description: 'Signier-Weg als Trockenlauf prüfen (--trocken, braucht die Secrets, veröffentlicht nichts)'
+        type: boolean
+        default: false
   push:
     tags: ['v*']
 
@@ -41,13 +46,97 @@ jobs:
         run: swift test
       - name: App bauen (Node mit Prüfsumme)
         run: bash scripts/baue-app.sh
-      # DEAKTIVIERT (if: false) — kommt später in die CI, Entscheidung CEO/Fabio (FBL-22).
-      # Hier würde nach dem Bauen signiert + notarisiert: scripts/veroeffentlichen.sh aus studio-v2
-      # (Developer-ID-Signatur, notarytool, stapler). Benötigte Secrets: siehe docs/ENTWICKLUNG.md.
-      # Zum Aktivieren: if auf true setzen und die Secrets im Repo anlegen. Jetzt existiert keines davon.
-      - name: Signieren + notarisieren (deaktiviert)
-        if: false
-        run: bash scripts/veroeffentlichen.sh build/Kortex.app
+      # Signieren + Notarisieren nur für Stable-Tags vX.Y.Z; Betas bleiben ad-hoc signiert.
+      # workflow_dispatch mit signier_probe=true macht denselben Weg als Trockenlauf (--trocken, nichts wird signiert).
+      - name: Signier-Modus bestimmen
+        id: modus
+        env:
+          PROBE: ${{ inputs.signier_probe }}
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "signieren=ja" >> "$GITHUB_OUTPUT"; echo "trocken=" >> "$GITHUB_OUTPUT"
+          elif [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && "$PROBE" == "true" ]]; then
+            echo "signieren=ja" >> "$GITHUB_OUTPUT"; echo "trocken=--trocken" >> "$GITHUB_OUTPUT"
+          else
+            echo "signieren=nein" >> "$GITHUB_OUTPUT"
+            echo "Kein Stable-Tag: App bleibt unsigniert."
+          fi
+      - name: Secrets prüfen
+        if: steps.modus.outputs.signieren == 'ja'
+        env:
+          MACOS_CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          BRAIN_SIGNIER_ID: ${{ secrets.BRAIN_SIGNIER_ID }}
+          NOTAR_KEY_P8_BASE64: ${{ secrets.NOTAR_KEY_P8_BASE64 }}
+          NOTAR_KEY_ID: ${{ secrets.NOTAR_KEY_ID }}
+          NOTAR_ISSUER_ID: ${{ secrets.NOTAR_ISSUER_ID }}
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          set +x
+          fehlt=0
+          for n in MACOS_CERT_P12_BASE64 MACOS_CERT_PASSWORD BRAIN_SIGNIER_ID NOTAR_KEY_P8_BASE64 NOTAR_KEY_ID NOTAR_ISSUER_ID SPARKLE_ED_PRIVATE_KEY; do
+            if [ -z "${!n}" ]; then echo "::error::Das GitHub-Secret $n fehlt. Veröffentlichung abgebrochen, es wird nichts unsigniert ausgeliefert (docs/ENTWICKLUNG.md)."; fehlt=1; fi
+          done
+          exit "$fehlt"
+      - name: Sparkle-Werkzeuge holen
+        if: steps.modus.outputs.signieren == 'ja'
+        run: |
+          set -euo pipefail
+          V=2.10.0
+          SHA=c2bf58aa8387266ac179357b1415d6f2635f044da8be41042af32425dae6da0c
+          D="$RUNNER_TEMP/sparkle"; mkdir -p "$D"
+          curl -fsSL -o "$D/s.tar.xz" "https://github.com/sparkle-project/Sparkle/releases/download/$V/Sparkle-$V.tar.xz"
+          echo "$SHA  $D/s.tar.xz" | shasum -a 256 -c -
+          tar -xf "$D/s.tar.xz" -C "$D" ./bin
+          echo "SPARKLE_BIN=$D/bin" >> "$GITHUB_ENV"
+      - name: Schlüsselbund anlegen und Zertifikat importieren
+        if: steps.modus.outputs.signieren == 'ja'
+        env:
+          MACOS_CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          set +x
+          set -euo pipefail
+          KC="$RUNNER_TEMP/brain-signieren.keychain-db"
+          KC_PW="$(uuidgen)"
+          echo "::add-mask::$KC_PW"
+          security create-keychain -p "$KC_PW" "$KC"
+          security set-keychain-settings -lut 3600 "$KC"
+          security unlock-keychain -p "$KC_PW" "$KC"
+          printf '%s' "$MACOS_CERT_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KC" -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security >/dev/null
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KC_PW" "$KC" >/dev/null
+          security list-keychains -d user -s "$KC" login.keychain-db
+          echo "BRAIN_KEYCHAIN=$KC" >> "$GITHUB_ENV"
+      - name: Signieren + notarisieren + DMG + Appcast
+        if: steps.modus.outputs.signieren == 'ja'
+        env:
+          BRAIN_SIGNIER_ID: ${{ secrets.BRAIN_SIGNIER_ID }}
+          NOTAR_KEY_P8_BASE64: ${{ secrets.NOTAR_KEY_P8_BASE64 }}
+          BRAIN_NOTAR_KEY_ID: ${{ secrets.NOTAR_KEY_ID }}
+          BRAIN_NOTAR_ISSUER: ${{ secrets.NOTAR_ISSUER_ID }}
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+          BRAIN_GITHUB_REPO: ${{ github.repository }}
+          TROCKEN: ${{ steps.modus.outputs.trocken }}
+        run: |
+          set +x
+          set -euo pipefail
+          umask 077
+          printf '%s' "$NOTAR_KEY_P8_BASE64" | base64 --decode > "$RUNNER_TEMP/notar.p8"
+          printf '%s' "$SPARKLE_ED_PRIVATE_KEY" > "$RUNNER_TEMP/sparkle.key"
+          export BRAIN_NOTAR_KEY_PFAD="$RUNNER_TEMP/notar.p8"
+          export SPARKLE_ED_KEY_DATEI="$RUNNER_TEMP/sparkle.key"
+          # shellcheck disable=SC2086
+          bash scripts/veroeffentlichen.sh $TROCKEN --app build/Kortex.app
+      - name: Schlüssel und Schlüsselbund löschen
+        if: always() && steps.modus.outputs.signieren == 'ja'
+        run: |
+          rm -f "$RUNNER_TEMP/cert.p12" "$RUNNER_TEMP/notar.p8" "$RUNNER_TEMP/sparkle.key"
+          if [ -n "${BRAIN_KEYCHAIN:-}" ]; then
+            security delete-keychain "$BRAIN_KEYCHAIN" || true
+            security list-keychains -d user -s login.keychain-db || true
+          fi
       - name: Zippen
         run: |
           NAME="${GITHUB_REF_TYPE}-${GITHUB_REF_NAME//\//-}"
@@ -59,6 +148,8 @@ jobs:
           path: |
             Kortex-*.zip
             Kortex-*.zip.sha256
+            build/Kortex-*.dmg
+            build/appcast.xml
           retention-days: 14
           if-no-files-found: error
 
@@ -91,5 +182,11 @@ jobs:
             echo "Release $TAG existiert schon; Tags werden nie ersetzt." >&2
             exit 1
           fi
+          EXTRA=()
+          if [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            # Stable: ohne signierte DMG und Appcast kein Release (nichts unsigniert ausliefern)
+            ls build/Kortex-*.dmg build/appcast.xml >/dev/null
+            EXTRA=(build/Kortex-*.dmg build/appcast.xml)
+          fi
           gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" \
-            --generate-notes "${ART[@]}" Kortex-*.zip Kortex-*.zip.sha256
+            --generate-notes "${ART[@]}" Kortex-*.zip Kortex-*.zip.sha256 "${EXTRA[@]}"
