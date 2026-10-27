@@ -148,12 +148,22 @@ private func berichtVault(_ dateien: [String: String]) -> URL {
 }
 
 @Test func tagesberichtNimmtDenNeuestenMitLaufNummer() throws {
-    let v = berichtVault(["2026-10-20.md": "alt 20261020-041000", "2026-10-21.md": "# Bericht\nLauf 20261021-041000\nrückgängig: brain zurueck 20261021-041000",
+    let v = berichtVault(["2026-10-20.md": "## Lauf 20261020-041000", "2026-10-21.md": "# Bericht\n## Lauf 20261021-041000\nrückgängig: brain zurueck 20261021-041000",
                           "letzter.json": "{}", "aktionen.jsonl": ""])
     let b = try #require(Tagesbericht.lade(vault: v))
     #expect(b.datei == "2026-10-21.md")
     #expect(b.lauf == "20261021-041000")
     #expect(b.kannZurueck)
+}
+
+@Test func tagesberichtNimmtDenLetztenLaufAbschnitt() throws {
+    let text = "# Bericht\n## Lauf 20261021-041000\n- Titel 20991231-235959 übernommen\n## Lauf 20261021-183000\n- nur Antworten\n"
+    let b = try #require(Tagesbericht.lade(vault: berichtVault(["2026-10-21.md": text])))
+    #expect(b.lauf == "20261021-183000")
+}
+
+@Test func laufNummerImFliesstextZaehltNicht() {
+    #expect(Tagesbericht.lauf(in: "Lauf 20261021-041000\nsiehe ## Lauf 20261021-041000 oben") == nil)
 }
 
 @Test func probeBerichtKannNichtZurueck() throws {

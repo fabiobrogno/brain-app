@@ -17,6 +17,7 @@ public struct Tagesbericht: Equatable, Sendable {
         let ordner = vault.appendingPathComponent(".logs/tageslauf", isDirectory: true)
         guard let namen = try? fm.contentsOfDirectory(atPath: ordner.path) else { return nil }
         // Nur Berichte vom Tag; „letzter.json“ und „aktionen.jsonl“ sind keine. Der Name beginnt mit dem Datum → sortierbar.
+        // „….md“ sortiert nach „…-probe.md“ ('-' < '.'): der echte Bericht des Tages gewinnt vor einer späteren Probe.
         let berichte = namen.filter { $0.hasSuffix(".md") && $0.first?.isNumber == true }.sorted()
         for name in berichte.reversed() {
             let url = ordner.appendingPathComponent(name)
@@ -29,8 +30,16 @@ public struct Tagesbericht: Equatable, Sendable {
         return nil
     }
 
+    /// Nummer des letzten Laufs: der Bericht wird fortgeschrieben, je Lauf ein Abschnitt `## Lauf <id>`.
+    /// Nur Überschriftzeilen zählen, nicht Zahlen im Fließtext.
     static func lauf(in text: String) -> String? {
-        guard let r = text.range(of: #"\b\d{8}-\d{6}\b"#, options: .regularExpression) else { return nil }
-        return String(text[r])
+        var letzte: String?
+        for zeile in text.split(whereSeparator: \.isNewline) {
+            let z = String(zeile)
+            guard z.range(of: #"^## Lauf \d{8}-\d{6}\s*$"#, options: .regularExpression) != nil,
+                  let r = z.range(of: #"\d{8}-\d{6}"#, options: .regularExpression) else { continue }
+            letzte = String(z[r])
+        }
+        return letzte
     }
 }
