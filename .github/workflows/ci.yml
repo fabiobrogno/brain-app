@@ -1,16 +1,48 @@
 name: CI
 
-# Nur PR und main: macOS-Minuten sind in privaten Repos teuer.
+# Nur PR und main: macOS-Minuten sind in privaten Repos teuer. Reine Doku löst keinen Lauf aus.
 on:
   pull_request:
+    paths-ignore: ['docs/**', '**/*.md']
   push:
     branches: [main]
+    paths-ignore: ['docs/**', '**/*.md']
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck scripts/*.sh
+        run: shellcheck scripts/*.sh
+
+  # Platzhalter für die Node-Tests aus studio-v2 (FBL-25): läuft nur, wenn scripts/teste-node.sh existiert.
+  # Fehlt das Skript, endet der Job grün ohne Arbeit; mit dem Skript ist er sofort aktiv.
+  node-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: teste-node.sh vorhanden?
+        id: erkennen
+        run: |
+          if [ -f scripts/teste-node.sh ]; then echo "vorhanden=true" >> "$GITHUB_OUTPUT"; else echo "scripts/teste-node.sh fehlt — Node-Tests übersprungen."; fi
+      - uses: actions/setup-node@v4
+        if: steps.erkennen.outputs.vorhanden == 'true'
+        with:
+          node-version: '22'
+      - name: Node-Tests
+        if: steps.erkennen.outputs.vorhanden == 'true'
+        run: bash scripts/teste-node.sh
+
   build-test:
     # Package.swift verlangt swift-tools 6.2 und macOS 26 -> macos-26-Image (Xcode 26).
     runs-on: macos-26
@@ -18,11 +50,51 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Toolchain anzeigen
+        id: toolchain
         run: |
           sw_vers
           xcodebuild -version
           swift --version
+          echo "xcode=$(xcodebuild -version | tr -s '\n ' '-')" >> "$GITHUB_OUTPUT"
+      - name: SwiftPM-Cache
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: spm-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+          restore-keys: |
+            spm-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-
       - name: Build
         run: swift build
       - name: Test
         run: swift test
+
+  # Spur „dev“: jeder Stand von main als Kortex.app (ad-hoc signiert), 14 Tage abrufbar.
+  dev-artefakt:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [shellcheck, build-test]
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain anzeigen
+        id: toolchain
+        run: |
+          xcodebuild -version
+          echo "xcode=$(xcodebuild -version | tr -s '\n ' '-')" >> "$GITHUB_OUTPUT"
+      - name: SwiftPM-Cache
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: spm-release-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+          restore-keys: |
+            spm-release-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-
+      - name: App bauen (Node mit Prüfsumme)
+        run: bash scripts/baue-app.sh
+      - name: Zippen
+        run: ditto -c -k --keepParent build/Kortex.app "Kortex-dev-${GITHUB_SHA::7}.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Kortex-dev-${{ github.sha }}
+          path: Kortex-dev-*.zip
+          retention-days: 14
+          if-no-files-found: error
