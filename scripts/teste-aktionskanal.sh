@@ -6,13 +6,13 @@
 #  - `aktion` antwortet: {ok:true} (titel, vault-gewechselt, vertrauen-geaendert, ansicht mit Kit und Vertrauen),
 #    {ok:false,grund:"kein-kit"} (ansicht ohne Kit), {ok:false,grund:"nicht-vertraut"} (ansicht mit Kit, aber ohne Vertrauen),
 #    Promise-Abweisung bei Ungültigem, null beim zweiten gleichzeitigen ordner-waehlen
-#  - Vertrauen (K1): ohne Freigabe liest die App den Kit-Status nicht („Kit nicht erlaubt“) und öffnet die Übersicht nicht; nach
+#  - Vertrauen (K1): ohne Freigabe liest die App den Kit-Status nicht ('Kit nicht erlaubt') und öffnet die Übersicht nicht; nach
 #    der Freigabe und `vertrauen-geaendert` liest sie den Status und öffnet die Übersicht. Fehlt die Prüfung ganz (dritter Lauf),
-#    bleibt alles zu — auch nach der „Freigabe“ — und die App sagt „Prüfung fehlgeschlagen“ statt „nicht erlaubt“ (SW-5).
+#    bleibt alles zu — auch nach der 'Freigabe' — und die App sagt 'Prüfung fehlgeschlagen' statt 'nicht erlaubt' (SW-5).
 #  - Offene Übersicht (SW-2): Entzieht das Backend die Freigabe oder verschwindet das Kit (Abgleich) und meldet `vertrauen-geaendert`,
 #    schließt die Übersicht. Ein technischer Prüffehler lässt sie offen; nach 10 s wird einmal wiederholt, erst bei einem zweiten
 #    Fehlschlag schließt sie. Belege sind Zeilen im App-Log (die Attrappe wartet darauf), keine festen Schlafzeiten.
-#  - Aktion `fehler` (SW-7): je Fensterleben 20 Zeilen im Log, danach einmal „js-fehler gedrosselt“, der Rest wird verworfen.
+#  - Aktion `fehler` (SW-7): je Fensterleben 20 Zeilen im Log, danach einmal 'js-fehler gedrosselt', der Rest wird verworfen.
 #  - vault-gewechselt: aktiver Vault aus vaults.json, Status, offene Übersicht wird geschlossen
 #  - der Ordner-Dialog (Sheet) öffnet und endet mit dem Fenster (ordner-dialog abgebrochen), kein Absturz
 #  - keine Spuren (k11): kein gemerkter Fensterrahmen in den Einstellungen, keine WebKit-Daten unter ~/Library/WebKit
@@ -71,8 +71,8 @@ keine_spuren() { # <Bundle-ID>: kein gemerkter Fensterrahmen, keine WebKit-Daten
   fi
 }
 lauf() { # leer | mit-vault | ohne-cli
-  local modus="$1" basis v1 v2 log stublog breite hoehe z_frei z_status z_auf z_fehler z_gut z_zu_fehler z_wechsel z_zu_uebersicht z_zu_studio
-  # Vertrauensprüfung (Attrappe) in die Kopie legen — im Lauf „ohne-cli“ fehlt sie. Vor der Signatur (neue_kennung).
+  local modus="$1" basis v1 v2 log breite hoehe z_frei z_status z_auf z_fehler z_gut z_zu_fehler z_wechsel z_zu_uebersicht z_zu_studio
+  # Vertrauensprüfung (Attrappe) in die Kopie legen — im Lauf 'ohne-cli' fehlt sie. Vor der Signatur (neue_kennung).
   rm -f "$APP/Contents/Resources/werkstatt/vertrauen-pruefen.mjs"
   [ "$modus" = "ohne-cli" ] || cp "$W/Tests/Aktionskanal/vertrauen-pruefen.mjs" "$APP/Contents/Resources/werkstatt/vertrauen-pruefen.mjs"
   neue_kennung "$modus"
@@ -88,7 +88,7 @@ lauf() { # leer | mit-vault | ohne-cli
     printf '{"vaults":[{"name":"Eins","pfad":"%s"}],"aktiv":"%s"}\n' "$v1" "$v1" > "$BRAIN_APP_SUPPORT/vaults.json"
     extra=(--test-fenster)
   fi
-  # Der Lauf „mit-vault“ wartet auf Belege im App-Log und braucht für die Wiederholungen nach technischen Prüffehlern 2 × 10 s mehr.
+  # Der Lauf 'mit-vault' wartet auf Belege im App-Log und braucht für die Wiederholungen nach technischen Prüffehlern 2 × 10 s mehr.
   local dauer=(--test-fenster-schliessen-nach 16 --test-beenden-nach 24)
   [ "$modus" = "mit-vault" ] && dauer=(--test-fenster-schliessen-nach 75 --test-beenden-nach 85)
   "$APP/Contents/MacOS/BrainApp" ${extra[@]+"${extra[@]}"} "${dauer[@]}" &
@@ -121,11 +121,11 @@ lauf() { # leer | mit-vault | ohne-cli
     pruefe "Start ohne Vault" "$log" "kein-vault"
     pruefe "ansicht ohne Kit antwortet ok:false/kein-kit" "$STUB_LOG" '"ansicht":"{\"grund\":\"kein-kit\",\"ok\":false}"'
     pruefe "ansicht ohne Kit (vor der Freigabe) ebenso" "$STUB_LOG" '"ansichtOhneVertrauen":"{\"grund\":\"kein-kit\",\"ok\":false}"'
-    # Aktion „fehler“ (SW-7): 25 Meldungen einer Seite → 20 im Log, danach einmal „gedrosselt“, der Rest verworfen
+    # Aktion 'fehler' (SW-7): 25 Meldungen einer Seite → 20 im Log, danach einmal 'gedrosselt', der Rest verworfen
     pruefe "fehler: 20 Meldungen angenommen" "$STUB_LOG" '"fehlerAngenommen":20'
     pruefe "fehler: die übrigen 5 antworten ok:false/gedrosselt" "$STUB_LOG" '"fehlerGedrosselt":5'
     pruefe_anzahl "fehler: genau 20 js-fehler-Zeilen im Log" "$log" ' js-fehler stub\.js:' 20
-    pruefe_anzahl "fehler: genau eine Zeile „js-fehler gedrosselt“" "$log" ' js-fehler gedrosselt' 1
+    pruefe_anzahl "fehler: genau eine Zeile 'js-fehler gedrosselt'" "$log" ' js-fehler gedrosselt' 1
     pruefe "fehler: die letzte durchgelassene Meldung steht im Log" "$log" ' js-fehler stub.js:20:1 Probefehler 20'
     pruefe_nicht "fehler: die 21. Meldung steht nicht im Log" "$log" 'Probefehler 21'
     ;;
@@ -133,7 +133,7 @@ lauf() { # leer | mit-vault | ohne-cli
     pruefe "Vault aus vaults.json beim Start" "$log" "vault $v1"
     pruefe "ansicht mit Kit, aber ohne Vertrauen: ok:false/nicht-vertraut" "$STUB_LOG" '"ansichtOhneVertrauen":"{\"grund\":\"nicht-vertraut\",\"ok\":false}"'
     pruefe "ansicht mit Kit und Vertrauen antwortet {ok:true}" "$STUB_LOG" '"ansicht":"{\"ok\":true}"'
-    pruefe "Status ohne Freigabe: „Kit nicht erlaubt“" "$log" "status kit-nicht-erlaubt nicht-freigegeben"
+    pruefe "Status ohne Freigabe: 'Kit nicht erlaubt'" "$log" "status kit-nicht-erlaubt nicht-freigegeben"
     pruefe "Übersicht ohne Freigabe abgelehnt" "$log" "uebersicht-abgelehnt kit-nein nicht-freigegeben"
     pruefe "Attrappen-CLI wurde ohne und mit Freigabe gefragt" "$STUB_LOG" '"pruefung":{"vault":"'"$v1"'","erlaubt":false}'
     pruefe "Attrappen-CLI wurde ohne und mit Freigabe gefragt (mit)" "$STUB_LOG" '"pruefung":{"vault":"'"$v1"'","erlaubt":true}'
@@ -157,10 +157,10 @@ lauf() { # leer | mit-vault | ohne-cli
     pruefe "ansicht nach dem Entzug: ok:false/nicht-vertraut" "$STUB_LOG" '"ansichtNachEntzug":"{\"grund\":\"nicht-vertraut\",\"ok\":false}"'
     pruefe "wieder freigegeben: die Übersicht öffnet erneut" "$STUB_LOG" '"ansichtZwei":"{\"ok\":true}"'
     pruefe "Kit gelöscht + vertrauen-geaendert: die Übersicht schließt" "$STUB_LOG" '"schliesstOhneKit":true'
-    pruefe "Schließgrund „Freigabe entfallen“ im Log" "$log" " uebersicht-geschlossen kit-nicht-erlaubt$"
-    pruefe "Schließgrund „Kit fehlt“ im Log" "$log" " uebersicht-geschlossen kein-kit$"
+    pruefe "Schließgrund 'Freigabe entfallen' im Log" "$log" " uebersicht-geschlossen kit-nicht-erlaubt$"
+    pruefe "Schließgrund 'Kit fehlt' im Log" "$log" " uebersicht-geschlossen kein-kit$"
     # Technischer Prüffehler (SW-5): einmal fehlgeschlagen → Übersicht bleibt offen, nach 10 s wiederholt, intakt → weiter offen
-    pruefe "technischer Prüffehler wird als „Prüfung fehlgeschlagen“ angezeigt" "$STUB_LOG" '"fehlerAngezeigt":true'
+    pruefe "technischer Prüffehler wird als 'Prüfung fehlgeschlagen' angezeigt" "$STUB_LOG" '"fehlerAngezeigt":true'
     pruefe "… mit einer Wiederholung nach 10 s" "$STUB_LOG" '"wiederholungGeplant":true'
     pruefe "… die das Vertrauen intakt findet (Status wird wieder gelesen)" "$STUB_LOG" '"wiederholungOk":true'
     z_fehler="$(zeile "$log" ' status kit-pruefung-fehlgeschlagen unerwartete-ausgabe$')"
@@ -175,8 +175,8 @@ lauf() { # leer | mit-vault | ohne-cli
     pruefe "zweiter Prüffehler: die Übersicht schließt erst nach der Wiederholung" "$STUB_LOG" '"schliesstNachWiederholung":true'
     pruefe "… Log: zweiter Fehlschlag steht als endgültig da" "$log" " status kit-pruefung-fehlgeschlagen unerwartete-ausgabe endgueltig$"
     pruefe_anzahl "Wiederholung geplant: zweimal (je ein Prüffehler-Durchgang)" "$log" ' kit-pruefung-wiederholung in 10s$' 2
-    pruefe_anzahl "Schließgrund „Prüfung fehlgeschlagen“ genau einmal" "$log" ' uebersicht-geschlossen pruefung-fehlgeschlagen$' 1
-    pruefe_nicht "technischer Prüffehler wird nie als „Kit nicht erlaubt“ gemeldet (kein „bitte freigeben“)" "$log" ' status kit-nicht-erlaubt unerwartete-ausgabe'
+    pruefe_anzahl "Schließgrund 'Prüfung fehlgeschlagen' genau einmal" "$log" ' uebersicht-geschlossen pruefung-fehlgeschlagen$' 1
+    pruefe_nicht "technischer Prüffehler wird nie als 'Kit nicht erlaubt' gemeldet (kein 'bitte freigeben')" "$log" ' status kit-nicht-erlaubt unerwartete-ausgabe'
     pruefe "Übersicht öffnet vor dem Vault-Wechsel noch einmal" "$STUB_LOG" '"ansichtVier":"{\"ok\":true}"'
     # Vier Übersichten: Entzug, Kit weg, zweiter Prüffehler, Vault-Wechsel — jede schließt, keine bleibt übrig
     pruefe_anzahl "vier Übersichten geöffnet" "$log" ' fenster-auf uebersicht' 4
@@ -192,14 +192,14 @@ lauf() { # leer | mit-vault | ohne-cli
     ;;
   ohne-cli)
     pruefe "Vault aus vaults.json beim Start" "$log" "vault $v1"
-    # Fehlt die Prüfung, ist alles „nicht erlaubt“ — auch nach der „Freigabe“ der Attrappe (es gibt niemanden, der sie liest)
-    # SW-5: Eine fehlende Prüfung ist ein technischer Fehler, nicht „nicht freigegeben“ — sonst hieße es „bitte freigeben“, obwohl der
+    # Fehlt die Prüfung, ist alles 'nicht erlaubt' — auch nach der 'Freigabe' der Attrappe (es gibt niemanden, der sie liest)
+    # SW-5: Eine fehlende Prüfung ist ein technischer Fehler, nicht 'nicht freigegeben' — sonst hieße es 'bitte freigeben', obwohl der
     # Nutzer nichts freigeben kann. Gestartet wird auch hier nichts.
     pruefe "ansicht ohne Prüfung: ok:false/pruefung-fehlgeschlagen" "$STUB_LOG" '"ansichtOhneVertrauen":"{\"grund\":\"pruefung-fehlgeschlagen\",\"ok\":false}"'
-    pruefe "ansicht nach der „Freigabe“ ohne Prüfung ebenso" "$STUB_LOG" '"ansicht":"{\"grund\":\"pruefung-fehlgeschlagen\",\"ok\":false}"'
-    pruefe "Status: „Kit-Prüfung fehlgeschlagen“ (Prüfung fehlt)" "$log" "status kit-pruefung-fehlgeschlagen pruefung-fehlt"
+    pruefe "ansicht nach der 'Freigabe' ohne Prüfung ebenso" "$STUB_LOG" '"ansicht":"{\"grund\":\"pruefung-fehlgeschlagen\",\"ok\":false}"'
+    pruefe "Status: 'Kit-Prüfung fehlgeschlagen' (Prüfung fehlt)" "$log" "status kit-pruefung-fehlgeschlagen pruefung-fehlt"
     pruefe "Die Prüfung wird einmal wiederholt (Wiederholung geplant)" "$log" "kit-pruefung-wiederholung in 10s"
-    pruefe_nicht "nie „Kit nicht erlaubt“ gemeldet (kein „bitte freigeben“)" "$log" ' status kit-nicht-erlaubt'
+    pruefe_nicht "nie 'Kit nicht erlaubt' gemeldet (kein 'bitte freigeben')" "$log" ' status kit-nicht-erlaubt'
     pruefe "Übersicht abgelehnt (Prüfung fehlt)" "$log" "uebersicht-abgelehnt kit-nein pruefung-fehlt"
     pruefe_nicht "Kit-Status wurde nie gelesen" "$log" ' status (ok|hinweis|problem)$'
     pruefe_nicht "Übersicht wurde nie geöffnet" "$log" ' fenster-auf uebersicht'

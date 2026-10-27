@@ -9,13 +9,13 @@
 #                  "-" = kein Vault: der Willkommen-Bildschirm (leerer Support-Ordner).
 #   <ausgabeordner> bekommt <name>-hell.png und <name>-dunkel.png (name = studio, willkommen oder der Name des Skripts) samt
 #                  Kopie des App-Logs (<name>-hell.log, <name>-dunkel.log).
-#   [skript.js]    Rumpf einer async-Funktion (darf await), läuft nach „bereit“ und vor dem Bild — z. B. eine Notiz öffnen.
+#   [skript.js]    Rumpf einer async-Funktion (darf await), läuft nach 'bereit' und vor dem Bild — z. B. eine Notiz öffnen.
 #                  Setzt BRAIN_TESTMODUS=1 (ohne das ignoriert die App --test-skript).
 #
 # Am Ende: die PNG-Pfade, alle js-fehler-Zeilen aus dem App-Log (Fehlerhaken der Oberfläche) und Warnungen der Testschalter.
 # Jeder Lauf nutzt einen frischen Support-Ordner (BRAIN_APP_SUPPORT) in /tmp; ~/Library/Application Support/Brain bleibt unberührt.
 # Umgebung (alle optional): SELBSTFOTO_GROESSE (Standard 1440x900, Inhaltsgröße in Punkten), SELBSTFOTO_WARTEN (Sekunden zwischen
-# „bereit“/Skript und Bild, Standard 2), SELBSTFOTO_FRIST (Sekunden bis zum Abbruch je Lauf, Standard 60), BRAIN_TEST_APP (andere .app).
+# 'bereit'/Skript und Bild, Standard 2), SELBSTFOTO_FRIST (Sekunden bis zum Abbruch je Lauf, Standard 60), BRAIN_TEST_APP (andere .app).
 # Exit 0, wenn beide Bilder geschrieben wurden (auch bei js-fehler — die stehen in der Ausgabe), sonst 1.
 set -uo pipefail
 W="$(cd "$(dirname "$0")/.." && pwd)"

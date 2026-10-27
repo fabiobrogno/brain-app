@@ -4,14 +4,14 @@
 #  A) mit --vault auf ein Wegwerf-Brain mit Leerzeichen im Namen (nie das Live-Brain) UND mit Freigabe (Vertrauen) im
 #     Wegwerf-Support-Ordner: Status gelesen, Studio-Fenster erscheint und ist bereit, Werkstatt-Prozess läuft, KEIN Netzwerk-Port,
 #     mit Kit-Worktree zusätzlich die Übersicht (Kit-Brücke); Fenster zu → Brücken beendet; App beenden → keine Node-Prozesse der
-#     App übrig. Fehlt die Vertrauensprüfung (werkstatt/vertrauen-pruefen.mjs) noch, läuft A ohne Freigabe: dann gilt „Kit nicht
-#     erlaubt“, die Übersicht wird abgelehnt, und der Freigabe-Teil steht als `SKIP: CLI fehlt` im Ergebnis (nicht still bestanden).
-#  B) OHNE --vault mit leerem Support-Ordner: das Studio öffnet trotzdem („Willkommen“), die Werkstatt läuft ohne
+#     App übrig. Fehlt die Vertrauensprüfung (werkstatt/vertrauen-pruefen.mjs) noch, läuft A ohne Freigabe: dann gilt 'Kit nicht
+#     erlaubt', die Übersicht wird abgelehnt, und der Freigabe-Teil steht als `SKIP: CLI fehlt` im Ergebnis (nicht still bestanden).
+#  B) OHNE --vault mit leerem Support-Ordner: das Studio öffnet trotzdem ('Willkommen'), die Werkstatt läuft ohne
 #     Vault-Argument, es erscheint kein Einrichtungsdialog.
 #  C) OHNE --vault, aber mit vaults.json im Support-Ordner (und Freigabe): die App liest den aktiven Vault daraus (Status) und
 #     startet die Werkstatt trotzdem ohne Vault-Argument (die Werkstatt liest vaults.json selbst); beendet wird bei offenem Studio.
 #  D) OHNE Freigabe mit einem Marken-Vault: Kit (brain.mjs, bruecke.mjs), Git-Hooks, core.fsmonitor und eine `node_modules/.bin/git`
-#     schreiben je eine Marke, falls sie je laufen. Zwei Läufe, beide mit relativem PATH-Eintrag („node_modules/.bin:$PATH“) und mit
+#     schreiben je eine Marke, falls sie je laufen. Zwei Läufe, beide mit relativem PATH-Eintrag ('node_modules/.bin:$PATH') und mit
 #     den Aktionen `vertrauen-geaendert` und `ansicht` aus der Studio-Oberfläche (--test-skript, BRAIN_TESTMODUS=1):
 #       haken    — Git-Einstellungen, die die App entschärft (Hooks, fsmonitor): Die Werkstatt committet sogar (Hooks aus), Marken: KEINE.
 #       gesperrt — Git-Einstellungen, die Programme starten und sich nicht entschärfen lassen (filter.*.clean, remote.*.uploadpack):
@@ -75,7 +75,7 @@ nichts_uebrig() {
   sleep 2
   if pgrep -f "$APP/Contents/Resources/(werkstatt|node-runtime)|$1" >/dev/null; then fehl "Nach dem Beenden laufen noch Prozesse der App"; fi
 }
-# Gibt es die Vertrauensprüfung (die CLI entsteht mit dem Backend)? Ohne sie gibt es keine Freigabe — und es gilt „nicht erlaubt“.
+# Gibt es die Vertrauensprüfung (die CLI entsteht mit dem Backend)? Ohne sie gibt es keine Freigabe — und es gilt 'nicht erlaubt'.
 cli_da() { [ -f "$CLI" ] && [ -x "$RNODE" ]; }
 sauber() { env -i PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" HOME="$HOME" "$@"; }
 # Freigabe wie der Nutzer sie erteilt — nur in den Wegwerf-Support-Ordner, nie in den echten (BRAIN_TESTMODUS=1 schaltet --erlauben frei).
@@ -100,8 +100,8 @@ phase_a() {
   if [ "$frei" = 1 ]; then
     warte "status (ok|hinweis|problem)" 80 || fehl "Status wurde nicht gelesen"
   else
-    warte "status kit-(nicht-erlaubt|pruefung-fehlgeschlagen)" 80 || fehl "Ohne Freigabe fehlt „Kit nicht erlaubt“ (bzw. „Prüfung fehlgeschlagen“) im Log"
-    ueberspringe "A: CLI fehlt ($CLI) — Status lesen, Übersicht und Kit-Brücke mit Freigabe nicht geprüft; geprüft: ohne Prüfung läuft nichts („Prüfung fehlgeschlagen“)"
+    warte "status kit-(nicht-erlaubt|pruefung-fehlgeschlagen)" 80 || fehl "Ohne Freigabe fehlt 'Kit nicht erlaubt' (bzw. 'Prüfung fehlgeschlagen') im Log"
+    ueberspringe "A: CLI fehlt ($CLI) — Status lesen, Übersicht und Kit-Brücke mit Freigabe nicht geprüft; geprüft: ohne Prüfung läuft nichts ('Prüfung fehlgeschlagen')"
   fi
   warte "fenster-auf studio" 80 || fehl "Studio-Fenster ist nicht erschienen"
   warte "fenster-bereit studio" 120 || fehl "Studio wurde nicht bereit"
@@ -132,7 +132,7 @@ phase_a() {
   sleep 3
   if lauf "werkstatt.mjs"; then fehl "Werkstatt läuft nach dem Schließen weiter"; fi
   if lauf "bruecke.mjs"; then fehl "Kit-Brücke läuft nach dem Schließen weiter"; fi
-  # Dock-Klick ersetzt: App läuft nach „Fenster zu“ weiter, Beenden räumt auf
+  # Dock-Klick ersetzt: App läuft nach 'Fenster zu' weiter, Beenden räumt auf
   kill -0 "$PID" 2>/dev/null || fehl "App hat sich mit dem letzten Fenster beendet"
   nichts_uebrig "$BASIS"
   if [ "$frei" = 1 ]; then echo "OK A: mit --vault, mit Freigabe"; else echo "OK A: mit --vault, ohne Freigabe (Freigabe-Teil übersprungen)"; fi
@@ -145,7 +145,7 @@ phase_b() {
   LOG="$BRAIN_APP_SUPPORT/logs/app.log"
   "$APP/Contents/MacOS/BrainApp" --test-fenster-schliessen-nach 25 --test-beenden-nach 45 &
   PID=$!
-  warte "kein-vault" 80 || fehl "B: App meldet nicht „kein-vault“ im Log"
+  warte "kein-vault" 80 || fehl "B: App meldet nicht 'kein-vault' im Log"
   warte "fenster-auf studio" 80 || fehl "B: Studio-Fenster öffnet nicht ohne Vault"
   warte "fenster-bereit studio" 120 || fehl "B: Studio wurde ohne Vault nicht bereit"
   werkstatt_ohne_argument
@@ -171,14 +171,14 @@ phase_c() {
   if [ "$frei" = 1 ]; then
     warte "status (ok|hinweis|problem)" 80 || fehl "C: Status des Vaults aus vaults.json wurde nicht gelesen"
   else
-    warte "status kit-(nicht-erlaubt|pruefung-fehlgeschlagen)" 80 || fehl "C: Ohne Freigabe fehlt „Kit nicht erlaubt“ (bzw. „Prüfung fehlgeschlagen“) im Log"
-    ueberspringe "C: CLI fehlt ($CLI) — Status des Vaults mit Freigabe nicht geprüft; geprüft: ohne Prüfung läuft nichts („Prüfung fehlgeschlagen“)"
+    warte "status kit-(nicht-erlaubt|pruefung-fehlgeschlagen)" 80 || fehl "C: Ohne Freigabe fehlt 'Kit nicht erlaubt' (bzw. 'Prüfung fehlgeschlagen') im Log"
+    ueberspringe "C: CLI fehlt ($CLI) — Status des Vaults mit Freigabe nicht geprüft; geprüft: ohne Prüfung läuft nichts ('Prüfung fehlgeschlagen')"
   fi
   warte "fenster-bereit studio" 120 || fehl "C: Studio wurde nicht bereit"
   werkstatt_ohne_argument
   warte "fenster-zu studio" 200 || fehl "C: Beenden bei offenem Studio ist hängen geblieben"
   nichts_uebrig "$BASIS_C"
-  echo "OK C: Vault aus vaults.json (Status gelesen oder „Kit nicht erlaubt“, Werkstatt ohne Vault-Argument, Beenden bei offenem Studio)"
+  echo "OK C: Vault aus vaults.json (Status gelesen oder 'Kit nicht erlaubt', Werkstatt ohne Vault-Argument, Beenden bei offenem Studio)"
 }
 
 # ---------- D) ohne Freigabe: nichts aus dem Vault läuft ----------
@@ -214,7 +214,7 @@ process.stdin.resume();'
   d_git init -q "$vd" && d_git -C "$vd" config user.name Probe && d_git -C "$vd" config user.email probe@example.invalid || fehl "D/$art: git init ist gescheitert"
   printf '# Notiz\n' > "$vd/notiz.md"; printf '# Neu\n' > "$vd/neu.md"
   d_git -C "$vd" add notiz.md && d_git -C "$vd" commit -q -m Start || fehl "D/$art: erster Commit ist gescheitert"
-  # Ein `git` im Vault, das nur ein relativer PATH-Eintrag („node_modules/.bin“) vor das echte setzt — schon das Lesen der
+  # Ein `git` im Vault, das nur ein relativer PATH-Eintrag ('node_modules/.bin') vor das echte setzt — schon das Lesen der
   # Git-Einstellungen bei der Vertrauensprüfung startet git im Vault-Ordner (Review SW-3).
   mkdir -p "$vd/node_modules/.bin"; d_marke_sh "$vd/node_modules/.bin/git" fremdes-git "$marke"
   case "$art" in
@@ -238,7 +238,7 @@ process.stdin.resume();'
       ;;
   esac
   # Kontrolle: Jede Marke schreibt wirklich, wenn man das Programm ohne die Vorsicht der App laufen lässt (an einer KOPIE des Vaults).
-  # Sonst bewiese „keine Marke“ nichts.
+  # Sonst bewiese 'keine Marke' nichts.
   k="$basis/kontrolle"; cp -R "$vd" "$k"
   ( cd "$k" && "$RNODE" .tools/brain.mjs >/dev/null 2>&1; "$RNODE" .tools/ansicht/bruecke.mjs </dev/null >/dev/null 2>&1 ) || true
   ( cd "$k" && PATH="node_modules/.bin:$PATH" git --version >/dev/null 2>&1 ) || true
@@ -248,7 +248,7 @@ process.stdin.resume();'
     ( cd "$k" && printf 'x\n' >> notiz.md && d_git add notiz.md >/dev/null 2>&1; d_git fetch -q origin >/dev/null 2>&1 ) || true
   fi
   for m in $erwartet; do
-    grep -qx "$m" "$marke" 2>/dev/null || { echo "Markendatei der Kontrolle:"; cat "$marke" 2>/dev/null || true; fehl "D/$art: Marke „$m“ schreibt in der Kontrolle nicht — der Test würde nichts beweisen"; }
+    grep -qx "$m" "$marke" 2>/dev/null || { echo "Markendatei der Kontrolle:"; cat "$marke" 2>/dev/null || true; fehl "D/$art: Marke '$m' schreibt in der Kontrolle nicht — der Test würde nichts beweisen"; }
   done
   rm -rf "$k" "$marke"
   # Die Probe im Studio: vertrauen-geaendert und ansicht aus der Oberfläche, dazu die Git-Wege der Werkstatt (nur mit BRAIN_TESTMODUS=1)
@@ -278,7 +278,7 @@ JS
   ( export BRAIN_TESTMODUS=1 PATH="node_modules/.bin:$PATH"
     exec "$APP/Contents/MacOS/BrainApp" --vault "$vd" --test-fenster --test-skript "$probe" --test-fenster-schliessen-nach 16 --test-beenden-nach 22 >/dev/null 2>&1 ) &
   PID=$!
-  warte "status kit-(nicht-erlaubt|pruefung-fehlgeschlagen)" 80 || fehl "D/$art: Ohne Freigabe fehlt „Kit nicht erlaubt“ (bzw. „Prüfung fehlgeschlagen“) im Log"
+  warte "status kit-(nicht-erlaubt|pruefung-fehlgeschlagen)" 80 || fehl "D/$art: Ohne Freigabe fehlt 'Kit nicht erlaubt' (bzw. 'Prüfung fehlgeschlagen') im Log"
   warte "uebersicht-abgelehnt" 80 || fehl "D/$art: Ohne Freigabe wurde die Übersicht nicht abgelehnt"
   warte "fenster-bereit studio" 120 || fehl "D/$art: Studio wurde nicht bereit"
   warte "test-skript(-fehler| ok) probe.js" 120 || fehl "D/$art: Die Probe im Studio ist nicht gelaufen"
@@ -297,11 +297,11 @@ JS
     *) fehl "D/$art: ansicht ohne Freigabe öffnet oder antwortet falsch: $ergebnis" ;;
   esac
   if [ "$art" = haken ]; then
-    # Der Commit erreicht Git wirklich (200) und löst trotzdem keinen Hook aus — sonst bewiese „keine Marke“ nichts.
+    # Der Commit erreicht Git wirklich (200) und löst trotzdem keinen Hook aus — sonst bewiese 'keine Marke' nichts.
     case " $ergebnis " in *" commit=200 "*) ;; *) fehl "D/$art: Der Commit der Werkstatt ging nicht bis Git (erwartet 200, ohne Hooks): $ergebnis" ;; esac
   fi
   if [ "$art" = gesperrt ]; then
-    case " $ergebnis " in *" status=200/gesperrt "*) ;; *) fehl "D/$art: Git-Status meldet nicht „gesperrt“: $ergebnis" ;; esac
+    case " $ergebnis " in *" status=200/gesperrt "*) ;; *) fehl "D/$art: Git-Status meldet nicht 'gesperrt': $ergebnis" ;; esac
     case " $ergebnis " in *" sync=409/gitGesperrt "*) ;; *) fehl "D/$art: Der Abgleich ist trotz gefährlicher Git-Einstellung nicht gesperrt: $ergebnis" ;; esac
     case " $ergebnis " in *" commit=409/gitGesperrt "*) ;; *) fehl "D/$art: Der Commit ist trotz gefährlicher Git-Einstellung nicht gesperrt: $ergebnis" ;; esac
   fi

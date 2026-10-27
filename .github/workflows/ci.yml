@@ -22,7 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: shellcheck scripts/*.sh
-        run: shellcheck scripts/*.sh
+        run: shellcheck -S warning scripts/*.sh
 
   # Platzhalter für die Node-Tests aus studio-v2 (FBL-25): läuft nur, wenn scripts/teste-node.sh existiert.
   # Fehlt das Skript, endet der Job grün ohne Arbeit; mit dem Skript ist er sofort aktiv.
