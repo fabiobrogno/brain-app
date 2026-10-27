@@ -45,6 +45,22 @@ public struct StatusAnzeige: Equatable, Sendable {
         StatusAnzeige(symbol: "xmark.octagon", zeichen: "✕", titel: text)
     }
 
+    /// Studio läuft, aber es ist noch kein Vault gewählt (Willkommen).
+    public static let keinVault = StatusAnzeige(symbol: "questionmark.circle", zeichen: "?", titel: "Kein Vault gewählt")
+
+    /// Vault ohne Brain-Kit (`.tools/brain.mjs` fehlt): für das Studio völlig in Ordnung, es gibt nur keine Kit-Prüfungen.
+    public static let ohneKit = StatusAnzeige(symbol: "checkmark.circle", zeichen: "✓", titel: "Vault ohne Kit — nur Studio")
+
+    /// Vault mit Kit, dem der Nutzer noch nicht vertraut hat (Studio-v2-Spec §8): nichts aus `.tools` läuft. Ein eigener Zustand,
+    /// kein Fehler — es ist nichts kaputt, es fehlt nur die Freigabe.
+    public static let kitNichtErlaubt = StatusAnzeige(symbol: "lock", zeichen: "🔒", titel: "Kit nicht erlaubt")
+
+    /// Die Vertrauensprüfung selbst ist gescheitert (Skript fehlt, Node startet nicht, Zeitüberschreitung): kein „bitte freigeben“,
+    /// denn der Nutzer kann nichts freigeben, was vielleicht längst freigegeben ist. Gestartet wird auch hier nichts aus dem Vault;
+    /// der Grund steht im Protokoll (Review SW-5).
+    public static let kitPruefungFehlgeschlagen = StatusAnzeige(symbol: "lock.trianglebadge.exclamationmark", zeichen: "⚠",
+                                                                titel: "Kit-Prüfung fehlgeschlagen")
+
     public static func fuer(_ status: BrainStatus?, fehler: String? = nil) -> StatusAnzeige {
         guard let s = status else {
             return StatusAnzeige(symbol: "questionmark.circle", zeichen: "?", titel: fehler ?? "Status unbekannt")

@@ -1,0 +1,166 @@
+/* Brain Studio — Einstieg ohne Vault: Willkommen-Karte, Name, Klonen, Versionsverlauf, KI verbinden.
+   Nur Tokens aus studio.css (Hell/Dunkel wechseln dort). Klassen mit Präfix w-. */
+
+#willkommen-host {
+  position: fixed; inset: 0; z-index: 70;
+  display: flex; overflow: auto; overscroll-behavior: contain;
+  padding: 32px 16px;
+  background: var(--seite); color: var(--text);
+  font-family: var(--schrift);
+  animation: w-host-ein var(--t) ease-out both;
+  --w-schatten: 0 1px 2px light-dark(rgba(30, 20, 10, .04), rgba(0, 0, 0, .35)), 0 14px 40px -8px light-dark(rgba(30, 20, 10, .10), rgba(0, 0, 0, .55));
+  --w-ring: color-mix(in srgb, var(--akzent) 30%, transparent);
+}
+#willkommen-host::-webkit-scrollbar { width: 10px; }
+#willkommen-host::-webkit-scrollbar-thumb { background: var(--linie-stark); border-radius: 6px; border: 3px solid transparent; background-clip: content-box; }
+
+/* ---------- Karte ---------- */
+.w-karte {
+  position: relative; flex: none; margin: auto; width: min(560px, 100%);
+  padding: 44px 48px 32px;
+  background: var(--erhoben); color: var(--text);
+  border: 1px solid var(--linie); border-radius: var(--r-xl);
+  box-shadow: var(--w-schatten);
+  animation: w-karte-ein 300ms var(--ease) both;
+}
+.w-schritt { animation: w-schritt-ein 200ms var(--ease) both; }
+.w-schritt.mit-ecke { padding-top: 20px; }
+.w-sperre { pointer-events: none; }
+
+.w-ecke {
+  position: absolute; top: 14px; display: inline-flex; align-items: center; gap: 6px;
+  height: 28px; padding: 0 10px; border: 0; background: transparent; border-radius: var(--r-s);
+  color: var(--text-2); font-size: 13px; cursor: pointer; white-space: nowrap;
+  transition: background var(--t), color var(--t);
+}
+.w-ecke.links { left: 14px; padding-left: 8px; }
+.w-ecke.rechts { right: 14px; }
+.w-ecke:hover { background: var(--hover-2); color: var(--text); }
+
+/* ---------- Kopf ---------- */
+.w-kopf { display: flex; flex-direction: column; align-items: center; text-align: center; }
+.w-logo { width: 56px; height: 56px; display: grid; place-items: center; color: var(--akzent); }
+.w-logo svg { width: 56px; height: 56px; stroke-width: 1.15; overflow: visible; }
+.w-titel { margin: 20px 0 0; font-size: 28px; line-height: 1.15; font-weight: 700; letter-spacing: -.025em; color: var(--text); }
+.w-titel.klein { font-size: 22px; letter-spacing: -.02em; }
+.w-kachel-gross + .w-titel { margin-top: 20px; }
+.w-kopf-hilfe { margin: 10px 0 0; max-width: 380px; line-height: 1.5; }
+.w-untertitel { margin: 12px 0 0; max-width: 410px; color: var(--text-2); font-size: 15px; line-height: 1.5; text-wrap: balance; }
+.w-trenner { height: 0; margin: 24px 0 20px; border: 0; border-top: 1px solid var(--linie); }
+.w-kachel-gross { width: 56px; height: 56px; border-radius: 16px; display: grid; place-items: center; color: var(--w-ton, var(--akzent)); background: color-mix(in srgb, var(--w-ton, var(--akzent)) 13%, transparent); }
+
+/* ---------- Vier Wege ---------- */
+.w-wege { display: flex; flex-direction: column; gap: 10px; }
+.w-weg {
+  display: flex; align-items: center; gap: 16px; width: 100%;
+  padding: 14px 16px; text-align: left; cursor: pointer;
+  background: var(--erhoben); color: var(--text);
+  border: 1px solid var(--linie-stark); border-radius: var(--r-l);
+  transition: border-color var(--t), box-shadow var(--t), background var(--t);
+}
+.w-weg:hover { background: var(--hover); }
+.w-weg:focus { outline: 0; border-color: var(--akzent); box-shadow: 0 0 0 3px var(--w-ring); }
+.w-weg:disabled { opacity: .5; cursor: default; }
+.w-kachel { flex: none; width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; color: var(--w-ton, var(--akzent)); background: color-mix(in srgb, var(--w-ton, var(--akzent)) 13%, transparent); transition: transform var(--t) var(--ease); }
+.w-weg:hover .w-kachel, .w-weg:focus .w-kachel { transform: scale(1.04); }
+.w-weg-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.w-weg-titel { font-size: 15px; font-weight: 600; letter-spacing: -.01em; line-height: 1.3; }
+.w-weg-text2 { font-size: 13px; line-height: 1.4; color: var(--text-2); text-wrap: pretty; }
+
+.ton-akzent { --w-ton: var(--akzent); }
+.ton-gelb { --w-ton: var(--gelb); }
+.ton-gruen { --w-ton: var(--gruen); }
+.ton-grau { --w-ton: var(--text-2); }
+.ton-orange { --w-ton: color-mix(in srgb, var(--rot) 55%, var(--gelb)); }
+
+.w-fuss-text { margin: 20px auto 0; max-width: 440px; font-size: 12.5px; line-height: 1.5; color: var(--text-2); text-align: center; text-wrap: balance; }
+.w-satz { display: block; }
+.w-fuss-text svg { display: inline-block; vertical-align: -2px; margin-right: 6px; color: var(--text-3); }
+
+/* ---------- Formulare ---------- */
+.w-formular { display: flex; flex-direction: column; gap: 18px; margin-top: 28px; }
+.w-karte .feld { gap: 6px; }
+.w-karte .feld > label { font-size: 13px; font-weight: 600; color: var(--text); }
+.w-karte .feld input[type=text] { padding: 10px 12px; font-size: 15px; border-radius: 10px; background: var(--papier); }
+.w-karte .feld input::placeholder { color: var(--text-3); }
+.w-ort { display: flex; align-items: center; gap: 12px; padding: 10px 10px 10px 14px; border: 1px solid var(--linie); border-radius: var(--r-l); background: var(--seite); }
+.w-ort-symbol { flex: none; display: grid; place-items: center; color: var(--text-3); }
+.w-ort-text { flex: 1; min-width: 0; font-size: 13.5px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.w-ort-text b { color: var(--text); font-weight: 600; }
+.w-hilfe { margin: -8px 0 0; line-height: 1.5; }
+.w-karte .knopf.gross { height: 40px; padding: 0 18px; border-radius: 10px; font-size: 14px; }
+.w-karte .knopf.primaer.gross { font-weight: 600; }
+.w-voll { width: 100%; }
+.w-fuss-knoepfe { display: flex; justify-content: center; gap: 10px; margin-top: 22px; }
+.w-fuss-knoepfe .knopf { min-width: 112px; }
+
+/* ---------- Meldungen (aria-live) ---------- */
+.w-meldung { margin-top: 16px; min-height: 0; font-size: 13px; }
+.w-meldung:empty { display: none; }
+.w-arbeit { display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--text-2); text-align: left; }
+.w-arbeit.links { justify-content: flex-start; }
+.w-dreh { flex: none; width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--akzent); border-top-color: transparent; animation: w-dreh 800ms linear infinite; }
+.w-fehlerbox { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; text-align: left; font-size: 13px; line-height: 1.45; border-radius: var(--r); background: color-mix(in srgb, var(--rot) 8%, transparent); border: 1px solid color-mix(in srgb, var(--rot) 25%, transparent); }
+.w-fehlerbox svg { flex: none; margin-top: 1px; }
+.w-fehlerbox.gross { margin-top: 20px; }
+.w-fehlerbox span { min-width: 0; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }
+.w-arbeit-seite { display: flex; flex-direction: column; align-items: center; gap: 14px; margin-top: 8px; padding: 12px 0; text-align: center; }
+
+/* ---------- KI verbinden ---------- */
+.w-ki-kopf { display: flex; flex-direction: column; align-items: center; text-align: center; }
+.w-ki-kopf .w-kachel-gross { margin-bottom: 20px; }
+.w-ki-kopf .w-titel { margin-top: 0; }
+.w-abschnitt { margin: 26px 0 10px; font-size: 11px; font-weight: 600; line-height: 1.2; letter-spacing: .07em; text-transform: uppercase; color: var(--text-2); }
+.w-ki.kompakt .w-abschnitt:first-child { margin-top: 0; }
+.w-agenten { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.w-agent { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 10px 14px; background: var(--erhoben); border: 1px solid var(--linie-stark); border-radius: var(--r-l); }
+.w-agent-symbol { flex: none; width: 24px; height: 24px; display: grid; place-items: center; color: var(--w-ton, var(--text-2)); }
+.w-agent-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.w-agent-name { font-size: 14px; font-weight: 600; line-height: 1.3; }
+.w-agent-version { font-size: 12.5px; line-height: 1.35; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.w-pille { flex: none; padding: 3px 11px; border-radius: 999px; font-size: 12px; font-weight: 600; line-height: 1.4; color: color-mix(in srgb, var(--gruen) 78%, var(--text)); background: color-mix(in srgb, var(--gruen) 15%, transparent); }
+.w-gruppe { margin-top: 12px; border: 1px solid var(--linie-stark); border-radius: var(--r-l); background: var(--erhoben); overflow: hidden; }
+.w-agenten + .w-gruppe { margin-top: 12px; }
+.w-aktion { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px 16px; padding: 14px 16px; }
+.w-aktion + .w-aktion { border-top: 1px solid var(--linie); }
+.w-aktion-text { font-size: 13px; line-height: 1.45; color: var(--text-2); overflow-wrap: anywhere; }
+.w-aktion-unten { grid-column: 1 / -1; min-width: 0; }
+.w-aktion-unten:empty { display: none; }
+.w-aktion .knopf { height: 32px; width: 200px; padding: 0 12px; border-radius: var(--r); font-size: 13px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.w-aktion .knopf.fertig { background: color-mix(in srgb, var(--gruen) 14%, transparent); border-color: color-mix(in srgb, var(--gruen) 35%, transparent); color: color-mix(in srgb, var(--gruen) 78%, var(--text)); font-weight: 600; opacity: 1; }
+.w-ok { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; line-height: 1.45; color: color-mix(in srgb, var(--gruen) 78%, var(--text)); }
+.w-ok svg { flex: none; margin-top: 1px; }
+.w-befehl { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.w-befehl code { flex: 1; min-width: 0; padding: 8px 10px; font: 12px/1.5 var(--mono); color: var(--text); background: var(--seite); border: 1px solid var(--linie); border-radius: var(--r); overflow-x: auto; white-space: pre; -webkit-user-select: text; user-select: text; }
+.w-ergebnis { padding: 10px 12px; border-radius: var(--r); background: color-mix(in srgb, var(--gruen) 9%, transparent); border: 1px solid color-mix(in srgb, var(--gruen) 24%, transparent); font-size: 13px; }
+.w-ergebnis.leer { background: var(--hover); border-color: var(--linie); color: var(--text-2); }
+.w-ergebnis-titel { display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--text); }
+.w-ergebnis-titel svg { flex: none; color: var(--gruen); }
+.w-ergebnis ul { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.w-ergebnis li { display: flex; align-items: center; gap: 8px; color: var(--text-2); min-width: 0; }
+.w-ergebnis li svg { flex: none; color: var(--text-3); }
+.w-ergebnis li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.w-laedt { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 22px 0; color: var(--text-2); }
+
+/* ---------- Pfad-Dialog (Browser-Ausweg) ---------- */
+.w-schleier { position: fixed; inset: 0; z-index: 90; display: flex; justify-content: center; align-items: flex-start; padding: 16vh 16px 16px; background: var(--schleier); animation: w-host-ein var(--t) ease-out both; }
+.w-modal { width: min(460px, 100%); padding: 20px; background: var(--erhoben); color: var(--text); border: 1px solid var(--linie-stark); border-radius: 14px; box-shadow: var(--schatten); display: flex; flex-direction: column; gap: 14px; animation: w-karte-ein 200ms var(--ease) both; font-family: var(--schrift); }
+.w-modal h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -.01em; }
+.w-modal .w-modal-fuss { display: flex; justify-content: flex-end; gap: 8px; margin-top: 2px; }
+.w-modal .feld input[type=text] { padding: 9px 12px; font-size: 14px; border-radius: 10px; background: var(--papier); }
+
+@keyframes w-host-ein { from { opacity: 0; } }
+@keyframes w-karte-ein { from { opacity: 0; transform: translateY(10px) scale(.985); } }
+@keyframes w-schritt-ein { from { opacity: 0; transform: translateY(6px); } }
+@keyframes w-dreh { to { transform: rotate(360deg); } }
+
+@media (max-width: 620px) {
+  #willkommen-host { padding: 16px 12px; }
+  .w-karte { padding: 52px 20px 24px; }
+  .w-titel { font-size: 24px; }
+  .w-aktion { grid-template-columns: minmax(0, 1fr); }
+  .w-aktion .knopf { justify-self: start; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #willkommen-host, #willkommen-host *, .w-schleier, .w-schleier * { animation: none !important; transition: none !important; }
+}

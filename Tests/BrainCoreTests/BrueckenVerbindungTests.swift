@@ -178,4 +178,15 @@ struct BrueckenVerbindungTests {
         #expect(pfad == "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin")
         await b.beende()
     }
+
+    /// Auch die Brücken (Werkstatt, Kit) laufen mit einem Vault als Arbeitsverzeichnis: kein relativer PATH-Eintrag (Review SW-3).
+    @Test func brueckeErhaeltKeinenRelativenPfad() async throws {
+        let ordner = tempOrdner("RelativerPfad")
+        let node = skript("#!/bin/sh\nprintf '{\"bereit\":true,\"version\":\"%s\"}\\n' \"$PATH\"\nexec cat > /dev/null\n",
+                          name: "node", in: ordner)
+        let b = BrueckenVerbindung(node: node, vault: ordner, umgebung: ["PATH": ".:node_modules/.bin:/usr/bin:/bin:"])
+        try await b.starte()
+        #expect(try #require(await b.version) == "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin")
+        await b.beende()
+    }
 }

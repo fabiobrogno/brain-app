@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Brain</title>
+<script src="fehlerhaken.js"></script>
+<link rel="stylesheet" href="studio.css">
+<link rel="stylesheet" href="verlauf.css">
+<link rel="stylesheet" href="willkommen.css">
+<link rel="stylesheet" href="vertrauen.css">
+</head>
+<body>
+<div id="app" data-info="an" data-modus="liste">
+  <aside id="seite" aria-label="Seitenleiste">
+    <header class="seite-kopf">
+      <button id="vault-wechsler" class="vault-knopf" aria-haspopup="menu" aria-expanded="false" title="Vault wechseln">
+        <span id="vault-farbe" class="vault-farbe" aria-hidden="true"></span>
+        <span id="vault-name" class="vault-name">Brain</span>
+        <span id="vault-pfeil" class="vault-pfeil" aria-hidden="true"></span>
+      </button>
+    </header>
+    <div id="seite-scroll" class="seite-scroll">
+      <nav id="bereiche" class="gruppe" aria-label="Bereiche"></nav>
+      <section class="abschnitt" id="favoriten-abschnitt" data-abschnitt="favoriten" hidden></section>
+      <section class="abschnitt" data-abschnitt="ansichten"></section>
+      <section class="abschnitt" data-abschnitt="typen"></section>
+      <section class="abschnitt" data-abschnitt="ordner"></section>
+    </div>
+    <footer class="seite-fuss">
+      <button id="fuss-neu" class="knopf-fuss primaer"><span data-sym="plus"></span><span data-t="neu">Neu</span></button>
+      <button id="fuss-merken" class="knopf-fuss"><span data-sym="funke"></span><span data-t="merken">Schnell merken</span></button>
+    </footer>
+  </aside>
+
+  <section id="liste" aria-label="Notizen">
+    <header class="liste-kopf">
+      <h2 id="liste-titel" class="liste-titel"></h2>
+      <div class="liste-werkzeuge">
+        <button id="knopf-sort" class="knopf-text" aria-haspopup="menu" aria-expanded="false" title="Sortierung"></button>
+        <button id="knopf-suche" class="knopf-icon" title="Im Vault suchen (⌘⇧F)" aria-label="Im Vault suchen"></button>
+        <button id="knopf-neu" class="knopf-icon" title="Neue Notiz (⌘N)" aria-label="Neue Notiz"></button>
+      </div>
+    </header>
+    <div id="liste-suche" class="liste-suche" hidden>
+      <span data-sym="suche"></span>
+      <input id="suche" type="search" autocomplete="off" spellcheck="false" aria-label="Suchen">
+      <button id="suche-zu" class="knopf-icon klein" aria-label="Suche schließen"></button>
+    </div>
+    <div id="liste-koerper" class="liste-koerper" tabindex="0" role="listbox" aria-label="Notizen"></div>
+  </section>
+
+  <main id="haupt">
+    <header class="werkzeug">
+      <div id="pfad" class="pfad" aria-label="Pfad der Notiz"></div>
+      <div class="werkzeug-rechts">
+        <span id="pille" class="pille" hidden></span>
+        <span id="speicherstand" class="speicherstand" aria-live="polite"></span>
+        <div id="werkzeuge" class="werkzeuge" role="toolbar" aria-label="Werkzeuge der Notiz"></div>
+      </div>
+    </header>
+    <div id="banner-host"></div>
+    <div id="editor"></div>
+    <section id="leer" class="leer" hidden></section>
+    <section id="diff-host" class="diff-host" hidden aria-label="Änderung"></section>
+  </main>
+
+  <aside id="info" aria-label="Eigenschaften"></aside>
+
+  <footer id="status" class="status" role="status"></footer>
+
+  <div class="griff" data-griff="seite" role="separator" aria-orientation="vertical" aria-label="Breite der Seitenleiste" tabindex="0"></div>
+  <div class="griff" data-griff="liste" role="separator" aria-orientation="vertical" aria-label="Breite der Notizliste" tabindex="0"></div>
+  <div class="griff" data-griff="info" role="separator" aria-orientation="vertical" aria-label="Breite der Eigenschaften" tabindex="0"></div>
+</div>
+<div id="willkommen-host" hidden></div>
+<div id="dialog-host"></div>
+<div id="menue-host"></div>
+<div id="toast-host" aria-live="polite"></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>

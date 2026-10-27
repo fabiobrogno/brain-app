@@ -1,25 +1,23 @@
 import SwiftUI
 import BrainCore
 
-/// Einrichtung M1 (App-Spec §9.1): nur „Vorhandenes Brain verbinden“.
+/// Rückfall-Fenster (Studio-v2-Spec §2): Einen Einrichtungsdialog als Pflicht gibt es nicht mehr — das Studio öffnet
+/// immer und führt selbst durch „Willkommen“. Dieses Fenster erscheint nur, wenn das Studio nicht starten kann, weil die
+/// mitgelieferte Laufzeit (Node) fehlt oder beschädigt ist.
 struct EinrichtungsAnsicht: View {
     @ObservedObject var zustand: AppZustand
-    private let vorschlag = VaultAuswahl.vorschlag()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Wo liegt dein Brain?").font(.title2.bold())
-            Text("Die App verbindet sich mit deinem vorhandenen Brain-Ordner. Sie zeigt ihn an und verändert von selbst nichts darin.")
+            Text("Kortex kann nicht starten").font(.title2.bold())
+            Label(zustand.anzeige.titel, systemImage: zustand.anzeige.symbol)
+                .foregroundStyle(.red)
                 .fixedSize(horizontal: false, vertical: true)
-            if let vorschlag {
-                Label(vorschlag.path, systemImage: "folder")
-                Button("Diesen Ordner verbinden") { Task { await zustand.verbinde(vorschlag) } }
-                    .keyboardShortcut(.defaultAction)
-            }
-            Button("Anderen Ordner wählen …") { zustand.waehleOrdner() }
-            if zustand.anzeige.zeichen == "✕" {
-                Label(zustand.anzeige.titel, systemImage: zustand.anzeige.symbol)
-                    .foregroundStyle(.red)
+            Text("Das Studio braucht die mitgelieferte Laufzeit. Bitte installiere die App neu — dein Brain wird dabei nicht verändert.")
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Button("Protokoll zeigen") { zustand.zeigeProtokoll() }
+                Button("Beenden") { NSApp.terminate(nil) }.keyboardShortcut(.defaultAction)
             }
         }
         .padding(24)

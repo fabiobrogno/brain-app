@@ -91,3 +91,20 @@ private func url(_ s: String) -> URL { URL(string: s)! }
         #expect(!SchemaAntwort.istApiPfad(try #require(URL(string: p))), "\(p)")
     }
 }
+
+@Test func studioNimmtGrosseKoerperAnKitAnsichtBleibtBei64KB() throws {
+    #expect(SchemaAntwort.maxKoerper(fuer: .app) == 64 * 1024)
+    #expect(SchemaAntwort.maxKoerper(fuer: .studio) == 8 * 1024 * 1024)
+    for groesse in [200 * 1024, 7 * 1024 * 1024] {
+        let text = String(repeating: "a", count: groesse)
+        let nachricht: [String: Any] = ["methode": "PUT", "pfad": "/api/notiz", "daten": ["text": text]]
+        let studio = try SchemaAntwort.anfrage(ausNachricht: nachricht, oberflaeche: .studio)
+        #expect((studio.body?.count ?? 0) > groesse)
+        #expect(throws: SchemaAntwort.AnfrageFehler.zuGross) { try SchemaAntwort.anfrage(ausNachricht: nachricht, oberflaeche: .app) }
+        #expect(throws: SchemaAntwort.AnfrageFehler.zuGross) { try SchemaAntwort.anfrage(ausNachricht: nachricht) }
+    }
+    let ueber = String(repeating: "a", count: 8 * 1024 * 1024)
+    #expect(throws: SchemaAntwort.AnfrageFehler.zuGross) {
+        try SchemaAntwort.anfrage(ausNachricht: ["methode": "PUT", "pfad": "/api/notiz", "daten": ["text": ueber]], oberflaeche: .studio)
+    }
+}

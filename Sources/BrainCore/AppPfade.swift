@@ -16,6 +16,8 @@ public struct AppPfade: Sendable, Equatable {
     }
 
     public var konfiguration: URL { basis.appendingPathComponent("config.json") }
+    /// Vault-Liste des Studios (vom Backend geführt, die App liest nur).
+    public var vaultListe: URL { basis.appendingPathComponent("vaults.json") }
     public var nodeOrdner: URL { basis.appendingPathComponent("node", isDirectory: true) }
     public var binOrdner: URL { basis.appendingPathComponent("bin", isDirectory: true) }
     public var node: URL { binOrdner.appendingPathComponent("node") }
