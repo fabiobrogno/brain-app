@@ -1,0 +1,7 @@
+{
+  "name": "brain-studio-oberflaechentests",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "playwright test", "bilder": "node bilder.mjs" },
+  "devDependencies": { "@playwright/test": "^1.57.0" }
+}

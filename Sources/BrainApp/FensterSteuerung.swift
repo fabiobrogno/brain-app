@@ -2,28 +2,22 @@ import AppKit
 import WebKit
 import BrainCore
 
-/// Fragt die Brücke an; endet die Anfrage mit `.beendet` (Brücke kurz zuvor abgestürzt), wird GENAU EINMAL neu
-/// angefragt — die neue Anfrage startet die Brücke neu. Scheitert auch das, geht der Fehler an den Aufrufer.
-func anfrageMitNeuversuch(_ bruecke: BrueckenVerbindung, methode: String, pfad: String, body: Data? = nil) async throws -> BrueckenAntwort {
-    do {
-        return try await bruecke.anfrage(methode: methode, pfad: pfad, body: body)
-    } catch BrueckenFehler.beendet {
-        return try await bruecke.anfrage(methode: methode, pfad: pfad, body: body)
-    }
-}
-
-/// Liefert brain://app/… über die Ansicht-Brücke aus (nur GET/HEAD). Gestoppte Aufgaben werden nie mehr bedient.
+/// Liefert brain://<host>/… über die Brücke des Fensters aus (nur GET/HEAD). Gestoppte Aufgaben werden nie mehr bedient.
 @MainActor
 final class SchemaHandler: NSObject, WKURLSchemeHandler {
     private let bruecke: BrueckenVerbindung
+    private let oberflaeche: Oberflaeche
     private var gestoppt = Set<ObjectIdentifier>()
 
-    init(bruecke: BrueckenVerbindung) { self.bruecke = bruecke }
+    init(bruecke: BrueckenVerbindung, oberflaeche: Oberflaeche) {
+        self.bruecke = bruecke
+        self.oberflaeche = oberflaeche
+    }
 
     func webView(_ webView: WKWebView, start aufgabe: any WKURLSchemeTask) {
         let kennung = ObjectIdentifier(aufgabe)
         let methode = aufgabe.request.httpMethod ?? "GET"
-        guard let url = aufgabe.request.url, url.host == NavigationsRegel.host,
+        guard let url = aufgabe.request.url, url.host == oberflaeche.host,
               !SchemaAntwort.istApiPfad(url), methode == "GET" || methode == "HEAD" else {
             aufgabe.didFailWithError(URLError(.badURL))
             return
@@ -31,7 +25,7 @@ final class SchemaHandler: NSObject, WKURLSchemeHandler {
         Task { @MainActor in
             defer { gestoppt.remove(kennung) }
             do {
-                let a = try await anfrageMitNeuversuch(bruecke, methode: "GET", pfad: SchemaAntwort.pfad(von: url))
+                let a = try await bruecke.anfrageMitNeuversuch(methode: "GET", pfad: SchemaAntwort.pfad(von: url))
                 guard !gestoppt.contains(kennung) else { return }
                 aufgabe.didReceive(SchemaAntwort.antwort(url: url, aus: a))
                 aufgabe.didReceive(a.body)
@@ -39,7 +33,7 @@ final class SchemaHandler: NSObject, WKURLSchemeHandler {
             } catch {
                 guard !gestoppt.contains(kennung) else { return }
                 if SchemaAntwort.istHauptdokument(url) {
-                    // Kein leeres Fenster: Fehlerseite unter derselben brain://app-URL ausliefern.
+                    // Kein leeres Fenster: Fehlerseite unter derselben brain://-URL ausliefern.
                     let seite = SchemaAntwort.fehlerSeite(url: url)
                     aufgabe.didReceive(seite.antwort)
                     aufgabe.didReceive(seite.body)
@@ -56,24 +50,34 @@ final class SchemaHandler: NSObject, WKURLSchemeHandler {
     }
 }
 
+/// Herkunftsprüfung für alle Kanäle: Hauptrahmen und brain://<Host der eigenen Oberfläche>.
+@MainActor
+func stammtVonEigenerOberflaeche(_ nachricht: WKScriptMessage, _ oberflaeche: Oberflaeche) -> Bool {
+    let herkunft = nachricht.frameInfo.securityOrigin
+    return nachricht.frameInfo.isMainFrame
+        && herkunft.protocol == NavigationsRegel.schema && herkunft.host == oberflaeche.host
+        && nachricht.frameInfo.request.url?.scheme == NavigationsRegel.schema
+}
+
 /// Nachrichtenkanal für api.js (window.webkit.messageHandlers.brain): nur aus dem Hauptrahmen der eigenen
 /// Oberfläche, nur /api/…; Antwort { status, body } oder Fehlertext (→ „Dienst nicht erreichbar“ in api.js).
 @MainActor
 final class Kanal: NSObject, WKScriptMessageHandlerWithReply {
     private let bruecke: BrueckenVerbindung
+    private let oberflaeche: Oberflaeche
 
-    init(bruecke: BrueckenVerbindung) { self.bruecke = bruecke }
+    init(bruecke: BrueckenVerbindung, oberflaeche: Oberflaeche) {
+        self.bruecke = bruecke
+        self.oberflaeche = oberflaeche
+    }
 
     func userContentController(_ controller: WKUserContentController, didReceive nachricht: WKScriptMessage) async -> (Any?, String?) {
-        let herkunft = nachricht.frameInfo.securityOrigin
-        guard nachricht.frameInfo.isMainFrame,
-              herkunft.protocol == NavigationsRegel.schema, herkunft.host == NavigationsRegel.host,
-              nachricht.frameInfo.request.url?.scheme == NavigationsRegel.schema else { return (nil, SchemaAntwort.AnfrageFehler.ungueltig.meldung) }
+        guard stammtVonEigenerOberflaeche(nachricht, oberflaeche) else { return (nil, SchemaAntwort.AnfrageFehler.ungueltig.meldung) }
         let a: (methode: String, pfad: String, body: Data?)
-        do { a = try SchemaAntwort.anfrage(ausNachricht: nachricht.body) }
+        do { a = try SchemaAntwort.anfrage(ausNachricht: nachricht.body, oberflaeche: oberflaeche) }
         catch { return (nil, (error as? SchemaAntwort.AnfrageFehler)?.meldung ?? SchemaAntwort.AnfrageFehler.ungueltig.meldung) }
         do {
-            let r = try await anfrageMitNeuversuch(bruecke, methode: a.methode, pfad: a.pfad, body: a.body)
+            let r = try await bruecke.anfrageMitNeuversuch(methode: a.methode, pfad: a.pfad, body: a.body)
             return (SchemaAntwort.kanalAntwort(r), nil)
         } catch {
             return (nil, "Dienst nicht erreichbar")
@@ -81,15 +85,42 @@ final class Kanal: NSObject, WKScriptMessageHandlerWithReply {
     }
 }
 
-/// Hält das Fenster auf brain://app; fremde Links nur auf Klick in den Standardbrowser (Review-Fokus 3).
+/// Nachrichtenkanal `aktion` (window.webkit.messageHandlers.aktion) MIT Antwort: nur Hauptrahmen der eigenen Herkunft; die
+/// Prüfung der Werte liegt in `AppAktion` (BrainCore). Die Seite bekommt ein Promise: `{ok:true}` (bzw. `{ok:false, grund}`),
+/// bei `ordner-waehlen` `{pfad}` oder `null`. Ungültiges (oder fremde Herkunft) weist das Promise mit einem Text ab.
+@MainActor
+final class AktionsKanal: NSObject, WKScriptMessageHandlerWithReply {
+    private let oberflaeche: Oberflaeche
+    private let vault: () -> URL?
+    private let ausfuehren: (AppAktion) async -> Any?
+
+    /// `vault`: der aktuelle Vault für die Pfadprüfung (wechselt im Studio ohne Neustart des Fensters).
+    init(oberflaeche: Oberflaeche, vault: @escaping () -> URL?, ausfuehren: @escaping (AppAktion) async -> Any?) {
+        self.oberflaeche = oberflaeche
+        self.vault = vault
+        self.ausfuehren = ausfuehren
+    }
+
+    func userContentController(_ controller: WKUserContentController, didReceive nachricht: WKScriptMessage) async -> (Any?, String?) {
+        guard stammtVonEigenerOberflaeche(nachricht, oberflaeche) else { return (nil, SchemaAntwort.AnfrageFehler.ungueltig.meldung) }
+        guard let aktion = AppAktion.pruefe(nachricht.body, vault: vault(), oberflaeche: oberflaeche) else { return (nil, "ungültige Aktion") }
+        // NSNull = ausdrücklich `null` für die Seite (nil würde als „undefined“ ankommen).
+        return ((await ausfuehren(aktion)) ?? NSNull(), nil)
+    }
+}
+
+/// Hält das Fenster auf seiner brain://-Oberfläche; fremde Links nur auf Klick in den Standardbrowser (Review-Fokus 3).
 @MainActor
 final class Navigation: NSObject, WKNavigationDelegate {
     var beiGeladen: (() -> Void)?
     var beiFehler: ((String) -> Void)?
+    private let oberflaeche: Oberflaeche
+
+    init(oberflaeche: Oberflaeche) { self.oberflaeche = oberflaeche }
 
     func webView(_ webView: WKWebView, decidePolicyFor aktion: WKNavigationAction) async -> WKNavigationActionPolicy {
         let hauptrahmen = aktion.targetFrame?.isMainFrame ?? true
-        switch NavigationsRegel.entscheide(aktion.request.url, hauptrahmen: hauptrahmen, vomNutzer: aktion.navigationType == .linkActivated) {
+        switch NavigationsRegel.entscheide(aktion.request.url, hauptrahmen: hauptrahmen, vomNutzer: aktion.navigationType == .linkActivated, oberflaeche: oberflaeche) {
         case .erlauben: return .allow
         case .extern(let url): NSWorkspace.shared.open(url); return .cancel
         case .abbrechen: return .cancel
@@ -112,85 +143,366 @@ final class Navigation: NSObject, WKNavigationDelegate {
         if e.domain == NSURLErrorDomain && e.code == NSURLErrorCancelled { return }
         if e.domain == "WebKitErrorDomain" && e.code == 102 { return }
         beiFehler?("\(e.domain) \(e.code)")
-        webView.loadSimulatedRequest(URLRequest(url: NavigationsRegel.startURL), responseHTML: SchemaAntwort.fehlerSeiteHTML)
+        webView.loadSimulatedRequest(URLRequest(url: oberflaeche.startURL), responseHTML: SchemaAntwort.fehlerSeiteHTML)
     }
 }
 
-/// Das Kortex-Fenster (App-Spec §5.2, §7.2): beim Schließen werden WebView, Kanal und Brücke beendet.
+/// Ein Kortex-Fenster (App-Spec §5.2, §7.2; Studio-Spec §9): beim Schließen werden WebView, Kanäle und Brücke beendet.
+/// Die App hat zwei davon: Studio (Werkstatt-Brücke) und Übersicht (Kit-Brücke).
 @MainActor
 final class FensterSteuerung: NSObject, NSWindowDelegate {
     private let log: AppLog
+    let oberflaeche: Oberflaeche
     private var fenster: NSWindow?
     private var webView: WKWebView?
     private var navigation: Navigation?
     private var bruecke: BrueckenVerbindung?
     private var bereitAufgabe: Task<Void, Never>?
+    /// Testschalter fürs Studio (`--test-bild` & Co., nur wenn die App damit gestartet wurde) und der Lauf dazu.
+    private var test: StartArgumente?
+    private var testAufgabe: Task<Void, Never>?
+    private var testGestartet = false
+    /// Zählt die Meldungen `fehler` dieses Fensterlebens (neu mit jedem `oeffne`): Mehr als `AppAktion.maxFehlerJeFenster` schreibt
+    /// die App nicht ins Protokoll (Review SW-7).
+    private var fehlerDrossel = MeldungsDrossel(grenze: AppAktion.maxFehlerJeFenster)
 
     var istOffen: Bool { fenster != nil }
     /// Wird nach dem Schließen aufgerufen (z. B. um den Menüstatus aufzufrischen).
     var beiGeschlossen: (() -> Void)?
+    /// Führt eine geprüfte Aktion der Oberfläche aus (Übersicht öffnen, Finder, Browser, Vault-Wechsel …) und liefert die
+    /// Antwort an die Seite (nil → `null`).
+    var beiAktion: ((AppAktion) async -> Any?)?
+    /// Der aktive Vault für die Pfadprüfung der Aktionen (nil = keiner gewählt).
+    var aktuellerVault: (() -> URL?)?
+    /// Der offene Ordner-Dialog (Sheet) samt Antwort-Wächter — höchstens einer je Fenster.
+    private var ordnerDialog: (panel: NSOpenPanel, antwort: PanelAntwort)?
+    /// Menübefehle, die noch auf die Oberfläche warten — in der Reihenfolge, in der sie kamen, jeder mit seiner Frist — und der
+    /// eine Lauf, der sie abarbeitet.
+    private var wartendeBefehle: [(befehl: StudioBefehl, frist: ContinuousClock.Instant)] = []
+    private var befehlsAufgabe: Task<Void, Never>?
+    /// So lange wartet ein Menübefehl auf eine noch nicht bereite Oberfläche (Fenster eben erst geöffnet, Seite lädt, Vault wird
+    /// geöffnet); danach steht er als `befehl-verworfen` im Log.
+    static let befehlsFrist = Duration.seconds(30)
 
-    init(log: AppLog) { self.log = log }
+    init(log: AppLog, oberflaeche: Oberflaeche) {
+        self.log = log
+        self.oberflaeche = oberflaeche
+    }
 
-    func oeffne(node: URL, vault: URL, umgebung: [String: String]) {
+    private var name: String { oberflaeche == .studio ? "studio" : "uebersicht" }
+    private var standardTitel: String { oberflaeche == .studio ? StudioFenster.standardTitel : "Übersicht" }
+
+    /// `skript`: nil = Kit-Brücke des Vaults, sonst z. B. die Werkstatt aus dem App-Paket. `vault` nil nur mit `skript`
+    /// (Studio vor der Vault-Wahl: die Werkstatt liest dann vaults.json); `arbeitsordner` gilt dann als Arbeitsverzeichnis.
+    /// `test`: Testschalter des Studios (Größe, Bild, Skript) — nur für das Studio, die Übersicht ignoriert sie.
+    /// `fluechtig`: irgendein Testschalter ist aktiv (`StartArgumente.fluechtig`) — gilt für beide Fenster: flüchtiger Web-Speicher,
+    /// keine gemerkte Fensterposition. `vorStart`: Prüfung vor jedem Start der Brücke (Kit-Brücke: Vertrauen in den Vault).
+    func oeffne(node: URL, vault: URL?, skript: URL? = nil, umgebung: [String: String], arbeitsordner: URL? = nil,
+                test: StartArgumente? = nil, fluechtig: Bool = false, vorStart: (@Sendable () async -> Bool)? = nil) {
         if let fenster {
+            if fenster.isMiniaturized { fenster.deminiaturize(nil) }
             fenster.makeKeyAndOrderFront(nil)
             NSApp.activate()
             return
         }
-        let bruecke = BrueckenVerbindung(node: node, vault: vault, umgebung: umgebung)
+        let bruecke = BrueckenVerbindung(node: node, vault: vault, skript: skript, umgebung: umgebung, arbeitsordner: arbeitsordner,
+                                         vorStart: vorStart)
         let config = WKWebViewConfiguration()
-        config.setURLSchemeHandler(SchemaHandler(bruecke: bruecke), forURLScheme: NavigationsRegel.schema)
-        config.userContentController.addScriptMessageHandler(Kanal(bruecke: bruecke), contentWorld: .page, name: "brain")
+        let test = oberflaeche == .studio ? test : nil
+        // Testlauf: flüchtiger Web-Speicher — die Seite liest und schreibt sonst den localStorage der echten App (Theme,
+        // letzte Notiz, Spaltenbreiten), das Bild hinge dann vom letzten Lauf ab; und WebKit legte Daten unter
+        // ~/Library/WebKit/<Bundle-ID> der installierten App an.
+        let fluechtig = fluechtig || test != nil
+        if fluechtig { config.websiteDataStore = .nonPersistent() }
+        if test != nil { config.userContentController.addUserScript(StudioTestlauf.ruhigeAnimationen()) }
+        config.setURLSchemeHandler(SchemaHandler(bruecke: bruecke, oberflaeche: oberflaeche), forURLScheme: NavigationsRegel.schema)
+        config.userContentController.addScriptMessageHandler(Kanal(bruecke: bruecke, oberflaeche: oberflaeche), contentWorld: .page, name: "brain")
+        fehlerDrossel = MeldungsDrossel(grenze: AppAktion.maxFehlerJeFenster)
+        let aktionsKanal = AktionsKanal(oberflaeche: oberflaeche, vault: { [weak self] in self?.aktuellerVault?() }) { [weak self] aktion in
+            guard let self, let f = self.beiAktion else { return nil }
+            if case .fehler = aktion, !self.laesstFehlerDurch() { return ["ok": false, "grund": "gedrosselt"] as [String: Any] }
+            return await f(aktion)
+        }
+        config.userContentController.addScriptMessageHandler(aktionsKanal, contentWorld: .page, name: "aktion")
         let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 1200, height: 800), configuration: config)
-        let navigation = Navigation()
+        let navigation = Navigation(oberflaeche: oberflaeche)
         navigation.beiGeladen = { [weak self] in self?.warteAufBereit() }
-        navigation.beiFehler = { [weak self] grund in self?.log.schreibe("fenster-ladefehler \(grund)") }
+        navigation.beiFehler = { [weak self] grund in self?.log.schreibe("fenster-ladefehler \(self?.name ?? "") \(grund)") }
         web.navigationDelegate = navigation
 
-        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800),
-                         styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        w.title = "Kortex"
+        // Ohne fullSizeContentView: Die WebView fängt sonst alle Klicks in der Titelleiste ab (Fenster nicht
+        // verschiebbar) und die Ampel-Knöpfe lägen über der Seitenleiste.
+        let maske: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .resizable]
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800), styleMask: maske, backing: .buffered, defer: false)
         w.isReleasedWhenClosed = false
         w.contentView = web
-        w.setFrameAutosaveName("BrainFenster")
-        if w.frame.origin == .zero { w.center() }
+        w.title = standardTitel
+        if oberflaeche == .studio {
+            w.titlebarAppearsTransparent = true
+            w.minSize = StudioFenster.minimum
+            // Erster Start (noch keine gemerkte Position): Standardgröße, mittig. Danach gilt die gemerkte Größe — aber nie
+            // unter dem heutigen Minimum (ältere Versionen erlaubten 900×600). Testlauf: immer wie beim ersten Start, und die
+            // Position der echten App wird weder gelesen noch überschrieben.
+            let ersterStart = fluechtig || UserDefaults.standard.string(forKey: "NSWindow Frame \(StudioFenster.rahmenName)") == nil
+            if !fluechtig { w.setFrameAutosaveName(StudioFenster.rahmenName) }
+            var rahmen = w.frame
+            if ersterStart {
+                let sichtbar = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame.size ?? StudioFenster.standard
+                rahmen.size = StudioFenster.startgroesse(sichtbar: sichtbar)
+            } else {
+                rahmen.size = StudioFenster.mindestens(rahmen.size)
+            }
+            if rahmen.size != w.frame.size { w.setFrame(rahmen, display: false) }
+            if let g = test?.testFenster { w.setContentSize(g) } // `--test-fenster`: Inhaltsgröße in Punkten (mindestens die Mindestgröße)
+            if ersterStart { w.center() }
+        } else {
+            if !fluechtig { w.setFrameAutosaveName("BrainFenster") }
+            if w.frame.origin == .zero { w.center() }
+        }
         w.delegate = self
 
         self.bruecke = bruecke
         self.webView = web
         self.navigation = navigation
+        self.test = test
         self.fenster = w
         w.makeKeyAndOrderFront(nil)
         NSApp.activate()
-        web.load(URLRequest(url: NavigationsRegel.startURL))
-        log.schreibe("fenster-auf")
+        web.load(URLRequest(url: oberflaeche.startURL))
+        log.schreibe("fenster-auf \(name) \(Int(w.frame.width))x\(Int(w.frame.height))")
+        if test != nil { log.schreibe("fenster-inhalt \(name) \(Int(web.bounds.width))x\(Int(web.bounds.height))") }
     }
 
     func schliesse() { fenster?.close() }
 
+    /// Höchstens `AppAktion.maxFehlerJeFenster` Meldungen `fehler` je Fensterleben kommen durch; die erste darüber steht als
+    /// `js-fehler gedrosselt` im Protokoll, der Rest wird verworfen. Die Seite kann sonst mit `postMessage` in einer Schleife das
+    /// Protokoll wegrotieren und die Diagnosezeilen verdrängen (Review SW-7).
+    private func laesstFehlerDurch() -> Bool {
+        switch fehlerDrossel.melde() {
+        case .durchlassen:
+            return true
+        case .ersteDrosselung:
+            log.schreibe("js-fehler gedrosselt nach \(fehlerDrossel.grenze) Meldungen — weitere werden verworfen")
+            return false
+        case .verwerfen:
+            return false
+        }
+    }
+
+    /// Fenstertitel (Studio: Name des aktiven Vaults, von der Oberfläche gemeldet); nil = Standardtitel.
+    func setzeTitel(_ titel: String?) { fenster?.title = titel ?? standardTitel }
+
+    /// Wartet genau einmal auf die Wahl im Ordner-Dialog (Antwort des Sheets oder Abbruch beim Schließen des Fensters).
+    @MainActor private final class PanelAntwort {
+        private var fortsetzung: CheckedContinuation<URL?, Never>?
+        init(_ f: CheckedContinuation<URL?, Never>) { fortsetzung = f }
+        func fertig(_ url: URL?) { fortsetzung?.resume(returning: url); fortsetzung = nil }
+    }
+
+    /// Ordner-Dialog als Sheet am Fenster (nur Ordner, „Neuer Ordner“ erlaubt). Liefert den gewählten Ordner oder nil
+    /// (Abbruch, kein Fenster, es ist schon ein Dialog offen). Startort: `vorschlag` (oder der tiefste vorhandene Ordner
+    /// darüber), sonst Home.
+    func waehleOrdner(titel: String?, vorschlag: URL?) async -> URL? {
+        guard let fenster, ordnerDialog == nil else { return nil }
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Wählen"
+        if let titel { panel.message = titel }
+        panel.directoryURL = AppAktion.startort(fuer: vorschlag, fallback: FileManager.default.homeDirectoryForCurrentUser)
+        if fenster.isMiniaturized { fenster.deminiaturize(nil) }
+        fenster.makeKeyAndOrderFront(nil)
+        NSApp.activate()
+        let gewaehlt: URL? = await withCheckedContinuation { (f: CheckedContinuation<URL?, Never>) in
+            let antwort = PanelAntwort(f)
+            ordnerDialog = (panel, antwort)
+            panel.beginSheetModal(for: fenster) { antwortCode in
+                antwort.fertig(antwortCode == .OK ? panel.url?.standardizedFileURL : nil)
+            }
+        }
+        ordnerDialog = nil
+        log.schreibe("ordner-dialog \(gewaehlt == nil ? "abgebrochen" : "gewaehlt")")
+        return gewaehlt
+    }
+
+    /// Menübefehl an die Studio-Oberfläche (`window.studio.befehl`); Fenster nach vorn. War das Fenster eben erst zu,
+    /// ist die Oberfläche noch nicht geladen: der Befehl wartet (höchstens `befehlsFrist`, 30 s), bis `window.studio.bereit === true`.
+    /// Mehrere Befehle in kurzer Folge laufen in der Reihenfolge ihres Eintreffens; was die Frist überschreitet oder beim
+    /// Schließen des Fensters noch wartet, steht als `befehl-verworfen` im Log.
+    func sende(_ befehl: StudioBefehl) {
+        guard webView != nil else { return }
+        fenster?.makeKeyAndOrderFront(nil)
+        wartendeBefehle.append((befehl, ContinuousClock.now + Self.befehlsFrist))
+        guard befehlsAufgabe == nil else { return } // der laufende Lauf nimmt den neuen Befehl der Reihe nach mit
+        befehlsAufgabe = Task { @MainActor [weak self] in await self?.arbeiteBefehleAb() }
+    }
+
+    /// Führt die wartenden Befehle der Reihe nach aus, sobald die Oberfläche bereit ist. Ein Abbruch (Fenster zu) räumt
+    /// `aufraeumen` auf; nur ein normales Ende (Liste leer) gibt den Lauf frei — ohne Unterbrechung zwischen Prüfung und Freigabe.
+    private func arbeiteBefehleAb() async {
+        while !Task.isCancelled, let naechster = wartendeBefehle.first {
+            guard let web = webView else { return }
+            if ContinuousClock.now >= naechster.frist {
+                wartendeBefehle.removeFirst()
+                log.schreibe("befehl-verworfen \(naechster.befehl.rawValue) oberflaeche-nicht-bereit")
+                continue
+            }
+            let bereit = try? await web.evaluateJavaScript("window.studio?.bereit === true")
+            guard !Task.isCancelled else { return }
+            if (bereit as? NSNumber)?.boolValue == true {
+                wartendeBefehle.removeFirst()
+                _ = try? await web.evaluateJavaScript(naechster.befehl.skript)
+            } else {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+        }
+        if !Task.isCancelled { befehlsAufgabe = nil }
+    }
+
+    /// Ab jetzt startet die Werkstatt dieses Fensters ohne `--vault` (nach `vault-gewechselt`: ein Neustart nach einem Absturz liest
+    /// dann `vaults.json` und kehrt nicht zum alten `--vault` zurück).
+    func vaultArgumentEntfernen() {
+        guard let b = bruecke else { return }
+        Task { await b.ohneVaultArgument() }
+    }
+
+    // MARK: Schließen mit Rückfrage an die Oberfläche (Studio-Spec: ungespeicherte Eingaben)
+
+    private enum VorSchliessen {
+        case ok
+        case nichtGespeichert(String?)
+        case nichtVerfuegbar(String)
+    }
+
+    /// Wartet genau einmal auf das erste Ergebnis (Antwort der Seite oder Zeitablauf).
+    @MainActor private final class Einmal {
+        private var fortsetzung: CheckedContinuation<VorSchliessen, Never>?
+        init(_ f: CheckedContinuation<VorSchliessen, Never>) { fortsetzung = f }
+        func fertig(_ r: VorSchliessen) { fortsetzung?.resume(returning: r); fortsetzung = nil }
+    }
+
+    private static let vorSchliessenSkript = """
+    if (!window.studio || typeof window.studio.vorSchliessen !== 'function') { return { nicht: true }; }
+    return await window.studio.vorSchliessen();
+    """
+
+    /// Fragt `window.studio.vorSchliessen()` (liefert `{ok:true}` oder `{ok:false, grund}`), höchstens 5 s.
+    private func frageOberflaeche() async -> VorSchliessen {
+        guard let web = webView else { return .ok }
+        return await withCheckedContinuation { (f: CheckedContinuation<VorSchliessen, Never>) in
+            let einmal = Einmal(f)
+            Task { @MainActor in
+                do {
+                    let wert = try await web.callAsyncJavaScript(Self.vorSchliessenSkript, arguments: [:], in: nil, contentWorld: .page)
+                    guard let d = wert as? [String: Any] else { einmal.fertig(.nichtVerfuegbar("unerwartete Antwort")); return }
+                    if d["nicht"] as? Bool == true { einmal.fertig(.nichtVerfuegbar("vorSchliessen fehlt")); return }
+                    if d["ok"] as? Bool == true { einmal.fertig(.ok) } else { einmal.fertig(.nichtGespeichert(d["grund"] as? String)) }
+                } catch {
+                    einmal.fertig(.nichtVerfuegbar("Fehler \(error.localizedDescription)"))
+                }
+            }
+            Task { @MainActor in
+                // Länger als die 5-s-Frist der Oberfläche, damit deren Antwort gewinnt; bleibt sie aus, fragt der Nutzer.
+                try? await Task.sleep(for: .seconds(8))
+                einmal.fertig(.nichtGespeichert("Das Sichern dauert zu lange."))
+            }
+        }
+    }
+
+    /// Darf das Studio jetzt geschlossen werden? Die Oberfläche sichert zuerst; meldet sie „nicht gespeichert“,
+    /// entscheidet der Nutzer (auch bei Zeitüberschreitung). Ältere Oberfläche: schließen, Hinweis im Log.
+    func darfSchliessen() async -> Bool {
+        guard oberflaeche == .studio, fenster != nil else { return true }
+        switch await frageOberflaeche() {
+        case .ok:
+            return true
+        case .nichtVerfuegbar(let grund):
+            log.schreibe("schliessen-ohne-pruefung \(name) \(grund)")
+            return true
+        case .nichtGespeichert(let grund):
+            let alert = NSAlert()
+            alert.messageText = "Änderungen nicht gespeichert"
+            alert.informativeText = grund?.isEmpty == false ? grund! : "Das Studio konnte nicht alles sichern."
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "Trotzdem schließen")
+            alert.addButton(withTitle: "Abbrechen")
+            NSApp.activate()
+            let trotzdem = alert.runModal() == .alertFirstButtonReturn
+            log.schreibe("schliessen-nicht-gespeichert \(name) \(trotzdem ? "trotzdem" : "abgebrochen")")
+            return trotzdem
+        }
+    }
+
+    private var schliessenLaeuft = false
+    private var schliessenFreigegeben = false
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard oberflaeche == .studio, !schliessenFreigegeben else { return true }
+        if schliessenLaeuft { return false }
+        schliessenLaeuft = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let ja = await self.darfSchliessen()
+            self.schliessenLaeuft = false
+            if ja { self.schliessenFreigegeben = true; self.fenster?.close() }
+        }
+        return false
+    }
+
     func windowWillClose(_ notification: Notification) { aufraeumen() }
 
-    /// Bereit = app.js hat die Daten geladen (window.__brain.ladezeit gesetzt). Höchstens 30 s warten.
+    /// Bereit = Übersicht: app.js hat die Daten geladen (window.__brain.ladezeit); Studio: window.studio ist da und
+    /// die Seite fertig geladen. Höchstens 30 s warten.
     private func warteAufBereit() {
+        // Der Testlauf startet schon mit dem ersten fertig geladenen Dokument: Wird die Oberfläche nie bereit (kaputtes
+        // app.js), soll das Bild trotzdem entstehen — es zeigt dann, was der Nutzer sähe.
+        if let web = webView { starteTestlauf(web) }
         bereitAufgabe?.cancel()
+        let pruefung = oberflaeche == .studio
+            ? "window.studio && document.readyState === 'complete' ? 1 : null"
+            : "window.__brain && window.__brain.ladezeit ? Math.round(window.__brain.ladezeit) : null"
         bereitAufgabe = Task { @MainActor [weak self] in
             for _ in 0..<120 {
                 guard let self, let web = self.webView, !Task.isCancelled else { return }
-                let wert = try? await web.evaluateJavaScript("window.__brain && window.__brain.ladezeit ? Math.round(window.__brain.ladezeit) : null")
+                let wert = try? await web.evaluateJavaScript(pruefung)
                 if let ms = wert as? NSNumber {
-                    self.log.schreibe("fenster-bereit ladezeit=\(ms.intValue)")
+                    self.log.schreibe("fenster-bereit \(self.name) ladezeit=\(ms.intValue)")
                     return
                 }
                 try? await Task.sleep(for: .milliseconds(250))
             }
-            self?.log.schreibe("fenster-nicht-bereit")
+            self?.log.schreibe("fenster-nicht-bereit \(self?.name ?? "")")
         }
+    }
+
+    /// Testschalter `--test-skript` / `--test-bild`: genau einmal je App-Lauf, sobald das erste Dokument des Studios geladen
+    /// ist (Ablauf und Logzeilen: `StudioTestlauf`).
+    private func starteTestlauf(_ web: WKWebView) {
+        guard let t = test, !testGestartet, t.testBild != nil || t.testSkript != nil else { return }
+        testGestartet = true
+        let log = self.log
+        testAufgabe = Task { @MainActor in await StudioTestlauf.fuehreAus(t, web: web, log: log) }
     }
 
     private func aufraeumen() {
         bereitAufgabe?.cancel()
         bereitAufgabe = nil
+        testAufgabe?.cancel()
+        testAufgabe = nil
+        // Menübefehle, die noch auf die Oberfläche warteten, sind mit dem Fenster hinfällig — nicht still verschwinden lassen.
+        befehlsAufgabe?.cancel()
+        befehlsAufgabe = nil
+        for b in wartendeBefehle { log.schreibe("befehl-verworfen \(b.befehl.rawValue) fenster-zu") }
+        wartendeBefehle.removeAll()
+        // Ein offener Ordner-Dialog endet mit dem Fenster; die wartende Seite bekommt „abgebrochen“.
+        if let d = ordnerDialog {
+            ordnerDialog = nil
+            fenster?.endSheet(d.panel, returnCode: .cancel)
+            d.antwort.fertig(nil)
+        }
         if let web = webView {
             web.stopLoading()
             web.navigationDelegate = nil
@@ -201,9 +513,11 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
         navigation = nil
         fenster?.delegate = nil
         fenster = nil
+        schliessenFreigegeben = false
+        schliessenLaeuft = false
         if let b = bruecke { Task { await b.beende() } }
         bruecke = nil
-        log.schreibe("fenster-zu")
+        log.schreibe("fenster-zu \(name)")
         beiGeschlossen?()
     }
 }

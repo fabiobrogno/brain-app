@@ -1,0 +1,127 @@
+// Alle sichtbaren Texte des Einstiegs ohne Vault (Deutsch, Du-Form, Alltagssprache).
+// Produktname nur über PRODUKT aus texte.js.
+import { PRODUKT } from "./texte.js";
+
+export const TW = {
+  zurueck: "Zurück",
+  abbrechen: "Abbrechen",
+  schliessen: "Schließen",
+
+  willkommen: {
+    titel: `Willkommen bei ${PRODUKT}`,
+    untertitel: `Dein ${PRODUKT} ist ein Ordner mit Notizen auf deinem Computer. Wie möchtest du starten?`,
+    wegeLabel: "So kannst du starten",
+    fuss: "Alles bleibt als normale Textdatei in deinem Ordner. Es gibt kein Konto und keine Cloud von uns.",
+  },
+  wege: {
+    vorlage: { titel: `Mit der ${PRODUKT}-Vorlage loslegen`, text: `Ein neues ${PRODUKT} mit Posteingang, Wiki und Beispielseiten.` },
+    leer: { titel: "Leeren Vault anlegen", text: "Ein leerer Ordner mit Versionsverlauf. Du fängst bei null an." },
+    ordner: { titel: "Vorhandenen Ordner öffnen", text: "Wähle einen Ordner mit Notizen, den du schon hast." },
+    klonen: { titel: "Von GitHub klonen", text: "Hole einen bestehenden Vault aus einem Git-Repository." },
+  },
+
+  name: {
+    vorlage: { titel: `${PRODUKT}-Vorlage anlegen`, text: `Ein neues ${PRODUKT} mit Posteingang, Wiki und Beispielseiten.`, arbeit: "Die Vorlage wird angelegt …" },
+    leer: { titel: "Leeren Vault anlegen", text: "Ein leerer Ordner mit Versionsverlauf. Du fängst bei null an.", arbeit: "Der Ordner wird angelegt …" },
+    feld: "Name",
+    vorgabe: PRODUKT,
+    ortVor: "Wird angelegt in",
+    andererOrdner: "Anderen Ordner wählen …",
+    freigabe: "In deinem Benutzerordner braucht die App keine zusätzliche Freigabe.",
+    anlegen: "Vault anlegen",
+    keinName: "Gib deinem Vault einen Namen.",
+    schraegstrich: "Der Name darf keinen Schrägstrich enthalten.",
+    dialogTitel: "Ordner für deinen Vault wählen",
+  },
+
+  klonen: {
+    titel: "Von GitHub klonen",
+    text: "Hole einen bestehenden Vault aus einem Git-Repository.",
+    urlFeld: "Adresse (URL)",
+    urlPlatzhalter: "https://github.com/name/vault.git",
+    zielFeld: "Zielordner",
+    ortVor: "Wird geholt nach",
+    andererOrdner: "Anderen Ordner wählen …",
+    anmeldung: "Anmeldung läuft über deine normale Git-Einrichtung (SSH oder Schlüsselbund). Die App speichert keine Passwörter.",
+    knopf: "Klonen",
+    arbeit: "Wird geklont … das kann einige Minuten dauern.",
+    keineUrl: "Gib die Adresse des Repositories ein.",
+    urlFormat: "Die Adresse sollte mit https://, ssh:// oder git@ beginnen.",
+    dialogTitel: "Zielordner wählen",
+  },
+
+  ordner: {
+    dialogTitel: "Ordner mit deinen Notizen wählen",
+    arbeit: "Der Ordner wird geöffnet …",
+    arbeitTitel: "Ordner wird geöffnet",
+    anderer: "Anderen Ordner wählen …",
+  },
+
+  git: {
+    titel: "Versionsverlauf einschalten?",
+    text: "In diesem Ordner gibt es noch keinen Versionsverlauf. Einschalten?",
+    hilfe: "Damit kannst du Änderungen nachvollziehen und frühere Fassungen zurückholen.",
+    einschalten: "Einschalten",
+    ohne: "Ohne Verlauf weiter",
+    arbeit: "Der Versionsverlauf wird eingeschaltet …",
+    fehlgeschlagen: "Der Versionsverlauf ließ sich nicht einschalten. Du kannst trotzdem ohne Verlauf weiterarbeiten.",
+    // Zeitüberschreitung beim Einschalten: der Ordner ist durch den ersten Schritt schon geöffnet, nur der Verlauf fehlt
+    zeit: "Das Einschalten des Versionsverlaufs hat zu lange gedauert. Dein Ordner ist geöffnet, der Verlauf aber nicht eingeschaltet. Versuche es noch einmal oder arbeite ohne Verlauf weiter.",
+  },
+
+  pfad: {
+    titel: "Pfad zum Ordner",
+    feld: "Ordnerpfad",
+    platzhalter: "/Users/dein-name/Notizen",
+    hilfe: "Gib den vollständigen Pfad ein, zum Beispiel /Users/dein-name/Notizen. In der App öffnet sich hier die normale Ordnerauswahl.",
+    uebernehmen: "Übernehmen",
+    leer: "Gib den Pfad des Ordners ein.",
+    relativ: "Der Pfad muss mit / oder ~ beginnen.",
+  },
+
+  ki: {
+    titel: "Deine KI kann mitlesen",
+    text: `Verbinde eine KI-App auf diesem Computer mit deinem ${PRODUKT}, damit sie in deinen Notizen nachschlagen kann.`,
+    titelOptional: "KI verbinden ist optional",
+    textOptional: "Auf diesem Computer wurde keine KI-App gefunden. Du kannst das jederzeit später einrichten.",
+    dialogTitel: "KI verbinden",
+    erkannt: "Auf diesem Computer erkannt",
+    installiert: "Installiert",
+    version: (v) => `Version ${v}`,
+    versionUnbekannt: "Version nicht ermittelt",
+    sucheLaeuft: "Suche nach KI-Apps auf diesem Computer …",
+    verbinden: "Mit Claude verbinden",
+    verbindenText: "Danach kann Claude in deinen Notizen nachschlagen.",
+    verbindet: "Wird verbunden …",
+    verbunden: "Verbunden. Claude kann jetzt auf dein Wissen zugreifen.",
+    verbundenKnopf: "Verbunden",
+    anders: "In Claude gibt es schon einen Eintrag „brain“, der woanders hinzeigt. Auf dieses Brain umstellen?",
+    umstellen: "Umstellen",
+    nichtUmstellen: "Nicht ändern",
+    befehl: "Das geht von hier aus noch nicht. Führe diesen Befehl im Terminal aus:",
+    befehlKopieren: "Befehl kopieren",
+    befehlKopiert: "Befehl kopiert.",
+    kopierFehler: "Kopieren war nicht möglich. Markiere den Befehl und kopiere ihn von Hand.",
+    hinweise: `${PRODUKT}-Hinweise einschalten`,
+    hinweiseText: "Claude erhält beim Arbeiten passende Hinweise.",
+    hinweiseLaeuft: "Wird eingeschaltet …",
+    hinweiseOk: "Die Hinweise sind eingeschaltet.",
+    hinweiseKnopfOk: "Eingeschaltet",
+    probeText: (f) => `Suche nach „${f}“ — so, wie Claude es tun würde.`,
+    probeKnopf: "Ausprobieren",
+    probeLaeuft: "Suche läuft …",
+    probeTitel: (n) => `Claude findet dein ${PRODUKT}: ${n} Treffer`,
+    probeKeine: "Zu dieser Frage gibt es noch keine Treffer.",
+    probeLeer: "Dein Vault ist noch leer — probiere es nach der ersten Notiz.",
+    probeStandard: "Willkommen",
+    spaeter: "Später",
+    weiter: "Weiter",
+    fertig: "Fertig",
+  },
+
+  fehler: {
+    titel: "Das hat nicht geklappt",
+    allgemein: "Das hat nicht geklappt.",
+    nochNicht: "Das geht in dieser Version noch nicht.",
+  },
+};

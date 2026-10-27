@@ -1,6 +1,6 @@
 #!/bin/bash
 # Speichermessung M1 (App-Spec §7.1, §13.2): physischer Speicher (Spalte MEM von top = phys_footprint, wie die
-# Aktivitätsanzeige „Speicher“) von App, Brücke und den neuen WebKit-Prozessen des Fensters.
+# Aktivitätsanzeige 'Speicher') von App, Brücke und den neuen WebKit-Prozessen des Fensters.
 # shellcheck disable=SC2046,SC2086  # PID-Listen (pgrep, $NEU, $REST) werden absichtlich aufgeteilt: ein Argument je PID, leer = keine
 set -euo pipefail
 W="$(cd "$(dirname "$0")/.." && pwd)"
