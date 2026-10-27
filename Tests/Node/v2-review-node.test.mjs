@@ -17,6 +17,7 @@ import { createInterface } from "node:readline";
 import { tmp, schreibe, repo, g, pfad } from "./hilfe.mjs";
 process.env.HOME = tmp("brain-home-");          // os.homedir() liest $HOME: keine echte ~/.gitconfig
 process.env.GIT_CONFIG_NOSYSTEM = "1";          // und keine System-Konfiguration
+for (const w of ["AUTHOR", "COMMITTER"]) { process.env[`GIT_${w}_NAME`] = "Test"; process.env[`GIT_${w}_EMAIL`] = "test@example.org"; }   // der CI-Runner hat keine Git-Identität
 for (const k of ["GIT_CONFIG_GLOBAL", "XDG_CONFIG_HOME", "GIT_SSH_COMMAND", "BRAIN_VAULT"]) delete process.env[k];
 
 const { HttpFehler, bereinigterPfad, bereinigePfad, kindUmgebung, absoluterGitPfad } = await import(pfad("gemeinsam", "basis.mjs"));
