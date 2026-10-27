@@ -1,0 +1,28 @@
+name: CI
+
+# Nur PR und main: macOS-Minuten sind in privaten Repos teuer.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    # Package.swift verlangt swift-tools 6.2 und macOS 26 -> macos-26-Image (Xcode 26).
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain anzeigen
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+      - name: Build
+        run: swift build
+      - name: Test
+        run: swift test
