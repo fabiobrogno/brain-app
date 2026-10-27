@@ -116,7 +116,7 @@ final class Navigation: NSObject, WKNavigationDelegate {
     }
 }
 
-/// Das Brain-Fenster (App-Spec §5.2, §7.2): beim Schließen werden WebView, Kanal und Brücke beendet.
+/// Das Kortex-Fenster (App-Spec §5.2, §7.2): beim Schließen werden WebView, Kanal und Brücke beendet.
 @MainActor
 final class FensterSteuerung: NSObject, NSWindowDelegate {
     private let log: AppLog
@@ -150,7 +150,7 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
 
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800),
                          styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        w.title = "Brain"
+        w.title = "Kortex"
         w.isReleasedWhenClosed = false
         w.contentView = web
         w.setFrameAutosaveName("BrainFenster")

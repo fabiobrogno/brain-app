@@ -3,7 +3,7 @@
 # Aktivitätsanzeige „Speicher“) von App, Brücke und den neuen WebKit-Prozessen des Fensters.
 set -euo pipefail
 W="$(cd "$(dirname "$0")/.." && pwd)"
-APP="$W/build/Brain.app/Contents/MacOS/BrainApp"
+APP="$W/build/Kortex.app/Contents/MacOS/BrainApp"
 KIT="${BRAIN_TEST_KIT:-$HOME/brain-kit-v0.6}"
 VAULT_ECHT="${1:-$KIT}"   # gemessen wird mit einem vollständigen Brain (Standard: der Kit-Worktree)
 [ -x "$APP" ] || { echo "zuerst bash scripts/baue-app.sh"; exit 1; }

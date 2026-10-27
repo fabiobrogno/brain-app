@@ -3,8 +3,8 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleIdentifier</key><string>io.github.fbrogno.brain</string>
-    <key>CFBundleName</key><string>Brain</string>
-    <key>CFBundleDisplayName</key><string>Brain</string>
+    <key>CFBundleName</key><string>Kortex</string>
+    <key>CFBundleDisplayName</key><string>Kortex</string>
     <key>CFBundleExecutable</key><string>BrainApp</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>0.1.0</string>
