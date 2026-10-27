@@ -43,6 +43,52 @@ jobs:
         if: steps.erkennen.outputs.vorhanden == 'true'
         run: bash scripts/teste-node.sh
 
+  # Playwright-Oberflächentests (Editor/Studio) gegen den Node-Entwicklungsserver; läuft ohne macOS.
+  ui-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: Tests/Oberflaeche
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: Tests/Oberflaeche/package-lock.json
+      - name: Abhängigkeiten
+        run: npm ci
+      - name: Playwright-Version
+        id: pw
+        run: echo "version=$(npx playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+      - name: Browser-Cache
+        id: browser-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      - name: Chromium installieren
+        if: steps.browser-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+      - name: Systembibliotheken (Browser aus Cache)
+        if: steps.browser-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+      - name: Oberflächentests
+        run: npx playwright test --reporter=list,html
+        env:
+          PLAYWRIGHT_HTML_OPEN: never
+      - name: Bericht und Traces hochladen
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-test-bericht
+          path: |
+            Tests/Oberflaeche/playwright-report
+            Tests/Oberflaeche/test-results
+          retention-days: 14
+          if-no-files-found: ignore
+
   build-test:
     # Package.swift verlangt swift-tools 6.2 und macOS 26 -> macos-26-Image (Xcode 26).
     runs-on: macos-26
