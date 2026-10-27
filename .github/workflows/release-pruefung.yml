@@ -61,6 +61,15 @@ jobs:
             echo "signieren=nein" >> "$GITHUB_OUTPUT"
             echo "Kein Stable-Tag: App bleibt unsigniert."
           fi
+      - name: Tag gegen App-Version prüfen
+        if: steps.modus.outputs.signieren == 'ja' && steps.modus.outputs.trocken == ''
+        run: |
+          VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' build/Kortex.app/Contents/Info.plist)"
+          if [ "v$VERSION" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Der Tag $GITHUB_REF_NAME passt nicht zur App-Version v$VERSION (Ressourcen/Info.plist, CFBundleShortVersionString). Veröffentlichung abgebrochen: Der Appcast würde auf eine nicht vorhandene Download-Adresse zeigen. Entweder die Version in der Info.plist anpassen oder einen passenden Tag setzen (Tags werden nie ersetzt, also neuen Tag vergeben)."
+            exit 1
+          fi
+          echo "Tag $GITHUB_REF_NAME passt zur App-Version."
       - name: Secrets prüfen
         if: steps.modus.outputs.signieren == 'ja'
         env:
