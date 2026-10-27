@@ -135,11 +135,12 @@ test("Wikilink-Klick öffnet Ziel, Autovervollständigung", async ({ page }) => 
   await expect(page.locator(".cm-tooltip-autocomplete")).toContainText("Mühle");
   // Die Liste aktualisiert sich verzögert: erst Enter, wenn sie zum getippten „Müh“ passt (die Stufe „[[“ listet alles).
   await expect(page.locator(".cm-tooltip-autocomplete")).not.toContainText("Espresso");
-  const doc = () => page.evaluate(async () => { const CM = await import("/vendor/codemirror.bundle.js"); const v = CM.EditorView.findFromDOM(document.querySelector(".cm-editor")); return JSON.stringify(v.state.sliceDoc(0, v.state.doc.length).slice(-30)); });
-  const vorher = await doc(), liste = await page.locator(".cm-tooltip-autocomplete").innerText();
+  // Ein Eintrag muss gewählt sein; CodeMirror ignoriert Enter kurz (interactionDelay) nach dem Öffnen/Aktualisieren der Liste,
+  // dann entsteht nur ein Zeilenumbruch („[[Müh⏎]]“).
+  await expect(page.locator('.cm-tooltip-autocomplete [aria-selected="true"]')).toContainText("Mühle");
+  await page.waitForTimeout(400);
   await page.keyboard.press("Enter");
-  try { await expect(page.locator(".cm-content")).toContainText("[[Mühle]]"); }
-  catch (e) { throw new Error("DIAG vorher=" + vorher + " liste=" + JSON.stringify(liste) + " nachher=" + (await doc()) + "\n" + e.message); }
+  await expect(page.locator(".cm-content")).toContainText("[[Mühle]]");
 });
 
 test("Statusleiste zeigt Zweig und geändert; Sync-Knopf", async ({ page }) => {
