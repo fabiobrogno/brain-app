@@ -5,7 +5,7 @@ import Foundation
 // Vorschau „wie frisch installiert“: Pfad- und Umgebungsumleitung. Nie das echte HOME: das „echte“ ist hier ein Temp-Ordner.
 
 private func vorschau(mitKi: Bool = false, ohneGit: Bool = false) -> VorschauModus {
-    VorschauModus(ordner: tempOrdner("kortex-vorschau"), mitKi: mitKi, ohneGit: ohneGit)
+    VorschauModus(ordner: vorschauTempOrdner("kortex-vorschau"), mitKi: mitKi, ohneGit: ohneGit)
 }
 
 private func lies(_ argumente: [String]) -> StartArgumente {
@@ -16,7 +16,7 @@ private func lies(_ argumente: [String]) -> StartArgumente {
 
 @Test func vorschauOrdnerMussAbsolutSauberUndVorhandenSein() throws {
     let echt = tempOrdner("echtes-home")
-    let ok = tempOrdner("vorschau-ok")
+    let ok = vorschauTempOrdner("vorschau-ok")
     #expect(try VorschauModus.pruefeOrdner(ok.path, echtesHome: echt.path).get() == ok.standardizedFileURL)
     #expect(throws: VorschauModus.OrdnerFehler.nichtAbsolut) { try VorschauModus.pruefeOrdner("relativ/pfad", echtesHome: echt.path).get() }
     #expect(throws: VorschauModus.OrdnerFehler.ungueltigeZeichen) { try VorschauModus.pruefeOrdner("/tmp/mit leerzeichen", echtesHome: echt.path).get() }
@@ -36,6 +36,7 @@ private func lies(_ argumente: [String]) -> StartArgumente {
     // ein Ordner IM echten HOME ist erlaubt (Tests, Entwickler), aber nicht gleich HOME
     let darin = echt.appendingPathComponent("vorschau-test", isDirectory: true)
     try FileManager.default.createDirectory(at: darin, withIntermediateDirectories: true)
+    FileManager.default.createFile(atPath: darin.appendingPathComponent(VorschauModus.markeName).path, contents: Data())
     #expect(throws: Never.self) { try VorschauModus.pruefeOrdner(darin.path, echtesHome: echt.path).get() }
     // der echte Benutzerordner kommt aus der Benutzerdatenbank, nicht aus HOME
     #expect(VorschauModus.echtesHome().hasPrefix("/"))
@@ -44,7 +45,7 @@ private func lies(_ argumente: [String]) -> StartArgumente {
 // MARK: Schalter
 
 @Test func vorschauSchalterWerdenGelesen() {
-    let ordner = tempOrdner("v")
+    let ordner = vorschauTempOrdner("v")
     let a = lies(["--vorschau", ordner.path, "--mit-ki", "--ohne-git"])
     #expect(a.vorschauOrdner == ordner.standardizedFileURL)
     #expect(a.vorschauMitKi && a.vorschauOhneGit)
@@ -72,7 +73,7 @@ private func lies(_ argumente: [String]) -> StartArgumente {
 }
 
 @Test func vorschauIgnoriertEinenEchtenVault() {
-    let a = lies(["--vorschau", tempOrdner("v").path, "--vault", "/Users/jemand/brain"])
+    let a = lies(["--vorschau", vorschauTempOrdner("v").path, "--vault", "/Users/jemand/brain"])
     #expect(a.vault == nil)
     #expect(a.hinweise.contains { $0.contains("--vault") })
 }
@@ -82,7 +83,7 @@ private func lies(_ argumente: [String]) -> StartArgumente {
     #expect(!lies(["--vault", "/tmp/x"]).assistentDarfErscheinen)
     #expect(!lies(["--test-dunkel"]).assistentDarfErscheinen)
     #expect(!lies(["--test-beenden-nach", "5"]).assistentDarfErscheinen)
-    let v = tempOrdner("v").path
+    let v = vorschauTempOrdner("v").path
     #expect(lies(["--vorschau", v]).assistentDarfErscheinen)
     #expect(lies(["--vorschau", v, "--test-dunkel", "--test-beenden-nach", "5"]).assistentDarfErscheinen)
 }
@@ -246,4 +247,61 @@ private func lauf(_ v: VorschauModus, _ programm: String, _ args: [String], home
 /// Liegt der Pfad (nach Auflösen von /var nach /private/var) im Ordner?
 private func liegtUnter(_ pfad: String, _ ordner: URL) -> Bool {
     URL(fileURLWithPath: pfad).resolvingSymlinksInPath().path.hasPrefix(ordner.resolvingSymlinksInPath().path + "/")
+}
+
+/// Ein Vorschau-Ordner, wie ihn `scripts/vorschau.sh` anlegt: mit der Marke `.kortex-vorschau`.
+func vorschauTempOrdner(_ name: String = "kortex-vorschau") -> URL {
+    let o = tempOrdner(name)
+    FileManager.default.createFile(atPath: o.appendingPathComponent(VorschauModus.markeName).path, contents: Data())
+    return o
+}
+
+// MARK: Marke (nichts in fremden Ordnern anlegen)
+
+@Test func vorschauOrdnerOhneMarkeWirdAbgelehntUndNichtAngelegt() throws {
+    let echt = tempOrdner("echtes-home")
+    let fremd = tempOrdner("brain-ohne-marke")
+    try "x".write(to: fremd.appendingPathComponent("notiz.md"), atomically: true, encoding: .utf8)
+    #expect(throws: VorschauModus.OrdnerFehler.keineMarke) { try VorschauModus.pruefeOrdner(fremd.path, echtesHome: echt.path).get() }
+    // über die Schalter: Fehler gesetzt, kein Ordner — die App legt nichts an (vorbereiten läuft nur mit gültigem Ordner)
+    let a = lies(["--vorschau", fremd.path])
+    #expect(a.vorschauOrdner == nil)
+    #expect(a.vorschauFehler?.contains(VorschauModus.markeName) == true)
+    #expect(try FileManager.default.contentsOfDirectory(atPath: fremd.path) == ["notiz.md"], "nichts angelegt")
+    // mit Marke geht es
+    let ok = vorschauTempOrdner()
+    #expect(throws: Never.self) { try VorschauModus.pruefeOrdner(ok.path, echtesHome: echt.path).get() }
+}
+
+// MARK: Git-Konfiguration: Klonen privater Repos
+
+@Test func vorschauGitKonfigurationHatDenCredentialHelperAufDieZugangsdatei() async throws {
+    let v = vorschau()
+    try v.vorbereiten()
+    let konfig = v.home.appendingPathComponent(".gitconfig")
+    let text = try String(contentsOf: konfig, encoding: .utf8)
+    #expect(text.contains("helper = store --file=\(v.zugangsdatei.path)"))
+    // Echtes git mit der Umgebung der Vorschau: der Helper greift (GIT_CONFIG_NOSYSTEM verbietet sonst jeden), approve → Datei im Ordner.
+    var env = v.kindVorgaben
+    env["PATH"] = "/usr/bin:/bin"
+    let git = URL(fileURLWithPath: "/usr/bin/git")
+    guard FileManager.default.isExecutableFile(atPath: git.path) else { return }
+    let helper = try await ProzessLauf.starte(git, ["config", "--global", "--get", "credential.helper"], umgebung: env, ordner: v.ordner, zeitlimit: .seconds(20))
+    #expect(helper.code == 0 && helper.ausgabe.contains("store --file=\(v.zugangsdatei.path)"), "\(helper.ausgabe) \(helper.fehler)")
+    let skriptURL = skript("#!/bin/sh\nprintf 'protocol=https\\nhost=github.com\\nusername=anna\\npassword=geheim-vorschau\\n\\n' | /usr/bin/git credential approve\n",
+                           name: "approve.sh", in: v.tmp)
+    let r = try await ProzessLauf.starte(skriptURL, [], umgebung: env, ordner: v.ordner, zeitlimit: .seconds(20))
+    #expect(r.code == 0, "\(r.fehler)")
+    let datei = try String(contentsOf: v.zugangsdatei, encoding: .utf8)
+    #expect(datei.contains("geheim-vorschau"), "das Token landet in der Datei im Vorschau-Home")
+}
+
+// MARK: Support-Ordner und #21 (SupportMigration)
+
+@Test func vorschauLenktDenSupportOrdnerUeberBrainAppSupportUm() {
+    // `AppPfade.standard`/(nach #21) `altBasis` folgen `BRAIN_APP_SUPPORT`: mit dem Wert der Vorschau gibt es keinen alten Ordner zu migrieren.
+    let v = vorschau()
+    #expect(v.kindVorgaben["BRAIN_APP_SUPPORT"] == v.support.path)
+    #expect(v.kindVorgaben["BRAIN_APP_SUPPORT"]?.hasPrefix("/") == true)
+    #expect(AppPfade.standard(umgebung: v.kindVorgaben).basis.path == v.support.path)
 }

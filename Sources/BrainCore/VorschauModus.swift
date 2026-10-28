@@ -41,7 +41,7 @@ public struct VorschauModus: Equatable, Sendable {
     // MARK: Ordner prüfen
 
     public enum OrdnerFehler: Error, Equatable, Sendable {
-        case nichtAbsolut, zuFlach, ungueltigeZeichen, keinOrdner, enthaeltEchtesHome
+        case nichtAbsolut, zuFlach, ungueltigeZeichen, keinOrdner, enthaeltEchtesHome, keineMarke
 
         public var beschreibung: String {
             switch self {
@@ -50,6 +50,7 @@ public struct VorschauModus: Equatable, Sendable {
             case .ungueltigeZeichen: return "--vorschau: Der Pfad darf nur Buchstaben, Ziffern und . _ - + @ = , / enthalten (keine Leerzeichen)."
             case .keinOrdner: return "--vorschau: Den Ordner gibt es nicht. scripts/vorschau.sh legt ihn an."
             case .enthaeltEchtesHome: return "--vorschau: Das ist (oder enthält) der echte Benutzerordner."
+            case .keineMarke: return "--vorschau: Das ist kein Vorschau-Ordner (die Marke \(VorschauModus.markeName) fehlt). scripts/vorschau.sh legt ihn an."
             }
         }
     }
@@ -57,14 +58,18 @@ public struct VorschauModus: Equatable, Sendable {
     /// Zeichen, die in Pfaden vorkommen dürfen, die in Git-Konfiguration und ssh-Befehle wandern (kein Leerzeichen, kein Anführungszeichen).
     static let erlaubteZeichen = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-+@=,/")
 
+    /// Datei, mit der `scripts/vorschau.sh` einen Vorschau-Ordner kennzeichnet. Ohne sie legt die App nichts an: `--vorschau ~/brain`
+    /// würde sonst in einem echten Ordner `home`, `support` und `bin` erzeugen.
+    public static let markeName = ".kortex-vorschau"
+
     /// Der echte Benutzerordner laut Benutzerdatenbank — nie vom Umgebungs-HOME abgeleitet, das die Vorschau ja umlenkt.
     public static func echtesHome() -> String {
         if let pw = getpwuid(getuid()), let dir = pw.pointee.pw_dir { return String(cString: dir) }
         return NSHomeDirectoryForUser(NSUserName()) ?? "/Users/\(NSUserName())"
     }
 
-    /// Absolut, mindestens zwei Ebenen tief, nur unbedenkliche Zeichen, existierender Ordner, nicht der echte Benutzerordner und keiner
-    /// seiner Vorfahren. Das Ergebnis ist standardisiert (ohne `..`, ohne Schrägstrich am Ende), Verweise werden NICHT aufgelöst:
+    /// Absolut, mindestens zwei Ebenen tief, nur unbedenkliche Zeichen, existierender Ordner mit der Marke `.kortex-vorschau`, nicht der
+    /// echte Benutzerordner und keiner seiner Vorfahren. Das Ergebnis ist standardisiert (ohne `..`, ohne Schrägstrich am Ende), Verweise werden NICHT aufgelöst:
     /// derselbe Text steht danach in HOME und CFFIXED_USER_HOME.
     public static func pruefeOrdner(_ text: String, echtesHome: String = VorschauModus.echtesHome()) -> Result<URL, OrdnerFehler> {
         guard text.hasPrefix("/") else { return .failure(.nichtAbsolut) }
@@ -79,6 +84,7 @@ public struct VorschauModus: Equatable, Sendable {
         for kandidat in [url.path, url.resolvingSymlinksInPath().path] {
             for h in [echt, echtResolved] where h == kandidat || h.hasPrefix(kandidat + "/") { return .failure(.enthaeltEchtesHome) }
         }
+        guard FileManager.default.fileExists(atPath: url.appendingPathComponent(markeName).path) else { return .failure(.keineMarke) }
         return .success(url)
     }
 
@@ -89,6 +95,12 @@ public struct VorschauModus: Equatable, Sendable {
     var sshBefehl: String {
         "ssh -F /dev/null -o BatchMode=yes -o IdentityFile=/dev/null -o IdentityAgent=none -o IdentitiesOnly=yes "
             + "-o UserKnownHostsFile=\(home.path)/.ssh/known_hosts -o GlobalKnownHostsFile=/dev/null"
+    }
+
+    /// Die globale Git-Konfiguration der Vorschau (`GIT_CONFIG_GLOBAL`). Wegen `GIT_CONFIG_NOSYSTEM` gäbe es sonst keinen Credential-Helper,
+    /// und das Klonen privater Repositories mit dem in der Vorschau gespeicherten GitHub-Token scheiterte.
+    var gitKonfiguration: String {
+        "[credential]\n\thelper = store --file=\(zugangsdatei.path)\n"
     }
 
     /// Pfad der Zugangsdatei, in die `git credential-store` das GitHub-Token der Vorschau schreibt (statt in den Schlüsselbund).
@@ -152,6 +164,7 @@ public struct VorschauModus: Equatable, Sendable {
         for o in ordnerListe { try fm.createDirectory(at: o, withIntermediateDirectories: true) }
         try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: home.appendingPathComponent(".ssh").path)
         try pfade.legeAn()
+        try gitKonfiguration.write(to: home.appendingPathComponent(".gitconfig"), atomically: true, encoding: .utf8)
         if mitKi {
             for d in [".claude", ".codex", ".cursor"] {
                 try fm.createDirectory(at: home.appendingPathComponent(d, isDirectory: true), withIntermediateDirectories: true)

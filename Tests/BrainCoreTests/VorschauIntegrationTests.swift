@@ -64,7 +64,7 @@ private func baueAblauf(_ modus: VorschauModus, echtesHome: URL, node: URL) -> (
     let node = try #require(findeNode())
     let echt = try baueEchtesHome()
     let vorher = abdruck(echt)
-    let modus = VorschauModus(ordner: tempOrdner("kortex-vorschau"), mitKi: true)
+    let modus = VorschauModus(ordner: vorschauTempOrdner("kortex-vorschau"), mitKi: true)
     try modus.vorbereiten()
     let (ablauf, dienste, bruecke) = await baueAblauf(modus, echtesHome: echt, node: node)
     defer { Task { await bruecke.beende() } }
@@ -122,7 +122,7 @@ private func baueAblauf(_ modus: VorschauModus, echtesHome: URL, node: URL) -> (
     let node = try #require(findeNode())
     let echt = try baueEchtesHome()
     let vorher = abdruck(echt)
-    let modus = VorschauModus(ordner: tempOrdner("kortex-vorschau"))
+    let modus = VorschauModus(ordner: vorschauTempOrdner("kortex-vorschau"))
     try modus.vorbereiten()
     let (ablauf, dienste, bruecke) = await baueAblauf(modus, echtesHome: echt, node: node)
     defer { Task { await bruecke.beende() } }
@@ -144,7 +144,7 @@ private func baueAblauf(_ modus: VorschauModus, echtesHome: URL, node: URL) -> (
 @Test(.enabled(if: moeglich)) func vorschauOhneGitZeigtFehltUndInstalliertNichts() async throws {
     let node = try #require(findeNode())
     let echt = try baueEchtesHome()
-    let modus = VorschauModus(ordner: tempOrdner("kortex-vorschau"), ohneGit: true)
+    let modus = VorschauModus(ordner: vorschauTempOrdner("kortex-vorschau"), ohneGit: true)
     try modus.vorbereiten()
     let (ablauf, dienste, bruecke) = await baueAblauf(modus, echtesHome: echt, node: node)
     defer { Task { await bruecke.beende() } }

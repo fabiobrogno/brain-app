@@ -126,10 +126,16 @@ HOME_V="$ORDNER/home"
 echo "Vorschau läuft in $ORDNER" >&2
 echo "(Beenden: Kortex beenden, Strg-C oder dieses Fenster schließen — der Ordner wird gelöscht.)" >&2
 STATUS=0
-env -u BRAIN_APP_SUPPORT -u BRAIN_VAULT -u BRAIN_TESTMODUS -u SSH_AUTH_SOCK \
-  KORTEX_VORSCHAU="$ORDNER" HOME="$HOME_V" CFFIXED_USER_HOME="$HOME_V" TMPDIR="$ORDNER/tmp/" \
-  XDG_CONFIG_HOME="$HOME_V/.config" XDG_CACHE_HOME="$HOME_V/.cache" XDG_DATA_HOME="$HOME_V/.local/share" XDG_STATE_HOME="$HOME_V/.local/state" \
-  GIT_CONFIG_GLOBAL="$HOME_V/.gitconfig" GIT_CONFIG_NOSYSTEM=1 \
+# Bereinigte Umgebung (env -i + Whitelist): nichts vom Starter geht durch — weder CLAUDE_CONFIG_DIR, CLAUDE_CODE_*, GH_CONFIG_DIR,
+# *_ASKPASS, SSH_AUTH_SOCK noch BRAIN_*. Durch kommen nur Sprache/Terminal/Benutzername und die Vorschau-Variablen.
+UMGEBUNG=(PATH=/usr/bin:/bin:/usr/sbin:/sbin
+  KORTEX_VORSCHAU="$ORDNER" HOME="$HOME_V" CFFIXED_USER_HOME="$HOME_V" TMPDIR="$ORDNER/tmp/"
+  XDG_CONFIG_HOME="$HOME_V/.config" XDG_CACHE_HOME="$HOME_V/.cache" XDG_DATA_HOME="$HOME_V/.local/share" XDG_STATE_HOME="$HOME_V/.local/state"
+  GIT_CONFIG_GLOBAL="$HOME_V/.gitconfig" GIT_CONFIG_NOSYSTEM=1)
+for name in LANG LANGUAGE TERM USER LOGNAME SHELL __CF_USER_TEXT_ENCODING $(compgen -v LC_ || true); do
+  if [ -n "${!name+x}" ]; then UMGEBUNG+=("$name=${!name}"); fi
+done
+env -i "${UMGEBUNG[@]}" \
   "$PROGRAMM" --vorschau "$ORDNER" ${APP_ARGS[@]+"${APP_ARGS[@]}"} &
 APP_PID=$!
 wait "$APP_PID" || STATUS=$?

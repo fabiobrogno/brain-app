@@ -46,27 +46,33 @@ cat > "$STUB" <<'EOF'
   echo "BRAIN_VAULT=${BRAIN_VAULT-nicht gesetzt}"
   echo "PID=$$"
   echo "ELTERN=$PPID"
-} > "$STUB_LOG"
+} > "@LOG@"
+env | sort > "@LOG@.env"
 echo "Notiz" > "$HOME/vorschau-datei.txt"
-case "${STUB_MODE:-ende}" in
-  ende) exit "${STUB_CODE:-0}" ;;
-  warten) trap 'exit 0' TERM HUP INT; echo bereit >> "$STUB_LOG"; while true; do sleep 1; done ;;
+case "$(cat "@LOG@.mode" 2>/dev/null || echo ende)" in
+  ende) exit "$(cat "@LOG@.code" 2>/dev/null || echo 0)" ;;
+  warten) trap 'exit 0' TERM HUP INT; echo bereit >> "@LOG@"; while true; do sleep 1; done ;;
 esac
 EOF
 chmod +x "$STUB"
+# Die App läuft mit bereinigter Umgebung: Log-Pfad, Modus und Exit-Code kommen aus Dateien, nicht aus Variablen.
+sed -i '' "s|@LOG@|$LOG|g" "$STUB"
 
 abdruck() { # Fingerabdruck eines Ordners (Pfad, Größe, Inhalt-Prüfsumme, Zeit)
   (cd "$1" && find . -exec stat -f '%N %z %m' {} + 2>/dev/null | sort; find . -type f -exec shasum {} + 2>/dev/null | sort)
 }
 lauf() { # <Argumente …>: Skript mit Platzhalter, echtem Temp-HOME und eigenem TMPDIR
-  env HOME="$ECHT" TMPDIR="$BASIS/" KORTEX_VORSCHAU_PROGRAMM="$STUB" STUB_LOG="$LOG" "$@"
+  env HOME="$ECHT" TMPDIR="$BASIS/" KORTEX_VORSCHAU_PROGRAMM="$STUB" "$@"
 }
 ordner_im_basis() { find "$BASIS" -mindepth 1 -maxdepth 1 -name 'kortex-vorschau-*' | head -1; }
 
 echo "== Normaler Lauf: Schalter und Umgebung, Aufräumen, Exit-Code =="
 vorher="$(abdruck "$ECHT")"
-lauf env STUB_CODE=3 bash "$SKRIPT" --ohne-git --mit-ki --test-dunkel >/dev/null 2>&1
-pruefe "Exit-Code der App wird weitergegeben" "$?" "3"
+echo 3 > "$LOG.code"
+lauf bash "$SKRIPT" --ohne-git --mit-ki --test-dunkel >/dev/null 2>&1
+code=$?
+rm -f "$LOG.code"
+pruefe "Exit-Code der App wird weitergegeben" "$code" "3"
 ORD="$(sed -n 's/^KORTEX_VORSCHAU=//p' "$LOG")"
 case "$ORD" in "$BASIS"/kortex-vorschau-*) ok "Ordner liegt unter \$TMPDIR: kortex-vorschau-XXXX" ;; *) fail "Ordner liegt nicht unter \$TMPDIR: $ORD" ;; esac
 pruefe "Schalter kommen unverändert an (--vorschau <Ordner> zuerst)" "$(sed -n 's/^args: //p' "$LOG")" "--vorschau $ORD --ohne-git --mit-ki --test-dunkel"
@@ -85,10 +91,24 @@ echo "== SSH-Agent des Nutzers wird nicht durchgereicht =="
 lauf env SSH_AUTH_SOCK=/private/tmp/echter-agent bash "$SKRIPT" >/dev/null 2>&1
 pruefe "SSH_AUTH_SOCK nicht gesetzt" "$(sed -n 's/^SSH_AUTH_SOCK=//p' "$LOG")" "nicht gesetzt"
 
+echo "== Bereinigte Umgebung: nichts vom Starter geht durch =="
+lauf env CLAUDE_CONFIG_DIR=/echt/claude CLAUDE_CODE_OAUTH_TOKEN=x GH_CONFIG_DIR=/echt/gh GIT_ASKPASS=/echt/askpass SSH_ASKPASS=/echt/askpass \
+  GIT_SSH_COMMAND="ssh -i /echt/schluessel" BRAIN_VAULT=/echt/brain BRAIN_TESTMODUS=1 ANTHROPIC_API_KEY=x KOEDER=1 \
+  LANG=de_DE.UTF-8 LC_ALL=de_DE.UTF-8 TERM=xterm bash "$SKRIPT" >/dev/null 2>&1
+for koeder in CLAUDE_CONFIG_DIR CLAUDE_CODE_OAUTH_TOKEN GH_CONFIG_DIR GIT_ASKPASS SSH_ASKPASS GIT_SSH_COMMAND BRAIN_VAULT BRAIN_TESTMODUS ANTHROPIC_API_KEY KOEDER; do
+  pruefe "nicht durchgereicht: $koeder" "$(grep -c "^$koeder=" "$LOG.env" || true)" "0"
+done
+pruefe "Sprache bleibt: LANG" "$(sed -n 's/^LANG=//p' "$LOG.env")" "de_DE.UTF-8"
+pruefe "Sprache bleibt: LC_ALL" "$(sed -n 's/^LC_ALL=//p' "$LOG.env")" "de_DE.UTF-8"
+pruefe "Terminal bleibt: TERM" "$(sed -n 's/^TERM=//p' "$LOG.env")" "xterm"
+pruefe "PATH ist nur System" "$(sed -n 's/^PATH=//p' "$LOG.env")" "/usr/bin:/bin:/usr/sbin:/sbin"
+pruefe "Vorschau-Variable da: KORTEX_VORSCHAU" "$(grep -c '^KORTEX_VORSCHAU=' "$LOG.env")" "1"
+
 for sig in TERM HUP; do
   echo "== Signal $sig während die App läuft: App beendet, Ordner gelöscht =="
   : > "$LOG"
-  lauf env STUB_MODE=warten bash "$SKRIPT" >/dev/null 2>&1 &
+  echo warten > "$LOG.mode"
+  lauf bash "$SKRIPT" >/dev/null 2>&1 &
   skript_pid=$!
   for _ in $(seq 1 100); do grep -q '^bereit' "$LOG" 2>/dev/null && break; sleep 0.1; done
   grep -q '^bereit' "$LOG" || fail "Platzhalter startet nicht"
@@ -99,6 +119,7 @@ for sig in TERM HUP; do
   if [ "$sig" = TERM ]; then pruefe "Skript endet mit 143" "$code" "143"; else pruefe "Skript endet mit 129" "$code" "129"; fi
   if kill -0 "$app_pid" 2>/dev/null; then fail "App läuft nach $sig noch (pid $app_pid)"; else ok "App ist beendet"; fi
   weg "$ORD" "Ordner gelöscht" "Ordner nach $sig noch da"
+  rm -f "$LOG.mode"
 done
 
 echo "== Alte Ordner: nur eigene mit toter Prozess-Nummer werden weggeräumt =="
@@ -116,7 +137,7 @@ echo "== Fehlerfälle =="
 lauf bash "$SKRIPT" --vorschau /tmp/x >/dev/null 2>&1
 pruefe "--vorschau von außen wird abgelehnt (Exit 2)" "$?" "2"
 mkdir -p "$ARBEIT/mit leerzeichen"
-env HOME="$ECHT" TMPDIR="$ARBEIT/mit leerzeichen/" KORTEX_VORSCHAU_PROGRAMM="$STUB" STUB_LOG="$LOG" bash "$SKRIPT" >/dev/null 2>&1
+env HOME="$ECHT" TMPDIR="$ARBEIT/mit leerzeichen/" KORTEX_VORSCHAU_PROGRAMM="$STUB" bash "$SKRIPT" >/dev/null 2>&1
 pruefe "TMPDIR mit Leerzeichen wird abgelehnt (Exit 1)" "$?" "1"
 pruefe "dabei bleibt nichts liegen" "$(find "$ARBEIT/mit leerzeichen" -mindepth 1 | head -1)" ""
 pruefe "das echte HOME ist weiter unverändert" "$(abdruck "$ECHT")" "$vorher"

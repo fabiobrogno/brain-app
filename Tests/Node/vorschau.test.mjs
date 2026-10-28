@@ -12,7 +12,7 @@ import { tmp, schreibe, pfad } from "./hilfe.mjs";
 
 const { vorschauOrdner, vorschauFehler } = await import(pfad("gemeinsam", "basis.mjs"));
 const { erzeugeGitHub } = await import(pfad("gemeinsam", "github.mjs"));
-const { findeProgramm } = await import(pfad("gemeinsam", "ki.mjs"));
+const { findeProgramm, erkenneAgenten } = await import(pfad("gemeinsam", "ki.mjs"));
 const vaults = await import(pfad("gemeinsam", "vaults.mjs"));
 
 // Umgebung zeitweise setzen (in-process-Tests lesen process.env bei jedem Aufruf).
@@ -211,4 +211,18 @@ esac
   assert.deepEqual(abdruck(echt), vorher, "das „echte“ HOME ist unverändert (Köder-claude nie gestartet, keine Datei neu)");
   assert.ok(!existsSync(join(echt, "claude-aufrufe.txt")));
   assert.ok(!existsSync(join(echt, "Brain")));
+});
+
+// ── Cursor.app dieses Rechners zählt in der Vorschau nicht ──
+test("Cursor-Erkennung in der Vorschau: nur das Vorschau-Home, nicht /Applications", async () => {
+  const vo = vorschauAnlegen();
+  const apps = tmp("kortex-apps-");
+  mkdirSync(join(apps, "Cursor.app"));
+  const env = { PATH: "" };
+  assert.equal((await erkenneAgenten({ env, home: join(vo, "home"), appOrdner: apps, neu: true })).cursorDa, true, "ohne Vorschau zählt die App");
+  await mit(vorschauEnv(vo), async () => {
+    assert.equal((await erkenneAgenten({ env, home: join(vo, "home"), appOrdner: apps, neu: true })).cursorDa, false, "Vorschau: frisch");
+    mkdirSync(join(vo, "home", ".cursor"));
+    assert.equal((await erkenneAgenten({ env, home: join(vo, "home"), appOrdner: apps, neu: true })).cursorDa, true, "--mit-ki: Platzhalter-Ordner im Vorschau-Home");
+  });
 });

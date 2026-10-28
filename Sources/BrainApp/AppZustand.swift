@@ -69,13 +69,16 @@ final class AppZustand: ObservableObject {
         var v: VorschauModus?
         if let fehler = argumente.vorschauFehler { Self.vorschauAbbruch([fehler]) }
         if let modus = argumente.vorschau {
-            do { try modus.vorbereiten() } catch { Self.vorschauAbbruch(["Der Vorschau-Ordner ließ sich nicht vorbereiten: \(error.localizedDescription)"]) }
+            // Erst prüfen, dann anlegen: nur setenv, keine Dateien.
             modus.inProzessSetzen()
             let probleme = modus.schutzFehlerImProzess()
             if !probleme.isEmpty { Self.vorschauAbbruch(probleme + ["Bitte scripts/vorschau.sh benutzen."]) }
+            do { try modus.vorbereiten() } catch { Self.vorschauAbbruch(["Der Vorschau-Ordner ließ sich nicht vorbereiten: \(error.localizedDescription)"]) }
             v = modus
         }
         vorschau = v
+        // PR #21 (Support-Ordner Kortex): `SupportMigration.migriere` folgt HIER und nur `if v == nil` — in der Vorschau gibt es keinen
+        // alten Ordner, und `AppPfade.altBasis()` ist mit `BRAIN_APP_SUPPORT` (setzt `VorschauModus`) ohnehin nil.
         let p = v?.pfade ?? AppPfade.standard()
         let l = AppLog(pfade: p)
         pfade = p
