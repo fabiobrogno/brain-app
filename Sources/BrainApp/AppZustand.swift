@@ -96,7 +96,8 @@ final class AppZustand: ObservableObject {
     /// Application-Support-Ordner der App.
     /// Die öffentliche GitHub-Client-ID (Info.plist `KortexGitHubClientID`) geht per Umgebung an die Werkstatt; die ID ist öffentlich (kein Client-Secret); leer/fehlt = Anmeldung ausgeblendet.
     private var werkstattUmgebung: [String: String] {
-        var env = umgebung.merging(["BRAIN_APP_SUPPORT": pfade.basis.path]) { _, neu in neu }
+        // BRAIN_MCP_NODE: der stabile Node-Pfad (<support>/bin/node), den die Werkstatt in neue MCP-Einträge schreibt.
+        var env = umgebung.merging(["BRAIN_APP_SUPPORT": pfade.basis.path, "BRAIN_MCP_NODE": pfade.node.path]) { _, neu in neu }
         if let id = Bundle.main.object(forInfoDictionaryKey: "KortexGitHubClientID") as? String, !id.isEmpty { env["KORTEX_GITHUB_CLIENT_ID"] = id }
         return env
     }
@@ -200,8 +201,9 @@ final class AppZustand: ObservableObject {
         }
         log.schreibe("start")
         log.schreibe(supportMigration.protokollZeile)
-        if let alt = supportAltBasis, let text = supportMigration.hinweis(alt: alt, neu: pfade.basis) {
-            zeigeHinweis(titel: "Kortex: Ordner „Brain“ nicht übernommen", text: text)
+        if let alt = supportAltBasis,
+           let text = SupportMigration.anzuzeigenderHinweis(supportMigration, alt: alt, neu: pfade.basis, merker: pfade.ordnerHinweisMerker) {
+            zeigeHinweis(titel: "Kortex: Hinweis zum Ordner „Brain“", text: text)
         }
         // Testschalter (Selbstfoto): abgelehnte Werte ins Log, Erscheinungsbild gilt gleich für die ganze App.
         for hinweis in argumente.hinweise { log.schreibe(hinweis) }

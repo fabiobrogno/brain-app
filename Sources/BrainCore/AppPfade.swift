@@ -11,12 +11,19 @@ public struct AppPfade: Sendable, Equatable {
     public static let ordnerName = "Kortex"
     public static let altOrdnerName = "Brain"
 
-    /// `BRAIN_APP_SUPPORT` (nur absolute Pfade) lenkt für Tests und Rauchtests auf einen eigenen Ordner um.
-    public static func standard(umgebung: [String: String] = ProcessInfo.processInfo.environment) -> AppPfade {
-        if let test = umgebung["BRAIN_APP_SUPPORT"], test.hasPrefix("/") {
-            return AppPfade(basis: URL(fileURLWithPath: test, isDirectory: true))
-        }
+    /// `BRAIN_APP_SUPPORT` lenkt für Tests und Rauchtests auf einen eigenen Ordner um. Ein relativer Wert wird auf den
+    /// Arbeitsordner bezogen (nie stillschweigend verworfen: sonst würde ein Testlauf den ECHTEN Support-Ordner nutzen).
+    public static func standard(umgebung: [String: String] = ProcessInfo.processInfo.environment,
+                                arbeitsordner: String = FileManager.default.currentDirectoryPath) -> AppPfade {
+        if let test = umlenkung(umgebung, arbeitsordner: arbeitsordner) { return AppPfade(basis: test) }
         return AppPfade(basis: applicationSupport().appendingPathComponent(ordnerName, isDirectory: true))
+    }
+
+    /// Der Ordner aus `BRAIN_APP_SUPPORT` (absolut gemacht, bereinigt) oder nil, wenn die Variable fehlt oder leer ist.
+    static func umlenkung(_ umgebung: [String: String], arbeitsordner: String) -> URL? {
+        guard let wert = umgebung["BRAIN_APP_SUPPORT"], !wert.isEmpty else { return nil }
+        let absolut = wert.hasPrefix("/") ? wert : arbeitsordner + "/" + wert
+        return URL(fileURLWithPath: absolut, isDirectory: true).standardizedFileURL
     }
 
     public static func applicationSupport() -> URL {
@@ -26,7 +33,7 @@ public struct AppPfade: Sendable, Equatable {
     /// Der frühere Support-Ordner (`…/Application Support/Brain`) — nil, wenn `BRAIN_APP_SUPPORT` auf einen eigenen Ordner
     /// umlenkt (Tests, Rauchtests: dort wird nie migriert und der echte Ordner nie angefasst).
     public static func altBasis(umgebung: [String: String] = ProcessInfo.processInfo.environment) -> URL? {
-        if let test = umgebung["BRAIN_APP_SUPPORT"], test.hasPrefix("/") { return nil }
+        if umlenkung(umgebung, arbeitsordner: "/") != nil { return nil }
         return applicationSupport().appendingPathComponent(altOrdnerName, isDirectory: true)
     }
 
@@ -44,6 +51,8 @@ public struct AppPfade: Sendable, Equatable {
     public var kern: URL { binOrdner.appendingPathComponent("kern") }
     /// Der Starter `kortex`: führt `bin/node bin/kern/brain.mjs` mit allen Argumenten aus.
     public var starter: URL { binOrdner.appendingPathComponent("kortex") }
+    /// Merker „Hinweis zu den zwei Ordnern Brain/Kortex wurde schon gezeigt“ (`SupportMigration.anzuzeigenderHinweis`).
+    public var ordnerHinweisMerker: URL { basis.appendingPathComponent(".brain-ordner-hinweis-gezeigt") }
     public var logs: URL { basis.appendingPathComponent("logs", isDirectory: true) }
 
     public func legeAn() throws {

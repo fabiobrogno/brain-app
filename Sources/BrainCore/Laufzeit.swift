@@ -150,7 +150,8 @@ public struct Laufzeit: Sendable {
             let kopiert = try Self.sha256(zielNode)
             guard kopiert == m.sha256 else { throw LaufzeitFehler.pruefsummeFalsch(erwartet: m.sha256, ist: kopiert) }
         }
-        try Self.setzeSymlink(pfade.node, auf: zielNode)
+        // relativ (`../node/<ver>/bin/node`): bleibt gültig, auch wenn der Support-Ordner umbenannt oder verschoben wird
+        try Self.setzeSymlink(pfade.node, nach: "../node/\(m.version)/bin/node")
         return pfade.node
     }
 
@@ -198,22 +199,24 @@ public struct Laufzeit: Sendable {
                 guard rename(tmp.path, ziel.path) == 0 else { throw LaufzeitFehler.symlinkFehlgeschlagen }
             }
         }
-        try Self.setzeSymlink(pfade.kern, auf: ziel)
+        try Self.setzeSymlink(pfade.kern, nach: "../kern/\(appVersion)") // relativ, siehe Node
         raeumeKernAuf(neu: appVersion, vorige: bisher)
         return ziel
     }
 
-    /// Ordnername, auf den `bin/kern` gerade zeigt (nur wenn er in `kern/` liegt).
-    private func aktuelleKernVersion() -> String? {
+    /// Ordnername, auf den `bin/kern` gerade zeigt (nur wenn er in `kern/` liegt). Relative Ziele (`../kern/<ver>`) werden
+    /// auf `bin/` bezogen, absolute (ältere Installationen) gelten wie sie sind.
+    func aktuelleKernVersion() -> String? {
         guard let ziel = try? FileManager.default.destinationOfSymbolicLink(atPath: pfade.kern.path) else { return nil }
-        let url = URL(fileURLWithPath: ziel)
-        guard url.deletingLastPathComponent().standardizedFileURL.path == pfade.kernOrdner.standardizedFileURL.path else { return nil }
-        return url.lastPathComponent
+        let url = ziel.hasPrefix("/") ? URL(fileURLWithPath: ziel) : URL(fileURLWithPath: ziel, relativeTo: pfade.binOrdner)
+        let norm = url.standardizedFileURL
+        guard norm.deletingLastPathComponent().path == pfade.kernOrdner.standardizedFileURL.path else { return nil }
+        return norm.lastPathComponent
     }
 
     /// Nach erfolgreichem Umschalten: behalte die neue und die vorige Version; alles andere und liegengebliebene
-    /// Arbeitsordner (älter als eine Stunde) weg. Zeigte `bin/kern` schon auf die neue Version (erneuter Lauf), bleibt alles liegen —
-    /// die vorige Version ist dann nicht mehr bekannt.
+    /// Arbeitsordner (älter als eine Stunde) weg. Ist die vorige Version nicht bekannt (erste Installation, `bin/kern` zeigte
+    /// nirgends hin oder schon auf die neue Version), werden KEINE Versionen gelöscht — lieber ein Ordner zu viel.
     private func raeumeKernAuf(neu: String, vorige: String?) {
         let fm = FileManager.default
         guard let inhalt = try? fm.contentsOfDirectory(at: pfade.kernOrdner, includingPropertiesForKeys: [.contentModificationDateKey], options: []) else { return }
@@ -223,7 +226,7 @@ public struct Laufzeit: Sendable {
             if name.hasPrefix(".") {
                 let datum = (try? eintrag.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date()
                 if datum < grenze { try? fm.removeItem(at: eintrag) }
-            } else if vorige != neu, name != neu, name != vorige {
+            } else if let vorige, vorige != neu, name != neu, name != vorige {
                 try? fm.removeItem(at: eintrag)
             }
         }
@@ -311,11 +314,12 @@ public struct Laufzeit: Sendable {
     /// 1 % enger Lesezugriffe, beim Tausch mit sofortigem Löschen noch bei rund 0,003 %, beim Tausch ohne sofortiges Löschen nie.
     /// Ist an der Stelle etwas anderes (Datei, Ordner), tauscht nichts: `rename(2)` ersetzt eine Datei oder scheitert bei einem
     /// Ordner — ein Ordner geht so nie verloren.
-    static func setzeSymlink(_ link: URL, auf ziel: URL, schonfrist: TimeInterval = 2) throws {
+    /// `ziel` ist der Inhalt des Links (üblich relativ zum Ordner des Links, z. B. `../kern/1.0.0`).
+    static func setzeSymlink(_ link: URL, nach ziel: String, schonfrist: TimeInterval = 2) throws {
         let fm = FileManager.default
         raeumeAlteSymlinksAuf(neben: link, aelterAls: schonfrist)
         let neu = link.deletingLastPathComponent().appendingPathComponent(".\(link.lastPathComponent).\(UUID().uuidString)")
-        try fm.createSymbolicLink(atPath: neu.path, withDestinationPath: ziel.path)
+        try fm.createSymbolicLink(atPath: neu.path, withDestinationPath: ziel)
         var st = stat()
         let istSymlink = lstat(link.path, &st) == 0 && (st.st_mode & S_IFMT) == S_IFLNK
         if istSymlink, renamex_np(neu.path, link.path, UInt32(RENAME_SWAP)) == 0 {

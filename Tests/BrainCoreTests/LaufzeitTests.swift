@@ -281,26 +281,75 @@ private func starte(_ url: URL, _ args: [String] = []) -> Lauf {
     #expect(FileManager.default.fileExists(atPath: frisch.path)) // könnte zu einem laufenden Kopieren gehören
 }
 
+@Test func nodeUndKernLinksSindRelativ() throws {
+    // relativ: gültig auch nach Umbenennen/Verschieben des Support-Ordners (Brain → Kortex, Rückwärts-Link)
+    let p = AppPfade(basis: tempOrdner("Support"))
+    let paket = Paket()
+    paket.kern(kernDateien)
+    try paket.laufzeit(p, version: "1.0.0").installiere()
+    #expect(ziel(p.node) == "../node/v24.0.0/bin/node")
+    #expect(ziel(p.kern) == "../kern/1.0.0")
+    let verschoben = p.basis.deletingLastPathComponent().appendingPathComponent("Anders", isDirectory: true)
+    try FileManager.default.moveItem(at: p.basis, to: verschoben)
+    let neu = AppPfade(basis: verschoben)
+    #expect(FileManager.default.isExecutableFile(atPath: neu.node.path))
+    #expect(try String(contentsOf: neu.kern.appendingPathComponent("brain.mjs"), encoding: .utf8) == kernDateien["brain.mjs"])
+}
+
+@Test func relativeAlteUndAbsoluteAelterLinksWerdenErkannt() throws {
+    let p = AppPfade(basis: tempOrdner())
+    let paket = Paket()
+    paket.kern(kernDateien)
+    let l = paket.laufzeit(p, version: "1.0.0")
+    try l.installiere()
+    #expect(l.aktuelleKernVersion() == "1.0.0")
+    // Link einer früheren Installation: absolut
+    try FileManager.default.removeItem(at: p.kern)
+    try FileManager.default.createSymbolicLink(atPath: p.kern.path, withDestinationPath: p.kernOrdner.appendingPathComponent("1.0.0").path)
+    #expect(l.aktuelleKernVersion() == "1.0.0")
+    // zeigt irgendwohin außerhalb von kern/: unbekannt
+    try FileManager.default.removeItem(at: p.kern)
+    try FileManager.default.createSymbolicLink(atPath: p.kern.path, withDestinationPath: "/tmp")
+    #expect(l.aktuelleKernVersion() == nil)
+}
+
+@Test func unbekannteVorigeVersionLoeschtNichts() throws {
+    // bin/kern fehlt oder zeigt woandershin: vorhandene Version-Ordner bleiben alle liegen
+    let p = AppPfade(basis: tempOrdner())
+    let paket = Paket()
+    paket.kern(kernDateien)
+    try p.legeAn()
+    for v in ["0.8.0", "0.9.0"] { try FileManager.default.createDirectory(at: p.kernOrdner.appendingPathComponent(v), withIntermediateDirectories: true) }
+    try FileManager.default.createSymbolicLink(atPath: p.kern.path, withDestinationPath: "/tmp") // zeigt außerhalb von kern/
+    try paket.laufzeit(p, version: "1.0.0").installiere()
+    #expect(kernVersionen(p) == ["0.8.0", "0.9.0", "1.0.0"])
+    #expect(ziel(p.kern) == "../kern/1.0.0")
+    // ab jetzt ist die vorige bekannt: die nächste Version räumt auf (außer neu + vorige)
+    paket.kern(["brain.mjs": "v2\n"])
+    try paket.laufzeit(p, version: "2.0.0").installiere()
+    #expect(kernVersionen(p) == ["1.0.0", "2.0.0"])
+}
+
 @Test func symlinkWirdAtomarUmgeschaltet() async throws {
     // Ein Leser, der den Link dauernd auflöst, sieht beim Umschalten nie „fehlt“ — nur das alte oder das neue Ziel.
     let ordner = tempOrdner()
     let a = ordner.appendingPathComponent("a"), b = ordner.appendingPathComponent("b"), link = ordner.appendingPathComponent("kern")
     for d in [a, b] { try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true) }
-    try Laufzeit.setzeSymlink(link, auf: a)
+    try Laufzeit.setzeSymlink(link, nach: "a")
     let stop = Atomic()
     let leser = Task.detached { () -> Int in
         var fehler = 0
         while !stop.wert {
-            guard let z = try? FileManager.default.destinationOfSymbolicLink(atPath: link.path), z == a.path || z == b.path else { fehler += 1; continue }
+            guard let z = try? FileManager.default.destinationOfSymbolicLink(atPath: link.path), z == "a" || z == "b" else { fehler += 1; continue }
         }
         return fehler
     }
-    for i in 0..<3000 { try Laufzeit.setzeSymlink(link, auf: i.isMultiple(of: 2) ? b : a, schonfrist: 0.05) }
+    for i in 0..<3000 { try Laufzeit.setzeSymlink(link, nach: i.isMultiple(of: 2) ? "b" : "a", schonfrist: 0.05) }
     stop.setze()
     #expect(await leser.value == 0)
     // abgelöste Links werden erst beim nächsten Umschalten (nach der Schonfrist) entfernt: danach bleibt höchstens der letzte übrig
     try await Task.sleep(for: .milliseconds(150))
-    try Laufzeit.setzeSymlink(link, auf: a, schonfrist: 0.05)
+    try Laufzeit.setzeSymlink(link, nach: "a", schonfrist: 0.05)
     let reste = ((try? FileManager.default.contentsOfDirectory(atPath: ordner.path)) ?? []).sorted().filter { $0 != "a" && $0 != "b" && $0 != "kern" }
     #expect(reste.count == 1 && reste[0].hasPrefix(".kern."), "\(reste)")
 }
