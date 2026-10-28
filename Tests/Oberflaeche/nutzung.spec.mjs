@@ -30,6 +30,15 @@ test("ohne Protokoll: ruhiger Hinweis statt Fehler, nichts als „nie abgerufen�
   await expect(d.locator(".fehlertext")).toHaveCount(0);
 });
 
+test("nicht lesbares Protokoll: der Fehler steht da, nicht „noch keine Abrufe“", async ({ page }) => {
+  mkdirSync(join(vault, ".logs", "mcp.log"), { recursive: true }); // Ordner statt Datei
+  await start(page);
+  await page.locator('[data-st="nutzung"]').first().click();
+  const d = page.locator(".dialog");
+  await expect(d.locator('[data-fehler="nutzung"]')).toContainText("Das Protokoll lässt sich nicht lesen");
+  await expect(d.locator('[data-leer="nutzung"]')).toHaveCount(0);
+});
+
 test("mit Protokoll: meistgenutzt mit Anzahl, nie abgerufen ohne generierte Seiten; Klick öffnet die Seite", async ({ page }) => {
   mkdirSync(join(vault, ".logs"));
   writeFileSync(join(vault, ".logs", "mcp.log"), [

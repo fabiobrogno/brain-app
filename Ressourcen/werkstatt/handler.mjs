@@ -355,7 +355,7 @@ export function erzeugeHandler(o) {
     if (!aktivPfad || echterPfad(aktivPfad) !== v.wurzel) {
       throw new HttpFehler(409, `Dieser Vault ist in Brain Studio nicht als aktiver Vault eingetragen — ${wer} würde ihn so nicht finden. Wähle ihn zuerst aus.`, { art: "nicht-aktiv" });
     }
-    const env = kindUmgebung({ BRAIN_APP_SUPPORT: vaultOpt.support || supportOrdner() });
+    const env = kindUmgebung({ BRAIN_APP_SUPPORT: vaultOpt.support || supportOrdner(), BRAIN_NUTZUNG: "aus" }); // Probe und Selbsttest sind keine KI-Nutzung
     delete env.BRAIN_VAULT;
     const frist = neueFrist(fristen.probe);
     const nachricht = (m) => JSON.stringify({ jsonrpc: "2.0", ...m }) + "\n";

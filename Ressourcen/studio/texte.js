@@ -173,6 +173,7 @@ export const T = {
     lokal: "Nur auf diesem Rechner protokolliert (.logs/mcp.log), ohne Suchbegriffe. Nichts wird gesendet.",
     keine: "Noch keine Abrufe protokolliert. Sobald deine KI über die Brain-Verbindung etwas sucht oder liest, erscheint es hier.",
     fehler: "Die Auswertung ist gerade nicht verfügbar.",
+    protokollFehler: (grund) => `Das Protokoll lässt sich nicht lesen: ${grund}`,
     kopf: (n, seit) => `${n} ${n === 1 ? "Aufruf" : "Aufrufe"} seit ${seit}`,
     meist: "Am häufigsten abgerufen", meistLeer: "Noch keine Seite abgerufen.",
     nie: "Nie abgerufen", nieHinweis: (n, gesamt) => `${n < gesamt ? `${n} von ${gesamt}` : gesamt} Wiki-Seite${gesamt === 1 ? "" : "n"} seit Beginn des Protokolls (es behält nur die letzten Aufrufe).`,

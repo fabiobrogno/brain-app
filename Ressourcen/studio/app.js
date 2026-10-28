@@ -1266,6 +1266,7 @@ async function oeffneNutzung() {
     h("span", { klasse: "leise", text: rechts || "" }));
   const rumpf = [h("p", { klasse: "leise", text: N.lokal })];
   if (fehler || !w) rumpf.push(h("p", { klasse: "fehlertext", text: N.fehler }));
+  else if (w.fehler) rumpf.push(h("p", { klasse: "fehlertext", "data-fehler": "nutzung", text: N.protokollFehler(w.fehler) }));
   else if (!w.protokoll) rumpf.push(h("p", { "data-leer": "nutzung", text: N.keine }));
   else {
     rumpf.push(h("p", { text: N.kopf(w.aufrufe, datumKurz(w.seit)) }));

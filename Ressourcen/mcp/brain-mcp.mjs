@@ -158,7 +158,9 @@ export async function bearbeite(v, msg, version = "0.2.0") {
       if (typeof p.name !== "string" || !WERKZEUGE.some((w) => w.name === p.name)) return nein(-32602, `Unbekanntes Werkzeug: ${String(p.name)}`);
       const spur = { seiten: [] }, t0 = Date.now();
       // Lokales Nutzungsprotokoll (.logs/mcp.log): protokolliere() wirft nie; der äußere try deckt auch das Auflösen des Vaults ab.
+      // BRAIN_NUTZUNG=aus: die App-eigene Probe-Frage und der Selbsttest zählen nicht als KI-Nutzung (und wer nichts protokollieren will, schaltet es so ab).
       const merke = (antwort) => {
+        if (process.env.BRAIN_NUTZUNG === "aus") return antwort;
         try { const vv = typeof v === "function" ? v() : v; if (vv && vv.wurzel) protokolliere(vv.wurzel, { werkzeug: p.name, seiten: antwort && antwort.isError ? [] : spur.seiten, ok: !(antwort && antwort.isError), ms: Date.now() - t0 }); } catch { /* Beiwerk */ }
         return antwort;
       };

@@ -1,6 +1,6 @@
 import test, { after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, writeFileSync, chmodSync, readdirSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, chmodSync, readdirSync, symlinkSync, statSync, existsSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
@@ -40,15 +40,16 @@ test("protokolliere: wirft nie (.logs ist eine Datei, Ordner schreibgeschützt, 
 test("Rotation: über 2000 Zeilen und 150 KB → die letzten 1000 bleiben, keine tmp-Reste; kleine Dateien werden nie gekürzt", () => {
   const d = tmp();
   mkdirSync(join(d, ".logs"));
-  const lang = encodeURIComponent(Array.from({ length: 20 }, (_, i) => `09_wiki/ein/langer/ordner/pfad/seite_${i}.md`).join("\t"));
+  const lang = encodeURIComponent(Array.from({ length: 4 }, (_, i) => `09_wiki/ein/langer/ordner/pfad/seite_${i}.md`).join("\t"));
   const zeile = (i) => `2026-10-28T00:00:00 sid=mcp werkzeug=brain_suchen hits=${lang} ms=${i} ok=1`;
   writeFileSync(LOG(d), Array.from({ length: 2100 }, (_, i) => zeile(i)).join("\n") + "\n");
+  assert.ok(statSync(LOG(d)).size > 150_000 && statSync(LOG(d)).size < 1_000_000, "Zeilenrotation, nicht Größenrotation");
   N.protokolliere(d, { werkzeug: "brain_lesen", seiten: ["neu.md"], jetzt: new Date("2026-10-29T00:00:00Z") });
   const z = zeilen(d);
   assert.equal(z.length, 1000);
   assert.match(z.at(-1), /^2026-10-29T00:00:00 .*hits=neu\.md/);
   assert.match(z[0], / ms=1101 /); // 2101 Zeilen, die letzten 1000 → die erste behaltene ist die mit ms=1101
-  assert.deepEqual(readdirSync(join(d, ".logs")), ["mcp.log"]);
+  assert.deepEqual(readdirSync(join(d, ".logs")).sort(), [".gitignore", "mcp.log"], "keine tmp-Reste");
   const k = tmp();
   for (let i = 0; i < 50; i++) N.protokolliere(k, { werkzeug: "brain_vaults" });
   assert.equal(zeilen(k).length, 50);
@@ -72,7 +73,7 @@ test("Auswertung: meistgenutzt (Anzahl, zuletzt), nie genutzt nur aus der Wiki-L
 
 test("Auswertung ohne Protokoll: neutral (protokoll false, keine Liste „nie genutzt“, kein Fehler); Obergrenzen top/maxNie", () => {
   const d = tmp();
-  assert.deepEqual(N.wertAus(d, ["09_wiki/a.md"]), { protokoll: false, aufrufe: 0, seit: null, bis: null, werkzeuge: {}, meistgenutzt: [], nieGenutzt: [], nieGenutztGesamt: 0, wikiSeiten: 1 });
+  assert.deepEqual(N.wertAus(d, ["09_wiki/a.md"]), { protokoll: false, fehler: null, aufrufe: 0, seit: null, bis: null, werkzeuge: {}, meistgenutzt: [], nieGenutzt: [], nieGenutztGesamt: 0, wikiSeiten: 1 });
   for (let i = 0; i < 15; i++) N.protokolliere(d, { werkzeug: "brain_lesen", seiten: [`09_wiki/s${i}.md`] });
   const viele = Array.from({ length: 80 }, (_, i) => `09_wiki/n${String(i).padStart(2, "0")}.md`);
   const w = N.wertAus(d, viele);
