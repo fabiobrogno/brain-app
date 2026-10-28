@@ -1,0 +1,73 @@
+// .tools/status.mjs — „brain status [--json]“: Gesamtzustand in einem Blick, für die Menüleiste der Brain-App
+// (App-Spec §5.3/§10) und für Menschen. Schreibt nur abgeleitete Caches (git-ignoriert, z. B.
+// .logs/pflege-bericht.json), nie Wissen; 0 Tokens. Zustand: problem (✕) > hinweis (⚠) > ok (✓).
+// Hinweis: zahlen.zuTun enthält die Vorschläge bereits (so rechnet auch die App damit).
+import { readFileSync, existsSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { configFehler, istQuellVault } from "./pfade.mjs";
+import { aktuellerBericht } from "./pflege.mjs";
+import { anzahlVorschlaege } from "./vorschlaege.mjs";
+import { leseAutomatik } from "./einstellungen.mjs";
+import { leseLetzter } from "./tageslauf/protokoll.mjs";
+import { sichtbare } from "./rueckfragen.mjs";
+
+const T = dirname(fileURLToPath(import.meta.url));
+const SYMBOL = { ok: "✓", hinweis: "⚠", problem: "✕" };
+
+export function bewerte({ fehler, berichtFehlt, zuTun, vorschlaege }) {
+  if (fehler) return "problem";
+  if (berichtFehlt || zuTun > 0 || vorschlaege > 0) return "hinweis";
+  return "ok";
+}
+
+export async function brainStatus(vault, { jetzt = Date.now() } = {}) {
+  const meldungen = [];
+  let fehler = false, berichtFehlt = false;
+  const version = (() => { try { return readFileSync(join(T, "VERSION"), "utf8").trim(); } catch { return "?"; } })();
+  if (!existsSync(join(vault, ".tools", "brain.mjs"))) {
+    fehler = true;
+    meldungen.push("Das ist kein Brain-Ordner — die Brain-Werkzeuge fehlen.");
+  }
+  if (configFehler(vault)) {
+    fehler = true;
+    meldungen.push("Die Einstellungsdatei brain.config.json ist beschädigt — sag „repariere meine Brain-Einstellungen“.");
+  }
+  let vorschlaege = 0, konflikte = 0, abgelaufen = 0, zuTun = 0;
+  try { vorschlaege = anzahlVorschlaege(vault); } catch { /* ohne Vorschlagsordner: 0 */ }
+  try {
+    const b = await aktuellerBericht(vault, { jetzt });
+    const zahl = (s) => b.posten.find((p) => p.schluessel === s)?.anzahl ?? 0;
+    konflikte = zahl("konflikte");
+    abgelaufen = zahl("abgelaufen");
+    zuTun = b.zuTun ?? 0;
+  } catch {
+    berichtFehlt = true;
+    meldungen.push("Der Pflegebericht konnte gerade nicht erstellt werden.");
+  }
+  let rueckfragen = 0, tageslauf = null;
+  try {
+    const s = sichtbare(vault, { jetzt, nutzung: new Map() });
+    rueckfragen = s.fragen.length + s.wartend;
+    const l = leseLetzter(vault);
+    tageslauf = { schalter: leseAutomatik(vault).werte.tageslauf, modus: l?.modus ?? null, status: l?.status ?? null, zeit: l?.zeit ?? null,
+      letzterErfolg: l?.letzterErfolg ?? null, autostufe: l?.autostufe ?? "normal", lernmodus: l?.lernmodus === true, fehlerquote: l?.fehlerquote ?? null, zahlen: l?.zahlen ?? null };
+  } catch { /* Status bleibt ohne Tageslauf-Block */ }
+  return {
+    version, quellVault: istQuellVault(vault),
+    zustand: bewerte({ fehler, berichtFehlt, zuTun, vorschlaege }),
+    meldungen, zahlen: { vorschlaege, konflikte, abgelaufen, zuTun, rueckfragen }, tageslauf,
+  };
+}
+
+export function statusText(s) {
+  const z = s.zahlen;
+  return [
+    `${SYMBOL[s.zustand] || "?"} Brain ${s.version}${s.quellVault ? " (Entwickler-Brain)" : ""}`,
+    `Vorschläge: ${z.vorschlaege} · Konflikte: ${z.konflikte} · abgelaufen: ${z.abgelaufen} · zu tun: ${z.zuTun}`,
+    ...(s.tageslauf && s.tageslauf.schalter !== "aus"
+      ? [`Tageslauf: ${s.tageslauf.schalter} · zuletzt ${s.tageslauf.zeit ? s.tageslauf.zeit.slice(0, 10) : "noch nie"}${s.tageslauf.status ? ` (${s.tageslauf.status})` : ""} · Rückfragen offen: ${z.rueckfragen ?? 0} · Autostufe ${s.tageslauf.autostufe}${s.tageslauf.lernmodus ? " (Lernmodus)" : ""}`]
+      : []),
+    ...s.meldungen,
+  ].join("\n");
+}

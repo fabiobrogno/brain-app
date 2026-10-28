@@ -147,10 +147,14 @@ export function erzeugeHandler(o) {
         throw new HttpFehler(405, "Diese Methode ist hier nicht erlaubt.");
       case "/api/neu": nur("POST"); return V().neu(eingabe());
       case "/api/merken": nur("POST"); return V().merken(eingabe());
+      case "/api/posteingang/verwerfen": nur("POST"); return V().posteingangVerwerfen(eingabe());
+      case "/api/posteingang/spaeter": nur("POST"); return V().posteingangSpaeter(eingabe());
+      case "/api/posteingang/uebernehmen": nur("POST"); return V().posteingangUebernehmen(eingabe());
       case "/api/suche": nur("GET"); return V().suche(q.get("q"));
       case "/api/pruefung": nur("GET"); return V().pruefung(q.get("pfad"));
       case "/api/gesundheit": nur("GET"); return V().gesundheit();
       case "/api/rueckfragen": nur("GET"); return V().rueckfragen();
+      case "/api/nutzung": nur("GET"); return V().nutzung();
       case "/api/notizen": nur("GET"); return V().notizen();
       case "/api/notiz/kontext": nur("GET"); return V().notizKontext(q.get("pfad"));
       case "/api/typen": nur("GET"); return V().typen();
@@ -199,6 +203,7 @@ export function erzeugeHandler(o) {
         nur("GET"); return github.status();
       case "/api/github/konto": nur("GET"); return github.konto();
       case "/api/github/abmelden": nur("POST"); return github.abmelden();
+      case "/api/github/abbrechen": nur("POST"); return github.abbrechen(); // nur das Warten beenden, nie den Schlüsselbund anfassen
       case "/api/stopp": nur("POST"); return { __stopp: true };
       default: throw new HttpFehler(404, "nicht gefunden");
     }
@@ -354,7 +359,7 @@ export function erzeugeHandler(o) {
     if (!aktivPfad || echterPfad(aktivPfad) !== v.wurzel) {
       throw new HttpFehler(409, `Dieser Vault ist in Brain Studio nicht als aktiver Vault eingetragen — ${wer} würde ihn so nicht finden. Wähle ihn zuerst aus.`, { art: "nicht-aktiv" });
     }
-    const env = kindUmgebung({ BRAIN_APP_SUPPORT: vaultOpt.support || supportOrdner() });
+    const env = kindUmgebung({ BRAIN_APP_SUPPORT: vaultOpt.support || supportOrdner(), BRAIN_NUTZUNG: "aus" }); // Probe und Selbsttest sind keine KI-Nutzung
     delete env.BRAIN_VAULT;
     const frist = neueFrist(fristen.probe);
     const nachricht = (m) => JSON.stringify({ jsonrpc: "2.0", ...m }) + "\n";

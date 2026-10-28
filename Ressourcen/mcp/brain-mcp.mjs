@@ -11,6 +11,7 @@ import { leseVaults, aktiverVaultPfad } from "../gemeinsam/vaults.mjs";
 import { beendeLaufendes } from "../gemeinsam/git.mjs";
 import { bereinigePfad } from "../gemeinsam/basis.mjs";
 import { leseKopf } from "../gemeinsam/pruefung.mjs";
+import { protokolliere } from "../gemeinsam/nutzung.mjs";
 
 const VERSIONEN = ["2025-06-18", "2025-03-26", "2024-11-05"];
 export const WERKZEUGE = [
@@ -49,7 +50,7 @@ function vaultText(v) {
 const KONTEXT_MAX = 8, KONTEXT_LIMIT = 6000, KONTEXT_DATEI = 256 * 1024;
 const norm = (x) => String(x || "").toLowerCase().replace(/\\/g, "/").replace(/^\.?\/+|\/+$/g, "");
 const liste = (w) => String(w || "").replace(/^\[|\]$/g, "").split(",").map((x) => norm(x.trim().replace(/^(["'])(.*)\1$/, "$2"))).filter(Boolean);
-function kontextText(v, projekt, cwd) {
+function kontextText(v, projekt, cwd, spur) {
   const name = norm(projekt).split("/").pop();
   const cw = norm(cwd);
   const treffer = [];
@@ -78,12 +79,14 @@ function kontextText(v, projekt, cwd) {
     const z = `${zeilen.length + 1}. ${t.pfad} — ${t.titel}\n   Stand ${t.stand} · Prüf-Stufe: ${STUFE[t.stufe]}${t.verfallen ? " · Stand verfallen" : ""}${t.auszug ? `\n   ${t.auszug}` : ""}`;
     if (zeilen.length >= 3 && laenge + z.length > KONTEXT_LIMIT) break;
     zeilen.push(z.slice(0, KONTEXT_LIMIT)); laenge += z.length + 1;
+    spur.seiten.push(t.pfad);
   }
   return `Brain-Kontext zu „${projekt}“ (${zeilen.length} Seite(n); Details mit brain_lesen):\n${zeilen.join("\n")}`.slice(0, KONTEXT_LIMIT);
 }
 
 // v: ein geöffneter Vault, eine Funktion, die den aktuellen liefert (Server ohne Vault-Argument), oder null.
-async function rufe(vArg, name, a) {
+// spur.seiten sammelt die Seiten, die diese Antwort der KI nennt (für das lokale Nutzungsprotokoll, nutzung.mjs).
+async function rufe(vArg, name, a, spur = { seiten: [] }) {
   const v = typeof vArg === "function" ? vArg() : vArg;
   if (name === "brain_vaults") return text(vaultText(v));
   if (!v) return fehlerText(KEIN_VAULT);
@@ -92,16 +95,18 @@ async function rufe(vArg, name, a) {
     case "brain_suchen": {
       const r = v.suchenFuerKi(arg("frage"), a.anzahl);
       // _meta ist für Clients tabu (die KI sieht nur den Text); die Probe-Frage der App liest hier die Treffer strukturiert statt den Text zu zerlegen.
+      spur.seiten = r.treffer.map((t) => t.pfad);
       return { ...text(r.text), _meta: { "brain-studio/treffer": r.treffer } };
     }
     case "brain_lesen": {
       const d = v.lies(arg("pfad"));
       const p = v.pruefung(d.pfad);
+      spur.seiten = [d.pfad];
       const kopf = [`Pfad: ${d.pfad}`, `Geändert: ${zeit(d.geaendert)}`, `Prüf-Stufe: ${STUFE[p.stufe]} — ${p.zusammenfassung}`,
         ...p.signale.map((s) => `  · ${s.text}${s.zeile ? ` (Zeile ${s.zeile})` : ""}`), d.schreibschutz ? "Schreibgeschützt (generiert oder kein Text)." : ""].filter(Boolean);
       return text(`${kopf.join("\n")}\n\n---\n${d.inhalt}`);
     }
-    case "brain_kontext": return text(kontextText(v, arg("projekt"), typeof a.cwd === "string" ? a.cwd : ""));
+    case "brain_kontext": return text(kontextText(v, arg("projekt"), typeof a.cwd === "string" ? a.cwd : "", spur));
     case "brain_merken": {
       const r = v.merken({ text: arg("text"), titel: typeof a.titel === "string" ? a.titel : undefined });
       return text(`Gemerkt in ${r.pfad}. Erst /ingest macht daraus Wissen im Wiki.`);
@@ -151,12 +156,20 @@ export async function bearbeite(v, msg, version = "0.2.0") {
     case "tools/call": {
       const p = msg.params || {};
       if (typeof p.name !== "string" || !WERKZEUGE.some((w) => w.name === p.name)) return nein(-32602, `Unbekanntes Werkzeug: ${String(p.name)}`);
+      const spur = { seiten: [] }, t0 = Date.now();
+      // Lokales Nutzungsprotokoll (.logs/mcp.log): protokolliere() wirft nie; der äußere try deckt auch das Auflösen des Vaults ab.
+      // BRAIN_NUTZUNG=aus: die App-eigene Probe-Frage und der Selbsttest zählen nicht als KI-Nutzung (und wer nichts protokollieren will, schaltet es so ab).
+      const merke = (antwort) => {
+        if (process.env.BRAIN_NUTZUNG === "aus") return antwort;
+        try { const vv = typeof v === "function" ? v() : v; if (vv && vv.wurzel) protokolliere(vv.wurzel, { werkzeug: p.name, seiten: antwort && antwort.isError ? [] : spur.seiten, ok: !(antwort && antwort.isError), ms: Date.now() - t0 }); } catch { /* Beiwerk */ }
+        return antwort;
+      };
       try {
-        return ok(await rufe(v, p.name, p.arguments && typeof p.arguments === "object" ? p.arguments : {}));
+        return ok(merke(await rufe(v, p.name, p.arguments && typeof p.arguments === "object" ? p.arguments : {}, spur)));
       } catch (e) {
-        if (e instanceof HttpFehler) return ok(fehlerText(e.message));
+        if (e instanceof HttpFehler) return ok(merke(fehlerText(e.message)));
         process.stderr.write(`brain-mcp: ${(e && e.stack) || e}\n`);
-        return ok(fehlerText("Interner Fehler"));
+        return ok(merke(fehlerText("Interner Fehler")));
       }
     }
     default:

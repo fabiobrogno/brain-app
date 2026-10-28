@@ -10,6 +10,7 @@ Abgelegt vom CEO (FBL-117). Momentaufnahme aus Paperclip und GitHub. Gültig ble
 | [produktplan.md](produktplan.md) | Ideen der Produktrunde 2, nach Hebel sortiert | FBL-66, Dokument „Produktplan“ |
 | [roadmap-fbl-16.md](roadmap-fbl-16.md) | Phasen 0–5 und Prüfergebnis der Produktrunde 2 | FBL-16, Dokument „Roadmap“ |
 | [pruefliste-veroeffentlichung.md](pruefliste-veroeffentlichung.md) | Prüfliste „bereit zur Veröffentlichung“, Lizenz-Vorschlag | FBL-75 |
+| [stand-abend.md](stand-abend.md) | Nachtrag abends: Entscheidung „ein Repo, eine App“, gemergte und offene PRs, nächste Schritte | Claude Code |
 
 Specs und Pläne liegen schon im Repo: `docs/superpowers/specs/` (App-Design, Studio v2, Lernkreislauf) und `docs/superpowers/plans/` (M1, M2a, B1–B3).
 

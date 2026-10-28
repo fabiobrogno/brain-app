@@ -28,6 +28,9 @@ public struct StartArgumente: Equatable, Sendable {
     public var testBildWarten: Duration = .seconds(2)
     public var testErscheinungsbild: TestErscheinungsbild?
     public var testSkript: URL?
+    /// `--test-frischer-start`: Der Assistent „Kortex einrichten“ erscheint wie bei einem echten ersten Start (sonst zeigen ihn
+    /// Testläufe nie). Nur mit `BRAIN_APP_SUPPORT` auf einen eigenen (Temp-)Ordner — nie gegen den echten Support-Ordner.
+    public var frischerStart = false
     /// Logzeilen zu abgelehnten Testschaltern (leer, wenn alles in Ordnung war).
     public var hinweise: [String] = []
 
@@ -45,8 +48,12 @@ public struct StartArgumente: Equatable, Sendable {
     /// echten App: flüchtiger Web-Speicher und keine gemerkte Fensterposition — sonst schreibt jeder Testlauf in die Einstellungen
     /// (`io.github.fbrogno.brain`) und nach `~/Library/WebKit/…` der installierten App. Ein ungültiger Wert zählt nicht.
     public var fluechtig: Bool {
-        studioTestlauf || fensterOeffnen || schliessenNach != nil || beendenNach != nil
+        studioTestlauf || fensterOeffnen || schliessenNach != nil || beendenNach != nil || frischerStart
     }
+
+    /// Darf der Assistent „Kortex einrichten“ von selbst erscheinen? Nicht in Testläufen und nicht mit `--vault` — außer ein
+    /// Testlauf verlangt es ausdrücklich mit `--test-frischer-start` (der echte Support-Ordner bleibt dann unberührt, siehe oben).
+    public var assistentDarfErscheinen: Bool { vault == nil && (!fluechtig || frischerStart) }
 
     /// Größte erlaubte Fensterkante (Punkte) und längste Wartezeit (Sekunden) für die Testschalter.
     static let maxKante = 4000
@@ -98,6 +105,9 @@ public struct StartArgumente: Equatable, Sendable {
                 erscheinungsbild("--test-dunkel", .dunkel)
             case "--test-hell":
                 erscheinungsbild("--test-hell", .hell)
+            case "--test-frischer-start":
+                if let s = umgebung["BRAIN_APP_SUPPORT"], s.hasPrefix("/") { a.frischerStart = true }
+                else { ignoriert("--test-frischer-start", "nur-mit-BRAIN_APP_SUPPORT-auf-eigenen-Ordner") }
             case "--test-skript":
                 if let w = testWert("--test-skript") {
                     if umgebung["BRAIN_TESTMODUS"] != "1" { ignoriert("--test-skript", "nur-mit-BRAIN_TESTMODUS=1") }

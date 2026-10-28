@@ -7,6 +7,7 @@ import { h, dialog, dialogOffen, schliesseDialoge, toast, vorMinuten, dateiName,
 import { symbol } from "./symbole.js";
 import { diffAnsicht } from "./diff.js";
 import { oeffneMenue, schliesseMenue } from "./menue.js";
+import { baueAktionen, istZurueckgestellt, spaeterBis } from "./posteingang.js";
 import { datumKurz, datumLang, datumZeit, istDatumText, bytesText, setzeTypFarbe, typSymbol, typName, wortAnzahl, relativ, pluralisiere, vorschauText, typTextFarbe } from "./format.js";
 
 const $ = (id) => document.getElementById(id);
@@ -27,6 +28,7 @@ const S = {
   zuletzt: [], suche: { aktiv: false, treffer: [], auswahl: 0, frage: "" },
   infoAn: leseLokal("infoAn", true), roh: leseLokal("roh", false), breit: leseLokal("breit", false), theme: leseLokal("theme", "system"),
   ladeNr: 0, bereit: false,
+  zeigeZurueckgestellt: false,               // Posteingang: false = offene Notizen, true = die mit „Später“ zurückgestellten
 };
 const lokal = {
   k: (n) => n + "@" + (S.info?.vault || ""),
@@ -319,7 +321,7 @@ async function ladeBaum() {
   } catch (e) { toast(e.message, { fehler: true }); return; }
   await ladeIndex();
   // Nur neu zeichnen, wenn sich am Index etwas geändert hat (Fokuswechsel und Speichern lassen die Liste sonst flackern)
-  const sig = S.notizen.length + ":" + S.notizen.map((n) => `${n.pfad}|${n.geaendert}|${n.titel}|${n.stufe}|${n.typ}`).join(";") + "#" + S.baum.length;
+  const sig = S.notizen.length + ":" + S.notizen.map((n) => `${n.pfad}|${n.geaendert}|${n.titel}|${n.stufe}|${n.typ}|${n.felder?.spaeter_bis || ""}`).join(";") + "#" + S.baum.length;
   const geaendert = sig !== S.sig; S.sig = sig;
   if (geaendert) { zeichneSeite(); if (S.sicht.art !== "verlauf") zeichneListe({ behalte: true }); zeichnePfad(); }
   zeichneStatus(); zeigeLeer();
@@ -335,6 +337,7 @@ function waehleSicht(sicht, { merken = true } = {}) {
   if (S.sicht.art !== "verlauf" || sicht.art !== "verlauf") { /* weiter */ }
   if (sicht.art !== "verlauf") S.vorVerlauf = null;
   schliesseSuche(false);
+  if (!gleicheSicht(S.sicht, sicht)) S.zeigeZurueckgestellt = false;
   S.sicht = sicht;
   if (merken && sicht.art !== "verlauf") lokal.schreib("sicht", sicht);
   $("app").dataset.modus = sicht.art === "verlauf" ? "verlauf" : "liste";
@@ -345,7 +348,7 @@ function zaehler() {
   const z = { inbox: 0, alle: 0, wissen: 0, archiv: 0 };
   for (const n of S.notizen) {
     if (n.bereich === "archiv") z.archiv++;
-    else if (istNotiz(n)) { z.alle++; if (n.bereich === "inbox") z.inbox++; if (n.bereich === "wissen") z.wissen++; }
+    else if (istNotiz(n)) { z.alle++; if (n.bereich === "inbox" && !istZurueckgestellt(n)) z.inbox++; if (n.bereich === "wissen") z.wissen++; }
   }
   return z;
 }
@@ -353,7 +356,7 @@ function sichtNotizen() {
   const { art, id } = S.sicht;
   const l = S.notizen;
   if (art === "bereich") {
-    if (id === "inbox") return l.filter((n) => n.bereich === "inbox" && !n.generiert);
+    if (id === "inbox") return l.filter((n) => n.bereich === "inbox" && !n.generiert && istZurueckgestellt(n) === S.zeigeZurueckgestellt);
     if (id === "alle") return l.filter(istNotiz);
     if (id === "wissen") return l.filter((n) => n.bereich === "wissen" && !n.generiert);
     if (id === "archiv") return l.filter((n) => n.bereich === "archiv");
@@ -508,7 +511,9 @@ function baueKarte(n) {
         symbol(typ ? typSymbol(typ.symbol) : "notiz", 15),
         stufe ? h("span", { klasse: "punkt " + stufe, "data-punkt": n.pfad, title: T.stufen[stufe] || "" }) : null)),
     h("div", { klasse: "karte-vorschau", text: vorschauText(n.vorschau) }),
-    h("div", { klasse: "karte-fuss" }, h("span", { text: datumKurz(n.geaendert) }), n.erstellt ? h("span", { text: `${T.liste.erstellt} ${datumKurz(n.erstellt)}` }) : null));
+    h("div", { klasse: "karte-fuss" }, h("span", { text: datumKurz(n.geaendert) }),
+      istZurueckgestellt(n) ? h("span", { klasse: "pe-marke", "data-spaeter": spaeterBis(n), text: T.posteingang.bis(datumKurz(spaeterBis(n))) }) : n.erstellt ? h("span", { text: `${T.liste.erstellt} ${datumKurz(n.erstellt)}` }) : null),
+    n.bereich === "inbox" && !n.generiert && S.sicht.art === "bereich" && S.sicht.id === "inbox" ? baueAktionen(n, posteingangCtx) : null);
   return typ ? setzeTypFarbe(karte, typ) : karte;
 }
 const CHUNK = 120;
@@ -532,7 +537,9 @@ function zeichneListe({ behalte = false } = {}) {
   S.sichtListe = sortiere(sichtNotizen());
   S.gerendert = 0;
   host.replaceChildren();
-  if (!S.sichtListe.length) { host.append(leerZustand()); return; }
+  const leiste = posteingangLeiste();
+  if (leiste) host.append(leiste);
+  if (!S.sichtListe.length) { host.append(S.zeigeZurueckgestellt ? h("div", { klasse: "leer-liste", "data-leer": "zurueckgestellt" }, h("p", { text: T.posteingang.leerZurueckgestellt })) : leerZustand()); return; }
   const bisAuswahl = S.pfad ? S.sichtListe.findIndex((n) => n.pfad === S.pfad) : -1;
   rendereMehr(Math.max(CHUNK, scroll ? Math.ceil((scroll + host.clientHeight) / 90) + 20 : 0, bisAuswahl >= 0 ? bisAuswahl + 5 : 0));
   host.scrollTop = scroll;
@@ -561,6 +568,7 @@ const host_fokus = () => { if (!S.suche.aktiv) $("liste-koerper").focus({ preven
 $("liste-koerper").addEventListener("keydown", (e) => {
   if (S.sicht.art === "verlauf") return;
   if (!["ArrowDown", "ArrowUp", "Home", "End", "Enter"].includes(e.key)) return;
+  if (e.target.closest?.(".karte-aktionen, .pe-leiste")) return; // Enter/Pfeile gehören den Knöpfen dort
   const liste = S.suche.aktiv ? S.suche.treffer : S.sichtListe;
   if (!liste.length) return;
   e.preventDefault();
@@ -574,6 +582,48 @@ $("liste-koerper").addEventListener("keydown", (e) => {
   $("liste-koerper").querySelectorAll("[data-karte]").forEach((x) => x.setAttribute("aria-selected", String(x === k)));
   k?.scrollIntoView({ block: "nearest" });
 });
+// ---- Posteingang sichten (FBL-68/71): Leiste, Kontext für posteingang.js
+function posteingangLeiste() {
+  if (!(S.sicht.art === "bereich" && S.sicht.id === "inbox")) return null;
+  const n = S.notizen.filter((x) => istZurueckgestellt(x)).length;
+  if (!n && !S.zeigeZurueckgestellt) return null;
+  return h("div", { klasse: "pe-leiste" },
+    h("button", { klasse: "pe-schalter", type: "button", "data-aktion": "zurueckgestellt-umschalten", "aria-pressed": String(S.zeigeZurueckgestellt),
+      text: S.zeigeZurueckgestellt ? T.posteingang.zurueckZumPosteingang : T.posteingang.zurueckgestellt(n),
+      aufClick: () => { S.zeigeZurueckgestellt = !S.zeigeZurueckgestellt; zeichneListe(); } }));
+}
+// Datei schließen, wenn die Werkstatt sie verschoben hat
+function schliesseDatei() {
+  clearTimeout(speicherTimer);
+  S.pfad = null; S.hash = null; S.dirty = false; S.konflikt = null; S.schutz = false; S.aktuellePruefung = null;
+  ed.setzeText("", { nurLesen: false });
+  zeigeBanner(); zeichnePfad(); zeichneWerkzeuge(); setzeFenstertitel(); ladeInfo(); zeigeLeer();
+  lokal.schreib("pfad", null);
+}
+const posteingangCtx = {
+  offenerPfad: () => S.pfad,
+  sichereVorWechsel: () => sichereVorWechsel(),
+  oeffne: (pfad) => oeffne(pfad),
+  // Offene Datei während einer Werkstatt-Aktion schreibgeschützt halten; gibt die Freigabe zurück (tut nichts, wenn die Datei nicht offen ist)
+  sperre: (pfad) => {
+    if (S.pfad !== pfad || S.konflikt) return () => {};
+    clearTimeout(speicherTimer);
+    const vorher = S.schutz;
+    S.schutz = true; ed.setzeText(ed.text(), { nurLesen: true });
+    return () => { if (S.pfad === pfad) { S.schutz = vorher; ed.setzeText(ed.text(), { nurLesen: vorher || !S.bearbeitbar }); } };
+  },
+  // Wiki-Seiten, in die sich eine Notiz übernehmen lässt: Bereich Wissen, nicht generiert, keine Belege/Verwaltungsdateien
+  wikiSeiten: () => S.notizen.filter((x) => x.bereich === "wissen" && !x.generiert && !/(^|\/)belege\//.test(x.pfad) && !dateiName(x.pfad).startsWith("_"))
+    .map((x) => ({ pfad: x.pfad, titel: x.titel || ohneEndung(dateiName(x.pfad)) })).sort((a, b) => a.titel.localeCompare(b.titel, "de", { numeric: true, sensitivity: "base" })),
+  wikiBereiche: () => S.baum.filter((e) => e.art === "ordner" && /^09_wiki\/[^/]+$/.test(e.pfad)).map((e) => dateiName(e.pfad)).filter((x) => !x.startsWith("_") && x.toLowerCase() !== "belege"),
+  // Nach einer Aktion der Werkstatt: Datei im Editor schließen bzw. neu laden, Index und Versionsstand neu holen
+  nachAktion: async ({ weg, neuLaden } = {}) => {
+    if (weg && S.pfad === weg) schliesseDatei();
+    await ladeBaum();
+    if (S.pfad && (neuLaden || []).includes(S.pfad)) await konfliktNeuLaden();
+    planeGitRefresh();
+  },
+};
 function zeichneRueckfragenKarte() {
   const host = $("liste-koerper");
   const n = Number(S.rueckfragen?.offen) || 0;
@@ -1028,6 +1078,7 @@ function zeichneStatus() {
     const farbe = /rot|red/.test(ampel) ? "rot" : /gelb|yellow|orange/.test(ampel) || w ? "gelb" : "";
     k.push(st("gesundheit", [symbol(farbe ? "warnung" : "herz", 14), h("span", { text: T.status.gesundheit }), h("span", { text: w ? String(w) : "✓" })], { klick: oeffneGesundheit, klasse: farbe === "rot" ? "schlecht" : farbe ? "warn" : "gut" }));
   }
+  k.push(st("nutzung", [symbol("verlauf", 14), h("span", { text: T.status.nutzung })], { klick: oeffneNutzung, titel: T.status.nutzungTitel }));
   k.push(h("span", { klasse: "trenner" }));
   k.push(st("theme", [symbol(istDunkel() ? "sonne" : "mond", 14)], { klick: () => setzeTheme(istDunkel() ? "hell" : "dunkel"), titel: istDunkel() ? T.status.zuHell : T.status.zuDunkel }));
   k.push(st("einstellungen", [symbol("zahnrad", 14)], { klick: (e) => oeffneEinstellungen(e.currentTarget), titel: T.status.einstellungen }));
@@ -1254,6 +1305,29 @@ async function oeffneGesundheit() {
       (p.befunde || []).length ? h("ul", null, (p.befunde || []).slice(0, 8).map((b) => h("li", { text: b.kurz }))) : null));
   dialog({ titel: T.gesundheit.titel, breit: true, rumpf: inhalt.length ? inhalt : [h("p", { klasse: "leise", text: T.gesundheit.ok })], knoepfe: [] });
 }
+// Lokale Nutzungsmessung (FBL-72): was die KI per MCP abruft, aus .logs/mcp.log (GET /api/nutzung).
+async function oeffneNutzung() {
+  if (dialogOffen()) return;
+  let w = null, fehler = false;
+  try { w = await api.nutzung(); } catch { fehler = true; }
+  const N = T.nutzung;
+  const seiteEl = (p, rechts) => h("li", { klasse: "nutzung-zeile" },
+    h("button", { klasse: "knopf-text nutzung-seite", "data-pfad": p, title: p, text: ohneEndung(dateiName(p)), aufClick: () => { d.schliessen(); oeffne(p); } }),
+    h("span", { klasse: "leise", text: rechts || "" }));
+  const rumpf = [h("p", { klasse: "leise", text: N.lokal })];
+  if (fehler || !w) rumpf.push(h("p", { klasse: "fehlertext", text: N.fehler }));
+  else if (w.fehler) rumpf.push(h("p", { klasse: "fehlertext", "data-fehler": "nutzung", text: N.protokollFehler(w.fehler) }));
+  else if (!w.protokoll) rumpf.push(h("p", { "data-leer": "nutzung", text: N.keine }));
+  else {
+    rumpf.push(h("p", { text: N.kopf(w.aufrufe, datumKurz(w.seit)) }));
+    rumpf.push(h("h4", { text: N.meist }));
+    rumpf.push(w.meistgenutzt.length ? h("ul", { klasse: "nutzung-liste", "data-liste": "meist" }, w.meistgenutzt.map((e) => seiteEl(e.pfad, `${N.mal(e.anzahl)} · ${relativ(e.zuletzt)}`))) : h("p", { klasse: "leise", text: N.meistLeer }));
+    rumpf.push(h("h4", { text: N.nie }));
+    rumpf.push(w.nieGenutztGesamt ? h("p", { klasse: "leise", text: N.nieHinweis(w.nieGenutzt.length, w.nieGenutztGesamt) }) : h("p", { klasse: "leise", text: N.nieLeer }));
+    if (w.nieGenutzt.length) rumpf.push(h("ul", { klasse: "nutzung-liste", "data-liste": "nie" }, w.nieGenutzt.map((p) => seiteEl(p))));
+  }
+  const d = dialog({ titel: N.titel, breit: true, rumpf, knoepfe: [] });
+}
 const stufenKlasse = (s) => (/rot|red|fehler/i.test(s || "") ? "rot" : /gelb|warn|yellow/i.test(s || "") ? "gelb" : /gr[uü]n|ok|green/i.test(s || "") ? "gruen" : "grau");
 
 // ======================================================= Palette
@@ -1261,7 +1335,7 @@ function oeffnePalette(vorgabe = "") {
   if (dialogOffen()) return;
   const befehle = [
     [T.befehle.neu, "⌘N", oeffneNeu], [T.befehle.merken, "⌘⇧M", oeffneMerken], [T.befehle.commit, "⌘⇧G", oeffneCommit], [T.befehle.sync, "", sync],
-    [T.befehle.suche, "⌘⇧F", fokusSuche], [T.befehle.inNotiz, "⌘F", () => ed.suchen()], [T.befehle.info, "⌘⌥I", umschalteInfo], [T.befehle.gesundheit, "", oeffneGesundheit],
+    [T.befehle.suche, "⌘⇧F", fokusSuche], [T.befehle.inNotiz, "⌘F", () => ed.suchen()], [T.befehle.info, "⌘⌥I", umschalteInfo], [T.befehle.gesundheit, "", oeffneGesundheit], [T.befehle.nutzung, "", oeffneNutzung],
     [T.liste.verlauf, "", oeffneVerlauf],
     ...(inApp() ? [[T.befehle.ordner, "", () => aktion("ordner-zeigen", S.pfad || undefined)], [T.befehle.ansicht, "", oeffneUebersicht]] : []),
     [T.befehle.mcp, "", oeffneKi],

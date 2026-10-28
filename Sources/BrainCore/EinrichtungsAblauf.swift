@@ -1,0 +1,501 @@
+import Foundation
+
+/// Was die Oberfläche zu einem KI-Ziel zeigt.
+public struct KiZeile: Equatable, Sendable {
+    public enum Status: Equatable, Sendable {
+        case nichtGefunden
+        case bereit
+        case verbindet
+        case verbunden(schon: Bool)
+        /// Die KI-App hat schon einen anderen Eintrag „brain“: nur mit Ja des Nutzers umstellen.
+        case umstellenFragen
+        case fehler(String, befehl: String?)
+    }
+
+    public let ziel: KiZiel
+    public var programm: KiProgramm?
+    public var status: Status
+
+    public var istVerbunden: Bool {
+        if case .verbunden = status { return true }
+        return false
+    }
+}
+
+public enum GitHubAnzeige: Equatable, Sendable {
+    case unbekannt
+    /// In dieser Version nicht eingerichtet (keine Client-ID): der Schritt entfällt.
+    case nichtVerfuegbar
+    case abgemeldet
+    case startet
+    case wartet(GitHubGeraetecode)
+    case angemeldet(login: String?)
+    case abgelaufen
+    case abgelehnt(grund: String?)
+}
+
+public enum ProbeAnzeige: Equatable, Sendable {
+    case offen
+    case laeuft
+    case ok(ProbeErgebnis)
+    /// Die Suche antwortet, das Brain ist aber noch leer.
+    case leer
+    case fehler(String)
+}
+
+/// Alles, was die Oberfläche zusätzlich zur Schrittfolge anzeigt.
+public struct EinrichtungsAnzeige: Equatable, Sendable {
+    public var git: GitStand?
+    public var gitPrueftGerade = false
+    public var vault: VaultInfo?
+    /// Text, solange ein Vault angelegt, geöffnet oder geklont wird; sonst nil.
+    public var vaultArbeitet: String?
+    public var github = GitHubAnzeige.unbekannt
+    public var kis: [KiZeile] = []
+    public var kiSuchtGerade = false
+    public var probe = ProbeAnzeige.offen
+
+    public init() {}
+}
+
+/// Der Ablauf des Assistenten „Kortex einrichten“: stellt aus der Wirklichkeit fest, was schon erledigt ist (git da? Vault aktiv?
+/// GitHub-Konto im Schlüsselbund?), springt über Erledigtes, führt die Aktionen des Nutzers über `EinrichtungsDienste` aus, hält
+/// Fehler sichtbar und merkt sich den Stand in `einrichtung.json` (Wiederaufnahme nach Abbruch). Er kennt keine Oberfläche:
+/// jede Änderung geht über `beiAenderung` an sie.
+@MainActor
+public final class EinrichtungsAblauf {
+    /// Suchbegriff der Probe. Er steht in jedem Brain aus der Vorlage; die Probe prüft den Weg, nicht den Inhalt.
+    public static let probeFrage = "Brain"
+
+    public private(set) var zustand = EinrichtungsZustand()
+    public private(set) var anzeige = EinrichtungsAnzeige()
+    public private(set) var abgeschlossen = false
+    public private(set) var automatischAus = false
+    /// Woher dieser Lauf kam; steht in `einrichtung.json` (siehe `EinrichtungsHerkunft`).
+    public private(set) var herkunft = EinrichtungsHerkunft.start
+    /// Die eine laufende Wartezeit auf Apples Installation — Mehrfachklicks auf „Erneut prüfen“ schließen sich ihr an.
+    private var gitWarteAufgabe: Task<GitStand, Never>?
+
+    private let dienste: EinrichtungsDienste
+    private let speicher: EinrichtungsSpeicher?
+    private let schlafe: @Sendable (Duration) async -> Void
+    private let log: (String) -> Void
+    private let beiAenderung: @MainActor (EinrichtungsZustand, EinrichtungsAnzeige) -> Void
+    /// Schritte, deren Eingangsprüfung in dieser Sitzung schon lief (damit „Zurück“ nicht gleich wieder weiterspringt).
+    private var geprueft: Set<EinrichtungsSchritt> = []
+    private var githubLauf = 0
+
+    public init(dienste: EinrichtungsDienste, speicher: EinrichtungsSpeicher?,
+                schlafe: @escaping @Sendable (Duration) async -> Void = { try? await Task.sleep(for: $0) },
+                log: @escaping (String) -> Void = { _ in },
+                beiAenderung: @escaping @MainActor (EinrichtungsZustand, EinrichtungsAnzeige) -> Void) {
+        self.dienste = dienste
+        self.speicher = speicher
+        self.schlafe = schlafe
+        self.log = log
+        self.beiAenderung = beiAenderung
+    }
+
+    // MARK: Start
+
+    /// Beginnt oder setzt fort. `wiederholung` (Menü „Kortex einrichten …“) zeigt KI und Probe noch einmal; Erledigtes aus der
+    /// Wirklichkeit (git, Vault, GitHub-Konto) geht auch dann ohne Klick vorbei.
+    public func starte(wiederholung: Bool = false) async {
+        let datei = speicher?.lade()
+        automatischAus = datei?.automatischAus ?? false
+        herkunft = wiederholung ? .menue : .start
+        let neuAnfangen = wiederholung || datei?.abgeschlossen == true
+        zustand = neuAnfangen ? EinrichtungsZustand() : EinrichtungsZustand(gespeichert: datei)
+        abgeschlossen = false
+        anzeige = EinrichtungsAnzeige()
+        geprueft = []
+        githubLauf += 1
+        melde()
+        await fortfahren()
+    }
+
+    /// Prüft jeden Schritt, der dran kommt, einmal beim Betreten; Erledigtes rückt den nächsten nach.
+    private func fortfahren() async {
+        while let s = zustand.aktuell, !geprueft.contains(s) {
+            geprueft.insert(s)
+            await betrete(s)
+        }
+        if zustand.istFertig { abgeschlossen = true }
+        sichere()
+        melde()
+    }
+
+    private func betrete(_ s: EinrichtungsSchritt) async {
+        switch s {
+        case .git: await pruefeGitSchritt()
+        case .vault: await pruefeVaultSchritt()
+        case .github: await pruefeGitHubSchritt()
+        case .ki: await erkenneKIsSchritt()
+        case .probe: await fuehreProbeAus()
+        }
+    }
+
+    // MARK: git
+
+    public func pruefeGit() async {
+        await pruefeGitSchritt()
+        await fortfahren()
+    }
+
+    private func pruefeGitSchritt() async {
+        anzeige.gitPrueftGerade = true
+        melde()
+        wendeAn(await dienste.gitStand())
+        anzeige.gitPrueftGerade = false
+        melde()
+        // Läuft die Installation schon (z. B. nach einem Neustart der App mittendrin), wird auf sie gewartet.
+        if anzeige.git == .installiertGerade { await wendeAnNachWarten() }
+    }
+
+    /// Wartet auf Apples Installation. Es gibt immer nur EINE Wartezeit: wer währenddessen noch einmal prüft (Doppelklick auf
+    /// „Erneut prüfen“, Wiederaufnahme), schließt sich ihr an, statt eine weitere Schleife zu starten.
+    private func wendeAnNachWarten() async {
+        let aufgabe: Task<GitStand, Never>
+        if let laufende = gitWarteAufgabe {
+            aufgabe = laufende
+        } else {
+            let dienste = self.dienste
+            aufgabe = Task { await dienste.gitWarten() }
+            gitWarteAufgabe = aufgabe
+        }
+        let stand = await aufgabe.value
+        gitWarteAufgabe = nil
+        wendeAn(stand)
+        melde()
+    }
+
+    private func wendeAn(_ stand: GitStand) {
+        anzeige.git = stand
+        switch stand {
+        case .vorhanden:
+            zustand.meldeErledigt(.git)
+        case .fehlt, .installiertGerade:
+            zustand.loescheFehler(.git)
+        case .defekt(let m):
+            zustand.meldeFehler(.git, "git ist da, läuft aber nicht: \(m)")
+        case .nichtPruefbar(let m):
+            zustand.meldeFehler(.git, "Die Prüfung von git ist fehlgeschlagen: \(m)")
+        }
+    }
+
+    /// Löst Apples Installationsdialog aus und wartet, bis git da ist (oder der Dialog zugemacht wurde).
+    public func installiereGit() async {
+        zustand.loescheFehler(.git)
+        anzeige.gitPrueftGerade = true
+        melde()
+        let start = await dienste.gitInstallationStarten()
+        anzeige.gitPrueftGerade = false
+        switch start {
+        case .dialogAusgeloest:
+            anzeige.git = .installiertGerade
+            melde()
+            await wendeAnNachWarten()
+        case .schonInstalliert:
+            wendeAn(await dienste.gitStand())
+        case .fehlgeschlagen(let m):
+            anzeige.git = .fehlt
+            zustand.meldeFehler(.git, m)
+        }
+        await fortfahren()
+    }
+
+    // MARK: Vault
+
+    private func pruefeVaultSchritt() async {
+        if let v = await dienste.aktiverVault() {
+            anzeige.vault = v
+            zustand.meldeErledigt(.vault)
+        }
+    }
+
+    public func legeVaultAn(art: NeuerVaultArt = .vorlage, name: String?, ordner: String?) async {
+        await vaultAktion("Dein Brain wird angelegt …") { try await self.dienste.legeVaultAn(art: art, name: name, ordner: ordner) }
+    }
+
+    public func oeffneOrdner(pfad: String, versionsverlaufEinschalten: Bool) async {
+        await vaultAktion("Ordner wird geöffnet …") {
+            try await self.dienste.oeffneOrdner(pfad: pfad, versionsverlaufEinschalten: versionsverlaufEinschalten)
+        }
+    }
+
+    public func klone(url: String, ordner: String? = nil) async {
+        await vaultAktion("Wird von GitHub geladen …") { try await self.dienste.klone(url: url, ordner: ordner, name: nil) }
+    }
+
+    private func vaultAktion(_ text: String, _ aktion: () async throws -> VaultInfo) async {
+        guard anzeige.vaultArbeitet == nil else { return }
+        anzeige.vaultArbeitet = text
+        zustand.loescheFehler(.vault)
+        melde()
+        do {
+            let v = try await aktion()
+            anzeige.vault = v
+            zustand.meldeErledigt(.vault)
+            log("einrichtung vault-bereit")
+        } catch {
+            zustand.meldeFehler(.vault, Self.text(error))
+            log("einrichtung vault-fehler")
+        }
+        anzeige.vaultArbeitet = nil
+        await fortfahren()
+    }
+
+    // MARK: GitHub
+
+    private func pruefeGitHubSchritt() async {
+        do {
+            let konto = try await dienste.githubKonto()
+            if !konto.verfuegbar {
+                anzeige.github = .nichtVerfuegbar
+                zustand.ueberspringe(.github)
+            } else if konto.angemeldet {
+                anzeige.github = .angemeldet(login: konto.login)
+                zustand.meldeErledigt(.github)
+            } else {
+                anzeige.github = .abgemeldet
+            }
+        } catch {
+            anzeige.github = .abgemeldet
+            zustand.meldeFehler(.github, Self.text(error))
+        }
+    }
+
+    /// Für die Karte „Von GitHub klonen“ im Vault-Schritt: private Repositories brauchen die Anmeldung schon vor dem GitHub-Schritt.
+    /// Liest den Kontostand einmal (danach gilt `anzeige.github`); ist man angemeldet, entfällt der GitHub-Schritt später ohne Klick.
+    public func ladeGitHubStand() async {
+        guard anzeige.github == .unbekannt else { return }
+        await pruefeGitHubSchritt()
+        await fortfahren()
+    }
+
+    /// Fordert den Gerätecode an und fragt dann regelmäßig nach, bis die Anmeldung fertig, abgelehnt oder abgelaufen ist.
+    /// Kehrt auch bei Abbruch (`brecheGitHubAb`) oder abgebrochener Aufgabe zurück.
+    public func meldeBeiGitHubAn() async {
+        githubLauf += 1
+        let lauf = githubLauf
+        zustand.loescheFehler(.github)
+        anzeige.github = .startet
+        melde()
+        do {
+            let code = try await dienste.githubAnmelden()
+            guard lauf == githubLauf else { return }
+            anzeige.github = .wartet(code)
+            melde()
+        } catch {
+            anzeige.github = .abgemeldet
+            zustand.meldeFehler(.github, Self.text(error))
+            melde()
+            return
+        }
+        var aufeinanderFehler = 0
+        while lauf == githubLauf, !Task.isCancelled {
+            await schlafe(.seconds(2))
+            guard lauf == githubLauf, !Task.isCancelled else { return }
+            let stand: GitHubAnmeldung
+            do {
+                stand = try await dienste.githubStatus()
+                aufeinanderFehler = 0
+            } catch {
+                // kurz weg (Schlaf, WLAN): weiter versuchen, aber nicht endlos still
+                aufeinanderFehler += 1
+                if aufeinanderFehler >= 5 {
+                    anzeige.github = .abgemeldet
+                    zustand.meldeFehler(.github, Self.text(error))
+                    melde()
+                    return
+                }
+                continue
+            }
+            guard lauf == githubLauf else { return }
+            switch stand {
+            case .wartet(let c): anzeige.github = .wartet(c); melde()
+            case .fertig(let login):
+                anzeige.github = .angemeldet(login: login)
+                zustand.meldeErledigt(.github)
+                log("einrichtung github-angemeldet")
+                await fortfahren()
+                return
+            case .abgelaufen: anzeige.github = .abgelaufen; melde(); return
+            case .abgelehnt(let g): anzeige.github = .abgelehnt(grund: g); melde(); return
+            case .keine:
+                // Die Werkstatt weiß nichts mehr von dieser Anmeldung (sie wurde neu gestartet): nicht still zurückspringen.
+                anzeige.github = .abgemeldet
+                zustand.meldeFehler(.github, "Die Anmeldung wurde unterbrochen (der Hintergrunddienst wurde neu gestartet). Bitte melde dich noch einmal an.")
+                melde()
+                return
+            }
+        }
+    }
+
+    /// Bricht das Warten auf den Code ab.
+    public func brecheGitHubAb() async {
+        githubLauf += 1
+        anzeige.github = .abgemeldet
+        melde()
+        do { try await dienste.githubAbbrechen() } catch { zustand.meldeFehler(.github, Self.text(error)); melde() }
+    }
+
+    // MARK: KI
+
+    private func erkenneKIsSchritt() async {
+        anzeige.kiSuchtGerade = true
+        zustand.loescheFehler(.ki)
+        melde()
+        do {
+            let liste = try await dienste.erkenneKIs()
+            anzeige.kis = KiZiel.verbindbar.map { ziel in
+                let programm = liste.first { $0.id == ziel.agentId }
+                let vorher = anzeige.kis.first { $0.ziel == ziel }?.status
+                let status: KiZeile.Status = (programm?.gefunden ?? false) ? (vorher.flatMap { $0 == .nichtGefunden ? nil : $0 } ?? .bereit) : .nichtGefunden
+                return KiZeile(ziel: ziel, programm: programm, status: status)
+            }
+        } catch {
+            zustand.meldeFehler(.ki, Self.text(error))
+        }
+        anzeige.kiSuchtGerade = false
+    }
+
+    public func sucheKIsNeu() async {
+        await erkenneKIsSchritt()
+        melde()
+    }
+
+    public func verbinde(_ ziel: KiZiel, umstellen: Bool = false) async {
+        setzeKi(ziel, .verbindet)
+        melde()
+        do {
+            let r = try await dienste.verbinde(ziel, umstellen: umstellen)
+            setzeKi(ziel, .verbunden(schon: r == .schonVerbunden))
+            zustand.loescheFehler(.ki)
+            log("einrichtung ki-verbunden \(ziel.rawValue)")
+        } catch let e as EinrichtungsFehler {
+            setzeKi(ziel, e.istAndererEintrag && !umstellen ? .umstellenFragen : .fehler(e.meldung, befehl: e.befehl))
+        } catch {
+            setzeKi(ziel, .fehler(Self.text(error), befehl: nil))
+        }
+        melde()
+    }
+
+    /// Der Nutzer will den fremden Eintrag nicht ersetzen.
+    public func lehneUmstellenAb(_ ziel: KiZiel) {
+        setzeKi(ziel, .bereit)
+        melde()
+    }
+
+    private func setzeKi(_ ziel: KiZiel, _ status: KiZeile.Status) {
+        guard let i = anzeige.kis.firstIndex(where: { $0.ziel == ziel }) else { return }
+        anzeige.kis[i].status = status
+    }
+
+    // MARK: Probe
+
+    public func starteProbe() async {
+        await fuehreProbeAus()
+        await fortfahren()
+    }
+
+    private func fuehreProbeAus() async {
+        anzeige.probe = .laeuft
+        zustand.loescheFehler(.probe)
+        melde()
+        do {
+            let r = try await dienste.probe(frage: Self.probeFrage)
+            anzeige.probe = r.treffer.isEmpty ? .leer : .ok(r)
+            zustand.meldeErledigt(.probe)
+            log("einrichtung probe-ok treffer=\(r.treffer.count)")
+        } catch {
+            anzeige.probe = .fehler(Self.text(error))
+            zustand.meldeFehler(.probe, Self.text(error))
+            log("einrichtung probe-fehler")
+        }
+    }
+
+    // MARK: Navigation
+
+    /// Darf der Nutzer vom aktuellen Schritt aus weiter? (Erledigt in der Wirklichkeit, auch wenn der Schritt gerade noch einmal gezeigt wird.)
+    public func kannWeiter(_ s: EinrichtungsSchritt) -> Bool {
+        switch s {
+        case .git: return anzeige.git?.istVorhanden ?? false
+        case .vault: return anzeige.vault != nil
+        case .github:
+            switch anzeige.github {
+            case .angemeldet, .nichtVerfuegbar: return true
+            default: return false
+            }
+        case .ki: return anzeige.kis.contains { $0.istVerbunden }
+        case .probe:
+            switch anzeige.probe {
+            case .ok, .leer: return true
+            default: return false
+            }
+        }
+    }
+
+    public func weiter() async {
+        guard let s = zustand.aktuell, kannWeiter(s) else { return }
+        zustand.meldeErledigt(s)
+        await fortfahren()
+    }
+
+    public func ueberspringe() async {
+        guard let s = zustand.aktuell else { return }
+        if s == .github { githubLauf += 1 }
+        zustand.ueberspringe(s)
+        await fortfahren()
+    }
+
+    /// Einen Schritt zurück (ein in dieser Version nicht eingerichteter GitHub-Schritt wird dabei übergangen).
+    public func zurueck() async {
+        guard var s = zustand.vorherigerSchritt else { return }
+        if s == .github, anzeige.github == .nichtVerfuegbar {
+            // Dieser Schritt entfällt in dieser Version: einen weiter zurück.
+            let alle = EinrichtungsSchritt.allCases
+            guard let i = alle.firstIndex(of: .github), i > 0 else { return }
+            s = alle[i - 1]
+        }
+        if s == .github { githubLauf += 1 }
+        guard zustand.geheZu(s) else { return }
+        // KI und Probe laufen beim erneuten Betreten wieder; git, Vault und GitHub zeigen den Stand, ohne gleich weiterzuspringen.
+        if s.ausWirklichkeit { geprueft.insert(s) } else { geprueft.remove(s) }
+        await fortfahren()
+    }
+
+    /// „Später“: der Assistent erscheint nicht mehr von selbst (das Menü bietet ihn weiter an).
+    public func spaeter() {
+        automatischAus = true
+        beendeWarten()
+        sichere()
+    }
+
+    /// Fenster zu: Stand sichern, laufendes Warten beenden.
+    public func schliesse() {
+        beendeWarten()
+        sichere()
+    }
+
+    private func beendeWarten() {
+        githubLauf += 1
+        gitWarteAufgabe?.cancel()
+    }
+
+    // MARK: Hilfen
+
+    private func sichere() {
+        guard let speicher else { return }
+        do { try speicher.speichere(zustand.datei(abgeschlossen: abgeschlossen, automatischAus: automatischAus, herkunft: herkunft)) } catch {
+            log("einrichtung speichern-fehlgeschlagen \(error.localizedDescription)")
+        }
+    }
+
+    private func melde() { beiAenderung(zustand, anzeige) }
+
+    static func text(_ fehler: Error) -> String {
+        if let e = fehler as? EinrichtungsFehler { return e.meldung }
+        return "Das hat nicht geklappt: \(fehler.localizedDescription)"
+    }
+}
