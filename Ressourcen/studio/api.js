@@ -51,6 +51,10 @@ export const api = {
   speichern: (pfad, inhalt, basisHash) => anfrage("PUT", "/api/datei", { pfad, inhalt, basisHash }),
   neu: (ordner, titel) => anfrage("POST", "/api/neu", { ordner, titel }),
   merken: (text, titel) => anfrage("POST", "/api/merken", titel ? { text, titel } : { text }),
+  // ---- Posteingang sichten: je Aktion ein Git-Commit (Antwort: pfad, ziel, commit = sha oder null ohne Git)
+  verwerfen: (pfad) => anfrage("POST", "/api/posteingang/verwerfen", { pfad }),
+  zurueckstellen: (pfad, tage) => anfrage("POST", "/api/posteingang/spaeter", tage === null ? { pfad, bis: null } : { pfad, tage }),
+  uebernehmen: (pfad, ziel) => anfrage("POST", "/api/posteingang/uebernehmen", { pfad, ziel }),
   suche: (frage) => anfrage("GET", "/api/suche" + q({ q: frage })),
   pruefung: (pfad) => anfrage("GET", "/api/pruefung" + q({ pfad })),
   gesundheit: () => anfrage("GET", "/api/gesundheit"),

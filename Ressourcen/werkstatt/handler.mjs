@@ -143,6 +143,9 @@ export function erzeugeHandler(o) {
         throw new HttpFehler(405, "Diese Methode ist hier nicht erlaubt.");
       case "/api/neu": nur("POST"); return V().neu(eingabe());
       case "/api/merken": nur("POST"); return V().merken(eingabe());
+      case "/api/posteingang/verwerfen": nur("POST"); return V().posteingangVerwerfen(eingabe());
+      case "/api/posteingang/spaeter": nur("POST"); return V().posteingangSpaeter(eingabe());
+      case "/api/posteingang/uebernehmen": nur("POST"); return V().posteingangUebernehmen(eingabe());
       case "/api/suche": nur("GET"); return V().suche(q.get("q"));
       case "/api/pruefung": nur("GET"); return V().pruefung(q.get("pfad"));
       case "/api/gesundheit": nur("GET"); return V().gesundheit();

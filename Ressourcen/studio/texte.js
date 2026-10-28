@@ -25,6 +25,21 @@ export const T = {
     rueckfragen: { titel: "Offene Rückfragen", text: (n) => (n === 1 ? "Eine Frage wartet auf deine Antwort." : `${n} Fragen warten auf deine Antwort.`), hinweis: "Beantworten kannst du sie im Terminal mit /rueckfragen.", kopieren: "Befehl kopieren", kopiert: "Befehl kopiert." },
     ohneTitel: "Ohne Titel",
   },
+  // Posteingang sichten (FBL-68/71): Aktionen an der Karte, jede ein Git-Commit; nichts wird gelöscht
+  posteingang: {
+    aktionen: "Posteingang sichten", ohneTitel: "Ohne Titel",
+    verwerfen: "Verwerfen", spaeter: "Später", uebernehmen: "In Seite übernehmen",
+    spaeterMenue: "Später ansehen", morgen: "Morgen", dreiTage: "In 3 Tagen", woche: "Nächste Woche", monat: "In einem Monat", wiederZeigen: "Jetzt wieder zeigen",
+    zurueckgestellt: (n) => `Zurückgestellt (${n})`, zurueckZumPosteingang: "Zurück zum Posteingang", leerZurueckgestellt: "Nichts zurückgestellt.",
+    bis: (d) => `Später · ${d}`,
+    fertigVerworfen: (t) => `„${t}“ verworfen. Die Notiz liegt im Archiv und im Verlauf.`,
+    fertigSpaeter: (t, d) => `„${t}“ kommt am ${d} wieder.`, fertigWieder: (t) => `„${t}“ ist wieder im Posteingang.`,
+    fertigUebernommen: (t, s) => `„${t}“ in „${s}“ übernommen.`, seiteOeffnen: "Seite öffnen",
+    uebernehmenTitel: (t) => `„${t}“ in eine Seite übernehmen`, bestehend: "Bestehende Seite", neu: "Neue Seite",
+    seiteSuchen: "Seite suchen …", seiteWaehlen: "Wiki-Seite wählen", keineTreffer: "Keine passende Seite.", keineSeiten: "Es gibt noch keine Wiki-Seite. Lege eine neue an.",
+    neuTitel: "Titel der neuen Seite", neuBereich: "Bereich im Wiki", uebernehmenOk: "Übernehmen",
+    uebernehmenHinweis: "Der Text wird als eigener Abschnitt ans Ende der Seite gehängt. Die Notiz wandert ins Archiv und bleibt im Verlauf; Belege und Stand ergänzt du danach selbst.",
+  },
   seitenleiste: { neu: "Neu", merken: "Schnell merken", leerBaum: "Hier liegt noch nichts.", laedt: "Lade …", neuerOrdner: "Neuer Ordner" },
   vault: {
     wechseln: "Vault wechseln", oeffnen: "Vault öffnen …", neu: "Neuer Vault …", entfernen: "Aus der Liste entfernen",
