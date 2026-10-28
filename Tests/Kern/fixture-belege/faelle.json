@@ -1,0 +1,497 @@
+[
+  {
+    "zitat": "Bitte prüfe die Versandliste für morgen und melde Ausreißer.",
+    "erwartet": {
+      "herkunft": "du",
+      "uuid": "u-02"
+    },
+    "warum": "Nutzertext, wörtlich; steht neben einem system-reminder in derselben Nachricht"
+  },
+  {
+    "zitat": "Die Rechnungsnummer beginnt immer mit RE-2026 und hat sieben Stellen.",
+    "erwartet": {
+      "herkunft": "ki",
+      "uuid": "u-02"
+    },
+    "warum": "steht nur im system-reminder: eingespielter Kontext ist keine Nutzeraussage"
+  },
+  {
+    "zitat": "Der Skill Retourenpruefung verlangt immer ein Foto vom Karton.",
+    "erwartet": {
+      "herkunft": "ki",
+      "uuid": "u-03"
+    },
+    "warum": "Nachricht mit isMeta: Skill-Text, kein Nutzertext"
+  },
+  {
+    "zitat": "Unser Hauptlager steht in Halle 7 und wir versenden täglich um 14:30 Uhr.",
+    "erwartet": {
+      "herkunft": "tool",
+      "uuid": "u-05"
+    },
+    "warum": "steht im Nutzertext (früher) und im Read-Ergebnis (später): tool ist stärker"
+  },
+  {
+    "zitat": "Zeitlimit für den Export beträgt 45 Sekunden",
+    "erwartet": {
+      "herkunft": "tool",
+      "uuid": "u-06"
+    },
+    "warum": "Bash-Ergebnis als Array von Textblöcken"
+  },
+  {
+    "zitat": "Laut Herstellerseite hält die Trommeleinheit typischerweise 12000 Seiten.",
+    "erwartet": {
+      "herkunft": "web",
+      "uuid": "u-07"
+    },
+    "warum": "nur im WebFetch-Ergebnis"
+  },
+  {
+    "zitat": "Die Garantie auf Ersatzkartuschen beträgt 24 Monate ab Kaufdatum.",
+    "erwartet": {
+      "herkunft": "du",
+      "uuid": "u-17"
+    },
+    "warum": "WebFetch und Nutzertext: du ist stärker als web"
+  },
+  {
+    "zitat": "Versandkosten nach Österreich liegen bei 6,90 Euro pauschal.",
+    "erwartet": {
+      "herkunft": "web",
+      "uuid": "u-07"
+    },
+    "warum": "WebFetch und Agent-Ergebnis: web ist stärker als ki"
+  },
+  {
+    "zitat": "die Zolltarifnummer 8443 3299 gilt für Tonerkartuschen",
+    "erwartet": {
+      "herkunft": "ki",
+      "uuid": "u-09"
+    },
+    "warum": "nur im Agent-Ergebnis"
+  },
+  {
+    "zitat": "maximal vier Kartuschen je Karton",
+    "erwartet": {
+      "herkunft": "ki",
+      "uuid": "u-10"
+    },
+    "warum": "nur im Skill-Ergebnis"
+  },
+  {
+    "zitat": "Lieferant Nordtoner liefert montags und donnerstags",
+    "erwartet": {
+      "herkunft": "web",
+      "uuid": "u-11"
+    },
+    "warum": "mcp__-Werkzeug ohne Freigabe (W2), Ergebnis als Array: web"
+  },
+  {
+    "zitat": "Die Zahlungsfrist beträgt 21 Tage netto",
+    "erwartet": {
+      "herkunft": "ki",
+      "uuid": "u-12"
+    },
+    "warum": "tool_result ohne bekanntes tool_use: Unbekanntes ist ki"
+  },
+  {
+    "zitat": "Die Messe in Köln beginnt am 5. November.",
+    "erwartet": {
+      "herkunft": "ki",
+      "uuid": "u-33"
+    },
+    "warum": "Ergebnis eines Edit-Aufrufs (nicht auf der tool-Liste): ki"
+  },
+  {
+    "zitat": "Mindestbestellwert 250 Euro",
+    "erwartet": {
+      "herkunft": "ki",
+      "uuid": "x-01"
+    },
+    "warum": "Hook-Ausgabe in einer attachment-Zeile"
+  },
+  {
+    "zitat": "Dieser Satz steht nur in der kaputten Zeile",
+    "erwartet": null,
+    "warum": "steht nur in einer kaputten JSON-Zeile, die übersprungen wird"
+  },
+  {
+    "zitat": "Der Kunde schrieb \"Retoure - abgelehnt\" und meinte die Sendung vom Montag.",
+    "erwartet": {
+      "herkunft": "du",
+      "uuid": "u-13"
+    },
+    "warum": "Transkript hat typografische Anführungszeichen und Gedankenstrich, Zitat gerade"
+  },
+  {
+    "zitat": "Im Etikett steht „Sendung A“ – bitte nicht verwechseln, sagt Frau Brandt.",
+    "erwartet": {
+      "herkunft": "du",
+      "uuid": "u-13b"
+    },
+    "warum": "umgekehrt: Zitat typografisch, Transkript gerade"
+  },
+  {
+    "zitat": "Die Frist für Widerrufe beträgt 14 Tage ab Erhalt.",
+    "erwartet": {
+      "herkunft": "du",
+      "uuid": "u-14"
+    },
+    "warum": "Transkript hat NBSP, doppelte Leerzeichen und Zeilenumbruch"
+  },
+  {
+    "zitat": "Die Frist für Widerrufe\nbeträgt    14 Tage ab Erhalt.",
+    "erwartet": {
+      "herkunft": "du",
+      "uuid": "u-14"
+    },
+    "warum": "Zitat mit Zeilenumbruch und Mehrfach-Leerzeichen"
+  },
+  {
+    "zitat": "DIE FRIST FÜR WIDERRUFE BETRÄGT 14 TAGE AB ERHALT.",
+    "erwartet": null,
+    "warum": "Groß/Klein zählt: kein Treffer"
+  },
+  {
+    "zitat": "Der Import läuft gerade... bitte nicht abbrechen",
+    "erwartet": {
+      "herkunft": "du",
+      "uuid": "u-14b"
+    },
+    "warum": "Auslassungszeichen im Transkript, drei Punkte im Zitat"
+  },
+  {
+    "zitat": "Halle 7",
+    "erwartet": null,
+    "warum": "zu kurz (7 Zeichen): Zufallstreffer"
+  },
+  {
+    "zitat": "auptlager s",
+    "erwartet": null,
+    "warum": "genau 11 Zeichen: zu kurz"
+  },
+  {
+    "zitat": "um 14:30 Uhr",
+    "erwartet": {
+      "herkunft": "tool",
+      "uuid": "u-05"
+    },
+    "warum": "genau 12 Zeichen: gerade lang genug (Teilstring mit Wortgrenzen, steht in du und tool)"
+  },
+  {
+    "zitat": "   Bitte prüfe die Versandliste für morgen   ",
+    "erwartet": {
+      "herkunft": "du",
+      "uuid": "u-02"
+    },
+    "warum": "Zitat wird getrimmt"
+  },
+  {
+    "zitat": "",
+    "erwartet": null,
+    "warum": "leeres Zitat"
+  },
+  {
+    "zitat": "Wir sammeln Rücksendungen im Wareneingang, prüfen jede Position einzeln, fotografieren Schäden und tragen die Ergebnisse noch am selben Tag in die Retourenliste ein, damit der Kundenservice am nächsten Morgen ohne Rückfrage antworten kann. Erst wenn alle Positionen bestätigt sind, geben wir die Gutschrift frei; bei Abweichungen melden wir uns beim Lieferanten und halten die Sendung zurück.",
+    "erwartet": null,
+    "warum": "zu lang (über 300 Zeichen): abgelehnt, nicht gekürzt, obwohl der Anfang vorkommt"
+  },
+  {
+    "zitat": "Wir sammeln Rücksendungen im Wareneingang, prüfen jede Position einzeln, fotografieren Schäden und tragen die Ergebnisse noch am selben Tag in die Retourenliste ein, damit der Kundenservice am nächsten Morgen ohne Rückfrage antworten kann. Erst wenn alle Positionen bestätigt sind, geben wir die Gutsc",
+    "erwartet": null,
+    "warum": "301 Zeichen: zu lang"
+  },
+  {
+    "zitat": "Wareneingang, prüfen jede Position einzeln, fotografieren Schäden und tragen die Ergebnisse noch am selben Tag in die Retourenliste ein, damit der Kundenservice am nächsten Morgen ohne Rückfrage antworten kann. Erst wenn alle Positionen bestätigt sind, geben wir die Gutschrift frei; bei Abweichungen",
+    "erwartet": {
+      "herkunft": "du",
+      "uuid": "u-32"
+    },
+    "warum": "genau 300 Zeichen (Wortgrenzen vorn und hinten): erlaubt"
+  },
+  {
+    "zitat": "ls -la /srv/export",
+    "erwartet": {
+      "herkunft": "du",
+      "uuid": "u-15"
+    },
+    "warum": "<bash-input>: der Nutzer hat den Befehl selbst eingegeben"
+  },
+  {
+    "zitat": "export-2026-10-21.csv 9 Zeilen Fehlerprotokoll",
+    "erwartet": {
+      "herkunft": "tool",
+      "uuid": "u-16"
+    },
+    "warum": "<bash-stdout>: Ausgabe seines eigenen Befehls"
+  },
+  {
+    "zitat": "Der Lagerbestand von Artikel TK-5521 liegt laut meiner Schätzung bei 340 Stück.",
+    "erwartet": {
+      "herkunft": "ki",
+      "uuid": "a-07"
+    },
+    "warum": "nur im Assistenten-Text"
+  },
+  {
+    "zitat": "Ich sollte erst die Datei prüfen, bevor ich die Frist von 14 Tagen nenne.",
+    "erwartet": {
+      "herkunft": "ki",
+      "uuid": "a-01"
+    },
+    "warum": "nur im thinking-Block des Assistenten"
+  },
+  {
+    "zitat": "grep -n Zeitlimit /srv/shop/config.yaml",
+    "erwartet": {
+      "herkunft": "ki",
+      "uuid": "a-02"
+    },
+    "warum": "nur in der Eingabe eines tool_use"
+  },
+  {
+    "zitat": "Retouren werden donnerstags nachmittags im Wareneingang geprüft.",
+    "erwartet": {
+      "herkunft": "du",
+      "uuid": "u-18"
+    },
+    "warum": "zwei Nutzernachrichten: die frühere zählt"
+  },
+  {
+    "zitat": "Standardversand: DHL Paket, Gewicht bis 31,5 kg.",
+    "erwartet": {
+      "herkunft": "tool",
+      "uuid": "u-20"
+    },
+    "warum": "zwei Read-Ergebnisse: das frühere zählt"
+  },
+  {
+    "zitat": "Laut Konfiguration läuft der Backup-Job jeden Sonntag um 02:00 Uhr.",
+    "erwartet": {
+      "herkunft": "ki",
+      "uuid": "a-09"
+    },
+    "warum": "Assistent (früher) und Read-Ergebnis (später): das Read-Ergebnis zählt nach K2 als ki, der Claude-Text steht schon davor"
+  },
+  {
+    "zitat": "Der Hausmeister heißt Herr Lindner und kommt freitags.",
+    "erwartet": {
+      "herkunft": "ki",
+      "uuid": "u-23"
+    },
+    "warum": "Kompaktierungs-Zusammenfassung (isCompactSummary)"
+  },
+  {
+    "zitat": "Prüfe, ob die Kundengruppe Gewerbe 19 Prozent Rabatt erhält.",
+    "erwartet": {
+      "herkunft": "ki",
+      "uuid": "u-24"
+    },
+    "warum": "Nutzer-Zeile im Nebenzweig (isSidechain): vom Assistenten geschrieben"
+  },
+  {
+    "zitat": "Es wurden 12 Dateien übernommen.",
+    "erwartet": {
+      "herkunft": "ki",
+      "uuid": "u-25"
+    },
+    "warum": "Nachricht mit origin.kind task-notification: nicht vom Nutzer"
+  },
+  {
+    "zitat": "Der Importlauf meldet: 8 Zeilen wurden übersprungen.",
+    "erwartet": {
+      "herkunft": "ki",
+      "uuid": "u-25b"
+    },
+    "warum": "<task-notification>-Text"
+  },
+  {
+    "zitat": "Das Kommando prüft alle Lieferantenseiten auf Fristen.",
+    "erwartet": {
+      "herkunft": "ki",
+      "uuid": "u-26"
+    },
+    "warum": "<command-message>-Inhalt"
+  },
+  {
+    "zitat": "Prüfe nur die Lieferantenseiten gründlich",
+    "erwartet": {
+      "herkunft": "du",
+      "uuid": "u-26"
+    },
+    "warum": "<command-args>: vom Nutzer getippt"
+  },
+  {
+    "zitat": "41 Prozent des Fensters belegt",
+    "erwartet": {
+      "herkunft": "ki",
+      "uuid": "u-27"
+    },
+    "warum": "<local-command-stdout>-Inhalt"
+  },
+  {
+    "zitat": "Die Hotline ist werktags bis 17 Uhr erreichbar.",
+    "erwartet": {
+      "herkunft": "ki",
+      "uuid": "u-29"
+    },
+    "warum": "verschachtelter system-reminder: der Rest bleibt Kontext"
+  },
+  {
+    "zitat": "enthält die Kundennummer 4711 im Klartext",
+    "erwartet": {
+      "herkunft": "ki",
+      "uuid": "u-28"
+    },
+    "warum": "nicht geschlossener system-reminder: alles danach ist Kontext"
+  },
+  {
+    "zitat": "Vorab gefragt",
+    "erwartet": {
+      "herkunft": "du",
+      "uuid": "u-28"
+    },
+    "warum": "Text vor einem nicht geschlossenen reminder bleibt Nutzertext"
+  },
+  {
+    "zitat": "Merke dir: Das Büro schließt am Freitag um 13 Uhr.",
+    "erwartet": {
+      "herkunft": "ki",
+      "uuid": "q-01"
+    },
+    "warum": "anderer Zeilentyp (queue-operation) zählt nur als ki"
+  },
+  {
+    "zitat": "Sitzung zu Versandregeln und Retouren",
+    "erwartet": {
+      "herkunft": "ki",
+      "uuid": null
+    },
+    "warum": "summary-Zeile ohne uuid"
+  },
+  {
+    "zitat": "Dieses Foto zeigt den Wareneingang mit 14 Paletten.",
+    "erwartet": {
+      "herkunft": "du",
+      "uuid": "u-30"
+    },
+    "warum": "Text neben einem Bildblock"
+  },
+  {
+    "zitat": "Danke, das passt so für die Lagerliste.",
+    "erwartet": {
+      "herkunft": "du",
+      "uuid": "u-31"
+    },
+    "warum": "Text neben einem tool_result in derselben Nachricht"
+  },
+  {
+    "zitat": "const TIMEOUT_MS = 45000;",
+    "erwartet": {
+      "herkunft": "tool",
+      "uuid": "u-31"
+    },
+    "warum": "Grep-Ergebnis"
+  },
+  {
+    "zitat": "Der Mond besteht aus Hartkäse und Lagerregalen.",
+    "erwartet": null,
+    "warum": "kommt nirgends vor"
+  },
+  {
+    "zitat": "Die Palette wird freitags bis 12 Uhr abgeholt.\nDer Fahrer meldet sich vorher telefonisch an.",
+    "erwartet": {
+      "herkunft": "tool",
+      "uuid": "u-34"
+    },
+    "warum": "mehrzeiliges Zitat aus Read-Ergebnis mit Tab-Zeilennummern"
+  },
+  {
+    "zitat": "Regal A enthält nur Tonerkartuschen.\nRegal B enthält Trommeleinheiten und Zubehör.",
+    "erwartet": {
+      "herkunft": "tool",
+      "uuid": "u-35"
+    },
+    "warum": "mehrzeiliges Zitat aus Read-Ergebnis mit Pfeil-Zeilennummern"
+  },
+  {
+    "zitat": "17 Offene Bestellungen warten auf Freigabe durch die Leitung",
+    "erwartet": {
+      "herkunft": "tool",
+      "uuid": "u-36"
+    },
+    "warum": "Grep-Ergebnis: führende Zahl gehört zum Inhalt und wird nicht entfernt"
+  },
+  {
+    "zitat": "Offene Bestellungen warten auf Freigabe durch die Leitung\nGeprüfte Bestellungen gehen morgens an den Versand",
+    "erwartet": null,
+    "warum": "Grep: Zahl zwischen den Zeilen bleibt, mehrzeiliges Zitat ohne Zahl findet nichts"
+  },
+  {
+    "zitat": "5→Ausgabe mit Pfeil und Zahl bleibt unverändert",
+    "erwartet": {
+      "herkunft": "tool",
+      "uuid": "u-37"
+    },
+    "warum": "Bash-Ergebnis: Pfeil-Präfix wird nicht entfernt"
+  },
+  {
+    "zitat": "5 Ausgabe mit Pfeil",
+    "erwartet": null,
+    "warum": "Bash: ohne Pfeil kein Treffer (nur Read/NotebookRead werden bereinigt)"
+  },
+  {
+    "zitat": "Der Gabelstapler wird jeden Mittwoch gewartet und geprüft.",
+    "erwartet": {
+      "herkunft": "ki",
+      "uuid": "a-k2-1"
+    },
+    "warum": "K2: echo des eigenen Befehls — das Bash-Ergebnis wiederholt nur Claude-Text"
+  },
+  {
+    "zitat": "Die Notfallnummer der Spedition lautet intern Kurzwahl neun.",
+    "erwartet": {
+      "herkunft": "ki",
+      "uuid": "a-k2-2"
+    },
+    "warum": "K2: Write, dann Read derselben Datei — der Inhalt stammt von Claude"
+  },
+  {
+    "zitat": "Retourenfrist im Skript auf vierzehn Tage gesetzt",
+    "erwartet": {
+      "herkunft": "ki",
+      "uuid": "a-k2-4"
+    },
+    "warum": "K2: Commit-Text von Claude, später über git log gelesen"
+  },
+  {
+    "zitat": "Die Ersatzteilliste liegt im Ordner Werkstatt unter Regal drei.",
+    "erwartet": {
+      "herkunft": "du",
+      "uuid": "u-k2-6"
+    },
+    "warum": "K2: Nutzer sagt es, Claude wiederholt es, Read zeigt es — der Nutzerfund bleibt"
+  },
+  {
+    "zitat": "Der Hersteller nennt eine Lieferzeit von sechs Werktagen.",
+    "erwartet": {
+      "herkunft": "web",
+      "uuid": "u-w2-1"
+    },
+    "warum": "W2: Bash mit curl liefert Web-Inhalt, nicht tool"
+  },
+  {
+    "zitat": "Die Servicehotline ist auch samstags bis 14 Uhr besetzt.",
+    "erwartet": {
+      "herkunft": "web",
+      "uuid": "u-w2-2"
+    },
+    "warum": "W2: MCP-Werkzeug ohne Freigabe gilt als web"
+  },
+  {
+    "zitat": "Der Hersteller nennt eine Lieferzeit von sechs Wer",
+    "erwartet": null,
+    "warum": "W3: Zitat endet mitten im Wort — kein Treffer"
+  }
+]
