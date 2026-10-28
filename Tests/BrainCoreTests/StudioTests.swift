@@ -339,6 +339,10 @@ private func url(_ s: String) -> URL { URL(string: s)! }
     for pfad in ["/api/git/status", "/api/git/commit/x", "/api/git/verlauf?pfad=a.md", "/api/git/log?max=50", "/api/git/diff"] {
         #expect(limit(pfad) == .seconds(90), "\(pfad)")
     }
+    // Posteingang sichten endet in einem Commit (Node-Frist 75 s): wie der Commit 90 s
+    for pfad in ["/api/posteingang/verwerfen", "/api/posteingang/spaeter", "/api/posteingang/uebernehmen"] {
+        #expect(limit(pfad) == .seconds(90), "\(pfad)")
+    }
     for pfad in ["/api/vaults", "/api/vaults/aktiv", "/api/vaults/entfernen", "/api/info", "/api/kit/vertrauen", "/api/mcp/verbinden",
                  "/api/notizen", "/api/notiz/kontext?pfad=a.md", "/api/probe", "/api/ki/erkennen", "/index.html"] {
         #expect(limit(pfad) == .seconds(30), "\(pfad)")
