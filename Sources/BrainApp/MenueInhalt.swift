@@ -41,6 +41,7 @@ struct MenueInhalt: View {
         Button("Ordner im Finder zeigen") { zustand.zeigeOrdner() }.disabled(zustand.vault == nil)
         Button("Status aktualisieren") { Task { await zustand.aktualisiere() } }.keyboardShortcut("r")
         Button("Vault öffnen …") { zustand.sende(.vaultOeffnen) }
+        Button("Kortex einrichten …") { zustand.zeigeAssistent() }
         Divider()
         Button("Nach Updates suchen …") { updater.checkForUpdates(nil) }
         Button("Beenden") { NSApp.terminate(nil) }.keyboardShortcut("q")

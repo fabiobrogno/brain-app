@@ -34,6 +34,12 @@ final class AppZustand: ObservableObject {
     private var brainNode = ""
     private var rueckfragenFenster: NSWindow?
     private var rueckfragenModell: RueckfragenModell?
+    /// Assistent „Kortex einrichten“: Fenster, Modell und seine eigene Werkstatt-Verbindung (ohne Vault, liest vaults.json).
+    private var assistentFenster: NSWindow?
+    private var assistentModell: EinrichtungsModell?
+    private var assistentBruecke: BrueckenVerbindung?
+    /// Hat der Assistent beim Start das Studio verdrängt? Dann öffnet es sich, wenn er zugeht.
+    private var assistentVerdraengtStudio = false
     /// Stand der Laufzeit-Prüfung beim Start (Prüfsumme der Node-Datei, rund 120 MB, kann dauern). Erst nach abgeschlossener
     /// Prüfung urteilt die App; vorher heißt es „wird vorbereitet“, nie „bitte neu installieren“.
     private enum LaufzeitStand { case wirdVorbereitet, bereit, fehlgeschlagen }
@@ -201,8 +207,15 @@ final class AppZustand: ObservableObject {
                 await self?.aktualisiere()
             }
         }
-        // Das Studio öffnet immer — auch ohne Vault (dann zeigt es „Willkommen“); der Status wird danach gelesen.
-        oeffneStudio()
+        // Das Studio öffnet immer — auch ohne Vault (dann zeigt es „Willkommen“); der Status wird danach gelesen. Nur beim ersten
+        // Start auf einem Mac ohne Vault (oder nach einem abgebrochenen Assistenten) kommt zuerst der Assistent „Kortex einrichten“
+        // und das Studio nach ihm. Testläufe (Rauchtest, Selbstfoto, `--vault`) zeigen ihn nie.
+        if argumente.vault == nil, !argumente.fluechtig, EinrichtungsSpeicher(pfade: pfade).sollErscheinen(hatVault: vault != nil) {
+            assistentVerdraengtStudio = true
+            zeigeAssistent(wiederholung: false)
+        } else {
+            oeffneStudio()
+        }
         if argumente.fensterOeffnen { Task { await oeffneFenster() } }
         if let s = argumente.schliessenNach { Task { try? await Task.sleep(for: s); studio.schliesse(); uebersicht.schliesse() } }
         if let s = argumente.beendenNach {
@@ -516,6 +529,74 @@ final class AppZustand: ObservableObject {
         hinweisFenster = w
         w.makeKeyAndOrderFront(nil)
         NSApp.activate()
+    }
+
+    // MARK: Assistent „Kortex einrichten“
+
+    /// Zeigt den Assistenten (beim ersten Start von selbst, sonst über das Menü). Er hat eine eigene Werkstatt-Verbindung ohne
+    /// Vault: sie führt dieselben Routen aus wie das Studio und liest/schreibt dieselbe `vaults.json`. Ein offenes Fenster kommt nur nach vorn.
+    func zeigeAssistent(wiederholung: Bool = true) {
+        if let assistentFenster {
+            assistentFenster.makeKeyAndOrderFront(nil)
+            NSApp.activate()
+            return
+        }
+        guard let node, let skript = werkstattSkript else {
+            // Ohne Laufzeit gibt es nichts, womit der Assistent arbeiten könnte.
+            log.schreibe("assistent-nicht-moeglich laufzeit-fehlt")
+            zeigeEinrichtung()
+            return
+        }
+        let bruecke = BrueckenVerbindung(node: node, vault: nil, skript: skript, umgebung: werkstattUmgebung, arbeitsordner: pfade.basis)
+        let dienste = WerkstattDienste(pfade: pfade) { methode, pfad, body in
+            try await bruecke.anfrage(methode: methode, pfad: pfad, body: body)
+        }
+        let modell = EinrichtungsModell(dienste: dienste, speicher: EinrichtungsSpeicher(pfade: pfade), log: log)
+        let vaultVorher = vaultFrisch()
+        let w = NSWindow(contentViewController: NSHostingController(rootView: EinrichtungsAssistentAnsicht(modell: modell)))
+        w.title = "Kortex einrichten"
+        w.styleMask = [.titled, .closable]
+        w.isReleasedWhenClosed = false
+        w.center()
+        assistentFenster = w
+        assistentModell = modell
+        assistentBruecke = bruecke
+        modell.beiSchliessen = { [weak w] in w?.close() }
+        modell.beiStudioOeffnen = { [weak w] in w?.close() }
+        NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: w, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.assistentGeschlossen(vaultVorher: vaultVorher) }
+        }
+        log.schreibe("assistent-offen wiederholung=\(wiederholung)")
+        modell.starte(wiederholung: wiederholung)
+        w.makeKeyAndOrderFront(nil)
+        NSApp.activate()
+    }
+
+    /// Der Assistent ist zu (fertig, „Später“, Fenster geschlossen oder App-Wechsel): Verbindung beenden, und das Studio muss den
+    /// neuen Vault kennen — es hat seine Werkstatt mit dem alten Stand gestartet, also neu öffnen, wenn sich der Vault geändert hat.
+    private func assistentGeschlossen(vaultVorher: URL?) {
+        let fertig = assistentModell?.istFertig ?? false
+        assistentModell?.beende()
+        let bruecke = assistentBruecke
+        Task { await bruecke?.beende() }
+        assistentFenster = nil
+        assistentModell = nil
+        assistentBruecke = nil
+        let verdraengt = assistentVerdraengtStudio
+        assistentVerdraengtStudio = false
+        log.schreibe("assistent-zu fertig=\(fertig)")
+        let geaendert = !Self.gleich(vaultVorher, vaultFrisch())
+        if geaendert { vaultGewechselt() }
+        Task {
+            if geaendert, studio.istOffen {
+                // Ungespeicherte Eingaben im Studio zuerst sichern lassen (wie bei ⌘Q); sagt der Nutzer „nein“, bleibt es offen.
+                guard await studio.darfSchliessen() else { return }
+                studio.schliesse()
+                oeffneStudio()
+            } else if !studio.istOffen, fertig || verdraengt {
+                oeffneStudio()
+            }
+        }
     }
 
     /// Vor ⌘Q: das Studio sichert zuerst seine Eingaben (siehe `FensterSteuerung.darfSchliessen`).
