@@ -47,6 +47,7 @@ final class AppDelegat: NSObject, NSApplicationDelegate {
     // MARK: Menüs
 
     @objc private func studioOeffnen() { zustand.oeffneStudio() }
+    @objc private func assistentOeffnen() { zustand.zeigeAssistent() }
     @objc private func uebersichtOeffnen() { Task { await zustand.oeffneFenster() } }
 
     /// Alle Befehle an die Studio-Oberfläche laufen über einen Eintrag mit dem Namen in `representedObject`
@@ -86,6 +87,7 @@ final class AppDelegat: NSObject, NSApplicationDelegate {
         suchen.target = updater
         haupt.addItem(menue("Kortex", [
             suchen,
+            eintrag("Kortex einrichten …", #selector(assistentOeffnen)),
             .separator(),
             standard("Kortex ausblenden", #selector(NSApplication.hide(_:)), "h"),
             .separator(),

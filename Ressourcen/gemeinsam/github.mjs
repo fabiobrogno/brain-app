@@ -157,5 +157,13 @@ export function erzeugeGitHub(opt = {}) {
     return { ok: true };
   }
 
-  return { verfuegbar, anmelden, status, konto, abmelden, stoppe: () => { lauf++; } };
+  // Beendet nur das Warten auf den Code (ohne Schlüsselbund): ein laufendes Polling speichert danach nichts mehr, ein schon gespeichertes
+  // Konto bleibt unberührt. Anders als abmelden() ruft das nie `git credential reject` auf.
+  function abbrechen() {
+    lauf++;
+    if (zustand && zustand.zustand === "wartet") zustand = null;
+    return { ok: true };
+  }
+
+  return { verfuegbar, anmelden, status, konto, abmelden, abbrechen, stoppe: () => { lauf++; } };
 }

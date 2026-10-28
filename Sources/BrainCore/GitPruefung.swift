@@ -51,6 +51,8 @@ public typealias GitProzess = @Sendable (_ programm: URL, _ argumente: [String])
 /// `git` gezeigt hat — die Prüfung selbst löst nie einen Dialog aus.
 public actor GitPruefer {
     static let xcodeSelect = URL(fileURLWithPath: "/usr/bin/xcode-select")
+    /// Das git, das die Werkstatt aus dem PATH startet.
+    static let systemGit = "/usr/bin/git"
     static let pgrep = URL(fileURLWithPath: "/usr/bin/pgrep")
     /// Prozessname der Installations-App von Apple (läuft, solange der Dialog offen ist oder installiert wird).
     static let installerName = "Install Command Line Developer Tools"
@@ -81,8 +83,10 @@ public actor GitPruefer {
             return .nichtPruefbar(Self.beschreibe(error))
         }
         if let pfad {
-            let programm = pfad + "/usr/bin/git"
-            if istAusfuehrbar(programm) { return await frageVersion(programm) }
+            // Erst wenn das Entwicklerverzeichnis ein echtes git enthält, löst `/usr/bin/git` keinen Dialog mehr aus. Gefragt wird dann
+            // genau das Programm, das auch die Werkstatt startet: Bei Xcode.app ohne akzeptierte Lizenz läuft das echte git im
+            // Entwicklerverzeichnis noch, `/usr/bin/git` aber nicht.
+            if istAusfuehrbar(pfad + "/usr/bin/git") { return await frageVersion(Self.systemGit) }
         }
         return await installiertJetzt() ? .installiertGerade : .fehlt
     }
@@ -140,8 +144,11 @@ public actor GitPruefer {
             return .defekt("git antwortet nicht: \(Self.beschreibe(error))")
         }
         if r.code == 0, let version = Self.version(aus: r.ausgabe) { return .vorhanden(pfad: programm, version: version) }
-        let grund = (r.fehler.isEmpty ? r.ausgabe : r.fehler).split(separator: "\n")
-            .map { $0.trimmingCharacters(in: .whitespaces) }.first { !$0.isEmpty }
+        let text = r.fehler.isEmpty ? r.ausgabe : r.fehler
+        if text.localizedCaseInsensitiveContains("license") {
+            return .defekt("Die Xcode-Lizenz ist noch nicht akzeptiert. Öffne Xcode einmal und bestätige die Lizenz — oder führe im Terminal „sudo xcodebuild -license accept“ aus.")
+        }
+        let grund = text.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.first { !$0.isEmpty }
         return .defekt(grund ?? "git beendete sich mit Code \(r.code)")
     }
 
