@@ -5,7 +5,7 @@ import { accessSync, constants, statSync, readdirSync, existsSync } from "node:f
 import { join, dirname, delimiter, isAbsolute } from "node:path";
 import { homedir } from "node:os";
 import { spawn } from "node:child_process";
-import { kindUmgebung } from "./basis.mjs";
+import { kindUmgebung, vorschauOrdner } from "./basis.mjs";
 
 // Feste Reihenfolge und Anzeigenamen; der Programmname ist die id.
 const AGENTEN = [
@@ -31,7 +31,9 @@ function versionAbsteigend(a, b) {
 function zusatzOrte(env) {
   if (env.BRAIN_TESTMODUS === "1" && env.BRAIN_CLAUDE_EXTRA !== undefined) return env.BRAIN_CLAUDE_EXTRA.split(delimiter).filter(Boolean);
   const home = homedir();
-  const orte = [join(home, ".local", "bin"), join(home, ".claude", "local"), "/opt/homebrew/bin", "/usr/local/bin", join(home, ".opencode", "bin"),
+  // Vorschau: ein frisch installierter Mac — die Programme dieses Rechners (Homebrew, /usr/local) gehören nicht dazu.
+  const system = vorschauOrdner() ? [] : ["/opt/homebrew/bin", "/usr/local/bin"];
+  const orte = [join(home, ".local", "bin"), join(home, ".claude", "local"), ...system, join(home, ".opencode", "bin"),
     join(home, ".cursor", "bin"), join(home, ".bun", "bin"), join(home, ".npm-global", "bin"), join(home, ".volta", "bin"), join(home, ".cargo", "bin")];
   try {
     const nvm = join(home, ".nvm", "versions", "node");

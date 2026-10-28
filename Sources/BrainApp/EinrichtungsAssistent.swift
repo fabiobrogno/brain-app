@@ -22,7 +22,11 @@ final class EinrichtungsModell: ObservableObject {
     /// Schließt das Fenster des Assistenten (für „Später“).
     var beiSchliessen: () -> Void = {}
 
-    init(dienste: EinrichtungsDienste, speicher: EinrichtungsSpeicher, log: AppLog) {
+    /// Vorschau („wie frisch installiert“): Band im Fenster, Ordner-Dialoge starten im Vorschau-Home.
+    let vorschau: VorschauModus?
+
+    init(dienste: EinrichtungsDienste, speicher: EinrichtungsSpeicher, log: AppLog, vorschau: VorschauModus? = nil) {
+        self.vorschau = vorschau
         ablauf = EinrichtungsAblauf(dienste: dienste, speicher: speicher, log: { log.schreibe($0) }) { [weak self] z, a in
             self?.zustand = z
             self?.anzeige = a
@@ -50,15 +54,15 @@ final class EinrichtungsModell: ObservableObject {
 
     var ordnerText: String {
         guard let o = eigenerOrdner else { return "Brain im Benutzerordner" }
-        return o.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
+        return o.path.replacingOccurrences(of: vorschau?.home.path ?? NSHomeDirectory(), with: "~")
     }
 
     func waehleZielordner() {
-        if let url = Self.waehleOrdner(titel: "Wo soll dein Brain liegen?", knopf: "Hier anlegen") { eigenerOrdner = url }
+        if let url = Self.waehleOrdner(titel: "Wo soll dein Brain liegen?", knopf: "Hier anlegen", start: vorschau?.home) { eigenerOrdner = url }
     }
 
     func oeffneVorhandenenOrdner() {
-        guard let url = Self.waehleOrdner(titel: "Welcher Ordner ist dein Brain?", knopf: "Öffnen") else { return }
+        guard let url = Self.waehleOrdner(titel: "Welcher Ordner ist dein Brain?", knopf: "Öffnen", start: vorschau?.home) else { return }
         var verlauf = true
         if !FileManager.default.fileExists(atPath: url.appendingPathComponent(".git").path) {
             let alert = NSAlert()
@@ -76,7 +80,7 @@ final class EinrichtungsModell: ObservableObject {
         tu { await $0.oeffneOrdner(pfad: url.path, versionsverlaufEinschalten: verlauf) }
     }
 
-    private static func waehleOrdner(titel: String, knopf: String) -> URL? {
+    private static func waehleOrdner(titel: String, knopf: String, start: URL? = nil) -> URL? {
         let p = NSOpenPanel()
         p.canChooseDirectories = true
         p.canChooseFiles = false
@@ -84,6 +88,7 @@ final class EinrichtungsModell: ObservableObject {
         p.canCreateDirectories = true
         p.message = titel
         p.prompt = knopf
+        if let start { p.directoryURL = start }
         NSApp.activate()
         return p.runModal() == .OK ? p.url : nil
     }
@@ -103,6 +108,7 @@ struct EinrichtungsAssistentAnsicht: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if modell.vorschau != nil { VorschauBandAnsicht() }
             Kopf(zustand: modell.zustand)
             Divider()
             Group {
@@ -118,7 +124,7 @@ struct EinrichtungsAssistentAnsicht: View {
             Divider()
             Fuss(modell: modell)
         }
-        .frame(width: 580, height: 560)
+        .frame(width: 580, height: modell.vorschau == nil ? 560 : 582)
     }
 }
 

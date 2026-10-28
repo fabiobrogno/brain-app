@@ -40,6 +40,8 @@ public actor BrueckenVerbindung {
     private let arbeitsordner: URL?
     private var argumente: [String]
     private let umgebung: [String: String]
+    /// Geerbte Umgebung, aus der die des Kindprozesses entsteht (`NodeUmgebung.fuerKind`); Standard: die der App. Nur Tests setzen sie.
+    private let basisUmgebung: [String: String]?
     private let vorStart: (@Sendable () async -> Bool)?
     /// Die laufende Vorab-Prüfung: gleichzeitige Starts (die Seite lädt viele Dateien auf einmal) teilen sich EINE Prüfung.
     private var pruefung: Task<Bool, Never>?
@@ -61,7 +63,8 @@ public actor BrueckenVerbindung {
     /// `vorStart` läuft vor JEDEM Prozessstart (auch nach einem Absturz) und muss `true` liefern, sonst startet nichts und die
     /// Anfrage scheitert mit `.nichtErlaubt` — so läuft Kit-Code aus dem Vault nur mit Vertrauen (Studio-v2-Spec §8).
     public init(node: URL, vault: URL?, skript: URL? = nil, umgebung: [String: String] = [:], arbeitsordner: URL? = nil,
-                vorStart: (@Sendable () async -> Bool)? = nil) {
+                basisUmgebung: [String: String]? = nil, vorStart: (@Sendable () async -> Bool)? = nil) {
+        self.basisUmgebung = basisUmgebung
         self.node = node
         self.vault = vault
         self.skript = skript
@@ -131,7 +134,7 @@ public actor BrueckenVerbindung {
         let p = Process()
         p.executableURL = node
         p.arguments = argumente
-        p.environment = NodeUmgebung.fuerKind(vault: vault, vorgaben: umgebung)
+        p.environment = NodeUmgebung.fuerKind(basis: basisUmgebung ?? ProcessInfo.processInfo.environment, vault: vault, vorgaben: umgebung)
         p.currentDirectoryURL = startOrdner
         let ein = Pipe(), aus = Pipe()
         p.standardInput = ein

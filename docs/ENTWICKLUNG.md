@@ -59,3 +59,31 @@ Ein roter Lauf darf höchstens 2× neu gestartet werden. Den ersten Fehler verli
 
 ## Lokal prüfen
 `swift build && swift test`, `shellcheck scripts/*.sh`, `bash scripts/baue-app.sh` (macOS, arm64).
+
+## Vorschau wie frisch installiert
+Ein Befehl zeigt Kortex so, wie es jemand sieht, der es gerade installiert hat — ohne dass auf deinem Mac etwas bleibt:
+
+    scripts/vorschau.sh [--ohne-git] [--mit-ki]      # oder Doppelklick auf „Kortex Vorschau.command“ im Repo-Ordner
+
+- `--ohne-git`: git gilt als nicht installiert; „installieren“ zeigt nur einen Hinweis, `xcode-select --install` läuft nie.
+- `--mit-ki`: Platzhalter für Claude Code, Codex und Cursor im Vorschau-PATH; „KI verbinden“ schreibt nur in die Vorschau.
+- `--neu-bauen`: Build erzwingen (sonst wird nur gebaut, wenn `build/Kortex.app` fehlt oder der Quelltext neuer ist). Weitere Schalter gehen an die App.
+
+Das Skript legt `$TMPDIR/kortex-vorschau-XXXX` an, startet eine Kopie der App unter eigener Kennung `io.github.fbrogno.brain.vorschau`
+(eigene Einstellungen, eigener Web-Speicher, Sparkle aus) mit `--vorschau <Ordner>` und löscht Ordner und Spuren der Kennung nach dem Ende
+(Beenden, Strg-C, Schließen des Terminals). Der Assistent „Kortex einrichten“ erscheint wie bei einem frischen Nutzer; ein Band
+„Vorschau — nichts wird gespeichert“ steht in jedem Fenster, im Menü und im Titel des Assistenten.
+
+Was umgeleitet ist (`VorschauModus`, Swift; `KORTEX_VORSCHAU`, Node):
+- Application Support → `<Ordner>/support`. HOME, `CFFIXED_USER_HOME`, `XDG_*`, `TMPDIR`, `CODEX_HOME` aller Kindprozesse → `<Ordner>/home` bzw. `tmp`.
+- git: `GIT_CONFIG_GLOBAL=<home>/.gitconfig`, `GIT_CONFIG_NOSYSTEM=1`; ssh ohne `~/.ssh`, Schlüssel und Agent (`GIT_SSH_COMMAND`).
+- GitHub-Token: Helper `store --file=<home>/.git-credentials` statt Schlüsselbund; die Swift-Seite greift nie auf den Schlüsselbund zu.
+- PATH: `<Ordner>/bin` plus Systemordner, nie Homebrew oder `/usr/local`. KI-Suche nur dort und im Vorschau-Home.
+- Vaults (anlegen, öffnen, klonen) nur innerhalb des Ordners — auch ein im Dialog gewählter Ordner außerhalb wird abgelehnt.
+- Kein Sparkle, keine Login-Shell (`TerminalNode`), keine LaunchAgents, keine Login-Items.
+- Fail-closed: ungültiger Ordner, HOME nicht umgelenkt oder echte Bundle-ID → die App beendet sich (Exit 2), die Werkstatt ebenso.
+
+Tests: `swift test --filter Vorschau` (Pfade, Umgebung, Platzhalter, Ende-zu-Ende mit echter Werkstatt und einem zweiten Temp-Ordner als
+„echtes“ HOME), `Tests/Node/vorschau.test.mjs`, `scripts/teste-vorschau.sh` (Skript, Signale, Aufräumen) und
+`scripts/teste-vorschau.sh --app` (echte App; prüft nur lesend, dass im echten Benutzerordner nichts neu oder anders ist).
+Wer weitere Orte einführt (neue Ordner unter `~`, Keychain, LaunchAgents), muss sie hier umlenken oder in der Vorschau abschalten.
