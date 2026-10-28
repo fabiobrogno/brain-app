@@ -58,10 +58,10 @@ test("MCP: initialize übernimmt unterstützte Version, sonst die neueste; Benac
   assert.equal(s.stderr(), "");
 });
 
-test("MCP: tools/list nennt genau die sechs Werkzeuge mit Schema", async () => {
+test("MCP: tools/list nennt genau die sieben Werkzeuge mit Schema", async () => {
   const s = starte(wiki());
   const a = await s.frage("tools/list");
-  assert.deepEqual(a.result.tools.map((t) => t.name).sort(), ["brain_gesundheit", "brain_lesen", "brain_merken", "brain_suchen", "brain_vaults", "brain_verlauf"]);
+  assert.deepEqual(a.result.tools.map((t) => t.name).sort(), ["brain_gesundheit", "brain_kontext", "brain_lesen", "brain_merken", "brain_suchen", "brain_vaults", "brain_verlauf"]);
   for (const t of a.result.tools) { assert.equal(t.inputSchema.type, "object"); assert.ok(t.description.length > 10); }
   assert.deepEqual(a.result.tools.find((t) => t.name === "brain_suchen").inputSchema.required, ["frage"]);
   s.p.stdin.end(); await s.ende;
@@ -175,5 +175,50 @@ test("MCP: leere Batch [] → JSON-RPC-Fehler -32600 (eine Antwort, kein Absturz
   const a = await s.naechste();
   assert.equal(a.error.code, -32600); assert.equal(a.id, null); assert.ok(!Array.isArray(a));
   assert.equal((await s.frage("ping")).jsonrpc, "2.0");
+  s.p.stdin.end(); await s.ende;
+});
+
+function projektWiki() {
+  const d = repo();
+  const k = (extra) => `---\nname: x\ntyp: entitaet\n${extra}\n---\n`;
+  schreibe(d, "09_wiki/projekte/entitaet_garten.md", k("repo: jo/garten-app\nstand: 2026-10-20") + "# Garten-App\n\nDie App pflegt Beete. Tests laufen mit npm test. Ziel ist test.\n\nVierter Satz fehlt im Auszug.\n");
+  schreibe(d, "09_wiki/projekte/entitaet_pfade.md", k("pfade: [apps/garten-app, tools/x]\nstand: 2026-10-21") + "# Pfade\n\nGilt für den Ordner.\n");
+  schreibe(d, "09_wiki/wissen/thema_garten_notizen.md", kopf + "# Garten-App Notizen\n\nNur über den Titel gefunden.\n");
+  schreibe(d, "09_wiki/projekte/entitaet_rot.md", k("repo: jo/garten-app\nzweifel: stimmt nicht mehr") + "# Rot\n\nGarten rot.\n");
+  schreibe(d, "09_wiki/projekte/entitaet_alt.md", k("repo: jo/garten-app\nstand: 2020-01-01\nverfall: 30") + "# Alt\n\nVerfallen.\n");
+  for (let i = 0; i < 10; i++) schreibe(d, `09_wiki/projekte/entitaet_viel${i}.md`, k("repo: jo/viel") + `# Viel ${i}\n\nSeite ${i}.\n`);
+  schreibe(d, "09_wiki/projekte/entitaet_lang.md", k("repo: jo/lang") + "# Lang\n\n" + "Ein sehr langer Satz ohne Ende ".repeat(500) + "\n");
+  g(d, "add", "--", "09_wiki"); g(d, "commit", "-q", "-m", "Projektseiten");
+  return d;
+}
+
+test("MCP brain_kontext: repo-Treffer zuerst, dann pfade/Titel; rote Seite fehlt, verfallene am Ende mit Hinweis; Auszug ≤ 3 Sätze", async () => {
+  const s = starte(projektWiki());
+  const a = await s.rufe("brain_kontext", { projekt: "garten-app" });
+  const t = textVon(a);
+  assert.ok(!a.result.isError);
+  const reihenfolge = ["entitaet_garten.md", "entitaet_pfade.md", "thema_garten_notizen.md", "entitaet_alt.md"].map((n) => t.indexOf(n));
+  assert.ok(reihenfolge.every((i) => i > 0), t);
+  assert.deepEqual([...reihenfolge].sort((x, y) => x - y), reihenfolge, "Reihenfolge: repo, pfade, Titel, verfallen");
+  assert.ok(!t.includes("entitaet_rot.md"));
+  assert.match(t, /entitaet_alt\.md[^\n]*\n[^\n]*Stand verfallen/);
+  assert.match(t, /Stand 2026-10-20/);
+  assert.match(t, /Prüf-Stufe/);
+  assert.ok(t.includes("Ziel ist test.") && !t.includes("Vierter Satz"));
+  s.p.stdin.end(); await s.ende;
+});
+
+test("MCP brain_kontext: cwd ordnet über pfade zu; Höchstzahl 8; Längengrenze 6000; kein Treffer", async () => {
+  const s = starte(projektWiki());
+  let t = textVon(await s.rufe("brain_kontext", { projekt: "unbekannt", cwd: "/home/x/apps/garten-app" }));
+  assert.ok(t.includes("entitaet_pfade.md"));
+  t = textVon(await s.rufe("brain_kontext", { projekt: "viel" }));
+  assert.equal((t.match(/^\d+\. /gm) || []).length, 8);
+  t = textVon(await s.rufe("brain_kontext", { projekt: "lang" }));
+  assert.ok(t.includes("entitaet_lang.md") && t.length <= 6000);
+  t = textVon(await s.rufe("brain_kontext", { projekt: "nirgendwo" }));
+  assert.match(t, /Keine Seiten/);
+  const f = await s.rufe("brain_kontext", {});
+  assert.ok(f.result.isError);
   s.p.stdin.end(); await s.ende;
 });
