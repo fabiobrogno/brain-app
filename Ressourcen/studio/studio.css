@@ -402,6 +402,9 @@ input[type=checkbox] { accent-color: var(--akzent); width: 14px; height: 14px; m
 .fehlertext pre { margin: 4px 0 0; font: 11.5px/1.5 var(--mono); white-space: pre-wrap; color: var(--text-2); max-height: 120px; overflow: auto; -webkit-user-select: text; user-select: text; }
 .mini { color: var(--text-2); font-size: 12px; }
 .mini a { color: var(--akzent); cursor: pointer; }
+.nutzung-liste { list-style: none; margin: 4px 0 12px; padding: 0; }
+.nutzung-zeile { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; }
+.nutzung-seite { text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .gesundheit-pruefung { padding: 8px 0; border-bottom: 1px solid var(--linie); }
 .gesundheit-pruefung:last-child { border-bottom: 0; }
 .gesundheit-pruefung .k { display: flex; gap: 8px; align-items: center; font-weight: 600; }

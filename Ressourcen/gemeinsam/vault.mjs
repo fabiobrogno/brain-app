@@ -13,6 +13,7 @@ import { pruefeText, berlinHeute, leseKopf } from "./pruefung.mjs";
 import * as gitFn from "./git.mjs";
 import * as vertrauenFn from "./vertrauen.mjs";
 import { erzeugeNotizIndex, titelAus } from "./notizen.mjs";
+import { wertAus } from "./nutzung.mjs";
 
 export { HttpFehler, pruefeText, berlinHeute, supportOrdner };
 export const STUFE_TEXT = { gruen: "grün", gelb: "gelb", rot: "rot", grau: "grau", ohne: "ohne Befund" };
@@ -319,6 +320,13 @@ export function oeffneVault(vaultPfad, opts = {}) {
   const notizIndex = erzeugeNotizIndex({ wurzel, jetzt, heute: () => opts.heute || berlinHeute(jetzt()),
     gitKontext: () => { const s = gitSicht(); return s.gesperrt ? null : ctxVon(s); } });
 
+  // Lokale Nutzungsmessung (FBL-72): welche Seiten die KI per MCP abruft (.logs/mcp.log). Als „nie genutzt“ kommen nur echte Wiki-Seiten
+  // in Frage (09_wiki/, Markdown, nicht generiert, kein Unterstrich-Name). Rein lesend, ohne Kit-Code.
+  function nutzung() {
+    const wiki = baum().eintraege.filter((e) => e.art === "datei" && e.pfad.startsWith("09_wiki/") && e.pfad.endsWith(".md") && !e.schreibschutz && !e.pfad.split("/").pop().startsWith("_")).map((e) => e.pfad);
+    return wertAus(wurzel, wiki);
+  }
+
   // Dieselbe Suche für MCP brain_suchen und die Probe-Frage: strukturiert (treffer) und als Text, wie ihn die KI sieht.
   function suchenFuerKi(frage, anzahl) {
     const n = Math.min(20, Math.max(1, Number.parseInt(anzahl, 10) || 10));
@@ -331,7 +339,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
   }
 
   return {
-    wurzel, name: basename(wurzel), rueckfragen, kitVersion, kitVorhanden, kit, vertrauen, vertrauenStand: stand, baum, lies, schreibe, neu, merken, suche, suchenFuerKi, pruefung, gesundheit,
+    wurzel, name: basename(wurzel), rueckfragen, kitVersion, kitVorhanden, kit, vertrauen, vertrauenStand: stand, baum, lies, schreibe, neu, merken, suche, suchenFuerKi, pruefung, gesundheit, nutzung,
     notizen: notizIndex.notizen, notizKontext: notizIndex.kontext, typen: notizIndex.typen, ansichten: notizIndex.ansichten,
     gitLog: async (a) => gitFn.log(wurzel, a || {}, gitCtx()),
     gitRemote: async (url) => gitFn.remoteHinzufuegen(wurzel, url, gitCtx({ limit: opts.gitLimitRemote })),

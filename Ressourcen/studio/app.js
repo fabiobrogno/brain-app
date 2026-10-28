@@ -1028,6 +1028,7 @@ function zeichneStatus() {
     const farbe = /rot|red/.test(ampel) ? "rot" : /gelb|yellow|orange/.test(ampel) || w ? "gelb" : "";
     k.push(st("gesundheit", [symbol(farbe ? "warnung" : "herz", 14), h("span", { text: T.status.gesundheit }), h("span", { text: w ? String(w) : "✓" })], { klick: oeffneGesundheit, klasse: farbe === "rot" ? "schlecht" : farbe ? "warn" : "gut" }));
   }
+  k.push(st("nutzung", [symbol("verlauf", 14), h("span", { text: T.status.nutzung })], { klick: oeffneNutzung, titel: T.status.nutzungTitel }));
   k.push(h("span", { klasse: "trenner" }));
   k.push(st("theme", [symbol(istDunkel() ? "sonne" : "mond", 14)], { klick: () => setzeTheme(istDunkel() ? "hell" : "dunkel"), titel: istDunkel() ? T.status.zuHell : T.status.zuDunkel }));
   k.push(st("einstellungen", [symbol("zahnrad", 14)], { klick: (e) => oeffneEinstellungen(e.currentTarget), titel: T.status.einstellungen }));
@@ -1254,6 +1255,28 @@ async function oeffneGesundheit() {
       (p.befunde || []).length ? h("ul", null, (p.befunde || []).slice(0, 8).map((b) => h("li", { text: b.kurz }))) : null));
   dialog({ titel: T.gesundheit.titel, breit: true, rumpf: inhalt.length ? inhalt : [h("p", { klasse: "leise", text: T.gesundheit.ok })], knoepfe: [] });
 }
+// Lokale Nutzungsmessung (FBL-72): was die KI per MCP abruft, aus .logs/mcp.log (GET /api/nutzung).
+async function oeffneNutzung() {
+  if (dialogOffen()) return;
+  let w = null, fehler = false;
+  try { w = await api.nutzung(); } catch { fehler = true; }
+  const N = T.nutzung;
+  const seiteEl = (p, rechts) => h("li", { klasse: "nutzung-zeile" },
+    h("button", { klasse: "knopf-text nutzung-seite", "data-pfad": p, title: p, text: ohneEndung(dateiName(p)), aufClick: () => { d.schliessen(); oeffne(p); } }),
+    h("span", { klasse: "leise", text: rechts || "" }));
+  const rumpf = [h("p", { klasse: "leise", text: N.lokal })];
+  if (fehler || !w) rumpf.push(h("p", { klasse: "fehlertext", text: N.fehler }));
+  else if (!w.protokoll) rumpf.push(h("p", { "data-leer": "nutzung", text: N.keine }));
+  else {
+    rumpf.push(h("p", { text: N.kopf(w.aufrufe, datumKurz(w.seit)) }));
+    rumpf.push(h("h4", { text: N.meist }));
+    rumpf.push(w.meistgenutzt.length ? h("ul", { klasse: "nutzung-liste", "data-liste": "meist" }, w.meistgenutzt.map((e) => seiteEl(e.pfad, `${N.mal(e.anzahl)} · ${relativ(e.zuletzt)}`))) : h("p", { klasse: "leise", text: N.meistLeer }));
+    rumpf.push(h("h4", { text: N.nie }));
+    rumpf.push(w.nieGenutztGesamt ? h("p", { klasse: "leise", text: N.nieHinweis(w.nieGenutzt.length, w.nieGenutztGesamt) }) : h("p", { klasse: "leise", text: N.nieLeer }));
+    if (w.nieGenutzt.length) rumpf.push(h("ul", { klasse: "nutzung-liste", "data-liste": "nie" }, w.nieGenutzt.map((p) => seiteEl(p))));
+  }
+  const d = dialog({ titel: N.titel, breit: true, rumpf, knoepfe: [] });
+}
 const stufenKlasse = (s) => (/rot|red|fehler/i.test(s || "") ? "rot" : /gelb|warn|yellow/i.test(s || "") ? "gelb" : /gr[uü]n|ok|green/i.test(s || "") ? "gruen" : "grau");
 
 // ======================================================= Palette
@@ -1261,7 +1284,7 @@ function oeffnePalette(vorgabe = "") {
   if (dialogOffen()) return;
   const befehle = [
     [T.befehle.neu, "⌘N", oeffneNeu], [T.befehle.merken, "⌘⇧M", oeffneMerken], [T.befehle.commit, "⌘⇧G", oeffneCommit], [T.befehle.sync, "", sync],
-    [T.befehle.suche, "⌘⇧F", fokusSuche], [T.befehle.inNotiz, "⌘F", () => ed.suchen()], [T.befehle.info, "⌘⌥I", umschalteInfo], [T.befehle.gesundheit, "", oeffneGesundheit],
+    [T.befehle.suche, "⌘⇧F", fokusSuche], [T.befehle.inNotiz, "⌘F", () => ed.suchen()], [T.befehle.info, "⌘⌥I", umschalteInfo], [T.befehle.gesundheit, "", oeffneGesundheit], [T.befehle.nutzung, "", oeffneNutzung],
     [T.liste.verlauf, "", oeffneVerlauf],
     ...(inApp() ? [[T.befehle.ordner, "", () => aktion("ordner-zeigen", S.pfad || undefined)], [T.befehle.ansicht, "", oeffneUebersicht]] : []),
     [T.befehle.mcp, "", oeffneKi],

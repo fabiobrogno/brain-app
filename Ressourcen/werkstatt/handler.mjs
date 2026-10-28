@@ -147,6 +147,7 @@ export function erzeugeHandler(o) {
       case "/api/pruefung": nur("GET"); return V().pruefung(q.get("pfad"));
       case "/api/gesundheit": nur("GET"); return V().gesundheit();
       case "/api/rueckfragen": nur("GET"); return V().rueckfragen();
+      case "/api/nutzung": nur("GET"); return V().nutzung();
       case "/api/notizen": nur("GET"); return V().notizen();
       case "/api/notiz/kontext": nur("GET"); return V().notizKontext(q.get("pfad"));
       case "/api/typen": nur("GET"); return V().typen();
