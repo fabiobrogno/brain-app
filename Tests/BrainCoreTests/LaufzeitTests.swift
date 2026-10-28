@@ -295,10 +295,14 @@ private func starte(_ url: URL, _ args: [String] = []) -> Lauf {
         }
         return fehler
     }
-    for i in 0..<300 { try Laufzeit.setzeSymlink(link, auf: i.isMultiple(of: 2) ? b : a) }
+    for i in 0..<3000 { try Laufzeit.setzeSymlink(link, auf: i.isMultiple(of: 2) ? b : a, schonfrist: 0.05) }
     stop.setze()
     #expect(await leser.value == 0)
-    #expect(((try? FileManager.default.contentsOfDirectory(atPath: ordner.path)) ?? []).sorted() == ["a", "b", "kern"]) // keine Reste
+    // abgelöste Links werden erst beim nächsten Umschalten (nach der Schonfrist) entfernt: danach bleibt höchstens der letzte übrig
+    try await Task.sleep(for: .milliseconds(150))
+    try Laufzeit.setzeSymlink(link, auf: a, schonfrist: 0.05)
+    let reste = ((try? FileManager.default.contentsOfDirectory(atPath: ordner.path)) ?? []).sorted().filter { $0 != "a" && $0 != "b" && $0 != "kern" }
+    #expect(reste.count == 1 && reste[0].hasPrefix(".kern."), "\(reste)")
 }
 
 @Test func scheiterndesUmschaltenHinterlaesstNichtsUndMeldet() throws {

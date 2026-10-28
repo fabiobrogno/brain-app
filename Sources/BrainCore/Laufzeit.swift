@@ -304,24 +304,41 @@ public struct Laufzeit: Sendable {
     // MARK: Hilfen
 
     /// Symlink atomar umbiegen: neuen daneben anlegen, dann an die Stelle des alten tauschen.
-    /// Ist schon ein Symlink da, wird getauscht (`RENAME_SWAP`) und der alte danach entfernt, nicht per `rename(2)` überschrieben:
-    /// Auf APFS liefert `readlink` in dem Moment, in dem `rename` den alten Symlink freigibt, vereinzelt EINVAL — ein Hook, der
-    /// genau dann den Pfad auflöst, sähe „kein Symlink“. Beim Tausch gibt es kein solches Fenster (gemessen: 0 von 20 000
-    /// Lesezugriffen gegen rund 1 % beim Überschreiben). Ist an der Stelle etwas anderes (Datei, Ordner), tauscht nichts:
-    /// `rename(2)` ersetzt eine Datei oder scheitert bei einem Ordner — ein Ordner geht so nie verloren.
-    static func setzeSymlink(_ link: URL, auf ziel: URL) throws {
+    /// Ist schon ein Symlink da, wird getauscht (`RENAME_SWAP`), nicht per `rename(2)` überschrieben, und der alte Link bleibt
+    /// noch kurz unter einem versteckten Namen liegen (`.<name>.<uuid>`); der nächste Aufruf räumt ihn nach `schonfrist` weg.
+    /// Grund (auf APFS gemessen): Gibt der Kernel den alten Symlink frei, während ein anderer Prozess ihn gerade auflöst,
+    /// liefert dessen `readlink` vereinzelt EINVAL — ein Hook sähe „kein Symlink“. Beim Überschreiben passierte das bei rund
+    /// 1 % enger Lesezugriffe, beim Tausch mit sofortigem Löschen noch bei rund 0,003 %, beim Tausch ohne sofortiges Löschen nie.
+    /// Ist an der Stelle etwas anderes (Datei, Ordner), tauscht nichts: `rename(2)` ersetzt eine Datei oder scheitert bei einem
+    /// Ordner — ein Ordner geht so nie verloren.
+    static func setzeSymlink(_ link: URL, auf ziel: URL, schonfrist: TimeInterval = 2) throws {
         let fm = FileManager.default
+        raeumeAlteSymlinksAuf(neben: link, aelterAls: schonfrist)
         let neu = link.deletingLastPathComponent().appendingPathComponent(".\(link.lastPathComponent).\(UUID().uuidString)")
         try fm.createSymbolicLink(atPath: neu.path, withDestinationPath: ziel.path)
         var st = stat()
         let istSymlink = lstat(link.path, &st) == 0 && (st.st_mode & S_IFMT) == S_IFLNK
         if istSymlink, renamex_np(neu.path, link.path, UInt32(RENAME_SWAP)) == 0 {
-            try? fm.removeItem(at: neu) // trägt jetzt den alten Link
-            return
+            return // `neu` trägt jetzt den alten Link und wird später aufgeräumt
         }
         guard rename(neu.path, link.path) == 0 else {
             try? fm.removeItem(at: neu)
             throw LaufzeitFehler.symlinkFehlgeschlagen
+        }
+    }
+
+    /// Entfernt abgelöste Links `.<name>.<uuid>` neben `link`, die älter als `aelterAls` Sekunden sind.
+    static func raeumeAlteSymlinksAuf(neben link: URL, aelterAls frist: TimeInterval) {
+        let fm = FileManager.default
+        let ordner = link.deletingLastPathComponent()
+        let praefix = ".\(link.lastPathComponent)."
+        guard let namen = try? fm.contentsOfDirectory(atPath: ordner.path) else { return }
+        for name in namen where name.hasPrefix(praefix) {
+            let pfad = ordner.appendingPathComponent(name).path
+            var st = stat()
+            guard lstat(pfad, &st) == 0, (st.st_mode & S_IFMT) == S_IFLNK else { continue }
+            let alter = Date().timeIntervalSince1970 - (Double(st.st_mtimespec.tv_sec) + Double(st.st_mtimespec.tv_nsec) / 1e9)
+            if alter > frist { unlink(pfad) }
         }
     }
 
