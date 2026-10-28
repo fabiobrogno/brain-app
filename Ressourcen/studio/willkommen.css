@@ -164,3 +164,8 @@
 @media (prefers-reduced-motion: reduce) {
   #willkommen-host, #willkommen-host *, .w-schleier, .w-schleier * { animation: none !important; transition: none !important; }
 }
+
+/* GitHub-Anmeldung (github-karte.js) */
+.w-github { gap: 12px; }
+.w-github-inhalt { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+.w-github-code { font: 600 32px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.12em; padding: 10px 16px; border-radius: 10px; background: color-mix(in srgb, var(--text) 6%, transparent); user-select: all; }

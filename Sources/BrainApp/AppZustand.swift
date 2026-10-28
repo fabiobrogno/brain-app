@@ -70,7 +70,12 @@ final class AppZustand: ObservableObject {
     private var umgebung: [String: String] { ["BRAIN_NODE": brainNode] }
     /// Die Werkstatt liest und schreibt `vaults.json` und ihren Kit-Vertrauens-Merker (`vertrauen.json`) im echten
     /// Application-Support-Ordner der App.
-    private var werkstattUmgebung: [String: String] { umgebung.merging(["BRAIN_APP_SUPPORT": pfade.basis.path]) { _, neu in neu } }
+    /// Die öffentliche GitHub-Client-ID (Info.plist `KortexGitHubClientID`) geht per Umgebung an die Werkstatt; leer/fehlt = Anmeldung ausgeblendet.
+    private var werkstattUmgebung: [String: String] {
+        var env = umgebung.merging(["BRAIN_APP_SUPPORT": pfade.basis.path]) { _, neu in neu }
+        if let id = Bundle.main.object(forInfoDictionaryKey: "KortexGitHubClientID") as? String, !id.isEmpty { env["KORTEX_GITHUB_CLIENT_ID"] = id }
+        return env
+    }
 
     /// Die Vertrauensprüfung: gebündeltes Node + `werkstatt/vertrauen-pruefen.mjs` neben der Werkstatt, `BRAIN_APP_SUPPORT` wie bei
     /// der Werkstatt (derselbe Merker `vertrauen.json`). nil, solange die Laufzeit fehlt — dann gilt „nicht erlaubt“.
