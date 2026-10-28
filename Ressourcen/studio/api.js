@@ -80,6 +80,11 @@ export const api = {
   vaultEntfernen: (pfad) => anfrage("POST", "/api/vaults/entfernen", { pfad }),
   kiErkennen: () => anfrage("GET", "/api/ki/erkennen"),
   kitHooks: () => anfrage("POST", "/api/kit/hooks", {}),
+  // ---- GitHub-Anmeldung per Gerätecode (nie ein Token in einer Antwort)
+  githubAnmelden: () => anfrage("POST", "/api/github/anmelden", {}),
+  githubZustand: () => anfrage("GET", "/api/github/anmelden"),
+  githubKonto: () => anfrage("GET", "/api/github/konto"),
+  githubAbmelden: () => anfrage("POST", "/api/github/abmelden", {}),
   probe: (frage) => anfrage("POST", "/api/probe", { frage }),
 };
 
