@@ -197,6 +197,7 @@ final class AppZustand: ObservableObject {
             return
         }
         brainNode = (await TerminalNode.finde())?.path ?? pfade.node.path
+        log.schreibe("git \(await GitPruefer().pruefe().logText)") // nur lesend, löst nie Apples Installationsdialog aus
         pruefeVaultWechsel()
         log.schreibe(vault.map { "vault \($0.path)" } ?? "kein-vault")
         taktgeber = Task { [weak self] in
