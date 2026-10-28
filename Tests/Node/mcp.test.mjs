@@ -111,7 +111,7 @@ test("MCP: brain_merken schreibt nur in 00_inbox, nie ins Wiki; Namensgleichheit
   assert.match(textVon(b), /-2\.md/);
   assert.equal((await s.rufe("brain_merken", { text: "" })).result.isError, true);
   assert.deepEqual(readdirSync(join(d, "09_wiki", "firma")).sort(), vorher, "Wiki unverändert");
-  assert.equal(g(d, "status", "--porcelain").split("\n").filter((z) => z && !z.includes("00_inbox/")).join(""), "", "nur Inbox angefasst");
+  assert.equal(g(d, "status", "--porcelain").split("\n").filter((z) => z && !z.includes("00_inbox/")).join(""), "", "nur Inbox angefasst (das Nutzungsprotokoll .logs/ schützt sich selbst per .gitignore)");
   // ein Werkzeug, das ins Wiki schreibt, gibt es nicht
   const u = await s.frage("tools/call", { name: "brain_schreiben", arguments: { pfad: "09_wiki/x.md", inhalt: "x" } });
   assert.equal(u.error.code, -32602);
