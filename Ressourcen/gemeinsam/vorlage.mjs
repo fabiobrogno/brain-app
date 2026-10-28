@@ -70,6 +70,8 @@ function agents(name) {
     "",
     "Ist der MCP-Server „brain“ verbunden, nutze diese Werkzeuge:",
     "",
+    "- Zu Beginn einer Sitzung `brain_kontext` mit dem Projektnamen aufrufen.",
+    "- `brain_kontext` — Seiten zum aktuellen Projekt",
     "- `brain_suchen` — Wissen finden",
     "- `brain_lesen` — eine Seite mit ihren Prüf-Signalen lesen",
     "- `brain_merken` — eine Notiz in die Inbox legen",
