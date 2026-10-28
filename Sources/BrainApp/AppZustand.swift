@@ -12,6 +12,9 @@ import BrainCore
 final class AppZustand: ObservableObject {
     @Published private(set) var anzeige = StatusAnzeige.fuer(nil, fehler: "Wird vorbereitet …")
     @Published private(set) var status: BrainStatus?
+    /// Stand der Zuführungen aus `<vault>/.logs/zufuehrungen.json` (Wächter des Kits, FBL-93/94). Reine Datei, kein Kit-Code: gelesen
+    /// wird sie bei jedem Status-Abruf, auch ohne Vertrauen. Fehlt sie, ist das neutral.
+    @Published private(set) var zufuehrungen = ZufuehrungenStand.keine
     /// Aktiver Vault (nil = keiner gewählt; das Studio zeigt dann „Willkommen“).
     @Published private(set) var vault: URL?
     @Published private(set) var vaultName: String?
@@ -27,6 +30,8 @@ final class AppZustand: ObservableObject {
     let pfade: AppPfade
     let log: AppLog
     private let argumente = StartArgumente.lies(CommandLine.arguments)
+    /// Was die Menüleiste zeigt: der Kit-Status, bei stillstehender Zuführung als ⚠ (nur dort, wo sonst ✓ stünde).
+    var menueAnzeige: StatusAnzeige { anzeige.mit(zufuehrungen: zufuehrungen) }
     /// Studio (Editor, Werkstatt-Brücke) und Übersicht (Kit-Ansicht, Kit-Brücke).
     private let studio: FensterSteuerung
     private let uebersicht: FensterSteuerung
@@ -299,10 +304,13 @@ final class AppZustand: ObservableObject {
         let lauf = statusLauf
         guard let vault else {
             status = nil
+            zufuehrungen = .keine
             kitStand = .unbekannt
             anzeige = .keinVault
             return
         }
+        // Reine Datei (kein Kit-Code, kein Prozess): bei jedem Abruf frisch lesen, auch wenn das Kit gesperrt ist.
+        zufuehrungen = ZufuehrungenStand.lade(vault: vault)
         switch VaultAuswahl.pruefe(vault) {
         case .fehlt:
             status = nil

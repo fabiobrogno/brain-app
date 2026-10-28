@@ -449,3 +449,24 @@ input[type=checkbox] { accent-color: var(--akzent); width: 14px; height: 14px; m
 .kuerzel dt { display: flex; gap: 4px; justify-content: flex-end; }
 .kuerzel dd { margin: 0; color: var(--text); font-size: 13px; }
 .kuerzel kbd { min-width: 22px; text-align: center; color: var(--text-2); border: 1px solid var(--linie-stark); border-radius: 5px; padding: 1px 6px; background: var(--seite); font-size: 11.5px; }
+
+/* ---- Posteingang sichten (FBL-68/71): Knöpfe an der Karte, Leiste „Zurückgestellt“, Auswahl der Wiki-Seite */
+.karte-aktionen { position: absolute; right: 10px; bottom: 6px; display: flex; gap: 2px; padding: 2px; border-radius: var(--r-s); background: var(--erhoben); border: 1px solid var(--linie); box-shadow: var(--schatten-klein); opacity: 0; pointer-events: none; transition: opacity var(--t); }
+.karte:hover .karte-aktionen, .karte:focus-within .karte-aktionen, .karte[aria-selected="true"] .karte-aktionen { opacity: 1; pointer-events: auto; }
+.karte-aktionen .knopf-icon[data-aktion="verwerfen"]:hover { color: var(--rot, #d9534f); }
+.pe-marke { color: var(--akzent); font-weight: 500; }
+.pe-leiste { padding: 8px 12px; border-bottom: 1px solid var(--linie); }
+.pe-schalter { border: 0; background: transparent; color: var(--text-2); font: 12px var(--schrift); padding: 4px 8px; border-radius: var(--r-s); cursor: pointer; }
+.pe-schalter:hover { background: var(--hover-2); color: var(--text); }
+.pe-schalter[aria-pressed="true"] { color: var(--akzent); background: var(--akzent-weich); }
+.pe-reiter-leiste { display: flex; gap: 4px; }
+.pe-reiter { border: 1px solid var(--linie); background: transparent; color: var(--text-2); font: 12px var(--schrift); padding: 5px 12px; border-radius: var(--r-s); cursor: pointer; }
+.pe-reiter[aria-pressed="true"] { color: var(--akzent); background: var(--akzent-weich); border-color: transparent; font-weight: 600; }
+.pe-modus { display: flex; flex-direction: column; gap: 8px; }
+.pe-seiten { display: flex; flex-direction: column; max-height: 240px; overflow-y: auto; border: 1px solid var(--linie); border-radius: var(--r-s); }
+.pe-seite { display: flex; justify-content: space-between; gap: 12px; text-align: left; border: 0; border-bottom: 1px solid var(--linie); background: transparent; color: var(--text); font: 13px var(--schrift); padding: 7px 10px; cursor: pointer; }
+.pe-seite:last-child { border-bottom: 0; }
+.pe-seite:hover { background: var(--hover); }
+.pe-seite[aria-selected="true"] { background: var(--akzent-weich); }
+.pe-titel { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pe-pfad { color: var(--text-3); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: none; max-width: 50%; }

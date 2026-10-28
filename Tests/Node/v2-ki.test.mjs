@@ -208,3 +208,16 @@ test("erkenneAgenten: Zwischenspeicher — zweiter Aufruf startet das Programm n
   const leer = await erkenneAgenten({ env: umgebung(anderer) });
   assert.equal(leer.agenten.every((a) => a.pfad === null), true);
 });
+
+test("erkenneAgenten: cursorDa — Cursor zählt auch ohne CLI, wenn ~/.cursor oder Cursor.app existiert", async () => {
+  const d = tmp("brain-ki-leer-");
+  const home = tmp("brain-ki-home-"), apps = tmp("brain-ki-apps-");
+  assert.equal((await erkenneAgenten({ env: umgebung(d), home, appOrdner: apps })).cursorDa, false, "weder Ordner noch App");
+  mkdirSync(join(home, ".cursor"));
+  assert.equal((await erkenneAgenten({ env: umgebung(d), home, appOrdner: apps })).cursorDa, true, "~/.cursor");
+  const home2 = tmp("brain-ki-home-");
+  mkdirSync(join(apps, "Cursor.app"));
+  assert.equal((await erkenneAgenten({ env: umgebung(d), home: home2, appOrdner: apps })).cursorDa, true, "Cursor.app");
+  const r = await erkenneAgenten({ env: umgebung(d), home: home2, appOrdner: apps });
+  assert.ok(r.agenten.every((a) => a.pfad === null), "die CLI-Erkennung bleibt davon unberührt");
+});
