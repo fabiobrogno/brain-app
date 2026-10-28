@@ -8,7 +8,7 @@ struct MenueInhalt: View {
     let updater: SPUStandardUpdaterController
 
     var body: some View {
-        Label("\(zustand.anzeige.zeichen) \(zustand.anzeige.titel)", systemImage: zustand.anzeige.symbol)
+        Label("\(zustand.menueAnzeige.zeichen) \(zustand.menueAnzeige.titel)", systemImage: zustand.menueAnzeige.symbol)
         if let name = zustand.vaultName {
             Text("Vault: \(name)")
         }
@@ -17,6 +17,10 @@ struct MenueInhalt: View {
         }
         if zustand.status?.quellVault == true {
             Text("Entwickler-Brain — keine Kit-Updates")
+        }
+        // Stillstehende Zuführungen (FBL-94): je Problem eine Zeile, auch wenn die Menüleiste schon wegen etwas anderem ⚠ oder ✕ zeigt.
+        ForEach(Array(zustand.zufuehrungen.menueZeilen.enumerated()), id: \.offset) { _, zeile in
+            Label(zeile, systemImage: "exclamationmark.triangle")
         }
         Divider()
         Button(RueckfragenText.zaehler(zustand.rueckfragenAnzahl)) { zustand.oeffneRueckfragen() }
@@ -52,7 +56,7 @@ struct MenueSymbol: View {
     @ObservedObject var zustand: AppZustand
 
     var body: some View {
-        Image(systemName: zustand.anzeige.symbol)
-            .accessibilityLabel("Kortex: \(zustand.anzeige.titel)")
+        Image(systemName: zustand.menueAnzeige.symbol)
+            .accessibilityLabel("Kortex: \(zustand.menueAnzeige.titel)")
     }
 }
