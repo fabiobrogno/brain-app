@@ -12,6 +12,7 @@ import { kindUmgebung, supportOrdner, falte } from "../gemeinsam/basis.mjs";
 import { starte, neueFrist, registriere, beendeGruppe } from "../gemeinsam/prozess.mjs";
 import { findeProgramm, erkenneAgenten } from "../gemeinsam/ki.mjs";
 import * as vaultsFn from "../gemeinsam/vaults.mjs";
+import { erzeugeGitHub } from "../gemeinsam/github.mjs";
 
 const HIER = dirname(fileURLToPath(import.meta.url));
 export const MAX_KOERPER = 8 * 1024 * 1024;
@@ -74,6 +75,10 @@ export function erzeugeHandler(o) {
   const appVersion = o.appVersion || appVersionLesen();
   const mcpPfad = o.mcpPfad || join(HIER, "..", "mcp", "brain-mcp.mjs");
   const nodePfad = o.nodePfad || process.execPath;
+
+  // GitHub-Anmeldung (Gerätecode): die Client-ID kommt aus der Umgebung (Info.plist → App), nie aus dem Code. o.github = Ersatz für Tests.
+  const github = o.github || erzeugeGitHub({ clientId: process.env.KORTEX_GITHUB_CLIENT_ID, basis: process.env.BRAIN_GITHUB_BASIS, apiBasis: process.env.BRAIN_GITHUB_API,
+    helper: process.env.BRAIN_GITHUB_HELPER });
 
   // Der offene Vault kann zur Laufzeit wechseln (POST /api/vaults/…): jede Anfrage hält den bei ihrem Start offenen Vault fest.
   // Start: Vault-Argument hat Vorrang; sonst der aktive Vault aus vaults.json; sonst ohne Vault (Willkommen).
@@ -189,6 +194,11 @@ export function erzeugeHandler(o) {
         }
         return vaultListe(aktuell);
       }
+      case "/api/github/anmelden":
+        if (methode === "POST") return github.anmelden();
+        nur("GET"); return github.status();
+      case "/api/github/konto": nur("GET"); return github.konto();
+      case "/api/github/abmelden": nur("POST"); return github.abmelden();
       case "/api/stopp": nur("POST"); return { __stopp: true };
       default: throw new HttpFehler(404, "nicht gefunden");
     }

@@ -36,11 +36,11 @@ export function beendeAlleProzesse() {
 }
 export const beendetGerade = () => wirdBeendet;
 
-// → { code, stdout, stderr } — stdout ist ein Buffer bei buffer:true, sonst Text. Wirft HttpFehler:
+// → { code, stdout, stderr } — o.stdin (Text) wird in den Standardeingang geschrieben (sonst bleibt er zu). stdout ist ein Buffer bei buffer:true, sonst Text. Wirft HttpFehler:
 //   504 bei Zeitlimit/abgelaufener Frist (extra.gestartet = Startzeit ms; die Prozessgruppe ist dann schon beendet),
 //   500 wenn das Programm fehlt (o.fehlt) oder zu viel ausgibt, 503 während die Werkstatt beendet wird.
 export function starte(programm, args, o = {}) {
-  const { cwd, env, timeout, frist = null, maxBuffer = 64 * 1024 * 1024, buffer = false, fehlt = `${programm} wurde nicht gefunden.`,
+  const { cwd, env, timeout, stdin, frist = null, maxBuffer = 64 * 1024 * 1024, buffer = false, fehlt = `${programm} wurde nicht gefunden.`,
     zuLange = "Der Vorgang hat zu lange gebraucht und wurde abgebrochen." } = o;
   return new Promise((aufloesen, ablehnen) => {
     if (wirdBeendet) return ablehnen(new HttpFehler(503, "Brain Studio wird gerade beendet."));
@@ -49,9 +49,10 @@ export function starte(programm, args, o = {}) {
     const gestartet = Date.now();
     if (limit <= 0) return ablehnen(new HttpFehler(504, zuLange, { gestartet }));
     let kind;
-    try { kind = spawn(programm, args, { cwd, env, detached: true, stdio: ["ignore", "pipe", "pipe"], windowsHide: true }); }
+    try { kind = spawn(programm, args, { cwd, env, detached: true, stdio: [stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"], windowsHide: true }); }
     catch (e) { return ablehnen(new HttpFehler(500, e && e.code === "ENOENT" ? fehlt : `${programm} ließ sich nicht starten.`)); }
     const eintrag = registriere(kind, cwd);
+    if (stdin !== undefined) { kind.stdin.on("error", () => { /* Programm schon fertig */ }); kind.stdin.end(stdin); kind.once("exit", () => kind.stdin.destroy()); } // z. B. `git credential`: Zugangsdaten nie als Argument
     const aus = [], fehl = [];
     let groesse = 0, fertig = false, uhr = null, nachlauf = null, ausgang = null;
     const ende = (fehler, wert) => {

@@ -10,6 +10,7 @@ import { oeffneVault, HttpFehler, STUFE_TEXT as STUFE } from "../gemeinsam/vault
 import { leseVaults, aktiverVaultPfad } from "../gemeinsam/vaults.mjs";
 import { beendeLaufendes } from "../gemeinsam/git.mjs";
 import { bereinigePfad } from "../gemeinsam/basis.mjs";
+import { leseKopf } from "../gemeinsam/pruefung.mjs";
 
 const VERSIONEN = ["2025-06-18", "2025-03-26", "2024-11-05"];
 export const WERKZEUGE = [
@@ -25,6 +26,8 @@ export const WERKZEUGE = [
     inputSchema: { type: "object", properties: {}, additionalProperties: false } },
   { name: "brain_verlauf", description: "Git-Verlauf einer Datei (neueste zuerst).",
     inputSchema: { type: "object", properties: { pfad: { type: "string" }, max: { type: "integer", minimum: 1, maximum: 100, description: "Standard 20" } }, required: ["pfad"], additionalProperties: false } },
+  { name: "brain_kontext", description: "Kontext-Paket zum aktuellen Projekt: 3–8 passende Seiten des Brains (Pfad, Titel, Stand, Prüf-Stufe, Auszug). Zu Beginn einer Sitzung mit dem Projektnamen aufrufen.",
+    inputSchema: { type: "object", properties: { projekt: { type: "string", description: "Repo- oder Ordnername des Projekts" }, cwd: { type: "string", description: "Arbeitsordner (optional); schärft die Zuordnung über `pfade`" } }, required: ["projekt"], additionalProperties: false } },
 ];
 
 const text = (t) => ({ content: [{ type: "text", text: t }] });
@@ -40,6 +43,43 @@ function vaultText(v) {
   const zeilen = l.vaults.map((e, i) => `${i + 1}. ${e.pfad === dieser ? "*" : " "} ${e.name} — ${e.pfad}${l.aktiv === e.pfad && e.pfad !== dieser ? " (in der App aktiv)" : ""}`);
   if (dieser && !l.vaults.some((e) => e.pfad === dieser)) zeilen.push(`*  ${v.name} — ${dieser} (nicht in der Liste der App)`);
   return `Vaults (* = von diesem Server genutzt):\n${zeilen.join("\n")}`;
+}
+
+// brain_kontext: Seiten zum Projekt. Erst Frontmatter repo/pfade (K14), dann Titel/Name; rote Seiten fehlen, verfallene kommen ans Ende.
+const KONTEXT_MAX = 8, KONTEXT_LIMIT = 6000, KONTEXT_DATEI = 256 * 1024;
+const norm = (x) => String(x || "").toLowerCase().replace(/\\/g, "/").replace(/^\.?\/+|\/+$/g, "");
+const liste = (w) => String(w || "").replace(/^\[|\]$/g, "").split(",").map((x) => norm(x.trim().replace(/^(["'])(.*)\1$/, "$2"))).filter(Boolean);
+function kontextText(v, projekt, cwd) {
+  const name = norm(projekt).split("/").pop();
+  const cw = norm(cwd);
+  const treffer = [];
+  for (const e of v.baum().eintraege) {
+    if (e.art !== "datei" || !e.pfad.startsWith("09_wiki/") || !e.pfad.endsWith(".md") || e.schreibschutz || e.groesse > KONTEXT_DATEI) continue;
+    let d, p; try { d = v.lies(e.pfad); p = v.pruefung(e.pfad); } catch { continue; }
+    if (p.stufe === "rot") continue;
+    const { felder, bis } = leseKopf(d.inhalt);
+    const repoNamen = liste(felder.repo);
+    const pfadeW = liste(felder.pfade);
+    const ueberRepo = repoNamen.some((r) => r === norm(projekt) || r.split("/").pop() === name)
+      || pfadeW.some((x) => x.split("/").includes(name) || (cw && (cw === x || cw.startsWith(`${x}/`) || cw.endsWith(`/${x}`))));
+    const titel = e.titel || felder.name || e.pfad.split("/").pop().replace(/\.md$/, "");
+    const ueberTitel = !ueberRepo && name.length > 1 && [titel, felder.name, e.pfad.split("/").pop().replace(/\.md$/, "")].some((t) => norm(t).includes(name));
+    if (!ueberRepo && !ueberTitel) continue;
+    const verfallen = p.signale.some((s) => s.art === "verfall");
+    const saetze = d.inhalt.split(/\r?\n/).slice(bis).filter((z) => z.trim() && !/^#/.test(z.trim()) && !/^```/.test(z.trim())).join(" ").replace(/\s+/g, " ").trim().match(/[^.!?]+[.!?]+(?=\s|$)|[^.!?]+$/g) || [];
+    const auszug = saetze.slice(0, 3).join(" ").trim().slice(0, 400);
+    treffer.push({ rang: (verfallen ? 2 : 0) + (ueberRepo ? 0 : 1), pfad: e.pfad, titel, stand: felder.stand || zeit(d.geaendert).slice(0, 10), stufe: p.stufe, verfallen, auszug });
+  }
+  if (!treffer.length) return `Keine Seiten zum Projekt „${projekt}“ im Brain gefunden.`;
+  treffer.sort((a, b) => a.rang - b.rang || a.pfad.localeCompare(b.pfad));
+  const zeilen = [];
+  let laenge = 0;
+  for (const t of treffer.slice(0, KONTEXT_MAX)) {
+    const z = `${zeilen.length + 1}. ${t.pfad} — ${t.titel}\n   Stand ${t.stand} · Prüf-Stufe: ${STUFE[t.stufe]}${t.verfallen ? " · Stand verfallen" : ""}${t.auszug ? `\n   ${t.auszug}` : ""}`;
+    if (zeilen.length >= 3 && laenge + z.length > KONTEXT_LIMIT) break;
+    zeilen.push(z.slice(0, KONTEXT_LIMIT)); laenge += z.length + 1;
+  }
+  return `Brain-Kontext zu „${projekt}“ (${zeilen.length} Seite(n); Details mit brain_lesen):\n${zeilen.join("\n")}`.slice(0, KONTEXT_LIMIT);
 }
 
 // v: ein geöffneter Vault, eine Funktion, die den aktuellen liefert (Server ohne Vault-Argument), oder null.
@@ -61,6 +101,7 @@ async function rufe(vArg, name, a) {
         ...p.signale.map((s) => `  · ${s.text}${s.zeile ? ` (Zeile ${s.zeile})` : ""}`), d.schreibschutz ? "Schreibgeschützt (generiert oder kein Text)." : ""].filter(Boolean);
       return text(`${kopf.join("\n")}\n\n---\n${d.inhalt}`);
     }
+    case "brain_kontext": return text(kontextText(v, arg("projekt"), typeof a.cwd === "string" ? a.cwd : ""));
     case "brain_merken": {
       const r = v.merken({ text: arg("text"), titel: typeof a.titel === "string" ? a.titel : undefined });
       return text(`Gemerkt in ${r.pfad}. Erst /ingest macht daraus Wissen im Wiki.`);
