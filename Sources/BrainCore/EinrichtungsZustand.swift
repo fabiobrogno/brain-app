@@ -137,12 +137,20 @@ public struct EinrichtungsZustand: Equatable, Sendable {
     // MARK: Gedächtnis
 
     /// Was die nächste Sitzung braucht, um an der richtigen Stelle weiterzumachen.
-    public func datei(abgeschlossen: Bool, automatischAus: Bool) -> EinrichtungsDatei {
+    public func datei(abgeschlossen: Bool, automatischAus: Bool, herkunft: EinrichtungsHerkunft = .start) -> EinrichtungsDatei {
         let alle = EinrichtungsSchritt.allCases
         return EinrichtungsDatei(abgeschlossen: abgeschlossen, automatischAus: automatischAus,
                                  erledigt: alle.filter { stand($0) == .erledigt && !$0.ausWirklichkeit }.map(\.rawValue),
-                                 uebersprungen: alle.filter { stand($0) == .uebersprungen }.map(\.rawValue))
+                                 uebersprungen: alle.filter { stand($0) == .uebersprungen }.map(\.rawValue),
+                                 herkunft: herkunft)
     }
+}
+
+public enum EinrichtungsHerkunft: String, Codable, Sendable {
+    /// Beim Start von selbst erschienen (erster Start oder Wiederaufnahme).
+    case start
+    /// Vom Nutzer über das Menü „Kortex einrichten …“ geöffnet.
+    case menue
 }
 
 /// `<support>/einrichtung.json` — das Gedächtnis des Assistenten. Nur, was sich nicht aus der Wirklichkeit ablesen lässt.
@@ -155,12 +163,30 @@ public struct EinrichtungsDatei: Codable, Equatable, Sendable {
     /// Schritte, die sich nicht aus der Wirklichkeit ablesen lassen und erledigt sind (KI verbunden, Probe bestanden).
     public var erledigt: [String] = []
     public var uebersprungen: [String] = []
+    /// Woher kam der letzte Lauf? Ein Lauf aus dem Menü wird nie von selbst wieder aufgenommen, wenn es schon einen Vault gibt
+    /// (sonst erschiene der Assistent bei jedem Start statt des Studios, nur weil ein Nutzer ihn einmal mittendrin geschlossen hat).
+    public var herkunft = EinrichtungsHerkunft.start
 
-    public init(abgeschlossen: Bool = false, automatischAus: Bool = false, erledigt: [String] = [], uebersprungen: [String] = []) {
+    public init(abgeschlossen: Bool = false, automatischAus: Bool = false, erledigt: [String] = [], uebersprungen: [String] = [],
+                herkunft: EinrichtungsHerkunft = .start) {
         self.abgeschlossen = abgeschlossen
         self.automatischAus = automatischAus
         self.erledigt = erledigt
         self.uebersprungen = uebersprungen
+        self.herkunft = herkunft
+    }
+
+    private enum CodingKeys: String, CodingKey { case version, abgeschlossen, automatischAus, erledigt, uebersprungen, herkunft }
+
+    /// Fehlende Felder (Datei aus einer anderen Version) bekommen ihren Standardwert; ein unbekannter Wert bei `herkunft` zählt als `.start`.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        abgeschlossen = try c.decodeIfPresent(Bool.self, forKey: .abgeschlossen) ?? false
+        automatischAus = try c.decodeIfPresent(Bool.self, forKey: .automatischAus) ?? false
+        erledigt = try c.decodeIfPresent([String].self, forKey: .erledigt) ?? []
+        uebersprungen = try c.decodeIfPresent([String].self, forKey: .uebersprungen) ?? []
+        herkunft = (try c.decodeIfPresent(String.self, forKey: .herkunft)).flatMap(EinrichtungsHerkunft.init(rawValue:)) ?? .start
     }
 
     /// Unbekannte Namen (Datei aus einer anderen Version) werden ignoriert, nicht als Fehler gewertet.
@@ -189,9 +215,13 @@ public struct EinrichtungsSpeicher: Sendable {
     /// Soll der Assistent beim Start von selbst erscheinen?
     /// - Noch nie gelaufen: nur auf einem Mac ohne aktiven Vault (wer die App schon nutzt, wird nicht überfallen; das Menü bietet ihn an).
     /// - Gelaufen und fertig oder mit „Später“ beiseitegelegt: nein.
-    /// - Mittendrin abgebrochen (Fenster zu, App beendet, Absturz): ja, er macht dort weiter.
+    /// - Mittendrin abgebrochen (Fenster zu, App beendet, Absturz): ja, er macht dort weiter — außer der Lauf kam aus dem Menü und
+    ///   es gibt schon einen Vault: wer die App nutzt und den Assistenten nur nachträglich geöffnet hat, wird nicht bei jedem Start
+    ///   damit empfangen.
     public func sollErscheinen(hatVault: Bool) -> Bool {
         guard let d = lade() else { return !hatVault }
-        return !d.abgeschlossen && !d.automatischAus
+        if d.abgeschlossen || d.automatischAus { return false }
+        if d.herkunft == .menue && hatVault { return false }
+        return true
     }
 }

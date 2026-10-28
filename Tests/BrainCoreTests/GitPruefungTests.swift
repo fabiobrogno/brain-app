@@ -52,7 +52,7 @@ private func pruefer(_ f: FalscherProzess, vorhanden: Set<String> = [gitPfad], j
     f.setze("xcode-select -p", f.ergebnis(0, werkzeuge + "\n"))
     f.setze("git --version", f.ergebnis(0, "git version 2.39.5 (Apple Git-154)\n"))
     let stand = await pruefer(f).pruefe()
-    #expect(stand == .vorhanden(pfad: gitPfad, version: "2.39.5 (Apple Git-154)"))
+    #expect(stand == .vorhanden(pfad: "/usr/bin/git", version: "2.39.5 (Apple Git-154)"), "gefragt wird das git, das auch die Werkstatt startet")
     #expect(stand.istVorhanden)
     #expect(!f.aufgerufen("--install"), "Die Prüfung löst nie den Installationsdialog aus")
 }
@@ -90,6 +90,25 @@ private func pruefer(_ f: FalscherProzess, vorhanden: Set<String> = [gitPfad], j
     let stand = await pruefer(f, vorhanden: ["/Applications/Xcode.app/Contents/Developer/usr/bin/git"]).pruefe()
     guard case .defekt(let meldung) = stand else { Issue.record("erwartet .defekt, war \(stand)"); return }
     #expect(meldung.contains("xcodebuild -license"))
+}
+
+@Test func xcodeLizenzNichtAkzeptiertIstDefektMitVerstaendlichemText() async {
+    // Xcode.app ist da und enthält git, aber /usr/bin/git (das git der Werkstatt) verweigert den Dienst, bis die Lizenz akzeptiert ist.
+    let f = FalscherProzess()
+    f.setze("xcode-select -p", f.ergebnis(0, "/Applications/Xcode.app/Contents/Developer\n"))
+    f.setze("git --version", f.ergebnis(69, fehler: "You have not agreed to the Xcode license agreements. Please run 'sudo xcodebuild -license' from within a Terminal window to review and agree to the Xcode and Apple SDKs license.\n"))
+    let stand = await pruefer(f, vorhanden: ["/Applications/Xcode.app/Contents/Developer/usr/bin/git"]).pruefe()
+    guard case .defekt(let meldung) = stand else { Issue.record("erwartet .defekt, war \(stand)"); return }
+    #expect(meldung.contains("Xcode-Lizenz"))
+    #expect(!meldung.contains("You have not agreed"), "deutscher Klartext statt der englischen Roh-Meldung")
+}
+
+@Test func nurDasGitDerWerkstattWirdGefragtUndErstNachDemEntwicklerverzeichnis() async {
+    let f = FalscherProzess()
+    f.setze("xcode-select -p", f.ergebnis(0, werkzeuge))
+    f.setze("git --version", f.ergebnis(0, "git version 2.39.5\n"))
+    _ = await pruefer(f).pruefe()
+    #expect(f.aufrufe == ["xcode-select -p", "git --version"])
 }
 
 @Test func unerwarteteVersionsAusgabeIstDefektNichtVorhanden() async {
@@ -214,7 +233,7 @@ private func pruefer(_ f: FalscherProzess, vorhanden: Set<String> = [gitPfad], j
     f.setze("git --version", f.ergebnis(0, "git version 2.39.5\n"))
     let schlaefe = ZaehlerBox()
     let stand = await pruefer(f).warteAufGit(alle: .seconds(3), hoechstens: 50, schlafe: { _ in schlaefe.erhoehe() })
-    #expect(stand == .vorhanden(pfad: gitPfad, version: "2.39.5"))
+    #expect(stand == .vorhanden(pfad: "/usr/bin/git", version: "2.39.5"))
     #expect(schlaefe.wert == 3)
 }
 

@@ -199,6 +199,26 @@ private typealias S = EinrichtungsSchritt
     #expect(s.sollErscheinen(hatVault: false))
 }
 
+@Test func abgebrochenerMenuLaufErscheintNurOhneVaultWieder() throws {
+    let s = EinrichtungsSpeicher(pfade: AppPfade(basis: tempOrdner()))
+    try s.speichere(EinrichtungsDatei(abgeschlossen: false, herkunft: .menue))
+    #expect(!s.sollErscheinen(hatVault: true))
+    #expect(s.sollErscheinen(hatVault: false))
+    try s.speichere(EinrichtungsDatei(abgeschlossen: false, herkunft: .start))
+    #expect(s.sollErscheinen(hatVault: true))
+}
+
+@Test func dateiOhneNeueFelderBleibtLesbar() throws {
+    // Datei aus einer früheren Fassung: ohne „herkunft“, ohne „version“
+    let s = EinrichtungsSpeicher(pfade: AppPfade(basis: tempOrdner()))
+    try #"{"abgeschlossen":false,"automatischAus":false,"erledigt":["ki"],"uebersprungen":[]}"#.write(to: s.datei, atomically: true, encoding: .utf8)
+    let d = try #require(s.lade())
+    #expect(d.herkunft == .start && d.erledigt == ["ki"] && d.version == 1)
+    try #"{"herkunft":"irgendwas","abgeschlossen":true}"#.write(to: s.datei, atomically: true, encoding: .utf8)
+    #expect(s.lade()?.herkunft == .start && s.lade()?.abgeschlossen == true)
+    #expect(s.lade()?.erledigt == [])
+}
+
 @Test func fertigerOderBeiseiteGelegterAssistentErscheintNichtVonSelbst() throws {
     let s = EinrichtungsSpeicher(pfade: AppPfade(basis: tempOrdner()))
     try s.speichere(EinrichtungsDatei(abgeschlossen: true))

@@ -8,6 +8,9 @@
 #     erlaubt', die Übersicht wird abgelehnt, und der Freigabe-Teil steht als `SKIP: CLI fehlt` im Ergebnis (nicht still bestanden).
 #  B) OHNE --vault mit leerem Support-Ordner: das Studio öffnet trotzdem ('Willkommen'), die Werkstatt läuft ohne
 #     Vault-Argument, es erscheint kein Einrichtungsdialog.
+#  E) Frischer Start (--test-frischer-start, nur mit Wegwerf-Support-Ordner): der Assistent „Kortex einrichten“ erscheint von selbst
+#     (Log 'assistent-offen'), das Studio wartet auf ihn, der Assistent legt von sich aus keinen Vault an und merkt sich seinen
+#     Stand in einrichtung.json.
 #  C) OHNE --vault, aber mit vaults.json im Support-Ordner (und Freigabe): die App liest den aktiven Vault daraus (Status) und
 #     startet die Werkstatt trotzdem ohne Vault-Argument (die Werkstatt liest vaults.json selbst); beendet wird bei offenem Studio.
 #  D) OHNE Freigabe mit einem Marken-Vault: Kit (brain.mjs, bruecke.mjs), Git-Hooks, core.fsmonitor und eine `node_modules/.bin/git`
@@ -21,7 +24,7 @@
 # Die Freigabe erteilt `vertrauen-pruefen.mjs --erlauben <vault>` (nur mit BRAIN_TESTMODUS=1) im Wegwerf-Support-Ordner.
 # Keine Spuren (k11): am Ende steht unter der Test-Bundle-ID weder ein gemerkter Fensterrahmen noch ein Ordner in ~/Library/WebKit.
 # Port-Check (A): App-PID, Kinder und alle NEU hinzugekommenen com.apple.WebKit.*-Prozesse (XPC-Dienste, keine Kinder).
-# Umgebung (optional): BRAIN_TEST_APP (andere .app), BRAIN_TEST_KIT (Kit-Worktree), BRAIN_RAUCHTEST_PHASEN (Standard "A B C D"),
+# Umgebung (optional): BRAIN_TEST_APP (andere .app), BRAIN_TEST_KIT (Kit-Worktree), BRAIN_RAUCHTEST_PHASEN (Standard "A B C D E"),
 # BRAIN_RAUCHTEST_STRENG=1 (Übersprungenes zählt als Fehler).
 set -euo pipefail
 W="$(cd "$(dirname "$0")/.." && pwd)"
@@ -153,6 +156,25 @@ phase_b() {
   warte "fenster-zu studio" 200 || fehl "B: Studio wurde nicht geschlossen"
   nichts_uebrig "$BASIS_B"
   echo "OK B: ohne --vault, leerer Support-Ordner (Studio öffnet, Werkstatt ohne Vault-Argument)"
+}
+
+# ---------- E) frischer Start: der Assistent „Kortex einrichten“ erscheint von selbst, das Studio erst nach ihm ----------
+phase_e() {
+  BASIS_E="$(mktemp -d)"
+  export BRAIN_APP_SUPPORT="$BASIS_E/support"
+  LOG="$BRAIN_APP_SUPPORT/logs/app.log"
+  # --test-frischer-start gilt nur mit BRAIN_APP_SUPPORT auf einen eigenen Ordner (hier der Wegwerf-Ordner), nie gegen den echten.
+  "$APP/Contents/MacOS/BrainApp" --test-frischer-start --test-beenden-nach 20 &
+  PID=$!
+  warte "assistent-offen wiederholung=false" 80 || fehl "E: der Assistent erscheint beim frischen Start nicht"
+  warte "kein-vault" 20 || fehl "E: App meldet nicht 'kein-vault' im Log"
+  [ -z "$(ls "$BRAIN_APP_SUPPORT/vaults.json" 2>/dev/null)" ] || fehl "E: der Assistent hat von selbst einen Vault angelegt"
+  sleep 2
+  if grep -q "fenster-auf studio" "$LOG"; then fehl "E: das Studio öffnete schon, obwohl der Assistent offen ist"; fi
+  warte "git (vorhanden|fehlt|installiert-gerade|defekt|nicht-pruefbar)" 80 || fehl "E: der git-Stand steht nicht im Log"
+  [ -f "$BRAIN_APP_SUPPORT/einrichtung.json" ] || { sleep 2; [ -f "$BRAIN_APP_SUPPORT/einrichtung.json" ] || fehl "E: einrichtung.json (Gedächtnis des Assistenten) wurde nicht geschrieben"; }
+  nichts_uebrig "$BASIS_E"
+  echo "OK E: frischer Start (Assistent erscheint, Studio wartet, Gedächtnis geschrieben)"
 }
 
 # ---------- C) ohne --vault, vaults.json im Support-Ordner ----------
@@ -326,12 +348,13 @@ keine_spuren() {
   echo "OK Keine Spuren: kein gemerkter Fensterrahmen, keine WebKit-Daten ($KENNUNG)"
 }
 
-# Phasen wählen: BRAIN_RAUCHTEST_PHASEN="A" (Standard: "A B C D"), z. B. solange das Backend ohne Vault-Argument noch fehlt.
-PHASEN=" ${BRAIN_RAUCHTEST_PHASEN:-A B C D} "
+# Phasen wählen: BRAIN_RAUCHTEST_PHASEN="A" (Standard: "A B C D E"), z. B. solange das Backend ohne Vault-Argument noch fehlt.
+PHASEN=" ${BRAIN_RAUCHTEST_PHASEN:-A B C D E} "
 [[ "$PHASEN" == *" A "* ]] && phase_a
 [[ "$PHASEN" == *" B "* ]] && phase_b
 [[ "$PHASEN" == *" C "* ]] && phase_c
 [[ "$PHASEN" == *" D "* ]] && phase_d
+[[ "$PHASEN" == *" E "* ]] && phase_e
 keine_spuren
 if [ "${#UEBERSPRUNGEN[@]}" -gt 0 ]; then
   echo

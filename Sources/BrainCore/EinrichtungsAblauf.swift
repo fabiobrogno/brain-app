@@ -71,6 +71,10 @@ public final class EinrichtungsAblauf {
     public private(set) var anzeige = EinrichtungsAnzeige()
     public private(set) var abgeschlossen = false
     public private(set) var automatischAus = false
+    /// Woher dieser Lauf kam; steht in `einrichtung.json` (siehe `EinrichtungsHerkunft`).
+    public private(set) var herkunft = EinrichtungsHerkunft.start
+    /// Die eine laufende Wartezeit auf Apples Installation — Mehrfachklicks auf „Erneut prüfen“ schließen sich ihr an.
+    private var gitWarteAufgabe: Task<GitStand, Never>?
 
     private let dienste: EinrichtungsDienste
     private let speicher: EinrichtungsSpeicher?
@@ -99,6 +103,7 @@ public final class EinrichtungsAblauf {
     public func starte(wiederholung: Bool = false) async {
         let datei = speicher?.lade()
         automatischAus = datei?.automatischAus ?? false
+        herkunft = wiederholung ? .menue : .start
         let neuAnfangen = wiederholung || datei?.abgeschlossen == true
         zustand = neuAnfangen ? EinrichtungsZustand() : EinrichtungsZustand(gespeichert: datei)
         abgeschlossen = false
@@ -147,8 +152,20 @@ public final class EinrichtungsAblauf {
         if anzeige.git == .installiertGerade { await wendeAnNachWarten() }
     }
 
+    /// Wartet auf Apples Installation. Es gibt immer nur EINE Wartezeit: wer währenddessen noch einmal prüft (Doppelklick auf
+    /// „Erneut prüfen“, Wiederaufnahme), schließt sich ihr an, statt eine weitere Schleife zu starten.
     private func wendeAnNachWarten() async {
-        wendeAn(await dienste.gitWarten())
+        let aufgabe: Task<GitStand, Never>
+        if let laufende = gitWarteAufgabe {
+            aufgabe = laufende
+        } else {
+            let dienste = self.dienste
+            aufgabe = Task { await dienste.gitWarten() }
+            gitWarteAufgabe = aufgabe
+        }
+        let stand = await aufgabe.value
+        gitWarteAufgabe = nil
+        wendeAn(stand)
         melde()
     }
 
@@ -305,7 +322,12 @@ public final class EinrichtungsAblauf {
                 return
             case .abgelaufen: anzeige.github = .abgelaufen; melde(); return
             case .abgelehnt(let g): anzeige.github = .abgelehnt(grund: g); melde(); return
-            case .keine: anzeige.github = .abgemeldet; melde(); return
+            case .keine:
+                // Die Werkstatt weiß nichts mehr von dieser Anmeldung (sie wurde neu gestartet): nicht still zurückspringen.
+                anzeige.github = .abgemeldet
+                zustand.meldeFehler(.github, "Die Anmeldung wurde unterbrochen (der Hintergrunddienst wurde neu gestartet). Bitte melde dich noch einmal an.")
+                melde()
+                return
             }
         }
     }
@@ -446,21 +468,26 @@ public final class EinrichtungsAblauf {
     /// „Später“: der Assistent erscheint nicht mehr von selbst (das Menü bietet ihn weiter an).
     public func spaeter() {
         automatischAus = true
-        githubLauf += 1
+        beendeWarten()
         sichere()
     }
 
     /// Fenster zu: Stand sichern, laufendes Warten beenden.
     public func schliesse() {
-        githubLauf += 1
+        beendeWarten()
         sichere()
+    }
+
+    private func beendeWarten() {
+        githubLauf += 1
+        gitWarteAufgabe?.cancel()
     }
 
     // MARK: Hilfen
 
     private func sichere() {
         guard let speicher else { return }
-        do { try speicher.speichere(zustand.datei(abgeschlossen: abgeschlossen, automatischAus: automatischAus)) } catch {
+        do { try speicher.speichere(zustand.datei(abgeschlossen: abgeschlossen, automatischAus: automatischAus, herkunft: herkunft)) } catch {
             log("einrichtung speichern-fehlgeschlagen \(error.localizedDescription)")
         }
     }

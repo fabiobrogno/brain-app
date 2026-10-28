@@ -237,7 +237,7 @@ private struct SchrittAnsicht: View {
             case .git: GitAnsicht(modell: modell)
             case .vault: VaultAnsicht(modell: modell)
             case .github: GitHubAnsicht(modell: modell)
-            case .ki: KiAnsicht(modell: modell)
+            case .ki: ScrollView { KiAnsicht(modell: modell) } // drei Ziele samt Fehlertexten können mehr Platz brauchen als das Fenster
             case .probe: ProbeAnsicht(modell: modell)
             }
             if let f = modell.zustand.fehler[schritt] { FehlerBox(text: f) }
@@ -263,11 +263,11 @@ private struct GitAnsicht: View {
             Titel(symbol: "arrow.down.circle", titel: "Apple installiert gerade …",
                   text: "Klicke im Fenster von Apple auf „Installieren“ und warte, bis es fertig ist. Hier geht es dann von selbst weiter.")
             Arbeit(text: "Warte auf die Installation")
-            Button("Erneut prüfen") { modell.tu { await $0.pruefeGit() } }
-            Button("Dialog noch einmal öffnen") { modell.tu { await $0.installiereGit() } }.buttonStyle(.link)
+            // Der Ablauf wartet bereits von selbst; der Knopf prüft nur sofort nach und schließt sich der laufenden Wartezeit an.
+            Button("Erneut prüfen") { modell.tu { await $0.pruefeGit() } }.disabled(modell.anzeige.gitPrueftGerade)
         case .defekt, .nichtPruefbar:
             Titel(symbol: "wrench.and.screwdriver", titel: "git ist noch nicht bereit", text: nil)
-            Button("Erneut prüfen") { modell.tu { await $0.pruefeGit() } }
+            Button("Erneut prüfen") { modell.tu { await $0.pruefeGit() } }.disabled(modell.anzeige.gitPrueftGerade)
         }
     }
 }
@@ -466,7 +466,7 @@ private struct KiReihe: View {
             case .fehler(let meldung, let befehl):
                 FehlerBox(text: meldung)
                 if let befehl {
-                    Text("Oder führe diesen Befehl im Terminal aus:").font(.callout).foregroundStyle(.secondary)
+                    Text(zeile.ziel.kopierHinweis).font(.callout).foregroundStyle(.secondary)
                     HStack {
                         Text(befehl).font(.system(.callout, design: .monospaced)).textSelection(.enabled).lineLimit(3)
                         Button("Kopieren") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(befehl, forType: .string) }

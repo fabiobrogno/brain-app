@@ -202,6 +202,7 @@ export function erzeugeHandler(o) {
         nur("GET"); return github.status();
       case "/api/github/konto": nur("GET"); return github.konto();
       case "/api/github/abmelden": nur("POST"); return github.abmelden();
+      case "/api/github/abbrechen": nur("POST"); return github.abbrechen(); // nur das Warten beenden, nie den Schlüsselbund anfassen
       case "/api/stopp": nur("POST"); return { __stopp: true };
       default: throw new HttpFehler(404, "nicht gefunden");
     }

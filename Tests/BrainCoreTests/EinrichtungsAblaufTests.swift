@@ -21,18 +21,34 @@ private final class FalscheDienste: EinrichtungsDienste, @unchecked Sendable {
     var kis: [Result<[KiProgramm], EinrichtungsFehler>] = [.success([claudeDa])]
     var verbinden: [Result<KiVerbindung, EinrichtungsFehler>] = [.success(.verbunden)]
     var probeAntworten: [Result<ProbeErgebnis, EinrichtungsFehler>] = [.success(ProbeErgebnis(frage: "Brain", treffer: ["Willkommen"]))]
-    private(set) var aufrufe: [String] = []
     private(set) var verbindeUmstellen: [Bool] = []
+
+    // Die Wartezeit auf Apples Installation läuft in einer eigenen Aufgabe, parallel zum Test: Protokoll und Bremse sind gesperrt.
+    private let sperre = NSLock()
+    private var _aufrufe: [String] = []
+    private var _wartenBremse = false
+    var aufrufe: [String] { sperre.lock(); defer { sperre.unlock() }; return _aufrufe }
+    var wartenBremse: Bool {
+        get { sperre.lock(); defer { sperre.unlock() }; return _wartenBremse }
+        set { sperre.lock(); _wartenBremse = newValue; sperre.unlock() }
+    }
+    private func merke(_ text: String) { sperre.lock(); _aufrufe.append(text); sperre.unlock() }
+    private func nimmWarten() -> GitStand { sperre.lock(); defer { sperre.unlock() }; return warten.count > 1 ? warten.removeFirst() : warten[0] }
 
     private func nimm<T>(_ liste: inout [T]) -> T { liste.count > 1 ? liste.removeFirst() : liste[0] }
 
-    func gitStand() async -> GitStand { aufrufe.append("gitStand"); return nimm(&git) }
-    func gitInstallationStarten() async -> GitInstallationStart { aufrufe.append("gitInstallation"); return installationsStart }
-    func gitWarten() async -> GitStand { aufrufe.append("gitWarten"); return nimm(&warten) }
+    func gitStand() async -> GitStand { merke("gitStand"); return nimm(&git) }
+    func gitInstallationStarten() async -> GitInstallationStart { merke("gitInstallation"); return installationsStart }
+    /// Solange `wartenBremse` gesetzt ist, „wartet“ gitWarten (wie Apples Installation) — der Test gibt es frei.
+    func gitWarten() async -> GitStand {
+        merke("gitWarten")
+        while wartenBremse && !Task.isCancelled { await Task.yield() }
+        return nimmWarten()
+    }
 
-    func aktiverVault() async -> VaultInfo? { aufrufe.append("aktiverVault"); return vault }
+    func aktiverVault() async -> VaultInfo? { merke("aktiverVault"); return vault }
     private func vaultErgebnis(_ name: String) throws -> VaultInfo {
-        aufrufe.append(name)
+        merke(name)
         let v = try nimm(&vaultAntworten).get()
         vault = v
         return v
@@ -41,18 +57,18 @@ private final class FalscheDienste: EinrichtungsDienste, @unchecked Sendable {
     func oeffneOrdner(pfad: String, versionsverlaufEinschalten: Bool) async throws -> VaultInfo { try vaultErgebnis("oeffneOrdner \(pfad) \(versionsverlaufEinschalten)") }
     func klone(url: String, ordner: String?, name: String?) async throws -> VaultInfo { try vaultErgebnis("klone \(url)") }
 
-    func githubKonto() async throws -> GitHubKonto { aufrufe.append("githubKonto"); return try nimm(&konto).get() }
-    func githubAnmelden() async throws -> GitHubGeraetecode { aufrufe.append("githubAnmelden"); return try nimm(&anmelden).get() }
-    func githubStatus() async throws -> GitHubAnmeldung { aufrufe.append("githubStatus"); return try nimm(&status).get() }
-    func githubAbbrechen() async throws { aufrufe.append("githubAbbrechen") }
+    func githubKonto() async throws -> GitHubKonto { merke("githubKonto"); return try nimm(&konto).get() }
+    func githubAnmelden() async throws -> GitHubGeraetecode { merke("githubAnmelden"); return try nimm(&anmelden).get() }
+    func githubStatus() async throws -> GitHubAnmeldung { merke("githubStatus"); return try nimm(&status).get() }
+    func githubAbbrechen() async throws { merke("githubAbbrechen") }
 
-    func erkenneKIs() async throws -> [KiProgramm] { aufrufe.append("erkenneKIs"); return try nimm(&kis).get() }
+    func erkenneKIs() async throws -> [KiProgramm] { merke("erkenneKIs"); return try nimm(&kis).get() }
     func verbinde(_ ziel: KiZiel, umstellen: Bool) async throws -> KiVerbindung {
-        aufrufe.append("verbinde \(ziel.rawValue)")
+        merke("verbinde \(ziel.rawValue)")
         verbindeUmstellen.append(umstellen)
         return try nimm(&verbinden).get()
     }
-    func probe(frage: String) async throws -> ProbeErgebnis { aufrufe.append("probe \(frage)"); return try nimm(&probeAntworten).get() }
+    func probe(frage: String) async throws -> ProbeErgebnis { merke("probe \(frage)"); return try nimm(&probeAntworten).get() }
 
     func anzahl(_ name: String) -> Int { aufrufe.filter { $0 == name }.count }
 }
@@ -100,7 +116,8 @@ private final class Aufbau {
     #expect(a.zustand.aktuell == .ki)
     #expect(a.anzeige.github == .angemeldet(login: "fabio"))
     #expect(a.anzeige.vault == vaultA)
-    #expect(a.anzeige.kis.map(\.status) == [.bereit])
+    #expect(a.anzeige.kis.map(\.ziel) == [.claude, .codex, .cursor])
+    #expect(a.anzeige.kis.map(\.status) == [.bereit, .nichtGefunden, .nichtGefunden], "nur das gefundene Programm lässt sich verbinden")
 }
 
 @Test @MainActor func gitInstallationFuehrtDurchDenDialogUndDannWeiter() async {
@@ -137,6 +154,37 @@ private final class Aufbau {
     await a.ablauf.starte()
     #expect(a.dienste.anzahl("gitWarten") == 1)
     #expect(a.zustand.aktuell == .vault)
+}
+
+@Test @MainActor func mehrfachesErneutPruefenStartetNurEineWartezeit() async {
+    let a = Aufbau()
+    a.dienste.git = [.installiertGerade]
+    a.dienste.warten = [gitDa]
+    a.dienste.wartenBremse = true
+    let erste = Task { @MainActor in await a.ablauf.starte() }
+    for _ in 0..<5 { await Task.yield() }
+    #expect(a.dienste.anzahl("gitWarten") == 1)
+    // der Nutzer klickt dreimal „Erneut prüfen“, während Apple noch installiert
+    let klicks = (0..<3).map { _ in Task { @MainActor in await a.ablauf.pruefeGit() } }
+    for _ in 0..<10 { await Task.yield() }
+    #expect(a.dienste.anzahl("gitWarten") == 1, "keine weitere Schleife")
+    a.dienste.wartenBremse = false // Apple ist fertig
+    await erste.value
+    for k in klicks { await k.value }
+    #expect(a.dienste.anzahl("gitWarten") == 1)
+    #expect(a.zustand.aktuell == .vault)
+}
+
+@Test @MainActor func fensterZuBeendetDieWarteaufgabeVonGit() async {
+    let a = Aufbau()
+    a.dienste.git = [.installiertGerade]
+    a.dienste.wartenBremse = true
+    a.dienste.warten = [.installiertGerade]
+    let lauf = Task { @MainActor in await a.ablauf.starte() }
+    for _ in 0..<5 { await Task.yield() }
+    a.ablauf.schliesse()
+    await lauf.value // kehrt zurück, statt ewig zu warten
+    #expect(a.zustand.aktuell == .git)
 }
 
 @Test @MainActor func fehlgeschlageneInstallationIstSichtbarUndWiederholbar() async {
@@ -303,6 +351,17 @@ private final class Aufbau {
     #expect(a.zustand.aktuell == .github)
 }
 
+@Test @MainActor func vergesseneAnmeldungNachWerkstattNeustartIstEinSichtbarerHinweis() async {
+    let a = Aufbau()
+    a.dienste.vault = vaultA
+    a.dienste.status = [.success(.keine)]
+    await a.ablauf.starte()
+    await a.ablauf.meldeBeiGitHubAn()
+    #expect(a.anzeige.github == .abgemeldet)
+    #expect(a.zustand.fehler[.github]?.contains("unterbrochen") == true)
+    #expect(a.zustand.aktuell == .github)
+}
+
 @Test @MainActor func githubNichtEingerichtetEntfaelltOhneKlick() async {
     let a = Aufbau()
     a.dienste.vault = vaultA
@@ -368,6 +427,29 @@ private func beiKi(_ a: Aufbau) async {
     await a.ablauf.verbinde(.claude)
     #expect(a.anzeige.kis.first?.status == .fehler("Claude Code hat den Eintrag abgelehnt.", befehl: "claude mcp add -s user brain -- node x"))
     #expect(!a.ablauf.kannWeiter(.ki))
+}
+
+@Test @MainActor func codexUndCursorWerdenErkanntUndEinzelnVerbunden() async {
+    let a = Aufbau()
+    a.dienste.kis = [.success([claudeDa, KiProgramm(id: "codex", name: "Codex", version: "0.9", gefunden: true),
+                               KiProgramm(id: "cursor", name: "Cursor", version: nil, gefunden: true)])]
+    await beiKi(a)
+    #expect(a.anzeige.kis.map(\.status) == [.bereit, .bereit, .bereit])
+    await a.ablauf.verbinde(.codex)
+    await a.ablauf.verbinde(.cursor)
+    #expect(a.dienste.aufrufe.contains("verbinde codex") && a.dienste.aufrufe.contains("verbinde cursor"))
+    #expect(a.anzeige.kis.map(\.status) == [.bereit, .verbunden(schon: false), .verbunden(schon: false)])
+    #expect(a.ablauf.kannWeiter(.ki), "ein verbundenes Ziel genügt")
+}
+
+@Test @MainActor func cursorDateiKaputtZeigtMeldungUndEintragZumKopieren() async {
+    let a = Aufbau()
+    a.dienste.kis = [.success([KiProgramm(id: "cursor", name: "Cursor", version: nil, gefunden: true)])]
+    await beiKi(a)
+    a.dienste.verbinden = [.failure(EinrichtungsFehler("Die Datei ~/.cursor/mcp.json ist kein gültiges JSON.", status: 422, art: "kaputt", befehl: "{ \"mcpServers\": {} }"))]
+    await a.ablauf.verbinde(.cursor)
+    #expect(a.anzeige.kis.last?.status == .fehler("Die Datei ~/.cursor/mcp.json ist kein gültiges JSON.", befehl: "{ \"mcpServers\": {} }"))
+    #expect(a.anzeige.kis.last?.ziel.kopierHinweis.contains("mcp.json") == true)
 }
 
 @Test @MainActor func schonVerbundenIstErfolg() async {
@@ -499,6 +581,35 @@ private func beiKi(_ a: Aufbau) async {
     a.neuerAblauf()
     await a.ablauf.starte()
     #expect(a.zustand.aktuell == .ki)
+}
+
+@Test @MainActor func menuLaufMitVaultWirdNachAbbruchNichtVonSelbstWiederaufgenommen() async throws {
+    // Bestandsnutzer mit Vault öffnet „Kortex einrichten …“ und schließt mittendrin
+    let a = Aufbau()
+    a.dienste.vault = vaultA
+    await a.ablauf.starte(wiederholung: true)
+    a.ablauf.schliesse()
+    #expect(a.speicher.lade()?.herkunft == .menue)
+    #expect(!a.speicher.sollErscheinen(hatVault: true), "beim nächsten Start kommt das Studio, nicht der Assistent")
+    #expect(a.speicher.sollErscheinen(hatVault: false), "ohne Vault ist er weiter hilfreich")
+}
+
+@Test @MainActor func startLaufMitAbbruchWirdWiederaufgenommenAuchNachdemDerVaultDaIst() async {
+    let a = Aufbau()
+    await a.ablauf.starte() // erster Start, kein Vault
+    await a.ablauf.legeVaultAn(name: nil, ordner: nil)
+    a.ablauf.schliesse()
+    #expect(a.speicher.lade()?.herkunft == .start)
+    #expect(a.speicher.sollErscheinen(hatVault: true))
+    // ein später aus dem Menü gestarteter Lauf ersetzt die Herkunft, ein automatisch wieder aufgenommener setzt sie zurück
+    a.neuerAblauf()
+    await a.ablauf.starte(wiederholung: true)
+    a.ablauf.schliesse()
+    #expect(a.speicher.lade()?.herkunft == .menue)
+    a.neuerAblauf()
+    await a.ablauf.starte()
+    a.ablauf.schliesse()
+    #expect(a.speicher.lade()?.herkunft == .start)
 }
 
 @Test @MainActor func spaeterSchaltetDasAutomatischeErscheinenAus() async {

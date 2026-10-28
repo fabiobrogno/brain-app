@@ -74,21 +74,30 @@ public struct WerkstattDienste: EinrichtungsDienste {
         Self.anmeldung(aus: try await rufe("GET", "/api/github/anmelden"))
     }
 
-    /// Beendet das Warten auf den Code. Abgemeldet wird nur, wenn kein Konto gespeichert ist: ein vorhandenes Konto (auch ein
-    /// vom Nutzer selbst eingerichtetes) bleibt unberührt.
+    /// Beendet das Warten auf den Code (`/api/github/abbrechen`): nur das Polling der Werkstatt stoppt, der Schlüsselbund wird nie
+    /// angefasst — ein vorhandenes oder gerade frisch gespeichertes Konto bleibt.
     public func githubAbbrechen() async throws {
-        if try await githubKonto().angemeldet { return }
-        _ = try await rufe("POST", "/api/github/abmelden", [:])
+        _ = try await rufe("POST", "/api/github/abbrechen", [:])
     }
 
     // MARK: KI
 
     public func erkenneKIs() async throws -> [KiProgramm] {
         let j = try await rufe("GET", "/api/ki/erkennen?neu=1")
-        return (j["agenten"] as? [[String: Any]] ?? []).compactMap { a in
+        return Self.programme(aus: j)
+    }
+
+    /// Die Liste der Werkstatt als `KiProgramm`e. Cursor bekommt einen eigenen Eintrag „cursor“: die Werkstatt meldet ihn über das
+    /// Feld `cursorDa` (App oder `~/.cursor` vorhanden) und/oder den Agenten `cursor-agent` — nicht über einen Agenten „cursor“.
+    static func programme(aus j: [String: Any]) -> [KiProgramm] {
+        let agenten = (j["agenten"] as? [[String: Any]] ?? []).compactMap { a -> KiProgramm? in
             guard let id = a["id"] as? String else { return nil }
             return KiProgramm(id: id, name: a["name"] as? String ?? id, version: a["version"] as? String, gefunden: (a["pfad"] as? String) != nil)
         }
+        let agent = agenten.first { $0.id == "cursor-agent" }
+        let cursor = KiProgramm(id: "cursor", name: "Cursor", version: agent?.gefunden == true ? agent?.version : nil,
+                                gefunden: (j["cursorDa"] as? Bool) == true || agent?.gefunden == true)
+        return agenten + [cursor]
     }
 
     public func verbinde(_ ziel: KiZiel, umstellen: Bool) async throws -> KiVerbindung {

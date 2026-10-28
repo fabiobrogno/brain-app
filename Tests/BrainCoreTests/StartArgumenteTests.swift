@@ -19,6 +19,37 @@ private func lies(_ argumente: [String], umgebung: [String: String] = [:]) -> St
     #expect(a.hinweise.isEmpty)
 }
 
+// MARK: Assistent „Kortex einrichten“ im Testlauf
+
+@Test func assistentErscheintOhneSchalterNurWennNichtGetestetWird() {
+    #expect(lies([]).assistentDarfErscheinen)
+    #expect(!lies(["--vault", "/tmp/x"]).assistentDarfErscheinen)
+    #expect(!lies(["--test-beenden-nach", "30"]).assistentDarfErscheinen, "Rauchtest B etc.: Studio statt Assistent")
+    #expect(!lies(["--test-fenster", "800x600"]).assistentDarfErscheinen)
+}
+
+@Test func frischerStartLaesstDenAssistentenImTestlaufErscheinen() {
+    let a = lies(["--test-frischer-start", "--test-beenden-nach", "30"], umgebung: ["BRAIN_APP_SUPPORT": "/tmp/support-test"])
+    #expect(a.frischerStart && a.fluechtig && a.assistentDarfErscheinen)
+    #expect(a.hinweise.isEmpty)
+    // auch allein: flüchtiger Web-Speicher, nichts in der echten App
+    #expect(lies(["--test-frischer-start"], umgebung: ["BRAIN_APP_SUPPORT": "/tmp/support-test"]).fluechtig)
+}
+
+@Test func frischerStartBrauchtEinenEigenenSupportOrdner() {
+    // ohne BRAIN_APP_SUPPORT würde der Test den echten Support-Ordner der App anfassen: abgelehnt
+    for umgebung in [[:], ["BRAIN_APP_SUPPORT": "relativ/pfad"]] as [[String: String]] {
+        let a = lies(["--test-frischer-start", "--test-beenden-nach", "30"], umgebung: umgebung)
+        #expect(!a.frischerStart && !a.assistentDarfErscheinen)
+        #expect(a.hinweise == ["test-schalter-ignoriert --test-frischer-start nur-mit-BRAIN_APP_SUPPORT-auf-eigenen-Ordner"])
+    }
+}
+
+@Test func frischerStartMitVaultZeigtKeinenAssistenten() {
+    let a = lies(["--test-frischer-start", "--vault", "/tmp/x"], umgebung: ["BRAIN_APP_SUPPORT": "/tmp/support-test"])
+    #expect(!a.assistentDarfErscheinen)
+}
+
 @Test func bisherigeSchalterBleibenUnveraendert() {
     let a = lies(["--vault", "/tmp/Mein Brain", "--test-fenster", "--test-fenster-schliessen-nach", "40", "--test-beenden-nach", "60"])
     #expect(a.vault == URL(fileURLWithPath: "/tmp/Mein Brain"))

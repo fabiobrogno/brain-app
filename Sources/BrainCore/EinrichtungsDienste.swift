@@ -94,18 +94,22 @@ public struct KiProgramm: Equatable, Sendable {
     }
 }
 
-/// KI-Apps, mit denen sich der Assistent verbinden kann. Hier steht die ganze Liste: wer eine weitere KI-App anbinden will
-/// (Codex und Cursor kommen mit PR #14 „KI verbinden“), ergänzt einen Fall mit `agentId` (Name aus `/api/ki/erkennen`) und `ziel`
-/// (Wert für `POST /api/mcp/verbinden`) und nimmt ihn in `verbindbar` auf — Ablauf und Oberfläche richten sich danach.
+/// KI-Apps, mit denen sich der Assistent verbinden kann. Hier steht die ganze Liste: wer eine weitere KI-App anbinden will,
+/// ergänzt einen Fall mit `agentId` (so heißt sie in `KiProgramm`; die Zuordnung aus `/api/ki/erkennen` macht
+/// `WerkstattDienste.erkenneKIs`) und `ziel` (Wert für `POST /api/mcp/verbinden`) und nimmt ihn in `verbindbar` auf.
 public enum KiZiel: String, CaseIterable, Sendable {
-    case claude
+    case claude, codex, cursor
 
-    /// Welche Ziele die Werkstatt in dieser Version verbinden kann.
-    public static let verbindbar: [KiZiel] = [.claude]
+    /// Welche Ziele die Werkstatt in dieser Version verbinden kann (`/api/mcp/verbinden`: claude, codex, cursor).
+    public static let verbindbar: [KiZiel] = [.claude, .codex, .cursor]
 
+    /// Name in `KiProgramm.id`. Cursor hat keine eigene Programmdatei in der Liste der Werkstatt (`cursor-agent` ist nur eine
+    /// von mehreren Spuren; die App oder `~/.cursor` zählen auch): `WerkstattDienste` bildet daraus den Eintrag „cursor“.
     public var agentId: String {
         switch self {
         case .claude: return "claude"
+        case .codex: return "codex"
+        case .cursor: return "cursor"
         }
     }
 
@@ -113,12 +117,25 @@ public enum KiZiel: String, CaseIterable, Sendable {
     public var ziel: String {
         switch self {
         case .claude: return "claude"
+        case .codex: return "codex"
+        case .cursor: return "cursor"
         }
     }
 
     public var name: String {
         switch self {
         case .claude: return "Claude Code"
+        case .codex: return "Codex"
+        case .cursor: return "Cursor"
+        }
+    }
+
+    /// Satz über dem Text zum Kopieren, falls das Verbinden nicht klappt: Claude und Codex bekommen einen Terminal-Befehl,
+    /// bei Cursor ist es der Eintrag für `~/.cursor/mcp.json`.
+    public var kopierHinweis: String {
+        switch self {
+        case .claude, .codex: return "Oder führe diesen Befehl im Terminal aus:"
+        case .cursor: return "Oder füge diesen Eintrag in ~/.cursor/mcp.json ein:"
         }
     }
 }

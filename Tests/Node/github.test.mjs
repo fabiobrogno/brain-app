@@ -161,6 +161,30 @@ test("Fremde Adresse im Gerätecode-Antwort wird nicht übernommen", async () =>
   await assert.rejects(gh.anmelden(), (e) => e.status === 502);
 });
 
+test("Abbrechen beendet das Warten, speichert nichts mehr und lässt ein vorhandenes Konto im Schlüsselbund in Ruhe", async () => {
+  await bundWeg();
+  const { gh } = neu();
+  const h = erzeugeHandler({ github: gh });
+  const rufe = async (methode, p) => { const r = await h({ methode, pfad: p, query: null }); return { status: r.status, j: JSON.parse(r.body.toString("utf8")) }; };
+  // 1) Warten, dann abbrechen: auch ein jetzt eintreffendes Token wird nicht mehr gespeichert
+  tokenAntworten = [{ error: "authorization_pending" }];
+  await rufe("POST", "/api/github/anmelden");
+  assert.equal((await rufe("GET", "/api/github/anmelden")).j.zustand, "wartet");
+  assert.deepEqual((await rufe("POST", "/api/github/abbrechen")).j, { ok: true });
+  tokenAntworten = [{ access_token: TOKEN }];
+  for (let i = 0; i < 20; i++) await new Promise((ok) => setTimeout(ok, 5));
+  assert.deepEqual((await rufe("GET", "/api/github/anmelden")).j, { zustand: "keiner" });
+  assert.ok(!existsSync(BUNDDATEI), "nach dem Abbrechen landet kein Token im Schlüsselbund");
+  // 2) ein schon gespeichertes Konto bleibt, Abbrechen ruft nie `credential reject`
+  tokenAntworten = [{ access_token: TOKEN }];
+  await gh.anmelden(); await bisEnde(gh);
+  assert.ok(existsSync(BUNDDATEI));
+  assert.deepEqual((await rufe("POST", "/api/github/abbrechen")).j, { ok: true });
+  assert.ok(existsSync(BUNDDATEI), "ein vorhandenes Konto wird vom Abbrechen nicht entfernt");
+  assert.deepEqual(gh.status(), { zustand: "fertig", login: "anna-test" }, "ein fertiger Stand bleibt stehen");
+  assert.equal((await rufe("GET", "/api/github/abbrechen")).status, 405);
+});
+
 test("Routen über den Handler: anmelden (POST/GET), konto, abmelden; Methoden; ohne Vault; Token nie in der Antwort", async () => {
   await bundWeg();
   const { gh } = neu();

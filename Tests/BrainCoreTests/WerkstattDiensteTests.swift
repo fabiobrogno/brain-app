@@ -149,24 +149,43 @@ private func dienste(_ w: FalscheWerkstatt, pfade: AppPfade? = nil, home: URL? =
     #expect(w.aufrufe.allSatisfy { $0.methode == "GET" && $0.pfad == "/api/github/anmelden" })
 }
 
-@Test func githubAbbrechenMeldetNurAb_wennKeinKontoGespeichertIst() async throws {
-    let angemeldet = FalscheWerkstatt(antwort(#"{"verfuegbar":true,"angemeldet":true,"login":"fabio"}"#))
-    try await dienste(angemeldet).githubAbbrechen()
-    #expect(angemeldet.aufrufe.map(\.pfad) == ["/api/github/konto"], "ein vorhandenes Konto bleibt unberührt")
-
-    let keins = FalscheWerkstatt(antwort(#"{"verfuegbar":true,"angemeldet":false}"#), antwort(#"{"ok":true}"#))
-    try await dienste(keins).githubAbbrechen()
-    #expect(keins.aufrufe.map(\.pfad) == ["/api/github/konto", "/api/github/abmelden"])
+@Test func githubAbbrechenBeendetNurDasWartenUndRuftNieAbmelden() async throws {
+    // „Abbrechen“ beim Gerätecode: nur /api/github/abbrechen — nie die Abmeldung (die würde ein frisch gespeichertes Konto löschen)
+    let w = FalscheWerkstatt(antwort(#"{"ok":true}"#))
+    try await dienste(w).githubAbbrechen()
+    #expect(w.aufrufe == [.init(methode: "POST", pfad: "/api/github/abbrechen", body: [:])])
 }
 
 // MARK: KI und Probe
 
 @Test func kiErkennungLiestDieAgenten() async throws {
-    let w = FalscheWerkstatt(antwort(#"{"agenten":[{"id":"claude","name":"Claude Code","version":"2.1.0","pfad":"/usr/local/bin/claude"},{"id":"codex","name":"Codex","version":null,"pfad":null}]}"#))
+    let w = FalscheWerkstatt(antwort(#"{"agenten":[{"id":"claude","name":"Claude Code","version":"2.1.0","pfad":"/usr/local/bin/claude"},{"id":"codex","name":"Codex","version":null,"pfad":null}],"cursorDa":false}"#))
     let l = try await dienste(w).erkenneKIs()
     #expect(l == [KiProgramm(id: "claude", name: "Claude Code", version: "2.1.0", gefunden: true),
-                  KiProgramm(id: "codex", name: "Codex", version: nil, gefunden: false)])
+                  KiProgramm(id: "codex", name: "Codex", version: nil, gefunden: false),
+                  KiProgramm(id: "cursor", name: "Cursor", version: nil, gefunden: false)])
     #expect(w.aufrufe.first?.pfad == "/api/ki/erkennen?neu=1")
+}
+
+@Test func cursorWirdUeberCursorDaOderCursorAgentErkannt() {
+    // nur die App / ~/.cursor
+    let a = WerkstattDienste.programme(aus: ["agenten": [["id": "cursor-agent", "name": "Cursor Agent", "pfad": NSNull()]], "cursorDa": true])
+    #expect(a.last == KiProgramm(id: "cursor", name: "Cursor", version: nil, gefunden: true))
+    // nur das Kommandozeilenprogramm, mit Version
+    let b = WerkstattDienste.programme(aus: ["agenten": [["id": "cursor-agent", "name": "Cursor Agent", "version": "1.2", "pfad": "/x/cursor-agent"]], "cursorDa": false])
+    #expect(b.last == KiProgramm(id: "cursor", name: "Cursor", version: "1.2", gefunden: true))
+    // nichts, und ältere Werkstatt ohne Feld
+    #expect(WerkstattDienste.programme(aus: ["agenten": []]).last == KiProgramm(id: "cursor", name: "Cursor", version: nil, gefunden: false))
+}
+
+@Test func cursorFehlerKaputteDateiBringtMeldungUndEintragZumKopieren() async {
+    let w = FalscheWerkstatt(antwort(422, #"{"fehler":"Die Datei ~/.cursor/mcp.json ist kein gültiges JSON in der erwarteten Form.","art":"kaputt","befehl":"{\n  \"mcpServers\": {}\n}"}"#))
+    do { _ = try await dienste(w).verbinde(.cursor, umstellen: false); Issue.record("erwartet Fehler") } catch let e as EinrichtungsFehler {
+        #expect(e.art == "kaputt" && e.status == 422)
+        #expect(e.befehl?.contains("mcpServers") == true)
+        #expect(!e.istAndererEintrag)
+    } catch { Issue.record("falscher Fehler") }
+    #expect(w.aufrufe.first?.body == ["ziel": "cursor"])
 }
 
 @Test func verbindenSchicktZielUndUmstellenUndErkenntSchonVerbunden() async throws {
@@ -196,6 +215,10 @@ private func dienste(_ w: FalscheWerkstatt, pfade: AppPfade? = nil, home: URL? =
 // MARK: Ziele
 
 @Test func nurVerbindbareKiZieleStehenInDerListe() {
-    #expect(KiZiel.verbindbar == [.claude])
+    #expect(KiZiel.verbindbar == [.claude, .codex, .cursor])
     #expect(KiZiel.claude.ziel == "claude" && KiZiel.claude.agentId == "claude")
+    #expect(KiZiel.codex.ziel == "codex" && KiZiel.codex.agentId == "codex")
+    #expect(KiZiel.cursor.ziel == "cursor" && KiZiel.cursor.agentId == "cursor")
+    #expect(KiZiel.cursor.kopierHinweis.contains("mcp.json"))
+    #expect(KiZiel.codex.kopierHinweis.contains("Terminal"))
 }

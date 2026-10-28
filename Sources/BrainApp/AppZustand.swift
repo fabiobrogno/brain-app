@@ -43,6 +43,8 @@ final class AppZustand: ObservableObject {
     private var assistentFenster: NSWindow?
     private var assistentModell: EinrichtungsModell?
     private var assistentBruecke: BrueckenVerbindung?
+    /// Beobachter für das Schließen des Assistenten-Fensters; wird beim Schließen wieder abgemeldet.
+    private var assistentBeobachter: NSObjectProtocol?
     /// Hat der Assistent beim Start das Studio verdrängt? Dann öffnet es sich, wenn er zugeht.
     private var assistentVerdraengtStudio = false
     /// Stand der Laufzeit-Prüfung beim Start (Prüfsumme der Node-Datei, rund 120 MB, kann dauern). Erst nach abgeschlossener
@@ -203,7 +205,9 @@ final class AppZustand: ObservableObject {
             return
         }
         brainNode = (await TerminalNode.finde())?.path ?? pfade.node.path
-        log.schreibe("git \(await GitPruefer().pruefe().logText)") // nur lesend, löst nie Apples Installationsdialog aus
+        // nur lesend, löst nie Apples Installationsdialog aus; in eigener Aufgabe, damit ein hängendes xcode-select den Start nicht aufhält
+        let startLog = log
+        Task { startLog.schreibe("git \(await GitPruefer().pruefe().logText)") }
         pruefeVaultWechsel()
         log.schreibe(vault.map { "vault \($0.path)" } ?? "kein-vault")
         taktgeber = Task { [weak self] in
@@ -215,7 +219,7 @@ final class AppZustand: ObservableObject {
         // Das Studio öffnet immer — auch ohne Vault (dann zeigt es „Willkommen“); der Status wird danach gelesen. Nur beim ersten
         // Start auf einem Mac ohne Vault (oder nach einem abgebrochenen Assistenten) kommt zuerst der Assistent „Kortex einrichten“
         // und das Studio nach ihm. Testläufe (Rauchtest, Selbstfoto, `--vault`) zeigen ihn nie.
-        if argumente.vault == nil, !argumente.fluechtig, EinrichtungsSpeicher(pfade: pfade).sollErscheinen(hatVault: vault != nil) {
+        if argumente.assistentDarfErscheinen, EinrichtungsSpeicher(pfade: pfade).sollErscheinen(hatVault: vault != nil) {
             assistentVerdraengtStudio = true
             zeigeAssistent(wiederholung: false)
         } else {
@@ -571,7 +575,7 @@ final class AppZustand: ObservableObject {
         assistentBruecke = bruecke
         modell.beiSchliessen = { [weak w] in w?.close() }
         modell.beiStudioOeffnen = { [weak w] in w?.close() }
-        NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: w, queue: .main) { [weak self] _ in
+        assistentBeobachter = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: w, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.assistentGeschlossen(vaultVorher: vaultVorher) }
         }
         log.schreibe("assistent-offen wiederholung=\(wiederholung)")
@@ -583,6 +587,8 @@ final class AppZustand: ObservableObject {
     /// Der Assistent ist zu (fertig, „Später“, Fenster geschlossen oder App-Wechsel): Verbindung beenden, und das Studio muss den
     /// neuen Vault kennen — es hat seine Werkstatt mit dem alten Stand gestartet, also neu öffnen, wenn sich der Vault geändert hat.
     private func assistentGeschlossen(vaultVorher: URL?) {
+        if let beobachter = assistentBeobachter { NotificationCenter.default.removeObserver(beobachter) }
+        assistentBeobachter = nil
         let fertig = assistentModell?.istFertig ?? false
         assistentModell?.beende()
         let bruecke = assistentBruecke
