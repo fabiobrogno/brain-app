@@ -1,0 +1,128 @@
+# Wiki-Schema — Arbeitsanweisung (vor JEDER Wiki-Arbeit lesen)
+
+## Seitentypen
+- `thema_<slug>.md` — Themenseite (fasst ein Thema über Quellen hinweg zusammen)
+- `entitaet_<slug>.md` — Tool/Person/Projekt (Steckbrief + Bezüge)
+- `synthese_<slug>.md` — Verdichtung quer über mehrere Themen
+- `quelle_<slug>.md` — Zusammenfassung EINER Quelle (Video, Artikel, Doku)
+
+## Ordner
+- Jede Seite liegt in `wiki/<bereich>/<thema>/` oder direkt in `wiki/<bereich>/` (Themenordner ab ≥ 2 Seiten).
+  Bereiche: frei wählbar (z. B. `projekte`, `wissen`, `persoenlich`). Wahlregel allein: **wo man zuerst suchen würde**
+  (nicht der Ordner der Rohquelle).
+- Oben liegen nur `ueberblick.md` (handgepflegt, ≤ 15 Zeilen), `_index.md` (generiert), `_log.md`, `_schema.md`.
+- `_<ordner>.md` in jedem Ordner ist generiert (Indexer) — nie von Hand anfassen. `_*.md` unterhalb der
+  obersten Ebene ist für generierte Dateien reserviert (gitignored) — keine eigenen `_`-Dateien dort anlegen.
+- Zweitbezug: Frontmatter `auch: ["bereich/thema"]` (JSON, Anführungszeichen) → Seite erscheint zusätzlich in
+  der Übersicht jenes Ordners.
+- Dateinamen behalten das Typ-Präfix und sind im ganzen Brain eindeutig; Links immer als `[[basename]]`.
+- Schnell veränderliche Tatsachen (Zählungen, Status, Listen, Ports) tragen „Stand <Datum>" oder verweisen
+  auf das führende System. Gültigkeit per Frontmatter (siehe „Optionale Frontmatter").
+- Gute Chat-Antworten: als Rohquelle nach inbox → /ingest. Eigene `synthese_`-Seite nur, wenn sie ≥ 2 Seiten
+  verbindet und keine bestehende Seite erweitert werden kann.
+
+## Frontmatter (Pflicht auf jeder Seite)
+---
+name: <slug>
+description: <Einzeiler — wovon handelt die Seite>
+typ: thema|entitaet|synthese|quelle
+quellen: ["<relativer Pfad zur Rohquelle>", ...]
+quellen_sha: ["<erste 16 Hex des SHA-256 der eingearbeiteten Quellversion>", ...]
+rev: 1
+---
+(optional nach Save in eine Team-Wissensbasis: team_id, saved_at)
+
+## Optionale Frontmatter (einzelne Seiten)
+- `mcp: ["<servername>", ...]` — verknüpft die Seite in der 3D-Ansicht mit einem MCP-Server gleichen Namens
+  (sonst reicht Namensgleichheit ab 4 Zeichen).
+- `repo: ["<repo-name>", ...]` / `pfade: ["<ordnername>", ...]` — macht die Seite zur „Projektseite": trifft der
+  Ordnername von `cwd` bzw. der Git-Repo-Name darauf zu, nennt der Sitzungsstart genau diese Seite.
+- Gültigkeit: `stand: YYYY-MM-DD` (Wissensstand), `pruefen_bis: YYYY-MM-DD` (feste Frist) und/oder `verfall: <Tage>`
+  (Momentaufnahme, gezählt ab dem letzten Commit der Seite). Abgelaufen = `pruefen_bis` liegt vor heute oder der
+  Verfall ist überschritten → Lint meldet `ABGELAUFEN`, das Gehirn zeigt die Seite markiert. Beim Einarbeiten
+  schnell veränderlicher Tatsachen (Preise, Versionen, Stände, Rollen) `pruefen_bis` setzen: Standard 90 Tage,
+  Preise 30 Tage. Seiten ohne diese Felder gelten weder als abgelaufen noch als gültig geprüft.
+- `fragen: ["<Frage>", ...]` — 2–6 typische Fragen in den eigenen Worten (eine Zeile, JSON, je ≤ 160 Zeichen,
+  höchstens 6; Lint meldet `FRAGEN`). Sie fließen in die Suchkarte der Seite, damit der Brain-Hinweis genau bei
+  diesen Fragen trifft. Beim Anlegen/Überarbeiten 2–4 eintragen; Änderungen brauchen kein rev+1.
+- Alle optionalen Felder sind rein additiv — ohne sie funktioniert die Seite wie bisher.
+
+## Zeit, Gültigkeit und Ersetzen (optional, Frontmatter)
+- `gilt_seit: YYYY-MM-DD` — ab wann die Aussage der Seite gilt. Falsches Datum → Lint `GILT_SEIT` (blockiert).
+- `ersetzt_durch: "[[<nachfolger>]]"` — die Seite ist überholt. Der Brain-Hinweis zeigt sie nur noch als
+  „ersetzt → [[nachfolger]]“, nie als aktuell. Lint `ERSETZT` (blockiert): kein Wikilink, Nachfolger fehlt oder ist die
+  Seite selbst. `ERSETZT-HINWEIS` (blockiert nicht): Kette (Nachfolger selbst ersetzt) oder die alte Seite wird noch
+  verlinkt — Links auf den Nachfolger umstellen.
+- `kritisch: true|false` — `true`: der automatische Tageslauf ändert die Seite nie, neue Fakten dazu werden zur Rückfrage.
+  Nur `true` oder `false` ohne Anführungszeichen; alles andere meldet Lint `KRITISCH` (blockiert) und gilt bis zur
+  Korrektur als kritisch.
+- `zweifel: "<JJJJ-MM-TT>: <grund>"` — setzt der Tageslauf, wenn nach einem Brain-Hinweis auf diese Seite eine Korrektur
+  kam (W7). Lint zeigt die Seite als `PRÜFBEDÜRFTIG (ZWEIFEL)`, der Hinweis mit „(PRÜFBEDÜRFTIG: Zweifel)“. Nach dem
+  Prüfen entfernen.
+- `auch_genannt: ["<alias>", …]` — andere Namen einer Entität (eine Zeile, JSON, höchstens 10, je ≤ 60 Zeichen; Lint
+  `ALIAS` blockiert bei Formatfehlern). `brain-index` baut daraus `.logs/aliasse.json` und die Suchkarte („Auch genannt“);
+  zeigt ein Alias auf mehrere Seiten, meldet der Lint `DOPPELTER NAME`.
+- Diese Felder brauchen kein rev+1.
+
+## Fakt-Zeilen und Stand-Abschnitt (Format des Tageslaufs)
+- Belegte Fakt-Zeile: `- <Aussage> · Stand 21.10.2026 · [[<cluster>/belege/<JJJJ-MM>/<id>]]` — der Link zeigt auf die
+  Beleg-Datei (Rohquelle mit wörtlichem Zitat, Herkunft und Fundstelle). Das Muster „ · Stand TT.MM.JJJJ“ (Mittelpunkt)
+  ist dafür reserviert: Steht es in einer Listenzeile ohne existierenden Beleg-Link, meldet Lint `FAKT-BELEG` (blockiert).
+  Hand-Stichpunkte wie „(Stand 19.10.)“ sind keine Fakt-Zeilen.
+- Ersetzte Fakt-Zeile: `- ~~<Aussage>~~ · ersetzt am 23.10.2026 durch die Zeile darunter` — bleibt sichtbar, bis die
+  Konsolidierung sie entfernt; die Historie liegt in Git.
+- Projektseiten: `## Stand` (wird ersetzt) und `## Verlauf` (eine Zeile je früherem Stand, neueste oben, höchstens 10).
+
+## Pflege durch den Tageslauf (B3, Schalter `pflegeIntelligenz`)
+- `herkunft_web: ["<Abschnitt>", ...]` — Abschnitte (`##`-Überschrift; „Einleitung" = Text davor), die aus einer Web- oder
+  KI-Recherche stammen. Setzt die Pflege beim Einarbeiten einer Inbox-Notiz mit URL, „Recherche" oder Herkunftszeile;
+  der Brain-Hinweis zeigt die Seite dann mit „(teils laut Web-Recherche)".
+- `_ausgemustert.md` (Drift-Liste im Wiki-Ordner): je Zeile `- alter Begriff → neuer Begriff`. Lint meldet lebende
+  Erwähnungen (`DRIFT`, blockiert nicht); Pflege und Ingest schreiben nur die neue Form.
+- Konsolidieren: höchstens alle 30 Tage je Seite (ab 5 Fakt-Zeilen oder 8 KB) arbeitet die Pflege `## Fakten` in den
+  Fließtext ein — jede Aussage behält „(Stand TT.MM.JJJJ)" und ihren Beleg-Link; ersetzte Zeilen älter als 90 Tage fallen weg.
+- Konflikt-Entscheidungen setzt die Pflege wörtlich um: `<Aussage> — Quelle: [[…]] _(Konflikt entschieden am TT.MM.JJJJ: A gilt)_`.
+- Themen-Ausschluss gilt auch hier: Notizen, Seiten und Fakten, die ein Wort aus `ernteOhneThema` oder einen Pfad aus
+  `ernteNichtIn` nennen, bekommt die KI nie zu sehen (ohne lesbare Einstellungen läuft die Pflege gar nicht).
+- Lernmodus (Autostufe „aus"): die Pflege ändert den Inhalt nicht selbst. Jede Einheit kommt als markierte Rückfrage mit dem
+  Diff zu dir; „Übernehmen" gibt sie für den nächsten Lauf frei, „Verwerfen" legt sie ab. Deine Konflikt-Entscheidungen setzt
+  sie weiterhin um.
+- Pflege-Commits heißen `pflege(<lauf>): …`; `brain zurueck <lauf|id>` nimmt sie zurück (Rohquellen kommen zurück in die Inbox).
+
+## Projekt-Steckbrief (Projektseiten, optional)
+Projektseite = Seite mit `repo:`/`pfade:` im Frontmatter oder `typ: entitaet` im Bereich `projekte/`. Feste Felder
+(je eine Zeile, JSON wie `quellen`):
+- `pruefen: ["<Befehl>", …]` — womit man prüft (Tests, Lint, Rauchtest). Fehlt es, meldet Lint `STECKBRIEF`.
+- `ziel: "<test|prod> — <Freigaberegel>"`
+- `fallen: ["<Stolperstein>", …]` — je ≤ 200 Zeichen, keine Zugangs- oder Kundendaten.
+Stack und Versionen NICHT eintragen: Sie werden beim Sitzungsstart und beim ersten Lesen einer Datei im Repo frisch
+aus `package.json`, `Package.swift`, `go.mod`, `pyproject.toml`, `Cargo.toml` gelesen. Der Steckbrief wird wörtlich
+eingespielt (≤ 1.200 Zeichen). Firmen-Fachwissen bleibt im Knowledge Collective. Änderungen an diesen Feldern
+brauchen kein rev+1.
+
+## Beweisbindung
+quellen_sha bindet die Seite an den eingearbeiteten Quellenstand. Ändert sich die Quelle
+später, meldet /brain-lint die Seite als PRÜFBEDÜRFTIG — dann Re-Ingest nach User-Freigabe.
+Hash berechnen: `shasum -a 256 <datei> | cut -c1-16` · rev bei jedem Re-Ingest erhöhen.
+
+## Die 3 Riegel (hart, keine Ausnahmen)
+1. Einarbeiten IMMER gegen die Originalquelle — nie gegen eine ältere Zusammenfassung.
+2. Widersprüche werden markiert, NIE still aufgelöst. Format:
+   > [!KONFLIKT] offen — Du entscheidest
+   > A: "<Aussage>" — Quelle: [[pfad-a]]
+   > B: "<Aussage>" — Quelle: [[pfad-b]]
+   Auflösung nur nach User-Entscheidung: zuerst die QUELLE präzisieren, dann Kasten
+   entfernen, Entscheidung in _log.md protokollieren.
+   Das Format genau so halten (Kopfzeile, dann je eine Zeile `A:` und `B:` im selben Zitatblock) — das Gehirn
+   liest die Kästen daraus und zeigt A und B zum Entscheiden nebeneinander.
+3. Jeder Lauf wird in _log.md protokolliert (Format siehe dort).
+
+## Regeln
+- Rohquellen sind unantastbar (nur lesen). Seiten verlinken Quellen als [[relativer/pfad]].
+- Seiten kurz halten: Ziel < 150 Zeilen; Details gehören in die Rohquelle.
+- Kein festes Gesamtbudget (Suche lädt nur Treffer). Signale statt Grenze: Seite > 150 Zeilen, Doppel-Seiten,
+  sinkende Hinweis-Qualität (Lint LANG / hint-eval) → Details in die Rohquelle oder Seiten zusammenlegen.
+- Commits prüft ein pre-commit-Hook (gestagter Stand, nur neue Befunde): rev+1 bei Inhalts-/Quellenänderung,
+  keine toten Links, _log.md append-only (neuer Eintrag oben).
+- Querverweise zwischen verwandten Seiten setzen. Keine Secrets — niemals.
+- _index.md und INDEX.md nie anfassen (generiert).
