@@ -86,7 +86,7 @@ nach Start unseres Aufrufs entstand und in diesem Vault kein git-Prozess mehr l�
 Abgleich/Commit gleichzeitig (zweiter → 409 „Abgleich läuft schon“).
 
 **Kit-Vertrauen (W-5):** Kit-Code (`<vault>/.tools/brain.mjs`, `rueckfragen.mjs`) läuft erst, wenn der Nutzer den Vault erlaubt hat. Merker:
-`<support>/vertrauen.json` = `{ "<realpath des Vaults>": {seit} }`, `<support>` = `BRAIN_APP_SUPPORT` oder `~/Library/Application Support/Brain`
+`<support>/vertrauen.json` = `{ "<realpath des Vaults>": {seit} }`, `<support>` = `BRAIN_APP_SUPPORT` oder `~/Library/Application Support/Kortex`
 (gilt auch für den MCP-Server). `rueckfragen` läuft als Kindprozess (Zeitlimit 20 s), nie per `import()` im eigenen Prozess.
 **Umgebung der Kindprozesse** (git, Kit, claude): ohne `NODE_*` (außer `NODE_EXTRA_CA_CERTS`), `ELECTRON_*`, `DYLD_*`, `LD_*`.
 Test-Schalter (`BRAIN_CLAUDE_EXTRA`) wirken nur mit `BRAIN_TESTMODUS=1`.

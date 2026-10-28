@@ -12,11 +12,28 @@ import Foundation
     #expect(p.konfiguration.lastPathComponent == "config.json")
 }
 
-@Test func standardIstApplicationSupportBrain() {
-    #expect(AppPfade.standard(umgebung: [:]).basis.path.hasSuffix("Library/Application Support/Brain"))
+@Test func kernUndStarterLiegenImSupportOrdner() throws {
+    let basis = tempOrdner("Application Support")
+    let p = AppPfade(basis: basis)
+    try p.legeAn()
+    #expect(p.kernOrdner.path == basis.appendingPathComponent("kern").path)
+    #expect(p.kern.path == basis.appendingPathComponent("bin/kern").path)
+    #expect(p.starter.path == basis.appendingPathComponent("bin/kortex").path)
+    #expect(FileManager.default.fileExists(atPath: p.kernOrdner.path))
+}
+
+@Test func standardIstApplicationSupportKortex() {
+    #expect(AppPfade.standard(umgebung: [:]).basis.path.hasSuffix("Library/Application Support/Kortex"))
 }
 
 @Test func testUmgebungLenktUm() {
     #expect(AppPfade.standard(umgebung: ["BRAIN_APP_SUPPORT": "/tmp/x y"]).basis.path == "/tmp/x y")
-    #expect(AppPfade.standard(umgebung: ["BRAIN_APP_SUPPORT": "relativ"]).basis.path.hasSuffix("Application Support/Brain"))
+    #expect(AppPfade.standard(umgebung: ["BRAIN_APP_SUPPORT": "relativ"]).basis.path.hasSuffix("Application Support/Kortex"))
+}
+
+@Test func altBasisNurOhneUmlenkung() {
+    #expect(AppPfade.altBasis(umgebung: [:])?.path.hasSuffix("Library/Application Support/Brain") == true)
+    #expect(AppPfade.altBasis(umgebung: ["BRAIN_APP_SUPPORT": "/tmp/x"]) == nil)
+    // ein relativer Wert gilt nicht als Umlenkung (wie bei `standard`)
+    #expect(AppPfade.altBasis(umgebung: ["BRAIN_APP_SUPPORT": "relativ"]) != nil)
 }

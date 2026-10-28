@@ -57,5 +57,14 @@ Tags werden nie verschoben oder ersetzt. Ist ein Release fehlerhaft, folgt eine 
 Ein roter Lauf darf höchstens 2× neu gestartet werden. Den ersten Fehler verlinkt man im PR
 (Lauf-URL und Zeile), damit er nicht verschwindet. Tritt er wieder auf, wird er behoben, nicht wegrestartet.
 
+## Laufzeit und feste Pfade
+Support-Ordner ist `~/Library/Application Support/Kortex` (früher `Brain`; beim Start benennt `SupportMigration` ihn einmalig um,
+existieren beide, bleibt alles unberührt und die App zeigt einen Hinweis). Die App stellt dort bereit (`Sources/BrainCore/Laufzeit.swift`):
+`bin/node` (Symlink auf `node/<ver>/bin/node`), `bin/kern` (Symlink auf `kern/<appVersion>/`, Kopie von `Resources/kern`, jede Datei
+gegen `Resources/kern-manifest.json` geprüft) und den Starter `bin/kortex` (`exec bin/node bin/kern/brain.mjs "$@"`). Hooks, MCP, git-Hooks
+und LaunchAgent verwenden nur diese Pfade. Die vorige Kern-Version bleibt nach einem Update liegen. Ohne `Ressourcen/kern` im Paket gibt
+es nur Node (Kern-Status „nicht enthalten“). `scripts/baue-app.sh` erzeugt das Manifest (`scripts/kern-manifest.sh`), Test:
+`bash scripts/teste-kern-manifest.sh`. Der Node-Code liest den Ordner aus `BRAIN_APP_SUPPORT` (setzt die App), Rückfall `…/Kortex`.
+
 ## Lokal prüfen
 `swift build && swift test`, `shellcheck scripts/*.sh`, `bash scripts/baue-app.sh` (macOS, arm64).

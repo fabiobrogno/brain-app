@@ -27,6 +27,13 @@ for d in Ressourcen/*/; do
   ordner="$(basename "$d")"
   cp -R "Ressourcen/$ordner" "$NEU/Contents/Resources/$ordner"
 done
+# Kern (Brain-Logik, Ressourcen/kern): Prüfsummen-Manifest daneben, bevor die App signiert wird. Ohne Ressourcen/kern entfällt das.
+if [ -d "$NEU/Contents/Resources/kern" ]; then
+  bash scripts/kern-manifest.sh erzeuge "$NEU"
+  bash scripts/kern-manifest.sh pruefe "$NEU"
+else
+  echo "Hinweis: Ressourcen/kern fehlt – App ohne Kern (nur Node-Laufzeit)."
+fi
 # Sparkle (Update-Framework): ins Paket, Suchpfad für die Programmdatei, Teile einzeln signieren (ohne --deep)
 [ -d "$BIN_DIR/Sparkle.framework" ] || { echo "FEHLER: Sparkle.framework fehlt im Build ($BIN_DIR)." >&2; exit 1; }
 mkdir -p "$NEU/Contents/Frameworks"

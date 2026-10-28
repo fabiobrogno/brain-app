@@ -38,6 +38,11 @@ final class AppZustand: ObservableObject {
     /// Prüfung urteilt die App; vorher heißt es „wird vorbereitet“, nie „bitte neu installieren“.
     private enum LaufzeitStand { case wirdVorbereitet, bereit, fehlgeschlagen }
     private var laufzeitStand = LaufzeitStand.wirdVorbereitet
+    /// Ergebnis des einmaligen Umzugs `Application Support/Brain` → `Kortex` (beim Start gelesen, danach protokolliert/angezeigt).
+    private var supportMigration = SupportMigration.Ergebnis.nichtNoetig
+    private var supportAltBasis: URL?
+    /// Stand des Kerns (Brain-Logik im App-Paket) nach dem Start: fehlt der Ordner im Paket, ist er „nicht enthalten“ — kein Fehler.
+    @Published private(set) var kernStatus = Laufzeit.KernStatus.nichtEnthalten
     /// Rückfall-Fenster, falls die Laufzeit fehlt (sonst gibt es keinen Einrichtungsdialog mehr).
     private var hinweisFenster: NSWindow?
     private var taktgeber: Task<Void, Never>?
@@ -49,6 +54,12 @@ final class AppZustand: ObservableObject {
 
     init() {
         let p = AppPfade.standard()
+        // Vor allem anderen (auch vor dem Log, das den Ordner anlegt): Brain → Kortex einmalig umbenennen. Mit
+        // `BRAIN_APP_SUPPORT` (Tests) gibt es keinen alten Ordner — dort wird nie migriert.
+        if let alt = AppPfade.altBasis() {
+            supportMigration = SupportMigration.migriere(alt: alt, neu: p.basis)
+            supportAltBasis = alt
+        }
         let l = AppLog(pfade: p)
         pfade = p
         log = l
@@ -175,6 +186,10 @@ final class AppZustand: ObservableObject {
             f.aktuellerVault = { [weak self] in self?.vaultFrisch() }
         }
         log.schreibe("start")
+        log.schreibe(supportMigration.protokollZeile)
+        if let alt = supportAltBasis, let text = supportMigration.hinweis(alt: alt, neu: pfade.basis) {
+            zeigeHinweis(titel: "Kortex: Ordner „Brain“ nicht übernommen", text: text)
+        }
         // Testschalter (Selbstfoto): abgelehnte Werte ins Log, Erscheinungsbild gilt gleich für die ganze App.
         for hinweis in argumente.hinweise { log.schreibe(hinweis) }
         if let b = argumente.testErscheinungsbild {
@@ -182,7 +197,14 @@ final class AppZustand: ObservableObject {
             log.schreibe("test-erscheinungsbild \(b.rawValue)")
         }
         do {
-            node = try await laufzeit()
+            let ergebnis = try await laufzeit()
+            node = ergebnis.node
+            kernStatus = ergebnis.kern
+            log.schreibe("kern \(ergebnis.kern)")
+            for meldung in ergebnis.meldungen { log.schreibe("laufzeit-fehler \(meldung)") }
+            if !ergebnis.meldungen.isEmpty {
+                zeigeHinweis(titel: "Kortex: Laufzeit unvollständig", text: ergebnis.meldungen.joined(separator: "\n\n"))
+            }
             laufzeitStand = .bereit
         } catch {
             laufzeitStand = .fehlgeschlagen
@@ -217,15 +239,31 @@ final class AppZustand: ObservableObject {
     }
 
     /// Die Prüfsumme der Node-Datei (rund 120 MB) wird abseits des Main-Threads gerechnet.
-    private func laufzeit() async throws -> URL {
+    private func laufzeit() async throws -> Laufzeit.Ergebnis {
         #if DEBUG
         if let dev = ProcessInfo.processInfo.environment["BRAIN_APP_NODE"], dev.hasPrefix("/") {
-            return URL(fileURLWithPath: dev)
+            return Laufzeit.Ergebnis(node: URL(fileURLWithPath: dev), kern: .nichtEnthalten, starter: pfade.starter, starterFehler: nil)
         }
         #endif
         guard let ressourcen = Bundle.main.resourceURL else { throw LaufzeitFehler.manifestFehlt }
-        let laufzeit = NodeLaufzeit(quelle: ressourcen.appendingPathComponent("node-runtime"), pfade: pfade)
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+        let laufzeit = Laufzeit(ressourcen: ressourcen, appVersion: version, pfade: pfade)
         return try await Task.detached { try laufzeit.installiere() }.value
+    }
+
+    /// Sichtbarer Hinweis (Fehler dürfen nie still bleiben). Als eigener Task, damit der Start nicht am Fenster hängt.
+    private func zeigeHinweis(titel: String, text: String) {
+        log.schreibe("hinweis \(titel)")
+        guard !argumente.fluechtig else { return } // Testläufe: nur ins Log, kein Modalfenster
+        Task { @MainActor in
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = titel
+            alert.informativeText = text
+            alert.addButton(withTitle: "OK")
+            NSApp.activate()
+            alert.runModal()
+        }
     }
 
     // MARK: Aktiver Vault
