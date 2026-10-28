@@ -14,6 +14,7 @@ import * as gitFn from "./git.mjs";
 import * as vertrauenFn from "./vertrauen.mjs";
 import { erzeugeNotizIndex, titelAus } from "./notizen.mjs";
 import { wertAus } from "./nutzung.mjs";
+import { erzeugePosteingang } from "./posteingang.mjs";
 
 export { HttpFehler, pruefeText, berlinHeute, supportOrdner };
 export const STUFE_TEXT = { gruen: "grün", gelb: "gelb", rot: "rot", grau: "grau", ohne: "ohne Befund" };
@@ -327,6 +328,17 @@ export function oeffneVault(vaultPfad, opts = {}) {
     return wertAus(wurzel, wiki);
   }
 
+  // ---------- Posteingang sichten (FBL-68/71): Verwerfen, Später, in eine Wiki-Seite übernehmen — je Aktion ein Commit ----------
+  const posteingang = erzeugePosteingang({
+    wurzel, heute: () => opts.heute || berlinHeute(jetzt()), notizen: () => notizIndex.notizen(), lies, schreibe, istGeneriert, slug,
+    git: {
+      // Gesperrtes Git (Vertrauen v2) → 409, bevor irgendetwas angefasst wird; sonst: gibt es ein Repository?
+      vorab: async () => { const s = gitSicht(); if (s.gesperrt) throw gesperrtFehler(s); return gitFn.istRepo(wurzel, ctxVon(s)); },
+      offen: async () => (await gitFn.status(wurzel, gitCtx())).geaendert.map((e) => e.pfad),
+      commit: async (a) => gitFn.commit(wurzel, a, gitCtx({ limit: opts.gitLimitCommit })),
+    },
+  });
+
   // Dieselbe Suche für MCP brain_suchen und die Probe-Frage: strukturiert (treffer) und als Text, wie ihn die KI sieht.
   function suchenFuerKi(frage, anzahl) {
     const n = Math.min(20, Math.max(1, Number.parseInt(anzahl, 10) || 10));
@@ -340,6 +352,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
 
   return {
     wurzel, name: basename(wurzel), rueckfragen, kitVersion, kitVorhanden, kit, vertrauen, vertrauenStand: stand, baum, lies, schreibe, neu, merken, suche, suchenFuerKi, pruefung, gesundheit, nutzung,
+    posteingangVerwerfen: posteingang.verwerfen, posteingangSpaeter: posteingang.spaeter, posteingangUebernehmen: posteingang.uebernehmen,
     notizen: notizIndex.notizen, notizKontext: notizIndex.kontext, typen: notizIndex.typen, ansichten: notizIndex.ansichten,
     gitLog: async (a) => gitFn.log(wurzel, a || {}, gitCtx()),
     gitRemote: async (url) => gitFn.remoteHinzufuegen(wurzel, url, gitCtx({ limit: opts.gitLimitRemote })),
