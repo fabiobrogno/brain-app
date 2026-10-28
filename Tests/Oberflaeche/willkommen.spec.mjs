@@ -90,7 +90,7 @@ async function rahmen(page, o = {}) {
         { const f = z.klonenFehler?.shift(); if (f) return json(f.status, { fehler: f.fehler }); }
         z.vault = "/Users/test/Brain/vault";
         return json(200, { pfad: z.vault });
-      case "/api/ki/erkennen": return json(200, { agenten: z.agenten ?? AGENTEN });
+      case "/api/ki/erkennen": return json(200, { agenten: z.agenten ?? AGENTEN, ...(z.cursorDa !== undefined ? { cursorDa: z.cursorDa } : {}) });
       case "/api/notizen": return json(200, { notizen: z.notizen ?? NOTIZEN });
       case "/api/mcp/verbinden":
         if (z.mcp === "befehl") return json(404, { fehler: "Claude Code wurde nicht gefunden. Kopiere den Befehl und führe ihn im Terminal aus.", befehl: BEFEHL });
@@ -99,6 +99,7 @@ async function rahmen(page, o = {}) {
         if (z.mcp === "schon") return json(200, { ok: true, schonVerbunden: true });
         return json(200, { ok: true });
       case "/api/mcp/selbsttest":
+        if (z.selbsttestVerzoegerung) await warte(z.selbsttestVerzoegerung);
         if (z.selbsttest === "fehler") return json(502, { fehler: "Der MCP-Server hat nicht geantwortet — die KI würde dein Brain so nicht finden.", art: "mcp" });
         return json(200, { ok: true, werkzeuge: ["brain_suchen", "brain_lesen"], treffer: 1 });
       case "/api/kit/hooks":
@@ -620,6 +621,36 @@ test("KI verbinden: Cursor mit kaputter Datei → Fehlertext und Eintrag zum Kop
   await expect(d.locator('[data-zeile="verbinden"]')).toContainText("kein gültiges JSON");
   await expect(d.locator('[data-bereich="befehl"] code')).toHaveText('{ "mcpServers": {} }');
   await expect(d.locator('[data-bereich="selbsttest"]')).toHaveCount(0);
+});
+
+test("KI verbinden: Während des Selbsttests ist die Auswahl gesperrt, das Ergebnis nennt die App, die verbunden wurde", async ({ page }) => {
+  await rahmen(page, { vault: "/Users/test/Brain/Privat", selbsttestVerzoegerung: 900 });
+  const d = await oeffneKi(page);
+  const wahl = d.locator('[data-bereich="ziel-wahl"]');
+  await wahl.locator('[data-ziel="codex"]').click();
+  await d.locator('[data-aktion="claude-verbinden"]').click();
+  await expect(d.locator('[data-zeile="verbinden"] .w-arbeit')).toBeVisible();
+  await expect(wahl.locator('[data-ziel="cursor"]')).toBeDisabled();
+  await wahl.locator('[data-ziel="cursor"]').dispatchEvent("click"); // auch ein erzwungener Klick ändert nichts
+  await expect(wahl.locator('[data-ziel="codex"]')).toHaveAttribute("aria-checked", "true");
+  await expect(d.locator('[data-bereich="selbsttest"]')).toContainText("Starte Codex neu");
+  await expect(d.locator('[data-bereich="selbsttest"]')).not.toContainText("Cursor");
+  await expect(wahl.locator('[data-ziel="cursor"]')).toBeEnabled(); // danach wieder frei
+});
+
+test("KI verbinden: Cursor wird auch ohne cursor-agent angeboten, wenn die App oder ~/.cursor da ist (cursorDa)", async ({ page }) => {
+  await rahmen(page, { vault: "/Users/test/Brain/Privat", agenten: [], cursorDa: true });
+  let d = await oeffneKi(page);
+  await expect(d.locator('[data-zeile="verbinden"]')).toBeVisible();
+  await expect(d.locator('[data-ziel="cursor"]')).toHaveAttribute("aria-checked", "true");
+  await expect(d.locator('[data-aktion="claude-verbinden"]')).toHaveText("Mit Cursor verbinden");
+});
+
+test("KI verbinden: ohne jede erkannte KI und ohne Cursor gibt es keine Verbinden-Zeile", async ({ page }) => {
+  await rahmen(page, { vault: "/Users/test/Brain/Privat", agenten: [], cursorDa: false });
+  const d = await oeffneKi(page);
+  await expect(d.locator(".w-laedt")).toHaveCount(0); // Suche ist fertig
+  await expect(d.locator('[data-zeile="verbinden"]')).toHaveCount(0);
 });
 
 // W4: „verbunden“ erst nach Erfolg

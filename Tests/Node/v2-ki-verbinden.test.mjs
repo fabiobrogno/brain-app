@@ -2,7 +2,8 @@
 // Nur Wegwerf-Ordner; nie das echte codex, nie das echte ~/.cursor.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync, readdirSync, realpathSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, lstatSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { tmp, schreibe, pfad } from "./hilfe.mjs";
 const HOME = tmp("brain-home-");
@@ -135,6 +136,76 @@ test("Cursor verbinden: kaputtes JSON (oder falsche Form) wird nie überschriebe
       assert.deepEqual(sicherungen(), []);
     }
   }
+});
+
+// ── Cursor: Rechte, Symlink, Sicherungen, Fehlermeldung ──
+const modus = (p) => statSync(p).mode & 0o777;
+const handlerCursor = () => aufruf(erzeugeHandler({ vault: vault(), mcpPfad: mcpDatei(), vaultOptionen: { support: tmp("brain-support-") } }));
+const FREMD = JSON.stringify({ mcpServers: { anderes: { command: "foo", env: { TOKEN: "geheim-1" } } } });
+
+test("Cursor verbinden: Rechte der vorhandenen Datei bleiben (0600 bleibt 0600), neue Datei bekommt 0600, Sicherung hat die Rechte des Originals", async () => {
+  const rufe = handlerCursor();
+  cursorLeeren();
+  assert.equal((await rufe("POST", "/api/mcp/verbinden", { ziel: "cursor" })).status, 200);
+  assert.equal(modus(cursorDatei()), 0o600, "neue Datei 0600");
+
+  for (const m of [0o600, 0o640]) {
+    writeFileSync(cursorDatei(), FREMD); chmodSync(cursorDatei(), m);
+    const r = await rufe("POST", "/api/mcp/verbinden", { ziel: "cursor" });
+    assert.equal(r.status, 200);
+    assert.equal(modus(cursorDatei()), m, `Rechte ${m.toString(8)} bleiben`);
+    assert.equal(modus(r.j.sicherung), m, "Sicherung hat die Rechte des Originals");
+  }
+});
+
+test("Cursor verbinden: ist mcp.json ein Symlink, bleibt er einer und das Ziel bekommt den Eintrag", async () => {
+  const rufe = handlerCursor();
+  cursorLeeren(); mkdirSync(join(HOME, ".cursor"));
+  const dot = tmp("brain-dotfiles-"), echt = join(dot, "mcp.json");
+  writeFileSync(echt, FREMD); chmodSync(echt, 0o600);
+  symlinkSync(echt, cursorDatei());
+  const r = await rufe("POST", "/api/mcp/verbinden", { ziel: "cursor" });
+  assert.equal(r.status, 200);
+  assert.ok(lstatSync(cursorDatei()).isSymbolicLink(), "Link bleibt Link");
+  assert.equal(realpathSync(cursorDatei()), realpathSync(echt));
+  const doc = JSON.parse(readFileSync(echt, "utf8"));
+  assert.equal(doc.mcpServers.brain.command, process.execPath);
+  assert.ok(doc.mcpServers.anderes, "andere Einträge bleiben");
+  assert.equal(modus(echt), 0o600);
+  assert.deepEqual(readdirSync(dot), ["mcp.json"], "keine Reste im Ordner des Ziels");
+});
+
+test("Cursor verbinden: Sicherungen — höchstens die letzten 3, ältere werden gelöscht; zwei Läufe in derselben Sekunde überschreiben sich nicht", async () => {
+  const rufe = handlerCursor();
+  cursorLeeren(); mkdirSync(join(HOME, ".cursor"));
+  for (const z of ["20200101000001", "20200101000002", "20200101000003", "20200101000004", "20200101000005"]) writeFileSync(`${cursorDatei()}.brain-sicherung-${z}`, "alt");
+  writeFileSync(cursorDatei(), FREMD);
+  const r1 = await rufe("POST", "/api/mcp/verbinden", { ziel: "cursor" });
+  assert.equal(r1.status, 200);
+  assert.equal(sicherungen().length, 3, "höchstens 3");
+  assert.ok(sicherungen().some((n) => `${cursorDatei()}`.endsWith("mcp.json") && r1.j.sicherung.endsWith(n)), "die neue Sicherung bleibt");
+  assert.ok(!sicherungen().some((n) => n.endsWith("20200101000001")), "die älteste ist weg");
+
+  // zwei Läufe hintereinander (meist dieselbe Sekunde): verschiedene Dateien, beide mit dem richtigen Inhalt
+  const a = FREMD, b = JSON.stringify({ mcpServers: { zweites: { command: "bar" } } });
+  writeFileSync(cursorDatei(), a); const s1 = (await rufe("POST", "/api/mcp/verbinden", { ziel: "cursor" })).j.sicherung;
+  writeFileSync(cursorDatei(), b); const s2 = (await rufe("POST", "/api/mcp/verbinden", { ziel: "cursor" })).j.sicherung;
+  assert.notEqual(s1, s2);
+  assert.equal(readFileSync(s1, "utf8"), a); assert.equal(readFileSync(s2, "utf8"), b);
+  assert.equal(sicherungen().length, 3);
+});
+
+test("Cursor verbinden: Schreibfehler nennt den Fehlercode; die Temp-Datei bleibt nicht liegen", { skip: process.platform !== "darwin" }, async () => {
+  const rufe = handlerCursor();
+  cursorLeeren(); mkdirSync(join(HOME, ".cursor"));
+  writeFileSync(cursorDatei(), FREMD);
+  execFileSync("chflags", ["uchg", cursorDatei()]); // unveränderlich: rename über die Datei schlägt mit EPERM fehl
+  try {
+    const r = await rufe("POST", "/api/mcp/verbinden", { ziel: "cursor" });
+    assert.equal(r.status, 502); assert.match(r.j.fehler, /EPERM/); assert.ok(r.j.befehl);
+    assert.deepEqual(readdirSync(join(HOME, ".cursor")).filter((n) => n.includes("brain-neu")), [], "Temp-Datei entfernt");
+    assert.equal(readFileSync(cursorDatei(), "utf8"), FREMD, "Original unverändert");
+  } finally { execFileSync("chflags", ["nouchg", cursorDatei()]); }
 });
 
 test("Unbekanntes Ziel → 400", async () => {

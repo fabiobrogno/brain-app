@@ -122,7 +122,7 @@ const AGENT_TON = { claude: "ton-orange" };
 async function ladeKiDaten() {
   const [ki, info, nz] = await Promise.all([sicher(() => api.kiErkennen()), sicher(() => api.info()), sicher(() => api.notizen())]);
   const agenten = Array.isArray(ki?.agenten) ? ki.agenten.filter((a) => a && (a.pfad || a.version)) : [];
-  return { erkannt: !!ki, agenten, info, notizen: Array.isArray(nz?.notizen) ? nz.notizen : null };
+  return { erkannt: !!ki, agenten, cursorDa: ki?.cursorDa === true, info, notizen: Array.isArray(nz?.notizen) ? nz.notizen : null };
 }
 
 // Ein Bereich mit Live-Region für Ergebnis/Fehler unter einer Aktion.
@@ -167,9 +167,9 @@ function baueKiInhalt({ kompakt = false, beiVerbunden } = {}) {
     }
     // Claude verbinden: nur wenn Claude gefunden wurde (oder die Erkennung selbst nicht antwortet).
     const claudeDa = d.erkannt ? d.agenten.some((a) => a.id === "claude") : true;
-    const verbindbar = claudeDa || d.agenten.some((a) => a.id === "codex" || a.id === "cursor-agent");
+    const verbindbar = claudeDa || d.cursorDa || d.agenten.some((a) => a.id === "codex" || a.id === "cursor-agent");
     const zeilen = [];
-    if (verbindbar) zeilen.push(baueVerbinden({ beiVerbunden, agenten: d.agenten }));
+    if (verbindbar) zeilen.push(baueVerbinden({ beiVerbunden, agenten: d.agenten, cursorDa: d.cursorDa }));
     if (HINWEISE_VERFUEGBAR && claudeDa && d.info?.kit?.vorhanden) zeilen.push(baueHinweise());
     if (claudeDa || hatAgenten) zeilen.push(baueProbe(d.notizen));
     if (zeilen.length) teile.push(h("div", { klasse: "w-gruppe", "data-gruppe": "aktionen" }, zeilen.map((x) => x.knoten)));
@@ -187,19 +187,20 @@ function zeigeOk(beschreibung, zone, text) {
 
 // beiVerbunden: wird erst nach geglücktem Verbinden mit Claude gerufen (200, auch { schonVerbunden: true }), nie beim bloßen Schließen.
 // Danach läuft bei jedem Ziel automatisch der Selbsttest. Er prüft nur unseren Server, nicht ob die fremde App ihn schon geladen hat.
-function baueVerbinden({ beiVerbunden, agenten = [] } = {}) {
+function baueVerbinden({ beiVerbunden, agenten = [], cursorDa = false } = {}) {
   const zone = meldeZone();
   const gefunden = (id) => agenten.some((a) => a.id === id);
   let ziel = "claude";
-  if (!gefunden("claude")) ziel = gefunden("codex") ? "codex" : gefunden("cursor-agent") ? "cursor" : "claude";
+  if (!gefunden("claude")) ziel = gefunden("codex") ? "codex" : (gefunden("cursor-agent") || cursorDa) ? "cursor" : "claude";
   const name = () => TW.ki.zielName[ziel];
   const knopf = h("button", { klasse: "knopf primaer", type: "button", "data-aktion": "claude-verbinden", text: ziel === "claude" ? TW.ki.verbinden : TW.ki.verbindenMit(name()) });
   const beschreibung = h("div", { klasse: "w-aktion-text", "aria-live": "polite", text: ziel === "claude" ? TW.ki.verbindenText : TW.ki.verbindenTextFuer(name()) });
+  let gesperrt = false; // während des Selbsttests bleibt die Auswahl stehen, sonst stimmt der App-Name im Ergebnis nicht
   const wahl = h("div", { klasse: "w-ziele", role: "radiogroup", "aria-label": TW.ki.zielWahl, "data-bereich": "ziel-wahl" },
     Object.keys(TW.ki.zielName).map((id) => {
       const b = h("button", { klasse: "knopf" + (id === ziel ? " aktiv" : ""), type: "button", role: "radio", "aria-checked": String(id === ziel), "data-ziel": id, text: TW.ki.zielName[id] });
       b.addEventListener("click", () => {
-        if (knopf.disabled) return;
+        if (knopf.disabled || gesperrt) return;
         ziel = id;
         for (const x of wahl.children) { const an = x.dataset.ziel === id; x.classList.toggle("aktiv", an); x.setAttribute("aria-checked", String(an)); }
         knopf.className = "knopf primaer";
@@ -209,16 +210,19 @@ function baueVerbinden({ beiVerbunden, agenten = [] } = {}) {
       });
       return b;
     }));
+  const sperreWahl = (an) => { gesperrt = an; for (const x of wahl.children) x.disabled = an; };
   async function selbsttest() {
+    const appName = name(); // jetzt festhalten: die Auswahl könnte sich sonst ändern
+    sperreWahl(true);
     zone.arbeit(TW.ki.selbsttestLaeuft);
     try {
       const r = await api.mcpSelbsttest();
       const n = Array.isArray(r?.werkzeuge) ? r.werkzeuge.length : 0;
       zone.knoten.replaceChildren(h("div", { klasse: "w-ergebnis", "data-bereich": "selbsttest" }, symbol("kreis-haken", 15),
-        h("span", { text: TW.ki.selbsttestOk(n, name()) })));
+        h("span", { text: TW.ki.selbsttestOk(n, appName) })));
     } catch (e) {
       zone.knoten.replaceChildren(h("div", { klasse: "w-fehlerbox fehlertext", role: "alert", "data-bereich": "selbsttest" }, symbol("warnung", 15), h("span", { text: TW.ki.selbsttestFehlt(meldungVon(e)) })));
-    }
+    } finally { sperreWahl(false); }
   }
   const erfolg = async () => {
     knopf.disabled = false;

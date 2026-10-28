@@ -1,7 +1,7 @@
 // werkstatt/handler.mjs — die Routen von Brain Studio (Spec §5) als reine Funktion, ohne Socket:
 //   erzeugeHandler({vault, ...}) → async ({methode, pfad, query, body}) => ({status, headers, body: Buffer, stopp?})
 // Genutzt von werkstatt.mjs (Brücke zur App) und entwicklung.mjs (HTTP für Tests). Statische Dateien kommen aus ../studio/.
-import { readFileSync, realpathSync, statSync, existsSync, writeFileSync, copyFileSync, mkdirSync, renameSync } from "node:fs";
+import { readFileSync, realpathSync, statSync, existsSync, writeFileSync, copyFileSync, mkdirSync, renameSync, readdirSync, rmSync, chmodSync, constants as fsKonst } from "node:fs";
 import { join, dirname, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
@@ -273,20 +273,46 @@ export function erzeugeHandler(o) {
       if (alt && typeof alt === "object" && alt.command === eintrag.command && JSON.stringify(alt.args || []) === JSON.stringify(eintrag.args)) return { ok: true, schonVerbunden: true };
       if (e.umstellen !== true) throw new HttpFehler(409, "Bei Cursor ist unter dem Namen „brain“ schon ein anderer Server eingetragen. Möchtest du ihn auf Brain Studio umstellen?", { art: "anders", befehl });
     }
+    let tmp = null;
     try {
-      let sicherung = null;
+      let sicherung = null, modus = 0o600; // neue Datei: nur für den Nutzer lesbar (andere MCP-Server tragen oft Tokens ein)
+      let ziel = datei; // ein Symlink (Dotfiles) bleibt ein Symlink: geschrieben wird beim echten Ziel
       if (vorhanden) {
-        sicherung = `${datei}.brain-sicherung-${new Date().toISOString().replace(/\D/g, "").slice(0, 14)}`;
-        copyFileSync(datei, sicherung);
+        try { ziel = realpathSync(datei); } catch { /* bleibt datei */ }
+        modus = statSync(ziel).mode & 0o777;
+        sicherung = sichereCursorDatei(ordner, datei, ziel, modus);
       } else mkdirSync(ordner, { recursive: true });
       const neu = { ...doc, mcpServers: { ...(doc.mcpServers || {}), brain: eintrag } };
-      const tmp = `${datei}.brain-neu`;
-      writeFileSync(tmp, JSON.stringify(neu, null, 2) + "\n");
-      renameSync(tmp, datei);
+      tmp = `${ziel}.brain-neu`;
+      writeFileSync(tmp, JSON.stringify(neu, null, 2) + "\n", { mode: modus });
+      chmodSync(tmp, modus); // umask darf die Rechte nicht verändern
+      renameSync(tmp, ziel);
+      tmp = null;
       return { ok: true, ...(sicherung ? { sicherung } : {}) };
-    } catch {
-      throw new HttpFehler(502, "Cursor ließ sich nicht einrichten (die Datei ~/.cursor/mcp.json ist nicht beschreibbar). Ergänze den Eintrag von Hand:", { befehl });
+    } catch (err) {
+      if (err instanceof HttpFehler) throw err;
+      throw new HttpFehler(502, `Cursor ließ sich nicht einrichten (Fehler ${err && err.code ? err.code : "unbekannt"} bei ~/.cursor/mcp.json). Ergänze den Eintrag von Hand:`, { befehl });
+    } finally {
+      if (tmp) try { rmSync(tmp, { force: true }); } catch { /* egal */ }
     }
+  }
+
+  // Sicherung neben der Datei (mit den Rechten des Originals, nie eine vorhandene überschreiben); nur die letzten 3 bleiben, sie enthalten fremde Tokens.
+  function sichereCursorDatei(ordner, datei, ziel, modus) {
+    const stamm = `${datei}.brain-sicherung-`, zeit = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
+    let sicherung = null;
+    for (let i = 1; i <= 50 && !sicherung; i++) {
+      const name = `${stamm}${zeit}${i > 1 ? `-${i}` : ""}`;
+      try { copyFileSync(ziel, name, fsKonst.COPYFILE_EXCL); sicherung = name; } catch (err) { if (!err || err.code !== "EEXIST") throw err; }
+    }
+    if (!sicherung) throw Object.assign(new Error("Sicherung"), { code: "EEXIST" });
+    chmodSync(sicherung, modus);
+    try {
+      const praefix = stamm.slice(ordner.length + 1);
+      const alle = readdirSync(ordner).filter((n) => n.startsWith(praefix)).sort();
+      for (const n of alle.slice(0, Math.max(0, alle.length - 3))) try { rmSync(join(ordner, n), { force: true }); } catch { /* egal */ }
+    } catch { /* Aufräumen ist nicht kritisch */ }
+    return sicherung;
   }
 
   async function verbindeClaude(e) {
