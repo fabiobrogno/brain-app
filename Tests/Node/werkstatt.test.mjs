@@ -39,7 +39,7 @@ test("Handler: info, baum, datei GET/PUT, 409, neu, merken, suche, pruefung", as
   const rufe = aufruf(erzeugeHandler({ vault: d, studioDir: studioOrdner(), appVersion: "9.9.9" }));
   let r = await rufe("GET", "/api/info");
   assert.equal(r.status, 200);
-  assert.deepEqual(Object.keys(r.j).sort(), ["appVersion", "git", "kit", "kitVersion", "mcpBefehl", "name", "vault", "vertrauen"]); // Vertrauen v2 (§8): info nennt den Vertrauensstand
+  assert.deepEqual(Object.keys(r.j).sort(), ["appVersion", "git", "kit", "kitVersion", "mcpBefehl", "mcpBefehle", "name", "vault", "vertrauen"]); // Vertrauen v2 (§8): info nennt den Vertrauensstand
   assert.equal(r.j.appVersion, "9.9.9"); assert.equal(r.j.kitVersion, null); assert.equal(r.j.git, false); assert.equal(r.j.vault, realpathSync(d));
   assert.match(r.headers["Content-Type"], /application\/json; charset=utf-8/);
 
