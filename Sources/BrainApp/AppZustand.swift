@@ -70,7 +70,7 @@ final class AppZustand: ObservableObject {
     private var umgebung: [String: String] { ["BRAIN_NODE": brainNode] }
     /// Die Werkstatt liest und schreibt `vaults.json` und ihren Kit-Vertrauens-Merker (`vertrauen.json`) im echten
     /// Application-Support-Ordner der App.
-    /// Die öffentliche GitHub-Client-ID (Info.plist `KortexGitHubClientID`) geht per Umgebung an die Werkstatt; leer/fehlt = Anmeldung ausgeblendet.
+    /// Die öffentliche GitHub-Client-ID (Info.plist `KortexGitHubClientID`) geht per Umgebung an die Werkstatt; die ID ist öffentlich (kein Client-Secret); leer/fehlt = Anmeldung ausgeblendet.
     private var werkstattUmgebung: [String: String] {
         var env = umgebung.merging(["BRAIN_APP_SUPPORT": pfade.basis.path]) { _, neu in neu }
         if let id = Bundle.main.object(forInfoDictionaryKey: "KortexGitHubClientID") as? String, !id.isEmpty { env["KORTEX_GITHUB_CLIENT_ID"] = id }
