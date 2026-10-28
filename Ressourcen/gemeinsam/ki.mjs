@@ -1,7 +1,7 @@
 // gemeinsam/ki.mjs — Erkennung installierter KI-Programme (v2-Spec §2 „KI verbinden“): wo liegt `claude`, `codex` …, und welche Version?
 // Gleiche Suche wie findeClaude in werkstatt/handler.mjs (PATH + übliche Orte, eine GUI-App hat nur einen knappen PATH).
 // Keine Abhängigkeiten außer basis.mjs. Es wird nur `<programm> --version` gestartet (ohne Shell), nie etwas anderes.
-import { accessSync, constants, statSync, readdirSync } from "node:fs";
+import { accessSync, constants, statSync, readdirSync, existsSync } from "node:fs";
 import { join, dirname, delimiter, isAbsolute } from "node:path";
 import { homedir } from "node:os";
 import { spawn } from "node:child_process";
@@ -106,8 +106,14 @@ const CACHE_ZEIT = 10 * 60_000;
 const cache = new Map();
 const schluessel = (env) => JSON.stringify([env.PATH || "", env.BRAIN_CLAUDE_EXTRA ?? null, env.BRAIN_TESTMODUS === "1", homedir()]);
 
-// → { agenten:[{ id, name, version|null, pfad|null }] } in fester Reihenfolge; neu:true umgeht und überschreibt den Zwischenspeicher.
-export async function erkenneAgenten({ env = process.env, neu = false, limit = 5000 } = {}) {
+// Cursor ist auch ohne `cursor-agent` verbindbar, wenn die App oder ihr Konfigurationsordner da ist. Immer frisch geprüft (zwei stat-Aufrufe), nicht im Zwischenspeicher.
+// home und appOrdner sind nur für Tests austauschbar.
+function cursorVorhanden(home, appOrdner) {
+  try { return existsSync(join(home, ".cursor")) || existsSync(join(appOrdner, "Cursor.app")) || existsSync(join(home, "Applications", "Cursor.app")); } catch { return false; }
+}
+
+// → { agenten:[{ id, name, version|null, pfad|null }], cursorDa } in fester Reihenfolge; neu:true umgeht und überschreibt den Zwischenspeicher.
+export async function erkenneAgenten({ env = process.env, neu = false, limit = 5000, home = homedir(), appOrdner = "/Applications" } = {}) {
   const jetzt = Date.now();
   const key = schluessel(env);
   let eintrag = cache.get(key);
@@ -118,5 +124,5 @@ export async function erkenneAgenten({ env = process.env, neu = false, limit = 5
     cache.set(key, eintrag);
   }
   const agenten = await eintrag.ergebnis;
-  return { agenten: agenten.map((a) => ({ ...a })) }; // Kopie: Aufrufer können den Zwischenspeicher nicht verändern
+  return { agenten: agenten.map((a) => ({ ...a })), cursorDa: cursorVorhanden(home, appOrdner) }; // Kopie: Aufrufer können den Zwischenspeicher nicht verändern
 }

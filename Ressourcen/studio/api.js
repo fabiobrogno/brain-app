@@ -63,7 +63,8 @@ export const api = {
   fassung: (pfad, sha) => anfrage("GET", "/api/git/fassung" + q({ pfad, sha })),
   // vault = der Pfad, den die Frage gezeigt hat: die Werkstatt erlaubt nur, wenn DAS ihr offener Vault ist (sonst 409 art „anderer-vault“)
   kitVertrauen: (erlauben, vault) => anfrage("POST", "/api/kit/vertrauen", { erlauben: !!erlauben, ...(typeof vault === "string" && vault ? { vault } : {}) }),
-  mcpVerbinden: ({ umstellen } = {}) => anfrage("POST", "/api/mcp/verbinden", umstellen ? { ziel: "claude", umstellen: true } : { ziel: "claude" }),
+  mcpVerbinden: ({ umstellen, ziel = "claude" } = {}) => anfrage("POST", "/api/mcp/verbinden", umstellen ? { ziel, umstellen: true } : { ziel }),
+  mcpSelbsttest: () => anfrage("POST", "/api/mcp/selbsttest", {}),
   // ---- v2: Index, Typen, Ansichten, Kontext, Verlauf des Repos
   notizen: () => anfrage("GET", "/api/notizen"),
   notizKontext: (pfad) => anfrage("GET", "/api/notiz/kontext" + q({ pfad })),

@@ -122,7 +122,7 @@ const AGENT_TON = { claude: "ton-orange" };
 async function ladeKiDaten() {
   const [ki, info, nz] = await Promise.all([sicher(() => api.kiErkennen()), sicher(() => api.info()), sicher(() => api.notizen())]);
   const agenten = Array.isArray(ki?.agenten) ? ki.agenten.filter((a) => a && (a.pfad || a.version)) : [];
-  return { erkannt: !!ki, agenten, info, notizen: Array.isArray(nz?.notizen) ? nz.notizen : null };
+  return { erkannt: !!ki, agenten, cursorDa: ki?.cursorDa === true, info, notizen: Array.isArray(nz?.notizen) ? nz.notizen : null };
 }
 
 // Ein Bereich mit Live-Region für Ergebnis/Fehler unter einer Aktion.
@@ -167,8 +167,9 @@ function baueKiInhalt({ kompakt = false, beiVerbunden } = {}) {
     }
     // Claude verbinden: nur wenn Claude gefunden wurde (oder die Erkennung selbst nicht antwortet).
     const claudeDa = d.erkannt ? d.agenten.some((a) => a.id === "claude") : true;
+    const verbindbar = claudeDa || d.cursorDa || d.agenten.some((a) => a.id === "codex" || a.id === "cursor-agent");
     const zeilen = [];
-    if (claudeDa) zeilen.push(baueVerbinden({ beiVerbunden }));
+    if (verbindbar) zeilen.push(baueVerbinden({ beiVerbunden, agenten: d.agenten, cursorDa: d.cursorDa }));
     if (HINWEISE_VERFUEGBAR && claudeDa && d.info?.kit?.vorhanden) zeilen.push(baueHinweise());
     if (claudeDa || hatAgenten) zeilen.push(baueProbe(d.notizen));
     if (zeilen.length) teile.push(h("div", { klasse: "w-gruppe", "data-gruppe": "aktionen" }, zeilen.map((x) => x.knoten)));
@@ -184,17 +185,52 @@ function zeigeOk(beschreibung, zone, text) {
   beschreibung.replaceChildren(h("div", { klasse: "w-ok" }, symbol("kreis-haken", 15), h("span", { text })));
 }
 
-// beiVerbunden: wird erst nach geglücktem Verbinden gerufen (200, auch { schonVerbunden: true }), nie beim bloßen Schließen.
-function baueVerbinden({ beiVerbunden } = {}) {
+// beiVerbunden: wird erst nach geglücktem Verbinden mit Claude gerufen (200, auch { schonVerbunden: true }), nie beim bloßen Schließen.
+// Danach läuft bei jedem Ziel automatisch der Selbsttest. Er prüft nur unseren Server, nicht ob die fremde App ihn schon geladen hat.
+function baueVerbinden({ beiVerbunden, agenten = [], cursorDa = false } = {}) {
   const zone = meldeZone();
-  const knopf = h("button", { klasse: "knopf primaer", type: "button", "data-aktion": "claude-verbinden", text: TW.ki.verbinden });
-  const beschreibung = h("div", { klasse: "w-aktion-text", "aria-live": "polite", text: TW.ki.verbindenText });
-  const erfolg = () => {
+  const gefunden = (id) => agenten.some((a) => a.id === id);
+  let ziel = "claude";
+  if (!gefunden("claude")) ziel = gefunden("codex") ? "codex" : (gefunden("cursor-agent") || cursorDa) ? "cursor" : "claude";
+  const name = () => TW.ki.zielName[ziel];
+  const knopf = h("button", { klasse: "knopf primaer", type: "button", "data-aktion": "claude-verbinden", text: ziel === "claude" ? TW.ki.verbinden : TW.ki.verbindenMit(name()) });
+  const beschreibung = h("div", { klasse: "w-aktion-text", "aria-live": "polite", text: ziel === "claude" ? TW.ki.verbindenText : TW.ki.verbindenTextFuer(name()) });
+  let gesperrt = false; // während des Selbsttests bleibt die Auswahl stehen, sonst stimmt der App-Name im Ergebnis nicht
+  const wahl = h("div", { klasse: "w-ziele", role: "radiogroup", "aria-label": TW.ki.zielWahl, "data-bereich": "ziel-wahl" },
+    Object.keys(TW.ki.zielName).map((id) => {
+      const b = h("button", { klasse: "knopf" + (id === ziel ? " aktiv" : ""), type: "button", role: "radio", "aria-checked": String(id === ziel), "data-ziel": id, text: TW.ki.zielName[id] });
+      b.addEventListener("click", () => {
+        if (knopf.disabled || gesperrt) return;
+        ziel = id;
+        for (const x of wahl.children) { const an = x.dataset.ziel === id; x.classList.toggle("aktiv", an); x.setAttribute("aria-checked", String(an)); }
+        knopf.className = "knopf primaer";
+        knopf.textContent = id === "claude" ? TW.ki.verbinden : TW.ki.verbindenMit(name());
+        beschreibung.replaceChildren(document.createTextNode(id === "claude" ? TW.ki.verbindenText : TW.ki.verbindenTextFuer(name())));
+        zone.leer();
+      });
+      return b;
+    }));
+  const sperreWahl = (an) => { gesperrt = an; for (const x of wahl.children) x.disabled = an; };
+  async function selbsttest() {
+    const appName = name(); // jetzt festhalten: die Auswahl könnte sich sonst ändern
+    sperreWahl(true);
+    zone.arbeit(TW.ki.selbsttestLaeuft);
+    try {
+      const r = await api.mcpSelbsttest();
+      const n = Array.isArray(r?.werkzeuge) ? r.werkzeuge.length : 0;
+      zone.knoten.replaceChildren(h("div", { klasse: "w-ergebnis", "data-bereich": "selbsttest" }, symbol("kreis-haken", 15),
+        h("span", { text: TW.ki.selbsttestOk(n, appName) })));
+    } catch (e) {
+      zone.knoten.replaceChildren(h("div", { klasse: "w-fehlerbox fehlertext", role: "alert", "data-bereich": "selbsttest" }, symbol("warnung", 15), h("span", { text: TW.ki.selbsttestFehlt(meldungVon(e)) })));
+    } finally { sperreWahl(false); }
+  }
+  const erfolg = async () => {
     knopf.disabled = false;
     knopf.className = "knopf fertig";
     knopf.replaceChildren(symbol("haken", 14), TW.ki.verbundenKnopf);
-    zeigeOk(beschreibung, zone, TW.ki.verbunden);
-    try { beiVerbunden?.(); } catch (e) { console.error(e); }
+    beschreibung.replaceChildren(h("div", { klasse: "w-ok" }, symbol("kreis-haken", 15), h("span", { text: ziel === "claude" ? TW.ki.verbunden : TW.ki.verbundenFuer(name()) })));
+    if (ziel === "claude") { try { beiVerbunden?.(); } catch (e) { console.error(e); } }
+    await selbsttest();
   };
   // Es gibt schon einen Eintrag „brain“, der woanders hinzeigt (409 art „anders“): erst fragen, dann mit { umstellen: true } ersetzen
   const frage = () => {
@@ -202,30 +238,32 @@ function baueVerbinden({ beiVerbunden } = {}) {
     const ja = h("button", { klasse: "knopf primaer", type: "button", "data-aktion": "umstellen", text: TW.ki.umstellen });
     nein.addEventListener("click", () => { zone.leer(); knopf.focus(); });
     ja.addEventListener("click", () => verbinde(true));
+    const text = ziel === "codex" ? TW.ki.codexAnders : ziel === "cursor" ? TW.ki.cursorAnders : TW.ki.anders;
     zone.knoten.replaceChildren(h("div", { klasse: "w-frage", "data-bereich": "umstellen", role: "group" },
-      h("div", { klasse: "w-aktion-text", text: TW.ki.anders }), h("div", { klasse: "w-frage-knoepfe" }, nein, ja)));
+      h("div", { klasse: "w-aktion-text", text }), h("div", { klasse: "w-frage-knoepfe" }, nein, ja)));
     setTimeout(() => nein.focus(), 0);
   };
   async function verbinde(umstellen) {
     knopf.disabled = true;
     zone.arbeit(TW.ki.verbindet);
     try {
-      await api.mcpVerbinden(umstellen ? { umstellen: true } : undefined);
-      erfolg();
+      await api.mcpVerbinden({ ...(umstellen ? { umstellen: true } : {}), ...(ziel === "claude" ? {} : { ziel }) });
     } catch (e) {
       knopf.disabled = false;
       const befehl = typeof e?.daten?.befehl === "string" ? e.daten.befehl : null;
       if (!umstellen && e?.status === 409 && e?.daten?.art === "anders") { frage(); return; }
-      if (befehl) zone.knoten.replaceChildren(befehlBlock(befehl));
+      if (befehl) zone.knoten.replaceChildren(...(e?.daten?.art === "kaputt" ? [h("div", { klasse: "w-fehlerbox fehlertext", role: "alert" }, symbol("warnung", 15), h("span", { text: e.message }))] : []), befehlBlock(befehl, ziel === "cursor" ? TW.ki.cursorKaputt : undefined));
       else zone.fehler(meldungVon(e));
       knopf.focus();
+      return;
     }
+    await erfolg();
   }
   knopf.addEventListener("click", () => verbinde(false));
-  return { knoten: h("div", { klasse: "w-aktion", "data-zeile": "verbinden" }, beschreibung, knopf, zone.knoten), knopf };
+  return { knoten: h("div", { klasse: "w-aktion", "data-zeile": "verbinden" }, beschreibung, knopf, wahl, zone.knoten), knopf };
 }
 
-function befehlBlock(befehl) {
+function befehlBlock(befehl, hinweis = TW.ki.befehl) {
   const meld = h("div", { klasse: "mini", "aria-live": "polite" });
   const kopieren = h("button", { klasse: "knopf", type: "button", "data-aktion": "befehl-kopieren" }, symbol("kopieren", 14), TW.ki.befehlKopieren);
   kopieren.addEventListener("click", async () => {
@@ -233,7 +271,7 @@ function befehlBlock(befehl) {
     catch { meld.textContent = TW.ki.kopierFehler; }
   });
   return h("div", { "data-bereich": "befehl" },
-    h("div", { klasse: "w-aktion-text", text: TW.ki.befehl }),
+    h("div", { klasse: "w-aktion-text", text: hinweis }),
     h("div", { klasse: "w-befehl" }, h("code", { text: befehl, tabindex: "0" }), kopieren),
     meld);
 }
