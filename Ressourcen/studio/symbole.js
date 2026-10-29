@@ -68,6 +68,14 @@ const ICONS = {
   ansicht: p("M2 8s2.2-4.5 6-4.5S14 8 14 8s-2.2 4.5-6 4.5S2 8 2 8z") + c(8, 8, 1.8),
   papierkorb: p("M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8a1 1 0 001 .9h3.8a1 1 0 001-.9l.6-8"),
   stift: p("M10.5 3.2l2.3 2.3-7 7-2.8.5.5-2.8z"),
+  "wolke-hoch": p("M4.8 12.2a3 3 0 01-.4-5.97 4 4 0 017.7 1 2.5 2.5 0 01-.6 4.97z") + p("M8 11V7.2M6.3 8.9L8 7.2l1.7 1.7"),
+  "wolke-runter": p("M4.8 12.2a3 3 0 01-.4-5.97 4 4 0 017.7 1 2.5 2.5 0 01-.6 4.97z") + p("M8 7.2V11M6.3 9.3L8 11l1.7-1.7"),
+  "wolke-aus": p("M4.8 12.2a3 3 0 01-.4-5.97 4 4 0 017.7 1 2.5 2.5 0 01-.6 4.97z") + p("M2.5 2.5l11 11"),
+  "ansicht-zeilen": p("M3 4.5h10M3 8h10M3 11.5h10"),
+  "ansicht-spalten": p("M3.5 3h9a1 1 0 011 1v8a1 1 0 01-1 1h-9a1 1 0 01-1-1V4a1 1 0 011-1z") + p("M8 3v10"),
+  pfeil: p("M3 8h10M9 4l4 4-4 4"),
+  "pfeil-oben": p("M8 13V3M4 7l4-4 4 4"),
+  "pfeil-unten": p("M8 3v10M4 9l4 4 4-4"),
 };
 
 export const symbolNamen = Object.keys(ICONS);

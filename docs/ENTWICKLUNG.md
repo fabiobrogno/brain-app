@@ -10,9 +10,9 @@ Stil wie bisher: `feat(FBL-19): Rückfragen-Zähler …`, `fix(FBL-19): …`, `c
 Deutsch, Imperativ oder Substantivstil, die Aufgabe steht in Klammern.
 
 ## Pull Requests
-- PR ist Pflicht. CI (`shellcheck`, `build-test`) muss grün sein; ein Review gibt frei.
+- PR ist Pflicht. Der CI-Status `ci-ok` muss grün sein (er fasst alle Jobs zusammen); ein Review gibt frei.
 - Gemergt wird nur durch die zuständige Person (CEO), nicht durch die Autorin oder den Autor.
-- Reine Doku-Änderungen (`docs/**`, `*.md`) lösen die CI nicht aus.
+- Reine Doku-Änderungen (`docs/**`, `*.md`) laufen durch die CI, überspringen aber alle Prüfjobs: `ci-ok` ist nach wenigen Sekunden grün.
 
 ## Spuren
 | Spur | Auslöser | Ergebnis |
@@ -47,7 +47,12 @@ Sparkle-Werkzeuge 2.10.0 werden mit fester SHA-256 geladen. Die `appcast.xml` au
 Stable-Tags setzt nur der CEO nach Fabios Freigabe.
 
 ## Node-Tests
-Der Job `node-test` in `ci.yml` läuft nur, wenn `scripts/teste-node.sh` existiert (kommt mit `studio-v2`, FBL-25).
+## CI-Aufbau (`.github/workflows/ci.yml`)
+- `aenderungen` entscheidet mit `scripts/ci-aenderungen.sh` (Test: `scripts/teste-ci-aenderungen.sh`), welche Bereiche laufen: `swift`, `kern`, `node`, `ui`, `vorab`.
+  Bei einem PR gilt der Vergleich mit dem Zielzweig, bei `main` der mit dem Stand vor dem Push. Unbekannte Pfade (z. B. `.github/**`, neue Ordner) schalten alles ein; neue Abhängigkeiten zwischen Bereichen gehören in dieses Skript.
+- Jobs: `vorpruefung` (shellcheck, Syntax, JSON, Lint; lokal `bash scripts/ci-vorpruefung.sh`), `kern-test` (6 Shards), `node-test`, `ui-test` (6 Shards), `swift` (macOS), `ci-ok` (EIN Status, grün bei „erfolgreich oder übersprungen“), `dev-artefakt` (nur `main`).
+- Kern-Shards: `bash Tests/Kern/run-all.sh --shard I/N`. Die Verteilung nutzt `Tests/Kern/gewichte.txt` (Sekunden je Testdatei, optional nachpflegen); jede Testdatei läuft in genau einem Shard, auch ohne Eintrag.
+- Playwright: `npx playwright test --shard=I/N --workers=2 --fully-parallel` (jeder Test startet seinen eigenen Server).
 
 ## Tags
 Tags werden nie verschoben oder ersetzt. Ist ein Release fehlerhaft, folgt eine neue Version

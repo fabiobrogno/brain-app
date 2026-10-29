@@ -5,7 +5,9 @@ import { api, aktion, aktionMitAntwort, inApp, gitGesperrt, andererVault, ausgan
 import { erstelleEditor } from "./editor.js";
 import { h, dialog, dialogOffen, schliesseDialoge, toast, vorMinuten, dateiName, ohneEndung, ordnerVon, istBearbeitbar, speichereLokal, leseLokal, leseEntwurf, speichereEntwurf, sucheGrad, suchFormen, ausTabelle, arbeitBeginnt, laufendeArbeiten } from "./hilfen.js";
 import { symbol } from "./symbole.js";
+import { kiLogo } from "./ki-logos.js";
 import { TV } from "./texte-verlauf.js";
+import { istRohGit } from "./verlauf.js";
 import { diffAnsicht } from "./diff.js";
 import { oeffneMenue, schliesseMenue } from "./menue.js";
 import { baueAktionen, istZurueckgestellt, spaeterBis } from "./posteingang.js";
@@ -25,7 +27,7 @@ const S = {
   offen: new Set(), zu: new Set(), favoriten: new Set(),
   pfad: null, hash: null, schutz: false, dirty: false, konflikt: null, speichert: false, nochmal: false, bearbeitbar: true,
   pruef: new Map(), aktuellePruefung: null,
-  git: null, gesundheit: null, rueckfragen: null, syncLaeuft: false, syncFehler: null, ki: null, kiVerbunden: false,
+  git: null, offline: false, gesundheit: null, rueckfragen: null, syncLaeuft: false, syncFehler: null, ki: null, kiVerbunden: false,
   zuletzt: [], suche: { aktiv: false, treffer: [], auswahl: 0, frage: "" },
   infoAn: leseLokal("infoAn", true), roh: leseLokal("roh", false), breit: leseLokal("breit", false), theme: leseLokal("theme", "system"),
   ladeNr: 0, bereit: false,
@@ -1037,15 +1039,35 @@ function st(id, kinder, { klick, titel, klasse = "", tag = null } = {}) {
   return el;
 }
 const punktEl = (farbe) => h("span", { klasse: "d " + (farbe || "") });
-function syncText(g) {
-  if (g.konflikt) return { text: T.status.konfliktLoesen, farbe: "rot" };
-  if (S.syncLaeuft) return { text: T.status.gleicheAb, farbe: "dreht" };
-  if (S.syncFehler) return { text: S.syncFehler === "konflikt" ? T.status.konflikt : T.status.fehler, farbe: "rot" };
-  if (!g.remote) return { text: T.status.nieGesichert, farbe: "grau" };
-  if (g.zurueck > 0) return { text: T.status.pullNoetig, farbe: "gelb" };
+// Hauptknopf „Abgleichen“: genau ein Zustand, in dieser Rangfolge. offline = Server nicht erreichbar (letztes Nachsehen schlug fehl oder das Gerät ist offline).
+const istOffline = () => S.offline || (typeof navigator !== "undefined" && navigator.onLine === false);
+function syncZustand(g) {
+  if (g.konflikt) return { z: "konflikt", text: T.status.konfliktLoesen, sym: "warnung", titel: T.status.konfliktTitel };
+  if (S.syncLaeuft) return { z: "laeuft", text: T.status.gleicheAb, sym: "sync", titel: T.status.gleicheAbTitel };
+  if (S.syncFehler) return { z: "fehler", text: S.syncFehler === "konflikt" ? T.status.konflikt : T.status.fehler, sym: "warnung", titel: T.status.fehlerTitel };
+  if (!g.remote) return { z: "nie", text: T.status.nieGesichert, sym: "wolke", titel: T.status.nieTitel };
+  if (istOffline()) return { z: "offline", text: T.status.offline, sym: "wolke-aus", titel: T.status.offlineTitel };
+  if (g.zurueck > 0) return { z: "neues", text: T.status.pullNoetig, sym: "wolke-runter", titel: T.status.neuesTitel };
+  if (g.vor > 0) return { z: "senden", text: T.status.zuSenden(g.vor), sym: "wolke-hoch", titel: T.status.zuSendenTitel(g.vor) };
   const min = g.letzterSync ? vorMinuten(g.letzterSync) : null;
-  if (min === null) return { text: T.status.nieGesichert, farbe: "grau" };
-  return { text: T.status.gesichert(T.status.vorMin(min)), farbe: g.vor > 0 || g.geaendert.length ? "gelb" : "" };
+  if (min === null) return { z: "nie", text: T.status.nieGesichert, sym: "wolke", titel: T.status.nieTitel };
+  return { z: "aktuell", text: T.status.gesichert(T.status.vorMin(min)), sym: "haken", titel: T.status.abgleichenTitel };
+}
+function syncKnopf(g) {
+  const sy = syncZustand(g);
+  const klick = sy.z === "konflikt" ? () => oeffneKonflikt() : sync;
+  const el = h("button", { klasse: "st sync", "data-st": "sync", "data-zustand": sy.z, type: "button", title: sy.titel, "aria-label": sy.z === "konflikt" || sy.z === "laeuft" ? sy.text : `${sy.text}. ${T.status.abgleichen}`, "aria-busy": sy.z === "laeuft" ? "true" : null, aufClick: klick },
+    h("span", { klasse: "sync-zustand" }, symbol(sy.sym, 14), h("span", { text: sy.text })),
+    h("span", { klasse: "sync-aktion", "aria-hidden": "true" }, symbol("sync", 12), h("span", { text: T.status.abgleichen })));
+  return { el, sy };
+}
+// Für Screenreader: nur wenn sich der Abgleich-Zustand ändert, nicht bei jedem Neuzeichnen der Leiste
+let letzteAnsage = "";
+function sageAn(text) {
+  if (text === letzteAnsage) return;
+  letzteAnsage = text;
+  const a = document.getElementById("status-ansage");
+  if (a) a.textContent = text;
 }
 function zeichneStatus() {
   const g = S.git, k = [];
@@ -1064,13 +1086,12 @@ function zeichneStatus() {
     if (!g.remote) k.push(st("remote", [symbol("wolke", 14), h("span", { text: T.status.keinRemote })], { klick: oeffneRemote, titel: T.status.remoteTitel, klasse: "warn" }));
     else k.push(st("remote", [symbol("wolke", 14), h("span", { text: g.upstream ? g.upstream.split("/")[0] : "Remote" })], { titel: g.upstream || "Remote" }));
     k.push(h("span", { klasse: "trenner" }));
-    const sy = syncText(g);
-    k.push(st("sync", [punktEl(sy.farbe), h("span", { text: sy.text })], g.konflikt ? { klick: () => oeffneKonflikt(), titel: T.status.konfliktTitel, klasse: "warn" }
-      : { klick: sync, titel: g.zurueck > 0 ? T.status.neuesTitel : T.status.abgleichen }));
-    if (g.vor > 0 && !g.konflikt) k.push(st("hochladen", [symbol("wolke", 14), h("span", { text: T.status.nichtHochgeladen(g.vor) })], { klick: sync, titel: T.status.nichtHochgeladenTitel(g.vor) }));
+    const { el: syncEl, sy } = syncKnopf(g);
+    k.push(syncEl);
+    sageAn(sy.z === "aktuell" || sy.z === "senden" || sy.z === "nie" ? "" : sy.text);
     k.push(h("span", { klasse: "trenner" }));
     const n = g.geaendert.length;
-    k.push(st("geaendert", [symbol("commit", 14), h("span", { text: n ? T.status.geaendert(n) : T.status.sauber })], { klick: oeffneCommit, titel: n ? T.status.geaendertTitel(n) : "Änderungen sichern (⌘⇧G)", klasse: n ? "hervor" : "" }));
+    k.push(st("geaendert", [symbol("commit", 14), h("span", { text: n ? T.status.geaendert(n) : T.status.sauber })], { klick: oeffneCommit, titel: n ? T.status.geaendertTitel(n) : "Änderungen sichern (⌘⇧G)", klasse: "st-geaendert" + (n ? " hervor" : "") }));
     k.push(st("verlauf", [symbol("verlauf", 14), h("span", { text: T.status.verlauf })], { klick: oeffneVerlauf, titel: T.status.verlaufTitel, klasse: S.sicht.art === "verlauf" ? "aktiv" : "" }));
   }
   k.push(h("span", { klasse: "sp" }));
@@ -1078,7 +1099,7 @@ function zeichneStatus() {
     k.push(st("vertrauen", [symbol("schild", 14), h("span", { text: T.status.nichtVertraut })], { klick: oeffneVertrauen, titel: T.status.nichtVertrautTitel, klasse: "warn" }));
   }
   const verbunden = S.kiVerbunden || S.ki?.agenten?.some((a) => a.id === "claude" && a.verbunden === true);
-  k.push(st("claude", [symbol("claude", 14), h("span", { text: T.status.claude }), symbol(verbunden ? "haken" : "schliessen", 12)], { klick: oeffneKi, titel: verbunden ? T.status.claudeVerbunden : T.status.claudeNicht, klasse: verbunden ? "gut" : "" }));
+  k.push(st("claude", [kiLogo("claude", 14, { dekorativ: true }), h("span", { text: T.status.claude }), symbol(verbunden ? "haken" : "schliessen", 12)], { klick: oeffneKi, titel: verbunden ? T.status.claudeVerbunden : T.status.claudeNicht, klasse: verbunden ? "gut" : "" }));
   const gs = S.gesundheit;
   if (gs && gs.verfuegbar !== false) {
     const w = Array.isArray(gs.warnungen) ? gs.warnungen.length : Number(gs.warnungen) || 0;
@@ -1093,6 +1114,8 @@ function zeichneStatus() {
   stEl.replaceChildren(...k);
 }
 setInterval(() => { if (S.git) zeichneStatus(); }, 30000);
+window.addEventListener("online", () => { S.offline = false; if (S.git) { zeichneStatus(); nachsehen(true); } });
+window.addEventListener("offline", () => { if (S.git) zeichneStatus(); });
 
 let gitTimer = null, baumTimer = null;
 async function ladeGit() {
@@ -1151,8 +1174,10 @@ async function nachsehen(eilig = false) {
   const vault = S.info?.vault, davor = S.git;
   try {
     const r = await api.gitNachsehen();
+    S.offline = false;
     if (r?.repo && S.info?.vault === vault && !S.syncLaeuft && S.git === davor) { const { geholt, ...stand } = r; S.git = stand; zeichneStatus(); } // nur wenn S.git unverändert: ein frischerer Stand wird nie überschrieben
-  } catch { /* offline oder Server nicht erreichbar: still bleiben, der Abgleich meldet es selbst */ }
+    else zeichneStatus();
+  } catch (e) { if (!gitGesperrt(e)) { S.offline = true; zeichneStatus(); } /* Server nicht erreichbar: still bleiben (Statusleiste zeigt „Offline“), der Abgleich meldet es selbst */ }
   finally { nachsehenLaeuft = false; }
 }
 
@@ -1164,6 +1189,7 @@ async function sync() {
   const ende = arbeitBeginnt("sync"); // Schließen des Fensters fragt nach, solange das läuft
   try {
     const r = await api.sync();
+    S.offline = false;
     toast(T.status.abgeglichen[r.ergebnis] || T.status.abgeglichen.aktuell);
     if (r.versteckteBehalten?.length) toast(TV.abgleich.versteckteBehalten(r.versteckteBehalten.length), { ms: 9000 });
     await ladeNachAbgleich();
@@ -1173,7 +1199,9 @@ async function sync() {
     else if (ausgangUnklar(e)) { S.syncFehler = null; await nachZeitueberschreitung(e); } // Ausgang unklar: keinen Fehlerzustand behaupten, der neu geladene Git-Status zeigt es
     else {
       S.syncFehler = e.status === 409 ? "konflikt" : "fehler";
-      toast(e.status === 409 && e.daten?.dateien?.length ? `${e.message} Betroffen: ${e.daten.dateien.slice(0, 3).join(", ")}` : e.message, { fehler: true });
+      const roh = e.message && istRohGit(e.message);
+      if (e.status !== 409 && roh && /could not resolve|unable to access|connect|network|unreachable|timed out/i.test(e.message)) S.offline = true;
+      toast(roh ? TV.roh.abgleich : e.status === 409 && e.daten?.dateien?.length ? `${e.message} Betroffen: ${e.daten.dateien.slice(0, 3).join(", ")}` : e.message, { fehler: true, ms: roh ? 9000 : undefined, aktion: roh ? { text: TV.roh.knopf, tun: () => import("./abgleich.js").then((m) => m.zeigeFehlerDetails({ text: e.message })) } : undefined });
     }
   } finally { ende(); S.syncLaeuft = false; await ladeGit(); ladeInfoLeise().then(() => fragVertrauenEinmal()); if (S.sicht.art === "verlauf") verlaufInst?.aktualisieren?.(); }
 }
@@ -1219,7 +1247,7 @@ function oeffneEinstellungen(anker) {
     { segmente: [{ name: T.status.system, wert: "system", aktiv: S.theme === "system", tun: () => setzeTheme("system") }, { name: T.status.hell, wert: "hell", symbol: "sonne", aktiv: S.theme === "hell", tun: () => setzeTheme("hell") }, { name: T.status.dunkel, wert: "dunkel", symbol: "mond", aktiv: S.theme === "dunkel", tun: () => setzeTheme("dunkel") }] },
     { trenner: true },
     { name: S.breit ? T.werkzeuge.schmal : T.werkzeuge.breit, symbol: "breite", id: "breite", tun: () => { umschalteBreit(); } },
-    { name: T.befehle.mcp, symbol: "claude", id: "ki", tun: oeffneKi },
+    { name: T.befehle.mcp, logo: "claude", id: "ki", tun: oeffneKi },
     ...(inApp() ? [{ name: T.befehle.ordner, symbol: "ordner", id: "finder", tun: () => aktion("ordner-zeigen", S.pfad || undefined) }, { name: T.befehle.ansicht, symbol: "ansicht", id: "uebersicht", tun: oeffneUebersicht }] : []),
     { trenner: true },
     { name: `${PRODUKT} ${S.info?.appVersion || ""}`.trim(), symbol: "info", id: "version", tun: () => {} },
