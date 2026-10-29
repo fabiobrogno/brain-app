@@ -4,10 +4,10 @@ import BrainCore
 
 /// Zustand und Abläufe der App (App-Spec §9.1/§10, Studio-v2-Spec §2): Laufzeit installieren, Studio immer öffnen, den
 /// aktiven Vault aus `<support>/vaults.json` lesen (Rückfall `config.json`), Status zeigen, Fenster öffnen. Die Vault-Liste
-/// führt das Backend (Werkstatt); die App liest sie nur und schreibt nie ins Brain. Code aus dem Vault (`brain status`, die
-/// Kit-Brücke der Übersicht) läuft nur, wenn die Vertrauensprüfung (`KitVertrauen`, Spec §8) unmittelbar vorher „erlaubt“ sagt.
-/// Gilt die Freigabe nicht mehr (Abgleich hat Kit-Code geändert, Vertrauen entzogen, Ordner oder Kit weg), schließt eine offene
-/// Übersicht — bei einem technischen Prüffehler erst nach einer Wiederholung (`UebersichtRegel`).
+/// führt das Backend (Werkstatt); die App liest sie nur und schreibt nie ins Brain. Alle Kern-Aufrufe (`brain status`, Rückfragen,
+/// Ansicht-Brücke der Übersicht) gehen über den gebündelten, per Manifest geprüften Kern (`pfade.kern` = `bin/kern`) mit
+/// ausdrücklichem `--vault`; im Vault liegen nur Daten, ein altes `.tools/` dort wird nie ausgeführt. Ist der Kern nicht bereit,
+/// zeigt die App eine klare Meldung (`kernBereitschaft`) statt irgendwohin auszuweichen (Kern-Umzug P4).
 @MainActor
 final class AppZustand: ObservableObject {
     @Published private(set) var anzeige = StatusAnzeige.fuer(nil, fehler: "Wird vorbereitet …")
@@ -18,14 +18,8 @@ final class AppZustand: ObservableObject {
     /// Aktiver Vault (nil = keiner gewählt; das Studio zeigt dann „Willkommen“).
     @Published private(set) var vault: URL?
     @Published private(set) var vaultName: String?
-    /// Hat der aktive Vault das Brain-Kit (`.tools/brain.mjs`)? Nur dann gibt es Kit-Status und die Übersicht.
+    /// Ist der aktive Vault ein Brain im Sinne des Kerns (`brain.config.json`)? Nur dann gibt es Kern-Status, Übersicht und Rückfragen.
     @Published private(set) var kitVorhanden = false
-    /// Was die letzte Vertrauensprüfung für den aktiven Vault ergab: erlaubt, ausdrücklich nicht freigegeben oder die Prüfung
-    /// selbst ist gescheitert. Bis zur ersten Prüfung und nach jedem Vault-Wechsel `.unbekannt`. Nur ein Anhaltspunkt für Menü und
-    /// Anzeige — gestartet wird Kit-Code immer nach einer frischen Prüfung.
-    @Published private(set) var kitStand = KitStand.unbekannt
-    /// Hat der Nutzer dem aktiven Vault vertraut (letzte Prüfung `{"erlaubt":true}`)?
-    var kitErlaubt: Bool { kitStand == .erlaubt }
 
     let pfade: AppPfade
     let log: AppLog
@@ -56,12 +50,23 @@ final class AppZustand: ObservableObject {
     private var supportAltBasis: URL?
     /// Stand des Kerns (Brain-Logik im App-Paket) nach dem Start: fehlt der Ordner im Paket, ist er „nicht enthalten“ — kein Fehler.
     @Published private(set) var kernStatus = Laufzeit.KernStatus.nichtEnthalten
+    #if DEBUG
+    /// Nur Entwicklung (`swift run`, `BRAIN_APP_KERN`=absoluter Ordner, zusammen mit `BRAIN_APP_NODE`): ein Kern-Ordner statt `bin/kern`.
+    private var kernEntwicklung: URL?
+    #endif
+    /// Der Pfad, über den die App den Kern aufruft: der stabile `bin/kern` (in Debug-Builds optional `BRAIN_APP_KERN`).
+    var kernPfad: URL {
+        #if DEBUG
+        if let k = kernEntwicklung { return k }
+        #endif
+        return pfade.kern
+    }
+    /// Darf die App den Kern benutzen? Sonst steht in `meldung`, was der Nutzer tun kann.
+    var kernBereitschaft: KernBereitschaft { KernBereitschaft.pruefe(kernStatus, kern: kernPfad) }
     /// Rückfall-Fenster, falls die Laufzeit fehlt (sonst gibt es keinen Einrichtungsdialog mehr).
     private var hinweisFenster: NSWindow?
     private var taktgeber: Task<Void, Never>?
     private var statusLauf = 0
-    /// Die eine Wiederholung nach einem technischen Prüffehler (`UebersichtRegel.wiederholungsFrist`); höchstens eine wartet.
-    private var pruefWiederholung: Task<Void, Never>?
     /// `--vault` (Entwicklung, Rauchtest) gilt, bis die Oberfläche einen Vault wechselt; danach gilt vaults.json.
     private var vaultVorgabe: URL?
 
@@ -116,102 +121,39 @@ final class AppZustand: ObservableObject {
     private var umgebung: [String: String] {
         ["BRAIN_NODE": brainNode].merging(vorschau?.kindVorgaben ?? [:]) { _, neu in neu }
     }
-    /// Die Werkstatt liest und schreibt `vaults.json` und ihren Kit-Vertrauens-Merker (`vertrauen.json`) im echten
-    /// Application-Support-Ordner der App.
+    /// Die Werkstatt liest und schreibt `vaults.json` und ihren Vertrauens-Merker (`vertrauen.json`, Hooks und Repo-Einstellungen) im
+    /// echten Application-Support-Ordner der App.
     /// Die öffentliche GitHub-Client-ID (Info.plist `KortexGitHubClientID`) geht per Umgebung an die Werkstatt; die ID ist öffentlich (kein Client-Secret); leer/fehlt = Anmeldung ausgeblendet.
     private var werkstattUmgebung: [String: String] {
         // BRAIN_MCP_NODE: der stabile Node-Pfad (<support>/bin/node), den die Werkstatt in neue MCP-Einträge schreibt.
-        var env = umgebung.merging(["BRAIN_APP_SUPPORT": pfade.basis.path, "BRAIN_MCP_NODE": pfade.node.path]) { _, neu in neu }
+        // KORTEX_KERN_PFAD: der stabile Kern-Pfad (<support>/bin/kern) für Gesundheit/Rückfragen der Werkstatt und die neuen MCP-Einträge.
+        var env = umgebung.merging(["BRAIN_APP_SUPPORT": pfade.basis.path, "BRAIN_MCP_NODE": pfade.node.path,
+                                    "KORTEX_KERN_PFAD": kernPfad.path]) { _, neu in neu }
         if let id = Bundle.main.object(forInfoDictionaryKey: "KortexGitHubClientID") as? String, !id.isEmpty { env["KORTEX_GITHUB_CLIENT_ID"] = id }
         return env
     }
 
-    /// Die Vertrauensprüfung: gebündeltes Node + `werkstatt/vertrauen-pruefen.mjs` neben der Werkstatt, `BRAIN_APP_SUPPORT` wie bei
-    /// der Werkstatt (derselbe Merker `vertrauen.json`). nil, solange die Laufzeit fehlt — dann gilt „nicht erlaubt“.
-    private var vertrauen: KitVertrauen? {
-        guard let node, let werkstatt = werkstattSkript else { return nil }
-        return KitVertrauen(node: node, pruefSkript: KitVertrauen.pruefSkript(werkstatt: werkstatt),
-                            umgebung: werkstattUmgebung, arbeitsordner: pfade.basis)
-    }
-
-    /// Menü „Übersicht“: Kit da UND Vault vertraut.
-    var uebersichtMoeglich: Bool { kitVorhanden && kitErlaubt }
+    /// Menü „Übersicht“: der Vault ist ein Brain UND der Kern ist bereit.
+    var uebersichtMoeglich: Bool { kitVorhanden && kernBereitschaft.istBereit }
 
     private static func gleich(_ a: URL?, _ b: URL?) -> Bool { a?.standardizedFileURL.path == b?.standardizedFileURL.path }
 
-    /// Vor jedem Start der Kit-Brücke (auch nach einem Absturz): frisch fragen, sonst läuft nichts aus dem Vault. Ein „nein“ geht
-    /// auch an `startAbgelehnt`: Stand, Anzeige und die offene Übersicht dürfen nicht weiter so tun, als gälte die Freigabe.
-    private func kitStartPruefung(_ vault: URL) -> @Sendable () async -> Bool {
-        let vertrauen = self.vertrauen
+    /// Vor jedem Start der Kern-Brücke (auch nach einem Absturz): ist der Kern noch bereit (Link und Brücke da)? Sonst startet nichts.
+    private func kernStartPruefung() -> @Sendable () async -> Bool {
+        let kern = kernPfad
         let log = self.log
-        return { [weak self] in
-            let erlaubnis: KitErlaubnis
-            if let vertrauen { erlaubnis = await vertrauen.pruefe(vault: vault) } else { erlaubnis = .nein(.pruefungFehlt) }
-            if !erlaubnis.istErlaubt {
-                log.schreibe("kit-start-abgelehnt \(erlaubnis.logText)")
-                Task { @MainActor in self?.startAbgelehnt(vault: vault, erlaubnis) }
-            }
-            return erlaubnis.istErlaubt
+        return {
+            let da = FileManager.default.fileExists(atPath: kern.appendingPathComponent("ansicht/bruecke.mjs").path)
+            if !da { log.schreibe("kern-start-abgelehnt \(kern.path)") }
+            return da
         }
     }
 
-    /// Die Vorab-Prüfung vor einem Start der Kit-Brücke hat „nein“ gesagt (Absturz-Neustart, Seite lädt nach).
-    private func startAbgelehnt(vault: URL, _ erlaubnis: KitErlaubnis) {
-        guard Self.gleich(self.vault, vault), Self.gleich(vaultFrisch(), vault) else { return }
-        uebernehme(erlaubnis)
-    }
-
-    // MARK: Ergebnis der Vertrauensprüfung
-
-    /// Wendet das Ergebnis einer Vertrauensprüfung für den aktuellen Vault an (Studio-v2-Spec §8, Review SW-2/SW-5): Stand und Anzeige,
-    /// die offene Übersicht (ihre Kit-Brücke ist Code aus dem Vault) und die eine Wiederholung nach einem technischen Fehler.
-    /// „Nicht freigegeben“ schließt die Übersicht sofort. Ein technischer Fehler (Prüfung fehlt, Start, Zeit, Ausgabe) lässt sie
-    /// zunächst offen, zeigt „Kit-Prüfung fehlgeschlagen“ — nie „bitte freigeben“ — und prüft nach `UebersichtRegel.wiederholungsFrist`
-    /// noch einmal; scheitert auch die Wiederholung (`zweiterVersuch`), schließt die Übersicht (ohne Beleg gilt „nein“).
-    /// Bei „erlaubt“ ändert sich nur der Stand: Status und Anzeige setzt der Aufrufer.
-    private func uebernehme(_ erlaubnis: KitErlaubnis, zweiterVersuch: Bool = false) {
-        kitStand = KitStand(erlaubnis)
-        guard case .nein(let grund) = erlaubnis else {
-            wiederholungAbbrechen()
-            return
-        }
-        status = nil
-        switch UebersichtRegel.folge(fuer: erlaubnis, zweiterVersuch: zweiterVersuch) {
-        case .offenLassen:
-            break
-        case .schliessen:
-            wiederholungAbbrechen()
-            anzeige = grund.istTechnisch ? .kitPruefungFehlgeschlagen : .kitNichtErlaubt
-            schliesseUebersicht(grund: grund.istTechnisch ? "pruefung-fehlgeschlagen" : "kit-nicht-erlaubt")
-        case .spaeterNochmalPruefen:
-            anzeige = .kitPruefungFehlgeschlagen
-            planeWiederholung()
-        }
-    }
-
-    /// Schließt die Übersicht, falls sie offen ist — ihre Kit-Brücke läuft nur mit Vertrauen, Kit und Ordner.
+    /// Schließt die Übersicht, falls sie offen ist — ihre Brücke läuft nur mit bereitem Kern und einem Brain-Vault.
     private func schliesseUebersicht(grund: String) {
         guard uebersicht.istOffen else { return }
         uebersicht.schliesse()
         log.schreibe("uebersicht-geschlossen \(grund)")
-    }
-
-    /// Die eine Wiederholung nach einem technischen Prüffehler. Läuft schon eine, bleibt sie (ein Schwall fehlschlagender Starts
-    /// schiebt sie nicht immer weiter hinaus); ein neuer, eigener Abruf (`aktualisiere`) ersetzt sie.
-    private func planeWiederholung() {
-        guard pruefWiederholung == nil else { return }
-        log.schreibe("kit-pruefung-wiederholung in \(UebersichtRegel.wiederholungsFrist.components.seconds)s")
-        pruefWiederholung = Task { [weak self] in
-            try? await Task.sleep(for: UebersichtRegel.wiederholungsFrist)
-            guard !Task.isCancelled, let self else { return }
-            self.pruefWiederholung = nil
-            await self.aktualisiere(zweiterVersuch: true)
-        }
-    }
-
-    private func wiederholungAbbrechen() {
-        pruefWiederholung?.cancel()
-        pruefWiederholung = nil
     }
 
     func starte() async {
@@ -240,6 +182,7 @@ final class AppZustand: ObservableObject {
             node = ergebnis.node
             kernStatus = ergebnis.kern
             log.schreibe("kern \(ergebnis.kern)")
+            if let m = kernBereitschaft.meldung { log.schreibe("kern-nicht-bereit \(m)") }
             for meldung in ergebnis.meldungen { log.schreibe("laufzeit-fehler \(meldung)") }
             if !ergebnis.meldungen.isEmpty {
                 zeigeHinweis(titel: "Kortex: Laufzeit unvollständig", text: ergebnis.meldungen.joined(separator: "\n\n"))
@@ -294,6 +237,11 @@ final class AppZustand: ObservableObject {
     private func laufzeit() async throws -> Laufzeit.Ergebnis {
         #if DEBUG
         if let dev = ProcessInfo.processInfo.environment["BRAIN_APP_NODE"], dev.hasPrefix("/") {
+            if let k = ProcessInfo.processInfo.environment["BRAIN_APP_KERN"], k.hasPrefix("/") {
+                kernEntwicklung = URL(fileURLWithPath: k)
+                return Laufzeit.Ergebnis(node: URL(fileURLWithPath: dev), kern: .bereit(version: "dev", ordner: URL(fileURLWithPath: k)),
+                                         starter: pfade.starter, starterFehler: nil)
+            }
             return Laufzeit.Ergebnis(node: URL(fileURLWithPath: dev), kern: .nichtEnthalten, starter: pfade.starter, starterFehler: nil)
         }
         #endif
@@ -329,7 +277,7 @@ final class AppZustand: ObservableObject {
         return VaultListe.aktiverVault(pfade)
     }
 
-    /// Liest den aktiven Vault neu. Wechselt er, gehört die offene Übersicht (Kit-Brücke) zum alten Vault und wird
+    /// Liest den aktiven Vault neu. Wechselt er, gehört die offene Übersicht (Kern-Brücke) zum alten Vault und wird
     /// geschlossen; der Status wird zurückgesetzt. Gibt zurück, ob sich der Vault geändert hat.
     @discardableResult
     private func pruefeVaultWechsel() -> Bool {
@@ -340,10 +288,8 @@ final class AppZustand: ObservableObject {
         guard alt?.standardizedFileURL.path != neu?.standardizedFileURL.path else { return false }
         vault = neu
         status = nil
-        kitStand = .unbekannt // das Vertrauen gilt für genau einen Vault; die nächste Prüfung entscheidet neu
-        wiederholungAbbrechen() // eine wartende Wiederholung gehörte zum alten Vault
         anzeige = neu == nil ? .keinVault : StatusAnzeige.fuer(nil, fehler: "Wird geprüft …")
-        if alt != nil { uebersicht.schliesse() }
+        if alt != nil { uebersicht.schliesse() } // die offene Übersicht gehört zum alten Vault
         log.schreibe("vault-wechsel \(neu?.path ?? "keiner")")
         return true
     }
@@ -357,17 +303,11 @@ final class AppZustand: ObservableObject {
         Task { await aktualisiere() }
     }
 
-    /// Status-Abruf: Vault neu lesen, Vertrauen frisch prüfen, bei „erlaubt“ `brain status` lesen — und die Übersicht schließen, sobald
-    /// die Freigabe nicht mehr gilt (Studio-v2-Spec §8, Review SW-2): Das Vertrauen kann zwischen zwei Abrufen entfallen sein (Abgleich
-    /// hat Kit-Code geändert, Freigabe entzogen), der Ordner oder das Kit können fehlen. Gerufen wird er beim Start, im Takt, aus
-    /// dem Menü, nach jedem Schließen eines Fensters und auf `vault-gewechselt` und `vertrauen-geaendert` der Oberfläche.
+    /// Status-Abruf: Vault neu lesen und `brain status` des gebündelten Kerns lesen (mit `--vault`). Ist der Kern nicht bereit, zeigt die
+    /// Menüleiste die Meldung dazu (nie ein Ausweichen auf Code im Vault); fehlt dem Ordner `brain.config.json`, ist er „nur Studio“.
+    /// Gerufen wird er beim Start, im Takt, aus dem Menü, nach jedem Schließen eines Fensters und auf `vault-gewechselt` und
+    /// `vertrauen-geaendert` der Oberfläche.
     func aktualisiere() async {
-        wiederholungAbbrechen() // ein eigener Abruf ersetzt die wartende Wiederholung (er bekommt bei Bedarf seine eigene)
-        await aktualisiere(zweiterVersuch: false)
-    }
-
-    /// `zweiterVersuch`: die eine Wiederholung nach einem technischen Prüffehler — scheitert auch sie, schließt die Übersicht.
-    private func aktualisiere(zweiterVersuch: Bool) async {
         guard let node else { return }
         pruefeVaultWechsel()
         // Nur das Ergebnis des neuesten Laufs für den aktuellen Ordner gilt (langsame ältere Läufe werden verworfen).
@@ -376,58 +316,46 @@ final class AppZustand: ObservableObject {
         guard let vault else {
             status = nil
             zufuehrungen = .keine
-            kitStand = .unbekannt
             anzeige = .keinVault
             return
         }
-        // Reine Datei (kein Kit-Code, kein Prozess): bei jedem Abruf frisch lesen, auch wenn das Kit gesperrt ist.
+        // Reine Datei (kein Prozess): bei jedem Abruf frisch lesen.
         zufuehrungen = ZufuehrungenStand.lade(vault: vault)
         switch VaultAuswahl.pruefe(vault) {
         case .fehlt:
             status = nil
-            kitStand = .unbekannt
             anzeige = .problem("Vault-Ordner nicht gefunden")
-            schliesseUebersicht(grund: "vault-fehlt") // ohne Ordner keine Kit-Brücke (SW-2)
+            schliesseUebersicht(grund: "vault-fehlt")
             return
         case .keinBrain:
             status = nil
-            kitStand = .unbekannt
             anzeige = .ohneKit
-            log.schreibe("status ohne-kit")
-            schliesseUebersicht(grund: "kein-kit") // Kit weg (z. B. nach einem Abgleich): die Übersicht ist kein Kit mehr (SW-2)
+            log.schreibe("status ohne-konfiguration")
+            schliesseUebersicht(grund: "kein-brain")
             return
         case .ok:
             break
         }
-        // Kit-Code läuft nur mit Vertrauen: die Prüfung und der Start von `brain status` gehören zusammen (`KitVertrauen.status`).
-        let abruf: KitAbruf
-        if let vertrauen {
-            abruf = await vertrauen.status(BrainBefehl(node: node, vault: vault, umgebung: umgebung))
-        } else {
-            abruf = .gesperrt(.pruefungFehlt)
+        if case .nichtBereit(let meldung) = kernBereitschaft {
+            status = nil
+            anzeige = .kernNichtBereit(meldung)
+            log.schreibe("status kern-nicht-bereit")
+            schliesseUebersicht(grund: "kern-nicht-bereit")
+            return
         }
+        let ergebnis: Result<BrainStatus, Error>
+        do { ergebnis = .success(try await BrainBefehl(node: node, kern: kernPfad, vault: vault, umgebung: umgebung).status()) }
+        catch { ergebnis = .failure(error) }
         guard lauf == statusLauf, Self.gleich(self.vault, vault) else { return }
-        switch abruf {
-        case .status(let s):
-            uebernehme(.erlaubt)
+        switch ergebnis {
+        case .success(let s):
             status = s
             anzeige = .fuer(s)
             log.schreibe("status \(s.zustand.rawValue)")
-        case .nichtAbrufbar(let grund):
-            uebernehme(.erlaubt) // erlaubt, nur `brain status` ging schief
+        case .failure(let fehler):
             status = nil
             anzeige = .fuer(nil, fehler: "Status gerade nicht abrufbar")
-            log.schreibe("status-fehler \(grund)")
-        case .gesperrt(let grund):
-            let erlaubnis = KitErlaubnis.nein(grund)
-            if grund.istTechnisch {
-                // Nicht „bitte freigeben“: die Prüfung selbst ist gescheitert. Der Grund steht nur hier im Protokoll.
-                log.schreibe("status kit-pruefung-fehlgeschlagen \(grund.rawValue)" + (zweiterVersuch ? " endgueltig" : ""))
-            } else {
-                log.schreibe("status kit-nicht-erlaubt \(grund.rawValue)")
-            }
-            // Wurde das Vertrauen entzogen (oder der Code geändert), während die Übersicht offen ist: zu — ihre Brücke ist Kit-Code.
-            uebernehme(erlaubnis, zweiterVersuch: zweiterVersuch)
+            log.schreibe("status-fehler \(fehler)")
         }
     }
 
@@ -436,34 +364,23 @@ final class AppZustand: ObservableObject {
     /// Was `oeffneFenster` ergeben hat — die Aktion `ansicht` meldet es der Seite als `grund`.
     enum UebersichtErgebnis: Equatable {
         case geoeffnet
+        /// Der Ordner ist kein Brain (`brain.config.json` fehlt) oder es ist kein Vault gewählt: Grund `kein-kit`.
         case keinKit
-        case nichtVertraut
-        /// Die Vertrauensprüfung selbst ist gescheitert (kein „bitte freigeben“): Grund `pruefung-fehlgeschlagen`.
-        case pruefungFehlgeschlagen
+        /// Der gebündelte Kern ist nicht bereit: Grund `kern-nicht-bereit`.
+        case kernNichtBereit
     }
 
-    /// Übersicht = bisherige Kit-Ansicht (3D/Karten); braucht ein Kit im aktiven Vault UND das Vertrauen des Nutzers in diesen
-    /// Vault: Die Vertrauensprüfung läuft jedes Mal frisch, bevor ein Fenster entsteht (und danach vor jedem Start der Kit-Brücke,
-    /// siehe `kitStartPruefung`). Ohne Vertrauen öffnet nichts; ihr Ergebnis geht durch `uebernehme` (Anzeige, offene Übersicht).
+    /// Übersicht = Ansicht des gebündelten Kerns (3D/Karten); braucht einen Brain-Vault (`brain.config.json`) und einen bereiten
+    /// Kern. Die Brücke läuft aus `bin/kern`, nie aus dem Vault; vor jedem Start prüft `kernStartPruefung`, ob der Kern noch da ist.
     @discardableResult
     func oeffneFenster() async -> UebersichtErgebnis {
         guard let node, let vault = vaultFrisch(), VaultAuswahl.pruefe(vault) == .ok else { return .keinKit }
-        let erlaubnis: KitErlaubnis
-        if let vertrauen { erlaubnis = await vertrauen.pruefe(vault: vault) } else { erlaubnis = .nein(.pruefungFehlt) }
-        // Wechselte der Vault während der Prüfung, gilt ihr Ergebnis nicht mehr.
-        guard Self.gleich(vaultFrisch(), vault) else { return .keinKit }
-        let vorher = kitStand
-        if Self.gleich(self.vault, vault) {
-            uebernehme(erlaubnis)
-            // Eben noch „nicht erlaubt“ oder „Prüfung fehlgeschlagen“, jetzt erlaubt: Menü und Status nachziehen.
-            if erlaubnis.istErlaubt, vorher != .erlaubt { Task { await aktualisiere() } }
+        guard kernBereitschaft.istBereit else {
+            log.schreibe("uebersicht-abgelehnt kern-nicht-bereit")
+            return .kernNichtBereit
         }
-        guard erlaubnis.istErlaubt else {
-            log.schreibe("uebersicht-abgelehnt kit-\(erlaubnis.logText)")
-            return erlaubnis.istTechnischerFehler ? .pruefungFehlgeschlagen : .nichtVertraut
-        }
-        uebersicht.oeffne(node: node, vault: vault, umgebung: umgebung, fluechtig: argumente.fluechtig, vorschau: vorschau != nil,
-                          vorStart: kitStartPruefung(vault))
+        uebersicht.oeffne(node: node, vault: vault, kern: kernPfad, umgebung: umgebung, fluechtig: argumente.fluechtig,
+                          vorschau: vorschau != nil, vorStart: kernStartPruefung())
         return .geoeffnet
     }
 
@@ -498,8 +415,7 @@ final class AppZustand: ObservableObject {
             switch await oeffneFenster() {
             case .geoeffnet: return ok
             case .keinKit: return ["ok": false, "grund": "kein-kit"] as [String: Any]
-            case .nichtVertraut: return ["ok": false, "grund": "nicht-vertraut"] as [String: Any]
-            case .pruefungFehlgeschlagen: return ["ok": false, "grund": "pruefung-fehlgeschlagen"] as [String: Any]
+            case .kernNichtBereit: return ["ok": false, "grund": "kern-nicht-bereit"] as [String: Any]
             }
         case .ordnerZeigen(let url):
             log.schreibe("aktion ordner-zeigen")
@@ -518,9 +434,8 @@ final class AppZustand: ObservableObject {
             vaultGewechselt()
             return ok
         case .vertrauenGeaendert:
-            // Das Backend hat das Vertrauen geändert — durch die Freigabe, ihren Entzug oder einen Abgleich, der Kit-Code oder Hooks
-            // verändert hat (Info neu geladen, `vertrauen.erlaubt` ist von true auf false gekippt): frisch prüfen, Status neu lesen
-            // und die Übersicht schließen, wenn nicht (mehr) erlaubt (`aktualisiere`). Die Antwort wartet nicht auf `brain status`.
+            // Das Backend hat das Vertrauen geändert (Hooks und Repo-Einstellungen des Vaults): Status neu lesen. Für den gebündelten
+            // Kern ist das Vertrauen nicht nötig. Die Antwort wartet nicht auf `brain status`.
             log.schreibe("aktion vertrauen-geaendert")
             Task { await aktualisiere() }
             return ok
@@ -538,20 +453,16 @@ final class AppZustand: ObservableObject {
     /// Offene Rückfragen laut letztem Status (kein eigenes Polling); nil = unbekannt oder älteres Kit.
     var rueckfragenAnzahl: Int? { status?.zahlen.rueckfragen }
 
-    /// Startet `.tools/brain.mjs` aus dem Vault — also Kit-Code: nur nach frischer Vertrauensprüfung (Vertrauen v2, Review FBL-34).
+    /// Öffnet das Rückfragen-Fenster (`brain rueckfragen` des gebündelten Kerns, `--vault` ausdrücklich). Kern nicht bereit: Hinweis
+    /// mit der Meldung, das Fenster öffnet nicht.
     func oeffneRueckfragen() {
         guard let vault = vaultFrisch(), node != nil, VaultAuswahl.pruefe(vault) == .ok else { zeigeEinrichtung(); return }
-        Task {
-            let erlaubnis: KitErlaubnis
-            if let vertrauen { erlaubnis = await vertrauen.pruefe(vault: vault) } else { erlaubnis = .nein(.pruefungFehlt) }
-            guard Self.gleich(vaultFrisch(), vault) else { return }
-            uebernehme(erlaubnis)
-            guard erlaubnis.istErlaubt else {
-                log.schreibe("rueckfragen-abgelehnt kit-\(erlaubnis.logText)")
-                return
-            }
-            zeigeRueckfragenFenster(vault: vault)
+        guard kernBereitschaft.istBereit else {
+            log.schreibe("rueckfragen-abgelehnt kern-nicht-bereit")
+            zeigeHinweis(titel: "Kortex: Kern nicht bereit", text: kernBereitschaft.meldung ?? "")
+            return
         }
+        zeigeRueckfragenFenster(vault: vault)
     }
 
     private func zeigeRueckfragenFenster(vault: URL) {
@@ -561,7 +472,7 @@ final class AppZustand: ObservableObject {
             NSApp.activate()
             return
         }
-        let modell = RueckfragenModell(befehl: BrainBefehl(node: node, vault: vault, umgebung: umgebung),
+        let modell = RueckfragenModell(befehl: BrainBefehl(node: node, kern: kernPfad, vault: vault, umgebung: umgebung),
                                        tageslauf: status?.tageslauf, log: log) { [weak self] in
             Task { await self?.aktualisiere() }
         }
@@ -687,7 +598,6 @@ final class AppZustand: ObservableObject {
     func beende() {
         vorschau?.raeumeDefaultsAuf() // nur die Einstellungen der Vorschau-Kennung; die echte App bleibt unberührt
         taktgeber?.cancel()
-        wiederholungAbbrechen()
         studio.schliesse()
         uebersicht.schliesse()
         rueckfragenFenster?.close()

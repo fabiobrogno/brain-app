@@ -345,7 +345,8 @@ const befehle = {
     if (!unter) { console.log(m.sichern(vault)); return 0; }
     if (unter === "einrichten") {
       if (!a) { console.error("Nutzung: brain backup einrichten github|ordner:<pfad>|keins"); return 64; }
-      const cfg = m.einrichten(vault, a);
+      let cfg;
+      try { cfg = m.einrichten(vault, a); } catch (e) { console.error(e.message); return 1; }
       const text = cfg.art === "github" ? "Sicherung eingerichtet: GitHub."
         : cfg.art === "ordner" ? `Sicherung eingerichtet: Ordner ${cfg.pfad}.`
         : "Sicherung eingerichtet: keine Sicherung.";

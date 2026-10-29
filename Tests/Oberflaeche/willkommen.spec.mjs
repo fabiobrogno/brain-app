@@ -1071,3 +1071,64 @@ test.describe("Screenshots", () => {
     });
   }
 });
+
+// ---------------------------------------------------------------- KI-Logos (ki-logos.js)
+// Claude und Cursor zeigen das echte Logo (Ressourcen/logos), Codex nur die Initiale; jedes Logo hat title und Namen für Screenreader.
+test("KI-Logos: erkannte Apps und Auswahl zeigen Logos mit title und Namen", async ({ page }) => {
+  await rahmen(page, { vault: "/Users/test/Brain/Privat" });
+  const d = await oeffneKi(page);
+  const liste = d.locator('[data-liste="agenten"]');
+  for (const [id, name] of [["claude", "Claude"], ["codex", "Codex"]]) {
+    const logo = liste.locator(`[data-agent="${id}"] [data-ki-logo="${id}"]`);
+    await expect(logo).toHaveCount(1);
+    await expect(logo).toHaveAttribute("title", name);
+  }
+  const wahl = d.locator('[data-bereich="ziel-wahl"]');
+  for (const [id, name] of [["claude", "Claude"], ["codex", "Codex"], ["cursor", "Cursor"]]) {
+    const logo = wahl.locator(`[data-ziel="${id}"] [data-ki-logo="${id}"]`);
+    await expect(logo).toHaveAttribute("title", name);
+    await expect(logo).toBeVisible();
+  }
+  // Claude und Cursor sind echte Vektor-Logos, Codex die Initiale ohne Text im DOM
+  await expect(wahl.locator('[data-ki-logo="claude"] svg path')).toHaveCount(1);
+  await expect(wahl.locator('[data-ki-logo="cursor"] svg path')).toHaveCount(1);
+  await expect(wahl.locator('[data-ki-logo="codex"] svg')).toHaveCount(0);
+  await expect(wahl.locator('[data-ki-logo="codex"]')).toHaveText("");
+  expect(await wahl.locator('[data-ki-logo="codex"]').evaluate((e) => getComputedStyle(e, "::before").content)).toBe('"C"');
+  // neben dem sichtbaren Namen nur dekorativ (kein doppeltes Vorlesen), Namen der Knöpfe unverändert
+  await expect(wahl.locator("[data-ki-logo]").first()).toHaveAttribute("aria-hidden", "true");
+  await expect(wahl.locator("[data-ziel]")).toHaveText(["Claude", "Codex", "Cursor"]);
+  // Cursor folgt der Textfarbe, Claude behält die Markenfarbe
+  const farbe = (sel) => wahl.locator(sel).evaluate((e) => getComputedStyle(e).color);
+  expect(await farbe('[data-ki-logo="claude"]')).toBe("rgb(217, 119, 87)");
+  expect(await farbe('[data-ki-logo="cursor"]')).not.toBe("rgb(217, 119, 87)");
+});
+
+test("KI-Logos: eigenständiges Logo ist ein Bild mit aria-label, unbekannte KI liefert nichts", async ({ page }) => {
+  await rahmen(page, { vault: "/Users/test/Brain/Privat" });
+  await oeffneSeite(page);
+  const r = await page.evaluate(async () => {
+    const m = await import("/ki-logos.js");
+    const e = m.kiLogo("claude", 20);
+    return { rolle: e.getAttribute("role"), label: e.getAttribute("aria-label"), titel: e.title, hatSvg: !!e.querySelector("svg"),
+      alias: m.kiLogo("cursor-agent", 16)?.dataset.kiLogo, gemini: m.kiLogo("gemini"), markup: m.kiLogoMarkup("codex") };
+  });
+  expect(r).toEqual({ rolle: "img", label: "Claude", titel: "Claude", hatSvg: true, alias: "cursor", gemini: null, markup: null });
+});
+
+// Optional: Bilder für die visuelle Kontrolle (KI_LOGO_BILDER=/Ordner/ npx playwright test -g "KI-Logos Bilder")
+test.describe("KI-Logos Bilder", () => {
+  test.skip(!process.env.KI_LOGO_BILDER, "nur mit KI_LOGO_BILDER");
+  test.use({ viewport: { width: 900, height: 700 }, deviceScaleFactor: 2 });
+  for (const schema of ["hell", "dunkel"]) {
+    test(`KI verbinden mit Logos (${schema})`, async ({ page }) => {
+      await page.emulateMedia({ colorScheme: schema === "hell" ? "light" : "dark", reducedMotion: "no-preference" });
+      await rahmen(page, { vault: "/Users/test/Brain/Privat" });
+      const d = await oeffneKi(page);
+      await expect(d.locator('[data-ki-logo="cursor"]')).toBeVisible();
+      await page.waitForTimeout(400);
+      mkdirSync(process.env.KI_LOGO_BILDER, { recursive: true });
+      await page.screenshot({ path: `${process.env.KI_LOGO_BILDER}ki-verbinden-${schema}.png` });
+    });
+  }
+});

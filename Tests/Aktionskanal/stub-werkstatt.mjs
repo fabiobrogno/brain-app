@@ -2,8 +2,9 @@
 // Attrappe für Werkstatt + Oberfläche (nur für scripts/teste-aktionskanal.sh): spricht das Brücken-Protokoll, startet ohne
 // Vault-Argument und liefert eine Seite, die den Aktionskanal der App (window.webkit.messageHandlers.aktion) durchspielt und
 // die Antworten in STUB_LOG protokolliert. So lässt sich die Swift-Seite prüfen, ohne dass Backend und Oberfläche fertig sind.
-// Umgebung: STUB_LOG (Ergebnisdatei), STUB_MODUS (leer | mit-vault | ohne-cli), STUB_NEUER_VAULT (Ziel des Vault-Wechsels),
-// STUB_VAULT (der erste Vault, dessen Kit „verschwindet“), BRAIN_APP_SUPPORT (Support-Ordner mit Freigabe-Datei und App-Log).
+// Umgebung: STUB_LOG (Ergebnisdatei), STUB_MODUS (leer | mit-vault | ohne-kern), STUB_NEUER_VAULT (Ziel des Vault-Wechsels),
+// STUB_VAULT (der erste Vault, dessen brain.config.json „verschwindet“), BRAIN_APP_SUPPORT (Support-Ordner mit App-Log).
+// Kern-Umzug P4: Die App ruft den gebündelten Kern ohne Vertrauensprüfung; es gibt keine Freigabe-Attrappe mehr.
 import { appendFileSync, writeFileSync, readFileSync, rmSync, copyFileSync, existsSync } from "node:fs";
 import { createInterface } from "node:readline";
 const LOG = process.env.STUB_LOG;
@@ -16,6 +17,8 @@ rep({ start: { argv: process.argv.slice(2), brainVault: process.env.BRAIN_VAULT 
 const SEITE = `<!doctype html><html><head><meta charset="utf-8"><title>Stub</title></head><body>stub<script>
 const K = window.webkit.messageHandlers.brain, A = window.webkit.messageHandlers.aktion;
 const api = async (m, p, d) => { const r = await K.postMessage({ methode: m, pfad: p, daten: d ?? null }); return JSON.parse(r.body); };
+// Antworten der App kommen aus einem Swift-Dictionary: die Reihenfolge der Schlüssel ist von Lauf zu Lauf verschieden — für den Vergleich sortieren.
+const stabil = (o) => JSON.stringify(o, (k, v) => (v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort((x, y) => (x[0] < y[0] ? -1 : 1))) : v));
 const meld = (o) => api("POST", "/api/stub", o);
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 // Das App-Log ist der Beleg: warten, bis eine Zeile (Muster) mindestens so oft vorkommt — statt auf gut Glück zu schlafen.
@@ -26,15 +29,13 @@ window.studio = { bereit: false, befehl: (n) => meld({ befehl: n }), vorSchliess
   const e = {};
   try {
     const modus = (await meld({ modus: true })).modus;
-    e.titel = JSON.stringify(await A.postMessage({ aktion: "titel", wert: "Stub Vault" }));
+    e.titel = stabil(await A.postMessage({ aktion: "titel", wert: "Stub Vault" }));
     e.ungueltig = await A.postMessage({ aktion: "loeschen" }).then(() => "angenommen", (x) => "abgewiesen:" + x);
     e.ohneWert = await A.postMessage({ aktion: "extern" }).then(() => "angenommen", (x) => "abgewiesen:" + x);
-    // Ohne Vertrauen öffnet die Übersicht nicht (Studio-v2-Spec §8); dann gibt das Backend frei und meldet es der App.
-    e.ansichtOhneVertrauen = JSON.stringify(await A.postMessage({ aktion: "ansicht" }));
-    await meld({ gewaehreVertrauen: true });
-    e.vertrauenGeaendert = JSON.stringify(await A.postMessage({ aktion: "vertrauen-geaendert" }));
-    await pause(2000); // die App liest Erlaubnis und Status im Hintergrund neu
-    e.ansicht = JSON.stringify(await A.postMessage({ aktion: "ansicht" }));
+    // Das Backend meldet Vertrauensänderungen (Hooks/Git) an die App; für den Kern ändert das nichts.
+    e.vertrauenGeaendert = stabil(await A.postMessage({ aktion: "vertrauen-geaendert" }));
+    await pause(2000); // die App liest den Status im Hintergrund neu
+    e.ansicht = stabil(await A.postMessage({ aktion: "ansicht" }));
     if (modus === "leer") {
       // Aktion „fehler“ (Review SW-7): je Fensterleben höchstens 20 Zeilen im Log, danach einmal „gedrosselt“, der Rest wird verworfen.
       const antworten = [];
@@ -43,49 +44,27 @@ window.studio = { bereit: false, befehl: (n) => meld({ befehl: n }), vorSchliess
       e.fehlerGedrosselt = antworten.filter((a) => a && a.ok === false && a.grund === "gedrosselt").length;
     }
     if (modus === "mit-vault") {
-      // Die Übersicht öffnen und warten, bis ihre Kit-Seite geladen ist (sonst stört der Start der Kit-Brücke, die vorher ebenfalls die
-      // Prüfung fragt, die gestellten Prüffehler unten).
+      // Die Übersicht öffnen und warten, bis ihre Seite (vom gebündelten Kern, über bin/kern) geladen ist.
       const oeffneUebersicht = async () => {
         const vorher = await zaehle(" fenster-bereit uebersicht");
-        const antwort = JSON.stringify(await A.postMessage({ aktion: "ansicht" }));
+        const antwort = stabil(await A.postMessage({ aktion: "ansicht" }));
         return { antwort, bereit: JSON.parse(antwort).ok === true && (await warte(" fenster-bereit uebersicht", vorher + 1, 30000)) };
       };
-      // 1) Die Übersicht ist offen (e.ansicht). Das Backend nimmt die Freigabe zurück und meldet es: Die Übersicht schließt (Review SW-2).
+      // 1) Die Übersicht ist offen (e.ansicht), ohne dass der Vault je „freigegeben“ wurde.
       e.bereitEins = await warte(" fenster-bereit uebersicht", 1, 30000);
-      const zuEntzug = await zaehle(" uebersicht-geschlossen kit-nicht-erlaubt");
-      await meld({ entziehVertrauen: true });
-      e.entzugAntwort = JSON.stringify(await A.postMessage({ aktion: "vertrauen-geaendert" }));
-      e.schliesstBeiEntzug = await warte(" uebersicht-geschlossen kit-nicht-erlaubt", zuEntzug + 1);
-      e.ansichtNachEntzug = JSON.stringify(await A.postMessage({ aktion: "ansicht" }));
-      // 2) Wieder freigeben, Übersicht öffnen. Ein Abgleich löscht das Kit (.tools/brain.mjs): Die Übersicht schließt auch dann.
-      await meld({ gewaehreVertrauen: true });
+      // 2) Ein Abgleich löscht brain.config.json: der Ordner ist kein Brain mehr, die Übersicht schließt (Review SW-2).
+      await meld({ kitWeg: true });
+      await A.postMessage({ aktion: "vertrauen-geaendert" });
+      e.schliesstOhneKonfig = await warte(" uebersicht-geschlossen kein-brain");
+      e.ansichtOhneKonfig = stabil(await A.postMessage({ aktion: "ansicht" }));
+      // 3) Wieder da: die Übersicht öffnet erneut und bleibt offen, bis der Vault wechselt.
+      await meld({ kitDa: true });
       await A.postMessage({ aktion: "vertrauen-geaendert" });
       const zwei = await oeffneUebersicht();
       e.ansichtZwei = zwei.antwort; e.bereitZwei = zwei.bereit;
-      await meld({ kitWeg: true });
-      await A.postMessage({ aktion: "vertrauen-geaendert" });
-      e.schliesstOhneKit = await warte(" uebersicht-geschlossen kein-kit");
-      await meld({ kitDa: true });
-      // 3) Technischer Prüffehler beim ersten Versuch (Review SW-5): Die Übersicht bleibt offen, nach 10 s wird noch einmal geprüft.
-      const drei = await oeffneUebersicht();
-      e.ansichtDrei = drei.antwort; e.bereitDrei = drei.bereit;
-      const statusVor = await zaehle(" status (ok|hinweis|problem)$");
-      await meld({ pruefFehler: 1 });
-      await A.postMessage({ aktion: "vertrauen-geaendert" });
-      e.fehlerAngezeigt = await warte(" status kit-pruefung-fehlgeschlagen unerwartete-ausgabe$");
-      e.wiederholungGeplant = await warte(" kit-pruefung-wiederholung in 10s$");
-      e.wiederholungOk = await warte(" status (ok|hinweis|problem)$", statusVor + 1); // die Wiederholung findet das Vertrauen intakt
-      // 4) Auch die Wiederholung scheitert: erst jetzt schließt die Übersicht.
-      await meld({ pruefFehler: 2 });
-      await A.postMessage({ aktion: "vertrauen-geaendert" });
-      e.schliesstNachWiederholung = await warte(" uebersicht-geschlossen pruefung-fehlgeschlagen");
-      // 5) Für den Vault-Wechsel: die Übersicht noch einmal öffnen (der Prüffehler ist aufgebraucht).
-      await pause(1500);
-      const vier = await oeffneUebersicht();
-      e.ansichtVier = vier.antwort; e.bereitVier = vier.bereit;
     }
     await meld({ schreibeVaults: true });
-    e.gewechselt = JSON.stringify(await A.postMessage({ aktion: "vault-gewechselt" }));
+    e.gewechselt = stabil(await A.postMessage({ aktion: "vault-gewechselt" }));
     await meld({ ergebnis: e });
     const dlg = A.postMessage({ aktion: "ordner-waehlen", wert: { titel: "Stub-Dialog", vorschlag: "~/Brain" } });
     await pause(800);
@@ -104,8 +83,8 @@ process.stdout.write(JSON.stringify({ bereit: true, version: "stub", vaultId: "s
 const appLog = () => { try { return readFileSync(APPLOG, "utf8"); } catch { return ""; } };
 const anzahl = (muster) => (appLog().match(new RegExp(muster, "gm")) || []).length;
 
-// „Kit weg“: das Kit des ersten Vaults (.tools/brain.mjs) verschwindet wie nach einem Abgleich, der es gelöscht hat; „Kit da“ stellt es her.
-const KIT = `${VAULT}/.tools/brain.mjs`, KIT_SICHERUNG = `${SUPPORT}/stub-brain.mjs.sicherung`;
+// „Kit weg“: die brain.config.json des ersten Vaults verschwindet wie nach einem Abgleich, der sie gelöscht hat; „Kit da“ stellt sie her.
+const KIT = `${VAULT}/brain.config.json`, KIT_SICHERUNG = `${SUPPORT}/stub-brain.config.sicherung`;
 
 const rl = createInterface({ input: process.stdin });
 rl.on("line", (z) => {
@@ -125,20 +104,11 @@ rl.on("line", (z) => {
       };
       return pruefe();
     }
-    if (body?.gewaehreVertrauen) {
-      // Wie das Backend nach „Vertrauen erlauben“: die Attrappen-CLI (vertrauen-pruefen.mjs) liest diese Datei
-      writeFileSync(`${SUPPORT}/stub-vertrauen`, "ja");
-    } else if (body?.entziehVertrauen) {
-      // Wie das Backend nach „Vertrauen entziehen“ (oder einem Abgleich, der Kit-Code geändert hat): die Freigabe gilt nicht mehr
-      rmSync(`${SUPPORT}/stub-vertrauen`, { force: true });
-    } else if (body?.kitWeg) {
+    if (body?.kitWeg) {
       if (!existsSync(KIT_SICHERUNG)) copyFileSync(KIT, KIT_SICHERUNG);
       rmSync(KIT, { force: true });
     } else if (body?.kitDa) {
       copyFileSync(KIT_SICHERUNG, KIT);
-    } else if (body?.pruefFehler) {
-      // Die nächsten n Aufrufe der Attrappen-CLI scheitern technisch (kein JSON, Exit 3)
-      writeFileSync(`${SUPPORT}/stub-pruef-fehler`, String(body.pruefFehler));
     } else if (body?.schreibeVaults) {
       // Wie das Backend: vaults.json auf einen anderen aktiven Vault stellen
       const neu = process.env.STUB_NEUER_VAULT;

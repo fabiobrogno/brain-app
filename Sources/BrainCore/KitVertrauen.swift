@@ -41,15 +41,10 @@ public enum KitErlaubnis: Equatable, Sendable {
     }
 }
 
-/// Ergebnis von `KitVertrauen.status`: gesperrt (das Kit wurde nicht angefasst), der gelesene Status oder — erlaubt, aber
-/// `brain status` ging schief (Zeitlimit, Absturz, unlesbare Ausgabe) — nur ein Fehlertext fürs Log.
-public enum KitAbruf: Equatable, Sendable {
-    case gesperrt(KitErlaubnis.Grund)
-    case status(BrainStatus)
-    case nichtAbrufbar(String)
-}
-
-/// Fragt vor jedem Start von Kit-Code (`brain.mjs status`, Kit-Brücke der Übersicht), ob der Nutzer dem Vault vertraut:
+/// Fragt, ob der Nutzer dem Vault vertraut. Seit Kern-Umzug P4 ist das für Kern-Aufrufe (`brain status`, Rückfragen, Ansicht-Brücke)
+/// nicht mehr nötig: der gebündelte Kern ist per Manifest geprüft, der Vault liefert nur Daten. Die App ruft die Prüfung nicht mehr
+/// auf; die Klasse bleibt bis P5 (dort ersetzt ein schmales VaultVertrauen für Hooks und `core.hooksPath` sie). Frühere Aufgabe:
+/// vor jedem Start von Kit-Code aus dem Vault fragen, ob der Nutzer dem Vault vertraut:
 /// `<node> <App-Ressourcen>/werkstatt/vertrauen-pruefen.mjs <vault>` (gebündeltes Node, saubere Umgebung, `BRAIN_APP_SUPPORT`
 /// wie bei der Werkstatt, höchstens 5 s). Die CLI liest denselben Merker (`<support>/vertrauen.json`) mit derselben Logik wie die
 /// Werkstatt und startet nichts aus dem Vault; die Entscheidung liegt dort, Swift fragt nur.
@@ -107,17 +102,6 @@ public struct KitVertrauen: Sendable {
             return .nein(.zeitueberschreitung)
         } catch {
             return .nein(.startFehlgeschlagen)
-        }
-    }
-
-    /// `brain status --json` des Kits — nur, wenn die Prüfung unmittelbar vorher `{"erlaubt":true}` geliefert hat; sonst wird
-    /// `brain.mjs` nicht gestartet (`.gesperrt`). Prüfung und Start gehören zusammen, damit kein alter Befund gilt. Wirft nie.
-    public func status(_ befehl: BrainBefehl, zeitlimit: Duration = .seconds(20)) async -> KitAbruf {
-        switch await pruefe(vault: befehl.vault) {
-        case .nein(let grund):
-            return .gesperrt(grund)
-        case .erlaubt:
-            do { return .status(try await befehl.status(zeitlimit: zeitlimit)) } catch { return .nichtAbrufbar("\(error)") }
         }
     }
 }

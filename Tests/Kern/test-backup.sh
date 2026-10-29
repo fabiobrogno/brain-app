@@ -12,6 +12,10 @@ BRAIN_VAULT="$V" node "$B" backup >/dev/null || { echo "FAIL: backup"; exit 1; }
 BRAIN_VAULT="$V" node "$B" backup wiederherstellen "$Z/brain-$(date +%F).bundle" "$T/zurück" >/dev/null || { echo "FAIL: wiederherstellen"; exit 1; }
 # Zeilenenden ausgenommen: unter Windows (core.autocrlf) checkt der Klon CRLF aus, die Arbeitskopie hat LF
 [ "$(tr -d "\r" < "$V/brain.config.json")" = "$(tr -d "\r" < "$T/zurück/brain.config.json")" ] || { echo "FAIL: Inhalt anders"; exit 1; }
+# Produktivumgebung (ohne Testschalter): der Klon aus dem Bundle hat ein lokales „origin“ — das entfernt wiederherstellen, sonst wäre der Vault für git-sicher gesperrt
+BRAIN_TESTMODUS= KORTEX_KERN_UNSTABIL_ERLAUBT= BRAIN_VAULT="$V" node "$B" backup wiederherstellen "$Z/brain-$(date +%F).bundle" "$T/zurück-prod" >/dev/null 2>&1 || { echo "FAIL: wiederherstellen (Produktivumgebung)"; exit 1; }
+[ -z "$(git -C "$T/zurück-prod" config --get remote.origin.url)" ] || { echo "FAIL: lokales origin blieb im wiederhergestellten Vault"; exit 1; }
+KORTEX_KERN_UNSTABIL_ERLAUBT= BRAIN_TESTMODUS= "$D/../git-sicher" -C "$T/zurück-prod" status --porcelain >/dev/null 2>&1 || { echo "FAIL: git-sicher verweigert den wiederhergestellten Vault"; exit 1; }
 # Ordner weg (USB abgezogen): freundlich melden, Exit 0, nichts kaputt
 rm -rf "$Z"; RC=0; OUT=$(BRAIN_VAULT="$V" node "$B" backup 2>&1) || RC=$?
 [ "$RC" = 0 ] && echo "$OUT" | grep -q 'Sicherungsordner ist gerade nicht da' || { echo "FAIL: fehlender Ordner rc=$RC $OUT"; exit 1; }
@@ -62,6 +66,12 @@ cp -R "$D/fixture" "$V4"; node -e 'const f=process.argv[1],c=JSON.parse(require(
 git init -q --bare "$R4"; git -C "$V4" init -q; git -C "$V4" add .; git -C "$V4" -c user.email=t@example.com -c user.name=t commit -qm init
 git -C "$V4" remote add origin "$R4"; git -C "$V4" push -q -u origin HEAD 2>/dev/null
 echo "neu" > "$V4/00_inbox/n.md"; git -C "$V4" add 00_inbox/n.md; git -C "$V4" -c user.email=t@example.com -c user.name=t commit -qm zwei --no-verify
+# ohne Bestätigung des Ziels (fremder Vault bringt origin mit): kein Push, freundlicher Satz
+OUT=$(BRAIN_VAULT="$V4" node "$B" backup)
+echo "$OUT" | grep -q "noch nicht von dir bestätigt" || { echo "FAIL: unbestätigtes Remote wurde nicht gemeldet: $OUT"; exit 1; }
+[ "$(git -C "$R4" rev-parse HEAD 2>/dev/null || git -C "$R4" rev-parse refs/heads/main)" != "$(git -C "$V4" rev-parse HEAD)" ] || { echo "FAIL: unbestätigtes Remote wurde beschickt"; exit 1; }
+# mit Bestätigung: pusht
+BRAIN_VAULT="$V4" node --input-type=module -e 'import("'"$D"'/../backup.mjs").then(m => m.bestaetigeRemote(process.env.BRAIN_VAULT, process.argv[1]))' "$R4"
 OUT=$(BRAIN_VAULT="$V4" node "$B" backup)
 echo "$OUT" | grep -q "Online gesichert" || { echo "FAIL: ohne backup-Eintrag + Remote kein Push: $OUT"; exit 1; }
 [ "$(git -C "$R4" rev-parse HEAD 2>/dev/null || git -C "$R4" rev-parse refs/heads/main)" = "$(git -C "$V4" rev-parse HEAD)" ] || { echo "FAIL: Remote nicht auf neuem Stand"; exit 1; }

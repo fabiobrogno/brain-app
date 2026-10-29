@@ -7,6 +7,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, rmSync, utimesSync } from "node:fs";
 import { join } from "node:path";
+import { spawnSync } from "node:child_process";
+import { KERN } from "../pfade.mjs";
 import { isoliere, git, JETZT } from "./tageslauf-hilfe.mjs";
 import { hook } from "./verlauf-fixture.mjs";
 import { fakeSonnet, neuerPflegeVault, pflegeCtx, seite } from "./pflege-hilfe.mjs";
@@ -151,7 +153,15 @@ for (const [id, name, regelFuer, erwartet] of FAELLE) {
     // Bericht (Aktionsprotokoll des Laufs)
     assert.ok(ctx.aktionen.some((a) => a.stufe === "fehler" && String(a.grund).includes(`Integrität verletzt: ${erwartet}`)), JSON.stringify(ctx.aktionen));
     // Kopie zurückgesetzt, nichts gemergt
-    assert.equal(git(kopie.pfad, "status", "--porcelain", "--ignored"), "");
+    if (id === "b") {
+      // Die .git/config des Vaults trägt jetzt einen Schlüssel, der nicht auf der Erlaubnisliste steht: git-sicher verweigert jeden weiteren
+      // git-Aufruf des Kerns (Exit 126) — die Kopie lässt sich nicht mehr per Kern-git zurücksetzen und wird einfach weggeworfen. Wichtig ist:
+      // erkannt, verworfen, gestoppt, nichts gemergt (siehe unten).
+      const r = spawnSync(join(KERN, "git-sicher"), ["-C", kopie.pfad, "status", "--porcelain"], { encoding: "utf8" });
+      assert.equal(r.status, 126, "git-sicher sperrt den Vault mit der veränderten .git/config");
+    } else {
+      assert.equal(git(kopie.pfad, "status", "--porcelain", "--ignored"), "");
+    }
     assert.equal(git(kopie.pfad, "log", "-1", "--format=%s"), "start");
     assert.equal(P.uebernehmePflege(ctx, kopie).commits.size, 0);
     assert.equal(git(v, "rev-parse", "HEAD"), headVorher);

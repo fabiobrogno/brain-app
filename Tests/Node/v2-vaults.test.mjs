@@ -368,7 +368,7 @@ test("neuesVault vorlage: Gerüst, ein Commit „Brain angelegt“, sauber, Iden
 
   // Dateiliste vollständig
   const erwartet = ["00_inbox/.gitkeep", "09_wiki/_log.md", "09_wiki/_schema.md", "09_wiki/wissen/thema_so-funktioniert-dein-brain.md",
-    "09_wiki/wissen/thema_wissen-belegen.md", "AGENTS.md", "CLAUDE.md", ".gitignore"];
+    "09_wiki/wissen/thema_wissen-belegen.md", "AGENTS.md", "CLAUDE.md", ".gitignore", "brain.config.json"];
   const liste = verfolgt(ziel);
   for (const p of erwartet) assert.ok(liste.includes(p), p);
   const belege = liste.filter((p) => p.startsWith("09_wiki/wissen/belege/2026-10/"));
@@ -390,6 +390,9 @@ test("neuesVault vorlage: Gerüst, ein Commit „Brain angelegt“, sauber, Iden
   assert.equal(existsSync(join(HOME, ".gitconfig")), false, "die globale Git-Einstellung bleibt unberührt");
 
   assert.equal(readFileSync(join(ziel, "CLAUDE.md"), "utf8"), "@AGENTS.md\n");
+  // Nur Daten + brain.config.json: kein .tools, und die Marke macht den Ordner zu einem Vault für den Kern
+  assert.equal(existsSync(join(ziel, ".tools")), false, "ein neuer Vault braucht kein .tools");
+  assert.deepEqual(JSON.parse(readFileSync(join(ziel, "brain.config.json"), "utf8")), { ordner: { inbox: "00_inbox", wiki: "09_wiki", archiv: "90_archiv" }, sprache: "de" });
   assert.equal(readFileSync(join(ziel, "00_inbox", ".gitkeep"), "utf8"), "");
   assert.equal(readFileSync(join(ziel, ".gitignore"), "utf8"), GITIGNORE);
   for (const eintrag of [".DS_Store", ".logs/", "node_modules/", ".brain-tmp-*"]) assert.ok(GITIGNORE.split("\n").includes(eintrag), eintrag);

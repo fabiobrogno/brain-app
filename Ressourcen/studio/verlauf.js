@@ -1,6 +1,6 @@
 // Verlauf-Modus der Notizliste (Commits nach Tagen) und ruhige Diff-Ansicht für den Editorbereich.
 // Kein innerHTML mit fremden Daten: alles über h() und textContent.
-import { h, dateiName, ohneEndung, ordnerVon } from "./hilfen.js";
+import { h, dateiName, ohneEndung, ordnerVon, leseLokal, speichereLokal } from "./hilfen.js";
 import { symbol } from "./symbole.js";
 import { TV } from "./texte-verlauf.js";
 import { gitGesperrt } from "./api.js";
@@ -100,6 +100,30 @@ function zeichen(name, groesse, klasse) {
   return s;
 }
 
+// Roher Text der Versionsverwaltung (fatal:, ssh …) gehört nicht in die Oberfläche: Nutzer sehen einen ruhigen Satz, die Details sind aufklappbar.
+export const istRohGit = (t) => /(^|\n)\s*(fatal|error|warning|hint|remote):|permission denied|could not (read|resolve|connect|lock)|unable to |refs\/|\.git\/|exit code|stderr|\bssh:|\brejected\]|\bgit(\.exe)? [a-z-]+ /i.test(String(t || ""));
+export function detailsBlock(text) {
+  return h("details", { klasse: "roh-details" }, h("summary", { text: TV.roh.details }), h("pre", { klasse: "roh-text", tabindex: "0", text: String(text) }));
+}
+// Rundes Namenskürzel statt Commit-Knoten: wer hat's gesichert. Farbe stabil aus dem Namen.
+const AVATAR_FARBEN = 6;
+function avatar(name) {
+  const n = String(name || "").trim();
+  const teile = n.split(/\s+/).filter(Boolean);
+  const kuerzel = n ? ((teile[0][0] || "") + (teile.length > 1 ? teile[teile.length - 1][0] : "")).toUpperCase() : "";
+  let q = 0; for (const ch of n) q = (q * 31 + ch.codePointAt(0)) % 997;
+  const a = h("span", { klasse: "vl-avatar av" + (q % AVATAR_FARBEN), "aria-hidden": "true" });
+  if (kuerzel) a.textContent = kuerzel; else a.append(zeichen("person", 14));
+  return a;
+}
+const lokalerTag = (d) => d.toLocaleDateString("sv-SE");
+function tagesLabel(datum) {
+  const jetzt = new Date();
+  if (datum === lokalerTag(jetzt)) return TV.heute;
+  const gestern = new Date(jetzt); gestern.setDate(gestern.getDate() - 1);
+  return datum === lokalerTag(gestern) ? TV.gestern : "";
+}
+
 // Pro Host lebt höchstens eine Instanz: ein erneuter Aufruf räumt die vorige ab (Listener, späte Antworten).
 const LISTEN = new WeakMap();
 const DIFFS = new WeakMap();
@@ -131,7 +155,10 @@ export function zeichneVerlauf(host, { api, beiDatei, beiCommitOeffnen, beiGespe
     if (z.phase === "laedt") teile.push(skelett());
     else if (z.phase === "keinGit") teile.push(leerBlock("verlauf", TV.keinGit.titel, TV.keinGit.text));
     else if (z.phase === "gesperrt") teile.push(leerBlock("schild", TV.gesperrt.titel, TV.gesperrt.text, { knopf: beiGesperrt ? { name: "vertrauen", text: TV.gesperrt.knopf } : null }));
-    else if (z.phase === "fehler") teile.push(leerBlock("warnung", TV.fehler.titel, z.fehler || TV.fehler.text, { nochmal: true }));
+    else if (z.phase === "fehler") {
+      const roh = !!z.fehler && istRohGit(z.fehler);
+      teile.push(leerBlock("warnung", TV.fehler.titel, roh ? TV.roh.verlauf : (z.fehler || TV.fehler.text), { nochmal: true, details: roh ? z.fehler : null }));
+    }
     else {
       if (z.ungesichert.length) teile.push(h("div", { klasse: "vl-ungesichert" }, commitBlock(ungesichertCommit(), { ungesichert: true })));
       if (!z.tage.length) teile.push(leerBlock("verlauf", TV.leer.titel, TV.leer.text));
@@ -155,11 +182,12 @@ export function zeichneVerlauf(host, { api, beiDatei, beiCommitOeffnen, beiGespe
     return h("div", { klasse: "vl-skelett", "aria-busy": "true", "aria-label": TV.laedt }, h("div", { klasse: "vl-sk-kopf" }), zeile(78), zeile(62), h("div", { klasse: "vl-sk-kopf" }), zeile(70), zeile(84), zeile(55));
   }
 
-  function leerBlock(symbolName, titel, text, { nochmal = false, knopf = null } = {}) {
+  function leerBlock(symbolName, titel, text, { nochmal = false, knopf = null, details = null } = {}) {
     return h("div", { klasse: "vl-leer", role: "status" },
       h("span", { klasse: "vl-leer-zeichen" }, zeichen(symbolName, 20)),
       h("div", { klasse: "vl-leer-titel", text: titel }),
       h("p", { klasse: "vl-leer-text", text }),
+      details ? detailsBlock(details) : null,
       nochmal ? h("button", { klasse: "knopf", type: "button", "data-aktion": "nochmal", text: TV.fehler.nochmal }) : null,
       knopf ? h("button", { klasse: "knopf", type: "button", "data-aktion": knopf.name, text: knopf.text }) : null);
   }
@@ -175,6 +203,7 @@ export function zeichneVerlauf(host, { api, beiDatei, beiCommitOeffnen, beiGespe
     const kopf = h("div", { klasse: "vl-zeile vl-tagkopf", role: "treeitem", "aria-level": "1", "aria-expanded": String(!zu), tabindex: "-1", "data-art": "tag", "data-schluessel": "tag:" + t.datum, "data-datum": t.datum },
       h("span", { klasse: "vl-chev" }, zeichen("chevron-unten", 12)),
       h("span", { klasse: "vl-tagtext", text: tagesTitel(t.datum) }),
+      tagesLabel(t.datum) ? h("span", { klasse: "vl-tagrel", text: tagesLabel(t.datum) }) : null,
       h("span", { klasse: "vl-tagzahl", text: TV.tagZahl(t.commits.length) }));
     const gruppe = h("div", { klasse: "vl-gruppe vl-commits", role: "group", hidden: zu }, t.commits.map((c) => commitBlock(c)));
     return h("section", { klasse: "vl-tag" }, kopf, gruppe);
@@ -187,13 +216,14 @@ export function zeichneVerlauf(host, { api, beiDatei, beiCommitOeffnen, beiGespe
       ? [h("span", { klasse: "vl-zeit", text: TV.ungesichertMeta(c.dateien.length) })]
       : [
         c.zeit ? h("span", { klasse: "vl-zeit", title: volleZeit(c.zeit), text: relativeZeit(c.zeit) }) : null,
+        c.autor ? h("span", { klasse: "vl-autor", title: TV.von(c.autor), text: c.autor }) : null,
         h("span", { klasse: "vl-hash", text: c.kurz }),
         c.plus > 0 ? h("span", { klasse: "vl-plus", title: TV.zaehlerPlus(c.plus), text: "+" + c.plus }) : null,
         c.geaendert > 0 ? h("span", { klasse: "vl-aender", title: TV.zaehlerAender(c.geaendert), text: "~" + c.geaendert }) : null,
         c.geloescht > 0 ? h("span", { klasse: "vl-weg", title: TV.zaehlerWeg(c.geloescht), text: "−" + c.geloescht }) : null,
       ];
     const zeile = h("div", { klasse: "vl-zeile vl-commitzeile" + (ungesichert ? " ungesichert" : ""), role: "treeitem", "aria-level": ungesichert ? "1" : "2", "aria-expanded": String(auf), "aria-label": ungesichert ? `${TV.ungesichert} · ${c.dateien.length}` : undefined, tabindex: "-1", "data-art": "commit", "data-schluessel": "c:" + key, "data-sha": c.sha || "", title: c.nachricht || undefined },
-      h("span", { klasse: "vl-knoten" }, zeichen(ungesichert ? "stift" : "commit", 16)),
+      h("span", { klasse: "vl-knoten" + (ungesichert ? " ungesichert" : "") }, ungesichert ? zeichen("stift", 14) : avatar(c.autor)),
       h("span", { klasse: "vl-text" },
         h("span", { klasse: "vl-nachricht", text: c.nachricht || TV.ohneNachricht }),
         h("span", { klasse: "vl-meta" }, meta)),
@@ -463,19 +493,39 @@ export function parseDiff(text) {
   return { zeilen: aus, plus, minus, binaer };
 }
 
-const wortZeichen = (c) => c !== undefined && /[\p{L}\p{N}_]/u.test(c);
+// Wortgenauer Vergleich zweier Zeilen (längste gemeinsame Folge über Wörter, Leerraum und Satzzeichen).
+// Ergebnis je Zeile: seg = [[Text, geändert?], …]. Fast alles anders (< 30 % gemeinsam): keine Marken, die Zeilentönung reicht.
+const WORTTEILE = /[\p{L}\p{N}_]+|\s+|[^\p{L}\p{N}_\s]/gu;
 function markiereWorte(alt, neu) {
   const a = alt.text, b = neu.text;
-  const max = Math.min(a.length, b.length);
-  let v = 0;
-  while (v < max && a[v] === b[v]) v++;
-  let n = 0;
-  while (n < max - v && a[a.length - 1 - n] === b[b.length - 1 - n]) n++;
-  while (v > 0 && wortZeichen(a[v - 1]) && (wortZeichen(a[v]) || wortZeichen(b[v]))) v--;
-  while (n > 0 && wortZeichen(a[a.length - n]) && (wortZeichen(a[a.length - n - 1]) || wortZeichen(b[b.length - n - 1]))) n--;
-  if (v + n === 0 || v + n < 0.3 * Math.max(a.length, b.length)) return; // fast alles anders: die Zeilentönung reicht
-  alt.teil = [a.slice(0, v), a.slice(v, a.length - n), a.slice(a.length - n)];
-  neu.teil = [b.slice(0, v), b.slice(v, b.length - n), b.slice(b.length - n)];
+  const x = a.match(WORTTEILE) || [], y = b.match(WORTTEILE) || [];
+  if (!x.length || !y.length || x.length * y.length > 60000) return;
+  const n = x.length, m = y.length;
+  const L = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i][j] = x[i] === y[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+  const sa = [], sb = [];
+  const schiebe = (liste, text, geaendert) => {
+    if (!text) return;
+    const l = liste[liste.length - 1];
+    if (l && l[1] === geaendert) l[0] += text; else liste.push([text, geaendert]);
+  };
+  let gemeinsam = 0;
+  for (let i = 0, j = 0; i < n || j < m;) {
+    if (i < n && j < m && x[i] === y[j]) { schiebe(sa, x[i], false); schiebe(sb, y[j], false); gemeinsam += x[i].length; i++; j++; }
+    else if (j < m && (i >= n || L[i][j + 1] >= L[i + 1][j])) { schiebe(sb, y[j], true); j++; }
+    else { schiebe(sa, x[i], true); i++; }
+  }
+  if (!gemeinsam || gemeinsam < 0.3 * Math.max(a.length, b.length)) return;
+  // Reiner Leerraum zwischen zwei Marken gehört dazu (ein zusammenhängender Block statt Flickenteppich)
+  const verbinde = (liste) => {
+    for (let k = 1; k < liste.length - 1; k++) if (!liste[k][1] && /^\s+$/.test(liste[k][0]) && liste[k - 1][1] && liste[k + 1][1]) liste[k][1] = true;
+    const aus = [];
+    for (const [t, g] of liste) { const l = aus[aus.length - 1]; if (l && l[1] === g) l[0] += t; else aus.push([t, g]); }
+    return aus;
+  };
+  const ra = verbinde(sa), rb = verbinde(sb);
+  if (!ra.some((s) => s[1]) && !rb.some((s) => s[1])) return;
+  alt.seg = ra; neu.seg = rb;
 }
 
 export function zeigeDiff(host, { api, sha, kurz, nachricht, pfad, status, zeit, beiSchliessen, beiWiederherstellen } = {}) {
@@ -492,8 +542,12 @@ export function zeigeDiff(host, { api, sha, kurz, nachricht, pfad, status, zeit,
     ? h("button", { klasse: "knopf vd-wieder", type: "button", "data-aktion": "diff-wiederherstellen" }, zeichen("uhr", 14), h("span", { text: TV.diff.wiederherstellen }))
     : null;
   const koerper = h("div", { klasse: "vd-koerper", tabindex: "0", role: "region", "aria-label": TV.diff.bereich });
+  let ansicht = leseDiffAnsicht();
+  let geparst = null, gezeigtZeilen = [];
+  const umschalter = ansichtUmschalter(ansicht, (a) => { ansicht = a; zeichneKoerper(); });
+  umschalter.hidden = true;
   const wurzel = h("div", { klasse: "vd", "data-diff-ansicht": "" },
-    h("div", { klasse: "vd-leiste" }, zurueck, wieder),
+    h("div", { klasse: "vd-leiste" }, zurueck, h("div", { klasse: "vd-leiste-rechts" }, umschalter, wieder)),
     h("header", { klasse: "vd-kopf" },
       h("h2", { klasse: "vd-titel", title: pfad || undefined },
         h("span", { klasse: "vd-dateiname", text: dateiAnzeige(pfad || "") }),
@@ -533,7 +587,8 @@ export function zeigeDiff(host, { api, sha, kurz, nachricht, pfad, status, zeit,
     try { text = (await api.diff(pfad, sha || undefined))?.diff; }
     catch (e) {
       if (tot) return;
-      koerper.replaceChildren(h("p", { klasse: "vd-hinweis fehlertext", text: gitGesperrt(e) ? TV.diff.gesperrt : (e?.message || TV.diff.fehler) }));
+      const roh = !gitGesperrt(e) && e?.message && istRohGit(e.message);
+      koerper.replaceChildren(h("div", { klasse: "vd-hinweis fehlertext" }, h("p", { text: gitGesperrt(e) ? TV.diff.gesperrt : (roh ? TV.diff.fehler : (e?.message || TV.diff.fehler)) }), roh ? detailsBlock(e.message) : null));
       return;
     }
     if (tot) return;
@@ -545,10 +600,16 @@ export function zeigeDiff(host, { api, sha, kurz, nachricht, pfad, status, zeit,
     setze(stat,
       d.plus ? h("span", { klasse: "vl-plus", title: TV.diff.plusZeilen(d.plus), text: "+" + d.plus }) : null,
       d.minus ? h("span", { klasse: "vl-weg", title: TV.diff.minusZeilen(d.minus), text: "−" + d.minus }) : null);
-    setze(koerper,
-      gesamt > MAX_DIFF_ZEILEN ? h("p", { klasse: "vd-gekuerzt", role: "note", text: TV.diff.gekuerzt(gesamt, MAX_DIFF_ZEILEN) }) : null,
-      h("div", { klasse: "vd-karte" }, h("div", { klasse: "vd-zeilen", "data-diff": "" }, gezeigt.map(diffZeile))));
+    geparst = { gesamt }; gezeigtZeilen = gezeigt;
+    umschalter.hidden = false;
+    zeichneKoerper();
   })();
+  function zeichneKoerper() {
+    if (!geparst || tot) return;
+    setze(koerper,
+      geparst.gesamt > MAX_DIFF_ZEILEN ? h("p", { klasse: "vd-gekuerzt", role: "note", text: TV.diff.gekuerzt(geparst.gesamt, MAX_DIFF_ZEILEN) }) : null,
+      diffKarte(gezeigtZeilen, ansicht));
+  }
 
   const instanz = {
     zerstoere() {
@@ -578,7 +639,60 @@ export function diffZeile(x) {
       h("span", { klasse: "vd-nr alt", "aria-label": x.alt === undefined ? undefined : TV.diff.alt + " " + (x.alt), text: x.alt === undefined ? "" : String(x.alt) }),
       h("span", { klasse: "vd-nr neu", "aria-label": x.neu === undefined ? undefined : TV.diff.neu + " " + (x.neu), text: x.neu === undefined ? "" : String(x.neu) }),
       h("span", { klasse: "vd-vz", "aria-hidden": "true", text: x.art === "p" ? "+" : x.art === "m" ? "−" : "" })),
-    x.teil
-      ? h("span", { klasse: "vd-code" }, x.teil[0], x.teil[1] ? h("span", { klasse: "vd-w" }, x.teil[1]) : null, x.teil[2])
-      : h("span", { klasse: "vd-code", text: x.text === "" ? " " : x.text }));
+    codeSpan(x));
+}
+function codeSpan(x) {
+  return x.seg
+    ? h("span", { klasse: "vd-code" }, x.seg.map(([t, g]) => (g ? h("span", { klasse: "vd-w" }, t) : t)))
+    : h("span", { klasse: "vd-code", text: x.text === "" ? " " : x.text });
+}
+
+// Nebeneinander: links die alte, rechts die neue Fassung. Gelöschte und neue Zeilen eines Blocks stehen paarweise in einer Reihe.
+export function seitenReihen(zeilen) {
+  const reihen = [];
+  for (let i = 0; i < zeilen.length;) {
+    const x = zeilen[i];
+    if (x.art === "h" || x.art === "k") { reihen.push({ voll: x }); i++; continue; }
+    if (x.art === "c") { reihen.push({ alt: x, neu: x }); i++; continue; }
+    const ms = []; while (i < zeilen.length && zeilen[i].art === "m") ms.push(zeilen[i++]);
+    const ps = []; while (i < zeilen.length && zeilen[i].art === "p") ps.push(zeilen[i++]);
+    for (let q = 0; q < Math.max(ms.length, ps.length); q++) reihen.push({ alt: ms[q] || null, neu: ps[q] || null });
+  }
+  return reihen;
+}
+export function seitenReihe(r) {
+  if (r.voll) return diffZeile(r.voll);
+  const seite = (x, wo) => {
+    if (!x) return h("div", { klasse: "vd-z platz", "aria-hidden": "true" }, h("span", { klasse: "vd-nrs" }, h("span", { klasse: "vd-nr" }), h("span", { klasse: "vd-vz" })), h("span", { klasse: "vd-code", text: " " }));
+    const nr = wo === "alt" ? x.alt : x.neu;
+    return h("div", { klasse: "vd-z " + x.art },
+      h("span", { klasse: "vd-nrs" },
+        h("span", { klasse: "vd-nr", "aria-label": (wo === "alt" ? TV.diff.alt : TV.diff.neu) + " " + nr, text: String(nr) }),
+        h("span", { klasse: "vd-vz", "aria-hidden": "true", text: x.art === "p" ? "+" : x.art === "m" ? "−" : "" })),
+      codeSpan(x));
+  };
+  return h("div", { klasse: "vd-paar" }, seite(r.alt, "alt"), seite(r.neu, "neu"));
+}
+const ANSICHT_SCHLUESSEL = "diff-ansicht";
+export const leseDiffAnsicht = () => (leseLokal(ANSICHT_SCHLUESSEL, "zeilen") === "spalten" ? "spalten" : "zeilen");
+// Umschalter „Untereinander | Nebeneinander“ (Segmente). beiWahl(ansicht) wird bei jeder Änderung gerufen.
+export function ansichtUmschalter(aktuell, beiWahl) {
+  const knoepfe = {};
+  const setze = (a) => { for (const [k, b] of Object.entries(knoepfe)) b.setAttribute("aria-pressed", String(k === a)); };
+  const mach = (name, sym, text) => {
+    const b = h("button", { klasse: "seg-knopf", type: "button", "data-ansicht": name, "aria-pressed": String(aktuell === name), title: text }, zeichen(sym, 14), h("span", { text }));
+    b.addEventListener("click", () => { setze(name); speichereLokal(ANSICHT_SCHLUESSEL, name); beiWahl(name); });
+    knoepfe[name] = b;
+    return b;
+  };
+  return h("div", { klasse: "seg", role: "group", "aria-label": TV.diff.ansicht.gruppe }, mach("zeilen", "ansicht-zeilen", TV.diff.ansicht.zeilen), mach("spalten", "ansicht-spalten", TV.diff.ansicht.spalten));
+}
+// Der Körper der Diff-Karte in der gewählten Ansicht (Kopfzeilen oben, bei „Nebeneinander“ mit Spaltenköpfen).
+export function diffKarte(zeilen, ansicht) {
+  if (ansicht === "spalten") {
+    return h("div", { klasse: "vd-karte spalten" },
+      h("div", { klasse: "vd-spaltenkopf", "aria-hidden": "true" }, h("span", { text: TV.diff.ansicht.davor }), h("span", { text: TV.diff.ansicht.danach })),
+      h("div", { klasse: "vd-zeilen", "data-diff": "", "data-ansicht": "spalten" }, seitenReihen(zeilen).map(seitenReihe)));
+  }
+  return h("div", { klasse: "vd-karte" }, h("div", { klasse: "vd-zeilen", "data-diff": "", "data-ansicht": "zeilen" }, zeilen.map(diffZeile)));
 }

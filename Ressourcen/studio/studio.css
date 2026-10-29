@@ -28,10 +28,21 @@
   --schatten: 0 1px 2px light-dark(rgba(30, 20, 10, .06), rgba(0, 0, 0, .4)), 0 12px 32px light-dark(rgba(30, 20, 10, .14), rgba(0, 0, 0, .5));
   --schatten-menue: 0 0 0 1px var(--linie-stark), 0 10px 30px light-dark(rgba(30, 20, 10, .16), rgba(0, 0, 0, .55));
   --schleier: light-dark(rgba(20, 16, 10, .30), rgba(8, 8, 7, .58));
+  /* Zustandsfarben als weiche Flächen und Ränder (Verlauf, Abgleich, Konflikte) */
+  --gruen-weich: color-mix(in srgb, var(--gruen) 14%, transparent);
+  --gelb-weich: color-mix(in srgb, var(--gelb) 16%, transparent);
+  --rot-weich: color-mix(in srgb, var(--rot) 12%, transparent);
+  --gruen-rand: color-mix(in srgb, var(--gruen) 38%, transparent);
+  --gelb-rand: color-mix(in srgb, var(--gelb) 42%, transparent);
+  --rot-rand: color-mix(in srgb, var(--rot) 42%, transparent);
+  --akzent-rand: color-mix(in srgb, var(--akzent) 40%, transparent);
+  --fokus-ring: 0 0 0 3px color-mix(in srgb, var(--akzent) 28%, transparent);
+  /* Abstände (4-pt-Raster) */
+  --a1: 4px; --a2: 8px; --a3: 12px; --a4: 16px; --a5: 20px; --a6: 24px;
   --schrift: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
   --schrift-text: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, monospace;
-  --r-s: 6px; --r: 8px; --r-l: 12px; --r-xl: 16px;
+  --r-s: 6px; --r: 8px; --r-l: 12px; --r-xl: 16px; --r-pille: 999px;
   --t: 150ms; --ease: cubic-bezier(.4, 0, .2, 1);
   /* Alt-Namen (v1-Code und Agent-Module) */
   --leiste: var(--seite); --leiste-2: var(--seite-2);
@@ -358,6 +369,33 @@ button.st { cursor: pointer; } button.st:hover { background: var(--hover-2); col
 .st.aktiv { color: var(--akzent); background: var(--akzent-weich); } .st.aktiv .sym { color: var(--akzent); }
 .trenner { width: 1px; height: 12px; background: var(--linie-stark); margin: 0 2px; flex: none; }
 @keyframes dreh { to { transform: rotate(360deg); } }
+/* Hauptknopf „Abgleichen“: Zustand links (Farbe + Text), Aktion rechts. Zustände: aktuell · senden · neues · konflikt · offline · laeuft · fehler · nie */
+.st.sync { --z: var(--text-3); gap: 0; height: 22px; padding: 0; border: 1px solid var(--linie-stark); border-radius: var(--r-pille); background: var(--erhoben); color: var(--text); overflow: hidden; transition: border-color var(--t), background var(--t), box-shadow var(--t); }
+.st.sync:hover { border-color: var(--text-3); background: var(--erhoben); color: var(--text); }
+.st.sync:focus-visible { outline: 0; box-shadow: var(--fokus-ring); border-color: var(--akzent); }
+.st.sync .sync-zustand { display: inline-flex; align-items: center; gap: 6px; height: 100%; padding: 0 10px 0 8px; }
+.st.sync .sync-zustand .sym { color: var(--z); }
+.st.sync .sync-aktion { display: inline-flex; align-items: center; gap: 5px; height: 100%; padding: 0 10px 0 9px; border-left: 1px solid var(--linie); color: var(--text-2); font-weight: 500; }
+.st.sync .sync-aktion .sym { color: var(--text-3); }
+.st.sync:hover .sync-aktion { background: var(--hover-2); color: var(--text); }
+.st.sync[data-zustand="aktuell"] { --z: var(--gruen); }
+.st.sync[data-zustand="senden"] { --z: var(--akzent); background: var(--akzent-weich); border-color: var(--akzent-rand); }
+.st.sync[data-zustand="neues"] { --z: var(--akzent); background: var(--akzent-weich); border-color: var(--akzent-rand); font-weight: 600; }
+.st.sync[data-zustand="konflikt"] { --z: var(--rot); background: var(--rot-weich); border-color: var(--rot-rand); font-weight: 600; }
+.st.sync[data-zustand="fehler"] { --z: var(--rot); background: var(--rot-weich); border-color: var(--rot-rand); }
+.st.sync[data-zustand="offline"] { --z: var(--text-3); color: var(--text-2); background: transparent; border-style: dashed; }
+.st.sync[data-zustand="nie"] { --z: var(--text-3); color: var(--text-2); }
+.st.sync[data-zustand="laeuft"] { --z: var(--akzent); }
+.st.sync[data-zustand="laeuft"] .sync-zustand .sym { animation: dreh 1s linear infinite; }
+.st.sync[data-zustand="konflikt"] .sync-aktion, .st.sync[data-zustand="laeuft"] .sync-aktion { display: none; }
+.st.sync[data-zustand="senden"] .sync-aktion, .st.sync[data-zustand="neues"] .sync-aktion, .st.sync[data-zustand="konflikt"] .sync-zustand { color: var(--text); }
+.st.sync[data-zustand="neues"] .sync-aktion { border-left-color: var(--akzent-rand); }
+.st.sync[data-zustand="senden"] .sync-aktion { border-left-color: var(--akzent-rand); }
+.st.sync[data-zustand="konflikt"] .sync-zustand, .st.sync[data-zustand="fehler"] .sync-zustand { padding-right: 12px; }
+.st-geaendert { gap: 6px; }
+.st-geaendert .st-zahl { display: inline-grid; place-items: center; min-width: 16px; height: 16px; padding: 0 5px; border-radius: 8px; background: var(--gelb-weich); color: var(--text); font-size: 11px; font-weight: 650; }
+@media (max-width: 1100px) { .st.sync .sync-aktion span { display: none; } .st.sync .sync-aktion { padding: 0 8px; } }
+.kein-ansage { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 /* ---------- Menüs (Popover) ---------- */
 #menue-host { position: fixed; inset: 0; z-index: 70; pointer-events: none; }
@@ -473,3 +511,11 @@ input[type=checkbox] { accent-color: var(--akzent); width: 14px; height: 14px; m
 .pe-seite[aria-selected="true"] { background: var(--akzent-weich); }
 .pe-titel { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pe-pfad { color: var(--text-3); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: none; max-width: 50%; }
+
+/* KI-Logos (ki-logos.js): Claude in Markenfarbe, Cursor einfarbig in der Textfarbe, Codex als neutrale Initiale (kein lizenziertes Logo) */
+.ki-logo { display: inline-flex; flex: none; align-items: center; justify-content: center; width: var(--ki-logo-groesse, 16px); height: var(--ki-logo-groesse, 16px); vertical-align: middle; }
+.ki-logo svg { display: block; }
+.ki-logo-claude { color: #D97757; }
+.ki-logo-cursor { color: var(--text); }
+.ki-logo-initiale { border-radius: 50%; background: var(--hover-2); color: var(--text-2); font-weight: 600; font-size: calc(var(--ki-logo-groesse, 16px) * 0.56); line-height: 1; }
+.ki-logo-initiale::before { content: attr(data-initiale); }

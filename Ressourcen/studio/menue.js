@@ -1,6 +1,7 @@
 // Kleines Popover-Menü: Eintragsliste, Tastatur (↑↓ Enter Esc), schließt bei Klick daneben. Kein innerHTML mit fremden Daten.
 import { h } from "./hilfen.js";
 import { symbol } from "./symbole.js";
+import { kiLogo } from "./ki-logos.js";
 
 // Vault-Farbe (aus der Vault-Liste, also Daten): nur #RRGGBB oder var(--akzent), direkt als CSS-Variable gesetzt
 const vaultFarbe = (farbe) => {
@@ -13,7 +14,7 @@ let offen = null;
 export const menueOffen = () => !!offen;
 export function schliesseMenue() { offen?.zu(); }
 
-// eintraege: [{ name, symbol?, farbe?, sub?, haken?, gefahr?, tun?, daten? } | { trenner:true } | { gruppe:"Text" } | { leer:"Text" } | { segmente:[{name, symbol?, aktiv, tun}] }]
+// eintraege: [{ name, symbol?, logo? (KI-Logo, ki-logos.js), farbe?, sub?, haken?, gefahr?, tun?, daten? } | { trenner:true } | { gruppe:"Text" } | { leer:"Text" } | { segmente:[{name, symbol?, aktiv, tun}] }]
 export function oeffneMenue(anker, eintraege, { rechts = false, oben = false, breite, beiZu, klasse = "" } = {}) {
   schliesseMenue();
   const host = document.getElementById("menue-host");
@@ -31,7 +32,7 @@ export function oeffneMenue(anker, eintraege, { rechts = false, oben = false, br
     }
     const b = h("button", { type: "button", klasse: "m-eintrag" + (e.gefahr ? " gefahr" : ""), role: "menuitem", "data-menue": e.id || e.name, "data-aktiv": "false",
       aufClick: () => { zu(); e.tun?.(e.daten); } },
-      e.farbe ? vaultFarbe(e.farbe) : e.symbol ? symbol(e.symbol, 16) : null,
+      e.farbe ? vaultFarbe(e.farbe) : e.logo ? kiLogo(e.logo, 16, { dekorativ: true }) : e.symbol ? symbol(e.symbol, 16) : null,
       h("span", { klasse: "m-name", text: e.name }),
       e.sub ? h("span", { klasse: "m-sub", text: e.sub }) : null,
       e.haken !== undefined ? h("span", { klasse: "m-haken" }, e.haken ? symbol("haken", 14) : null) : null);

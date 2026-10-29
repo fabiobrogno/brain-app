@@ -148,7 +148,7 @@ final class Navigation: NSObject, WKNavigationDelegate {
 }
 
 /// Ein Kortex-Fenster (App-Spec §5.2, §7.2; Studio-Spec §9): beim Schließen werden WebView, Kanäle und Brücke beendet.
-/// Die App hat zwei davon: Studio (Werkstatt-Brücke) und Übersicht (Kit-Brücke).
+/// Die App hat zwei davon: Studio (Werkstatt-Brücke) und Übersicht (Brücke des gebündelten Kerns).
 @MainActor
 final class FensterSteuerung: NSObject, NSWindowDelegate {
     private let log: AppLog
@@ -192,12 +192,13 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
     private var name: String { oberflaeche == .studio ? "studio" : "uebersicht" }
     private var standardTitel: String { oberflaeche == .studio ? StudioFenster.standardTitel : "Übersicht" }
 
-    /// `skript`: nil = Kit-Brücke des Vaults, sonst z. B. die Werkstatt aus dem App-Paket. `vault` nil nur mit `skript`
+    /// `skript`: nil = Ansicht-Brücke des gebündelten Kerns (`kern` = `bin/kern`, nie Code aus dem Vault), sonst z. B. die Werkstatt
+    /// aus dem App-Paket. `vault` nil nur mit `skript`
     /// (Studio vor der Vault-Wahl: die Werkstatt liest dann vaults.json); `arbeitsordner` gilt dann als Arbeitsverzeichnis.
     /// `test`: Testschalter des Studios (Größe, Bild, Skript) — nur für das Studio, die Übersicht ignoriert sie.
     /// `fluechtig`: irgendein Testschalter ist aktiv (`StartArgumente.fluechtig`) — gilt für beide Fenster: flüchtiger Web-Speicher,
-    /// keine gemerkte Fensterposition. `vorStart`: Prüfung vor jedem Start der Brücke (Kit-Brücke: Vertrauen in den Vault).
-    func oeffne(node: URL, vault: URL?, skript: URL? = nil, umgebung: [String: String], arbeitsordner: URL? = nil,
+    /// keine gemerkte Fensterposition. `vorStart`: Prüfung vor jedem Start der Brücke (Kern-Brücke: ist der Kern noch bereit?).
+    func oeffne(node: URL, vault: URL?, skript: URL? = nil, kern: URL? = nil, umgebung: [String: String], arbeitsordner: URL? = nil,
                 test: StartArgumente? = nil, fluechtig: Bool = false, vorschau: Bool = false, vorStart: (@Sendable () async -> Bool)? = nil) {
         if let fenster {
             if fenster.isMiniaturized { fenster.deminiaturize(nil) }
@@ -205,8 +206,8 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
             NSApp.activate()
             return
         }
-        let bruecke = BrueckenVerbindung(node: node, vault: vault, skript: skript, umgebung: umgebung, arbeitsordner: arbeitsordner,
-                                         vorStart: vorStart)
+        let bruecke = BrueckenVerbindung(node: node, vault: vault, skript: skript, kern: kern, umgebung: umgebung,
+                                         arbeitsordner: arbeitsordner, vorStart: vorStart)
         let config = WKWebViewConfiguration()
         let test = oberflaeche == .studio ? test : nil
         // Testlauf: flüchtiger Web-Speicher — die Seite liest und schreibt sonst den localStorage der echten App (Theme,

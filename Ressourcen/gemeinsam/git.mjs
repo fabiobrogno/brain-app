@@ -304,7 +304,7 @@ async function mitAbbruchSchutz(G, wurzel, lauf) {
 
 // opt: limitSync = Frist je Git-Aufruf (Standard 120 s), limitGesamt = Gesamtfrist der Route (Standard 360 s), vertraut/sshEigen/… aus vault.mjs,
 // neuBewerten = () => { vertraut, gesperrt } (Vertrauen NEU lesen; ohne Angabe wird nach dem Holen nicht neu bewertet).
-// Der Abgleich bringt fremde Commits in den Arbeitsbaum — auch Hook-Dateien und Kit-Code (z. B. bei core.hooksPath=.tools/git-hooks). Holen und
+// Der Abgleich bringt fremde Commits in den Arbeitsbaum — auch Hook-Dateien und Programmcode im Vault (z. B. ein altes Kit bei core.hooksPath=.tools/git-hooks, das die App selbst nicht mehr ausführt). Holen und
 // Zusammenführen laufen deshalb IMMER ohne Hooks, auch in einem vertrauten Vault: ein vom Server geholter Hook liefe sonst, bevor die Frage nach
 // dem Vertrauen neu gestellt wird (§8). Nach dem Holen wird das Vertrauen neu bewertet; gilt es nicht mehr, wird nichts gesendet (der Hook
 // pre-push wäre der neue, nicht freigegebene Code) und das Ergebnis trägt vertrauenGeaendert: die Oberfläche fragt neu, danach sendet der
@@ -1113,3 +1113,6 @@ async function wiederherstellenOhneSperre(wurzel, { pfad: rel, sha }, ctx) {
   if (c.code !== 0) { await zurueck(); throw new HttpFehler(422, "Das Sichern der Fassung wurde abgelehnt. Deine Datei ist unverändert.", { ausgabe: ausgabeVon(c) }); }
   return { sha: (await G(["rev-parse", "HEAD"])).stdout.trim(), unveraendert: false };
 }
+
+// Für den Test, der die Härtung des Kerns (kern/git-sicher) gegen diese hält (Tests/Node/kern-git-haertung.test.mjs).
+export const HAERTUNG = { GRUND, OHNE_HOOKS, OHNE_SIGNIEREN };

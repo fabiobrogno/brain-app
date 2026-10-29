@@ -21,7 +21,7 @@ export const WERKZEUGE = [
     inputSchema: { type: "object", properties: { pfad: { type: "string", description: "Pfad relativ zum Vault, z. B. 09_wiki/firma/amazon/thema_x.md" } }, required: ["pfad"], additionalProperties: false } },
   { name: "brain_merken", description: "Legt eine neue Notiz in 00_inbox/ ab. Schreibt nie ins Wiki; erst /ingest macht daraus Wissen.",
     inputSchema: { type: "object", properties: { text: { type: "string" }, titel: { type: "string" } }, required: ["text"], additionalProperties: false } },
-  { name: "brain_gesundheit", description: "Kurzfassung der Brain-Gesundheit (Ampel und Befunde), falls das Kit installiert ist.",
+  { name: "brain_gesundheit", description: "Kurzfassung der Brain-Gesundheit (Ampel und Befunde) aus dem Kern von Kortex, falls der Vault ein Brain ist (brain.config.json).",
     inputSchema: { type: "object", properties: {}, additionalProperties: false } },
   { name: "brain_vaults", description: "Listet die in der App eingerichteten Vaults (Brains) und nennt den, den dieser Server gerade nutzt.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false } },
@@ -113,13 +113,7 @@ async function rufe(vArg, name, a, spur = { seiten: [] }) {
     }
     case "brain_gesundheit": {
       const g = await v.gesundheit();
-      if (g.grund === "nicht-vertraut") {
-        const geaendert = v.vertrauenStand().geaendert;
-        return text(geaendert
-          ? "Das Brain-Kit in diesem Vault hat sich seit der Freigabe geändert (oder der Ordner ist ein anderer). In der App neu erlauben (Brain Studio → Kit erlauben), dann klappt die Gesundheitsprüfung."
-          : "Das Brain-Kit in diesem Vault ist noch nicht freigegeben. In der App einmal erlauben (Brain Studio → Kit erlauben), dann klappt die Gesundheitsprüfung.");
-      }
-      if (g.verfuegbar === false) return text("Die Gesundheitsprüfung ist nicht verfügbar (kein Brain-Kit in diesem Vault).");
+      if (g.verfuegbar === false) return text("Die Gesundheitsprüfung ist nicht verfügbar (dieser Ordner ist kein Brain-Vault mit brain.config.json, oder der Kern von Kortex ist nicht erreichbar).");
       const zeilen = [`Ampel: ${g.ampel}${g.warnungen !== undefined ? ` · ${g.warnungen} Warnung(en)` : ""}`];
       for (const p of g.pruefungen || []) {
         if (p.stufe === "gruen") continue;
