@@ -15,8 +15,11 @@ import { erzeugeHandler, appVersionLesen, MAX_KOERPER } from "./handler.mjs";
 import { HttpFehler } from "../gemeinsam/vault.mjs";
 import { beendeLaufendes } from "../gemeinsam/git.mjs";
 import { beendeVorgaenge } from "../gemeinsam/vaults.mjs";
-import { bereinigePfad } from "../gemeinsam/basis.mjs";
+import { bereinigePfad, vorschauFehler } from "../gemeinsam/basis.mjs";
 
+// Vorschau („wie frisch installiert“) nur mit umgelenktem Benutzerordner — sonst gar nicht erst starten (nichts wird angefasst).
+const vorschauProblem = vorschauFehler();
+if (vorschauProblem) { process.stderr.write(`Vorschau-Schutz: ${vorschauProblem}\n`); process.exit(2); }
 bereinigePfad(); // kein leerer oder relativer PATH-Eintrag: ein `git` (oder anderes Programm) aus einem fremden Vault startet nie (Vertrauen v2, §8)
 const vault = process.argv[2] || process.env.BRAIN_VAULT || undefined; // das Argument hat Vorrang vor vaults.json
 // Neue MCP-Einträge (Claude Code, Codex, Cursor) nennen den STABILEN Node-Pfad der App (<support>/bin/node, setzt die App per

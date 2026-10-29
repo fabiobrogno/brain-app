@@ -198,7 +198,7 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
     /// `fluechtig`: irgendein Testschalter ist aktiv (`StartArgumente.fluechtig`) — gilt für beide Fenster: flüchtiger Web-Speicher,
     /// keine gemerkte Fensterposition. `vorStart`: Prüfung vor jedem Start der Brücke (Kit-Brücke: Vertrauen in den Vault).
     func oeffne(node: URL, vault: URL?, skript: URL? = nil, umgebung: [String: String], arbeitsordner: URL? = nil,
-                test: StartArgumente? = nil, fluechtig: Bool = false, vorStart: (@Sendable () async -> Bool)? = nil) {
+                test: StartArgumente? = nil, fluechtig: Bool = false, vorschau: Bool = false, vorStart: (@Sendable () async -> Bool)? = nil) {
         if let fenster {
             if fenster.isMiniaturized { fenster.deminiaturize(nil) }
             fenster.makeKeyAndOrderFront(nil)
@@ -260,6 +260,7 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
             if w.frame.origin == .zero { w.center() }
         }
         w.delegate = self
+        if vorschau { VorschauBand.anbringen(an: w) }
 
         self.bruecke = bruecke
         self.webView = web
@@ -303,7 +304,7 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
     /// Ordner-Dialog als Sheet am Fenster (nur Ordner, „Neuer Ordner“ erlaubt). Liefert den gewählten Ordner oder nil
     /// (Abbruch, kein Fenster, es ist schon ein Dialog offen). Startort: `vorschlag` (oder der tiefste vorhandene Ordner
     /// darüber), sonst Home.
-    func waehleOrdner(titel: String?, vorschlag: URL?) async -> URL? {
+    func waehleOrdner(titel: String?, vorschlag: URL?, startort: URL? = nil) async -> URL? {
         guard let fenster, ordnerDialog == nil else { return nil }
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
@@ -312,7 +313,7 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
         panel.canCreateDirectories = true
         panel.prompt = "Wählen"
         if let titel { panel.message = titel }
-        panel.directoryURL = AppAktion.startort(fuer: vorschlag, fallback: FileManager.default.homeDirectoryForCurrentUser)
+        panel.directoryURL = AppAktion.startort(fuer: vorschlag, fallback: startort ?? FileManager.default.homeDirectoryForCurrentUser)
         if fenster.isMiniaturized { fenster.deminiaturize(nil) }
         fenster.makeKeyAndOrderFront(nil)
         NSApp.activate()
