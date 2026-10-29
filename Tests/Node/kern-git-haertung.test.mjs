@@ -29,7 +29,6 @@ test("git-sicher ist ausführbar und nennt jede -c-Einstellung der Werkstatt (au
 // Konkrete Schlüssel zu jedem Muster der Werkstatt-Liste: Werkstatt UND Kern müssen sie als gefährlich sehen
 const BEISPIELE = ["credential.helper", "credential.https://example.org.helper", "core.askpass", "core.gitproxy", "core.alternaterefscommand", "gpg.program", "gpg.x509.program",
   "gpg.ssh.defaultKeyCommand", "gpg.ssh.program", "merge.x.driver", "filter.x.clean", "filter.x.smudge", "filter.x.process", "remote.o.uploadpack", "remote.o.receivepack", "remote.o.vcs"];
-const NETZ = new Set(["credential.helper", "credential.https://example.org.helper", "core.askpass", "core.gitproxy", "core.alternaterefscommand", "remote.o.uploadpack", "remote.o.receivepack", "remote.o.vcs"]);
 
 test("jedes Muster der Werkstatt-Liste ist durch mindestens ein Beispiel abgedeckt, und git-sicher verweigert alle Beispiele", () => {
   for (const re of GEFAEHRLICH_MUSTER) assert.ok(BEISPIELE.some((k) => re.test(k.toLowerCase())), `kein Beispiel für ${re}`);
@@ -39,7 +38,10 @@ test("jedes Muster der Werkstatt-Liste ist durch mindestens ein Beispiel abgedec
     g(d, "config", k, evil);
     const werkstatt = gefaehrlicheSchluessel(liesGitKonfiguration(d, { frisch: true }).eintraege);
     assert.equal(werkstatt.length, 1, `Werkstatt sieht ${k} nicht als gefährlich`);
-    const r = spawnSync(SICHER, ["-C", d, ...(NETZ.has(k) ? ["fetch", "--quiet"] : ["status", "--porcelain"])], { encoding: "utf8" });
-    assert.equal(r.status, 126, `git-sicher lässt ${k} durch: ${r.stderr}`);
+    // bei JEDEM Befehl (auch lesenden): ein Partial Clone lädt beim Lesen nach und startet dann Netz-Programme
+    for (const sub of [["status", "--porcelain"], ["cat-file", "-t", "HEAD"], ["fetch", "--quiet"]]) {
+      const r = spawnSync(SICHER, ["-C", d, ...sub], { encoding: "utf8" });
+      assert.equal(r.status, 126, `git-sicher lässt ${k} bei ${sub[0]} durch: ${r.stderr}`);
+    }
   }
 });

@@ -112,7 +112,7 @@ test("sonnetArgs: Rechte als Listen (ein Argument je Regel), --settings schaltet
   assert.equal(w("--permission-mode"), "dontAsk");
   assert.equal(w("--mcp-config"), '{"mcpServers":{}}');
   assert.equal(w("--system-prompt"), "SYS");
-  assert.equal(w("--setting-sources"), "project");
+  assert.equal(w("--setting-sources"), "user");
   assert.equal(w("--output-format"), "json");
   for (const f of ["-p", "--strict-mcp-config", "--no-session-persistence"]) assert.ok(a.includes(f), f);
   assert.ok(!a.some((x) => /bypass|dangerously/i.test(x)));

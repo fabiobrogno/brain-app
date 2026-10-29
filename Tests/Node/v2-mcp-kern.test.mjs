@@ -30,7 +30,13 @@ function kernMitLink() {
   symlinkSync("../kern/1.0.0", join(support, "bin/kern"));
   return { support, kern: join(support, "bin/kern"), echt: realpathSync(join(support, "bin/kern")) };
 }
-const handlerFuer = (k, extra = {}) => aufruf(erzeugeHandler({ vault: vault(), kern: k.kern, nodePfad: STABIL, vaultOptionen: { support: tmp("brain-vsupport-") }, ...extra }));
+// Ein BEKANNTER Vault (steht in vaults.json jedes Test-Support-Ordners): nur unter dessen .tools gilt ein alter MCP-Eintrag als „von uns“.
+const BEKANNT = vault();
+const handlerFuer = (k, extra = {}) => {
+  const support = tmp("brain-vsupport-");
+  writeFileSync(join(support, "vaults.json"), JSON.stringify({ vaults: [{ name: "bekannt", pfad: BEKANNT, farbe: "#7C8798" }], aktiv: BEKANNT }));
+  return aufruf(erzeugeHandler({ vault: vault(), kern: k.kern, nodePfad: STABIL, vaultOptionen: { support }, ...extra }));
+};
 
 async function mitPfad(bin, fn) {
   const alt = { PATH: process.env.PATH, EXTRA: process.env.BRAIN_CLAUDE_EXTRA };
@@ -78,7 +84,8 @@ const ALTE_SERVER = [
   "/Applications/Kortex.app/Contents/Resources/mcp/brain-mcp.mjs",                                   // App-Paket
   "/Users/x/Library/Application Support/Kortex/kern/0.9.0/mcp/brain-mcp.mjs",                         // früherer Kern-Ordner
 ];
-const KIT_SERVER = "/Users/x/brain/.tools/mcp/brain-mcp.mjs"; // Kit-Zeit: Server im Vault
+const KIT_SERVER = join(BEKANNT, ".tools/mcp/brain-mcp.mjs"); // Kit-Zeit: Server im Vault, der in vaults.json steht
+const KIT_UNBEKANNT = "/Users/x/anderswo/.tools/mcp/brain-mcp.mjs"; // dasselbe unter einem Ordner, den die App nicht kennt → fremder Eintrag
 
 test("kernOrdner: KORTEX_KERN_PFAD gilt allein (auch wenn er fehlt), sonst Ressourcen/kern neben gemeinsam/", () => {
   assert.equal(kernOrdner({ env: { KORTEX_KERN_PFAD: "/x/bin/kern" } }), "/x/bin/kern");
@@ -135,6 +142,7 @@ test("Claude: fremde Befehle oder fremde Server → weiter 409 und unverändert"
     ["/usr/bin/fremd", ALTE_SERVER[0]],                     // fremder Befehl mit altem Server
     [ALT_NODE, "/anderer/server.mjs"],                       // alter Node mit fremdem Server
     [STABIL, "/Users/x/brain/.tools/lib/hilfe.mjs"],         // .tools, aber kein MCP-Server
+    [STABIL, KIT_UNBEKANNT], ["/opt/homebrew/bin/node", KIT_UNBEKANNT], // .tools-Server unter einem unbekannten Vault: fremd
     ["/usr/bin/fremd", KIT_SERVER],                          // .tools-Server mit Befehl, der kein node ist
     ["/Users/x/bin/node-fremd", KIT_SERVER],
     [STABIL, `${ALTE_SERVER[0]} --extra`],                   // zusätzliche Argumente
@@ -187,7 +195,7 @@ test("Cursor: früherer Eintrag → ohne Rückfrage auf den Kern umgestellt (mit
     assert.deepEqual(JSON.parse(readFileSync(datei, "utf8")), { mcpServers: { anderes, brain: { command: STABIL, args: [neu] } } });
     assert.deepEqual((await rufe("POST", "/api/mcp/verbinden", { ziel: "cursor" })).j, { ok: true, schonVerbunden: true });
   }
-  const fremd = { mcpServers: { brain: { command: "/usr/bin/fremd", args: [KIT_SERVER] } } };
+  const fremd = { mcpServers: { brain: { command: "/opt/homebrew/bin/node", args: [KIT_UNBEKANNT] } } };
   writeFileSync(datei, JSON.stringify(fremd));
   assert.equal((await rufe("POST", "/api/mcp/verbinden", { ziel: "cursor" })).status, 409);
   assert.deepEqual(JSON.parse(readFileSync(datei, "utf8")), fremd, "unverändert");

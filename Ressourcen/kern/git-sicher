@@ -1,36 +1,50 @@
 #!/bin/sh
 # git-sicher — der einzige Weg, auf dem der Kern git startet (werkzeug.mjs#gitBefehl liefert den Pfad dieser Datei).
 #
-# Vault-Inhalte dürfen nie ein Programm starten (Kern-Umzug P4, Sicherheit): Ein geklonter fremder Vault bringt seine eigene
-# .git/config und .gitattributes mit. Darum
-#  1. wird git nur über feste Orte gefunden (Homebrew, /usr/local, /usr/bin), nie über PATH oder einen Pfad aus dem Vault;
-#     BRAIN_GIT_PROGRAMM (absolut, aus der Umgebung des Aufrufers — Tests) ersetzt die Suche;
+# Vault-Inhalte dürfen nie ein Programm starten und nie außerhalb des Vaults schreiben (Kern-Umzug P4, Sicherheit): Ein geklonter
+# fremder Vault bringt seine eigene .git/config, .gitattributes und .git-Datei mit. Darum
+#  1. wird git nur über feste Orte gefunden (Homebrew, /usr/local, /usr/bin), nie über PATH oder einen Pfad aus dem Vault.
+#     Die Umgebungsvariablen BRAIN_GIT_PROGRAMM (absoluter git-Pfad) und BRAIN_GIT_HOOKS_ERLAUBT (Hook-Ordner, durch ":" getrennt)
+#     gelten nur in der Testumgebung (KORTEX_KERN_UNSTABIL_ERLAUBT=1 oder BRAIN_TESTMODUS=1); die App setzt beides nie, ein Vault nie;
 #  2. laufen alle Unterbefehle außer `config` mit Befehlszeilen-Einstellungen, die die des Vaults schlagen — dieselben wie die
-#     Werkstatt (Ressourcen/gemeinsam/git.mjs: GRUND, OHNE_HOOKS, OHNE_SIGNIEREN; Test: Tests/Kern/test-git-sicher.mjs):
+#     Werkstatt (Ressourcen/gemeinsam/git.mjs: GRUND, OHNE_HOOKS, OHNE_SIGNIEREN; Test: Tests/Node/kern-git-haertung.test.mjs):
 #     kein core.fsmonitor, keine Hooks (core.hooksPath=/dev/null), kein ext::-Transport, keine Submodule, keine Signierung.
 #     Einzige Ausnahme für Hooks: ist core.hooksPath der Repo-Konfiguration genau der Ordner git-hooks DIESES Kerns (so richtet
 #     install-git-hooks.mjs den Schutz ein, den auch die Pflege-Arbeitskopien brauchen), laufen diese Hooks — Code aus dem Kern, nie
-#     aus dem Vault; jeder andere Wert und jedes .git/hooks/ im Vault bleibt aus. (BRAIN_GIT_HOOKS_ERLAUBT — Ordner, durch ":" getrennt, aus
-#     der Umgebung des Aufrufers — erlaubt weitere Hook-Ordner; nur die Tests setzen es, ein Vault kann es nicht);
-#  3. verweigert die Datei den Dienst (Exit 126), wenn die lokale Konfiguration des Repos (auch per include.path) ein Programm
-#     eintragen kann, das sich nicht per Option abschalten lässt: immer gpg.*.program, filter.*.clean/smudge/process, merge.*.driver,
-#     diff.external, diff.*.command/textconv; bei Befehlen, die ins Netz gehen (fetch, pull, push, clone, ls-remote, remote, submodule),
-#     zusätzlich credential.helper, core.askPass, core.gitProxy, core.alternateRefsCommand, remote.*.uploadpack/receivepack/vcs
-#     (Liste: gemeinsam/vertrauen.mjs#GEFAEHRLICH, ergänzt um die Diff-Programme). `init` und `clone` ohne -C lesen keine fremde
-#     Konfiguration (das Arbeitsverzeichnis ist dann nicht das Ziel);
-#  4. gelten GIT_TERMINAL_PROMPT=0, GIT_EDITOR=: , kein Pager und für Netzwerk-Befehle ein ssh ohne Rückfrage (core.sshCommand des
-#     Vaults wird so nie wirksam; die globale Einstellung des Nutzers bleibt).
-# Der Kern kennt keine Vertrauensfrage: wer eine solche Einstellung in einem Vault braucht, nutzt git im Terminal.
+#     aus dem Vault; jeder andere Wert und jedes .git/hooks/ im Vault bleibt aus;
+#  3. verweigert die Datei bei JEDEM Befehl den Dienst (Exit 126), wenn die lokale Konfiguration des Repos (auch per include.path)
+#     ein Programm eintragen kann, das sich nicht per Option abschalten lässt: gpg.*.program, filter.*.clean/smudge/process,
+#     merge.*.driver, diff.external, diff.*.command/textconv, credential.helper, core.askPass, core.gitProxy, core.alternateRefsCommand,
+#     core.sshCommand, remote.*.uploadpack/receivepack/vcs (Liste: gemeinsam/vertrauen.mjs#GEFAEHRLICH, ergänzt um die Diff-Programme
+#     und core.sshCommand). Auch Befehle, die nur lesen, können nachladen (Partial Clone: remote.*.promisor, extensions.partialClone,
+#     remote.*.partialCloneFilter → Exit 126; zusätzlich GIT_NO_LAZY_FETCH=1), und dann liefen uploadpack/ssh/credential-Programme.
+#     `init`, `clone` und `merge-file` ohne -C lesen keine fremde Konfiguration (das Arbeitsverzeichnis ist dann nicht das Ziel);
+#  4. verweigert die Datei den Dienst, wenn der Arbeitsbaum oder das Git-Verzeichnis aus dem Ordner hinauszeigt, in dem sie läuft
+#     (-C): core.worktree, core.bare, ein Arbeitsbaum, der kein Elternordner des Ordners ist, oder ein gemeinsames Git-Verzeichnis
+#     außerhalb des Arbeitsbaums (`.git` als Datei mit gitdir: nach draußen). reset --hard, merge, mv, worktree add schrieben sonst
+#     in fremde Ordner oder Repos. Ausgenommen sind die Arbeitskopien des Tageslaufs unter <Home>/Library/Caches/brain-tageslauf
+#     (verknüpfte Arbeitsbäume des Vaults, vom Kern selbst angelegt);
+#  5. gelten GIT_TERMINAL_PROMPT=0, GIT_EDITOR=: , kein Pager und IMMER ein ssh ohne Rückfrage (GIT_SSH_COMMAND; die globale Einstellung
+#     des Nutzers bleibt bei Netzbefehlen erhalten).
+# Folge: Ein Vault mit lokalem credential.helper, core.sshCommand oder Partial Clone arbeitet im Kern ohne git (Online-Sicherung, Push der
+# Sitzungs-Sicherung, Verlauf …); wer das braucht, nutzt git im Terminal oder legt den Helper in die globale Konfiguration.
 # `config` bleibt unverändert (install-git-hooks.mjs liest und schreibt core.hooksPath); es startet nichts.
 LC_ALL=C
 export LC_ALL
+
+TEST=0
+if [ "$KORTEX_KERN_UNSTABIL_ERLAUBT" = 1 ] || [ "$BRAIN_TESTMODUS" = 1 ]; then TEST=1; fi
+
 ECHT=
-case "$BRAIN_GIT_PROGRAMM" in
-  /*) [ -x "$BRAIN_GIT_PROGRAMM" ] && ECHT="$BRAIN_GIT_PROGRAMM" ;;
-  *) for g in /opt/homebrew/bin/git /usr/local/bin/git /usr/bin/git; do
-       if [ -x "$g" ]; then ECHT="$g"; break; fi
-     done ;;
-esac
+if [ "$TEST" = 1 ] && [ -n "$BRAIN_GIT_PROGRAMM" ]; then
+  case "$BRAIN_GIT_PROGRAMM" in
+    /*) [ -x "$BRAIN_GIT_PROGRAMM" ] && ECHT="$BRAIN_GIT_PROGRAMM" ;;
+  esac
+else
+  for g in /opt/homebrew/bin/git /usr/local/bin/git /usr/bin/git; do
+    if [ -x "$g" ]; then ECHT="$g"; break; fi
+  done
+fi
 if [ -z "$ECHT" ]; then echo "git-sicher: git wurde nicht gefunden." >&2; exit 127; fi
 
 # Unterbefehl und -C-Ordner aus den Optionen vor dem Unterbefehl lesen
@@ -50,34 +64,60 @@ case "$sub" in
   ""|config|help|version) exec "$ECHT" "$@" ;;
 esac
 
-IMMER='gpg\.program|gpg\.[^=]*\.program|gpg\.ssh\.[^=]*(program|command)|merge\.[^=]*\.driver|filter\.[^=]*\.(clean|smudge|process)|diff\.external|diff\.[^=]*\.(command|textconv)'
-NETZ='credential(\.[^=]*)?\.helper|core\.askpass|core\.gitproxy|core\.alternaterefscommand|remote\.[^=]*\.(uploadpack|receivepack|vcs)'
-GEFAHR="^(local|worktree)[[:space:]]+($IMMER)="
-case "$sub" in
-  fetch|pull|push|clone|ls-remote|remote|submodule) GEFAHR="^(local|worktree)[[:space:]]+($IMMER|$NETZ)=" ;;
-esac
+verweigere() { echo "git-sicher: git ist für diesen Ordner gesperrt: $1" >&2; exit 126; }
+
+GEFAHR='^(local|worktree)[[:space:]]+(gpg\.program|gpg\.[^=]*\.program|gpg\.ssh\.[^=]*(program|command)|merge\.[^=]*\.driver|filter\.[^=]*\.(clean|smudge|process)|diff\.external|diff\.[^=]*\.(command|textconv)|credential(\.[^=]*)?\.helper|core\.askpass|core\.gitproxy|core\.alternaterefscommand|core\.sshcommand|remote\.[^=]*\.(uploadpack|receivepack|vcs|partialclonefilter)|extensions\.partialclone|remote\.[^=]*\.promisor=(true|yes|on|1)$|core\.worktree|core\.bare=(true|yes|on|1)$)'
+
 konfig=
-if [ "$dir" != . ] || { [ "$sub" != init ] && [ "$sub" != clone ]; }; then
-konfig=$("$ECHT" -C "$dir" -c core.fsmonitor=false -c core.hooksPath=/dev/null -c protocol.ext.allow=never \
-  config --list --show-scope --includes 2>/dev/null)
+pruefen=0
+# init, clone und merge-file (reine Dateioperation) ohne -C: das Arbeitsverzeichnis ist nicht das Ziel, seine Konfiguration zählt nicht
+if [ "$dir" != . ] || { [ "$sub" != init ] && [ "$sub" != clone ] && [ "$sub" != merge-file ]; }; then
+  pruefen=1
+  konfig=$("$ECHT" -C "$dir" -c core.fsmonitor=false -c core.hooksPath=/dev/null -c protocol.ext.allow=never \
+    config --list --show-scope --includes 2>/dev/null)
 fi
 treffer=$(printf '%s\n' "$konfig" | /usr/bin/grep -Ei "$GEFAHR" | /usr/bin/head -n 1)
 if [ -n "$treffer" ]; then
   schluessel=$(printf '%s' "$treffer" | /usr/bin/sed -e 's/^[a-z]*[[:space:]]*//' -e 's/=.*$//')
-  echo "git-sicher: git ist für diesen Ordner gesperrt: die Konfiguration enthält $schluessel (kann ein Programm starten)." >&2
-  exit 126
+  verweigere "die Konfiguration enthält $schluessel (kann ein Programm starten, nachladen oder aus dem Ordner hinaus schreiben)."
 fi
 
-GIT_TERMINAL_PROMPT=0; GIT_EDITOR=:; GIT_SEQUENCE_EDITOR=:; GIT_PAGER=cat
-export GIT_TERMINAL_PROMPT GIT_EDITOR GIT_SEQUENCE_EDITOR GIT_PAGER
-case "$sub" in
-  fetch|pull|push|clone|ls-remote|remote)
-    if [ -z "$GIT_SSH_COMMAND" ]; then
-      GIT_SSH_COMMAND=$("$ECHT" -c core.fsmonitor=false config --global --get core.sshcommand 2>/dev/null)
-      [ -n "$GIT_SSH_COMMAND" ] || GIT_SSH_COMMAND="ssh -o BatchMode=yes"
-      export GIT_SSH_COMMAND
-    fi ;;
-esac
+# Arbeitsbaum und Git-Verzeichnis müssen im Ordner liegen, in dem wir laufen
+if [ "$pruefen" = 1 ]; then
+  lage=$("$ECHT" -C "$dir" -c core.fsmonitor=false -c core.hooksPath=/dev/null \
+    rev-parse --path-format=absolute --show-toplevel --git-common-dir 2>/dev/null)
+  top=$(printf '%s\n' "$lage" | /usr/bin/sed -n 1p)
+  common=$(printf '%s\n' "$lage" | /usr/bin/sed -n 2p)
+  if [ -n "$top" ] && [ -n "$common" ]; then
+    top=$(cd "$top" 2>/dev/null && pwd -P)
+    common=$(cd "$common" 2>/dev/null && pwd -P)
+    hier=$(cd "$dir" 2>/dev/null && pwd -P)
+    [ -n "$top" ] && [ -n "$common" ] && [ -n "$hier" ] || verweigere "Arbeitsbaum oder Git-Verzeichnis sind nicht lesbar."
+    case "$hier/" in "$top"/*) ;; *) verweigere "der Arbeitsbaum ($top) liegt nicht über dem Ordner ($hier)." ;; esac
+    cache=
+    if [ -n "$HOME" ]; then cache=$(cd "$HOME/Library/Caches/brain-tageslauf" 2>/dev/null && pwd -P); fi
+    if [ "$TEST" = 1 ] && [ -n "$BRAIN_TAGESLAUF_CACHE" ]; then cache2=$(cd "$BRAIN_TAGESLAUF_CACHE" 2>/dev/null && pwd -P); else cache2=; fi
+    kopie=0
+    for c in "$cache" "$cache2"; do
+      if [ -n "$c" ]; then case "$top/" in "$c"/*) kopie=1 ;; esac; fi
+    done
+    if [ "$kopie" = 0 ]; then
+      case "$common/" in "$top"/*) ;; *) verweigere "das Git-Verzeichnis ($common) liegt außerhalb des Arbeitsbaums ($top)." ;; esac
+    fi
+  fi
+fi
+
+GIT_TERMINAL_PROMPT=0; GIT_EDITOR=:; GIT_SEQUENCE_EDITOR=:; GIT_PAGER=cat; GIT_NO_LAZY_FETCH=1
+export GIT_TERMINAL_PROMPT GIT_EDITOR GIT_SEQUENCE_EDITOR GIT_PAGER GIT_NO_LAZY_FETCH
+if [ -z "$GIT_SSH_COMMAND" ]; then
+  GIT_SSH_COMMAND=
+  case "$sub" in
+    fetch|pull|push|clone|ls-remote|remote)
+      GIT_SSH_COMMAND=$("$ECHT" -c core.fsmonitor=false config --global --get core.sshcommand 2>/dev/null) ;;
+  esac
+  [ -n "$GIT_SSH_COMMAND" ] || GIT_SSH_COMMAND="ssh -o BatchMode=yes"
+  export GIT_SSH_COMMAND
+fi
 
 # Hooks nur aus dem Hook-Ordner dieses Kerns (siehe Kopf)
 HOOKS=/dev/null
@@ -86,7 +126,7 @@ hp=$(printf '%s\n' "$konfig" | /usr/bin/grep -Ei '^(local|worktree)[[:space:]]+c
 case "$hp" in
   /*) real=$(cd "$hp" 2>/dev/null && pwd -P)
       if [ -n "$real" ] && [ -n "$kerndir" ] && [ "$real" = "$kerndir/git-hooks" ]; then HOOKS="$real"; fi
-      if [ -n "$real" ] && [ -n "$BRAIN_GIT_HOOKS_ERLAUBT" ]; then
+      if [ "$TEST" = 1 ] && [ -n "$real" ] && [ -n "$BRAIN_GIT_HOOKS_ERLAUBT" ]; then
         alt_ifs=$IFS; IFS=:
         for h in $BRAIN_GIT_HOOKS_ERLAUBT; do
           [ -n "$h" ] && [ "$(cd "$h" 2>/dev/null && pwd -P)" = "$real" ] && HOOKS="$real"

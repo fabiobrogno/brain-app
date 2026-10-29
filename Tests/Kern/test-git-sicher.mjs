@@ -5,7 +5,7 @@
 // Wege ohne die Härtung wirklich Marken schreiben würden (sonst bewiese „keine Marke“ nichts).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, mkdirSync, existsSync, chmodSync, cpSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, existsSync, chmodSync, cpSync, readFileSync, rmSync, readdirSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -99,10 +99,9 @@ test("werkzeuge.* in der brain.config.json des Vaults startet nie ein Programm (
   assert.deepEqual(s.marken(), [], "ein Programm aus brain.config.json ist gelaufen");
 });
 
-test("Einstellungen der .git/config, die git neutralisiert (fsmonitor, Hooks, ssh, Editor): nichts läuft, der Kern arbeitet weiter", async () => {
+test("Einstellungen der .git/config, die git neutralisiert (fsmonitor, Hooks, Editor): nichts läuft, der Kern arbeitet weiter", async () => {
   const s = neuerVault();
   g(s.v, "config", "core.fsmonitor", s.programm("fsmonitor.sh"));
-  g(s.v, "config", "core.sshCommand", s.programm("ssh.sh"));
   g(s.v, "config", "core.editor", s.programm("editor.sh"));
   g(s.v, "config", "core.hooksPath", join(s.v, "eigene-hooks"));
   mkdirSync(join(s.v, "eigene-hooks"));
@@ -125,20 +124,20 @@ test("Einstellungen der .git/config, die git neutralisiert (fsmonitor, Hooks, ss
 // Schlüssel, die ein Programm starten und sich nicht per Option abschalten lassen → git-sicher verweigert (Exit 126)
 const IMMER = [["gpg.program"], ["gpg.x509.program"], ["gpg.ssh.defaultKeyCommand"], ["merge.x.driver"], ["filter.x.clean"], ["filter.x.smudge"], ["filter.x.process"],
   ["diff.external"], ["diff.x.command"], ["diff.x.textconv"]];
+// Netz-Schlüssel gelten bei JEDEM Befehl: auch lesende Befehle laden bei einem Partial Clone nach und starten dann diese Programme
 const NETZ = [["credential.helper"], ["credential.https://example.org.helper"], ["core.askpass"], ["core.gitproxy"], ["core.alternaterefscommand"],
-  ["remote.o.uploadpack"], ["remote.o.receivepack"], ["remote.o.vcs"]];
+  ["remote.o.uploadpack"], ["remote.o.receivepack"], ["remote.o.vcs"], ["core.sshCommand"]];
 
 test("gefährliche Programm-Schlüssel der .git/config: git-sicher verweigert, nichts läuft; brain-Befehle laufen ohne Absturz", async () => {
   for (const [schluessel] of [...IMMER, ...NETZ]) {
     const s = neuerVault();
     const evil = s.programm("evil.sh", "cat");
     g(s.v, "config", schluessel, evil);
-    const netz = NETZ.some(([k]) => k === schluessel);
-    const sub = netz ? ["fetch", "--quiet"] : ["status", "--porcelain"];
-    if (netz) g(s.v, "config", "remote.o.url", join(s.basis, "gibt-es-nicht.git")); // ein Ziel ohne Netz; die Konfiguration entscheidet vorher
-    const r = spawnSync(SICHER, ["-C", s.v, ...sub], { env: ENV, encoding: "utf8" });
-    assert.equal(r.status, 126, `${schluessel}: erwartet Exit 126, war ${r.status} (${r.stderr})`);
-    assert.match(r.stderr, /gesperrt/, schluessel);
+    for (const sub of [["status", "--porcelain"], ["cat-file", "-t", "HEAD"], ["log", "-1", "--format=%H"], ["fetch", "--quiet"]]) {
+      const r = spawnSync(SICHER, ["-C", s.v, ...sub], { env: ENV, encoding: "utf8" });
+      assert.equal(r.status, 126, `${schluessel} (${sub[0]}): erwartet Exit 126, war ${r.status} (${r.stderr})`);
+      assert.match(r.stderr, /gesperrt/, schluessel);
+    }
     assert.deepEqual(s.marken(), [], `${schluessel}: Programm lief`);
   }
 });
@@ -203,5 +202,152 @@ test("Der Kern startet git nur über git-sicher: kein nacktes 'git', kein Pfad a
   lies(KERN);
   assert.deepEqual(treffer, [], "nacktes git als Programm");
 });
-import { readdirSync } from "node:fs";
 function readdirSyncMitTyp(d) { return readdirSync(d, { withFileTypes: true }); }
+
+// ------------------------------------------------------------------------------------------------------------------------------
+// Review-Befunde P4 (Opus): Partial-Clone-Nachladen, Arbeitsbaum/Git-Verzeichnis nach außen, Ordnernamen, Testschalter
+
+// Ein Server (bare), ein Partial Clone (ohne Blobs) davon; die .git/config des Klons nennt einen uploadpack mit Marke.
+function partialClone() {
+  const s = neuerVault();
+  const server = join(s.basis, "server.git");
+  const w = join(s.basis, "werk"); mkdirSync(w);
+  g(w, "init", "-q", "-b", "main"); writeFileSync(join(w, "f.md"), "Inhalt\n"); g(w, "add", "--", "f.md"); g(w, "commit", "-q", "-m", "f");
+  execFileSync(GIT, ["clone", "-q", "--bare", w, server], { env: ENV });
+  g(server, "config", "uploadpack.allowFilter", "true"); g(server, "config", "uploadpack.allowAnySHA1InWant", "true");
+  const klon = join(s.basis, "klon");
+  execFileSync(GIT, ["clone", "-q", "--filter=blob:none", "--no-checkout", `file://${server}`, klon], { env: ENV });
+  const echt = execFileSync(GIT, ["--exec-path"], { env: ENV, encoding: "utf8" }).trim();
+  const prog = join(s.basis, "uploadpack.sh");
+  writeFileSync(prog, `#!/bin/sh\necho uploadpack >> '${s.marke}'\nexec '${echt}/git-upload-pack' "$@"\n`); chmodSync(prog, 0o755);
+  g(klon, "config", "remote.origin.uploadpack", prog);
+  return { ...s, klon };
+}
+
+test("Partial Clone: lesende Befehle laden Blobs nach und starten uploadpack/ssh — git-sicher sperrt, ohne die Sperre liefe das Programm (Kontrolle)", () => {
+  const s = partialClone();
+  // Kontrolle: einfaches git holt den fehlenden Blob beim Lesen nach und startet dabei den eingetragenen uploadpack
+  g(s.klon, "cat-file", "-p", "HEAD:f.md");
+  assert.ok(s.marken().includes("uploadpack"), "einfaches git lädt beim Lesen nach und startet uploadpack");
+  // frischer Klon (der Blob fehlt wieder), jetzt über git-sicher
+  const t = partialClone();
+  for (const sub of [["cat-file", "-p", "HEAD:f.md"], ["checkout", "-q", "HEAD", "--", "f.md"], ["log", "-p", "-1"], ["worktree", "add", join(t.basis, "w2")], ["checkout-index", "-a"]]) {
+    const r = spawnSync(SICHER, ["-C", t.klon, ...sub], { env: ENV, encoding: "utf8" });
+    assert.equal(r.status, 126, `${sub[0]}: ${r.status} ${r.stderr}`);
+  }
+  assert.deepEqual(t.marken(), [], "über git-sicher lief kein Programm");
+  // auch ohne uploadpack/ssh-Schlüssel in der Konfiguration: Partial Clone selbst ist gesperrt (kein stilles Nachladen aus dem Netz)
+  const u = partialClone(); g(u.klon, "config", "--unset", "remote.origin.uploadpack");
+  assert.equal(spawnSync(SICHER, ["-C", u.klon, "cat-file", "-p", "HEAD:f.md"], { env: ENV }).status, 126);
+  g(u.klon, "config", "--unset", "remote.origin.promisor"); g(u.klon, "config", "--unset", "remote.origin.partialclonefilter");
+  // ohne die Marker eines Partial Clones läuft git-sicher wieder (der Blob fehlt, git scheitert selbst — nicht mit 126)
+  assert.notEqual(spawnSync(SICHER, ["-C", u.klon, "cat-file", "-p", "HEAD:f.md"], { env: ENV }).status, 126);
+  // jeder einzelne Marker eines Partial Clones sperrt (auch die ältere Form extensions.partialclone)
+  for (const [k, w] of [["remote.origin.promisor", "true"], ["remote.origin.partialclonefilter", "blob:none"], ["extensions.partialclone", "origin"]]) {
+    g(u.klon, "config", k, w);
+    assert.equal(spawnSync(SICHER, ["-C", u.klon, "status", "--porcelain"], { env: ENV }).status, 126, k);
+    g(u.klon, "config", "--unset", k);
+  }
+  // und GIT_NO_LAZY_FETCH steht im Skript (zweite Verteidigung)
+  assert.match(readFileSync(SICHER, "utf8"), /GIT_NO_LAZY_FETCH=1/);
+  // ssh: GIT_SSH_COMMAND gilt immer (hier für einen lesenden Befehl): der Wert ist der Standard, nicht der aus dem Vault
+  assert.match(readFileSync(SICHER, "utf8"), /GIT_SSH_COMMAND="ssh -o BatchMode=yes"/);
+});
+
+test("core.worktree / .git-Datei mit gitdir: nach außen: reset --hard, merge, mv, worktree add schreiben nirgends außerhalb — git-sicher verweigert", () => {
+  const s = neuerVault();
+  // (a) core.worktree zeigt auf einen fremden Ordner mit Dateien
+  const fremd = join(s.basis, "fremd"); mkdirSync(fremd); writeFileSync(join(fremd, "wichtig.md"), "fremd\n");
+  g(s.v, "config", "core.worktree", fremd);
+  for (const sub of [["reset", "--hard", "HEAD"], ["checkout", "--", "."], ["status", "--porcelain"], ["mv", "a", "b"], ["worktree", "add", join(s.basis, "w")]]) {
+    const r = spawnSync(SICHER, ["-C", s.v, ...sub], { env: ENV, encoding: "utf8" });
+    assert.equal(r.status, 126, `core.worktree ${sub[0]}: ${r.status} ${r.stderr}`);
+  }
+  assert.equal(readFileSync(join(fremd, "wichtig.md"), "utf8"), "fremd\n");
+  // (b) .git als Datei mit gitdir: nach außen — ein fremdes Repo X würde zurückgesetzt
+  const x = join(s.basis, "X"); mkdirSync(x); g(x, "init", "-q", "-b", "main");
+  writeFileSync(join(x, "z.md"), "1\n"); g(x, "add", "--", "z.md"); g(x, "commit", "-q", "-m", "eins");
+  writeFileSync(join(x, "z.md"), "2\n"); g(x, "add", "--", "z.md"); g(x, "commit", "-q", "-m", "zwei");
+  const vor = g(x, "rev-parse", "HEAD").trim();
+  const e = join(s.basis, "Eingang"); mkdirSync(e);
+  writeFileSync(join(e, ".git"), `gitdir: ${join(x, ".git")}\n`);
+  // Kontrolle: einfaches git setzt das fremde Repo X zurück (und den Ordner Eingang auf dessen Stand)
+  g(e, "reset", "-q", "--hard", "HEAD~1");
+  assert.notEqual(g(x, "rev-parse", "HEAD").trim(), vor, "Kontrolle: git schrieb in das fremde Repo");
+  g(x, "reset", "-q", "--hard", vor);
+  for (const sub of [["reset", "--hard", "HEAD~1"], ["merge", "--ff-only", "HEAD"], ["mv", "z.md", "y.md"], ["worktree", "add", join(s.basis, "w3")], ["status", "--porcelain"]]) {
+    const r = spawnSync(SICHER, ["-C", e, ...sub], { env: ENV, encoding: "utf8" });
+    assert.equal(r.status, 126, `gitdir nach außen ${sub[0]}: ${r.status} ${r.stderr}`);
+  }
+  assert.equal(g(x, "rev-parse", "HEAD").trim(), vor, "das fremde Repo blieb unberührt");
+  assert.equal(readFileSync(join(x, "z.md"), "utf8"), "2\n");
+  // (c) ein normaler Vault und ein Unterordner davon laufen weiter
+  assert.equal(spawnSync(SICHER, ["-C", s.v, "-c", "core.worktree=", "status", "--porcelain"], { env: ENV }).status === 126, true, "core.worktree bleibt gesperrt");
+  const t = neuerVault();
+  assert.equal(spawnSync(SICHER, ["-C", t.v, "status", "--porcelain"], { env: ENV }).status, 0);
+  assert.equal(spawnSync(SICHER, ["-C", join(t.v, "09_wiki"), "rev-parse", "--show-toplevel"], { env: ENV }).status, 0, "ein Unterordner des Vaults ist erlaubt");
+});
+
+test("Arbeitskopien des Tageslaufs (verknüpfte Arbeitsbäume unter dem Cache-Ordner) laufen; ein verknüpfter Arbeitsbaum anderswo nicht", () => {
+  const s = neuerVault();
+  const cache = join(s.basis, "cache"); mkdirSync(cache);
+  const kopie = join(cache, "lauf1");
+  g(s.v, "worktree", "add", "-q", "-b", "tageslauf/x", kopie, "main");
+  const mit = { ...ENV, BRAIN_TAGESLAUF_CACHE: cache };
+  assert.equal(spawnSync(SICHER, ["-C", kopie, "status", "--porcelain"], { env: mit }).status, 0, "Kopie im Cache-Ordner");
+  assert.equal(spawnSync(SICHER, ["-C", kopie, "status", "--porcelain"], { env: ENV }).status, 126, "ohne den Cache-Ordner ist es ein verknüpfter Arbeitsbaum anderswo");
+  const anderswo = join(s.basis, "anderswo"); g(s.v, "worktree", "add", "-q", "-b", "tageslauf/y", anderswo, "main");
+  assert.equal(spawnSync(SICHER, ["-C", anderswo, "status", "--porcelain"], { env: mit }).status, 126, "verknüpfter Arbeitsbaum außerhalb des Cache-Ordners");
+});
+
+test("BRAIN_GIT_PROGRAMM und BRAIN_GIT_HOOKS_ERLAUBT gelten nur in der Testumgebung", () => {
+  const s = neuerVault();
+  const ohneTest = { ...ENV }; delete ohneTest.KORTEX_KERN_UNSTABIL_ERLAUBT; delete ohneTest.BRAIN_TESTMODUS;
+  // ein Programm, das eine Marke schreibt, als „git“ untergeschoben: in der Produktivumgebung wird es nicht benutzt
+  const falsch = s.programm("falsches-git.sh", "exit 0");
+  const r = spawnSync(SICHER, ["-C", s.v, "status", "--porcelain"], { env: { ...ohneTest, BRAIN_GIT_PROGRAMM: falsch }, encoding: "utf8" });
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(s.marken(), [], "BRAIN_GIT_PROGRAMM wurde ausgewertet");
+  const mitTest = spawnSync(SICHER, ["-C", s.v, "status", "--porcelain"], { env: { ...ENV, KORTEX_KERN_UNSTABIL_ERLAUBT: "1", BRAIN_GIT_PROGRAMM: falsch }, encoding: "utf8" });
+  assert.ok(s.marken().includes("falsches-git.sh"), "in der Testumgebung gilt es");
+  void mitTest; s.weg();
+  // Hook-Ordner aus der Umgebung
+  const eigene = join(s.v, "eigene-hooks"); mkdirSync(eigene);
+  const hook = join(eigene, "pre-commit"); writeFileSync(hook, `#!/bin/sh\necho hook >> '${s.marke}'\n`); chmodSync(hook, 0o755);
+  g(s.v, "config", "core.hooksPath", eigene);
+  writeFileSync(join(s.v, "a.md"), "a\n"); g(s.v, "add", "--", "a.md");
+  assert.equal(spawnSync(SICHER, ["-C", s.v, "commit", "-q", "-m", "a"], { env: { ...ohneTest, BRAIN_GIT_HOOKS_ERLAUBT: eigene } }).status, 0);
+  assert.deepEqual(s.marken(), [], "BRAIN_GIT_HOOKS_ERLAUBT wurde in der Produktivumgebung ausgewertet");
+});
+
+test("Ordnernamen aus brain.config.json: nur ein einzelnes relatives Segment; '../aussen' fällt auf den Standard, nichts landet draußen", () => {
+  const s = neuerVault();
+  const aussen = join(s.basis, "aussen"); mkdirSync(aussen);
+  const cfgDatei = join(s.v, "brain.config.json");
+  const cfg = JSON.parse(readFileSync(cfgDatei, "utf8"));
+  cfg.ordner = { wiki: "../aussen", inbox: "/tmp/absolut", archiv: "a/b" };
+  cfg.wiki = { ...(cfg.wiki || {}), ordner: "../aussen" };
+  writeFileSync(cfgDatei, JSON.stringify(cfg));
+  for (const a of [["status", "--json"], ["index"], ["lint"], ["gesundheit", "--json"], ["pflege"]]) kern(s.v, a);
+  assert.deepEqual(readdirSync(aussen), [], "außerhalb des Vaults wurde geschrieben");
+  assert.deepEqual(readdirSync(s.basis).sort(), ["Vault_Eins", "aussen"].sort(), "neben dem Vault entstand nichts");
+  assert.ok(!existsSync(join(s.basis, "absolut")));
+});
+
+test(".logs (und andere Schreibziele) als Verweis nach außen: der Ordner gilt nicht als Vault, Befehle enden mit Exit 2, Hooks still mit Exit 0, nichts wird draußen geschrieben", () => {
+  for (const ziel of [".logs", "AGENTS.md", "graph.json", "09_wiki"]) {
+    const s = neuerVault();
+    const aussen = join(s.basis, "aussen"); mkdirSync(aussen);
+    const innen = join(s.v, ziel);
+    rmSync(innen, { recursive: true, force: true });
+    symlinkSync(ziel.includes(".") && !ziel.startsWith(".") ? join(aussen, "datei") : aussen, innen);
+    for (const a of [["status", "--json"], ["gesundheit", "--json"], ["index"], ["pflege"]]) {
+      const r = kern(s.v, a);
+      assert.equal(r.status, 2, `${ziel}: brain ${a[0]} erwartet Exit 2, war ${r.status} (${r.stderr})`);
+      assert.match(String(r.stderr), /zeigt aus dem Ordner hinaus/, ziel);
+    }
+    const hook = spawnSync(NODE, [join(KERN, "adapters", "claude-code", "session-start.mjs")], { input: "{}", encoding: "utf8", env: { ...ENV, BRAIN_VAULT: s.v }, timeout: 60_000 });
+    assert.equal(hook.status, 0, `${ziel}: Hook endet still mit Exit 0`);
+    assert.deepEqual(readdirSync(aussen), [], `${ziel}: außerhalb des Vaults wurde geschrieben`);
+  }
+});

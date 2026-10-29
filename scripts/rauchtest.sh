@@ -18,8 +18,10 @@
 #     ('node_modules/.bin:$PATH') und mit den Aktionen `vertrauen-geaendert` und `ansicht` aus der Studio-Oberfläche (--test-skript,
 #     BRAIN_TESTMODUS=1). Der Vault ist nicht vertraut; trotzdem darf das alte .tools NIE laufen (der Kern kommt aus dem Paket):
 #       haken    — Git-Einstellungen, die die App entschärft (Hooks, fsmonitor): Die Werkstatt committet sogar (Hooks aus), Marken: KEINE.
-#       gesperrt — Git-Einstellungen, die Programme starten und sich nicht entschärfen lassen (filter.*.clean, remote.*.uploadpack):
-#                  Git bleibt gesperrt (409), Marken: KEINE.
+#       gesperrt — Git-Einstellungen, die Programme starten und sich nicht entschärfen lassen (filter.*.clean, remote.*.uploadpack,
+#                  Partial Clone mit Nachladen, diff.external, credential.helper): Git bleibt gesperrt (409), Marken: KEINE.
+#       umleitung — core.worktree und .logs zeigen aus dem Vault hinaus, brain.config.json nennt Ordner wie „../aussen“: Der Kern
+#                  schreibt nichts außerhalb (Ordner vorher/nachher gleich), Marken: KEINE.
 #     Der Markenpfad steht fest in den Marken-Skripten (keine Umgebungsvariable, die eine bereinigte Umgebung verschluckt), und eine
 #     Kontrolle an einer Kopie des Vaults beweist vorher, dass jede Marke wirklich schreibt.
 # Keine Spuren (k11): am Ende steht unter der Test-Bundle-ID weder ein gemerkter Fensterrahmen noch ein Ordner in ~/Library/WebKit.
@@ -201,7 +203,7 @@ d_lauf() {
   # Ein Brain-Vault für den Kern (sonst wäre schon der Status "kein Brain"). Seine Konfiguration nennt als „Werkzeuge“ ein Skript im Vault, das
   # eine Marke schreibt, falls es je läuft: früher hätte `brain status` es als git gestartet (Kern-Umzug P4: Programme kommen nie aus dem Vault).
   d_marke_sh "$vd/werkzeug.sh" werkzeug "$marke"
-  printf '{"werkzeuge":{"git":"%s","qmd":"%s","claude":"%s","node":"%s","editor":"%s"}}\n' "$vd/werkzeug.sh" "$vd/werkzeug.sh" "$vd/werkzeug.sh" "$vd/werkzeug.sh" "$vd/werkzeug.sh" > "$vd/brain.config.json"
+  printf '{"werkzeuge":{"git":"%s","qmd":"%s","claude":"%s","node":"%s","editor":"%s"},"ordner":{"wiki":"../aussen3","inbox":"../aussen3","archiv":"../aussen3"}}\n' "$vd/werkzeug.sh" "$vd/werkzeug.sh" "$vd/werkzeug.sh" "$vd/werkzeug.sh" "$vd/werkzeug.sh" > "$vd/brain.config.json"
   # Ein altes Kit im Vault (brain status, Brücke der Übersicht): Es darf nie laufen, der Kern kommt aus dem App-Paket.
   d_marke_mjs "$vd/.tools/brain.mjs" brain.mjs "$marke" 'console.log(JSON.stringify({ version: "marke", quellVault: false, zustand: "ok", meldungen: [], zahlen: { vorschlaege: 0, konflikte: 0, abgelaufen: 0, zuTun: 0 } }));'
   d_marke_mjs "$vd/.tools/ansicht/bruecke.mjs" bruecke.mjs "$marke" 'process.stdout.write(JSON.stringify({ bereit: true, version: "marke" }) + "\n");
@@ -227,6 +229,8 @@ process.stdin.resume();'
       d_marke_sh "$basis/marken/uploadpack.sh" uploadpack "$marke"
       d_marke_sh "$basis/marken/diffext.sh" diff-extern "$marke"
       d_marke_sh "$basis/marken/cred.sh" credential-helper "$marke"
+      d_git -C "$vd" config remote.origin.promisor true         # Partial Clone: lesende Befehle würden nachladen (uploadpack/ssh)
+      d_git -C "$vd" config remote.origin.partialclonefilter blob:none
       d_git -C "$vd" config diff.external "$basis/marken/diffext.sh"
       d_git -C "$vd" config credential.helper "$basis/marken/cred.sh"
       printf '* filter=marke\n' > "$vd/.gitattributes"
@@ -236,6 +240,13 @@ process.stdin.resume();'
       d_git -C "$vd" config remote.origin.uploadpack "$basis/marken/uploadpack.sh"
       erwartet="brain.mjs bruecke.mjs werkzeug fremdes-git filter-clean uploadpack diff-extern"
       ;;
+    umleitung)
+      # Arbeitsbaum und .logs zeigen auf Ordner außerhalb des Vaults; „../aussen3“ steht schon in der Konfiguration (siehe oben).
+      mkdir -p "$basis/aussen" "$basis/aussen-logs"; printf 'fremd\n' > "$basis/aussen/wichtig.md"
+      d_git -C "$vd" config core.worktree "$basis/aussen"
+      ln -s "$basis/aussen-logs" "$vd/.logs"
+      erwartet="brain.mjs bruecke.mjs werkzeug fremdes-git"
+      ;;
   esac
   # Kontrolle: Jede Marke schreibt wirklich, wenn man das Programm ohne die Vorsicht der App laufen lässt (an einer KOPIE des Vaults).
   # Sonst bewiese 'keine Marke' nichts.
@@ -244,6 +255,13 @@ process.stdin.resume();'
   ( cd "$k" && PATH="node_modules/.bin:$PATH" git --version >/dev/null 2>&1 ) || true
   if [ "$art" = haken ]; then
     ( cd "$k" && printf 'x\n' >> notiz.md && d_git status -s >/dev/null 2>&1; d_git add notiz.md >/dev/null 2>&1; d_git commit -q -m Kontrolle >/dev/null 2>&1 ) || true
+  elif [ "$art" = umleitung ]; then
+    # Kontrolle: einfaches git schreibt mit core.worktree wirklich in den fremden Ordner (an einem eigenen kleinen Repo)
+    mkdir -p "$basis/kontrolle-u/aussen"; d_git init -q "$basis/kontrolle-u/v" && d_git -C "$basis/kontrolle-u/v" config user.name Probe && d_git -C "$basis/kontrolle-u/v" config user.email probe@example.invalid
+    printf 'a\n' > "$basis/kontrolle-u/v/a.md"; d_git -C "$basis/kontrolle-u/v" add a.md && d_git -C "$basis/kontrolle-u/v" commit -q -m a || fehl "D/$art: Kontroll-Commit"
+    d_git -C "$basis/kontrolle-u/v" config core.worktree "$basis/kontrolle-u/aussen"
+    d_git -C "$basis/kontrolle-u/v" reset -q --hard >/dev/null 2>&1 || true
+    [ -f "$basis/kontrolle-u/aussen/a.md" ] || fehl "D/$art: die Kontrolle schreibt mit core.worktree nicht in den fremden Ordner — der Test würde nichts beweisen"
   else
     ( cd "$k" && printf 'x\n' >> notiz.md && d_git add notiz.md >/dev/null 2>&1; d_git diff --cached >/dev/null 2>&1; d_git fetch -q origin >/dev/null 2>&1 ) || true
   fi
@@ -251,6 +269,9 @@ process.stdin.resume();'
     grep -qx "$m" "$marke" 2>/dev/null || { echo "Markendatei der Kontrolle:"; cat "$marke" 2>/dev/null || true; fehl "D/$art: Marke '$m' schreibt in der Kontrolle nicht — der Test würde nichts beweisen"; }
   done
   rm -rf "$k" "$marke"
+  # Stand der Ordner außerhalb des Vaults vor dem Lauf (Umleitung): danach muss er gleich sein
+  aussen_stand() { ( cd "$basis" && find aussen aussen-logs aussen3 -print 2>/dev/null | LC_ALL=C sort; [ -f aussen/wichtig.md ] && shasum aussen/wichtig.md ) 2>/dev/null || true; }
+  aussen_vorher="$(aussen_stand)"
   # Die Probe im Studio: vertrauen-geaendert und ansicht (öffnet die Übersicht des Kerns) aus der Oberfläche, dazu die Git-Wege der Werkstatt (nur mit BRAIN_TESTMODUS=1)
   probe="$basis/probe.js"
   cat > "$probe" <<'JS'
@@ -278,19 +299,28 @@ JS
   ( export BRAIN_TESTMODUS=1 PATH="node_modules/.bin:$PATH"
     exec "$APP/Contents/MacOS/BrainApp" --vault "$vd" --test-fenster --test-skript "$probe" --test-fenster-schliessen-nach 16 --test-beenden-nach 22 >/dev/null 2>&1 ) &
   PID=$!
-  warte "status (ok|hinweis|problem)" 80 || fehl "D/$art: der Status vom Kern wurde nicht gelesen"
+  if [ "$art" = umleitung ]; then
+    warte "status-fehler|status (ok|hinweis|problem)" 80 || fehl "D/$art: der Status wurde gar nicht abgerufen"
+    if grep -Eq " status (ok|hinweis|problem)$" "$LOG"; then fehl "D/$art: der Kern hat trotz Verweis aus dem Vault hinaus einen Status geliefert"; fi
+  else
+    warte "status (ok|hinweis|problem)" 80 || fehl "D/$art: der Status vom Kern wurde nicht gelesen"
+  fi
   warte "fenster-bereit studio" 120 || fehl "D/$art: Studio wurde nicht bereit"
   warte "test-skript(-fehler| ok) probe.js" 120 || fehl "D/$art: Die Probe im Studio ist nicht gelaufen"
   warte "fenster-zu studio" 200 || fehl "D/$art: Studio wurde nicht geschlossen"
   nichts_uebrig "$basis"
   if [ -e "$marke" ]; then cat "$marke"; fehl "D/$art: Code aus dem Vault ist ohne Freigabe gelaufen (Marke geschrieben)"; fi
-  grep -q "fenster-auf uebersicht" "$LOG" || fehl "D/$art: die Übersicht des Kerns hat sich nicht geöffnet"
+  [ "$art" = umleitung ] || grep -q "fenster-auf uebersicht" "$LOG" || fehl "D/$art: die Übersicht des Kerns hat sich nicht geöffnet"
+  if [ "$(aussen_stand)" != "$aussen_vorher" ]; then echo "vorher:"; echo "$aussen_vorher"; echo "nachher:"; aussen_stand; fehl "D/$art: außerhalb des Vaults wurde geschrieben"; fi
+  [ ! -e "$basis/aussen3" ] || fehl "D/$art: „../aussen3“ aus der Konfiguration wurde angelegt"
   grep -q "aktion vertrauen-geaendert" "$LOG" || fehl "D/$art: Die Aktion vertrauen-geaendert kam nicht an"
   grep -q "aktion ansicht" "$LOG" || fehl "D/$art: Die Aktion ansicht kam nicht an"
   ergebnis="$(sed -n 's/.* test-skript ok probe.js [0-9]*ms ergebnis=\(.*\)$/\1/p' "$LOG" | head -1)"
   [ -n "$ergebnis" ] || { grep "test-skript" "$LOG" || true; fehl "D/$art: Die Probe im Studio meldet kein Ergebnis"; }
   case " $ergebnis " in *" geaendert=ok "*) ;; *) fehl "D/$art: vertrauen-geaendert antwortet nicht {ok:true}: $ergebnis" ;; esac
-  case " $ergebnis " in *" ansicht=offen "*) ;; *) fehl "D/$art: ansicht (Übersicht des Kerns) antwortet nicht ok: $ergebnis" ;; esac
+  if [ "$art" != umleitung ]; then
+    case " $ergebnis " in *" ansicht=offen "*) ;; *) fehl "D/$art: ansicht (Übersicht des Kerns) antwortet nicht ok: $ergebnis" ;; esac
+  fi
   if [ "$art" = haken ]; then
     # Der Commit erreicht Git wirklich (200) und löst trotzdem keinen Hook aus — sonst bewiese 'keine Marke' nichts.
     case " $ergebnis " in *" commit=200 "*) ;; *) fehl "D/$art: Der Commit der Werkstatt ging nicht bis Git (erwartet 200, ohne Hooks): $ergebnis" ;; esac
@@ -307,6 +337,7 @@ phase_d() {
   command -v git >/dev/null 2>&1 || { ueberspringe "D: git fehlt auf diesem Mac — Git-Wege (Hooks, fsmonitor, git aus dem Vault, Sperre) nicht geprüft"; return 0; }
   d_lauf haken
   d_lauf gesperrt
+  d_lauf umleitung
 }
 
 # Keine Spuren in der echten App (k11): unter der Test-Bundle-ID steht kein gemerkter Fensterrahmen, und WebKit hat nichts angelegt.

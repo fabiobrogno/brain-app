@@ -246,19 +246,29 @@ export function erzeugeHandler(o) {
   //    …/Kortex/node/<ver>/bin/node (aufgelöster Pfad), bei sonst gleichen Argumenten;
   //  · die Argumente nannten den Server im App-Paket (…/mcp/brain-mcp.mjs, auch ein früherer Kern-Ordner), dann zusätzlich nur mit
   //    dem stabilen oder einem früheren App-Node als Befehl;
-  //  · die Argumente nannten einen Server im Vault (<vault>/.tools/…mcp….mjs, Kit-Zeit): sein Code läuft nicht mehr, der Eintrag wird
-  //    auf den Kern umgestellt (Befehl: ein absoluter `node`).
+  //  · die Argumente nannten einen Server unter .tools eines BEKANNTEN Vaults (<vault>/.tools/…mcp….mjs, Kit-Zeit; der Vault steht in
+  //    vaults.json): sein Code läuft nicht mehr, der Eintrag wird auf den Kern umgestellt (Befehl: ein absoluter `node`). Liegt der Pfad
+  //    unter einem unbekannten Ordner, ist es ein fremder Eintrag (Rückfrage).
   const ALTER_APP_NODE = /\/Application Support\/(?:Brain|Kortex)\/node\/[^/]+\/bin\/node$/;
   const ALTER_MCP_PFAD = /^\/.*\/mcp\/brain-mcp\.mjs$/;
   const ALTER_KIT_MCP = /^\/.*\/\.tools\/(?:.*\/)?[^/]*mcp[^/]*\.mjs$/;
+  const imBekanntenVault = (p) => {
+    const m = /^(.*)\/\.tools\//.exec(p);
+    if (!m) return false;
+    let liste;
+    try { liste = vaultsFn.leseVaults(optV()).vaults; } catch { return false; }
+    const formen = (x) => [falte(x), falte(echterPfad(x))];
+    const ziel = formen(m[1]);
+    return liste.some((e) => formen(e.pfad).some((f) => ziel.includes(f)));
+  };
   const befehlsArt = (cmd, argsGleich, a, altArgs = null) => {
     if (argsGleich) {
       if (cmd === a[0]) return "gleich";
       return typeof cmd === "string" && ALTER_APP_NODE.test(cmd) ? "alt" : "anders";
     }
     if (typeof cmd === "string" && typeof altArgs === "string") {
-      if (ALTER_MCP_PFAD.test(altArgs) && (cmd === a[0] || ALTER_APP_NODE.test(cmd))) return "alt";
-      if (ALTER_KIT_MCP.test(altArgs) && /^\/(?:.*\/)?node$/.test(cmd)) return "alt";
+      if (ALTER_MCP_PFAD.test(altArgs) && !/\/\.tools\//.test(altArgs) && (cmd === a[0] || ALTER_APP_NODE.test(cmd))) return "alt";
+      if (ALTER_KIT_MCP.test(altArgs) && /^\/(?:.*\/)?node$/.test(cmd) && imBekanntenVault(altArgs)) return "alt";
     }
     return "anders";
   };

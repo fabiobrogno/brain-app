@@ -26,7 +26,7 @@ test("sonnetArgs: eingebaut nur Lese-/Schreibwerkzeuge, Rechte nur unter der Kop
   assert.equal(w("--permission-mode"), "dontAsk");
   assert.equal(w("--mcp-config"), '{"mcpServers":{}}');
   assert.equal(w("--system-prompt"), "SYS");
-  assert.equal(w("--setting-sources"), "project");
+  assert.equal(w("--setting-sources"), "user");
   assert.equal(w("--max-turns"), "25", "Sonnet-Lauf ist auf 25 Runden begrenzt");
   assert.ok(Number(w("--max-budget-usd")) > 0, "und auf ein Dollar-Budget");
   for (const f of ["-p", "--strict-mcp-config", "--no-session-persistence"]) assert.ok(a.includes(f), f);
