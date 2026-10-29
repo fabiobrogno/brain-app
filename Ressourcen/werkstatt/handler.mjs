@@ -15,6 +15,7 @@ import * as vaultsFn from "../gemeinsam/vaults.mjs";
 import { erzeugeGitHub } from "../gemeinsam/github.mjs";
 import { sicherungStand } from "../gemeinsam/gitsicherung.mjs";
 import { erzeugeVerdrahtung } from "./verdrahtung.mjs";
+import { erzeugeUmstellung } from "./umstellung.mjs";
 import { profilZuPfad, mitProfil } from "./profile.mjs";
 import { merkeRemoteBestaetigt } from "../gemeinsam/sicherungsmerker.mjs";
 
@@ -117,6 +118,8 @@ export function erzeugeHandler(o) {
   const fristen = { mcpVerbinden: 25_000, probe: 10_000, ...(o.fristen || {}) };
   // Einrichtung über den Starter der App (Hooks bei Claude Code, Prüfung vor dem Speichern, Hintergrunddienst): werkstatt/verdrahtung.mjs. o.starter = Ersatz für Tests.
   const verdrahtung = erzeugeVerdrahtung({ starter: o.starter || join(vaultOpt.support || supportOrdner(), "bin", "kortex"), support: vaultOpt.support || supportOrdner() });
+  // Umstellung eines Vaults aus der Kit-Zeit (P7a, nur lesend): werkstatt/umstellung.mjs
+  const umstellung = erzeugeUmstellung({ starter: o.starter || join(vaultOpt.support || supportOrdner(), "bin", "kortex"), support: vaultOpt.support || supportOrdner() });
 
   // Liste für die Oberfläche: gespeicherte Vaults (+ ein nur für diesen Start geöffneter, der nicht in vaults.json steht).
   function vaultListe(v) {
@@ -199,6 +202,7 @@ export function erzeugeHandler(o) {
       case "/api/git/fassung": nur("GET"); return V().gitFassung(q.get("pfad"), q.get("sha"));
       case "/api/kern/stand": nur("GET"); return verdrahtung.stand(v);
       case "/api/kern/verdrahten": nur("POST"); return verdrahtung.verdrahte(v, eingabe());
+      case "/api/umstellung/befund": nur("GET"); return umstellung.befund(v);
       case "/api/mcp/verbinden": { nur("POST"); V(); return verbinde(eingabe()); }
       case "/api/ki/erkennen": nur("GET"); return erkenneAgenten({ neu: q.get("neu") === "1" });
       case "/api/vaults": nur("GET"); return vaultListe(v);

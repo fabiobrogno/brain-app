@@ -192,6 +192,8 @@ function nimm(argv) {
 }
 export function nimmVaultArg(argv) { return nimm(argv).wert; }
 const ARG = nimm(process.argv);
+// Der mit --vault ausdrücklich angegebene Pfad (ungeprüft) – nur für den Befund der Umstellung (umstellung/cli.mjs), der auch einen Vault beschreibt, den pruefeVault ablehnt.
+export const angegebenerVaultPfad = () => ARG.wert;
 
 // Reihenfolge: --vault > (Altform, wo ein Werkzeug sie kennt) erstes Positionsargument von `argv` > BRAIN_VAULT > aktiver Vault der App.
 // Wurde ein Vault ANGEGEBEN (Flag, Argument, BRAIN_VAULT), gilt genau dieser: ist er kein gültiger Vault, gibt es einen Fehler und nie einen Ausweichen
