@@ -5,6 +5,7 @@ import { api, aktion, aktionMitAntwort, inApp, gitGesperrt, andererVault, ausgan
 import { erstelleEditor } from "./editor.js";
 import { h, dialog, dialogOffen, schliesseDialoge, toast, vorMinuten, dateiName, ohneEndung, ordnerVon, istBearbeitbar, speichereLokal, leseLokal, leseEntwurf, speichereEntwurf, sucheGrad, suchFormen, ausTabelle, arbeitBeginnt, laufendeArbeiten } from "./hilfen.js";
 import { symbol } from "./symbole.js";
+import { TV } from "./texte-verlauf.js";
 import { diffAnsicht } from "./diff.js";
 import { oeffneMenue, schliesseMenue } from "./menue.js";
 import { baueAktionen, istZurueckgestellt, spaeterBis } from "./posteingang.js";
@@ -1131,7 +1132,7 @@ async function oeffneKonflikt() {
   await speichereAlles();
   try {
     const r = await api.gitKonflikt();
-    if (!r?.aktiv || !r.dateien?.length) { await ladeGit(); return; }
+    if (!r?.aktiv) { await ladeGit(); return; } // sonst auch ohne offene Datei: Zusammenführen abschließen oder abbrechen, nie eine Sackgasse
     const m = await import("./abgleich.js");
     m.oeffneKonfliktDialog({ dateien: r.dateien, api, beiStandNeu: nachZeitueberschreitung,
       beiFertig: async () => { await ladeNachAbgleich().catch(() => {}); await ladeGit(); ladeInfo(); sync(); },
@@ -1147,10 +1148,10 @@ async function nachsehen(eilig = false) {
   if (nachsehenLaeuft || S.syncLaeuft || !S.git?.repo || S.git.gesperrt || !S.git.remote || S.git.konflikt || istGitGesperrt()) return;
   if (!eilig && Date.now() - letztesNachsehen < 60000) return;
   nachsehenLaeuft = true; letztesNachsehen = Date.now();
-  const vault = S.info?.vault;
+  const vault = S.info?.vault, davor = S.git;
   try {
     const r = await api.gitNachsehen();
-    if (r?.repo && S.info?.vault === vault && !S.syncLaeuft) { const { geholt, ...stand } = r; S.git = stand; zeichneStatus(); }
+    if (r?.repo && S.info?.vault === vault && !S.syncLaeuft && S.git === davor) { const { geholt, ...stand } = r; S.git = stand; zeichneStatus(); } // nur wenn S.git unverändert: ein frischerer Stand wird nie überschrieben
   } catch { /* offline oder Server nicht erreichbar: still bleiben, der Abgleich meldet es selbst */ }
   finally { nachsehenLaeuft = false; }
 }
@@ -1164,10 +1165,11 @@ async function sync() {
   try {
     const r = await api.sync();
     toast(T.status.abgeglichen[r.ergebnis] || T.status.abgeglichen.aktuell);
+    if (r.versteckteBehalten?.length) toast(TV.abgleich.versteckteBehalten(r.versteckteBehalten.length), { ms: 9000 });
     await ladeNachAbgleich();
   } catch (e) {
     if (gitGesperrt(e)) { S.syncFehler = null; await zeigeGitGesperrt(); }
-    else if (e.status === 409 && e.daten?.konflikt) { S.syncFehler = null; await ladeNachAbgleich().catch(() => {}); setTimeout(() => oeffneKonflikt(), 0); } // Zusammenführung bleibt offen: pro Datei wählen
+    else if (e.status === 409 && e.daten?.konflikt) { S.syncFehler = null; if (e.daten.versteckteBehalten?.length) toast(TV.abgleich.versteckteBehalten(e.daten.versteckteBehalten.length), { ms: 9000 }); await ladeNachAbgleich().catch(() => {}); setTimeout(() => oeffneKonflikt(), 0); } // Zusammenführung bleibt offen: pro Datei wählen
     else if (ausgangUnklar(e)) { S.syncFehler = null; await nachZeitueberschreitung(e); } // Ausgang unklar: keinen Fehlerzustand behaupten, der neu geladene Git-Status zeigt es
     else {
       S.syncFehler = e.status === 409 ? "konflikt" : "fehler";

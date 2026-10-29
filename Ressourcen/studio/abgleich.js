@@ -44,12 +44,14 @@ export function oeffneKonfliktDialog({ dateien, api = standardApi, datum, beiFer
   };
 
   const karten = liste.map((d) => {
-    const art = d.art === "meine-geloescht" || d.art === "andere-geloescht" ? d.art : "beide";
+    const art = ["meine-geloescht", "andere-geloescht", "nur-meine", "nur-andere"].includes(d.art) ? d.art : "beide";
     const optionen = art === "beide"
       ? [["meine", T.meine], ["andere", T.andere], ["beide", T.beide, T.beideHinweis(datum || heuteBerlin())]]
       : art === "meine-geloescht"
         ? [["meine", T.meineGeloeschtLassen], ["andere", T.andereBehalten]]
-        : [["meine", T.meineBehalten], ["andere", T.andereLoeschen]];
+        : art === "andere-geloescht"
+          ? [["meine", T.meineBehalten], ["andere", T.andereLoeschen]]
+          : art === "nur-meine" ? [["meine", T.behalten], ["andere", T.weglassen]] : [["meine", T.weglassen], ["andere", T.uebernehmen]];
     const name = `ab-wahl-${liste.indexOf(d)}`;
     const radios = optionen.map(([wert, text, zusatz]) => {
       const r = h("input", { type: "radio", name, value: wert, "data-wahl": wert, aufChange: () => { wahl.set(d.pfad, wert); aktualisiere(); } });
@@ -73,13 +75,13 @@ export function oeffneKonfliktDialog({ dateien, api = standardApi, datum, beiFer
     });
     return h("fieldset", { klasse: "ab-karte", "data-datei": d.pfad },
       h("legend", { klasse: "ab-datei", title: d.pfad, text: d.pfad }),
-      art !== "beide" ? h("p", { klasse: "ab-hinweis", text: art === "meine-geloescht" ? T.meineGeloescht : T.andereGeloescht }) : null,
+      art !== "beide" ? h("p", { klasse: "ab-hinweis", text: art === "meine-geloescht" ? T.meineGeloescht : art === "andere-geloescht" ? T.andereGeloescht : art === "nur-meine" ? T.nurMeine : T.nurAndere }) : null,
       h("div", { klasse: "ab-optionen", role: "radiogroup" }, radios), umschalter, vorschau);
   });
 
   const box = h("div", { klasse: "dialog rm-dialog ab-dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "ab-titel", "data-dialog": "konflikt" },
-    h("div", { klasse: "rm-kopf" }, h("span", { klasse: "rm-zeichen" }, zeichen("warnung", 18)), h("h2", { klasse: "rm-titel", id: "ab-titel", text: T.titel })),
-    h("p", { klasse: "rm-text", text: T.erklaerung }),
+    h("div", { klasse: "rm-kopf" }, h("span", { klasse: "rm-zeichen" }, zeichen("warnung", 18)), h("h2", { klasse: "rm-titel", id: "ab-titel", text: liste.length ? T.titel : T.leerTitel })),
+    h("p", { klasse: "rm-text", text: liste.length ? T.erklaerung : T.leerText }),
     h("div", { klasse: "ab-liste" }, karten),
     meldung.el,
     h("div", { klasse: "ab-fuss" }, abbrechen, hinweis, h("span", { klasse: "sp" }), spaeter, knopf));
@@ -102,6 +104,7 @@ export function oeffneKonfliktDialog({ dateien, api = standardApi, datum, beiFer
       ende(); laeuft = false;
       d.schliessen();
       toast(r?.zweiteDateien?.length ? T.fertigZweite(r.zweiteDateien.length) : T.fertig, { ms: 7000 });
+      if (r?.versteckteBehalten?.length) toast(T.versteckteBehalten(r.versteckteBehalten.length), { ms: 9000 });
       beiFertig?.(r || {});
     } catch (err) { ende(); beschaeftigt(false); await fehlerZeigen(err, T.fehler); }
   });

@@ -201,7 +201,8 @@ test("Abbrechen = merge --abort: Stand wie vorher, ungesicherte Datei bleibt, Ha
   const { a, b, v, bare } = await konfliktAufbauen();
   const kopf = g(a, "rev-parse", "HEAD").trim();
   writeFileSync(join(a, "start.md"), "# von Hand halb gelöst\n");  // jemand hat in der Konfliktdatei gearbeitet
-  assert.deepEqual(await v.gitKonfliktAbbrechen(), { ok: true });
+  const ab = await v.gitKonfliktAbbrechen();
+  assert.equal(ab.ok, true); assert.ok(ab.sicherung.includes("brain-sicherung"));
   assert.equal(mergeOffen(a), false); assert.equal(g(a, "rev-parse", "HEAD").trim(), kopf);
   assert.equal(lies(a, "start.md"), "# Start\nVersion von A\n"); assert.equal(lies(a, "wip.md"), "# ungesichert\n");
   assert.equal(g(a, "ls-files", "-u").trim(), "");
@@ -486,4 +487,94 @@ test("Nach gelösten Konflikten wird das Vertrauen vor dem Senden neu bewertet: 
   const r2 = await sync(a, { vertraut: true, neuBewerten: () => ({ vertraut: true, gesperrt: false }) });
   assert.equal(r2.ergebnis, "gesendet"); assert.equal(r2.vertrauenGeaendert, undefined);
   assert.equal(existsSync(marke), true, "bei bestehendem Vertrauen laufen die Hooks wie gewohnt");
+});
+
+// ───────────────────────────── Nachbesserungen aus dem Review ─────────────────────────────
+
+test("Offene Zusammenführung ohne sichtbare Datei (im Terminal gelöst): Abschließen mit leerer Auswahl möglich — keine Sackgasse", async () => {
+  const { a, v } = await konfliktAufbauen();
+  writeFileSync(join(a, "start.md"), "# Start\nvon Hand gelöst\n"); g(a, "add", "--", "start.md");
+  const s = await v.gitStatus();
+  assert.deepEqual(s.konflikt, { dateien: [], versteckt: 0 });
+  assert.deepEqual(await v.gitKonflikte(), { aktiv: true, dateien: [] });
+  const r = await v.gitKonfliktAbschliessen({ auswahl: [] });
+  assert.equal(r.dateien, 0); assert.equal(mergeOffen(a), false);
+  assert.equal(lies(a, "start.md"), "# Start\nvon Hand gelöst\n");
+  assert.equal((await v.gitSync(OPT)).ergebnis, "gesendet");
+});
+
+test("Versteckte Konflikte werden gemeldet (versteckteBehalten), Sicherungsort kommt in der Antwort", async () => {
+  const { a, b, v } = mitRemote();
+  commitIn(a, ".obsidian/app.json", "{}\n", "o", true); g(b, "pull", "-q");
+  commitIn(b, ".obsidian/app.json", "{\"b\":1}\n", "Bo"); commitIn(b, "start.md", "# Start\nB\n", "Bs"); g(b, "push", "-q");
+  commitIn(a, ".obsidian/app.json", "{\"a\":1}\n", "Ao"); commitIn(a, "start.md", "# Start\nA\n", "As");
+  const e1 = await wirft(v.gitSync(OPT));
+  assert.deepEqual(e1.extra.versteckteBehalten, [".obsidian/app.json"], "schon der Abgleich meldet, was automatisch bei deiner Fassung blieb");
+  const r = await v.gitKonfliktAbschliessen({ auswahl: [{ pfad: "start.md", wahl: "meine" }] });
+  assert.ok(r.sicherung && existsSync(join(r.sicherung, "start.md")), "Sicherungskopie liegt da");
+  // nur versteckte Konflikte: Abgleich meldet sie im Ergebnis
+  commitIn(b, ".obsidian/app.json", "{\"b\":2}\n", "Bo2"); g(b, "pull", "-q", "--no-rebase", "--no-edit"); g(b, "push", "-q");
+  await v.gitSync(OPT);
+  g(b, "pull", "-q", "--no-rebase", "--no-edit");
+  commitIn(b, ".obsidian/app.json", "{\"b\":3}\n", "Bo3", true);
+  commitIn(a, ".obsidian/app.json", "{\"a\":3}\n", "Ao3");
+  const e2 = await v.gitSync(OPT);
+  assert.deepEqual(e2.versteckteBehalten, [".obsidian/app.json"]);
+});
+
+test("Abbrechen, nachdem eine konfliktfrei zusammengeführte Datei neu bearbeitet wurde: 409 mit klarer Meldung, nichts geht verloren", async () => {
+  const { a, b, v } = mitRemote();
+  commitIn(a, "ruhig.md", "# r\n", "r", true); g(b, "pull", "-q");
+  commitIn(b, "start.md", "# Start\nB\n", "Bs"); commitIn(b, "ruhig.md", "# r\nvon B\n", "Br"); g(b, "push", "-q");
+  commitIn(a, "start.md", "# Start\nA\n", "As");
+  await wirft(v.gitSync(OPT));
+  assert.equal(lies(a, "ruhig.md"), "# r\nvon B\n", "konfliktfrei übernommen");
+  writeFileSync(join(a, "ruhig.md"), "# r\nmeine neue Arbeit\n");
+  const e = await wirft(v.gitKonfliktAbbrechen());
+  assert.equal(e.status, 409); assert.equal(e.extra.art, "geaendert");
+  assert.equal(lies(a, "ruhig.md"), "# r\nmeine neue Arbeit\n"); assert.ok(mergeOffen(a));
+});
+
+test("Konfliktarten: nur eine Seite hat die Datei (neu/umbenannt) heißt nur-meine/nur-andere; beide gelöscht erledigt sich selbst", async () => {
+  const { a, b, v } = mitRemote();
+  commitIn(a, "x.md", "# x\nZeile 1\nZeile 2\nZeile 3\nZeile 4\nZeile 5\n", "x", true); g(b, "pull", "-q");
+  g(b, "mv", "x.md", "b-name.md"); g(b, "commit", "-q", "-m", "B benennt um"); g(b, "push", "-q");
+  g(a, "mv", "x.md", "a-name.md"); g(a, "commit", "-q", "-m", "A benennt um");
+  const e = await wirft(v.gitSync(OPT));
+  assert.equal(e.extra.konflikt, true);
+  const k = (await v.gitKonflikte()).dateien;
+  assert.ok(k.every((x) => !["meine-geloescht", "andere-geloescht"].includes(x.art)), JSON.stringify(k));
+  assert.ok(k.some((x) => x.art === "nur-meine") || k.some((x) => x.art === "nur-andere"), JSON.stringify(k));
+  assert.ok(!k.some((x) => x.pfad === "x.md"), "der alte Name (beide gelöscht) fragt nicht");
+  // beide Namen behalten: jeweils die eigene Seite bzw. die des anderen übernehmen → beide Dateien existieren
+  await v.gitKonfliktAbschliessen({ auswahl: k.map((x) => ({ pfad: x.pfad, wahl: x.art === "nur-meine" ? "meine" : "andere" })) });
+  assert.ok(existsSync(join(a, "a-name.md")) && existsSync(join(a, "b-name.md")));
+  assert.equal(mergeOffen(a), false);
+});
+
+test("Wiederherstellen überschreibt nie, was nicht im Verlauf steht: Datei wurde zum Ordner, darüber liegt eine Datei, ignorierte Datei an der Stelle", async () => {
+  const d = repo();
+  const v = oeffneVault(d);
+  commitIn(d, "thema", "# war mal eine Datei\n", "datei");
+  const sha = g(d, "rev-parse", "HEAD").trim();
+  g(d, "rm", "-q", "--", "thema"); g(d, "commit", "-q", "-m", "weg");
+  commitIn(d, "thema/x.md", "# jetzt Ordner\n", "ordner");
+  writeFileSync(join(d, "thema/x.md"), "# ungesichert im Ordner\n"); schreibe(d, "thema/neu.md", "# untracked\n");
+  const e = await wirft(v.gitWiederherstellen({ pfad: "thema", sha }));
+  assert.equal(e.status, 409);
+  assert.equal(lies(d, "thema/x.md"), "# ungesichert im Ordner\n"); assert.equal(lies(d, "thema/neu.md"), "# untracked\n");
+  // darüber liegt eine ungesicherte Datei
+  commitIn(d, "a/b.md", "# b\n", "ab"); const sha2 = g(d, "rev-parse", "HEAD").trim();
+  g(d, "rm", "-q", "-r", "--", "a"); g(d, "commit", "-q", "-m", "a weg");
+  schreibe(d, "a", "ich bin jetzt eine Datei\n");
+  assert.equal((await wirft(v.gitWiederherstellen({ pfad: "a/b.md", sha: sha2 }))).status, 409);
+  assert.equal(lies(d, "a"), "ich bin jetzt eine Datei\n");
+  unlinkSync(join(d, "a"));
+  // ignorierte Datei an der Stelle einer früher gelöschten
+  commitIn(d, "alt.md", "# alt\n", "alt"); const sha3 = g(d, "rev-parse", "HEAD").trim();
+  g(d, "rm", "-q", "--", "alt.md"); g(d, "commit", "-q", "-m", "alt weg");
+  commitIn(d, ".gitignore", "alt.md\n", "ign");
+  schreibe(d, "alt.md", "# meine ignorierte Datei\n");
+  assert.equal((await wirft(v.gitWiederherstellen({ pfad: "alt.md", sha: sha3 }))).status, 409);
+  assert.equal(lies(d, "alt.md"), "# meine ignorierte Datei\n");
 });

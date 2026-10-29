@@ -323,7 +323,7 @@ async function syncOhneSperre(wurzel, opt = {}) {
     else neuerZweig = true;
   }
 
-  let geholt = false, gesendet = false, vertrauenGeaendert = false;
+  let geholt = false, gesendet = false, vertrauenGeaendert = false, versteckteBehalten_ = [];
   // Das Geholte kann Hooks, Kit-Code oder Git-Einstellungen geändert haben: Vertrauen NEU bewerten. true = gilt weiter (oder war nie gegeben).
   const bewerteNeu = () => {
     if (!opt.vertraut || typeof opt.neuBewerten !== "function") return true;
@@ -344,11 +344,16 @@ async function syncOhneSperre(wurzel, opt = {}) {
           // Versteckte Dateien (Punkt-Ordner) kann die Oberfläche nicht zeigen: dort bleibt automatisch die eigene Fassung.
           let offen;
           try {
-            await versteckteBehalten(G, wurzel);
+            await beideGeloeschtErledigen(G);
+            versteckteBehalten_ = await versteckteBehalten(G, wurzel);
             offen = (await konfliktListe(G)).filter((e) => !e.versteckt);
             if (!offen.length) await mergeCommit(G, wurzel, []);
-          } catch (e) { await G(["merge", "--abort"], rueckweg); throw e; }
-          if (offen.length) throw new HttpFehler(409, KONFLIKT_TEXT, { konflikt: true, dateien: offen.map((e) => e.pfad) });
+          } catch (e) {
+            if (e instanceof HttpFehler && e.status === 504) await nachAbbruchAufraeumen(G, wurzel, e.extra.gestartet || Date.now()).catch(() => {});
+            else await G(["merge", "--abort"], rueckweg);
+            throw e;
+          }
+          if (offen.length) throw new HttpFehler(409, KONFLIKT_TEXT, { konflikt: true, dateien: offen.map((e) => e.pfad), versteckteBehalten: versteckteBehalten_ });
           m = { code: 0 }; // alles war automatisch lösbar: Zusammenführung ist abgeschlossen
         }
         if (m.code !== 0) {
@@ -378,7 +383,8 @@ async function syncOhneSperre(wurzel, opt = {}) {
     gesendet = true;
   }
   const ergebnis = geholt && gesendet ? "beides" : geholt ? "geholt" : gesendet ? "gesendet" : "aktuell";
-  return { ergebnis, letzterSync: merkeSync(wurzel), ...(vertrauenGeaendert ? { vertrauenGeaendert: true } : {}) };
+  return { ergebnis, letzterSync: merkeSync(wurzel), ...(vertrauenGeaendert ? { vertrauenGeaendert: true } : {}),
+    ...(versteckteBehalten_.length ? { versteckteBehalten: versteckteBehalten_ } : {}) };
 }
 
 const SHA = /^[0-9a-f]{4,64}$/i;
@@ -767,7 +773,7 @@ const WAHL = new Set(["meine", "andere", "beide"]);
 async function mergeLaeuft(G) { return (await G(["rev-parse", "-q", "--verify", "MERGE_HEAD"])).code === 0; }
 async function keinMergeOffen(G) {
   if (!(await mergeLaeuft(G))) return;
-  const offen = (await konfliktListe(G)).filter((e) => !e.versteckt).map((e) => e.pfad);
+  const offen = (await konfliktListe(G)).filter((e) => !e.versteckt && e.art !== "beide-geloescht").map((e) => e.pfad);
   throw new HttpFehler(409, "Es wartet noch ein Abgleich mit Konflikten. Bitte schließe ihn zuerst ab (oder brich ihn ab).", { konflikt: true, dateien: offen });
 }
 
@@ -780,14 +786,18 @@ async function konfliktListe(G) {
   for (const eintrag of r.stdout.split("\0")) {
     const m = /^(\d{6}) [0-9a-f]+ ([123])\t([\s\S]+)$/.exec(eintrag);
     if (!m) continue;
-    const e = map.get(m[3]) || { pfad: m[3], stufen: new Set(), modus: m[1] };
+    const e = map.get(m[3]) || { pfad: m[3], stufen: new Set(), modi: new Set() };
     e.stufen.add(Number(m[2]));
-    if (m[2] !== "1") e.modus = m[1];
+    if (m[2] !== "1") e.modi.add(m[1]);
     map.set(m[3], e);
   }
+  // art: beide · meine-geloescht / andere-geloescht (es gab einen gemeinsamen Vorgänger, eine Seite hat gelöscht) · nur-meine / nur-andere
+  // (nur eine Seite hat die Datei, z. B. neu angelegt oder umbenannt) · beide-geloescht (nur der Vorgänger ist übrig: erledigt sich von selbst)
+  const artVon = (st) => (st.has(2) && st.has(3) ? "beide"
+    : st.has(1) && st.has(3) ? "meine-geloescht" : st.has(1) && st.has(2) ? "andere-geloescht"
+    : st.has(3) ? "nur-andere" : st.has(2) ? "nur-meine" : "beide-geloescht");
   return [...map.values()].sort((a, b) => (a.pfad < b.pfad ? -1 : 1)).map((e) => ({
-    pfad: e.pfad, stufen: e.stufen, modus: e.modus, versteckt: istGesperrt(e.pfad),
-    art: e.stufen.has(2) && e.stufen.has(3) ? "beide" : e.stufen.has(3) ? "meine-geloescht" : "andere-geloescht",
+    pfad: e.pfad, stufen: e.stufen, modus: e.modi.has("160000") ? "160000" : [...e.modi][0] || "100644", versteckt: istGesperrt(e.pfad), art: artVon(e.stufen),
   }));
 }
 const oeffentlich = (e) => ({ pfad: e.pfad, art: e.art });
@@ -796,24 +806,31 @@ const oeffentlich = (e) => ({ pfad: e.pfad, art: e.art });
 async function konfliktStand(G) {
   if (!(await mergeLaeuft(G))) return null;
   const liste = await konfliktListe(G);
-  return { dateien: liste.filter((e) => !e.versteckt).map(oeffentlich), versteckt: liste.filter((e) => e.versteckt).length };
+  return { dateien: liste.filter((e) => !e.versteckt && e.art !== "beide-geloescht").map(oeffentlich), versteckt: liste.filter((e) => e.versteckt).length };
 }
 
-// Kopie des Arbeitsstands der Konfliktdateien nach .git/brain-sicherung/<Zeit>/ — falls jemand darin von Hand gearbeitet hat.
-function sichereArbeitsstand(wurzel, pfade) {
+// Kopie des Arbeitsstands der Konfliktdateien nach <git-dir>/brain-sicherung/<Zeit>/ — falls jemand darin von Hand gearbeitet hat.
+// Lässt sich eine vorhandene Datei nicht sichern, wird nichts angefasst (409). → Ordner der Kopie oder null.
+async function sichereArbeitsstand(G, wurzel, pfade) {
   if (!pfade.length) return null;
-  const basis = join(wurzel, ".git", "brain-sicherung", new Date().toISOString().replace(/[:.]/g, "-"));
+  const gp = await G(["rev-parse", "--path-format=absolute", "--git-path", "brain-sicherung"]);
+  const wurzelSich = gp.code === 0 ? gp.stdout.trim() : join(wurzel, ".git", "brain-sicherung");
+  const basis = join(wurzelSich, new Date().toISOString().replace(/[:.]/g, "-"));
   let n = 0;
+  const nicht = [];
   for (const p of pfade) {
     const quelle = join(wurzel, ...p.split("/")), ziel = join(basis, ...p.split("/"));
-    if (!ziel.startsWith(basis + sep)) continue;
+    if (!ziel.startsWith(basis + sep)) { nicht.push(p); continue; }
+    let st;
+    try { st = lstatSync(quelle); } catch { continue; } // Datei fehlt (auf dieser Seite gelöscht): nichts zu sichern
+    if (st.isSymbolicLink()) continue;
     try {
-      const s = lstatSync(quelle);
-      if (!s.isFile() || s.size > MAX_DATEI) continue;
+      if (!st.isFile() || st.size > MAX_DATEI) throw new Error("nicht sicherbar");
       mkdirSync(dirname(ziel), { recursive: true });
       copyFileSync(quelle, ziel); n++;
-    } catch { /* Datei fehlt (gelöscht) oder nicht lesbar: nur Komfort */ }
+    } catch { nicht.push(p); }
   }
+  if (nicht.length) throw new HttpFehler(409, `Von „${nicht[0]}“ ließ sich keine Sicherungskopie anlegen (zu groß oder nicht lesbar). Es wurde nichts verändert.`, { dateien: nicht });
   return n ? basis : null;
 }
 
@@ -861,9 +878,17 @@ async function loeseDatei(G, wurzel, e, wahl, datum) {
 // Versteckte Konfliktdateien (Punkt-Ordner) zeigt die Oberfläche nicht: dort bleibt automatisch die eigene Fassung.
 async function versteckteBehalten(G, wurzel) {
   const liste = (await konfliktListe(G)).filter((e) => e.versteckt);
-  if (!liste.length) return;
-  sichereArbeitsstand(wurzel, liste.map((e) => e.pfad));
+  if (!liste.length) return [];
+  await sichereArbeitsstand(G, wurzel, liste.map((e) => e.pfad));
   for (const e of liste) await loeseDatei(G, wurzel, e, "meine", "");
+  return liste.map((e) => e.pfad);
+}
+// Beide Seiten haben die Datei gelöscht (nur der Vorgänger ist übrig): bleibt gelöscht, braucht keine Entscheidung.
+async function beideGeloeschtErledigen(G) {
+  for (const e of (await konfliktListe(G)).filter((x) => x.art === "beide-geloescht")) {
+    const r = await G(["rm", "-q", "-f", "--", e.pfad]);
+    if (r.code !== 0) throw new HttpFehler(500, `„${e.pfad}“ ließ sich nicht entfernen.`, { ausgabe: ausgabeVon(r) });
+  }
 }
 
 // Merge-Commit; nur wenn nichts mehr offen ist. Immer ohne Hooks (wie der ganze Abgleich).
@@ -890,7 +915,7 @@ export async function konflikte(wurzel, pfad, ctx = {}) {
   const G = binde(wurzel, ctx);
   await brauchtRepo(G, wurzel);
   if (!(await mergeLaeuft(G))) return { aktiv: false, dateien: [] };
-  const liste = (await konfliktListe(G)).filter((e) => !e.versteckt);
+  const liste = (await konfliktListe(G)).filter((e) => !e.versteckt && e.art !== "beide-geloescht");
   const r = { aktiv: true, dateien: liste.map(oeffentlich) };
   if (pfad !== undefined && pfad !== null && pfad !== "") {
     const e = liste.find((x) => x.pfad === pfad);
@@ -908,7 +933,7 @@ async function konfliktAbschliessenOhneSperre(wurzel, { auswahl }, ctx) {
   await brauchtRepo(G, wurzel);
   if (!(await mergeLaeuft(G))) throw new HttpFehler(409, "Es gibt keinen offenen Abgleich.");
   const liste = await konfliktListe(G);
-  const sichtbar = liste.filter((e) => !e.versteckt);
+  const sichtbar = liste.filter((e) => !e.versteckt && e.art !== "beide-geloescht");
   if (!Array.isArray(auswahl)) throw new HttpFehler(400, "Bitte für jede Datei eine Fassung wählen.");
   const wahlen = new Map();
   for (const x of auswahl) {
@@ -919,13 +944,14 @@ async function konfliktAbschliessenOhneSperre(wurzel, { auswahl }, ctx) {
   const fehlt = sichtbar.filter((e) => !wahlen.has(e.pfad));
   if (fehlt.length) throw new HttpFehler(400, `Bitte für jede Datei eine Fassung wählen (es fehlt: ${fehlt.slice(0, 3).map((e) => e.pfad).join(", ")}).`, { dateien: fehlt.map((e) => e.pfad) });
   const datum = berlinHeute();
-  sichereArbeitsstand(wurzel, liste.map((e) => e.pfad));
+  const sicherung = await sichereArbeitsstand(G, wurzel, liste.filter((e) => e.art !== "beide-geloescht").map((e) => e.pfad));
   return mitAbbruchSchutz(G, wurzel, async () => {
     const zweite = [];
-    await versteckteBehalten(G, wurzel);
+    await beideGeloeschtErledigen(G);
+    const versteckt = await versteckteBehalten(G, wurzel);
     for (const e of sichtbar) { const r = await loeseDatei(G, wurzel, e, wahlen.get(e.pfad), datum); if (r.zweiteDatei) zweite.push(r.zweiteDatei); }
     const sha = await mergeCommit(G, wurzel, sichtbar.map((e) => e.pfad));
-    return { sha, dateien: sichtbar.length, zweiteDateien: zweite };
+    return { sha, dateien: sichtbar.length, zweiteDateien: zweite, versteckteBehalten: versteckt, sicherung };
   });
 }
 
@@ -935,10 +961,15 @@ async function konfliktAbbrechenOhneSperre(wurzel, ctx) {
   const G = binde(wurzel, ctx);
   await brauchtRepo(G, wurzel);
   if (!(await mergeLaeuft(G))) throw new HttpFehler(409, "Es gibt keinen offenen Abgleich.");
-  sichereArbeitsstand(wurzel, (await konfliktListe(G)).map((e) => e.pfad));
+  const sicherung = await sichereArbeitsstand(G, wurzel, (await konfliktListe(G)).filter((e) => e.art !== "beide-geloescht").map((e) => e.pfad));
   const r = await G(["merge", "--abort"], { ohneHooks: true });
-  if (r.code !== 0 || (await mergeLaeuft(G))) throw new HttpFehler(500, "Der Abgleich ließ sich nicht abbrechen.", { ausgabe: ausgabeVon(r) });
-  return { ok: true };
+  if (r.code !== 0 || (await mergeLaeuft(G))) {
+    if (/not uptodate|would be overwritten|local changes/i.test(String(r.stderr))) {
+      throw new HttpFehler(409, "Eine zusammengeführte Datei wurde seit dem Abgleich noch einmal geändert. Zum Abbrechen müsste sie zurückgesetzt werden — dabei ginge deine Änderung verloren. Bitte wähle stattdessen „Zusammenführen“.", { art: "geaendert" });
+    }
+    throw new HttpFehler(500, "Der Abgleich ließ sich nicht abbrechen.", { ausgabe: ausgabeVon(r) });
+  }
+  return { ok: true, sicherung };
 }
 
 // POST: beim Server nachsehen (nur holen, nichts zusammenführen) → neuer Status mit vor/zurueck. Läuft gerade ein Abgleich, wird nicht geholt.
@@ -950,8 +981,8 @@ export async function nachsehen(wurzel, ctx = {}) {
   if (!rem.length || laufend.has(wurzel)) return { ...(await status(wurzel, ctx)), geholt: false };
   const remote = rem.includes("origin") ? "origin" : rem[0];
   let f;
-  try { f = await G(["fetch", "--quiet", "--no-recurse-submodules", remote], { ohneHooks: true, timeout: 60_000 }); }
-  catch (e) { throw zeitFehler(e, LESEN_ZU_LANGE); }
+  try { f = await exklusiv(wurzel, () => G(["fetch", "--quiet", "--no-recurse-submodules", remote], { ohneHooks: true, timeout: 60_000 })); }
+  catch (e) { if (e instanceof HttpFehler && e.status === 409) return { ...(await status(wurzel, ctx)), geholt: false }; throw zeitFehler(e, LESEN_ZU_LANGE); }
   if (f.code !== 0) { const u = uebersetzeGitFehler(f.stderr, "Der Server war nicht erreichbar."); throw new HttpFehler(u.status, u.meldung); } // ohne Roh-Ausgabe: die könnte eine Adresse mit Zugangsdaten nennen
   return { ...(await status(wurzel, ctx)), geholt: true };
 }
@@ -992,6 +1023,15 @@ export async function wiederherstellenVorschau(wurzel, rel, sha, ctx = {}) {
   return { diff: r.stdout.length > MAX ? r.stdout.slice(0, MAX) + "\n… (gekürzt)\n" : r.stdout, unveraendert: !r.stdout.trim(), ungesichert };
 }
 
+// Ist ein Ordner über p im Arbeitsordner in Wirklichkeit eine Datei oder ein Symlink?
+function vorfahrIstDatei(wurzel, p) {
+  const teile = p.split("/");
+  for (let i = 1; i < teile.length; i++) {
+    try { if (!lstatSync(join(wurzel, ...teile.slice(0, i))).isDirectory()) return true; } catch { return false; }
+  }
+  return false;
+}
+
 // POST { pfad, sha }: holt die Fassung zurück und sichert sie als NEUEN Commit (kein reset, kein Umschreiben). Die Verlaufs-Einträge bleiben.
 export function wiederherstellen(wurzel, a, ctx = {}) { return exklusiv(wurzel, () => wiederherstellenOhneSperre(wurzel, a || {}, kontext(ctx, ctx.frist || neueFrist(ctx.limit > 0 ? ctx.limit : LIMIT_COMMIT)))); }
 async function wiederherstellenOhneSperre(wurzel, { pfad: rel, sha }, ctx) {
@@ -1003,7 +1043,16 @@ async function wiederherstellenOhneSperre(wurzel, { pfad: rel, sha }, ctx) {
   if (!(await hatCommits(G))) throw new HttpFehler(404, "Diese Version gibt es nicht.");
   const voll = await versionVon(G, sha);
   await dateiInVersion(G, voll, p);
-  if ((await geaendert(G)).some((e) => e.pfad === p)) {
+  // Nichts überschreiben, was nicht im Verlauf steht: an der Stelle liegt keine Ordner-Struktur und keine fremde Datei, und es gibt keine offenen Änderungen
+  const kopfArt = await G(["cat-file", "-t", `HEAD:${p}`]);
+  const ordnerStattDatei = kopfArt.code === 0 && kopfArt.stdout.trim() !== "blob";
+  const darunter = (await G(["ls-files", "--", `${p}/`])).stdout.trim() !== "";
+  if (ordnerStattDatei || darunter || vorfahrIstDatei(wurzel, p)) {
+    throw new HttpFehler(409, "An dieser Stelle liegt inzwischen etwas anderes (zum Beispiel ein Ordner statt der Datei). Zurückholen ist hier nicht möglich.", { art: "im-weg" });
+  }
+  const offen = (await geaendert(G)).some((e) => e.pfad === p || p.startsWith(e.pfad + "/") || e.pfad.startsWith(p + "/"));
+  const unbekannteDatei = kopfArt.code !== 0 && existsSync(join(wurzel, ...p.split("/"))); // liegt da, steht aber nicht im Verlauf (z. B. ignoriert)
+  if (offen || unbekannteDatei) {
     throw new HttpFehler(409, "Diese Datei hat Änderungen, die noch nicht gesichert sind. Bitte sichere sie zuerst, dann kannst du eine frühere Fassung zurückholen.", { art: "ungesichert" });
   }
   const jetzt = await G(["rev-parse", "-q", "--verify", `HEAD:${p}`]);
