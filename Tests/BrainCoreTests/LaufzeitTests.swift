@@ -331,27 +331,68 @@ private func starte(_ url: URL, _ args: [String] = []) -> Lauf {
 }
 
 @Test func symlinkWirdAtomarUmgeschaltet() async throws {
-    // Ein Leser, der den Link dauernd auflöst, sieht beim Umschalten nie „fehlt“ — nur das alte oder das neue Ziel.
+    // Ein Leser, der den Link dauernd auflöst, sieht beim Umschalten nie „fehlt“ — nur das alte oder das neue Ziel. Geprüft wird
+    // wie ein Hook es braucht: `readlink` auf den Link und `stat` auf einen Pfad DURCH den Link (dieselbe Auflösung wie execve).
     let ordner = tempOrdner()
     let a = ordner.appendingPathComponent("a"), b = ordner.appendingPathComponent("b"), link = ordner.appendingPathComponent("kern")
-    for d in [a, b] { try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true) }
+    for d in [a, b] {
+        try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        try Data("x".utf8).write(to: d.appendingPathComponent("x"))
+    }
     try Laufzeit.setzeSymlink(link, nach: "a")
     let stop = Atomic()
-    let leser = Task.detached { () -> Int in
-        var fehler = 0
+    let durch = link.appendingPathComponent("x").path
+    let leser = Task.detached { () -> [String] in
+        var fehler: [String] = []
+        var puffer = [CChar](repeating: 0, count: Int(PATH_MAX))
+        var st = stat()
         while !stop.wert {
-            guard let z = try? FileManager.default.destinationOfSymbolicLink(atPath: link.path), z == "a" || z == "b" else { fehler += 1; continue }
+            let n = readlink(link.path, &puffer, puffer.count - 1)
+            if n < 0 { fehler.append("readlink errno \(errno)") } else {
+                puffer[n] = 0
+                let z = String(cString: puffer)
+                if z != "a" && z != "b" { fehler.append("readlink ziel \(z)") }
+            }
+            if stat(durch, &st) != 0 { fehler.append("stat errno \(errno)") }
         }
         return fehler
     }
-    for i in 0..<3000 { try Laufzeit.setzeSymlink(link, nach: i.isMultiple(of: 2) ? "b" : "a", schonfrist: 0.05) }
+    // Schonfrist 0,5 s (Produktion 2 s): lang genug gegen Aussetzer unter Last (lokal gemessen: einzelne Aufrufe bis ~60 ms),
+    // kurz genug, dass während der Schleife (2 s) laufend abgelöste Links gelöscht werden — das Löschen ist der kritische Teil.
+    let ende = Date().addingTimeInterval(2)
+    var i = 0
+    while Date() < ende || i < 200 {
+        try Laufzeit.setzeSymlink(link, nach: i.isMultiple(of: 2) ? "b" : "a", schonfrist: 0.5)
+        i += 1
+    }
     stop.setze()
-    #expect(await leser.value == 0)
+    let fehler = await leser.value
+    #expect(fehler.isEmpty, "\(fehler.count) Fehler, z. B. \(Set(fehler).sorted())")
     // abgelöste Links werden erst beim nächsten Umschalten (nach der Schonfrist) entfernt: danach bleibt höchstens der letzte übrig
-    try await Task.sleep(for: .milliseconds(150))
-    try Laufzeit.setzeSymlink(link, nach: "a", schonfrist: 0.05)
+    try await Task.sleep(for: .milliseconds(700))
+    try Laufzeit.setzeSymlink(link, nach: i.isMultiple(of: 2) ? "b" : "a", schonfrist: 0.5) // anderes Ziel als zuletzt: tauscht
     let reste = ((try? FileManager.default.contentsOfDirectory(atPath: ordner.path)) ?? []).sorted().filter { $0 != "a" && $0 != "b" && $0 != "kern" }
     #expect(reste.count == 1 && reste[0].hasPrefix(".kern."), "\(reste)")
+}
+
+@Test func schonfristZaehltAbAbloesungNichtAbAnlegen() throws {
+    // Wie in Produktion: bin/kern liegt seit einer Stunde. Wird er abgelöst und gleich danach noch einmal umgeschaltet, muss der
+    // eben abgelöste Link die Schonfrist bekommen — früher zählte die mtime (Anlegen), er wurde sofort gelöscht.
+    let ordner = tempOrdner()
+    let link = ordner.appendingPathComponent("kern")
+    try Laufzeit.setzeSymlink(link, nach: "a")
+    let vorStunde = timeval(tv_sec: time(nil) - 3600, tv_usec: 0)
+    #expect(lutimes(link.path, [vorStunde, vorStunde]) == 0)
+    func reste() -> [String] { ((try? FileManager.default.contentsOfDirectory(atPath: ordner.path)) ?? []).filter { $0.hasPrefix(".kern.") } }
+    try Laufzeit.setzeSymlink(link, nach: "b", schonfrist: 60)
+    try Laufzeit.setzeSymlink(link, nach: "a", schonfrist: 60)
+    #expect(reste().count == 2, "\(reste())") // der stundenalte „a“-Link ist eben erst abgelöst: er bleibt noch
+    // Zeigt der Link schon aufs Ziel, wird nichts getauscht (kein neuer Rest, derselbe Link)
+    var vorher = stat(), nachher = stat()
+    lstat(link.path, &vorher)
+    try Laufzeit.setzeSymlink(link, nach: "a", schonfrist: 60)
+    lstat(link.path, &nachher)
+    #expect(vorher.st_ino == nachher.st_ino && reste().count == 2)
 }
 
 @Test func scheiterndesUmschaltenHinterlaesstNichtsUndMeldet() throws {

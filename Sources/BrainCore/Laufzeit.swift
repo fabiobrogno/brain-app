@@ -312,12 +312,16 @@ public struct Laufzeit: Sendable {
     /// Grund (auf APFS gemessen): Gibt der Kernel den alten Symlink frei, während ein anderer Prozess ihn gerade auflöst,
     /// liefert dessen `readlink` vereinzelt EINVAL — ein Hook sähe „kein Symlink“. Beim Überschreiben passierte das bei rund
     /// 1 % enger Lesezugriffe, beim Tausch mit sofortigem Löschen noch bei rund 0,003 %, beim Tausch ohne sofortiges Löschen nie.
+    /// Das betrifft nicht nur `readlink`: auch `stat`/`open` über den Link (und damit `execve` eines Hooks) scheitern dann mit
+    /// EINVAL oder ENOENT. Die Schonfrist zählt darum ab dem Tausch, nicht ab dem Anlegen des Links (siehe
+    /// `raeumeAlteSymlinksAuf`). Zeigt der Link schon auf `ziel`, bleibt er unangetastet — kein Tausch, kein Rennen.
     /// Ist an der Stelle etwas anderes (Datei, Ordner), tauscht nichts: `rename(2)` ersetzt eine Datei oder scheitert bei einem
     /// Ordner — ein Ordner geht so nie verloren.
     /// `ziel` ist der Inhalt des Links (üblich relativ zum Ordner des Links, z. B. `../kern/1.0.0`).
     static func setzeSymlink(_ link: URL, nach ziel: String, schonfrist: TimeInterval = 2) throws {
         let fm = FileManager.default
         raeumeAlteSymlinksAuf(neben: link, aelterAls: schonfrist)
+        if (try? fm.destinationOfSymbolicLink(atPath: link.path)) == ziel { return }
         let neu = link.deletingLastPathComponent().appendingPathComponent(".\(link.lastPathComponent).\(UUID().uuidString)")
         try fm.createSymbolicLink(atPath: neu.path, withDestinationPath: ziel)
         var st = stat()
@@ -331,7 +335,10 @@ public struct Laufzeit: Sendable {
         }
     }
 
-    /// Entfernt abgelöste Links `.<name>.<uuid>` neben `link`, die älter als `aelterAls` Sekunden sind.
+    /// Entfernt abgelöste Links `.<name>.<uuid>` neben `link`, die seit mehr als `aelterAls` Sekunden abgelöst sind.
+    /// Maßgeblich ist die ctime: `RENAME_SWAP` setzt sie beim Tausch, die mtime bleibt die Zeit des Anlegens. Nach der mtime
+    /// (früher so) galt ein Link, der Tage aktiv war, schon im Moment seiner Ablösung als „alt“ und wurde beim nächsten Aufruf
+    /// ohne Schonfrist gelöscht — genau das Rennen, das die Schonfrist verhindern soll.
     static func raeumeAlteSymlinksAuf(neben link: URL, aelterAls frist: TimeInterval) {
         let fm = FileManager.default
         let ordner = link.deletingLastPathComponent()
@@ -341,7 +348,7 @@ public struct Laufzeit: Sendable {
             let pfad = ordner.appendingPathComponent(name).path
             var st = stat()
             guard lstat(pfad, &st) == 0, (st.st_mode & S_IFMT) == S_IFLNK else { continue }
-            let alter = Date().timeIntervalSince1970 - (Double(st.st_mtimespec.tv_sec) + Double(st.st_mtimespec.tv_nsec) / 1e9)
+            let alter = Date().timeIntervalSince1970 - (Double(st.st_ctimespec.tv_sec) + Double(st.st_ctimespec.tv_nsec) / 1e9)
             if alter > frist { unlink(pfad) }
         }
     }
