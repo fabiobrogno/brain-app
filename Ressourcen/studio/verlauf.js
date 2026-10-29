@@ -562,7 +562,7 @@ export function zeigeDiff(host, { api, sha, kurz, nachricht, pfad, status, zeit,
   return instanz;
 }
 
-function diffZeile(x) {
+export function diffZeile(x) {
   if (x.art === "h") {
     return h("div", { klasse: "vd-z h" },
       h("span", { klasse: "vd-nrs" }, h("span", { klasse: "vd-nr alt" }), h("span", { klasse: "vd-nr neu" }), h("span", { klasse: "vd-vz" })),

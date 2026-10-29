@@ -7,9 +7,9 @@
 // (ctx.frist) — bei Ablauf wird die ganze Prozessgruppe beendet.
 // ctx = { vertraut, sshEigen, sshGlobal, gpgGlobal, frist } kommt von vault.mjs (aus vertrauen.mjs); ohne Angabe gilt „nicht vertraut“.
 import { execFile, execFileSync } from "node:child_process";
-import { realpathSync, readFileSync, writeFileSync, statSync, renameSync, lstatSync, unlinkSync, readdirSync } from "node:fs";
-import { join } from "node:path";
-import { HttpFehler, sauber, kindUmgebung, falte, absoluterGitPfad, absoluterPfad } from "./basis.mjs";
+import { realpathSync, readFileSync, writeFileSync, statSync, renameSync, lstatSync, unlinkSync, readdirSync, mkdirSync, copyFileSync, existsSync } from "node:fs";
+import { join, dirname, basename, extname, sep } from "node:path";
+import { HttpFehler, sauber, loese, kindUmgebung, falte, absoluterGitPfad, absoluterPfad, MAX_DATEI } from "./basis.mjs";
 import { berlinHeute } from "./pruefung.mjs";
 import { starte, neueFrist, beendeAlleProzesse } from "./prozess.mjs";
 import { pruefeGitUrl, uebersetzeGitFehler } from "./gitwerkzeug.mjs"; // (gitwerkzeug importiert git() von hier — Kreis ist harmlos: nur Funktionen, nichts beim Laden)
@@ -143,9 +143,9 @@ async function geaendert(G) {
 export async function status(wurzel, ctx = {}) {
   const G = binde(wurzel, ctx);
   if (!(await istRepoG(G, wurzel))) {
-    return { repo: false, zweig: null, upstream: null, vor: 0, zurueck: 0, geaendert: [], letzterCommit: null, letzterSync: null, remote: false };
+    return { repo: false, zweig: null, upstream: null, vor: 0, zurueck: 0, geaendert: [], letzterCommit: null, letzterSync: null, remote: false, konflikt: null };
   }
-  const [z, up, ge, rem, hat] = await Promise.all([zweig(G), upstreamVon(G), geaendert(G), remotes(G), hatCommits(G)]);
+  const [z, up, ge, rem, hat, konflikt] = await Promise.all([zweig(G), upstreamVon(G), geaendert(G), remotes(G), hatCommits(G), konfliktStand(G)]);
   const zaehl = up ? await vorZurueck(G) : { vor: 0, zurueck: 0 };
   let letzterCommit = null;
   if (hat) {
@@ -153,7 +153,7 @@ export async function status(wurzel, ctx = {}) {
     if (r.code === 0) { const [sha, kurz, nachricht, zeit] = r.stdout.trim().split("\x1f"); letzterCommit = { sha, kurz, nachricht, zeit }; }
   }
   return { repo: true, zweig: z, upstream: up, vor: zaehl.vor, zurueck: zaehl.zurueck, geaendert: ge, letzterCommit,
-    letzterSync: letzterSync(wurzel), remote: rem.length > 0 };
+    letzterSync: letzterSync(wurzel), remote: rem.length > 0, konflikt };
 }
 
 // Je Vault nur ein Abgleich/Commit gleichzeitig (Sperre im Prozess). Wird synchron beim Aufruf genommen.
@@ -173,6 +173,7 @@ export function commit(wurzel, a, ctx = {}) {
 async function commitOhneSperre(wurzel, { nachricht, dateien }, ctx) {
   const G = binde(wurzel, ctx);
   await brauchtRepo(G, wurzel);
+  await keinMergeOffen(G);
   if (typeof nachricht !== "string" || !nachricht.trim()) throw new HttpFehler(400, "Bitte eine Commit-Nachricht eingeben.");
   if (!Array.isArray(dateien) || !dateien.length || dateien.some((d) => typeof d !== "string")) throw new HttpFehler(400, "Bitte mindestens eine Datei auswählen.");
   const offen = new Set((await geaendert(G)).map((e) => e.pfad));
@@ -304,6 +305,7 @@ async function syncOhneSperre(wurzel, opt = {}) {
   const G = binde(wurzel, kontext(opt, frist));
   const OH = { ohneHooks: true };
   await brauchtRepo(G, wurzel);
+  await keinMergeOffen(G);
   const rem = await remotes(G);
   if (!rem.length) throw new HttpFehler(400, "Es ist noch kein Remote (Server) eingetragen. Trage zuerst eins in Git ein.");
   const remote = rem.includes("origin") ? "origin" : rem[0];
@@ -322,6 +324,13 @@ async function syncOhneSperre(wurzel, opt = {}) {
   }
 
   let geholt = false, gesendet = false, vertrauenGeaendert = false;
+  // Das Geholte kann Hooks, Kit-Code oder Git-Einstellungen geändert haben: Vertrauen NEU bewerten. true = gilt weiter (oder war nie gegeben).
+  const bewerteNeu = () => {
+    if (!opt.vertraut || typeof opt.neuBewerten !== "function") return true;
+    let neu = null;
+    try { neu = opt.neuBewerten(); } catch { /* nicht prüfbar: wie „nicht mehr vertraut“ */ }
+    return !!(neu && neu.vertraut && !neu.gesperrt);
+  };
   if (up) {
     const { zurueck } = await vorZurueck(G);
     if (zurueck > 0) {
@@ -330,6 +339,18 @@ async function syncOhneSperre(wurzel, opt = {}) {
       try {
         let m = await mitAbbruchSchutz(G, wurzel, () => G(["merge", "--ff-only", "--quiet", "@{u}"], { ...OH, timeout: limitSync }));
         if (m.code !== 0) m = await mitAbbruchSchutz(G, wurzel, () => G(["merge", "--no-edit", "--quiet", "@{u}"], { ...OH, timeout: limitSync }));
+        if (m.code !== 0 && opt.konflikteLoesen && (await konfliktDateien(G)).length) {
+          // Konflikte NICHT zurücknehmen: Die Oberfläche lässt pro Datei wählen (konfliktAbschliessen) oder bricht ab (konfliktAbbrechen).
+          // Versteckte Dateien (Punkt-Ordner) kann die Oberfläche nicht zeigen: dort bleibt automatisch die eigene Fassung.
+          let offen;
+          try {
+            await versteckteBehalten(G, wurzel);
+            offen = (await konfliktListe(G)).filter((e) => !e.versteckt);
+            if (!offen.length) await mergeCommit(G, wurzel, []);
+          } catch (e) { await G(["merge", "--abort"], rueckweg); throw e; }
+          if (offen.length) throw new HttpFehler(409, KONFLIKT_TEXT, { konflikt: true, dateien: offen.map((e) => e.pfad) });
+          m = { code: 0 }; // alles war automatisch lösbar: Zusammenführung ist abgeschlossen
+        }
         if (m.code !== 0) {
           const dateien = await konfliktDateien(G);
           await G(["merge", "--abort"], rueckweg); // Arbeitsstand wie vorher
@@ -337,13 +358,15 @@ async function syncOhneSperre(wurzel, opt = {}) {
           throw new HttpFehler(409, "Ungesicherte Änderungen stehen im Weg. Bitte zuerst committen, dann abgleichen.", { dateien: [], ausgabe: ausgabeVon(m) });
         }
       } finally { markeWeg(); }
-      if (opt.vertraut && typeof opt.neuBewerten === "function") { // das Geholte kann Hooks, Kit-Code oder Git-Einstellungen geändert haben
-        let neu = null;
-        try { neu = opt.neuBewerten(); } catch { /* nicht prüfbar: wie „nicht mehr vertraut“ */ }
-        if (!neu || !neu.vertraut || neu.gesperrt) vertrauenGeaendert = true;
-      }
+      if (!bewerteNeu()) vertrauenGeaendert = true;
     }
     const nach = await vorZurueck(G);
+    // Noch nicht gesendete Zusammenführungen (z. B. nach gelösten Konflikten, siehe konfliktAbschliessen) haben fremde Commits gebracht: auch dann
+    // das Vertrauen neu bewerten, bevor beim Senden Hooks laufen.
+    if (!geholt && nach.vor > 0 && opt.vertraut) {
+      const mg = await G(["rev-list", "--merges", "--count", "@{u}..HEAD"]);
+      if (mg.code !== 0 || Number(mg.stdout.trim()) > 0) { if (!bewerteNeu()) vertrauenGeaendert = true; }
+    }
     if (nach.vor > 0 && !vertrauenGeaendert) {
       const p = await G(["push", "--quiet"], { timeout: limitSync });
       if (p.code !== 0) throw new HttpFehler(409, "Der Server hat das Senden abgelehnt (es gab dort inzwischen Neues). Bitte noch einmal abgleichen.", { dateien: [], ausgabe: ausgabeVon(p) });
@@ -730,4 +753,284 @@ async function remoteHinzufuegenOhneSperre(wurzel, rohUrl, opt) {
     }
     throw e;
   }
+}
+
+// ══ Studio v3 ════════════════════════════════════════════════════════════════════════════════════════════════════════
+// Abgleich mit Konflikten, „Nachsehen“ (Holen ohne Zusammenführen) und „Version zurückholen“ (als neuer Commit). Grundsätze wie oben:
+// Argument-Listen statt Shell, Pfade nach `--`, nie --force, nie reset/rewrite, nichts wird still überschrieben (vor jeder Entscheidung
+// über eine Konfliktdatei liegt eine Kopie in .git/brain-sicherung/).
+
+const KONFLIKT_TEXT = "Beim Abgleich haben beide Seiten dieselbe Stelle geändert. Bitte wähle pro Datei, welche Fassung gelten soll. Es geht nichts verloren.";
+const WAHL = new Set(["meine", "andere", "beide"]);
+
+// Läuft gerade eine Zusammenführung (MERGE_HEAD)? Auch eine, die außerhalb der App begonnen wurde.
+async function mergeLaeuft(G) { return (await G(["rev-parse", "-q", "--verify", "MERGE_HEAD"])).code === 0; }
+async function keinMergeOffen(G) {
+  if (!(await mergeLaeuft(G))) return;
+  const offen = (await konfliktListe(G)).filter((e) => !e.versteckt).map((e) => e.pfad);
+  throw new HttpFehler(409, "Es wartet noch ein Abgleich mit Konflikten. Bitte schließe ihn zuerst ab (oder brich ihn ab).", { konflikt: true, dateien: offen });
+}
+
+// Ungelöste Dateien: `git ls-files -u -z` → "Modus SHA Stufe\tPfad\0". Stufe 1 = gemeinsamer Vorgänger, 2 = meine, 3 = die des anderen Macs.
+// art: beide (beide haben geändert/angelegt) · meine-geloescht (ich habe gelöscht, der andere geändert) · andere-geloescht.
+async function konfliktListe(G) {
+  const r = await G(["ls-files", "-u", "-z"]);
+  if (r.code !== 0) throw new HttpFehler(500, "Die Konflikte waren nicht lesbar.", { ausgabe: ausgabeVon(r) });
+  const map = new Map();
+  for (const eintrag of r.stdout.split("\0")) {
+    const m = /^(\d{6}) [0-9a-f]+ ([123])\t([\s\S]+)$/.exec(eintrag);
+    if (!m) continue;
+    const e = map.get(m[3]) || { pfad: m[3], stufen: new Set(), modus: m[1] };
+    e.stufen.add(Number(m[2]));
+    if (m[2] !== "1") e.modus = m[1];
+    map.set(m[3], e);
+  }
+  return [...map.values()].sort((a, b) => (a.pfad < b.pfad ? -1 : 1)).map((e) => ({
+    pfad: e.pfad, stufen: e.stufen, modus: e.modus, versteckt: istGesperrt(e.pfad),
+    art: e.stufen.has(2) && e.stufen.has(3) ? "beide" : e.stufen.has(3) ? "meine-geloescht" : "andere-geloescht",
+  }));
+}
+const oeffentlich = (e) => ({ pfad: e.pfad, art: e.art });
+
+// Für status(): null ohne laufende Zusammenführung, sonst { dateien: [{pfad, art}], versteckt: Anzahl } (versteckte Dateien nennt die App nie).
+async function konfliktStand(G) {
+  if (!(await mergeLaeuft(G))) return null;
+  const liste = await konfliktListe(G);
+  return { dateien: liste.filter((e) => !e.versteckt).map(oeffentlich), versteckt: liste.filter((e) => e.versteckt).length };
+}
+
+// Kopie des Arbeitsstands der Konfliktdateien nach .git/brain-sicherung/<Zeit>/ — falls jemand darin von Hand gearbeitet hat.
+function sichereArbeitsstand(wurzel, pfade) {
+  if (!pfade.length) return null;
+  const basis = join(wurzel, ".git", "brain-sicherung", new Date().toISOString().replace(/[:.]/g, "-"));
+  let n = 0;
+  for (const p of pfade) {
+    const quelle = join(wurzel, ...p.split("/")), ziel = join(basis, ...p.split("/"));
+    if (!ziel.startsWith(basis + sep)) continue;
+    try {
+      const s = lstatSync(quelle);
+      if (!s.isFile() || s.size > MAX_DATEI) continue;
+      mkdirSync(dirname(ziel), { recursive: true });
+      copyFileSync(quelle, ziel); n++;
+    } catch { /* Datei fehlt (gelöscht) oder nicht lesbar: nur Komfort */ }
+  }
+  return n ? basis : null;
+}
+
+// Eine Datei auflösen. wahl: meine | andere | beide. Fehlt die gewählte Seite (dort gelöscht), wird auch gelöscht.
+// → { zweiteDatei } wenn „beide“ eine Zusatzdatei angelegt hat.
+async function loeseDatei(G, wurzel, e, wahl, datum) {
+  const hat = (st) => e.stufen.has(st);
+  const behalte = async (seite) => {
+    const a = await G(["checkout", seite === 2 ? "--ours" : "--theirs", "--", e.pfad]);
+    if (a.code !== 0) throw new HttpFehler(500, `„${e.pfad}“ ließ sich nicht übernehmen.`, { ausgabe: ausgabeVon(a) });
+    const b = await G(["add", "--", e.pfad]);
+    if (b.code !== 0) throw new HttpFehler(500, `„${e.pfad}“ ließ sich nicht vormerken.`, { ausgabe: ausgabeVon(b) });
+  };
+  const loesche = async () => {
+    const r = await G(["rm", "-q", "-f", "--", e.pfad]);
+    if (r.code !== 0) throw new HttpFehler(500, `„${e.pfad}“ ließ sich nicht entfernen.`, { ausgabe: ausgabeVon(r) });
+  };
+  if (e.modus === "160000") throw new HttpFehler(422, `„${e.pfad}“ ist ein eingebettetes Repository — das kann die App nicht zusammenführen.`);
+  if (wahl === "meine") { if (hat(2)) await behalte(2); else await loesche(); return {}; }
+  if (wahl === "andere") { if (hat(3)) await behalte(3); else await loesche(); return {}; }
+  // beide: meine bleibt, die des anderen Macs wird daneben als „<Name> (Konflikt <Datum>).<Endung>“ gespeichert
+  if (!hat(2)) { await behalte(3); return {}; }   // ich habe gelöscht: die Fassung des anderen bleibt
+  if (!hat(3)) { await behalte(2); return {}; }   // der andere hat gelöscht: meine bleibt
+  const blob = await G(["cat-file", "blob", `:3:${e.pfad}`], { buffer: true });
+  if (blob.code !== 0) throw new HttpFehler(500, `Die Fassung des anderen Macs von „${e.pfad}“ war nicht lesbar.`, { ausgabe: ausgabeVon(blob) });
+  if (blob.stdout.length > MAX_DATEI) throw new HttpFehler(413, `„${e.pfad}“ ist zu groß für „beide behalten“. Bitte wähle eine der beiden Fassungen.`);
+  const ordner = dirname(e.pfad) === "." ? "" : dirname(e.pfad) + "/";
+  const ext = extname(e.pfad), stamm = basename(e.pfad, ext).slice(0, 100);
+  let ziel = null;
+  for (let i = 0; i < 100 && !ziel; i++) {
+    const rel = `${ordner}${stamm} (Konflikt ${datum}${i ? " " + (i + 1) : ""})${ext}`;
+    const l = loese(wurzel, rel); // innerhalb des Vaults, kein Symlink nach draußen
+    if (!existsSync(l.abs) && (await G(["ls-files", "--error-unmatch", "--", l.rel])).code !== 0) ziel = l;
+  }
+  if (!ziel) throw new HttpFehler(409, `Für „${e.pfad}“ gibt es schon zu viele Konfliktkopien.`);
+  writeFileSync(ziel.abs, blob.stdout, { flag: "wx" }); // wx: nie eine vorhandene Datei überschreiben
+  try {
+    await behalte(2);
+    const b = await G(["add", "--", ziel.rel]);
+    if (b.code !== 0) throw new HttpFehler(500, "Die Zusatzdatei ließ sich nicht vormerken.", { ausgabe: ausgabeVon(b) });
+  } catch (x) { try { unlinkSync(ziel.abs); } catch { /* schon weg */ } throw x; }
+  return { zweiteDatei: ziel.rel };
+}
+
+// Versteckte Konfliktdateien (Punkt-Ordner) zeigt die Oberfläche nicht: dort bleibt automatisch die eigene Fassung.
+async function versteckteBehalten(G, wurzel) {
+  const liste = (await konfliktListe(G)).filter((e) => e.versteckt);
+  if (!liste.length) return;
+  sichereArbeitsstand(wurzel, liste.map((e) => e.pfad));
+  for (const e of liste) await loeseDatei(G, wurzel, e, "meine", "");
+}
+
+// Merge-Commit; nur wenn nichts mehr offen ist. Immer ohne Hooks (wie der ganze Abgleich).
+async function mergeCommit(G, wurzel, namen) {
+  if ((await konfliktListe(G)).length) throw new HttpFehler(409, "Es sind noch Dateien offen.");
+  const liste = namen.slice(0, 5).join(", ") + (namen.length > 5 ? ` und ${namen.length - 5} weitere` : "");
+  const nachricht = namen.length ? `Abgleich: Konflikte gelöst (${liste})` : "Abgleich mit dem anderen Mac";
+  const c = await G(["commit", "-m", nachricht], { ohneHooks: true });
+  if (c.code !== 0) throw new HttpFehler(422, "Das Zusammenführen konnte nicht abgeschlossen werden.", { ausgabe: ausgabeVon(c) });
+  return (await G(["rev-parse", "HEAD"])).stdout.trim();
+}
+
+// Text einer Konfliktseite für die Vorschau (nur lesbarer Text bis 200 KB, sonst { text: null }).
+async function seitenText(G, stufe, pfad) {
+  const r = await G(["cat-file", "blob", `:${stufe}:${pfad}`], { buffer: true });
+  if (r.code !== 0) return null;
+  if (r.stdout.length > 200_000 || r.stdout.includes(0)) return { text: null, gross: r.stdout.length > 200_000 };
+  const text = r.stdout.toString("utf8");
+  return Buffer.compare(Buffer.from(text, "utf8"), r.stdout) === 0 ? { text } : { text: null };
+}
+
+// GET: offene Konflikte. Mit pfad zusätzlich beide Fassungen als Text (meine / andere; null = diese Seite hat gelöscht).
+export async function konflikte(wurzel, pfad, ctx = {}) {
+  const G = binde(wurzel, ctx);
+  await brauchtRepo(G, wurzel);
+  if (!(await mergeLaeuft(G))) return { aktiv: false, dateien: [] };
+  const liste = (await konfliktListe(G)).filter((e) => !e.versteckt);
+  const r = { aktiv: true, dateien: liste.map(oeffentlich) };
+  if (pfad !== undefined && pfad !== null && pfad !== "") {
+    const e = liste.find((x) => x.pfad === pfad);
+    if (!e) throw new HttpFehler(404, "Diese Datei hat keinen offenen Konflikt.");
+    const [m, a] = await Promise.all([e.stufen.has(2) ? seitenText(G, 2, e.pfad) : null, e.stufen.has(3) ? seitenText(G, 3, e.pfad) : null]);
+    r.datei = { pfad: e.pfad, art: e.art, meine: m, andere: a };
+  }
+  return r;
+}
+
+// POST { auswahl: [{ pfad, wahl }] }: jede offene Datei bekommt eine Wahl; danach der Merge-Commit. Danach sendet die Oberfläche (sync).
+export function konfliktAbschliessen(wurzel, a, ctx = {}) { return exklusiv(wurzel, () => konfliktAbschliessenOhneSperre(wurzel, a || {}, kontext(ctx, ctx.frist || neueFrist(LIMIT_COMMIT)))); }
+async function konfliktAbschliessenOhneSperre(wurzel, { auswahl }, ctx) {
+  const G = binde(wurzel, ctx);
+  await brauchtRepo(G, wurzel);
+  if (!(await mergeLaeuft(G))) throw new HttpFehler(409, "Es gibt keinen offenen Abgleich.");
+  const liste = await konfliktListe(G);
+  const sichtbar = liste.filter((e) => !e.versteckt);
+  if (!Array.isArray(auswahl)) throw new HttpFehler(400, "Bitte für jede Datei eine Fassung wählen.");
+  const wahlen = new Map();
+  for (const x of auswahl) {
+    if (!x || typeof x.pfad !== "string" || !WAHL.has(x.wahl)) throw new HttpFehler(400, "Ungültige Auswahl.");
+    if (!sichtbar.some((e) => e.pfad === x.pfad)) throw new HttpFehler(400, `„${x.pfad}“ hat keinen offenen Konflikt.`);
+    wahlen.set(x.pfad, x.wahl);
+  }
+  const fehlt = sichtbar.filter((e) => !wahlen.has(e.pfad));
+  if (fehlt.length) throw new HttpFehler(400, `Bitte für jede Datei eine Fassung wählen (es fehlt: ${fehlt.slice(0, 3).map((e) => e.pfad).join(", ")}).`, { dateien: fehlt.map((e) => e.pfad) });
+  const datum = berlinHeute();
+  sichereArbeitsstand(wurzel, liste.map((e) => e.pfad));
+  return mitAbbruchSchutz(G, wurzel, async () => {
+    const zweite = [];
+    await versteckteBehalten(G, wurzel);
+    for (const e of sichtbar) { const r = await loeseDatei(G, wurzel, e, wahlen.get(e.pfad), datum); if (r.zweiteDatei) zweite.push(r.zweiteDatei); }
+    const sha = await mergeCommit(G, wurzel, sichtbar.map((e) => e.pfad));
+    return { sha, dateien: sichtbar.length, zweiteDateien: zweite };
+  });
+}
+
+// POST: Abbrechen = `git merge --abort`. Der Stand ist danach wie vor dem Abgleich; von Hand Bearbeitetes liegt vorher in .git/brain-sicherung/.
+export function konfliktAbbrechen(wurzel, ctx = {}) { return exklusiv(wurzel, () => konfliktAbbrechenOhneSperre(wurzel, kontext(ctx, ctx.frist || neueFrist(LIMIT_COMMIT)))); }
+async function konfliktAbbrechenOhneSperre(wurzel, ctx) {
+  const G = binde(wurzel, ctx);
+  await brauchtRepo(G, wurzel);
+  if (!(await mergeLaeuft(G))) throw new HttpFehler(409, "Es gibt keinen offenen Abgleich.");
+  sichereArbeitsstand(wurzel, (await konfliktListe(G)).map((e) => e.pfad));
+  const r = await G(["merge", "--abort"], { ohneHooks: true });
+  if (r.code !== 0 || (await mergeLaeuft(G))) throw new HttpFehler(500, "Der Abgleich ließ sich nicht abbrechen.", { ausgabe: ausgabeVon(r) });
+  return { ok: true };
+}
+
+// POST: beim Server nachsehen (nur holen, nichts zusammenführen) → neuer Status mit vor/zurueck. Läuft gerade ein Abgleich, wird nicht geholt.
+export async function nachsehen(wurzel, ctx = {}) {
+  const frist = neueFrist(70_000);
+  const G = binde(wurzel, kontext(ctx, frist));
+  await brauchtRepo(G, wurzel);
+  const rem = await remotes(G);
+  if (!rem.length || laufend.has(wurzel)) return { ...(await status(wurzel, ctx)), geholt: false };
+  const remote = rem.includes("origin") ? "origin" : rem[0];
+  let f;
+  try { f = await G(["fetch", "--quiet", "--no-recurse-submodules", remote], { ohneHooks: true, timeout: 60_000 }); }
+  catch (e) { throw zeitFehler(e, LESEN_ZU_LANGE); }
+  if (f.code !== 0) { const u = uebersetzeGitFehler(f.stderr, "Der Server war nicht erreichbar."); throw new HttpFehler(u.status, u.meldung); } // ohne Roh-Ausgabe: die könnte eine Adresse mit Zugangsdaten nennen
+  return { ...(await status(wurzel, ctx)), geholt: true };
+}
+
+// ── Version zurückholen ──────────────────────────────────────────────────────────────────────────────────────────────
+const DATUM_DE = new Intl.DateTimeFormat("de-DE", { timeZone: "Europe/Berlin", day: "2-digit", month: "2-digit", year: "numeric" });
+
+// Vollständige Versionsnummer eines Commits aus dem Verlauf von HEAD (nie ein Zweig-/Tag-Name, der wie Hex aussieht).
+async function versionVon(G, sha) {
+  pruefeSha(sha);
+  const unbekannt = () => new HttpFehler(404, "Diese Version gibt es nicht.");
+  const a = await G(["rev-parse", "--verify", "-q", `${sha}^{commit}`]);
+  const voll = a.code === 0 ? a.stdout.trim() : "";
+  if (!voll || !voll.startsWith(sha.toLowerCase())) throw unbekannt();
+  const v = await G(["merge-base", "--is-ancestor", voll, "HEAD"]);
+  if (v.code !== 0) throw unbekannt();
+  return voll;
+}
+async function dateiInVersion(G, voll, p) {
+  const t = await G(["cat-file", "-t", `${voll}:${p}`]);
+  if (t.code !== 0 || t.stdout.trim() !== "blob") throw new HttpFehler(404, "Diese Datei gab es in der Version nicht.");
+}
+
+// GET: Was würde das Zurückholen ändern? Unterschied von der aktuellen Fassung (HEAD) zur gewählten, als Diff.
+// ungesichert: Die Datei hat offene Änderungen — zuerst sichern, sonst wird nicht zurückgeholt.
+export async function wiederherstellenVorschau(wurzel, rel, sha, ctx = {}) {
+  const G = binde(wurzel, ctx);
+  await brauchtRepo(G, wurzel);
+  const p = gitPfad(rel);
+  loese(wurzel, rel);
+  if (!(await hatCommits(G))) throw new HttpFehler(404, "Diese Version gibt es nicht.");
+  const voll = await versionVon(G, sha);
+  await dateiInVersion(G, voll, p);
+  const r = await G(["diff", "--no-color", ...OHNE_EXTERN, ...OHNE_SUBMODULE, "HEAD", voll, "--", p]);
+  if (r.code !== 0) throw new HttpFehler(500, "Der Vergleich war nicht lesbar.", { ausgabe: ausgabeVon(r) });
+  const ungesichert = (await geaendert(G)).some((e) => e.pfad === p);
+  const MAX = 400_000;
+  return { diff: r.stdout.length > MAX ? r.stdout.slice(0, MAX) + "\n… (gekürzt)\n" : r.stdout, unveraendert: !r.stdout.trim(), ungesichert };
+}
+
+// POST { pfad, sha }: holt die Fassung zurück und sichert sie als NEUEN Commit (kein reset, kein Umschreiben). Die Verlaufs-Einträge bleiben.
+export function wiederherstellen(wurzel, a, ctx = {}) { return exklusiv(wurzel, () => wiederherstellenOhneSperre(wurzel, a || {}, kontext(ctx, ctx.frist || neueFrist(ctx.limit > 0 ? ctx.limit : LIMIT_COMMIT)))); }
+async function wiederherstellenOhneSperre(wurzel, { pfad: rel, sha }, ctx) {
+  const G = binde(wurzel, ctx);
+  await brauchtRepo(G, wurzel);
+  await keinMergeOffen(G);
+  const p = gitPfad(rel);
+  loese(wurzel, rel); // Symlinks und Ausbruch aus dem Vault
+  if (!(await hatCommits(G))) throw new HttpFehler(404, "Diese Version gibt es nicht.");
+  const voll = await versionVon(G, sha);
+  await dateiInVersion(G, voll, p);
+  if ((await geaendert(G)).some((e) => e.pfad === p)) {
+    throw new HttpFehler(409, "Diese Datei hat Änderungen, die noch nicht gesichert sind. Bitte sichere sie zuerst, dann kannst du eine frühere Fassung zurückholen.", { art: "ungesichert" });
+  }
+  const jetzt = await G(["rev-parse", "-q", "--verify", `HEAD:${p}`]);
+  const dann = await G(["rev-parse", "--verify", `${voll}:${p}`]);
+  const hatteHead = jetzt.code === 0;
+  if (hatteHead && jetzt.stdout.trim() === dann.stdout.trim()) return { sha: null, unveraendert: true };
+  const wann = await G(["log", "-1", "--format=%cI", voll]);
+  const tag = DATUM_DE.format(new Date(wann.stdout.trim()));
+  const nachricht = `Fassung vom ${tag} wiederhergestellt: ${basename(p)}`;
+  const gestartet = Date.now();
+  const kopfVorher = await kopfSha(G);
+  const zurueck = async () => { // Rückweg: Datei und Vormerkung wie vorher
+    try { await G(hatteHead ? ["checkout", "HEAD", "--", p] : ["rm", "-q", "-f", "--", p], rueckweg); } catch { /* nur Komfort */ }
+  };
+  let c;
+  try {
+    const a = await G(["checkout", voll, "--", p]);
+    if (a.code !== 0) { await zurueck(); throw new HttpFehler(422, "Die Fassung konnte nicht geholt werden.", { ausgabe: ausgabeVon(a) }); }
+    c = await G(["commit", "-m", nachricht, "--only", "--", p]);
+  } catch (e) {
+    if (!(e instanceof HttpFehler) || e.status !== 504) throw e;
+    await sperreAufraeumen(wurzel, gestartet);
+    const kopfNachher = await kopfSha(G, rueckweg).catch(() => null);
+    if (kopfNachher && kopfNachher !== kopfVorher) return { sha: kopfNachher, unveraendert: false };
+    await zurueck();
+    throw new HttpFehler(504, "Das Zurückholen hat zu lange gebraucht und wurde abgebrochen. Deine Datei ist unverändert — bitte später noch einmal versuchen.");
+  }
+  if (c.code !== 0) { await zurueck(); throw new HttpFehler(422, "Das Sichern der Fassung wurde abgelehnt. Deine Datei ist unverändert.", { ausgabe: ausgabeVon(c) }); }
+  return { sha: (await G(["rev-parse", "HEAD"])).stdout.trim(), unveraendert: false };
 }
