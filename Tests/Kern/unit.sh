@@ -8,4 +8,6 @@ D="$(cd "$(dirname "$0")" && pwd)"
 . "$D/stage.sh" "$@"   # Kern-Wurzel (KORTEX_KERN): baut bei Bedarf die Bühne und läuft dort weiter (siehe stage.sh)
 S="$(node -p 'require("node:url").pathToFileURL(process.argv[1]).href' "$D/setup.mjs")" || exit 1
 [ "$#" -gt 0 ] || set -- "$D"/test-*.mjs
-exec node --test --import "$S" "$@"
+# KERN_TEST_KONKURRENZ=<n>: so viele Testdateien gleichzeitig (Standard von node: Kerne − 1). Die Tests warten viel auf
+# Kindprozesse (Versionsverwaltung, node); die CI-Runner haben 4 Kerne, dort lohnt etwas mehr als der Standard.
+exec node --test ${KERN_TEST_KONKURRENZ:+--test-concurrency="$KERN_TEST_KONKURRENZ"} --import "$S" "$@"
