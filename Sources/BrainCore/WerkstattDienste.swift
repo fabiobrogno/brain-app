@@ -80,6 +80,51 @@ public struct WerkstattDienste: EinrichtungsDienste {
         _ = try await rufe("POST", "/api/github/abbrechen", [:])
     }
 
+    // MARK: Sicherung
+
+    public func sicherungVorpruefung() async -> SicherungVorpruefung {
+        do {
+            let j = try await rufe("GET", "/api/sicherung/bereit")
+            switch j["zustand"] as? String {
+            case "gesichert": return .gesichert
+            case "bereit": return .bereit
+            case "blockiert": return .blockiert((j["text"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Dein Brain kann gerade nicht gesichert werden.")
+            default: return .blockiert("Die Antwort des Hintergrunddienstes war unvollständig.")
+            }
+        } catch {
+            // Nicht lesbar heißt NICHT „keine Sicherung“: sonst würde ein Repository angelegt, das sich danach nicht verbinden lässt.
+            let grund = (error as? EinrichtungsFehler)?.meldung ?? error.localizedDescription
+            return .blockiert("Kortex konnte den Stand deines Brains nicht prüfen: \(grund) Es wurde nichts bei GitHub angelegt.")
+        }
+    }
+
+    public func githubRepos() async throws -> GitHubRepoListe {
+        let j = try await rufe("GET", "/api/github/repos")
+        let repos = (j["repos"] as? [[String: Any]] ?? []).compactMap(Self.repo(aus:))
+        return GitHubRepoListe(repos: repos, gekuerzt: (j["gekuerzt"] as? Bool) == true)
+    }
+
+    public func githubRepoAnlegen(name: String) async throws -> GitHubRepo {
+        let j = try await rufe("POST", "/api/github/repo-anlegen", ["name": name])
+        // Die Werkstatt legt nur private Repositories an; meldet sie etwas anderes, wird das Ergebnis nicht verwendet.
+        guard (j["privat"] as? Bool) == true, let r = Self.repo(aus: j) else {
+            throw EinrichtungsFehler("GitHub hat das Repository nicht wie erwartet angelegt. Schau auf github.com nach, bevor du es noch einmal versuchst.")
+        }
+        return r
+    }
+
+    public func verbindeSicherung(besitzer: String, name: String) async throws -> SicherungErgebnis {
+        // Nur besitzer/name: die Adresse baut die Werkstatt selbst (kein Freitext, keine Zugangsdaten).
+        let j = try await rufe("POST", "/api/sicherung/verbinden", ["besitzer": besitzer, "name": name])
+        return (j["ergebnis"] as? String).flatMap(SicherungErgebnis.init(rawValue:)) ?? .verbunden
+    }
+
+    static func repo(aus j: [String: Any]) -> GitHubRepo? {
+        guard let name = j["name"] as? String, let besitzer = j["besitzer"] as? String, let url = j["url"] as? String,
+              url == "https://github.com/\(besitzer)/\(name).git" else { return nil }
+        return GitHubRepo(name: name, besitzer: besitzer, url: url, aktualisiert: j["aktualisiert"] as? String, leer: (j["leer"] as? Bool) == true)
+    }
+
     // MARK: KI
 
     public func erkenneKIs() async throws -> [KiProgramm] {

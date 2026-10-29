@@ -40,6 +40,8 @@ public actor BrueckenVerbindung {
     private let arbeitsordner: URL?
     private var argumente: [String]
     private let umgebung: [String: String]
+    /// Geerbte Umgebung, aus der die des Kindprozesses entsteht (`NodeUmgebung.fuerKind`); Standard: die der App. Nur Tests setzen sie.
+    private let basisUmgebung: [String: String]?
     private let vorStart: (@Sendable () async -> Bool)?
     /// Die laufende Vorab-Prüfung: gleichzeitige Starts (die Seite lädt viele Dateien auf einmal) teilen sich EINE Prüfung.
     private var pruefung: Task<Bool, Never>?
@@ -61,7 +63,8 @@ public actor BrueckenVerbindung {
     /// `vorStart` läuft vor JEDEM Prozessstart (auch nach einem Absturz) und muss `true` liefern, sonst startet nichts und die
     /// Anfrage scheitert mit `.nichtErlaubt` — so läuft Kit-Code aus dem Vault nur mit Vertrauen (Studio-v2-Spec §8).
     public init(node: URL, vault: URL?, skript: URL? = nil, umgebung: [String: String] = [:], arbeitsordner: URL? = nil,
-                vorStart: (@Sendable () async -> Bool)? = nil) {
+                basisUmgebung: [String: String]? = nil, vorStart: (@Sendable () async -> Bool)? = nil) {
+        self.basisUmgebung = basisUmgebung
         self.node = node
         self.vault = vault
         self.skript = skript
@@ -131,7 +134,7 @@ public actor BrueckenVerbindung {
         let p = Process()
         p.executableURL = node
         p.arguments = argumente
-        p.environment = NodeUmgebung.fuerKind(vault: vault, vorgaben: umgebung)
+        p.environment = NodeUmgebung.fuerKind(basis: basisUmgebung ?? ProcessInfo.processInfo.environment, vault: vault, vorgaben: umgebung)
         p.currentDirectoryURL = startOrdner
         let ein = Pipe(), aus = Pipe()
         p.standardInput = ein
@@ -183,7 +186,7 @@ public actor BrueckenVerbindung {
 
     /// Zeitlimit je Pfad, immer etwas über der Gesamtfrist, die die Werkstatt selbst einhält (Studio-v2-Spec §8): Vault öffnen,
     /// neu anlegen und klonen (`/api/vaults/oeffnen`, `…/neu`, `…/klonen`; Node-Frist je 300 s) 330 s, Remote hinzufügen
-    /// (`/api/git/remote`; Node-Gesamtfrist 120 s, darin Historien-Prüfung und erster Push) 150 s, Commit (`/api/git/commit`;
+    /// (`/api/git/remote`; Node-Gesamtfrist 120 s, darin Historien-Prüfung und erster Push) 150 s, Repository-Liste (`/api/github/repos`) 45 s, Commit (`/api/git/commit`;
     /// Node-Frist 75 s) 90 s, Git-Abgleich (`/api/git/sync`) 400 s, übrige `/api/git/…` und `/api/posteingang/…` (enden in einem Commit) 90 s, alles andere 30 s. Die Zuordnung
     /// gilt für den Pfad ohne Query; die Einzelpfade nur für genau diesen Pfad (auch mit „/“ am Ende), nicht für Unterpfade.
     /// Läuft ein Limit ab, wird die Anfrage nie wiederholt (`darfWiederholen`): ein zweites POST könnte doppelt klonen oder pushen.
@@ -194,6 +197,9 @@ public actor BrueckenVerbindung {
         if ist("/api/vaults/oeffnen") || ist("/api/vaults/neu") || ist("/api/vaults/klonen") { return .seconds(330) }
         if ist("/api/git/sync") { return .seconds(400) }
         if ist("/api/git/remote") { return .seconds(150) }
+        if ist("/api/sicherung/verbinden") { return .seconds(180) } // Prüfung bei GitHub (bis 30 s) + Remote-Frist 120 s
+        if ist("/api/sicherung/bereit") { return .seconds(90) } // wie /api/git/status
+        if ist("/api/github/repos") || ist("/api/github/repo-anlegen") { return .seconds(45) } // Token 15 s + Anfragen; Liste: Node-Frist 25 s + eine Anfrage // Liste der Repositories: bis zu 10 Seiten, Node-Frist 25 s + eine Anfrage
         if ist("/api/git/commit") { return .seconds(90) }
         if p.hasPrefix("/api/git/") { return .seconds(90) }
         if p.hasPrefix("/api/posteingang/") { return .seconds(90) } // Verwerfen/Später/Übernehmen enden in einem Commit (Node-Frist 75 s)

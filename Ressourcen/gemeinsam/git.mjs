@@ -7,9 +7,9 @@
 // (ctx.frist) — bei Ablauf wird die ganze Prozessgruppe beendet.
 // ctx = { vertraut, sshEigen, sshGlobal, gpgGlobal, frist } kommt von vault.mjs (aus vertrauen.mjs); ohne Angabe gilt „nicht vertraut“.
 import { execFile, execFileSync } from "node:child_process";
-import { realpathSync, readFileSync, writeFileSync, statSync, renameSync, lstatSync, unlinkSync, readdirSync, mkdirSync, copyFileSync, existsSync } from "node:fs";
+import { realpathSync, readFileSync, writeFileSync, statSync, renameSync, lstatSync, unlinkSync, readdirSync, mkdirSync, copyFileSync, existsSync, rmSync } from "node:fs";
 import { join, dirname, basename, extname, sep } from "node:path";
-import { HttpFehler, sauber, loese, kindUmgebung, falte, absoluterGitPfad, absoluterPfad, MAX_DATEI } from "./basis.mjs";
+import { HttpFehler, sauber, loese, kindUmgebung, falte, absoluterGitPfad, absoluterPfad, MAX_DATEI, testmodus } from "./basis.mjs";
 import { berlinHeute } from "./pruefung.mjs";
 import { starte, neueFrist, beendeAlleProzesse } from "./prozess.mjs";
 import { pruefeGitUrl, uebersetzeGitFehler } from "./gitwerkzeug.mjs"; // (gitwerkzeug importiert git() von hier — Kreis ist harmlos: nur Funktionen, nichts beim Laden)
@@ -60,16 +60,26 @@ export function gitUmgebung({ vertraut = false, sshEigen = false, sshGlobal = nu
 // ist dann beendet) oder wenn git fehlt. frist = Gesamtfrist der Route: der Aufruf bekommt höchstens das Restbudget.
 // ohneHooks: auch in einem vertrauten Vault ohne Hooks (Abgleich, Rückweg). vault: Wert für BRAIN_VAULT (Standard: cwd; null = keiner,
 // z. B. beim Klonen, wo cwd der Elternordner ist). sshGlobal/gpgGlobal: Einstellungen des Nutzers (siehe gitUmgebung, OHNE_SIGNIEREN).
-export function git(cwd, args, { timeout = LIMIT, buffer = false, vertraut = false, sshEigen = false, sshGlobal = null, gpgGlobal = null, ohneHooks = false, frist = null, vault = cwd } = {}) {
+export function git(cwd, args, { timeout = LIMIT, buffer = false, vertraut = false, sshEigen = false, sshGlobal = null, gpgGlobal = null, ohneHooks = false, frist = null, vault = cwd, githubHelper = null } = {}) {
   const programm = absoluterGitPfad(); // nie der nackte Name „git“: der würde nach dem Wechsel in den (womöglich fremden) Vault gesucht
   if (!programm) return Promise.reject(new HttpFehler(500, "Git ist auf diesem Mac nicht installiert."));
-  return starte(programm, [...GRUND, ...(vertraut ? [] : OHNE_SIGNIEREN(gpgGlobal)), ...(vertraut && !ohneHooks ? [] : OHNE_HOOKS), ...args],
+  return starte(programm, [...GRUND, ...githubHelperArgs(githubHelper), ...(vertraut ? [] : OHNE_SIGNIEREN(gpgGlobal)), ...(vertraut && !ohneHooks ? [] : OHNE_HOOKS), ...args],
     { cwd, env: gitUmgebung({ vertraut, sshEigen, sshGlobal, vault }), timeout, frist, buffer,
       fehlt: "Git ist auf diesem Mac nicht installiert.", zuLange: "Git hat zu lange gebraucht und wurde abgebrochen." });
 }
+// Nur für Adressen unter https://github.com: genau dieser eine Credential-Helper (die Liste wird davor geleert). Der Assistent „Sicherung“
+// nutzt damit denselben Schlüsselbund wie die Anmeldung per Gerätecode (sonst könnte ein anderer Helper des Nutzers, z. B. der von `gh`,
+// ein anderes Konto liefern als das, in dem das Repository angelegt wurde). Ohne Angabe (Studio, Abgleich) bleibt die Git-Konfiguration
+// des Nutzers unverändert. Der Wert ist ein einfacher Helper-Name (kein Pfad, kein Befehl).
+export function githubHelperArgs(helper) {
+  if (!helper) return [];
+  const erlaubt = /^[a-z][a-z0-9_-]{0,40}$/i.test(helper) || (testmodus() && /^\/[\w./-]{1,300}$/.test(helper)); // ein Pfad nur im Test (Schein-Helper)
+  if (!erlaubt) throw new HttpFehler(500, "Ungültiger Credential-Helper.");
+  return ["-c", "credential.https://github.com.helper=", "-c", `credential.https://github.com.helper=${helper}`];
+}
 // Git-Aufruf mit dem Kontext einer Route (Vertrauen, Frist); extra überschreibt (z. B. { frist: null, timeout: GNADE } für den Rückweg).
 const binde = (wurzel, ctx = {}) => (args, extra) => git(wurzel, args, { ...ctx, ...extra });
-const kontext = (o = {}, frist) => ({ vertraut: !!o.vertraut, sshEigen: !!o.sshEigen, sshGlobal: o.sshGlobal ?? null, gpgGlobal: o.gpgGlobal ?? null, frist });
+const kontext = (o = {}, frist) => ({ vertraut: !!o.vertraut, sshEigen: !!o.sshEigen, sshGlobal: o.sshGlobal ?? null, gpgGlobal: o.gpgGlobal ?? null, githubHelper: o.githubHelper ?? null, frist });
 const rueckweg = { frist: null, timeout: GNADE, ohneHooks: true };
 
 const kuerze = (s, n = 4000) => (s.length > n ? s.slice(0, n) + "\n… (gekürzt)" : s);
@@ -667,11 +677,20 @@ async function remoteHinzufuegenOhneSperre(wurzel, rohUrl, opt) {
     const serverLeer = zweige.size === 0;
     const hat = await hatCommits(G);
 
-    const senden = async () => { // nie --force: ein abgelehntes Senden lässt den Server unverändert
+    // Nie --force. Erst wird direkt an die Adresse gesendet, ERST DANACH wird origin eingetragen und der Upstream gesetzt: bricht etwas
+    // mitten im ersten Push ab (App beendet, Mac schläft), steht kein halbes origin im Vault — ein neuer Versuch beginnt sauber, und liegt
+    // der Stand schon auf dem Server, erkennt der Vergleich unten „gleich“ und trägt nur noch origin ein.
+    const senden = async () => {
       let p;
-      try { p = await G(["push", "--quiet", "-u", "origin", `refs/heads/${z}:refs/heads/${z}`], { timeout: limitSenden }); }
+      try { p = await G(["push", "--quiet", "--", url, `refs/heads/${z}:refs/heads/${z}`], { timeout: limitSenden }); }
       catch (e) { throw zeitFehler(e, "Das Senden hat zu lange gebraucht und wurde abgebrochen. Es wurde nichts eingetragen — bitte später noch einmal versuchen."); }
       if (p.code !== 0) throw sendenFehler(p);
+      await setzeOrigin();
+      let geholt = false;
+      try { geholt = (await Gh(["fetch", "--quiet", "--no-recurse-submodules", "origin"], { timeout: limit })).code === 0; } catch { /* unten: Verfolgungs-Ref selbst anlegen */ }
+      if (!geholt) { const k = await G(["rev-parse", "--verify", "-q", "HEAD"]); if (k.code === 0) await Gh(["update-ref", `refs/remotes/origin/${z}`, k.stdout.trim()]); }
+      const u = await Gh(["branch", "--set-upstream-to", `origin/${z}`]);
+      if (u.code !== 0) throw new HttpFehler(500, "Der Stand wurde gesendet, aber der Abgleich-Zweig konnte nicht eingetragen werden.", { ausgabe: ausgabeVon(u) });
     };
     const sendenMitRueckweg = async () => { try { await senden(); } catch (e) { await zuruecknehmen(); throw e; } };
     const fertig = async (ergebnis, nochHolen = true) => {
@@ -688,9 +707,8 @@ async function remoteHinzufuegenOhneSperre(wurzel, rohUrl, opt) {
 
     // e) Server leer → alles senden
     if (serverLeer) {
-      await setzeOrigin();
       await sendenMitRueckweg();
-      return await fertig("gesendet");
+      return await fertig("gesendet", false);
     }
 
     // f) Server hat Inhalte: Historien vergleichen. Zielzweig = gleichnamiger Zweig, sonst Hauptzweig des Servers, sonst der erste.
@@ -715,9 +733,8 @@ async function remoteHinzufuegenOhneSperre(wurzel, rohUrl, opt) {
 
       // Server ist gleich oder älter → senden (setzt notfalls nur den Upstream)
       if (await istVorfahr(spitze, lokal)) {
-        await setzeOrigin();
         await sendenMitRueckweg();
-        return await fertig(spitze === lokal && ziel === z ? "verbunden" : "gesendet");
+        return await fertig(spitze === lokal && ziel === z ? "verbunden" : "gesendet", false);
       }
 
       // Wir sind älter → vorspulen (der Arbeitsstand muss nicht sauber sein, aber das Vorspulen muss gehen)
@@ -809,12 +826,25 @@ async function konfliktStand(G) {
   return { dateien: liste.filter((e) => !e.versteckt && e.art !== "beide-geloescht").map(oeffentlich), versteckt: liste.filter((e) => e.versteckt).length };
 }
 
+// Räumt alte Sicherungen auf: nur echte Unterordner mit Zeitstempel-Namen direkt in brain-sicherung/, älter als 30 Tage (Symlinks werden nie verfolgt).
+const SICHERUNG_NAME = /^\d{4}-\d\d-\d\dT[\d-]+Z$/;
+export function raeumeSicherungenAuf(ordner, maxAlterMs = 30 * 86_400_000) {
+  let eintraege;
+  try { eintraege = readdirSync(ordner, { withFileTypes: true }); } catch { return; }
+  for (const e of eintraege) {
+    if (!e.isDirectory() || !SICHERUNG_NAME.test(e.name)) continue; // isDirectory() ist für Symlinks false
+    const p = join(ordner, e.name);
+    try { if (Date.now() - lstatSync(p).mtimeMs > maxAlterMs) rmSync(p, { recursive: true, force: true }); } catch { /* nur Komfort */ }
+  }
+}
+
 // Kopie des Arbeitsstands der Konfliktdateien nach <git-dir>/brain-sicherung/<Zeit>/ — falls jemand darin von Hand gearbeitet hat.
 // Lässt sich eine vorhandene Datei nicht sichern, wird nichts angefasst (409). → Ordner der Kopie oder null.
 async function sichereArbeitsstand(G, wurzel, pfade) {
   if (!pfade.length) return null;
   const gp = await G(["rev-parse", "--path-format=absolute", "--git-path", "brain-sicherung"]);
   const wurzelSich = gp.code === 0 ? gp.stdout.trim() : join(wurzel, ".git", "brain-sicherung");
+  raeumeSicherungenAuf(wurzelSich);
   const basis = join(wurzelSich, new Date().toISOString().replace(/[:.]/g, "-"));
   let n = 0;
   const nicht = [];

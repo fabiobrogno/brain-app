@@ -2,7 +2,7 @@
 // Das Token landet NUR über `git credential approve` im Schlüsselbund (Helper osxkeychain). Es steht nie in einer Datei, einem Log,
 // vaults.json oder einer Antwort; im Speicher lebt es nur bis zum Speichern. Die Client-ID ist eine öffentliche Einstellung
 // (Info.plist `KortexGitHubClientID` → Umgebung `KORTEX_GITHUB_CLIENT_ID`); fehlt sie, ist die Anmeldung „nicht verfügbar“.
-import { HttpFehler, kindUmgebung, absoluterGitPfad, testmodus } from "./basis.mjs";
+import { HttpFehler, kindUmgebung, absoluterGitPfad, testmodus, vorschauOrdner } from "./basis.mjs";
 import { starte } from "./prozess.mjs";
 
 const SCOPE = "repo"; // Klonen und Pushen privater Repos
@@ -21,7 +21,9 @@ export function erzeugeGitHub(opt = {}) {
   const clientId = typeof opt.clientId === "string" ? opt.clientId.trim() : "";
   const basis = new URL(frei && opt.basis ? opt.basis : "https://github.com");
   const apiBasis = (frei && opt.apiBasis ? opt.apiBasis : "https://api.github.com").replace(/\/$/, "");
-  const helper = frei && opt.helper ? opt.helper : "osxkeychain";
+  // Vorschau: das Token kommt in eine Datei im Vorschau-Ordner (Helper „store“), nie in den Schlüsselbund des echten Nutzers.
+  const vorschau = vorschauOrdner();
+  const helper = vorschau ? `store --file=${vorschau}/home/.git-credentials` : frei && opt.helper ? opt.helper : "osxkeychain";
   const holen = opt.fetch || globalThis.fetch;
   const warte = opt.warte || standardWarte;
   const jetzt = opt.jetzt || Date.now;
@@ -165,5 +167,111 @@ export function erzeugeGitHub(opt = {}) {
     return { ok: true };
   }
 
-  return { verfuegbar, anmelden, status, konto, abmelden, abbrechen, stoppe: () => { lauf++; } };
+  // ── Sicherung (FBL-88): eigene private Repositories ──────────────────────────────────────────────────────────────────────────────
+  // Das Token wird nur für den einen API-Aufruf aus dem Schlüsselbund geholt (`credential fill`) und lebt als lokale Variable bis zur
+  // Antwort. Es steht in keiner Antwort, keinem Log, keiner Fehlermeldung und keiner Repo-Adresse; die Adresse bauen wir selbst
+  // (https://github.com/<besitzer>/<name>.git), die Anmeldung beim späteren Push übernimmt derselbe Schlüsselbund.
+  async function gespeichertesToken() {
+    let r;
+    try { r = await gitAufruf(["fill"], eintrag(GITHUB)); } catch { return null; }
+    if (r.code !== 0) return null;
+    const m = /^password=(.+)$/m.exec(String(r.stdout || ""));
+    return m ? m[1] : null;
+  }
+  // Das Token wird EINMAL je Aufruf der Oberfläche geholt (nicht je Seite): ein Schlüsselbund-Zugriff, eine lokale Variable.
+  async function holeToken() {
+    if (!verfuegbar) throw new HttpFehler(404, "Die Anmeldung bei GitHub ist in dieser Version nicht eingerichtet.", { art: "nicht-eingerichtet" });
+    const token = await gespeichertesToken();
+    if (!token) throw new HttpFehler(401, "Du bist bei GitHub nicht angemeldet. Bitte melde dich zuerst an.", { art: "nicht-angemeldet" });
+    return token;
+  }
+  async function githubApi(token, methode, pfad, body) {
+    let r;
+    try {
+      r = await holen(`${apiBasis}${pfad}`, { method: methode, signal: AbortSignal.timeout(NETZ_FRIST),
+        headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}`, "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "Kortex",
+          ...(body ? { "Content-Type": "application/json" } : {}) },
+        ...(body ? { body: JSON.stringify(body) } : {}) });
+    } catch { throw new HttpFehler(502, "GitHub war nicht erreichbar. Prüfe die Internetverbindung.", { art: "netz" }); }
+    let j = null; try { j = await r.json(); } catch { /* kein JSON */ }
+    if (r.status === 401) throw new HttpFehler(401, "Die Anmeldung bei GitHub gilt nicht mehr. Bitte melde dich noch einmal an.", { art: "anmeldung" });
+    return { status: r.status, j };
+  }
+
+  const gueltigerBesitzer = (s) => typeof s === "string" && /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(s);
+  // Die Adresse bauen wir selbst; nur im Testmodus lässt sie sich auf ein lokales Repository umbiegen (opt.repoAdresse).
+  const repoAdresse = frei && typeof opt.repoAdresse === "function" ? opt.repoAdresse : (besitzer, name) => `https://github.com/${besitzer}/${name}.git`;
+  // Höchstens 1000 Repositories. Gesamtdauer: Token (15 s) + Seiten bis 25 s + eine letzte Anfrage (15 s) < 45 s, dem Limit der App.
+  const MAX_SEITEN = 10, LISTEN_FRIST = 25_000;
+
+  // Eigene PRIVATE Repositories (GET /user/repos?affiliation=owner&visibility=private, seitenweise). Zusätzlich zur Abfrage wird jede
+  // Antwortzeile geprüft: was nicht ausdrücklich privat ist, erscheint nie. Archivierte und gesperrte Repos lassen sich nicht beschreiben.
+  async function repos() {
+    const token = await holeToken();
+    const start = jetzt(), aus = [];
+    let gekuerzt = false;
+    for (let seite = 1; ; seite++) {
+      if (seite > MAX_SEITEN || jetzt() - start > LISTEN_FRIST) { gekuerzt = true; break; }
+      const { status, j } = await githubApi(token, "GET", `/user/repos?affiliation=owner&visibility=private&sort=updated&per_page=100&page=${seite}`);
+      if (status === 403 || status === 429) throw new HttpFehler(429, "GitHub bremst gerade. Bitte versuche es in ein paar Minuten noch einmal.", { art: "limit" });
+      if (status !== 200 || !Array.isArray(j)) throw new HttpFehler(502, "GitHub hat die Liste deiner Repositories nicht geliefert.", { art: "github" });
+      for (const r of j) {
+        const besitzer = r && r.owner && r.owner.login, name = r && r.name;
+        if (!r || r.private !== true || r.archived || r.disabled || !gueltigerBesitzer(besitzer) || !repoNameGueltig(name)) continue;
+        aus.push({ name, besitzer, url: repoAdresse(besitzer, name), aktualisiert: typeof r.pushed_at === "string" ? r.pushed_at : (typeof r.updated_at === "string" ? r.updated_at : null), leer: r.size === 0 });
+      }
+      if (j.length < 100) break;
+    }
+    return { repos: aus, ...(gekuerzt ? { gekuerzt: true } : {}) };
+  }
+
+  // Neues Repository im Konto des Nutzers — IMMER privat: `private: true` steht fest im Code, die Eingabe kann es nicht ändern, und
+  // eine Antwort, die nicht ausdrücklich „privat“ meldet, wird nicht weiterverwendet.
+  async function repoAnlegen(eingabe) {
+    const name = typeof (eingabe && eingabe.name) === "string" ? eingabe.name.trim() : "";
+    const fehler = repoNameFehler(name);
+    if (fehler) throw new HttpFehler(400, fehler, { art: "name" });
+    const token = await holeToken();
+    const { status, j } = await githubApi(token, "POST", "/user/repos", { name, description: "Sicherung meines Kortex-Brains", private: true, auto_init: false });
+    if (status === 422) {
+      const vergeben = JSON.stringify((j && j.errors) || []).includes("already exists");
+      throw new HttpFehler(vergeben ? 409 : 400, vergeben ? "Du hast schon ein Repository mit diesem Namen. Wähle einen anderen Namen oder nimm das vorhandene." : "GitHub nimmt diesen Namen nicht an. Wähle einen anderen.", { art: vergeben ? "name-vergeben" : "name" });
+    }
+    if (status === 403 || status === 429) throw new HttpFehler(403, "GitHub erlaubt das Anlegen gerade nicht (fehlende Rechte oder zu viele Anfragen). Melde dich neu an oder versuche es später noch einmal.", { art: "limit" });
+    const besitzer = j && j.owner && j.owner.login;
+    if (status !== 201 || !j || j.private !== true || j.name !== name || !gueltigerBesitzer(besitzer)) {
+      throw new HttpFehler(502, "GitHub hat das Repository nicht wie erwartet angelegt. Schau auf github.com nach, bevor du es noch einmal versuchst.", { art: "github" });
+    }
+    return { name, besitzer, url: repoAdresse(besitzer, name), privat: true };
+  }
+
+  // Vor dem Verbinden: das Repository gibt es, gehört dem Konto, ist PRIVAT, nicht archiviert und beschreibbar. Gibt die von GitHub genannte
+  // Schreibweise von Besitzer und Name zurück — die Adresse für den Push entsteht nur hier, nie aus Eingaben der Oberfläche.
+  async function repoPruefen(besitzer, name) {
+    if (!gueltigerBesitzer(besitzer) || !repoNameGueltig(name)) throw new HttpFehler(400, "Das ist kein gültiger Repository-Name.", { art: "name" });
+    const token = await holeToken();
+    const { status, j } = await githubApi(token, "GET", `/repos/${besitzer}/${name}`);
+    if (status === 404) throw new HttpFehler(404, "Dieses Repository gibt es nicht (oder du hast keinen Zugriff darauf).", { art: "nicht-gefunden" });
+    if (status === 403 || status === 429) throw new HttpFehler(429, "GitHub bremst gerade. Bitte versuche es in ein paar Minuten noch einmal.", { art: "limit" });
+    const o = j && j.owner && j.owner.login;
+    if (status !== 200 || !j || !gueltigerBesitzer(o) || !repoNameGueltig(j.name) || o.toLowerCase() !== besitzer.toLowerCase() || j.name.toLowerCase() !== name.toLowerCase()) {
+      throw new HttpFehler(502, "GitHub hat das Repository nicht wie erwartet beschrieben.", { art: "github" });
+    }
+    if (j.private !== true) throw new HttpFehler(403, "Dieses Repository ist nicht privat. Kortex sichert dein Brain nur in private Repositories.", { art: "oeffentlich" });
+    if (j.archived || j.disabled) throw new HttpFehler(409, "Dieses Repository ist archiviert. Darin lässt sich nichts speichern.", { art: "archiviert" });
+    if (j.permissions && j.permissions.push === false) throw new HttpFehler(403, "Du darfst in diesem Repository nichts speichern.", { art: "rechte" });
+    return { besitzer: o, name: j.name, url: repoAdresse(o, j.name), privat: true };
+  }
+
+  return { verfuegbar, anmelden, status, konto, abmelden, abbrechen, repos, repoAnlegen, repoPruefen, helper, stoppe: () => { lauf++; } };
 }
+
+// Namensregeln für Repositories bei GitHub: 1–100 Zeichen aus Buchstaben, Ziffern, „.“, „-“, „_“; nicht „.“/„..“, nicht auf „.git“ endend.
+export function repoNameFehler(name) {
+  if (typeof name !== "string" || !name) return "Bitte gib einen Namen für das Repository ein.";
+  if (name.length > 100) return "Der Name ist zu lang (höchstens 100 Zeichen).";
+  if (!/^[A-Za-z0-9._-]+$/.test(name)) return "Im Namen sind nur Buchstaben ohne Umlaute, Ziffern, Bindestrich, Unterstrich und Punkt erlaubt.";
+  if (name === "." || name === ".." || /\.git$/i.test(name)) return "Dieser Name ist bei GitHub nicht erlaubt.";
+  return null;
+}
+export const repoNameGueltig = (name) => repoNameFehler(name) === null;

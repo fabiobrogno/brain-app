@@ -7,6 +7,8 @@ import BrainCore
 @MainActor
 final class EinrichtungsModell: ObservableObject {
     enum Weg: Equatable { case neu, klonen }
+    /// Schritt „Sicherung“: neues privates Repository anlegen oder ein vorhandenes wählen.
+    enum SicherungsWeg: Equatable { case neu, vorhanden }
 
     @Published private(set) var zustand = EinrichtungsZustand()
     @Published private(set) var anzeige = EinrichtungsAnzeige()
@@ -14,6 +16,10 @@ final class EinrichtungsModell: ObservableObject {
     @Published var name = "Brain"
     @Published var klonAdresse = ""
     @Published var eigenerOrdner: URL?
+    @Published var sicherungsWeg: SicherungsWeg? = .neu
+    /// Name für das neue Repository; leer = noch nicht vorbelegt (Vorschlag aus dem Namen des Brains).
+    @Published var repoName = ""
+    @Published var repoSuche = ""
 
     private(set) var ablauf: EinrichtungsAblauf!
     private var aufgaben: [Task<Void, Never>] = []
@@ -22,7 +28,11 @@ final class EinrichtungsModell: ObservableObject {
     /// Schließt das Fenster des Assistenten (für „Später“).
     var beiSchliessen: () -> Void = {}
 
-    init(dienste: EinrichtungsDienste, speicher: EinrichtungsSpeicher, log: AppLog) {
+    /// Vorschau („wie frisch installiert“): Band im Fenster, Ordner-Dialoge starten im Vorschau-Home.
+    let vorschau: VorschauModus?
+
+    init(dienste: EinrichtungsDienste, speicher: EinrichtungsSpeicher, log: AppLog, vorschau: VorschauModus? = nil) {
+        self.vorschau = vorschau
         ablauf = EinrichtungsAblauf(dienste: dienste, speicher: speicher, log: { log.schreibe($0) }) { [weak self] z, a in
             self?.zustand = z
             self?.anzeige = a
@@ -39,6 +49,12 @@ final class EinrichtungsModell: ObservableObject {
         aufgaben.append(Task { await aktion(a) })
     }
 
+    /// Belegt den Namen des neuen Repositories einmal aus dem Namen des Brains vor; der Nutzer kann ihn ändern.
+    func schlageRepoNamenVor() {
+        guard repoName.isEmpty else { return }
+        repoName = RepoName.vorschlag(ausVaultName: anzeige.vault?.name ?? "")
+    }
+
     func starte(wiederholung: Bool) { tu { await $0.starte(wiederholung: wiederholung) } }
 
     /// Fenster zu: laufende Aufgaben (Warten auf git, auf GitHub) beenden, Stand sichern.
@@ -50,15 +66,15 @@ final class EinrichtungsModell: ObservableObject {
 
     var ordnerText: String {
         guard let o = eigenerOrdner else { return "Brain im Benutzerordner" }
-        return o.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
+        return o.path.replacingOccurrences(of: vorschau?.home.path ?? NSHomeDirectory(), with: "~")
     }
 
     func waehleZielordner() {
-        if let url = Self.waehleOrdner(titel: "Wo soll dein Brain liegen?", knopf: "Hier anlegen") { eigenerOrdner = url }
+        if let url = Self.waehleOrdner(titel: "Wo soll dein Brain liegen?", knopf: "Hier anlegen", start: vorschau?.home) { eigenerOrdner = url }
     }
 
     func oeffneVorhandenenOrdner() {
-        guard let url = Self.waehleOrdner(titel: "Welcher Ordner ist dein Brain?", knopf: "Öffnen") else { return }
+        guard let url = Self.waehleOrdner(titel: "Welcher Ordner ist dein Brain?", knopf: "Öffnen", start: vorschau?.home) else { return }
         var verlauf = true
         if !FileManager.default.fileExists(atPath: url.appendingPathComponent(".git").path) {
             let alert = NSAlert()
@@ -76,7 +92,7 @@ final class EinrichtungsModell: ObservableObject {
         tu { await $0.oeffneOrdner(pfad: url.path, versionsverlaufEinschalten: verlauf) }
     }
 
-    private static func waehleOrdner(titel: String, knopf: String) -> URL? {
+    private static func waehleOrdner(titel: String, knopf: String, start: URL? = nil) -> URL? {
         let p = NSOpenPanel()
         p.canChooseDirectories = true
         p.canChooseFiles = false
@@ -84,6 +100,7 @@ final class EinrichtungsModell: ObservableObject {
         p.canCreateDirectories = true
         p.message = titel
         p.prompt = knopf
+        if let start { p.directoryURL = start }
         NSApp.activate()
         return p.runModal() == .OK ? p.url : nil
     }
@@ -103,6 +120,7 @@ struct EinrichtungsAssistentAnsicht: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if modell.vorschau != nil { VorschauBandAnsicht() }
             Kopf(zustand: modell.zustand)
             Divider()
             Group {
@@ -118,7 +136,7 @@ struct EinrichtungsAssistentAnsicht: View {
             Divider()
             Fuss(modell: modell)
         }
-        .frame(width: 580, height: 560)
+        .frame(width: 580, height: modell.vorschau == nil ? 560 : 582)
     }
 }
 
@@ -160,8 +178,9 @@ private struct Fuss: View {
             }
             Spacer()
             if let s = modell.aktuell {
-                if s.darfUebersprungenWerden {
-                    Button("Überspringen") { modell.tu { await $0.ueberspringe() } }
+                if s.darfUebersprungenWerden && !(s == .sicherung && modell.kannWeiter(s)) {
+                    Button(s == .sicherung ? "Später sichern" : "Überspringen") { modell.tu { await $0.ueberspringe() } }
+                        .help(s == .sicherung ? "Du kannst die Sicherung jederzeit im Menü unter „Kortex einrichten …“ nachholen." : "")
                 }
                 if modell.kannWeiter(s) {
                     Button("Weiter") { modell.tu { await $0.weiter() } }.keyboardShortcut(.defaultAction)
@@ -237,6 +256,7 @@ private struct SchrittAnsicht: View {
             case .git: GitAnsicht(modell: modell)
             case .vault: VaultAnsicht(modell: modell)
             case .github: GitHubAnsicht(modell: modell)
+            case .sicherung: ScrollView { SicherungAnsicht(modell: modell) } // Auswahl samt Repository-Liste kann höher sein als das Fenster
             case .ki: ScrollView { KiAnsicht(modell: modell) } // drei Ziele samt Fehlertexten können mehr Platz brauchen als das Fenster
             case .probe: ProbeAnsicht(modell: modell)
             }
@@ -417,6 +437,139 @@ private struct GitHubAnsicht: View {
             GitHubCode(modell: modell, code: c)
         case .angemeldet(let login):
             Titel(symbol: "checkmark.seal", titel: "Bei GitHub angemeldet", text: login.map { "Konto: \($0)" })
+        }
+    }
+}
+
+private struct SicherungAnsicht: View {
+    @ObservedObject var modell: EinrichtungsModell
+
+    private var s: SicherungAnzeige { modell.anzeige.sicherung }
+
+    var body: some View {
+        VStack(spacing: 14) {
+            if s.istVerbunden {
+                erfolg
+            } else if let arbeit = s.arbeitet {
+                Titel(symbol: "lock.shield", titel: "Dein Brain wird gesichert", text: nil)
+                Arbeit(text: arbeit).padding(.top, 10)
+            } else if let konflikt = s.konflikt {
+                konfliktAnsicht(konflikt)
+            } else if let grund = s.blockiert {
+                Titel(symbol: "lock.trianglebadge.exclamationmark", titel: "Dein Brain lässt sich gerade nicht sichern", text: grund)
+                Button("Erneut prüfen") { modell.tu { await $0.pruefeSicherungNeu() } }
+                Text("Oder überspringe den Schritt — du kannst ihn im Menü „Kortex einrichten …“ nachholen.").font(.callout).foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+            } else {
+                switch modell.anzeige.github {
+                case .angemeldet: auswahl
+                case .unbekannt, .startet:
+                    Titel(symbol: "lock.shield", titel: "Dein Brain sichern", text: nil)
+                    Arbeit(text: "Einen Moment")
+                case .wartet(let c):
+                    Titel(symbol: "person.badge.key", titel: "Gib diesen Code bei GitHub ein", text: nil)
+                    GitHubCode(modell: modell, code: c)
+                case .abgemeldet, .abgelaufen, .abgelehnt, .nichtVerfuegbar:
+                    Titel(symbol: "lock.shield", titel: "Dein Brain sichern",
+                          text: "Dafür brauchst du ein GitHub-Konto. Melde dich an — Kortex speichert nur ein Zugangszeichen im Schlüsselbund deines Macs, kein Passwort.")
+                    GrosserKnopf(titel: "Bei GitHub anmelden") { modell.tu { await $0.meldeBeiGitHubAn() } }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder private var erfolg: some View {
+        switch s.ergebnis {
+        case .gesendet?:
+            Titel(symbol: "checkmark.shield.fill", titel: "Dein Brain ist gesichert",
+                  text: "Alles liegt jetzt in deinem privaten Repository \(s.verbundenMit ?? "bei GitHub"). Nur du hast Zugriff.")
+        case .geholt?:
+            Titel(symbol: "checkmark.shield.fill", titel: "Dein Brain ist verbunden",
+                  text: "Das Repository \(s.verbundenMit ?? "bei GitHub") war weiter als dein Brain. Der neuere Stand wurde übernommen — es wurde nichts überschrieben.")
+        case .verbunden?:
+            Titel(symbol: "checkmark.shield.fill", titel: "Dein Brain ist verbunden",
+                  text: "Mit dem privaten Repository \(s.verbundenMit ?? "bei GitHub"). Gesendet wird, sobald es die erste gespeicherte Version gibt.")
+        case nil:
+            Titel(symbol: "checkmark.shield.fill", titel: "Die Sicherung steht schon",
+                  text: "Dein Brain ist bereits mit einem Server verbunden. Daran ändert Kortex nichts.")
+        }
+    }
+
+    private func konfliktAnsicht(_ text: String) -> some View {
+        VStack(spacing: 14) {
+            Titel(symbol: "exclamationmark.shield", titel: "Dieses Repository passt nicht zu deinem Brain", text: text)
+            Text("Kortex hat nichts gesendet und nichts überschrieben.").font(.callout).foregroundStyle(.secondary)
+            HStack {
+                Button("Neues Repository anlegen") { modell.ablauf.schliesseKonfliktAb(); modell.sicherungsWeg = .neu }.buttonStyle(.borderedProminent)
+                Button("Anderes wählen") { modell.ablauf.schliesseKonfliktAb(); modell.sicherungsWeg = .vorhanden }
+            }
+        }
+    }
+
+    private var auswahl: some View {
+        VStack(spacing: 14) {
+            Titel(symbol: "lock.shield", titel: "Dein Brain sichern",
+                  text: "Kortex legt eine Kopie deines Brains in einem privaten Repository bei GitHub ab. Nur du hast Zugriff — und nichts geht verloren, wenn dein Mac ausfällt.")
+            Karte(symbol: "plus.circle", titel: "Neues privates Repository anlegen", text: "Der einfachste Weg.", offen: modell.sicherungsWeg == .neu) {
+                modell.sicherungsWeg = .neu
+            } inhalt: { neuesRepo }
+            Karte(symbol: "tray.full", titel: "Eigenes Repository wählen", text: "Eines deiner privaten Repositories bei GitHub.", offen: modell.sicherungsWeg == .vorhanden) {
+                modell.sicherungsWeg = .vorhanden
+                if case .nichtGeladen = s.repos { modell.tu { await $0.ladeRepos() } }
+            } inhalt: { vorhandene }
+        }
+        .onAppear { modell.schlageRepoNamenVor() }
+    }
+
+    private var neuesRepo: some View {
+        let fehler = modell.repoName.isEmpty ? nil : RepoName.fehler(modell.repoName)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                TextField("Name des Repositories", text: $modell.repoName).textFieldStyle(.roundedBorder)
+                Button("Anlegen und sichern") { let n = modell.repoName; modell.tu { await $0.sichereMitNeuemRepo(name: n) } }
+                    .disabled(RepoName.fehler(modell.repoName) != nil).keyboardShortcut(.defaultAction)
+            }
+            if let vergeben = s.vergebenerName {
+                Button("Das vorhandene Repository „\(vergeben)“ nehmen") { modell.tu { await $0.nimmGleichnamigesRepo() } }.buttonStyle(.link)
+            }
+            if let fehler {
+                Text(fehler).font(.callout).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("Es wird immer privat angelegt — niemand außer dir kann es sehen.").font(.callout).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder private var vorhandene: some View {
+        switch s.repos {
+        case .nichtGeladen, .laedt:
+            Arbeit(text: "Deine Repositories werden geladen …")
+        case .fehler(let text):
+            FehlerBox(text: text)
+            Button("Noch einmal versuchen") { modell.tu { await $0.ladeRepos() } }
+        case .geladen(let liste):
+            if liste.repos.isEmpty {
+                Text("Du hast noch kein privates Repository. Lege ein neues an.").font(.callout).foregroundStyle(.secondary)
+            } else {
+                let treffer = liste.repos.filter { modell.repoSuche.isEmpty || $0.vollerName.localizedCaseInsensitiveContains(modell.repoSuche) }
+                if liste.repos.count > 6 { TextField("Suchen …", text: $modell.repoSuche).textFieldStyle(.roundedBorder) }
+                VStack(spacing: 6) {
+                    ForEach(treffer.prefix(50)) { repo in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(repo.vollerName).font(.callout.weight(.medium)).lineLimit(1).truncationMode(.middle)
+                                Text(repo.leer ? "leer" : "hat schon Inhalt — Kortex prüft, ob es zu deinem Brain passt")
+                                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                            Spacer(minLength: 8)
+                            Button("Wählen") { modell.tu { await $0.sichereMitRepo(repo) } }
+                        }
+                    }
+                    if treffer.count > 50 { Text("Weitere Treffer: Suche eingrenzen.").font(.caption).foregroundStyle(.secondary) }
+                    if liste.gekuerzt { Text("Die Liste ist sehr lang und wurde gekürzt. Suche nach dem Namen.").font(.caption).foregroundStyle(.secondary) }
+                }
+            }
         }
     }
 }

@@ -18,6 +18,12 @@ public enum TestErscheinungsbild: String, Equatable, Sendable {
 ///  - `--test-dunkel` / `--test-hell`: Erscheinungsbild erzwingen.
 ///  - `--test-skript <absoluter Pfad.js>`: Skript nach „bereit“ und vor dem Bild im Studio ausführen; nur mit der
 ///    Umgebungsvariable `BRAIN_TESTMODUS=1`.
+///
+/// Vorschau („wie frisch installiert“, `scripts/vorschau.sh`):
+///  - `--vorschau <absoluter Ordner>`: Alles, was die App sonst im Benutzerordner liest oder schreibt, liegt in diesem Ordner
+///    (siehe `VorschauModus`). Ein ungültiger Ordner ist KEIN ignorierter Schalter: `vorschauFehler` ist gesetzt und die App startet
+///    nicht (sonst liefe sie ohne Schutz in den echten Daten).
+///  - `--mit-ki`: simuliert erkannte KI-Programme; `--ohne-git`: Git gilt als nicht installiert (beide nur mit `--vorschau`).
 public struct StartArgumente: Equatable, Sendable {
     public var vault: URL?
     public var fensterOeffnen = false
@@ -31,6 +37,12 @@ public struct StartArgumente: Equatable, Sendable {
     /// `--test-frischer-start`: Der Assistent „Kortex einrichten“ erscheint wie bei einem echten ersten Start (sonst zeigen ihn
     /// Testläufe nie). Nur mit `BRAIN_APP_SUPPORT` auf einen eigenen (Temp-)Ordner — nie gegen den echten Support-Ordner.
     public var frischerStart = false
+    /// Vorschau-Ordner (`--vorschau`), standardisiert; nil = normaler Start.
+    public var vorschauOrdner: URL?
+    public var vorschauMitKi = false
+    public var vorschauOhneGit = false
+    /// Grund, warum `--vorschau` ungültig ist (kein Wert, nicht absolut, Wurzel, Sonderzeichen, kein Ordner). Dann darf die App nicht starten.
+    public var vorschauFehler: String?
     /// Logzeilen zu abgelehnten Testschaltern (leer, wenn alles in Ordnung war).
     public var hinweise: [String] = []
 
@@ -48,12 +60,18 @@ public struct StartArgumente: Equatable, Sendable {
     /// echten App: flüchtiger Web-Speicher und keine gemerkte Fensterposition — sonst schreibt jeder Testlauf in die Einstellungen
     /// (`io.github.fbrogno.brain`) und nach `~/Library/WebKit/…` der installierten App. Ein ungültiger Wert zählt nicht.
     public var fluechtig: Bool {
-        studioTestlauf || fensterOeffnen || schliessenNach != nil || beendenNach != nil || frischerStart
+        studioTestlauf || fensterOeffnen || schliessenNach != nil || beendenNach != nil || frischerStart || vorschauOrdner != nil
+    }
+
+    /// Die Vorschau, wenn `--vorschau` gültig war.
+    public var vorschau: VorschauModus? {
+        vorschauOrdner.map { VorschauModus(ordner: $0, mitKi: vorschauMitKi, ohneGit: vorschauOhneGit) }
     }
 
     /// Darf der Assistent „Kortex einrichten“ von selbst erscheinen? Nicht in Testläufen und nicht mit `--vault` — außer ein
     /// Testlauf verlangt es ausdrücklich mit `--test-frischer-start` (der echte Support-Ordner bleibt dann unberührt, siehe oben).
-    public var assistentDarfErscheinen: Bool { vault == nil && (!fluechtig || frischerStart) }
+    /// Die Vorschau (`--vorschau`) zeigt ihn immer: ein frischer Nutzer ohne Vault.
+    public var assistentDarfErscheinen: Bool { vorschauOrdner != nil || (vault == nil && (!fluechtig || frischerStart)) }
 
     /// Größte erlaubte Fensterkante (Punkte) und längste Wartezeit (Sekunden) für die Testschalter.
     static let maxKante = 4000
@@ -82,6 +100,20 @@ public struct StartArgumente: Equatable, Sendable {
             switch argumente[i] {
             case "--vault":
                 if let v = wert(), v.hasPrefix("/") { a.vault = URL(fileURLWithPath: v); i += 1 }
+            case "--vorschau":
+                if let w = wert(), !w.hasPrefix("--") {
+                    i += 1
+                    switch VorschauModus.pruefeOrdner(w) {
+                    case .success(let u): a.vorschauOrdner = u
+                    case .failure(let f): a.vorschauFehler = f.beschreibung
+                    }
+                } else {
+                    a.vorschauFehler = "--vorschau braucht einen Ordner (absoluter Pfad)."
+                }
+            case "--mit-ki":
+                a.vorschauMitKi = true
+            case "--ohne-git":
+                a.vorschauOhneGit = true
             case "--test-fenster":
                 if let w = wert(), !w.hasPrefix("--") {
                     i += 1
@@ -118,6 +150,16 @@ public struct StartArgumente: Equatable, Sendable {
                 break
             }
             i += 1
+        }
+        if a.vorschauOrdner == nil {
+            if a.vorschauMitKi { ignoriert("--mit-ki", "nur-mit---vorschau") }
+            if a.vorschauOhneGit { ignoriert("--ohne-git", "nur-mit---vorschau") }
+            a.vorschauMitKi = false
+            a.vorschauOhneGit = false
+        } else if a.vault != nil {
+            // Ein echter Vault hat in der Vorschau nichts verloren: alles läuft im Wegwerf-Ordner.
+            ignoriert("--vault", "nicht-mit---vorschau")
+            a.vault = nil
         }
         return a
     }

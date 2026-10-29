@@ -135,13 +135,18 @@ private let statusJSON = #"{"version":"0.5.1","quellVault":true,"zustand":"hinwe
     #expect(StatusAnzeige.problem("Brain-Ordner nicht gefunden").zeichen == "✕")
 }
 
+/// Großzügiges Zeitlimit nur für die Tests: Die Attrappen-Shell ist ein frisch geschriebenes Skript, dessen erster Start auf einem
+/// ausgelasteten Mac (paralleles `swift test`) Sekunden dauern kann. Das 3-s-Limit der App bleibt unverändert; geprüft wird hier
+/// die Auswertung der Ausgabe, nicht die Startzeit.
+private let attrappenZeitlimit = Duration.seconds(60)
+
 @Test func terminalNodeNimmtDieLetzteAbsolutePfadZeile() async {
     let shell = skript("#!/bin/bash\necho 'Willkommen'\necho /bin/ls\n", name: "zsh", in: tempOrdner())
-    #expect(await TerminalNode.finde(shell: shell) == URL(fileURLWithPath: "/bin/ls"))
+    #expect(await TerminalNode.finde(shell: shell, zeitlimit: attrappenZeitlimit) == URL(fileURLWithPath: "/bin/ls"))
 }
 
 @Test func terminalNodeOhneTrefferIstNil() async {
     let o = tempOrdner()
-    #expect(await TerminalNode.finde(shell: skript("#!/bin/bash\necho relativ/node\n", name: "a", in: o)) == nil)
-    #expect(await TerminalNode.finde(shell: skript("#!/bin/bash\nexit 1\n", name: "b", in: o)) == nil)
+    #expect(await TerminalNode.finde(shell: skript("#!/bin/bash\necho relativ/node\n", name: "a", in: o), zeitlimit: attrappenZeitlimit) == nil)
+    #expect(await TerminalNode.finde(shell: skript("#!/bin/bash\nexit 1\n", name: "b", in: o), zeitlimit: attrappenZeitlimit) == nil)
 }

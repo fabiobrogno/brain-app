@@ -2,7 +2,7 @@
 // Nur Wegwerf-Repos und ein Bare-Remote in os.tmpdir() (zwei Klone A und B + bare), kein Netzwerk.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, symlinkSync, unlinkSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, symlinkSync, unlinkSync, utimesSync } from "node:fs";
 import { join } from "node:path";
 import { tmp, schreibe, repo, g, pfad } from "./hilfe.mjs";
 process.env.HOME = tmp("brain-home-");  // keine echte ~/.gitconfig
@@ -577,4 +577,18 @@ test("Wiederherstellen überschreibt nie, was nicht im Verlauf steht: Datei wurd
   schreibe(d, "alt.md", "# meine ignorierte Datei\n");
   assert.equal((await wirft(v.gitWiederherstellen({ pfad: "alt.md", sha: sha3 }))).status, 409);
   assert.equal(lies(d, "alt.md"), "# meine ignorierte Datei\n");
+});
+
+test("Aufräumen: Sicherungen älter als 30 Tage verschwinden beim nächsten Konfliktstart — nur echte Zeitstempel-Ordner, Symlinks nie verfolgt", async () => {
+  const { a, v } = await konfliktAufbauen();
+  const wurzel = join(a, ".git", "brain-sicherung");
+  const alt = (name) => { const p = join(wurzel, name); mkdirSync(p, { recursive: true }); schreibe(p, "x.md", "alt\n"); const t = new Date(Date.now() - 40 * 86_400_000); utimesSync(p, t, t); return p; };
+  const altOrdner = alt("2026-01-01T10-00-00-000Z");
+  const jung = join(wurzel, "2026-10-28T10-00-00-000Z"); mkdirSync(jung, { recursive: true });
+  const fremd = alt("meine-eigene-sammlung");           // kein Zeitstempel-Name: bleibt
+  const draussen = tmp("brain-draussen-"); schreibe(draussen, "wichtig.md", "bleibt\n");
+  symlinkSync(draussen, join(wurzel, "2026-01-02T10-00-00-000Z")); // Symlink mit passendem Namen: wird nicht verfolgt und nicht gelöscht
+  await v.gitKonfliktAbbrechen();
+  assert.equal(existsSync(altOrdner), false); assert.equal(existsSync(jung), true); assert.equal(existsSync(fremd), true);
+  assert.equal(readFileSync(join(draussen, "wichtig.md"), "utf8"), "bleibt\n");
 });

@@ -13,6 +13,7 @@ import { starte, neueFrist, registriere, beendeGruppe } from "../gemeinsam/proze
 import { findeProgramm, erkenneAgenten } from "../gemeinsam/ki.mjs";
 import * as vaultsFn from "../gemeinsam/vaults.mjs";
 import { erzeugeGitHub } from "../gemeinsam/github.mjs";
+import { sicherungStand } from "../gemeinsam/gitsicherung.mjs";
 
 const HIER = dirname(fileURLToPath(import.meta.url));
 export const MAX_KOERPER = 8 * 1024 * 1024;
@@ -210,6 +211,19 @@ export function erzeugeHandler(o) {
       case "/api/github/konto": nur("GET"); return github.konto();
       case "/api/github/abmelden": nur("POST"); return github.abmelden();
       case "/api/github/abbrechen": nur("POST"); return github.abbrechen(); // nur das Warten beenden, nie den Schlüsselbund anfassen
+      case "/api/github/repos": nur("GET"); return github.repos(); // eigene PRIVATE Repositories (Sicherung)
+      case "/api/github/repo-anlegen": nur("POST"); return github.repoAnlegen(eingabe()); // legt immer ein privates Repository an
+      // Sicherung (Assistent): bereit? — und verbinden mit einem PRIVATEN Repository des Kontos (nur besitzer/name; die Adresse baut die Werkstatt).
+      case "/api/sicherung/bereit": nur("GET"); return sicherungStand(await V().gitStatus());
+      case "/api/sicherung/verbinden": {
+        nur("POST");
+        const e = eingabe();
+        const stand = sicherungStand(await V().gitStatus());
+        if (stand.zustand === "gesichert") throw new HttpFehler(409, "Dein Brain ist schon mit einem Server verbunden.", { art: "gesichert" });
+        if (stand.zustand !== "bereit") throw new HttpFehler(409, stand.text, { art: "blockiert", grund: stand.grund });
+        const repo = await github.repoPruefen(e.besitzer, e.name); // gibt es, privat, beschreibbar — sonst Fehler, bevor etwas gesendet wird
+        return V().gitRemote(repo.url, { githubHelper: github.helper });
+      }
       case "/api/stopp": nur("POST"); return { __stopp: true };
       default: throw new HttpFehler(404, "nicht gefunden");
     }
