@@ -43,7 +43,7 @@ export function starte(programm, args, o = {}) {
   const { cwd, env, timeout, stdin, frist = null, maxBuffer = 64 * 1024 * 1024, buffer = false, fehlt = `${programm} wurde nicht gefunden.`,
     zuLange = "Der Vorgang hat zu lange gebraucht und wurde abgebrochen." } = o;
   return new Promise((aufloesen, ablehnen) => {
-    if (wirdBeendet) return ablehnen(new HttpFehler(503, "Brain Studio wird gerade beendet."));
+    if (wirdBeendet) return ablehnen(new HttpFehler(503, "Kortex Studio wird gerade beendet."));
     let limit = timeout > 0 ? timeout : Infinity;
     if (frist) limit = Math.min(limit, frist.rest());
     const gestartet = Date.now();

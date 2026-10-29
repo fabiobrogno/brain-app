@@ -15,19 +15,19 @@ import { protokolliere } from "../gemeinsam/nutzung.mjs";
 
 const VERSIONEN = ["2025-06-18", "2025-03-26", "2024-11-05"];
 export const WERKZEUGE = [
-  { name: "brain_suchen", description: "Durchsucht das Brain (Titel und Inhalt) und nennt je Treffer Pfad, Titel, Auszug und Prüf-Stufe.",
+  { name: "brain_suchen", description: "Durchsucht den Kortex-Vault des Nutzers (Titel und Inhalt) und nennt je Treffer Pfad, Titel, Auszug und Prüf-Stufe.",
     inputSchema: { type: "object", properties: { frage: { type: "string", description: "Suchbegriffe" }, anzahl: { type: "integer", minimum: 1, maximum: 20, description: "Höchstzahl der Treffer (Standard 10)" } }, required: ["frage"], additionalProperties: false } },
-  { name: "brain_lesen", description: "Liest eine Seite des Brains samt Prüf-Signalen und Stand.",
+  { name: "brain_lesen", description: "Liest eine Seite aus dem Kortex-Vault des Nutzers samt Prüf-Signalen und Stand.",
     inputSchema: { type: "object", properties: { pfad: { type: "string", description: "Pfad relativ zum Vault, z. B. 09_wiki/firma/amazon/thema_x.md" } }, required: ["pfad"], additionalProperties: false } },
   { name: "brain_merken", description: "Legt eine neue Notiz in 00_inbox/ ab. Schreibt nie ins Wiki; erst /ingest macht daraus Wissen.",
     inputSchema: { type: "object", properties: { text: { type: "string" }, titel: { type: "string" } }, required: ["text"], additionalProperties: false } },
-  { name: "brain_gesundheit", description: "Kurzfassung der Brain-Gesundheit (Ampel und Befunde) aus dem Kern von Kortex, falls der Vault ein Brain ist (brain.config.json).",
+  { name: "brain_gesundheit", description: "Kurzfassung der Vault-Gesundheit (Ampel und Befunde) aus dem Kern von Kortex, falls der Vault ein Kortex-Vault ist (brain.config.json).",
     inputSchema: { type: "object", properties: {}, additionalProperties: false } },
-  { name: "brain_vaults", description: "Listet die in der App eingerichteten Vaults (Brains) und nennt den, den dieser Server gerade nutzt.",
+  { name: "brain_vaults", description: "Listet die in Kortex eingerichteten Vaults und nennt den, den dieser Server gerade nutzt.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false } },
   { name: "brain_verlauf", description: "Git-Verlauf einer Datei (neueste zuerst).",
     inputSchema: { type: "object", properties: { pfad: { type: "string" }, max: { type: "integer", minimum: 1, maximum: 100, description: "Standard 20" } }, required: ["pfad"], additionalProperties: false } },
-  { name: "brain_kontext", description: "Kontext-Paket zum aktuellen Projekt: 3–8 passende Seiten des Brains (Pfad, Titel, Stand, Prüf-Stufe, Auszug). Zu Beginn einer Sitzung mit dem Projektnamen aufrufen.",
+  { name: "brain_kontext", description: "Kontext-Paket zum aktuellen Projekt: 3–8 passende Seiten aus dem Kortex-Vault des Nutzers (Pfad, Titel, Stand, Prüf-Stufe, Auszug). Zu Beginn einer Sitzung mit dem Projektnamen aufrufen.",
     inputSchema: { type: "object", properties: { projekt: { type: "string", description: "Repo- oder Ordnername des Projekts" }, cwd: { type: "string", description: "Arbeitsordner (optional); schärft die Zuordnung über `pfade`" } }, required: ["projekt"], additionalProperties: false } },
 ];
 
@@ -35,7 +35,7 @@ const text = (t) => ({ content: [{ type: "text", text: t }] });
 const fehlerText = (t) => ({ content: [{ type: "text", text: t }], isError: true });
 const zeit = (iso) => String(iso || "").slice(0, 16).replace("T", " ");
 
-const KEIN_VAULT = "Es ist noch kein Vault eingerichtet. Lege in Brain Studio einen an (Willkommen → Brain-Vorlage) und versuche es dann noch einmal.";
+const KEIN_VAULT = "Es ist noch kein Vault eingerichtet. Lege in Kortex einen an (Willkommen → Kortex-Vorlage) und versuche es dann noch einmal.";
 
 function vaultText(v) {
   const l = leseVaults();
@@ -71,7 +71,7 @@ function kontextText(v, projekt, cwd, spur) {
     const auszug = saetze.slice(0, 3).join(" ").trim().slice(0, 400);
     treffer.push({ rang: (verfallen ? 2 : 0) + (ueberRepo ? 0 : 1), pfad: e.pfad, titel, stand: felder.stand || zeit(d.geaendert).slice(0, 10), stufe: p.stufe, verfallen, auszug });
   }
-  if (!treffer.length) return `Keine Seiten zum Projekt „${projekt}“ im Brain gefunden.`;
+  if (!treffer.length) return `Keine Seiten zum Projekt „${projekt}“ im Vault gefunden.`;
   treffer.sort((a, b) => a.rang - b.rang || a.pfad.localeCompare(b.pfad));
   const zeilen = [];
   let laenge = 0;
@@ -81,7 +81,7 @@ function kontextText(v, projekt, cwd, spur) {
     zeilen.push(z.slice(0, KONTEXT_LIMIT)); laenge += z.length + 1;
     spur.seiten.push(t.pfad);
   }
-  return `Brain-Kontext zu „${projekt}“ (${zeilen.length} Seite(n); Details mit brain_lesen):\n${zeilen.join("\n")}`.slice(0, KONTEXT_LIMIT);
+  return `Kortex-Kontext zu „${projekt}“ (${zeilen.length} Seite(n); Details mit brain_lesen):\n${zeilen.join("\n")}`.slice(0, KONTEXT_LIMIT);
 }
 
 // v: ein geöffneter Vault, eine Funktion, die den aktuellen liefert (Server ohne Vault-Argument), oder null.
@@ -113,7 +113,7 @@ async function rufe(vArg, name, a, spur = { seiten: [] }) {
     }
     case "brain_gesundheit": {
       const g = await v.gesundheit();
-      if (g.verfuegbar === false) return text("Die Gesundheitsprüfung ist nicht verfügbar (dieser Ordner ist kein Brain-Vault mit brain.config.json, oder der Kern von Kortex ist nicht erreichbar).");
+      if (g.verfuegbar === false) return text("Die Gesundheitsprüfung ist nicht verfügbar (dieser Ordner ist kein Kortex-Vault mit brain.config.json, oder der Kern von Kortex ist nicht erreichbar).");
       const zeilen = [`Ampel: ${g.ampel}${g.warnungen !== undefined ? ` · ${g.warnungen} Warnung(en)` : ""}`];
       for (const p of g.pruefungen || []) {
         if (p.stufe === "gruen") continue;
@@ -143,7 +143,7 @@ export async function bearbeite(v, msg, version = "0.2.0") {
     case "initialize": {
       const gewollt = msg.params && msg.params.protocolVersion;
       return ok({ protocolVersion: VERSIONEN.includes(gewollt) ? gewollt : VERSIONEN[0], capabilities: { tools: {} },
-        serverInfo: { name: "brain", version }, instructions: "Brain: durchsuche und lies das Wissen des Nutzers; merke Neues nur über brain_merken (landet in der Inbox)." });
+        serverInfo: { name: "brain", version }, instructions: "Kortex: durchsuche und lies das Wissen im Vault des Nutzers; merke Neues nur über brain_merken (landet in der Inbox)." });
     }
     case "ping": return ok({});
     case "tools/list": return ok({ tools: WERKZEUGE });

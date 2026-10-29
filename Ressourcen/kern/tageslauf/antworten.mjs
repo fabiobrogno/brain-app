@@ -220,7 +220,7 @@ export function w7Eingang(ctx, { aktionen = [] } = {}) {
     schon.add(seite);
     const zitat = kurz(f.zitat, 200) || "Korrektur in einer Sitzung";
     const id = legeRueckfrageAn(ctx, { typ: "zweifel", frage: `Stimmt ${seite.split("/").pop()} noch?`, seite, grund: "w7", felder: { zitat },
-      beschreibung: `Nach einem Brain-Hinweis auf diese Seite kam eine Korrektur:\n„${zitat}“\nSitzung ${f.sitzung || "-"}, ${String(f.zeit || "").slice(0, 16)}` });
+      beschreibung: `Nach einem Kortex-Hinweis auf diese Seite kam eine Korrektur:\n„${zitat}“\nSitzung ${f.sitzung || "-"}, ${String(f.zeit || "").slice(0, 16)}` });
     auftraege.push({ art: "feld", seite, feld: "zweifel", wert: `${ctx.heute}: ${zitat}`, titel: "Zweifel nach Korrektur (W7)", ref: id || `w7-${ctx.lauf}` });
     const t = Date.parse(f.zeit) || ctx.jetzt;
     const imFenster = (a) => t >= Date.parse(a.zeit) && t - Date.parse(a.zeit) <= W7_FENSTER_TAGE * TAG;

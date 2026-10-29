@@ -31,7 +31,7 @@ export function istKorrektur(text) {
 // Wiki-Seiten aus einem Brain-Hinweis (Zeilen „- <pfad>[ (Zusatz)] — …“, hint-core.format) → vault-relativ.
 export function hinweisSeiten(text, { vault, wiki = "09_wiki", home = homedir(), plattform = process.platform } = {}) {
   const t = String(text ?? "").trimStart();
-  if (!t.startsWith("Brain-Treffer")) return [];
+  if (!/^(Kortex|Brain)-Treffer/.test(t)) return [];
   const falt = plattform === "darwin" || plattform === "win32";
   const norm = (p) => { const f = String(p).replace(/\\/g, "/").replace(/\/+$/, "").normalize("NFC"); return falt ? f.toLowerCase() : f; };
   const v = vault ? norm(vault) : "";

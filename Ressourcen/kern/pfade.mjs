@@ -79,7 +79,7 @@ export function pruefeVault(pfad) {
   let istOrdner = false;
   try { istOrdner = statSync(echt).isDirectory(); } catch { /* fehlt */ }
   if (!istOrdner) throw new KeinVaultFehler(`Vault nicht gefunden: ${p} ist kein Ordner.`);
-  if (!existsSync(join(echt, "brain.config.json"))) throw new KeinVaultFehler(`Das ist kein Brain-Vault: in ${p} fehlt brain.config.json.`);
+  if (!existsSync(join(echt, "brain.config.json"))) throw new KeinVaultFehler(`Das ist kein Kortex-Vault: in ${p} fehlt brain.config.json.`);
   zieleImVault(echt);
   registriereVault(p, echt); // ab jetzt bleiben alle Schreibzugriffe unter diesem Vault im Vault (vault-schutz.mjs)
   return p;

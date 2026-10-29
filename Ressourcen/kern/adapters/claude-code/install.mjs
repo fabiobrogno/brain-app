@@ -24,7 +24,7 @@ function platziereCommand(ziel, inhalt) {
     if (!alt.includes(COMMANDS_MARKER)) {
       const bak = `${ziel}.bak-${new Date().toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15)}`;
       copyFileSync(ziel, bak);
-      console.log(`Eigene Datei gesichert: ${bak} (ersetzt durch die Brain-Fassung)`);
+      console.log(`Eigene Datei gesichert: ${bak} (ersetzt durch die Kortex-Fassung)`);
     }
   }
   writeFileSync(ziel, inhalt);
@@ -116,7 +116,7 @@ function entfernen(home) {
   } else console.log("settings.json unverändert");
   let cmds = 0;
   for (const n of brainCommands(commandsZiel)) { try { rmSync(join(commandsZiel, n), { force: true }); cmds++; } catch { /* bleibt */ } }
-  if (cmds) console.log(`- ${cmds} Brain-Befehl${cmds === 1 ? "" : "e"} entfernt`);
+  if (cmds) console.log(`- ${cmds} Kortex-Befehl${cmds === 1 ? "" : "e"} entfernt`);
 }
 
 // Stand als eine JSON-Zeile (liest nur): wie viele der Brain-Hooks eingetragen sind, ob die Statuszeile von Brain ist, wie viele Brain-Befehle da sind.
@@ -287,7 +287,7 @@ for (const { ev, datei: hookDatei, args: hookArgs = "", cmd, matcher, altFassung
 const brainModsAktiv = Object.entries(s.enabledPlugins || {}).some(([k, v]) => v === true && k.startsWith("brain-mods@"));
 if (brainModsAktiv && !args.includes("--ohne-statusline")) {
   if (eigeneStatuszeile(s.statusLine?.command)) {
-    delete s.statusLine; console.log("- Statusline entfernt (Brain-Band von brain-mods zeigt den Stand)");
+    delete s.statusLine; console.log("- Statusline entfernt (das Band von brain-mods zeigt den Stand)");
   }
 } else if (!args.includes("--ohne-statusline")) {
   const statusCmd = hookCmd("statusline.mjs");

@@ -117,19 +117,19 @@ test("KI-Suche in der Vorschau: nur PATH und das Vorschau-Home, nie die Systemor
 });
 
 // ── Vault-Orte ──
-test("Vaults in der Vorschau: nur im Vorschau-Ordner; Standardort ist <home>/Brain", async () => {
+test("Vaults in der Vorschau: nur im Vorschau-Ordner; Standardort ist <home>/Kortex", async () => {
   const vo = vorschauAnlegen();
   const draussen = tmp("kortex-draussen-");
   await mit(vorschauEnv(vo), async () => {
-    assert.throws(() => vaults.pruefeVaultPfad(join(draussen, "Brain")), (e) => e.status === 403 && /Vorschau/.test(e.message));
+    assert.throws(() => vaults.pruefeVaultPfad(join(draussen, "Kortex")), (e) => e.status === 403 && /Vorschau/.test(e.message));
     assert.throws(() => vaults.pruefeVaultPfad("/tmp/x-vorschau-test"), (e) => e.status === 403);
-    assert.equal(vaults.pruefeVaultPfad(join(vo, "home", "Brain")), join(vo, "home", "Brain"));
+    assert.equal(vaults.pruefeVaultPfad(join(vo, "home", "Kortex")), join(vo, "home", "Kortex"));
     await assert.rejects(vaults.oeffneOrdner({ pfad: draussen }), (e) => e.status === 403);
     await assert.rejects(vaults.klone({ url: "https://github.com/x/y.git", ordner: join(draussen, "klon") }), (e) => e.status === 403);
     assert.ok(!existsSync(join(draussen, "klon")));
     const v = await vaults.neuesVault({ art: "leer" });
-    assert.equal(v.vault.pfad, join(vo, "home", "Brain"));
-    assert.ok(existsSync(join(vo, "home", "Brain", ".git")));
+    assert.equal(v.vault.pfad, join(vo, "home", "Kortex"));
+    assert.ok(existsSync(join(vo, "home", "Kortex", ".git")));
   });
   assert.deepEqual(readdirSync(draussen), [], "außerhalb wurde nichts angelegt");
 });
@@ -194,9 +194,9 @@ esac
 
   const neu = await w.rufe("POST", "/api/vaults/neu", { art: "vorlage" });
   assert.equal(neu.status, 200, JSON.stringify(neu.j));
-  assert.equal(neu.j.vault.pfad, join(vo, "home", "Brain"));
-  for (const d of ["00_inbox", "09_wiki"]) assert.ok(existsSync(join(vo, "home", "Brain", d)), d);
-  assert.ok(existsSync(join(vo, "home", "Brain", ".git")));
+  assert.equal(neu.j.vault.pfad, join(vo, "home", "Kortex"));
+  for (const d of ["00_inbox", "09_wiki"]) assert.ok(existsSync(join(vo, "home", "Kortex", d)), d);
+  assert.ok(existsSync(join(vo, "home", "Kortex", ".git")));
   assert.ok(existsSync(join(vo, "support", "vaults.json")));
 
   const aus = await w.rufe("POST", "/api/vaults/neu", { art: "leer", ordner: join(echt, "Brain") });

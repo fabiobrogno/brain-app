@@ -182,7 +182,7 @@ export function erzeugeHandler(o) {
         if (typeof e.frage !== "string" || !e.frage.trim() || e.frage.length > 500) throw new HttpFehler(400, "Bitte eine Frage eingeben (höchstens 500 Zeichen).");
         return probeUeberMcp(V(), e.frage.trim(), e.anzahl);
       }
-      case "/api/mcp/selbsttest": nur("POST"); return probeUeberMcp(V(), "Brain", 1, { liste: true, wer: "die KI" });
+      case "/api/mcp/selbsttest": nur("POST"); return probeUeberMcp(V(), "Vault", 1, { liste: true, wer: "die KI" });
       case "/api/git/status": nur("GET"); return V().gitStatus();
       case "/api/git/commit": nur("POST"); return V().gitCommit(eingabe());
       case "/api/git/sync": nur("POST"); return V().gitSync(koerper && koerper.length ? eingabe() : {});
@@ -237,7 +237,7 @@ export function erzeugeHandler(o) {
         nur("POST");
         const e = eingabe();
         const stand = sicherungStand(await V().gitStatus());
-        if (stand.zustand === "gesichert") throw new HttpFehler(409, "Dein Brain ist schon mit einem Server verbunden.", { art: "gesichert" });
+        if (stand.zustand === "gesichert") throw new HttpFehler(409, "Dein Vault ist schon mit einem Server verbunden.", { art: "gesichert" });
         if (stand.zustand !== "bereit") throw new HttpFehler(409, stand.text, { art: "blockiert", grund: stand.grund });
         const repo = await github.repoPruefen(e.besitzer, e.name); // gibt es, privat, beschreibbar — sonst Fehler, bevor etwas gesendet wird
         const erg = await V().gitRemote(repo.url, { githubHelper: github.helper });
@@ -317,7 +317,7 @@ export function erzeugeHandler(o) {
       if (vorher.code === 0) {
         const vergleich = art(String(vorher.stdout || ""));
         if (vergleich === "gleich") return { ok: true, schonVerbunden: true };
-        if (vergleich !== "alt" && e.umstellen !== true) throw new HttpFehler(409, "Bei Codex ist unter dem Namen „brain“ schon ein anderer Server eingetragen. Möchtest du ihn auf Brain Studio umstellen?", { art: "anders", befehl });
+        if (vergleich !== "alt" && e.umstellen !== true) throw new HttpFehler(409, "Bei Codex ist unter dem Namen „brain“ schon ein anderer Server eingetragen. Möchtest du ihn auf Kortex Studio umstellen?", { art: "anders", befehl });
         const weg = await lauf(["mcp", "remove", "brain"]);
         if (weg.code !== 0) throw new HttpFehler(502, "Codex konnte den alten Eintrag nicht entfernen. Kopiere den Befehl und führe ihn im Terminal aus.", { befehl });
       }
@@ -343,7 +343,7 @@ export function erzeugeHandler(o) {
       if (roh.trim()) { // leere Datei zählt wie neu
         try { doc = JSON.parse(roh); } catch { doc = null; }
         if (!doc || typeof doc !== "object" || Array.isArray(doc) || (doc.mcpServers !== undefined && (!doc.mcpServers || typeof doc.mcpServers !== "object" || Array.isArray(doc.mcpServers)))) {
-          throw new HttpFehler(422, "Die Datei ~/.cursor/mcp.json ist kein gültiges JSON in der erwarteten Form. Brain Studio ändert sie deshalb nicht. Ergänze den Eintrag von Hand:", { art: "kaputt", befehl });
+          throw new HttpFehler(422, "Die Datei ~/.cursor/mcp.json ist kein gültiges JSON in der erwarteten Form. Kortex Studio ändert sie deshalb nicht. Ergänze den Eintrag von Hand:", { art: "kaputt", befehl });
         }
       }
     } catch (err) {
@@ -356,7 +356,7 @@ export function erzeugeHandler(o) {
         ? befehlsArt(alt.command, JSON.stringify(alt.args || []) === JSON.stringify(eintrag.args), [eintrag.command], Array.isArray(alt.args) && alt.args.length === 1 ? alt.args[0] : null)
         : "anders";
       if (vergleich === "gleich") return { ok: true, schonVerbunden: true };
-      if (vergleich !== "alt" && e.umstellen !== true) throw new HttpFehler(409, "Bei Cursor ist unter dem Namen „brain“ schon ein anderer Server eingetragen. Möchtest du ihn auf Brain Studio umstellen?", { art: "anders", befehl });
+      if (vergleich !== "alt" && e.umstellen !== true) throw new HttpFehler(409, "Bei Cursor ist unter dem Namen „brain“ schon ein anderer Server eingetragen. Möchtest du ihn auf Kortex Studio umstellen?", { art: "anders", befehl });
     }
     let tmp = null;
     try {
@@ -416,7 +416,7 @@ export function erzeugeHandler(o) {
       if (vorher.code === 0) {
         const art = artClaude(String(vorher.stdout || "") + "\n" + String(vorher.stderr || ""), a);
         if (art === "gleich") return { ok: true, schonVerbunden: true };
-        if (art !== "alt" && e.umstellen !== true) throw new HttpFehler(409, "Bei Claude Code ist unter dem Namen „brain“ schon ein anderer Server eingetragen. Möchtest du ihn auf Brain Studio umstellen?", { art: "anders", befehl });
+        if (art !== "alt" && e.umstellen !== true) throw new HttpFehler(409, "Bei Claude Code ist unter dem Namen „brain“ schon ein anderer Server eingetragen. Möchtest du ihn auf Kortex Studio umstellen?", { art: "anders", befehl });
         const weg = await lauf(["mcp", "remove", "-s", "user", "brain"]);
         if (weg.code !== 0) throw new HttpFehler(502, "Claude Code konnte den alten Eintrag nicht entfernen. Kopiere den Befehl und führe ihn im Terminal aus.", { befehl });
       }
@@ -441,7 +441,7 @@ export function erzeugeHandler(o) {
     if (!a) throw new HttpFehler(404, "Der MCP-Server wurde nicht gefunden.");
     let aktivPfad = null; try { aktivPfad = vaultsFn.aktiverVaultPfad(optV()); } catch { /* keine Liste */ }
     if (!aktivPfad || echterPfad(aktivPfad) !== v.wurzel) {
-      throw new HttpFehler(409, `Dieser Vault ist in Brain Studio nicht als aktiver Vault eingetragen — ${wer} würde ihn so nicht finden. Wähle ihn zuerst aus.`, { art: "nicht-aktiv" });
+      throw new HttpFehler(409, `Dieser Vault ist in Kortex Studio nicht als aktiver Vault eingetragen — ${wer} würde ihn so nicht finden. Wähle ihn zuerst aus.`, { art: "nicht-aktiv" });
     }
     const env = kindUmgebung({ BRAIN_APP_SUPPORT: vaultOpt.support || supportOrdner(), BRAIN_NUTZUNG: "aus" }); // Probe und Selbsttest sind keine KI-Nutzung
     delete env.BRAIN_VAULT;
@@ -467,7 +467,7 @@ export function erzeugeHandler(o) {
       try { kind = spawn(a[0], [a[1]], { cwd: homedir(), env, detached: true, stdio: ["pipe", "pipe", "ignore"], windowsHide: true }); }
       catch { return nein(new HttpFehler(502, "Der MCP-Server ließ sich nicht starten.", { art: "mcp" })); }
       registriere(kind, null);
-      const nichtAntwort = () => ende(new HttpFehler(502, `Der MCP-Server hat nicht geantwortet — ${wer} würde dein Brain so nicht finden.`, { art: "mcp" }));
+      const nichtAntwort = () => ende(new HttpFehler(502, `Der MCP-Server hat nicht geantwortet — ${wer} würde deinen Vault so nicht finden.`, { art: "mcp" }));
       kind.on("error", nichtAntwort);
       kind.stdin.on("error", () => { /* Server schon weg */ });
       kind.on("exit", () => setTimeout(nichtAntwort, 300).unref());

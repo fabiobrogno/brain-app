@@ -55,7 +55,7 @@ test("Geister-Vault: ein angegebener Vault muss ein existierender Ordner mit bra
     [["node", "s"], { ...env, BRAIN_VAULT: join(tmpdir(), "gibt-es-nicht-vault") }],
     [["node", "s", "--vault", ohneConfig], env],
     [["node", "s", "--vault", datei], env],
-  ]) assert.throws(() => vaultPfad(argv, { env: e }), (x) => x instanceof KeinVaultFehler && /Vault nicht gefunden|kein Brain-Vault/.test(x.message), JSON.stringify(argv));
+  ]) assert.throws(() => vaultPfad(argv, { env: e }), (x) => x instanceof KeinVaultFehler && /Vault nicht gefunden|kein Kortex-Vault/.test(x.message), JSON.stringify(argv));
   assert.equal(pruefeVault(aktiv), aktiv);
 });
 test("Geister-Vault: ein Symlink auf einen Vault gilt (aufgelöst geprüft), ein kaputter Symlink nicht", { skip: process.platform === "win32" }, () => {

@@ -243,17 +243,17 @@ test("wochenHinweis: einmal je 7 Tage, nur bei Arbeit, ohne Bericht/ohne Befund 
   assert.equal(await W(v, { ladeBericht: async () => null }), "");
   assert.ok(!existsSync(P.WOCHE_MARKE(v)), "ohne Bericht keine Marke");
   const bericht = { posten: [...BERICHT.posten, { schluessel: "vorschlaege", anzahl: 5 }, { schluessel: "konflikte", anzahl: 1 }, { schluessel: "constructor", anzahl: 3 }] };
-  assert.equal(await W(v, { ladeBericht: async () => bericht }), "Brain-Woche: 2 abgelaufen · 1 Dublette · 1 Konflikt — im Gehirn unter Pflege");
+  assert.equal(await W(v, { ladeBericht: async () => bericht }), "Kortex-Woche: 2 abgelaufen · 1 Dublette · 1 Konflikt — in der Ansicht unter Pflege");
   assert.ok(existsSync(P.WOCHE_MARKE(v)));
   assert.equal(await W(v, { ladeBericht: async () => bericht }), "", "innerhalb der Woche nicht noch einmal");
-  assert.ok((await W(v, { jetzt: Date.now() + 8 * TAG, ladeBericht: async () => bericht })).startsWith("Brain-Woche:"));
+  assert.ok((await W(v, { jetzt: Date.now() + 8 * TAG, ladeBericht: async () => bericht })).startsWith("Kortex-Woche:"));
   const leer = neuerVault();
   assert.equal(await W(leer, { ladeBericht: async () => ({ posten: [{ schluessel: "abgelaufen", anzahl: 0 }] }) }), "");
   // Final-Review #5: die Woche wird nur mit einer Meldung verbraucht — sauberer Bericht setzt keine Marke …
   assert.ok(!existsSync(P.WOCHE_MARKE(leer)), "geprüft, nichts zu tun → keine Marke");
   // … und entsteht am nächsten Tag Arbeit, meldet der nächste Start sie sofort
   assert.equal(await W(leer, { jetzt: Date.now() + TAG, ladeBericht: async () => ({ posten: [{ schluessel: "abgelaufen", anzahl: 1 }] }) }),
-    "Brain-Woche: 1 abgelaufen — im Gehirn unter Pflege");
+    "Kortex-Woche: 1 abgelaufen — in der Ansicht unter Pflege");
   assert.ok(existsSync(P.WOCHE_MARKE(leer)));
   // auch über pflege.mjs#wochenZeile: Bericht nur mit eigenen Zeilen (Vorschläge) → leer → keine Marke
   const nurEigene = neuerVault();
@@ -265,10 +265,10 @@ test("wochenHinweis: einmal je 7 Tage, nur bei Arbeit, ohne Bericht/ohne Befund 
 
 test("wochenHinweis: Text kommt aus pflege.mjs#wochenZeile(bericht) (null → keine Zeile; nur eine Zeile)", async () => {
   const d = mkdtempSync(join(tmpdir(), "pflege-woche-modul-"));
-  writeFileSync(join(d, "mit.mjs"), "export function wochenZeile(b) { return 'Brain-Woche: ' + b.posten.length + ' Posten\\nzweite Zeile'; }\n");
+  writeFileSync(join(d, "mit.mjs"), "export function wochenZeile(b) { return 'Kortex-Woche: ' + b.posten.length + ' Posten\\nzweite Zeile'; }\n");
   writeFileSync(join(d, "null.mjs"), "export function wochenZeile() { return null; }\n");
   const bericht = async () => BERICHT;
-  assert.equal(await P.wochenHinweis(neuerVault(), { ladeBericht: bericht, modulPfad: join(d, "mit.mjs") }), "Brain-Woche: 3 Posten");
+  assert.equal(await P.wochenHinweis(neuerVault(), { ladeBericht: bericht, modulPfad: join(d, "mit.mjs") }), "Kortex-Woche: 3 Posten");
   assert.equal(await P.wochenHinweis(neuerVault(), { ladeBericht: bericht, modulPfad: join(d, "null.mjs") }), "");
 });
 
@@ -281,7 +281,7 @@ test("wochenHinweis ohne ladeBericht liest nur den Cache (.logs/pflege-bericht.j
   const alt = new Date(Date.now() - 8 * TAG); utimesSync(BERICHT_CACHE(v), alt, alt);
   assert.equal(await P.wochenHinweis(v), "", "Cache älter als eine Woche zählt nicht");
   utimesSync(BERICHT_CACHE(v), new Date(), new Date());
-  assert.equal(await P.wochenHinweis(v), "Brain-Woche: 2 abgelaufen — im Gehirn unter Pflege");
+  assert.equal(await P.wochenHinweis(v), "Kortex-Woche: 2 abgelaufen — in der Ansicht unter Pflege");
   assert.ok(existsSync(P.WOCHE_MARKE(v)));
 });
 

@@ -44,13 +44,13 @@ test("brainStand: leerer Vault → alles 0, ohne Fehler", () => {
 });
 
 test("statusZeile: Texte und Reihenfolge", () => {
-  assert.equal(ohneAnsi(statusZeile({ wartend: 0, konflikte: 0, pruefbeduerftig: 0, vorschlaege: 0, ingest: "", frisch: 0 }, "Opus")), "🧠 Brain: aktuell · Opus");
+  assert.equal(ohneAnsi(statusZeile({ wartend: 0, konflikte: 0, pruefbeduerftig: 0, vorschlaege: 0, ingest: "", frisch: 0 }, "Opus")), "🧠 Kortex: aktuell · Opus");
   assert.equal(
     ohneAnsi(statusZeile({ wartend: 2, konflikte: 2, pruefbeduerftig: 1, vorschlaege: 1, ingest: "02.10.", frisch: 2 })),
-    "🧠 Brain: 2 wartend · 2 Konflikt(e)! · 1 prüfbedürftig · 1 Vorschlag · Ingest 02.10. ⚠",
+    "🧠 Kortex: 2 wartend · 2 Konflikt(e)! · 1 prüfbedürftig · 1 Vorschlag · Ingest 02.10. ⚠",
   );
   assert.equal(ohneAnsi(statusZeile({ wartend: 0, konflikte: 0, pruefbeduerftig: 3, vorschlaege: 2, ingest: "01.10.", frisch: 0 })),
-    "🧠 Brain · 3 prüfbedürftig · 2 Vorschläge · Ingest 01.10.");
+    "🧠 Kortex · 3 prüfbedürftig · 2 Vorschläge · Ingest 01.10.");
 });
 
 test("letzteHinweise: letzte Zeile der Sitzung (8er-sid), kodierte und alte hits-Felder", () => {

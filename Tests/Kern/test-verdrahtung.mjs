@@ -146,7 +146,7 @@ test("install-git-hooks: --stand schreibt nichts; an trägt den Kern-Pfad ein; -
   assert.equal(lokal(v), join(KERN, "git-hooks").split("\\").join("/"));
   st = JSON.parse(hookLauf(v, "--stand").stdout);
   assert.deepEqual([st.aktiv, st.fremder], [true, false]);
-  assert.match(hookLauf(v).stdout, /Brain-Hooks aktiv/, "idempotent");
+  assert.match(hookLauf(v).stdout, /Kortex-Hooks aktiv/, "idempotent");
   const aus = hookLauf(v, "--aus");
   assert.equal(aus.status, 0, aus.stderr);
   assert.match(aus.stdout, /entfernt/);

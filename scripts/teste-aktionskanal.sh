@@ -169,7 +169,7 @@ lauf() { # leer | mit-vault | ohne-kern
   ohne-kern)
     pruefe "Vault aus vaults.json beim Start" "$log" "vault $v1"
     # Fehlt der Kern im Paket, meldet die App das klar — und weicht nicht auf das .tools im Vault aus.
-    pruefe "Kern nicht bereit im Log (Meldung)" "$log" "kern-nicht-bereit Der Kern (die Brain-Logik) fehlt im App-Paket"
+    pruefe "Kern nicht bereit im Log (Meldung)" "$log" "kern-nicht-bereit Der Kern von Kortex fehlt im App-Paket"
     pruefe "Status: 'Kern nicht bereit'" "$log" " status kern-nicht-bereit"
     pruefe "ansicht ohne Kern: ok:false/kern-nicht-bereit" "$STUB_LOG" '"ansicht":"{\"grund\":\"kern-nicht-bereit\",\"ok\":false}"'
     pruefe "Übersicht abgelehnt (Kern fehlt)" "$log" "uebersicht-abgelehnt kern-nicht-bereit"

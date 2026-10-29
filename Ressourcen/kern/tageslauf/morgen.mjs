@@ -34,12 +34,12 @@ export function morgenZeile(vault, { jetzt = Date.now() } = {}) {
     const teile = [];
     if (l.modus === "probe") {
       const n = werte.einschwingen;
-      teile.push(`Brain-Probelauf (${kurzDatum(l.zeit)}): würde ${z.uebernommen ?? 0} übernehmen · ${z.aussortiert ?? 0} aussortieren · ${z.rueckfragenNeu ?? 0} Rückfragen stellen — nichts geändert; scharf schalten mit dem Schalter „tageslauf: an“`
+      teile.push(`Kortex-Probelauf (${kurzDatum(l.zeit)}): würde ${z.uebernommen ?? 0} übernehmen · ${z.aussortiert ?? 0} aussortieren · ${z.rueckfragenNeu ?? 0} Rückfragen stellen — nichts geändert; scharf schalten mit dem Schalter „tageslauf: an“`
         + (n > 0 ? ` — die ersten ${n} Übernahmen prüfst du dann einzeln (Einschwingphase)` : ""));
     } else {
       let offen = z.rueckfragen ?? 0;
       try { const s = sichtbare(vault, { jetzt, nutzung: new Map() }); offen = s.fragen.length + s.wartend; } catch {}
-      teile.push(`Brain hat gelernt (${kurzDatum(l.zeit)}): ${z.uebernommen ?? 0} übernommen · ${z.aussortiert ?? 0} aussortiert · ${offen} Rückfragen offen${offen ? " — „Rückfragen“ sagen" : ""} · Fehlerquote ${q.fehler}/${q.geprueft}`);
+      teile.push(`Kortex hat gelernt (${kurzDatum(l.zeit)}): ${z.uebernommen ?? 0} übernommen · ${z.aussortiert ?? 0} aussortiert · ${offen} Rückfragen offen${offen ? " — „Rückfragen“ sagen" : ""} · Fehlerquote ${q.fehler}/${q.geprueft}`);
     }
     if (l.modus === "an") { const t = einschwingText(einschwingStand(vault, werte)); if (t) teile.push(t); }
     if (l.modus === "an") { const n = ladeOffene(vault).liste.length; if (n > 0) teile.push(`Rücknahme offen: ${n}`); }   // Befund N6: gescheiterte „stimmt nicht“-Rücknahmen, live gelesen
@@ -68,7 +68,7 @@ export function einschwingZeile(vault) {
     const { werte, fehler } = leseAutomatik(vault);
     if (fehler || werte.tageslauf !== "an") return null;
     const t = einschwingText(einschwingStand(vault, werte));
-    return t ? `Brain: ${t}` : null;
+    return t ? `Kortex: ${t}` : null;
   } catch { return null; }
 }
 
@@ -82,7 +82,7 @@ export function integritaetsZeile(vault) {
     const pfade = [...new Set(offen.flatMap((r) => (Array.isArray(r.fm.pfade) ? r.fm.pfade : []).map(einzeln)).filter(Boolean))];
     const liste = `${pfade.slice(0, 3).join(", ")}${pfade.length > 3 ? ` (+${pfade.length - 3} weitere)` : ""}`;
     const datum = offen.map((r) => r.erstellt).filter(Boolean).sort().pop();
-    return `ACHTUNG Brain-Sicherheit: Integrität verletzt${datum ? ` (${kurzDatum(datum)})` : ""}: ${liste || "Pfade siehe Rückfrage"} — die automatische Pflege wurde gestoppt. `
+    return `ACHTUNG Kortex-Sicherheit: Integrität verletzt${datum ? ` (${kurzDatum(datum)})` : ""}: ${liste || "Pfade siehe Rückfrage"} — die automatische Pflege wurde gestoppt. `
       + "Bitte selbst prüfen (git status, .git/hooks, .git/config), diese Meldung NICHT selbst abhaken — danach unter „Rückfragen“ als geprüft quittieren.";
   } catch { return null; }
 }

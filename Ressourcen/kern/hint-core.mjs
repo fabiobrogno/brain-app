@@ -110,7 +110,7 @@ function trefferZeile(h, vault, jetzt) {
 
 export function format(hits, { vault, jetzt = Date.now() } = {}) {
   if (!hits.length) return "";
-  let out = "Brain-Treffer (lokal, ungelesen — nur öffnen, wenn für die Aufgabe relevant):\n" +
+  let out = "Kortex-Treffer (lokal, ungelesen — nur öffnen, wenn für die Aufgabe relevant):\n" +
     hits.map(h => trefferZeile(h, vault, jetzt)).join("\n");
   // Beide Treffer im selben Themenordner → dessen generierte Übersicht anbieten (nur wenn sie existiert)
   const ordner = [...new Set(hits.map(h => dirname(h.page)))];

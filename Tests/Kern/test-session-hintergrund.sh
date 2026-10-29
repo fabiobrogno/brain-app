@@ -81,12 +81,12 @@ auto '{"projektAutomatik":false}'
 OUT=$(start "$W/arbeit/nirgends"); echo "$OUT" | grep -q 'Vorschläge' && { echo "FAIL: Vorschlagszeile ohne Vorschläge"; exit 1; }
 # import() braucht unter Windows eine file://-URL (D:/… wäre ein unbekanntes URL-Schema) → pathToFileURL
 node --input-type=module -e "const { pathToFileURL } = await import('node:url'); const { schreibeVorschlag } = await import(pathToFileURL(process.argv[1]).href); schreibeVorschlag(process.argv[2], { art: 'fakt', titel: 'Beet im Frühling', text: 'Kompost zuerst.' })" "$(pwd)/../vorschlaege.mjs" "$V2" >/dev/null || { echo "FAIL: Vorschlag anlegen"; exit 1; }
-OUT=$(start "$W/arbeit/nirgends"); echo "$OUT" | grep -qx '1 neuer Vorschlag — im Gehirn prüfen („zeig mir mein Brain“)' || { echo "FAIL: Vorschlagszeile fehlt: [$OUT]"; exit 1; }
+OUT=$(start "$W/arbeit/nirgends"); echo "$OUT" | grep -qx '1 neuer Vorschlag — in der Ansicht prüfen („zeig mir meinen Vault“)' || { echo "FAIL: Vorschlagszeile fehlt: [$OUT]"; exit 1; }
 # Final-Review #6: Vorschläge und Importe zählen nicht als „warten auf /ingest"; normale Inbox-Dateien schon
 mkdir -p "$V2/00_inbox/_import/alt/Technik"; echo '# a' > "$V2/00_inbox/_import/alt/Technik/a.md"; echo '{}' > "$V2/00_inbox/_import/alt/_import.json"
-OUT=$(start "$W/arbeit/nirgends"); echo "$OUT" | grep -q 'Brain-Inbox' && { echo "FAIL: Vorschläge/Importe als Inbox gezählt: [$OUT]"; exit 1; }
+OUT=$(start "$W/arbeit/nirgends"); echo "$OUT" | grep -q 'Kortex-Inbox' && { echo "FAIL: Vorschläge/Importe als Inbox gezählt: [$OUT]"; exit 1; }
 echo 'notiz' > "$V2/00_inbox/notiz.md"
-OUT=$(start "$W/arbeit/nirgends"); echo "$OUT" | grep -qx 'Brain-Inbox: 1 Datei(en) warten auf /ingest.' || { echo "FAIL: Inbox-Zeile falsch: [$OUT]"; exit 1; }
+OUT=$(start "$W/arbeit/nirgends"); echo "$OUT" | grep -qx 'Kortex-Inbox: 1 Datei(en) warten auf /ingest.' || { echo "FAIL: Inbox-Zeile falsch: [$OUT]"; exit 1; }
 # ohne stdin (Hand-Aufruf, offenes stdin) darf session-start nicht hängen
 S0=$(date +%s); HOME="$TH" USERPROFILE="$TH" BRAIN_VAULT="$V2" BRAIN_SESSION_NUR_STATUS=1 node "$S" < <(sleep 5) >/dev/null; [ $(( $(date +%s) - S0 )) -le 3 ] || { echo "FAIL: session-start wartet auf stdin"; exit 1; }
 rm -rf "$W" "$TH"

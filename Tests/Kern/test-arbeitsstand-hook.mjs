@@ -25,7 +25,7 @@ test("kompakt-sichern → SessionStart(compact) spielt den Stand derselben Sitzu
   assert.match(readFileSync(join(v, ".logs", "hooks.log"), "utf8"), /kompakt-sichern sid=sitzung- nachrichten=2 luecke=0/);
   const ss = start(v, "sitzung-a", "compact");
   assert.equal(ss.status, 0);
-  assert.match(ss.stdout, /^Brain-Arbeitsstand vor der Kompaktierung/);
+  assert.match(ss.stdout, /^Kortex-Arbeitsstand vor der Kompaktierung/);
   assert.match(ss.stdout, /> Ziel A: Export bauen/);
   assert.match(ss.stdout, /Vorgabe für sitzung-a: nur im Worktree arbeiten/);
 });
@@ -37,13 +37,13 @@ test("zwei parallele Sitzungen bekommen nie den Stand der anderen (Zuordnung str
   const b = start(v, "sitzung-b", "compact").stdout;
   assert.match(b, /Ziel B/);
   assert.doesNotMatch(b, /Ziel A|sitzung-a/);
-  assert.doesNotMatch(start(v, "sitzung-c", "compact").stdout, /Brain-Arbeitsstand/);
+  assert.doesNotMatch(start(v, "sitzung-c", "compact").stdout, /Kortex-Arbeitsstand/);
 });
 
 test("SessionStart startup/resume/clear spielt keinen Arbeitsstand ein", () => {
   const v = tempVault();
   sichern(v, "sitzung-a", sitzung("sitzung-a", "Ziel A"));
-  for (const q of ["startup", "resume", "clear"]) assert.doesNotMatch(start(v, "sitzung-a", q).stdout, /Brain-Arbeitsstand/, q);
+  for (const q of ["startup", "resume", "clear"]) assert.doesNotMatch(start(v, "sitzung-a", q).stdout, /Kortex-Arbeitsstand/, q);
 });
 
 test("SessionStart-Ausgabe bleibt mit Ich-Karte und großem Arbeitsstand ≤ 9.500 Zeichen; Arbeitsstand steht zuerst", () => {
@@ -55,7 +55,7 @@ test("SessionStart-Ausgabe bleibt mit Ich-Karte und großem Arbeitsstand ≤ 9.5
   sichern(v, "gross", f);
   const out = start(v, "gross", "compact").stdout;
   assert.ok(out.length <= 9500, String(out.length));
-  assert.match(out, /^Brain-Arbeitsstand/);
+  assert.match(out, /^Kortex-Arbeitsstand/);
   assert.match(out, /Ich-Karte/);
 });
 
@@ -111,7 +111,7 @@ test("SessionStart (M1): passt ein Eintrag nicht mehr ins Gesamtbudget, entfäll
   assert.ok(stand.length > 7960, `Stand zu kurz für den Test: ${stand.length}`);
   const out = start(v, sid, "compact").stdout;
   assert.ok(out.length <= 9500, String(out.length));
-  assert.match(out, /^Brain-Arbeitsstand/);
-  assert.doesNotMatch(out, /\(… gekürzt\)\s*$|Brain-Ich-Karte[^\n]*:\n?(\(… gekürzt\))?\s*$/);
-  assert.doesNotMatch(out, /Brain-Ich-Karte/, "passt nicht ganz → entfällt ganz");
+  assert.match(out, /^Kortex-Arbeitsstand/);
+  assert.doesNotMatch(out, /\(… gekürzt\)\s*$|Kortex-Ich-Karte[^\n]*:\n?(\(… gekürzt\))?\s*$/);
+  assert.doesNotMatch(out, /Kortex-Ich-Karte/, "passt nicht ganz → entfällt ganz");
 });

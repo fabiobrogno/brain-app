@@ -314,7 +314,7 @@ const TEXT = {
   "ingest-laeuft": "Gerade läuft ein /ingest — bitte danach noch einmal.",
   "von-hand-geaendert": "Die Stelle wurde inzwischen von Hand geändert — bitte selbst anpassen.",
   "pruefung-rot": "Die Commit-Prüfung hat die Rücknahme blockiert.",
-  "vault-nicht-auf-main": "Das Brain steht nicht auf main.",
+  "vault-nicht-auf-main": "Der Vault steht nicht auf main.",
   konflikt: "Die Seite hat sich währenddessen geändert — bitte noch einmal.",
   "lokale-aenderung": "Es gibt ungespeicherte Änderungen an der Seite — erst speichern oder verwerfen.",
 };

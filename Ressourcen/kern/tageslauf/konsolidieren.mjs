@@ -39,7 +39,7 @@ const FM_BLOCK = /^---\n[\s\S]*?\n---(?:\n|$)/;
 const fmOhneRev = (t) => { const m = FM_BLOCK.exec(lf(t)); return m ? m[0].split("\n").filter((z) => !/^rev:/.test(z)).join("\n") : ""; };
 
 export const KONSOL_SYSTEM = [
-  "Du überarbeitest im nächtlichen Tageslauf GENAU EINE Wiki-Seite in einer Arbeitskopie (aktuelles Verzeichnis = Brain-Wurzel). Keine Rückfragen.",
+  "Du überarbeitest im nächtlichen Tageslauf GENAU EINE Wiki-Seite in einer Arbeitskopie (aktuelles Verzeichnis = Vault-Wurzel). Keine Rückfragen.",
   "Aufgabe: die Zeilen unter `## Fakten` in den passenden Fließtext der Seite einarbeiten (bestehende Abschnitte ergänzen, Dopplungen zusammenführen).",
   "Regeln (alle zwingend):",
   "1. Jede Aussage bleibt vollständig erhalten: alle Zahlen, Daten, Einheiten, Namen und Verneinungen wörtlich. Nichts weglassen, nichts verallgemeinern, nichts dazuerfinden.",

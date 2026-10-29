@@ -1,10 +1,10 @@
 ---
 name: ingest
-description: Quelle ins Brain einarbeiten — Wiki pflegen, Widersprüche markieren, protokollieren
+description: Quelle in den Vault einarbeiten — Wiki pflegen, Widersprüche markieren, protokollieren
 argument-hint: <datei|text|youtube-url>
 ---
 
-Arbeite die Quelle ($ARGUMENTS) nach {{WIKI}}/_schema.md ins Brain ({{VAULT}}) ein. Ablauf STRIKT:
+Arbeite die Quelle ($ARGUMENTS) nach {{WIKI}}/_schema.md in den Vault ({{VAULT}}) ein. Ablauf STRIKT:
 
 1. **Quelle beschaffen:** Datei → lesen. Freitext → als Notiz-Datei in {{INBOX}} anlegen.
    YouTube-URL (optional — nur falls `yt-dlp` installiert ist; sonst die Person bitten, das Transkript als Text
@@ -52,7 +52,7 @@ Arbeite die Quelle ($ARGUMENTS) nach {{WIKI}}/_schema.md ins Brain ({{VAULT}}) e
 4. **Einarbeiten nach den 3 Riegeln** (_schema.md): gegen Originalquellen schreiben; Widersprüche
    als [!KONFLIKT]-Kasten mit beiden Quellen markieren, nie still auflösen; fehlende Seiten anlegen
    (Frontmatter-Pflicht!) im passenden Ordner nach _schema.md „Ordner“ (neuer Themenordner erst ab 2 Seiten;
-   Basename muss im ganzen Brain eindeutig sein — Lint prüft), Querverweise setzen. Beweisbindung: quellen + quellen_sha
+   Basename muss im ganzen Vault eindeutig sein — Lint prüft), Querverweise setzen. Beweisbindung: quellen + quellen_sha
    (`{{NODE}} "{{KERN}}/brain.mjs" --vault "{{VAULT}}" sha <quelle>`) auf den eingearbeiteten Stand setzen, rev um 1 erhöhen.
    **Gültigkeit:** bei schnell veränderlichen Tatsachen (Preise, Versionen, Stände, Personen-Rollen) `stand: <heutiges Datum>`
    und `pruefen_bis` setzen — Standard 90 Tage ab heute, bei Preisen 30 Tage (Datum selbst ausrechnen, nicht schätzen).

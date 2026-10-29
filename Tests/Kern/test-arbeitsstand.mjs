@@ -103,7 +103,7 @@ test("render: Budget — neueste drei Nachrichten ganz, ältere gekürzt, Rest m
   assert.ok(t.includes(`Nachricht 47 ${"z".repeat(900)}`), "drittneueste ganz");
   assert.match(t, /Nachricht 46 z+ \(gekürzt\)/);
   assert.match(t, /\(\d+ ältere Nachricht\(en\) ausgelassen — Platzgrenze\)/);
-  assert.match(t, /^Brain-Arbeitsstand vor der Kompaktierung/);
+  assert.match(t, /^Kortex-Arbeitsstand vor der Kompaktierung/);
 });
 
 test("schreibe/lies: je session_id eigene Datei; fremde session_id bekommt nichts; ohne session_id nichts", () => {

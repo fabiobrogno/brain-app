@@ -473,7 +473,7 @@ test("Morgenzeile: Lernmodus nur, wenn der Zustand aus dem Start kommt; kommt �
   const p = bau({ automatik: { ...LERN, tageslauf: "probe" } });
   P.schreibeLetzter(p, letzter({ modus: "probe", lernmodus: true }));
   const zp = M.morgenZeile(p, { jetzt: JETZT });
-  assert.match(zp, /^Brain-Probelauf/);
+  assert.match(zp, /^Kortex-Probelauf/);
   assert.match(zp, /Lernmodus: scharf beginnt die Automatik bei „aus“/);
   assert.doesNotMatch(zp, /Autostufe aus: Fehlerquote/);
 });

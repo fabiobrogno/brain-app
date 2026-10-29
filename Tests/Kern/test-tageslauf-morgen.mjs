@@ -22,7 +22,7 @@ test("morgenZeile: scharf wie in der Spec; Rückfragen live gezählt; Autostufe 
   P.schreibeLetzter(v, letzter());
   const ctx = P.neuerLauf(v, { claudeBefehl: FAKE_BEFEHL, jetzt: JETZT });
   for (let i = 0; i < 3; i++) R.legeRueckfrageAn(ctx, { typ: "heikel", frage: `F${i}` });
-  assert.equal(M.morgenZeile(v, { jetzt: JETZT }), "Brain hat gelernt (21.10.): 7 übernommen · 31 aussortiert · 3 Rückfragen offen — „Rückfragen“ sagen · Fehlerquote 0/12");
+  assert.equal(M.morgenZeile(v, { jetzt: JETZT }), "Kortex hat gelernt (21.10.): 7 übernommen · 31 aussortiert · 3 Rückfragen offen — „Rückfragen“ sagen · Fehlerquote 0/12");
   P.schreibeLetzter(v, letzter({ autostufe: "eng", letzterErfolg: "2026-10-17T03:00:00Z", status: "ohne-ki", grund: "claude nicht gefunden" }));
   const z = M.morgenZeile(v, { jetzt: JETZT });
   assert.match(z, /Autostufe eng/);
@@ -33,7 +33,7 @@ test("morgenZeile: Probe-Variante; aus oder noch kein Lauf → null", () => {
   const v = neuerTestVault({ automatik: {} });
   assert.equal(M.morgenZeile(v, { jetzt: JETZT }), null);
   P.schreibeLetzter(v, letzter({ modus: "probe" }));
-  assert.match(M.morgenZeile(v, { jetzt: JETZT }), /^Brain-Probelauf \(21\.10\.\): würde 7 übernehmen · 31 aussortieren · 3 Rückfragen stellen — nichts geändert/);
+  assert.match(M.morgenZeile(v, { jetzt: JETZT }), /^Kortex-Probelauf \(21\.10\.\): würde 7 übernehmen · 31 aussortieren · 3 Rückfragen stellen — nichts geändert/);
   const aus = neuerTestVault({ automatik: { tageslauf: "aus" } });
   P.schreibeLetzter(aus, letzter());
   assert.equal(M.morgenZeile(aus, { jetzt: JETZT }), null);
@@ -57,7 +57,7 @@ test("morgenZeile: während der Einschwingphase steht „Einschwingen R/N geprü
   const v = mitPhase(20, { r: 3 });
   P.schreibeLetzter(v, letzter());
   const z = M.morgenZeile(v, { jetzt: JETZT });
-  assert.match(z, /^Brain hat gelernt \(21\.10\.\): 7 übernommen/);
+  assert.match(z, /^Kortex hat gelernt \(21\.10\.\): 7 übernommen/);
   assert.match(z, / · Einschwingen 3\/20 geprüft(?: · |$)/);
   phase(v, { r: 19 });
   assert.match(M.morgenZeile(v, { jetzt: JETZT }), /Einschwingen 19\/20 geprüft/);
@@ -116,11 +116,11 @@ test("morgenZeile: ohne Tageslauf-Zeile (aus / noch kein Lauf / Modus passt nich
   assert.equal(M.einschwingZeile(aus), null, "Schalter aus → nichts");
   const nie = mitPhase(20, { r: 2, o: 1 });
   assert.equal(M.morgenZeile(nie, { jetzt: JETZT }), null);
-  assert.equal(M.einschwingZeile(nie), "Brain: Einschwingen 2/20 geprüft · 1 offen", "Schalter an, noch kein Lauf: eigene Zeile");
+  assert.equal(M.einschwingZeile(nie), "Kortex: Einschwingen 2/20 geprüft · 1 offen", "Schalter an, noch kein Lauf: eigene Zeile");
   const falsch = mitPhase(20, { r: 0 });
   P.schreibeLetzter(falsch, letzter({ modus: "probe" }));
   assert.equal(M.morgenZeile(falsch, { jetzt: JETZT }), null, "letzter Lauf war Probe, Schalter jetzt an: Sitzungsstart bleibt wie bisher (Zähler für Vorschläge)");
-  assert.equal(M.einschwingZeile(falsch), "Brain: Einschwingen 0/20 geprüft");
+  assert.equal(M.einschwingZeile(falsch), "Kortex: Einschwingen 0/20 geprüft");
   assert.equal(M.einschwingZeile(mitPhase(20, { r: 20 })), null, "Phase vorbei");
   assert.equal(M.einschwingZeile(mitPhase(0, { o: 2 })), null, "0 = aus");
   assert.equal(M.einschwingZeile(mitPhase(20, { r: 1 }, "probe")), null, "Probe: keine Einschwing-Zeile");
@@ -130,10 +130,10 @@ test("Sitzungsstart: die Morgenzeile zeigt „Einschwingen R/N geprüft“ solan
   const v = mitPhase(20, { r: 3, o: 2 });
   P.schreibeLetzter(v, letzter());
   const start = () => hook("session-start.mjs", { session_id: "s", source: "startup", cwd: v }, { vault: v, env: { BRAIN_SESSION_NUR_STATUS: "1" } }).stdout;
-  assert.match(start(), /Brain hat gelernt \(21\.10\.\).*Einschwingen 3\/20 geprüft · 2 offen/);
+  assert.match(start(), /Kortex hat gelernt \(21\.10\.\).*Einschwingen 3\/20 geprüft · 2 offen/);
   phase(v, { r: 20 });
   const danach = start();
-  assert.match(danach, /Brain hat gelernt \(21\.10\.\)/);
+  assert.match(danach, /Kortex hat gelernt \(21\.10\.\)/);
   assert.doesNotMatch(danach, /Einschwingen/);
 });
 
@@ -142,10 +142,10 @@ test("Sitzungsstart: Schalter an, noch kein Lauf → die Einschwing-Zeile steht 
   legeVorschlagAn(v, { id: "v1" });
   legeVorschlagAn(v, { id: "l1", art: "lektion", titel: "L" });
   const aus = startNurStatus(v);
-  assert.match(aus, /Brain: Einschwingen 0\/20 geprüft/);
+  assert.match(aus, /Kortex: Einschwingen 0\/20 geprüft/);
   assert.match(aus, /1 neuer Vorschlag/, "Zähler nicht ersetzt");
   assert.match(aus, /1 Lektion wartet/);
-  assert.doesNotMatch(aus, /Brain hat gelernt/);
+  assert.doesNotMatch(aus, /Kortex hat gelernt/);
   const probe = mitPhase(20, { r: 0 }, "probe");
   legeVorschlagAn(probe, { id: "v1" });
   assert.doesNotMatch(startNurStatus(probe), /Einschwingen \d/, "Probe: keine Einschwing-Zeile");
@@ -179,13 +179,13 @@ test("Sitzungsstart: scharf → eine Zeile statt der Vorschlags-/Lektionszähler
   writeFileSync(join(v, "00_inbox", "_rueckfragen", "rf-x.md"), "---\ntyp: rueckfrage\nart: heikel\n---\n# ?\n");
   const start = () => hook("session-start.mjs", { session_id: "s", source: "startup", cwd: v }, { vault: v, env: { BRAIN_SESSION_NUR_STATUS: "1" } }).stdout;
   let aus = start();
-  assert.match(aus, /Brain hat gelernt \(21\.10\.\)/);
-  assert.doesNotMatch(aus, /neuer Vorschlag|Lektion wartet|Brain-Inbox/);
+  assert.match(aus, /Kortex hat gelernt \(21\.10\.\)/);
+  assert.doesNotMatch(aus, /neuer Vorschlag|Lektion wartet|Kortex-Inbox/);
   const cfg = JSON.parse(readFileSync(join(v, "brain.config.json"), "utf8"));
   writeFileSync(join(v, "brain.config.json"), JSON.stringify({ ...cfg, automatik: { tageslauf: "probe" } }));
   P.schreibeLetzter(v, letzter({ modus: "probe" }));
   aus = start();
-  assert.match(aus, /Brain-Probelauf/);
+  assert.match(aus, /Kortex-Probelauf/);
   assert.match(aus, /1 neuer Vorschlag/);
 });
 
@@ -234,9 +234,9 @@ test("Sitzungsstart: Schalter aus → alles wie heute (alte Zähler da, keine Ta
   legeVorschlagAn(v, { id: "l1", art: "lektion", titel: "L" });
   writeFileSync(join(v, "09_wiki", "_lektionen.md"), "# Lektionen\n\n- **Immer** — Tests zuerst.\n");
   const aus = startNurStatus(v);
-  assert.match(aus, /2 neue Vorschläge — im Gehirn prüfen/);
+  assert.match(aus, /2 neue Vorschläge — in der Ansicht prüfen/);
   assert.match(aus, /1 Lektion wartet auf Übernahme/);
-  assert.doesNotMatch(aus, /Brain hat gelernt|Brain-Probelauf|Brain-Regeln \(allgemein\)/);
+  assert.doesNotMatch(aus, /Kortex hat gelernt|Kortex-Probelauf|Kortex-Regeln \(allgemein\)/);
 });
 
 test("Sitzungsstart: Schalter an, aber noch kein scharfer Lauf → alte Zähler bleiben (nichts verschwindet ohne Ersatz)", () => {
@@ -244,11 +244,11 @@ test("Sitzungsstart: Schalter an, aber noch kein scharfer Lauf → alte Zähler 
   legeVorschlagAn(v, { id: "v1" });
   let aus = startNurStatus(v);
   assert.match(aus, /1 neuer Vorschlag/);
-  assert.doesNotMatch(aus, /Brain hat gelernt/);
+  assert.doesNotMatch(aus, /Kortex hat gelernt/);
   P.schreibeLetzter(v, letzter({ modus: "probe" }));
   aus = startNurStatus(v);
   assert.match(aus, /1 neuer Vorschlag/, "nur ein Probelauf vorhanden → nichts ersetzt");
-  assert.doesNotMatch(aus, /Brain-Probelauf|Brain hat gelernt/);
+  assert.doesNotMatch(aus, /Kortex-Probelauf|Kortex hat gelernt/);
 });
 
 test("Sitzungsstart: allgemeine Lektionen als eigener Block (nur ohne „Gilt für“), Zugangsdaten nie", () => {
@@ -256,7 +256,7 @@ test("Sitzungsstart: allgemeine Lektionen als eigener Block (nur ohne „Gilt f�
   writeFileSync(join(v, "09_wiki", "_lektionen.md"), ["# Lektionen", "", "- **Datei** — Nur für mjs.", "  Gilt für: `*.mjs`",
     `- **Geheim** — Nutze ${["pass", "word"].join("")}=Koeder123`, "- **Allgemein** — Immer Tests zuerst.", ""].join("\n"));
   const aus = startNurStatus(v);
-  assert.match(aus, /Brain-Regeln \(allgemein\):\n- \*\*Allgemein\*\* — Immer Tests zuerst\./);
+  assert.match(aus, /Kortex-Regeln \(allgemein\):\n- \*\*Allgemein\*\* — Immer Tests zuerst\./);
   assert.doesNotMatch(aus, /Nur für mjs|Koeder123/);
 });
 

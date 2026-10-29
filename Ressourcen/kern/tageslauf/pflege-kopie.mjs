@@ -162,7 +162,7 @@ export async function einheit(ctx, kopie, { id, art, titel, arbeit, pruef = {} }
   }
   if (vaultZustand(ctx.vault) !== vorher) {
     ctx.pflegeStopp = true;
-    return verwerfen("vault-veraendert", [{ pfad: "-", regel: "vault-veraendert", meldung: "Im Brain hat sich währenddessen etwas geändert — nichts übernommen, Pflege für heute beendet." }]);
+    return verwerfen("vault-veraendert", [{ pfad: "-", regel: "vault-veraendert", meldung: "Im Vault hat sich währenddessen etwas geändert — nichts übernommen, Pflege für heute beendet." }]);
   }
   if (zeigerVorher !== null && lies() !== zeigerVorher) {
     try { writeFileSync(zeiger, zeigerVorher); } catch {}

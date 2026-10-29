@@ -161,17 +161,17 @@ test("Vault-Wechsel ohne Neustart: Öffnen, Wechseln, Vertrauen je Vault, Entfer
   assert.equal((await rufe("GET", "/api/baum")).status, 409);
   assert.ok(existsSync(join(a, "00_inbox/lose.md")), "nichts gelöscht");
 
-  // Neuanlage aus der Vorlage (Standardordner ~/Brain im hermetischen Home) und leerer Vault
-  r = await rufe("POST", "/api/vaults/neu", { art: "vorlage", name: "Mein Brain" });
+  // Neuanlage aus der Vorlage (Standardordner ~/Kortex im hermetischen Home) und leerer Vault
+  r = await rufe("POST", "/api/vaults/neu", { art: "vorlage", name: "Mein Vault" });
   assert.equal(r.status, 200, JSON.stringify(r.j));
-  const brain = join(process.env.HOME, "Brain");
-  assert.equal(r.j.vault.pfad, realpathSync(brain)); assert.equal(r.j.vault.name, "Mein Brain"); assert.equal(r.j.git, true);
+  const brain = join(process.env.HOME, "Kortex");
+  assert.equal(r.j.vault.pfad, realpathSync(brain)); assert.equal(r.j.vault.name, "Mein Vault"); assert.equal(r.j.git, true);
   assert.equal((await rufe("GET", "/api/info")).j.git, true);
   const notizen = (await rufe("GET", "/api/notizen")).j.notizen;
   assert.ok(notizen.some((n) => n.bereich === "wissen" && n.stufe === "gruen"), "Beispielseiten sind belegt");
-  assert.equal((await rufe("GET", "/api/git/status")).j.letzterCommit.nachricht, "Brain angelegt");
+  assert.equal((await rufe("GET", "/api/git/status")).j.letzterCommit.nachricht, "Kortex-Vault angelegt");
   r = await rufe("POST", "/api/vaults/neu", { art: "leer", name: "Zweites" });
-  assert.equal(r.j.vault.pfad, realpathSync(join(process.env.HOME, "Brain 2")), "Kollision → Brain 2");
+  assert.equal(r.j.vault.pfad, realpathSync(join(process.env.HOME, "Kortex 2")), "Kollision → Kortex 2");
   assert.deepEqual((await rufe("GET", "/api/notizen")).j.notizen, []);
   assert.equal((await rufe("GET", "/api/vaults")).j.vaults.length, 2);
   assert.equal((await rufe("POST", "/api/vaults/neu", { art: "gibtsnicht" })).status, 400);

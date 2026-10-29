@@ -121,7 +121,7 @@ export function importiere(vault, quelle, { name, bestaetigt = false, jetzt = ne
   const q = oeffneQuelle(quelle);
   const importWurzel = join(vault, o.inbox, "_import");
   if (!q.istZip && innerhalb(echt(quelle), echt(vault))) {
-    throw new ImportFehler("Die Quelle enthält dieses Brain selbst — bitte einen Ordner außerhalb des Brains wählen.");
+    throw new ImportFehler("Die Quelle enthält diesen Vault selbst — bitte einen Ordner außerhalb des Vaults wählen.");
   }
 
   // 1) Einordnen nur nach Name und Größe — noch wird nichts gelesen (Rückfrage kommt VOR dem Einlesen).
@@ -346,7 +346,7 @@ export function berichtMarkdown(b) {
     for (const w of b.widersprueche) {
       const neuer = w.neuer ? ` — neuer: ${code(w[w.neuer].datei)}` : "";
       z.push(`- **${WART_TEXT[w.art] || w.art}:** ${zitat(w.a.satz)} (${code(w.a.datei)}${w.a.datum ? ", " + w.a.datum : ""})`
-        + ` ↔ ${zitat(w.b.satz)} (${code(w.b.datei)}${w.b.ort === "brain" ? ", im Brain" : ""}${w.b.datum ? ", " + w.b.datum : ""})${neuer}`);
+        + ` ↔ ${zitat(w.b.satz)} (${code(w.b.datei)}${w.b.ort === "brain" ? ", im Vault" : ""}${w.b.datum ? ", " + w.b.datum : ""})${neuer}`);
     }
     z.push("");
   }
@@ -362,7 +362,7 @@ export function berichtMarkdown(b) {
   }
   if (dups.length) {
     z.push("## Exakte Duplikate (nicht übernommen)", "");
-    for (const d of dups) z.push(`- ${code(d.datei)} ist gleich wie ${code(d.gleichWie)}${d.ort === "brain" ? " (schon im Brain)" : ""}`);
+    for (const d of dups) z.push(`- ${code(d.datei)} ist gleich wie ${code(d.gleichWie)}${d.ort === "brain" ? " (schon im Vault)" : ""}`);
     z.push("");
   }
   if (b.pakete.length) {

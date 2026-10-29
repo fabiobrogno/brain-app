@@ -491,7 +491,7 @@ test("gesundheitsZeile: nur bei Warnungen, genau eine Zeile im Format der Spec, 
   assert.equal(G.gesundheitsZeile(v, { jetzt: JETZT }), null, "grün: nichts (Kontext sparen)");
   G.schreibeGesundheit(v, stand([b("gelb", "Doppelaufrufe"), b("rot", "Messlatte verfehlt (73/81)"), b("rot", "Weg dienst-vektor 0 Treffer/24 h")]));
   const z = G.gesundheitsZeile(v, { jetzt: JETZT });
-  assert.equal(z, "Brain-Gesundheit: ⚠ 3 — Messlatte verfehlt (73/81) · Weg dienst-vektor 0 Treffer/24 h · Doppelaufrufe — Details: brain gesundheit");
+  assert.equal(z, "Kortex-Gesundheit: ⚠ 3 — Messlatte verfehlt (73/81) · Weg dienst-vektor 0 Treffer/24 h · Doppelaufrufe — Details: brain gesundheit");
   assert.ok(!z.includes("\n"));
 });
 
@@ -499,7 +499,7 @@ test("gesundheitsZeile: lange Listen werden gekürzt („+N weitere“), Schalte
   const v = vaultMit();
   G.schreibeGesundheit(v, stand(Array.from({ length: 12 }, (_, i) => b("gelb", `Befund Nummer ${i} mit etwas längerem Text`))));
   const z = G.gesundheitsZeile(v, { jetzt: JETZT });
-  assert.match(z, /^Brain-Gesundheit: ⚠ 12 — Befund Nummer 0 /);
+  assert.match(z, /^Kortex-Gesundheit: ⚠ 12 — Befund Nummer 0 /);
   assert.match(z, / · \+\d+ weitere — Details: brain gesundheit$/);
   assert.ok(z.length < 420 && !z.includes("\n"), String(z.length));
   const aus = vaultMit({ automatik: { gesundheit: false } });
@@ -516,7 +516,7 @@ test("gesundheitsZeile: der Wächter, der nicht mehr wacht, ist selbst eine Warn
   const stalt = stand([], new Date(JETZT - 4 * TAG).toISOString());
   const v = vaultMit({ automatik: { tageslauf: "an" } });
   G.schreibeGesundheit(v, stalt);
-  assert.equal(G.gesundheitsZeile(v, { jetzt: JETZT }), "Brain-Gesundheit: ⚠ 1 — Prüfung seit 4 Tagen nicht gelaufen (Tageslauf prüfen; von Hand: brain gesundheit)");
+  assert.equal(G.gesundheitsZeile(v, { jetzt: JETZT }), "Kortex-Gesundheit: ⚠ 1 — Prüfung seit 4 Tagen nicht gelaufen (Tageslauf prüfen; von Hand: brain gesundheit)");
   const aus = vaultMit({ automatik: { tageslauf: "aus" } });
   G.schreibeGesundheit(aus, stalt);
   assert.equal(G.gesundheitsZeile(aus, { jetzt: JETZT }), null);
@@ -529,17 +529,17 @@ const start = (v, source = "startup") => hook("session-start.mjs", { session_id:
 
 test("Sitzungsstart: genau eine Gesundheits-Zeile bei Warnung; bei Grün, ausgeschaltet und nach Kompaktierung nichts", () => {
   const v = vaultMit();
-  assert.doesNotMatch(start(v), /Brain-Gesundheit/, "kein Stand");
+  assert.doesNotMatch(start(v), /Kortex-Gesundheit/, "kein Stand");
   G.schreibeGesundheit(v, stand([], new Date().toISOString()));   // frischer Stand: der Test hing sonst an der echten Uhr (JETZT = 22.10.)
-  assert.doesNotMatch(start(v), /Brain-Gesundheit/, "grün");
+  assert.doesNotMatch(start(v), /Kortex-Gesundheit/, "grün");
   G.schreibeGesundheit(v, stand([b("rot", "Messlatte verfehlt (73/81)"), b("gelb", "Doppelaufrufe")], new Date().toISOString()));
   const aus = start(v);
-  assert.equal(aus.split("\n").filter((z) => z.startsWith("Brain-Gesundheit")).length, 1);
-  assert.match(aus, /^Brain-Gesundheit: ⚠ 2 — Messlatte verfehlt \(73\/81\) · Doppelaufrufe — Details: brain gesundheit$/m);
-  assert.doesNotMatch(start(v, "compact"), /Brain-Gesundheit/, "nach einer Kompaktierung nicht noch einmal");
+  assert.equal(aus.split("\n").filter((z) => z.startsWith("Kortex-Gesundheit")).length, 1);
+  assert.match(aus, /^Kortex-Gesundheit: ⚠ 2 — Messlatte verfehlt \(73\/81\) · Doppelaufrufe — Details: brain gesundheit$/m);
+  assert.doesNotMatch(start(v, "compact"), /Kortex-Gesundheit/, "nach einer Kompaktierung nicht noch einmal");
   const abgeschaltet = vaultMit({ automatik: { gesundheit: false } });
   G.schreibeGesundheit(abgeschaltet, stand([b("rot", "x")], new Date().toISOString()));
-  assert.doesNotMatch(start(abgeschaltet), /Brain-Gesundheit/);
+  assert.doesNotMatch(start(abgeschaltet), /Kortex-Gesundheit/);
 });
 
 test("N6: session-start schreibt die Quelle in hooks.log (session-start source=…); der Wächter zählt nur source=startup — alte Zeilen ohne Quelle gelten wie bisher als Start", () => {
@@ -563,7 +563,7 @@ test("Sitzungsstart: die Inbox-Zeile bleibt unverändert (Zählung jetzt aus vau
   writeFileSync(join(v, "00_inbox", "unter", "b.md"), "# b\n");
   writeFileSync(join(v, "00_inbox", "_rueckfragen", "q.md"), "# q\n");
   writeFileSync(join(v, "00_inbox", ".versteckt"), "x");
-  assert.match(start(v), /^Brain-Inbox: 2 Datei\(en\) warten auf \/ingest\.$/m);
+  assert.match(start(v), /^Kortex-Inbox: 2 Datei\(en\) warten auf \/ingest\.$/m);
 });
 
 // ---------- Tageslauf ----------
@@ -593,7 +593,7 @@ test("Tageslauf: ein Abschnitt „### Gesundheit“ mit allen fünf Prüfungen, 
   const g = JSON.parse(readFileSync(TL(v, "gesundheit.json"), "utf8"));
   assert.deepEqual([g.ampel, g.warnungen, g.pruefungen.length], ["gelb", 1, 5]);
   assert.deepEqual(P.leseLetzter(v).gesundheit, { zeit: g.zeit, ampel: "gelb", warnungen: 1 });
-  assert.match(G.gesundheitsZeile(v, { jetzt: JETZT }), /^Brain-Gesundheit: ⚠ 1 — 80 % der Vektoren verwaist \(qmd cleanup\)/);
+  assert.match(G.gesundheitsZeile(v, { jetzt: JETZT }), /^Kortex-Gesundheit: ⚠ 1 — 80 % der Vektoren verwaist \(qmd cleanup\)/);
   // zweiter Lauf am selben Tag: die Messlatte ist heute schon gelaufen
   await lauf(v, { jetzt: JETZT + 3600e3, haken: { gesundheit: { messlatte: messHaken(z) } } });
   assert.equal(z.n, 1);
@@ -648,14 +648,14 @@ test("CLI: --json/--trocken speichert nichts, ohne --trocken wird der Stand gesc
   assert.equal(existsSync(TL(gruenVault, "gesundheit.json")), false, "--trocken");
   r = cli(gruenVault);
   assert.equal(r.status, 0);
-  assert.match(r.stdout, /^Brain-Gesundheit \d\d\.\d\d\.: alles in Ordnung\n🟢 Messlatte: /);
+  assert.match(r.stdout, /^Kortex-Gesundheit \d\d\.\d\d\.: alles in Ordnung\n🟢 Messlatte: /);
   assert.ok(existsSync(TL(gruenVault, "gesundheit.json")));
   // mit Befund: kaputtes Messlatte-Ergebnis → Exit 2
   const rot = vaultMit({ automatik: { hinweise: "aus" }, suche: { profil: "minimal" } });
   logDatei(rot, "hint-eval.log", evalZeile(new Date().toISOString().slice(0, 10), "73/81", 0) + "\n");
   r = cli(rot, "--trocken");
   assert.equal(r.status, 2);
-  assert.match(r.stdout, /Brain-Gesundheit \d\d\.\d\d\.: ⚠ 1 Warnung\n🔴 Messlatte: /);
+  assert.match(r.stdout, /Kortex-Gesundheit \d\d\.\d\d\.: ⚠ 1 Warnung\n🔴 Messlatte: /);
   assert.match(r.stdout, /⇒ Messlatte verfehlt \(73\/81\)/);
   r = cli(rot, "--quatsch");
   assert.equal(r.status, 64);

@@ -100,7 +100,7 @@ export async function zaehleTranskript(pfad, z = leerZaehler(), { fristMs = Infi
     if (k) { z.kompakt[k]++; return; }
     const h = hookAusgabe(o);
     if (h) {
-      if (h.ereignis === "UserPromptSubmit" && h.text.startsWith("Brain-Treffer")) { z.hinweise.n++; s.hinweis = true; }
+      if (h.ereignis === "UserPromptSubmit" && /^(Kortex|Brain)-Treffer/.test(h.text)) { z.hinweise.n++; s.hinweis = true; }
       return;
     }
     if (o.type === "assistant") {
@@ -186,7 +186,7 @@ export function textWirkung(m, vorher = null) {
   }
   z.push(`Rückbezüge („wo waren wir", „gestern" …): ${m.rueckbezug.n} in ${m.rueckbezug.s} Sitzungen, davon ${m.rueckbezug.start} als erste Nachricht`);
   z.push(`Kompaktierungen: ${m.kompakt.auto + m.kompakt.manuell} (${m.kompakt.auto} automatisch, ${m.kompakt.manuell} manuell)`);
-  z.push(`Brain-Hinweise: ${m.hinweise.n} in ${m.hinweise.s} Sitzungen; Sitzungen mit Hinweis und späterer Korrektur: ${m.hinweise.korrektur}`);
+  z.push(`Kortex-Hinweise: ${m.hinweise.n} in ${m.hinweise.s} Sitzungen; Sitzungen mit Hinweis und späterer Korrektur: ${m.hinweise.korrektur}`);
   const a = m.ausgaben, pct = (x) => (a.zeichenGross ? Math.round((100 * x) / a.zeichenGross) : 0);
   z.push(`Große Werkzeug-Ausgaben (> 5 KB): ${a.gross}, ${zahl(runde(100 * a.anteil, 1))} % des Verlaufstexts `
     + `(Bash ${pct(a.jeWerkzeug.bash)} %, Read ${pct(a.jeWerkzeug.read)} %, MCP ${pct(a.jeWerkzeug.mcp)} %, andere ${pct(a.jeWerkzeug.andere)} %)`
@@ -261,7 +261,7 @@ if (aufruf && aufruf === realpathSync(selbst)) {
     if (speichern) speichereMessung(vault, m);
     console.log(args.includes("--json") ? JSON.stringify(nurZahlen(m)) : textWirkung(m, vorher));
   } catch {
-    console.error(`Wirkungs-Messung nicht möglich — ist ${vault} wirklich ein Brain?`);
+    console.error(`Wirkungs-Messung nicht möglich — ist ${vault} wirklich ein Vault?`);
     process.exitCode = 1;
   } finally {
     if (speichern) try { unlinkSync(LAUF_MARKE(vault)); } catch {}
