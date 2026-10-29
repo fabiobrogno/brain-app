@@ -104,12 +104,14 @@ private let kernAttrappe = URL(fileURLWithPath: "/tmp/Kortex Test/bin/kern", isD
 }
 
 @Test func zeitlimitBrichtAbOhneZuHaengen() async {
-    let node = skript("#!/bin/bash\nsleep 5\n", name: "node", in: tempOrdner())
+    // Das Skript liefe 60 s (`exec`: kein Kindprozess, der nach dem Abbruch weiterläuft). Die Obergrenze liegt weit über dem
+    // Limit von 300 ms, damit Runner-Last den Test nicht kippt, aber weit unter der Laufzeit des Skripts: Wer wartet, scheitert.
+    let node = skript("#!/bin/bash\nexec sleep 60\n", name: "node", in: tempOrdner())
     let start = ContinuousClock.now
     await #expect(throws: BefehlFehler.zeitUeberschritten) {
         _ = try await BrainBefehl(node: node, kern: kernAttrappe, vault: tempOrdner()).fuehreAus(["status"], zeitlimit: .milliseconds(300))
     }
-    #expect(ContinuousClock.now - start < .seconds(3))
+    #expect(ContinuousClock.now - start < .seconds(30))
 }
 
 @Test func exitCodeUndFehlerausgabeWerdenWeitergegeben() async throws {

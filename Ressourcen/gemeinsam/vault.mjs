@@ -15,6 +15,7 @@ import * as vertrauenFn from "./vertrauen.mjs";
 import { erzeugeNotizIndex, titelAus } from "./notizen.mjs";
 import { wertAus } from "./nutzung.mjs";
 import { erzeugePosteingang } from "./posteingang.mjs";
+import { SUCHE_STANDARD, SUCHE_MAX, sucheWoerter, suchAuszug, sucheText } from "./ki-antworten.mjs";
 
 export { HttpFehler, pruefeText, berlinHeute, supportOrdner };
 export const STUFE_TEXT = { gruen: "grün", gelb: "gelb", rot: "rot", grau: "grau", ohne: "ohne Befund" };
@@ -342,13 +343,40 @@ export function oeffneVault(vaultPfad, opts = {}) {
   });
 
   // Dieselbe Suche für MCP brain_suchen und die Probe-Frage: strukturiert (treffer) und als Text, wie ihn die KI sieht.
-  function suchenFuerKi(frage, anzahl) {
-    const n = Math.min(20, Math.max(1, Number.parseInt(anzahl, 10) || 10));
-    const treffer = suche(frage).treffer.slice(0, n).map((t) => {
-      let stufe = "grau"; try { stufe = pruefung(t.pfad).stufe; } catch { /* unlesbar → grau */ }
-      return { ...t, stufe };
+  // Rangfolge wie die CLI-Suche (`brain search`, Profil minimal): BM25 aus dem gebündelten Kern (minisuche.mjs), ODER über die Wörter der
+  // Frage statt „jedes Wort muss vorkommen“. Fehlt der Kern (oder wirft er), gilt die UND-Suche der Oberfläche (suche()).
+  let miniSuche; // Funktion | null (nicht verfügbar) | undefined (noch nicht versucht)
+  async function ladeMiniSuche() {
+    if (miniSuche !== undefined) return miniSuche;
+    try { miniSuche = (await import(pathToFileURL(join(kern, "minisuche.mjs")).href)).minisuche || null; } catch { miniSuche = null; }
+    return miniSuche;
+  }
+  async function kandidaten(frage, n) {
+    const mini = await ladeMiniSuche();
+    if (mini) {
+      try {
+        const liste = [];
+        for (const t of mini(wurzel, frage, n + 10)) {
+          if (liste.length >= n) break;
+          if (t.pfad.split("/").some(gesperrterName)) continue;
+          let d; try { d = lies(t.pfad); } catch { continue; } // außerhalb des Vaults, unlesbar, kein Text → nie nennen
+          if (istGeneriert(d.pfad, null)) continue;
+          liste.push({ pfad: d.pfad, titel: titelAus(d.pfad, d.inhalt), inhalt: d.inhalt });
+        }
+        return liste;
+      } catch { /* Kern defekt → einfache Suche */ }
+    }
+    return suche(frage).treffer.slice(0, n).map((t) => { try { const d = lies(t.pfad); return { pfad: d.pfad, titel: t.titel, inhalt: d.inhalt }; } catch { return null; } }).filter(Boolean);
+  }
+  async function suchenFuerKi(frage, anzahl) {
+    const n = Math.min(SUCHE_MAX, Math.max(1, Number.parseInt(anzahl, 10) || SUCHE_STANDARD));
+    const woerter = sucheWoerter(frage);
+    const treffer = (await kandidaten(frage, n)).map((k) => {
+      let stufe = "grau"; try { stufe = pruefung(k.pfad).stufe; } catch { /* unlesbar → grau */ }
+      const { auszug, zeile } = suchAuszug(k.inhalt, woerter);
+      return { pfad: k.pfad, titel: k.titel, auszug, zeile, stufe };
     });
-    const text = treffer.length ? treffer.map((t, i) => `${i + 1}. ${t.pfad} — ${t.titel} [${STUFE_TEXT[t.stufe]}]\n   ${t.auszug}`).join("\n") : "Keine Treffer.";
+    const text = sucheText(treffer.map((t) => ({ ...t, stufeText: STUFE_TEXT[t.stufe] })), { mehr: treffer.length >= n && n < SUCHE_MAX });
     return { treffer, text };
   }
 
