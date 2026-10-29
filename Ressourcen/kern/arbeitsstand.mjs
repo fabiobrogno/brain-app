@@ -139,7 +139,7 @@ export function kuerzeAnZeile(text, max) {
 }
 
 export function render(z, { budget = MAX_EINSPIELEN, quelle = "" } = {}) {
-  const teile = [`Brain-Arbeitsstand vor der Kompaktierung (Stand ${datumZeit(Date.parse(z.stand))}) — wörtliche Auszüge aus dem `
+  const teile = [`Kortex-Arbeitsstand vor der Kompaktierung (Stand ${datumZeit(Date.parse(z.stand))}) — wörtliche Auszüge aus dem `
     + `Verlauf DIESER Sitzung, keine Zusammenfassung${quelle ? `; Datei ${quelle}` : ""}. Ältere Nachrichten können überholt `
     + "sein — im Zweifel nachfragen."];
   if (z.ziel) teile.push(`## Ziel der Sitzung (erste Nutzer-Nachricht)\n${zitat(z.ziel)}`);

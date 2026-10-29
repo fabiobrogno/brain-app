@@ -15,7 +15,7 @@
   obersten Ebene ist für generierte Dateien reserviert (gitignored) — keine eigenen `_`-Dateien dort anlegen.
 - Zweitbezug: Frontmatter `auch: ["bereich/thema"]` (JSON, Anführungszeichen) → Seite erscheint zusätzlich in
   der Übersicht jenes Ordners.
-- Dateinamen behalten das Typ-Präfix und sind im ganzen Brain eindeutig; Links immer als `[[basename]]`.
+- Dateinamen behalten das Typ-Präfix und sind im ganzen Vault eindeutig; Links immer als `[[basename]]`.
 - Schnell veränderliche Tatsachen (Zählungen, Status, Listen, Ports) tragen „Stand <Datum>" oder verweisen
   auf das führende System. Gültigkeit per Frontmatter (siehe „Optionale Frontmatter").
 - Gute Chat-Antworten: als Rohquelle nach inbox → /ingest. Eigene `synthese_`-Seite nur, wenn sie ≥ 2 Seiten
@@ -43,20 +43,20 @@ rev: 1
   schnell veränderlicher Tatsachen (Preise, Versionen, Stände, Rollen) `pruefen_bis` setzen: Standard 90 Tage,
   Preise 30 Tage. Seiten ohne diese Felder gelten weder als abgelaufen noch als gültig geprüft.
 - `fragen: ["<Frage>", ...]` — 2–6 typische Fragen in den eigenen Worten (eine Zeile, JSON, je ≤ 160 Zeichen,
-  höchstens 6; Lint meldet `FRAGEN`). Sie fließen in die Suchkarte der Seite, damit der Brain-Hinweis genau bei
+  höchstens 6; Lint meldet `FRAGEN`). Sie fließen in die Suchkarte der Seite, damit der Kortex-Hinweis genau bei
   diesen Fragen trifft. Beim Anlegen/Überarbeiten 2–4 eintragen; Änderungen brauchen kein rev+1.
 - Alle optionalen Felder sind rein additiv — ohne sie funktioniert die Seite wie bisher.
 
 ## Zeit, Gültigkeit und Ersetzen (optional, Frontmatter)
 - `gilt_seit: YYYY-MM-DD` — ab wann die Aussage der Seite gilt. Falsches Datum → Lint `GILT_SEIT` (blockiert).
-- `ersetzt_durch: "[[<nachfolger>]]"` — die Seite ist überholt. Der Brain-Hinweis zeigt sie nur noch als
+- `ersetzt_durch: "[[<nachfolger>]]"` — die Seite ist überholt. Der Kortex-Hinweis zeigt sie nur noch als
   „ersetzt → [[nachfolger]]“, nie als aktuell. Lint `ERSETZT` (blockiert): kein Wikilink, Nachfolger fehlt oder ist die
   Seite selbst. `ERSETZT-HINWEIS` (blockiert nicht): Kette (Nachfolger selbst ersetzt) oder die alte Seite wird noch
   verlinkt — Links auf den Nachfolger umstellen.
 - `kritisch: true|false` — `true`: der automatische Tageslauf ändert die Seite nie, neue Fakten dazu werden zur Rückfrage.
   Nur `true` oder `false` ohne Anführungszeichen; alles andere meldet Lint `KRITISCH` (blockiert) und gilt bis zur
   Korrektur als kritisch.
-- `zweifel: "<JJJJ-MM-TT>: <grund>"` — setzt der Tageslauf, wenn nach einem Brain-Hinweis auf diese Seite eine Korrektur
+- `zweifel: "<JJJJ-MM-TT>: <grund>"` — setzt der Tageslauf, wenn nach einem Kortex-Hinweis auf diese Seite eine Korrektur
   kam (W7). Lint zeigt die Seite als `PRÜFBEDÜRFTIG (ZWEIFEL)`, der Hinweis mit „(PRÜFBEDÜRFTIG: Zweifel)“. Nach dem
   Prüfen entfernen.
 - `auch_genannt: ["<alias>", …]` — andere Namen einer Entität (eine Zeile, JSON, höchstens 10, je ≤ 60 Zeichen; Lint
@@ -76,7 +76,7 @@ rev: 1
 ## Pflege durch den Tageslauf (B3, Schalter `pflegeIntelligenz`)
 - `herkunft_web: ["<Abschnitt>", ...]` — Abschnitte (`##`-Überschrift; „Einleitung" = Text davor), die aus einer Web- oder
   KI-Recherche stammen. Setzt die Pflege beim Einarbeiten einer Inbox-Notiz mit URL, „Recherche" oder Herkunftszeile;
-  der Brain-Hinweis zeigt die Seite dann mit „(teils laut Web-Recherche)".
+  der Kortex-Hinweis zeigt die Seite dann mit „(teils laut Web-Recherche)".
 - `_ausgemustert.md` (Drift-Liste im Wiki-Ordner): je Zeile `- alter Begriff → neuer Begriff`. Lint meldet lebende
   Erwähnungen (`DRIFT`, blockiert nicht); Pflege und Ingest schreiben nur die neue Form.
 - Konsolidieren: höchstens alle 30 Tage je Seite (ab 5 Fakt-Zeilen oder 8 KB) arbeitet die Pflege `## Fakten` in den

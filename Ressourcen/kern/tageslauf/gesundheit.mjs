@@ -412,7 +412,7 @@ export function gesundheitsZeile(vault, { jetzt = Date.now() } = {}) {
     if (!g) return null;
     const stand = Date.parse(g.zeit);
     if (Number.isFinite(stand) && jetzt - stand > STAND_MAX_ALTER_MS && werte.tageslauf !== "aus") {
-      return `Brain-Gesundheit: ⚠ 1 — Prüfung seit ${Math.floor((jetzt - stand) / TAG)} Tagen nicht gelaufen (Tageslauf prüfen; von Hand: brain gesundheit)`;
+      return `Kortex-Gesundheit: ⚠ 1 — Prüfung seit ${Math.floor((jetzt - stand) / TAG)} Tagen nicht gelaufen (Tageslauf prüfen; von Hand: brain gesundheit)`;
     }
     const alle = g.pruefungen.flatMap((p) => (Array.isArray(p.befunde) ? p.befunde : []))
       .filter((b) => b && typeof b.kurz === "string" && b.stufe !== "gruen")
@@ -426,13 +426,13 @@ export function gesundheitsZeile(vault, { jetzt = Date.now() } = {}) {
     }
     const rest = alle.length - genannt.length;
     const veraltet = Number.isFinite(stand) && jetzt - stand > 36 * STUNDE ? ` (Stand ${kurzDatum(stand)})` : "";
-    return `Brain-Gesundheit: ⚠ ${alle.length} — ${genannt.join(" · ")}${rest ? ` · +${rest} weitere` : ""}${veraltet} — Details: brain gesundheit`;
+    return `Kortex-Gesundheit: ⚠ ${alle.length} — ${genannt.join(" · ")}${rest ? ` · +${rest} weitere` : ""}${veraltet} — Details: brain gesundheit`;
   } catch { return null; }
 }
 
 // ---------- CLI ----------
 export function gesundheitText(g) {
-  const kopf = g.warnungen ? `Brain-Gesundheit ${kurzDatum(Date.parse(g.zeit))}: ⚠ ${g.warnungen} Warnung${g.warnungen === 1 ? "" : "en"}` : `Brain-Gesundheit ${kurzDatum(Date.parse(g.zeit))}: alles in Ordnung`;
+  const kopf = g.warnungen ? `Kortex-Gesundheit ${kurzDatum(Date.parse(g.zeit))}: ⚠ ${g.warnungen} Warnung${g.warnungen === 1 ? "" : "en"}` : `Kortex-Gesundheit ${kurzDatum(Date.parse(g.zeit))}: alles in Ordnung`;
   return [kopf, ...g.pruefungen.map((p) => `${SYMBOL[p.stufe]} ${p.name}: ${p.text}${p.befunde.length ? `\n     ⇒ ${p.befunde.map((b) => b.kurz).join("; ")}` : ""}`)].join("\n");
 }
 

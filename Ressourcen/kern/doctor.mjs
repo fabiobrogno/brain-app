@@ -66,7 +66,7 @@ try {
 
 // 6. Config gültig + systemVersion gesetzt
 const fehler = configFehler(vault);
-if (fehler) zeile("FEHLT", "Einstellungsdatei", `brain.config.json ist beschädigt (${fehler}) — Sag „repariere meine Brain-Einstellungen“.`);
+if (fehler) zeile("FEHLT", "Einstellungsdatei", `brain.config.json ist beschädigt (${fehler}) — Sag „repariere meine Kortex-Einstellungen“.`);
 else {
   const cfg = ladeConfig(vault);
   zeile("OK", "Einstellungsdatei", cfg.systemVersion ? `gültig, Version ${cfg.systemVersion}` : "gültig");
@@ -110,7 +110,7 @@ else {
     if (existsSync(modul)) lauf = await (await import(pathToFileURL(modul).href)).laufender(vault);
   } catch { lauf = null; }
   if (lauf) zeile("OK", "Ansicht-Dienst", `läuft (Port ${lauf.port})`);
-  else zeile("OK", "Ansicht-Dienst", "aus (startet bei ‚zeig mir mein Brain‘)");
+  else zeile("OK", "Ansicht-Dienst", "aus (startet bei ‚zeig mir meinen Vault‘)");
 }
 
 // 10. AGENTS.md aktuell (Hash des frischen Renders == Datei auf der Platte)
@@ -154,7 +154,7 @@ else {
 // 13. Offene Vorschläge (aus der Hintergrund-Ernte) — reine Information, blockiert nie.
 {
   const n = anzahlVorschlaege(vault);
-  zeile("OK", "Vorschläge", n > 0 ? `${n} offen — in der Ansicht prüfen („zeig mir mein Brain“).` : "keine offen");
+  zeile("OK", "Vorschläge", n > 0 ? `${n} offen — in der Ansicht prüfen („zeig mir meinen Vault“).` : "keine offen");
 }
 
 // 14. Pflege (v0.4): wie viel der Pflegebericht zu tun meldet — reine Information, blockiert nie.
@@ -162,7 +162,7 @@ else {
   let bericht = null;
   try { bericht = (await import("./pflege.mjs")).pflegebericht(vault); } catch { bericht = null; }
   if (!bericht) zeile("OK", "Pflege", "Bericht nicht verfügbar — „brain pflege“ später erneut versuchen.");
-  else if (bericht.zuTun > 0) zeile("OK", "Pflege", `${bericht.zuTun} ${bericht.zuTun === 1 ? "Sache" : "Sachen"} zu tun — „brain pflege“ oder im Gehirn unter Pflege.`);
+  else if (bericht.zuTun > 0) zeile("OK", "Pflege", `${bericht.zuTun} ${bericht.zuTun === 1 ? "Sache" : "Sachen"} zu tun — „brain pflege“ oder in der Ansicht unter Pflege.`);
   else zeile("OK", "Pflege", "nichts zu tun");
 }
 

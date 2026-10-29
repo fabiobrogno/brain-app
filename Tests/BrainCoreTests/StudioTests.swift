@@ -364,7 +364,7 @@ private func url(_ s: String) -> URL { URL(string: s)! }
     // gemerkte Größe aus 0.2.0 (Minimum war 900×600) wird angehoben, größere bleibt
     #expect(StudioFenster.mindestens(CGSize(width: 900, height: 600)) == CGSize(width: 1100, height: 700))
     #expect(StudioFenster.mindestens(CGSize(width: 1600, height: 650)) == CGSize(width: 1600, height: 700))
-    #expect(StudioFenster.standardTitel == "Brain Studio")
+    #expect(StudioFenster.standardTitel == "Kortex Studio")
 }
 
 // MARK: Brücken-Argumente

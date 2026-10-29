@@ -213,8 +213,8 @@ export function pruefeVorschlag({ basis, vorschlag, bericht, verlaeufe, woerter,
   // 5. Brain-Kandidaten (ändern nichts am Gedächtnis).
   for (const e of ber.filter((x) => x.art === "brain-kandidat")) {
     if (out.brainKandidaten.length >= MAX_BRAIN_KANDIDATEN) break;
-    if (!belegGefunden(e.beleg, alleTexte)) { weg(e.datei || "-", "beleg", "Brain-Kandidat ohne wörtliches Zitat aus einem Verlauf"); continue; }
-    if (nenntThema(woerter, e.grund, e.beleg, e.datei)) { weg(e.datei || "-", "thema", "Brain-Kandidat nennt ein ausgeschlossenes Thema"); continue; }
+    if (!belegGefunden(e.beleg, alleTexte)) { weg(e.datei || "-", "beleg", "Vault-Kandidat ohne wörtliches Zitat aus einem Verlauf"); continue; }
+    if (nenntThema(woerter, e.grund, e.beleg, e.datei)) { weg(e.datei || "-", "thema", "Vault-Kandidat nennt ein ausgeschlossenes Thema"); continue; }
     out.brainKandidaten.push({ grund: e.grund, beleg: e.beleg, datei: e.datei || "-" });
   }
   const eintraege = (n) => ber.filter((e) => e.art !== "brain-kandidat" && e.datei === n);

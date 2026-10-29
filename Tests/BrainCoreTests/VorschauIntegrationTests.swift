@@ -74,13 +74,13 @@ private func baueAblauf(_ modus: VorschauModus, echtesHome: URL, node: URL) -> (
     #expect(aktuell == .vault, "frischer Nutzer: kein Vault, der Assistent beginnt dort (git ist auf diesem Rechner da)")
     #expect(await dienste.aktiverVault() == nil)
 
-    // Vault anlegen ohne eigenen Ordner: Standardort ist <Vorschau-home>/Brain
+    // Vault anlegen ohne eigenen Ordner: Standardort ist <Vorschau-home>/Kortex
     await ablauf.legeVaultAn(art: .vorlage, name: nil, ordner: nil)
     let fehler = await ablauf.zustand.fehler[.vault]
     #expect(fehler == nil, "\(fehler ?? "")")
     let vault = await ablauf.anzeige.vault
-    #expect(vault.map { URL(fileURLWithPath: $0.pfad).resolvingSymlinksInPath().path } == modus.home.appendingPathComponent("Brain").resolvingSymlinksInPath().path)
-    #expect(FileManager.default.fileExists(atPath: modus.home.appendingPathComponent("Brain/.git").path))
+    #expect(vault.map { URL(fileURLWithPath: $0.pfad).resolvingSymlinksInPath().path } == modus.home.appendingPathComponent("Kortex").resolvingSymlinksInPath().path)
+    #expect(FileManager.default.fileExists(atPath: modus.home.appendingPathComponent("Kortex/.git").path))
     #expect(FileManager.default.fileExists(atPath: modus.support.appendingPathComponent("vaults.json").path))
     aktuell = await ablauf.zustand.aktuell
     #expect(aktuell == .ki, "GitHub entfällt ohne Client-ID, dann kommt die KI")
@@ -115,7 +115,7 @@ private func baueAblauf(_ modus: VorschauModus, echtesHome: URL, node: URL) -> (
     // Nichts außerhalb des Vorschau-Ordners
     #expect(abdruck(echt) == vorher, "das „echte“ HOME ist unverändert")
     #expect(!FileManager.default.fileExists(atPath: echt.appendingPathComponent("koeder-aufrufe.txt").path), "das Köder-claude wurde nie gestartet")
-    #expect(!FileManager.default.fileExists(atPath: echt.appendingPathComponent("Brain").path))
+    #expect(!FileManager.default.fileExists(atPath: echt.appendingPathComponent("Kortex").path))
 }
 
 @Test(.enabled(if: moeglich)) func vorschauOhneKiFindetKeineKIUndLehntOrdnerAusserhalbAb() async throws {
@@ -129,7 +129,7 @@ private func baueAblauf(_ modus: VorschauModus, echtesHome: URL, node: URL) -> (
 
     await ablauf.starte()
     // Ein Ordner im „echten“ HOME wird abgelehnt (auch wenn ihn der Nutzer im Dialog wählt) — der Fehler ist lesbar
-    await ablauf.legeVaultAn(art: .leer, name: "Echt", ordner: echt.appendingPathComponent("Brain").path)
+    await ablauf.legeVaultAn(art: .leer, name: "Echt", ordner: echt.appendingPathComponent("Kortex").path)
     let fehler = await ablauf.zustand.fehler[.vault]
     #expect(fehler?.contains("Vorschau") == true, "\(fehler ?? "nil")")
     #expect(await dienste.aktiverVault() == nil)

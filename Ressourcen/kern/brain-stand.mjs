@@ -81,9 +81,9 @@ export function statusZeile(stand, modell = "") {
   const { wartend, konflikte, pruefbeduerftig, vorschlaege, ingest, frisch } = stand;
   let s;
   if (wartend === 0 && konflikte === 0 && pruefbeduerftig === 0) {
-    s = `${GRUEN}🧠 Brain: aktuell${RESET}`;
+    s = `${GRUEN}🧠 Kortex: aktuell${RESET}`;
   } else {
-    s = wartend !== 0 ? `${GELB}🧠 Brain: ${wartend} wartend${RESET}` : `${GELB}🧠 Brain${RESET}`;
+    s = wartend !== 0 ? `${GELB}🧠 Kortex: ${wartend} wartend${RESET}` : `${GELB}🧠 Kortex${RESET}`;
     if (konflikte !== 0) s += ` ${ROT}· ${konflikte} Konflikt(e)!${RESET}`;
     if (pruefbeduerftig !== 0) s += ` ${MAGENTA}· ${pruefbeduerftig} prüfbedürftig${RESET}`;
   }

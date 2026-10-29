@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { nutzer, assistent, hinweis, schreibeVerlauf, tempVault, tempOrdner, TEMP_HOME } from "./verlauf-fixture.mjs";
 import { leseW7, w7Lauf } from "../w7.mjs";
 
-const KOPF = "Brain-Treffer (lokal, ungelesen — nur öffnen, wenn für die Aufgabe relevant):";
+const KOPF = "Kortex-Treffer (lokal, ungelesen — nur öffnen, wenn für die Aufgabe relevant):";
 const z = (n) => `2026-10-21T08:0${n}:00.000Z`;
 const H = (seite, vault) => hinweis(`${KOPF}\n- ${vault}/${seite} — Beschreibung`);
 const CWD = "/projekte/tiere";

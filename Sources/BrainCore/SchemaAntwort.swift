@@ -27,11 +27,11 @@ public enum SchemaAntwort {
 
     /// Kleine Fehlerseite in Alltagssprache, wenn die Ansicht nicht starten kann (statt eines leeren weißen Fensters).
     public static let fehlerSeiteHTML = """
-    <!doctype html><html lang="de"><head><meta charset="utf-8"><title>Brain</title>
+    <!doctype html><html lang="de"><head><meta charset="utf-8"><title>Kortex</title>
     <style>body{font:16px -apple-system,system-ui,sans-serif;display:flex;align-items:center;justify-content:center;\
     height:100vh;margin:0;background:Canvas;color:CanvasText}main{max-width:30em;text-align:center;padding:2em}\
     .symbol{font-size:3em;color:#c0392b}</style></head><body><main><div class="symbol">&#10005;</div>\
-    <p>Die Ansicht konnte nicht starten. Ist der Brain-Ordner noch da und das Kit aktuell?</p></main></body></html>
+    <p>Die Ansicht konnte nicht starten. Ist der Vault-Ordner noch da und das Kit aktuell?</p></main></body></html>
     """
 
     public static func fehlerSeite(url: URL) -> (antwort: HTTPURLResponse, body: Data) {

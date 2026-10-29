@@ -21,7 +21,7 @@ function testWurzel() {
     assistent("Beim Beet."),
     aufruf("t1", "Bash", { command: "cat gross.log" }),
     ergebnis("t1", "x".repeat(6000)),
-    hinweis("Brain-Treffer (lokal, ungelesen — nur öffnen, wenn für die Aufgabe relevant):\n- ~/brain/09_wiki/x.md — x"),
+    hinweis("Kortex-Treffer (lokal, ungelesen — nur öffnen, wenn für die Aufgabe relevant):\n- ~/brain/09_wiki/x.md — x"),
     nutzer("nein, das stimmt nicht"),
     befehl("/compact"),
     kompakt("manual"),

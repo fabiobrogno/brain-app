@@ -127,7 +127,7 @@ export function veraltetSchritt(ctx, { home = homedir() } = {}) {
     if (neu >= K7_JE_LAUF) continue;
     const repoText = repo ? `\nRepo: ${repo.commits} Commit(s) seit dem Stand${repo.betreffe.length ? ` (z. B. „${repo.betreffe[0]}“)` : ""}.` : "";
     legeRueckfrageAn(ctx, { typ: "veraltet", frage: `Stimmt ${basename(k.seite)} noch?`, seite: k.seite, grund: "k7",
-      beschreibung: `Abgelaufen seit ${k.tageUeber} Tagen (Frist ${k.pruefenBis}). In den letzten 90 Tagen ${k.nutzung}× als Brain-Hinweis gezeigt.${repoText}` });
+      beschreibung: `Abgelaufen seit ${k.tageUeber} Tagen (Frist ${k.pruefenBis}). In den letzten 90 Tagen ${k.nutzung}× als Kortex-Hinweis gezeigt.${repoText}` });
     offen.add(k.seite);
     neu++;
   }

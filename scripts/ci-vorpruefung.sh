@@ -4,6 +4,7 @@
 #   2. Syntaxprüfung (node --check) aller .mjs/.js unter Ressourcen/, Tests/ (ohne vendor, node_modules, Testdaten-Ordner)
 #   3. Gültiges JSON in allen .json (ohne node_modules, Testdaten-Ordner)
 #   4. Lint-Test „keine Altpfade“ im Kern (kostet Sekunden, findet Rückfälle auf ~/brain früh)
+#   5. Lint-Test „sichtbare Begriffe“ (Tests/Node/sichtbare-begriffe.test.mjs): kein sichtbares „Brain“ in Texten, die App heißt Kortex, der Datenordner Vault
 # Aufruf: bash scripts/ci-vorpruefung.sh   (Exit ≠ 0, sobald etwas rot ist; alle Funde werden gesammelt)
 set -u
 cd "$(dirname "$0")/.." || exit 2
@@ -39,6 +40,9 @@ echo "$n Dateien geprüft"
 
 echo "== Lint: keine Altpfade im Kern"
 bash Tests/Kern/unit.sh Tests/Kern/test-keine-altpfade.mjs >"$T/lint" 2>&1 || { tail -n 40 "$T/lint" >&2; rot "test-keine-altpfade"; }
+
+echo "== Lint: sichtbare Begriffe (Kortex / Vault statt Brain)"
+node --test Tests/Node/sichtbare-begriffe.test.mjs >"$T/begriffe" 2>&1 || { grep -E '^\s+(Sources|Ressourcen|README)' "$T/begriffe" | head -n 40 >&2; rot "sichtbare-begriffe"; }
 
 [ "$FEHLER" -eq 0 ] && echo "Vorprüfung grün." || echo "Vorprüfung ROT." >&2
 exit "$FEHLER"

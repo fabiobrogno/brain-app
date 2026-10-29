@@ -1,6 +1,6 @@
 ---
 name: backup
-description: Sicherung für das Second Brain einrichten — mit GitHub (privates Repo) oder ohne (Ordner/Stick)
+description: Sicherung für deinen Kortex-Vault einrichten — mit GitHub (privates Repo) oder ohne (Ordner/Stick)
 argument-hint: [github|ordner|keins]
 ---
 
@@ -19,11 +19,11 @@ Frag die Person, welchen Weg sie möchte, falls nicht klar.
    `gh auth status`.
    Hat die Person kein GitHub-Konto: Link zur Registrierung (github.com/signup) zeigen und warten, bis sie
    eins hat — nicht raten, nicht überspringen.
-3. **Privates Repo anlegen und verbinden:** `gh repo create mein-brain --private --source "{{VAULT}}" --push`
+3. **Privates Repo anlegen und verbinden:** `gh repo create mein-vault --private --source "{{VAULT}}" --push`
    . Prüfbefehl: `{{GIT}} -C "{{VAULT}}" remote -v` (muss auf das neue Repo zeigen).
 4. **Einrichten bestätigen:** `{{NODE}} "{{KERN}}/brain.mjs" --vault "{{VAULT}}" backup einrichten github`. Ab jetzt sichert jede
    Sitzung automatisch online (`brain backup` pusht).
-5. **Wiederherstellen** (auf einem neuen Rechner): `gh repo clone mein-brain <ziel>`.
+5. **Wiederherstellen** (auf einem neuen Rechner): `gh repo clone mein-vault <ziel>`.
 
 ## Weg B: ohne GitHub (Ordner/Stick)
 

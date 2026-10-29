@@ -188,7 +188,7 @@ for (const f of readdirSync(kartenDir)) if (f.endsWith(".md") && !karten.has(f))
 atomic(join(vault, ".logs", "wiki-map.json"), JSON.stringify(wikiMap, null, 2) + "\n");
 
 // INDEX.md — Katalog: 1 Zeile pro Ordner/wichtiger Datei, Archiv ausgeblendet
-const lines = ["# INDEX (generiert — nicht editieren)", "", `Brain-First: Dieser Katalog wird ZUERST gelesen. Danach ${wikiDir}, dann Suche.`, ""];
+const lines = ["# INDEX (generiert — nicht editieren)", "", `Vault zuerst: Dieser Katalog wird ZUERST gelesen. Danach ${wikiDir}, dann Suche.`, ""];
 const inbox = files.filter(f => f.cluster === inboxDir);
 lines.push(`## ${inboxDir} — ${inbox.length} wartend`);
 for (const f of inbox) lines.push(`- ${f.id} — ${f.title}`);

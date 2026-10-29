@@ -184,10 +184,10 @@ if (claudeMemory && !struktur && existsSync(memRoot)) {
       const lines = readFileSync(full, "utf8").split("\n").length;
       if (lines <= 20) continue;
       if (statSync(full).mtimeMs < BRAIN_GO_LIVE) altbestand++;
-      else findings.push(`MEMORY-ROUTING: ${f} (${lines} Zeilen, neu) — Fakten-Wissen gehört ins Brain, Memory auf Zeiger eindampfen`);
+      else findings.push(`MEMORY-ROUTING: ${f} (${lines} Zeilen, neu) — Fakten-Wissen gehört in den Vault, Memory auf Zeiger eindampfen`);
     }
   }
-  if (altbestand) findings.push(`ALT-BACKLOG: ${altbestand} fette Alt-Memories (vor Brain-Start) — bei Wieder-Berührung verifizieren und ins Brain ingesten, nicht blind migrieren`);
+  if (altbestand) findings.push(`ALT-BACKLOG: ${altbestand} fette Alt-Memories (vor Kortex) — bei Wieder-Berührung verifizieren und in den Vault ingesten, nicht blind migrieren`);
 }
 
 // Frische-Vertrag (Harness-Video): nicht „läuft es?", sondern „bis zu welchem Stand ist was verarbeitet?"

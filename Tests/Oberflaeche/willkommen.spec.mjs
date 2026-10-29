@@ -100,7 +100,7 @@ async function rahmen(page, o = {}) {
         return json(200, { ok: true });
       case "/api/mcp/selbsttest":
         if (z.selbsttestVerzoegerung) await warte(z.selbsttestVerzoegerung);
-        if (z.selbsttest === "fehler") return json(502, { fehler: "Der MCP-Server hat nicht geantwortet — die KI würde dein Brain so nicht finden.", art: "mcp" });
+        if (z.selbsttest === "fehler") return json(502, { fehler: "Der MCP-Server hat nicht geantwortet — die KI würde deinen Vault so nicht finden.", art: "mcp" });
         return json(200, { ok: true, werkzeuge: ["brain_suchen", "brain_lesen"], treffer: 1 });
       case "/api/kit/hooks":
         if (z.hooks === "fehlt") return json(404, { fehler: "nicht gefunden" });
@@ -145,11 +145,11 @@ test("Karte zeigt die vier Wege, die erste Zeile ist vorfokussiert", async ({ pa
   await oeffneSeite(page);
   await zeigeWillkommen(page);
   await deckend(schritt(page, "wahl"));
-  await expect(page.locator("#willkommen-host h1")).toHaveText("Willkommen bei Brain");
+  await expect(page.locator("#willkommen-host h1")).toHaveText("Willkommen bei Kortex");
   await expect(page.locator("#willkommen-host [data-weg]")).toHaveCount(4);
   await expect(page.locator("#willkommen-host .w-weg-titel")).toHaveText([
-    "Mit der Brain-Vorlage loslegen", "Leeren Vault anlegen", "Vorhandenen Ordner öffnen", "Von GitHub klonen"]);
-  await expect(page.locator("#willkommen-host .w-weg-text2").first()).toHaveText("Ein neues Brain mit Posteingang, Wiki und Beispielseiten.");
+    "Mit der Kortex-Vorlage loslegen", "Leeren Vault anlegen", "Vorhandenen Ordner öffnen", "Von GitHub klonen"]);
+  await expect(page.locator("#willkommen-host .w-weg-text2").first()).toHaveText("Ein neuer Vault mit Posteingang, Wiki und Beispielseiten.");
   await expect(page.locator("#willkommen-host .w-fuss-text")).toContainText("kein Konto und keine Cloud von uns");
   for (const id of ["vorlage", "leer", "ordner", "klonen"]) await deckend(weg(page, id));
   await expect.poll(() => aktivesWeg(page)).toBe("vorlage");
@@ -181,7 +181,7 @@ test("Tastatur: Pfeile wechseln die Zeile, Enter öffnet sie", async ({ page }) 
   await deckend(schritt(page, "name"));
   await expect(page.locator("#willkommen-host h2")).toHaveText("Leeren Vault anlegen");
   await expect(page.locator('[data-feld="name"]')).toBeFocused();
-  await expect(page.locator('[data-feld="name"]')).toHaveValue("Brain");
+  await expect(page.locator('[data-feld="name"]')).toHaveValue("Kortex");
   // Escape geht einen Schritt zurück und fokussiert wieder eine Zeile
   await page.keyboard.press("Escape");
   await deckend(schritt(page, "wahl"));
@@ -195,7 +195,7 @@ test("Leerer Vault: POST /api/vaults/neu mit art und name, ohne ordner; Fortschr
   await deckend(weg(page, "leer"));
   await weg(page, "leer").click();
   await deckend(schritt(page, "name"));
-  await expect(page.locator(".w-ort-text")).toHaveText("Wird angelegt in ~/Brain");
+  await expect(page.locator(".w-ort-text")).toHaveText("Wird angelegt in ~/Kortex");
   await expect(page.locator("#willkommen-host .mini")).toHaveText("In deinem Benutzerordner braucht die App keine zusätzliche Freigabe.");
   await page.locator('[data-feld="name"]').fill("Privat");
   await knopf(page, "anlegen").click();
@@ -216,7 +216,7 @@ test("Vorlage: art \"vorlage\", leerer Name und Schrägstrich werden freundlich 
   await deckend(weg(page, "vorlage"));
   await weg(page, "vorlage").click();
   await deckend(schritt(page, "name"));
-  await expect(page.locator("#willkommen-host h2")).toHaveText("Brain-Vorlage anlegen");
+  await expect(page.locator("#willkommen-host h2")).toHaveText("Kortex-Vorlage anlegen");
   await page.locator('[data-feld="name"]').fill("  ");
   await knopf(page, "anlegen").click();
   await expect(page.locator("#willkommen-host .fehlertext")).toHaveText("Gib deinem Vault einen Namen.");
@@ -248,7 +248,7 @@ test("Anderen Ordner wählen (App-Simulation): Pfad wird angezeigt und gesendet;
   await expect(page.locator(".w-ort-text")).toHaveText("Wird angelegt in ~/Notizen");
   await knopf(page, "anlegen").click();
   await deckend(schritt(page, "ki"));
-  expect(aufgezeichnet(z, "/api/vaults/neu")[0].body).toEqual({ art: "leer", name: "Brain", ordner: "/Users/test/Notizen" });
+  expect(aufgezeichnet(z, "/api/vaults/neu")[0].body).toEqual({ art: "leer", name: "Kortex", ordner: "/Users/test/Notizen" });
 });
 
 test("Browser-Ausweg: Textfeld „Pfad zum Ordner“ mit Prüfung", async ({ page }) => {
@@ -488,7 +488,7 @@ test("Klonen: Fortschritt, Fehler in Alltagssprache mit Anmelde-Hinweis, Eingabe
   await weg(page, "klonen").click();
   await deckend(schritt(page, "klonen"));
   await expect(page.locator("#willkommen-host h2")).toHaveText("Von GitHub klonen");
-  await expect(page.locator("#willkommen-host .w-hilfe")).toHaveText("Anmeldung läuft über deine normale Git-Einrichtung (SSH oder Schlüsselbund). Die App speichert keine Passwörter.");
+  await expect(page.locator("#willkommen-host .w-hilfe")).toHaveText("Anmeldung läuft über deine normale Git-Anmeldung (SSH-Schlüssel oder macOS-Schlüsselbund). Die App speichert keine Passwörter.");
   await expect(page.locator('[data-feld="url"]')).toBeFocused();
   // leere und unpassende Adresse
   await knopf(page, "klonen").click();
@@ -662,7 +662,7 @@ test("KI-Dialog: beiVerbunden kommt nur nach geglücktem Verbinden, nicht beim S
   await deckend(d);
   await d.locator('[data-aktion="claude-verbinden"]').click();
   const frage = d.locator('[data-bereich="umstellen"]');
-  await expect(frage).toContainText("In Claude gibt es schon einen Eintrag „brain“, der woanders hinzeigt. Auf dieses Brain umstellen?");
+  await expect(frage).toContainText("In Claude gibt es schon einen Eintrag „brain“, der woanders hinzeigt. Auf diesen Vault umstellen?");
   await frage.locator('[data-aktion="nicht-umstellen"]').click();
   await d.locator('[data-aktion="ki-fertig"]').click(); // schließen, ohne verbunden zu sein
   await expect(d).toHaveCount(0);
@@ -801,7 +801,7 @@ test("Probe: Beispielfrage aus der ersten Notiz, Ergebnis mit bis zu drei Titeln
   await expect(page.locator('[data-zeile="probe"] .w-aktion-text')).toContainText("Suche nach „Kaffee“ — so, wie Claude es tun würde.");
   await knopf(page, "probe").click();
   const erg = page.locator('[data-bereich="probe-ergebnis"]');
-  await expect(erg.locator(".w-ergebnis-titel")).toHaveText("Claude findet dein Brain: 4 Treffer");
+  await expect(erg.locator(".w-ergebnis-titel")).toHaveText("Claude findet deinen Vault: 4 Treffer");
   await deckend(erg);
   await expect(erg.locator("li")).toHaveText(["Kaffee", "Espresso", "Mühle"]);
   expect(aufgezeichnet(z, "/api/probe")[0].body).toEqual({ frage: "Kaffee" });
@@ -821,7 +821,7 @@ test("Probe bei leerem Vault: Hinweis, keine Suche", async ({ page }) => {
   expect(aufgezeichnet(z, "/api/probe")).toHaveLength(0);
 });
 
-test("Brain-Hinweise einschalten: der Knopf bleibt aus, solange es /api/kit/hooks nicht gibt (auch mit Kit)", async ({ page }) => {
+test("Kortex-Hinweise einschalten: der Knopf bleibt aus, solange es /api/kit/hooks nicht gibt (auch mit Kit)", async ({ page }) => {
   const z = await rahmen(page, { kit: { vorhanden: true, vertraut: true }, hooks: "fehlt" });
   await oeffneSeite(page);
   await zeigeWillkommen(page);

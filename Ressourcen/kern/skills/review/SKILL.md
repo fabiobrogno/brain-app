@@ -1,6 +1,6 @@
 ---
 name: review
-description: Brain-Review (alle ~30 Tage) — nur seit dem letzten Review geänderte Wiki-Seiten kritisch prüfen, nichts still ändern
+description: Vault-Review (alle ~30 Tage) — nur seit dem letzten Review geänderte Wiki-Seiten kritisch prüfen, nichts still ändern
 ---
 
 1. Kandidaten holen (lokal, 0 Tokens): `{{NODE}} "{{KERN}}/review-kandidaten.mjs" --vault "{{VAULT}}"` → `seiten`, `nachbarn`, `feedback`, `hinweisOhneTreffer`.

@@ -1,10 +1,10 @@
 ---
 name: import
-description: Altes Brain (Obsidian, Notion-Export, Logseq, Ordner mit Notizen) importieren — Quelle bleibt unberührt, Bericht vor jedem Einarbeiten
+description: Alten Vault bzw. Notizsammlung (Obsidian, Notion-Export, Logseq, Ordner mit Notizen) importieren — Quelle bleibt unberührt, Bericht vor jedem Einarbeiten
 argument-hint: <ordner|zip>
 ---
 
-Ablauf für „importiere mein altes Brain aus <Ordner>" (oder: Obsidian/Notion/Logseq):
+Ablauf für „importiere meinen alten Vault aus <Ordner>" bzw. „… mein altes Brain …" (oder: Obsidian/Notion/Logseq):
 
 1. **Ordner oder Zip erfragen**, falls nicht genannt: welcher Ordner (oder welche Zip-Datei) soll importiert
    werden? Apple Notizen hat keinen direkten Ordner-Export — die Person bitten, zuerst in der Notizen-App zu

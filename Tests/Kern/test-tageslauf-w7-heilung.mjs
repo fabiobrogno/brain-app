@@ -18,7 +18,7 @@ const vault = (fm = {}) => neuerTestVault({ seiten: { [SEITE]: seitenText({ fm: 
 const w7Zeile = (uuid, zitat = "Das stimmt nicht, Port ist 3311") => JSON.stringify({ v: 1, seite: SEITE, sitzung: "s9", uuid, zeit: "2026-10-21T12:00:00Z", zitat });
 const schreibeW7 = (v, ...zeilen) => { mkdirSync(join(v, ".logs"), { recursive: true }); writeFileSync(join(v, ".logs", "w7.jsonl"), zeilen.join("\n") + "\n", { flag: "a" }); };
 const zweifelFrage = (ctx, extra = {}) => R.legeRueckfrageAn(ctx, { typ: "zweifel", frage: "Stimmt entitaet_alpha.md noch?", seite: SEITE, grund: "w7",
-  beschreibung: "Nach einem Brain-Hinweis auf diese Seite kam eine Korrektur:\n„Port ist 3311“\nSitzung s9", ...extra });
+  beschreibung: "Nach einem Kortex-Hinweis auf diese Seite kam eine Korrektur:\n„Port ist 3311“\nSitzung s9", ...extra });
 const seiteText = (v) => readFileSync(join(v, SEITE), "utf8");
 
 test("offene zweifel-Rückfrage aus W7 ohne gesetztes Feld → der Feld-Auftrag kommt in jedem Lauf wieder; mit gesetztem Feld nicht", () => {

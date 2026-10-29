@@ -1,6 +1,6 @@
 ---
 name: lint
-description: Brain-Hygiene prüfen (read-only) — Konflikte, Waisen, Drift, Verfall, Review
+description: Vault-Hygiene prüfen (read-only) — Konflikte, Waisen, Drift, Verfall, Review
 ---
 
 1. Führe aus: `{{NODE}} "{{KERN}}/brain.mjs" --vault "{{VAULT}}" lint` und zeige die Befunde als Liste.

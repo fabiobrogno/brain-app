@@ -22,9 +22,9 @@ export const WERKZEUGE = [
     inputSchema: { type: "object", properties: { pfad: { type: "string", description: "Pfad relativ zum Vault, z. B. 09_wiki/firma/amazon/thema_x.md" }, abschnitt: { type: "string", description: "Nur dieser Abschnitt (Nummer oder Überschrift aus der Gliederung)" }, von: { type: "integer", minimum: 1, description: "Erste Zeile" }, bis: { type: "integer", minimum: 1, description: "Letzte Zeile" } }, required: ["pfad"], additionalProperties: false } },
   { name: "brain_merken", description: "Legt eine neue Notiz in 00_inbox/ ab. Schreibt nie ins Wiki; erst /ingest macht daraus Wissen.",
     inputSchema: { type: "object", properties: { text: { type: "string" }, titel: { type: "string" } }, required: ["text"], additionalProperties: false } },
-  { name: "brain_gesundheit", description: "Kurzfassung der Brain-Gesundheit (Ampel und Befunde) aus dem Kern von Kortex, falls der Vault ein Brain ist (brain.config.json).",
+  { name: "brain_gesundheit", description: "Kurzfassung der Vault-Gesundheit (Ampel und Befunde) aus dem Kern von Kortex, falls der Vault ein Kortex-Vault ist (brain.config.json).",
     inputSchema: { type: "object", properties: {}, additionalProperties: false } },
-  { name: "brain_vaults", description: "Listet die in der App eingerichteten Vaults (Brains) und nennt den, den dieser Server gerade nutzt.",
+  { name: "brain_vaults", description: "Listet die in Kortex eingerichteten Vaults und nennt den, den dieser Server gerade nutzt.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false } },
   { name: "brain_verlauf", description: "Git-Verlauf einer Datei (neueste zuerst).",
     inputSchema: { type: "object", properties: { pfad: { type: "string" }, max: { type: "integer", minimum: 1, maximum: 100, description: "Standard 20" } }, required: ["pfad"], additionalProperties: false } },
@@ -36,7 +36,7 @@ const text = (t) => ({ content: [{ type: "text", text: t }] });
 const fehlerText = (t) => ({ content: [{ type: "text", text: t }], isError: true });
 const zeit = (iso) => String(iso || "").slice(0, 16).replace("T", " ");
 
-const KEIN_VAULT = "Es ist noch kein Vault eingerichtet. Lege in Brain Studio einen an (Willkommen → Brain-Vorlage) und versuche es dann noch einmal.";
+const KEIN_VAULT = "Es ist noch kein Vault eingerichtet. Lege in Kortex einen an (Willkommen → Kortex-Vorlage) und versuche es dann noch einmal.";
 
 function vaultText(v) {
   const l = leseVaults();
@@ -72,7 +72,7 @@ function kontextText(v, projekt, cwd, spur) {
     const satz = (saetze[0] || "").trim();
     treffer.push({ rang: (verfallen ? 2 : 0) + (ueberRepo ? 0 : 1), pfad: e.pfad, titel, stand: felder.stand || zeit(d.geaendert).slice(0, 10), stufeText: `Prüf-Stufe: ${STUFE[p.stufe]}`, verfallen, satz });
   }
-  if (!treffer.length) return `Keine Seiten zum Projekt „${projekt}“ im Brain gefunden.`;
+  if (!treffer.length) return `Keine Seiten zum Projekt „${projekt}“ im Vault gefunden.`;
   treffer.sort((a, b) => a.rang - b.rang || a.pfad.localeCompare(b.pfad));
   return kontextBegrenzt(treffer, projekt, spur);
 }
@@ -118,7 +118,7 @@ async function rufe(vArg, name, a, spur = { seiten: [] }) {
     }
     case "brain_gesundheit": {
       const g = await v.gesundheit();
-      if (g.verfuegbar === false) return text("Die Gesundheitsprüfung ist nicht verfügbar (dieser Ordner ist kein Brain-Vault mit brain.config.json, oder der Kern von Kortex ist nicht erreichbar).");
+      if (g.verfuegbar === false) return text("Die Gesundheitsprüfung ist nicht verfügbar (dieser Ordner ist kein Kortex-Vault mit brain.config.json, oder der Kern von Kortex ist nicht erreichbar).");
       const zeilen = [`Ampel: ${g.ampel}${g.warnungen !== undefined ? ` · ${g.warnungen} Warnung(en)` : ""}`];
       for (const p of g.pruefungen || []) {
         if (p.stufe === "gruen") continue;
@@ -148,7 +148,7 @@ export async function bearbeite(v, msg, version = "0.2.0") {
     case "initialize": {
       const gewollt = msg.params && msg.params.protocolVersion;
       return ok({ protocolVersion: VERSIONEN.includes(gewollt) ? gewollt : VERSIONEN[0], capabilities: { tools: {} },
-        serverInfo: { name: "brain", version }, instructions: "Brain: durchsuche und lies das Wissen des Nutzers; merke Neues nur über brain_merken (landet in der Inbox)." });
+        serverInfo: { name: "brain", version }, instructions: "Kortex: durchsuche und lies das Wissen im Vault des Nutzers; merke Neues nur über brain_merken (landet in der Inbox)." });
     }
     case "ping": return ok({});
     case "tools/list": return ok({ tools: WERKZEUGE });

@@ -66,7 +66,7 @@ test("pflegebericht: exakt auf dem Fixture", () => {
     naechsterSchritt: "Bald fällig — nichts Eiliges, beim nächsten Einarbeiten mitprüfen." });
   // zwei Kästen, Kasten 1 ist schon entschieden (Auftrag wartet) → nur noch einer offen
   assert.deepEqual(p.konflikte, { schluessel: "konflikte", anzahl: 1, liste: [{ seite: "09_wiki/geräte/thema_konflikt.md", anzahl: 1 }],
-    naechsterSchritt: "Im Gehirn unter „Pflege“ entscheiden, welche Aussage gilt." });
+    naechsterSchritt: "In der Ansicht unter „Pflege“ entscheiden, welche Aussage gilt." });
   assert.deepEqual(p.konflikteKaputt, { schluessel: "konflikteKaputt", anzahl: 1, liste: [{ seite: "09_wiki/geräte/thema_halb.md", anzahl: 1 }],
     naechsterSchritt: "Konflikt-Kasten unvollständig — A und B ergänzen oder den Kasten entfernen (sag „reparier die Konflikt-Kästen“)." });
   assert.deepEqual(txt(p.pflegeAuftraege), ["20261002-090000-pflege-abc123"]);
@@ -105,9 +105,9 @@ test("pflegebericht: exakt auf dem Fixture", () => {
   }
   // ohne Vorschläge/Entscheidungen — die haben eigene Sitzungsstart-Zeilen (W1-Review #7); kaputte Kästen,
   // übernommene Lektionen und Pflege-Aufträge haben keine und stehen deshalb drin (Final-Review #3/#4)
-  assert.equal(wochenZeile(b), "Brain-Woche: 1 abgelaufen · 1 Konflikt · 1 Konflikt-Kasten unvollständig — im Gehirn unter Pflege");
+  assert.equal(wochenZeile(b), "Kortex-Woche: 1 abgelaufen · 1 Konflikt · 1 Konflikt-Kasten unvollständig — in der Ansicht unter Pflege");
   assert.equal(wochenZeile({ zuTun: 2, posten: [{ schluessel: "lektionen", anzahl: 1 }, { schluessel: "pflegeAuftraege", anzahl: 2 }] }),
-    "Brain-Woche: 1 Lektion wartet · 2 Pflege-Aufträge warten — im Gehirn unter Pflege");
+    "Kortex-Woche: 1 Lektion wartet · 2 Pflege-Aufträge warten — in der Ansicht unter Pflege");
   assert.equal(wochenZeile({ zuTun: 4, posten: [{ schluessel: "vorschlaege", anzahl: 3 }, { schluessel: "entscheidungen", anzahl: 1 }] }), "", "nur eigene Zeilen → keine Wochen-Zeile");
   assert.match(textBericht(b), /^Pflegebericht \(2026-10-03\): 11 Sachen zu tun\. 2 beauftragt — wird beim nächsten Einarbeiten erledigt\.\n- 1 abgelaufen: 09_wiki\/geräte\/thema_alt\.md/);
 });
@@ -164,7 +164,7 @@ test("CLI: node pflege.mjs <vault> [--json]", () => {
   assert.deepEqual(json.posten.map(p => p.schluessel), POSTEN);
   const text = execFileSync(process.execPath, [join(HIER, "..", "brain.mjs"), "pflege"], { encoding: "utf8", env: { ...env, BRAIN_VAULT: v }, windowsHide: true });
   assert.match(text, /^Pflegebericht \(\d{4}-\d{2}-\d{2}\): \d+ Sachen zu tun\./);
-  assert.match(text, /→ Im Gehirn unter „Pflege“ entscheiden/);
+  assert.match(text, /→ In der Ansicht unter „Pflege“ entscheiden/);
 });
 
 test("Cache (W1-Review #6): aktuellerBericht schreibt .logs/pflege-bericht.json, nutzt ihn bei gleichem Schlüssel, rechnet nach Änderung neu; CLI --cache still", async () => {

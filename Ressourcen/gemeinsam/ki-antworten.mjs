@@ -171,7 +171,7 @@ export function begrenzeKontext(treffer, projekt) {
     zeilen.push(z); laenge += z.length + 1; seiten.push(t.pfad);
   }
   const rest = treffer.length - zeilen.length;
-  const kopf = `Brain-Kontext zu „${kuerze(String(projekt), 60)}“ (${zeilen.length} Seite(n); Details mit brain_lesen):`;
+  const kopf = `Kortex-Kontext zu „${kuerze(String(projekt), 60)}“ (${zeilen.length} Seite(n); Details mit brain_lesen):`;
   const fuss = rest > 0 ? `\n(+${rest} weitere; brain_suchen)` : "";
   return { text: `${kopf}\n${zeilen.join("\n")}${fuss}`.slice(0, KONTEXT_LIMIT), seiten };
 }

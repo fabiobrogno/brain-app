@@ -232,7 +232,7 @@ export function erzeugeGitHub(opt = {}) {
     const fehler = repoNameFehler(name);
     if (fehler) throw new HttpFehler(400, fehler, { art: "name" });
     const token = await holeToken();
-    const { status, j } = await githubApi(token, "POST", "/user/repos", { name, description: "Sicherung meines Kortex-Brains", private: true, auto_init: false });
+    const { status, j } = await githubApi(token, "POST", "/user/repos", { name, description: "Sicherung meines Kortex-Vaults", private: true, auto_init: false });
     if (status === 422) {
       const vergeben = JSON.stringify((j && j.errors) || []).includes("already exists");
       throw new HttpFehler(vergeben ? 409 : 400, vergeben ? "Du hast schon ein Repository mit diesem Namen. Wähle einen anderen Namen oder nimm das vorhandene." : "GitHub nimmt diesen Namen nicht an. Wähle einen anderen.", { art: vergeben ? "name-vergeben" : "name" });
@@ -257,7 +257,7 @@ export function erzeugeGitHub(opt = {}) {
     if (status !== 200 || !j || !gueltigerBesitzer(o) || !repoNameGueltig(j.name) || o.toLowerCase() !== besitzer.toLowerCase() || j.name.toLowerCase() !== name.toLowerCase()) {
       throw new HttpFehler(502, "GitHub hat das Repository nicht wie erwartet beschrieben.", { art: "github" });
     }
-    if (j.private !== true) throw new HttpFehler(403, "Dieses Repository ist nicht privat. Kortex sichert dein Brain nur in private Repositories.", { art: "oeffentlich" });
+    if (j.private !== true) throw new HttpFehler(403, "Dieses Repository ist nicht privat. Kortex sichert deinen Vault nur in private Repositories.", { art: "oeffentlich" });
     if (j.archived || j.disabled) throw new HttpFehler(409, "Dieses Repository ist archiviert. Darin lässt sich nichts speichern.", { art: "archiviert" });
     if (j.permissions && j.permissions.push === false) throw new HttpFehler(403, "Du darfst in diesem Repository nichts speichern.", { art: "rechte" });
     return { besitzer: o, name: j.name, url: repoAdresse(o, j.name), privat: true };
