@@ -30,10 +30,12 @@ node "$H"
 # Schalter sicherungTaeglich=false → keine tägliche Ordner-Sicherung (Standard: Bundle wird geschrieben)
 git -C "$V" init -q 2>/dev/null; git -C "$V" -c user.name=t -c user.email=t@t commit -q --allow-empty -m init 2>/dev/null
 BK=$(mktemp -d)
-echo "{\"backup\":{\"art\":\"ordner\",\"pfad\":\"$BK\"},\"automatik\":{\"updateHinweis\":false,\"wochenbericht\":false,\"sicherungTaeglich\":false}}" > "$V/brain.config.json"
+# Der Sicherungsordner steht seit P4 im Support-Ordner (nicht in der Vault-Config): einrichten legt ihn dort ab
+BRAIN_VAULT="$V" node "$(pwd)/../brain.mjs" backup einrichten "ordner:$BK" >/dev/null || { echo "FAIL: backup einrichten"; exit 1; }
+echo "{\"backup\":{\"art\":\"ordner\"},\"automatik\":{\"updateHinweis\":false,\"wochenbericht\":false,\"sicherungTaeglich\":false}}" > "$V/brain.config.json"
 node "$H"
 ls "$BK"/brain-*.bundle >/dev/null 2>&1 && { echo "FAIL: Sicherung trotz sicherungTaeglich=false"; exit 1; }
-echo "{\"backup\":{\"art\":\"ordner\",\"pfad\":\"$BK\"},\"automatik\":{\"updateHinweis\":false,\"wochenbericht\":false}}" > "$V/brain.config.json"
+echo "{\"backup\":{\"art\":\"ordner\"},\"automatik\":{\"updateHinweis\":false,\"wochenbericht\":false}}" > "$V/brain.config.json"
 node "$H"
 ls "$BK"/brain-*.bundle >/dev/null 2>&1 || { echo "FAIL: Sicherung im Standard (sicherungTaeglich nicht gesetzt) fehlt"; exit 1; }
 rm -rf "$BK"

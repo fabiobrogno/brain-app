@@ -9,6 +9,7 @@ import { join, dirname, resolve, delimiter, isAbsolute, sep } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
+import { registriereVault } from "./vault-schutz.mjs";
 
 export const KERN = dirname(fileURLToPath(import.meta.url));
 
@@ -80,6 +81,7 @@ export function pruefeVault(pfad) {
   if (!istOrdner) throw new KeinVaultFehler(`Vault nicht gefunden: ${p} ist kein Ordner.`);
   if (!existsSync(join(echt, "brain.config.json"))) throw new KeinVaultFehler(`Das ist kein Brain-Vault: in ${p} fehlt brain.config.json.`);
   zieleImVault(echt);
+  registriereVault(p, echt); // ab jetzt bleiben alle Schreibzugriffe unter diesem Vault im Vault (vault-schutz.mjs)
   return p;
 }
 

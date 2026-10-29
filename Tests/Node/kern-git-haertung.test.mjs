@@ -45,3 +45,17 @@ test("jedes Muster der Werkstatt-Liste ist durch mindestens ein Beispiel abgedec
     }
   }
 });
+
+// Die Werkstatt fährt eine Sperrliste (GEFAEHRLICH) und fragt bei Treffern nach Vertrauen; der Kern kennt keine Vertrauensfrage und fährt deshalb
+// eine ERLAUBNISLISTE (git-sicher-pruefung.pl, fail-closed): strenger und nicht umgehbar. Sicherungsnetz: nichts, was die Werkstatt als
+// gefährlich kennt, darf auf der Erlaubnisliste des Kerns stehen.
+test("die Erlaubnisliste des Kerns enthält keinen Schlüssel, den die Werkstatt als gefährlich kennt", () => {
+  const pl = readFileSync(pfad("kern", "git-sicher-pruefung.pl"), "utf8");
+  const schluessel = [...pl.matchAll(/^\s*"([a-z.*-]+)"\s*=>/gm)].map((m) => m[1]);
+  assert.ok(schluessel.length >= 30, `zu wenige Schlüssel gelesen: ${schluessel.length}`);
+  for (const k of schluessel) {
+    const beispiel = k.replaceAll("*", "x");
+    for (const re of GEFAEHRLICH_MUSTER) assert.ok(!re.test(beispiel), `${k} steht auf der Erlaubnisliste, ist aber gefährlich (${re})`);
+  }
+  assert.ok(!schluessel.some((k) => /^(http|credential|filter|diff|url|include|submodule|man|help|core\.(fsmonitor|worktree|sshcommand|editor|pager|askpass|gitproxy|attributesfile))/.test(k)), "unerwarteter Abschnitt auf der Erlaubnisliste");
+});

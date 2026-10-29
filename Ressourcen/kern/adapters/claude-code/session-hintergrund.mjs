@@ -92,6 +92,8 @@ if (AUTOMATIK.sicherungTaeglich !== false) try {
   if (!takt.noetig) log(`Sicherung übersprungen (${takt.grund})`);
   else {
     const cfg = ladeConfig(V);
+    const { leseBackupOrdner, ortstag } = await import("../../backup.mjs");
+    const backupOrdner = leseBackupOrdner(V);
     let ok = false;
     if (!cfg.backup) {
       const remote = spawnSync(GIT, ["-C", V, "remote"], { encoding: "utf8", windowsHide: true });
@@ -101,8 +103,8 @@ if (AUTOMATIK.sicherungTaeglich !== false) try {
         ok = r.status === 0;
       }
     } else if (
-      cfg.backup.art === "ordner" && cfg.backup.pfad &&
-      existsSync(join(cfg.backup.pfad, `brain-${new Date().toISOString().slice(0, 10)}.bundle`))
+      cfg.backup.art === "ordner" && backupOrdner &&
+      existsSync(join(backupOrdner, `brain-${ortstag()}.bundle`)) // Ortszeit wie beim Anlegen des Bundles (backup.mjs), Ordner aus dem Support-Ordner
     ) {
       // heute schon gesichert — überspringen
     } else {

@@ -231,6 +231,8 @@ process.stdin.resume();'
       d_marke_sh "$basis/marken/cred.sh" credential-helper "$marke"
       d_git -C "$vd" config remote.origin.promisor true         # Partial Clone: lesende Befehle würden nachladen (uploadpack/ssh)
       d_git -C "$vd" config remote.origin.partialclonefilter blob:none
+      # Umgehungen einer Sperrliste: „=“ im Unterabschnitt und ein lokaler http-Schlüssel (der Kern führt eine Erlaubnisliste und verweigert beides)
+      printf '[remote "a=b"]\n\turl = %s\n\tuploadpack = %s\n[http]\n\tproxy = http://127.0.0.1:9\n' "$basis/gegenstelle.git" "$basis/marken/uploadpack.sh" >> "$vd/.git/config"
       d_git -C "$vd" config diff.external "$basis/marken/diffext.sh"
       d_git -C "$vd" config credential.helper "$basis/marken/cred.sh"
       printf '* filter=marke\n' > "$vd/.gitattributes"

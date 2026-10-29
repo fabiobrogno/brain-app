@@ -5,7 +5,7 @@
 // Wege ohne die Härtung wirklich Marken schreiben würden (sonst bewiese „keine Marke“ nichts).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, mkdirSync, existsSync, chmodSync, cpSync, readFileSync, rmSync, readdirSync, symlinkSync } from "node:fs";
+import { mkdtempSync, writeFileSync, appendFileSync, mkdirSync, existsSync, chmodSync, cpSync, readFileSync, rmSync, readdirSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -99,10 +99,8 @@ test("werkzeuge.* in der brain.config.json des Vaults startet nie ein Programm (
   assert.deepEqual(s.marken(), [], "ein Programm aus brain.config.json ist gelaufen");
 });
 
-test("Einstellungen der .git/config, die git neutralisiert (fsmonitor, Hooks, Editor): nichts läuft, der Kern arbeitet weiter", async () => {
+test("core.hooksPath auf Hooks im Vault und .git/hooks: erlaubter Schlüssel, aber neutralisiert — nichts läuft, der Kern arbeitet weiter", async () => {
   const s = neuerVault();
-  g(s.v, "config", "core.fsmonitor", s.programm("fsmonitor.sh"));
-  g(s.v, "config", "core.editor", s.programm("editor.sh"));
   g(s.v, "config", "core.hooksPath", join(s.v, "eigene-hooks"));
   mkdirSync(join(s.v, "eigene-hooks"));
   for (const h of ["pre-commit", "post-commit", "reference-transaction", "post-checkout"]) {
@@ -122,7 +120,7 @@ test("Einstellungen der .git/config, die git neutralisiert (fsmonitor, Hooks, Ed
 });
 
 // Schlüssel, die ein Programm starten und sich nicht per Option abschalten lassen → git-sicher verweigert (Exit 126)
-const IMMER = [["gpg.program"], ["gpg.x509.program"], ["gpg.ssh.defaultKeyCommand"], ["merge.x.driver"], ["filter.x.clean"], ["filter.x.smudge"], ["filter.x.process"],
+const IMMER = [["core.fsmonitor"], ["core.editor"], ["core.pager"], ["http.proxy"], ["alias.x"], ["core.attributesfile"], ["gpg.program"], ["gpg.x509.program"], ["gpg.ssh.defaultKeyCommand"], ["merge.x.driver"], ["filter.x.clean"], ["filter.x.smudge"], ["filter.x.process"],
   ["diff.external"], ["diff.x.command"], ["diff.x.textconv"]];
 // Netz-Schlüssel gelten bei JEDEM Befehl: auch lesende Befehle laden bei einem Partial Clone nach und starten dann diese Programme
 const NETZ = [["credential.helper"], ["credential.https://example.org.helper"], ["core.askpass"], ["core.gitproxy"], ["core.alternaterefscommand"],
@@ -350,4 +348,106 @@ test(".logs (und andere Schreibziele) als Verweis nach außen: der Ordner gilt n
     assert.equal(hook.status, 0, `${ziel}: Hook endet still mit Exit 0`);
     assert.deepEqual(readdirSync(aussen), [], `${ziel}: außerhalb des Vaults wurde geschrieben`);
   }
+});
+
+// ------------------------------------------------------------------------------------------------------------------------------
+// Review 2: Erlaubnisliste statt Sperrliste (fail-closed). Jede Umgehung der alten Sperrliste und jeder unbedachte Schlüssel wird verweigert.
+
+// Rohe Konfigurationsblöcke (so, wie sie in einer fremden .git/config stehen können), jeder mit einem Programm/Netzziel/Nachladen dahinter
+const UMGEHUNGEN = {
+  "N1 ‚=‘ im Unterabschnitt (remote)": '[remote "a=b"]\n\turl = https://example.org/x.git\n\tuploadpack = EVIL\n',
+  "N1 ‚=‘ im Unterabschnitt (filter)": '[filter "a=b"]\n\tsmudge = EVIL\n',
+  "N1 ‚=‘ und ‚?‘ im credential-Unterabschnitt": '[credential "https://h/?a=b"]\n\thelper = EVIL\n',
+  "Befund 1 promisor ohne Wert": '[remote "o"]\n\turl = https://example.org/x.git\n\tpromisor\n',
+  "Befund 1 promisor = 2": '[remote "o"]\n\turl = https://example.org/x.git\n\tpromisor = 2\n',
+  "Befund 1 partialclonefilter": '[remote "o"]\n\tpartialclonefilter = blob:none\n',
+  "Befund 1 core.bare ohne Wert": '[core]\n\tbare\n',
+  "Befund 1 core.bare = 2": '[core]\n\tbare = 2\n',
+  "Befund 1 core.bare = true": '[core]\n\tbare = true\n',
+  "N2 http.sslVerify": '[http]\n\tsslVerify = false\n',
+  "N2 http.proxy": '[http]\n\tproxy = http://fremd.example:8080\n',
+  "N2 http.curloptResolve": '[http]\n\tcurloptResolve = github.com:443:192.0.2.1\n',
+  "N2 http.cookieFile + saveCookies": '[http]\n\tcookieFile = /tmp/cookies\n\tsaveCookies = true\n',
+  "N2 remote.*.proxy": '[remote "o"]\n\tproxy = http://fremd.example:8080\n',
+  "N2 url.*.insteadOf": '[url "https://fremd.example/"]\n\tinsteadOf = https://github.com/\n',
+  "N5 man.*.cmd": '[man "x"]\n\tcmd = EVIL\n',
+  "N5 help.browser": '[help]\n\tbrowser = EVIL\n',
+  "N5 submodule.*.update=!cmd": '[submodule "s"]\n\tupdate = !EVIL\n',
+  "include.path": '[include]\n\tpath = /tmp/fremd.config\n',
+  "includeIf": '[includeIf "gitdir:/"]\n\tpath = /tmp/fremd.config\n',
+  "ext::-Adresse": '[remote "o"]\n\turl = ext::sh -c EVIL\n',
+  "fd::-Adresse": '[remote "o"]\n\turl = fd::17\n',
+  "Adresse mit - am Anfang": '[remote "o"]\n\turl = -oProxyCommand=EVIL\n',
+  "ssh://-oProxy…": '[remote "o"]\n\turl = ssh://-oProxyCommand=EVIL/x\n',
+  "relative lokale Adresse": '[remote "o"]\n\turl = ../fremd\n',
+  "branch.remote mit Pfad": '[branch "main"]\n\tremote = ../x/y\n',
+  "unbekannter Schlüssel": '[brain]\n\twas = auchimmer\n',
+};
+
+test("Erlaubnisliste: jede Umgehung der alten Sperrliste und jeder unbekannte Schlüssel wird verweigert (Exit 126, Name, nie der Wert) — nichts läuft", () => {
+  for (const [name, block] of Object.entries(UMGEHUNGEN)) {
+    const s = neuerVault();
+    const evil = s.programm("evil.sh", "cat");
+    appendFileSync(join(s.v, ".git", "config"), block.replaceAll("EVIL", evil));
+    for (const sub of [["status", "--porcelain"], ["cat-file", "-t", "HEAD"], ["log", "-1", "--format=%H"], ["fetch", "--quiet"], ["reset", "--hard", "HEAD"]]) {
+      const r = spawnSync(SICHER, ["-C", s.v, ...sub], { env: ENV, encoding: "utf8" });
+      assert.equal(r.status, 126, `${name} (${sub[0]}): erwartet Exit 126, war ${r.status} (${r.stderr})`);
+      assert.match(r.stderr, /Erlaubnisliste/, name);
+      assert.ok(!r.stderr.includes(evil), `${name}: der Wert steht in der Meldung`);
+    }
+    assert.deepEqual(s.marken(), [], `${name}: Programm lief`);
+  }
+});
+
+test("Ein normaler Vault läuft weiter: frisches init, user, https-Adresse, ssh-Formen, lokale Adresse, pull.rebase, Zweige, gc, VS-Code-Merke", () => {
+  const s = neuerVault();
+  const normal = `[user]\n\tname = Fabio\n\temail = f@example.org\n[pull]\n\trebase = true\n\tff = only\n[merge]\n\tff = false\n[push]\n\tdefault = simple\n\tautoSetupRemote = true\n[init]\n\tdefaultBranch = main\n[fetch]\n\tprune = true\n[gc]\n\tpruneExpire = never\n\tauto = 0\n[core]\n\tautocrlf = input\n\tquotepath = false\n\tsymlinks = true\n\thooksPath = ${s.v}/irgendwo\n[remote "origin"]\n\turl = https://example.org/user/repo.git\n\tpushurl = git@example.org:user/repo.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[remote "zweit"]\n\turl = ssh://git@example.org/user/repo.git\n[remote "lokal"]\n\turl = ${s.basis}/sicherung.git\n[branch "main"]\n\tremote = origin\n\tmerge = refs/heads/main\n\trebase = true\n\tvscode-merge-base = origin/main\n[extensions]\n\tworktreeConfig = true\n`;
+  appendFileSync(join(s.v, ".git", "config"), normal);
+  for (const sub of [["status", "--porcelain"], ["log", "-1", "--format=%H"], ["rev-parse", "HEAD"], ["remote", "-v"]]) {
+    const r = spawnSync(SICHER, ["-C", s.v, ...sub], { env: ENV, encoding: "utf8" });
+    assert.equal(r.status, 0, `${sub[0]}: ${r.status} ${r.stderr}`);
+  }
+  writeFileSync(join(s.v, "neu.md"), "neu\n");
+  assert.equal(spawnSync(SICHER, ["-C", s.v, "add", "--", "neu.md"], { env: ENV }).status, 0);
+  assert.equal(spawnSync(SICHER, ["-C", s.v, "commit", "-q", "-m", "neu"], { env: ENV }).status, 0);
+  // ein frischer Klon (lokal) bleibt benutzbar
+  const klon = join(s.basis, "klon");
+  assert.equal(spawnSync(SICHER, ["clone", "-q", s.v, klon], { env: ENV }).status, 0);
+  assert.equal(spawnSync(SICHER, ["-C", klon, "status", "--porcelain"], { env: ENV }).status, 0);
+  assert.equal(spawnSync(SICHER, ["-C", klon, "pull", "-q"], { env: ENV }).status, 0);
+});
+
+test("fail-closed: kein Repository, help, submodule, objects/info/alternates → Exit 126; geerbtes GIT_DIR/GIT_CONFIG_* wirkt nicht", () => {
+  const s = neuerVault();
+  const leer = join(s.basis, "kein-repo"); mkdirSync(leer);
+  assert.equal(spawnSync(SICHER, ["-C", leer, "status"], { env: ENV }).status, 126, "kein Repository: nicht überspringen");
+  assert.equal(spawnSync(SICHER, ["-C", s.v, "help", "log"], { env: ENV }).status, 126);
+  assert.equal(spawnSync(SICHER, ["-C", s.v, "submodule", "status"], { env: ENV }).status, 126);
+  // init in einen neuen Ordner (-C, noch kein Repo) bleibt möglich
+  assert.equal(spawnSync(SICHER, ["-C", leer, "init", "-q"], { env: ENV }).status, 0);
+  // alternates
+  const t = neuerVault();
+  mkdirSync(join(t.v, ".git", "objects", "info"), { recursive: true });
+  writeFileSync(join(t.v, ".git", "objects", "info", "alternates"), join(s.v, ".git", "objects") + "\n");
+  const r = spawnSync(SICHER, ["-C", t.v, "status", "--porcelain"], { env: ENV, encoding: "utf8" });
+  assert.equal(r.status, 126); assert.match(r.stderr, /alternates/);
+  // Umgebung: GIT_DIR auf ein fremdes Repo und eingeschleuste Konfiguration (Hook-Ordner mit Marke) wirken nicht
+  const u = neuerVault();
+  const fremd = join(u.basis, "fremd-hooks"); mkdirSync(fremd);
+  const hook = join(fremd, "pre-commit"); writeFileSync(hook, `#!/bin/sh\necho hook >> '${u.marke}'\n`); chmodSync(hook, 0o755);
+  const eingeschleust = { ...ENV, GIT_DIR: join(s.v, ".git"), GIT_WORK_TREE: s.v, GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "core.hooksPath", GIT_CONFIG_VALUE_0: fremd,
+    GIT_CONFIG_PARAMETERS: `'core.hooksPath'='${fremd}'`, BRAIN_GIT_HOOKS_ERLAUBT: fremd };
+  const top = spawnSync(SICHER, ["-C", u.v, "rev-parse", "--show-toplevel"], { env: eingeschleust, encoding: "utf8" });
+  assert.equal(top.stdout.trim(), execFileSync("sh", ["-c", `cd '${u.v}' && pwd -P`], { encoding: "utf8" }).trim(), "GIT_DIR/GIT_WORK_TREE wurden verworfen");
+  writeFileSync(join(u.v, "a.md"), "a\n"); g(u.v, "add", "--", "a.md");
+  assert.equal(spawnSync(SICHER, ["-C", u.v, "commit", "-q", "-m", "a"], { env: eingeschleust }).status, 0);
+  assert.deepEqual(u.marken(), [], "eingeschleuste Konfiguration (GIT_CONFIG_*) hat Hooks aktiviert");
+});
+
+test("git-sicher kommt mit einem winzigen PATH aus (Hook-Umgebung ohne dirname & Co.)", () => {
+  const s = neuerVault();
+  const leer = join(s.basis, "leer-pfad"); mkdirSync(leer);
+  const env = { HOME: s.basis, PATH: leer, KORTEX_KERN_UNSTABIL_ERLAUBT: "1" };
+  const r = spawnSync(SICHER, ["-C", s.v, "status", "--porcelain"], { env, encoding: "utf8" });
+  assert.equal(r.status, 0, r.stderr);
 });
