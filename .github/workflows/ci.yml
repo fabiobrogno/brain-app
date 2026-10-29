@@ -202,10 +202,14 @@ jobs:
       - name: SwiftPM-Cache
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
-          path: .build
-          key: spm-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+          # .build: Abhängigkeiten (Sparkle) und Zwischenstände; ~/Library/Caches/org.swift.swiftpm: übersetzte Paket-Manifeste
+          # (sonst ≈ 15 s „Planning“ bei jedem Lauf).
+          path: |
+            .build
+            ~/Library/Caches/org.swift.swiftpm
+          key: spm2-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
           restore-keys: |
-            spm-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-
+            spm2-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-
       - name: Build der App (alle Ziele)
         if: matrix.teil == 'app'
         run: swift build
