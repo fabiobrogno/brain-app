@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { userInfo } from "node:os";
-import { KERN } from "../pfade.mjs";
+import { KERN, starterPfad, supportOrdner } from "../pfade.mjs";
 import { isoliere, neuerTestVault, JETZT } from "./tageslauf-hilfe.mjs";
 import { tempOrdner } from "./verlauf-fixture.mjs";
 const Z = await import("../tageslauf/zeitplan.mjs");
@@ -89,13 +89,13 @@ test("starteWennFaellig: ohne Dienst nur wenn fällig; mit Dienst nur nach > 36 
   } finally { delete process.env.BRAIN_TAGESLAUF_SKRIPT; }
 });
 
-test("plistInhalt: /bin/sh + node-start.sh (kein fester Node-Pfad), brain.mjs, --wenn-faellig --dienst, stündlich, PATH, XML-escaped", () => {
-  const p = D.plistInhalt({ starter: "/V & W/.tools/node-start.sh", brain: "/V & W/.tools/brain.mjs", vault: "/V & W", pfad: "/opt/homebrew/bin:/usr/bin", log: "/V & W/.logs/tageslauf/dienst.log" });
-  for (const s of ["<string>de.brain.tageslauf</string>", "<string>/bin/sh</string>", "<string>/V &amp; W/.tools/node-start.sh</string>",
-    "<string>/V &amp; W/.tools/brain.mjs</string>", "<string>tageslauf</string>", "<string>--wenn-faellig</string>", "<string>--dienst</string>",
-    "<key>StartInterval</key><integer>3600</integer>", "<string>/opt/homebrew/bin:/usr/bin</string>"]) assert.ok(p.includes(s), s);
-  assert.ok(!p.includes("/V & W"));
-  assert.ok(!p.includes("<string>/opt/homebrew/bin/node</string>"));
+test("plistInhalt: der Starter der App (kein /bin/sh, kein node-start.sh, kein fester Vault), tageslauf --wenn-faellig --dienst, stündlich, PATH, XML-escaped", () => {
+  const p = D.plistInhalt({ starter: "/S & T/bin/kortex", pfad: "/opt/homebrew/bin:/usr/bin", log: "/S & T/logs/dienst.log" });
+  const args = p.split("<key>ProgramArguments</key>")[1].split("</array>")[0].match(/<string>([^<]*)<\/string>/g).map((x) => x.replace(/<\/?string>/g, ""));
+  assert.deepEqual(args, ["/S &amp; T/bin/kortex", "tageslauf", "--wenn-faellig", "--dienst"]);
+  for (const s of ["<string>de.brain.tageslauf</string>", "<key>StartInterval</key><integer>3600</integer>", "<string>/opt/homebrew/bin:/usr/bin</string>",
+    "<key>StandardOutPath</key><string>/S &amp; T/logs/dienst.log</string>"]) assert.ok(p.includes(s), s);
+  for (const nein of ["BRAIN_VAULT", "node-start.sh", "/bin/sh", ".tools", "brain.mjs", "/S & T"]) assert.ok(!p.includes(nein), nein);
 });
 
 test("dienst an/status/aus: plist unter ~/Library/LaunchAgents, launchctl bootstrap/print/bootout (Ersatzprogramm)", () => {
@@ -105,9 +105,9 @@ test("dienst an/status/aus: plist unter ~/Library/LaunchAgents, launchctl bootst
     const an = D.dienstAn(v, { home: HOME, plattform: "darwin", node: process.execPath, claude: { befehl: "/opt/claude/bin/claude", args: [] } });
     assert.equal(an.ok, true);
     const plist = readFileSync(D.plistPfad({ home: HOME }), "utf8");
-    assert.ok(plist.includes(`<string>${join(KERN, "node-start.sh").replace(/&/g, "&amp;")}</string>`));
-    assert.ok(plist.includes(`<string>${join(KERN, "brain.mjs").replace(/&/g, "&amp;")}</string>`));
-    assert.ok(plist.includes(`<key>BRAIN_VAULT</key><string>${v.replace(/&/g, "&amp;")}</string>`), "der Vault steht in der Umgebung des Dienstes");
+    assert.ok(plist.includes(`<string>${starterPfad().replace(/&/g, "&amp;")}</string>`), "Programm ist der Starter");
+    assert.ok(!plist.includes("BRAIN_VAULT") && !plist.includes(v) && !plist.includes("node-start.sh"), "kein fester Vault, kein node-start.sh");
+    assert.ok(plist.includes(join(supportOrdner(), "logs", "dienst.log").replace(/&/g, "&amp;")), "Protokoll im Support-Ordner, nicht im Vault");
     assert.ok(!plist.includes(`<string>${process.execPath}</string>`), "kein fester Node-Pfad als Programm");
     assert.ok(plist.includes("/opt/claude/bin"), "PATH enthält den Ordner von claude");
     assert.equal(D.dienstStatus(v, { home: HOME }).geladen, true);

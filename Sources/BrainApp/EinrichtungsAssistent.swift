@@ -584,12 +584,100 @@ private struct KiAnsicht: View {
             if modell.anzeige.kiSuchtGerade && modell.anzeige.kis.isEmpty {
                 Arbeit(text: "Suche KI-Apps auf diesem Mac …")
             }
+            if let stand = modell.anzeige.verdrahtung.stand, stand.profile.count > 1,
+               modell.anzeige.kis.contains(where: { $0.ziel == .claude && $0.status != .nichtGefunden }) {
+                ProfilAuswahl(modell: modell, profile: stand.profile)
+            }
             ForEach(modell.anzeige.kis, id: \.ziel) { z in KiReihe(modell: modell, zeile: z) }
+            if let stand = modell.anzeige.verdrahtung.stand, stand.starterVorhanden {
+                VerdrahtungsBlock(modell: modell, stand: stand)
+            }
             if !modell.anzeige.kis.contains(where: { $0.status != .nichtGefunden }) && !modell.anzeige.kiSuchtGerade {
                 Text("Keine unterstützte KI-App gefunden. Installiere sie und suche dann neu — oder überspringe diesen Schritt, du kannst ihn später im Menü wiederholen.")
                     .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
                 Button("Neu suchen") { modell.tu { await $0.sucheKIsNeu() } }
             }
+        }
+    }
+}
+
+/// Mehrere Claude-Code-Profile (`~/.claude`, `~/.claude-privat` …): Kortex sucht sie selbst, weil die App aus dem Finder ohne `CLAUDE_CONFIG_DIR` startet.
+/// Die Auswahl gilt für „Verbinden“ bei Claude Code und für die Hooks.
+private struct ProfilAuswahl: View {
+    @ObservedObject var modell: EinrichtungsModell
+    let profile: [ClaudeProfil]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Welche Claude-Profile?").font(.headline)
+            Text("Du hast mehrere Claude-Profile. Kortex trägt sich nur in die ein, die du hier ankreuzt. Der Hintergrunddienst nutzt das zuerst gewählte.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            ForEach(profile, id: \.pfad) { p in
+                Toggle(isOn: Binding(
+                    get: { modell.anzeige.verdrahtung.auswahl.contains(p.pfad) },
+                    set: { an in modell.ablauf.waehleProfil(p.pfad, gewaehlt: an) })) {
+                    Text(p.anzeigeName + (p.standard ? " (Standard)" : "") + (p.aktiv ? " — Hooks eingetragen" : ""))
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+/// Zusätzliche Eintragungen, jede nur auf ausdrücklichen Klick und mit Rückweg: Hooks bei Claude Code, Prüfung auf Passwörter vor dem Speichern,
+/// Hintergrunddienst. Die Texte sagen genau, was wo eingetragen wird.
+private struct VerdrahtungsBlock: View {
+    @ObservedObject var modell: EinrichtungsModell
+    let stand: VerdrahtungsStand
+
+    private var anzeige: VerdrahtungsAnzeige { modell.anzeige.verdrahtung }
+    private var claudeDa: Bool { modell.anzeige.kis.contains { $0.ziel == .claude && $0.status != .nichtGefunden } }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Zusätzlich, wenn du möchtest").font(.headline)
+            if claudeDa && !stand.profile.isEmpty {
+                zeile(.claude, titel: "Claude Code: Kortex beim Arbeiten dabeihaben",
+                      text: "Trägt in die gewählten Claude-Profile (Standard: ~/.claude/settings.json) kleine Helfer ein: Sie zeigen dir beim Fragen passende Notizen, schützen dein Wiki vor versehentlichen Änderungen "
+                          + "und sichern den Arbeitsstand. Dazu kommen eine Statuszeile und einige Brain-Befehle. Alles, was dort schon steht, bleibt; vorher legt Kortex eine Sicherung an. "
+                          + "Ausschalten nimmt genau das wieder heraus.")
+            }
+            if stand.gitMoeglich {
+                zeile(.git, titel: "Vor jedem Commit nach Passwörtern und Schlüsseln suchen",
+                      text: "Beim Speichern einer Version in deinem Brain prüft Kortex, ob Passwörter oder Schlüssel in den Notizen stehen, und hält das Speichern dann an. "
+                          + "Eingetragen wird das nur in diesem Ordner (Einstellung core.hooksPath). Ausschalten entfernt es wieder.")
+                if anzeige.gitFragtErsetzen {
+                    Text("In diesem Ordner ist schon eine andere Prüfung vor dem Speichern eingetragen. Ersetzen? Dann wird sie durch die von Kortex abgelöst.").font(.callout)
+                    HStack {
+                        Button("Nicht ändern") { modell.ablauf.lehneGitErsetzenAb() }
+                        Button("Ersetzen") { modell.tu { await $0.schalte(.git, an: true, ersetzen: true) } }.buttonStyle(.borderedProminent)
+                    }
+                }
+            }
+            if stand.dienstVerfuegbar {
+                zeile(.dienst, titel: "Kortex darf dieses Brain im Hintergrund aufräumen",
+                      text: "Richtet einen Dienst auf deinem Mac ein (Datei de.brain.tageslauf in ~/Library/LaunchAgents). Er pflegt einmal am Tag genau dieses Brain, wenn es in Kortex gerade aktiv ist "
+                          + "und der Mac am Netzteil hängt und ruht, und nutzt dafür dein Claude. Andere Brains fasst er nie an, solange du ihn für sie nicht ebenfalls einschaltest. Ausschalten löscht ihn wieder.")
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    @ViewBuilder private func zeile(_ was: Verdrahtung, titel: String, text: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Toggle(titel, isOn: Binding(
+                    get: { was == .claude ? stand.claudeAktiv(in: anzeige.auswahl) : stand.aktiv(was) },
+                    set: { neu in modell.tu { await $0.schalte(was, an: neu) } }))
+                    .disabled(anzeige.arbeitet != nil)
+                if anzeige.arbeitet == was { ProgressView().controlSize(.small) }
+            }
+            Text(text).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if let f = anzeige.fehler[was] { FehlerBox(text: f) }
         }
     }
 }

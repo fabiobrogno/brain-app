@@ -277,25 +277,45 @@ public struct Laufzeit: Sendable {
         }
     }
 
-    /// Inhalt des Starters. Die Pfade stehen einfach quotiert im Skript (Leerzeichen, Apostrophe, `$` sind unkritisch);
-    /// fehlt Node oder Kern, endet er mit Meldung auf stderr und Exit 127 — nie mit einem kryptischen Fehler.
+    /// Inhalt des Starters. Die Pfade stehen einfach quotiert im Skript (Leerzeichen, Apostrophe, `$` sind unkritisch).
+    ///
+    /// Normalmodus (`kortex <befehl> …`): setzt `KORTEX_KERN_PFAD` auf den stabilen Symlink `bin/kern` (nie auf den Versionsordner:
+    /// alles, was der Kern außerhalb einträgt — Claude-Code-Hooks, Hooks im Versionsverlauf, Hintergrunddienst — überlebt so
+    /// App-Updates) und startet `node bin/kern/brain.mjs …`. Fehlt Node oder der Kern, endet er mit Meldung auf stderr und Exit 127.
+    ///
+    /// Hook-Modus (`kortex hook <name> …`): startet `bin/kern/adapters/claude-code/<name>.mjs`. Claude Code ruft das bei jedem
+    /// Prompt auf; fehlt Node, der Kern oder der Hook (App gelöscht, Update mitten im Wechsel), endet der Starter STILL mit Exit 0
+    /// und ohne Ausgabe, damit nie eine Fehlermeldung in einer Sitzung erscheint. Läuft der Hook, behält er Exit-Code, Ausgabe und stdin.
     static func starterInhalt(support: URL) -> String {
         let node = support.appendingPathComponent("bin/node").path
-        let kern = support.appendingPathComponent("bin/kern/brain.mjs").path
+        let kern = support.appendingPathComponent("bin/kern").path
         return """
         #!/bin/sh
         # Kortex-Starter. Von der App geschrieben und bei jedem Start erneuert — nicht von Hand ändern.
         node=\(shellQuote(node))
         kern=\(shellQuote(kern))
+        KORTEX_KERN_PFAD="$kern"
+        export KORTEX_KERN_PFAD
+        if [ "$1" = "hook" ]; then
+          # Hook-Modus: fehlt etwas, still beenden (Exit 0, keine Ausgabe).
+          name="$2"
+          case "$name" in
+            ''|*[!abcdefghijklmnopqrstuvwxyz0123456789-]*) exit 0 ;;
+          esac
+          hook="$kern/adapters/claude-code/$name.mjs"
+          if [ ! -f "$node" ] || [ ! -x "$node" ] || [ ! -f "$hook" ]; then exit 0; fi
+          shift 2
+          exec "$node" "$hook" "$@"
+        fi
         if [ ! -f "$node" ] || [ ! -x "$node" ]; then
           echo "kortex: Node fehlt ($node). Bitte Kortex einmal öffnen." >&2
           exit 127
         fi
-        if [ ! -f "$kern" ]; then
-          echo "kortex: Kern fehlt ($kern). Bitte Kortex öffnen bzw. aktualisieren." >&2
+        if [ ! -f "$kern/brain.mjs" ]; then
+          echo "kortex: Kern fehlt ($kern/brain.mjs). Bitte Kortex öffnen bzw. aktualisieren." >&2
           exit 127
         fi
-        exec "$node" "$kern" "$@"
+        exec "$node" "$kern/brain.mjs" "$@"
 
         """
     }

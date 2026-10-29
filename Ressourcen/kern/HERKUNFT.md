@@ -61,6 +61,26 @@ Der Kern liegt künftig außerhalb des Vaults (P3/P4: `Support/Kortex/kern/<appV
 - Entfallen: `update-check.mjs` samt Befehl `brain update-check`, Update-Hinweis in `session-start`/`session-hintergrund` und `doctor` (die App aktualisiert sich per Sparkle; der Schalter `updateHinweis` bleibt wirkungslos in der Config gültig), `istQuellVault`, der Unit-Test-Schritt der Commit-Prüfung (`BRAIN_ERSTCOMMIT`), `systemVersion`-Pflicht im `doctor`.
 - Templates (`kit/AGENTS.md`, `skills/*`): neue Platzhalter `{{KERN}}` und `{{DATEN}}`; Kern-Befehle lauten `{{NODE}} "{{KERN}}/brain.mjs" --vault "{{VAULT}}" <befehl>`.
 
+## P6: Einrichtung verdrahten (Hooks, core.hooksPath, LaunchAgent über den Starter)
+- **Hook-Befehle** in `settings.json` (nur macOS/Linux): `[ -x '<Support>/bin/kortex' ] && exec '<Support>/bin/kortex' hook <name> [args] || exit 0` (`pfade.mjs#hookBefehl`, POSIX-gequotet).
+  Der Starter (`Sources/BrainCore/Laufzeit.swift#starterInhalt`) hat einen **Hook-Modus**: `kortex hook <name>` startet `bin/kern/adapters/claude-code/<name>.mjs` mit `bin/node`;
+  fehlt Starter, Node, Kern oder Hook-Datei (oder ist der Name ungültig), endet er still mit Exit 0 ohne Ausgabe. Läuft der Hook, bleiben Exit-Code, Ausgabe und stdin erhalten.
+  Der Normalmodus (`kortex <befehl>`) exportiert `KORTEX_KERN_PFAD=<Support>/bin/kern` und startet `brain.mjs`; fehlt Node/Kern, Exit 127 mit Meldung.
+- `install.mjs` verlangt `KORTEX_KERN_PFAD` **und** den Starter (`pfade.mjs#starterOderEnde`, Exit 3). Alt-Einträge (alter Kit-Ordner im Vault, früherer Kern-Pfad, `node-start.sh`-Form, Versionsordner) werden erkannt und ersetzt.
+  Neu: `--entfernen` (Rückweg: Hooks, Statuszeile, Brain-Befehle; Fremdes bleibt) und `--stand` (JSON). `brain.mjs`: Befehl `claude-hooks`; `hooks-install` reicht Flags durch.
+- `install-git-hooks.mjs`: `--aus` (nur ein zu Kortex gehörender Eintrag wird entfernt), `--stand`, und ein **fremder** `core.hooksPath` bleibt stehen (Exit 4), außer mit `--ersetzen`.
+- `tageslauf/dienst.mjs`: der LaunchAgent `de.brain.tageslauf` läuft über den **Starter** (`ProgramArguments`: `<Support>/bin/kortex tageslauf --wenn-faellig --dienst`), ohne `/bin/sh`, `node-start.sh` und ohne festes `BRAIN_VAULT`:
+  wie die Hooks folgt er dem aktiven Vault der App; ohne gültigen Vault endet der Lauf still mit Exit 0 (`brain.mjs`, eine Zeile im Protokoll). Protokoll: `<Support>/logs/dienst.log` (nicht mehr im Vault).
+  **Nur für freigegebene Vaults:** `dienstAn` trägt den aktuellen Vault (realpath) in `<Support>/dienst.json` ein (`tageslauf/dienst-merker.mjs`, atomar, 0600); der Lauf (`brain.mjs`/`tageslauf.mjs` mit `--dienst`) nimmt den aktiven Vault nur, wenn er dort steht, sonst Exit 0 mit einer Protokollzeile. `dienstAus` löscht plist und Merker.
+  `dienstAn` ersetzt eine ältere plist (BRAIN_VAULT/node-start.sh/alter Kit-Ordner); `status --json` meldet `veraltet`. `launchctl` nur per Attrappe (`BRAIN_LAUNCHCTL`) in Tests.
+- Testhaken (nur mit `KORTEX_KERN_UNSTABIL_ERLAUBT=1`): `KORTEX_STARTER_PFAD` (Starter umlenken), `KORTEX_KERN_TEMP_WURZELN` (Temp-Ordner für die Prüfung „unbeständig“ ersetzen, leer = keine; so kann ein Wegwerf-Support-Ordner als stabil gelten).
+- Werkstatt (`Ressourcen/werkstatt/verdrahtung.mjs`): `GET /api/kern/stand`, `POST /api/kern/verdrahten {was: claude|git|dienst, an, ersetzen?}` — ruft den Starter (`kortex claude-hooks|hooks-install|dienst …`). Kein Hintergrunddienst in der Vorschau
+  und im Testmodus ohne Attrappe. Der Assistent (Schritt „KI verbinden“) bietet die drei Eintragungen als Schalter an, jede nur auf Klick, mit Beschreibung und Rückweg.
+- **Claude-Profile** (`Ressourcen/werkstatt/profile.mjs`): Die App startet aus dem Finder ohne `CLAUDE_CONFIG_DIR`. Profile = Ordner `~/.claude` und `~/.claude-*` direkt im Home (Symlinks werden nicht verfolgt) mit `settings.json`, `.claude.json` oder `projects/`
+  (Standardprofil auch bei nur `~/.claude.json`). Der Assistent zeigt sie als Auswahl (Standard: `~/.claude`); Hooks/Statuszeile/Befehle werden je gewähltem Profil über `--claude-home` eingetragen, entfernt und abgefragt (Pfade nur aus der erkannten Liste).
+  MCP-Eintrag (`POST /api/mcp/verbinden {ziel: claude, profil}`): Standardprofil → `claude` ohne `CLAUDE_CONFIG_DIR` (Konfiguration in `~/.claude.json`), anderes Profil → `CLAUDE_CONFIG_DIR=<Profil>` (`<Profil>/.claude.json`); eine geerbte Variable wird entfernt. `mcpArgs` selbst ist unverändert.
+  Der Hintergrunddienst bekommt das zuerst gewählte Profil (`profil`; nur ein Nicht-Standardprofil landet als `CLAUDE_CONFIG_DIR` in der plist).
+
 ## Mitgenommen
 - `VERSION` (`0.5.1`, Stand des Exports; wird in P3 beim App-Bau auf die App-Version gesetzt)
 

@@ -78,11 +78,19 @@ node adapters/claude-code/install.mjs <vault> [--claude-home <dir>] [--ohne-stat
 ```
 
 - `<vault>` ist der Pfad zum Brain-Vault (z. B. `~/Documents/Brain`). Fehlt er, gilt `--vault`, `BRAIN_VAULT` bzw. der aktive Vault der App.
-- Die Hook-Befehle zeigen auf den Kern (`<Kern>/adapters/claude-code/<hook>.mjs`, bei gesetztem `KORTEX_KERN_PFAD` auf dessen stabilen Pfad)
-  und tragen den Vault als `--vault "<vault>"` mit: ein Kern bedient mehrere Vaults, der Vault wird nie aus dem Ort des Kerns abgeleitet.
-  Ohne auffindbaren Vault beenden sich die Hooks still mit Exit 0.
+- Die Hook-Befehle zeigen auf den **Starter der App** (`Support/Kortex/bin/kortex`, neben dem stabilen Symlink `bin/kern`), nie auf einen Versionsordner,
+  das App-Paket oder einen festen Vault: `[ -x '<Starter>' ] && exec '<Starter>' hook <name> || exit 0`. Der Starter startet `adapters/claude-code/<name>.mjs`
+  im Kern. Fehlt der Starter, Node oder der Kern (App gelöscht, Update läuft gerade), endet der Befehl **still mit Exit 0** — nie eine Fehlermeldung in der Sitzung.
+  Läuft der Hook, bleiben Exit-Code, Ausgabe und stdin erhalten (der `wiki-guard` darf blockieren). Ohne Vault im Hook (`--vault`, `BRAIN_VAULT`, aktiver Vault der App)
+  beenden sich die Hooks ebenfalls still. Der Installer verlangt `KORTEX_KERN_PFAD` (setzt der Starter) und den Starter; sonst Exit 3 und nichts wird geschrieben.
+  Windows (kein Starter): Node mit dem Kern-Pfad direkt.
 - `--claude-home <dir>` überschreibt `~/.claude` (für Tests/Probeläufe).
 - `--ohne-statusline` lässt die Statusline unangetastet.
+- `--entfernen` ist der Rückweg: nimmt alle Brain-Hooks (neue und ältere Form), die Brain-Statuszeile und die Brain-Befehle (`commands/*.md` mit der Marke) heraus; Fremdes
+  bleibt, vorher wird ein Backup angelegt. Braucht weder Vault noch Starter.
+- Ist `settings.json` ein Symlink (Dotfiles), wird das Ziel atomar ersetzt und der Link bleibt (gilt auch für `--entfernen`).
+- `--stand` schreibt nichts und gibt eine JSON-Zeile aus (`hooks.eingetragen/neueForm`, `statuszeile`, `befehle`, `aktiv`).
+- Über den Starter: `kortex claude-hooks [--entfernen|--stand]` (das ruft die Einrichtung der App auf).
 
 Der Installer ergänzt `settings.json` nur — fremde Hooks und eine fremde Statusline bleiben unverändert.
 Vor jeder Änderung wird ein Backup `settings.json.bak-<YYYYMMDD-HHMMSS>` angelegt. Ein zweiter Lauf ohne
@@ -94,7 +102,7 @@ etwas zu schreiben oder ein Backup anzulegen — erst die Datei reparieren, dann
 **Ältere Brain-Hooks derselben Vault** (Stand vor dem Kern-Umzug: Pfade im alten Kit-Ordner des Vaults, auch die frühere Form
 ohne `adapters/claude-code/` und die `$HOME`-Schreibweise des Vault-Ordners) werden automatisch durch den neuen Aufruf **ersetzt** statt verdoppelt —
 an derselben Stelle in der Hook-Liste, mit Backup wie jede andere Änderung. Hooks, die auf eine andere
-Vault oder ein anderes Werkzeug zeigen, bleiben unangetastet. (Das Verdrahten der Hooks über den Starter der App übernimmt Paket P6.)
+Vault oder ein anderes Werkzeug zeigen, bleiben unangetastet.
 
 ## Tests
 

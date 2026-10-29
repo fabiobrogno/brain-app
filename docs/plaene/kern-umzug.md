@@ -30,7 +30,7 @@ Stand 28.10.2026. Entscheidung Fabio: Man installiert Kortex, und alles funktion
 | P3 | Swift: Laufzeit (node + kern), Starter `bin/kortex`, Support-Ordner Kortex | – |
 | P4 | App nutzt den gebündelten Kern (BrainBefehl, Rueckfragen, Brücke, vault.mjs, VaultAuswahl, mcpArgs) | P2, P3 |
 | P5 | Vertrauen verkleinern (VaultVertrauen), danach Sicherheits-Review | P4 |
-| P6 | Einrichtung verdrahten: Hooks, `core.hooksPath`, LaunchAgent auf den Starter | P2, P3 |
+| P6 | Einrichtung verdrahten: Hooks, `core.hooksPath`, LaunchAgent auf den Starter (Hook-Befehl `[ -x Starter ] && exec Starter hook <name> \|\| exit 0`, Details in `Ressourcen/kern/HERKUNFT.md` „P6“) | P2, P3 |
 | P7 | Umstellungs-Assistent für bestehende Vaults: Probelauf, Phase A (außerhalb Vault), Phase B (`.tools` entfernen, ein Release später), Rückweg | P6 |
 | P8 | Aufräumen: Installer/Export raus, Übersicht ins Studio, Vorlage und Suche zusammenführen | P2 |
 | P9 | `second-brain-kit` archivieren | P7 released |

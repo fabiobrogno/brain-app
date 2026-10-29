@@ -103,7 +103,7 @@ private func baueAblauf(_ modus: VorschauModus, echtesHome: URL, node: URL) -> (
     let nachVerbinden = await ablauf.anzeige.kis.first { $0.ziel == .claude }?.status
     #expect(nachVerbinden == .verbunden(schon: false), "\(String(describing: nachVerbinden))")
     #expect(FileManager.default.fileExists(atPath: modus.home.appendingPathComponent(".claude.json").path))
-    #expect(try await dienste.verbinde(.claude, umstellen: false) == .schonVerbunden)
+    #expect(try await dienste.verbinde(.claude, umstellen: false, profil: nil) == .schonVerbunden)
 
     // Probe-Frage über den MCP-Server des neuen Vaults
     await ablauf.weiter()

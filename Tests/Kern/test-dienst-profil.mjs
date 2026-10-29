@@ -32,14 +32,14 @@ const schluessel = (plist) => [...plist.split("<key>EnvironmentVariables</key>")
 const DIENST_AN = (v, extra = {}) => D.dienstAn(v, { home: HOME, plattform: "darwin", node: process.execPath, claude: { befehl: "/opt/claude/bin/claude", args: [] }, ...extra });
 
 test("plistInhalt: mit profil steht CLAUDE_CONFIG_DIR (XML-escaped) in den EnvironmentVariables, ohne profil fehlt der Schlüssel", () => {
-  const basis = { node: "/n", brain: "/V/.tools/brain.mjs", vault: "/V", pfad: "/usr/bin", log: "/V/dienst.log" };
+  const basis = { starter: "/S/bin/kortex", pfad: "/usr/bin", log: "/S/logs/dienst.log" };
   const mit = D.plistInhalt({ ...basis, profil: "/Users/USER/Profil & Co/.claude" });
   assert.ok(mit.includes("<key>CLAUDE_CONFIG_DIR</key><string>/Users/USER/Profil &amp; Co/.claude</string>"));
-  assert.deepEqual(schluessel(mit), ["BRAIN_VAULT", "PATH", "CLAUDE_CONFIG_DIR"], "nur diese eine Variable kommt zusätzlich dazu");
+  assert.deepEqual(schluessel(mit), ["PATH", "CLAUDE_CONFIG_DIR"], "nur diese eine Variable kommt zusätzlich dazu");
   for (const leer of [undefined, null, "", "   "]) {
     const ohne = D.plistInhalt({ ...basis, profil: leer });
     assert.ok(!ohne.includes("CLAUDE_CONFIG_DIR"), JSON.stringify(leer));
-    assert.deepEqual(schluessel(ohne), ["BRAIN_VAULT", "PATH"]);
+    assert.deepEqual(schluessel(ohne), ["PATH"]);
   }
 });
 
@@ -54,7 +54,7 @@ test("dienstAn: ein gesetztes CLAUDE_CONFIG_DIR der Umgebung kommt in die plist,
     assert.equal(an.profil, PROFIL);
     const plist = readFileSync(D.plistPfad({ home: HOME }), "utf8");
     assert.ok(plist.includes(`<key>CLAUDE_CONFIG_DIR</key><string>${PROFIL.replace(/&/g, "&amp;")}</string>`));
-    assert.deepEqual(schluessel(plist), ["BRAIN_VAULT", "PATH", "CLAUDE_CONFIG_DIR"]);
+    assert.deepEqual(schluessel(plist), ["PATH", "CLAUDE_CONFIG_DIR"]);
     assert.ok(!plist.includes(fremd), "keine weitere Umgebungsvariable wird übernommen");
 
     const ohne = await mitProfil(undefined, () => DIENST_AN(v));

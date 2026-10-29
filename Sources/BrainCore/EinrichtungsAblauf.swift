@@ -78,6 +78,32 @@ public struct SicherungAnzeige: Equatable, Sendable {
     public var istVerbunden: Bool { ergebnis != nil || schonVerbunden }
 }
 
+/// Stand der Eintragungen im Schritt „KI verbinden“ (Hooks bei Claude Code, Prüfung vor dem Speichern, Hintergrunddienst).
+public struct VerdrahtungsAnzeige: Equatable, Sendable {
+    /// nil: noch nicht gelesen oder nicht lesbar — dann zeigt die Oberfläche den Block nicht.
+    public var stand: VerdrahtungsStand?
+    /// Welcher Eintrag gerade geschrieben oder herausgenommen wird.
+    public var arbeitet: Verdrahtung?
+    public var fehler: [Verdrahtung: String] = [:]
+    /// Im Vault ist schon ein anderer Hook-Ordner eingetragen: Rückfrage, ob er ersetzt werden soll.
+    public var gitFragtErsetzen = false
+    /// Die vom Nutzer gewählten Claude-Profile (Pfade). nil: noch nicht gewählt — dann gilt das Standardprofil `~/.claude`, falls es eines gibt
+    /// (oder das einzige gefundene). Die Auswahl gilt für das Eintragen der Hooks UND für das Verbinden von Claude Code (MCP).
+    public var gewaehlteProfile: [String]?
+
+    public init() {}
+
+    /// Die gefundenen Profile (leer, solange der Stand nicht gelesen ist).
+    public var profile: [ClaudeProfil] { stand?.profile ?? [] }
+    /// Die tatsächlich gewählten Profile: die Auswahl, sonst die Voreinstellung — nur Profile, die es (noch) gibt.
+    public var auswahl: [String] {
+        let da = profile.map(\.pfad)
+        if let g = gewaehlteProfile { return da.filter { g.contains($0) } }
+        if let standard = profile.first(where: \.standard) { return [standard.pfad] }
+        return profile.count == 1 ? da : []
+    }
+}
+
 /// Alles, was die Oberfläche zusätzlich zur Schrittfolge anzeigt.
 public struct EinrichtungsAnzeige: Equatable, Sendable {
     public var git: GitStand?
@@ -89,6 +115,7 @@ public struct EinrichtungsAnzeige: Equatable, Sendable {
     public var sicherung = SicherungAnzeige()
     public var kis: [KiZeile] = []
     public var kiSuchtGerade = false
+    public var verdrahtung = VerdrahtungsAnzeige()
     public var probe = ProbeAnzeige.offen
 
     public init() {}
@@ -579,6 +606,62 @@ public final class EinrichtungsAblauf {
             zustand.meldeFehler(.ki, Self.text(error))
         }
         anzeige.kiSuchtGerade = false
+        await ladeVerdrahtung()
+    }
+
+    // MARK: Verdrahtung (Hooks, Prüfung vor dem Speichern, Hintergrunddienst)
+
+    /// Liest, was eingetragen ist. Ein Lesefehler ist kein Hindernis für den Schritt: der Block bleibt dann einfach unsichtbar.
+    public func ladeVerdrahtung() async {
+        do { anzeige.verdrahtung.stand = try await dienste.verdrahtungsStand() } catch { anzeige.verdrahtung.stand = nil }
+        melde()
+    }
+
+    /// Trägt einen Eintrag ein (`an`) oder nimmt ihn heraus. Nur auf ausdrücklichen Klick des Nutzers. Fehler bleiben sichtbar und lassen
+    /// den Stand, wie er war (die Installer schreiben atomar und legen vorher eine Sicherung an).
+    public func schalte(_ was: Verdrahtung, an: Bool, ersetzen: Bool = false) async {
+        guard anzeige.verdrahtung.arbeitet == nil else { return }
+        anzeige.verdrahtung.fehler[was] = nil
+        anzeige.verdrahtung.gitFragtErsetzen = false
+        let profile = anzeige.verdrahtung.auswahl
+        if was == .claude, profile.isEmpty {
+            anzeige.verdrahtung.fehler[was] = "Wähle bitte mindestens ein Claude-Profil aus."
+            melde()
+            return
+        }
+        anzeige.verdrahtung.arbeitet = was
+        melde()
+        do {
+            anzeige.verdrahtung.stand = try await dienste.verdrahte(was, an: an, ersetzen: ersetzen, profile: profile)
+            log("einrichtung verdrahtung \(was.rawValue) \(an ? "an" : "aus")")
+        } catch let e as EinrichtungsFehler {
+            if was == .git, an, e.status == 409, e.art == "anders" {
+                anzeige.verdrahtung.gitFragtErsetzen = true
+            } else {
+                anzeige.verdrahtung.fehler[was] = e.meldung
+            }
+            log("einrichtung verdrahtung-fehler \(was.rawValue)")
+        } catch {
+            anzeige.verdrahtung.fehler[was] = Self.text(error)
+            log("einrichtung verdrahtung-fehler \(was.rawValue)")
+        }
+        anzeige.verdrahtung.arbeitet = nil
+        melde()
+    }
+
+    /// Ein Claude-Profil an- oder abwählen (gilt für Hooks und für das Verbinden von Claude Code).
+    public func waehleProfil(_ pfad: String, gewaehlt: Bool) {
+        var liste = anzeige.verdrahtung.auswahl
+        liste.removeAll { $0 == pfad }
+        if gewaehlt { liste.append(pfad) }
+        anzeige.verdrahtung.gewaehlteProfile = liste
+        melde()
+    }
+
+    /// „Nicht ersetzen“: die Rückfrage zum fremden Hook-Ordner wird geschlossen, nichts verändert.
+    public func lehneGitErsetzenAb() {
+        anzeige.verdrahtung.gitFragtErsetzen = false
+        melde()
     }
 
     public func sucheKIsNeu() async {
@@ -590,8 +673,18 @@ public final class EinrichtungsAblauf {
         setzeKi(ziel, .verbindet)
         melde()
         do {
-            let r = try await dienste.verbinde(ziel, umstellen: umstellen)
-            setzeKi(ziel, .verbunden(schon: r == .schonVerbunden))
+            // Claude Code: in jedem gewählten Profil (Standardprofil → ~/.claude.json, andere → <Profil>/.claude.json). Ohne gefundene Profile wie bisher ohne Angabe.
+            var ziele: [String?] = [nil]
+            if ziel == .claude, !anzeige.verdrahtung.profile.isEmpty {
+                let gewaehlt = anzeige.verdrahtung.auswahl
+                guard !gewaehlt.isEmpty else { throw EinrichtungsFehler("Wähle bitte mindestens ein Claude-Profil aus.") }
+                ziele = gewaehlt
+            }
+            var alleSchon = true
+            for profil in ziele {
+                if try await dienste.verbinde(ziel, umstellen: umstellen, profil: profil) != .schonVerbunden { alleSchon = false }
+            }
+            setzeKi(ziel, .verbunden(schon: alleSchon))
             zustand.loescheFehler(.ki)
             log("einrichtung ki-verbunden \(ziel.rawValue)")
         } catch let e as EinrichtungsFehler {
