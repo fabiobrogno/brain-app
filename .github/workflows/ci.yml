@@ -7,7 +7,7 @@ name: CI
 #  - kern-test     Kern-Tests in 6 Shards (Gewichte: Tests/Kern/gewichte.txt), alle parallel.
 #  - ui-test       Playwright in 6 Shards mit je 2 Workern, nur Chromium (Headless-Shell), Browser-Cache.
 #  - node-test     Node-Tests (Tests/Node).
-#  - swift         macOS (knapp, daher nur 2 Jobs): App bauen || Tests + Kern-Manifest + Vorschau.
+#  - swift         macOS (knapp, daher nur 1 Job): Build + Tests + Kern-Manifest + Vorschau.
 #  - ci-ok         EIN Status für alles: grün, wenn jeder nötige Job grün war oder bewusst übersprungen wurde.
 #  - dev-artefakt  nur auf main: Kortex.app als Artefakt.
 # Es gibt absichtlich KEIN paths-ignore: Ein Lauf, der nur Doku ändert, ist in Sekunden grün (aenderungen + ci-ok), und der
@@ -169,19 +169,14 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
-  # Zwei parallele macOS-Jobs (je ~1 Minute statt einer ~1,5): „app“ baut die ganze App, „tests“ baut und führt die Tests aus
-  # und prüft Kern-Manifest und Vorschau. Beide planen das Paket neu (≈15 s); der Gewinn liegt im parallelen Kompilieren.
+  # Ein macOS-Job (macOS-Runner sind knapp). `swift test` baut ohnehin alle Ziele (auch die App) und führt dann die Tests aus;
+  # ein getrennter „swift build“ vorweg oder parallel brächte nichts (gemessen: jeder Lauf plant das Paket ≈ 15–20 s neu).
   swift:
     needs: aenderungen
     if: needs.aenderungen.outputs.swift == 'true'
     # Package.swift verlangt swift-tools 6.2 und macOS 26 -> macos-26-Image (Xcode 26).
     runs-on: macos-26
     timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        teil: [app, tests]
-    name: swift (${{ matrix.teil }})
     env:
       XCODE_VERSION: '26.6'
     steps:
@@ -202,26 +197,20 @@ jobs:
       - name: SwiftPM-Cache
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
-          # .build: Abhängigkeiten (Sparkle) und Zwischenstände; ~/Library/Caches/org.swift.swiftpm: übersetzte Paket-Manifeste
-          # (sonst ≈ 15 s „Planning“ bei jedem Lauf).
+          # .build: Abhängigkeiten (Sparkle); ~/Library/Caches/org.swift.swiftpm: übersetzte Paket-Manifeste von SwiftPM.
+          # Die Objektdateien in .build bringen kaum etwas: nach dem Checkout haben alle Quellen neue Zeitstempel, es wird neu gebaut.
           path: |
             .build
             ~/Library/Caches/org.swift.swiftpm
           key: spm2-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
           restore-keys: |
             spm2-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-
-      - name: Build der App (alle Ziele)
-        if: matrix.teil == 'app'
-        run: swift build
-      - name: Test
-        if: matrix.teil == 'tests'
+      - name: Build (alle Ziele) und Test
         run: swift test --parallel
       # Kern-Manifest (SHA-256 je Datei im Bundle) und Vorschau-Modus (Wegwerf-Ordner, Schutz vor echtem Benutzerordner).
       - name: Kern-Manifest
-        if: matrix.teil == 'tests'
         run: bash scripts/teste-kern-manifest.sh
       - name: Vorschau-Modus
-        if: matrix.teil == 'tests'
         run: bash scripts/teste-vorschau.sh
 
   # EIN Status für den ganzen Lauf. Grün, wenn jeder Job erfolgreich war oder übersprungen wurde (weil sein Bereich unverändert
