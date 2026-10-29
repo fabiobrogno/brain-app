@@ -5,7 +5,8 @@
 # geklonter oder entpackter fremder Vault bringt seine eigene .git/config, .gitattributes und .git-Datei mit. Darum
 #  1. wird git nur über feste Orte gefunden (Homebrew, /usr/local, /usr/bin), nie über PATH oder einen Pfad aus dem Vault.
 #     Die Umgebungsvariablen BRAIN_GIT_PROGRAMM (absoluter git-Pfad), BRAIN_GIT_HOOKS_ERLAUBT (Hook-Ordner, durch ":" getrennt) und
-#     BRAIN_TAGESLAUF_CACHE gelten nur in der Testumgebung (KORTEX_KERN_UNSTABIL_ERLAUBT=1 oder BRAIN_TESTMODUS=1);
+#     BRAIN_TAGESLAUF_CACHE gelten nur in der Testumgebung (KORTEX_KERN_UNSTABIL_ERLAUBT=1 oder BRAIN_TESTMODUS=1); dort sind auch
+#     lokale Remote-Adressen (absoluter Pfad, file:///) erlaubt, in der Produktion nie (ein Push startet die Hooks des Ziel-Repos);
 #  2. gilt für die lokale Konfiguration des Repos (local, worktree, auch per include.path — das ist selbst verboten) eine ERLAUBNISLISTE
 #     (git-sicher-pruefung.pl, fail-closed): jeder Schlüssel muss auf der Liste harmloser Schlüssel stehen und einen zulässigen Wert haben,
 #     sonst Exit 126 mit dem Namen des Schlüssels (nie dem Wert). Unbekanntes ist verboten — auch Schlüssel, an die niemand gedacht hat
@@ -18,17 +19,20 @@
 #     Einzige Ausnahme für Hooks: ist core.hooksPath der Repo-Konfiguration genau der Ordner git-hooks DIESES Kerns (so richtet
 #     install-git-hooks.mjs den Schutz ein, den auch die Pflege-Arbeitskopien brauchen), laufen diese Hooks — Code aus dem Kern, nie
 #     aus dem Vault; jeder andere Wert und jedes .git/hooks/ im Vault bleibt aus. `help` und `submodule` gibt es nicht;
-#  4. verweigert die Datei den Dienst, wenn der Arbeitsbaum oder das Git-Verzeichnis aus dem Ordner hinauszeigt, in dem sie läuft (-C):
+#  4. verweigert die Datei den Dienst — auch für `config` —, wenn der Arbeitsbaum oder ein Git-Verzeichnis aus dem Ordner hinauszeigt, in dem sie
+#     läuft (-C), oder irgendwo im Git-Verzeichnis (ohne Objektinhalte und Hooks) ein Verweis liegt (git schriebe über logs/HEAD,
+#     COMMIT_EDITMSG, FETCH_HEAD … nach draußen):
 #     kein Arbeitsbaum feststellbar, ein Arbeitsbaum, der kein Elternordner des Ordners ist, ein gemeinsames Git-Verzeichnis außerhalb des
 #     Arbeitsbaums (`.git` als Datei mit gitdir: nach draußen) oder objects/info/alternates (fremde Objekte). core.worktree/core.bare
 #     stehen nicht auf der Erlaubnisliste. Ausgenommen sind die Arbeitskopien des Tageslaufs unter
 #     <Home>/Library/Caches/brain-tageslauf (verknüpfte Arbeitsbäume des Vaults, vom Kern selbst angelegt);
-#  5. werden geerbte GIT_DIR/GIT_WORK_TREE (außer im Hook, erkennbar an GIT_INDEX_FILE) und GIT_CONFIG_PARAMETERS/GIT_CONFIG_COUNT/
+#  5. werden geerbte GIT_DIR/GIT_WORK_TREE (außer im Hook, erkennbar an GIT_INDEX_FILE, und nur wenn GIT_DIR unter dem -C-Ordner liegt) und GIT_CONFIG_PARAMETERS/GIT_CONFIG_COUNT/
 #     GIT_CONFIG_KEY_*/GIT_CONFIG_VALUE_* geleert; es gelten GIT_TERMINAL_PROMPT=0, GIT_EDITOR=: , kein Pager, GIT_NO_LAZY_FETCH=1 und IMMER ein
 #     ssh ohne Rückfrage (GIT_SSH_COMMAND; die globale Einstellung des Nutzers bleibt bei Netzbefehlen erhalten).
 # Bewusst NICHT erzwungen: http.sslVerify, http.proxy, http.cookieFile, http.curloptResolve u. ä. Lokal sind sie nicht erlaubt (Punkt 2), und
 # system/global sind die Einstellungen des Nutzers selbst (Firmen-Proxy, eigene Zertifikate) — sie zu überschreiben bräche seine Anmeldung.
-# `config` bleibt unverändert (install-git-hooks.mjs liest und schreibt core.hooksPath); es startet nichts.
+# `config` bekommt die Lage- und Verweisprüfung (Punkt 4), aber keine Erlaubnisliste und bleibt sonst unverändert (install-git-hooks.mjs liest und
+# schreibt core.hooksPath); `version` läuft ungeprüft.
 LC_ALL=C
 export LC_ALL
 
@@ -61,14 +65,20 @@ for a in "$@"; do
 done
 
 case "$sub" in
-  ""|config|version) exec "$ECHT" "$@" ;;
+  ""|version) exec "$ECHT" "$@" ;;
 esac
 
 verweigere() { echo "git-sicher: git ist für diesen Ordner gesperrt: $1" >&2; exit 126; }
-# Geerbte Umlenkungen und eingeschleuste Konfiguration verwerfen. GIT_DIR/GIT_WORK_TREE bleiben nur im Hook (git setzt dort GIT_INDEX_FILE).
+# Geerbte Umlenkungen und eingeschleuste Konfiguration verwerfen. GIT_DIR/GIT_WORK_TREE bleiben nur im Hook (git setzt dort GIT_INDEX_FILE)
+# UND nur, wenn GIT_DIR unter dem -C-Ordner liegt.
 unset GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT
 gi=0; while [ "$gi" -lt 256 ]; do unset "GIT_CONFIG_KEY_$gi" "GIT_CONFIG_VALUE_$gi"; gi=$((gi + 1)); done
-if [ -z "$GIT_INDEX_FILE" ]; then unset GIT_DIR GIT_WORK_TREE; fi
+if [ -n "$GIT_INDEX_FILE" ] && [ -n "$GIT_DIR" ]; then
+  gd=$(cd "$dir" 2>/dev/null && cd "$GIT_DIR" 2>/dev/null && pwd -P); dd=$(cd "$dir" 2>/dev/null && pwd -P)
+  case "$gd/" in "$dd"/*) [ -n "$gd" ] && [ -n "$dd" ] || unset GIT_DIR GIT_WORK_TREE ;; *) unset GIT_DIR GIT_WORK_TREE ;; esac
+else
+  unset GIT_DIR GIT_WORK_TREE
+fi
 case "$sub" in
   help|submodule) verweigere "der Unterbefehl $sub ist im Kern nicht vorgesehen." ;;
 esac
@@ -77,9 +87,17 @@ case "$0" in */*) kerndir=$(cd "${0%/*}" 2>/dev/null && pwd -P) ;; *) kerndir=$(
 
 pruefen=0
 hp=
-# init, clone und merge-file (reine Dateioperation) ohne -C: das Arbeitsverzeichnis ist nicht das Ziel, seine Konfiguration zählt nicht
-if [ "$dir" != . ] || { [ "$sub" != init ] && [ "$sub" != clone ] && [ "$sub" != merge-file ]; }; then
+# init, clone und merge-file (reine Dateioperation) ohne -C: das Arbeitsverzeichnis ist nicht das Ziel, seine Konfiguration zählt nicht;
+# config mit --global/--system/--file ohne -C ebenso (kein Repository im Spiel)
+if [ "$sub" = config ]; then
+  extern=0
+  for a in "$@"; do case "$a" in --global|--system|--file|--file=*|-f|--blob|--blob=*) extern=1 ;; esac; done
+  if [ "$dir" != . ] || [ "$extern" = 0 ]; then pruefen=1; fi
+elif [ "$dir" != . ] || { [ "$sub" != init ] && [ "$sub" != clone ] && [ "$sub" != merge-file ]; }; then
   pruefen=1
+fi
+# Erlaubnisliste der Konfiguration: für jeden Unterbefehl außer config (config liest und schreibt nur; die Lage-/Verweisprüfung unten gilt auch dort)
+if [ "$pruefen" = 1 ] && [ "$sub" != config ]; then
   [ -f "$kerndir/git-sicher-pruefung.pl" ] && [ -x /usr/bin/perl ] || verweigere "die Prüfung der Konfiguration fehlt (git-sicher-pruefung.pl oder perl)."
   res=$(/usr/bin/perl "$kerndir/git-sicher-pruefung.pl" "$ECHT" "$dir" 2>/dev/null)
   if [ $? -ne 0 ]; then
@@ -89,20 +107,22 @@ if [ "$dir" != . ] || { [ "$sub" != init ] && [ "$sub" != clone ] && [ "$sub" !=
   hp=$(printf '%s\n' "$res" | /usr/bin/awk -F'\t' '$1=="HOOKSPATH"{sub(/^HOOKSPATH\t/, ""); print; exit}')
 fi
 
-# Arbeitsbaum und Git-Verzeichnis müssen im Ordner liegen, in dem wir laufen (fail-closed: ohne feststellbaren Arbeitsbaum kein git;
-# nur init und clone dürfen in einen Ordner, der noch kein Repository ist)
+# Arbeitsbaum und Git-Verzeichnisse müssen im Ordner liegen, in dem wir laufen, und dürfen keine Verweise enthalten (fail-closed: ohne
+# feststellbaren Arbeitsbaum kein git; init, clone und config dürfen in einen Ordner, der noch kein Repository ist)
 if [ "$pruefen" = 1 ]; then
   lage=$("$ECHT" -C "$dir" -c core.fsmonitor=false -c core.hooksPath=/dev/null \
-    rev-parse --path-format=absolute --show-toplevel --git-common-dir 2>/dev/null)
+    rev-parse --path-format=absolute --show-toplevel --git-common-dir --absolute-git-dir 2>/dev/null)
   top=$(printf '%s\n' "$lage" | /usr/bin/sed -n 1p)
   common=$(printf '%s\n' "$lage" | /usr/bin/sed -n 2p)
-  if [ -z "$top" ] || [ -z "$common" ]; then
-    case "$sub" in init|clone) ;; *) verweigere "kein Arbeitsbaum festzustellen (kein Repository oder nicht lesbar)." ;; esac
+  gitdir=$(printf '%s\n' "$lage" | /usr/bin/sed -n 3p)
+  if [ -z "$top" ] || [ -z "$common" ] || [ -z "$gitdir" ]; then
+    case "$sub" in init|clone|config) ;; *) verweigere "kein Arbeitsbaum festzustellen (kein Repository oder nicht lesbar)." ;; esac
   else
     top=$(cd "$top" 2>/dev/null && pwd -P)
     common=$(cd "$common" 2>/dev/null && pwd -P)
+    gitdir=$(cd "$gitdir" 2>/dev/null && pwd -P)
     hier=$(cd "$dir" 2>/dev/null && pwd -P)
-    [ -n "$top" ] && [ -n "$common" ] && [ -n "$hier" ] || verweigere "Arbeitsbaum oder Git-Verzeichnis sind nicht lesbar."
+    [ -n "$top" ] && [ -n "$common" ] && [ -n "$gitdir" ] && [ -n "$hier" ] || verweigere "Arbeitsbaum oder Git-Verzeichnis sind nicht lesbar."
     case "$hier/" in "$top"/*) ;; *) verweigere "der Arbeitsbaum ($top) liegt nicht über dem Ordner ($hier)." ;; esac
     cache=
     if [ -n "$HOME" ]; then cache=$(cd "$HOME/Library/Caches/brain-tageslauf" 2>/dev/null && pwd -P); fi
@@ -113,10 +133,29 @@ if [ "$pruefen" = 1 ]; then
     done
     if [ "$kopie" = 0 ]; then
       case "$common/" in "$top"/*) ;; *) verweigere "das Git-Verzeichnis ($common) liegt außerhalb des Arbeitsbaums ($top)." ;; esac
+      case "$gitdir/" in "$top"/*) ;; *) verweigere "das Git-Verzeichnis dieses Arbeitsbaums ($gitdir) liegt außerhalb des Arbeitsbaums ($top)." ;; esac
     fi
     [ ! -e "$common/objects/info/alternates" ] || verweigere "objects/info/alternates verweist auf fremde Objekte."
+    # Verweise im Git-Verzeichnis lassen git nach draußen schreiben (logs/HEAD, COMMIT_EDITMSG, FETCH_HEAD, objects …): keiner ist erlaubt.
+    # Objektinhalte (objects/??/*, objects/pack/*) und Hook-Dateien (laufen nie) werden übersprungen, damit der Lauf schnell bleibt.
+    dirs="$common"
+    if [ "$gitdir" != "$common" ]; then case "$gitdir/" in "$common"/*) ;; *) dirs="$common
+$gitdir" ;; esac; fi
+    IFS_ALT=$IFS; IFS='
+'
+    for d in $dirs; do
+      IFS=$IFS_ALT
+      verweis=$(/usr/bin/find "$d" \( -path "$d/objects/??/*" -o -path "$d/objects/pack/*" -o -path "$d/hooks/*" \) -prune -o -type l -print -quit 2>/dev/null)
+      [ -z "$verweis" ] || verweigere "im Git-Verzeichnis liegt ein Verweis (${verweis##*/}); git würde darüber nach draußen schreiben."
+      IFS='
+'
+    done
+    IFS=$IFS_ALT
   fi
 fi
+
+# config liest und schreibt nur: nach der Lage- und Verweisprüfung unverändert ausführen (install-git-hooks.mjs verlässt sich darauf)
+if [ "$sub" = config ]; then exec "$ECHT" "$@"; fi
 
 GIT_TERMINAL_PROMPT=0; GIT_EDITOR=:; GIT_SEQUENCE_EDITOR=:; GIT_PAGER=cat; GIT_NO_LAZY_FETCH=1
 export GIT_TERMINAL_PROMPT GIT_EDITOR GIT_SEQUENCE_EDITOR GIT_PAGER GIT_NO_LAZY_FETCH

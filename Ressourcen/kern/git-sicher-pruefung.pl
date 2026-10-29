@@ -45,10 +45,15 @@ sub url_ok {
     return 1 if $u =~ m{^https://[A-Za-z0-9_\[][^\s/]*(/\S*)?$};
     return 1 if $u =~ m{^ssh://[A-Za-z0-9_\[][^\s/]*(/\S*)?$};
     return 1 if $u =~ m{^[A-Za-z0-9_][A-Za-z0-9_.-]*\@[A-Za-z0-9\[][A-Za-z0-9_.:\]-]*:\S*$} && $u !~ /::/;
+    # Lokale Adressen (absoluter Pfad, file:///) starten beim Senden die Hooks des Ziel-Repos und schreiben in fremde lokale Repositories
+    # (git leert für den lokalen Transport GIT_CONFIG_PARAMETERS, die Entschärfung per -c gilt dort nicht): nur in der Testumgebung erlaubt.
+    return 0 unless $ENV{KORTEX_KERN_UNSTABIL_ERLAUBT} && $ENV{KORTEX_KERN_UNSTABIL_ERLAUBT} eq "1" or $ENV{BRAIN_TESTMODUS} && $ENV{BRAIN_TESTMODUS} eq "1";
     return 1 if $u =~ m{^/[^\x00-\x1f]*$} && $u !~ m{^//};
     return 1 if $u =~ m{^file:///[^\x00-\x1f]*$};
     return 0;
 }
+# Name und Adresse landen in Reflog-Zeilen und Commit-Köpfen: keine Zeichen, die eine Shell oder ein Format deuten könnte
+sub person_ok { my $w = shift; return defined $w && length $w && $w !~ /[;\$`|&<>\\\x00-\x1f\x7f]/; }
 
 # Schlüssel ohne Unterabschnitt: "abschnitt.variable" → Prüfung des Werts
 my %ohne = (
@@ -65,8 +70,8 @@ my %ohne = (
     "core.safecrlf"                => sub { wahr($_[0]) || (defined $_[0] && lc $_[0] eq "warn") },
     "core.quotepath"               => \&wahr,
     "core.hookspath"               => \&text,    # wird von git-sicher per -c überschrieben, außer es ist der Hook-Ordner des Kerns
-    "user.name"                    => \&text,
-    "user.email"                   => \&text,
+    "user.name"                    => \&person_ok,
+    "user.email"                   => \&person_ok,
     "pull.rebase"                  => sub { wahr($_[0]) || (defined $_[0] && $_[0] =~ /^(merges|interactive)$/i) },
     "pull.ff"                      => sub { wahr($_[0]) || (defined $_[0] && lc $_[0] eq "only") },
     "merge.ff"                     => sub { wahr($_[0]) || (defined $_[0] && lc $_[0] eq "only") },
@@ -81,8 +86,13 @@ my %ohne = (
     "extensions.objectformat"      => sub { defined $_[0] && $_[0] =~ /^(sha1|sha256)$/i },
     "extensions.worktreeconfig"    => \&wahr,
 );
-# gc.<name>: Zahlen, Zeitangaben, Wahrheitswerte
-sub gc_ok { defined $_[0] && $_[0] =~ /^(never|now|true|false|yes|no|on|off|[0-9][0-9A-Za-z. ]*)$/i }
+# gc.<name>: feste Liste mit Wertprüfung (Zahlen, Zeitangaben, Wahrheitswerte)
+sub zahl { defined $_[0] && $_[0] =~ /^[0-9]{1,9}$/ }
+sub zeit { defined $_[0] && $_[0] =~ /^(never|now|[0-9][0-9A-Za-z. ]{0,40})$/i }
+my %gc = (
+    "gc.auto" => \&zahl, "gc.autopacklimit" => \&zahl, "gc.autodetach" => \&wahr,
+    "gc.pruneexpire" => \&zeit, "gc.reflogexpire" => \&zeit, "gc.reflogexpireunreachable" => \&zeit, "gc.worktreepruneexpire" => \&zeit,
+);
 # Schlüssel mit Unterabschnitt: "abschnitt.*.variable"
 my %mit = (
     "remote.*.url"            => \&url_ok,
@@ -113,7 +123,7 @@ for (my $i = 0; $i + 1 <= $#t; $i += 2) {
         my $a = lc $abschnitt;
         if (!defined $unter) {
             my $k = $a . "." . lc $var;
-            if ($a eq "gc") { $ok = gc_ok($wert); }
+            if ($gc{$k}) { $ok = $gc{$k}->($wert) ? 1 : 0; }
             elsif ($ohne{$k}) { $ok = $ohne{$k}->($wert) ? 1 : 0; $hooks = $wert if $k eq "core.hookspath" && $ok; }
         } else {
             my $k = $a . ".*." . lc $var;

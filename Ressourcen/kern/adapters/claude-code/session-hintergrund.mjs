@@ -98,9 +98,15 @@ if (AUTOMATIK.sicherungTaeglich !== false) try {
     if (!cfg.backup) {
       const remote = spawnSync(GIT, ["-C", V, "remote"], { encoding: "utf8", windowsHide: true });
       if ((remote.stdout || "").trim()) {
-        const r = spawnSync(GIT, ["-C", V, "push", "-q"], { encoding: "utf8", windowsHide: true });
-        log((r.stdout || "") + (r.stderr || ""));
-        ok = r.status === 0;
+        // nur zu einem vom Nutzer bestätigten Remote (ein fremder Vault kann ein origin mitbringen); sonst keine Sicherung, nur eine Logzeile
+        const { pushErlaubnis } = await import("../../backup.mjs");
+        const erlaubnis = pushErlaubnis(V);
+        if (!erlaubnis.ok) log(`Push übersprungen: Remote nicht bestätigt (${erlaubnis.grund})`);
+        else {
+          const r = spawnSync(GIT, ["-C", V, "push", "-q"], { encoding: "utf8", windowsHide: true });
+          log((r.stdout || "") + (r.stderr || ""));
+          ok = r.status === 0;
+        }
       }
     } else if (
       cfg.backup.art === "ordner" && backupOrdner &&

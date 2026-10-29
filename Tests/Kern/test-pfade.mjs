@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, readdirSync, existsSync, symlinkSync, realpathSync, rmSync } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { spawnSync, execFileSync } from "node:child_process";
 import { join, dirname, relative, basename, isAbsolute, resolve } from "node:path";
 import { tmpdir, homedir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -288,12 +288,12 @@ test("pruefeVault: Schreibziele, die per Verweis aus dem Vault hinauszeigen, mac
   assert.equal(pruefeVault(v), resolve(v));
   for (const [rel, ziel] of [[".logs", aussen], ["AGENTS.md", join(aussen, "gibt-es-nicht")], ["graph.json", join(aussen, "g.json")], ["09_wiki", aussen]]) {
     rmSync(join(v, rel), { recursive: true, force: true });
-    symlinkSync(ziel, join(v, rel));
+    execFileSync("ln", ["-s", ziel, join(v, rel)]); // nach pruefeVault sind die fs-Verweisfunktionen selbst geschützt
     assert.throws(() => pruefeVault(v), /zeigt aus dem Ordner hinaus/, rel);
     rmSync(join(v, rel), { force: true });
   }
   // ein Verweis innerhalb des Vaults ist in Ordnung
-  mkdirSync(join(v, "echt")); symlinkSync(join(v, "echt"), join(v, ".logs"));
+  mkdirSync(join(v, "echt")); execFileSync("ln", ["-s", join(v, "echt"), join(v, ".logs")]);
   assert.equal(pruefeVault(v), resolve(v));
 });
 test("Review-Fund 7 (BOM in brain.config.json): ladeConfig/configFehler tolerieren ein UTF-8-BOM", () => {

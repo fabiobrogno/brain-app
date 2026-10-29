@@ -9,6 +9,7 @@ import { isoliere, neuerTestVault, committe, seitenText, git, KIT } from "./tage
 import { tempOrdner } from "./verlauf-fixture.mjs";
 const T = await import("../sicherung-takt.mjs");
 isoliere();
+const B = await import("../backup.mjs");
 const MIN = 60000;
 
 test("erste → nötig; gleicher HEAD → unveraendert; neuer HEAD zu früh → zu-frueh; nach 15 min → geaendert", () => {
@@ -28,6 +29,7 @@ test("Sitzungsstart: erste Sicherung pusht, zweite ohne neuen Commit wird übers
   git(nackt, "init", "-q", "--bare");
   git(v, "remote", "add", "origin", nackt);
   git(v, "push", "-q", "-u", "origin", "main");
+  B.bestaetigeRemote(v, nackt); // der Nutzer hat dieses Ziel bestätigt (sonst pusht der Sitzungsstart nicht)
   const H = join(KIT, "adapters", "claude-code", "session-hintergrund.mjs");
   // QMD_BIN = Fake: der Suchindex-Schritt (kaltes qmd, ~15 s) gehört nicht zu dieser Prüfung
   const env = { ...process.env, BRAIN_VAULT: v, QMD_BIN: join(KIT, "tests", "fake-qmd-cli.mjs") };
@@ -37,4 +39,22 @@ test("Sitzungsstart: erste Sicherung pusht, zweite ohne neuen Commit wird übers
   assert.match(log, /Sicherung übersprungen \(unveraendert\)/);
   committe(v, "09_wiki/wissen/a.md", seitenText({ fm: { name: "a", description: "A" } }));
   assert.equal(T.sicherungNoetig(v, { head: T.aktuellerHead(v), jetzt: Date.now() }).grund, "zu-frueh");
+});
+
+test("Sitzungsstart: Remote nicht bestätigt (fremder Vault bringt origin mit) → kein Push, Logzeile; bestätigtes anderes Ziel zählt nicht", () => {
+  const v = neuerTestVault({ automatik: { updateHinweis: false, wochenbericht: false } });
+  const nackt = tempOrdner("remote");
+  git(nackt, "init", "-q", "--bare");
+  git(v, "remote", "add", "origin", nackt);
+  const H = join(KIT, "adapters", "claude-code", "session-hintergrund.mjs");
+  const env = { ...process.env, BRAIN_VAULT: v, QMD_BIN: join(KIT, "tests", "fake-qmd-cli.mjs") };
+  spawnSync(process.execPath, [H], { env, encoding: "utf8" });
+  let log = readFileSync(join(v, ".logs", "hooks.log"), "utf8");
+  assert.match(log, /Push übersprungen: Remote nicht bestätigt \(nicht-bestaetigt\)/);
+  assert.equal(git(nackt, "for-each-ref").trim(), "", "nichts wurde gepusht");
+  B.bestaetigeRemote(v, "https://example.org/anderes.git");
+  spawnSync(process.execPath, [H], { env, encoding: "utf8" });
+  log = readFileSync(join(v, ".logs", "hooks.log"), "utf8");
+  assert.match(log, /\(anderes-remote\)/);
+  assert.equal(git(nackt, "for-each-ref").trim(), "", "weiterhin nichts gepusht");
 });

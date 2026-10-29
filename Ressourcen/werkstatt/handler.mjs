@@ -14,6 +14,7 @@ import { findeProgramm, erkenneAgenten } from "../gemeinsam/ki.mjs";
 import * as vaultsFn from "../gemeinsam/vaults.mjs";
 import { erzeugeGitHub } from "../gemeinsam/github.mjs";
 import { sicherungStand } from "../gemeinsam/gitsicherung.mjs";
+import { merkeRemoteBestaetigt } from "../gemeinsam/sicherungsmerker.mjs";
 
 const HIER = dirname(fileURLToPath(import.meta.url));
 export const MAX_KOERPER = 8 * 1024 * 1024;
@@ -72,6 +73,8 @@ const gleicherOrdner = (a, b) => { try { return falte(realpathSync.native(a)) ==
 export function erzeugeHandler(o) {
   const vaultOpt = o.vaultOptionen || {};
   const optV = () => (vaultOpt.support ? { support: vaultOpt.support } : {});
+  // Der Nutzer hat dieses Remote gerade selbst eingerichtet: der Kern darf dorthin sichern (kern/backup.mjs, sicherungsmerker.mjs)
+  const merkeRemote = (wurzel, url) => merkeRemoteBestaetigt(wurzel, String(url).trim(), { support: vaultOpt.support });
   const studioDir = o.studioDir || join(HIER, "..", "studio");
   const appVersion = o.appVersion || appVersionLesen();
   const mcpPfad = o.mcpPfad || join(HIER, "..", "mcp", "brain-mcp.mjs");
@@ -187,7 +190,7 @@ export function erzeugeHandler(o) {
       case "/api/git/wiederherstellen": nur("POST"); return V().gitWiederherstellen(eingabe());
       case "/api/git/verlauf": nur("GET"); return V().gitVerlauf(q.get("pfad"), q.get("max"));
       case "/api/git/log": nur("GET"); return V().gitLog({ max: q.get("max"), vor: q.get("vor") || undefined });
-      case "/api/git/remote": nur("POST"); return V().gitRemote(eingabe().url);
+      case "/api/git/remote": { nur("POST"); const url = eingabe().url; const erg = await V().gitRemote(url); merkeRemote(V().wurzel, url); return erg; }
       case "/api/git/diff": nur("GET"); return V().gitDiff(q.get("pfad"), q.get("sha") || undefined);
       case "/api/git/fassung": nur("GET"); return V().gitFassung(q.get("pfad"), q.get("sha"));
       case "/api/mcp/verbinden": { nur("POST"); V(); return verbinde(eingabe()); }
@@ -231,7 +234,9 @@ export function erzeugeHandler(o) {
         if (stand.zustand === "gesichert") throw new HttpFehler(409, "Dein Brain ist schon mit einem Server verbunden.", { art: "gesichert" });
         if (stand.zustand !== "bereit") throw new HttpFehler(409, stand.text, { art: "blockiert", grund: stand.grund });
         const repo = await github.repoPruefen(e.besitzer, e.name); // gibt es, privat, beschreibbar — sonst Fehler, bevor etwas gesendet wird
-        return V().gitRemote(repo.url, { githubHelper: github.helper });
+        const erg = await V().gitRemote(repo.url, { githubHelper: github.helper });
+        merkeRemote(V().wurzel, repo.url);
+        return erg;
       }
       case "/api/stopp": nur("POST"); return { __stopp: true };
       default: throw new HttpFehler(404, "nicht gefunden");

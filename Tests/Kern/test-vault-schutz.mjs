@@ -6,7 +6,10 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, appendFileSync, sy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pruefeVault } from "../pfade.mjs";
+import { execFileSync } from "node:child_process";
 import { sicheresZiel } from "../vault-schutz.mjs";
+const lnS = (ziel, link) => execFileSync("ln", ["-s", ziel, link]);
+const lnH = (ziel, link) => execFileSync("ln", [ziel, link]);
 import { haengeAn } from "../logs.mjs";
 
 function aufbau() {
@@ -24,8 +27,8 @@ const wirft = (f) => { try { f(); } catch (e) { return e; } return null; };
 
 test("Verweis auf eine Datei außerhalb (tief im Baum): Anhängen, Schreiben, Kopieren, Umbenennen werden verweigert, nichts draußen ändert sich", () => {
   const { v, ziel } = aufbau();
-  symlinkSync(ziel, join(v, ".logs", "werkzeug.log"));
-  symlinkSync(ziel, join(v, "09_wiki", "firma", "_log.md"));
+  lnS(ziel, join(v, ".logs", "werkzeug.log"));
+  lnS(ziel, join(v, "09_wiki", "firma", "_log.md"));
   for (const p of [join(v, ".logs", "werkzeug.log"), join(v, "09_wiki", "firma", "_log.md")]) {
     assert.equal(wirft(() => appendFileSync(p, "böse\n"))?.code, "EVAULTSCHUTZ", p);
     assert.equal(wirft(() => writeFileSync(p, "böse\n"))?.code, "EVAULTSCHUTZ", p);
@@ -39,8 +42,8 @@ test("Verweis auf eine Datei außerhalb (tief im Baum): Anhängen, Schreiben, Ko
 
 test("Verweis auf einen Ordner außerhalb: Anlegen, Schreiben, Löschen darin werden verweigert", () => {
   const { v, aussen, ziel } = aufbau();
-  symlinkSync(aussen, join(v, ".logs", "tageslauf"));
-  symlinkSync(aussen, join(v, "09_wiki", "firma", "belege"));
+  lnS(aussen, join(v, ".logs", "tageslauf"));
+  lnS(aussen, join(v, "09_wiki", "firma", "belege"));
   for (const d of [join(v, ".logs", "tageslauf"), join(v, "09_wiki", "firma", "belege")]) {
     assert.equal(wirft(() => writeFileSync(join(d, "neu.txt"), "x"))?.code, "EVAULTSCHUTZ", d);
     assert.equal(wirft(() => mkdirSync(join(d, "unter", "tief"), { recursive: true }))?.code, "EVAULTSCHUTZ", d);
@@ -54,7 +57,7 @@ test("Verweis auf einen Ordner außerhalb: Anlegen, Schreiben, Löschen darin we
 
 test("Hardlink auf eine Datei außerhalb: Anhängen und Schreiben werden verweigert", () => {
   const { v, ziel } = aufbau();
-  linkSync(ziel, join(v, ".logs", "hint.log"));
+  lnH(ziel, join(v, ".logs", "hint.log"));
   assert.equal(wirft(() => appendFileSync(join(v, ".logs", "hint.log"), "böse\n"))?.code, "EVAULTSCHUTZ");
   assert.equal(wirft(() => writeFileSync(join(v, ".logs", "hint.log"), "böse\n"))?.code, "EVAULTSCHUTZ");
   haengeAn(join(v, ".logs", "hint.log"), "zeile");
@@ -63,7 +66,7 @@ test("Hardlink auf eine Datei außerhalb: Anhängen und Schreiben werden verweig
 
 test("Verweis ins Leere (Ziel existiert noch nicht): Schreiben würde die Datei draußen anlegen → verweigert", () => {
   const { v, aussen } = aufbau();
-  symlinkSync(join(aussen, "gibt-es-nicht.txt"), join(v, ".logs", "neu.log"));
+  lnS(join(aussen, "gibt-es-nicht.txt"), join(v, ".logs", "neu.log"));
   assert.equal(wirft(() => appendFileSync(join(v, ".logs", "neu.log"), "x"))?.code, "EVAULTSCHUTZ");
   assert.equal(existsSync(join(aussen, "gibt-es-nicht.txt")), false);
 });
@@ -77,7 +80,7 @@ test("normale Schreibzugriffe laufen weiter: Dateien, Anhängen, Ordner, Umbenen
   const fd = openSync(join(v, ".logs", "sperre"), "wx"); closeSync(fd);
   assert.equal(wirft(() => openSync(join(v, ".logs", "sperre"), "wx"))?.code, "EEXIST", "wx bleibt exklusiv");
   renameSync(p, join(v, ".logs", "a", "c.log"));
-  mkdirSync(join(v, "echt")); symlinkSync(join(v, "echt"), join(v, ".logs", "innen"));
+  mkdirSync(join(v, "echt")); lnS(join(v, "echt"), join(v, ".logs", "innen"));
   writeFileSync(join(v, ".logs", "innen", "d.txt"), "im Vault"); // Verweis, der im Vault bleibt
   assert.equal(readFileSync(join(v, "echt", "d.txt"), "utf8"), "im Vault");
   unlinkSync(join(v, ".logs", "a", "c.log"));
@@ -97,7 +100,7 @@ test("im Kindprozess (brain.mjs): ein Verweis tief in .logs wird beim Befehl nic
   const { fileURLToPath } = await import("node:url");
   const kern = fileURLToPath(new URL("..", import.meta.url));
   const { v, aussen, ziel } = aufbau();
-  for (const n of ["hint.log", "hooks.log", "werkzeug.log", "tageslauf.log", "feedback.log", "gesundheit.json", "status.json"]) symlinkSync(ziel, join(v, ".logs", n));
+  for (const n of ["hint.log", "hooks.log", "werkzeug.log", "tageslauf.log", "feedback.log", "gesundheit.json", "status.json"]) lnS(ziel, join(v, ".logs", n));
   for (const a of [["status", "--json"], ["gesundheit", "--json"], ["rueckfragen", "liste"], ["search", "x"], ["pflege"]]) {
     spawnSync(process.execPath, [join(kern, "brain.mjs"), "--vault", v, ...a], { encoding: "utf8", timeout: 90_000, env: { ...process.env } });
   }
