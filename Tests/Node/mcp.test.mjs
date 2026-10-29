@@ -195,7 +195,7 @@ function projektWiki() {
   return d;
 }
 
-test("MCP brain_kontext: repo-Treffer zuerst, dann pfade/Titel; rote Seite fehlt, verfallene am Ende mit Hinweis; Auszug ≤ 3 Sätze", async () => {
+test("MCP brain_kontext: repo-Treffer zuerst, dann pfade/Titel; rote Seite fehlt, verfallene am Ende mit Hinweis; je Seite ein Satz", async () => {
   const s = starte(projektWiki());
   const a = await s.rufe("brain_kontext", { projekt: "garten-app" });
   const t = textVon(a);
@@ -207,18 +207,19 @@ test("MCP brain_kontext: repo-Treffer zuerst, dann pfade/Titel; rote Seite fehlt
   assert.match(t, /entitaet_alt\.md[^\n]*\n[^\n]*Stand verfallen/);
   assert.match(t, /Stand 2026-10-20/);
   assert.match(t, /Prüf-Stufe/);
-  assert.ok(t.includes("Ziel ist test.") && !t.includes("Vierter Satz"));
+  assert.ok(t.includes("Die App pflegt Beete.") && !t.includes("Tests laufen mit npm test") && !t.includes("Vierter Satz"), "nur der erste Satz");
   s.p.stdin.end(); await s.ende;
 });
 
-test("MCP brain_kontext: cwd ordnet über pfade zu; Höchstzahl 8; Längengrenze 6000; kein Treffer", async () => {
+test("MCP brain_kontext: cwd ordnet über pfade zu; Höchstzahl 4; Längengrenze 2000; kein Treffer", async () => {
   const s = starte(projektWiki());
   let t = textVon(await s.rufe("brain_kontext", { projekt: "unbekannt", cwd: "/home/x/apps/garten-app" }));
   assert.ok(t.includes("entitaet_pfade.md"));
   t = textVon(await s.rufe("brain_kontext", { projekt: "viel" }));
-  assert.equal((t.match(/^\d+\. /gm) || []).length, 8);
+  assert.equal((t.match(/^\d+\. /gm) || []).length, 4);
+  assert.match(t, /\(\+6 weitere/);
   t = textVon(await s.rufe("brain_kontext", { projekt: "lang" }));
-  assert.ok(t.includes("entitaet_lang.md") && t.length <= 6000);
+  assert.ok(t.includes("entitaet_lang.md") && t.length <= 2000);
   t = textVon(await s.rufe("brain_kontext", { projekt: "nirgendwo" }));
   assert.match(t, /Keine Seiten/);
   const f = await s.rufe("brain_kontext", {});

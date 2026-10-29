@@ -570,8 +570,8 @@ test("Probe: läuft über den MCP-Server (eigener Kindprozess, JSON-RPC), liefer
   assert.equal(r.status, 200);
   assert.deepEqual(r.j.treffer.map((t) => t.pfad), ["00_inbox/n.md"]);
   assert.deepEqual(Object.keys(r.j.treffer[0]).sort(), ["auszug", "pfad", "stufe", "titel", "zeile"]);
-  assert.match(r.j.text, /^1\. 00_inbox\/n\.md — Notiz \[grau\]\n {3}Das Zebra/);
-  assert.equal(r.j.text, oeffneVault(d, { support }).suchenFuerKi("zebra").text, "derselbe Text wie die direkte Suche");
+  assert.match(r.j.text, /^1\. 00_inbox\/n\.md — Notiz \[grau\]\n {3}Z\.3: Das Zebra/);
+  assert.equal(r.j.text, (await oeffneVault(d, { support }).suchenFuerKi("zebra")).text, "derselbe Text wie die direkte Suche");
   assert.equal((await rufe("POST", "/api/probe", { frage: "zzzgibtesnicht" })).j.text, "Keine Treffer.");
   // dieser Vault ist in der App nicht der aktive → die Probe könnte ihn über den MCP-Weg nicht finden
   const anderer = notizVault("x"); listeMit(support, [d, anderer], anderer);
