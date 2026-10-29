@@ -142,7 +142,7 @@ test("setup.mjs: QMD_BIN zeigt standardmäßig auf den Fake (kein echtes qmd, ke
 
 test("setup.mjs: mit dem Fake-QMD indexiert search-refresh.mjs ohne Netz und ohne Modell — Stempel gesetzt, kein .cache/qmd im HOME", () => {
   const home = join(ANDERE, "home"), vault = join(ANDERE, "vault-sr");
-  mkdirSync(home, { recursive: true }); mkdirSync(join(vault, "20_firma"), { recursive: true });
+  mkdirSync(home, { recursive: true }); mkdirSync(join(vault, "20_firma"), { recursive: true }); writeFileSync(join(vault, "brain.config.json"), "{}");
   writeFileSync(join(vault, "20_firma", "a.md"), "# a\n");
   const r = spawnSync(process.execPath, ["--import", SETUP_URL, join(KIT, "search-refresh.mjs"), vault],
     { env: kindEnv({ HOME: home, USERPROFILE: home, BRAIN_VAULT: vault }), encoding: "utf8", timeout: 30000 });

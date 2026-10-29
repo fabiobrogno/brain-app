@@ -4,12 +4,13 @@
 import { chmodSync } from "node:fs";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { vaultPfadOderEnde, ladeConfig, kernStabil } from "./pfade.mjs";
+import { vaultPfadOderEnde, ladeConfig, kernStabilOderEnde } from "./pfade.mjs";
 import { gitBefehl } from "./werkzeug.mjs";
 
 const V = vaultPfadOderEnde();
 const GIT = gitBefehl({ cfg: ladeConfig(V) });
-const HOOKS = join(kernStabil(), "git-hooks");
+// Ohne stabilen Kern-Pfad (KORTEX_KERN_PFAD) wird nichts eingetragen: Exit 3 mit klarer Meldung.
+const HOOKS = join(kernStabilOderEnde(), "git-hooks");
 if (process.platform !== "win32") {
   try { chmodSync(join(HOOKS, "pre-commit"), 0o755); } catch { /* schreibgeschützter Kern (App-Bundle): der Hook ist dort schon ausführbar */ }
 }

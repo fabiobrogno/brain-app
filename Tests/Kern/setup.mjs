@@ -25,6 +25,9 @@ import { fileURLToPath } from "node:url";
 //    pfade.mjs liest sonst die echte vaults.json der App und fände einen echten Vault. Tests setzen, was sie brauchen, selbst.
 delete process.env.BRAIN_VAULT; delete process.env.KORTEX_KERN_PFAD;
 if (!process.env.BRAIN_APP_SUPPORT) process.env.BRAIN_APP_SUPPORT = path.join(os.tmpdir(), "kortex-test-support-leer");
+// Die Bühne liegt im Temp-Ordner und ist kein stabiler Kern-Pfad: Tests, die Hooks/Git-Hooks/Dienst eintragen, dürfen den tatsächlichen Ort nehmen.
+// Die Tests der Verweigerung (test-kern-stabil.mjs) entfernen den Schalter im Kindprozess.
+if (!process.env.KORTEX_KERN_UNSTABIL_ERLAUBT) process.env.KORTEX_KERN_UNSTABIL_ERLAUBT = "1";
 
 if (!process.env.QMD_BIN) process.env.QMD_BIN = fileURLToPath(new URL("./fake-qmd-cli.mjs", import.meta.url));
 

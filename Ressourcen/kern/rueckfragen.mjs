@@ -8,10 +8,10 @@
 //   node rueckfragen.mjs <vault> liste                       → JSON { fragen: [...], wartend }
 //   node rueckfragen.mjs <vault> antwort <id> <wahl> [notiz]  → Exit 0 | 1 (gibt es nicht) | 2 (ungültig) | 64
 import { readdirSync, readFileSync, writeFileSync, mkdirSync, lstatSync, unlinkSync, realpathSync } from "node:fs";
-import { join, isAbsolute } from "node:path";
+import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { ordner, vaultPfadOderEnde } from "./pfade.mjs";
+import { ordner, vaultUndRest } from "./pfade.mjs";
 import { findeSecrets } from "./secrets-muster.mjs";
 import { walk } from "./vault-dateien.mjs";
 import { istWikiSeite } from "./wiki-pfade.mjs";
@@ -251,8 +251,8 @@ let aufruf = "";
 try { aufruf = realpathSync(process.argv[1] || ""); } catch {}
 if (aufruf && aufruf === realpathSync(selbst)) {
   // brain.mjs ruft mit dem Vault als erstem Argument auf (<vault> <befehl> …); direkt geht auch <befehl> … mit --vault/BRAIN_VAULT/aktivem App-Vault.
-  const a0 = process.argv.slice(2);
-  const [vault, befehl = "liste", ...rest] = a0.length && isAbsolute(a0[0]) ? a0 : [vaultPfadOderEnde([]), ...a0];
+  const { vault, rest: r0 } = vaultUndRest(process.argv.slice(2), (a) => a === "liste" || a === "antwort");
+  const [befehl = "liste", ...rest] = r0;
   try {
     if (befehl === "liste") {
       const s = sichtbare(vault);

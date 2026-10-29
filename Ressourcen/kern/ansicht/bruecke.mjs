@@ -16,7 +16,7 @@ import { erzeugeHandler } from "./handler.mjs";
 import { vaultPfadOderEnde, kernVersion } from "../pfade.mjs";
 
 const HIER = dirname(fileURLToPath(import.meta.url));
-const vault = process.argv[2] || vaultPfadOderEnde([]);
+const vault = vaultPfadOderEnde();
 // base64 (×4/3) + JSON-Hülle: größere Anfragezeilen sind nie gültig und werden mit 413 abgewiesen
 const MAX_ZEILE = 2 * MAX_KOERPER + 4096;
 const handler = erzeugeHandler();

@@ -13,8 +13,9 @@ node "$H"
 grep -qF "$V" "$V/AGENTS.md" || { echo "FAIL: AGENTS.md enthält nicht den Vault-Pfad"; exit 1; }
 # Node-Pfad endet unter Windows auf node.exe
 K="$(cd .. && pwd -P)"   # Kern-Ordner (liegt außerhalb des Vaults); AGENTS.md nennt ihn und den Vault, beide gequotet
-grep -F "/brain.mjs\" --vault \"$V\" search" "$V/AGENTS.md" | grep -qE 'node(\.exe)?" "' || { echo "FAIL: Kommando-Pfad nicht gequotet"; cat "$V/AGENTS.md"; exit 1; }
-grep -qF "\"$K/brain.mjs\" --vault" "$V/AGENTS.md" || { echo "FAIL: AGENTS.md nennt nicht den Kern-Ordner ($K)"; exit 1; }
+# POSIX-sicher: Kern- und Vault-Pfad in einfachen Anführungszeichen (kein $(), Backtick oder " kann darin etwas auslösen)
+grep -F "/brain.mjs' --vault '$V' search" "$V/AGENTS.md" | grep -qE "node(\.exe)?' '" || { echo "FAIL: Kommando-Pfad nicht gequotet"; cat "$V/AGENTS.md"; exit 1; }
+grep -qF "'$K/brain.mjs' --vault" "$V/AGENTS.md" || { echo "FAIL: AGENTS.md nennt nicht den Kern-Ordner ($K)"; exit 1; }
 ! grep -q '/\.tools/' "$V/AGENTS.md" || { echo "FAIL: AGENTS.md verweist noch auf den alten Kit-Ordner"; exit 1; }
 # Kein Update-Check mehr (Kortex aktualisiert sich selbst): weder bei updateHinweis=true noch =false steht davon etwas im Log
 rm -f "$V/.logs/hooks.log"; node "$H"

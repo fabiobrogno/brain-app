@@ -3,7 +3,7 @@
 # search-refresh.mjs läuft nur, wenn sich seit dem letzten erfolgreichen Refresh eine Notiz geändert hat
 # (sonst konkurriert der SessionStart-Refresh mit dem Hinweis-Hook um CPU/DB → Timeouts).
 set -u; cd "$(dirname "$0")"; T="$(pwd)"; R="$T/../search-refresh.mjs"
-V=$(mktemp -d); mkdir -p "$V/.logs/hint-karten" "$V/20_firma"; echo "# a" > "$V/20_firma/a.md"
+V=$(mktemp -d); mkdir -p "$V/.logs/hint-karten" "$V/20_firma"; echo "{}" > "$V/brain.config.json"; echo "# a" > "$V/20_firma/a.md"
 CALLS=$(mktemp)
 # Fake-QMD als .mjs: search-refresh.mjs startet .mjs-QMD_BIN-Werte über process.execPath (node) — läuft so
 # auf allen drei Plattformen ohne shell:true (Windows kann .cmd/.bat ohne shell:true nicht direkt spawnen).

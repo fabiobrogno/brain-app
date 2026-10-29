@@ -16,7 +16,7 @@ import { erzeugeHandler } from "./handler.mjs";
 import { vaultPfadOderEnde } from "../pfade.mjs";
 
 const HIER = dirname(fileURLToPath(import.meta.url));
-const vault = process.argv[2] || vaultPfadOderEnde([]);
+const vault = vaultPfadOderEnde();
 const LEERLAUF_MS = Number(process.env.BRAIN_DIENST_LEERLAUF_MS) > 0 ? Number(process.env.BRAIN_DIENST_LEERLAUF_MS) : 30 * 60 * 1000;
 // Zugangsschlüssel für /api (32 Byte, je Start neu); Feldname in dienst.json und kontext: "token"
 const zugang = randomBytes(32).toString("hex");

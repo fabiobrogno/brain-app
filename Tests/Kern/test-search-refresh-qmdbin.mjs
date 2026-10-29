@@ -15,7 +15,7 @@ const R = join(T, "..", "search-refresh.mjs");
 const FAKE = join(T, "fake-qmd-cli.mjs");
 
 test("search-refresh.mjs: QMD_BIN mit .mjs-Endung läuft über process.execPath, nicht per direktem Exec", () => {
-  const vault = mkdtempSync(join(tmpdir(), "sr-qmdbin-"));
+  const vault = mkdtempSync(join(tmpdir(), "sr-qmdbin-")); writeFileSync(join(vault, "brain.config.json"), "{}");
   mkdirSync(join(vault, "20_firma"), { recursive: true });
   writeFileSync(join(vault, "20_firma", "a.md"), "# a\n");
   const calls = join(vault, "calls.txt");
@@ -30,7 +30,7 @@ test("search-refresh.mjs: QMD_BIN mit .mjs-Endung läuft über process.execPath,
 });
 
 test("search-refresh.mjs: fehlende Sammlungen „brain“/„brainkarten“ werden angelegt, vorhandene nicht doppelt (#3)", () => {
-  const vault = mkdtempSync(join(tmpdir(), "sr-sammlung-"));
+  const vault = mkdtempSync(join(tmpdir(), "sr-sammlung-")); writeFileSync(join(vault, "brain.config.json"), "{}");
   mkdirSync(join(vault, "20_firma"), { recursive: true });
   writeFileSync(join(vault, "20_firma", "a.md"), "# a\n");
   const calls = join(vault, "calls.txt");
@@ -46,14 +46,14 @@ test("search-refresh.mjs: fehlende Sammlungen „brain“/„brainkarten“ werd
 });
 
 test("search-refresh.mjs: antwortet qmd nicht, wird nichts indexiert und kein Stempel gesetzt", () => {
-  const vault = mkdtempSync(join(tmpdir(), "sr-ohne-qmd-"));
+  const vault = mkdtempSync(join(tmpdir(), "sr-ohne-qmd-")); writeFileSync(join(vault, "brain.config.json"), "{}");
   const r = spawnSync(process.execPath, [R], { env: { ...process.env, BRAIN_VAULT: vault, QMD_BIN: join(vault, "gibt-es-nicht") }, encoding: "utf8" });
   assert.equal(r.status, 0);
   assert.ok(!existsSync(join(vault, ".logs", "search-refreshed")));
 });
 
 test("search-refresh.mjs: scheitert collection add, laufen update/embed der vorhandenen Sammlung trotzdem — ohne Stempel", () => {
-  const vault = mkdtempSync(join(tmpdir(), "sr-addfehler-"));
+  const vault = mkdtempSync(join(tmpdir(), "sr-addfehler-")); writeFileSync(join(vault, "brain.config.json"), "{}");
   const calls = join(vault, "calls.txt");
   const sammlungen = join(vault, "sammlungen.txt");
   writeFileSync(sammlungen, "brain\n");

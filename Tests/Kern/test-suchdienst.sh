@@ -5,7 +5,7 @@
 [ "${OS:-}" = "Windows_NT" ] && { echo "SKIP test-suchdienst.sh (Suchdienst unter Windows erst ab v0.3)"; exit 0; }
 set -u; cd "$(dirname "$0")"; T="$(pwd)"; D="$T/../suchdienst.mjs"
 V=$(mktemp -d /tmp/bdXXXX); trap 'pkill -f "suchdienst.mjs $V" 2>/dev/null; rm -rf "$V"' EXIT
-mkdir -p "$V/.logs/hint-karten"; echo "# Alpha" > "$V/.logs/hint-karten/thema_alpha.md"
+echo "{}" > "$V/brain.config.json"; mkdir -p "$V/.logs/hint-karten"; echo "# Alpha" > "$V/.logs/hint-karten/thema_alpha.md"
 echo '{"paths":{"thema-alpha.md":"09_wiki/thema_alpha.md"},"pages":{"09_wiki/thema_alpha.md":{"description":"Alpha"}},"bySource":{}}' > "$V/.logs/wiki-map.json"
 export BRAIN_DIENST_LIB="$T/fake-qmd-lib.mjs" BRAIN_DIENST_IDLE_MS=3000
 S="$V/.logs/suchdienst.sock"

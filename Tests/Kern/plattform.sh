@@ -13,6 +13,8 @@ export BRAIN_EINMAL=aus
 # (pfade.mjs liest sonst die echte vaults.json der App). Node-Tests: setup.mjs.
 unset BRAIN_VAULT KORTEX_KERN_PFAD
 export BRAIN_APP_SUPPORT="${BRAIN_APP_SUPPORT:-${TMPDIR:-/tmp}/kortex-test-support-leer}"
+# Testschalter: die Bühne (Temp) darf als Kern-Pfad eingetragen werden (siehe pfade.mjs#kernStabil).
+export KORTEX_KERN_UNSTABIL_ERLAUBT="${KORTEX_KERN_UNSTABIL_ERLAUBT:-1}"
 TEST_WIN=0
 case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*)

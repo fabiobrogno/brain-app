@@ -14,9 +14,9 @@
 // Pflege-Commits von B3 (pflege(<lauf>): …) nimmt pflege-zurueck.mjs zurück; die CLI ruft beides (Pflege zuerst).
 // CLI: node tageslauf/zurueck.mjs <vault> <lauf|id>        Exit 0 · 1 (nichts gefunden / nicht möglich) · 64
 import { readFileSync, writeFileSync, existsSync, realpathSync, readdirSync } from "node:fs";
-import { join, isAbsolute } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ordner, vaultPfadOderEnde } from "../pfade.mjs";
+import { ordner, vaultUndRest } from "../pfade.mjs";
 import { ladeVorschlagDatei, verschiebeVorschlag, ablehnen, UNTERORDNER } from "./bestand.mjs";
 import { neuerLauf, laufId, notiere, merkePruefung, leseAktionen, schreibeAktionen } from "./protokoll.mjs";
 import { git, legeArbeitskopieAn, verwerfeArbeitskopie, uebernehmen, nimmIngestSperre, gibIngestSperreFrei, BETREFF_MUSTER } from "./arbeitskopie.mjs";
@@ -325,7 +325,7 @@ try { aufruf = realpathSync(process.argv[1] || ""); } catch {}
 if (aufruf && aufruf === realpathSync(selbst)) {
   // <vault> <lauf|id> (so ruft brain.mjs auf) oder <lauf|id> mit --vault/BRAIN_VAULT/aktivem App-Vault
   const a0 = process.argv.slice(2);
-  const [vault, ziel] = a0.length && isAbsolute(a0[0]) ? a0 : [vaultPfadOderEnde([]), ...a0];
+  const { vault, rest: [ziel] } = vaultUndRest(a0, (a) => a0.length < 2 && !/[\\/]/.test(a));   // <vault> <ziel>; ein einzelnes Argument ohne Pfadtrenner ist das Ziel
   if (!ziel || !/^[A-Za-z0-9-]{1,80}$/.test(ziel)) {
     console.error("Nutzung: brain zurueck <lauf|id> — die Lauf-Nummer steht im Tageslauf-Bericht (.logs/tageslauf/).");
     process.exit(64);

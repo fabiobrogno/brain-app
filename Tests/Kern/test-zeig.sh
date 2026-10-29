@@ -27,7 +27,7 @@ echo "$OUT" | grep -q 'file://' && { echo "FAIL: --nur-daten hat trotzdem eine U
 echo "$OUT" | grep -Eq '^[0-9]+ Seiten, [0-9]+ Verbindungen\.$' || { echo "FAIL: --nur-daten druckt keine Seitenzahl: $OUT"; exit 1; }
 
 # Leerer Vault → Exit 0 (kein Wiki-Ordner, keine Notizen)
-LEER="$T/leer"; mkdir -p "$LEER"; mit_tools "$LEER"
+LEER="$T/leer"; mkdir -p "$LEER"; echo "{}" > "$LEER/brain.config.json"
 RC=0; OUT=$(BRAIN_VAULT="$LEER" node "$B" zeig --nicht-oeffnen) || RC=$?
 [ "$RC" = 0 ] || { echo "FAIL: zeig bei leerem Vault rc=$RC: $OUT"; exit 1; }
 
@@ -52,7 +52,7 @@ echo "$OUT" | grep -qF "Geöffnet im Browser:" || { echo "FAIL: Erfolgs-Satz feh
 
 # Nicht existierender Vault: verständliche Meldung statt Stacktrace, Exit 1 (Fund 2 aus dem Review)
 RC=0; OUT=$(BRAIN_VAULT="$T/gibt-es-nicht-als-vault" node "$B" zeig --nicht-oeffnen 2>&1) || RC=$?
-[ "$RC" = 1 ] || { echo "FAIL: zeig bei fehlendem Vault rc=$RC: $OUT"; exit 1; }
+[ "$RC" = 2 ] || { echo "FAIL: zeig bei fehlendem Vault rc=$RC: $OUT"; exit 1; }
 echo "$OUT" | grep -qF "Vault nicht gefunden:" || { echo "FAIL: Satz für fehlenden Vault fehlt: $OUT"; exit 1; }
 echo "$OUT" | grep -qiE 'ENOENT|at .*\(|stack' && { echo "FAIL: Rohtext/Stacktrace bei fehlendem Vault: $OUT"; exit 1; }
 

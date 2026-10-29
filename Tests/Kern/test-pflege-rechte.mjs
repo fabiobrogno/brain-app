@@ -8,7 +8,7 @@ import { SONNET_BASH } from "../tageslauf/pflege-ki.mjs";
 const BRAIN = `node "${KERN.split("\\").join("/")}/brain.mjs"`;   // der Befehl, den die KI ausführen darf (Kern liegt außerhalb der Kopie)
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { realpathSync, existsSync, mkdirSync } from "node:fs";
+import { realpathSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { homedir } from "node:os";
 import { spawnSync } from "node:child_process";
@@ -139,14 +139,15 @@ test("sonnetUmgebung: Vault hart auf die Kopie, keine fremden BRAIN_*-Variablen,
 });
 
 test("gepinnter Vault: das ECHTE brain.mjs wirkt mit der Umgebung des Sonnet-Aufrufs auf die Kopie, nie auf den echten Vault (Kontrolle: ohne Pin trifft es ihn)", () => {
-  const echt = tempOrdner("echter Vault"), kopie = tempOrdner("kopie");
+  const mitConfig = (d) => { writeFileSync(join(d, "brain.config.json"), "{}"); return d; };   // ein Vault braucht brain.config.json (die Pflege-Kopie hat sie: sie ist getrackt)
+  const echt = mitConfig(tempOrdner("echter Vault")), kopie = mitConfig(tempOrdner("kopie"));
   const lauf = (env) => spawnSync(process.execPath, [join(KIT, "brain.mjs"), "lock"], { cwd: kopie, env, encoding: "utf8" });
   const feind = { ...process.env, BRAIN_VAULT: echt };            // so sähe die Umgebung aus, wenn der Dienst BRAIN_VAULT gesetzt hat
   const ohnePin = lauf(feind);
   assert.equal(ohnePin.status, 0, ohnePin.stderr);
   assert.ok(existsSync(join(echt, ".logs", "ingest.lock")), "Kontrolle: ohne Pin landet der Lock im echten Vault");
   assert.ok(!existsSync(join(kopie, ".logs", "ingest.lock")));
-  const echt2 = tempOrdner("echter Vault 2"), kopie2 = tempOrdner("kopie 2");
+  const echt2 = mitConfig(tempOrdner("echter Vault 2")), kopie2 = mitConfig(tempOrdner("kopie 2"));
   const mitPin = spawnSync(process.execPath, [join(KIT, "brain.mjs"), "lock"], { cwd: kopie2, env: K.sonnetUmgebung(kopie2, { ...process.env, BRAIN_VAULT: echt2 }), encoding: "utf8" });
   assert.equal(mitPin.status, 0, mitPin.stderr);
   assert.ok(existsSync(join(kopie2, ".logs", "ingest.lock")), "mit Pin landet er in der Kopie");
