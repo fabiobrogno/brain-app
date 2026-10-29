@@ -3,6 +3,7 @@ import { h, dialog, arbeitBeginnt, ausTabelle } from "./hilfen.js";
 import { symbol } from "./symbole.js";
 import { api, gitGesperrt, ausgangUnklar, zeitText, ladeStandNeu } from "./api.js";
 import { TV } from "./texte-verlauf.js";
+import { istRohGit, detailsBlock } from "./verlauf.js";
 
 const CSS_URL = new URL("./verlauf.css", import.meta.url).href;
 function ladeCss() {
@@ -46,9 +47,9 @@ export function oeffneRemoteDialog({ beiFertig, beiStandNeu } = {}) {
 
   const d = dialog({ eigen: box, beiSchliessen: () => { if (verbunden) melde(); } });
 
-  const zeige = (art, text, symbolName, kopf) => {
+  const zeige = (art, text, symbolName, kopf, roh = null) => {
     meldung.className = "rm-meldung" + (art ? " " + art : "");
-    meldung.replaceChildren(...(text ? [symbolName ? zeichen(symbolName, 14) : null, h("span", null, ...(kopf ? [h("strong", { text: kopf }), " "] : []), text)].filter(Boolean) : []));
+    meldung.replaceChildren(...(text ? [symbolName ? zeichen(symbolName, 14) : null, h("div", { klasse: "rm-meldung-text" }, h("span", null, ...(kopf ? [h("strong", { text: kopf }), " "] : []), text), roh ? detailsBlock(roh) : null)].filter(Boolean) : []));
     eingabe.setAttribute("aria-invalid", art === "fehlertext" || art === "hinweis" ? "true" : "false");
   };
   const beschaeftigt = (an) => {
@@ -90,8 +91,12 @@ export function oeffneRemoteDialog({ beiFertig, beiStandNeu } = {}) {
         // Ob es geklappt hat, ist unklar: Stand neu holen (die Statusleiste zeigt dann das Remote) und ehrlich sagen
         const stand = await ladeStandNeu();
         if (stand.ok) { try { await beiStandNeu?.(stand); } catch (x) { console.error(x); } zeige("hinweis", zeitText(err), "info"); }
-        else zeige("fehlertext", err?.message || TV.remote.fehler, "warnung");
-      } else zeige("fehlertext", err?.daten?.fehler || err?.message || TV.remote.fehler, "warnung", ausTabelle(TV.remote.arten, err?.daten?.art));
+        else zeige("fehlertext", istRohGit(err?.message) ? TV.remote.fehler : (err?.message || TV.remote.fehler), "warnung", undefined, istRohGit(err?.message) ? err.message : null);
+      } else {
+        const t = err?.daten?.fehler || err?.message || TV.remote.fehler;
+        const roh = istRohGit(t);
+        zeige("fehlertext", roh ? TV.remote.fehler : t, "warnung", ausTabelle(TV.remote.arten, err?.daten?.art), roh ? t : null);
+      }
       beschaeftigt(false);
       eingabe.focus();
     } finally { ende(); }
