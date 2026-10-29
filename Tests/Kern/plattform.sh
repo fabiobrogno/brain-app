@@ -9,6 +9,10 @@ for _v in $(env | sed -n 's/^\(GIT_[A-Za-z0-9_]*\)=.*/\1/p'); do unset "$_v"; do
 # Hook-Dubletten-Guard (adapters/claude-code/einmal.mjs) aus: Shell-Tests rufen dieselben Hooks mit gleicher Eingabe mehrfach kurz
 # hintereinander auf und prüfen anderes. (Node-Tests: setup.mjs; der Guard selbst: test-hook-einmal.mjs.)
 export BRAIN_EINMAL=aus
+# Nie die echte Umgebung des Nutzers: kein BRAIN_VAULT/KORTEX_KERN_PFAD aus der Shell, App-Support auf einen leeren, nicht vorhandenen Ordner
+# (pfade.mjs liest sonst die echte vaults.json der App). Node-Tests: setup.mjs.
+unset BRAIN_VAULT KORTEX_KERN_PFAD
+export BRAIN_APP_SUPPORT="${BRAIN_APP_SUPPORT:-${TMPDIR:-/tmp}/kortex-test-support-leer}"
 TEST_WIN=0
 case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*)

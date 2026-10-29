@@ -19,6 +19,10 @@
 
 _kern_hier="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Nie die echte Umgebung des Nutzers (BRAIN_VAULT aus der Shell, die echte vaults.json der App): leere, nicht vorhandene App-Ablage.
+unset BRAIN_VAULT KORTEX_KERN_PFAD
+export BRAIN_APP_SUPPORT="${BRAIN_APP_SUPPORT:-${TMPDIR:-/tmp}/kortex-test-support-leer}"
+
 if [ -f "$_kern_hier/../brain.mjs" ]; then
   KORTEX_KERN="$(cd "$_kern_hier/.." && pwd)"
   export KORTEX_KERN
@@ -29,8 +33,6 @@ else
   trap 'rm -rf "$_kern_buehne"' EXIT
   cp -Rp "$_kern_quelle/." "$_kern_buehne/" || exit 2
   mkdir -p "$_kern_buehne/tests" && cp -Rp "$_kern_hier/." "$_kern_buehne/tests/" || exit 2
-  # Platzhalter-Fragen für Messlatte/Karten-Tor/Lint (der Kern liest tests/hint-eval.json; echte Fragen gehören nie ins Repo).
-  cp "$_kern_buehne/kit/vorlage-eval.json" "$_kern_buehne/tests/hint-eval.json" || exit 2
   export KORTEX_KERN="$_kern_buehne"
   # Dateiargumente (Tests/Kern/test-x.mjs) auf die Bühne umlenken; alles andere bleibt, wie es ist.
   _kern_args=()

@@ -1,18 +1,127 @@
-// .tools/pfade.mjs — einzige Stelle, die weiß, wo der Vault liegt und wie seine Ordner heißen.
+// pfade.mjs — einzige Stelle, die weiß, wo der Kern liegt, wo der Vault liegt und wie seine Ordner heißen.
+//
+// Zwei getrennte Orte (Kern-Umzug P2, docs/plaene/kern-umzug.md):
+//   KERN  = der Ordner DIESER Datei (Code und gebündelte Daten, im App-Bundle bzw. unter Support/Kortex/kern). Nur lesen.
+//   VAULT = der Datenordner des Nutzers. Dort liegen Wissen, brain.config.json und alle Laufzeitdaten (.logs/ …).
+// Der Vault wird NIE aus dem Ort des Kerns abgeleitet und es gibt keinen Rückfall auf einen festen Ordner (auch nicht den Vault des Entwicklers).
 import { readFileSync, existsSync, realpathSync } from "node:fs";
 import { join, dirname, resolve, delimiter, isAbsolute } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 
-// Diese Datei liegt immer unter <vault>/.tools/ — ihr Elternordner IST der Vault. Ohne Argument und ohne
-// BRAIN_VAULT gilt deshalb der Vault, zu dem das gerade laufende Werkzeug gehört (nie ein fester ~/brain).
-export const EIGENER_VAULT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+export const KERN = dirname(fileURLToPath(import.meta.url));
 
-export function vaultPfad(argv = process.argv) {
-  const arg = argv.slice(2).find(a => !a.startsWith("--"));
-  return arg || process.env.BRAIN_VAULT || EIGENER_VAULT;
+// Kern-Version = App-Version. Die EINE Lesestelle ist die Datei VERSION im Kern-Ordner (status.mjs, brain.mjs `version`,
+// wirkung.mjs, ansicht/bruecke.mjs und ansicht/dienst-lib.mjs lesen über kernVersion()). Der App-Bau schreibt dort die
+// CFBundleShortVersionString hinein (Paket P3); bis dahin steht der Stand des importierten Kits darin.
+export function kernVersion() {
+  try { return readFileSync(join(KERN, "VERSION"), "utf8").trim() || "?"; } catch { return "?"; }
 }
+
+// Einzige erlaubte Nennung des alten Kit-Ordners im Vault (Erkennung/Migration, Schutz vor Schreibzugriffen der KI-Pflege
+// auf noch nicht umgestellte Vaults). Der Lint-Test (Tests/Kern/test-keine-altpfade.mjs) erlaubt das Literal nur in dieser Datei.
+export const ALT_KIT_ORDNER = ".tools";
+
+// ---------------------------------------------------------------------------------------------------------------------
+// App-Daten (Support-Ordner) und Vaultliste
+
+const plattformBasis = (home, env, plattform) => {
+  if (plattform === "darwin") return join(home, "Library", "Application Support");
+  if (plattform === "win32") return env.APPDATA || join(home, "AppData", "Roaming");
+  return env.XDG_DATA_HOME || join(home, ".local", "share");
+};
+// Support-Ordner der App in Suchreihenfolge: BRAIN_APP_SUPPORT (nur absolut; Tests/Rauchtests) allein, sonst …/Kortex und als Rückfall
+// …/Brain (alter Name bis zum Umzug, Paket P3). Es wird nie verschoben, nur gelesen.
+export function supportOrte({ home = homedir(), env = process.env, plattform = process.platform } = {}) {
+  const vorgabe = env.BRAIN_APP_SUPPORT;
+  if (typeof vorgabe === "string" && isAbsolute(vorgabe)) return [vorgabe];
+  const basis = plattformBasis(home, env, plattform);
+  return [join(basis, "Kortex"), join(basis, "Brain")];
+}
+// Der Ordner für neue App-weite Daten (Kortex; mit BRAIN_APP_SUPPORT dieser).
+export function supportOrdner(opt = {}) { return supportOrte(opt)[0]; }
+// Orte der App-weiten Werkzeuge (qmd unter bin/, privates Node/git/gh): zuerst der Support-Ordner, als Lese-Rückfall der alte Ort ~/.brain-kit.
+export function kitOrte({ home = homedir(), env = process.env, plattform = process.platform } = {}) {
+  return [supportOrdner({ home, env, plattform }), join(home, ".brain-kit")];
+}
+
+// Fragen für Messlatte, Karten-Tor und Lint-Ziel. Gebündelt (KERN): kit/vorlage-eval.json mit Platzhalter-Fragen. Nutzerdaten (VAULT):
+// .logs/hint-eval.json — eigene Fragen ersetzen die Platzhalter, sobald die Datei existiert (nie im Repo); der Holdout liegt in .logs/holdout.json.
+// BRAIN_EVAL_DATEI überschreibt (Tests).
+export function evalFragenDatei(vault, { env = process.env } = {}) {
+  if (env.BRAIN_EVAL_DATEI) return env.BRAIN_EVAL_DATEI;
+  const eigene = join(vault, ".logs", "hint-eval.json");
+  return existsSync(eigene) ? eigene : join(KERN, "kit", "vorlage-eval.json");
+}
+export function holdoutDatei(vault) { return join(vault, ".logs", "holdout.json"); }
+
+function pfadGleich(a, b) { return resolve(a) === resolve(b); }
+// Aktiver Vault laut vaults.json (`{ "vaults":[{"pfad":…}], "aktiv":"<pfad>" }`, geführt von der App): `aktiv` zählt nur, wenn es einen
+// Eintrag mit absolutem Pfad meint. Die erste vorhandene, lesbare Datei entscheidet (auch mit aktiv:null — dann gibt es keinen Vault).
+export function aktiverVaultAusListe(opt = {}) {
+  for (const ordner of supportOrte(opt)) {
+    let j;
+    try { j = JSON.parse(readFileSync(join(ordner, "vaults.json"), "utf8")); } catch { continue; }
+    if (!j || typeof j !== "object" || !Array.isArray(j.vaults)) continue;
+    const aktiv = j.aktiv;
+    if (typeof aktiv !== "string" || !isAbsolute(aktiv)) return null;
+    const eintrag = j.vaults.find((e) => e && typeof e.pfad === "string" && isAbsolute(e.pfad) && pfadGleich(e.pfad, aktiv));
+    return eintrag ? resolve(eintrag.pfad) : null;
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Vault bestimmen
+
+export class KeinVaultFehler extends Error {
+  constructor() {
+    super("Kein Vault gefunden. Gib ihn mit --vault <pfad> an, setze BRAIN_VAULT oder wähle in der Kortex-App einen aktiven Vault.");
+    this.name = "KeinVaultFehler";
+    this.code = "KEIN_VAULT";
+  }
+}
+
+// --vault <pfad> bzw. --vault=<pfad> steht an beliebiger Stelle der Kommandozeile. Beim Laden dieses Moduls wird die Angabe aus
+// process.argv genommen und gemerkt: alle Werkzeuge mit eigener Argumentauswertung (Befehl an Stelle 2, Flags, Positionen) sehen sie
+// nie und müssen sie nicht kennen.
+export function nimmVaultArg(argv) {
+  let vault = null;
+  for (let i = 2; i < argv.length;) {
+    const a = argv[i];
+    if (a === "--vault" && typeof argv[i + 1] === "string" && argv[i + 1] !== "") { vault = argv[i + 1]; argv.splice(i, 2); continue; }
+    if (typeof a === "string" && a.startsWith("--vault=") && a.length > 8) { vault = a.slice(8); argv.splice(i, 1); continue; }
+    i++;
+  }
+  return vault;
+}
+const ARG_VAULT = nimmVaultArg(process.argv);
+
+// Reihenfolge: --vault > (Altform, wo ein Werkzeug sie kennt) erstes Positionsargument von `argv` > BRAIN_VAULT > aktiver Vault der App.
+// Keinen gefunden → KeinVaultFehler. Es gibt bewusst keinen Rückfall auf einen festen Ordner und keinen auf den Ort des Kerns.
+export function vaultPfad(argv = process.argv, { env = process.env, support } = {}) {
+  const lokal = Array.isArray(argv) && argv !== process.argv ? nimmVaultArg([...argv]) : null;
+  const explizit = lokal || ARG_VAULT;
+  if (explizit) return explizit;
+  const positionell = Array.isArray(argv) ? argv.slice(2).find((a) => typeof a === "string" && a !== "" && !a.startsWith("--")) : null;
+  if (positionell) return positionell;
+  if (typeof env.BRAIN_VAULT === "string" && env.BRAIN_VAULT) return env.BRAIN_VAULT;
+  const ausListe = aktiverVaultAusListe({ env, ...(support || {}) });
+  if (ausListe) return ausListe;
+  throw new KeinVaultFehler();
+}
+// Für Werkzeug-Einstiege: kein Vault → Meldung auf stderr und Exit 2. Hook-Einstiege (still:true) beenden sich leise mit Exit 0 —
+// ein Hook darf nie eine Sitzung stören, nur weil gerade kein Vault gewählt ist.
+export function vaultPfadOderEnde(argv = process.argv, { still = false, ...opt } = {}) {
+  try { return vaultPfad(argv, opt); }
+  catch (e) {
+    if (!(e instanceof KeinVaultFehler)) throw e;
+    if (!still) console.error(e.message);
+    process.exit(still ? 0 : 2);
+  }
+}
+
 export function ladeConfig(vault) {
   const f = join(vault, "brain.config.json");
   if (!existsSync(f)) return {};
@@ -62,13 +171,14 @@ export function ordner(vault, cfg = ladeConfig(vault)) {
   };
 }
 
-// Ein Quell-Vault (Entwicklung) trägt die Kit-Baustelle samt Export-Werkzeug — er ist kein installierter
-// Vault (keine systemVersion, nie per install.mjs/Skill update überschreiben).
-export function istQuellVault(vault) {
-  return existsSync(join(vault, ".tools", "kit", "export.mjs"));
-}
-
 const fwd = (p) => String(p).split("\\").join("/");
+// Kern-Pfad für gerenderte Befehle (AGENTS.md, Skills): ein stabiler Pfad, den der Starter in KORTEX_KERN_PFAD setzt (z. B. der Symlink
+// Support/Kortex/bin/kern, der ein App-Update überlebt) — sonst der tatsächliche Ort dieses Kerns.
+export function kernStabil({ env = process.env } = {}) {
+  const v = env.KORTEX_KERN_PFAD;
+  return typeof v === "string" && isAbsolute(v) ? v : KERN;
+}
+export function kernAnzeige(opt = {}) { return fwd(kernStabil(opt)); }
 // Absolute, gequotete Programmpfade für gerenderte Befehle (AGENTS.md, Skills, Hook-Befehle): ein frisch
 // eingerichteter Rechner hat das private Node/git oft NICHT im PATH — darum nie nackt "node"/"git".
 // Bevorzugt ein stabiler PATH-Eintrag, der auf genau dieses Node zeigt (z. B. /opt/homebrew/bin/node statt des
@@ -88,20 +198,23 @@ export function nodePfad({ env = process.env } = {}) {
 }
 export function nodeBefehl() { return `"${fwd(nodePfad())}"`; }
 // Nur fürs RENDERN von Vorlagen (AGENTS.md, Skills) — ein gequoteter Anzeige-String, kein argv[0] für
-// execFileSync/spawnSync (dafür gibt es gitBefehl() in .tools/werkzeug.mjs; zwei Funktionen mit demselben
+// execFileSync/spawnSync (dafür gibt es gitBefehl() in werkzeug.mjs; zwei Funktionen mit demselben
 // Namen für zwei verschiedene Zwecke wären verwirrend, darum hier umbenannt). Bevorzugt werkzeuge.git aus
 // der Vault-Config (von install.mjs gesetzt), sonst den bekannten MinGit-Ort unter diesem Home (win32),
 // sonst das nackte "git".
 export function gitAnzeige({ cfg = {}, plattform = process.platform, home = homedir() } = {}) {
   if (typeof cfg?.werkzeuge?.git === "string" && cfg.werkzeuge.git) return `"${fwd(cfg.werkzeuge.git)}"`;
   if (plattform === "win32") {
-    const mingit = join(home, ".brain-kit", "git", "cmd", "git.exe");
-    if (existsSync(mingit)) return `"${fwd(mingit)}"`;
+    for (const ort of kitOrte({ home, plattform })) {
+      const mingit = join(ort, "git", "cmd", "git.exe");
+      if (existsSync(mingit)) return `"${fwd(mingit)}"`;
+    }
   }
   return "git";
 }
 // Platzhalter in Vorlagen (kit/AGENTS.md, skills/*/SKILL.md) — von skills-build.mjs UND doctor.mjs genutzt,
-// damit „AGENTS.md aktuell?" exakt dasselbe Rendering vergleicht.
+// damit „AGENTS.md aktuell?" exakt dasselbe Rendering vergleicht. {{VAULT}} = Datenordner, {{KERN}} = Kern-Ordner (kernAnzeige),
+// {{DATEN}} = Support-Ordner der App (App-weite Werkzeuge wie qmd), dazu {{NODE}}, {{GIT}}, {{INBOX}}, {{WIKI}}, {{ARCHIV}}.
 // Bedingte Blöcke: {{WENN:<automatik-schluessel>}}…{{/WENN}} — der Inhalt bleibt nur stehen, wenn
 // cfg.automatik[<schluessel>] === true ist (z. B. die Ich-Karte-Zeile, nur wenn `ichKarte` eingeschaltet
 // ist). Unbekannte/fehlende Schlüssel gelten als aus (Standard false) — nie werfen, nie als Platzhalter
@@ -113,5 +226,6 @@ export function renderVorlage(text, vault) {
   const bedingt = text.replace(/\{\{WENN:([A-Za-z0-9_]+)\}\}([\s\S]*?)\{\{\/WENN\}\}\n?/g,
     (_, schluessel, innen) => (an[schluessel] === true ? innen : ""));
   return bedingt.replaceAll("{{VAULT}}", fwd(vault)).replaceAll("{{INBOX}}", o.inbox).replaceAll("{{WIKI}}", o.wiki)
-    .replaceAll("{{ARCHIV}}", o.archiv).replaceAll("{{NODE}}", nodeBefehl()).replaceAll("{{GIT}}", gitAnzeige({ cfg }));
+    .replaceAll("{{ARCHIV}}", o.archiv).replaceAll("{{KERN}}", kernAnzeige()).replaceAll("{{DATEN}}", fwd(supportOrdner()))
+    .replaceAll("{{NODE}}", nodeBefehl()).replaceAll("{{GIT}}", gitAnzeige({ cfg }));
 }

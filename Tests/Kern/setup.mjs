@@ -21,6 +21,11 @@ import path from "node:path";
 import module from "node:module";
 import { fileURLToPath } from "node:url";
 
+// 0) Nie die echte Umgebung des Nutzers: kein BRAIN_VAULT/KORTEX_KERN_PFAD aus der Shell und eine (nicht vorhandene) leere App-Support-Ablage —
+//    pfade.mjs liest sonst die echte vaults.json der App und fände einen echten Vault. Tests setzen, was sie brauchen, selbst.
+delete process.env.BRAIN_VAULT; delete process.env.KORTEX_KERN_PFAD;
+if (!process.env.BRAIN_APP_SUPPORT) process.env.BRAIN_APP_SUPPORT = path.join(os.tmpdir(), "kortex-test-support-leer");
+
 if (!process.env.QMD_BIN) process.env.QMD_BIN = fileURLToPath(new URL("./fake-qmd-cli.mjs", import.meta.url));
 
 // 3) Hook-Dubletten-Guard aus (adapters/claude-code/einmal.mjs): Die Tests rufen dieselben Hooks mit gleicher Eingabe mehrmals
