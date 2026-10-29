@@ -7,6 +7,7 @@
 import { readdirSync, statSync, readFileSync } from "node:fs";
 import { join, dirname, basename } from "node:path";
 import { spawnSync } from "node:child_process";
+import { gitBefehl } from "./werkzeug.mjs";
 import { leseKopf, leseAb, nutzerNachricht, titelAus, zeitVon, kuerze, ganzeZeilen, datumZeit } from "./verlauf.mjs";
 import { hatSecretsImKontext, ohneSecrets } from "./secrets-muster.mjs";
 import { hatPii } from "./pii-muster.mjs";
@@ -76,7 +77,7 @@ export function offenAusSessionDatei(memoryOrdner) {
   return { datei: mit[0].n, zeilen: out.filter((z) => !hatSecretsImKontext(z)), mtimeMs: mit[0].m };
 }
 
-export function commitsSeit(wurzel, seitMs, { git = "git", anzahl = 5 } = {}) {
+export function commitsSeit(wurzel, seitMs, { git = gitBefehl(), anzahl = 5 } = {}) {
   if (!wurzel || !Number.isFinite(seitMs)) return [];
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_")));
   const r = spawnSync(git, ["-C", wurzel, "log", `--since=@${Math.floor(seitMs / 1000)}`, "-n", String(anzahl), "--format=%h %s"],
@@ -85,7 +86,7 @@ export function commitsSeit(wurzel, seitMs, { git = "git", anzahl = 5 } = {}) {
   return String(r.stdout || "").split("\n").map((z) => ohneSecrets(z).trim()).filter(Boolean);
 }
 
-export function wasWarZuletzt({ transkriptPfad = "", sid = "", cwd = "", git = "git", max = ZULETZT_MAX } = {}) {
+export function wasWarZuletzt({ transkriptPfad = "", sid = "", cwd = "", git = gitBefehl(), max = ZULETZT_MAX } = {}) {
   if (!transkriptPfad) return "";
   const sitzungen = letzteSitzungen(transkriptPfad, { eigeneSid: sid });
   const offen = offenAusSessionDatei(join(dirname(transkriptPfad), "memory"));

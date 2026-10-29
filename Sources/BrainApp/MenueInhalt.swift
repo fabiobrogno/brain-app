@@ -29,19 +29,12 @@ struct MenueInhalt: View {
         Divider()
         Button(RueckfragenText.zaehler(zustand.rueckfragenAnzahl)) { zustand.oeffneRueckfragen() }
             .keyboardShortcut("f")
-            .disabled(zustand.vault == nil || !zustand.kitErlaubt)
-        if zustand.kitVorhanden {
-            switch zustand.kitStand {
-            case .nichtFreigegeben:
-                Text("Im Studio freigeben, dann läuft das Kit")
-            case .pruefungFehlgeschlagen:
-                // Kein „bitte freigeben“: Dem Vault ist vielleicht längst vertraut, nur die Prüfung selbst ging schief. Gestartet wird
-                // trotzdem nichts aus dem Vault; der Grund steht im Protokoll.
-                Text("Die Prüfung ließ sich nicht ausführen — siehe Protokoll")
-                Button("Protokoll zeigen") { zustand.zeigeProtokoll() }
-            case .unbekannt, .erlaubt:
-                EmptyView()
-            }
+            .disabled(zustand.vault == nil || !zustand.kitVorhanden || !zustand.kernBereitschaft.istBereit)
+        if let meldung = zustand.kernBereitschaft.meldung {
+            // Der gebündelte Kern ist nicht bereit: klare Meldung statt stillem Ausweichen (Kern-Umzug P4).
+            Text("Kern nicht bereit — siehe Protokoll")
+                .help(meldung)
+            Button("Protokoll zeigen") { zustand.zeigeProtokoll() }
         }
         Divider()
         Button("Studio öffnen") { zustand.oeffneStudio() }.keyboardShortcut("o")

@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, readdirSync, existsSync, symlinkSync, realpathSync, rmSync } from "node:fs";
-import { spawnSync } from "node:child_process";
-import { join, dirname, relative, basename, isAbsolute } from "node:path";
+import { spawnSync, execFileSync } from "node:child_process";
+import { join, dirname, relative, basename, isAbsolute, resolve } from "node:path";
 import { tmpdir, homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { vaultPfad, pruefeVault, vaultUndRest, shellQuote, stabilerKern, kernStabil, KernNichtStabilFehler, nimmVaultArg, KeinVaultFehler, KERN, ALT_KIT_ORDNER, kernVersion, kernAnzeige, supportOrte, supportOrdner, kitOrte, aktiverVaultAusListe, evalFragenDatei, holdoutDatei, ordner, renderVorlage, nodeBefehl, nodePfad, gitAnzeige, ladeConfig, configFehler, liesConfigRoh, entferneBom } from "../pfade.mjs";
@@ -250,11 +250,11 @@ test("renderVorlage: absoluter, gequoteter Node-Pfad, Ordnernamen inkl. ARCHIV, 
   assert.match(r, / · ablage · /);
   assert.doesNotMatch(r, /\{\{/);
 });
-test("renderVorlage: {{GIT}} bevorzugt werkzeuge.git aus der Vault-Config vor dem PATH-Rückfall (Fix round 1)", () => {
+test("renderVorlage: {{GIT}} ignoriert werkzeuge.git aus der Vault-Config (Programme kommen nie aus dem Vault, P4)", () => {
   const v = neu();
   writeFileSync(join(v, "brain.config.json"), JSON.stringify({ werkzeuge: { git: "/ein/privater/git" } }));
   const r = renderVorlage("{{GIT}}", v);
-  assert.equal(r, process.platform === "win32" ? `"/ein/privater/git"` : `'/ein/privater/git'`);
+  assert.equal(r, "git");
 });
 test("gitAnzeige: ohne Config fällt auf den bisherigen Rückfall zurück (win32-MinGit-Ort bzw. nacktes 'git')", () => {
   const home = mkdtempSync(join(tmpdir(), "pfad-git-"));
@@ -263,8 +263,38 @@ test("gitAnzeige: ohne Config fällt auf den bisherigen Rückfall zurück (win32
   writeFileSync(join(home, ".brain-kit", "git", "cmd", "git.exe"), "");
   // Anzeige-Strings tragen immer "/" (auch unter Windows), darum hier ebenso
   assert.equal(gitAnzeige({ cfg: {}, plattform: "win32", home }), `"${join(home, ".brain-kit", "git", "cmd", "git.exe").split("\\").join("/")}"`);
-  // Config geht auch hier vor
-  assert.equal(gitAnzeige({ cfg: { werkzeuge: { git: "/x/git" } }, plattform: "win32", home }), `"/x/git"`);
+  // eine Angabe aus der Config zählt nicht
+  assert.equal(gitAnzeige({ cfg: { werkzeuge: { git: "/x/git" } }, plattform: "darwin", home }), "git");
+});
+test("ordner(): nur ein einzelnes relatives Segment — '../aussen', Absolutes, Pfade, Shell-Zeichen fallen auf den Standard (landen so nie in Pfaden, Hooks, gerenderten Texten)", () => {
+  const v = neu();
+  const mit = (o) => ordner(v, o);
+  assert.deepEqual(mit({ ordner: { inbox: "../aussen", wiki: "/tmp/x", archiv: "a/b" } }), { inbox: "00_inbox", wiki: "09_wiki", archiv: "90_archiv" });
+  assert.deepEqual(mit({ ordner: { inbox: "..", wiki: ".", archiv: "" } }), { inbox: "00_inbox", wiki: "09_wiki", archiv: "90_archiv" });
+  assert.deepEqual(mit({ ordner: { wiki: "$(evil)", inbox: "x y", archiv: "a;b" } }), { inbox: "00_inbox", wiki: "09_wiki", archiv: "90_archiv" });
+  assert.equal(mit({ wiki: { ordner: "../aussen" } }).wiki, "09_wiki", "auch der ältere Schlüssel wiki.ordner");
+  assert.equal(mit({ ordner: { wiki: "../aussen" }, wiki: { ordner: "Wissen" } }).wiki, "Wissen", "ungültig → nächster Schlüssel → Standard");
+  assert.deepEqual(mit({ ordner: { inbox: "Eingang_Ü", wiki: "wiki-1.x", archiv: "90_archiv" } }), { inbox: "Eingang_Ü", wiki: "wiki-1.x", archiv: "90_archiv" });
+  assert.deepEqual(mit({ ordner: { inbox: 5, wiki: null, archiv: ["x"] } }), { inbox: "00_inbox", wiki: "09_wiki", archiv: "90_archiv" });
+});
+test("renderVorlage: {{WIKI}}/{{INBOX}}/{{ARCHIV}} aus einer Vault-Config mit Pfad oder Shell-Zeichen werden zum Standard (Prompt-Injection in ~/.claude*/commands)", () => {
+  const v = neu();
+  writeFileSync(join(v, "brain.config.json"), JSON.stringify({ ordner: { wiki: "../../.claude/commands", inbox: "x`id`", archiv: "a/../b" } }));
+  assert.equal(renderVorlage("{{WIKI}}|{{INBOX}}|{{ARCHIV}}", v), "09_wiki|00_inbox|90_archiv");
+});
+test("pruefeVault: Schreibziele, die per Verweis aus dem Vault hinauszeigen, machen ihn unbrauchbar (auch ein Verweis ins Leere)", () => {
+  const v = neu(), aussen = mkdtempSync(join(tmpdir(), "pfad-aussen-"));
+  writeFileSync(join(v, "brain.config.json"), "{}");
+  assert.equal(pruefeVault(v), resolve(v));
+  for (const [rel, ziel] of [[".logs", aussen], ["AGENTS.md", join(aussen, "gibt-es-nicht")], ["graph.json", join(aussen, "g.json")], ["09_wiki", aussen]]) {
+    rmSync(join(v, rel), { recursive: true, force: true });
+    execFileSync("ln", ["-s", ziel, join(v, rel)]); // nach pruefeVault sind die fs-Verweisfunktionen selbst geschützt
+    assert.throws(() => pruefeVault(v), /zeigt aus dem Ordner hinaus/, rel);
+    rmSync(join(v, rel), { force: true });
+  }
+  // ein Verweis innerhalb des Vaults ist in Ordnung
+  mkdirSync(join(v, "echt")); execFileSync("ln", ["-s", join(v, "echt"), join(v, ".logs")]);
+  assert.equal(pruefeVault(v), resolve(v));
 });
 test("Review-Fund 7 (BOM in brain.config.json): ladeConfig/configFehler tolerieren ein UTF-8-BOM", () => {
   const v = neu();

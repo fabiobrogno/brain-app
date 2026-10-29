@@ -27,6 +27,14 @@ for d in Ressourcen/*/; do
   ordner="$(basename "$d")"
   cp -R "Ressourcen/$ordner" "$NEU/Contents/Resources/$ordner"
 done
+# Kern (Brain-Logik, Ressourcen/kern): Der MCP-Server samt gemeinsamem Code kommt zusätzlich in den Kern (kern/mcp, kern/gemeinsam), damit
+# die MCP-Einträge der KI-Programme auf den stabilen Pfad <support>/bin/kern/mcp/brain-mcp.mjs zeigen können und nicht auf das App-Paket
+# (Kern-Umzug P4). Relative Importe (../gemeinsam/…) bleiben dabei gültig. Die Quellen bleiben Ressourcen/mcp und Ressourcen/gemeinsam.
+if [ -d "$NEU/Contents/Resources/kern" ]; then
+  rm -rf "$NEU/Contents/Resources/kern/mcp" "$NEU/Contents/Resources/kern/gemeinsam"
+  cp -R Ressourcen/mcp "$NEU/Contents/Resources/kern/mcp"
+  cp -R Ressourcen/gemeinsam "$NEU/Contents/Resources/kern/gemeinsam"
+fi
 # Kern (Brain-Logik, Ressourcen/kern): Prüfsummen-Manifest daneben, bevor die App signiert wird. Ohne Ressourcen/kern entfällt das.
 if [ -d "$NEU/Contents/Resources/kern" ]; then
   bash scripts/kern-manifest.sh erzeuge "$NEU"

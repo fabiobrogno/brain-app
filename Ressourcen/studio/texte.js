@@ -155,7 +155,7 @@ export const T = {
     intro: "In diesem Ordner liegt etwas, das auf deinem Mac Programme starten kann:",
     // Rückfall, wenn die Werkstatt zu einem Grund keinen eigenen Text liefert
     gruende: {
-      kit: "Brain-Werkzeuge (.tools): Gesundheit und Rückfragen führen sie als Programm aus.",
+      kit: "Ein altes Brain-Kit im Ordner „.tools“ (Programmcode). Kortex führt es nicht mehr aus; Git-Hooks könnten es aber noch starten.",
       hooks: "Git-Hooks: Programme, die bei Git-Aktionen wie Sichern oder Abgleichen starten.",
       git: "Git-Einstellungen, die Programme starten können.",
       sonst: "Programme, die dieser Ordner mitbringt.",
@@ -169,9 +169,11 @@ export const T = {
     andererVault: "Das Vertrauen wurde nicht gespeichert: Inzwischen ist ein anderer Vault geöffnet. Die Frage gilt jetzt für ihn.",
     schon: "Du vertraust diesem Vault schon.",
   },
-  // Antwort der App auf „Übersicht öffnen“, wenn sie nicht aufgeht (grund „kein-kit“, „nicht-vertraut“ oder „pruefung-fehlgeschlagen“)
+  // Antwort der App auf „Übersicht öffnen“, wenn sie nicht aufgeht (grund „kein-kit“ oder „kern-nicht-bereit“; „nicht-vertraut“ und
+  // „pruefung-fehlgeschlagen“ kennt nur noch eine ältere App)
   uebersicht: {
-    keinKit: "Für diesen Vault gibt es keine Übersicht: Es fehlt das Brain-Kit (.tools).",
+    keinKit: "Für diesen Ordner gibt es keine Übersicht: Es fehlt die Datei brain.config.json (sie macht ihn zu einem Brain).",
+    kernNichtBereit: "Die Übersicht öffnet sich nicht: Der Kern von Kortex (die Brain-Logik) ist nicht bereit. Starte Kortex neu oder installiere die App neu.",
     nichtVertraut: "Die Übersicht öffnet sich erst, wenn du diesem Vault vertraust.",
     nichtBestaetigt: "Die Übersicht öffnet sich nicht: Brain konnte das Vertrauen zu diesem Vault gerade nicht bestätigen.",
     pruefung: "Die Übersicht öffnet sich nicht: Brain konnte gerade nicht prüfen, ob du diesem Vault vertraust. Versuche es gleich noch einmal.",

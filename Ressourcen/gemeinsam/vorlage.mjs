@@ -23,6 +23,14 @@ export const GITIGNORE = [
   "",
 ].join("\n");
 
+// brain.config.json: die Marke eines Vaults für den Kern (`pruefeVault` im Kern verlangt sie) und seine Grundeinstellungen. Der Vault
+// enthält sonst nur Daten — kein `.tools`, keinen Kern-Code (der liegt im App-Paket, Kern-Umzug P4). Die Ordnernamen entsprechen den
+// Standardwerten des Kerns und dem Gerüst unten (00_inbox, 09_wiki, 90_archiv).
+export const BRAIN_CONFIG = JSON.stringify({
+  ordner: { inbox: "00_inbox", wiki: "09_wiki", archiv: "90_archiv" },
+  sprache: "de",
+}, null, 2) + "\n";
+
 const md = (...zeilen) => zeilen.join("\n") + "\n";
 const ISO = /^(\d{4})-(\d{2})-(\d{2})$/;
 
@@ -277,6 +285,7 @@ export function vorlageDateien({ name, heute } = {}) {
     { pfad: "AGENTS.md", inhalt: agents(titel) },
     { pfad: "CLAUDE.md", inhalt: "@AGENTS.md\n" },
     { pfad: ".gitignore", inhalt: GITIGNORE },
+    { pfad: "brain.config.json", inhalt: BRAIN_CONFIG },
   );
   return dateien;
 }

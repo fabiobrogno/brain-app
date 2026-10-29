@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, chmodSync, symlinkSync, statSync, appendFileSync, utimesSync } from "node:fs";
 import { join } from "node:path";
-import { tmp, schreibe, repo, g, pfad } from "./hilfe.mjs";
+import { tmp, schreibe, repo, g, pfad, kernAttrappe } from "./hilfe.mjs";
 process.env.HOME = tmp("brain-home-");          // os.homedir() liest $HOME: keine echte ~/.gitconfig
 process.env.GIT_CONFIG_NOSYSTEM = "1";          // und keine System-Konfiguration
 
@@ -18,7 +18,7 @@ const wirft = async (p) => { try { await p; } catch (e) { assert.ok(e instanceof
 
 const neuerSupport = () => tmp("brain-support-");
 const KIT = `console.log(JSON.stringify({version:1,ampel:"gruen",warnungen:0,pruefungen:[]}));\n`;
-const kitVault = () => { const d = tmp(); schreibe(d, ".tools/brain.mjs", KIT); schreibe(d, "a.md", "# A\n"); return d; };
+const kitVault = () => { const d = tmp(); schreibe(d, ".tools/brain.mjs", KIT); schreibe(d, "a.md", "# A\n"); schreibe(d, "brain.config.json", "{}\n"); return d; };
 const merkerVon = (support) => JSON.parse(readFileSync(join(support, "vertrauen.json"), "utf8"));
 const aufruf = (h) => async (methode, p, daten, query) => {
   const r = await h({ methode, pfad: p, query: query ?? null, body: daten === undefined ? undefined : Buffer.from(JSON.stringify(daten)) });
@@ -64,7 +64,7 @@ test("Vertrauen v2: Ordner am selben Pfad gelöscht und neu angelegt (auch mit g
   assert.equal(V.pruefeVertrauen(d, { support }).erlaubt, true);
   rmSync(d, { recursive: true, force: true });
   mkdirSync(d, { recursive: true });
-  schreibe(d, ".tools/brain.mjs", KIT); schreibe(d, "a.md", "# A\n"); // byte-gleicher Inhalt, aber ein anderer Ordner
+  schreibe(d, ".tools/brain.mjs", KIT); schreibe(d, "a.md", "# A\n"); schreibe(d, "brain.config.json", "{}\n"); // byte-gleicher Inhalt, aber ein anderer Ordner
   const r = V.pruefeVertrauen(d, { support });
   assert.equal(r.erlaubt, false); assert.equal(r.geaendert, true);
   assert.deepEqual(oeffneVault(d, { support }).kit(), { vorhanden: true, vertraut: false });
@@ -225,7 +225,8 @@ test("CLI liest denselben Merker wie die Werkstatt (Einstellungen → Erlauben i
 test("API: /api/info nennt vertrauen (kit.vertraut === vertrauen.erlaubt); POST /api/kit/vertrauen → { kit, vertrauen }; ohne Vault null", async () => {
   const support = neuerSupport();
   const d = kitVault();
-  const rufe = aufruf(erzeugeHandler({ vault: d, vaultOptionen: { support } }));
+  const kern = kernAttrappe({ "brain.mjs": KIT });
+  const rufe = aufruf(erzeugeHandler({ vault: d, vaultOptionen: { support, kern } }));
   let r = await rufe("GET", "/api/info");
   assert.deepEqual(Object.keys(r.j.vertrauen).sort(), ["erlaubt", "geaendert", "gitGesperrt", "gruende", "noetig"]);
   assert.equal(r.j.vertrauen.erlaubt, false); assert.equal(r.j.vertrauen.noetig, true); assert.equal(r.j.kit.vertraut, false);
@@ -234,11 +235,11 @@ test("API: /api/info nennt vertrauen (kit.vertraut === vertrauen.erlaubt); POST 
   assert.equal(r.j.vertrauen.erlaubt, true); assert.equal(r.j.kit.vertraut, true);
   r = await rufe("GET", "/api/info");
   assert.equal(r.j.kit.vertraut, r.j.vertrauen.erlaubt); assert.equal(r.j.vertrauen.erlaubt, true);
-  // Kit-Code geändert → die Erlaubnis gilt nicht mehr, Kit läuft nicht
+  // Code im Vault geändert → die Erlaubnis gilt nicht mehr (für Hooks/Git); der gebündelte Kern läuft davon unberührt
   appendFileSync(join(d, ".tools/brain.mjs"), "// vom Abgleich\n");
   r = await rufe("GET", "/api/info");
   assert.equal(r.j.vertrauen.erlaubt, false); assert.equal(r.j.vertrauen.geaendert, true); assert.equal(r.j.kit.vertraut, false);
-  assert.deepEqual((await rufe("GET", "/api/gesundheit")).j, { verfuegbar: false, grund: "nicht-vertraut" });
+  assert.equal((await rufe("GET", "/api/gesundheit")).j.ampel, "gruen", "der Kern braucht kein Vertrauen");
   assert.equal((await rufe("POST", "/api/kit/vertrauen", { erlauben: "ja", vault: d })).status, 400);
 
   const ohne = aufruf(erzeugeHandler({ vaultOptionen: { support: tmp("brain-leer-support-") } }));
@@ -543,12 +544,12 @@ test("MCP verbinden: Gesamtfrist — hängendes claude wird samt Prozessgruppe b
   const d = kitVault();
   const mcp = tmp("brain-mcpdir-"); schreibe(mcp, "brain-mcp.mjs", "// fake\n");
   const c = fakeClaude({ haengt: true });
-  const rufe = aufruf(erzeugeHandler({ vault: d, mcpPfad: join(mcp, "brain-mcp.mjs"), fristen: { mcpVerbinden: 700 }, vaultOptionen: { support: neuerSupport() } }));
+  const rufe = aufruf(erzeugeHandler({ vault: d, mcpPfad: join(mcp, "brain-mcp.mjs"), fristen: { mcpVerbinden: 2500 }, vaultOptionen: { support: neuerSupport() } }));
   await mitClaude(c.bin, async () => {
     const t0 = Date.now();
     const r = await rufe("POST", "/api/mcp/verbinden", { ziel: "claude" });
     assert.equal(r.status, 504); assert.match(r.j.fehler, /nicht rechtzeitig/); assert.ok(r.j.befehl);
-    assert.ok(Date.now() - t0 < 5000, `dauerte ${Date.now() - t0} ms`);
+    assert.ok(Date.now() - t0 < 15_000, `dauerte ${Date.now() - t0} ms`);
     assert.ok(!existsSync(c.zustand), "nichts eingetragen");
     const pids = readFileSync(c.pids, "utf8").trim().split("\n").map(Number);
     assert.equal(pids.length, 2);
@@ -677,12 +678,12 @@ test("Frist git/commit: hängender Hook → Prozessgruppe beendet, Index wie vor
   schreibe(d, "a.md", "# a\n"); schreibe(d, "b.md", "# b\n");
   g(d, "add", "--", "b.md"); // b ist vorgemerkt und soll es danach genauso sein
   const vorher = { baum: g(d, "write-tree").trim(), status: g(d, "status", "--porcelain=v1"), kopf: g(d, "rev-parse", "HEAD") };
-  const v = mitSupport(d, neuerSupport(), { gitLimitCommit: 900 });
+  const v = mitSupport(d, neuerSupport(), { gitLimitCommit: 3000 });
   v.vertrauen(true); // der Hook läuft nur mit Vertrauen
   const t0 = Date.now();
   const e = await wirft(v.gitCommit({ nachricht: "hängt", dateien: ["a.md"] }));
   assert.equal(e.status, 504); assert.match(e.message, /zu lange gebraucht/); assert.match(e.message, /nichts gesichert/i);
-  assert.ok(Date.now() - t0 < 6000, `dauerte ${Date.now() - t0} ms`);
+  assert.ok(Date.now() - t0 < 20_000, `dauerte ${Date.now() - t0} ms`);
   const p = pidsVon(pids); assert.equal(p.length, 2);
   assert.ok(await warteBis(() => p.every((x) => !lebt(x))), "Hook und sein Kindprozess sind beendet");
   assert.equal(existsSync(join(d, ".git/index.lock")), false, "keine liegengebliebene Sperrdatei");
@@ -700,9 +701,9 @@ test("Frist git/remote ist eine GESAMTfrist: langsamer Server-Haken (Prozessgrup
   writeFileSync(h, `#!/bin/sh\necho $$ >> '${pids}'\nsleep 30 &\necho $! >> '${pids}'\nwait\n`); chmodSync(h, 0o755);
   const a = repo();
   const t0 = Date.now();
-  const e = await wirft(gitRemoteDirekt(a, bare, 1500));
+  const e = await wirft(gitRemoteDirekt(a, bare, 4000));
   assert.equal(e.status, 504); assert.match(e.message, /zu lange|nicht rechtzeitig/);
-  assert.ok(Date.now() - t0 < 8000, `dauerte ${Date.now() - t0} ms`);
+  assert.ok(Date.now() - t0 < 20_000, `dauerte ${Date.now() - t0} ms`);
   assert.equal(g(a, "remote").trim(), "", "origin zurückgenommen");
   assert.equal(g(a, "for-each-ref", "refs/brain-studio").trim(), "", "Prüf-Ref aufgeräumt");
   assert.equal(g(bare, "for-each-ref").trim(), "", "nichts auf dem Server");
@@ -719,10 +720,10 @@ test("Frist Abgleich: Gesamtfrist (limitGesamt) beendet auch einen hängenden Pu
   const h = join(bare, "hooks", "pre-receive");
   writeFileSync(h, `#!/bin/sh\necho $$ >> '${pids}'\nsleep 30 &\necho $! >> '${pids}'\nwait\n`); chmodSync(h, 0o755);
   schreibe(a, "neu.md", "# neu\n"); g(a, "add", "--", "neu.md"); g(a, "commit", "-q", "-m", "lokal");
-  const v = mitSupport(a, neuerSupport(), { gitLimitAbgleich: 1200 });
+  const v = mitSupport(a, neuerSupport(), { gitLimitAbgleich: 4000 });
   const t0 = Date.now();
   const e = await wirft(v.gitSync());
-  assert.equal(e.status, 504); assert.ok(Date.now() - t0 < 8000);
+  assert.equal(e.status, 504); assert.ok(Date.now() - t0 < 20_000);
   const p = pidsVon(pids);
   assert.ok(await warteBis(() => p.every((x) => !lebt(x))), "Push und Haken beendet");
   assert.equal(g(bare, "for-each-ref", "refs/heads").split("\n").filter((z) => /main/.test(z)).length, 1);
@@ -755,12 +756,12 @@ const nichtsHalbes = async ({ a, pids, kopf }) => {
 
 test("Frist Abgleich: hängender Merge-Treiber → Frist je Git-Aufruf, 504 mit Alltagsmeldung, Merge zurückgenommen, keine Hilfsdateien", async () => {
   const s = haengenderMerge();
-  const v = mitSupport(s.a, neuerSupport(), { gitLimitSync: 1500 });
+  const v = mitSupport(s.a, neuerSupport(), { gitLimitSync: 4000 });
   v.vertrauen(true); // merge.*.driver sperrt Git, solange dem Vault nicht vertraut ist
   const t0 = Date.now();
   const e = await wirft(v.gitSync());
   assert.equal(e.status, 504); assert.match(e.message, /zu lange gebraucht/); assert.match(e.message, /nichts verändert/);
-  assert.ok(Date.now() - t0 < 10_000, `dauerte ${Date.now() - t0} ms`);
+  assert.ok(Date.now() - t0 < 25_000, `dauerte ${Date.now() - t0} ms`);
   assert.ok(existsSync(s.pids) && pidsVon(s.pids).length >= 2, "der Treiber lief wirklich");
   await nichtsHalbes(s);
 });

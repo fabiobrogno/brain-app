@@ -44,12 +44,12 @@ private func starts(_ log: URL) -> [[String]] {
     return bloecke
 }
 
-// MARK: Prüfung vor dem Start (Kit-Brücke nur mit Vertrauen)
+// MARK: Prüfung vor dem Start (z. B. „ist der Kern noch bereit?“)
 
 @Test func ohneErlaubnisStartetKeinProzess() async throws {
     let ordner = tempOrdner("Ohne Erlaubnis")
     let log = ordner.appendingPathComponent("starts.txt")
-    let b = BrueckenVerbindung(node: protokollierenderNode(in: ordner, log: log), vault: ordner, vorStart: { false })
+    let b = BrueckenVerbindung(node: protokollierenderNode(in: ordner, log: log), vault: ordner, kern: ordner, vorStart: { false })
     await #expect(throws: BrueckenFehler.nichtErlaubt) { _ = try await b.anfrage(methode: "GET", pfad: "/") }
     await #expect(throws: BrueckenFehler.nichtErlaubt) { _ = try await b.anfrage(methode: "POST", pfad: "/api/x", body: Data("{}".utf8)) }
     // GET mit Neuversuch: „nicht erlaubt“ ist kein Absturz und wird nie wiederholt
@@ -64,7 +64,7 @@ private func starts(_ log: URL) -> [[String]] {
     let ordner = tempOrdner("Mit Erlaubnis")
     let log = ordner.appendingPathComponent("starts.txt")
     let pruefungen = Zaehler()
-    let b = BrueckenVerbindung(node: protokollierenderNode(in: ordner, log: log), vault: ordner, vorStart: { pruefungen.erhoehe(); return true })
+    let b = BrueckenVerbindung(node: protokollierenderNode(in: ordner, log: log), vault: ordner, kern: ordner, vorStart: { pruefungen.erhoehe(); return true })
     try await b.starte()
     #expect(await b.version == "attrappe")
     try await b.starte() // läuft schon: keine zweite Prüfung, kein zweiter Start
@@ -78,7 +78,7 @@ private func starts(_ log: URL) -> [[String]] {
     let log = ordner.appendingPathComponent("starts.txt")
     let pruefungen = Zaehler()
     // Eine langsame Prüfung: während sie läuft, treffen weitere Anfragen ein (die Seite lädt viele Dateien auf einmal).
-    let b = BrueckenVerbindung(node: protokollierenderNode(in: ordner, log: log), vault: ordner, vorStart: {
+    let b = BrueckenVerbindung(node: protokollierenderNode(in: ordner, log: log), vault: ordner, kern: ordner, vorStart: {
         pruefungen.erhoehe()
         try? await Task.sleep(for: .milliseconds(300))
         return true
@@ -96,7 +96,7 @@ private func starts(_ log: URL) -> [[String]] {
     let log = ordner.appendingPathComponent("starts.txt")
     let pruefungen = Zaehler()
     let erlaubt = Schalter(true)
-    let b = BrueckenVerbindung(node: protokollierenderNode(in: ordner, log: log), vault: ordner, vorStart: {
+    let b = BrueckenVerbindung(node: protokollierenderNode(in: ordner, log: log), vault: ordner, kern: ordner, vorStart: {
         pruefungen.erhoehe()
         return erlaubt.wert
     })
@@ -120,7 +120,7 @@ private func starts(_ log: URL) -> [[String]] {
 @Test func geschlossenWaehrendDerPruefungStartetNichts() async throws {
     let ordner = tempOrdner("Geschlossen")
     let log = ordner.appendingPathComponent("starts.txt")
-    let b = BrueckenVerbindung(node: protokollierenderNode(in: ordner, log: log), vault: ordner, vorStart: {
+    let b = BrueckenVerbindung(node: protokollierenderNode(in: ordner, log: log), vault: ordner, kern: ordner, vorStart: {
         try? await Task.sleep(for: .milliseconds(400))
         return true
     })
@@ -161,11 +161,12 @@ private func starts(_ log: URL) -> [[String]] {
     await b.beende()
 }
 
-@Test func ohneVaultArgumentLaesstDieKitBrueckeUnberuehrt() async throws {
-    // Die Kit-Brücke gehört zu ihrem Vault; ohne Vault gäbe es nichts zu starten.
-    let ordner = tempOrdner("Kit Neustart")
+@Test func ohneVaultArgumentLaesstDieKernBrueckeUnberuehrt() async throws {
+    // Die Kern-Brücke gehört zu ihrem Vault; ohne Vault gäbe es nichts zu starten.
+    let ordner = tempOrdner("Kern Neustart")
+    let kern = ordner.appendingPathComponent("bin/kern", isDirectory: true)
     let log = ordner.appendingPathComponent("starts.txt")
-    let b = BrueckenVerbindung(node: protokollierenderNode(in: ordner, log: log), vault: ordner)
+    let b = BrueckenVerbindung(node: protokollierenderNode(in: ordner, log: log), vault: ordner, kern: kern)
     try await b.starte()
     await b.ohneVaultArgument()
     let alt = try #require(await b.pid)
@@ -174,6 +175,6 @@ private func starts(_ log: URL) -> [[String]] {
     try await b.starte()
     let bloecke = starts(log)
     #expect(bloecke.count == 2)
-    #expect(bloecke.last == ["arg:\(BrueckenVerbindung.kitSkript(vault: ordner).path)", "arg:\(ordner.path)", "vault:\(ordner.path)"])
+    #expect(bloecke.last == ["arg:\(BrueckenVerbindung.kernSkript(kern: kern).path)", "arg:--vault", "arg:\(ordner.path)", "vault:\(ordner.path)"])
     await b.beende()
 }

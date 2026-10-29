@@ -4,29 +4,48 @@ import Foundation
 
 private let statusJSON = #"{"version":"0.5.1","quellVault":true,"zustand":"hinweis","meldungen":[],"zahlen":{"vorschlaege":2,"konflikte":0,"abgelaufen":1,"zuTun":3}}"#
 
+/// Der stabile Kern-Pfad (`bin/kern`) in den Tests: ein Ordner, den es nicht geben muss — das „node“ ist eine Attrappe.
+private let kernAttrappe = URL(fileURLWithPath: "/tmp/Kortex Test/bin/kern", isDirectory: true)
+
 @Test func statusWirdAusDerLetztenZeileGelesen() async throws {
     let node = skript("#!/bin/bash\necho 'Hinweis vorab'\necho '\(statusJSON)'\n", name: "node", in: tempOrdner())
-    let s = try await BrainBefehl(node: node, vault: tempOrdner("Mein Brän")).status()
+    let s = try await BrainBefehl(node: node, kern: kernAttrappe, vault: tempOrdner("Mein Brän")).status()
     #expect(s.zustand == .hinweis)
     #expect(s.quellVault)
     #expect(s.zahlen.zuTun == 3)
 }
 
-@Test func vaultMitLeerzeichenKommtAlsArgumentUndUmgebungAn() async throws {
-    let node = skript("#!/bin/bash\nprintf '%s|%s|%s' \"$BRAIN_VAULT\" \"$1\" \"$BRAIN_NODE\"\n", name: "node", in: tempOrdner())
+@Test func kernAufrufMitAusdruecklichemVaultUndOhneToolsOrdner() async throws {
+    let node = skript("#!/bin/bash\nprintf '%s|%s|%s|%s|%s|%s' \"$BRAIN_VAULT\" \"$1\" \"$2\" \"$3\" \"$4\" \"$BRAIN_NODE\"\n", name: "node", in: tempOrdner())
     let vault = tempOrdner("Mein Brän")
-    let r = try await BrainBefehl(node: node, vault: vault, umgebung: ["BRAIN_NODE": "/opt/x/node"]).fuehreAus(["status"])
-    #expect(r.ausgabe == "\(vault.path)|\(vault.appendingPathComponent(".tools/brain.mjs").path)|/opt/x/node")
+    let r = try await BrainBefehl(node: node, kern: kernAttrappe, vault: vault, umgebung: ["BRAIN_NODE": "/opt/x/node"]).fuehreAus(["status"])
+    // <kern>/brain.mjs --vault <vault> status — Vault zusätzlich als BRAIN_VAULT; nirgends ein Pfad im Vault
+    #expect(r.ausgabe == "\(vault.path)|/tmp/Kortex Test/bin/kern/brain.mjs|--vault|\(vault.path)|status|/opt/x/node")
+    #expect(!r.ausgabe.replacingOccurrences(of: vault.path, with: "").contains(".tools"))
+    #expect(BrainBefehl.nodeArgumente(kern: kernAttrappe, vault: vault, ["status", "--json"])
+            == ["/tmp/Kortex Test/bin/kern/brain.mjs", "--vault", vault.path, "status", "--json"])
+}
+
+@Test func einAltesToolsImVaultWirdNieAusgefuehrt() async throws {
+    // Der Vault trägt ein altes .tools/brain.mjs mit Marke; der Aufruf geht an den Kern, nicht dorthin.
+    let vault = tempOrdner("Alter Vault")
+    let marke = vault.appendingPathComponent("marke.txt")
+    try FileManager.default.createDirectory(at: vault.appendingPathComponent(".tools"), withIntermediateDirectories: true)
+    try "x".write(to: vault.appendingPathComponent(".tools/brain.mjs"), atomically: true, encoding: .utf8)
+    let node = skript("#!/bin/bash\ncase \"$1\" in */.tools/*) echo alt >> '\(marke.path)' ;; esac\nprintf '%s' \"$1\"\n", name: "node", in: tempOrdner())
+    let r = try await BrainBefehl(node: node, kern: kernAttrappe, vault: vault).fuehreAus(["status"])
+    #expect(r.ausgabe == "/tmp/Kortex Test/bin/kern/brain.mjs")
+    #expect(!FileManager.default.fileExists(atPath: marke.path))
 }
 
 @Test func pfadEnthaeltImmerHomebrewUndUsrLocal() async throws {
     let node = skript("#!/bin/bash\nprintf '%s' \"$PATH\"\n", name: "node", in: tempOrdner())
     let vault = tempOrdner()
     // Minimal-PATH einer GUI-App: beide Ordner werden vorne ergänzt.
-    let mager = try await BrainBefehl(node: node, vault: vault, umgebung: ["PATH": "/usr/bin:/bin"]).fuehreAus([])
+    let mager = try await BrainBefehl(node: node, kern: kernAttrappe, vault: vault, umgebung: ["PATH": "/usr/bin:/bin"]).fuehreAus([])
     #expect(mager.ausgabe == "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin")
     // Schon Enthaltenes wird nicht doppelt ergänzt.
-    let teils = try await BrainBefehl(node: node, vault: vault, umgebung: ["PATH": "/usr/local/bin:/usr/bin"]).fuehreAus([])
+    let teils = try await BrainBefehl(node: node, kern: kernAttrappe, vault: vault, umgebung: ["PATH": "/usr/local/bin:/usr/bin"]).fuehreAus([])
     #expect(teils.ausgabe == "/opt/homebrew/bin:/usr/local/bin:/usr/bin")
 }
 
@@ -61,7 +80,7 @@ private let statusJSON = #"{"version":"0.5.1","quellVault":true,"zustand":"hinwe
     let node = skript("#!/bin/bash\nprintf '%s' \"$PATH\"\n", name: "node", in: tempOrdner())
     let vault = tempOrdner()
     // Ohne die Korrektur stünde hier `/opt/homebrew/bin:/usr/local/bin:node_modules/.bin:/usr/bin:.`
-    let r = try await BrainBefehl(node: node, vault: vault, umgebung: ["PATH": "node_modules/.bin:/usr/bin:.:"]).fuehreAus([])
+    let r = try await BrainBefehl(node: node, kern: kernAttrappe, vault: vault, umgebung: ["PATH": "node_modules/.bin:/usr/bin:.:"]).fuehreAus([])
     #expect(r.ausgabe == "/opt/homebrew/bin:/usr/local/bin:/usr/bin")
     for eintrag in r.ausgabe.split(separator: ":") { #expect(eintrag.hasPrefix("/"), "\(eintrag)") }
 }
@@ -88,21 +107,21 @@ private let statusJSON = #"{"version":"0.5.1","quellVault":true,"zustand":"hinwe
     let node = skript("#!/bin/bash\nsleep 5\n", name: "node", in: tempOrdner())
     let start = ContinuousClock.now
     await #expect(throws: BefehlFehler.zeitUeberschritten) {
-        _ = try await BrainBefehl(node: node, vault: tempOrdner()).fuehreAus(["status"], zeitlimit: .milliseconds(300))
+        _ = try await BrainBefehl(node: node, kern: kernAttrappe, vault: tempOrdner()).fuehreAus(["status"], zeitlimit: .milliseconds(300))
     }
     #expect(ContinuousClock.now - start < .seconds(3))
 }
 
 @Test func exitCodeUndFehlerausgabeWerdenWeitergegeben() async throws {
     let node = skript("#!/bin/bash\necho kaputt >&2\nexit 3\n", name: "node", in: tempOrdner())
-    let r = try await BrainBefehl(node: node, vault: tempOrdner()).fuehreAus([])
+    let r = try await BrainBefehl(node: node, kern: kernAttrappe, vault: tempOrdner()).fuehreAus([])
     #expect(r.code == 3)
     #expect(r.fehler == "kaputt\n")
 }
 
 @Test func grosseAusgabeStautNicht() async throws {
     let node = skript("#!/bin/bash\nhead -c 3000000 /dev/zero | tr '\\0' 'a'\n", name: "node", in: tempOrdner())
-    let r = try await BrainBefehl(node: node, vault: tempOrdner()).fuehreAus([])
+    let r = try await BrainBefehl(node: node, kern: kernAttrappe, vault: tempOrdner()).fuehreAus([])
     #expect(r.ausgabe.count == 3_000_000)
 }
 

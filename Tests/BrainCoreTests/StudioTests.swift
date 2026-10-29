@@ -369,20 +369,24 @@ private func url(_ s: String) -> URL { URL(string: s)! }
 
 // MARK: Brücken-Argumente
 
-@Test func standardArgumenteSindDieKitBruecke() {
+@Test func standardArgumenteSindDieBrueckeDesKerns() {
     let v = URL(fileURLWithPath: "/tmp/Mein Brain", isDirectory: true)
-    #expect(BrueckenVerbindung.startArgumente(skript: nil, vault: v) == ["/tmp/Mein Brain/.tools/ansicht/bruecke.mjs", "/tmp/Mein Brain"])
-    #expect(BrueckenVerbindung.kitSkript(vault: v).path == "/tmp/Mein Brain/.tools/ansicht/bruecke.mjs")
+    let k = URL(fileURLWithPath: "/tmp/Kortex/bin/kern", isDirectory: true)
+    #expect(BrueckenVerbindung.startArgumente(skript: nil, vault: v, kern: k) == ["/tmp/Kortex/bin/kern/ansicht/bruecke.mjs", "--vault", "/tmp/Mein Brain"])
+    #expect(BrueckenVerbindung.kernSkript(kern: k).path == "/tmp/Kortex/bin/kern/ansicht/bruecke.mjs")
+    // ohne Kern gibt es nichts zu starten — nie ein Ausweichen auf Code im Vault
+    #expect(BrueckenVerbindung.startArgumente(skript: nil, vault: v, kern: nil) == [])
+    #expect(!BrueckenVerbindung.startArgumente(skript: nil, vault: v, kern: k).contains { $0.contains(".tools") })
 }
 
 @Test func ohneVaultGibtEsNurDasSkript() {
     let w = URL(fileURLWithPath: "/Applications/Brain.app/Contents/Resources/werkstatt/werkstatt.mjs")
     #expect(BrueckenVerbindung.startArgumente(skript: w, vault: nil) == [w.path])
-    // Kit-Brücke ohne Vault gibt es nicht; ohne alles: nichts zu starten
+    // Kern-Brücke ohne Vault gibt es nicht; ohne alles: nichts zu starten
     #expect(BrueckenVerbindung.startArgumente(skript: nil, vault: nil) == [])
 }
 
-@Test func eigenesSkriptErsetztDieKitBruecke() {
+@Test func eigenesSkriptErsetztDieKernBruecke() {
     let v = URL(fileURLWithPath: "/tmp/Mein Brain", isDirectory: true)
     let w = URL(fileURLWithPath: "/Applications/Brain.app/Contents/Resources/werkstatt/werkstatt.mjs")
     #expect(BrueckenVerbindung.startArgumente(skript: w, vault: v) == [w.path, "/tmp/Mein Brain"])

@@ -119,7 +119,7 @@ test("ältere Werkstatt ohne info.vertrauen: die Frage kommt aus info.kit", asyn
   const stand = await start(page, { alt: true, vertrauen: vertrauenAntwort({ gruende: [] }) });
   const d = dialogVertrauen(page);
   await expect(d).toBeVisible();
-  await expect(d.locator('[data-grund="kit"]')).toContainText("Brain-Werkzeuge (.tools)");
+  await expect(d.locator('[data-grund="kit"]')).toContainText("Ein altes Brain-Kit im Ordner „.tools“");
   await page.click('[data-aktion="vertrauen-erlauben"]');
   await expect(d).toHaveCount(0);
   expect(stand.post).toEqual([{ erlauben: true, vault: echt() }]); // Vertrauen v2: der gezeigte Vault geht mit
@@ -539,7 +539,7 @@ test("UI-5: „Übersicht öffnen“ ohne Vertrauen: Satz und Vertrauensfrage; o
   await antwort(page, { ok: false, grund: "kein-kit" });
   await page.click('[data-st="einstellungen"]');
   await page.click('.menue [data-menue="uebersicht"]');
-  await expect(page.locator(".toast", { hasText: "keine Übersicht" })).toContainText("Für diesen Vault gibt es keine Übersicht: Es fehlt das Brain-Kit (.tools).");
+  await expect(page.locator(".toast", { hasText: "keine Übersicht" })).toContainText("Für diesen Ordner gibt es keine Übersicht: Es fehlt die Datei brain.config.json");
   await expect(dialogVertrauen(page)).toHaveCount(0);
   expect(await aktionen(page, "ansicht")).toHaveLength(2);
   // 3. geöffnet → keine Meldung, keine Frage
@@ -558,6 +558,15 @@ test("UI-5: die App sagt „nicht vertraut“, wir halten den Vault für vertrau
   await uebersichtPalette(page);
   await expect(page.locator(".toast.fehler")).toContainText("Die Übersicht öffnet sich nicht: Brain konnte das Vertrauen zu diesem Vault gerade nicht bestätigen.");
   await expect(dialogVertrauen(page)).toHaveCount(0);
+});
+
+test("UI-5: der Kern ist nicht bereit: klarer Satz, keine Vertrauensfrage (Kern-Umzug P4)", async ({ page }) => {
+  await startMitAntworten(page, { vertrauen: vertrauenAntwort({ erlaubt: true }) });
+  await antwort(page, { ok: false, grund: "kern-nicht-bereit" });
+  await uebersichtPalette(page);
+  await expect(page.locator(".toast.fehler")).toContainText("Der Kern von Kortex (die Brain-Logik) ist nicht bereit.");
+  await expect(dialogVertrauen(page)).toHaveCount(0);
+  expect(await aktionen(page, "ansicht")).toHaveLength(1);
 });
 
 test("UI-5: „Prüfung fehlgeschlagen“ und unbekannte Gründe der App werden benannt, nie verschwiegen", async ({ page }) => {

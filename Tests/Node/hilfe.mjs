@@ -29,6 +29,16 @@ const GIT_ENV = () => { const e = { ...process.env }; for (const k of Object.key
   return { ...e, GIT_AUTHOR_NAME: "T", GIT_AUTHOR_EMAIL: "t@example.org", GIT_COMMITTER_NAME: "T", GIT_COMMITTER_EMAIL: "t@example.org" }; };
 export const g = (cwd, ...args) => execFileSync("git", args, { cwd, env: GIT_ENV(), encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 
+// Attrappen-Kern (Kern-Umzug P4): ein Ordner mit den Dateien des gebündelten Kerns, die die Werkstatt benutzt (brain.mjs, rueckfragen.mjs,
+// VERSION). Übergeben wird er als `kern` (oeffneVault/erzeugeHandler) bzw. als KORTEX_KERN_PFAD (Kindprozesse). Der Vault trägt nur Daten.
+export function kernAttrappe(dateien = {}) {
+  const k = tmp("brain-kern-");
+  for (const [rel, inhalt] of Object.entries(dateien)) schreibe(k, rel, inhalt);
+  return k;
+}
+// Macht einen Ordner zu einem Vault im Sinne des Kerns (brain.config.json).
+export function brainVault(d) { schreibe(d, "brain.config.json", "{}\n"); return d; }
+
 // Wegwerf-Repo auf Zweig main mit Startdatei und einem Commit.
 export function repo(praefix = "brain-git-") {
   const d = tmp(praefix);

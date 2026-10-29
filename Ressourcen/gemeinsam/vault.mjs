@@ -8,7 +8,7 @@ import { join, basename, relative, sep } from "node:path";
 import { createHash, randomBytes } from "node:crypto";
 import { execFile } from "node:child_process";
 import { pathToFileURL } from "node:url";
-import { HttpFehler, MAX_DATEI, loese, imVault, falte, kindUmgebung, supportOrdner, BEARBEITBAR, generiertName, wikiGeneriert, gesperrterName } from "./basis.mjs";
+import { HttpFehler, MAX_DATEI, loese, imVault, falte, kindUmgebung, supportOrdner, kernOrdner, BEARBEITBAR, generiertName, wikiGeneriert, gesperrterName } from "./basis.mjs";
 import { pruefeText, berlinHeute, leseKopf } from "./pruefung.mjs";
 import * as gitFn from "./git.mjs";
 import * as vertrauenFn from "./vertrauen.mjs";
@@ -40,7 +40,9 @@ export function oeffneVault(vaultPfad, opts = {}) {
   try { wurzel = realpathSync(vaultPfad); if (!statSync(wurzel).isDirectory()) throw 0; }
   catch { throw new HttpFehler(400, "Der Vault-Ordner existiert nicht."); }
   const jetzt = opts.jetzt || (() => new Date());
-  const kitPfad = join(wurzel, ".tools", "brain.mjs");
+  // Kern-Werkzeuge (Gesundheit, Rückfragen) laufen aus dem gebündelten Kern (opts.kern = Test), nie aus dem Vault.
+  const kern = opts.kern || kernOrdner();
+  const kitPfad = join(kern, "brain.mjs");
 
   // „generiert — nicht editieren“ in den ersten 3 Zeilen, bekannte generierte Namen, _*.md unter 09_wiki
   function istGeneriert(rel, abs) {
@@ -245,15 +247,18 @@ export function oeffneVault(vaultPfad, opts = {}) {
     return pruefeText(d.pfad, d.inhalt, { heute: opts.heute || berlinHeute(jetzt()) });
   }
 
-  // ---------- Kit und Vertrauen (Spec v2 §8) ----------
-  // Kit-Code (<vault>/.tools) und Git-Hooks laufen erst, wenn der Nutzer diesem Vault in der App vertraut hat. Der Merker liegt
-  // außerhalb des Vaults (<support>/vertrauen.json, siehe vertrauen.mjs) und bindet an genau diesen Ordner und diesen Code; er wirkt
-  // auch für den MCP-Server und die CLI von Swift. Ohne gültigen Eintrag läuft nichts aus dem Vault.
+  // ---------- Kern und Vertrauen (Spec v2 §8, Kern-Umzug P4) ----------
+  // Der gebündelte Kern läuft ohne Freigabe (er ist per Manifest geprüft, der Vault liefert nur Daten). Git-Hooks und programmstartende
+  // Git-Einstellungen eines Vaults laufen erst, wenn der Nutzer ihm in der App vertraut hat. Der Merker liegt außerhalb des Vaults
+  // (<support>/vertrauen.json, siehe vertrauen.mjs) und bindet an genau diesen Ordner und diesen Code; er wirkt auch für den MCP-Server
+  // und die CLI von Swift.
   const stuetze = () => ({ support: opts.support });
   const stand = () => vertrauenFn.pruefeVertrauen(wurzel, stuetze());
   const vertraut = () => stand().erlaubt;
-  const rueckfragenPfad = join(wurzel, ".tools", "rueckfragen.mjs");
-  const kitVorhanden = () => existsSync(kitPfad) || existsSync(rueckfragenPfad);
+  const rueckfragenPfad = join(kern, "rueckfragen.mjs");
+  // „Kit vorhanden“ heißt jetzt: der Vault ist ein Brain im Sinne des Kerns (brain.config.json) UND der Kern ist da.
+  const istBrain = () => existsSync(join(wurzel, "brain.config.json"));
+  const kitVorhanden = () => istBrain() && (existsSync(kitPfad) || existsSync(rueckfragenPfad));
   const kit = (s) => ({ vorhanden: kitVorhanden(), vertraut: (s || stand()).erlaubt });
   function vertrauen(erlauben) {
     if (typeof erlauben !== "boolean") throw new HttpFehler(400, "„erlauben“ muss true oder false sein.");
@@ -262,18 +267,16 @@ export function oeffneVault(vaultPfad, opts = {}) {
     const s = stand();
     return { kit: kit(s), vertrauen: s };
   }
-  const NICHT_VERTRAUT = { verfuegbar: false, grund: "nicht-vertraut" };
-
-  const kitVersion = () => { try { return readFileSync(join(wurzel, ".tools", "VERSION"), "utf8").trim() || null; } catch { return null; } };
+  // Version des gebündelten Kerns (= App-Version), nicht die eines Ordners im Vault.
+  const kitVersion = () => { if (!istBrain()) return null; try { return readFileSync(join(kern, "VERSION"), "utf8").trim() || null; } catch { return null; } };
   let gesCache = null;
   function gesundheit() {
-    if (!existsSync(kitPfad)) return Promise.resolve({ verfuegbar: false });
-    if (!vertraut()) return Promise.resolve({ ...NICHT_VERTRAUT });
+    if (!istBrain() || !existsSync(kitPfad)) return Promise.resolve({ verfuegbar: false });
     if (gesCache && Date.now() - gesCache.t < 120_000) return Promise.resolve(gesCache.wert);
     return new Promise((ok) => {
-      // BRAIN_VAULT = dieser Vault: das Kit bevorzugt die Variable vor dem eigenen Ort — eine vom Start geerbte (anderer Vault nach einem Wechsel
-      // in der Oberfläche) ließe das Kit von diesem Vault auf den Startvault arbeiten.
-      execFile(process.execPath, [kitPfad, "gesundheit", "--json"], { cwd: wurzel, timeout: 20_000, maxBuffer: 8 * 1024 * 1024, env: kindUmgebung({ NO_COLOR: "1", BRAIN_VAULT: wurzel }) },
+      // --vault UND BRAIN_VAULT = dieser Vault: eine vom Start geerbte Variable (anderer Vault nach einem Wechsel in der Oberfläche) ließe
+      // den Kern sonst auf dem Startvault arbeiten.
+      execFile(process.execPath, [kitPfad, "--vault", wurzel, "gesundheit", "--json"], { cwd: wurzel, timeout: 20_000, maxBuffer: 8 * 1024 * 1024, env: kindUmgebung({ NO_COLOR: "1", BRAIN_VAULT: wurzel }) },
         (err, stdout) => {
           let wert = { verfuegbar: false };
           try { const j = JSON.parse(String(stdout)); if (j && typeof j === "object") wert = j; } catch { /* Kit fehlt/defekt/Zeitlimit */ }
@@ -285,13 +288,12 @@ export function oeffneVault(vaultPfad, opts = {}) {
 
   // Offene Rückfragen: rein lesend über die Kit-Funktion sichtbare() (nicht über `brain rueckfragen liste` — das
   // schreibt `gezeigt` in die Rückfragen und würde die Verfallsfrist auslösen). Zahl = so viele, wie der Skill zeigt.
-  // Läuft als eigener Kindprozess (nie im eigenen Prozess importiert): ein Kit-Update gilt sofort, Kit-Fehler bleiben draußen.
+  // Läuft als eigener Kindprozess (nie im eigenen Prozess importiert): Fehler des Kerns bleiben draußen.
   const RF_SKRIPT = `import(process.argv[1]).then((m) => { const s = typeof m.sichtbare === "function" ? m.sichtbare(process.argv[2]) : null;
     process.stdout.write(JSON.stringify(s && Array.isArray(s.fragen) && Number.isFinite(s.wartend) ? { f: s.fragen.length, w: s.wartend } : null)); }).catch(() => process.stdout.write("null"));`;
   let rfCache = null;
   async function rueckfragen() {
-    if (!existsSync(rueckfragenPfad)) return { verfuegbar: false };
-    if (!vertraut()) return { ...NICHT_VERTRAUT };
+    if (!istBrain() || !existsSync(rueckfragenPfad)) return { verfuegbar: false };
     if (rfCache && Date.now() - rfCache.t < 120_000) return rfCache.wert;
     const wert = await new Promise((ok) => {
       execFile(process.execPath, ["--input-type=module", "-e", RF_SKRIPT, pathToFileURL(rueckfragenPfad).href, wurzel],

@@ -12,11 +12,11 @@ public enum BrueckenFehler: Error, Equatable {
     /// Die Verbindung wurde bewusst geschlossen (Fenster zu) — kein Neuversuch, kein neuer Prozess.
     case geschlossen
     case zeitUeberschritten
-    /// Die Vorab-Prüfung vor dem Prozessstart (`vorStart`, Kit-Brücke: Vertrauen in den Vault) hat „nein“ gesagt — es lief nichts an.
+    /// Die Vorab-Prüfung vor dem Prozessstart (`vorStart`, z. B. „ist der Kern noch bereit?“) hat „nein“ gesagt — es lief nichts an.
     case nichtErlaubt
 }
 
-/// Hält den Node-Prozess einer Brücke (Kit: .tools/ansicht/bruecke.mjs oder Werkstatt: werkstatt.mjs) und ordnet Antworten über die id zu
+/// Hält den Node-Prozess einer Brücke (Kern: ansicht/bruecke.mjs oder Werkstatt: werkstatt.mjs) und ordnet Antworten über die id zu
 /// (App-Spec §5.2 Baustein 4). Stirbt die Brücke, scheitern offene Anfragen mit `.beendet`; die nächste Anfrage
 /// startet sie neu (Review-Fokus 4) und schließt dabei zuerst alle noch wartenden Anfragen ab, damit keine bis zum
 /// Zeitlimit hängt. Schreiben in eine tote Brücke darf die App nie beenden (SIGPIPE aus).
@@ -34,9 +34,10 @@ public actor BrueckenVerbindung {
     private struct SchreibFehler: Error {}
 
     private let node: URL
-    /// Nur für Brücken mit eigenem Skript änderbar (`ohneVaultArgument`): die Kit-Brücke braucht ihren Vault.
+    /// Nur für Brücken mit eigenem Skript änderbar (`ohneVaultArgument`): die Kern-Brücke braucht ihren Vault.
     private var vault: URL?
     private let skript: URL?
+    private let kern: URL?
     private let arbeitsordner: URL?
     private var argumente: [String]
     private let umgebung: [String: String]
@@ -56,32 +57,35 @@ public actor BrueckenVerbindung {
     private var zeitwaechter: [Int: Task<Void, Never>] = [:]
     public private(set) var version: String?
 
-    /// Standard ist die Kit-Brücke des Vaults; mit `skript` startet stattdessen dieses Skript (z. B. die Werkstatt).
-    /// Beide sprechen dasselbe JSON-Zeilen-Protokoll und bekommen den Vault-Pfad als ersten Argument nach dem Skript.
-    /// Ohne `vault` (nur mit `skript`: die Werkstatt vor der Vault-Wahl) gibt es kein Vault-Argument und kein
-    /// `BRAIN_VAULT`; die Werkstatt liest dann `<support>/vaults.json`. `arbeitsordner` ist dann das Arbeitsverzeichnis.
-    /// `vorStart` läuft vor JEDEM Prozessstart (auch nach einem Absturz) und muss `true` liefern, sonst startet nichts und die
-    /// Anfrage scheitert mit `.nichtErlaubt` — so läuft Kit-Code aus dem Vault nur mit Vertrauen (Studio-v2-Spec §8).
-    public init(node: URL, vault: URL?, skript: URL? = nil, umgebung: [String: String] = [:], arbeitsordner: URL? = nil,
+    /// Standard ist die Ansicht-Brücke des gebündelten Kerns (`kern`, der stabile Pfad `bin/kern`) für `vault`; sie bekommt den Vault als
+    /// `--vault <vault>`. Mit `skript` startet stattdessen dieses Skript (z. B. die Werkstatt) und bekommt den Vault-Pfad als erstes
+    /// Argument nach dem Skript. Beide sprechen dasselbe JSON-Zeilen-Protokoll. Ohne `vault` (nur mit `skript`: die Werkstatt vor der
+    /// Vault-Wahl) gibt es kein Vault-Argument und kein `BRAIN_VAULT`; die Werkstatt liest dann `<support>/vaults.json`.
+    /// `arbeitsordner` ist dann das Arbeitsverzeichnis. `vorStart` läuft vor JEDEM Prozessstart (auch nach einem Absturz) und muss
+    /// `true` liefern, sonst startet nichts und die Anfrage scheitert mit `.nichtErlaubt`.
+    public init(node: URL, vault: URL?, skript: URL? = nil, kern: URL? = nil, umgebung: [String: String] = [:], arbeitsordner: URL? = nil,
                 basisUmgebung: [String: String]? = nil, vorStart: (@Sendable () async -> Bool)? = nil) {
         self.basisUmgebung = basisUmgebung
         self.node = node
         self.vault = vault
         self.skript = skript
+        self.kern = kern
         self.arbeitsordner = arbeitsordner
-        self.argumente = Self.startArgumente(skript: skript, vault: vault)
+        self.argumente = Self.startArgumente(skript: skript, vault: vault, kern: kern)
         self.umgebung = umgebung
         self.vorStart = vorStart
     }
 
-    /// Pfad der Kit-Brücke (Ansicht „Übersicht“) im Vault.
-    public static func kitSkript(vault: URL) -> URL { vault.appendingPathComponent(".tools/ansicht/bruecke.mjs") }
+    /// Pfad der Ansicht-Brücke („Übersicht“) im gebündelten Kern (`kern` = `bin/kern`).
+    public static func kernSkript(kern: URL) -> URL { kern.appendingPathComponent("ansicht/bruecke.mjs") }
 
-    /// Argumente für Node: `<skript> <vault>`; ohne Skript die Kit-Brücke; ohne Vault nur `<skript>`.
-    /// Ohne Skript und ohne Vault gibt es nichts zu starten (leere Liste).
-    static func startArgumente(skript: URL?, vault: URL?) -> [String] {
-        guard let ziel = skript ?? vault.map({ kitSkript(vault: $0) }) else { return [] }
-        return [ziel.path] + (vault.map { [$0.path] } ?? [])
+    /// Argumente für Node: mit `skript` `<skript> <vault>` (ohne Vault nur `<skript>`); ohne Skript die Brücke des Kerns:
+    /// `<kern>/ansicht/bruecke.mjs --vault <vault>`. Fehlt dort `kern` oder `vault`, gibt es nichts zu starten (leere Liste) — nie
+    /// ein Ausweichen auf Code im Vault.
+    static func startArgumente(skript: URL?, vault: URL?, kern: URL? = nil) -> [String] {
+        if let skript { return [skript.path] + (vault.map { [$0.path] } ?? []) }
+        guard let kern, let vault else { return [] }
+        return [kernSkript(kern: kern).path, "--vault", vault.path]
     }
 
     /// Arbeitsverzeichnis des Prozesses: der Vault, sonst `arbeitsordner` (nur wenn es ihn gibt), sonst das der App.
@@ -115,7 +119,7 @@ public actor BrueckenVerbindung {
     public func ohneVaultArgument() {
         guard skript != nil, vault != nil else { return }
         vault = nil
-        argumente = Self.startArgumente(skript: skript, vault: nil)
+        argumente = Self.startArgumente(skript: skript, vault: nil, kern: kern)
     }
 
     public func starte(zeitlimit: Duration = .seconds(15)) async throws {

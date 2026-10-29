@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync, existsSync, symlinkSync, mkdirSync, writeFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
-import { tmp, schreibe, pfad } from "./hilfe.mjs";
+import { tmp, schreibe, pfad, kernAttrappe, brainVault } from "./hilfe.mjs";
 
 const { oeffneVault, HttpFehler, pruefeText, slug } = await import(pfad("gemeinsam", "vault.mjs"));
 const sha = (b) => createHash("sha256").update(b).digest("hex");
@@ -254,24 +254,30 @@ test("Prüfung: rot schlägt gelb; Route über Vault liest die Datei", () => {
   assert.equal(v.pruefung("00_inbox/x.md" in {} ? "" : WIKI).stufe, "rot");
 });
 
-test("Gesundheit: ohne Kit {verfuegbar:false}; mit Kit durchgereicht und 120 s gecacht", async () => {
+test("Gesundheit: ohne brain.config.json oder Kern {verfuegbar:false}; mit Kern durchgereicht (ohne Erlaubnis, mit --vault) und 120 s gecacht", async () => {
   const d = tmp();
-  const v = oeffneVault(d);
-  assert.deepEqual(await v.gesundheit(), { verfuegbar: false });
-  schreibe(d, ".tools/brain.mjs", `import {appendFileSync} from "node:fs"; appendFileSync(process.cwd()+"/aufrufe.log","x");\nconsole.log(JSON.stringify({version:1,ampel:"gelb",warnungen:1,pruefungen:[]}));\n`);
-  schreibe(d, ".tools/VERSION", "9.9.9\n");
-  const w = oeffneVault(d);
-  assert.deepEqual(await w.gesundheit(), { verfuegbar: false, grund: "nicht-vertraut" }, "ohne Freigabe läuft kein Kit-Code");
-  assert.equal(existsSync(join(d, "aufrufe.log")), false);
-  w.vertrauen(true);
-  assert.equal(w.kitVersion(), "9.9.9");
+  const kern = kernAttrappe({
+    "brain.mjs": `import {appendFileSync} from "node:fs"; appendFileSync(process.cwd()+"/aufrufe.log", process.argv.slice(2).join(" ") + "\\n");\nconsole.log(JSON.stringify({version:1,ampel:"gelb",warnungen:1,pruefungen:[]}));\n`,
+    VERSION: "9.9.9\n",
+  });
+  // kein Brain-Vault (brain.config.json fehlt): nichts läuft, auch mit Kern
+  assert.deepEqual(await oeffneVault(d, { kern }).gesundheit(), { verfuegbar: false });
+  assert.equal(oeffneVault(d, { kern }).kitVersion(), null);
+  brainVault(d);
+  // ein altes Kit im Vault wird nie ausgeführt
+  schreibe(d, ".tools/brain.mjs", `import {appendFileSync} from "node:fs"; appendFileSync(process.cwd()+"/alt.log","x");\nconsole.log(JSON.stringify({version:1,ampel:"rot",warnungen:9,pruefungen:[]}));\n`);
+  schreibe(d, ".tools/VERSION", "1.0.0\n");
+  const w = oeffneVault(d, { kern });
+  assert.equal(w.kitVersion(), "9.9.9", "Version des Kerns");
   assert.equal((await w.gesundheit()).ampel, "gelb");
   assert.equal((await w.gesundheit()).ampel, "gelb");
-  assert.equal(readFileSync(join(d, "aufrufe.log"), "utf8"), "x", "zweiter Aufruf kam aus dem Cache");
-  schreibe(d, ".tools/brain.mjs", "console.log('kein json');");
-  assert.deepEqual(await oeffneVault(d).gesundheit(), { verfuegbar: false, grund: "nicht-vertraut" }, "geänderter Kit-Code = neue Frage (Vertrauen v2, §8)");
-  oeffneVault(d).vertrauen(true); // neu erlaubt: jetzt zählt wieder nur, ob das Kit brauchbar antwortet
-  assert.deepEqual(await oeffneVault(d).gesundheit(), { verfuegbar: false });
+  assert.equal(readFileSync(join(d, "aufrufe.log"), "utf8"), `--vault ${w.wurzel} gesundheit --json\n`, "ein Aufruf mit ausdrücklichem --vault; der zweite kam aus dem Cache");
+  assert.equal(existsSync(join(d, "alt.log")), false, ".tools im Vault lief nicht");
+  // defekter Kern (keine JSON-Ausgabe): nicht verfügbar
+  const kaputt = kernAttrappe({ "brain.mjs": "console.log('kein json');" });
+  assert.deepEqual(await oeffneVault(d, { kern: kaputt }).gesundheit(), { verfuegbar: false });
+  // kein Kern: nicht verfügbar
+  assert.deepEqual(await oeffneVault(d, { kern: tmp() }).gesundheit(), { verfuegbar: false });
 });
 
 test("Prüfung: Kaffee-Fall (eine belegte, eine unbelegte Zeile unter ## Fakten) ist gelb, Text passt", () => {
@@ -299,20 +305,17 @@ test("Prüfung: grün nur mit belegter Zeile und ohne unbelegte; ersetzte Zeilen
   assert.equal(pruefeText(WIKI, schlecht, heute).stufe, "gelb");
 });
 
-test("Rückfragen: ohne Kit nicht verfügbar; mit Kit offen = fragen + wartend, rein lesend; defektes Kit → keine Zahl", async () => {
+test("Rückfragen: ohne Brain-Vault nicht verfügbar; mit Kern offen = fragen + wartend, rein lesend, ohne Erlaubnis; defekter Kern → keine Zahl", async () => {
   const d = tmp();
-  assert.deepEqual(await oeffneVault(d).rueckfragen(), { verfuegbar: false });
-  schreibe(d, ".tools/rueckfragen.mjs", `import {appendFileSync} from "node:fs"; export function sichtbare(v){ appendFileSync(v+"/aufrufe.log","x"); return { fragen: [{},{},{}], wartend: 4 }; }\n`);
-  const v = oeffneVault(d);
-  assert.deepEqual(await v.rueckfragen(), { verfuegbar: false, grund: "nicht-vertraut" });
-  v.vertrauen(true);
+  const kern = kernAttrappe({ "rueckfragen.mjs": `import {appendFileSync} from "node:fs"; export function sichtbare(v){ appendFileSync(v+"/aufrufe.log","x"); return { fragen: [{},{},{}], wartend: 4 }; }\n` });
+  assert.deepEqual(await oeffneVault(d, { kern }).rueckfragen(), { verfuegbar: false }, "ohne brain.config.json");
+  brainVault(d);
+  const v = oeffneVault(d, { kern });
   assert.deepEqual(await v.rueckfragen(), { verfuegbar: true, offen: 7 });
   assert.deepEqual(await v.rueckfragen(), { verfuegbar: true, offen: 7 });
   assert.equal(readFileSync(join(d, "aufrufe.log"), "utf8"), "x", "zweiter Aufruf kam aus dem Cache");
-  const e = tmp();
-  schreibe(e, ".tools/rueckfragen.mjs", "export const nichts = 1;\n");
-  const ve = oeffneVault(e); ve.vertrauen(true);
-  assert.deepEqual(await ve.rueckfragen(), { verfuegbar: false });
+  const e = brainVault(tmp());
+  assert.deepEqual(await oeffneVault(e, { kern: kernAttrappe({ "rueckfragen.mjs": "export const nichts = 1;\n" }) }).rueckfragen(), { verfuegbar: false });
 });
 
 test("Baum: Titel je Datei aus H1 (auch nach Frontmatter), sonst Frontmatter title/titel/name, sonst Dateiname", () => {

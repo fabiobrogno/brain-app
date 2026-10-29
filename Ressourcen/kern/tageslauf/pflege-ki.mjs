@@ -21,6 +21,10 @@
 //  • --settings — …/settings#settings-precedence : die Kommandozeile steht über Projekt-/Nutzer-Settings. Ohne `disableAllHooks`
 //    liefen Hooks aus einer `.claude/settings.json` der Kopie auch im `-p`-Lauf (Rauchtest bestätigt); `permissions.
 //    blockReadsOutsideWorkingDirectories` lässt die Dateiwerkzeuge Lesen außerhalb des Arbeitsverzeichnisses verweigern.
+//  • --setting-sources user (Kern-Umzug P4, Sicherheit) — …/settings#settings-precedence : Die Arbeitsverzeichnis ist die Kopie des Vaults;
+//    „project“ lüde deren `.claude/settings.json` (env, apiKeyHelper, permissions, statusLine …) — Programme und Variablen aus Vault-Daten.
+//    „user“ lädt nur die Einstellungen des Nutzers selbst (seine Anmeldung/sein apiKeyHelper bleiben nutzbar); die Befehlszeile
+//    (--settings) steht darüber. Verzichtet wird auf die Projekt- und lokalen Einstellungen (project, local) der Kopie.
 import { execFile } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
@@ -94,7 +98,7 @@ export function sonnetArgs(systemPrompt, kopiePfad, { vault, sperren, werkzeuge 
   return ["-p", "--model", "sonnet", "--tools", werkzeuge, "--allowedTools", ...erlaubt, "--disallowedTools", ...verboten,
     "--max-turns", String(maxRunden), "--max-budget-usd", String(maxUsd), "--permission-mode", "dontAsk", "--settings", JSON.stringify(SONNET_EINSTELLUNGEN),
     "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--system-prompt", systemPrompt,
-    "--no-session-persistence", "--setting-sources", "project", "--output-format", "json"];
+    "--no-session-persistence", "--setting-sources", "user", "--output-format", "json"];
 }
 
 // Umgebung des Sonnet-Kindes: wie kindUmgebung (BRAIN_ERNTE=1, keine Sitzungs-/GIT_-Variablen), aber der Vault HART auf die Kopie.

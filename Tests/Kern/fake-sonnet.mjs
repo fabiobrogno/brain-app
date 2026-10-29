@@ -25,7 +25,7 @@ if (wert("--model") === "haiku") {
   // Werkzeuge: B3 bekommt Read,Edit,Write,Glob,Grep,Bash; der Traum (traum-ki.mjs) dieselben OHNE Bash — nichts anderes, und immer mit Rundengrenze und Dollar-Budget.
   const SOLL = {
     "--model": "sonnet",
-    "--permission-mode": "dontAsk", "--setting-sources": "project", "--output-format": "json",
+    "--permission-mode": "dontAsk", "--setting-sources": "user", "--output-format": "json",
   };
   const fehlt = Object.entries(SOLL).filter(([f, w]) => wert(f) !== w).map(([f, w]) => `${f} ${w}`);
   if (!["Read,Edit,Write,Glob,Grep,Bash", "Read,Edit,Write,Glob,Grep"].includes(wert("--tools"))) fehlt.push("--tools Read,Edit,Write,Glob,Grep[,Bash]");

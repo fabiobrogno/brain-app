@@ -14,7 +14,7 @@ import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, chmodSync, symlinkSync, utimesSync, readdirSync, appendFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { createInterface } from "node:readline";
-import { tmp, schreibe, repo, g, pfad } from "./hilfe.mjs";
+import { tmp, schreibe, repo, g, pfad, kernAttrappe, brainVault } from "./hilfe.mjs";
 process.env.HOME = tmp("brain-home-");          // os.homedir() liest $HOME: keine echte ~/.gitconfig
 process.env.GIT_CONFIG_NOSYSTEM = "1";          // und keine System-Konfiguration
 for (const w of ["AUTHOR", "COMMITTER"]) { process.env[`GIT_${w}_NAME`] = "Test"; process.env[`GIT_${w}_EMAIL`] = "test@example.org"; }   // der CI-Runner hat keine Git-Identität
@@ -126,7 +126,7 @@ test("vertrauen-node/K1: ohne Vertrauen signiert Git nicht aus der Vault-Konfigu
 
 // ───────────────────────────── K2: Umfang des Fingerabdrucks ─────────────────────────────
 
-test("vertrauen-node/K2 (a): package.json unter .tools lenkt den geladenen Code um — eine Änderung nach der Freigabe ist eine neue Frage, das Kit läuft nicht", async () => {
+test("vertrauen-node/K2 (a): package.json unter .tools lenkt den geladenen Code um — eine Änderung nach der Freigabe ist eine neue Frage (für Hooks, die .tools starten)", async () => {
   const d = tmp();
   const marken = tmp("brain-marke-"), gut = join(marken, "GUT"), boese = join(marken, "BOESE");
   const kitSkript = (m) => `import { writeFileSync } from "node:fs"; writeFileSync(${JSON.stringify(m)}, "1");\nconsole.log(JSON.stringify({ version: 1, ampel: "gruen", warnungen: 0, pruefungen: [] }));\n`;
@@ -137,13 +137,11 @@ test("vertrauen-node/K2 (a): package.json unter .tools lenkt den geladenen Code 
   const support = neuerSupport();
   const v = mitSupport(d, support);
   v.vertrauen(true);
-  assert.equal((await v.gesundheit()).ampel, "gruen"); assert.equal(existsSync(gut), true, "freigegeben: gut.mjs läuft");
-  rmSync(gut);
+  assert.equal(V.pruefeVertrauen(d, { support }).erlaubt, true);
   pkg("boese.mjs"); // NUR die package.json ändert sich — beide Zieldateien standen schon in der Freigabe
   const p = V.pruefeVertrauen(d, { support });
   assert.equal(p.erlaubt, false); assert.equal(p.geaendert, true);
-  assert.deepEqual(await v.gesundheit(), { verfuegbar: false, grund: "nicht-vertraut" });
-  assert.equal(existsSync(boese), false, "der umgelenkte Code lief nie");
+  assert.equal(existsSync(gut) || existsSync(boese), false, "die App führt .tools nie aus (Kern-Umzug P4)");
   v.vertrauen(true);
   assert.equal(V.pruefeVertrauen(d, { support }).erlaubt, true);
   schreibe(d, ".tools/lib/package.json", '{"type":"commonjs"}\n'); // auch in Unterordnern
@@ -260,20 +258,23 @@ test("vertrauen-node/K3: ging das Vertrauen durch den Abgleich verloren, wird ni
 
 // ───────────────────────────── W1: BRAIN_VAULT ─────────────────────────────
 
-test("vertrauen-node/W1: nach einem Vault-Wechsel arbeitet das Kit (gesundheit, rueckfragen) und jeder Git-Hook an DIESEM Vault, nicht am Startvault", async () => {
+test("vertrauen-node/W1: nach einem Vault-Wechsel arbeitet der Kern (gesundheit mit --vault, rueckfragen) und jeder Git-Hook an DIESEM Vault, nicht am Startvault", async () => {
   const A = tmp("brain-start-");
-  const B = repo("brain-wechsel-");
+  const B = brainVault(repo("brain-wechsel-"));
   const m = tmp("brain-marke-");
-  schreibe(B, ".tools/brain.mjs", `process.stdout.write(JSON.stringify({ version: 1, ampel: "gruen", warnungen: 0, pruefungen: [], brainVault: process.env.BRAIN_VAULT || null, cwd: process.cwd() }));\n`);
-  schreibe(B, ".tools/rueckfragen.mjs", `import { writeFileSync } from "node:fs";\nexport const sichtbare = () => { writeFileSync(${JSON.stringify(join(m, "RF-VAULT"))}, process.env.BRAIN_VAULT || "-"); return { fragen: [], wartend: 0 }; };\n`);
+  const kern = kernAttrappe({
+    "brain.mjs": `process.stdout.write(JSON.stringify({ version: 1, ampel: "gruen", warnungen: 0, pruefungen: [], brainVault: process.env.BRAIN_VAULT || null, argVault: process.argv[process.argv.indexOf("--vault") + 1] || null, cwd: process.cwd() }));\n`,
+    "rueckfragen.mjs": `import { writeFileSync } from "node:fs";\nexport const sichtbare = () => { writeFileSync(${JSON.stringify(join(m, "RF-VAULT"))}, process.env.BRAIN_VAULT || "-"); return { fragen: [], wartend: 0 }; };\n`,
+  });
   schreibe(B, ".git/hooks/pre-commit", `#!/bin/sh\nprintf '%s' "$BRAIN_VAULT" > '${join(m, "HOOK-VAULT")}'\n`); chmodSync(join(B, ".git/hooks/pre-commit"), 0o755);
   const alt = process.env.BRAIN_VAULT;
   process.env.BRAIN_VAULT = A; // die Werkstatt wurde mit --vault A gestartet (Swift setzt die Variable), dann wurde in der Oberfläche zu B gewechselt
   try {
-    const v = mitSupport(B);
+    const v = mitSupport(B, undefined, { kern });
     v.vertrauen(true);
     const ges = await v.gesundheit();
-    assert.equal(ges.brainVault, v.wurzel, `das Kit von B arbeitet an B (nicht an ${A}): ${ges.brainVault}`);
+    assert.equal(ges.brainVault, v.wurzel, `der Kern arbeitet an B (nicht an ${A}): ${ges.brainVault}`);
+    assert.equal(ges.argVault, v.wurzel, "ausdrückliches --vault");
     assert.equal(ges.cwd, v.wurzel);
     await v.rueckfragen();
     assert.equal(readFileSync(join(m, "RF-VAULT"), "utf8"), v.wurzel, "auch rueckfragen");
@@ -333,7 +334,7 @@ test("swift-k1/SW-1: brain.config.json zählt zur Freigabe — eine geänderte P
   const support = neuerSupport();
   const v = mitSupport(d, support);
   v.vertrauen(true);
-  assert.equal((await v.gesundheit()).ampel, "gruen"); assert.equal(existsSync(m), true); rmSync(m);
+  assert.equal(V.pruefeVertrauen(d, { support }).erlaubt, true); assert.equal(existsSync(m), false, "die App führt .tools nie aus (Kern-Umzug P4)");
   // Die Steuerzentrale des Kits schreibt im Alltag „automatik“ (Schalter, Stufen, Zahlen): keine neue Frage
   cfg({ werkzeuge: { git: "git" }, automatik: { tageslauf: { an: false }, neu: [1, 2, 3] } });
   assert.equal(V.pruefeVertrauen(d, { support }).erlaubt, true, "nur „automatik“ geändert");
@@ -345,7 +346,6 @@ test("swift-k1/SW-1: brain.config.json zählt zur Freigabe — eine geänderte P
   const p = V.pruefeVertrauen(d, { support });
   assert.equal(p.erlaubt, false); assert.equal(p.geaendert, true);
   assert.equal(cli([d], { BRAIN_APP_SUPPORT: support, BRAIN_TESTMODUS: "0" }).stdout, '{"erlaubt":false}\n', "Swifts Prüfung (brain status) sagt nein");
-  assert.deepEqual(await v.gesundheit(), { verfuegbar: false, grund: "nicht-vertraut" });
   assert.equal(existsSync(m), false, "das Kit läuft nicht");
   // erneut freigeben; Datei entfernen, neu anlegen, kein JSON: jeweils eine neue Frage
   v.vertrauen(true);

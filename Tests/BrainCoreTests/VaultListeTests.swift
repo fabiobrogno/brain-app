@@ -87,7 +87,7 @@ private func aufgeloest(_ u: URL) -> URL { AppAktion.aufgeloest(u) }
 @Test func statusAnzeigeOhneVaultUndOhneKit() {
     #expect(StatusAnzeige.keinVault == StatusAnzeige(symbol: "questionmark.circle", zeichen: "?", titel: "Kein Vault gewählt"))
     #expect(StatusAnzeige.ohneKit.zeichen == "✓")
-    #expect(StatusAnzeige.ohneKit.titel.contains("ohne Kit"))
+    #expect(StatusAnzeige.ohneKit.titel.contains("brain.config.json"))
 }
 
 // MARK: Lesen wie die Werkstatt (k5)

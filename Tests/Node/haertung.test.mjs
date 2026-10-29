@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, existsSync, symlinkSync, linkSync, chmodSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
-import { tmp, schreibe, repo, g, pfad } from "./hilfe.mjs";
+import { tmp, schreibe, repo, g, pfad, kernAttrappe, brainVault } from "./hilfe.mjs";
 
 const { oeffneVault, HttpFehler } = await import(pfad("gemeinsam", "vault.mjs"));
 const { erzeugeHandler, findeClaude } = await import(pfad("werkstatt", "handler.mjs"));
@@ -205,15 +205,19 @@ const aufruf = (h) => async (methode, p, daten, query) => {
 };
 const support = () => process.env.BRAIN_APP_SUPPORT;
 
-test("Vertrauen: Kit läuft erst nach Erlaubnis; Merker mit realpath im Support-Ordner; Widerruf stoppt es wieder", async () => {
-  const d = tmp();
-  schreibe(d, ".tools/brain.mjs", `import {appendFileSync} from "node:fs"; appendFileSync(process.cwd()+"/gelaufen.log","x");\nconsole.log(JSON.stringify({version:1,ampel:"gruen",warnungen:0,pruefungen:[]}));\n`);
-  const rufe = aufruf(erzeugeHandler({ vault: d, studioDir: STUDIO() }));
+test("Kern: Gesundheit läuft ohne Erlaubnis aus dem Kern, nie aus .tools; Merker mit realpath im Support-Ordner gilt für Hooks/Git, nicht für den Kern", async () => {
+  const d = brainVault(tmp());
+  // Ein altes Kit im Vault: liefe es, stünde gelaufen.log da. Der Kern schreibt kern.log.
+  schreibe(d, ".tools/brain.mjs", `import {appendFileSync} from "node:fs"; appendFileSync(process.cwd()+"/gelaufen.log","x");\nconsole.log(JSON.stringify({version:1,ampel:"rot",warnungen:0,pruefungen:[]}));\n`);
+  const kern = kernAttrappe({ "brain.mjs": `import {appendFileSync} from "node:fs"; appendFileSync(process.cwd()+"/kern.log","x");\nconsole.log(JSON.stringify({version:1,ampel:"gruen",warnungen:0,pruefungen:[]}));\n`, VERSION: "7.7.7\n" });
+  const rufe = aufruf(erzeugeHandler({ vault: d, studioDir: STUDIO(), vaultOptionen: { kern } }));
   let r = await rufe("GET", "/api/info");
-  assert.deepEqual(r.j.kit, { vorhanden: true, vertraut: false });
+  assert.deepEqual(r.j.kit, { vorhanden: true, vertraut: false }); // vertraut: das alte .tools zählt als Code im Vault, bis der Nutzer vertraut
+  assert.equal(r.j.kitVersion, "7.7.7", "Version des Kerns, nicht eines Ordners im Vault");
   r = await rufe("GET", "/api/gesundheit");
-  assert.equal(r.status, 200); assert.deepEqual(r.j, { verfuegbar: false, grund: "nicht-vertraut" });
-  assert.equal(existsSync(join(d, "gelaufen.log")), false, "unvertraut: kein Kit-Code ausgeführt");
+  assert.equal(r.status, 200); assert.equal(r.j.ampel, "gruen", "ohne Vertrauen: der Kern läuft trotzdem");
+  assert.equal(existsSync(join(d, "gelaufen.log")), false, ".tools im Vault wurde nie ausgeführt");
+  assert.equal(readFileSync(join(d, "kern.log"), "utf8"), "x");
 
   r = await rufe("POST", "/api/kit/vertrauen", { erlauben: "ja" }); assert.equal(r.status, 400);
   r = await rufe("GET", "/api/kit/vertrauen"); assert.equal(r.status, 405);
@@ -225,41 +229,40 @@ test("Vertrauen: Kit läuft erst nach Erlaubnis; Merker mit realpath im Support-
   assert.match(merker[oeffneVault(d).wurzel].ordner, /^\d+:\d+:[\d.]+$/); assert.match(merker[oeffneVault(d).wurzel].code, /^[0-9a-f]{64}$/);
   assert.equal((await rufe("GET", "/api/info")).j.kit.vertraut, true);
   assert.equal((await rufe("GET", "/api/gesundheit")).j.ampel, "gruen");
-  assert.equal(readFileSync(join(d, "gelaufen.log"), "utf8"), "x");
+  assert.equal(existsSync(join(d, "gelaufen.log")), false, "auch mit Vertrauen läuft .tools nicht");
 
   r = await rufe("POST", "/api/kit/vertrauen", { erlauben: false, vault: d });
   assert.deepEqual(r.j.kit, { vorhanden: true, vertraut: false }); assert.equal(r.j.vertrauen.erlaubt, false);
   assert.equal(JSON.parse(readFileSync(join(support(), "vertrauen.json"), "utf8"))[oeffneVault(d).wurzel], undefined);
-  assert.deepEqual((await rufe("GET", "/api/gesundheit")).j, { verfuegbar: false, grund: "nicht-vertraut" });
-  assert.equal(readFileSync(join(d, "gelaufen.log"), "utf8"), "x", "nach Widerruf kein weiterer Lauf");
-  // anderer Vault bleibt unvertraut
+  assert.equal((await rufe("GET", "/api/gesundheit")).j.ampel, "gruen", "der Widerruf ändert für den Kern nichts");
+  // „Kit vorhanden“ = brain.config.json UND Kern; ein Ordner nur mit altem .tools ist keiner
   const e = tmp(); schreibe(e, ".tools/rueckfragen.mjs", "export function sichtbare(){ return { fragen: [], wartend: 0 }; }\n");
-  assert.deepEqual(oeffneVault(e).kit(), { vorhanden: true, vertraut: false });
-  assert.deepEqual(oeffneVault(tmp()).kit(), { vorhanden: false, vertraut: false });
+  assert.equal(oeffneVault(e, { kern }).kit().vorhanden, false);
+  assert.deepEqual(oeffneVault(brainVault(tmp()), { kern }).kit(), { vorhanden: true, vertraut: false });
+  assert.deepEqual(oeffneVault(brainVault(tmp()), { kern: tmp() }).kit(), { vorhanden: false, vertraut: false }, "ohne Kern kein Kit");
 });
 
-test("Rückfragen: unvertraut nicht ausgeführt; vertraut läuft als Kindprozess (kein import im eigenen Prozess), Kit-Absturz reißt uns nicht mit", async () => {
-  const d = tmp();
-  schreibe(d, ".tools/rueckfragen.mjs", `import {writeFileSync} from "node:fs"; export function sichtbare(v){ writeFileSync(v+"/pid.txt", String(process.pid)); return { fragen: [{}], wartend: 2 }; }\n`);
-  const v = oeffneVault(d);
-  assert.deepEqual(await v.rueckfragen(), { verfuegbar: false, grund: "nicht-vertraut" });
-  assert.equal(existsSync(join(d, "pid.txt")), false);
-  v.vertrauen(true);
-  assert.deepEqual(await v.rueckfragen(), { verfuegbar: true, offen: 3 });
+test("Rückfragen: der Kern läuft als Kindprozess (kein import im eigenen Prozess) und ohne Erlaubnis; Kern-Absturz reißt uns nicht mit; .tools im Vault zählt nicht", async () => {
+  const d = brainVault(tmp());
+  const kern = kernAttrappe({ "rueckfragen.mjs": `import {writeFileSync} from "node:fs"; export function sichtbare(v){ writeFileSync(v+"/pid.txt", String(process.pid)); return { fragen: [{}], wartend: 2 }; }\n` });
+  schreibe(d, ".tools/rueckfragen.mjs", `import {writeFileSync} from "node:fs"; export function sichtbare(v){ writeFileSync(v+"/alt.txt", "x"); return { fragen: [], wartend: 99 }; }\n`);
+  const v = oeffneVault(d, { kern });
+  assert.deepEqual(await v.rueckfragen(), { verfuegbar: true, offen: 3 }, "ohne vertrauen(true)");
   assert.notEqual(readFileSync(join(d, "pid.txt"), "utf8"), String(process.pid), "lief in einem Kindprozess");
-  const e = tmp(); schreibe(e, ".tools/rueckfragen.mjs", "process.exit(3);\n");
-  const ve = oeffneVault(e); ve.vertrauen(true);
-  assert.deepEqual(await ve.rueckfragen(), { verfuegbar: false });
-  const k = tmp(); schreibe(k, ".tools/rueckfragen.mjs", "throw new Error('kaputt');\n");
-  const vk = oeffneVault(k); vk.vertrauen(true);
-  assert.deepEqual(await vk.rueckfragen(), { verfuegbar: false });
+  assert.equal(existsSync(join(d, "alt.txt")), false, "das .tools im Vault lief nicht");
+  const e = brainVault(tmp());
+  assert.deepEqual(await oeffneVault(e, { kern: kernAttrappe({ "rueckfragen.mjs": "process.exit(3);\n" }) }).rueckfragen(), { verfuegbar: false });
+  const k = brainVault(tmp());
+  assert.deepEqual(await oeffneVault(k, { kern: kernAttrappe({ "rueckfragen.mjs": "throw new Error('kaputt');\n" }) }).rueckfragen(), { verfuegbar: false });
+  // kein Brain-Vault (brain.config.json fehlt): nicht verfügbar, auch mit Kern
+  assert.deepEqual(await oeffneVault(tmp(), { kern }).rueckfragen(), { verfuegbar: false });
 });
 
 // ---------- 8. Umgebung ----------
 test("Kindprozesse bekommen keine NODE_*/ELECTRON_*-Umgebung; Test-Schalter nur mit BRAIN_TESTMODUS=1", async () => {
-  const d = tmp();
-  schreibe(d, ".tools/brain.mjs", `console.log(JSON.stringify({version:1,ampel:[process.env.NODE_OPTIONS,process.env.NODE_PATH,process.env.ELECTRON_RUN_AS_NODE,process.env.DYLD_INSERT_LIBRARIES].map((x)=>x===undefined?"-":x).join("|"),warnungen:0,pruefungen:[]}));\n`);
-  const v = oeffneVault(d); v.vertrauen(true);
+  const d = brainVault(tmp());
+  const kern = kernAttrappe({ "brain.mjs": `console.log(JSON.stringify({version:1,ampel:[process.env.NODE_OPTIONS,process.env.NODE_PATH,process.env.ELECTRON_RUN_AS_NODE,process.env.DYLD_INSERT_LIBRARIES].map((x)=>x===undefined?"-":x).join("|"),warnungen:0,pruefungen:[]}));\n` });
+  const v = oeffneVault(d, { kern });
   const alt = ["NODE_OPTIONS", "NODE_PATH", "ELECTRON_RUN_AS_NODE", "DYLD_INSERT_LIBRARIES"].map((k) => [k, process.env[k]]);
   Object.assign(process.env, { NODE_OPTIONS: "--max-old-space-size=100", NODE_PATH: "/tmp/nirgends", ELECTRON_RUN_AS_NODE: "1", DYLD_INSERT_LIBRARIES: "/tmp/x.dylib" });
   try { assert.equal((await v.gesundheit()).ampel, "-|-|-|-"); }

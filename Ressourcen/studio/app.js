@@ -1254,12 +1254,14 @@ function oeffneEinstellungen(anker) {
   ], { rechts: true, oben: true, breite: 240 });
 }
 
-// „Übersicht öffnen“: die App antwortet { ok: true } oder { ok: false, grund } (Spec §8). Ohne Vertrauen oder ohne Kit öffnet sich nichts,
-// und das sagen wir: bei „nicht-vertraut“ kommt die Frage, bei „kein-kit“ und „pruefung-fehlgeschlagen“ ein Satz. Im Browser (keine App) tut der Aufruf nichts.
+// „Übersicht öffnen“: die App antwortet { ok: true } oder { ok: false, grund } (Spec §8). Ohne Brain-Vault (brain.config.json) oder ohne
+// bereiten Kern öffnet sich nichts, und das sagen wir: „kein-kit“ und „kern-nicht-bereit“ bekommen je einen Satz. „nicht-vertraut“ und
+// „pruefung-fehlgeschlagen“ kennt nur noch eine ältere App (der gebündelte Kern braucht kein Vertrauen). Im Browser (keine App) tut der Aufruf nichts.
 async function oeffneUebersicht() {
   const r = await aktionMitAntwort("ansicht");
   if (!r || r.ok !== false) return;
   if (r.grund === "kein-kit") { toast(T.uebersicht.keinKit); return; }
+  if (r.grund === "kern-nicht-bereit") { toast(T.uebersicht.kernNichtBereit, { fehler: true }); return; }
   if (r.grund === "pruefung-fehlgeschlagen") { toast(T.uebersicht.pruefung, { fehler: true }); return; }
   if (r.grund === "nicht-vertraut") {
     await ladeInfoLeise(); // die App prüft frisch: unseren Stand angleichen, bevor wir fragen
@@ -1668,7 +1670,8 @@ function markiereBereit() {
 }
 
 // ======================================================= Vertrauen (Spec §8)
-// Nichts aus einem Vault startet ein Programm, bevor der Nutzer ihm vertraut hat: Kit-Werkzeuge (.tools), Git-Hooks, Git-Einstellungen.
+// Nichts aus einem Vault startet ein Programm, bevor der Nutzer ihm vertraut hat: Git-Hooks, Git-Einstellungen (und ein altes .tools, falls
+// Hooks es starten). Der gebündelte Kern der App braucht kein Vertrauen.
 // info.vertrauen = { erlaubt, noetig, geaendert, gitGesperrt, gruende: [{ art, text }] }; eine ältere Werkstatt kennt nur info.kit.
 function vertrauenVon(info) {
   if (!info?.vault) return null;

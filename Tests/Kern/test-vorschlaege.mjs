@@ -213,13 +213,13 @@ test("pflege: _pflege als Symlink (etwa ins Wiki) → 400, Vorschlag bleibt lieg
 
 test("Inbox im Wiki (ordner.inbox im Wiki) → übernehmen 400, Vorschlag bleibt liegen (W1-Review #14)", () => {
   const v = neuerVault();
-  writeFileSync(join(v, "brain.config.json"), JSON.stringify({ ordner: { inbox: "09_wiki/eingang" } }));
+  writeFileSync(join(v, "brain.config.json"), JSON.stringify({ ordner: { inbox: "09_wiki" } })); // seit P4 nur ein einzelner Ordnername: „die Inbox ist das Wiki selbst“
   mkdirSync(join(v, "09_wiki", "eingang"), { recursive: true });
   const fakt = schreibeVorschlag(v, vorschlag({ titel: "fakt" }));
   const lektion = schreibeVorschlag(v, vorschlag({ titel: "lektion", art: "lektion" }));
   assert.equal(code(() => entscheide(v, fakt, "uebernehmen")), 400);
   assert.equal(code(() => entscheide(v, lektion, "uebernehmen")), 400);
-  assert.equal(existsSync(join(v, "09_wiki", "eingang", "_lektionen")), false, "kein Lektionsordner im Wiki angelegt");
+  assert.equal(existsSync(join(v, "09_wiki", "_lektionen")), false, "kein Lektionsordner im Wiki angelegt");
   assert.equal(listeVorschlaege(v).length, 2);
 });
 

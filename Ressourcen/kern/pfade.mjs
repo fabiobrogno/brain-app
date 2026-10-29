@@ -4,11 +4,12 @@
 //   KERN  = der Ordner DIESER Datei (Code und gebündelte Daten, im App-Bundle bzw. unter Support/Kortex/kern). Nur lesen.
 //   VAULT = der Datenordner des Nutzers. Dort liegen Wissen, brain.config.json und alle Laufzeitdaten (.logs/ …).
 // Der Vault wird NIE aus dem Ort des Kerns abgeleitet und es gibt keinen Rückfall auf einen festen Ordner (auch nicht den Vault des Entwicklers).
-import { readFileSync, existsSync, realpathSync, statSync } from "node:fs";
-import { join, dirname, resolve, delimiter, isAbsolute } from "node:path";
+import { readFileSync, existsSync, realpathSync, statSync, lstatSync } from "node:fs";
+import { join, dirname, resolve, delimiter, isAbsolute, sep } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
+import { registriereVault } from "./vault-schutz.mjs";
 
 export const KERN = dirname(fileURLToPath(import.meta.url));
 
@@ -79,6 +80,8 @@ export function pruefeVault(pfad) {
   try { istOrdner = statSync(echt).isDirectory(); } catch { /* fehlt */ }
   if (!istOrdner) throw new KeinVaultFehler(`Vault nicht gefunden: ${p} ist kein Ordner.`);
   if (!existsSync(join(echt, "brain.config.json"))) throw new KeinVaultFehler(`Das ist kein Brain-Vault: in ${p} fehlt brain.config.json.`);
+  zieleImVault(echt);
+  registriereVault(p, echt); // ab jetzt bleiben alle Schreibzugriffe unter diesem Vault im Vault (vault-schutz.mjs)
   return p;
 }
 
@@ -265,12 +268,38 @@ export function liesConfigRoh(vault) {
 export function entferneBom(text) {
   return String(text).replace(/^﻿/, "");
 }
+// Die Ordnernamen kommen aus brain.config.json (Vault-Daten) und landen in Dateipfaden, Hook-Befehlen und gerenderten Texten ({{WIKI}} …
+// in Skills und AGENTS.md, die in ~/.claude*/commands/ geschrieben werden): nur ein einzelner relativer Name ist zulässig — Buchstaben, Ziffern,
+// "_", "." und "-", kein "." oder ".." allein, kein Pfad, nichts Absolutes. Alles andere fällt auf den Standard zurück (nie ein Fehler).
+const ORDNER_NAME = /^[\p{L}\p{N}_.-]+$/u;
+export const istOrdnerName = (w) => typeof w === "string" && w !== "." && w !== ".." && ORDNER_NAME.test(w);
 export function ordner(vault, cfg = ladeConfig(vault)) {
+  const nimm = (wert, standard) => (istOrdnerName(wert) ? wert : standard);
   return {
-    inbox: cfg.ordner?.inbox || "00_inbox",
-    wiki: cfg.ordner?.wiki || cfg.wiki?.ordner || "09_wiki",
-    archiv: cfg.ordner?.archiv || "90_archiv",
+    inbox: nimm(cfg.ordner?.inbox, "00_inbox"),
+    wiki: nimm(cfg.ordner?.wiki, nimm(cfg.wiki?.ordner, "09_wiki")),
+    archiv: nimm(cfg.ordner?.archiv, "90_archiv"),
   };
+}
+
+// Schreibziele des Kerns, die als Ordner oder Datei im Vault liegen müssen (Symlink nach draußen: gesundheit schriebe nach <draußen>/…,
+// AGENTS.md/graph.json/_index.md würden außerhalb überschrieben). Gibt es ein Ziel und löst es (realpath) nicht innerhalb des Vaults auf,
+// ist der Ordner kein Vault für den Kern (Exit 2; Hooks enden still mit Exit 0).
+function zieleImVault(echt) {
+  const o = ordner(echt);
+  const ziele = [".logs", o.inbox, o.wiki, o.archiv, "AGENTS.md", "CLAUDE.md", "graph.json", join(o.wiki, "_index.md"), join(o.wiki, "INDEX.md")];
+  for (const rel of ziele) {
+    const p = join(echt, rel);
+    let real;
+    try { real = realpathSync(p); } catch (e) {
+      // fehlt das Ziel: harmlos, außer es ist ein Verweis ins Leere (ein Schreiben legte die Datei am Ziel draußen an)
+      if (e && (e.code === "ENOENT" || e.code === "ENOTDIR")) { let verweis = false; try { lstatSync(p); verweis = true; } catch { /* fehlt wirklich */ } if (!verweis) continue; }
+      real = null;
+    }
+    if (real === null || !(real === echt || real.startsWith(echt + sep))) {
+      throw new KeinVaultFehler(`Kein sicherer Vault: ${rel} zeigt aus dem Ordner hinaus (Verweis nach außerhalb) und wird nicht beschrieben.`);
+    }
+  }
 }
 
 const fwd = (p) => String(p).split("\\").join("/");
@@ -345,11 +374,9 @@ export function nodePfad({ env = process.env } = {}) {
 export function nodeBefehl() { return shellQuote(nodePfad()); }
 // Nur fürs RENDERN von Vorlagen (AGENTS.md, Skills) — ein gequoteter Anzeige-String, kein argv[0] für
 // execFileSync/spawnSync (dafür gibt es gitBefehl() in werkzeug.mjs; zwei Funktionen mit demselben
-// Namen für zwei verschiedene Zwecke wären verwirrend, darum hier umbenannt). Bevorzugt werkzeuge.git aus
-// der Vault-Config (von install.mjs gesetzt), sonst den bekannten MinGit-Ort unter diesem Home (win32),
-// sonst das nackte "git".
-export function gitAnzeige({ cfg = {}, plattform = process.platform, home = homedir() } = {}) {
-  if (typeof cfg?.werkzeuge?.git === "string" && cfg.werkzeuge.git) return shellQuote(cfg.werkzeuge.git, plattform);
+// Namen für zwei verschiedene Zwecke wären verwirrend, darum hier umbenannt). Den bekannten MinGit-Ort unter diesem Home
+// (win32), sonst das nackte "git". werkzeuge.git aus der Vault-Config zählt nicht (Programme kommen nie aus dem Vault, P4).
+export function gitAnzeige({ plattform = process.platform, home = homedir() } = {}) {
   if (plattform === "win32") {
     for (const ort of kitOrte({ home, plattform })) {
       const mingit = join(ort, "git", "cmd", "git.exe");

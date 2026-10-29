@@ -1,6 +1,7 @@
 import { test, expect } from "./basis.mjs";
-import { readFileSync, writeFileSync, mkdirSync, rmSync, realpathSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync, realpathSync } from "node:fs";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { baueVault, git } from "./vault.mjs";
 import { starteServer } from "./start.mjs";
 import { mockeV2 } from "./mocks.mjs";
@@ -226,22 +227,21 @@ test("Palette findet tiefe Seite per Titel, Dateiname und Wortanfang; Enter ohne
   await expect(page.locator('[data-feld="titel"]')).toHaveValue("zzzqqq");
 });
 
-test("Seitenleiste zeigt Rückfragen n, wenn das Kit sie liefert", async ({ page }) => {
-  mkdirSync(join(vault, ".tools"), { recursive: true });
-  writeFileSync(join(vault, ".tools/rueckfragen.mjs"), "export function sichtbare(){ return { fragen: [{},{}], wartend: 1 }; }\n");
+test("Seitenleiste zeigt Rückfragen n, wenn der Kern sie liefert (ohne Vertrauensfrage)", async ({ page }) => {
+  // Der Vault ist ein Brain (brain.config.json), enthält aber nur Daten — kein .tools. Der Kern kommt von außen (KORTEX_KERN_PFAD, hier ein
+  // Attrappen-Kern) und läuft ohne Freigabe.
+  const kern = mkdtempSync(join(tmpdir(), "brain-ui-kern-"));
+  writeFileSync(join(kern, "brain.mjs"), "// Attrappe\n");
+  writeFileSync(join(kern, "rueckfragen.mjs"), "export function sichtbare(){ return { fragen: [{},{}], wartend: 1 }; }\n");
+  writeFileSync(join(vault, "brain.config.json"), "{}\n");
+  server.stopp();
+  server = await starteServer(vault, { kern });
   await oeffne(page, "09_wiki/wissen/Kaffee.md");
-  // Echte Werkstatt, kein Attrappen-Vertrauen: Der Vault war vertraut, dann kam Code dazu → „geändert“, die Frage erscheint,
-  // erst nach „Vertrauen“ läuft das Kit (der Knopf hieß vor Vertrauen v2 kit-erlauben)
-  const frage = page.locator('.dialog[data-dialog="vertrauen"]');
-  await expect(frage).toBeVisible();
-  await expect(frage).toContainText("Die Werkzeuge in diesem Vault haben sich seit deiner Freigabe geändert.");
-  await expect(page.locator('[data-bereich="rueckfragen"]')).toHaveCount(0); // vorher läuft nichts
-  await page.click('[data-aktion="vertrauen-erlauben"]');
-  await expect(frage).toHaveCount(0);
   await expect(page.locator('[data-bereich="rueckfragen"] .zahl')).toHaveText("3", { timeout: 5000 });
+  await expect(page.locator('.dialog[data-dialog="vertrauen"]')).toHaveCount(0); // der Kern braucht kein Vertrauen
 });
 
-test("Seitenleiste: ohne Kit keine Rückfragen-Anzeige", async ({ page }) => {
+test("Seitenleiste: ohne Kern oder ohne brain.config.json keine Rückfragen-Anzeige", async ({ page }) => {
   await oeffne(page, "09_wiki/wissen/Kaffee.md");
   await page.waitForTimeout(800);
   await expect(page.locator('[data-bereich="rueckfragen"]')).toHaveCount(0);
@@ -436,7 +436,7 @@ test("Kit-Vertrauen: Frage, Vertrauen lädt Gesundheit/Rückfragen sofort", asyn
   await oeffne(page, DATEI_A);
   const frage = page.locator('.dialog[data-dialog="vertrauen"]');
   await expect(frage).toBeVisible();
-  await expect(frage).toContainText("Brain-Werkzeuge (.tools)");
+  await expect(frage).toContainText("Ein altes Brain-Kit im Ordner „.tools“");
   await expect(page.locator('[data-st="gesundheit"]')).toHaveCount(0);
   await page.screenshot({ path: "screenshots/kit-vertrauen-light.png" });
   const vorher = stand.gesundheit;
