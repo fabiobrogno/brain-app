@@ -48,11 +48,12 @@ export function committeAm(v, rel, s, zeit, msg = `edit ${rel}`) {
 }
 
 // pre-commit: „gruen" blockt nur Zeilen mit VERBOTEN, „rot" blockt alles, „echt" = Kit-commit-pruefung.mjs
-// (Secrets, REV, _log append-only; Struktur-Lint fehlt mangels .tools im Vault → nur Hinweis).
+// (Secrets, REV, _log append-only). Der Struktur-Lint wird per BRAIN_LINT_SKRIPT auf ein nicht vorhandenes Skript gelenkt (gilt nur unter node --test): die
+// Fixture-Seiten haben absichtlich tote Platzhalter-Links; früher lief der Lint nie, weil der Test-Vault keinen Werkzeug-Ordner hatte → nur Hinweis.
 const HOOKS = {
   gruen: "#!/bin/sh\nif git diff --cached -U0 | grep -q VERBOTEN; then echo '- SECRETS: Testbefund VERBOTEN'; exit 2; fi\nexit 0\n",
   rot: "#!/bin/sh\necho '- SECRETS: Testbefund'\nexit 2\n",
-  echt: `#!/bin/sh\nexec "${process.execPath}" "${join(KIT, "commit-pruefung.mjs")}" "$(git rev-parse --show-toplevel)"\n`,
+  echt: `#!/bin/sh\nexport BRAIN_LINT_SKRIPT="${join(KIT, "gibt-es-nicht-lint.mjs")}"\nexec "${process.execPath}" "${join(KIT, "commit-pruefung.mjs")}" "$(git rev-parse --show-toplevel)"\n`,
 };
 // Testvaults starten bei Autostufe „normal“ (wie vor dem Lernmodus): der Standard der Einstellung autostufeStart ist „aus“ — der erste echte Lauf ohne Zustand schriebe sonst nichts
 // selbst, und jeder Test der Stufen/Übernahmen müsste es einzeln umstellen. Die Lernmodus-Tests (test-tageslauf-lernmodus.mjs) setzen autostufeStart selbst; `autostufeStart: undefined`

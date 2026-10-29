@@ -4,11 +4,12 @@
 set -u; cd "$(dirname "$0")"; T="$(pwd)"; C="$T/../commit-pruefung.mjs"
 V=$(mktemp -d /tmp/cpXXXX); trap 'rm -rf "$V"' EXIT
 g(){ git -C "$V" -c user.email=t@t -c user.name=t "$@"; }
-mkdir -p "$V/09_wiki/firma/x" "$V/.tools"; cp fixture/brain.config.json "$V/"; cp -R "$T/.." "$V/.tools.src" 2>/dev/null; rm -rf "$V/.tools"; mv "$V/.tools.src" "$V/.tools"; rm -rf "$V/.tools/tests/fixture/.logs"
+# Der Kern liegt außerhalb des Vaults (K = Kern-Ordner, die Prüfung nimmt ihr Lint von dort); der Test-Vault enthält nur Daten.
+mkdir -p "$V/09_wiki/firma/x"; cp fixture/brain.config.json "$V/"
 seite(){ printf -- '---\nname: %s\ndescription: %s\ntyp: thema\nquellen: []\nquellen_sha: []\nrev: %s\n---\n# %s\n\n%s\n' "$1" "$1" "$2" "$1" "$3"; }
 seite thema_a 1 'Siehe [[thema_b]].' > "$V/09_wiki/firma/x/thema_a.md"; seite thema_b 1 'Zurück [[thema_a]].' > "$V/09_wiki/firma/x/thema_b.md"
 printf '# Ingest-Protokoll (append-only, neuester Eintrag oben)\n\nFormat je Lauf:\n## <YYYY-MM-DD HH:MM> — <Quelle>\n- Seiten geändert/neu: <liste>\n\n## 2026-09-24 10:00 — alt2\n- x\n\n## 2026-09-23 — alt1\n- y\n' > "$V/09_wiki/_log.md"
-g init -q; g add -- 09_wiki brain.config.json .tools; g commit -qm init
+g init -q; g add -- 09_wiki brain.config.json; g commit -qm init
 pruef(){ RC=0; OUT=$(node "$C" "$V" 2>&1) || RC=$?; }
 zurueck(){ g reset -q --hard HEAD; g clean -fdq -- 09_wiki; }
 # Portable Ersatz für „sed -i ''" (BSD-spezifisch, bricht unter GNU/Windows): Regex-Ersatz, ^/$ wirkt je Zeile wie bei sed.
@@ -43,11 +44,11 @@ printf '\n## 2026-09-25 09:00 — falsch\n- w\n' >> "$V/09_wiki/_log.md"; g add 
 ersetze "$V/09_wiki/_log.md" '^- y$' '- y geändert'; g add 09_wiki; pruef; echo "$OUT" | grep -q 'LOG-REIHENFOLGE\|LOG-BESTAND' || { echo "FAIL: veränderter Bestandseintrag nicht erkannt"; exit 1; }; zurueck
 # (i) Altlast (toter Link in HEAD) blockiert fremden Commit nicht; neuer toter Link schon
 echo "[[weg_alt]]" >> "$V/09_wiki/firma/x/thema_a.md"; ersetze "$V/09_wiki/firma/x/thema_a.md" '^rev: 1$' 'rev: 2'; g add 09_wiki; g commit -qm --no-verify-altlast -q
-echo "x" > "$V/.tools/notiz.md"; g add .tools/notiz.md; pruef; [ $RC -eq 0 ] || { echo "FAIL: Altlast blockiert fremden Commit: $OUT"; exit 1; }; zurueck
+echo "x" > "$V/notiz.md"; g add notiz.md; pruef; [ $RC -eq 0 ] || { echo "FAIL: Altlast blockiert fremden Commit: $OUT"; exit 1; }; zurueck
 echo "[[weg_neu]]" >> "$V/09_wiki/firma/y/thema_c.md"; ersetze "$V/09_wiki/firma/y/thema_c.md" '^rev: 1$' 'rev: 2'; g add 09_wiki; pruef
 [ $RC -eq 2 ] && echo "$OUT" | grep -q 'TOTER LINK: firma/y/thema_c.md' && ! echo "$OUT" | grep -q 'weg_alt' || { echo "FAIL: neuer toter Link (rc=$RC): $OUT"; exit 1; }; zurueck
 # (j) kaputter, NICHT gestagter Arbeitsbaum blockiert nicht
-echo "[[weg_unstaged]]" >> "$V/09_wiki/firma/y/thema_c.md"; echo "x" > "$V/.tools/notiz2.md"; g add .tools/notiz2.md; pruef
+echo "[[weg_unstaged]]" >> "$V/09_wiki/firma/y/thema_c.md"; echo "x" > "$V/notiz2.md"; g add notiz2.md; pruef
 [ $RC -eq 0 ] || { echo "FAIL: ungestagte Arbeit blockiert: $OUT"; exit 1; }; zurueck
 # Review-Fixes 3.4
 # (l) Umlaut im Dateinamen: REV greift trotzdem
@@ -91,10 +92,11 @@ KEY=api_key; VAL=sk-DUMMY1234567890; { printf 'BIN\000\000'; printf '\n%s=%s\n' 
 [ $RC -eq 0 ] || { echo "FAIL: Binärdatei als Secret geprüft (rc=$RC): $OUT"; exit 1; }
 g reset -q -- bild.bin; rm -f "$V/bild.bin"
 # (o4) Secrets-Prüfung kaputt (Muster-Modul fehlt) → fail closed: blockiert mit einfachem Satz, kein Stacktrace
-cp "$V/.tools/secrets-muster.mjs" "$V/sm.bak"; printf 'export function findeSecrets() { throw new Error("kaputt"); }\n' > "$V/.tools/secrets-muster.mjs"
-echo "notiz" > "$V/harmlos.md"; g add -- harmlos.md; RC=0; OUT=$(node "$V/.tools/commit-pruefung.mjs" "$V" 2>&1) || RC=$?
+K2=$(mktemp -d); cp -R "$T/.." "$K2/kern" 2>/dev/null; rm -rf "$K2/kern/tests"   # eigene Kopie des Kerns, das Original bleibt unberührt
+printf 'export function findeSecrets() { throw new Error("kaputt"); }\n' > "$K2/kern/secrets-muster.mjs"
+echo "notiz" > "$V/harmlos.md"; g add -- harmlos.md; RC=0; OUT=$(node "$K2/kern/commit-pruefung.mjs" "$V" 2>&1) || RC=$?
 [ $RC -eq 2 ] && echo "$OUT" | grep -q 'Sicherheitsprüfung' && ! echo "$OUT" | grep -q '    at ' || { echo "FAIL: kaputte Secrets-Prüfung nicht fail-closed (rc=$RC): $OUT"; exit 1; }
-mv "$V/sm.bak" "$V/.tools/secrets-muster.mjs"; g reset -q -- harmlos.md; rm -f "$V/harmlos.md"
+g reset -q -- harmlos.md; rm -f "$V/harmlos.md"; rm -rf "$K2"
 # (p) CLI-Zweig von secrets-muster.mjs erkennt Secret auch über Symlink-Aufruf (argv[1] ≠ realpath)
 SLD=$(mktemp -d /tmp/slXXXX)
 if ln -s "$T/../secrets-muster.mjs" "$SLD/link.mjs" 2>/dev/null; then
@@ -107,17 +109,16 @@ else
 fi
 rm -rf "$SLD"
 
-# BRAIN_ERSTCOMMIT=1 (nur install.mjs, allererster Commit): Unit-Tests des Kits entfallen, Secrets blockieren weiter.
+# Gestagter Altbestand im alten Kit-Ordner eines noch nicht umgestellten Vaults: die Commit-Prüfung startet keine Unit-Tests mehr (Kern-Umzug P2),
+# ein roter Test dort blockiert nichts — Secrets blockieren weiter (außerhalb von .tools/tests).
 VE=$(mktemp -d); mkdir -p "$VE/09_wiki" "$VE/.tools/tests"; cp fixture/brain.config.json "$VE/"
 printf 'import { test } from "node:test";\ntest("rot", () => { throw new Error("rot"); });\n' > "$VE/.tools/tests/test-rot.mjs"
 echo 'export const x = 1;' > "$VE/.tools/x.mjs"
 git -C "$VE" init -q; git -C "$VE" add -- .tools brain.config.json
 RC=0; OUT=$(node "$C" "$VE" 2>&1) || RC=$?
-[ $RC -eq 2 ] && echo "$OUT" | grep -q 'UNIT-TESTS' || { echo "FAIL: roter Unit-Test blockiert nicht (rc=$RC): $OUT"; exit 1; }
-RC=0; OUT=$(BRAIN_ERSTCOMMIT=1 node "$C" "$VE" 2>&1) || RC=$?
-[ $RC -eq 0 ] || { echo "FAIL: BRAIN_ERSTCOMMIT=1 lässt Unit-Tests trotzdem laufen (rc=$RC): $OUT"; exit 1; }
+[ $RC -eq 0 ] && ! echo "$OUT" | grep -q 'UNIT-TESTS' || { echo "FAIL: roter Unit-Test im alten Kit-Ordner blockiert/läuft noch (rc=$RC): $OUT"; exit 1; }
 KEY=api_key; VAL=sk-DUMMY1234567890; printf '# n\n%s=%s\n' "$KEY" "$VAL" > "$VE/n.md"; git -C "$VE" add -- n.md
-RC=0; OUT=$(BRAIN_ERSTCOMMIT=1 node "$C" "$VE" 2>&1) || RC=$?
-[ $RC -eq 2 ] && echo "$OUT" | grep -q 'SECRETS: n.md' || { echo "FAIL: BRAIN_ERSTCOMMIT=1 übergeht Secrets (rc=$RC): $OUT"; exit 1; }
+RC=0; OUT=$(node "$C" "$VE" 2>&1) || RC=$?
+[ $RC -eq 2 ] && echo "$OUT" | grep -q 'SECRETS: n.md' || { echo "FAIL: Secrets werden übergangen (rc=$RC): $OUT"; exit 1; }
 rm -rf "$VE"
 echo "PASS"

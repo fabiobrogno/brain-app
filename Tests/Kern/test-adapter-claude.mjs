@@ -1,4 +1,4 @@
-import { nodeBefehl } from "../pfade.mjs";
+import { nodeBefehl, KERN } from "../pfade.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, readFileSync, readdirSync, mkdirSync } from "node:fs";
@@ -6,7 +6,8 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-const starter = (vf) => (process.platform === "win32" ? nodeBefehl() : `/bin/sh "${vf}/.tools/node-start.sh"`);
+const KF = KERN.split("\\").join("/");   // der Kern, auf den die Hooks zeigen (nicht mehr der Vault)
+const starter = () => (process.platform === "win32" ? nodeBefehl() : `/bin/sh "${KF}/node-start.sh"`);
 const inst = fileURLToPath(new URL("../adapters/claude-code/install.mjs", import.meta.url));
 // HOME/USERPROFILE immer auf ein Temp-Verzeichnis: das echte ~/.claude wird nie gelesen oder geschrieben.
 const TEMP_HOME = mkdtempSync(join(tmpdir(), "adapter-home-"));
@@ -22,8 +23,8 @@ test("ergänzt, ersetzt nicht, legt Backup an", () => {
   assert.equal(s.model, "x");
   assert.ok(s.hooks.Stop[0].hooks[0].command === "afplay glass");
   const ss = s.hooks.SessionStart.flatMap(x => x.hooks.map(y => y.command));
-  assert.ok(ss.includes("fremd.sh") && ss.some(c => c.includes("/.tools/adapters/claude-code/session-start.mjs")));
-  for (const e of ["UserPromptSubmit", "PreToolUse"]) assert.ok(s.hooks[e].some(x => x.hooks.some(y => y.command.includes("/.tools/adapters/claude-code/"))), e);
+  assert.ok(ss.includes("fremd.sh") && ss.some(c => c.includes("/adapters/claude-code/session-start.mjs")));
+  for (const e of ["UserPromptSubmit", "PreToolUse"]) assert.ok(s.hooks[e].some(x => x.hooks.some(y => y.command.includes("/adapters/claude-code/"))), e);
   assert.equal(readdirSync(h).filter(f => f.startsWith("settings.json.bak-")).length, 1);
   assert.ok(readdirSync(join(h, "commands")).includes("ingest.md"));
 });
@@ -36,7 +37,7 @@ test("zweiter Lauf ist ohne Änderung", () => {
 test("Vault-Pfad mit Leerzeichen wird gequotet", () => {
   const { h, v } = setup(); lauf(v, h);
   const cmd = JSON.parse(readFileSync(join(h, "settings.json"), "utf8")).hooks.UserPromptSubmit[0].hooks[0].command;
-  assert.ok(cmd.includes(`"${v.split("\\").join("/")}/.tools/adapters/claude-code/brain-hint.mjs"`), cmd);
+  assert.ok(cmd.includes(`"${KF}/adapters/claude-code/brain-hint.mjs" --vault "${v.split("\\").join("/")}"`), cmd);
 });
 
 test("kaputtes settings.json: Exit 1, nichts geändert, kein Stacktrace", () => {
@@ -98,11 +99,11 @@ test("ersetzt ältere Brain-Hooks derselben Vault statt zu duplizieren (.sh/.mjs
   const s = JSON.parse(readFileSync(join(h, "settings.json"), "utf8"));
   for (const [e, datei] of [["SessionStart", "session-start.mjs"], ["UserPromptSubmit", "brain-hint.mjs"], ["PreToolUse", "wiki-guard.mjs"]]) {
     const cmds = s.hooks[e].flatMap(x => x.hooks.map(y => y.command));
-    assert.equal(cmds.filter(c => c.includes(`/.tools/adapters/claude-code/${datei}`)).length, 1, `${e}: ${JSON.stringify(cmds)}`);
+    assert.equal(cmds.filter(c => c.includes(`/adapters/claude-code/${datei}`)).length, 1, `${e}: ${JSON.stringify(cmds)}`);
   }
   const sessionCmds = s.hooks.SessionStart.flatMap(x => x.hooks.map(y => y.command));
   assert.ok(sessionCmds.includes("fremd.sh"), "fremder Hook im selben Event muss überleben");
-  assert.ok(s.statusLine.command.includes("/.tools/adapters/claude-code/statusline.mjs"));
+  assert.ok(s.statusLine.command.includes("/adapters/claude-code/statusline.mjs"));
   assert.equal(s.hooks.PreToolUse[0].matcher, "Edit|Write|MultiEdit|NotebookEdit", "matcher muss beim Ersetzen auf den Zielwert gesetzt werden");
   assert.equal(s.hooks.PreToolUse.length, 3, "wiki-guard ersetzt + eigene Einträge für Werkzeug-Protokoll und Regeln am Read");
   assert.match(lauf(v, h), /unverändert/);
@@ -140,7 +141,7 @@ test("entfernt veraltete Brain-Hooks, auch wenn schon ein aktueller Eintrag exis
   assert.match(out, /- Hook SessionStart entfernt \(alte Fassung\)/, out);
   const s = JSON.parse(readFileSync(join(h, "settings.json"), "utf8"));
   const cmds = s.hooks.SessionStart.flatMap(x => x.hooks.map(y => y.command));
-  assert.equal(cmds.filter(c => c.includes("/.tools/adapters/claude-code/")).length, 1, JSON.stringify(cmds));
+  assert.equal(cmds.filter(c => c.includes("/adapters/claude-code/")).length, 1, JSON.stringify(cmds));
   assert.ok(cmds.includes("fremd.sh"), "fremder Hook im selben Event muss überleben");
   assert.ok(!cmds.some(c => c.includes("/.tools/session-start.sh")), "veralteter Eintrag muss weg sein");
   assert.equal(s.hooks.SessionStart.length, 2, "leer gewordener Eintrag muss entfernt werden");
@@ -159,7 +160,7 @@ test("ersetzt die $HOME/brain-Schreibweise, wenn Vault == homedir()/brain", () =
   lauf(v, h, H); // Windows: homedir() liest USERPROFILE
   const s = JSON.parse(readFileSync(join(h, "settings.json"), "utf8"));
   const cmds = s.hooks.SessionStart.flatMap(x => x.hooks.map(y => y.command));
-  assert.equal(cmds.filter(c => c.includes("/.tools/adapters/claude-code/")).length, 1, JSON.stringify(cmds));
+  assert.equal(cmds.filter(c => c.includes("/adapters/claude-code/")).length, 1, JSON.stringify(cmds));
   assert.ok(!cmds.some(c => c.includes("$HOME/brain/.tools/session-start.mjs")), "alte $HOME-Form noch vorhanden");
 });
 
@@ -217,21 +218,21 @@ test("fremder Hook ohne command (type:'prompt') neben altem Brain-Eintrag: Insta
   const promptEintrag = eintraege.flatMap(x => x.hooks).find(x => x.type === "prompt");
   assert.deepEqual(promptEintrag, promptHook, "fremder prompt-Hook muss unverändert bleiben");
   const cmds = eintraege.flatMap(x => x.hooks).filter(x => typeof x.command === "string").map(x => x.command);
-  assert.equal(cmds.filter(c => c.includes("/.tools/adapters/claude-code/brain-hint.mjs")).length, 1, JSON.stringify(cmds));
+  assert.equal(cmds.filter(c => c.includes("/adapters/claude-code/brain-hint.mjs")).length, 1, JSON.stringify(cmds));
   assert.ok(!cmds.some(c => c.includes(`${vf}/.tools/brain-hint.mjs`)), "veralteter Eintrag muss ersetzt sein");
 });
 
 test("Hook-Befehle starten Node ohne festen Pfad (node-start.sh); alter Eintrag mit nacktem node wird darauf gehoben", () => {
   const h = mkdtempSync(join(tmpdir(), "ch-")), v = mkdtempSync(join(tmpdir(), "v3 ")); writeFileSync(join(v, "brain.config.json"), "{}");
-  const vf = v.split("\\").join("/"), nodeQ = starter(vf);
+  const vf = v.split("\\").join("/"), nodeQ = starter();
   writeFileSync(join(h, "settings.json"), JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: "command", command: `node "${vf}/.tools/adapters/claude-code/session-start.mjs"` }] }] },
     statusLine: { type: "command", command: `node "${vf}/.tools/adapters/claude-code/statusline.mjs"` } }));
   lauf(v, h);
   const s = JSON.parse(readFileSync(join(h, "settings.json"), "utf8"));
   for (const [e, n] of [["SessionStart", 1], ["UserPromptSubmit", 1], ["PreToolUse", 3], ["SessionEnd", 2], ["PreCompact", 2]]) {
-    const cmds = s.hooks[e].flatMap(x => x.hooks.map(y => y.command)).filter(c => c.includes("/.tools/adapters/claude-code/"));
+    const cmds = s.hooks[e].flatMap(x => x.hooks.map(y => y.command)).filter(c => c.includes("/adapters/claude-code/"));
     assert.equal(cmds.length, n, `${e}: ${JSON.stringify(cmds)}`);
-    for (const c of cmds) assert.ok(c.startsWith(`${nodeQ} "${vf}/`), c);
+    for (const c of cmds) assert.ok(c.startsWith(`${nodeQ} "${KF}/adapters/claude-code/`) && c.endsWith(` --vault "${vf}"`), c);
   }
   assert.ok(s.statusLine.command.startsWith(`${nodeQ} `), s.statusLine.command);
   const cmdDir = join(h, "commands");
@@ -255,11 +256,11 @@ test("v0.3: registriert Werkzeug-Protokoll (eigener PreToolUse-Eintrag), Session
   assert.notEqual(wg[0], wp[0]);
   assert.equal(wp[0].hooks.length, 1, "eigener Eintrag nur mit dem Protokoll-Hook");
   const se = befehle(s, "SessionEnd");
-  assert.equal(se.filter(c => c.includes("/claude-code/ernte-ausloeser.mjs\" --art fakt")).length, 1, JSON.stringify(se));
+  assert.equal(se.filter(c => c.includes("/claude-code/ernte-ausloeser.mjs\" --art fakt --vault")).length, 1, JSON.stringify(se));
   const pc = befehle(s, "PreCompact");
   assert.equal(pc.filter(c => c.startsWith("echo ") && c.includes("handoff")).length, 0, JSON.stringify(pc));
   assert.equal(pc.filter(c => c.includes("/claude-code/kompakt-sichern.mjs")).length, 1, JSON.stringify(pc));
-  assert.equal(pc.filter(c => c.includes("/claude-code/ernte-ausloeser.mjs\" --art fakt")).length, 1, JSON.stringify(pc));
+  assert.equal(pc.filter(c => c.includes("/claude-code/ernte-ausloeser.mjs\" --art fakt --vault")).length, 1, JSON.stringify(pc));
   assert.equal(readdirSync(h).filter(f => f.startsWith("settings.json.bak-")).length, 1, "zweiter Lauf: kein neues Backup");
   // fremde Hooks unverändert
   assert.equal(s.hooks.Stop[0].hooks[0].command, "afplay glass");
@@ -287,7 +288,7 @@ test("v0.3: Eintrag mit nacktem node für den Ernte-Auslöser wird auf den absol
   lauf(v, h);
   const se = befehle(lies(h), "SessionEnd").filter(c => c.includes("ernte-ausloeser"));
   assert.equal(se.length, 1, JSON.stringify(se));
-  assert.ok(se[0].startsWith(`${starter(vf)} "${vf}/`), se[0]);
+  assert.ok(se[0].startsWith(`${starter()} "${KF}/`), se[0]);
 });
 
 // ---------- v0.6 (M2a): Arbeitsstand statt echo-Hinweis, Sitzungsende, Regeln am Read ----------
@@ -318,5 +319,5 @@ test("B3: Eintrag mit festem Node-Pfad wird auf node-start.sh gehoben, nicht ver
     command: `"/opt/homebrew/bin/node" "${vf}/.tools/adapters/claude-code/brain-hint.mjs"` }] }] } }));
   lauf(v, h);
   const c = JSON.parse(readFileSync(join(h, "settings.json"), "utf8")).hooks.UserPromptSubmit.flatMap((x) => x.hooks.map((y) => y.command));
-  assert.deepEqual(c, [`/bin/sh "${vf}/.tools/node-start.sh" "${vf}/.tools/adapters/claude-code/brain-hint.mjs"`]);
+  assert.deepEqual(c, [`/bin/sh "${KF}/node-start.sh" "${KF}/adapters/claude-code/brain-hint.mjs" --vault "${vf}"`]);
 });

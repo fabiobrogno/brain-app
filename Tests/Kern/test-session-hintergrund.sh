@@ -12,11 +12,15 @@ node "$H"
 [ -f "$V/AGENTS.md" ] || { echo "FAIL: AGENTS.md wurde nicht erzeugt"; exit 1; }
 grep -qF "$V" "$V/AGENTS.md" || { echo "FAIL: AGENTS.md enthält nicht den Vault-Pfad"; exit 1; }
 # Node-Pfad endet unter Windows auf node.exe
-grep -F "\"$V/.tools/brain.mjs\" search" "$V/AGENTS.md" | grep -qE 'node(\.exe)?" "' || { echo "FAIL: Kommando-Pfad nicht gequotet"; cat "$V/AGENTS.md"; exit 1; }
-# v0.3: Schalter updateHinweis=false → kein Update-Check im Hintergrund
+K="$(cd .. && pwd -P)"   # Kern-Ordner (liegt außerhalb des Vaults); AGENTS.md nennt ihn und den Vault, beide gequotet
+grep -F "/brain.mjs\" --vault \"$V\" search" "$V/AGENTS.md" | grep -qE 'node(\.exe)?" "' || { echo "FAIL: Kommando-Pfad nicht gequotet"; cat "$V/AGENTS.md"; exit 1; }
+grep -qF "\"$K/brain.mjs\" --vault" "$V/AGENTS.md" || { echo "FAIL: AGENTS.md nennt nicht den Kern-Ordner ($K)"; exit 1; }
+! grep -q '/\.tools/' "$V/AGENTS.md" || { echo "FAIL: AGENTS.md verweist noch auf den alten Kit-Ordner"; exit 1; }
+# Kein Update-Check mehr (Kortex aktualisiert sich selbst): weder bei updateHinweis=true noch =false steht davon etwas im Log
+rm -f "$V/.logs/hooks.log"; node "$H"
+grep -q 'Update-Check' "$V/.logs/hooks.log" 2>/dev/null && { echo "FAIL: Update-Check im Hintergrund"; exit 1; }
 echo '{"automatik":{"updateHinweis":false}}' > "$V/brain.config.json"; rm -f "$V/.logs/hooks.log"
 node "$H"
-grep -q 'Update-Check:' "$V/.logs/hooks.log" 2>/dev/null && { echo "FAIL: Update-Check trotz updateHinweis=false"; exit 1; }
 # v0.4: Pflegebericht wird im Hintergrund gerechnet (Cache für die Wochen-Zeile); Schalter wochenbericht=false → nicht
 [ -f "$V/.logs/pflege-bericht.json" ] || { echo "FAIL: Pflegebericht-Cache fehlt"; exit 1; }
 rm -f "$V/.logs/pflege-bericht.json"; echo '{"automatik":{"updateHinweis":false,"wochenbericht":false}}' > "$V/brain.config.json"

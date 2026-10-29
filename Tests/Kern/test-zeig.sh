@@ -1,22 +1,23 @@
 #!/bin/bash
 . "$(dirname "$0")/plattform.sh"
-# .tools/tests/test-zeig.sh — "brain zeig": erzeugt die Daten für die 3D-Ansicht (Task 1:
-# .tools/ansicht/daten.mjs) und meldet den Pfad der Ansicht. --nicht-oeffnen/--nur-daten verhindern
+# test-zeig.sh — "brain zeig": erzeugt die Daten für die 3D-Ansicht (Task 1:
+# ansicht/daten.mjs im Kern) und meldet den Pfad der Ansicht. --nicht-oeffnen/--nur-daten verhindern
 # in Tests, dass ein Browser aufgeht.
 set -u; D="$(cd "$(dirname "$0")" && pwd)"; B="$D/../brain.mjs"
 T="$(mktemp -d)"; V="$T/Mein Brain"; cp -R "$D/fixture" "$V"
-# zeig nutzt die Ansicht des ZIEL-Vaults (<vault>/.tools/ansicht, wie doctor) — darum bekommt jeder Test-Vault
-# eine eigene Kopie von .tools (ohne tests/), und brain.mjs läuft absichtlich aus dem Werkzeug-Vault ($B) mit
-# BRAIN_VAULT auf den Test-Vault (Fund 3 der Gesamtprüfung: früher Daten hier, Seite dort).
-mit_tools() { mkdir -p "$1/.tools"; for e in "$D/.."/* "$D/.."/.[!.]*; do [ -e "$e" ] || continue; [ "$(basename "$e")" = tests ] && continue; cp -R "$e" "$1/.tools/"; done; }
-mit_tools "$V"
+# zeig nutzt die Ansicht des KERNS (liegt außerhalb des Vaults); Daten und die file://-Seite (seite.html) entstehen im Ziel-Vault (BRAIN_VAULT).
+mit_tools() { :; }   # früher: Kopie des Werkzeug-Ordners in jeden Test-Vault — der Vault enthält jetzt nur Daten
 
 RC=0; OUT=$(BRAIN_VAULT="$V" node "$B" zeig --nicht-oeffnen) || RC=$?
 [ "$RC" = 0 ] || { echo "FAIL: zeig --nicht-oeffnen rc=$RC: $OUT"; exit 1; }
 echo "$OUT" | grep -q 'file://' || { echo "FAIL: Ausgabe enthält keine file://-URL: $OUT"; exit 1; }
-echo "$OUT" | grep -Eq '\.tools/ansicht/index\.html"?$' || { echo "FAIL: Ausgabe endet nicht auf .tools/ansicht/index.html: $OUT"; exit 1; }
+echo "$OUT" | grep -Eq '\.logs/ansicht/seite\.html"?$' || { echo "FAIL: Ausgabe endet nicht auf .logs/ansicht/seite.html: $OUT"; exit 1; }
 # Die geöffnete Seite liegt im Ziel-Vault (dort, wo auch data.js geschrieben wird), nicht im Werkzeug-Vault
-echo "$OUT" | grep -qF "/Mein%20Brain/.tools/ansicht/index.html" || { echo "FAIL: URL zeigt nicht auf <BRAIN_VAULT>/.tools/ansicht: $OUT"; exit 1; }
+echo "$OUT" | grep -qF "/Mein%20Brain/.logs/ansicht/seite.html" || { echo "FAIL: URL zeigt nicht auf <BRAIN_VAULT>/.logs/ansicht: $OUT"; exit 1; }
+# seite.html = index.html des Kerns mit <base> auf den Kern und der Adresse der Daten im Vault
+grep -q '<base href="file://[^"]*/ansicht/">' "$V/.logs/ansicht/seite.html" && grep -q '<meta name="brain-daten" content="file://[^"]*/Mein%20Brain/.logs/ansicht/data.js">' "$V/.logs/ansicht/seite.html" || { echo "FAIL: seite.html ohne base/brain-daten"; head -8 "$V/.logs/ansicht/seite.html"; exit 1; }
+grep -q 'src="app.js"' "$V/.logs/ansicht/seite.html" || { echo "FAIL: seite.html ist nicht die Kern-index.html"; exit 1; }
+[ ! -e "$V/.tools" ] || { echo "FAIL: zeig legt .tools im Vault an"; exit 1; }
 [ -f "$V/.logs/ansicht/data.js" ] || { echo "FAIL: <vault>/.logs/ansicht/data.js fehlt"; exit 1; }
 
 # --nur-daten: öffnet nichts (keine file://-URL in der Ausgabe), druckt die Seitenzahl
@@ -61,11 +62,18 @@ RC=0; OUT=$(BRAIN_DIENST_AUS=1 BRAIN_OEFFNER="$T/gibt-es-nicht/kein-programm" BR
 [ "$RC" = 2 ] || { echo "FAIL: zeig mit unbekannter Option rc=$RC: $OUT"; exit 1; }
 echo "$OUT" | grep -qF -- "--quatsch" || { echo "FAIL: Hinweis nennt die unbekannte Option nicht: $OUT"; exit 1; }
 
-# Vault ohne eigene Ansicht (.tools/ansicht fehlt): klare Meldung, Exit 1 — auch wenn der Werkzeug-Vault sie hat
+# Kern ohne Ansicht (z. B. beschädigte Installation): klare Meldung, Exit 1
 OHNE="$T/ohne-ansicht"; cp -R "$D/fixture" "$OHNE"
-RC=0; OUT=$(BRAIN_VAULT="$OHNE" node "$B" zeig --nicht-oeffnen 2>&1) || RC=$?
-[ "$RC" = 1 ] || { echo "FAIL: zeig ohne <vault>/.tools/ansicht rc=$RC: $OUT"; exit 1; }
-echo "$OUT" | grep -qF "noch nicht installiert" || { echo "FAIL: Satz für fehlende Ansicht fehlt: $OUT"; exit 1; }
+K2="$T/kern-ohne-ansicht"; mkdir -p "$K2"; for e in "$D/.."/* "$D/.."/.[!.]*; do [ -e "$e" ] || continue; [ "$(basename "$e")" = tests ] && continue; cp -R "$e" "$K2/"; done; rm -f "$K2/ansicht/index.html"
+RC=0; OUT=$(BRAIN_VAULT="$OHNE" node "$K2/brain.mjs" zeig --nicht-oeffnen 2>&1) || RC=$?
+[ "$RC" = 1 ] || { echo "FAIL: zeig ohne Ansicht im Kern rc=$RC: $OUT"; exit 1; }
+echo "$OUT" | grep -qF "fehlt in diesem Kern" || { echo "FAIL: Satz für fehlende Ansicht fehlt: $OUT"; exit 1; }
+# Kein Vault bekannt (weder --vault noch BRAIN_VAULT noch App-Liste): Exit 2 mit klarer Meldung, kein Rückfall auf irgendeinen Ordner
+RC=0; OUT=$(node "$B" zeig --nicht-oeffnen 2>&1) || RC=$?
+[ "$RC" = 2 ] && echo "$OUT" | grep -qF "Kein Vault gefunden" || { echo "FAIL: zeig ohne Vault rc=$RC: $OUT"; exit 1; }
+# --vault <pfad> statt BRAIN_VAULT
+RC=0; OUT=$(node "$B" zeig --nur-daten --vault "$V" 2>&1) || RC=$?
+[ "$RC" = 0 ] && echo "$OUT" | grep -Eq '^[0-9]+ Seiten' || { echo "FAIL: zeig --vault rc=$RC: $OUT"; exit 1; }
 
 # Warnungen von daten.mjs (kaputte brain.config.json) landen auf stderr, zeig läuft trotzdem durch (Fund 4)
 KAPUTT="$T/kaputt"; cp -R "$D/fixture" "$KAPUTT"; mit_tools "$KAPUTT"

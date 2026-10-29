@@ -10,10 +10,9 @@ import { spawnSync } from "node:child_process";
 import { brainStatus, bewerte, statusText } from "../status.mjs";
 
 const HIER = dirname(fileURLToPath(import.meta.url));
-function vault({ mitWerkzeug = true } = {}) {
+function vault() {
   const v = mkdtempSync(join(tmpdir(), "status-"));
   cpSync(join(HIER, "fixture"), v, { recursive: true });
-  if (mitWerkzeug) { mkdirSync(join(v, ".tools"), { recursive: true }); writeFileSync(join(v, ".tools", "brain.mjs"), "// stub\n"); }
   process.on("exit", () => rmSync(v, { recursive: true, force: true }));
   return v;
 }
@@ -43,22 +42,24 @@ test("brainStatus: beschädigte brain.config.json → problem mit Alltags-Meldun
   assert.ok(s.meldungen.some((m) => m.includes("beschädigt")));
 });
 
-test("brainStatus: Ordner ohne Werkzeuge → problem", async () => {
-  const s = await brainStatus(vault({ mitWerkzeug: false }));
+test("brainStatus: fehlender Ordner → problem (der Kern liegt außerhalb des Vaults, Werkzeuge im Vault werden nicht mehr gesucht)", async () => {
+  const v = vault();
+  rmSync(v, { recursive: true, force: true });
+  const s = await brainStatus(v);
   assert.equal(s.zustand, "problem");
-  assert.ok(s.meldungen.some((m) => m.includes("kein Brain-Ordner")));
+  assert.ok(s.meldungen.some((m) => m.includes("nicht gefunden")));
 });
 
-test("brainStatus: Quell-Vault wird erkannt", async () => {
+test("brainStatus: quellVault bleibt für die App im JSON, ist aber immer false (den Entwickler-Vault gibt es nicht mehr)", async () => {
   const v = vault();
   mkdirSync(join(v, ".tools", "kit"), { recursive: true });
   writeFileSync(join(v, ".tools", "kit", "export.mjs"), "// stub\n");
-  assert.equal((await brainStatus(v)).quellVault, true);
+  assert.equal((await brainStatus(v)).quellVault, false);
 });
 
 test("statusText: Symbol und Zahlen", () => {
-  const t = statusText({ version: "0.6.0", quellVault: true, zustand: "hinweis", meldungen: ["X"], zahlen: { vorschlaege: 2, konflikte: 1, abgelaufen: 0, zuTun: 3 } });
-  assert.match(t, /^⚠ Brain 0\.6\.0 \(Entwickler-Brain\)/);
+  const t = statusText({ version: "0.6.0", quellVault: false, zustand: "hinweis", meldungen: ["X"], zahlen: { vorschlaege: 2, konflikte: 1, abgelaufen: 0, zuTun: 3 } });
+  assert.match(t, /^⚠ Brain 0\.6\.0\n/);
   assert.match(t, /Vorschläge: 2 · Konflikte: 1 · abgelaufen: 0 · zu tun: 3/);
 });
 

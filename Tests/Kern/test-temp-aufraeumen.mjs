@@ -151,7 +151,7 @@ test("setup.mjs: mit dem Fake-QMD indexiert search-refresh.mjs ohne Netz und ohn
   assert.ok(!existsSync(join(home, ".cache")), "kein Modell-Cache im Test-HOME");
 });
 
-test("Aufrufstellen: Unit-Suite läuft überall mit setup.mjs (unit.sh, run-all.sh, pre-commit-Prüfung, Hook-Laufzeit-Test)", () => {
+test("Aufrufstellen: Unit-Suite läuft überall mit setup.mjs (unit.sh, run-all.sh, Hook-Laufzeit-Test)", () => {
   const lies = (...p) => readFileSync(join(...p), "utf8").split("\n").filter((z) => !/^\s*(#|\/\/)/.test(z)).map((z) => z.replace(/\s#\s.*$/, "")).join("\n");   // ohne Kommentare
   const unit = lies(HIER, "unit.sh");
   assert.match(unit, /--import/);
@@ -161,9 +161,8 @@ test("Aufrufstellen: Unit-Suite läuft überall mit setup.mjs (unit.sh, run-all.
   assert.doesNotMatch(lies(HIER, "run-all.sh"), /^node --test/m, "kein nackter node --test mehr in run-all.sh");
   assert.match(lies(HIER, "test-hook-laufzeit.sh"), /unit\.sh/);
   assert.doesNotMatch(lies(HIER, "test-hook-laufzeit.sh"), /node --test/);
-  const pruefung = lies(KIT, "commit-pruefung.mjs");
-  assert.match(pruefung, /"--import"/);
-  assert.match(pruefung, /setup\.mjs/);
+  // Die Commit-Prüfung startet seit dem Kern-Umzug keine Unit-Tests mehr (sie laufen in der CI des Repos).
+  assert.doesNotMatch(lies(KIT, "commit-pruefung.mjs"), /node:test|--test/);
 });
 
 test("verlauf-fixture: hook() startet Hooks nie mit dem echten qmd — auch ein nackter node --test (ohne Setup) lädt kein Modell nach", () => {

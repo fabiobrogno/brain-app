@@ -1,6 +1,9 @@
 // .tools/tests/test-pflege-inbox.mjs — B3 Task 7: Inbox headless. fake-sonnet schreibt in der Arbeitskopie (cwd), Node sortiert
 // ein und setzt quellen; Secrets erreichen die KI nie; höchstens 2 Versuche je Inhalt; Ziel/Quelle/Löschen werden verworfen.
 // Eingeschleuste Anweisungen und Schutzgeländer: test-pflege-inbox-schutz.mjs.
+import { KERN } from "../pfade.mjs";
+import { SONNET_BASH } from "../tageslauf/pflege-ki.mjs";
+const BRAIN = `node "${KERN.split("\\").join("/")}/brain.mjs"`;   // der Befehl, den die KI ausführen darf (Kern liegt außerhalb der Kopie)
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, existsSync, writeFileSync, utimesSync, realpathSync, mkdirSync } from "node:fs";
@@ -49,7 +52,7 @@ test("eigene Notiz: Sonnet schreibt in der Kopie, Node sortiert ein + quellen/sh
   const a = s.aufrufe()[0];
   assert.equal(realpathSync(a.cwd), realpathSync(kopie.pfad));
   assert.match(a.system, /Vorrangregeln/);
-  assert.match(a.system, /node \.tools\/brain\.mjs/);
+  assert.ok(a.system.includes(`${SONNET_BASH[0]} "<frage>"`), a.system);
   assert.doesNotMatch(a.system, /\{\{|Tages Brän/);                          // keine Platzhalter, kein Vault-Pfad
   const t = readFileSync(join(kopie.pfad, ORION), "utf8");
   assert.match(t, /^rev: 2$/m);
@@ -161,7 +164,7 @@ test("headlessSkill + ingestSystem + zielGueltig", () => {
   const v = neuerPflegeVault({ seiten: SEITEN });
   const t = I.headlessSkill(readFileSync(join(KIT, "skills", "ingest", "SKILL.md"), "utf8"), v);
   assert.doesNotMatch(t, /\{\{|\$ARGUMENTS|^---$/m);
-  assert.match(t, /node \.tools\/brain\.mjs ingest-check/);
+  assert.ok(t.includes(`${BRAIN} ingest-check`), t);
   assert.ok(!t.includes(v));
   const sys = I.ingestSystem({ skill: t, wiki: "09_wiki", inbox: "00_inbox", cluster: ["30_wissen (Wissen)"], drift: [{ alt: "Altname", neu: "Neuname" }] });
   assert.match(sys, /„Altname" → „Neuname"/);
