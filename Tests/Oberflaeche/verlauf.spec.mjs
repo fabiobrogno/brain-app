@@ -660,7 +660,7 @@ test("Remote-Dialog: Texte, Fokus im Feld, Escape schließt", async ({ page }) =
   await expect(dlg.locator("label")).toHaveText("Adresse");
   await expect(dlg.locator("input")).toHaveAttribute("placeholder", /git@github\.com:name\/brain\.git/);
   await expect(dlg.locator("input")).toBeFocused();
-  await expect(dlg).toContainText("Anmeldung läuft über deine normale Git-Einrichtung (SSH oder Schlüsselbund). Die App speichert keine Passwörter.");
+  await expect(dlg).toContainText("Anmeldung läuft über deine normale Git-Anmeldung (SSH-Schlüssel oder macOS-Schlüsselbund). Die App speichert keine Passwörter.");
   await expect(dlg.locator('[data-aktion="verbinden"]')).toHaveText("Verbinden");
   await page.keyboard.press("Escape");
   await expect(dlg).toHaveCount(0);

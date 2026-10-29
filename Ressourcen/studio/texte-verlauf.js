@@ -37,7 +37,7 @@ export const TV = {
   },
   keinGit: {
     titel: "Dieser Ordner hat noch keinen Versionsverlauf",
-    text: "Wenn du die Versionierung einschaltest, merkt sich Brain jede Fassung deiner Notizen.",
+    text: "Wenn du die Versionierung einschaltest, merkt sich Kortex jede Fassung deiner Notizen.",
   },
   gesperrt: {
     titel: "Git ist für diesen Vault gesperrt",
@@ -158,8 +158,8 @@ export const TV = {
     titel: "Remote hinzufügen",
     erklaerung: "Ein Remote ist ein Online-Ort, an dem dein Vault gesichert wird — z. B. ein privates GitHub-Repository.",
     label: "Adresse",
-    platzhalter: "git@github.com:name/brain.git oder https://github.com/name/brain.git",
-    hinweis: "Anmeldung läuft über deine normale Git-Einrichtung (SSH oder Schlüsselbund). Die App speichert keine Passwörter.",
+    platzhalter: "git@github.com:name/vault.git oder https://github.com/name/vault.git",
+    hinweis: "Anmeldung läuft über deine normale Git-Anmeldung (SSH-Schlüssel oder macOS-Schlüsselbund). Die App speichert keine Passwörter.",
     verbinden: "Verbinden",
     abbrechen: "Abbrechen",
     schliessen: "Schließen",

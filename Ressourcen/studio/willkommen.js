@@ -7,9 +7,9 @@ import { kiLogo } from "./ki-logos.js";
 import { TW } from "./texte-willkommen.js";
 
 const api = API.api;
-const STANDARD_ORDNER = "~/Brain";
+const STANDARD_ORDNER = "~/Kortex";
 const KI_GESEHEN = "ki-schritt-gesehen";
-// „Brain-Hinweise einschalten“ (POST /api/kit/hooks): die Werkstatt hat diese Route noch nicht. Der Knopf bleibt aus, bis es sie gibt.
+// „Kortex-Hinweise einschalten“ (POST /api/kit/hooks): die Werkstatt hat diese Route noch nicht. Der Knopf bleibt aus, bis es sie gibt.
 const HINWEISE_VERFUEGBAR = false;
 
 let zaehler = 0;
