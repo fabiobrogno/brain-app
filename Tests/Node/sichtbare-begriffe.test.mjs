@@ -35,7 +35,7 @@ const AUSNAHMEN = [
   { datei: "Ressourcen/kern/pfade.mjs", muster: /"Brain"/, grund: "alter Support-Ordner namens Brain (Pfad)" },
   { datei: "Ressourcen/kern/tageslauf/arbeitskopie.mjs", muster: /Brain-Tageslauf/, grund: "Git-Autor des Tageslaufs: Name und Mail erkennen eigene Commits in bestehenden Vaults (regeln.mjs, heilung.mjs) — Umbenennen würde alte Commits fremd machen" },
   { datei: "Ressourcen/kern/tageslauf/pflege-ki.mjs", muster: /Application Support\/Brain/, grund: "Pfad des alten Support-Ordners" },
-  { datei: "Ressourcen/kern/umstellung/befund.mjs", muster: /"Application Support", "Brain"/, grund: "Befund sucht den alten Support-Ordner namens Brain (Pfad)" },
+  { datei: "Ressourcen/kern/umstellung/befund.mjs", muster: /"Brain"/, grund: "Befund sucht den alten Support-Ordner namens Brain (Pfad)" },
   { datei: "Ressourcen/kern/kit/AGENTS.md", muster: /(?:mein(?:e|en)?|altes|das|im) Brain|my brain/, grund: "Alte Auslösephrasen bleiben als zusätzliche Auslöser neben den neuen" },
   { datei: "Ressourcen/kern/skills/", muster: /(?:mein(?:e|en)?|altes|das|im) Brain|Brain fragt/, grund: "Alte Auslösephrasen bleiben als zusätzliche Auslöser" },
   { datei: "Sources/BrainCore/SupportMigration.swift", muster: /./, grund: "nennt den früheren Support-Ordner „Brain“ (Ordnername, kein Produktname)" },
