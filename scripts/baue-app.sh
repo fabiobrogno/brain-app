@@ -6,8 +6,8 @@
 set -euo pipefail
 W="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$W"
-# Studio-Bausteine (Oberfläche, Werkstatt, MCP, gemeinsamer Code) müssen vorhanden sein
-for ordner in studio werkstatt mcp gemeinsam; do
+# Studio-Bausteine (Oberfläche, Werkstatt, MCP, gemeinsamer Code, Logos) müssen vorhanden sein
+for ordner in studio werkstatt mcp gemeinsam logos; do
   [ -d "Ressourcen/$ordner" ] || { echo "FEHLER: Ressourcen/$ordner fehlt — ohne diesen Ordner entsteht keine vollständige App." >&2; exit 1; }
 done
 [ -f Ressourcen/werkstatt/werkstatt.mjs ] || { echo "FEHLER: Ressourcen/werkstatt/werkstatt.mjs fehlt." >&2; exit 1; }

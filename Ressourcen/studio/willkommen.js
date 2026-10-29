@@ -3,6 +3,7 @@
 import { h, dialog, speichereLokal, leseLokal, arbeitBeginnt } from "./hilfen.js";
 import * as API from "./api.js";
 import { symbol } from "./symbole.js";
+import { kiLogo } from "./ki-logos.js";
 import { TW } from "./texte-willkommen.js";
 
 const api = API.api;
@@ -159,7 +160,7 @@ function baueKiInhalt({ kompakt = false, beiVerbunden } = {}) {
       teile.push(h("h3", { klasse: "w-abschnitt", text: TW.ki.erkannt }));
       teile.push(h("ul", { klasse: "w-agenten", "data-liste": "agenten" }, d.agenten.map((a) =>
         h("li", { klasse: `w-agent ${AGENT_TON[a.id] || ""}`, "data-agent": a.id },
-          h("span", { klasse: "w-agent-symbol" }, symbol(AGENT_SYMBOL[a.id] || "stecker", 20)),
+          h("span", { klasse: "w-agent-symbol" }, kiLogo(a.id, 22, { dekorativ: true }) || symbol(AGENT_SYMBOL[a.id] || "stecker", 20)),
           h("span", { klasse: "w-agent-text" },
             h("span", { klasse: "w-agent-name", text: a.name || AGENT_NAME[a.id] || a.id }),
             h("span", { klasse: "w-agent-version", text: a.version ? TW.ki.version(a.version) : TW.ki.versionUnbekannt })),
@@ -198,7 +199,7 @@ function baueVerbinden({ beiVerbunden, agenten = [], cursorDa = false } = {}) {
   let gesperrt = false; // während des Selbsttests bleibt die Auswahl stehen, sonst stimmt der App-Name im Ergebnis nicht
   const wahl = h("div", { klasse: "w-ziele", role: "radiogroup", "aria-label": TW.ki.zielWahl, "data-bereich": "ziel-wahl" },
     Object.keys(TW.ki.zielName).map((id) => {
-      const b = h("button", { klasse: "knopf" + (id === ziel ? " aktiv" : ""), type: "button", role: "radio", "aria-checked": String(id === ziel), "data-ziel": id, text: TW.ki.zielName[id] });
+      const b = h("button", { klasse: "knopf" + (id === ziel ? " aktiv" : ""), type: "button", role: "radio", "aria-checked": String(id === ziel), "data-ziel": id }, kiLogo(id, 16, { dekorativ: true }), h("span", { text: TW.ki.zielName[id] }));
       b.addEventListener("click", () => {
         if (knopf.disabled || gesperrt) return;
         ziel = id;

@@ -167,7 +167,7 @@
 
 /* KI verbinden: Auswahl Claude / Codex / Cursor */
 .w-ziele { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
-.w-aktion .w-ziele .knopf { width: auto; height: 28px; }
+.w-aktion .w-ziele .knopf { width: auto; height: 28px; display: inline-flex; align-items: center; gap: 6px; }
 .w-aktion .w-ziele .knopf.aktiv { background: color-mix(in srgb, var(--akzent) 16%, transparent); border-color: color-mix(in srgb, var(--akzent) 45%, transparent); font-weight: 600; }
 
 /* GitHub-Anmeldung (github-karte.js) */
