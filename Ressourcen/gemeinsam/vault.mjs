@@ -355,7 +355,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
     posteingangVerwerfen: posteingang.verwerfen, posteingangSpaeter: posteingang.spaeter, posteingangUebernehmen: posteingang.uebernehmen,
     notizen: notizIndex.notizen, notizKontext: notizIndex.kontext, typen: notizIndex.typen, ansichten: notizIndex.ansichten,
     gitLog: async (a) => gitFn.log(wurzel, a || {}, gitCtx()),
-    gitRemote: async (url) => gitFn.remoteHinzufuegen(wurzel, url, gitCtx({ limit: opts.gitLimitRemote })),
+    gitRemote: async (url, extra = {}) => gitFn.remoteHinzufuegen(wurzel, url, gitCtx({ limit: opts.gitLimitRemote, ...extra })),
     gitStatus: async () => {
       const s = gitSicht();
       if (s.gesperrt) return { repo: true, gesperrt: true, grund: s.grund };
