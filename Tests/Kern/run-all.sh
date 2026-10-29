@@ -15,12 +15,13 @@ if [ -n "${KERN_SHARD:-}" ]; then
   I="${KERN_SHARD%/*}"; N="${KERN_SHARD#*/}"
   case "$I$N" in ''|*[!0-9]*) echo "run-all.sh: ungültiger Shard '$KERN_SHARD' (erwartet I/N)" >&2; exit 2 ;; esac
   { [ "$I" -ge 1 ] && [ "$I" -le "$N" ]; } || { echo "run-all.sh: Shard '$KERN_SHARD' außerhalb 1..N" >&2; exit 2; }
-  # Kosten: Shell-Tests laufen nacheinander (Gewicht = Sekunden), Unit-Dateien parallel zu etwa 4 (Gewicht / 4).
+  # Kosten: Shell-Tests laufen nacheinander und auf dem Runner etwa doppelt so lange wie auf dem Mac (Gewicht × 2),
+  # Unit-Dateien parallel zu etwa 4 (Gewicht / 4).
   while IFS= read -r f; do
     case "$f" in *.mjs) UNIT+=("$D/$f") ;; *.sh) SHELLS+=("$D/$f") ;; esac
   done < <(cd "$D" && ls test-*.mjs test-*.sh | LC_ALL=C awk -v G="$D/gewichte.txt" '
       BEGIN { while ((getline z < G) > 0) { if (z ~ /^#/ || z == "") continue; split(z, a, " "); w[a[2]] = a[1] } }
-      { c = ($0 in w) ? w[$0] : 3; if ($0 ~ /\.mjs$/) c = c / 4; printf "%.3f %s\n", c, $0 }' \
+      { c = ($0 in w) ? w[$0] : 3; c = ($0 ~ /\.mjs$/) ? c / 4 : c * 2; printf "%.3f %s\n", c, $0 }' \
     | LC_ALL=C sort -k1,1nr -k2,2 \
     | LC_ALL=C awk -v N="$N" -v I="$I" '{ m = 1; for (i = 2; i <= N; i++) if (s[i] < s[m]) m = i; s[m] += $1; if (m == I) print $2 }')
   echo "Shard $KERN_SHARD: ${#UNIT[@]} Unit-Dateien, ${#SHELLS[@]} Shell-Tests"

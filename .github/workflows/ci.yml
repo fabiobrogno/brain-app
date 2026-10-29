@@ -5,9 +5,9 @@ name: CI
 #                  scripts/teste-ci-aenderungen.sh). Unbekannte Pfade schalten alles ein; nur Doku schaltet nichts ein.
 #  - vorpruefung   shellcheck, Syntax, JSON, Lint (Linux, unter einer Minute) — fällt als Erstes rot auf.
 #  - kern-test     Kern-Tests in 6 Shards (Gewichte: Tests/Kern/gewichte.txt), alle parallel.
-#  - ui-test       Playwright in 4 Shards mit je 2 Workern, nur Chromium (Headless-Shell), Browser-Cache.
+#  - ui-test       Playwright in 6 Shards mit je 2 Workern, nur Chromium (Headless-Shell), Browser-Cache.
 #  - node-test     Node-Tests (Tests/Node).
-#  - swift         Build + Tests + Kern-Manifest + Vorschau auf macOS (macOS-Minuten sind knapp: ein einziger Job).
+#  - swift         macOS (knapp, daher nur 2 Jobs): App bauen || Tests + Kern-Manifest + Vorschau.
 #  - ci-ok         EIN Status für alles: grün, wenn jeder nötige Job grün war oder bewusst übersprungen wurde.
 #  - dev-artefakt  nur auf main: Kortex.app als Artefakt.
 # Es gibt absichtlich KEIN paths-ignore: Ein Lauf, der nur Doku ändert, ist in Sekunden grün (aenderungen + ci-ok), und der
@@ -118,8 +118,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
-    name: ui-test (${{ matrix.shard }}/4)
+        shard: [1, 2, 3, 4, 5, 6]
+    name: ui-test (${{ matrix.shard }}/6)
     env:
       # Die Werkstatt committet im Test echt; der Runner hat keine Git-Identität.
       GIT_AUTHOR_NAME: Test
@@ -154,8 +154,8 @@ jobs:
         run: |
           node --input-type=module -e "import { chromium } from '@playwright/test'; const b = await chromium.launch(); await b.close();" \
             || { echo '::notice::Browser startet nicht ohne zusätzliche Bibliotheken — install-deps'; npx playwright install-deps chromium; }
-      - name: Oberflächentests (Shard ${{ matrix.shard }} von 4)
-        run: npx playwright test --shard=${{ matrix.shard }}/4 --workers=2 --fully-parallel --reporter=list,html
+      - name: Oberflächentests (Shard ${{ matrix.shard }} von 6)
+        run: npx playwright test --shard=${{ matrix.shard }}/6 --workers=2 --fully-parallel --reporter=list,html
         env:
           PLAYWRIGHT_HTML_OPEN: never
       - name: Bericht und Traces hochladen
@@ -169,12 +169,19 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
+  # Zwei parallele macOS-Jobs (je ~1 Minute statt einer ~1,5): „app“ baut die ganze App, „tests“ baut und führt die Tests aus
+  # und prüft Kern-Manifest und Vorschau. Beide planen das Paket neu (≈15 s); der Gewinn liegt im parallelen Kompilieren.
   swift:
     needs: aenderungen
     if: needs.aenderungen.outputs.swift == 'true'
     # Package.swift verlangt swift-tools 6.2 und macOS 26 -> macos-26-Image (Xcode 26).
     runs-on: macos-26
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        teil: [app, tests]
+    name: swift (${{ matrix.teil }})
     env:
       XCODE_VERSION: '26.6'
     steps:
@@ -199,15 +206,18 @@ jobs:
           key: spm-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
           restore-keys: |
             spm-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-
-      # Ein Bauvorgang für App und Tests (ein Planungslauf statt zwei), danach nur noch ausführen.
-      - name: Build (App und Tests)
-        run: swift build --build-tests
+      - name: Build der App (alle Ziele)
+        if: matrix.teil == 'app'
+        run: swift build
       - name: Test
-        run: swift test --skip-build --parallel
+        if: matrix.teil == 'tests'
+        run: swift test --parallel
       # Kern-Manifest (SHA-256 je Datei im Bundle) und Vorschau-Modus (Wegwerf-Ordner, Schutz vor echtem Benutzerordner).
       - name: Kern-Manifest
+        if: matrix.teil == 'tests'
         run: bash scripts/teste-kern-manifest.sh
       - name: Vorschau-Modus
+        if: matrix.teil == 'tests'
         run: bash scripts/teste-vorschau.sh
 
   # EIN Status für den ganzen Lauf. Grün, wenn jeder Job erfolgreich war oder übersprungen wurde (weil sein Bereich unverändert
