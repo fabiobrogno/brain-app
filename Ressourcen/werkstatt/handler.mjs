@@ -211,9 +211,18 @@ export function erzeugeHandler(o) {
 
   // Vergleich NUR intern: Command/Args des vorhandenen Eintrags stehen nie in einer Antwort oder im Log (fremde Einträge können
   // Zugangsdaten enthalten). Unlesbar oder anderer Typ (http/sse) zählt als „anders“.
-  const istGleicherBefehl = (text, a) => {
+  // Ergebnis: "gleich" (schon richtig eingetragen), "alt" (derselbe Server, nur der Node-Pfad ist ein früherer der App — wird ohne
+  // Rückfrage auf den stabilen Pfad umgestellt) oder "anders" (fremder Eintrag: Rückfrage). Alte App-Pfade:
+  // …/Application Support/Brain/node/<ver>/bin/node (vor der Umbenennung) und …/Kortex/node/<ver>/bin/node (aufgelöster Pfad).
+  const ALTER_APP_NODE = /\/Application Support\/(?:Brain|Kortex)\/node\/[^/]+\/bin\/node$/;
+  const befehlsArt = (cmd, argsGleich, a) => {
+    if (!argsGleich) return "anders";
+    if (cmd === a[0]) return "gleich";
+    return typeof cmd === "string" && ALTER_APP_NODE.test(cmd) ? "alt" : "anders";
+  };
+  const artClaude = (text, a) => {
     const cmd = /^\s*Command:\s*(.+?)\s*$/m.exec(text), args = /^\s*Args:\s*(.*?)\s*$/m.exec(text);
-    return !!cmd && cmd[1] === a[0] && (args ? args[1] : "") === a.slice(1).join(" ");
+    return cmd ? befehlsArt(cmd[1], (args ? args[1] : "") === a.slice(1).join(" "), a) : "anders";
   };
 
   // Gesamtfrist 25 s für get/remove/add zusammen; bei Ablauf wird der laufende Aufruf samt Prozessgruppe beendet.
@@ -233,14 +242,15 @@ export function erzeugeHandler(o) {
     const frist = neueFrist(fristen.mcpVerbinden);
     const lauf = (args) => starte(codex, args, { cwd: homedir(), env: kindUmgebung({ CI: "1" }), frist, timeout: fristen.mcpVerbinden, fehlt: "Codex wurde nicht gefunden.", zuLange: "Codex hat nicht rechtzeitig geantwortet." });
     const ausgabeVon = (r) => (String(r.stdout || "") + String(r.stderr || "")).trim().slice(0, 2000);
-    const gleich = (text) => { // Vergleich nur intern, nichts davon in Antworten
-      try { const t = JSON.parse(text).transport; return !!t && t.command === a[0] && JSON.stringify(t.args || []) === JSON.stringify(a.slice(1)); } catch { return false; }
+    const art = (text) => { // Vergleich nur intern, nichts davon in Antworten
+      try { const t = JSON.parse(text).transport; return !t ? "anders" : befehlsArt(t.command, JSON.stringify(t.args || []) === JSON.stringify(a.slice(1)), a); } catch { return "anders"; }
     };
     try {
       const vorher = await lauf(["mcp", "get", "brain", "--json"]);
       if (vorher.code === 0) {
-        if (gleich(String(vorher.stdout || ""))) return { ok: true, schonVerbunden: true };
-        if (e.umstellen !== true) throw new HttpFehler(409, "Bei Codex ist unter dem Namen „brain“ schon ein anderer Server eingetragen. Möchtest du ihn auf Brain Studio umstellen?", { art: "anders", befehl });
+        const vergleich = art(String(vorher.stdout || ""));
+        if (vergleich === "gleich") return { ok: true, schonVerbunden: true };
+        if (vergleich !== "alt" && e.umstellen !== true) throw new HttpFehler(409, "Bei Codex ist unter dem Namen „brain“ schon ein anderer Server eingetragen. Möchtest du ihn auf Brain Studio umstellen?", { art: "anders", befehl });
         const weg = await lauf(["mcp", "remove", "brain"]);
         if (weg.code !== 0) throw new HttpFehler(502, "Codex konnte den alten Eintrag nicht entfernen. Kopiere den Befehl und führe ihn im Terminal aus.", { befehl });
       }
@@ -275,8 +285,9 @@ export function erzeugeHandler(o) {
     }
     const alt = doc.mcpServers && doc.mcpServers.brain;
     if (alt !== undefined) {
-      if (alt && typeof alt === "object" && alt.command === eintrag.command && JSON.stringify(alt.args || []) === JSON.stringify(eintrag.args)) return { ok: true, schonVerbunden: true };
-      if (e.umstellen !== true) throw new HttpFehler(409, "Bei Cursor ist unter dem Namen „brain“ schon ein anderer Server eingetragen. Möchtest du ihn auf Brain Studio umstellen?", { art: "anders", befehl });
+      const vergleich = alt && typeof alt === "object" ? befehlsArt(alt.command, JSON.stringify(alt.args || []) === JSON.stringify(eintrag.args), [eintrag.command]) : "anders";
+      if (vergleich === "gleich") return { ok: true, schonVerbunden: true };
+      if (vergleich !== "alt" && e.umstellen !== true) throw new HttpFehler(409, "Bei Cursor ist unter dem Namen „brain“ schon ein anderer Server eingetragen. Möchtest du ihn auf Brain Studio umstellen?", { art: "anders", befehl });
     }
     let tmp = null;
     try {
@@ -331,8 +342,9 @@ export function erzeugeHandler(o) {
     try {
       const vorher = await lauf(["mcp", "get", "brain"]); // Ausgabe nur zum Vergleichen
       if (vorher.code === 0) {
-        if (istGleicherBefehl(String(vorher.stdout || "") + "\n" + String(vorher.stderr || ""), a)) return { ok: true, schonVerbunden: true };
-        if (e.umstellen !== true) throw new HttpFehler(409, "Bei Claude Code ist unter dem Namen „brain“ schon ein anderer Server eingetragen. Möchtest du ihn auf Brain Studio umstellen?", { art: "anders", befehl });
+        const art = artClaude(String(vorher.stdout || "") + "\n" + String(vorher.stderr || ""), a);
+        if (art === "gleich") return { ok: true, schonVerbunden: true };
+        if (art !== "alt" && e.umstellen !== true) throw new HttpFehler(409, "Bei Claude Code ist unter dem Namen „brain“ schon ein anderer Server eingetragen. Möchtest du ihn auf Brain Studio umstellen?", { art: "anders", befehl });
         const weg = await lauf(["mcp", "remove", "-s", "user", "brain"]);
         if (weg.code !== 0) throw new HttpFehler(502, "Claude Code konnte den alten Eintrag nicht entfernen. Kopiere den Befehl und führe ihn im Terminal aus.", { befehl });
       }

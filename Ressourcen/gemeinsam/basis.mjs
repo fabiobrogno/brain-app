@@ -14,8 +14,8 @@ export class HttpFehler extends Error {
 
 export const MAX_DATEI = 5 * 1024 * 1024;
 
-// Ablageort der App (Vault-Liste, Vertrauens-Merker): BRAIN_APP_SUPPORT oder ~/Library/Application Support/Brain.
-export const supportOrdner = () => process.env.BRAIN_APP_SUPPORT || join(homedir(), "Library", "Application Support", "Brain");
+// Ablageort der App (Vault-Liste, Vertrauens-Merker): BRAIN_APP_SUPPORT (setzt die App) oder ~/Library/Application Support/Kortex.
+export const supportOrdner = () => process.env.BRAIN_APP_SUPPORT || join(homedir(), "Library", "Application Support", "Kortex");
 
 // Vergleichsform für Namen: APFS unterscheidet weder Groß/klein noch NFC/NFD — Sperren und Schreibschutz dürfen es auch nicht.
 export const falte = (s) => String(s).normalize("NFC").toLowerCase();

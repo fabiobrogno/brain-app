@@ -7,7 +7,7 @@
 #                                                               schreibt die neue SHA-256 ins Manifest
 #
 # Warum: Das Signieren (codesign) ändert die Bytes von bin/node. Die App prüft beim Kopieren nach Application Support
-# die SHA-256 gegen das Manifest (Sources/BrainCore/NodeLaufzeit.swift) und bricht sonst mit pruefsummeFalsch ab.
+# die SHA-256 gegen das Manifest (Sources/BrainCore/Laufzeit.swift) und bricht sonst mit pruefsummeFalsch ab.
 set -euo pipefail
 W="$(cd "$(dirname "$0")/.." && pwd)"
 MODUS="${1:-}"; APP="${2:-}"

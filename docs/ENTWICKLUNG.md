@@ -57,5 +57,17 @@ Tags werden nie verschoben oder ersetzt. Ist ein Release fehlerhaft, folgt eine 
 Ein roter Lauf darf höchstens 2× neu gestartet werden. Den ersten Fehler verlinkt man im PR
 (Lauf-URL und Zeile), damit er nicht verschwindet. Tritt er wieder auf, wird er behoben, nicht wegrestartet.
 
+## Laufzeit und feste Pfade
+Support-Ordner ist `~/Library/Application Support/Kortex` (früher `Brain`; beim Start benennt `SupportMigration` ihn einmalig um,
+existieren beide, bleibt alles unberührt und die App zeigt einen Hinweis). Die App stellt dort bereit (`Sources/BrainCore/Laufzeit.swift`):
+`bin/node` (relativer Symlink auf `node/<ver>/bin/node`), `bin/kern` (Symlink auf `kern/<appVersion>/`, Kopie von `Resources/kern`, jede Datei
+gegen `Resources/kern-manifest.json` geprüft) und den Starter `bin/kortex` (`exec bin/node bin/kern/brain.mjs "$@"`). Hooks, MCP, git-Hooks
+und LaunchAgent verwenden nur diese Pfade. Die vorige Kern-Version bleibt nach einem Update liegen. Ohne `Ressourcen/kern` im Paket gibt
+es nur Node (Kern-Status „nicht enthalten“). `scripts/baue-app.sh` erzeugt das Manifest (`scripts/kern-manifest.sh`), Test:
+`bash scripts/teste-kern-manifest.sh`. Der Node-Code liest den Ordner aus `BRAIN_APP_SUPPORT` (setzt die App), Rückfall `…/Kortex`. Ein relativer Wert von `BRAIN_APP_SUPPORT`
+wird auf den Arbeitsordner bezogen. Nach dem Umbenennen bleibt `Brain` als relativer Symlink auf `Kortex` stehen, damit bereits eingetragene
+Pfade (MCP-Einträge, Hooks) weiterlaufen. Die App gibt der Werkstatt den stabilen Node-Pfad (`BRAIN_MCP_NODE` = `bin/node`) für neue MCP-Einträge;
+Einträge mit altem aufgelöstem Pfad (`…/Brain|Kortex/node/<ver>/bin/node`) stellt „KI verbinden“ ohne Rückfrage darauf um.
+
 ## Lokal prüfen
 `swift build && swift test`, `shellcheck scripts/*.sh`, `bash scripts/baue-app.sh` (macOS, arm64).
