@@ -1,4 +1,4 @@
-// .tools/thema-ausschluss.mjs — Themen-Ausschluss (Einstellung automatik.ernteOhneThema): Fakten zu bestimmten, meist privaten
+// thema-ausschluss.mjs — Themen-Ausschluss (Einstellung automatik.ernteOhneThema): Fakten zu bestimmten, meist privaten
 // Themen kommen nie ins Brain, gleich aus welchem Ordner die Sitzung stammt (der Ordner-Ausschluss ernteNichtIn reicht dafür nicht:
 // solche Sitzungen laufen im normalen Home-Ordner). Eine Wortliste; ein Wort trifft nur als GANZES Wort — Unicode-Wortgrenzen
 // (Buchstaben, Ziffern und Kombinationszeichen gehören zum Wort, alles andere, auch _ und -, trennt), Groß/Klein egal, NFC wie NFD.

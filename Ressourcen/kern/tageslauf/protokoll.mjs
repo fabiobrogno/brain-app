@@ -1,4 +1,4 @@
-// .tools/tageslauf/protokoll.mjs — Lauf-Kontext, Aktionsprotokoll, Prüfungen, Cache, letzter.json (B2, Spec §5.2 Nr. 10, §6.3).
+// tageslauf/protokoll.mjs — Lauf-Kontext, Aktionsprotokoll, Prüfungen, Cache, letzter.json (B2, Spec §5.2 Nr. 10, §6.3).
 // Alles unter .logs/tageslauf/ (git-ignoriert). Probemodus: Aktionen nach probe-aktionen.jsonl, keine Prüfungen.
 // Der Cache (Belege, Abgleich, Wahl der Seite, Richter) wird auch im Probemodus geschrieben — so kommen tägliche Probeläufe voran.
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, renameSync, openSync, writeSync, readSync, fsyncSync, fstatSync, closeSync, unlinkSync } from "node:fs";

@@ -1,4 +1,4 @@
-// .tools/import/widerspruch.mjs — Widerspruchs-Kandidaten zwischen zwei Notizen derselben Sache.
+// import/widerspruch.mjs — Widerspruchs-Kandidaten zwischen zwei Notizen derselben Sache.
 // Verglichen werden nur Sätze mit gemeinsamem Schlüsselwort (≥ 5 Zeichen, kein Stoppwort) und ähnlichem
 // „Satzrahmen“ (der Satz ohne Zahlen/Daten/Versionen/Ja-Nein-Wörter). Widerspruch, wenn sich im selben Rahmen
 // Datum, Version, Zahl/Betrag oder die Ja/Nein-Richtung unterscheiden. Entschieden wird nie — nur gemeldet.

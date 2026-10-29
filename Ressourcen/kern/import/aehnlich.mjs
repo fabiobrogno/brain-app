@@ -1,4 +1,4 @@
-// .tools/import/aehnlich.mjs — Fast-Duplikate: Jaccard-Ähnlichkeit über 5-Wort-Shingles.
+// import/aehnlich.mjs — Fast-Duplikate: Jaccard-Ähnlichkeit über 5-Wort-Shingles.
 // Damit 5000 Notizen in Sekunden gehen, wird nicht jedes Paar verglichen: Kandidaten kommen aus Eimern
 // (gleicher normalisierter Titel, oder gleiches MinHash-Band: 16 Hashes in 8 Bändern à 2), genau gerechnet
 // wird nur innerhalb dieser Eimer. Gruppen bildet Union-Find über alle Paare mit Ähnlichkeit ≥ Schwelle.

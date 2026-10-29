@@ -1,11 +1,11 @@
-// .tools/ansicht/steuer.js — Steuerzentrale der Ansicht: Zahnrad oben rechts → Seitenleiste mit vier Reitern
+// ansicht/steuer.js — Steuerzentrale der Ansicht: Zahnrad oben rechts → Seitenleiste mit vier Reitern
 // Einstellungen · Vorschläge · Pflege · Analyse (klassisches Skript, kein ESM). Setzt window.BrainSteuer = { init, oeffne,
 // schliesse, hilfen }.
 //
 // Braucht: texte.js (BrainTexte) und api.js (BrainApi) — vorher laden. app.js ist optional: neuLaden()/waehle(id)
 // werden nur aufgerufen, wenn window.BrainApp (oder init({ app })) existiert. Startet sich selbst, sobald das
 // Dokument bereit ist; ein zweites init({ app }) setzt nur die App. Erzeugt alle Elemente selbst: Zahnrad in
-// `.top .tools` (vor #btnTheme), sonst als eigener Knopf oben rechts; Seitenleiste als <section id="steuer"> am
+// `.top .werkzeuge` (vor #btnTheme), sonst als eigener Knopf oben rechts; Seitenleiste als <section id="steuer"> am
 // Ende von #app bzw. <body>.
 //
 // Sicherheit: alle Daten nur über textContent bzw. Attribute — nie HTML aus Zeichenketten. Ereignisse nur per
@@ -313,7 +313,7 @@
 
   // ---------------------------------------------------------------------------------------- Aufbau
   function baue() {
-    const tools = doc.querySelector(".top .tools");
+    const tools = doc.querySelector(".top .werkzeuge");
     knopf = h("button", {
       class: "icon-btn st-zahnrad" + (tools ? "" : " st-frei"), type: "button", id: "btnSteuer",
       "aria-controls": "steuer", "aria-expanded": "false", onclick: () => (Z.offen ? schliesse() : oeffne()),

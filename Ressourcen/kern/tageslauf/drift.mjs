@@ -1,4 +1,4 @@
-// .tools/tageslauf/drift.mjs — K4 Drift-Liste (Spec §7.5, App-Spec K4). <wiki>/_ausgemustert.md nennt ausgemusterte Begriffe,
+// tageslauf/drift.mjs — K4 Drift-Liste (Spec §7.5, App-Spec K4). <wiki>/_ausgemustert.md nennt ausgemusterte Begriffe,
 // je Zeile „- alter Begriff → neuer Begriff" (auch „->"; ein Zusatz in Klammern am Ende zählt nicht). Lint (DRIFT, nur melden)
 // und der Tageslauf (Hinweis bei Vorschlägen) zeigen lebende Erwähnungen. Nicht gezählt: Frontmatter, Code-Blöcke und
 // Inline-Code, Zitate (Zeilen mit „>"), durchgestrichener Text (~~…~~), reine Wikilink-Ziele ([[ziel]], der Anzeigetext

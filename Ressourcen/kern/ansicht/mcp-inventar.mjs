@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// .tools/ansicht/mcp-inventar.mjs — MCP-Server aus Client-Configs + Werkzeug-Log. NUR LESEND, und NUR Namen:
+// ansicht/mcp-inventar.mjs — MCP-Server aus Client-Configs + Werkzeug-Log. NUR LESEND, und NUR Namen:
 // aus keiner Config wird je `command`, `args`, `env`, `url` oder `headers` übernommen oder ausgegeben —
 // auch nicht beim Testen. Kaputte/riesige/fremde Dateien führen nie zu einem Absturz, nur zu `nichtLesbar`.
 import { readFileSync, existsSync, statSync } from "node:fs";

@@ -1,4 +1,4 @@
-// .tools/tageslauf/richter.mjs — Der Richter des Tageslaufs (B2, Nachbesserung nach dem Probelauf über den echten Bestand).
+// tageslauf/richter.mjs — Der Richter des Tageslaufs (B2, Nachbesserung nach dem Probelauf über den echten Bestand).
 // Warum: Von vier geplanten automatischen Übernahmen waren drei falsch und eine unsicher. Das Zitat stimmte jedes Mal; falsch war das Urteil —
 // ein Wunsch statt Fakt, schon (als erledigt) auf der Seite, im späteren Verlauf oder durch eine neuere Seite überholt, eine Zahl mit falscher
 // Messgröße und ohne Zeitraum. Haiku sah nur Zitat + Seitenauszug. Der Richter (Sonnet) sieht den KONTEXT und entscheidet; Leitlinie des Brains:

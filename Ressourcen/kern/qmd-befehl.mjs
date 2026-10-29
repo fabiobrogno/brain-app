@@ -1,22 +1,27 @@
-// .tools/qmd-befehl.mjs — Windows kennt keine Unix-Symlinks: node_modules/.bin/qmd.cmd lässt sich ohne
+// qmd-befehl.mjs — Windows kennt keine Unix-Symlinks: node_modules/.bin/qmd.cmd lässt sich ohne
 // shell:true nicht direkt per spawnSync starten (ENOENT/falscher Exit). Löst stattdessen über das
 // @tobilu/qmd-Paket (liegt bei npms Windows-Layout im selben Ordner wie der .cmd-Shim) den echten
-// JS-Entry auf und startet den mit `node <entry>`. Andere Plattformen: das private qmd aus der Installation
-// (~/.brain-kit/bin/qmd, `npm i -g --prefix ~/.brain-kit`) per absolutem Pfad — dieser Ordner steht in keinem
+// JS-Entry auf und startet den mit `node <entry>`. Andere Plattformen: das private qmd der App (<Support-Ordner>/bin/qmd,
+// `npm i -g --prefix <Support-Ordner>`; Lese-Rückfall: der alte Ort ~/.brain-kit) per absolutem Pfad — dieser Ordner steht in keinem
 // PATH, den Claude Code/Hooks sehen —, sonst "qmd" (PATH/Symlink).
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join, dirname, delimiter } from "node:path";
 import { homedir } from "node:os";
+import { kitOrte } from "./pfade.mjs";
 
 // Mindest-Arbeitsspeicher (GB, 10^9 Byte wie os.totalmem) für Suchprofil „voll“ — doctor und Installation warnen darunter.
 export const VOLL_AB_GB = 15;
 
-// Ort, an den sorgeFuerQmd() (kit/repo/lib/voraussetzungen.mjs) qmd installiert. npm legt bei --prefix den
+// Ort des privaten qmd (pfade.mjs#kitOrte: Support-Ordner der App, dann der alte Kit-Ort). npm legt bei --prefix den
 // Starter unter Unix nach <prefix>/bin, unter Windows direkt nach <prefix> (qmd.cmd + node_modules daneben).
 export function qmdPrivatBin(home = homedir()) {
-  const bin = join(home, ".brain-kit", "bin", "qmd");
-  return existsSync(bin) ? bin : null;
+  for (const ort of kitOrte({ home })) {
+    const bin = join(ort, "bin", "qmd");
+    if (existsSync(bin)) return bin;
+  }
+  return null;
 }
+const kitSuchpfad = (pfad, home) => [pfad, ...kitOrte({ home, plattform: "win32" })].join(";");
 
 // Intern: PATH-Einträge (win32-Delimiter ";", unabhängig vom Host-Betriebssystem, damit das auch beim
 // Testen auf macOS/Linux simulierbar ist) nach qmd.cmd absuchen und das @tobilu/qmd-Paketverzeichnis
@@ -46,7 +51,7 @@ export function qmdBefehl(plattform = process.platform, pfad = process.env.PATH 
     if (!privat) return { cmd: "qmd", vorArgs: [] };
     try { return mitNode(realpathSync(privat)); } catch { return { cmd: privat, vorArgs: [] }; }
   }
-  const paket = findePaketVerzeichnis(`${pfad};${join(home, ".brain-kit")}`);
+  const paket = findePaketVerzeichnis(kitSuchpfad(pfad, home));
   if (!paket) return { cmd: "qmd", vorArgs: [] };
   try {
     const pkg = JSON.parse(readFileSync(join(paket, "package.json"), "utf8"));
@@ -69,5 +74,5 @@ export function qmdAufruf(env = process.env, ...befehlArgs) {
 // Für modulPfad() in qmd-vector.mjs: dasselbe Paketverzeichnis, aber ohne den Bin-Umweg — dist/index.js
 // liegt im Paket-Root, unabhängig vom bin-Feld. Nur auf win32 relevant (sonst reicht die PATH-Suche dort).
 export function qmdPaketVerzeichnisWin32(pfad = process.env.PATH ?? "", home = homedir()) {
-  return findePaketVerzeichnis(`${pfad};${join(home, ".brain-kit")}`);
+  return findePaketVerzeichnis(kitSuchpfad(pfad, home));
 }

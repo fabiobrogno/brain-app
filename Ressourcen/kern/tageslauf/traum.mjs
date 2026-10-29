@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// .tools/tageslauf/traum.mjs — Der „Traum“: nächtliche Pflege des Claude-Auto-Memory nach dem Muster von Anthropics „Dreams“ (Managed Agents).
+// tageslauf/traum.mjs — Der „Traum“: nächtliche Pflege des Claude-Auto-Memory nach dem Muster von Anthropics „Dreams“ (Managed Agents).
 // Ein Traum liest ein bestehendes Gedächtnis plus Sitzungsverläufe und SCHLÄGT ein bereinigtes Gedächtnis VOR — Doppeltes zusammengeführt, Überholtes durch den
 // neuesten Stand ersetzt (mit wörtlichem Beleg), Erledigtes abgehakt, Neues nur mit wörtlichem Zitat, Konflikt-Kopien aufgelöst. Die Eingabe (Wurzel, Verläufe)
 // wird nie verändert; das Ergebnis ist ein Patch, den DU prüfst. Lokal über die headless-claude-Anbindung des Kits (Abo, kein API-Schlüssel).
@@ -24,12 +24,12 @@
 //      an alle Konten und dreht ihn nie zurück (Wurzel-Änderungen gewinnen gegen unveränderte Konten). Brain-Kandidaten (Fakten über Welt/Firma, kein
 //      Arbeitsstil) werden nur bei „Übernehmen“ als Notiz nach 00_inbox/ geschrieben — nie ins Gedächtnis.
 // Einstellungen: traum aus|probe|an (Standard aus), traumProjekteMax (5), traumOhneThema (+ ernteOhneThema), gedaechtnisWurzel, gedaechtnisKonten (einstellungen.mjs).
-// CLI: node .tools/tageslauf/traum.mjs [vault] [--probe] [--projekt <schlüssel>]   (brain traum …; ohne traum=an immer Probe, Rückfragen nur bei traum=an)
+// CLI: node tageslauf/traum.mjs [vault] [--probe] [--projekt <schlüssel>]   (brain traum …; ohne traum=an immer Probe, Rückfragen nur bei traum=an)
 import { readFileSync, writeFileSync, mkdirSync, rmSync, renameSync, readdirSync, lstatSync, mkdtempSync, realpathSync, unlinkSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { ordner, EIGENER_VAULT } from "../pfade.mjs";
+import { ordner, vaultPfadOderEnde } from "../pfade.mjs";
 import { findeClaude } from "../ernte.mjs";
 import { ladeConfig } from "../pfade.mjs";
 import { gitBefehl } from "../werkzeug.mjs";
@@ -632,7 +632,7 @@ if (aufruf && aufruf === realpathSync(selbst)) {
   let o;
   try { o = leseArgs(process.argv.slice(2)); }
   catch (e) { console.error(`${e.message}\nNutzung: brain traum [--probe] [--projekt <schlüssel>]`); process.exit(64); }
-  const vault = o.vault || EIGENER_VAULT;
+  const vault = o.vault || vaultPfadOderEnde([]);
   if (!nimmSperre(vault)) { console.error("Der Tageslauf läuft gerade — bitte gleich noch einmal versuchen."); process.exit(1); }
   try {
     const ctx = neuerLauf(vault, { probe: o.probe });

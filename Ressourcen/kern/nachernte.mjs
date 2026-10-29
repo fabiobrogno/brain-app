@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// .tools/nachernte.mjs — Sammelbefehl der Nach-Ernte (nach dem Probelauf über echten Altbestand): erntet alle gesicherten
+// nachernte.mjs — Sammelbefehl der Nach-Ernte (nach dem Probelauf über echten Altbestand): erntet alle gesicherten
 // Transkripte <vault>/.logs/transkript-sicherung/*.jsonl nacheinander noch einmal, mit dem schärferen Auftrag (ernte.mjs
 // --nachernte: ohne Byte-Marke, nur Fakten, alle B1-Prüfungen, Vorschläge mit nachernte: true). Jede Sitzung wird GANZ geerntet:
 // in Fenstern à ~24 000 Zeichen, je Fenster ein Haiku-Aufruf, höchstens --max-fenster je Sitzung (Standard 8; mehr Fenster →
@@ -7,13 +7,13 @@
 // .logs/ernte/nachernte/<sid>: erledigte Sitzungen werden übersprungen, angefangene setzen beim nächsten Lauf fort. Der
 // Arbeitsordner (cwd) steht im Transkript. Neueste Sitzung zuerst.
 // Die alten Vorschläge ohne Zitat räumt danach der Tageslauf (Schritt „Aufräumen“) ins Archiv: ersetzt-durch-nachernte.
-// CLI: node .tools/nachernte.mjs [vault] [--budget-aufrufe N] [--max-fenster N] [--zaehlen]      (auch: brain nachernte …)
+// CLI: node nachernte.mjs [vault] [--budget-aufrufe N] [--max-fenster N] [--zaehlen]      (auch: brain nachernte …)
 //      Exit 0 (auch bei Budget-Ende) · 1 claude fehlt/fällt aus · 64 Aufruf falsch.
 // Nur Node-Standardbibliothek.
 import { readdirSync, lstatSync, openSync, readSync, fstatSync, closeSync, realpathSync } from "node:fs";
 import { join, isAbsolute, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
-import { EIGENER_VAULT, entferneBom } from "./pfade.mjs";
+import { vaultPfadOderEnde, entferneBom } from "./pfade.mjs";
 import { leseAutomatik } from "./einstellungen.mjs";
 import { ernte, findeClaude, istAusgeschlossen, leseNachernteMarken, leseNachernteMarke, schreibeNachernteMarke, nachernteFertig, MAX_FENSTER } from "./ernte.mjs";
 
@@ -162,7 +162,7 @@ if (aufruf && aufruf === realpathSync(selbst)) {
     console.error(`${e.message}\nNutzung: brain nachernte [--budget-aufrufe N] [--max-fenster N] [--zaehlen]   (Standard ${STANDARD_AUFRUFE} Aufrufe, ${STANDARD_FENSTER} Fenster je Sitzung)`);
     process.exit(64);
   }
-  const r = await nachernteAlle(o.vault || process.env.BRAIN_VAULT || EIGENER_VAULT, { budget: o.budget, maxFenster: o.maxFenster, nurZaehlen: o.zaehlen });
+  const r = await nachernteAlle(o.vault || vaultPfadOderEnde([]), { budget: o.budget, maxFenster: o.maxFenster, nurZaehlen: o.zaehlen });
   console.log(zusammenfassung(r, { budget: o.budget, zaehlen: o.zaehlen }));
   process.exitCode = r.abbruch === "claude-fehlt" || r.abbruch === "claude-fehler" ? 1 : 0;
 }

@@ -1,4 +1,4 @@
-// .tools/ansicht/handler.mjs — die Daten-Handler der Ansicht, transportunabhängig. dienst.mjs (HTTP) und
+// ansicht/handler.mjs — die Daten-Handler der Ansicht, transportunabhängig. dienst.mjs (HTTP) und
 // bruecke.mjs (Brain-App, stdin/stdout) erzeugen sich je eine eigene Instanz mit eigenem Daten-/Modul-Cache.
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";

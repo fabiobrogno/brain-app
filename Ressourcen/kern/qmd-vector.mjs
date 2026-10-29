@@ -16,7 +16,7 @@ export function modulPfad() {
     if (paket) return join(paket, "dist", "index.js");
     throw Object.assign(new Error("qmd nicht im PATH"), { code: "QMD_FEHLT" });
   }
-  // Zuerst das private qmd der Installation (~/.brain-kit/bin) — es steht in keinem PATH.
+  // Zuerst das private qmd der App (Support-Ordner/bin, alter Ort ~/.brain-kit/bin) — es steht in keinem PATH.
   for (const bin of [qmdPrivatBin(), ...(process.env.PATH || "").split(":").map(dir => join(dir, "qmd"))].filter(Boolean)) {
     if (existsSync(bin)) return join(dirname(realpathSync(bin)), "..", "dist", "index.js");
   }

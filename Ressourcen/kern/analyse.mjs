@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// .tools/analyse.mjs — Kennzahlen für die Steuerzentrale (Task 5): Trefferquote des Brain-Hinweises,
+// analyse.mjs — Kennzahlen für die Steuerzentrale (Task 5): Trefferquote des Brain-Hinweises,
 // ob Hinweise auch gelesen werden, Seiten-Pflegezustand, Token-Schätzung, offene Importe. Rein lesend
 // (außer `merkeLuecke`, die NUR das eigene `.logs/luecken.log` schreibt). Wirft nie — eine kaputte oder
 // fehlende Log-Datei liefert einfach leere/neutrale Werte statt eine Ausnahme.
@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { zeitstempel, leseZeilen, leseFelder, hitsSeiten } from "./logs.mjs";
 import { wert, leseAutomatik } from "./einstellungen.mjs";
 import { findeSecrets } from "./secrets-muster.mjs";
-import { vaultPfad, ladeConfig, ordner, entferneBom } from "./pfade.mjs";
+import { vaultPfadOderEnde, ladeConfig, ordner, entferneBom } from "./pfade.mjs";
 import { istAusgeschlossen } from "./ernte.mjs";
 import { nenntThema } from "./thema-ausschluss.mjs";
 import { inventar } from "./ansicht/mcp-inventar.mjs";
@@ -532,7 +532,7 @@ const selbst = fileURLToPath(import.meta.url);
 let aufruf = "";
 try { aufruf = realpathSync(process.argv[1] || ""); } catch {}
 if (aufruf && aufruf === realpathSync(selbst)) {
-  const vault = vaultPfad();
+  const vault = vaultPfadOderEnde();
   const ergebnis = analyse(vault);
   if (process.argv.includes("--json")) console.log(JSON.stringify(ergebnis));
   else console.log(textBericht(ergebnis));

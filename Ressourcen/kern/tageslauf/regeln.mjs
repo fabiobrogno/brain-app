@@ -1,4 +1,4 @@
-// .tools/tageslauf/regeln.mjs — Feste Regeln des Tageslaufs, ganz ohne KI (0 Tokens, reine Funktionen, wirft nie).
+// tageslauf/regeln.mjs — Feste Regeln des Tageslaufs, ganz ohne KI (0 Tokens, reine Funktionen, wirft nie).
 // Anlass: der Probelauf über den echten Bestand (B2) ergab, dass bei den geplanten automatischen Übernahmen das Zitat stimmte, das URTEIL
 // aber nicht: Wunsch/Auftrag statt Fakt, Zahl ohne Messgröße und Zeitraum, Zielseite nach dem Zitat geändert, Seite nur aus der Seitenwahl.
 // Leitlinie des Brains: lieber eine Lücke als ein falscher Fakt — aussortieren heißt archivieren (nichts wird gelöscht).

@@ -1,4 +1,4 @@
-// .tools/tageslauf/abgleich.mjs — Schritt 4 (Spec §5.2): neu | schon_drin | widerspricht | unklar. Haiku mit --tools "",
+// tageslauf/abgleich.mjs — Schritt 4 (Spec §5.2): neu | schon_drin | widerspricht | unklar. Haiku mit --tools "",
 // Eingabe: Fakt + Zitat + passende Abschnitte der Zielseite (≤ 6 000 Zeichen; „## Fakten" immer — ist er zu lang, werden seine Zeilen nach
 // Wortüberlapp mit dem neuen Fakt gewählt, gekürzt statt gestrichen). Vorfilter ohne KI, auf dem GANZEN Rumpf der Seite (nicht nur auf dem Auszug):
 // gleiche Entität (≥ 50 % der Inhaltswörter) mit abweichender Zahl/Datum oder Verneinung → VERDACHT; die Verdachtszeilen stehen immer im Auszug,

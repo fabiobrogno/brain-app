@@ -1,4 +1,4 @@
-// .tools/tageslauf/neue-seiten.mjs — B3 §7.3: Neue Seiten aus dem Wartebereich. Kandidaten: Vorschläge in <inbox>/_warten/ mit
+// tageslauf/neue-seiten.mjs — B3 §7.3: Neue Seiten aus dem Wartebereich. Kandidaten: Vorschläge in <inbox>/_warten/ mit
 // warten_grund „keine-seite“ oder „seite-passt-nicht“, art fakt, herkunft du/tool, mit Zitat und Fundstelle im B1-Format, vom
 // Zitat gedeckt, weder heikel noch mit Zugangsdaten (Autostufe eng/aus: keine neuen Seiten, §6.3).
 // Häufung = ein Themenwort in ≥ 3 verschiedenen Fakten aus ≥ 2 Sitzungen (deterministisch — BM25 kippt bei wenigen

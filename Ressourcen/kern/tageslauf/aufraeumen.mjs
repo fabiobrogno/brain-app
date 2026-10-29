@@ -1,4 +1,4 @@
-// .tools/tageslauf/aufraeumen.mjs — Schritt 1 (0 Tokens, Spec §5.2): Ins Archiv 90_archiv/vorschlaege-aussortiert/<grund>/
+// tageslauf/aufraeumen.mjs — Schritt 1 (0 Tokens, Spec §5.2): Ins Archiv 90_archiv/vorschlaege-aussortiert/<grund>/
 // (verschieben, nie löschen) kommen: herkunft ki · exakte und nahe Dubletten (import/aehnlich, ≥ 0,8; die neueste bleibt)
 // · Stände mit einem neueren aus demselben Ordner · Lektions-Rohkandidaten, deren Thema seit 14 Tagen nicht wieder
 // aufgetreten ist · Wartende ohne Seite > 60 Tage (nicht, wer nur auf einen Platz der Einschwingphase wartet) · alte Fakten OHNE Zitat, deren Sitzung erfolgreich nachgeerntet wurde

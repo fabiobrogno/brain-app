@@ -1,4 +1,4 @@
-// .tools/beleg-ernte.mjs — alles, was die Ernte rund um beleg.mjs braucht (B1, §4.1): die Selbstbestätigungs-Sperre
+// beleg-ernte.mjs — alles, was die Ernte rund um beleg.mjs braucht (B1, §4.1): die Selbstbestätigungs-Sperre
 // (Werkzeug-Ergebnisse aus dem eigenen Brain — Vault oder ernteNichtIn — zählen nie als Beleg), Fehler und unbekannte
 // Aufrufe als „ki“, die Web-Adresse eines web-Belegs und die Fundstelle. Die Regeln „Zitat finden / Herkunft je Rolle“
 // stehen nur in beleg.mjs; markiereEigenes formt den Verlauf so um, dass beleg.mjs Eigenes als Assistenten-Text (ki) sieht.
@@ -52,7 +52,7 @@ export function pfadFormen(pfad, { home = homedir() } = {}) {
   return [...formen];
 }
 
-// Nennt `text` einen der Pfade an Ordnergrenzen? (`~/brain-kit` nennt `~/brain` nicht.) darwin/win32 ohne Groß/Klein.
+// Nennt `text` einen der Pfade an Ordnergrenzen? (ein Ordner „brain-kit“ ist nicht der Ordner „brain“.) darwin/win32 ohne Groß/Klein.
 export function nenntPfad(text, formen, { plattform = process.platform } = {}) {
   if (!Array.isArray(formen) || !formen.length) return false;
   const s = vergleich(text, plattform);

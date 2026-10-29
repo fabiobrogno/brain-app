@@ -1,4 +1,4 @@
-// .tools/import/notiz.mjs — Text-Bausteine für den Import: Normalisieren, Hash, Frontmatter, Titel, Links.
+// import/notiz.mjs — Text-Bausteine für den Import: Normalisieren, Hash, Frontmatter, Titel, Links.
 // Reine Funktionen ohne Dateizugriff.
 import { createHash } from "node:crypto";
 import { entferneBom } from "../pfade.mjs";

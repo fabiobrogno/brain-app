@@ -1,14 +1,14 @@
 #!/usr/bin/env node
-// .tools/brain-stand.mjs — die EINE Zählweise des Brain-Stands (wartende Rohquellen, Konflikte, prüfbedürftige
+// brain-stand.mjs — die EINE Zählweise des Brain-Stands (wartende Rohquellen, Konflikte, prüfbedürftige
 // Seiten, offene Vorschläge, letzter Ingest samt Frische-Warnung) und der Brain-Seiten, die der Hinweis-Hook zur
 // letzten Frage einer Sitzung gemeldet hat. Genutzt von der Statusleiste (adapters/claude-code/statusline.mjs)
-// und vom Brain-Band des Plugins brain-mods (über `node .tools/brain-stand.mjs --json --sid=<id>`).
+// und vom Brain-Band des Plugins brain-mods (über `node brain-stand.mjs --json --sid=<id>`).
 // Nie werfend: fehlende Ordner/Logs zählen 0, ein kaputter git-Aufruf lässt `ingest` leer.
 import { readFileSync, readdirSync, existsSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { vaultPfad, ladeConfig, ordner } from "./pfade.mjs";
+import { vaultPfadOderEnde, ladeConfig, ordner } from "./pfade.mjs";
 import { gitBefehl } from "./werkzeug.mjs";
 import { hitsSeiten } from "./logs.mjs";
 
@@ -111,11 +111,11 @@ export function letzteHinweise(vault, sid) {
   return null;
 }
 
-// CLI: `node .tools/brain-stand.mjs --json [--sid=<sitzung>]` → eine JSON-Zeile { stand, hinweis }.
+// CLI: `node brain-stand.mjs --json [--sid=<sitzung>]` → eine JSON-Zeile { stand, hinweis }.
 const istHaupt = (() => { try { return realpathSync(process.argv[1] || "") === realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } })();
 if (istHaupt) {
   const sidArg = process.argv.find(a => a.startsWith("--sid="));
-  const vault = vaultPfad();
+  const vault = vaultPfadOderEnde();
   const ausgabe = { stand: brainStand(vault), hinweis: sidArg ? letzteHinweise(vault, sidArg.slice(6)) : null };
   if (process.argv.includes("--json")) console.log(JSON.stringify(ausgabe));
   else console.log(statusZeile(ausgabe.stand).replace(/\x1b\[\d+m/g, ""));

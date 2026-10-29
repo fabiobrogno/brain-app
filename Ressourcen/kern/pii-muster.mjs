@@ -1,4 +1,4 @@
-// .tools/pii-muster.mjs — Kundendaten-Heuristik (v0.4, W1-Review #1): E-Mail, Telefonnummer, IBAN, Postanschrift.
+// pii-muster.mjs — Kundendaten-Heuristik (v0.4, W1-Review #1): E-Mail, Telefonnummer, IBAN, Postanschrift.
 // Gedacht für fail-closed-Filter (Lektionen, Pflege-Lauf): Trifft ein Muster, wird der ganze Text verworfen — nie
 // gekürzt oder maskiert weitergegeben. Lieber eine Lektion zu wenig als eine Adresse im Vorschlag.
 // Meldet nur, OB und WELCHE Art getroffen hat — nie den getroffenen Text. Nur Node-Standardbibliothek, rein.

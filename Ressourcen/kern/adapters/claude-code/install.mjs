@@ -1,13 +1,13 @@
 #!/usr/bin/env node
-// .tools/adapters/claude-code/install.mjs — Brain-Hooks in Claude Code ergänzen (fremde Hooks nie
+// adapters/claude-code/install.mjs — Brain-Hooks in Claude Code ergänzen (fremde Hooks nie
 // anfassen); ältere Brain-Einträge derselben Vault werden ersetzt bzw. entfernt (sie zeigen auf Dateien,
-// die es nach dem Umzug nach .tools/adapters/claude-code/ nicht mehr gibt), idempotent, mit Backup.
+// die es nach dem Umzug nach adapters/claude-code/ nicht mehr gibt), idempotent, mit Backup.
 import { readFileSync, writeFileSync, existsSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, readdirSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
-import { nodeBefehl } from "../../pfade.mjs";
+import { nodeBefehl, vaultPfadOderEnde, kernStabil, ALT_KIT_ORDNER } from "../../pfade.mjs";
 // Gleiche Marke wie skills-build.mjs::schreibeGeneriert — hier erneut, weil die Commands jetzt erst in
 // einen Temp-Ordner gerendert und danach HIER (nicht in skills-build.mjs) ins echte Ziel platziert werden,
 // damit ein fremder, nicht markierter Command vor dem Überschreiben weiter gesichert wird.
@@ -36,7 +36,7 @@ function aufraeumen(tmp) { try { rmSync(tmp, { recursive: true, force: true }); 
 // Form während Phase A) und meldet einen Alltagssatz statt eines Stacktrace.
 function hauptlauf() {
 const A = dirname(fileURLToPath(import.meta.url));
-const args = process.argv.slice(2), vault = args[0];
+const args = process.argv.slice(2), vault = args[0] && !args[0].startsWith("--") ? args[0] : vaultPfadOderEnde([]);
 const home = args.includes("--claude-home") ? args[args.indexOf("--claude-home") + 1] : join(homedir(), ".claude");
 const commandsZiel = join(home, "commands");
 const datei = join(home, "settings.json");
@@ -56,11 +56,14 @@ const vorher = JSON.stringify(s);
 // A2: neues settings-Objekt komplett im Speicher berechnen (Hooks + Statusline) — s ist bis hierher nur
 // ein JS-Objekt, noch keine Datei angefasst.
 // Vorwärts-Schrägstriche auch auf Windows: node versteht beide, Shell-Quoting bleibt einfach
-const pfad = (f) => `"${vault.split("\\").join("/")}/.tools/adapters/claude-code/${f}"`;
+// Die Hooks zeigen auf den Kern (kernStabil: Kern-Ordner bzw. der stabile Pfad aus KORTEX_KERN_PFAD) und tragen den Vault als --vault mit.
+const KERN_FWD = kernStabil().split("\\").join("/");
+const pfad = (f) => `"${KERN_FWD}/adapters/claude-code/${f}"`;
+const ZUSATZ = ` --vault "${vault.split("\\").join("/")}"`;
 // §12.1 Nr. 1 (B3): kein fester Node-Pfad in den Hooks — auf macOS/Linux sucht node-start.sh Node bei jedem Start (ein
 // Node-Update bricht so keine Hooks; es findet auch das private Node unter ~/.brain-kit/node, das Claude Code oft nicht
 // im PATH der Hooks hat). Windows behält den erkannten Pfad (kein /bin/sh).
-const NODE = process.platform === "win32" ? nodeBefehl() : `/bin/sh "${vault.split("\\").join("/")}/.tools/node-start.sh"`;
+const NODE = process.platform === "win32" ? nodeBefehl() : `/bin/sh "${KERN_FWD}/node-start.sh"`;
 // Ein Eintrag je Brain-Hook. PreToolUse hat DREI eigene Einträge (wiki-guard, werkzeug-protokoll, regeln-lesen), damit
 // der wiki-guard-Matcher unverändert bleibt; PreCompact sichert den Arbeitsstand (kompakt-sichern, M2a) UND startet die
 // Ernte; SessionEnd startet die Ernte UND trägt die Sitzung aus .logs/laufend/ aus (sitzung-ende, M2a).
@@ -82,9 +85,10 @@ const soll = [
 // Bis v0.5 registrierter echo-Hinweis vor der Kompaktierung — ersetzt durch kompakt-sichern.mjs (K12) und entfernt.
 const ALT_HANDOFF_ECHO = `echo 'Kontext-Kompression steht bevor: offenen Arbeitsstand sichern (Skill handoff).'`;
 
-// Ältere Brain-Einträge derselben Vault erkennen (vor dem Umzug nach .tools/adapters/claude-code/):
-// <vault>/.tools/<basis>.<ext> — nicht unter .tools/adapters/ — mit oder ohne Anführungszeichen, auch die
-// unexpandierte $HOME/brain-Schreibweise, wenn <vault> genau homedir()/brain entspricht.
+// Ältere Brain-Einträge derselben Vault erkennen (Migration): <vault>/<alter Kit-Ordner>/<basis>.<ext> — Stand vor dem Umzug in den
+// Unterordner adapters/claude-code/ — mit oder ohne Anführungszeichen, auch die unexpandierte $HOME/brain-Schreibweise, wenn <vault>
+// genau homedir()/brain entspricht. Einträge mit dem Pfad <vault>/<alter Kit-Ordner>/adapters/claude-code/ (Stand vor dem Kern-Umzug)
+// werden unten auf den Kern der App umgestellt.
 const escapeReg = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const vaultFwd = vault.split("\\").join("/");
 const homeBrainFwd = join(homedir(), "brain").split("\\").join("/");
@@ -93,7 +97,7 @@ if (vaultFwd === homeBrainFwd) vaultAliases.push("$HOME/brain");
 function altMuster(basis, exts) {
   const alts = vaultAliases.map(escapeReg).join("|");
   const extAlt = exts.join("|");
-  return new RegExp(`(?:^|["'\\s])(?:${alts})/\\.tools/${basis}\\.(?:${extAlt})(?=["'\\s]|$)`);
+  return new RegExp(`(?:^|["'\\s])(?:${alts})/${escapeReg(ALT_KIT_ORDNER)}/${basis}\\.(?:${extAlt})(?=["'\\s]|$)`);
 }
 const alteMuster = {
   SessionStart: altMuster("session-start", ["sh", "mjs"]),
@@ -103,11 +107,15 @@ const alteMuster = {
 const alteStatusMuster = altMuster("statusline", ["sh", "mjs"]);
 
 s.hooks ||= {};
-const MARKER = "/.tools/adapters/claude-code/";
-for (const { ev, cmd, matcher, altFassung } of soll) {
+const MARKER = "/adapters/claude-code/";
+const MARKER_ALT = `/${ALT_KIT_ORDNER}${MARKER}`;
+// Eintrag dieses Vaults: zeigt auf seinen alten Kit-Ordner oder trägt sein --vault.
+const meinEintrag = (c) => c.includes(`${vaultFwd}${MARKER_ALT}`) || c.includes(ZUSATZ);
+for (const { ev, cmd: basis, matcher, altFassung } of soll) {
+  const cmd = basis + ZUSATZ;
   const liste = (s.hooks[ev] ||= []);
   // Erkennungsmerkmal des eigenen Eintrags: Dateiname samt Argumenten (z. B. 'ernte-ausloeser.mjs" --art fakt').
-  const datei2 = cmd.split("/").pop();
+  const datei2 = basis.split("/").pop();
   // h.command fehlt bei fremden Hook-Formen ohne Kommandozeile (z. B. { type:"prompt", prompt:"…" } —
   // Claude Code kennt auch nicht-command-basierte Hooks). Solche Einträge sind fremd und bleiben
   // unangetastet: jeder Zugriff auf h.command ist deshalb mit typeof h.command === "string" abgesichert.
@@ -115,7 +123,7 @@ for (const { ev, cmd, matcher, altFassung } of soll) {
   // Eigener Adapter-Eintrag DIESES Vaults mit anderem Aufruf (z. B. nacktes "node" statt absolutem Pfad) → auf
   // den aktuellen Befehl heben, statt ihn als „schon aktuell" stehen zu lassen.
   for (const eintrag of liste) for (const h of eintrag.hooks || []) {
-    if (typeof h.command === "string" && h.command !== cmd && h.command.includes(`${vaultFwd}${MARKER}`) && h.command.includes(datei2)) {
+    if (typeof h.command === "string" && h.command !== cmd && meinEintrag(h.command) && h.command.includes(MARKER) && h.command.includes(datei2)) {
       h.command = cmd; console.log(`~ Hook ${ev} aktualisiert`);
     }
   }
@@ -126,7 +134,7 @@ for (const { ev, cmd, matcher, altFassung } of soll) {
   if (alt) {
     // Erster Treffer ohne aktuellen Eintrag wird in Ort und Stelle ersetzt (einer je Event genügt);
     // jeder weitere Treffer — auch wenn schon ein aktueller Eintrag da war — wird entfernt (die alten
-    // Dateien existieren nach dem Umzug nach .tools/adapters/claude-code/ nicht mehr).
+    // Dateien existieren nach dem Umzug nach adapters/claude-code/ nicht mehr).
     for (const eintrag of liste) {
       if (!eintrag.hooks) continue;
       for (let i = eintrag.hooks.length - 1; i >= 0; i--) {
@@ -174,10 +182,10 @@ if (brainModsAktiv && !args.includes("--ohne-statusline")) {
     delete s.statusLine; console.log("- Statusline entfernt (Brain-Band von brain-mods zeigt den Stand)");
   }
 } else if (!args.includes("--ohne-statusline")) {
-  const statusCmd = `${NODE} ${pfad("statusline.mjs")}`;
+  const statusCmd = `${NODE} ${pfad("statusline.mjs")}${ZUSATZ}`;
   if (!s.statusLine) { s.statusLine = { type: "command", command: statusCmd }; console.log("+ Statusline"); }
   else if (s.statusLine.command === statusCmd) { /* schon aktuell, idempotent still */ }
-  else if (s.statusLine.command?.includes(`${vaultFwd}${MARKER}statusline.mjs`)) { s.statusLine.command = statusCmd; console.log("~ Statusline aktualisiert"); }
+  else if (typeof s.statusLine.command === "string" && meinEintrag(s.statusLine.command) && s.statusLine.command.includes(`${MARKER}statusline.mjs`)) { s.statusLine.command = statusCmd; console.log("~ Statusline aktualisiert"); }
   else if (typeof s.statusLine.command === "string" && alteStatusMuster.test(s.statusLine.command)) { s.statusLine.command = statusCmd; console.log("~ Statusline ersetzt (alte Fassung)"); }
   // Auch ruhende Terminals sollen den aktuellen Brain-Stand zeigen (Änderungen anderer Sitzungen): Claude Code
   // führt die Statusline sonst nur bei eigener Aktivität aus. Ein eigener Wert der Person bleibt unangetastet.

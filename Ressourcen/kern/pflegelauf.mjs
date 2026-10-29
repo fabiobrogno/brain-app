@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// .tools/pflegelauf.mjs — Pflege-Lauf mit KI (v0.4, Spec D; opt-in): Pflegebericht (pflege.mjs) + Kandidatenseiten
+// pflegelauf.mjs — Pflege-Lauf mit KI (v0.4, Spec D; opt-in): Pflegebericht (pflege.mjs) + Kandidatenseiten
 // aus review-kandidaten.mjs → Haiku (schlank wie die Ernte, dieselben Helfer aus ernte.mjs) → höchstens 8 Vorschläge
 // `art: pflege` in <inbox>/_vorschlaege/. Ändert NIE das Wiki. Dazu (Spec H) der Session-Auswerter über die Verläufe
 // der letzten 7 Tage — nur die des eigenen Vaults (~/.claude/projects/<kodierter Vault-Pfad>/), Schalter `lektionen`.
 // Wöchentlich (Schalter pflegeLauf = "woechentlich"): session-start ruft starteWennFaellig() — losgelöst.
 // Per Klick: Dienst-Route POST /api/pflege/lauf → starteLosgeloest(vault). Höchstens ein Lauf zugleich.
 // Gibt beim Lauf nie etwas aus; Ergebnis in .logs/pflege-lauf.log (Zeichen und Token-Zahlen aus `usage`).
-// CLI: node .tools/pflegelauf.mjs [--anlass knopf|woechentlich] [vault]
+// CLI: node pflegelauf.mjs [--anlass knopf|woechentlich] [vault]
 // Testhaken: BRAIN_PFLEGELAUF_SKRIPT ersetzt den Pfad zu diesem Skript beim losgelösten Start.
 import { readFileSync, readdirSync, statSync, lstatSync, realpathSync, unlinkSync, mkdirSync, writeFileSync, utimesSync } from "node:fs";
 import { join, dirname, basename } from "node:path";
@@ -18,7 +18,7 @@ import { hatPii } from "./pii-muster.mjs";
 import { haengeAn, zeitstempel, leseZeilen } from "./logs.mjs";
 import { leseAutomatik } from "./einstellungen.mjs";
 import { schreibeVorschlag, KI_BEFUNDE } from "./vorschlaege.mjs";
-import { EIGENER_VAULT, ordner, entferneBom } from "./pfade.mjs";
+import { vaultPfadOderEnde, ordner, entferneBom } from "./pfade.mjs";
 import { findeClaude, rufeHaiku, leseClaudeAntwort, nimmLock } from "./ernte.mjs";
 import { lektionenAusVerlaeufen } from "./lektionen.mjs";
 
@@ -370,6 +370,6 @@ if (aufruf && aufruf === realpathSync(selbst)) {
     if (argv[i] === "--anlass") { anlass = argv[i + 1] === "woechentlich" ? "woechentlich" : "knopf"; i++; }
     else if (!argv[i].startsWith("--")) vault = vault || argv[i];
   }
-  const r = await pflegeLauf(vault || process.env.BRAIN_VAULT || EIGENER_VAULT, { anlass });
+  const r = await pflegeLauf(vault || vaultPfadOderEnde([]), { anlass });
   process.exitCode = r.status === "fehler" ? 1 : 0;
 }

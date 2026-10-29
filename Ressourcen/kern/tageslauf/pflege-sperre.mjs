@@ -1,4 +1,4 @@
-// .tools/tageslauf/pflege-sperre.mjs — W4: Der Themen-Guard (ernteOhneThema, ernteNichtIn) filtert die Eingabe der KI — aber Sonnet darf die ganze
+// tageslauf/pflege-sperre.mjs — W4: Der Themen-Guard (ernteOhneThema, ernteNichtIn) filtert die Eingabe der KI — aber Sonnet darf die ganze
 // Arbeitskopie lesen. Darum werden vor jedem Sonnet-Lauf alle Dateien, die ein ausgeschlossenes Thema nennen oder in einem ausgeschlossenen
 // Ordner liegen, aus der ARBEITSKOPIE entfernt (nie aus dem echten Vault) und danach per `git checkout` wiederhergestellt. Legt die KI so
 // eine Datei neu an, merkt sich ctx.pflegeGesperrtBeruehrt den Pfad — einheit() verwirft dann die Einheit. Fail-closed: ohne lesbare
@@ -6,10 +6,11 @@
 import { readdirSync, lstatSync, readFileSync, unlinkSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { istAusgeschlossen } from "../ernte.mjs";
+import { ALT_KIT_ORDNER } from "../pfade.mjs";
 import { git } from "./arbeitskopie.mjs";
 import { pflegeGrund, konfigLesbar } from "./pflege-thema.mjs";
 
-const UEBERSPRINGEN = new Set([".git", ".tools", ".claude", ".logs", "node_modules"]);
+const UEBERSPRINGEN = new Set([".git", ALT_KIT_ORDNER, ".claude", ".logs", "node_modules"]);
 const TEXT = /\.(md|txt|json|csv|yml|yaml)$/i;
 const MAX_BYTES = 2 * 1024 * 1024;
 const fwd = (p) => String(p).split("\\").join("/");

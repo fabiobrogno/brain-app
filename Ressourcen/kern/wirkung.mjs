@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// .tools/wirkung.mjs — K15 „Alltags-Wirkung messen" (Spec §12.2, §13.2). Wertet lokal die Claude-Code-Verläufe der
+// wirkung.mjs — K15 „Alltags-Wirkung messen" (Spec §12.2, §13.2). Wertet lokal die Claude-Code-Verläufe der
 // letzten N Tage aus: Nutzer-Nachrichten gegen feste Musterlisten, Rückbezüge, Kompaktierungen, Brain-Hinweise mit
 // späterer Korrektur und den Anteil großer Werkzeug-Ausgaben (> 5 KB) am Verlaufstext. 0 Tokens.
 // Gespeichert werden NUR Zahlen (.logs/wirkung.jsonl), nie Text. Musterlisten = 1:1 die Auswertung vom 16.10.2026
@@ -15,7 +15,7 @@ import {
   jeEintrag, nutzerNachricht, assistentText, werkzeugAufrufe, werkzeugErgebnisse, kompaktierung, hookAusgabe,
 } from "./verlauf.mjs";
 import { haengeAn, zeitstempel } from "./logs.mjs";
-import { EIGENER_VAULT } from "./pfade.mjs";
+import { vaultPfadOderEnde, kernVersion } from "./pfade.mjs";
 
 export const MUSTER_VERSION = "v1";
 export const GRUPPEN = {
@@ -242,7 +242,7 @@ try { aufruf = realpathSync(process.argv[1] || ""); } catch {}
 if (aufruf && aufruf === realpathSync(selbst)) {
   const args = process.argv.slice(2);
   const werte = (k) => args.filter((a) => a.startsWith(`--${k}=`)).map((a) => a.slice(k.length + 3));
-  const vault = args.find((a) => !a.startsWith("--")) || process.env.BRAIN_VAULT || EIGENER_VAULT;
+  const vault = args.find((a) => !a.startsWith("--")) || vaultPfadOderEnde([]);
   const tage = Number(werte("tage")[0] || 30);
   const bis = werte("bis")[0];
   const bisMs = bis ? Date.parse(`${bis}T23:59:59`) : Date.now();
@@ -253,8 +253,7 @@ if (aufruf && aufruf === realpathSync(selbst)) {
   }
   const speichern = args.includes("--speichern");
   const extra = werte("wurzel");
-  let kitVersion = "?";
-  try { kitVersion = readFileSync(join(HIER, "VERSION"), "utf8").trim(); } catch {}
+  const kitVersion = kernVersion();
   try {
     if (speichern) { mkdirSync(join(vault, ".logs"), { recursive: true }); writeFileSync(LAUF_MARKE(vault), ""); }
     const vorher = leseMessungen(vault).at(-1) || null;

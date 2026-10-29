@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// .tools/skills-build.mjs — rendert Skills/AGENTS.md für einen Vault.
+// skills-build.mjs — rendert Skills/AGENTS.md für einen Vault.
 // Nutzung: <vault> --ziel claude-commands <ordner> | agents <datei> | agents-skills <ordner>
 import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync, copyFileSync } from "node:fs";
 import { join, dirname } from "node:path";

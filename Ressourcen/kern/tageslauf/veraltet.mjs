@@ -1,4 +1,4 @@
-// .tools/tageslauf/veraltet.mjs — K7 „Prüfen nach Nutzung" (Spec §7.6, App-Spec K7), 0 Tokens.
+// tageslauf/veraltet.mjs — K7 „Prüfen nach Nutzung" (Spec §7.6, App-Spec K7), 0 Tokens.
 // Abgelaufene Seiten (gueltigkeit.mjs) nach (Nutzung + 1) × Tage über der Frist; Nutzung = Brain-Hinweise der letzten 90 Tage
 // (hint.log). Projektseiten (K14) prüft der Lauf zuerst selbst: Zeigt pfade/repo auf ein lokales Git-Repo ohne Commit seit dem
 // Stand der Seite, verlängert er sie (Feld-Aufträge stand + pruefen_bis; sie laufen durch das B2-Schreiben, ein Commit je Feld,

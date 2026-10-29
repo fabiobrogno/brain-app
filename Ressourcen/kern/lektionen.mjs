@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// .tools/lektionen.mjs — Session-Auswerter (v0.4, Spec H): wiederholte Korrekturen und doppelte Fehlschläge in
+// lektionen.mjs — Session-Auswerter (v0.4, Spec H): wiederholte Korrekturen und doppelte Fehlschläge in
 // einem Claude-Code-Verlauf → Lektions-Vorschläge (art: lektion) in <inbox>/_vorschlaege/.
 // Erkennen lokal (0 Tokens, findeLektionen); Formulieren nur mit Schalter lektionen = "mit-ki" (Haiku, schlank wie
 // die Ernte — dieselben Helfer aus ernte.mjs). Fail-closed: unbekannter oder ausgeschlossener Ordner (ernteNichtIn),
@@ -7,12 +7,12 @@
 // Pfad aus ernteNichtIn werden verworfen, nie gekürzt gesendet; Pfade stehen im Auszug nur als Dateiname.
 // Gibt beim Lauf nie etwas aus; Ergebnis steht in .logs/lektionen.log. Nur Node-Standardbibliothek.
 // CLI:
-//   node .tools/lektionen.mjs --transkript <pfad> --sid <id> --cwd <pfad> [vault]   (vom Ernte-Auslöser, losgelöst)
-//   node .tools/lektionen.mjs liste [vault]                → übernommene Lektionen (JSON) für den Skill „lektion"
-//   node .tools/lektionen.mjs ins-wiki <id> [--titel …] [--regel …] [--warum …] [--wie …] [vault]
+//   node lektionen.mjs --transkript <pfad> --sid <id> --cwd <pfad> [vault]   (vom Ernte-Auslöser, losgelöst)
+//   node lektionen.mjs liste [vault]                → übernommene Lektionen (JSON) für den Skill „lektion"
+//   node lektionen.mjs ins-wiki <id> [--titel …] [--regel …] [--warum …] [--wie …] [vault]
 //                                                          → Eintrag in <wiki>/_lektionen.md, danach archiviert
-//   node .tools/lektionen.mjs skill-entwurf <id> [vault]   → <inbox>/_lektionen/skill-<slug>.md (SKILL.md-Gerüst)
-//   node .tools/lektionen.mjs erledigt <id> [vault]        → nach <archiv>/lektionen-erledigt/
+//   node lektionen.mjs skill-entwurf <id> [vault]   → <inbox>/_lektionen/skill-<slug>.md (SKILL.md-Gerüst)
+//   node lektionen.mjs erledigt <id> [vault]        → nach <archiv>/lektionen-erledigt/
 import {
   readFileSync, writeFileSync, mkdirSync, readdirSync, lstatSync, renameSync, realpathSync, unlinkSync,
 } from "node:fs";
@@ -25,7 +25,7 @@ import { haengeAn, zeitstempel } from "./logs.mjs";
 import { leseAutomatik } from "./einstellungen.mjs";
 import { nenntThema, THEMA_GRUND } from "./thema-ausschluss.mjs";
 import { schreibeVorschlag, lektionOrdner, leseVorschlagDatei, ID_MUSTER, liegtImWiki } from "./vorschlaege.mjs";
-import { EIGENER_VAULT, ordner, entferneBom } from "./pfade.mjs";
+import { vaultPfadOderEnde, ordner, entferneBom } from "./pfade.mjs";
 import {
   leseEnde, istAusgeschlossen, findeClaude, rufeHaiku, leseClaudeAntwort, nimmLock,
 } from "./ernte.mjs";
@@ -565,7 +565,7 @@ if (aufruf && aufruf === realpathSync(selbst)) {
   if (befehle.has(rest[0])) {
     const befehl = rest[0];
     const id = befehl === "liste" ? null : rest[1];
-    const vault = (befehl === "liste" ? rest[1] : rest[2]) || process.env.BRAIN_VAULT || EIGENER_VAULT;
+    const vault = (befehl === "liste" ? rest[1] : rest[2]) || vaultPfadOderEnde([]);
     try {
       let r;
       if (befehl === "liste") r = listeLektionen(vault);
@@ -579,7 +579,7 @@ if (aufruf && aufruf === realpathSync(selbst)) {
     }
   } else {
     // Hintergrund-Lauf: nie Ausgabe.
-    const vault = rest[0] || process.env.BRAIN_VAULT || EIGENER_VAULT;
+    const vault = rest[0] || vaultPfadOderEnde([]);
     const r = await lektionsLauf(vault, { transkript: flags.transkript, sid: flags.sid || "", cwd: flags.cwd || "" });
     process.exitCode = r.status === "fehler" ? 1 : 0;
   }

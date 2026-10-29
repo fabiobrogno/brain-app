@@ -1,11 +1,11 @@
-// .tools/tageslauf/pflege-kopie.mjs — Die Pflege-Arbeitskopie von B3 (Spec §6.2): EIN Git-Worktree je Lauf außerhalb des Vaults
+// tageslauf/pflege-kopie.mjs — Die Pflege-Arbeitskopie von B3 (Spec §6.2): EIN Git-Worktree je Lauf außerhalb des Vaults
 // (Branch tageslauf/<lauf>-pflege; Reste räumt raeumeResteAuf wie in B2 weg). Je Einheit (eine Quelle, eine Seite, eine
 // Entscheidung) GENAU EIN Commit oder keiner: arbeit() → Wächter „Vault unverändert" → rev nachziehen → _log-Eintrag (Node)
 // → Diff-Prüfung → git add (explizit) → commit mit normalem pre-commit (Lint + Secrets + REV + Log, nie --no-verify).
 // Jeder Verstoß setzt die Arbeitskopie auf den letzten guten Commit zurück. Übernommen wird am Ende per ff-Merge — und nur,
 // wenn der Branch genau auf dem letzten geprüften Commit steht (kein Commit an der Diff-Prüfung vorbei).
 // Härtung: VOR und NACH jeder Arbeit ein Fingerabdruck (integritaet.mjs) von echtem Vault, Arbeitskopie und Home — jede Abweichung
-// (Hook, .git/config, .tools, Wiki, ~/.zshrc …) verwirft die Einheit, beendet die Pflege und erzeugt eine laute Warnung.
+// (Hook, .git/config, alter Kit-Ordner, Wiki, ~/.zshrc …) verwirft die Einheit, beendet die Pflege und erzeugt eine laute Warnung.
 import { readFileSync, writeFileSync, existsSync, statSync, lstatSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";

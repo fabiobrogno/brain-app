@@ -1,4 +1,4 @@
-// .tools/tageslauf/zeitplan.mjs — Wann der Tageslauf läuft (Spec §5.1): fällig (letzter Erfolg > 20 h), Strom/Leerlauf
+// tageslauf/zeitplan.mjs — Wann der Tageslauf läuft (Spec §5.1): fällig (letzter Erfolg > 20 h), Strom/Leerlauf
 // (nur mit --dienst), Sperre (PID + Startzeit), losgelöster Start und Rückfall beim Sitzungsstart. Wirft nie.
 // Testhaken: BRAIN_PMSET_DATEI / BRAIN_IOREG_DATEI (Ausgabe aus Datei), BRAIN_TAGESLAUF_SKRIPT (Skript beim Start).
 import { readFileSync, writeFileSync, mkdirSync, unlinkSync } from "node:fs";

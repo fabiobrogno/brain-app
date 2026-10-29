@@ -1,4 +1,4 @@
-// .tools/tageslauf/ki.mjs — Budget je Lauf und der EINZIGE KI-Weg des Tageslaufs (Spec §5.1, §6.1): Haiku über rufeHaiku
+// tageslauf/ki.mjs — Budget je Lauf und der EINZIGE KI-Weg des Tageslaufs (Spec §5.1, §6.1): Haiku über rufeHaiku
 // (--tools "", --strict-mcp-config, BRAIN_ERNTE=1) — die KI liefert nur Text/JSON, sie schreibt nie.
 // Drei KI-Fehler in Folge (offline, claude kaputt) → ctx.ohneKi: KI-Schritte entfallen, der Lauf gilt nicht als erfolgreich.
 import { findeClaude, rufeHaiku, leseClaudeAntwort } from "../ernte.mjs";

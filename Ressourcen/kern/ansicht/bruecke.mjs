@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// .tools/ansicht/bruecke.mjs — Ansicht-Brücke für die Brain-App (App-Spec §5.2, Baustein 4): dieselben Routen wie
+// ansicht/bruecke.mjs — Ansicht-Brücke für die Brain-App (App-Spec §5.2, Baustein 4): dieselben Routen wie
 // der HTTP-Dienst (dienst-lib.mjs#behandleIntern), aber über stdin/stdout statt über einen Port. Nur die App, die
 // diesen Prozess startet, kann mit ihm reden — darum entfallen hier Host-, Herkunfts- und Token-Prüfung.
 // Protokoll: je Zeile ein JSON-Objekt (UTF-8).
@@ -13,14 +13,15 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { behandleIntern, vaultIdVon, MAX_KOERPER } from "./dienst-lib.mjs";
 import { erzeugeHandler } from "./handler.mjs";
+import { vaultPfadOderEnde, kernVersion } from "../pfade.mjs";
 
 const HIER = dirname(fileURLToPath(import.meta.url));
-const vault = process.argv[2] || process.env.BRAIN_VAULT || join(HIER, "..", "..");
+const vault = process.argv[2] || vaultPfadOderEnde([]);
 // base64 (×4/3) + JSON-Hülle: größere Anfragezeilen sind nie gültig und werden mit 413 abgewiesen
 const MAX_ZEILE = 2 * MAX_KOERPER + 4096;
 const handler = erzeugeHandler();
 const vaultId = vaultIdVon(vault);
-const version = (() => { try { return readFileSync(join(HIER, "..", "VERSION"), "utf8").trim(); } catch { return "?"; } })();
+const version = kernVersion();
 const JSON_TYP = { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" };
 
 process.stdout.on("error", () => process.exit(0)); // App weg → still beenden

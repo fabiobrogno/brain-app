@@ -1,6 +1,6 @@
 # Herkunft und Lizenz der Gehirnoberfläche
 
-**Datei:** `vendor/brain-mesh/brain-mesh.js` (≈2,8 MB), erzeugt von `.tools/ansicht/build/build-brain.mjs`.
+**Datei:** `vendor/brain-mesh/brain-mesh.js` (≈2,8 MB), erzeugt von `ansicht/build/build-brain.mjs`.
 
 ## Quelle
 - **Datensatz:** AOMIC-ID1000 — *The Amsterdam Open MRI Collection*, OpenNeuro **ds003097**, Version 1.2.1
@@ -36,7 +36,7 @@ FreeSurfer-Laufs über CC0-Daten; FreeSurfer selbst wird nicht mitgeliefert oder
 
 ## Neu bauen
 ```
-node .tools/ansicht/build/build-brain.mjs            # lädt die 9 Dateien (~13 MB) einmalig in einen Cache im Temp-Ordner
-BRAIN_DENSITY=1.2 node .tools/ansicht/build/build-brain.mjs   # mehr Punkte
-BRAIN_PITCH=11 node .tools/ansicht/build/build-brain.mjs      # Ausgleich der Kopfneigung (Grad)
+node ansicht/build/build-brain.mjs            # lädt die 9 Dateien (~13 MB) einmalig in einen Cache im Temp-Ordner
+BRAIN_DENSITY=1.2 node ansicht/build/build-brain.mjs   # mehr Punkte
+BRAIN_PITCH=11 node ansicht/build/build-brain.mjs      # Ausgleich der Kopfneigung (Grad)
 ```

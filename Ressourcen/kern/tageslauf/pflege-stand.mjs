@@ -1,4 +1,4 @@
-// .tools/tageslauf/pflege-stand.mjs — Was B3 sich zwischen Läufen merkt (.logs/tageslauf/pflege-stand.json, git-ignoriert):
+// tageslauf/pflege-stand.mjs — Was B3 sich zwischen Läufen merkt (.logs/tageslauf/pflege-stand.json, git-ignoriert):
 //   tag           Kalendertag des letzten scharfen B3-Laufs (höchstens einmal je Tag)
 //   inbox[name]   { sha, versuche, letzter, grund } fehlgeschlagener Inbox-Notizen (höchstens 2 Versuche je Inhalt)
 //   konsolidiert[seite]  Datum der letzten Konsolidierung (höchstens alle 30 Tage)

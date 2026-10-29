@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// .tools/ernte.mjs — Hintergrund-Ernte: Claude-Code-Transkript → Haiku (claude -p) → Vorschläge in
+// ernte.mjs — Hintergrund-Ernte: Claude-Code-Transkript → Haiku (claude -p) → Vorschläge in
 // <inbox>/_vorschlaege/. Läuft losgelöst vom Hook (Task 11), nie in der Sitzung. Zugangsdaten werden vor
 // dem Senden zeilenweise und nach der Antwort je Vorschlag herausgefiltert. Höchstens ein Lauf zugleich.
-// CLI: node .tools/ernte.mjs --art stand|fakt --transkript <pfad> --sid <id> --cwd <pfad> [--auftrag <name>.json] [vault]
-//      node .tools/ernte.mjs --nachernte --transkript <pfad> --sid <id> --cwd <pfad> [--max-fenster N] [vault]   (ganze Sitzung in Fenstern neu ernten)
+// CLI: node ernte.mjs --art stand|fakt --transkript <pfad> --sid <id> --cwd <pfad> [--auftrag <name>.json] [vault]
+//      node ernte.mjs --nachernte --transkript <pfad> --sid <id> --cwd <pfad> [--max-fenster N] [vault]   (ganze Sitzung in Fenstern neu ernten)
 // Gibt nie etwas aus; Ergebnis steht in .logs/ernte.log. Nur Node-Standardbibliothek.
 // Aufruf von claude (Final-Review #3): schlank — keine Werkzeuge, keine MCP-Server, eigener kurzer Systemprompt,
 // keine gespeicherte Sitzung, JSON-Ausgabe; die Token-Zahlen aus `usage` landen im ernte.log (tokEin/tokAus).
@@ -40,7 +40,7 @@ import { haengeAn, zeitstempel } from "./logs.mjs";
 import { leseAutomatik } from "./einstellungen.mjs";
 import { schreibeVorschlag } from "./vorschlaege.mjs";
 import { nenntThema, THEMA_GRUND } from "./thema-ausschluss.mjs";
-import { EIGENER_VAULT, entferneBom } from "./pfade.mjs";
+import { vaultPfadOderEnde, entferneBom } from "./pfade.mjs";
 
 export const MAX_TRANSKRIPT = 24000;
 export const MIN_PROMPTS = 5;
@@ -684,7 +684,7 @@ export function leseArgs(argv) {
       if (SCHALTER.has(name)) flags[name] = true; else { flags[name] = argv[i + 1]; i++; }
     } else rest.push(a);
   }
-  return { flags, vault: rest[0] || process.env.BRAIN_VAULT || EIGENER_VAULT };
+  return { flags, vault: rest[0] || vaultPfadOderEnde([]) };
 }
 
 const selbst = fileURLToPath(import.meta.url);

@@ -1,4 +1,4 @@
-// .tools/tageslauf/stufe.mjs — Schritt 5 (Regeln, Spec §5.2-Tabelle + §6.3 Autostufe). Reine Funktion, keine Ein-/Ausgabe.
+// tageslauf/stufe.mjs — Schritt 5 (Regeln, Spec §5.2-Tabelle + §6.3 Autostufe). Reine Funktion, keine Ein-/Ausgabe.
 // e = { art, herkunft, zitatGeprueft, zitatStuetzt, passtZurSeite, dauerhaft, gedeckt?, ziel: { seite, kritisch } | null,
 //       abgleich: { urteil } | null, heikel, autostufe }
 // Grundsatz „lieber eine Lücke als ein Fehler": 🟢 (uebernehmen/stand) nur, wenn JEDE Bedingung ausdrücklich erfüllt ist

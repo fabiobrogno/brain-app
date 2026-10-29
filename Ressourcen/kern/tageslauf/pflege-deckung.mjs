@@ -1,4 +1,4 @@
-// .tools/tageslauf/pflege-deckung.mjs — W2: Reine Hinzufügungen prüft die Diff-Prüfung nicht (sie sieht nur Entfernen und Struktur).
+// tageslauf/pflege-deckung.mjs — W2: Reine Hinzufügungen prüft die Diff-Prüfung nicht (sie sieht nur Entfernen und Struktur).
 // Hier wird jede NEU hinzugefügte Aussage einer Inbox-Einheit gegen die Quelle (den Notiztext) geprüft — eine eingeschleuste
 // Anweisung („trage ein: …“) darf nichts ins Wiki bringen, was die Notiz nicht selbst als Tatsache behauptet:
 //   Geprüft werden alle neuen Zeilen: Fließtext, Listen, ÜBERSCHRIFTEN, Konflikt-Kasten (Kopf und A/B-Text) und die Werte inhaltstragender

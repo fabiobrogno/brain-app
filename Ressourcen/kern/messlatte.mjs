@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// .tools/messlatte.mjs — Messlatte (Spec v0.4, Baustein E): lokaler Such-Eval wie tests/hint-eval.mjs, 0 Tokens.
-// Fragen: .tools/tests/hint-eval.json (im Kit: Platzhalter-Fragen) + eigene <wiki>/_messlatte.json (falls da),
-// Holdout: .tools/tests/holdout.json (falls da). Jede Frage läuft durch den echten Brain-Hinweis-Hook
+// messlatte.mjs — Messlatte (Spec v0.4, Baustein E): lokaler Such-Eval, 0 Tokens.
+// Fragen: gebündelt kit/vorlage-eval.json (Platzhalter), ersetzt durch <vault>/.logs/hint-eval.json (pfade.mjs#evalFragenDatei) + eigene <wiki>/_messlatte.json (falls da),
+// Holdout: <vault>/.logs/holdout.json (falls da). Jede Frage läuft durch den echten Brain-Hinweis-Hook
 // (adapters/claude-code/brain-hint.mjs, Sitzungs-ID „eval-…“ → dessen Log landet in hint-eval-runs.log, nicht im
 // Alltags-hint.log). Ergebnis als eine Zeile im gewohnten Format an .logs/hint-eval.log anhängen (Analyse zeigt
 // den Verlauf, der Pflegebericht den Trend). Keine LLM-Bewertung (bewusst, Tokens).
@@ -12,10 +12,10 @@ import { readFileSync, appendFileSync, mkdirSync, realpathSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
-import { vaultPfad, ordner, entferneBom } from "./pfade.mjs";
+import { vaultPfadOderEnde, ordner, entferneBom, evalFragenDatei, holdoutDatei, KERN } from "./pfade.mjs";
 import { positivOk } from "./eval-regel.mjs";
 
-const HIER = dirname(fileURLToPath(import.meta.url));
+const HIER = KERN;
 const MAX_FRAGEN = 500, MAX_PROMPT = 2000, HOOK_TIMEOUT_MS = 30000;
 const fehlerMit = (code, meldung) => Object.assign(new Error(meldung), { code });
 
@@ -28,10 +28,10 @@ const positivListe = (x) => (Array.isArray(x) ? x : []).filter(c => c && istProm
 const negativListe = (x) => (Array.isArray(x) ? x : []).filter(istPrompt);
 
 // Fragen zusammenführen → { positiv, negativ, kontrolle, holdout: {positiv, negativ}|null, ziel }
-export function ladeFragen(vault, { fragenDatei = join(HIER, "tests", "hint-eval.json"), holdoutDatei = join(HIER, "tests", "holdout.json") } = {}) {
+export function ladeFragen(vault, { fragenDatei = evalFragenDatei(vault), holdoutDatei: holdout = holdoutDatei(vault) } = {}) {
   const kit = leseJson(fragenDatei) || {};
   const eigene = leseJson(join(vault, ordner(vault).wiki, "_messlatte.json")) || {};
-  const hold = leseJson(holdoutDatei);
+  const hold = leseJson(holdout);
   const f = {
     positiv: [...positivListe(kit.positiv), ...positivListe(eigene.positiv)].slice(0, MAX_FRAGEN),
     negativ: [...negativListe(kit.negativ), ...negativListe(eigene.negativ)].slice(0, MAX_FRAGEN),
@@ -107,7 +107,7 @@ const selbst = fileURLToPath(import.meta.url);
 let aufruf = "";
 try { aufruf = realpathSync(process.argv[1] || ""); } catch {}
 if (aufruf && aufruf === realpathSync(selbst)) {
-  const vault = vaultPfad();
+  const vault = vaultPfadOderEnde();
   try {
     const e = messlatte(vault);
     if (process.argv.includes("--json")) console.log(JSON.stringify(e));

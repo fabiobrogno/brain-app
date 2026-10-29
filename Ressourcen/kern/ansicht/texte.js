@@ -1,4 +1,4 @@
-// .tools/ansicht/texte.js — alle Oberflächentexte der Ansicht, Deutsch und Englisch (klassisches Skript, kein ESM).
+// ansicht/texte.js — alle Oberflächentexte der Ansicht, Deutsch und Englisch (klassisches Skript, kein ESM).
 // Setzt window.BrainTexte = { t, sprache, setzeSprache, ergaenze, sprachen, tabelle }. In Node per vm testbar.
 //
 // Sprache: localStorage „brain-sprache“ → navigator.language → Deutsch. setzeSprache(s) speichert die Wahl,

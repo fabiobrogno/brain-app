@@ -1,4 +1,4 @@
-// .tools/ansicht/dienst-start.mjs — Ansicht-Dienst finden, starten, stoppen (für `brain zeig` und doctor).
+// ansicht/dienst-start.mjs — Ansicht-Dienst finden, starten, stoppen (für `brain zeig` und doctor).
 // starteOderFinde(vault, { warteMs }) → { url, neu } | null
 //   Läuft schon ein Dienst dieses Vaults (dienst.json + GET /api/ping mit passender vaultId), wird er
 //   wiederverwendet; sonst wird dienst.mjs losgelöst gestartet (detached, windowsHide, unref) und bis zu

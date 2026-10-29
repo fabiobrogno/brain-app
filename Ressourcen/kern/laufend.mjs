@@ -1,4 +1,4 @@
-// .tools/laufend.mjs — K13 „Was läuft parallel" (Spec §12.2): SessionStart trägt die Sitzung in .logs/laufend/<sid>.json
+// laufend.mjs — K13 „Was läuft parallel" (Spec §12.2): SessionStart trägt die Sitzung in .logs/laufend/<sid>.json
 // ein (Projekt-Schlüssel = Git-Wurzel bzw. Vault, Titel, Start), jeder Prompt erneuert das Lebenszeichen, SessionEnd
 // trägt aus. Einträge ohne Lebenszeichen > 2 h zählen nicht (SessionEnd läuft bei einem Absturz nicht), > 24 h werden
 // aufgeräumt. Je Sitzung eine eigene Datei, atomar (tmp + rename) — mehrere Sitzungen schreiben nie dieselbe Datei.

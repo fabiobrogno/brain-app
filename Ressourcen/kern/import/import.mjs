@@ -1,16 +1,16 @@
 #!/usr/bin/env node
-// .tools/import/import.mjs — Import alter Brains (Obsidian, Notion-Export, Logseq, Ordner mit Notizen).
+// import/import.mjs — Import alter Brains (Obsidian, Notion-Export, Logseq, Ordner mit Notizen).
 // Die Quelle wird nur gelesen. Kopiert wird nach <inbox>/_import/<name>/ (Struktur bleibt, Inhalt bytegleich),
 // dazu _import.json (Titel, Links, Aliase je Datei — ohne absoluten Quellpfad) und die lokale Vorprüfung
 // (_bericht.json + _bericht.md): exakte Duplikate (werden nicht kopiert), Fast-Duplikate, Widerspruchs-Kandidaten,
 // Überschneidungen mit dem Wiki und Pakete mit Token-Schätzung. 0 Tokens — eingearbeitet wird später, je Paket.
 //
-// CLI: node .tools/import/import.mjs <quelle> [vault] [--name x] [--ja]
+// CLI: node import/import.mjs <quelle> [vault] [--name x] [--ja]
 import { existsSync, mkdirSync, readFileSync, writeFileSync, utimesSync, realpathSync, statSync, readdirSync } from "node:fs";
 import { join, resolve, relative, sep, dirname, extname, isAbsolute } from "node:path";
 import { posix } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ordner, EIGENER_VAULT } from "../pfade.mjs";
+import { ordner, vaultPfadOderEnde } from "../pfade.mjs";
 import { walk } from "../vault-dateien.mjs";
 import { istWikiSeite } from "../wiki-pfade.mjs";
 import { findeSecrets } from "../secrets-muster.mjs";
@@ -409,10 +409,10 @@ export function cli(argv = process.argv.slice(2)) {
     else pos.push(a);
   }
   if (!pos[0]) {
-    console.log("Aufruf: node .tools/import/import.mjs <ordner|zip> [vault] [--name x] [--ja]");
+    console.log("Aufruf: node import/import.mjs <ordner|zip> [vault] [--name x] [--ja]");
     return 1;
   }
-  const vault = pos[1] || process.env.BRAIN_VAULT || EIGENER_VAULT;
+  const vault = pos[1] || vaultPfadOderEnde([]);
   try {
     console.log(kurzBericht(importiere(vault, pos[0], opt)));
     return 0;

@@ -1,4 +1,4 @@
-// .tools/tageslauf/konflikt-aufloesen.mjs — B3 §7.4: Entscheidungen anwenden. Die Entscheidung des Nutzers (<inbox>/_entscheidungen/<id>.md,
+// tageslauf/konflikt-aufloesen.mjs — B3 §7.4: Entscheidungen anwenden. Die Entscheidung des Nutzers (<inbox>/_entscheidungen/<id>.md,
 // aus dem Gehirn-Klick oder einer beantworteten konflikt-Rückfrage) löst den [!KONFLIKT]-Kasten DETERMINISTISCH auf — keine KI:
 //   a / b  → EIN Satz: „<Aussage> — Quelle: [[…]] _(Konflikt entschieden am TT.MM.JJJJ: A gilt — <Notiz>)_"
 //   beide  → zwei Listenpunkte, je mit Quelle, der zweite mit dem Vermerk

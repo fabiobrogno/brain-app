@@ -2,7 +2,7 @@
 // Hintergrund-Teil von SessionStart (läuft als eigener, losgelöster Prozess — session-start.mjs wartet nicht
 // darauf). Reihenfolge wie bisher: AGENTS.md, Index, Refresh, Suchdienst (falls eingeschaltet), Lint-Cache,
 // Push, Memory-Sync (nur wenn module.claudeMemory). Fehler landen im Log, blockieren aber nie.
-// Schalter (automatik): sicherungTaeglich=false → keine Sicherung; updateHinweis=false → kein Update-Check.
+// Schalter (automatik): sicherungTaeglich=false → keine Sicherung.
 // BRAIN_ERNTE=1 (Selbstaufruf der Ernte) → nichts tun.
 if (process.env.BRAIN_ERNTE === "1") process.exit(0);
 // Kit-Module erst nach dieser Prüfung laden (dynamisches import) — statische Importe würden vorher ausgewertet.
@@ -11,15 +11,13 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import { spawn, spawnSync } from "node:child_process";
-const { vaultPfad, ladeConfig } = await import("../../pfade.mjs");
+const { vaultPfadOderEnde, ladeConfig, KERN } = await import("../../pfade.mjs");
 const { gitBefehl } = await import("../../werkzeug.mjs");
-const { pruefeUpdate, schreibeBereitMarke } = await import("../../update-check.mjs");
 const { leseAutomatik } = await import("../../einstellungen.mjs");
 const { sicherungNoetig, merkeSicherung, aktuellerHead } = await import("../../sicherung-takt.mjs");
 
-const T = dirname(fileURLToPath(import.meta.url));
-const TOOLS = join(T, "..", "..");
-const V = vaultPfad();
+const TOOLS = KERN;
+const V = vaultPfadOderEnde(process.argv, { still: true });
 const LOG = join(V, ".logs", "hooks.log");
 // EIN git-Pfad für die ganze Datei — gilt auch für die Aufrufe gegen ~/.claude unten (dort geht es nur um
 // den WERKZEUG-Ort, nicht um das Zielrepo).
@@ -37,7 +35,7 @@ function node(script, args = []) {
 }
 
 // AGENTS.md ist nicht getrackt (maschinenlokaler, absoluter Vault-Pfad) — jede Sitzung erzeugt sie neu
-// aus der Vorlage (.tools/kit/AGENTS.md), damit sie nie veraltet oder fehlt.
+// aus der Vorlage (kit/AGENTS.md im Kern), damit sie nie veraltet oder fehlt.
 node("skills-build.mjs", [V, "--ziel", "agents", join(V, "AGENTS.md")]);
 node("brain-index.mjs", [V]);
 node("search-refresh.mjs", [V]);
@@ -141,12 +139,5 @@ try {
   }
 } catch (e) { log(`Hinweis: Memory-Sync übersprungen (${e.message})`); }
 
-// Update-Hinweis (Spec §3.9): höchstens 1x/24h geprüft (pruefeUpdate cached selbst), nie blockierend.
-// update.auto:true → nur die Marke schreiben, NICHTS automatisch ausführen — das macht der Agent über
-// den Skill "update" (kein Code führt fremden Release-Inhalt selbst aus).
-if (AUTOMATIK.updateHinweis !== false) try {
-  const erg = await pruefeUpdate(V);
-  log(`Update-Check: ${JSON.stringify(erg)}`);
-  const cfg = ladeConfig(V);
-  if (erg.neuer && cfg.update?.auto) schreibeBereitMarke(V, erg.neueste);
-} catch (e) { log(`Hinweis: Update-Check übersprungen (${e.message})`); }
+// Kein Update-Check mehr: Kortex aktualisiert sich selbst (Sparkle), der Kern ist Teil der App. Der Schalter updateHinweis
+// bleibt als wirkungslose Einstellung erhalten, damit bestehende brain.config.json gültig bleiben.

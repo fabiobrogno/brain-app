@@ -11,9 +11,9 @@ import { fragenRoh, fragenZeile } from "./fragen.mjs";
 import { auchGenanntRoh, pruefeAuchGenannt, eigenerName, aliasIndex, aliasZeile } from "./aliasse.mjs";
 import { istGeneriert, istWikiSeite, resolveLink as loese } from "./wiki-pfade.mjs";
 import { walk } from "./vault-dateien.mjs";
-import { vaultPfad, ladeConfig, ordner, entferneBom } from "./pfade.mjs";
+import { vaultPfadOderEnde, ladeConfig, ordner, entferneBom } from "./pfade.mjs";
 
-const vault = vaultPfad();
+const vault = vaultPfadOderEnde();
 const cfg = ladeConfig(vault);
 const { inbox: inboxDir, wiki: wikiDir } = ordner(vault, cfg);
 const toSlash = (p) => p.split(sep).join("/");

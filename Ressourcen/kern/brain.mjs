@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// .tools/brain.mjs — ein Einstieg für alle Agenten und Menschen. Kein Agent-spezifischer Code hier.
+// brain.mjs — ein Einstieg für alle Agenten und Menschen. Kein Agent-spezifischer Code hier.
 // Befehle: index | search "<frage>" [n] | lint | ingest-check <datei> | refresh | hooks-install | version | pflege | messlatte | status [--json]
 //   | lernschleife | antworten | wirkung | tageslauf | rueckfragen | zurueck | traum | dienst | nachernte | gedaechtnis | gesundheit
 // Skill-Helfer (statt POSIX-Shell, laufen gleich auf macOS/Windows/Linux): lock | unlock | sha <datei> | jetzt | review-erledigt
@@ -7,9 +7,9 @@
 import { execFileSync, spawnSync, spawn } from "node:child_process";
 import { readFileSync, writeFileSync, mkdirSync, statSync, rmSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { join, dirname } from "node:path";
+import { join, dirname, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { vaultPfad, ladeConfig } from "./pfade.mjs";
+import { vaultPfad, KeinVaultFehler, ladeConfig, kernVersion } from "./pfade.mjs";
 import { findeSecrets } from "./secrets-muster.mjs";
 import { minisuche } from "./minisuche.mjs";
 import { qmdAufruf } from "./qmd-befehl.mjs";
@@ -19,9 +19,12 @@ import { merkeLuecke } from "./analyse.mjs";
 
 const T = dirname(fileURLToPath(import.meta.url));
 const [befehl, ...rest] = process.argv.slice(2);
-// Kein Argv-Vault: brain.mjs bekommt Unterbefehl + dessen Argumente, keinen Vault-Pfad — nur
-// BRAIN_VAULT bzw. der Vault, in dem diese Datei liegt, zählen hier (Positionsargumente gehen an die Werkzeuge in index/lint/refresh).
-const vault = vaultPfad(["", ""]);
+// Kein Positions-Vault: brain.mjs bekommt Unterbefehl + dessen Argumente, keinen Vault-Pfad — der Vault kommt aus --vault <pfad>
+// (pfade.mjs nimmt es aus der Kommandozeile), BRAIN_VAULT oder dem aktiven Vault der App (Positionsargumente gehen an die Werkzeuge in index/lint/refresh).
+// Ohne Vault laufen nur die Befehle, die keinen brauchen; alle anderen enden mit Exit 2 und einer klaren Meldung.
+const OHNE_VAULT = new Set(["version", "jetzt", "sha", "ingest-check"]);
+let vault = null, vaultFehler = null;
+try { vault = vaultPfad(["", ""]); } catch (e) { if (!(e instanceof KeinVaultFehler)) throw e; vaultFehler = e; }
 const b = qmdAufruf();
 
 const node = (skript, ...a) => spawnSync(process.execPath, [join(T, skript), ...a], { stdio: "inherit", windowsHide: true }).status ?? 1;
@@ -78,7 +81,7 @@ function suche(frage, n = "5") {
 // optimistisch true). BRAIN_OEFFNER: reiner Testhaken, ersetzt das Öffner-Programm (z. B. durch einen
 // garantiert nicht existierenden Pfad), damit Tests den Scheitern-Pfad auslösen können, ohne einen echten
 // Browser zu öffnen.
-// Welches Programm mit welchen Argumenten: .tools/oeffner.mjs (Windows über rundll32 statt explorer.exe).
+// Welches Programm mit welchen Argumenten: oeffner.mjs (Windows über rundll32 statt explorer.exe).
 // Für den Ansicht-Dienst wird statt einer Datei eine http-Adresse geöffnet: dann ist `datei` die Adresse selbst.
 function oeffneDatei(datei, timeoutMs = 250, url = pathToFileURL(datei).href) {
   const { cmd, args } = oeffnerAufruf({ datei, url }, process.platform, process.env.BRAIN_OEFFNER || "");
@@ -95,9 +98,10 @@ function oeffneDatei(datei, timeoutMs = 250, url = pathToFileURL(datei).href) {
   });
 }
 
-// „brain zeig" — erzeugt die Daten für die 3D-Ansicht (.tools/ansicht/daten.mjs) und öffnet sie im Browser:
-// über den lokalen Ansicht-Dienst (.tools/ansicht/dienst-start.mjs, http://127.0.0.1:<port>, Token nur im
-// URL-Fragment), sonst — Start gescheitert — wie bisher .tools/ansicht/index.html als file://-Ansicht.
+// „brain zeig" — erzeugt die Daten für die 3D-Ansicht (ansicht/daten.mjs im Kern) und öffnet sie im Browser:
+// über den lokalen Ansicht-Dienst (ansicht/dienst-start.mjs, http://127.0.0.1:<port>, Token nur im
+// URL-Fragment), sonst — Start gescheitert — als file://-Ansicht: <vault>/.logs/ansicht/seite.html (eine Kopie von ansicht/index.html
+// mit <base> auf den Kern und der Adresse der Daten; der Kern selbst liegt außerhalb des Vaults und bleibt unverändert).
 // --nur-daten: nur erzeugen, nichts öffnen, Seitenzahl drucken.
 // --nicht-oeffnen: erzeugen, file://-Pfad drucken, aber nicht öffnen und keinen Dienst starten (Tests/Skripte).
 // --stopp: laufenden Ansicht-Dienst dieses Vaults beenden.
@@ -111,7 +115,7 @@ async function zeig(...args) {
   const nurDaten = args.includes("--nur-daten");
   const nichtOeffnen = nurDaten || args.includes("--nicht-oeffnen");
   if (!existsSync(vault)) { console.error(`Vault nicht gefunden: ${vault}`); return 1; }
-  const startModul = join(vault, ".tools", "ansicht", "dienst-start.mjs");
+  const startModul = join(T, "ansicht", "dienst-start.mjs");
   if (args.includes("--stopp")) {
     let gestoppt = false;
     try { if (existsSync(startModul)) gestoppt = await (await import(pathToFileURL(startModul).href)).stoppe(vault); }
@@ -119,14 +123,14 @@ async function zeig(...args) {
     console.log(gestoppt ? "Ansicht-Dienst beendet." : "Es lief kein Ansicht-Dienst.");
     return 0;
   }
-  // Ansicht des Ziel-Vaults (wie doctor): über den Dienst holt die Seite ihre Daten per /api/daten, im file://-Rückfall
-  // lädt index.html ../../.logs/ansicht/data.js — Daten und Seite müssen also im selben Vault liegen (auch bei BRAIN_VAULT).
-  const modulPfad = join(vault, ".tools", "ansicht", "daten.mjs");
-  const indexPfad = join(vault, ".tools", "ansicht", "index.html");
-  if (!existsSync(modulPfad) || !existsSync(indexPfad)) {
-    console.error("Die 3D-Ansicht ist noch nicht installiert — aktualisiere das Kit (sag „update mein Brain“).");
+  // Über den Dienst holt die Seite ihre Daten per /api/daten; im file://-Rückfall lädt die Seite <vault>/.logs/ansicht/data.js (Adresse steht in seite.html).
+  const modulPfad = join(T, "ansicht", "daten.mjs");
+  const quellIndex = join(T, "ansicht", "index.html");
+  if (!existsSync(modulPfad) || !existsSync(quellIndex)) {
+    console.error("Die 3D-Ansicht fehlt in diesem Kern — aktualisiere Kortex.");
     return 1;
   }
+  const indexPfad = join(vault, ".logs", "ansicht", "seite.html");
   let erg;
   try {
     const { erzeugeAnsichtsDaten } = await import(pathToFileURL(modulPfad).href);
@@ -137,6 +141,7 @@ async function zeig(...args) {
   }
   for (const w of erg.warnungen || []) console.error(`Warnung: ${w}`);
   if (nurDaten) { console.log(`${erg.seiten} Seiten, ${erg.verbindungen} Verbindungen.`); return 0; }
+  schreibeDateiSeite(vault, quellIndex, indexPfad);
   const url = pathToFileURL(indexPfad).href;
   if (nichtOeffnen) { console.log(`Öffne diese Datei im Browser: ${url}`); return 0; }
   // Ansicht-Dienst: läuft einer für diesen Vault, wird er wiederverwendet, sonst gestartet. Der Token steht nur
@@ -156,6 +161,15 @@ async function zeig(...args) {
   const ok = await oeffneDatei(indexPfad);
   console.log(ok ? `Geöffnet im Browser: ${url}` : `Öffne diese Datei im Browser: ${url}`);
   return 0;
+}
+
+// file://-Rückfall der Ansicht: index.html mit <base> auf den Kern-Ordner und der Adresse der Daten im Vault (app.js liest meta brain-daten).
+function schreibeDateiSeite(vaultPfad_, quelle, ziel) {
+  const basis = pathToFileURL(join(T, "ansicht") + sep).href;
+  const daten = pathToFileURL(join(vaultPfad_, ".logs", "ansicht", "data.js")).href;
+  const html = readFileSync(quelle, "utf8").replace("<head>", `<head>\n<base href="${basis}">\n<meta name="brain-daten" content="${daten}">`);
+  mkdirSync(dirname(ziel), { recursive: true });
+  writeFileSync(ziel, html);
 }
 
 // Lokale Zeit als „YYYY-MM-DD HH:MM" (für _log.md, Lock, Review-Marke) — nie schätzen.
@@ -225,7 +239,7 @@ const befehle = {
     console.log(createHash("sha256").update(inhalt).digest("hex").slice(0, 16));
     return 0;
   },
-  version: () => (console.log(readFileSync(join(T, "VERSION"), "utf8").trim()), 0),
+  version: () => (console.log(kernVersion()), 0),
   index: () => node("brain-index.mjs", vault),
   lint: () => node("brain-lint.mjs", vault),
   refresh: () => {
@@ -243,16 +257,6 @@ const befehle = {
     console.log(a.includes("--json") ? JSON.stringify(s) : statusText(s));
     return 0;
   },
-  "update-check": async () => {
-    const { pruefeUpdate, hinweisZeile } = await import("./update-check.mjs");
-    const erg = await pruefeUpdate(vault);
-    const zeile = hinweisZeile(erg, vault);
-    if (zeile) console.log(zeile);
-    else if (erg.aus) console.log("Die Update-Prüfung ist ausgeschaltet (update.pruefen: false in brain.config.json).");
-    else if (erg.neueste) console.log("Du hast die neueste Version.");
-    else console.log("Konnte nicht geprüft werden (offline?) — ich versuche es beim nächsten Mal wieder.");
-    return 0;
-  },
   "ingest-check": (datei) => {
     if (!datei) { console.error("Nutzung: brain ingest-check <datei>"); return 64; }
     let text;
@@ -267,7 +271,7 @@ const befehle = {
   search: suche,
   zeig,
   // „brain analyse [--json]" — delegiert ans Analyse-Werkzeug (Task 5): gleiche Kennzahlen/Text wie
-  // `node .tools/analyse.mjs`, nur über den gewohnten Einstiegspunkt aufrufbar (auch für KIs ohne Ansicht).
+  // `node analyse.mjs`, nur über den gewohnten Einstiegspunkt aufrufbar (auch für KIs ohne Ansicht).
   analyse: (...a) => node("analyse.mjs", vault, ...a),
   // „brain pflege [--json]" — Pflegebericht (v0.4, pflege.mjs): was zu tun ist, je Posten mit nächstem Schritt.
   pflege: (...a) => node("pflege.mjs", vault, ...a),
@@ -358,6 +362,7 @@ const befehle = {
 
 const f = befehle[befehl];
 if (!f) { console.error(`Befehle: ${Object.keys(befehle).join(" | ")}`); process.exit(64); }
+if (!vault && !OHNE_VAULT.has(befehl)) { console.error(vaultFehler.message); process.exit(2); }
 // befehle sind sonst synchron; backup ist async (dynamischer Import) — await auf einen einfachen
 // Rückgabewert löst sofort auf, ändert also nichts am Verhalten der anderen Befehle.
 try {

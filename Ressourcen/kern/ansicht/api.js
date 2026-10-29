@@ -1,4 +1,4 @@
-// .tools/ansicht/api.js — Verbindung der Ansicht zum lokalen Ansicht-Dienst (klassisches Skript, kein ESM).
+// ansicht/api.js — Verbindung der Ansicht zum lokalen Ansicht-Dienst (klassisches Skript, kein ESM).
 // Setzt window.BrainApi = { verfuegbar, token, holeJson(pfad), sende(methode, pfad, daten) }. In Node per vm testbar.
 //
 // Der Zugang (zufällig je Dienststart) kommt nur über das URL-Fragment (#t=…), das nie an einen Server geht.

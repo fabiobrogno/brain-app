@@ -10,10 +10,10 @@ import { join } from "node:path";
 
 const t0 = Date.now();
 try {
-  const { vaultPfad } = await import("../../pfade.mjs");
+  const { vaultPfadOderEnde } = await import("../../pfade.mjs");
   const { sammle, schreibe, leseZustand, saubereSid } = await import("../../arbeitsstand.mjs");
   const { haengeAn, zeitstempel } = await import("../../logs.mjs");
-  const V = vaultPfad([]);
+  const V = vaultPfadOderEnde([], { still: true });
   let e = {};
   try { e = JSON.parse(readFileSync(0, "utf8") || "{}"); } catch {}
   const sid = saubereSid(e?.session_id);

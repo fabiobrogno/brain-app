@@ -1,4 +1,4 @@
-// .tools/ansicht/dienst-lib.mjs — reine Anfrage-Logik des Ansicht-Dienstes (Spec §3.A, §3b.1): Routing und
+// ansicht/dienst-lib.mjs — reine Anfrage-Logik des Ansicht-Dienstes (Spec §3.A, §3b.1): Routing und
 // Sicherheitsprüfungen, ohne Socket testbar (test-dienst-lib.mjs). Der HTTP-Teil steckt in dienst.mjs.
 //
 // Kernrisiko: Eine fremde Webseite im selben Browser darf über diesen Dienst keinerlei Brain-Inhalt bekommen
@@ -17,6 +17,7 @@ import { join, dirname, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 // Gleiches ID-Muster wie vorschlaege.mjs (eine Quelle, einheitliche Fehlermeldungen).
 import { ID_MUSTER } from "../vorschlaege.mjs";
+import { kernVersion } from "../pfade.mjs";
 
 const HIER = dirname(fileURLToPath(import.meta.url));
 export const MAX_KOERPER = 64 * 1024;
@@ -55,7 +56,7 @@ export function vaultIdVon(vault) {
 let versionCache = null;
 function kitVersion() {
   if (versionCache === null) {
-    try { versionCache = readFileSync(join(HIER, "..", "VERSION"), "utf8").trim(); } catch { versionCache = ""; }
+    versionCache = kernVersion();
   }
   return versionCache;
 }

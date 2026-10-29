@@ -1,4 +1,4 @@
-// .tools/sicherung-takt.mjs — Sicherung nur bei Änderung und höchstens alle 15 min (App-Spec §12.1 Nr. 2, Lernkreislauf §7.7).
+// sicherung-takt.mjs — Sicherung nur bei Änderung und höchstens alle 15 min (App-Spec §12.1 Nr. 2, Lernkreislauf §7.7).
 // Merkt HEAD und Zeit der letzten erfolgreichen Sicherung in .logs/sicherung.json. Nur der Sitzungsstart fragt hier;
 // `brain backup` von Hand sichert immer.
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";

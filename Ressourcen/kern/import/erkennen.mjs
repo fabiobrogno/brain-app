@@ -1,4 +1,4 @@
-// .tools/import/erkennen.mjs — Quelle öffnen (Ordner oder Zip) und ihre Art erkennen. Liest nur, schreibt nie.
+// import/erkennen.mjs — Quelle öffnen (Ordner oder Zip) und ihre Art erkennen. Liest nur, schreibt nie.
 // Liefert alle Dateien als { rel ("/"-getrennt), groesse, datum, lies() } — der Import entscheidet, was kopiert wird.
 import { existsSync, statSync, lstatSync, readdirSync, readFileSync, openSync, readSync, closeSync } from "node:fs";
 import { join, basename, resolve } from "node:path";

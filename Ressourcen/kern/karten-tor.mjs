@@ -1,21 +1,21 @@
 #!/usr/bin/env node
 // Karten-Tor: Würde eine (neue) Karte bei fachfremden Fragen anschlagen? Lässt alle Negativ- und Kontrollfragen
-// aus tests/hint-eval.json laufen — über den Suchdienst (Reranker), sonst über die Vektor-Suche — und meldet
+// aus den Messlatte-Fragen (pfade.mjs#evalFragenDatei) laufen — über den Suchdienst (Reranker), sonst über die Vektor-Suche — und meldet
 // je Treffer eine Zeile. Nur Bericht, Exit immer 0. Nutzung: node karten-tor.mjs <basename.md> [...]
 import { readFileSync } from "node:fs";
 import { join, basename } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { suche } from "./hint-kind.mjs";
 import { frageDienst } from "./dienst-client.mjs";
-import { vaultPfad } from "./pfade.mjs";
+import { vaultPfadOderEnde, evalFragenDatei } from "./pfade.mjs";
 
 // argv-Positionale sind hier Kartennamen, kein Vaultpfad — vaultPfad() daher ohne sie aufrufen
-const vault = vaultPfad(process.argv.slice(0, 2));
+const vault = vaultPfadOderEnde(process.argv.slice(0, 2));
 const karten = new Set(process.argv.slice(2).map(k => basename(k)));
 try {
   const cfg = JSON.parse(readFileSync(join(vault, "brain.config.json"), "utf8")).hinweis || {};
   const map = JSON.parse(readFileSync(join(vault, ".logs", "wiki-map.json"), "utf8"));
-  const ev = JSON.parse(readFileSync(process.env.BRAIN_EVAL_DATEI || new URL("./tests/hint-eval.json", import.meta.url), "utf8"));
+  const ev = JSON.parse(readFileSync(evalFragenDatei(vault), "utf8"));
   const fragen = [...(ev.negativ || []), ...(ev.kontrolle_negativ || [])];
   const karteVon = (file) => { const seite = map.paths[String(file).replace(/^qmd:\/\/[^/]+\//, "")]; return seite ? basename(seite) : null; };
   const modul = process.env.BRAIN_HINT_SEARCH_MODULE || fileURLToPath(new URL("./qmd-vector.mjs", import.meta.url));

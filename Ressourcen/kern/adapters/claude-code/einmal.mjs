@@ -1,4 +1,4 @@
-// .tools/adapters/claude-code/einmal.mjs — Hook-Dubletten verhindern: derselbe Hook läuft je Ereignis nur EINMAL.
+// adapters/claude-code/einmal.mjs — Hook-Dubletten verhindern: derselbe Hook läuft je Ereignis nur EINMAL.
 // Anlass: Läuft ein zweites Claude-Konto (CLAUDE_CONFIG_DIR) mit einem Arbeitsordner, in dem Claude Code die Einstellungen
 // des ersten Kontos zusätzlich als Projekt-Einstellung liest, stehen die Brain-Hooks zweimal in der Hook-Liste (einmal über
 // node-start.sh, einmal direkt über node). Jeder Hook liefe dann pro Ereignis doppelt, teils gleichzeitig — doppelte

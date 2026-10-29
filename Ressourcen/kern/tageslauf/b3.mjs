@@ -1,4 +1,4 @@
-// .tools/tageslauf/b3.mjs — B3 „Pflege-Intelligenz" im Tageslauf (Spec §7). Zwei Andockstellen im Orchestrator (tageslauf.mjs):
+// tageslauf/b3.mjs — B3 „Pflege-Intelligenz" im Tageslauf (Spec §7). Zwei Andockstellen im Orchestrator (tageslauf.mjs):
 //   b3Auftraege(ctx)  vor den Schritten 1–5: K7 (Prüfen nach Nutzung: veraltet-Rückfragen, Feld-Aufträge für unveränderte
 //                     Projekte — geschrieben vom B2-Schreiben) einmal je Tag; K4-Hinweise zu Vorschlägen mit alten Begriffen.
 //   b3Schritte(ctx)   nach den Rücknahmen, vor Schritt 8: Entscheidungen → Inbox → neue Seiten → Konsolidieren in EINER

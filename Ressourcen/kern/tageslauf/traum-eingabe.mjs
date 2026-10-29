@@ -1,4 +1,4 @@
-// .tools/tageslauf/traum-eingabe.mjs — Eingabe des Traums (traum.mjs): Einstellungen, Projekte der Gedächtnis-Wurzel, Verläufe der letzten 24 h,
+// tageslauf/traum-eingabe.mjs — Eingabe des Traums (traum.mjs): Einstellungen, Projekte der Gedächtnis-Wurzel, Verläufe der letzten 24 h,
 // Themen-Ausschluss, Anlass. Nur LESEN (nie in Wurzel oder ~/.claude*), nur Node-Standardbibliothek (+ gedaechtnis.mjs: Pfade, Projekt-Schlüssel und das Format der
 // Konflikt-Kopien/_konflikte.md kommen von dort — es gibt keinen zweiten Parser), wirft nie bei kaputten Dateien.
 //

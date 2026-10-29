@@ -96,7 +96,7 @@ kbd { font: 500 11px var(--mono); color: var(--fg-3); border: 1px solid var(--li
 #results .empty { color: var(--fg-3); padding: 10px; cursor: default; display: block; }
 .dotc { width: 8px; height: 8px; border-radius: 50%; background: currentColor; box-shadow: 0 0 10px currentColor; }
 
-.tools { justify-self: end; display: flex; gap: 6px; }
+.werkzeuge { justify-self: end; display: flex; gap: 6px; }
 .icon-btn { position: relative; width: 38px; height: 38px; display: grid; place-items: center; border-radius: 10px; border: 1px solid var(--line); background: var(--glass); backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px); cursor: pointer; transition: border-color .15s, background .15s; }
 .icon-btn:hover { border-color: var(--line-2); }
 .icon-btn svg { width: 17px; height: 17px; fill: none; stroke: var(--fg-2); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
@@ -212,7 +212,7 @@ h3 { margin: 0 0 8px; font: 500 10.5px var(--mono); letter-spacing: .12em; text-
   .top { grid-template-columns: 1fr auto; grid-template-rows: auto auto; padding: 12px 14px; gap: 10px; }
   .brand { grid-column: 1; grid-row: 1; }
   .brand .meta { display: none; }
-  .tools { grid-column: 2; grid-row: 1; }
+  .werkzeuge { grid-column: 2; grid-row: 1; }
   .search { grid-column: 1 / -1; grid-row: 2; height: 44px; }
   #qkbd { display: none; }
   .only-mobile { display: grid; }

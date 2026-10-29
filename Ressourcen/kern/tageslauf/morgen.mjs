@@ -1,4 +1,4 @@
-// .tools/tageslauf/morgen.mjs — Sitzungsstart-Zeile des Tageslaufs (Spec §5.5). 0 Tokens: liest letzter.json und zählt die
+// tageslauf/morgen.mjs — Sitzungsstart-Zeile des Tageslaufs (Spec §5.5). 0 Tokens: liest letzter.json und zählt die
 // offenen Rückfragen live (ohne hint.log — für die Zahl ist die Reihenfolge egal). Schalter aus, noch kein Lauf oder ein
 // Lauf in der anderen Betriebsart als der Schalter (z. B. letzter Lauf Probe, Schalter jetzt „an“) → null: dann gilt im
 // Sitzungsstart weiter alles wie bisher. Wirft nie.
@@ -83,6 +83,6 @@ export function integritaetsZeile(vault) {
     const liste = `${pfade.slice(0, 3).join(", ")}${pfade.length > 3 ? ` (+${pfade.length - 3} weitere)` : ""}`;
     const datum = offen.map((r) => r.erstellt).filter(Boolean).sort().pop();
     return `ACHTUNG Brain-Sicherheit: Integrität verletzt${datum ? ` (${kurzDatum(datum)})` : ""}: ${liste || "Pfade siehe Rückfrage"} — die automatische Pflege wurde gestoppt. `
-      + "Bitte selbst prüfen (git status, .git/hooks, .git/config, .tools), diese Meldung NICHT selbst abhaken — danach unter „Rückfragen“ als geprüft quittieren.";
+      + "Bitte selbst prüfen (git status, .git/hooks, .git/config), diese Meldung NICHT selbst abhaken — danach unter „Rückfragen“ als geprüft quittieren.";
   } catch { return null; }
 }

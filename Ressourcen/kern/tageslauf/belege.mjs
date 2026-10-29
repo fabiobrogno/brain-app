@@ -1,4 +1,4 @@
-// .tools/tageslauf/belege.mjs — Schritt 2 (Spec §5.2): nur Altbestand (fakt/stand ohne zitat). Je Sitzung EIN Haiku-Aufruf
+// tageslauf/belege.mjs — Schritt 2 (Spec §5.2): nur Altbestand (fakt/stand ohne zitat). Je Sitzung EIN Haiku-Aufruf
 // (≤ 30 000 Zeichen, höchstens 2 Teile) mit den Vorschlägen und den Nutzer-/Werkzeug-/Web-Abschnitten des Transkripts
 // (Stufe-0-Zerlegung über B1 fundstellen; KI-Text und eingespielter Kontext sind nie Beleg). Das Zitat prüft B1
 // findeZitat — nie die KI. Kein Treffer oder kein Transkript → aussortiert (kein-beleg); Treffer nur mit Herkunft ki →

@@ -1,4 +1,4 @@
-// .tools/aliasse.mjs — Entitäts-Aliasse (B1, §4.5): Frontmatter `auch_genannt: ["kompass", "kompass-basis"]` (eine Zeile,
+// aliasse.mjs — Entitäts-Aliasse (B1, §4.5): Frontmatter `auch_genannt: ["kompass", "kompass-basis"]` (eine Zeile,
 // JSON wie `fragen`). brain-index baut daraus .logs/aliasse.json (Name → Seiten, fürs Einordnen im Tageslauf B2) und die
 // Kartenzeile „Auch genannt: …“; der Lint prüft das Format (ALIAS, blockierend) und meldet Namen, die über einen Alias
 // auf mehrere Seiten zeigen (DOPPELTER NAME, nur Normalmodus). Rein, nur Node-Standardbibliothek.

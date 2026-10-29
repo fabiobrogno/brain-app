@@ -9,7 +9,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { istWikiSeite, resolveLink, wikilinks, doppelteNamen } from "./wiki-pfade.mjs";
 import { walk } from "./vault-dateien.mjs";
-import { vaultPfad, ladeConfig, ordner, configFehler, entferneBom } from "./pfade.mjs";
+import { vaultPfadOderEnde, ladeConfig, ordner, configFehler, entferneBom, evalFragenDatei, KERN } from "./pfade.mjs";
 import { gitBefehl } from "./werkzeug.mjs";
 import { gueltigkeit } from "./gueltigkeit.mjs";
 import { fragenRoh, pruefeFragen } from "./fragen.mjs";
@@ -21,7 +21,7 @@ import { auchGenanntRoh, pruefeAuchGenannt, eigenerName, aliasIndex, aliasDublet
 
 // --struktur: nur blockierende Prüfungen, ohne Indexer-Lauf/QMD/~/.claude — für den pre-commit-Hook (auf Schnappschüssen)
 const struktur = process.argv.includes("--struktur");
-const vault = vaultPfad();
+const vault = vaultPfadOderEnde();
 const cfg = ladeConfig(vault);
 const mod = cfg.module || {};
 const teamWissen = mod.teamWissen ?? false;
@@ -35,7 +35,7 @@ const findings = [];
 const configDefekt = configFehler(vault);
 if (configDefekt) findings.push(`CONFIG: brain.config.json ist kein gültiges JSON (${configDefekt}) — es gelten Standardwerte; Datei reparieren`);
 // Normal: graph.json aktuell erzeugen lassen (Kanten für VERWAIST). Struktur: nur Dateien lesen.
-if (!struktur) execFileSync(process.execPath, [join(dirname(fileURLToPath(import.meta.url)), "brain-index.mjs"), vault], { stdio: "pipe", windowsHide: true });
+if (!struktur) execFileSync(process.execPath, [join(KERN, "brain-index.mjs"), vault], { stdio: "pipe", windowsHide: true });
 const graph = struktur ? { nodes: walk(vault, { wikiDir: wikiName }).map(f => ({ id: f.rel })), edges: [] } : JSON.parse(readFileSync(join(vault, "graph.json"), "utf8"));
 const ids = graph.nodes.map(n => n.id.split(sep).join("/")), idSet = new Set(ids);
 // Seiten relativ zu 09_wiki, auch in Unterordnern
@@ -196,7 +196,7 @@ const newestMd = (dir) => { let t = 0; for (const n of readdirSync(dir)) { if (n
   t = Math.max(t, s.isDirectory() ? newestMd(p) : (n.endsWith(".md") ? s.mtimeMs : 0)); } return t; };
 const stamp = join(logsDir, "search-refreshed");
 if (existsSync(stamp) && newestMd(vault) > statSync(stamp).mtimeMs + 10 * 60000)
-  findings.push(`SUCHINDEX: Notizen neuer als letzter erfolgreicher Such-Refresh — node "${join(vault, ".tools", "brain.mjs").split("\\").join("/")}" refresh laufen lassen`);
+  findings.push(`SUCHINDEX: Notizen neuer als letzter erfolgreicher Such-Refresh — node "${join(KERN, "brain.mjs").split("\\").join("/")}" --vault "${vault.split("\\").join("/")}" refresh laufen lassen`);
 let lastIngest = 0;
 try { lastIngest = Number(execFileSync(GIT, ["-C", vault, "log", "-1", "--format=%ct", "--grep=^ingest:"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], windowsHide: true }).trim()) * 1000 || 0; } catch {}
 if (lastIngest && existsSync(memRoot)) {
@@ -208,7 +208,7 @@ if (lastIngest && existsSync(memRoot)) {
 }
 const evalLog = join(logsDir, "hint-eval.log");
 if (existsSync(evalLog)) {
-  const zielDatei = process.env.BRAIN_EVAL_ZIEL || join(dirname(fileURLToPath(import.meta.url)), "tests", "hint-eval.json");
+  const zielDatei = process.env.BRAIN_EVAL_ZIEL || evalFragenDatei(vault);
   let ziel = {}; try { ziel = JSON.parse(readFileSync(zielDatei, "utf8")).ziel || {}; } catch {}
   const last = readFileSync(evalLog, "utf8").trim().split("\n").reverse().find(z => z.startsWith("hint-eval ")) || "";
   const zahl = (k) => { const m = last.match(new RegExp(`${k}=(\\d+)/(\\d+)`)); return m ? +m[1] : null; };
@@ -216,7 +216,7 @@ if (existsSync(evalLog)) {
   if (zahl("still") !== null && ziel.still && zahl("still") < ziel.still) unter.push(`still<${ziel.still}`);
   if (zahl("kontrolle") !== null && ziel.kontrolle_still && zahl("kontrolle") < ziel.kontrolle_still) unter.push(`kontrolle<${ziel.kontrolle_still}`);
   // holdout wird bewusst NIE geprüft (reiner Bericht, Spec Etappe 1.2)
-  if (unter.length) findings.push(`HINWEIS-QUALITÄT: ${last} — unter Ziel (${unter.join(", ")}): Ursache per tests/hint-eval.mjs --scores (Schwelle nicht am Holdout kalibrieren)`);
+  if (unter.length) findings.push(`HINWEIS-QUALITÄT: ${last} — unter Ziel (${unter.join(", ")}): Ursache per „brain messlatte“ prüfen (Schwelle nicht am Holdout kalibrieren)`);
 }
 
 if (!findings.length) { console.log("Lint: keine Befunde."); process.exit(0); }

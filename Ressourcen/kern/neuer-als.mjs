@@ -1,4 +1,4 @@
-// .tools/neuer-als.mjs — Ersatz für `find -newer`: gibt es eine .md (außer .git), die neuer ist als die Stempeldatei?
+// neuer-als.mjs — Ersatz für `find -newer`: gibt es eine .md (außer .git), die neuer ist als die Stempeldatei?
 import { readdirSync, statSync, existsSync } from "node:fs";
 import { join } from "node:path";
 export function neuerAls(vault, stempel) {

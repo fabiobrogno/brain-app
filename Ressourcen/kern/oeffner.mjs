@@ -1,4 +1,4 @@
-// .tools/oeffner.mjs — welches Programm öffnet eine Datei im Standardprogramm des Systems (für `brain zeig`).
+// oeffner.mjs — welches Programm öffnet eine Datei im Standardprogramm des Systems (für `brain zeig`).
 // Reine Funktion, damit sie ohne echtes Öffnen auf jedem OS testbar ist (test-oeffner.mjs).
 // oeffnerAufruf({ datei, url }, plattform, oeffner) → { cmd, args }
 //   datei: nativer Pfad der Datei, url: ihre file://-URL (pathToFileURL(datei).href),

@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// .tools/w7.mjs — Fehler-Signal W7/K8 (B1, §4.4): Folgt auf eine Antwort, vor deren Prompt ein Brain-Hinweis eine Wiki-Seite
+// w7.mjs — Fehler-Signal W7/K8 (B1, §4.4): Folgt auf eine Antwort, vor deren Prompt ein Brain-Hinweis eine Wiki-Seite
 // gezeigt hat, eine Korrektur der Person, wird {seite, sitzung, zitat der Korrektur} an .logs/w7.jsonl angehängt. Der
 // Tageslauf (B2) setzt daraus `zweifel` und stellt eine Rückfrage. 0 Tokens, nur Regeln.
 // Quelle des Hinweises ist der Verlauf selbst (attachment hook_success, UserPromptSubmit, „Brain-Treffer …“) — genau das,
 // was Claude gesehen hat, in der richtigen Reihenfolge. Läuft losgelöst über ernte-ausloeser.mjs (SessionEnd/PreCompact);
 // mehrere Läufe derselben Sitzung schreiben jeden Fund nur einmal (Schlüssel sitzung|uuid|seite, Sperre .logs/w7.lock).
-// CLI: node .tools/w7.mjs --transkript <pfad> --sid <id> --cwd <pfad> [vault]. Gibt nie etwas aus; Ergebnis in .logs/w7.log.
+// CLI: node w7.mjs --transkript <pfad> --sid <id> --cwd <pfad> [vault]. Gibt nie etwas aus; Ergebnis in .logs/w7.log.
 import { readFileSync, appendFileSync, mkdirSync, unlinkSync, realpathSync } from "node:fs";
 import { join, isAbsolute, win32 } from "node:path";
 import { homedir } from "node:os";

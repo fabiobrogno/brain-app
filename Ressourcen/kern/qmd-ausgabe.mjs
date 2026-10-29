@@ -1,4 +1,4 @@
-// .tools/qmd-ausgabe.mjs — Parser für `qmd search|vsearch|query ... --files`-Ausgabe.
+// qmd-ausgabe.mjs — Parser für `qmd search|vsearch|query ... --files`-Ausgabe.
 // Format je Treffer (siehe @tobilu/qmd cli/formatter.js, searchResultsToFiles):
 //   #<docid>,<score>,<pfad>[,"<kontext>"]
 // Der optionale Kontext-Teil ist CSV-gequotet (doppelte Anführungszeichen escapen) und darf

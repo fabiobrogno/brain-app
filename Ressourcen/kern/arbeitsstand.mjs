@@ -1,4 +1,4 @@
-// .tools/arbeitsstand.mjs — K12 „Arbeitsstand über die Kompaktierung retten" (Spec §12.2). PreCompact sammelt aus dem
+// arbeitsstand.mjs — K12 „Arbeitsstand über die Kompaktierung retten" (Spec §12.2). PreCompact sammelt aus dem
 // Verlauf DIESER Sitzung wörtliche Auszüge — erste Nutzer-Nachricht (Ziel), Nutzer-Nachrichten seit der letzten
 // Kompaktierung, Commits aus der Git-Ausgabe, geänderte Dateien aus Edit/Write, offene Aufgaben (TodoWrite bzw.
 // TaskCreate/TaskUpdate) — und legt sie unter .logs/sitzungen/<session_id>.{json,md} ab. SessionStart (source

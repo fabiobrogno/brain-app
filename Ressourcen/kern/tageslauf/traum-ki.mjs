@@ -1,4 +1,4 @@
-// .tools/tageslauf/traum-ki.mjs — Der KI-Weg des Traums: EIN Sonnet-Aufruf je Projekt, derselbe gehärtete Weg wie bei B3 (pflege-ki.mjs: sonnetArgs mit
+// tageslauf/traum-ki.mjs — Der KI-Weg des Traums: EIN Sonnet-Aufruf je Projekt, derselbe gehärtete Weg wie bei B3 (pflege-ki.mjs: sonnetArgs mit
 // Pfadregeln, dontAsk, keine MCP-Server, Hooks aus, gepinnte Umgebung), nur enger: Werkzeuge Read/Edit/Write/Glob/Grep (kein Bash, kein Web), höchstens
 // 50 Runden und 1,5 USD je Aufruf, Arbeitsordner = temporärer Ordner außerhalb von Vault, Wurzel und Konten (die sind zusätzlich für die KI gesperrt).
 // Eigenes Budget (ctx.traumBudget, getrennt von B2 und B3), eigene Zähler (ctx.traumAufrufe, ctx.traumTokens). Wirft nie.

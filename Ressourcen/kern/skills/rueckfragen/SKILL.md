@@ -6,9 +6,9 @@ description: Offene Brain-Rückfragen beantworten — kurze Ja/Nein/A/B-Fragen a
 Der Tageslauf fragt nur, was er nicht allein entscheiden darf. Dieser Ablauf stellt die Fragen, speichert die Antworten und
 stößt das Anwenden an. Nie selbst entscheiden, nie raten, nichts am Wiki ändern, nie Zugangsdaten in eine Notiz schreiben.
 Sicherheits-Rückfragen (Typ `integritaet`, Kopf „Sicherheit“) nie selbst abhaken: dem User die betroffenen Pfade nennen, ihn
-nachsehen lassen (git status, .git/hooks, .git/config, .tools) und „geprueft“ nur speichern, wenn er ausdrücklich sagt, dass er geprüft hat.
+nachsehen lassen (git status, .git/hooks, .git/config) und „geprueft“ nur speichern, wenn er ausdrücklich sagt, dass er geprüft hat.
 
-1. Liste holen (0 Tokens): `{{NODE}} "{{VAULT}}/.tools/brain.mjs" rueckfragen liste` → JSON
+1. Liste holen (0 Tokens): `{{NODE}} "{{KERN}}/brain.mjs" --vault "{{VAULT}}" rueckfragen liste` → JSON
    `{ fragen: [{ id, typ, header, frage, beschreibung, optionen: [{ wahl, label, wirkung }], pflege?, vollstaendig?, datei?, hinweis? }], wartend }`.
    Leer → „Keine Rückfragen offen.“ und fertig.
 2. In Blöcken zu höchstens 4 Fragen fragen. In Claude Code mit dem Werkzeug **AskUserQuestion**: je Rückfrage eine Frage —
@@ -31,10 +31,10 @@ nachsehen lassen (git status, .git/hooks, .git/config, .tools) und „geprueft�
    - `vollstaendig: false` oder leere `optionen`: den Vorschlag nie zur Antwort anbieten — dem User sagen, dass er zu lang ist, und `datei` nennen
      (er prüft sie dort; die Antwort gibt er dann selbst).
    - Danach die AskUserQuestion mit kurzem `question` (nur die `frage`; der Diff steht oben) und den `optionen` wie sonst.
-3. Jede Antwort sofort speichern: `{{NODE}} "{{VAULT}}/.tools/brain.mjs" rueckfragen antwort <id> <wahl> "<notiz>"` — `<wahl>`
+3. Jede Antwort sofort speichern: `{{NODE}} "{{KERN}}/brain.mjs" --vault "{{VAULT}}" rueckfragen antwort <id> <wahl> "<notiz>"` — `<wahl>`
    ist die `wahl` der gewählten Option. Freitext („Other“): bei `lektion` → Wahl `aendern`, Notiz = die neue Regel; bei
    `zweifel` → Wahl `falsch`, Notiz = welche Stelle; sonst den Freitext als Notiz behalten und die Wahl nachfragen.
 4. Nach dem letzten Block anwenden lassen (losgelöst, nicht warten):
-   `{{NODE}} "{{VAULT}}/.tools/brain.mjs" tageslauf --nur-antworten --losgeloest`.
+   `{{NODE}} "{{KERN}}/brain.mjs" --vault "{{VAULT}}" tageslauf --nur-antworten --losgeloest`.
    Kurz melden: „N Antworten gespeichert, werden jetzt eingearbeitet. Noch M Rückfragen warten.“ (M = `wartend`).
 5. Höchstens 10 Fragen je Sitzung, außer der User will ausdrücklich weitermachen.

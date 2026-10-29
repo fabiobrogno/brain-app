@@ -1,4 +1,4 @@
-// .tools/gezeigt.mjs — je Sitzung gemerkt, was schon eingespielt wurde (Steckbrief, Regeln, geprüfte Repos), damit
+// gezeigt.mjs — je Sitzung gemerkt, was schon eingespielt wurde (Steckbrief, Regeln, geprüfte Repos), damit
 // nichts doppelt in den Kontext kommt (K2/K14). Datei .logs/gezeigt/<sid>.txt, eine Zeile je Schlüssel; nur die eigene
 // Sitzung schreibt ihre Datei. Wirft nie.
 import { readFileSync, appendFileSync, mkdirSync, readdirSync, statSync, unlinkSync } from "node:fs";

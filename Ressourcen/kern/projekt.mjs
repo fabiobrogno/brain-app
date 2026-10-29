@@ -1,4 +1,4 @@
-// .tools/projekt.mjs — Projekt-Bezug einer Sitzung oder Datei (0 Tokens, nur Dateisystem, kein git-Aufruf): Git-Wurzel
+// projekt.mjs — Projekt-Bezug einer Sitzung oder Datei (0 Tokens, nur Dateisystem, kein git-Aufruf): Git-Wurzel
 // und Projekt-Schlüssel (K11/K13), die Projektseite im Wiki (bis M2a in session-start.mjs) und der Projekt-Steckbrief
 // (K14, Spec §12.2): feste Felder pruefen/ziel/fallen der Projektseite + Stack/Versionen frisch aus den Manifesten im
 // Repo (nie gepflegt, immer aktuell). Alles wörtlich mit Quelle; Zeilen mit Zugangsdaten fallen weg; gekürzt wird nur

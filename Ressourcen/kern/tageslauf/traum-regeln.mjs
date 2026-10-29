@@ -1,4 +1,4 @@
-// .tools/tageslauf/traum-regeln.mjs — Regelprüfung des Traums, OHNE KI (0 Tokens), rein auf Texten (kein Dateizugriff, kein Git). Die KI hat im Arbeitsordner
+// tageslauf/traum-regeln.mjs — Regelprüfung des Traums, OHNE KI (0 Tokens), rein auf Texten (kein Dateizugriff, kein Git). Die KI hat im Arbeitsordner
 // ein bereinigtes Gedächtnis hinterlassen und einen Bericht traum-bericht.json [{ datei, art, grund, beleg, nichtUebernommen? }]. Was davon gilt, entscheidet allein diese Prüfung:
 //   Gesamtverwurf (nichts wird vorgeschlagen): eine gelöschte oder umbenannte Datei · ein Zugangsdaten-Muster in neu geschriebenen Zeilen oder im Bericht.
 //   Dateiebene (die Änderung an GENAU dieser Datei fällt weg, der Rest bleibt): ohne Begründung im Bericht · Beleg-Zitat steht nicht wörtlich im Verlauf
