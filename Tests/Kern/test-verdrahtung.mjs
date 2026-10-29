@@ -204,3 +204,39 @@ test("doctor erkennt die Hooks in der neuen Form (über den Starter)", { skip: !
   assert.equal(spawnSync(process.execPath, [inst, v, "--claude-home", h], { encoding: "utf8", env: env({ HOME: heim, USERPROFILE: heim }) }).status, 0);
   assert.match(zeile(), /Live-Aufleuchten und Hintergrund-Ernte eingerichtet/);
 });
+
+// ---- Hintergrunddienst über den Starter ----
+test("dienstAn ersetzt eine ältere plist (fester Vault, node-start.sh, alter Kit-Ordner) durch die Starter-Form; dienstAus ist der Rückweg", { skip: process.platform !== "darwin" }, async () => {
+  const D = await import("../tageslauf/dienst.mjs");
+  const heim = mkdtempSync(join(tmpdir(), "verdr-dienst-")), v = vaultOrdner("verdr-dv ");
+  const fake = join(mkdtempSync(join(tmpdir(), "verdr-lc-")), "launchctl.mjs");
+  writeFileSync(fake, 'import { appendFileSync } from "node:fs"; appendFileSync(process.argv[1] + ".log", process.argv.slice(2).join(" ") + "\\n");\n');
+  const alt = process.env.BRAIN_LAUNCHCTL; process.env.BRAIN_LAUNCHCTL = fake;
+  try {
+    const plist = D.plistPfad({ home: heim });
+    mkdirSync(join(heim, "Library", "LaunchAgents"), { recursive: true });
+    writeFileSync(plist, `<?xml version="1.0"?><plist><dict><key>Label</key><string>de.brain.tageslauf</string><key>ProgramArguments</key><array><string>/bin/sh</string><string>${v}/.tools/node-start.sh</string><string>${v}/.tools/brain.mjs</string><string>tageslauf</string></array><key>EnvironmentVariables</key><dict><key>BRAIN_VAULT</key><string>${v}</string></dict></dict></plist>`);
+    assert.equal(D.dienstStatus(v, { home: heim }).veraltet, true);
+    const r = D.dienstAn(v, { home: heim, plattform: "darwin", node: process.execPath, claude: null, profil: "" });
+    assert.equal(r.ok, true, r.text);
+    const neu = readFileSync(plist, "utf8");
+    assert.ok(neu.includes(`<string>${starterPfad()}</string>`));
+    for (const nein of ["BRAIN_VAULT", "node-start.sh", ".tools", "/bin/sh", v]) assert.ok(!neu.includes(nein), nein);
+    assert.equal(D.dienstStatus(v, { home: heim }).veraltet, false);
+    assert.equal(D.dienstAus(v, { home: heim }).ok, true);
+    assert.equal(existsSync(plist), false);
+  } finally { if (alt === undefined) delete process.env.BRAIN_LAUNCHCTL; else process.env.BRAIN_LAUNCHCTL = alt; }
+});
+
+test("Hintergrunddienst ohne aktiven Vault: der Lauf endet still mit Exit 0 und schreibt nur eine Protokollzeile", () => {
+  const brain = fileURLToPath(new URL("../brain.mjs", import.meta.url));
+  const leer = mkdtempSync(join(tmpdir(), "verdr-leer-"));
+  const e = () => { const x = env({ BRAIN_APP_SUPPORT: leer }); delete x.BRAIN_VAULT; return x; };
+  const r = spawnSync(process.execPath, [brain, "tageslauf", "--wenn-faellig", "--dienst"], { encoding: "utf8", env: e() });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout, "");
+  assert.match(r.stderr, /kein aktiver Vault/);
+  assert.equal(r.stderr.trim().split("\n").length, 1);
+  // Ohne --dienst bleibt es ein Fehler für Menschen (Exit 2).
+  assert.equal(spawnSync(process.execPath, [brain, "tageslauf", "--probe"], { encoding: "utf8", env: e() }).status, 2);
+});

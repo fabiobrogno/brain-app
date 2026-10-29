@@ -145,9 +145,10 @@ public struct WerkstattDienste: EinrichtungsDienste {
         return agenten + [cursor]
     }
 
-    public func verbinde(_ ziel: KiZiel, umstellen: Bool) async throws -> KiVerbindung {
+    public func verbinde(_ ziel: KiZiel, umstellen: Bool, profil: String?) async throws -> KiVerbindung {
         var b: [String: Any] = ["ziel": ziel.ziel]
         if umstellen { b["umstellen"] = true }
+        if ziel == .claude, let profil { b["profil"] = profil }
         let j = try await rufe("POST", "/api/mcp/verbinden", b)
         return (j["schonVerbunden"] as? Bool) == true ? .schonVerbunden : .verbunden
     }
@@ -158,22 +159,29 @@ public struct WerkstattDienste: EinrichtungsDienste {
         Self.verdrahtungsStand(aus: try await rufe("GET", "/api/kern/stand"))
     }
 
-    public func verdrahte(_ was: Verdrahtung, an: Bool, ersetzen: Bool) async throws -> VerdrahtungsStand {
+    public func verdrahte(_ was: Verdrahtung, an: Bool, ersetzen: Bool, profile: [String]) async throws -> VerdrahtungsStand {
         var b: [String: Any] = ["was": was.rawValue, "an": an]
         if ersetzen { b["ersetzen"] = true }
+        if was == .claude { b["profile"] = profile }
+        if was == .dienst, let erstes = profile.first { b["profil"] = erstes }
         let j = try await rufe("POST", "/api/kern/verdrahten", b)
         return Self.verdrahtungsStand(aus: j["stand"] as? [String: Any] ?? [:])
     }
 
-    /// `{ starter: {vorhanden}, claude: {aktiv} | {fehler}, git: {moeglich, aktiv, fremder}, dienst: {verfuegbar, eingerichtet} }`.
+    /// `{ starter: {vorhanden}, profile: [{pfad, name, standard}], claude: {profile: {<pfad>: {aktiv} | {fehler}}}, git: {moeglich, aktiv, fremder}, dienst: {verfuegbar, eingerichtet} }`.
     /// Ein Abschnitt mit `fehler` zählt als „nicht eingetragen“ (die Oberfläche bietet das Eintragen an und zeigt dessen Fehler).
     static func verdrahtungsStand(aus j: [String: Any]) -> VerdrahtungsStand {
-        let claude = j["claude"] as? [String: Any]
+        let claudeProfile = (j["claude"] as? [String: Any])?["profile"] as? [String: Any] ?? [:]
+        let profile = (j["profile"] as? [[String: Any]] ?? []).compactMap { p -> ClaudeProfil? in
+            guard let pfad = p["pfad"] as? String, let name = p["name"] as? String else { return nil }
+            let aktiv = ((claudeProfile[pfad] as? [String: Any])?["aktiv"] as? Bool) == true
+            return ClaudeProfil(pfad: pfad, name: name, standard: (p["standard"] as? Bool) == true, aktiv: aktiv)
+        }
         let versionsverlauf = j["git"] as? [String: Any]
         let dienst = j["dienst"] as? [String: Any]
         return VerdrahtungsStand(
             starterVorhanden: ((j["starter"] as? [String: Any])?["vorhanden"] as? Bool) == true,
-            claudeAktiv: (claude?["aktiv"] as? Bool) == true,
+            profile: profile,
             gitMoeglich: (versionsverlauf?["moeglich"] as? Bool) == true && versionsverlauf?["fehler"] == nil,
             gitAktiv: (versionsverlauf?["aktiv"] as? Bool) == true,
             gitFremderEintrag: (versionsverlauf?["fremder"] as? Bool) == true,

@@ -1,6 +1,9 @@
 // tageslauf/dienst.mjs — „brain dienst an|aus|status" (Spec §5.1): LaunchAgent de.brain.tageslauf ruft stündlich
-// `brain tageslauf --wenn-faellig --dienst`. Node- und claude-Pfad werden erkannt, nicht fest eingetragen. Nur macOS.
-// Programm ist `/bin/sh node-start.sh` — Node wird bei jedem Takt neu gesucht.
+// `brain tageslauf --wenn-faellig --dienst`. Nur macOS.
+// Programm ist der STARTER der App (Support/Kortex/bin/kortex tageslauf …): Er setzt KORTEX_KERN_PFAD und startet Node und den Kern über die festen
+// Pfade bin/node und bin/kern — die plist überlebt App-Updates. Sie trägt KEINEN Vault ein: der Lauf folgt wie die Hooks dem aktiven Vault der App
+// (vaults.json); ohne gültigen Vault endet er still mit Exit 0 (brain.mjs). Das Protokoll liegt im Support-Ordner der App (logs/dienst.log), nicht im Vault.
+// Eine ältere plist (BRAIN_VAULT, node-start.sh, Kern-Pfad) wird von dienstAn ersetzt.
 // Der Nutzer führt `brain dienst an` selbst aus — Claude ändert keine LaunchAgents (Spec §9).
 // Testhaken: BRAIN_LAUNCHCTL (Ersatzprogramm, per node gestartet). Unter `node --test` (NODE_TEST_CONTEXT) ohne Ersatz:
 // Fehler statt echtem launchctl.
@@ -12,7 +15,7 @@ import { join, dirname, isAbsolute, resolve } from "node:path";
 import { homedir, userInfo } from "node:os";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { nodePfad, kernStabil, KernNichtStabilFehler, vaultUndRest } from "../pfade.mjs";
+import { nodePfad, starterPfad, supportOrdner, KernNichtStabilFehler, vaultUndRest } from "../pfade.mjs";
 import { findeClaude } from "../ernte.mjs";
 
 export const LABEL = "de.brain.tageslauf";
@@ -31,7 +34,7 @@ export function profilPfad(roh = process.env.CLAUDE_CONFIG_DIR, { home = homedir
   return isAbsolute(p) ? p : resolve(p);
 }
 
-export function plistInhalt({ starter, brain, vault, pfad, log, profil = null }) {
+export function plistInhalt({ starter, pfad, log, profil = null }) {
   const profilZeile = typeof profil === "string" && profil.trim() ? `\n    <key>CLAUDE_CONFIG_DIR</key><string>${xml(profil)}</string>` : "";
   const arg = (a) => `    <string>${xml(a)}</string>`;
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -41,11 +44,10 @@ export function plistInhalt({ starter, brain, vault, pfad, log, profil = null })
   <key>Label</key><string>${LABEL}</string>
   <key>ProgramArguments</key>
   <array>
-${["/bin/sh", starter, brain, "tageslauf", "--wenn-faellig", "--dienst"].map(arg).join("\n")}
+${[starter, "tageslauf", "--wenn-faellig", "--dienst"].map(arg).join("\n")}
   </array>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>BRAIN_VAULT</key><string>${xml(vault)}</string>
     <key>PATH</key><string>${xml(pfad)}</string>${profilZeile}
   </dict>
   <key>StartInterval</key><integer>3600</integer>
@@ -70,19 +72,22 @@ const domain = () => `gui/${userInfo().uid}`;
 
 export function dienstAn(vault, { home = homedir(), plattform = process.platform, node = nodePfad(), claude = findeClaude(), profil: profilRoh = process.env.CLAUDE_CONFIG_DIR } = {}) {
   if (plattform !== "darwin") return { ok: false, text: "Den Hintergrunddienst gibt es nur auf dem Mac — der Tageslauf startet dann beim Sitzungsstart, wenn er fällig ist." };
-  // Der LaunchAgent zeigt auf den Kern: ohne stabilen Pfad (KORTEX_KERN_PFAD) nichts eintragen, sonst bricht er beim nächsten App-Update.
-  let kern;
-  try { kern = kernStabil(); } catch (e) { if (e instanceof KernNichtStabilFehler) return { ok: false, nichtStabil: true, text: e.message }; throw e; }
+  // Der LaunchAgent zeigt auf den Starter neben dem stabilen Kern-Pfad: ohne ihn (KORTEX_KERN_PFAD) nichts eintragen, sonst bricht er beim nächsten App-Update.
+  let starter;
+  try { starter = starterPfad(); } catch (e) { if (e instanceof KernNichtStabilFehler) return { ok: false, nichtStabil: true, text: e.message }; throw e; }
+  if (process.env.KORTEX_KERN_UNSTABIL_ERLAUBT !== "1" && !existsSync(starter)) {
+    return { ok: false, nichtStabil: true, text: "Der Starter von Kortex fehlt. Öffne die Kortex-App einmal, dann wird er angelegt, und versuche es danach noch einmal." };
+  }
   const profil = profilPfad(profilRoh, { home });
   const claudeDir = claude && claude.args.length === 0 ? dirname(claude.befehl) : null;
   const pfad = [...new Set([dirname(node), claudeDir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].filter(Boolean))].join(":");
-  const log = join(vault, ".logs", "tageslauf", "dienst.log");
+  const log = join(supportOrdner(), "logs", "dienst.log");
   mkdirSync(dirname(log), { recursive: true });
   const datei = plistPfad({ home });
   mkdirSync(dirname(datei), { recursive: true });
   if (existsSync(datei)) launchctl(["bootout", `${domain()}/${LABEL}`]);
-  // §12.1 Nr. 1: kein fester Node-Pfad — der Ordner des heutigen Node steht nur noch als PATH-Hinweis drin.
-  writeFileSync(datei, plistInhalt({ starter: join(kern, "node-start.sh"), brain: join(kern, "brain.mjs"), vault, pfad, log, profil }));
+  // Kein fester Node-Pfad und kein Vault — der Ordner des heutigen Node steht nur noch als PATH-Hinweis drin.
+  writeFileSync(datei, plistInhalt({ starter, pfad, log, profil }));
   const ok = launchctl(["bootstrap", domain(), datei]);
   return {
     ok, ohneClaude: !claude, profil,
@@ -107,7 +112,10 @@ function profilAusPlist(datei) {
 export function dienstStatus(vault, { home = homedir() } = {}) {
   const eingerichtet = dienstEingerichtet({ home });
   const plist = plistPfad({ home });
-  return { eingerichtet, geladen: eingerichtet && launchctl(["print", `${domain()}/${LABEL}`]), plist, profil: eingerichtet ? profilAusPlist(plist) : null };
+  // veraltet: die plist ist noch die ältere Form (fester Vault oder node-start.sh) — „dienst an“ ersetzt sie.
+  let veraltet = false;
+  if (eingerichtet) { try { veraltet = /<key>BRAIN_VAULT<\/key>|node-start\.sh/.test(readFileSync(plist, "utf8")); } catch { /* unlesbar */ } }
+  return { eingerichtet, geladen: eingerichtet && launchctl(["print", `${domain()}/${LABEL}`]), plist, profil: eingerichtet ? profilAusPlist(plist) : null, veraltet };
 }
 
 const selbst = fileURLToPath(import.meta.url);
@@ -120,7 +128,7 @@ if (aufruf && aufruf === realpathSync(selbst)) {
   if (befehl === "status") {
     const s = dienstStatus(vault);
     // --json: eine Zeile für die App (Kortex-Einrichtung); nichts davon enthält Zugangsdaten.
-    if (process.argv.includes("--json")) console.log(JSON.stringify({ eingerichtet: s.eingerichtet, geladen: s.geladen, profil: s.profil }));
+    if (process.argv.includes("--json")) console.log(JSON.stringify({ eingerichtet: s.eingerichtet, geladen: s.geladen, profil: s.profil, veraltet: s.veraltet }));
     else console.log(s.eingerichtet ? `Hintergrunddienst eingerichtet${s.geladen ? " und geladen" : ", aber nicht geladen — „brain dienst an“ erneut ausführen"}.`
       : "Hintergrunddienst ist nicht eingerichtet — der Tageslauf startet beim Sitzungsstart, wenn er fällig ist.");
     if (s.eingerichtet && !process.argv.includes("--json")) {

@@ -180,7 +180,7 @@ private func dienste(_ w: FalscheWerkstatt, pfade: AppPfade? = nil, home: URL? =
 
 @Test func cursorFehlerKaputteDateiBringtMeldungUndEintragZumKopieren() async {
     let w = FalscheWerkstatt(antwort(422, #"{"fehler":"Die Datei ~/.cursor/mcp.json ist kein gültiges JSON in der erwarteten Form.","art":"kaputt","befehl":"{\n  \"mcpServers\": {}\n}"}"#))
-    do { _ = try await dienste(w).verbinde(.cursor, umstellen: false); Issue.record("erwartet Fehler") } catch let e as EinrichtungsFehler {
+    do { _ = try await dienste(w).verbinde(.cursor, umstellen: false, profil: nil); Issue.record("erwartet Fehler") } catch let e as EinrichtungsFehler {
         #expect(e.art == "kaputt" && e.status == 422)
         #expect(e.befehl?.contains("mcpServers") == true)
         #expect(!e.istAndererEintrag)
@@ -191,15 +191,15 @@ private func dienste(_ w: FalscheWerkstatt, pfade: AppPfade? = nil, home: URL? =
 @Test func verbindenSchicktZielUndUmstellenUndErkenntSchonVerbunden() async throws {
     let w = FalscheWerkstatt(antwort(#"{"ok":true,"ausgabe":"x"}"#), antwort(#"{"ok":true,"schonVerbunden":true}"#))
     let d = dienste(w)
-    #expect(try await d.verbinde(.claude, umstellen: false) == .verbunden)
-    #expect(try await d.verbinde(.claude, umstellen: true) == .schonVerbunden)
+    #expect(try await d.verbinde(.claude, umstellen: false, profil: nil) == .verbunden)
+    #expect(try await d.verbinde(.claude, umstellen: true, profil: nil) == .schonVerbunden)
     #expect(w.aufrufe[0].body == ["ziel": "claude"])
     #expect(w.aufrufe[1].body == ["ziel": "claude", "umstellen": true])
 }
 
 @Test func verbindenMitFremdemEintragIstEinFehlerMitArtUndBefehl() async {
     let w = FalscheWerkstatt(antwort(409, #"{"fehler":"Bei Claude Code ist schon ein anderer Server eingetragen.","art":"anders","befehl":"claude mcp add -s user brain -- node x"}"#))
-    do { _ = try await dienste(w).verbinde(.claude, umstellen: false); Issue.record("erwartet Fehler") } catch let e as EinrichtungsFehler {
+    do { _ = try await dienste(w).verbinde(.claude, umstellen: false, profil: nil); Issue.record("erwartet Fehler") } catch let e as EinrichtungsFehler {
         #expect(e.istAndererEintrag)
         #expect(e.befehl == "claude mcp add -s user brain -- node x")
     } catch { Issue.record("falscher Fehler") }
@@ -287,35 +287,58 @@ private func dienste(_ w: FalscheWerkstatt, pfade: AppPfade? = nil, home: URL? =
 
 // MARK: Verdrahtung (Hooks bei Claude Code, Prüfung vor dem Speichern, Hintergrunddienst)
 
-@Test func verdrahtungsStandLiestAlleAbschnitte() async throws {
-    let w = FalscheWerkstatt(antwort(#"{"starter":{"vorhanden":true},"claude":{"aktiv":true,"hooks":{"soll":8}},"git":{"moeglich":true,"aktiv":false,"fremder":true},"dienst":{"verfuegbar":true,"eingerichtet":true,"geladen":false}}"#))
+private let stSt = "/Users/t/.claude", stPriv = "/Users/t/.claude-privat"
+
+@Test func verdrahtungsStandLiestProfileUndAlleAbschnitte() async throws {
+    let w = FalscheWerkstatt(antwort(#"""
+    {"starter":{"vorhanden":true},
+     "profile":[{"pfad":"/Users/t/.claude","name":".claude","standard":true},{"pfad":"/Users/t/.claude-privat","name":".claude-privat","standard":false}],
+     "claude":{"profile":{"/Users/t/.claude":{"aktiv":true,"hooks":{"soll":8}},"/Users/t/.claude-privat":{"fehler":"kaputt"}}},
+     "git":{"moeglich":true,"aktiv":false,"fremder":true},"dienst":{"verfuegbar":true,"eingerichtet":true,"geladen":false}}
+    """#))
     let s = try await dienste(w).verdrahtungsStand()
-    #expect(s == VerdrahtungsStand(starterVorhanden: true, claudeAktiv: true, gitMoeglich: true, gitAktiv: false, gitFremderEintrag: true, dienstVerfuegbar: true, dienstAktiv: true))
+    #expect(s == VerdrahtungsStand(starterVorhanden: true,
+                                   profile: [ClaudeProfil(pfad: stSt, name: ".claude", standard: true, aktiv: true),
+                                             ClaudeProfil(pfad: stPriv, name: ".claude-privat", standard: false, aktiv: false)],
+                                   gitMoeglich: true, gitAktiv: false, gitFremderEintrag: true, dienstVerfuegbar: true, dienstAktiv: true))
+    #expect(s.profile[1].anzeigeName == "~/.claude-privat")
+    #expect(s.claudeAktiv(in: [stSt]) && !s.claudeAktiv(in: [stSt, stPriv]) && !s.claudeAktiv(in: []))
     #expect(w.aufrufe == [.init(methode: "GET", pfad: "/api/kern/stand", body: nil)])
 }
 
 @Test func verdrahtungsStandMitFehlerAbschnittenOderOhneStarterZaehltAlsNichtEingetragen() async throws {
-    let w = FalscheWerkstatt(antwort(#"{"starter":{"vorhanden":true},"claude":{"fehler":"kaputt"},"git":{"fehler":"kaputt"},"dienst":{"verfuegbar":false}}"#),
-                             antwort(#"{"starter":{"vorhanden":false},"claude":null,"git":null,"dienst":{"verfuegbar":false}}"#))
+    let w = FalscheWerkstatt(antwort(#"{"starter":{"vorhanden":true},"profile":[],"claude":{"profile":{}},"git":{"fehler":"kaputt"},"dienst":{"verfuegbar":false}}"#),
+                             antwort(#"{"starter":{"vorhanden":false},"profile":[],"claude":null,"git":null,"dienst":{"verfuegbar":false}}"#))
     let d = dienste(w)
     #expect(try await d.verdrahtungsStand() == VerdrahtungsStand(starterVorhanden: true))
     #expect(try await d.verdrahtungsStand() == VerdrahtungsStand())
 }
 
-@Test func verdrahteSchicktNurWasUndAnUndErsetzenNurWennGewollt() async throws {
-    let w = FalscheWerkstatt(antwort(#"{"ok":true,"stand":{"starter":{"vorhanden":true},"claude":{"aktiv":true},"git":{"moeglich":false},"dienst":{"verfuegbar":false}}}"#),
-                             antwort(#"{"ok":true,"stand":{"starter":{"vorhanden":true},"claude":{"aktiv":false},"git":{"moeglich":true,"aktiv":true},"dienst":{"verfuegbar":false}}}"#))
+@Test func verdrahteSchicktProfileNurFuerClaudeUndDasErsteProfilFuerDenDienst() async throws {
+    let stand = #"{"ok":true,"stand":{"starter":{"vorhanden":true},"profile":[{"pfad":"/Users/t/.claude","name":".claude","standard":true}],"claude":{"profile":{"/Users/t/.claude":{"aktiv":true}}},"git":{"moeglich":true,"aktiv":true},"dienst":{"verfuegbar":true,"eingerichtet":true}}}"#
+    let w = FalscheWerkstatt(antwort(stand), antwort(stand), antwort(stand))
     let d = dienste(w)
-    #expect(try await d.verdrahte(.claude, an: true, ersetzen: false).claudeAktiv == true)
-    #expect(try await d.verdrahte(.git, an: true, ersetzen: true).gitAktiv == true)
-    #expect(w.aufrufe == [.init(methode: "POST", pfad: "/api/kern/verdrahten", body: ["was": "claude", "an": true]),
-                          .init(methode: "POST", pfad: "/api/kern/verdrahten", body: ["was": "git", "an": true, "ersetzen": true])])
+    #expect(try await d.verdrahte(.claude, an: true, ersetzen: false, profile: [stSt, stPriv]).profile.first?.aktiv == true)
+    #expect(try await d.verdrahte(.git, an: true, ersetzen: true, profile: [stSt]).gitAktiv == true)
+    #expect(try await d.verdrahte(.dienst, an: true, ersetzen: false, profile: [stPriv, stSt]).dienstAktiv == true)
+    #expect(w.aufrufe == [.init(methode: "POST", pfad: "/api/kern/verdrahten", body: ["was": "claude", "an": true, "profile": [stSt, stPriv]]),
+                          .init(methode: "POST", pfad: "/api/kern/verdrahten", body: ["was": "git", "an": true, "ersetzen": true]),
+                          .init(methode: "POST", pfad: "/api/kern/verdrahten", body: ["was": "dienst", "an": true, "profil": stPriv])])
+}
+
+@Test func verbindenSchicktDasProfilNurBeiClaude() async throws {
+    let w = FalscheWerkstatt(antwort(#"{"ok":true}"#), antwort(#"{"ok":true}"#))
+    let d = dienste(w)
+    _ = try await d.verbinde(.claude, umstellen: false, profil: stPriv)
+    _ = try await d.verbinde(.codex, umstellen: false, profil: stPriv)
+    #expect(w.aufrufe[0].body == ["ziel": "claude", "profil": stPriv])
+    #expect(w.aufrufe[1].body == ["ziel": "codex"])
 }
 
 @Test func verdrahteMitFremdemHookOrdnerIstEinFehlerMitArt() async {
     let w = FalscheWerkstatt(antwort(409, #"{"fehler":"In diesem Vault ist schon eine andere Prüfung eingetragen.","art":"anders"}"#))
     do {
-        _ = try await dienste(w).verdrahte(.git, an: true, ersetzen: false)
+        _ = try await dienste(w).verdrahte(.git, an: true, ersetzen: false, profile: [])
         Issue.record("sollte fehlschlagen")
     } catch let e as EinrichtungsFehler {
         #expect(e.status == 409 && e.art == "anders")

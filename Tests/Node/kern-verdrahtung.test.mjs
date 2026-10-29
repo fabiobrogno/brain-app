@@ -50,6 +50,7 @@ function einrichtung(opt = {}) {
   return { ...s, v, rufe };
 }
 const settingsDatei = join(HOME, ".claude", "settings.json");
+const standardProfil = (st) => st.claude.profile[join(HOME, ".claude")];
 const settings = () => JSON.parse(readFileSync(settingsDatei, "utf8"));
 const alleBefehle = (s) => Object.values(s.hooks || {}).flat().flatMap((e) => (e.hooks || []).map((h) => h.command));
 const ohneVersionOderApp = (text, e) => {
@@ -76,12 +77,12 @@ test("Claude Code: Hooks und Statuszeile über den Starter, nur bin/kortex und b
 
   let st = (await e.rufe("GET", "/api/kern/stand")).j;
   assert.equal(st.starter.vorhanden, true);
-  assert.equal(st.claude.aktiv, false);
+  assert.equal(standardProfil(st).aktiv, false);
 
   const r = await e.rufe("POST", "/api/kern/verdrahten", { was: "claude", an: true });
   assert.equal(r.status, 200, JSON.stringify(r.j));
-  assert.equal(r.j.stand.claude.aktiv, true);
-  assert.equal(r.j.stand.claude.statuszeile, "brain");
+  assert.equal(standardProfil(r.j.stand).aktiv, true);
+  assert.equal(standardProfil(r.j.stand).statuszeile, "brain");
   const s = settings();
   assert.equal(s.model, "x");
   assert.deepEqual(s.hooks.Stop, [fremd], "fremder Hook unverändert");
@@ -98,7 +99,7 @@ test("Claude Code: Hooks und Statuszeile über den Starter, nur bin/kortex und b
   // Rückweg
   const aus = await e.rufe("POST", "/api/kern/verdrahten", { was: "claude", an: false });
   assert.equal(aus.status, 200, JSON.stringify(aus.j));
-  assert.equal(aus.j.stand.claude.aktiv, false);
+  assert.equal(standardProfil(aus.j.stand).aktiv, false);
   const nach = settings();
   assert.equal(nach.statusLine, undefined);
   assert.deepEqual(nach.hooks.Stop, [fremd]);
@@ -182,7 +183,7 @@ function fakeLaunchctl() {
   return { skript, aufrufe: () => (existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : []) };
 }
 
-test("Hintergrunddienst: LaunchAgent zeigt auf bin/kern; Attrappe statt launchctl; Rückweg entfernt die Datei", { skip: process.platform !== "darwin" }, async () => {
+test("Hintergrunddienst: LaunchAgent zeigt auf den Starter (bin/kortex), kein fester Vault; Attrappe statt launchctl; Rückweg entfernt die Datei", { skip: process.platform !== "darwin" }, async () => {
   const e = einrichtung();
   const fake = fakeLaunchctl();
   const plist = join(HOME, "Library", "LaunchAgents", "de.brain.tageslauf.plist");
@@ -194,7 +195,10 @@ test("Hintergrunddienst: LaunchAgent zeigt auf bin/kern; Attrappe statt launchct
     assert.equal(r.status, 200, JSON.stringify(r.j));
     assert.ok(existsSync(plist));
     const text = readFileSync(plist, "utf8");
-    assert.ok(text.includes(`${e.kern}/node-start.sh`) && text.includes(`${e.kern}/brain.mjs`), text);
+    assert.ok(text.includes(`<string>${e.starter}</string>`), "Programm ist der Starter");
+    assert.ok(text.includes("<string>tageslauf</string>") && text.includes("<string>--dienst</string>"));
+    assert.ok(!text.includes("BRAIN_VAULT") && !text.includes(e.v) && !text.includes("node-start.sh"), "folgt dem aktiven Vault, kein fester Eintrag");
+    assert.ok(text.includes(join(e.support, "logs", "dienst.log")), "Protokoll im Support-Ordner");
     ohneVersionOderApp(text, e);
     assert.ok(fake.aufrufe().some((a) => a.startsWith("bootstrap")), "nur die Attrappe wurde gerufen");
     assert.equal(r.j.stand.dienst.eingerichtet, true);
@@ -242,4 +246,150 @@ test("Ungültige Eingaben: 400, nichts passiert", async () => {
   }
   assert.equal((await e.rufe("GET", "/api/kern/verdrahten")).status, 405);
   assert.equal((await e.rufe("POST", "/api/kern/stand", {})).status, 405);
+});
+
+// ---- Mehrere Claude-Profile (CLAUDE_CONFIG_DIR): die App startet aus dem Finder ohne diese Umgebung ----
+const { erkenneProfile } = await import(pfad("werkstatt", "profile.mjs"));
+
+// Ein eigenes Home mit mehreren Profilordnern. Gibt die Pfade zurück; das Home gilt, bis `fertig()` aufgerufen wird.
+function mehrProfilHome() {
+  const heim = tmp("kortex-profile-home-");
+  const ordner = (name, dateien = {}) => { mkdirSync(join(heim, name), { recursive: true }); for (const [n, t] of Object.entries(dateien)) schreibe(join(heim, name), n, t); return join(heim, name); };
+  const p = {
+    heim,
+    standard: ordner(".claude", { "settings.json": '{"model":"standard"}' }),
+    privat: ordner(".claude-privat", { ".claude.json": "{}" }),
+    firma: ordner(".claude-firma2", { "projects/p/x.jsonl": "{}" }),
+    leer: ordner(".claude-leer"),                                   // kein Profil: weder settings.json noch .claude.json noch projects/
+    sicherung: ordner(".claude.bak", { "settings.json": "{}" }),     // Name passt nicht (.claude-*)
+  };
+  mkdirSync(join(heim, "echt-ordner"), { recursive: true });
+  schreibe(join(heim, "echt-ordner"), "settings.json", "{}");
+  symlinkSync(join(heim, "echt-ordner"), join(heim, ".claude-link"));  // Symlinks werden nicht verfolgt
+  schreibe(heim, ".claude-datei", "ich bin eine Datei");
+  const alt = process.env.HOME;
+  process.env.HOME = heim;
+  return { ...p, fertig: () => { process.env.HOME = alt; } };
+}
+
+test("Profile werden gefunden: ~/.claude und ~/.claude-* mit settings.json, .claude.json oder projects/ — nicht leere Ordner, Symlinks, Dateien oder ähnliche Namen", () => {
+  const h = mehrProfilHome();
+  try {
+    const liste = erkenneProfile(h.heim);
+    assert.deepEqual(liste.map((p) => p.name), [".claude", ".claude-firma2", ".claude-privat"]);
+    assert.deepEqual(liste.map((p) => p.standard), [true, false, false]);
+    assert.deepEqual(liste.map((p) => p.pfad), [h.standard, h.firma, h.privat]);
+  } finally { h.fertig(); }
+  // nur ~/.claude.json im Home: das Standardprofil zählt (der Ordner entsteht beim Eintragen)
+  const nur = tmp("kortex-profile-nur-");
+  schreibe(nur, ".claude.json", "{}");
+  assert.deepEqual(erkenneProfile(nur).map((p) => [p.name, p.standard]), [[".claude", true]]);
+  assert.deepEqual(erkenneProfile(tmp("kortex-profile-leer-")), []);
+});
+
+test("Mehrere Profile: Stand je Profil; Eintragen und Entfernen nur in den gewählten; Pfade außerhalb der erkannten Liste werden abgelehnt", async () => {
+  const h = mehrProfilHome();
+  try {
+    const e = einrichtung();
+    const st = (await e.rufe("GET", "/api/kern/stand")).j;
+    assert.deepEqual(st.profile.map((p) => p.pfad), [h.standard, h.firma, h.privat]);
+    assert.deepEqual(Object.keys(st.claude.profile).sort(), [h.standard, h.firma, h.privat].sort());
+    assert.ok(Object.values(st.claude.profile).every((p) => p.aktiv === false));
+
+    // ohne Angabe: nur das Standardprofil
+    let r = await e.rufe("POST", "/api/kern/verdrahten", { was: "claude", an: true });
+    assert.equal(r.status, 200, JSON.stringify(r.j));
+    assert.equal(r.j.stand.claude.profile[h.standard].aktiv, true);
+    assert.equal(r.j.stand.claude.profile[h.privat].aktiv, false);
+    assert.equal(JSON.parse(readFileSync(join(h.standard, "settings.json"), "utf8")).model, "standard", "Fremdes bleibt");
+    assert.ok(!existsSync(join(h.privat, "settings.json")), "ungewählte Profile bleiben unberührt");
+
+    // Privat und Firma zusätzlich
+    r = await e.rufe("POST", "/api/kern/verdrahten", { was: "claude", an: true, profile: [h.privat, h.firma] });
+    assert.equal(r.status, 200, JSON.stringify(r.j));
+    for (const p of [h.standard, h.privat, h.firma]) assert.equal(r.j.stand.claude.profile[p].aktiv, true, p);
+    for (const p of [h.standard, h.privat, h.firma]) {
+      const text = readFileSync(join(p, "settings.json"), "utf8");
+      assert.ok(alleBefehle(JSON.parse(text)).some((c) => c.startsWith(`[ -x ${q(e.starter)} ] && exec ${q(e.starter)} hook `)), p);
+      assert.ok(!text.includes(e.version) && !text.includes("/kern/9.9.9"));
+    }
+    assert.ok(existsSync(join(h.privat, "commands")), "die Befehle liegen im Profilordner");
+
+    // Rückweg nur für Privat
+    r = await e.rufe("POST", "/api/kern/verdrahten", { was: "claude", an: false, profile: [h.privat] });
+    assert.equal(r.status, 200, JSON.stringify(r.j));
+    assert.equal(r.j.stand.claude.profile[h.privat].aktiv, false);
+    assert.equal(r.j.stand.claude.profile[h.firma].aktiv, true);
+    assert.equal(r.j.stand.claude.profile[h.standard].aktiv, true);
+
+    // abgelehnt: Pfade außerhalb der Liste, ein leeres Profil, ein Symlink, nichts gewählt
+    const vorher = readFileSync(join(h.standard, "settings.json"), "utf8");
+    for (const profile of [["/etc"], [h.leer], [join(h.heim, ".claude-link")], [join(h.standard, "..", ".claude-privat", "..", ".claude-leer")], [h.firma, "/tmp"]]) {
+      r = await e.rufe("POST", "/api/kern/verdrahten", { was: "claude", an: true, profile });
+      assert.equal(r.status, 409, JSON.stringify(profile)); assert.equal(r.j.art, "profil-weg");
+    }
+    r = await e.rufe("POST", "/api/kern/verdrahten", { was: "claude", an: true, profile: [] });
+    assert.equal(r.status, 409); assert.equal(r.j.art, "kein-profil");
+    r = await e.rufe("POST", "/api/kern/verdrahten", { was: "claude", an: true, profile: "alle" });
+    assert.equal(r.status, 400);
+    assert.equal(readFileSync(join(h.standard, "settings.json"), "utf8"), vorher);
+    assert.ok(!existsSync(join(h.leer, "settings.json")));
+  } finally { h.fertig(); }
+});
+
+// claude-Attrappe, die bei jedem Aufruf die Umgebungsvariable CLAUDE_CONFIG_DIR festhält.
+function fakeClaudeMitProfil() {
+  const bin = tmp("kortex-claudebin-"), log = join(bin, "aufrufe.log");
+  writeFileSync(join(bin, "claude"), `#!/bin/sh\necho "dir=\${CLAUDE_CONFIG_DIR:-STANDARD} $*" >> '${log}'\ncase "$1 $2" in\n  "mcp get") echo "No MCP server found" >&2; exit 1;;\n  "mcp add") echo ok; exit 0;;\nesac\nexit 3\n`);
+  chmodSync(join(bin, "claude"), 0o755);
+  return { bin, aufrufe: () => (existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : []) };
+}
+
+test("KI verbinden mit Claude je Profil: das Standardprofil ohne CLAUDE_CONFIG_DIR (~/.claude.json), ein anderes mit CLAUDE_CONFIG_DIR=<Profil> (<Profil>/.claude.json); unbekanntes Profil wird abgelehnt", async () => {
+  const h = mehrProfilHome();
+  const c = fakeClaudeMitProfil();
+  const mcpDir = tmp("kortex-mcp-"); schreibe(mcpDir, "brain-mcp.mjs", "// fake\n");
+  const altPfad = process.env.PATH, altEnv = process.env.CLAUDE_CONFIG_DIR, altExtra = process.env.BRAIN_CLAUDE_EXTRA;
+  process.env.PATH = `${c.bin}:${altPfad}`; process.env.BRAIN_CLAUDE_EXTRA = "";
+  process.env.CLAUDE_CONFIG_DIR = "/geerbt/aus/der/shell";   // so eine Variable darf das Standardprofil nie beeinflussen
+  try {
+    const rufe = aufruf(erzeugeHandler({ vault: vault(), mcpPfad: join(mcpDir, "brain-mcp.mjs"), vaultOptionen: { support: tmp("kortex-s-") } }));
+    let r = await rufe("POST", "/api/mcp/verbinden", { ziel: "claude", profil: h.privat });
+    assert.equal(r.status, 200, JSON.stringify(r.j));
+    r = await rufe("POST", "/api/mcp/verbinden", { ziel: "claude", profil: h.standard });
+    assert.equal(r.status, 200, JSON.stringify(r.j));
+    const a = c.aufrufe();
+    assert.deepEqual(a.map((z) => z.split(" ")[0]), [`dir=${h.privat}`, `dir=${h.privat}`, "dir=STANDARD", "dir=STANDARD"], a.join("\n"));
+    r = await rufe("POST", "/api/mcp/verbinden", { ziel: "claude", profil: "/etc" });
+    assert.equal(r.status, 400);
+    r = await rufe("POST", "/api/mcp/verbinden", { ziel: "claude", profil: h.leer });
+    assert.equal(r.status, 400);
+    assert.equal(c.aufrufe().length, a.length, "bei abgelehntem Profil wird claude nicht gestartet");
+  } finally {
+    process.env.PATH = altPfad;
+    if (altEnv === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = altEnv;
+    if (altExtra === undefined) delete process.env.BRAIN_CLAUDE_EXTRA; else process.env.BRAIN_CLAUDE_EXTRA = altExtra;
+    h.fertig();
+  }
+});
+
+test("Hintergrunddienst mit Profil: ein anderes Profil kommt als CLAUDE_CONFIG_DIR in die plist, das Standardprofil nicht", { skip: process.platform !== "darwin" }, async () => {
+  const h = mehrProfilHome();
+  const fake = fakeLaunchctl();
+  process.env.BRAIN_LAUNCHCTL = fake.skript;
+  const altEnv = process.env.CLAUDE_CONFIG_DIR; delete process.env.CLAUDE_CONFIG_DIR;
+  try {
+    const e = einrichtung();
+    const plist = join(h.heim, "Library", "LaunchAgents", "de.brain.tageslauf.plist");
+    let r = await e.rufe("POST", "/api/kern/verdrahten", { was: "dienst", an: true, profil: h.privat });
+    assert.equal(r.status, 200, JSON.stringify(r.j));
+    assert.ok(readFileSync(plist, "utf8").includes(`<key>CLAUDE_CONFIG_DIR</key><string>${h.privat}</string>`));
+    r = await e.rufe("POST", "/api/kern/verdrahten", { was: "dienst", an: true, profil: h.standard });
+    assert.equal(r.status, 200, JSON.stringify(r.j));
+    assert.ok(!readFileSync(plist, "utf8").includes("CLAUDE_CONFIG_DIR"));
+    r = await e.rufe("POST", "/api/kern/verdrahten", { was: "dienst", an: true, profil: "/etc" });
+    assert.equal(r.status, 409); assert.equal(r.j.art, "profil-weg");
+    assert.equal((await e.rufe("POST", "/api/kern/verdrahten", { was: "dienst", an: false })).status, 200);
+    assert.ok(!existsSync(plist));
+  } finally { delete process.env.BRAIN_LAUNCHCTL; if (altEnv !== undefined) process.env.CLAUDE_CONFIG_DIR = altEnv; h.fertig(); }
 });

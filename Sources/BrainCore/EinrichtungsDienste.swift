@@ -156,11 +156,34 @@ public enum Verdrahtung: String, CaseIterable, Sendable {
     case dienst
 }
 
+/// Ein Claude-Code-Profil auf diesem Mac: der Ordner `~/.claude` oder `~/.claude-*` im Home (wer mit `CLAUDE_CONFIG_DIR` mehrere Profile nutzt).
+/// Die App startet aus dem Finder ohne diese Umgebung und sucht die Profile deshalb selbst.
+public struct ClaudeProfil: Equatable, Sendable {
+    public let pfad: String
+    /// Ordnername, z. B. `.claude-privat`.
+    public let name: String
+    /// `~/.claude`: das Standardprofil (Konfiguration in `~/.claude.json`, ohne `CLAUDE_CONFIG_DIR`).
+    public let standard: Bool
+    /// Hooks und Statuszeile von Kortex sind in diesem Profil eingetragen.
+    public var aktiv: Bool
+
+    public init(pfad: String, name: String, standard: Bool, aktiv: Bool = false) {
+        self.pfad = pfad
+        self.name = name
+        self.standard = standard
+        self.aktiv = aktiv
+    }
+
+    /// Anzeigename: `~/.claude-privat`.
+    public var anzeigeName: String { "~/\(name)" }
+}
+
 /// Was von der Verdrahtung gerade eingetragen ist (`GET /api/kern/stand`).
 public struct VerdrahtungsStand: Equatable, Sendable {
     /// Der Starter `bin/kortex` ist da; ohne ihn lässt sich nichts eintragen.
     public var starterVorhanden: Bool
-    public var claudeAktiv: Bool
+    /// Die gefundenen Claude-Profile (Standardprofil zuerst) mit ihrem Stand; leer, wenn es keine gibt.
+    public var profile: [ClaudeProfil]
     /// Der Vault hat einen Versionsverlauf, die Prüfung vor dem Speichern ist also möglich.
     public var gitMoeglich: Bool
     public var gitAktiv: Bool
@@ -169,10 +192,10 @@ public struct VerdrahtungsStand: Equatable, Sendable {
     public var dienstVerfuegbar: Bool
     public var dienstAktiv: Bool
 
-    public init(starterVorhanden: Bool = false, claudeAktiv: Bool = false, gitMoeglich: Bool = false, gitAktiv: Bool = false,
+    public init(starterVorhanden: Bool = false, profile: [ClaudeProfil] = [], gitMoeglich: Bool = false, gitAktiv: Bool = false,
                 gitFremderEintrag: Bool = false, dienstVerfuegbar: Bool = false, dienstAktiv: Bool = false) {
         self.starterVorhanden = starterVorhanden
-        self.claudeAktiv = claudeAktiv
+        self.profile = profile
         self.gitMoeglich = gitMoeglich
         self.gitAktiv = gitAktiv
         self.gitFremderEintrag = gitFremderEintrag
@@ -180,9 +203,14 @@ public struct VerdrahtungsStand: Equatable, Sendable {
         self.dienstAktiv = dienstAktiv
     }
 
+    /// Sind Hooks und Statuszeile in ALLEN genannten Profilen eingetragen? (Leere Auswahl: nein.)
+    public func claudeAktiv(in gewaehlt: [String]) -> Bool {
+        !gewaehlt.isEmpty && gewaehlt.allSatisfy { pfad in profile.first { $0.pfad == pfad }?.aktiv == true }
+    }
+
     public func aktiv(_ was: Verdrahtung) -> Bool {
         switch was {
-        case .claude: return claudeAktiv
+        case .claude: return !profile.isEmpty && profile.allSatisfy(\.aktiv)
         case .git: return gitAktiv
         case .dienst: return dienstAktiv
         }
@@ -233,13 +261,15 @@ public protocol EinrichtungsDienste: Sendable {
 
     // KI
     func erkenneKIs() async throws -> [KiProgramm]
-    func verbinde(_ ziel: KiZiel, umstellen: Bool) async throws -> KiVerbindung
+    /// `profil`: nur bei Claude Code — der Pfad eines gefundenen Profils (`VerdrahtungsStand.profile`); nil = Standard wie bisher.
+    func verbinde(_ ziel: KiZiel, umstellen: Bool, profil: String?) async throws -> KiVerbindung
 
     // Verdrahtung (Hooks bei Claude Code, Prüfung vor dem Speichern, Hintergrunddienst)
     /// Was eingetragen ist. Liest nur.
     func verdrahtungsStand() async throws -> VerdrahtungsStand
     /// Trägt ein (`an`) bzw. nimmt heraus und liefert den neuen Stand. `ersetzen`: einen fremden Hook-Ordner im Vault ersetzen.
-    func verdrahte(_ was: Verdrahtung, an: Bool, ersetzen: Bool) async throws -> VerdrahtungsStand
+    /// `profile`: die gewählten Claude-Profile (Pfade); für `.claude` Pflicht, für `.dienst` zählt das erste (das der Dienst für `claude` nutzt).
+    func verdrahte(_ was: Verdrahtung, an: Bool, ersetzen: Bool, profile: [String]) async throws -> VerdrahtungsStand
 
     // Probe
     func probe(frage: String) async throws -> ProbeErgebnis

@@ -69,10 +69,16 @@ Der Kern liegt künftig außerhalb des Vaults (P3/P4: `Support/Kortex/kern/<appV
 - `install.mjs` verlangt `KORTEX_KERN_PFAD` **und** den Starter (`pfade.mjs#starterOderEnde`, Exit 3). Alt-Einträge (alter Kit-Ordner im Vault, früherer Kern-Pfad, `node-start.sh`-Form, Versionsordner) werden erkannt und ersetzt.
   Neu: `--entfernen` (Rückweg: Hooks, Statuszeile, Brain-Befehle; Fremdes bleibt) und `--stand` (JSON). `brain.mjs`: Befehl `claude-hooks`; `hooks-install` reicht Flags durch.
 - `install-git-hooks.mjs`: `--aus` (nur ein zu Kortex gehörender Eintrag wird entfernt), `--stand`, und ein **fremder** `core.hooksPath` bleibt stehen (Exit 4), außer mit `--ersetzen`.
-- `tageslauf/dienst.mjs`: `status --json`. Der LaunchAgent trägt weiter nur `bin/kern` ein (`dienstAn`); `launchctl` nur per Attrappe (`BRAIN_LAUNCHCTL`) in Tests.
+- `tageslauf/dienst.mjs`: der LaunchAgent `de.brain.tageslauf` läuft über den **Starter** (`ProgramArguments`: `<Support>/bin/kortex tageslauf --wenn-faellig --dienst`), ohne `/bin/sh`, `node-start.sh` und ohne festes `BRAIN_VAULT`:
+  wie die Hooks folgt er dem aktiven Vault der App; ohne gültigen Vault endet der Lauf still mit Exit 0 (`brain.mjs`, eine Zeile im Protokoll). Protokoll: `<Support>/logs/dienst.log` (nicht mehr im Vault).
+  `dienstAn` ersetzt eine ältere plist (BRAIN_VAULT/node-start.sh/alter Kit-Ordner); `status --json` meldet `veraltet`. `launchctl` nur per Attrappe (`BRAIN_LAUNCHCTL`) in Tests.
 - Testhaken (nur mit `KORTEX_KERN_UNSTABIL_ERLAUBT=1`): `KORTEX_STARTER_PFAD` (Starter umlenken), `KORTEX_KERN_TEMP_WURZELN` (Temp-Ordner für die Prüfung „unbeständig“ ersetzen, leer = keine; so kann ein Wegwerf-Support-Ordner als stabil gelten).
 - Werkstatt (`Ressourcen/werkstatt/verdrahtung.mjs`): `GET /api/kern/stand`, `POST /api/kern/verdrahten {was: claude|git|dienst, an, ersetzen?}` — ruft den Starter (`kortex claude-hooks|hooks-install|dienst …`). Kein Hintergrunddienst in der Vorschau
   und im Testmodus ohne Attrappe. Der Assistent (Schritt „KI verbinden“) bietet die drei Eintragungen als Schalter an, jede nur auf Klick, mit Beschreibung und Rückweg.
+- **Claude-Profile** (`Ressourcen/werkstatt/profile.mjs`): Die App startet aus dem Finder ohne `CLAUDE_CONFIG_DIR`. Profile = Ordner `~/.claude` und `~/.claude-*` direkt im Home (Symlinks werden nicht verfolgt) mit `settings.json`, `.claude.json` oder `projects/`
+  (Standardprofil auch bei nur `~/.claude.json`). Der Assistent zeigt sie als Auswahl (Standard: `~/.claude`); Hooks/Statuszeile/Befehle werden je gewähltem Profil über `--claude-home` eingetragen, entfernt und abgefragt (Pfade nur aus der erkannten Liste).
+  MCP-Eintrag (`POST /api/mcp/verbinden {ziel: claude, profil}`): Standardprofil → `claude` ohne `CLAUDE_CONFIG_DIR` (Konfiguration in `~/.claude.json`), anderes Profil → `CLAUDE_CONFIG_DIR=<Profil>` (`<Profil>/.claude.json`); eine geerbte Variable wird entfernt. `mcpArgs` selbst ist unverändert.
+  Der Hintergrunddienst bekommt das zuerst gewählte Profil (`profil`; nur ein Nicht-Standardprofil landet als `CLAUDE_CONFIG_DIR` in der plist).
 
 ## Mitgenommen
 - `VERSION` (`0.5.1`, Stand des Exports; wird in P3 beim App-Bau auf die App-Version gesetzt)

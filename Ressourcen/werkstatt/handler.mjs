@@ -15,6 +15,7 @@ import * as vaultsFn from "../gemeinsam/vaults.mjs";
 import { erzeugeGitHub } from "../gemeinsam/github.mjs";
 import { sicherungStand } from "../gemeinsam/gitsicherung.mjs";
 import { erzeugeVerdrahtung } from "./verdrahtung.mjs";
+import { profilZuPfad, mitProfil } from "./profile.mjs";
 
 const HIER = dirname(fileURLToPath(import.meta.url));
 export const MAX_KOERPER = 8 * 1024 * 1024;
@@ -103,7 +104,7 @@ export function erzeugeHandler(o) {
   // Gesamtfristen je Route in ms (nur im Test kürzer): mcp/verbinden 25 s, Probe über den MCP-Server 10 s.
   const fristen = { mcpVerbinden: 25_000, probe: 10_000, ...(o.fristen || {}) };
   // Einrichtung über den Starter der App (Hooks bei Claude Code, Prüfung vor dem Speichern, Hintergrunddienst): werkstatt/verdrahtung.mjs. o.starter = Ersatz für Tests.
-  const verdrahtung = erzeugeVerdrahtung({ starter: o.starter || join(vaultOpt.support || supportOrdner(), "bin", "kortex") });
+  const verdrahtung = erzeugeVerdrahtung({ starter: o.starter || join(vaultOpt.support || supportOrdner(), "bin", "kortex"), support: vaultOpt.support || supportOrdner() });
 
   // Liste für die Oberfläche: gespeicherte Vaults (+ ein nur für diesen Start geöffneter, der nicht in vaults.json steht).
   function vaultListe(v) {
@@ -362,7 +363,10 @@ export function erzeugeHandler(o) {
     const claude = findeClaude();
     if (!claude) throw new HttpFehler(404, "Claude Code wurde nicht gefunden. Kopiere den Befehl und führe ihn im Terminal aus.", { befehl });
     const frist = neueFrist(fristen.mcpVerbinden);
-    const lauf = (args) => starte(claude, args, { cwd: homedir(), env: kindUmgebung({ CI: "1" }), frist, timeout: fristen.mcpVerbinden, fehlt: "Claude Code wurde nicht gefunden.", zuLange: "Claude Code hat nicht rechtzeitig geantwortet." });
+    // Claude-Profil (Auswahl im Assistenten): nur ein erkanntes Profil; das Standardprofil nutzt ~/.claude.json, ein anderes <Profil>/.claude.json (CLAUDE_CONFIG_DIR).
+    const profil = e.profil === undefined ? null : profilZuPfad(e.profil);
+    if (e.profil !== undefined && !profil) throw new HttpFehler(400, "Dieses Claude-Profil gibt es nicht (mehr). Suche die Profile bitte neu.", { befehl });
+    const lauf = (args) => starte(claude, args, { cwd: homedir(), env: profil ? mitProfil(kindUmgebung({ CI: "1" }), profil) : kindUmgebung({ CI: "1" }), frist, timeout: fristen.mcpVerbinden, fehlt: "Claude Code wurde nicht gefunden.", zuLange: "Claude Code hat nicht rechtzeitig geantwortet." });
     const ausgabeVon = (r) => (String(r.stdout || "") + String(r.stderr || "")).trim().slice(0, 2000);
     try {
       const vorher = await lauf(["mcp", "get", "brain"]); // Ausgabe nur zum Vergleichen

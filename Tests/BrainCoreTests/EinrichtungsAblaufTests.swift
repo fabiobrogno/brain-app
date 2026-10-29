@@ -6,6 +6,8 @@ private let gitDa = GitStand.vorhanden(pfad: "/Library/Developer/CommandLineTool
 private let vaultA = VaultInfo(name: "Brain", pfad: "/Users/test/Brain", git: true)
 private let claudeDa = KiProgramm(id: "claude", name: "Claude Code", version: "2.1.0", gefunden: true)
 private let claudeFehlt = KiProgramm(id: "claude", name: "Claude Code", version: nil, gefunden: false)
+private let profilStandard = ClaudeProfil(pfad: "/Users/test/.claude", name: ".claude", standard: true)
+private let profilPrivat = ClaudeProfil(pfad: "/Users/test/.claude-privat", name: ".claude-privat", standard: false)
 private let meinRepo = GitHubRepo(name: "brain", besitzer: "fabio", url: "https://github.com/fabio/brain.git", aktualisiert: nil, leer: true)
 private let code = GitHubGeraetecode(code: "ABCD-1234", url: "https://github.com/login/device", ablauf: nil)
 
@@ -32,8 +34,10 @@ private final class FalscheDienste: EinrichtungsDienste, @unchecked Sendable {
     var verbinden: [Result<KiVerbindung, EinrichtungsFehler>] = [.success(.verbunden)]
     var probeAntworten: [Result<ProbeErgebnis, EinrichtungsFehler>] = [.success(ProbeErgebnis(frage: "Brain", treffer: ["Willkommen"]))]
     private(set) var verbindeUmstellen: [Bool] = []
+    private(set) var verbindeProfile: [String?] = []
     /// Verdrahtung: der Stand, den die Dienste melden; `verdrahte` ändert ihn wie die echte Werkstatt (oder wirft der Reihe nach `verdrahtenFehler`).
-    var verdrahtung = VerdrahtungsStand(starterVorhanden: true, gitMoeglich: true, dienstVerfuegbar: true)
+    var verdrahtung = VerdrahtungsStand(starterVorhanden: true, profile: [profilStandard], gitMoeglich: true, dienstVerfuegbar: true)
+    private(set) var verdrahtetProfile: [[String]] = []
     var verdrahtungLesefehler: EinrichtungsFehler?
     var verdrahtenFehler: [EinrichtungsFehler?] = []
 
@@ -85,9 +89,10 @@ private final class FalscheDienste: EinrichtungsDienste, @unchecked Sendable {
     }
 
     func erkenneKIs() async throws -> [KiProgramm] { merke("erkenneKIs"); return try nimm(&kis).get() }
-    func verbinde(_ ziel: KiZiel, umstellen: Bool) async throws -> KiVerbindung {
+    func verbinde(_ ziel: KiZiel, umstellen: Bool, profil: String?) async throws -> KiVerbindung {
         merke("verbinde \(ziel.rawValue)")
         verbindeUmstellen.append(umstellen)
+        verbindeProfile.append(profil)
         return try nimm(&verbinden).get()
     }
     func verdrahtungsStand() async throws -> VerdrahtungsStand {
@@ -95,11 +100,12 @@ private final class FalscheDienste: EinrichtungsDienste, @unchecked Sendable {
         if let f = verdrahtungLesefehler { throw f }
         return verdrahtung
     }
-    func verdrahte(_ was: Verdrahtung, an: Bool, ersetzen: Bool) async throws -> VerdrahtungsStand {
+    func verdrahte(_ was: Verdrahtung, an: Bool, ersetzen: Bool, profile: [String]) async throws -> VerdrahtungsStand {
         merke("verdrahte \(was.rawValue) \(an ? "an" : "aus")\(ersetzen ? " ersetzen" : "")")
+        verdrahtetProfile.append(profile)
         if !verdrahtenFehler.isEmpty, let f = verdrahtenFehler.removeFirst() { throw f }
         switch was {
-        case .claude: verdrahtung.claudeAktiv = an
+        case .claude: for i in verdrahtung.profile.indices where profile.contains(verdrahtung.profile[i].pfad) { verdrahtung.profile[i].aktiv = an }
         case .git: verdrahtung.gitAktiv = an; verdrahtung.gitFremderEintrag = false
         case .dienst: verdrahtung.dienstAktiv = an
         }
@@ -1060,7 +1066,7 @@ private let gesperrtText = "Git ist für dieses Brain gesperrt, bis du ihm im St
     a.dienste.konto = [.success(GitHubKonto(verfuegbar: true, angemeldet: true, login: "fabio"))]
     await a.ablauf.starte()
     #expect(a.zustand.aktuell == .ki)
-    #expect(a.anzeige.verdrahtung.stand == VerdrahtungsStand(starterVorhanden: true, gitMoeglich: true, dienstVerfuegbar: true))
+    #expect(a.anzeige.verdrahtung.stand == VerdrahtungsStand(starterVorhanden: true, profile: [profilStandard], gitMoeglich: true, dienstVerfuegbar: true))
     #expect(a.dienste.aufrufe.filter { $0.hasPrefix("verdrahte ") }.isEmpty, "eingetragen wird nur auf Klick")
 }
 
@@ -1081,10 +1087,10 @@ private let gesperrtText = "Git ist für dieses Brain gesperrt, bis du ihm im St
     a.dienste.konto = [.success(GitHubKonto(verfuegbar: true, angemeldet: true, login: "fabio"))]
     await a.ablauf.starte()
     await a.ablauf.schalte(.claude, an: true)
-    #expect(a.anzeige.verdrahtung.stand?.claudeAktiv == true)
+    #expect(a.anzeige.verdrahtung.stand?.aktiv(.claude) == true)
     #expect(a.anzeige.verdrahtung.arbeitet == nil)
     await a.ablauf.schalte(.claude, an: false)
-    #expect(a.anzeige.verdrahtung.stand?.claudeAktiv == false)
+    #expect(a.anzeige.verdrahtung.stand?.aktiv(.claude) == false)
     #expect(a.dienste.aufrufe.filter { $0.hasPrefix("verdrahte ") } == ["verdrahte claude an", "verdrahte claude aus"])
     #expect(a.logzeilen.contains("einrichtung verdrahtung claude an") && a.logzeilen.contains("einrichtung verdrahtung claude aus"))
 }
@@ -1122,4 +1128,79 @@ private let gesperrtText = "Git ist für dieses Brain gesperrt, bis du ihm im St
     #expect(a.dienste.aufrufe.last == "verdrahte git an ersetzen")
     #expect(a.anzeige.verdrahtung.stand?.gitAktiv == true)
     #expect(!a.anzeige.verdrahtung.gitFragtErsetzen)
+}
+
+// MARK: Mehrere Claude-Profile
+
+@Test @MainActor func mehrereProfileStandardIstVorgewaehltUndNurDieGewaehltenWerdenBeschrieben() async {
+    let a = Aufbau()
+    a.dienste.vault = vaultA
+    a.dienste.konto = [.success(GitHubKonto(verfuegbar: true, angemeldet: true, login: "fabio"))]
+    a.dienste.verdrahtung.profile = [profilStandard, profilPrivat]
+    await a.ablauf.starte()
+    #expect(a.anzeige.verdrahtung.auswahl == [profilStandard.pfad], "Standard: nur ~/.claude")
+    await a.ablauf.schalte(.claude, an: true)
+    #expect(a.dienste.verdrahtetProfile == [[profilStandard.pfad]])
+    #expect(a.anzeige.verdrahtung.stand?.profile.map(\.aktiv) == [true, false])
+    a.ablauf.waehleProfil(profilPrivat.pfad, gewaehlt: true)
+    #expect(a.anzeige.verdrahtung.auswahl == [profilStandard.pfad, profilPrivat.pfad])
+    #expect(a.anzeige.verdrahtung.stand?.claudeAktiv(in: a.anzeige.verdrahtung.auswahl) == false)
+    await a.ablauf.schalte(.claude, an: true)
+    #expect(a.dienste.verdrahtetProfile.last == [profilStandard.pfad, profilPrivat.pfad])
+    #expect(a.anzeige.verdrahtung.stand?.claudeAktiv(in: a.anzeige.verdrahtung.auswahl) == true)
+    a.ablauf.waehleProfil(profilStandard.pfad, gewaehlt: false)
+    await a.ablauf.schalte(.claude, an: false)
+    #expect(a.dienste.verdrahtetProfile.last == [profilPrivat.pfad])
+    #expect(a.anzeige.verdrahtung.stand?.profile.map(\.aktiv) == [true, false], "nur das gewählte Profil wurde herausgenommen")
+}
+
+@Test @MainActor func ohneGewaehltesProfilWirdNichtsGeschriebenUndEsGibtEineMeldung() async {
+    let a = Aufbau()
+    a.dienste.vault = vaultA
+    a.dienste.konto = [.success(GitHubKonto(verfuegbar: true, angemeldet: true, login: "fabio"))]
+    a.dienste.verdrahtung.profile = [profilStandard, profilPrivat]
+    await a.ablauf.starte()
+    a.ablauf.waehleProfil(profilStandard.pfad, gewaehlt: false)
+    #expect(a.anzeige.verdrahtung.auswahl.isEmpty)
+    await a.ablauf.schalte(.claude, an: true)
+    #expect(a.anzeige.verdrahtung.fehler[.claude] != nil)
+    #expect(a.dienste.aufrufe.filter { $0.hasPrefix("verdrahte ") }.isEmpty)
+    await a.ablauf.verbinde(.claude)
+    #expect(a.anzeige.kis.first?.status == .fehler("Wähle bitte mindestens ein Claude-Profil aus.", befehl: nil))
+    #expect(a.dienste.anzahl("verbinde claude") == 0)
+}
+
+@Test @MainActor func claudeVerbindenLaeuftInJedemGewaehltenProfilAndereZieleOhneProfil() async {
+    let a = Aufbau()
+    a.dienste.vault = vaultA
+    a.dienste.konto = [.success(GitHubKonto(verfuegbar: true, angemeldet: true, login: "fabio"))]
+    a.dienste.verdrahtung.profile = [profilStandard, profilPrivat]
+    a.dienste.kis = [.success([claudeDa, KiProgramm(id: "codex", name: "Codex", version: "0.9", gefunden: true)])]
+    await a.ablauf.starte()
+    a.ablauf.waehleProfil(profilPrivat.pfad, gewaehlt: true)
+    a.dienste.verbinden = [.success(.verbunden), .success(.schonVerbunden)]
+    await a.ablauf.verbinde(.claude)
+    #expect(a.dienste.verbindeProfile == [profilStandard.pfad, profilPrivat.pfad])
+    #expect(a.anzeige.kis.first?.status == .verbunden(schon: false))
+    await a.ablauf.verbinde(.codex)
+    #expect(a.dienste.verbindeProfile.last! == nil)
+}
+
+@Test @MainActor func ohneGefundeneProfileVerbindetClaudeWieBisherOhneProfil() async {
+    let a = Aufbau()
+    a.dienste.vault = vaultA
+    a.dienste.konto = [.success(GitHubKonto(verfuegbar: true, angemeldet: true, login: "fabio"))]
+    a.dienste.verdrahtung.profile = []
+    await a.ablauf.starte()
+    await a.ablauf.verbinde(.claude)
+    #expect(a.dienste.verbindeProfile == [nil])
+}
+
+@Test @MainActor func einzigesProfilOhneStandardIstVorgewaehlt() async {
+    let a = Aufbau()
+    a.dienste.vault = vaultA
+    a.dienste.konto = [.success(GitHubKonto(verfuegbar: true, angemeldet: true, login: "fabio"))]
+    a.dienste.verdrahtung.profile = [profilPrivat]
+    await a.ablauf.starte()
+    #expect(a.anzeige.verdrahtung.auswahl == [profilPrivat.pfad])
 }

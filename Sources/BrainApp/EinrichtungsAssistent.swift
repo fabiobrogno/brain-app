@@ -584,6 +584,10 @@ private struct KiAnsicht: View {
             if modell.anzeige.kiSuchtGerade && modell.anzeige.kis.isEmpty {
                 Arbeit(text: "Suche KI-Apps auf diesem Mac …")
             }
+            if let stand = modell.anzeige.verdrahtung.stand, stand.profile.count > 1,
+               modell.anzeige.kis.contains(where: { $0.ziel == .claude && $0.status != .nichtGefunden }) {
+                ProfilAuswahl(modell: modell, profile: stand.profile)
+            }
             ForEach(modell.anzeige.kis, id: \.ziel) { z in KiReihe(modell: modell, zeile: z) }
             if let stand = modell.anzeige.verdrahtung.stand, stand.starterVorhanden {
                 VerdrahtungsBlock(modell: modell, stand: stand)
@@ -594,6 +598,31 @@ private struct KiAnsicht: View {
                 Button("Neu suchen") { modell.tu { await $0.sucheKIsNeu() } }
             }
         }
+    }
+}
+
+/// Mehrere Claude-Code-Profile (`~/.claude`, `~/.claude-privat` …): Kortex sucht sie selbst, weil die App aus dem Finder ohne `CLAUDE_CONFIG_DIR` startet.
+/// Die Auswahl gilt für „Verbinden“ bei Claude Code und für die Hooks.
+private struct ProfilAuswahl: View {
+    @ObservedObject var modell: EinrichtungsModell
+    let profile: [ClaudeProfil]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Welche Claude-Profile?").font(.headline)
+            Text("Du hast mehrere Claude-Profile. Kortex trägt sich nur in die ein, die du hier ankreuzt. Der Hintergrunddienst nutzt das zuerst gewählte.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            ForEach(profile, id: \.pfad) { p in
+                Toggle(isOn: Binding(
+                    get: { modell.anzeige.verdrahtung.auswahl.contains(p.pfad) },
+                    set: { an in modell.ablauf.waehleProfil(p.pfad, gewaehlt: an) })) {
+                    Text(p.anzeigeName + (p.standard ? " (Standard)" : "") + (p.aktiv ? " — Hooks eingetragen" : ""))
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 10))
     }
 }
 
@@ -609,9 +638,9 @@ private struct VerdrahtungsBlock: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Zusätzlich, wenn du möchtest").font(.headline)
-            if claudeDa {
+            if claudeDa && !stand.profile.isEmpty {
                 zeile(.claude, titel: "Claude Code: Kortex beim Arbeiten dabeihaben",
-                      text: "Trägt in ~/.claude/settings.json kleine Helfer ein: Sie zeigen dir beim Fragen passende Notizen, schützen dein Wiki vor versehentlichen Änderungen "
+                      text: "Trägt in die gewählten Claude-Profile (Standard: ~/.claude/settings.json) kleine Helfer ein: Sie zeigen dir beim Fragen passende Notizen, schützen dein Wiki vor versehentlichen Änderungen "
                           + "und sichern den Arbeitsstand. Dazu kommen eine Statuszeile und einige Brain-Befehle. Alles, was dort schon steht, bleibt; vorher legt Kortex eine Sicherung an. "
                           + "Ausschalten nimmt genau das wieder heraus.")
             }
@@ -629,7 +658,7 @@ private struct VerdrahtungsBlock: View {
             }
             if stand.dienstVerfuegbar {
                 zeile(.dienst, titel: "Kortex darf im Hintergrund aufräumen",
-                      text: "Richtet einen Dienst auf deinem Mac ein (Datei de.brain.tageslauf in ~/Library/LaunchAgents). Er pflegt dein Brain einmal am Tag, wenn der Mac am Netzteil hängt "
+                      text: "Richtet einen Dienst auf deinem Mac ein (Datei de.brain.tageslauf in ~/Library/LaunchAgents). Er pflegt einmal am Tag das Brain, das in Kortex gerade aktiv ist, wenn der Mac am Netzteil hängt "
                           + "und ruht, und nutzt dafür dein Claude. Ausschalten löscht ihn wieder.")
             }
         }
@@ -642,7 +671,7 @@ private struct VerdrahtungsBlock: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Toggle(titel, isOn: Binding(
-                    get: { stand.aktiv(was) },
+                    get: { was == .claude ? stand.claudeAktiv(in: anzeige.auswahl) : stand.aktiv(was) },
                     set: { neu in modell.tu { await $0.schalte(was, an: neu) } }))
                     .disabled(anzeige.arbeitet != nil)
                 if anzeige.arbeitet == was { ProgressView().controlSize(.small) }

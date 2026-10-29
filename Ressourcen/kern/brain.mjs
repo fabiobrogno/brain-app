@@ -365,6 +365,8 @@ const befehle = {
 
 const f = befehle[befehl];
 if (!f) { console.error(`Befehle: ${Object.keys(befehle).join(" | ")}`); process.exit(64); }
+// Der Hintergrunddienst (LaunchAgent) folgt dem aktiven Vault: gibt es keinen gültigen, endet sein Lauf still mit Exit 0 (eine Zeile im Protokoll des Dienstes).
+if (!vault && befehl === "tageslauf" && rest.includes("--dienst")) { console.error(`${new Date().toISOString()} Hintergrunddienst: kein aktiver Vault — Lauf übersprungen.`); process.exit(0); }
 if (!vault && !OHNE_VAULT.has(befehl)) { console.error(vaultFehler.message); process.exit(2); }
 // befehle sind sonst synchron; backup ist async (dynamischer Import) — await auf einen einfachen
 // Rückgabewert löst sofort auf, ändert also nichts am Verhalten der anderen Befehle.
