@@ -287,7 +287,13 @@ export function shellQuote(wert, plattform = process.platform) {
 // ändert: den Symlink Support/Kortex/bin/kern, den der Starter in KORTEX_KERN_PFAD meldet. Der tatsächliche Ort des Kerns (Bundle, Versionsordner,
 // Temp, Worktree) ist dafür ungeeignet. stabilerKern() liefert den Pfad nur, wenn er gesetzt, absolut und vorhanden ist und weder in einem .app-Bundle
 // noch unter dem Temp-Ordner noch in einem Worktree liegt (geschriebene UND aufgelöste Form); sonst null.
-const TEMP_WURZELN = () => [...new Set([tmpdir(), echterPfadOderSelbst(tmpdir()), "/tmp", "/private/tmp", "/var/folders", "/private/var/folders"])];
+// Testhaken: KORTEX_KERN_TEMP_WURZELN (nur mit KORTEX_KERN_UNSTABIL_ERLAUBT=1) ersetzt die Temp-Ordner (":"-getrennt, leer = keine). So lässt sich der echte
+// Weg (Starter → bin/kern) in einem Wegwerf-Support-Ordner prüfen, der selbst unter Temp liegt.
+const TEMP_WURZELN = () => {
+  const ersatz = process.env.KORTEX_KERN_UNSTABIL_ERLAUBT === "1" ? process.env.KORTEX_KERN_TEMP_WURZELN : undefined;
+  if (typeof ersatz === "string") return ersatz.split(delimiter).filter(Boolean);
+  return [...new Set([tmpdir(), echterPfadOderSelbst(tmpdir()), "/tmp", "/private/tmp", "/var/folders", "/private/var/folders"])];
+};
 function istUnbestaendig(pfad, tempWurzeln = TEMP_WURZELN()) {
   const formen = [resolve(pfad), echterPfadOderSelbst(resolve(pfad))];
   return formen.some((f) => {
@@ -324,6 +330,40 @@ export function kernAnzeige({ env = process.env, tempWurzeln } = {}) { return fw
 export function kernStabilOderEnde(opt = {}) {
   try { return kernStabil(opt); }
   catch (e) { if (!(e instanceof KernNichtStabilFehler)) throw e; console.error(e.message); process.exit(3); }
+}
+// --- Starter und Hook-Befehle -------------------------------------------------------------------------------------------------
+// Claude-Code-Hooks laufen bei JEDEM Prompt. Sie zeigen deshalb nie direkt auf Node oder den Kern, sondern auf den Starter der App
+// (Support/Kortex/bin/kortex, neben dem Symlink bin/kern): `kortex hook <name>` startet adapters/claude-code/<name>.mjs. Fehlt der Starter,
+// Node oder der Kern (App gelöscht, Update läuft gerade), beendet sich der Befehl still mit Exit 0 — nie eine Fehlermeldung in der Sitzung.
+// KORTEX_STARTER_PFAD (nur mit KORTEX_KERN_UNSTABIL_ERLAUBT=1, für Tests) lenkt den Starter um.
+export function starterPfad({ env = process.env, tempWurzeln } = {}) {
+  if (env.KORTEX_KERN_UNSTABIL_ERLAUBT === "1" && typeof env.KORTEX_STARTER_PFAD === "string" && isAbsolute(env.KORTEX_STARTER_PFAD)) return env.KORTEX_STARTER_PFAD;
+  return join(dirname(kernStabil({ env, tempWurzeln })), "kortex");
+}
+export class StarterFehltFehler extends Error {
+  constructor(pfad) {
+    super(`Der Starter von Kortex fehlt (${pfad}). Öffne die Kortex-App einmal, dann wird er angelegt, und versuche es danach noch einmal.`);
+    this.name = "StarterFehltFehler";
+  }
+}
+// Für Einstiege, die Hook-Befehle eintragen: Starter-Pfad, der vorhanden sein muss (sonst Exit 3 mit klarer Meldung). In der Testumgebung genügt der Pfad.
+export function starterOderEnde(opt = {}) {
+  const env = opt.env || process.env;
+  kernStabilOderEnde(opt);
+  const s = starterPfad(opt);
+  if (env.KORTEX_KERN_UNSTABIL_ERLAUBT !== "1" && !existsSync(s)) { console.error(new StarterFehltFehler(s).message); process.exit(3); }
+  return s;
+}
+// Befehlszeile für settings.json (POSIX-Shell): fehlt der Starter, Exit 0 ohne Ausgabe; sonst ersetzt der Starter die Shell (Exit-Code und stdin des Hooks bleiben erhalten).
+export function hookBefehl(starter, name, args = "") {
+  if (!/^[a-z][a-z0-9-]*$/.test(name)) throw new Error(`ungültiger Hook-Name: ${name}`);
+  const q = shellQuote(fwd(starter), "linux");
+  return `[ -x ${q} ] && exec ${q} hook ${name}${args} || exit 0`;
+}
+// Gehört dieser Befehl zu einem Kortex-Hook (neue Form, jeder Starter-Ort)? → Hook-Name oder null.
+export function hookNameAusBefehl(befehl) {
+  const m = typeof befehl === "string" ? /kortex' hook ([a-z][a-z0-9-]*)(?: |$)/.exec(befehl) : null;
+  return m ? m[1] : null;
 }
 // Absolute, gequotete Programmpfade für gerenderte Befehle (AGENTS.md, Skills, Hook-Befehle): ein frisch
 // eingerichteter Rechner hat das private Node/git oft NICHT im PATH — darum nie nackt "node"/"git".

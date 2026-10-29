@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // brain.mjs — ein Einstieg für alle Agenten und Menschen. Kein Agent-spezifischer Code hier.
-// Befehle: index | search "<frage>" [n] | lint | ingest-check <datei> | refresh | hooks-install | version | pflege | messlatte | status [--json]
+// Befehle: index | search "<frage>" [n] | lint | ingest-check <datei> | refresh | hooks-install | claude-hooks | version | pflege | messlatte | status [--json]
 //   | lernschleife | antworten | wirkung | tageslauf | rueckfragen | zurueck | traum | dienst | nachernte | gedaechtnis | gesundheit
 // Skill-Helfer (statt POSIX-Shell, laufen gleich auf macOS/Windows/Linux): lock | unlock | sha <datei> | jetzt | review-erledigt
 // Exit-Codes: 0 ok, 2 Befunde (lint) / unbekannte Option (zeig), 3 Secrets (ingest-check), 64 falscher Aufruf.
@@ -22,7 +22,7 @@ const [befehl, ...rest] = process.argv.slice(2);
 // Kein Positions-Vault: brain.mjs bekommt Unterbefehl + dessen Argumente, keinen Vault-Pfad — der Vault kommt aus --vault <pfad>
 // (pfade.mjs nimmt es aus der Kommandozeile), BRAIN_VAULT oder dem aktiven Vault der App (Positionsargumente gehen an die Werkzeuge in index/lint/refresh).
 // Ohne Vault laufen nur die Befehle, die keinen brauchen; alle anderen enden mit Exit 2 und einer klaren Meldung.
-const OHNE_VAULT = new Set(["version", "jetzt", "sha", "ingest-check"]);
+const OHNE_VAULT = new Set(["version", "jetzt", "sha", "ingest-check", "claude-hooks"]);
 let vault = null, vaultFehler = null;
 try { vault = vaultPfad(["", ""]); } catch (e) { if (!(e instanceof KeinVaultFehler)) throw e; vaultFehler = e; }
 const b = qmdAufruf();
@@ -248,7 +248,10 @@ const befehle = {
     if (!hatQmd()) console.error("Hinweis: Die bessere Suche ist nicht installiert — der Suchindex wird nicht aufgefrischt. Die einfache Suche funktioniert trotzdem.");
     return node("search-refresh.mjs", vault);
   },
-  "hooks-install": () => node("install-git-hooks.mjs", vault),
+  // „brain hooks-install [--aus|--stand|--ersetzen]" — core.hooksPath des Vaults auf die Hooks des Kerns (stabiler Pfad); --aus nimmt ihn wieder heraus.
+  "hooks-install": (...a) => node("install-git-hooks.mjs", vault, ...a),
+  // „brain claude-hooks [--entfernen|--stand] [--claude-home <ordner>]" — Hooks, Statuszeile und Brain-Befehle in Claude Code eintragen bzw. entfernen.
+  "claude-hooks": (...a) => node(join("adapters", "claude-code", "install.mjs"), ...(vault ? [vault] : []), ...a),
   doctor: () => node("doctor.mjs", vault),
   // Gesamtzustand (✓/⚠/✕) — für Menschen als Text, für die Brain-App als genau eine JSON-Zeile (--json).
   status: async (...a) => {

@@ -152,6 +152,35 @@ public struct WerkstattDienste: EinrichtungsDienste {
         return (j["schonVerbunden"] as? Bool) == true ? .schonVerbunden : .verbunden
     }
 
+    // MARK: Verdrahtung
+
+    public func verdrahtungsStand() async throws -> VerdrahtungsStand {
+        Self.verdrahtungsStand(aus: try await rufe("GET", "/api/kern/stand"))
+    }
+
+    public func verdrahte(_ was: Verdrahtung, an: Bool, ersetzen: Bool) async throws -> VerdrahtungsStand {
+        var b: [String: Any] = ["was": was.rawValue, "an": an]
+        if ersetzen { b["ersetzen"] = true }
+        let j = try await rufe("POST", "/api/kern/verdrahten", b)
+        return Self.verdrahtungsStand(aus: j["stand"] as? [String: Any] ?? [:])
+    }
+
+    /// `{ starter: {vorhanden}, claude: {aktiv} | {fehler}, git: {moeglich, aktiv, fremder}, dienst: {verfuegbar, eingerichtet} }`.
+    /// Ein Abschnitt mit `fehler` zählt als „nicht eingetragen“ (die Oberfläche bietet das Eintragen an und zeigt dessen Fehler).
+    static func verdrahtungsStand(aus j: [String: Any]) -> VerdrahtungsStand {
+        let claude = j["claude"] as? [String: Any]
+        let versionsverlauf = j["git"] as? [String: Any]
+        let dienst = j["dienst"] as? [String: Any]
+        return VerdrahtungsStand(
+            starterVorhanden: ((j["starter"] as? [String: Any])?["vorhanden"] as? Bool) == true,
+            claudeAktiv: (claude?["aktiv"] as? Bool) == true,
+            gitMoeglich: (versionsverlauf?["moeglich"] as? Bool) == true && versionsverlauf?["fehler"] == nil,
+            gitAktiv: (versionsverlauf?["aktiv"] as? Bool) == true,
+            gitFremderEintrag: (versionsverlauf?["fremder"] as? Bool) == true,
+            dienstVerfuegbar: (dienst?["verfuegbar"] as? Bool) == true,
+            dienstAktiv: (dienst?["eingerichtet"] as? Bool) == true)
+    }
+
     // MARK: Probe
 
     public func probe(frage: String) async throws -> ProbeErgebnis {

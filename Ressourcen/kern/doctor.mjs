@@ -7,7 +7,7 @@ import { join, isAbsolute } from "node:path";
 import { pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
 import { totalmem, homedir } from "node:os";
-import { vaultPfadOderEnde, ladeConfig, configFehler, ordner, renderVorlage, KERN, ALT_KIT_ORDNER } from "./pfade.mjs";
+import { vaultPfadOderEnde, ladeConfig, configFehler, ordner, renderVorlage, hookNameAusBefehl, KERN, ALT_KIT_ORDNER } from "./pfade.mjs";
 import { gitBefehl } from "./werkzeug.mjs";
 import { qmdAufruf, VOLL_AB_GB } from "./qmd-befehl.mjs";
 import { findeClaude } from "./ernte.mjs";
@@ -132,10 +132,13 @@ else {
   const heimSettings = join(homedir(), ".claude", "settings.json");
   let settings = null;
   try { settings = JSON.parse(readFileSync(heimSettings, "utf8")); } catch { settings = null; }
-  const hooksText = settings ? JSON.stringify(settings.hooks || {}) : "";
-  if (!hooksText.includes("/adapters/claude-code/")) {
+  // Eigene Einträge: neue Form (`… kortex' hook <name>`, über den Starter der App) oder ältere mit Pfad nach adapters/claude-code/.
+  const eigene = Object.values((settings && typeof settings.hooks === "object" && settings.hooks) || {}).flat().flatMap((e) => (Array.isArray(e?.hooks) ? e.hooks : []))
+    .map((h) => h?.command).filter((c) => typeof c === "string" && (hookNameAusBefehl(c) || c.includes("/adapters/claude-code/")));
+  const hatHook = (name) => eigene.some((c) => hookNameAusBefehl(c) === name || c.includes(`/${name}.mjs`));
+  if (!eigene.length) {
     zeile("OK", "Hooks (Claude Code)", "nicht installiert — nur für Claude Code relevant");
-  } else if (hooksText.includes("werkzeug-protokoll.mjs") && hooksText.includes("ernte-ausloeser.mjs")) {
+  } else if (hatHook("werkzeug-protokoll") && hatHook("ernte-ausloeser")) {
     zeile("OK", "Hooks v0.3", "Live-Aufleuchten und Hintergrund-Ernte eingerichtet");
   } else {
     zeile("WARN", "Hooks v0.3", "noch nicht eingerichtet — führe die Einrichtung in Kortex erneut aus.");

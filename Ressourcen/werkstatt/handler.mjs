@@ -14,6 +14,7 @@ import { findeProgramm, erkenneAgenten } from "../gemeinsam/ki.mjs";
 import * as vaultsFn from "../gemeinsam/vaults.mjs";
 import { erzeugeGitHub } from "../gemeinsam/github.mjs";
 import { sicherungStand } from "../gemeinsam/gitsicherung.mjs";
+import { erzeugeVerdrahtung } from "./verdrahtung.mjs";
 
 const HIER = dirname(fileURLToPath(import.meta.url));
 export const MAX_KOERPER = 8 * 1024 * 1024;
@@ -101,6 +102,8 @@ export function erzeugeHandler(o) {
   const cursorText = () => { const e = cursorEintrag(); return e ? JSON.stringify({ mcpServers: { brain: e } }, null, 2) : null; };
   // Gesamtfristen je Route in ms (nur im Test kürzer): mcp/verbinden 25 s, Probe über den MCP-Server 10 s.
   const fristen = { mcpVerbinden: 25_000, probe: 10_000, ...(o.fristen || {}) };
+  // Einrichtung über den Starter der App (Hooks bei Claude Code, Prüfung vor dem Speichern, Hintergrunddienst): werkstatt/verdrahtung.mjs. o.starter = Ersatz für Tests.
+  const verdrahtung = erzeugeVerdrahtung({ starter: o.starter || join(vaultOpt.support || supportOrdner(), "bin", "kortex") });
 
   // Liste für die Oberfläche: gespeicherte Vaults (+ ein nur für diesen Start geöffneter, der nicht in vaults.json steht).
   function vaultListe(v) {
@@ -181,6 +184,8 @@ export function erzeugeHandler(o) {
       case "/api/git/remote": nur("POST"); return V().gitRemote(eingabe().url);
       case "/api/git/diff": nur("GET"); return V().gitDiff(q.get("pfad"), q.get("sha") || undefined);
       case "/api/git/fassung": nur("GET"); return V().gitFassung(q.get("pfad"), q.get("sha"));
+      case "/api/kern/stand": nur("GET"); return verdrahtung.stand(v);
+      case "/api/kern/verdrahten": nur("POST"); return verdrahtung.verdrahte(v, eingabe());
       case "/api/mcp/verbinden": { nur("POST"); V(); return verbinde(eingabe()); }
       case "/api/ki/erkennen": nur("GET"); return erkenneAgenten({ neu: q.get("neu") === "1" });
       case "/api/vaults": nur("GET"); return vaultListe(v);

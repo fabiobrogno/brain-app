@@ -52,14 +52,17 @@ private func kernVersionen(_ p: AppPfade) -> [String] {
 
 private struct Lauf { let status: Int32; let aus: String; let fehler: String }
 
-private func starte(_ url: URL, _ args: [String] = []) -> Lauf {
+private func starte(_ url: URL, _ args: [String] = [], eingabe: String = "") -> Lauf {
     let p = Process()
     p.executableURL = url
     p.arguments = args
-    let o = Pipe(), e = Pipe()
+    let o = Pipe(), e = Pipe(), i = Pipe()
     p.standardOutput = o
     p.standardError = e
+    p.standardInput = i
     try! p.run()
+    i.fileHandleForWriting.write(Data(eingabe.utf8))
+    try? i.fileHandleForWriting.close()
     let aus = o.fileHandleForReading.readDataToEndOfFile()
     let fehler = e.fileHandleForReading.readDataToEndOfFile()
     p.waitUntilExit()
@@ -421,9 +424,11 @@ private final class Atomic: @unchecked Sendable {
     try Paket().laufzeit(p).installiere()
     let text = try String(contentsOf: p.starter, encoding: .utf8)
     #expect(text.hasPrefix("#!/bin/sh\n"))
-    #expect(text.contains("exec \"$node\" \"$kern\" \"$@\""))
+    #expect(text.contains("exec \"$node\" \"$kern/brain.mjs\" \"$@\""))
     #expect(text.contains("node='\(p.basis.path)/bin/node'"))
-    #expect(text.contains("kern='\(p.basis.path)/bin/kern/brain.mjs'"))
+    #expect(text.contains("kern='\(p.basis.path)/bin/kern'"), "der stabile Symlink, nie ein Versionsordner")
+    #expect(text.contains("KORTEX_KERN_PFAD=\"$kern\"\nexport KORTEX_KERN_PFAD"))
+    #expect(!text.contains("/kern/1.0.0"))
     let rechte = try FileManager.default.attributesOfItem(atPath: p.starter.path)[.posixPermissions] as? Int
     #expect(rechte == 0o755)
 }
@@ -475,5 +480,71 @@ private final class Atomic: @unchecked Sendable {
     try Paket().laufzeit(p).installiere() // Node da, Bundle ohne Kern
     let l = starte(p.starter)
     #expect(l.status != 0)
+    #expect(l.fehler.contains("Kern fehlt"))
+}
+
+@Test func starterMeldetStabilenKernPfadAnDenKern() throws {
+    let p = AppPfade(basis: tempOrdner("App Support 'Test'/Kortex"))
+    let paket = Paket(nodeInhalt: "#!/bin/sh\necho \"pfad:$KORTEX_KERN_PFAD\"\n")
+    paket.kern(kernDateien)
+    try paket.laufzeit(p).installiere()
+    let l = starte(p.starter)
+    #expect(l.status == 0, "\(l.fehler)")
+    #expect(l.aus == "pfad:\(p.basis.path)/bin/kern\n", "bin/kern, nicht kern/<Version>: nur der Symlink übersteht App-Updates")
+}
+
+// MARK: Starter im Hook-Modus (Claude Code ruft ihn bei jedem Prompt)
+
+private let hookKern = kernDateien.merging(["adapters/claude-code/session-start.mjs": "// hook\n"]) { a, _ in a }
+
+@Test func hookModusFuehrtDenHookMitArgumentenUndStdinAus() throws {
+    let p = AppPfade(basis: tempOrdner("App Support 'Test'/Kortex"))
+    let paket = Paket(nodeInhalt: "#!/bin/sh\nfor a in \"$@\"; do echo \"arg:$a\"; done\ncat\nexit 2\n")
+    paket.kern(hookKern)
+    try paket.laufzeit(p).installiere()
+    let l = starte(p.starter, ["hook", "session-start", "--art", "fakt"], eingabe: "{\"prompt\":1}")
+    #expect(l.aus == "arg:\(p.basis.path)/bin/kern/adapters/claude-code/session-start.mjs\narg:--art\narg:fakt\n{\"prompt\":1}", "\(l.fehler)")
+    #expect(l.status == 2, "der Exit-Code eines laufenden Hooks bleibt erhalten (wiki-guard darf blockieren)")
+}
+
+@Test func hookModusEndetStillOhneStarterBestandteile() throws {
+    // Nur der Starter, weder Node noch Kern: Exit 0, keine Ausgabe auf stdout und stderr.
+    let p = AppPfade(basis: tempOrdner("Support mit Leerzeichen"))
+    try Paket().laufzeit(p).schreibeStarter()
+    for name in ["session-start", "brain-hint"] {
+        let l = starte(p.starter, ["hook", name])
+        #expect(l.status == 0 && l.aus.isEmpty && l.fehler.isEmpty, "\(name): \(l.status) \(l.aus) \(l.fehler)")
+    }
+}
+
+@Test func hookModusEndetStillWennKernOderHookFehlt() throws {
+    let p = AppPfade(basis: tempOrdner())
+    try Paket().laufzeit(p).installiere() // Node da, Bundle ohne Kern
+    var l = starte(p.starter, ["hook", "session-start"])
+    #expect(l.status == 0 && l.aus.isEmpty && l.fehler.isEmpty, "Kern fehlt: \(l.fehler)")
+    let paket = Paket()
+    paket.kern(kernDateien) // Kern da, aber ohne diesen Hook
+    try paket.laufzeit(AppPfade(basis: p.basis)).installiere()
+    l = starte(p.starter, ["hook", "gibt-es-nicht"])
+    #expect(l.status == 0 && l.aus.isEmpty && l.fehler.isEmpty, "Hook fehlt: \(l.fehler)")
+}
+
+@Test func hookModusLehntUngueltigeNamenStillAb() throws {
+    let p = AppPfade(basis: tempOrdner())
+    let paket = Paket(nodeInhalt: "#!/bin/sh\necho AUSGEFUEHRT\n")
+    paket.kern(hookKern)
+    try paket.laufzeit(p).installiere()
+    for name in ["../brain", "a/b", "Session-Start", "", "x y", "x;y", "$(echo)"] {
+        let l = starte(p.starter, ["hook", name])
+        #expect(l.status == 0 && l.aus.isEmpty && l.fehler.isEmpty, "Name „\(name)“: \(l.aus) \(l.fehler)")
+    }
+}
+
+@Test func normalerModusMeldetFehlendenKernWeiterMitExit127() throws {
+    // Der Hook-Modus ist still, der Normalmodus nicht: ein Mensch im Terminal soll die Ursache lesen.
+    let p = AppPfade(basis: tempOrdner())
+    try Paket().laufzeit(p).installiere()
+    let l = starte(p.starter, ["status"])
+    #expect(l.status == 127)
     #expect(l.fehler.contains("Kern fehlt"))
 }

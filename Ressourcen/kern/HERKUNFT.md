@@ -61,6 +61,19 @@ Der Kern liegt künftig außerhalb des Vaults (P3/P4: `Support/Kortex/kern/<appV
 - Entfallen: `update-check.mjs` samt Befehl `brain update-check`, Update-Hinweis in `session-start`/`session-hintergrund` und `doctor` (die App aktualisiert sich per Sparkle; der Schalter `updateHinweis` bleibt wirkungslos in der Config gültig), `istQuellVault`, der Unit-Test-Schritt der Commit-Prüfung (`BRAIN_ERSTCOMMIT`), `systemVersion`-Pflicht im `doctor`.
 - Templates (`kit/AGENTS.md`, `skills/*`): neue Platzhalter `{{KERN}}` und `{{DATEN}}`; Kern-Befehle lauten `{{NODE}} "{{KERN}}/brain.mjs" --vault "{{VAULT}}" <befehl>`.
 
+## P6: Einrichtung verdrahten (Hooks, core.hooksPath, LaunchAgent über den Starter)
+- **Hook-Befehle** in `settings.json` (nur macOS/Linux): `[ -x '<Support>/bin/kortex' ] && exec '<Support>/bin/kortex' hook <name> [args] || exit 0` (`pfade.mjs#hookBefehl`, POSIX-gequotet).
+  Der Starter (`Sources/BrainCore/Laufzeit.swift#starterInhalt`) hat einen **Hook-Modus**: `kortex hook <name>` startet `bin/kern/adapters/claude-code/<name>.mjs` mit `bin/node`;
+  fehlt Starter, Node, Kern oder Hook-Datei (oder ist der Name ungültig), endet er still mit Exit 0 ohne Ausgabe. Läuft der Hook, bleiben Exit-Code, Ausgabe und stdin erhalten.
+  Der Normalmodus (`kortex <befehl>`) exportiert `KORTEX_KERN_PFAD=<Support>/bin/kern` und startet `brain.mjs`; fehlt Node/Kern, Exit 127 mit Meldung.
+- `install.mjs` verlangt `KORTEX_KERN_PFAD` **und** den Starter (`pfade.mjs#starterOderEnde`, Exit 3). Alt-Einträge (alter Kit-Ordner im Vault, früherer Kern-Pfad, `node-start.sh`-Form, Versionsordner) werden erkannt und ersetzt.
+  Neu: `--entfernen` (Rückweg: Hooks, Statuszeile, Brain-Befehle; Fremdes bleibt) und `--stand` (JSON). `brain.mjs`: Befehl `claude-hooks`; `hooks-install` reicht Flags durch.
+- `install-git-hooks.mjs`: `--aus` (nur ein zu Kortex gehörender Eintrag wird entfernt), `--stand`, und ein **fremder** `core.hooksPath` bleibt stehen (Exit 4), außer mit `--ersetzen`.
+- `tageslauf/dienst.mjs`: `status --json`. Der LaunchAgent trägt weiter nur `bin/kern` ein (`dienstAn`); `launchctl` nur per Attrappe (`BRAIN_LAUNCHCTL`) in Tests.
+- Testhaken (nur mit `KORTEX_KERN_UNSTABIL_ERLAUBT=1`): `KORTEX_STARTER_PFAD` (Starter umlenken), `KORTEX_KERN_TEMP_WURZELN` (Temp-Ordner für die Prüfung „unbeständig“ ersetzen, leer = keine; so kann ein Wegwerf-Support-Ordner als stabil gelten).
+- Werkstatt (`Ressourcen/werkstatt/verdrahtung.mjs`): `GET /api/kern/stand`, `POST /api/kern/verdrahten {was: claude|git|dienst, an, ersetzen?}` — ruft den Starter (`kortex claude-hooks|hooks-install|dienst …`). Kein Hintergrunddienst in der Vorschau
+  und im Testmodus ohne Attrappe. Der Assistent (Schritt „KI verbinden“) bietet die drei Eintragungen als Schalter an, jede nur auf Klick, mit Beschreibung und Rückweg.
+
 ## Mitgenommen
 - `VERSION` (`0.5.1`, Stand des Exports; wird in P3 beim App-Bau auf die App-Version gesetzt)
 

@@ -145,6 +145,50 @@ public enum KiVerbindung: Equatable, Sendable {
     case schonVerbunden
 }
 
+/// Wo sich Kortex zusätzlich einträgt (Kern-Umzug P6). Alles läuft über den Starter der App und zeigt nur auf feste Pfade
+/// (`bin/kortex`, `bin/kern`) — nach einem App-Update bleibt es gültig. Jeder Eintrag lässt sich wieder herausnehmen.
+public enum Verdrahtung: String, CaseIterable, Sendable {
+    /// Hooks, Statuszeile und Brain-Befehle in Claude Code (`~/.claude/settings.json`, `~/.claude/commands`).
+    case claude
+    /// Prüfung auf Passwörter und Schlüssel vor jedem Commit im Vault (`core.hooksPath`).
+    case git
+    /// Hintergrunddienst (LaunchAgent) für den täglichen Tageslauf.
+    case dienst
+}
+
+/// Was von der Verdrahtung gerade eingetragen ist (`GET /api/kern/stand`).
+public struct VerdrahtungsStand: Equatable, Sendable {
+    /// Der Starter `bin/kortex` ist da; ohne ihn lässt sich nichts eintragen.
+    public var starterVorhanden: Bool
+    public var claudeAktiv: Bool
+    /// Der Vault hat einen Versionsverlauf, die Prüfung vor dem Speichern ist also möglich.
+    public var gitMoeglich: Bool
+    public var gitAktiv: Bool
+    /// Im Vault ist schon ein anderer Hook-Ordner eingetragen (wird nur mit ausdrücklichem Ja ersetzt).
+    public var gitFremderEintrag: Bool
+    public var dienstVerfuegbar: Bool
+    public var dienstAktiv: Bool
+
+    public init(starterVorhanden: Bool = false, claudeAktiv: Bool = false, gitMoeglich: Bool = false, gitAktiv: Bool = false,
+                gitFremderEintrag: Bool = false, dienstVerfuegbar: Bool = false, dienstAktiv: Bool = false) {
+        self.starterVorhanden = starterVorhanden
+        self.claudeAktiv = claudeAktiv
+        self.gitMoeglich = gitMoeglich
+        self.gitAktiv = gitAktiv
+        self.gitFremderEintrag = gitFremderEintrag
+        self.dienstVerfuegbar = dienstVerfuegbar
+        self.dienstAktiv = dienstAktiv
+    }
+
+    public func aktiv(_ was: Verdrahtung) -> Bool {
+        switch was {
+        case .claude: return claudeAktiv
+        case .git: return gitAktiv
+        case .dienst: return dienstAktiv
+        }
+    }
+}
+
 public struct ProbeErgebnis: Equatable, Sendable {
     public let frage: String
     /// Titel (sonst Pfade) der gefundenen Seiten.
@@ -190,6 +234,12 @@ public protocol EinrichtungsDienste: Sendable {
     // KI
     func erkenneKIs() async throws -> [KiProgramm]
     func verbinde(_ ziel: KiZiel, umstellen: Bool) async throws -> KiVerbindung
+
+    // Verdrahtung (Hooks bei Claude Code, Prüfung vor dem Speichern, Hintergrunddienst)
+    /// Was eingetragen ist. Liest nur.
+    func verdrahtungsStand() async throws -> VerdrahtungsStand
+    /// Trägt ein (`an`) bzw. nimmt heraus und liefert den neuen Stand. `ersetzen`: einen fremden Hook-Ordner im Vault ersetzen.
+    func verdrahte(_ was: Verdrahtung, an: Bool, ersetzen: Bool) async throws -> VerdrahtungsStand
 
     // Probe
     func probe(frage: String) async throws -> ProbeErgebnis

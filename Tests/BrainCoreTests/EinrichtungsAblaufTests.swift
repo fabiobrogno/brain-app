@@ -32,6 +32,10 @@ private final class FalscheDienste: EinrichtungsDienste, @unchecked Sendable {
     var verbinden: [Result<KiVerbindung, EinrichtungsFehler>] = [.success(.verbunden)]
     var probeAntworten: [Result<ProbeErgebnis, EinrichtungsFehler>] = [.success(ProbeErgebnis(frage: "Brain", treffer: ["Willkommen"]))]
     private(set) var verbindeUmstellen: [Bool] = []
+    /// Verdrahtung: der Stand, den die Dienste melden; `verdrahte` ändert ihn wie die echte Werkstatt (oder wirft der Reihe nach `verdrahtenFehler`).
+    var verdrahtung = VerdrahtungsStand(starterVorhanden: true, gitMoeglich: true, dienstVerfuegbar: true)
+    var verdrahtungLesefehler: EinrichtungsFehler?
+    var verdrahtenFehler: [EinrichtungsFehler?] = []
 
     // Die Wartezeit auf Apples Installation läuft in einer eigenen Aufgabe, parallel zum Test: Protokoll und Bremse sind gesperrt.
     private let sperre = NSLock()
@@ -85,6 +89,21 @@ private final class FalscheDienste: EinrichtungsDienste, @unchecked Sendable {
         merke("verbinde \(ziel.rawValue)")
         verbindeUmstellen.append(umstellen)
         return try nimm(&verbinden).get()
+    }
+    func verdrahtungsStand() async throws -> VerdrahtungsStand {
+        merke("verdrahtungsStand")
+        if let f = verdrahtungLesefehler { throw f }
+        return verdrahtung
+    }
+    func verdrahte(_ was: Verdrahtung, an: Bool, ersetzen: Bool) async throws -> VerdrahtungsStand {
+        merke("verdrahte \(was.rawValue) \(an ? "an" : "aus")\(ersetzen ? " ersetzen" : "")")
+        if !verdrahtenFehler.isEmpty, let f = verdrahtenFehler.removeFirst() { throw f }
+        switch was {
+        case .claude: verdrahtung.claudeAktiv = an
+        case .git: verdrahtung.gitAktiv = an; verdrahtung.gitFremderEintrag = false
+        case .dienst: verdrahtung.dienstAktiv = an
+        }
+        return verdrahtung
     }
     func probe(frage: String) async throws -> ProbeErgebnis { merke("probe \(frage)"); return try nimm(&probeAntworten).get() }
 
@@ -1031,4 +1050,76 @@ private let gesperrtText = "Git ist für dieses Brain gesperrt, bis du ihm im St
     await beiSicherung(a)
     await a.ablauf.ueberspringe()
     #expect(a.speicher.lade()?.uebersprungen.contains("sicherung") == true)
+}
+
+// MARK: Verdrahtung (Hooks bei Claude Code, Prüfung vor dem Speichern, Hintergrunddienst)
+
+@Test @MainActor func kiSchrittLiestDenStandUndTraegtVonAlleinNichtsEin() async {
+    let a = Aufbau()
+    a.dienste.vault = vaultA
+    a.dienste.konto = [.success(GitHubKonto(verfuegbar: true, angemeldet: true, login: "fabio"))]
+    await a.ablauf.starte()
+    #expect(a.zustand.aktuell == .ki)
+    #expect(a.anzeige.verdrahtung.stand == VerdrahtungsStand(starterVorhanden: true, gitMoeglich: true, dienstVerfuegbar: true))
+    #expect(a.dienste.aufrufe.filter { $0.hasPrefix("verdrahte ") }.isEmpty, "eingetragen wird nur auf Klick")
+}
+
+@Test @MainActor func lesefehlerDerVerdrahtungBlendetDenBlockNurAus() async {
+    let a = Aufbau()
+    a.dienste.vault = vaultA
+    a.dienste.konto = [.success(GitHubKonto(verfuegbar: true, angemeldet: true, login: "fabio"))]
+    a.dienste.verdrahtungLesefehler = EinrichtungsFehler("kaputt")
+    await a.ablauf.starte()
+    #expect(a.zustand.aktuell == .ki)
+    #expect(a.anzeige.verdrahtung.stand == nil)
+    #expect(a.anzeige.kis.first?.status == .bereit, "der Schritt selbst bleibt unbeeinträchtigt")
+}
+
+@Test @MainActor func claudeHooksEintragenUndWiederHerausnehmen() async {
+    let a = Aufbau()
+    a.dienste.vault = vaultA
+    a.dienste.konto = [.success(GitHubKonto(verfuegbar: true, angemeldet: true, login: "fabio"))]
+    await a.ablauf.starte()
+    await a.ablauf.schalte(.claude, an: true)
+    #expect(a.anzeige.verdrahtung.stand?.claudeAktiv == true)
+    #expect(a.anzeige.verdrahtung.arbeitet == nil)
+    await a.ablauf.schalte(.claude, an: false)
+    #expect(a.anzeige.verdrahtung.stand?.claudeAktiv == false)
+    #expect(a.dienste.aufrufe.filter { $0.hasPrefix("verdrahte ") } == ["verdrahte claude an", "verdrahte claude aus"])
+    #expect(a.logzeilen.contains("einrichtung verdrahtung claude an") && a.logzeilen.contains("einrichtung verdrahtung claude aus"))
+}
+
+@Test @MainActor func fehlerBeimEintragenBleibtSichtbarUndLaesstDenStandStehen() async {
+    let a = Aufbau()
+    a.dienste.vault = vaultA
+    a.dienste.konto = [.success(GitHubKonto(verfuegbar: true, angemeldet: true, login: "fabio"))]
+    await a.ablauf.starte()
+    a.dienste.verdrahtenFehler = [EinrichtungsFehler("Kortex ist noch nicht ganz eingerichtet.", status: 409, art: "nicht-stabil")]
+    await a.ablauf.schalte(.dienst, an: true)
+    #expect(a.anzeige.verdrahtung.fehler[.dienst] == "Kortex ist noch nicht ganz eingerichtet.")
+    #expect(a.anzeige.verdrahtung.stand?.dienstAktiv == false)
+    #expect(a.anzeige.verdrahtung.arbeitet == nil)
+    await a.ablauf.schalte(.dienst, an: true)
+    #expect(a.anzeige.verdrahtung.fehler[.dienst] == nil, "ein neuer Versuch löscht die alte Meldung")
+    #expect(a.anzeige.verdrahtung.stand?.dienstAktiv == true)
+}
+
+@Test @MainActor func fremderHookOrdnerImVaultFragtErstUndErsetztNurMitJa() async {
+    let a = Aufbau()
+    a.dienste.vault = vaultA
+    a.dienste.konto = [.success(GitHubKonto(verfuegbar: true, angemeldet: true, login: "fabio"))]
+    a.dienste.verdrahtung.gitFremderEintrag = true
+    await a.ablauf.starte()
+    a.dienste.verdrahtenFehler = [EinrichtungsFehler("Schon eine andere Prüfung.", status: 409, art: "anders")]
+    await a.ablauf.schalte(.git, an: true)
+    #expect(a.anzeige.verdrahtung.gitFragtErsetzen)
+    #expect(a.anzeige.verdrahtung.fehler[.git] == nil)
+    #expect(a.anzeige.verdrahtung.stand?.gitAktiv == false)
+    a.ablauf.lehneGitErsetzenAb()
+    #expect(!a.anzeige.verdrahtung.gitFragtErsetzen)
+    #expect(a.dienste.aufrufe.filter { $0.hasPrefix("verdrahte ") } == ["verdrahte git an"], "ohne Ja wird nichts ersetzt")
+    await a.ablauf.schalte(.git, an: true, ersetzen: true)
+    #expect(a.dienste.aufrufe.last == "verdrahte git an ersetzen")
+    #expect(a.anzeige.verdrahtung.stand?.gitAktiv == true)
+    #expect(!a.anzeige.verdrahtung.gitFragtErsetzen)
 }

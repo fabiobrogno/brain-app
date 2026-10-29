@@ -284,3 +284,40 @@ private func dienste(_ w: FalscheWerkstatt, pfade: AppPfade? = nil, home: URL? =
         #expect(f.status == 409 && f.art == "fremd")
     }
 }
+
+// MARK: Verdrahtung (Hooks bei Claude Code, Prüfung vor dem Speichern, Hintergrunddienst)
+
+@Test func verdrahtungsStandLiestAlleAbschnitte() async throws {
+    let w = FalscheWerkstatt(antwort(#"{"starter":{"vorhanden":true},"claude":{"aktiv":true,"hooks":{"soll":8}},"git":{"moeglich":true,"aktiv":false,"fremder":true},"dienst":{"verfuegbar":true,"eingerichtet":true,"geladen":false}}"#))
+    let s = try await dienste(w).verdrahtungsStand()
+    #expect(s == VerdrahtungsStand(starterVorhanden: true, claudeAktiv: true, gitMoeglich: true, gitAktiv: false, gitFremderEintrag: true, dienstVerfuegbar: true, dienstAktiv: true))
+    #expect(w.aufrufe == [.init(methode: "GET", pfad: "/api/kern/stand", body: nil)])
+}
+
+@Test func verdrahtungsStandMitFehlerAbschnittenOderOhneStarterZaehltAlsNichtEingetragen() async throws {
+    let w = FalscheWerkstatt(antwort(#"{"starter":{"vorhanden":true},"claude":{"fehler":"kaputt"},"git":{"fehler":"kaputt"},"dienst":{"verfuegbar":false}}"#),
+                             antwort(#"{"starter":{"vorhanden":false},"claude":null,"git":null,"dienst":{"verfuegbar":false}}"#))
+    let d = dienste(w)
+    #expect(try await d.verdrahtungsStand() == VerdrahtungsStand(starterVorhanden: true))
+    #expect(try await d.verdrahtungsStand() == VerdrahtungsStand())
+}
+
+@Test func verdrahteSchicktNurWasUndAnUndErsetzenNurWennGewollt() async throws {
+    let w = FalscheWerkstatt(antwort(#"{"ok":true,"stand":{"starter":{"vorhanden":true},"claude":{"aktiv":true},"git":{"moeglich":false},"dienst":{"verfuegbar":false}}}"#),
+                             antwort(#"{"ok":true,"stand":{"starter":{"vorhanden":true},"claude":{"aktiv":false},"git":{"moeglich":true,"aktiv":true},"dienst":{"verfuegbar":false}}}"#))
+    let d = dienste(w)
+    #expect(try await d.verdrahte(.claude, an: true, ersetzen: false).claudeAktiv == true)
+    #expect(try await d.verdrahte(.git, an: true, ersetzen: true).gitAktiv == true)
+    #expect(w.aufrufe == [.init(methode: "POST", pfad: "/api/kern/verdrahten", body: ["was": "claude", "an": true]),
+                          .init(methode: "POST", pfad: "/api/kern/verdrahten", body: ["was": "git", "an": true, "ersetzen": true])])
+}
+
+@Test func verdrahteMitFremdemHookOrdnerIstEinFehlerMitArt() async {
+    let w = FalscheWerkstatt(antwort(409, #"{"fehler":"In diesem Vault ist schon eine andere Prüfung eingetragen.","art":"anders"}"#))
+    do {
+        _ = try await dienste(w).verdrahte(.git, an: true, ersetzen: false)
+        Issue.record("sollte fehlschlagen")
+    } catch let e as EinrichtungsFehler {
+        #expect(e.status == 409 && e.art == "anders")
+    } catch { Issue.record("falscher Fehler: \(error)") }
+}

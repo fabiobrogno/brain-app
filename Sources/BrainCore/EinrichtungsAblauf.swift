@@ -78,6 +78,19 @@ public struct SicherungAnzeige: Equatable, Sendable {
     public var istVerbunden: Bool { ergebnis != nil || schonVerbunden }
 }
 
+/// Stand der Eintragungen im Schritt „KI verbinden“ (Hooks bei Claude Code, Prüfung vor dem Speichern, Hintergrunddienst).
+public struct VerdrahtungsAnzeige: Equatable, Sendable {
+    /// nil: noch nicht gelesen oder nicht lesbar — dann zeigt die Oberfläche den Block nicht.
+    public var stand: VerdrahtungsStand?
+    /// Welcher Eintrag gerade geschrieben oder herausgenommen wird.
+    public var arbeitet: Verdrahtung?
+    public var fehler: [Verdrahtung: String] = [:]
+    /// Im Vault ist schon ein anderer Hook-Ordner eingetragen: Rückfrage, ob er ersetzt werden soll.
+    public var gitFragtErsetzen = false
+
+    public init() {}
+}
+
 /// Alles, was die Oberfläche zusätzlich zur Schrittfolge anzeigt.
 public struct EinrichtungsAnzeige: Equatable, Sendable {
     public var git: GitStand?
@@ -89,6 +102,7 @@ public struct EinrichtungsAnzeige: Equatable, Sendable {
     public var sicherung = SicherungAnzeige()
     public var kis: [KiZeile] = []
     public var kiSuchtGerade = false
+    public var verdrahtung = VerdrahtungsAnzeige()
     public var probe = ProbeAnzeige.offen
 
     public init() {}
@@ -579,6 +593,47 @@ public final class EinrichtungsAblauf {
             zustand.meldeFehler(.ki, Self.text(error))
         }
         anzeige.kiSuchtGerade = false
+        await ladeVerdrahtung()
+    }
+
+    // MARK: Verdrahtung (Hooks, Prüfung vor dem Speichern, Hintergrunddienst)
+
+    /// Liest, was eingetragen ist. Ein Lesefehler ist kein Hindernis für den Schritt: der Block bleibt dann einfach unsichtbar.
+    public func ladeVerdrahtung() async {
+        do { anzeige.verdrahtung.stand = try await dienste.verdrahtungsStand() } catch { anzeige.verdrahtung.stand = nil }
+        melde()
+    }
+
+    /// Trägt einen Eintrag ein (`an`) oder nimmt ihn heraus. Nur auf ausdrücklichen Klick des Nutzers. Fehler bleiben sichtbar und lassen
+    /// den Stand, wie er war (die Installer schreiben atomar und legen vorher eine Sicherung an).
+    public func schalte(_ was: Verdrahtung, an: Bool, ersetzen: Bool = false) async {
+        guard anzeige.verdrahtung.arbeitet == nil else { return }
+        anzeige.verdrahtung.arbeitet = was
+        anzeige.verdrahtung.fehler[was] = nil
+        anzeige.verdrahtung.gitFragtErsetzen = false
+        melde()
+        do {
+            anzeige.verdrahtung.stand = try await dienste.verdrahte(was, an: an, ersetzen: ersetzen)
+            log("einrichtung verdrahtung \(was.rawValue) \(an ? "an" : "aus")")
+        } catch let e as EinrichtungsFehler {
+            if was == .git, an, e.status == 409, e.art == "anders" {
+                anzeige.verdrahtung.gitFragtErsetzen = true
+            } else {
+                anzeige.verdrahtung.fehler[was] = e.meldung
+            }
+            log("einrichtung verdrahtung-fehler \(was.rawValue)")
+        } catch {
+            anzeige.verdrahtung.fehler[was] = Self.text(error)
+            log("einrichtung verdrahtung-fehler \(was.rawValue)")
+        }
+        anzeige.verdrahtung.arbeitet = nil
+        melde()
+    }
+
+    /// „Nicht ersetzen“: die Rückfrage zum fremden Hook-Ordner wird geschlossen, nichts verändert.
+    public func lehneGitErsetzenAb() {
+        anzeige.verdrahtung.gitFragtErsetzen = false
+        melde()
     }
 
     public func sucheKIsNeu() async {

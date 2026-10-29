@@ -585,11 +585,70 @@ private struct KiAnsicht: View {
                 Arbeit(text: "Suche KI-Apps auf diesem Mac …")
             }
             ForEach(modell.anzeige.kis, id: \.ziel) { z in KiReihe(modell: modell, zeile: z) }
+            if let stand = modell.anzeige.verdrahtung.stand, stand.starterVorhanden {
+                VerdrahtungsBlock(modell: modell, stand: stand)
+            }
             if !modell.anzeige.kis.contains(where: { $0.status != .nichtGefunden }) && !modell.anzeige.kiSuchtGerade {
                 Text("Keine unterstützte KI-App gefunden. Installiere sie und suche dann neu — oder überspringe diesen Schritt, du kannst ihn später im Menü wiederholen.")
                     .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
                 Button("Neu suchen") { modell.tu { await $0.sucheKIsNeu() } }
             }
+        }
+    }
+}
+
+/// Zusätzliche Eintragungen, jede nur auf ausdrücklichen Klick und mit Rückweg: Hooks bei Claude Code, Prüfung auf Passwörter vor dem Speichern,
+/// Hintergrunddienst. Die Texte sagen genau, was wo eingetragen wird.
+private struct VerdrahtungsBlock: View {
+    @ObservedObject var modell: EinrichtungsModell
+    let stand: VerdrahtungsStand
+
+    private var anzeige: VerdrahtungsAnzeige { modell.anzeige.verdrahtung }
+    private var claudeDa: Bool { modell.anzeige.kis.contains { $0.ziel == .claude && $0.status != .nichtGefunden } }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Zusätzlich, wenn du möchtest").font(.headline)
+            if claudeDa {
+                zeile(.claude, titel: "Claude Code: Kortex beim Arbeiten dabeihaben",
+                      text: "Trägt in ~/.claude/settings.json kleine Helfer ein: Sie zeigen dir beim Fragen passende Notizen, schützen dein Wiki vor versehentlichen Änderungen "
+                          + "und sichern den Arbeitsstand. Dazu kommen eine Statuszeile und einige Brain-Befehle. Alles, was dort schon steht, bleibt; vorher legt Kortex eine Sicherung an. "
+                          + "Ausschalten nimmt genau das wieder heraus.")
+            }
+            if stand.gitMoeglich {
+                zeile(.git, titel: "Vor jedem Commit nach Passwörtern und Schlüsseln suchen",
+                      text: "Beim Speichern einer Version in deinem Brain prüft Kortex, ob Passwörter oder Schlüssel in den Notizen stehen, und hält das Speichern dann an. "
+                          + "Eingetragen wird das nur in diesem Ordner (Einstellung core.hooksPath). Ausschalten entfernt es wieder.")
+                if anzeige.gitFragtErsetzen {
+                    Text("In diesem Ordner ist schon eine andere Prüfung vor dem Speichern eingetragen. Ersetzen? Dann wird sie durch die von Kortex abgelöst.").font(.callout)
+                    HStack {
+                        Button("Nicht ändern") { modell.ablauf.lehneGitErsetzenAb() }
+                        Button("Ersetzen") { modell.tu { await $0.schalte(.git, an: true, ersetzen: true) } }.buttonStyle(.borderedProminent)
+                    }
+                }
+            }
+            if stand.dienstVerfuegbar {
+                zeile(.dienst, titel: "Kortex darf im Hintergrund aufräumen",
+                      text: "Richtet einen Dienst auf deinem Mac ein (Datei de.brain.tageslauf in ~/Library/LaunchAgents). Er pflegt dein Brain einmal am Tag, wenn der Mac am Netzteil hängt "
+                          + "und ruht, und nutzt dafür dein Claude. Ausschalten löscht ihn wieder.")
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    @ViewBuilder private func zeile(_ was: Verdrahtung, titel: String, text: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Toggle(titel, isOn: Binding(
+                    get: { stand.aktiv(was) },
+                    set: { neu in modell.tu { await $0.schalte(was, an: neu) } }))
+                    .disabled(anzeige.arbeitet != nil)
+                if anzeige.arbeitet == was { ProgressView().controlSize(.small) }
+            }
+            Text(text).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if let f = anzeige.fehler[was] { FehlerBox(text: f) }
         }
     }
 }

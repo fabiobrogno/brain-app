@@ -119,9 +119,11 @@ if (aufruf && aufruf === realpathSync(selbst)) {
   if (!["an", "aus", "status"].includes(befehl)) { console.error("Nutzung: brain dienst an|aus|status"); process.exit(64); }
   if (befehl === "status") {
     const s = dienstStatus(vault);
-    console.log(s.eingerichtet ? `Hintergrunddienst eingerichtet${s.geladen ? " und geladen" : ", aber nicht geladen — „brain dienst an“ erneut ausführen"}.`
+    // --json: eine Zeile für die App (Kortex-Einrichtung); nichts davon enthält Zugangsdaten.
+    if (process.argv.includes("--json")) console.log(JSON.stringify({ eingerichtet: s.eingerichtet, geladen: s.geladen, profil: s.profil }));
+    else console.log(s.eingerichtet ? `Hintergrunddienst eingerichtet${s.geladen ? " und geladen" : ", aber nicht geladen — „brain dienst an“ erneut ausführen"}.`
       : "Hintergrunddienst ist nicht eingerichtet — der Tageslauf startet beim Sitzungsstart, wenn er fällig ist.");
-    if (s.eingerichtet) {
+    if (s.eingerichtet && !process.argv.includes("--json")) {
       console.log(`Profil: ${s.profil || "Standardprofil"}`);
       // Nur wenn DIESE Sitzung ausdrücklich ein Profil hat, das der Dienst nicht nutzt — sonst wäre der Hinweis nur Rauschen.
       const sitzung = profilPfad();
