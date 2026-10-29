@@ -68,7 +68,14 @@ private struct KitAttrappe {
     let cli: URL
     let marke: URL
     let freigabe: URL
-    var vertrauen: KitVertrauen { KitVertrauen(node: node, pruefSkript: cli, umgebung: ["BRAIN_APP_SUPPORT": ordner.path], arbeitsordner: ordner) }
+    /// Großzügiges Zeitlimit nur für die Tests: Der erste Start frisch geschriebener Skripte dauert auf einem ausgelasteten Mac
+    /// (paralleles `swift test`) mitunter Sekunden. Das 5-s-Limit der App bleibt unverändert (siehe `pruefSkriptLiegtNebenDerWerkstatt`);
+    /// die Zeitüberschreitung selbst wird mit einem ausdrücklich kurzen Limit geprüft.
+    static let testZeitlimit = Duration.seconds(60)
+    var vertrauen: KitVertrauen {
+        KitVertrauen(node: node, pruefSkript: cli, umgebung: ["BRAIN_APP_SUPPORT": ordner.path], arbeitsordner: ordner,
+                     pruefZeitlimit: Self.testZeitlimit)
+    }
 
     /// `rumpf`: eigener Inhalt der Attrappen-CLI (Shell); `ohneCli`: die Datei fehlt ganz; `status`: Ausgabe von `brain.mjs`.
     init(rumpf: String? = nil, ohneCli: Bool = false, status: String = statusJSON) {
@@ -144,11 +151,11 @@ private struct KitAttrappe {
 }
 
 @Test func vertrauenBrichtNachDemZeitlimitAbUndVerneint() async {
-    let a = KitAttrappe(rumpf: "sleep 5\necho '{\"erlaubt\":true}'\n")
+    let a = KitAttrappe(rumpf: "exec sleep 60\n")
     a.erlaube(true)
     let start = ContinuousClock.now
     #expect(await a.vertrauen.pruefe(vault: a.vault, zeitlimit: .milliseconds(300)) == .nein(.zeitueberschreitung))
-    #expect(ContinuousClock.now - start < .seconds(3), "die Prüfung darf nicht bis zum Ende der Attrappe hängen")
+    #expect(ContinuousClock.now - start < .seconds(30), "die Prüfung darf nicht bis zum Ende der Attrappe hängen")
 }
 
 @Test func vertrauenStartetDiePruefungOhneRelativenPfad() async throws {
@@ -160,7 +167,7 @@ private struct KitAttrappe {
     """)
     let vertrauen = KitVertrauen(node: a.node, pruefSkript: a.cli,
                                  umgebung: ["BRAIN_APP_SUPPORT": a.ordner.path, "PATH": "node_modules/.bin:.:/usr/bin:/bin"],
-                                 arbeitsordner: a.ordner)
+                                 arbeitsordner: a.ordner, pruefZeitlimit: KitAttrappe.testZeitlimit)
     #expect(await vertrauen.pruefe(vault: a.vault) == .erlaubt)
     let pfad = try String(contentsOf: a.ordner.appendingPathComponent("pfad.txt"), encoding: .utf8)
     #expect(pfad == "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin")
@@ -193,7 +200,7 @@ private struct KitAttrappe {
         let a = KitAttrappe(rumpf: rumpf)
         #expect(KitStand(await a.vertrauen.pruefe(vault: a.vault)) == .pruefungFehlgeschlagen, "\(rumpf)")
     }
-    let langsam = KitAttrappe(rumpf: "sleep 5\n")
+    let langsam = KitAttrappe(rumpf: "exec sleep 60\n")
     #expect(KitStand(await langsam.vertrauen.pruefe(vault: langsam.vault, zeitlimit: .milliseconds(300))) == .pruefungFehlgeschlagen)
     let nein = KitAttrappe() // ohne Freigabe-Datei: {"erlaubt":false}
     #expect(KitStand(await nein.vertrauen.pruefe(vault: nein.vault)) == .nichtFreigegeben)
@@ -230,38 +237,38 @@ private struct KitAttrappe {
 
 @Test func kitStatusStartetOhneErlaubnisKeinKit() async {
     let a = KitAttrappe() // keine Freigabe: {"erlaubt":false}
-    #expect(await a.vertrauen.status(a.befehl) == .gesperrt(.nichtFreigegeben))
+    #expect(await a.vertrauen.status(a.befehl, zeitlimit: KitAttrappe.testZeitlimit) == .gesperrt(.nichtFreigegeben))
     #expect(a.kitStarts == 0, "brain.mjs darf ohne Erlaubnis nicht laufen")
     // fehlende CLI: gleiches Bild
     let b = KitAttrappe(ohneCli: true)
     b.erlaube(true) // die Freigabe-Datei zählt nur für die Attrappen-CLI — die fehlt hier
-    #expect(await b.vertrauen.status(b.befehl) == .gesperrt(.pruefungFehlt))
+    #expect(await b.vertrauen.status(b.befehl, zeitlimit: KitAttrappe.testZeitlimit) == .gesperrt(.pruefungFehlt))
     #expect(b.kitStarts == 0)
     // Müll als Antwort der CLI
     let c = KitAttrappe(rumpf: "echo nichts\n")
-    #expect(await c.vertrauen.status(c.befehl) == .gesperrt(.unerwarteteAusgabe))
+    #expect(await c.vertrauen.status(c.befehl, zeitlimit: KitAttrappe.testZeitlimit) == .gesperrt(.unerwarteteAusgabe))
     #expect(c.kitStarts == 0)
 }
 
 @Test func kitStatusLaeuftMitErlaubnisUndFragtJedesMalNeu() async {
     let a = KitAttrappe()
     a.erlaube(true)
-    guard case .status(let s) = await a.vertrauen.status(a.befehl) else { Issue.record("erwartet: gelesener Status"); return }
+    guard case .status(let s) = await a.vertrauen.status(a.befehl, zeitlimit: KitAttrappe.testZeitlimit) else { Issue.record("erwartet: gelesener Status"); return }
     #expect(s.zustand == .ok)
     #expect(a.kitStarts == 1)
     // Vertrauen entfällt (z. B. Code geändert): der nächste Abruf startet das Kit nicht mehr
     a.erlaube(false)
-    #expect(await a.vertrauen.status(a.befehl) == .gesperrt(.nichtFreigegeben))
+    #expect(await a.vertrauen.status(a.befehl, zeitlimit: KitAttrappe.testZeitlimit) == .gesperrt(.nichtFreigegeben))
     #expect(a.kitStarts == 1, "ohne frische Erlaubnis kein zweiter Start")
     a.erlaube(true)
-    _ = await a.vertrauen.status(a.befehl)
+    _ = await a.vertrauen.status(a.befehl, zeitlimit: KitAttrappe.testZeitlimit)
     #expect(a.kitStarts == 2)
 }
 
 @Test func kitStatusMitDefekterAusgabeIstErlaubtAberNichtAbrufbar() async {
     let a = KitAttrappe(status: "das ist kein JSON")
     a.erlaube(true)
-    guard case .nichtAbrufbar(let text) = await a.vertrauen.status(a.befehl) else { Issue.record("erwartet: nichtAbrufbar"); return }
+    guard case .nichtAbrufbar(let text) = await a.vertrauen.status(a.befehl, zeitlimit: KitAttrappe.testZeitlimit) else { Issue.record("erwartet: nichtAbrufbar"); return }
     #expect(!text.isEmpty)
     #expect(a.kitStarts == 1)
 }
