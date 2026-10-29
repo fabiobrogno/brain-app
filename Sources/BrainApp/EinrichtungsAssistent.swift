@@ -449,6 +449,11 @@ private struct SicherungAnsicht: View {
                 Arbeit(text: arbeit).padding(.top, 10)
             } else if let konflikt = s.konflikt {
                 konfliktAnsicht(konflikt)
+            } else if let grund = s.blockiert {
+                Titel(symbol: "lock.trianglebadge.exclamationmark", titel: "Dein Brain lässt sich gerade nicht sichern", text: grund)
+                Button("Erneut prüfen") { modell.tu { await $0.pruefeSicherungNeu() } }
+                Text("Oder überspringe den Schritt — du kannst ihn im Menü „Kortex einrichten …“ nachholen.").font(.callout).foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
             } else {
                 switch modell.anzeige.github {
                 case .angemeldet: auswahl
@@ -518,6 +523,9 @@ private struct SicherungAnsicht: View {
                 TextField("Name des Repositories", text: $modell.repoName).textFieldStyle(.roundedBorder)
                 Button("Anlegen und sichern") { let n = modell.repoName; modell.tu { await $0.sichereMitNeuemRepo(name: n) } }
                     .disabled(RepoName.fehler(modell.repoName) != nil).keyboardShortcut(.defaultAction)
+            }
+            if let vergeben = s.vergebenerName {
+                Button("Das vorhandene Repository „\(vergeben)“ nehmen") { modell.tu { await $0.nimmGleichnamigesRepo() } }.buttonStyle(.link)
             }
             if let fehler {
                 Text(fehler).font(.callout).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)

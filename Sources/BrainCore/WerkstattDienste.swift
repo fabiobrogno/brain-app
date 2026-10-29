@@ -82,9 +82,20 @@ public struct WerkstattDienste: EinrichtungsDienste {
 
     // MARK: Sicherung
 
-    public func sicherungVorhanden() async -> Bool {
-        guard let j = try? await rufe("GET", "/api/git/status") else { return false }
-        return (j["remote"] as? Bool) == true
+    public func sicherungVorpruefung() async -> SicherungVorpruefung {
+        do {
+            let j = try await rufe("GET", "/api/sicherung/bereit")
+            switch j["zustand"] as? String {
+            case "gesichert": return .gesichert
+            case "bereit": return .bereit
+            case "blockiert": return .blockiert((j["text"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Dein Brain kann gerade nicht gesichert werden.")
+            default: return .blockiert("Die Antwort des Hintergrunddienstes war unvollständig.")
+            }
+        } catch {
+            // Nicht lesbar heißt NICHT „keine Sicherung“: sonst würde ein Repository angelegt, das sich danach nicht verbinden lässt.
+            let grund = (error as? EinrichtungsFehler)?.meldung ?? error.localizedDescription
+            return .blockiert("Kortex konnte den Stand deines Brains nicht prüfen: \(grund) Es wurde nichts bei GitHub angelegt.")
+        }
     }
 
     public func githubRepos() async throws -> GitHubRepoListe {
@@ -102,8 +113,9 @@ public struct WerkstattDienste: EinrichtungsDienste {
         return r
     }
 
-    public func verbindeSicherung(url: String) async throws -> SicherungErgebnis {
-        let j = try await rufe("POST", "/api/git/remote", ["url": url])
+    public func verbindeSicherung(besitzer: String, name: String) async throws -> SicherungErgebnis {
+        // Nur besitzer/name: die Adresse baut die Werkstatt selbst (kein Freitext, keine Zugangsdaten).
+        let j = try await rufe("POST", "/api/sicherung/verbinden", ["besitzer": besitzer, "name": name])
         return (j["ergebnis"] as? String).flatMap(SicherungErgebnis.init(rawValue:)) ?? .verbunden
     }
 

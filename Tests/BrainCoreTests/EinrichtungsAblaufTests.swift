@@ -20,7 +20,11 @@ private final class FalscheDienste: EinrichtungsDienste, @unchecked Sendable {
     var anmelden: [Result<GitHubGeraetecode, EinrichtungsFehler>] = [.success(code)]
     var status: [Result<GitHubAnmeldung, EinrichtungsFehler>] = [.success(.fertig(login: "fabio"))]
     /// Standard: das Brain hat schon ein Remote — der Schritt „Sicherung“ geht dann ohne Klick vorbei (die Tests zur Sicherung setzen es auf false).
-    var remoteDa = true
+    var vorpruefung = SicherungVorpruefung.gesichert
+    var remoteDa: Bool {
+        get { vorpruefung == .gesichert }
+        set { vorpruefung = newValue ? .gesichert : .bereit }
+    }
     var repos: [Result<GitHubRepoListe, EinrichtungsFehler>] = [.success(GitHubRepoListe(repos: [meinRepo]))]
     var repoAnlegen: [Result<GitHubRepo, EinrichtungsFehler>] = [.success(meinRepo)]
     var sicherungVerbinden: [Result<SicherungErgebnis, EinrichtungsFehler>] = [.success(.gesendet)]
@@ -68,10 +72,13 @@ private final class FalscheDienste: EinrichtungsDienste, @unchecked Sendable {
     func githubStatus() async throws -> GitHubAnmeldung { merke("githubStatus"); return try nimm(&status).get() }
     func githubAbbrechen() async throws { merke("githubAbbrechen") }
 
-    func sicherungVorhanden() async -> Bool { merke("sicherungVorhanden"); return remoteDa }
+    func sicherungVorpruefung() async -> SicherungVorpruefung { merke("sicherungVorpruefung"); return vorpruefung }
     func githubRepos() async throws -> GitHubRepoListe { merke("githubRepos"); return try nimm(&repos).get() }
     func githubRepoAnlegen(name: String) async throws -> GitHubRepo { merke("githubRepoAnlegen \(name)"); return try nimm(&repoAnlegen).get() }
-    func verbindeSicherung(url: String) async throws -> SicherungErgebnis { merke("verbindeSicherung \(url)"); return try nimm(&sicherungVerbinden).get() }
+    func verbindeSicherung(besitzer: String, name: String) async throws -> SicherungErgebnis {
+        merke("verbindeSicherung https://github.com/\(besitzer)/\(name).git")
+        return try nimm(&sicherungVerbinden).get()
+    }
 
     func erkenneKIs() async throws -> [KiProgramm] { merke("erkenneKIs"); return try nimm(&kis).get() }
     func verbinde(_ ziel: KiZiel, umstellen: Bool) async throws -> KiVerbindung {
@@ -904,4 +911,124 @@ private func beiKi(_ a: Aufbau) async {
     for gut in ["brain", "Mein_Brain-2", "a.b", String(repeating: "x", count: 100), ".github-sicherung"] { #expect(RepoName.fehler(gut) == nil, "\(gut)") }
     for schlecht in ["", "   ", "ä", "a b", "a/b", "..", ".", "foo.git", "foo.GIT", String(repeating: "x", count: 101)] { #expect(RepoName.fehler(schlecht) != nil, "\(schlecht)") }
     #expect(RepoName.fehler("  brain  ") == nil, "Ränder werden abgeschnitten")
+}
+
+// MARK: Sicherung: Nachbesserungen aus dem Review
+
+private let gesperrtText = "Git ist für dieses Brain gesperrt, bis du ihm im Studio vertraust."
+
+@Test @MainActor func blockierteSicherungLegtNieEinRepositoryAn() async {
+    let a = Aufbau()
+    await beiSicherung(a)
+    a.dienste.vorpruefung = .blockiert(gesperrtText)
+    await a.ablauf.sichereMitNeuemRepo(name: "brain")
+    #expect(a.anzeige.sicherung.blockiert == gesperrtText)
+    #expect(a.dienste.aufrufe.allSatisfy { !$0.hasPrefix("githubRepoAnlegen") && !$0.hasPrefix("verbindeSicherung") })
+    await a.ablauf.sichereMitRepo(meinRepo)
+    #expect(a.dienste.aufrufe.allSatisfy { !$0.hasPrefix("githubRepoAnlegen") && !$0.hasPrefix("verbindeSicherung") })
+    #expect(!a.anzeige.sicherung.istVerbunden)
+    #expect(a.anzeige.sicherung.arbeitet == nil)
+}
+
+@Test @MainActor func schonBeimBetretenBlockiertZeigtDieErklaerungStattDerAuswahl() async {
+    let a = Aufbau()
+    a.dienste.vault = vaultA
+    a.dienste.konto = [.success(GitHubKonto(verfuegbar: true, angemeldet: true, login: "fabio"))]
+    a.dienste.vorpruefung = .blockiert("Kortex konnte den Stand deines Brains nicht prüfen: kaputt.")
+    await a.ablauf.starte()
+    #expect(a.zustand.aktuell == .sicherung, "ein Statusfehler zählt nicht als „kein Remote“ und überspringt nichts")
+    #expect(a.anzeige.sicherung.blockiert == "Kortex konnte den Stand deines Brains nicht prüfen: kaputt.")
+    #expect(!a.ablauf.kannWeiter(.sicherung))
+    // Nach der Freigabe: „Erneut prüfen“ hebt die Sperre auf
+    a.dienste.vorpruefung = .bereit
+    await a.ablauf.pruefeSicherungNeu()
+    #expect(a.anzeige.sicherung.blockiert == nil)
+    await a.ablauf.sichereMitNeuemRepo(name: "brain")
+    #expect(a.anzeige.sicherung.ergebnis == .gesendet)
+}
+
+@Test @MainActor func neuePruefungErkenntEineSchonBestehendeSicherung() async {
+    let a = Aufbau()
+    await beiSicherung(a)
+    a.dienste.vorpruefung = .gesichert
+    await a.ablauf.sichereMitNeuemRepo(name: "brain")
+    #expect(a.anzeige.sicherung.schonVerbunden)
+    #expect(a.zustand.stand(.sicherung) == .erledigt)
+    #expect(a.dienste.aufrufe.allSatisfy { !$0.hasPrefix("githubRepoAnlegen") }, "kein zweites Repository, wenn schon gesichert ist")
+}
+
+@Test @MainActor func dieVorpruefungLaeuftVorJedemAnlegen() async {
+    let a = Aufbau()
+    await beiSicherung(a)
+    await a.ablauf.sichereMitNeuemRepo(name: "brain")
+    let reihenfolge = a.dienste.aufrufe.filter { $0 == "sicherungVorpruefung" || $0.hasPrefix("githubRepoAnlegen") }
+    #expect(reihenfolge == ["sicherungVorpruefung", "sicherungVorpruefung", "githubRepoAnlegen brain"])
+}
+
+@Test @MainActor func meldetDieWerkstattBeimVerbindenBlockiertWirdDieErklaerungGezeigt() async {
+    let a = Aufbau()
+    await beiSicherung(a)
+    a.dienste.sicherungVerbinden = [.failure(EinrichtungsFehler("Dein Brain steht auf keinem Zweig.", status: 409, art: "blockiert"))]
+    await a.ablauf.sichereMitRepo(meinRepo)
+    #expect(a.anzeige.sicherung.blockiert == "Dein Brain steht auf keinem Zweig.")
+    #expect(a.zustand.fehler[.sicherung] == nil)
+}
+
+@Test @MainActor func nameVergebenBietetDasGleichnamigeEigenePrivateRepositoryAn() async {
+    let a = Aufbau()
+    await beiSicherung(a)
+    a.dienste.repoAnlegen = [.failure(EinrichtungsFehler("Du hast schon ein Repository mit diesem Namen.", status: 409, art: "name-vergeben"))]
+    await a.ablauf.sichereMitNeuemRepo(name: "Brain")
+    #expect(a.anzeige.sicherung.vergebenerName == "Brain")
+    // Das vorhandene (Groß-/Kleinschreibung egal) wird aus der Liste der privaten Repositories genommen
+    a.dienste.sicherungVerbinden = [.success(.geholt)]
+    await a.ablauf.nimmGleichnamigesRepo()
+    #expect(a.dienste.aufrufe.contains("verbindeSicherung https://github.com/fabio/brain.git"))
+    #expect(a.anzeige.sicherung.ergebnis == .geholt)
+    #expect(a.anzeige.sicherung.vergebenerName == nil)
+    #expect(a.zustand.fehler[.sicherung] == nil)
+}
+
+@Test @MainActor func nameVergebenOhnePassendesPrivatesRepositoryErklaertEs() async {
+    let a = Aufbau()
+    await beiSicherung(a)
+    a.dienste.repoAnlegen = [.failure(EinrichtungsFehler("Du hast schon ein Repository mit diesem Namen.", status: 409, art: "name-vergeben"))]
+    a.dienste.repos = [.success(GitHubRepoListe(repos: []))]
+    await a.ablauf.sichereMitNeuemRepo(name: "oeffentlich-da")
+    await a.ablauf.nimmGleichnamigesRepo()
+    #expect(a.zustand.fehler[.sicherung]?.contains("nicht privat") == true)
+    #expect(a.dienste.aufrufe.allSatisfy { !$0.hasPrefix("verbindeSicherung") })
+}
+
+@Test @MainActor func wasNurEntfaelltWirdNichtInEinrichtungJsonGemerkt() async {
+    // kein git im Ordner
+    let a = Aufbau()
+    a.dienste.vault = VaultInfo(name: "Notizen", pfad: "/Users/test/Notizen", git: false)
+    a.dienste.konto = [.success(GitHubKonto(verfuegbar: true, angemeldet: true, login: "fabio"))]
+    a.dienste.remoteDa = false
+    await a.ablauf.starte()
+    #expect(a.zustand.stand(.sicherung) == .uebersprungen)
+    #expect(a.speicher.lade()?.uebersprungen.contains("sicherung") != true, "später (mit git) soll die Sicherung wieder angeboten werden")
+    a.ablauf.schliesse()
+    a.dienste.vault = vaultA
+    a.neuerAblauf()
+    await a.ablauf.starte()
+    #expect(a.zustand.aktuell == .sicherung, "neu beurteilt: jetzt mit git wird sie angeboten")
+
+    // GitHub-Anmeldung in dieser Version nicht eingerichtet
+    let b = Aufbau()
+    b.dienste.vault = vaultA
+    b.dienste.konto = [.success(GitHubKonto(verfuegbar: false, angemeldet: false))]
+    b.dienste.remoteDa = false
+    await b.ablauf.starte()
+    #expect(b.zustand.stand(.sicherung) == .uebersprungen && b.zustand.stand(.github) == .uebersprungen)
+    let gemerkt = b.speicher.lade()?.uebersprungen ?? []
+    #expect(!gemerkt.contains("sicherung") && !gemerkt.contains("github"))
+}
+
+@Test @MainActor func vomNutzerUebersprungenesWirdWeiterGemerkt() async {
+    let a = Aufbau()
+    await beiSicherung(a)
+    await a.ablauf.ueberspringe()
+    #expect(a.speicher.lade()?.uebersprungen.contains("sicherung") == true)
 }

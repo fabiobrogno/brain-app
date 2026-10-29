@@ -67,6 +67,11 @@ public struct SicherungAnzeige: Equatable, Sendable {
     /// Das gewählte Repository hat eine andere Geschichte als das Brain: nichts wurde verändert, der Nutzer bekommt eine Erklärung
     /// und kann stattdessen ein neues anlegen.
     public var konflikt: String?
+    /// Die Sicherung ist gerade nicht möglich (Git gesperrt, losgelöster Kopf, keine Version, Stand nicht lesbar …): Erklärung für den
+    /// Nutzer. Dann wurde und wird bei GitHub nichts angelegt.
+    public var blockiert: String?
+    /// „Name schon vergeben“: der Name, zu dem das gleichnamige eigene private Repository angeboten wird.
+    public var vergebenerName: String?
 
     public init() {}
 
@@ -284,7 +289,7 @@ public final class EinrichtungsAblauf {
             let konto = try await dienste.githubKonto()
             if !konto.verfuegbar {
                 anzeige.github = .nichtVerfuegbar
-                zustand.ueberspringe(.github)
+                zustand.uebergehe(.github) // entfällt nur in dieser Version: nicht merken, beim nächsten Mal neu beurteilen
             } else if konto.angemeldet {
                 anzeige.github = .angemeldet(login: konto.login)
                 zustand.meldeErledigt(.github)
@@ -374,21 +379,54 @@ public final class EinrichtungsAblauf {
 
     // MARK: Sicherung
 
-    /// Schritt „Sicherung“: Hat der Vault schon ein Remote, ist er erledigt. Ohne GitHub-Anmeldung in dieser Version oder ohne
-    /// Versionsverlauf (Ordner ohne git) entfällt er.
+    /// Schritt „Sicherung“: Sind Remote und Upstream da, ist er erledigt. Ohne GitHub-Anmeldung in dieser Version oder ohne
+    /// Versionsverlauf (Ordner ohne git) entfällt er — nur in der Anzeige (`uebergehe`), nicht in `einrichtung.json`.
     private func pruefeSicherungSchritt() async {
         if anzeige.vault?.git == false {
-            zustand.ueberspringe(.sicherung)
+            zustand.uebergehe(.sicherung)
             return
         }
-        if await dienste.sicherungVorhanden() {
+        let vor = await dienste.sicherungVorpruefung()
+        if vor == .gesichert {
             anzeige.sicherung.schonVerbunden = true
             zustand.meldeErledigt(.sicherung)
             return
         }
         // Noch keine Sicherung: ob ein GitHub-Konto da ist, entscheidet, was die Oberfläche anbietet.
         if anzeige.github == .unbekannt { await pruefeGitHubSchritt() }
-        if anzeige.github == .nichtVerfuegbar { zustand.ueberspringe(.sicherung) }
+        if anzeige.github == .nichtVerfuegbar {
+            zustand.uebergehe(.sicherung)
+            return
+        }
+        anzeige.sicherung.blockiert = vor.blockiertText
+    }
+
+    /// „Erneut prüfen“, wenn die Sicherung blockiert ist (z. B. nachdem der Nutzer das Brain im Studio freigegeben hat).
+    public func pruefeSicherungNeu() async {
+        guard anzeige.sicherung.arbeitet == nil else { return }
+        anzeige.sicherung.arbeitet = "Dein Brain wird geprüft …"
+        melde()
+        _ = await vorpruefungOk()
+        anzeige.sicherung.arbeitet = nil
+        await fortfahren()
+    }
+
+    /// Frische Vorprüfung unmittelbar vor dem Anlegen oder Verbinden. true = es darf weitergehen. Blockiert sie, wird NICHTS bei
+    /// GitHub angelegt; ist alles schon verbunden, ist der Schritt erledigt.
+    private func vorpruefungOk() async -> Bool {
+        switch await dienste.sicherungVorpruefung() {
+        case .bereit:
+            anzeige.sicherung.blockiert = nil
+            return true
+        case .gesichert:
+            anzeige.sicherung.blockiert = nil
+            anzeige.sicherung.schonVerbunden = true
+            zustand.meldeErledigt(.sicherung)
+            return false
+        case .blockiert(let text):
+            anzeige.sicherung.blockiert = text
+            return false
+        }
     }
 
     /// Liest die eigenen privaten Repositories (für „Vorhandenes wählen“).
@@ -405,8 +443,9 @@ public final class EinrichtungsAblauf {
         melde()
     }
 
-    /// „Neues privates Repository“: legt es an (immer privat) und verbindet das Brain damit. Scheitert das Verbinden, bleibt das
-    /// angelegte Repository gemerkt — der nächste Versuch mit demselben Namen legt kein zweites an.
+    /// „Neues privates Repository“: prüft ZUERST, ob sich das Brain verbinden lässt, legt dann das Repository an (immer privat) und
+    /// verbindet. Scheitert das Verbinden, bleibt das angelegte Repository gemerkt — der nächste Versuch mit demselben Namen legt kein
+    /// zweites an.
     public func sichereMitNeuemRepo(name roh: String) async {
         guard anzeige.sicherung.arbeitet == nil else { return }
         let name = roh.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -417,6 +456,14 @@ public final class EinrichtungsAblauf {
         }
         zustand.loescheFehler(.sicherung)
         anzeige.sicherung.konflikt = nil
+        anzeige.sicherung.vergebenerName = nil
+        anzeige.sicherung.arbeitet = "Dein Brain wird geprüft …"
+        melde()
+        guard await vorpruefungOk() else {
+            anzeige.sicherung.arbeitet = nil
+            await fortfahren()
+            return
+        }
         if let schon = anzeige.sicherung.angelegt, schon.name == name {
             await verbindeRepo(schon)
             return
@@ -429,8 +476,10 @@ public final class EinrichtungsAblauf {
             log("einrichtung sicherung-repo-angelegt")
             await verbindeRepo(repo)
         } catch {
+            let f = error as? EinrichtungsFehler
             zustand.meldeFehler(.sicherung, Self.text(error))
-            if (error as? EinrichtungsFehler)?.status == 401 { anzeige.github = .abgemeldet }
+            if f?.art == "name-vergeben" { anzeige.sicherung.vergebenerName = name }
+            if f?.status == 401 { anzeige.github = .abgemeldet }
             anzeige.sicherung.arbeitet = nil
             log("einrichtung sicherung-anlegen-fehler")
             melde()
@@ -443,7 +492,29 @@ public final class EinrichtungsAblauf {
         guard anzeige.sicherung.arbeitet == nil else { return }
         zustand.loescheFehler(.sicherung)
         anzeige.sicherung.konflikt = nil
+        anzeige.sicherung.vergebenerName = nil
+        anzeige.sicherung.arbeitet = "Dein Brain wird geprüft …"
+        melde()
+        guard await vorpruefungOk() else {
+            anzeige.sicherung.arbeitet = nil
+            await fortfahren()
+            return
+        }
         await verbindeRepo(repo)
+    }
+
+    /// Nach „Name schon vergeben“: das gleichnamige EIGENE PRIVATE Repository nehmen (aus der Liste der Werkstatt; ein öffentliches
+    /// oder fremdes kommt dort nie vor).
+    public func nimmGleichnamigesRepo() async {
+        guard anzeige.sicherung.arbeitet == nil, let name = anzeige.sicherung.vergebenerName else { return }
+        if case .geladen = anzeige.sicherung.repos {} else { await ladeRepos() }
+        if case .geladen(let liste) = anzeige.sicherung.repos, let r = liste.repos.first(where: { $0.name.lowercased() == name.lowercased() }) {
+            await sichereMitRepo(r)
+        } else {
+            zustand.meldeFehler(.sicherung, "Ein Repository „\(name)“ gibt es zwar, aber es ist nicht privat oder gehört nicht zu deinem Konto. Wähle einen anderen Namen.")
+            anzeige.sicherung.vergebenerName = nil
+            melde()
+        }
     }
 
     /// Nach der Erklärung zum fremden Repository: zurück zur Auswahl.
@@ -456,7 +527,7 @@ public final class EinrichtungsAblauf {
         anzeige.sicherung.arbeitet = "Dein Brain wird mit GitHub verbunden und gesendet … Das kann bei einem großen Brain einige Minuten dauern."
         melde()
         do {
-            let e = try await dienste.verbindeSicherung(url: repo.url)
+            let e = try await dienste.verbindeSicherung(besitzer: repo.besitzer, name: repo.name)
             anzeige.sicherung.ergebnis = e
             anzeige.sicherung.verbundenMit = repo.vollerName
             anzeige.sicherung.angelegt = nil
@@ -464,6 +535,8 @@ public final class EinrichtungsAblauf {
         } catch let f as EinrichtungsFehler {
             if let art = f.art, Self.konfliktArten.contains(art) {
                 anzeige.sicherung.konflikt = f.meldung
+            } else if f.art == "blockiert" {
+                anzeige.sicherung.blockiert = f.meldung
             } else {
                 zustand.meldeFehler(.sicherung, Self.sicherungsText(f))
                 if f.status == 403 || f.status == 401 { anzeige.github = .abgemeldet }

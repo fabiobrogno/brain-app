@@ -48,6 +48,21 @@ public enum SicherungErgebnis: String, Equatable, Sendable {
     case geholt
 }
 
+/// Ergebnis der Vorprüfung (`GET /api/sicherung/bereit`), BEVOR bei GitHub etwas angelegt wird.
+public enum SicherungVorpruefung: Equatable, Sendable {
+    /// Remote und Upstream sind da: nichts zu tun.
+    case gesichert
+    /// Das Brain lässt sich verbinden.
+    case bereit
+    /// Es geht gerade nicht (Git gesperrt, losgelöster Kopf, keine Version, Status nicht lesbar …): ein Satz für den Nutzer.
+    case blockiert(String)
+
+    var blockiertText: String? {
+        if case .blockiert(let t) = self { return t }
+        return nil
+    }
+}
+
 /// Namensregeln für Repositories bei GitHub und der Vorschlag aus dem Vault-Namen.
 public enum RepoName {
     /// Aus dem Namen des Brains: klein, Umlaute ausgeschrieben, alles Unerlaubte wird zu „-“. Leer → „brain“.

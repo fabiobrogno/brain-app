@@ -2,7 +2,7 @@
 // gefälschter Credential-Helper (Datei). Belegt: Anlegen ist IMMER privat, es erscheinen nur private Repos, das Token bleibt im Schlüsselbund.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { writeFileSync, rmSync, chmodSync } from "node:fs";
+import { writeFileSync, readFileSync, rmSync, chmodSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmp, pfad } from "./hilfe.mjs";
 
@@ -17,10 +17,18 @@ const BUND = tmp("brain-bund-");
 const BUNDDATEI = join(BUND, "schluesselbund.txt");
 process.env.FAKE_BUND = BUNDDATEI;
 const HELPER = join(BUND, "git-credential-fake");
+// Der Helper wertet die Eingabe von `credential fill` aus: nur protocol=https + host=github.com bekommt das Konto, und jede Anfrage
+// wird mitgeschrieben (FAKE_EINGABE) — so ist belegt, WAS Kortex dem Schlüsselbund schickt (und dass dabei kein Passwort mitgeht).
+const EINGABE = join(BUND, "eingaben.txt");
+process.env.FAKE_EINGABE = EINGABE;
 writeFileSync(HELPER, `#!/bin/sh
 case "$1" in
   store) grep -E '^(username|password)=' > "$FAKE_BUND" ;;
-  get) cat "$FAKE_BUND" 2>/dev/null || exit 1 ;;
+  get)
+    eingabe=$(cat)
+    { echo "--"; echo "$eingabe"; } >> "$FAKE_EINGABE"
+    echo "$eingabe" | grep -qx 'protocol=https' && echo "$eingabe" | grep -qx 'host=github.com' || exit 1
+    cat "$FAKE_BUND" 2>/dev/null || exit 1 ;;
   erase) rm -f "$FAKE_BUND" ;;
 esac
 `);
@@ -156,4 +164,44 @@ test("Routen über den Handler: GET /api/github/repos, POST /api/github/repo-anl
   assert.equal(r.status, 200); assert.equal(r.j.url, "https://github.com/anna-test/neu-brain.git"); assert.equal(r.j.privat, true);
   r = await rufe("POST", "/api/github/repo-anlegen", { name: "Über uns" });
   assert.equal(r.status, 400); assert.equal(r.j.art, "name");
+});
+
+test("Eingabe an den Schlüsselbund: protocol=https, host=github.com, nie ein Passwort; das Token wird je Aufruf einmal geholt", async () => {
+  angemeldet(); rmSync(EINGABE, { force: true });
+  const seite1 = Array.from({ length: 100 }, (_, i) => repoZeile(`r${i}`));
+  const { gh, aufrufe } = neu((a) => (/page=1$/.test(a.pfad) ? { status: 200, j: seite1 } : { status: 200, j: [] }));
+  await gh.repos();
+  assert.equal(aufrufe.length, 2);
+  const eingaben = readFileSync(EINGABE, "utf8").split("--\n").filter(Boolean);
+  assert.equal(eingaben.length, 1, "ein Schlüsselbund-Zugriff für zwei Seiten");
+  assert.deepEqual(eingaben[0].trim().split("\n").sort(), ["host=github.com", "protocol=https"]);
+  assert.ok(!/password|username/.test(eingaben[0]));
+  // Ein Helper, der nur für andere Server antwortet, liefert kein Konto → 401 ohne Aufruf an GitHub
+  abgemeldet(); const leer = neu(() => ({ status: 200, j: [] }));
+  await assert.rejects(leer.gh.repos(), (e) => e.status === 401);
+  assert.equal(leer.aufrufe.length, 0);
+});
+
+test("Ein Netzfehler, dessen Text das Token enthält, landet weder in der Fehlermeldung noch im Log", async () => {
+  angemeldet();
+  const boese = () => new TypeError(`fetch failed: Authorization: Bearer ${TOKEN}`);
+  for (const aktion of [(gh) => gh.repoAnlegen({ name: "x" }), (gh) => gh.repos(), (gh) => gh.repoPruefen("anna-test", "x")]) {
+    const { gh, logs } = neu(() => boese());
+    await assert.rejects(aktion(gh), (e) => e.status === 502 && !JSON.stringify([e.message, e.extra, String(e.stack || "").split("\n")[0]]).includes(TOKEN));
+    assert.ok(!JSON.stringify(logs).includes(TOKEN));
+  }
+});
+
+test("repoPruefen: nur privat, nur beschreibbar; ungültige Namen gehen nicht zu GitHub", async () => {
+  angemeldet();
+  const gut = { status: 200, j: repoZeile("Brain", { permissions: { push: true } }) };
+  const { gh, aufrufe } = neu(() => gut);
+  assert.deepEqual(await gh.repoPruefen("anna-test", "brain"), { besitzer: "anna-test", name: "Brain", url: "https://github.com/anna-test/Brain.git", privat: true });
+  for (const [besitzer, name] of [["../x", "a"], ["anna", "a/b"], ["anna", ""], ["-anna", "a"], [null, "a"]]) {
+    await assert.rejects(gh.repoPruefen(besitzer, name), (e) => e.status === 400, `${besitzer}/${name}`);
+  }
+  assert.equal(aufrufe.length, 1);
+  await assert.rejects(neu(() => ({ status: 200, j: repoZeile("x", { private: false }) })).gh.repoPruefen("anna-test", "x"), (e) => e.status === 403 && e.extra.art === "oeffentlich");
+  await assert.rejects(neu(() => ({ status: 200, j: repoZeile("x", { private: undefined }) })).gh.repoPruefen("anna-test", "x"), (e) => e.extra.art === "oeffentlich");
+  assert.ok(existsSync(EINGABE));
 });

@@ -176,10 +176,14 @@ export function erzeugeGitHub(opt = {}) {
     const m = /^password=(.+)$/m.exec(String(r.stdout || ""));
     return m ? m[1] : null;
   }
-  async function githubApi(methode, pfad, body) {
+  // Das Token wird EINMAL je Aufruf der Oberfläche geholt (nicht je Seite): ein Schlüsselbund-Zugriff, eine lokale Variable.
+  async function holeToken() {
     if (!verfuegbar) throw new HttpFehler(404, "Die Anmeldung bei GitHub ist in dieser Version nicht eingerichtet.", { art: "nicht-eingerichtet" });
     const token = await gespeichertesToken();
     if (!token) throw new HttpFehler(401, "Du bist bei GitHub nicht angemeldet. Bitte melde dich zuerst an.", { art: "nicht-angemeldet" });
+    return token;
+  }
+  async function githubApi(token, methode, pfad, body) {
     let r;
     try {
       r = await holen(`${apiBasis}${pfad}`, { method: methode, signal: AbortSignal.timeout(NETZ_FRIST),
@@ -193,17 +197,20 @@ export function erzeugeGitHub(opt = {}) {
   }
 
   const gueltigerBesitzer = (s) => typeof s === "string" && /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(s);
-  const repoAdresse = (besitzer, name) => `https://github.com/${besitzer}/${name}.git`;
-  const MAX_SEITEN = 10, LISTEN_FRIST = 25_000; // höchstens 1000 Repositories und 25 s (die App wartet 30 s)
+  // Die Adresse bauen wir selbst; nur im Testmodus lässt sie sich auf ein lokales Repository umbiegen (opt.repoAdresse).
+  const repoAdresse = frei && typeof opt.repoAdresse === "function" ? opt.repoAdresse : (besitzer, name) => `https://github.com/${besitzer}/${name}.git`;
+  // Höchstens 1000 Repositories. Gesamtdauer: Token (15 s) + Seiten bis 25 s + eine letzte Anfrage (15 s) < 45 s, dem Limit der App.
+  const MAX_SEITEN = 10, LISTEN_FRIST = 25_000;
 
   // Eigene PRIVATE Repositories (GET /user/repos?affiliation=owner&visibility=private, seitenweise). Zusätzlich zur Abfrage wird jede
   // Antwortzeile geprüft: was nicht ausdrücklich privat ist, erscheint nie. Archivierte und gesperrte Repos lassen sich nicht beschreiben.
   async function repos() {
+    const token = await holeToken();
     const start = jetzt(), aus = [];
     let gekuerzt = false;
     for (let seite = 1; ; seite++) {
       if (seite > MAX_SEITEN || jetzt() - start > LISTEN_FRIST) { gekuerzt = true; break; }
-      const { status, j } = await githubApi("GET", `/user/repos?affiliation=owner&visibility=private&sort=updated&per_page=100&page=${seite}`);
+      const { status, j } = await githubApi(token, "GET", `/user/repos?affiliation=owner&visibility=private&sort=updated&per_page=100&page=${seite}`);
       if (status === 403 || status === 429) throw new HttpFehler(429, "GitHub bremst gerade. Bitte versuche es in ein paar Minuten noch einmal.", { art: "limit" });
       if (status !== 200 || !Array.isArray(j)) throw new HttpFehler(502, "GitHub hat die Liste deiner Repositories nicht geliefert.", { art: "github" });
       for (const r of j) {
@@ -222,7 +229,8 @@ export function erzeugeGitHub(opt = {}) {
     const name = typeof (eingabe && eingabe.name) === "string" ? eingabe.name.trim() : "";
     const fehler = repoNameFehler(name);
     if (fehler) throw new HttpFehler(400, fehler, { art: "name" });
-    const { status, j } = await githubApi("POST", "/user/repos", { name, description: "Sicherung meines Kortex-Brains", private: true, auto_init: false });
+    const token = await holeToken();
+    const { status, j } = await githubApi(token, "POST", "/user/repos", { name, description: "Sicherung meines Kortex-Brains", private: true, auto_init: false });
     if (status === 422) {
       const vergeben = JSON.stringify((j && j.errors) || []).includes("already exists");
       throw new HttpFehler(vergeben ? 409 : 400, vergeben ? "Du hast schon ein Repository mit diesem Namen. Wähle einen anderen Namen oder nimm das vorhandene." : "GitHub nimmt diesen Namen nicht an. Wähle einen anderen.", { art: vergeben ? "name-vergeben" : "name" });
@@ -235,7 +243,25 @@ export function erzeugeGitHub(opt = {}) {
     return { name, besitzer, url: repoAdresse(besitzer, name), privat: true };
   }
 
-  return { verfuegbar, anmelden, status, konto, abmelden, abbrechen, repos, repoAnlegen, stoppe: () => { lauf++; } };
+  // Vor dem Verbinden: das Repository gibt es, gehört dem Konto, ist PRIVAT, nicht archiviert und beschreibbar. Gibt die von GitHub genannte
+  // Schreibweise von Besitzer und Name zurück — die Adresse für den Push entsteht nur hier, nie aus Eingaben der Oberfläche.
+  async function repoPruefen(besitzer, name) {
+    if (!gueltigerBesitzer(besitzer) || !repoNameGueltig(name)) throw new HttpFehler(400, "Das ist kein gültiger Repository-Name.", { art: "name" });
+    const token = await holeToken();
+    const { status, j } = await githubApi(token, "GET", `/repos/${besitzer}/${name}`);
+    if (status === 404) throw new HttpFehler(404, "Dieses Repository gibt es nicht (oder du hast keinen Zugriff darauf).", { art: "nicht-gefunden" });
+    if (status === 403 || status === 429) throw new HttpFehler(429, "GitHub bremst gerade. Bitte versuche es in ein paar Minuten noch einmal.", { art: "limit" });
+    const o = j && j.owner && j.owner.login;
+    if (status !== 200 || !j || !gueltigerBesitzer(o) || !repoNameGueltig(j.name) || o.toLowerCase() !== besitzer.toLowerCase() || j.name.toLowerCase() !== name.toLowerCase()) {
+      throw new HttpFehler(502, "GitHub hat das Repository nicht wie erwartet beschrieben.", { art: "github" });
+    }
+    if (j.private !== true) throw new HttpFehler(403, "Dieses Repository ist nicht privat. Kortex sichert dein Brain nur in private Repositories.", { art: "oeffentlich" });
+    if (j.archived || j.disabled) throw new HttpFehler(409, "Dieses Repository ist archiviert. Darin lässt sich nichts speichern.", { art: "archiviert" });
+    if (j.permissions && j.permissions.push === false) throw new HttpFehler(403, "Du darfst in diesem Repository nichts speichern.", { art: "rechte" });
+    return { besitzer: o, name: j.name, url: repoAdresse(o, j.name), privat: true };
+  }
+
+  return { verfuegbar, anmelden, status, konto, abmelden, abbrechen, repos, repoAnlegen, repoPruefen, helper, stoppe: () => { lauf++; } };
 }
 
 // Namensregeln für Repositories bei GitHub: 1–100 Zeichen aus Buchstaben, Ziffern, „.“, „-“, „_“; nicht „.“/„..“, nicht auf „.git“ endend.

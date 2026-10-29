@@ -51,6 +51,9 @@ public struct EinrichtungsZustand: Equatable, Sendable {
     public private(set) var aktuell: EinrichtungsSchritt?
     /// Sichtbarer Fehler je Schritt (Text für den Nutzer). Verschwindet beim nächsten Versuch oder wenn der Schritt erledigt ist.
     public private(set) var fehler: [EinrichtungsSchritt: String]
+    /// Schritte, die hier nur nicht gezeigt werden, weil sie entfallen (kein git im Ordner, Anmeldung nicht eingerichtet) — anders als
+    /// `uebersprungen` durch den Nutzer werden sie NICHT in `einrichtung.json` gemerkt und beim nächsten Mal neu beurteilt.
+    public private(set) var uebergangen: Set<EinrichtungsSchritt> = []
 
     /// Frischer Start: alles offen. Mit `gespeichert` (Wiederaufnahme nach Abbruch) gelten die gemerkten Schritte KI und Probe
     /// als erledigt und die vom Nutzer übersprungenen als übersprungen; git, Vault und GitHub stellt der Ablauf neu fest.
@@ -90,6 +93,7 @@ public struct EinrichtungsZustand: Equatable, Sendable {
 
     /// Der Schritt ist erledigt (auch ein späterer, den die Wirklichkeit schon erfüllt) — weiter zum ersten offenen.
     public mutating func meldeErledigt(_ s: EinrichtungsSchritt) {
+        uebergangen.remove(s)
         staende[s] = .erledigt
         fehler[s] = nil
         aktuell = ersterOffener
@@ -99,7 +103,19 @@ public struct EinrichtungsZustand: Equatable, Sendable {
     @discardableResult
     public mutating func ueberspringe(_ s: EinrichtungsSchritt) -> Bool {
         guard s.darfUebersprungenWerden, stand(s) != .erledigt else { return false }
+        uebergangen.remove(s)
         staende[s] = .uebersprungen
+        fehler[s] = nil
+        aktuell = ersterOffener
+        return true
+    }
+
+    /// Der Schritt entfällt hier (nicht durch den Nutzer): er zählt für die Anzeige als übersprungen, wird aber nicht gemerkt.
+    @discardableResult
+    public mutating func uebergehe(_ s: EinrichtungsSchritt) -> Bool {
+        guard s.darfUebersprungenWerden, stand(s) != .erledigt else { return false }
+        staende[s] = .uebersprungen
+        uebergangen.insert(s)
         fehler[s] = nil
         aktuell = ersterOffener
         return true
@@ -122,6 +138,7 @@ public struct EinrichtungsZustand: Equatable, Sendable {
         guard let ziel = alle.firstIndex(of: s) else { return false }
         let grenze = aktuell.flatMap { alle.firstIndex(of: $0) } ?? alle.count
         guard ziel <= grenze else { return false }
+        uebergangen.remove(s)
         staende[s] = .offen
         fehler[s] = nil
         aktuell = s
@@ -131,6 +148,7 @@ public struct EinrichtungsZustand: Equatable, Sendable {
     /// Wiederholung über das Menü: KI und Probe werden noch einmal gezeigt, Überspringen-Entscheidungen gelten nicht mehr.
     public mutating func setzeZurueck() {
         for s in EinrichtungsSchritt.allCases { staende[s] = .offen }
+        uebergangen = []
         fehler = [:]
         aktuell = ersterOffener
     }
@@ -142,7 +160,7 @@ public struct EinrichtungsZustand: Equatable, Sendable {
         let alle = EinrichtungsSchritt.allCases
         return EinrichtungsDatei(abgeschlossen: abgeschlossen, automatischAus: automatischAus,
                                  erledigt: alle.filter { stand($0) == .erledigt && !$0.ausWirklichkeit }.map(\.rawValue),
-                                 uebersprungen: alle.filter { stand($0) == .uebersprungen }.map(\.rawValue),
+                                 uebersprungen: alle.filter { stand($0) == .uebersprungen && !uebergangen.contains($0) }.map(\.rawValue),
                                  herkunft: herkunft)
     }
 }

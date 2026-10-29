@@ -194,7 +194,9 @@ public actor BrueckenVerbindung {
         if ist("/api/vaults/oeffnen") || ist("/api/vaults/neu") || ist("/api/vaults/klonen") { return .seconds(330) }
         if ist("/api/git/sync") { return .seconds(400) }
         if ist("/api/git/remote") { return .seconds(150) }
-        if ist("/api/github/repos") { return .seconds(45) } // Liste der Repositories: bis zu 10 Seiten, Node-Frist 25 s + eine Anfrage
+        if ist("/api/sicherung/verbinden") { return .seconds(180) } // Prüfung bei GitHub (bis 30 s) + Remote-Frist 120 s
+        if ist("/api/sicherung/bereit") { return .seconds(90) } // wie /api/git/status
+        if ist("/api/github/repos") || ist("/api/github/repo-anlegen") { return .seconds(45) } // Token 15 s + Anfragen; Liste: Node-Frist 25 s + eine Anfrage // Liste der Repositories: bis zu 10 Seiten, Node-Frist 25 s + eine Anfrage
         if ist("/api/git/commit") { return .seconds(90) }
         if p.hasPrefix("/api/git/") { return .seconds(90) }
         if p.hasPrefix("/api/posteingang/") { return .seconds(90) } // Verwerfen/Später/Übernehmen enden in einem Commit (Node-Frist 75 s)

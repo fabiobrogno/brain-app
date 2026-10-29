@@ -231,3 +231,25 @@ private typealias S = EinrichtungsSchritt
     try s.speichere(EinrichtungsDatei(abgeschlossen: false, automatischAus: true))
     #expect(!s.sollErscheinen(hatVault: false))
 }
+
+@Test func uebergangenesZaehltInDerAnzeigeAberWirdNichtGemerkt() {
+    var z = EinrichtungsZustand()
+    z.meldeErledigt(.git); z.meldeErledigt(.vault); z.meldeErledigt(.github)
+    let ging = z.uebergehe(.sicherung)
+    #expect(ging)
+    #expect(z.stand(.sicherung) == .uebersprungen)
+    #expect(z.aktuell == .ki)
+    #expect(z.datei(abgeschlossen: false, automatischAus: false).uebersprungen.isEmpty, "nicht in einrichtung.json")
+    // Pflichtschritte und Erledigtes lassen sich nicht übergehen
+    let gitGing = z.uebergehe(.git)
+    #expect(!gitGing)
+    var y = EinrichtungsZustand()
+    y.meldeErledigt(.sicherung)
+    let erledigtGing = y.uebergehe(.sicherung)
+    #expect(!erledigtGing)
+    // Wird der Schritt später doch gezeigt und vom Nutzer übersprungen, wird es gemerkt
+    let zurueck = z.geheZu(.sicherung)
+    let uebersprungen = z.ueberspringe(.sicherung)
+    #expect(zurueck && uebersprungen)
+    #expect(z.datei(abgeschlossen: false, automatischAus: false).uebersprungen == ["sicherung"])
+}

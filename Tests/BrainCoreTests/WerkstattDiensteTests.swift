@@ -225,14 +225,20 @@ private func dienste(_ w: FalscheWerkstatt, pfade: AppPfade? = nil, home: URL? =
 
 // MARK: Sicherung (FBL-88)
 
-@Test func sicherungVorhandenLiestDasRemoteAusDemGitStatus() async {
-    let ja = FalscheWerkstatt(antwort(#"{"repo":true,"remote":true}"#))
-    #expect(await dienste(ja).sicherungVorhanden())
-    #expect(ja.aufrufe == [.init(methode: "GET", pfad: "/api/git/status", body: nil)])
-    let nein = FalscheWerkstatt(antwort(#"{"repo":true,"remote":false}"#))
-    #expect(await dienste(nein).sicherungVorhanden() == false)
-    let gesperrt = FalscheWerkstatt(antwort(409, #"{"fehler":"Git ist gesperrt","gitGesperrt":true}"#))
-    #expect(await dienste(gesperrt).sicherungVorhanden() == false, "nicht feststellbar zählt als „keine Sicherung“")
+@Test func sicherungVorpruefungLiestDenZustandUndWertetFehlerNieAlsKeinRemote() async {
+    let w = FalscheWerkstatt(antwort(#"{"zustand":"gesichert"}"#), antwort(#"{"zustand":"bereit"}"#),
+                             antwort(#"{"zustand":"blockiert","grund":"gesperrt","text":"Git ist gesperrt."}"#),
+                             antwort(#"{"zustand":"etwas Neues"}"#),
+                             antwort(500, #"{"fehler":"Git-Status war nicht lesbar."}"#))
+    let d = dienste(w)
+    #expect(await d.sicherungVorpruefung() == .gesichert)
+    #expect(await d.sicherungVorpruefung() == .bereit)
+    #expect(await d.sicherungVorpruefung() == .blockiert("Git ist gesperrt."))
+    #expect(await d.sicherungVorpruefung().blockiertText != nil, "unbekannte Antwort ist blockiert, nicht bereit")
+    let fehler = await d.sicherungVorpruefung()
+    guard case .blockiert(let text) = fehler else { Issue.record("Statusfehler muss blockiert sein"); return }
+    #expect(text.contains("Git-Status war nicht lesbar") && text.contains("nichts bei GitHub angelegt"))
+    #expect(w.aufrufe.allSatisfy { $0 == .init(methode: "GET", pfad: "/api/sicherung/bereit", body: nil) })
 }
 
 @Test func reposLiestNurWohlgeformteEintraegeUndDasKuerzen() async throws {
@@ -264,17 +270,17 @@ private func dienste(_ w: FalscheWerkstatt, pfade: AppPfade? = nil, home: URL? =
     }
 }
 
-@Test func verbindeSicherungSendetNurDieAdresseUndLiestDasErgebnis() async throws {
+@Test func verbindeSicherungSendetNurBesitzerUndNameUndLiestDasErgebnis() async throws {
     let w = FalscheWerkstatt(antwort(#"{"ok":true,"ergebnis":"gesendet","remote":"origin","zweig":"main"}"#),
                              antwort(#"{"ok":true,"ergebnis":"geholt"}"#), antwort(#"{"ok":true}"#),
                              antwort(409, #"{"fehler":"Dieses Repository hat eine andere Geschichte.","art":"fremd"}"#))
     let d = dienste(w)
-    #expect(try await d.verbindeSicherung(url: "https://github.com/anna/brain.git") == .gesendet)
-    #expect(try await d.verbindeSicherung(url: "https://github.com/anna/brain.git") == .geholt)
-    #expect(try await d.verbindeSicherung(url: "https://github.com/anna/brain.git") == .verbunden)
-    #expect(w.aufrufe.first == .init(methode: "POST", pfad: "/api/git/remote", body: ["url": "https://github.com/anna/brain.git"]))
-    #expect(w.aufrufe.allSatisfy { !($0.body.map { "\($0)" } ?? "").contains("@") }, "nie Zugangsdaten in der Adresse")
-    do { _ = try await d.verbindeSicherung(url: "https://github.com/anna/anders.git"); Issue.record("hätte werfen müssen") } catch let f as EinrichtungsFehler {
+    #expect(try await d.verbindeSicherung(besitzer: "anna", name: "brain") == .gesendet)
+    #expect(try await d.verbindeSicherung(besitzer: "anna", name: "brain") == .geholt)
+    #expect(try await d.verbindeSicherung(besitzer: "anna", name: "brain") == .verbunden)
+    #expect(w.aufrufe.first == .init(methode: "POST", pfad: "/api/sicherung/verbinden", body: ["besitzer": "anna", "name": "brain"]), "keine freie Adresse")
+    #expect(w.aufrufe.allSatisfy { $0.pfad == "/api/sicherung/verbinden" && Set($0.body?.keys.map { $0 } ?? []) == ["besitzer", "name"] })
+    do { _ = try await d.verbindeSicherung(besitzer: "anna", name: "anders"); Issue.record("hätte werfen müssen") } catch let f as EinrichtungsFehler {
         #expect(f.status == 409 && f.art == "fremd")
     }
 }
