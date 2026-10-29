@@ -94,6 +94,7 @@ OUT=$(BRAIN_VAULT="$T" node "$B" import "$T/quelle-alt" --name probe) || { echo 
 RC=0; OUT=$(BRAIN_VAULT="$T" node "$B" import 2>&1) || RC=$?
 [ "$RC" = 64 ] && echo "$OUT" | grep -q 'Nutzung' || { echo "FAIL: import ohne Quelle rc=$RC: $OUT"; exit 1; }
 # doctor ohne systemVersion: kein FEHLT mehr (die Einrichtung schreibt sie nicht mehr; der Kern liegt außerhalb des Vaults)
-OUT=$(BRAIN_VAULT="$T" node "$B" doctor 2>&1); echo "$OUT" | grep -q '^OK Einstellungsdatei' || { echo "FAIL: doctor Einstellungsdatei: $OUT"; exit 1; }
+mkdir -p "$T/leeres-heim"   # doctor liest ~/.claude/settings.json: eigenes leeres Home, nie die echte Datei
+OUT=$(HOME="$T/leeres-heim" USERPROFILE="$T/leeres-heim" BRAIN_VAULT="$T" node "$B" doctor 2>&1); echo "$OUT" | grep -q '^OK Einstellungsdatei' || { echo "FAIL: doctor Einstellungsdatei: $OUT"; exit 1; }
 echo "$OUT" | grep -q '^FEHLT Einstellungsdatei' && { echo "FAIL: doctor FEHLT ohne systemVersion"; exit 1; }
 echo "OK test-cli"
