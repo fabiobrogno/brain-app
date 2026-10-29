@@ -17,6 +17,8 @@ rep({ start: { argv: process.argv.slice(2), brainVault: process.env.BRAIN_VAULT 
 const SEITE = `<!doctype html><html><head><meta charset="utf-8"><title>Stub</title></head><body>stub<script>
 const K = window.webkit.messageHandlers.brain, A = window.webkit.messageHandlers.aktion;
 const api = async (m, p, d) => { const r = await K.postMessage({ methode: m, pfad: p, daten: d ?? null }); return JSON.parse(r.body); };
+// Antworten der App kommen aus einem Swift-Dictionary: die Reihenfolge der Schlüssel ist von Lauf zu Lauf verschieden — für den Vergleich sortieren.
+const stabil = (o) => JSON.stringify(o, (k, v) => (v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort((x, y) => (x[0] < y[0] ? -1 : 1))) : v));
 const meld = (o) => api("POST", "/api/stub", o);
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 // Das App-Log ist der Beleg: warten, bis eine Zeile (Muster) mindestens so oft vorkommt — statt auf gut Glück zu schlafen.
@@ -27,13 +29,13 @@ window.studio = { bereit: false, befehl: (n) => meld({ befehl: n }), vorSchliess
   const e = {};
   try {
     const modus = (await meld({ modus: true })).modus;
-    e.titel = JSON.stringify(await A.postMessage({ aktion: "titel", wert: "Stub Vault" }));
+    e.titel = stabil(await A.postMessage({ aktion: "titel", wert: "Stub Vault" }));
     e.ungueltig = await A.postMessage({ aktion: "loeschen" }).then(() => "angenommen", (x) => "abgewiesen:" + x);
     e.ohneWert = await A.postMessage({ aktion: "extern" }).then(() => "angenommen", (x) => "abgewiesen:" + x);
     // Das Backend meldet Vertrauensänderungen (Hooks/Git) an die App; für den Kern ändert das nichts.
-    e.vertrauenGeaendert = JSON.stringify(await A.postMessage({ aktion: "vertrauen-geaendert" }));
+    e.vertrauenGeaendert = stabil(await A.postMessage({ aktion: "vertrauen-geaendert" }));
     await pause(2000); // die App liest den Status im Hintergrund neu
-    e.ansicht = JSON.stringify(await A.postMessage({ aktion: "ansicht" }));
+    e.ansicht = stabil(await A.postMessage({ aktion: "ansicht" }));
     if (modus === "leer") {
       // Aktion „fehler“ (Review SW-7): je Fensterleben höchstens 20 Zeilen im Log, danach einmal „gedrosselt“, der Rest wird verworfen.
       const antworten = [];
@@ -45,7 +47,7 @@ window.studio = { bereit: false, befehl: (n) => meld({ befehl: n }), vorSchliess
       // Die Übersicht öffnen und warten, bis ihre Seite (vom gebündelten Kern, über bin/kern) geladen ist.
       const oeffneUebersicht = async () => {
         const vorher = await zaehle(" fenster-bereit uebersicht");
-        const antwort = JSON.stringify(await A.postMessage({ aktion: "ansicht" }));
+        const antwort = stabil(await A.postMessage({ aktion: "ansicht" }));
         return { antwort, bereit: JSON.parse(antwort).ok === true && (await warte(" fenster-bereit uebersicht", vorher + 1, 30000)) };
       };
       // 1) Die Übersicht ist offen (e.ansicht), ohne dass der Vault je „freigegeben“ wurde.
@@ -54,7 +56,7 @@ window.studio = { bereit: false, befehl: (n) => meld({ befehl: n }), vorSchliess
       await meld({ kitWeg: true });
       await A.postMessage({ aktion: "vertrauen-geaendert" });
       e.schliesstOhneKonfig = await warte(" uebersicht-geschlossen kein-brain");
-      e.ansichtOhneKonfig = JSON.stringify(await A.postMessage({ aktion: "ansicht" }));
+      e.ansichtOhneKonfig = stabil(await A.postMessage({ aktion: "ansicht" }));
       // 3) Wieder da: die Übersicht öffnet erneut und bleibt offen, bis der Vault wechselt.
       await meld({ kitDa: true });
       await A.postMessage({ aktion: "vertrauen-geaendert" });
@@ -62,7 +64,7 @@ window.studio = { bereit: false, befehl: (n) => meld({ befehl: n }), vorSchliess
       e.ansichtZwei = zwei.antwort; e.bereitZwei = zwei.bereit;
     }
     await meld({ schreibeVaults: true });
-    e.gewechselt = JSON.stringify(await A.postMessage({ aktion: "vault-gewechselt" }));
+    e.gewechselt = stabil(await A.postMessage({ aktion: "vault-gewechselt" }));
     await meld({ ergebnis: e });
     const dlg = A.postMessage({ aktion: "ordner-waehlen", wert: { titel: "Stub-Dialog", vorschlag: "~/Brain" } });
     await pause(800);

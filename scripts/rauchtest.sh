@@ -314,7 +314,7 @@ JS
   if [ -e "$marke" ]; then cat "$marke"; fehl "D/$art: Code aus dem Vault ist ohne Freigabe gelaufen (Marke geschrieben)"; fi
   [ "$art" = umleitung ] || grep -q "fenster-auf uebersicht" "$LOG" || fehl "D/$art: die Übersicht des Kerns hat sich nicht geöffnet"
   if [ "$(aussen_stand)" != "$aussen_vorher" ]; then echo "vorher:"; echo "$aussen_vorher"; echo "nachher:"; aussen_stand; fehl "D/$art: außerhalb des Vaults wurde geschrieben"; fi
-  [ ! -e "$basis/aussen3" ] || fehl "D/$art: „../aussen3“ aus der Konfiguration wurde angelegt"
+  [ ! -e "$basis/aussen3" ] || fehl "D/$art: ../aussen3 aus der Konfiguration wurde angelegt"
   grep -q "aktion vertrauen-geaendert" "$LOG" || fehl "D/$art: Die Aktion vertrauen-geaendert kam nicht an"
   grep -q "aktion ansicht" "$LOG" || fehl "D/$art: Die Aktion ansicht kam nicht an"
   ergebnis="$(sed -n 's/.* test-skript ok probe.js [0-9]*ms ergebnis=\(.*\)$/\1/p' "$LOG" | head -1)"
