@@ -7,8 +7,8 @@
 // Nutzung: install.mjs [vault] [--claude-home <ordner>] [--ohne-statusline]
 //          install.mjs --entfernen [--claude-home <ordner>]   (nimmt alle Brain-Hooks, die Statuszeile und die Brain-Befehle wieder heraus; Fremdes bleibt)
 //          install.mjs --stand [--claude-home <ordner>]       (eine JSON-Zeile: was eingetragen ist; schreibt nichts)
-import { readFileSync, writeFileSync, existsSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, readdirSync, statSync, renameSync, chmodSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { readFileSync, writeFileSync, existsSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, readdirSync, statSync, renameSync, chmodSync, lstatSync, readlinkSync } from "node:fs";
+import { join, dirname, resolve } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
@@ -56,17 +56,31 @@ function liesSettings(datei) {
   try { return JSON.parse(readFileSync(datei, "utf8")); }
   catch { console.error(`Die Datei ${datei} ist kein gültiges JSON — ich ändere nichts. Bitte zuerst reparieren.`); process.exit(1); }
 }
-// Atomar: Temp-Datei im selben Ordner, Rechte der bisherigen Datei übernehmen, dann rename — settings.json ist nie halb geschrieben. Backup der alten Fassung.
+// Ist settings.json ein Symlink (z. B. aus einem Dotfiles-Ordner), wird das ZIEL geändert und der Link bleibt: → aufgelöster Pfad (auch bei ins Leere zeigendem Link).
+function echtesZiel(datei) {
+  let p = datei;
+  for (let i = 0; i < 20; i++) {
+    let l;
+    try { l = lstatSync(p); } catch { return p; }
+    if (!l.isSymbolicLink()) return p;
+    p = resolve(dirname(p), readlinkSync(p));
+  }
+  throw new Error("zu viele verschachtelte Links");
+}
+// Atomar: Temp-Datei im selben Ordner wie das (aufgelöste) Ziel, Rechte der bisherigen Datei übernehmen, dann rename — settings.json ist nie halb geschrieben und ein
+// Symlink wird nicht durch eine normale Datei ersetzt. Backup der alten Fassung neben dem Pfad `datei`.
 function schreibeSettings(datei, home, s) {
   mkdirSync(home, { recursive: true });
   if (existsSync(datei)) { const b = `${datei}.bak-${zeitstempel()}`; copyFileSync(datei, b); console.log(`Backup: ${b}`); }
-  const tmp = `${datei}.tmp-${process.pid}`;
+  const ziel = echtesZiel(datei);
+  mkdirSync(dirname(ziel), { recursive: true });
+  const tmp = `${ziel}.tmp-${process.pid}`;
   let modus = 0o600;
-  try { modus = statSync(datei).mode & 0o777; } catch { /* neue Datei */ }
+  try { modus = statSync(ziel).mode & 0o777; } catch { /* neue Datei */ }
   try {
     writeFileSync(tmp, JSON.stringify(s, null, 2) + "\n", { mode: modus });
     chmodSync(tmp, modus);
-    renameSync(tmp, datei);
+    renameSync(tmp, ziel);
   } catch (e) { try { rmSync(tmp, { force: true }); } catch { /* weg */ } throw e; }
 }
 // Brain-Befehle (Slash-Commands) tragen die Marke; fremde Dateien im Ordner bleiben.

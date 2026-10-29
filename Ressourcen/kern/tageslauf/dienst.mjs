@@ -4,6 +4,8 @@
 // Pfade bin/node und bin/kern — die plist überlebt App-Updates. Sie trägt KEINEN Vault ein: der Lauf folgt wie die Hooks dem aktiven Vault der App
 // (vaults.json); ohne gültigen Vault endet er still mit Exit 0 (brain.mjs). Das Protokoll liegt im Support-Ordner der App (logs/dienst.log), nicht im Vault.
 // Eine ältere plist (BRAIN_VAULT, node-start.sh, Kern-Pfad) wird von dienstAn ersetzt.
+// Der Lauf gilt nur für Vaults, für die der Dienst ausdrücklich eingeschaltet wurde (dienst-merker.mjs: <Support>/dienst.json); ein später aktiv gewordener
+// fremder Vault wird nie automatisch bearbeitet. `dienst an` trägt den aktuellen Vault ein, `dienst aus` löscht den Merker und die plist.
 // Der Nutzer führt `brain dienst an` selbst aus — Claude ändert keine LaunchAgents (Spec §9).
 // Testhaken: BRAIN_LAUNCHCTL (Ersatzprogramm, per node gestartet). Unter `node --test` (NODE_TEST_CONTEXT) ohne Ersatz:
 // Fehler statt echtem launchctl.
@@ -17,6 +19,7 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { nodePfad, starterPfad, supportOrdner, KernNichtStabilFehler, vaultUndRest } from "../pfade.mjs";
 import { findeClaude } from "../ernte.mjs";
+import { erlaubeVault, widerrufeAlle, dienstErlaubt } from "./dienst-merker.mjs";
 
 export const LABEL = "de.brain.tageslauf";
 export const plistPfad = ({ home = homedir() } = {}) => join(home, "Library", "LaunchAgents", `${LABEL}.plist`);
@@ -88,6 +91,7 @@ export function dienstAn(vault, { home = homedir(), plattform = process.platform
   if (existsSync(datei)) launchctl(["bootout", `${domain()}/${LABEL}`]);
   // Kein fester Node-Pfad und kein Vault — der Ordner des heutigen Node steht nur noch als PATH-Hinweis drin.
   writeFileSync(datei, plistInhalt({ starter, pfad, log, profil }));
+  erlaubeVault(vault);
   const ok = launchctl(["bootstrap", domain(), datei]);
   return {
     ok, ohneClaude: !claude, profil,
@@ -97,6 +101,7 @@ export function dienstAn(vault, { home = homedir(), plattform = process.platform
 }
 export function dienstAus(vault, { home = homedir() } = {}) {
   const datei = plistPfad({ home });
+  widerrufeAlle(); // auch ohne plist: nie ein Merker ohne Dienst
   if (!existsSync(datei)) return { ok: true, text: "Der Hintergrunddienst war nicht eingerichtet." };
   launchctl(["bootout", `${domain()}/${LABEL}`]);
   unlinkSync(datei);
@@ -115,7 +120,7 @@ export function dienstStatus(vault, { home = homedir() } = {}) {
   // veraltet: die plist ist noch die ältere Form (fester Vault oder node-start.sh) — „dienst an“ ersetzt sie.
   let veraltet = false;
   if (eingerichtet) { try { veraltet = /<key>BRAIN_VAULT<\/key>|node-start\.sh/.test(readFileSync(plist, "utf8")); } catch { /* unlesbar */ } }
-  return { eingerichtet, geladen: eingerichtet && launchctl(["print", `${domain()}/${LABEL}`]), plist, profil: eingerichtet ? profilAusPlist(plist) : null, veraltet };
+  return { eingerichtet, geladen: eingerichtet && launchctl(["print", `${domain()}/${LABEL}`]), plist, profil: eingerichtet ? profilAusPlist(plist) : null, veraltet, fuerVault: eingerichtet && dienstErlaubt(vault) };
 }
 
 const selbst = fileURLToPath(import.meta.url);
@@ -128,7 +133,7 @@ if (aufruf && aufruf === realpathSync(selbst)) {
   if (befehl === "status") {
     const s = dienstStatus(vault);
     // --json: eine Zeile für die App (Kortex-Einrichtung); nichts davon enthält Zugangsdaten.
-    if (process.argv.includes("--json")) console.log(JSON.stringify({ eingerichtet: s.eingerichtet, geladen: s.geladen, profil: s.profil, veraltet: s.veraltet }));
+    if (process.argv.includes("--json")) console.log(JSON.stringify({ eingerichtet: s.eingerichtet, geladen: s.geladen, profil: s.profil, veraltet: s.veraltet, fuerDiesenVault: s.fuerVault }));
     else console.log(s.eingerichtet ? `Hintergrunddienst eingerichtet${s.geladen ? " und geladen" : ", aber nicht geladen — „brain dienst an“ erneut ausführen"}.`
       : "Hintergrunddienst ist nicht eingerichtet — der Tageslauf startet beim Sitzungsstart, wenn er fällig ist.");
     if (s.eingerichtet && !process.argv.includes("--json")) {

@@ -657,9 +657,9 @@ private struct VerdrahtungsBlock: View {
                 }
             }
             if stand.dienstVerfuegbar {
-                zeile(.dienst, titel: "Kortex darf im Hintergrund aufräumen",
-                      text: "Richtet einen Dienst auf deinem Mac ein (Datei de.brain.tageslauf in ~/Library/LaunchAgents). Er pflegt einmal am Tag das Brain, das in Kortex gerade aktiv ist, wenn der Mac am Netzteil hängt "
-                          + "und ruht, und nutzt dafür dein Claude. Ausschalten löscht ihn wieder.")
+                zeile(.dienst, titel: "Kortex darf dieses Brain im Hintergrund aufräumen",
+                      text: "Richtet einen Dienst auf deinem Mac ein (Datei de.brain.tageslauf in ~/Library/LaunchAgents). Er pflegt einmal am Tag genau dieses Brain, wenn es in Kortex gerade aktiv ist "
+                          + "und der Mac am Netzteil hängt und ruht, und nutzt dafür dein Claude. Andere Brains fasst er nie an, solange du ihn für sie nicht ebenfalls einschaltest. Ausschalten löscht ihn wieder.")
             }
         }
         .padding(12)

@@ -614,6 +614,11 @@ if (aufruf && aufruf === realpathSync(selbst)) {
     process.exit(64);
   }
   const vault = o.vault || vaultPfadOderEnde([]);
+  // Dienst-Lauf (LaunchAgent): nur für Vaults, für die der Dienst eingeschaltet wurde (tageslauf/dienst-merker.mjs).
+  if (o.dienst && !(await import("./tageslauf/dienst-merker.mjs")).dienstErlaubt(vault)) {
+    console.error(`${new Date().toISOString()} Hintergrunddienst: für diesen Vault ist der Dienst nicht eingeschaltet — Lauf übersprungen.`);
+    process.exit(0);
+  }
   if (o.losgeloest) {
     const args = process.argv.slice(2).filter((a) => a !== "--losgeloest" && a !== o.vault);
     const r = starteLosgeloest(vault, args);

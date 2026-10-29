@@ -4,6 +4,7 @@
 // (so bleibt alles nach einem App-Update gültig). Jeder Schritt hat einen Rückweg („aus“); Fremdes in den Einstellungen anderer Programme bleibt.
 //   GET  /api/kern/stand       → { starter, profile: [{pfad, name, standard}], claude: { profile: { <pfad>: {aktiv, …} } }, git, dienst } (liest nur)
 //   POST /api/kern/verdrahten  { was: "claude" | "git" | "dienst", an: true|false, ersetzen?: true, profile?: [<pfad>], profil?: <pfad> } → { ok, ausgabe, stand }
+//   Hintergrunddienst: läuft nur für Vaults, für die er eingeschaltet wurde (tageslauf/dienst-merker.mjs); `eingerichtet` heißt: für DIESEN Vault.
 //   Claude-Profile (profile.mjs): die App kennt CLAUDE_CONFIG_DIR nicht (Start aus dem Finder). „claude“ wirkt auf die gewählten Profile (Pfade aus der erkannten
 //   Liste, je Profil --claude-home); „dienst“ nutzt das Profil `profil` (nur wenn es nicht das Standardprofil ist, wird CLAUDE_CONFIG_DIR gesetzt).
 import { existsSync } from "node:fs";
@@ -62,7 +63,7 @@ export function erzeugeVerdrahtung({ starter, support = null, istVorschau = () =
       profilStand(),
       v && (await v.istGitRepo()) ? abschnitt(["hooks-install", ...vaultArgs, "--stand"], (j) => ({ moeglich: true, aktiv: !!j.aktiv, fremder: !!j.fremder })) : Promise.resolve({ moeglich: false }),
       process.platform === "darwin" && !vorschau && v && (!testmodus() || process.env.BRAIN_LAUNCHCTL)
-        ? abschnitt(["dienst", "status", "--json", ...vaultArgs], (j) => ({ verfuegbar: true, eingerichtet: !!j.eingerichtet, geladen: !!j.geladen }))
+        ? abschnitt(["dienst", "status", "--json", ...vaultArgs], (j) => ({ verfuegbar: true, eingerichtet: !!j.eingerichtet && !!j.fuerDiesenVault, geladen: !!j.geladen }))
         : Promise.resolve({ verfuegbar: false }),
     ]);
     return { ...aus, claude, git, dienst };

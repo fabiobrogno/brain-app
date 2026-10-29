@@ -3,7 +3,7 @@
 // Nie das echte ~/.claude, nie ~/Library/LaunchAgents, nie das echte launchctl.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync, cpSync, symlinkSync, readdirSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync, cpSync, symlinkSync, readdirSync, realpathSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { tmp, schreibe, pfad, repo, g } from "./hilfe.mjs";
@@ -202,10 +202,11 @@ test("Hintergrunddienst: LaunchAgent zeigt auf den Starter (bin/kortex), kein fe
     ohneVersionOderApp(text, e);
     assert.ok(fake.aufrufe().some((a) => a.startsWith("bootstrap")), "nur die Attrappe wurde gerufen");
     assert.equal(r.j.stand.dienst.eingerichtet, true);
+    assert.deepEqual(JSON.parse(readFileSync(join(e.support, "dienst.json"), "utf8")).vaults, [realpathSync(e.v)], "der Dienst ist nur für diesen Vault eingeschaltet");
 
     const aus = await e.rufe("POST", "/api/kern/verdrahten", { was: "dienst", an: false });
     assert.equal(aus.status, 200, JSON.stringify(aus.j));
-    assert.ok(!existsSync(plist));
+    assert.ok(!existsSync(plist) && !existsSync(join(e.support, "dienst.json")));
     assert.ok(fake.aufrufe().some((a) => a.startsWith("bootout")));
   } finally { delete process.env.BRAIN_LAUNCHCTL; }
 });

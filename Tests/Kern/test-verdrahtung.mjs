@@ -2,7 +2,7 @@
 // Nur Temp-HOME und Wegwerf-Ordner; nie ~/.claude, nie ein echter Starter.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, readFileSync, readdirSync, mkdirSync, chmodSync, existsSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, readdirSync, mkdirSync, chmodSync, existsSync, symlinkSync, lstatSync, readlinkSync, realpathSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -239,4 +239,79 @@ test("Hintergrunddienst ohne aktiven Vault: der Lauf endet still mit Exit 0 und 
   assert.equal(r.stderr.trim().split("\n").length, 1);
   // Ohne --dienst bleibt es ein Fehler für Menschen (Exit 2).
   assert.equal(spawnSync(process.execPath, [brain, "tageslauf", "--probe"], { encoding: "utf8", env: e() }).status, 2);
+});
+
+// ---- Review: Dienst nur für freigegebene Vaults; settings.json als Symlink ----
+test("Dienst-Merker: nur der eingeschaltete Vault darf laufen; ein anderer, später aktiver Vault wird still übersprungen; aus löscht alles", { skip: process.platform !== "darwin" }, async () => {
+  const D = await import("../tageslauf/dienst.mjs");
+  const M = await import("../tageslauf/dienst-merker.mjs");
+  const brain = fileURLToPath(new URL("../brain.mjs", import.meta.url));
+  const heim = mkdtempSync(join(tmpdir(), "verdr-m-heim-")), support = mkdtempSync(join(tmpdir(), "verdr-m-sup-"));
+  const eigener = vaultOrdner("verdr-eigen "), fremder = vaultOrdner("verdr-fremd ");
+  const fake = join(mkdtempSync(join(tmpdir(), "verdr-m-lc-")), "launchctl.mjs");
+  writeFileSync(fake, "process.exit(0);\n");
+  const alt = [process.env.BRAIN_LAUNCHCTL, process.env.BRAIN_APP_SUPPORT];
+  process.env.BRAIN_LAUNCHCTL = fake; process.env.BRAIN_APP_SUPPORT = support;
+  try {
+    assert.deepEqual(M.erlaubteVaults(), []);
+    assert.equal(M.dienstErlaubt(eigener), false, "ohne Merker darf kein Vault laufen");
+    assert.equal(D.dienstAn(eigener, { home: heim, plattform: "darwin", node: process.execPath, claude: null, profil: "" }).ok, true);
+    assert.equal(M.dienstErlaubt(eigener), true);
+    assert.equal(M.dienstErlaubt(fremder), false);
+    assert.deepEqual(M.erlaubteVaults(), [realpathSync(eigener)], "realpath, nicht der angegebene Pfad");
+    assert.equal(statSync(M.merkerPfad()).mode & 0o777, 0o600);
+    assert.deepEqual(readdirSync(support).filter((n) => n.includes(".tmp")), [], "atomar: keine Temp-Reste");
+    assert.equal(D.dienstStatus(eigener, { home: heim }).fuerVault, true);
+    assert.equal(D.dienstStatus(fremder, { home: heim }).fuerVault, false);
+    // Der Lauf selbst (so ruft ihn der LaunchAgent): fremder Vault → still Exit 0 mit einer Protokollzeile, nichts wird bearbeitet.
+    const lauf = (vault) => spawnSync(process.execPath, [brain, "tageslauf", "--wenn-faellig", "--dienst"], { encoding: "utf8", env: env({ BRAIN_APP_SUPPORT: support, BRAIN_VAULT: vault }) });
+    const r = lauf(fremder);
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stdout, "");
+    assert.match(r.stderr, /nicht eingeschaltet/);
+    assert.equal(r.stderr.trim().split("\n").length, 1);
+    assert.ok(!existsSync(join(fremder, ".logs")), "im fremden Vault entsteht nichts");
+    // Ein zweiter Vault kann zusätzlich eingeschaltet werden; ein kaputter Merker erlaubt nichts.
+    D.dienstAn(fremder, { home: heim, plattform: "darwin", node: process.execPath, claude: null, profil: "" });
+    assert.deepEqual(M.erlaubteVaults().sort(), [realpathSync(eigener), realpathSync(fremder)].sort());
+    writeFileSync(M.merkerPfad(), "{ kaputt");
+    assert.equal(M.dienstErlaubt(eigener), false);
+    // Rückweg: dienst aus löscht plist UND Merker.
+    D.dienstAn(eigener, { home: heim, plattform: "darwin", node: process.execPath, claude: null, profil: "" });
+    assert.equal(D.dienstAus(eigener, { home: heim }).ok, true);
+    assert.equal(existsSync(M.merkerPfad()), false);
+    assert.equal(M.dienstErlaubt(eigener), false);
+  } finally {
+    for (const [i, k] of ["BRAIN_LAUNCHCTL", "BRAIN_APP_SUPPORT"].entries()) { if (alt[i] === undefined) delete process.env[k]; else process.env[k] = alt[i]; }
+  }
+});
+
+test("settings.json als Symlink (Dotfiles): Einrichten und Entfernen ändern das Ziel atomar, der Link bleibt, Rechte bleiben", { skip: !POSIX }, () => {
+  const h = claudeHome(), v = vaultOrdner();
+  const dot = mkdtempSync(join(tmpdir(), "verdr-dot-"));
+  const ziel = join(dot, "claude-settings.json");
+  writeFileSync(ziel, JSON.stringify({ model: "x", hooks: { Stop: [{ hooks: [{ type: "command", command: "afplay glass" }] }] } }));
+  chmodSync(ziel, 0o640);
+  symlinkSync(ziel, join(h, "settings.json"));
+  const istLink = () => lstatSync(join(h, "settings.json")).isSymbolicLink();
+  let r = lauf([inst, v, "--claude-home", h]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(istLink(), "der Link bleibt ein Link");
+  assert.equal(readlinkSync(join(h, "settings.json")), ziel);
+  const s = JSON.parse(readFileSync(ziel, "utf8"));
+  assert.equal(s.model, "x");
+  assert.ok(befehle(s).some((c) => c.includes("hook session-start")), "das Ziel enthält die Hooks");
+  assert.equal(statSync(ziel).mode & 0o777, 0o640, "Rechte des Ziels bleiben");
+  assert.deepEqual(readdirSync(dot).filter((n) => n.includes(".tmp")), [], "keine Temp-Reste im Zielordner");
+  r = lauf([inst, "--entfernen", "--claude-home", h]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(istLink());
+  assert.deepEqual(befehle(JSON.parse(readFileSync(ziel, "utf8"))), ["afplay glass"]);
+  assert.equal(statSync(ziel).mode & 0o777, 0o640);
+  // ins Leere zeigender Link: das Ziel wird neu angelegt, der Link bleibt
+  const h2 = claudeHome(), dot2 = mkdtempSync(join(tmpdir(), "verdr-dot2-"));
+  symlinkSync(join(dot2, "neu.json"), join(h2, "settings.json"));
+  assert.equal(lauf([inst, v, "--claude-home", h2]).status, 0);
+  assert.ok(lstatSync(join(h2, "settings.json")).isSymbolicLink());
+  assert.ok(existsSync(join(dot2, "neu.json")));
 });

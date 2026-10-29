@@ -88,6 +88,7 @@ node adapters/claude-code/install.mjs <vault> [--claude-home <dir>] [--ohne-stat
 - `--ohne-statusline` lässt die Statusline unangetastet.
 - `--entfernen` ist der Rückweg: nimmt alle Brain-Hooks (neue und ältere Form), die Brain-Statuszeile und die Brain-Befehle (`commands/*.md` mit der Marke) heraus; Fremdes
   bleibt, vorher wird ein Backup angelegt. Braucht weder Vault noch Starter.
+- Ist `settings.json` ein Symlink (Dotfiles), wird das Ziel atomar ersetzt und der Link bleibt (gilt auch für `--entfernen`).
 - `--stand` schreibt nichts und gibt eine JSON-Zeile aus (`hooks.eingetragen/neueForm`, `statuszeile`, `befehle`, `aktiv`).
 - Über den Starter: `kortex claude-hooks [--entfernen|--stand]` (das ruft die Einrichtung der App auf).
 
