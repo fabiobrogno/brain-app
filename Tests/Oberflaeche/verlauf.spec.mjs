@@ -658,7 +658,7 @@ test("Remote-Dialog: Texte, Fokus im Feld, Escape schließt", async ({ page }) =
   await expect(dlg.locator(".rm-titel")).toHaveText("Remote hinzufügen");
   await expect(dlg).toContainText("Ein Remote ist ein Online-Ort, an dem dein Vault gesichert wird — z. B. ein privates GitHub-Repository.");
   await expect(dlg.locator("label")).toHaveText("Adresse");
-  await expect(dlg.locator("input")).toHaveAttribute("placeholder", /git@github\.com:name\/brain\.git/);
+  await expect(dlg.locator("input")).toHaveAttribute("placeholder", /git@github\.com:name\/vault\.git/);
   await expect(dlg.locator("input")).toBeFocused();
   await expect(dlg).toContainText("Anmeldung läuft über deine normale Git-Anmeldung (SSH-Schlüssel oder macOS-Schlüsselbund). Die App speichert keine Passwörter.");
   await expect(dlg.locator('[data-aktion="verbinden"]')).toHaveText("Verbinden");
