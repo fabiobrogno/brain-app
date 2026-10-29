@@ -55,7 +55,7 @@ const alsPrueflistenName = (s) => s.replace(/[^\x20-\x7e]/g, "?").slice(0, 120);
 export function pruefungAlle(git, vault, { home = homedir(), perl = "/usr/bin/perl" } = {}) {
   const skript = join(KERN, "git-sicher-pruefung.pl");
   if (!git || !existsSync(perl) || !existsSync(skript)) return { ok: false, namen: [], nichtPruefbar: true };
-  const r = spawnSync(perl, [skript, git, vault, "--alle"], { encoding: "utf8", env: saubereUmgebung(home), timeout: 30_000, stdio: ["ignore", "pipe", "ignore"] });
+  const r = spawnSync(perl, [skript, git, vault, "--alle"], { encoding: "utf8", env: saubereUmgebung(home), timeout: 30_000, windowsHide: true, stdio: ["ignore", "pipe", "ignore"] });
   if (r.error || r.status === null) return { ok: false, namen: [], nichtPruefbar: true };
   const namen = String(r.stdout || "").split("\n").filter((z) => z.startsWith("REFUSE\t")).map((z) => z.slice(7));
   if (r.status === 0) return { ok: true, namen: [], nichtPruefbar: false };

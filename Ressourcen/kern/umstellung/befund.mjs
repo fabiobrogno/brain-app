@@ -78,7 +78,7 @@ function ordnerGroesse(wurzel, grenze = 20_000) {
 function laufendeProzesse(vault) {
   const orte = [...new Set([resolve(vault), echt(vault)])].map((v) => `${maskiere(v)}/${maskiere(ALT_KIT_ORDNER)}/`);
   try {
-    const aus = execFileSync("/usr/bin/pgrep", ["-f", "--", orte.join("|")], { encoding: "utf8", timeout: 10_000, stdio: ["ignore", "pipe", "ignore"] });
+    const aus = execFileSync("/usr/bin/pgrep", ["-f", "--", orte.join("|")], { encoding: "utf8", timeout: 10_000, windowsHide: true, stdio: ["ignore", "pipe", "ignore"] });
     return aus.split("\n").filter((z) => /^\d+$/.test(z.trim())).filter((z) => Number(z) !== process.pid).length;
   } catch { return 0; }   // Exit 1 = keine Treffer; fehlt pgrep, gilt „keine bekannt“
 }
@@ -316,7 +316,7 @@ export function erstelleBefund({ vault, home = homedir(), env = process.env, sup
       if (falte(echterPfad) !== falte(vault)) merkmale.push("verknuepfung");
       try { if (statSync(vault).dev !== statSync(tmp).dev) merkmale.push("anderes-volume"); } catch { /* ignorieren */ }
       if (merkmale.includes("cloud") && plattform === "darwin") {
-        try { const d = execFileSync("/usr/bin/find", [vault, "-flags", "+dataless", "-print", "-quit"], { encoding: "utf8", timeout: 20_000, stdio: ["ignore", "pipe", "ignore"] }); if (d.trim()) merkmale.push("nur-in-der-cloud"); } catch { /* find kennt das Flag nicht */ }
+        try { const d = execFileSync("/usr/bin/find", [vault, "-flags", "+dataless", "-print", "-quit"], { encoding: "utf8", timeout: 20_000, windowsHide: true, stdio: ["ignore", "pipe", "ignore"] }); if (d.trim()) merkmale.push("nur-in-der-cloud"); } catch { /* find kennt das Flag nicht */ }
       }
       if (merkmale.length) {
         const sätze = {
