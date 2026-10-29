@@ -160,3 +160,32 @@
   .vl-ein { animation: none; }
   .rm-spinner { animation: rm-dreh 2.4s linear infinite !important; }
 }
+
+/* ------------------------------------------------------------------ Abgleich mit Konflikten, Fassung zurückholen */
+.ab-dialog { width: min(640px, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow-y: auto; }
+.ab-liste { display: flex; flex-direction: column; gap: 12px; margin-bottom: 4px; }
+.ab-karte { margin: 0; padding: 12px 14px 10px; border: 1px solid var(--linie); border-radius: var(--r); background: var(--papier); min-width: 0; }
+.ab-datei { padding: 0 4px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; color: var(--text); }
+.ab-hinweis { margin: 4px 0 8px; color: var(--text-3); font-size: 12px; line-height: 1.5; }
+.ab-hinweis.fehlertext { color: var(--rot); }
+.ab-optionen { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.ab-option { display: flex; align-items: flex-start; gap: 10px; padding: 8px 10px; border-radius: var(--r); cursor: pointer; font-size: 13px; line-height: 1.45; }
+.ab-option:hover { background: var(--hover); }
+.ab-option input { flex: none; margin-top: 3px; accent-color: var(--akzent); }
+.ab-option:has(input:checked) { background: var(--akzent-weich); }
+.ab-optext { display: block; color: var(--text); }
+.ab-zusatz { display: block; color: var(--text-3); font-size: 12px; }
+.ab-link { margin-top: 6px; padding: 2px 4px; border: 0; background: none; color: var(--akzent); font: inherit; font-size: 12.5px; cursor: pointer; border-radius: 4px; }
+.ab-link:hover { text-decoration: underline; }
+.ab-link:focus-visible { outline: 2px solid var(--akzent); outline-offset: 1px; }
+.ab-vorschau { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-top: 8px; }
+.ab-spalte { min-width: 0; border: 1px solid var(--linie); border-radius: var(--r); overflow: hidden; background: var(--seite); }
+.ab-spaltenkopf { padding: 6px 10px; border-bottom: 1px solid var(--linie); color: var(--text-2); font-size: 11.5px; font-weight: 600; }
+.ab-text { margin: 0; padding: 8px 10px; max-height: 220px; overflow: auto; white-space: pre-wrap; word-break: break-word; font: 12px/1.5 var(--mono, ui-monospace, Menlo, monospace); color: var(--text); }
+.ab-fuss { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.ab-fuss .sp { flex: 1; }
+.ab-offen { color: var(--text-3); font-size: 12px; }
+.ab-abbrechen { color: var(--text-2); }
+.ab-fuss .knopf { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.ab-diff { max-height: 280px; overflow: auto; margin: 4px 0 4px; }
+.ab-dialog .rm-fuss { flex-wrap: wrap; }

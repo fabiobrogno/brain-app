@@ -62,7 +62,8 @@ export const api = {
   nutzung: () => anfrage("GET", "/api/nutzung"),
   status: () => anfrage("GET", "/api/git/status"),
   commit: (nachricht, dateien) => anfrage("POST", "/api/git/commit", { nachricht, dateien }),
-  sync: () => anfrage("POST", "/api/git/sync", {}),
+  // konflikteLoesen: bei Konflikten bleibt die Zusammenführung offen (409 { konflikt: true, dateien }) und die Oberfläche lässt pro Datei wählen
+  sync: () => anfrage("POST", "/api/git/sync", { konflikteLoesen: true }),
   verlauf: (pfad, max) => anfrage("GET", "/api/git/verlauf" + q({ pfad, max })),
   diff: (pfad, sha) => anfrage("GET", "/api/git/diff" + q({ pfad, sha })),
   fassung: (pfad, sha) => anfrage("GET", "/api/git/fassung" + q({ pfad, sha })),
@@ -77,6 +78,13 @@ export const api = {
   ansichten: () => anfrage("GET", "/api/ansichten"),
   gitLog: ({ max, vor } = {}) => anfrage("GET", "/api/git/log" + q({ max, vor })),
   gitRemote: (url) => anfrage("POST", "/api/git/remote", { url }),
+  // ---- v3: Abgleich mit Konflikten, Nachsehen, Version zurückholen
+  gitKonflikt: (pfad) => anfrage("GET", "/api/git/konflikt" + q({ pfad })),
+  gitKonfliktLoesen: (auswahl) => anfrage("POST", "/api/git/konflikt/loesen", { auswahl }),
+  gitKonfliktAbbrechen: () => anfrage("POST", "/api/git/konflikt/abbrechen", {}),
+  gitNachsehen: () => anfrage("POST", "/api/git/nachsehen", {}),
+  zurueckholenVorschau: (pfad, sha) => anfrage("GET", "/api/git/wiederherstellen/vorschau" + q({ pfad, sha })),
+  zurueckholen: (pfad, sha) => anfrage("POST", "/api/git/wiederherstellen", { pfad, sha }),
   // ---- v2: Vaults, KI, Probe
   vaults: () => anfrage("GET", "/api/vaults"),
   vaultAktiv: (pfad) => anfrage("POST", "/api/vaults/aktiv", { pfad }),

@@ -96,9 +96,15 @@ test("Verlauf, Diff und Wiederherstellen", async ({ page }) => {
   await eintraege.nth(1).locator(".fassung-kopf").click(); // Erste Fassung (kein Diff-Zeilen mit Mietwagen)
   await expect(eintraege.nth(1).locator("[data-diff]")).toBeVisible();
   await eintraege.nth(1).locator('[data-aktion="wiederherstellen"]').click();
+  // Vorschau zeigt den Unterschied; erst „Zurückholen“ ändert etwas — und zwar als NEUE Fassung (Verlauf bleibt vollständig)
+  const dlg = page.locator('[data-dialog="zurueckholen"]');
+  await expect(dlg.locator("[data-diff]")).toBeVisible();
+  const vorher = Number(git(vault, "rev-list", "--count", "HEAD").trim());
+  await dlg.locator('[data-aktion="zurueckholen"]').click();
   await expect(page.locator(".cm-content")).not.toContainText("Mietwagen");
-  await expect(page.locator("#speicherstand")).toHaveText("Gespeichert", { timeout: 5000 });
   expect(lese("10_notizen/Reise nach Lissabon.md").toString()).toBe("# Reise nach Lissabon\n\nFlug im Mai. Hotel in der Alfama.\n");
+  expect(Number(git(vault, "rev-list", "--count", "HEAD").trim())).toBe(vorher + 1);
+  expect(git(vault, "log", "-1", "--format=%s")).toContain("wiederhergestellt");
 });
 
 test("Suche im Vault und Öffnen", async ({ page }) => {
