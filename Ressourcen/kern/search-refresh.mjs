@@ -21,7 +21,7 @@ const stamp = join(vault, ".logs", "search-refreshed");
 
 if (!neuerAls(vault, stamp)) {
   // nichts zu tun → Suche aufwärmen (Kaltstart-Timeouts)
-  spawnSync(process.execPath, [join(T, "hint-warm.mjs")], { stdio: "ignore", windowsHide: true });
+  spawnSync(process.execPath, [join(T, "hint-warm.mjs"), vault], { stdio: "ignore", windowsHide: true, env: { ...process.env, BRAIN_VAULT: vault } });
   process.exit(0);
 }
 

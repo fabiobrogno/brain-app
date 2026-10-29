@@ -12,16 +12,26 @@ const HIER = dirname(fileURLToPath(import.meta.url));
 const WURZEL = process.env.KORTEX_KERN || join(HIER, "..", "..", "Ressourcen", "kern");
 
 // Muster, die verboten sind. `name` taucht in der Allowlist wieder auf.
+const HOME_BRAIN = [
+  /homedir\(\)\s*,\s*["'`]brain["'`]/,                                  // join(homedir(), "brain")
+  /homedir\(\)\s*\+\s*["'`]\/brain/,                                    // homedir() + "/brain"
+  /\bjoin\(\s*[\w.]*(?:home|HOME)\w*\s*,\s*["'`]brain["'`]/,            // join(home, "brain"), join(HOME, "brain")
+  /\b(?:home|HOME|heim)\w*\s*\+\s*["'`]\/brain(?![\w-])/,               // home + "/brain"
+  /process\.env\.(?:HOME|USERPROFILE)\s*\+\s*["'`]\/?brain/,            // Umgebungsvariable HOME plus "/brain"
+  /\$\{\s*(?:home|HOME|homedir\(\))\s*\}\/brain(?![\w-])/,              // `${home}/brain`
+  /(?:\$HOME|\$\{HOME\}|~)\/brain(?![\w-])/,                            // $HOME/brain, ~/brain
+];
 export const REGELN = [
   { name: "alter-kit-ordner", muster: /\.tools\b/, hinweis: "alter Kit-Ordner im Vault (.tools) — Kern-Dateien über KERN aus pfade.mjs ansprechen" },
-  { name: "home-brain", muster: /homedir\(\)\s*,\s*["'`]brain["'`]|homedir\(\)\s*\+\s*["'`]\/brain|(?:\$HOME|\$\{HOME\}|~)\/brain(?![\w-])/, hinweis: "fester Rückfall auf ~/brain — der Vault kommt aus --vault, BRAIN_VAULT oder der App-Vaultliste" },
+  { name: "home-brain", muster: { test: (z) => HOME_BRAIN.some((m) => m.test(z)) }, hinweis: "fester Rückfall auf ~/brain — der Vault kommt aus --vault, BRAIN_VAULT oder der App-Vaultliste" },
 ];
 
-// Ausnahmen: nur Migrations-/Erkennungscode. Jeder Eintrag muss tatsächlich etwas treffen, sonst schlägt der Test fehl (keine toten Ausnahmen).
+// Ausnahmen: nur Migrations-/Erkennungscode. Je Eintrag eine genaue Zahl erlaubter Zeilen und ein Muster, dem jede dieser Zeilen entsprechen muss — eine neue
+// Fundstelle in derselben Datei schlägt also fehl. Jeder Eintrag muss tatsächlich etwas treffen, sonst schlägt der Test fehl (keine toten Ausnahmen).
 export const ALLOWLIST = [
-  { datei: "pfade.mjs", regel: "alter-kit-ordner", grund: "Einzige Definition (ALT_KIT_ORDNER) des alten Kit-Ordners; alle anderen Module erkennen/schützen ihn nur über diese Konstante (noch nicht umgestellte Vaults, P7)." },
-  { datei: "HERKUNFT.md", regel: "alter-kit-ordner", grund: "Dokumentation der Herkunft: beschreibt das alte Layout <vault>/.tools, aus dem der Kern stammt." },
-  { datei: "adapters/claude-code/install.mjs", regel: "home-brain", grund: "Migration: ältere Hook-Einträge in der $HOME/brain-Schreibweise werden erkannt und durch den neuen Aufruf ersetzt (kein Rückfall auf einen Vault)." },
+  { datei: "pfade.mjs", regel: "alter-kit-ordner", anzahl: 1, zeile: /^export const ALT_KIT_ORDNER = "\.tools";/, grund: "Einzige Definition (ALT_KIT_ORDNER) des alten Kit-Ordners; alle anderen Module erkennen/schützen ihn nur über diese Konstante (noch nicht umgestellte Vaults, P7)." },
+  { datei: "HERKUNFT.md", regel: "alter-kit-ordner", anzahl: 4, zeile: /\.tools/, grund: "Dokumentation der Herkunft: beschreibt das alte Layout <vault>/.tools, aus dem der Kern stammt." },
+  { datei: "adapters/claude-code/install.mjs", regel: "home-brain", anzahl: 2, zeile: /^(?:const homeBrainFwd = join\(homedir\(\), "brain"\)|if \(vaultFwd === homeBrainFwd\) vaultAliases\.push\("\$HOME\/brain"\))/, grund: "Migration: ältere Hook-Einträge in der $HOME/brain-Schreibweise werden erkannt und durch den neuen Aufruf ersetzt (kein Rückfall auf einen Vault)." },
 ];
 
 const TEXT_ENDUNGEN = /\.(mjs|js|cjs|sh|md|json|css|html|txt|yml|yaml)$/i;
@@ -63,6 +73,13 @@ test("Sicherung des Tests selbst: die Muster erkennen Altlasten", () => {
   assert.deepEqual(f("const v = os.homedir() + \"/brain\";"), ["home-brain"]);
   assert.deepEqual(f('vault = "$HOME/brain"'), ["home-brain"]);
   assert.deepEqual(f("cd ~/brain && ls"), ["home-brain"]);
+  assert.deepEqual(f('const v = join(home, "brain");'), ["home-brain"]);
+  assert.deepEqual(f("const v = join(os.homedir(), 'brain');"), ["home-brain"]);
+  assert.deepEqual(f('const heim = join(HOME, "brain");'), ["home-brain"]);
+  assert.deepEqual(f('const v = process.env.' + 'HOME + "/brain";'), ["home-brain"]);
+  assert.deepEqual(f("const v = `${home}/brain`;"), ["home-brain"]);
+  assert.deepEqual(f('const v = home + "/brain/wiki";'), ["home-brain"]);
+  assert.deepEqual(f('join(home, "brain-kit")'), []);
   assert.deepEqual(f("~/brain-kit nennt ~/brain nicht"), ["home-brain"]);
   // erlaubt: andere Wörter
   assert.deepEqual(f('join(homedir(), ".brain-kit", "bin")'), []);
@@ -77,19 +94,21 @@ test("Ressourcen/kern/** ist frei von .tools-Literalen und ~/brain außerhalb de
   assert.ok(liste.length > 100, `zu wenige Dateien gescannt (${liste.length}) — Wurzel ${WURZEL}`);
   const texte = liste.map(({ rel, p }) => ({ rel, inhalt: readFileSync(p, "utf8") }));
   const treffer = sucheTreffer(texte);
-  const erlaubt = (t) => ALLOWLIST.some((a) => a.datei === t.datei && a.regel === t.regel);
+  const erlaubt = (t) => ALLOWLIST.some((a) => a.datei === t.datei && a.regel === t.regel && a.zeile.test(t.text));
   const verboten = treffer.filter((t) => !erlaubt(t));
   assert.deepEqual(verboten, [], "Altpfade im Kern:\n" + verboten.map((t) => `  ${t.datei}:${t.zeile} [${t.regel}] ${t.text}`).join("\n")
     + "\n→ " + REGELN.map((r) => `${r.name}: ${r.hinweis}`).join("\n→ "));
 });
 
-test("Allowlist: jede Ausnahme trifft wirklich etwas und hat eine Begründung (keine toten Ausnahmen)", () => {
+test("Allowlist: jede Ausnahme hat eine Begründung und trifft GENAU die erlaubte Zahl Zeilen (weder tot noch aufgeweicht)", () => {
   const liste = dateien(WURZEL);
   const treffer = sucheTreffer(liste.map(({ rel, p }) => ({ rel, inhalt: readFileSync(p, "utf8") })));
   for (const a of ALLOWLIST) {
     assert.ok(a.grund && a.grund.length > 20, `${a.datei}: Begründung fehlt`);
     assert.ok(REGELN.some((r) => r.name === a.regel), `${a.datei}: unbekannte Regel ${a.regel}`);
-    assert.ok(treffer.some((t) => t.datei === a.datei && t.regel === a.regel), `tote Ausnahme: ${a.datei} (${a.regel}) trifft nichts mehr — aus der Allowlist entfernen`);
+    const meine = treffer.filter((t) => t.datei === a.datei && t.regel === a.regel);
+    assert.equal(meine.length, a.anzahl, `${a.datei} (${a.regel}): erlaubt sind genau ${a.anzahl} Zeilen, gefunden ${meine.length}:\n${meine.map((t) => `  ${t.zeile}: ${t.text}`).join("\n")}`);
+    for (const t of meine) assert.match(t.text, a.zeile, `${a.datei}:${t.zeile} passt nicht zum erlaubten Zeilenmuster`);
   }
 });
 

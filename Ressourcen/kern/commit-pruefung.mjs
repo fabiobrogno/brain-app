@@ -6,14 +6,17 @@
 // als ein durchgerutschtes Credential. Die übrigen Prüfungen bleiben bei eigenem Defekt durchlässig.
 // Nutzung: node commit-pruefung.mjs [vault]
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, existsSync, rmSync } from "node:fs";
-import { join, isAbsolute } from "node:path";
+import { mkdirSync, mkdtempSync, readFileSync, existsSync, rmSync, realpathSync } from "node:fs";
+import { join, isAbsolute, relative, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { istWikiSeite } from "./wiki-pfade.mjs";
 import { ladeConfig, ordner, entferneBom, KERN, ALT_KIT_ORDNER } from "./pfade.mjs";
 import { gitBefehl } from "./werkzeug.mjs";
 import { findeSecrets } from "./secrets-muster.mjs";
+
+const unterTemp = (p) => [tmpdir(), realpathSync(tmpdir())].some((t) => { const r = relative(resolve(t), resolve(p)); return r && !r.startsWith("..") && !isAbsolute(r); });
+const ersatzLintErlaubt = (p) => typeof p === "string" && p !== "" && isAbsolute(p) && !!process.env.NODE_TEST_CONTEXT && unterTemp(p);
 
 // Vault noch unbekannt → noch keine Config zum Laden; gitBefehl() fällt ohne cfg auf den MinGit-Ort bzw. "git" zurück.
 const vault = process.argv[2] || execFileSync(gitBefehl(), ["rev-parse", "--show-toplevel"], { encoding: "utf8", windowsHide: true }).trim();
@@ -63,7 +66,8 @@ try {
   const lint = (dir) => { if (!existsSync(join(dir, "brain.config.json"))) return [];
     // Der installierte Kern prüft den gestagten Stand (nicht ein Stand aus dem Commit selbst). BRAIN_LINT_SKRIPT ersetzt das Lint-Skript nur unter
     // dem Node-Testläufer (NODE_TEST_CONTEXT): Tageslauf-Tests mit absichtlich unvollständigen Fixture-Seiten prüfen REV und _log, nicht die Struktur.
-    const l = process.env.BRAIN_LINT_SKRIPT && process.env.NODE_TEST_CONTEXT ? process.env.BRAIN_LINT_SKRIPT : join(KERN, "brain-lint.mjs");
+    // Zusätzlich muss das Ersatzskript unter dem Temp-Ordner liegen (die Bühne der Tests) — nie ein Pfad außerhalb.
+    const l = ersatzLintErlaubt(process.env.BRAIN_LINT_SKRIPT) ? process.env.BRAIN_LINT_SKRIPT : join(KERN, "brain-lint.mjs");
     try { execFileSync(process.execPath, [l, dir, "--struktur"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], windowsHide: true }); return []; }
     catch (e) { if (e.status !== 2) { hinweise.push(`Struktur-Lint abgestürzt (${e.status ?? e.code}) — ungeprüft`); return []; }
       return String(e.stdout || "").split("\n").filter(Boolean); } };
