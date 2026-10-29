@@ -81,6 +81,11 @@ Der Kern liegt künftig außerhalb des Vaults (P3/P4: `Support/Kortex/kern/<appV
   MCP-Eintrag (`POST /api/mcp/verbinden {ziel: claude, profil}`): Standardprofil → `claude` ohne `CLAUDE_CONFIG_DIR` (Konfiguration in `~/.claude.json`), anderes Profil → `CLAUDE_CONFIG_DIR=<Profil>` (`<Profil>/.claude.json`); eine geerbte Variable wird entfernt. `mcpArgs` selbst ist unverändert.
   Der Hintergrunddienst bekommt das zuerst gewählte Profil (`profil`; nur ein Nicht-Standardprofil landet als `CLAUDE_CONFIG_DIR` in der plist).
 
+## P7a: Befund für Vaults aus der Kit-Zeit (nur lesend)
+- `umstellung/` (Plan: `docs/plaene/p7-umstellung.md`): `brain umstellung befund [--json] [--claude-home <ordner>]…` findet alle Altlasten eines Vaults, der noch auf den alten Kit-Ordner im Vault zeigt (Kit-Ordner, Einstellungen, Schlüssel des Versionsverlaufs, Claude-Hooks, MCP-Einträge, Hintergrunddienst, Restverweise in Profil-Dateien und Shell), stuft sie ein (`auto`/`frage`/`hinweis`/`blocker`) und liefert JSON oder einen Klartext-Bericht. Er schreibt nichts, startet weder `claude` noch `codex` noch `launchctl` noch ein Programm aus dem Vault und nennt nie einen Wert (nur Kategorien, Zählungen, Schlüsselnamen in der Form `abschnitt.*.variable`).
+- `git-sicher-pruefung.pl --alle` liefert alle verbotenen Schlüsselnamen auf einmal (Normalmodus unverändert).
+- Werkstatt: `GET /api/umstellung/befund` (`werkstatt/umstellung.mjs`). Tests: `Tests/Kern/test-umstellung-befund.mjs`, `test-git-sicher-liste.mjs`, Fixture-Bauer `Tests/Kern/fixture-altvault.mjs`, `Tests/Node/umstellung-befund.test.mjs`.
+
 ## Mitgenommen
 - `VERSION` (`0.5.1`, Stand des Exports; wird in P3 beim App-Bau auf die App-Version gesetzt)
 

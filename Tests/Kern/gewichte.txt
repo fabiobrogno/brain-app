@@ -56,3 +56,4 @@
 5 test-commit-pruefung-pfad.sh
 4 test-index.sh
 4 test-cli.sh
+10 test-umstellung-befund.mjs

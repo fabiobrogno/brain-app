@@ -1,7 +1,10 @@
 #!/usr/bin/perl
 # git-sicher-pruefung.pl — Erlaubnisliste für die Repo-Konfiguration (Teil von git-sicher; Kern-Umzug P4, Sicherheit).
 #
-# Aufruf: git-sicher-pruefung.pl <git> <ordner>
+# Aufruf: git-sicher-pruefung.pl <git> <ordner> [--alle]
+# Mit --alle (Befund der Umstellung, Paket P7a): nicht beim ersten verbotenen Schlüssel abbrechen, sondern ALLE verbotenen Schlüsselnamen
+# ausgeben (je eine Zeile `REFUSE\t<Schlüssel>`, jeder Name einmal, in der Reihenfolge der Konfiguration), dann Exit 1; ohne Fund `OK` und Exit 0.
+# Auch dann nur Namen, nie Werte. Der Normalmodus (ohne --alle), den git-sicher benutzt, bleibt unverändert.
 # Liest ALLE Einträge des Repo-Scopes (local, worktree — auch alles, was per include.path/includeIf dazukäme: diese Schlüssel sind selbst
 # verboten) mit `git config --list --show-scope --includes -z` (NUL-getrennt, Schlüssel und Wert sauber getrennt: kein Muster über ganze
 # Zeilen, ein „=“ im Unterabschnitt täuscht nichts vor). JEDER lokale Schlüssel muss auf der Erlaubnisliste stehen und einen zulässigen Wert
@@ -16,7 +19,8 @@
 use strict;
 use warnings;
 
-my ($git, $ordner) = @ARGV;
+my $alle = grep { $_ eq "--alle" } @ARGV;
+my ($git, $ordner) = grep { $_ ne "--alle" } @ARGV;
 exit 2 unless defined $git && defined $ordner;
 
 my $pid = open(my $fh, "-|");
@@ -107,6 +111,7 @@ my %mit = (
 );
 
 my $hooks;
+my (%gesehen, $verboten);
 for (my $i = 0; $i + 1 <= $#t; $i += 2) {
     my ($scope, $eintrag) = ($t[$i], $t[$i + 1]);
     next unless $scope eq "local" || $scope eq "worktree";
@@ -130,8 +135,13 @@ for (my $i = 0; $i + 1 <= $#t; $i += 2) {
             $ok = ($mit{$k} && $unter ne "" ? ($mit{$k}->($wert) ? 1 : 0) : 0);
         }
     }
-    unless ($ok) { print "REFUSE\t$name\n"; exit 1; }
+    unless ($ok) {
+        print "REFUSE\t$name\n" unless $gesehen{$name}++;
+        exit 1 unless $alle;
+        $verboten = 1;
+    }
 }
+exit 1 if $verboten;
 print "OK\n";
 print "HOOKSPATH\t$hooks\n" if defined $hooks;
 exit 0;

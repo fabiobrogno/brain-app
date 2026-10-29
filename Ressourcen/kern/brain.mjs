@@ -9,7 +9,7 @@ import { readFileSync, writeFileSync, mkdirSync, statSync, rmSync, existsSync } 
 import { createHash } from "node:crypto";
 import { join, dirname, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { vaultPfad, KeinVaultFehler, ladeConfig, kernVersion } from "./pfade.mjs";
+import { vaultPfad, KeinVaultFehler, ladeConfig, kernVersion, angegebenerVaultPfad } from "./pfade.mjs";
 import { findeSecrets } from "./secrets-muster.mjs";
 import { minisuche } from "./minisuche.mjs";
 import { qmdAufruf } from "./qmd-befehl.mjs";
@@ -22,7 +22,7 @@ const [befehl, ...rest] = process.argv.slice(2);
 // Kein Positions-Vault: brain.mjs bekommt Unterbefehl + dessen Argumente, keinen Vault-Pfad — der Vault kommt aus --vault <pfad>
 // (pfade.mjs nimmt es aus der Kommandozeile), BRAIN_VAULT oder dem aktiven Vault der App (Positionsargumente gehen an die Werkzeuge in index/lint/refresh).
 // Ohne Vault laufen nur die Befehle, die keinen brauchen; alle anderen enden mit Exit 2 und einer klaren Meldung.
-const OHNE_VAULT = new Set(["version", "jetzt", "sha", "ingest-check", "claude-hooks"]);
+const OHNE_VAULT = new Set(["version", "jetzt", "sha", "ingest-check", "claude-hooks", "umstellung"]);
 let vault = null, vaultFehler = null;
 try { vault = vaultPfad(["", ""]); } catch (e) { if (!(e instanceof KeinVaultFehler)) throw e; vaultFehler = e; }
 const b = qmdAufruf();
@@ -252,6 +252,8 @@ const befehle = {
   "hooks-install": (...a) => node("install-git-hooks.mjs", vault, ...a),
   // „brain claude-hooks [--entfernen|--stand] [--claude-home <ordner>]" — Hooks, Statuszeile und Brain-Befehle in Claude Code eintragen bzw. entfernen.
   "claude-hooks": (...a) => node(join("adapters", "claude-code", "install.mjs"), ...(vault ? [vault] : []), ...a),
+  // „brain umstellung befund [--json] [--claude-home <ordner>]…“ — Befund für Vaults aus der Kit-Zeit (umstellung/, nur lesend). Beschreibt auch einen Vault, den pruefeVault ablehnt.
+  umstellung: (...a) => node(join("umstellung", "cli.mjs"), vault || angegebenerVaultPfad() || process.env.BRAIN_VAULT || "", ...a),
   doctor: () => node("doctor.mjs", vault),
   // Gesamtzustand (✓/⚠/✕) — für Menschen als Text, für die Brain-App als genau eine JSON-Zeile (--json).
   status: async (...a) => {
