@@ -50,11 +50,12 @@ IFS='|' read -r T U <<< "$OUT"
 leer || fail "Temp-Ordner nicht leer nach trap - EXIT"
 
 # 5) Debug-Schalter: BRAIN_TEST_TEMP_BEHALTEN=1 lässt alles liegen — zugleich die Gegenprobe, dass leer() anschlägt (sonst bewiese „leer“ nichts)
-OUT=$(BEHALTEN=1 kind 'T=$(mktemp -d); U=$(mktemp -d "$TMPDIR/tXXXXXX"); echo "$T|$U"')
-IFS='|' read -r T U <<< "$OUT"
+#    Behalten bleibt auch die Registratur ($_TEMP_LISTE). Sie entsteht ohne Vorlage: auf Linux in $TMPDIR (= $W), auf macOS anderswo.
+OUT=$(BEHALTEN=1 kind 'T=$(mktemp -d); U=$(mktemp -d "$TMPDIR/tXXXXXX"); echo "$T|$U|$_TEMP_LISTE"')
+IFS='|' read -r T U L <<< "$OUT"
 [ -d "$T" ] && [ -d "$U" ] || fail "BRAIN_TEST_TEMP_BEHALTEN=1 muss die Ordner behalten: $OUT"
 leer && fail "leer() schlägt nicht an, obwohl in $W etwas liegt — die leer()-Prüfungen dieses Tests wären wirkungslos"
-node -e 'for (const p of process.argv.slice(1)) require("fs").rmSync(p, { recursive: true, force: true })' "$T" "$U"
+node -e 'for (const p of process.argv.slice(1)) require("fs").rmSync(p, { recursive: true, force: true })' "$T" "$U" "$L"
 leer || fail "Temp-Ordner nicht leer nach dem Behalten-Test"
 
 # 6) Scheitert mktemp selbst, kommt der Fehlercode durch und es wird nichts Falsches vorgemerkt (Registratur: nur ihre eigene Datei)
