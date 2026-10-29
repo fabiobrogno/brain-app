@@ -8,20 +8,20 @@ import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { vaultPfad } from "./pfade.mjs";
+import { vaultPfadOderEnde } from "./pfade.mjs";
 import { neuerAls } from "./neuer-als.mjs";
 import { qmdAufruf } from "./qmd-befehl.mjs";
 
 const T = dirname(fileURLToPath(import.meta.url));
-// Vault als Positionsargument erlaubt (session-hintergrund.mjs ruft mit [V] auf), sonst BRAIN_VAULT/~/brain
-const vault = vaultPfad();
+// Vault als Positionsargument erlaubt (session-hintergrund.mjs ruft mit [V] auf), sonst --vault/BRAIN_VAULT/aktiver Vault der App (pfade.mjs)
+const vault = vaultPfadOderEnde(process.argv, { still: true });
 // QMD_BIN (Tests) geht vor der Plattform-Auflösung — qmdAufruf (qmd-befehl.mjs) regelt das für alle Aufrufer gleich.
 const b = qmdAufruf();
 const stamp = join(vault, ".logs", "search-refreshed");
 
 if (!neuerAls(vault, stamp)) {
   // nichts zu tun → Suche aufwärmen (Kaltstart-Timeouts)
-  spawnSync(process.execPath, [join(T, "hint-warm.mjs")], { stdio: "ignore", windowsHide: true });
+  spawnSync(process.execPath, [join(T, "hint-warm.mjs"), vault], { stdio: "ignore", windowsHide: true, env: { ...process.env, BRAIN_VAULT: vault } });
   process.exit(0);
 }
 

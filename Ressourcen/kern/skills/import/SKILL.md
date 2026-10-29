@@ -9,7 +9,7 @@ Ablauf für „importiere mein altes Brain aus <Ordner>" (oder: Obsidian/Notion/
 1. **Ordner oder Zip erfragen**, falls nicht genannt: welcher Ordner (oder welche Zip-Datei) soll importiert
    werden? Apple Notizen hat keinen direkten Ordner-Export — die Person bitten, zuerst in der Notizen-App zu
    exportieren (je Notiz als PDF oder Text), dann diesen Export-Ordner importieren.
-2. **Import ausführen:** `{{NODE}} "{{VAULT}}/.tools/brain.mjs" import "<ordner|zip>" [--name <quelle>]`.
+2. **Import ausführen:** `{{NODE}} "{{KERN}}/brain.mjs" --vault "{{VAULT}}" import "<ordner|zip>" [--name <quelle>]`.
    Die Quelle wird dabei NUR gelesen, nie verändert oder gelöscht. ACHTUNG groß (≥ 2000 Notizen oder ≥ 50 MB):
    der Befehl fragt dann erst nach (mit Tokenschätzung fürs vollständige Einarbeiten) und kopiert noch nichts —
    erst nach ausdrücklichem Ja der Person denselben Befehl mit zusätzlich `--ja` erneut aufrufen.
@@ -29,7 +29,7 @@ Ablauf für „importiere mein altes Brain aus <Ordner>" (oder: Obsidian/Notion/
    (sie liegen unter `{{INBOX}}/_import/<quelle>/`). Dessen Import-Regeln gelten: erst `_bericht.md` lesen,
    je Fast-Duplikat-Gruppe eine Wiki-Seite, Widersprüche nie still entscheiden. REIHENFOLGE (wichtig):
    a) passenden Ziel-Cluster wählen (Cluster-Ids aus brain.config.json) und dem Paket zuweisen,
-   b) **zuerst** `{{NODE}} "{{VAULT}}/.tools/brain.mjs" import fertig <quelle> "<paket>" --ziel <cluster>` — das
+   b) **zuerst** `{{NODE}} "{{KERN}}/brain.mjs" --vault "{{VAULT}}" import fertig <quelle> "<paket>" --ziel <cluster>` — das
       verschiebt die Paketdateien per `git mv` nach `<cluster>/<quelle>/<unveränderte Unterstruktur>` und vermerkt
       das Paket im Bericht als eingearbeitet (Inhalt bleibt bytegleich, `quellen_sha` ändert sich nicht),
    c) **danach** die Wiki-Seiten schreiben: `quellen:` zeigt auf den NEUEN Ort `<cluster>/<quelle>/…`, nicht mehr
@@ -41,5 +41,5 @@ Ablauf für „importiere mein altes Brain aus <Ordner>" (oder: Obsidian/Notion/
    Das letzte Paket schließt den Import ab: Bericht und Metadaten wandern nach `{{ARCHIV}}/import-berichte/<quelle>/`,
    `{{INBOX}}/_import/<quelle>/` verschwindet. Soll gar nichts eingearbeitet, sondern der ganze Rest ohne Wiki-Seiten
    abgelegt werden, geht `… import fertig <quelle> --alle --ziel <cluster>` (nur auf ausdrücklichen Wunsch).
-7. **Danach:** `{{NODE}} "{{VAULT}}/.tools/brain.mjs" analyse` zeigt offene Importe (nur Pakete, die noch nicht
+7. **Danach:** `{{NODE}} "{{KERN}}/brain.mjs" --vault "{{VAULT}}" analyse` zeigt offene Importe (nur Pakete, die noch nicht
    eingearbeitet sind) — der Person kurz nennen, wenn noch Pakete offen sind.

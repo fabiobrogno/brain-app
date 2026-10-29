@@ -1,15 +1,15 @@
 #!/usr/bin/env node
-// .tools/ansicht/daten.mjs — baut die Daten für die 3D-Ansicht (index.html) aus dem Vault. Liest nur;
-// schreibt ausschließlich <vault>/.logs/ansicht/data.js (gitignored — nie ins getrackte .tools/ansicht/).
+// ansicht/daten.mjs — baut die Daten für die 3D-Ansicht (index.html) aus dem Vault. Liest nur;
+// schreibt ausschließlich <vault>/.logs/ansicht/data.js (gitignored — nie ins getrackte ansicht/).
 // Bereiche kommen aus brain.config.json (clusters), nicht aus festen Namen: jeder Cluster wird ein Bereich
 // mit einer Hirnregion; dazu die festen Bereiche zentrum (Wiki ohne passenden Cluster), archiv, inbox.
-// Nutzung: node .tools/ansicht/daten.mjs [vault]
+// Nutzung: node ansicht/daten.mjs [vault]
 import { readFileSync, writeFileSync, existsSync, mkdirSync, realpathSync, statSync, readdirSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { vaultPfad, ladeConfig, ordner, configFehler, entferneBom } from "../pfade.mjs";
+import { vaultPfadOderEnde, ladeConfig, ordner, configFehler, entferneBom } from "../pfade.mjs";
 import { walk } from "../vault-dateien.mjs";
 import { wikilinks, resolveLink } from "../wiki-pfade.mjs";
 import { gitBefehl } from "../werkzeug.mjs";
@@ -85,7 +85,7 @@ function frontmatter(raw) {
   const fm = m ? m[1] : "";
   const str = (k) => (fm.match(new RegExp("^" + k + ":\\s*(.+)$", "m")) || [])[1]?.trim().replace(/^["']|["']$/g, "");
   const arr = (k) => { const a = fm.match(new RegExp("^" + k + ":\\s*\\[([^\\]]*)\\]", "m")); return a ? a[1].split(",").map((s) => s.trim().replace(/^["']|["']$/g, "")).filter(Boolean) : []; };
-  // Rohe description wie .tools/minisuche.mjs (Suchgewicht ×3 in suche.js): bei mehreren Zeilen gilt die LETZTE,
+  // Rohe description wie minisuche.mjs (Suchgewicht ×3 in suche.js): bei mehreren Zeilen gilt die LETZTE,
   // getrimmt, umschließende Anführungszeichen weg; fehlt sie: "".
   let beschreibung = "";
   for (const zeile of fm.split("\n")) {
@@ -307,7 +307,7 @@ export function erzeugeAnsichtsDaten(vault) {
   mkdirSync(dir, { recursive: true });
   const pfad = join(dir, "data.js");
   // "</" maskieren: die Datei wird per <script> geladen, Seiteninhalt darf das Script-Tag nie schließen
-  writeFileSync(pfad, "// generiert von .tools/ansicht/daten.mjs — nicht von Hand ändern\nwindow.BRAIN_DATA = " + JSON.stringify(data).replace(/<\//g, "<\\/") + ";\n");
+  writeFileSync(pfad, "// generiert von ansicht/daten.mjs — nicht von Hand ändern\nwindow.BRAIN_DATA = " + JSON.stringify(data).replace(/<\//g, "<\\/") + ";\n");
   return { pfad, seiten: data.nodes.length, verbindungen: data.edges.length, warnungen: data.warnungen };
 }
 
@@ -366,7 +366,7 @@ let aufruf = "";
 try { aufruf = realpathSync(process.argv[1] || ""); } catch {}
 if (aufruf && aufruf === realpathSync(fileURLToPath(import.meta.url))) {
   try {
-    const r = erzeugeAnsichtsDaten(vaultPfad());
+    const r = erzeugeAnsichtsDaten(vaultPfadOderEnde());
     for (const w of r.warnungen) console.error(`Warnung: ${w}`);
     console.log(`Ansicht: ${r.seiten} Seiten, ${r.verbindungen} Verbindungen → ${r.pfad}`);
   } catch (e) {

@@ -1,4 +1,4 @@
-// .tools/entscheidungen.mjs — Konflikt-Entscheidungen (Spec v0.4, Baustein B). Ein Klick im Gehirn („A gilt“,
+// entscheidungen.mjs — Konflikt-Entscheidungen (Spec v0.4, Baustein B). Ein Klick im Gehirn („A gilt“,
 // „B gilt“, „Beide gelten“) schreibt NUR einen Auftrag <inbox>/_entscheidungen/<id>.md — nie das Wiki selbst
 // (Riegel 2: aufgelöst wird über die Quelle, beim nächsten Ingest). „Später“ schreibt nichts.
 // Sicherheitsprüfungen wie bei den Vorschlägen (vorschlaege.mjs): Seiten-ID nur als saubere Wiki-Seite, echte

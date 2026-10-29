@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Baut .tools/ansicht/vendor/brain-mesh/brain-mesh.js aus einer echten, MRT-basierten Gehirnoberfläche.
+// Baut ansicht/vendor/brain-mesh/brain-mesh.js aus einer echten, MRT-basierten Gehirnoberfläche.
 // Quelle: AOMIC-ID1000 (OpenNeuro ds003097, Lizenz CC0), Proband sub-0001, FreeSurfer-Ableitungen
 // (Pial-Oberflächen, Sulkustiefe, Kurvatur, Lappen-Parzellierung, Volumen-Segmentierung).
 // Ablauf (reproduzierbar):
@@ -8,7 +8,7 @@
 //   3. Oberflächen flächengewichtet abtasten (dichter auf Windungskuppen), Schattierung je Punkt aus Sulkustiefe/Kurvatur
 //   4. Hülle (Belegung) + Lappen-Karte als 64³-Raster
 //   5. Alles kompakt (quantisiert, base64) nach vendor/brain-mesh/brain-mesh.js schreiben (per <script> ladbar, auch über file://)
-// Aufruf: node .tools/ansicht/build/build-brain.mjs   (Umgebung: BRAIN_FS_CACHE=<ordner> optional; Standard-Cache
+// Aufruf: node ansicht/build/build-brain.mjs   (Umgebung: BRAIN_FS_CACHE=<ordner> optional; Standard-Cache
 // liegt unter os.tmpdir(), nie im Repo). Nur zum Neubauen des Meshs nötig — die Ansicht selbst braucht es nicht.
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -18,7 +18,7 @@ import vm from "node:vm";
 import { readSurf, readCurv, readAnnot, readMgz } from "./fs-read.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const VENDOR = join(HERE, "..", "vendor"); // .tools/ansicht/vendor
+const VENDOR = join(HERE, "..", "vendor"); // ansicht/vendor
 const SRC = "https://s3.amazonaws.com/openneuro.org/ds003097/derivatives/freesurfer/sub-0001";
 const FILES = ["surf/lh.pial", "surf/rh.pial", "surf/lh.sulc", "surf/rh.sulc", "surf/lh.curv", "surf/rh.curv", "label/lh.aparc.annot", "label/rh.aparc.annot", "mri/aseg.mgz"];
 const CACHE = process.env.BRAIN_FS_CACHE || join(tmpdir(), "brain3d-ds003097-sub-0001");

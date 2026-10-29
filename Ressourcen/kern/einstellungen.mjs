@@ -1,4 +1,4 @@
-// .tools/einstellungen.mjs — Schema + Lesen/Schreiben von brain.config.json#automatik (Steuerzentrale,
+// einstellungen.mjs — Schema + Lesen/Schreiben von brain.config.json#automatik (Steuerzentrale,
 // v0.3). Optimistisches Sperren über `stand` (= SHA-256-Hex der rohen Config-Bytes, aus liesConfigRoh in
 // pfade.mjs — robuster als mtime, siehe dort): gleichzeitige Änderung durch Maske und KI → 409 statt
 // stillem Überschreiben. Übrige Config-Abschnitte bleiben byte-genau erhalten (nur die Neuserialisierung

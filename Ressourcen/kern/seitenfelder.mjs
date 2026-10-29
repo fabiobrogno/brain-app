@@ -1,4 +1,4 @@
-// .tools/seitenfelder.mjs — Seitenfelder für Zeit und Ersetzen (B1, §4.2/§4.3): gilt_seit (JJJJ-MM-TT), ersetzt_durch
+// seitenfelder.mjs — Seitenfelder für Zeit und Ersetzen (B1, §4.2/§4.3): gilt_seit (JJJJ-MM-TT), ersetzt_durch
 // (Wikilink auf die Nachfolgeseite), kritisch (true|false), zweifel ("<datum>: <grund>", setzt der Tageslauf nach W7).
 // Lesen (Brain-Hinweis W6, Tageslauf B2) und Prüfen (Lint). Fail-safe: ein kaputtes `kritisch` gilt als kritisch —
 // der Tageslauf fasst die Seite dann nie an. Nur echtes Frontmatter zählt. Rein, nur Node-Standardbibliothek.

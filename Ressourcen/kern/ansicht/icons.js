@@ -1,4 +1,4 @@
-// .tools/ansicht/icons.js — MCP-Logos im Browser (klassisches Skript, kein ESM; Grund: index.html lädt alle
+// ansicht/icons.js — MCP-Logos im Browser (klassisches Skript, kein ESM; Grund: index.html lädt alle
 // Ansichts-Skripte per <script src>, keine type="module"-Tags, siehe CSP-Hinweis dort). Setzt
 // window.BrainIcons = { iconFuer, woerter, normalisiere, monogramm, rasterLayout, ladeAtlas }.
 //

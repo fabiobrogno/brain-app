@@ -1,4 +1,4 @@
-// .tools/tageslauf/konsolidieren.mjs — B3 §7.2: Seiten monatlich konsolidieren. Kandidat: Wiki-Seite mit ≥ 5 Fakt-Zeilen oder
+// tageslauf/konsolidieren.mjs — B3 §7.2: Seiten monatlich konsolidieren. Kandidat: Wiki-Seite mit ≥ 5 Fakt-Zeilen oder
 // > 8 KB (mit mindestens einer Fakt- oder alten ersetzten Zeile), nicht kritisch, nicht ersetzt, ohne kaputte Fakt-Zeile,
 // höchstens alle 30 Tage, ≤ 1 je Lauf (meiste Fakt-Zeilen zuerst).
 //   Node:   ersetzte Zeilen älter als 90 Tage entfernen (deterministisch, vor der KI; ohne Fakt-Zeilen bleibt es dabei)

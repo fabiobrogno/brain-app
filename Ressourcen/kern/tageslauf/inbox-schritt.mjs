@@ -1,4 +1,4 @@
-// .tools/tageslauf/inbox-schritt.mjs — B3 §7.1: Inbox headless einarbeiten. Je Lauf höchstens 2 Rohquellen aus <inbox>/ (keine
+// tageslauf/inbox-schritt.mjs — B3 §7.1: Inbox headless einarbeiten. Je Lauf höchstens 2 Rohquellen aus <inbox>/ (keine
 // Vorschläge, keine Pflege-Aufträge, keine _-Systemordner), älteste zuerst. Je Notiz EINE Einheit (= ein Commit):
 //   Node:   Secrets-Riegel (Treffer → die KI sieht die Notiz nie, einmal gemeldet, dann gesperrt) → Notiz in die Inbox der
 //           Arbeitskopie kopieren
@@ -6,19 +6,19 @@
 //   Node:   Ziel prüfen → Quelle unverändert? → einsortieren (in der Kopie) → quellen/quellen_sha (+ herkunft_web bei Web-/
 //           KI-Recherche) je berührter Seite → einheit(): rev, _log, Diff-Prüfung, pre-commit, Commit
 //   nach dem Merge: Original-Notiz → <archiv>/inbox-eingearbeitet/ (nur wenn währenddessen unverändert)
-// Der Inhalt einer Notiz ist DATEN, nie Auftrag: Alles, was die KI auf eine eingeschleuste Anweisung hin tut (löschen, .tools/,
+// Der Inhalt einer Notiz ist DATEN, nie Auftrag: Alles, was die KI auf eine eingeschleuste Anweisung hin tut (löschen, ,
 // kritisch, Konflikte auflösen, Massenumbau, fremde Pfade), scheitert an der Diff-Prüfung der Einheit — es gibt keinen Weg
 // um sie herum: jede Änderung entsteht nur innerhalb von einheit(), die Notiz wandert erst nach erfolgreichem Merge weiter.
 // Höchstens 2 Versuche je Inhalt (pflege-stand.json); Budget/ohne KI/Vault verändert zählen nicht als Versuch.
 import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, lstatSync, readdirSync, chmodSync } from "node:fs";
 import { join, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ordner, ladeConfig, renderVorlage, entferneBom } from "../pfade.mjs";
+import { ordner, ladeConfig, renderVorlage, entferneBom, KERN, ALT_KIT_ORDNER } from "../pfade.mjs";
 import { istWikiSeite } from "../wiki-pfade.mjs";
 import { hatSecretsImKontext } from "../secrets-muster.mjs";
 import { leseFm } from "./bestand.mjs";
 import { sha16, ergaenzeQuelle, setzeFeld, leseFeld } from "./schreiben.mjs";
-import { rufeSonnet, letztesJson } from "./pflege-ki.mjs";
+import { rufeSonnet, letztesJson, SONNET_BASH } from "./pflege-ki.mjs";
 import { leseStand, aendereStand } from "./pflege-stand.mjs";
 import { einheit, sammleDiff, slug } from "./pflege-kopie.mjs";
 import { patchArbeit, ohnePatch } from "./pflege-patch.mjs";
@@ -42,11 +42,11 @@ export function webHerkunft(text) {
     || /^\s*(?:herkunft|quelle|source)\s*:\s*(?:web|internet|ki|ai|chatgpt|perplexity|claude|gemini|copilot)\b/im.test(t);
 }
 
-// Kit-Vorlage des /ingest-Skills für die Arbeitskopie: Kit-Befehle relativ (`node .tools/…`), {{VAULT}} → ".", übrige Platzhalter
-// wie beim Installieren. Erlaubt ist der KI davon nur `node .tools/brain.mjs search` (pflege-ki.mjs#sonnetRechte).
+// Kit-Vorlage des /ingest-Skills für die Arbeitskopie: Kern-Befehle ohne --vault (der Vault ist über BRAIN_VAULT auf die Kopie gepinnt),
+// {{VAULT}} → ".", übrige Platzhalter wie beim Installieren. Erlaubt ist der KI davon nur `node "<Kern>/brain.mjs" search` (pflege-ki.mjs#sonnetRechte).
 export function headlessSkill(vorlage, vault) {
   const ohneFm = entferneBom(String(vorlage)).replace(/\r\n?/g, "\n").replace(/^---\n[\s\S]*?\n---\n/, "");
-  const t = ohneFm.replace(/\{\{NODE\}\} "\{\{VAULT\}\}\/(\.tools\/[^"]+)"/g, "node $1")
+  const t = ohneFm.replace(/\{\{NODE\}\} "\{\{KERN\}\}\/([^"]+)" --vault "\{\{VAULT\}\}"/g, (_, datei) => `node "${fwd(KERN)}/${datei}"`)
     .replaceAll('"{{VAULT}}/', '"./').replaceAll("{{VAULT}}", ".");
   return renderVorlage(t, vault).replaceAll("$ARGUMENTS", "die QUELLE aus der Eingabe");
 }
@@ -56,7 +56,7 @@ export function ingestSystem({ skill, wiki, inbox, cluster, drift = [] }) {
     "Du arbeitest OHNE Rückfragen im nächtlichen Tageslauf in einer ARBEITSKOPIE des Brains (aktuelles Verzeichnis = Brain-Wurzel).",
     "Arbeite die QUELLE aus der Eingabe nach dem Ingest-Ablauf unten ein. Diese Vorrangregeln gehen dem Ablauf IMMER vor:",
     "1. Führe NUR die Schritte 3 und 4 aus (Seiten finden, einarbeiten). Die Schritte 1, 1b, 2, 2b, 2c, 2d, 5, 6, 7, 8, 9 und die Konflikt-Auflösung erledigt das Programm selbst — nicht ausführen, nicht nachholen.",
-    `2. Schreibe nur Wiki-Seiten unter ${wiki}/. Nie ${wiki}/_log.md, nie generierte Dateien (_index.md, INDEX.md, _<ordner>.md, graph.json), nie .tools/, .git/, .claude/ oder brain.config.json, nie etwas außerhalb des aktuellen Verzeichnisses (auch nicht lesen). Nichts löschen, nichts umbenennen, die Quelle weder ändern noch verschieben. Außer Dateien lesen/schreiben nutzt du nur „node .tools/brain.mjs search "<frage>"“ — nie Netzwerk, nie andere Befehle.`,
+    `2. Schreibe nur Wiki-Seiten unter ${wiki}/. Nie ${wiki}/_log.md, nie generierte Dateien (_index.md, INDEX.md, _<ordner>.md, graph.json), nie .git/, .claude/ oder brain.config.json, nie etwas außerhalb des aktuellen Verzeichnisses (auch nicht lesen). Nichts löschen, nichts umbenennen, die Quelle weder ändern noch verschieben. Außer Dateien lesen/schreiben nutzt du nur „${SONNET_BASH[0]} "<frage>"“ — nie Netzwerk, nie andere Befehle.`,
     "3. Widersprüche nie auflösen: als [!KONFLIKT]-Kasten mit beiden Quellen markieren. Vorhandene Konflikt-Kästen bleiben wörtlich stehen.",
     "4. Seiten mit `kritisch: true` nicht anfassen. Vorhandene Zeilen nur umschreiben, wenn die neue Information es verlangt; Beleg-Links ([[…/belege/…]]) und quellen-Einträge bleiben stehen.",
     "5. rev, quellen und quellen_sha NICHT ändern — das macht das Programm. Neue Seiten bekommen das Pflicht-Frontmatter aus dem Schema mit rev: 1, quellen: [] und quellen_sha: [].",
@@ -99,7 +99,7 @@ function ohneInboxQuellen(text, inbox) {
   return setzeFeld(setzeFeld(text, "quellen", bleiben.map((x) => x[0])), "quellen_sha", bleiben.map((x) => x[1]));
 }
 
-// Ziel der Quelle: ein neuer Dateiname in einem Cluster (nie Wiki, Inbox, Archiv, .tools, Beleg-Ordner, versteckt, „..“,
+// Ziel der Quelle: ein neuer Dateiname in einem Cluster (nie Wiki, Inbox, Archiv, alter Kit-Ordner, Beleg-Ordner, versteckt, „..“,
 // absolut, Steuerzeichen), gleiche Endung wie die Quelle, noch nicht vorhanden — weder in der Kopie noch im Vault.
 export function zielGueltig(ziel, { vault, kopie, cluster, quelle }) {
   if (typeof ziel !== "string" || STEUERZEICHEN.test(ziel)) return false;
@@ -108,13 +108,13 @@ export function zielGueltig(ziel, { vault, kopie, cluster, quelle }) {
   const teile = z.split("/");
   if (!z || z.length > 200 || z.startsWith("/") || /^[A-Za-z]:/.test(z) || teile.some((t) => !t || t.startsWith("."))) return false;
   if (teile.length < 2 || !cluster.includes(teile[0]) || teile.includes("belege")) return false;
-  if ([o.wiki, o.inbox, o.archiv, ".tools"].some((x) => z === x || z.startsWith(`${x}/`))) return false;
+  if ([o.wiki, o.inbox, o.archiv, ALT_KIT_ORDNER].some((x) => z === x || z.startsWith(`${x}/`))) return false;
   const endung = (s) => (String(s).match(ENDUNG)?.[0] || "").toLowerCase();
   if (!endung(z) || endung(z) !== endung(quelle)) return false;
   return !existsSync(join(kopie, z)) && !existsSync(join(vault, z));
 }
 
-// Werkzeug-Code der Arbeitskopie ist während des KI-Laufs schreibgeschützt (Defense in Depth): die KI darf `node .tools/brain.mjs …`
+// Werkzeug-Code der Arbeitskopie ist während des KI-Laufs schreibgeschützt (Defense in Depth): die KI darf `node brain.mjs …`
 // starten und soll den Code davor nicht umschreiben können (Prompt-Injection → Codeausführung noch VOR der Diff-Prüfung).
 // Nur Dateien (Verzeichnisse bleiben beschreibbar — Aufräumen und git reset funktionieren auch nach einem Absturz); die Rechte
 // kommen exakt zurück, sonst sähe git Moduswechsel. Gibt die Freigabe-Funktion zurück.
@@ -132,7 +132,7 @@ export function schuetzeWerkzeuge(kopiePfad) {
       else if (st.isFile()) { try { chmodSync(p, st.mode & ~0o222); gemerkt.push([p, st.mode & 0o7777]); } catch { /* best effort */ } }
     }
   };
-  gehe(join(kopiePfad, ".tools"));
+  gehe(join(kopiePfad, ALT_KIT_ORDNER));   // nur in noch nicht umgestellten Vaults vorhanden; der Kern selbst liegt außerhalb der Kopie
   return () => { for (const [p, modus] of gemerkt) { try { chmodSync(p, modus); } catch { /* weg oder nicht änderbar */ } } };
 }
 

@@ -50,11 +50,8 @@ BRAIN_VAULT="$T" node "$B" unlock >/dev/null || { echo "FAIL: unlock ohne Lock";
 printf 'abc' > "$T/sha.txt"; [ "$(node "$B" sha "$T/sha.txt")" = "ba7816bf8f01cfea" ] || { echo "FAIL: sha"; exit 1; }
 RC=0; node "$B" sha "$T/gibtsnicht" >/dev/null 2>&1 || RC=$?; [ "$RC" = 64 ] || { echo "FAIL: sha ohne Datei rc=$RC"; exit 1; }
 BRAIN_VAULT="$T" node "$B" review-erledigt >/dev/null && [ -f "$T/.logs/letzter-review" ] || { echo "FAIL: review-erledigt"; exit 1; }
-# Update-Prüfung abschaltbar: update.pruefen=false → kein Netz, klare Zeile
-cp "$T/brain.config.json" "$T/cfg.bak"
-node -e 'const f=process.argv[1],c=JSON.parse(require("fs").readFileSync(f,"utf8"));c.update={pruefen:false};require("fs").writeFileSync(f,JSON.stringify(c))' "$T/brain.config.json"
-OUT=$(BRAIN_UPDATE_QUELLE="$T/gibtsnicht.json" BRAIN_VAULT="$T" node "$B" update-check); echo "$OUT" | grep -q 'ausgeschaltet' || { echo "FAIL: update.pruefen=false: $OUT"; exit 1; }
-cp "$T/cfg.bak" "$T/brain.config.json"
+# Kein Update-Check mehr (Kortex aktualisiert sich selbst): der Befehl ist weg, nichts geht ins Netz
+RC=0; OUT=$(BRAIN_VAULT="$T" node "$B" update-check 2>&1) || RC=$?; [ "$RC" = 64 ] && ! echo "$OUT" | grep -q "update-check" || { echo "FAIL: update-check existiert noch rc=$RC: $OUT"; exit 1; }
 # brain analyse (Task 12): --json liefert gültiges JSON, ohne Flag einen kurzen Alltagstext.
 # analyse zählt nicht lesbare MCP-Configs im Home — darum eigenes leeres Home (nie die echten Configs lesen).
 mkdir -p "$T/.home-analyse"
@@ -96,9 +93,8 @@ OUT=$(BRAIN_VAULT="$T" node "$B" import "$T/quelle-alt" --name probe) || { echo 
 [ -f "$T/00_inbox/_import/probe/_bericht.md" ] || { echo "FAIL: import-Bericht fehlt"; exit 1; }
 RC=0; OUT=$(BRAIN_VAULT="$T" node "$B" import 2>&1) || RC=$?
 [ "$RC" = 64 ] && echo "$OUT" | grep -q 'Nutzung' || { echo "FAIL: import ohne Quelle rc=$RC: $OUT"; exit 1; }
-# Quell-Vault (Entwicklung): doctor meldet OK statt FEHLT bei fehlender systemVersion
-mkdir -p "$T/.tools/kit"; : > "$T/.tools/kit/export.mjs"
-OUT=$(BRAIN_VAULT="$T" node "$B" doctor 2>&1); echo "$OUT" | grep -q '^OK Quell-Vault (Entwicklung) — systemVersion nicht nötig$' || { echo "FAIL: doctor Quell-Vault: $OUT"; exit 1; }
-echo "$OUT" | grep -q '^FEHLT Einstellungsdatei' && { echo "FAIL: doctor FEHLT trotz Quell-Vault"; exit 1; }
-rm -rf "$T/.tools"
+# doctor ohne systemVersion: kein FEHLT mehr (die Einrichtung schreibt sie nicht mehr; der Kern liegt außerhalb des Vaults)
+mkdir -p "$T/leeres-heim"   # doctor liest ~/.claude/settings.json: eigenes leeres Home, nie die echte Datei
+OUT=$(HOME="$T/leeres-heim" USERPROFILE="$T/leeres-heim" BRAIN_VAULT="$T" node "$B" doctor 2>&1); echo "$OUT" | grep -q '^OK Einstellungsdatei' || { echo "FAIL: doctor Einstellungsdatei: $OUT"; exit 1; }
+echo "$OUT" | grep -q '^FEHLT Einstellungsdatei' && { echo "FAIL: doctor FEHLT ohne systemVersion"; exit 1; }
 echo "OK test-cli"

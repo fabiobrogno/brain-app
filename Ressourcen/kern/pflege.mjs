@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// .tools/pflege.mjs — Pflegebericht (Spec v0.4, Baustein C): deterministisch, 0 Tokens, rein lesend.
+// pflege.mjs — Pflegebericht (Spec v0.4, Baustein C): deterministisch, 0 Tokens, rein lesend.
 // Je Posten: Zahl, Liste (höchstens 20) und der nächste Schritt in Alltagssprache. Posten (feste Reihenfolge):
 //   abgelaufen, bald        Gültigkeit aus dem Frontmatter (gueltigkeit.mjs aus Task 1, sonst Rückfall unten)
 //   konflikte               offene [!KONFLIKT]-Kästen (konflikte.mjs aus Task 1, sonst Rückfall-Zählung)
@@ -23,7 +23,7 @@ import { createHash } from "node:crypto";
 import { join, dirname, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
-import { vaultPfad, ladeConfig, ordner, entferneBom } from "./pfade.mjs";
+import { vaultPfadOderEnde, ladeConfig, ordner, entferneBom } from "./pfade.mjs";
 import { walk } from "./vault-dateien.mjs";
 import { istWikiSeite, resolveLink, wikilinks, doppelteNamen } from "./wiki-pfade.mjs";
 import { gitBefehl } from "./werkzeug.mjs";
@@ -457,7 +457,7 @@ const selbst = fileURLToPath(import.meta.url);
 let aufruf = "";
 try { aufruf = realpathSync(process.argv[1] || ""); } catch {}
 if (aufruf && aufruf === realpathSync(selbst)) {
-  const vault = vaultPfad();
+  const vault = vaultPfadOderEnde();
   try {
     // --cache (session-hintergrund): nur den Cache auffrischen, nichts ausgeben
     if (process.argv.includes("--cache")) { await aktuellerBericht(vault); process.exit(0); }

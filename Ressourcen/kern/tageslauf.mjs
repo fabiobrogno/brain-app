@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// .tools/tageslauf.mjs — Der Tageslauf (Spec §5): lokal, einmal am Tag, nie mit Rückfrage-Dialog. Ablauf:
+// tageslauf.mjs — Der Tageslauf (Spec §5): lokal, einmal am Tag, nie mit Rückfrage-Dialog. Ablauf:
 //  (vorab: Protokoll heilen — Übernahme-Commits ohne Aktion nachtragen) · 0 Antworten anwenden + W7 · 1 Aufräumen · 2 Belege nachholen ·
 //  R1/R2 früh (feste Regeln ohne KI: Wunsch statt Fakt, Zahl ohne Zeitraum → ⚪) · 3 Einordnen (bei „mehrdeutig“ wählt Haiku unter den Kandidaten) · 4 Abgleich · 5 Stufe ·
 //  bei 🟢 der RICHTER (Sonnet, richter.mjs): nur sein „übernehmen“ erlaubt eine Übernahme, sonst ⚪/🟡/⏸; danach R3 (Zielseite nach dem Zitat geändert), R4
@@ -14,12 +14,12 @@
 // Fehlerbild: Jeder Schritt und jeder Vorschlag hat seine eigene Fehlergrenze — ein Fehler wird als Aktion „fehler" vermerkt,
 // der Rest läuft weiter; nach dem Merge wird jede Übernahme protokolliert, auch wenn das Verschieben danach scheitert.
 // Erfolg (für „fällig") = voller Lauf mit ok oder abgebrochen; ohne KI, teilweise oder mit Fehler wird er beim nächsten Takt wiederholt.
-// CLI: node .tools/tageslauf.mjs <vault> [--wenn-faellig] [--dienst] [--probe] [--nur-antworten] [--losgeloest]
+// CLI: node tageslauf.mjs <vault> [--wenn-faellig] [--dienst] [--probe] [--nur-antworten] [--losgeloest]
 //        [--budget-aufrufe N] [--budget-minuten N]        Exit 0 (auch übersprungen) · 1 Fehler · 64 Aufruf falsch
 import { readFileSync, appendFileSync, mkdirSync, readdirSync, existsSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ordner, EIGENER_VAULT } from "./pfade.mjs";
+import { ordner, vaultPfadOderEnde } from "./pfade.mjs";
 import { leseAutomatik, TAGESLAUF_BUDGETS } from "./einstellungen.mjs";
 import { istHeikel } from "./heikel.mjs";
 import { aussageGedeckt, kernsatz, FUNDSTELLE_MUSTER } from "./beleg-ernte.mjs";
@@ -613,7 +613,7 @@ if (aufruf && aufruf === realpathSync(selbst)) {
     console.error(`${e.message}\nNutzung: brain tageslauf [--probe] [--nur-antworten] [--wenn-faellig] [--dienst] [--losgeloest] [--budget-aufrufe N] [--budget-minuten N]`);
     process.exit(64);
   }
-  const vault = o.vault || EIGENER_VAULT;
+  const vault = o.vault || vaultPfadOderEnde([]);
   if (o.losgeloest) {
     const args = process.argv.slice(2).filter((a) => a !== "--losgeloest" && a !== o.vault);
     const r = starteLosgeloest(vault, args);

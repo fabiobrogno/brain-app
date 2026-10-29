@@ -1,12 +1,15 @@
-import { nodeBefehl } from "../pfade.mjs";
+import { nodeBefehl, KERN, shellQuote } from "../pfade.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, readFileSync, readdirSync, mkdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, readdirSync, mkdirSync, chmodSync, statSync, cpSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-const starter = (vf) => (process.platform === "win32" ? nodeBefehl() : `/bin/sh "${vf}/.tools/node-start.sh"`);
+const KF = KERN.split("\\").join("/");   // der Kern, auf den die Hooks zeigen (nicht mehr der Vault)
+const q = (p) => shellQuote(p);   // POSIX: einfache Anführungszeichen
+const starter = () => (process.platform === "win32" ? nodeBefehl() : `/bin/sh ${q(`${KF}/node-start.sh`)}`);
+const kernHook = (datei) => q(`${KF}/adapters/claude-code/${datei}`);
 const inst = fileURLToPath(new URL("../adapters/claude-code/install.mjs", import.meta.url));
 // HOME/USERPROFILE immer auf ein Temp-Verzeichnis: das echte ~/.claude wird nie gelesen oder geschrieben.
 const TEMP_HOME = mkdtempSync(join(tmpdir(), "adapter-home-"));
@@ -22,8 +25,8 @@ test("ergänzt, ersetzt nicht, legt Backup an", () => {
   assert.equal(s.model, "x");
   assert.ok(s.hooks.Stop[0].hooks[0].command === "afplay glass");
   const ss = s.hooks.SessionStart.flatMap(x => x.hooks.map(y => y.command));
-  assert.ok(ss.includes("fremd.sh") && ss.some(c => c.includes("/.tools/adapters/claude-code/session-start.mjs")));
-  for (const e of ["UserPromptSubmit", "PreToolUse"]) assert.ok(s.hooks[e].some(x => x.hooks.some(y => y.command.includes("/.tools/adapters/claude-code/"))), e);
+  assert.ok(ss.includes("fremd.sh") && ss.some(c => c.includes("/adapters/claude-code/session-start.mjs")));
+  for (const e of ["UserPromptSubmit", "PreToolUse"]) assert.ok(s.hooks[e].some(x => x.hooks.some(y => y.command.includes("/adapters/claude-code/"))), e);
   assert.equal(readdirSync(h).filter(f => f.startsWith("settings.json.bak-")).length, 1);
   assert.ok(readdirSync(join(h, "commands")).includes("ingest.md"));
 });
@@ -33,10 +36,13 @@ test("zweiter Lauf ist ohne Änderung", () => {
   assert.equal(readFileSync(join(h, "settings.json"), "utf8"), vorher);
   assert.equal(readdirSync(h).filter(f => f.startsWith("settings.json.bak-")).length, 1);
 });
-test("Vault-Pfad mit Leerzeichen wird gequotet", () => {
+test("Hook-Befehle tragen keinen festen Vault (sie folgen dem aktiven Vault) und den Kern-Pfad POSIX-sicher gequotet", () => {
   const { h, v } = setup(); lauf(v, h);
   const cmd = JSON.parse(readFileSync(join(h, "settings.json"), "utf8")).hooks.UserPromptSubmit[0].hooks[0].command;
-  assert.ok(cmd.includes(`"${v.split("\\").join("/")}/.tools/adapters/claude-code/brain-hint.mjs"`), cmd);
+  assert.equal(cmd, `${starter()} ${kernHook("brain-hint.mjs")}`);
+  assert.ok(!/--vault/.test(cmd) && !cmd.includes(v), cmd);
+  const alle = JSON.stringify(JSON.parse(readFileSync(join(h, "settings.json"), "utf8")));
+  assert.ok(!alle.includes("--vault") && !alle.includes(v.split("\\").join("/")), "weder --vault noch der Vault-Pfad steht in settings.json");
 });
 
 test("kaputtes settings.json: Exit 1, nichts geändert, kein Stacktrace", () => {
@@ -98,11 +104,11 @@ test("ersetzt ältere Brain-Hooks derselben Vault statt zu duplizieren (.sh/.mjs
   const s = JSON.parse(readFileSync(join(h, "settings.json"), "utf8"));
   for (const [e, datei] of [["SessionStart", "session-start.mjs"], ["UserPromptSubmit", "brain-hint.mjs"], ["PreToolUse", "wiki-guard.mjs"]]) {
     const cmds = s.hooks[e].flatMap(x => x.hooks.map(y => y.command));
-    assert.equal(cmds.filter(c => c.includes(`/.tools/adapters/claude-code/${datei}`)).length, 1, `${e}: ${JSON.stringify(cmds)}`);
+    assert.equal(cmds.filter(c => c.includes(`/adapters/claude-code/${datei}`)).length, 1, `${e}: ${JSON.stringify(cmds)}`);
   }
   const sessionCmds = s.hooks.SessionStart.flatMap(x => x.hooks.map(y => y.command));
   assert.ok(sessionCmds.includes("fremd.sh"), "fremder Hook im selben Event muss überleben");
-  assert.ok(s.statusLine.command.includes("/.tools/adapters/claude-code/statusline.mjs"));
+  assert.ok(s.statusLine.command.includes("/adapters/claude-code/statusline.mjs"));
   assert.equal(s.hooks.PreToolUse[0].matcher, "Edit|Write|MultiEdit|NotebookEdit", "matcher muss beim Ersetzen auf den Zielwert gesetzt werden");
   assert.equal(s.hooks.PreToolUse.length, 3, "wiki-guard ersetzt + eigene Einträge für Werkzeug-Protokoll und Regeln am Read");
   assert.match(lauf(v, h), /unverändert/);
@@ -140,7 +146,7 @@ test("entfernt veraltete Brain-Hooks, auch wenn schon ein aktueller Eintrag exis
   assert.match(out, /- Hook SessionStart entfernt \(alte Fassung\)/, out);
   const s = JSON.parse(readFileSync(join(h, "settings.json"), "utf8"));
   const cmds = s.hooks.SessionStart.flatMap(x => x.hooks.map(y => y.command));
-  assert.equal(cmds.filter(c => c.includes("/.tools/adapters/claude-code/")).length, 1, JSON.stringify(cmds));
+  assert.equal(cmds.filter(c => c.includes("/adapters/claude-code/")).length, 1, JSON.stringify(cmds));
   assert.ok(cmds.includes("fremd.sh"), "fremder Hook im selben Event muss überleben");
   assert.ok(!cmds.some(c => c.includes("/.tools/session-start.sh")), "veralteter Eintrag muss weg sein");
   assert.equal(s.hooks.SessionStart.length, 2, "leer gewordener Eintrag muss entfernt werden");
@@ -159,7 +165,7 @@ test("ersetzt die $HOME/brain-Schreibweise, wenn Vault == homedir()/brain", () =
   lauf(v, h, H); // Windows: homedir() liest USERPROFILE
   const s = JSON.parse(readFileSync(join(h, "settings.json"), "utf8"));
   const cmds = s.hooks.SessionStart.flatMap(x => x.hooks.map(y => y.command));
-  assert.equal(cmds.filter(c => c.includes("/.tools/adapters/claude-code/")).length, 1, JSON.stringify(cmds));
+  assert.equal(cmds.filter(c => c.includes("/adapters/claude-code/")).length, 1, JSON.stringify(cmds));
   assert.ok(!cmds.some(c => c.includes("$HOME/brain/.tools/session-start.mjs")), "alte $HOME-Form noch vorhanden");
 });
 
@@ -217,21 +223,21 @@ test("fremder Hook ohne command (type:'prompt') neben altem Brain-Eintrag: Insta
   const promptEintrag = eintraege.flatMap(x => x.hooks).find(x => x.type === "prompt");
   assert.deepEqual(promptEintrag, promptHook, "fremder prompt-Hook muss unverändert bleiben");
   const cmds = eintraege.flatMap(x => x.hooks).filter(x => typeof x.command === "string").map(x => x.command);
-  assert.equal(cmds.filter(c => c.includes("/.tools/adapters/claude-code/brain-hint.mjs")).length, 1, JSON.stringify(cmds));
+  assert.equal(cmds.filter(c => c.includes("/adapters/claude-code/brain-hint.mjs")).length, 1, JSON.stringify(cmds));
   assert.ok(!cmds.some(c => c.includes(`${vf}/.tools/brain-hint.mjs`)), "veralteter Eintrag muss ersetzt sein");
 });
 
 test("Hook-Befehle starten Node ohne festen Pfad (node-start.sh); alter Eintrag mit nacktem node wird darauf gehoben", () => {
   const h = mkdtempSync(join(tmpdir(), "ch-")), v = mkdtempSync(join(tmpdir(), "v3 ")); writeFileSync(join(v, "brain.config.json"), "{}");
-  const vf = v.split("\\").join("/"), nodeQ = starter(vf);
+  const vf = v.split("\\").join("/"), nodeQ = starter();
   writeFileSync(join(h, "settings.json"), JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: "command", command: `node "${vf}/.tools/adapters/claude-code/session-start.mjs"` }] }] },
     statusLine: { type: "command", command: `node "${vf}/.tools/adapters/claude-code/statusline.mjs"` } }));
   lauf(v, h);
   const s = JSON.parse(readFileSync(join(h, "settings.json"), "utf8"));
   for (const [e, n] of [["SessionStart", 1], ["UserPromptSubmit", 1], ["PreToolUse", 3], ["SessionEnd", 2], ["PreCompact", 2]]) {
-    const cmds = s.hooks[e].flatMap(x => x.hooks.map(y => y.command)).filter(c => c.includes("/.tools/adapters/claude-code/"));
+    const cmds = s.hooks[e].flatMap(x => x.hooks.map(y => y.command)).filter(c => c.includes("/adapters/claude-code/"));
     assert.equal(cmds.length, n, `${e}: ${JSON.stringify(cmds)}`);
-    for (const c of cmds) assert.ok(c.startsWith(`${nodeQ} "${vf}/`), c);
+    for (const c of cmds) assert.ok(c.startsWith(`${nodeQ} ${q(`${KF}/adapters/claude-code/`).slice(0, -1)}`) && !c.includes("--vault"), c);
   }
   assert.ok(s.statusLine.command.startsWith(`${nodeQ} `), s.statusLine.command);
   const cmdDir = join(h, "commands");
@@ -255,11 +261,11 @@ test("v0.3: registriert Werkzeug-Protokoll (eigener PreToolUse-Eintrag), Session
   assert.notEqual(wg[0], wp[0]);
   assert.equal(wp[0].hooks.length, 1, "eigener Eintrag nur mit dem Protokoll-Hook");
   const se = befehle(s, "SessionEnd");
-  assert.equal(se.filter(c => c.includes("/claude-code/ernte-ausloeser.mjs\" --art fakt")).length, 1, JSON.stringify(se));
+  assert.equal(se.filter(c => c.endsWith("/claude-code/ernte-ausloeser.mjs' --art fakt")).length, 1, JSON.stringify(se));
   const pc = befehle(s, "PreCompact");
   assert.equal(pc.filter(c => c.startsWith("echo ") && c.includes("handoff")).length, 0, JSON.stringify(pc));
   assert.equal(pc.filter(c => c.includes("/claude-code/kompakt-sichern.mjs")).length, 1, JSON.stringify(pc));
-  assert.equal(pc.filter(c => c.includes("/claude-code/ernte-ausloeser.mjs\" --art fakt")).length, 1, JSON.stringify(pc));
+  assert.equal(pc.filter(c => c.endsWith("/claude-code/ernte-ausloeser.mjs' --art fakt")).length, 1, JSON.stringify(pc));
   assert.equal(readdirSync(h).filter(f => f.startsWith("settings.json.bak-")).length, 1, "zweiter Lauf: kein neues Backup");
   // fremde Hooks unverändert
   assert.equal(s.hooks.Stop[0].hooks[0].command, "afplay glass");
@@ -287,7 +293,7 @@ test("v0.3: Eintrag mit nacktem node für den Ernte-Auslöser wird auf den absol
   lauf(v, h);
   const se = befehle(lies(h), "SessionEnd").filter(c => c.includes("ernte-ausloeser"));
   assert.equal(se.length, 1, JSON.stringify(se));
-  assert.ok(se[0].startsWith(`${starter(vf)} "${vf}/`), se[0]);
+  assert.equal(se[0], `${starter()} ${kernHook("ernte-ausloeser.mjs")} --art fakt`);
 });
 
 // ---------- v0.6 (M2a): Arbeitsstand statt echo-Hinweis, Sitzungsende, Regeln am Read ----------
@@ -318,5 +324,67 @@ test("B3: Eintrag mit festem Node-Pfad wird auf node-start.sh gehoben, nicht ver
     command: `"/opt/homebrew/bin/node" "${vf}/.tools/adapters/claude-code/brain-hint.mjs"` }] }] } }));
   lauf(v, h);
   const c = JSON.parse(readFileSync(join(h, "settings.json"), "utf8")).hooks.UserPromptSubmit.flatMap((x) => x.hooks.map((y) => y.command));
-  assert.deepEqual(c, [`/bin/sh "${vf}/.tools/node-start.sh" "${vf}/.tools/adapters/claude-code/brain-hint.mjs"`]);
+  assert.deepEqual(c, [`${starter()} ${kernHook("brain-hint.mjs")}`]);
+});
+
+
+// ---------- Review-Fixes zu P2: Hooks folgen dem aktiven Vault, atomar, nur mit stabilem Kern ----------
+test("Hooks sind vault-unabhängig: Einträge mit --vault oder fremdem Vault/Kern-Ort werden ersetzt, fremde Hooks bleiben, ein zweiter Lauf ändert nichts", () => {
+  const { h, v } = setup();
+  const anderer = mkdtempSync(join(tmpdir(), "anderer-vault ")).split("\\").join("/");
+  writeFileSync(join(h, "settings.json"), JSON.stringify({ hooks: {
+    SessionStart: [{ hooks: [{ type: "command", command: "fremd.sh" }, { type: "command", command: `/bin/sh "/alter/kern/node-start.sh" "/alter/kern/adapters/claude-code/session-start.mjs" --vault "${anderer}"` }] }],
+    UserPromptSubmit: [{ hooks: [{ type: "command", command: `node "${anderer}/.tools/adapters/claude-code/brain-hint.mjs"` }] }],
+    SessionEnd: [{ hooks: [{ type: "command", command: `/bin/sh "/alter/kern/node-start.sh" "/alter/kern/adapters/claude-code/ernte-ausloeser.mjs" --art fakt --vault "${anderer}"` }] },
+      { hooks: [{ type: "command", command: `/bin/sh "/alter/kern/node-start.sh" "/alter/kern/adapters/claude-code/ernte-ausloeser.mjs" --art fakt` }] }],
+  } }));
+  lauf(v, h);
+  const s = lies(h);
+  assert.deepEqual(befehle(s, "SessionStart"), ["fremd.sh", `${starter()} ${kernHook("session-start.mjs")}`]);
+  assert.deepEqual(befehle(s, "UserPromptSubmit"), [`${starter()} ${kernHook("brain-hint.mjs")}`]);
+  assert.deepEqual(befehle(s, "SessionEnd").filter((c) => c.includes("ernte-ausloeser")), [`${starter()} ${kernHook("ernte-ausloeser.mjs")} --art fakt`], "Dublette entfernt");
+  const vorher = readFileSync(join(h, "settings.json"), "utf8");
+  assert.match(lauf(v, h), /unverändert/);
+  assert.equal(readFileSync(join(h, "settings.json"), "utf8"), vorher);
+});
+
+test("settings.json wird atomar geschrieben (Temp + rename, keine Reste) und behält die Dateirechte", { skip: process.platform === "win32" }, () => {
+  const { h, v } = setup();
+  const datei = join(h, "settings.json");
+  chmodSync(datei, 0o640);
+  lauf(v, h);
+  assert.equal(statSync(datei).mode & 0o777, 0o640);
+  assert.deepEqual(readdirSync(h).filter((f) => f.includes(".tmp-")), []);
+  assert.ok(JSON.parse(readFileSync(datei, "utf8")).hooks.SessionStart.length >= 2);
+});
+
+test("Ohne stabilen Kern-Pfad (KORTEX_KERN_PFAD fehlt oder ist unbeständig) trägt der Installer nichts ein: Exit 3 mit klarer Meldung", () => {
+  const { h, v } = setup();
+  const vorher = readFileSync(join(h, "settings.json"), "utf8");
+  const ohne = { ...ohneGit(), HOME: TEMP_HOME, USERPROFILE: TEMP_HOME, KORTEX_KERN_UNSTABIL_ERLAUBT: "" };
+  delete ohne.KORTEX_KERN_PFAD;
+  for (const extra of [{}, { KORTEX_KERN_PFAD: "relativ/kern" }, { KORTEX_KERN_PFAD: join(tmpdir(), "gibt-es-nicht") }, { KORTEX_KERN_PFAD: tmpdir() }, { KORTEX_KERN_PFAD: "/Applications/Kortex.app/Contents/Resources/kern" }]) {
+    const r = spawnSync(process.execPath, [inst, v, "--claude-home", h], { encoding: "utf8", env: { ...ohne, ...extra } });
+    assert.equal(r.status, 3, `${JSON.stringify(extra)}: ${r.stderr}`);
+    assert.match(r.stderr, /stabilen Kern-Pfad/);
+  }
+  assert.equal(readFileSync(join(h, "settings.json"), "utf8"), vorher, "nichts geändert");
+  assert.equal(readdirSync(h).filter((f) => f.startsWith("settings.json.bak-")).length, 0);
+});
+
+test("Kern-Pfad mit $(), Backtick, \" und ' im Namen: die Hook-Befehle zerlegt eine echte Shell in genau die Pfade, nichts wird ausgeführt", { skip: process.platform === "win32" }, () => {
+  const arbeitsdir = mkdtempSync(join(tmpdir(), "inj-arbeit "));                       // eine Injektion würde hier pwned1/pwned2 anlegen
+  const kern = join(mkdtempSync(join(tmpdir(), "inj-kern ")), `Kern "x" it's $(touch pwned1) \`touch pwned2\``);
+  mkdirSync(kern);
+  for (const n of readdirSync(KERN)) if (n !== "tests") cpSync(join(KERN, n), join(kern, n), { recursive: true });
+  const { h, v } = setup();
+  execFileSync(process.execPath, [join(kern, "adapters", "claude-code", "install.mjs"), v, "--claude-home", h], { encoding: "utf8", cwd: arbeitsdir, env: { ...ohneGit(), HOME: TEMP_HOME, USERPROFILE: TEMP_HOME } });
+  const cmd = lies(h).hooks.UserPromptSubmit.flatMap((x) => x.hooks.map((y) => y.command))[0];
+  const r = spawnSync("/bin/sh", ["-c", `set -- ${cmd}; printf '%s\n' "$#" "$1" "$2" "$3"`], { encoding: "utf8", cwd: arbeitsdir });
+  const [anzahl, sh, starterPfad, hookPfad] = r.stdout.split("\n");
+  assert.equal(anzahl, "3");
+  assert.equal(sh, "/bin/sh");
+  assert.equal(starterPfad, join(realpathSync(kern), "node-start.sh"));
+  assert.equal(hookPfad, join(realpathSync(kern), "adapters", "claude-code", "brain-hint.mjs"));
+  assert.deepEqual(readdirSync(arbeitsdir), [], "kein eingeschleuster Befehl ist gelaufen");
 });

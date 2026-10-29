@@ -1,20 +1,22 @@
 #!/usr/bin/env node
 // Commit-Prüfung (pre-commit): prüft den GESTAGTEN Stand, nicht den Arbeitsbaum (halbfertige Arbeit anderer Sessions),
 // und blockiert nur NEUE Befunde gegenüber HEAD. Dazu: REV (Inhalt/Quellen geändert ohne rev+1) und _log-Reihenfolge
-// nach Position (append-only). Unit-Tests nur, wenn Werkzeug-Code gestagt ist. Exit 0 ok · 2 blockiert.
+// nach Position (append-only). Exit 0 ok · 2 blockiert. Die Unit-Tests des Kerns laufen in der CI des Repos, nicht mehr im Commit des Vaults.
 // Secrets-Prüfung läuft ZUERST und schließt bei eigenem Defekt (fail closed): lieber ein blockierter Commit
 // als ein durchgerutschtes Credential. Die übrigen Prüfungen bleiben bei eigenem Defekt durchlässig.
 // Nutzung: node commit-pruefung.mjs [vault]
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, existsSync, rmSync, readdirSync } from "node:fs";
-import { join, isAbsolute } from "node:path";
-import { pathToFileURL } from "node:url";
+import { mkdirSync, mkdtempSync, readFileSync, existsSync, rmSync, realpathSync } from "node:fs";
+import { join, isAbsolute, relative, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { istWikiSeite } from "./wiki-pfade.mjs";
-import { ladeConfig, ordner, entferneBom } from "./pfade.mjs";
+import { ladeConfig, ordner, entferneBom, KERN, ALT_KIT_ORDNER } from "./pfade.mjs";
 import { gitBefehl } from "./werkzeug.mjs";
 import { findeSecrets } from "./secrets-muster.mjs";
+
+const unterTemp = (p) => [tmpdir(), realpathSync(tmpdir())].some((t) => { const r = relative(resolve(t), resolve(p)); return r && !r.startsWith("..") && !isAbsolute(r); });
+const ersatzLintErlaubt = (p) => typeof p === "string" && p !== "" && isAbsolute(p) && !!process.env.NODE_TEST_CONTEXT && unterTemp(p);
 
 // Vault noch unbekannt → noch keine Config zum Laden; gitBefehl() fällt ohne cfg auf den MinGit-Ort bzw. "git" zurück.
 const vault = process.argv[2] || execFileSync(gitBefehl(), ["rev-parse", "--show-toplevel"], { encoding: "utf8", windowsHide: true }).trim();
@@ -23,15 +25,14 @@ const GIT = gitBefehl({ cfg });
 const git = (...a) => execFileSync(GIT, ["-C", vault, ...a], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], windowsHide: true, maxBuffer: 256 * 1024 * 1024 });
 const { wiki, archiv } = ordner(vault, cfg);
 const blockiert = [], hinweise = [];
-const UNIT_LIMIT_S = 120;   // Zeitlimit der Unit-Tests (Schritt 4)
 
-// 0) Secrets (zuerst, eigener try, fail closed): JEDE gestagte Datei außerhalb .tools/tests/ — egal welche
+// 0) Secrets (zuerst, eigener try, fail closed): JEDE gestagte Datei außerhalb des Testordners eines alten Kit-Ordners — egal welche
 // Endung (.env, .csv, ohne Endung …), nur echte Binärdateien (NUL in den ersten 8000 Bytes) nicht. Gelesen
 // wird der gestagte Blob (:pfad), nie der Arbeitsbaum. Gemeldet wird nur die Fundstelle, nie der Inhalt.
 try {
   const namen = git("diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z").split("\0").filter(Boolean);
   for (const f of namen) {
-    if (/^\.tools\/tests\//.test(f)) continue;
+    if (f.startsWith(`${ALT_KIT_ORDNER}/tests/`)) continue;   // nur noch in nicht umgestellten Vaults: Test-Fixtures mit absichtlichen Fake-Secrets
     const blob = execFileSync(GIT, ["-C", vault, "cat-file", "blob", `:${f}`], { stdio: ["ignore", "pipe", "ignore"], windowsHide: true, maxBuffer: 256 * 1024 * 1024 });
     if (blob.subarray(0, 8000).includes(0)) continue;
     for (const t of findeSecrets(blob.toString("utf8"))) blockiert.push(`SECRETS: ${f} Zeile ${t.zeile} — Credential-Muster; Wert entfernen, nur den Speicherort nennen. Falls das kein echtes Secret ist: umformulieren, z. B. ‚Token liegt im Passwort-Manager‘ statt den Wert auszuschreiben.`);
@@ -63,7 +64,10 @@ try {
   const gestagt = status.map(s => s[s.length - 1]);
 
   const lint = (dir) => { if (!existsSync(join(dir, "brain.config.json"))) return [];
-    const l = join(S, ".tools", "brain-lint.mjs");
+    // Der installierte Kern prüft den gestagten Stand (nicht ein Stand aus dem Commit selbst). BRAIN_LINT_SKRIPT ersetzt das Lint-Skript nur unter
+    // dem Node-Testläufer (NODE_TEST_CONTEXT): Tageslauf-Tests mit absichtlich unvollständigen Fixture-Seiten prüfen REV und _log, nicht die Struktur.
+    // Zusätzlich muss das Ersatzskript unter dem Temp-Ordner liegen (die Bühne der Tests) — nie ein Pfad außerhalb.
+    const l = ersatzLintErlaubt(process.env.BRAIN_LINT_SKRIPT) ? process.env.BRAIN_LINT_SKRIPT : join(KERN, "brain-lint.mjs");
     try { execFileSync(process.execPath, [l, dir, "--struktur"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], windowsHide: true }); return []; }
     catch (e) { if (e.status !== 2) { hinweise.push(`Struktur-Lint abgestürzt (${e.status ?? e.code}) — ungeprüft`); return []; }
       return String(e.stdout || "").split("\n").filter(Boolean); } };
@@ -122,25 +126,6 @@ try {
     else if (neuIdx.some((idx, k) => idx !== k)) blockiert.push(`LOG-REIHENFOLGE: neuer Eintrag „${n[neuIdx.find((idx, k) => idx !== k)].split("\n")[0]}" steht nicht oben — direkt unter die Formatvorlage (neuester oben)`);
     for (const i of neuIdx) { const m = n[i].match(/^## (\d{4}-\d{2}-\d{2})(?: (\d{2}:\d{2}))?/);
       if (m) { const t = new Date(`${m[1]}T${m[2] || "00:00"}:00`).getTime(); if (Math.abs(Date.now() - t) > 30 * 60000) hinweise.push(`LOG-ZEIT: „${n[i].split("\n")[0]}" weicht > 30 min von jetzt ab — Zeit per \`brain jetzt\``); } }
-  }
-
-  // 4) Unit-Tests nur, wenn Werkzeug-Code gestagt ist (fremder .tools-Code blockiert keinen Ingest). Zeitlimit 120 s: seit v0.3
-  //    warten einige Tests auf losgelöste Prozesse (~8 s gesamt), und die ganze Suite braucht unter Last schon ~43 s — bei einer
-  //    Zeitüberschreitung geht der Commit nur mit Hinweis „ungeprüft“ durch, das Limit liegt also weit über dem Lastfall.
-  //    Ein Ingest-Commit ohne .tools-Code wartet nie.
-  //    BRAIN_ERSTCOMMIT=1 setzt nur install.mjs für den allerersten Commit (frisch kopierter Kit-Code) — die
-  //    übrigen Prüfungen (Secrets, Wiki) laufen trotzdem.
-  if (process.env.BRAIN_ERSTCOMMIT !== "1" && gestagt.some(f => /^\.tools\/.*\.mjs$/.test(f)) && existsSync(join(S, ".tools", "tests"))) {
-    const unit = readdirSync(join(S, ".tools", "tests")).filter(f => /^test-.*\.mjs$/.test(f)).map(f => join(S, ".tools", "tests", f));
-    // Ohne GIT_*: im Hook setzt git GIT_DIR/GIT_INDEX_FILE — ein Test mit eigenem Temp-Repo träfe sonst dieses Repo.
-    const testEnv = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^GIT_/i.test(k)));
-    // --import setup.mjs: räumt die Temp-Ordner jedes Test-Prozesses beim Ende auf und setzt QMD_BIN auf den Fake (kein echtes qmd,
-    // kein Modell-Download) — sonst ließe jeder Commit mit .tools-Änderung hunderte Temp-Ordner und ~330 MB liegen. Fehlt die Datei
-    // (alter Stand), läuft die Suite wie bisher.
-    const setup = join(S, ".tools", "tests", "setup.mjs");
-    const importArgs = existsSync(setup) ? ["--import", pathToFileURL(setup).href] : [];
-    try { execFileSync(process.execPath, ["--test", ...importArgs, ...unit], { stdio: "ignore", timeout: UNIT_LIMIT_S * 1000, windowsHide: true, env: testEnv }); }
-    catch (e) { if (e.signal || e.code === "ETIMEDOUT") hinweise.push(`Unit-Tests nicht in ${UNIT_LIMIT_S} s fertig — ungeprüft`); else blockiert.push("UNIT-TESTS: node --test .tools/tests/test-*.mjs schlägt fehl"); }
   }
 
   hinweise.forEach(h => console.log("Hinweis: " + h));

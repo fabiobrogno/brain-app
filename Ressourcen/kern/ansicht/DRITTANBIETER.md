@@ -1,4 +1,4 @@
-# Drittanbieter in der 3D-Ansicht (`.tools/ansicht/`)
+# Drittanbieter in der 3D-Ansicht (`ansicht/`)
 
 Die Ansicht läuft vollständig lokal (auch über `file://`), ohne CDN. Mitgeliefert werden vier fremde Bestandteile:
 
@@ -25,7 +25,7 @@ data:`), nie von einem fremden Host.
 Der Datensatz AOMIC-ID1000 (Snoek, L. et al. (2021), *The Amsterdam Open MRI Collection*, Scientific Data 8, 85,
 https://doi.org/10.1038/s41597-021-00870-6) steht unter CC0 1.0 (https://creativecommons.org/publicdomain/zero/1.0/):
 Nutzung, Veränderung und Weitergabe ohne Bedingungen. Abgeleitet wurden nur Geometrie, Sulkustiefe/Kurvatur und die
-Lappen-Zuordnung — keine Bilddaten, keine personenbezogenen Daten. Neu bauen: `node .tools/ansicht/build/build-brain.mjs`
+Lappen-Zuordnung — keine Bilddaten, keine personenbezogenen Daten. Neu bauen: `node ansicht/build/build-brain.mjs`
 (Download-Cache unter dem Temp-Ordner des Systems, nie im Repo). Details in `vendor/brain-mesh/LICENSE-SOURCE.md`.
 
 ## three.js — MIT-Lizenz (vollständiger Text aus `vendor/three.LICENSE.txt`)

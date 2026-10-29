@@ -1,20 +1,20 @@
 #!/bin/bash
 . "$(dirname "$0")/plattform.sh"
 # pre-commit über core.hooksPath: blockiert neuen toten Link, lässt sauberen Commit durch, < 10 s, Hook ist 100755.
-# Node-Suche des Hooks: PATH → $HOME/.brain-kit/node → sonst blockieren (fail closed).
-# Exportierbar: der Test-Vault entsteht aus fixture-neutral + dem aktuellen .tools (kein privates Layout nötig).
+# Node-Suche des Hooks: PATH → Support-Ordner der App → $HOME/.brain-kit/node (alter Ort) → sonst blockieren (fail closed).
+# Der Test-Vault entsteht aus fixture-neutral (nur Daten); der Hook liegt im Kern (core.hooksPath zeigt absolut dorthin).
 set -u; D="$(cd "$(dirname "$0")" && pwd)"; K="${KORTEX_KERN:-$(cd "$D/.." && pwd)}"   # K = Kern-Wurzel (stage.sh setzt KORTEX_KERN)
 [ -x "$K/git-hooks/pre-commit" ] || { echo "FAIL: pre-commit nicht ausführbar"; exit 1; }
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 V="$T/Mein Brain"; mkdir -p "$V"
 cp -R "$D/fixture-neutral/." "$V/"
-mkdir -p "$V/.tools"; (cd "$K" && tar --exclude=./tests -cf - .) | (cd "$V/.tools" && tar -xf -)
 g(){ git -C "$V" -c user.email=t@t -c user.name=t "$@"; }
 # Portable Ersatz für „sed -i ''": Regex-Ersatz, ^/$ wirkt je Zeile; ersetzt nur den ERSTEN Treffer der Datei.
 ersetze() { node -e 'const fs=require("fs");const [f,re,ers]=process.argv.slice(1);fs.writeFileSync(f,fs.readFileSync(f,"utf8").replace(new RegExp(re,"m"),ers))' "$@"; }
 g init -q; g add --all; g commit -qm init --no-verify
-node "$V/.tools/install-git-hooks.mjs" "$V" >/dev/null && [ "$(git -C "$V" config core.hooksPath)" = ".tools/git-hooks" ] || { echo "FAIL: Installer"; exit 1; }
-node "$V/.tools/install-git-hooks.mjs" "$V" >/dev/null   # idempotent
+node "$K/install-git-hooks.mjs" "$V" >/dev/null && [ "$(git -C "$V" config core.hooksPath)" = "$(cd "$K" && pwd -P)/git-hooks" ] || { echo "FAIL: Installer (hooksPath=$(git -C "$V" config core.hooksPath))"; exit 1; }
+node "$K/install-git-hooks.mjs" "$V" >/dev/null   # idempotent
+BRAIN_VAULT="$V" node "$K/install-git-hooks.mjs" >/dev/null && node "$K/install-git-hooks.mjs" --vault "$V" >/dev/null || { echo "FAIL: Installer mit BRAIN_VAULT bzw. --vault"; exit 1; }
 P="wiki/firma/kunde_a/thema_beta.md"
 echo '[[gibt_es_garantiert_nicht]]' >> "$V/$P"; ersetze "$V/$P" '^rev: [0-9]+$' 'rev: 99'; g add -- "$P"
 S0=$(date +%s); OUT=$(g commit -qm kaputt 2>&1); RC=$?; D0=$(( $(date +%s) - S0 ))
@@ -55,7 +55,10 @@ RC=0; OUT=$(ohne_node git -C "$V" -c user.email=t@t -c user.name=t commit -qm oh
 [ $RC -ne 0 ] && echo "$OUT" | grep -q 'Node wurde nicht gefunden' || { echo "FAIL: ohne Node nicht blockiert (rc=$RC): $OUT"; exit 1; }
 g reset -q -- inbox/probe3.md; rm -f "$V/inbox/probe3.md"
 
-# Hook ohne Prüfskript (alter Checkout) → Commit geht durch, keine Shell-Fehlermeldung
-rm -f "$V/.tools/commit-pruefung.mjs"; echo "x" > "$V/inbox/probe4.md"; g add -- inbox/probe4.md
+# Hook ohne Prüfskript (Kern entfernt/unvollständig) → Commit geht durch, keine Shell-Fehlermeldung
+mkdir -p "$T/leer-kern/git-hooks"; cp "$K/git-hooks/pre-commit" "$T/leer-kern/git-hooks/pre-commit"; chmod 755 "$T/leer-kern/git-hooks/pre-commit"
+g config core.hooksPath "$T/leer-kern/git-hooks"
+echo "x" > "$V/inbox/probe4.md"; g add -- inbox/probe4.md
 OUT=$(g commit -qm ohne-skript 2>&1) || { echo "FAIL: fehlendes Prüfskript blockiert: $OUT"; exit 1; }
+[ -z "$OUT" ] || { echo "FAIL: Meldung trotz fehlendem Prüfskript: $OUT"; exit 1; }
 echo "PASS"

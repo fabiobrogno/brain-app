@@ -1,4 +1,4 @@
-// .tools/zuletzt.mjs — K11 „Was war zuletzt" (Spec §12.2): beim Sitzungsstart (startup/resume/clear) höchstens ~600
+// zuletzt.mjs — K11 „Was war zuletzt" (Spec §12.2): beim Sitzungsstart (startup/resume/clear) höchstens ~600
 // Zeichen — die letzten drei Sitzungen in diesem Ordner (Datum + Titel aus dem Verlauf, sonst erste Nachricht gekürzt),
 // Commits seit Beginn der jüngsten dieser Sitzungen (git log, höchstens 5) und der Abschnitt „Offen" der jüngsten
 // session_*.md. Nur wörtliche Auszüge mit Quelle, nichts zusammengefasst. „Anbieten, nicht beanspruchen": nichts wird

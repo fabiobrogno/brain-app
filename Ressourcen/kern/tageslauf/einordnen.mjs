@@ -1,4 +1,4 @@
-// .tools/tageslauf/einordnen.mjs — Schritt 3 (0 Tokens, Spec §5.2/K9): Zielseite je Vorschlag. Reihenfolge: Alias
+// tageslauf/einordnen.mjs — Schritt 3 (0 Tokens, Spec §5.2/K9): Zielseite je Vorschlag. Reihenfolge: Alias
 // (.logs/aliasse.json, genau eine Seite) → BM25 über Titel, name, description, fragen, auch_genannt der Wiki-Seiten,
 // nur über MIN_GUETE und mit Abstand ABSTAND zum Zweiten (sonst lieber warten). `stand` → Projektseite, deren
 // repo/pfade zum quelle_ordner passt. MIN_GUETE wird im Probelauf (Task 15) am echten Bestand geprüft.

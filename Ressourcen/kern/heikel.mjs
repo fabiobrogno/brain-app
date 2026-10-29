@@ -1,4 +1,4 @@
-// .tools/heikel.mjs — Heikel-Erkennung für den Tageslauf (Spec §4.3): Ein „heikler“ Fakt wird NIE automatisch ins
+// heikel.mjs — Heikel-Erkennung für den Tageslauf (Spec §4.3): Ein „heikler“ Fakt wird NIE automatisch ins
 // Wiki übernommen, sondern geht als Rückfrage an den Menschen. Regelbasiert, 0 Tokens, nur Node-Standardbibliothek.
 //
 //   istHeikel(text) → { heikel: boolean, gruende: Array<"geld"|"recht"|"person"|"zugang"> }

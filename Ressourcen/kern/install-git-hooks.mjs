@@ -1,17 +1,19 @@
 #!/usr/bin/env node
-// Aktiviert die versionierten Brain-Git-Hooks (core.hooksPath = .tools/git-hooks) — idempotent, gilt für alle Sessions/Worktrees.
-// Nutzung: node install-git-hooks.mjs [vault]
+// Aktiviert die Brain-Git-Hooks des Kerns (core.hooksPath = <Kern>/git-hooks, absolut) — idempotent, gilt für alle Sessions/Worktrees.
+// Nutzung: node install-git-hooks.mjs [vault]   (oder --vault <pfad>, BRAIN_VAULT, aktiver Vault der App)
 import { chmodSync } from "node:fs";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { EIGENER_VAULT, ladeConfig } from "./pfade.mjs";
+import { vaultPfadOderEnde, ladeConfig, kernStabilOderEnde } from "./pfade.mjs";
 import { gitBefehl } from "./werkzeug.mjs";
 
-const V = process.argv[2] || EIGENER_VAULT;
+const V = vaultPfadOderEnde();
 const GIT = gitBefehl({ cfg: ladeConfig(V) });
+// Ohne stabilen Kern-Pfad (KORTEX_KERN_PFAD) wird nichts eingetragen: Exit 3 mit klarer Meldung.
+const HOOKS = join(kernStabilOderEnde(), "git-hooks");
 if (process.platform !== "win32") {
-  chmodSync(join(V, ".tools", "git-hooks", "pre-commit"), 0o755);
+  try { chmodSync(join(HOOKS, "pre-commit"), 0o755); } catch { /* schreibgeschützter Kern (App-Bundle): der Hook ist dort schon ausführbar */ }
 }
-execFileSync(GIT, ["-C", V, "config", "core.hooksPath", ".tools/git-hooks"], { windowsHide: true });
+execFileSync(GIT, ["-C", V, "config", "core.hooksPath", HOOKS.split("\\").join("/")], { windowsHide: true });
 const aktiv = execFileSync(GIT, ["-C", V, "config", "core.hooksPath"], { encoding: "utf8", windowsHide: true }).trim();
 console.log(`Brain-Hooks aktiv: ${aktiv}`);

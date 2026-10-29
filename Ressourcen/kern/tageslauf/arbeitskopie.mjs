@@ -1,4 +1,4 @@
-// .tools/tageslauf/arbeitskopie.mjs — Schritt 6/7, Git-Teil (Spec §5.2): Arbeitskopie per `git worktree` AUSSERHALB des Vaults
+// tageslauf/arbeitskopie.mjs — Schritt 6/7, Git-Teil (Spec §5.2): Arbeitskopie per `git worktree` AUSSERHALB des Vaults
 // (~/Library/Caches/brain-tageslauf/<lauf>, Branch tageslauf/<lauf> von main), ein Commit je Auftrag mit normalem pre-commit
 // (nie --no-verify; rot → Auftrag verworfen, Arbeitskopie zurückgesetzt), Übernehmen nur per `merge --ff-only` auf main,
 // ist main weitergelaufen: einmal rebasen und neu versuchen, sonst Abbruch ohne Schaden. Commits als „Brain-Tageslauf".

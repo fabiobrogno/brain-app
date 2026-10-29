@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// .tools/tageslauf/gesundheit.mjs — Gesundheits-Wächter: das Brain meldet selbst, wenn etwas kaputt ist (0 Tokens, keine KI).
+// tageslauf/gesundheit.mjs — Gesundheits-Wächter: das Brain meldet selbst, wenn etwas kaputt ist (0 Tokens, keine KI).
 // Hintergrund: Drei Wochen lieferte der Hinweis-Weg „dienst-vektor“ 0 Treffer und die Such-Messlatte fiel durch (ok=0), ohne dass es jemand merkte.
 // Fünf schnelle Prüfungen, jede mit eigener Fehlergrenze (wirft eine, steht „Prüfung X lief nicht: …“ als Warnung da, der Rest läuft weiter):
 //   1 messlatte   Such-Messlatte im Tageslauf nach Takt (gesundheitMesslatte: taeglich|woechentlich|aus) laufen lassen und bewerten:
@@ -25,7 +25,7 @@ import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
-import { vaultPfad, ladeConfig, ordner } from "../pfade.mjs";
+import { vaultPfadOderEnde, ladeConfig, ordner } from "../pfade.mjs";
 import { leseAutomatik } from "../einstellungen.mjs";
 import { findeSecrets } from "../secrets-muster.mjs";
 
@@ -444,7 +444,7 @@ if (aufruf && aufruf === realpathSync(selbst)) {
   const bekannt = new Set(["--json", "--trocken", "--messlatte"]);
   const unbekannt = args.find((a) => a.startsWith("--") && !bekannt.has(a));
   if (unbekannt) { console.error(`Unbekannte Angabe: ${unbekannt}\nNutzung: brain gesundheit [--json] [--trocken] [--messlatte]`); process.exit(64); }
-  const vault = vaultPfad();
+  const vault = vaultPfadOderEnde();
   try {
     const g = await gesundheit(vault, { messlatte: args.includes("--messlatte") ? "ja" : "nein" });
     if (!args.includes("--trocken")) { try { schreibeGesundheit(vault, g); } catch (e) { console.error(`Stand nicht gespeichert: ${kurz(e?.message, 80)}`); } }

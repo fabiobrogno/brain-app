@@ -1,4 +1,4 @@
-// .tools/tageslauf/pflege-patch.mjs — Lernmodus (Autostufe „aus“): Was dir als Rückfrage gezeigt wurde, ist genau das, was nach „Übernehmen“
+// tageslauf/pflege-patch.mjs — Lernmodus (Autostufe „aus“): Was dir als Rückfrage gezeigt wurde, ist genau das, was nach „Übernehmen“
 // angewendet wird. Beim Vorlegen wird der Patch der Einheit (Commit der Vorschlags-Kopie, ohne _log.md) unter
 // .logs/tageslauf/pflege-vorschlaege/<rueckfrage-id>.patch gespeichert; sein sha256 (und der der Meta-Angaben, die die Diff-Prüfung
 // der Einheit braucht) steht im Lern-Eintrag in pflege-stand.json. Nach „Übernehmen“ rechnet nie wieder eine KI: der Patch wird per

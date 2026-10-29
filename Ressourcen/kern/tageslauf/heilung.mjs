@@ -1,4 +1,4 @@
-// .tools/tageslauf/heilung.mjs — Selbstheilung des Aktionsprotokolls (B2, Folgepunkt „Doppelausfall nach dem Merge“).
+// tageslauf/heilung.mjs — Selbstheilung des Aktionsprotokolls (B2, Folgepunkt „Doppelausfall nach dem Merge“).
 // Problem: Die Übernahme-Aktionen werden direkt nach dem Merge ins Protokoll geschrieben (append + fsync), das finally am Laufende holt es nach. Scheitern BEIDE (Ordner
 // statt aktionen.jsonl, Rechte, voller Datenträger), stehen die Übernahmen auf main, aber nicht im Protokoll: Das Einschwing-Tor (zählt nur das Protokoll) öffnet nach der
 // Heilung des Protokolls wieder (A = 0), und `brain zurueck` findet die Commits nicht (findeCommits verlangt die Aktion).

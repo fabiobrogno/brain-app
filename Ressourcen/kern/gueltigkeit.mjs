@@ -1,4 +1,4 @@
-// .tools/gueltigkeit.mjs — Gültigkeit einer Seite aus ihrem Frontmatter (Spec v0.4, Baustein A). Rein, liest nichts.
+// gueltigkeit.mjs — Gültigkeit einer Seite aus ihrem Frontmatter (Spec v0.4, Baustein A). Rein, liest nichts.
 // Felder (alle optional): `stand: YYYY-MM-DD` (Wissensstand, nur Anzeige), `pruefen_bis: YYYY-MM-DD` (absolute
 // Frist), `verfall: <Tage>` (relativ zum letzten Commit der Seite — ohne Commit-Zeit nicht auswertbar).
 // Ergebnis: { status: "ok"|"bald"|"abgelaufen"|"ohne", stand, pruefenBis, tageUeber, grund }

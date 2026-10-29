@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// .tools/secrets-muster.mjs — Credential-Muster (Basis: Memory-Blueprint-Spec 2026-07-29). Einzige Quelle.
+// secrets-muster.mjs — Credential-Muster (Basis: Memory-Blueprint-Spec 2026-07-29). Einzige Quelle.
 // Modul-Export für commit-pruefung.mjs, publish-check, Ernte, Vorschläge, Lücken, Import UND CLI (ersetzt
 // secrets-check.sh): node secrets-muster.mjs <datei> → Exit 0 sauber, Exit 3 Fund.
 // Meldet NUR Fundstellen (Datei/Zeile), NIE den getroffenen Text.

@@ -5,7 +5,7 @@ Bindet den Brain-Vault in Claude Code ein: Hooks, Statusline und Slash-Commands.
 ## Dateien
 - `install.mjs` — Merge-Installer. Ergänzt `~/.claude/settings.json` um die Brain-Hooks (nie ersetzen,
   nie eine fremde `statusLine` überschreiben) und schreibt die Slash-Commands nach `~/.claude/commands/`
-  (`ingest`, `handoff`, `brain-lint`, `brain-review`, `brain-feedback`, `brain-update`, `brain-backup`). Jede
+  (`ingest`, `handoff`, `brain-lint`, `brain-review`, `brain-feedback`, `brain-backup`). Jede
   generierte Datei trägt die Marke `<!-- brain-kit -->`; eine gleichnamige eigene Datei ohne Marke wird vorher
   als `<name>.md.bak-<YYYYMMDD-HHMMSS>` gesichert (mit Meldung). Hook-Befehle nutzen den absoluten Node-Pfad.
 - `session-start.mjs` (SessionStart) — stößt `session-hintergrund.mjs` als eigenen, losgelösten Prozess an
@@ -19,7 +19,7 @@ Bindet den Brain-Vault in Claude Code ein: Hooks, Statusline und Slash-Commands.
   Sitzungen im selben Repo (`.logs/laufend/`, nur Hinweis) und der Projekt-Steckbrief (`pruefen`/`ziel`/`fallen` +
   Stack aus den Manifesten, ≤ 1.200).
 - `session-hintergrund.mjs` — Hintergrund-Refresh: AGENTS.md neu rendern, Index, Suchrefresh, Lint-Cache,
-  Sicherung (Schalter `sicherungTaeglich`), Memory-Sync, Update-Check (Schalter `updateHinweis`).
+  Sicherung (Schalter `sicherungTaeglich`), Memory-Sync (der frühere Update-Check entfällt: Kortex aktualisiert sich selbst).
 - `brain-hint.mjs` (UserPromptSubmit) — lokaler Brain-Hinweis über QMD-Vektorsuche (0 API-Tokens). Stufe
   `hinweise` (aus/niedrig/mittel/hoch), Import-Treffer mit „(Import, ungeprüft)“, Lücken (Schalter `luecken`),
   startet beim Stand-Intervall (`staendeIntervallStunden`) die Ernte `--art stand` losgelöst. Seit v0.6: Intent-Gate
@@ -28,11 +28,11 @@ Bindet den Brain-Vault in Claude Code ein: Hooks, Statusline und Slash-Commands.
   einmalige Zeile und zählt nicht zum 600-Zeichen-Budget des Such-Hinweises.
   Seit B1 (W6): Treffer auf eine Seite mit „ersetzt_durch“ erscheinen nur als „ersetzt → [[neu]], nicht mehr aktuell“,
   Seiten mit „zweifel“ tragen „(PRÜFBEDÜRFTIG: Zweifel)“.
-- `ernte-ausloeser.mjs` (SessionEnd, PreCompact) — startet `.tools/ernte.mjs --art fakt` losgelöst, wenn
+- `ernte-ausloeser.mjs` (SessionEnd, PreCompact) — startet `ernte.mjs --art fakt` losgelöst, wenn
   `ernteSitzungsende` an ist; gibt nie etwas aus. Vorher legt er eine Auftrags-Marke `.logs/ernte/offen/<sid>.json`
   an, die `ernte.mjs` nach Abschluss entfernt. Bleibt sie liegen (Lauf mit Claude Code beendet, z. B. Windows),
   startet `session-start.mjs` sie beim nächsten Start neu; Marken älter als 7 Tage werden dort aufgeräumt.
-  Seit B1 startet er mit „fakt“ zusätzlich das Fehler-Signal W7 (`.tools/w7.mjs`, 0 Tokens): Folgt auf eine Antwort nach
+  Seit B1 startet er mit „fakt“ zusätzlich das Fehler-Signal W7 (`w7.mjs`, 0 Tokens): Folgt auf eine Antwort nach
   einem Brain-Hinweis eine Korrektur, landet {Seite, Sitzung, Zitat der Korrektur} in `.logs/w7.jsonl` (jeder Fund
   genau einmal). Die Ernte speichert nur noch Vorschläge mit wörtlichem Zitat aus Nutzer- oder Werkzeug-Text (`zitat`,
   `herkunft`, `fundstelle`); `ernte.log` zählt `ohneBeleg`, `nurKi` und `ungedeckt` (ein Fakt, dessen Zahlen, Daten, Uhrzeiten oder
@@ -74,11 +74,13 @@ sich dann sofort. So schreibt eine Änderung in der Einstellungsmaske `settings.
 ## Installation
 
 ```
-node .tools/adapters/claude-code/install.mjs <vault> [--claude-home <dir>] [--ohne-statusline]
+node adapters/claude-code/install.mjs <vault> [--claude-home <dir>] [--ohne-statusline]
 ```
 
-- `<vault>` ist der Pfad zum Brain-Vault (z. B. `~/Documents/Brain`). Die Hooks selbst brauchen kein
-  `BRAIN_VAULT`: sie finden den Vault über ihren eigenen Ort (`<vault>/.tools/adapters/claude-code/`).
+- `<vault>` ist der Pfad zum Brain-Vault (z. B. `~/Documents/Brain`). Fehlt er, gilt `--vault`, `BRAIN_VAULT` bzw. der aktive Vault der App.
+- Die Hook-Befehle zeigen auf den Kern (`<Kern>/adapters/claude-code/<hook>.mjs`, bei gesetztem `KORTEX_KERN_PFAD` auf dessen stabilen Pfad)
+  und tragen den Vault als `--vault "<vault>"` mit: ein Kern bedient mehrere Vaults, der Vault wird nie aus dem Ort des Kerns abgeleitet.
+  Ohne auffindbaren Vault beenden sich die Hooks still mit Exit 0.
 - `--claude-home <dir>` überschreibt `~/.claude` (für Tests/Probeläufe).
 - `--ohne-statusline` lässt die Statusline unangetastet.
 
@@ -89,28 +91,14 @@ Vault-/Config-Änderung meldet `unverändert` und legt kein neues Backup an.
 Ist `settings.json` kein gültiges JSON, bricht der Installer mit einer Klartextzeile und Exit 1 ab, ohne
 etwas zu schreiben oder ein Backup anzulegen — erst die Datei reparieren, dann erneut installieren.
 
-**Ältere Brain-Hooks derselben Vault** (vor dem Umzug nach `.tools/adapters/claude-code/`, z. B.
-`<vault>/.tools/session-start.mjs`, `wiki-guard.sh`, `brain-hint.mjs`, `statusline.sh`, auch in der
-`$HOME/brain`-Schreibweise) werden automatisch durch den neuen Adapter-Pfad **ersetzt** statt verdoppelt —
+**Ältere Brain-Hooks derselben Vault** (Stand vor dem Kern-Umzug: Pfade im alten Kit-Ordner des Vaults, auch die frühere Form
+ohne `adapters/claude-code/` und die `$HOME`-Schreibweise des Vault-Ordners) werden automatisch durch den neuen Aufruf **ersetzt** statt verdoppelt —
 an derselben Stelle in der Hook-Liste, mit Backup wie jede andere Änderung. Hooks, die auf eine andere
-Vault oder ein anderes Werkzeug zeigen, bleiben unangetastet.
+Vault oder ein anderes Werkzeug zeigen, bleiben unangetastet. (Das Verdrahten der Hooks über den Starter der App übernimmt Paket P6.)
 
 ## Tests
 
-Node-Tests laufen über `bash .tools/tests/unit.sh <Dateien>` (= `node --test --import .tools/tests/setup.mjs`): das Setup
-löscht beim Prozessende alle Temp-Ordner, die ein Test per `mkdtemp` anlegt, und setzt `QMD_BIN` auf den Fake (kein echtes
-qmd, kein Modell-Download). Ein nackter `node --test` hinterlässt Temp-Reste. Shell-Tests räumen über `plattform.sh` auf.
-
-```
-bash .tools/tests/unit.sh .tools/tests/test-adapter-claude.mjs
-bash .tools/tests/test-hint-hook.sh
-bash .tools/tests/test-wiki-guard.sh
-bash .tools/tests/test-session-hintergrund.sh
-bash .tools/tests/test-config-kaputt.sh
-bash .tools/tests/test-pflege.sh
-bash .tools/tests/unit.sh .tools/tests/test-ernte-ausloeser.mjs
-bash .tools/tests/unit.sh .tools/tests/test-w7.mjs .tools/tests/test-ernte-beleg.mjs .tools/tests/test-hint-core.mjs
-bash .tools/tests/unit.sh .tools/tests/test-arbeitsstand-hook.mjs .tools/tests/test-zuletzt.mjs .tools/tests/test-laufend.mjs
-bash .tools/tests/unit.sh .tools/tests/test-projekt.mjs .tools/tests/test-regeln.mjs .tools/tests/test-intent-gate.mjs
-bash .tools/tests/test-hook-laufzeit.sh
-```
+Die Tests liegen im Repo unter `Tests/Kern/` und laufen über `bash Tests/Kern/run-all.sh` (alles) bzw.
+`bash Tests/Kern/unit.sh Tests/Kern/test-x.mjs` (einzelne Dateien); siehe `Ressourcen/kern/HERKUNFT.md`. Das Setup löscht beim Prozessende alle Temp-Ordner,
+die ein Test per `mkdtemp` anlegt, setzt `QMD_BIN` auf den Fake (kein echtes qmd, kein Modell-Download) und `BRAIN_APP_SUPPORT` auf einen leeren
+Temp-Ordner (kein Test liest je die echte Vault-Liste der App). Ein nackter `node --test` hinterlässt Temp-Reste.

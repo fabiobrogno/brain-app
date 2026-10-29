@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// .tools/import/abschluss.mjs — Import-Paket als eingearbeitet abschließen (Issue #6).
+// import/abschluss.mjs — Import-Paket als eingearbeitet abschließen (Issue #6).
 // Ein normaler Ingest sortiert seine Quelle in einen Cluster ein (Schritt 5). Beim Import tut das dieses Werkzeug:
 // es verschiebt die Dateien EINES Pakets von <inbox>/_import/<quelle>/ nach <cluster>/<quelle>/ (Unterstruktur
 // bleibt, Inhalt bytegleich → quellen_sha ändert sich nicht), vermerkt den Fortschritt je Paket in _bericht.json
@@ -7,7 +7,7 @@
 // <archiv>/import-berichte/<quelle>/. analyse/pflege zählen nur Pakete ohne diesen Vermerk (offenePakete()).
 // Aufruf VOR dem Schreiben der Wiki-Seiten, damit quellen: gleich auf den endgültigen Ort zeigt.
 //
-// CLI: node .tools/import/abschluss.mjs <vault> <quelle> <paket|--alle> --ziel <cluster>
+// CLI: node import/abschluss.mjs <vault> <quelle> <paket|--alle> --ziel <cluster>
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, readdirSync, rmdirSync, realpathSync } from "node:fs";
 import { join, resolve, relative, dirname, isAbsolute } from "node:path";
 import { execFileSync } from "node:child_process";

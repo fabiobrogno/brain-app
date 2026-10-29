@@ -12,8 +12,8 @@ import { join, dirname, basename, resolve } from "node:path";
 
 let V = "", AUSGABE = "";
 try {
-  const { vaultPfad, ordner } = await import("../../pfade.mjs");
-  V = vaultPfad([]);
+  const { vaultPfadOderEnde, ordner } = await import("../../pfade.mjs");
+  V = vaultPfadOderEnde([], { still: true });
   if (!existsSync(V)) process.exit(0);
   let e = {};
   try { e = JSON.parse(readFileSync(0, "utf8") || "{}"); } catch {}

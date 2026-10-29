@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Ernte-Auslöser (SessionEnd/PreCompact mit --art fakt; brain-hint.mjs nutzt starteErnte für --art stand).
 // Liest das Hook-JSON von stdin (session_id, transcript_path, cwd), prüft den Schalter und startet
-// .tools/ernte.mjs LOSGELÖST (detached, stdio ignore, windowsHide, unref) — kehrt sofort zurück.
+// ernte.mjs LOSGELÖST (detached, stdio ignore, windowsHide, unref) — kehrt sofort zurück.
 // Gibt NIE etwas aus (0-Token-Regel), Exit immer 0. Tut nichts bei BRAIN_ERNTE=1 (Selbstaufruf-Schutz).
 // Den Ordner-Ausschluss (ernteNichtIn) prüft ernte.mjs selbst.
 // Auftrags-Marke (Final-Review #5): „fakt" legt vor dem Start .logs/ernte/offen/<sid>.json an (Transkript, cwd,
@@ -17,7 +17,7 @@ import { readFileSync, existsSync, realpathSync, mkdirSync, writeFileSync, readd
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
-import { EIGENER_VAULT } from "../../pfade.mjs";
+import { vaultPfadOderEnde } from "../../pfade.mjs";
 import { leseAutomatik } from "../../einstellungen.mjs";
 import { ersterAufruf } from "./einmal.mjs";
 
@@ -164,7 +164,7 @@ export function leseArgs(argv) {
     if (argv[i] === "--art") { art = argv[i + 1]; i++; }
     else if (!argv[i].startsWith("--")) vault = vault || argv[i];
   }
-  return { art, vault: vault || process.env.BRAIN_VAULT || EIGENER_VAULT };
+  return { art, vault: vault || vaultPfadOderEnde([], { still: true }) };
 }
 
 let aufruf = "";

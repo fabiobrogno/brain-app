@@ -1,8 +1,8 @@
-// .tools/ansicht/suche.js — Suche der 3D-Ansicht wie `brain search` (klassisches Skript, kein ESM).
+// ansicht/suche.js — Suche der 3D-Ansicht wie `brain search` (klassisches Skript, kein ESM).
 // Setzt window.BrainSuche = { suche, hervorheben, tokenisiere }. In Node per vm mit { window: {} } testbar.
 // suche(nodes, frage, n, { filter }) — filter(node, i) blendet Knoten vor dem Kürzen auf n aus (Ansicht: Bereichsfilter).
 //
-// Ranking identisch zu .tools/minisuche.mjs: BM25 (k1=1.2, b=0.75), Dokumenttext = body + 3× beschreibung
+// Ranking identisch zu minisuche.mjs: BM25 (k1=1.2, b=0.75), Dokumenttext = body + 3× beschreibung
 // (rohe Frontmatter-description; fehlt sie: ""). `desc` (Anzeigetext, ggf. erster Absatz) zählt NICHT —
 // er dient nur als Auszug-Fallback. Tokens = /[\p{L}\p{N}]+/gu auf NFC + Kleinbuchstaben. Zusatz: Fragebegriffe ab 5 Zeichen, die im Bestand
 // nicht vorkommen, werden auf Bestandswörter mit Levenshtein-Abstand ≤ 1 erweitert (Tippfehler); das LETZTE

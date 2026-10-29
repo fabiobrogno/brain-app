@@ -1,4 +1,4 @@
-// .tools/import/zip.mjs — Zip lesen (und für Tests schreiben) nur mit node:zlib, ohne Abhängigkeiten.
+// import/zip.mjs — Zip lesen (und für Tests schreiben) nur mit node:zlib, ohne Abhängigkeiten.
 // Unterstützt: Store (0) und Deflate (8). Zip64, verschlüsselte Einträge und andere Verfahren → ZipFehler mit
 // klarer Meldung („bitte entpacken und den Ordner importieren“). Liest nur das zentrale Verzeichnis und
 // entpackt einen Eintrag erst, wenn er gebraucht wird (daten()).

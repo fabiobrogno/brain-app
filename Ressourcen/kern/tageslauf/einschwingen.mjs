@@ -1,4 +1,4 @@
-// .tools/tageslauf/einschwingen.mjs — Einschwingphase des Tageslaufs (B2) als echtes Tor. Die ersten N automatischen Übernahmen
+// tageslauf/einschwingen.mjs — Einschwingphase des Tageslaufs (B2) als echtes Tor. Die ersten N automatischen Übernahmen
 // (Einstellung automatik.einschwingen, Standard 20, 0 = aus → kein Tor, Verhalten wie ohne Phase) prüft der Mensch einzeln, BEVOR die
 // Automatik weiterläuft. Das ersetzt das Abnahme-Tor der Spec (20 zufällige 🟢 prüfen, erst bei 20/20 Schalter an) — im Kit selbst stand es nirgends.
 // Zählgrößen (nie gespeichert, immer neu aus Protokoll + Antworten gelesen — es gibt keinen Zähler, der veralten oder abweichen könnte):

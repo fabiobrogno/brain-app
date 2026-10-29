@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// .tools/tageslauf/zurueck.mjs — „brain zurueck <lauf|id>" (Spec §5.4). Nimmt automatische Änderungen des Tageslaufs zurück:
+// tageslauf/zurueck.mjs — „brain zurueck <lauf|id>" (Spec §5.4). Nimmt automatische Änderungen des Tageslaufs zurück:
 // EIN neuer Commit (nichts wird umgeschrieben), gebaut als gezielte Gegenänderung je Aktion statt `git revert` — ein Revert
 // kollidiert an rev, quellen und benachbarten Fakt-Zeilen, sobald danach noch etwas auf derselben Seite dazukam. Je Aktion:
 // Fakt-Zeile mit ihrem Beleg-Link entfernen (beim Ersetzen die alte Zeile wiederherstellen), Stand-Abschnitt samt Verlauf auf
@@ -12,11 +12,11 @@
 // Betroffene Vorschläge → 90_archiv/vorschlaege-abgelehnt/; beim ganzen Lauf kommen die nicht versionierten Verschiebungen
 // (aussortiert, abgelehnt, Inbox) zurück nach _vorschlaege. Rücknahme einer automatischen Übernahme zählt als Fehler (§6.3).
 // Pflege-Commits von B3 (pflege(<lauf>): …) nimmt pflege-zurueck.mjs zurück; die CLI ruft beides (Pflege zuerst).
-// CLI: node .tools/tageslauf/zurueck.mjs <vault> <lauf|id>        Exit 0 · 1 (nichts gefunden / nicht möglich) · 64
+// CLI: node tageslauf/zurueck.mjs <vault> <lauf|id>        Exit 0 · 1 (nichts gefunden / nicht möglich) · 64
 import { readFileSync, writeFileSync, existsSync, realpathSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ordner, EIGENER_VAULT } from "../pfade.mjs";
+import { ordner, vaultUndRest } from "../pfade.mjs";
 import { ladeVorschlagDatei, verschiebeVorschlag, ablehnen, UNTERORDNER } from "./bestand.mjs";
 import { neuerLauf, laufId, notiere, merkePruefung, leseAktionen, schreibeAktionen } from "./protokoll.mjs";
 import { git, legeArbeitskopieAn, verwerfeArbeitskopie, uebernehmen, nimmIngestSperre, gibIngestSperreFrei, BETREFF_MUSTER } from "./arbeitskopie.mjs";
@@ -323,7 +323,9 @@ const selbst = fileURLToPath(import.meta.url);
 let aufruf = "";
 try { aufruf = realpathSync(process.argv[1] || ""); } catch {}
 if (aufruf && aufruf === realpathSync(selbst)) {
-  const [vault = EIGENER_VAULT, ziel] = process.argv.slice(2);
+  // <vault> <lauf|id> (so ruft brain.mjs auf) oder <lauf|id> mit --vault/BRAIN_VAULT/aktivem App-Vault
+  const a0 = process.argv.slice(2);
+  const { vault, rest: [ziel] } = vaultUndRest(a0, (a) => a0.length < 2 && !/[\\/]/.test(a));   // <vault> <ziel>; ein einzelnes Argument ohne Pfadtrenner ist das Ziel
   if (!ziel || !/^[A-Za-z0-9-]{1,80}$/.test(ziel)) {
     console.error("Nutzung: brain zurueck <lauf|id> — die Lauf-Nummer steht im Tageslauf-Bericht (.logs/tageslauf/).");
     process.exit(64);

@@ -1,4 +1,4 @@
-// .tools/fakten.mjs — Fakt-Zeilen im Wiki (B1, §4.2): Format bauen und lesen, Beleg-Links prüfen (Lint FAKT-BELEG).
+// fakten.mjs — Fakt-Zeilen im Wiki (B1, §4.2): Format bauen und lesen, Beleg-Links prüfen (Lint FAKT-BELEG).
 //   - <Aussage> · Stand 21.10.2026 · [[<cluster>/belege/<JJJJ-MM>/<id>]]
 //   - ~~<Aussage>~~ · ersetzt am 23.10.2026 durch die Zeile darunter
 // Kandidat ist nur eine Listenzeile mit „ · Stand TT.MM.JJJJ“ (Mittelpunkt U+00B7) — Hand-Stichpunkte wie „(Stand 19.10.)“

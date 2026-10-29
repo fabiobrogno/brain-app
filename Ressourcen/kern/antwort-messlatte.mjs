@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// .tools/antwort-messlatte.mjs — Antwort-Messlatte (Treffsicherheit, opt-in): Taugen die Seiten als Antwortquelle?
+// antwort-messlatte.mjs — Antwort-Messlatte (Treffsicherheit, opt-in): Taugen die Seiten als Antwortquelle?
 // Testfragen: <wiki>/_antworten.json — [{ "frage": "…", "seite": "<basename>.md", "kernfakten": ["…", "…"] }].
 // Je Frage: Seite lesen → Haiku antwortet NUR aus der Seite (schlanker Aufruf wie die Ernte: rufeHaiku/leseClaudeAntwort
 // aus ernte.mjs) → lokaler Abgleich, ob die Kernfakten in der Antwort stehen (0 Tokens). Ergebnis nach
@@ -16,7 +16,7 @@ import { createHash } from "node:crypto";
 import { findeSecrets, ohneSecrets } from "./secrets-muster.mjs";
 import { haengeAn, zeitstempel, leseZeilen } from "./logs.mjs";
 import { leseAutomatik } from "./einstellungen.mjs";
-import { EIGENER_VAULT, ordner, entferneBom } from "./pfade.mjs";
+import { vaultPfadOderEnde, ordner, entferneBom } from "./pfade.mjs";
 import { findeClaude, rufeHaiku, leseClaudeAntwort, nimmLock } from "./ernte.mjs";
 import { walk } from "./vault-dateien.mjs";
 import { istWikiSeite } from "./wiki-pfade.mjs";
@@ -249,6 +249,6 @@ if (aufruf && aufruf === realpathSync(selbst)) {
     if (argv[i] === "--anlass") { anlass = argv[i + 1]; i++; }
     else if (!argv[i].startsWith("--")) vault = vault || argv[i];
   }
-  const r = await antwortLauf(vault || process.env.BRAIN_VAULT || EIGENER_VAULT, { anlass });
+  const r = await antwortLauf(vault || vaultPfadOderEnde([]), { anlass });
   process.exitCode = r.status === "fehler" ? 1 : 0;
 }

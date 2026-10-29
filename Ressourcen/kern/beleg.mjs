@@ -1,4 +1,4 @@
-// .tools/beleg.mjs — Beleg-Prüfung (Lernkreislauf-Spec §4.1): steht das Zitat wörtlich im Claude-Code-Transkript,
+// beleg.mjs — Beleg-Prüfung (Lernkreislauf-Spec §4.1): steht das Zitat wörtlich im Claude-Code-Transkript,
 // und woher stammt die Fundstelle (du · tool · web · ki)? Regelbasiert, keine KI. Grundsatz: im Zweifel ki oder
 // null — eingespielter Kontext (system-reminder, Hook-Ausgaben, Skill-Texte, Zusammenfassungen) darf nie als
 // Aussage des Nutzers zählen, sonst bestätigt sich das Brain selbst. Ebenso Claudes eigener Text, der über ein Werkzeug

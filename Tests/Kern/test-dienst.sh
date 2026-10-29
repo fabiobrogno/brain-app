@@ -9,9 +9,7 @@ T="$(mktemp -d)"; V="$T/Mein Brain, Ü's"; cp -R "$D/fixture" "$V"
 mkdir -p "$T/home"; export HOME="$T/home" USERPROFILE="$T/home"
 export BRAIN_OEFFNER="$(node -p process.execPath)"   # „öffnet“ mit node selbst — garantiert kein Browser
 unset BRAIN_DIENST_AUS BRAIN_DIENST_LEERLAUF_MS BRAIN_DIENST_RUHE_MS
-export BRAIN_UPDATE_QUELLE="$T/kein-update.json"          # doctor: Update-Prüfung lokal, kein Netz
-mit_tools() { mkdir -p "$1/.tools"; for e in "$D/.."/* "$D/.."/.[!.]*; do [ -e "$e" ] || continue; [ "$(basename "$e")" = tests ] && continue; cp -R "$e" "$1/.tools/"; done; }
-mit_tools "$V"
+K="$(cd "$D/.." && pwd)"   # der Kern liegt außerhalb des Vaults — der Test-Vault enthält nur Daten
 DJ="$V/.logs/ansicht/dienst.json"
 
 # Feld aus dienst.json (leer, wenn die Datei fehlt)
@@ -63,7 +61,7 @@ R=$(hole "$PORT" /../../.logs/ansicht/data.js); case "$R" in "404 "*) ;; *) echo
 R=$(hole "$PORT" /); case "$R" in "200 "*"<html"*) ;; *) echo "FAIL: Startseite: ${R:0:200}"; exit 1;; esac
 R=$(hole "$PORT" /api/ping "$SCHLUESSEL"); case "$R" in "200 "*'"vaultId"'*) ;; *) echo "FAIL: ping: ${R:0:200}"; exit 1;; esac
 # Fehlende Module paralleler Tasks → 503 statt Absturz (solange analyse.mjs fehlt)
-if [ ! -f "$V/.tools/analyse.mjs" ]; then
+if [ ! -f "$K/analyse.mjs" ]; then
   R=$(hole "$PORT" /api/analyse "$SCHLUESSEL"); case "$R" in "503 "*) ;; *) echo "FAIL: /api/analyse ohne Modul: ${R:0:200}"; exit 1;; esac
 fi
 R=$(hole "$PORT" /api/einstellungen "$SCHLUESSEL"); case "$R" in "200 "*'"werte"'*'"claudeGefunden"'*) ;; *) echo "FAIL: /api/einstellungen: ${R:0:200}"; exit 1;; esac
@@ -90,7 +88,7 @@ grep -q 'Lies zuerst' "$V/AGENTS.md" && { echo "FAIL: Ich-Karten-Satz nach PUT f
 lebt "$PID" || { echo "FAIL: Dienst nach den Anfragen abgestürzt"; exit 1; }
 
 # 4) doctor meldet „läuft (Port n)“
-OUT=$(BRAIN_VAULT="$V" node "$V/.tools/doctor.mjs" "$V" 2>&1)
+OUT=$(BRAIN_VAULT="$V" node "$K/doctor.mjs" "$V" 2>&1)
 echo "$OUT" | grep -qF "OK Ansicht-Dienst — läuft (Port $PORT)" || { echo "FAIL: doctor-Zeile (läuft) fehlt: $OUT"; exit 1; }
 
 # 5) zeig --stopp → Prozess weg, dienst.json weg
@@ -98,7 +96,7 @@ RC=0; OUT=$(BRAIN_VAULT="$V" node "$B" zeig --stopp 2>&1) || RC=$?
 [ "$RC" = 0 ] || { echo "FAIL: zeig --stopp rc=$RC: $OUT"; exit 1; }
 warte_bis "! lebt $PID" || { echo "FAIL: Dienst läuft nach --stopp weiter"; exit 1; }
 [ -f "$DJ" ] && { echo "FAIL: dienst.json nach --stopp noch da"; exit 1; }
-OUT=$(BRAIN_VAULT="$V" node "$V/.tools/doctor.mjs" "$V" 2>&1)
+OUT=$(BRAIN_VAULT="$V" node "$K/doctor.mjs" "$V" 2>&1)
 echo "$OUT" | grep -qF "OK Ansicht-Dienst — aus (startet bei ‚zeig mir mein Brain‘)" || { echo "FAIL: doctor-Zeile (aus) fehlt: $OUT"; exit 1; }
 # --stopp ohne laufenden Dienst: freundlich, Exit 0
 RC=0; OUT=$(BRAIN_VAULT="$V" node "$B" zeig --stopp 2>&1) || RC=$?
@@ -131,7 +129,7 @@ grep -q "http://127.0.0.1:$PORT/" "$A_OUT" && grep -q "http://127.0.0.1:$PORT/" 
 [ ! -f "$V/.logs/ansicht/dienst.lock" ] || { echo "FAIL: Start-Lock liegt nach dem Start noch da"; exit 1; }
 
 # 7c) Ein zweiter, direkt gestarteter dienst.mjs merkt den laufenden Dienst und beendet sich ohne „bereit“
-RC=0; OUT=$(node "$V/.tools/ansicht/dienst.mjs" "$V" 2>&1) || RC=$?
+RC=0; OUT=$(node "$K/ansicht/dienst.mjs" "$V" 2>&1) || RC=$?
 [ "$RC" = 0 ] && [ -z "$OUT" ] || { echo "FAIL: überzähliger Dienst rc=$RC: $OUT"; exit 1; }
 [ "$(feld "$DJ" pid)" = "$PID" ] && lebt "$PID" || { echo "FAIL: laufender Dienst wurde verdrängt"; exit 1; }
 
@@ -158,7 +156,7 @@ warte_bis "! lebt $PID" || { echo "FAIL: Dienst (Ruhe-Test) läuft nach --stopp 
 # 8) Start scheitert (Testhaken BRAIN_DIENST_AUS=1) → file://-Rückfall, Exit 0
 RC=0; OUT=$(BRAIN_DIENST_AUS=1 BRAIN_VAULT="$V" node "$B" zeig 2>/dev/null) || RC=$?
 [ "$RC" = 0 ] || { echo "FAIL: zeig mit BRAIN_DIENST_AUS rc=$RC: $OUT"; exit 1; }
-echo "$OUT" | grep -q 'file://.*/index\.html' || { echo "FAIL: kein file://-Rückfall: $OUT"; exit 1; }
+echo "$OUT" | grep -q 'file://.*/\.logs/ansicht/seite\.html' || { echo "FAIL: kein file://-Rückfall: $OUT"; exit 1; }
 [ -f "$DJ" ] && { echo "FAIL: dienst.json trotz BRAIN_DIENST_AUS"; exit 1; }
 
 echo "OK test-dienst"

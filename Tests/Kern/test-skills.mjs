@@ -1,4 +1,4 @@
-import { nodeBefehl } from "../pfade.mjs";
+import { nodeBefehl, KERN, shellQuote } from "../pfade.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
@@ -40,17 +40,17 @@ test("Build erzeugt Codex-Skills unter <ordner>/<name>/SKILL.md, Platzhalter ger
     assert.doesNotMatch(raw, /\{\{/, s);
   }
 });
-test("Vault-Pfad mit Leerzeichen: jede Zeile mit .tools/brain.mjs hat den Pfad in doppelten Anführungszeichen", () => {
+test("Kern-/Vault-Pfad mit Leerzeichen: jede Zeile mit brain.mjs hat Kern- und Vault-Pfad in einfachen Anführungszeichen (POSIX-sicher)", () => {
   const z = mkdtempSync(join(tmpdir(), "cmdq-"));
   const v = mkdtempSync(join(tmpdir(), "v mit Leerzeichen "));
   writeFileSync(join(v, "brain.config.json"), "{}");
   execFileSync(process.execPath, [build, v, "--ziel", "claude-commands", z]);
   for (const datei of readdirSync(z)) {
     for (const zeile of readFileSync(join(z, datei), "utf8").split("\n")) {
-      if (!zeile.includes(".tools/brain.mjs")) continue;
-      const gesamt = (zeile.match(/\.tools\/brain\.mjs/g) || []).length;
-      const gequotet = (zeile.match(/"[^"\n]*\.tools\/brain\.mjs"/g) || []).length;
-      assert.equal(gequotet, gesamt, `${datei}: ungequotetes .tools/brain.mjs — ${zeile}`);
+      if (!/[/]brain\.mjs/.test(zeile)) continue;
+      const gesamt = (zeile.match(/[/]brain\.mjs/g) || []).length;
+      const gequotet = (zeile.match(/'[^'\n]*[/]brain\.mjs' --vault '(?:[^'\n]|'\\'')*'/g) || []).length;
+      assert.equal(gequotet, gesamt, `${datei}: ungequotetes brain.mjs bzw. --vault — ${zeile}`);
     }
   }
 });
@@ -60,7 +60,7 @@ test("AGENTS.md und Skills nutzen den absoluten Node-Pfad (nie nacktes node) —
   execFileSync(process.execPath, [build, v, "--ziel", "agents", ziel]);
   const nodeQ = nodeBefehl();
   const a = readFileSync(ziel, "utf8");
-  assert.ok(a.includes(`${nodeQ} "${v.split("\\").join("/")}/.tools/brain.mjs" search`), a);
+  assert.ok(a.includes(`${nodeQ} ${shellQuote(`${KERN}/brain.mjs`)} --vault ${shellQuote(v)} search`), a);
   assert.doesNotMatch(a, /`node /);
   const z = mkdtempSync(join(tmpdir(), "cmdn-"));
   execFileSync(process.execPath, [build, v, "--ziel", "claude-commands", z]);

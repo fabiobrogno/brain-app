@@ -1,9 +1,9 @@
-// .tools/tageslauf/diffpruefung.mjs — Diff-Prüfung nach jedem Schreiblauf von B3 (Spec §6.2). REIN: bekommt die geänderten
+// tageslauf/diffpruefung.mjs — Diff-Prüfung nach jedem Schreiblauf von B3 (Spec §6.2). REIN: bekommt die geänderten
 // Dateien mit altem und neuem Text, liest nichts. Jeder Befund verwirft die ganze Einheit (= den ganzen Quellen-Commit).
 //   tools · generiert · pfad   erlaubt sind nur Wiki-Seiten, <wiki>/_log.md und neue Dateien, die die Einheit ausdrücklich
 //                              anmeldet (einsortierte Quelle: neueQuellen; Beleg-Dateien <cluster>/belege/JJJJ-MM/<id>.md: neueBelege —
 //                              nur neue-seiten.mjs, wo Node die Belege selbst schreibt; sonst ist jede neue Beleg-Datei ein Verstoß);
-//                              Symlinks, „..“-Pfade und versteckte Ordner (außer .tools → eigene Regel) sind nie erlaubt
+//                              Symlinks, „..“-Pfade und versteckte Ordner (außer dem alten Kit-Ordner → eigene Regel) sind nie erlaubt
 //   gesperrt                   Dateien, die ein ausgeschlossenes Thema nennen (Themen-Guard), dürfen nie berührt werden
 //   geloescht                  nichts wird gelöscht
 //   binaer                     Binärdateien (NUL-Byte / kein UTF-8) sind in Pflege-Einheiten nie erlaubt: sie ließen sich nicht als Diff zeigen
@@ -19,6 +19,7 @@
 //                              Haiku-Gegenprobe bestätigt) zählen nicht für die 20 % — Beleg-Links und quellen bleiben Pflicht
 // Lint und pre-commit laufen danach beim Commit (pflege-kopie.mjs#einheit).
 import { istWikiSeite, istGeneriert } from "../wiki-pfade.mjs";
+import { ALT_KIT_ORDNER } from "../pfade.mjs";
 import { leseSeitenFelder } from "../seitenfelder.mjs";
 import { konfliktKaesten } from "../konflikte.mjs";
 import { BELEG_LINK_MUSTER } from "../fakten.mjs";
@@ -89,13 +90,16 @@ export function entfernteZeilen(alt, neu, { jetzt = Date.now(), ausnahmen = new 
   return { gesamt, entfernt, anteil: gesamt ? entfernt / gesamt : 0 };
 }
 
+// Der alte Kit-Ordner in noch nicht umgestellten Vaults: Werkzeug-Code, den die Pflege nie ändern darf.
+const ALT_KIT_RE = new RegExp(`^${ALT_KIT_ORDNER.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:/|$)`, "i");
+
 export function pruefeDiff(dateien, { wiki = "09_wiki", cluster = [], jetzt = Date.now(), neueQuellen = [], neueBelege = [], aufgeloest = [], umgezogen = [], nurSeiten = null, gesperrt = [] } = {}) {
   const befunde = [];
   const b = (pfad, regel, meldung) => befunde.push({ pfad, regel, meldung });
   for (const d of dateien) {
     const p = norm(d.pfad);
     if (gesperrt.map(norm).includes(p)) { b(p, "gesperrt", "diese Datei nennt ein ausgeschlossenes Thema und darf nicht berührt werden"); continue; }
-    if (/^\.tools(?:\/|$)/i.test(p)) { b(p, "tools", "Werkzeug-Code darf die Pflege nicht ändern"); continue; }
+    if (ALT_KIT_RE.test(p)) { b(p, "tools", "Werkzeug-Code darf die Pflege nicht ändern"); continue; }
     if (GENERIERT_WURZEL.has(p) || istGeneriert(p, wiki)) { b(p, "generiert", "generierte Datei"); continue; }
     if (!sauberPfad(p) && d.status !== "geloescht") { b(p, "pfad", "Datei außerhalb der erlaubten Bereiche (Pfad nicht zulässig)"); continue; }
     if (d.symlink) { b(p, "pfad", "Symlinks sind nicht erlaubt"); continue; }

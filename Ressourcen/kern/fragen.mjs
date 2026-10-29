@@ -1,4 +1,4 @@
-// .tools/fragen.mjs — Frontmatter-Feld `fragen:` (Treffsicherheit): 2–6 typische Fragen einer Wiki-Seite in den
+// fragen.mjs — Frontmatter-Feld `fragen:` (Treffsicherheit): 2–6 typische Fragen einer Wiki-Seite in den
 // Worten der Person. Sie fließen in die Suchkarte (brain-index.mjs), damit der Hinweis bei genau diesen Fragen trifft.
 // Format (eine Zeile, JSON wie `quellen`/`auch`):  fragen: ["Wie …?", "Wo steht …?"]
 // Lint (brain-lint.mjs) prüft: JSON-Liste aus Texten, höchstens 6, je höchstens 160 Zeichen. Nur Standardbibliothek.

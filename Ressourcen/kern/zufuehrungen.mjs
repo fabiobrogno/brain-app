@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// .tools/zufuehrungen.mjs — Wächter für Zuführungen (Connectors, Importordner, Sammelstellen): erkennt Quellen, die
+// zufuehrungen.mjs — Wächter für Zuführungen (Connectors, Importordner, Sammelstellen): erkennt Quellen, die
 // still stehen (Pfad weg, keine Leserechte, lange kein neuer Inhalt) und sagt es — nie still.
 // Zuführungen stehen in brain.config.json:  "zufuehrungen": [{ "name": "Notizen-Sync", "pfad": "~/Sync/notizen", "maxAlterTage": 7 }]
 //   pfad          absolut, mit „~/“ oder relativ zum Vault (Datei oder Ordner)
@@ -12,12 +12,12 @@
 //     "zufuehrungen": [{ "name": "…", "pfad": "…", "status": "ok|fehlt|nicht-lesbar|still|config",
 //                        "letzterLauf": "2026-10-20T08:00:00Z" | null, "alterTage": 8 | null, "maxAlterTage": 7 }] }
 //   `probleme` = Zahl der Einträge mit status ≠ ok; ⚠ anzeigen, sobald probleme > 0.
-// CLI: node .tools/zufuehrungen.mjs [--json] [vault]   (schreibt die Statusdatei; Exit 1 nur, wenn das Schreiben scheitert)
+// CLI: node zufuehrungen.mjs [--json] [vault]   (schreibt die Statusdatei; Exit 1 nur, wenn das Schreiben scheitert)
 import { readdirSync, statSync, lstatSync, openSync, closeSync, writeFileSync, renameSync, unlinkSync, mkdirSync, realpathSync } from "node:fs";
 import { join, dirname, isAbsolute, resolve } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { vaultPfad, ladeConfig } from "./pfade.mjs";
+import { vaultPfadOderEnde, ladeConfig } from "./pfade.mjs";
 
 export const STATUS_DATEI = (vault) => join(vault, ".logs", "zufuehrungen.json");
 export const STANDARD_MAX_ALTER_TAGE = 7;
@@ -99,7 +99,7 @@ const selbst = fileURLToPath(import.meta.url);
 let aufruf = "";
 try { aufruf = realpathSync(process.argv[1] || ""); } catch {}
 if (aufruf && aufruf === realpathSync(selbst)) {
-  const vault = vaultPfad();
+  const vault = vaultPfadOderEnde();
   const status = pruefeZufuehrungen(vault);
   try { schreibeStatus(vault, status); }
   catch (e) { console.error(`Statusdatei nicht schreibbar: ${String(e.message || e).split("\n")[0]}`); process.exit(1); }

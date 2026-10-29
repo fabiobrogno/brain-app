@@ -1,5 +1,5 @@
 /* Brain 3D — Ansicht des Second Brain. Daten kommen über den lokalen Dienst (BrainApi → /api/daten); ohne Dienst
-   (file://) aus window.BRAIN_DATA (<vault>/.logs/ansicht/data.js, gebaut von daten.mjs). Schreibt nie.
+   (file://) aus window.BRAIN_DATA (<vault>/.logs/ansicht/data.js, gebaut von daten.mjs; Adresse über meta brain-daten). Schreibt nie.
    three.js kommt lokal aus vendor/three.bundle.js (window.THREE), kein CDN zur Laufzeit. Bereiche, Farben und
    Hirnregionen kommen aus den Daten (config-gesteuert), nicht aus festen Namen. Keine Inline-Skripte/-Handler (CSP).
    Für steuer.js: window.BrainApp = { neuLaden(), waehle(id) }. Texte über window.BrainTexte.t (Rückfall: Deutsch). */
@@ -206,6 +206,8 @@
   // läuft parallel zum Aufbau der Gehirn-Szene.
   const api = () => (window.BrainApi && window.BrainApi.verfuegbar ? window.BrainApi : null);
   let quelle = "keine";
+  // file://-Ansicht: `brain zeig` schreibt seite.html mit der Adresse der Daten im Vault (meta brain-daten); sonst der alte relative Pfad.
+  const DATEN_PFAD = (document.querySelector('meta[name="brain-daten"]') || {}).content || "../../.logs/ansicht/data.js";
   function ladeSkript(src) {
     return new Promise((ok) => {
       const s = document.createElement("script");
@@ -217,7 +219,7 @@
     const a = api();
     if (a) { quelle = "dienst"; return await a.holeJson("/api/daten"); }
     if (location.protocol === "file:") {
-      if (!window.BRAIN_DATA || neu) await ladeSkript("../../.logs/ansicht/data.js" + (neu ? "?v=" + Date.now() : ""));
+      if (!window.BRAIN_DATA || neu) await ladeSkript(DATEN_PFAD + (neu ? "?v=" + Date.now() : ""));
       quelle = "datei"; return window.BRAIN_DATA || null;
     }
     if (window.BRAIN_DATA) { quelle = "datei"; return window.BRAIN_DATA; }
@@ -266,7 +268,7 @@
   let D = null, AREAS = {}, N = 0, E = 0, idx = new Map(), byName = new Map(), out = [], inn = [], adj = [];
   let tFirst = 0, tLast = 0, days = 1, DENSE = 1, mcpInfo = new Map(), S = null, nodeOn = new Uint8Array(0);
   // Die vier festen Bereiche (zentrum/archiv/inbox/werkzeuge) kommen von daten.mjs IMMER mit einem fest
-  // deutschen `name` (Überblick/Archiv/Inbox/Werkzeuge, siehe .tools/ansicht/daten.mjs) — die Übersetzung aus
+  // deutschen `name` (Überblick/Archiv/Inbox/Werkzeuge, siehe ansicht/daten.mjs) — die Übersetzung aus
   // texte.js greift darum nur, wenn sie hier Vorrang vor AREAS[a]?.name bekommt. Nur echte Cluster (nicht in
   // FIXED_NAME) nutzen weiter ihren konfigurierten Namen unverändert (Themen des Vaults werden nicht übersetzt).
   const areaName = (a) => (FIXED_NAME[a] ? t(FIXED_NAME[a]) : AREAS[a]?.name || a);

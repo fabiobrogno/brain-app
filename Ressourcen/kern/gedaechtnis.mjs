@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// .tools/gedaechtnis.mjs — Gemeinsames Gedächtnis für mehrere Claude-Konten (Auto-Memory je Projekt), per 3-Wege-Abgleich.
+// gedaechtnis.mjs — Gemeinsames Gedächtnis für mehrere Claude-Konten (Auto-Memory je Projekt), per 3-Wege-Abgleich.
 // Claude Code legt das Auto-Memory je Konto unter <konto>/projects/<projekt-schlüssel>/memory/ ab (MEMORY.md als Index, dazu
 // Themen-Dateien). Der Projekt-Schlüssel (Pfad, Nicht-Alphanumerisches → „-“) ist bei allen Konten gleich. JEDES Konto behält einen
 // ECHTEN memory-Ordner (Claude darf dort schreiben, ein Konto mit Git sichert ihn weiter nach GitHub); die Wurzel (Standard
 // ~/.claude-gedaechtnis, lokales Git-Repo ohne Remote) ist nur der Knoten, über den abgeglichen wird. Angefasst wird NUR
 // projects/<P>/memory (Verläufe *.jsonl, Einstellungen usw. bleiben, wo sie sind).
 //
-// CLI:  node .tools/gedaechtnis.mjs [vault] [status|abgleichen] [--projekt <P>] [--anwenden] [--erzwingen] [--json] [--ins-log] [--warte <s>]   (brain gedaechtnis …)
+// CLI:  node gedaechtnis.mjs [vault] [status|abgleichen] [--projekt <P>] [--anwenden] [--erzwingen] [--json] [--ins-log] [--warte <s>]   (brain gedaechtnis …)
 //   status      je Projekt und Konto: abgeglichen oder was aussteht, offene Konflikte (nur lesend)
 //   abgleichen  Plan als Trockenlauf; mit --anwenden ausführen. Idempotent: ein zweiter Lauf meldet „nichts zu tun“.
 //   --projekt   nur dieses Projekt (Schlüssel, wie Claude ihn vergibt); --ins-log: Ergebniszeile in <vault>/.logs/hooks.log;
@@ -75,7 +75,7 @@ import { homedir, tmpdir } from "node:os";
 import { spawnSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { EIGENER_VAULT, ladeConfig } from "./pfade.mjs";
+import { vaultPfadOderEnde, ladeConfig } from "./pfade.mjs";
 import { leseAutomatik, STANDARD } from "./einstellungen.mjs";
 import { gitBefehl } from "./werkzeug.mjs";
 
@@ -1057,7 +1057,7 @@ function planText(erg, home = homedir()) {
   if (erg.sicherung) z.push(`Sicherung: ${kurzPfad(erg.sicherung, home)}${erg.sicherungenEntfernt ? ` (${erg.sicherungenEntfernt} alte Sicherung(en) rotiert)` : ""}`);
   if (erg.commit) z.push(`Git: Commit ${erg.commit} in der Wurzel`);
   for (const f of erg.fehler) z.push(`FEHLER: ${f}`);
-  if (!fertig && !erg.nichtsZuTun) z.push("Zum Ausführen: node .tools/gedaechtnis.mjs abgleichen --anwenden");
+  if (!fertig && !erg.nichtsZuTun) z.push("Zum Ausführen: brain gedaechtnis abgleichen --anwenden");
   z.push(erg.zeile);
   return z.join("\n");
 }
@@ -1113,7 +1113,7 @@ if (aufruf && aufruf === realpathSync(fileURLToPath(import.meta.url))) {
   let o;
   try { o = leseArgs(process.argv.slice(2)); }
   catch (e) { console.error(`${e.message}\nNutzung: brain gedaechtnis [status|abgleichen] [--projekt <P>] [--anwenden] [--erzwingen] [--json]`); process.exit(64); }
-  const vault = o.vault || process.env.BRAIN_VAULT || EIGENER_VAULT;
+  const vault = o.vault || vaultPfadOderEnde([]);
   const ins = (text) => { if (!o.insLog) return; try { mkdirSync(join(vault, ".logs"), { recursive: true }); appendFileSync(join(vault, ".logs", "hooks.log"), `${text}\n`); } catch {} };
   try {
     const werte = leseAutomatik(vault).werte;

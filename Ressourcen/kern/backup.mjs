@@ -1,4 +1,4 @@
-// .tools/backup.mjs — Sicherung: github (push) | ordner (git bundle, 7 behalten) | keins. Alltagssprache, nie Abbruch im Alltag.
+// backup.mjs — Sicherung: github (push) | ordner (git bundle, 7 behalten) | keins. Alltagssprache, nie Abbruch im Alltag.
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, statSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";

@@ -1,4 +1,4 @@
-// .tools/tageslauf/antworten.mjs — Schritt 0 (Spec §5.3 „Anwenden", §4.4): beantwortete Rückfragen umsetzen, W7-Funde
+// tageslauf/antworten.mjs — Schritt 0 (Spec §5.3 „Anwenden", §4.4): beantwortete Rückfragen umsetzen, W7-Funde
 // aufnehmen. Schreibt selbst nie ins Wiki: Seitenänderungen werden Schreibaufträge für Schritt 6/7 (der Orchestrator
 // archiviert die Rückfrage erst nach dem Merge). Alles andere — verwerfen, aussortieren, Entscheidung, Lektion, Prüfung —
 // passiert hier direkt. Eine Antwort wird genau so angewendet, wie sie gegeben wurde; passt sie nicht zur Frage (von Hand

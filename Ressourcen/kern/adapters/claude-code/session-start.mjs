@@ -17,15 +17,14 @@ import { appendFileSync, existsSync, statSync, readFileSync, readdirSync, mkdirS
 import { join, dirname, basename, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
-const { vaultPfad, ladeConfig, ordner, configFehler, entferneBom } = await import("../../pfade.mjs");
-const { leseCache, hinweisZeile, leseBereitMarke } = await import("../../update-check.mjs");
+const { vaultPfadOderEnde, ladeConfig, ordner, configFehler, entferneBom } = await import("../../pfade.mjs");
 const { leseAutomatik } = await import("../../einstellungen.mjs");
 const { listeVorschlaege } = await import("../../vorschlaege.mjs");
 const { gitBefehl } = await import("../../werkzeug.mjs");
 const { anzeigePfad } = await import("../../hint-core.mjs");
 
 const T = dirname(fileURLToPath(import.meta.url));
-const V = vaultPfad([]);
+const V = vaultPfadOderEnde([], { still: true });
 const log = join(V, ".logs", "hooks.log");
 
 // Hook-JSON einmal lesen (cwd, session_id, source, transcript_path, session_title) — K11/K12/K13 und die Projektseite
@@ -101,14 +100,6 @@ const automatik = leseAutomatik(V).werte;
 // Projekt-Schlüssel = Elternordner von transcript_path (gedaechtnis.mjs#starteAbgleichFuerSitzung); ohne ihn passiert nichts.
 // Bewusst außerhalb des BRAIN_SESSION_NUR_STATUS-Zweigs: bei Schalter „aus“ (Standard) tut es nie etwas, und die Tests brauchen es einzeln.
 if (automatik.gedaechtnisTeilen === "an") { try { (await import("../../gedaechtnis.mjs")).starteAbgleichFuerSitzung({ vault: V, eingabe: EINGABE, werte: automatik }); } catch {} }
-
-// Update-Hinweis (Spec §3.9) — schneller Pfad: nur Cache/Marke lesen, nie selbst das Netz fragen
-// (das erledigt session-hintergrund.mjs einmal pro Tag im Hintergrund). Schalter updateHinweis.
-if (automatik.updateHinweis !== false) try {
-  const bereit = leseBereitMarke(V);
-  if (bereit) aus(`Brain-Update: Update v${bereit} wird beim nächsten Start eingespielt.`);
-  else { const z = hinweisZeile(leseCache(V), V); if (z) aus(`Brain-Update: ${z}`); }
-} catch { /* nie blockierend */ }
 
 const cfg = ladeConfig(V);
 const { inbox: inboxName, wiki: wikiName } = ordner(V, cfg);

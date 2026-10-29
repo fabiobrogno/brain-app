@@ -1,4 +1,4 @@
-// .tools/tageslauf/lektionen-schritt.mjs — Schritt 9 (Spec §5.2): fertige Lektions-Vorschläge → Rückfrage „lektion“;
+// tageslauf/lektionen-schritt.mjs — Schritt 9 (Spec §5.2): fertige Lektions-Vorschläge → Rückfrage „lektion“;
 // Rohkandidaten mit gleichem Thema (≥ 2) → EIN Haiku-Aufruf je Gruppe formuliert höchstens eine Regel (optional mit
 // „gilt:“-Dateimustern) → Rückfrage; Antwort NICHTS → aussortiert (keine-lektion). Einzelne Rohkandidaten bleiben liegen
 // (Schritt 1 archiviert sie nach 14 Tagen). Aktiviert wird erst nach deinem Ja (Schritt 0, antworten.mjs) — hier nie.
@@ -8,7 +8,7 @@ import { kiAufruf } from "./ki.mjs";
 import { aussortieren } from "./bestand.mjs";
 import { themaVon, istRohkandidat } from "./aufraeumen.mjs";
 
-export const GILT_ZEILE = "Optional je Block eine Zeile „gilt: <bis zu 5 Dateimuster, kommagetrennt, z. B. *.mjs oder ~/brain/**>“ — nur wenn die Regel klar an bestimmte Dateien gebunden ist, sonst weglassen.";
+export const GILT_ZEILE = "Optional je Block eine Zeile „gilt: <bis zu 5 Dateimuster, kommagetrennt, z. B. *.mjs oder ~/projekte/app/**>“ — nur wenn die Regel klar an bestimmte Dateien gebunden ist, sonst weglassen.";
 export const GRUPPEN_AUFTRAG = `${LEKTION_AUFTRAG}\nFasse alle Kandidaten zu höchstens EINER Lektion zusammen.\n${GILT_ZEILE}`;
 
 export function parseGruppenLektion(text) {

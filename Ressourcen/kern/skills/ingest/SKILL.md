@@ -16,15 +16,15 @@ Arbeite die Quelle ($ARGUMENTS) nach {{WIKI}}/_schema.md ins Brain ({{VAULT}}) e
    gewählte Paket einarbeiten (nie den ganzen Import auf einmal). Je Fast-Duplikat-Gruppe entsteht GENAU EINE
    Wiki-Seite (nicht eine je Datei). Widerspruchs-Kandidaten aus dem Bericht nie still entscheiden: als
    [!KONFLIKT]-Kasten mit BEIDEN Belegen setzen, die laut Bericht NEUERE Quelle zuerst nennen — erst die Person
-   entscheidet. VOR dem Schreiben der Seiten die Paketdateien einsortieren: `{{NODE}} "{{VAULT}}/.tools/brain.mjs" import fertig <name> "<paket>" --ziel <cluster>`
+   entscheidet. VOR dem Schreiben der Seiten die Paketdateien einsortieren: `{{NODE}} "{{KERN}}/brain.mjs" --vault "{{VAULT}}" import fertig <name> "<paket>" --ziel <cluster>`
    (verschiebt sie nach `<cluster>/<name>/…` mit unveränderter Unterstruktur und vermerkt das Paket im Bericht; das ist
    hier Schritt 5, siehe Skill import). Beweisbindung wie immer: `quellen`/`quellen_sha` zeigen auf den NEUEN Ort
    `<cluster>/<name>/…` (Hash ist unverändert).
-2. **Secrets-Riegel (VOR allem anderen):** `{{NODE}} "{{VAULT}}/.tools/brain.mjs" ingest-check <datei>`.
+2. **Secrets-Riegel (VOR allem anderen):** `{{NODE}} "{{KERN}}/brain.mjs" --vault "{{VAULT}}" ingest-check <datei>`.
    Exit 3 → ABBRUCH: Fundstellen nennen, NICHTS schreiben, User fragen. Exit 0 → weiter.
-2b. **Lock setzen (Parallel-Sicherheit):** `{{NODE}} "{{VAULT}}/.tools/brain.mjs" lock`. Exit 1 (eine andere Sitzung arbeitet
+2b. **Lock setzen (Parallel-Sicherheit):** `{{NODE}} "{{KERN}}/brain.mjs" --vault "{{VAULT}}" lock`. Exit 1 (eine andere Sitzung arbeitet
    gerade, Lock jünger als 30 min) → NICHT einarbeiten, User informieren. Lock am Ende (Schritt 8) und bei
-   JEDEM Abbruch entfernen: `{{NODE}} "{{VAULT}}/.tools/brain.mjs" unlock`. Lock NICHT doppelt setzen — Schritt 2c
+   JEDEM Abbruch entfernen: `{{NODE}} "{{KERN}}/brain.mjs" --vault "{{VAULT}}" unlock`. Lock NICHT doppelt setzen — Schritt 2c
    arbeitet unter demselben Lock weiter.
 2c. **Offene Entscheidungen zuerst** (nur falls `{{INBOX}}/_entscheidungen/` Dateien enthält): jede einzeln
    abarbeiten, bevor die eigentliche Quelle drankommt. Je Auftrag: betroffene Seite öffnen, zuerst die QUELLE
@@ -53,7 +53,7 @@ Arbeite die Quelle ($ARGUMENTS) nach {{WIKI}}/_schema.md ins Brain ({{VAULT}}) e
    als [!KONFLIKT]-Kasten mit beiden Quellen markieren, nie still auflösen; fehlende Seiten anlegen
    (Frontmatter-Pflicht!) im passenden Ordner nach _schema.md „Ordner“ (neuer Themenordner erst ab 2 Seiten;
    Basename muss im ganzen Brain eindeutig sein — Lint prüft), Querverweise setzen. Beweisbindung: quellen + quellen_sha
-   (`{{NODE}} "{{VAULT}}/.tools/brain.mjs" sha <quelle>`) auf den eingearbeiteten Stand setzen, rev um 1 erhöhen.
+   (`{{NODE}} "{{KERN}}/brain.mjs" --vault "{{VAULT}}" sha <quelle>`) auf den eingearbeiteten Stand setzen, rev um 1 erhöhen.
    **Gültigkeit:** bei schnell veränderlichen Tatsachen (Preise, Versionen, Stände, Personen-Rollen) `stand: <heutiges Datum>`
    und `pruefen_bis` setzen — Standard 90 Tage ab heute, bei Preisen 30 Tage (Datum selbst ausrechnen, nicht schätzen).
    Andere Seiten brauchen diese Felder nicht.
@@ -66,23 +66,22 @@ Arbeite die Quelle ($ARGUMENTS) nach {{WIKI}}/_schema.md ins Brain ({{VAULT}}) e
    in brain.config.json); Wahl im Report nennen. WICHTIG: quellen-Pfade im Frontmatter zeigen auf
    den NEUEN Ort, Hash NACH dem Verschieben berechnen.
 6. **Protokoll:** Eintrag in {{WIKI}}/_log.md direkt unter die Formatvorlage (neuester oben). Zeitstempel IMMER
-   per `{{NODE}} "{{VAULT}}/.tools/brain.mjs" jetzt` holen, nie schätzen.
-7. **Nachlauf:** `{{NODE}} "{{VAULT}}/.tools/brain.mjs" index` ausführen, danach `{{NODE}} "{{VAULT}}/.tools/brain.mjs" refresh`
+   per `{{NODE}} "{{KERN}}/brain.mjs" --vault "{{VAULT}}" jetzt` holen, nie schätzen.
+7. **Nachlauf:** `{{NODE}} "{{KERN}}/brain.mjs" --vault "{{VAULT}}" index` ausführen, danach `{{NODE}} "{{KERN}}/brain.mjs" --vault "{{VAULT}}" refresh`
    (Suchindex + Karteikarten, lokal, 0 API-Tokens; kann dein Werkzeug Befehle im Hintergrund starten, gern dort).
-   Nur falls `{{VAULT}}/.tools/tests/hint-eval.mjs` vorhanden ist (Entwicklungs-Vault), danach zusätzlich
-   `{{NODE}} "{{VAULT}}/.tools/tests/hint-eval.mjs" --quiet` (Hinweis-Qualität). Seite > 150 Zeilen → Details in die Rohquelle
-   (Lint meldet LANG). Neue Wiki-Seite und `{{VAULT}}/.tools/tests/hint-eval.json` vorhanden → 1–2 passende Testfragen
-   dort ergänzen (positiv, `erwartet` als **Basename**, z. B. `thema_x.md`) und mit committen.
+   Seite > 150 Zeilen → Details in die Rohquelle (Lint meldet LANG). Neue Wiki-Seite und `{{VAULT}}/.logs/hint-eval.json`
+   (eigene Messlatte-Fragen, nicht versioniert) vorhanden → 1–2 passende Testfragen dort ergänzen (positiv, `erwartet` als **Basename**,
+   z. B. `thema_x.md`).
    **Neue Wiki-Seite oder neue/geänderte `fragen:` → Karten-Tor** (vor dem Report, NICHT im Hintergrund — die neue Karte ist erst nach dem
-   Refresh im Index): erst `{{NODE}} "{{VAULT}}/.tools/brain.mjs" refresh`, dann `{{NODE}} "{{VAULT}}/.tools/karten-tor.mjs" <basename>.md`
+   Refresh im Index): erst `{{NODE}} "{{KERN}}/brain.mjs" --vault "{{VAULT}}" refresh`, dann `{{NODE}} "{{KERN}}/karten-tor.mjs" --vault "{{VAULT}}" <basename>.md`
    (~30–60 s, lokal). Meldet es `KARTEN-TOR: …`, im Report nennen und die Karte schärfen (Beschreibung und
    Fettbegriffe spezifischer, generische Wörter raus; schlägt eine Frage an, sie konkreter fassen) — blockiert nie.
 8. **Git:** NUR bei vollständigem Erfolg: im Repo {{VAULT}} die geänderten Dateien EXPLIZIT stagen
    (`{{GIT}} -C "{{VAULT}}" add -- <dateien>`: Wiki-Seiten, _log.md, verschobene Quelle — kein add -A) und committen:
    `{{GIT}} -C "{{VAULT}}" commit -m "ingest: <quelle> — <n> Seiten"`, danach
-   `{{NODE}} "{{VAULT}}/.tools/brain.mjs" backup` (Sicherungsfehler nur melden,
+   `{{NODE}} "{{KERN}}/brain.mjs" --vault "{{VAULT}}" backup` (Sicherungsfehler nur melden,
    Commit bleibt lokal gesichert). **Lehnt der pre-commit-Hook ab** (Befundliste): Befund beheben (z. B. rev erhöhen,
-   toten Link korrigieren, _log-Eintrag nach oben), erneut committen, ERST DANN Lock entfernen (`{{NODE}} "{{VAULT}}/.tools/brain.mjs" unlock`) — nie `--no-verify`
+   toten Link korrigieren, _log-Eintrag nach oben), erneut committen, ERST DANN Lock entfernen (`{{NODE}} "{{KERN}}/brain.mjs" --vault "{{VAULT}}" unlock`) — nie `--no-verify`
    (Umgehen nur durch den User). Bei Abbruch in Schritt 2–6: nichts committen,
    angelegte Fragmente zurücknehmen.
 9. **Report an User:** Quelle, geänderte/neue Seiten, Konflikte (mit Kurzfassung), Ziel-Cluster.

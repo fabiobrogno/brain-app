@@ -1,4 +1,4 @@
-// .tools/tageslauf/autostufe.mjs — Fehlerquote und Autostufe (Spec §6.3), selbstregelnd, Zustand in .logs/tageslauf/autostufe.json.
+// tageslauf/autostufe.mjs — Fehlerquote und Autostufe (Spec §6.3), selbstregelnd, Zustand in .logs/tageslauf/autostufe.json.
 // Fehler: Stichprobe „stimmt nicht", Rücknahme einer automatischen Übernahme, W7 auf einer automatisch geschriebenen Stelle.
 // Geprüft: diese + beantwortete Stichproben + „bewährt" (automatische Übernahme > 30 Tage, seitdem als Hinweis gezeigt,
 // ohne Beanstandung). Quote über die letzten 40 Prüfungen: > 5 % → eng, > 15 % → aus. Strenger nur, wenn seit dem letzten

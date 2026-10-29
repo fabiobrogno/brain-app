@@ -1,4 +1,4 @@
-// .tools/minisuche.mjs — reine JS-Suche (kein qmd nötig): BM25 über die Vault-Notizen, k1=1.2, b=0.75.
+// minisuche.mjs — reine JS-Suche (kein qmd nötig): BM25 über die Vault-Notizen, k1=1.2, b=0.75.
 // Das Frontmatter-Feld `description` zählt dreifach (Signal für Wiki-Seiten). Kein Cache in v0.1 —
 // Ziel < 300 ms auf Fixture und eigenem Vault (siehe Task 10).
 import { readFileSync } from "node:fs";
@@ -11,7 +11,7 @@ const B = 0.75;
 const TOKEN_MUSTER = /[\p{L}\p{N}]+/gu;
 
 function tokenisiere(text) {
-  return String(text).normalize("NFC").toLowerCase().match(TOKEN_MUSTER) || [];  // NFC: wie .tools/ansicht/suche.js
+  return String(text).normalize("NFC").toLowerCase().match(TOKEN_MUSTER) || [];  // NFC: wie ansicht/suche.js
 }
 
 // Frontmatter-Beschreibung dreifach gewichten: Rumpf (ohne Frontmatter) + description 3×

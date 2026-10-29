@@ -3,10 +3,10 @@
 // Nutzung: node feedback.mjs <falsch|fehlte> [seite] [notiz...]
 import { mkdirSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
-import { vaultPfad } from "./pfade.mjs";
+import { vaultPfadOderEnde } from "./pfade.mjs";
 
 // Kein Vault-Positionsargument hier (anders als bei den Vault-Werkzeugen) — alle argv sind Feedback-Parameter.
-const V = vaultPfad([]);
+const V = vaultPfadOderEnde([]);
 const argv = process.argv.slice(2);
 const art = argv[0] || "";
 if (!["falsch", "fehlte"].includes(art)) {

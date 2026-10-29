@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// .tools/lernschleife.mjs — Lernschleife der Treffsicherheit (0 Tokens, rein lokal).
+// lernschleife.mjs — Lernschleife der Treffsicherheit (0 Tokens, rein lokal).
 // Quelle: Wissensfragen, die der Hinweis-Hook nur mit Schalter `luecken` als STICHWÖRTER festhält (nie Prompttext):
 //   .logs/luecken.log    — kein Hinweis gezeigt          (Felder: sid, quelle, text)
 //   .logs/fragespur.log  — Hinweis gezeigt (Seiten hits) (Felder: sid, hits, text)
@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 import { leseZeilen } from "./logs.mjs";
 import { lueckenDatei, fragespurDatei, stichwoerter } from "./analyse.mjs";
 import { schreibeVorschlag } from "./vorschlaege.mjs";
-import { vaultPfad, ordner, entferneBom } from "./pfade.mjs";
+import { vaultPfadOderEnde, ordner, entferneBom } from "./pfade.mjs";
 import { istWikiSeite } from "./wiki-pfade.mjs";
 import { fragenRoh, pruefeFragen } from "./fragen.mjs";
 import { wert } from "./einstellungen.mjs";
@@ -168,7 +168,7 @@ const selbst = fileURLToPath(import.meta.url);
 let aufruf = "";
 try { aufruf = realpathSync(process.argv[1] || ""); } catch {}
 if (aufruf && aufruf === realpathSync(selbst)) {
-  const vault = vaultPfad();
+  const vault = vaultPfadOderEnde();
   if (process.argv.includes("--woche")) {
     const r = wochenLauf(vault);
     if (process.argv.includes("--json")) console.log(JSON.stringify(r));

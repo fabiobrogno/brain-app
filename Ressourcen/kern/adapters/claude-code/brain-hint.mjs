@@ -15,12 +15,12 @@ const { frageDienst, istGesperrt, meldeHaenger, starteDienst } = await import(".
 const { entscheide } = await import("../../such-kern.mjs");
 const { shouldQuery, istWissensfrage, decide, format, countSuppressed, suchtext, istFolgefrage, qmdToRel, ohneWissensbedarf, imBudget } = await import("../../hint-core.mjs");
 const { vorigeFrage } = await import("../../transkript.mjs");
-const { vaultPfad, ordner, ladeConfig } = await import("../../pfade.mjs");
+const { vaultPfadOderEnde, ordner, ladeConfig } = await import("../../pfade.mjs");
 const { leseAutomatik, HINWEIS_SCHWELLEN } = await import("../../einstellungen.mjs");
 const { starteErnte } = await import("./ernte-ausloeser.mjs");
 const { ersterAufruf, FENSTER_HINT_MS } = await import("./einmal.mjs");
 
-const vault = vaultPfad();
+const vault = vaultPfadOderEnde(process.argv, { still: true });
 const logs = join(vault, ".logs");
 const t0 = Date.now();
 let sid = "ohne";

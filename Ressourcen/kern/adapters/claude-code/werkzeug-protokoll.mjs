@@ -5,7 +5,7 @@
 // aus (weder stdout noch stderr), Exit immer 0 — ein Fehler hier darf den Werkzeug-Aufruf nie blockieren.
 // Tut nichts bei BRAIN_ERNTE=1 (Selbstaufruf-Schutz: der Ernte-Lauf darf sich nicht selbst protokollieren).
 import { readFileSync } from "node:fs";
-import { vaultPfad } from "../../pfade.mjs";
+import { vaultPfadOderEnde } from "../../pfade.mjs";
 import { wert } from "../../einstellungen.mjs";
 import { protokolliere } from "../../werkzeug-log.mjs";
 import { ersterAufruf } from "./einmal.mjs";
@@ -19,7 +19,7 @@ try {
     const eingabe = JSON.parse(leseStdin());
     const toolName = String(eingabe?.tool_name || "");
     const istMcp = /^mcp__.+__.+$/.test(toolName);
-    const vault = vaultPfad();
+    const vault = vaultPfadOderEnde(process.argv, { still: true });
     // Dublette (derselbe Hook aus zwei Einstellungsdateien) würde jede Nutzung doppelt ins Protokoll schreiben.
     // Schlüssel: tool_use_id; fehlt sie (alte Claude-Code-Version), Werkzeugname + Eingabe.
     if ((istMcp || wert(vault, "liveAufleuchten") !== false)

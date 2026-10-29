@@ -1,12 +1,14 @@
 #!/usr/bin/env node
-// .tools/skills-build.mjs — rendert Skills/AGENTS.md für einen Vault.
+// skills-build.mjs — rendert Skills/AGENTS.md für einen Vault.
 // Nutzung: <vault> --ziel claude-commands <ordner> | agents <datei> | agents-skills <ordner>
 import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync, copyFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { renderVorlage } from "./pfade.mjs";
+import { resolve } from "node:path";
 const T = dirname(fileURLToPath(import.meta.url));
-const [vault, , art, ziel] = process.argv.slice(2);
+const [vault0, , art, ziel] = process.argv.slice(2);
+const vault = vault0 ? resolve(vault0) : vault0;   // immer absolut (die Vorlagen nennen den Vault)
 const render = (s) => renderVorlage(s, vault);
 const MARKER = "<!-- brain-kit -->";
 const fm = (roh) => { const raw = roh.replace(/\r\n/g, "\n"); const m = raw.match(/^---\n([\s\S]*?)\n---\n?/); const f = Object.fromEntries((m?.[1] || "").split("\n").map(z => z.split(/:\s(.*)/s).slice(0, 2)));

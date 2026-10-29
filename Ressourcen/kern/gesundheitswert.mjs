@@ -1,4 +1,4 @@
-// .tools/gesundheitswert.mjs — Gesundheitswert 0–100 fürs wöchentliche Aufräumen (rein rechnend, 0 Tokens).
+// gesundheitswert.mjs — Gesundheitswert 0–100 fürs wöchentliche Aufräumen (rein rechnend, 0 Tokens).
 // Der Wert entsteht aus Befunden, die es schon gibt (Pflegebericht/Lint) — hier wird nur gewichtet.
 // Formel: wert = 100 − Σ min(deckel, gewicht × anzahl), nie unter 0. Die Deckel summieren sich auf 100;
 // ein einzelner Mangel-Typ kann den Wert also nie allein auf 0 ziehen, und jeder Abzug ist einzeln nachrechenbar.

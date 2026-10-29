@@ -1,5 +1,8 @@
 // .tools/tests/test-pflege-inbox-grenzen.mjs — B3 Task 7: Grenzen der Inbox-Einarbeitung — ein Commit je Quelle, Archivieren erst nach
 // dem Merge (und nur bei unveränderter Notiz), Probe schreibt nichts, Dateinamen/Größe/ignorierte Ordner, keine Web-/MCP-Werkzeuge.
+import { KERN } from "../pfade.mjs";
+import { SONNET_BASH } from "../tageslauf/pflege-ki.mjs";
+const BRAIN = `node "${KERN.split("\\").join("/")}/brain.mjs"`;   // der Befehl, den die KI ausführen darf (Kern liegt außerhalb der Kopie)
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, existsSync, writeFileSync, utimesSync, statSync } from "node:fs";
@@ -111,7 +114,7 @@ test("Schutzgeländer: kein Web, kein MCP, kein freies Bash — Argumente von ru
   const erlaubt = [];
   for (let i = a.indexOf("--allowedTools") + 1; i < a.length && !a[i].startsWith("--"); i++) erlaubt.push(a[i]);
   assert.ok(erlaubt.length >= 3 && erlaubt.every((r) => r.includes("(")), erlaubt.join());
-  assert.ok(erlaubt.filter((r) => r.startsWith("Bash")).every((r) => r === "Bash(node .tools/brain.mjs search *)"));
+  assert.ok(erlaubt.filter((r) => r.startsWith("Bash")).every((r) => r === `Bash(${SONNET_BASH[0]} *)`));
   assert.ok(!/mcp__|WebFetch|WebSearch/.test(erlaubt.join()));
   assert.ok(a.includes("WebFetch") && a.includes("WebSearch"));
   assert.equal(w("--permission-mode"), "dontAsk");

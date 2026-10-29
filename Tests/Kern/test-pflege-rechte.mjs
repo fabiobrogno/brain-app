@@ -3,9 +3,12 @@
 // Werkzeug-/Git-/Settings-Bereich der Kopie und alles Sensible außerhalb ausdrücklich verbieten, Bash auf eine lesende Suche
 // verengen und den Vault für Unterprozesse hart auf die Kopie setzen. Nie echtes claude; die Regel-Syntax selbst prüft der
 // einmalige, manuelle Rauchtest (nicht Teil der Suite).
+import { KERN } from "../pfade.mjs";
+import { SONNET_BASH } from "../tageslauf/pflege-ki.mjs";
+const BRAIN = `node "${KERN.split("\\").join("/")}/brain.mjs"`;   // der Befehl, den die KI ausführen darf (Kern liegt außerhalb der Kopie)
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { realpathSync, existsSync, mkdirSync } from "node:fs";
+import { realpathSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { homedir } from "node:os";
 import { spawnSync } from "node:child_process";
@@ -38,7 +41,7 @@ function deckt(regel, pfad) {
 test("sonnetRechte: erlaubt nur Lesen/Editieren UNTER der Kopie (//-Form) und die lesende Suche — nichts Nacktes", { skip: !POSIX }, () => {
   const kopie = tempOrdner("kopie");
   const { erlaubt } = K.sonnetRechte(kopie);
-  const erwartet = [...varianten(kopie).flatMap((p) => [`Read(${abs(p)}/**)`, `Edit(${abs(p)}/**)`]), "Bash(node .tools/brain.mjs search *)"];
+  const erwartet = [...varianten(kopie).flatMap((p) => [`Read(${abs(p)}/**)`, `Edit(${abs(p)}/**)`]), `Bash(${BRAIN} search *)`];
   assert.deepEqual([...erlaubt].sort(), erwartet.sort());
   assert.ok(erlaubt.every((r) => r.includes("(")), "ein nacktes „Read“/„Edit“/„Bash“ würde überall gelten");
   assert.ok(!erlaubt.some((r) => /^(Write|Glob|Grep)/.test(r)), "Write/Glob/Grep haben keine eigenen Pfadregeln — Edit/Read tragen sie");
@@ -83,15 +86,15 @@ test("Bash: nur die lesende Suche; JEDER andere Unterbefehl von brain.mjs bleibt
   const kopie = tempOrdner("kopie");
   const { erlaubt } = K.sonnetRechte(kopie);
   const bash = erlaubt.filter((x) => x.startsWith("Bash"));
-  assert.deepEqual(bash, ["Bash(node .tools/brain.mjs search *)"]);
-  const frei = befehle.filter((b) => bash.some((rg) => bashPasst(rg, `node .tools/brain.mjs ${b} x`)));
+  assert.deepEqual(bash, [`Bash(${BRAIN} search *)`]);
+  const frei = befehle.filter((b) => bash.some((rg) => bashPasst(rg, `${BRAIN} ${b} x`)));
   assert.deepEqual(frei, ["search"], "freigegeben: nur search (liest nur; schreibt höchstens .logs der Kopie)");
   // die gefährlichen Beispiele ausdrücklich: Hooks/Git-Config, LaunchAgent, Backup/Push, Einstellungen, Import, nested Tageslauf, Lock …
   for (const b of ["hooks-install", "dienst", "backup", "einstellungen", "import", "tageslauf", "zurueck", "nachernte", "zeig", "lock", "unlock", "refresh", "index", "update-check", "rueckfragen", "sha"]) {
-    assert.ok(!bash.some((rg) => bashPasst(rg, `node .tools/brain.mjs ${b}`)), b);
+    assert.ok(!bash.some((rg) => bashPasst(rg, `${BRAIN} ${b}`)), b);
   }
   // Verkettung, Umleitung, Variablen-Präfix und fremder Pfad passen nicht auf eine Regel mit festem Befehlspräfix
-  for (const text of ["node ./.tools/brain.mjs search x", "FOO=1 node .tools/brain.mjs search x", "node .tools/brain.mjs searchx", "node /tmp/brain.mjs search x"]) {
+  for (const text of [`node ./brain.mjs search x`, `FOO=1 ${BRAIN} search x`, `${BRAIN} searchx`, "node /tmp/brain.mjs search x"]) {
     assert.ok(!bash.some((rg) => bashPasst(rg, text)), text);
   }
 });
@@ -136,14 +139,15 @@ test("sonnetUmgebung: Vault hart auf die Kopie, keine fremden BRAIN_*-Variablen,
 });
 
 test("gepinnter Vault: das ECHTE brain.mjs wirkt mit der Umgebung des Sonnet-Aufrufs auf die Kopie, nie auf den echten Vault (Kontrolle: ohne Pin trifft es ihn)", () => {
-  const echt = tempOrdner("echter Vault"), kopie = tempOrdner("kopie");
+  const mitConfig = (d) => { writeFileSync(join(d, "brain.config.json"), "{}"); return d; };   // ein Vault braucht brain.config.json (die Pflege-Kopie hat sie: sie ist getrackt)
+  const echt = mitConfig(tempOrdner("echter Vault")), kopie = mitConfig(tempOrdner("kopie"));
   const lauf = (env) => spawnSync(process.execPath, [join(KIT, "brain.mjs"), "lock"], { cwd: kopie, env, encoding: "utf8" });
   const feind = { ...process.env, BRAIN_VAULT: echt };            // so sähe die Umgebung aus, wenn der Dienst BRAIN_VAULT gesetzt hat
   const ohnePin = lauf(feind);
   assert.equal(ohnePin.status, 0, ohnePin.stderr);
   assert.ok(existsSync(join(echt, ".logs", "ingest.lock")), "Kontrolle: ohne Pin landet der Lock im echten Vault");
   assert.ok(!existsSync(join(kopie, ".logs", "ingest.lock")));
-  const echt2 = tempOrdner("echter Vault 2"), kopie2 = tempOrdner("kopie 2");
+  const echt2 = mitConfig(tempOrdner("echter Vault 2")), kopie2 = mitConfig(tempOrdner("kopie 2"));
   const mitPin = spawnSync(process.execPath, [join(KIT, "brain.mjs"), "lock"], { cwd: kopie2, env: K.sonnetUmgebung(kopie2, { ...process.env, BRAIN_VAULT: echt2 }), encoding: "utf8" });
   assert.equal(mitPin.status, 0, mitPin.stderr);
   assert.ok(existsSync(join(kopie2, ".logs", "ingest.lock")), "mit Pin landet er in der Kopie");

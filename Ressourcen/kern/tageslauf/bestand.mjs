@@ -1,4 +1,4 @@
-// .tools/tageslauf/bestand.mjs — Vorschläge für den Tageslauf (B2, Spec §5.2): lesen mit ALLEN Frontmatter-Feldern
+// tageslauf/bestand.mjs — Vorschläge für den Tageslauf (B2, Spec §5.2): lesen mit ALLEN Frontmatter-Feldern
 // (auch zitat/herkunft/fundstelle aus B1 und warten_*), verschieben ohne Überschreiben, nie ins Wiki, nie aus dem Vault.
 // Probemodus (ctx.probe): rechnet nur den Zielpfad aus, ändert nichts. Unzulässiges Ziel → wirft.
 import { readdirSync, readFileSync, writeFileSync, mkdirSync, lstatSync, unlinkSync, realpathSync } from "node:fs";

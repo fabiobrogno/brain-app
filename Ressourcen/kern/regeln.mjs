@@ -1,4 +1,4 @@
-// .tools/regeln.mjs — K2 „Regeln am Read" (Spec §12.2): Beim Lesen einer Datei die dafür passenden Lektionen aus
+// regeln.mjs — K2 „Regeln am Read" (Spec §12.2): Beim Lesen einer Datei die dafür passenden Lektionen aus
 // <wiki>/_lektionen.md wörtlich einspielen. Eine Lektion gilt für eine Datei, wenn eines ihrer Muster aus der Folgezeile
 // „  Gilt für: `muster`, …" passt (Glob: `*` innerhalb eines Ordners, `**` über Ordner, `?` ein Zeichen, `~/` = Home;
 // ohne führendes `/` passt das Muster auf das Pfadende). Am besten passende zuerst (spezifischstes Muster = meiste feste

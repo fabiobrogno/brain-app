@@ -1,17 +1,17 @@
 #!/usr/bin/env node
-// .tools/rueckfragen.mjs — Rückfragen (Spec §5.3): Ablage <inbox>/_rueckfragen/<id>.md (betroffene Vorschläge daneben unter
+// rueckfragen.mjs — Rückfragen (Spec §5.3): Ablage <inbox>/_rueckfragen/<id>.md (betroffene Vorschläge daneben unter
 // _rueckfragen/vorschlaege/), feste Antworten je Typ, Deckel 10 offene (Rest wartet und wird nicht gezeigt), Reihenfolge,
 // Verfall (web nach 60 Tagen ins Archiv; heikel 60 Tage nach der ersten ANZEIGE — was nie gezeigt wurde, verfällt nicht), Wochen-Stichprobe (außerhalb des Deckels; Stichproben der Einschwingphase zählen
 // mit und gehen vor), offene Konflikt-Kästen.
 // Antworten werden hier nur gespeichert; angewendet werden sie vom Tageslauf (tageslauf/antworten.mjs).
 // CLI (Skill „rueckfragen", später die App):
-//   node .tools/rueckfragen.mjs <vault> liste                       → JSON { fragen: [...], wartend }
-//   node .tools/rueckfragen.mjs <vault> antwort <id> <wahl> [notiz]  → Exit 0 | 1 (gibt es nicht) | 2 (ungültig) | 64
+//   node rueckfragen.mjs <vault> liste                       → JSON { fragen: [...], wartend }
+//   node rueckfragen.mjs <vault> antwort <id> <wahl> [notiz]  → Exit 0 | 1 (gibt es nicht) | 2 (ungültig) | 64
 import { readdirSync, readFileSync, writeFileSync, mkdirSync, lstatSync, unlinkSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { ordner, EIGENER_VAULT } from "./pfade.mjs";
+import { ordner, vaultUndRest } from "./pfade.mjs";
 import { findeSecrets } from "./secrets-muster.mjs";
 import { walk } from "./vault-dateien.mjs";
 import { istWikiSeite } from "./wiki-pfade.mjs";
@@ -45,7 +45,7 @@ export const TYPEN = {
   web: { rang: 6, kopf: "Web-Quelle", wahlen: { uebernehmen: w("Übernehmen", "Der Fakt aus dem Web kommt mit Beleg ins Wiki."), verwerfen: w("Verwerfen", "Der Fakt wird verworfen.") } },
   // Traum (tageslauf/traum.mjs): Vorschlag zur Pflege des Claude-Gedächtnisses (Patch gegen die Gedächtnis-Wurzel). „Übernehmen“ gilt genau dem gezeigten Diff.
   traum: { rang: 3.5, kopf: "Gedächtnis", wahlen: { uebernehmen: w("Übernehmen", "Genau diese Änderung am Gedächtnis wird übernommen."), verwerfen: w("Verwerfen", "Der Vorschlag wird verworfen.") } },
-  integritaet: { rang: 0, kopf: "Sicherheit", wahlen: { geprueft: w("Geprüft", "Ich habe nachgesehen (git status, Hooks, .git/config, .tools) — die Warnung verschwindet."), spaeter: w("Später", "Die Warnung bleibt stehen, bis du sie als geprüft abhakst.") } },
+  integritaet: { rang: 0, kopf: "Sicherheit", wahlen: { geprueft: w("Geprüft", "Ich habe nachgesehen (git status, Hooks, .git/config) — die Warnung verschwindet."), spaeter: w("Später", "Die Warnung bleibt stehen, bis du sie als geprüft abhakst.") } },
   stichprobe: { rang: 0, kopf: "Stichprobe", wahlen: { stimmt: w("Stimmt", "Die automatische Übernahme war richtig."), "stimmt-nicht": w("Stimmt nicht", "Die Übernahme wird zurückgenommen und zählt als Fehler.") } },
 };
 export const rueckfrageOrdner = (vault) => join(vault, ordner(vault).inbox, "_rueckfragen");
@@ -250,7 +250,9 @@ const selbst = fileURLToPath(import.meta.url);
 let aufruf = "";
 try { aufruf = realpathSync(process.argv[1] || ""); } catch {}
 if (aufruf && aufruf === realpathSync(selbst)) {
-  const [vault = EIGENER_VAULT, befehl = "liste", ...rest] = process.argv.slice(2);
+  // brain.mjs ruft mit dem Vault als erstem Argument auf (<vault> <befehl> …); direkt geht auch <befehl> … mit --vault/BRAIN_VAULT/aktivem App-Vault.
+  const { vault, rest: r0 } = vaultUndRest(process.argv.slice(2), (a) => a === "liste" || a === "antwort");
+  const [befehl = "liste", ...rest] = r0;
   try {
     if (befehl === "liste") {
       const s = sichtbare(vault);

@@ -1,10 +1,10 @@
-// .tools/tageslauf/pflege-ki.mjs — Die KI-Wege von B3 (Spec §6.2, §7). Sonnet MIT Schreibwerkzeugen gibt es NUR hier (rufeSonnet):
+// tageslauf/pflege-ki.mjs — Die KI-Wege von B3 (Spec §6.2, §7). Sonnet MIT Schreibwerkzeugen gibt es NUR hier (rufeSonnet):
 // eingebaut nur Read/Edit/Write/Glob/Grep/Bash, kein Web, kein MCP, dontAsk (alles Nichtfreigegebene wird ohne Nachfrage abgelehnt),
 // cwd = Pflege-Arbeitskopie außerhalb des Vaults, Umgebung gepinnt (sonnetUmgebung). Urteile ohne Werkzeuge: pflegeHaiku (rufeHaiku,
 // --tools ""). Eigenes Budget je Lauf (ctx.pflegeBudget), getrennt vom B2-Budget; drei KI-Fehler in Folge → ctx.ohneKi wie in B2.
 //
 // Härtung — der Inhalt einer Inbox-Notiz ist DATEN, kann aber Anweisungen enthalten. Read/Edit/Write würden ohne Pfadregeln überall
-// hin wirken (echter Vault: .git/config, Hooks, .tools = Code beim nächsten Commit; ~/.zshrc, ~/.ssh, ~/.claude* …), an der
+// hin wirken (echter Vault: .git/config, Hooks, ggf. alter Kit-Ordner = Code beim nächsten Commit; ~/.zshrc, ~/.ssh, ~/.claude* …), an der
 // Diff-Prüfung vorbei, die nur die Arbeitskopie sieht. Darum gilt (Doku-Stand Claude Code 2.1.306):
 //  • Pfadregeln — https://code.claude.com/docs/en/permissions#read-and-edit : Read-/Edit-Regeln nutzen gitignore-Muster; `//pfad`
 //    ist absolut ab Wurzel, `~/pfad` ab Home, ein einfaches `/pfad` NICHT absolut (ab Arbeitsverzeichnis/Settings-Quelle). Edit-Regeln
@@ -26,6 +26,7 @@ import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve, relative, isAbsolute } from "node:path";
 import { findeClaude, kindUmgebung, rufeHaiku, leseClaudeAntwort } from "../ernte.mjs";
+import { KERN, ALT_KIT_ORDNER } from "../pfade.mjs";
 import { sperreAusgeschlossenes } from "./pflege-sperre.mjs";
 
 export const SONNET_WERKZEUGE = "Read,Edit,Write,Glob,Grep,Bash";
@@ -33,17 +34,18 @@ export const SONNET_WERKZEUGE = "Read,Edit,Write,Glob,Grep,Bash";
 // lock macht das Programm selbst); `search` liest nur und schreibt höchstens .logs der Kopie. Alle anderen Unterbefehle von brain.mjs
 // (hooks-install ändert die Git-Konfiguration des ECHTEN Vaults, dienst legt LaunchAgents an, backup pusht, einstellungen/import/
 // tageslauf/nachernte schreiben oder starten Kindprozesse …) sind NICHT freigegeben.
-export const SONNET_BASH = ["node .tools/brain.mjs search"];
+// Der Kern liegt außerhalb der Arbeitskopie: der Befehl trägt seinen absoluten, gequoteten Pfad (der Vault ist über BRAIN_VAULT auf die Kopie gepinnt).
+export const SONNET_BASH = [`node "${String(KERN).split("\\").join("/")}/brain.mjs" search`];
 // Obergrenzen je Sonnet-Aufruf (claude 2.1.308 kennt beide Optionen: --max-turns steht nicht in --help, ist aber im Programm; --max-budget-usd schon).
 export const SONNET_MAX_RUNDEN = 25, SONNET_MAX_USD = 3;
 export const SONNET_EINSTELLUNGEN = { disableAllHooks: true, permissions: { blockReadsOutsideWorkingDirectories: true } };
 // Bereiche der Kopie, die die KI nie ändern darf: Git-Zeiger (Worktree → echter Vault), Werkzeug-Code (läuft über Bash und beim
 // Commit-Hook), Claude-Settings/MCP (Hooks, Rechte), Konfiguration.
-const KOPIE_GESPERRT = [".git", ".git/**", ".tools/**", ".claude/**", ".mcp.json", "brain.config.json"];
+const KOPIE_GESPERRT = [".git", ".git/**", `${ALT_KIT_ORDNER}/**`, ".claude/**", ".mcp.json", "brain.config.json"];
 // Home: lesen UND schreiben verboten (Zugangsdaten) · nur schreiben verboten (Start-/Konfigurationsdateien, Code, Dienste).
 const HOME_GEHEIM = [".ssh", ".aws", ".gnupg", ".config"];
 const HOME_NUR_SCHREIBEN = [".claude*/**", ".claude.json*", ".zshrc", ".zshenv", ".zprofile", ".bashrc", ".bash_profile", ".profile", ".gitconfig",
-  "Library/LaunchAgents/**", ".brain-kit/**"];
+  "Library/LaunchAgents/**", "Library/Application Support/Kortex/**", "Library/Application Support/Brain/**", ".brain-kit/**"];
 
 const fwd = (p) => String(p).split("\\").join("/");
 const echt = (p) => { try { return realpathSync(p); } catch { return resolve(p); } };
@@ -72,6 +74,8 @@ export function sonnetRechte(kopiePfad, { vault, sperren = [] } = {}) {
     ...SONNET_BASH.map((b) => `Bash(${b} *)`),
   ];
   const verboten = ["WebFetch", "WebSearch", ...kopien.flatMap((k) => KOPIE_GESPERRT.map((s) => `Edit(${regelPfad(k)}/${s})`))];
+  // Der Kern (Code, den `brain.mjs search` ausführt) liegt außerhalb des Vaults und bleibt für die KI schreibgeschützt.
+  for (const k of varianten(KERN)) if (!kopien.some((c) => istUnter(c, k))) verboten.push(`Edit(${regelPfad(k)}/**)`);
   // Ein Verbot, das die Kopie selbst träfe, würde jede Arbeit sperren (Deny schlägt Allow) → dann entfällt genau dieses.
   const trifftKopie = (wurzel) => kopien.some((k) => istUnter(k, wurzel));
   for (const w of [vault, ...sperren]) {
@@ -94,7 +98,7 @@ export function sonnetArgs(systemPrompt, kopiePfad, { vault, sperren, werkzeuge 
 }
 
 // Umgebung des Sonnet-Kindes: wie kindUmgebung (BRAIN_ERNTE=1, keine Sitzungs-/GIT_-Variablen), aber der Vault HART auf die Kopie.
-// Sonst träfe `node .tools/brain.mjs …` über ein geerbtes BRAIN_VAULT (Dienst/Hintergrundprozess setzen es) den ECHTEN Vault.
+// Sonst träfe `node brain.mjs …` über ein geerbtes BRAIN_VAULT (Dienst/Hintergrundprozess setzen es) den ECHTEN Vault.
 // Weitere BRAIN_*-Variablen (Testhaken, Pfade, Cache) bekommt das Kind nie.
 export function sonnetUmgebung(kopiePfad, env = process.env) {
   const out = {};

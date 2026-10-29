@@ -1,7 +1,7 @@
 #!/bin/bash
 . "$(dirname "$0")/plattform.sh"
 set -u; cd "$(dirname "$0")"; G="$(pwd)/../adapters/claude-code/wiki-guard.mjs"
-V=$(mktemp -d); mkdir -p "$V/09_wiki" "$V/.logs" "$V/20_firma"; export BRAIN_VAULT="$V"
+V=$(mktemp -d); mkdir -p "$V/09_wiki" "$V/.logs" "$V/20_firma"; echo "{}" > "$V/brain.config.json"; export BRAIN_VAULT="$V"
 j(){ printf '{"tool_name":"Edit","cwd":"%s","tool_input":{"file_path":"%s"}}' "$2" "$1"; }
 # Lock-Alter in Minuten setzen — portabel (BSD-date -v gibt es unter GNU/Git Bash nicht)
 lock_alter(){ node -e 'const fs=require("fs");const t=new Date(Date.now()-Number(process.argv[2])*60000);fs.utimesSync(process.argv[1],t,t)' "$V/.logs/ingest.lock" "$1"; }

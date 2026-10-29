@@ -6,7 +6,7 @@
 if (process.env.BRAIN_ERNTE === "1") process.exit(0);
 import { readFileSync, existsSync, statSync, utimesSync, realpathSync } from "node:fs";
 import { resolve, join, sep, basename, dirname } from "node:path";
-import { vaultPfad, ladeConfig, ordner } from "../../pfade.mjs";
+import { vaultPfadOderEnde, ladeConfig, ordner } from "../../pfade.mjs";
 
 function leseStdin() {
   try { return readFileSync(0, "utf8"); } catch { return ""; }
@@ -21,7 +21,7 @@ const unter = (pfad, ordnerPfad) => {
 };
 
 // resolve: BRAIN_VAULT darf unter Windows mit "/" kommen (C:/…) — Vergleiche unten laufen auf der nativen Form.
-const V = resolve(vaultPfad());
+const V = resolve(vaultPfadOderEnde(process.argv, { still: true }));
 let eingabe;
 try { eingabe = JSON.parse(leseStdin()); } catch { process.exit(0); }
 const F0 = eingabe?.tool_input?.file_path ?? eingabe?.tool_input?.notebook_path ?? "";

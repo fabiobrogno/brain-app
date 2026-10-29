@@ -1,18 +1,15 @@
-// .tools/status.mjs — „brain status [--json]“: Gesamtzustand in einem Blick, für die Menüleiste der Brain-App
+// status.mjs — „brain status [--json]“: Gesamtzustand in einem Blick, für die Menüleiste der Brain-App
 // (App-Spec §5.3/§10) und für Menschen. Schreibt nur abgeleitete Caches (git-ignoriert, z. B.
 // .logs/pflege-bericht.json), nie Wissen; 0 Tokens. Zustand: problem (✕) > hinweis (⚠) > ok (✓).
 // Hinweis: zahlen.zuTun enthält die Vorschläge bereits (so rechnet auch die App damit).
-import { readFileSync, existsSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { configFehler, istQuellVault } from "./pfade.mjs";
+import { statSync } from "node:fs";
+import { configFehler, kernVersion } from "./pfade.mjs";
 import { aktuellerBericht } from "./pflege.mjs";
 import { anzahlVorschlaege } from "./vorschlaege.mjs";
 import { leseAutomatik } from "./einstellungen.mjs";
 import { leseLetzter } from "./tageslauf/protokoll.mjs";
 import { sichtbare } from "./rueckfragen.mjs";
 
-const T = dirname(fileURLToPath(import.meta.url));
 const SYMBOL = { ok: "✓", hinweis: "⚠", problem: "✕" };
 
 export function bewerte({ fehler, berichtFehlt, zuTun, vorschlaege }) {
@@ -24,10 +21,12 @@ export function bewerte({ fehler, berichtFehlt, zuTun, vorschlaege }) {
 export async function brainStatus(vault, { jetzt = Date.now() } = {}) {
   const meldungen = [];
   let fehler = false, berichtFehlt = false;
-  const version = (() => { try { return readFileSync(join(T, "VERSION"), "utf8").trim(); } catch { return "?"; } })();
-  if (!existsSync(join(vault, ".tools", "brain.mjs"))) {
+  const version = kernVersion();
+  let istOrdner = false;
+  try { istOrdner = statSync(vault).isDirectory(); } catch { /* fehlt */ }
+  if (!istOrdner) {
     fehler = true;
-    meldungen.push("Das ist kein Brain-Ordner — die Brain-Werkzeuge fehlen.");
+    meldungen.push("Der Brain-Ordner wurde nicht gefunden.");
   }
   if (configFehler(vault)) {
     fehler = true;
@@ -54,7 +53,7 @@ export async function brainStatus(vault, { jetzt = Date.now() } = {}) {
       letzterErfolg: l?.letzterErfolg ?? null, autostufe: l?.autostufe ?? "normal", lernmodus: l?.lernmodus === true, fehlerquote: l?.fehlerquote ?? null, zahlen: l?.zahlen ?? null };
   } catch { /* Status bleibt ohne Tageslauf-Block */ }
   return {
-    version, quellVault: istQuellVault(vault),
+    version, quellVault: false,   // Feld bleibt für die App (Status-Modell); den Entwickler-Vault gibt es im Kern-Umzug nicht mehr
     zustand: bewerte({ fehler, berichtFehlt, zuTun, vorschlaege }),
     meldungen, zahlen: { vorschlaege, konflikte, abgelaufen, zuTun, rueckfragen }, tageslauf,
   };
@@ -63,7 +62,7 @@ export async function brainStatus(vault, { jetzt = Date.now() } = {}) {
 export function statusText(s) {
   const z = s.zahlen;
   return [
-    `${SYMBOL[s.zustand] || "?"} Brain ${s.version}${s.quellVault ? " (Entwickler-Brain)" : ""}`,
+    `${SYMBOL[s.zustand] || "?"} Brain ${s.version}`,
     `Vorschläge: ${z.vorschlaege} · Konflikte: ${z.konflikte} · abgelaufen: ${z.abgelaufen} · zu tun: ${z.zuTun}`,
     ...(s.tageslauf && s.tageslauf.schalter !== "aus"
       ? [`Tageslauf: ${s.tageslauf.schalter} · zuletzt ${s.tageslauf.zeit ? s.tageslauf.zeit.slice(0, 10) : "noch nie"}${s.tageslauf.status ? ` (${s.tageslauf.status})` : ""} · Rückfragen offen: ${z.rueckfragen ?? 0} · Autostufe ${s.tageslauf.autostufe}${s.tageslauf.lernmodus ? " (Lernmodus)" : ""}`]

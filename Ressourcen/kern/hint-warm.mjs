@@ -6,9 +6,9 @@ import { join } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { suche } from "./hint-kind.mjs";
 import { frageDienst } from "./dienst-client.mjs";
-import { vaultPfad } from "./pfade.mjs";
+import { vaultPfadOderEnde } from "./pfade.mjs";
 
-const vault = vaultPfad();
+const vault = vaultPfadOderEnde(process.argv, { still: true });
 const t0 = Date.now();
 const modul = process.env.BRAIN_HINT_SEARCH_MODULE || fileURLToPath(new URL("./qmd-vector.mjs", import.meta.url));
 // Läuft der Suchdienst, ist schon alles warm — kein zweites Modell laden

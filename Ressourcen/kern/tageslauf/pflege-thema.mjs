@@ -1,4 +1,4 @@
-// .tools/tageslauf/pflege-thema.mjs — Themen-Guard der Pflege (B3): Alles, was die Pflege an eine KI gibt oder ins Wiki schreibt
+// tageslauf/pflege-thema.mjs — Themen-Guard der Pflege (B3): Alles, was die Pflege an eine KI gibt oder ins Wiki schreibt
 // (Inbox headless, Konsolidieren, neue Seiten), geht vorher durch pflegeGrund(). Gleiche Regeln wie die Ernte:
 //   ernteOhneThema  Wortliste (thema-ausschluss.mjs) — ein ausgeschlossenes Wort in Name/Text → nichts davon an die KI
 //   ernteNichtIn    Ordnerliste — nennt der Text einen Pfad in einem ausgeschlossenen Ordner (lektionen.mjs#nenntAusgeschlossenes) → ebenso

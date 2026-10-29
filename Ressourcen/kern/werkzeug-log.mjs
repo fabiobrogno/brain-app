@@ -1,4 +1,4 @@
-// .tools/werkzeug-log.mjs — Werkzeug-Protokoll: hält Read-Zugriffe innerhalb des Vaults (für das
+// werkzeug-log.mjs — Werkzeug-Protokoll: hält Read-Zugriffe innerhalb des Vaults (für das
 // Aufleuchten im Graphen) und MCP-Werkzeugnutzung (für die Ansicht, Task 3/C) in `.logs/werkzeug.log`
 // fest. 0-Token-Regel: schreibt nur, gibt nie etwas aus, wirft nie. Nur Node-Standardbibliothek.
 import { realpathSync } from "node:fs";

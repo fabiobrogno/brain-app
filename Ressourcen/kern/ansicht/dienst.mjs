@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// .tools/ansicht/dienst.mjs — Ansicht-Dienst (Spec §3.A, §3b.1): lokaler HTTP-Dienst nur auf 127.0.0.1, Port
+// ansicht/dienst.mjs — Ansicht-Dienst (Spec §3.A, §3b.1): lokaler HTTP-Dienst nur auf 127.0.0.1, Port
 // zufällig, für die 3D-Ansicht und die Steuerzentrale. Nur node:http, keine Abhängigkeit. Die Anfrage-Logik
 // (Routing, alle Sicherheitsprüfungen) steckt in dienst-lib.mjs; hier nur Socket, Lebensdauer und Handler.
-// Nutzung: node .tools/ansicht/dienst.mjs <vault>   (gestartet von dienst-start.mjs, losgelöst)
+// Nutzung: node ansicht/dienst.mjs <vault>   (gestartet von dienst-start.mjs, losgelöst)
 // stdout: genau eine Zeile „bereit <port>“, sobald dienst.json geschrieben ist — danach nichts mehr.
 // Ende: SIGTERM/SIGINT, POST /api/stopp, oder Leerlauf (Standard 30 min, BRAIN_DIENST_LEERLAUF_MS) — räumt
 // dienst.json auf (nur die eigene, falls inzwischen ein anderer Dienst sie ersetzt hat).
@@ -13,9 +13,10 @@ import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { behandle, vaultIdVon, MAX_KOERPER } from "./dienst-lib.mjs";
 import { erzeugeHandler } from "./handler.mjs";
+import { vaultPfadOderEnde } from "../pfade.mjs";
 
 const HIER = dirname(fileURLToPath(import.meta.url));
-const vault = process.argv[2] || process.env.BRAIN_VAULT || join(HIER, "..", "..");
+const vault = vaultPfadOderEnde();
 const LEERLAUF_MS = Number(process.env.BRAIN_DIENST_LEERLAUF_MS) > 0 ? Number(process.env.BRAIN_DIENST_LEERLAUF_MS) : 30 * 60 * 1000;
 // Zugangsschlüssel für /api (32 Byte, je Start neu); Feldname in dienst.json und kontext: "token"
 const zugang = randomBytes(32).toString("hex");

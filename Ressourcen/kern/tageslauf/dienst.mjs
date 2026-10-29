@@ -1,6 +1,6 @@
-// .tools/tageslauf/dienst.mjs — „brain dienst an|aus|status" (Spec §5.1): LaunchAgent de.brain.tageslauf ruft stündlich
+// tageslauf/dienst.mjs — „brain dienst an|aus|status" (Spec §5.1): LaunchAgent de.brain.tageslauf ruft stündlich
 // `brain tageslauf --wenn-faellig --dienst`. Node- und claude-Pfad werden erkannt, nicht fest eingetragen. Nur macOS.
-// Programm ist `/bin/sh .tools/node-start.sh` — Node wird bei jedem Takt neu gesucht.
+// Programm ist `/bin/sh node-start.sh` — Node wird bei jedem Takt neu gesucht.
 // Der Nutzer führt `brain dienst an` selbst aus — Claude ändert keine LaunchAgents (Spec §9).
 // Testhaken: BRAIN_LAUNCHCTL (Ersatzprogramm, per node gestartet). Unter `node --test` (NODE_TEST_CONTEXT) ohne Ersatz:
 // Fehler statt echtem launchctl.
@@ -12,7 +12,7 @@ import { join, dirname, isAbsolute, resolve } from "node:path";
 import { homedir, userInfo } from "node:os";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { nodePfad } from "../pfade.mjs";
+import { nodePfad, kernStabil, KernNichtStabilFehler, vaultUndRest } from "../pfade.mjs";
 import { findeClaude } from "../ernte.mjs";
 
 export const LABEL = "de.brain.tageslauf";
@@ -70,6 +70,9 @@ const domain = () => `gui/${userInfo().uid}`;
 
 export function dienstAn(vault, { home = homedir(), plattform = process.platform, node = nodePfad(), claude = findeClaude(), profil: profilRoh = process.env.CLAUDE_CONFIG_DIR } = {}) {
   if (plattform !== "darwin") return { ok: false, text: "Den Hintergrunddienst gibt es nur auf dem Mac — der Tageslauf startet dann beim Sitzungsstart, wenn er fällig ist." };
+  // Der LaunchAgent zeigt auf den Kern: ohne stabilen Pfad (KORTEX_KERN_PFAD) nichts eintragen, sonst bricht er beim nächsten App-Update.
+  let kern;
+  try { kern = kernStabil(); } catch (e) { if (e instanceof KernNichtStabilFehler) return { ok: false, nichtStabil: true, text: e.message }; throw e; }
   const profil = profilPfad(profilRoh, { home });
   const claudeDir = claude && claude.args.length === 0 ? dirname(claude.befehl) : null;
   const pfad = [...new Set([dirname(node), claudeDir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].filter(Boolean))].join(":");
@@ -79,7 +82,7 @@ export function dienstAn(vault, { home = homedir(), plattform = process.platform
   mkdirSync(dirname(datei), { recursive: true });
   if (existsSync(datei)) launchctl(["bootout", `${domain()}/${LABEL}`]);
   // §12.1 Nr. 1: kein fester Node-Pfad — der Ordner des heutigen Node steht nur noch als PATH-Hinweis drin.
-  writeFileSync(datei, plistInhalt({ starter: join(vault, ".tools", "node-start.sh"), brain: join(vault, ".tools", "brain.mjs"), vault, pfad, log, profil }));
+  writeFileSync(datei, plistInhalt({ starter: join(kern, "node-start.sh"), brain: join(kern, "brain.mjs"), vault, pfad, log, profil }));
   const ok = launchctl(["bootstrap", domain(), datei]);
   return {
     ok, ohneClaude: !claude, profil,
@@ -111,7 +114,8 @@ const selbst = fileURLToPath(import.meta.url);
 let aufruf = "";
 try { aufruf = realpathSync(process.argv[1] || ""); } catch {}
 if (aufruf && aufruf === realpathSync(selbst)) {
-  const [vault, befehl = "status"] = process.argv.slice(2);
+  // <vault> <befehl> (so ruft brain.mjs auf) oder <befehl> mit --vault/BRAIN_VAULT/aktivem App-Vault
+  const { vault, rest: [befehl = "status"] } = vaultUndRest(process.argv.slice(2), (a) => ["an", "aus", "status"].includes(a));
   if (!["an", "aus", "status"].includes(befehl)) { console.error("Nutzung: brain dienst an|aus|status"); process.exit(64); }
   if (befehl === "status") {
     const s = dienstStatus(vault);

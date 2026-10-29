@@ -1,4 +1,4 @@
-// .tools/tageslauf/schreiben.mjs — Schritt 6, Textteil (Node, kein LLM; Spec §4.2/§5.2): Fakt-Zeile unter „## Fakten",
+// tageslauf/schreiben.mjs — Schritt 6, Textteil (Node, kein LLM; Spec §4.2/§5.2): Fakt-Zeile unter „## Fakten",
 // Stand/Verlauf, Ersetzen (durchgestrichen + neue Zeile darunter), Frontmatter-Feld, rev+1, quellen/quellen_sha,
 // _log.md-Eintrag oben, Beleg-Datei <cluster>/belege/<JJJJ-MM>/<id>.md. Frontmatter wird ZEILENWEISE geändert (fremde
 // Formatierung bleibt). Fehler tragen `grund`: seite-unlesbar | seite-fehlt | kritisch | kein-cluster | auftrag-unbekannt | unveraendert.

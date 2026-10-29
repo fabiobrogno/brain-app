@@ -1,4 +1,4 @@
-// .tools/vorschlaege.mjs — Vorschläge (aus der Hintergrund-Ernte) schreiben, auflisten, übernehmen, verwerfen.
+// vorschlaege.mjs — Vorschläge (aus der Hintergrund-Ernte) schreiben, auflisten, übernehmen, verwerfen.
 // Ablage: <inbox>/_vorschlaege/<id>.md. Übernehmen → <inbox>/<id>.md (normale Rohquelle), Verwerfen →
 // <archiv>/vorschlaege-verworfen/<id>.md. Nie löschen. Fehler tragen `code` (400/404/500) für den Dienst.
 // v0.4: Art „lektion" (Session-Auswerter; Felder ziel/regel/warum/wie — Übernehmen → <inbox>/_lektionen/, dort

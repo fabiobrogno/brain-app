@@ -1,4 +1,4 @@
-// .tools/logs.mjs — gemeinsames Log-Modul: Anhängen mit Rotation, Zeitstempel, Zeilen-Parser.
+// logs.mjs — gemeinsames Log-Modul: Anhängen mit Rotation, Zeitstempel, Zeilen-Parser.
 // Ersetzt die bisher mehrfach kopierten Anhänge-/Rotations-Schnipsel (hint.log, hooks.log, feedback.log …).
 // Nur Node-Standardbibliothek, keine Abhängigkeiten.
 import { appendFileSync, readFileSync, writeFileSync, renameSync, unlinkSync, mkdirSync, statSync } from "node:fs";

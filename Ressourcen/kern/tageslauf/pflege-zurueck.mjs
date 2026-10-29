@@ -1,4 +1,4 @@
-// .tools/tageslauf/pflege-zurueck.mjs — „brain zurueck" für Pflege-Commits von B3 (Spec §5.4, §7). Pflege-Änderungen sind frei
+// tageslauf/pflege-zurueck.mjs — „brain zurueck" für Pflege-Commits von B3 (Spec §5.4, §7). Pflege-Änderungen sind frei
 // formuliert — darum je Datei ein Drei-Wege-Merge rückwärts (`git merge-file`: aktuell ⟵ Commit-Stand → Stand davor) statt der
 // gezielten Gegenänderung aus zurueck.mjs. Strukturfelder werden vorher gleichgezogen und danach gerechnet: rev = rev auf main
 // + 1 (einmal je Seite), quellen/quellen_sha und herkunft_web verlieren genau die Einträge, die der Commit dazugetan hat.

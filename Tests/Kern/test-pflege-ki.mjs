@@ -1,5 +1,8 @@
 // .tools/tests/test-pflege-ki.mjs — B3 Task 1: Sonnet-Argumente (Schutzgeländer §6.2), Aufruf im cwd mit Fake, Budget,
 // ohne claude, drei Fehler in Folge, Haiku-Weitergabe an fake-claude, letztesJson, Pflege-Stand (Probe schreibt nie).
+import { KERN } from "../pfade.mjs";
+import { SONNET_BASH } from "../tageslauf/pflege-ki.mjs";
+const BRAIN = `node "${KERN.split("\\").join("/")}/brain.mjs"`;   // der Befehl, den die KI ausführen darf (Kern liegt außerhalb der Kopie)
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, realpathSync, writeFileSync, mkdirSync } from "node:fs";
@@ -18,7 +21,7 @@ test("sonnetArgs: eingebaut nur Lese-/Schreibwerkzeuge, Rechte nur unter der Kop
   const w = (f) => a[a.indexOf(f) + 1];
   assert.equal(w("--model"), "sonnet");
   assert.equal(w("--tools"), "Read,Edit,Write,Glob,Grep,Bash");
-  assert.ok(w("--allowedTools").startsWith("Read(//") && a.includes("Bash(node .tools/brain.mjs search *)"), "Pfadregeln statt nackter Werkzeuge");
+  assert.ok(w("--allowedTools").startsWith("Read(//") && a.includes(`Bash(${SONNET_BASH[0]} *)`), "Pfadregeln statt nackter Werkzeuge");
   assert.ok(a.includes("WebFetch") && a.includes("WebSearch") && a.indexOf("WebFetch") > a.indexOf("--disallowedTools"));
   assert.equal(w("--permission-mode"), "dontAsk");
   assert.equal(w("--mcp-config"), '{"mcpServers":{}}');

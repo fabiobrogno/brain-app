@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { userInfo } from "node:os";
+import { KERN } from "../pfade.mjs";
 import { isoliere, neuerTestVault, JETZT } from "./tageslauf-hilfe.mjs";
 import { tempOrdner } from "./verlauf-fixture.mjs";
 const Z = await import("../tageslauf/zeitplan.mjs");
@@ -104,7 +105,9 @@ test("dienst an/status/aus: plist unter ~/Library/LaunchAgents, launchctl bootst
     const an = D.dienstAn(v, { home: HOME, plattform: "darwin", node: process.execPath, claude: { befehl: "/opt/claude/bin/claude", args: [] } });
     assert.equal(an.ok, true);
     const plist = readFileSync(D.plistPfad({ home: HOME }), "utf8");
-    assert.ok(plist.includes(`<string>${join(v, ".tools", "node-start.sh").replace(/&/g, "&amp;")}</string>`));
+    assert.ok(plist.includes(`<string>${join(KERN, "node-start.sh").replace(/&/g, "&amp;")}</string>`));
+    assert.ok(plist.includes(`<string>${join(KERN, "brain.mjs").replace(/&/g, "&amp;")}</string>`));
+    assert.ok(plist.includes(`<key>BRAIN_VAULT</key><string>${v.replace(/&/g, "&amp;")}</string>`), "der Vault steht in der Umgebung des Dienstes");
     assert.ok(!plist.includes(`<string>${process.execPath}</string>`), "kein fester Node-Pfad als Programm");
     assert.ok(plist.includes("/opt/claude/bin"), "PATH enthält den Ordner von claude");
     assert.equal(D.dienstStatus(v, { home: HOME }).geladen, true);

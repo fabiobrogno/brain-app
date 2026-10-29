@@ -7,11 +7,11 @@ if (process.env.BRAIN_ERNTE === "1") process.exit(0);
 import { readFileSync } from "node:fs";
 
 try {
-  const { vaultPfad } = await import("../../pfade.mjs");
+  const { vaultPfadOderEnde } = await import("../../pfade.mjs");
   const { abmelden } = await import("../../laufend.mjs");
   let e = {};
   try { e = JSON.parse(readFileSync(0, "utf8") || "{}"); } catch {}
-  const vault = vaultPfad([]);
+  const vault = vaultPfadOderEnde([], { still: true });
   try { abmelden(vault, e?.session_id); } catch {}
   try {
     const werte = (await import("../../einstellungen.mjs")).leseAutomatik(vault).werte;

@@ -1,4 +1,4 @@
-// .tools/verlauf.mjs — Claude-Code-Verläufe (JSONL unter ~/.claude*/projects/<projekt>/<sitzung>.jsonl) lesen.
+// verlauf.mjs — Claude-Code-Verläufe (JSONL unter ~/.claude*/projects/<projekt>/<sitzung>.jsonl) lesen.
 // Einzige Stelle, die das Zeilenformat kennt (K11 zuletzt, K12 Arbeitsstand, K13 parallel, K15 Wirkung).
 // Grundsätze: unbekannte Zeilenarten und kaputte/halbe Zeilen werden still übersprungen (das Format ändert sich mit
 // Claude-Code-Versionen); große Dateien nur stückweise (Kopf, Ende ab Byte-Marke) oder als Strom mit Zeitlimit;

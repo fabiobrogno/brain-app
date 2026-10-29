@@ -1,4 +1,4 @@
-// .tools/tageslauf/ruecknahmen.mjs — offene Rücknahmen (B2, Folgepunkt N6). Antwortet der Nutzer auf eine Stichprobe „stimmt nicht“, wird die automatische
+// tageslauf/ruecknahmen.mjs — offene Rücknahmen (B2, Folgepunkt N6). Antwortet der Nutzer auf eine Stichprobe „stimmt nicht“, wird die automatische
 // Übernahme zurückgenommen (zurueck.mjs). Scheitert das (ungespeicherte Änderung an der Seite, Brain nicht auf main, Ingest läuft, von Hand verändert …),
 // darf der falsche Fakt nicht still auf der Seite bleiben, obwohl die Rückfrage längst archiviert ist. Darum:
 //  - Schon beim Beantworten wird die Rücknahme in .logs/tageslauf/ruecknahmen-offen.json festgehalten (merkeRuecknahme, atomar, noch vor der Prüfung/Archivierung —

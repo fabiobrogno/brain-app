@@ -1,4 +1,4 @@
-// .tools/ansicht/markdown.js — sicherer Markdown-Renderer der 3D-Ansicht (klassisches Skript, kein ESM).
+// ansicht/markdown.js — sicherer Markdown-Renderer der 3D-Ansicht (klassisches Skript, kein ESM).
 // Setzt window.BrainMarkdown = { render, escape }. In Node per vm mit { window: {} } testbar.
 //
 // Sicherheitsmodell: Eingabe gilt als fremd. Aller Text wird escaped (Roh-HTML wie `List<String>` oder

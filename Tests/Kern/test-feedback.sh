@@ -1,6 +1,6 @@
 #!/bin/bash
 . "$(dirname "$0")/plattform.sh"
-set -u; cd "$(dirname "$0")"; F="$(pwd)/../feedback.mjs"; V=$(mktemp -d); export BRAIN_VAULT="$V"
+set -u; cd "$(dirname "$0")"; F="$(pwd)/../feedback.mjs"; V=$(mktemp -d); echo "{}" > "$V/brain.config.json"; export BRAIN_VAULT="$V"
 node "$F" falsch thema_x.md "passte gar nicht" >/dev/null || { echo "FAIL: gültiger Aufruf"; exit 1; }
 grep -q 'art=falsch seite=thema_x.md notiz=passte gar nicht' "$V/.logs/feedback.log" || { echo "FAIL: Zeile falsch: $(cat "$V/.logs/feedback.log")"; exit 1; }
 node "$F" quatsch >/dev/null 2>&1 && { echo "FAIL: ungültige Art akzeptiert"; exit 1; }

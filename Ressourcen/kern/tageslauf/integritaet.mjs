@@ -1,10 +1,10 @@
-// .tools/tageslauf/integritaet.mjs — Integritätsprüfung nach jedem KI-Lauf der Pflege (B3-Härtung, Node, 0 Tokens).
+// tageslauf/integritaet.mjs — Integritätsprüfung nach jedem KI-Lauf der Pflege (B3-Härtung, Node, 0 Tokens).
 // Die KI schreibt in einer Arbeitskopie; eine eingeschleuste Anweisung könnte sie aber dazu bringen, DANEBEN etwas zu ändern, das die
-// Diff-Prüfung der Kopie nie sieht: .git/config oder Hooks des echten Vaults (= Code beim nächsten Commit), .tools, das Wiki, ~/.zshrc,
+// Diff-Prüfung der Kopie nie sieht: .git/config oder Hooks des echten Vaults (= Code beim nächsten Commit), der alte Kit-Ordner (ALT_KIT_ORDNER), das Wiki, ~/.zshrc,
 // ~/.ssh, ~/.claude*/settings.json, LaunchAgents. Darum wird VOR und NACH der Arbeit ein Fingerabdruck gebildet und verglichen —
 // nur Hashes, nie Inhalt (nichts davon darf in Berichte, Logs oder Warnungen gelangen).
-//   fingerabdruck()  Map<Schlüssel, Hash>: echter Vault (.git/config, .git/hooks, .git/info, .tools, Wiki ohne generierte Dateien, HEAD,
-//                    Arbeitsbaum ohne Inbox/Archiv/.logs) · Arbeitskopie (.tools, Worktree-Zeiger samt Verwaltungsdateien, .claude, .mcp.json)
+//   fingerabdruck()  Map<Schlüssel, Hash>: echter Vault (.git/config, .git/hooks, .git/info, alter Kit-Ordner, Wiki ohne generierte Dateien, HEAD,
+//                    Arbeitsbaum ohne Inbox/Archiv/.logs) · Arbeitskopie (alter Kit-Ordner, Worktree-Zeiger samt Verwaltungsdateien, .claude, .mcp.json)
 //                    · Home (Shell-Starter, SSH, Claude-Settings, LaunchAgents) — jeweils falls vorhanden; neu angelegt zählt als Änderung.
 //   abweichungen()   Schlüssel, deren Hash sich unterscheidet (neu, geändert, weg).
 //   meldeVerletzung  pflegeStopp, Grund im Lauf, Eintrag im Bericht („Integrität verletzt: <Pfad>“), Rückfrage `integritaet`, die der
@@ -13,6 +13,7 @@ import { readFileSync, readdirSync, lstatSync, statSync, readlinkSync } from "no
 import { join, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { istGeneriert } from "../wiki-pfade.mjs";
+import { ALT_KIT_ORDNER } from "../pfade.mjs";
 import { listeRueckfragen, legeRueckfrageAn } from "../rueckfragen.mjs";
 import { notiere } from "./protokoll.mjs";
 
@@ -77,7 +78,7 @@ export function fingerabdruck({ vault, kopie, home, wiki, inbox, archiv, gemeins
   f.set(".git/config", dateiHash(join(gemeinsam, "config")));
   baum(join(gemeinsam, "hooks"), ".git/hooks", f);
   baum(join(gemeinsam, "info"), ".git/info", f);
-  baum(join(vault, ".tools"), ".tools", f);
+  baum(join(vault, ALT_KIT_ORDNER), ALT_KIT_ORDNER, f);   // noch nicht umgestellte Vaults tragen den alten Kit-Ordner
   baum(join(vault, wiki), wiki, f, { ueberspringe: (rel) => istGeneriert(rel, wiki) });
   f.set("HEAD", String(head || "-"));
   for (const [k, h] of freigabeStand(vault, inbox)) f.set(k, h);
@@ -88,7 +89,7 @@ export function fingerabdruck({ vault, kopie, home, wiki, inbox, archiv, gemeins
   }
   // ---- Arbeitskopie: Code, der beim Lauf (über Bash) oder beim Commit-Hook ausgeführt würde, und der Zeiger auf den echten Vault
   const K = (rel) => `Arbeitskopie/${rel}`;
-  baum(join(kopie, ".tools"), K(".tools"), f);
+  baum(join(kopie, ALT_KIT_ORDNER), K(ALT_KIT_ORDNER), f);
   baum(join(kopie, ".claude"), K(".claude"), f);
   f.set(K(".mcp.json"), dateiHash(join(kopie, ".mcp.json")));
   const zeiger = join(kopie, ".git");
@@ -149,7 +150,7 @@ export function meldeVerletzung(ctx, { einheit, pfade }) {
         "Shell-Startdateien, Zugangs- oder Settings-Dateien). Betroffen (nur Namen, nie Inhalt):",
         ...liste.slice(0, 15).map((p) => `- ${p}`),
         "Die Einheit wurde verworfen, die Pflege für diesen Lauf beendet, die Notiz ist gesperrt.",
-        "Bitte ansehen: git status, git diff, .git/config, .git/hooks, .tools — erst danach als „geprüft“ abhaken.",
+        "Bitte ansehen: git status, git diff, .git/config, .git/hooks — erst danach als „geprüft“ abhaken.",
       ].join("\n"),
       felder: { pfade: liste.slice(0, 30), fp } });
   } catch { /* die Warnung im Bericht (notiere) bleibt */ }

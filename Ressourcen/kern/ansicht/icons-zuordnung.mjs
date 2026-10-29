@@ -1,4 +1,4 @@
-// .tools/ansicht/icons-zuordnung.mjs — reine Zuordnungslogik MCP-Servername → Simple-Icons-Slug.
+// ansicht/icons-zuordnung.mjs — reine Zuordnungslogik MCP-Servername → Simple-Icons-Slug.
 // Keine Datei-/Netzwerkzugriffe hier: `zuordnung` (Inhalt von vendor/icons/zuordnung.json) wird übergeben,
 // nicht selbst gelesen. Dieselbe Logik liegt als klassisches Skript-Duplikat in `icons.js` (Browser, ohne
 // ESM-Import geladen) — Test `test-icons.mjs` prüft, dass beide Kopien bei denselben Eingaben übereinstimmen.

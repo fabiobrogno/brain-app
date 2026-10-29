@@ -27,7 +27,7 @@
       <ul id="results" role="listbox"></ul>
     </div>
 
-    <div class="tools">
+    <div class="werkzeuge">
       <button id="btnFilter" class="icon-btn only-mobile" title="Filter" aria-label="Filter" data-t-title="filter" data-t-aria="filter"><svg viewBox="0 0 24 24"><path d="M4 6h16M7 12h10M10 18h4"/></svg></button>
       <button id="btnCare" class="icon-btn" title="Pflege (P)" aria-label="Pflege" data-t-title="pflegeTitel" data-t-aria="pflege"><svg viewBox="0 0 24 24"><path d="M3 12h4l2.5-6 5 12 2.5-6h4"/></svg><i class="dot" id="careDot"></i></button>
       <button id="btnReset" class="icon-btn" title="Ansicht zurücksetzen (R)" aria-label="Ansicht zurücksetzen" data-t-title="zuruecksetzenTitel" data-t-aria="zuruecksetzen"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="1.6"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3"/></svg></button>
@@ -68,7 +68,7 @@
 </div>
 
 <!-- Keine Inline-Skripte oder -Handler: der Dienst sendet eine strenge CSP. Daten kommen über den Dienst
-     (/api/daten); ohne Dienst (file://) lädt app.js ../../.logs/ansicht/data.js selbst nach (nie getrackt). -->
+     (/api/daten); ohne Dienst (file://) lädt app.js die data.js im Vault nach (meta brain-daten in der von `brain zeig` geschriebenen seite.html; nie getrackt). -->
 <script src="vendor/three.bundle.js"></script>
 <script src="vendor/brain-mesh/brain-mesh.js"></script>
 <script src="texte.js"></script>

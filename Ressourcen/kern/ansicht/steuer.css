@@ -1,4 +1,4 @@
-/* .tools/ansicht/steuer.css — Steuerzentrale (Zahnrad + Seitenleiste). Nutzt nur die Farb-/Schrift-Variablen aus
+/* ansicht/steuer.css — Steuerzentrale (Zahnrad + Seitenleiste). Nutzt nur die Farb-/Schrift-Variablen aus
    style.css (--bg, --fg, --line, --glass, --accent, --c-*, --font, --mono …); funktioniert in hell und dunkel. */
 .steuer {
   --st-gruen: var(--c-gruen, #46e0ae);

@@ -1,4 +1,4 @@
-// .tools/konflikte.mjs — liest offene Konflikt-Kästen aus einer Wiki-Seite (Spec v0.4, Baustein B). Rein, liest nichts.
+// konflikte.mjs — liest offene Konflikt-Kästen aus einer Wiki-Seite (Spec v0.4, Baustein B). Rein, liest nichts.
 // Format (wiki/_schema.md), Einrückung erlaubt:
 //   > [!KONFLIKT] offen — Du entscheidest
 //   > A: "<Aussage>" — Quelle: [[pfad-a]]

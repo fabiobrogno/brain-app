@@ -21,6 +21,14 @@ import path from "node:path";
 import module from "node:module";
 import { fileURLToPath } from "node:url";
 
+// 0) Nie die echte Umgebung des Nutzers: kein BRAIN_VAULT/KORTEX_KERN_PFAD aus der Shell und eine (nicht vorhandene) leere App-Support-Ablage —
+//    pfade.mjs liest sonst die echte vaults.json der App und fände einen echten Vault. Tests setzen, was sie brauchen, selbst.
+delete process.env.BRAIN_VAULT; delete process.env.KORTEX_KERN_PFAD;
+if (!process.env.BRAIN_APP_SUPPORT) process.env.BRAIN_APP_SUPPORT = path.join(os.tmpdir(), "kortex-test-support-leer");
+// Die Bühne liegt im Temp-Ordner und ist kein stabiler Kern-Pfad: Tests, die Hooks/Git-Hooks/Dienst eintragen, dürfen den tatsächlichen Ort nehmen.
+// Die Tests der Verweigerung (test-kern-stabil.mjs) entfernen den Schalter im Kindprozess.
+if (!process.env.KORTEX_KERN_UNSTABIL_ERLAUBT) process.env.KORTEX_KERN_UNSTABIL_ERLAUBT = "1";
+
 if (!process.env.QMD_BIN) process.env.QMD_BIN = fileURLToPath(new URL("./fake-qmd-cli.mjs", import.meta.url));
 
 // 3) Hook-Dubletten-Guard aus (adapters/claude-code/einmal.mjs): Die Tests rufen dieselben Hooks mit gleicher Eingabe mehrmals

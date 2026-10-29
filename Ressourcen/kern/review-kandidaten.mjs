@@ -6,10 +6,10 @@ import { readFileSync, existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { istWikiSeite } from "./wiki-pfade.mjs";
-import { vaultPfad, ladeConfig, ordner } from "./pfade.mjs";
+import { vaultPfadOderEnde, ladeConfig, ordner } from "./pfade.mjs";
 import { gitBefehl } from "./werkzeug.mjs";
 
-const vault = vaultPfad();
+const vault = vaultPfadOderEnde();
 const cfg = ladeConfig(vault);
 const marker = join(vault, ".logs", "letzter-review");
 const seitMs = existsSync(marker) ? statSync(marker).mtimeMs : Date.now() - 30 * 86400000;
