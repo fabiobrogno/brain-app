@@ -2,7 +2,7 @@
 // (B2, Task 12): Vault, HEAD, Branches, Arbeitskopien und Aktionsprotokoll bleiben unverändert (aendertNichts).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, writeFileSync, chmodSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, chmodSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { isoliere, committe, neuerTestVault } from "./tageslauf-hilfe.mjs";
 import { tempOrdner } from "./verlauf-fixture.mjs";
@@ -73,7 +73,8 @@ test("Commit-Prüfung rot → pruefung-rot (die Prüfung wird nie umgangen)", ()
   const rot = tempOrdner("hook-rot");
   writeFileSync(join(rot, "pre-commit"), "#!/bin/sh\necho '- SECRETS: Testbefund'\nexit 2\n");
   chmodSync(join(rot, "pre-commit"), 0o755);
-  git(v, "config", "core.hooksPath", rot);
+  process.env.BRAIN_GIT_HOOKS_ERLAUBT = [process.env.BRAIN_GIT_HOOKS_ERLAUBT, realpathSync(rot)].filter(Boolean).join(":"); // der Kern führt Hooks nur aus Ordnern, die die Umgebung erlaubt (git-sicher)
+  git(v, "config", "core.hooksPath", realpathSync(rot));
   assert.deepEqual(grundVon(nimm(v, { ids: ["r1"] })), [false, "pruefung-rot"]);
 });
 

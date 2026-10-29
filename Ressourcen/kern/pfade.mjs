@@ -345,11 +345,9 @@ export function nodePfad({ env = process.env } = {}) {
 export function nodeBefehl() { return shellQuote(nodePfad()); }
 // Nur fürs RENDERN von Vorlagen (AGENTS.md, Skills) — ein gequoteter Anzeige-String, kein argv[0] für
 // execFileSync/spawnSync (dafür gibt es gitBefehl() in werkzeug.mjs; zwei Funktionen mit demselben
-// Namen für zwei verschiedene Zwecke wären verwirrend, darum hier umbenannt). Bevorzugt werkzeuge.git aus
-// der Vault-Config (von install.mjs gesetzt), sonst den bekannten MinGit-Ort unter diesem Home (win32),
-// sonst das nackte "git".
-export function gitAnzeige({ cfg = {}, plattform = process.platform, home = homedir() } = {}) {
-  if (typeof cfg?.werkzeuge?.git === "string" && cfg.werkzeuge.git) return shellQuote(cfg.werkzeuge.git, plattform);
+// Namen für zwei verschiedene Zwecke wären verwirrend, darum hier umbenannt). Den bekannten MinGit-Ort unter diesem Home
+// (win32), sonst das nackte "git". werkzeuge.git aus der Vault-Config zählt nicht (Programme kommen nie aus dem Vault, P4).
+export function gitAnzeige({ plattform = process.platform, home = homedir() } = {}) {
   if (plattform === "win32") {
     for (const ort of kitOrte({ home, plattform })) {
       const mingit = join(ort, "git", "cmd", "git.exe");

@@ -250,11 +250,11 @@ test("renderVorlage: absoluter, gequoteter Node-Pfad, Ordnernamen inkl. ARCHIV, 
   assert.match(r, / · ablage · /);
   assert.doesNotMatch(r, /\{\{/);
 });
-test("renderVorlage: {{GIT}} bevorzugt werkzeuge.git aus der Vault-Config vor dem PATH-Rückfall (Fix round 1)", () => {
+test("renderVorlage: {{GIT}} ignoriert werkzeuge.git aus der Vault-Config (Programme kommen nie aus dem Vault, P4)", () => {
   const v = neu();
   writeFileSync(join(v, "brain.config.json"), JSON.stringify({ werkzeuge: { git: "/ein/privater/git" } }));
   const r = renderVorlage("{{GIT}}", v);
-  assert.equal(r, process.platform === "win32" ? `"/ein/privater/git"` : `'/ein/privater/git'`);
+  assert.equal(r, "git");
 });
 test("gitAnzeige: ohne Config fällt auf den bisherigen Rückfall zurück (win32-MinGit-Ort bzw. nacktes 'git')", () => {
   const home = mkdtempSync(join(tmpdir(), "pfad-git-"));
@@ -263,8 +263,8 @@ test("gitAnzeige: ohne Config fällt auf den bisherigen Rückfall zurück (win32
   writeFileSync(join(home, ".brain-kit", "git", "cmd", "git.exe"), "");
   // Anzeige-Strings tragen immer "/" (auch unter Windows), darum hier ebenso
   assert.equal(gitAnzeige({ cfg: {}, plattform: "win32", home }), `"${join(home, ".brain-kit", "git", "cmd", "git.exe").split("\\").join("/")}"`);
-  // Config geht auch hier vor
-  assert.equal(gitAnzeige({ cfg: { werkzeuge: { git: "/x/git" } }, plattform: "win32", home }), `"/x/git"`);
+  // eine Angabe aus der Config zählt nicht
+  assert.equal(gitAnzeige({ cfg: { werkzeuge: { git: "/x/git" } }, plattform: "darwin", home }), "git");
 });
 test("Review-Fund 7 (BOM in brain.config.json): ladeConfig/configFehler tolerieren ein UTF-8-BOM", () => {
   const v = neu();

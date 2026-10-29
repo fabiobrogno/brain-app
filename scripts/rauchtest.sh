@@ -198,7 +198,10 @@ d_lauf() {
   vd="$basis/Marken Brain"
   marke="$basis/marken/marke.txt"
   mkdir -p "$vd/.tools/ansicht"
-  printf '{}\n' > "$vd/brain.config.json" # ein Brain-Vault für den Kern (sonst wäre schon der Status "kein Brain")
+  # Ein Brain-Vault für den Kern (sonst wäre schon der Status "kein Brain"). Seine Konfiguration nennt als „Werkzeuge“ ein Skript im Vault, das
+  # eine Marke schreibt, falls es je läuft: früher hätte `brain status` es als git gestartet (Kern-Umzug P4: Programme kommen nie aus dem Vault).
+  d_marke_sh "$vd/werkzeug.sh" werkzeug "$marke"
+  printf '{"werkzeuge":{"git":"%s","qmd":"%s","claude":"%s","node":"%s","editor":"%s"}}\n' "$vd/werkzeug.sh" "$vd/werkzeug.sh" "$vd/werkzeug.sh" "$vd/werkzeug.sh" "$vd/werkzeug.sh" > "$vd/brain.config.json"
   # Ein altes Kit im Vault (brain status, Brücke der Übersicht): Es darf nie laufen, der Kern kommt aus dem App-Paket.
   d_marke_mjs "$vd/.tools/brain.mjs" brain.mjs "$marke" 'console.log(JSON.stringify({ version: "marke", quellVault: false, zustand: "ok", meldungen: [], zahlen: { vorschlaege: 0, konflikte: 0, abgelaufen: 0, zuTun: 0 } }));'
   d_marke_mjs "$vd/.tools/ansicht/bruecke.mjs" bruecke.mjs "$marke" 'process.stdout.write(JSON.stringify({ bereit: true, version: "marke" }) + "\n");
@@ -216,29 +219,33 @@ process.stdin.resume();'
       for h in pre-commit commit-msg post-commit post-checkout post-merge pre-push; do d_marke_sh "$vd/.git/hooks/$h" "hook-$h" "$marke" ok; done
       d_marke_sh "$basis/marken/fsmonitor.sh" fsmonitor "$marke"
       d_git -C "$vd" config core.fsmonitor "$basis/marken/fsmonitor.sh"
-      erwartet="brain.mjs bruecke.mjs fremdes-git hook-pre-commit hook-commit-msg hook-post-commit fsmonitor"
+      erwartet="brain.mjs bruecke.mjs werkzeug fremdes-git hook-pre-commit hook-commit-msg hook-post-commit fsmonitor"
       ;;
     gesperrt)
       # Einstellungen, die Programme starten und sich nicht entschärfen lassen: Git bleibt gesperrt, bis der Nutzer vertraut.
       d_marke_sh "$basis/marken/clean.sh" filter-clean "$marke" filter
       d_marke_sh "$basis/marken/uploadpack.sh" uploadpack "$marke"
+      d_marke_sh "$basis/marken/diffext.sh" diff-extern "$marke"
+      d_marke_sh "$basis/marken/cred.sh" credential-helper "$marke"
+      d_git -C "$vd" config diff.external "$basis/marken/diffext.sh"
+      d_git -C "$vd" config credential.helper "$basis/marken/cred.sh"
       printf '* filter=marke\n' > "$vd/.gitattributes"
       d_git -C "$vd" config filter.marke.clean "$basis/marken/clean.sh"
       d_git init -q --bare "$basis/gegenstelle.git"
       d_git -C "$vd" config remote.origin.url "$basis/gegenstelle.git"
       d_git -C "$vd" config remote.origin.uploadpack "$basis/marken/uploadpack.sh"
-      erwartet="brain.mjs bruecke.mjs fremdes-git filter-clean uploadpack"
+      erwartet="brain.mjs bruecke.mjs werkzeug fremdes-git filter-clean uploadpack diff-extern"
       ;;
   esac
   # Kontrolle: Jede Marke schreibt wirklich, wenn man das Programm ohne die Vorsicht der App laufen lässt (an einer KOPIE des Vaults).
   # Sonst bewiese 'keine Marke' nichts.
   k="$basis/kontrolle"; cp -R "$vd" "$k"
-  ( cd "$k" && "$RNODE" .tools/brain.mjs >/dev/null 2>&1; "$RNODE" .tools/ansicht/bruecke.mjs </dev/null >/dev/null 2>&1 ) || true
+  ( cd "$k" && "$RNODE" .tools/brain.mjs >/dev/null 2>&1; "$RNODE" .tools/ansicht/bruecke.mjs </dev/null >/dev/null 2>&1; ./werkzeug.sh status >/dev/null 2>&1 ) || true
   ( cd "$k" && PATH="node_modules/.bin:$PATH" git --version >/dev/null 2>&1 ) || true
   if [ "$art" = haken ]; then
     ( cd "$k" && printf 'x\n' >> notiz.md && d_git status -s >/dev/null 2>&1; d_git add notiz.md >/dev/null 2>&1; d_git commit -q -m Kontrolle >/dev/null 2>&1 ) || true
   else
-    ( cd "$k" && printf 'x\n' >> notiz.md && d_git add notiz.md >/dev/null 2>&1; d_git fetch -q origin >/dev/null 2>&1 ) || true
+    ( cd "$k" && printf 'x\n' >> notiz.md && d_git add notiz.md >/dev/null 2>&1; d_git diff --cached >/dev/null 2>&1; d_git fetch -q origin >/dev/null 2>&1 ) || true
   fi
   for m in $erwartet; do
     grep -qx "$m" "$marke" 2>/dev/null || { echo "Markendatei der Kontrolle:"; cat "$marke" 2>/dev/null || true; fehl "D/$art: Marke '$m' schreibt in der Kontrolle nicht — der Test würde nichts beweisen"; }

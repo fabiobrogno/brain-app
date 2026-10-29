@@ -378,3 +378,6 @@ export function vergissVertrauen(pfad, { support } = {}) {
   for (const k of weg) delete m[k];
   schreibeMerker(support, m);
 }
+
+// Für den Test, der die Liste der Programm-Schlüssel des Kerns (kern/git-sicher) gegen diese hält (Tests/Node/kern-git-haertung.test.mjs).
+export const GEFAEHRLICH_MUSTER = GEFAEHRLICH;

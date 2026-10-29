@@ -1113,3 +1113,6 @@ async function wiederherstellenOhneSperre(wurzel, { pfad: rel, sha }, ctx) {
   if (c.code !== 0) { await zurueck(); throw new HttpFehler(422, "Das Sichern der Fassung wurde abgelehnt. Deine Datei ist unverändert.", { ausgabe: ausgabeVon(c) }); }
   return { sha: (await G(["rev-parse", "HEAD"])).stdout.trim(), unveraendert: false };
 }
+
+// Für den Test, der die Härtung des Kerns (kern/git-sicher) gegen diese hält (Tests/Node/kern-git-haertung.test.mjs).
+export const HAERTUNG = { GRUND, OHNE_HOOKS, OHNE_SIGNIEREN };

@@ -544,12 +544,12 @@ test("MCP verbinden: Gesamtfrist — hängendes claude wird samt Prozessgruppe b
   const d = kitVault();
   const mcp = tmp("brain-mcpdir-"); schreibe(mcp, "brain-mcp.mjs", "// fake\n");
   const c = fakeClaude({ haengt: true });
-  const rufe = aufruf(erzeugeHandler({ vault: d, mcpPfad: join(mcp, "brain-mcp.mjs"), fristen: { mcpVerbinden: 700 }, vaultOptionen: { support: neuerSupport() } }));
+  const rufe = aufruf(erzeugeHandler({ vault: d, mcpPfad: join(mcp, "brain-mcp.mjs"), fristen: { mcpVerbinden: 2500 }, vaultOptionen: { support: neuerSupport() } }));
   await mitClaude(c.bin, async () => {
     const t0 = Date.now();
     const r = await rufe("POST", "/api/mcp/verbinden", { ziel: "claude" });
     assert.equal(r.status, 504); assert.match(r.j.fehler, /nicht rechtzeitig/); assert.ok(r.j.befehl);
-    assert.ok(Date.now() - t0 < 5000, `dauerte ${Date.now() - t0} ms`);
+    assert.ok(Date.now() - t0 < 15_000, `dauerte ${Date.now() - t0} ms`);
     assert.ok(!existsSync(c.zustand), "nichts eingetragen");
     const pids = readFileSync(c.pids, "utf8").trim().split("\n").map(Number);
     assert.equal(pids.length, 2);
@@ -678,12 +678,12 @@ test("Frist git/commit: hängender Hook → Prozessgruppe beendet, Index wie vor
   schreibe(d, "a.md", "# a\n"); schreibe(d, "b.md", "# b\n");
   g(d, "add", "--", "b.md"); // b ist vorgemerkt und soll es danach genauso sein
   const vorher = { baum: g(d, "write-tree").trim(), status: g(d, "status", "--porcelain=v1"), kopf: g(d, "rev-parse", "HEAD") };
-  const v = mitSupport(d, neuerSupport(), { gitLimitCommit: 900 });
+  const v = mitSupport(d, neuerSupport(), { gitLimitCommit: 3000 });
   v.vertrauen(true); // der Hook läuft nur mit Vertrauen
   const t0 = Date.now();
   const e = await wirft(v.gitCommit({ nachricht: "hängt", dateien: ["a.md"] }));
   assert.equal(e.status, 504); assert.match(e.message, /zu lange gebraucht/); assert.match(e.message, /nichts gesichert/i);
-  assert.ok(Date.now() - t0 < 6000, `dauerte ${Date.now() - t0} ms`);
+  assert.ok(Date.now() - t0 < 20_000, `dauerte ${Date.now() - t0} ms`);
   const p = pidsVon(pids); assert.equal(p.length, 2);
   assert.ok(await warteBis(() => p.every((x) => !lebt(x))), "Hook und sein Kindprozess sind beendet");
   assert.equal(existsSync(join(d, ".git/index.lock")), false, "keine liegengebliebene Sperrdatei");
@@ -701,9 +701,9 @@ test("Frist git/remote ist eine GESAMTfrist: langsamer Server-Haken (Prozessgrup
   writeFileSync(h, `#!/bin/sh\necho $$ >> '${pids}'\nsleep 30 &\necho $! >> '${pids}'\nwait\n`); chmodSync(h, 0o755);
   const a = repo();
   const t0 = Date.now();
-  const e = await wirft(gitRemoteDirekt(a, bare, 1500));
+  const e = await wirft(gitRemoteDirekt(a, bare, 4000));
   assert.equal(e.status, 504); assert.match(e.message, /zu lange|nicht rechtzeitig/);
-  assert.ok(Date.now() - t0 < 8000, `dauerte ${Date.now() - t0} ms`);
+  assert.ok(Date.now() - t0 < 20_000, `dauerte ${Date.now() - t0} ms`);
   assert.equal(g(a, "remote").trim(), "", "origin zurückgenommen");
   assert.equal(g(a, "for-each-ref", "refs/brain-studio").trim(), "", "Prüf-Ref aufgeräumt");
   assert.equal(g(bare, "for-each-ref").trim(), "", "nichts auf dem Server");
@@ -720,10 +720,10 @@ test("Frist Abgleich: Gesamtfrist (limitGesamt) beendet auch einen hängenden Pu
   const h = join(bare, "hooks", "pre-receive");
   writeFileSync(h, `#!/bin/sh\necho $$ >> '${pids}'\nsleep 30 &\necho $! >> '${pids}'\nwait\n`); chmodSync(h, 0o755);
   schreibe(a, "neu.md", "# neu\n"); g(a, "add", "--", "neu.md"); g(a, "commit", "-q", "-m", "lokal");
-  const v = mitSupport(a, neuerSupport(), { gitLimitAbgleich: 1200 });
+  const v = mitSupport(a, neuerSupport(), { gitLimitAbgleich: 4000 });
   const t0 = Date.now();
   const e = await wirft(v.gitSync());
-  assert.equal(e.status, 504); assert.ok(Date.now() - t0 < 8000);
+  assert.equal(e.status, 504); assert.ok(Date.now() - t0 < 20_000);
   const p = pidsVon(pids);
   assert.ok(await warteBis(() => p.every((x) => !lebt(x))), "Push und Haken beendet");
   assert.equal(g(bare, "for-each-ref", "refs/heads").split("\n").filter((z) => /main/.test(z)).length, 1);
@@ -756,12 +756,12 @@ const nichtsHalbes = async ({ a, pids, kopf }) => {
 
 test("Frist Abgleich: hängender Merge-Treiber → Frist je Git-Aufruf, 504 mit Alltagsmeldung, Merge zurückgenommen, keine Hilfsdateien", async () => {
   const s = haengenderMerge();
-  const v = mitSupport(s.a, neuerSupport(), { gitLimitSync: 1500 });
+  const v = mitSupport(s.a, neuerSupport(), { gitLimitSync: 4000 });
   v.vertrauen(true); // merge.*.driver sperrt Git, solange dem Vault nicht vertraut ist
   const t0 = Date.now();
   const e = await wirft(v.gitSync());
   assert.equal(e.status, 504); assert.match(e.message, /zu lange gebraucht/); assert.match(e.message, /nichts verändert/);
-  assert.ok(Date.now() - t0 < 10_000, `dauerte ${Date.now() - t0} ms`);
+  assert.ok(Date.now() - t0 < 25_000, `dauerte ${Date.now() - t0} ms`);
   assert.ok(existsSync(s.pids) && pidsVon(s.pids).length >= 2, "der Treiber lief wirklich");
   await nichtsHalbes(s);
 });

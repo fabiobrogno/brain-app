@@ -42,7 +42,7 @@ export function findePflegeCommits(vault, { lauf = null, ids = null, aktionen = 
 
 // git merge-file -p <aktuell> <basis> <ziel>: trägt die Änderung basis→ziel in aktuell ein. Exit 0 = sauber, 1..127 = Anzahl
 // Konflikte (→ null), sonst Fehler (→ wirft).
-export function mergeDatei(aktuell, basis, ziel, { gitPfad = "git" } = {}) {
+export function mergeDatei(aktuell, basis, ziel, { gitPfad = gitBefehl() } = {}) {
   const d = mkdtempSync(join(tmpdir(), "brain-zurueck-"));
   try {
     const p = (n, t) => { const f = join(d, n); writeFileSync(f, t); return f; };

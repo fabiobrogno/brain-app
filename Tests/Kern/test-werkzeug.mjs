@@ -1,41 +1,33 @@
-// .tools/tests/test-werkzeug.mjs — gitBefehl(): config vor MinGit-Ort vor nacktem "git".
+// test-werkzeug.mjs — gitBefehl(): git-sicher (macOS/Linux), MinGit-Ort oder "git" (win32); werkzeuge.git aus der Config zählt nie.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { gitBefehl } from "../werkzeug.mjs";
+import { KERN } from "../pfade.mjs";
 
-test("gitBefehl: ohne Config/MinGit → nacktes 'git'", () => {
+test("gitBefehl: macOS/Linux → git-sicher im Kern (absolut, ausführbar), nie der nackte Name", () => {
   const home = mkdtempSync(join(tmpdir(), "wz-"));
-  assert.equal(gitBefehl({ cfg: {}, plattform: "darwin", home }), "git");
-  assert.equal(gitBefehl({ cfg: {}, plattform: "win32", home }), "git");
+  const p = gitBefehl({ plattform: "darwin", home });
+  assert.equal(p, join(KERN, "git-sicher"));
+  assert.ok(statSync(p).mode & 0o111, "git-sicher muss ausführbar sein");
 });
 
-test("gitBefehl: win32 mit vorhandenem MinGit (ohne Config) → dessen absoluter Pfad", () => {
+test("gitBefehl: win32 ohne MinGit → 'git', mit MinGit → dessen absoluter Pfad", () => {
   const home = mkdtempSync(join(tmpdir(), "wz-"));
+  assert.equal(gitBefehl({ plattform: "win32", home }), "git");
   const mingit = join(home, ".brain-kit", "git", "cmd");
   mkdirSync(mingit, { recursive: true });
   writeFileSync(join(mingit, "git.exe"), "");
-  assert.equal(gitBefehl({ cfg: {}, plattform: "win32", home }), join(mingit, "git.exe"));
-  // auf einer anderen Plattform zählt der MinGit-Ort nicht (gibt es praktisch nicht, aber die Reihenfolge
-  // muss trotzdem stimmen: ohne win32 bleibt es beim nackten "git")
-  assert.equal(gitBefehl({ cfg: {}, plattform: "darwin", home }), "git");
+  assert.equal(gitBefehl({ plattform: "win32", home }), join(mingit, "git.exe"));
 });
 
-test("gitBefehl: Config-Eintrag werkzeuge.git geht JEDEM anderen Rückfall vor", () => {
+test("gitBefehl: werkzeuge.git aus der Vault-Config wird NIE benutzt (auch cfg-Argumente nicht)", () => {
   const home = mkdtempSync(join(tmpdir(), "wz-"));
-  const mingit = join(home, ".brain-kit", "git", "cmd");
-  mkdirSync(mingit, { recursive: true });
-  writeFileSync(join(mingit, "git.exe"), "");
   const cfg = { werkzeuge: { git: "/ein/anderer/git" } };
-  assert.equal(gitBefehl({ cfg, plattform: "win32", home }), "/ein/anderer/git");
-  assert.equal(gitBefehl({ cfg, plattform: "darwin", home }), "/ein/anderer/git");
-});
-
-test("gitBefehl: kaputter/fehlender cfg-Wert (kein String) fällt zurück statt zu werfen", () => {
-  const home = mkdtempSync(join(tmpdir(), "wz-"));
-  assert.equal(gitBefehl({ cfg: { werkzeuge: { git: 123 } }, plattform: "darwin", home }), "git");
-  assert.equal(gitBefehl({ cfg: null, plattform: "darwin", home }), "git");
+  assert.equal(gitBefehl({ cfg, plattform: "darwin", home }), join(KERN, "git-sicher"));
+  assert.equal(gitBefehl({ cfg, plattform: "win32", home }), "git");
+  assert.equal(gitBefehl({ cfg: null, plattform: "darwin", home }), join(KERN, "git-sicher"));
   assert.equal(gitBefehl(), gitBefehl({ cfg: {} })); // Default-Parameter funktionieren ohne Argument
 });
