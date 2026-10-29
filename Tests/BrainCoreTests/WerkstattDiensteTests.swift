@@ -222,3 +222,59 @@ private func dienste(_ w: FalscheWerkstatt, pfade: AppPfade? = nil, home: URL? =
     #expect(KiZiel.cursor.kopierHinweis.contains("mcp.json"))
     #expect(KiZiel.codex.kopierHinweis.contains("Terminal"))
 }
+
+// MARK: Sicherung (FBL-88)
+
+@Test func sicherungVorhandenLiestDasRemoteAusDemGitStatus() async {
+    let ja = FalscheWerkstatt(antwort(#"{"repo":true,"remote":true}"#))
+    #expect(await dienste(ja).sicherungVorhanden())
+    #expect(ja.aufrufe == [.init(methode: "GET", pfad: "/api/git/status", body: nil)])
+    let nein = FalscheWerkstatt(antwort(#"{"repo":true,"remote":false}"#))
+    #expect(await dienste(nein).sicherungVorhanden() == false)
+    let gesperrt = FalscheWerkstatt(antwort(409, #"{"fehler":"Git ist gesperrt","gitGesperrt":true}"#))
+    #expect(await dienste(gesperrt).sicherungVorhanden() == false, "nicht feststellbar zählt als „keine Sicherung“")
+}
+
+@Test func reposLiestNurWohlgeformteEintraegeUndDasKuerzen() async throws {
+    let w = FalscheWerkstatt(antwort(#"""
+    {"repos":[{"name":"brain","besitzer":"anna","url":"https://github.com/anna/brain.git","aktualisiert":"2026-10-01T10:00:00Z","leer":false},
+              {"name":"leer","besitzer":"anna","url":"https://github.com/anna/leer.git","aktualisiert":null,"leer":true},
+              {"name":"boese","besitzer":"anna","url":"https://boese.example/anna/boese.git"},
+              {"name":"ohne-url","besitzer":"anna"}],"gekuerzt":true}
+    """#))
+    let l = try await dienste(w).githubRepos()
+    #expect(l.repos == [GitHubRepo(name: "brain", besitzer: "anna", url: "https://github.com/anna/brain.git", aktualisiert: "2026-10-01T10:00:00Z", leer: false),
+                        GitHubRepo(name: "leer", besitzer: "anna", url: "https://github.com/anna/leer.git", aktualisiert: nil, leer: true)])
+    #expect(l.gekuerzt)
+    #expect(w.aufrufe == [.init(methode: "GET", pfad: "/api/github/repos", body: nil)])
+}
+
+@Test func repoAnlegenSchicktNurDenNamenUndVerlangtPrivat() async throws {
+    let w = FalscheWerkstatt(antwort(#"{"name":"brain","besitzer":"anna","url":"https://github.com/anna/brain.git","privat":true}"#),
+                             antwort(#"{"name":"brain","besitzer":"anna","url":"https://github.com/anna/brain.git"}"#),
+                             antwort(409, #"{"fehler":"Du hast schon ein Repository mit diesem Namen.","art":"name-vergeben"}"#))
+    let d = dienste(w)
+    let r = try await d.githubRepoAnlegen(name: "brain")
+    #expect(r.url == "https://github.com/anna/brain.git" && r.vollerName == "anna/brain")
+    #expect(w.aufrufe == [.init(methode: "POST", pfad: "/api/github/repo-anlegen", body: ["name": "brain"])], "kein Feld für die Sichtbarkeit")
+    // Eine Antwort ohne ausdrückliches „privat“ wird nicht verwendet.
+    await #expect(throws: EinrichtungsFehler.self) { _ = try await d.githubRepoAnlegen(name: "brain") }
+    do { _ = try await d.githubRepoAnlegen(name: "brain"); Issue.record("hätte werfen müssen") } catch let f as EinrichtungsFehler {
+        #expect(f.status == 409 && f.art == "name-vergeben")
+    }
+}
+
+@Test func verbindeSicherungSendetNurDieAdresseUndLiestDasErgebnis() async throws {
+    let w = FalscheWerkstatt(antwort(#"{"ok":true,"ergebnis":"gesendet","remote":"origin","zweig":"main"}"#),
+                             antwort(#"{"ok":true,"ergebnis":"geholt"}"#), antwort(#"{"ok":true}"#),
+                             antwort(409, #"{"fehler":"Dieses Repository hat eine andere Geschichte.","art":"fremd"}"#))
+    let d = dienste(w)
+    #expect(try await d.verbindeSicherung(url: "https://github.com/anna/brain.git") == .gesendet)
+    #expect(try await d.verbindeSicherung(url: "https://github.com/anna/brain.git") == .geholt)
+    #expect(try await d.verbindeSicherung(url: "https://github.com/anna/brain.git") == .verbunden)
+    #expect(w.aufrufe.first == .init(methode: "POST", pfad: "/api/git/remote", body: ["url": "https://github.com/anna/brain.git"]))
+    #expect(w.aufrufe.allSatisfy { !($0.body.map { "\($0)" } ?? "").contains("@") }, "nie Zugangsdaten in der Adresse")
+    do { _ = try await d.verbindeSicherung(url: "https://github.com/anna/anders.git"); Issue.record("hätte werfen müssen") } catch let f as EinrichtungsFehler {
+        #expect(f.status == 409 && f.art == "fremd")
+    }
+}

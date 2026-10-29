@@ -1,19 +1,20 @@
 import Foundation
 
 /// Die Schritte des Assistenten „Kortex einrichten“ in fester Reihenfolge (Nordstern Meilenstein 2, App-Spec §9.1). Eine weitere
-/// Stufe (z. B. „Sicherung“, FBL-88) kommt hier als neuer Fall an die richtige Stelle in die Liste; Zustandsmaschine, Speicher
-/// und Fortschrittsanzeige richten sich nach `allCases`.
+/// Stufe kommt hier als neuer Fall an die richtige Stelle in die Liste; Zustandsmaschine, Speicher und Fortschrittsanzeige richten
+/// sich nach `allCases`. „Sicherung“ (FBL-88) steht hinter GitHub: sie braucht die Anmeldung.
 ///
 /// Reihenfolge: git steht vor dem Vault, weil „Neues Brain“ und „Von GitHub klonen“ git brauchen (Spec §9.1 nennt den Vault zuerst;
 /// die Reihenfolge ist hier der Code-Realität angepasst — ist git schon da, geht der Schritt ohne Klick vorbei).
 public enum EinrichtungsSchritt: String, CaseIterable, Codable, Sendable {
-    case git, vault, github, ki, probe
+    case git, vault, github, sicherung, ki, probe
 
     public var titel: String {
         switch self {
         case .git: return "git"
         case .vault: return "Vault"
         case .github: return "GitHub"
+        case .sicherung: return "Sicherung"
         case .ki: return "KI"
         case .probe: return "Probe"
         }
@@ -23,7 +24,7 @@ public enum EinrichtungsSchritt: String, CaseIterable, Codable, Sendable {
     public var darfUebersprungenWerden: Bool {
         switch self {
         case .git, .vault: return false
-        case .github, .ki, .probe: return true
+        case .github, .sicherung, .ki, .probe: return true
         }
     }
 
@@ -31,7 +32,7 @@ public enum EinrichtungsSchritt: String, CaseIterable, Codable, Sendable {
     /// Schlüsselbund?) — oder muss der Assistent sich merken, dass er erledigt ist (KI verbunden, Probe bestanden)?
     var ausWirklichkeit: Bool {
         switch self {
-        case .git, .vault, .github: return true
+        case .git, .vault, .github, .sicherung: return true // Sicherung: der Vault hat ein Remote (origin)
         case .ki, .probe: return false
         }
     }

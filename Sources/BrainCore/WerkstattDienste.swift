@@ -80,6 +80,39 @@ public struct WerkstattDienste: EinrichtungsDienste {
         _ = try await rufe("POST", "/api/github/abbrechen", [:])
     }
 
+    // MARK: Sicherung
+
+    public func sicherungVorhanden() async -> Bool {
+        guard let j = try? await rufe("GET", "/api/git/status") else { return false }
+        return (j["remote"] as? Bool) == true
+    }
+
+    public func githubRepos() async throws -> GitHubRepoListe {
+        let j = try await rufe("GET", "/api/github/repos")
+        let repos = (j["repos"] as? [[String: Any]] ?? []).compactMap(Self.repo(aus:))
+        return GitHubRepoListe(repos: repos, gekuerzt: (j["gekuerzt"] as? Bool) == true)
+    }
+
+    public func githubRepoAnlegen(name: String) async throws -> GitHubRepo {
+        let j = try await rufe("POST", "/api/github/repo-anlegen", ["name": name])
+        // Die Werkstatt legt nur private Repositories an; meldet sie etwas anderes, wird das Ergebnis nicht verwendet.
+        guard (j["privat"] as? Bool) == true, let r = Self.repo(aus: j) else {
+            throw EinrichtungsFehler("GitHub hat das Repository nicht wie erwartet angelegt. Schau auf github.com nach, bevor du es noch einmal versuchst.")
+        }
+        return r
+    }
+
+    public func verbindeSicherung(url: String) async throws -> SicherungErgebnis {
+        let j = try await rufe("POST", "/api/git/remote", ["url": url])
+        return (j["ergebnis"] as? String).flatMap(SicherungErgebnis.init(rawValue:)) ?? .verbunden
+    }
+
+    static func repo(aus j: [String: Any]) -> GitHubRepo? {
+        guard let name = j["name"] as? String, let besitzer = j["besitzer"] as? String, let url = j["url"] as? String,
+              url == "https://github.com/\(besitzer)/\(name).git" else { return nil }
+        return GitHubRepo(name: name, besitzer: besitzer, url: url, aktualisiert: j["aktualisiert"] as? String, leer: (j["leer"] as? Bool) == true)
+    }
+
     // MARK: KI
 
     public func erkenneKIs() async throws -> [KiProgramm] {

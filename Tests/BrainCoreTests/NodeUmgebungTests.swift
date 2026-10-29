@@ -75,6 +75,8 @@ import Foundation
     #expect(BrueckenVerbindung.zeitlimit(fuerPfad: "/api/git/sync?x=1") == .seconds(400))
     #expect(BrueckenVerbindung.zeitlimit(fuerPfad: "/api/git/status") == .seconds(90))
     #expect(BrueckenVerbindung.zeitlimit(fuerPfad: "/api/git/commit") == .seconds(90))
+    #expect(BrueckenVerbindung.zeitlimit(fuerPfad: "/api/github/repos") == .seconds(45))
+    #expect(BrueckenVerbindung.zeitlimit(fuerPfad: "/api/github/repo-anlegen") == .seconds(30))
     #expect(BrueckenVerbindung.zeitlimit(fuerPfad: "/api/notiz") == .seconds(30))
     #expect(BrueckenVerbindung.zeitlimit(fuerPfad: "/api/gitx") == .seconds(30))
 }

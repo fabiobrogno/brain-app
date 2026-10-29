@@ -175,6 +175,16 @@ public protocol EinrichtungsDienste: Sendable {
     func githubStatus() async throws -> GitHubAnmeldung
     func githubAbbrechen() async throws
 
+    // Sicherung (privates GitHub-Repository; das Token bleibt in der Werkstatt und im Schlüsselbund)
+    /// Hat der aktive Vault schon ein Remote? Dann ist die Sicherung eingerichtet. Nicht feststellbar → false.
+    func sicherungVorhanden() async -> Bool
+    /// Die eigenen PRIVATEN Repositories des angemeldeten Kontos.
+    func githubRepos() async throws -> GitHubRepoListe
+    /// Legt ein neues Repository an — immer privat (die Werkstatt erzwingt es).
+    func githubRepoAnlegen(name: String) async throws -> GitHubRepo
+    /// Setzt `origin` auf die Adresse, prüft die Historien und sendet beim ersten Mal (nie mit Gewalt überschreiben).
+    func verbindeSicherung(url: String) async throws -> SicherungErgebnis
+
     // KI
     func erkenneKIs() async throws -> [KiProgramm]
     func verbinde(_ ziel: KiZiel, umstellen: Bool) async throws -> KiVerbindung
