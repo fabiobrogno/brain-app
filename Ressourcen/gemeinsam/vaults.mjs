@@ -31,7 +31,7 @@ import {
 import { join, resolve, dirname, basename, isAbsolute } from "node:path";
 import { homedir, userInfo } from "node:os";
 import { randomBytes } from "node:crypto";
-import { HttpFehler, supportOrdner, testmodus, falte, BEARBEITBAR } from "./basis.mjs";
+import { HttpFehler, supportOrdner, testmodus, falte, BEARBEITBAR, vorschauOrdner } from "./basis.mjs";
 import { git } from "./git.mjs";
 import { pruefeGitUrl, uebersetzeGitFehler } from "./gitwerkzeug.mjs";
 import { sicherungFuer } from "./sicherung.mjs";
@@ -145,6 +145,16 @@ function pruefeRegeln(p, home, support) {
   }
 }
 
+// Vorschau („wie frisch installiert“): Vaults liegen nur im Vorschau-Ordner — auch ein Ordner, den der Nutzer im Dialog wählt, darf nicht
+// aus ihm herausführen (sonst legte die Vorschau Dateien in seine echten Ordner).
+function pruefeVorschauOrt(lex, echt) {
+  const vo = vorschauOrdner();
+  if (!vo) return;
+  const formen = [vo, versuchEchter(vo)];
+  const drin = (p) => formen.some((f) => istUnter(p, f));
+  if (!drin(lex) || !drin(echt)) throw new HttpFehler(403, "In der Vorschau kann nur im Vorschau-Ordner gearbeitet werden. Wähle einen Ordner darin (der vorgeschlagene Ort passt).");
+}
+
 // → bereinigter absoluter Pfad (Symlinks aufgelöst) oder HttpFehler 400/403/409. Legt nichts an, ändert nichts.
 export function pruefeVaultPfad(pfad, optionenUndListe) {
   const { vaults, ...opt } = objekt(optionenUndListe);
@@ -161,6 +171,7 @@ export function pruefeVaultPfad(pfad, optionenUndListe) {
   pruefeRegeln(lex, homeLex, supportLex);
   const echt = echterPfad(lex);
   pruefeRegeln(echt, versuchEchter(homeLex), versuchEchter(supportLex));
+  pruefeVorschauOrt(lex, echt);
 
   const alle = Array.isArray(vaults) ? vaults : ladeListe(o, false).liste.vaults;
   for (const v of alle) {

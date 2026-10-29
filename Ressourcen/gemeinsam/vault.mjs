@@ -355,14 +355,21 @@ export function oeffneVault(vaultPfad, opts = {}) {
     posteingangVerwerfen: posteingang.verwerfen, posteingangSpaeter: posteingang.spaeter, posteingangUebernehmen: posteingang.uebernehmen,
     notizen: notizIndex.notizen, notizKontext: notizIndex.kontext, typen: notizIndex.typen, ansichten: notizIndex.ansichten,
     gitLog: async (a) => gitFn.log(wurzel, a || {}, gitCtx()),
-    gitRemote: async (url) => gitFn.remoteHinzufuegen(wurzel, url, gitCtx({ limit: opts.gitLimitRemote })),
+    gitRemote: async (url, extra = {}) => gitFn.remoteHinzufuegen(wurzel, url, gitCtx({ limit: opts.gitLimitRemote, ...extra })),
     gitStatus: async () => {
       const s = gitSicht();
       if (s.gesperrt) return { repo: true, gesperrt: true, grund: s.grund };
       return gitFn.status(wurzel, ctxVon(s));
     },
     gitCommit: async (a) => gitFn.commit(wurzel, a || {}, gitCtx({ limit: opts.gitLimitCommit })),
-    gitSync: async () => gitFn.sync(wurzel, gitCtx({ limitSync: opts.gitLimitSync, limitGesamt: opts.gitLimitAbgleich, neuBewerten })),
+    // konflikteLoesen: bei Konflikten die Zusammenführung offen lassen, damit die Oberfläche pro Datei wählen lässt (sonst wie bisher: abbrechen, 409)
+    gitSync: async (a) => gitFn.sync(wurzel, gitCtx({ limitSync: opts.gitLimitSync, limitGesamt: opts.gitLimitAbgleich, neuBewerten, konflikteLoesen: !!(a && a.konflikteLoesen === true) })),
+    gitKonflikte: async (pfad) => gitFn.konflikte(wurzel, pfad, gitCtx()),
+    gitKonfliktAbschliessen: async (a) => gitFn.konfliktAbschliessen(wurzel, a || {}, gitCtx({ limit: opts.gitLimitCommit })),
+    gitKonfliktAbbrechen: async () => gitFn.konfliktAbbrechen(wurzel, gitCtx({ limit: opts.gitLimitCommit })),
+    gitNachsehen: async () => gitFn.nachsehen(wurzel, gitCtx()),
+    gitWiederherstellenVorschau: async (pfad, sha) => gitFn.wiederherstellenVorschau(wurzel, pfad, sha, gitCtx()),
+    gitWiederherstellen: async (a) => gitFn.wiederherstellen(wurzel, a || {}, gitCtx({ limit: opts.gitLimitCommit })),
     gitVerlauf: async (pfad, max) => gitFn.verlauf(wurzel, pfad, max, gitCtx()),
     gitDiff: async (pfad, sha) => gitFn.diff(wurzel, pfad, sha, gitCtx()),
     gitFassung: async (pfad, sha) => gitFn.fassung(wurzel, pfad, sha, gitCtx()),

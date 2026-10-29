@@ -5,6 +5,7 @@ import { api, aktion, aktionMitAntwort, inApp, gitGesperrt, andererVault, ausgan
 import { erstelleEditor } from "./editor.js";
 import { h, dialog, dialogOffen, schliesseDialoge, toast, vorMinuten, dateiName, ohneEndung, ordnerVon, istBearbeitbar, speichereLokal, leseLokal, leseEntwurf, speichereEntwurf, sucheGrad, suchFormen, ausTabelle, arbeitBeginnt, laufendeArbeiten } from "./hilfen.js";
 import { symbol } from "./symbole.js";
+import { TV } from "./texte-verlauf.js";
 import { diffAnsicht } from "./diff.js";
 import { oeffneMenue, schliesseMenue } from "./menue.js";
 import { baueAktionen, istZurueckgestellt, spaeterBis } from "./posteingang.js";
@@ -738,7 +739,7 @@ async function zeigeDiff(d) {
     diffInst = m.zeigeDiff(host, { api, ...d, beiSchliessen: schliesseDiff, beiWiederherstellen: async ({ pfad, sha }) => {
       schliesseDiff();
       if (S.pfad !== pfad) { if (!(await oeffne(pfad, { ausListe: true }))) return; }
-      await stelleWiederHer(pfad, sha);
+      await stelleWiederHer(pfad, sha, d.zeit);
     } });
   } catch { host.hidden = true; toast(T.fehler.allgemein, { fehler: true }); }
 }
@@ -1007,7 +1008,7 @@ function fassung(x, pfad) {
       try {
         const d = await api.diff(pfad, x.arbeitsstand ? undefined : x.sha);
         rumpf.replaceChildren(diffAnsicht(d.diff));
-        if (!x.arbeitsstand) rumpf.append(h("button", { klasse: "knopf", "data-aktion": "wiederherstellen", text: T.info.wiederherstellen, aufClick: () => stelleWiederHer(pfad, x.sha) }));
+        if (!x.arbeitsstand) rumpf.append(h("button", { klasse: "knopf", "data-aktion": "wiederherstellen", text: T.info.wiederherstellen, aufClick: () => stelleWiederHer(pfad, x.sha, x.zeit) }));
       } catch (e) { rumpf.replaceChildren(h("div", { klasse: "fehlertext", text: gitGesperrt(e) ? T.fehler.gitGesperrt : e.message })); }
     }
   } }, h("span", { klasse: "nachricht", text: x.nachricht }), h("span", { klasse: "meta", text: x.arbeitsstand ? "" : [x.autor, zeitText(x.zeit)].filter(Boolean).join(" · ") }));
@@ -1015,14 +1016,18 @@ function fassung(x, pfad) {
   wurzel.append(kopf, rumpf);
   return wurzel;
 }
-async function stelleWiederHer(pfad, sha) {
-  if (S.pfad !== pfad || S.schutz) return;
+// Frühere Fassung zurückholen: erst Vorschau (Unterschied als Diff), dann wird sie als NEUE Fassung gesichert — der Verlauf bleibt vollständig.
+async function stelleWiederHer(pfad, sha, zeit) {
+  if (dialogOffen() || (S.pfad === pfad && S.schutz)) return;
+  clearTimeout(speicherTimer);
+  await speichereAlles(); // Eigene Eingaben zuerst auf die Platte: die Werkstatt prüft, ob die Datei sonst noch Ungesichertes hat
+  if (istGitGesperrt()) { await zeigeGitGesperrt(); return; }
   try {
-    const f = await api.fassung(pfad, sha);
-    if (f.inhalt.includes("\r") && ed.view.state.lineBreak === "\n") { ed.setzeText(f.inhalt); S.dirty = true; ed.view.dispatch({}); zeigeStand("ungespeichert"); clearTimeout(speicherTimer); speicherTimer = setTimeout(speichere, 800); }
-    else ed.ersetzeAlles(f.inhalt);
-    toast(T.info.wiederhergestellt);
-  } catch (e) { toast(gitGesperrt(e) ? T.fehler.gitGesperrt : e.message, { fehler: true }); }
+    const m = await import("./abgleich.js");
+    m.oeffneZurueckholen({ pfad, sha, wann: zeit ? "vom " + zeitText(zeit) : null, api,
+      beiSichern: oeffneCommit, beiStandNeu: nachZeitueberschreitung,
+      beiFertig: async () => { await ladeNachAbgleich(); await ladeGit(); ladeInfo(); if (S.sicht.art === "verlauf") verlaufInst?.aktualisieren?.(); } });
+  } catch { toast(T.fehler.allgemein, { fehler: true }); }
 }
 
 // ======================================================= Statusleiste
@@ -1033,6 +1038,7 @@ function st(id, kinder, { klick, titel, klasse = "", tag = null } = {}) {
 }
 const punktEl = (farbe) => h("span", { klasse: "d " + (farbe || "") });
 function syncText(g) {
+  if (g.konflikt) return { text: T.status.konfliktLoesen, farbe: "rot" };
   if (S.syncLaeuft) return { text: T.status.gleicheAb, farbe: "dreht" };
   if (S.syncFehler) return { text: S.syncFehler === "konflikt" ? T.status.konflikt : T.status.fehler, farbe: "rot" };
   if (!g.remote) return { text: T.status.nieGesichert, farbe: "grau" };
@@ -1059,10 +1065,12 @@ function zeichneStatus() {
     else k.push(st("remote", [symbol("wolke", 14), h("span", { text: g.upstream ? g.upstream.split("/")[0] : "Remote" })], { titel: g.upstream || "Remote" }));
     k.push(h("span", { klasse: "trenner" }));
     const sy = syncText(g);
-    k.push(st("sync", [punktEl(sy.farbe), h("span", { text: sy.text })], { klick: sync, titel: T.status.abgleichen }));
+    k.push(st("sync", [punktEl(sy.farbe), h("span", { text: sy.text })], g.konflikt ? { klick: () => oeffneKonflikt(), titel: T.status.konfliktTitel, klasse: "warn" }
+      : { klick: sync, titel: g.zurueck > 0 ? T.status.neuesTitel : T.status.abgleichen }));
+    if (g.vor > 0 && !g.konflikt) k.push(st("hochladen", [symbol("wolke", 14), h("span", { text: T.status.nichtHochgeladen(g.vor) })], { klick: sync, titel: T.status.nichtHochgeladenTitel(g.vor) }));
     k.push(h("span", { klasse: "trenner" }));
     const n = g.geaendert.length;
-    k.push(st("geaendert", [symbol("commit", 14), h("span", { text: n ? T.status.geaendert(n) : T.status.sauber })], { klick: oeffneCommit, titel: "Änderungen sichern (⌘⇧G)", klasse: n ? "hervor" : "" }));
+    k.push(st("geaendert", [symbol("commit", 14), h("span", { text: n ? T.status.geaendert(n) : T.status.sauber })], { klick: oeffneCommit, titel: n ? T.status.geaendertTitel(n) : "Änderungen sichern (⌘⇧G)", klasse: n ? "hervor" : "" }));
     k.push(st("verlauf", [symbol("verlauf", 14), h("span", { text: T.status.verlauf })], { klick: oeffneVerlauf, titel: T.status.verlaufTitel, klasse: S.sicht.art === "verlauf" ? "aktiv" : "" }));
   }
   k.push(h("span", { klasse: "sp" }));
@@ -1104,6 +1112,50 @@ async function ladeKi() {
   zeichneStatus();
 }
 
+// Nach Abgleich, Zusammenführen oder Zurückholen: Dateibaum und die offene Datei vom Datenträger auffrischen (Eingaben gehen nie verloren)
+async function ladeNachAbgleich() {
+  await ladeBaum();
+  const pfad = S.pfad;
+  if (!pfad) return;
+  const d = await api.datei(pfad).catch(() => null);
+  // erst NACH dem Laden prüfen: inzwischen getippt oder Datei gewechselt?
+  if (d && S.pfad === pfad && d.hash !== S.hash) {
+    if (S.dirty || S.speichert) { if (!S.konflikt) { S.konflikt = { aktuellerHash: d.hash }; zeigeBanner(); zeigeStand("konflikt"); } }
+    else { S.hash = d.hash; ed.setzeText(d.inhalt, { nurLesen: !!d.schreibschutz }); }
+  }
+}
+
+// Konflikt-Dialog: pro Datei „meine Fassung“, „Fassung vom anderen Mac“ oder „beide behalten“; danach wird zusammengeführt und abgeglichen.
+async function oeffneKonflikt() {
+  if (dialogOffen()) return;
+  clearTimeout(speicherTimer);
+  await speichereAlles();
+  try {
+    const r = await api.gitKonflikt();
+    if (!r?.aktiv) { await ladeGit(); return; } // sonst auch ohne offene Datei: Zusammenführen abschließen oder abbrechen, nie eine Sackgasse
+    const m = await import("./abgleich.js");
+    m.oeffneKonfliktDialog({ dateien: r.dateien, api, beiStandNeu: nachZeitueberschreitung,
+      beiFertig: async () => { await ladeNachAbgleich().catch(() => {}); await ladeGit(); ladeInfo(); sync(); },
+      beiAbgebrochen: async () => { await ladeNachAbgleich().catch(() => {}); await ladeGit(); ladeInfo(); } });
+  } catch (e) {
+    if (gitGesperrt(e)) await zeigeGitGesperrt(); else toast(e.message || T.fehler.allgemein, { fehler: true });
+  }
+}
+
+// Beim Server nachsehen (nur holen, nichts zusammenführen): so steht „Neues vom anderen Mac“ in der Statusleiste, bevor jemand abgleicht.
+let nachsehenLaeuft = false, letztesNachsehen = 0;
+async function nachsehen(eilig = false) {
+  if (nachsehenLaeuft || S.syncLaeuft || !S.git?.repo || S.git.gesperrt || !S.git.remote || S.git.konflikt || istGitGesperrt()) return;
+  if (!eilig && Date.now() - letztesNachsehen < 60000) return;
+  nachsehenLaeuft = true; letztesNachsehen = Date.now();
+  const vault = S.info?.vault, davor = S.git;
+  try {
+    const r = await api.gitNachsehen();
+    if (r?.repo && S.info?.vault === vault && !S.syncLaeuft && S.git === davor) { const { geholt, ...stand } = r; S.git = stand; zeichneStatus(); } // nur wenn S.git unverändert: ein frischerer Stand wird nie überschrieben
+  } catch { /* offline oder Server nicht erreichbar: still bleiben, der Abgleich meldet es selbst */ }
+  finally { nachsehenLaeuft = false; }
+}
+
 async function sync() {
   if (S.syncLaeuft) return;
   if (istGitGesperrt()) { await zeigeGitGesperrt(); return; }
@@ -1113,18 +1165,11 @@ async function sync() {
   try {
     const r = await api.sync();
     toast(T.status.abgeglichen[r.ergebnis] || T.status.abgeglichen.aktuell);
-    await ladeBaum();
-    const pfad = S.pfad;
-    if (pfad) {
-      const d = await api.datei(pfad).catch(() => null);
-      // erst NACH dem Laden prüfen: inzwischen getippt oder Datei gewechselt?
-      if (d && S.pfad === pfad && d.hash !== S.hash) {
-        if (S.dirty || S.speichert) { if (!S.konflikt) { S.konflikt = { aktuellerHash: d.hash }; zeigeBanner(); zeigeStand("konflikt"); } }
-        else { S.hash = d.hash; ed.setzeText(d.inhalt, { nurLesen: !!d.schreibschutz }); }
-      }
-    }
+    if (r.versteckteBehalten?.length) toast(TV.abgleich.versteckteBehalten(r.versteckteBehalten.length), { ms: 9000 });
+    await ladeNachAbgleich();
   } catch (e) {
     if (gitGesperrt(e)) { S.syncFehler = null; await zeigeGitGesperrt(); }
+    else if (e.status === 409 && e.daten?.konflikt) { S.syncFehler = null; if (e.daten.versteckteBehalten?.length) toast(TV.abgleich.versteckteBehalten(e.daten.versteckteBehalten.length), { ms: 9000 }); await ladeNachAbgleich().catch(() => {}); setTimeout(() => oeffneKonflikt(), 0); } // Zusammenführung bleibt offen: pro Datei wählen
     else if (ausgangUnklar(e)) { S.syncFehler = null; await nachZeitueberschreitung(e); } // Ausgang unklar: keinen Fehlerzustand behaupten, der neu geladene Git-Status zeigt es
     else {
       S.syncFehler = e.status === 409 ? "konflikt" : "fehler";
@@ -1206,6 +1251,7 @@ async function oeffneCommit() {
   await ladeGit();
   if (istGitGesperrt()) { await zeigeGitGesperrt(); return; }
   if (!S.git?.repo) { toast(T.status.keinGit); return; }
+  if (S.git.konflikt) { toast(T.status.konfliktErst, { fehler: true }); await oeffneKonflikt(); return; } // Sichern geht erst, wenn der Abgleich abgeschlossen ist
   const liste = S.git.geaendert || [];
   if (!liste.length) { toast(T.commit.nichts); return; }
   const haken = new Map(liste.map((g) => [g.pfad, true]));
@@ -1801,8 +1847,8 @@ async function ladeAlles() {
   if (S.sicht.art === "typ" && !S.typMap.has(S.sicht.id)) S.sicht = { art: "bereich", id: "alle" };
   zeichneSeite(); zeichneListe();
   fragVertrauenEinmal();
-  ladeGit(); ladeGesundheit(); ladeKi(); ladeVaults();
-  if (!intervalle) { intervalle = true; setInterval(ladeGit, 15000); setInterval(ladeGesundheit, 120000); }
+  ladeGit().then(() => nachsehen(true)); ladeGesundheit(); ladeKi(); ladeVaults();
+  if (!intervalle) { intervalle = true; setInterval(ladeGit, 15000); setInterval(ladeGesundheit, 120000); setInterval(() => nachsehen(), 300000); window.addEventListener("focus", () => nachsehen()); }
   ladeInfo();
   const wunsch = new URLSearchParams(location.search).get("pfad") || lokal.lies("pfad", null);
   if (wunsch && S.eintraege.has(wunsch)) await oeffne(wunsch, { ausListe: true });

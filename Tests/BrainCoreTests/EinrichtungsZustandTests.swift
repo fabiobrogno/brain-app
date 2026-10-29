@@ -8,7 +8,7 @@ private typealias S = EinrichtungsSchritt
 
 @Test func einrichtungBeginntBeiGitUndFolgtDerFestenReihenfolge() {
     var z = EinrichtungsZustand()
-    #expect(S.allCases == [.git, .vault, .github, .ki, .probe])
+    #expect(S.allCases == [.git, .vault, .github, .sicherung, .ki, .probe])
     var gesehen: [S] = []
     while let s = z.aktuell {
         gesehen.append(s)
@@ -27,6 +27,8 @@ private typealias S = EinrichtungsSchritt
     z.meldeErledigt(.git)
     #expect(z.aktuell == .github)
     z.meldeErledigt(.github)
+    #expect(z.aktuell == .sicherung)
+    z.meldeErledigt(.sicherung)
     #expect(z.aktuell == .ki)
 }
 
@@ -42,6 +44,9 @@ private typealias S = EinrichtungsSchritt
     let okGithub = z.ueberspringe(.github)
     #expect(okGithub)
     #expect(z.stand(.github) == .uebersprungen)
+    #expect(z.aktuell == .sicherung)
+    let okSicherung = z.ueberspringe(.sicherung)
+    #expect(okSicherung, "die Sicherung darf der Nutzer auf später verschieben")
     #expect(z.aktuell == .ki)
     let okKi = z.ueberspringe(.ki), okProbe = z.ueberspringe(.probe)
     #expect(okKi && okProbe)
@@ -50,7 +55,7 @@ private typealias S = EinrichtungsSchritt
 
 @Test func einErledigterSchrittWirdNichtZuUebersprungen() {
     var z = EinrichtungsZustand()
-    z.meldeErledigt(.git); z.meldeErledigt(.vault); z.meldeErledigt(.github)
+    z.meldeErledigt(.git); z.meldeErledigt(.vault); z.meldeErledigt(.github); z.meldeErledigt(.sicherung)
     z.meldeErledigt(.ki)
     let okKi = z.ueberspringe(.ki)
     #expect(!okKi)
@@ -225,4 +230,26 @@ private typealias S = EinrichtungsSchritt
     #expect(!s.sollErscheinen(hatVault: false))
     try s.speichere(EinrichtungsDatei(abgeschlossen: false, automatischAus: true))
     #expect(!s.sollErscheinen(hatVault: false))
+}
+
+@Test func uebergangenesZaehltInDerAnzeigeAberWirdNichtGemerkt() {
+    var z = EinrichtungsZustand()
+    z.meldeErledigt(.git); z.meldeErledigt(.vault); z.meldeErledigt(.github)
+    let ging = z.uebergehe(.sicherung)
+    #expect(ging)
+    #expect(z.stand(.sicherung) == .uebersprungen)
+    #expect(z.aktuell == .ki)
+    #expect(z.datei(abgeschlossen: false, automatischAus: false).uebersprungen.isEmpty, "nicht in einrichtung.json")
+    // Pflichtschritte und Erledigtes lassen sich nicht übergehen
+    let gitGing = z.uebergehe(.git)
+    #expect(!gitGing)
+    var y = EinrichtungsZustand()
+    y.meldeErledigt(.sicherung)
+    let erledigtGing = y.uebergehe(.sicherung)
+    #expect(!erledigtGing)
+    // Wird der Schritt später doch gezeigt und vom Nutzer übersprungen, wird es gemerkt
+    let zurueck = z.geheZu(.sicherung)
+    let uebersprungen = z.ueberspringe(.sicherung)
+    #expect(zurueck && uebersprungen)
+    #expect(z.datei(abgeschlossen: false, automatischAus: false).uebersprungen == ["sicherung"])
 }

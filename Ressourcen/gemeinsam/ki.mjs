@@ -5,7 +5,7 @@ import { accessSync, constants, statSync, readdirSync, existsSync } from "node:f
 import { join, dirname, delimiter, isAbsolute } from "node:path";
 import { homedir } from "node:os";
 import { spawn } from "node:child_process";
-import { kindUmgebung } from "./basis.mjs";
+import { kindUmgebung, vorschauOrdner } from "./basis.mjs";
 
 // Feste Reihenfolge und Anzeigenamen; der Programmname ist die id.
 const AGENTEN = [
@@ -31,7 +31,9 @@ function versionAbsteigend(a, b) {
 function zusatzOrte(env) {
   if (env.BRAIN_TESTMODUS === "1" && env.BRAIN_CLAUDE_EXTRA !== undefined) return env.BRAIN_CLAUDE_EXTRA.split(delimiter).filter(Boolean);
   const home = homedir();
-  const orte = [join(home, ".local", "bin"), join(home, ".claude", "local"), "/opt/homebrew/bin", "/usr/local/bin", join(home, ".opencode", "bin"),
+  // Vorschau: ein frisch installierter Mac — die Programme dieses Rechners (Homebrew, /usr/local) gehören nicht dazu.
+  const system = vorschauOrdner() ? [] : ["/opt/homebrew/bin", "/usr/local/bin"];
+  const orte = [join(home, ".local", "bin"), join(home, ".claude", "local"), ...system, join(home, ".opencode", "bin"),
     join(home, ".cursor", "bin"), join(home, ".bun", "bin"), join(home, ".npm-global", "bin"), join(home, ".volta", "bin"), join(home, ".cargo", "bin")];
   try {
     const nvm = join(home, ".nvm", "versions", "node");
@@ -109,7 +111,9 @@ const schluessel = (env) => JSON.stringify([env.PATH || "", env.BRAIN_CLAUDE_EXT
 // Cursor ist auch ohne `cursor-agent` verbindbar, wenn die App oder ihr Konfigurationsordner da ist. Immer frisch geprüft (zwei stat-Aufrufe), nicht im Zwischenspeicher.
 // home und appOrdner sind nur für Tests austauschbar.
 function cursorVorhanden(home, appOrdner) {
-  try { return existsSync(join(home, ".cursor")) || existsSync(join(appOrdner, "Cursor.app")) || existsSync(join(home, "Applications", "Cursor.app")); } catch { return false; }
+  // Vorschau: nur das Vorschau-Home zählt — die Apps dieses Rechners gehören nicht zu einem frisch installierten Mac.
+  const apps = vorschauOrdner() ? [] : [join(appOrdner, "Cursor.app")];
+  try { return existsSync(join(home, ".cursor")) || apps.some((a) => existsSync(a)) || existsSync(join(home, "Applications", "Cursor.app")); } catch { return false; }
 }
 
 // → { agenten:[{ id, name, version|null, pfad|null }], cursorDa } in fester Reihenfolge; neu:true umgeht und überschreibt den Zwischenspeicher.

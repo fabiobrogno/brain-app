@@ -14,8 +14,26 @@ export class HttpFehler extends Error {
 
 export const MAX_DATEI = 5 * 1024 * 1024;
 
-// Ablageort der App (Vault-Liste, Vertrauens-Merker): BRAIN_APP_SUPPORT oder ~/Library/Application Support/Brain.
-export const supportOrdner = () => process.env.BRAIN_APP_SUPPORT || join(homedir(), "Library", "Application Support", "Brain");
+// Ablageort der App (Vault-Liste, Vertrauens-Merker): BRAIN_APP_SUPPORT (setzt die App) oder ~/Library/Application Support/Kortex.
+export const supportOrdner = () => process.env.BRAIN_APP_SUPPORT || join(homedir(), "Library", "Application Support", "Kortex");
+
+// ───────────────────────────── Vorschau („wie frisch installiert“) ─────────────────────────────
+// Die App setzt KORTEX_VORSCHAU=<Ordner> (Swift: VorschauModus). Dann liegt alles im Ordner: HOME, Support, Zugangsdaten, Vaults —
+// nichts im echten Benutzerordner, nichts im Schlüsselbund. Gültig ist nur ein absoluter Pfad aus unbedenklichen Zeichen (er wandert in
+// Git-Konfiguration und ssh-Befehle). Ist die Variable gesetzt, aber ungültig, ist das ein Fehler (vorschauFehler), kein stilles „aus“.
+const VORSCHAU_PFAD = /^\/[A-Za-z0-9._+@=,/-]{1,500}$/;
+export function vorschauOrdner() {
+  const v = process.env.KORTEX_VORSCHAU;
+  return typeof v === "string" && VORSCHAU_PFAD.test(v) && !v.endsWith("/") && !v.split("/").includes("..") ? v : null;
+}
+// → Text mit dem Grund, wenn die Vorschau gesetzt ist, aber nicht sicher läuft (ungültiger Pfad oder HOME nicht im Vorschau-Ordner); sonst null.
+export function vorschauFehler() {
+  if (process.env.KORTEX_VORSCHAU === undefined) return null;
+  const o = vorschauOrdner();
+  if (!o) return "KORTEX_VORSCHAU ist kein gültiger Ordnerpfad.";
+  if (homedir() !== join(o, "home")) return "Der Benutzerordner (HOME) liegt nicht im Vorschau-Ordner.";
+  return null;
+}
 
 // Vergleichsform für Namen: APFS unterscheidet weder Groß/klein noch NFC/NFD — Sperren und Schreibschutz dürfen es auch nicht.
 export const falte = (s) => String(s).normalize("NFC").toLowerCase();

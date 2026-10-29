@@ -8,6 +8,10 @@ struct MenueInhalt: View {
     let updater: SPUStandardUpdaterController
 
     var body: some View {
+        if zustand.vorschau != nil {
+            Text(VorschauBand.text)
+            Divider()
+        }
         Label("\(zustand.menueAnzeige.zeichen) \(zustand.menueAnzeige.titel)", systemImage: zustand.menueAnzeige.symbol)
         if let name = zustand.vaultName {
             Text("Vault: \(name)")
@@ -47,7 +51,7 @@ struct MenueInhalt: View {
         Button("Vault öffnen …") { zustand.sende(.vaultOeffnen) }
         Button("Kortex einrichten …") { zustand.zeigeAssistent() }
         Divider()
-        Button("Nach Updates suchen …") { updater.checkForUpdates(nil) }
+        Button("Nach Updates suchen …") { updater.checkForUpdates(nil) }.disabled(zustand.vorschau != nil)
         Button("Beenden") { NSApp.terminate(nil) }.keyboardShortcut("q")
     }
 }

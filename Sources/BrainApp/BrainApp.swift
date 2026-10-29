@@ -7,8 +7,9 @@ import BrainCore
 final class AppDelegat: NSObject, NSApplicationDelegate {
     let zustand = AppZustand()
     /// Sparkle-Updates. Läuft nur im gebauten Paket (mit `SUFeedURL`); bei `swift run` ohne Info.plist startet er nicht.
+    /// In der Vorschau startet er nie: kein Update-Abruf im Netz, keine Einstellungen von Sparkle.
     let updater = SPUStandardUpdaterController(
-        startingUpdater: Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") != nil,
+        startingUpdater: Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") != nil && !CommandLine.arguments.contains("--vorschau"),
         updaterDelegate: nil, userDriverDelegate: nil)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -85,7 +86,14 @@ final class AppDelegat: NSObject, NSApplicationDelegate {
         let haupt = NSMenu()
         let suchen = NSMenuItem(title: "Nach Updates suchen …", action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)), keyEquivalent: "")
         suchen.target = updater
-        haupt.addItem(menue("Kortex", [
+        if zustand.vorschau != nil { suchen.isEnabled = false; suchen.action = nil }
+        var kortexEintraege: [NSMenuItem] = []
+        if zustand.vorschau != nil {
+            let hinweis = NSMenuItem(title: VorschauBand.text, action: nil, keyEquivalent: "")
+            hinweis.isEnabled = false
+            kortexEintraege += [hinweis, .separator()]
+        }
+        haupt.addItem(menue("Kortex", kortexEintraege + [
             suchen,
             eintrag("Kortex einrichten …", #selector(assistentOeffnen)),
             .separator(),

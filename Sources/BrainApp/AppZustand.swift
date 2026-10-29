@@ -51,6 +51,11 @@ final class AppZustand: ObservableObject {
     /// Prüfung urteilt die App; vorher heißt es „wird vorbereitet“, nie „bitte neu installieren“.
     private enum LaufzeitStand { case wirdVorbereitet, bereit, fehlgeschlagen }
     private var laufzeitStand = LaufzeitStand.wirdVorbereitet
+    /// Ergebnis des einmaligen Umzugs `Application Support/Brain` → `Kortex` (beim Start gelesen, danach protokolliert/angezeigt).
+    private var supportMigration = SupportMigration.Ergebnis.nichtNoetig
+    private var supportAltBasis: URL?
+    /// Stand des Kerns (Brain-Logik im App-Paket) nach dem Start: fehlt der Ordner im Paket, ist er „nicht enthalten“ — kein Fehler.
+    @Published private(set) var kernStatus = Laufzeit.KernStatus.nichtEnthalten
     /// Rückfall-Fenster, falls die Laufzeit fehlt (sonst gibt es keinen Einrichtungsdialog mehr).
     private var hinweisFenster: NSWindow?
     private var taktgeber: Task<Void, Never>?
@@ -60,14 +65,42 @@ final class AppZustand: ObservableObject {
     /// `--vault` (Entwicklung, Rauchtest) gilt, bis die Oberfläche einen Vault wechselt; danach gilt vaults.json.
     private var vaultVorgabe: URL?
 
+    /// Vorschau „wie frisch installiert“ (`--vorschau <Ordner>`): nil im normalen Start.
+    let vorschau: VorschauModus?
+
     init() {
-        let p = AppPfade.standard()
+        // Vorschau zuerst und fail-closed: ungültiger Ordner, fehlende Umlenkung des Benutzerordners oder die echte Bundle-ID beenden
+        // die App, bevor sie irgendwo etwas liest oder schreibt. Danach zeigt alles (Support, Logs, Kindprozesse) in den Vorschau-Ordner.
+        var v: VorschauModus?
+        if let fehler = argumente.vorschauFehler { Self.vorschauAbbruch([fehler]) }
+        if let modus = argumente.vorschau {
+            // Erst prüfen, dann anlegen: nur setenv, keine Dateien.
+            modus.inProzessSetzen()
+            let probleme = modus.schutzFehlerImProzess()
+            if !probleme.isEmpty { Self.vorschauAbbruch(probleme + ["Bitte scripts/vorschau.sh benutzen."]) }
+            do { try modus.vorbereiten() } catch { Self.vorschauAbbruch(["Der Vorschau-Ordner ließ sich nicht vorbereiten: \(error.localizedDescription)"]) }
+            v = modus
+        }
+        vorschau = v
+        let p = v?.pfade ?? AppPfade.standard()
+        // Vor allem anderen (auch vor dem Log, das den Ordner anlegt): Brain → Kortex einmalig umbenennen. Mit
+        // `BRAIN_APP_SUPPORT` (Tests, Vorschau) gibt es keinen alten Ordner — dort wird nie migriert.
+        if v == nil, let alt = AppPfade.altBasis() {
+            supportMigration = SupportMigration.migriere(alt: alt, neu: p.basis)
+            supportAltBasis = alt
+        }
         let l = AppLog(pfade: p)
         pfade = p
         log = l
         studio = FensterSteuerung(log: l, oberflaeche: .studio)
         uebersicht = FensterSteuerung(log: l, oberflaeche: .app)
         vaultVorgabe = argumente.vault
+    }
+
+    private static func vorschauAbbruch(_ gruende: [String]) -> Never {
+        let text = (["Kortex-Vorschau abgebrochen — es wurde nichts verändert:"] + gruende.map { "  - " + $0 }).joined(separator: "\n") + "\n"
+        FileHandle.standardError.write(Data(text.utf8))
+        exit(2)
     }
 
     /// Werkstatt-Skript im App-Paket (`BRAIN_APP_WERKSTATT` lenkt nur in Debug-Builds für Entwicklung um).
@@ -80,12 +113,15 @@ final class AppZustand: ObservableObject {
 
     var istStudioOffen: Bool { studio.istOffen }
 
-    private var umgebung: [String: String] { ["BRAIN_NODE": brainNode] }
+    private var umgebung: [String: String] {
+        ["BRAIN_NODE": brainNode].merging(vorschau?.kindVorgaben ?? [:]) { _, neu in neu }
+    }
     /// Die Werkstatt liest und schreibt `vaults.json` und ihren Kit-Vertrauens-Merker (`vertrauen.json`) im echten
     /// Application-Support-Ordner der App.
     /// Die öffentliche GitHub-Client-ID (Info.plist `KortexGitHubClientID`) geht per Umgebung an die Werkstatt; die ID ist öffentlich (kein Client-Secret); leer/fehlt = Anmeldung ausgeblendet.
     private var werkstattUmgebung: [String: String] {
-        var env = umgebung.merging(["BRAIN_APP_SUPPORT": pfade.basis.path]) { _, neu in neu }
+        // BRAIN_MCP_NODE: der stabile Node-Pfad (<support>/bin/node), den die Werkstatt in neue MCP-Einträge schreibt.
+        var env = umgebung.merging(["BRAIN_APP_SUPPORT": pfade.basis.path, "BRAIN_MCP_NODE": pfade.node.path]) { _, neu in neu }
         if let id = Bundle.main.object(forInfoDictionaryKey: "KortexGitHubClientID") as? String, !id.isEmpty { env["KORTEX_GITHUB_CLIENT_ID"] = id }
         return env
     }
@@ -188,6 +224,11 @@ final class AppZustand: ObservableObject {
             f.aktuellerVault = { [weak self] in self?.vaultFrisch() }
         }
         log.schreibe("start")
+        log.schreibe(supportMigration.protokollZeile)
+        if let alt = supportAltBasis,
+           let text = SupportMigration.anzuzeigenderHinweis(supportMigration, alt: alt, neu: pfade.basis, merker: pfade.ordnerHinweisMerker) {
+            zeigeHinweis(titel: "Kortex: Hinweis zum Ordner „Brain“", text: text)
+        }
         // Testschalter (Selbstfoto): abgelehnte Werte ins Log, Erscheinungsbild gilt gleich für die ganze App.
         for hinweis in argumente.hinweise { log.schreibe(hinweis) }
         if let b = argumente.testErscheinungsbild {
@@ -195,7 +236,14 @@ final class AppZustand: ObservableObject {
             log.schreibe("test-erscheinungsbild \(b.rawValue)")
         }
         do {
-            node = try await laufzeit()
+            let ergebnis = try await laufzeit()
+            node = ergebnis.node
+            kernStatus = ergebnis.kern
+            log.schreibe("kern \(ergebnis.kern)")
+            for meldung in ergebnis.meldungen { log.schreibe("laufzeit-fehler \(meldung)") }
+            if !ergebnis.meldungen.isEmpty {
+                zeigeHinweis(titel: "Kortex: Laufzeit unvollständig", text: ergebnis.meldungen.joined(separator: "\n\n"))
+            }
             laufzeitStand = .bereit
         } catch {
             laufzeitStand = .fehlgeschlagen
@@ -204,10 +252,13 @@ final class AppZustand: ObservableObject {
             zeigeEinrichtung()
             return
         }
-        brainNode = (await TerminalNode.finde())?.path ?? pfade.node.path
+        // Vorschau: nicht die Login-Shell des echten Nutzers (liest dessen Dotfiles) nach node fragen — das App-Node genügt.
+        brainNode = vorschau != nil ? pfade.node.path : ((await TerminalNode.finde())?.path ?? pfade.node.path)
+        if let v = vorschau { log.schreibe("vorschau \(v.ordner.path) mit-ki=\(v.mitKi) ohne-git=\(v.ohneGit)") }
         // nur lesend, löst nie Apples Installationsdialog aus; in eigener Aufgabe, damit ein hängendes xcode-select den Start nicht aufhält
         let startLog = log
-        Task { startLog.schreibe("git \(await GitPruefer().pruefe().logText)") }
+        let gitPruefer = vorschau?.gitPruefer() ?? GitPruefer()
+        Task { startLog.schreibe("git \(await gitPruefer.pruefe().logText)") }
         pruefeVaultWechsel()
         log.schreibe(vault.map { "vault \($0.path)" } ?? "kein-vault")
         taktgeber = Task { [weak self] in
@@ -240,15 +291,31 @@ final class AppZustand: ObservableObject {
     }
 
     /// Die Prüfsumme der Node-Datei (rund 120 MB) wird abseits des Main-Threads gerechnet.
-    private func laufzeit() async throws -> URL {
+    private func laufzeit() async throws -> Laufzeit.Ergebnis {
         #if DEBUG
         if let dev = ProcessInfo.processInfo.environment["BRAIN_APP_NODE"], dev.hasPrefix("/") {
-            return URL(fileURLWithPath: dev)
+            return Laufzeit.Ergebnis(node: URL(fileURLWithPath: dev), kern: .nichtEnthalten, starter: pfade.starter, starterFehler: nil)
         }
         #endif
         guard let ressourcen = Bundle.main.resourceURL else { throw LaufzeitFehler.manifestFehlt }
-        let laufzeit = NodeLaufzeit(quelle: ressourcen.appendingPathComponent("node-runtime"), pfade: pfade)
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+        let laufzeit = Laufzeit(ressourcen: ressourcen, appVersion: version, pfade: pfade)
         return try await Task.detached { try laufzeit.installiere() }.value
+    }
+
+    /// Sichtbarer Hinweis (Fehler dürfen nie still bleiben). Als eigener Task, damit der Start nicht am Fenster hängt.
+    private func zeigeHinweis(titel: String, text: String) {
+        log.schreibe("hinweis \(titel)")
+        guard !argumente.fluechtig else { return } // Testläufe: nur ins Log, kein Modalfenster
+        Task { @MainActor in
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = titel
+            alert.informativeText = text
+            alert.addButton(withTitle: "OK")
+            NSApp.activate()
+            alert.runModal()
+        }
     }
 
     // MARK: Aktiver Vault
@@ -395,7 +462,7 @@ final class AppZustand: ObservableObject {
             log.schreibe("uebersicht-abgelehnt kit-\(erlaubnis.logText)")
             return erlaubnis.istTechnischerFehler ? .pruefungFehlgeschlagen : .nichtVertraut
         }
-        uebersicht.oeffne(node: node, vault: vault, umgebung: umgebung, fluechtig: argumente.fluechtig,
+        uebersicht.oeffne(node: node, vault: vault, umgebung: umgebung, fluechtig: argumente.fluechtig, vorschau: vorschau != nil,
                           vorStart: kitStartPruefung(vault))
         return .geoeffnet
     }
@@ -411,7 +478,7 @@ final class AppZustand: ObservableObject {
             return
         }
         studio.oeffne(node: node, vault: vaultVorgabe, skript: werkstattSkript, umgebung: werkstattUmgebung, arbeitsordner: pfade.basis,
-                      test: argumente.studioTestlauf ? argumente : nil, fluechtig: argumente.fluechtig)
+                      test: argumente.studioTestlauf ? argumente : nil, fluechtig: argumente.fluechtig, vorschau: vorschau != nil)
     }
 
     /// Menübefehl (⌘N, ⌘⇧M, Vault …, Gehe zu …) an die Studio-Oberfläche; öffnet das Studio, wenn es zu ist.
@@ -444,7 +511,7 @@ final class AppZustand: ObservableObject {
             return ok
         case .ordnerWaehlen(let titel, let vorschlag):
             log.schreibe("aktion ordner-waehlen")
-            guard let url = await studio.waehleOrdner(titel: titel, vorschlag: vorschlag) else { return nil }
+            guard let url = await studio.waehleOrdner(titel: titel, vorschlag: vorschlag, startort: vorschau?.home) else { return nil }
             return ["pfad": url.path]
         case .vaultGewechselt:
             log.schreibe("aktion vault-gewechselt")
@@ -560,13 +627,14 @@ final class AppZustand: ObservableObject {
             return
         }
         let bruecke = BrueckenVerbindung(node: node, vault: nil, skript: skript, umgebung: werkstattUmgebung, arbeitsordner: pfade.basis)
-        let dienste = WerkstattDienste(pfade: pfade) { methode, pfad, body in
+        let dienste = WerkstattDienste(pfade: pfade, git: vorschau?.gitPruefer() ?? GitPruefer(),
+                                       home: vorschau?.home ?? FileManager.default.homeDirectoryForCurrentUser) { methode, pfad, body in
             try await bruecke.anfrage(methode: methode, pfad: pfad, body: body)
         }
-        let modell = EinrichtungsModell(dienste: dienste, speicher: EinrichtungsSpeicher(pfade: pfade), log: log)
+        let modell = EinrichtungsModell(dienste: dienste, speicher: EinrichtungsSpeicher(pfade: pfade), log: log, vorschau: vorschau)
         let vaultVorher = vaultFrisch()
         let w = NSWindow(contentViewController: NSHostingController(rootView: EinrichtungsAssistentAnsicht(modell: modell)))
-        w.title = "Kortex einrichten"
+        w.title = vorschau == nil ? "Kortex einrichten" : "Kortex einrichten — Vorschau"
         w.styleMask = [.titled, .closable]
         w.isReleasedWhenClosed = false
         w.center()
@@ -617,6 +685,7 @@ final class AppZustand: ObservableObject {
     func darfBeenden() async -> Bool { await studio.darfSchliessen() }
 
     func beende() {
+        vorschau?.raeumeDefaultsAuf() // nur die Einstellungen der Vorschau-Kennung; die echte App bleibt unberührt
         taktgeber?.cancel()
         wiederholungAbbrechen()
         studio.schliesse()

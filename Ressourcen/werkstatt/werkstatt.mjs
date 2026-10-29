@@ -10,16 +10,23 @@
 import { createInterface } from "node:readline";
 import { realpathSync } from "node:fs";
 import { createHash } from "node:crypto";
+import { isAbsolute } from "node:path";
 import { erzeugeHandler, appVersionLesen, MAX_KOERPER } from "./handler.mjs";
 import { HttpFehler } from "../gemeinsam/vault.mjs";
 import { beendeLaufendes } from "../gemeinsam/git.mjs";
 import { beendeVorgaenge } from "../gemeinsam/vaults.mjs";
-import { bereinigePfad } from "../gemeinsam/basis.mjs";
+import { bereinigePfad, vorschauFehler } from "../gemeinsam/basis.mjs";
 
+// Vorschau („wie frisch installiert“) nur mit umgelenktem Benutzerordner — sonst gar nicht erst starten (nichts wird angefasst).
+const vorschauProblem = vorschauFehler();
+if (vorschauProblem) { process.stderr.write(`Vorschau-Schutz: ${vorschauProblem}\n`); process.exit(2); }
 bereinigePfad(); // kein leerer oder relativer PATH-Eintrag: ein `git` (oder anderes Programm) aus einem fremden Vault startet nie (Vertrauen v2, §8)
 const vault = process.argv[2] || process.env.BRAIN_VAULT || undefined; // das Argument hat Vorrang vor vaults.json
+// Neue MCP-Einträge (Claude Code, Codex, Cursor) nennen den STABILEN Node-Pfad der App (<support>/bin/node, setzt die App per
+// BRAIN_MCP_NODE) statt des aufgelösten `process.execPath` (…/node/<version>/bin/node): der übersteht Umbenennen, Node-Updates und App-Updates.
+const mcpNode = process.env.BRAIN_MCP_NODE && isAbsolute(process.env.BRAIN_MCP_NODE) ? process.env.BRAIN_MCP_NODE : undefined;
 let handler;
-try { handler = erzeugeHandler(vault ? { vault } : {}); }
+try { handler = erzeugeHandler({ ...(vault ? { vault } : {}), ...(mcpNode ? { nodePfad: mcpNode } : {}) }); }
 catch (e) { process.stderr.write(`${e instanceof HttpFehler ? e.message : e}\n`); process.exit(2); }
 
 const MAX_ZEILE = 2 * MAX_KOERPER + 4096; // base64 (×4/3) + JSON-Hülle; größere Zeilen sind nie gültig
