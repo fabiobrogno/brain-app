@@ -20,7 +20,7 @@ export function baueGitHubKarte({ beiAngemeldet } = {}) {
   const fehlerBox = (text) => h("div", { klasse: "w-fehlerbox fehlertext", role: "alert" }, symbol("warnung", 15), h("span", { text }));
 
   const zeigeStart = (meldung) => setze(
-    h("h3", { klasse: "w-abschnitt", text: T.titel }), h("div", { klasse: "w-aktion-text", text: T.text }),
+    h("h3", { klasse: "w-abschnitt" }, symbol("github", 14), h("span", { text: T.titel })), h("div", { klasse: "w-aktion-text", text: T.text }),
     meldung ? fehlerBox(meldung) : null,
     h("button", { klasse: "knopf primaer", type: "button", "data-aktion": "github-anmelden", text: meldung ? T.nochmal : T.anmelden, aufClick: starte }));
 
