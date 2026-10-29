@@ -50,7 +50,7 @@ Den genauen Befehl mit den richtigen Pfaden zeigt Brain an. Werkzeuge: `brain_su
 
 - Keine Telemetrie, keine Analyse, kein Absturz-Upload. Berichte bleiben auf deinem Mac.
 - Kein offener Netzwerk-Port. Die Oberfläche spricht über eine interne Brücke mit der App.
-- Brain arbeitet nur in deinem Brain-Ordner und in `~/Library/Application Support/Brain`.
+- Brain arbeitet nur in deinem Brain-Ordner und in `~/Library/Application Support/Kortex`.
 - Wenn du ein Git-Remote einträgst, geht dein Wissen dorthin und nirgendwo sonst hin.
 
 ## Entwicklung

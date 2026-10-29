@@ -159,9 +159,12 @@ private func lies(_ argumente: [String]) -> StartArgumente {
 @Test func appPfadeDerVorschauLiegenImVorschauOrdner() {
     let v = vorschau()
     #expect(v.pfade.basis == v.support)
-    for u in [v.pfade.konfiguration, v.pfade.vaultListe, v.pfade.einrichtung, v.pfade.nodeOrdner, v.pfade.binOrdner, v.pfade.logs, v.pfade.node] {
+    for u in [v.pfade.konfiguration, v.pfade.vaultListe, v.pfade.einrichtung, v.pfade.nodeOrdner, v.pfade.binOrdner, v.pfade.logs, v.pfade.node,
+              v.pfade.kernOrdner, v.pfade.kern, v.pfade.starter] {
         #expect(u.path.hasPrefix(v.ordner.path + "/"), "\(u.path)")
     }
+    // Kein alter Brain-Ordner in der Vorschau → nie eine Support-Migration.
+    #expect(AppPfade.altBasis(umgebung: v.kindVorgaben) == nil)
 }
 
 // MARK: Vorbereiten

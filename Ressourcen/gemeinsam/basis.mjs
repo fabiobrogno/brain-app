@@ -14,8 +14,8 @@ export class HttpFehler extends Error {
 
 export const MAX_DATEI = 5 * 1024 * 1024;
 
-// Ablageort der App (Vault-Liste, Vertrauens-Merker): BRAIN_APP_SUPPORT oder ~/Library/Application Support/Brain.
-export const supportOrdner = () => process.env.BRAIN_APP_SUPPORT || join(homedir(), "Library", "Application Support", "Brain");
+// Ablageort der App (Vault-Liste, Vertrauens-Merker): BRAIN_APP_SUPPORT (setzt die App) oder ~/Library/Application Support/Kortex.
+export const supportOrdner = () => process.env.BRAIN_APP_SUPPORT || join(homedir(), "Library", "Application Support", "Kortex");
 
 // ───────────────────────────── Vorschau („wie frisch installiert“) ─────────────────────────────
 // Die App setzt KORTEX_VORSCHAU=<Ordner> (Swift: VorschauModus). Dann liegt alles im Ordner: HOME, Support, Zugangsdaten, Vaults —
