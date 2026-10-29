@@ -3,18 +3,19 @@
 // die „Vorproben“ zeigen, dass der Aufbau wirkt (ein ungehärtetes git, ein ungeschütztes Dateisystem tut tatsächlich, was der Befund beschreibt).
 // Nur Wegwerf-Ordner in os.tmpdir(); kein Netzwerk (Adressen unter example.invalid), nie das echte `claude`, nie der echte Support-Ordner.
 //
-//   vertrauen-node/K1  gpg.ssh.defaultKeyCommand sperrt Git · K2 package.json, node_modules, Ordner-Verweise im Fingerabdruck · K3 Abgleich ohne Hooks
-//   vertrauen-node/W1  BRAIN_VAULT · k1 Merker-Schlüssel (Groß/klein, Unicode) · swift-k1/SW-1 brain.config.json im Fingerabdruck
-//   luecken/VK-1 Submodule · VK-2 relative PATH-Einträge · VK-3 Git-Konfiguration im Fingerabdruck
+//   vertrauen-node/K1  Signieren nur aus der Konfiguration des Nutzers bzw. eines vertrauten Vaults · K3 Abgleich ohne Hooks
+//   vertrauen-node/W1  BRAIN_VAULT
+//   luecken/VK-1 Submodule · VK-2 relative PATH-Einträge
+//   (P5: die Befunde zum Fingerabdruck — K2, k1, SW-1, VK-3 — entfielen mit ihm; Merker, Migration und API prüft vertrauen.test.mjs)
 //   vaults/V1 Klonen mit der ssh-Einstellung des Nutzers · V2 SIGTERM beim Anlegen · V3 Rücknahme nur leerer Elternordner · V4 kaputte vertrauen.json
-//   git-haertung/B2 (wie V1) · Vertragsänderung 1: POST /api/kit/vertrauen { erlauben, vault }
+//   git-haertung/B2 (wie V1) · Vertragsänderung 1: POST /api/vertrauen { erlauben, vault }
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, chmodSync, symlinkSync, utimesSync, readdirSync, appendFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { createInterface } from "node:readline";
-import { tmp, schreibe, repo, g, pfad, kernAttrappe, brainVault } from "./hilfe.mjs";
+import { tmp, schreibe, repo, g, pfad, kernAttrappe, brainVault, echt } from "./hilfe.mjs";
 process.env.HOME = tmp("brain-home-");          // os.homedir() liest $HOME: keine echte ~/.gitconfig
 process.env.GIT_CONFIG_NOSYSTEM = "1";          // und keine System-Konfiguration
 for (const w of ["AUTHOR", "COMMITTER"]) { process.env[`GIT_${w}_NAME`] = "Test"; process.env[`GIT_${w}_EMAIL`] = "test@example.org"; }   // der CI-Runner hat keine Git-Identität
@@ -48,46 +49,7 @@ const echtesGit = execFileSync("which", ["git"], { encoding: "utf8" }).trim();
 const cli = (args, env = {}) => spawnSync(process.execPath, [pfad("werkstatt", "vertrauen-pruefen.mjs"), ...args], { encoding: "utf8", env: { ...process.env, ...env } });
 const marke = (name) => join(tmp("brain-marke-"), name); // Pfad einer Markerdatei: sie entsteht nur, wenn das Programm läuft
 
-// ───────────────────────────── K1: gpg.ssh.defaultKeyCommand ─────────────────────────────
-
-test("vertrauen-node/K1: gpg.ssh.defaultKeyCommand sperrt Git — der Befehl läuft ohne Vertrauen nie (Commit 409), nach dem Erlauben wie konfiguriert", async () => {
-  const d = repo();
-  const m = marke("DEFAULTKEYCOMMAND");
-  konfig(d, `[commit]\n\tgpgSign = true\n[gpg]\n\tformat = ssh\n[gpg "ssh"]\n\tdefaultKeyCommand = "touch '${m}'"\n`);
-  // Vorprobe: ein ungehärtetes git ruft den Befehl beim Commit auf (user.signingKey fehlt) — sonst beweist der Test nichts
-  try { g(d, "commit", "--allow-empty", "-q", "-m", "x"); } catch { /* scheitert: der Befehl liefert keinen Schlüssel */ }
-  assert.equal(existsSync(m), true, "Vorprobe: git startet gpg.ssh.defaultKeyCommand aus der Vault-Konfiguration");
-  rmSync(m);
-  const support = neuerSupport();
-  const s = V.gitSicht(d, { support });
-  assert.equal(s.gesperrt, true); assert.equal(s.vertraut, false); assert.match(s.grund, /gpg\.ssh\.defaultkeycommand/i);
-  const rufe = aufruf(erzeugeHandler({ vault: d, vaultOptionen: { support } }));
-  schreibe(d, "a.md", "# a\n");
-  let r = await rufe("POST", "/api/git/commit", { nachricht: "x", dateien: ["a.md"] });
-  assert.equal(r.status, 409); assert.equal(r.j.gitGesperrt, true); assert.match(r.j.fehler, /gesperrt/);
-  assert.equal(existsSync(m), false, "der Befehl aus dem Vault lief nie");
-  r = await rufe("GET", "/api/info");
-  assert.equal(r.j.vertrauen.gitGesperrt, true);
-  assert.ok(r.j.vertrauen.gruende.some((x) => x.art === "git" && /defaultkeycommand/i.test(x.text)), "die Oberfläche nennt den Grund");
-  // Der Nutzer hat die Frage gesehen und freigegeben: jetzt gilt die Konfiguration des Vaults wie gewohnt.
-  r = await rufe("POST", "/api/kit/vertrauen", { erlauben: true, vault: d });
-  assert.equal(r.j.vertrauen.gitGesperrt, false);
-  await rufe("POST", "/api/git/commit", { nachricht: "y", dateien: ["a.md"] });
-  assert.equal(existsSync(m), true, "mit Vertrauen läuft der Befehl (der Nutzer hat der Einstellung vertraut)");
-});
-
-test("vertrauen-node/K1: jeder Programmschlüssel unter gpg. sperrt (auch gpg.ssh.…command/…program und künftige), Dateien und Formate nicht", () => {
-  const gesperrt = (zeilen) => { const d = repo(); konfig(d, zeilen); return V.gitSicht(d, { support: neuerSupport() }).gesperrt; };
-  for (const zeilen of ['[gpg "ssh"]\n\tdefaultKeyCommand = /bin/echo\n', '[gpg "ssh"]\n\tprogram = /bin/echo\n', '[gpg]\n\tprogram = /bin/echo\n', '[gpg "x509"]\n\tprogram = /bin/echo\n',
-    '[gpg "openpgp"]\n\tprogram = /bin/echo\n', '[gpg "ssh"]\n\tsomeFutureCommand = /bin/echo\n']) assert.equal(gesperrt(zeilen), true, zeilen);
-  for (const zeilen of ["[gpg]\n\tformat = ssh\n", '[gpg "ssh"]\n\tallowedSignersFile = /tmp/signers\n', '[gpg "ssh"]\n\trevocationFile = /tmp/rev\n', "[commit]\n\tgpgSign = true\n", "[user]\n\tsigningKey = ABCDEF\n"]) {
-    assert.equal(gesperrt(zeilen), false, `${zeilen.trim()} startet kein Programm`);
-  }
-  const d = repo(); konfig(d, '[gpg "ssh"]\n\tdefaultKeyCommand = /bin/echo\n');
-  assert.deepEqual(V.gefaehrlicheSchluessel(V.liesGitKonfiguration(d, { frisch: true }).eintraege), ["gpg.ssh.defaultkeycommand"]);
-});
-
-test("vertrauen-node/K1: ohne Vertrauen signiert Git nicht aus der Vault-Konfiguration (kein Programm); die Einstellung des Nutzers (global) bleibt; mit Vertrauen wie konfiguriert", async () => {
+test("vertrauen-node/K1: mit Vertrauen gilt die Signier-Konfiguration; ohne Vertrauen ist Git gesperrt, und die internen Git-Aufrufe (Anlegen, Klonen) signieren nie aus der Vault-Konfiguration", () => echt(async () => {
   const bin = tmp("brain-bin-"), lief = join(bin, "KEYGEN-LIEF"); // Attrappe für ssh-keygen: Git ruft sie auf, sobald es SSH-signiert
   writeFileSync(join(bin, "ssh-keygen"), `#!/bin/sh\necho "$*" >> '${lief}'\nexit 1\n`); chmodSync(join(bin, "ssh-keygen"), 0o755);
   const SCHLUESSEL = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICbsyW1AtEgE8Zq5Ntk3sCgb1jtbWoP2DzzGxBnfT2bM";
@@ -100,79 +62,30 @@ test("vertrauen-node/K1: ohne Vertrauen signiert Git nicht aus der Vault-Konfigu
       const support = neuerSupport();
       const v = mitSupport(d, support);
       schreibe(d, "a.md", "# a\n");
-      const ok = await v.gitCommit({ nachricht: "ohne Signatur", dateien: ["a.md"] });
-      assert.match(ok.sha, /^[0-9a-f]{40}$/, "der Commit gelingt ohne Signatur");
-      assert.equal(existsSync(lief), false, "ohne Vertrauen ruft Git ssh-keygen nicht auf (commit.gpgSign aus dem Vault ist ausgeschaltet)");
+      const e = await wirft(v.gitCommit({ nachricht: "ohne Vertrauen", dateien: ["a.md"] }));
+      assert.equal(e.status, 409); assert.equal(existsSync(lief), false, "ohne Vertrauen läuft gar kein Git");
+      // (b) interne Aufrufe (neues Vault, Klon): nie aus der Vault-Konfiguration signieren
+      const r = await git(d, ["commit", "-q", "--allow-empty", "-m", "intern"]);
+      assert.equal(r.code, 0, r.stderr); assert.equal(existsSync(lief), false, "commit.gpgSign aus dem Vault ist für nicht vertraute Aufrufe ausgeschaltet");
       assert.ok(!g(d, "cat-file", "-p", "HEAD").includes("gpgsig"), "unsigniert");
+      // (c) mit Vertrauen gilt die Konfiguration
       v.vertrauen(true);
-      schreibe(d, "b.md", "# b\n");
-      await wirft(v.gitCommit({ nachricht: "mit Vertrauen", dateien: ["b.md"] })); // die Attrappe lässt das Signieren scheitern
+      await wirft(v.gitCommit({ nachricht: "mit Vertrauen", dateien: ["a.md"] })); // die Attrappe lässt das Signieren scheitern
       assert.equal(existsSync(lief), true, "mit Vertrauen gilt die Konfiguration: Git ruft ssh-keygen");
       rmSync(lief);
-      // (b) der Nutzer hat selbst eingestellt, dass signiert wird (global): das gilt auch ohne Vertrauen — wir ersetzen nur die Einstellung des Vaults
+      // (d) der Nutzer hat selbst eingestellt, dass signiert wird (global): gitSicht kennt es, und ein nicht vertrauter interner Aufruf (Klonen) übernimmt nur diese Einstellung
       const globalDatei = join(tmp("brain-gcfg-"), "gitconfig");
       writeFileSync(globalDatei, `[user]\n\tname = T\n\temail = t@example.org\n${signieren}`);
       process.env.GIT_CONFIG_GLOBAL = globalDatei;
       const d2 = repo();
       const support2 = neuerSupport();
+      mitSupport(d2, support2).vertrauen(true);
       assert.deepEqual(V.gitSicht(d2, { support: support2 }).gpgGlobal, { commit: "true", tag: "true" });
-      const v2 = mitSupport(d2, support2);
-      schreibe(d2, "a.md", "# a\n");
-      await wirft(v2.gitCommit({ nachricht: "der Nutzer will signieren", dateien: ["a.md"] }));
-      assert.equal(existsSync(lief), true, "die eigene Einstellung des Nutzers bleibt wirksam");
+      const r2 = await git(d2, ["commit", "-q", "--allow-empty", "-m", "Nutzer will signieren"], { gpgGlobal: { commit: "true", tag: "true" } });
+      assert.notEqual(r2.code, 0); assert.equal(existsSync(lief), true, "die eigene Einstellung des Nutzers bleibt wirksam");
     });
   } finally { if (alt === undefined) delete process.env.GIT_CONFIG_GLOBAL; else process.env.GIT_CONFIG_GLOBAL = alt; }
-});
-
-// ───────────────────────────── K2: Umfang des Fingerabdrucks ─────────────────────────────
-
-test("vertrauen-node/K2 (a): package.json unter .tools lenkt den geladenen Code um — eine Änderung nach der Freigabe ist eine neue Frage (für Hooks, die .tools starten)", async () => {
-  const d = tmp();
-  const marken = tmp("brain-marke-"), gut = join(marken, "GUT"), boese = join(marken, "BOESE");
-  const kitSkript = (m) => `import { writeFileSync } from "node:fs"; writeFileSync(${JSON.stringify(m)}, "1");\nconsole.log(JSON.stringify({ version: 1, ampel: "gruen", warnungen: 0, pruefungen: [] }));\n`;
-  schreibe(d, ".tools/gut.mjs", kitSkript(gut)); schreibe(d, ".tools/boese.mjs", kitSkript(boese));
-  schreibe(d, ".tools/brain.mjs", 'await import("#start");\n'); // lädt über den Alias aus der package.json
-  const pkg = (ziel) => schreibe(d, ".tools/package.json", JSON.stringify({ type: "module", imports: { "#start": `./${ziel}` } }) + "\n");
-  pkg("gut.mjs");
-  const support = neuerSupport();
-  const v = mitSupport(d, support);
-  v.vertrauen(true);
-  assert.equal(V.pruefeVertrauen(d, { support }).erlaubt, true);
-  pkg("boese.mjs"); // NUR die package.json ändert sich — beide Zieldateien standen schon in der Freigabe
-  const p = V.pruefeVertrauen(d, { support });
-  assert.equal(p.erlaubt, false); assert.equal(p.geaendert, true);
-  assert.equal(existsSync(gut) || existsSync(boese), false, "die App führt .tools nie aus (Kern-Umzug P4)");
-  v.vertrauen(true);
-  assert.equal(V.pruefeVertrauen(d, { support }).erlaubt, true);
-  schreibe(d, ".tools/lib/package.json", '{"type":"commonjs"}\n'); // auch in Unterordnern
-  assert.equal(V.pruefeVertrauen(d, { support }).geaendert, true, "neue package.json in einem Unterordner");
-  v.vertrauen(true);
-  schreibe(d, ".tools/lib/package.json", '{"type":"module"}\n');
-  assert.equal(V.pruefeVertrauen(d, { support }).geaendert, true, "geänderte package.json in einem Unterordner");
-});
-
-test("vertrauen-node/K2 (c): Ordner-Verweise unter .tools zählen mit dem Inhalt ihres Ziels — auch außerhalb des Vaults; ein Kreis hängt nicht", () => {
-  const support = neuerSupport();
-  const d = kitVault();
-  const draussen = tmp("brain-aus-"); schreibe(draussen, "lib/x.mjs", "// 1\n");
-  schreibe(d, "extern/y.mjs", "// 1\n");
-  symlinkSync(join(draussen, "lib"), join(d, ".tools/lib"));  // Ordner-Verweis nach außerhalb des Vaults
-  symlinkSync("../extern", join(d, ".tools/extern"));         // relativer Ordner-Verweis in einen anderen Ordner des Vaults
-  symlinkSync(".", join(d, ".tools/schleife"));               // Kreis: zeigt auf seinen eigenen Ordner
-  V.erlaube(d, { support });
-  assert.equal(V.pruefeVertrauen(d, { support }).erlaubt, true);
-  schreibe(draussen, "lib/x.mjs", "// 2 — ausgetauscht\n");
-  assert.equal(V.pruefeVertrauen(d, { support }).geaendert, true, "Inhalt des Ziels außerhalb des Vaults geändert");
-  V.erlaube(d, { support });
-  schreibe(draussen, "lib/neu.mjs", "// neu\n");
-  assert.equal(V.pruefeVertrauen(d, { support }).geaendert, true, "neue Datei im Ziel");
-  V.erlaube(d, { support });
-  schreibe(d, "extern/y.mjs", "// 2\n");
-  assert.equal(V.pruefeVertrauen(d, { support }).geaendert, true, "Ziel innerhalb des Vaults (relativer Verweis)");
-  V.erlaube(d, { support });
-  rmSync(join(d, ".tools/lib")); symlinkSync(join(draussen, "anderer-ordner"), join(d, ".tools/lib")); // Verweis umgebogen (hier ins Leere)
-  assert.equal(V.pruefeVertrauen(d, { support }).geaendert, true, "anderes Ziel");
-});
+}));
 
 // ───────────────────────────── K3: Abgleich ohne Hooks, Vertrauen danach neu bewerten ─────────────────────────────
 
@@ -199,7 +112,7 @@ function kitMitServer() {
   return { bare, autor, vault, neuerHook, lief, weg };
 }
 
-test("vertrauen-node/K3: Abgleich in einem vertrauten Vault — ein vom Server geholter post-merge-Hook läuft NICHT; danach ist das Vertrauen weg (vertrauenGeaendert)", async () => {
+test("vertrauen-node/K3: Abgleich in einem vertrauten Vault — ein vom Server geholter post-merge-Hook läuft NICHT, und auch beim Senden laufen keine Hooks", async () => {
   // Vorprobe: ein ungehärteter Abgleich (pull mit Hooks, wie vorher) führte den neuen Hook sofort aus
   const roh = kitMitServer();
   roh.neuerHook("post-merge");
@@ -216,44 +129,16 @@ test("vertrauen-node/K3: Abgleich in einem vertrauten Vault — ein vom Server g
   const r = await v.gitSync();
   assert.equal(r.ergebnis, "geholt");
   assert.equal(s.lief("POST-MERGE"), false, "der geholte Hook lief nie — Holen und Zusammenführen laufen immer ohne Hooks");
-  assert.equal(s.lief("REF-TRANSACTION"), false, "auch die Hooks des vertrauten Stands laufen beim Abgleich nicht (nur beim Senden)");
-  assert.equal(r.vertrauenGeaendert, true, "das Ergebnis meldet: die Freigabe gilt nicht mehr");
-  const p = V.pruefeVertrauen(s.vault, { support });
-  assert.equal(p.erlaubt, false); assert.equal(p.geaendert, true); assert.ok(p.gruende.some((x) => x.art === "hooks"));
-  // Der Hook läuft auch später nicht, solange nicht neu freigegeben wurde (Commit in einem nicht mehr vertrauten Vault: keine Hooks)
+  assert.equal(s.lief("REF-TRANSACTION"), false, "auch die Hooks des vertrauten Stands laufen beim Abgleich nicht");
+  assert.equal(r.vertrauenGeaendert, undefined, "das Vertrauen gilt dem Vault; ein Abgleich ändert es nicht");
+  assert.equal(V.pruefeVertrauen(s.vault, { support }).erlaubt, true);
+  // Senden im Abgleich: ebenfalls ohne Hooks (ein geholter pre-push wäre neuer, ungesehener Code)
   schreibe(s.vault, "n.md", "# n\n");
-  await v.gitCommit({ nachricht: "ohne Freigabe", dateien: ["n.md"] });
-  assert.equal(s.lief("POST-MERGE"), false);
-});
-
-test("vertrauen-node/K3: ging das Vertrauen durch den Abgleich verloren, wird nichts gesendet (pre-push wäre neuer Code); nach neuer Freigabe sendet der nächste Abgleich — mit Hooks wie gewohnt", async () => {
-  const s = kitMitServer();
-  const support = neuerSupport();
-  const v = mitSupport(s.vault, support);
-  v.vertrauen(true);
-  // Kontrolle: ohne Änderung am Stand laufen die Hooks beim Senden wie gewohnt, kein Hinweis
-  schreibe(s.vault, "eins.md", "# 1\n"); g(s.vault, "add", "--", "eins.md"); g(s.vault, "commit", "-q", "-m", "lokal 1");
+  await v.gitCommit({ nachricht: "lokal", dateien: ["n.md"] });
   s.weg("PRE-PUSH");
-  let r = await v.gitSync();
-  assert.equal(r.ergebnis, "gesendet"); assert.equal(r.vertrauenGeaendert, undefined);
-  assert.equal(s.lief("PRE-PUSH"), true, "pre-push läuft beim Senden mit Vertrauen wie gewohnt");
-  assert.equal(g(s.bare, "rev-parse", "main").trim(), g(s.vault, "rev-parse", "HEAD").trim());
-  // Jetzt: lokaler Commit UND ein neuer Hook auf dem Server → Zusammenführen, Vertrauen weg, kein Senden
-  schreibe(s.vault, "zwei.md", "# 2\n"); g(s.vault, "add", "--", "zwei.md"); g(s.vault, "commit", "-q", "-m", "lokal 2");
-  s.neuerHook("post-merge");
-  s.weg("PRE-PUSH");
-  const serverStand = g(s.bare, "rev-parse", "main").trim();
-  r = await v.gitSync();
-  assert.equal(r.vertrauenGeaendert, true); assert.equal(r.ergebnis, "geholt", "geholt, aber nicht gesendet");
-  assert.equal(g(s.bare, "rev-parse", "main").trim(), serverStand, "der Server hat nichts bekommen");
-  assert.equal(s.lief("PRE-PUSH"), false, "der neue (nicht freigegebene) Hook-Stand läuft nicht");
-  assert.equal(s.lief("POST-MERGE"), false);
-  // Der Nutzer prüft und gibt den neuen Stand frei: der nächste Abgleich sendet, die Hooks laufen wie gewohnt
-  v.vertrauen(true);
-  r = await v.gitSync();
-  assert.equal(r.ergebnis, "gesendet"); assert.equal(r.vertrauenGeaendert, undefined);
-  assert.equal(s.lief("PRE-PUSH"), true);
-  assert.equal(g(s.bare, "rev-parse", "main").trim(), g(s.vault, "rev-parse", "HEAD").trim());
+  const r2 = await v.gitSync();
+  assert.equal(r2.ergebnis, "gesendet");
+  assert.equal(s.lief("PRE-PUSH"), false, "beim Senden im Abgleich läuft kein pre-push");
 });
 
 // ───────────────────────────── W1: BRAIN_VAULT ─────────────────────────────
@@ -288,84 +173,6 @@ test("vertrauen-node/W1: nach einem Vault-Wechsel arbeitet der Kern (gesundheit 
   } finally { if (alt === undefined) delete process.env.BRAIN_VAULT; else process.env.BRAIN_VAULT = alt; }
 });
 
-// ───────────────────────────── k1: Merker-Schlüssel ─────────────────────────────
-
-// Das Test-Dateisystem (APFS) unterscheidet weder Groß/klein noch Unicode-Form; auf einem anderen (z. B. ext4) gibt es den Fall nicht.
-const unempfindlich = (() => {
-  const b = tmp("brain-fs-"); mkdirSync(join(b, "MeinBrain")); mkdirSync(join(b, "Übung".normalize("NFC")));
-  return existsSync(join(b, "meinbrain")) && existsSync(join(b, "Übung".normalize("NFD")));
-})();
-
-test("vertrauen-node/k1: Merker-Schlüssel ohne Groß/klein und Unicode-Form — erlauben, prüfen und widerrufen finden denselben Eintrag, auch über die API",
-  { skip: unempfindlich ? false : "Das Dateisystem unterscheidet Groß/klein oder Unicode-Form." }, async () => {
-    const basis = tmp("brain-fs-");
-    const gross = join(basis, "MeinBrain"), klein = join(basis, "meinbrain");
-    const nfc = join(basis, "Übung".normalize("NFC")), nfd = join(basis, "Übung".normalize("NFD"));
-    for (const d of [gross, nfc]) { schreibe(d, ".tools/brain.mjs", KIT); }
-    const support = neuerSupport();
-    V.erlaube(gross, { support });
-    assert.deepEqual(Object.keys(merkerVon(support)), [gross], "der Schlüssel ist die Schreibweise auf der Platte");
-    assert.equal(V.pruefeVertrauen(klein, { support }).erlaubt, true, "dieselbe Freigabe über die andere Schreibweise (früher: erlaubt=false)");
-    assert.equal(oeffneVault(klein, { support }).kit().vertraut, true);
-    V.erlaube(klein, { support });
-    assert.deepEqual(Object.keys(merkerVon(support)), [gross], "erneut über die andere Schreibweise: ersetzt, kein zweiter Eintrag");
-    assert.equal(V.widerrufe(klein, { support }).erlaubt, false);
-    assert.deepEqual(merkerVon(support), {}, "widerrufen über eine andere Schreibweise entfernt den Eintrag (früher blieb er stehen)");
-    V.erlaube(nfc, { support });
-    assert.equal(V.pruefeVertrauen(nfd, { support }).erlaubt, true, "NFC erlaubt, NFD geprüft");
-    V.widerrufe(nfd, { support });
-    assert.deepEqual(merkerVon(support), {});
-    // der Widerrufspfad der Oberfläche: POST /api/kit/vertrauen { erlauben: false, vault } mit der anderen Schreibweise
-    const rufe = aufruf(erzeugeHandler({ vault: gross, vaultOptionen: { support } }));
-    assert.equal((await rufe("POST", "/api/kit/vertrauen", { erlauben: true, vault: gross })).j.vertrauen.erlaubt, true);
-    const r = await rufe("POST", "/api/kit/vertrauen", { erlauben: false, vault: klein });
-    assert.equal(r.status, 200); assert.equal(r.j.vertrauen.erlaubt, false);
-    assert.deepEqual(merkerVon(support), {}, "kein Rest nach dem Widerruf");
-  });
-
-// ───────────────────────────── SW-1: brain.config.json ─────────────────────────────
-
-test("swift-k1/SW-1: brain.config.json zählt zur Freigabe — eine geänderte Programmangabe (werkzeuge.git) ist eine neue Frage; „automatik“ und Formatierung nicht", async () => {
-  const d = kitVault();
-  const m = marke("KIT-LIEF");
-  schreibe(d, ".tools/brain.mjs", `import { writeFileSync } from "node:fs"; writeFileSync(${JSON.stringify(m)}, "x");\n${KIT}`);
-  const cfg = (o) => schreibe(d, "brain.config.json", JSON.stringify(o, null, 2) + "\n");
-  cfg({ werkzeuge: { git: "git" }, automatik: { tageslauf: { an: true } } });
-  const support = neuerSupport();
-  const v = mitSupport(d, support);
-  v.vertrauen(true);
-  assert.equal(V.pruefeVertrauen(d, { support }).erlaubt, true); assert.equal(existsSync(m), false, "die App führt .tools nie aus (Kern-Umzug P4)");
-  // Die Steuerzentrale des Kits schreibt im Alltag „automatik“ (Schalter, Stufen, Zahlen): keine neue Frage
-  cfg({ werkzeuge: { git: "git" }, automatik: { tageslauf: { an: false }, neu: [1, 2, 3] } });
-  assert.equal(V.pruefeVertrauen(d, { support }).erlaubt, true, "nur „automatik“ geändert");
-  schreibe(d, "brain.config.json", '{"automatik":{"x":1},"werkzeuge":{"git":"git"}}'); // Formatierung und Reihenfolge der Schlüssel
-  assert.equal(V.pruefeVertrauen(d, { support }).erlaubt, true, "nur Formatierung und Schlüsselreihenfolge");
-  // Ein Pull (oder ein Datei-Abgleich) ändert die Programmangabe und bringt ein ausführbares Skript mit — unter .tools ändert sich nichts
-  schreibe(d, "notizen/x.sh", "#!/bin/sh\necho x\n"); chmodSync(join(d, "notizen/x.sh"), 0o755);
-  cfg({ werkzeuge: { git: "notizen/x.sh" }, automatik: { tageslauf: { an: false } } });
-  const p = V.pruefeVertrauen(d, { support });
-  assert.equal(p.erlaubt, false); assert.equal(p.geaendert, true);
-  assert.equal(cli([d], { BRAIN_APP_SUPPORT: support, BRAIN_TESTMODUS: "0" }).stdout, '{"erlaubt":false}\n', "Swifts Prüfung (brain status) sagt nein");
-  assert.equal(existsSync(m), false, "das Kit läuft nicht");
-  // erneut freigeben; Datei entfernen, neu anlegen, kein JSON: jeweils eine neue Frage
-  v.vertrauen(true);
-  rmSync(join(d, "brain.config.json"));
-  assert.equal(V.pruefeVertrauen(d, { support }).geaendert, true, "Datei entfernt");
-  v.vertrauen(true);
-  cfg({ werkzeuge: { git: "git" } });
-  assert.equal(V.pruefeVertrauen(d, { support }).geaendert, true, "Datei neu angelegt");
-  v.vertrauen(true);
-  schreibe(d, "brain.config.json", "{ kein json 1");
-  assert.equal(V.pruefeVertrauen(d, { support }).geaendert, true, "kein JSON mehr");
-  v.vertrauen(true);
-  schreibe(d, "brain.config.json", "{ kein json 2");
-  assert.equal(V.pruefeVertrauen(d, { support }).geaendert, true, "kein JSON: Byte für Byte");
-  // package.json der Vault-Wurzel: sie bestimmt, welchen Code `node` im Vault lädt
-  v.vertrauen(true);
-  schreibe(d, "package.json", '{"type":"module"}\n');
-  assert.equal(V.pruefeVertrauen(d, { support }).geaendert, true, "package.json in der Wurzel");
-});
-
 // ───────────────────────────── VK-1: Submodule ─────────────────────────────
 
 const FILE = ["-c", "protocol.file.allow=always"]; // nur zum Aufbau: Submodule aus lokalen Ordnern
@@ -382,7 +189,7 @@ function mitSubmodul() {
 // Ein Klon von B mit eingerichtetem Submodul; die Git-Konfiguration des Submoduls liegt in .git/modules/sub/config (hier kommt sie „fremd“ an).
 function klonMitSubmodul(B) { const v = tmp("brain-vsub-"); g(v, ...FILE, "clone", "-q", "--recurse-submodules", B, "."); return v; }
 
-test("luecken/VK-1: ein clean-Filter in der Konfiguration eines Submoduls startet nie (gitStatus, Notiz-Index, Diff, Verlauf, Commit) — ohne Vertrauensfrage, weil das Hauptrepo harmlos ist", async () => {
+test("luecken/VK-1: ein clean-Filter in der Konfiguration eines Submoduls startet nie (gitStatus, Notiz-Index, Diff, Verlauf, Commit) — auch im vertrauten Vault", async () => {
   const { B } = mitSubmodul();
   const bauen = (name) => {
     const vault = klonMitSubmodul(B), m = marke(name);
@@ -395,7 +202,6 @@ test("luecken/VK-1: ein clean-Filter in der Konfiguration eines Submoduls starte
   assert.equal(existsSync(roh.m), true, "Vorprobe: ein ungehärtetes git status startet den Filter des Submoduls");
   const { vault, m } = bauen("STUDIO");
   const support = neuerSupport();
-  assert.deepEqual(V.pruefeVertrauen(vault, { support }), { erlaubt: false, noetig: false, geaendert: false, gitGesperrt: false, gruende: [] }, "das Hauptrepo ist harmlos: keine Frage, keine Sperre");
   const v = mitSupport(vault, support);
   const st = await v.gitStatus();
   assert.equal(st.repo, true); assert.equal(st.gesperrt, undefined);
@@ -479,14 +285,6 @@ test("luecken/VK-2: der MCP-Server führt kein `git` aus dem Vault aus — relat
   }
 });
 
-test("luecken/VK-2: die CLI für Swift (vertrauen-pruefen.mjs) führt kein `git` aus dem Vault aus — schon das Lesen der Git-Einstellungen startet git im Vault-Ordner", () => {
-  const m = marke("VAULT-GIT-LIEF");
-  const d = vaultMitEigenemGit(m);
-  const r = cli([d], { BRAIN_APP_SUPPORT: neuerSupport(), PATH: `node_modules/.bin::${gitOrdner}:/usr/bin:/bin` });
-  assert.equal(r.status, 0); assert.equal(r.stdout, '{"erlaubt":false}\n');
-  assert.equal(existsSync(m), false, "das git aus dem Vault lief nie");
-});
-
 test("luecken/VK-2: in der Werkstatt startet Git nur über einen absoluten Pfad — PATH mit relativen Einträgen, ohne absolutes git: Fehler statt des Vault-Programms; kindUmgebung bereinigt PATH", async () => {
   const m = marke("VAULT-GIT-LIEF");
   const d = vaultMitEigenemGit(m);
@@ -512,55 +310,6 @@ test("luecken/VK-2: in der Werkstatt startet Git nur über einen absoluten Pfad 
     process.env.PATH = "node_modules/.bin::/usr/bin:."; bereinigePfad(); assert.equal(process.env.PATH, "/usr/bin");
     process.env.PATH = "rel:."; bereinigePfad(); assert.equal("PATH" in process.env, false, "ein leerer PATH-Text wäre selbst ein leerer Eintrag");
   } finally { process.env.PATH = alt; }
-});
-
-// ───────────────────────────── VK-3: Git-Konfiguration im Fingerabdruck ─────────────────────────────
-
-test("luecken/VK-3: ein Programm-Schlüssel, der nach der Freigabe über eine eingebundene Datei (include.path) dazukommt, ist eine neue Frage — der Filter läuft nicht", async () => {
-  const d = repo();
-  schreibe(d, "team.gitconfig", "[user]\n\tname = Team\n");
-  schreibe(d, ".gitattributes", "*.md filter=probe\n");
-  g(d, "add", "--", "team.gitconfig", ".gitattributes"); g(d, "commit", "-q", "-m", "Team-Konfiguration");
-  konfig(d, "[include]\n\tpath = ../team.gitconfig\n");
-  const m = marke("FILTER");
-  const support = neuerSupport();
-  const v = mitSupport(d, support);
-  v.vertrauen(true);
-  assert.equal(V.pruefeVertrauen(d, { support }).erlaubt, true);
-  // Ein Abgleich (oder jemand im geteilten Ordner) ergänzt die versionierte Datei — .git/config selbst bleibt, wie sie war
-  schreibe(d, "team.gitconfig", `[user]\n\tname = Team\n[filter "probe"]\n\tclean = "sh -c 'touch ${m}; cat'"\n`);
-  const spaeter = new Date(Date.now() + 60_000); utimesSync(join(d, "start.md"), spaeter, spaeter); // andere mtime als im Index: git status müsste die Datei durch den Filter lesen
-  const p = V.pruefeVertrauen(d, { support });
-  assert.equal(p.erlaubt, false, "die Freigabe gilt für den alten Stand der Git-Konfiguration"); assert.equal(p.geaendert, true); assert.equal(p.gitGesperrt, true);
-  const s = await v.gitStatus();
-  assert.equal(s.gesperrt, true); assert.match(s.grund, /filter\.probe\.clean/);
-  assert.equal(existsSync(m), false, "der Filter lief nie");
-  v.vertrauen(true); // der Nutzer prüft den neuen Stand und gibt ihn frei
-  const s2 = await v.gitStatus();
-  assert.equal(s2.repo, true); assert.equal(s2.gesperrt, undefined);
-  assert.equal(existsSync(m), true, "mit der neuen Freigabe läuft der Filter (die Einstellung gehört dem Nutzer, der ihr vertraut hat)");
-});
-
-test("luecken/VK-3: lokales core.sshCommand und core.hooksPath gehören zur Freigabe (Wert geändert = neue Frage); ein harmloser Schlüssel nicht", () => {
-  const d = repo();
-  const support = neuerSupport();
-  V.erlaube(d, { support });
-  g(d, "config", "user.name", "Anders"); g(d, "config", "core.autocrlf", "false");
-  assert.equal(V.pruefeVertrauen(d, { support }).erlaubt, true, "harmlose Schlüssel ändern den Fingerabdruck nicht");
-  g(d, "config", "core.sshCommand", "ssh -i /tmp/a");
-  assert.equal(V.pruefeVertrauen(d, { support }).geaendert, true, "core.sshCommand neu");
-  V.erlaube(d, { support });
-  g(d, "config", "core.sshCommand", "ssh -i /tmp/b");
-  assert.equal(V.pruefeVertrauen(d, { support }).geaendert, true, "core.sshCommand mit anderem Wert");
-  V.erlaube(d, { support });
-  g(d, "config", "core.hooksPath", ".githooks");
-  assert.equal(V.pruefeVertrauen(d, { support }).geaendert, true, "core.hooksPath neu");
-  V.erlaube(d, { support });
-  g(d, "config", "core.hooksPath", ".andere-hooks");
-  assert.equal(V.pruefeVertrauen(d, { support }).geaendert, true, "core.hooksPath mit anderem Wert (auch wenn der Ordner leer ist)");
-  V.erlaube(d, { support });
-  g(d, "config", "merge.x.driver", "/bin/cat %A");
-  assert.equal(V.pruefeVertrauen(d, { support }).erlaubt, false, "ein Programm-Schlüssel nach der Freigabe");
 });
 
 // ───────────────────────────── V1 / B2: Klonen mit der ssh-Einstellung des Nutzers ─────────────────────────────
@@ -689,13 +438,13 @@ exec '${echtesGit}' "$@"\n`);
 
 // ───────────────────────────── V4: kaputte vertrauen.json ─────────────────────────────
 
-test("vaults/V4: erlaube über einer kaputten vertrauen.json sichert sie vorher (vertrauen.json.defekt-<Zeit>); Lesen allein ändert nichts und gilt als „nichts freigegeben“", () => {
+test("vaults/V4: erlaube über einer kaputten vertrauen.json sichert sie vorher (vertrauen.json.defekt-<Zeit>); Lesen allein ändert nichts und gilt als „nichts freigegeben“", () => echt(async () => {
   const d = kitVault();
   for (const roh of ["{ kein json", "[]", "null", "\"x\"", "5"]) {
     const support = neuerSupport();
     writeFileSync(join(support, "vertrauen.json"), roh);
     const r = V.pruefeVertrauen(d, { support });
-    assert.equal(r.erlaubt, false); assert.equal(r.geaendert, false, "kein Eintrag, also keine „geänderte“ Freigabe");
+    assert.equal(r.erlaubt, false);
     assert.deepEqual(readdirSync(support), ["vertrauen.json"], "bloßes Lesen sichert und ändert nichts");
     assert.equal(V.sichereDefektenMerker(support, { jetzt: Date.UTC(2026, 9, 24, 21, 15, 2) }), true);
     assert.deepEqual(readdirSync(support), ["vertrauen.json.defekt-20261024-231502"], "beiseite gelegt, Berliner Zeit im Namen");
@@ -714,37 +463,36 @@ test("vaults/V4: erlaube über einer kaputten vertrauen.json sichert sie vorher 
   writeFileSync(join(support, "vertrauen.json"), ""); assert.equal(V.sichereDefektenMerker(support), false, "leer: nichts zu bewahren");
   writeFileSync(join(support, "vertrauen.json"), "{}"); assert.equal(V.sichereDefektenMerker(support), false, "heil");
   assert.deepEqual(readdirSync(support), ["vertrauen.json"]);
-});
+}));
+// ───────────────────────────── Vertragsänderung 1: POST /api/vertrauen { erlauben, vault } ─────────────────────────────
 
-// ───────────────────────────── Vertragsänderung 1: POST /api/kit/vertrauen { erlauben, vault } ─────────────────────────────
-
-test("Vertrag 1: POST /api/kit/vertrauen verlangt { vault } — ohne 400, ein anderer Vault 409 art „anderer-vault“ ohne jede Wirkung, derselbe (auch über Verweis) 200", async () => {
+test("Vertrag 1: POST /api/vertrauen verlangt { vault } — ohne 400, ein anderer Vault 409 art „anderer-vault“ ohne jede Wirkung, derselbe (auch über Verweis) 200", () => echt(async () => {
   const support = neuerSupport();
   const a = kitVault(), b = kitVault();
   const rufe = aufruf(erzeugeHandler({ vault: a, vaultOptionen: { support } }));
   const nichtsFreigegeben = () => assert.equal(existsSync(join(support, "vertrauen.json")), false, "nichts freigegeben — weder a noch b");
-  let r = await rufe("POST", "/api/kit/vertrauen", { erlauben: true });
+  let r = await rufe("POST", "/api/vertrauen", { erlauben: true });
   assert.equal(r.status, 400); assert.match(r.j.fehler, /Vault/); nichtsFreigegeben();
-  for (const falsch of ["", "   ", 5, null, ["x"]]) { r = await rufe("POST", "/api/kit/vertrauen", { erlauben: true, vault: falsch }); assert.equal(r.status, 400, JSON.stringify(falsch)); }
-  r = await rufe("POST", "/api/kit/vertrauen", { erlauben: true, vault: b });
+  for (const falsch of ["", "   ", 5, null, ["x"]]) { r = await rufe("POST", "/api/vertrauen", { erlauben: true, vault: falsch }); assert.equal(r.status, 400, JSON.stringify(falsch)); }
+  r = await rufe("POST", "/api/vertrauen", { erlauben: true, vault: b });
   assert.equal(r.status, 409); assert.equal(r.j.art, "anderer-vault"); assert.equal(typeof r.j.fehler, "string"); assert.match(r.j.fehler, /nichts geändert/i);
-  r = await rufe("POST", "/api/kit/vertrauen", { erlauben: true, vault: join(tmp(), "gibts-nicht") });
+  r = await rufe("POST", "/api/vertrauen", { erlauben: true, vault: join(tmp(), "gibts-nicht") });
   assert.equal(r.status, 409); assert.equal(r.j.art, "anderer-vault"); nichtsFreigegeben();
-  r = await rufe("POST", "/api/kit/vertrauen", { erlauben: "ja", vault: a });
+  r = await rufe("POST", "/api/vertrauen", { erlauben: "ja", vault: a });
   assert.equal(r.status, 400);
   const link = join(tmp("brain-ln-"), "verweis"); symlinkSync(a, link);
-  r = await rufe("POST", "/api/kit/vertrauen", { erlauben: true, vault: link });
-  assert.equal(r.status, 200); assert.equal(r.j.vertrauen.erlaubt, true); assert.equal(r.j.kit.vertraut, true, "derselbe Ordner über einen Verweis");
+  r = await rufe("POST", "/api/vertrauen", { erlauben: true, vault: link });
+  assert.equal(r.status, 200); assert.equal(r.j.vertrauen.erlaubt, true); assert.equal(r.j.vertrauen.erlaubt, true, "derselbe Ordner über einen Verweis");
   // Widerrufen gilt ebenso nur für den Vault, den der Dialog gezeigt hat
-  r = await rufe("POST", "/api/kit/vertrauen", { erlauben: false, vault: b });
+  r = await rufe("POST", "/api/vertrauen", { erlauben: false, vault: b });
   assert.equal(r.status, 409); assert.equal(V.pruefeVertrauen(a, { support }).erlaubt, true, "a bleibt freigegeben");
-  r = await rufe("POST", "/api/kit/vertrauen", { erlauben: false, vault: a });
+  r = await rufe("POST", "/api/vertrauen", { erlauben: false, vault: a });
   assert.equal(r.status, 200); assert.equal(r.j.vertrauen.erlaubt, false);
   // Der Vault wechselt zwischen Anzeige des Dialogs und Klick (Vault-Wechsel in der Oberfläche): die Freigabe für a trifft nie b
   assert.equal((await rufe("POST", "/api/vaults/oeffnen", { pfad: b })).status, 200);
-  r = await rufe("POST", "/api/kit/vertrauen", { erlauben: true, vault: a });
+  r = await rufe("POST", "/api/vertrauen", { erlauben: true, vault: a });
   assert.equal(r.status, 409); assert.equal(r.j.art, "anderer-vault");
   assert.equal(V.pruefeVertrauen(b, { support }).erlaubt, false, "b wurde nicht freigegeben, obwohl es der offene Vault ist");
-  assert.equal((await rufe("POST", "/api/kit/vertrauen", { erlauben: true, vault: b })).status, 200);
+  assert.equal((await rufe("POST", "/api/vertrauen", { erlauben: true, vault: b })).status, 200);
   assert.equal(V.pruefeVertrauen(b, { support }).erlaubt, true);
-});
+}));

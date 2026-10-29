@@ -213,7 +213,7 @@ process.stdin.resume();'
   printf '# Notiz\n' > "$vd/notiz.md"; printf '# Neu\n' > "$vd/neu.md"
   d_git -C "$vd" add notiz.md && d_git -C "$vd" commit -q -m Start || fehl "D/$art: erster Commit ist gescheitert"
   # Ein `git` im Vault, das nur ein relativer PATH-Eintrag ('node_modules/.bin') vor das echte setzt — schon das Lesen der
-  # Git-Einstellungen bei der Vertrauensprüfung startet git im Vault-Ordner (Review SW-3).
+  # Git-Einstellungen (Werkstatt: git config --list im Vault-Ordner) startet git im Vault-Ordner (Review SW-3).
   mkdir -p "$vd/node_modules/.bin"; d_marke_sh "$vd/node_modules/.bin/git" fremdes-git "$marke"
   case "$art" in
     haken)

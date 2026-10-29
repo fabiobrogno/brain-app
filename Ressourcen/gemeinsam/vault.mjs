@@ -13,6 +13,7 @@ import { pruefeText, berlinHeute, leseKopf } from "./pruefung.mjs";
 import * as gitFn from "./git.mjs";
 import * as vertrauenFn from "./vertrauen.mjs";
 import { erzeugeNotizIndex, titelAus } from "./notizen.mjs";
+import { leseVaults } from "./vaults.mjs";
 import { wertAus } from "./nutzung.mjs";
 import { erzeugePosteingang } from "./posteingang.mjs";
 
@@ -247,25 +248,23 @@ export function oeffneVault(vaultPfad, opts = {}) {
     return pruefeText(d.pfad, d.inhalt, { heute: opts.heute || berlinHeute(jetzt()) });
   }
 
-  // ---------- Kern und Vertrauen (Spec v2 §8, Kern-Umzug P4) ----------
-  // Der gebündelte Kern läuft ohne Freigabe (er ist per Manifest geprüft, der Vault liefert nur Daten). Git-Hooks und programmstartende
-  // Git-Einstellungen eines Vaults laufen erst, wenn der Nutzer ihm in der App vertraut hat. Der Merker liegt außerhalb des Vaults
-  // (<support>/vertrauen.json, siehe vertrauen.mjs) und bindet an genau diesen Ordner und diesen Code; er wirkt auch für den MCP-Server
-  // und die CLI von Swift.
-  const stuetze = () => ({ support: opts.support });
+  // ---------- Kern und Workspace-Trust (Kern-Umzug P4/P5) ----------
+  // Der gebündelte Kern läuft aus dem App-Paket (per Manifest geprüft, der Vault liefert nur Daten). Ob an einem Vault etwas bewirkt werden darf
+  // (git, Hintergrunddienst, Hooks, KI-Pflege), entscheidet das Vertrauen: angelegt/geklont von Kortex oder vom Nutzer im Studio bestätigt. Der
+  // Merker liegt außerhalb des Vaults (<support>/vertrauen.json, siehe vertrauen.mjs); er wirkt auch für den MCP-Server und den Kern.
+  const imListe = (echt) => leseVaults({ support: opts.support }).vaults.some((v) => { try { return realpathSync(v.pfad) === echt; } catch { return false; } });
+  const stuetze = () => ({ support: opts.support, imListe });
   const stand = () => vertrauenFn.pruefeVertrauen(wurzel, stuetze());
-  const vertraut = () => stand().erlaubt;
   const rueckfragenPfad = join(kern, "rueckfragen.mjs");
   // „Kit vorhanden“ heißt jetzt: der Vault ist ein Brain im Sinne des Kerns (brain.config.json) UND der Kern ist da.
   const istBrain = () => existsSync(join(wurzel, "brain.config.json"));
   const kitVorhanden = () => istBrain() && (existsSync(kitPfad) || existsSync(rueckfragenPfad));
-  const kit = (s) => ({ vorhanden: kitVorhanden(), vertraut: (s || stand()).erlaubt });
+  const kit = () => ({ vorhanden: kitVorhanden() });
   function vertrauen(erlauben) {
     if (typeof erlauben !== "boolean") throw new HttpFehler(400, "„erlauben“ muss true oder false sein.");
-    if (erlauben) vertrauenFn.erlaube(wurzel, stuetze()); else vertrauenFn.widerrufe(wurzel, stuetze());
+    if (erlauben) vertrauenFn.erlaube(wurzel, { support: opts.support, quelle: "bestaetigt" }); else vertrauenFn.widerrufe(wurzel, { support: opts.support });
     gesCache = null; rfCache = null;
-    const s = stand();
-    return { kit: kit(s), vertrauen: s };
+    return { kit: kit(), vertrauen: stand() };
   }
   // Version des gebündelten Kerns (= App-Version), nicht die eines Ordners im Vault.
   const kitVersion = () => { if (!istBrain()) return null; try { return readFileSync(join(kern, "VERSION"), "utf8").trim() || null; } catch { return null; } };
@@ -306,18 +305,15 @@ export function oeffneVault(vaultPfad, opts = {}) {
     return wert;
   }
 
-  // ---------- Git unter Vertrauen v2 (Spec v2 §8) ----------
-  // Jeder Git-Aufruf läuft gehärtet (git.mjs); ohne Vertrauen zusätzlich ohne Hooks. Enthält die lokale Git-Konfiguration einen Schlüssel,
-  // der Programme starten kann (credential.helper, filter.*.clean, merge.*.driver …), ist Git gesperrt, bis dem Vault vertraut wird:
-  // status meldet es, alle anderen Git-Routen antworten 409 { gitGesperrt: true }, der Notiz-Index fragt Git dann gar nicht.
-  const gitSicht = (extra = {}) => vertrauenFn.gitSicht(wurzel, { ...stuetze(), ...extra });
+  // ---------- Git unter Workspace-Trust (P5) ----------
+  // Jeder Git-Aufruf läuft gehärtet (git.mjs). Ist dem Vault nicht vertraut, ist Git GANZ gesperrt: status meldet es, alle anderen Git-Routen
+  // antworten 409 { gitGesperrt: true }, der Notiz-Index fragt Git gar nicht. Mit Vertrauen laufen Hooks und Repo-Konfiguration wie gewohnt.
+  const gitSicht = () => vertrauenFn.gitSicht(wurzel, stuetze());
   const gesperrtFehler = (s) => new HttpFehler(409, `Git ist für diesen Vault gesperrt. ${s.grund}`, { gitGesperrt: true, grund: s.grund });
   // Kontext eines Git-Aufrufs: vertraut/sshEigen und, was der Nutzer selbst eingestellt hat (sshGlobal, gpgGlobal) — ohne Vertrauen ersetzen wir
   // nur die Einstellungen des Vaults, nie seine eigenen.
   const ctxVon = (s) => ({ vertraut: s.vertraut, sshEigen: s.sshEigen, sshGlobal: s.sshGlobal, gpgGlobal: s.gpgGlobal });
   const gitCtx = (extra = {}) => { const s = gitSicht(); if (s.gesperrt) throw gesperrtFehler(s); return { ...ctxVon(s), ...extra }; };
-  // Nach dem Holen im Abgleich: Vertrauen NEU bewerten (Konfiguration frisch gelesen) — das Geholte kann Hooks oder Kit-Code geändert haben.
-  const neuBewerten = () => { const s = gitSicht({ frisch: true }); return { vertraut: s.vertraut, gesperrt: s.gesperrt }; };
 
   // ---------- Notiz-Index (Spec v2 §5) ----------
   const notizIndex = erzeugeNotizIndex({ wurzel, jetzt, heute: () => opts.heute || berlinHeute(jetzt()),
@@ -365,7 +361,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
     },
     gitCommit: async (a) => gitFn.commit(wurzel, a || {}, gitCtx({ limit: opts.gitLimitCommit })),
     // konflikteLoesen: bei Konflikten die Zusammenführung offen lassen, damit die Oberfläche pro Datei wählen lässt (sonst wie bisher: abbrechen, 409)
-    gitSync: async (a) => gitFn.sync(wurzel, gitCtx({ limitSync: opts.gitLimitSync, limitGesamt: opts.gitLimitAbgleich, neuBewerten, konflikteLoesen: !!(a && a.konflikteLoesen === true) })),
+    gitSync: async (a) => gitFn.sync(wurzel, gitCtx({ limitSync: opts.gitLimitSync, limitGesamt: opts.gitLimitAbgleich, konflikteLoesen: !!(a && a.konflikteLoesen === true) })),
     gitKonflikte: async (pfad) => gitFn.konflikte(wurzel, pfad, gitCtx()),
     gitKonfliktAbschliessen: async (a) => gitFn.konfliktAbschliessen(wurzel, a || {}, gitCtx({ limit: opts.gitLimitCommit })),
     gitKonfliktAbbrechen: async () => gitFn.konfliktAbbrechen(wurzel, gitCtx({ limit: opts.gitLimitCommit })),
@@ -375,6 +371,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
     gitVerlauf: async (pfad, max) => gitFn.verlauf(wurzel, pfad, max, gitCtx()),
     gitDiff: async (pfad, sha) => gitFn.diff(wurzel, pfad, sha, gitCtx()),
     gitFassung: async (pfad, sha) => gitFn.fassung(wurzel, pfad, sha, gitCtx()),
-    istGitRepo: async () => { const s = gitSicht(); return gitFn.istRepo(wurzel, ctxVon(s)); }, // rev-parse ist auch bei gesperrtem Git harmlos
+    // Ohne Vertrauen läuft kein git, auch kein rev-parse: dann zählt, ob der Ordner ein .git hat.
+    istGitRepo: async () => { const s = gitSicht(); return s.gesperrt ? existsSync(join(wurzel, ".git")) : gitFn.istRepo(wurzel, ctxVon(s)); },
   };
 }

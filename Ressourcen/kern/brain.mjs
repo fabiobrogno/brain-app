@@ -9,7 +9,7 @@ import { readFileSync, writeFileSync, mkdirSync, statSync, rmSync, existsSync } 
 import { createHash } from "node:crypto";
 import { join, dirname, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { vaultPfad, KeinVaultFehler, ladeConfig, kernVersion } from "./pfade.mjs";
+import { vaultPfad, KeinVaultFehler, ladeConfig, kernVersion, vaultVertraut, NICHT_VERTRAUT_TEXT } from "./pfade.mjs";
 import { findeSecrets } from "./secrets-muster.mjs";
 import { minisuche } from "./minisuche.mjs";
 import { qmdAufruf } from "./qmd-befehl.mjs";
@@ -369,10 +369,19 @@ if (!f) { console.error(`Befehle: ${Object.keys(befehle).join(" | ")}`); process
 // Der Hintergrunddienst (LaunchAgent) folgt dem aktiven Vault, läuft aber nur für Vaults, für die er ausdrücklich eingeschaltet wurde (tageslauf/dienst-merker.mjs).
 // Kein gültiger oder nicht freigegebener Vault: der Lauf endet still mit Exit 0 (eine Zeile im Protokoll des Dienstes).
 if (befehl === "tageslauf" && rest.includes("--dienst")) {
-  const grund = !vault ? "kein aktiver Vault" : (await import("./tageslauf/dienst-merker.mjs")).dienstErlaubt(vault) ? null : "für diesen Vault ist der Dienst nicht eingeschaltet";
+  const grund = !vault ? "kein aktiver Vault"
+    : !vaultVertraut(vault) ? "dieser Vault ist nicht als deiner bestätigt"
+    : (await import("./tageslauf/dienst-merker.mjs")).dienstErlaubt(vault) ? null : "für diesen Vault ist der Dienst nicht eingeschaltet";
   if (grund) { console.error(`${new Date().toISOString()} Hintergrunddienst: ${grund} — Lauf übersprungen.`); process.exit(0); }
 }
 if (!vault && !OHNE_VAULT.has(befehl)) { console.error(vaultFehler.message); process.exit(2); }
+// Workspace-Trust (P5): Befehle, die am Vault etwas bewirken (git, Hintergrunddienst, KI-Pflege, Hooks eintragen), laufen nur in einem Vault, den Kortex angelegt
+// oder geklont oder der Nutzer im Studio bestätigt hat. Lesen, Suchen, Ansehen, Status, Lint und die Einstellungen bleiben möglich.
+const WIRKEND = new Set(["tageslauf", "dienst", "traum", "nachernte", "antworten", "zurueck", "backup", "hooks-install", "gedaechtnis"]);
+if (vault && WIRKEND.has(befehl) && !(befehl === "backup" && rest[0] === "wiederherstellen") && !(befehl === "dienst" && ["status", "aus"].includes(rest[0])) && !vaultVertraut(vault)) {
+  console.error(NICHT_VERTRAUT_TEXT);
+  process.exit(5);
+}
 // befehle sind sonst synchron; backup ist async (dynamischer Import) — await auf einen einfachen
 // Rückgabewert löst sofort auf, ändert also nichts am Verhalten der anderen Befehle.
 try {

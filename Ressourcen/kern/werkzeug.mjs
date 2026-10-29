@@ -12,9 +12,14 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { kitOrte, KERN } from "./pfade.mjs";
+import { kitOrte, KERN, geprueftVaultsVertraut, vaultVertraut } from "./pfade.mjs";
 
-export function gitBefehl({ plattform = process.platform, home = homedir() } = {}) {
+// Workspace-Trust (P5): Solange ein Vault dieses Prozesses nicht vertraut ist (vertrauen.mjs), startet der Kern GAR KEIN git — gitBefehl liefert dann
+// `git-gesperrt` (Shell-Skript: sagt es und endet mit Exit 126), nie ein echtes git. `ohneVault: true` nur für Aufrufe, die keinen Vault berühren
+// (Wiederherstellen einer Sicherung in einen neuen Ordner): sie laufen weiter durch git-sicher.
+// `vault`: für Einstiege, die den Vault nicht über pruefeVault gefunden haben (die Commit-Prüfung im Hook) — dann zählt dieser Vault.
+export function gitBefehl({ plattform = process.platform, home = homedir(), ohneVault = false, vault = null } = {}) {
+  if (!ohneVault && !(vault ? vaultVertraut(vault) : geprueftVaultsVertraut())) return join(KERN, "git-gesperrt");
   if (plattform === "win32") {
     for (const ort of kitOrte({ home, plattform })) {
       const mingit = join(ort, "git", "cmd", "git.exe");

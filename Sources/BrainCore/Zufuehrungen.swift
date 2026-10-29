@@ -41,7 +41,7 @@ public struct Zufuehrung: Decodable, Equatable, Sendable {
 }
 
 /// Stand der Zuführungen: die Statusdatei `<vault>/.logs/zufuehrungen.json`, die der Wächter des Kits schreibt (Kit-PR #13, FBL-93).
-/// Die App liest sie nur — sie ist Daten, kein Kit-Code, und braucht darum keine Vertrauensprüfung.
+/// Die App liest sie nur — sie ist Daten und wird auch ohne Vertrauen in den Vault gelesen.
 ///
 /// Format (Version 1): `{ "version", "erstellt", "probleme", "zufuehrungen": [{ "name", "pfad", "status", "letzterLauf", "alterTage", "maxAlterTage" }] }`.
 /// Gezählt werden die Einträge selbst, nicht das Feld `probleme`.

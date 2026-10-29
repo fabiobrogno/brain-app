@@ -79,54 +79,46 @@ export async function mockeV2(page, vault, { erzwingen = false, ueberschreibe = 
   }));
 }
 
-// ---- Vertrauen v2 (Spec §8): info.vertrauen, POST /api/kit/vertrauen → { kit, vertrauen }, Git gesperrt.
-// Antwortform genau nach §8: vertrauen = { erlaubt, noetig, geaendert, gitGesperrt, gruende: [{ art: "kit"|"hooks"|"git", text }] }.
-export const vertrauenAntwort = (o = {}) => ({
-  erlaubt: false, noetig: true, geaendert: false, gitGesperrt: false,
-  gruende: [{ art: "kit", text: "Brain-Werkzeuge (.tools) mit 3 Programmdateien" }], ...o,
-});
-export const GRUENDE_ALLE = [
-  { art: "kit", text: "Brain-Werkzeuge (.tools) mit 3 Programmdateien" },
-  { art: "hooks", text: "Git-Hooks: pre-commit" },
-  { art: "git", text: "Git-Einstellungen, die Programme starten: core.gitProxy" },
-];
+// ---- Workspace-Trust (P5): info.vertrauen, POST /api/vertrauen → { kit, vertrauen }, Git gesperrt.
+// Antwortform wie die Werkstatt: vertrauen = { erlaubt, noetig, gitGesperrt, quelle } (nicht vertraut: noetig und gitGesperrt, kein quelle).
+export const vertrauenAntwort = (o = {}) => ({ erlaubt: false, noetig: true, gitGesperrt: true, quelle: null, ...o });
+export const VERTRAUT = { erlaubt: true, noetig: false, gitGesperrt: false, quelle: "angelegt" };
 
 // opt.vertrauen: Anfangszustand (veränderlich über das zurückgegebene stand.vertrauen)
-// opt.alt: ältere Werkstatt ohne info.vertrauen (nur kit: { vorhanden, vertraut })
-// opt.postFehler: { status, fehler } → POST /api/kit/vertrauen scheitert
-// stand.post = Anfragen an /api/kit/vertrauen, stand.anfragen = Zähler je Route (info, notizen, gitStatus, gesundheit), stand.gitGesperrtAnfragen = abgewiesene Git-Aufrufe
-// POST /api/kit/vertrauen wie die Werkstatt (Spec §8, Vertrauen v2): { erlauben, vault } — ohne vault 400, mit dem Pfad eines anderen Vaults
-// als dem offenen (stand.vault, aus /api/info) 409 { fehler, art: "anderer-vault" } und nichts wird erlaubt.
-export async function mockeVertrauen(page, { vertrauen = vertrauenAntwort(), alt = false, postFehler = null } = {}) {
+// opt.postFehler: { status, fehler } → POST /api/vertrauen scheitert
+// stand.post = Anfragen an /api/vertrauen, stand.anfragen = Zähler je Route (info, notizen, gitStatus, gesundheit), stand.gitGesperrtAnfragen = abgewiesene Git-Aufrufe
+// POST /api/vertrauen wie die Werkstatt: { erlauben, vault } — ohne vault 400, mit dem Pfad eines anderen Vaults als dem offenen (stand.vault, aus
+// /api/info) 409 { fehler, art: "anderer-vault" } und nichts ändert sich. erlauben:false nimmt das Vertrauen zurück (Einstellungen).
+export async function mockeVertrauen(page, { vertrauen = vertrauenAntwort(), postFehler = null } = {}) {
   const stand = { vertrauen: { ...vertrauen }, post: [], anfragen: { info: 0, notizen: 0, gitStatus: 0, gesundheit: 0 }, gitGesperrtAnfragen: [], vault: null };
-  const kitVon = (v) => ({ vorhanden: !!v.noetig, vertraut: !!v.erlaubt });
   await page.route("**/api/info", async (route) => {
     stand.anfragen.info++;
-    const r = await route.fetch(); const { vertrauen: _echt, ...j } = await r.json(); // die echte Werkstatt liefert info.vertrauen schon: für „ältere Werkstatt“ weglassen, sonst ersetzen
+    let r; try { r = await route.fetch(); } catch { return; } // der Test kann enden, während die Anfrage noch läuft
+    const j = await r.json();
     stand.vault = j.vault || stand.vault;
-    await route.fulfill({ response: r, json: { ...j, kit: kitVon(stand.vertrauen), ...(alt ? {} : { vertrauen: stand.vertrauen }) } });
+    await route.fulfill({ response: r, json: { ...j, kit: { vorhanden: true }, vertrauen: stand.vertrauen } });
   });
-  await page.route("**/api/kit/vertrauen", async (route) => {
+  await page.route("**/api/vertrauen", async (route) => {
     const body = route.request().postDataJSON();
     stand.post.push(body);
     if (postFehler) return route.fulfill({ status: postFehler.status, json: { fehler: postFehler.fehler } });
     if (typeof body.vault !== "string") return route.fulfill({ status: 400, json: { fehler: "Der Vault fehlt: die Frage muss den gezeigten Pfad mitschicken." } });
     if (stand.vault && body.vault !== stand.vault) return route.fulfill({ status: 409, json: { fehler: "Das ist nicht der Vault, der in der Werkstatt offen ist.", art: "anderer-vault" } });
-    stand.vertrauen = { ...stand.vertrauen, erlaubt: !!body.erlauben, geaendert: false, gitGesperrt: body.erlauben ? false : stand.vertrauen.gitGesperrt };
-    await route.fulfill({ json: { kit: kitVon(stand.vertrauen), vertrauen: stand.vertrauen } });
+    stand.vertrauen = body.erlauben ? { erlaubt: true, noetig: false, gitGesperrt: false, quelle: "bestaetigt" } : vertrauenAntwort();
+    await route.fulfill({ json: { kit: { vorhanden: true }, vertrauen: stand.vertrauen } });
   });
   // Git gesperrt: Status 200 { repo, gesperrt, grund }, alle übrigen Git-Routen 409 { fehler, gitGesperrt: true }
   await page.route(/\/api\/git\/(status|sync|commit|log|verlauf|diff|fassung|remote)(\?|$)/, async (route) => {
     const name = new URL(route.request().url()).pathname.split("/").pop();
     if (name === "status") stand.anfragen.gitStatus++;
     if (!stand.vertrauen.gitGesperrt) return route.fallback();
-    if (name === "status") return route.fulfill({ json: { repo: true, gesperrt: true, grund: "Die Git-Einstellungen dieses Vaults können Programme starten." } });
+    if (name === "status") return route.fulfill({ json: { repo: true, gesperrt: true, grund: "Dieser Vault ist in Kortex noch nicht als deiner bestätigt." } });
     stand.gitGesperrtAnfragen.push(name);
-    return route.fulfill({ status: 409, json: { fehler: "Roher Backend-Text: Git ist gesperrt (core.gitProxy).", gitGesperrt: true } });
+    return route.fulfill({ status: 409, json: { fehler: "Roher Backend-Text: Git ist gesperrt.", gitGesperrt: true } });
   });
   await page.route("**/api/notizen", (route) => { stand.anfragen.notizen++; return route.fallback(); });
-  // Ohne Vertrauen läuft das Kit nicht: Gesundheit und Rückfragen sind „nicht verfügbar“
-  await page.route("**/api/gesundheit", (route) => { stand.anfragen.gesundheit++; return route.fulfill({ json: stand.vertrauen.erlaubt || !stand.vertrauen.noetig ? { ampel: "gruen", warnungen: [], pruefungen: [] } : { verfuegbar: false, grund: "nicht-vertraut" } }); });
-  await page.route("**/api/rueckfragen", (route) => route.fulfill({ json: stand.vertrauen.erlaubt || !stand.vertrauen.noetig ? { offen: 2 } : { verfuegbar: false, grund: "nicht-vertraut" } }));
+  // Gesundheit und Rückfragen kommen aus dem gebündelten Kern und laufen auch ohne Vertrauen
+  await page.route("**/api/gesundheit", (route) => { stand.anfragen.gesundheit++; return route.fulfill({ json: { ampel: "gruen", warnungen: [], pruefungen: [] } }); });
+  await page.route("**/api/rueckfragen", (route) => route.fulfill({ json: { offen: 2 } }));
   return stand;
 }

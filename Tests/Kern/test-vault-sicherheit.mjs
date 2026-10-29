@@ -120,7 +120,7 @@ test("Ohne stabilen Kern-Pfad setzt install-git-hooks core.hooksPath nicht (Exit
   const v = gueltig();
   const g = (...a) => execFileSync("git", ["-C", v, ...a], { encoding: "utf8", env: ohneGit() });
   g("init", "-q", "-b", "main");
-  const ohne = lauf("install-git-hooks.mjs", [v], { env: { KORTEX_KERN_UNSTABIL_ERLAUBT: "" } });
+  const ohne = lauf("install-git-hooks.mjs", [v], { env: { KORTEX_KERN_UNSTABIL_ERLAUBT: "", BRAIN_TESTMODUS: "1" } }); // BRAIN_TESTMODUS: der Wegwerf-Vault gilt als vertraut (P5)
   assert.equal(ohne.status, 3, ohne.stderr);
   assert.match(ohne.stderr, /stabilen Kern-Pfad/);
   assert.throws(() => g("config", "core.hooksPath"), "core.hooksPath bleibt ungesetzt");
@@ -131,13 +131,17 @@ test("Ohne stabilen Kern-Pfad setzt install-git-hooks core.hooksPath nicht (Exit
 
 test("Ohne stabilen Kern-Pfad schreibt dienstAn keine plist und lädt nichts (ok:false, nichtStabil), mit Testschalter schon", () => {
   const v = gueltig(), home = temp("vs-heim");
-  const alt = process.env.KORTEX_KERN_UNSTABIL_ERLAUBT;
+  const alt = process.env.KORTEX_KERN_UNSTABIL_ERLAUBT, altTest = process.env.BRAIN_TESTMODUS;
   try {
     process.env.KORTEX_KERN_UNSTABIL_ERLAUBT = "";
+    process.env.BRAIN_TESTMODUS = "1"; // der Wegwerf-Vault gilt als vertraut (P5)
     const r = D.dienstAn(v, { home, plattform: "darwin", node: process.execPath, claude: null });
     assert.equal(r.ok, false);
     assert.equal(r.nichtStabil, true);
     assert.match(r.text, /stabilen Kern-Pfad/);
     assert.equal(D.dienstEingerichtet({ home }), false, "keine plist geschrieben");
-  } finally { if (alt === undefined) delete process.env.KORTEX_KERN_UNSTABIL_ERLAUBT; else process.env.KORTEX_KERN_UNSTABIL_ERLAUBT = alt; }
+  } finally {
+    if (alt === undefined) delete process.env.KORTEX_KERN_UNSTABIL_ERLAUBT; else process.env.KORTEX_KERN_UNSTABIL_ERLAUBT = alt;
+    if (altTest === undefined) delete process.env.BRAIN_TESTMODUS; else process.env.BRAIN_TESTMODUS = altTest;
+  }
 });

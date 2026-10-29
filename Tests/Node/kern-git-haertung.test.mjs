@@ -1,5 +1,5 @@
 // Die Härtung der git-Aufrufe des Kerns (Ressourcen/kern/git-sicher, ein Shell-Skript im Kern-Bündel) darf nicht hinter der der Werkstatt
-// (gemeinsam/git.mjs: GRUND/OHNE_HOOKS/OHNE_SIGNIEREN; gemeinsam/vertrauen.mjs: GEFAEHRLICH) zurückbleiben. Der Kern kann die Module der
+// (gemeinsam/git.mjs: GRUND/OHNE_HOOKS/OHNE_SIGNIEREN) zurückbleiben. Der Kern kann die Module der
 // Werkstatt nicht importieren (er liegt im Bündel/Support-Ordner neben, nicht unter `gemeinsam`), darum ist die Härtung dort nachgebaut —
 // dieser Test hält beide gleich.
 import test from "node:test";
@@ -10,7 +10,11 @@ import { spawnSync } from "node:child_process";
 import { tmp, g, repo, pfad } from "./hilfe.mjs";
 
 const { HAERTUNG } = await import(pfad("gemeinsam", "git.mjs"));
-const { GEFAEHRLICH_MUSTER, gefaehrlicheSchluessel, liesGitKonfiguration } = await import(pfad("gemeinsam", "vertrauen.mjs"));
+// Schlüssel der lokalen Git-Konfiguration, die Git ein Programm starten lassen (credential.<url>.helper, core.askpass/gitProxy/alternateRefsCommand, gpg.*.program,
+// merge.*.driver, filter.*.clean/smudge/process, remote.*.uploadpack/receivepack/vcs). Bis P4 war das die Sperrliste der Werkstatt (Vertrauensfrage); seit P5 gilt
+// das Vertrauen dem Vault, und diese Muster sind nur noch der Prüfstein für die Erlaubnisliste des Kerns.
+const GEFAEHRLICH_MUSTER = [/^credential(\..+)?\.helper$/, /^core\.askpass$/, /^core\.gitproxy$/, /^core\.alternaterefscommand$/, /^gpg\.program$/, /^gpg\..+\.program$/,
+  /^gpg\.ssh\..*(program|command)$/, /^merge\..+\.driver$/, /^filter\..+\.(clean|smudge|process)$/, /^remote\..+\.(uploadpack|receivepack|vcs)$/];
 const SICHER = pfad("kern", "git-sicher");
 const text = readFileSync(SICHER, "utf8");
 
@@ -26,18 +30,16 @@ test("git-sicher ist ausführbar und nennt jede -c-Einstellung der Werkstatt (au
   }
 });
 
-// Konkrete Schlüssel zu jedem Muster der Werkstatt-Liste: Werkstatt UND Kern müssen sie als gefährlich sehen
+// Konkrete Schlüssel zu jedem Muster der Liste: git-sicher muss sie alle verweigern
 const BEISPIELE = ["credential.helper", "credential.https://example.org.helper", "core.askpass", "core.gitproxy", "core.alternaterefscommand", "gpg.program", "gpg.x509.program",
   "gpg.ssh.defaultKeyCommand", "gpg.ssh.program", "merge.x.driver", "filter.x.clean", "filter.x.smudge", "filter.x.process", "remote.o.uploadpack", "remote.o.receivepack", "remote.o.vcs"];
 
-test("jedes Muster der Werkstatt-Liste ist durch mindestens ein Beispiel abgedeckt, und git-sicher verweigert alle Beispiele", () => {
+test("jedes Muster der Liste ist durch mindestens ein Beispiel abgedeckt, und git-sicher verweigert alle Beispiele", () => {
   for (const re of GEFAEHRLICH_MUSTER) assert.ok(BEISPIELE.some((k) => re.test(k.toLowerCase())), `kein Beispiel für ${re}`);
   for (const k of BEISPIELE) {
     const d = repo();
     const evil = join(tmp("brain-evil-"), "evil.sh"); writeFileSync(evil, "#!/bin/sh\nexit 1\n"); chmodSync(evil, 0o755);
     g(d, "config", k, evil);
-    const werkstatt = gefaehrlicheSchluessel(liesGitKonfiguration(d, { frisch: true }).eintraege);
-    assert.equal(werkstatt.length, 1, `Werkstatt sieht ${k} nicht als gefährlich`);
     // bei JEDEM Befehl (auch lesenden): ein Partial Clone lädt beim Lesen nach und startet dann Netz-Programme
     for (const sub of [["status", "--porcelain"], ["cat-file", "-t", "HEAD"], ["fetch", "--quiet"]]) {
       const r = spawnSync(SICHER, ["-C", d, ...sub], { encoding: "utf8" });
@@ -46,10 +48,9 @@ test("jedes Muster der Werkstatt-Liste ist durch mindestens ein Beispiel abgedec
   }
 });
 
-// Die Werkstatt fährt eine Sperrliste (GEFAEHRLICH) und fragt bei Treffern nach Vertrauen; der Kern kennt keine Vertrauensfrage und fährt deshalb
-// eine ERLAUBNISLISTE (git-sicher-pruefung.pl, fail-closed): strenger und nicht umgehbar. Sicherungsnetz: nichts, was die Werkstatt als
-// gefährlich kennt, darf auf der Erlaubnisliste des Kerns stehen.
-test("die Erlaubnisliste des Kerns enthält keinen Schlüssel, den die Werkstatt als gefährlich kennt", () => {
+// Der Kern fährt eine ERLAUBNISLISTE (git-sicher-pruefung.pl, fail-closed): strenger und nicht umgehbar als eine Sperrliste. Sicherungsnetz: nichts
+// Programmstartendes darf auf der Erlaubnisliste des Kerns stehen.
+test("die Erlaubnisliste des Kerns enthält keinen programmstartenden Schlüssel", () => {
   const pl = readFileSync(pfad("kern", "git-sicher-pruefung.pl"), "utf8");
   const schluessel = [...pl.matchAll(/^\s*"([a-z.*-]+)"\s*=>/gm)].map((m) => m[1]);
   assert.ok(schluessel.length >= 30, `zu wenige Schlüssel gelesen: ${schluessel.length}`);

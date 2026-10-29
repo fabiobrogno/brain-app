@@ -8,11 +8,11 @@
 import { chmodSync } from "node:fs";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { vaultPfadOderEnde, ladeConfig, kernStabilOderEnde, stabilerKern, KERN, ALT_KIT_ORDNER } from "./pfade.mjs";
+import { vaultPfadOderEnde, vertrauterVaultOderEnde, ladeConfig, kernStabilOderEnde, stabilerKern, KERN, ALT_KIT_ORDNER } from "./pfade.mjs";
 import { gitBefehl } from "./werkzeug.mjs";
 
 const args = process.argv.slice(2);
-const V = vaultPfadOderEnde();
+const V = vertrauterVaultOderEnde(vaultPfadOderEnde()); // Workspace-Trust (P5): core.hooksPath setzt nur in einem bestätigten Vault
 const GIT = gitBefehl({ cfg: ladeConfig(V) });
 const fwd = (p) => String(p).split("\\").join("/");
 const git = (...a) => execFileSync(GIT, ["-C", V, ...a], { encoding: "utf8", windowsHide: true, stdio: ["ignore", "pipe", "ignore"] }).trim();

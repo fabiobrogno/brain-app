@@ -28,6 +28,9 @@ if (!process.env.BRAIN_APP_SUPPORT) process.env.BRAIN_APP_SUPPORT = path.join(os
 // Die Bühne liegt im Temp-Ordner und ist kein stabiler Kern-Pfad: Tests, die Hooks/Git-Hooks/Dienst eintragen, dürfen den tatsächlichen Ort nehmen.
 // Die Tests der Verweigerung (test-kern-stabil.mjs) entfernen den Schalter im Kindprozess.
 if (!process.env.KORTEX_KERN_UNSTABIL_ERLAUBT) process.env.KORTEX_KERN_UNSTABIL_ERLAUBT = "1";
+// Workspace-Trust (P5): die Wegwerf-Vaults der Suite gelten als vertraut (sonst liefe kein git, kein Hook, keine KI-Pflege). Die Tests der Sperre
+// (test-vertrauen*.mjs/.sh) entfernen die Variable im Kindprozess.
+if (!process.env.KORTEX_VAULT_VERTRAUT) process.env.KORTEX_VAULT_VERTRAUT = "alle";
 
 if (!process.env.QMD_BIN) process.env.QMD_BIN = fileURLToPath(new URL("./fake-qmd-cli.mjs", import.meta.url));
 

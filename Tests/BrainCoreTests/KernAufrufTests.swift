@@ -76,6 +76,24 @@ struct KernAufrufEchtTests {
         #expect(!FileManager.default.fileExists(atPath: marke.path), "Code aus <vault>/.tools darf nie laufen")
     }
 
+    /// Workspace-Trust (P5): Ein von außen geöffneter Vault ist nicht vertraut. Der Kern liest weiter (Status), tut aber nichts, was am
+    /// Vault etwas bewirkt: Pflege, Hintergrunddienst, Hooks eintragen, Sicherung enden mit Exit 5 und einem Satz — kein git, keine KI.
+    @Test func einNichtVertrauterVaultWirdNurGelesen() async throws {
+        let vault = try BrueckenUmgebung.vault()
+        let support = tempOrdner("Kortex Support Leer") // leerer Support-Ordner: kein Vertrauens-Merker
+        let befehl = BrainBefehl(node: BrueckenUmgebung.node!, kern: try Self.kernLink(), vault: vault,
+                                 umgebung: ["BRAIN_APP_SUPPORT": support.path, "KORTEX_VAULT_VERTRAUT": ""])
+        let s = try await befehl.status()
+        #expect(s.zustand == .ok, "Lesen geht ohne Vertrauen")
+        for argumente in [["tageslauf", "--probe"], ["dienst", "an"], ["hooks-install"], ["backup"], ["antworten"]] {
+            let r = try await befehl.fuehreAus(argumente)
+            #expect(r.code == 5, "brain \(argumente.joined(separator: " ")): Exit \(r.code)")
+            #expect(r.fehler.contains("noch nicht als deiner bestätigt"))
+        }
+        #expect(!FileManager.default.fileExists(atPath: support.appendingPathComponent("dienst.json").path))
+        #expect(!FileManager.default.fileExists(atPath: vault.appendingPathComponent(".git").path), "kein git gestartet")
+    }
+
     @Test func ordnerOhneBrainConfigEndetMitExit2() async throws {
         let ohne = tempOrdner("Kein Vault")
         let r = try await BrainBefehl(node: BrueckenUmgebung.node!, kern: try Self.kernLink(), vault: ohne).fuehreAus(["status", "--json"])

@@ -17,7 +17,7 @@ import { join, dirname, isAbsolute, resolve } from "node:path";
 import { homedir, userInfo } from "node:os";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { nodePfad, starterPfad, supportOrdner, KernNichtStabilFehler, vaultUndRest } from "../pfade.mjs";
+import { nodePfad, starterPfad, supportOrdner, KernNichtStabilFehler, vaultUndRest, vaultVertraut, NICHT_VERTRAUT_TEXT } from "../pfade.mjs";
 import { findeClaude } from "../ernte.mjs";
 import { erlaubeVault, widerrufeAlle, dienstErlaubt } from "./dienst-merker.mjs";
 
@@ -74,6 +74,8 @@ function launchctl(args) {
 const domain = () => `gui/${userInfo().uid}`;
 
 export function dienstAn(vault, { home = homedir(), plattform = process.platform, node = nodePfad(), claude = findeClaude(), profil: profilRoh = process.env.CLAUDE_CONFIG_DIR } = {}) {
+  // Workspace-Trust (P5): der Dienst läuft nur für einen Vault, den der Nutzer als seinen bestätigt hat.
+  if (!vaultVertraut(vault)) return { ok: false, nichtVertraut: true, text: NICHT_VERTRAUT_TEXT };
   if (plattform !== "darwin") return { ok: false, text: "Den Hintergrunddienst gibt es nur auf dem Mac — der Tageslauf startet dann beim Sitzungsstart, wenn er fällig ist." };
   // Der LaunchAgent zeigt auf den Starter neben dem stabilen Kern-Pfad: ohne ihn (KORTEX_KERN_PFAD) nichts eintragen, sonst bricht er beim nächsten App-Update.
   let starter;

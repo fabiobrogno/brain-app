@@ -11,7 +11,7 @@ export function sicherungStand(s) {
   const blockiert = (grund, text) => ({ zustand: "blockiert", grund, text });
   if (!s || typeof s !== "object") return blockiert("kein-git", "Der Stand deines Brains war nicht lesbar.");
   if (s.gesperrt) {
-    return blockiert("gesperrt", "Git ist für dieses Brain gesperrt, bis du ihm im Studio vertraust. Solange kann Kortex nichts sichern — es wurde auch nichts bei GitHub angelegt.");
+    return blockiert("gesperrt", "Git ist für diesen Vault gesperrt, bis du ihm im Studio vertraust. Solange kann Kortex nichts sichern — es wurde auch nichts bei GitHub angelegt.");
   }
   if (!s.repo) return blockiert("kein-git", "Dieser Ordner hat keinen Versionsverlauf (git). Schalte ihn zuerst ein.");
   if (s.zweig === "(losgelöst)") {

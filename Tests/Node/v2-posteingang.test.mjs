@@ -4,7 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, existsSync, chmodSync, appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { tmp, schreibe, repo, g, pfad } from "./hilfe.mjs";
+import { tmp, schreibe, repo, g, pfad, echt } from "./hilfe.mjs";
 
 const { oeffneVault, HttpFehler } = await import(pfad("gemeinsam", "vault.mjs"));
 const { setzeKopfFeld, koerperVon } = await import(pfad("gemeinsam", "posteingang.mjs"));
@@ -150,7 +150,7 @@ test("Ohne Git-Repository: Datei wird verschoben, Antwort sagt git:false und com
   assert.ok(existsSync(join(d, "90_archiv/verworfen/a.md")));
 });
 
-test("Git gesperrt (fremder Filter in .git/config): 409 gitGesperrt, nichts verschoben", async () => {
+test("Git gesperrt (Vault nicht vertraut): 409 gitGesperrt, nichts verschoben", () => echt(async () => {
   const d = posteingang();
   appendFileSync(join(d, ".git", "config"), `[filter "probe"]\n\tclean = "sh -c 'cat'"\n`);
   const v = vault(d);
@@ -162,7 +162,7 @@ test("Git gesperrt (fremder Filter in .git/config): 409 gitGesperrt, nichts vers
   assert.ok(existsSync(join(d, "00_inbox/2026-10-27_idee.md")));
   assert.doesNotMatch(lesen(d, "00_inbox/2026-10-27_idee.md"), /spaeter_bis/);
   assert.doesNotMatch(lesen(d, "09_wiki/wissen/thema_kaffee.md"), /Posteingang/);
-});
+}));
 
 // ---------- Später ----------
 test("Später: schreibt spaeter_bis in den Kopf, ein Commit, Index zeigt das Feld; wieder zeigen entfernt es", async () => {

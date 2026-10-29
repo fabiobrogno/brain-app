@@ -2,20 +2,17 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
-import { mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 // BRAIN_WURZEL: alternative Wurzel mit Ressourcen/werkstatt (z. B. fester Backend-Stand), sonst dieses Repo
 const wurzel = process.env.BRAIN_WURZEL || join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-// Vertrauen v2 (Spec §8): der Merker braucht Ordner-Kennung und Code-Fingerabdruck. Die rechnet das Backend selbst aus (erlaube),
-// geschrieben wird nur in den übergebenen Support-Ordner. Ein älterer Backend-Stand (BRAIN_WURZEL) kennt nur { seit }.
+// Workspace-Trust (P5): der Merker braucht die Ordner-Kennung; die rechnet das Backend selbst aus (erlaube), geschrieben wird nur in den
+// übergebenen Support-Ordner. quelle „angelegt“: so sieht ein von Kortex angelegter Vault aus.
 export async function erteileVertrauen(vault, support) {
-  try {
-    const m = await import(pathToFileURL(join(wurzel, "Ressourcen/gemeinsam/vertrauen.mjs")).href);
-    if (typeof m.erlaube === "function") { m.erlaube(vault, { support }); return; }
-  } catch { /* älterer Backend-Stand */ }
-  writeFileSync(join(support, "vertrauen.json"), JSON.stringify({ [realpathSync(vault)]: { seit: new Date().toISOString() } }));
+  const m = await import(pathToFileURL(join(wurzel, "Ressourcen/gemeinsam/vertrauen.mjs")).href);
+  m.erlaube(vault, { support, quelle: "angelegt" });
 }
-// Eigener Support-Ordner je Server (nie der echte). Standard: Vault ist vertraut (Kit läuft); { vertraut: false } = unvertraut.
+// Eigener Support-Ordner je Server (nie der echte). Standard: Vault ist vertraut; { vertraut: false } = von außen geöffnet (die Frage kommt, Git bleibt gesperrt).
 // { kern }: Ordner eines Attrappen-Kerns (brain.mjs, rueckfragen.mjs …), den die Werkstatt als gebündelten Kern benutzt (KORTEX_KERN_PFAD, wie
 // die App ihn setzt); ohne Angabe bleibt die Variable leer (nie der Kern des Entwicklers).
 // vault = null: Werkstatt ohne Vault (Willkommen), der Vault-Ordner wird dann über die Oberfläche geöffnet. Das Ergebnis nennt auch den support-Ordner.

@@ -1,6 +1,6 @@
 import Foundation
 
-/// Umgebung für alle Node-Kindprozesse (Brücken, brain.mjs, Vertrauensprüfung): Eine GUI-App erbt die Umgebung ihres Starters;
+/// Umgebung für alle Node-Kindprozesse (Brücken, brain.mjs): Eine GUI-App erbt die Umgebung ihres Starters;
 /// Variablen, die Node, den Lader oder Git umlenken, dürfen nicht in die mitgelieferte Laufzeit gelangen.
 public enum NodeUmgebung {
     /// Entfernt: Node-Optionen/-Pfade (fremder Code per `--require`), Electron-Modus, TLS-Abschaltung, `DYLD_*`/`LD_*` (Bibliotheken
@@ -13,7 +13,7 @@ public enum NodeUmgebung {
     ]
     static let gesperrtePraefixe = ["DYLD_", "LD_", "GIT_"]
 
-    /// Der Testschalter der Werkstatt (`BRAIN_TESTMODUS=1`: Test-Hilfen wie `--erlauben` der Vertrauensprüfung). Swift liest ihn
+    /// Der Testschalter der Werkstatt (`BRAIN_TESTMODUS=1`: Test-Hilfen der Werkstatt). Swift liest ihn
     /// selbst für `--test-skript`; an Kindprozesse geht er nur in Debug-Builds — ein Release-Build gibt ihn nie weiter, auch nicht,
     /// wenn der Starter ihn gesetzt hat.
     static let testmodusName = "BRAIN_TESTMODUS"

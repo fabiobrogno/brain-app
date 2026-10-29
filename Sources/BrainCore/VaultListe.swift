@@ -62,7 +62,7 @@ public struct VaultListe: Equatable, Sendable {
     /// dieser Datei): ein Text, Ränder weg, absolut und ohne NUL, der Ordner existiert, und die Ortsregeln erlauben ihn — nicht das
     /// Home selbst, nicht `/`, kein Systemordner, kein versteckter Ordner unter dem Home … (`ortErlaubt` prüft die geschriebene UND
     /// die aufgelöste Form). Das Ergebnis ist der aufgelöste Pfad (dort `realpathSync.native`). Sonst nil: Die Werkstatt zeigt dann
-    /// „Willkommen“, und die App darf nicht den Status eines anderen Ordners zeigen — oder gar `vertrauen-pruefen.mjs` danach fragen.
+    /// „Willkommen“, und die App darf nicht den Status eines anderen Ordners zeigen.
     static func altVault(_ pfade: AppPfade, home: URL) -> URL? {
         guard let roh = AppEinstellungen.lade(pfade).vault else { return nil }
         let v = roh.trimmingCharacters(in: .whitespacesAndNewlines)

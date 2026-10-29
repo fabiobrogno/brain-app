@@ -12,7 +12,7 @@ import { join, dirname, resolve } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
-import { vaultPfadOderEnde, kernStabilOderEnde, starterOderEnde, hookBefehl, hookNameAusBefehl, shellQuote, ALT_KIT_ORDNER } from "../../pfade.mjs";
+import { vaultPfadOderEnde, vertrauterVaultOderEnde, kernStabilOderEnde, starterOderEnde, hookBefehl, hookNameAusBefehl, shellQuote, ALT_KIT_ORDNER } from "../../pfade.mjs";
 // Gleiche Marke wie skills-build.mjs::schreibeGeneriert — hier erneut, weil die Commands jetzt erst in
 // einen Temp-Ordner gerendert und danach HIER (nicht in skills-build.mjs) ins echte Ziel platziert werden,
 // damit ein fremder, nicht markierter Command vor dem Überschreiben weiter gesichert wird.
@@ -142,7 +142,7 @@ const home = args.includes("--claude-home") ? args[args.indexOf("--claude-home")
 if (args.includes("--entfernen")) return entfernen(home);
 if (args.includes("--stand")) return stand(home);
 // Der Vault (nur für die Commands und die Erkennung älterer Einträge): Argument oder --vault/BRAIN_VAULT/aktiver Vault — immer absolut und geprüft.
-const vault = vaultPfadOderEnde(args[0] && !args[0].startsWith("--") ? ["", "", args[0]] : []);
+const vault = vertrauterVaultOderEnde(vaultPfadOderEnde(args[0] && !args[0].startsWith("--") ? ["", "", args[0]] : [])); // Workspace-Trust (P5): Commands und Hooks für die KI nur für einen vertrauten Vault
 // Ohne stabilen Kern-Pfad (KORTEX_KERN_PFAD) trägt der Installer nichts ein: Hooks würden beim nächsten App-Update ins Leere zeigen. Dazu gehört der Starter der App.
 const KERN_STABIL = kernStabilOderEnde();
 const STARTER = process.platform === "win32" ? null : starterOderEnde();

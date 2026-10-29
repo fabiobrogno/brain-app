@@ -415,40 +415,40 @@ test("Menübefehl vor fertigem Start wird gemerkt und danach ausgeführt; bereit
   expect(await page.evaluate(() => window.studio.bereit)).toBe(true);
 });
 
-async function kitRouten(page, { vorhanden = true, vertraut = false } = {}) {
+// Workspace-Trust (P5): info.vertrauen aus einer Attrappe; Gesundheit und Rückfragen kommen aus dem gebündelten Kern und laufen auch ohne Vertrauen.
+async function kitRouten(page, { vertraut = false } = {}) {
   const stand = { vertraut, post: [], gesundheit: 0 };
+  const vertrauen = () => (stand.vertraut ? { erlaubt: true, noetig: false, gitGesperrt: false, quelle: "bestaetigt" } : { erlaubt: false, noetig: true, gitGesperrt: true, quelle: null });
   await page.route("**/api/info", async (route) => {
-    const r = await route.fetch(); const { vertrauen: _echt, ...j } = await r.json(); // ältere Werkstatt: ohne info.vertrauen (die echte liefert es inzwischen)
-    await route.fulfill({ response: r, json: { ...j, kit: { vorhanden, vertraut: stand.vertraut } } });
+    const r = await route.fetch(); const j = await r.json();
+    await route.fulfill({ response: r, json: { ...j, kit: { vorhanden: true }, vertrauen: vertrauen() } });
   });
-  await page.route("**/api/kit/vertrauen", async (route) => { stand.post.push(route.request().postDataJSON()); stand.vertraut = true; await route.fulfill({ json: { ok: true } }); });
-  await page.route("**/api/gesundheit", async (route) => {
-    stand.gesundheit++;
-    await route.fulfill({ json: stand.vertraut ? { ampel: "gruen", warnungen: [], pruefungen: [] } : { verfuegbar: false, grund: "nicht-vertraut" } });
-  });
-  await page.route("**/api/rueckfragen", (route) => route.fulfill({ json: stand.vertraut ? { offen: 2 } : { verfuegbar: false, grund: "nicht-vertraut" } }));
+  await page.route("**/api/vertrauen", async (route) => { stand.post.push(route.request().postDataJSON()); stand.vertraut = true; await route.fulfill({ json: { kit: { vorhanden: true }, vertrauen: vertrauen() } }); });
+  await page.route("**/api/gesundheit", async (route) => { stand.gesundheit++; await route.fulfill({ json: { ampel: "gruen", warnungen: [], pruefungen: [] } }); });
+  await page.route("**/api/rueckfragen", (route) => route.fulfill({ json: { offen: 2 } }));
   return stand;
 }
 
-// Ältere Werkstatt: nur info.kit ({ vorhanden, vertraut }), ohne info.vertrauen. Die Frage ist seit Vertrauen v2 ein Dialog (vorher ein Hinweisband).
-test("Kit-Vertrauen: Frage, Vertrauen lädt Gesundheit/Rückfragen sofort", async ({ page }) => {
+test("Vertrauen: Frage „Kommt dieser Vault von dir?“, Vertrauen lädt Git und Stand sofort neu", async ({ page }) => {
   const stand = await kitRouten(page);
   await oeffne(page, DATEI_A);
   const frage = page.locator('.dialog[data-dialog="vertrauen"]');
   await expect(frage).toBeVisible();
-  await expect(frage).toContainText("Ein altes Brain-Kit im Ordner „.tools“");
-  await expect(page.locator('[data-st="gesundheit"]')).toHaveCount(0);
-  await page.screenshot({ path: "screenshots/kit-vertrauen-light.png" });
+  await expect(frage.locator(".dialog-kopf")).toHaveText("Kommt dieser Vault von dir?");
+  await expect(frage).toContainText("Du hast diesen Ordner von außen geöffnet");
+  await expect(page.locator('[data-st="vertrauen"]')).toContainText("Nur ansehen");
+  await page.screenshot({ path: "screenshots/vertrauen-frage-light.png" });
   const vorher = stand.gesundheit;
   await page.click('[data-aktion="vertrauen-erlauben"]');
   await expect(frage).toHaveCount(0);
-  expect(stand.post).toEqual([{ erlauben: true, vault: realpathSync(vault) }]); // Vertrauen v2: der gezeigte Vault geht mit
+  expect(stand.post).toEqual([{ erlauben: true, vault: realpathSync(vault) }]); // der gezeigte Vault geht mit
   await expect(page.locator('[data-st="gesundheit"]')).toBeVisible();
   await expect(page.locator('[data-bereich="rueckfragen"] .zahl')).toHaveText("2");
   expect(stand.gesundheit).toBeGreaterThan(vorher);
+  await expect(page.locator('[data-st="vertrauen"]')).toHaveCount(0);
 });
 
-test("Kit-Vertrauen: Nicht jetzt schließt die Frage; vertraut oder ohne kit-Feld: keine Frage", async ({ page }) => {
+test("Vertrauen: „Nur ansehen“ schließt die Frage; vertraut: keine Frage", async ({ page }) => {
   await kitRouten(page);
   await oeffne(page, DATEI_A);
   await page.click('[data-aktion="vertrauen-spaeter"]');
@@ -459,11 +459,7 @@ test("Kit-Vertrauen: Nicht jetzt schließt die Frage; vertraut oder ohne kit-Fel
   await kitRouten(p2, { vertraut: true });
   await p2.goto(server.url + "?pfad=" + encodeURIComponent(DATEI_A)); await p2.waitForSelector(".cm-content .cm-line");
   await expect(p2.locator('[data-dialog="vertrauen"]')).toHaveCount(0);
-  const p3 = await page.context().newPage(); // echtes Backend, evtl. ohne kit-Feld
-  await mocke(p3);
-  await p3.goto(server.url + "?pfad=" + encodeURIComponent(DATEI_A)); await p3.waitForSelector(".cm-content .cm-line");
-  await p3.waitForTimeout(500);
-  await expect(p3.locator('[data-dialog="vertrauen"]')).toHaveCount(0);
+  await expect(p2.locator('[data-st="vertrauen"]')).toHaveCount(0);
 });
 
 // ---------------------------------------------------------------- W3: Zeitüberschreitung der Brücke (die Anfrage reißt ab, status 0)

@@ -98,3 +98,7 @@ Die übernommenen Tests rechnen mit dem alten Layout (`tests/..` ist der Kern). 
 Bühne (`Ressourcen/kern/` + `Tests/Kern/` als `tests/`), setzt `KORTEX_KERN` auf deren Wurzel und führt `run-all.sh`/`unit.sh` dort aus. Der Arbeitsbaum bleibt unberührt.
 `bash Tests/Kern/run-all.sh` (alles) bzw. `bash Tests/Kern/unit.sh Tests/Kern/test-x.mjs` (einzelne Dateien). Platzhalterfragen
 (`kit/vorlage-eval.json`) sind seit P2 direkt die Standardfragen des Kerns; echte Fragen gehören nie ins Repo (`<vault>/.logs/hint-eval.json`).
+
+## P5: Workspace-Trust
+- `Ressourcen/kern/vertrauen.mjs` liest den Merker `<Support>/vertrauen.json` (geschrieben von der Werkstatt, `gemeinsam/vertrauen.mjs`); `pfade.mjs#vaultVertraut`, `geprueftVaultsVertraut`, `vertrauterVaultOderEnde`, `NICHT_VERTRAUT_TEXT`. Ohne Vertrauen: `git-gesperrt` statt `git-sicher` (`werkzeug.mjs#gitBefehl`), Hooks (`vaultPfadOderEnde` mit `still`) enden still, kein Dienst, kein `findeClaude`, `skills-build.mjs`/`claude-hooks`/`hooks-install`/`tageslauf`/… verweigern mit Exit 5. Einzelheiten und Abwägungen: `docs/plaene/kern-umzug.md` „P5 umgesetzt“.
+- Testschalter `KORTEX_VAULT_VERTRAUT=alle` (nur mit `BRAIN_TESTMODUS=1` oder `KORTEX_KERN_UNSTABIL_ERLAUBT=1`): `Tests/Kern/setup.mjs`, `plattform.sh`, `stage.sh` setzen ihn; `Tests/Kern/test-vertrauen.mjs` prüft die Sperre mit Marken (Schein-git, Schein-claude) ohne ihn.

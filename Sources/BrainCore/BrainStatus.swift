@@ -58,11 +58,6 @@ public struct StatusAnzeige: Equatable, Sendable {
         StatusAnzeige(symbol: "exclamationmark.octagon", zeichen: "✕", titel: text)
     }
 
-    /// Reste des Vertrauensmodells für Kern-Aufrufe (bis P5): Die App zeigt sie nicht mehr an, der gebündelte Kern braucht keine Freigabe.
-    public static let kitNichtErlaubt = StatusAnzeige(symbol: "lock", zeichen: "🔒", titel: "Kit nicht erlaubt")
-    public static let kitPruefungFehlgeschlagen = StatusAnzeige(symbol: "lock.trianglebadge.exclamationmark", zeichen: "⚠",
-                                                                titel: "Kit-Prüfung fehlgeschlagen")
-
     public static func fuer(_ status: BrainStatus?, fehler: String? = nil) -> StatusAnzeige {
         guard let s = status else {
             return StatusAnzeige(symbol: "questionmark.circle", zeichen: "?", titel: fehler ?? "Status unbekannt")

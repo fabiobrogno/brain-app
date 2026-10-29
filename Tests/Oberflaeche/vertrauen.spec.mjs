@@ -1,16 +1,18 @@
-// Vertrauen v2 in der Oberfläche (Spec §8): Frage „Diesem Vault vertrauen?“, Statusleiste, Git gesperrt, Aktion an die App.
-// Die Werkstatt-Antworten (info.vertrauen, POST /api/kit/vertrauen, Git gesperrt) sind Attrappen aus mocks.mjs; der Rest läuft gegen die echte Werkstatt.
+// Workspace-Trust in der Oberfläche (P5): Frage „Kommt dieser Vault von dir?“, Statusleiste „Nur ansehen“, Vertrauen entziehen, Git gesperrt, Aktion an die App.
+// Die Werkstatt-Antworten (info.vertrauen, POST /api/vertrauen, Git gesperrt) sind Attrappen aus mocks.mjs; der Rest läuft gegen die echte Werkstatt.
+// UI_SHOTS=<Ordner>: legt die Bildschirmfotos der Vertrauens-Oberfläche dort ab (sonst screenshots/, ignoriert).
 import { test, expect } from "./basis.mjs";
 import { writeFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { baueVault } from "./vault.mjs";
 import { starteServer } from "./start.mjs";
-import { mockeV2, mockeVertrauen, vertrauenAntwort, GRUENDE_ALLE } from "./mocks.mjs";
+import { mockeV2, mockeVertrauen, vertrauenAntwort, VERTRAUT } from "./mocks.mjs";
 
 let vault, server;
 test.beforeEach(async () => { ({ vault } = baueVault()); server = await starteServer(vault); });
 test.afterEach(() => server?.stopp());
 
+const shot = (name) => join(process.env.UI_SHOTS || "screenshots", `vertrauen-${name}.png`);
 const NOTIZ = "10_notizen/Reise nach Lissabon.md";
 // Der Vault, den die Frage zeigt und beim Erlauben mitschickt (die Werkstatt meldet den echten Pfad, auch hinter Verweisen wie /var → /private/var)
 const echt = () => realpathSync(vault);
@@ -27,49 +29,48 @@ async function start(page, opt = {}) {
   return stand;
 }
 
-test("Frage erscheint bei noetig und nicht erlaubt: Gründe aus der Werkstatt, „Nicht jetzt“ hat den Fokus", async ({ page }) => {
-  await start(page, { vertrauen: vertrauenAntwort({ gruende: GRUENDE_ALLE }) });
+test("Frage erscheint bei einem nicht vertrauten Vault: „Kommt dieser Vault von dir?“, Optionen „Vertrauen“ / „Nur ansehen“, „Nur ansehen“ hat den Fokus", async ({ page }) => {
+  await start(page, { vertrauen: vertrauenAntwort() });
   const d = dialogVertrauen(page);
   await expect(d).toBeVisible();
-  await expect(d.locator(".dialog-kopf")).toHaveText("Diesem Vault vertrauen?");
-  await expect(d.locator("[data-grund]")).toHaveCount(3);
-  await expect(d.locator('[data-grund="kit"]')).toHaveText("Brain-Werkzeuge (.tools) mit 3 Programmdateien");
-  await expect(d.locator('[data-grund="hooks"]')).toHaveText("Git-Hooks: pre-commit");
-  await expect(d.locator('[data-grund="git"]')).toHaveText("Git-Einstellungen, die Programme starten: core.gitProxy");
-  await expect(d).not.toContainText("seit deiner Freigabe"); // nur bei geaendert
-  await expect(d.locator('[data-vertrauen="git-gesperrt"]')).toHaveCount(0);
+  await expect(d.locator(".dialog-kopf")).toHaveText("Kommt dieser Vault von dir?");
+  await expect(d.locator('[data-vertrauen="intro"]')).toContainText("von außen geöffnet");
+  await expect(d.locator('[data-vertrauen="folge"]')).toContainText("Git nutzen");
+  await expect(d.locator('[data-vertrauen="folge"]')).toContainText("Bei „Nur ansehen“ kannst du den Vault lesen, durchsuchen und bearbeiten");
+  await expect(d.locator('[data-vertrauen="git-gesperrt"]')).toContainText("ist Git gesperrt");
+  await expect(d.locator('[data-aktion="vertrauen-erlauben"]')).toHaveText("Vertrauen");
+  await expect(d.locator('[data-aktion="vertrauen-spaeter"]')).toHaveText("Nur ansehen");
+  await expect(d).not.toContainText("Brain");
+  await expect(d).not.toContainText(".tools");
+  await page.screenshot({ path: shot("frage-hell") });
   // Sicherer Standard: ein versehentliches Enter erteilt kein Vertrauen
   await expect(d.locator('[data-aktion="vertrauen-spaeter"]')).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(d).toHaveCount(0);
   expect(await aktionen(page, "vertrauen-geaendert")).toHaveLength(0);
-});
-
-test("geaendert: der Satz „Die Werkzeuge in diesem Vault haben sich seit deiner Freigabe geändert.“", async ({ page }) => {
-  await start(page, { vertrauen: vertrauenAntwort({ geaendert: true }) });
-  await expect(dialogVertrauen(page).locator('[data-vertrauen="geaendert"]')).toHaveText("Die Werkzeuge in diesem Vault haben sich seit deiner Freigabe geändert.");
+  await page.screenshot({ path: shot("nur-ansehen-statusleiste") });
 });
 
 test("Vertrauen: POST erlauben, Aktion an die App, danach Info, Git-Status, Index und Gesundheit neu", async ({ page }) => {
   const stand = await start(page, { vertrauen: vertrauenAntwort() });
   await expect(dialogVertrauen(page)).toBeVisible();
-  await expect(page.locator('[data-st="gesundheit"]')).toHaveCount(0); // ohne Vertrauen läuft das Kit nicht
+  await expect(page.locator('[data-st="zweig"]')).toHaveCount(0); // ohne Vertrauen keine Git-Angaben
   expect(await aktionen(page, "vertrauen-geaendert")).toHaveLength(0);
   const vorher = { ...stand.anfragen };
   await page.click('[data-aktion="vertrauen-erlauben"]');
   await expect(dialogVertrauen(page)).toHaveCount(0);
-  expect(stand.post).toEqual([{ erlauben: true, vault: echt() }]); // Vertrauen v2: der gezeigte Vault geht mit
+  expect(stand.post).toEqual([{ erlauben: true, vault: echt() }]); // der gezeigte Vault geht mit
   expect(await aktionen(page, "vertrauen-geaendert")).toEqual([{ aktion: "vertrauen-geaendert" }]);
   await expect.poll(() => stand.anfragen.info).toBeGreaterThan(vorher.info);
   await expect.poll(() => stand.anfragen.gitStatus).toBeGreaterThan(vorher.gitStatus);
   await expect.poll(() => stand.anfragen.notizen).toBeGreaterThan(vorher.notizen);
   await expect(page.locator('[data-st="gesundheit"]')).toBeVisible();
-  await expect(page.locator('[data-bereich="rueckfragen"] .zahl')).toHaveText("2");
   await expect(page.locator('[data-st="vertrauen"]')).toHaveCount(0);
+  await expect(page.locator('[data-st="zweig"]')).toBeVisible();
   await expect(page.locator(".toast")).toContainText("Vertrauen gespeichert");
 });
 
-test("Nicht jetzt: einmal je Vault und Sitzung, danach über die Statusleiste erreichbar", async ({ page }) => {
+test("Nur ansehen: einmal je Vault und Sitzung gefragt, danach über die Statusleiste „Nur ansehen“ erreichbar; Git-Angaben fehlen dort", async ({ page }) => {
   const stand = await start(page, { vertrauen: vertrauenAntwort() });
   await page.click('.dialog [data-aktion="vertrauen-spaeter"]');
   await expect(dialogVertrauen(page)).toHaveCount(0);
@@ -77,87 +78,93 @@ test("Nicht jetzt: einmal je Vault und Sitzung, danach über die Statusleiste er
   expect(await aktionen(page, "vertrauen-geaendert")).toHaveLength(0);
   const st = page.locator('[data-st="vertrauen"]');
   await expect(st).toBeVisible();
-  await expect(st).toContainText("Nicht freigegeben");
+  await expect(st).toContainText("Nur ansehen");
+  for (const id of ["zweig", "remote", "sync", "geaendert", "verlauf", "kein-git", "git-gesperrt"]) await expect(page.locator(`[data-st="${id}"]`)).toHaveCount(0);
   // Fokuswechsel und neu geladene Info fragen nicht von selbst noch einmal
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await expect.poll(() => stand.anfragen.info).toBeGreaterThan(1);
   await page.waitForTimeout(300);
   await expect(dialogVertrauen(page)).toHaveCount(0);
-  // Statusleiste öffnet die Frage wieder; Esc schließt wie „Nicht jetzt“
+  // Statusleiste öffnet die Frage wieder; Esc schließt wie „Nur ansehen“
   await st.click();
   await expect(dialogVertrauen(page)).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(dialogVertrauen(page)).toHaveCount(0);
+  // auch die Einstellungen führen zur Frage
+  await page.click('[data-st="einstellungen"]');
+  await page.click('[data-menue="vertrauen"]');
+  await expect(dialogVertrauen(page)).toBeVisible();
 });
 
-test("kein Vertrauen nötig oder schon erteilt: keine Frage, kein Statusleisten-Eintrag", async ({ page }) => {
-  await start(page, { vertrauen: vertrauenAntwort({ noetig: false, gruende: [] }) });
+test("vertraut: keine Frage, kein Statusleisten-Eintrag „Nur ansehen“", async ({ page }) => {
+  await start(page, { vertrauen: vertrauenAntwort(VERTRAUT) });
   await page.waitForTimeout(400);
   await expect(dialogVertrauen(page)).toHaveCount(0);
   await expect(page.locator('[data-st="vertrauen"]')).toHaveCount(0);
-  const p2 = await page.context().newPage();
-  await mockeV2(p2, vault);
-  await mockeVertrauen(p2, { vertrauen: vertrauenAntwort({ erlaubt: true }) });
-  await p2.goto(server.url + "?pfad=" + encodeURIComponent(NOTIZ));
-  await p2.waitForSelector(".cm-content .cm-line");
-  await p2.waitForTimeout(400);
-  await expect(dialogVertrauen(p2)).toHaveCount(0);
-  await expect(p2.locator('[data-st="vertrauen"]')).toHaveCount(0);
+  await expect(page.locator('[data-st="zweig"]')).toBeVisible();
 });
 
 test("POST scheitert: Fehler im Dialog, Dialog bleibt, keine Aktion an die App", async ({ page }) => {
-  const stand = await start(page, { vertrauen: vertrauenAntwort(), postFehler: { status: 500, fehler: "Der Merker konnte nicht gespeichert werden." } });
+  const stand = await start(page, { vertrauen: vertrauenAntwort(), postFehler: { status: 500, fehler: "Das Vertrauen konnte nicht gespeichert werden." } });
   await page.click('[data-aktion="vertrauen-erlauben"]');
-  await expect(dialogVertrauen(page).locator(".fehlertext")).toHaveText("Der Merker konnte nicht gespeichert werden.");
+  await expect(dialogVertrauen(page).locator(".fehlertext")).toHaveText("Das Vertrauen konnte nicht gespeichert werden.");
   await expect(dialogVertrauen(page)).toBeVisible();
   await expect(page.locator('[data-aktion="vertrauen-erlauben"]')).toBeEnabled();
   expect(stand.post).toHaveLength(1);
   expect(await aktionen(page, "vertrauen-geaendert")).toHaveLength(0);
 });
 
-test("ältere Werkstatt ohne info.vertrauen: die Frage kommt aus info.kit", async ({ page }) => {
-  const stand = await start(page, { alt: true, vertrauen: vertrauenAntwort({ gruende: [] }) });
-  const d = dialogVertrauen(page);
+test("Rückweg: Einstellungen → „Vertrauen entziehen …“ fragt zurück, entzieht, meldet es der App; danach „Nur ansehen“ ohne neue Frage in dieser Sitzung", async ({ page }) => {
+  const stand = await start(page, { vertrauen: vertrauenAntwort(VERTRAUT) });
+  await expect(page.locator('[data-st="zweig"]')).toBeVisible();
+  await page.click('[data-st="einstellungen"]');
+  await expect(page.locator('[data-menue="vertrauen"]')).toHaveCount(0);
+  await page.screenshot({ path: shot("einstellungen-vertrauen-entziehen") });
+  await page.click('[data-menue="vertrauen-entziehen"]');
+  const d = page.locator('.dialog[data-dialog="vertrauen-entziehen"]');
   await expect(d).toBeVisible();
-  await expect(d.locator('[data-grund="kit"]')).toContainText("Ein altes Brain-Kit im Ordner „.tools“");
-  await page.click('[data-aktion="vertrauen-erlauben"]');
+  await expect(d.locator(".dialog-kopf")).toHaveText("Vertrauen entziehen?");
+  await expect(d).toContainText("Git, Hintergrunddienst, Hooks und KI-Pflege sind aus");
+  await page.screenshot({ path: shot("entziehen-frage") });
+  // „Behalten“ hat den Fokus; nichts passiert
+  await expect(d.locator('[data-aktion="vertrauen-behalten"]')).toBeFocused();
+  await page.click('[data-aktion="vertrauen-behalten"]');
   await expect(d).toHaveCount(0);
-  expect(stand.post).toEqual([{ erlauben: true, vault: echt() }]); // Vertrauen v2: der gezeigte Vault geht mit
-  await expect(page.locator('[data-st="gesundheit"]')).toBeVisible();
+  expect(stand.post).toEqual([]);
+  await page.click('[data-st="einstellungen"]');
+  await page.click('[data-menue="vertrauen-entziehen"]');
+  await page.click('[data-aktion="vertrauen-entziehen"]');
+  await expect(d).toHaveCount(0);
+  expect(stand.post).toEqual([{ erlauben: false, vault: echt() }]);
+  expect(await aktionen(page, "vertrauen-geaendert")).toEqual([{ aktion: "vertrauen-geaendert" }]);
+  await expect(page.locator(".toast")).toContainText("Vertrauen entzogen");
+  await expect(page.locator('[data-st="vertrauen"]')).toContainText("Nur ansehen");
+  await expect(page.locator('[data-st="zweig"]')).toHaveCount(0);
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await page.waitForTimeout(400);
+  await expect(dialogVertrauen(page)).toHaveCount(0);
 });
 
-test("Git gesperrt: Statusleiste zeigt „Git gesperrt“ statt der Git-Angaben, Klick öffnet die Frage, Vertrauen hebt die Sperre auf", async ({ page }) => {
-  const stand = await start(page, { vertrauen: vertrauenAntwort({ gitGesperrt: true, gruende: GRUENDE_ALLE.slice(2) }) });
-  await page.click('.dialog [data-aktion="vertrauen-spaeter"]');
-  const gesperrt = page.locator('[data-st="git-gesperrt"]');
-  await expect(gesperrt).toContainText("Git gesperrt");
-  for (const id of ["zweig", "remote", "sync", "geaendert", "verlauf", "kein-git"]) await expect(page.locator(`[data-st="${id}"]`)).toHaveCount(0);
-  await expect(page.locator('[data-st="vertrauen"]')).toHaveCount(0); // „Git gesperrt“ öffnet dieselbe Frage
-  await gesperrt.click();
-  const d = dialogVertrauen(page);
-  await expect(d.locator('[data-vertrauen="git-gesperrt"]')).toContainText("Git ist für diesen Vault gesperrt");
-  await expect(d.locator('[data-grund="git"]')).toBeVisible();
-  await page.click('[data-aktion="vertrauen-erlauben"]');
-  await expect(d).toHaveCount(0);
-  expect(stand.post).toEqual([{ erlauben: true, vault: echt() }]); // Vertrauen v2: der gezeigte Vault geht mit
-  await expect(page.locator('[data-st="git-gesperrt"]')).toHaveCount(0);
-  await expect(page.locator('[data-st="zweig"]')).toBeVisible();
-  await expect(page.locator('[data-st="sync"]')).toBeVisible();
+test("Git gesperrt trotz Vertrauen (Status meldet gesperrt): die Statusleiste zeigt „Git gesperrt“, Klick zeigt den Grund", async ({ page }) => {
+  await start(page, { vertrauen: vertrauenAntwort(VERTRAUT) });
+  await page.route(/\/api\/git\/status$/, (r) => r.fulfill({ json: { repo: true, gesperrt: true, grund: "x" } }));
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(page.locator('[data-st="git-gesperrt"]')).toBeVisible({ timeout: 8000 });
+  await expect(page.locator('[data-st="sync"]')).toHaveCount(0);
 });
 
 test("Git-Aktionen bei Sperre: nie der rohe Fehler, sondern die Frage; Verlauf und Notiz-Verlauf erklären es", async ({ page }) => {
   writeFileSync(join(vault, "00_inbox/neu.md"), "Neu\n"); // etwas zum Sichern
-  const stand = await start(page, { vertrauen: vertrauenAntwort({ gruende: GRUENDE_ALLE.slice(1, 2) }) });
-  await page.click('.dialog [data-aktion="vertrauen-spaeter"]');
+  const stand = await start(page, { vertrauen: vertrauenAntwort(VERTRAUT) });
   await expect(page.locator('[data-st="geaendert"]')).toBeVisible();
   // die Sperre kommt erst jetzt dazu (die Oberfläche kennt sie noch nicht): Abgleich → 409 gitGesperrt → Frage statt rohem Text
-  stand.vertrauen = { ...stand.vertrauen, gitGesperrt: true };
+  stand.vertrauen = vertrauenAntwort();
   await page.click('[data-st="sync"]');
   await expect(dialogVertrauen(page)).toBeVisible();
   expect(stand.gitGesperrtAnfragen).toContain("sync");
   await expect(page.locator(".toast.fehler")).toHaveCount(0);
   await expect(page.locator("body")).not.toContainText("Roher Backend-Text");
-  await expect(page.locator('[data-st="git-gesperrt"]')).toBeVisible();
+  await expect(page.locator('[data-st="vertrauen"]')).toBeVisible();
   await page.keyboard.press("Escape");
   // Sichern (⌘⇧G): ohne Umweg die Frage
   await page.keyboard.press("Meta+Shift+g");
@@ -297,21 +304,21 @@ const VAULT_NAME = (p) => (p === ALPHA ? "Alpha" : "Beta");
 async function zweiVaults(page, { vertraut = [] } = {}) {
   const echtInfo = await (await fetch(server.url + "api/info")).json();
   const stand = { aktiv: ALPHA, wechsel: [], oeffnen: [], post: [], erlaubt: new Set(vertraut) };
-  const vertrauenVon = (p) => ({ erlaubt: stand.erlaubt.has(p), noetig: true, geaendert: false, gitGesperrt: false, gruende: [{ art: "kit", text: `Programme von ${VAULT_NAME(p)}` }] });
+  const vertrauenVon = (p) => (stand.erlaubt.has(p) ? { erlaubt: true, noetig: false, gitGesperrt: false, quelle: "bestaetigt" } : { erlaubt: false, noetig: true, gitGesperrt: true, quelle: null });
   await page.addInitScript(() => { window.__aktionen = []; window.webkit = { messageHandlers: { aktion: { postMessage: (m) => { window.__aktionen.push(m); } } } }; });
   await mockeV2(page, vault);
-  await page.route("**/api/info", (r) => r.fulfill({ json: { ...echtInfo, vault: stand.aktiv, name: VAULT_NAME(stand.aktiv), kit: { vorhanden: true, vertraut: stand.erlaubt.has(stand.aktiv) }, vertrauen: vertrauenVon(stand.aktiv) } }));
+  await page.route("**/api/info", (r) => r.fulfill({ json: { ...echtInfo, vault: stand.aktiv, name: VAULT_NAME(stand.aktiv), kit: { vorhanden: true }, vertrauen: vertrauenVon(stand.aktiv) } }));
   await page.route("**/api/vaults", (r) => (r.request().method() === "GET"
     ? r.fulfill({ json: { vaults: [{ name: "Alpha", pfad: ALPHA, farbe: "#5b4ed6" }, { name: "Beta", pfad: BETA, farbe: "#2a9ba8" }], aktiv: stand.aktiv } }) : r.fallback()));
   await page.route("**/api/vaults/aktiv", (r) => { const b = r.request().postDataJSON(); stand.wechsel.push(b); stand.aktiv = b.pfad; r.fulfill({ json: { ok: true } }); });
   await page.route("**/api/vaults/oeffnen", (r) => { const b = r.request().postDataJSON(); stand.oeffnen.push(b); stand.aktiv = b.pfad; r.fulfill({ json: { pfad: b.pfad, git: true } }); });
-  // wie die Werkstatt (Spec §8): erlaubt wird nur der Vault, der offen ist, sonst 409 anderer-vault
-  await page.route("**/api/kit/vertrauen", (r) => {
+  // wie die Werkstatt: vertraut wird nur der Vault, der offen ist, sonst 409 anderer-vault
+  await page.route("**/api/vertrauen", (r) => {
     const b = r.request().postDataJSON();
     stand.post.push(b);
     if (b.vault !== stand.aktiv) return r.fulfill({ status: 409, json: { fehler: "Das ist nicht der Vault, der in der Werkstatt offen ist.", art: "anderer-vault" } });
     stand.erlaubt.add(b.vault);
-    r.fulfill({ json: { kit: { vorhanden: true, vertraut: true }, vertrauen: vertrauenVon(b.vault) } });
+    r.fulfill({ json: { kit: { vorhanden: true }, vertrauen: vertrauenVon(b.vault) } });
   });
   return stand;
 }
@@ -327,7 +334,6 @@ test("UI-1: Vault-Wechsel schließt die offene Frage; die neue gilt dem neuen Va
   await expect(frage).toBeVisible();
   await expect(frage).toHaveAttribute("data-vault", ALPHA);
   await expect(frage.locator(".vt-vault")).toContainText("Alpha");
-  await expect(frage.locator('[data-grund="kit"]')).toHaveText("Programme von Alpha");
   // ohne zu antworten wechselt der Nutzer den Vault
   await waehleVaultImMenue(page, "Beta");
   await expect(page.locator("#vault-name")).toHaveText("Beta");
@@ -335,7 +341,6 @@ test("UI-1: Vault-Wechsel schließt die offene Frage; die neue gilt dem neuen Va
   // genau eine Frage, und die gehört zu Beta (nicht die alte mit dem Namen und den Gründen von Alpha)
   await expect(frage).toHaveCount(1);
   await expect(frage.locator(".vt-vault")).toContainText("Beta");
-  await expect(frage.locator('[data-grund="kit"]')).toHaveText("Programme von Beta");
   await expect(frage).toHaveAttribute("data-vault", BETA);
   expect(stand.post).toEqual([]);
   // „Vertrauen“ erlaubt genau den gezeigten Vault und schickt seinen Pfad mit
@@ -355,7 +360,7 @@ test("UI-1: ein Wechsel auf einen vertrauten Vault lässt keine Frage stehen; zu
   await page.waitForTimeout(300);
   await expect(dialogVertrauen(page)).toHaveCount(0);
   expect(stand.post).toEqual([]);
-  // zurück zu Alpha: die Frage zu Alpha ist in dieser Sitzung schon einmal von selbst aufgegangen (je Vault und Sitzung einmal), jetzt zeigt nur die Statusleiste „Nicht freigegeben“
+  // zurück zu Alpha: die Frage zu Alpha ist in dieser Sitzung schon einmal von selbst aufgegangen (je Vault und Sitzung einmal), jetzt zeigt nur die Statusleiste „Nur ansehen“
   await waehleVaultImMenue(page, "Alpha");
   await expect(page.locator("#vault-name")).toHaveText("Alpha");
   await expect(page.locator('[data-st="vertrauen"]')).toBeVisible();
@@ -368,7 +373,7 @@ test("UI-1: 409 anderer-vault — die Werkstatt hat inzwischen einen anderen Vau
   await expect(frage).toHaveAttribute("data-vault", ALPHA);
   stand.aktiv = BETA; // die Werkstatt wechselt heimlich (anderes Fenster, Menübefehl), die Oberfläche weiß es noch nicht
   await page.click('[data-aktion="vertrauen-erlauben"]');
-  await expect(page.locator(".toast.fehler")).toContainText("Das Vertrauen wurde nicht gespeichert: Inzwischen ist ein anderer Vault geöffnet.");
+  await expect(page.locator(".toast.fehler")).toContainText("Das Vertrauen wurde nicht geändert: Inzwischen ist ein anderer Vault geöffnet.");
   await expect(page.locator("#vault-name")).toHaveText("Beta");
   await expect(frage).toHaveCount(1);
   await expect(frage).toHaveAttribute("data-vault", BETA);
@@ -418,7 +423,6 @@ test("UI-1: „Vault öffnen …“ bei offener Frage: danach gilt die Frage dem
   expect(stand.oeffnen).toEqual([{ pfad: BETA }]);
   await expect(frage).toHaveCount(1);
   await expect(frage.locator(".vt-vault")).toContainText("Beta");
-  await expect(frage.locator('[data-grund="kit"]')).toHaveText("Programme von Beta");
   await expect(frage).toHaveAttribute("data-vault", BETA);
   await page.click('[data-aktion="vertrauen-erlauben"]');
   await expect(frage).toHaveCount(0);
@@ -444,9 +448,9 @@ test("UI-1: schliesseDialoge schließt alle offenen Dialoge; jedes beiSchliessen
   expect(r).toEqual({ offen: 2, dazwischen: 1, danach: 0, zaehler: { a: 1, b: 1 } });
 });
 
-// ---------------------------------------------------------------- Vertragsänderung 2: nach dem Abgleich Vertrauen neu bewerten
-test("Abgleich: ging dabei das Vertrauen verloren (anderer Code), sagt die Oberfläche es der App und fragt neu, auch beim zweiten Mal", async ({ page }) => {
-  const stand = await start(page, { vertrauen: vertrauenAntwort({ erlaubt: true }) });
+// ---------------------------------------------------------------- nach dem Abgleich wird die Info neu geholt: ist das Vertrauen weg, erfährt es die App
+test("Abgleich: ist das Vertrauen inzwischen weg (z. B. in einem anderen Fenster entzogen), sagt die Oberfläche es der App und fragt neu, auch beim zweiten Mal", async ({ page }) => {
+  const stand = await start(page, { vertrauen: vertrauenAntwort(VERTRAUT) });
   await page.waitForSelector('[data-st="sync"]');
   await expect(dialogVertrauen(page)).toHaveCount(0);
   // erster Abgleich ohne Änderung: keine Aktion, keine Frage
@@ -455,29 +459,29 @@ test("Abgleich: ging dabei das Vertrauen verloren (anderer Code), sagt die Oberf
   await expect.poll(() => stand.anfragen.info).toBeGreaterThan(1); // die Info wurde nach dem Abgleich neu geholt
   expect(await aktionen(page, "vertrauen-geaendert")).toHaveLength(0);
   await expect(dialogVertrauen(page)).toHaveCount(0);
-  // jetzt holt der Abgleich anderen Code: das Vertrauen gilt nicht mehr
-  await page.route("**/api/git/sync", async (route) => { stand.vertrauen = { ...stand.vertrauen, erlaubt: false, geaendert: true }; await route.fallback(); });
+  // jetzt ist das Vertrauen während des Abgleichs weggefallen (anderes Fenster)
+  await page.route("**/api/git/sync", async (route) => { stand.vertrauen = vertrauenAntwort(); await route.fallback(); });
   const infoVorher = stand.anfragen.info;
   await page.click('[data-st="sync"]');
   await expect(dialogVertrauen(page)).toBeVisible();
-  await expect(dialogVertrauen(page).locator('[data-vertrauen="geaendert"]')).toBeVisible();
   expect(stand.anfragen.info).toBeGreaterThan(infoVorher);
   expect(await aktionen(page, "vertrauen-geaendert")).toEqual([{ aktion: "vertrauen-geaendert" }]);
   // Vertrauen erteilt (zweite Aktion nach dem POST) ...
   await page.click('[data-aktion="vertrauen-erlauben"]');
   await expect(dialogVertrauen(page)).toHaveCount(0);
   expect(await aktionen(page, "vertrauen-geaendert")).toHaveLength(2);
-  // ... und ein weiterer Abgleich holt wieder anderen Code: wieder die Frage (die Sitzung hat „geändert“ schon einmal gefragt)
+  // ... und fällt es noch einmal weg: wieder die Frage
+  await page.route("**/api/git/sync", async (route) => { stand.vertrauen = vertrauenAntwort(); await route.fallback(); }, { times: 1 });
   await page.click('[data-st="sync"]');
   await expect(dialogVertrauen(page)).toBeVisible();
   expect(await aktionen(page, "vertrauen-geaendert")).toHaveLength(3);
 });
 
 test("Abgleich abgebrochen (409 Konflikt): auch dann Info neu, Aktion an die App und die Frage, wenn das Vertrauen weg ist", async ({ page }) => {
-  const stand = await start(page, { vertrauen: vertrauenAntwort({ erlaubt: true }) });
+  const stand = await start(page, { vertrauen: vertrauenAntwort(VERTRAUT) });
   await page.waitForSelector('[data-st="sync"]');
   await page.route("**/api/git/sync", async (route) => {
-    stand.vertrauen = { ...stand.vertrauen, erlaubt: false, geaendert: true };
+    stand.vertrauen = vertrauenAntwort();
     await route.fulfill({ status: 409, json: { fehler: "Beim Abgleich ist ein Konflikt entstanden. Es wurde nichts verändert." } });
   });
   await page.click('[data-st="sync"]');
@@ -488,7 +492,7 @@ test("Abgleich abgebrochen (409 Konflikt): auch dann Info neu, Aktion an die App
 
 // ---------------------------------------------------------------- UI-4: nach dem Vertrauen kein „Git gesperrt“ mehr
 test("UI-4: nach dem Vertrauen laden Verlauf-Ansicht und Notiz-Verlauf neu (kein „Git gesperrt“ mehr)", async ({ page }) => {
-  await start(page, { vertrauen: vertrauenAntwort({ gitGesperrt: true, gruende: GRUENDE_ALLE.slice(2) }) });
+  await start(page, { vertrauen: vertrauenAntwort() });
   await page.click('.dialog [data-aktion="vertrauen-spaeter"]');
   // Verlauf-Ansicht und Notiz-Verlauf zeigen die Sperre
   await page.keyboard.press("Meta+k");
@@ -504,7 +508,7 @@ test("UI-4: nach dem Vertrauen laden Verlauf-Ansicht und Notiz-Verlauf neu (kein
   // die Liste zeigt jetzt den Verlauf, die Notiz ihre Fassungen — ohne die Ansicht oder die Notiz zu wechseln
   await expect(page.locator("#liste-koerper .vl-commitzeile").first()).toBeVisible();
   await expect(page.locator("#liste-koerper .vl-leer")).toHaveCount(0);
-  await expect(page.locator('#info [data-sektion="verlauf"]')).not.toContainText("Git ist gesperrt");
+  await expect(page.locator('#info [data-sektion="verlauf"]')).not.toContainText("ist Git gesperrt");
   await expect(page.locator('#info [data-sektion="verlauf"] .fassung').first()).toBeVisible();
   await expect(page.locator("body")).not.toContainText("Git ist für diesen Vault gesperrt");
 });
@@ -525,16 +529,13 @@ async function startMitAntworten(page, opt) {
 const antwort = (page, wert) => page.evaluate((w) => { window.__antwort = w; }, wert);
 const uebersichtPalette = async (page) => { await page.keyboard.press("Meta+k"); await page.keyboard.type(">Übersicht"); await page.keyboard.press("Enter"); };
 
-test("UI-5: „Übersicht öffnen“ ohne Vertrauen: Satz und Vertrauensfrage; ohne Kit: Satz; geöffnet: nichts", async ({ page }) => {
+test("UI-5: „Übersicht öffnen“ ohne Vertrauen: kein Hindernis; ohne Kit: Satz; geöffnet: nichts", async ({ page }) => {
   await startMitAntworten(page, { vertrauen: vertrauenAntwort() });
   await page.click('.dialog [data-aktion="vertrauen-spaeter"]'); // die Frage vom Start
-  // 1. die App weist ab: nicht vertraut → Satz und Frage
-  await antwort(page, { ok: false, grund: "nicht-vertraut" });
+  // 1. ohne Vertrauen öffnet die App die Übersicht trotzdem (der Kern liest nur): keine Meldung, keine neue Frage
   await uebersichtPalette(page);
-  await expect(page.locator(".toast")).toContainText("Die Übersicht öffnet sich erst, wenn du diesem Vault vertraust.");
-  await expect(dialogVertrauen(page)).toBeVisible();
-  expect(await aktionen(page, "ansicht")).toHaveLength(1);
-  await page.click('.dialog [data-aktion="vertrauen-spaeter"]');
+  await expect.poll(() => aktionen(page, "ansicht").then((a) => a.length)).toBe(1);
+  await expect(dialogVertrauen(page)).toHaveCount(0);
   // 2. kein Kit im Vault → Satz, keine Frage (aus dem Einstellungsmenü)
   await antwort(page, { ok: false, grund: "kein-kit" });
   await page.click('[data-st="einstellungen"]');
@@ -552,28 +553,20 @@ test("UI-5: „Übersicht öffnen“ ohne Vertrauen: Satz und Vertrauensfrage; o
   expect(await page.locator(".toast").count()).toBeLessThanOrEqual(toastsVorher);
 });
 
-test("UI-5: die App sagt „nicht vertraut“, wir halten den Vault für vertraut: ehrlicher Satz statt stiller Wirkungslosigkeit", async ({ page }) => {
-  await startMitAntworten(page, { vertrauen: vertrauenAntwort({ erlaubt: true }) });
-  await antwort(page, { ok: false, grund: "nicht-vertraut" });
-  await uebersichtPalette(page);
-  await expect(page.locator(".toast.fehler")).toContainText("Die Übersicht öffnet sich nicht: Brain konnte das Vertrauen zu diesem Vault gerade nicht bestätigen.");
-  await expect(dialogVertrauen(page)).toHaveCount(0);
-});
-
 test("UI-5: der Kern ist nicht bereit: klarer Satz, keine Vertrauensfrage (Kern-Umzug P4)", async ({ page }) => {
-  await startMitAntworten(page, { vertrauen: vertrauenAntwort({ erlaubt: true }) });
+  await startMitAntworten(page, { vertrauen: vertrauenAntwort(VERTRAUT) });
   await antwort(page, { ok: false, grund: "kern-nicht-bereit" });
   await uebersichtPalette(page);
-  await expect(page.locator(".toast.fehler")).toContainText("Der Kern von Kortex (die Brain-Logik) ist nicht bereit.");
+  await expect(page.locator(".toast.fehler")).toContainText("Der Kern von Kortex (die Logik hinter Suche und Pflege) ist nicht bereit.");
   await expect(dialogVertrauen(page)).toHaveCount(0);
   expect(await aktionen(page, "ansicht")).toHaveLength(1);
 });
 
-test("UI-5: „Prüfung fehlgeschlagen“ und unbekannte Gründe der App werden benannt, nie verschwiegen", async ({ page }) => {
-  await startMitAntworten(page, { vertrauen: vertrauenAntwort({ erlaubt: true }) });
+test("UI-5: unbekannte Gründe der App (auch die alten „nicht-vertraut“ und „pruefung-fehlgeschlagen“) werden benannt, nie verschwiegen", async ({ page }) => {
+  await startMitAntworten(page, { vertrauen: vertrauenAntwort(VERTRAUT) });
   await antwort(page, { ok: false, grund: "pruefung-fehlgeschlagen" });
   await uebersichtPalette(page);
-  await expect(page.locator(".toast.fehler")).toContainText("Die Übersicht öffnet sich nicht: Brain konnte gerade nicht prüfen, ob du diesem Vault vertraust. Versuche es gleich noch einmal.");
+  await expect(page.locator(".toast.fehler", { hasText: "Die Übersicht ließ sich nicht öffnen." })).toBeVisible();
   expect(await aktionen(page, "ansicht")).toHaveLength(1);
   // ein Grund, den die Oberfläche nicht kennt (oder gar keiner): der allgemeine Satz statt Schweigen
   await antwort(page, { ok: false, grund: "vault-fehlt" });
@@ -582,7 +575,7 @@ test("UI-5: „Prüfung fehlgeschlagen“ und unbekannte Gründe der App werden 
   await antwort(page, { ok: false });
   await uebersichtPalette(page);
   await expect.poll(() => aktionen(page, "ansicht").then((a) => a.length)).toBe(3);
-  await expect(page.locator(".toast.fehler", { hasText: "Die Übersicht ließ sich nicht öffnen." })).toHaveCount(2);
+  await expect(page.locator(".toast.fehler", { hasText: "Die Übersicht ließ sich nicht öffnen." })).toHaveCount(3);
   await expect(dialogVertrauen(page)).toHaveCount(0);
 });
 

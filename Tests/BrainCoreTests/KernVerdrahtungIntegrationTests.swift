@@ -87,7 +87,9 @@ private struct Umgebung {
     /// Die Umgebung, in der Claude Code einen Hook (oder die Einrichtung) startet: kein KORTEX_KERN_PFAD, kein Testschalter außer dem einen.
     var env: [String: String] {
         ["PATH": "/usr/bin:/bin", "HOME": home.path, "BRAIN_APP_SUPPORT": pfade.basis.path, "BRAIN_VAULT": vault.path,
-         "KORTEX_KERN_UNSTABIL_ERLAUBT": "1", "KORTEX_KERN_TEMP_WURZELN": ""]
+         "KORTEX_KERN_UNSTABIL_ERLAUBT": "1", "KORTEX_KERN_TEMP_WURZELN": "",
+         // Workspace-Trust (P5): der Wegwerf-Vault gilt als vertraut (gilt nur zusammen mit einem Testflag)
+         "KORTEX_VAULT_VERTRAUT": "alle"]
     }
     var settings: URL { home.appendingPathComponent(".claude/settings.json") }
     func lies() throws -> [String: Any] {
@@ -189,6 +191,7 @@ private struct Umgebung {
     try u.installiere(version: "1.0.0", ressourcen: try paket(node: u.node))
     var e = u.env
     e["KORTEX_KERN_UNSTABIL_ERLAUBT"] = nil
+    e["BRAIN_TESTMODUS"] = "1" // Testflag für den Vertrauens-Schalter (P5), ohne den Kern-Pfad-Schalter
     let brain = u.pfade.kern.appendingPathComponent("brain.mjs").path
     let l = fuehreAus(u.node.path, [brain, "claude-hooks", "--vault", u.vault.path], umgebung: e)
     #expect(l.status == 3, "\(l.aus) \(l.fehler)")

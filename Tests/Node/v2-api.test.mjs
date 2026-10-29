@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { createHash } from "node:crypto";
-import { tmp, schreibe, repo, g, pfad } from "./hilfe.mjs";
+import { tmp, schreibe, repo, g, pfad, echt } from "./hilfe.mjs";
 
 // Hermetisch: kein echtes Home (Standardordner ~/Brain, Git-Konfiguration).
 process.env.HOME = tmp("brain-home-");
@@ -85,7 +85,7 @@ test("Ohne Vault: info mit vault:null, Vault-Routen und Statisches gehen, alle a
   const studio = tmp(); schreibe(studio, "index.html", "<title>Studio</title>");
   const rufe = aufruf(erzeugeHandler({ studioDir: studio, appVersion: "9.9.9" }));
   let r = await rufe("GET", "/api/info");
-  assert.deepEqual(r.j, { vault: null, name: null, appVersion: "9.9.9", kitVersion: null, git: false, mcpBefehl: null, kit: { vorhanden: false, vertraut: false }, vertrauen: null });
+  assert.deepEqual(r.j, { vault: null, name: null, appVersion: "9.9.9", kitVersion: null, git: false, mcpBefehl: null, kit: { vorhanden: false }, vertrauen: null });
   r = await rufe("GET", "/api/vaults"); assert.deepEqual(r.j, { vaults: [], aktiv: null });
   r = await rufe("GET", "/"); assert.equal(r.status, 200);
   r = await rufe("GET", "/api/ki/erkennen"); assert.equal(r.status, 200); assert.equal(r.j.agenten.length, 5);
@@ -127,7 +127,7 @@ test("Start aus vaults.json / config.json; das Vault-Argument hat Vorrang", asyn
   assert.equal(JSON.parse(readFileSync(join(SUPPORT, "vaults.json"), "utf8")).aktiv, realpathSync(a));
 });
 
-test("Vault-Wechsel ohne Neustart: Öffnen, Wechseln, Vertrauen je Vault, Entfernen, Neuanlage aus der Vorlage", async () => {
+test("Vault-Wechsel ohne Neustart: Öffnen, Wechseln, Vertrauen je Vault, Entfernen, Neuanlage aus der Vorlage", () => echt(async () => {
   await loescheListe();
   const a = vaultMitNotizen(), b = tmp();
   schreibe(b, "00_inbox/b-lose.md", "# B lose\n");
@@ -137,15 +137,15 @@ test("Vault-Wechsel ohne Neustart: Öffnen, Wechseln, Vertrauen je Vault, Entfer
   assert.equal(r.status, 200); assert.equal(r.j.git, false); assert.equal(r.j.vault.pfad, realpathSync(a)); assert.equal(r.j.aktiv, realpathSync(a));
   assert.equal((await rufe("GET", "/api/info")).j.vault, realpathSync(a));
   assert.equal((await rufe("GET", "/api/notizen")).j.notizen.length, 4);
-  assert.equal((await rufe("POST", "/api/kit/vertrauen", { erlauben: true, vault: a })).j.kit.vertraut, true);
+  assert.equal((await rufe("POST", "/api/vertrauen", { erlauben: true, vault: a })).j.vertrauen.erlaubt, true);
   r = await rufe("POST", "/api/vaults/oeffnen", { pfad: b });
   assert.equal(r.j.vaults.length, 2); assert.deepEqual(r.j.vaults.map((v) => v.aktiv), [false, true]);
   assert.deepEqual((await rufe("GET", "/api/notizen")).j.notizen.map((n) => n.pfad), ["00_inbox/b-lose.md"]);
-  assert.equal((await rufe("GET", "/api/info")).j.kit.vertraut, false, "Vertrauen gilt je Vault");
+  assert.equal((await rufe("GET", "/api/info")).j.vertrauen.erlaubt, false, "Vertrauen gilt je Vault");
   // zurück zu A (ohne Neustart): Vertrauen bleibt dort erhalten, Caches sind die von A
   r = await rufe("POST", "/api/vaults/aktiv", { pfad: a });
   assert.equal(r.status, 200); assert.equal(r.j.aktiv, realpathSync(a));
-  assert.equal((await rufe("GET", "/api/info")).j.kit.vertraut, true);
+  assert.equal((await rufe("GET", "/api/info")).j.vertrauen.erlaubt, true);
   assert.equal((await rufe("GET", "/api/notizen")).j.notizen.length, 4);
   assert.equal(JSON.parse(readFileSync(join(SUPPORT, "vaults.json"), "utf8")).aktiv, realpathSync(a));
   // nur registrierte Vaults lassen sich wählen
@@ -175,7 +175,7 @@ test("Vault-Wechsel ohne Neustart: Öffnen, Wechseln, Vertrauen je Vault, Entfer
   assert.deepEqual((await rufe("GET", "/api/notizen")).j.notizen, []);
   assert.equal((await rufe("GET", "/api/vaults")).j.vaults.length, 2);
   assert.equal((await rufe("POST", "/api/vaults/neu", { art: "gibtsnicht" })).status, 400);
-});
+}));
 
 // ---------- MCP folgt dem aktiven Vault ----------
 function starteMcp(args = []) {

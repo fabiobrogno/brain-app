@@ -10,9 +10,18 @@ export const pfad = (...t) => join(WURZEL, ...t);
 const aufraeumen = [];
 // Tests nie gegen echte Nutzerdaten: eigener Support-Ordner (Vertrauens-Merker), Test-Schalter an.
 process.env.BRAIN_TESTMODUS = "1";
+// Workspace-Trust (P5): die Wegwerf-Vaults der Suite gelten als vertraut (sonst bliebe Git gesperrt). Die Tests der Sperre (vertrauen*.test.mjs) entfernen die Variable.
+process.env.KORTEX_VAULT_VERTRAUT = "alle";
 process.env.BRAIN_APP_SUPPORT = realpathSync(mkdtempSync(join(tmpdir(), "brain-support-")));
 aufraeumen.push(process.env.BRAIN_APP_SUPPORT);
 process.on("exit", () => { for (const d of aufraeumen) try { rmSync(d, { recursive: true, force: true }); } catch { /* egal */ } });
+
+// Führt fn ohne den Testschalter KORTEX_VAULT_VERTRAUT aus: es gilt die echte Vertrauensprüfung (Workspace-Trust, P5). Für Tests, die „nicht vertraut“ brauchen.
+export async function echt(fn) {
+  const alt = process.env.KORTEX_VAULT_VERTRAUT;
+  delete process.env.KORTEX_VAULT_VERTRAUT;
+  try { return await fn(); } finally { if (alt !== undefined) process.env.KORTEX_VAULT_VERTRAUT = alt; }
+}
 
 export function tmp(praefix = "brain-test-") {
   const d = realpathSync(mkdtempSync(join(tmpdir(), praefix)));
