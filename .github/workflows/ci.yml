@@ -1,80 +1,137 @@
 name: CI
 
-# Nur PR und main: macOS-Minuten sind in privaten Repos teuer. Reine Doku löst keinen Lauf aus.
+# Ziel: jede Validierung in wenigen Minuten, Fehler früh sichtbar.
+#  - aenderungen   entscheidet aus den geänderten Dateien, welche Bereiche laufen (scripts/ci-aenderungen.sh, getestet mit
+#                  scripts/teste-ci-aenderungen.sh). Unbekannte Pfade schalten alles ein; nur Doku schaltet nichts ein.
+#  - vorpruefung   shellcheck, Syntax, JSON, Lint (Linux, unter einer Minute) — fällt als Erstes rot auf.
+#  - kern-test     Kern-Tests in 6 Shards (Gewichte: Tests/Kern/gewichte.txt), alle parallel.
+#  - ui-test       Playwright in 4 Shards mit je 2 Workern, nur Chromium (Headless-Shell), Browser-Cache.
+#  - node-test     Node-Tests (Tests/Node).
+#  - swift         Build + Tests + Kern-Manifest + Vorschau auf macOS (macOS-Minuten sind knapp: ein einziger Job).
+#  - ci-ok         EIN Status für alles: grün, wenn jeder nötige Job grün war oder bewusst übersprungen wurde.
+#  - dev-artefakt  nur auf main: Kortex.app als Artefakt.
+# Es gibt absichtlich KEIN paths-ignore: Ein Lauf, der nur Doku ändert, ist in Sekunden grün (aenderungen + ci-ok), und der
+# Status ci-ok fehlt nie (wichtig, falls er einmal als erforderlicher Check eingetragen wird).
 on:
   pull_request:
-    paths-ignore: ['docs/**', '**/*.md']
   push:
     branches: [main]
-    paths-ignore: ['docs/**', '**/*.md']
 
+# Neuer Push auf dieselbe PR-Branch bricht den alten Lauf ab; auf main läuft jeder Stand zu Ende.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
 
 jobs:
-  shellcheck:
+  aenderungen:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    outputs:
+      swift: ${{ steps.filter.outputs.swift }}
+      kern: ${{ steps.filter.outputs.kern }}
+      node: ${{ steps.filter.outputs.node }}
+      ui: ${{ steps.filter.outputs.ui }}
+      vorab: ${{ steps.filter.outputs.vorab }}
     steps:
-      - uses: actions/checkout@v4
-      - name: shellcheck scripts/*.sh
-        run: shellcheck -S warning scripts/*.sh
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - name: Geänderte Bereiche bestimmen
+        id: filter
+        env:
+          EREIGNIS: ${{ github.event_name }}
+          VORHER: ${{ github.event.before }}
+        run: |
+          # PR: ausgecheckt ist der Merge-Commit, sein erster Elternteil ist der aktuelle Stand des Zielzweigs.
+          # Push auf main: Vergleich mit dem Stand vor dem Push. Ist der Vergleich nicht möglich, läuft alles.
+          if [ "$EREIGNIS" = "pull_request" ]; then von=HEAD^1; else von="$VORHER"; fi
+          echo "Vergleich: ${von:-?} .. HEAD"
+          bash scripts/ci-aenderungen.sh "${von:-?}" HEAD | tee -a "$GITHUB_OUTPUT"
 
-  # Platzhalter für die Node-Tests aus studio-v2 (FBL-25): läuft nur, wenn scripts/teste-node.sh existiert.
-  # Fehlt das Skript, endet der Job grün ohne Arbeit; mit dem Skript ist er sofort aktiv.
-  node-test:
+  vorpruefung:
+    needs: aenderungen
+    if: needs.aenderungen.outputs.vorab == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - name: teste-node.sh vorhanden?
-        id: erkennen
-        run: |
-          if [ -f scripts/teste-node.sh ]; then echo "vorhanden=true" >> "$GITHUB_OUTPUT"; else echo "scripts/teste-node.sh fehlt — Node-Tests übersprungen."; fi
-      - uses: actions/setup-node@v4
-        if: steps.erkennen.outputs.vorhanden == 'true'
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: scripts/node-version.txt
+      - name: shellcheck, Syntax, JSON, Lint
+        run: bash scripts/ci-vorpruefung.sh
+      - name: Pfadfilter selbst testen
+        run: bash scripts/teste-ci-aenderungen.sh
+
+  # Kern (Ressourcen/kern): Unit- und Shell-Tests aus Tests/Kern, in Shards. Node wie im App-Bundle (scripts/node-version.txt).
+  kern-test:
+    needs: aenderungen
+    if: needs.aenderungen.outputs.kern == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    name: kern-test (${{ matrix.shard }}/6)
+    env:
+      # Die Tests legen echte Repos in Temp-Ordnern an und committen; der Runner hat keine Git-Identität.
+      GIT_AUTHOR_NAME: Test
+      GIT_AUTHOR_EMAIL: t@example.org
+      GIT_COMMITTER_NAME: Test
+      GIT_COMMITTER_EMAIL: t@example.org
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: scripts/node-version.txt
+      - name: Kern-Tests (Shard ${{ matrix.shard }} von 6)
+        run: bash Tests/Kern/run-all.sh --shard ${{ matrix.shard }}/6
+        env:
+          KERN_TEST_KONKURRENZ: 4
+
+  # Node-Tests (Brain Studio: Werkstatt, gemeinsam, MCP).
+  node-test:
+    needs: aenderungen
+    if: needs.aenderungen.outputs.node == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
       - name: Node-Tests
-        if: steps.erkennen.outputs.vorhanden == 'true'
-        run: bash scripts/teste-node.sh
-
-  # Kern (Ressourcen/kern, aus dem ehemaligen Kit): Unit- und Shell-Tests aus Tests/Kern. Node wie im App-Bundle
-  # (scripts/node-version.txt). Die Tests legen echte Git-Repos in Temp-Ordnern an; der Runner hat keine Git-Identität.
-  kern-test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: scripts/node-version.txt
-      - name: shellcheck Tests/Kern (eigene Skripte)
-        run: shellcheck -S warning Tests/Kern/stage.sh Tests/Kern/run-all.sh Tests/Kern/unit.sh
-      - name: Kern-Tests
-        run: bash Tests/Kern/run-all.sh
-        env:
-          GIT_AUTHOR_NAME: Test
-          GIT_AUTHOR_EMAIL: t@example.org
-          GIT_COMMITTER_NAME: Test
-          GIT_COMMITTER_EMAIL: t@example.org
+        run: bash scripts/teste-node.sh --test-concurrency=4
 
   # Playwright-Oberflächentests (Editor/Studio) gegen den Node-Entwicklungsserver; läuft ohne macOS.
+  # Jeder Test startet seinen eigenen Server auf freiem Port mit eigenem Temp-Vault -> Tests sind unabhängig und laufen
+  # dateiübergreifend und innerhalb einer Datei parallel (--fully-parallel).
   ui-test:
+    needs: aenderungen
+    if: needs.aenderungen.outputs.ui == 'true'
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    timeout-minutes: 20
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    name: ui-test (${{ matrix.shard }}/4)
+    env:
+      # Die Werkstatt committet im Test echt; der Runner hat keine Git-Identität.
+      GIT_AUTHOR_NAME: Test
+      GIT_AUTHOR_EMAIL: t@example.org
+      GIT_COMMITTER_NAME: Test
+      GIT_COMMITTER_EMAIL: t@example.org
     defaults:
       run:
         working-directory: Tests/Oberflaeche
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
           cache: npm
@@ -86,81 +143,108 @@ jobs:
         run: echo "version=$(npx playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
       - name: Browser-Cache
         id: browser-cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
-      - name: Chromium installieren
+      - name: Chromium (nur Headless-Shell) herunterladen
         if: steps.browser-cache.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps chromium
-      - name: Systembibliotheken (Browser aus Cache)
-        if: steps.browser-cache.outputs.cache-hit == 'true'
-        run: npx playwright install-deps chromium
-      - name: Oberflächentests
-        run: npx playwright test --reporter=list,html
+        run: npx playwright install --only-shell chromium
+      - name: Systembibliotheken nur nachinstallieren, wenn der Browser nicht startet
+        run: |
+          node --input-type=module -e "import { chromium } from '@playwright/test'; const b = await chromium.launch(); await b.close();" \
+            || { echo '::notice::Browser startet nicht ohne zusätzliche Bibliotheken — install-deps'; npx playwright install-deps chromium; }
+      - name: Oberflächentests (Shard ${{ matrix.shard }} von 4)
+        run: npx playwright test --shard=${{ matrix.shard }}/4 --workers=2 --fully-parallel --reporter=list,html
         env:
           PLAYWRIGHT_HTML_OPEN: never
-          # Die Werkstatt committet im Test echt; der Runner hat keine Git-Identität.
-          GIT_AUTHOR_NAME: Test
-          GIT_AUTHOR_EMAIL: t@example.org
-          GIT_COMMITTER_NAME: Test
-          GIT_COMMITTER_EMAIL: t@example.org
       - name: Bericht und Traces hochladen
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: ui-test-bericht
+          name: ui-test-bericht-${{ matrix.shard }}
           path: |
             Tests/Oberflaeche/playwright-report
             Tests/Oberflaeche/test-results
           retention-days: 14
           if-no-files-found: ignore
 
-  build-test:
+  swift:
+    needs: aenderungen
+    if: needs.aenderungen.outputs.swift == 'true'
     # Package.swift verlangt swift-tools 6.2 und macOS 26 -> macos-26-Image (Xcode 26).
     runs-on: macos-26
-    timeout-minutes: 30
+    timeout-minutes: 20
+    env:
+      XCODE_VERSION: '26.6'
     steps:
-      - uses: actions/checkout@v4
-      - name: Toolchain anzeigen
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Xcode festlegen und Toolchain anzeigen
         id: toolchain
         run: |
+          if [ -d "/Applications/Xcode_${XCODE_VERSION}.app" ]; then
+            echo "DEVELOPER_DIR=/Applications/Xcode_${XCODE_VERSION}.app/Contents/Developer" >> "$GITHUB_ENV"
+            export DEVELOPER_DIR="/Applications/Xcode_${XCODE_VERSION}.app/Contents/Developer"
+          else
+            echo "::warning::Xcode ${XCODE_VERSION} nicht auf dem Image — Standard-Xcode wird benutzt"
+          fi
           sw_vers
           xcodebuild -version
           swift --version
           echo "xcode=$(xcodebuild -version | tr -s '\n ' '-')" >> "$GITHUB_OUTPUT"
       - name: SwiftPM-Cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: .build
           key: spm-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
           restore-keys: |
             spm-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-
-      - name: Build
-        run: swift build
+      # Ein Bauvorgang für App und Tests (ein Planungslauf statt zwei), danach nur noch ausführen.
+      - name: Build (App und Tests)
+        run: swift build --build-tests
       - name: Test
-        run: swift test
+        run: swift test --skip-build --parallel
       # Kern-Manifest (SHA-256 je Datei im Bundle) und Vorschau-Modus (Wegwerf-Ordner, Schutz vor echtem Benutzerordner).
       - name: Kern-Manifest
         run: bash scripts/teste-kern-manifest.sh
       - name: Vorschau-Modus
         run: bash scripts/teste-vorschau.sh
 
-  # Spur „dev“: jeder Stand von main als Kortex.app (ad-hoc signiert), 14 Tage abrufbar.
-  dev-artefakt:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [shellcheck, build-test]
-    runs-on: macos-26
-    timeout-minutes: 30
+  # EIN Status für den ganzen Lauf. Grün, wenn jeder Job erfolgreich war oder übersprungen wurde (weil sein Bereich unverändert
+  # ist); rot bei Fehlschlag oder Abbruch. Läuft immer (if: always()), auch wenn davor etwas rot ist.
+  ci-ok:
+    if: always()
+    needs: [aenderungen, vorpruefung, kern-test, node-test, ui-test, swift]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - name: Ergebnis aller Jobs
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          if echo "$NEEDS" | jq -e 'all(.[]; .result == "success" or .result == "skipped")' >/dev/null; then
+            echo "CI grün."
+          else
+            echo "::error::Mindestens ein Job ist fehlgeschlagen oder abgebrochen."
+            exit 1
+          fi
+
+  # Spur „dev“: jeder Stand von main als Kortex.app (ad-hoc signiert), 14 Tage abrufbar. Erst, wenn alles grün ist.
+  dev-artefakt:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.aenderungen.outputs.vorab == 'true'
+    needs: [aenderungen, ci-ok]
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Toolchain anzeigen
         id: toolchain
         run: |
           xcodebuild -version
           echo "xcode=$(xcodebuild -version | tr -s '\n ' '-')" >> "$GITHUB_OUTPUT"
       - name: SwiftPM-Cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: .build
           key: spm-release-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
@@ -170,7 +254,7 @@ jobs:
         run: bash scripts/baue-app.sh
       - name: Zippen
         run: ditto -c -k --keepParent build/Kortex.app "Kortex-dev-${GITHUB_SHA::7}.zip"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: Kortex-dev-${{ github.sha }}
           path: Kortex-dev-*.zip
