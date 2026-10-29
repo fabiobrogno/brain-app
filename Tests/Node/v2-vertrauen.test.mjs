@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, chmodSync, symlinkSync, statSync, appendFileSync, utimesSync } from "node:fs";
 import { join } from "node:path";
-import { tmp, schreibe, repo, g, pfad } from "./hilfe.mjs";
+import { tmp, schreibe, repo, g, pfad, kernAttrappe } from "./hilfe.mjs";
 process.env.HOME = tmp("brain-home-");          // os.homedir() liest $HOME: keine echte ~/.gitconfig
 process.env.GIT_CONFIG_NOSYSTEM = "1";          // und keine System-Konfiguration
 
@@ -18,7 +18,7 @@ const wirft = async (p) => { try { await p; } catch (e) { assert.ok(e instanceof
 
 const neuerSupport = () => tmp("brain-support-");
 const KIT = `console.log(JSON.stringify({version:1,ampel:"gruen",warnungen:0,pruefungen:[]}));\n`;
-const kitVault = () => { const d = tmp(); schreibe(d, ".tools/brain.mjs", KIT); schreibe(d, "a.md", "# A\n"); return d; };
+const kitVault = () => { const d = tmp(); schreibe(d, ".tools/brain.mjs", KIT); schreibe(d, "a.md", "# A\n"); schreibe(d, "brain.config.json", "{}\n"); return d; };
 const merkerVon = (support) => JSON.parse(readFileSync(join(support, "vertrauen.json"), "utf8"));
 const aufruf = (h) => async (methode, p, daten, query) => {
   const r = await h({ methode, pfad: p, query: query ?? null, body: daten === undefined ? undefined : Buffer.from(JSON.stringify(daten)) });
@@ -64,7 +64,7 @@ test("Vertrauen v2: Ordner am selben Pfad gelöscht und neu angelegt (auch mit g
   assert.equal(V.pruefeVertrauen(d, { support }).erlaubt, true);
   rmSync(d, { recursive: true, force: true });
   mkdirSync(d, { recursive: true });
-  schreibe(d, ".tools/brain.mjs", KIT); schreibe(d, "a.md", "# A\n"); // byte-gleicher Inhalt, aber ein anderer Ordner
+  schreibe(d, ".tools/brain.mjs", KIT); schreibe(d, "a.md", "# A\n"); schreibe(d, "brain.config.json", "{}\n"); // byte-gleicher Inhalt, aber ein anderer Ordner
   const r = V.pruefeVertrauen(d, { support });
   assert.equal(r.erlaubt, false); assert.equal(r.geaendert, true);
   assert.deepEqual(oeffneVault(d, { support }).kit(), { vorhanden: true, vertraut: false });
@@ -225,7 +225,8 @@ test("CLI liest denselben Merker wie die Werkstatt (Einstellungen → Erlauben i
 test("API: /api/info nennt vertrauen (kit.vertraut === vertrauen.erlaubt); POST /api/kit/vertrauen → { kit, vertrauen }; ohne Vault null", async () => {
   const support = neuerSupport();
   const d = kitVault();
-  const rufe = aufruf(erzeugeHandler({ vault: d, vaultOptionen: { support } }));
+  const kern = kernAttrappe({ "brain.mjs": KIT });
+  const rufe = aufruf(erzeugeHandler({ vault: d, vaultOptionen: { support, kern } }));
   let r = await rufe("GET", "/api/info");
   assert.deepEqual(Object.keys(r.j.vertrauen).sort(), ["erlaubt", "geaendert", "gitGesperrt", "gruende", "noetig"]);
   assert.equal(r.j.vertrauen.erlaubt, false); assert.equal(r.j.vertrauen.noetig, true); assert.equal(r.j.kit.vertraut, false);
@@ -234,11 +235,11 @@ test("API: /api/info nennt vertrauen (kit.vertraut === vertrauen.erlaubt); POST 
   assert.equal(r.j.vertrauen.erlaubt, true); assert.equal(r.j.kit.vertraut, true);
   r = await rufe("GET", "/api/info");
   assert.equal(r.j.kit.vertraut, r.j.vertrauen.erlaubt); assert.equal(r.j.vertrauen.erlaubt, true);
-  // Kit-Code geändert → die Erlaubnis gilt nicht mehr, Kit läuft nicht
+  // Code im Vault geändert → die Erlaubnis gilt nicht mehr (für Hooks/Git); der gebündelte Kern läuft davon unberührt
   appendFileSync(join(d, ".tools/brain.mjs"), "// vom Abgleich\n");
   r = await rufe("GET", "/api/info");
   assert.equal(r.j.vertrauen.erlaubt, false); assert.equal(r.j.vertrauen.geaendert, true); assert.equal(r.j.kit.vertraut, false);
-  assert.deepEqual((await rufe("GET", "/api/gesundheit")).j, { verfuegbar: false, grund: "nicht-vertraut" });
+  assert.equal((await rufe("GET", "/api/gesundheit")).j.ampel, "gruen", "der Kern braucht kein Vertrauen");
   assert.equal((await rufe("POST", "/api/kit/vertrauen", { erlauben: "ja", vault: d })).status, 400);
 
   const ohne = aufruf(erzeugeHandler({ vaultOptionen: { support: tmp("brain-leer-support-") } }));

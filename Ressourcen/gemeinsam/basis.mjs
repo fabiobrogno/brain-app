@@ -1,6 +1,7 @@
 // gemeinsam/basis.mjs — Fehlerart mit HTTP-Status und der Pfad-Schutz (Studio-Spec §5). Keine Abhängigkeiten.
-import { realpathSync, lstatSync, readdirSync, accessSync, statSync, constants } from "node:fs";
-import { join, sep, dirname, delimiter, isAbsolute } from "node:path";
+import { realpathSync, lstatSync, readdirSync, accessSync, statSync, existsSync, constants } from "node:fs";
+import { join, sep, dirname, delimiter, isAbsolute, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 
 // Fehler, die bis zur Oberfläche durchgereicht werden: Status + Alltagsmeldung (+ Zusatzfelder wie aktuellerHash).
@@ -15,6 +16,19 @@ export class HttpFehler extends Error {
 export const MAX_DATEI = 5 * 1024 * 1024;
 
 // Ablageort der App (Vault-Liste, Vertrauens-Merker): BRAIN_APP_SUPPORT (setzt die App) oder ~/Library/Application Support/Kortex.
+// Der gebündelte Kern (Brain-Logik, Kern-Umzug P4): Gesundheit, Rückfragen und der MCP-Eintrag laufen aus ihm, NIE aus dem Vault
+// (`<vault>/.tools` wird nicht mehr ausgeführt). Reihenfolge: `KORTEX_KERN_PFAD` (die App setzt den stabilen Pfad <support>/bin/kern; ist
+// er gesetzt, gilt nur er — auch wenn er gerade fehlt, kein stiller Rückfall), sonst der Kern, in dessen Ordner dieser Code selbst liegt
+// (`gemeinsam/` als Teil des Kern-Bündels), sonst `Ressourcen/kern` neben `gemeinsam/` (Entwicklung, App-Paket). → Pfad (kann fehlen).
+export function kernOrdner({ env = process.env } = {}) {
+  const stabil = env.KORTEX_KERN_PFAD;
+  if (typeof stabil === "string" && isAbsolute(stabil)) return stabil;
+  const hier = dirname(fileURLToPath(import.meta.url));
+  if (existsSync(join(hier, "..", "brain.mjs"))) return resolve(hier, "..");
+  return resolve(hier, "..", "kern");
+}
+export const kernVorhanden = (kern) => existsSync(join(kern, "brain.mjs"));
+
 export const supportOrdner = () => process.env.BRAIN_APP_SUPPORT || join(homedir(), "Library", "Application Support", "Kortex");
 
 // ───────────────────────────── Vorschau („wie frisch installiert“) ─────────────────────────────

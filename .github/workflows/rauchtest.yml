@@ -3,10 +3,10 @@ name: Rauchtest
 # macOS-Minuten sind teuer: nur bei Änderungen an der App selbst (nicht bei Doku, nicht bei Tests allein).
 on:
   pull_request:
-    paths: ['Sources/**', 'Ressourcen/**', 'scripts/**', 'Package.swift', '.github/workflows/rauchtest.yml']
+    paths: ['Sources/**', 'Ressourcen/**', 'Tests/Kern/fixture/**', 'Tests/Aktionskanal/**', 'scripts/**', 'Package.swift', '.github/workflows/rauchtest.yml']
   push:
     branches: [main]
-    paths: ['Sources/**', 'Ressourcen/**', 'scripts/**', 'Package.swift', '.github/workflows/rauchtest.yml']
+    paths: ['Sources/**', 'Ressourcen/**', 'Tests/Kern/fixture/**', 'Tests/Aktionskanal/**', 'scripts/**', 'Package.swift', '.github/workflows/rauchtest.yml']
 
 concurrency:
   group: rauchtest-${{ github.ref }}
@@ -19,10 +19,6 @@ jobs:
   rauchtest:
     runs-on: macos-26
     timeout-minutes: 30
-    env:
-      # rauchtest.sh und teste-aktionskanal.sh brauchen ein Kit-Worktree (.tools/brain.mjs, Fixture). Das Kit liegt in einem
-      # anderen Repo; ohne Secret gibt es hier keins. Wird BRAIN_TEST_KIT gesetzt, laufen beide Skripte mit.
-      BRAIN_TEST_KIT: ${{ vars.BRAIN_TEST_KIT }}
     steps:
       - uses: actions/checkout@v4
       - name: Toolchain anzeigen
@@ -39,17 +35,13 @@ jobs:
             spm-release-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-
       - name: App bauen (unsigniert/ad-hoc)
         run: bash scripts/baue-app.sh
-      - name: Selbstfoto hell/dunkel (Willkommen-Bildschirm, ohne Kit)
+      - name: Selbstfoto hell/dunkel (Willkommen-Bildschirm)
         run: bash scripts/selbstfoto.sh - selbstfoto
+      # Beide Skripte brauchen kein Kit-Worktree mehr: Kern = der gebündelte aus dem App-Paket, Vault = Tests/Kern/fixture (Kern-Umzug P4).
       - name: Rauchtest
-        if: env.BRAIN_TEST_KIT != ''
         run: bash scripts/rauchtest.sh
       - name: Aktionskanal-Test
-        if: env.BRAIN_TEST_KIT != ''
         run: bash scripts/teste-aktionskanal.sh
-      - name: Hinweis, wenn Kit-Tests entfallen
-        if: env.BRAIN_TEST_KIT == ''
-        run: echo "::notice::rauchtest.sh und teste-aktionskanal.sh übersprungen — kein Kit-Worktree (BRAIN_TEST_KIT) in der CI."
       - uses: actions/upload-artifact@v4
         if: always()
         with:

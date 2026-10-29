@@ -1,32 +1,29 @@
 #!/bin/bash
 # Aktionskanal-Test (Studio-v2-Spec §2/§5/§8): startet eine Kopie von build/Kortex.app, in der Werkstatt und Oberfläche durch
-# Tests/Aktionskanal/stub-werkstatt.mjs und die Vertrauensprüfung durch Tests/Aktionskanal/vertrauen-pruefen.mjs ersetzt sind, und
-# prüft die Swift-Seite unabhängig vom Stand des Backends:
+# Tests/Aktionskanal/stub-werkstatt.mjs ersetzt sind, und prüft die Swift-Seite unabhängig vom Stand des Backends. Der Kern ist der
+# gebündelte aus dem App-Paket (Contents/Resources/kern, wie in der Auslieferung); der Vault ist eine Kopie von Tests/Kern/fixture.
+# Es braucht weder ein Kit-Worktree noch eine Vertrauensprüfung (Kern-Umzug P4):
 #  - Studio öffnet ohne Vault; die Werkstatt startet ohne Vault-Argument und ohne BRAIN_VAULT (mit BRAIN_APP_SUPPORT)
-#  - `aktion` antwortet: {ok:true} (titel, vault-gewechselt, vertrauen-geaendert, ansicht mit Kit und Vertrauen),
-#    {ok:false,grund:"kein-kit"} (ansicht ohne Kit), {ok:false,grund:"nicht-vertraut"} (ansicht mit Kit, aber ohne Vertrauen),
+#  - `aktion` antwortet: {ok:true} (titel, vault-gewechselt, vertrauen-geaendert, ansicht mit Brain-Vault und Kern),
+#    {ok:false,grund:"kein-kit"} (ansicht ohne Vault), {ok:false,grund:"kern-nicht-bereit"} (Kern fehlt im Paket),
 #    Promise-Abweisung bei Ungültigem, null beim zweiten gleichzeitigen ordner-waehlen
-#  - Vertrauen (K1): ohne Freigabe liest die App den Kit-Status nicht ('Kit nicht erlaubt') und öffnet die Übersicht nicht; nach
-#    der Freigabe und `vertrauen-geaendert` liest sie den Status und öffnet die Übersicht. Fehlt die Prüfung ganz (dritter Lauf),
-#    bleibt alles zu — auch nach der 'Freigabe' — und die App sagt 'Prüfung fehlgeschlagen' statt 'nicht erlaubt' (SW-5).
-#  - Offene Übersicht (SW-2): Entzieht das Backend die Freigabe oder verschwindet das Kit (Abgleich) und meldet `vertrauen-geaendert`,
-#    schließt die Übersicht. Ein technischer Prüffehler lässt sie offen; nach 10 s wird einmal wiederholt, erst bei einem zweiten
-#    Fehlschlag schließt sie. Belege sind Zeilen im App-Log (die Attrappe wartet darauf), keine festen Schlafzeiten.
+#  - Kern-Aufrufe: `brain status` läuft aus support/bin/kern mit --vault, ohne jede Freigabe; ein altes <vault>/.tools wird nie ausgeführt
+#    (Marken-Skripte schreiben eine Datei, falls sie je laufen); fehlt der Kern, meldet die App 'kern-nicht-bereit' und öffnet nichts.
+#  - Offene Übersicht (SW-2): Verschwindet brain.config.json (Abgleich) und meldet `vertrauen-geaendert`, schließt die Übersicht; sie
+#    öffnet wieder, wenn die Datei zurück ist. Belege sind Zeilen im App-Log (die Attrappe wartet darauf), keine festen Schlafzeiten.
 #  - Aktion `fehler` (SW-7): je Fensterleben 20 Zeilen im Log, danach einmal 'js-fehler gedrosselt', der Rest wird verworfen.
 #  - vault-gewechselt: aktiver Vault aus vaults.json, Status, offene Übersicht wird geschlossen
 #  - der Ordner-Dialog (Sheet) öffnet und endet mit dem Fenster (ordner-dialog abgebrochen), kein Absturz
 #  - keine Spuren (k11): kein gemerkter Fensterrahmen in den Einstellungen, keine WebKit-Daten unter ~/Library/WebKit
 # Nicht automatisierbar (braucht einen Klick): der Dialog mit echter Auswahl → {pfad}.
-# Umgebung (optional): BRAIN_TEST_APP (andere .app als build/Kortex.app), BRAIN_TEST_KIT (Kit-Worktree), KANAL_LAEUFE (Standard: alle drei).
+# Umgebung (optional): BRAIN_TEST_APP (andere .app als build/Kortex.app), KANAL_LAEUFE (Standard: alle drei).
 set -uo pipefail
 W="$(cd "$(dirname "$0")/.." && pwd)"
 ORIGINAL="${BRAIN_TEST_APP:-$W/build/Kortex.app}"
-KIT="${BRAIN_TEST_KIT:-}"
-if [ -z "$KIT" ]; then
-  for k in "$HOME/brain-kit-v0.6" "$HOME/brain-kit-v0.9-integ"; do [ -f "$k/.tools/brain.mjs" ] && { KIT="$k"; break; }; done
-fi
+FIXTURE="$W/Tests/Kern/fixture"
 [ -x "$ORIGINAL/Contents/MacOS/BrainApp" ] || { echo "FAIL: zuerst bash scripts/baue-app.sh"; exit 1; }
-[ -n "$KIT" ] && [ -f "$KIT/.tools/brain.mjs" ] || { echo "FAIL: Kit-Worktree fehlt (BRAIN_TEST_KIT setzen)"; exit 1; }
+[ -f "$ORIGINAL/Contents/Resources/kern/brain.mjs" ] || { echo "FAIL: Kern fehlt im App-Paket (Contents/Resources/kern)"; exit 1; }
+[ -f "$FIXTURE/brain.config.json" ] || { echo "FAIL: Tests/Kern/fixture fehlt"; exit 1; }
 ARBEIT="$(mktemp -d)"
 APP="$ARBEIT/Kortex.app"
 cp -R "$ORIGINAL" "$APP"
@@ -70,17 +67,26 @@ keine_spuren() { # <Bundle-ID>: kein gemerkter Fensterrahmen, keine WebKit-Daten
     echo "  ok   keine WebKit-Daten"
   fi
 }
-lauf() { # leer | mit-vault | ohne-cli
-  local modus="$1" basis v1 v2 log breite hoehe z_frei z_status z_auf z_fehler z_gut z_zu_fehler z_wechsel z_zu_uebersicht z_zu_studio
-  # Vertrauensprüfung (Attrappe) in die Kopie legen — im Lauf 'ohne-cli' fehlt sie. Vor der Signatur (neue_kennung).
-  rm -f "$APP/Contents/Resources/werkstatt/vertrauen-pruefen.mjs"
-  [ "$modus" = "ohne-cli" ] || cp "$W/Tests/Aktionskanal/vertrauen-pruefen.mjs" "$APP/Contents/Resources/werkstatt/vertrauen-pruefen.mjs"
+lauf() { # leer | mit-vault | ohne-kern
+  local modus="$1" basis v1 v2 log breite hoehe z_status z_auf z_wechsel z_zu_uebersicht z_zu_studio marke
+  # Im Lauf 'ohne-kern' fehlt der Kern im Paket (samt Manifest). Vor der Signatur (neue_kennung).
+  if [ "$modus" = "ohne-kern" ]; then
+    rm -rf "$APP/Contents/Resources/kern" "$APP/Contents/Resources/kern-manifest.json"
+  elif [ ! -d "$APP/Contents/Resources/kern" ]; then
+    cp -R "$ORIGINAL/Contents/Resources/kern" "$APP/Contents/Resources/kern"
+    cp "$ORIGINAL/Contents/Resources/kern-manifest.json" "$APP/Contents/Resources/kern-manifest.json"
+  fi
   neue_kennung "$modus"
   basis="$(mktemp -d "$ARBEIT/lauf.XXXX")"
   v1="$basis/Vault Eins"; v2="$basis/Vault Zwei"
   mkdir -p "$v1" "$v2"
-  # Eigene KOPIE des Kits (kein Verweis): Der Test löscht darin `brain.mjs`, wie ein Abgleich es könnte — nie im Kit-Worktree.
-  cp -R "$KIT/.tools/tests/fixture/." "$v1/"; cp -R "$KIT/.tools" "$v1/.tools"
+  # Eigene KOPIE der Kern-Fixture (ein Vault ist ein Ordner mit brain.config.json; der Test löscht sie, wie ein Abgleich es könnte).
+  cp -R "$FIXTURE/." "$v1/"
+  # Ein altes Kit im Vault mit Marken: Es darf nie laufen (Status, Übersicht) — sonst steht die Marke da.
+  marke="$basis/marke-altes-kit.txt"
+  mkdir -p "$v1/.tools/ansicht"
+  printf 'import { appendFileSync } from "node:fs";\nappendFileSync("%s", "brain.mjs\\n");\nconsole.log("{}");\n' "$marke" > "$v1/.tools/brain.mjs"
+  printf 'import { appendFileSync } from "node:fs";\nappendFileSync("%s", "bruecke.mjs\\n");\nprocess.stdout.write(JSON.stringify({ bereit: true, version: "alt" }) + "\\n");\nprocess.stdin.resume();\n' "$marke" > "$v1/.tools/ansicht/bruecke.mjs"
   export BRAIN_APP_SUPPORT="$basis/support"; mkdir -p "$BRAIN_APP_SUPPORT"
   export STUB_LOG="$basis/stub.log" STUB_NEUER_VAULT="$v2" STUB_MODUS="$modus" STUB_VAULT="$v1"
   local extra=()
@@ -114,13 +120,12 @@ lauf() { # leer | mit-vault | ohne-cli
   pruefe "zweiter gleichzeitiger Ordner-Dialog antwortet null" "$STUB_LOG" '"zweiterDialog":"null"'
   pruefe "Aktion vertrauen-geaendert kommt an" "$log" "aktion vertrauen-geaendert"
   pruefe "Vault-Wechsel erkannt (vaults.json)" "$log" "vault-wechsel $v2"
-  pruefe "Status des neuen Vaults (ohne Kit)" "$log" "status ohne-kit"
+  pruefe "Status des neuen Vaults (ohne brain.config.json)" "$log" "status ohne-konfiguration"
   pruefe "Ordner-Dialog endet mit dem Fenster" "$log" "ordner-dialog abgebrochen"
   case "$modus" in
   leer)
     pruefe "Start ohne Vault" "$log" "kein-vault"
-    pruefe "ansicht ohne Kit antwortet ok:false/kein-kit" "$STUB_LOG" '"ansicht":"{\"grund\":\"kein-kit\",\"ok\":false}"'
-    pruefe "ansicht ohne Kit (vor der Freigabe) ebenso" "$STUB_LOG" '"ansichtOhneVertrauen":"{\"grund\":\"kein-kit\",\"ok\":false}"'
+    pruefe "ansicht ohne Vault antwortet ok:false/kein-kit" "$STUB_LOG" '"ansicht":"{\"grund\":\"kein-kit\",\"ok\":false}"'
     # Aktion 'fehler' (SW-7): 25 Meldungen einer Seite → 20 im Log, danach einmal 'gedrosselt', der Rest verworfen
     pruefe "fehler: 20 Meldungen angenommen" "$STUB_LOG" '"fehlerAngenommen":20'
     pruefe "fehler: die übrigen 5 antworten ok:false/gedrosselt" "$STUB_LOG" '"fehlerGedrosselt":5'
@@ -131,85 +136,52 @@ lauf() { # leer | mit-vault | ohne-cli
     ;;
   mit-vault)
     pruefe "Vault aus vaults.json beim Start" "$log" "vault $v1"
-    pruefe "ansicht mit Kit, aber ohne Vertrauen: ok:false/nicht-vertraut" "$STUB_LOG" '"ansichtOhneVertrauen":"{\"grund\":\"nicht-vertraut\",\"ok\":false}"'
-    pruefe "ansicht mit Kit und Vertrauen antwortet {ok:true}" "$STUB_LOG" '"ansicht":"{\"ok\":true}"'
-    pruefe "Status ohne Freigabe: 'Kit nicht erlaubt'" "$log" "status kit-nicht-erlaubt nicht-freigegeben"
-    pruefe "Übersicht ohne Freigabe abgelehnt" "$log" "uebersicht-abgelehnt kit-nein nicht-freigegeben"
-    pruefe "Attrappen-CLI wurde ohne und mit Freigabe gefragt" "$STUB_LOG" '"pruefung":{"vault":"'"$v1"'","erlaubt":false}'
-    pruefe "Attrappen-CLI wurde ohne und mit Freigabe gefragt (mit)" "$STUB_LOG" '"pruefung":{"vault":"'"$v1"'","erlaubt":true}'
-    # Reihenfolge: Das Kit läuft erst nach der Freigabe (Status gelesen, Übersicht geöffnet)
-    z_frei="$(zeile "$log" 'aktion vertrauen-geaendert')"
+    pruefe "ansicht mit Brain-Vault und Kern antwortet {ok:true} (ohne jede Freigabe)" "$STUB_LOG" '"ansicht":"{\"ok\":true}"'
+    pruefe "Der Kern wurde bereitgestellt" "$log" " kern bereit(version:"
+    pruefe "Status vom gebündelten Kern gelesen" "$log" " status ok"
+    pruefe_nicht "nie ein Vertrauens-Status für den Kern" "$log" 'kit-nicht-erlaubt|kit-pruefung|uebersicht-abgelehnt'
     z_status="$(zeile "$log" ' status (ok|hinweis|problem)$')"
     z_auf="$(zeile "$log" ' fenster-auf uebersicht')"
-    if [ -n "$z_frei" ] && [ -n "$z_status" ] && [ "$z_status" -gt "$z_frei" ]; then
-      echo "  ok   Kit-Status erst nach der Freigabe gelesen"
+    if [ -n "$z_status" ] && [ -n "$z_auf" ]; then
+      echo "  ok   Status gelesen und Übersicht geöffnet (Status Zeile $z_status, Fenster Zeile $z_auf)"
     else
-      echo "  FAIL Kit-Status vor der Freigabe oder gar nicht gelesen (Freigabe Zeile ${z_frei:-?}, Status Zeile ${z_status:-?})"; FEHLER=1
+      echo "  FAIL Status oder Übersicht fehlt (Status Zeile ${z_status:-?}, Fenster Zeile ${z_auf:-?})"; FEHLER=1
     fi
-    if [ -n "$z_frei" ] && [ -n "$z_auf" ] && [ "$z_auf" -gt "$z_frei" ]; then
-      echo "  ok   Übersicht erst nach der Freigabe geöffnet"
-    else
-      echo "  FAIL Übersicht vor der Freigabe oder gar nicht geöffnet (Freigabe Zeile ${z_frei:-?}, Fenster Zeile ${z_auf:-?})"; FEHLER=1
-    fi
-    # Offene Übersicht (SW-2): Freigabe entzogen, Kit verschwunden → sie schließt; Belege aus dem App-Log und der Attrappe
-    pruefe "Übersicht war nach dem Öffnen bereit (Kit-Seite geladen)" "$STUB_LOG" '"bereitEins":true'
-    pruefe "Freigabe entzogen + vertrauen-geaendert: die Übersicht schließt" "$STUB_LOG" '"schliesstBeiEntzug":true'
-    pruefe "ansicht nach dem Entzug: ok:false/nicht-vertraut" "$STUB_LOG" '"ansichtNachEntzug":"{\"grund\":\"nicht-vertraut\",\"ok\":false}"'
-    pruefe "wieder freigegeben: die Übersicht öffnet erneut" "$STUB_LOG" '"ansichtZwei":"{\"ok\":true}"'
-    pruefe "Kit gelöscht + vertrauen-geaendert: die Übersicht schließt" "$STUB_LOG" '"schliesstOhneKit":true'
-    pruefe "Schließgrund 'Freigabe entfallen' im Log" "$log" " uebersicht-geschlossen kit-nicht-erlaubt$"
-    pruefe "Schließgrund 'Kit fehlt' im Log" "$log" " uebersicht-geschlossen kein-kit$"
-    # Technischer Prüffehler (SW-5): einmal fehlgeschlagen → Übersicht bleibt offen, nach 10 s wiederholt, intakt → weiter offen
-    pruefe "technischer Prüffehler wird als 'Prüfung fehlgeschlagen' angezeigt" "$STUB_LOG" '"fehlerAngezeigt":true'
-    pruefe "… mit einer Wiederholung nach 10 s" "$STUB_LOG" '"wiederholungGeplant":true'
-    pruefe "… die das Vertrauen intakt findet (Status wird wieder gelesen)" "$STUB_LOG" '"wiederholungOk":true'
-    z_fehler="$(zeile "$log" ' status kit-pruefung-fehlgeschlagen unerwartete-ausgabe$')"
-    z_gut="$(zeile_nach "$log" ' status (ok|hinweis|problem)$' "${z_fehler:-0}")"
-    z_zu_fehler="$(zeile "$log" ' uebersicht-geschlossen pruefung-fehlgeschlagen$')"
-    if [ -n "$z_fehler" ] && [ -n "$z_gut" ] && { [ -z "$z_zu_fehler" ] || [ "$z_zu_fehler" -gt "$z_gut" ]; }; then
-      echo "  ok   Die Übersicht blieb während der Wiederholung offen (Prüffehler Zeile $z_fehler, wieder gut Zeile $z_gut)"
-    else
-      echo "  FAIL Übersicht schloss schon beim ersten technischen Prüffehler (Fehler Zeile ${z_fehler:-?}, wieder gut ${z_gut:-?}, geschlossen ${z_zu_fehler:-?})"; FEHLER=1
-    fi
-    # … und scheitert auch die Wiederholung, schließt sie erst danach
-    pruefe "zweiter Prüffehler: die Übersicht schließt erst nach der Wiederholung" "$STUB_LOG" '"schliesstNachWiederholung":true'
-    pruefe "… Log: zweiter Fehlschlag steht als endgültig da" "$log" " status kit-pruefung-fehlgeschlagen unerwartete-ausgabe endgueltig$"
-    pruefe_anzahl "Wiederholung geplant: zweimal (je ein Prüffehler-Durchgang)" "$log" ' kit-pruefung-wiederholung in 10s$' 2
-    pruefe_anzahl "Schließgrund 'Prüfung fehlgeschlagen' genau einmal" "$log" ' uebersicht-geschlossen pruefung-fehlgeschlagen$' 1
-    pruefe_nicht "technischer Prüffehler wird nie als 'Kit nicht erlaubt' gemeldet (kein 'bitte freigeben')" "$log" ' status kit-nicht-erlaubt unerwartete-ausgabe'
-    pruefe "Übersicht öffnet vor dem Vault-Wechsel noch einmal" "$STUB_LOG" '"ansichtVier":"{\"ok\":true}"'
-    # Vier Übersichten: Entzug, Kit weg, zweiter Prüffehler, Vault-Wechsel — jede schließt, keine bleibt übrig
-    pruefe_anzahl "vier Übersichten geöffnet" "$log" ' fenster-auf uebersicht' 4
-    pruefe_anzahl "vier Übersichten geschlossen" "$log" ' fenster-zu uebersicht$' 4
+    pruefe "Übersicht war nach dem Öffnen bereit (Seite vom Kern geladen)" "$STUB_LOG" '"bereitEins":true'
+    # Offene Übersicht (SW-2): brain.config.json verschwindet (Abgleich) → sie schließt; danach öffnet sie wieder
+    pruefe "brain.config.json weg + vertrauen-geaendert: die Übersicht schließt" "$STUB_LOG" '"schliesstOhneKonfig":true'
+    pruefe_anzahl "Schließgrund 'kein Brain' genau einmal im Log" "$log" ' uebersicht-geschlossen kein-brain$' 1
+    pruefe "ansicht ohne brain.config.json: ok:false/kein-kit" "$STUB_LOG" '"ansichtOhneKonfig":"{\"grund\":\"kein-kit\",\"ok\":false}"'
+    pruefe "wieder da: die Übersicht öffnet erneut" "$STUB_LOG" '"ansichtZwei":"{\"ok\":true}"'
+    pruefe "… und wird bereit" "$STUB_LOG" '"bereitZwei":true'
+    pruefe_anzahl "zwei Übersichten geöffnet" "$log" ' fenster-auf uebersicht' 2
+    pruefe_anzahl "zwei Übersichten geschlossen" "$log" ' fenster-zu uebersicht$' 2
     z_wechsel="$(zeile "$log" "vault-wechsel $v2")"
     z_zu_uebersicht="$(letzte_zeile "$log" ' fenster-zu uebersicht$')"
     z_zu_studio="$(zeile "$log" 'fenster-zu studio')"
-    if [ -n "$z_wechsel" ] && [ -n "$z_zu_uebersicht" ] && [ -n "$z_zu_studio" ] && [ "$z_zu_uebersicht" -gt "$z_wechsel" ] && [ "$z_zu_uebersicht" -lt "$z_zu_studio" ]; then
-      echo "  ok   Vault-Wechsel schließt die offene Übersicht (vor dem Schließen des Studios)"
+    if [ -n "$z_wechsel" ] && [ -n "$z_zu_uebersicht" ] && [ -n "$z_zu_studio" ] && [ "$z_zu_uebersicht" -ge $((z_wechsel - 1)) ] && [ "$z_zu_uebersicht" -lt "$z_zu_studio" ]; then
+      echo "  ok   Vault-Wechsel schließt die offene Übersicht (Fenster-zu steht unmittelbar am Wechsel, vor dem Schließen des Studios)"
     else
       echo "  FAIL Übersicht wurde beim Vault-Wechsel nicht geschlossen (Wechsel Zeile ${z_wechsel:-?}, Übersicht zu ${z_zu_uebersicht:-?}, Studio zu ${z_zu_studio:-?})"; FEHLER=1
     fi
+    if [ -e "$marke" ]; then echo "  FAIL Code aus <vault>/.tools ist gelaufen (Marke: $(tr '\n' ' ' < "$marke"))"; FEHLER=1; else echo "  ok   das alte .tools im Vault ist nie gelaufen (keine Marke)"; fi
     ;;
-  ohne-cli)
+  ohne-kern)
     pruefe "Vault aus vaults.json beim Start" "$log" "vault $v1"
-    # Fehlt die Prüfung, ist alles 'nicht erlaubt' — auch nach der 'Freigabe' der Attrappe (es gibt niemanden, der sie liest)
-    # SW-5: Eine fehlende Prüfung ist ein technischer Fehler, nicht 'nicht freigegeben' — sonst hieße es 'bitte freigeben', obwohl der
-    # Nutzer nichts freigeben kann. Gestartet wird auch hier nichts.
-    pruefe "ansicht ohne Prüfung: ok:false/pruefung-fehlgeschlagen" "$STUB_LOG" '"ansichtOhneVertrauen":"{\"grund\":\"pruefung-fehlgeschlagen\",\"ok\":false}"'
-    pruefe "ansicht nach der 'Freigabe' ohne Prüfung ebenso" "$STUB_LOG" '"ansicht":"{\"grund\":\"pruefung-fehlgeschlagen\",\"ok\":false}"'
-    pruefe "Status: 'Kit-Prüfung fehlgeschlagen' (Prüfung fehlt)" "$log" "status kit-pruefung-fehlgeschlagen pruefung-fehlt"
-    pruefe "Die Prüfung wird einmal wiederholt (Wiederholung geplant)" "$log" "kit-pruefung-wiederholung in 10s"
-    pruefe_nicht "nie 'Kit nicht erlaubt' gemeldet (kein 'bitte freigeben')" "$log" ' status kit-nicht-erlaubt'
-    pruefe "Übersicht abgelehnt (Prüfung fehlt)" "$log" "uebersicht-abgelehnt kit-nein pruefung-fehlt"
-    pruefe_nicht "Kit-Status wurde nie gelesen" "$log" ' status (ok|hinweis|problem)$'
+    # Fehlt der Kern im Paket, meldet die App das klar — und weicht nicht auf das .tools im Vault aus.
+    pruefe "Kern nicht bereit im Log (Meldung)" "$log" "kern-nicht-bereit Der Kern (die Brain-Logik) fehlt im App-Paket"
+    pruefe "Status: 'Kern nicht bereit'" "$log" " status kern-nicht-bereit"
+    pruefe "ansicht ohne Kern: ok:false/kern-nicht-bereit" "$STUB_LOG" '"ansicht":"{\"grund\":\"kern-nicht-bereit\",\"ok\":false}"'
+    pruefe "Übersicht abgelehnt (Kern fehlt)" "$log" "uebersicht-abgelehnt kern-nicht-bereit"
+    pruefe_nicht "Status wurde nie gelesen" "$log" ' status (ok|hinweis|problem)$'
     pruefe_nicht "Übersicht wurde nie geöffnet" "$log" ' fenster-auf uebersicht'
-    pruefe_nicht "Attrappen-CLI wurde nie gestartet" "$STUB_LOG" '"pruefung"'
+    if [ -e "$marke" ]; then echo "  FAIL Code aus <vault>/.tools ist gelaufen (Marke: $(tr '\n' ' ' < "$marke"))"; FEHLER=1; else echo "  ok   kein Ausweichen auf das alte .tools im Vault (keine Marke)"; fi
     ;;
   esac
   keine_spuren "$KENNUNG"
 }
-# Läufe wählen: KANAL_LAEUFE="ohne-cli" (Standard: alle drei), z. B. zum Eingrenzen eines Fehlers.
-LAEUFE="${KANAL_LAEUFE:-leer mit-vault ohne-cli}"
+# Läufe wählen: KANAL_LAEUFE="ohne-kern" (Standard: alle drei), z. B. zum Eingrenzen eines Fehlers.
+LAEUFE="${KANAL_LAEUFE:-leer mit-vault ohne-kern}"
 for m in $LAEUFE; do lauf "$m"; done
 for m in $LAEUFE; do
   defaults delete "io.github.fbrogno.brain.kanaltest.$$.$m" 2>/dev/null || true

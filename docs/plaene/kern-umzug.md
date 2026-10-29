@@ -42,3 +42,17 @@ Stand 28.10.2026. Entscheidung Fabio: Man installiert Kortex, und alles funktion
 4. Mehrere Macs mit gemischten Versionen → zwei Phasen, `kernVersion` in `brain.config.json`.
 5. Fest eingebrannte Pfade → Ordnername Kortex vor P3 entschieden.
 6. Vertrauensmodell ändert sich → Sicherheits-Review nach P5.
+
+## P4 umgesetzt: die App nutzt den gebündelten Kern
+- Alle Kern-Aufrufe laufen über `Support/Kortex/bin/kern` (`AppPfade.kern`) mit `bin/node` und ausdrücklichem `--vault <vault>` (zusätzlich `BRAIN_VAULT`):
+  `BrainBefehl` (status, rueckfragen), `BrueckenVerbindung` (Ansicht-Brücke `ansicht/bruecke.mjs --vault`), Werkstatt (`gesundheit`, Rückfragen-Zahl über `KORTEX_KERN_PFAD`, das die App setzt).
+  Ist der Kern nicht bereit (`KernBereitschaft`: fehlt im Paket, Prüfung gescheitert, Link kaputt), zeigt die App eine Meldung (Menüleiste, Menü, Aktion `ansicht` → Grund `kern-nicht-bereit`); nie ein Ausweichen auf `<vault>/.tools`.
+- Ein Vault ist ein Ordner mit `brain.config.json` (`VaultAuswahl`, wie `pruefeVault`). Ein altes `.tools/` bleibt liegen und wird nicht ausgeführt. Neue Vaults aus der Vorlage (`vorlage.mjs`) enthalten `brain.config.json` und kein `.tools`; „leerer Vault“ bleibt ein reiner Studio-Ordner.
+- MCP-Server: liegt im Quellbaum in `Ressourcen/mcp` (braucht `Ressourcen/gemeinsam`). `scripts/baue-app.sh` legt beides zusätzlich in den Kern (`kern/mcp`, `kern/gemeinsam`, vom Manifest erfasst). Neue MCP-Einträge: `<bin/node> <bin/kern>/mcp/brain-mcp.mjs` (Link nicht aufgelöst). Frühere Formen (Server im App-Paket, früherer Kern-Ordner, Server unter `<vault>/.tools`, alter App-Node) werden ohne Rückfrage umgestellt.
+- KitVertrauen/KitStand/`UebersichtRegel` bleiben als Code, die App ruft sie nicht mehr auf. Das Vertrauen der Werkstatt (`vertrauen.mjs`, Git-Hooks, Git-Einstellungen) ist unverändert.
+
+### Für P5 (entfernen oder verkleinern)
+- Swift: `KitVertrauen`, `KitErlaubnis`, `KitStand`, `UebersichtRegel`, `StatusAnzeige.kitNichtErlaubt/.kitPruefungFehlgeschlagen`, `BrueckenFehler.nichtErlaubt`/`vorStart` (wird nur noch für „Kern noch da?“ genutzt), `AppAktion.vertrauenGeaendert` (löst nur noch einen Status-Abruf aus), Test `KitVertrauenTests`.
+- Werkstatt: der Grund `kit` in `vertrauen.mjs` (Fingerabdruck über `.tools`, Text „Programmcode unter .tools“); `werkstatt/vertrauen-pruefen.mjs` (CLI für Swift, sonst nicht mehr gebraucht); `info.kit`/`kitVersion` (heißt jetzt: Brain-Vault + Kern).
+- Studio: Texte/Zweige zu `nicht-vertraut` und `pruefung-fehlgeschlagen` der Aktion `ansicht` (nur für ältere Apps).
+- Sicherheits-Review (Pflicht): Der Kern läuft jetzt ohne Freigabe auf beliebigen Vaults. Er liest `werkzeuge.git` aus der `brain.config.json` des Vaults und startet es als Programm (`kern/werkzeug.mjs#gitBefehl`), und er ruft `git` im Vault auf (Repo-Einstellungen wie `core.fsmonitor`, `filter.*`). Vorher sperrte die Vertrauensprüfung genau das (SW-1). P5 muss entscheiden: `werkzeuge.*` aus Vault-Daten ignorieren oder nur bei Vertrauen, und Git-Aufrufe des Kerns wie die der Werkstatt härten.

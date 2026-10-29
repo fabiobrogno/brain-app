@@ -75,25 +75,26 @@ private let listeJSON = #"""
 // MARK: Befehle gegen ein falsches „node“ mit Fake-Ausgaben des Kits
 
 private func fakeKit(_ skriptKoerper: String) -> BrainBefehl {
-    BrainBefehl(node: skript("#!/bin/bash\n\(skriptKoerper)\n", name: "node", in: tempOrdner()), vault: tempOrdner("Mein Brän"))
+    BrainBefehl(node: skript("#!/bin/bash\n\(skriptKoerper)\n", name: "node", in: tempOrdner()),
+                kern: URL(fileURLWithPath: "/tmp/Kortex Test/bin/kern", isDirectory: true), vault: tempOrdner("Mein Brän"))
 }
 
 @Test func rueckfragenListeUeberBrainBefehl() async throws {
-    // $1 = brain.mjs, $2/$3 = Befehl
-    let b = fakeKit("[ \"$2 $3\" = \"rueckfragen liste\" ] || exit 9\ncat <<'EOF'\n\(listeJSON)\nEOF")
+    // $1 = brain.mjs, $2/$3 = --vault <vault>, danach der Befehl
+    let b = fakeKit("[ \"$4 $5\" = \"rueckfragen liste\" ] || exit 9\ncat <<'EOF'\n\(listeJSON)\nEOF")
     let l = try await b.rueckfragen()
     #expect(l.fragen.count == 2)
 }
 
 @Test func antwortUebergibtIdWahlUndNotiz() async throws {
-    let b = fakeKit("printf '%s|' \"${@:2}\" > \"$BRAIN_VAULT/args.txt\"")
+    let b = fakeKit("printf '%s|' \"${@:4}\" > \"$BRAIN_VAULT/args.txt\"")
     try await b.antworte(id: "rf-1-heikel-abc", wahl: "uebernehmen", notiz: "  passt so \n")
     let s = try String(contentsOf: b.vault.appendingPathComponent("args.txt"), encoding: .utf8)
     #expect(s == "rueckfragen|antwort|rf-1-heikel-abc|uebernehmen|passt so|")
 }
 
 @Test func antwortOhneNotizGibtKeinLeeresArgument() async throws {
-    let b = fakeKit("printf '%s|' \"${@:2}\" > \"$BRAIN_VAULT/args.txt\"")
+    let b = fakeKit("printf '%s|' \"${@:4}\" > \"$BRAIN_VAULT/args.txt\"")
     try await b.antworte(id: "rf-1-web-abc", wahl: "verwerfen")
     let s = try String(contentsOf: b.vault.appendingPathComponent("args.txt"), encoding: .utf8)
     #expect(s == "rueckfragen|antwort|rf-1-web-abc|verwerfen|")
@@ -114,14 +115,14 @@ private func fakeKit(_ skriptKoerper: String) -> BrainBefehl {
 }
 
 @Test func antwortenAnwendenRuftNurAntwortenLosgeloest() async throws {
-    let b = fakeKit("printf '%s|' \"${@:2}\" > \"$BRAIN_VAULT/args.txt\"")
+    let b = fakeKit("printf '%s|' \"${@:4}\" > \"$BRAIN_VAULT/args.txt\"")
     try await b.antwortenAnwenden()
     let s = try String(contentsOf: b.vault.appendingPathComponent("args.txt"), encoding: .utf8)
     #expect(s == "tageslauf|--nur-antworten|--losgeloest|")
 }
 
 @Test func zurueckNimmtNurEchteLaufNummern() async throws {
-    let b = fakeKit("printf '%s|' \"${@:2}\" > \"$BRAIN_VAULT/args.txt\"\necho 'Zurückgenommen: 3 Änderung(en)'")
+    let b = fakeKit("printf '%s|' \"${@:4}\" > \"$BRAIN_VAULT/args.txt\"\necho 'Zurückgenommen: 3 Änderung(en)'")
     let text = try await b.nimmZurueck(lauf: "20261021-041000")
     #expect(text == "Zurückgenommen: 3 Änderung(en)")
     let s = try String(contentsOf: b.vault.appendingPathComponent("args.txt"), encoding: .utf8)

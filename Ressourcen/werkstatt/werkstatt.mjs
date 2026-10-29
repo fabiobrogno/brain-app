@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // werkstatt/werkstatt.mjs — Brücke zwischen Brain Studio (Swift-App) und dem Vault, Protokoll wie
-// ~/brain/.tools/ansicht/bruecke.mjs (Spec §4): je Zeile ein JSON-Objekt (UTF-8) über stdin/stdout.
+// kern/ansicht/bruecke.mjs (Spec §4): je Zeile ein JSON-Objekt (UTF-8) über stdin/stdout.
 //   Start:   → {"bereit":true,"version":"<app-version>","vaultId":"<id>"}
 //   Anfrage: ← {"id":1,"methode":"GET","pfad":"/api/datei","query":"pfad=a.md"|null,"body":"<base64>"|null}
 //   Antwort: → {"id":1,"status":200,"headers":{…},"body":"<base64>"}

@@ -152,8 +152,8 @@ final class AppDelegat: NSObject, NSApplicationDelegate {
     }
 }
 
-/// Die Übersicht braucht das Brain-Kit im aktiven Vault und das Vertrauen des Nutzers in diesen Vault — ohne eins von beiden ist
-/// ihr Eintrag ausgegraut.
+/// Die Übersicht braucht einen Brain-Vault (`brain.config.json`) und einen bereiten Kern — ohne eins von beiden ist ihr Eintrag
+/// ausgegraut.
 extension AppDelegat: NSMenuItemValidation {
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         if item.action == #selector(uebersichtOeffnen) { return zustand.uebersichtMoeglich }

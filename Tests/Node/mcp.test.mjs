@@ -4,7 +4,7 @@ import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
-import { tmp, schreibe, repo, g, pfad } from "./hilfe.mjs";
+import { tmp, schreibe, repo, g, pfad, kernAttrappe, brainVault } from "./hilfe.mjs";
 
 const { oeffneVault } = await import(pfad("gemeinsam", "vault.mjs"));
 const kinder = [];
@@ -22,8 +22,8 @@ function wiki() {
   return d;
 }
 
-function starte(vault) {
-  const p = spawn(process.execPath, [SKRIPT, vault], { stdio: ["pipe", "pipe", "pipe"] });
+function starte(vault, env = {}) {
+  const p = spawn(process.execPath, [SKRIPT, vault], { stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, ...env } });
   kinder.push(p);
   const antworten = [], wartende = [];
   let stderr = ""; p.stderr.on("data", (c) => (stderr += c));
@@ -127,19 +127,22 @@ test("MCP: unbekanntes Werkzeug → JSON-RPC-Fehler", async () => {
   s.p.stdin.end(); await s.ende;
 });
 
-test("MCP: brain_gesundheit ohne Kit und mit Kit (Kurzfassung)", async () => {
+test("MCP: brain_gesundheit ohne Brain-Vault und mit Kern (Kurzfassung, ohne Erlaubnis, nie aus .tools)", async () => {
   const d = wiki();
-  const s = starte(d);
+  const kern = kernAttrappe({ "brain.mjs": `console.log(JSON.stringify({version:1,ampel:"rot",warnungen:2,pruefungen:[
+    {id:"a",name:"Messlatte",stufe:"rot",text:"verfehlt 0/97",befunde:[{stufe:"rot",kurz:"Messlatte verfehlt"}]},
+    {id:"b",name:"Suchindex",stufe:"gruen",text:"alles gut",befunde:[]}]}));` });
+  // kein Brain-Vault (brain.config.json fehlt), auch mit Kern: nicht verfügbar
+  const s = starte(d, { KORTEX_KERN_PFAD: kern });
   assert.match(textVon(await s.rufe("brain_gesundheit", {})), /nicht verfügbar/);
   s.p.stdin.end(); await s.ende;
-  schreibe(d, ".tools/brain.mjs", `console.log(JSON.stringify({version:1,ampel:"rot",warnungen:2,pruefungen:[
-    {id:"a",name:"Messlatte",stufe:"rot",text:"verfehlt 0/97",befunde:[{stufe:"rot",kurz:"Messlatte verfehlt"}]},
-    {id:"b",name:"Suchindex",stufe:"gruen",text:"alles gut",befunde:[]}]}));`);
-  const s1 = starte(d);
-  assert.match(textVon(await s1.rufe("brain_gesundheit", {})), /In der App einmal erlauben/);
+  // ein altes Kit im Vault zählt nicht
+  brainVault(d);
+  schreibe(d, ".tools/brain.mjs", `console.log(JSON.stringify({version:1,ampel:"gruen",warnungen:0,pruefungen:[]}));`);
+  const s1 = starte(d, { KORTEX_KERN_PFAD: tmp() }); // Kern ohne brain.mjs
+  assert.match(textVon(await s1.rufe("brain_gesundheit", {})), /nicht verfügbar/);
   s1.p.stdin.end(); await s1.ende;
-  oeffneVault(d).vertrauen(true);
-  const s2 = starte(d);
+  const s2 = starte(d, { KORTEX_KERN_PFAD: kern });
   const t = textVon(await s2.rufe("brain_gesundheit", {}));
   assert.match(t, /Ampel: rot · 2 Warnung/); assert.match(t, /Messlatte \[rot\]: verfehlt 0\/97/); assert.match(t, /Messlatte verfehlt/); assert.doesNotMatch(t, /Suchindex/);
   s2.p.stdin.end(); await s2.ende;

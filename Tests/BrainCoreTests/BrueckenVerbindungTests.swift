@@ -2,33 +2,34 @@ import Testing
 import Foundation
 @testable import BrainCore
 
-/// Echte Brücke aus dem Kit-Worktree; ohne Node oder Kit werden die Tests übersprungen
-/// (außer `BRAIN_TEST_REQUIRE=1`: dann scheitert `umgebungIstVorhandenWennErzwungen`).
+/// Echte Brücke aus dem gebündelten Kern (`Ressourcen/kern`, wie im App-Paket) mit einer Kopie der Kern-Fixture als Vault; ohne Node
+/// werden die Tests übersprungen (außer `BRAIN_TEST_REQUIRE=1`: dann scheitert `umgebungIstVorhandenWennErzwungen`).
 enum BrueckenUmgebung {
-    static let kit = URL(fileURLWithPath: ProcessInfo.processInfo.environment["BRAIN_TEST_KIT"] ?? NSHomeDirectory() + "/brain-kit-v0.6")
+    /// Wurzel des Repos (diese Datei liegt unter `Tests/BrainCoreTests/`).
+    static let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    /// Der Kern wie die App ihn aufruft (`bin/kern`); in den Tests direkt der Ordner `Ressourcen/kern`.
+    static let kern = repo.appendingPathComponent("Ressourcen/kern", isDirectory: true)
     static let node: URL? = {
         let kandidaten = [ProcessInfo.processInfo.environment["BRAIN_TEST_NODE"], "/opt/homebrew/bin/node", "/usr/local/bin/node"]
         for p in kandidaten.compactMap({ $0 }) where FileManager.default.isExecutableFile(atPath: p) { return URL(fileURLWithPath: p) }
         return nil
     }()
     static var verfuegbar: Bool {
-        node != nil && FileManager.default.fileExists(atPath: kit.appendingPathComponent(".tools/ansicht/bruecke.mjs").path)
+        node != nil && FileManager.default.fileExists(atPath: kern.appendingPathComponent("ansicht/bruecke.mjs").path)
     }
 
-    /// Test-Brain: Kopie der Kit-Fixture, `.tools` als Symlink auf das Kit; Name mit Leerzeichen und Umlaut.
+    /// Test-Brain: Kopie der Kern-Fixture (mit `brain.config.json`), KEIN `.tools`; Name mit Leerzeichen und Umlaut.
     static func vault() throws -> URL {
         let v = tempOrdner("Test Brän")
-        let fixture = kit.appendingPathComponent(".tools/tests/fixture")
+        let fixture = repo.appendingPathComponent("Tests/Kern/fixture")
         for name in try FileManager.default.contentsOfDirectory(atPath: fixture.path) {
             try FileManager.default.copyItem(at: fixture.appendingPathComponent(name), to: v.appendingPathComponent(name))
         }
-        try FileManager.default.createSymbolicLink(at: v.appendingPathComponent(".tools"),
-                                                   withDestinationURL: kit.appendingPathComponent(".tools"))
         return v
     }
 
     static func verbindung() throws -> BrueckenVerbindung {
-        BrueckenVerbindung(node: node!, vault: try vault())
+        BrueckenVerbindung(node: node!, vault: try vault(), kern: kern)
     }
 }
 
@@ -43,11 +44,11 @@ func wartebisTot(_ b: BrueckenVerbindung) async {
 @Suite struct BrueckenUmgebungTests {
     @Test func umgebungIstVorhandenWennErzwungen() {
         guard ProcessInfo.processInfo.environment["BRAIN_TEST_REQUIRE"] == "1" else { return }
-        #expect(BrueckenUmgebung.verfuegbar, "BRAIN_TEST_REQUIRE=1, aber Node oder Kit fehlen (BRAIN_TEST_NODE / BRAIN_TEST_KIT)")
+        #expect(BrueckenUmgebung.verfuegbar, "BRAIN_TEST_REQUIRE=1, aber Node oder der Kern fehlen (BRAIN_TEST_NODE)")
     }
 }
 
-@Suite(.enabled(if: BrueckenUmgebung.verfuegbar, "braucht Node und den Kit-Worktree ~/brain-kit-v0.6"))
+@Suite(.enabled(if: BrueckenUmgebung.verfuegbar, "braucht Node und den Kern unter Ressourcen/kern"))
 struct BrueckenVerbindungTests {
     @Test func startetUndLiefertStartseiteUndPing() async throws {
         let b = try BrueckenUmgebung.verbindung()
@@ -73,7 +74,7 @@ struct BrueckenVerbindungTests {
     @Test func grosseDateiKommtVollstaendigUndBrueckeStartetVonSelbst() async throws {
         let b = try BrueckenUmgebung.verbindung()
         let r = try await b.anfrage(methode: "GET", pfad: "/vendor/three.bundle.js")
-        let datei = BrueckenUmgebung.kit.appendingPathComponent(".tools/ansicht/vendor/three.bundle.js").path
+        let datei = BrueckenUmgebung.kern.appendingPathComponent("ansicht/vendor/three.bundle.js").path
         let soll = try #require(try FileManager.default.attributesOfItem(atPath: datei)[.size] as? Int)
         #expect(r.status == 200)
         #expect(r.body.count == soll)
@@ -92,7 +93,7 @@ struct BrueckenVerbindungTests {
     }
 
     @Test func fehlendesNodeMeldetSichSauber() async throws {
-        let b = BrueckenVerbindung(node: URL(fileURLWithPath: "/gibt/es/nicht"), vault: try BrueckenUmgebung.vault())
+        let b = BrueckenVerbindung(node: URL(fileURLWithPath: "/gibt/es/nicht"), vault: try BrueckenUmgebung.vault(), kern: BrueckenUmgebung.kern)
         await #expect(throws: BrueckenFehler.self) { _ = try await b.anfrage(methode: "GET", pfad: "/") }
     }
 
@@ -113,7 +114,7 @@ struct BrueckenVerbindungTests {
         let ordner = tempOrdner("Attrappe")
         let node = skript("#!/bin/sh\necho '{\"bereit\":true,\"version\":\"attrappe\"}'\nexec cat > /dev/null\n",
                           name: "node", in: ordner)
-        return BrueckenVerbindung(node: node, vault: ordner)
+        return BrueckenVerbindung(node: node, vault: ordner, kern: ordner)
     }
 
     @Test func wartendeAnfrageEndetSofortBeiAbsturzUndNeuerAnfrage() async throws {
@@ -150,7 +151,7 @@ struct BrueckenVerbindungTests {
         let zaehler = ordner.appendingPathComponent("starts.txt")
         let node = skript("#!/bin/sh\necho x >> '\(zaehler.path)'\necho '{\"bereit\":true,\"version\":\"attrappe\"}'\nexec cat > /dev/null\n",
                           name: "node", in: ordner)
-        let b = BrueckenVerbindung(node: node, vault: ordner)
+        let b = BrueckenVerbindung(node: node, vault: ordner, kern: ordner)
         try await b.starte()
         let laufend = Task { () -> BrueckenFehler? in
             do { _ = try await b.anfrage(methode: "GET", pfad: "/", zeitlimit: .seconds(60)); return nil }
@@ -172,19 +173,19 @@ struct BrueckenVerbindungTests {
         let ordner = tempOrdner("PfadTest")
         let node = skript("#!/bin/sh\nprintf '{\"bereit\":true,\"version\":\"%s\"}\\n' \"$PATH\"\nexec cat > /dev/null\n",
                           name: "node", in: ordner)
-        let b = BrueckenVerbindung(node: node, vault: ordner, umgebung: ["PATH": "/usr/bin:/bin"])
+        let b = BrueckenVerbindung(node: node, vault: ordner, kern: ordner, umgebung: ["PATH": "/usr/bin:/bin"])
         try await b.starte()
         let pfad = try #require(await b.version)
         #expect(pfad == "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin")
         await b.beende()
     }
 
-    /// Auch die Brücken (Werkstatt, Kit) laufen mit einem Vault als Arbeitsverzeichnis: kein relativer PATH-Eintrag (Review SW-3).
+    /// Auch die Brücken (Werkstatt, Kern) laufen mit einem Vault als Arbeitsverzeichnis: kein relativer PATH-Eintrag (Review SW-3).
     @Test func brueckeErhaeltKeinenRelativenPfad() async throws {
         let ordner = tempOrdner("RelativerPfad")
         let node = skript("#!/bin/sh\nprintf '{\"bereit\":true,\"version\":\"%s\"}\\n' \"$PATH\"\nexec cat > /dev/null\n",
                           name: "node", in: ordner)
-        let b = BrueckenVerbindung(node: node, vault: ordner, umgebung: ["PATH": ".:node_modules/.bin:/usr/bin:/bin:"])
+        let b = BrueckenVerbindung(node: node, vault: ordner, kern: ordner, umgebung: ["PATH": ".:node_modules/.bin:/usr/bin:/bin:"])
         try await b.starte()
         #expect(try #require(await b.version) == "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin")
         await b.beende()

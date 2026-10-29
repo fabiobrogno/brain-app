@@ -8,7 +8,7 @@ import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { createInterface } from "node:readline";
 import { oeffneVault, HttpFehler } from "../gemeinsam/vault.mjs";
-import { kindUmgebung, supportOrdner, falte } from "../gemeinsam/basis.mjs";
+import { kindUmgebung, supportOrdner, falte, kernOrdner } from "../gemeinsam/basis.mjs";
 import { starte, neueFrist, registriere, beendeGruppe } from "../gemeinsam/prozess.mjs";
 import { findeProgramm, erkenneAgenten } from "../gemeinsam/ki.mjs";
 import * as vaultsFn from "../gemeinsam/vaults.mjs";
@@ -76,6 +76,10 @@ export function erzeugeHandler(o) {
   const appVersion = o.appVersion || appVersionLesen();
   const mcpPfad = o.mcpPfad || join(HIER, "..", "mcp", "brain-mcp.mjs");
   const nodePfad = o.nodePfad || process.execPath;
+  // Der MCP-Server liegt zusätzlich im gebündelten Kern (<kern>/mcp/brain-mcp.mjs; der App-Bau legt ihn mit dem gemeinsamen Code dorthin).
+  // Neue Einträge zeigen auf den STABILEN Kern-Pfad (<support>/bin/kern, `KORTEX_KERN_PFAD`), nicht auf das App-Paket: so überstehen sie
+  // App-Verschieben und -Updates. Ein ausdrücklich übergebener `mcpPfad` (Tests) gilt nur zusammen mit einem ausdrücklichen `kern`.
+  const kernMcp = o.kern || !o.mcpPfad ? join(o.kern || kernOrdner(), "mcp", "brain-mcp.mjs") : null;
 
   // GitHub-Anmeldung (Gerätecode): die Client-ID kommt aus der Umgebung (Info.plist → App), nie aus dem Code. o.github = Ersatz für Tests.
   const github = o.github || erzeugeGitHub({ clientId: process.env.KORTEX_GITHUB_CLIENT_ID, basis: process.env.BRAIN_GITHUB_BASIS, apiBasis: process.env.BRAIN_GITHUB_API,
@@ -93,7 +97,12 @@ export function erzeugeHandler(o) {
   }
 
   // Der Eintrag bei Claude Code nennt keinen Vault: der MCP-Server folgt dem aktiven Vault aus vaults.json (Spec v2 §8).
-  const mcpArgs = () => { try { statSync(mcpPfad); } catch { return null; } return [nodePfad, realpathSync(mcpPfad)]; };
+  // Der Kern-Pfad bleibt wie er ist (kein realpath: der Symlink bin/kern ist der stabile Teil), der Paket-Pfad ist der aufgelöste (Rückfall).
+  const mcpArgs = () => {
+    if (kernMcp) { try { statSync(kernMcp); return [nodePfad, kernMcp]; } catch { /* nicht im Kern: Rückfall auf das App-Paket */ } }
+    try { statSync(mcpPfad); } catch { return null; }
+    return [nodePfad, realpathSync(mcpPfad)];
+  };
   const mcpBefehl = () => { const a = mcpArgs(); return a ? `claude mcp add -s user brain -- ${a.map(shellText).join(" ")}` : null; };
   const codexBefehl = () => { const a = mcpArgs(); return a ? `codex mcp add brain -- ${a.map(shellText).join(" ")}` : null; };
   const cursorEintrag = () => { const a = mcpArgs(); return a ? { command: a[0], args: [a[1]] } : null; };
@@ -231,18 +240,32 @@ export function erzeugeHandler(o) {
 
   // Vergleich NUR intern: Command/Args des vorhandenen Eintrags stehen nie in einer Antwort oder im Log (fremde Einträge können
   // Zugangsdaten enthalten). Unlesbar oder anderer Typ (http/sse) zählt als „anders“.
-  // Ergebnis: "gleich" (schon richtig eingetragen), "alt" (derselbe Server, nur der Node-Pfad ist ein früherer der App — wird ohne
-  // Rückfrage auf den stabilen Pfad umgestellt) oder "anders" (fremder Eintrag: Rückfrage). Alte App-Pfade:
-  // …/Application Support/Brain/node/<ver>/bin/node (vor der Umbenennung) und …/Kortex/node/<ver>/bin/node (aufgelöster Pfad).
+  // Ergebnis: "gleich" (schon richtig eingetragen), "alt" (derselbe Server in einer früheren Form — wird ohne Rückfrage auf den
+  // stabilen Eintrag umgestellt) oder "anders" (fremder Eintrag: Rückfrage). Früher heißt:
+  //  · der Node-Pfad war ein früherer der App: …/Application Support/Brain/node/<ver>/bin/node (vor der Umbenennung) und
+  //    …/Kortex/node/<ver>/bin/node (aufgelöster Pfad), bei sonst gleichen Argumenten;
+  //  · die Argumente nannten den Server im App-Paket (…/mcp/brain-mcp.mjs, auch ein früherer Kern-Ordner), dann zusätzlich nur mit
+  //    dem stabilen oder einem früheren App-Node als Befehl;
+  //  · die Argumente nannten einen Server im Vault (<vault>/.tools/…mcp….mjs, Kit-Zeit): sein Code läuft nicht mehr, der Eintrag wird
+  //    auf den Kern umgestellt (Befehl: ein absoluter `node`).
   const ALTER_APP_NODE = /\/Application Support\/(?:Brain|Kortex)\/node\/[^/]+\/bin\/node$/;
-  const befehlsArt = (cmd, argsGleich, a) => {
-    if (!argsGleich) return "anders";
-    if (cmd === a[0]) return "gleich";
-    return typeof cmd === "string" && ALTER_APP_NODE.test(cmd) ? "alt" : "anders";
+  const ALTER_MCP_PFAD = /^\/.*\/mcp\/brain-mcp\.mjs$/;
+  const ALTER_KIT_MCP = /^\/.*\/\.tools\/(?:.*\/)?[^/]*mcp[^/]*\.mjs$/;
+  const befehlsArt = (cmd, argsGleich, a, altArgs = null) => {
+    if (argsGleich) {
+      if (cmd === a[0]) return "gleich";
+      return typeof cmd === "string" && ALTER_APP_NODE.test(cmd) ? "alt" : "anders";
+    }
+    if (typeof cmd === "string" && typeof altArgs === "string") {
+      if (ALTER_MCP_PFAD.test(altArgs) && (cmd === a[0] || ALTER_APP_NODE.test(cmd))) return "alt";
+      if (ALTER_KIT_MCP.test(altArgs) && /^\/(?:.*\/)?node$/.test(cmd)) return "alt";
+    }
+    return "anders";
   };
   const artClaude = (text, a) => {
     const cmd = /^\s*Command:\s*(.+?)\s*$/m.exec(text), args = /^\s*Args:\s*(.*?)\s*$/m.exec(text);
-    return cmd ? befehlsArt(cmd[1], (args ? args[1] : "") === a.slice(1).join(" "), a) : "anders";
+    const argsText = args ? args[1] : "";
+    return cmd ? befehlsArt(cmd[1], argsText === a.slice(1).join(" "), a, argsText) : "anders";
   };
 
   // Gesamtfrist 25 s für get/remove/add zusammen; bei Ablauf wird der laufende Aufruf samt Prozessgruppe beendet.
@@ -263,7 +286,10 @@ export function erzeugeHandler(o) {
     const lauf = (args) => starte(codex, args, { cwd: homedir(), env: kindUmgebung({ CI: "1" }), frist, timeout: fristen.mcpVerbinden, fehlt: "Codex wurde nicht gefunden.", zuLange: "Codex hat nicht rechtzeitig geantwortet." });
     const ausgabeVon = (r) => (String(r.stdout || "") + String(r.stderr || "")).trim().slice(0, 2000);
     const art = (text) => { // Vergleich nur intern, nichts davon in Antworten
-      try { const t = JSON.parse(text).transport; return !t ? "anders" : befehlsArt(t.command, JSON.stringify(t.args || []) === JSON.stringify(a.slice(1)), a); } catch { return "anders"; }
+      try {
+        const t = JSON.parse(text).transport;
+        return !t ? "anders" : befehlsArt(t.command, JSON.stringify(t.args || []) === JSON.stringify(a.slice(1)), a, Array.isArray(t.args) && t.args.length === 1 ? t.args[0] : null);
+      } catch { return "anders"; }
     };
     try {
       const vorher = await lauf(["mcp", "get", "brain", "--json"]);
@@ -305,7 +331,9 @@ export function erzeugeHandler(o) {
     }
     const alt = doc.mcpServers && doc.mcpServers.brain;
     if (alt !== undefined) {
-      const vergleich = alt && typeof alt === "object" ? befehlsArt(alt.command, JSON.stringify(alt.args || []) === JSON.stringify(eintrag.args), [eintrag.command]) : "anders";
+      const vergleich = alt && typeof alt === "object"
+        ? befehlsArt(alt.command, JSON.stringify(alt.args || []) === JSON.stringify(eintrag.args), [eintrag.command], Array.isArray(alt.args) && alt.args.length === 1 ? alt.args[0] : null)
+        : "anders";
       if (vergleich === "gleich") return { ok: true, schonVerbunden: true };
       if (vergleich !== "alt" && e.umstellen !== true) throw new HttpFehler(409, "Bei Cursor ist unter dem Namen „brain“ schon ein anderer Server eingetragen. Möchtest du ihn auf Brain Studio umstellen?", { art: "anders", befehl });
     }
