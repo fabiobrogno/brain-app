@@ -20,7 +20,7 @@ struct MenueInhalt: View {
             Text("Vorschläge \(z.vorschlaege) · Konflikte \(z.konflikte) · abgelaufen \(z.abgelaufen)")
         }
         if zustand.status?.quellVault == true {
-            Text("Entwickler-Brain — keine Kit-Updates")
+            Text("Entwickler-Vault — keine Kit-Updates")
         }
         // Stillstehende Zuführungen (FBL-94): je Problem eine Zeile, auch wenn die Menüleiste schon wegen etwas anderem ⚠ oder ✕ zeigt.
         ForEach(Array(zustand.zufuehrungen.menueZeilen.enumerated()), id: \.offset) { _, zeile in

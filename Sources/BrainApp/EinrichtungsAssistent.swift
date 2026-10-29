@@ -13,11 +13,11 @@ final class EinrichtungsModell: ObservableObject {
     @Published private(set) var zustand = EinrichtungsZustand()
     @Published private(set) var anzeige = EinrichtungsAnzeige()
     @Published var weg: Weg?
-    @Published var name = "Brain"
+    @Published var name = "Kortex"
     @Published var klonAdresse = ""
     @Published var eigenerOrdner: URL?
     @Published var sicherungsWeg: SicherungsWeg? = .neu
-    /// Name für das neue Repository; leer = noch nicht vorbelegt (Vorschlag aus dem Namen des Brains).
+    /// Name für das neue Repository; leer = noch nicht vorbelegt (Vorschlag aus dem Namen des Vaults).
     @Published var repoName = ""
     @Published var repoSuche = ""
 
@@ -49,7 +49,7 @@ final class EinrichtungsModell: ObservableObject {
         aufgaben.append(Task { await aktion(a) })
     }
 
-    /// Belegt den Namen des neuen Repositories einmal aus dem Namen des Brains vor; der Nutzer kann ihn ändern.
+    /// Belegt den Namen des neuen Repositories einmal aus dem Namen des Vaults vor; der Nutzer kann ihn ändern.
     func schlageRepoNamenVor() {
         guard repoName.isEmpty else { return }
         repoName = RepoName.vorschlag(ausVaultName: anzeige.vault?.name ?? "")
@@ -65,16 +65,16 @@ final class EinrichtungsModell: ObservableObject {
     }
 
     var ordnerText: String {
-        guard let o = eigenerOrdner else { return "Brain im Benutzerordner" }
+        guard let o = eigenerOrdner else { return "Vault im Benutzerordner" }
         return o.path.replacingOccurrences(of: vorschau?.home.path ?? NSHomeDirectory(), with: "~")
     }
 
     func waehleZielordner() {
-        if let url = Self.waehleOrdner(titel: "Wo soll dein Brain liegen?", knopf: "Hier anlegen", start: vorschau?.home) { eigenerOrdner = url }
+        if let url = Self.waehleOrdner(titel: "Wo soll dein Vault liegen?", knopf: "Hier anlegen", start: vorschau?.home) { eigenerOrdner = url }
     }
 
     func oeffneVorhandenenOrdner() {
-        guard let url = Self.waehleOrdner(titel: "Welcher Ordner ist dein Brain?", knopf: "Öffnen", start: vorschau?.home) else { return }
+        guard let url = Self.waehleOrdner(titel: "Welcher Ordner ist dein Vault?", knopf: "Öffnen", start: vorschau?.home) else { return }
         var verlauf = true
         if !FileManager.default.fileExists(atPath: url.appendingPathComponent(".git").path) {
             let alert = NSAlert()
@@ -301,7 +301,7 @@ private struct VaultAnsicht: View {
             if let arbeit = modell.anzeige.vaultArbeitet {
                 Arbeit(text: arbeit).padding(.top, 20)
             } else {
-                Karte(symbol: "sparkles", titel: "Neues Brain anlegen", text: "Mit Vorlage und Beispielseiten — der einfachste Start.",
+                Karte(symbol: "sparkles", titel: "Neuen Vault anlegen", text: "Mit Vorlage und Beispielseiten — der einfachste Start.",
                       offen: modell.weg == .neu) { modell.weg = .neu } inhalt: {
                     HStack {
                         TextField("Name", text: $modell.name).textFieldStyle(.roundedBorder)
@@ -320,7 +320,7 @@ private struct VaultAnsicht: View {
                     modell.weg = nil
                     modell.oeffneVorhandenenOrdner()
                 } inhalt: { EmptyView() }
-                Karte(symbol: "arrow.down.circle", titel: "Von GitHub klonen", text: "Dein Brain von einem anderen Mac oder aus einem Repository.",
+                Karte(symbol: "arrow.down.circle", titel: "Von GitHub klonen", text: "Dein Vault von einem anderen Mac oder aus einem Repository.",
                       offen: modell.weg == .klonen) {
                     modell.weg = .klonen
                     modell.tu { await $0.ladeGitHubStand() }
@@ -426,7 +426,7 @@ private struct GitHubAnsicht: View {
             Titel(symbol: "person.badge.key", titel: "GitHub", text: "Die Anmeldung ist in dieser Version nicht eingerichtet.")
         case .abgemeldet, .abgelaufen, .abgelehnt:
             Titel(symbol: "person.badge.key", titel: "Bei GitHub anmelden",
-                  text: "Für die Sicherung deines Brains und für private Repositories. Du bekommst einen Code, den du auf github.com eingibst — Kortex speichert nur ein Zugangszeichen im Schlüsselbund deines Macs, kein Passwort.")
+                  text: "Für die Sicherung deines Vaults und für private Repositories. Du bekommst einen Code, den du auf github.com eingibst — Kortex speichert nur ein Zugangszeichen im Schlüsselbund deines Macs, kein Passwort.")
             if case .abgelaufen = modell.anzeige.github { FehlerBox(text: "Der Code ist abgelaufen. Bitte noch einmal anmelden.") }
             if case .abgelehnt(let g) = modell.anzeige.github {
                 FehlerBox(text: g == "schluesselbund" ? "Das Zugangszeichen ließ sich nicht im Schlüsselbund speichern." : "GitHub hat die Anmeldung abgelehnt.")
@@ -451,12 +451,12 @@ private struct SicherungAnsicht: View {
             if s.istVerbunden {
                 erfolg
             } else if let arbeit = s.arbeitet {
-                Titel(symbol: "lock.shield", titel: "Dein Brain wird gesichert", text: nil)
+                Titel(symbol: "lock.shield", titel: "Dein Vault wird gesichert", text: nil)
                 Arbeit(text: arbeit).padding(.top, 10)
             } else if let konflikt = s.konflikt {
                 konfliktAnsicht(konflikt)
             } else if let grund = s.blockiert {
-                Titel(symbol: "lock.trianglebadge.exclamationmark", titel: "Dein Brain lässt sich gerade nicht sichern", text: grund)
+                Titel(symbol: "lock.trianglebadge.exclamationmark", titel: "Dein Vault lässt sich gerade nicht sichern", text: grund)
                 Button("Erneut prüfen") { modell.tu { await $0.pruefeSicherungNeu() } }
                 Text("Oder überspringe den Schritt — du kannst ihn im Menü „Kortex einrichten …“ nachholen.").font(.callout).foregroundStyle(.secondary)
                     .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
@@ -464,13 +464,13 @@ private struct SicherungAnsicht: View {
                 switch modell.anzeige.github {
                 case .angemeldet: auswahl
                 case .unbekannt, .startet:
-                    Titel(symbol: "lock.shield", titel: "Dein Brain sichern", text: nil)
+                    Titel(symbol: "lock.shield", titel: "Dein Vault sichern", text: nil)
                     Arbeit(text: "Einen Moment")
                 case .wartet(let c):
                     Titel(symbol: "person.badge.key", titel: "Gib diesen Code bei GitHub ein", text: nil)
                     GitHubCode(modell: modell, code: c)
                 case .abgemeldet, .abgelaufen, .abgelehnt, .nichtVerfuegbar:
-                    Titel(symbol: "lock.shield", titel: "Dein Brain sichern",
+                    Titel(symbol: "lock.shield", titel: "Dein Vault sichern",
                           text: "Dafür brauchst du ein GitHub-Konto. Melde dich an — Kortex speichert nur ein Zugangszeichen im Schlüsselbund deines Macs, kein Passwort.")
                     GrosserKnopf(titel: "Bei GitHub anmelden") { modell.tu { await $0.meldeBeiGitHubAn() } }
                 }
@@ -482,23 +482,23 @@ private struct SicherungAnsicht: View {
     @ViewBuilder private var erfolg: some View {
         switch s.ergebnis {
         case .gesendet?:
-            Titel(symbol: "checkmark.shield.fill", titel: "Dein Brain ist gesichert",
+            Titel(symbol: "checkmark.shield.fill", titel: "Dein Vault ist gesichert",
                   text: "Alles liegt jetzt in deinem privaten Repository \(s.verbundenMit ?? "bei GitHub"). Nur du hast Zugriff.")
         case .geholt?:
-            Titel(symbol: "checkmark.shield.fill", titel: "Dein Brain ist verbunden",
-                  text: "Das Repository \(s.verbundenMit ?? "bei GitHub") war weiter als dein Brain. Der neuere Stand wurde übernommen — es wurde nichts überschrieben.")
+            Titel(symbol: "checkmark.shield.fill", titel: "Dein Vault ist verbunden",
+                  text: "Das Repository \(s.verbundenMit ?? "bei GitHub") war weiter als dein Vault. Der neuere Stand wurde übernommen — es wurde nichts überschrieben.")
         case .verbunden?:
-            Titel(symbol: "checkmark.shield.fill", titel: "Dein Brain ist verbunden",
+            Titel(symbol: "checkmark.shield.fill", titel: "Dein Vault ist verbunden",
                   text: "Mit dem privaten Repository \(s.verbundenMit ?? "bei GitHub"). Gesendet wird, sobald es die erste gespeicherte Version gibt.")
         case nil:
             Titel(symbol: "checkmark.shield.fill", titel: "Die Sicherung steht schon",
-                  text: "Dein Brain ist bereits mit einem Server verbunden. Daran ändert Kortex nichts.")
+                  text: "Dein Vault ist bereits mit einem Server verbunden. Daran ändert Kortex nichts.")
         }
     }
 
     private func konfliktAnsicht(_ text: String) -> some View {
         VStack(spacing: 14) {
-            Titel(symbol: "exclamationmark.shield", titel: "Dieses Repository passt nicht zu deinem Brain", text: text)
+            Titel(symbol: "exclamationmark.shield", titel: "Dieses Repository passt nicht zu deinem Vault", text: text)
             Text("Kortex hat nichts gesendet und nichts überschrieben.").font(.callout).foregroundStyle(.secondary)
             HStack {
                 Button("Neues Repository anlegen") { modell.ablauf.schliesseKonfliktAb(); modell.sicherungsWeg = .neu }.buttonStyle(.borderedProminent)
@@ -509,8 +509,8 @@ private struct SicherungAnsicht: View {
 
     private var auswahl: some View {
         VStack(spacing: 14) {
-            Titel(symbol: "lock.shield", titel: "Dein Brain sichern",
-                  text: "Kortex legt eine Kopie deines Brains in einem privaten Repository bei GitHub ab. Nur du hast Zugriff — und nichts geht verloren, wenn dein Mac ausfällt.")
+            Titel(symbol: "lock.shield", titel: "Dein Vault sichern",
+                  text: "Kortex legt eine Kopie deines Vaults in einem privaten Repository bei GitHub ab. Nur du hast Zugriff — und nichts geht verloren, wenn dein Mac ausfällt.")
             Karte(symbol: "plus.circle", titel: "Neues privates Repository anlegen", text: "Der einfachste Weg.", offen: modell.sicherungsWeg == .neu) {
                 modell.sicherungsWeg = .neu
             } inhalt: { neuesRepo }
@@ -559,7 +559,7 @@ private struct SicherungAnsicht: View {
                         HStack {
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(repo.vollerName).font(.callout.weight(.medium)).lineLimit(1).truncationMode(.middle)
-                                Text(repo.leer ? "leer" : "hat schon Inhalt — Kortex prüft, ob es zu deinem Brain passt")
+                                Text(repo.leer ? "leer" : "hat schon Inhalt — Kortex prüft, ob es zu deinem Vault passt")
                                     .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                             }
                             Spacer(minLength: 8)
@@ -579,7 +579,7 @@ private struct KiAnsicht: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            Titel(symbol: "sparkles", titel: "Deine KI mit dem Brain verbinden",
+            Titel(symbol: "sparkles", titel: "Deine KI mit dem Vault verbinden",
                   text: "Danach kann deine KI in deinen Notizen nachschlagen — lokal, ohne dass Notizen die App verlassen.")
             if modell.anzeige.kiSuchtGerade && modell.anzeige.kis.isEmpty {
                 Arbeit(text: "Suche KI-Apps auf diesem Mac …")
@@ -641,12 +641,12 @@ private struct VerdrahtungsBlock: View {
             if claudeDa && !stand.profile.isEmpty {
                 zeile(.claude, titel: "Claude Code: Kortex beim Arbeiten dabeihaben",
                       text: "Trägt in die gewählten Claude-Profile (Standard: ~/.claude/settings.json) kleine Helfer ein: Sie zeigen dir beim Fragen passende Notizen, schützen dein Wiki vor versehentlichen Änderungen "
-                          + "und sichern den Arbeitsstand. Dazu kommen eine Statuszeile und einige Brain-Befehle. Alles, was dort schon steht, bleibt; vorher legt Kortex eine Sicherung an. "
+                          + "und sichern den Arbeitsstand. Dazu kommen eine Statuszeile und einige Kortex-Befehle. Alles, was dort schon steht, bleibt; vorher legt Kortex eine Sicherung an. "
                           + "Ausschalten nimmt genau das wieder heraus.")
             }
             if stand.gitMoeglich {
                 zeile(.git, titel: "Vor jedem Commit nach Passwörtern und Schlüsseln suchen",
-                      text: "Beim Speichern einer Version in deinem Brain prüft Kortex, ob Passwörter oder Schlüssel in den Notizen stehen, und hält das Speichern dann an. "
+                      text: "Beim Speichern einer Version in deinem Vault prüft Kortex, ob Passwörter oder Schlüssel in den Notizen stehen, und hält das Speichern dann an. "
                           + "Eingetragen wird das nur in diesem Ordner (Einstellung core.hooksPath). Ausschalten entfernt es wieder.")
                 if anzeige.gitFragtErsetzen {
                     Text("In diesem Ordner ist schon eine andere Prüfung vor dem Speichern eingetragen. Ersetzen? Dann wird sie durch die von Kortex abgelöst.").font(.callout)
@@ -657,9 +657,9 @@ private struct VerdrahtungsBlock: View {
                 }
             }
             if stand.dienstVerfuegbar {
-                zeile(.dienst, titel: "Kortex darf dieses Brain im Hintergrund aufräumen",
-                      text: "Richtet einen Dienst auf deinem Mac ein (Datei de.brain.tageslauf in ~/Library/LaunchAgents). Er pflegt einmal am Tag genau dieses Brain, wenn es in Kortex gerade aktiv ist "
-                          + "und der Mac am Netzteil hängt und ruht, und nutzt dafür dein Claude. Andere Brains fasst er nie an, solange du ihn für sie nicht ebenfalls einschaltest. Ausschalten löscht ihn wieder.")
+                zeile(.dienst, titel: "Kortex darf diesen Vault im Hintergrund aufräumen",
+                      text: "Richtet einen Dienst auf deinem Mac ein (Datei de.brain.tageslauf in ~/Library/LaunchAgents). Er pflegt einmal am Tag genau diesen Vault, wenn er in Kortex gerade aktiv ist "
+                          + "und der Mac am Netzteil hängt und ruht, und nutzt dafür dein Claude. Andere Vaults fasst er nie an, solange du ihn für sie nicht ebenfalls einschaltest. Ausschalten löscht ihn wieder.")
             }
         }
         .padding(12)
@@ -699,7 +699,7 @@ private struct KiReihe: View {
             }
             switch zeile.status {
             case .umstellenFragen:
-                Text("Bei \(zeile.ziel.name) gibt es schon einen Eintrag „brain“, der woanders hinzeigt. Auf dieses Brain umstellen?").font(.callout)
+                Text("Bei \(zeile.ziel.name) gibt es schon einen Eintrag „brain“, der woanders hinzeigt. Auf diesen Vault umstellen?").font(.callout)
                 HStack {
                     Button("Nicht ändern") { modell.ablauf.lehneUmstellenAb(zeile.ziel) }
                     Button("Umstellen") { modell.tu { await $0.verbinde(zeile.ziel, umstellen: true) } }.buttonStyle(.borderedProminent)
@@ -714,7 +714,7 @@ private struct KiReihe: View {
                     }
                 }
             case .verbunden:
-                Text("Eingetragen. Starte \(zeile.ziel.name) neu, dann ist dein Brain dabei.").font(.callout).foregroundStyle(.secondary)
+                Text("Eingetragen. Starte \(zeile.ziel.name) neu, dann ist dein Vault dabei.").font(.callout).foregroundStyle(.secondary)
             case .nichtGefunden, .bereit, .verbindet:
                 EmptyView()
             }
@@ -744,14 +744,14 @@ private struct ProbeAnsicht: View {
     var body: some View {
         switch modell.anzeige.probe {
         case .offen, .laeuft:
-            Titel(symbol: "magnifyingglass", titel: "Probe", text: "Kortex fragt dein Brain auf demselben Weg, den deine KI nimmt.")
+            Titel(symbol: "magnifyingglass", titel: "Probe", text: "Kortex fragt deinen Vault auf demselben Weg, den deine KI nimmt.")
             Arbeit(text: "Suche läuft …")
         case .ok(let e):
             ProbeErfolg(treffer: e.treffer)
         case .leer:
             ProbeErfolg(treffer: [])
         case .fehler:
-            Titel(symbol: "magnifyingglass", titel: "Die Probe hat nicht geklappt", text: "Die Verbindung zu deinem Brain antwortet nicht so, wie sie soll.")
+            Titel(symbol: "magnifyingglass", titel: "Die Probe hat nicht geklappt", text: "Die Verbindung zu deinem Vault antwortet nicht so, wie sie soll.")
             GrosserKnopf(titel: "Noch einmal versuchen") { modell.tu { await $0.starteProbe() } }
         }
     }
@@ -763,7 +763,7 @@ private struct ProbeErfolg: View {
     var body: some View {
         VStack(spacing: 10) {
             Titel(symbol: "checkmark.seal.fill", titel: "Es funktioniert",
-                  text: treffer.isEmpty ? "Die Suche antwortet. Dein Brain ist noch leer — das füllt sich beim Arbeiten." : "Die Suche in deinem Brain liefert:")
+                  text: treffer.isEmpty ? "Die Suche antwortet. Dein Vault ist noch leer — das füllt sich beim Arbeiten." : "Die Suche in deinem Vault liefert:")
             ForEach(treffer.prefix(3), id: \.self) { t in Label(t, systemImage: "doc.text").lineLimit(1) }
         }
     }

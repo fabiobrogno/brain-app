@@ -81,7 +81,7 @@ final class RueckfragenModell: ObservableObject {
     private func text(_ error: Error) -> String {
         switch error {
         case RueckfragenFehler.abgelehnt(let m): return m
-        case BefehlFehler.zeitUeberschritten: return "Das Brain antwortet gerade nicht."
+        case BefehlFehler.zeitUeberschritten: return "Kortex antwortet gerade nicht."
         default: return "Das hat gerade nicht geklappt."
         }
     }

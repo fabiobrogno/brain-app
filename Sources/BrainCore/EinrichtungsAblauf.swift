@@ -128,7 +128,7 @@ public struct EinrichtungsAnzeige: Equatable, Sendable {
 @MainActor
 public final class EinrichtungsAblauf {
     /// Suchbegriff der Probe. Er steht in jedem Brain aus der Vorlage; die Probe prüft den Weg, nicht den Inhalt.
-    public static let probeFrage = "Brain"
+    public static let probeFrage = "Vault"
 
     public private(set) var zustand = EinrichtungsZustand()
     public private(set) var anzeige = EinrichtungsAnzeige()
@@ -278,7 +278,7 @@ public final class EinrichtungsAblauf {
     }
 
     public func legeVaultAn(art: NeuerVaultArt = .vorlage, name: String?, ordner: String?) async {
-        await vaultAktion("Dein Brain wird angelegt …") { try await self.dienste.legeVaultAn(art: art, name: name, ordner: ordner) }
+        await vaultAktion("Dein Vault wird angelegt …") { try await self.dienste.legeVaultAn(art: art, name: name, ordner: ordner) }
     }
 
     public func oeffneOrdner(pfad: String, versionsverlaufEinschalten: Bool) async {
@@ -431,7 +431,7 @@ public final class EinrichtungsAblauf {
     /// „Erneut prüfen“, wenn die Sicherung blockiert ist (z. B. nachdem der Nutzer das Brain im Studio freigegeben hat).
     public func pruefeSicherungNeu() async {
         guard anzeige.sicherung.arbeitet == nil else { return }
-        anzeige.sicherung.arbeitet = "Dein Brain wird geprüft …"
+        anzeige.sicherung.arbeitet = "Dein Vault wird geprüft …"
         melde()
         _ = await vorpruefungOk()
         anzeige.sicherung.arbeitet = nil
@@ -484,7 +484,7 @@ public final class EinrichtungsAblauf {
         zustand.loescheFehler(.sicherung)
         anzeige.sicherung.konflikt = nil
         anzeige.sicherung.vergebenerName = nil
-        anzeige.sicherung.arbeitet = "Dein Brain wird geprüft …"
+        anzeige.sicherung.arbeitet = "Dein Vault wird geprüft …"
         melde()
         guard await vorpruefungOk() else {
             anzeige.sicherung.arbeitet = nil
@@ -520,7 +520,7 @@ public final class EinrichtungsAblauf {
         zustand.loescheFehler(.sicherung)
         anzeige.sicherung.konflikt = nil
         anzeige.sicherung.vergebenerName = nil
-        anzeige.sicherung.arbeitet = "Dein Brain wird geprüft …"
+        anzeige.sicherung.arbeitet = "Dein Vault wird geprüft …"
         melde()
         guard await vorpruefungOk() else {
             anzeige.sicherung.arbeitet = nil
@@ -551,7 +551,7 @@ public final class EinrichtungsAblauf {
     }
 
     private func verbindeRepo(_ repo: GitHubRepo) async {
-        anzeige.sicherung.arbeitet = "Dein Brain wird mit GitHub verbunden und gesendet … Das kann bei einem großen Brain einige Minuten dauern."
+        anzeige.sicherung.arbeitet = "Dein Vault wird mit GitHub verbunden und gesendet … Das kann bei einem großen Vault einige Minuten dauern."
         melde()
         do {
             let e = try await dienste.verbindeSicherung(besitzer: repo.besitzer, name: repo.name)
