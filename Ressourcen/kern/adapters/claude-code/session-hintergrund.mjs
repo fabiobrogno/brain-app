@@ -116,7 +116,8 @@ if (AUTOMATIK.sicherungTaeglich !== false) try {
       // Online (oder ältere Vaults ohne backup-Eintrag, aber mit Remote): erst holen und zusammenführen, dann senden (backup.mjs#abgleichen) — nur zu einem
       // vom Nutzer bestätigten Remote (ein fremder Vault kann ein origin mitbringen). Gelingt es nicht, wird der Stand nicht als gesichert gemerkt: nächster Versuch beim nächsten Start.
       const r = sichernErgebnis(V);
-      log(`Sicherung: ${r.art} — ${r.text}`);
+      if (r.art === "nicht-bestaetigt") { const { pushErlaubnis } = await import("../../backup.mjs"); log(`Push übersprungen: Remote nicht bestätigt (${pushErlaubnis(V).grund})`); }
+      else log(`Sicherung: ${r.art} — ${r.text}`);
       ok = r.ok;
     }
     if (ok) merkeSicherung(V, { head: aktuellerHead(V) || head }); // nach dem Zusammenführen mit dem Server ist der HEAD ein anderer als vorher

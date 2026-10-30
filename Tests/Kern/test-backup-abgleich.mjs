@@ -14,8 +14,7 @@ const KERN = fileURLToPath(new URL("..", import.meta.url));
 const FIXTURE = join(KERN, "tests", "fixture");
 // Umgebung säubern, bevor etwas gestartet wird (Kindprozesse erben process.env)
 const HOME = mkdtempSync(join(tmpdir(), "backup-abgleich-home-"));
-process.env.HOME = HOME;
-process.env.GIT_CONFIG_NOSYSTEM = "1";
+Object.assign(process.env, { HOME, GIT_CONFIG_NOSYSTEM: "1" }); // Temp-Home: nie die globale Git-Konfiguration des Nutzers
 for (const k of ["GIT_CONFIG_GLOBAL", "XDG_CONFIG_HOME", "CLAUDE_CONFIG_DIR", "CODEX_HOME"]) delete process.env[k];
 for (const k of Object.keys(process.env)) if (/^GIT_(DIR|WORK_TREE|INDEX_FILE|AUTHOR|COMMITTER|CONFIG_(COUNT|KEY|VALUE|PARAMETERS))/.test(k)) delete process.env[k];
 Object.assign(process.env, { GIT_AUTHOR_NAME: "T", GIT_AUTHOR_EMAIL: "t@example.org", GIT_COMMITTER_NAME: "T", GIT_COMMITTER_EMAIL: "t@example.org" });
