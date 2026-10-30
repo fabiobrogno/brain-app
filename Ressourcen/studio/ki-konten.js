@@ -264,7 +264,7 @@ export function oeffneKontenDialog({ api = standardApi, vault = null, beiZu, bei
     secKonten.append(liste);
   }
   function logoFuer(k) {
-    return kiLogoId(k.programm) ? kiLogo(k.programm, 18, { dekorativ: true }) : zeichen("person", 18);
+    return kiLogoId(k.programm) ? kiLogo(k.programm, 20, { dekorativ: true }) : zeichen("person", 20);
   }
   function kontoZeile(k) {
     const li = h("li", { klasse: "kk-konto", "data-konto": k.id, "data-programm": k.programm });

@@ -50,9 +50,9 @@ test("Einstellungen → KI-Konten: Liste mit Logo, Name, Programm, Ordner und ve
   await expect(privat.locator('[data-kk="meta"]')).toHaveText("Claude Code · ~/.claude-privat");
   await expect(privat.locator('[data-kk="verbunden"]')).toContainText("Nicht verbunden");
   await expect(d.locator('.kk-konto[data-konto="k_aaaa0003"] .ki-logo')).toHaveAttribute("data-ki-logo", "codex");
-  // Logos haben feste Größe aus dem Symbol-Set (18 px), nichts läuft aus dem Dialog
+  // Logos haben feste Größe aus dem Symbol-Set (20 px), nichts läuft aus dem Dialog
   const box = await claude.locator(".ki-logo svg").boundingBox();
-  expect(Math.round(box.width)).toBe(18);
+  expect(Math.round(box.width)).toBe(20);
   // Erklärung der Stufen in Alltagssprache
   const leg = d.locator('[data-kk="legende"]');
   await expect(leg).toContainText("Das Konto findet diesen Vault über Kortex nicht");
