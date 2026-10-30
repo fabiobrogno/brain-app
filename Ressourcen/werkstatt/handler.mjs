@@ -19,6 +19,7 @@ import { erzeugeVerdrahtung } from "./verdrahtung.mjs";
 import { erzeugeUmstellung } from "./umstellung.mjs";
 import { profilZuPfad, mitProfil, mitCodexHome } from "./profile.mjs";
 import { erzeugeKonten } from "./konten.mjs";
+import { erzeugeFrage } from "./frage.mjs";
 import { STUFEN } from "../gemeinsam/ki-konten.mjs";
 import { merkeRemoteBestaetigt } from "../gemeinsam/sicherungsmerker.mjs";
 import { ADAPTER, erkenneProgramme } from "./ki-programme/index.mjs";
@@ -105,7 +106,8 @@ export function erzeugeHandler(o) {
   // Start: Vault-Argument hat Vorrang; sonst der aktive Vault aus vaults.json; sonst ohne Vault (Willkommen).
   let aktuell = null;
   const oeffne = (pfad) => oeffneVault(pfad, vaultOpt);
-  const wechsleZu = (pfad) => { aktuell = pfad ? oeffne(pfad) : null; };
+  // Eine laufende Frage („Frag deinen Vault“) gehört zum bisherigen Vault: bei jedem Wechsel endet sie (frage.brichAb).
+  const wechsleZu = (pfad) => { frage.brichAb("vault"); aktuell = pfad ? oeffne(pfad) : null; };
   if (o.vault) aktuell = oeffne(o.vault); // falscher Ordner → HttpFehler wie bisher
   else {
     const p = vaultsFn.aktiverVaultPfad(optV());
@@ -162,6 +164,10 @@ export function erzeugeHandler(o) {
   const verdrahtung = erzeugeVerdrahtung({ starter: o.starter || join(vaultOpt.support || supportOrdner(), "bin", "kortex"), support: vaultOpt.support || supportOrdner(),
     kontoFuerProfil: (pfad) => { if (o.kontenAus === true) return null; try { return konten.kontoFuerProfil(pfad) || (konten.synchronisiere(), konten.kontoFuerProfil(pfad)); } catch { return null; } },
     freigeben: (konto, vault, stufe) => konten.setzeZugriff({ konto, vault: vault.wurzel, stufe }) });
+  // „Frag deinen Vault“ (P4): eine Frage an Claude Code, die den Vault nur über den Kortex-MCP liest — werkstatt/frage.mjs. o.frageEnv / o.frageGrenzen / o.frageTemp: Ersatz für Tests
+  // (Umgebung für Programmsuche und Kindprozess, kürzere Grenzen, Temp-Ordner); sonst gilt die Umgebung dieser Werkstatt als Quelle für PATH/HOME/LANG, nie mehr.
+  const frage = erzeugeFrage({ support: vaultOpt.support || supportOrdner(), konten, mcpBasis: () => mcpArgs(), basisEnv: o.frageEnv || process.env,
+    home: () => o.kontenHome || homedir(), grenzen: o.frageGrenzen || {}, tempBasis: o.frageTemp || null });
   // Umstellung eines Vaults aus der Kit-Zeit (P7a Befund, P7b Probelauf/Phase A/Rückweg): werkstatt/umstellung.mjs
   const umstellung = erzeugeUmstellung({ starter: o.starter || join(vaultOpt.support || supportOrdner(), "bin", "kortex"), support: vaultOpt.support || supportOrdner() });
 
@@ -281,6 +287,11 @@ export function erzeugeHandler(o) {
         if (methode === "GET") return konten.stand();
         nur("POST"); return konten.setzeName(eingabe());
       case "/api/ki/zugriff": nur("PUT"); return konten.setzeZugriff(eingabe());
+      // Frag deinen Vault (P4): Start → Long-Poll auf den Stand → Abbruch. Nichts wird gespeichert.
+      case "/api/frage/bereit": nur("GET"); return frage.bereit(V());
+      case "/api/frage/start": nur("POST"); return frage.start(eingabe(), V());
+      case "/api/frage/stand": nur("GET"); return frage.stand(q, V());
+      case "/api/frage/abbrechen": nur("POST"); return frage.abbrechen(eingabe(), V());
       case "/api/vaults": nur("GET"); return vaultListe(v);
       case "/api/vaults/aktiv": {
         nur("POST");
@@ -303,7 +314,7 @@ export function erzeugeHandler(o) {
         if (v && weg === v.wurzel) { // der offene Vault wurde aus der Liste genommen → nächster oder Willkommen
           // Der Nachfolger ist schon gespeichert: lässt er sich nicht öffnen, ist jetzt eben kein Vault offen (200, aktiv: null — die
           // Oberfläche zeigt Willkommen). Ein 400 NACH dem Speichern ließe die Oberfläche beim entfernten Vault stehen.
-          try { wechsleZu(l.aktiv); } catch { aktuell = null; }
+          try { wechsleZu(l.aktiv); } catch { frage.brichAb("vault"); aktuell = null; }
         }
         return vaultListe(aktuell);
       }
@@ -328,7 +339,7 @@ export function erzeugeHandler(o) {
         merkeRemote(V().wurzel, repo.url);
         return erg;
       }
-      case "/api/stopp": nur("POST"); return { __stopp: true };
+      case "/api/stopp": nur("POST"); frage.brichAb("ende"); return { __stopp: true };
       default: throw new HttpFehler(404, "nicht gefunden");
     }
   }

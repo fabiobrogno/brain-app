@@ -12,6 +12,8 @@ import { diffAnsicht } from "./diff.js";
 import { oeffneMenue, schliesseMenue } from "./menue.js";
 import { baueAktionen, istZurueckgestellt, spaeterBis } from "./posteingang.js";
 import { TA as TAUF } from "./texte-aufgaben.js";
+import { erzeugeFragePanel } from "./frage.js";
+import { TF } from "./texte-frage.js";
 import { datumKurz, datumLang, datumZeit, istDatumText, bytesText, setzeTypFarbe, typSymbol, typName, wortAnzahl, relativ, pluralisiere, vorschauText, typTextFarbe } from "./format.js";
 
 const $ = (id) => document.getElementById(id);
@@ -54,6 +56,10 @@ $("suche-zu").replaceChildren(symbol("schliessen", 12));
 $("vault-pfeil").replaceChildren(symbol("chevron-auf-ab", 14));
 $("au-zurueck").replaceChildren(symbol("pfeil-links", 14), h("span", { text: TAUF.zurueck }));
 $("au-zurueck").addEventListener("click", () => zurueckZumBoard());
+// Frag deinen Vault (P4): Panel rechts, Knopf in der Kopfzeile, ⌘J und Befehlspalette. Die KI liest nur über Kortex, nichts wird gespeichert (frage.js).
+const frage = erzeugeFragePanel({ vaultPfad: () => S.info?.vault || null, oeffneSeite: (p) => oeffne(p), oeffneVertrauen: () => oeffneVertrauen(), oeffneKi: () => oeffneKi() });
+$("knopf-frage").replaceChildren(symbol("frage", 16));
+$("knopf-frage").addEventListener("click", () => { if (S.info?.vault) frage.umschalten(); });
 
 // ======================================================= Erscheinungsbild
 function wendeThemeAn() {
@@ -1516,7 +1522,7 @@ function oeffnePalette(vorgabe = "") {
   if (dialogOffen()) return;
   const befehle = [
     [T.befehle.neu, "⌘N", oeffneNeu], [T.befehle.merken, "⌘⇧M", oeffneMerken], [TAUF.erfassen.befehl, "⌘⇧A", aufgabeErfassen], [T.befehle.commit, "⌘⇧G", oeffneCommit], [T.befehle.sync, "", sync],
-    [T.befehle.suche, "⌘⇧F", fokusSuche], [T.befehle.inNotiz, "⌘F", () => ed.suchen()], [T.befehle.info, "⌘⌥I", umschalteInfo], [T.befehle.gesundheit, "", oeffneGesundheit], [T.befehle.nutzung, "", oeffneNutzung],
+    [TF.befehl, "⌘J", () => frage.oeffne()], [T.befehle.suche, "⌘⇧F", fokusSuche], [T.befehle.inNotiz, "⌘F", () => ed.suchen()], [T.befehle.info, "⌘⌥I", umschalteInfo], [T.befehle.gesundheit, "", oeffneGesundheit], [T.befehle.nutzung, "", oeffneNutzung],
     [T.liste.verlauf, "", oeffneVerlauf],
     ...(inApp() ? [[T.befehle.ordner, "", () => aktion("ordner-zeigen", S.pfad || undefined)], [T.befehle.ansicht, "", oeffneUebersicht]] : []),
     [T.befehle.mcp, "", oeffneKi],
@@ -1661,6 +1667,7 @@ window.addEventListener("keydown", (e) => {
   else if (k === "m" && e.shiftKey) tun(oeffneMerken);
   else if (k === "a" && e.shiftKey && !e.altKey && !dialogOffen()) tun(aufgabeErfassen);
   else if ((k === "k" || k === "p") && !e.shiftKey && !e.altKey) tun(() => oeffnePalette());
+  else if (k === "j" && !e.shiftKey && !e.altKey && !dialogOffen() && S.info?.vault) tun(() => frage.umschalten());
   else if (k === "f" && e.shiftKey) tun(fokusSuche);
   else if (k === "f" && !e.shiftKey && !e.altKey && !dialogOffen() && S.pfad && !e.target.closest?.("input, textarea, select")) tun(() => ed.suchen());
   else if ((k === "i" || e.code === "KeyI") && e.altKey) tun(umschalteInfo);
@@ -1991,6 +1998,7 @@ function zuruecksetzen() {
   S.sichtListe = []; S.gerendert = 0;
   ed.setzeText("", { nurLesen: false });
   schliesseDialoge(); // offene Dialoge (Vertrauen, Sichern, Neue Notiz …) gehören zum alten Vault; für den neuen fragt ladeAlles selbst
+  frage.zuruecksetzen(); // eine Frage gehört zum alten Vault (die Werkstatt hat sie beim Wechsel schon beendet)
   schliesseDiff(); schliesseSuche(false);
   S.umstellung = null; $("umstellung-host").replaceChildren();
   $("banner-host").replaceChildren(); $("pille").hidden = true; $("speicherstand").textContent = "";

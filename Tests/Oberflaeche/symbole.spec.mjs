@@ -124,6 +124,7 @@ test("Remote-Dialog: bei einer GitHub-Adresse steht deren Logo im Kopf, sonst di
 
 test("Fokus: Tastaturfokus auf Seitenleiste, Werkzeug und Statusleiste zeigt denselben Ring (kein Standard-Umriss)", async ({ page }) => {
   await start(page);
+  await page.waitForLoadState("networkidle"); // die Statusleiste zeichnet sich nach den letzten Antworten neu: erst danach fokussieren, sonst geht der Fokus verloren
   for (const sel of ['.eintrag[data-bereich]', "#knopf-neu", '[data-st="theme"]']) {
     const el = page.locator(sel).first();
     await el.focus();

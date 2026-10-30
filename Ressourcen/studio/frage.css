@@ -1,0 +1,85 @@
+/* Frag deinen Vault — Panel rechts über der Infospalte. Farben nur aus den Variablen von studio.css (hell und dunkel). */
+#frage-host { position: fixed; inset: 0 0 30px 0; z-index: 40; pointer-events: none; }
+.frage { position: absolute; top: 0; right: 0; bottom: 0; width: min(440px, 100vw); display: flex; flex-direction: column; background: var(--erhoben); color: var(--text);
+  border-left: 1px solid var(--linie-stark); box-shadow: var(--schatten); pointer-events: auto; animation: ein var(--t) var(--ease); font-size: 13px; }
+.frage[hidden] { display: none; }
+.frage-kopf { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: none; height: 44px; padding: 0 8px 0 16px; border-bottom: 1px solid var(--linie); }
+.frage-titel { display: flex; align-items: center; gap: 8px; color: var(--akzent); min-width: 0; }
+.frage-titel h2 { margin: 0; font-size: 14px; font-weight: 650; letter-spacing: -.01em; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.frage-rumpf { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 16px 20px; display: flex; flex-direction: column; gap: 14px; -webkit-user-select: text; user-select: text; }
+.frage-fuss { flex: none; display: flex; align-items: flex-start; gap: 8px; padding: 8px 16px; border-top: 1px solid var(--linie); background: var(--seite); color: var(--text-2); font-size: 11.5px; line-height: 16px; }
+.frage-fuss > svg { flex: none; margin-top: 2px; color: var(--gruen); }
+
+.frage-label { font-size: 11px; font-weight: 600; letter-spacing: .02em; color: var(--text-2); margin: 0; }
+.frage-form { display: flex; flex-direction: column; gap: 10px; }
+.frage-zeile { display: flex; flex-direction: column; gap: 5px; }
+.frage-konten { display: flex; flex-wrap: wrap; gap: 6px; }
+.frage-konto { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 12px 0 9px; border: 1px solid var(--linie-stark); border-radius: var(--r-pille); background: var(--papier); color: var(--text-2); cursor: pointer; font: inherit; max-width: 100%; }
+.frage-konto:hover:not(:disabled) { border-color: var(--text-3); color: var(--text); }
+.frage-konto[aria-checked="true"] { border-color: var(--akzent); background: var(--akzent-weich); color: var(--text); font-weight: 600; }
+.frage-konto:disabled { opacity: .5; cursor: default; }
+.frage-konto .ki-logo { color: inherit; flex: none; }
+.frage-konto-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.frage-modell { display: inline-flex; padding: 2px; gap: 2px; border-radius: var(--r); background: var(--seite-2); align-self: flex-start; }
+.frage-segment { height: 24px; padding: 0 12px; border: 0; border-radius: var(--r-s); background: transparent; color: var(--text-2); cursor: pointer; font: inherit; }
+.frage-segment[aria-checked="true"] { background: var(--erhoben); color: var(--text); font-weight: 600; box-shadow: var(--schatten-klein); }
+.frage-segment:disabled { opacity: .5; cursor: default; }
+.frage-eingabe { width: 100%; box-sizing: border-box; min-height: 76px; max-height: 220px; resize: vertical; padding: 9px 11px; border: 1px solid var(--linie-stark); border-radius: var(--r); background: var(--papier); color: var(--text); font: 13.5px/1.5 var(--schrift-text); outline: 0; }
+.frage-eingabe:focus { border-color: var(--akzent); box-shadow: 0 0 0 3px var(--akzent-weich); }
+.frage-eingabe:disabled { opacity: .6; }
+.frage-aktionen { display: flex; justify-content: flex-end; gap: 8px; }
+.frage-aktionen .knopf kbd { margin-left: 8px; opacity: .75; font-weight: 500; }
+.frage-weg, .frage-hinweis { margin: 0; color: var(--text-2); font-size: 12px; line-height: 17px; }
+.frage-hinweis { color: var(--text-3); }
+
+.frage-leer { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; padding: 36px 12px; color: var(--text-2); }
+.frage-leer h3 { margin: 0; font-size: 14px; color: var(--text); }
+.frage-leer p { margin: 0; line-height: 19px; max-width: 34ch; }
+.frage-leer-zeichen { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 14px; background: var(--seite); border: 1px solid var(--linie); color: var(--akzent); margin-bottom: 4px; }
+.frage-leer-knoepfe { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 8px; }
+
+.frage-ausgabe { display: flex; flex-direction: column; gap: 14px; }
+.frage-ausgabe[hidden] { display: none; }
+.frage-block { display: flex; flex-direction: column; gap: 6px; }
+.frage-gefragt-text { margin: 0; padding: 8px 11px; border-radius: var(--r); background: var(--seite); border: 1px solid var(--linie); white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
+.frage-status { display: flex; align-items: center; gap: 9px; color: var(--text-2); }
+.frage-status .knopf { margin-left: auto; flex: none; }
+.frage-status-text { min-width: 0; overflow-wrap: anywhere; }
+.frage-punkte { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--akzent-rand); border-top-color: var(--akzent); animation: dreh .8s linear infinite; flex: none; }
+.frage-antwort { line-height: 1.6; font-size: 13.5px; overflow-wrap: anywhere; }
+.frage-antwort > :first-child { margin-top: 0; } .frage-antwort > :last-child { margin-bottom: 0; }
+.frage-antwort .md-p { margin: 0 0 .7em; }
+.frage-antwort .md-h { margin: 1em 0 .4em; font-size: 13.5px; font-weight: 650; line-height: 1.35; }
+.frage-antwort h3.md-h { font-size: 15px; }
+.frage-antwort .md-liste { margin: 0 0 .7em; padding-left: 1.4em; }
+.frage-antwort .md-liste .md-liste { margin: .2em 0 0; }
+.frage-antwort li { margin: .15em 0; }
+.frage-antwort .md-code { font: 12px var(--mono); padding: 1px 5px; border-radius: 4px; background: var(--seite-2); }
+.frage-antwort .md-pre { margin: 0 0 .8em; padding: 9px 11px; border-radius: var(--r); background: var(--seite); border: 1px solid var(--linie); overflow-x: auto; font: 12px/1.5 var(--mono); }
+.frage-antwort .md-pre code { font: inherit; background: none; padding: 0; }
+.frage-antwort .md-zitat { margin: 0 0 .8em; padding: 2px 0 2px 11px; border-left: 3px solid var(--linie-stark); color: var(--text-2); }
+.frage-antwort .md-hr { border: 0; border-top: 1px solid var(--linie); margin: 1em 0; }
+.frage-antwort .md-tabelle-rahmen { overflow-x: auto; margin: 0 0 .8em; }
+.frage-antwort .md-tabelle { border-collapse: collapse; font-size: 12.5px; }
+.frage-antwort .md-tabelle th, .frage-antwort .md-tabelle td { border: 1px solid var(--linie-stark); padding: 4px 9px; text-align: left; vertical-align: top; }
+.frage-antwort .md-tabelle th { background: var(--seite); font-weight: 600; }
+.frage-antwort .md-url { color: var(--text-3); font-size: 12px; }
+.frage-antwort .md-wiki { display: inline; padding: 0 5px; border: 1px solid var(--akzent-rand); border-radius: 5px; background: var(--akzent-weich); color: var(--akzent); font: inherit; font-size: 12.5px; cursor: pointer; }
+.frage-antwort button.md-wiki:hover { border-color: var(--akzent); }
+.frage-antwort .md-wiki.nein { border-color: var(--linie-stark); background: transparent; color: var(--text-3); text-decoration: line-through; cursor: help; }
+.frage-meldung { padding: 9px 12px; border-radius: var(--r); font-size: 12.5px; line-height: 18px; overflow-wrap: anywhere; }
+.frage-meldung.fehler { background: var(--rot-weich); border: 1px solid var(--rot-rand); }
+.frage-meldung.abbruch { background: var(--seite); border: 1px solid var(--linie-stark); color: var(--text-2); }
+.frage-quellenliste { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.frage-quelle { display: grid; grid-template-columns: 1fr auto; column-gap: 8px; width: 100%; text-align: left; padding: 8px 11px; border: 1px solid var(--linie-stark); border-radius: var(--r); background: var(--papier); color: var(--text); cursor: pointer; font: inherit; }
+.frage-quelle:hover { border-color: var(--akzent); background: var(--akzent-weich); }
+.frage-quelle-titel { grid-column: 1; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.frage-quelle-pfad { grid-column: 1; font-size: 11px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.frage-quelle-meta { grid-column: 2; grid-row: 1 / span 2; display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 3px; font-size: 11px; }
+.frage-stufe { display: inline-flex; align-items: center; gap: 5px; color: var(--text-2); }
+.frage-stufe .punkt { width: 7px; height: 7px; border-radius: 50%; }
+.frage-art { color: var(--text-3); }
+.frage-art.gefunden { opacity: .8; }
+.frage-verbrauch { margin: 0; font-size: 12px; color: var(--text-2); }
+@media (max-width: 520px) { .frage { width: 100vw; } }
+@media (prefers-reduced-motion: reduce) { .frage, .frage-punkte { animation: none; } }

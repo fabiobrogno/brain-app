@@ -104,6 +104,11 @@ export const api = {
   githubKonto: () => anfrage("GET", "/api/github/konto"),
   githubAbmelden: () => anfrage("POST", "/api/github/abmelden", {}),
   probe: (frage) => anfrage("POST", "/api/probe", { frage }),
+  // ---- Frag deinen Vault (P4): Start, Long-Poll auf den Stand, Abbruch. Nichts wird gespeichert.
+  frageBereit: () => anfrage("GET", "/api/frage/bereit"),
+  frageStart: (frage, konto, modell) => anfrage("POST", "/api/frage/start", { frage, konto, ...(modell ? { modell } : {}) }),
+  frageStand: ({ id, ab, text, epoche }) => anfrage("GET", "/api/frage/stand" + q({ id, ab, text, epoche })),
+  frageAbbrechen: (id) => anfrage("POST", "/api/frage/abbrechen", { id }),
   // ---- Umstellung eines Vaults aus der Kit-Zeit (P7). Geschrieben wird nur mit bestaetigt: true — das setzt die Oberfläche erst nach dem Klick des Nutzers.
   umstellungHinweis: () => anfrage("GET", "/api/umstellung/hinweis"),
   umstellungBefund: () => anfrage("GET", "/api/umstellung/befund"),
