@@ -413,3 +413,13 @@ export function entprelle(fn, ms = 150) {
   return f;
 }
 export { wenigBewegung };
+
+// Leerer Zustand: ein dezentes Symbol, ein kurzer Satz, höchstens EINE Aktion (Muster aus Orca, MIT; siehe dialoge.css und THIRD-PARTY-NOTICES.md).
+// { symbol, titel, text, aktion: { text, tun } | null, daten: { "data-…": "" }, klasse } → <div class="leer-liste">
+export function leerBlock({ symbol: sym, titel, text, aktion = null, daten = {}, klasse = "leer-liste" } = {}) {
+  return h("div", { klasse, ...daten },
+    h("div", { klasse: "zeichen" }, symbol(sym, GROESSE.kachel)),
+    h("h3", { text: titel }),
+    text ? h("p", { text }) : null,
+    aktion ? knopf({ text: aktion.text, aktion: "leer-aktion", aufKlick: aktion.tun }) : null);
+}

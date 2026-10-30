@@ -2,11 +2,11 @@
 // das Board liest sie über GET /api/aufgaben und ändert sie über PATCH /api/aufgaben/<pfad> — je Änderung genau eine Datei.
 // Bedienung: Karte ziehen (Maus) oder Alt+Pfeiltasten (Tastatur), Enter öffnet die Datei im Editor, das Menü „⋯“ (auch Rechtsklick) ändert Spalte, Priorität, Fälligkeit.
 // Kein innerHTML mit Daten aus dem Vault: alles läuft über h()/textContent.
-import { h, leerBlock } from "./hilfen.js";
+import { h } from "./hilfen.js";
 import { symbol, GROESSE } from "./symbole.js";
 import { kiLogo, kiLogoName } from "./ki-logos.js";
 import { oeffneMenue } from "./menue.js";
-import { textfeld, filterChip, knopf, oeffneDatumsauswahl, tooltip, skelett } from "./bausteine.js";
+import { textfeld, leerBlock, filterChip, knopf, oeffneDatumsauswahl, tooltip, skelett } from "./bausteine.js";
 import { wenigBewegung } from "./popover.js";
 import { TA } from "./texte-aufgaben.js";
 

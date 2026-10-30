@@ -3,9 +3,9 @@
 import { T, PRODUKT } from "./texte.js";
 import { api, aktion, aktionMitAntwort, inApp, gitGesperrt, andererVault, nichtVertraut, ausgangUnklar, zeitText as zeitFehlerText, ladeStandNeu } from "./api.js";
 import { erstelleEditor } from "./editor.js";
-import { h, dialog, leerBlock, dialogOffen, schliesseDialoge, toast, vorMinuten, dateiName, ohneEndung, ordnerVon, istBearbeitbar, speichereLokal, leseLokal, leseEntwurf, speichereEntwurf, sucheGrad, suchFormen, ausTabelle, arbeitBeginnt, laufendeArbeiten } from "./hilfen.js";
+import { h, dialog, dialogOffen, schliesseDialoge, toast, vorMinuten, dateiName, ohneEndung, ordnerVon, istBearbeitbar, speichereLokal, leseLokal, leseEntwurf, speichereEntwurf, sucheGrad, suchFormen, ausTabelle, arbeitBeginnt, laufendeArbeiten } from "./hilfen.js";
 import { symbol } from "./symbole.js";
-import { textfeld, textbereich, auswahl, knopf as baueKnopf, setzeLaedt } from "./bausteine.js";
+import { textfeld, textbereich, auswahl, knopf as baueKnopf, leerBlock, setzeLaedt } from "./bausteine.js";
 import { kiLogo } from "./ki-logos.js";
 import { TV } from "./texte-verlauf.js";
 import { istRohGit } from "./verlauf.js";
@@ -2053,7 +2053,7 @@ function zeigeLeer() {
     el.replaceChildren(
       h("div", { klasse: "zeichen" }, symbol("marke", 24)),
       h("h2", { text: T.editor.leer }), h("p", { text: T.editor.leerHinweis }),
-      h("div", null, h("button", { klasse: "knopf", "data-aktion": "leer-neu", text: T.befehle.neu, aufClick: () => oeffneNeu() })));
+      h("div", null, baueKnopf({ text: T.befehle.neu, aktion: "leer-neu", aufKlick: () => oeffneNeu() })));
   }
 }
 

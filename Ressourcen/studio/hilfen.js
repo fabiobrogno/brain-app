@@ -1,6 +1,5 @@
 // Kleine DOM-Helfer, Dialoge, Toasts. Kein innerHTML mit fremden Daten.
 import { popoverOffen } from "./popover.js";
-import { symbol as symbolFn } from "./symbole.js";
 export function h(tag, attrs, ...kinder) {
   const e = document.createElement(tag);
   if (attrs) for (const [k, v] of Object.entries(attrs)) {
@@ -83,15 +82,6 @@ export function dialog({ titel, satz, rumpf, knoepfe = [], breit = false, beiSch
   const erst = box.querySelector("[autofocus], input[type=text], textarea, input") || box.querySelector("button.primaer");
   setTimeout(() => erst?.focus(), 0);
   return { schliessen: zu, box };
-}
-// Leerer Zustand: ein dezentes Symbol, ein kurzer Satz, höchstens EINE Aktion (Muster aus Orca, MIT; siehe dialoge.css).
-// { symbol, titel, text, aktion: { text, tun } | null, daten: { "data-…": "" } } → <div class="leer-liste">
-export function leerBlock({ symbol: sym, titel, text, aktion = null, daten = {}, klasse = "leer-liste" }) {
-  return h("div", { klasse, ...daten },
-    h("div", { klasse: "zeichen" }, symbolFn(sym, 24)),
-    h("h3", { text: titel }),
-    text ? h("p", { text }) : null,
-    aktion ? h("button", { klasse: "knopf", type: "button", "data-aktion": "leer-aktion", text: aktion.text, aufClick: aktion.tun }) : null);
 }
 export const dialogOffen = () => !!document.querySelector("#dialog-host .schleier");
 // Beim Wechsel des Vaults: alle offenen Dialoge zu. Sie gehören zum alten Vault (Sichern, Neue Notiz, Vertrauen, Palette …);
