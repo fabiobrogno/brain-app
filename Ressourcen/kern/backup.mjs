@@ -1,6 +1,6 @@
 // backup.mjs — Sicherung: github (push) | ordner (git bundle, 7 behalten) | keins. Alltagssprache, nie Abbruch im Alltag.
-import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, statSync, lstatSync, rmSync, writeFileSync, readFileSync, mkdirSync, realpathSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { existsSync, readdirSync, statSync, lstatSync, rmSync, writeFileSync, readFileSync, mkdirSync, realpathSync, renameSync } from "node:fs";
 import { join, isAbsolute } from "node:path";
 import { createHash } from "node:crypto";
 import { ladeConfig, supportOrdner } from "./pfade.mjs";
@@ -32,10 +32,12 @@ export function pruefeBackupPfad(p) {
   return null;
 }
 const leseDatei = (vault, support) => { try { const o = JSON.parse(readFileSync(backupDatei(vault, support), "utf8")); return o && typeof o === "object" && !Array.isArray(o) ? o : {}; } catch { return {}; } };
+// Atomar (Temp-Datei + rename): ein Leser sieht nie eine halbe Datei und verliert so nie die Bestätigung des Ziels oder den Sicherungsordner
+const atomar = (datei, inhalt) => { const tmp = `${datei}.${process.pid}.tmp`; writeFileSync(tmp, inhalt); renameSync(tmp, datei); };
 const schreibeDatei = (vault, o, support = supportOrdner()) => {
   mkdirSync(join(support, "backup"), { recursive: true });
   if (!Object.keys(o).length) rmSync(backupDatei(vault, support), { force: true });
-  else writeFileSync(backupDatei(vault, support), JSON.stringify(o) + "\n");
+  else atomar(backupDatei(vault, support), JSON.stringify(o) + "\n");
 };
 // Umstellung (P7b, Schritt A1): übernimmt den Sicherungsordner aus dem alten Eintrag der Vault-Config in den Support-Ordner – OHNE die Config zu ändern und ohne Commit
 // (einrichten() schreibt die Config und committet). Der Ordner muss pruefeBackupPfad bestehen. `support` lenkt die Ablage um (Probelauf/Tests).
@@ -60,10 +62,10 @@ export function leseBackupOrdner(vault) {
 // Push nur zu einem Remote, das der Nutzer bestätigt hat (<Support>/backup/<Kennung>.json → remoteBestaetigt; gesetzt vom Assistenten
 // „Sicherung“, vom Studio-„Remote hinzufügen“ und von `brain backup einrichten github`, siehe gemeinsam/sicherungsmerker.mjs). Ein fremder Vault,
 // der ein origin mitbringt, wird so nie automatisch beschickt. → { ok, url, grund }
-export function pushErlaubnis(vault) {
+export function pushErlaubnis(vault, support = supportOrdner()) {
   let url = "";
   try { url = git(vault, "config", "--get", "remote.origin.url").trim(); } catch { return { ok: false, url: "", grund: "kein-remote" }; }
-  const bestaetigt = leseDatei(vault).remoteBestaetigt;
+  const bestaetigt = leseDatei(vault, support).remoteBestaetigt;
   if (!url) return { ok: false, url, grund: "kein-remote" };
   if (typeof bestaetigt !== "string" || bestaetigt !== url) return { ok: false, url, grund: bestaetigt ? "anderes-remote" : "nicht-bestaetigt" };
   return { ok: true, url };
@@ -117,24 +119,257 @@ function nichtEingearbeitet(vault) {
   } catch { return ""; }
 }
 
-export function sichern(vault) {
+// ── Abgleich mit dem Server (mehrere Geräte) ─────────────────────────────────────────────────────────────────────────────
+// Ein zweiter Mac oder das iPhone kann jederzeit einen Commit auf den Server legen. Ein bloßes Senden würde dann abgelehnt und als „kein
+// Internet?“ missverstanden. Darum holt die Sicherung zuerst und führt zusammen — nach denselben Regeln wie der Studio-Abgleich
+// (gemeinsam/git.mjs#sync): fetch, dann ff-only, sonst Zusammenführen ohne Hooks. Bei einem Konflikt wird NICHT gesendet: die Zusammenführung
+// wird zurückgenommen (der Arbeitsstand bleibt, wie er war), der Stand „Konflikt“ wird im Support-Ordner vermerkt (<Support>/backup/<Kennung>.json
+// → abgleich), und Menüleiste (brain status) und Studio weisen darauf hin. Gelöst wird der Konflikt im Studio („Abgleichen“).
+// Alles läuft über git-sicher (gitBefehl), also mit allen Härtungen des Kerns; Hooks sind zusätzlich ausdrücklich aus.
+// Ziel ist IMMER origin (das vom Nutzer bestätigte Remote), und zwar mit ausdrücklichem Zweig: geholt wird `+refs/heads/X:refs/remotes/origin/X`,
+// gesendet `HEAD:refs/heads/X`, jeweils an die bestätigte Adresse selbst (nicht über den Remote-Namen: dessen fetch-Einträge würden mitaktualisieren) — weder ein Refspec noch ein Upstream, pushurl oder pushremote aus der Vault-Konfiguration kann das umlenken.
+const ZEIT_NETZ = 90_000, ZEIT_LOKAL = 30_000, OHNE_ZEIT = 0;
+const OHNE_HOOKS = ["-c", "core.hooksPath=/dev/null"];
+
+function gitLauf(vault, args, zeit = ZEIT_LOKAL) {
+  const r = spawnSync(gitBefehl({ cfg: ladeConfig(vault) }), ["-C", vault, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], windowsHide: true, timeout: zeit });
+  const zuLange = r.error && r.error.code === "ETIMEDOUT";
+  return { code: r.error ? (zuLange ? 124 : 1) : (r.status ?? 1), out: r.stdout || "", err: `${r.stderr || ""}${zuLange ? " Operation timed out" : ""}` };
+}
+
+// Fehlerausgabe (LC_ALL=C, also englisch) → Art des Fehlers. Reihenfolge zählt: gesperrt, Anmeldung, „abgelehnt“, „kein Netz“
+// (ein ssh-Fehler endet mit „Could not read from remote repository“, ist aber eine Anmeldung). Der Rohtext kommt nie in eine Meldung.
+export function gitFehlerArt(ausgabe) {
+  const a = String(ausgabe || "");
+  if (/git-sicher: git ist für diesen Ordner gesperrt|git-gesperrt/i.test(a)) return "gesperrt";
+  if (/Authentication failed|could not read (Username|Password)|Permission denied \(publickey|Permission to .* denied|terminal prompts disabled|access denied|error: 40[13]|publickey|Invalid username or password|Repository not found|Host key verification failed/i.test(a)) return "anmeldung";
+  if (/\[rejected\]|\[remote rejected\]|non-fast-forward|fetch first|failed to push some refs|protected branch|pre-receive hook declined|stale info/i.test(a)) return "abgelehnt";
+  if (/Could not resolve host|Connection (timed out|refused|reset)|Network is unreachable|early EOF|Operation timed out|unable to access|Could not read from remote|Failed to connect|Temporary failure|SSL|TLS|RPC failed|remote end hung up|Software caused connection abort/i.test(a)) return "netz";
+  return "fehler";
+}
+
+const OK_ARTEN = new Set(["aktuell", "geholt", "gesendet", "beides"]);
+const STAND_ARTEN = new Set(["konflikt", "anmeldung", "neues"]);
+export const KONFLIKT_STATUS = "Konflikt – im Studio lösen";
+export const STAND_TEXT = {
+  konflikt: KONFLIKT_STATUS,
+  anmeldung: "Anmeldung für die Online-Sicherung nötig",
+  neues: "Auf dem Server liegt Neues – im Studio abgleichen",
+};
+const NAECHSTES_MAL = "Ich versuche es beim nächsten Mal wieder.";
+const MELDUNG = {
+  aktuell: "Online gesichert.",
+  gesendet: "Online gesichert.",
+  geholt: "Online gesichert. Neues von einem anderen Gerät wurde dabei übernommen.",
+  beides: "Online gesichert. Neues von einem anderen Gerät wurde dabei übernommen.",
+  konflikt: `Die Online-Sicherung wartet: ${KONFLIKT_STATUS}. Auf dem Server liegt eine andere Fassung derselben Notiz (zum Beispiel von einem anderen Gerät). Es wurde nichts überschrieben und nichts gesendet — öffne das Studio und tippe auf „Abgleichen“, dort wählst du, welche Fassung gilt.`,
+  ungesichert: "Die Online-Sicherung wartet: Auf dem Server liegt Neues, aber es stehen noch nicht eingearbeitete Änderungen im Weg. Es wurde nichts gesendet. Arbeite deine Notizen ein oder gleiche im Studio ab.",
+  abgelehnt: `Der Server hat die Online-Sicherung abgelehnt (dort liegt inzwischen Neueres, oder der Zweig ist geschützt). ${NAECHSTES_MAL}`,
+  netz: `Online-Sicherung hat gerade nicht geklappt: Der Server ist nicht erreichbar (kein Internet?). ${NAECHSTES_MAL}`,
+  anmeldung: "Online-Sicherung hat nicht geklappt: Die Anmeldung beim Server fehlt oder wurde abgelehnt. Melde dich in Kortex neu an (Einrichtung → Sicherung).",
+  fehler: `Online-Sicherung hat gerade nicht geklappt. ${NAECHSTES_MAL}`,
+  gesperrt: "Die Online-Sicherung wartet: Dieser Vault ist in Kortex noch nicht als deiner bestätigt (oder seine Git-Einstellungen sind nicht erlaubt). Bestätige ihn im Studio unter Einstellungen.",
+  umgeleitet: "Die Online-Sicherung wartet: Die Git-Einstellungen dieses Vaults leiten das Senden woandershin um (pushurl, pushremote oder ein anderes Ziel als das bestätigte). Aus Sicherheitsgründen sende ich so nichts.",
+  beschaeftigt: `Die Online-Sicherung wartet: Gerade arbeitet eine Einarbeitung (Sperre .logs/ingest.lock). ${NAECHSTES_MAL}`,
+  "kein-zweig": "Die Online-Sicherung wartet: Der Vault steht auf keinem Zweig. Wähle im Studio zuerst einen Zweig.",
+  "kein-commit": "Die Online-Sicherung wartet: Es gibt noch nichts Eingearbeitetes zum Sichern.",
+};
+
+// Vermerk im Support-Ordner: abgleich = { stand: "konflikt"|"anmeldung"|"neues", zeit }. Nur eine Änderung des Standes schreibt.
+function merkeStand(vault, stand, support) {
+  try {
+    const d = leseDatei(vault, support);
+    const jetzt = d.abgleich && typeof d.abgleich === "object" ? d.abgleich.stand : null;
+    if (stand === jetzt || (!stand && !d.abgleich)) return;
+    if (stand) d.abgleich = { stand, zeit: new Date().toISOString() }; else delete d.abgleich;
+    schreibeDatei(vault, d, support);
+  } catch { /* nur Komfort: ohne Vermerk bleibt der Hinweis eben aus */ }
+}
+// → { stand, text, zeit } oder null. Menüleiste (brain status) und Studio zeigen damit den Hinweis.
+export function leseAbgleichStand(vault, { support = supportOrdner() } = {}) {
+  const a = leseDatei(vault, support).abgleich;
+  if (!a || typeof a !== "object" || !STAND_ARTEN.has(a.stand)) return null;
+  return { stand: a.stand, text: STAND_TEXT[a.stand], zeit: typeof a.zeit === "string" ? a.zeit : null };
+}
+export function loescheAbgleichStand(vault, { support = supportOrdner() } = {}) { merkeStand(vault, null, support); }
+
+const mergeOffen = (vault) => gitLauf(vault, ["rev-parse", "-q", "--verify", "MERGE_HEAD"]).code === 0;
+// Dieselbe Sperre wie `brain lock` / die Übernahme des Tageslaufs (.logs/ingest.lock, frisch < 30 min): währenddessen fasst der Hintergrund den Arbeitsbaum nicht an.
+function ingestGesperrt(vault) {
+  try { return Date.now() - statSync(join(vault, ".logs", "ingest.lock")).mtimeMs < 30 * 60000; } catch { return false; }
+}
+
+// Ziel dieses Zweigs auf origin. → { zweig, ref, vorhanden } | { fehler: "umgeleitet" }.
+// zweig = Name auf dem Server (aus branch.<z>.merge, sonst der lokale Name), ref = refs/remotes/origin/<zweig>, vorhanden = Upstream ist schon eingerichtet.
+// Ein Upstream auf ein anderes Remote als origin, pushurl, pushremote oder push.default-Umlenkungen gelten als Umleitung: dann wird nichts geholt oder gesendet.
+function ziel(vault, lokal) {
+  const cfg = (k) => { const r = gitLauf(vault, ["config", "--get", k]); return r.code === 0 ? r.out.trim() : ""; };
+  const url = cfg("remote.origin.url");
+  if (!url) return { fehler: "fehler" };
+  if (cfg("remote.origin.pushurl") || cfg(`branch.${lokal}.pushremote`) || cfg("remote.pushDefault")) return { fehler: "umgeleitet" };
+  const remote = cfg(`branch.${lokal}.remote`), merge = cfg(`branch.${lokal}.merge`);
+  if (!remote && !merge) return { url, zweig: lokal, ref: `refs/remotes/origin/${lokal}`, vorhanden: false };
+  if (remote !== "origin" || !/^refs\/heads\/[^\s~^:?*[\\]+$/.test(merge)) return { fehler: "umgeleitet" };
+  const zweig = merge.slice("refs/heads/".length);
+  return { url, zweig, ref: `refs/remotes/origin/${zweig}`, vorhanden: true };
+}
+function zaehlen(vault, ref) {
+  const r = gitLauf(vault, ["rev-list", "--left-right", "--count", `HEAD...${ref}`]);
+  if (r.code !== 0) return null;
+  const [vor, zurueck] = r.out.trim().split(/\s+/).map(Number);
+  return { vor: vor || 0, zurueck: zurueck || 0 };
+}
+// Holt genau diesen Zweig. → { code, err, neu } (neu: der Zweig fehlt auf dem Server)
+function hole(vault, z) {
+  const f = gitLauf(vault, [...OHNE_HOOKS, "fetch", "--quiet", "--no-recurse-submodules", z.url, `+refs/heads/${z.zweig}:${z.ref}`], ZEIT_NETZ);
+  return { ...f, neu: f.code !== 0 && /couldn't find remote ref/i.test(f.err) };
+}
+// Verbindet den lokalen Zweig mit origin/<zweig>, wenn noch kein Upstream da ist (einen vorhandenen fasst das nie an)
+function upstreamSetzen(vault, lokal, z) {
+  if (!z.vorhanden) gitLauf(vault, [...OHNE_HOOKS, "branch", "--set-upstream-to", `origin/${z.zweig}`, lokal]);
+}
+
+// Holen, zusammenführen, senden. → { art, ok, text, dateien? } mit art ∈ aktuell | gesendet | geholt | beides (alle ok) | konflikt | ungesichert |
+// abgelehnt | netz | anmeldung | fehler | gesperrt | umgeleitet | beschaeftigt | kein-zweig | kein-commit. Wirft nie. Sendet nur nach einem sauberen Zusammenführen.
+export function abgleichen(vault, { support = supportOrdner() } = {}) {
+  const fertig = (art, extra = {}) => {
+    if (OK_ARTEN.has(art)) merkeStand(vault, null, support);
+    else if (art === "konflikt" || art === "anmeldung") merkeStand(vault, art, support);
+    else if (art === "ungesichert") merkeStand(vault, "neues", support);
+    return { art, ok: OK_ARTEN.has(art), text: MELDUNG[art], ...extra };
+  };
+  try {
+    if (mergeOffen(vault)) return fertig("konflikt"); // eine offene Zusammenführung (im Studio begonnen) wartet auf den Nutzer
+    if (ingestGesperrt(vault)) return fertig("beschaeftigt");
+    const zw = gitLauf(vault, ["symbolic-ref", "--short", "-q", "HEAD"]);
+    if (zw.code !== 0) return fertig("kein-zweig");
+    const lokal = zw.out.trim();
+    if (gitLauf(vault, ["rev-parse", "--verify", "-q", "HEAD"]).code !== 0) return fertig("kein-commit");
+    const z = ziel(vault, lokal);
+    if (z.fehler) return fertig(z.fehler);
+    let geholt = false;
+    for (let runde = 0; runde < 2; runde++) { // eine zweite Runde nur, wenn der Server zwischen Holen und Senden schon wieder Neues bekam
+      const f = hole(vault, z);
+      if (f.neu) { // der Zweig ist auf dem Server neu
+        const p = gitLauf(vault, [...OHNE_HOOKS, "push", "--quiet", z.url, `HEAD:refs/heads/${z.zweig}`], ZEIT_NETZ);
+        if (p.code !== 0) return fertig(gitFehlerArt(p.err));
+        gitLauf(vault, [...OHNE_HOOKS, "fetch", "--quiet", "--no-recurse-submodules", z.url, `+refs/heads/${z.zweig}:${z.ref}`], ZEIT_NETZ);
+        upstreamSetzen(vault, lokal, z);
+        return fertig("gesendet");
+      }
+      if (f.code !== 0) return fertig(gitFehlerArt(f.err));
+      upstreamSetzen(vault, lokal, z);
+      let n = zaehlen(vault, z.ref);
+      if (!n) return fertig("fehler");
+      if (n.zurueck > 0) {
+        geholt = true;
+        // ohne eigene Identität (frischer Rechner) scheiterte das Zusammenführen: die Rückfall-Identität gilt nur für diesen Aufruf
+        const hatIdent = gitLauf(vault, ["config", "user.email"]).code === 0 && gitLauf(vault, ["config", "user.name"]).code === 0;
+        const ident = hatIdent ? [] : ["-c", "user.email=brain@localhost", "-c", "user.name=Kortex"];
+        if (mergeOffen(vault)) return fertig("konflikt"); // inzwischen im Studio begonnen: nicht anfassen
+        const spitze = gitLauf(vault, ["rev-parse", "--verify", "-q", z.ref]).out.trim();
+        // lokale Zusammenführungen ohne Zeitlimit: ein Abbruch mitten im Checkout ließe einen halben Arbeitsbaum zurück
+        let m = gitLauf(vault, [...OHNE_HOOKS, ...ident, "merge", "--ff-only", "--quiet", z.ref], OHNE_ZEIT);
+        if (m.code !== 0) m = gitLauf(vault, [...OHNE_HOOKS, ...ident, "merge", "--no-edit", "--quiet", z.ref], OHNE_ZEIT);
+        if (m.code !== 0) {
+          const dateien = gitLauf(vault, ["diff", "--name-only", "--diff-filter=U"]).out.split("\n").filter(Boolean);
+          // zurücknehmen nur, was DIESER Lauf begonnen hat: MERGE_HEAD zeigt auf den eben geholten Stand (nie die Zusammenführung des Nutzers aus dem Studio)
+          const kopf = gitLauf(vault, ["rev-parse", "-q", "--verify", "MERGE_HEAD"]);
+          if (kopf.code === 0 && kopf.out.trim() === spitze) gitLauf(vault, ["merge", "--abort"]);
+          return dateien.length ? fertig("konflikt", { dateien }) : fertig("ungesichert");
+        }
+        n = zaehlen(vault, z.ref) || n;
+      }
+      if (n.vor > 0 || n.zurueck > 0) {
+        const p = gitLauf(vault, [...OHNE_HOOKS, "push", "--quiet", z.url, `HEAD:refs/heads/${z.zweig}`], ZEIT_NETZ);
+        if (p.code !== 0) {
+          const art = gitFehlerArt(p.err);
+          if (art === "abgelehnt" && runde === 0) continue;
+          return fertig(art);
+        }
+        return fertig(geholt ? "beides" : "gesendet");
+      }
+      return fertig(geholt ? "geholt" : "aktuell");
+    }
+    return fertig("abgelehnt");
+  } catch { return fertig("fehler"); }
+}
+
+// Regelmäßiges Holen (Sitzungsstart, Tageslauf): damit Änderungen anderer Geräte (zum Beispiel Aufgaben vom iPhone) hier ankommen. Nur mit einem
+// vom Nutzer bestätigten Remote. Fast-Forward automatisch, aber nur bei sauberem Arbeitsbaum und ohne eigene neue Commits; sonst nur der Hinweis
+// „Neues auf dem Server“ (Stand „neues“). Sendet nie, führt nie mit Merge-Commit zusammen. → { art, ok, text } mit art ∈ aktuell | geholt | neues |
+// nicht-bestaetigt | konflikt | netz | anmeldung | abgelehnt | fehler | gesperrt | umgeleitet | beschaeftigt | kein-zweig | kein-commit. Wirft nie.
+export function holen(vault, { support = supportOrdner() } = {}) {
+  try {
+    if (!pushErlaubnis(vault, support).ok) return { art: "nicht-bestaetigt", ok: false, text: PUSH_NICHT_BESTAETIGT };
+    const ergebnis = (art, ok = OK_ARTEN.has(art)) => ({ art, ok, text: MELDUNG[art] || STAND_TEXT[art] || "" });
+    if (mergeOffen(vault)) return ergebnis("konflikt", false);
+    if (ingestGesperrt(vault)) return ergebnis("beschaeftigt", false);
+    const zw = gitLauf(vault, ["symbolic-ref", "--short", "-q", "HEAD"]);
+    if (zw.code !== 0) return ergebnis("kein-zweig", false);
+    const lokal = zw.out.trim();
+    if (gitLauf(vault, ["rev-parse", "--verify", "-q", "HEAD"]).code !== 0) return ergebnis("kein-commit", false);
+    const z = ziel(vault, lokal);
+    if (z.fehler) return ergebnis(z.fehler, false);
+    const f = hole(vault, z);
+    if (f.neu) return ergebnis("aktuell"); // der Zweig ist auf dem Server neu: nichts zu holen
+    if (f.code !== 0) {
+      const art = gitFehlerArt(f.err);
+      if (art === "anmeldung") merkeStand(vault, "anmeldung", support);
+      return ergebnis(art, false);
+    }
+    upstreamSetzen(vault, lokal, z);
+    const n = zaehlen(vault, z.ref);
+    if (!n) return ergebnis("fehler", false);
+    if (n.zurueck === 0) { merkeStand(vault, null, support); return ergebnis("aktuell"); }
+    const gesetzt = leseAbgleichStand(vault, { support });
+    const hinweis = () => { if (!gesetzt || gesetzt.stand !== "konflikt") merkeStand(vault, "neues", support); return ergebnis("neues", false); };
+    if (n.vor > 0) return hinweis(); // beide Seiten haben Neues: zusammenführen macht die Sicherung bzw. das Studio
+    if (gitLauf(vault, ["status", "--porcelain"]).out.trim()) return hinweis(); // nicht eingearbeitete Änderungen: nicht anfassen
+    const m = gitLauf(vault, [...OHNE_HOOKS, "merge", "--ff-only", "--quiet", z.ref], OHNE_ZEIT);
+    if (m.code !== 0) return hinweis();
+    merkeStand(vault, null, support);
+    return ergebnis("geholt");
+  } catch { return { art: "fehler", ok: false, text: MELDUNG.fehler }; }
+}
+
+// Holen höchstens alle 10 Minuten je Vault (Sitzungsstarts kommen oft hintereinander). Die Zeit steht im Support-Ordner in einer eigenen Datei
+// (<Kennung>.holen.json, nicht im Vault und nicht im Merker): eine Datei im Vault machte den Arbeitsbaum „unsauber“, und häufiges Schreiben des Merkers
+// risse sein Lesen-Ändern-Schreiben mit dem des Studios auseinander.
+export const MIN_ABSTAND_HOLEN_MS = 10 * 60000;
+export function holenGedrosselt(vault, { jetzt = Date.now(), support = supportOrdner() } = {}) {
+  if (!pushErlaubnis(vault, support).ok) return { art: "nicht-bestaetigt", ok: false, text: PUSH_NICHT_BESTAETIGT };
+  const datei = backupDatei(vault, support).replace(/\.json$/, ".holen.json");
+  try { const z = Number(JSON.parse(readFileSync(datei, "utf8")).zeit); if (Number.isFinite(z) && jetzt - z >= 0 && jetzt - z < MIN_ABSTAND_HOLEN_MS) return { art: "uebersprungen", ok: true, text: "" }; } catch { /* noch nie geholt */ }
+  const r = holen(vault, { support });
+  try { mkdirSync(join(support, "backup"), { recursive: true }); atomar(datei, JSON.stringify({ zeit: jetzt }) + "\n"); } catch { /* nur Komfort */ }
+  return r;
+}
+
+// → { ok, art, text }; ok = gesichert (bei der Ordner-Sicherung: ein Bundle geschrieben). Der Sitzungsstart merkt sich damit, ob er es noch einmal versuchen muss.
+export function sichernErgebnis(vault) {
   let b = ladeConfig(vault).backup;
   // Ohne backup-Eintrag, aber mit eingerichtetem Git-Remote: pushen wie bisher (gleiche Rückfall-Regel wie
   // im Sitzungsstart — ältere Vaults vor dieser Sicherungs-Funktion sichern unverändert weiter).
   if (!b) { let remote = ""; try { remote = git(vault, "remote").trim(); } catch {} b = remote ? { art: "github" } : { art: "keins" }; }
-  if (b.art === "keins") return "Keine Sicherung eingerichtet. Sag „richte mir eine Sicherung ein“, wenn du eine möchtest.";
+  if (b.art === "keins") return { ok: false, art: "keins", text: "Keine Sicherung eingerichtet. Sag „richte mir eine Sicherung ein“, wenn du eine möchtest." };
   const hinweis = nichtEingearbeitet(vault);
-  if (b.art === "github") { if (!pushErlaubnis(vault).ok) return PUSH_NICHT_BESTAETIGT; try { git(vault, "push", "-q"); return "Online gesichert." + hinweis; } catch { return "Online-Sicherung hat gerade nicht geklappt (kein Internet?). Ich versuche es beim nächsten Mal wieder."; } }
+  if (b.art === "github") {
+    if (!pushErlaubnis(vault).ok) return { ok: false, art: "nicht-bestaetigt", text: PUSH_NICHT_BESTAETIGT };
+    const r = abgleichen(vault);
+    return { ok: r.ok, art: r.art, text: r.text + (r.ok ? hinweis : "") };
+  }
   // Der Ordner kommt aus dem Support-Ordner (nie aus der Vault-Config) und wird vor jedem Gebrauch neu geprüft
   const ziel = leseBackupOrdner(vault);
-  if (!ziel) return "Für diesen Vault ist kein gültiger Sicherungsordner eingerichtet (absoluter Ordner, kein Verweis). Sag „richte mir eine Sicherung ein“ oder: brain backup einrichten ordner:<Ordner>.";
-  if (!existsSync(ziel)) return "Der Sicherungsordner ist gerade nicht da (Stick oder Platte nicht angeschlossen?). Ich sichere beim nächsten Mal.";
+  if (!ziel) return { ok: false, art: "kein-ordner", text: "Für diesen Vault ist kein gültiger Sicherungsordner eingerichtet (absoluter Ordner, kein Verweis). Sag „richte mir eine Sicherung ein“ oder: brain backup einrichten ordner:<Ordner>." };
+  if (!existsSync(ziel)) return { ok: false, art: "ordner-fehlt", text: "Der Sicherungsordner ist gerade nicht da (Stick oder Platte nicht angeschlossen?). Ich sichere beim nächsten Mal." };
   const datei = join(ziel, `brain-${ortstag()}.bundle`);
   git(vault, "bundle", "create", datei, "--all");
   const alle = readdirSync(ziel).filter(f => /^brain-.*\.bundle$/.test(f)).sort((x, y) => statSync(join(ziel, y)).mtimeMs - statSync(join(ziel, x)).mtimeMs);
   for (const alt of alle.slice(7)) rmSync(join(ziel, alt));
-  return `Gesichert in ${ziel}.` + hinweis;
+  return { ok: true, art: "ordner", text: `Gesichert in ${ziel}.` + hinweis };
 }
+export function sichern(vault) { return sichernErgebnis(vault).text; }
 
 export function wiederherstellen(quelle, ziel) {
   let nichtLeer = false;
