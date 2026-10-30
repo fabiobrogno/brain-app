@@ -324,7 +324,14 @@ function leiteAnsichtenAb(apiAnsichten) {
   }
 }
 async function ladeIndex() {
-  const [n, t, a] = await Promise.allSettled([api.notizen(), api.typen(), api.ansichten()]);
+  // Ein Abruf (Notizen + Typen + Ansichten aus EINEM Lauf der Werkstatt) statt drei; fehlt die Route oder scheitert sie, die drei einzelnen wie bisher.
+  let n, t, a;
+  try {
+    const r = await api.indexAlles();
+    if (!Array.isArray(r?.notizen)) throw new Error("kein Index");
+    n = { status: "fulfilled", value: { notizen: r.notizen, aufgabenOrdner: r.aufgabenOrdner } };
+    t = { status: "fulfilled", value: r.typen }; a = { status: "fulfilled", value: r.ansichten };
+  } catch { [n, t, a] = await Promise.allSettled([api.notizen(), api.typen(), api.ansichten()]); }
   if (n.status === "fulfilled" && typeof n.value?.aufgabenOrdner === "string" && n.value.aufgabenOrdner) S.aufgabenOrdner = n.value.aufgabenOrdner;
   S.notizen = n.status === "fulfilled" && Array.isArray(n.value?.notizen) ? n.value.notizen : notizenAusBaum();
   S.nMap = new Map(S.notizen.map((x) => [x.pfad, x]));
@@ -341,11 +348,42 @@ async function ladeBaum() {
     wikiIndex = null;
   } catch (e) { toast(e.message, { fehler: true }); return; }
   await ladeIndex();
-  // Nur neu zeichnen, wenn sich am Index etwas geändert hat (Fokuswechsel und Speichern lassen die Liste sonst flackern)
+  zeichneNachIndex();
+}
+// Nur neu zeichnen, wenn sich am Index etwas geändert hat (Fokuswechsel und Speichern lassen die Liste sonst flackern)
+function zeichneNachIndex() {
   const sig = S.notizen.length + ":" + S.notizen.map((n) => `${n.pfad}|${n.geaendert}|${n.titel}|${n.stufe}|${n.typ}|${n.felder?.spaeter_bis || ""}`).join(";") + "#" + S.baum.length;
   const geaendert = sig !== S.sig; S.sig = sig;
   if (geaendert) { zeichneSeite(); if (S.sicht.art !== "verlauf") zeichneListe({ behalte: true }); zeichnePfad(); }
   zeichneStatus(); zeigeLeer();
+}
+// Reihenfolge der Werkstatt-Liste: zuletzt geändert zuerst, bei Gleichstand nach Pfad (werkstatt: gemeinsam/notizen.mjs)
+const werkstattReihenfolge = (a, b) => (a.geaendert < b.geaendert ? 1 : a.geaendert > b.geaendert ? -1 : a.pfad < b.pfad ? -1 : 1);
+// Live-Ereignis „Inhalt geändert“ bei Dateien, die wir schon kennen: nur diese Einträge und Zeilen nachladen (POST /api/teilindex) statt Baum und ganzen
+// Index. true = erledigt (und gezeichnet); false = reicht nicht (neu, weg, Titel/Alias geändert, ältere Werkstatt, Fehler) → der Aufrufer lädt alles.
+async function ladeTeil(pfade) {
+  if (!pfade.length || pfade.length > 200 || pfade.some((p) => !S.eintraege.has(p))) return false;
+  const vault = S.info?.vault;
+  let r;
+  try { r = await api.teilIndex(pfade); } catch { return false; }
+  if (vault !== S.info?.vault) return true; // währenddessen Vault gewechselt: ladeAlles räumt auf
+  if (!r || r.voll || !Array.isArray(r.baum) || !Array.isArray(r.notizen)) return false;
+  if (r.baum.some((e) => !S.eintraege.has(e.pfad)) || r.notizen.some((x) => !S.nMap.has(x.pfad))) return false;
+  if (r.baum.length) {
+    const neu = new Map(r.baum.map((e) => [e.pfad, e]));
+    S.baum = S.baum.map((e) => neu.get(e.pfad) || e);
+    for (const e of r.baum) S.eintraege.set(e.pfad, e);
+  }
+  if (r.notizen.length) {
+    const neu = new Map(r.notizen.map((x) => [x.pfad, x]));
+    S.notizen = S.notizen.map((x) => neu.get(x.pfad) || x).sort(werkstattReihenfolge);
+    S.nMap = new Map(S.notizen.map((x) => [x.pfad, x]));
+    if (r.typen && Array.isArray(r.typen.typen)) { S.typen = r.typen.typen; S.typMap = new Map(S.typen.map((x) => [x.name, x])); }
+    if (r.ansichten && Array.isArray(r.ansichten.ansichten)) { S.ansichten = r.ansichten.ansichten; leiteAnsichtenAb(S.ansichten); }
+  }
+  wikiIndex = null;
+  zeichneNachIndex();
+  return true;
 }
 
 // ======================================================= Sicht (Seitenleiste → Liste)
@@ -1257,7 +1295,7 @@ async function abgleichOffeneDatei() {
 // Wenn Claude oder ein anderes Programm im Vault schreibt, zeichnen Board, Notizliste, Seitenleiste, Statusleiste und die offene Datei sich neu —
 // über dieselben Wege wie sonst (ladeBaum, Board.aktualisiere, abgleichOffeneDatei), gebündelt (60 ms) und nur, wenn sich etwas geändert hat.
 let live = null, liveTimer = null, liveLaeuft = false, liveNochmal = false, menueTimer = null;
-let liveSammlung = { pfade: [], aufgaben: false, alles: false };
+let liveSammlung = { pfade: [], aufgaben: false, alles: false, strukturell: false };
 // Menüleiste: Zähler (offene/überfällige Aufgaben, Posteingang) neu lesen lassen — gebündelt; die App drosselt zusätzlich
 function liveMenue() { clearTimeout(menueTimer); menueTimer = setTimeout(() => aktion("status-auffrischen"), 1200); }
 async function liveNeuladen() {
@@ -1266,10 +1304,11 @@ async function liveNeuladen() {
   try {
     do {
       liveNochmal = false;
-      const { pfade, aufgaben, alles } = liveSammlung;
-      liveSammlung = { pfade: [], aufgaben: false, alles: false };
+      const { pfade, aufgaben, alles, strukturell } = liveSammlung;
+      liveSammlung = { pfade: [], aufgaben: false, alles: false, strukturell: false };
       const vault = S.info?.vault;
-      await ladeBaum();
+      // Nur Inhalte bekannter Dateien geändert → Teil-Index; neue, entfernte, Ordner oder „alles“ → wie bisher Baum und Index ganz
+      if (alles || strukturell || !(await ladeTeil(pfade))) await ladeBaum();
       if (vault !== S.info?.vault) return; // währenddessen Vault gewechselt: ladeAlles räumt auf
       if (aufgaben && aufgabenInst && istAufgabenSicht() && !S.aufgabeDatei) await aufgabenInst.aktualisiere();
       if (S.pfad && (pfade.includes(S.pfad) || alles)) await abgleichOffeneDatei();
@@ -1295,6 +1334,7 @@ function beiLiveEreignisse(liste) {
   if (p.index) {
     for (const x of p.pfade) if (!liveSammlung.pfade.includes(x)) liveSammlung.pfade.push(x);
     liveSammlung.aufgaben ||= p.aufgaben;
+    liveSammlung.strukturell ||= p.strukturell;
     clearTimeout(liveTimer); liveTimer = setTimeout(liveNeuladen, 60);
   } else if (p.aufgaben && aufgabenInst && istAufgabenSicht() && !S.aufgabeDatei) aufgabenInst.aktualisiere();
 }

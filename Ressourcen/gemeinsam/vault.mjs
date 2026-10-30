@@ -80,6 +80,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
     titelCache.set(rel, { k: schluessel, t });
     return t;
   }
+  const dateiEintrag = (rel, abs, st) => ({ pfad: rel, art: "datei", geaendert: st.mtime.toISOString(), groesse: st.size, schreibschutz: schreibgeschuetzt(rel, abs, st), titel: titelFuerBaum(rel, abs, st) });
   function baum() {
     const eintraege = [];
     const geh = (relOrdner) => {
@@ -108,11 +109,37 @@ export function oeffneVault(vaultPfad, opts = {}) {
       for (const f of dateien) {
         const a = join(wurzel, f.rel);
         let st; try { st = statSync(a); } catch { continue; }
-        eintraege.push({ pfad: f.rel, art: "datei", geaendert: st.mtime.toISOString(), groesse: st.size, schreibschutz: schreibgeschuetzt(f.rel, a, st), titel: titelFuerBaum(f.rel, a, st) });
+        eintraege.push(dateiEintrag(f.rel, a, st));
       }
     };
     geh("");
     return { eintraege };
+  }
+
+  // Teil-Index für die Live-Aktualisierung der Oberfläche: Baum-Eintrag und Notiz-Zeile nur der genannten Dateien (geändert, bereits bekannt) — kein
+  // Verzeichnislauf. { voll: true } heißt: das reicht nicht (neue, entfernte oder unbekannte Pfade, Ordner, Symlinks, Titel/Alias geändert, zu viele,
+  // noch kein Vollauf) — die Oberfläche lädt dann wie bisher Baum und Index ganz. Rein lesend.
+  const TEIL_MAX = 200;
+  async function teilIndex(pfade) {
+    const VOLL = { voll: true };
+    if (!Array.isArray(pfade) || !pfade.length || pfade.length > TEIL_MAX) return VOLL;
+    const dateien = [];
+    for (const p of pfade) {
+      if (typeof p !== "string") return VOLL;
+      let l; try { l = loese(wurzel, p); } catch { return VOLL; }
+      if (l.segmente.some(gesperrterName) || imUnterVault(l.abs)) return VOLL;
+      dateien.push(l);
+    }
+    const eintraege = [];
+    for (const { rel, abs } of dateien) {
+      let st; try { st = lstatSync(abs); } catch { return VOLL; }
+      if (st.isSymbolicLink() || !st.isFile()) return VOLL;
+      eintraege.push(dateiEintrag(rel, abs, st));
+    }
+    const notizPfade = dateien.filter((d) => BEARBEITBAR.test(d.rel)).map((d) => d.rel);
+    let teil = null;
+    if (notizPfade.length) { teil = notizIndex.teil(notizPfade); if (!teil) return VOLL; }
+    return { voll: false, baum: eintraege, notizen: teil ? teil.zeilen : [], ...(teil ? { typen: teil.typen, ansichten: teil.ansichten } : {}), aufgabenOrdner: await aufgabenFn.ordnerName() };
   }
 
   // ---------- Lesen / Schreiben ----------
@@ -396,6 +423,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
     posteingangVerwerfen: posteingang.verwerfen, posteingangSpaeter: posteingang.spaeter, posteingangUebernehmen: posteingang.uebernehmen,
     aufgaben: aufgabenFn.aufgaben, aufgabeAnlegen: aufgabenFn.anlegen, aufgabeAendern: aufgabenFn.aendern, aufgabenArchivieren: aufgabenFn.archivieren, aufgabenFuerKi: aufgabenFn.fuerKi, aufgabenOrdnerName: aufgabenFn.ordnerName, aufgabePfad: aufgabenFn.findePfad,
     notizen: async () => ({ ...(await notizIndex.notizen()), aufgabenOrdner: await aufgabenFn.ordnerName() }), notizKontext: notizIndex.kontext, typen: notizIndex.typen, ansichten: notizIndex.ansichten,
+    indexAlles: async () => ({ ...(await notizIndex.alles()), aufgabenOrdner: await aufgabenFn.ordnerName() }), teilIndex,
     gitLog: async (a) => gitFn.log(wurzel, a || {}, gitCtx()),
     gitRemote: async (url, extra = {}) => gitFn.remoteHinzufuegen(wurzel, url, gitCtx({ limit: opts.gitLimitRemote, ...extra })),
     gitStatus: async () => {

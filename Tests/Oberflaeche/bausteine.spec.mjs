@@ -278,7 +278,9 @@ test.describe("Segment, Switch, Checkbox, Radio", () => {
     await expect(c).toBeChecked();
     await r2.check();
     await expect(r1).not.toBeChecked();
-    expect(await c.evaluate((e) => getComputedStyle(e).backgroundColor)).toBe("rgb(91, 78, 214)");
+    // Die Hintergrundfarbe läuft nach dem Anhaken 120 ms lang von „leer" zum Akzent (CSS-Übergang). Ein sofortiges getComputedStyle misst mitten im Übergang
+    // (früher flackernd: rgb(92, 79, 214) statt rgb(91, 78, 214)). toHaveCSS wiederholt, bis der Endwert EXAKT erreicht ist — die Erwartung bleibt dieselbe.
+    await expect(c).toHaveCSS("background-color", "rgb(91, 78, 214)");
     expect(await r2.evaluate((e) => getComputedStyle(e).borderRadius)).toMatch(/50%|8px/);
   });
 });

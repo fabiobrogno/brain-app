@@ -14,6 +14,10 @@
 //
 // Ablage: .logs/ statt .cache/ — .logs/ steht in jedem Vault in der .gitignore (.cache/ nicht), die Marken sind flüchtig.
 //
+// BRAIN_EINMAL_FENSTER_MS=<ms> überschreibt das Fenster (Prüfstand): Die Tests haben „Dublette innerhalb des Fensters" bisher gegen die Wanduhr gemessen
+// (Marke des ersten Hooks bis Prüfung des dritten Prozesses, jeder mit eigenem Node-Start) — unter Last dehnt sich das über 5 s, und die Wiederholung lief
+// fälschlich. Mit einem großen Fenster hängt „Dublette" nicht mehr an der Startzeit der Kindprozesse. Ungesetzt oder ungültig: die festen Fenster oben.
+//
 // Nie blockierend: jeder Fehler im Guard (Ordner nicht schreibbar, Platte voll, Vault fehlt …) → true, der Hook läuft
 // normal weiter. Bewusst KEIN Guard, wenn die session_id fehlt (Hand-Aufruf, Tests: ohne sie lassen sich zwei Sitzungen
 // nicht unterscheiden) oder mit „eval-" beginnt (Messlatte/Hint-Eval rufen brain-hint.mjs mit vielen Prompts je eigener
@@ -61,8 +65,10 @@ function raeumeAuf(ordner, jetzt) {
 // → true: erster Aufruf (normal weiterlaufen) · false: Dublette (still beenden).
 // ereignis: Name des Hooks (je Skript eigen, auch wenn zwei Hooks am selben Ereignis hängen — z. B. PreCompact);
 // sid: session_id aus dem Hook-JSON; inhalt: was zwei verschiedene Aufrufe derselben Sitzung unterscheidet.
-export function ersterAufruf(vault, ereignis, { sid = "", inhalt = "", fensterMs = FENSTER_MS, jetzt = Date.now() } = {}) {
+const fensterAusUmgebung = (standard) => { const w = Number(process.env.BRAIN_EINMAL_FENSTER_MS); return Number.isFinite(w) && w > 0 ? w : standard; };
+export function ersterAufruf(vault, ereignis, { sid = "", inhalt = "", fensterMs: fensterWunsch = FENSTER_MS, jetzt = Date.now() } = {}) {
   try {
+    const fensterMs = fensterAusUmgebung(fensterWunsch);
     const s = String(sid || "");
     if (!s || s.startsWith("eval-") || process.env.BRAIN_EINMAL === "aus" || !vault || !existsSync(vault)) return true;
     const ordner = markenOrdner(vault);

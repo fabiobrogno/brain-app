@@ -202,6 +202,27 @@ test("Titel einer Notiz von außen geändert → Liste zeigt den neuen Titel", a
   await expect(page.locator(`#liste-koerper [data-karte][data-pfad="${pfad}"] .karte-titel`)).toHaveText("Reise nach Porto", { timeout: 5000 });
 });
 
+test("Inhalt einer bekannten Notiz von außen geändert → Teil-Index (/api/teilindex), kein Neuladen von Baum und Index; neue Datei → wie bisher alles", async ({ page }) => {
+  await oeffneStudio(page);
+  const pfad = "10_notizen/Reise nach Lissabon.md";
+  const karteText = (p) => page.locator(`#liste-koerper [data-karte][data-pfad="${p}"] .karte-vorschau`);
+  await expect(karteText(pfad)).toContainText("Mietwagen nicht nötig");
+  const anfragen = [];
+  page.on("request", (r) => { const u = new URL(r.url()); if (u.pathname.startsWith("/api/")) anfragen.push(`${r.method()} ${u.pathname}`); });
+  writeFileSync(join(vault, pfad), "# Reise nach Lissabon\n\nFlug im Mai. Hotel in der Alfama. Doch ein Zug statt Flug, Teil-Index-Probe.\n");
+  await expect(karteText(pfad)).toContainText("Teil-Index-Probe", { timeout: 5000 });
+  expect(anfragen).toContain("POST /api/teilindex");
+  expect(anfragen).not.toContain("GET /api/baum");
+  expect(anfragen).not.toContain("GET /api/index");
+  expect(anfragen).not.toContain("GET /api/notizen");
+  // neue Datei: der Teil-Index reicht nicht (andere Links könnten sich neu auflösen) → Baum und Index werden ganz geladen
+  anfragen.length = 0;
+  writeFileSync(join(vault, "10_notizen/ganz-neu.md"), "# Ganz neu\n\nText.\n");
+  await expect(page.locator('#liste-koerper [data-karte][data-pfad="10_notizen/ganz-neu.md"]')).toBeVisible({ timeout: 5000 });
+  expect(anfragen).toContain("GET /api/baum");
+  expect(anfragen).toContain("GET /api/index");
+});
+
 test("Offene Datei, lokal unverändert: externe Änderung wird still nachgeladen (kein Banner), Cursor bleibt, Speichern danach klappt", async ({ page }) => {
   await oeffneStudio(page);
   const pfad = "10_notizen/Reise nach Lissabon.md";

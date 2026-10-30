@@ -2,6 +2,9 @@
 // (aufgelöst auf Pfade), Entstehungs- und Änderungszeit aus Git, Kontext einer Notiz (Beziehungen, Rückverweise, Info), Typen und Ansichten.
 // Je Datei wird nur neu gelesen, wenn sich Änderungszeit oder Größe geändert haben; die Verknüpfungen werden bei jeder Anfrage
 // aus den (gecachten) Rohlinks neu aufgelöst, weil eine neue Datei ein bisher loses [[Ziel]] erfüllen kann. Keine Abhängigkeiten.
+// Teil-Index (teil): ändert sich nur der Inhalt bereits bekannter Notizen (Live-Ereignis „geändert“), liest die Oberfläche nur diese Zeilen nach — ohne
+// Verzeichnislauf und ohne Neuauflösung aller Links. Wirkt sich die Änderung auf andere Notizen aus (Titel/Alias, bei Vaults ohne Posteingang auch Links),
+// kommt null zurück und die Oberfläche lädt wie bisher alles.
 import { readdirSync, statSync, realpathSync, readFileSync, openSync, readSync, closeSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { BEARBEITBAR, generiertName, wikiGeneriert, gesperrterName, falte, imVault, HttpFehler, loese } from "./basis.mjs";
@@ -283,6 +286,8 @@ const gleichRang = (a, b) => { for (let i = 0; i < a.length; i++) if (a[i] !== b
 export function erzeugeNotizIndex({ wurzel, jetzt = () => new Date(), heute, gitKontext, aufgabenOrdner }) {
   const heuteJetzt = () => (typeof heute === "function" ? heute() : heute) || berlinHeute(jetzt());
   const cache = new Map(); // rel → { k, heute, ...analysiere() }
+  let letzter = null;      // Ergebnis des letzten vollständigen index() samt Kontext (Grundlage von teil)
+  let stand = 0;           // zählt jede Änderung von `letzter` (ein langsamer index() darf einen neueren Teilstand nicht überschreiben)
 
   function geheDurch() {
     const aus = [];
@@ -404,8 +409,49 @@ export function erzeugeNotizIndex({ wurzel, jetzt = () => new Date(), heute, git
   }
   const iso = (v) => { const d = new Date(v); return Number.isNaN(d.getTime()) ? null : d.toISOString(); };
 
+  // Eine Zeile des Index aus einem Roh-Eintrag und dem Kontext des Laufs (ctx) — für den Vollauf und für teil() dieselbe Regel.
+  function baueZeile(e, ctx) {
+    const { aufgabenName, hatInbox, rueck, karte, status, zuletztAb } = ctx;
+    const { c } = e;
+    const oben = falte(e.teile[0]);
+    const unterhalb = e.teile.slice(1, -1);
+    // Vorrang: archiv · maschine · vorlage · system · inbox · wissen · notiz
+    let bereich;
+    if (c.archiviert || /^90_/.test(oben)) bereich = "archiv";
+    else if (oben === falte(aufgabenName) && e.teile.length === 3 && falte(e.teile[1]) === "archiv") bereich = "archiv"; // archivierte Aufgaben (kern/aufgaben.mjs archiviere): weder Board noch Zähler noch „Alle Notizen“
+    else if (oben === "00_inbox" && e.teile.length > 2 && e.teile[1].startsWith("_")) bereich = "maschine"; // _-Ordner direkt im Posteingang: maschinell verwaltet (Rückfragen, Vorschläge, …)
+    else if (oben === "01_vorlagen") bereich = "vorlage";
+    else if (e.teile.length === 1 && SYSTEM_DATEIEN.has(falte(e.rel))) bereich = "system"; // CLAUDE.md, AGENTS.md, GEMINI.md in der Wurzel (Groß/klein egal)
+    else if (oben === "00_inbox" && !unterhalb.some((s) => s.startsWith("_"))) bereich = "inbox";
+    else if (oben === "09_wiki") bereich = "wissen";
+    else if (oben === falte(aufgabenName) && e.teile.length === 2 && !e.teile[1].startsWith("_") && String(c.typ || "").trim().toLowerCase() === "aufgabe") bereich = "aufgabe"; // Aufgaben-Board (kern/aufgaben.mjs): nur direkte Kinder des konfigurierten Ordners
+    else if (!hatInbox && !c.typ && !c.links.length && !rueck.has(e.rel)) bereich = "inbox"; // Vault ohne 00_inbox: lose Notizen ohne Typ und Verknüpfung
+    else bereich = "notiz";
+
+    // Änderungszeit: sauber in Git (nicht geändert, nicht neu, seit dem Status nicht mehr geschrieben) → Zeit des letzten Commits, sonst Dateizeit.
+    // So gilt nach einem frischen `git clone` oder einem Abgleich nicht jede Notiz als „gerade geändert“.
+    const nfc = e.rel.normalize("NFC");
+    const git1 = karte ? karte.get(nfc) : undefined;
+    const sauber = !!git1 && !!status && !status.unsauber.has(nfc) && Math.floor(e.st.mtimeMs) <= status.start;
+    const gitZeit = sauber ? iso(git1.letzte) : null;
+    const geaendert = gitZeit || e.st.mtime.toISOString();
+    const geaendertMs = gitZeit ? Date.parse(gitZeit) : e.st.mtimeMs;
+    const erstellt = (git1 && iso(git1.erste)) || (e.st.birthtimeMs > 0 ? iso(e.st.birthtimeMs) : null);
+
+    const ansichten = [];
+    if (!c.generiert && ZAEHLT_MIT.has(bereich)) {
+      if (c.abgelaufen) ansichten.push("abgelaufen");
+      if (c.stufe === "rot") ansichten.push("strittig");
+      if (c.istSeite && !c.belegt && !c.hatStand) ansichten.push("ungeprueft");
+      if (geaendertMs >= zuletztAb) ansichten.push("zuletzt");
+    }
+    return { pfad: e.rel, titel: c.titel, vorschau: c.vorschau, typ: c.typ, bereich, geaendert, erstellt, stufe: c.stufe,
+      links: e.ziele, felder: c.felder, generiert: c.generiert, ansichten, _offen: e.offen };
+  }
+
   // ----- Hauptlauf -----
   async function index() {
+    const stand0 = stand;
     const heuteStr = heuteJetzt();
     const jetztMs = jetzt().getTime();
     const dateien = geheDurch();
@@ -480,45 +526,15 @@ export function erzeugeNotizIndex({ wurzel, jetzt = () => new Date(), heute, git
     const hatInbox = roh.some((e) => falte(e.teile[0]) === "00_inbox") || existsSync(join(wurzel, "00_inbox"));
     const zuletztAb = jetztMs - SIEBEN_TAGE;
 
-    const zeilen = roh.map((e) => {
-      const { c } = e;
-      const oben = falte(e.teile[0]);
-      const unterhalb = e.teile.slice(1, -1);
-      // Vorrang: archiv · maschine · vorlage · system · inbox · wissen · notiz
-      let bereich;
-      if (c.archiviert || /^90_/.test(oben)) bereich = "archiv";
-      else if (oben === falte(aufgabenName) && e.teile.length === 3 && falte(e.teile[1]) === "archiv") bereich = "archiv"; // archivierte Aufgaben (kern/aufgaben.mjs archiviere): weder Board noch Zähler noch „Alle Notizen“
-      else if (oben === "00_inbox" && e.teile.length > 2 && e.teile[1].startsWith("_")) bereich = "maschine"; // _-Ordner direkt im Posteingang: maschinell verwaltet (Rückfragen, Vorschläge, …)
-      else if (oben === "01_vorlagen") bereich = "vorlage";
-      else if (e.teile.length === 1 && SYSTEM_DATEIEN.has(falte(e.rel))) bereich = "system"; // CLAUDE.md, AGENTS.md, GEMINI.md in der Wurzel (Groß/klein egal)
-      else if (oben === "00_inbox" && !unterhalb.some((s) => s.startsWith("_"))) bereich = "inbox";
-      else if (oben === "09_wiki") bereich = "wissen";
-      else if (oben === falte(aufgabenName) && e.teile.length === 2 && !e.teile[1].startsWith("_") && String(c.typ || "").trim().toLowerCase() === "aufgabe") bereich = "aufgabe"; // Aufgaben-Board (kern/aufgaben.mjs): nur direkte Kinder des konfigurierten Ordners
-      else if (!hatInbox && !c.typ && !c.links.length && !rueck.has(e.rel)) bereich = "inbox"; // Vault ohne 00_inbox: lose Notizen ohne Typ und Verknüpfung
-      else bereich = "notiz";
-
-      // Änderungszeit: sauber in Git (nicht geändert, nicht neu, seit dem Status nicht mehr geschrieben) → Zeit des letzten Commits, sonst Dateizeit.
-      // So gilt nach einem frischen `git clone` oder einem Abgleich nicht jede Notiz als „gerade geändert“.
-      const nfc = e.rel.normalize("NFC");
-      const git1 = karte ? karte.get(nfc) : undefined;
-      const sauber = !!git1 && !!status && !status.unsauber.has(nfc) && Math.floor(e.st.mtimeMs) <= status.start;
-      const gitZeit = sauber ? iso(git1.letzte) : null;
-      const geaendert = gitZeit || e.st.mtime.toISOString();
-      const geaendertMs = gitZeit ? Date.parse(gitZeit) : e.st.mtimeMs;
-      const erstellt = (git1 && iso(git1.erste)) || (e.st.birthtimeMs > 0 ? iso(e.st.birthtimeMs) : null);
-
-      const ansichten = [];
-      if (!c.generiert && ZAEHLT_MIT.has(bereich)) {
-        if (c.abgelaufen) ansichten.push("abgelaufen");
-        if (c.stufe === "rot") ansichten.push("strittig");
-        if (c.istSeite && !c.belegt && !c.hatStand) ansichten.push("ungeprueft");
-        if (geaendertMs >= zuletztAb) ansichten.push("zuletzt");
-      }
-      return { pfad: e.rel, titel: c.titel, vorschau: c.vorschau, typ: c.typ, bereich, geaendert, erstellt, stufe: c.stufe,
-        links: e.ziele, felder: c.felder, generiert: c.generiert, ansichten, _offen: e.offen };
-    });
+    const ctx = { aufgabenName, hatInbox, rueck, karte, status, zuletztAb };
+    const zeilen = roh.map((e) => baueZeile(e, ctx));
     zeilen.sort((a, b) => (a.geaendert < b.geaendert ? 1 : a.geaendert > b.geaendert ? -1 : a.pfad < b.pfad ? -1 : 1));
-    return { zeilen, rueck, roh, loeseZiel, karte };
+    const ergebnis = { zeilen, rueck, roh, loeseZiel, karte };
+    if (stand0 === stand) { // zwischenzeitlich kein Teilstand: dieser Lauf ist der neueste
+      stand++;
+      letzter = { ...ergebnis, ctx, heute: heuteStr, nachRoh: new Map(roh.map((e, i) => [e.rel, i])), nachZeile: new Map(zeilen.map((z, i) => [z.pfad, i])) };
+    }
+    return ergebnis;
   }
 
   const oeffentlich = (z) => { const { _offen, ...rest } = z; return rest; };
@@ -528,20 +544,69 @@ export function erzeugeNotizIndex({ wurzel, jetzt = () => new Date(), heute, git
     return { notizen: zeilen.map(oeffentlich) };
   }
 
-  async function typen() {
-    const { zeilen } = await index();
+  function typenAus(zeilen) {
     const zaehl = new Map();
     for (const z of zeilen) if (z.typ && !z.generiert && ZAEHLT_MIT.has(z.bereich)) zaehl.set(z.typ, (zaehl.get(z.typ) || 0) + 1); // wie die Ansichten: nur inbox/notiz/wissen
     const liste = [...zaehl].map(([name, anzahl]) => ({ name, anzahl, ...typStil(name) }));
     liste.sort((a, b) => b.anzahl - a.anzahl || a.name.localeCompare(b.name, "de"));
     return { typen: liste, standard: { ...STANDARD_STIL } };
   }
+  async function typen() { return typenAus((await index()).zeilen); }
 
-  async function ansichten() {
-    const { zeilen } = await index();
+  function ansichtenAus(zeilen) {
     const zaehl = { abgelaufen: 0, strittig: 0, ungeprueft: 0, zuletzt: 0 };
     for (const z of zeilen) for (const a of z.ansichten) zaehl[a]++;
     return { ansichten: ["abgelaufen", "strittig", "ungeprueft", "zuletzt"].map((id) => ({ id, anzahl: zaehl[id] })) };
+  }
+  async function ansichten() { return ansichtenAus((await index()).zeilen); }
+
+  // Notizen, Typen und Ansichten aus EINEM Lauf (die Oberfläche brauchte bisher drei Anfragen = dreimal Verzeichnislauf und Linkauflösung).
+  async function alles() {
+    const { zeilen } = await index();
+    return { notizen: zeilen.map(oeffentlich), typen: typenAus(zeilen), ansichten: ansichtenAus(zeilen) };
+  }
+
+  // Teil-Index: nur die Zeilen der genannten, bereits bekannten Notizen neu bestimmen (Stat + gegebenenfalls Lesen dieser Dateien, kein Verzeichnislauf).
+  // → { zeilen (öffentliche Form), typen, ansichten } oder null, wenn der Teil-Index nicht reicht (Oberfläche lädt dann alles):
+  //   kein Vollauf vorher · Datum gewechselt · Pfad unbekannt (neu), weg, kein regulärer Dateipfad · Titel oder Aliasse geändert (andere Links lösen anders auf)
+  //   · Vault ohne Posteingang und Links/„generiert“ geändert (der Bereich anderer Notizen hängt dann an den Rückverweisen).
+  // Geändert wird erst, wenn ALLE Pfade geprüft sind (alles oder nichts).
+  function teil(rels) {
+    const L = letzter;
+    if (!L || !Array.isArray(rels) || !rels.length) return null;
+    const heuteStr = heuteJetzt();
+    if (heuteStr !== L.heute) return null;
+    const neu = [];
+    for (const rel of new Set(rels)) {
+      const i = L.nachRoh.get(rel);
+      if (i === undefined) return null;
+      const e = L.roh[i];
+      let st;
+      try { const abs = join(wurzel, rel); if (!(st = statSync(abs)).isFile()) return null; } catch { return null; }
+      const k = `${st.mtimeMs}:${st.size}`;
+      let c = cache.get(rel);
+      if (!c || c.k !== k || c.heute !== heuteStr) {
+        let text;
+        try { text = leseText(join(wurzel, rel), st.size); } catch { return null; }
+        c = { k, heute: heuteStr, ...analysiere(rel, text, heuteStr) };
+      }
+      const alt = e.c;
+      if (c.titel !== alt.titel || c.aliasse.length !== alt.aliasse.length || c.aliasse.some((a, j) => a !== alt.aliasse[j])) return null;
+      if (!L.ctx.hatInbox && (c.generiert !== alt.generiert || c.links.length !== alt.links.length || c.links.some((l, j) => l !== alt.links[j]))) return null;
+      const ziele = [], offen = [];
+      for (const z of c.links) {
+        const g = L.loeseZiel(z, e.dir);
+        if (g) { if (!ziele.includes(g.rel)) ziele.push(g.rel); } else if (!offen.includes(z)) offen.push(z);
+      }
+      neu.push({ i, rel, c, e: { ...e, st, c, ziele, offen } });
+    }
+    for (const n of neu) {
+      cache.set(n.rel, n.c);
+      L.roh[n.i] = n.e;
+      L.zeilen[L.nachZeile.get(n.rel)] = baueZeile(n.e, L.ctx);
+    }
+    stand++;
+    return { zeilen: neu.map((n) => oeffentlich(L.zeilen[L.nachZeile.get(n.rel)])), typen: typenAus(L.zeilen), ansichten: ansichtenAus(L.zeilen) };
   }
 
   async function kontext(pfad) {
@@ -577,5 +642,5 @@ export function erzeugeNotizIndex({ wurzel, jetzt = () => new Date(), heute, git
     };
   }
 
-  return { notizen, typen, ansichten, kontext };
+  return { notizen, typen, ansichten, alles, teil, kontext };
 }
