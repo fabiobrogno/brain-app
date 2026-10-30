@@ -95,23 +95,22 @@ public struct KiProgramm: Equatable, Sendable {
 }
 
 /// KI-Apps, mit denen sich der Assistent verbinden kann. Hier steht die ganze Liste: wer eine weitere KI-App anbinden will,
-/// ergänzt einen Fall mit `agentId` (so heißt sie in `KiProgramm`; die Zuordnung aus `/api/ki/erkennen` macht
-/// `WerkstattDienste.erkenneKIs`) und `ziel` (Wert für `POST /api/mcp/verbinden`) und nimmt ihn in `verbindbar` auf.
+/// ergänzt einen Fall (`ziel` = Wert für `POST /api/mcp/verbinden`, in der Werkstatt `Ressourcen/werkstatt/ki-programme/programme.mjs`),
+/// trägt Namen, Dateiort und Logo ein und nimmt ihn in `verbindbar` auf. `KiZielTests` vergleicht die Liste mit der Werkstatt.
+///
+/// Claude Code und Codex trägt Kortex über deren Befehl ein, Cursor und die weiteren Programme (`dateiOrt != nil`) über ihre
+/// Einstellungsdatei: additiv, mit Sicherung, atomar, eine kaputte Datei bleibt unberührt.
 public enum KiZiel: String, CaseIterable, Sendable {
     case claude, codex, cursor
+    case claudeDesktop, gemini, copilot, zed, opencode, warp
 
-    /// Welche Ziele die Werkstatt in dieser Version verbinden kann (`/api/mcp/verbinden`: claude, codex, cursor).
-    public static let verbindbar: [KiZiel] = [.claude, .codex, .cursor]
+    /// Welche Ziele die Werkstatt in dieser Version verbinden kann (`/api/mcp/verbinden`).
+    public static let verbindbar: [KiZiel] = [.claude, .codex, .cursor, .claudeDesktop, .gemini, .copilot, .zed, .opencode, .warp]
 
     /// Name in `KiProgramm.id`. Cursor hat keine eigene Programmdatei in der Liste der Werkstatt (`cursor-agent` ist nur eine
     /// von mehreren Spuren; die App oder `~/.cursor` zählen auch): `WerkstattDienste` bildet daraus den Eintrag „cursor“.
-    public var agentId: String {
-        switch self {
-        case .claude: return "claude"
-        case .codex: return "codex"
-        case .cursor: return "cursor"
-        }
-    }
+    /// Die weiteren Programme meldet die Werkstatt in `programme` unter genau ihrem `ziel`.
+    public var agentId: String { ziel }
 
     /// Wert des Felds `ziel` bei `POST /api/mcp/verbinden`.
     public var ziel: String {
@@ -119,6 +118,12 @@ public enum KiZiel: String, CaseIterable, Sendable {
         case .claude: return "claude"
         case .codex: return "codex"
         case .cursor: return "cursor"
+        case .claudeDesktop: return "claude-desktop"
+        case .gemini: return "gemini"
+        case .copilot: return "copilot"
+        case .zed: return "zed"
+        case .opencode: return "opencode"
+        case .warp: return "warp"
         }
     }
 
@@ -127,16 +132,34 @@ public enum KiZiel: String, CaseIterable, Sendable {
         case .claude: return "Claude Code"
         case .codex: return "Codex"
         case .cursor: return "Cursor"
+        case .claudeDesktop: return "Claude Desktop"
+        case .gemini: return "Gemini CLI"
+        case .copilot: return "GitHub Copilot"
+        case .zed: return "Zed"
+        case .opencode: return "OpenCode"
+        case .warp: return "Warp"
+        }
+    }
+
+    /// Die Einstellungsdatei, in die Kortex sich einträgt (für Menschen, mit „~“); `nil` bei Programmen, die über ihren Befehl eingerichtet werden.
+    public var dateiOrt: String? {
+        switch self {
+        case .claude, .codex: return nil
+        case .cursor: return "~/.cursor/mcp.json"
+        case .claudeDesktop: return "~/Library/Application Support/Claude/claude_desktop_config.json"
+        case .gemini: return "~/.gemini/settings.json"
+        case .copilot: return "~/.copilot/mcp-config.json"
+        case .zed: return "~/.config/zed/settings.json"
+        case .opencode: return "~/.config/opencode/opencode.json"
+        case .warp: return "~/.warp/.mcp.json"
         }
     }
 
     /// Satz über dem Text zum Kopieren, falls das Verbinden nicht klappt: Claude und Codex bekommen einen Terminal-Befehl,
-    /// bei Cursor ist es der Eintrag für `~/.cursor/mcp.json`.
+    /// die anderen den Eintrag für ihre Einstellungsdatei.
     public var kopierHinweis: String {
-        switch self {
-        case .claude, .codex: return "Oder führe diesen Befehl im Terminal aus:"
-        case .cursor: return "Oder füge diesen Eintrag in ~/.cursor/mcp.json ein:"
-        }
+        if let ort = dateiOrt { return "Oder füge diesen Eintrag in \(ort) ein:" }
+        return "Oder führe diesen Befehl im Terminal aus:"
     }
 }
 
@@ -273,8 +296,9 @@ public protocol EinrichtungsDienste: Sendable {
     /// Rückweg von `verbinde`: nimmt NUR den Eintrag „brain“ heraus, und nur, wenn er von Kortex stammt. Ein fremder Eintrag bleibt
     /// stehen (Fehler mit `art == "anders"`). Hooks und Statuszeile sind ein eigener Schalter (`verdrahte`).
     func trenne(_ ziel: KiZiel, profil: String?) async throws -> KiTrennung
-    /// Konfiguration (JSON, Feld `mcpServers`) zum Einfügen in andere KI-Programme. Liest nur.
-    func konfiguration() async throws -> String
+    /// Konfiguration (JSON) zum Einfügen in ein KI-Programm. Ohne `ziel` im üblichen Format (Feld `mcpServers`), mit `ziel` genau so,
+    /// wie dieses Programm den Eintrag in seiner Einstellungsdatei erwartet (`KiZiel.dateiOrt`). Liest nur.
+    func konfiguration(fuer ziel: KiZiel?) async throws -> String
 
     // Verdrahtung (Hooks bei Claude Code, Prüfung vor dem Speichern, Hintergrunddienst)
     /// Was eingetragen ist. Liest nur.

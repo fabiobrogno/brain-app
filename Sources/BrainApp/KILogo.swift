@@ -2,9 +2,10 @@ import SwiftUI
 import AppKit
 import BrainCore
 
-/// Logo einer KI-App (Claude, Codex, Cursor) als wiederverwendbarer Baustein.
-/// Die SVG-Dateien liegen unverändert in `Contents/Resources/logos` und werden mit `NSImage` geladen (macOS liest SVG selbst).
-/// Claude erscheint in der Markenfarbe, Cursor einfarbig in der Textfarbe (passt zu Hell und Dunkel). Ohne Logo-Datei (Codex) oder wenn
+/// Logo einer KI-App (Claude Code, Codex, Cursor, Claude Desktop, Gemini CLI, GitHub Copilot, Zed, OpenCode, Warp) als wiederverwendbarer Baustein.
+/// Die SVG-Dateien liegen unverändert in `Contents/Resources/logos` und werden mit `NSImage` geladen (macOS liest SVG selbst). Nur das
+/// Attribut `viewBox` wird für die Darstellung ersetzt (`KiZiel.logoAnsicht`): so füllt jedes Logo das Quadrat optisch gleich stark, ohne Verzerrung.
+/// Claude und Gemini erscheinen in der Markenfarbe, alle anderen einfarbig in der Textfarbe (passt zu Hell und Dunkel). Ohne Logo-Datei (Codex) oder wenn
 /// das Laden scheitert, steht die Initiale in einem neutralen Kreis. Die Marken gehören den jeweiligen Inhabern (siehe `Ressourcen/logos/HERKUNFT.md`).
 ///
 /// Eingebaut im Einrichtungsassistenten, Schritt „KI verbinden“ (`Sources/BrainApp/EinrichtungsSchritte.swift`, `KiReihe`), vor dem Namen
@@ -44,10 +45,12 @@ enum KILogoBilder {
 
     static func bild(_ ki: KiZiel, ressourcen: URL?) -> NSImage? {
         guard let url = KILogoQuelle.url(ki, ressourcen: ressourcen) else { return nil }
-        if let b = zwischenspeicher[url.path] { return b }
-        guard let b = NSImage(contentsOf: url), b.size.width > 0, b.size.height > 0 else { return nil }
+        let schluessel = url.path + "#" + (ki.logoAnsicht ?? "")
+        if let b = zwischenspeicher[schluessel] { return b }
+        guard let daten = KILogoQuelle.daten(ki, ressourcen: ressourcen),
+              let b = NSImage(data: daten), b.size.width > 0, b.size.height > 0 else { return nil }
         b.isTemplate = true
-        zwischenspeicher[url.path] = b
+        zwischenspeicher[schluessel] = b
         return b
     }
 }

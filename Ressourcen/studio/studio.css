@@ -512,11 +512,12 @@ input[type=checkbox] { accent-color: var(--akzent); width: 14px; height: 14px; m
 .pe-titel { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pe-pfad { color: var(--text-3); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: none; max-width: 50%; }
 
-/* KI-Logos (ki-logos.js): Claude in Markenfarbe, Cursor einfarbig in der Textfarbe, Codex als neutrale Initiale (kein lizenziertes Logo) */
+/* KI-Logos (ki-logos.js): Claude (Desktop) und Gemini in der Markenfarbe, alle anderen einfarbig in der Textfarbe (Begründung: Ressourcen/logos/HERKUNFT.md); Codex als neutrale Initiale (kein lizenziertes Logo) */
 .ki-logo { display: inline-flex; flex: none; align-items: center; justify-content: center; width: var(--ki-logo-groesse, 16px); height: var(--ki-logo-groesse, 16px); vertical-align: middle; }
 .ki-logo svg { display: block; }
-.ki-logo-claude { color: #D97757; }
-.ki-logo-cursor { color: var(--text); }
+.ki-logo-claude, .ki-logo-claude-desktop { color: #D97757; }
+.ki-logo-gemini { color: #8E75B2; }
+.ki-logo-cursor, .ki-logo-copilot, .ki-logo-zed, .ki-logo-opencode, .ki-logo-warp { color: var(--text); }
 .ki-logo-initiale { border-radius: 50%; background: var(--hover-2); color: var(--text-2); font-weight: 600; font-size: calc(var(--ki-logo-groesse, 16px) * 0.56); line-height: 1; }
 .ki-logo-initiale::before { content: attr(data-initiale); }
 

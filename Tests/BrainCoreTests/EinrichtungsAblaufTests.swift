@@ -103,7 +103,7 @@ private final class FalscheDienste: EinrichtungsDienste, @unchecked Sendable {
         trenneProfile.append(profil)
         return try nimm(&trennen).get()
     }
-    func konfiguration() async throws -> String { merke("konfiguration"); return try konfigurationAntwort.get() }
+    func konfiguration(fuer ziel: KiZiel?) async throws -> String { merke(ziel.map { "konfiguration \($0.ziel)" } ?? "konfiguration"); return try konfigurationAntwort.get() }
     func verdrahtungsStand() async throws -> VerdrahtungsStand {
         merke("verdrahtungsStand")
         if let f = verdrahtungLesefehler { throw f }
@@ -168,8 +168,8 @@ private final class Aufbau {
     #expect(a.zustand.aktuell == .ki)
     #expect(a.anzeige.github == .angemeldet(login: "fabio"))
     #expect(a.anzeige.vault == vaultA)
-    #expect(a.anzeige.kis.map(\.ziel) == [.claude, .codex, .cursor])
-    #expect(a.anzeige.kis.map(\.status) == [.bereit, .nichtGefunden, .nichtGefunden], "nur das gefundene Programm lässt sich verbinden")
+    #expect(a.anzeige.kis.map(\.ziel) == KiZiel.verbindbar)
+    #expect(a.anzeige.kis.map(\.status) == [.bereit] + Array(repeating: .nichtGefunden, count: KiZiel.verbindbar.count - 1), "nur das gefundene Programm lässt sich verbinden")
 }
 
 @Test @MainActor func gitInstallationFuehrtDurchDenDialogUndDannWeiter() async {
@@ -486,11 +486,11 @@ private func beiKi(_ a: Aufbau) async {
     a.dienste.kis = [.success([claudeDa, KiProgramm(id: "codex", name: "Codex", version: "0.9", gefunden: true),
                                KiProgramm(id: "cursor", name: "Cursor", version: nil, gefunden: true)])]
     await beiKi(a)
-    #expect(a.anzeige.kis.map(\.status) == [.bereit, .bereit, .bereit])
+    #expect(a.anzeige.kis.prefix(3).map(\.status) == [.bereit, .bereit, .bereit])
     await a.ablauf.verbinde(.codex)
     await a.ablauf.verbinde(.cursor)
     #expect(a.dienste.aufrufe.contains("verbinde codex") && a.dienste.aufrufe.contains("verbinde cursor"))
-    #expect(a.anzeige.kis.map(\.status) == [.bereit, .verbunden(schon: false), .verbunden(schon: false)])
+    #expect(a.anzeige.kis.prefix(3).map(\.status) == [.bereit, .verbunden(schon: false), .verbunden(schon: false)])
     #expect(a.ablauf.kannWeiter(.ki), "ein verbundenes Ziel genügt")
 }
 
@@ -500,8 +500,8 @@ private func beiKi(_ a: Aufbau) async {
     await beiKi(a)
     a.dienste.verbinden = [.failure(EinrichtungsFehler("Die Datei ~/.cursor/mcp.json ist kein gültiges JSON.", status: 422, art: "kaputt", befehl: "{ \"mcpServers\": {} }"))]
     await a.ablauf.verbinde(.cursor)
-    #expect(a.anzeige.kis.last?.status == .fehler("Die Datei ~/.cursor/mcp.json ist kein gültiges JSON.", befehl: "{ \"mcpServers\": {} }"))
-    #expect(a.anzeige.kis.last?.ziel.kopierHinweis.contains("mcp.json") == true)
+    #expect(a.anzeige.kis.first { $0.ziel == .cursor }?.status == .fehler("Die Datei ~/.cursor/mcp.json ist kein gültiges JSON.", befehl: "{ \"mcpServers\": {} }"))
+    #expect(KiZiel.cursor.kopierHinweis.contains("mcp.json"))
 }
 
 @Test @MainActor func schonVerbundenIstErfolg() async {

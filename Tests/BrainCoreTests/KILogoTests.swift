@@ -11,7 +11,7 @@ private func ressourcenOrdner() -> URL {
 /// Alle Logos, die eine Datei haben, werden gefunden und als Bild geladen (macOS liest SVG über NSImage).
 @Test func logosMitDateiWerdenGefundenUndGeladen() throws {
     let mitDatei = KiZiel.allCases.filter { $0.logoDatei != nil }
-    #expect(Set(mitDatei) == [.claude, .cursor])
+    #expect(Set(mitDatei) == Set(KiZiel.allCases).subtracting([.codex]), "alle außer Codex haben ein Logo")
     for ki in mitDatei {
         let url = try #require(KILogoQuelle.url(ki, ressourcen: ressourcenOrdner()), "Logo für \(ki.name) fehlt")
         let bild = try #require(NSImage(contentsOf: url), "Logo für \(ki.name) lässt sich nicht laden")

@@ -134,6 +134,8 @@ public struct WerkstattDienste: EinrichtungsDienste {
 
     /// Die Liste der Werkstatt als `KiProgramm`e. Cursor bekommt einen eigenen Eintrag „cursor“: die Werkstatt meldet ihn über das
     /// Feld `cursorDa` (App oder `~/.cursor` vorhanden) und/oder den Agenten `cursor-agent` — nicht über einen Agenten „cursor“.
+    /// Die Programme mit Einstellungsdatei (Claude Desktop, Gemini CLI, GitHub Copilot, Zed, OpenCode, Warp) stehen in `programme`
+    /// (`id`, `name`, `gefunden`, `version`); sie kommen zwischen den Agenten und Cursor.
     static func programme(aus j: [String: Any]) -> [KiProgramm] {
         let agenten = (j["agenten"] as? [[String: Any]] ?? []).compactMap { a -> KiProgramm? in
             guard let id = a["id"] as? String else { return nil }
@@ -142,7 +144,16 @@ public struct WerkstattDienste: EinrichtungsDienste {
         let agent = agenten.first { $0.id == "cursor-agent" }
         let cursor = KiProgramm(id: "cursor", name: "Cursor", version: agent?.gefunden == true ? agent?.version : nil,
                                 gefunden: (j["cursorDa"] as? Bool) == true || agent?.gefunden == true)
-        return agenten + [cursor]
+        let weitere = (j["programme"] as? [[String: Any]] ?? []).compactMap { p -> KiProgramm? in
+            guard let id = p["id"] as? String else { return nil }
+            return KiProgramm(id: id, name: p["name"] as? String ?? id, version: p["version"] as? String, gefunden: (p["gefunden"] as? Bool) == true)
+        }
+        // Wer als Agent (Befehl) und als Programm (App oder Befehl) vorkommt, zählt mit dem Eintrag aus `programme`: er kennt auch die App.
+        let ids = Set(weitere.map(\.id))
+        return agenten.filter { !ids.contains($0.id) } + weitere.map { p in
+            let agent = agenten.first { $0.id == p.id }
+            return KiProgramm(id: p.id, name: p.name, version: p.version ?? agent?.version, gefunden: p.gefunden || agent?.gefunden == true)
+        } + [cursor]
     }
 
     public func verbinde(_ ziel: KiZiel, umstellen: Bool, profil: String?) async throws -> KiVerbindung {
@@ -160,8 +171,9 @@ public struct WerkstattDienste: EinrichtungsDienste {
         return (j["warNichtVerbunden"] as? Bool) == true ? .warNichtVerbunden : .getrennt
     }
 
-    public func konfiguration() async throws -> String {
-        let j = try await rufe("GET", "/api/mcp/konfiguration")
+    public func konfiguration(fuer ziel: KiZiel?) async throws -> String {
+        // Nur die Programme mit Einstellungsdatei haben ein eigenes Format; für Claude Code und Codex gilt das übliche (`mcpServers`).
+        let j = try await rufe("GET", ziel?.dateiOrt != nil ? "/api/mcp/konfiguration?ziel=\(ziel!.ziel)" : "/api/mcp/konfiguration")
         guard let text = j["json"] as? String, !text.isEmpty else {
             throw EinrichtungsFehler("Die Antwort des Hintergrunddienstes war unvollständig.")
         }

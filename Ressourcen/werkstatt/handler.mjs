@@ -19,6 +19,7 @@ import { erzeugeVerdrahtung } from "./verdrahtung.mjs";
 import { erzeugeUmstellung } from "./umstellung.mjs";
 import { profilZuPfad, mitProfil } from "./profile.mjs";
 import { merkeRemoteBestaetigt } from "../gemeinsam/sicherungsmerker.mjs";
+import { ADAPTER, erkenneProgramme } from "./ki-programme/index.mjs";
 
 const HIER = dirname(fileURLToPath(import.meta.url));
 export const MAX_KOERPER = 8 * 1024 * 1024;
@@ -43,6 +44,7 @@ export function appVersionLesen() {
   return "dev";
 }
 
+const ZIELE_TEXT = `Unbekanntes Ziel — möglich ist: ${["claude", "codex", ...Object.keys(ADAPTER)].join(", ")}.`;
 const shellText = (s) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`);
 
 // `claude` im PATH und an den üblichen Orten suchen (Logik und Test-Schalter BRAIN_CLAUDE_EXTRA/BRAIN_TESTMODUS: gemeinsam/ki.mjs).
@@ -117,9 +119,14 @@ export function erzeugeHandler(o) {
   };
   const mcpBefehl = () => { const a = mcpArgs(); return a ? `claude mcp add -s user brain -- ${a.map(shellText).join(" ")}` : null; };
   const codexBefehl = () => { const a = mcpArgs(); return a ? `codex mcp add brain -- ${a.map(shellText).join(" ")}` : null; };
-  const cursorEintrag = () => { const a = mcpArgs(); return a ? { command: a[0], args: [a[1]] } : null; };
-  // Text zum Kopieren für Cursor: der Eintrag für ~/.cursor/mcp.json
-  const cursorText = () => { const e = cursorEintrag(); return e ? JSON.stringify({ mcpServers: { brain: e } }, null, 2) : null; };
+  // KI-Programme mit Einstellungsdatei (Cursor, Claude Desktop, Gemini CLI …): ki-programme/. Alle laufen durch denselben Adapter.
+  // Vergleich eines vorhandenen Eintrags mit unserem: "gleich" | "alt" | "anders" (siehe befehlsArt); Command/Args stehen nie in Antworten.
+  const eintragArt = (command, args) => {
+    const a = mcpArgs();
+    return a ? befehlsArt(command, JSON.stringify(args || []) === JSON.stringify(a.slice(1)), a, Array.isArray(args) && args.length === 1 ? args[0] : null) : "anders";
+  };
+  const adapterCtx = () => ({ home: homedir(), a: mcpArgs(), art: eintragArt });
+  const adapterText = (id) => ADAPTER[id].konfiguration(adapterCtx());
   // Gesamtfristen je Route in ms (nur im Test kürzer): mcp/verbinden 25 s, Probe über den MCP-Server 10 s.
   const fristen = { mcpVerbinden: 25_000, probe: 10_000, ...(o.fristen || {}) };
   // Einrichtung über den Starter der App (Hooks bei Claude Code, Prüfung vor dem Speichern, Hintergrunddienst): werkstatt/verdrahtung.mjs. o.starter = Ersatz für Tests.
@@ -151,7 +158,7 @@ export function erzeugeHandler(o) {
         nur("GET");
         if (!v) return { vault: null, name: null, appVersion, kitVersion: null, git: false, mcpBefehl: null, kit: { vorhanden: false }, vertrauen: null };
         const stand = v.vertrauenStand();
-        return { vault: v.wurzel, name: v.name, appVersion, kitVersion: v.kitVersion(), git: await v.istGitRepo(), mcpBefehl: mcpBefehl(), mcpBefehle: { claude: mcpBefehl(), codex: codexBefehl(), cursor: cursorText() }, kit: v.kit(), vertrauen: stand };
+        return { vault: v.wurzel, name: v.name, appVersion, kitVersion: v.kitVersion(), git: await v.istGitRepo(), mcpBefehl: mcpBefehl(), mcpBefehle: { claude: mcpBefehl(), codex: codexBefehl(), ...Object.fromEntries(Object.keys(ADAPTER).map((id) => [id, adapterText(id)])) }, kit: v.kit(), vertrauen: stand };
       }
       case "/api/vertrauen": {
         // Workspace-Trust (P5). { erlauben, vault }: vault ist der Pfad, den der Dialog gezeigt hat. Der offene Vault kann zwischen Anzeige und Klick
@@ -218,8 +225,12 @@ export function erzeugeHandler(o) {
       case "/api/umstellung/rueckweg": nur("POST"); return umstellung.rueckweg(v, eingabe());
       case "/api/mcp/verbinden": { nur("POST"); V(); return verbinde(eingabe()); }
       case "/api/mcp/trennen": { nur("POST"); return trenne(eingabe()); }
-      case "/api/mcp/konfiguration": { nur("GET"); return konfiguration(); }
-      case "/api/ki/erkennen": nur("GET"); return erkenneAgenten({ neu: q.get("neu") === "1" });
+      case "/api/mcp/konfiguration": { nur("GET"); return konfiguration(q); }
+      case "/api/ki/erkennen": {
+        nur("GET");
+        const erg = await erkenneAgenten({ neu: q.get("neu") === "1" });
+        return { ...erg, programme: erkenneProgramme({ agenten: erg.agenten }) }; // Programme mit Einstellungsdatei (Cursor meldet weiter `cursorDa`)
+      }
       case "/api/vaults": nur("GET"); return vaultListe(v);
       case "/api/vaults/aktiv": {
         nur("POST");
@@ -315,8 +326,8 @@ export function erzeugeHandler(o) {
   // Gesamtfrist 25 s für get/remove/add zusammen; bei Ablauf wird der laufende Aufruf samt Prozessgruppe beendet.
   function verbinde(e) {
     if (e.ziel === "codex") return verbindeCodex(e);
-    if (e.ziel === "cursor") return verbindeCursor(e);
-    if (e.ziel !== "claude") throw new HttpFehler(400, "Unbekanntes Ziel — möglich ist: claude, codex, cursor.");
+    if (Object.hasOwn(ADAPTER, e.ziel)) return ADAPTER[e.ziel].verbinde(adapterCtx(), e);
+    if (e.ziel !== "claude") throw new HttpFehler(400, ZIELE_TEXT);
     return verbindeClaude(e);
   }
 
@@ -326,8 +337,8 @@ export function erzeugeHandler(o) {
   // Hooks und Statuszeile bei Claude Code sind ein eigener Schalter (/api/kern/verdrahten) und bleiben unberührt.
   function trenne(e) {
     if (e.ziel === "codex") return trenneCodex();
-    if (e.ziel === "cursor") return trenneCursor();
-    if (e.ziel !== "claude") throw new HttpFehler(400, "Unbekanntes Ziel — möglich ist: claude, codex, cursor.");
+    if (Object.hasOwn(ADAPTER, e.ziel)) return ADAPTER[e.ziel].trenne(adapterCtx());
+    if (e.ziel !== "claude") throw new HttpFehler(400, ZIELE_TEXT);
     return trenneClaude(e);
   }
 
@@ -379,55 +390,15 @@ export function erzeugeHandler(o) {
     }
   }
 
-  // Cursor: Eintrag „brain“ aus ~/.cursor/mcp.json nehmen. Wie beim Verbinden: vorher Sicherung, andere Einträge bleiben, kaputtes JSON wird nie überschrieben.
-  function trenneCursor() {
-    const eintrag = cursorEintrag();
-    if (!eintrag) throw new HttpFehler(404, "Der MCP-Server wurde nicht gefunden.");
-    const ordner = join(homedir(), ".cursor"), datei = join(ordner, "mcp.json");
-    let roh;
-    try { roh = readFileSync(datei, "utf8"); } catch (err) {
-      if (err && err.code === "ENOENT") return { ok: true, warNichtVerbunden: true };
-      throw new HttpFehler(502, "Die Datei ~/.cursor/mcp.json ließ sich nicht lesen. Entferne den Eintrag „brain“ dort von Hand.");
-    }
-    let doc = null;
-    if (!roh.trim()) return { ok: true, warNichtVerbunden: true };
-    try { doc = JSON.parse(roh); } catch { doc = null; }
-    if (!doc || typeof doc !== "object" || Array.isArray(doc) || (doc.mcpServers !== undefined && (!doc.mcpServers || typeof doc.mcpServers !== "object" || Array.isArray(doc.mcpServers)))) {
-      throw new HttpFehler(422, "Die Datei ~/.cursor/mcp.json ist kein gültiges JSON in der erwarteten Form. Kortex ändert sie deshalb nicht. Entferne den Eintrag „brain“ dort von Hand.", { art: "kaputt" });
-    }
-    const alt = doc.mcpServers && doc.mcpServers.brain;
-    if (alt === undefined) return { ok: true, warNichtVerbunden: true };
-    const vergleich = alt && typeof alt === "object"
-      ? befehlsArt(alt.command, JSON.stringify(alt.args || []) === JSON.stringify(eintrag.args), [eintrag.command], Array.isArray(alt.args) && alt.args.length === 1 ? alt.args[0] : null)
-      : "anders";
-    if (vergleich === "anders") throw new HttpFehler(409, "Bei Cursor steht unter dem Namen „brain“ ein anderer Eintrag, nicht der von Kortex. Kortex lässt ihn stehen.", { art: "anders" });
-    let tmp = null;
-    try {
-      let ziel = datei;
-      try { ziel = realpathSync(datei); } catch { /* bleibt datei */ }
-      const modus = statSync(ziel).mode & 0o777;
-      const sicherung = sichereCursorDatei(ordner, datei, ziel, modus);
-      const { brain: _weg, ...rest } = doc.mcpServers;
-      const neu = { ...doc, mcpServers: rest };
-      tmp = `${ziel}.brain-neu`;
-      writeFileSync(tmp, JSON.stringify(neu, null, 2) + "\n", { mode: modus });
-      chmodSync(tmp, modus);
-      renameSync(tmp, ziel);
-      tmp = null;
-      return { ok: true, sicherung };
-    } catch (err) {
-      if (err instanceof HttpFehler) throw err;
-      throw new HttpFehler(502, `Cursor ließ sich nicht trennen (Fehler ${err && err.code ? err.code : "unbekannt"} bei ~/.cursor/mcp.json). Entferne den Eintrag „brain“ dort von Hand.`);
-    } finally {
-      if (tmp) try { rmSync(tmp, { force: true }); } catch { /* egal */ }
-    }
-  }
-
   // Konfiguration zum Kopieren für andere KI-Programme: der Eintrag im üblichen Format (mcpServers → Name → command/args). Liest nur.
-  function konfiguration() {
-    const text = cursorText();
+  // Ohne `ziel` im üblichen Format (mcpServers); mit `ziel` genau so, wie das Programm es erwartet (+ Ort der Datei).
+  function konfiguration(q) {
+    const ziel = q.get("ziel");
+    if (ziel && !Object.hasOwn(ADAPTER, ziel)) throw new HttpFehler(400, ZIELE_TEXT);
+    const ad = ziel ? ADAPTER[ziel] : ADAPTER.cursor;
+    const text = ad.konfiguration(adapterCtx());
     if (!text) throw new HttpFehler(404, "Der MCP-Server wurde nicht gefunden.");
-    return { json: text };
+    return { json: text, ...(ziel ? { ort: ad.anzeige } : {}) };
   }
 
   // Codex: `codex mcp get brain --json` (nur zum Vergleichen), bei fremdem Eintrag nach Rückfrage `remove`, dann `add`.
@@ -462,75 +433,6 @@ export function erzeugeHandler(o) {
       if (err instanceof HttpFehler && err.status === 504) throw new HttpFehler(504, "Codex hat nicht rechtzeitig geantwortet (nach 25 Sekunden abgebrochen). Kopiere den Befehl und führe ihn im Terminal aus.", { befehl });
       throw err;
     }
-  }
-
-  // Cursor: Eintrag „brain“ in ~/.cursor/mcp.json. Vorher Sicherung; andere Einträge bleiben unverändert; kaputtes JSON wird nie überschrieben.
-  function verbindeCursor(e) {
-    const eintrag = cursorEintrag(), befehl = cursorText();
-    if (!eintrag) throw new HttpFehler(404, "Der MCP-Server wurde nicht gefunden.", { befehl: null });
-    const ordner = join(homedir(), ".cursor"), datei = join(ordner, "mcp.json");
-    let doc = {}, vorhanden = false;
-    try {
-      const roh = readFileSync(datei, "utf8");
-      vorhanden = true;
-      if (roh.trim()) { // leere Datei zählt wie neu
-        try { doc = JSON.parse(roh); } catch { doc = null; }
-        if (!doc || typeof doc !== "object" || Array.isArray(doc) || (doc.mcpServers !== undefined && (!doc.mcpServers || typeof doc.mcpServers !== "object" || Array.isArray(doc.mcpServers)))) {
-          throw new HttpFehler(422, "Die Datei ~/.cursor/mcp.json ist kein gültiges JSON in der erwarteten Form. Kortex Studio ändert sie deshalb nicht. Ergänze den Eintrag von Hand:", { art: "kaputt", befehl });
-        }
-      }
-    } catch (err) {
-      if (err instanceof HttpFehler) throw err;
-      if (err && err.code !== "ENOENT") throw new HttpFehler(502, "Die Datei ~/.cursor/mcp.json ließ sich nicht lesen. Ergänze den Eintrag von Hand:", { befehl });
-    }
-    const alt = doc.mcpServers && doc.mcpServers.brain;
-    if (alt !== undefined) {
-      const vergleich = alt && typeof alt === "object"
-        ? befehlsArt(alt.command, JSON.stringify(alt.args || []) === JSON.stringify(eintrag.args), [eintrag.command], Array.isArray(alt.args) && alt.args.length === 1 ? alt.args[0] : null)
-        : "anders";
-      if (vergleich === "gleich") return { ok: true, schonVerbunden: true };
-      if (vergleich !== "alt" && e.umstellen !== true) throw new HttpFehler(409, "Bei Cursor ist unter dem Namen „brain“ schon ein anderer Server eingetragen. Möchtest du ihn auf Kortex Studio umstellen?", { art: "anders", befehl });
-    }
-    let tmp = null;
-    try {
-      let sicherung = null, modus = 0o600; // neue Datei: nur für den Nutzer lesbar (andere MCP-Server tragen oft Tokens ein)
-      let ziel = datei; // ein Symlink (Dotfiles) bleibt ein Symlink: geschrieben wird beim echten Ziel
-      if (vorhanden) {
-        try { ziel = realpathSync(datei); } catch { /* bleibt datei */ }
-        modus = statSync(ziel).mode & 0o777;
-        sicherung = sichereCursorDatei(ordner, datei, ziel, modus);
-      } else mkdirSync(ordner, { recursive: true });
-      const neu = { ...doc, mcpServers: { ...(doc.mcpServers || {}), brain: eintrag } };
-      tmp = `${ziel}.brain-neu`;
-      writeFileSync(tmp, JSON.stringify(neu, null, 2) + "\n", { mode: modus });
-      chmodSync(tmp, modus); // umask darf die Rechte nicht verändern
-      renameSync(tmp, ziel);
-      tmp = null;
-      return { ok: true, ...(sicherung ? { sicherung } : {}) };
-    } catch (err) {
-      if (err instanceof HttpFehler) throw err;
-      throw new HttpFehler(502, `Cursor ließ sich nicht einrichten (Fehler ${err && err.code ? err.code : "unbekannt"} bei ~/.cursor/mcp.json). Ergänze den Eintrag von Hand:`, { befehl });
-    } finally {
-      if (tmp) try { rmSync(tmp, { force: true }); } catch { /* egal */ }
-    }
-  }
-
-  // Sicherung neben der Datei (mit den Rechten des Originals, nie eine vorhandene überschreiben); nur die letzten 3 bleiben, sie enthalten fremde Tokens.
-  function sichereCursorDatei(ordner, datei, ziel, modus) {
-    const stamm = `${datei}.brain-sicherung-`, zeit = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
-    let sicherung = null;
-    for (let i = 1; i <= 50 && !sicherung; i++) {
-      const name = `${stamm}${zeit}${i > 1 ? `-${i}` : ""}`;
-      try { copyFileSync(ziel, name, fsKonst.COPYFILE_EXCL); sicherung = name; } catch (err) { if (!err || err.code !== "EEXIST") throw err; }
-    }
-    if (!sicherung) throw Object.assign(new Error("Sicherung"), { code: "EEXIST" });
-    chmodSync(sicherung, modus);
-    try {
-      const praefix = stamm.slice(ordner.length + 1);
-      const alle = readdirSync(ordner).filter((n) => n.startsWith(praefix)).sort();
-      for (const n of alle.slice(0, Math.max(0, alle.length - 3))) try { rmSync(join(ordner, n), { force: true }); } catch { /* egal */ }
-    } catch { /* Aufräumen ist nicht kritisch */ }
-    return sicherung;
   }
 
   async function verbindeClaude(e) {
