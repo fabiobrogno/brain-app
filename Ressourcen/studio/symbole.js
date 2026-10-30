@@ -72,7 +72,7 @@ const ICONS = {
   stecker: p("M6 2.5v3M10 2.5v3M4.5 5.5h7v2.2A3.5 3.5 0 018 11.2a3.5 3.5 0 01-3.5-3.5zM8 11.2v2.3"),
   vorlage: p("M4 2.5h8A1.5 1.5 0 0113.5 4v8a1.5 1.5 0 01-1.5 1.5H4A1.5 1.5 0 012.5 12V4A1.5 1.5 0 014 2.5z") + p("M2.5 6h11M6 6v7.5"),
   klonen: c(5, 4, 1.6) + c(11, 4, 1.6) + c(8, 12, 1.6) + p("M5 5.6v.8a2 2 0 002 2h2a2 2 0 002-2v-.8M8 8.4v2"),
-  marke: p("M6.77 3.71H3.84a1.43 1.43 0 000 2.86h1.62a1.43 1.43 0 010 2.86H3.84a1.43 1.43 0 000 2.86h8.32a1.43 1.43 0 000-2.86h-1.62a1.43 1.43 0 010-2.86h1.62a1.43 1.43 0 000-2.86H9.23"), // Windung der App (Entwurf 3 „Windung“, vereinfacht): ein Strang, vier Bahnen je Seite, Spalt in der Mitte
+  marke: p("M7.29 3.71H10.29a1.43 1.43 0 010 2.86H5.71a1.43 1.43 0 000 2.86h4.58a1.43 1.43 0 010 2.86H7.29"), // Windung der App (Entwurf 3 „Windung“, vereinfacht): eine durchgehende Linie in vier Bahnen
   punkt: c(8, 8, 3, voll),
   ansicht: p("M2 8s2.2-4.5 6-4.5S14 8 14 8s-2.2 4.5-6 4.5S2 8 2 8z") + c(8, 8, 1.8),
   papierkorb: p("M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8a1 1 0 001 .9h3.8a1 1 0 001-.9l.6-8"),

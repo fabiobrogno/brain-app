@@ -55,7 +55,7 @@ test("symbol(): jedes Symbol hat das 16er-Raster und in jeder Größe 1,5 px Str
   expect(r.anzahl).toBeGreaterThan(60);
 });
 
-test("symbol(\"marke\"): die Windung der App (ein Strang aus Bahnen und Wendungen, keine Knoten), spiegelgleich, im 16er Raster", async ({ page }) => {
+test("symbol(\"marke\"): die Windung der App (eine durchgehende Linie aus vier Bahnen, keine Knoten), oben/unten spiegelgleich, im 16er Raster", async ({ page }) => {
   await start(page);
   const r = await page.evaluate(async () => {
     const m = await import("/symbole.js");
@@ -70,13 +70,13 @@ test("symbol(\"marke\"): die Windung der App (ein Strang aus Bahnen und Wendunge
   expect(r.kreise).toBe(0); // nicht mehr das Netz aus Knoten
   expect(r.pfade).toBe(1); // ein durchgehender Strang
   expect(r.d.match(/M/g)).toHaveLength(1);
-  expect(r.d.match(/a[\d.]+ [\d.]+ 0 [01][01]/gi)).toHaveLength(6); // sechs Wendungen (je Seite drei)
+  expect(r.d.match(/a[\d.]+ [\d.]+ 0 [01][01]/gi)).toHaveLength(3); // drei Wendungen: vier Bahnen
   const rand = 0.75; // halbe Strichstärke im Raster
   expect(r.box.x - rand).toBeGreaterThanOrEqual(0);
   expect(r.box.x + r.box.w + rand).toBeLessThanOrEqual(16);
   expect(r.box.y - rand).toBeGreaterThanOrEqual(0);
   expect(r.box.y + r.box.h + rand).toBeLessThanOrEqual(16);
-  expect(Math.abs(r.box.x + r.box.w / 2 - 8)).toBeLessThan(0.05); // links und rechts spiegelgleich um die Mitte
+  expect(Math.abs(r.box.x + r.box.w / 2 - 8)).toBeLessThan(0.05); // waagerecht und senkrecht mittig
   expect(Math.abs(r.box.y + r.box.h / 2 - 8)).toBeLessThan(0.05);
 });
 

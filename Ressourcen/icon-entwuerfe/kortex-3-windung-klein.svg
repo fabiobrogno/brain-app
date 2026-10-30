@@ -1,9 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-<!-- Kleinvariante von kortex-3-windung-v2a.svg fuer 16 und 32 px: groesserer Squircle (weniger Rand), kein Glanz/Innenlicht/Rand/Schatten,
-     vereinfachte Windung (vier Bahnen, symmetrisch, dicker Strich, gleiche Geometrie wie das Menueleisten-Symbol), gleiche Farben. -->
+<!-- Kleinvariante von kortex-3-windung.svg fuer 16 und 32 px: groesserer Squircle (weniger Rand), kein Glanz/Innenlicht/Rand/Schatten,
+     dieselbe Serpentine mit vier statt sechs Bahnen und dickerem Strich (gleiche Geometrie wie das Menueleisten-Symbol), gleiche Farben. -->
 <defs>
 <linearGradient id="bg" x1="0.2" y1="0" x2="0.8" y2="1"><stop offset="0" stop-color="#8F85F7"/><stop offset="0.5" stop-color="#5B4ED6"/><stop offset="1" stop-color="#3A2EA6"/></linearGradient>
 </defs>
 <rect x="56" y="56" width="912" height="912" rx="205" fill="url(#bg)"/>
-<path d="M445.5 281L288 281A77 77 0 0 0 288 435L375.5 435A77 77 0 0 1 375.5 589L288 589A77 77 0 0 0 288 743L736 743A77 77 0 0 0 736 589L648.5 589A77 77 0 0 1 648.5 435L736 435A77 77 0 0 0 736 281L578.5 281" fill="none" stroke="#FFFFFF" stroke-width="80.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M468 248H652.8A88 88 0 0 1 652.8 424H371.2A88 88 0 0 0 371.2 600H652.8A88 88 0 0 1 652.8 776H468" fill="none" stroke="#FFFFFF" stroke-width="92.4" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
