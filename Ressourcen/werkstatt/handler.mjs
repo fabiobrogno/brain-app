@@ -185,6 +185,9 @@ export function erzeugeHandler(o) {
     const V = () => { if (!v) throw new HttpFehler(409, "Es ist noch kein Vault geöffnet.", { keinVault: true }); return v; };
     // Ein von Kortex angelegter/geklonter/geöffneter Vault kommt in die Liste der KI-Konten (alle gesperrt; das einzige Konto bei angelegt/geklont posteingang).
     const neuerStand = (r, herkunft = "geoeffnet") => { try { konten.vaultHinzu(r.vault.pfad, herkunft); } catch { /* der Vault ist gesperrt, bis die Liste wieder geht */ } wechsleZu(r.vault.pfad); return { ...vaultListe(aktuell), vault: r.vault, git: r.git }; };
+    // POST /api/aufgaben/archivieren { pfad } | { aelterAlsTage }: erledigte Aufgaben ins Archiv verschieben (kein Löschen; nur in einem vertrauten Vault).
+    // Vor der PATCH-Route: „archivieren“ ist nie ein Aufgabenpfad (die haben immer den Ordner davor).
+    if (pfad === "/api/aufgaben/archivieren") { nur("POST"); return V().aufgabenArchivieren(eingabe()); }
     // PATCH /api/aufgaben/<pfad der Aufgabe im Vault>: Status, Rang, Felder einer Aufgabe ändern
     if (pfad.startsWith("/api/aufgaben/")) {
       nur("PATCH");

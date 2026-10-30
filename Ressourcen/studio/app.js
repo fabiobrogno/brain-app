@@ -278,7 +278,7 @@ function setzeFenstertitel() {
 
 // ======================================================= Index (Notizen, Typen, Ansichten)
 // Wie der Werkstatt-Index: _-Ordner im Posteingang sind maschinell, Vorlagen und Agenten-Anweisungen in der Wurzel keine Notizen
-const bereichVonPfad = (p) => (/^90_/.test(p) ? "archiv" : /^00_inbox\/_/.test(p) ? "maschine" : p.startsWith("01_vorlagen/") ? "vorlage"
+const bereichVonPfad = (p) => (/^90_/.test(p) || (S.aufgabenOrdner && p.toLowerCase().startsWith(S.aufgabenOrdner.toLowerCase() + "/archiv/") && p.split("/").length === 3) ? "archiv" : /^00_inbox\/_/.test(p) ? "maschine" : p.startsWith("01_vorlagen/") ? "vorlage"
   : /^(claude|agents|gemini)\.md$/i.test(p) ? "system" : p.startsWith("00_inbox/") ? "inbox" : p.startsWith("09_wiki/") ? "wissen" : (S.aufgabenOrdner && p.toLowerCase().startsWith(S.aufgabenOrdner.toLowerCase() + "/") && p.split("/").length === 2) ? "aufgabe" : "notiz");
 const SICHTBAR = new Set(["inbox", "notiz", "wissen"]); // erscheinen in „Alle Notizen“, Typen und Ansichten
 const istNotiz = (n) => SICHTBAR.has(n.bereich) && !n.generiert;
