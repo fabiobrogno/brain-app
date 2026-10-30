@@ -305,16 +305,6 @@ body.e-seite { background: var(--e-schreibtisch); display: grid; place-items: ce
 .e-ki-einst .e-reihe { display: flex; align-items: center; gap: 10px; }
 .e-ki-einst .e-reihe .e-cap { width: 52px; font-size: 10.5px; }
 .e-stufe-text { margin: 0; font-size: 12px; line-height: 1.45; color: var(--text-2); }
-.e-mehr-knopf { justify-self: start; border: 0; background: none; padding: 2px 0; font-size: 12.5px; font-weight: 500; color: var(--text-2); display: inline-flex; gap: 4px; align-items: center; }
-.e-mehr-knopf:hover { color: var(--text); }
-.e-mehr-knopf .sym { transition: transform var(--d) var(--ease-out); }
-.e-mehr-knopf[aria-expanded="true"] .sym { transform: rotate(90deg); }
-.e-weitere { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; animation: e-pop 320ms var(--ease-flow) both; }
-.e-weitere a, .e-beliebt a { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: var(--r); border: 1px solid var(--linie); color: var(--text); text-decoration: none; font-size: 12.5px; font-weight: 500; }
-.e-weitere a:hover, .e-beliebt a:hover { background: var(--hover); }
-.e-weitere a .sym:last-child, .e-beliebt a .sym:last-child { margin-left: auto; color: var(--text-3); }
-.e-weitere .e-logo-tile, .e-beliebt .e-logo-tile { width: 24px; height: 24px; border-radius: 6px; }
-.e-beliebt { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; width: 100%; margin-top: 8px; text-align: left; }
 
 /* ---------- Schritt Fertig ---------- */
 .e-zusammen { border-radius: var(--r-xl); border: 1px solid var(--linie); background: var(--erhoben); overflow: hidden; }
@@ -420,7 +410,6 @@ html.e-app .e-ampel { display: none; }
 .e-probe-feld .bs-feld:focus-within { box-shadow: none; }
 .e-zusammen .e-z .knopf { flex: none; }
 .e-doch { margin-top: 6px; }
-.e-beliebt a, .e-weitere a { cursor: pointer; }
 .e-erneut { margin-top: 6px; }
 .e-win #toast-host { position: absolute; right: 16px; bottom: 16px; z-index: 80; }
 .e-windung-punkt { stroke-width: 30; }
@@ -431,3 +420,5 @@ html.e-app .e-ampel { display: none; }
 .e-win .dialog { width: min(400px, calc(100% - 32px)); }
 .e-win .dialog-rumpf:empty { display: none; }
 .e-win .dialog > .dialog-satz { padding-bottom: 18px; }
+.e-ki-hinweis { display: grid; justify-items: start; gap: 8px; }
+.e-ki-hinweis[hidden] { display: none; }

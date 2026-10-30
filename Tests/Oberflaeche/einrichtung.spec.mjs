@@ -223,26 +223,27 @@ for (const thema of ["light", "dark"]) {
     test("KI: erkannte Programme mit Konto und Stufe, Weitere Programme mit Logos, Verbinden mit Zugriff", async ({ page }) => {
       const z = await oeffne(page);
       await zuKi(page);
-      await expect(page.locator(".e-abschnitt-kopf")).toContainText("Auf deinem Mac gefunden");
-      await expect(page.locator(".e-ki-zeile")).toHaveCount(3);
+      await expect(page.locator(".ka-kopf")).toContainText("Auf diesem Computer gefunden");
+      await expect(page.locator(".ka-karte")).toHaveCount(3);
+      await expect(page.locator('.ka-karte[data-ki="claude"]')).toHaveAttribute("aria-checked", "true");
+      await expect(page.locator('.ka-karte[data-ki="cursor"]')).toHaveAttribute("aria-checked", "false");
+      await expect(page.locator(".e-ki-zeile")).toHaveCount(1);
       await expect(page.locator('.e-ki-zeile[data-ki="claude"]')).toContainText("Version 2.1.310 · 2 Konten gefunden");
-      await expect(page.locator('.e-ki-zeile[data-ki="claude"]')).toHaveAttribute("data-an", "true");
-      await expect(page.locator('.e-ki-zeile[data-ki="cursor"]')).toHaveAttribute("data-an", "false");
       await expect(page.locator(sel("weiter"))).toHaveText(/1 KI verbinden/);
-      // Cursor dazuschalten, Stufe „Lesen“, Claude-Konto „Firma“
-      await page.click('.e-ki-zeile[data-ki="cursor"] .e-ki-kopf');
+      // Cursor dazuwählen, Stufe „Lesen“, Claude-Konto „Firma“
+      await page.click('.ka-karte[data-ki="cursor"]');
       await expect(page.locator(sel("weiter"))).toHaveText(/2 KIs verbinden/);
       await page.click('.e-ki-zeile[data-ki="cursor"] [data-wert="lesen"]');
       await page.click('.e-ki-zeile[data-ki="claude"] [data-wert="k_claude_firma"]');
       await expect(page.locator('.e-ki[data-ki="cursor"] .e-stufe')).toHaveText("Lesen");
       await expect(page.locator('.e-ki[data-ki="claude"]')).toHaveClass(/an/);
       await bild(page, "w3-ki", thema);
-      await page.click(sel("weitere"));
-      await expect(page.locator('.e-weitere [data-ki-link="gemini"]')).toBeVisible();
-      await expect(page.locator('.e-weitere [data-ki-link="gemini"] .ki-logo svg')).toBeVisible();
+      await page.click(sel("ki-weitere"));
+      await expect(page.locator('.ka-zeile[data-ki="gemini"]')).toBeVisible();
+      await expect(page.locator('.ka-zeile[data-ki="gemini"] .ki-logo svg')).toBeVisible();
+      await expect(page.locator('.ka-zeile[data-ki="windsurf"]')).toHaveAttribute("aria-disabled", "true");
       await bild(page, "w3-ki-weitere", thema);
-      await page.click('.e-weitere [data-ki-link="zed"]');
-      expect(z.aktionen.some((a) => a.aktion === "extern" && a.wert === "https://zed.dev")).toBe(true);
+      await page.click(sel("ki-weitere"));
       await page.click(sel("weiter"));
       await expect(page.locator("#win")).toHaveAttribute("data-step", "4", { timeout: 8000 });
       const v = (z.verbunden || []).map((b) => b);
@@ -265,8 +266,9 @@ for (const thema of ["light", "dark"]) {
     test("KI: nichts gefunden — Anleitungen statt Sackgasse, ohne KI weiter", async ({ page }) => {
       const z = await oeffne(page, { ki: "keine" });
       await zuKi(page);
-      await expect(page.locator(".e-pane:not(.raus) .e-leer")).toContainText("Noch keine KI auf diesem Mac");
-      await expect(page.locator(".e-beliebt a")).toHaveCount(3);
+      await expect(page.locator(".e-pane:not(.raus) .e-ki-hinweis")).toContainText("funktioniert auch ohne");
+      await expect(page.locator(".ka")).toHaveAttribute("data-erkennung", "keine");
+      await expect(page.locator(".ka-kopf")).toContainText("Beliebte KIs");
       await expect(page.locator(sel("weiter"))).toHaveText(/Ohne KI weiter/);
       await expect(page.locator("#k-ki-platz")).toContainText("noch keine");
       await bild(page, "w3b-keine-ki", thema);
@@ -281,7 +283,7 @@ for (const thema of ["light", "dark"]) {
     test("KI: vorhandener Eintrag wird erst nach Rückfrage umgestellt; Fehler zeigt den Befehl zum Kopieren", async ({ page }) => {
       const z = await oeffne(page, { verbindenFehler: { claude: { status: 409, fehler: "anders", art: "anders" }, codex: { status: 502, fehler: "Codex hat den Eintrag abgelehnt.", befehl: "codex mcp add brain -- node x" } } });
       await zuKi(page);
-      await page.click('.e-ki-zeile[data-ki="codex"] .e-ki-kopf');
+      await page.click('.ka-karte[data-ki="codex"]');
       await page.click(sel("weiter"));
       await expect(page.locator('[data-bereich="umstellen"]')).toContainText("Auf diesen Vault umstellen?");
       await expect(page.locator('[data-bereich="befehl"] code')).toHaveText("codex mcp add brain -- node x");
@@ -291,7 +293,7 @@ for (const thema of ["light", "dark"]) {
       await page.click(sel("umstellen"));
       await expect(page.locator('.e-ki-zeile[data-ki="claude"]')).toHaveClass(/verbunden/, { timeout: 6000 });
       expect(z.verbunden.some((b) => b.ziel === "claude" && b.umstellen === true)).toBe(true);
-      await page.click('.e-ki-zeile[data-ki="codex"] .e-ki-kopf'); // Codex ausschalten, weiter
+      await page.click('.ka-karte[data-ki="codex"]'); // Codex abwählen, weiter
       await page.click(sel("weiter"));
       await expect(page.locator("#win")).toHaveAttribute("data-step", "4", { timeout: 6000 });
     });

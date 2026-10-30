@@ -15,9 +15,10 @@ vorab gebautes Bündel (siehe CodeMirror).
 | three.js (3D-Ansicht) | r170 | MIT | `kern/ansicht/vendor/three.bundle.js` |
 | Geist und Geist Mono (Schriften) | Variable | SIL Open Font License 1.1 | `kern/ansicht/vendor/fonts/`, `studio/vendor/fonts/` |
 | Gehirnoberfläche (aus AOMIC-ID1000) | 1.2.1 | CC0 1.0 | `kern/ansicht/vendor/brain-mesh/brain-mesh.js` |
-| Simple Icons (Logos der KI-Programme und Dienste) | 16.36.0 | CC0 1.0 | `logos/`, `studio/ki-logos.js`, `studio/marken.js` |
+| Simple Icons (Logos der KI-Programme und Dienste) | 16.36.0 | CC0 1.0 | `logos/`, `studio/ki-katalog.js`, `studio/marken.js` |
+| Logos weiterer KI-Programme (Marken der Inhaber, nur zur Kennzeichnung) | abgerufen 30.10.2026 | Marke des Inhabers | `logos/`, `studio/ki-katalog.js` (Quelle je Datei: `logos/HERKUNFT.md`) |
 | Simple Icons (MCP-Logos der 3D-Ansicht) | 16.33.0 | CC0 1.0 | `kern/ansicht/vendor/icons/` |
-| Orca (Gestaltungsmuster und -werte: Dialoge, Einrichtung, leere Zustände, Design-System v2) | Commits cf5b462, 9bccd67 | MIT | `studio/studio.css`, `studio/bausteine.css`, `studio/dialoge.css`, `studio/aufgaben.css`, `studio/hilfen.js`, `studio/willkommen.js`, `studio/einrichtung.css`, `studio/einrichtung.js`, `studio/einrichtung-buehne.js` (Gestaltung) |
+| Orca (Gestaltungsmuster und -werte: Dialoge, Einrichtung, leere Zustände, Design-System v2; Liste der KI-Programme) | Commits cf5b462, 9bccd67 | MIT | `studio/studio.css`, `studio/bausteine.css`, `studio/dialoge.css`, `studio/aufgaben.css`, `studio/hilfen.js`, `studio/willkommen.js`, `studio/einrichtung.css`, `studio/einrichtung.js`, `studio/einrichtung-buehne.js` (Gestaltung), `gemeinsam/ki-katalog.json` (Programmliste) |
 
 Die Pfade sind relativ zu `Kortex.app/Contents/Resources`, außer Sparkle (relativ zu `Kortex.app/Contents`).
 
@@ -363,8 +364,14 @@ analyses*, Scientific Data 8, 85. https://doi.org/10.1038/s41597-021-00870-6 · 
 Die Logos der KI-Programme und Dienste stammen aus dem Projekt Simple Icons (https://simpleicons.org), Version 16.36.0, unverändert
 bis auf die gekürzten Dateinamen. Die SVG-Daten des Projekts stehen unter CC0 1.0 (Lizenztext im Paket:
 `logos/LIZENZ-simple-icons-CC0.md`, Herkunft und Darstellung: `logos/HERKUNFT.md`). Dateien: claude.svg, copilot.svg, cursor.svg,
-gemini.svg, github.svg, opencode.svg, warp.svg, zed.svg, LIZENZ-simple-icons-CC0.md, HERKUNFT.md. Die Pfaddaten stehen unverändert
-auch in `studio/ki-logos.js` und `studio/marken.js`.
+gemini.svg, github.svg, opencode.svg, warp.svg, zed.svg, dazu aus Simple Icons kimi, trae, qwen-code, rovo und muse (Dateien in `logos/`,
+Zuordnung in `logos/HERKUNFT.md`), LIZENZ-simple-icons-CC0.md, HERKUNFT.md. Die Zeichnungen stehen unverändert auch in
+`studio/ki-katalog.js` (erzeugt) und `studio/marken.js`.
+
+Die Logos der übrigen KI-Programme im Katalog (`gemeinsam/ki-katalog.json`, rund 40 Terminal-KIs, Editoren und Apps) wurden einmalig von der
+offiziellen Seite des jeweiligen Produkts bzw. von der Datei geholt, die diese Seite selbst als Symbol angibt (Adresse und Datum je Datei in
+`logos/HERKUNFT.md`), gesäubert (keine Skripte, keine Verweise nach außen) und beschnitten bzw. auf eine Fläche reduziert. Kortex lädt nie
+ein Logo aus dem Netz. Es sind Marken ihrer Inhaber (siehe unten); die Dateien stehen nicht unter CC0. Alle Logo-Dateien des Ordners `logos/`: aider.png, amp.svg, ante.svg, antigravity.svg, aug.svg, autohand.svg, claude.svg, cline.svg, codebuddy.svg, codebuff.png, codex.svg, command-code.svg, continue.png, copilot.svg, cursor.svg, devin.svg, droid.svg, freebuff.png, gemini.svg, github.svg, goose.png, grok.svg, jcode.svg, kilo.svg, kimi.svg, kiro.svg, mistral-vibe.svg, muse.svg, omp.svg, openclaude.svg, openclaw.svg, opencode.svg, pi.svg, prime-agent.png, qoder.png, qwen-code.svg, rovo.svg, trae.svg, vscode.png, warp.svg, windsurf.svg, zcode.png, zed.svg.
 
 Die MCP-Logos der 3D-Ansicht (`kern/ansicht/vendor/icons/`, Simple Icons 16.33.0, 46 Symbole, CC0 1.0; Zuordnung in `zuordnung.json`,
 Herkunft in `LIZENZ.md`) sind: airtable.svg, anthropic.svg, asana.svg, claude.svg, cloudflare.svg, confluence.svg, discord.svg,
@@ -377,7 +384,7 @@ zoom.svg.
 **Marken.** CC0 gilt für die Zeichnungen, nicht für die dargestellten Marken. Alle Namen, Logos und Marken gehören ihren Inhabern
 (unter anderen Anthropic, OpenAI, Anysphere (Cursor), Google, GitHub/Microsoft, Zed Industries, OpenCode, Warp und die Anbieter der
 MCP-Dienste). Kortex nutzt sie nur, um Programme und Dienste zu kennzeichnen, mit denen es sich verbindet. **Kortex ist mit keinem dieser
-Unternehmen verbunden und wird von ihnen weder empfohlen noch unterstützt.** Das OpenAI/Codex-Logo ist bewusst nicht enthalten.
+Unternehmen verbunden und wird von ihnen weder empfohlen noch unterstützt.** Das OpenAI-Zeichen (für Codex) stammt von `developers.openai.com`; OpenAI hat keine Freigabe erteilt, Kortex nutzt es nur zur Kennzeichnung und nimmt es auf Wunsch des Inhabers heraus (Begründung: `logos/HERKUNFT.md`).
 
 ## Orca (Gestaltungsmuster, MIT)
 
@@ -394,6 +401,10 @@ Website https://orca.dev), Stand Commit `cf5b462fba8462678256b25d05cec2adb8dca41
   wechseln die Zeile“ samt Zeilenmaßen (Symbolkachel 28 px mit 6 px Ecke, Titel 14 px, Beschreibung 12 px, Gruppenüberschrift in Großbuchstaben mit
   Sperrung) nach `src/renderer/src/components/sidebar/AddRepoStartSteps.tsx`
   → `studio/willkommen.js` und `studio/dialoge.css` („Andere Wege“);
+- die Liste der KI-Programme (Terminal-KIs mit Erkennungsbefehl und Ersatznamen, Reihenfolge, Webseiten) und das Muster „gefundene bzw. beliebte KIs als Karten, weitere zum Aufklappen“ nach
+  `src/shared/tui-agent-config.ts`, `src/shared/tui-agent-favicon-domains.ts`, `src/renderer/src/lib/agent-catalog-entries-*.ts` und
+  `src/renderer/src/components/onboarding/AgentStep.tsx` (Stand @9bccd67) → `gemeinsam/ki-katalog.json`, `studio/bausteine.js` (`kiAuswahl()`),
+  `Sources/BrainCore/KiKatalog.swift`; die Programmlogos von Orca (`agent-icons`) sind nicht übernommen;
 - der leere Zustand als Kreis (48 px) mit Symbol, einem kurzen Satz und höchstens einer Aktion nach
   `src/renderer/src/components/native-chat/NativeChatEmptyState.tsx` → `studio/dialoge.css`, `studio/bausteine.js` (`leerBlock()`);
 - die Gestaltungswerte des Design-Systems v2 (Graustufen hell/dunkel, Ränder 7 % und 13 %, Radius-Skala aus `--radius: 0.625rem`, die drei Höhenstufen

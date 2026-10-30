@@ -10,7 +10,7 @@ import { kiLogo } from "./ki-logos.js";
 import { markenLogo } from "./marken.js";
 import { TE } from "./texte-einrichtung.js";
 import { erzeugeBuehne, markeSvg, windungFortschritt } from "./einrichtung-buehne.js";
-import { erzeugeKi, KI_NAME } from "./einrichtung-ki.js";
+import { erzeugeKi } from "./einrichtung-ki.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const win = $("#win"), panes = $("#panes"), stepperEl = $("#stepper"), fussEl = $("#fuss"), buehneEl = $("#buehne");
@@ -81,7 +81,7 @@ const S = {
 const ki = erzeugeKi({
   vaultPfad: () => S.vault?.pfad || null,
   beiAenderung: () => { renderFuss(); renderBuehne(); },
-  oeffneExtern, kopiere, melde: (text, sym) => toast(text),
+  kopiere, melde: (text) => toast(text),
 });
 
 const buehne = erzeugeBuehne(buehneEl, { fensterEl: win });
@@ -595,7 +595,6 @@ function geheZu(n) {
   document.activeElement?.blur?.(); // ↩ gilt vom Rumpf aus (siehe Tastatur); kein Fokusring auf dem Hauptknopf nach einem Schrittwechsel
   if (n === 2) ladeSync();
   if (n === 3 && !ki.z.geladen) ki.lade();
-  if (n === 3 && ki.z.geladen && !ki.z.programme.length) { /* nichts: Leerzustand steht da */ }
 }
 function zurueck() { if (!S.busy && S.step > 0) geheZu(S.step - 1); }
 

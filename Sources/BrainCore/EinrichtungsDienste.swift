@@ -102,11 +102,12 @@ public struct KiProgramm: Equatable, Sendable {
 /// Claude Code und Codex trägt Kortex über deren Befehl ein, Cursor und die weiteren Programme (`dateiOrt != nil`) über ihre
 /// Einstellungsdatei: additiv, mit Sicherung, atomar, eine kaputte Datei bleibt unberührt.
 public enum KiZiel: String, CaseIterable, Sendable {
-    case claude, codex, cursor
-    case claudeDesktop, gemini, copilot, zed, opencode, warp
+    // Reihenfolge wie im KI-Katalog (Ressourcen/gemeinsam/ki-katalog.json): Claude Code zuerst, dann die beliebten, dann Apps und Editoren
+    case claude, codex, cursor, gemini, copilot, opencode
+    case claudeDesktop, zed, warp
 
     /// Welche Ziele die Werkstatt in dieser Version verbinden kann (`/api/mcp/verbinden`).
-    public static let verbindbar: [KiZiel] = [.claude, .codex, .cursor, .claudeDesktop, .gemini, .copilot, .zed, .opencode, .warp]
+    public static let verbindbar: [KiZiel] = [.claude, .codex, .cursor, .gemini, .copilot, .opencode, .claudeDesktop, .zed, .warp]
 
     /// Name in `KiProgramm.id`. Cursor hat keine eigene Programmdatei in der Liste der Werkstatt (`cursor-agent` ist nur eine
     /// von mehreren Spuren; die App oder `~/.cursor` zählen auch): `WerkstattDienste` bildet daraus den Eintrag „cursor“.

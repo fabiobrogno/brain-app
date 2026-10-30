@@ -249,7 +249,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
       if (!t) t = koerper.split(/\r?\n/).find((z) => z.trim()).trim().replace(/\s+/g, " ").slice(0, 80);
       inhalt = `# ${t}\n\n${koerper}\n`;
     }
-    const datum = berlinHeute(jetzt());
+    const datum = opts.heute || berlinHeute(jetzt()); // opts.heute: feste Zeit für Tests (wie bei den anderen Aufrufen)
     return { pfad: legeFreiAn(inboxOrdner(), `${datum}_${slug(t)}`, inhalt) };
   }
 

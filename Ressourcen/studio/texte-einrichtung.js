@@ -195,6 +195,7 @@ export const TE = {
     fehler: (n, m) => `${n}: ${m}`,
     nichtGefunden: (n) => `${n} wurde nicht gefunden.`,
     platzKeine: "noch keine",
+    nichtInstalliertKurz: "nicht installiert, Kortex trägt sich trotzdem ein",
     platzSchritt: "Schritt 3",
     weitereHinweis: "Weitere Programme richtest du im Studio unter Einstellungen → KI & Konten ein.",
     neustart: (n) => `Eingetragen. Starte ${n} neu, dann ist dein Vault dabei.`,
