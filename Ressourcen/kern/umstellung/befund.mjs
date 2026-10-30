@@ -19,6 +19,7 @@ import { pruefeBackupPfad, merkerDateiFuer } from "../backup.mjs";
 import { echtesGit, gitLesen, lokaleKonfiguration, werte, pruefungAlle, ordneSchluesselEin, zaehleFormen, formSchluessel, adressArt, lokaleRemotes, hooksPfadArt, gitVerzeichnis } from "./git-lage.mjs";
 import { pruefeEinstellungen, pruefeBekannteMaerkte, pruefeBefehleUndSkills, pruefeShellDateien, zeilenMitVerweis, nennt } from "./restverweise.mjs";
 import { mcpLage } from "./mcp-lage.mjs";
+import { findeVerwaiste } from "./verwaist.mjs";
 import { erkenneProfile, profileAusPfaden } from "./profile.mjs";
 
 export const BEFUND_VERSION = 1;
@@ -299,10 +300,18 @@ export function erstelleBefund({ vault, home = homedir(), env = process.env, sup
       let ich = null;
       try { ich = JSON.parse(readFileSync(join(support, "umstellung", "geraet.json"), "utf8")).id ?? null; } catch { /* keine Geräte-ID */ }
       let andere = 0;
-      try { andere = readdirSync(join(vault, ".kortex", "geraete")).filter((n) => /\.json$/.test(n) && n.replace(/\.json$/, "") !== ich).length; } catch { /* keine Merker */ }
-      if (andere > 0) f("E26", "anderer-mac", "hinweis", "Vault", andere, "info", `Dieser Vault wurde auf ${mehrzahl(andere, "einem anderen Mac", andere + " anderen Macs")} schon mit Kortex umgestellt. Auf diesem Mac stellt Kortex nur die Einstellungen dieses Macs um; das Aufräumen im Vault übernimmt der erste Mac.`, { details: { andereMacs: andere } });
+      let aufgeraeumt = 0;
+      try { const namen = readdirSync(join(vault, ".kortex", "geraete")).filter((n) => /\.json$/.test(n) && n.replace(/\.json$/, "") !== ich); andere = namen.length; for (const n of namen) { try { if (typeof JSON.parse(readFileSync(join(vault, ".kortex", "geraete", n), "utf8")).phaseB === "string") aufgeraeumt++; } catch { /* unlesbar */ } } } catch { /* keine Merker */ }
+      if (andere > 0) f("E26", "anderer-mac", "hinweis", "Vault", andere, "info", `Dieser Vault wurde auf ${mehrzahl(andere, "einem anderen Mac", andere + " anderen Macs")} schon mit Kortex umgestellt. Auf diesem Mac stellt Kortex nur die Einstellungen dieses Macs um; das Aufräumen im Vault übernimmt der erste Mac.${aufgeraeumt > 0 ? " Auf einem anderen Mac wurde der alte Werkzeug-Ordner schon aufgeräumt; hier verschwindet er beim nächsten Abgleich aus dem Vault." : ""}`, { details: { andereMacs: andere, aufgeraeumt } });
       const kv = cfg && typeof cfg.kernVersion === "string" ? cfg.kernVersion : null;
       if (kv && versionKleiner(kernVersion(), kv)) f("E26", "kortex-zu-alt", "blocker", "Vault", 1, "kortex-aktualisieren", "Kortex auf diesem Mac ist älter, als dein Vault es erwartet. Bitte aktualisiere Kortex, bevor du hier etwas umstellst.", { details: { vault: kv, kortex: kernVersion() } });
+    });
+
+    // --- 9b. Verwaiste Einbindungen in der globalen git-Konfiguration (E29): Vault verschoben oder gelöscht, der Block von Kortex zeigt ins Leere -------------------------
+    versuche(() => {
+      const gg = typeof env.GIT_CONFIG_GLOBAL === "string" && env.GIT_CONFIG_GLOBAL.startsWith("/") ? env.GIT_CONFIG_GLOBAL : join(home, ".gitconfig");
+      const waisen = findeVerwaiste(gg);
+      if (waisen.length) f("E29", "include-verwaist", "frage", "Persönliche Einstellungen (Versionsverlauf)", waisen.length, "include-aufraeumen", `In deinen persönlichen Einstellungen für den Versionsverlauf ${mehrzahl(waisen.length, "steht ein Eintrag", "stehen " + waisen.length + " Einträge")} von Kortex für ${mehrzahl(waisen.length, "einen Vault", "Vaults")}, den es an dieser Stelle nicht mehr gibt (verschoben oder gelöscht). Das schadet nicht. Kortex kann ${mehrzahl(waisen.length, "ihn", "sie")} auf Wunsch aufräumen; der Rückweg bleibt möglich.`, { phase: "B", details: { eintraege: waisen.length } });
     });
 
     // --- 10. Ort des Vaults (E27) und Altlasten außerhalb (E28) -------------------------------------------------------------------------

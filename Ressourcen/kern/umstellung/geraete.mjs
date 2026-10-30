@@ -17,7 +17,7 @@ export const id = "A8";
 const MELDUNG = "Kortex: Gerät umgestellt";
 export const titel = "Gerät im Vault vermerken";
 
-function versionKleiner(a, b) {
+export function versionKleiner(a, b) {
   const z = (v) => String(v || "").split(/[.+-]/).map((x) => (/^\d+$/.test(x) ? Number(x) : 0));
   const x = z(a), y = z(b);
   for (let i = 0; i < Math.max(x.length, y.length); i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) < (y[i] || 0); }

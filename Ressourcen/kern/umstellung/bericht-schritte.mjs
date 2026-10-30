@@ -60,6 +60,7 @@ export function rueckwegText(r) {
 
 export function standText(s) {
   const z = [`Phase: ${s.phase || "noch nicht umgestellt"}`];
+  if (s.phaseB && s.phaseB.status) z.push(`Aufräumen (Phase B): ${s.phaseB.status === "fertig" ? "erledigt" : s.phaseB.status}`);
   if (s.unterbrochen) z.push("Die Umstellung wurde unterbrochen: starte sie noch einmal („Weitermachen“) oder mache sie rückgängig.");
   if (s.probelauf) z.push(`Probelauf: ${s.probelauf.ampel === "gruen" ? (s.probelauf.gueltig ? "in Ordnung" : "in Ordnung, aber nicht mehr aktuell") : "nicht in Ordnung"}`);
   for (const [id, e] of Object.entries(s.schritte || {})) z.push(`  ${id}: ${e.status}`);
@@ -75,4 +76,49 @@ export function protokollText(p) {
 export function kopieText(r) {
   if (r.plan) return r.anzahl ? `Es liegt ${r.anzahl === 1 ? "eine Probekopie" : r.anzahl + " Probekopien"} bereit. Mit --ja wird sie gelöscht.\n` : "Es liegt keine Probekopie bereit.\n";
   return r.uebrig ? "Nicht alles ließ sich löschen.\n" : r.geloescht ? "Die Probekopie ist gelöscht. Dein Original war nie betroffen.\n" : "Es lag keine Probekopie da.\n";
+}
+
+// --- Phase B (P7d) -------------------------------------------------------------------------------------------------------------------------
+export function torText(tor) {
+  const z = [tor.frei ? "Das Aufräumen ist freigegeben." : "Das Aufräumen ist noch nicht freigegeben:"];
+  for (const b of tor.bedingungen || []) z.push(`  ${b.erfuellt ? "✓" : "✗"} ${b.titel}${b.erfuellt ? "" : ` – ${b.text}`}`);
+  return z.join("\n");
+}
+export function phaseBText(r) {
+  const z = [];
+  if (r.plan) {
+    z.push("Das würde Kortex aufräumen (nichts davon ist passiert):");
+    for (const s of r.schritte || []) z.push(`  ${s.noetig ? "•" : "–"} ${s.id} ${s.titel}: ${s.text}`);
+    z.push("", torText(r.tor), "", "Starte das Aufräumen mit --ja (nach einem grünen Probelauf: --probelauf --ja).");
+    return z.join("\n") + "\n";
+  }
+  if (!r.ok) {
+    z.push(`Schritt ${r.fehlerBei} hat nicht geklappt${r.zurueckgenommen ? " und wurde zurückgenommen" : ""}. Der alte Werkzeug-Ordner ist nicht verloren: er liegt im Archiv im Support-Ordner von Kortex.`);
+    z.push("Du kannst es noch einmal versuchen oder das Aufräumen rückgängig machen (zurueck --schritt B3,B2,B1).");
+    return z.join("\n") + "\n";
+  }
+  z.push(r.mitWarnungen ? "Die Prüfung am Schluss hat etwas gefunden. Du kannst das Aufräumen rückgängig machen." : "Fertig. Der alte Werkzeug-Ordner liegt jetzt im Archiv und ist aus deinem Vault verschwunden.");
+  if (!r.mitWarnungen) z.push("Der Ordner bleibt 30 Tage im Archiv, danach bietet Kortex an, ihn in den Papierkorb zu legen. Sichere deinen Vault jetzt einmal.");
+  for (const s of r.schritte || []) z.push(`  ${s.status === "ok" ? "✓" : s.status === "rot" ? "✗" : "–"} ${s.id} ${s.titel}${s.grund ? ` (${s.grund})` : ""}`);
+  return z.join("\n") + "\n";
+}
+export function probelaufBText(r) {
+  const z = [];
+  if (r.plan) { z.push("Kortex probiert das Aufräumen zuerst an einer Kopie deines Vaults aus – samt Rückweg. Das Original bleibt dabei unberührt.", "Starte den Probelauf mit --ja."); return z.join("\n") + "\n"; }
+  z.push(r.ok ? "Der Probelauf ist in Ordnung. Am Original wurde nichts geändert." : "Hier hat etwas nicht geklappt. Am Original wurde nichts geändert.");
+  for (const c of r.kriterien || []) z.push(`  ${KRIT[c.status] || "?"} ${c.titel}${c.status === "rot" ? grund(c.grund) : ""}`);
+  if (r.ok) z.push("", "Das Tor für das Aufräumen kann sich jetzt öffnen (phase-b zeigt den Stand).");
+  else if (r.kopieBehalten) z.push("", "Die Kopie bleibt zur Ansicht liegen und wird später gelöscht.");
+  return z.join("\n") + "\n";
+}
+export function aufraeumenText(r) {
+  const z = [];
+  if (r.angebote) {
+    if (!r.angebote.length) return "Es gibt gerade nichts aufzuräumen.\n";
+    for (const a of r.angebote) z.push(`  ${a.faellig ? "•" : "–"} ${a.id}${a.name ? ` (${a.name})` : ""}: ${a.text}`);
+    z.push("", "Mit --was <verwaist|archiv|sicherungen|bundles> --ja räumt Kortex das auf (Papierkorb, nie endgültig).");
+    return z.join("\n") + "\n";
+  }
+  if (r.plan) return `${r.angebot.text}\nMit --ja in den Papierkorb legen.\n`;
+  return r.ok ? "Aufgeräumt.\n" : "Nicht alles ließ sich aufräumen.\n";
 }

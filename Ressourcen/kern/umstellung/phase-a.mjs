@@ -40,7 +40,7 @@ export function standPhaseA(z) {
   let gueltig = false;
   if (merker && merker.ergebnis === "gruen") { try { gueltig = merker.fingerabdruck === fingerabdruck(momentaufnahme(z, { mitStatus: false })); } catch { gueltig = false; } }
   return {
-    phase: zu.phase, kernVersion: zu.kernVersion, schritte: Object.fromEntries(Object.entries(zu.schritte).map(([id, e]) => [id, { status: e.status, zeit: e.zeit, anzahl: e.anzahl, grund: e.grund }])),
+    phase: zu.phase, kernVersion: zu.kernVersion, phaseA: zu.phaseA || null, schritte: Object.fromEntries(Object.entries(zu.schritte).map(([id, e]) => [id, { status: e.status, zeit: e.zeit, anzahl: e.anzahl, grund: e.grund }])),
     laeuft: s.belegt, unterbrochen: s.unterbrochen || (!!zu.laeuft && !s.belegt),
     probelauf: merker ? { zeit: merker.zeit, ampel: merker.ergebnis, gueltig } : null, a9: zu.a9 || null,
     bundle: existsSync(join(ablageOrdner(z), "vor-kortex.bundle")),
@@ -152,6 +152,8 @@ export async function phaseA(z, { entscheidungen = {}, schritte = null, bestaeti
     const rot = !!a9 && a9.ampel === "rot";
     if (rot) { zustand.phase = null; delete zustand.vertrauen; }
     if (fertig && !rot && (!schritte || !schritte.length)) {
+      // erster Abschluss zählt für das Freigabe-Tor von Phase B (Zeit und Version); ein erneuter Lauf setzt die Wartezeit nicht zurück
+      if (zustand.phase !== "A" || !zustand.phaseA) zustand.phaseA = { zeit: jetztIso(), kernVersion: kernVersion() };
       zustand.phase = "A";
       zustand.weitereMacs = ent.weitereMacs;
       zustand.vertrauen = vermerkeUmgestellt().vermerken ? "vermerken" : null;   // die Werkstatt trägt den Vault als vertraut ein (vertrauen-merker.mjs)
