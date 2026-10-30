@@ -568,7 +568,7 @@ button.st:focus-visible, .baum .zeile:focus-visible, .baum .pfeil:focus-visible,
 .st[data-st="geaendert"] > span:not(.st-zahl) { max-width: 32ch; overflow: hidden; text-overflow: ellipsis; }
 @container status (max-width: 1180px) { .st[data-st="version"], .st[data-st="remote"] > span { display: none; } .st[data-st="remote"] { padding: 0 6px; }
   .st[data-st="verlauf"] > span, .st[data-st="nutzung"] > span, .st[data-st="gesundheit"] > span:first-of-type:not(:last-child) { display: none; }
-  .st[data-st="vault"] > span:last-child { max-width: 14ch; } .st[data-st="geaendert"] > span:not(.st-zahl) { max-width: 32ch; } }
+  .st[data-st="vault"] > span:last-child { max-width: 11ch; } .st[data-st="geaendert"] > span:not(.st-zahl) { max-width: 26ch; } }
 @container status (max-width: 960px) {
   .st[data-st="verlauf"] > span, .st[data-st="claude"] > span:not(.ki-logo), .st[data-st="nutzung"] > span, .st[data-st="gesundheit"] > span:first-of-type:not(:last-child) { display: none; }
   .st[data-st="vault"] > span:last-child { max-width: 72px; overflow: hidden; text-overflow: ellipsis; }
