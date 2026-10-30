@@ -29,6 +29,10 @@ export const kiEintrag = (id) => NACH_ID.get(kiLogoId(id)) || null;
 
 export const kiLogoName = (id) => kiEintrag(id)?.name ?? null;
 
+// Name in Sätzen („Claude hat eine Aufgabe angelegt“): meist der Katalogname, bei Claude Code kurz „Claude“
+const KURZ = { claude: "Claude" };
+export const kiKurzname = (id) => { const e = kiEintrag(id); return e ? (KURZ[e.id] ?? e.name) : null; };
+
 export function kiLogoMarkup(id, groesse = 16) {
   const logo = kiEintrag(id)?.logo;
   if (!logo) return null;
