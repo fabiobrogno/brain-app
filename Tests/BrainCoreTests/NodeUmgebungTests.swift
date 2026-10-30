@@ -79,6 +79,13 @@ import Foundation
     #expect(BrueckenVerbindung.zeitlimit(fuerPfad: "/api/github/repo-anlegen") == .seconds(45), "Token 15 s + Anfrage 15 s im Worst Case")
     #expect(BrueckenVerbindung.zeitlimit(fuerPfad: "/api/sicherung/verbinden") == .seconds(180))
     #expect(BrueckenVerbindung.zeitlimit(fuerPfad: "/api/sicherung/bereit") == .seconds(90))
+    #expect(BrueckenVerbindung.zeitlimit(fuerPfad: "/api/umstellung/probelauf") == .seconds(46 * 60), "der Probelauf kopiert den Vault und braucht Minuten")
+    #expect(BrueckenVerbindung.zeitlimit(fuerPfad: "/api/umstellung/phase-a") == .seconds(46 * 60))
+    #expect(BrueckenVerbindung.zeitlimit(fuerPfad: "/api/umstellung/rueckweg/") == .seconds(46 * 60))
+    #expect(BrueckenVerbindung.zeitlimit(fuerPfad: "/api/umstellung/befund") == .seconds(75))
+    #expect(BrueckenVerbindung.zeitlimit(fuerPfad: "/api/umstellung/stand?x=1") == .seconds(75))
+    #expect(BrueckenVerbindung.zeitlimit(fuerPfad: "/api/umstellung/kopie-loeschen") == .seconds(75))
+    #expect(BrueckenVerbindung.zeitlimit(fuerPfad: "/api/umstellungx") == .seconds(30))
     #expect(BrueckenVerbindung.zeitlimit(fuerPfad: "/api/notiz") == .seconds(30))
     #expect(BrueckenVerbindung.zeitlimit(fuerPfad: "/api/gitx") == .seconds(30))
 }
@@ -128,7 +135,7 @@ import Foundation
 
 @Test func testSchalterGehenNurInDebugBuildsAnKindprozesse() {
     let schalter = ["KORTEX_VAULT_VERTRAUT": "alle", "KORTEX_KERN_UNSTABIL_ERLAUBT": "1", "KORTEX_STARTER_PFAD": "/x/kortex", "KORTEX_KERN_TEMP_WURZELN": "",
-                    "BRAIN_GIT_PROGRAMM": "/x/git", "BRAIN_GIT_HOOKS_ERLAUBT": "/x/hooks"]
+                    "BRAIN_GIT_PROGRAMM": "/x/git", "BRAIN_GIT_HOOKS_ERLAUBT": "/x/hooks", "KORTEX_DIENST_PLATTFORM": "darwin"]
     let roh = schalter.merging(["PATH": "/usr/bin", "HOME": "/h"]) { a, _ in a }
     let release = NodeUmgebung.bereinigt(roh, testmodusWeitergeben: false)
     for k in schalter.keys { #expect(release[k] == nil, "\(k) darf im Release nicht in den Kindprozess") }

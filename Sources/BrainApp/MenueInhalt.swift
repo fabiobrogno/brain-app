@@ -31,6 +31,9 @@ struct MenueInhalt: View {
         Button("Ordner als Vault öffnen …") { zustand.sende(.vaultOeffnen) }.keyboardShortcut("o", modifiers: [.command, .shift])
         Button("Ordner im Finder zeigen") { zustand.zeigeOrdner() }.keyboardShortcut("f", modifiers: [.command, .shift]).disabled(zustand.vault == nil)
         Divider()
+        if zustand.umstellungAngeboten {
+            Button("Vault umstellen …") { zustand.sende(.umstellung) }.help("Dieser Vault stammt aus der Zeit vor Kortex. Kortex probiert die Umstellung zuerst an einer Kopie aus.")
+        }
         Button("Einstellungen …") { zustand.sende(.einstellungen) }.keyboardShortcut(",").disabled(zustand.vault == nil)
         Button("Kortex einrichten …") { zustand.zeigeAssistent() }.keyboardShortcut("e")
         Button("Status neu prüfen") { Task { await zustand.aktualisiere() } }.keyboardShortcut("r")

@@ -9,6 +9,7 @@ import { anzahlVorschlaege } from "./vorschlaege.mjs";
 import { leseAutomatik } from "./einstellungen.mjs";
 import { leseLetzter } from "./tageslauf/protokoll.mjs";
 import { sichtbare } from "./rueckfragen.mjs";
+import { umstellungHinweis } from "./umstellung/hinweis.mjs";
 
 const SYMBOL = { ok: "✓", hinweis: "⚠", problem: "✕" };
 
@@ -18,7 +19,7 @@ export function bewerte({ fehler, berichtFehlt, zuTun, vorschlaege }) {
   return "ok";
 }
 
-export async function brainStatus(vault, { jetzt = Date.now() } = {}) {
+export async function brainStatus(vault, { jetzt = Date.now(), support } = {}) {
   const meldungen = [];
   let fehler = false, berichtFehlt = false;
   const version = kernVersion();
@@ -52,10 +53,13 @@ export async function brainStatus(vault, { jetzt = Date.now() } = {}) {
     tageslauf = { schalter: leseAutomatik(vault).werte.tageslauf, modus: l?.modus ?? null, status: l?.status ?? null, zeit: l?.zeit ?? null,
       letzterErfolg: l?.letzterErfolg ?? null, autostufe: l?.autostufe ?? "normal", lernmodus: l?.lernmodus === true, fehlerquote: l?.fehlerquote ?? null, zahlen: l?.zahlen ?? null };
   } catch { /* Status bleibt ohne Tageslauf-Block */ }
+  // P7c: Vault aus der Kit-Zeit (alter Werkzeug-Ordner liegt noch im Vault, Phase A nicht durch) → Menüleiste bietet „Vault umstellen …“ an
+  let umstellung = { altlasten: false, phase: null };
+  try { umstellung = umstellungHinweis(vault, support ? { support } : {}); } catch { /* ohne Hinweis */ }
   return {
     version, quellVault: false,   // Feld bleibt für die App (Status-Modell); den Entwickler-Vault gibt es im Kern-Umzug nicht mehr
     zustand: bewerte({ fehler, berichtFehlt, zuTun, vorschlaege }),
-    meldungen, zahlen: { vorschlaege, konflikte, abgelaufen, zuTun, rueckfragen }, tageslauf,
+    meldungen, zahlen: { vorschlaege, konflikte, abgelaufen, zuTun, rueckfragen }, tageslauf, umstellung,
   };
 }
 

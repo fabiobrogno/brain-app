@@ -35,7 +35,10 @@ export function altvault({ faelle = [], vaultName = null } = {}) {
   writeFileSync(join(support, "bin", "kortex"), "#!/bin/sh\n", { mode: 0o755 });
   writeFileSync(join(support, "bin", "kern", "mcp", "brain-mcp.mjs"), readFileSync(new URL("./fake-mcp-server.mjs", import.meta.url), "utf8"));
 
-  const ENV = { PATH: process.env.PATH, HOME: home, LC_ALL: "C", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1", GIT_AUTHOR_NAME: "T", GIT_AUTHOR_EMAIL: "t@example.org", GIT_COMMITTER_NAME: "T", GIT_COMMITTER_EMAIL: "t@example.org" };
+  const ENV = { PATH: process.env.PATH, HOME: home, LC_ALL: "C", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1",
+    // Kein Hintergrund-Aufräumen nach dem Commit: ein neues git startet nach `commit` losgelöst "maintenance run --auto". Das hält kurz .git/objects/maintenance.lock und ändert die Zeit von
+    // .git/objects – mitten im Vorher/Nachher-Vergleich von baumStand() (CI-Flake "der Befund darf nichts schreiben"). Per Umgebung statt .git/config, damit der Fall "maintenance" der einzige Fund bleibt.
+    GIT_CONFIG_COUNT: "2", GIT_CONFIG_KEY_0: "maintenance.auto", GIT_CONFIG_VALUE_0: "false", GIT_CONFIG_KEY_1: "gc.auto", GIT_CONFIG_VALUE_1: "0", GIT_AUTHOR_NAME: "T", GIT_AUTHOR_EMAIL: "t@example.org", GIT_COMMITTER_NAME: "T", GIT_COMMITTER_EMAIL: "t@example.org" };
   const g = (...a) => execFileSync("git", ["-C", vault, ...a], { env: ENV, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   const schreibe = (pfad, text, modus) => { mkdirSync(dirname(pfad), { recursive: true }); writeFileSync(pfad, text, modus ? { mode: modus } : undefined); };
   const jsonDatei = (pfad) => { try { return JSON.parse(readFileSync(pfad, "utf8")); } catch { return {}; } };

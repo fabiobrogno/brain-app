@@ -65,3 +65,14 @@ export function standText(s) {
   for (const [id, e] of Object.entries(s.schritte || {})) z.push(`  ${id}: ${e.status}`);
   return z.join("\n") + "\n";
 }
+
+export function protokollText(p) {
+  const z = [`Das Protokoll liegt im Support-Ordner von Kortex: ${p.ordner}/${p.datei}`];
+  for (const e of p.zeilen || []) z.push(`  ${e.zeit || ""} ${e.lauf || ""} ${e.schritt || ""} ${e.ereignis || ""}${e.anzahl !== undefined ? ` (${e.anzahl})` : ""}${e.grund ? ` – ${e.grund}` : ""}`);
+  return z.join("\n") + "\n";
+}
+
+export function kopieText(r) {
+  if (r.plan) return r.anzahl ? `Es liegt ${r.anzahl === 1 ? "eine Probekopie" : r.anzahl + " Probekopien"} bereit. Mit --ja wird sie gelöscht.\n` : "Es liegt keine Probekopie bereit.\n";
+  return r.uebrig ? "Nicht alles ließ sich löschen.\n" : r.geloescht ? "Die Probekopie ist gelöscht. Dein Original war nie betroffen.\n" : "Es lag keine Probekopie da.\n";
+}

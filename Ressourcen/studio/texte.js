@@ -168,6 +168,8 @@ export const T = {
     entziehenKnopf: "Vertrauen entziehen", behalten: "Behalten",
     entzogen: "Vertrauen entzogen. Dieser Vault ist jetzt „Nur ansehen“.",
   },
+  // Umstellung eines Vaults aus der Kit-Zeit (P7c): Einträge der Einstellungen; der Rest steht in texte-umstellung.js (lädt bei Bedarf)
+  umstellung: { menue: "Vault umstellen …", fertig: "Umstellung ansehen …", nichtGeoeffnet: "Das geht in dieser Version noch nicht." },
   // Antwort der App auf „Übersicht öffnen“, wenn sie nicht aufgeht (grund „kein-kit“ oder „kern-nicht-bereit“)
   uebersicht: {
     keinKit: "Für diesen Ordner gibt es keine Übersicht: Es fehlt die Datei brain.config.json (sie macht den Ordner zu einem Kortex-Vault).",
@@ -180,7 +182,7 @@ export const T = {
   befehle: {
     neu: "Neue Notiz", merken: "Schnell merken", commit: "Änderungen sichern …", sync: "Mit Remote abgleichen",
     info: "Infospalte ein- oder ausblenden", suche: "Im Vault suchen", gesundheit: "Gesundheit anzeigen", nutzung: "KI-Nutzung anzeigen",
-    ordner: "Vault im Finder zeigen", ansicht: "Übersicht öffnen", mcp: "KI (Claude) verbinden",
+    ordner: "Vault im Finder zeigen", ansicht: "Übersicht öffnen", mcp: "KI (Claude) verbinden", umstellen: "Vault umstellen …",
     inNotiz: "In der Notiz suchen",
   },
   kuerzel: {
@@ -229,6 +231,7 @@ export const T = {
     remote: "Das Verbinden mit dem Remote läuft noch. Wenn du jetzt schließt, wird es abgebrochen.",
     oeffnen: "Das Öffnen des Ordners läuft noch. Wenn du jetzt schließt, wird es abgebrochen.",
     neu: "Das Anlegen des Vaults läuft noch. Wenn du jetzt schließt, wird es abgebrochen.",
+    umstellung: "Die Umstellung läuft noch. Wenn du jetzt schließt, bleibt sie angefangen; du kannst sie später fortsetzen oder zurücknehmen.",
     vault: "Das Öffnen des Vaults läuft noch. Wenn du jetzt schließt, wird es abgebrochen.",
     // Rückfall für jede Arbeit ohne eigenen Satz: nie die Worte einer anderen Arbeit
     sonst: "Es läuft noch etwas. Wenn du jetzt schließt, wird es abgebrochen.",
