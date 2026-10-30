@@ -18,6 +18,7 @@ import {
 import { momentaufnahme, fingerabdruck, pruefeAmOriginal, ampel } from "./pruefung.mjs";
 import { leseProbelaufMerker } from "./probelauf-merker.mjs";
 import { vermerkeUmgestellt } from "./vertrauen-merker.mjs";
+import { probekopien } from "./kopien.mjs";
 
 export { TestAbbruch };
 
@@ -43,6 +44,7 @@ export function standPhaseA(z) {
     laeuft: s.belegt, unterbrochen: s.unterbrochen || (!!zu.laeuft && !s.belegt),
     probelauf: merker ? { zeit: merker.zeit, ampel: merker.ergebnis, gueltig } : null, a9: zu.a9 || null,
     bundle: existsSync(join(ablageOrdner(z), "vor-kortex.bundle")),
+    kopien: (() => { try { return probekopien(z).length; } catch { return 0; } })(),    // liegen gebliebene Probekopien (Oberfläche: „Kopie jetzt löschen“)
   };
 }
 

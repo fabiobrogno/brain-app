@@ -208,8 +208,11 @@ export function erzeugeHandler(o) {
       case "/api/git/fassung": nur("GET"); return V().gitFassung(q.get("pfad"), q.get("sha"));
       case "/api/kern/stand": nur("GET"); return verdrahtung.stand(v);
       case "/api/kern/verdrahten": nur("POST"); return verdrahtung.verdrahte(v, eingabe());
+      case "/api/umstellung/hinweis": nur("GET"); return umstellung.hinweis(v);
       case "/api/umstellung/befund": nur("GET"); return umstellung.befund(v);
       case "/api/umstellung/stand": nur("GET"); return umstellung.stand(v);
+      case "/api/umstellung/protokoll": nur("GET"); return umstellung.protokoll(v);
+      case "/api/umstellung/kopie-loeschen": nur("POST"); return umstellung.kopieLoeschen(v, eingabe());
       case "/api/umstellung/probelauf": nur("POST"); return umstellung.probelauf(v, eingabe());
       case "/api/umstellung/phase-a": nur("POST"); return umstellung.phaseA(v, eingabe());
       case "/api/umstellung/rueckweg": nur("POST"); return umstellung.rueckweg(v, eingabe());

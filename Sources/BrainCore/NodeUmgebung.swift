@@ -23,7 +23,7 @@ public enum NodeUmgebung {
     /// aus den Vorgaben.
     static let testSchalter: Set<String> = [
         "KORTEX_VAULT_VERTRAUT", "KORTEX_KERN_UNSTABIL_ERLAUBT", "KORTEX_STARTER_PFAD", "KORTEX_KERN_TEMP_WURZELN",
-        "BRAIN_GIT_PROGRAMM", "BRAIN_GIT_HOOKS_ERLAUBT",
+        "BRAIN_GIT_PROGRAMM", "BRAIN_GIT_HOOKS_ERLAUBT", "KORTEX_DIENST_PLATTFORM",
     ]
     /// Marke der Vorschau (`VorschauModus.kindVorgaben`): Wer sie als Vorgabe setzt, bekommt keine Standardordner im PATH.
     /// Aus der geerbten Umgebung fliegt sie raus (`gesperrt`) — sie kommt nur von der App selbst.

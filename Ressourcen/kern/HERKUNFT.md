@@ -93,6 +93,11 @@ Der Kern liegt künftig außerhalb des Vaults (P3/P4: `Support/Kortex/kern/<appV
 - Werkstatt: `GET /api/umstellung/stand`, `POST /api/umstellung/probelauf|phase-a|rueckweg` (nur mit `bestaetigt: true` im Body wird geschrieben).
 - Tests: `Tests/Kern/test-umstellung-phase-a.mjs`, `test-umstellung-probelauf.mjs`, `test-umstellung-fixes.mjs`, `Tests/Node/umstellung-phase-a.test.mjs`; Hilfen `umstellung-hilfe.mjs`, Attrappen `fake-launchctl.mjs`, `fake-claude-mcp.mjs`, `fake-codex-mcp.mjs`, `fake-mcp-server.mjs`.
 
+## P7c: Oberfläche der Umstellung (Studio)
+- Kern: `umstellung/kopien.mjs` (Probekopien finden/löschen – nur Ordner `kortex-probelauf-<Kennung>-…` dieses Vaults, nie Verweise; Protokoll-Ansicht ohne Werte), `umstellung/hinweis.mjs` (billiger Hinweis: alter Werkzeug-Ordner liegt noch im Vault und Phase A ist nicht durch). `kortex umstellung protokoll|kopie-loeschen [--ja]`; `stand` meldet `kopien`; `status --json` enthält `umstellung: { altlasten, phase }` (Menüleiste „Vault umstellen …“).
+- Werkstatt: `GET /api/umstellung/hinweis|protokoll`, `POST /api/umstellung/kopie-loeschen` (nur mit `bestaetigt: true`).
+- Tests: `Tests/Kern/test-umstellung-oberflaeche.mjs`, `Tests/Node/umstellung-oberflaeche.test.mjs`; Fixture `fixture-altvault.mjs` schaltet das Aufräumen im Hintergrund nach dem Commit aus (CI-Flake „der Befund darf nichts schreiben“).
+
 ## Mitgenommen
 - `VERSION` (`0.5.1`, Stand des Exports; wird in P3 beim App-Bau auf die App-Version gesetzt)
 

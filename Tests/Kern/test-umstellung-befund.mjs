@@ -148,6 +148,19 @@ for (const [fall, erwartet] of Object.entries(FAELLE)) {
   });
 }
 
+// Ursache des einmaligen CI-Fehlers „der Befund darf nichts schreiben“ (Fall kit-versioniert): `git commit` im Fixture startete (git 2.56 auf dem Runner) losgelöst
+// „maintenance run --auto“; das hielt kurz .git/objects/maintenance.lock und änderte die Zeit von .git/objects – mitten im Vorher/Nachher-Vergleich. Der Befund war unschuldig.
+// Das Fixture schaltet das Aufräumen im Hintergrund jetzt per Umgebung aus; dieser Test hält fest, dass der gebaute Baum danach ruhig bleibt.
+test("Fixture: nach dem Bau läuft nichts mehr im Hintergrund (kein Aufräumen nach dem Commit, Baum bleibt ruhig)", async () => {
+  const a = altvault({ faelle: ["kit-versioniert"] });
+  try {
+    const vorher = baumStand(a.basis);
+    await new Promise((r) => setTimeout(r, 400));
+    assert.equal(baumStand(a.basis), vorher);
+    assert.ok(!/maintenance\.lock/.test(vorher));
+  } finally { a.weg(); }
+});
+
 test("sauberer Kortex-Vault (alles in neuer Form: Hooks, MCP, Dienst, Prüfung vor dem Speichern) = leerer Befund", () => {
   const a = altvault();
   try {

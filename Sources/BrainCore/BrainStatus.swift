@@ -20,6 +20,18 @@ public struct BrainStatus: Decodable, Equatable, Sendable {
     public let zahlen: Zahlen
     /// Letzter Tageslauf (B2-Kit); fehlt bei älteren Kits oder wenn noch keiner lief.
     public let tageslauf: TageslaufKurz?
+    /// Umstellung eines Vaults aus der Kit-Zeit (P7c, Kern `status.mjs`): liegt der alte Werkzeug-Ordner noch im Vault und ist die Umstellung nicht durch?
+    /// Fehlt bei älteren Kernen. Die App zeigt daraufhin nur den Menüeintrag „Vault umstellen …“; die Umstellung selbst läuft im Studio.
+    public let umstellung: Umstellung?
+
+    public struct Umstellung: Decodable, Equatable, Sendable {
+        public let altlasten: Bool
+        /// `"A"` nach abgeschlossener Phase A, sonst nil.
+        public let phase: String?
+    }
+
+    /// Soll die Menüleiste „Vault umstellen …“ anbieten? Nur bei gemeldeten Altlasten (nicht nach der Umstellung, nicht bei einem sauberen Vault).
+    public var bietetUmstellungAn: Bool { umstellung?.altlasten == true }
 
     /// Liest die letzte nicht-leere Zeile (frühere Zeilen könnten Hinweise anderer Module sein).
     public static func aus(ausgabe: String) throws -> BrainStatus {

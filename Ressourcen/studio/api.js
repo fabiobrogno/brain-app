@@ -100,7 +100,20 @@ export const api = {
   githubKonto: () => anfrage("GET", "/api/github/konto"),
   githubAbmelden: () => anfrage("POST", "/api/github/abmelden", {}),
   probe: (frage) => anfrage("POST", "/api/probe", { frage }),
+  // ---- Umstellung eines Vaults aus der Kit-Zeit (P7). Geschrieben wird nur mit bestaetigt: true — das setzt die Oberfläche erst nach dem Klick des Nutzers.
+  umstellungHinweis: () => anfrage("GET", "/api/umstellung/hinweis"),
+  umstellungBefund: () => anfrage("GET", "/api/umstellung/befund"),
+  umstellungStand: () => anfrage("GET", "/api/umstellung/stand"),
+  umstellungProtokoll: () => anfrage("GET", "/api/umstellung/protokoll"),
+  umstellungProbelauf: (entscheidungen) => anfrage("POST", "/api/umstellung/probelauf", { bestaetigt: true, ...(entscheidungen ? { entscheidungen } : {}) }),
+  umstellungPhaseA: (entscheidungen) => anfrage("POST", "/api/umstellung/phase-a", { bestaetigt: true, ...(entscheidungen ? { entscheidungen } : {}) }),
+  umstellungRueckwegListe: () => anfrage("POST", "/api/umstellung/rueckweg", {}),
+  umstellungRueckweg: ({ schritte, alles } = {}) => anfrage("POST", "/api/umstellung/rueckweg", { bestaetigt: true, ...(alles ? { alles: true } : { schritte }) }),
+  umstellungKopieLoeschen: () => anfrage("POST", "/api/umstellung/kopie-loeschen", { bestaetigt: true }),
 };
+
+// Fehler „Vault noch nicht als deiner bestätigt“ (Workspace-Trust): die Werkstatt antwortet 409 mit art „nicht-vertraut“; dort hat die Umstellung nichts verändert.
+export const nichtVertraut = (e) => e?.status === 409 && e?.daten?.art === "nicht-vertraut";
 
 // Aktion an die App (kein Datenweg); im Browser still ohne Wirkung.
 export function aktion(name, wert) {

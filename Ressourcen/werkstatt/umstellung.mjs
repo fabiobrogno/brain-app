@@ -1,15 +1,19 @@
 // werkstatt/umstellung.mjs — Umstellung eines Vaults aus der Kit-Zeit (Pakete P7a und P7b, Plan docs/plaene/p7-umstellung.md):
 //   GET  /api/umstellung/befund      → Befund (kern/umstellung/befund.mjs), nur lesend (P7a)
+//   GET  /api/umstellung/hinweis     → { altesWerkzeug: boolean } (P7c; ein einziges lstat, startet nichts: das Studio fragt damit billig, ob sich ein Befund lohnt)
 //   GET  /api/umstellung/stand       → { phase, schritte, laeuft, unterbrochen, probelauf: {zeit, ampel, gueltig}, a9, bundle } (nur lesend)
 //   POST /api/umstellung/probelauf   { bestaetigt: true, entscheidungen? }                      → Ampel je Kriterium (Probelauf an einer Kopie; ohne `bestaetigt` nur der Plan)
 //   POST /api/umstellung/phase-a     { bestaetigt: true, entscheidungen?, schritte? }           → Ergebnis je Schritt A0–A9 (ohne `bestaetigt` nur der Plan; verlangt einen grünen Probelauf)
 //   POST /api/umstellung/rueckweg    { bestaetigt: true, alles?: true | schritte: ["A4"] }      → Ergebnis je Schritt (ohne `bestaetigt` nur, was sich zurücknehmen lässt)
+//   GET  /api/umstellung/protokoll   → { ordner, datei, zeilen: [{ zeit, lauf, schritt, ereignis, anzahl?, grund? }], gekuerzt } (P7c; nur lesend, nie Werte, Ablageort mit ~ gekürzt)
+//   POST /api/umstellung/kopie-loeschen { bestaetigt: true }  → { geloescht, uebrig } (P7c; löscht nur die liegen gebliebene Probekopie dieses Vaults; ohne bestaetigt: { plan, anzahl })
 // Die Logik lebt im Kern; die Werkstatt ruft den Starter der App (`kortex umstellung … --vault <v> --json`, Muster verdrahtung.mjs) und reicht das Ergebnis durch. Es steht nie ein
 // Wert in einer Antwort (kein Hook-Befehl, kein MCP-Eintrag, kein git-Wert). Geschrieben wird NUR mit `bestaetigt: true` im Body – das setzt die Oberfläche erst nach dem Klick des Nutzers.
 // Vertrauen (P5): Probelauf und Phase A verlangen einen vertrauten Vault (Kern: Code `nicht-vertraut`, Exit 6 → hier 409 mit art „nicht-vertraut“). `vermerkeVertrauen` trägt nach einer
 // vollständigen Phase A nur dann etwas ein, wenn das Vertrauen inzwischen fehlt; ein vorhandenes bleibt mit seiner Herkunft unberührt (keine eigene Quelle „umgestellt“, siehe
 // kern/umstellung/vertrauen-merker.mjs).
-import { existsSync } from "node:fs";
+import { existsSync, lstatSync } from "node:fs";
+import { join } from "node:path";
 import { homedir } from "node:os";
 import { HttpFehler, kindUmgebung } from "../gemeinsam/basis.mjs";
 import { starte, neueFrist } from "../gemeinsam/prozess.mjs";
@@ -66,6 +70,14 @@ export function erzeugeUmstellung({ starter, support = null, vertrauen = null })
     return new HttpFehler(502, `${was} hat nicht geklappt. Am Original wurde nichts Halbes hinterlassen.`, { code: j && j.fehler });
   }
 
+  // Liegt der alte Werkzeug-Ordner im Vault? Nur ein lstat – kein Kindprozess (der Befund selbst liest den Versionsverlauf und Claude-Einstellungen)
+  function hinweis(v) {
+    if (!v) throw new HttpFehler(409, "Es ist noch kein Vault geöffnet.", { keinVault: true });
+    let da = false;
+    try { lstatSync(join(v.wurzel, ".tools")); da = true; } catch { /* kein alter Ordner */ }
+    return { altesWerkzeug: da };
+  }
+
   async function befund(v) {
     const { r, j } = await lauf(v, "befund", [], FRIST_LESEN);
     if (r.code !== 0 || !j || !Array.isArray(j.funde)) throw new HttpFehler(502, "Die Suche nach Altlasten hat nicht geklappt. Es wurde nichts verändert.");
@@ -74,6 +86,18 @@ export function erzeugeUmstellung({ starter, support = null, vertrauen = null })
   async function stand(v) {
     const { r, j } = await lauf(v, "stand", [], FRIST_LESEN);
     if (r.code !== 0 || !j || typeof j !== "object") throw fehlerAus(r, j, "Das Abfragen des Stands");
+    return j;
+  }
+
+  async function protokoll(v) {
+    const { r, j } = await lauf(v, "protokoll", [], FRIST_LESEN);
+    if (r.code !== 0 || !j || !Array.isArray(j.zeilen)) throw fehlerAus(r, j, "Das Lesen des Protokolls");
+    return j;
+  }
+  async function kopieLoeschen(v, b) {
+    if (!b || typeof b !== "object" || Array.isArray(b)) throw new HttpFehler(400, "Der Body muss ein Objekt sein.");
+    const { r, j } = await lauf(v, "kopie-loeschen", b.bestaetigt === true ? ["--ja"] : [], FRIST_LESEN);
+    if (r.code !== 0 || !j || typeof j !== "object") throw fehlerAus(r, j, "Das Löschen der Kopie");
     return j;
   }
 
@@ -107,7 +131,7 @@ export function erzeugeUmstellung({ starter, support = null, vertrauen = null })
   }
 
   return {
-    befund, stand,
+    hinweis, befund, stand, protokoll, kopieLoeschen,
     probelauf: (v, b) => schreibend(v, "probelauf", "Der Probelauf", b || {}, []),
     phaseA: (v, b) => schreibend(v, "phase-a", "Die Umstellung", b || {}, schrittArgs(b || {}), { vertrauenNachher: true }),
     rueckweg: (v, b) => {

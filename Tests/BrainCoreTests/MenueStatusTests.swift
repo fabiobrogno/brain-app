@@ -89,3 +89,31 @@ private func z(_ vorschlaege: Int, _ konflikte: Int, _ abgelaufen: Int) -> Brain
     #expect(zeilen(anzeige: .problem("kaputt"))[1].aktion == .studioOeffnen)
     #expect(zeilen(name: nil, anzeige: .keinVault, vertrauen: nil).map(\.aktion) == [.keine])
 }
+
+// MARK: Vault umstellen (P7c)
+
+private func statusMitUmstellung(_ block: String?) throws -> BrainStatus {
+    let zusatz = block.map { ",\"umstellung\":\($0)" } ?? ""
+    return try BrainStatus.aus(ausgabe: "{\"version\":\"1.0.0\",\"quellVault\":false,\"zustand\":\"ok\",\"meldungen\":[],\"zahlen\":{\"vorschlaege\":0,\"konflikte\":0,\"abgelaufen\":0,\"zuTun\":0}\(zusatz)}")
+}
+
+@Test func umstellungWirdNurBeiAltlastenAngeboten() throws {
+    let alt = try statusMitUmstellung(#"{"altlasten":true,"phase":null}"#)
+    let sauber = try statusMitUmstellung(#"{"altlasten":false,"phase":null}"#)
+    let fertig = try statusMitUmstellung(#"{"altlasten":false,"phase":"A"}"#)
+    let aelterKern = try statusMitUmstellung(nil)
+    #expect(alt.umstellung == BrainStatus.Umstellung(altlasten: true, phase: nil))
+    #expect(MenueStatus.bietetUmstellungAn(hatVault: true, status: alt))
+    #expect(!MenueStatus.bietetUmstellungAn(hatVault: true, status: sauber), "sauberer Vault: kein Eintrag")
+    #expect(!MenueStatus.bietetUmstellungAn(hatVault: true, status: fertig), "nach der Umstellung: kein Eintrag")
+    #expect(fertig.umstellung?.phase == "A")
+    #expect(!MenueStatus.bietetUmstellungAn(hatVault: true, status: aelterKern), "ältere Kerne kennen das Feld nicht")
+    #expect(aelterKern.umstellung == nil)
+    #expect(!MenueStatus.bietetUmstellungAn(hatVault: true, status: nil), "ohne Status (noch nicht gelesen oder Fehler)")
+    #expect(!MenueStatus.bietetUmstellungAn(hatVault: false, status: alt), "ohne Vault gibt es nichts umzustellen")
+}
+
+@Test func umstellungStehtNichtImKopfDesMenues() {
+    // Der Eintrag „Vault umstellen …“ ist eine Aktion unter den Vault-Befehlen, keine Statuszeile: der Kopf bleibt, wie er war
+    #expect(zeilen().map(\.text) == ["Mein Vault", "Alles in Ordnung"])
+}

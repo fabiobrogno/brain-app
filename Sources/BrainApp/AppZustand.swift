@@ -143,6 +143,8 @@ final class AppZustand: ObservableObject {
 
     /// Menü „Übersicht“: der Vault ist ein Brain UND der Kern ist bereit.
     var uebersichtMoeglich: Bool { kitVorhanden && kernBereitschaft.istBereit }
+    /// „Vault umstellen …“ im Menü (P7c): nur bei gemeldeten Altlasten; die Umstellung selbst läuft im Studio (`StudioBefehl.umstellung`).
+    var umstellungAngeboten: Bool { MenueStatus.bietetUmstellungAn(hatVault: vault != nil, status: status) }
 
     private static func gleich(_ a: URL?, _ b: URL?) -> Bool { a?.standardizedFileURL.path == b?.standardizedFileURL.path }
 

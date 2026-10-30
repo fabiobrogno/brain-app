@@ -5,6 +5,8 @@
 //   probelauf [--ja] [--entscheide a=ja,b=nein] [--claude-home <ordner>]… [--json]
 //   phase-a  [--ja] [--schritt A1,A4]… [--entscheide …] [--claude-home …]… [--json]
 //   zurueck  [--ja] (--schritt A4,… | --alles) [--entscheide …] [--claude-home …]… [--json]
+//   protokoll [--json]                                                   nur lesend: Ablageort und letzte Zeilen des Protokolls (nie Werte)
+//   kopie-loeschen [--ja] [--json]                                       löscht die liegen gebliebene Probekopie dieses Vaults (ohne --ja nur: was liegt da)
 // Ohne --ja schreibt keiner dieser Befehle etwas: sie zeigen, was sie täten (probelauf: Plan, phase-a: Plan, zurueck: was sich zurücknehmen lässt). Mit --ja läuft der Schritt;
 // phase-a verlangt vorher einen grünen Probelauf für denselben Stand. --entscheide setzt die Entscheidungen des Nutzers (gitSchluessel, verweiseAufloesen, remoteEntfernen,
 // remoteBestaetigen, hooksErsetzen, mcpAnders, dienstAnderer; profile=<pfad>+<pfad>; weitereMacs=ja|nein).
@@ -16,9 +18,9 @@ import { erstelleBefund } from "./befund.mjs";
 import { befundText } from "./bericht.mjs";
 
 const [vault, befehl, ...rest] = process.argv.slice(2);
-const BEFEHLE = ["befund", "stand", "probelauf", "phase-a", "zurueck"];
+const BEFEHLE = ["befund", "stand", "probelauf", "phase-a", "zurueck", "protokoll", "kopie-loeschen"];
 if (!BEFEHLE.includes(befehl)) {
-  console.error("Nutzung: kortex umstellung befund|stand|probelauf|phase-a|zurueck [--ja] [--json] …");
+  console.error("Nutzung: kortex umstellung befund|stand|probelauf|phase-a|zurueck|protokoll|kopie-loeschen [--ja] [--json] …");
   process.exit(64);
 }
 if (!vault) { console.error("Kein Vault gefunden. Gib ihn mit --vault <pfad> an, setze BRAIN_VAULT oder wähle in der Kortex-App einen aktiven Vault."); process.exit(2); }
@@ -51,6 +53,14 @@ if (befehl === "befund") {
       const { standPhaseA } = await import("./phase-a.mjs");
       const { standText } = await import("./bericht-schritte.mjs");
       ausgabe(standPhaseA(z), standText);
+    } else if (befehl === "protokoll") {
+      const { protokollAnsicht } = await import("./kopien.mjs");
+      const { protokollText } = await import("./bericht-schritte.mjs");
+      ausgabe(protokollAnsicht(z), protokollText);
+    } else if (befehl === "kopie-loeschen") {
+      const { loescheProbekopien, planKopienLoeschen } = await import("./kopien.mjs");
+      const { kopieText } = await import("./bericht-schritte.mjs");
+      ausgabe(ja ? { ok: true, ...loescheProbekopien(z) } : { ok: true, plan: true, bestaetigt: false, ...planKopienLoeschen(z) }, kopieText);
     } else if (befehl === "probelauf") {
       const { probelauf } = await import("./probelauf.mjs");
       const { probelaufText } = await import("./bericht-schritte.mjs");

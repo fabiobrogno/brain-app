@@ -31,6 +31,7 @@ const S = {
   zuletzt: [], suche: { aktiv: false, treffer: [], auswahl: 0, frage: "" },
   infoAn: leseLokal("infoAn", true), roh: leseLokal("roh", false), breit: leseLokal("breit", false), theme: leseLokal("theme", "system"),
   ladeNr: 0, bereit: false,
+  umstellung: null,                          // P7c: { altlasten, umgestellt, angefangen } oder null (alter Werkzeug-Ordner im Vault und Stand der Umstellung)
   zeigeZurueckgestellt: false,               // Posteingang: false = offene Notizen, true = die mit „Später“ zurückgestellten
 };
 const lokal = {
@@ -1251,10 +1252,46 @@ function oeffneEinstellungen(anker) {
     ...(S.info?.vault && vertrauenVon(S.info) ? [vertrauenVon(S.info).erlaubt
       ? { name: T.vertrauen.entziehenMenue, symbol: "schild", id: "vertrauen-entziehen", tun: oeffneVertrauenEntziehen }
       : { name: T.vertrauen.vertrauenMenue, symbol: "schild", id: "vertrauen", tun: oeffneVertrauen }] : []),
+    ...(S.umstellung ? [{ name: S.umstellung.umgestellt ? T.umstellung.fertig : T.umstellung.menue, symbol: "sync", id: "umstellen", tun: oeffneUmstellung }] : []),
     ...(inApp() ? [{ name: T.befehle.ordner, symbol: "ordner", id: "finder", tun: () => aktion("ordner-zeigen", S.pfad || undefined) }, { name: T.befehle.ansicht, symbol: "ansicht", id: "uebersicht", tun: oeffneUebersicht }] : []),
     { trenner: true },
     { name: `${PRODUKT} ${S.info?.appVersion || ""}`.trim(), symbol: "info", id: "version", tun: () => {} },
   ], { rechts: true, oben: true, breite: 240 });
+}
+
+// ======================================================= Umstellung eines Vaults aus der Kit-Zeit (P7c)
+// Liegt der alte Werkzeug-Ordner noch im Vault, prüft die Oberfläche (billig: ein lstat, erst dann der Befund) und zeigt einmal je Sitzung einen Hinweis, den man wegklicken kann.
+// Ein Eintrag in den Einstellungen und der Menüleisten-Befehl „Vault umstellen …“ öffnen dieselbe Ansicht (umstellung.js, lädt bei Bedarf).
+const umstellungWeg = new Set(); // Vaults, deren Hinweis in dieser Sitzung weggeklickt wurde
+async function ladeUmstellungHinweis() {
+  const vault = S.info?.vault;
+  if (!vault) return;
+  try {
+    const m = await import("./umstellung.js");
+    const hinweis = await m.leseUmstellungHinweis(api);
+    if (S.info?.vault !== vault) return; // inzwischen anderer Vault
+    S.umstellung = hinweis;
+    zeichneUmstellungHinweis(m);
+  } catch { S.umstellung = null; $("umstellung-host").replaceChildren(); }
+}
+function zeichneUmstellungHinweis(m) {
+  const host = $("umstellung-host");
+  host.replaceChildren();
+  const vault = S.info?.vault;
+  if (!S.umstellung?.altlasten || !vault || umstellungWeg.has(vault)) return;
+  host.append(m.baueUmstellungBanner({ beiOeffnen: oeffneUmstellung, beiZu: () => { umstellungWeg.add(vault); host.replaceChildren(); } }));
+}
+async function oeffneUmstellung() {
+  if (!S.info?.vault) return;
+  try {
+    const m = await import("./umstellung.js");
+    m.oeffneUmstellungDialog({
+      api, vault: S.info.vault, vertraut: vertrauenVon(S.info) ? vertrauenVon(S.info).erlaubt : null,
+      beiVertrauen: () => { oeffneVertrauen(); },
+      // Umstellen oder Zurücknehmen kann das Vertrauen und den Hinweis der Menüleiste ändern: die App liest den Status neu, hier wird der Hinweis neu geprüft
+      beiAenderung: () => { aktion("vertrauen-geaendert"); ladeInfoLeise(); ladeUmstellungHinweis(); },
+    });
+  } catch { toast(T.umstellung.nichtGeoeffnet, { fehler: true }); }
 }
 
 // „Übersicht öffnen“: die App antwortet { ok: true } oder { ok: false, grund } (Spec §8). Ohne Vault-Marke (brain.config.json) oder ohne
@@ -1628,6 +1665,7 @@ function bestaetigeEntfernen(v) {
 const MENUE_BEFEHLE = {
   neu: () => oeffneNeu(), merken: oeffneMerken, infospalte: umschalteInfo, palette: () => oeffnePalette(), commit: oeffneCommit, sync, suche: fokusSuche,
   "vault-oeffnen": vaultOeffnen, "vault-wechseln": oeffneVaultMenue, verlauf: oeffneVerlauf,
+  umstellung: () => oeffneUmstellung(), // Menüleiste „Vault umstellen …“ (nur wenn der Status Altlasten meldet): dieselbe Ansicht wie in den Einstellungen
   einstellungen: () => { const anker = stEl.querySelector('[data-st="einstellungen"]'); if (anker) oeffneEinstellungen(anker); }, // Menüleiste „Einstellungen …“: das Zahnrad-Menü der Statusleiste
   posteingang: () => waehleSicht({ art: "bereich", id: "inbox" }), alle: () => waehleSicht({ art: "bereich", id: "alle" }), wissen: () => waehleSicht({ art: "bereich", id: "wissen" }),
   "hell-dunkel": () => setzeTheme(istDunkel() ? "hell" : "dunkel"),
@@ -1878,6 +1916,7 @@ function zuruecksetzen() {
   ed.setzeText("", { nurLesen: false });
   schliesseDialoge(); // offene Dialoge (Vertrauen, Sichern, Neue Notiz …) gehören zum alten Vault; für den neuen fragt ladeAlles selbst
   schliesseDiff(); schliesseSuche(false);
+  S.umstellung = null; $("umstellung-host").replaceChildren();
   $("banner-host").replaceChildren(); $("pille").hidden = true; $("speicherstand").textContent = "";
   $("pfad").replaceChildren(); $("info").replaceChildren();
 }
@@ -1901,6 +1940,7 @@ async function ladeAlles() {
   if (S.sicht.art === "typ" && !S.typMap.has(S.sicht.id)) S.sicht = { art: "bereich", id: "alle" };
   zeichneSeite(); zeichneListe();
   fragVertrauenEinmal();
+  ladeUmstellungHinweis();
   ladeGit().then(() => nachsehen(true)); ladeGesundheit(); ladeKi(); ladeVaults();
   if (!intervalle) { intervalle = true; setInterval(ladeGit, 15000); setInterval(ladeGesundheit, 120000); setInterval(() => nachsehen(), 300000); window.addEventListener("focus", () => nachsehen()); }
   ladeInfo();

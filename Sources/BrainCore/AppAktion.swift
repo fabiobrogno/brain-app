@@ -171,6 +171,8 @@ public enum StudioBefehl: String, Sendable, CaseIterable {
     /// Menüleiste „Abgleichen“ (Neues holen, eigene Änderungen senden) und „Einstellungen“ (Darstellung, KI, Vertrauen) — wie der Knopf in der Statusleiste des Studios.
     case abgleichen = "sync"
     case einstellungen
+    /// Menüleiste „Vault umstellen …“ (nur, wenn der Status Altlasten meldet): öffnet im Studio die Umstellungs-Ansicht (P7c).
+    case umstellung
 
     public var skript: String { "window.studio?.befehl('\(rawValue)')" }
 }

@@ -78,6 +78,11 @@ public enum MenueStatus {
         return z
     }
 
+    /// „Vault umstellen …“ im Menü: nur mit offenem Vault und nur, wenn der Status Altlasten meldet (alter Werkzeug-Ordner im Vault, Phase A nicht durch).
+    public static func bietetUmstellungAn(hatVault: Bool, status: BrainStatus?) -> Bool {
+        hatVault && status?.bietetUmstellungAn == true
+    }
+
     /// Die Zustandszeile: Symbol und Wortlaut der Statusanzeige, technische Texte in verständliche Sprache übersetzt.
     static func zustand(_ a: StatusAnzeige, kernMeldung: String?) -> MenueZeile {
         let art: MenueZeile.Art = a.zeichen == "✕" ? .fehler : (a.zeichen == "⚠" ? .hinweis : .normal)
