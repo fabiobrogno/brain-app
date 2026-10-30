@@ -77,7 +77,7 @@ test("Installer ohne Testschalter und ohne Starter: Exit 3 mit klarer Meldung, n
 test("--stand: eine JSON-Zeile, schreibt nichts; erkennt eingetragen / veraltet / fremde Statuszeile", { skip: !POSIX }, () => {
   const h = claudeHome(), v = vaultOrdner();
   const stand = () => JSON.parse(lauf([inst, "--stand", "--claude-home", h]).stdout);
-  assert.deepEqual(stand(), { hooks: { soll: 8, eingetragen: 0, neueForm: 0 }, statuszeile: null, befehle: 0, aktiv: false });
+  assert.deepEqual(stand(), { hooks: { soll: 8, eingetragen: 0, neueForm: 0 }, statuszeile: null, befehle: 0, aktiv: false, konto: null, mitKonto: false }); // konto/mitKonto: KI-Konten, siehe test-konto-hooks.mjs
   assert.ok(!existsSync(join(h, "settings.json")), "--stand legt nichts an");
   // Fremde Statuszeile bleibt fremd
   writeFileSync(join(h, "settings.json"), JSON.stringify({ statusLine: { type: "command", command: "meine-zeile.sh" } }));
