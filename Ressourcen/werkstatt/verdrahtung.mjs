@@ -137,16 +137,27 @@ export function erzeugeVerdrahtung({ starter, support = null, istVorschau = () =
   }
 
   // „Jetzt pflegen“: der Tageslauf dieses Vaults, einmal, im Hintergrund (derselbe Weg wie der Dienst: Starter, dann brain tageslauf). Er richtet sich nach den Schaltern des Vaults
-  // (tageslauf aus/probe/an) und nach dem Pflege-Konto und der Stufe aus der Liste der KI-Konten; läuft schon einer, startet kein zweiter.
-  async function jetztPflegen(v) {
+  // (tageslauf aus/probe/an) und nach dem Pflege-Konto und der Stufe aus der Liste der KI-Konten.
+  // Vorher geprüft (409 mit ehrlichem Satz statt eines Starts, der gleich wieder endet): Schalter „aus“ · läuft schon einer (Sperre des Kerns, `laeuft`) · eine kurze Sperre je Vault gegen Mehrfachklicks.
+  // `gestartet: true` nur, wenn der Kern den losgelösten Lauf wirklich gestartet hat.
+  const kurzGesperrt = new Map();
+  async function jetztPflegen(v, { schalter = () => "an", laeuft = () => false } = {}) {
     if (!v) throw new HttpFehler(409, "Es ist noch kein Vault geöffnet.", { keinVault: true });
     if (!v.vertrauenStand().erlaubt) throw new HttpFehler(409, NICHT_VERTRAUT, { art: "nicht-vertraut" });
     if (istVorschau()) throw new HttpFehler(409, "In der Vorschau wird nichts gepflegt.", { art: "vorschau" });
-    const r = await lauf(["tageslauf", "--losgeloest", "--vault", v.wurzel], neueFrist(FRIST));
-    if (r.code !== 0) throw fehlerAus(r, "Das Pflegen");
-    const aus = kurz(r.stdout);
-    if (!/läuft im Hintergrund/.test(aus)) throw new HttpFehler(409, `Die Pflege wurde nicht gestartet${aus ? `: ${aus.replace(/^Tageslauf nicht gestartet:\s*/, "")}` : "."}`, { art: "nicht-gestartet" });
-    return { ok: true, gestartet: true };
+    const s = schalter(v.wurzel);
+    if (s === "aus") throw new HttpFehler(409, "Die Pflege ist für diesen Vault ausgeschaltet. Schalte sie unter Einstellungen → Automatik ein (oder auf Probe), dann geht es hier.", { art: "schalter-aus" });
+    if (laeuft(v.wurzel)) throw new HttpFehler(409, "Die Pflege läuft gerade schon. Das Ergebnis steht danach hier.", { art: "laeuft-schon" });
+    const jetzt = Date.now();
+    if ((kurzGesperrt.get(v.wurzel) || 0) > jetzt) throw new HttpFehler(409, "Die Pflege wurde gerade erst gestartet. Warte einen Moment, das Ergebnis steht danach hier.", { art: "laeuft-schon" });
+    kurzGesperrt.set(v.wurzel, jetzt + 20_000);
+    try {
+      const r = await lauf(["tageslauf", "--losgeloest", "--vault", v.wurzel], neueFrist(FRIST));
+      if (r.code !== 0) throw fehlerAus(r, "Das Pflegen");
+      const aus = kurz(r.stdout);
+      if (!/läuft im Hintergrund/.test(aus)) throw new HttpFehler(409, `Die Pflege wurde nicht gestartet${aus ? `: ${aus.replace(/^Tageslauf nicht gestartet:\s*/, "")}` : "."}`, { art: "nicht-gestartet" });
+      return { ok: true, gestartet: true, ...(s === "probe" ? { probe: true } : {}) };
+    } catch (e) { kurzGesperrt.delete(v.wurzel); throw e; }
   }
 
   return { stand, verdrahte, jetztPflegen };

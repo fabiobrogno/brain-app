@@ -3,7 +3,7 @@
 // Nur Wegwerf-Orte unter dem Temp-Ordner; die plist liegt in einem Temp-HOME (nie ~/Library/LaunchAgents), der Starter ist eine Attrappe, kein echtes claude/launchctl.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync, mkdirSync, statSync, realpathSync, chmodSync, existsSync, symlinkSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, statSync, realpathSync, chmodSync, existsSync, symlinkSync, cpSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmp, schreibe, pfad } from "./hilfe.mjs";
 
@@ -15,6 +15,8 @@ const G = await import(pfad("gemeinsam", "ki-konten.mjs"));
 const KERN = await import(pfad("kern", "ki-konten.mjs"));
 const { pflegeAufloesen } = await import(pfad("kern", "pflege-konto.mjs"));
 const { erzeugeHandler } = await import(pfad("werkstatt", "handler.mjs"));
+const { erzeugeKonten } = await import(pfad("werkstatt", "konten.mjs"));
+const { erzeugePflege } = await import(pfad("werkstatt", "pflege.mjs"));
 
 const neuesVault = () => { const d = tmp("brain-vault-"); schreibe(d, "brain.config.json", JSON.stringify({ automatik: { tageslauf: "an" } })); schreibe(d, "00_inbox/n.md", "# N\n"); return realpathSync(d); };
 const aufruf = (h) => async (methode, p, daten, query) => {
@@ -214,12 +216,193 @@ test("POST /api/ki/pflege/jetzt: startet den Tageslauf des offenen Vaults über 
   let r = await rufe("POST", "/api/ki/pflege/jetzt", {});
   assert.equal(r.status, 200, JSON.stringify(r.j)); assert.equal(r.j.gestartet, true);
   assert.equal(readFileSync(log, "utf8").trim(), `tageslauf --losgeloest --vault ${a.v1}`);
-  bauen("Tageslauf nicht gestartet: läuft schon.");
+  // ein zweiter Klick gleich danach: kurze Sperre je Vault, der Starter wird nicht noch einmal gerufen
   r = await rufe("POST", "/api/ki/pflege/jetzt", {});
+  assert.equal(r.status, 409); assert.equal(r.j.art, "laeuft-schon");
+  assert.equal(readFileSync(log, "utf8").trim().split("\n").length, 1, "der Starter lief nur einmal");
+  bauen("Tageslauf nicht gestartet: läuft schon.");
+  r = await handler(a, { starter })("POST", "/api/ki/pflege/jetzt", {});
   assert.equal(r.status, 409); assert.equal(r.j.art, "nicht-gestartet"); assert.match(r.j.fehler, /läuft schon/);
   assert.equal((await rufe("GET", "/api/ki/pflege/jetzt")).status, 405);
   const ohne = handler(a, { starter: join(bin, "gibt-es-nicht") });
   r = await ohne("POST", "/api/ki/pflege/jetzt", {});
   assert.equal(r.status, 409); assert.equal(r.j.art, "kein-starter");
   assert.ok(existsSync(log));
+});
+
+// ───────────────────────────── Überarbeitung nach dem Review ─────────────────────────────
+const plistText = (profil, extra = "") => `<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict>\n  <key>EnvironmentVariables</key>\n  <dict>\n    <key>PATH</key><string>/usr/bin</string>${profil === null ? "" : `\n    <key>CLAUDE_CONFIG_DIR</key>\n      <string>${profil}</string>`}${extra}\n  </dict>\n</dict></plist>\n`;
+const schreibePlist = (home, inhalt) => { const d = join(home, "Library", "LaunchAgents"); mkdirSync(d, { recursive: true }); const p = join(d, "de.brain.tageslauf.plist"); writeFileSync(p, inhalt); return p; };
+const pflegeObjekt = (a, opt = {}) => {
+  const konten = erzeugeKonten({ support: a.s, home: () => a.home, vaults: () => [{ pfad: a.v1 }, { pfad: a.v2 }], erkennung: () => [], verbunden: () => false });
+  return { konten, pflege: erzeugePflege({ support: a.s, home: () => a.home, konten, vaults: () => [{ pfad: a.v1 }, { pfad: a.v2 }], ...opt }) };
+};
+
+test("Migration ist idempotent und läuft, solange die plist eine Variable trägt: spätere Vaults des Dienstes werden nachgezogen, Eingestelltes bleibt, der Vermerk heißt erst mit neuer plist „erledigt“", async () => {
+  const a = aufbau();
+  writeFileSync(join(a.s, "dienst.json"), JSON.stringify({ vaults: [a.v1] }));
+  schreibePlist(a.home, plistText(a.P.A));
+  const { konten, pflege } = pflegeObjekt(a);
+  let r = await pflege.migriere({ neuschreiben: async () => ({ grund: "nicht-im-dienst" }) });
+  assert.equal(r.plist, "offen");
+  assert.deepEqual(pflegeVon(a.s, a.v1), { gesetzt: true, konto: "k_0000000a", stufe: "mittel" });
+  let d = G.liesKonten(a.s).daten;
+  assert.deepEqual([d.pflegeMigration.plistOffen, d.pflegeMigration.plistGrund], [true, "nicht-im-dienst"], "gemerkt, nicht erledigt");
+  assert.deepEqual(konten.stand().pflegePlist, { offen: true, grund: "nicht-im-dienst" });
+  // zweiter Lauf: v2 kommt zum Dienst, der Nutzer hat v1 inzwischen anders eingestellt
+  await handler(a)("POST", "/api/ki/pflege", { vault: a.v1, konto: "k_00000001", stufe: "klein" });
+  writeFileSync(join(a.s, "dienst.json"), JSON.stringify({ vaults: [a.v1, a.v2] }));
+  r = await pflege.migriere({ neuschreiben: async () => ({ grund: "kein-vault" }) });
+  assert.deepEqual(pflegeVon(a.s, a.v1), { gesetzt: true, konto: "k_00000001", stufe: "klein" }, "nichts Eingestelltes wird überschrieben");
+  assert.deepEqual(pflegeVon(a.s, a.v2), { gesetzt: true, konto: "k_0000000a", stufe: "mittel" }, "der neue Vault des Dienstes wird nachgezogen");
+  assert.equal(G.liesKonten(a.s).daten.pflegeMigration.plistGrund, "kein-vault");
+  // ohne Versuch (null) bleibt der Vermerk, wie er ist
+  r = await pflege.migriere({ neuschreiben: null });
+  assert.equal(G.liesKonten(a.s).daten.pflegeMigration.plistGrund, "kein-vault");
+  // die plist ist neu geschrieben (Variable weg): erledigt, kein Grund mehr, keine neue Übernahme
+  schreibePlist(a.home, plistText(null));
+  r = await pflege.migriere({ neuschreiben: async () => { throw new Error("nicht nötig"); } });
+  assert.equal(r.plist, "in-ordnung");
+  d = G.liesKonten(a.s).daten;
+  assert.deepEqual([d.pflegeMigration.plistOffen, d.pflegeMigration.plistGrund], [false, undefined]);
+  assert.equal(konten.stand().pflegePlist, undefined);
+  // „ok“ gemeldet, aber die Variable steht noch → nicht als erledigt zählen
+  schreibePlist(a.home, plistText(a.P.A));
+  r = await pflege.migriere({ neuschreiben: async () => ({ ok: true }) });
+  assert.equal(r.plist, "offen"); assert.equal(G.liesKonten(a.s).daten.pflegeMigration.plistGrund, "fehler");
+});
+
+test("Handler: Übernahme gelingt, das Neuschreiben nicht → Grund je Fall: offener Vault nicht im Dienst, Starter fehlt, kein Vault offen; die Einstellungen der Vaults gelten trotzdem", async () => {
+  // offener Vault gehört nicht zum Dienst (nur v2)
+  let a = aufbau();
+  writeFileSync(join(a.s, "dienst.json"), JSON.stringify({ vaults: [a.v2] }));
+  schreibePlist(a.home, plistText(a.P.A));
+  let r = await handler(a)("GET", "/api/ki/konten");
+  assert.equal(r.status, 200, JSON.stringify(r.j));
+  assert.deepEqual(r.j.pflegePlist, { offen: true, grund: "nicht-im-dienst" });
+  assert.deepEqual(pflegeVon(a.s, a.v2), { gesetzt: true, konto: "k_0000000a", stufe: "mittel" });
+  assert.equal(pflegeVon(a.s, a.v1).gesetzt, false, "der offene Vault ist nicht im Dienst: er bekommt nichts und wird nie neu eingeschaltet");
+  assert.ok(!existsSync(join(a.s, "bin")) && readFileSync(join(a.home, "Library", "LaunchAgents", "de.brain.tageslauf.plist"), "utf8").includes(a.P.A), "die plist bleibt unberührt");
+  // offener Vault im Dienst, aber der Starter fehlt
+  a = aufbau();
+  writeFileSync(join(a.s, "dienst.json"), JSON.stringify({ vaults: [a.v1] }));
+  schreibePlist(a.home, plistText(a.P.A));
+  r = await handler(a, { starter: join(tmp("brain-ohne-starter-"), "kortex") })("GET", "/api/ki/konten");
+  assert.deepEqual(r.j.pflegePlist, { offen: true, grund: "kein-starter" });
+  assert.deepEqual(pflegeVon(a.s, a.v1), { gesetzt: true, konto: "k_0000000a", stufe: "mittel" });
+  // kein Vault offen (Start der Werkstatt ohne Vault)
+  a = aufbau();
+  writeFileSync(join(a.s, "vaults.json"), JSON.stringify({ vaults: [a.v1, a.v2].map((p, i) => ({ name: `V${i + 1}`, pfad: p, farbe: "#5B8DEF" })) }));
+  writeFileSync(join(a.s, "dienst.json"), JSON.stringify({ vaults: [a.v1] }));
+  schreibePlist(a.home, plistText(a.P.A));
+  const h = erzeugeHandler({ vaultOptionen: { support: a.s }, kontenHome: a.home, kontenErkennung: () => [], kontenVerbunden: () => false });
+  assert.equal(h.aktuellerVaultPfad(), null, "kein Vault offen");
+  await h.migrierePflege();
+  assert.deepEqual(G.liesKonten(a.s).daten.pflegeMigration.plistGrund, "kein-vault");
+  assert.deepEqual(pflegeVon(a.s, a.v1), { gesetzt: true, konto: "k_0000000a", stufe: "mittel" });
+});
+
+test("plist lesen: eine binäre plist wird mit plutil als XML gelesen; ohne plutil, umformatiert ohne lesbaren Wert oder ohne </plist> ist sie „unlesbar“ — dann wird nichts übernommen und nie das Standardprofil angenommen", async () => {
+  const a = aufbau();
+  writeFileSync(join(a.s, "dienst.json"), JSON.stringify({ vaults: [a.v1] }));
+  // binär, plutil liefert XML mit Profil A
+  schreibePlist(a.home, Buffer.concat([Buffer.from("bplist00"), Buffer.from([0, 1, 2, 3])]));
+  let { pflege } = pflegeObjekt(a, { plutil: () => plistText(a.P.A) });
+  assert.deepEqual(pflege.plistStand(), { da: true, profil: a.P.A });
+  await pflege.migriere({ neuschreiben: async () => ({ grund: "kein-vault" }) });
+  assert.deepEqual(pflegeVon(a.s, a.v1), { gesetzt: true, konto: "k_0000000a", stufe: "mittel" });
+  // Zeilenumbrüche zwischen Schlüssel und Wert und Kommentare sind kein Problem (plistText bricht schon um)
+  assert.equal(pflegeObjekt(a).pflege.plistStand().da, true);
+  // unlesbare Fälle: nie das Standardprofil annehmen, nichts schreiben
+  for (const [name, inhalt, plutil] of [
+    ["binär ohne plutil", Buffer.concat([Buffer.from("bplist00"), Buffer.from([9, 9])]), () => null],
+    ["Schlüssel ohne lesbaren Wert", plistText(null, "\n<key>CLAUDE_CONFIG_DIR</key><string/>"), undefined],
+    ["abgeschnitten (kein </plist>)", "<?xml version=\"1.0\"?><plist><dict><key>CLAUDE_CONFIG_DIR</key>", undefined],
+    ["Müll", "das ist keine plist", () => "auch nicht"],
+  ]) {
+    const b = aufbau();
+    writeFileSync(join(b.s, "dienst.json"), JSON.stringify({ vaults: [b.v1] }));
+    schreibePlist(b.home, inhalt);
+    const { pflege: p } = pflegeObjekt(b, plutil ? { plutil } : {});
+    const st = p.plistStand();
+    assert.deepEqual([st.da, st.profil, st.unlesbar], [true, null, true], name);
+    const r = await p.migriere({ neuschreiben: async () => { throw new Error("nie bei einer unlesbaren plist"); } });
+    assert.equal(r.plist, "unlesbar", name);
+    assert.equal(pflegeVon(b.s, b.v1).gesetzt, false, `${name}: das Standardprofil wird nicht angenommen`);
+    assert.equal(G.liesKonten(b.s).daten.pflegeMigration, undefined, `${name}: kein Vermerk`);
+  }
+});
+
+test("POST /api/ki/pflege/jetzt: Schalter „aus“ → 409 ohne Start; läuft schon (Sperre des Kerns mit lebendem Prozess) → 409 ohne Start; eine verwaiste oder alte Sperre zählt nicht; Probe wird gemeldet", async () => {
+  const a = aufbau();
+  const bin = tmp("brain-starter-"); const log = join(bin, "aufrufe.log"); const starter = join(bin, "kortex");
+  writeFileSync(starter, `#!/bin/sh\necho "$@" >> '${log}'\necho 'Tageslauf läuft im Hintergrund.'\n`); chmodSync(starter, 0o755);
+  const cfg = (s) => writeFileSync(join(a.v1, "brain.config.json"), JSON.stringify({ automatik: { tageslauf: s } }));
+  const lock = (pid, start) => schreibe(a.v1, ".logs/tageslauf/lauf.lock", JSON.stringify({ pid, start }));
+  cfg("aus");
+  let r = await handler(a, { starter })("POST", "/api/ki/pflege/jetzt", {});
+  assert.equal(r.status, 409); assert.equal(r.j.art, "schalter-aus"); assert.match(r.j.fehler, /ausgeschaltet/);
+  cfg("an");
+  lock(process.pid, new Date().toISOString());
+  r = await handler(a, { starter })("POST", "/api/ki/pflege/jetzt", {});
+  assert.equal(r.status, 409); assert.equal(r.j.art, "laeuft-schon");
+  lock(process.pid, new Date(Date.now() - 3 * 3600e3).toISOString());          // zu alt: gilt nicht (wie nimmSperre)
+  lock(2 ** 22 + 12345, new Date().toISOString());                              // Prozess gibt es nicht
+  assert.ok(!existsSync(log), "bis hier wurde nichts gestartet");
+  cfg("probe");
+  r = await handler(a, { starter })("POST", "/api/ki/pflege/jetzt", {});
+  assert.equal(r.status, 200, JSON.stringify(r.j)); assert.deepEqual([r.j.gestartet, r.j.probe], [true, true]);
+  assert.equal(readFileSync(log, "utf8").trim().split("\n").length, 1);
+  // der Stand meldet „läuft“ für die Anzeige
+  lock(process.pid, new Date().toISOString());
+  const s = await handler(a)("GET", "/api/ki/pflege", undefined, `vault=${encodeURIComponent(a.v1)}`);
+  assert.equal(s.j.laeuft, true);
+});
+
+test("setzePflege prüft unter der Sperre: nurWennUngesetzt schreibt nichts, wenn schon etwas eingestellt ist; die Stufe des Kontos wird im Schreib-Callback geprüft (409 ohne Änderung)", async () => {
+  const a = aufbau();
+  const { konten } = pflegeObjekt(a);
+  assert.deepEqual(konten.setzePflege({ vault: a.v1, konto: "k_0000000a", stufe: "mittel" }, { nurWennUngesetzt: true }), { geschrieben: true });
+  assert.deepEqual(konten.setzePflege({ vault: a.v1, konto: "k_00000001", stufe: "klein" }, { nurWennUngesetzt: true }), { geschrieben: false });
+  assert.deepEqual(pflegeVon(a.s, a.v1), { gesetzt: true, konto: "k_0000000a", stufe: "mittel" });
+  const vorher = readFileSync(G.kontenPfad(a.s), "utf8");
+  assert.throws(() => konten.setzePflege({ vault: a.v1, konto: "k_0000000b", stufe: "klein" }, { nurWennUngesetzt: false }), (e) => e.status === 409 && e.extra.art === "stufe");
+  assert.equal(readFileSync(G.kontenPfad(a.s), "utf8"), vorher);
+});
+
+// Erfolgsweg mit dem echten Kern (Starter, `dienst an`) und einer launchctl-Attrappe: nur auf dem Mac (der Dienst gibt es nur dort)
+test("Migration mit echtem `dienst an` (Attrappe statt launchctl): Einstellung übernommen, plist ohne Variable neu geschrieben, Sicherung *.vor-pflege, Vermerk erledigt; ein Ladefehler stellt die alte plist wieder her und bleibt offen", { skip: process.platform !== "darwin" }, async () => {
+  const q = (p) => `'${String(p).replaceAll("'", "'\\''")}'`;
+  const a = aufbau();
+  const support = a.s;
+  const version = join(support, "kern", "9.9.9");
+  cpSync(pfad("kern"), version, { recursive: true });
+  mkdirSync(join(support, "bin"), { recursive: true });
+  symlinkSync("../kern/9.9.9", join(support, "bin", "kern"));
+  const starter = join(support, "bin", "kortex");
+  writeFileSync(starter, `#!/bin/sh\nKORTEX_KERN_PFAD=${q(join(support, "bin", "kern"))}\nexport KORTEX_KERN_PFAD\nexec ${q(process.execPath)} ${q(join(support, "bin", "kern", "brain.mjs"))} "$@"\n`);
+  chmodSync(starter, 0o755);
+  const launchd = (scheitern) => { const d = tmp("kortex-launchctl-"); const z = join(d, "zaehler"); const s = join(d, "launchctl.mjs");
+    writeFileSync(s, `import { readFileSync, writeFileSync, existsSync } from "node:fs"; if (process.argv[2] === "bootstrap") { const n = existsSync(${JSON.stringify(z)}) ? Number(readFileSync(${JSON.stringify(z)}, "utf8")) : 0; writeFileSync(${JSON.stringify(z)}, String(n + 1)); if (n < ${scheitern}) process.exit(1); } process.exit(0);\n`); return s; };
+  const alt = { HOME: process.env.HOME, K1: process.env.KORTEX_KERN_UNSTABIL_ERLAUBT, K2: process.env.KORTEX_KERN_TEMP_WURZELN, L: process.env.BRAIN_LAUNCHCTL };
+  process.env.HOME = a.home; process.env.KORTEX_KERN_UNSTABIL_ERLAUBT = "1"; process.env.KORTEX_KERN_TEMP_WURZELN = "";
+  try {
+    writeFileSync(join(a.s, "dienst.json"), JSON.stringify({ vaults: [a.v1] }));
+    const plist = schreibePlist(a.home, plistText(a.P.A));
+    // 1) Laden der neuen plist scheitert: die alte kommt zurück, die Übernahme in die Einstellungen gilt trotzdem, der Vermerk bleibt offen
+    process.env.BRAIN_LAUNCHCTL = launchd(1);
+    let r = await handler(a, { starter })("GET", "/api/ki/konten");
+    assert.deepEqual(pflegeVon(a.s, a.v1), { gesetzt: true, konto: "k_0000000a", stufe: "mittel" });
+    assert.ok(readFileSync(plist, "utf8").includes(a.P.A), "die alte plist ist wieder eingetragen");
+    assert.equal(r.j.pflegePlist.offen, true);
+    assert.ok(existsSync(`${plist}.vor-pflege`), "die Sicherung bleibt");
+    // 2) neuer Start: klappt, die plist trägt keine Variable mehr, erledigt
+    process.env.BRAIN_LAUNCHCTL = launchd(0);
+    const h = handler(a, { starter });
+    r = await h("GET", "/api/ki/konten");
+    assert.ok(!readFileSync(plist, "utf8").includes("CLAUDE_CONFIG_DIR"), readFileSync(plist, "utf8"));
+    assert.equal(r.j.pflegePlist, undefined);
+    assert.equal(G.liesKonten(a.s).daten.pflegeMigration.plistOffen, false);
+    assert.ok(readFileSync(`${plist}.vor-pflege`, "utf8").includes(a.P.A));
+  } finally { for (const [k, w] of [["HOME", alt.HOME], ["KORTEX_KERN_UNSTABIL_ERLAUBT", alt.K1], ["KORTEX_KERN_TEMP_WURZELN", alt.K2], ["BRAIN_LAUNCHCTL", alt.L]]) { if (w === undefined) delete process.env[k]; else process.env[k] = w; } }
 });

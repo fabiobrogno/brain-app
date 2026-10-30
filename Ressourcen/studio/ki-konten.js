@@ -400,6 +400,11 @@ export function oeffneKontenDialog({ api = standardApi, vault = null, beiZu, bei
     } else if (p.problem && p.gesetzt) {
       secPflege.append(h("div", { klasse: "kk-karte warn", role: "status", "data-kk": "pflege-problem", "data-problem": p.problem }, marke("warn"), h("p", { text: P.problem[p.problem] || P.problem.unlesbar })));
     }
+    // Die plist des Dienstes trägt noch das alte feste Konto (Neuschreiben offen oder gescheitert): sagen, warum
+    if (S.daten.pflegePlist && S.daten.pflegePlist.offen) {
+      secPflege.append(h("div", { klasse: "kk-karte warn", role: "status", "data-kk": "pflege-plist", "data-grund": S.daten.pflegePlist.grund }, marke("warn"),
+        h("div", { klasse: "kk-block" }, h("div", { klasse: "kk-block-titel", text: P.plist.titel }), h("p", { text: P.plist.text }), h("p", { klasse: "mini", text: P.plist.grund[S.daten.pflegePlist.grund] || P.plist.grund.fehler }))));
+    }
     // Konto: nur Claude-Code-Konten mit „Erweitert“ in diesem Vault
     const eignung = konten().filter((k) => k.programm === "claude" && stufeVon(k, v) === "erweitert");
     const optionen = eignung.map((k) => ({ wert: k.id, text: k.name, logo: kiLogoId(k.programm) ? k.programm : undefined, sub: k.ordner }));

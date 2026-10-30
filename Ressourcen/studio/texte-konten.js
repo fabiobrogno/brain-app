@@ -135,6 +135,18 @@ export const TK = {
       "kein-konto": "Der Hintergrunddienst lief bisher mit einem Profil, das Kortex nicht als KI-Konto kennt. Darum steht die Pflege jetzt auf „Ohne KI“. Wähle hier ein Konto mit der Stufe „Erweitert“, wenn die KI wieder mitarbeiten soll.",
     },
     fehlerLaden: "Der Stand der Pflege konnte nicht gelesen werden.",
+    plist: {
+      titel: "Der Hintergrunddienst trägt noch ein festes Konto",
+      text: "Kortex hat das bisherige Konto des Dienstes schon als Pflege-Konto übernommen, konnte die Einstellung des Dienstes aber noch nicht neu schreiben. Bis dahin gilt für Vaults ohne eigene Einstellung das alte Konto. Kortex versucht es bei jedem Start erneut.",
+      grund: {
+        "kein-vault": "Es ist gerade kein Vault geöffnet.",
+        "nicht-im-dienst": "Der geöffnete Vault gehört nicht zu den Vaults, für die der Dienst eingeschaltet ist. Öffne einen Vault, für den der Dienst läuft.",
+        "kein-starter": "Der Starter von Kortex fehlt. Starte Kortex einmal neu.",
+        "nicht-vertraut": "Der geöffnete Vault ist noch nicht als deiner bestätigt.",
+        unlesbar: "Die Einstellung des Dienstes ließ sich nicht sicher lesen. Kortex ändert sie deshalb nicht.",
+        fehler: "Das Neuschreiben hat nicht geklappt. Die bisherige Einstellung ist unverändert.",
+      },
+    },
   },
 
   // ---- Leseverbot in Claude Code (Zustand je gesperrtem Vault)

@@ -184,6 +184,15 @@ test("Hinweis aus der Migration und Problem der Einstellung: das alte Konto des 
 });
 async function stufeKnopfZugriff(page, id, s) { await dlg(page).locator(`.kk-zeile[data-konto="${id}"] [data-stufe-wahl="${s}"]`).click(); }
 
+test("Die plist des Dienstes trägt noch das alte Konto: der Block sagt, warum das Neuschreiben offen ist (Grund in Alltagssprache), und nennt nichts Technisches", async ({ page }) => {
+  await start(page, { pflegePlist: { offen: true, grund: "nicht-im-dienst" } });
+  const k = abschnitt(page).locator('[data-kk="pflege-plist"]');
+  await expect(k).toContainText("Der Hintergrunddienst trägt noch ein festes Konto");
+  await expect(k).toContainText("gehört nicht zu den Vaults, für die der Dienst eingeschaltet ist");
+  await expect(k).toHaveAttribute("data-grund", "nicht-im-dienst");
+  await ruhig(page); await abschnitt(page).screenshot({ path: shot("plist-offen-hell") });
+});
+
 test("Hell und dunkel, auch schmal: der Block läuft nie über den Dialog hinaus, nichts scrollt waagerecht, Texte bleiben lesbar", async ({ page }) => {
   await start(page, { pflege: { [vault]: { konto: "k_aaaa0001", stufe: "klein" } },
     letzter: { zeit: "2026-10-29T03:12:00.000Z", status: "ok", erfolgreich: true, modus: "an", art: "voll", aufrufe: 14, tokEin: 5200, tokAus: 640, uebernommen: 3, rueckfragen: 1 },
