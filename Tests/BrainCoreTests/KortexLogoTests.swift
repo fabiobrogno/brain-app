@@ -4,7 +4,7 @@ import AppKit
 import CoreGraphics
 @testable import BrainCore
 
-/// App-Logo „Netz“ (Entwurf 2, gewählt am 30.10.2026): Menüleisten-Symbol (Geometrie und Zeichnung), App-Icon im Bundle, Einbau-Skripte.
+/// App-Logo „Windung“ (Entwurf 3, Originalfassung, gewählt am 30.10.2026): Menüleisten-Symbol (Geometrie und Zeichnung), App-Icon im Bundle, Einbau-Skripte.
 private let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
 
 private func text(_ pfad: String) throws -> String {
@@ -31,19 +31,23 @@ private func alphaBei(_ b: (px: Int, alpha: [UInt8]), _ p: CGPoint) -> UInt8 {
     return b.alpha[(b.px - 1 - y) * b.px + x]
 }
 
+private typealias P = KortexMenueSymbol.P
+
 @Test(arguments: [1, 2, 3])
 func menueSymbolIstBeiAllenAufloesungenLesbar(faktor: Int) throws {
     let b = try alphaBild(punkt: 18, faktor: faktor)
     let px = Double(b.px)
+    func bild(_ p: P) -> CGPoint { KortexMenueSymbol.bildpunkt(p, groesse: px) }
 
-    // Jeder der fünf Knoten ist ausgefüllt (Mittelpunkt deckend).
-    for i in KortexMenueSymbol.knoten.indices {
-        #expect(alphaBei(b, KortexMenueSymbol.mittelpunkt(i, groesse: px)) >= 250, "Knoten \(i) bei \(faktor)x nicht ausgefüllt")
+    // Der Strang ist durchgehend: Mitte jedes Abschnitts (Bahn oder Wendung) ist (bis auf Kantenglättung bei 1x) deckend.
+    for a in KortexMenueSymbol.abschnitte {
+        #expect(alphaBei(b, bild(KortexMenueSymbol.scheitel(a))) >= 200, "Abschnitt \(a) bei \(faktor)x unterbrochen")
     }
-    // Die Kanten verbinden: Mitte jeder Kante (Stamm oben–Kern, Kern–Stamm unten, beide Arme) ist (bis auf Kantenglättung bei 1x) deckend.
-    for (von, nach) in [(0, 4), (4, 1), (4, 2), (4, 3)] {
-        let a = KortexMenueSymbol.mittelpunkt(von, groesse: px), c = KortexMenueSymbol.mittelpunkt(nach, groesse: px)
-        #expect(alphaBei(b, CGPoint(x: (a.x + c.x) / 2, y: (a.y + c.y) / 2)) >= 200, "Kante \(von)-\(nach) bei \(faktor)x unterbrochen")
+    // Luft: Zwischen je zwei Bahnen bleibt Hintergrund (Mitte der Taschen), sonst wird aus der Windung ein Block (Röhre).
+    let s = 2 * KortexMenueSymbol.radius
+    for i in 0..<(KortexMenueSymbol.bahnen - 1) {
+        let t = P(0, KortexMenueSymbol.y(i) + s / 2)
+        #expect(alphaBei(b, bild(t)) <= 60, "Tasche \(i) bei \(faktor)x zugelaufen")
     }
     // Ecken sind leer (kein Hintergrund, nur das Zeichen).
     for ecke in [CGPoint(x: 0, y: 0), CGPoint(x: px - 1, y: 0), CGPoint(x: 0, y: px - 1), CGPoint(x: px - 1, y: px - 1)] {
@@ -51,43 +55,60 @@ func menueSymbolIstBeiAllenAufloesungenLesbar(faktor: Int) throws {
     }
     // Füllgrad: sichtbar, aber nicht zugelaufen.
     let anteil = Double(b.alpha.reduce(0) { $0 + Int($1) }) / (255 * px * px)
-    #expect(anteil > 0.15 && anteil < 0.45, "Füllgrad \(anteil) bei \(faktor)x")
-    // Außenmaße: etwa 88 % der Höhe, mittig.
+    #expect(anteil > 0.18 && anteil < 0.45, "Füllgrad \(anteil) bei \(faktor)x")
+    // Außenmaße: die längere Seite (Höhe) füllt etwa 90 % des Bildes, mittig.
     var minX = b.px, maxX = -1, minY = b.px, maxY = -1
     for y in 0..<b.px { for x in 0..<b.px where b.alpha[y * b.px + x] > 127 { minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y) } }
     let hoehe = Double(maxY - minY + 1) / px
-    #expect(abs(hoehe - KortexMenueSymbol.hoehenAnteil) <= 1.5 / px + 0.01, "Höhe \(hoehe) bei \(faktor)x")
-    #expect(abs((minY + maxY + 1) - b.px) <= 1 && abs((minX + maxX + 1) - b.px) <= 2, "Symbol nicht mittig bei \(faktor)x")
+    #expect(abs(hoehe - KortexMenueSymbol.fuellAnteil) <= 1.5 / px + 0.01, "Höhe \(hoehe) bei \(faktor)x")
+    #expect(abs((minY + maxY + 1) - b.px) <= 2 && abs((minX + maxX + 1) - b.px) <= 2, "Symbol nicht mittig bei \(faktor)x")
 }
 
+/// Die Windung ist oben und unten spiegelgleich (erste und letzte Bahn, zweite und dritte Bahn).
 @Test func menueSymbolIstObenUndUntenSpiegelgleich() throws {
     let b = try alphaBild(punkt: 18, faktor: 3)
     for y in 0..<b.px / 2 { for x in 0..<b.px {
         let oben = Int(b.alpha[y * b.px + x]), unten = Int(b.alpha[(b.px - 1 - y) * b.px + x])
-        #expect(abs(oben - unten) <= 2, "Zeile \(y), Spalte \(x)")
+        #expect(abs(oben - unten) <= 3, "Zeile \(y), Spalte \(x)")
     } }
 }
 
-@Test func menueSymbolHatFuenfKnotenMitKlarerHierarchie() {
-    let k = KortexMenueSymbol.knoten
-    #expect(k.count == 5)
-    let kern = k[4]
-    #expect(kern.x == 0 && kern.y == 0)
-    #expect(k.dropLast().allSatisfy { $0.radius < kern.radius }, "Der Kern ist der größte Knoten")
-    // Zwischen zwei Knoten bleibt sichtbare Linie (Abstand > Summe der Radien + Kantenbreite/2), sonst verschmilzt das Netz bei 18 pt.
-    for (v, n) in KortexMenueSymbol.kanten where v != 0 || n != 1 {
-        let a = k[v], c = k[n]
-        let abstand = ((a.x - c.x) * (a.x - c.x) + (a.y - c.y) * (a.y - c.y)).squareRoot()
-        #expect(abstand > a.radius + c.radius + 20, "Kante \(v)-\(n) zu kurz")
+@Test func menueSymbolIstEineDurchgehendeLinieMitVierBahnen() {
+    let a = KortexMenueSymbol.abschnitte
+    // Abschnitte hängen lückenlos aneinander (Ende des einen = Anfang des nächsten), also eine einzige Linie.
+    func anfang(_ x: KortexMenueSymbol.Abschnitt) -> P {
+        switch x {
+        case let .bahn(von, _): return von
+        case let .wendung(m, _, ab): return P(m.x, m.y + (ab ? -1 : 1) * KortexMenueSymbol.radius)
+        }
     }
-    #expect(KortexMenueSymbol.kantenbreite < 2 * k.dropLast().map(\.radius).min()!, "Kanten dünner als die Knoten")
+    func ende(_ x: KortexMenueSymbol.Abschnitt) -> P {
+        switch x {
+        case let .bahn(_, nach): return nach
+        case let .wendung(m, _, ab): return P(m.x, m.y + (ab ? 1 : -1) * KortexMenueSymbol.radius)
+        }
+    }
+    for i in 1..<a.count {
+        let e = ende(a[i - 1]), n = anfang(a[i])
+        #expect(abs(e.x - n.x) < 1e-9 && abs(e.y - n.y) < 1e-9, "Lücke vor Abschnitt \(i)")
+    }
+    let bahnen = a.filter { if case .bahn = $0 { return true } else { return false } }
+    #expect(KortexMenueSymbol.bahnen == 4 && bahnen.count == 4 && a.count - bahnen.count == 3, "vier Bahnen, drei Wendungen")
+    // Die Wendungen wechseln die Seite (rechts, links, rechts): Serpentine, nicht Spirale.
+    let seiten = a.compactMap { x -> Bool? in if case let .wendung(_, rechts, _) = x { return rechts } else { return nil } }
+    #expect(seiten == [true, false, true])
+    // Luft: Zwischen zwei Bahnen ist mindestens 80 % der Strichstärke frei (dünne Linie, mehr Luft statt Schlauch/Heizkörper).
+    let luft = 2 * KortexMenueSymbol.radius - KortexMenueSymbol.kantenbreite
+    #expect(luft >= 0.8 * KortexMenueSymbol.kantenbreite, "Luft \(luft)")
+    // Die Bahnen sind länger als die Wendungen breit sind.
+    #expect(KortexMenueSymbol.spanne > 2 * KortexMenueSymbol.radius)
 }
 
-/// Die App benutzt das Symbol als Template (System färbt es) und kennt keinen Rückfall auf das alte K.
-@Test func menueBildIstTemplateUndNutztDasNetzSymbol() throws {
+/// Die App benutzt das Symbol als Template (System färbt es) und kennt keinen Rückfall auf das alte K oder das Netz.
+@Test func menueBildIstTemplateUndNutztDieWindung() throws {
     let quelle = try text("Sources/BrainApp/Kortex.swift")
     #expect(quelle.contains("KortexMenueSymbol.zeichne(") && quelle.contains("bild.isTemplate = true"))
-    #expect(!quelle.contains("kortex-c-k"), "Altes K-Template ist noch im Code")
+    #expect(!quelle.contains("kortex-c-k") && !quelle.contains("kortex-2-netz"), "Altes K oder Netz ist noch im Code")
 }
 
 // MARK: App-Icon
@@ -109,13 +130,15 @@ func menueSymbolIstBeiAllenAufloesungenLesbar(faktor: Int) throws {
     #expect(try text("scripts/veroeffentlichen.sh").contains("Contents/Resources/AppIcon.icns"))
 }
 
-@Test func iconSkriptBautAusDemNetzEntwurfMitKleinvariante() throws {
+@Test func iconSkriptBautAusDerWindungMitKleinvariante() throws {
     let skript = try text("scripts/baue-icon.sh")
-    #expect(skript.contains("kortex-2-netz.svg") && skript.contains("kortex-2-netz-klein.svg"))
-    #expect(!skript.contains("kortex-c-k"))
-    for datei in ["kortex-2-netz.svg", "kortex-2-netz-klein.svg", "kortex-2-netz.png"] {
+    #expect(skript.contains("kortex-3-windung.svg") && skript.contains("kortex-3-windung-klein.svg"))
+    #expect(!skript.contains("kortex-c-k") && !skript.contains("kortex-2-netz"))
+    // Die Netz-Dateien bleiben als Archiv im Entwurfsordner.
+    for datei in ["kortex-3-windung.svg", "kortex-3-windung.png", "kortex-3-windung-klein.svg", "kortex-3-windung-menue.svg", "kortex-3-windung-v2a.svg",
+                  "kortex-3-windung-v2b.svg", "kortex-3-windung-v2c.svg", "kortex-2-netz.svg", "kortex-2-netz-klein.svg"] {
         #expect(FileManager.default.fileExists(atPath: repo.appendingPathComponent("Ressourcen/icon-entwuerfe/\(datei)").path), "\(datei) fehlt")
     }
     let readme = try text("Ressourcen/icon-entwuerfe/README.md")
-    #expect(readme.contains("Netz") && readme.contains("30.10.2026"), "Die Wahl ist nicht dokumentiert")
+    #expect(readme.contains("Original-Windung") && readme.contains("30.10.2026") && readme.contains("Netz") && readme.contains("verworfen"), "Die Wahl ist nicht dokumentiert")
 }

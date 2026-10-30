@@ -5,7 +5,7 @@
 //
 // Dieses Modul ist die einzige Stelle, die das Format kennt (Kommandozeile, Werkstatt und MCP rufen es auf). Der Teil oben ist rein (Text rein, Text
 // raus), der Teil unten liest und schreibt Dateien: nur Dateien direkt im Aufgaben-Ordner, nie Verweise, atomar (Temp-Datei + Umbenennen).
-import { readFileSync, readdirSync, lstatSync, mkdirSync, writeFileSync, renameSync, unlinkSync, realpathSync, openSync, readSync, closeSync } from "node:fs";
+import { readFileSync, readdirSync, lstatSync, mkdirSync, writeFileSync, renameSync, unlinkSync, linkSync, realpathSync, openSync, readSync, closeSync } from "node:fs";
 import { join, sep } from "node:path";
 import { randomBytes } from "node:crypto";
 import { ordner } from "./pfade.mjs";
@@ -14,6 +14,8 @@ export const STATUS = ["offen", "in-arbeit", "warten", "erledigt"];
 export const PRIORITAET = ["niedrig", "normal", "hoch"];
 export const STANDARD_ORDNER = "05_aufgaben";
 export const RANG_SCHRITT = 1000;
+export const ARCHIV_ORDNER = "archiv";   // Unterordner des Aufgaben-Ordners: erledigte Aufgaben wandern hierher (nie gelöscht)
+export const ARCHIV_TAGE = 30;           // „alle erledigten älter als …“: Standard in Tagen
 const MAX_DATEI = 256 * 1024;          // Bytes: größere Dateien werden nicht gelesen
 const MAX_NEU = MAX_DATEI - 16 * 1024; // Bytes: so groß darf eine geschriebene Datei höchstens werden (Reserve für spätere Änderungen)
 const MAX_TITEL = 200;
@@ -528,6 +530,95 @@ export function aendere(vault, pfad, e, { jetzt = new Date(), basisText, zwische
   if (typeof zwischen === "function") zwischen();   // Testhaken: ein anderer Prozess ändert die Datei zwischen Lesen und Schreiben
   aendereDatei(abs, f, jetzt, text);
   return { pfad: rel, aufgabe: parseAufgabe(readFileSync(abs, "utf8"), rel), geaendert };
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Archivieren: eine erledigte Aufgabe wandert unverändert (Byte für Byte) in `<aufgaben-ordner>/archiv/`. Es wird nichts gelöscht und nichts überschrieben
+// (gibt es den Namen dort schon, bekommt die Datei ein „-2“, „-3“ …). Das Board und die Zähler lesen nur die Dateien DIREKT im Aufgaben-Ordner und sehen das Archiv
+// darum nie; im Notiz-Index zählt der Ordner als Archiv. Dieselben Schutzregeln wie beim Aufgaben-Ordner: nie ein Verweis, nie außerhalb des Vaults.
+
+// Der Archiv-Ordner unterhalb des Aufgaben-Ordners (echter Ordner, kein Verweis, direkt darin). Fehlt er, wird er nur auf Wunsch angelegt.
+function archivAbs(o, { anlegen = false } = {}) {
+  let namen = [];
+  try { namen = readdirSync(o.abs); } catch { throw new AufgabeFehler(`Der Ordner „${o.name}“ ist nicht lesbar.`, 422); }
+  const vorhanden = namen.find((n) => n === ARCHIV_ORDNER) ?? namen.find((n) => falte(n) === falte(ARCHIV_ORDNER)) ?? null;
+  const name = vorhanden ?? ARCHIV_ORDNER;
+  const abs = join(o.abs, name);
+  if (vorhanden) {
+    let st;
+    try { st = lstatSync(abs); } catch { throw new AufgabeFehler(`Der Ordner „${name}“ ist nicht lesbar.`, 422); }
+    if (st.isSymbolicLink()) throw new AufgabeFehler(`„${o.name}/${name}“ ist ein Verweis und wird nicht benutzt: Das Archiv liegt als echter Ordner im Aufgaben-Ordner.`, 403);
+    if (!st.isDirectory()) throw new AufgabeFehler(`„${o.name}/${name}“ ist eine Datei, kein Ordner.`, 422);
+  } else {
+    if (!anlegen) return { name, abs, da: false };
+    try { mkdirSync(abs); } catch (e) { if (e.code !== "EEXIST") throw e; }
+  }
+  let echt, eltern;
+  try { echt = realpathSync(abs); eltern = realpathSync(o.abs); } catch { throw new AufgabeFehler(`Der Ordner „${name}“ ist nicht lesbar.`, 422); }
+  if (falte(echt) !== falte(join(eltern, name))) throw new AufgabeFehler(`Der Ordner „${o.name}/${name}“ liegt nicht direkt im Aufgaben-Ordner und wird nicht benutzt.`, 403);
+  return { name, abs, da: true };
+}
+
+// Datei `von` unter einem freien Namen in `zielOrdner` ablegen, ohne etwas zu überschreiben: erst ein zweiter Name (harter Verweis; schlägt bei einem
+// vorhandenen Ziel fehl), dann fällt der alte Name weg. So gibt es keinen Augenblick ohne Datei. Ging die Quelle zwischendurch an einen anderen Prozess
+// (atomar ersetzt), wird nichts entfernt und der Vorgang abgebrochen. Ohne harte Verweise (manche Laufwerke) gilt Umbenennen mit vorheriger Prüfung.
+function legeUnterFreiemNamenAb(von, zielOrdner, name) {
+  const stamm = name.replace(/\.md$/i, "");
+  for (let i = 1; i < 1000; i++) {
+    const ziel = join(zielOrdner, `${stamm}${i === 1 ? "" : "-" + i}.md`);
+    try {
+      linkSync(von, ziel);
+    } catch (e) {
+      if (e.code === "EEXIST") continue;
+      if (!["EPERM", "ENOTSUP", "EXDEV", "EMLINK", "ENOSYS", "EOPNOTSUPP"].includes(e.code)) throw e;
+      try { lstatSync(ziel); continue; } catch { /* frei */ }
+      renameSync(von, ziel);
+      return ziel;
+    }
+    let gleich = false;
+    try { gleich = lstatSync(von).ino === lstatSync(ziel).ino; } catch { /* Quelle weg */ }
+    if (!gleich) { try { unlinkSync(ziel); } catch { /* weg */ } throw new AufgabeFehler("Die Aufgabe wurde inzwischen geändert. Es wurde nichts verschoben.", 409); }
+    unlinkSync(von);
+    return ziel;
+  }
+  throw new AufgabeFehler("Im Archiv gibt es schon zu viele Dateien mit diesem Namen.", 409);
+}
+
+// Eine erledigte Aufgabe archivieren. Gibt { von, pfad, aufgabe } zurück (pfad = neuer Ort im Archiv). Nicht erledigte Aufgaben bleiben auf dem Board (409).
+export function archiviere(vault, pfad) {
+  const o = ordnerAbs(vault);
+  if (!o.da) throw new AufgabeFehler("Diese Aufgabe gibt es nicht.", 404);
+  const m = /^([^/]+)\/([^/]+\.md)$/i.exec(String(pfad ?? "").replace(/\\/g, "/"));
+  if (!m || falte(m[1]) !== falte(o.name) || m[2].startsWith(".") || m[2].startsWith("_") || UNSICHERER_NAME.test(m[2])) throw new AufgabeFehler("Das ist keine Aufgabe in diesem Vault.", 400);
+  const rel = `${o.name}/${m[2]}`;
+  const abs = join(o.abs, m[2]);
+  let text;
+  try { text = leseDatei(abs); } catch { throw new AufgabeFehler("Diese Aufgabe gibt es nicht (mehr).", 404); }
+  if (text === null) throw new AufgabeFehler("Das ist keine gewöhnliche Datei.", 422);
+  const a = parseAufgabe(text, rel);
+  if (!a) throw new AufgabeFehler("Diese Datei ist keine Aufgabe (typ: aufgabe fehlt).", 422);
+  if (a.status !== "erledigt") throw new AufgabeFehler("Archiviert werden nur erledigte Aufgaben.", 409);
+  const archiv = archivAbs(o, { anlegen: true });
+  const ziel = legeUnterFreiemNamenAb(abs, archiv.abs, m[2]);
+  const neu = `${o.name}/${archiv.name}/${ziel.split(sep).pop()}`;
+  return { von: rel, pfad: neu, aufgabe: { ...a, pfad: neu } };
+}
+
+// Alle erledigten Aufgaben archivieren, die seit mehr als `tage` Tagen nicht mehr geändert wurden (Änderungszeit aus dem Kopf; ohne lesbares Datum bleibt die
+// Aufgabe stehen). Gibt { tage, archiviert: [{ von, pfad }], uebersprungen: n } zurück; eine einzelne Aufgabe, die sich nicht verschieben lässt, stoppt die anderen nicht.
+export function archiviereAlte(vault, { tage = ARCHIV_TAGE, jetzt = new Date() } = {}) {
+  if (typeof tage !== "number" || !Number.isInteger(tage) || tage < 1 || tage > 3650) throw new AufgabeFehler("Die Tage müssen eine ganze Zahl von 1 bis 3650 sein.");
+  const grenze = jetzt.getTime() - tage * 86400000;
+  const archiviert = [];
+  let uebersprungen = 0;
+  for (const a of liste(vault, { kopf: true })) {
+    if (a.status !== "erledigt") continue;
+    const t = Date.parse(a.geaendert || a.erstellt || "");
+    if (!Number.isFinite(t) || t >= grenze) continue;
+    try { const r = archiviere(vault, a.pfad); archiviert.push({ von: r.von, pfad: r.pfad }); }
+    catch (e) { if (e instanceof AufgabeFehler) uebersprungen++; else throw e; }
+  }
+  return { tage, archiviert, uebersprungen };
 }
 
 export const zaehle = (vault, heute) => zaehleAus(liste(vault, { kopf: true }), heute);

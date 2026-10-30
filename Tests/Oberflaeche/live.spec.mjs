@@ -88,6 +88,33 @@ test("Eigene Änderungen im Board flackern nicht: kein zusätzliches Nachladen d
   await expect(page.locator(`[data-pfad="${p.a}"].live-neu`)).toHaveCount(0);
 });
 
+test("Ein Live-Nachladen dreht eine laufende eigene Änderung nicht zurück (Karte bleibt in der neuen Spalte)", async ({ page }) => {
+  await oeffneBoard(page);
+  await page.route("**/api/aufgaben/05_aufgaben/**", async (route) => { if (route.request().method() === "PATCH") await new Promise((r) => setTimeout(r, 1500)); await route.fallback(); });
+  await karte(page, p.a).focus();
+  await page.keyboard.press("Alt+ArrowRight");
+  await expect(spalte(page, "in-arbeit").locator(`[data-pfad="${p.a}"]`)).toBeVisible();
+  // während die Änderung unterwegs ist, kommt von außen eine neue Aufgabe → Live-Nachladen
+  const neu = aufgabe(vault, "2026-10-30-nebenbei", { titel: "Nebenbei", rang: 2000 });
+  await expect(karte(page, neu)).toBeVisible({ timeout: 6000 });
+  await expect(spalte(page, "in-arbeit").locator(`[data-pfad="${p.a}"]`)).toBeVisible();
+  await expect(spalte(page, "offen").locator(`[data-pfad="${p.a}"]`)).toHaveCount(0);
+  await expect.poll(() => readFileSync(join(vault, p.a), "utf8").match(/^status: (.*)$/m)?.[1], { timeout: 6000 }).toBe("in-arbeit");
+  await expect(spalte(page, "in-arbeit").locator(`[data-pfad="${p.a}"]`)).toBeVisible();
+});
+
+test("Archiv von außen: die Karte verschwindet vom Board, ohne Hinweis „angelegt“", async ({ page }) => {
+  aufgabe(vault, "2026-10-21-fertig", { titel: "Fertig", status: "erledigt", rang: 2000 });
+  await oeffneBoard(page);
+  const fertig = "05_aufgaben/2026-10-21-fertig.md";
+  await expect(karte(page, fertig)).toBeVisible();
+  mkdirSync(join(vault, "05_aufgaben", "archiv"), { recursive: true });
+  renameSync(join(vault, fertig), join(vault, "05_aufgaben", "archiv", "2026-10-21-fertig.md"));
+  await expect(karte(page, fertig)).toHaveCount(0, { timeout: 6000 });
+  await page.waitForTimeout(900);
+  expect(await toastTexte(page)).toEqual([]);
+});
+
 test("Hinweis „Claude hat eine Aufgabe angelegt: …“ bei KI-Quelle; keiner bei eigener Quelle; mehrere werden gebündelt", async ({ page }) => {
   await oeffneBoard(page);
   aufgabe(vault, "2026-10-30-mensch", { titel: "Von mir", quelle: "mensch" });

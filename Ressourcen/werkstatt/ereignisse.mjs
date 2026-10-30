@@ -199,6 +199,8 @@ export function erzeugeEreignisse(o = {}) {
     if (hash === null) bekannteAufgaben.delete(k.pfad); else bekannteAufgaben.add(k.pfad);
     if (istEigen(k.pfad) && eigen.get(k.pfad).hash === hash) return null; // eigener Schreibvorgang: kein Echo
     if (hash === null) return { typ: "aufgabe", art: "entfernt", pfad: k.pfad };
+    // <aufgaben-ordner>/archiv/…: Archiv (kern/aufgaben.mjs ARCHIV_ORDNER). Eine dort ankommende Datei ist nie eine NEUE Aufgabe (kein Hinweis „angelegt“); das Board lädt neu, die Karte verschwindet
+    if (falte(k.pfad.split("/")[1] || "") === "archiv") return { typ: "aufgabe", art: "archiviert", pfad: k.pfad };
     const kopf = aufgabenKopf(kopfLesen(abs));
     return { typ: "aufgabe", art: war ? "geaendert" : "angelegt", pfad: k.pfad, ...(kopf.titel ? { titel: kopf.titel } : {}), ...(kopf.status ? { status: kopf.status } : {}), ...(kopf.quelle ? { quelle: kopf.quelle } : {}) };
   }

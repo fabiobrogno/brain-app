@@ -388,3 +388,31 @@ test("MCP brain_aufgabe_anlegen → Ereignis aufgabe/angelegt mit Quelle ki:<cli
   assert.ok(dauer < 2500, `Ereignis nach ${dauer} ms`);
   console.log(`# Latenz MCP → Ereignis: ${dauer} ms`);
 });
+
+// ───────────────────────────── Archiv ─────────────────────────────
+
+test("Archiv: eine Aufgabe, die nach <aufgaben>/archiv/ wandert, meldet „archiviert“ (nie „angelegt“) und „entfernt“ am alten Ort; eigenes Archivieren bleibt still", async () => {
+  const d = vaultOrdner();
+  const handler = erzeugeHandler({ vault: d, vaultOptionen: { support: tmp("brain-support-") }, ereignisse: { entprellMs: 60, maxWarteMs: 300, modus: "poll", pollMs: 80 } });
+  hubs.push(handler.ereignisse);
+  const rufe = async (methode, p, daten, query) => { const r = await handler({ methode, pfad: p, query: query ?? null, body: daten === undefined ? undefined : Buffer.from(JSON.stringify(daten)) }); return { status: r.status, j: JSON.parse(r.body.toString("utf8")) }; };
+  const a = (await rufe("POST", "/api/aufgaben", { titel: "Zum Archivieren" })).j.pfad;
+  const b = (await rufe("POST", "/api/aufgaben", { titel: "Von außen archiviert" })).j.pfad;
+  await rufe("PATCH", `/api/aufgaben/${a}`, { status: "erledigt" });
+  await rufe("PATCH", `/api/aufgaben/${b}`, { status: "erledigt" });
+  const s = (await rufe("GET", "/api/ereignisse")).j;
+  await pause(200);
+  const r1 = await rufe("POST", "/api/aufgaben/archivieren", { pfad: a });
+  assert.equal(r1.status, 200, JSON.stringify(r1.j));
+  await pause(700);
+  assert.deepEqual((await rufe("GET", "/api/ereignisse", undefined, `seit=0&epoche=${s.epoche}&warte=0`)).j.ereignisse, [], "eigenes Archivieren: kein Echo");
+  // von außen (wie die KI oder der Finder): Datei verschieben
+  mkdirSync(join(d, "05_aufgaben", "archiv"), { recursive: true });
+  renameSync(join(d, b), join(d, "05_aufgaben", "archiv", b.split("/").pop()));
+  await rufe("GET", "/api/ereignisse", undefined, `seit=0&epoche=${s.epoche}&warte=5`);
+  await pause(400);
+  const alle = (await rufe("GET", "/api/ereignisse", undefined, `seit=0&epoche=${s.epoche}&warte=0`)).j.ereignisse;
+  assert.ok(alle.some((x) => x.typ === "aufgabe" && x.art === "archiviert" && x.pfad.includes("/archiv/")), JSON.stringify(alle));
+  assert.ok(alle.some((x) => x.typ === "aufgabe" && x.art === "entfernt" && x.pfad === b), JSON.stringify(alle));
+  assert.ok(!alle.some((x) => x.art === "angelegt"), "im Archiv entsteht keine neue Aufgabe");
+});

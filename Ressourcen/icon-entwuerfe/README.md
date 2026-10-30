@@ -20,25 +20,37 @@ sanfter Lila-Verlauf, Innenlicht, Glanz oben, feiner heller Rand, kein Schlagsch
 ausserhalb des Squircles und ist deshalb nicht verwendet.
 
 ## Entscheidung und Einbau
-**Gewählt ist Entwurf 2 „Netz“ (`kortex-2-netz.svg`), am 30.10.2026.** Er löst das bisherige K (Entwurf C, `kortex-c-k.svg`) ab.
-Alle übrigen Entwürfe (A, B, C, 1, 3, 4, 5) bleiben als Archiv in diesem Ordner; er gehört nicht ins App-Paket (`scripts/baue-app.sh`
-überspringt `icon-entwuerfe`, `scripts/ci-aenderungen.sh` zählt ihn nicht als Testgegenstand).
+**Gewählt ist Entwurf 3 „Windung“ in der Originalfassung (`kortex-3-windung.svg`, die eine durchgehende Serpentinenlinie), am 30.10.2026.**
+Das Netz (Entwurf 2, `kortex-2-netz.svg`) ist verworfen und löst das K nicht mehr ab; vorher war das Netz kurz eingebaut (PR 51), davor das K
+(Entwurf C). Netz, K, die verfeinerten Windungen v2a/b/c und alle übrigen Entwürfe bleiben als Archiv in diesem Ordner; er gehört nicht ins App-Paket
+(`scripts/baue-app.sh` überspringt `icon-entwuerfe`, `scripts/ci-aenderungen.sh` zählt ihn nicht als Testgegenstand).
 
-- **App-Icon:** `bash scripts/baue-icon.sh` (braucht `rsvg-convert` und `iconutil`) erzeugt `Ressourcen/AppIcon.icns` aus dem Netz:
-  16, 16@2x und 32 px aus der Kleinvariante `kortex-2-netz-klein.svg`, alle übrigen Größen (32@2x bis 1024) aus dem vollen Entwurf.
+- **App-Icon:** `bash scripts/baue-icon.sh` (braucht `rsvg-convert` und `iconutil`) erzeugt `Ressourcen/AppIcon.icns` aus der Windung:
+  16, 16@2x und 32 px aus der Kleinvariante `kortex-3-windung-klein.svg`, alle übrigen Größen (32@2x bis 1024) aus dem vollen Entwurf `kortex-3-windung.svg`
+  (Form und Linienführung unverändert; Raster, Squircle, Licht von oben und Tiefe entsprechen den übrigen Entwürfen).
   `Info.plist` nennt es mit `CFBundleIconFile`, `scripts/baue-app.sh` legt es nach `Contents/Resources`.
-- **Kleinvariante:** Bei 16 px verschwimmen im vollen Entwurf die dünnen Kanten und kleinen Knoten (Glanz und Schatten helfen dort nicht).
-  Die Kleinvariante hat einen größeren Squircle (weniger Rand), kein Glanz, kein Innenlicht, keinen Rand und keinen Schatten, den Graphen
-  um das 1,3fache vergrößert, dickere Kanten (92 statt 50) und größere Knoten; Anordnung und Farben sind gleich.
-- **Menüleiste:** Das Template-Bild (18 pt, scharf bei 1x/2x/3x, weil bei jeder Auflösung neu gezeichnet) ist das Netz ohne Fläche:
-  fünf Knoten, dickere Kanten, kleinere Knoten als im Icon, damit zwischen den Knoten noch Linie zu sehen ist. Eine Fassung mit drei
-  Knoten wurde verworfen, sie liest sich als Teilen-Symbol statt als K. Geometrie und Zeichnung: `Sources/BrainCore/KortexMenueSymbol.swift`
-  (getestet in `Tests/BrainCoreTests/KortexLogoTests.swift`); als Bild eingebunden in `KortexMenueBild` (`Sources/BrainApp/Kortex.swift`).
-  `kortex-2-netz-menue.svg` zeigt dasselbe einfarbig als Vorlage (zur Ansicht, nicht im Bundle).
-- **Studio:** Das Marken-Symbol (`marke` in `Ressourcen/studio/symbole.js`, Willkommen-Kopf und leere Editor-Fläche) ist dasselbe Netz-K
-  im Linien-Raster des Studios (Kanten und Knoten in `currentColor`).
+- **Kleinvariante:** Bei 16 px verschwimmen im vollen Entwurf die sechs Bahnen. Die Kleinvariante hat einen größeren Squircle (weniger Rand), kein Glanz,
+  kein Innenlicht, keinen Rand und keinen Schatten, dieselbe Serpentine mit vier statt sechs Bahnen und dickerem Strich (92 statt 46); Farben gleich.
+- **Menüleiste:** Das Template-Bild (18 pt, scharf bei 1x/2x/3x, weil bei jeder Auflösung neu gezeichnet) ist dieselbe vereinfachte Serpentine ohne Fläche
+  (vier Bahnen, eine Linie, Strich 1,05 bei Bahnabstand 2 Einheiten, damit Luft zwischen den Bahnen bleibt).
+  Geometrie und Zeichnung: `Sources/BrainCore/KortexMenueSymbol.swift` (getestet in `Tests/BrainCoreTests/KortexLogoTests.swift`); als Bild eingebunden
+  in `KortexMenueBild` (`Sources/BrainApp/Kortex.swift`). `kortex-3-windung-menue.svg` zeigt dasselbe einfarbig als Vorlage (zur Ansicht, nicht im Bundle).
+- **Studio:** Das Marken-Symbol (`marke` in `Ressourcen/studio/symbole.js`, Willkommen-Kopf und leere Editor-Fläche) ist dieselbe vereinfachte Serpentine
+  als ein Linienzug im 16er Raster des Studios (`currentColor`).
 
-## Entwürfe v2 (Netz gewählt, Rest Archiv, nicht im Bundle)
+### Warum die Original-Windung
+Die Verfeinerungen v2a/b/c (zwei Hemisphären aus einem Strang, dünnere Linie, ungleiche Bahnlängen) wurden geprüft und verworfen: Die ursprüngliche
+Serpentine ist die ruhigere, klarere Form, die auch bei 16 bis 32 px und im Menüleisten-Symbol mit wenigen Bahnen trägt. Proben der Kleinvariante:
+`proben/kortex-3-windung-klein-16.png`, `-32.png`, `-64.png`.
+
+| Datei | Idee |
+|---|---|
+| kortex-3-windung | Original: eine durchgehende Serpentinenlinie, sechs Bahnen (gewählt) |
+| kortex-3-windung-v2a | Zwei Hemisphären aus einem Strang, sechs Bahnen je Seite, dünner Strich (Archiv) |
+| kortex-3-windung-v2b | Wie v2a mit vier Bahnen und dickem Strich; wirkt wie ein Gesicht (Archiv) |
+| kortex-3-windung-v2c | Wie v2a, gekippt und unregelmäßiger; wirkt zufällig (Archiv) |
+
+## Entwürfe v2 (Windung gewählt, Netz verworfen, Rest Archiv, nicht im Bundle)
 Fünf neue Entwürfe nach macOS-26-Raster: Squircle (Superellipse, 824er Körper auf 1024er Fläche), Licht von oben, dezenter Schlagschatten,
 feiner Innenrand, Zeichen mit weichem Schatten. Palette: Kortex-Lila (`#5B4ED6` Mitte, `#8F85F7` oben, `#3A2EA6` unten; Entwurf 5 dunkel mit `#A89FFF`-Licht).
 Ansicht aller Entwürfe groß und klein, hell und dunkel: `uebersicht.html`. Proben (16/32/64 px) liegen in `proben/`.
