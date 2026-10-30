@@ -11,7 +11,7 @@
 ## A. Python-Auswertung vom 16.10.2026 (nur Einordnung, nicht vergleichbar)
 
 Herkunft: Sitzung 8def260d (Skripte ex.py, an.py, an2.py), 30 Tage bis 16.10.2026, 193 Haupt-Verläufe
-(190 in `~/.claude`, 3 in `~/.claude-firma2`), 174 mit Nutzertext, 2.600 Nutzer-Nachrichten, 70 Befehle.
+(190 in `~/.claude`, 3 in `~/.claude-<profil2>`), 174 mit Nutzertext, 2.600 Nutzer-Nachrichten, 70 Befehle.
 
 | Gruppe | Nachrichten | Sitzungen |
 |---|---|---|
