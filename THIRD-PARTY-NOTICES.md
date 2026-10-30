@@ -17,7 +17,7 @@ vorab gebautes Bündel (siehe CodeMirror).
 | Gehirnoberfläche (aus AOMIC-ID1000) | 1.2.1 | CC0 1.0 | `kern/ansicht/vendor/brain-mesh/brain-mesh.js` |
 | Simple Icons (Logos der KI-Programme und Dienste) | 16.36.0 | CC0 1.0 | `logos/`, `studio/ki-logos.js`, `studio/marken.js` |
 | Simple Icons (MCP-Logos der 3D-Ansicht) | 16.33.0 | CC0 1.0 | `kern/ansicht/vendor/icons/` |
-| Orca (Gestaltungsmuster und -werte: Dialoge, Einrichtung, leere Zustände, Design-System v2) | Commits cf5b462, 9bccd67 | MIT | `studio/studio.css`, `studio/bausteine.css`, `studio/dialoge.css`, `studio/aufgaben.css`, `studio/hilfen.js`, `studio/willkommen.js` (Gestaltung; Oberfläche der App: `EinrichtungsBausteine.swift`) |
+| Orca (Gestaltungsmuster und -werte: Dialoge, Einrichtung, leere Zustände, Design-System v2) | Commits cf5b462, 9bccd67 | MIT | `studio/studio.css`, `studio/bausteine.css`, `studio/dialoge.css`, `studio/aufgaben.css`, `studio/hilfen.js`, `studio/willkommen.js`, `studio/einrichtung.css`, `studio/einrichtung.js`, `studio/einrichtung-buehne.js` (Gestaltung) |
 
 Die Pfade sind relativ zu `Kortex.app/Contents/Resources`, außer Sparkle (relativ zu `Kortex.app/Contents`).
 
@@ -389,11 +389,11 @@ Website https://orca.dev), Stand Commit `cf5b462fba8462678256b25d05cec2adb8dca41
 - das Aufbaumuster eines Dialogs (Titel, ein Satz Beschreibung, Inhalt, Fußleiste rechtsbündig mit dem Hauptknopf; 24 px Innenabstand, 16 px Abstand
   zwischen den Teilen, 8 px zwischen den Knöpfen; Enter bestätigt, Esc schließt; Enter-Hinweis am Hauptknopf) nach
   `src/renderer/src/components/ui/dialog.tsx` und `src/renderer/src/components/onboarding/OnboardingFooter.tsx`
-  → `studio/dialoge.css`, `studio/hilfen.js` (`dialog()`), `Sources/BrainApp/EinrichtungsAssistent.swift` (Fußleiste);
+  → `studio/dialoge.css`, `studio/hilfen.js` (`dialog()`);
 - das Muster „eine große Hauptaktion, darunter eine gruppierte Liste weiterer Wege, gewählte Zeile mit Rahmen und Enter-Hinweis, Pfeiltasten
   wechseln die Zeile“ samt Zeilenmaßen (Symbolkachel 28 px mit 6 px Ecke, Titel 14 px, Beschreibung 12 px, Gruppenüberschrift in Großbuchstaben mit
   Sperrung) nach `src/renderer/src/components/sidebar/AddRepoStartSteps.tsx`
-  → `studio/willkommen.js` und `studio/dialoge.css` („Andere Wege“), `Sources/BrainApp/EinrichtungsBausteine.swift` (`WegZeile`, `WegGruppe`);
+  → `studio/willkommen.js` und `studio/dialoge.css` („Andere Wege“);
 - der leere Zustand als Kreis (48 px) mit Symbol, einem kurzen Satz und höchstens einer Aktion nach
   `src/renderer/src/components/native-chat/NativeChatEmptyState.tsx` → `studio/dialoge.css`, `studio/bausteine.js` (`leerBlock()`);
 - die Gestaltungswerte des Design-Systems v2 (Graustufen hell/dunkel, Ränder 7 % und 13 %, Radius-Skala aus `--radius: 0.625rem`, die drei Höhenstufen

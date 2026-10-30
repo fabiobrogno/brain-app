@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Kortex einrichten</title>
+<script src="fehlerhaken.js"></script>
+<link rel="stylesheet" href="studio.css">
+<link rel="stylesheet" href="bausteine.css">
+<link rel="stylesheet" href="dialoge.css">
+<link rel="stylesheet" href="einrichtung.css">
+</head>
+<body class="e-seite">
+<section class="e-win" id="win" data-step="0" role="dialog" aria-modal="true" aria-label="Kortex einrichten">
+  <div class="e-ampel" aria-hidden="true"><i></i><i></i><i></i></div>
+  <div class="e-spalte">
+    <div class="e-spalte-innen">
+      <nav class="e-stepper" id="stepper" aria-label="Fortschritt"></nav>
+      <div class="e-panes" id="panes"></div>
+      <footer class="e-fuss" id="fuss"></footer>
+    </div>
+  </div>
+  <div class="e-buehne" id="buehne" data-step="0"></div>
+  <div id="toast-host" aria-live="polite"></div>
+</section>
+<div id="dialog-host"></div>
+<script type="module" src="einrichtung.js"></script>
+</body>
+</html>

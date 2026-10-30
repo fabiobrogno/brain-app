@@ -138,3 +138,24 @@ Dialoge und Palette erscheinen per Zoom; Aufgaben-Board mit Spalten (Radius 14) 
 
 **Prüfung.** Alle Playwright-Specs (angepasst nur dort, wo Farbwerte geprüft werden: Hintergrund dunkel `rgb(10, 10, 10)`, Chip-Text `#4c3fc6`, Fokusrand Akzent 55 %), neue Spec `tokens.spec.mjs`;
 Bilder des echten Studios hell/dunkel vorher/nachher im Scratchpad (`ui-p1/`), verglichen mit dem Prototyp.
+
+## 7. Einrichtungs-Assistent im Studio (P2)
+
+Stand: 30.10.2026 · Branch `feat/assistent-studio` · Paket P2 aus `UMSETZUNG.md` des Prototyps. **Ein** Assistent statt zweier Masken: Er lebt als Studio-Seite
+(`Ressourcen/studio/einrichtung.html`, `einrichtung.js`, `einrichtung.css`, Bühne in `einrichtung-buehne.js`, KI-Schritt in `einrichtung-ki.js`, Texte in `texte-einrichtung.js`)
+und wird in einem eigenen Fenster ohne Titelleiste angezeigt (1120 x 720 Punkte, begrenzt auf den sichtbaren Bildschirm, echte Ampel, Zieh-Streifen oben).
+
+**Schritte und Zustände.** Willkommen (selbstzeichnende Windung, stille git-Prüfung: bereit, fehlt, wird installiert, läuft nicht) · 1 Vault (neu, Beispiel, Ordner öffnen
+mit Zählung und „zu breit“, von GitHub holen mit Adresse-Prüfung und Umweg über die Anmeldung bei privaten Repositories) · 2 Sicherung (Gerätecode mit Countdown, abgelaufen,
+abgelehnt, kein Netz, GitHub nicht eingerichtet, schon gesichert, blockiert, Repository anlegen oder ein vorhandenes nehmen, „Nur auf diesem Mac“) · 3 KI (erkannte Programme mit
+Schalter, Konto und Stufe, „Weitere Programme“ mit echten Logos, Rückfrage beim Umstellen, Befehl zum Kopieren bei Fehlern, Pflege-Konto bei „Erweitert“, nichts gefunden) ·
+4 Fertig (Zusammenfassung mit „Ändern“, Probe-Suche mit Quellen, Studio öffnen). Tastatur: ↩ (nicht im Textfeld), ⌘↩, ⌘[, 1–4, Pfeile, Esc (Später-Rückfrage).
+`prefers-reduced-motion` schaltet Gleiten, Kreisen, Fließen und Schimmer ab. Die Windung ist zusätzlich die Fortschrittsanzeige (Idee aus Prototyp B): ein Punkt wandert je Schritt eine Bahn weiter.
+
+**Was in Swift bleibt** (Aktionskanal `aktion`, Prüfung in `AppAktion`): `git-pruefen`, `git-installieren`, `ordner-waehlen` (mit Zählung und Breite-Prüfung), `extern`, `kopieren`,
+`einrichtung-ende` (fertig/später, schreibt `einrichtung.json`, öffnet das Studio), `einrichtung-oeffnen` (Menü, Studio ohne Vault). Alles andere läuft über die vorhandene API.
+
+**Bewusst anders als im Prototyp.** Der Schalter „Automatisch sichern“ fehlt (es gibt keine solche Einstellung; die tägliche Pflege gleicht ab, das steht dort stattdessen). „Hierher ziehen“
+fehlt (eine WebView bekommt von einem gezogenen Ordner keinen Pfad). Die Probe ist eine echte Suche über den MCP-Weg der KI mit den Fundstellen als Chips, keine erfundene Antwort; beim
+Apple-Installer steht kein Prozentbalken (er meldet keinen Fortschritt), sondern ein unbestimmter. KI-Auswahl: Übergangsvariante mit `ki-logos.js`, bis der Baustein „KI-Auswahl“ aus
+`feat/ki-katalog` auf main ist.

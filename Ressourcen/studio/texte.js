@@ -3,6 +3,7 @@ export const PRODUKT = "Kortex";
 
 export const T = {
   produkt: PRODUKT,
+  ohneVault: { titel: "Noch kein Vault", text: `Die Einrichtung führt dich in zwei Minuten zu deinem ersten Vault, mit Sicherung und KI, wenn du möchtest.`, einrichten: `${PRODUKT} einrichten …`, anderer: "Anderen Weg wählen" },
   suche: { platzhalter: "Suchen", keine: "Nichts gefunden.", zeile: "Zeile" },
   bereiche: { inbox: "Posteingang", aufgaben: "Aufgaben", rueckfragen: "Rückfragen", alle: "Alle Notizen", wissen: "Wissen", archiv: "Archiv", vorlagen: "Vorlagen" },
   abschnitte: { favoriten: "Favoriten", ansichten: "Ansichten", typen: "Typen", ordner: "Ordner" },

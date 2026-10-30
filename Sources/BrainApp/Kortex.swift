@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 import BrainCore
 
-/// Gemeinsame Gestaltung der App: EINE Akzentfarbe für Assistent, Rückfragen, Dialoge und Knöpfe — dieselbe wie im Studio
+/// Gemeinsame Gestaltung der App: EINE Akzentfarbe für Rückfragen, Dialoge und Knöpfe — dieselbe wie im Studio
 /// (`--akzent` in `Ressourcen/studio/studio.css`). Die Werte stehen in `BrainCore/KortexFarben.swift` (dort auch der Kontrast-Test);
 /// hier werden sie nur zu SwiftUI-Farben, die dem Erscheinungsbild (hell/dunkel) von selbst folgen.
 ///
@@ -85,4 +85,48 @@ enum KortexMenueBild {
         bild.isTemplate = true
         return bild
     }
+}
+
+// MARK: Symbole und Beschriftungen (Rückfragen, Menü, Vorschau-Band)
+
+/// Einheitliche Symbolstufen für SF Symbols der App: immer dieselbe Gewichtung (`.medium`), nur drei Größen, einfarbig (`.monochrome`),
+/// in einer festen Breite, damit Texte daneben auf einer Linie stehen.
+enum SymbolStufe {
+    /// Neben Text: Hinweise, Meldungen, Zeilen, Menüzeilen.
+    case zeile
+    /// In einer Auswahlkarte.
+    case karte
+    /// Im Kopf einer Ansicht (im getönten Kreis).
+    case titel
+
+    var punkte: CGFloat { switch self { case .zeile: 14; case .karte: 18; case .titel: 22 } }
+    var breite: CGFloat { switch self { case .zeile: 18; case .karte: 28; case .titel: 22 } }
+}
+
+/// Ein SF Symbol in einer festen Stufe. Gefüllte Varianten (`.fill`) sind Zuständen vorbehalten (Warnung, Hinweis).
+struct KSymbol: View {
+    let name: String
+    var stufe: SymbolStufe = .zeile
+
+    var body: some View {
+        Image(systemName: name)
+            .symbolRenderingMode(.monochrome)
+            .font(.system(size: stufe.punkte, weight: .medium))
+            .frame(width: stufe.breite, height: stufe.breite)
+            .accessibilityHidden(true)
+    }
+}
+
+/// Beschriftung mit Symbol in der Zeilenstufe: gleiche Größe, Gewichtung und Abstand überall (statt der Standardgröße von `Label`).
+struct KortexLabelStil: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            configuration.icon.font(.system(size: SymbolStufe.zeile.punkte, weight: .medium)).frame(width: SymbolStufe.zeile.breite)
+            configuration.title
+        }
+    }
+}
+
+extension LabelStyle where Self == KortexLabelStil {
+    static var kortex: KortexLabelStil { KortexLabelStil() }
 }

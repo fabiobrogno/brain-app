@@ -1,7 +1,8 @@
 import Foundation
 
-// Alles, was der Assistent „Kortex einrichten“ von außen braucht, hinter einem Protokoll: der Ablauf (`EinrichtungsAblauf`) bleibt
-// dadurch ohne Prozesse und Netz testbar. Die echte Umsetzung (`WerkstattDienste`) spricht mit der Werkstatt, dem Node-Teil, der
+// Die Dienste der Werkstatt hinter einem Protokoll (früher vom SwiftUI-Assistenten benutzt, heute führt die Web-Seite „Kortex einrichten“
+// die Schritte selbst aus; geblieben sind die Datentypen, die Auswertung der Antworten und die Fehlerhülle `EinrichtungsFehler`, die
+// z. B. „Schnell erfassen“ nutzt). Die echte Umsetzung (`WerkstattDienste`) spricht mit der Werkstatt, dem Node-Teil, der
 // auch das Studio bedient — dieselben Routen, dieselben Prüfungen, dieselbe Vault-Liste.
 
 /// Ein Fehler, den der Nutzer lesen darf (deutscher Klartext). `art`/`befehl` stammen aus den Fehlerantworten der Werkstatt.

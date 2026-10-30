@@ -95,7 +95,7 @@ final class AppDelegat: NSObject, NSApplicationDelegate {
         }
         haupt.addItem(menue("Kortex", kortexEintraege + [
             suchen,
-            eintrag("Kortex einrichten …", #selector(assistentOeffnen)),
+            eintrag("Kortex einrichten …", #selector(assistentOeffnen), "e"),
             .separator(),
             standard("Kortex ausblenden", #selector(NSApplication.hide(_:)), "h"),
             .separator(),
