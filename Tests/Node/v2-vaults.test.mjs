@@ -1219,3 +1219,40 @@ test("config.json-Übernahme: ein unzulässiger Ort (Home selbst, Systemordner, 
     assert.equal(existsSync(VAULTS_JSON()), false, v);
   }
 });
+
+// ---------------------------------------------------------------- Zu breite Ordner (gleiche Fälle wie VaultAuswahlTests in Swift)
+
+test("Zu breite Orte: Anlegen und Öffnen werden mit Erklärung und Unterordner-Vorschlag verweigert, Unterordner sind erlaubt", async () => {
+  const breit = ["Desktop", "Documents", "Downloads", "Pictures", "Movies", "Music", "Public", "Applications",
+    "Library/Mobile Documents", "Library/Mobile Documents/com~apple~CloudDocs", "Library/CloudStorage", "Library/CloudStorage/Dropbox"];
+  for (const rel of breit) {
+    const p = join(HOME, ...rel.split("/"));
+    mkdirSync(p, { recursive: true });
+    const e = wirft(() => pruefeVaultPfad(p, { vaults: [], breit: true }));
+    assert.equal(e.status, 403, rel); assert.equal(e.extra.art, "zu-breit", rel);
+    assert.match(e.message, /zu groß/, rel);
+    assert.equal((await wirftAsync(neuesVault({ art: "leer", ordner: p }, OPT))).status, 403, `neu ${rel}`);
+    assert.equal((await wirftAsync(oeffneOrdner({ pfad: p }, OPT))).status, 403, `öffnen ${rel}`);
+    assert.equal((await wirftAsync(klone({ url: "https://github.com/x/y.git", ordner: p }, OPT))).status, 403, `klonen ${rel}`);
+    assert.deepEqual(readdirSync(p).filter((n) => n !== "Dropbox" && n !== "com~apple~CloudDocs" && n !== "Mobile Documents"), [], `${rel}: nichts angelegt`);
+  }
+  assert.match(wirft(() => pruefeVaultPfad(join(HOME, "Documents"), { vaults: [], breit: true })).message, /„Dokumente“.*„Kortex“ \(.*Documents\/Kortex\)/);
+  assert.equal(wirft(() => pruefeVaultPfad(join(HOME, "documents"), { vaults: [], breit: true })).status, 403, "ohne Groß/klein");
+  for (const rel of ["Documents/Kortex", "Desktop/Notizen/Privat", "Library/CloudStorage/Dropbox/Kortex", "Library/Mobile Documents/com~apple~CloudDocs/Kortex"]) {
+    const p = join(HOME, ...rel.split("/"));
+    assert.equal(pruefeVaultPfad(p, { vaults: [], breit: true }), p, rel);
+  }
+  const ok = join(HOME, "Documents", "Kortex");
+  const v = await neuesVault({ art: "leer", ordner: ok }, OPT);
+  assert.equal(v.vault.pfad, ok);
+});
+
+test("Zu breite Orte: die Regel gilt nur beim Anlegen/Öffnen/Klonen — ein vorhandener Eintrag in der Liste bleibt les- und entfernbar", () => {
+  const p = join(HOME, "Downloads");
+  mkdirSync(p, { recursive: true });
+  assert.equal(pruefeVaultPfad(p, { vaults: [] }), p, "ohne breit-Schalter unverändert erlaubt");
+  registriere(p);
+  assert.ok(leseVaults().vaults.some((v) => v.pfad === p));
+  entferne(p);
+  assert.ok(!leseVaults().vaults.some((v) => v.pfad === p));
+});

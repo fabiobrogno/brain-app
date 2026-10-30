@@ -25,6 +25,7 @@ cp -R build/node-runtime "$NEU/Contents/Resources/node-runtime"
 # Alle Ressourcen-Ordner ins Paket (studio, werkstatt, mcp, gemeinsam und was das Backend sonst mitbringt, z. B. Vorlagen)
 for d in Ressourcen/*/; do
   ordner="$(basename "$d")"
+  [ "$ordner" = "icon-entwuerfe" ] && continue # Entwürfe fürs App-Icon: gehören nicht ins Paket
   cp -R "Ressourcen/$ordner" "$NEU/Contents/Resources/$ordner"
 done
 # Kern (Brain-Logik, Ressourcen/kern): Der MCP-Server samt gemeinsamem Code kommt zusätzlich in den Kern (kern/mcp, kern/gemeinsam), damit
