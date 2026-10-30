@@ -2121,7 +2121,7 @@ async function zeigeWillkommenFlow() {
   $("app").hidden = true;
   const host = $("willkommen-host");
   // In der App führt der Einrichtungs-Assistent (eigenes Fenster) durch den Anfang; hier steht nur der Weg dorthin. Im Browser bleibt die Karte.
-  if (inApp()) { zeigeOhneVault(host); return; }
+  if (inApp() && location.protocol === "brain:") { zeigeOhneVault(host); return; } // nur im echten App-Fenster (brain://), nicht in Tests mit einer Attrappe des Aktionskanals
   try {
     const m = await import("./willkommen.js");
     m.zeigeWillkommen({ modus: "start", beiFertig: async () => { aktion("vault-gewechselt"); await ladeAlles(); }, beiStandNeu: karteStandNeu, beiVerbunden: () => { S.kiVerbunden = true; } });
