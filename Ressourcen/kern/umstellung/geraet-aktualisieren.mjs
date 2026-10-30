@@ -7,7 +7,6 @@ if (vault) {
   try {
     const { echteZiele } = await import("./ziele.mjs");
     const { aktualisiereGeraetemerker } = await import("./geraete.mjs");
-    const r = aktualisiereGeraetemerker(echteZiele({ vault: resolve(vault) }));
-    if (process.env.BRAIN_DEBUG) console.log(r);
+    aktualisiereGeraetemerker(echteZiele({ vault: resolve(vault) }));
   } catch { /* nie ein Fehler nach außen */ }
 }
