@@ -1,6 +1,6 @@
 #!/bin/bash
-# Erzeugt Ressourcen/AppIcon.icns aus den SVG-Entwürfen (gewählt: Entwurf 2 „Netz“, 30.10.2026): 16 und 32 px aus der
-# kräftigeren Kleinvariante (kortex-2-netz-klein.svg), alle größeren aus dem vollen Entwurf (kortex-2-netz.svg). Braucht rsvg-convert (brew install librsvg) und iconutil.
+# Erzeugt Ressourcen/AppIcon.icns aus den SVG-Entwürfen (gewählt: Entwurf 3 „Windung“ in der Fassung v2a, 30.10.2026): 16 und 32 px aus der
+# kräftigeren Kleinvariante (kortex-3-windung-klein.svg), alle größeren aus dem vollen Entwurf (kortex-3-windung-v2a.svg). Braucht rsvg-convert (brew install librsvg) und iconutil.
 # Die erzeugte .icns liegt im Repo; dieses Skript muss nur laufen, wenn sich ein Entwurf ändert.
 set -euo pipefail
 W="$(cd "$(dirname "$0")/.." && pwd)"
@@ -12,8 +12,8 @@ mkdir -p "$SET"
 bild() { # <svg> <pixel> <dateiname>
   rsvg-convert -w "$2" -h "$2" "$1" -o "$SET/$3"
 }
-GROSS="$E/kortex-2-netz.svg"
-KLEIN="$E/kortex-2-netz-klein.svg"
+GROSS="$E/kortex-3-windung-v2a.svg"
+KLEIN="$E/kortex-3-windung-klein.svg"
 bild "$KLEIN" 16 icon_16x16.png
 bild "$KLEIN" 32 icon_16x16@2x.png
 bild "$KLEIN" 32 icon_32x32.png

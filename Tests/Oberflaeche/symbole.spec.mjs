@@ -55,20 +55,29 @@ test("symbol(): jedes Symbol hat das 16er-Raster und in jeder Größe 1,5 px Str
   expect(r.anzahl).toBeGreaterThan(60);
 });
 
-test("symbol(\"marke\"): das Netz-K der App (fünf Knoten, ein Linienzug), nicht mehr das alte Kästchen mit Dreieck", async ({ page }) => {
+test("symbol(\"marke\"): die Windung der App (ein Strang aus Bahnen und Wendungen, keine Knoten), spiegelgleich, im 16er Raster", async ({ page }) => {
   await start(page);
   const r = await page.evaluate(async () => {
     const m = await import("/symbole.js");
     const s = m.symbol("marke", 56);
-    const k = [...s.querySelectorAll("circle")].map((c) => ({ x: Number(c.getAttribute("cx")), y: Number(c.getAttribute("cy")), r: Number(c.getAttribute("r")) }));
-    return { kreise: k, pfade: s.querySelectorAll("path").length };
+    document.body.append(s);
+    const pfad = s.querySelector("path");
+    const b = pfad.getBBox();
+    const d = pfad.getAttribute("d");
+    s.remove();
+    return { kreise: s.querySelectorAll("circle").length, pfade: s.querySelectorAll("path").length, d, box: { x: b.x, y: b.y, w: b.width, h: b.height } };
   });
-  expect(r.kreise).toHaveLength(5);
-  expect(r.pfade).toBe(1);
-  const kern = r.kreise.reduce((a, b) => (b.r > a.r ? b : a));
-  expect(r.kreise.filter((k) => k.r === kern.r)).toHaveLength(1); // ein großer Kern
-  expect(kern.x).toBeLessThan(8); // Kern links, Arme rechts (wie das K im Icon)
-  for (const k of r.kreise) expect(k.x - k.r >= 0 && k.x + k.r <= 16 && k.y - k.r >= 0 && k.y + k.r <= 16).toBe(true);
+  expect(r.kreise).toBe(0); // nicht mehr das Netz aus Knoten
+  expect(r.pfade).toBe(1); // ein durchgehender Strang
+  expect(r.d.match(/M/g)).toHaveLength(1);
+  expect(r.d.match(/a[\d.]+ [\d.]+ 0 [01][01]/gi)).toHaveLength(6); // sechs Wendungen (je Seite drei)
+  const rand = 0.75; // halbe Strichstärke im Raster
+  expect(r.box.x - rand).toBeGreaterThanOrEqual(0);
+  expect(r.box.x + r.box.w + rand).toBeLessThanOrEqual(16);
+  expect(r.box.y - rand).toBeGreaterThanOrEqual(0);
+  expect(r.box.y + r.box.h + rand).toBeLessThanOrEqual(16);
+  expect(Math.abs(r.box.x + r.box.w / 2 - 8)).toBeLessThan(0.05); // links und rechts spiegelgleich um die Mitte
+  expect(Math.abs(r.box.y + r.box.h / 2 - 8)).toBeLessThan(0.05);
 });
 
 test("Marken-Logo GitHub: Pfad stimmt mit Ressourcen/logos/github.svg überein, Bild mit Namen, unbekannte Marke liefert nichts", async ({ page }) => {
