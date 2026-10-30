@@ -670,37 +670,102 @@ private func beiKi(_ a: Aufbau) async {
     #expect(!a.speicher.sollErscheinen(hatVault: false))
 }
 
-@Test @MainActor func wiederaufnahmeNachAbbruchMachtBeiDerProbeWeiter() async {
+@Test @MainActor func nachDemVaultGiltDieEinrichtungAlsFertigAuchWennKiUndProbeOffenSind() async throws {
+    // Der Assistent verlangt nur git und einen Vault. KI, Sicherung und Probe sind Karten: sie halten ihn beim nächsten Start nicht wieder auf.
     let a = Aufbau()
     a.dienste.probeAntworten = [.failure(EinrichtungsFehler("nein"))]
     await beiKi(a)
-    await a.ablauf.verbinde(.claude)
-    await a.ablauf.weiter()
-    #expect(a.zustand.aktuell == .probe)
-    a.ablauf.schliesse() // Fenster zu / App beendet mitten in der Einrichtung
-    #expect(a.speicher.sollErscheinen(hatVault: true), "Abbruch: erscheint beim nächsten Start wieder")
+    #expect(a.zustand.aktuell == .ki, "die Zustandsmaschine kennt die weiteren Schritte weiter")
+    #expect(a.zustand.grundeingerichtet)
+    #expect(a.ablauf.abgeschlossen)
+    a.ablauf.schliesse() // Fenster zu / App beendet
+    #expect(try #require(a.speicher.lade()).abgeschlossen)
+    #expect(!a.speicher.sollErscheinen(hatVault: true), "kein erneutes Erscheinen von selbst")
 
-    // neue Sitzung, derselbe Speicher; git/Vault/GitHub kommen wieder aus der Wirklichkeit
+    // neue Sitzung: frischer Lauf, git/Vault/GitHub kommen wieder aus der Wirklichkeit
     a.neuerAblauf()
-    a.dienste.probeAntworten = [.success(ProbeErgebnis(frage: "Vault", treffer: ["x"]))]
     await a.ablauf.starte()
-    #expect(a.zustand.stand(.ki) == .erledigt, "KI-Verbindung ist gemerkt")
-    #expect(a.dienste.anzahl("erkenneKIs") == 1, "die KI-Suche lief nur in der ersten Sitzung")
-    #expect(a.zustand.istFertig)
-    #expect(a.anzeige.probe == .ok(ProbeErgebnis(frage: "Vault", treffer: ["x"])))
+    #expect(a.zustand.stand(.ki) == .offen)
+    #expect(a.zustand.grundeingerichtet)
 }
 
-@Test @MainActor func wiederaufnahmeMerktWasDerNutzerUebersprungenHat() async {
+@Test @MainActor func abbruchVorDemVaultWirdWiederaufgenommen() async {
+    let a = Aufbau()
+    a.dienste.git = [.fehlt]
+    await a.ablauf.starte()
+    #expect(!a.zustand.grundeingerichtet)
+    #expect(!a.ablauf.abgeschlossen)
+    a.ablauf.schliesse()
+    #expect(a.speicher.sollErscheinen(hatVault: false))
+}
+
+@Test @MainActor func gemerktesUebersprungenesGiltBeiUnabgeschlossenemLauf() async throws {
+    // Datei eines unterbrochenen Laufs (aus einer früheren Version): Wiederaufnahme merkt, was der Nutzer ausgelassen hat.
     let a = Aufbau()
     a.dienste.vault = vaultA
-    await a.ablauf.starte()
-    await a.ablauf.ueberspringe() // GitHub
-    a.ablauf.schliesse()
-    a.neuerAblauf()
+    try a.speicher.speichere(EinrichtungsDatei(abgeschlossen: false, uebersprungen: ["github"]))
     await a.ablauf.starte()
     #expect(a.zustand.stand(.github) == .uebersprungen)
     #expect(a.zustand.aktuell == .ki)
-    #expect(a.dienste.anzahl("githubKonto") == 1, "nicht noch einmal gefragt")
+    #expect(a.dienste.anzahl("githubKonto") == 0, "nicht noch einmal gefragt")
+}
+
+// MARK: Karten (Abschlussbild)
+
+@Test @MainActor func kartenLadenErstWennDasNoetigeSteht() async {
+    let a = Aufbau()
+    a.dienste.git = [.fehlt]
+    await a.ablauf.starte()
+    await a.ablauf.ladeKarten()
+    #expect(a.dienste.anzahl("erkenneKIs") == 0)
+    #expect(a.dienste.anzahl("githubKonto") == 0)
+}
+
+@Test @MainActor func kartenLadenGitHubSicherungUndKiEinmalOhneDenAblaufWeiterzuschieben() async {
+    let a = Aufbau()
+    a.dienste.vault = vaultA
+    a.dienste.remoteDa = false
+    await a.ablauf.starte()
+    #expect(a.zustand.aktuell == .github, "der Ablauf steht vor dem GitHub-Konto")
+    #expect(a.dienste.anzahl("erkenneKIs") == 0)
+    await a.ablauf.ladeKarten()
+    #expect(a.dienste.anzahl("erkenneKIs") == 1)
+    #expect(a.anzeige.kis.map(\.ziel) == KiZiel.verbindbar)
+    #expect(a.anzeige.github == .abgemeldet)
+    #expect(a.zustand.aktuell == .github, "freiwillig: nichts wird übersprungen oder verlangt")
+    await a.ablauf.ladeKarten()
+    #expect(a.dienste.anzahl("erkenneKIs") == 1, "nur einmal je Sitzung")
+    #expect(a.dienste.anzahl("githubKonto") == 1)
+}
+
+@Test @MainActor func karteSicherungZeigtSchonVorhandeneSicherungAlsErledigt() async {
+    let a = Aufbau()
+    a.dienste.vault = vaultA
+    a.dienste.konto = [.success(GitHubKonto(verfuegbar: true, angemeldet: true, login: "fabio"))]
+    await a.ablauf.starte()
+    await a.ablauf.ladeKarten()
+    #expect(a.anzeige.sicherung.istVerbunden)
+    #expect(a.anzeige.github == .angemeldet(login: "fabio"))
+}
+
+@Test @MainActor func kartenOhneGitHubInDieserVersionBleibenLeise() async {
+    let a = Aufbau()
+    a.dienste.vault = vaultA
+    a.dienste.konto = [.success(GitHubKonto(verfuegbar: false, angemeldet: false))]
+    await a.ablauf.starte()
+    await a.ablauf.ladeKarten()
+    #expect(a.anzeige.github == .nichtVerfuegbar, "die Oberfläche blendet die Karte „Sichern“ dann aus")
+    #expect(a.zustand.grundeingerichtet)
+}
+
+@Test @MainActor func probeKarteLaeuftErstAufKlick() async {
+    let a = Aufbau()
+    await beiKi(a)
+    await a.ablauf.ladeKarten()
+    #expect(a.anzeige.probe == .offen)
+    #expect(a.dienste.anzahl("probe") == 0)
+    await a.ablauf.starteProbe()
+    #expect(a.anzeige.probe == .ok(ProbeErgebnis(frage: "Vault", treffer: ["Willkommen"])))
 }
 
 @Test @MainActor func wiederholungUeberDasMenuZeigtKiUndProbeNochEinmal() async {
@@ -733,16 +798,16 @@ private func beiKi(_ a: Aufbau) async {
     a.ablauf.schliesse()
     #expect(a.speicher.lade()?.herkunft == .menue)
     #expect(!a.speicher.sollErscheinen(hatVault: true), "beim nächsten Start kommt das Studio, nicht der Assistent")
-    #expect(a.speicher.sollErscheinen(hatVault: false), "ohne Vault ist er weiter hilfreich")
 }
 
 @Test @MainActor func startLaufMitAbbruchWirdWiederaufgenommenAuchNachdemDerVaultDaIst() async {
     let a = Aufbau()
-    await a.ablauf.starte() // erster Start, kein Vault
-    await a.ablauf.legeVaultAn(name: nil, ordner: nil)
+    a.dienste.git = [.fehlt]
+    await a.ablauf.starte() // erster Start, git fehlt noch
     a.ablauf.schliesse()
     #expect(a.speicher.lade()?.herkunft == .start)
-    #expect(a.speicher.sollErscheinen(hatVault: true))
+    #expect(a.speicher.sollErscheinen(hatVault: false))
+    #expect(a.speicher.sollErscheinen(hatVault: true), "mittendrin abgebrochen: macht weiter")
     // ein später aus dem Menü gestarteter Lauf ersetzt die Herkunft, ein automatisch wieder aufgenommener setzt sie zurück
     a.neuerAblauf()
     await a.ablauf.starte(wiederholung: true)
@@ -962,11 +1027,12 @@ private func beiKi(_ a: Aufbau) async {
     #expect(a.zustand.stand(.sicherung) == .uebersprungen)
     #expect(a.zustand.aktuell == .ki)
     #expect(a.speicher.lade()?.uebersprungen.contains("sicherung") == true)
-    // Wiederaufnahme: nicht noch einmal fragen
+    // Nach dem Vault gilt der Assistent als fertig: der nächste Lauf beginnt frisch, die Sicherung bleibt eine freiwillige Karte
     a.ablauf.schliesse()
     a.neuerAblauf()
     await a.ablauf.starte()
-    #expect(a.zustand.stand(.sicherung) == .uebersprungen)
+    #expect(a.zustand.stand(.sicherung) == .offen)
+    #expect(a.zustand.grundeingerichtet)
 }
 
 @Test @MainActor func ohneGitImOrdnerEntfaelltDieSicherung() async {
