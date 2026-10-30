@@ -1,6 +1,7 @@
 // Dialoge für den Abgleich mit Konflikten und für „Frühere Fassung zurückholen“ (Vorschau per Diff, dann als neue Fassung gesichert).
 // Kein innerHTML mit fremden Daten: alles über h() und textContent. Die Entscheidungen gehen an die Werkstatt, die sie prüft und ausführt.
 import { h, dialog, arbeitBeginnt, toast, dateiName, ordnerVon } from "./hilfen.js";
+import { knopf as baueKnopf, setzeLaedt } from "./bausteine.js";
 import { symbol } from "./symbole.js";
 import { api as standardApi, gitGesperrt, ausgangUnklar, zeitText } from "./api.js";
 import { TV } from "./texte-verlauf.js";
@@ -29,8 +30,8 @@ const klarText = (err, ersatz) => (err?.message && !istRohGit(err.message) ? err
 
 // Kleines Fenster „Technische Details“ (für Toasts und Fehler, die nicht in den Satz passen).
 export function zeigeFehlerDetails({ text, titel = TV.roh.titel } = {}) {
-  const kopieren = h("button", { klasse: "knopf gross", type: "button", text: TV.roh.kopieren });
-  const zu = h("button", { klasse: "knopf primaer gross", type: "button", text: TV.roh.schliessen });
+  const kopieren = baueKnopf({ text: TV.roh.kopieren, groesse: "l" });
+  const zu = baueKnopf({ text: TV.roh.schliessen, variante: "primaer", groesse: "l" });
   const box = h("div", { klasse: "dialog rm-dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "roh-titel", "data-dialog": "details" },
     h("div", { klasse: "rm-kopf" }, h("span", { klasse: "rm-zeichen" }, zeichen("info", 20)), h("h2", { klasse: "rm-titel", id: "roh-titel", text: titel })),
     h("p", { klasse: "rm-text", text: TV.roh.hinweis }),
@@ -53,9 +54,9 @@ export function oeffneKonfliktDialog({ dateien, api = standardApi, datum, beiFer
   const wahl = new Map();
   let laeuft = false;
   const meldung = meldungBox();
-  const knopf = h("button", { klasse: "knopf primaer gross", type: "button", "data-aktion": "konflikt-zusammenfuehren", text: T.zusammenfuehren });
-  const spaeter = h("button", { klasse: "knopf gross", type: "button", "data-aktion": "konflikt-spaeter", text: T.spaeter });
-  const abbrechen = h("button", { klasse: "knopf gross ab-abbrechen", type: "button", "data-aktion": "konflikt-abbrechen", text: T.abbrechen, title: T.abbrechenHinweis });
+  const knopf = baueKnopf({ text: T.zusammenfuehren, variante: "primaer", groesse: "l", aktion: "konflikt-zusammenfuehren" });
+  const spaeter = baueKnopf({ text: T.spaeter, groesse: "l", aktion: "konflikt-spaeter" });
+  const abbrechen = baueKnopf({ text: T.abbrechen, groesse: "l", klasse: "ab-abbrechen", aktion: "konflikt-abbrechen", titel: T.abbrechenHinweis });
   const hinweis = h("span", { klasse: "ab-offen" });
   const fortschrittText = h("span", { klasse: "ab-fortschritt-text", "aria-live": "polite" });
   const fuell = h("span", { klasse: "ab-balken-fuell" });
@@ -68,7 +69,7 @@ export function oeffneKonfliktDialog({ dateien, api = standardApi, datum, beiFer
     const gesamt = liste.length;
     const fertig = liste.filter((d) => wahl.has(d.pfad)).length;
     const offen = gesamt - fertig;
-    knopf.disabled = laeuft || offen > 0;
+    knopf.disabled = !laeuft && offen > 0; setzeLaedt(knopf, laeuft);
     spaeter.disabled = laeuft; abbrechen.disabled = laeuft;
     hinweis.textContent = offen ? T.waehle(offen) : "";
     fortschrittText.textContent = offen || !gesamt ? T.fortschritt(fertig, gesamt) : T.alleGeloest;
@@ -235,9 +236,9 @@ export function oeffneZurueckholen({ pfad, sha, wann, api = standardApi, beiFert
   const datei = String(pfad || "").split("/").pop();
   const meldung = meldungBox();
   let laeuft = false, bereit = false;
-  const knopf = h("button", { klasse: "knopf primaer gross", type: "button", "data-aktion": "zurueckholen", text: Z.zurueckholen, disabled: true });
-  const abbrechen = h("button", { klasse: "knopf gross", type: "button", "data-aktion": "zurueckholen-abbrechen", text: Z.abbrechen });
-  const sichern = h("button", { klasse: "knopf gross", type: "button", "data-aktion": "zurueckholen-sichern", text: Z.jetztSichern, hidden: true });
+  const knopf = baueKnopf({ text: Z.zurueckholen, variante: "primaer", groesse: "l", aktion: "zurueckholen", disabled: true });
+  const abbrechen = baueKnopf({ text: Z.abbrechen, groesse: "l", aktion: "zurueckholen-abbrechen" });
+  const sichern = baueKnopf({ text: Z.jetztSichern, groesse: "l", aktion: "zurueckholen-sichern", hidden: true });
   const karte = h("div", { klasse: "zh-vorschau", hidden: true });
   const stat = h("span", { klasse: "vd-stat" });
   const vorschauKopf = h("p", { klasse: "ab-hinweis", text: Z.laedt, role: "status" });
@@ -282,7 +283,7 @@ export function oeffneZurueckholen({ pfad, sha, wann, api = standardApi, beiFert
 
   knopf.addEventListener("click", async () => {
     if (laeuft || !bereit) return;
-    laeuft = true; knopf.disabled = true; abbrechen.disabled = true;
+    laeuft = true; setzeLaedt(knopf, true); abbrechen.disabled = true;
     meldung.zeige("hinweis", T.arbeitet, null);
     const ende = arbeitBeginnt("commit");
     try {
@@ -292,7 +293,7 @@ export function oeffneZurueckholen({ pfad, sha, wann, api = standardApi, beiFert
       toast(r?.unveraendert ? Z.schonAktuell : Z.fertig, { ms: 6000 });
       beiFertig?.({ pfad, sha, unveraendert: !!r?.unveraendert });
     } catch (err) {
-      ende(); laeuft = false; abbrechen.disabled = false;
+      ende(); laeuft = false; setzeLaedt(knopf, false); abbrechen.disabled = false;
       if (gitGesperrt(err)) meldung.zeige("fehlertext", TV.diff.gesperrt, "warnung");
       else if (ausgangUnklar(err)) { try { await beiStandNeu?.(err); } catch (x) { console.error(x); } meldung.zeige("hinweis", zeitText(err), "info"); }
       else if (err?.status === 409 && err?.daten?.konflikt) meldung.zeige("fehlertext", Z.konflikt, "warnung");

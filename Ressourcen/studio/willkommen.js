@@ -1,7 +1,7 @@
 // Einstieg ohne Vault: Willkommen-Karte (vier Wege), Name/Ort, Klonen, Versionsverlauf-Rückfrage, KI verbinden.
 // Wird per dynamischem import() geladen und hat beim Import keine Nebenwirkungen.
 import { h, dialog, speichereLokal, leseLokal, arbeitBeginnt } from "./hilfen.js";
-import { textfeld } from "./bausteine.js";
+import { textfeld, knopf as baueKnopf, setzeLaedt } from "./bausteine.js";
 import * as API from "./api.js";
 import { symbol } from "./symbole.js";
 import { kiLogo } from "./ki-logos.js";
@@ -79,8 +79,8 @@ function pfadDialog(titel) {
     const pfadFeld = textfeld({ id: `${id}-feld`, platzhalter: TW.pfad.platzhalter, beschreibung: `${id}-hilfe`, daten: { "data-feld": "pfad" } });
     const eingabe = pfadFeld.input;
     const fehler = h("div", { klasse: "fehlertext", role: "alert" });
-    const abbrechen = h("button", { klasse: "knopf", type: "button", "data-aktion": "pfad-abbrechen", text: TW.abbrechen });
-    const uebernehmen = h("button", { klasse: "knopf primaer", type: "button", "data-aktion": "pfad-uebernehmen", text: TW.pfad.uebernehmen });
+    const abbrechen = baueKnopf({ text: TW.abbrechen, aktion: "pfad-abbrechen" });
+    const uebernehmen = baueKnopf({ text: TW.pfad.uebernehmen, variante: "primaer", aktion: "pfad-uebernehmen" });
     const box = h("div", { klasse: "w-modal", role: "dialog", "aria-modal": "true", "aria-labelledby": `${id}-titel`, "data-schritt": "pfad" },
       h("h2", { id: `${id}-titel`, text: titel || TW.pfad.titel }),
       h("div", { klasse: "feld" },
@@ -204,17 +204,17 @@ function baueVerbinden({ beiVerbunden, agenten = [], cursorDa = false, weitere =
   let ziel = "claude";
   if (!gefunden("claude")) ziel = gefunden("codex") ? "codex" : (gefunden("cursor-agent") || cursorDa) ? "cursor" : (weitere[0] || "claude");
   const name = () => zielName[ziel];
-  const knopf = h("button", { klasse: "knopf primaer", type: "button", "data-aktion": "claude-verbinden", text: ziel === "claude" ? TW.ki.verbinden : TW.ki.verbindenMit(name()) });
+  const knopf = baueKnopf({ text: ziel === "claude" ? TW.ki.verbinden : TW.ki.verbindenMit(name()), variante: "primaer", aktion: "claude-verbinden" });
   const beschreibung = h("div", { klasse: "w-aktion-text", "aria-live": "polite", text: ziel === "claude" ? TW.ki.verbindenText : TW.ki.verbindenTextFuer(name()) });
   let gesperrt = false; // während des Selbsttests bleibt die Auswahl stehen, sonst stimmt der App-Name im Ergebnis nicht
   const wahl = h("div", { klasse: "w-ziele", role: "radiogroup", "aria-label": TW.ki.zielWahl, "data-bereich": "ziel-wahl" },
     Object.keys(zielName).map((id) => {
-      const b = h("button", { klasse: "knopf" + (id === ziel ? " aktiv" : ""), type: "button", role: "radio", "aria-checked": String(id === ziel), "data-ziel": id }, kiLogo(id, 16, { dekorativ: true }), h("span", { text: zielName[id] }));
+      const b = baueKnopf({ klasse: id === ziel ? "aktiv" : "", daten: { role: "radio", "aria-checked": String(id === ziel), "data-ziel": id }, kinder: [kiLogo(id, 16, { dekorativ: true }), h("span", { text: zielName[id] })] });
       b.addEventListener("click", () => {
-        if (knopf.disabled || gesperrt) return;
+        if (knopf.getAttribute("aria-busy") === "true" || gesperrt) return;
         ziel = id;
         for (const x of wahl.children) { const an = x.dataset.ziel === id; x.classList.toggle("aktiv", an); x.setAttribute("aria-checked", String(an)); }
-        knopf.className = "knopf primaer";
+        knopf.className = "knopf bs-knopf primaer";
         knopf.textContent = id === "claude" ? TW.ki.verbinden : TW.ki.verbindenMit(name());
         beschreibung.replaceChildren(document.createTextNode(id === "claude" ? TW.ki.verbindenText : TW.ki.verbindenTextFuer(name())));
         zone.leer();
@@ -236,8 +236,8 @@ function baueVerbinden({ beiVerbunden, agenten = [], cursorDa = false, weitere =
     } finally { sperreWahl(false); }
   }
   const erfolg = async () => {
-    knopf.disabled = false;
-    knopf.className = "knopf fertig";
+    setzeLaedt(knopf, false);
+    knopf.className = "knopf bs-knopf fertig";
     knopf.replaceChildren(symbol("haken", 14), TW.ki.verbundenKnopf);
     beschreibung.replaceChildren(h("div", { klasse: "w-ok" }, symbol("kreis-haken", 14), h("span", { text: ziel === "claude" ? TW.ki.verbunden : TW.ki.verbundenFuer(name()) })));
     if (ziel === "claude") { try { beiVerbunden?.(); } catch (e) { console.error(e); } }
@@ -245,8 +245,8 @@ function baueVerbinden({ beiVerbunden, agenten = [], cursorDa = false, weitere =
   };
   // Es gibt schon einen Eintrag „brain“, der woanders hinzeigt (409 art „anders“): erst fragen, dann mit { umstellen: true } ersetzen
   const frage = () => {
-    const nein = h("button", { klasse: "knopf", type: "button", "data-aktion": "nicht-umstellen", text: TW.ki.nichtUmstellen });
-    const ja = h("button", { klasse: "knopf primaer", type: "button", "data-aktion": "umstellen", text: TW.ki.umstellen });
+    const nein = baueKnopf({ text: TW.ki.nichtUmstellen, aktion: "nicht-umstellen" });
+    const ja = baueKnopf({ text: TW.ki.umstellen, variante: "primaer", aktion: "umstellen" });
     nein.addEventListener("click", () => { zone.leer(); knopf.focus(); });
     ja.addEventListener("click", () => verbinde(true));
     const text = ziel === "codex" ? TW.ki.codexAnders : ziel === "cursor" ? TW.ki.cursorAnders : ziel === "claude" ? TW.ki.anders : TW.ki.andersFuer(name());
@@ -255,12 +255,12 @@ function baueVerbinden({ beiVerbunden, agenten = [], cursorDa = false, weitere =
     setTimeout(() => nein.focus(), 0);
   };
   async function verbinde(umstellen) {
-    knopf.disabled = true;
+    setzeLaedt(knopf, true);
     zone.arbeit(TW.ki.verbindet);
     try {
       await api.mcpVerbinden({ ...(umstellen ? { umstellen: true } : {}), ...(ziel === "claude" ? {} : { ziel }) });
     } catch (e) {
-      knopf.disabled = false;
+      setzeLaedt(knopf, false);
       const befehl = typeof e?.daten?.befehl === "string" ? e.daten.befehl : null;
       if (!umstellen && e?.status === 409 && e?.daten?.art === "anders") { frage(); return; }
       if (befehl) zone.knoten.replaceChildren(...(e?.daten?.art === "kaputt" ? [h("div", { klasse: "w-fehlerbox fehlertext", role: "alert" }, symbol("warnung", 14), h("span", { text: e.message }))] : []), befehlBlock(befehl, ziel === "cursor" ? TW.ki.cursorKaputt : Object.hasOwn(TW.ki.weitereName, ziel) ? TW.ki.kaputtFuer(name()) : undefined));
@@ -276,7 +276,7 @@ function baueVerbinden({ beiVerbunden, agenten = [], cursorDa = false, weitere =
 
 function befehlBlock(befehl, hinweis = TW.ki.befehl) {
   const meld = h("div", { klasse: "mini", "aria-live": "polite" });
-  const kopieren = h("button", { klasse: "knopf", type: "button", "data-aktion": "befehl-kopieren" }, symbol("kopieren", 14), TW.ki.befehlKopieren);
+  const kopieren = baueKnopf({ aktion: "befehl-kopieren", kinder: [symbol("kopieren", 14), TW.ki.befehlKopieren] });
   kopieren.addEventListener("click", async () => {
     try { await navigator.clipboard.writeText(befehl); meld.textContent = TW.ki.befehlKopiert; }
     catch { meld.textContent = TW.ki.kopierFehler; }
@@ -289,18 +289,19 @@ function befehlBlock(befehl, hinweis = TW.ki.befehl) {
 
 function baueHinweise() {
   const zone = meldeZone();
-  const knopf = h("button", { klasse: "knopf", type: "button", "data-aktion": "hinweise-einschalten", text: TW.ki.hinweise });
+  const knopf = baueKnopf({ text: TW.ki.hinweise, aktion: "hinweise-einschalten" });
   const beschreibung = h("div", { klasse: "w-aktion-text", "aria-live": "polite", text: TW.ki.hinweiseText });
   knopf.addEventListener("click", async () => {
-    knopf.disabled = true;
+    setzeLaedt(knopf, true);
     zone.arbeit(TW.ki.hinweiseLaeuft);
     try {
       await api.kitHooks();
-      knopf.className = "knopf fertig";
+      setzeLaedt(knopf, false);
+      knopf.className = "knopf bs-knopf fertig";
       knopf.replaceChildren(symbol("haken", 14), TW.ki.hinweiseKnopfOk);
       zeigeOk(beschreibung, zone, TW.ki.hinweiseOk);
     } catch (e) {
-      knopf.disabled = false;
+      setzeLaedt(knopf, false);
       zone.fehler(meldungVon(e));
     }
   });
@@ -310,13 +311,13 @@ function baueHinweise() {
 function baueProbe(notizen) {
   const zone = meldeZone();
   const frage = (notizen?.find((n) => n?.titel)?.titel) || TW.ki.probeStandard;
-  const knopf = h("button", { klasse: "knopf", type: "button", "data-aktion": "probe", text: TW.ki.probeKnopf });
+  const knopf = baueKnopf({ text: TW.ki.probeKnopf, aktion: "probe" });
   knopf.addEventListener("click", async () => {
     if (notizen && notizen.length === 0) {
       zone.knoten.replaceChildren(h("div", { klasse: "w-ergebnis leer", "data-bereich": "probe-ergebnis" }, TW.ki.probeLeer));
       return;
     }
-    knopf.disabled = true;
+    setzeLaedt(knopf, true);
     zone.arbeit(TW.ki.probeLaeuft);
     try {
       const r = await api.probe(frage);
@@ -326,7 +327,7 @@ function baueProbe(notizen) {
         h("div", { klasse: "w-ergebnis-titel" }, symbol("kreis-haken", 14), h("span", { text: TW.ki.probeTitel(treffer.length) })),
         h("ul", null, treffer.slice(0, 3).map((t) => h("li", null, symbol("notiz", 14), h("span", { text: t.titel || t.pfad || "" }))))));
     } catch (e) { zone.fehler(meldungVon(e)); }
-    finally { knopf.disabled = false; }
+    finally { setzeLaedt(knopf, false); }
   });
   const text = h("div", { klasse: "w-aktion-text", text: TW.ki.probeText(kuerze(frage)) });
   return { knoten: h("div", { klasse: "w-aktion", "data-zeile": "probe" }, text, knopf, zone.knoten), knopf };
@@ -336,7 +337,7 @@ function baueProbe(notizen) {
 export async function oeffneKiDialog({ beiFertig, beiVerbunden } = {}) {
   await ladeStil();
   const ki = baueKiInhalt({ kompakt: true, beiVerbunden });
-  const fertig = h("button", { klasse: "knopf primaer", type: "button", "data-aktion": "ki-fertig", text: TW.ki.fertig });
+  const fertig = baueKnopf({ text: TW.ki.fertig, variante: "primaer", aktion: "ki-fertig" });
   const d = dialog({ titel: TW.ki.dialogTitel, rumpf: ki.knoten, knoepfe: [fertig], breit: true, beiSchliessen: () => { try { beiFertig?.({}); } catch (e) { console.error(e); } } });
   fertig.addEventListener("click", () => d.schliessen());
   return d;
@@ -524,12 +525,12 @@ async function starteKarte({ modus = "start", beiFertig, beiAbbruch, beiStandNeu
     const ortPfad = h("b", { text: kurzPfad(z.ordner) });
     const hilfe = h("p", { klasse: "mini w-hilfe", text: TW.name.freigabe });
     hilfe.hidden = !!z.ordner;
-    const wechseln = h("button", { klasse: "knopf", type: "button", "data-aktion": "ordner-wechseln", text: TW.name.andererOrdner, aufClick: async () => {
+    const wechseln = baueKnopf({ text: TW.name.andererOrdner, aktion: "ordner-wechseln", aufKlick: async () => {
       const p = await waehleOrdner(TW.name.dialogTitel);
       if (p) { z.ordner = p; ortPfad.textContent = kurzPfad(p); hilfe.hidden = true; }
       wechseln.focus();
     } });
-    const knopf = h("button", { klasse: "knopf primaer gross w-voll", type: "button", "data-aktion": "anlegen", text: TW.name.anlegen });
+    const knopf = baueKnopf({ text: TW.name.anlegen, variante: "primaer", groesse: "l", klasse: "w-voll", aktion: "anlegen" });
     const s = {
       name: "name", titelId, abbrechbar: true, meldung, zurueck: () => zeige(schrittWahl()),
       knoten: h("div", null,
@@ -568,12 +569,12 @@ async function starteKarte({ modus = "start", beiFertig, beiAbbruch, beiStandNeu
     const urlFeld = textfeld({ id: feldId, wert: z.url || "", platzhalter: TW.klonen.urlPlatzhalter, daten: { "data-feld": "url" } });
     const eingabe = urlFeld.input;
     const ortPfad = h("b", { text: kurzPfad(z.ordner) });
-    const wechseln = h("button", { klasse: "knopf", type: "button", "data-aktion": "ordner-wechseln", text: TW.klonen.andererOrdner, aufClick: async () => {
+    const wechseln = baueKnopf({ text: TW.klonen.andererOrdner, aktion: "ordner-wechseln", aufKlick: async () => {
       const p = await waehleOrdner(TW.klonen.dialogTitel);
       if (p) { z.ordner = p; ortPfad.textContent = kurzPfad(p); }
       wechseln.focus();
     } });
-    const knopf = h("button", { klasse: "knopf primaer gross w-voll", type: "button", "data-aktion": "klonen", text: TW.klonen.knopf });
+    const knopf = baueKnopf({ text: TW.klonen.knopf, variante: "primaer", groesse: "l", klasse: "w-voll", aktion: "klonen" });
     const s = {
       name: "klonen", titelId, abbrechbar: true, meldung, zurueck: () => zeige(schrittWahl()),
       knoten: h("div", null,
@@ -611,8 +612,8 @@ async function starteKarte({ modus = "start", beiFertig, beiAbbruch, beiStandNeu
     const titelId = nid("w-t");
     const meldung = h("div", { klasse: "w-meldung", "aria-live": "polite" });
     const weiter = () => nachVault(pfad).catch((e) => zeigeFehler(s, e));
-    const ein = h("button", { klasse: "knopf primaer gross", type: "button", "data-aktion": "git-einschalten", text: TW.git.einschalten });
-    const ohne = h("button", { klasse: "knopf gross", type: "button", "data-aktion": "git-ohne", text: TW.git.ohne, aufClick: () => { if (!z.beschaeftigt) weiter(); } });
+    const ein = baueKnopf({ text: TW.git.einschalten, variante: "primaer", groesse: "l", aktion: "git-einschalten" });
+    const ohne = baueKnopf({ text: TW.git.ohne, groesse: "l", aktion: "git-ohne", aufKlick: () => { if (!z.beschaeftigt) weiter(); } });
     const s = {
       name: "git", titelId, meldung, escape: () => weiter(),
       knoten: h("div", null,
@@ -663,8 +664,8 @@ async function starteKarte({ modus = "start", beiFertig, beiAbbruch, beiStandNeu
   function schrittFehler(e) {
     const titelId = nid("w-t");
     const meldung = h("div", { klasse: "w-meldung", "aria-live": "polite" });
-    const zu = h("button", { klasse: "knopf gross", type: "button", "data-aktion": "schliessen", text: TW.schliessen, aufClick: () => abbrechen() });
-    const nochmal = h("button", { klasse: "knopf primaer gross", type: "button", "data-aktion": "anderer-ordner", text: TW.ordner.anderer, aufClick: async () => {
+    const zu = baueKnopf({ text: TW.schliessen, groesse: "l", aktion: "schliessen", aufKlick: () => abbrechen() });
+    const nochmal = baueKnopf({ text: TW.ordner.anderer, variante: "primaer", groesse: "l", aktion: "anderer-ordner", aufKlick: async () => {
       const p = await waehleOrdner(TW.ordner.dialogTitel);
       if (!p) { nochmal.focus(); return; }
       zeige(schrittArbeit(TW.ordner.arbeitTitel, TW.ordner.arbeit));
@@ -687,8 +688,8 @@ async function starteKarte({ modus = "start", beiFertig, beiAbbruch, beiStandNeu
   function schrittKi() {
     const ki = baueKiInhalt({ kompakt: false, beiVerbunden });
     const weiter = () => { speichereLokal(KI_GESEHEN, true); abschluss(); };
-    const spaeter = h("button", { klasse: "knopf gross", type: "button", "data-aktion": "ki-spaeter", text: TW.ki.spaeter, aufClick: weiter });
-    const fertig = h("button", { klasse: "knopf primaer gross", type: "button", "data-aktion": "ki-weiter", text: TW.ki.weiter, aufClick: weiter });
+    const spaeter = baueKnopf({ text: TW.ki.spaeter, groesse: "l", aktion: "ki-spaeter", aufKlick: weiter });
+    const fertig = baueKnopf({ text: TW.ki.weiter, variante: "primaer", groesse: "l", aktion: "ki-weiter", aufKlick: weiter });
     return {
       name: "ki", titelId: ki.titelId, meldung: null,
       knoten: h("div", null, ki.knoten, h("div", { klasse: "w-fuss-knoepfe" }, spaeter, fertig)),

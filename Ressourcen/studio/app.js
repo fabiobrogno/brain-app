@@ -5,7 +5,7 @@ import { api, aktion, aktionMitAntwort, inApp, gitGesperrt, andererVault, nichtV
 import { erstelleEditor } from "./editor.js";
 import { h, dialog, dialogOffen, schliesseDialoge, toast, vorMinuten, dateiName, ohneEndung, ordnerVon, istBearbeitbar, speichereLokal, leseLokal, leseEntwurf, speichereEntwurf, sucheGrad, suchFormen, ausTabelle, arbeitBeginnt, laufendeArbeiten } from "./hilfen.js";
 import { symbol } from "./symbole.js";
-import { textfeld, textbereich, auswahl, knopf as baueKnopf, setzeLaedt } from "./bausteine.js";
+import { textfeld, textbereich, auswahl, hakenFeld, knopf as baueKnopf, setzeLaedt, wenigBewegung } from "./bausteine.js";
 import { kiLogo } from "./ki-logos.js";
 import { TV } from "./texte-verlauf.js";
 import { istRohGit } from "./verlauf.js";
@@ -51,6 +51,7 @@ document.title = PRODUKT;
 $("suche").placeholder = T.suche.platzhalter;
 document.querySelector('[data-t="neu"]').textContent = T.seitenleiste.neu;
 document.querySelector('[data-t="merken"]').textContent = T.seitenleiste.merken;
+$("fuss-merken").title = T.seitenleiste.merken; $("fuss-merken").setAttribute("aria-label", T.seitenleiste.merken); // bleibt benannt, wenn die Seitenleiste nur das Symbol zeigt
 document.querySelectorAll("[data-sym]").forEach((el) => el.replaceWith(symbol(el.dataset.sym, 16)));
 $("knopf-suche").replaceChildren(symbol("suche", 16));
 $("knopf-neu").replaceChildren(symbol("plus", 16));
@@ -226,10 +227,10 @@ function fragSpeicherFehler() {
       titel: T.speicherFehler.titel,
       rumpf: [h("p", { text: letzterFehler || T.speicherFehler.text }), h("p", { klasse: "leise", text: T.speicherFehler.text })],
       knoepfe: [
-        h("button", { klasse: "knopf", "data-aktion": "verwerfen", text: T.speicherFehler.verwerfen, aufClick: () => zu("verwerfen") }),
-        h("button", { klasse: "knopf", "data-aktion": "kopieren", text: T.speicherFehler.kopieren, aufClick: async () => {
+        baueKnopf({ text: T.speicherFehler.verwerfen, aktion: "verwerfen", aufKlick: () => zu("verwerfen") }),
+        baueKnopf({ text: T.speicherFehler.kopieren, aktion: "kopieren", aufKlick: async () => {
           try { await navigator.clipboard.writeText(ed.text()); toast(T.speicherFehler.kopiert); } catch { toast(T.speicherFehler.kopierFehler, { fehler: true }); } } }),
-        h("button", { klasse: "knopf primaer", "data-aktion": "nochmal", text: T.speicherFehler.nochmal, aufClick: () => zu("nochmal") }),
+        baueKnopf({ text: T.speicherFehler.nochmal, variante: "primaer", aktion: "nochmal", aufKlick: () => zu("nochmal") }),
       ],
       beiSchliessen: () => fertig(wahl),
     });
@@ -267,8 +268,8 @@ function zeigeBanner() {
   if (S.konflikt) {
     host.append(h("div", { klasse: "banner warn", role: "alert", "data-banner": "konflikt" },
       h("div", { klasse: "b-text" }, h("div", { klasse: "b-titel", text: T.konflikt.titel }), h("div", { klasse: "b-sub", text: T.konflikt.text })),
-      h("button", { klasse: "knopf", text: T.konflikt.neuLaden, aufClick: konfliktNeuLaden, "data-aktion": "neu-laden" }),
-      h("button", { klasse: "knopf primaer", text: T.konflikt.behalten, aufClick: konfliktBehalten, "data-aktion": "behalten" })));
+      baueKnopf({ text: T.konflikt.neuLaden, aufKlick: konfliktNeuLaden, aktion: "neu-laden" }),
+      baueKnopf({ text: T.konflikt.behalten, variante: "primaer", aufKlick: konfliktBehalten, aktion: "behalten" })));
   } else if (S.schutz) {
     host.append(h("div", { klasse: "banner schutz", "data-banner": "schutz" }, symbol("schild", 14), h("span", { text: T.editor.schreibschutz })));
   } else if (!S.bearbeitbar) {
@@ -352,6 +353,13 @@ const BEREICHE = [
   ["inbox", "inbox"], ["aufgaben", "aufgaben"], ["rueckfragen", "info"], ["alle", "notiz"], ["wissen", "buch"], ["archiv", "archiv"],
 ];
 const istAufgabenSicht = () => S.sicht.art === "bereich" && S.sicht.id === "aufgaben";
+// Weicher Ansichtswechsel (Notizen ↔ Aufgaben ↔ Posteingang): kurzes Einblenden (140 ms), ohne Bewegung bei „Bewegung reduzieren“
+function weicherWechsel() {
+  if (wenigBewegung()) return;
+  const a = $("app");
+  a.classList.remove("ansicht-wechsel"); void a.offsetWidth; a.classList.add("ansicht-wechsel");
+  setTimeout(() => a.classList.remove("ansicht-wechsel"), 170);
+}
 // Fenster-Modus: liste (Standard) · verlauf · aufgaben (Board füllt den Platz) · aufgaben-datei (Karte als Datei im Editor)
 function setzeModus() {
   $("app").dataset.modus = S.sicht.art === "verlauf" ? "verlauf" : istAufgabenSicht() ? (S.aufgabeDatei ? "aufgaben-datei" : "aufgaben") : "liste";
@@ -377,9 +385,11 @@ function waehleSicht(sicht, { merken = true } = {}) {
   if (sicht.art !== "verlauf") S.vorVerlauf = null;
   schliesseSuche(false);
   if (!gleicheSicht(S.sicht, sicht)) S.zeigeZurueckgestellt = false;
+  const vorherModus = $("app").dataset.modus, vorherId = S.sicht.id;
   S.sicht = sicht;
   S.aufgabeDatei = false;
   if (merken && sicht.art !== "verlauf") lokal.schreib("sicht", sicht);
+  if (vorherModus !== (S.sicht.art === "verlauf" ? "verlauf" : istAufgabenSicht() ? "aufgaben" : "liste") || vorherId !== sicht.id) weicherWechsel();
   setzeModus();
   zeichneSeite(); zeichneListe();
   $("liste-koerper").scrollTop = 0;
@@ -529,7 +539,8 @@ function zeichneListenKopf() {
   $("knopf-suche").hidden = verlauf;
   $("knopf-neu").hidden = verlauf;
   const sk = $("knopf-sort");
-  sk.replaceChildren(symbol("sortierung", 14), h("span", { text: T.sortierung[S.sortierung] }));
+  sk.replaceChildren(symbol("sortierung", 14), h("span", { klasse: "sort-text", text: T.sortierung[S.sortierung] }));
+  sk.title = `${T.sortierung.menue}: ${T.sortierung[S.sortierung]}`;
   let zu = document.getElementById("verlauf-zu");
   if (verlauf && !zu) { zu = h("button", { id: "verlauf-zu", klasse: "knopf-icon", title: "Verlauf schließen", "aria-label": "Verlauf schließen", aufClick: schliesseVerlauf }, symbol("schliessen", 14)); document.querySelector(".liste-werkzeuge").append(zu); }
   if (!verlauf) zu?.remove();
@@ -538,7 +549,8 @@ function leerZustand() {
   const { art, id } = S.sicht;
   const t = art === "favoriten" ? T.liste.leerFavoriten : art === "ansicht" ? T.liste.leerAnsicht : art === "bereich" && id === "inbox" ? T.liste.leerInbox : T.liste.leer;
   return h("div", { klasse: "leer-liste", "data-leer": "liste" }, h("div", { klasse: "zeichen" }, symbol(art === "ansicht" ? "kreis-haken" : "notiz", 24)), h("h3", { text: t.titel }), h("p", { text: t.text }),
-    art === "bereich" && (id === "inbox" || id === "alle") ? h("button", { klasse: "knopf primaer", text: T.seitenleiste.neu, aufClick: () => oeffneNeu() }) : null,
+    art === "bereich" && (id === "inbox" || id === "alle") ? baueKnopf({ text: T.seitenleiste.neu, variante: "primaer", aufKlick: () => oeffneNeu() })
+      : baueKnopf({ text: T.liste.alleNotizen, aktion: "alle-notizen", aufKlick: () => waehleSicht({ art: "bereich", id: "alle" }) }),
     h("div", { klasse: "kurz" }, h("span", null, h("kbd", { text: "⌘K" }), "suchen"), h("span", null, h("kbd", { text: "⌘N" }), "neu")));
 }
 function baueKarte(n) {
@@ -674,7 +686,7 @@ function zeichneRueckfragenKarte() {
   S.sichtListe = [];
   host.replaceChildren(h("div", { klasse: "leer-liste", "data-leer": "rueckfragen" }, h("div", { klasse: "zeichen" }, symbol("info", 24)), h("h3", { text: T.liste.rueckfragen.titel }),
     h("p", { text: n ? T.liste.rueckfragen.text(n) : "Keine offenen Fragen." }), h("p", { text: T.liste.rueckfragen.hinweis }),
-    h("button", { klasse: "knopf", text: T.liste.rueckfragen.kopieren, aufClick: async () => { try { await navigator.clipboard.writeText("/rueckfragen"); toast(T.liste.rueckfragen.kopiert); } catch { /* ohne Zwischenablage */ } } })));
+    baueKnopf({ text: T.liste.rueckfragen.kopieren, aufKlick: async () => { try { await navigator.clipboard.writeText("/rueckfragen"); toast(T.liste.rueckfragen.kopiert); } catch { /* ohne Zwischenablage */ } } })));
 }
 
 // ---- Sortierung
@@ -732,7 +744,8 @@ function zeichneSuchergebnisse() {
   const host = $("liste-koerper");
   zeichneListenKopf();
   if (!S.suche.frage) return;
-  if (!S.suche.treffer.length) { host.replaceChildren(h("div", { klasse: "leer-liste", "data-suche": "leer" }, h("div", { klasse: "zeichen" }, symbol("suche", 24)), h("h3", { text: T.liste.leerSuche.titel }), h("p", { text: T.liste.leerSuche.text }))); return; }
+  if (!S.suche.treffer.length) { host.replaceChildren(h("div", { klasse: "leer-liste", "data-suche": "leer" }, h("div", { klasse: "zeichen" }, symbol("suche", 24)), h("h3", { text: T.liste.leerSuche.titel }), h("p", { text: T.liste.leerSuche.text }),
+    baueKnopf({ text: T.liste.sucheLoeschen, variante: "leise", groesse: "s", aktion: "suche-loeschen", aufKlick: () => { sucheEl.value = ""; sucheEl.dispatchEvent(new Event("input")); sucheEl.focus(); } }))); return; }
   host.replaceChildren(...S.suche.treffer.map((t, i) => {
     const n = S.nMap.get(t.pfad);
     const typ = n?.typ ? (S.typMap.get(n.typ) || { name: n.typ }) : null;
@@ -1093,7 +1106,7 @@ function fassung(x, pfad) {
       try {
         const d = await api.diff(pfad, x.arbeitsstand ? undefined : x.sha);
         rumpf.replaceChildren(diffAnsicht(d.diff));
-        if (!x.arbeitsstand) rumpf.append(h("button", { klasse: "knopf", "data-aktion": "wiederherstellen", text: T.info.wiederherstellen, aufClick: () => stelleWiederHer(pfad, x.sha, x.zeit) }));
+        if (!x.arbeitsstand) rumpf.append(baueKnopf({ text: T.info.wiederherstellen, aktion: "wiederherstellen", aufKlick: () => stelleWiederHer(pfad, x.sha, x.zeit) }));
       } catch (e) { rumpf.replaceChildren(h("div", { klasse: "fehlertext", text: gitGesperrt(e) ? T.fehler.gitGesperrt : e.message })); }
     }
   } }, h("span", { klasse: "nachricht", text: x.nachricht }), h("span", { klasse: "meta", text: x.arbeitsstand ? "" : [x.autor, zeitText(x.zeit)].filter(Boolean).join(" · ") }));
@@ -1188,13 +1201,16 @@ function zeichneStatus() {
     const w = Array.isArray(gs.warnungen) ? gs.warnungen.length : Number(gs.warnungen) || 0;
     const ampel = String(gs.ampel || "").toLowerCase();
     const farbe = /rot|red/.test(ampel) ? "rot" : /gelb|yellow|orange/.test(ampel) || w ? "gelb" : "";
-    k.push(st("gesundheit", [symbol(farbe ? "warnung" : "herz", 14), h("span", { text: T.status.gesundheit }), (w ? h("span", { text: String(w) }) : symbol("haken", 12))], { klick: oeffneGesundheit, klasse: farbe === "rot" ? "schlecht" : farbe ? "warn" : "gut" }));
+    k.push(st("gesundheit", [symbol(farbe ? "warnung" : "herz", 14), h("span", { text: T.status.gesundheit }), (w ? h("span", { text: String(w) }) : symbol("haken", 12))], { klick: oeffneGesundheit, titel: T.befehle.gesundheit, klasse: farbe === "rot" ? "schlecht" : farbe ? "warn" : "gut" }));
   }
   k.push(st("nutzung", [symbol("balken", 14), h("span", { text: T.status.nutzung })], { klick: oeffneNutzung, titel: T.status.nutzungTitel }));
   k.push(h("span", { klasse: "trenner" }));
   k.push(st("theme", [symbol(istDunkel() ? "sonne" : "mond", 14)], { klick: () => setzeTheme(istDunkel() ? "hell" : "dunkel"), titel: istDunkel() ? T.status.zuHell : T.status.zuDunkel }));
   k.push(st("einstellungen", [symbol("zahnrad", 14)], { klick: (e) => oeffneEinstellungen(e.currentTarget), titel: T.status.einstellungen }));
+  // Fokus merken: das Neuzeichnen (alle 30 s, nach jedem Git-Stand) darf den Tastaturfokus nicht verlieren
+  const fokusId = stEl.contains(document.activeElement) ? document.activeElement.closest?.("[data-st]")?.dataset.st : null;
   stEl.replaceChildren(...k);
+  if (fokusId) { const neu = stEl.querySelector(`[data-st="${CSS.escape(fokusId)}"]`); if (neu && neu.tagName === "BUTTON") neu.focus({ preventScroll: true }); }
 }
 setInterval(() => { if (S.git) zeichneStatus(); }, 30000);
 window.addEventListener("online", () => { S.offline = false; if (S.git) { zeichneStatus(); nachsehen(true); } });
@@ -1474,8 +1490,9 @@ async function oeffneCommit() {
   const fehlerEl = h("div", { klasse: "fehlertext", hidden: true });
   const knopf = baueKnopf({ text: T.commit.sichern, variante: "primaer", aktion: "commit" });
   const boxen = liste.map((g) => {
-    const cb = h("input", { type: "checkbox", checked: true, "data-datei": g.pfad, aufChange: () => { haken.set(g.pfad, cb.checked); aktualisiere(); } });
-    return h("label", null, cb, h("span", { klasse: "n", text: g.pfad, title: g.pfad }), h("span", { klasse: "c", text: T.commit.codes[g.code?.trim()] || T.commit.codes[g.code?.trim()?.[0]] || "geändert" }));
+    const zeile = hakenFeld({ checked: true, daten: { "data-datei": g.pfad }, aufChange: (an) => { haken.set(g.pfad, an); aktualisiere(); } });
+    zeile.append(h("span", { klasse: "n", text: g.pfad, title: g.pfad }), h("span", { klasse: "c", text: T.commit.codes[g.code?.trim()] || T.commit.codes[g.code?.trim()?.[0]] || "geändert" }));
+    return zeile;
   });
   const aktualisiere = () => { knopf.disabled = ![...haken.values()].some(Boolean); };
   const setzeAlle = (v) => { boxen.forEach((l) => { const c = l.querySelector("input"); c.checked = v; haken.set(c.dataset.datei, v); }); aktualisiere(); };
@@ -1605,8 +1622,9 @@ function oeffnePalette(vorgabe = "") {
     ...(inApp() ? [[T.befehle.ordner, "", () => aktion("ordner-zeigen", S.pfad || undefined)], [T.befehle.ansicht, "", oeffneUebersicht]] : []),
     [T.befehle.mcp, "", oeffneKi],
   ];
-  const eingabe = h("input", { type: "text", placeholder: T.palette.platzhalter, "aria-label": T.palette.platzhalter, autocomplete: "off", spellcheck: "false", value: vorgabe, role: "combobox" });
-  const liste = h("div", { klasse: "pal-liste", role: "listbox" });
+  const eingabeFeld = textfeld({ wert: vorgabe, platzhalter: T.palette.platzhalter, label: T.palette.platzhalter, klasse: "pal-feld", daten: { role: "combobox", "aria-expanded": "true", "aria-controls": "pal-liste" } });
+  const eingabe = eingabeFeld.input;
+  const liste = h("div", { klasse: "pal-liste", role: "listbox", id: "pal-liste" });
   let eintraege = [], idx = 0;
   const grad = (d, q) => {
     const gleich = (x) => suchFormen(x).some((f) => suchFormen(q).includes(f));
@@ -1652,7 +1670,7 @@ function oeffnePalette(vorgabe = "") {
     else if (e.key === "ArrowUp") { e.preventDefault(); idx = (idx + eintraege.length - 1) % Math.max(1, eintraege.length); markiere(); }
     else if (e.key === "Enter") { e.preventDefault(); waehle(idx); }
   });
-  const d = dialog({ eigen: h("div", { klasse: "palette", role: "dialog", "aria-modal": "true" }, eingabe, liste) });
+  const d = dialog({ eigen: h("div", { klasse: "palette", role: "dialog", "aria-modal": "true" }, eingabeFeld.el, liste) });
   eingabe.focus(); // sofort, nicht erst im nächsten Takt: schnell getippte Zeichen dürfen nicht verloren gehen
   zeichne();
 }
@@ -1732,7 +1750,7 @@ function oeffneKuerzel() {
     titel: K.titel, breit: true,
     rumpf: [h("div", { klasse: "kuerzel" }, ...K.gruppen.map((g) => h("section", null, h("h3", { text: g.name }),
       h("dl", null, ...g.zeilen.flatMap(([tasten, was]) => [h("dt", null, ...tasten.split(" ").map((x) => h("kbd", { text: x }))), h("dd", { text: was })])))))],
-    knoepfe: [h("button", { klasse: "knopf primaer", text: K.schliessen, aufClick: () => d.schliessen() })],
+    knoepfe: [baueKnopf({ text: K.schliessen, variante: "primaer", aufKlick: () => d.schliessen() })],
   });
 }
 window.addEventListener("keydown", (e) => {
@@ -1807,7 +1825,7 @@ function vaultEntfernenMenue() {
 }
 function bestaetigeEntfernen(v) {
   const d = dialog({ titel: T.vault.entfernenFrage(v.name), rumpf: [h("p", { text: T.vault.entfernenText }), h("p", { klasse: "mini", text: v.pfad })],
-    knoepfe: [h("button", { klasse: "knopf", text: T.commit.abbrechen, aufClick: () => d.schliessen() }), h("button", { klasse: "knopf primaer", "data-aktion": "entfernen", text: T.vault.entfernen, aufClick: async () => {
+    knoepfe: [baueKnopf({ text: T.commit.abbrechen, aufKlick: () => d.schliessen() }), baueKnopf({ text: T.vault.entfernen, variante: "primaer", aktion: "entfernen", aufKlick: async () => {
       try {
         // IMMER zuerst sichern: ob der offene Vault betroffen ist, entscheidet erst die Werkstatt (Pfade können verschieden geschrieben sein)
         if (!(await sichereVorWechsel())) return;
@@ -1899,8 +1917,8 @@ function oeffneVertrauen() {
   }
   const fehlerEl = h("div", { klasse: "fehlertext", role: "alert", hidden: true });
   // „Nur ansehen“ hat den Fokus: ein versehentliches Enter erteilt kein Vertrauen
-  const nein = h("button", { klasse: "knopf", type: "button", "data-aktion": "vertrauen-spaeter", text: T.vertrauen.spaeter, autofocus: true, aufClick: () => d.schliessen() });
-  const ja = h("button", { klasse: "knopf primaer", type: "button", "data-aktion": "vertrauen-erlauben", text: T.vertrauen.erlauben });
+  const nein = baueKnopf({ text: T.vertrauen.spaeter, aktion: "vertrauen-spaeter", autofocus: true, aufKlick: () => d.schliessen() });
+  const ja = baueKnopf({ text: T.vertrauen.erlauben, variante: "primaer", aktion: "vertrauen-erlauben" });
   const d = dialog({
     titel: T.vertrauen.titel, breit: true,
     beiSchliessen: () => { if (vertrauenFrage?.d === d) vertrauenFrage = null; },
@@ -1944,8 +1962,8 @@ function oeffneVertrauenEntziehen() {
   if (entziehenFrage?.box.isConnected) return entziehenFrage;
   const fuer = S.info.vault;
   const fehlerEl = h("div", { klasse: "fehlertext", role: "alert", hidden: true });
-  const nein = h("button", { klasse: "knopf", type: "button", "data-aktion": "vertrauen-behalten", text: T.vertrauen.behalten, autofocus: true, aufClick: () => d.schliessen() });
-  const ja = h("button", { klasse: "knopf gefahr", type: "button", "data-aktion": "vertrauen-entziehen", text: T.vertrauen.entziehenKnopf });
+  const nein = baueKnopf({ text: T.vertrauen.behalten, aktion: "vertrauen-behalten", autofocus: true, aufKlick: () => d.schliessen() });
+  const ja = baueKnopf({ text: T.vertrauen.entziehenKnopf, variante: "gefahr", aktion: "vertrauen-entziehen" });
   const d = dialog({
     titel: T.vertrauen.entziehenTitel,
     beiSchliessen: () => { if (entziehenFrage === d) entziehenFrage = null; },
@@ -2045,7 +2063,7 @@ function zeigeLeer() {
     el.replaceChildren(
       h("div", { klasse: "zeichen" }, symbol("notiz", 24)),
       h("h2", { text: T.leer.titel }), h("p", { text: T.leer.text }),
-      h("div", null, h("button", { klasse: "knopf primaer gross", "data-aktion": "erste", text: T.leer.knopf, aufClick: () => oeffneNeu() })),
+      h("div", null, baueKnopf({ text: T.leer.knopf, variante: "primaer", groesse: "l", aktion: "erste", aufKlick: () => oeffneNeu() })),
       S.info && !S.info.git ? h("p", { klasse: "mini", style: "margin-top:14px", text: "Dieser Ordner ist noch nicht mit Git gesichert. Du kannst trotzdem schreiben." }) : null);
   } else {
     el.replaceChildren(

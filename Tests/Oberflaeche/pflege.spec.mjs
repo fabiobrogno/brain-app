@@ -37,6 +37,14 @@ async function start(page, opt = {}) {
   await expect(abschnitt(page).locator('[data-kk="pflege-naechster"]')).toBeVisible();   // der Stand ist geladen (danach zeichnet sich nichts mehr neu)
   return z;
 }
+// Vault wählen (Auswahl-Baustein): Liste öffnen, Option wählen; ein Neuzeichnen schließt die Liste, dann erneut öffnen
+async function waehleVault(page, wert) {
+  const combobox = dlg(page).locator('[data-kk="vault-wahl"]');
+  await expect(async () => {
+    if (!(await page.locator(".bs-liste").count())) await combobox.click();
+    await page.locator(`.bs-liste [role="option"][data-wert="${wert}"]`).click({ timeout: 2000 });
+  }).toPass({ timeout: 15000 });
+}
 const stufe = (page, s) => abschnitt(page).locator(`[data-kk="pflege-stufe"] [data-wert="${s}"]`);
 const postIst = (z, body) => expect.poll(() => z.log("/api/ki/pflege", "POST").at(-1)?.body).toEqual(body);
 // Ein Popover schließt bei jedem Scrollen: erst den Knopf sichtbar machen und warten, dann öffnen.
@@ -84,7 +92,7 @@ test("Block Pflege: Konto nur aus Claude-Code-Konten mit Erweitert (mit Logo), S
   await expect(a.locator('[data-kk="pflege-problem"]')).toHaveCount(0);
   await ruhig(page); await a.screenshot({ path: shot("aus-hell") });
   // der andere Vault ist unberührt
-  await dlg(page).locator('[data-kk="vault-wahl"]').selectOption(FIRMA);
+  await waehleVault(page, FIRMA);
   await expect(stufe(page, "mittel")).toHaveAttribute("aria-checked", "true");
   await expect(a.locator('[data-kk="pflege-alt"]')).toBeVisible();
   expect(Object.keys(z.pflege)).toEqual([vault]);
@@ -136,7 +144,7 @@ test("Letzter und nächster Lauf: „fertig, ohne KI (so eingestellt)“ zählt 
   expect(z.log("/api/ki/pflege/jetzt")).toHaveLength(1);
   await ruhig(page); await a.screenshot({ path: shot("lauf-hell") });
   // anderer Vault: nur der offene Vault wird gepflegt
-  await dlg(page).locator('[data-kk="vault-wahl"]').selectOption(FIRMA);
+  await waehleVault(page, FIRMA);
   await expect(jetzt).toBeDisabled();
   await expect(a.locator(".kk-pflege-jetzt")).toContainText("gerade geöffnet ist");
 });
@@ -169,7 +177,7 @@ test("Hinweis aus der Migration und Problem der Einstellung: das alte Konto des 
   await expect.poll(() => z.log("/api/ki/pflege", "POST").at(-1)?.body.konto).toBe("k_aaaa0001");
   // Problem: dem Konto wird die Stufe genommen → der Block erklärt, dass die Pflege ohne KI läuft
   await stufe(page, "mittel").click();
-  await dlg(page).locator('[data-kk="vault-wahl"]').selectOption(FIRMA);
+  await waehleVault(page, FIRMA);
   await stufeKnopfZugriff(page, "k_aaaa0001", "lesen");
   await expect(a.locator('[data-kk="pflege-problem"]')).toHaveAttribute("data-problem", "stufe");
   await expect(a.locator('[data-kk="pflege-problem"]')).toContainText("läuft die Pflege ohne KI");

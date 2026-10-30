@@ -1,6 +1,7 @@
 // Verlauf-Modus der Notizliste (Commits nach Tagen) und ruhige Diff-Ansicht für den Editorbereich.
 // Kein innerHTML mit fremden Daten: alles über h() und textContent.
 import { h, dateiName, ohneEndung, ordnerVon, leseLokal, speichereLokal } from "./hilfen.js";
+import { knopf as baueKnopf } from "./bausteine.js";
 import { symbol } from "./symbole.js";
 import { TV } from "./texte-verlauf.js";
 import { gitGesperrt } from "./api.js";
@@ -188,8 +189,8 @@ export function zeichneVerlauf(host, { api, beiDatei, beiCommitOeffnen, beiGespe
       h("div", { klasse: "vl-leer-titel", text: titel }),
       h("p", { klasse: "vl-leer-text", text }),
       details ? detailsBlock(details) : null,
-      nochmal ? h("button", { klasse: "knopf", type: "button", "data-aktion": "nochmal", text: TV.fehler.nochmal }) : null,
-      knopf ? h("button", { klasse: "knopf", type: "button", "data-aktion": knopf.name, text: knopf.text }) : null);
+      nochmal ? baueKnopf({ text: TV.fehler.nochmal, aktion: "nochmal" }) : null,
+      knopf ? baueKnopf({ text: knopf.text, aktion: knopf.name }) : null);
   }
 
   function mehrBlock() {
@@ -539,7 +540,7 @@ export function zeigeDiff(host, { api, sha, kurz, nachricht, pfad, status, zeit,
 
   const zurueck = h("button", { klasse: "vd-zurueck", type: "button", "data-aktion": "diff-zu" }, zeichen("pfeil-links", 14), h("span", { text: TV.diff.zurueck }));
   const wieder = kannWieder
-    ? h("button", { klasse: "knopf vd-wieder", type: "button", "data-aktion": "diff-wiederherstellen" }, zeichen("uhr", 14), h("span", { text: TV.diff.wiederherstellen }))
+    ? baueKnopf({ klasse: "vd-wieder", aktion: "diff-wiederherstellen", kinder: [zeichen("uhr", 14), h("span", { text: TV.diff.wiederherstellen })] })
     : null;
   const koerper = h("div", { klasse: "vd-koerper", tabindex: "0", role: "region", "aria-label": TV.diff.bereich });
   let ansicht = leseDiffAnsicht();

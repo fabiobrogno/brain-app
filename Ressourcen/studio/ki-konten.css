@@ -28,7 +28,7 @@
 .kk-block-titel { font-weight: 600; font-size: 12.5px; }
 .kk-knoepfe { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .kk-wahl { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; line-height: 1.4; }
-.kk-wahl input { margin-top: 2px; flex: none; accent-color: var(--akzent); width: 14px; height: 14px; }
+.kk-wahl input { margin-top: 2px; }
 .kk-punkte { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; color: var(--text-2); font-size: 12.5px; line-height: 1.45; }
 
 /* Marke vor einer Zeile: Zustand nie nur durch Farbe */
@@ -51,9 +51,7 @@
 .kk-meta { color: var(--text-2); font-size: 12px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 .kk-chips { display: flex; gap: 8px; flex-wrap: wrap; }
 .kk-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-2); padding: 2px 8px 2px 4px; border: 1px solid var(--linie); border-radius: var(--r-pille); white-space: nowrap; }
-.kk-eingabe { height: 28px; min-width: 0; flex: 1 1 160px; padding: 0 8px; border: 1px solid var(--linie-stark); border-radius: var(--r-s); background: var(--papier); color: var(--text); font: inherit; }
-.kk-eingabe:focus-visible { outline: none; box-shadow: var(--fokus-ring); border-color: var(--akzent); }
-.kk-eingabe[aria-invalid="true"] { border-color: var(--rot); }
+.kk-eingabe { flex: 1 1 160px; min-width: 0; }
 
 /* Altform: Eintrag ohne Kontokennung */
 .kk-altform { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--r); background: var(--gelb-weich); border: 1px solid var(--gelb-rand); flex-wrap: wrap; }
@@ -75,8 +73,6 @@
 .kk-vault-wahl { display: flex; align-items: center; gap: 10px; }
 .kk-vault-label { color: var(--text-2); font-size: 12.5px; }
 .kk-vault-name { display: flex; align-items: center; gap: 8px; font-weight: 600; }
-.kk-auswahl { height: 28px; max-width: 100%; padding: 0 8px; border: 1px solid var(--linie-stark); border-radius: var(--r-s); background: var(--erhoben); color: var(--text); font: inherit; }
-.kk-auswahl:focus-visible { outline: none; box-shadow: var(--fokus-ring); border-color: var(--akzent); }
 .kk-zeile-kopf { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .kk-zeile-kopf .kk-name { flex: 1 1 140px; min-width: 0; }
 .kk-stufentext { margin: 0; color: var(--text-2); font-size: 12.5px; line-height: 1.5; padding-left: 36px; -webkit-user-select: text; user-select: text; }
@@ -118,6 +114,7 @@
   .kk-stufentext, .kk-sperrzustand { padding-left: 0; }
   .kk-seg { flex-wrap: wrap; }
 }
+.kk-vault-wahl .bs-auswahl { min-width: 220px; }
 
 /* Pflege (Paket P3): Konto und wie viel KI je Vault, was die Pflege tut, letzter/nächster Lauf */
 .kk-pflege-zeile { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: flex-end; }

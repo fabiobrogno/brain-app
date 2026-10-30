@@ -2,11 +2,11 @@
 // Standard für neue Konten, Pflege (Konto und wie viel KI je Vault), Leseverbot in Claude Code und „Strenger Schutz“. Die Routen der Werkstatt (werkstatt/konten.mjs) tun die Arbeit; hier steht nur, was der Nutzer sieht und
 // entscheidet. Geschrieben wird nur nach einem Klick; ein Sperren fragt vorher nach und sagt ehrlich, was es schützt und was nicht. Kein innerHTML mit fremden Daten: alles über h().
 import { h, dialog, toast } from "./hilfen.js";
+import { knopf as baueKnopf, auswahl, segment, textfeld, hakenFeld } from "./bausteine.js";
 import { symbol } from "./symbole.js";
 import { kiLogo, kiLogoId } from "./ki-logos.js";
 import { api as standardApi } from "./api.js";
 import { TK } from "./texte-konten.js";
-import { auswahl as bsAuswahl, segment as bsSegment, knopf as bsKnopf } from "./bausteine.js";
 
 // ---------------------------------------------------------------- Stylesheet (lädt sich selbst, einmalig)
 const CSS_URL = new URL("./ki-konten.css", import.meta.url).href;
@@ -88,11 +88,11 @@ export function oeffneKontenDialog({ api = standardApi, vault = null, beiZu, bei
   const secStreng = h("section", { klasse: "kk-sektion", "data-kk": "streng-abschnitt" });
   const secEhrlich = h("section", { klasse: "kk-sektion", "data-kk": "ehrlich" });
   const rumpf = h("div", { klasse: "kk-rumpf" }, h("div", { klasse: "kk-haupt" }, secMeldung, secFrage, secHinweis, secKonten, secZugriff, secPflege, secStreng, secEhrlich));
-  const zuKnopf = h("button", { klasse: "knopf gross", type: "button", "data-aktion": "konten-schliessen", text: TK.schliessen, aufClick: () => d.schliessen() });
+  const zuKnopf = baueKnopf({ text: TK.schliessen, groesse: "l", aktion: "konten-schliessen", aufKlick: () => d.schliessen() });
   const box = h("div", { klasse: "dialog kk-dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "kk-titel", "data-dialog": "ki-konten" },
     h("div", { klasse: "kk-kopf" }, h("h2", { klasse: "kk-titel", id: "kk-titel", text: TK.titel }), intro),
     rumpf,
-    h("div", { klasse: "kk-fuss" }, h("button", { klasse: "knopf", type: "button", "data-aktion": "konten-neu-suchen", text: TK.neuSuchen, aufClick: () => lade() }), h("span", { klasse: "kk-fuss-platz" }), zuKnopf));
+    h("div", { klasse: "kk-fuss" }, baueKnopf({ text: TK.neuSuchen, aktion: "konten-neu-suchen", aufKlick: () => lade() }), h("span", { klasse: "kk-fuss-platz" }), zuKnopf));
   const d = dialog({ eigen: box, beiSchliessen: () => { tot = true; beiZu?.(); } });
   setTimeout(() => zuKnopf.focus(), 10);
 
@@ -229,9 +229,9 @@ export function oeffneKontenDialog({ api = standardApi, vault = null, beiZu, bei
     secHinweis.replaceChildren();
     if (S.fehler || !S.daten || S.daten.hinweis !== "defekt-neu") return;
     const knoepfe = [
-      h("button", { klasse: "knopf", type: "button", "data-aktion": "konten-hinweis-verstanden", disabled: S.beschaeftigt, text: TK.defekt.verstanden, aufClick: () => tue(() => api.kiHinweis()) }),
+      baueKnopf({ text: TK.defekt.verstanden, aktion: "konten-hinweis-verstanden", disabled: S.beschaeftigt, aufKlick: () => tue(() => api.kiHinweis()) }),
     ];
-    if (S.daten.vorherDa) knoepfe.push(h("button", { klasse: "knopf", type: "button", "data-aktion": "konten-vorher", disabled: S.beschaeftigt, text: TK.defekt.vorher, aufClick: () => { S.frage = { art: "vorher" }; zeichneAlles(); zeigeFrage(); } }));
+    if (S.daten.vorherDa) knoepfe.push(baueKnopf({ text: TK.defekt.vorher, aktion: "konten-vorher", disabled: S.beschaeftigt, aufKlick: () => { S.frage = { art: "vorher" }; zeichneAlles(); zeigeFrage(); } }));
     secHinweis.append(h("div", { klasse: "kk-karte warn", role: "status", "data-kk": "defekt" },
       h("div", { klasse: "kk-karte-kopf" }, marke("warn"), h("div", { klasse: "kk-karte-titel", text: TK.defekt.titel })),
       h("p", { text: S.daten.hinweisGrund === "geloescht" ? TK.defekt.textGeloescht : TK.defekt.text }),
@@ -243,20 +243,20 @@ export function oeffneKontenDialog({ api = standardApi, vault = null, beiZu, bei
     secFrage.replaceChildren();
     const f = S.frage;
     if (!f) return;
-    const abbrechen = h("button", { klasse: "knopf", type: "button", "data-aktion": "konten-frage-abbrechen", text: TK.sperren.abbrechen, aufClick: () => { S.frage = null; zeichneAlles(); if (f.konto) fokusAufKonto(f.konto); } });
+    const abbrechen = baueKnopf({ text: TK.sperren.abbrechen, aktion: "konten-frage-abbrechen", aufKlick: () => { S.frage = null; zeichneAlles(); if (f.konto) fokusAufKonto(f.konto); } });
     if (f.art === "sperren") {
       const k = kontoMitId(f.konto), v = vaults().find((x) => x.pfad === f.vault);
       if (!k || !v) return;
       const datei = `${k.ordner}/settings.json`;
-      const haken = f.claude ? h("input", { type: "checkbox", id: "kk-claude-haken", "data-kk": "claude-haken", checked: true }) : null;
-      if (haken) haken.checked = true;
-      const ja = h("button", { klasse: "knopf primaer", type: "button", "data-aktion": "konten-sperren-ja", text: TK.sperren.ja, aufClick: () => bestaetigeSperren(f, haken ? haken.checked : false) });
+      const hakenZeile = f.claude ? hakenFeld({ checked: true, text: TK.sperren.claudeHaken, klasse: "kk-wahl", daten: { id: "kk-claude-haken", "data-kk": "claude-haken" } }) : null;
+      const haken = hakenZeile?.input || null;
+      const ja = baueKnopf({ text: TK.sperren.ja, variante: "primaer", aktion: "konten-sperren-ja", aufKlick: () => bestaetigeSperren(f, haken ? haken.checked : false) });
       secFrage.append(h("div", { klasse: "kk-karte bestaetigung", role: "group", "aria-labelledby": "kk-frage-titel", "data-kk": "frage-sperren" },
         h("div", { klasse: "kk-karte-titel", id: "kk-frage-titel", text: TK.sperren.titel(k.name, v.name) }),
         h("div", { klasse: "kk-block" }, h("div", { klasse: "kk-block-titel", text: TK.sperren.schuetztTitel }), h("p", { text: TK.sperren.schuetzt })),
         f.claude
           ? h("div", { klasse: "kk-block" }, h("div", { klasse: "kk-block-titel", text: TK.sperren.claudeTitel }),
-            h("label", { klasse: "kk-wahl", for: "kk-claude-haken" }, haken, h("span", { text: TK.sperren.claudeHaken })),
+            hakenZeile,
             h("p", { klasse: "mini", text: TK.sperren.claudeText(datei) }), h("p", { klasse: "mini", text: TK.sperren.claudeWirkt }))
           : h("div", { klasse: "kk-block" }, h("div", { klasse: "kk-block-titel", text: TK.sperren.andereTitel(k.programmName) }), h("p", { text: TK.sperren.andere(k.programmName) })),
         h("div", { klasse: "kk-block" }, h("div", { klasse: "kk-block-titel", text: TK.sperren.grenzenTitel }), h("p", { text: TK.sperren.grenzen })),
@@ -270,12 +270,12 @@ export function oeffneKontenDialog({ api = standardApi, vault = null, beiZu, bei
         h("p", { text: TK.streng.dialogEinstellungen }),
         h("div", { klasse: "kk-block" }, h("div", { klasse: "kk-block-titel", text: TK.streng.dialogFolgenTitel }), h("p", { text: TK.streng.dialogFolgen })),
         h("p", { klasse: "mini", text: TK.streng.dialogRueckweg }),
-        h("div", { klasse: "kk-knoepfe" }, abbrechen, h("button", { klasse: "knopf primaer", type: "button", "data-aktion": "konten-streng-ja", text: TK.streng.dialogJa, aufClick: () => schalteStreng(k, true) }))));
+        h("div", { klasse: "kk-knoepfe" }, abbrechen, baueKnopf({ text: TK.streng.dialogJa, variante: "primaer", aktion: "konten-streng-ja", aufKlick: () => schalteStreng(k, true) }))));
     } else if (f.art === "vorher") {
       secFrage.append(h("div", { klasse: "kk-karte bestaetigung", role: "group", "aria-labelledby": "kk-frage-titel", "data-kk": "frage-vorher" },
         h("div", { klasse: "kk-karte-titel", id: "kk-frage-titel", text: TK.defekt.vorherTitel }),
         h("p", { text: TK.defekt.vorherText }),
-        h("div", { klasse: "kk-knoepfe" }, abbrechen, h("button", { klasse: "knopf primaer", type: "button", "data-aktion": "konten-vorher-ja", text: TK.defekt.vorherJa, aufClick: async () => { S.frage = null; await tue(() => api.kiVorher(), { erfolg: () => TK.defekt.vorherErfolg }); } }))));
+        h("div", { klasse: "kk-knoepfe" }, abbrechen, baueKnopf({ text: TK.defekt.vorherJa, variante: "primaer", aktion: "konten-vorher-ja", aufKlick: async () => { S.frage = null; await tue(() => api.kiVorher(), { erfolg: () => TK.defekt.vorherErfolg }); } }))));
     }
   }
 
@@ -285,7 +285,7 @@ export function oeffneKontenDialog({ api = standardApi, vault = null, beiZu, bei
     if (S.laedt) { secKonten.append(h("p", { klasse: "kk-laedt", role: "status", text: TK.laedt })); return; }
     if (S.fehler) {
       secKonten.append(h("div", { klasse: "kk-karte fehler", role: "alert" }, marke("rot"), h("p", { text: S.fehler?.message || TK.fehlerLaden }),
-        h("button", { klasse: "knopf", type: "button", "data-aktion": "konten-nochmal", text: TK.nochmal, aufClick: () => lade() })));
+        baueKnopf({ text: TK.nochmal, aktion: "konten-nochmal", aufKlick: () => lade() })));
       return;
     }
     secKonten.append(h("h3", { klasse: "kk-gruppe-titel", text: TK.konten.titel }));
@@ -314,18 +314,18 @@ export function oeffneKontenDialog({ api = standardApi, vault = null, beiZu, bei
     if (k.altform && (k.altform.mcp || k.altform.hooks)) {
       li.append(h("div", { klasse: "kk-altform", "data-kk": "altform" }, marke("warn"),
         h("div", { klasse: "kk-altform-text" }, h("div", { klasse: "kk-block-titel", text: TK.konten.altformTitel }), h("div", { klasse: "mini", text: TK.konten.altformText })),
-        h("button", { klasse: "knopf", type: "button", "data-aktion": "konto-neu-verbinden", text: TK.konten.altformKnopf, aufClick: () => tue(() => api.kiNeuVerbinden(k.id), { erfolg: () => TK.konten.altformErfolg }) })));
+        baueKnopf({ text: TK.konten.altformKnopf, aktion: "konto-neu-verbinden", aufKlick: () => tue(() => api.kiNeuVerbinden(k.id), { erfolg: () => TK.konten.altformErfolg }) })));
     }
     return li;
   }
   function namensFeld(k) {
-    const feld = h("input", { type: "text", klasse: "kk-eingabe", "data-kk": "name-feld", maxlength: "60", value: k.name, "aria-label": TK.konten.nameFeld, "aria-invalid": S.namensFehler ? "true" : null });
-    feld.value = k.name;
+    const tf = textfeld({ klasse: "kk-eingabe", wert: k.name, maxlaenge: 60, label: TK.konten.nameFeld, groesse: "s", daten: { "data-kk": "name-feld", "aria-invalid": S.namensFehler ? "true" : null } });
+    const feld = tf.input;
     feld.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); speichereName(k, feld.value); } });
     return h("div", { klasse: "kk-konto-name bearbeiten" },
-      feld,
-      h("button", { klasse: "knopf primaer", type: "button", "data-aktion": "konto-name-speichern", text: TK.konten.speichern, aufClick: () => speichereName(k, feld.value) }),
-      h("button", { klasse: "knopf", type: "button", "data-aktion": "konto-name-abbrechen", text: TK.konten.abbrechen, aufClick: () => { S.umbenenne = null; S.namensFehler = null; zeichneKonten(); } }),
+      tf.el,
+      baueKnopf({ text: TK.konten.speichern, variante: "primaer", aktion: "konto-name-speichern", aufKlick: () => speichereName(k, feld.value) }),
+      baueKnopf({ text: TK.konten.abbrechen, aktion: "konto-name-abbrechen", aufKlick: () => { S.umbenenne = null; S.namensFehler = null; zeichneKonten(); } }),
       S.namensFehler ? h("div", { klasse: "kk-fehlertext", role: "alert", text: S.namensFehler }) : null);
   }
   // Strenger Schutz: nur Claude Code, aus der Werkstatt gemeldet (schutz.moeglich); ein eigener Abschnitt unter der Wahl der Stufen
@@ -348,8 +348,8 @@ export function oeffneKontenDialog({ api = standardApi, vault = null, beiZu, bei
     const an = !!s.strenger;
     const zustand = an ? (s.strengerAktiv ? TK.streng.an : TK.streng.inaktiv) : TK.streng.aus;
     const knopf = an
-      ? h("button", { klasse: "knopf", type: "button", "data-aktion": "streng-aus", text: TK.streng.ausschalten, aufClick: () => schalteStreng(k, false) })
-      : h("button", { klasse: "knopf", type: "button", "data-aktion": "streng-an", disabled: gesperrte === 0, text: TK.streng.einschalten, aufClick: () => { S.frage = { art: "streng", konto: k.id }; zeichneAlles(); zeigeFrage(); } });
+      ? baueKnopf({ text: TK.streng.ausschalten, aktion: "streng-aus", aufKlick: () => schalteStreng(k, false) })
+      : baueKnopf({ text: TK.streng.einschalten, aktion: "streng-an", disabled: gesperrte === 0, aufKlick: () => { S.frage = { art: "streng", konto: k.id }; zeichneAlles(); zeigeFrage(); } });
     return h("li", { klasse: "kk-streng", "data-kk": "streng", "data-konto": k.id, "data-streng": an ? "an" : "aus" },
       h("span", { klasse: "kk-logo" }, logoFuer(k)),
       h("div", { klasse: "kk-streng-text" },
@@ -409,12 +409,12 @@ export function oeffneKontenDialog({ api = standardApi, vault = null, beiZu, bei
     if (!optionen.length) {
       zeile.append(h("div", { klasse: "kk-karte schmal", "data-kk": "pflege-kein-konto" }, marke("aus"), h("p", { text: P.keinKonto })));
     } else {
-      const wahl = bsAuswahl({ optionen, wert: kontoId || "",   // "" = noch keins gewählt (zeigt den Platzhalter; undefined nähme die erste Option)
+      const wahl = auswahl({ optionen, wert: kontoId || "",   // "" = noch keins gewählt (zeigt den Platzhalter; undefined nähme die erste Option)
          platzhalter: P.kontoPlatzhalter, label: P.konto, breit: true, daten: { "data-kk": "pflege-konto" },
         aufAenderung: (w) => { const n = S.pflegeEntwurf[v.pfad]; setzePflege(v, w, n ? n.stufe : p.gesetzt && p.stufe !== "aus" ? p.stufe : "mittel"); } });
       zeile.append(h("div", { klasse: "kk-pflege-feld" }, h("span", { klasse: "kk-block-titel", "aria-hidden": "true", text: P.konto }), wahl));
     }
-    const seg = bsSegment({ optionen: ["klein", "mittel", "aus"].map((s) => ({ wert: s, text: P.stufen[s].name, daten: { "data-stufe-wahl": s } })), wert: stufe, label: P.stufe, daten: { "data-kk": "pflege-stufe" },
+    const seg = segment({ optionen: ["klein", "mittel", "aus"].map((s) => ({ wert: s, text: P.stufen[s].name, daten: { "data-stufe-wahl": s } })), wert: stufe, label: P.stufe, daten: { "data-kk": "pflege-stufe" },
       aufAenderung: (s) => {
         let k = kontoId;
         if (!k && s !== "aus" && eignung.length === 1) k = eignung[0].id;     // genau ein Konto zur Wahl: kein zweiter Klick nötig
@@ -451,7 +451,7 @@ export function oeffneKontenDialog({ api = standardApi, vault = null, beiZu, bei
       const n = st.naechster || {};
       lauf.append(h("p", { "data-kk": "pflege-naechster", text: n.art === "dienst" ? P.naechster.dienst(n.fruehestens ? zeitText(n.fruehestens) : null) : P.naechster[n.art] || "" }));
       const offen = gleicherPfad(v.pfad, vault);
-      const knopf = bsKnopf({ text: P.jetzt, variante: "primaer", aktion: "pflege-jetzt", daten: { "data-kk": "pflege-jetzt" }, aufKlick: () => pflegeJetzt() });
+      const knopf = baueKnopf({ text: P.jetzt, variante: "primaer", aktion: "pflege-jetzt", daten: { "data-kk": "pflege-jetzt" }, aufKlick: () => pflegeJetzt() });
       if (!offen || st.schalter === "aus" || S.beschaeftigt) knopf.disabled = true;
       lauf.append(h("div", { klasse: "kk-pflege-jetzt" }, knopf,
         !offen ? h("span", { klasse: "mini", text: P.jetztNurOffener }) : st.schalter === "probe" ? h("span", { klasse: "mini", text: P.jetztProbe }) : null));
@@ -461,11 +461,9 @@ export function oeffneKontenDialog({ api = standardApi, vault = null, beiZu, bei
 
   function vaultAuswahl() {
     if (vaults().length === 1) return h("div", { klasse: "kk-vault-name", "data-kk": "vault-name" }, zeichen("vault", 14), h("span", { text: vaults()[0].name }));
-    const sel = h("select", { klasse: "kk-auswahl", "data-kk": "vault-wahl", "aria-label": TK.vault.wahl },
-      vaults().map((v) => h("option", { value: v.pfad, text: v.name })));
-    sel.value = aktuellerVault()?.pfad || "";
-    sel.addEventListener("change", () => { S.vaultPfad = sel.value; S.frage = null; zeichneAlles(); ladePflegeStatus(); });
-    return h("label", { klasse: "kk-vault-wahl" }, h("span", { klasse: "kk-vault-label", text: TK.vault.wahl }), sel);
+    const sel = auswahl({ optionen: vaults().map((v) => ({ wert: v.pfad, text: v.name })), wert: aktuellerVault()?.pfad || "", label: TK.vault.wahl, daten: { "data-kk": "vault-wahl" }, klasse: "kk-auswahl",
+      aufAenderung: (pfad) => { S.vaultPfad = pfad; S.frage = null; zeichneAlles(); ladePflegeStatus(); } });
+    return h("div", { klasse: "kk-vault-wahl" }, h("span", { klasse: "kk-vault-label", "aria-hidden": "true", text: TK.vault.wahl }), sel);
   }
   function zeichneVaultAnsicht() {
     const v = aktuellerVault();
@@ -508,10 +506,8 @@ export function oeffneKontenDialog({ api = standardApi, vault = null, beiZu, bei
     for (const k of konten()) {
       const tr = h("tr", { "data-konto": k.id }, h("th", { scope: "row" }, h("span", { klasse: "kk-matrix-konto" }, h("span", { klasse: "kk-logo" }, logoFuer(k)), h("span", { text: k.name }))));
       for (const v of vaults()) {
-        const sel = h("select", { klasse: "kk-auswahl", "data-kk": "matrix-zelle", "aria-label": TK.vault.zeileFuer(k.name, v.name), disabled: S.beschaeftigt },
-          STUFEN.map((s) => h("option", { value: s, text: stufeName(s) })));
-        sel.value = stufeVon(k, v);
-        sel.addEventListener("change", () => { const s = sel.value; sel.value = stufeVon(k, v); waehleStufe(k, v, s); });
+        const sel = auswahl({ optionen: STUFEN.map((s) => ({ wert: s, text: stufeName(s) })), wert: stufeVon(k, v), label: TK.vault.zeileFuer(k.name, v.name), groesse: "s", disabled: S.beschaeftigt,
+          daten: { "data-kk": "matrix-zelle" }, aufAenderung: (neu) => { sel.setze(stufeVon(k, v)); waehleStufe(k, v, neu); } });
         tr.append(h("td", { "data-vault": v.pfad }, sel));
       }
       koerper.append(tr);

@@ -113,14 +113,31 @@ export function baueAufgaben(host, ctx) {
     aufKlick: () => { Object.assign(st.filter, FILTER_STANDARD); ctx.lokal.schreib("aufgabenFilter", st.filter); syncFilter(); zeichne(); } });
   reset.hidden = true;
   const filterEl = h("div", { klasse: "au-filter", role: "group", "aria-label": TA.filter.label }, chips.prio, chips.quelle, chips.faellig, reset);
+  // Schmales Fenster (< 900 px Boardbreite, per Container-Abfrage in aufgaben.css): die drei Chips wandern in ein Popover „Filter ▾“ (ein Menü mit Gruppen, Haken am gewählten Wert)
+  const filterZahl = () => Object.keys(FILTER_STANDARD).filter((k) => st.filter[k] !== FILTER_STANDARD[k]).length;
+  const filterKnopf = knopf({ text: TA.filter.label, symbol: "filter", groesse: "s", klasse: "au-filter-knopf", daten: { "data-filter-knopf": "", "aria-haspopup": "menu", "aria-expanded": "false" },
+    nach: [h("span", { klasse: "au-filter-zahl", "data-filter-zahl": "", hidden: true }), h("span", { klasse: "bs-chevron", "aria-hidden": "true" }, symbol("chevron-unten", GROESSE.klein))],
+    aufKlick: () => oeffneFilterMenue() });
+  const setzeFilter = (name, w) => { st.filter[name] = w; ctx.lokal.schreib("aufgabenFilter", st.filter); syncFilter(); zeichne(); };
+  function oeffneFilterMenue() {
+    const gruppe = (name, label, optionen) => [{ gruppe: label }, ...optionen.map(([wert, text]) => ({ name: text, haken: st.filter[name] === wert, id: `filter-${name}-${wert}`, tun: () => setzeFilter(name, wert) }))];
+    oeffneMenue(filterKnopf, [
+      ...gruppe("prio", TA.filter.prio, [["alle", TA.filter.alle], ["hoch", TA.prio.hoch], ["normal", TA.prio.normal], ["niedrig", TA.prio.niedrig]]),
+      { trenner: true },
+      ...gruppe("quelle", TA.filter.quelle, [["alle", TA.filter.alle], ["mensch", TA.filter.mensch], ["ki", TA.filter.ki]]),
+      { trenner: true },
+      ...gruppe("faellig", TA.filter.faellig, [["alle", TA.filter.alle], ["ueberfaellig", TA.filter.ueberfaellig], ["heute", TA.filter.heute], ["woche", TA.filter.woche], ["ohne", TA.filter.ohne]]),
+      ...(filterZahl() ? [{ trenner: true }, { name: TA.filter.zuruecksetzen, symbol: "schliessen", id: "filter-zuruecksetzen", tun: () => { Object.assign(st.filter, FILTER_STANDARD); ctx.lokal.schreib("aufgabenFilter", st.filter); syncFilter(); zeichne(); } }] : []),
+    ], { rechts: true, klasse: "au-filter-menue" });
+  }
   const hinweis = h("div", { klasse: "au-hinweis", role: "status", hidden: true, "data-aufgaben-hinweis": "" },
-    symbol("schild", GROESSE.norm), h("span", { text: TA.nichtVertraut }), h("button", { type: "button", klasse: "knopf", text: TA.bestaetigen, aufClick: () => ctx.fragVertrauen() }));
+    symbol("schild", GROESSE.norm), h("span", { text: TA.nichtVertraut }), knopf({ text: TA.bestaetigen, aufKlick: () => ctx.fragVertrauen() }));
   const ansage = h("div", { klasse: "au-ansage", role: "status", "aria-live": "polite" });
   const brett = h("div", { klasse: "au-brett", "data-aufgaben-brett": "" });
   const wurzel = h("section", { klasse: "au", "aria-label": TA.titel, "data-ansicht": "aufgaben" },
     h("header", { klasse: "au-kopf" },
       h("div", { klasse: "au-titelzeile" }, h("h2", { klasse: "au-titel-h" }, symbol("aufgaben", GROESSE.gross), h("span", { text: TA.titel })), zahlEl),
-      form, filterEl, hinweis),
+      form, filterEl, filterKnopf, hinweis),
     brett, ansage);
   host.replaceChildren(wurzel);
 
@@ -203,16 +220,22 @@ export function baueAufgaben(host, ctx) {
     eingabe.disabled = !st.vertraut;
     const aktiv = Object.keys(FILTER_STANDARD).some((k) => st.filter[k] !== FILTER_STANDARD[k]);
     reset.hidden = !aktiv;
+    const nf = filterZahl();
+    const zEl = filterKnopf.querySelector("[data-filter-zahl]");
+    zEl.hidden = !nf; zEl.textContent = String(nf);
+    filterKnopf.classList.toggle("aktiv", nf > 0);
+    filterKnopf.setAttribute("aria-label", nf ? `${TA.filter.label}: ${TA.filter.aktiv(nf)}` : TA.filter.label);
     // Fokus merken: nach dem Neuzeichnen kommt er auf dieselbe Karte zurück
     const fokus = st.fokusPfad || (host.contains(document.activeElement) ? document.activeElement.closest?.("[data-karte-aufgabe]")?.dataset.pfad : null);
     st.fokusPfad = null;
     if (st.fehler && !st.liste.length) {
       brett.replaceChildren(h("div", { klasse: "au-leer", "data-aufgaben-fehler": "" }, symbol("warnung", GROESSE.kachel), h("h3", { text: TA.fehler.laden }), h("p", { text: st.fehler }),
-        h("button", { type: "button", klasse: "knopf", text: "Neu laden", aufClick: () => lade() })));
+        knopf({ text: "Neu laden", aufKlick: () => lade() })));
       return;
     }
     if (st.geladen && !st.liste.length) {
-      brett.replaceChildren(h("div", { klasse: "au-leer", "data-aufgaben-leer": "" }, symbol("aufgaben", GROESSE.kachel), h("h3", { text: TA.leer.titel }), h("p", { text: TA.leer.text })));
+      brett.replaceChildren(h("div", { klasse: "au-leer", "data-aufgaben-leer": "" }, symbol("aufgaben", GROESSE.kachel), h("h3", { text: TA.leer.titel }), h("p", { text: TA.leer.text }),
+        knopf({ text: TA.leer.aktion, variante: "primaer", aktion: "aufgabe-erste", aufKlick: () => eingabe.focus() })));
       return;
     }
     const sichtbar = SPALTEN.reduce((n, s) => n + sichtbarInSpalte(s).karten.length, 0);
@@ -220,7 +243,8 @@ export function baueAufgaben(host, ctx) {
     const scroll = new Map([...brett.querySelectorAll("[data-spalte-karten]")].map((e) => [e.dataset.spalteKarten, e.scrollTop]));
     brett.replaceChildren(...SPALTEN.map(spalteEl));
     for (const [sp, y] of scroll) { const e = brett.querySelector(`[data-spalte-karten="${sp}"]`); if (e && y) e.scrollTop = y; }
-    if (aktiv && !sichtbar) brett.prepend(h("div", { klasse: "au-leer klein", "data-aufgaben-gefiltert": "" }, h("p", { text: TA.filter.keine })));
+    if (aktiv && !sichtbar) brett.prepend(h("div", { klasse: "au-leer klein", "data-aufgaben-gefiltert": "" }, h("p", { text: TA.filter.keine }),
+      knopf({ text: TA.filter.keineAktion, variante: "leise", groesse: "s", aktion: "filter-zurueck", aufKlick: () => { Object.assign(st.filter, FILTER_STANDARD); ctx.lokal.schreib("aufgabenFilter", st.filter); syncFilter(); zeichne(); } })));
     if (fokus) brett.querySelector(`[data-karte-aufgabe][data-pfad="${CSS.escape(fokus)}"]`)?.focus({ preventScroll: false });
     if (st.neuPfad) { const neu = st.neuPfad; setTimeout(() => { if (st.neuPfad === neu) st.neuPfad = null; }, 1600); }
   }

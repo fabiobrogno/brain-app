@@ -3,6 +3,7 @@
 // Studio-Datei aus. Im Entwicklungsserver (ohne App-Bau) fehlt sie: dann sagt der Dialog das, statt leer zu bleiben.
 // Kein innerHTML: alles über h() und textContent. Gezeigt wird schlicht (Überschriften, Absätze, Tabellen und Lizenztexte in fester Schrift).
 import { h, dialog } from "./hilfen.js";
+import { knopf as baueKnopf } from "./bausteine.js";
 
 export const LIZENZ_DATEI = "THIRD-PARTY-NOTICES.md";
 const TEXTE = {
@@ -63,7 +64,7 @@ export async function ladeLizenzText(holen = (u) => fetch(u, { cache: "no-store"
 
 export function oeffneLizenzen({ holen } = {}) {
   const platz = h("div", { klasse: "mini", "data-lizenzen": "platz", text: TEXTE.laedt });
-  const zu = h("button", { klasse: "knopf", type: "button", "data-aktion": "lizenzen-zu", text: TEXTE.zu, aufClick: () => d.schliessen() });
+  const zu = baueKnopf({ text: TEXTE.zu, aktion: "lizenzen-zu", aufKlick: () => d.schliessen() });
   const d = dialog({ titel: TEXTE.titel, breit: true, rumpf: [h("p", { klasse: "mini", text: TEXTE.einleitung }), platz], knoepfe: [zu] });
   ladeLizenzText(holen).then(
     (t) => { if (platz.isConnected) platz.replaceWith(baueLizenzAnsicht(t)); },
