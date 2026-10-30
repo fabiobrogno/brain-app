@@ -3,10 +3,10 @@ name: Rauchtest
 # macOS-Minuten sind teuer: nur bei Änderungen an der App selbst (nicht bei Doku, nicht bei Tests allein).
 on:
   pull_request:
-    paths: ['Sources/**', 'Ressourcen/**', 'Tests/Kern/fixture/**', 'Tests/Aktionskanal/**', 'scripts/**', 'Package.swift', '.github/workflows/rauchtest.yml']
+    paths: ['Sources/**', 'Ressourcen/**', 'Tests/Kern/fixture/**', 'Tests/Aktionskanal/**', 'scripts/**', 'THIRD-PARTY-NOTICES.md', 'LICENSE', 'Package.swift', '.github/workflows/rauchtest.yml']
   push:
     branches: [main]
-    paths: ['Sources/**', 'Ressourcen/**', 'Tests/Kern/fixture/**', 'Tests/Aktionskanal/**', 'scripts/**', 'Package.swift', '.github/workflows/rauchtest.yml']
+    paths: ['Sources/**', 'Ressourcen/**', 'Tests/Kern/fixture/**', 'Tests/Aktionskanal/**', 'scripts/**', 'THIRD-PARTY-NOTICES.md', 'LICENSE', 'Package.swift', '.github/workflows/rauchtest.yml']
 
 concurrency:
   group: rauchtest-${{ github.ref }}
@@ -20,14 +20,14 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Toolchain anzeigen
         id: toolchain
         run: |
           xcodebuild -version
           echo "xcode=$(xcodebuild -version | tr -s '\n ' '-')" >> "$GITHUB_OUTPUT"
       - name: SwiftPM-Cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: .build
           key: spm-release-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
@@ -42,7 +42,7 @@ jobs:
         run: bash scripts/rauchtest.sh
       - name: Aktionskanal-Test
         run: bash scripts/teste-aktionskanal.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: selbstfoto-${{ github.sha }}
