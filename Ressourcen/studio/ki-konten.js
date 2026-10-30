@@ -409,7 +409,8 @@ export function oeffneKontenDialog({ api = standardApi, vault = null, beiZu, bei
     if (!optionen.length) {
       zeile.append(h("div", { klasse: "kk-karte schmal", "data-kk": "pflege-kein-konto" }, marke("aus"), h("p", { text: P.keinKonto })));
     } else {
-      const wahl = bsAuswahl({ optionen, wert: kontoId || undefined, platzhalter: P.kontoPlatzhalter, label: P.konto, breit: true, daten: { "data-kk": "pflege-konto" },
+      const wahl = bsAuswahl({ optionen, wert: kontoId || "",   // "" = noch keins gewählt (zeigt den Platzhalter; undefined nähme die erste Option)
+         platzhalter: P.kontoPlatzhalter, label: P.konto, breit: true, daten: { "data-kk": "pflege-konto" },
         aufAenderung: (w) => { const n = S.pflegeEntwurf[v.pfad]; setzePflege(v, w, n ? n.stufe : p.gesetzt && p.stufe !== "aus" ? p.stufe : "mittel"); } });
       zeile.append(h("div", { klasse: "kk-pflege-feld" }, h("span", { klasse: "kk-block-titel", "aria-hidden": "true", text: P.konto }), wahl));
     }
