@@ -92,27 +92,45 @@ export function verschiebeBaum(quelle, ziel, { umbenenner = renameSync, platz = 
 
 // Bringt `archiv` an `ziel` zurück. Fehlt das Ziel, wandert der Baum zurück. Gibt es das Ziel schon (z. B. weil `git revert` die versionierten Dateien wiederhergestellt hat, oder weil
 // ein Abbruch das Original nur halb entfernt hat), wird zusammengeführt: das Archiv ist der Stand vor Phase B und gewinnt; erst wenn alles gleich vorhanden ist, wird das Archiv entfernt.
-// → "verschoben" | "zusammengefuehrt"
+// NICHTS wird dabei überschrieben oder gelöscht: was im Ziel anders ist als im Archiv, wandert vorher nach `opt.ablage` (Ordner, Pflicht, sobald es Abweichungen gibt).
+// Ein Archiv, das nur eine Verknüpfung oder Datei ist (z. B. ein versionierter Verweis, den der Revert schon wiederhergestellt hat), wird bei Gleichheit einfach verworfen.
+// → { wie: "verschoben" | "zusammengefuehrt" | "gleich", gesichert: Anzahl der in `ablage` gesicherten Einträge }
 export function fuegeBaumZurueck(archiv, ziel, opt = {}) {
-  if (!lexists(ziel)) { verschiebeBaum(archiv, ziel, opt); return "verschoben"; }
+  const { ablage = null } = opt;
+  if (!lexists(ziel)) { verschiebeBaum(archiv, ziel, opt); return { wie: "verschoben", gesichert: 0 }; }
+  let gesichert = 0;
+  const sichere = (pfad, rel) => {
+    if (!ablage) throw new Error("abweichung-ohne-ablage");
+    verschiebeBaum(pfad, join(ablage, rel === "" ? "wurzel" : rel), { umbenenner: opt.umbenenner });
+    gesichert++;
+  };
   const rl = lstatSync(archiv), zl = lstatSync(ziel);
-  if (!rl.isDirectory() || !zl.isDirectory()) throw new Error("ziel-ist-anders");
+  if (!rl.isDirectory() || !zl.isDirectory()) {
+    if (baumEintraege(archiv).get("") === baumEintraege(ziel).get("")) { rmSync(archiv, { recursive: true, force: true }); return { wie: "gleich", gesichert: 0 }; }
+    sichere(ziel, "");
+    verschiebeBaum(archiv, ziel, opt);
+    return { wie: "zusammengefuehrt", gesichert };
+  }
   for (const [rel] of baumEintraege(archiv, { inhalt: false })) {
     if (rel === "") continue;
     const q = join(archiv, rel), z = join(ziel, rel);
     const ql = lstatSync(q);
-    if (ql.isDirectory()) { if (lexists(z) && !lstatSync(z).isDirectory()) rmSync(z, { recursive: true, force: true }); mkdirSync(z, { recursive: true }); continue; }
+    if (ql.isDirectory()) {
+      if (lexists(z) && !lstatSync(z).isDirectory()) sichere(z, rel);
+      mkdirSync(z, { recursive: true });
+      continue;
+    }
     if (lexists(z)) {
       const zl2 = lstatSync(z);
       if (ql.isSymbolicLink() && zl2.isSymbolicLink() && readlinkSync(q) === readlinkSync(z)) continue;
       if (ql.isFile() && zl2.isFile() && (zl2.mode & 0o777) === (ql.mode & 0o777) && zl2.size === ql.size && sha(readFileSync(z)) === sha(readFileSync(q))) continue;
-      rmSync(z, { recursive: true, force: true });
+      sichere(z, rel);
     }
     kopiere(q, z);
   }
   if (!baumEnthalten(archiv, ziel)) throw new Error("zusammenfuehren-unvollstaendig");
   rmSync(archiv, { recursive: true, force: true });
-  return "zusammengefuehrt";
+  return { wie: "zusammengefuehrt", gesichert };
 }
 
 export const heuteTag = (d = new Date()) => d.toISOString().slice(0, 10);

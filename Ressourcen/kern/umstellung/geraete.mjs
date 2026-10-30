@@ -11,6 +11,7 @@ import { hostname } from "node:os";
 import { randomBytes } from "node:crypto";
 import { kernVersion, liesConfigRoh } from "../pfade.mjs";
 import { gitLauf, gitSicherLauf } from "./ziele.mjs";
+import { nimmCommitZurueck } from "./git-revert.mjs";
 import { hashDatei, hashText, sichereDatei, sicherungsPfad, schreibeAtomar, stelleHer, modusVon, echtesDateiZiel } from "./protokoll.mjs";
 
 export const id = "A8";
@@ -130,9 +131,9 @@ export function zurueck(z, ctx, undo) {
     if (h && h !== undo.headVorher && gitSicherLauf(z, ["rev-parse", "HEAD^"]).stdout.trim() === undo.headVorher && gitSicherLauf(z, ["log", "-1", "--format=%s"]).stdout.trim() === MELDUNG) commit = h;
   }
   if (commit) {
-    const r = gitSicherLauf(z, ["revert", "--no-edit", commit]);
-    if (r.status !== 0) { gitSicherLauf(z, ["revert", "--abort"]); hinweise.push("revert-fehlgeschlagen"); return { status: "nichts", hinweise }; }
-    n++;
+    const r = nimmCommitZurueck(z, commit, undo.committet || []);
+    if (r.hinweise.length) return { status: "nichts", hinweise: r.hinweise };
+    if (r.status === "ok") n++;
   } else if (undo.merkerNachherHash && hashDatei(undo.datei) === undo.merkerNachherHash && undo.merkerVorherHash === null) { rmSync(undo.datei, { force: true }); n++; }
   else if (existsSync(undo.datei) && hashDatei(undo.datei) !== undo.merkerVorherHash) hinweise.push("geraetemerker-geaendert");
   // die Config: war sie Teil des Commits, hat der Revert sie schon hergestellt (ihr Hash ist dann wieder der alte); sonst (Config hatte vorher eigene Änderungen oder kein Commit)
@@ -143,4 +144,28 @@ export function zurueck(z, ctx, undo) {
   else if (c.hashNachher && hashDatei(configDatei) !== c.hashVorher) hinweise.push("config-geaendert");
   leereDirs(z);
   return { status: n ? "ok" : "nichts", hinweise };
+}
+
+// --- Gerätemerker auffrischen (Review: Tor „macs“) ---------------------------------------------------------------------------------------------------------------------------
+// Der Merker trägt die Kortex-Version von Phase A. Damit das Tor von Phase B die Versionen anderer Macs richtig liest, erneuert jeder Sitzungsstart (session-hintergrund.mjs →
+// umstellung/geraet-aktualisieren.mjs) die Version im Merker DIESES Macs, wenn Kortex inzwischen neuer ist. Nur diese eine Datei, nur wenn es sie gibt und sie sauber ist; ein Commit nur
+// dieses Pfads über git-sicher („Kortex: Gerät aktualisiert“). Nicht während einer Umstellung (Sperre) und nie ein Fehler nach außen. → "aktualisiert" | "aktuell" | Grund
+export function aktualisiereGeraetemerker(z) {
+  try {
+    if (existsSync(join(z.vault, ".logs", "ingest.lock")) || existsSync(join(z.vault, ".logs", "umstellung-phase-b.lock"))) return "gesperrt";
+    const gid = geraeteId(z, { anlegen: false });
+    if (!gid) return "kein-merker";
+    const rel = merkerRel(gid), datei = join(z.vault, rel);
+    let m; try { m = JSON.parse(readFileSync(datei, "utf8")); } catch { return "kein-merker"; }
+    if (!m || typeof m !== "object" || Array.isArray(m) || typeof m.phaseA !== "string") return "kein-merker";
+    if (typeof m.kortexVersion === "string" && !versionKleiner(m.kortexVersion, kernVersion())) return "aktuell";
+    const hatGit = existsSync(join(z.vault, ".git"));
+    if (hatGit) { const s = gitLauf(z, ["status", "--porcelain", "-z", "--", rel]); if (s.status !== 0 || s.stdout.trim() !== "") return "datei-nicht-sauber"; }
+    schreibeAtomar(echtesDateiZiel(datei), JSON.stringify({ ...m, kortexVersion: kernVersion() }, null, 2) + "\n", modusVon(datei, 0o644));
+    if (hatGit) {
+      const a = gitSicherLauf(z, ["add", "--", rel]);
+      if (a.status !== 0 || gitSicherLauf(z, ["commit", "-q", "-m", "Kortex: Gerät aktualisiert", "--", rel]).status !== 0) gitSicherLauf(z, ["reset", "-q", "--", rel]);
+    }
+    return "aktualisiert";
+  } catch { return "fehler"; }
 }

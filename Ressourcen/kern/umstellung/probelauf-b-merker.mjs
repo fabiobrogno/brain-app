@@ -7,6 +7,7 @@ import { ALT_KIT_ORDNER, kernVersion } from "../pfade.mjs";
 import { merkerDateiFuer } from "../backup.mjs";
 import { ablageOrdner, schreibeAtomar, oeffneAblage, hashDatei, hashText } from "./protokoll.mjs";
 import { baumHash, lexists } from "./baum.mjs";
+import { gitLauf } from "./ziele.mjs";
 
 export const MERKER_FRIST_MS = 24 * 3600_000;
 const datei = (z) => join(ablageOrdner(z), "probelauf-b.json");
@@ -17,13 +18,20 @@ export function schreibeProbelaufBMerker(z, merker) { oeffneAblage(z); schreibeA
 export function loescheProbelaufBMerker(z) { try { rmSync(datei(z), { force: true }); } catch { /* weg */ } }
 
 // Der Stand, den Phase B ändert: Einstellungen des Vaults, .gitignore, lokale git-Konfiguration, Aufbau des alten Ordners (Pfade, Größen, Rechte), Gerätemerker, Sicherungsmerker.
-// Notizen und neue Commits ändern ihn nicht.
+// Notizen im Arbeitsbaum ändern ihn nicht; ein neuer Commit oder eine vorgemerkte Änderung schon (HEAD, Index).
 export function fingerabdruckB(z) {
   let geraete = [];
   try { const dir = join(z.vault, ".kortex", "geraete"); geraete = readdirSync(dir).sort().map((n) => `${n}:${hashDatei(join(dir, n))}`); } catch { /* keine */ }
   const kit = lexists(join(z.vault, ALT_KIT_ORDNER)) ? baumHash(join(z.vault, ALT_KIT_ORDNER), { inhalt: false }) : null;
+  // HEAD und der Inhalt des Index (ls-files -s: Modi, Objekt-IDs, Pfade – nicht die Bytes der Index-Datei, die sich bei jedem „status“ neu schreiben): ein neuer Commit oder eine vorgemerkte Änderung
+  // machen den Probelauf ungültig
+  let head = null, index = null;
+  if (lexists(join(z.vault, ".git"))) {
+    const h = gitLauf(z, ["rev-parse", "--verify", "-q", "HEAD"]); head = h.status === 0 ? h.stdout.trim() : "keiner";
+    const i = gitLauf(z, ["ls-files", "-s", "-z"]); index = i.status === 0 ? hashText(i.stdout) : null;
+  }
   return hashText(JSON.stringify({
-    kernVersion: kernVersion(), config: hashDatei(join(z.vault, "brain.config.json")), gitConfig: hashDatei(join(z.vault, ".git", "config")), gitignore: hashDatei(join(z.vault, ".gitignore")),
+    head, index, kernVersion: kernVersion(), config: hashDatei(join(z.vault, "brain.config.json")), gitConfig: hashDatei(join(z.vault, ".git", "config")), gitignore: hashDatei(join(z.vault, ".gitignore")),
     kit, geraete, sicherung: hashDatei(merkerDateiFuer(z.vault, z.support)),
   }));
 }

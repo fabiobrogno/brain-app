@@ -7,15 +7,16 @@
 //   B2 Einstellungen   .gitignore bekommt den Ordnernamen, brain.config.json verliert die Altfelder (backup.pfad nur, wenn A1 ihn übernommen hat), der Gerätemerker dieses Macs bekommt phaseB
 //   B3 Commit          EIN Commit nur dieser Pfade über git-sicher („Kortex: alten Werkzeug-Ordner entfernt“); Rückweg: git revert dieses Commits, dann kommt das Archiv zurück
 // Reihenfolge des Rückwegs (rueckweg.mjs, umgekehrt): B3 (Revert) → B2 → B1 (Archiv zurück, notfalls zusammenführen) → B0 (bleibt liegen). Keine Werte im Protokoll.
-import { existsSync, readFileSync, mkdirSync, rmSync, rmdirSync, chmodSync, lstatSync } from "node:fs";
+import { existsSync, readFileSync, mkdirSync, rmSync, rmdirSync, chmodSync, lstatSync, renameSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { ALT_KIT_ORDNER, liesConfigRoh, pruefeVault } from "../pfade.mjs";
 import { merkerDateiFuer } from "../backup.mjs";
-import { gitLauf, gitSicherLauf, freierPlatz } from "./ziele.mjs";
-import { ablageOrdner, hashDatei, hashText, sichereDatei, sicherungsPfad, schreibeAtomar, stelleHer, modusVon, echtesDateiZiel, liesZustand } from "./protokoll.mjs";
+import { gitLauf, gitSicherLauf, freierPlatz, ordnerGroesseGrob } from "./ziele.mjs";
+import { ablageOrdner, hashDatei, hashText, sichereDatei, sicherungsPfad, schreibeAtomar, stelleHer, modusVon, echtesDateiZiel, liesZustand, stempel } from "./protokoll.mjs";
 import { baumHash, baumGroesse, baumEnthalten, verschiebeBaum, fuegeBaumZurueck, lexists, heuteTag } from "./baum.mjs";
 import { geraeteId } from "./geraete.mjs";
 import { undoListe } from "./schrittliste.mjs";
+import { nimmCommitZurueck, gitBeschaeftigt } from "./git-revert.mjs";
 
 export const ALTE_FELDER = ["werkzeuge", "kit", "systemVersion", "updateHinweis", "vaultPath"];
 const MELDUNG = "Kortex: alten Werkzeug-Ordner entfernt";
@@ -39,13 +40,16 @@ export const B0 = {
     if (hatGit(z)) {
       const ziel = join(ablageOrdner(z), "vor-phase-b.bundle");
       mkdirSync(ablageOrdner(z), { recursive: true, mode: 0o700 });
-      if (existsSync(ziel)) rmSync(ziel, { force: true });      // eine frische Sicherung des jetzigen Stands
-      if (freierPlatz(z, ablageOrdner(z)) < PUFFER) throw new Error("zu-wenig-platz");
-      const r = gitLauf(z, ["bundle", "create", ziel, "--all"]);
-      if (r.status !== 0) { rmSync(ziel, { force: true }); if (/empty bundle/i.test(r.stderr)) bundle = "leer"; else throw new Error("bundle-fehlgeschlagen"); }
+      // Erst die neue Sicherung daneben schreiben und prüfen, DANN die alte ersetzen (scheitert etwas, bleibt die alte unberührt); Platz vorher prüfen
+      const neu = `${ziel}.neu`;
+      if (freierPlatz(z, ablageOrdner(z)) < Math.ceil(ordnerGroesseGrob(join(z.vault, ".git")) * 1.2) + PUFFER) throw new Error("zu-wenig-platz");
+      rmSync(neu, { force: true });
+      const r = gitLauf(z, ["bundle", "create", neu, "--all"]);
+      if (r.status !== 0) { rmSync(neu, { force: true }); if (/empty bundle/i.test(r.stderr)) bundle = "leer"; else throw new Error("bundle-fehlgeschlagen"); }
       else {
-        try { chmodSync(ziel, 0o600); } catch { /* best effort */ }
-        if (gitLauf(z, ["bundle", "verify", ziel]).status !== 0) { rmSync(ziel, { force: true }); throw new Error("bundle-ungeprueft"); }
+        try { chmodSync(neu, 0o600); } catch { /* best effort */ }
+        if (gitLauf(z, ["bundle", "verify", neu]).status !== 0) { rmSync(neu, { force: true }); throw new Error("bundle-ungeprueft"); }
+        renameSync(neu, ziel);
         bundle = "neu";
       }
     }
@@ -82,7 +86,16 @@ export const B1 = {
   },
   wende(z, ctx) {
     const art = kitArt(z);
-    if (!art) return { status: "nichts" };
+    if (!art) {
+      // Der Ordner ist weg, aber ein früherer (unterbrochener) Lauf hat ihn ins Archiv gelegt: übernehmen, nicht „nichts“ melden (sonst ginge der Rückweg verloren)
+      const frueher = undoListe(z, liesZustand(z), "B1")[0];
+      if (frueher && frueher.archiv && lexists(archivOrt(z, frueher.archiv, frueher.art))) {
+        if (baumHash(archivOrt(z, frueher.archiv, frueher.art)) !== frueher.hash) throw new Error("archiv-weicht-ab");
+        ctx.merkeUndo({ ...frueher, fertig: true });
+        return { status: "ok", anzahl: frueher.dateien, details: { archiv: frueher.archiv, wie: frueher.wie || "uebernommen", art: frueher.art, uebernommen: true } };
+      }
+      return { status: "nichts" };
+    }
     const quelle = kitPfad(z);
     const name = archivName(z, (z.heute ? z.heute() : heuteTag()));
     const ziel = archivOrt(z, name, art);
@@ -111,10 +124,18 @@ export const B1 = {
     if (!undo || !undo.archiv) return { status: "nichts", hinweise };
     const ort = archivOrt(z, undo.archiv, undo.art);
     if (!lexists(ort)) { if (!lexists(kitPfad(z))) hinweise.push("archiv-fehlt"); return { status: "nichts", hinweise }; }
-    try { fuegeBaumZurueck(ort, kitPfad(z), { umbenenner: z.umbenenner || undefined, pruefpunkt: (n) => ctx.pruefpunkt && ctx.pruefpunkt(`zurueck-${n}`) }); }
-    catch (e) { if (e && e.name === "TestAbbruch") throw e; hinweise.push("archiv-nicht-zurueck"); return { status: "nichts", hinweise }; }
+    let erg;
+    try {
+      erg = fuegeBaumZurueck(ort, kitPfad(z), {
+        umbenenner: z.umbenenner || undefined, pruefpunkt: (n) => ctx.pruefpunkt && ctx.pruefpunkt(`zurueck-${n}`),
+        // Abweichendes im Vault wird nie überschrieben: es wandert vorher in die Sicherung dieses Rückwegs
+        ablage: ctx.sicherungsDir ? join(ctx.sicherungsDir, `zusammenfuehren-${stempel()}`) : null,
+        // Über eine Laufwerksgrenze braucht die Kopie zurück Platz am Ziel
+        platz: (bytes) => freierPlatz(z, dirname(kitPfad(z))) >= Math.ceil(bytes * 1.2) + PUFFER,
+      });
+    } catch (e) { if (e && e.name === "TestAbbruch") throw e; hinweise.push(e && e.message === "zu-wenig-platz" ? "zu-wenig-platz" : "archiv-nicht-zurueck"); return { status: "nichts", hinweise }; }
     if (undo.art !== "ordner") { try { rmdirSync(join(ablageOrdner(z), undo.archiv)); } catch { /* nicht leer */ } }
-    return { status: "ok", hinweise };
+    return { status: "ok", hinweise, gesichert: erg.gesichert };
   },
 };
 
@@ -219,7 +240,15 @@ export const B2 = {
 // B3 — ein Commit nur dieser Pfade
 // ===================================================================================================================================
 function b2Angaben(z) {
-  try { const l = undoListe(z, liesZustand(z), "B2"); return l[0] || null; } catch { return null; }
+  // Alle Rückweg-Angaben von B2 (auch die unterbrochener früherer Läufe) zusammen: je Datei zählt die ÄLTESTE Angabe, in der sie als geändert vermerkt ist (nur sie weiß, ob die Datei vorher
+  // sauber war). Ein erneuter Lauf nach einem Abbruch findet die Datei schon bereinigt vor und vermerkt sie als „nicht geändert“ – das darf den Commit nicht um sie bringen.
+  try {
+    const liste = undoListe(z, liesZustand(z), "B2").reverse();
+    if (!liste.length) return null;
+    const aus = {};
+    for (const k of ["gitignore", "config", "merker"]) aus[k] = liste.map((u) => u[k]).find((d) => d && d.geaendert) || (liste[liste.length - 1][k] || null);
+    return aus;
+  } catch { return null; }
 }
 function pfadeFuerCommit(z) {
   const u = b2Angaben(z);
@@ -293,12 +322,13 @@ export const B3 = {
       if (undo.committet && undo.committet.length && hatGit(z)) gitSicherLauf(z, ["reset", "-q", "--", ...undo.committet]);
       return { status: "nichts", hinweise };
     }
+    // Läuft beim Nutzer gerade ein cherry-pick, revert, merge oder rebase, bleibt alles, wie es ist
+    if (gitBeschaeftigt(z)) { hinweise.push("git-beschaeftigt"); return { status: "nichts", hinweise }; }
     // Ist der Commit überhaupt noch ein Vorfahre von HEAD? Sonst gibt es nichts zurückzunehmen (z. B. der Nutzer hat ihn schon selbst zurückgenommen)
     const vorfahre = gitSicherLauf(z, ["merge-base", "--is-ancestor", commit, "HEAD"]);
     if (vorfahre.status !== 0) { hinweise.push("commit-nicht-mehr-im-verlauf"); return { status: "nichts", hinweise }; }
-    const r = gitSicherLauf(z, ["revert", "--no-edit", commit]);
-    if (r.status !== 0) { gitSicherLauf(z, ["revert", "--abort"]); hinweise.push("revert-fehlgeschlagen"); return { status: "nichts", hinweise }; }
-    return { status: "ok", hinweise };
+    const r = nimmCommitZurueck(z, commit, undo.committet || []);
+    return { status: r.status, hinweise: r.hinweise };
   },
 };
 

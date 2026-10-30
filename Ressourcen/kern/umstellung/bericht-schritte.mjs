@@ -54,6 +54,8 @@ export function rueckwegText(r) {
   }
   z.push(r.alles ? "Kortex hat die Umstellung rückgängig gemacht." : "Der Schritt wurde rückgängig gemacht.");
   for (const s of r.schritte || []) z.push(`  ${s.status === "zurueck" ? "✓" : s.status === "fehler" ? "✗" : "–"} ${s.id} ${s.titel}`);
+  if (r.gesichert) z.push("", `${r.gesichert === 1 ? "Eine Datei im Vault war" : r.gesichert + " Dateien im Vault waren"} anders als im Archiv. Kortex hat ${r.gesichert === 1 ? "sie" : "sie"} nicht überschrieben, sondern vorher in die Sicherungen im Support-Ordner von Kortex gelegt.`);
+  if ((r.hinweise || []).some((h) => /git-beschaeftigt/.test(h))) z.push("", "In deinem Vault läuft gerade ein Zusammenführen oder Umsortieren im Versionsverlauf. Schließe es ab und versuche das Rückgängigmachen noch einmal; bis dahin hat Kortex nichts angefasst.");
   if ((r.hinweise || []).length) z.push("", "Dinge, die du inzwischen selbst geändert hast, hat Kortex nicht überschrieben. Die Sicherungen liegen im Support-Ordner von Kortex.");
   return z.join("\n") + "\n";
 }

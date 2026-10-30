@@ -11,7 +11,7 @@ const REIHE = [...SCHRITTE, ...SCHRITTE_B, V1];
 const IDS_ALLES = [...SCHRITTE, ...SCHRITTE_B].map((s) => s.id);
 const IDS_GUELTIG = [...ALLE_IDS, ...REIHE.map((s) => s.id), "B4"];
 import {
-  liesZustand, schreibeZustand, protokolliere, setzeSperre, loeseSperre, setzeVaultSperre, loeseVaultSperre, stempel, jetztIso, oeffneAblage, sicherungsOrdner,
+  liesZustand, schreibeZustand, protokolliere, setzeSperre, loeseSperre, setzeVaultSperre, loeseVaultSperre, setzePhaseBSperre, loesePhaseBSperre, stempel, jetztIso, oeffneAblage, sicherungsOrdner,
 } from "./protokoll.mjs";
 
 // → Liste [{ id, titel, hatRueckweg, status }] – nur lesend
@@ -27,6 +27,8 @@ export async function rueckweg(z, { schritte = null, alles = false, entscheidung
   oeffneAblage(z);
   if (!setzeSperre(z)) throw new UmstellungsFehler("laeuft-schon", "Die Umstellung läuft gerade. Warte, bis sie fertig ist.", 5);
   const vaultSperre = setzeVaultSperre(z);
+  const mitB = alles || (schritte || []).some((id) => /^B/.test(id));
+  if (mitB) setzePhaseBSperre(z);          // die Werkstatt wartet mit Speichern/Abgleichen
   const ent = normalisiereEntscheidungen(entscheidungen);
   const zustand = liesZustand(z);
   const profile = waehleProfile(z, ent);
@@ -39,10 +41,10 @@ export async function rueckweg(z, { schritte = null, alles = false, entscheidung
       const liste = undoListe(z, zustand, s.id);
       if (!liste.length) { ergebnis.push({ id: s.id, titel: s.titel, status: "nichts" }); continue; }
       protokolliere(z, { schritt: s.id, ereignis: "start", grund: "rueckweg" });
-      let n = 0; const hw = [];
+      let n = 0, gesichert = 0; const hw = [];
       const c = { entscheidungen: ent, profile, sicherungsDir, merkeUndo() { /* der Rückweg hinterlässt keine Rückweg-Angaben */ }, nachDaten: undefined };
       try {
-        for (const undo of liste) { const r = s.zurueck(z, c, undo); if (r && r.status === "ok") n++; for (const h of (r && r.hinweise) || []) if (!hw.includes(h)) hw.push(h); }
+        for (const undo of liste) { const r = s.zurueck(z, c, undo); if (r && r.status === "ok") n++; if (r && r.gesichert) gesichert += r.gesichert; for (const h of (r && r.hinweise) || []) if (!hw.includes(h)) hw.push(h); }
       } catch (e) {
         const grund = String((e && e.message) || "fehler").split("\n")[0].slice(0, 80);
         protokolliere(z, { schritt: s.id, ereignis: "fehler", grund: `rueckweg:${grund}` });
@@ -50,18 +52,24 @@ export async function rueckweg(z, { schritte = null, alles = false, entscheidung
         hinweise.push(`${s.id}:rueckweg-fehler`);
         continue;                                           // die übrigen Schritte trotzdem zurücknehmen
       }
-      zustand.schritte[s.id] = { ...(zustand.schritte[s.id] || {}), status: "zurueck", zeit: jetztIso(), hinweise: hw.length ? hw : undefined };
+      // Konnte der Schritt nicht wirklich zurückgenommen werden (der Nutzer arbeitet gerade mit dem Versionsverlauf, Platz fehlt …), bleibt er, wie er ist – ein neuer Versuch findet alles wieder
+      const offen = hw.some((h) => ["git-beschaeftigt", "revert-fehlgeschlagen", "archiv-nicht-zurueck", "zu-wenig-platz"].includes(h));
+      if (!offen) zustand.schritte[s.id] = { ...(zustand.schritte[s.id] || {}), status: "zurueck", zeit: jetztIso(), hinweise: hw.length ? hw : undefined };
       protokolliere(z, { schritt: s.id, ereignis: "rueckweg", anzahl: n, grund: hw[0] });
-      ergebnis.push({ id: s.id, titel: s.titel, status: n ? "zurueck" : "nichts", hinweise: hw });
+      ergebnis.push({ id: s.id, titel: s.titel, status: n && !offen ? "zurueck" : "nichts", hinweise: hw, ...(gesichert ? { gesichert } : {}) });
       for (const h of hw) hinweise.push(`${s.id}:${h}`);
+      // Die Schritte von Phase B hängen voneinander ab (erst der Commit, dann die Dateien, dann der Ordner): geht ein Schritt nicht, bleiben die übrigen unberührt, sonst entstünde ein Mischzustand
+      if (offen && /^B/.test(s.id)) { hinweise.push(`${s.id}:rest-nicht-angefasst`); break; }
     }
     // Phase B ist zurückgenommen, sobald der alte Ordner oder der Commit zurück sind
     if (ergebnis.some((e) => ["B1", "B3"].includes(e.id) && e.status === "zurueck")) { delete zustand.phaseB; delete zustand.b4; }
-    if (alles) { zustand.phase = null; zustand.laeuft = null; delete zustand.a9; delete zustand.vertrauen; delete zustand.phaseA; delete zustand.phaseB; delete zustand.b4; }
+    if (alles && !hinweise.some((h) => h.endsWith(":rest-nicht-angefasst"))) { zustand.phase = null; zustand.laeuft = null; delete zustand.a9; delete zustand.vertrauen; delete zustand.phaseA; delete zustand.phaseB; delete zustand.b4; }
     schreibeZustand(z, zustand);
-    return { ok: true, alles, schritte: ergebnis, hinweise };
+    const gesichertGesamt = ergebnis.reduce((a, e) => a + (e.gesichert || 0), 0);
+    return { ok: true, alles, schritte: ergebnis, hinweise, ...(gesichertGesamt ? { gesichert: gesichertGesamt } : {}) };
   } finally {
     loeseSperre(z);
+    if (mitB) loesePhaseBSperre(z);
     if (vaultSperre.ok) loeseVaultSperre(z);
   }
 }

@@ -42,7 +42,7 @@ const groesse = (pfade) => pfade.reduce((a, p) => { try { const l = lstatSync(p)
 export function angebote(z, { jetzt = Date.now() } = {}) {
   const aus = [];
   const zustand = liesZustand(z);
-  let waisen = 0; try { waisen = V1.findeVerwaiste(z.gitGlobal).length; } catch { /* keine globale Konfiguration */ }
+  let waisen = 0; try { waisen = V1.findeVerwaiste(z.gitGlobal, { support: z.support, volumen: z.volumenWurzel || "/Volumes" }).length; } catch { /* keine globale Konfiguration */ }
   if (waisen > 0) aus.push({ id: "verwaist", titel: "Verwaiste Einträge im Versionsverlauf aufräumen", text: `${waisen} ${waisen === 1 ? "Eintrag" : "Einträge"} in deinen persönlichen Einstellungen für den Versionsverlauf ${waisen === 1 ? "gehört" : "gehören"} zu Vaults, die es nicht mehr gibt. Kortex kann ${waisen === 1 ? "ihn" : "sie"} entfernen; das lässt sich zurücknehmen.`, anzahl: waisen, faellig: true, rueckweg: "zurueck --schritt V1" });
   for (const a of archive(z)) {
     const tage = Number.isFinite(a.zeit) ? Math.floor((jetzt - a.zeit) / TAG_MS) : 0;

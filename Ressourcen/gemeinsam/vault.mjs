@@ -13,6 +13,7 @@ import { pruefeText, berlinHeute, leseKopf } from "./pruefung.mjs";
 import * as gitFn from "./git.mjs";
 import * as vertrauenFn from "./vertrauen.mjs";
 import { leseAbgleichStand, loescheAbgleichStand } from "./sicherungsmerker.mjs";
+import { umstellungLaeuft } from "./umstellung-sperre.mjs";
 import { erzeugeNotizIndex, titelAus } from "./notizen.mjs";
 import { wertAus } from "./nutzung.mjs";
 import { erzeugePosteingang } from "./posteingang.mjs";
@@ -365,6 +366,8 @@ export function oeffneVault(vaultPfad, opts = {}) {
   // Jeder Git-Aufruf läuft gehärtet (git.mjs). Ist dem Vault nicht vertraut, ist Git GANZ gesperrt: status meldet es, alle anderen Git-Routen
   // antworten 409 { gitGesperrt: true }, der Notiz-Index fragt Git gar nicht. Mit Vertrauen laufen Hooks und Repo-Konfiguration wie gewohnt.
   const gitSicht = () => vertrauenFn.gitSicht(wurzel, { ...stuetze(), kern });
+  // Phase B der Umstellung (oder ihr Rückweg) läuft: Speichern, Abgleichen und Wiederherstellen warten (409), bis sie fertig ist (gemeinsam/umstellung-sperre.mjs)
+  const umstellungSperre = () => { if (umstellungLaeuft(wurzel)) throw new HttpFehler(409, "Kortex räumt gerade deinen Vault auf (alter Werkzeug-Ordner). Warte einen Moment, dann geht das Speichern und Abgleichen wieder.", { umstellungLaeuft: true }); };
   const gesperrtFehler = (s) => new HttpFehler(409, `Git ist für diesen Vault gesperrt. ${s.grund}`, { gitGesperrt: true, grund: s.grund });
   // Kontext eines Git-Aufrufs: vertraut/sshEigen und, was der Nutzer selbst eingestellt hat (sshGlobal, gpgGlobal) — ohne Vertrauen ersetzen wir
   // nur die Einstellungen des Vaults, nie seine eigenen.
@@ -391,7 +394,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
       // Gesperrtes Git (Vertrauen v2) → 409, bevor irgendetwas angefasst wird; sonst: gibt es ein Repository?
       vorab: async () => { const s = gitSicht(); if (s.gesperrt) throw gesperrtFehler(s); return gitFn.istRepo(wurzel, ctxVon(s)); },
       offen: async () => (await gitFn.status(wurzel, gitCtx())).geaendert.map((e) => e.pfad),
-      commit: async (a) => gitFn.commit(wurzel, a, gitCtx({ limit: opts.gitLimitCommit })),
+      commit: async (a) => { umstellungSperre(); return gitFn.commit(wurzel, a, gitCtx({ limit: opts.gitLimitCommit })); },
     },
   });
 
@@ -450,23 +453,25 @@ export function oeffneVault(vaultPfad, opts = {}) {
       if (s.gesperrt) return { repo: true, gesperrt: true, grund: s.grund };
       return mitSicherungsStand(await gitFn.status(wurzel, ctxVon(s)));
     },
-    gitCommit: async (a) => gitFn.commit(wurzel, a || {}, gitCtx({ limit: opts.gitLimitCommit })),
+    gitCommit: async (a) => { umstellungSperre(); return gitFn.commit(wurzel, a || {}, gitCtx({ limit: opts.gitLimitCommit })); },
     // konflikteLoesen: bei Konflikten die Zusammenführung offen lassen, damit die Oberfläche pro Datei wählen lässt (sonst wie bisher: abbrechen, 409)
     gitSync: async (a) => {
+      umstellungSperre();
       const r = await gitFn.sync(wurzel, gitCtx({ limitSync: opts.gitLimitSync, limitGesamt: opts.gitLimitAbgleich, konflikteLoesen: !!(a && a.konflikteLoesen === true) }));
       loescheAbgleichStand(wurzel, { support: opts.support }); // der Abgleich lief durch: der Vermerk der Hintergrund-Sicherung (Konflikt, Anmeldung, Neues) gilt nicht mehr
       return r;
     },
     gitKonflikte: async (pfad) => gitFn.konflikte(wurzel, pfad, gitCtx()),
     gitKonfliktAbschliessen: async (a) => {
+      umstellungSperre();
       const r = await gitFn.konfliktAbschliessen(wurzel, a || {}, gitCtx({ limit: opts.gitLimitCommit }));
       loescheAbgleichStand(wurzel, { support: opts.support }); // der Konflikt ist gelöst: der Hinweis der Hintergrund-Sicherung gilt nicht mehr
       return r;
     },
-    gitKonfliktAbbrechen: async () => gitFn.konfliktAbbrechen(wurzel, gitCtx({ limit: opts.gitLimitCommit })),
+    gitKonfliktAbbrechen: async () => { umstellungSperre(); return gitFn.konfliktAbbrechen(wurzel, gitCtx({ limit: opts.gitLimitCommit })); },
     gitNachsehen: async () => mitSicherungsStand(await gitFn.nachsehen(wurzel, gitCtx())),
     gitWiederherstellenVorschau: async (pfad, sha) => gitFn.wiederherstellenVorschau(wurzel, pfad, sha, gitCtx()),
-    gitWiederherstellen: async (a) => gitFn.wiederherstellen(wurzel, a || {}, gitCtx({ limit: opts.gitLimitCommit })),
+    gitWiederherstellen: async (a) => { umstellungSperre(); return gitFn.wiederherstellen(wurzel, a || {}, gitCtx({ limit: opts.gitLimitCommit })); },
     gitVerlauf: async (pfad, max) => gitFn.verlauf(wurzel, pfad, max, gitCtx()),
     gitDiff: async (pfad, sha) => gitFn.diff(wurzel, pfad, sha, gitCtx()),
     gitFassung: async (pfad, sha) => gitFn.fassung(wurzel, pfad, sha, gitCtx()),

@@ -131,7 +131,8 @@ export async function phaseA(z, { entscheidungen = {}, schritte = null, bestaeti
       // „nichts“ nach einem früheren „ok“ lässt das frühere Ergebnis (und seine Rückweg-Angaben) stehen
       const bleibt = res.status === "nichts" && vorher.status === "ok";
       zustand.schritte[s.id] = bleibt ? { ...vorher } : { ...(zustand.schritte[s.id] || {}), status: res.status, zeit: jetztIso(), anzahl: res.anzahl, grund: res.grund };
-      if (!bleibt && res.status !== "ok") delete zustand.schritte[s.id].undo;
+      // Rückweg-Angaben eines früheren, unterbrochenen oder erledigten Laufs bleiben IMMER stehen (ein erneuter Lauf, der „nichts“ zu tun findet, darf sie nicht verwaisen lassen)
+      if (!bleibt && res.status !== "ok" && !(vorher.undo && ["laeuft", "ok", "fehler"].includes(vorher.status))) delete zustand.schritte[s.id].undo;
       schreibeZustand(z, zustand);
       protokolliere(z, { schritt: s.id, ereignis: res.status === "ok" ? "ok" : res.status, anzahl: res.anzahl, grund: res.grund, sicherung: zustand.schritte[s.id].undo, hashVorher: c.undo && c.undo.hashVorher, hashNachher: c.undo && c.undo.hashNachher });
       ergebnis.push({ id: s.id, titel: s.titel, status: res.status, anzahl: res.anzahl, grund: res.grund, details: res.details });

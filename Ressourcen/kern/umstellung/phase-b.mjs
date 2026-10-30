@@ -9,7 +9,7 @@ import { kernVersion, ALT_KIT_ORDNER } from "../pfade.mjs";
 import { erstelleBefund } from "./befund.mjs";
 import { UmstellungsFehler, bereitFehler, waehleProfile, schrittKontext, TestAbbruch, undoListe } from "./schrittliste.mjs";
 import { SCHRITTE_B } from "./phase-b-schritte.mjs";
-import { liesZustand, schreibeZustand, protokolliere, setzeSperre, loeseSperre, setzeVaultSperre, loeseVaultSperre, sicherungsOrdner, stempel, jetztIso, oeffneAblage } from "./protokoll.mjs";
+import { liesZustand, schreibeZustand, protokolliere, setzeSperre, loeseSperre, setzeVaultSperre, loeseVaultSperre, setzePhaseBSperre, loesePhaseBSperre, sicherungsOrdner, stempel, jetztIso, oeffneAblage } from "./protokoll.mjs";
 import { kriterium1, kriterium2, kriterium3, kriterium4, ampel } from "./pruefung.mjs";
 import { pruefeVertrauen } from "./phase-a.mjs";
 import { pruefeTor } from "./tor.mjs";
@@ -75,6 +75,7 @@ export async function phaseB(z, { entscheidungen = {}, bestaetigt = false, jetzt
     vaultSperre = setzeVaultSperre(z);
     if (!vaultSperre.ok) { loeseSperre(z); throw new UmstellungsFehler("vault-belegt", "Im Vault arbeitet gerade etwas anderes (zum Beispiel das Einarbeiten von Notizen). Versuche es in ein paar Minuten noch einmal.", 5); }
   }
+  setzePhaseBSperre(z);                 // die Werkstatt wartet mit Speichern/Abgleichen, bis Phase B fertig ist
   const zustand = liesZustand(z);
   const lauf = stempel();
   const sicherungsDir = sicherungsOrdner(z, `phase-b-${lauf}`);
@@ -112,7 +113,8 @@ export async function phaseB(z, { entscheidungen = {}, bestaetigt = false, jetzt
       }
       const bleibt = res.status === "nichts" && vorher.status === "ok";
       zustand.schritte[s.id] = bleibt ? { ...vorher } : { ...(zustand.schritte[s.id] || {}), status: res.status, zeit: jetztIso(), anzahl: res.anzahl, grund: res.grund };
-      if (!bleibt && res.status !== "ok") delete zustand.schritte[s.id].undo;
+      // Rückweg-Angaben eines früheren, unterbrochenen oder erledigten Laufs bleiben IMMER stehen (ein erneuter Lauf, der „nichts“ zu tun findet, darf sie nicht verwaisen lassen)
+      if (!bleibt && res.status !== "ok" && !(vorher.undo && ["laeuft", "ok", "fehler"].includes(vorher.status))) delete zustand.schritte[s.id].undo;
       schreibeZustand(z, zustand);
       protokolliere(z, { schritt: s.id, ereignis: res.status === "ok" ? "ok" : res.status, anzahl: res.anzahl, grund: res.grund, sicherung: zustand.schritte[s.id].undo });
       ergebnis.push({ id: s.id, titel: s.titel, status: res.status, anzahl: res.anzahl, grund: res.grund, details: res.details });
@@ -133,6 +135,7 @@ export async function phaseB(z, { entscheidungen = {}, bestaetigt = false, jetzt
     return { ok: true, phaseB: zustand.phaseB.status, archiv: zustand.phaseB.archiv, schritte: ergebnis, b4, ...(rot ? { mitWarnungen: true, hinweis: "pruefung-rot" } : { sichernAngebot: true }) };
   } finally {
     loeseSperre(z);
+    loesePhaseBSperre(z);
     if (vaultSperre.ok) loeseVaultSperre(z);
   }
 }

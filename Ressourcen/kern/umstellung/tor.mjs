@@ -16,7 +16,7 @@ import { join } from "node:path";
 import { kernVersion, liesConfigRoh } from "../pfade.mjs";
 import { erstelleBefund } from "./befund.mjs";
 import { liesZustand, liesProtokoll } from "./protokoll.mjs";
-import { versionKleiner } from "./geraete.mjs";
+import { versionKleiner, geraeteId } from "./geraete.mjs";
 import { probelaufBStand } from "./probelauf-b-merker.mjs";
 
 export const WARTEZEIT_TAGE = 7;
@@ -86,15 +86,18 @@ export function pruefeTor(z, { entscheidungen = {}, jetzt = Date.now(), befund =
   const kv = roh.cfg && typeof roh.cfg.kernVersion === "string" ? roh.cfg.kernVersion : null;
   const ohnePhaseA = geraete.filter((g) => !g.phaseA).length;
   const zuAlt = geraete.filter((g) => g.phaseA && (!g.kortexVersion || versionKleiner(g.kortexVersion, noetigeVersion))).length;
-  const macsOk = !roh.fehler && !!kv && geraete.length > 0 && ohnePhaseA === 0 && zuAlt === 0;
+  // dieser Mac muss selbst einen Gerätemerker haben (sonst weiß der Vault nichts von ihm, und die Prüfung der anderen sagt nichts)
+  const eigene = geraeteId(z, { anlegen: false });
+  const dieserOhne = !(eigene && geraete.some((g) => g.id === eigene));
+  const macsOk = !roh.fehler && !!kv && !dieserOhne && ohnePhaseA === 0 && zuAlt === 0;
   add("macs", "Alle bekannten Macs sind umgestellt", macsOk, "automatisch",
     macsOk ? `${geraete.length === 1 ? "Der einzige bekannte Mac ist" : `Alle ${geraete.length} bekannten Macs sind`} umgestellt.`
       : roh.fehler ? "Die Einstellungsdatei des Vaults ist beschädigt."
       : !kv ? "In den Einstellungen des Vaults fehlt der Vermerk der Kortex-Version (kernVersion). Stelle Phase A noch einmal fertig."
-      : !geraete.length ? "Im Vault ist kein Mac vermerkt. Stelle Phase A noch einmal fertig."
-      : ohnePhaseA ? `Auf ${ohnePhaseA === 1 ? "einem Mac" : ohnePhaseA + " Macs"} ist die Umstellung noch nicht abgeschlossen.`
-      : `Auf ${zuAlt === 1 ? "einem Mac" : zuAlt + " Macs"} läuft ein älteres Kortex. Aktualisiere Kortex dort.`,
-    roh.fehler ? "config-defekt" : !kv ? "kernversion-fehlt" : !geraete.length ? "kein-geraet" : ohnePhaseA ? "geraet-ohne-phase-a" : "geraet-zu-alt", { macs: geraete.length, ohnePhaseA, zuAlt });
+      : dieserOhne ? "Für diesen Mac gibt es im Vault noch keinen Vermerk. Stelle Phase A hier noch einmal fertig."
+      : ohnePhaseA ? `Auf ${ohnePhaseA === 1 ? "einem Mac" : ohnePhaseA + " Macs"} ist die Umstellung noch nicht abgeschlossen. Öffne Kortex dort, stelle um und gleiche den Vault ab.`
+      : `Auf ${zuAlt === 1 ? "einem Mac" : zuAlt + " Macs"} ist Kortex älter, oder der Vermerk im Vault ist veraltet. Öffne Kortex dort einmal in der aktuellen Version (der Vermerk wird beim Start erneuert) und gleiche den Vault ab.`,
+    roh.fehler ? "config-defekt" : !kv ? "kernversion-fehlt" : dieserOhne ? "dieser-mac-ohne-merker" : ohnePhaseA ? "geraet-ohne-phase-a" : "geraet-zu-alt", { macs: geraete.length, ohnePhaseA, zuAlt });
 
   // 5 Bestätigung
   const bestaetigt = entscheidungen.keineAltenMacs === true;
@@ -105,9 +108,12 @@ export function pruefeTor(z, { entscheidungen = {}, jetzt = Date.now(), befund =
   // 6–8 aus dem Befund
   const bf = befund || erstelleBefund({ vault: z.vault, home: z.home, support: z.support, claudeHomes: null });
   const prozesse = bf.funde.find((f) => f.id === "E3");
+  const unklar = !!(prozesse && prozesse.details && prozesse.details.unklar);
   add("prozesse", "Aus dem alten Werkzeug-Ordner läuft nichts mehr", !prozesse, "automatisch",
-    !prozesse ? "Es laufen keine Programme aus dem alten Werkzeug-Ordner." : `Es laufen noch ${prozesse.anzahl} ${prozesse.anzahl === 1 ? "Programm" : "Programme"} aus dem alten Werkzeug-Ordner. Beende offene Claude-Sitzungen und versuche es noch einmal.`,
-    "laufende-prozesse", prozesse ? { anzahl: prozesse.anzahl } : undefined);
+    !prozesse ? "Es laufen keine Programme aus dem alten Werkzeug-Ordner (geprüft nach dem Pfad in der Befehlszeile und, wo möglich, nach geöffneten Dateien; ein Programm, das den Ordner nur auf anderem Weg erreicht, erkennt Kortex nicht – beende im Zweifel offene Claude-Sitzungen)."
+      : unklar ? prozesse.text
+      : `Es laufen noch ${prozesse.anzahl} ${prozesse.anzahl === 1 ? "Programm" : "Programme"} aus dem alten Werkzeug-Ordner. Beende offene Claude-Sitzungen und versuche es noch einmal.`,
+    unklar ? "konnte-nicht-pruefen" : "laufende-prozesse", prozesse && !unklar ? { anzahl: prozesse.anzahl } : undefined);
   const bewusst = new Set(Array.isArray(entscheidungen.bewusst) ? entscheidungen.bewusst : []);
   const rest = [];
   for (const f of bf.funde) {

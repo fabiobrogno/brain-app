@@ -74,12 +74,28 @@ function ordnerGroesse(wurzel, grenze = 20_000) {
   return { dateien, bytes, abgeschnitten };
 }
 
-function laufendeProzesse(vault) {
+// → Anzahl der Prozesse aus dem alten Werkzeug-Ordner, oder null = KONNTE NICHT PRÜFEN (fail-closed: pgrep fehlt, scheitert oder läuft in die Frist – das Tor von Phase B bleibt dann zu).
+// Zwei Wege: (1) pgrep -f nach dem absoluten Pfad in der Befehlszeile, (2) wenn lsof da ist, Prozesse mit geöffneten Dateien oder dem Arbeitsordner im alten Ordner (findet auch Programme, die mit
+// relativem Pfad gestartet wurden). Fehlt lsof oder braucht es zu lange, gilt nur (1) – diese Grenze steht im Text des Tors. Testhaken KORTEX_PGREP / KORTEX_LSOF nur in der Testumgebung.
+function laufendeProzesse(vault, env = process.env) {
+  const test = env.KORTEX_KERN_UNSTABIL_ERLAUBT === "1" || env.BRAIN_TESTMODUS === "1";
+  const pgrep = (test && env.KORTEX_PGREP) || "/usr/bin/pgrep";
+  const lsofListe = (test && env.KORTEX_LSOF) ? [env.KORTEX_LSOF] : ["/usr/sbin/lsof", "/usr/bin/lsof"];
   const orte = [...new Set([resolve(vault), echt(vault)])].map((v) => `${maskiere(v)}/${maskiere(ALT_KIT_ORDNER)}/`);
-  try {
-    const aus = execFileSync("/usr/bin/pgrep", ["-f", "--", orte.join("|")], { encoding: "utf8", timeout: 10_000, windowsHide: true, stdio: ["ignore", "pipe", "ignore"] });
-    return aus.split("\n").filter((z) => /^\d+$/.test(z.trim())).filter((z) => Number(z) !== process.pid).length;
-  } catch { return 0; }   // Exit 1 = keine Treffer; fehlt pgrep, gilt „keine bekannt“
+  const pids = new Set();
+  const nimm = (aus) => { for (const z of String(aus).split("\n")) if (/^\d+$/.test(z.trim()) && Number(z) !== process.pid && Number(z) !== process.ppid) pids.add(Number(z)); };
+  try { nimm(execFileSync(pgrep, ["-f", "--", orte.join("|")], { encoding: "utf8", timeout: 10_000, windowsHide: true, stdio: ["ignore", "pipe", "ignore"] })); }
+  catch (e) { if (!(e && e.status === 1 && !e.killed && !e.signal)) return null; }       // Exit 1 = keine Treffer; alles andere (fehlt, Fehler, Frist) = unklar
+  const lsof = lsofListe.find((p) => existsSync(p));
+  if (lsof) {
+    for (const v of new Set([resolve(vault), echt(vault)])) {
+      const kit = join(v, ALT_KIT_ORDNER);
+      let l; try { l = lstatSync(kit); } catch { continue; }
+      if (!l.isDirectory()) continue;
+      try { nimm(execFileSync(lsof, ["-t", "+D", kit], { encoding: "utf8", timeout: 20_000, windowsHide: true, stdio: ["ignore", "pipe", "ignore"] })); } catch { /* keine Treffer (Exit 1), nicht prüfbar oder zu langsam: nur pgrep zählt */ }
+    }
+  }
+  return pids.size;
 }
 
 function leseConfigRoh(vault) {
@@ -122,8 +138,9 @@ export function erstelleBefund({ vault, home = homedir(), env = process.env, sup
       const art = kit.art === "verweis" ? " (eine Verknüpfung auf einen anderen Ort)" : "";
       f("E1", "kit-ordner", "auto", "Vault", 1, "kit-archivieren", `Im Vault liegt noch der alte Werkzeug-Ordner${kit.version ? ` (Version ${kit.version})` : ""}${art}. Kortex benutzt ihn nicht mehr; er wird bei einem späteren Update aufgeräumt, vorher archiviert und nichts geht verloren.`,
         { phase: "B", details: { art: kit.art, version: kit.version, dateien: kit.dateien, bytes: kit.bytes, abgeschnitten: kit.abgeschnitten } });
-      const prozesse = laufendeProzesse(vault);
-      if (prozesse > 0) f("E3", "kit-prozesse", "blocker", "Vault", prozesse, "sitzungen-beenden", `Es laufen noch ${prozesse} ${mehrzahl(prozesse, "Programm", "Programme")} aus dem alten Werkzeug-Ordner (zum Beispiel in einer offenen Claude-Sitzung). Beende offene Claude-Sitzungen, bevor aufgeräumt wird.`, { phase: "B", blockiertPhase: "B" });
+      const prozesse = laufendeProzesse(vault, env);
+      if (prozesse === null) f("E3", "kit-prozesse-unklar", "blocker", "Vault", 0, "sitzungen-beenden", "Kortex konnte nicht prüfen, ob noch Programme aus dem alten Werkzeug-Ordner laufen. Beende offene Claude-Sitzungen und versuche es noch einmal.", { phase: "B", blockiertPhase: "B", details: { unklar: true } });
+      else if (prozesse > 0) f("E3", "kit-prozesse", "blocker", "Vault", prozesse, "sitzungen-beenden", `Es laufen noch ${prozesse} ${mehrzahl(prozesse, "Programm", "Programme")} aus dem alten Werkzeug-Ordner (zum Beispiel in einer offenen Claude-Sitzung). Beende offene Claude-Sitzungen, bevor aufgeräumt wird.`, { phase: "B", blockiertPhase: "B" });
     }
 
     // --- 2. Einstellungen des Vaults (E4–E7) -------------------------------------------------------------------------------
@@ -310,7 +327,7 @@ export function erstelleBefund({ vault, home = homedir(), env = process.env, sup
     // --- 9b. Verwaiste Einbindungen in der globalen git-Konfiguration (E29): Vault verschoben oder gelöscht, der Block von Kortex zeigt ins Leere -------------------------
     versuche(() => {
       const gg = typeof env.GIT_CONFIG_GLOBAL === "string" && env.GIT_CONFIG_GLOBAL.startsWith("/") ? env.GIT_CONFIG_GLOBAL : join(home, ".gitconfig");
-      const waisen = findeVerwaiste(gg);
+      const waisen = findeVerwaiste(gg, { support });
       if (waisen.length) f("E29", "include-verwaist", "frage", "Persönliche Einstellungen (Versionsverlauf)", waisen.length, "include-aufraeumen", `In deinen persönlichen Einstellungen für den Versionsverlauf ${mehrzahl(waisen.length, "steht ein Eintrag", "stehen " + waisen.length + " Einträge")} von Kortex für ${mehrzahl(waisen.length, "einen Vault", "Vaults")}, den es an dieser Stelle nicht mehr gibt (verschoben oder gelöscht). Das schadet nicht. Kortex kann ${mehrzahl(waisen.length, "ihn", "sie")} auf Wunsch aufräumen; der Rückweg bleibt möglich.`, { phase: "B", details: { eintraege: waisen.length } });
     });
 
