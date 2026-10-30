@@ -465,6 +465,9 @@ async function starteKarte({ modus = "start", beiFertig, beiAbbruch, beiStandNeu
       h("span", { klasse: "w-weg-text" }, h("span", { klasse: "w-weg-titel", text: TW.wege[w.id].titel }), h("span", { klasse: "w-weg-text2", text: TW.wege[w.id].text }))));
     let zeile = zeilen[0];
     zeilen.forEach((el) => el.addEventListener("focus", () => { zeile = el; }));
+    // Ein Hauptweg (die Vorlage), die übrigen ruhig gruppiert darunter (Muster aus Orcas „Add a project“, MIT; siehe THIRD-PARTY-NOTICES.md).
+    zeilen[0].classList.add("haupt");
+    const andere = h("div", { klasse: "w-andere" }, h("h3", { klasse: "w-abschnitt", text: TW.willkommen.andere }), h("div", { klasse: "w-gruppe-wege" }, zeilen.slice(1)));
     const liste = h("div", { klasse: "w-wege", role: "group", "aria-label": TW.willkommen.wegeLabel, aufKeydown: (e) => {
       const i = zeilen.indexOf(document.activeElement);
       let n = null;
@@ -473,7 +476,7 @@ async function starteKarte({ modus = "start", beiFertig, beiAbbruch, beiStandNeu
       else if (e.key === "Home") n = 0;
       else if (e.key === "End") n = zeilen.length - 1;
       if (n !== null) { e.preventDefault(); zeilen[n].focus(); }
-    } }, zeilen);
+    } }, zeilen[0], andere);
     const s = {
       name: "wahl", titelId, abbrechbar: true, meldung,
       knoten: h("div", null,

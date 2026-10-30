@@ -64,8 +64,8 @@ export async function ladeLizenzText(holen = (u) => fetch(u, { cache: "no-store"
 
 export function oeffneLizenzen({ holen } = {}) {
   const platz = h("div", { klasse: "mini", "data-lizenzen": "platz", text: TEXTE.laedt });
-  const zu = baueKnopf({ text: TEXTE.zu, aktion: "lizenzen-zu", aufKlick: () => d.schliessen() });
-  const d = dialog({ titel: TEXTE.titel, breit: true, rumpf: [h("p", { klasse: "mini", text: TEXTE.einleitung }), platz], knoepfe: [zu] });
+  const zu = baueKnopf({ text: TEXTE.zu, variante: "primaer", aktion: "lizenzen-zu", aufKlick: () => d.schliessen() });
+  const d = dialog({ titel: TEXTE.titel, satz: TEXTE.einleitung, breit: true, rumpf: [platz], knoepfe: [zu] });
   ladeLizenzText(holen).then(
     (t) => { if (platz.isConnected) platz.replaceWith(baueLizenzAnsicht(t)); },
     () => { if (platz.isConnected) { platz.textContent = TEXTE.fehlt; platz.setAttribute("data-lizenzen", "fehlt"); } },

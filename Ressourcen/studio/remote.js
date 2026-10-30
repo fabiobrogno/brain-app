@@ -34,24 +34,23 @@ export function oeffneRemoteDialog({ beiFertig, beiStandNeu } = {}) {
   const adressFeld = textfeld({ id: "rm-adresse", platzhalter: TV.remote.platzhalter, beschreibung: "rm-hinweis rm-meldung", daten: { "data-feld": "adresse" } });
   const eingabe = adressFeld.input;
   const meldung = h("div", { klasse: "rm-meldung", id: "rm-meldung", "aria-live": "polite" });
-  const knopf = baueKnopf({ variante: "primaer", groesse: "l", typ: "submit", aktion: "verbinden", kinder: [h("span", { text: TV.remote.verbinden })] });
-  const abbrechen = baueKnopf({ text: TV.remote.abbrechen, groesse: "l", aktion: "abbrechen" });
-  const zu = h("button", { klasse: "knopf-icon rm-zu", type: "button", "aria-label": TV.remote.schliessen, title: TV.remote.schliessen }, zeichen("schliessen", 14));
-  // Zeigt die Adresse auf GitHub, steht dessen Logo im Kopf (Marke statt Wolke), sonst die Wolke.
-  const kopfZeichen = h("span", { klasse: "rm-zeichen" }, zeichen("wolke", 20));
-  const zeigeKopfzeichen = (adresse) => kopfZeichen.replaceChildren(/(^|[@/.])github\.com([:/]|$)/i.test(adresse) ? markenLogo("github", 20, { dekorativ: true }) : zeichen("wolke", 20));
-  const form = h("form", { klasse: "rm-form", novalidate: true },
+  const knopf = baueKnopf({ variante: "primaer", typ: "submit", aktion: "verbinden", daten: { form: "rm-form" }, kinder: [h("span", { text: TV.remote.verbinden })] });
+  const abbrechen = baueKnopf({ text: TV.remote.abbrechen, aktion: "abbrechen" });
+  const form = h("form", { klasse: "rm-form", id: "rm-form", novalidate: true },
     h("div", { klasse: "feld" }, h("label", { for: "rm-adresse", text: TV.remote.label }), adressFeld.el),
     h("p", { klasse: "rm-hinweis", id: "rm-hinweis", text: TV.remote.hinweis }),
-    meldung,
-    h("div", { klasse: "rm-fuss" }, abbrechen, knopf));
-  const box = h("div", { klasse: "dialog rm-dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "rm-titel", "data-dialog": "remote" },
-    zu,
-    h("div", { klasse: "rm-kopf" }, kopfZeichen, h("h2", { klasse: "rm-titel", id: "rm-titel", text: TV.remote.titel })),
-    h("p", { klasse: "rm-text", text: TV.remote.erklaerung }),
-    form);
+    meldung);
 
-  const d = dialog({ eigen: box, beiSchliessen: () => { if (verbunden) melde(); } });
+  // Einheitliche Dialoghülle (hilfen.js): Titel, ein Satz, Inhalt, Fußleiste mit einem Hauptknopf rechts; Enter verbindet, Esc schließt.
+  const d = dialog({ titel: TV.remote.titel, satz: TV.remote.erklaerung, rumpf: [form], knoepfe: [abbrechen, knopf], beiSchliessen: () => { if (verbunden) melde(); } });
+  d.box.setAttribute("data-dialog", "remote");
+  const kopf = d.box.querySelector(".dialog-kopf");
+  kopf?.classList.add("rm-titel");
+  // Dezentes Symbol vor dem Titel: bei einer GitHub-Adresse deren Logo, sonst die Wolke
+  const kopfZeichen = h("span", { klasse: "rm-zeichen" }, zeichen("wolke", 20));
+  const zeigeKopfzeichen = (adresse) => kopfZeichen.replaceChildren(/(^|[@/.])github\.com([:/]|$)/i.test(adresse) ? markenLogo("github", 20, { dekorativ: true }) : zeichen("wolke", 20));
+  kopf?.prepend(kopfZeichen);
+  d.box.querySelector(".dialog-satz")?.classList.add("rm-text");
 
   const zeige = (art, text, symbolName, kopf, roh = null) => {
     meldung.className = "rm-meldung" + (art ? " " + art : "");
@@ -65,7 +64,6 @@ export function oeffneRemoteDialog({ beiFertig, beiStandNeu } = {}) {
     abbrechen.disabled = an;
   };
 
-  zu.addEventListener("click", () => d.schliessen());
   abbrechen.addEventListener("click", () => d.schliessen());
   eingabe.addEventListener("input", () => { zeigeKopfzeichen(eingabe.value); if (!laeuft) zeige("", ""); });
   form.addEventListener("submit", async (e) => {

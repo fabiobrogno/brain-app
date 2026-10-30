@@ -222,7 +222,9 @@ public final class EinrichtungsAblauf {
             geprueft.insert(s)
             await betrete(s)
         }
-        if zustand.istFertig { abgeschlossen = true }
+        // „Eingerichtet“ heißt: git und ein Vault. GitHub, Sicherung, KI und Probe sind freiwillige Karten und kein Grund, den Assistenten
+        // beim nächsten Start noch einmal von selbst zu zeigen.
+        if zustand.istFertig || zustand.grundeingerichtet { abgeschlossen = true }
         sichere()
         melde()
     }
@@ -236,6 +238,20 @@ public final class EinrichtungsAblauf {
         case .ki: await erkenneKIsSchritt()
         case .probe: await fuehreProbeAus()
         }
+    }
+
+    /// Bereitet die Karten des Abschlussbilds vor (GitHub-Konto, Sicherung, gefundene KI-Programme), ohne den Assistenten weiterzuschieben.
+    /// Läuft erst, wenn das Nötige steht (git und Vault), und jeder Teil nur einmal je Sitzung. Die Probe läuft erst, wenn der Nutzer
+    /// ihre Karte öffnet (`starteProbe`).
+    public func ladeKarten() async {
+        guard zustand.grundeingerichtet else { return }
+        for s in [EinrichtungsSchritt.github, .sicherung, .ki] where !geprueft.contains(s) {
+            geprueft.insert(s)
+            await betrete(s)
+            melde()
+        }
+        sichere()
+        melde()
     }
 
     // MARK: git
