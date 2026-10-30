@@ -21,7 +21,7 @@ Deutsch, Imperativ oder Substantivstil, die Aufgabe steht in Klammern.
 | beta | Tag `vX.Y.Z-beta.N` | GitHub-Prerelease mit Zip, Workflow `release-pruefung` |
 | stable | Tag `vX.Y.Z` | Release-Entwurf (draft); Veröffentlichen von Hand |
 
-Alle Pakete sind nur ad-hoc signiert, nicht notarisiert (siehe „Signieren + Notarisieren“). Ein manueller Lauf von
+dev und beta sind nur ad-hoc signiert, nicht notarisiert; nur stable ist signiert und notarisiert (siehe „Signieren + Notarisieren“). Ein manueller Lauf von
 `release-pruefung` (`workflow_dispatch`) baut und testet, veröffentlicht aber nichts.
 
 ## Signieren + Notarisieren (nur Stable-Tags)
@@ -41,6 +41,17 @@ Sparkle 2.10.0 steckt als SwiftPM-Abhängigkeit in der App (`SUPublicEDKey` und 
 Feed: `https://github.com/fabiobrogno/brain-app/releases/latest/download/appcast.xml`); `baue-app.sh` legt `Sparkle.framework` nach
 `Contents/Frameworks`, `veroeffentlichen.sh` signiert dessen XPC-Dienste, Autoupdate und Updater.app von innen nach außen mit Hardened Runtime.
 Sparkle-Werkzeuge 2.10.0 werden mit fester SHA-256 geladen. Die `appcast.xml` aus CI enthält nur die jeweils neue Version. Vor dem Signieren prüft CI, dass der Stable-Tag `v<Version>` der `CFBundleShortVersionString` aus `Ressourcen/Info.plist` entspricht, sonst Abbruch. `releases/latest` ignoriert Entwürfe: Der Stable-Entwurf muss veröffentlicht sein, damit der Feed greift.
+
+Nach dem Signieren prüft der Workflow unabhängig vom Skript (Schritte „Gatekeeper-Prüfung“ und „Appcast gegen Tag und DMG prüfen“):
+`codesign --verify --deep --strict`, `spctl -a -vv` und `xcrun stapler validate` an App, DMG und der App in der gemounteten DMG, Hardened Runtime,
+Verknüpfung „Programme“, und im Appcast Version, Download-Adresse (muss zu Tag und DMG passen) und EdDSA-Signatur. Alle Actions sind auf Commit-SHAs
+gepinnt (Version im Kommentar), jeder Job und jeder lange Schritt hat `timeout-minutes`. Den Ablauf für dich als Freigebende beschreibt `docs/veroeffentlichen.md`.
+
+## Lizenzen von Dritten
+`THIRD-PARTY-NOTICES.md` (Wurzelordner) nennt alles, was die App mitliefert: Node.js (Version aus `scripts/node-version.txt`), Sparkle (Version aus
+`Package.swift`), CodeMirror, three.js, Geist, Gehirnmodell, Simple Icons. `baue-app.sh` legt die Datei nach `Contents/Resources/` und neben die
+Oberfläche (`studio/`, dort liest sie Einstellungen → „Lizenzen …“); `Tests/Node/lizenzen.test.mjs` und der Rauchtest prüfen, dass jede Datei unter
+`vendor/` und `logos/` darin steht und die Datei im Paket liegt. **Wer eine Bibliothek, Schrift oder ein Logo hinzufügt oder die Version von Node/Sparkle ändert, ergänzt die Datei im selben PR.**
 
 **Probelauf:** Actions, „Release-Prüfung“, Run workflow, `signier_probe` anhaken. Das führt `veroeffentlichen.sh --trocken` aus
 (Secrets, Zertifikat, Apple-Anmeldung werden geprüft, nichts wird signiert oder veröffentlicht).

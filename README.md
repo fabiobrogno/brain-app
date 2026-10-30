@@ -1,88 +1,90 @@
 # Kortex
 
-**Ein Editor für dein Wissen, der weiß, was davon stimmt, und deine KI arbeitet direkt mit.**
+**Ein Editor für dein Wissen, der weiß, was davon stimmt, und an dem deine KI direkt mitarbeitet.**
 
-Kortex ist eine Mac-App für einen Ordner mit Markdown-Notizen, den Vault. Zu jeder Seite zeigt sie, ob sie belegt, abgelaufen,
-strittig oder noch ungeprüft ist. Der Vault bleibt die einzige Wahrheit: Kortex liest und schreibt nur normale Dateien
-und erhält deinen Text Byte für Byte.
+[English version](README.en.md) · [Lizenzen von Dritten](THIRD-PARTY-NOTICES.md)
 
-> **Frühe Version.** Kortex ist jung und wird noch viel angefasst. Ecken und Fehler sind wahrscheinlich.
-> Dein Vault liegt in Git, sodass du Änderungen jederzeit zurückholen kannst. Eine Sicherung ersetzt das trotzdem nicht.
+Kortex ist eine Mac-App für Ordner mit Markdown-Notizen, die Vaults. Zu jeder Seite zeigt sie, ob sie belegt, abgelaufen,
+strittig oder noch ungeprüft ist. Dein Vault bleibt die einzige Wahrheit: Kortex liest und schreibt nur normale Dateien und
+erhält deinen Text Byte für Byte.
 
-## Funktionen
+> **Beta.** Kortex ist jung und wird noch viel angefasst. Ecken und Fehler sind wahrscheinlich, und bis zur ersten
+> stabilen Version gibt es kein Update-Versprechen. Dein Vault liegt in Git, sodass du Änderungen zurückholen kannst. Eine
+> Sicherung ersetzt das trotzdem nicht.
 
-- **Editor** mit Markdown-Live-Vorschau, `[[Wikilinks]]`, automatischem Speichern und Befehlspalette (⌘K)
-- **Prüf-Signale** je Seite: belegt, abgelaufen, strittig, ungeprüft
-- **Git eingebaut:** Änderungen ansehen, auswählen und committen, Verlauf mit Vergleich, alte Fassung wiederherstellen,
-  Abgleich mit deinem eigenen Git-Remote (Konflikte werden erklärt, nichts wird still überschrieben)
-- **Suche** über alle Seiten, **Schnell merken** in die Inbox
-- **Lokale KI-Anbindung per MCP:** Claude Code, Codex, Cursor und andere lesen dein Wissen mit Quellen und legen Merkzettel
-  ausschließlich in die Inbox ab, nie direkt ins Wiki
-- **Kein Server, keine Kosten, keine Telemetrie**
+## Was Kortex kann
 
-## Voraussetzungen
-
-- **Nur Apple Silicon (arm64: M1 oder neuer)** — Intel-Macs werden nicht unterstützt
-- macOS 26 oder neuer
-- Git (bei den Xcode-Kommandozeilentools dabei: `xcode-select --install`)
+- **Vaults:** Lege einen neuen Vault an, öffne einen vorhandenen Ordner oder starte mit dem Beispiel-Vault. Du kannst mehrere
+  Vaults führen und zwischen ihnen wechseln.
+- **Studio-Editor:** Markdown mit Live-Vorschau, `[[Wikilinks]]`, automatischem Speichern und Befehlspalette (⌘K). Jede
+  Seite trägt ein Prüf-Signal (belegt, abgelaufen, strittig, ungeprüft). Dazu kommen eine Gesundheitsübersicht und eine 3D-Ansicht
+  des Vaults.
+- **Suche und Schnell merken:** Suche über alle Seiten; was du nicht verlieren willst, landet mit einem Handgriff im Posteingang.
+- **Aufgaben:** Ein Board im Vault, auf dem du und deine KI Aufgaben anlegen, verschieben und abhaken.
+- **Abgleich und Sicherung mit git:** Änderungen ansehen und auswählen, sichern, Verlauf mit Vergleich, alte Fassungen
+  wiederherstellen. Abgleich mit deinem eigenen git-Remote oder GitHub; Konflikte werden erklärt, nichts wird still überschrieben.
+  Auf Wunsch sichert der Assistent den Vault in ein privates GitHub-Repository.
+- **KI verbinden:** Kortex erkennt deine KI-Programme und trägt seinen lokalen MCP-Server dort ein: Claude Code, Claude Desktop,
+  Codex, Cursor, Gemini CLI, GitHub Copilot (CLI), Zed, OpenCode und Warp. Die KI liest dein Wissen mit Quellen und legt
+  Merkzettel im Posteingang ab; ins Wiki schreibt sie nie direkt. Wer sie zusätzlich dürfen soll, entscheidest du.
+- **KI-Konten und Zugriff:** Kortex unterscheidet deine KI-Konten (zum Beispiel ein privates und ein Firmenkonto von Claude Code)
+  und legt je Konto und Vault fest, was es darf: gesperrt, lesen, Posteingang oder erweitert. Neue Konten starten gesperrt.
+  Die Durchsetzung ist eingebaut; die Oberfläche dafür folgt in den nächsten Beta-Versionen.
+- **Vertrauen:** Ein Ordner, der von außen kommt, ist zunächst „Nur ansehen“: kein git, kein Hintergrunddienst, keine Hooks, keine
+  Anweisungen an die KI. Erst wenn du dem Vault vertraust, wird er voll nutzbar. Du kannst das jederzeit zurücknehmen.
+- **Umstellung alter Vaults:** Hast du einen Vault aus der Zeit des Vorgängers (mit eigenem Werkzeugordner), prüft „Vault
+  umstellen …“ zuerst an einer Kopie, stellt dann Schritt für Schritt um und kennt für jeden Schritt einen Rückweg.
 
 ## Installation
 
-1. Die neueste `Kortex-<Version>.dmg` (nur Apple Silicon, arm64) unter **Releases** laden.
-2. Öffnen und **Kortex** auf **Programme** ziehen.
-3. Starten und einen neuen Vault anlegen oder einen vorhandenen Ordner öffnen.
+Kortex läuft nur auf **Apple Silicon (M1 oder neuer)** mit **macOS 26 oder neuer**. Git muss installiert sein (es gehört
+zu den Xcode-Kommandozeilentools: `xcode-select --install`).
 
-Die App ist von Apple geprüft (notarisiert) und aktualisiert sich selbst, sobald die Update-Funktion eingebaut ist.
+1. Lade unter **Releases** die neueste Datei herunter. Die Beta-Versionen (`v0.3.0-beta.N`) sind ein Zip, die späteren
+   stabilen Versionen eine `Kortex-<Version>.dmg`.
+2. Zip entpacken (DMG öffnen) und **Kortex** in den Ordner **Programme** ziehen.
+3. Beim ersten Start meldet macOS bei einer Beta, dass es Kortex nicht prüfen kann. Das ist normal, die Beta ist noch nicht
+   von Apple notarisiert. So öffnest du sie trotzdem: Starte Kortex einmal, öffne **Systemeinstellungen → Datenschutz &
+   Sicherheit**, scrolle zu „Kortex wurde blockiert“ und wähle **Trotzdem öffnen**. (Rechtsklick → Öffnen genügt unter macOS 26 nicht mehr.)
+   Wer lieber das Terminal nutzt: `xattr -dr com.apple.quarantine /Applications/Kortex.app`.
+4. Starte Kortex. Der Assistent legt deinen ersten Vault an und verbindet auf Wunsch deine KI-Programme.
 
-## Mit Claude Code verbinden
-
-Kortex bringt einen lokalen MCP-Server mit (Standard-Ein-/Ausgabe, kein Netzwerk-Port). Die App kann ihn für Claude Code
-einrichten. Von Hand geht es mit:
-
-```bash
-claude mcp add -s user brain -- <node> <brain-mcp.mjs> <dein-vault-ordner>
-```
-
-Den genauen Befehl mit den richtigen Pfaden zeigt Kortex an. Werkzeuge: `brain_suchen`, `brain_lesen`, `brain_merken`,
-`brain_gesundheit`, `brain_verlauf`.
+Stabile Versionen sind signiert, von Apple notarisiert und aktualisieren sich über Sparkle selbst („Nach Updates suchen …“ im Menü).
 
 ## Datenschutz
 
-- Keine Telemetrie, keine Analyse, kein Absturz-Upload. Berichte bleiben auf deinem Mac.
-- Kein offener Netzwerk-Port. Die Oberfläche spricht über eine interne Brücke mit der App.
-- Kortex arbeitet nur in deinem Vault und in `~/Library/Application Support/Kortex`.
-- Wenn du ein Git-Remote einträgst, geht dein Wissen dorthin und nirgendwo sonst hin.
+- **Alles bleibt auf deinem Mac.** Deine Notizen liegen in deinem Vault-Ordner. Kortex hat keinen Server, keine Telemetrie, keine
+  Analyse und lädt keine Berichte hoch.
+- **Netzverbindungen** gibt es nur, wenn du sie auslöst oder in diesen Fällen: der **git-Abgleich** mit deinem Remote (dorthin
+  gehen deine Notizen und nirgendwo sonst hin), die **GitHub-Anmeldung** und das Anlegen oder Klonen von Repositories, und die
+  **Update-Abfrage** (Kortex lädt die Datei `appcast.xml` von GitHub; dabei sieht GitHub deine IP-Adresse, Kortex schickt kein Systemprofil).
+- Es gibt keinen offenen Netzwerk-Port. Die Oberfläche spricht über eine interne Brücke mit der App, die KI-Programme über
+  Standard-Ein- und -Ausgabe (MCP) mit dem lokalen Server.
+- **Deine KI-Programme** haben eigene Datenschutzregeln: Was sie aus dem Vault lesen, geht an ihren Anbieter. Deshalb legst du
+  je KI-Konto fest, was sichtbar ist.
+- Kortex arbeitet nur in deinen Vaults und in `~/Library/Application Support/Kortex`.
 
 ## Entwicklung
 
+Bauen, testen, CI und Veröffentlichen beschreibt [docs/ENTWICKLUNG.md](docs/ENTWICKLUNG.md); die Schritte zum Veröffentlichen stehen in
+[docs/veroeffentlichen.md](docs/veroeffentlichen.md). Kurz:
+
 ```bash
-swift build                      # Swift-Teil bauen
-swift test                       # Swift-Tests
-bash scripts/teste-node.sh       # Node-Tests (Brücke, MCP, Dateizugriff, Git)
+swift build && swift test        # Swift-Teil
+bash scripts/teste-node.sh       # Node-Tests
 bash scripts/baue-app.sh         # baut build/Kortex.app (arm64)
-bash scripts/selbstfoto.sh <vault-kopie> <ordner>   # Studio fotografiert sich selbst (hell/dunkel) und meldet js-fehler
 ```
 
-Die Oberflächen-Tests (Playwright) liegen in `Tests/Oberflaeche` und laufen gegen den Entwicklungsserver mit einem
-Wegwerf-Ordner, nie gegen echte Notizen. Veröffentlichen (Signieren, Notarisieren, DMG, Update-Feed) beschreibt
-[docs/veroeffentlichen.md](docs/veroeffentlichen.md).
+Beiträge sind willkommen: Fehler und Wünsche als Issue, Änderungen als Pull Request (die CI muss grün sein).
 
 ## Lizenz
 
-MIT, siehe [LICENSE](LICENSE). Copyright 2026 Fabio Brogno.
+Kortex steht unter der MIT-Lizenz, siehe [LICENSE](LICENSE). Copyright 2026 Fabio Brogno. Software und Material von Dritten, die
+Kortex mitliefert (Node.js, Sparkle, CodeMirror, three.js, Geist, Simple Icons und weitere), steht in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md); in der App findest du den Text unter Einstellungen → „Lizenzen …“.
 
----
+## Markenhinweis
 
-## English (short)
-
-**Kortex** is a free, open-source Mac app: an editor for a folder of Markdown notes (the vault) that knows which pages are
-backed by sources, which have expired, and which are disputed. Git is built in (review, commit, history, restore,
-sync with your own remote). A local MCP server (stdio, no network port) lets Claude Code, Codex or Cursor search and
-read your notes with provenance; agents can only drop notes into the inbox.
-
-- No server, no cost, no telemetry. Everything stays in your vault folder.
-- Requires Apple Silicon and macOS 26 or later.
-- **Early version:** expect rough edges. Keep backups.
-- Install: download the notarized DMG from Releases, drag Kortex to Applications.
-- Develop: `swift test`, `bash scripts/teste-node.sh`, `bash scripts/baue-app.sh`; UI tests (Playwright) in `Tests/Oberflaeche`.
-- License: MIT.
+Namen und Logos von Anthropic (Claude), OpenAI (Codex), Anysphere (Cursor), Google (Gemini), GitHub, Zed, OpenCode, Warp und
+anderen gehören ihren Inhabern. Kortex zeigt sie nur, um Programme zu kennzeichnen, mit denen es sich verbindet. **Kortex ist mit
+keinem dieser Unternehmen verbunden und wird von ihnen weder empfohlen noch unterstützt.**

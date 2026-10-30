@@ -8,7 +8,7 @@
 
 **Tech Stack:** Node-ESM (nur Standardbibliothek), `node --test`, Bash-Testsuiten des Kits (`.tools/tests/run-all.sh`), git-CLI. Keine neuen Abhängigkeiten.
 
-**Spec:** `/Users/fbFirma/source/brain-app/docs/superpowers/specs/2026-10-16-brain-app-design.md` — Kopf-„Nachtrag“, §2, §4/§4a, §11, §12.2 (K2, K3, K11–K15), §13.2 (Alltags-Wirkung, Hook-Laufzeit), §14 (M2).
+**Spec:** `<home>/source/brain-app/docs/superpowers/specs/2026-10-16-brain-app-design.md` — Kopf-„Nachtrag“, §2, §4/§4a, §11, §12.2 (K2, K3, K11–K15), §13.2 (Alltags-Wirkung, Hook-Laufzeit), §14 (M2).
 
 ## Global Constraints
 
@@ -19,7 +19,7 @@
 - **Ausgabegrenzen** (Hook-Doku v2.1.30x: 10.000 Zeichen je String, darüber Datei + 2.000-Zeichen-Vorschau): SessionStart gesamt ≤ **9.500** Zeichen; K12-Arbeitsstand ≤ **8.000**; K11 ≤ **600**; Projekt-Steckbrief ≤ **1.200** (~300 Tokens, K2-Deckel); Regeln beim `Read` ≤ **1.200**; Brain-Hinweis je Prompt ≤ **600**. Bei Überschreitung **ganze Einträge** in Rangfolge statt alle gekürzt.
 - **Hook-Ausgabekanäle** (Hook-Doku): SessionStart und UserPromptSubmit dürfen plain stdout nutzen; **PreToolUse nur JSON** `{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"…"}}` — plain stdout erreicht Claude dort nicht. PreCompact: Ausgabe wird nicht eingespielt → nur Seiteneffekte.
 - **Zuordnung strikt über `session_id`:** Was eine Sitzung speichert (K12-Stand, K13-Eintrag, Gezeigt-Liste), bekommt nie eine andere Sitzung eingespielt. „Anbieten, nicht beanspruchen“: K11/K13 zeigen nur an und markieren nichts als übernommen.
-- **Arbeitsort:** Worktree `~/brain-kit-v0.6`, Branch `kit-v0.6`. Nie direkt in `~/brain` ändern. Zusammenführen und Hook-Registrierung erst im letzten Task und **nur nach Fabios ausdrücklichem Okay**; `~/.claude/settings.json` und `~/.claude-firma2/settings.json` ändert nur Fabio selbst (fertiger `!`-Befehl über den bestehenden Installer).
+- **Arbeitsort:** Worktree `~/brain-kit-v0.6`, Branch `kit-v0.6`. Nie direkt in `~/brain` ändern. Zusammenführen und Hook-Registrierung erst im letzten Task und **nur nach Fabios ausdrücklichem Okay**; `~/.claude/settings.json` und `~/.claude-<profil2>/settings.json` ändert nur Fabio selbst (fertiger `!`-Befehl über den bestehenden Installer).
 - **Unverändert bleiben:** alle bestehenden Hooks und Tests (grün), `brain zeig`, `brain status --json`, die Ansicht-Brücke (M1-App-Schnittstellen), das Einstellungs-Schema `einstellungen.mjs#SCHEMA` (keine neuen Schalter in M2a).
 - **Stil:** Bezeichner Deutsch ohne Umlaute (`ae/oe/ue`), Kommentare Deutsch, Stil wie im Kit; Pfade immer mit Leerzeichen/Umlauten testen.
 - **Git:** `git add` nur mit expliziten Dateien (kein `-A`, kein `.`); jede Commit-Nachricht endet mit `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
@@ -43,7 +43,7 @@
 - **K15 Musterlisten** 1:1 aus `an.py` übernommen (Musterliste `v1`). JavaScript-`\b` arbeitet nur auf ASCII — die Node-Zahlen werden daher nur mit der Node-Ausgangsmessung verglichen; die Python-Zahlen vom 16.10. stehen nur zur Einordnung im Messprotokoll. „Hinweis mit folgender Korrektur“ zählt wie in `an2.py` je Sitzung.
 - **K15 Rauschband (vorab festgelegt):** Eine Änderung je Gruppe gilt erst als echt, wenn sie **≥ 1,0 je 100 Nachrichten UND ≥ 25 % des Vorwerts** beträgt und **beide Zeiträume ≥ 500 Nutzer-Nachrichten** haben, bei gleicher Musterliste. Anteil großer Werkzeug-Ausgaben **≥ 30 %** gilt als „hoch“ → Vorschlag eines eigenen Bausteins (Auslagern großer Ausgaben) an Fabio, kein Bau in M2a.
 - **K3-Gate-Zählung** in eigenem Log `.logs/intent-gate.log` (nicht in `hint.log`), damit `brain analyse` und das Brain-Band unverändert rechnen.
-- **Installation** in beiden Claude-Profilen (`~/.claude` und `~/.claude-firma2`), weil Fabio beide nutzt.
+- **Installation** in beiden Claude-Profilen (`~/.claude` und `~/.claude-<profil2>`), weil Fabio beide nutzt.
 
 ## Was M2a für M2b/M2c offenlässt (nicht bauen, nicht verbauen)
 
@@ -597,10 +597,10 @@ test("transkripte: nur <wurzel>/<projekt>/*.jsonl im Zeitfenster, keine Subagent
 test("transkriptWurzeln: findet <home>/.claude*/projects, ignoriert Dateien wie .claude.json", () => {
   const home = tempOrdner("home");
   mkdirSync(join(home, ".claude", "projects"), { recursive: true });
-  mkdirSync(join(home, ".claude-firma2", "projects"), { recursive: true });
+  mkdirSync(join(home, ".claude-<profil2>", "projects"), { recursive: true });
   writeFileSync(join(home, ".claude.json"), "{}");
   assert.deepEqual(transkriptWurzeln({ home }).map((p) => p.slice(home.length).split("\\").join("/")),
-    ["/.claude/projects", "/.claude-firma2/projects"]);
+    ["/.claude/projects", "/.claude-<profil2>/projects"]);
 });
 
 test("messeWirkung: zählt Nachrichten, Gruppen, Rückbezüge, Kompaktierungen, Hinweise und große Ausgaben", async () => {
@@ -750,7 +750,7 @@ const LAUF_MARKE = (vault) => join(vault, ".logs", "wirkung.laeuft");
 const runde = (x, stellen = 1) => { const f = 10 ** stellen; return Math.round(x * f) / f; };
 const zahl = (x) => String(x).replace(".", ",");
 
-// Alle <home>/.claude*/projects (Fabio hat ~/.claude und ~/.claude-firma2), jede echte Wurzel nur einmal.
+// Alle <home>/.claude*/projects (Fabio hat ~/.claude und ~/.claude-<profil2>), jede echte Wurzel nur einmal.
 export function transkriptWurzeln({ home = homedir() } = {}) {
   const out = [], gesehen = new Set();
   let namen = [];
@@ -1126,7 +1126,7 @@ Expected: JSON-Zeile mit `"unvollstaendig":false` (sonst `--zeitlimit` erhöhen 
 ## A. Python-Auswertung vom 16.10.2026 (nur Einordnung, nicht vergleichbar)
 
 Herkunft: Sitzung 8def260d (Skripte ex.py, an.py, an2.py), 30 Tage bis 16.10.2026, 193 Haupt-Verläufe
-(190 in `~/.claude`, 3 in `~/.claude-firma2`), 174 mit Nutzertext, 2.600 Nutzer-Nachrichten, 70 Befehle.
+(190 in `~/.claude`, 3 in `~/.claude-<profil2>`), 174 mit Nutzertext, 2.600 Nutzer-Nachrichten, 70 Befehle.
 
 | Gruppe | Nachrichten | Sitzungen |
 |---|---|---|
@@ -3709,7 +3709,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **Files:**
 - Modify (nur nach Freigabe): `~/brain` (Fast-Forward auf `kit-v0.6`)
 - Modify: `~/source/brain-app/docs/messungen/2026-10-16-m2a-wirkung-ausgang.md` (Abschnitt D)
-- Fabio selbst: `~/.claude/settings.json`, `~/.claude-firma2/settings.json` (über den Installer)
+- Fabio selbst: `~/.claude/settings.json`, `~/.claude-<profil2>/settings.json` (über den Installer)
 
 **Interfaces:**
 - Consumes: alle Tasks 1–11; `brain wirkung` (Task 2), Messprotokoll (Task 3).
@@ -3744,7 +3744,7 @@ Expected: `# fail 0`, alle `OK`, Status leer (die Tests schreiben nur in Temp-Or
 
 ```bash
 P=/private/tmp/claude-502/m2a-install-probe && mkdir -p "$P/a" "$P/b"
-cp ~/.claude/settings.json "$P/a/" && cp ~/.claude-firma2/settings.json "$P/b/"
+cp ~/.claude/settings.json "$P/a/" && cp ~/.claude-<profil2>/settings.json "$P/b/"
 /opt/homebrew/bin/node ~/brain/.tools/adapters/claude-code/install.mjs ~/brain --claude-home "$P/a"
 /opt/homebrew/bin/node ~/brain/.tools/adapters/claude-code/install.mjs ~/brain --claude-home "$P/b"
 diff <(node -p 'JSON.stringify(require(process.argv[1]).hooks,null,1)' ~/.claude/settings.json) <(node -p 'JSON.stringify(require(process.argv[1]).hooks,null,1)' "$P/a/settings.json")
@@ -3753,7 +3753,7 @@ git -C ~/brain status --short
 Expected: Meldungen `+ Hook PreToolUse (Read)`, `+ Hook PreCompact`, `+ Hook SessionEnd`, `- Hook PreCompact entfernt (Hinweis „Skill handoff“ …)`; im Diff nur diese Hooks; fremde Hooks unverändert; `~/brain` sauber. Dann Fabio diesen fertigen Befehl geben (ohne `BRAIN_NODE`, damit die Hook-Befehle denselben Node-Pfad wie bisher tragen):
 
 ```
-! /opt/homebrew/bin/node /Users/fbFirma/brain/.tools/adapters/claude-code/install.mjs /Users/fbFirma/brain --claude-home /Users/fbFirma/.claude && /opt/homebrew/bin/node /Users/fbFirma/brain/.tools/adapters/claude-code/install.mjs /Users/fbFirma/brain --claude-home /Users/fbFirma/.claude-firma2
+! /opt/homebrew/bin/node <home>/brain/.tools/adapters/claude-code/install.mjs <home>/brain --claude-home <home>/.claude && /opt/homebrew/bin/node <home>/brain/.tools/adapters/claude-code/install.mjs <home>/brain --claude-home <home>/.claude-<profil2>
 ```
 Rückweg: der Installer legt je Profil `settings.json.bak-<Zeit>` an.
 

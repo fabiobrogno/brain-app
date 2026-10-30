@@ -8,7 +8,7 @@
 
 **Tech Stack:** Node-ESM (nur Standardbibliothek), `node --test`, Bash-Testsuiten des Kits (`.tools/tests/run-all.sh`), `fake-claude.mjs`, git-CLI. Keine neuen Abhängigkeiten.
 
-**Spec:** `/Users/fbFirma/source/brain-app/docs/superpowers/specs/2026-10-21-brain-lernkreislauf-design.md` — §4 komplett (4.1–4.5), §6.1 (Schutzgeländer, soweit B1), §8 (Abnahme B1, Worktree), §9 (Bewusst nicht), §10 (Tests `beleg`, `ernte`).
+**Spec:** `<home>/source/brain-app/docs/superpowers/specs/2026-10-21-brain-lernkreislauf-design.md` — §4 komplett (4.1–4.5), §6.1 (Schutzgeländer, soweit B1), §8 (Abnahme B1, Worktree), §9 (Bewusst nicht), §10 (Tests `beleg`, `ernte`).
 
 ## Global Constraints
 

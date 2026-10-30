@@ -1374,6 +1374,11 @@ async function oeffneKi() {
   try { const m = await import("./willkommen.js"); m.oeffneKiDialog({ beiFertig: () => { ladeKi(); }, beiVerbunden: () => { S.kiVerbunden = true; zeichneStatus(); } }); }
   catch { try { await api.mcpVerbinden(); S.kiVerbunden = true; toast(T.mcp.ok); zeichneStatus(); } catch (e) { toast(e.daten?.befehl ? `${T.mcp.befehl} ${e.daten.befehl}` : e.message, { fehler: !e.daten?.befehl, ms: 12000 }); } }
 }
+// „Lizenzen …“: Hinweise zu Software und Material von Dritten (lizenzen.js, lädt bei Bedarf)
+async function oeffneLizenzen() {
+  try { const m = await import("./lizenzen.js"); m.oeffneLizenzen(); }
+  catch { toast(T.umstellung.nichtGeoeffnet, { fehler: true }); }
+}
 function oeffneEinstellungen(anker) {
   oeffneMenue(anker, [
     { gruppe: T.status.darstellung },
@@ -1387,6 +1392,7 @@ function oeffneEinstellungen(anker) {
     ...(S.umstellung ? [{ name: S.umstellung.umgestellt ? T.umstellung.fertig : T.umstellung.menue, symbol: "sync", id: "umstellen", tun: oeffneUmstellung }] : []),
     ...(inApp() ? [{ name: T.befehle.ordner, symbol: "ordner", id: "finder", tun: () => aktion("ordner-zeigen", S.pfad || undefined) }, { name: T.befehle.ansicht, symbol: "ansicht", id: "uebersicht", tun: oeffneUebersicht }] : []),
     { trenner: true },
+    { name: T.befehle.lizenzen, symbol: "buch", id: "lizenzen", tun: oeffneLizenzen },
     { name: `${PRODUKT} ${S.info?.appVersion || ""}`.trim(), symbol: "info", id: "version", tun: () => {} },
   ], { rechts: true, oben: true, breite: 240 });
 }
