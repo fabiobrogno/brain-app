@@ -127,6 +127,8 @@ export const T = {
     offline: "Offline",
     offlineTitel: "Der Server ist gerade nicht erreichbar. Deine Arbeit bleibt auf diesem Mac und wird beim nächsten Abgleich gesendet.",
     fehlerTitel: "Der letzte Abgleich hat nicht geklappt. Klicke, um es noch einmal zu versuchen.",
+    sicherungKonflikt: "Konflikt – im Studio lösen",
+    sicherungKonfliktTitel: "Die automatische Sicherung konnte nichts senden: Auf dem Server liegt eine andere Fassung derselben Notiz (zum Beispiel von einem anderen Gerät). Klicke, um abzugleichen und zu wählen, welche gilt.",
     nieTitel: "Dieser Vault ist noch nicht mit einem Server abgeglichen.",
     gleicheAbTitel: "Der Abgleich läuft …",
     gleicheAb: "Gleiche ab …",

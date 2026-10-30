@@ -25,6 +25,15 @@ public struct BrainStatus: Decodable, Equatable, Sendable {
     public let umstellung: Umstellung?
     /// Aufgaben im Vault (Kern `aufgaben.mjs`): offen = noch nicht erledigt, überfällig = offen mit Fälligkeit vor heute. Fehlt bei älteren Kernen.
     public let aufgaben: Aufgaben?
+    /// Hinweis der Online-Sicherung bei mehreren Geräten (Kern `backup.mjs`): `stand` ist `konflikt`, `anmeldung` oder `neues`, `text` der fertige Satz
+    /// („Konflikt – im Studio lösen“). Fehlt, wenn alles in Ordnung ist, und bei älteren Kernen.
+    public let sicherung: Sicherung?
+
+    public struct Sicherung: Decodable, Equatable, Sendable {
+        public let stand: String
+        public let text: String
+        public init(stand: String, text: String) { self.stand = stand; self.text = text }
+    }
 
     public struct Aufgaben: Decodable, Equatable, Sendable {
         public let offen: Int

@@ -1179,6 +1179,8 @@ const istOffline = () => S.offline || (typeof navigator !== "undefined" && navig
 function syncZustand(g) {
   if (g.konflikt) return { z: "konflikt", text: T.status.konfliktLoesen, sym: "warnung", titel: T.status.konfliktTitel };
   if (S.syncLaeuft) return { z: "laeuft", text: T.status.gleicheAb, sym: "sync", titel: T.status.gleicheAbTitel };
+  // Die Hintergrund-Sicherung (Kern) konnte nicht senden, weil der Server eine andere Fassung hat: ein Klick gleicht ab und öffnet die Konfliktauswahl
+  if (g.sicherungStand === "konflikt") return { z: "fehler", text: T.status.sicherungKonflikt, sym: "warnung", titel: T.status.sicherungKonfliktTitel };
   if (S.syncFehler) return { z: "fehler", text: S.syncFehler === "konflikt" ? T.status.konflikt : T.status.fehler, sym: "warnung", titel: T.status.fehlerTitel };
   if (!g.remote) return { z: "nie", text: T.status.nieGesichert, sym: "wolke", titel: T.status.nieTitel };
   if (istOffline()) return { z: "offline", text: T.status.offline, sym: "wolke-aus", titel: T.status.offlineTitel };
