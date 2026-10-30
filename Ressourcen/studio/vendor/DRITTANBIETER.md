@@ -15,3 +15,6 @@ Neubau: `cd Werkzeuge/editor-bundle && npm install && npm run bauen`). Es wird o
 | @lezer/highlight (und weitere @lezer/*, @marijn/*, style-mod, w3c-keyname, crelt als Abhängigkeiten) | 1.2.5 | MIT |
 
 Copyright © Marijn Haverbeke und Mitwirkende. MIT-Lizenztext: https://github.com/codemirror/dev/blob/main/LICENSE
+
+`fonts/` enthält Geist und Geist Mono (Variable, woff2) von Vercel, SIL Open Font License 1.1 (`fonts/OFL.txt`), dieselben Dateien wie `kern/ansicht/vendor/fonts/`.
+Sie werden von `studio.css` per `@font-face` geladen; der Lizenztext steht in `THIRD-PARTY-NOTICES.md`.

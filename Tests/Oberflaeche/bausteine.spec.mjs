@@ -108,7 +108,7 @@ test.describe("Filter-Chips", () => {
     await liste(page).getByRole("option", { name: "Hoch" }).click();
     await expect(chip).toHaveAttribute("data-aktiv", "true");
     await expect(knopf).toHaveAccessibleName("Priorität: Hoch");
-    await expect(knopf).toHaveCSS("color", "rgb(91, 78, 214)"); // Akzent (hell), nach dem 120-ms-Übergang
+    await expect(knopf).toHaveCSS("color", "rgb(76, 63, 198)"); // Akzent-Tinte (hell, #4C3FC6) auf weicher Akzentfläche, nach dem Übergang
     expect(await ereignisse(page)).toEqual([["prio", "hoch"]]);
     await chip.getByRole("button", { name: "Priorität zurücksetzen" }).click();
     await expect(chip).toHaveAttribute("data-aktiv", "false");
@@ -149,7 +149,7 @@ test.describe("Textfelder", () => {
     const feld = input.locator("xpath=..");
     const ohne = await feld.evaluate((e) => getComputedStyle(e).boxShadow);
     await input.focus();
-    await expect.poll(() => feld.evaluate((e) => getComputedStyle(e).borderColor)).toBe("rgb(91, 78, 214)");
+    await expect.poll(() => feld.evaluate((e) => getComputedStyle(e).borderColor)).toMatch(/0\.3568\d* 0\.3058\d* 0\.8392\d* \/ 0\.55|rgba\(91, 78, 214, 0\.55\)/); // Akzent 55 % (Design-System v2: --akzent-linie)
     const mit = await feld.evaluate((e) => getComputedStyle(e).boxShadow);
     expect(mit).not.toBe(ohne);
     expect(mit).not.toBe("none");
