@@ -402,6 +402,12 @@ Website https://orca.dev), Stand Commit `cf5b462fba8462678256b25d05cec2adb8dca41
   → `studio/studio.css` (Tokens), `studio/bausteine.css`, `studio/dialoge.css`, `studio/aufgaben.css`; der Text-Schimmer für laufende Vorgänge (`assets/text-shimmer.css` in Orca,
   dort aus shadcn/ui, MIT: https://github.com/shadcn-ui/ui) ist neu geschrieben (`bausteine.css`, `.bs-text-schimmer`).
 
+- die Seite „Einstellungen“: ganzflächig mit eigener Seitenleiste (Suche oben, Gruppen in Großbuchstaben, „Zurück zur App“), Zeile mit Titel und Beschreibung links und Steuerung rechts,
+  Bereich als Karte, Themenkarten mit Fenster-Vorschau, sofort speichern (Textfelder 700 ms verzögert), Sprungziel leuchtet kurz auf, und die Wertung der Einstellungssuche
+  (Bereichsname 900/850/800, Titel 700/650/600, Beschreibung 500/450/400, Stichwörter 300/250/200; genau, beginnt mit, enthält) nach
+  `src/renderer/src/components/settings/Settings.tsx`, `SettingsSidebar.tsx`, `SettingsFormControls.tsx`, `settings-search.ts` und `components/onboarding/ThemeStep.tsx`
+  → `studio/einstellungen.js`, `studio/einstellungen.css`, `studio/einstellungen-suche.js` (die Wertung ist in JavaScript neu geschrieben, nichts kopiert), `studio/bausteine.js` (Zeilen-Bausteine).
+
 Orca ist MIT-lizenziert. Lizenztext (Copyright-Zeile wie in der Datei `LICENSE` von Orca):
 
 ```

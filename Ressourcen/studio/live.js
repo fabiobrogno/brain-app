@@ -42,9 +42,9 @@ export function starteLive({ api, beiEreignisse, beiAlles, beiBereit, warteS = 2
 }
 
 // Ereignisse → was zu tun ist (rein, damit es sich ohne Oberfläche testen lässt):
-//   { index, aufgaben, git, info, konten, menue, pfade (zum Hervorheben), ki: [{ quelle, titel }] }
+//   { index, aufgaben, git, info, konten, einstellungen, menue, pfade (zum Hervorheben), ki: [{ quelle, titel }] }
 export function planeAus(ereignisse) {
-  const p = { index: false, aufgaben: false, git: false, info: false, konten: false, menue: false, pfade: [], ki: [] };
+  const p = { index: false, aufgaben: false, git: false, info: false, konten: false, einstellungen: false, menue: false, pfade: [], ki: [] };
   for (const e of ereignisse) {
     switch (e.typ) {
       case "aufgabe": p.index = p.aufgaben = p.menue = true; break;
@@ -52,6 +52,7 @@ export function planeAus(ereignisse) {
       case "git": p.git = p.menue = true; break;
       case "vertrauen": p.info = p.git = p.aufgaben = p.menue = true; break;
       case "konten": p.konten = true; break;
+      case "einstellungen": p.einstellungen = true; break; // brain.config.json des Vaults (auch `brain einstellungen` im Terminal) oder einstellungen.json der App
       default: break;
     }
     if (e.pfad && e.art !== "entfernt" && e.art !== "ordner" && !p.pfade.includes(e.pfad)) p.pfade.push(e.pfad);
