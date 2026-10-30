@@ -97,7 +97,7 @@ test("Hinweis „Claude hat eine Aufgabe angelegt: …“ bei KI-Quelle; keiner 
   await expect(page.locator("#toast-host .toast")).toHaveText("Claude hat eine Aufgabe angelegt: „Angebot prüfen“", { timeout: 5000 });
   // mehrere auf einmal: ein Hinweis
   for (const t of ["Eins", "Zwei", "Drei", "Vier"]) aufgabe(vault, `2026-10-30-b-${t.toLowerCase()}`, { titel: t, quelle: "ki:claude-code" });
-  await expect(page.locator("#toast-host .toast", { hasText: "4 Aufgaben" })).toHaveText("Claude hat 4 Aufgaben angelegt: „Eins“, „Zwei“, „Drei“ und 1 weitere", { timeout: 5000 });
+  await expect(page.locator("#toast-host .toast", { hasText: "4 Aufgaben" })).toHaveText(/^Claude hat 4 Aufgaben angelegt: „(Eins|Zwei|Drei|Vier)“, „(Eins|Zwei|Drei|Vier)“, „(Eins|Zwei|Drei|Vier)“ und 1 weitere$/, { timeout: 5000 }); // Reihenfolge: wie das Dateisystem meldet
 });
 
 test("Hinweis erscheint auch, wenn das Board gar nicht offen ist; Seitenleisten-Zähler steigt", async ({ page }) => {

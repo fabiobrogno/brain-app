@@ -81,9 +81,11 @@ export function gitStand(wurzel) {
 
 // o: { entprellMs, maxWarteMs, pollMs, modus ("auto" | "watch" | "poll"), ring, maxJeFlush, maxProFenster, fensterMs, support (Ordner mit vertrauen.json / ki-konten.json) }
 export function erzeugeEreignisse(o = {}) {
-  const entprellMs = o.entprellMs ?? 150, maxWarteMs = o.maxWarteMs ?? 600, pollMs = o.pollMs ?? 2000;
+  // Auto: macOS (FSEvents) und Windows beobachten per fs.watch. Unter Linux (nur Entwicklung/CI) ist der rekursive fs.watch von Node unzuverlässig
+  // (ein per Umbenennen ersetzter Dateiname wird nicht mehr beobachtet) und frisst inotify-Handles: dort wird gepollt, dafür schneller.
+  const modusWunsch = o.modus || process.env.BRAIN_WATCH || (process.platform === "linux" ? "poll" : "auto");
+  const entprellMs = o.entprellMs ?? 150, maxWarteMs = o.maxWarteMs ?? 600, pollMs = o.pollMs ?? (modusWunsch === "poll" ? 400 : 2000);
   const ringMax = o.ring ?? 500, maxJeFlush = o.maxJeFlush ?? 200, maxProFenster = o.maxProFenster ?? 300, fensterMs = o.fensterMs ?? 5000;
-  const modusWunsch = o.modus || process.env.BRAIN_WATCH || "auto";
   const eigenTtl = o.eigenTtlMs ?? 10_000;
 
   let epoche = randomBytes(6).toString("hex");
