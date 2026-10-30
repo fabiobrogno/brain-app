@@ -72,6 +72,14 @@ function wendeThemeAn() {
 function setzeTheme(t) { S.theme = t; speichereLokal("theme", t); wendeThemeAn(); zeichneStatus(); }
 const istDunkel = () => matchMedia("(prefers-color-scheme: dark)").matches ? S.theme !== "hell" : S.theme === "dunkel";
 wendeThemeAn();
+// Einstellungen der App (Seite „Einstellungen“, P5): Schriftgröße im Editor und Bewegung kommen aus GET /api/einstellungen (<support>/einstellungen.json) und gelten sofort.
+function wendeEinstellungenAn(w) {
+  if (!w) return;
+  const r = document.documentElement;
+  if (Number.isInteger(w.schriftgroesse) && w.schriftgroesse >= 13 && w.schriftgroesse <= 19) r.style.setProperty("--editor-schrift", w.schriftgroesse + "px");
+  if (w.bewegung === "reduziert") r.dataset.bewegung = "reduziert"; else delete r.dataset.bewegung;
+}
+async function ladeAppEinstellungen() { try { const d = await api.einstellungen(); wendeEinstellungenAn(d.werte); } catch { /* ohne: Standard */ } }
 
 // ======================================================= Editor
 let speicherTimer = null;
@@ -1332,6 +1340,7 @@ function beiLiveEreignisse(liste) {
   if (p.info) ladeInfoLeise();
   if (p.git) ladeGit(); else if (p.index) planeGitRefresh(); // Statusleiste: „N geändert“ (gebündelt, nicht bei jeder Datei ein Statusabruf)
   if (p.konten) { ladeKi(); window.dispatchEvent(new CustomEvent("kortex-konten")); }
+  if (p.einstellungen) { ladeAppEinstellungen(); window.dispatchEvent(new CustomEvent("kortex-einstellungen")); } // Änderung von außen (CLI, KI, zweites Fenster): die Seite „Einstellungen“ führt nach
   if (p.menue) liveMenue();
   if (p.index) {
     for (const x of p.pfade) if (!liveSammlung.pfade.includes(x)) liveSammlung.pfade.push(x);
@@ -1452,8 +1461,40 @@ async function oeffneLizenzen() {
   try { const m = await import("./lizenzen.js"); m.oeffneLizenzen(); }
   catch { toast(T.umstellung.nichtGeoeffnet, { fehler: true }); }
 }
+// Die Seite „Einstellungen“ (einstellungen.js, lädt bei Bedarf): ganzflächig über dem Studio, ⌘, öffnet sie, Esc geht zurück. Adresse: #einstellungen/<bereich>?ziel=<zeile>.
+let einstModul = null;
+const einstOffen = () => !!einstModul?.istOffen();
+const kurzPfadVon = (p) => String(p || "").replace(/^\/Users\/[^/]+(?=\/|$)/, "~");
+function einstellungenKontext() {
+  return {
+    inApp: inApp(), aktion, kurzPfad: kurzPfadVon,
+    info: () => S.info, git: () => S.git, version: () => S.info?.appVersion || "",
+    theme: { lies: () => S.theme, setze: setzeTheme },
+    breit: { lies: () => S.breit, setze: (an) => { if (!!S.breit !== !!an) umschalteBreit(); } },
+    wendeAn: wendeEinstellungenAn,
+    oeffneKi, oeffneKonten, oeffneRemote, oeffneLizenzen, sync,
+    vaultOeffnen: () => { vaultOeffnen(); }, vaultWechseln: (pfad) => wechsleVault(pfad), vaultEntfernen: (v) => bestaetigeEntfernen(v),
+    zeigeVault: () => aktion("ordner-zeigen", "brain.config.json"),
+    vertrauen: { erlauben: oeffneVertrauen, entziehen: oeffneVertrauenEntziehen },
+  };
+}
+async function oeffneEinstellungenSeite({ bereich = null, ziel = null } = {}) {
+  try {
+    einstModul ??= await import("./einstellungen.js");
+    schliesseMenue();
+    await einstModul.oeffneEinstellungen({ api, kontext: einstellungenKontext(), bereich, ziel });
+  } catch { toast("Das geht in dieser Version noch nicht.", { fehler: true }); }
+}
+// Adresse beim Start und bei Änderung: #einstellungen/… öffnet die Seite (die Seite selbst pflegt die Adresse, solange sie offen ist)
+function pruefeEinstellungenAdresse() {
+  if (!/^#einstellungen/.test(location.hash)) return;
+  import("./einstellungen.js").then((m) => { einstModul ??= m; const a = m.leseHash(); if (a && (!m.istOffen() || a.bereich || a.ziel)) oeffneEinstellungenSeite(a); }).catch(() => {}); // offen: die Adresse führt zum Bereich/Ziel
+}
+window.addEventListener("hashchange", pruefeEinstellungenAdresse);
 function oeffneEinstellungen(anker) {
   oeffneMenue(anker, [
+    { name: T.befehle.alleEinstellungen, symbol: "zahnrad", id: "einstellungen-seite", tun: () => oeffneEinstellungenSeite() },
+    { trenner: true },
     { gruppe: T.status.darstellung },
     { segmente: [{ name: T.status.system, wert: "system", aktiv: S.theme === "system", tun: () => setzeTheme("system") }, { name: T.status.hell, wert: "hell", symbol: "sonne", aktiv: S.theme === "hell", tun: () => setzeTheme("hell") }, { name: T.status.dunkel, wert: "dunkel", symbol: "mond", aktiv: S.theme === "dunkel", tun: () => setzeTheme("dunkel") }] },
     { trenner: true },
@@ -1800,9 +1841,11 @@ function oeffneKuerzel() {
 window.addEventListener("keydown", (e) => {
   const mod = MOD_META ? e.metaKey : e.ctrlKey;
   if (!mod || e.isComposing) return;
+  if (einstOffen()) return; // die Seite „Einstellungen“ liegt über dem Studio und hört selbst zu (⌘F sucht dort, nicht in der Notiz)
   const k = e.key.toLowerCase();
   const tun = (f) => { e.preventDefault(); e.stopPropagation(); f(); };
-  if (k === "s" && !e.shiftKey) tun(() => { clearTimeout(speicherTimer); speichere(); });
+  if (k === "," && !e.shiftKey && !e.altKey && S.info?.vault) tun(() => oeffneEinstellungenSeite());
+  else if (k === "s" && !e.shiftKey) tun(() => { clearTimeout(speicherTimer); speichere(); });
   else if (k === "n" && !e.shiftKey) tun(() => oeffneNeu());
   else if (k === "m" && e.shiftKey) tun(oeffneMerken);
   else if (k === "a" && e.shiftKey && !e.altKey && !dialogOffen()) tun(aufgabeErfassen);
@@ -1888,7 +1931,7 @@ const MENUE_BEFEHLE = {
   neu: () => oeffneNeu(), merken: oeffneMerken, infospalte: umschalteInfo, palette: () => oeffnePalette(), commit: oeffneCommit, sync, suche: fokusSuche,
   "vault-oeffnen": vaultOeffnen, "vault-wechseln": oeffneVaultMenue, verlauf: oeffneVerlauf,
   umstellung: () => oeffneUmstellung(), // Menüleiste „Vault umstellen …“ (nur wenn der Status Altlasten meldet): dieselbe Ansicht wie in den Einstellungen
-  einstellungen: () => { const anker = stEl.querySelector('[data-st="einstellungen"]'); if (anker) oeffneEinstellungen(anker); }, // Menüleiste „Einstellungen …“: das Zahnrad-Menü der Statusleiste
+  einstellungen: () => oeffneEinstellungenSeite(), // Menü „Einstellungen …“ (⌘,): die Seite „Einstellungen“ (früher das Zahnrad-Menü der Statusleiste, das es weiter gibt)
   aufgaben: () => waehleSicht({ art: "bereich", id: "aufgaben" }), "aufgabe-erfassen": () => aufgabeErfassen(),
   posteingang: () => waehleSicht({ art: "bereich", id: "inbox" }), alle: () => waehleSicht({ art: "bereich", id: "alle" }), wissen: () => waehleSicht({ art: "bereich", id: "wissen" }),
   "hell-dunkel": () => setzeTheme(istDunkel() ? "hell" : "dunkel"),
@@ -1911,6 +1954,7 @@ window.studio.befehl = (name) => {
 window.studio.vorSchliessen = () => {
   const arbeit = (async () => {
     clearTimeout(speicherTimer);
+    try { await einstModul?.flushe?.(); } catch { /* die Seite hat nichts Offenes */ } // Eingaben der Seite „Einstellungen“ (Textfelder warten 700 ms) gehen nicht verloren
     if (!(await speichereAlles())) return { ok: false, grund: S.konflikt ? "konflikt" : letzterFehler || T.fehler.speichern };
     // Läuft noch ein Abgleich, Sichern, Klonen, Öffnen, Anlegen oder Remote-Verbinden, geht es wie bei ungespeicherten Eingaben: die App fragt nach
     const laeuft = laufendeArbeiten()[0];
@@ -1922,6 +1966,7 @@ window.studio.vorSchliessen = () => {
 };
 function markiereBereit() {
   window.studio.bereit = true; window.__studioBereit = true;
+  pruefeEinstellungenAdresse();
   while (wartendeBefehle.length) { try { fuehreBefehlAus(wartendeBefehle.shift()); } catch { /* ein Befehl darf die anderen nicht stoppen */ } }
 }
 
@@ -2149,6 +2194,7 @@ async function ladeAlles() {
   zuruecksetzen();
   $("editor").hidden = true;
   $("app").hidden = false;
+  ladeAppEinstellungen();
   try { S.info = await api.info(); }
   catch (e) { $("leer").hidden = false; $("leer").replaceChildren(h("h2", { text: T.fehler.verbindung }), h("p", { text: e.message })); return; }
   if (!S.info.vault) { await zeigeWillkommenFlow(); markiereBereit(); return; } // auch der Einstieg ist „bereit“: Menübefehle (Ordner öffnen) gehen sofort

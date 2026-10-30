@@ -21,6 +21,7 @@ import { erzeugeEreignisse } from "./ereignisse.mjs";
 import { profilZuPfad, mitProfil, mitCodexHome } from "./profile.mjs";
 import { erzeugeKonten } from "./konten.mjs";
 import { erzeugeFrage } from "./frage.mjs";
+import { erzeugeEinstellungen } from "./einstellungen.mjs";
 import { STUFEN, pflegeFuer, stufeFuer, darfMindestens } from "../gemeinsam/ki-konten.mjs";
 import { erzeugePflege } from "./pflege.mjs";
 import { merkeRemoteBestaetigt } from "../gemeinsam/sicherungsmerker.mjs";
@@ -201,6 +202,8 @@ export function erzeugeHandler(o) {
   // (Umgebung für Programmsuche und Kindprozess, kürzere Grenzen, Temp-Ordner); sonst gilt die Umgebung dieser Werkstatt als Quelle für PATH/HOME/LANG, nie mehr.
   const frage = erzeugeFrage({ support: vaultOpt.support || supportOrdner(), konten, mcpBasis: () => mcpArgs(), basisEnv: o.frageEnv || process.env,
     home: () => o.kontenHome || homedir(), grenzen: o.frageGrenzen || {}, tempBasis: o.frageTemp || null });
+  // Seite „Einstellungen“ (P5): GET/PUT /api/einstellungen führt die Werte eines Vaults (kern/einstellungen.mjs, wie `brain einstellungen`) und die der App (<support>/einstellungen.json) zusammen.
+  const einstellungen = erzeugeEinstellungen({ support: vaultOpt.support || supportOrdner(), kern: () => o.kern || kernOrdner() });
   // Umstellung eines Vaults aus der Kit-Zeit (P7a Befund, P7b Probelauf/Phase A/Rückweg): werkstatt/umstellung.mjs
   const umstellung = erzeugeUmstellung({ starter: o.starter || join(vaultOpt.support || supportOrdner(), "bin", "kortex"), support: vaultOpt.support || supportOrdner() });
 
@@ -286,6 +289,10 @@ export function erzeugeHandler(o) {
         if (seit !== null && seit !== "" && !/^\d{1,15}$/.test(seit)) throw new HttpFehler(400, "„seit“ ist eine Ereignis-Nummer.");
         return ereignisse.warte({ seit: seit === null || seit === "" ? null : Number(seit), epoche: q.get("epoche") || null, warteMs: (Number.isFinite(warte) ? Math.max(0, warte) : 25) * 1000 });
       }
+      case "/api/einstellungen":
+        if (methode === "GET") return einstellungen.lesen(v);
+        nur("PUT");
+        return einstellungen.schreiben(v, eingabe());
       case "/api/baum": nur("GET"); return V().baum();
       case "/api/datei":
         if (methode === "GET") return V().lies(q.get("pfad"));
@@ -762,6 +769,7 @@ export function erzeugeHandler(o) {
     if (pfad.startsWith("/api/aufgaben/")) { try { rel(decodeURIComponent(pfad.slice("/api/aufgaben/".length))); } catch { /* ungültig */ } }
     if (e && typeof e === "object") { rel(e.pfad); rel(e.ziel); if (e.platz && typeof e.platz === "object") { rel(e.platz.davor); rel(e.platz.danach); } }
     if (erg && typeof erg === "object") { rel(erg.pfad); rel(erg.ziel); if (Array.isArray(erg.geaendert)) erg.geaendert.forEach(rel); if (Array.isArray(erg.archiviert)) for (const x of erg.archiviert) { rel(x?.von); rel(x?.pfad); } }
+    if (pfad === "/api/einstellungen") { k.add("brain.config.json"); k.add("@support/einstellungen.json"); k.add("AGENTS.md"); }
     if (/^\/api\/vertrauen\/?$/.test(pfad) || pfad.startsWith("/api/vaults")) k.add("@support/vertrauen.json");
     if (/^\/api\/(ki|mcp)\//.test(pfad) || pfad.startsWith("/api/vaults")) k.add("@support/ki-konten.json");
     return [...k];

@@ -13,7 +13,7 @@ const vault = (config) => {
   const d = tmp();
   schreibe(d, "00_inbox/alt.md", "# Alt\n");
   if (config !== undefined) schreibe(d, "brain.config.json", typeof config === "string" ? config : JSON.stringify(config));
-  return { d, v: oeffneVault(d, { heute: "2026-10-30" }) };
+  return { d, v: oeffneVault(d, { jetzt: () => new Date("2026-10-30T12:00:00Z") }) };
 };
 
 test("ohne Konfiguration: 00_inbox (wie bisher)", () => {
@@ -55,7 +55,7 @@ test("ein Verweis als Konfigurationsdatei wird nicht gelesen", async () => {
   const ziel = tmp();
   schreibe(ziel, "c.json", JSON.stringify({ ordner: { inbox: "Fremd" } }));
   symlinkSync(join(ziel, "c.json"), join(d, "brain.config.json"));
-  const v = oeffneVault(d, { heute: "2026-10-30" });
+  const v = oeffneVault(d, { jetzt: () => new Date("2026-10-30T12:00:00Z") });
   assert.equal(v.merken({ text: "x", titel: "T" }).pfad, "00_inbox/2026-10-30_t.md");
 });
 

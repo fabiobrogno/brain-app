@@ -35,7 +35,7 @@ struct MenueInhalt: View {
         if zustand.umstellungAngeboten {
             Button("Vault umstellen …") { zustand.sende(.umstellung) }.help("Dieser Vault stammt aus der Zeit vor Kortex. Kortex probiert die Umstellung zuerst an einer Kopie aus.")
         }
-        Button("Einstellungen …") { zustand.sende(.einstellungen) }.keyboardShortcut(",").disabled(zustand.vault == nil)
+        Button(StudioBefehl.einstellungenEintrag.titel) { zustand.sende(StudioBefehl.einstellungenEintrag.befehl) }.keyboardShortcut(KeyEquivalent(Character(StudioBefehl.einstellungenEintrag.taste))).disabled(zustand.vault == nil)
         Button("Kortex einrichten …") { zustand.zeigeAssistent() }.keyboardShortcut("e")
         Button("Status neu prüfen") { Task { await zustand.aktualisiere() } }.keyboardShortcut("r")
         Button("Nach Updates suchen …") { updater.checkForUpdates(nil) }.disabled(zustand.vorschau != nil)

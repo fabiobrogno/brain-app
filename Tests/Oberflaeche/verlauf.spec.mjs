@@ -274,11 +274,11 @@ test("Liste: Maße, Ladezustand, haftender Tageskopf, Fokusring", async ({ page 
   frei();
   await expect(page.locator(".vl-commitzeile")).toHaveCount(40);
   await expect(page.locator(".vl-skelett")).toHaveCount(0);
-  // Maße: Commit-Zeile ≈ 64 px, Tageskopf ≈ 30 px
+  // Maße: Commit-Zeile ≈ 64 px, Tageskopf ≈ 30 px (einzeilig) — mit „Heute“ und der Zahl der Commits in der schmalen Spalte zweizeilig (≈ 43 px, P5-Befund: Geist ist breiter)
   const hoeheCommit = (await page.locator(".vl-commitzeile").first().boundingBox()).height;
   const hoeheTag = (await page.locator(".vl-tagkopf").first().boundingBox()).height;
   expect(hoeheCommit).toBeGreaterThanOrEqual(62); expect(hoeheCommit).toBeLessThanOrEqual(68);
-  expect(hoeheTag).toBeGreaterThanOrEqual(28); expect(hoeheTag).toBeLessThanOrEqual(32);
+  expect(hoeheTag).toBeGreaterThanOrEqual(28); expect(hoeheTag).toBeLessThanOrEqual(46);
   await expect(page.locator(".vl-tagkopf").first()).toHaveCSS("position", "sticky");
   await expect(page.locator(".vl-tagkopf").first()).toHaveCSS("font-size", "12px");
   await expect(page.locator(".vl-tagkopf").first()).toHaveCSS("font-weight", "500");

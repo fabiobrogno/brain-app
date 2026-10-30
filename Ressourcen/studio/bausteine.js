@@ -433,6 +433,118 @@ export function leerBlock({ symbol: sym, titel, text, aktion = null, daten = {},
     aktion ? knopf({ text: aktion.text, variante: aktion.variante, groesse: aktion.groesse, aktion: aktion.name || "leer-aktion", aufKlick: aktion.tun }) : null);
 }
 
+// ======================================================= Einstellungen (Paket P5): Zeilen-Bausteine der Seite „Einstellungen“ (einstellungen.js, Stil: einstellungen.css)
+// Muster: Orca SettingsRow/SettingsSection (settings/SettingsFormControls.tsx @9bccd67, MIT, Lovecast Inc.): Titel + Beschreibung links, Steuerung rechts, Bereich als Karte.
+// Schalter, Segment und Menü sind umschalter(), segment() und auswahl() von oben; neu sind hier Zeile, Abschnitt, Textfeld mit Verzögerung, Pfad, Liste und Regler.
+// Gespeichert wird sofort (Schalter, Segment, Menü, Regler) oder, bei Textfeldern, 700 ms nach der letzten Eingabe, beim Verlassen des Felds und beim Schließen der Seite.
+export const EINSTELL_VERZOEGERUNG_MS = 700;
+
+// Kleine Marke neben einem Titel: „Experiment“, „aus“, „bald“. ton: "" | "ok" | "warn" | "akzent"
+export const einstellMarke = (text, ton = "") => h("span", { klasse: klassen("ez-marke", ton && `ez-marke-${ton}`), text });
+
+// Karte mit Zeilen: <div class="ez-karte">
+export const einstellKarte = (...kinder) => h("div", { klasse: "ez-karte" }, kinder.flat());
+
+// Eine Einstellung: Titel (+ Marke) und Beschreibung links, Steuerung rechts. hoch: Steuerung oben ausgerichtet (lange Listen). id → data-zeile (Sprungziel, Suche).
+export function einstellZeile({ id, titel, text, steuerung = null, hoch = false, marke = null, unten = null, klasse = "" } = {}) {
+  const titelEl = h("span", { klasse: "ez-titel", "data-feld": "titel", text: titel });
+  const textEl = text ? h("span", { klasse: "ez-text", "data-feld": "text", text }) : null;
+  const links = h("div", { klasse: "ez-l" }, h("div", { klasse: "ez-kopf" }, titelEl, marke), textEl, unten);
+  const zeile = h("div", { klasse: klassen("ez", hoch && "hoch", klasse), "data-zeile": id }, links, steuerung ? h("div", { klasse: "ez-r" }, steuerung) : null);
+  zeile.titelEl = titelEl; zeile.textEl = textEl;
+  zeile.originalTitel = titel; zeile.originalText = text || "";
+  return zeile;
+}
+
+// Abschnitt: Überschrift (+ Satz) und darunter die Karte mit den Zeilen. rechts: Knoten rechts neben der Überschrift.
+export function einstellAbschnitt({ id, titel, text, rechts = null, zeilen = [], karte = true } = {}) {
+  const kopf = titel || text || rechts ? h("div", { klasse: "ez-abschnitt-kopf" },
+    h("div", { klasse: "ez-abschnitt-text" }, titel ? h("h2", { text: titel, "data-feld": "abschnitt-titel" }) : null, text ? h("p", { text }) : null),
+    rechts ? h("div", { klasse: "ez-abschnitt-rechts" }, rechts) : null) : null;
+  return h("section", { klasse: "ez-abschnitt", "data-abschnitt": id }, kopf, karte ? einstellKarte(zeilen) : h("div", {}, zeilen));
+}
+
+// Textfeld einer Einstellung: schreibt 700 ms nach der letzten Eingabe, beim Verlassen und mit .sofort(). pruefe(text) → Fehlertext oder "" (bei Fehler wird nicht gespeichert).
+// → { el, input, setze(text), sofort(), offen() }  (offen: es wartet eine Eingabe auf das Speichern)
+export function einstellTextfeld({ wert = "", platzhalter, label, mono = false, breite = 240, maxlaenge, pruefe, aufSpeichern, verzoegerung = EINSTELL_VERZOEGERUNG_MS, daten = {} } = {}) {
+  let gespeichert = String(wert ?? ""), wartet = false;
+  const tf = textfeld({ wert: gespeichert, platzhalter, label, maxlaenge, groesse: "m", klasse: klassen("ez-textfeld", mono && "mono"), daten });
+  tf.el.style.width = `${breite}px`;
+  const speichere = () => {
+    wartet = false;
+    const text = tf.input.value.trim();
+    if (text === gespeichert) { tf.fehler(""); return; }
+    const f = pruefe?.(text) || "";
+    tf.fehler(f);
+    if (f) return;
+    gespeichert = text;
+    aufSpeichern?.(text);
+  };
+  const planen = entprelle(speichere, verzoegerung);
+  tf.input.addEventListener("input", () => { wartet = true; planen(); });
+  tf.input.addEventListener("blur", () => { if (wartet) planen.sofort(); });
+  tf.input.addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); planen.sofort(); } });
+  return {
+    el: tf.el, input: tf.input,
+    setze: (t) => { gespeichert = String(t ?? ""); if (document.activeElement !== tf.input) tf.input.value = gespeichert; tf.fehler(""); tf.sync?.(); },
+    sofort: () => { if (wartet) planen.sofort(); },
+    offen: () => wartet,
+  };
+}
+
+// Pfad: Textfeld in fester Schrift und, wenn die App einen Ordner-Dialog hat, daneben „Wählen …“. waehlen() → Promise<string|null>.
+export function einstellPfad({ wert = "", platzhalter, label, waehlen, auswahlText = "Wählen …", pruefe, aufSpeichern, breite = 240 } = {}) {
+  const feld = einstellTextfeld({ wert, platzhalter, label, mono: true, breite, pruefe, aufSpeichern });
+  const knopfEl = waehlen ? knopf({ text: auswahlText, groesse: "s", aufKlick: async () => { const p = await waehlen(); if (p) { feld.input.value = p; feld.input.dispatchEvent(new Event("input", { bubbles: true })); feld.sofort(); } } }) : null;
+  return { ...feld, el: h("div", { klasse: "ez-pfad" }, feld.el, knopfEl) };
+}
+
+// Liste von Einträgen (Ordner, Wörter, Werkzeugnamen) als Chips mit ✕ und „+ …“. pruefe(text, liste) → Fehlertext oder "". Jede Änderung ruft aufAenderung(neueListe) sofort.
+export function einstellChips({ werte = [], label, platzhalter, mono = false, plusText = "Eintrag", pruefe, aufAenderung, max = 50, textEntfernen = (w) => `${w} entfernen`, textNeu = (w) => `${w} hinzufügen` } = {}) {
+  let liste = [...werte];
+  const el = h("div", { klasse: "ez-chips", role: "group", "aria-label": label });
+  let eingabe = null;
+  const aendere = (neu) => { liste = neu; zeichne(); aufAenderung?.([...liste]); };
+  const plus = () => {
+    const tf = textfeld({ platzhalter, label: textNeu(plusText), groesse: "s", klasse: klassen("ez-chip-feld", mono && "mono"), maxlaenge: 300 });
+    eingabe = tf;
+    const fertig = (uebernehmen) => {
+      if (eingabe !== tf) return;
+      const text = tf.input.value.trim();
+      if (uebernehmen && text) {
+        const f = pruefe?.(text, liste) || (liste.length >= max ? "Die Liste ist voll." : "");
+        if (f) { tf.fehler(f); return; }
+        eingabe = null; aendere([...liste, text]); return;
+      }
+      eingabe = null; zeichne();
+    };
+    tf.input.addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); fertig(true); } else if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); fertig(false); } });
+    tf.input.addEventListener("blur", () => setTimeout(() => { if (eingabe === tf && !el.contains(document.activeElement)) fertig(true); }, 120));
+    zeichne();
+    tf.input.focus();
+  };
+  function zeichne() {
+    const chips = liste.map((w) => h("span", { klasse: klassen("ez-chip", mono && "mono"), "data-eintrag": w },
+      h("span", { klasse: "ez-chip-text", text: w }),
+      h("button", { type: "button", klasse: "ez-chip-x", "aria-label": textEntfernen(w), title: textEntfernen(w), aufClick: () => aendere(liste.filter((x) => x !== w)) }, symbol("schliessen", GROESSE.klein))));
+    el.replaceChildren(...chips, eingabe ? eingabe.el : h("button", { type: "button", klasse: "ez-chip-plus", "data-aktion": "chip-plus", aufClick: plus }, symbol("plus", GROESSE.klein), h("span", { text: plusText })));
+  }
+  zeichne();
+  return { el, setze: (l) => { liste = [...l]; if (!eingabe) zeichne(); }, get liste() { return [...liste]; } };
+}
+
+// Regler (Schriftgröße …): <input type="range"> im Stil des Studios, links „A“ klein, rechts „A“ groß, ganz rechts der Wert. aufEingabe beim Ziehen, aufAenderung beim Loslassen.
+export function einstellRegler({ min, max, schritt = 1, wert, label, einheit = "px", aufEingabe, aufAenderung, textKlein = "Kleiner", textGross = "Größer", daten = {} } = {}) {
+  const feld = h("input", { type: "range", klasse: "ez-regler", min: String(min), max: String(max), step: String(schritt), value: String(wert), "aria-label": label, ...daten });
+  const anzeige = h("span", { klasse: "ez-regler-wert", "aria-hidden": "true" });
+  const fuelle = () => { feld.style.setProperty("--fuell", `${((Number(feld.value) - min) / (max - min)) * 100}%`); anzeige.textContent = `${feld.value} ${einheit}`; };
+  feld.addEventListener("input", () => { fuelle(); aufEingabe?.(Number(feld.value)); });
+  feld.addEventListener("change", () => aufAenderung?.(Number(feld.value)));
+  fuelle();
+  const el = h("div", { klasse: "ez-regler-block" }, h("span", { klasse: "ez-regler-klein", "aria-hidden": "true", title: textKlein, text: "A" }), feld, h("span", { klasse: "ez-regler-gross", "aria-hidden": "true", title: textGross, text: "A" }), anzeige);
+  return { el, input: feld, setze: (w) => { feld.value = String(w); fuelle(); } };
+}
+
 // ======================================================= KI-Auswahl
 // Oben die gefundenen KIs (sonst die beliebten) als große Karten mit Logo, Name und Status; darunter „Weitere KIs anzeigen (N)“ klappt eine
 // durchsuchbare, kompakte Liste aller anderen KIs des Katalogs auf (Terminal-KIs, Editoren, Apps; Logos lokal, nie aus dem Netz).
