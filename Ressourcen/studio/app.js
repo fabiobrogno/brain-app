@@ -1323,6 +1323,13 @@ async function oeffneKi() {
   try { const m = await import("./willkommen.js"); m.oeffneKiDialog({ beiFertig: () => { ladeKi(); }, beiVerbunden: () => { S.kiVerbunden = true; zeichneStatus(); } }); }
   catch { try { await api.mcpVerbinden(); S.kiVerbunden = true; toast(T.mcp.ok); zeichneStatus(); } catch (e) { toast(e.daten?.befehl ? `${T.mcp.befehl} ${e.daten.befehl}` : e.message, { fehler: !e.daten?.befehl, ms: 12000 }); } }
 }
+// Einstellungen → „KI-Konten …“: wer darf welchen Vault sehen (ki-konten.js lädt bei Bedarf)
+async function oeffneKonten() {
+  try {
+    const m = await import("./ki-konten.js");
+    m.oeffneKontenDialog({ api, vault: S.info?.vault || null });
+  } catch { toast("Das geht in dieser Version noch nicht.", { fehler: true }); }
+}
 // „Lizenzen …“: Hinweise zu Software und Material von Dritten (lizenzen.js, lädt bei Bedarf)
 async function oeffneLizenzen() {
   try { const m = await import("./lizenzen.js"); m.oeffneLizenzen(); }
@@ -1335,6 +1342,7 @@ function oeffneEinstellungen(anker) {
     { trenner: true },
     { name: S.breit ? T.werkzeuge.schmal : T.werkzeuge.breit, symbol: "breite", id: "breite", tun: () => { umschalteBreit(); } },
     { name: T.befehle.mcp, logo: "claude", id: "ki", tun: oeffneKi },
+    { name: T.befehle.konten, symbol: "person", id: "ki-konten", tun: oeffneKonten },
     ...(S.info?.vault && vertrauenVon(S.info) ? [vertrauenVon(S.info).erlaubt
       ? { name: T.vertrauen.entziehenMenue, symbol: "schild", id: "vertrauen-entziehen", tun: oeffneVertrauenEntziehen }
       : { name: T.vertrauen.vertrauenMenue, symbol: "schild", id: "vertrauen", tun: oeffneVertrauen }] : []),

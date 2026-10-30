@@ -29,7 +29,8 @@ import { execFile } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve, relative, isAbsolute } from "node:path";
-import { findeClaude, kindUmgebung, rufeHaiku, leseClaudeAntwort } from "../ernte.mjs";
+import { kindUmgebung, rufeHaiku, leseClaudeAntwort } from "../ernte.mjs";
+import { kiBefehl, KI_STUFE } from "./ki.mjs";
 import { KERN, ALT_KIT_ORDNER } from "../pfade.mjs";
 import { sperreAusgeschlossenes } from "./pflege-sperre.mjs";
 
@@ -133,8 +134,8 @@ function vorab(ctx, art) {
   if (ctx.ohneKi) return { ohneKi: true };
   const b = pflegeBudget(ctx);
   if (!b.frei(art)) return { budget: true };
-  const befehl = ctx.claudeBefehl === undefined ? findeClaude() : ctx.claudeBefehl;
-  if (!befehl) { ctx.ohneKi = true; ctx.grund ||= "claude nicht gefunden"; return { ohneKi: true }; }
+  const befehl = kiBefehl(ctx);
+  if (!befehl) return { ohneKi: true };
   b.zaehle(art);
   (ctx.pflegeAufrufe ??= { sonnet: 0, haiku: 0 })[art]++;
   return { befehl };
@@ -182,7 +183,7 @@ export async function rufeSonnet(ctx, { system, eingabe, cwd, zeitlimitMs = SONN
 export async function pflegeHaiku(ctx, { system, eingabe, zweck = "pflege" }) {
   const v = vorab(ctx, "haiku");
   if (!v.befehl) return v;
-  return auswerten(ctx, await rufeHaiku(v.befehl, system, eingabe, ctx.vault, { zweck: `b3${zweck}` }));
+  return auswerten(ctx, await rufeHaiku(v.befehl, system, eingabe, ctx.vault, { zweck: `b3${zweck}`, konto: KI_STUFE }));
 }
 
 // Letztes JSON-Objekt in einem KI-Text (Sonnet schreibt oft Erklärungen davor). Kein Objekt → null.

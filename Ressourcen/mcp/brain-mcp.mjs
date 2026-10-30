@@ -11,7 +11,7 @@ import { createInterface } from "node:readline";
 import { realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { oeffneVault, HttpFehler, STUFE_TEXT as STUFE, supportOrdner } from "../gemeinsam/vault.mjs";
-import { liesKonten, bestimmeKonto, stufeFuerBestimmung, darfMindestens, schwaecher } from "../gemeinsam/ki-konten.mjs";
+import { liesKonten, bestimmeKonto, kontoStufe, kontenOrte, massgeblicheListe, darfMindestens, schwaecher } from "../gemeinsam/ki-konten.mjs";
 import { leseVaults, aktiverVaultPfad } from "../gemeinsam/vaults.mjs";
 import { beendeLaufendes } from "../gemeinsam/git.mjs";
 import { bereinigePfad } from "../gemeinsam/basis.mjs";
@@ -58,30 +58,31 @@ export const MINDEST_STUFE = { brain_merken: "posteingang", brain_aufgabe_anlege
 
 // Zugriff dieses Servers auf Vaults: das Konto (--konto, Umgebung) und die Regeln aus ki-konten.json; alles wird bei jedem Aufruf frisch gelesen (ein Entzug wirkt sofort).
 // → { stufe(vaultPfad), defekt(), heimat() }. nurLesen deckelt jede Stufe auf „lesen“ (Frag-deinen-Vault, Paket P4).
-export function erzeugeZugriff({ support = supportOrdner(), arg = null, env = process.env, nurLesen = false } = {}) {
+export function erzeugeZugriff({ support = supportOrdner(), arg = null, env = process.env, nurLesen = false, standard = undefined, abgeschottet = undefined } = {}) {
   const deckel = (s) => (nurLesen ? schwaecher(s, "lesen") : s);
+  // Unter Claude Code (CLAUDECODE ist gesetzt) heißt eine fehlende CLAUDE_CONFIG_DIR „Standardprofil“: Der Server bekommt die Umgebung unverändert von Claude Code, und ein
+  // `--konto <anderes>` im Eintrag (die Kennung ist keine Anmeldung) wird so mit dem Standardprofil verglichen; es gilt das strengere Recht.
+  const vollstaendig = env.CLAUDECODE === "1" || env.CLAUDECODE === "true";
+  const orte = { standard, abgeschottet }; // nur für Tests (der echte Standardort darf dort nicht gelesen werden); sonst leer
+  const liste = () => massgeblicheListe(support, orte);
   return {
-    stufe(vaultPfad) {
-      const { zustand, daten } = liesKonten(support);
-      if (zustand === "fehlt") return deckel("posteingang"); // Übergang vor dem ersten Start der neuen App: bisheriges Verhalten
-      if (zustand !== "ok") return "gesperrt";
-      return deckel(stufeFuerBestimmung(daten, vaultPfad, bestimmeKonto({ arg, env, daten }).ids));
-    },
-    defekt: () => liesKonten(support).zustand === "defekt",
+    stufe(vaultPfad) { return deckel(kontoStufe(vaultPfad, { support, arg, env, vollstaendig, ...orte })); },
+    // Ein Ort mit beschädigter oder gelöschter Liste (der Standardort zählt immer mit): nichts an KIs.
+    defekt: () => kontenOrte(support, orte).some((o) => ["defekt", "geloescht"].includes(liesKonten(o).zustand)),
     // Das erkannte Konto dieses Servers (genau eins) für die Herkunft einer Notiz oder Aufgabe, z. B. `ki:<programm>/<id>` (PR #50) — sonst null. Nie der Name aus dem Login.
     konto() {
-      const { zustand, daten } = liesKonten(support);
+      const { zustand, daten } = liste();
       if (zustand !== "ok") return null;
-      const ids = bestimmeKonto({ arg, env, daten }).ids;
+      const ids = bestimmeKonto({ arg, env, daten, vollstaendig }).ids;
       return ids.length === 1 && ids[0] !== null ? { id: ids[0], programm: daten.konten[ids[0]].programm } : null;
     },
-    // Gilt überhaupt ein Kontofilter? Nein, solange die Liste fehlt (die neue App lief noch nie): dann gilt das bisherige Verhalten samt seinen Texten.
-    gefiltert: () => liesKonten(support).zustand !== "fehlt",
+    // Gilt überhaupt ein Kontofilter? Nein, solange es nirgends eine Liste gibt (die neue App lief noch nie): dann gilt das bisherige Verhalten samt seinen Texten.
+    gefiltert: () => kontenOrte(support, orte).some((o) => liesKonten(o).zustand !== "fehlt"),
     // Der Heimat-Vault des Kontos (konten[id].heimat), nur wenn genau EIN Konto erkannt ist.
     heimat() {
-      const { zustand, daten } = liesKonten(support);
+      const { zustand, daten } = liste();
       if (zustand !== "ok") return null;
-      const ids = bestimmeKonto({ arg, env, daten }).ids;
+      const ids = bestimmeKonto({ arg, env, daten, vollstaendig }).ids;
       const h = ids.length === 1 && ids[0] !== null ? daten.konten[ids[0]].heimat : null;
       return typeof h === "string" && h ? h : null;
     },
@@ -193,6 +194,7 @@ async function rufe(vArg, name, a, spur = { seiten: [] }, sitzung = standardSitz
       return text(`${vertraut(v) ? "" : `${DATEN_HINWEIS}\n\n`}${zeilen.join("\n")}`);
     }
     case "brain_verlauf": {
+      if (v.imUnterVault(arg("pfad"))) return fehlerText("Diese Datei gibt es nicht.");
       const { eintraege } = await v.gitVerlauf(arg("pfad"), Math.min(100, Math.max(1, Number.parseInt(a.max, 10) || 20)));
       if (!eintraege.length) return text("Kein Verlauf gefunden (Datei nicht in Git oder noch nicht committet).");
       return text(eintraege.map((e) => `${e.kurz} ${zeit(e.zeit)} ${e.autor}: ${e.nachricht}`).join("\n"));
@@ -277,7 +279,7 @@ function haupt() {
   const gebunden = arg.vault || process.env.BRAIN_VAULT || "";
   const zugriff = erzeugeZugriff({ arg: arg.konto, nurLesen: arg.nurLesen });
   let aktuell = null, aktuellPfad;
-  if (gebunden) { try { aktuell = oeffneVault(gebunden); } catch (e) { process.stderr.write(`${e.message}\n`); process.exit(2); } }
+  if (gebunden) { try { aktuell = oeffneVault(gebunden, { ohneUnterVaults: true }); } catch (e) { process.stderr.write(`${e.message}\n`); process.exit(2); } }
   // Ohne Argument: aktiven Vault der App nehmen; wechselt er, wird neu geöffnet (billig: nur vaults.json lesen).
   // KI-Konten: darf das Konto den aktiven Vault nicht lesen, folgt der Server seinem Heimat-Vault (falls es einen hat und er erlaubt ist), sonst gibt es keinen Vault.
   const v = () => {
@@ -285,7 +287,7 @@ function haupt() {
     let p = null; try { p = aktiverVaultPfad(); } catch { /* keine Liste → kein Vault */ }
     if (p && !sehen(zugriff, p)) p = null;
     if (!p) { const h = zugriff.heimat(); if (h && sehen(zugriff, h)) p = h; }
-    if (p !== aktuellPfad) { aktuellPfad = p; aktuell = null; if (p) { try { aktuell = oeffneVault(p); } catch { /* nicht lesbar → kein Vault */ } } }
+    if (p !== aktuellPfad) { aktuellPfad = p; aktuell = null; if (p) { try { aktuell = oeffneVault(p, { ohneUnterVaults: true }); } catch { /* nicht lesbar → kein Vault */ } } }
     return aktuell;
   };
   const sitzung = { klient: "", angelegt: 0 };   // diese Verbindung

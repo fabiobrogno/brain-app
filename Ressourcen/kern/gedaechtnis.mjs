@@ -75,7 +75,8 @@ import { homedir, tmpdir } from "node:os";
 import { spawnSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { vaultPfadOderEnde, ladeConfig, kontoDarf } from "./pfade.mjs";
+import { vaultPfadOderEnde, ladeConfig, kontoDarf, supportOrdner, bekannteVaultPfade } from "./pfade.mjs";
+import { kontoStufe, darfMindestens, schwaecher } from "./ki-konten.mjs";
 import { leseAutomatik, STANDARD } from "./einstellungen.mjs";
 import { gitBefehl } from "./werkzeug.mjs";
 
@@ -128,6 +129,54 @@ export function projektKlasse(name, opt = {}) {
   return istTempProjekt(name, opt) ? "temporaer" : "projekt";
 }
 export const istEchterProjektSchluessel = (name, opt = {}) => projektKlasse(name, opt) === "projekt";
+// ------------------------------------------------------------------------------------------ KI-Konten: Projekte, die zu einem Vault gehören
+// Ein Projekt, dessen Schlüssel dem Schlüssel eines bekannten Vaults entspricht oder darunter liegt („<vault>-…“), enthält Inhalte dieses Vaults. Sein Gedächtnis
+// wandert nur zwischen Konten, die den Vault mindestens lesen dürfen (docs/plaene/ki-konten.md): ein für den Vault gesperrtes Konto wird weder gelesen noch beschrieben
+// noch mit verteilt. Die Stufe bestimmt kontoStufe (ki-konten.mjs) für den Profilordner des Kontos; das Standardprofil ~/.claude gilt auch ohne CLAUDE_CONFIG_DIR als
+// Standard (es zählt das strengere Ergebnis beider Wege). Fehlt die Kontenliste ganz ohne Spur, liefert kontoStufe „posteingang“: alles bleibt wie bisher.
+// opt: { support, home, vaults: [Pfad …] (zusätzlich bekannte Vaults), schluesselVon(pfad) → [Schlüssel] (Testhaken: ein Vault im Temp-Ordner hat einen „temporären“ Schlüssel, den der Abgleich überspringt) }
+const FALTE = (s) => String(s).toLowerCase();
+export function vaultSchluesselFormen(pfad) {
+  const aus = new Set();
+  const formen = [String(pfad)];
+  try { formen.push(realpathSync(pfad)); } catch {}
+  for (const f of formen) for (const n of ["NFC", "NFD"]) aus.add(FALTE(projektSchluessel(f.normalize(n))));
+  return [...aus].filter((k) => k.replace(/-/g, "") !== "");          // der Wurzel-Schlüssel „-“ ist kein Vault
+}
+export function baueKontoPruefung(opt = {}) {
+  const o = opt || {};
+  const home = o.home ? resolve(o.home) : homedir();
+  const support = typeof o.support === "string" && o.support ? o.support : supportOrdner(o.home ? { home: o.home } : {});
+  const stdProfile = new Set([resolve(home, ".claude")]); try { stdProfile.add(realpathSync(resolve(home, ".claude"))); } catch {}
+  const istStandard = (pfad) => { if (stdProfile.has(resolve(pfad))) return true; try { return stdProfile.has(realpathSync(pfad)); } catch { return false; } };
+  let vaults = null;
+  const lade = () => {
+    if (vaults) return vaults;
+    const alle = new Set([...bekannteVaultPfade({ support, ...(o.home ? { home: o.home } : {}) }), ...(Array.isArray(o.vaults) ? o.vaults.filter((v) => typeof v === "string" && v).map((v) => resolve(v)) : [])]);
+    vaults = [...alle].map((pfad) => ({ pfad, schluessel: (typeof o.schluesselVon === "function" ? o.schluesselVon(pfad) : vaultSchluesselFormen(pfad)).map(FALTE) })).filter((v) => v.schluessel.length);
+    return vaults;
+  };
+  const vaultsFuer = (projekt) => {
+    const p = FALTE(projekt);
+    return lade().filter((v) => v.schluessel.some((k) => p === k || p.startsWith(`${k}-`))).map((v) => v.pfad);
+  };
+  const cache = new Map();
+  const stufe = (vault, kontoPfad) => {
+    const key = `${vault}\0${kontoPfad}`;
+    if (cache.has(key)) return cache.get(key);
+    let s = "erweitert";
+    const umgebungen = [{ CLAUDE_CONFIG_DIR: kontoPfad }];
+    if (istStandard(kontoPfad)) umgebungen.push({});
+    for (const env of umgebungen) s = schwaecher(s, kontoStufe(vault, { support, env, programm: "claude", vollstaendig: true }));
+    cache.set(key, s);
+    return s;
+  };
+  // → true, wenn das Konto am Gedächtnis dieses Projekts NICHT teilnehmen darf
+  const gesperrt = (projekt, kontoPfad) => vaultsFuer(projekt).some((v) => !darfMindestens(stufe(v, kontoPfad), "lesen"));
+  return { gesperrt, vaultsFuer, stufe };
+}
+export const KONTO_NICHT_FREIGEGEBEN = "Konto für diesen Vault nicht freigegeben";
+
 const unter = (kind, eltern) => { const a = resolve(kind), b = resolve(eltern); return a === b || a.startsWith(b.endsWith(sep) ? b : b + sep); };
 const kurzPfad = (p, home = homedir()) => (p === home ? "~" : p.startsWith(home + sep) ? `~${sep}${p.slice(home.length + 1)}` : p);
 const zweistellig = (n) => String(n).padStart(2, "0");
@@ -484,9 +533,10 @@ const altOrdner = (projektDir) => {
 
 // ------------------------------------------------------------------------------------------ Umgebung eines Laufs
 // Bündelt, was Plan und Anwenden gemeinsam brauchen: git, Objektformat, Basis-Blobs lesen, git merge-file. aufraeumen() am Ende aufrufen.
-function baueUmgebung({ wurzel, konten, jetzt, temp, gitCmd, erzwingen = false }) {
+function baueUmgebung({ wurzel, konten, jetzt, temp, gitCmd, erzwingen = false, kontoPruefung = {} }) {
   const git = gitCmd || gitBefehl({ cfg: {} });
-  const env = { wurzel, konten, jetzt, temp, git, algo: objektFormat(wurzel, git), warnungen: [], gitBereit: existsSync(join(wurzel, ".git")), scratch: null, erzwingen };
+  const env = { wurzel, konten, jetzt, temp, git, algo: objektFormat(wurzel, git), warnungen: [], gitBereit: existsSync(join(wurzel, ".git")), scratch: null, erzwingen,
+    kontoPruefung: baueKontoPruefung(kontoPruefung) };
   env.holeBlob = (sha) => {
     if (!sha || !/^[0-9a-f]{40,64}$/.test(sha) || !existsSync(join(wurzel, ".git"))) return null;
     const r = gitLauf(wurzel, ["cat-file", "blob", sha], git, { puffer: true });
@@ -546,7 +596,7 @@ function legeKonfliktKopieAn(env, wneu, rel, konto, c) {
 // Liest ein Projekt (Wurzel + alle Konten) und rechnet den neuen Wurzelstand und die Aufgaben je Konto aus. Schreibt nichts.
 // Massenlöschungs-Riegel: ab so vielen Löschungen in einem Konto UND mehr als der Hälfte seiner Dateien wird das Projekt nicht angewendet (--erzwingen hebt ihn auf).
 const MASSEN_MIN = 3;
-function berechneProjekt(env, p, aktive) {
+function berechneProjekt(env, p, aktive, ausgeschlossen = []) {
   const T = join(env.wurzel, p);
   const W = new Map(), fehler = [];
   if (NUR_ORDNER(T)) {
@@ -572,6 +622,11 @@ function berechneProjekt(env, p, aktive) {
     // fehlender Ordner trotz Manifest ≠ „alles gelöscht“ (siehe Kopfkommentar)
     if (zustand.art === "fehlt" && x.manifest.map.size) { x.ohneLoeschen = true; env.warnungen.push(`${k.name}/${p}: memory fehlt, obwohl das Konto abgeglichen war — wird aus der Wurzel wiederhergestellt (nicht als Löschung gewertet).`); }
     kp.push(x);
+  }
+  // Konten, die für den Vault dieses Projekts nicht freigegeben sind: nicht lesen, nicht beschreiben, kein Manifest, nur eine Zeile im Plan.
+  for (const k of ausgeschlossen) {
+    kp.push({ konto: k.name, kontoPfad: k.pfad, projektDir: null, memory: null, zustand: "ausgeschlossen", stand: new Map(), manifest: { map: new Map(), text: "", vorhanden: false },
+      aktiv: false, ausgeschlossen: true, zaehler: { neu: 0, geaendert: 0, geloescht: 0, gemerged: 0 }, ohneLoeschen: false });
   }
   // Etwas ließ sich nicht lesen (EACCES, EIO, …): das Projekt wird in diesem Lauf nicht angefasst — eine fehlende Datei wäre sonst eine „Löschung“, die in alle Konten wandert.
   if (fehler.length) {
@@ -654,6 +709,12 @@ function erstellePlan(env, { projekt = null } = {}) {
 
   // Projekte einsammeln
   const projekte = new Set();
+  const ausgelassen = new Set();                                         // Namen der Konten, die an mindestens einem Vault-Projekt nicht teilnehmen
+  const kontoAusgeschlossen = (p, k) => {
+    if (projektKlasse(p, { temp }) !== "projekt" || !env.kontoPruefung.gesperrt(p, k.pfad)) return false;
+    ausgelassen.add(k.name);
+    return true;
+  };
   const merkeProjekt = (p, quelle) => {
     const klasse = projektKlasse(p, { temp });
     if (klasse === "kein-schluessel") return;
@@ -666,7 +727,7 @@ function erstellePlan(env, { projekt = null } = {}) {
   } else {
     for (const k of aktive) {
       let es = []; try { es = readdirSync(join(k.pfad, "projects"), { withFileTypes: true }); } catch {}
-      for (const e of es) if (e.isDirectory() || (e.isSymbolicLink() && NUR_ORDNER(join(k.pfad, "projects", e.name)))) merkeProjekt(e.name, k.name);
+      for (const e of es) if ((e.isDirectory() || (e.isSymbolicLink() && NUR_ORDNER(join(k.pfad, "projects", e.name)))) && !kontoAusgeschlossen(e.name, k)) merkeProjekt(e.name, k.name);
     }
     if (plan.wurzelVorhanden) for (const e of readdirSync(wurzel, { withFileTypes: true })) if (e.isDirectory()) merkeProjekt(e.name, "wurzel");
   }
@@ -676,7 +737,8 @@ function erstellePlan(env, { projekt = null } = {}) {
   const intern = new Map();
   for (const p of [...projekte].sort()) {
     let pr;
-    try { pr = berechneProjekt(env, p, aktive); }
+    const draussen = aktive.filter((k) => kontoAusgeschlossen(p, k));
+    try { pr = berechneProjekt(env, p, draussen.length ? aktive.filter((k) => !draussen.includes(k)) : aktive, draussen); }
     catch (e) {                                                          // z. B. git-Zeitüberschreitung: dieses Projekt fällt aus, die anderen laufen weiter
       plan.fehler.push(`${p}: ${erste(e.message)}`);
       plan.projekte.push({ projekt: p, ziel: join(wurzel, p), noetig: false, datenAenderung: false, manifestNeu: false, wurzel: { neu: 0, geaendert: 0, geloescht: 0 }, dateienInWurzel: 0,
@@ -687,6 +749,7 @@ function erstellePlan(env, { projekt = null } = {}) {
       konto: x.konto, zustand: x.zustand,
       vonKonto: { ...x.zaehler },
       schreiben: x.aufgabe.schreiben.length, loeschen: x.aufgabe.loeschen.length,
+      ...(x.ausgeschlossen ? { ausgeschlossen: true, grund: KONTO_NICHT_FREIGEGEBEN } : {}),
       aktion: !x.aktiv ? "uebersprungen" : x.aufgabe.ersetzeLink ? "symlink-ersetzen" : (x.aufgabe.schreiben.length || x.aufgabe.loeschen.length) ? "verteilen" : "ok",
     }));
     const zaehl = (art) => [...pr.geaendertW.values()].filter((v) => v === art).length;
@@ -697,6 +760,8 @@ function erstellePlan(env, { projekt = null } = {}) {
     if (pr.noetig && !pr.blockiert.length) plan.aenderungen++;
     intern.set(p, pr);
   }
+  // Neutral: weder Vault-Name noch -Pfad, nur dass und für welche Konten es Projekte gab, an denen sie nicht teilnehmen.
+  if (ausgelassen.size) plan.warnungen.push(`${KONTO_NICHT_FREIGEGEBEN}: ${[...ausgelassen].join(", ")} — bei Projekten, die zu einem Vault gehören, nicht abgeglichen.`);
   return { plan, intern };
 }
 
@@ -924,14 +989,14 @@ function planZeile(plan) {
 // haken.vorVerteilen({ projekt, konto, memory }) (Testhaken: vor dem Verteilen an ein Konto — hier „verändert“ ein Test eine Konto-Datei mitten im Lauf).
 // zeitgrenzen: { git, tar } in ms (Standard ZEIT_STANDARD; nur für Tests kürzer). erzwingen: der Massenlöschungs-Riegel (mehr als die Hälfte der Dateien eines Kontos, mindestens 3) wird übergangen — erst nach Prüfung des Trockenlaufs.
 // → { anwenden, nichtsZuTun, zeile, plan, sicherung, commit, zaehler, fehler: [], warnungen: [], ok }   (Lesefehler und nicht angewendete Projekte stehen in fehler bzw. warnungen)
-export function gleicheAb({ wurzel, konten, projekt = null, anwenden = false, jetzt = Date.now(), temp = [tmpdir()], gitCmd = null, haken = {}, warteMs = 0, erzwingen = false, zeitgrenzen = {} } = {}) {
+export function gleicheAb({ wurzel, konten, projekt = null, anwenden = false, jetzt = Date.now(), temp = [tmpdir()], gitCmd = null, haken = {}, warteMs = 0, erzwingen = false, zeitgrenzen = {}, kontoPruefung = {} } = {}) {
   if (!wurzel || !Array.isArray(konten)) throw new Error("gleicheAb braucht wurzel und konten.");
   wurzel = resolve(wurzel); konten = konten.map((k) => resolve(k));
   const sperre = anwenden ? nimmSperre(wurzel, jetzt, warteMs) : null;
   let env = null;
   try {
     Object.assign(ZEIT, ZEIT_STANDARD, Object.fromEntries(Object.entries(zeitgrenzen ?? {}).filter(([k, v]) => k in ZEIT_STANDARD && Number(v) > 0)));
-    env = baueUmgebung({ wurzel, konten, jetzt, temp, gitCmd, erzwingen });
+    env = baueUmgebung({ wurzel, konten, jetzt, temp, gitCmd, erzwingen, kontoPruefung });
     const { plan, intern } = erstellePlan(env, { projekt });
     const blockiert = plan.projekte.filter((x) => x.blockiert.length).map((x) => x.projekt);
     const erg = { anwenden: Boolean(anwenden), nichtsZuTun: plan.aenderungen === 0 && !blockiert.length && !plan.fehler.length, plan, sicherung: null, commit: null, zaehler: { projekte: 0, wurzel: 0, konten: 0, konflikte: 0, aufgeloest: 0 },
@@ -969,17 +1034,17 @@ export function gleicheAb({ wurzel, konten, projekt = null, anwenden = false, je
 }
 
 // ------------------------------------------------------------------------------------------ status
-export function statusGedaechtnis({ wurzel, konten, temp = [tmpdir()], gitCmd = null } = {}) {
+export function statusGedaechtnis({ wurzel, konten, temp = [tmpdir()], gitCmd = null, kontoPruefung = {} } = {}) {
   wurzel = resolve(wurzel); konten = konten.map((k) => resolve(k));
   let env = null;
   try {
-    env = baueUmgebung({ wurzel, konten, jetzt: Date.now(), temp, gitCmd });
+    env = baueUmgebung({ wurzel, konten, jetzt: Date.now(), temp, gitCmd, kontoPruefung });
     const { plan } = erstellePlan(env);
     let offeneKonflikte = 0;
     const projekte = plan.projekte.map((p) => {
       const konflikteKopien = NUR_ORDNER(p.ziel) ? [...leseBaum(p.ziel).dateien].filter(([r, e]) => istKonfliktKopie(r) && !istAufgeloesteKopie(r, e.b.toString("utf8"))).length : 0;
       offeneKonflikte += konflikteKopien;
-      return { projekt: p.projekt, wurzelVorhanden: NUR_ORDNER(p.ziel), abgeglichen: !p.noetig && !p.fehler.length && p.konten.every((k) => k.aktion !== "uebersprungen"), blockiert: p.blockiert.length > 0, fehler: p.fehler,
+      return { projekt: p.projekt, wurzelVorhanden: NUR_ORDNER(p.ziel), abgeglichen: !p.noetig && !p.fehler.length && p.konten.every((k) => k.aktion !== "uebersprungen" || k.ausgeschlossen), blockiert: p.blockiert.length > 0, fehler: p.fehler,
         konten: p.konten.map((k) => ({ konto: k.konto, zustand: k.zustand, vonKonto: k.vonKonto.neu + k.vonKonto.geaendert + k.vonKonto.geloescht + k.vonKonto.gemerged, nachKonto: k.schreiben + k.loeschen })),
         konflikte: konflikteKopien };
     });
@@ -994,7 +1059,8 @@ export function gedaechtnisSchritt(ctx) {
   try {
     if (ctx?.werte?.gedaechtnisTeilen !== "an") return;
     const p = gedaechtnisPfade(ctx.werte, { home: ctx.home || homedir() });
-    const r = gleicheAb({ wurzel: p.wurzel, konten: p.konten, anwenden: !ctx.probe, jetzt: ctx.jetzt, gitCmd: ctx.vault ? gitBefehl({ cfg: ladeConfig(ctx.vault) }) : null });
+    const r = gleicheAb({ wurzel: p.wurzel, konten: p.konten, anwenden: !ctx.probe, jetzt: ctx.jetzt, gitCmd: ctx.vault ? gitBefehl({ cfg: ladeConfig(ctx.vault) }) : null,
+      kontoPruefung: ctx.vault ? { vaults: [ctx.vault] } : {} });
     ctx.gedaechtnis = r.zeile;
     if (r.fehler.length) ctx.gedaechtnis += ` — ${r.fehler.slice(0, 2).join("; ")}`;
   } catch (e) { ctx.gedaechtnis = `Gedächtnis: Fehler — ${erste(e?.message || e).slice(0, 240)}`; }

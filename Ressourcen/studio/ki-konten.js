@@ -1,0 +1,427 @@
+// „KI-Konten“ (Paket P2, Plan docs/plaene/ki-konten.md, Abschnitt 3.1): Liste der KI-Konten, je Vault „Wer darf diesen Vault sehen?“ (Stufe je Konto), Übersicht aller Vaults,
+// Standard für neue Konten, Leseverbot in Claude Code und „Strenger Schutz“. Die Routen der Werkstatt (werkstatt/konten.mjs) tun die Arbeit; hier steht nur, was der Nutzer sieht und
+// entscheidet. Geschrieben wird nur nach einem Klick; ein Sperren fragt vorher nach und sagt ehrlich, was es schützt und was nicht. Kein innerHTML mit fremden Daten: alles über h().
+import { h, dialog, toast } from "./hilfen.js";
+import { symbol } from "./symbole.js";
+import { kiLogo, kiLogoId } from "./ki-logos.js";
+import { api as standardApi } from "./api.js";
+import { TK } from "./texte-konten.js";
+
+// ---------------------------------------------------------------- Stylesheet (lädt sich selbst, einmalig)
+const CSS_URL = new URL("./ki-konten.css", import.meta.url).href;
+export function ladeKontenCss() {
+  const da = document.querySelector("link[data-konten-css]");
+  if (da) return da._bereit || Promise.resolve();
+  const l = document.createElement("link");
+  l.rel = "stylesheet";
+  l.href = CSS_URL;
+  l.setAttribute("data-konten-css", "");
+  l._bereit = new Promise((ok) => { l.onload = ok; l.onerror = ok; setTimeout(ok, 2500); });
+  document.head.append(l);
+  return l._bereit;
+}
+
+const STUFEN = ["gesperrt", "lesen", "posteingang", "erweitert"];
+const NEUE = ["gesperrt", "lesen", "posteingang"];
+const zeichen = (name, groesse = 14) => symbol(name, groesse);
+const stufeName = (s) => TK.stufen[s]?.name || s;
+const gleicherPfad = (a, b) => String(a || "").normalize("NFC").toLowerCase() === String(b || "").normalize("NFC").toLowerCase();
+
+// Marke vor einer Zeile: Zustand nie nur durch Farbe (Symbol und Text daneben)
+function marke(art) {
+  const sym = art === "gruen" ? "haken" : art === "rot" ? "schliessen" : art === "warn" ? "warnung" : null;
+  return h("span", { klasse: "kk-marke", "data-marke": art, "aria-hidden": "true" }, sym ? zeichen(sym, 12) : null);
+}
+
+// Eine Auswahl aus Stufen als Knopfgruppe (radiogroup): Pfeiltasten bewegen den Fokus, Leertaste/Enter/Klick wählt.
+function segmente({ stufen, wert, label, daten, beiWahl, gesperrt = false }) {
+  const gruppe = h("div", { klasse: "kk-seg", role: "radiogroup", "aria-label": label, ...daten });
+  const knoepfe = stufen.map((s) => {
+    const aktiv = s === wert;
+    const b = h("button", {
+      type: "button", klasse: "kk-seg-knopf", role: "radio", "aria-checked": String(aktiv), tabindex: aktiv || (wert === undefined && s === stufen[0]) ? "0" : "-1",
+      "data-stufe-wahl": s, disabled: gesperrt, aufClick: () => { if (!aktiv) beiWahl(s); },
+    }, h("span", { text: (TK.stufen[s]?.name) || TK.vault.neueKontenStufen[s] || s }));
+    return b;
+  });
+  gruppe.addEventListener("keydown", (e) => {
+    const i = knoepfe.indexOf(document.activeElement);
+    if (i < 0) return;
+    let n = null;
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") n = (i + 1) % knoepfe.length;
+    else if (e.key === "ArrowLeft" || e.key === "ArrowUp") n = (i - 1 + knoepfe.length) % knoepfe.length;
+    else if (e.key === "Home") n = 0;
+    else if (e.key === "End") n = knoepfe.length - 1;
+    if (n === null) return;
+    e.preventDefault();
+    knoepfe.forEach((k, j) => k.setAttribute("tabindex", j === n ? "0" : "-1"));
+    knoepfe[n].focus();
+  });
+  gruppe.append(...knoepfe);
+  return gruppe;
+}
+
+// ---------------------------------------------------------------- Dialog
+// vault = Pfad des offenen Vaults (vorgewählt), beiZu() meldet das Schließen, beiAenderung() meldet eine geänderte Stufe.
+export function oeffneKontenDialog({ api = standardApi, vault = null, beiZu, beiAenderung } = {}) {
+  ladeKontenCss();
+  const S = {
+    daten: null, laedt: true, fehler: null, ansicht: "vault", vaultPfad: vault, beschaeftigt: false,
+    meldung: null,            // Satz, wenn die Einstellungen von Claude Code nicht geändert werden konnten
+    umbenenne: null,          // Konto-Kennung, deren Name gerade bearbeitet wird
+    namensFehler: null,
+    frage: null,              // offene Bestätigung: { art: "sperren", konto, vault, claude } | { art: "streng", konto } | { art: "vorher" }
+  };
+  let tot = false;
+
+  const intro = h("p", { klasse: "kk-intro", "data-kk": "intro", text: TK.intro });
+  const secMeldung = h("div", { klasse: "kk-sektion", "data-kk": "meldung", "aria-live": "polite" });
+  const secFrage = h("div", { klasse: "kk-sektion", "data-kk": "frage" });
+  const secHinweis = h("div", { klasse: "kk-sektion", "data-kk": "hinweis" });
+  const secKonten = h("section", { klasse: "kk-sektion", "data-kk": "konten" });
+  const secZugriff = h("section", { klasse: "kk-sektion", "data-kk": "zugriff" });
+  const secStreng = h("section", { klasse: "kk-sektion", "data-kk": "streng-abschnitt" });
+  const secEhrlich = h("section", { klasse: "kk-sektion", "data-kk": "ehrlich" });
+  const rumpf = h("div", { klasse: "kk-rumpf" }, h("div", { klasse: "kk-haupt" }, secMeldung, secFrage, secHinweis, secKonten, secZugriff, secStreng, secEhrlich));
+  const zuKnopf = h("button", { klasse: "knopf gross", type: "button", "data-aktion": "konten-schliessen", text: TK.schliessen, aufClick: () => d.schliessen() });
+  const box = h("div", { klasse: "dialog kk-dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "kk-titel", "data-dialog": "ki-konten" },
+    h("div", { klasse: "kk-kopf" }, h("h2", { klasse: "kk-titel", id: "kk-titel", text: TK.titel }), intro),
+    rumpf,
+    h("div", { klasse: "kk-fuss" }, h("button", { klasse: "knopf", type: "button", "data-aktion": "konten-neu-suchen", text: TK.neuSuchen, aufClick: () => lade() }), h("span", { klasse: "kk-fuss-platz" }), zuKnopf));
+  const d = dialog({ eigen: box, beiSchliessen: () => { tot = true; beiZu?.(); } });
+  setTimeout(() => zuKnopf.focus(), 10);
+
+  // ----- Hilfen
+  const konten = () => S.daten?.konten || [];
+  const vaults = () => S.daten?.vaults || [];
+  const aktuellerVault = () => vaults().find((v) => v.pfad === S.vaultPfad) || vaults().find((v) => gleicherPfad(v.pfad, S.vaultPfad)) || vaults()[0] || null;
+  const stufeVon = (k, v) => S.daten?.zugriff?.[k.id]?.[v.pfad] || "gesperrt";
+  const kontoMitId = (id) => konten().find((k) => k.id === id) || null;
+  const fehlerSatz = (e) => (e?.status === 0 ? TK.fehlerAllgemein : e?.message || TK.fehlerAllgemein);
+
+  // Antwort der Werkstatt übernehmen. Bei einem Fehler in den Einstellungen von Claude Code steht die Meldung oben.
+  function uebernimm(antwort) {
+    if (!antwort) return null;
+    const { claude, warnungen, ...rest } = antwort;
+    if (Array.isArray(warnungen) && warnungen.length) S.warnung = warnungen.join(" ");
+    const stand = rest.stand && rest.stand.konten ? rest.stand : rest; // „Neu verbinden“ liefert den Stand in .stand
+    if (stand.konten) S.daten = stand;
+    return claude || null;
+  }
+  async function lade() {
+    S.laedt = true; S.fehler = null; zeichneAlles();
+    try {
+      const stand = await api.kiKonten();
+      if (tot) return;
+      S.daten = stand;
+      if (!aktuellerVault()) S.vaultPfad = null; else S.vaultPfad = aktuellerVault().pfad;
+    } catch (e) { if (tot) return; S.fehler = e; }
+    S.laedt = false;
+    zeichneAlles();
+  }
+  // Führt eine Änderung aus; währenddessen sind die Knöpfe gesperrt. fn() → Antwort der Werkstatt.
+  async function tue(fn, { erfolg } = {}) {
+    if (S.beschaeftigt) return null;
+    S.beschaeftigt = true; S.meldung = null; S.warnung = null; zeichneMeldung(); box.setAttribute("aria-busy", "true");
+    try {
+      const antwort = await fn();
+      if (tot) return null;
+      const claude = uebernimm(antwort);
+      if (claude?.aktion === "fehler") S.meldung = TK.sperre.fehlerSatz(claude.fehler || "");
+      else if (erfolg) { const t = erfolg(claude); if (t) toast(t); }
+      beiAenderung?.();
+      return antwort;
+    } catch (e) {
+      if (!tot) { S.meldung = fehlerSatz(e); }
+      return null;
+    } finally { S.beschaeftigt = false; if (!tot) zeichneAlles(); }
+  }
+
+  // ----- Aktionen
+  async function waehleStufe(k, v, stufe) {
+    const alt = stufeVon(k, v);
+    if (stufe === alt || S.beschaeftigt) return;
+    if (stufe === "gesperrt") { S.frage = { art: "sperren", konto: k.id, vault: v.pfad, claude: k.programm === "claude" }; zeichneAlles(); zeigeFrage(); return; }
+    S.frage = null;
+    await tue(() => api.kiZugriff({ konto: k.id, vault: v.pfad, stufe }), {
+      erfolg: (claude) => (claude?.aktion === "entfernt" ? TK.sperre.entfernt : TK.vault.stufeGesetzt(k.name, stufeName(stufe))),
+    });
+  }
+  async function bestaetigeSperren(frage, claudeSperre) {
+    const k = kontoMitId(frage.konto), v = vaults().find((x) => x.pfad === frage.vault);
+    S.frage = null;
+    if (!k || !v) { zeichneAlles(); return; }
+    await tue(() => api.kiZugriff({ konto: k.id, vault: v.pfad, stufe: "gesperrt", ...(frage.claude ? { claudeSperre } : {}) }), {
+      erfolg: (claude) => (claude?.aktion === "eingetragen" ? TK.sperre.eingetragen : TK.vault.stufeGesetzt(k.name, stufeName("gesperrt"))),
+    });
+  }
+  async function setzeStandard(v, stufe) {
+    await tue(() => api.kiStandard(v.pfad, stufe), { erfolg: () => TK.vault.neueKontenGespeichert });
+  }
+  async function schalteStreng(k, an) {
+    S.frage = null;
+    await tue(() => api.kiSchutz(k.id, an), { erfolg: () => (an ? TK.streng.erfolgAn : TK.streng.erfolgAus) });
+  }
+  async function speichereName(k, text) {
+    const name = String(text).replace(/\s+/g, " ").trim();
+    if (!name) { S.namensFehler = TK.konten.nameLeer; zeichneKonten(); return; }
+    if (name.length > 40) { S.namensFehler = TK.konten.nameZuLang; zeichneKonten(); return; }
+    S.namensFehler = null; S.umbenenne = null;
+    await tue(() => api.kiKontoName(k.id, name), { erfolg: () => TK.konten.benannt });
+  }
+  const zeigeFrage = () => requestAnimationFrame(() => { if (!tot) { secFrage.scrollIntoView({ block: "nearest" }); secFrage.querySelector("button.primaer, button")?.focus(); } });
+
+  // ----- Zeichnen
+  // Beim Neuzeichnen bleibt der Fokus dort, wo er war (Stufenwahl, Ansichtswahl, Strenger Schutz): sonst fiele er nach jeder Wahl auf die Seite zurück.
+  function merkeFokus() {
+    const a = document.activeElement;
+    if (!a || !box.contains(a)) return () => {};
+    const konto = a.closest("[data-konto]")?.getAttribute("data-konto") || null;
+    let finde = null;
+    if (a.matches("[data-stufe-wahl]")) { const gruppe = a.closest("[data-kk]")?.getAttribute("data-kk"); const wert = a.getAttribute("data-stufe-wahl"); finde = () => secZugriff.querySelector(`${konto ? `[data-konto="${konto}"] ` : ""}[data-kk="${gruppe}"] [data-stufe-wahl="${wert}"]`); }
+    else if (a.matches("[data-ansicht]")) { const w = a.getAttribute("data-ansicht"); finde = () => secZugriff.querySelector(`[data-ansicht="${w}"]`); }
+    else if (a.matches('[data-aktion="streng-an"], [data-aktion="streng-aus"]')) finde = () => secStreng.querySelector(`[data-kk="streng"][data-konto="${konto}"] button:not(:disabled)`);
+    else if (a.matches('[data-aktion="konto-umbenennen"]')) finde = () => secKonten.querySelector(`[data-konto="${konto}"] [data-aktion="konto-umbenennen"]`);
+    return () => { const n = finde?.(); if (n && !n.disabled) n.focus(); };
+  }
+  function zeichneAlles() {
+    const wieder = merkeFokus();
+    zeichneMeldung(); zeichneFrage(); zeichneHinweis(); zeichneKonten(); zeichneZugriff(); zeichneStreng(); zeichneEhrlich();
+    box.setAttribute("aria-busy", S.beschaeftigt ? "true" : "false");
+    wieder();
+  }
+  // Nach einer Rückfrage zurück zur gewählten Zeile
+  const fokusAufKonto = (id) => requestAnimationFrame(() => { if (!tot) (secZugriff.querySelector(`[data-konto="${id}"] [role="radio"][aria-checked="true"]`) || secZugriff.querySelector(`tr[data-konto="${id}"] select`))?.focus(); });
+  function zeichneMeldung() {
+    secMeldung.replaceChildren();
+    if (S.warnung) secMeldung.append(h("div", { klasse: "kk-karte warn", role: "status", "data-kk": "warnung-text" }, marke("warn"), h("p", { text: S.warnung })));
+    if (!S.meldung) return;
+    secMeldung.append(h("div", { klasse: "kk-karte fehler", role: "alert", "data-kk": "meldung-text" }, marke("rot"), h("p", { text: S.meldung })));
+  }
+  function zeichneHinweis() {
+    secHinweis.replaceChildren();
+    if (S.fehler || !S.daten || S.daten.hinweis !== "defekt-neu") return;
+    const knoepfe = [
+      h("button", { klasse: "knopf", type: "button", "data-aktion": "konten-hinweis-verstanden", disabled: S.beschaeftigt, text: TK.defekt.verstanden, aufClick: () => tue(() => api.kiHinweis()) }),
+    ];
+    if (S.daten.vorherDa) knoepfe.push(h("button", { klasse: "knopf", type: "button", "data-aktion": "konten-vorher", disabled: S.beschaeftigt, text: TK.defekt.vorher, aufClick: () => { S.frage = { art: "vorher" }; zeichneAlles(); zeigeFrage(); } }));
+    secHinweis.append(h("div", { klasse: "kk-karte warn", role: "status", "data-kk": "defekt" },
+      h("div", { klasse: "kk-karte-kopf" }, marke("warn"), h("div", { klasse: "kk-karte-titel", text: TK.defekt.titel })),
+      h("p", { text: S.daten.hinweisGrund === "geloescht" ? TK.defekt.textGeloescht : TK.defekt.text }),
+      h("div", { klasse: "kk-knoepfe" }, knoepfe)));
+  }
+
+  // Bestätigungen: Sperren, Strenger Schutz, frühere Fassung
+  function zeichneFrage() {
+    secFrage.replaceChildren();
+    const f = S.frage;
+    if (!f) return;
+    const abbrechen = h("button", { klasse: "knopf", type: "button", "data-aktion": "konten-frage-abbrechen", text: TK.sperren.abbrechen, aufClick: () => { S.frage = null; zeichneAlles(); if (f.konto) fokusAufKonto(f.konto); } });
+    if (f.art === "sperren") {
+      const k = kontoMitId(f.konto), v = vaults().find((x) => x.pfad === f.vault);
+      if (!k || !v) return;
+      const datei = `${k.ordner}/settings.json`;
+      const haken = f.claude ? h("input", { type: "checkbox", id: "kk-claude-haken", "data-kk": "claude-haken", checked: true }) : null;
+      if (haken) haken.checked = true;
+      const ja = h("button", { klasse: "knopf primaer", type: "button", "data-aktion": "konten-sperren-ja", text: TK.sperren.ja, aufClick: () => bestaetigeSperren(f, haken ? haken.checked : false) });
+      secFrage.append(h("div", { klasse: "kk-karte bestaetigung", role: "group", "aria-labelledby": "kk-frage-titel", "data-kk": "frage-sperren" },
+        h("div", { klasse: "kk-karte-titel", id: "kk-frage-titel", text: TK.sperren.titel(k.name, v.name) }),
+        h("div", { klasse: "kk-block" }, h("div", { klasse: "kk-block-titel", text: TK.sperren.schuetztTitel }), h("p", { text: TK.sperren.schuetzt })),
+        f.claude
+          ? h("div", { klasse: "kk-block" }, h("div", { klasse: "kk-block-titel", text: TK.sperren.claudeTitel }),
+            h("label", { klasse: "kk-wahl", for: "kk-claude-haken" }, haken, h("span", { text: TK.sperren.claudeHaken })),
+            h("p", { klasse: "mini", text: TK.sperren.claudeText(datei) }), h("p", { klasse: "mini", text: TK.sperren.claudeWirkt }))
+          : h("div", { klasse: "kk-block" }, h("div", { klasse: "kk-block-titel", text: TK.sperren.andereTitel(k.programmName) }), h("p", { text: TK.sperren.andere(k.programmName) })),
+        h("div", { klasse: "kk-block" }, h("div", { klasse: "kk-block-titel", text: TK.sperren.grenzenTitel }), h("p", { text: TK.sperren.grenzen })),
+        h("div", { klasse: "kk-knoepfe" }, abbrechen, ja)));
+    } else if (f.art === "streng") {
+      const k = kontoMitId(f.konto);
+      if (!k) return;
+      secFrage.append(h("div", { klasse: "kk-karte bestaetigung", role: "group", "aria-labelledby": "kk-frage-titel", "data-kk": "frage-streng" },
+        h("div", { klasse: "kk-karte-titel", id: "kk-frage-titel", text: TK.streng.dialogTitel(k.name) }),
+        h("p", { text: TK.streng.dialogWas }),
+        h("p", { text: TK.streng.dialogEinstellungen }),
+        h("div", { klasse: "kk-block" }, h("div", { klasse: "kk-block-titel", text: TK.streng.dialogFolgenTitel }), h("p", { text: TK.streng.dialogFolgen })),
+        h("p", { klasse: "mini", text: TK.streng.dialogRueckweg }),
+        h("div", { klasse: "kk-knoepfe" }, abbrechen, h("button", { klasse: "knopf primaer", type: "button", "data-aktion": "konten-streng-ja", text: TK.streng.dialogJa, aufClick: () => schalteStreng(k, true) }))));
+    } else if (f.art === "vorher") {
+      secFrage.append(h("div", { klasse: "kk-karte bestaetigung", role: "group", "aria-labelledby": "kk-frage-titel", "data-kk": "frage-vorher" },
+        h("div", { klasse: "kk-karte-titel", id: "kk-frage-titel", text: TK.defekt.vorherTitel }),
+        h("p", { text: TK.defekt.vorherText }),
+        h("div", { klasse: "kk-knoepfe" }, abbrechen, h("button", { klasse: "knopf primaer", type: "button", "data-aktion": "konten-vorher-ja", text: TK.defekt.vorherJa, aufClick: async () => { S.frage = null; await tue(() => api.kiVorher(), { erfolg: () => TK.defekt.vorherErfolg }); } }))));
+    }
+  }
+
+  // Liste der Konten: Logo, Name (umbenennbar), Programm · Ordner, verbunden ja/nein; bei Claude Code der Strenge Schutz
+  function zeichneKonten() {
+    secKonten.replaceChildren();
+    if (S.laedt) { secKonten.append(h("p", { klasse: "kk-laedt", role: "status", text: TK.laedt })); return; }
+    if (S.fehler) {
+      secKonten.append(h("div", { klasse: "kk-karte fehler", role: "alert" }, marke("rot"), h("p", { text: S.fehler?.message || TK.fehlerLaden }),
+        h("button", { klasse: "knopf", type: "button", "data-aktion": "konten-nochmal", text: TK.nochmal, aufClick: () => lade() })));
+      return;
+    }
+    secKonten.append(h("h3", { klasse: "kk-gruppe-titel", text: TK.konten.titel }));
+    if (!konten().length) { secKonten.append(h("p", { klasse: "kk-leer", "data-kk": "keine-konten", text: TK.keineKonten })); return; }
+    const liste = h("ul", { klasse: "kk-konten", "data-kk": "konten-liste" });
+    for (const k of konten()) liste.append(kontoZeile(k));
+    secKonten.append(liste);
+  }
+  function logoFuer(k) {
+    return kiLogoId(k.programm) ? kiLogo(k.programm, 20, { dekorativ: true }) : zeichen("person", 20);
+  }
+  function kontoZeile(k) {
+    const li = h("li", { klasse: "kk-konto", "data-konto": k.id, "data-programm": k.programm });
+    const kopf = h("div", { klasse: "kk-konto-kopf" });
+    const name = S.umbenenne === k.id
+      ? namensFeld(k)
+      : h("div", { klasse: "kk-konto-name" }, h("span", { klasse: "kk-name", "data-kk": "name", text: k.name }),
+        h("button", { klasse: "knopf-text", type: "button", "data-aktion": "konto-umbenennen", "aria-label": TK.konten.umbenennenFuer(k.name), disabled: S.beschaeftigt, text: TK.konten.umbenennen, aufClick: () => { S.umbenenne = k.id; S.namensFehler = null; zeichneKonten(); const f = secKonten.querySelector('[data-kk="name-feld"]'); f?.focus(); f?.select(); } }));
+    const chips = h("div", { klasse: "kk-chips" },
+      h("span", { klasse: "kk-chip", "data-kk": "verbunden", "data-verbunden": String(!!k.verbunden) }, marke(k.verbunden ? "gruen" : "aus"), h("span", { text: k.verbunden ? TK.konten.verbunden : TK.konten.nichtVerbunden })),
+      k.vorhanden === false ? h("span", { klasse: "kk-chip", "data-kk": "nicht-gefunden" }, marke("warn"), h("span", { text: TK.konten.nichtGefunden })) : null);
+    kopf.append(h("span", { klasse: "kk-logo" }, logoFuer(k)), h("div", { klasse: "kk-konto-text" }, name,
+      h("div", { klasse: "kk-meta", "data-kk": "meta", text: TK.konten.programmOrdner(k.programmName || k.programm, k.ordner) })), chips);
+    li.append(kopf);
+    // Altform: Eintrag oder Hooks ohne --konto → mit Konto neu verbinden (ändert nur die Einträge von Kortex, nie die Stufe)
+    if (k.altform && (k.altform.mcp || k.altform.hooks)) {
+      li.append(h("div", { klasse: "kk-altform", "data-kk": "altform" }, marke("warn"),
+        h("div", { klasse: "kk-altform-text" }, h("div", { klasse: "kk-block-titel", text: TK.konten.altformTitel }), h("div", { klasse: "mini", text: TK.konten.altformText })),
+        h("button", { klasse: "knopf", type: "button", "data-aktion": "konto-neu-verbinden", text: TK.konten.altformKnopf, aufClick: () => tue(() => api.kiNeuVerbinden(k.id), { erfolg: () => TK.konten.altformErfolg }) })));
+    }
+    return li;
+  }
+  function namensFeld(k) {
+    const feld = h("input", { type: "text", klasse: "kk-eingabe", "data-kk": "name-feld", maxlength: "60", value: k.name, "aria-label": TK.konten.nameFeld, "aria-invalid": S.namensFehler ? "true" : null });
+    feld.value = k.name;
+    feld.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); speichereName(k, feld.value); } });
+    return h("div", { klasse: "kk-konto-name bearbeiten" },
+      feld,
+      h("button", { klasse: "knopf primaer", type: "button", "data-aktion": "konto-name-speichern", text: TK.konten.speichern, aufClick: () => speichereName(k, feld.value) }),
+      h("button", { klasse: "knopf", type: "button", "data-aktion": "konto-name-abbrechen", text: TK.konten.abbrechen, aufClick: () => { S.umbenenne = null; S.namensFehler = null; zeichneKonten(); } }),
+      S.namensFehler ? h("div", { klasse: "kk-fehlertext", role: "alert", text: S.namensFehler }) : null);
+  }
+  // Strenger Schutz: nur Claude Code, aus der Werkstatt gemeldet (schutz.moeglich); ein eigener Abschnitt unter der Wahl der Stufen
+  function zeichneStreng() {
+    secStreng.replaceChildren();
+    if (S.laedt || S.fehler || !S.daten) return;
+    const claude = konten().filter((k) => k.schutz?.moeglich);
+    if (!claude.length) return;
+    secStreng.append(h("h3", { klasse: "kk-gruppe-titel", text: TK.streng.titel }), h("p", { klasse: "mini", text: TK.streng.hilfe }));
+    const warn = [...new Set(claude.flatMap((k) => (k.schutz.strenger ? k.schutz.warnungen || [] : []).map((w) => `${k.name}: ${TK.streng.warnungen[w] || w}`)))];
+    if (claude.some((k) => k.schutz.strenger)) warn.push(TK.streng.projektHinweis);
+    if (warn.length) secStreng.append(h("div", { klasse: "kk-karte warn", role: "status", "data-kk": "streng-warnung" }, marke("warn"), h("ul", { klasse: "kk-punkte" }, warn.map((t) => h("li", { text: t })))));
+    const liste = h("ul", { klasse: "kk-konten", "data-kk": "streng-liste" });
+    for (const k of claude) liste.append(strengZeile(k));
+    secStreng.append(liste);
+  }
+  function strengZeile(k) {
+    const s = k.schutz;
+    const gesperrte = vaults().filter((v) => stufeVon(k, v) === "gesperrt").length;
+    const an = !!s.strenger;
+    const zustand = an ? (s.strengerAktiv ? TK.streng.an : TK.streng.inaktiv) : TK.streng.aus;
+    const knopf = an
+      ? h("button", { klasse: "knopf", type: "button", "data-aktion": "streng-aus", text: TK.streng.ausschalten, aufClick: () => schalteStreng(k, false) })
+      : h("button", { klasse: "knopf", type: "button", "data-aktion": "streng-an", disabled: gesperrte === 0, text: TK.streng.einschalten, aufClick: () => { S.frage = { art: "streng", konto: k.id }; zeichneAlles(); zeigeFrage(); } });
+    return h("li", { klasse: "kk-streng", "data-kk": "streng", "data-konto": k.id, "data-streng": an ? "an" : "aus" },
+      h("span", { klasse: "kk-logo" }, logoFuer(k)),
+      h("div", { klasse: "kk-streng-text" },
+        h("div", { klasse: "kk-streng-kopf" }, h("span", { klasse: "kk-name", text: k.name }), h("span", { klasse: "kk-streng-zustand", "data-kk": "streng-zustand", text: zustand })),
+        !an && gesperrte === 0 ? h("div", { klasse: "mini", text: TK.streng.keinGesperrter }) : null),
+      knopf);
+  }
+
+  // Wer darf diesen Vault sehen? — pro Vault oder als Übersicht aller Vaults
+  function zeichneZugriff() {
+    secZugriff.replaceChildren();
+    if (S.laedt || S.fehler || !S.daten) return;
+    const kopf = h("div", { klasse: "kk-zugriff-kopf" }, h("h3", { klasse: "kk-gruppe-titel", text: TK.vault.titel }));
+    const hatMatrix = vaults().length >= 2 && konten().length >= 2;
+    if (!hatMatrix) S.ansicht = "vault";
+    if (hatMatrix) {
+      kopf.append(h("div", { klasse: "kk-ansicht", role: "group", "aria-label": TK.vault.titel },
+        ...["vault", "matrix"].map((a) => h("button", { type: "button", klasse: "kk-ansicht-knopf", "aria-pressed": String(S.ansicht === a), "data-ansicht": a, text: a === "vault" ? TK.vault.ansichtVault : TK.vault.ansichtMatrix,
+          aufClick: () => { S.ansicht = a; zeichneZugriff(); } }))));
+    }
+    secZugriff.append(kopf);
+    if (!vaults().length) { secZugriff.append(h("p", { klasse: "kk-leer", "data-kk": "kein-vault", text: TK.vault.keinVault })); return; }
+    if (!konten().length) { secZugriff.append(h("p", { klasse: "kk-leer", text: TK.vault.keineKonten })); return; }
+    if (S.ansicht === "matrix") zeichneMatrix(); else zeichneVaultAnsicht();
+    secZugriff.append(legende());
+  }
+  function vaultAuswahl() {
+    if (vaults().length === 1) return h("div", { klasse: "kk-vault-name", "data-kk": "vault-name" }, zeichen("vault", 14), h("span", { text: vaults()[0].name }));
+    const sel = h("select", { klasse: "kk-auswahl", "data-kk": "vault-wahl", "aria-label": TK.vault.wahl },
+      vaults().map((v) => h("option", { value: v.pfad, text: v.name })));
+    sel.value = aktuellerVault()?.pfad || "";
+    sel.addEventListener("change", () => { S.vaultPfad = sel.value; S.frage = null; zeichneAlles(); });
+    return h("label", { klasse: "kk-vault-wahl" }, h("span", { klasse: "kk-vault-label", text: TK.vault.wahl }), sel);
+  }
+  function zeichneVaultAnsicht() {
+    const v = aktuellerVault();
+    secZugriff.append(vaultAuswahl());
+    const liste = h("ul", { klasse: "kk-zeilen", "data-kk": "zugriff-liste" });
+    for (const k of konten()) {
+      const stufe = stufeVon(k, v);
+      const li = h("li", { klasse: "kk-zeile", "data-konto": k.id, "data-stufe": stufe });
+      li.append(
+        h("div", { klasse: "kk-zeile-kopf" },
+          h("span", { klasse: "kk-logo" }, logoFuer(k)),
+          h("span", { klasse: "kk-name", text: k.name }),
+          segmente({ stufen: STUFEN, wert: stufe, label: TK.vault.zeileFuer(k.name, v.name), daten: { "data-kk": "stufen" }, gesperrt: S.beschaeftigt, beiWahl: (s) => waehleStufe(k, v, s) })),
+        h("p", { klasse: "kk-stufentext", "data-kk": "stufentext", text: TK.stufen[stufe].text }));
+      if (stufe === "gesperrt") li.append(sperrZustand(k, v));
+      liste.append(li);
+    }
+    secZugriff.append(liste);
+    // Standard für neue Konten
+    const e = v;
+    secZugriff.append(h("div", { klasse: "kk-neu", "data-kk": "neue-konten" },
+      h("div", { klasse: "kk-neu-text" }, h("div", { klasse: "kk-block-titel", text: TK.vault.neueKonten }), h("div", { klasse: "mini", text: TK.vault.neueKontenHilfe })),
+      segmente({ stufen: NEUE, wert: e.neueKonten || "gesperrt", label: `${TK.vault.neueKonten}: ${v.name}`, daten: { "data-kk": "neue-stufen" }, gesperrt: S.beschaeftigt, beiWahl: (s) => setzeStandard(v, s) })));
+  }
+  // Zustand der Sperre in Claude Code für ein gesperrtes Konto in einem Vault (nur bei Claude Code), sonst der ehrliche Satz
+  function sperrZustand(k, v) {
+    if (!k.schutz?.moeglich) return h("div", { klasse: "kk-sperrzustand", "data-kk": "sperrzustand", "data-zustand": "kortex" }, marke("aus"), h("span", { text: TK.sperre.anderesProgramm(k.programmName || k.programm) }));
+    const schluessel = v.schluessel || v.pfad;
+    const z = k.schutz.vaults?.[schluessel] || k.schutz.vaults?.[v.pfad] || "aus";
+    const gut = z === "aktiv" || z === "eigene";
+    const knopf = gut ? null : h("button", { klasse: "knopf-text", type: "button", "data-aktion": "leseverbot-eintragen", disabled: S.beschaeftigt || z === "defekt",
+      text: z === "fehlt" || z === "veraltet" ? TK.sperre.erneuern : TK.sperre.eintragen, aufClick: () => { S.frage = { art: "sperren", konto: k.id, vault: v.pfad, claude: true }; zeichneAlles(); zeigeFrage(); } });
+    return h("div", { klasse: "kk-sperrzustand", "data-kk": "sperrzustand", "data-zustand": z }, marke(gut ? "gruen" : z === "aus" ? "aus" : "warn"), h("span", { text: TK.sperre[z] || TK.sperre.aus }), knopf);
+  }
+  function zeichneMatrix() {
+    const tabelle = h("table", { klasse: "kk-matrix", "data-kk": "matrix" });
+    tabelle.append(h("caption", { klasse: "kk-matrix-hinweis", text: TK.vault.matrixHinweis }));
+    tabelle.append(h("thead", {}, h("tr", {}, h("th", { scope: "col", text: TK.vault.matrixKonto }), vaults().map((v) => h("th", { scope: "col", "data-vault": v.pfad, text: v.name })))));
+    const koerper = h("tbody");
+    for (const k of konten()) {
+      const tr = h("tr", { "data-konto": k.id }, h("th", { scope: "row" }, h("span", { klasse: "kk-matrix-konto" }, h("span", { klasse: "kk-logo" }, logoFuer(k)), h("span", { text: k.name }))));
+      for (const v of vaults()) {
+        const sel = h("select", { klasse: "kk-auswahl", "data-kk": "matrix-zelle", "aria-label": TK.vault.zeileFuer(k.name, v.name), disabled: S.beschaeftigt },
+          STUFEN.map((s) => h("option", { value: s, text: stufeName(s) })));
+        sel.value = stufeVon(k, v);
+        sel.addEventListener("change", () => { const s = sel.value; sel.value = stufeVon(k, v); waehleStufe(k, v, s); });
+        tr.append(h("td", { "data-vault": v.pfad }, sel));
+      }
+      koerper.append(tr);
+    }
+    tabelle.append(koerper);
+    secZugriff.append(h("div", { klasse: "kk-matrix-rahmen" }, tabelle));
+  }
+  function legende() {
+    return h("details", { klasse: "kk-legende", "data-kk": "legende", open: true }, h("summary", { text: TK.vault.legende }),
+      h("dl", {}, STUFEN.flatMap((s) => [h("dt", { text: TK.stufen[s].name }), h("dd", { text: TK.stufen[s].text })])));
+  }
+
+  function zeichneEhrlich() {
+    secEhrlich.replaceChildren();
+    if (S.laedt || S.fehler || !S.daten || !konten().length) return;
+    secEhrlich.append(h("div", { klasse: "kk-karte schmal", "data-kk": "ehrlich-karte" }, h("div", { klasse: "kk-block-titel", text: TK.ehrlich.titel }),
+      h("ul", { klasse: "kk-punkte" }, [TK.ehrlich.kennung, TK.ehrlich.claude, TK.ehrlich.andere, TK.ehrlich.keine].map((t) => h("li", { text: t })))));
+  }
+
+  zeichneAlles();
+  lade();
+  return d;
+}

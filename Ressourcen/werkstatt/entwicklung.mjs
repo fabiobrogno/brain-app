@@ -2,6 +2,8 @@
 // werkstatt/entwicklung.mjs — derselbe Handler über HTTP, nur 127.0.0.1 (Entwicklung und Playwright-Tests; die App
 // startet das nie). Aufruf: node entwicklung.mjs [<vault>] [port]   (Port auch per BRAIN_PORT, Standard 4517, 0 = frei)
 // Ohne Vault-Argument (oder mit "-" als Platzhalter vor dem Port) gilt der aktive Vault aus <support>/vaults.json, sonst „kein Vault“.
+// SICHERHEIT: Dieser Server hat KEIN Zugriffs-Token — jeder Prozess desselben Benutzers, der 127.0.0.1:<port> erreicht, spricht mit der Werkstatt. Geschützt ist er nur gegen Browser-Querzugriffe
+// (Host- und Origin-Prüfung, nur JSON). Er ist ausschließlich für Entwicklung und Playwright-Tests da; die App startet ihn nie (sie spricht über den Nachrichtenkanal brain://).
 import { createServer } from "node:http";
 import { erzeugeHandler, MAX_KOERPER } from "./handler.mjs";
 import { HttpFehler } from "../gemeinsam/vault.mjs";

@@ -163,9 +163,52 @@ public enum KiZiel: String, CaseIterable, Sendable {
     }
 }
 
+/// Wie weit ein KI-Konto in den Vault schauen darf (KI-Konten und Vault-Zugriff). Die Werte sind die Stufen der Werkstatt (`PUT /api/ki/zugriff`).
+public enum KiStufe: String, CaseIterable, Sendable {
+    case gesperrt, lesen, posteingang, erweitert
+
+    /// Was der Assistent vorschlägt: das Konto, das du gerade verbindest, darf nachschlagen und Neues im Posteingang ablegen — wie bisher.
+    public static let standard = KiStufe.posteingang
+
+    public var name: String {
+        switch self {
+        case .gesperrt: return "Gesperrt"
+        case .lesen: return "Lesen"
+        case .posteingang: return "Posteingang"
+        case .erweitert: return "Erweitert"
+        }
+    }
+
+    /// Erklärung in Alltagssprache (dieselben Sätze wie im Studio unter „KI-Konten“).
+    public var erklaerung: String {
+        switch self {
+        case .gesperrt: return "Das Konto findet diesen Vault über Kortex nicht: keine Suche, kein Lesen, keine Hinweise beim Fragen, nichts wird dort abgelegt."
+        case .lesen: return "Das Konto darf nachschlagen: suchen und Notizen lesen. Es legt nichts im Vault ab."
+        case .posteingang: return "Das Konto darf nachschlagen und Neues im Posteingang ablegen, zum Beispiel Notizen und Aufgaben. Bestehende Notizen ändert es nicht."
+        case .erweitert: return "Wie Posteingang. Außerdem darf dieses Konto später den Vault pflegen (aufräumen, zusammenfassen). Gedacht für das Hauptkonto dieses Vaults."
+        }
+    }
+
+    /// Hinweis auf weitere Konten, solange der Assistent nur das hier verbundene Konto freigibt.
+    public static let hinweisWeitereKonten = "Weitere KI-Konten, zum Beispiel ein zweites Claude-Profil, sind für diesen Vault zunächst gesperrt. Du erlaubst sie später in Kortex unter Einstellungen → KI-Konten."
+}
+
+/// Die Stufe, mit der ein KI-Konto den Vault sehen soll, und ob der Nutzer sie ausdrücklich gewählt hat. Ohne ausdrückliche Wahl öffnet der Assistent nie ein Konto wieder, das der Nutzer selbst
+/// für diesen Vault gesperrt hat (die Werkstatt lässt es dann gesperrt).
+public struct KiZugriff: Equatable, Sendable {
+    public let stufe: KiStufe
+    public let ausdruecklich: Bool
+    public init(stufe: KiStufe, ausdruecklich: Bool) {
+        self.stufe = stufe
+        self.ausdruecklich = ausdruecklich
+    }
+}
+
 public enum KiVerbindung: Equatable, Sendable {
     case verbunden
     case schonVerbunden
+    /// Verbunden, aber das Konto ist für diesen Vault vom Nutzer gesperrt und bleibt es (keine ausdrückliche Wahl).
+    case verbundenGesperrt
 }
 
 /// Ergebnis von „Trennen“: Kortex hat seinen Eintrag herausgenommen, oder es gab keinen (dann ist nichts zu tun).
@@ -292,6 +335,8 @@ public protocol EinrichtungsDienste: Sendable {
     func erkenneKIs() async throws -> [KiProgramm]
     /// `profil`: nur bei Claude Code — der Pfad eines gefundenen Profils (`VerdrahtungsStand.profile`); nil = Standard wie bisher.
     func verbinde(_ ziel: KiZiel, umstellen: Bool, profil: String?) async throws -> KiVerbindung
+    /// Wie `verbinde`, und das Konto bekommt dabei die Stufe `zugriff` für den gerade offenen Vault (nil: es bleibt, was die Liste der KI-Konten sagt).
+    func verbinde(_ ziel: KiZiel, umstellen: Bool, profil: String?, zugriff: KiZugriff?) async throws -> KiVerbindung
 
     /// Rückweg von `verbinde`: nimmt NUR den Eintrag „brain“ heraus, und nur, wenn er von Kortex stammt. Ein fremder Eintrag bleibt
     /// stehen (Fehler mit `art == "anders"`). Hooks und Statuszeile sind ein eigener Schalter (`verdrahte`).
@@ -306,7 +351,19 @@ public protocol EinrichtungsDienste: Sendable {
     /// Trägt ein (`an`) bzw. nimmt heraus und liefert den neuen Stand. `ersetzen`: einen fremden Hook-Ordner im Vault ersetzen.
     /// `profile`: die gewählten Claude-Profile (Pfade); für `.claude` Pflicht, für `.dienst` zählt das erste (das der Dienst für `claude` nutzt).
     func verdrahte(_ was: Verdrahtung, an: Bool, ersetzen: Bool, profile: [String]) async throws -> VerdrahtungsStand
+    /// Wie `verdrahte`; beim Eintragen der Hooks bekommen die gewählten Claude-Profile dabei die Stufe `zugriff` für den offenen Vault (der Assistent nutzt das nicht: Hooks ändern keine Stufe).
+    func verdrahte(_ was: Verdrahtung, an: Bool, ersetzen: Bool, profile: [String], zugriff: KiZugriff?) async throws -> VerdrahtungsStand
 
     // Probe
     func probe(frage: String) async throws -> ProbeErgebnis
+}
+
+/// Alte Dienste (und Test-Attrappen) kennen die Stufe nicht: für sie gilt der Aufruf ohne `zugriff`.
+public extension EinrichtungsDienste {
+    func verbinde(_ ziel: KiZiel, umstellen: Bool, profil: String?, zugriff: KiZugriff?) async throws -> KiVerbindung {
+        try await verbinde(ziel, umstellen: umstellen, profil: profil)
+    }
+    func verdrahte(_ was: Verdrahtung, an: Bool, ersetzen: Bool, profile: [String], zugriff: KiZugriff?) async throws -> VerdrahtungsStand {
+        try await verdrahte(was, an: an, ersetzen: ersetzen, profile: profile)
+    }
 }

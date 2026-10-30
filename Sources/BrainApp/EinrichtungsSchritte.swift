@@ -389,6 +389,12 @@ private struct KiAnsicht: View {
             VStack(spacing: 10) {
                 ForEach(modell.anzeige.kis.filter { $0.status != .nichtGefunden }, id: \.ziel) { z in KiReihe(modell: modell, zeile: z) }
             }
+            if modell.anzeige.zeigeWeitereKontenHinweis {
+                Text(KiStufe.hinweisWeitereKonten)
+                    .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityIdentifier("ki-weitere-konten")
+            }
             WeitereKis(modell: modell, zeilen: modell.anzeige.kis.filter { $0.status == .nichtGefunden })
             if !modell.anzeige.kis.contains(where: { $0.status != .nichtGefunden }) && !modell.anzeige.kiSuchtGerade {
                 Text("Kortex hat hier kein unterstütztes KI-Programm gefunden. Installiere eines und suche dann neu — oder überspringe diesen Schritt, du kannst ihn später im Menü wiederholen.")
@@ -469,6 +475,16 @@ private struct ProfilAuswahl: View {
                     set: { an in modell.ablauf.waehleProfil(p.pfad, gewaehlt: an) })) {
                     Text(p.anzeigeName + (p.standard ? " (Standard)" : "") + (p.aktiv ? " — Hooks eingetragen" : ""))
                 }
+                if modell.anzeige.verdrahtung.auswahl.contains(p.pfad) {
+                    // Jedes Konto bekommt seine eigene Stufe für diesen Vault.
+                    Picker("Darf diesen Vault", selection: Binding(
+                        get: { modell.anzeige.profilStufen[p.pfad] ?? modell.anzeige.kiStufe(.claude) },
+                        set: { modell.ablauf.waehleProfilStufe(p.pfad, $0) })) {
+                        ForEach(KiStufe.allCases, id: \.self) { Text($0.name).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("ki-profil-stufe")
+                }
             }
         }
     }
@@ -545,6 +561,15 @@ private struct KiReihe: View {
                 Spacer(minLength: 8)
                 aktion
             }
+            if gefunden, zeile.status == .bereit || zeile.status.istFehler { stufenWahl }
+            if case .verbunden = zeile.status {
+                if modell.anzeige.kiGesperrtBleibt.contains(zeile.ziel) {
+                    Text("Dieses Konto hast du für diesen Vault gesperrt, es bleibt gesperrt. Ändern: Einstellungen → KI-Konten, oder wähle hier ausdrücklich eine Stufe und verbinde noch einmal.")
+                        .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text("Darf diesen Vault: \(modell.anzeige.kiStufe(zeile.ziel).name).").font(.callout).foregroundStyle(.secondary)
+                }
+            }
             switch zeile.status {
             case .umstellenFragen:
                 Text("Bei \(zeile.ziel.name) gibt es schon einen Eintrag „brain“, der woanders hinzeigt. Auf diesen Vault umstellen?").font(.callout)
@@ -576,6 +601,21 @@ private struct KiReihe: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.primary.opacity(gefunden ? 0.05 : 0.025), in: RoundedRectangle(cornerRadius: AssistentMass.eckenGross, style: .continuous))
         .accessibilityElement(children: .contain)
+    }
+
+    /// Wie weit dieses KI-Konto in den Vault schauen darf — vorbelegt mit „Posteingang“ (nachschlagen und Neues ablegen, wie bisher).
+    private var stufenWahl: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Picker("Darf diesen Vault", selection: Binding(
+                get: { modell.anzeige.kiStufe(zeile.ziel) },
+                set: { modell.ablauf.waehleKiStufe(zeile.ziel, $0) })) {
+                ForEach(KiStufe.allCases, id: \.self) { Text($0.name).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("ki-stufe-\(zeile.ziel.rawValue)")
+            Text(modell.anzeige.kiStufe(zeile.ziel).erklaerung)
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private var untertitel: String {

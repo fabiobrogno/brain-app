@@ -56,6 +56,16 @@ export function oeffneVault(vaultPfad, opts = {}) {
     return /generiert\s+—\s+nicht\s+editieren/i.test(kopf);
   }
   const mehrfachVerknuepft = (st) => st.isFile() && st.nlink > 1;
+  // Unter-Vaults (opts.ohneUnterVaults, vom MCP-Server gesetzt): Ein Unterordner mit eigener brain.config.json ist ein eigener Vault mit eigenen Zugriffsregeln. Für eine KI gehört er nicht zum äußeren
+  // Vault — weder im Baum noch in der Suche, im Kontext oder beim Lesen: sonst läse jedes Konto, das den äußeren Vault sehen darf, den inneren mit (der ggf. für dieses Konto gesperrt ist).
+  const istUnterVaultOrdner = (abs) => opts.ohneUnterVaults === true && abs !== wurzel && existsSync(join(abs, "brain.config.json"));
+  const imUnterVault = (abs) => {
+    if (opts.ohneUnterVaults !== true) return false;
+    const teile = relative(wurzel, abs).split(sep).filter(Boolean);
+    let p = wurzel;
+    for (const t of teile.slice(0, -1)) { p = join(p, t); if (istUnterVaultOrdner(p)) return true; }
+    return false;
+  };
   const schreibgeschuetzt = (rel, abs, st) => !BEARBEITBAR.test(rel) || istGeneriert(rel, abs) || (st ? mehrfachVerknuepft(st) : false);
 
   // ---------- Baum ----------
@@ -84,6 +94,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
         if (d.isSymbolicLink()) { // nur Dateien, die im Vault bleiben; Ordner-Symlinks nie (Schleifen)
           try { const echt = realpathSync(join(abs, d.name)); if (!imVault(echt, wurzel) || !statSync(echt).isFile()) continue; istDatei = true; istOrdner = false; } catch { continue; }
         }
+        if (istOrdner && istUnterVaultOrdner(join(abs, d.name))) continue;
         if (istOrdner) ordner.push({ name: d.name, rel });
         else if (istDatei) dateien.push({ name: d.name, rel });
       }
@@ -107,6 +118,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
   // ---------- Lesen / Schreiben ----------
   function lies(rel) {
     const { abs, rel: sauber } = loese(wurzel, rel);
+    if (imUnterVault(abs)) throw new HttpFehler(404, "Diese Datei gibt es nicht.");
     if (!BEARBEITBAR.test(sauber)) throw new HttpFehler(415, "Nur Markdown- und Textdateien lassen sich öffnen.");
     let st, buf;
     try { st = statSync(abs); if (!st.isFile()) throw 0; if (st.size > MAX_DATEI) throw new HttpFehler(413, "Die Datei ist zu groß."); buf = readFileSync(abs); }
@@ -205,7 +217,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
       for (const d of liste) {
         if (gesperrterName(d.name)) continue;
         const rel = relOrdner ? `${relOrdner}/${d.name}` : d.name;
-        if (d.isDirectory()) geh(rel);
+        if (d.isDirectory()) { if (!istUnterVaultOrdner(join(wurzel, rel))) geh(rel); }
         else if (d.isFile() && BEARBEITBAR.test(d.name) && !generiertName(d.name) && !wikiGeneriert(rel, d.name)) aus.push(rel);
       }
     };
@@ -380,7 +392,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
   }
 
   return {
-    wurzel, name: basename(wurzel), rueckfragen, kitVersion, kitVorhanden, kit, vertrauen, vertrauenStand: stand, baum, lies, schreibe, neu, merken, suche, suchenFuerKi, pruefung, gesundheit, nutzung,
+    wurzel, name: basename(wurzel), rueckfragen, kitVersion, kitVorhanden, kit, vertrauen, vertrauenStand: stand, baum, lies, imUnterVault: (rel) => { try { return imUnterVault(loese(wurzel, rel).abs); } catch { return false; } }, schreibe, neu, merken, suche, suchenFuerKi, pruefung, gesundheit, nutzung,
     posteingangVerwerfen: posteingang.verwerfen, posteingangSpaeter: posteingang.spaeter, posteingangUebernehmen: posteingang.uebernehmen,
     aufgaben: aufgabenFn.aufgaben, aufgabeAnlegen: aufgabenFn.anlegen, aufgabeAendern: aufgabenFn.aendern, aufgabenArchivieren: aufgabenFn.archivieren, aufgabenFuerKi: aufgabenFn.fuerKi, aufgabePfad: aufgabenFn.findePfad,
     notizen: async () => ({ ...(await notizIndex.notizen()), aufgabenOrdner: await aufgabenFn.ordnerName() }), notizKontext: notizIndex.kontext, typen: notizIndex.typen, ansichten: notizIndex.ansichten,

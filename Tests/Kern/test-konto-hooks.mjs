@@ -77,7 +77,7 @@ test("wiki-guard: für ein gesperrtes Konto wird Schreiben unter den Vault verwe
   const imVault = join(s.vault, "00_inbox", "neu.md"), draussen = join(HOME, "irgendwo.md");
   const e = (datei) => ({ tool_name: "Write", tool_input: { file_path: datei }, cwd: HOME });
   let r = lauf("wiki-guard", s, { args: ["--konto", "k_aaaaaaaa"], eingabe: e(imVault) });
-  assert.equal(r.code, 2); assert.match(r.fehler, /darf diesen Vault nicht verändern/); assert.ok(!r.fehler.includes(s.vault) && !r.fehler.includes("konto vault"));
+  assert.equal(r.code, 2); assert.match(r.fehler, /nicht freigegeben/); assert.ok(!r.fehler.includes(s.vault) && !r.fehler.includes("konto vault"));
   r = lauf("wiki-guard", s, { args: ["--konto", "k_aaaaaaaa"], eingabe: e(draussen) });
   assert.equal(r.code, 0); assert.equal(r.aus + r.fehler, "");
   // mit Stufe: die gewohnte Regel (hier: Posteingang frei, Wiki nur mit /ingest)

@@ -27,7 +27,8 @@ import { ADAPTER, erkenneProgramme } from "./ki-programme/index.mjs";
 const HIER = dirname(fileURLToPath(import.meta.url));
 export const MAX_KOERPER = 8 * 1024 * 1024;
 
-const CSP = "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self'; base-uri 'none'; object-src 'none'; form-action 'none'; frame-ancestors 'none'";
+// script-src ausdrücklich (statt nur über default-src): Skripte laufen nur aus Dateien der Werkstatt, nie inline und nie von fremden Adressen — eine in eine Notiz eingeschmuggelte <script>-Zeile bleibt wirkungslos.
+const CSP = "default-src 'self'; script-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self'; base-uri 'none'; object-src 'none'; form-action 'none'; frame-ancestors 'none'";
 const TYPEN = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".map": "application/json; charset=utf-8",
@@ -163,7 +164,7 @@ export function erzeugeHandler(o) {
   // Einrichtung über den Starter der App (Hooks bei Claude Code, Prüfung vor dem Speichern, Hintergrunddienst): werkstatt/verdrahtung.mjs. o.starter = Ersatz für Tests.
   const verdrahtung = erzeugeVerdrahtung({ starter: o.starter || join(vaultOpt.support || supportOrdner(), "bin", "kortex"), support: vaultOpt.support || supportOrdner(),
     kontoFuerProfil: (pfad) => { if (o.kontenAus === true) return null; try { return konten.kontoFuerProfil(pfad) || (konten.synchronisiere(), konten.kontoFuerProfil(pfad)); } catch { return null; } },
-    freigeben: (konto, vault, stufe) => konten.setzeZugriff({ konto, vault: vault.wurzel, stufe }) });
+    freigeben: (konto, vault, stufe, ausdruecklich = false) => konten.setzeZugriff({ konto, vault: vault.wurzel, stufe, quelle: "assistent", ausdruecklich }) });
   // „Frag deinen Vault“ (P4): eine Frage an Claude Code, die den Vault nur über den Kortex-MCP liest — werkstatt/frage.mjs. o.frageEnv / o.frageGrenzen / o.frageTemp: Ersatz für Tests
   // (Umgebung für Programmsuche und Kindprozess, kürzere Grenzen, Temp-Ordner); sonst gilt die Umgebung dieser Werkstatt als Quelle für PATH/HOME/LANG, nie mehr.
   const frage = erzeugeFrage({ support: vaultOpt.support || supportOrdner(), konten, mcpBasis: () => mcpArgs(), basisEnv: o.frageEnv || process.env,
@@ -190,7 +191,30 @@ export function erzeugeHandler(o) {
     // Routen ohne Vault: info, vaults/*, ki/erkennen, stopp. Alle anderen brauchen einen offenen Vault.
     const V = () => { if (!v) throw new HttpFehler(409, "Es ist noch kein Vault geöffnet.", { keinVault: true }); return v; };
     // Ein von Kortex angelegter/geklonter/geöffneter Vault kommt in die Liste der KI-Konten (alle gesperrt; das einzige Konto bei angelegt/geklont posteingang).
-    const neuerStand = (r, herkunft = "geoeffnet") => { try { konten.vaultHinzu(r.vault.pfad, herkunft); } catch { /* der Vault ist gesperrt, bis die Liste wieder geht */ } wechsleZu(r.vault.pfad); return { ...vaultListe(aktuell), vault: r.vault, git: r.git }; };
+    // Liegt der neue Vault in einem anderen Vault (oder umgekehrt)? Die Liste der App lässt das nicht zu (vaults.mjs), aber ein Ordner mit eigener brain.config.json kann trotzdem in einem Vault liegen
+    // (nie angemeldet, geklont, hineinkopiert). Dann gelten die Zugriffsrechte je Vault, und KI-Konten sehen den inneren nicht als Teil des äußeren: Warnung für den Nutzer.
+    const verschachtelt = (pfad) => {
+      let mein; try { mein = realpathSync.native(pfad); } catch { return null; }
+      let oben = dirname(mein);
+      for (let i = 0; i < 8 && oben !== dirname(oben); i++, oben = dirname(oben)) {
+        if (existsSync(join(oben, "brain.config.json"))) return "Dieser Vault liegt in einem anderen Vault. KI-Konten, die den äußeren Vault sehen dürfen, sehen diesen inneren nicht mit: Die Zugriffsrechte gelten je Vault (Einstellungen → KI-Konten).";
+      }
+      const gefunden = []; let besucht = 0;
+      const lauf = (dir, tiefe) => {
+        if (tiefe > 3 || besucht > 2000 || gefunden.length) return;
+        let liste; try { liste = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+        for (const d of liste) {
+          if (!d.isDirectory() || d.name.startsWith(".") || d.name === "node_modules") continue;
+          besucht++;
+          const u = join(dir, d.name);
+          if (existsSync(join(u, "brain.config.json"))) { gefunden.push(d.name); return; }
+          lauf(u, tiefe + 1);
+        }
+      };
+      lauf(mein, 1);
+      return gefunden.length ? `In diesem Vault liegt der Ordner „${gefunden[0]}“, der selbst ein Vault ist. KI-Konten sehen ihn nicht als Teil dieses Vaults: Die Zugriffsrechte gelten je Vault (Einstellungen → KI-Konten).` : null;
+    };
+    const neuerStand = (r, herkunft = "geoeffnet") => { const warnung = verschachtelt(r.vault.pfad); try { konten.vaultHinzu(r.vault.pfad, herkunft); } catch { /* der Vault ist gesperrt, bis die Liste wieder geht */ } wechsleZu(r.vault.pfad); return { ...vaultListe(aktuell), vault: r.vault, git: r.git, ...(warnung ? { warnung } : {}) }; };
     // POST /api/aufgaben/archivieren { pfad } | { aelterAlsTage }: erledigte Aufgaben ins Archiv verschieben (kein Löschen; nur in einem vertrauten Vault).
     // Vor der PATCH-Route: „archivieren“ ist nie ein Aufgabenpfad (die haben immer den Ordner davor).
     if (pfad === "/api/aufgaben/archivieren") { nur("POST"); return V().aufgabenArchivieren(eingabe()); }
@@ -295,6 +319,12 @@ export function erzeugeHandler(o) {
       case "/api/frage/start": nur("POST"); return frage.start(eingabe(), V());
       case "/api/frage/stand": nur("GET"); return frage.stand(q, V());
       case "/api/frage/abbrechen": nur("POST"); return frage.abbrechen(eingabe(), V());
+      case "/api/ki/standard": nur("PUT"); return konten.setzeStandard(eingabe());
+      case "/api/ki/schutz": nur("POST"); return konten.setzeSchutz(eingabe());
+      case "/api/ki/hinweis": nur("POST"); return konten.quittiereHinweis();
+      // Altform (Eintrag oder Hooks ohne --konto) mit Konto neu verbinden: ändert nur die Einträge von Kortex, nie die Stufe des Kontos (das Konto wird dadurch nicht freigegeben).
+      case "/api/ki/neu-verbinden": { nur("POST"); return kontoNeuVerbinden(eingabe(), v); }
+      case "/api/ki/vorher": nur("POST"); return konten.holeVorher(eingabe());
       case "/api/vaults": nur("GET"); return vaultListe(v);
       case "/api/vaults/aktiv": {
         nur("POST");
@@ -416,10 +446,28 @@ export function erzeugeHandler(o) {
     if (gewaehren !== undefined) {
       const id = kontoFuer(e, e.ziel, { anlegen: true });
       let gesetzt = false;
-      if (id && v) { try { konten.setzeZugriff({ konto: id, vault: v.wurzel, stufe: gewaehren }); gesetzt = true; } catch { /* z. B. ein nur für diesen Start geöffneter Vault: nicht in der Liste */ } }
-      return { ...erg, zugriffGesetzt: gesetzt };
+      let grund = null;
+      if (id && v) {
+        try { const r = konten.setzeZugriff({ konto: id, vault: v.wurzel, stufe: gewaehren, quelle: "assistent", ausdruecklich: e.zugriffAusdruecklich === true }); gesetzt = r.zugriffGesetzt !== false; grund = r.zugriffGrund || null; }
+        catch { /* z. B. ein nur für diesen Start geöffneter Vault: nicht in der Liste */ }
+      }
+      return { ...erg, zugriffGesetzt: gesetzt, ...(grund ? { zugriffGrund: grund } : {}) };
     }
     return erg;
+  }
+
+  async function kontoNeuVerbinden(e, v) {
+    if (typeof e.konto !== "string") throw new HttpFehler(400, "Das KI-Konto muss angegeben werden.");
+    const k = konten.kontoDaten(e.konto);
+    if (!k) throw new HttpFehler(404, "Dieses KI-Konto gibt es nicht (mehr).");
+    const alt = konten.altform(e.konto);
+    const aus = { mcp: null, hooks: null };
+    if (alt.mcp) aus.mcp = await verbinde({ ziel: k.programm, konto: e.konto }, null); // ohne zugriff: die Stufe bleibt, wie sie ist
+    if (alt.hooks && k.programm === "claude") {
+      if (!v) throw new HttpFehler(409, "Es ist noch kein Vault geöffnet.", { keinVault: true });
+      aus.hooks = (await verdrahtung.verdrahte(v, { was: "claude", an: true, profile: [k.ordner] })).ok === true;
+    }
+    return { ok: true, ...aus, stand: konten.stand() };
   }
 
   // ---------- Trennen (Rückweg von „Verbinden“) ----------

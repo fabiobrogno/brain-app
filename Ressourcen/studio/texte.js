@@ -182,7 +182,7 @@ export const T = {
   befehle: {
     neu: "Neue Notiz", merken: "Schnell merken", commit: "Änderungen sichern …", sync: "Mit Remote abgleichen",
     info: "Infospalte ein- oder ausblenden", suche: "Im Vault suchen", gesundheit: "Gesundheit anzeigen", nutzung: "KI-Nutzung anzeigen",
-    lizenzen: "Lizenzen …", ordner: "Vault im Finder zeigen", ansicht: "Übersicht öffnen", mcp: "KI (Claude) verbinden", umstellen: "Vault umstellen …",
+    lizenzen: "Lizenzen …", ordner: "Vault im Finder zeigen", ansicht: "Übersicht öffnen", mcp: "KI (Claude) verbinden", konten: "KI-Konten …", umstellen: "Vault umstellen …",
     inNotiz: "In der Notiz suchen",
   },
   kuerzel: {

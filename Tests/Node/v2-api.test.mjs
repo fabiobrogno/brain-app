@@ -20,7 +20,7 @@ const aufruf = (h) => async (methode, p, daten, query) => {
   let j = null; try { j = JSON.parse(r.body.toString("utf8")); } catch { /* statisch */ }
   return { ...r, j };
 };
-const loescheListe = async () => { const { rmSync } = await import("node:fs"); for (const f of ["vaults.json", "config.json", "vertrauen.json", "ki-konten.json"]) rmSync(join(SUPPORT, f), { force: true }); };
+const loescheListe = async () => { const { rmSync } = await import("node:fs"); for (const f of ["vaults.json", "config.json", "vertrauen.json", "ki-konten.json", "ki-konten.json.vorher", "ki-konten.angelegt"]) rmSync(join(SUPPORT, f), { force: true }); };
 const schreibeListe = (vaults, aktiv) => writeFileSync(join(SUPPORT, "vaults.json"), JSON.stringify({ vaults, aktiv }));
 const id16 = (p) => createHash("sha256").update(realpathSync(p)).digest("hex").slice(0, 16);
 

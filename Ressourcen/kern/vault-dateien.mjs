@@ -22,7 +22,8 @@ export function walk(vault, { wikiDir = ordner(vault).wiki, ignore = ignorierLis
       const full = join(dir, name), rel = relative(vault, full);
       if (skip(rel)) continue;
       const st = statSync(full);
-      if (st.isDirectory()) lauf(full);
+      // Ein Unterordner mit eigener brain.config.json ist ein eigener Vault (mit eigenen Zugriffsregeln) und gehört nicht zu diesem Index: sonst läse jedes Konto, das den äußeren Vault sehen darf, den inneren mit.
+      if (st.isDirectory()) { if (!existsSync(join(full, "brain.config.json"))) lauf(full); }
       else if (name.endsWith(".md")) out.push({ full, rel, size: st.size });
     }
   };

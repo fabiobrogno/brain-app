@@ -40,7 +40,7 @@ import { haengeAn, zeitstempel } from "./logs.mjs";
 import { leseAutomatik } from "./einstellungen.mjs";
 import { schreibeVorschlag } from "./vorschlaege.mjs";
 import { nenntThema, THEMA_GRUND } from "./thema-ausschluss.mjs";
-import { vaultPfadOderEnde, entferneBom, geprueftVaultsVertraut } from "./pfade.mjs";
+import { vaultPfadOderEnde, entferneBom, geprueftVaultsVertraut, kiKontoDarf } from "./pfade.mjs";
 
 export const MAX_TRANSKRIPT = 24000;
 export const MIN_PROMPTS = 5;
@@ -457,8 +457,11 @@ function rufeClaude(claudeBefehl, art, eingabe, vault) {
 }
 
 // Schlanker Haiku-Aufruf mit eigenem Systemprompt; Eingabe über stdin. → { ausgabe } | { fehler }.
-export function rufeHaiku(claudeBefehl, systemPrompt, eingabe, vault, { zweck = "", modell = "haiku" } = {}) {
+// KI-Konten: letzte Sicherung vor dem Start — das Konto dieses Prozesses (CLAUDE_CONFIG_DIR) braucht für den Vault mindestens `konto` (Standard „posteingang“, wie die Ernte-Hooks;
+// der Hintergrunddienst und die KI-Pflege verlangen „erweitert“, siehe tageslauf/ki.mjs#kiBefehl). Sonst wird nichts gestartet und kein Vault-Inhalt weitergegeben.
+export function rufeHaiku(claudeBefehl, systemPrompt, eingabe, vault, { zweck = "", modell = "haiku", konto = "posteingang" } = {}) {
   return new Promise((resolve) => {
+    if (!kiKontoDarf(vault, konto)) { resolve({ fehler: "KI-Konto ohne Berechtigung" }); return; }
     let arbeitsDir;
     try { arbeitsDir = legeArbeitsOrdnerAn(vault, zweck); }
     catch { resolve({ fehler: "kein Temp-Ordner" }); return; }
@@ -538,6 +541,7 @@ function pruefeUndSpeichere(vault, { antwortText, art, cwd, sid, reinSid, jetzt,
 async function ernteLauf(vault, { art, transkript, sid = "", cwd = "", claudeBefehl = findeClaude(), jetzt = Date.now() } = {}) {
   const ergebnis = (status, grund, vorschlaege = []) => ({ status, ...(grund ? { grund } : {}), vorschlaege });
   if (process.env.BRAIN_ERNTE === "1") return ergebnis("uebersprungen", "Selbstaufruf");
+  if (!kiKontoDarf(vault, "posteingang")) return ergebnis("uebersprungen", "KI-Konto ohne Berechtigung");   // KI-Konten: die Ernte schreibt Vorschläge in den Vault (die Hooks prüfen es schon, hier auch für Aufrufe von der Kommandozeile)
   const reinSid = reinSidVon(sid);
   const log = join(vault, ".logs", "ernte.log");
   const protokoll = (status, ein, aus, extra = "") =>
@@ -599,6 +603,7 @@ async function nachernteLauf(vault, { transkript, sid = "", cwd = "", claudeBefe
   let aufrufe = 0;
   const ergebnis = (status, grund) => ({ status, ...(grund ? { grund } : {}), vorschlaege: ids, aufrufe });
   if (process.env.BRAIN_ERNTE === "1") return ergebnis("uebersprungen", "Selbstaufruf");
+  if (!kiKontoDarf(vault, "posteingang")) return ergebnis("uebersprungen", "KI-Konto ohne Berechtigung");   // KI-Konten: siehe ernteLauf
   const reinSid = reinSidVon(sid);
   const zeit = () => new Date(jetzt).toISOString().slice(0, 19) + "Z";
   const log = join(vault, ".logs", "ernte.log");

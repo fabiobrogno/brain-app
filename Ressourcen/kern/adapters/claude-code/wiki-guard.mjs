@@ -51,9 +51,10 @@ else {
 function blockiere(msg) { process.stderr.write(msg + "\n"); process.exit(2); }
 
 // KI-Konten: Hat das Konto dieser Sitzung für den Vault keine Stufe, wird jedes Schreiben unter ihm verweigert (best effort: der Hook sieht nur file_path).
-// Die Meldung nennt nur den Pfad, den die KI selbst angegeben hat; sonst nichts über den Vault. Ohne Treffer bleibt der Hook still.
+// Die Meldung ist neutral (kein „Vault“, kein Name, kein Pfad außer dem, den die KI selbst angegeben hat). Ein Rest bleibt: Wer Pfade ausprobiert, sieht den Unterschied zwischen „verweigert“ und „still“ —
+// das ist ein Existenz-Hinweis für Pfade, die die KI schon kennt, kein Inhalt; ihn ganz zu verhindern ginge nur mit einer Meldung bei JEDEM Pfad.
 if (!KONTO_DARF) {
-  if (unter(F, VN) || unter(F, V) || gleich(F, VN) || gleich(F, V)) blockiere("Kortex: Dieses KI-Konto darf diesen Vault nicht verändern.");
+  if (unter(F, VN) || unter(F, V) || gleich(F, VN) || gleich(F, V)) blockiere("Kortex: Dieser Pfad ist für dieses KI-Konto nicht freigegeben.");
   process.exit(0);
 }
 

@@ -16,6 +16,7 @@ import { hooksPfadArt, adressArt } from "./git-lage.mjs";
 import { gitLauf, kernSkript, kennung, findeClaudeProgramm } from "./ziele.mjs";
 import { hashDatei, sichereDatei, sicherungsPfad, stelleHer, modusVon, schreibeAtomar, echtesDateiZiel, hashText } from "./protokoll.mjs";
 import { nennt, pruefeBefehleUndSkills } from "./restverweise.mjs";
+import { kontoLeser } from "./konto.mjs";
 import { spawnSync } from "node:child_process";
 
 const istObjekt = (x) => x && typeof x === "object" && !Array.isArray(x);
@@ -196,9 +197,11 @@ export function hakenZurueck(doc, diff) {
   return doc;
 }
 
+// KI-Konten: die Hook-Befehle des Profils tragen `--konto <id>`, wenn die Liste der KI-Konten das Profil kennt (sonst bleibt es die Altform). Gelesen wird nur.
+const kontoArgs = (z, profil) => { const k = kontoLeser(z.supportOriginal || z.support)("claude", profil.pfad); return k ? ["--konto", k] : []; };
 export function vorschauProfil(z, profil) {
   // der Vault ist das ORIGINAL (nur für die Erkennung alter Einträge): sein Vertrauen steht im echten Support-Ordner, nicht im Probe-Support
-  const r = kernSkript(z, INSTALL, [z.musterVault, "--vorschau", "--claude-home", profil.pfad], { extraEnv: { BRAIN_APP_SUPPORT: z.supportOriginal || z.support } });
+  const r = kernSkript(z, INSTALL, [z.musterVault, "--vorschau", "--claude-home", profil.pfad, ...kontoArgs(z, profil)], { extraEnv: { BRAIN_APP_SUPPORT: z.supportOriginal || z.support } });
   const j = r.status === 0 ? jsonZeile(r.stdout) : null;
   return { status: r.status, vorschau: j && j.vorschau ? j : null, stderr: r.stderr };
 }
@@ -236,7 +239,7 @@ export const A4 = {
       }
       undo.profile.push(eintrag);
       ctx.merkeUndo(undo);
-      const r = kernSkript(z, INSTALL, [z.vault, "--claude-home", p.pfad]);
+      const r = kernSkript(z, INSTALL, [z.vault, "--claude-home", p.pfad, ...kontoArgs(z, p)]);
       if (r.status === 3) throw new Error("kein-stabiler-kern");
       if (r.status === 5) throw new Error("vault-nicht-vertraut");
       if (r.status !== 0) throw new Error("claude-hooks-fehlgeschlagen");
