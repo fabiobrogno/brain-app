@@ -65,13 +65,23 @@ ${[starter, "tageslauf", "--wenn-faellig", "--dienst"].map(arg).join("\n")}
 `;
 }
 
-function launchctl(args) {
+export function launchctl(args) {
   const ersatz = process.env.BRAIN_LAUNCHCTL;
   if (!ersatz && process.env.NODE_TEST_CONTEXT) throw new Error("echtes launchctl in Tests verboten (BRAIN_LAUNCHCTL setzen)");
   const [cmd, vor] = ersatz ? [process.execPath, [ersatz]] : ["/bin/launchctl", []];
   try { execFileSync(cmd, [...vor, ...args], { stdio: ["ignore", "pipe", "pipe"], timeout: 10000, windowsHide: true }); return true; } catch { return false; }
 }
-const domain = () => `gui/${userInfo().uid}`;
+export const domain = () => `gui/${userInfo().uid}`;
+
+// Der Inhalt der plist samt Profil – eine Stelle für „dienst an“ und für die Umstellung (P7b: Probelauf rendert nur, ohne zu schreiben und ohne launchctl).
+// → { profil, text, log }
+export function bauePlist({ starter, node = nodePfad(), claude = findeClaude(), profilRoh = process.env.CLAUDE_CONFIG_DIR, home = homedir(), support = supportOrdner() } = {}) {
+  const profil = profilPfad(profilRoh, { home });
+  const claudeDir = claude && claude.args.length === 0 ? dirname(claude.befehl) : null;
+  const pfad = [...new Set([dirname(node), claudeDir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].filter(Boolean))].join(":");
+  const log = join(support, "logs", "dienst.log");
+  return { profil, log, text: plistInhalt({ starter, pfad, log, profil }) };
+}
 
 export function dienstAn(vault, { home = homedir(), plattform = process.platform, node = nodePfad(), claude = findeClaude(), profil: profilRoh = process.env.CLAUDE_CONFIG_DIR } = {}) {
   if (plattform !== "darwin") return { ok: false, text: "Den Hintergrunddienst gibt es nur auf dem Mac — der Tageslauf startet dann beim Sitzungsstart, wenn er fällig ist." };
@@ -81,16 +91,13 @@ export function dienstAn(vault, { home = homedir(), plattform = process.platform
   if (process.env.KORTEX_KERN_UNSTABIL_ERLAUBT !== "1" && !existsSync(starter)) {
     return { ok: false, nichtStabil: true, text: "Der Starter von Kortex fehlt. Öffne die Kortex-App einmal, dann wird er angelegt, und versuche es danach noch einmal." };
   }
-  const profil = profilPfad(profilRoh, { home });
-  const claudeDir = claude && claude.args.length === 0 ? dirname(claude.befehl) : null;
-  const pfad = [...new Set([dirname(node), claudeDir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].filter(Boolean))].join(":");
-  const log = join(supportOrdner(), "logs", "dienst.log");
-  mkdirSync(dirname(log), { recursive: true });
+  const { profil, text } = bauePlist({ starter, node, claude, profilRoh, home });
+  mkdirSync(dirname(join(supportOrdner(), "logs", "dienst.log")), { recursive: true });
   const datei = plistPfad({ home });
   mkdirSync(dirname(datei), { recursive: true });
   if (existsSync(datei)) launchctl(["bootout", `${domain()}/${LABEL}`]);
   // Kein fester Node-Pfad und kein Vault — der Ordner des heutigen Node steht nur noch als PATH-Hinweis drin.
-  writeFileSync(datei, plistInhalt({ starter, pfad, log, profil }));
+  writeFileSync(datei, text);
   erlaubeVault(vault);
   const ok = launchctl(["bootstrap", domain(), datei]);
   return {
@@ -108,19 +115,20 @@ export function dienstAus(vault, { home = homedir() } = {}) {
   return { ok: true, text: "Hintergrunddienst aus. Der Tageslauf startet jetzt beim Sitzungsstart, wenn er fällig ist." };
 }
 // Das Profil, das der Dienst tatsächlich nutzt, steht in seiner plist (nicht in der Umgebung dieser Sitzung): Pfad | null (Standardprofil).
-function profilAusPlist(datei) {
+export function profilAusPlist(datei) {
   try {
     const m = readFileSync(datei, "utf8").match(/<key>CLAUDE_CONFIG_DIR<\/key>\s*<string>([^<]*)<\/string>/);
     return m && unxml(m[1]).trim() ? unxml(m[1]).trim() : null;
   } catch { return null; }
 }
-export function dienstStatus(vault, { home = homedir() } = {}) {
+// nurLesen: kein `launchctl print` (Probelauf/Befund der Umstellung); `geladen` bleibt dann null.
+export function dienstStatus(vault, { home = homedir(), nurLesen = false } = {}) {
   const eingerichtet = dienstEingerichtet({ home });
   const plist = plistPfad({ home });
   // veraltet: die plist ist noch die ältere Form (fester Vault oder node-start.sh) — „dienst an“ ersetzt sie.
   let veraltet = false;
   if (eingerichtet) { try { veraltet = /<key>BRAIN_VAULT<\/key>|node-start\.sh/.test(readFileSync(plist, "utf8")); } catch { /* unlesbar */ } }
-  return { eingerichtet, geladen: eingerichtet && launchctl(["print", `${domain()}/${LABEL}`]), plist, profil: eingerichtet ? profilAusPlist(plist) : null, veraltet, fuerVault: eingerichtet && dienstErlaubt(vault) };
+  return { eingerichtet, geladen: nurLesen ? null : eingerichtet && launchctl(["print", `${domain()}/${LABEL}`]), plist, profil: eingerichtet ? profilAusPlist(plist) : null, veraltet, fuerVault: eingerichtet && dienstErlaubt(vault) };
 }
 
 const selbst = fileURLToPath(import.meta.url);
@@ -131,7 +139,7 @@ if (aufruf && aufruf === realpathSync(selbst)) {
   const { vault, rest: [befehl = "status"] } = vaultUndRest(process.argv.slice(2), (a) => ["an", "aus", "status"].includes(a));
   if (!["an", "aus", "status"].includes(befehl)) { console.error("Nutzung: brain dienst an|aus|status"); process.exit(64); }
   if (befehl === "status") {
-    const s = dienstStatus(vault);
+    const s = dienstStatus(vault, { nurLesen: process.argv.includes("--nur-lesen") });
     // --json: eine Zeile für die App (Kortex-Einrichtung); nichts davon enthält Zugangsdaten.
     if (process.argv.includes("--json")) console.log(JSON.stringify({ eingerichtet: s.eingerichtet, geladen: s.geladen, profil: s.profil, veraltet: s.veraltet, fuerDiesenVault: s.fuerVault }));
     else console.log(s.eingerichtet ? `Hintergrunddienst eingerichtet${s.geladen ? " und geladen" : ", aber nicht geladen — „brain dienst an“ erneut ausführen"}.`

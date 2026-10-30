@@ -108,7 +108,7 @@ export function zielGueltig(ziel, { vault, kopie, cluster, quelle }) {
   const teile = z.split("/");
   if (!z || z.length > 200 || z.startsWith("/") || /^[A-Za-z]:/.test(z) || teile.some((t) => !t || t.startsWith("."))) return false;
   if (teile.length < 2 || !cluster.includes(teile[0]) || teile.includes("belege")) return false;
-  if ([o.wiki, o.inbox, o.archiv, ALT_KIT_ORDNER].some((x) => z === x || z.startsWith(`${x}/`))) return false;
+  if ([o.wiki, o.inbox, o.archiv, ALT_KIT_ORDNER, ".kortex"].some((x) => z === x || z.startsWith(`${x}/`))) return false;
   const endung = (s) => (String(s).match(ENDUNG)?.[0] || "").toLowerCase();
   if (!endung(z) || endung(z) !== endung(quelle)) return false;
   return !existsSync(join(kopie, z)) && !existsSync(join(vault, z));

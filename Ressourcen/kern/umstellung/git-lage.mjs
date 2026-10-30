@@ -48,7 +48,7 @@ export function lokaleKonfiguration(git, vault, opt = {}) {
 export const werte = (konfig, schluessel) => (konfig || []).filter((e) => e.schluessel.toLowerCase() === schluessel.toLowerCase()).map((e) => e.wert);
 
 // Wie git-sicher-pruefung.pl den Namen ausgibt: nur druckbares ASCII, höchstens 120 Zeichen.
-const alsPrueflistenName = (s) => s.replace(/[^\x20-\x7e]/g, "?").slice(0, 120);
+export const alsPrueflistenName = (s) => s.replace(/[^\x20-\x7e]/g, "?").slice(0, 120);
 
 // Die Prüfung der Erlaubnisliste im Modus --alle → { ok, namen: [Schlüsselnamen], nichtPruefbar }. Die Umgebung ist die der Produktion (keine Testschalter),
 // damit auch lokale Remote-Adressen als verboten gelten.
@@ -109,7 +109,7 @@ export function lokaleRemotes(konfig) {
 
 // --- core.hooksPath -----------------------------------------------------------------------------------------------------------
 // → "keiner" | "kortex" | "kit-alt" | "fremd" und die Schreibweise („relativ“/„absolut“) des alten Kit-Eintrags. Die relative Form des Kits (ein Kit-Ordner im
-// Vault mit /git-hooks) kennt install-git-hooks.mjs#istKortex nicht und meldet sie als fremd (Exit 4): der Befund erkennt sie richtig (Lücke wird in P7b geschlossen).
+// Vault mit /git-hooks) kannte install-git-hooks.mjs#istKortex früher nicht (Exit 4, „fremd“); seit P7b erkennt es sie wie der Befund.
 export function hooksPfadArt(wert, vault, kitOrdner, support = null) {
   const w = String(wert || "").split("\\").join("/").replace(/\/+$/, "");
   if (!w) return { art: "keiner" };
@@ -117,7 +117,7 @@ export function hooksPfadArt(wert, vault, kitOrdner, support = null) {
   if (s && (w === `${s}/bin/kern/git-hooks` || new RegExp(`^${s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/kern/[^/]+/git-hooks$`).test(w))) return { art: "kortex" };
   if (/\/Application Support\/(?:Kortex|Brain)\/(?:bin\/kern|kern\/[^/]+)\/git-hooks$/.test(w)) return { art: "kortex" };
   const v = String(vault).split("\\").join("/").replace(/\/+$/, "");
-  if (w === `${kitOrdner}/git-hooks`) return { art: "kit-alt", form: "relativ" };
+  if (w === `${kitOrdner}/git-hooks` || w === `./${kitOrdner}/git-hooks`) return { art: "kit-alt", form: "relativ" };
   if (w === `${v}/${kitOrdner}/git-hooks` || w.endsWith(`/${kitOrdner}/git-hooks`)) return { art: "kit-alt", form: "absolut" };
   return { art: "fremd" };
 }

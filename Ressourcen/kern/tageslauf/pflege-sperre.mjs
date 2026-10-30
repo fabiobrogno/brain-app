@@ -10,7 +10,8 @@ import { ALT_KIT_ORDNER } from "../pfade.mjs";
 import { git } from "./arbeitskopie.mjs";
 import { pflegeGrund, konfigLesbar } from "./pflege-thema.mjs";
 
-const UEBERSPRINGEN = new Set([".git", ALT_KIT_ORDNER, ".claude", ".logs", "node_modules"]);
+// .kortex = Gerätemerker der Umstellung (P7b): Pflege und KI fassen ihn nie an
+const UEBERSPRINGEN = new Set([".git", ALT_KIT_ORDNER, ".claude", ".kortex", ".logs", "node_modules"]);
 const TEXT = /\.(md|txt|json|csv|yml|yaml)$/i;
 const MAX_BYTES = 2 * 1024 * 1024;
 const fwd = (p) => String(p).split("\\").join("/");
