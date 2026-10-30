@@ -1,5 +1,6 @@
 // Dialog „Remote hinzufügen“: Adresse eingeben, prüfen lassen, verbinden.
 import { h, dialog, arbeitBeginnt, ausTabelle } from "./hilfen.js";
+import { textfeld } from "./bausteine.js";
 import { symbol } from "./symbole.js";
 import { markenLogo } from "./marken.js";
 import { api, gitGesperrt, ausgangUnklar, zeitText, ladeStandNeu } from "./api.js";
@@ -30,7 +31,8 @@ export function oeffneRemoteDialog({ beiFertig, beiStandNeu } = {}) {
   let laeuft = false;
   const melde = () => { if (gemeldet) return; gemeldet = true; beiFertig?.(); };
 
-  const eingabe = h("input", { type: "text", id: "rm-adresse", "data-feld": "adresse", autocomplete: "off", autocapitalize: "off", spellcheck: "false", placeholder: TV.remote.platzhalter, "aria-describedby": "rm-hinweis rm-meldung" });
+  const adressFeld = textfeld({ id: "rm-adresse", platzhalter: TV.remote.platzhalter, beschreibung: "rm-hinweis rm-meldung", daten: { "data-feld": "adresse" } });
+  const eingabe = adressFeld.input;
   const meldung = h("div", { klasse: "rm-meldung", id: "rm-meldung", "aria-live": "polite" });
   const knopf = h("button", { klasse: "knopf primaer gross", type: "submit", "data-aktion": "verbinden" }, h("span", { text: TV.remote.verbinden }));
   const abbrechen = h("button", { klasse: "knopf gross", type: "button", "data-aktion": "abbrechen", text: TV.remote.abbrechen });
@@ -39,7 +41,7 @@ export function oeffneRemoteDialog({ beiFertig, beiStandNeu } = {}) {
   const kopfZeichen = h("span", { klasse: "rm-zeichen" }, zeichen("wolke", 20));
   const zeigeKopfzeichen = (adresse) => kopfZeichen.replaceChildren(/(^|[@/.])github\.com([:/]|$)/i.test(adresse) ? markenLogo("github", 20, { dekorativ: true }) : zeichen("wolke", 20));
   const form = h("form", { klasse: "rm-form", novalidate: true },
-    h("div", { klasse: "feld" }, h("label", { for: "rm-adresse", text: TV.remote.label }), eingabe),
+    h("div", { klasse: "feld" }, h("label", { for: "rm-adresse", text: TV.remote.label }), adressFeld.el),
     h("p", { klasse: "rm-hinweis", id: "rm-hinweis", text: TV.remote.hinweis }),
     meldung,
     h("div", { klasse: "rm-fuss" }, abbrechen, knopf));

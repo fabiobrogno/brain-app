@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="vertrauen.css">
 <link rel="stylesheet" href="aufgaben.css">
 <link rel="stylesheet" href="live.css">
+<link rel="stylesheet" href="bausteine.css">
 </head>
 <body>
 <div id="app" data-info="an" data-modus="liste">
@@ -46,9 +47,11 @@
       </div>
     </header>
     <div id="liste-suche" class="liste-suche" hidden>
-      <span data-sym="suche"></span>
-      <input id="suche" type="search" autocomplete="off" spellcheck="false" aria-label="Suchen">
-      <button id="suche-zu" class="knopf-icon klein" aria-label="Suche schließen"></button>
+      <div class="bs-feld bs-s">
+        <span data-sym="suche" class="bs-feld-symbol"></span>
+        <input id="suche" class="bs-input" type="search" autocomplete="off" spellcheck="false" aria-label="Suchen">
+        <button id="suche-zu" class="knopf-icon klein" aria-label="Suche schließen"></button>
+      </div>
     </div>
     <div id="liste-koerper" class="liste-koerper" tabindex="0" role="listbox" aria-label="Notizen"></div>
   </section>

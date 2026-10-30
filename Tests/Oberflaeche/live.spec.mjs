@@ -103,6 +103,41 @@ test("Ein Live-Nachladen dreht eine laufende eigene Änderung nicht zurück (Kar
   await expect(spalte(page, "in-arbeit").locator(`[data-pfad="${p.a}"]`)).toBeVisible();
 });
 
+test("Optimistisch angelegte Karte (blass) und Live-Nachladen: keine Doppel-Karte, die vorläufige bleibt bis zur Bestätigung", async ({ page }) => {
+  await oeffneBoard(page);
+  await page.route("**/api/aufgaben", async (route) => { if (route.request().method() === "POST") await new Promise((r) => setTimeout(r, 1500)); await route.fallback(); });
+  await page.locator("[data-aufgabe-eingabe]").fill("Selbst angelegt");
+  await page.keyboard.press("Enter");
+  const eigene = page.locator(".au-karte", { hasText: "Selbst angelegt" });
+  await expect(eigene).toHaveCount(1);
+  await expect(eigene).toHaveClass(/vorlaeufig/);
+  // währenddessen legt jemand anderes eine Aufgabe an → Live-Nachladen
+  const fremd = aufgabe(vault, "2026-10-30-fremd", { titel: "Fremd angelegt", rang: 5000 });
+  await expect(karte(page, fremd)).toBeVisible({ timeout: 6000 });
+  await expect(eigene).toHaveCount(1);
+  await expect(eigene).not.toHaveClass(/vorlaeufig/, { timeout: 6000 }); // bestätigt
+  await page.waitForTimeout(800);
+  await expect(page.locator(".au-karte", { hasText: "Selbst angelegt" })).toHaveCount(1);
+  await expect(page.locator(".au-karte", { hasText: "Fremd angelegt" })).toHaveCount(1);
+});
+
+test("Zeiger-Ziehen: ein Live-Ereignis mitten im Ziehen lässt nichts springen und wird nach dem Loslassen nachgeholt", async ({ page }) => {
+  await oeffneBoard(page);
+  const von = await karte(page, p.a).boundingBox();
+  const ziel = await spalte(page, "in-arbeit").locator(".au-karten").boundingBox();
+  await page.mouse.move(von.x + von.width / 2, von.y + von.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(ziel.x + ziel.width / 2, ziel.y + 30, { steps: 8 });
+  const neu = aufgabe(vault, "2026-10-30-beim-ziehen", { titel: "Beim Ziehen", rang: 5000 });
+  await page.waitForTimeout(1500); // das Ereignis ist da, das Board bleibt aber ruhig
+  await expect(karte(page, neu)).toHaveCount(0);
+  await page.mouse.up();
+  await expect(spalte(page, "in-arbeit").locator(`[data-pfad="${p.a}"]`)).toBeVisible();
+  await expect(karte(page, neu)).toBeVisible({ timeout: 6000 }); // nachgeholt
+  await expect(spalte(page, "in-arbeit").locator(`[data-pfad="${p.a}"]`)).toBeVisible();
+  await expect.poll(() => readFileSync(join(vault, p.a), "utf8").match(/^status: (.*)$/m)?.[1], { timeout: 6000 }).toBe("in-arbeit");
+});
+
 test("Archiv von außen: die Karte verschwindet vom Board, ohne Hinweis „angelegt“", async ({ page }) => {
   aufgabe(vault, "2026-10-21-fertig", { titel: "Fertig", status: "erledigt", rang: 2000 });
   await oeffneBoard(page);
