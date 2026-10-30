@@ -7,8 +7,8 @@ import BrainCore
 /// Claude erscheint in der Markenfarbe, Cursor einfarbig in der Textfarbe (passt zu Hell und Dunkel). Ohne Logo-Datei (Codex) oder wenn
 /// das Laden scheitert, steht die Initiale in einem neutralen Kreis. Die Marken gehören den jeweiligen Inhabern (siehe `Ressourcen/logos/HERKUNFT.md`).
 ///
-/// Vorgesehen für den Einrichtungsassistenten, Schritt „KI verbinden“ (`Sources/BrainApp/EinrichtungsAssistent.swift`), vor dem Namen
-/// jeder KI-Zeile: `KILogo(ki: ziel, groesse: 22)`. Dort ist sie noch nicht eingebaut (der Assistent wird gerade in einem anderen PR umgebaut).
+/// Eingebaut im Einrichtungsassistenten, Schritt „KI verbinden“ (`Sources/BrainApp/EinrichtungsSchritte.swift`, `KiReihe`), vor dem Namen
+/// jeder KI-Zeile: `KILogo(ki: ziel, groesse: 28)`.
 struct KILogo: View {
     let ki: KiZiel
     var groesse: CGFloat = 20

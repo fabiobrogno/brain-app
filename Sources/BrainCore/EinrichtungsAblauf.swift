@@ -6,6 +6,8 @@ public struct KiZeile: Equatable, Sendable {
         case nichtGefunden
         case bereit
         case verbindet
+        /// „Trennen“ läuft (Kortex nimmt seinen Eintrag heraus).
+        case trennt
         case verbunden(schon: Bool)
         /// Die KI-App hat schon einen anderen Eintrag „brain“: nur mit Ja des Nutzers umstellen.
         case umstellenFragen
@@ -32,6 +34,12 @@ public enum GitHubAnzeige: Equatable, Sendable {
     case angemeldet(login: String?)
     case abgelaufen
     case abgelehnt(grund: String?)
+}
+
+public enum KonfigurationsAnzeige: Equatable, Sendable {
+    case offen
+    case holt
+    case fehler(String)
 }
 
 public enum ProbeAnzeige: Equatable, Sendable {
@@ -109,12 +117,20 @@ public struct EinrichtungsAnzeige: Equatable, Sendable {
     public var git: GitStand?
     public var gitPrueftGerade = false
     public var vault: VaultInfo?
+    /// Der Vault wurde über „Erst mal ausprobieren“ angelegt: ein Beispiel, kein eigener Vault.
+    public var vaultIstBeispiel = false
     /// Text, solange ein Vault angelegt, geöffnet oder geklont wird; sonst nil.
     public var vaultArbeitet: String?
     public var github = GitHubAnzeige.unbekannt
     public var sicherung = SicherungAnzeige()
     public var kis: [KiZeile] = []
     public var kiSuchtGerade = false
+    /// Kurzer Hinweis unter einer KI-Zeile nach „Trennen“ (z. B. „Getrennt. …“), je KI; verschwindet beim nächsten Verbinden.
+    public var kiHinweise: [KiZiel: String] = [:]
+    /// Fehler beim Trennen, je KI.
+    public var kiTrennFehler: [KiZiel: String] = [:]
+    /// Die Konfiguration zum Kopieren ist gerade in der Zwischenablage (kurze Rückmeldung) bzw. ließ sich nicht holen.
+    public var konfiguration = KonfigurationsAnzeige.offen
     public var verdrahtung = VerdrahtungsAnzeige()
     public var probe = ProbeAnzeige.offen
 
@@ -279,6 +295,15 @@ public final class EinrichtungsAblauf {
 
     public func legeVaultAn(art: NeuerVaultArt = .vorlage, name: String?, ordner: String?) async {
         await vaultAktion("Dein Vault wird angelegt …") { try await self.dienste.legeVaultAn(art: art, name: name, ordner: ordner) }
+    }
+
+    /// „Erst mal ausprobieren“: legt aus der Kortex-Vorlage einen Beispiel-Vault an (lokal, ohne Netz; die Vorlage bringt Beispielseiten mit).
+    /// Er heißt `BeispielVault.name` und liegt in `ordner` (Standard: `~/Kortex-Beispiel`, bei Bedarf mit Nummer). Die Probe läuft danach darauf.
+    public func legeBeispielVaultAn(ordner: String) async {
+        await vaultAktion("Das Beispiel wird angelegt …") {
+            try await self.dienste.legeVaultAn(art: .vorlage, name: BeispielVault.name, ordner: ordner)
+        }
+        if zustand.fehler[.vault] == nil, anzeige.vault != nil { anzeige.vaultIstBeispiel = true; melde() }
     }
 
     public func oeffneOrdner(pfad: String, versionsverlaufEinschalten: Bool) async {
@@ -670,6 +695,8 @@ public final class EinrichtungsAblauf {
     }
 
     public func verbinde(_ ziel: KiZiel, umstellen: Bool = false) async {
+        anzeige.kiHinweise[ziel] = nil
+        anzeige.kiTrennFehler[ziel] = nil
         setzeKi(ziel, .verbindet)
         melde()
         do {
@@ -693,6 +720,50 @@ public final class EinrichtungsAblauf {
             setzeKi(ziel, .fehler(Self.text(error), befehl: nil))
         }
         melde()
+    }
+
+    /// „KI trennen“: nimmt den Eintrag von Kortex bei dieser KI wieder heraus (bei Claude Code in jedem gewählten Profil). Ein fremder
+    /// Eintrag bleibt stehen. Hooks und Statuszeile sind ein eigener Schalter weiter unten und bleiben, wie sie sind.
+    public func trenne(_ ziel: KiZiel) async {
+        guard let zeile = anzeige.kis.first(where: { $0.ziel == ziel }), zeile.istVerbunden else { return }
+        let vorher = zeile.status
+        anzeige.kiTrennFehler[ziel] = nil
+        anzeige.kiHinweise[ziel] = nil
+        setzeKi(ziel, .trennt)
+        melde()
+        do {
+            var ziele: [String?] = [nil]
+            if ziel == .claude, !anzeige.verdrahtung.profile.isEmpty {
+                let gewaehlt = anzeige.verdrahtung.auswahl
+                guard !gewaehlt.isEmpty else { throw EinrichtungsFehler("Wähle bitte mindestens ein Claude-Profil aus.") }
+                ziele = gewaehlt
+            }
+            for profil in ziele { _ = try await dienste.trenne(ziel, profil: profil) }
+            setzeKi(ziel, .bereit)
+            anzeige.kiHinweise[ziel] = "Getrennt. Starte \(ziel.name) neu, damit es wirkt."
+            log("einrichtung ki-getrennt \(ziel.rawValue)")
+        } catch {
+            setzeKi(ziel, vorher)
+            anzeige.kiTrennFehler[ziel] = Self.text(error)
+            log("einrichtung ki-trennen-fehler \(ziel.rawValue)")
+        }
+        melde()
+    }
+
+    /// Holt die Konfiguration zum Kopieren (JSON für andere KI-Programme). Gibt den Text zurück; bei einem Fehler steht er in `anzeige.konfiguration`.
+    public func holeKonfiguration() async -> String? {
+        anzeige.konfiguration = .holt
+        melde()
+        do {
+            let text = try await dienste.konfiguration()
+            anzeige.konfiguration = .offen
+            melde()
+            return text
+        } catch {
+            anzeige.konfiguration = .fehler(Self.text(error))
+            melde()
+            return nil
+        }
     }
 
     /// Der Nutzer will den fremden Eintrag nicht ersetzen.
