@@ -6,6 +6,8 @@ import { h } from "./hilfen.js";
 import { symbol, GROESSE } from "./symbole.js";
 import { kiLogo, kiLogoName } from "./ki-logos.js";
 import { oeffneMenue } from "./menue.js";
+import { textfeld, filterChip, knopf, oeffneDatumsauswahl, tooltip, skelett } from "./bausteine.js";
+import { wenigBewegung } from "./popover.js";
 import { TA } from "./texte-aufgaben.js";
 
 export const SPALTEN = ["offen", "in-arbeit", "warten", "erledigt"];
@@ -72,7 +74,7 @@ function prioEl(prio) {
 export function baueAufgaben(host, ctx) {
   const { api } = ctx;
   const st = { liste: [], vertraut: true, geladen: false, fehler: null, filter: { ...FILTER_STANDARD, ...(ctx.lokal.lies("aufgabenFilter", {}) || {}) },
-    alteZeigen: false, drag: null, fokusPfad: null, neuPfad: null, ladeNr: 0, weg: false };
+    alteZeigen: false, drag: null, fokusPfad: null, neuPfad: null, ladeNr: 0, weg: false, landet: null };
   for (const k of Object.keys(FILTER_STANDARD)) if (typeof st.filter[k] !== "string") st.filter[k] = FILTER_STANDARD[k];
 
   // Änderungen laufen nacheinander: schnelles Ziehen mehrerer Karten darf sich nicht überholen.
@@ -86,24 +88,24 @@ export function baueAufgaben(host, ctx) {
   };
 
   // ---------- Gerüst (einmal gebaut) ----------
-  const eingabe = h("input", { type: "text", klasse: "au-eingabe", "data-aufgabe-eingabe": "", placeholder: TA.erfassen.platzhalter, "aria-label": TA.erfassen.label,
-    maxlength: "200", autocomplete: "off", spellcheck: "false" });
-  const form = h("form", { klasse: "au-erfassen", novalidate: "", aufSubmit: (e) => { e.preventDefault(); erfasse(); } },
-    symbol("plus", GROESSE.norm), eingabe, h("button", { type: "submit", klasse: "knopf primaer", "data-aufgabe-anlegen": "", text: TA.erfassen.knopf }));
+  const feld = textfeld({ klasse: "au-eingabefeld", symbol: "plus", platzhalter: TA.erfassen.platzhalter, label: TA.erfassen.label, maxlaenge: 200, daten: { "data-aufgabe-eingabe": "" } });
+  const eingabe = feld.input;
+  const anlegen = knopf({ text: TA.erfassen.knopf, variante: "primaer", typ: "submit", daten: { "data-aufgabe-anlegen": "" } });
+  const form = h("form", { klasse: "au-erfassen", novalidate: "", aufSubmit: (e) => { e.preventDefault(); erfasse(); } }, feld.el, anlegen);
   const zahlEl = h("span", { klasse: "au-zahl", "data-aufgaben-zahl": "" });
-  const waehle = (name, label, optionen) => {
-    const sel = h("select", { "data-filter": name, "aria-label": label, aufChange: (e) => { st.filter[name] = e.target.value; ctx.lokal.schreib("aufgabenFilter", st.filter); zeichne(); } },
-      optionen.map(([w, t]) => h("option", { value: w, text: t })));
-    sel.value = st.filter[name];
-    return h("label", { klasse: "au-filter-feld" }, h("span", { text: label }), sel);
+  // Filter als Chips („Priorität: Alle ▾“): aktive sind farbig, das ✕ setzt zurück
+  const chip = (name, label, optionen) => filterChip({ label, optionen: optionen.map(([wert, text]) => ({ wert, text })), wert: st.filter[name], standard: FILTER_STANDARD[name], daten: { "data-filter": name },
+    aufAenderung: (w) => { st.filter[name] = w; ctx.lokal.schreib("aufgabenFilter", st.filter); zeichne(); } });
+  const chips = {
+    prio: chip("prio", TA.filter.prio, [["alle", TA.filter.alle], ["hoch", TA.prio.hoch], ["normal", TA.prio.normal], ["niedrig", TA.prio.niedrig]]),
+    quelle: chip("quelle", TA.filter.quelle, [["alle", TA.filter.alle], ["mensch", TA.filter.mensch], ["ki", TA.filter.ki]]),
+    faellig: chip("faellig", TA.filter.faellig, [["alle", TA.filter.alle], ["ueberfaellig", TA.filter.ueberfaellig], ["heute", TA.filter.heute], ["woche", TA.filter.woche], ["ohne", TA.filter.ohne]]),
   };
-  const reset = h("button", { type: "button", klasse: "knopf-text au-reset", "data-filter-reset": "", text: TA.filter.zuruecksetzen, hidden: true, aufClick: () => { Object.assign(st.filter, FILTER_STANDARD); ctx.lokal.schreib("aufgabenFilter", st.filter); syncFilter(); zeichne(); } });
-  const filterEl = h("div", { klasse: "au-filter", role: "group", "aria-label": TA.filter.label },
-    waehle("prio", TA.filter.prio, [["alle", TA.filter.alle], ["hoch", TA.prio.hoch], ["normal", TA.prio.normal], ["niedrig", TA.prio.niedrig]]),
-    waehle("quelle", TA.filter.quelle, [["alle", TA.filter.alle], ["mensch", TA.filter.mensch], ["ki", TA.filter.ki]]),
-    waehle("faellig", TA.filter.faellig, [["alle", TA.filter.alle], ["ueberfaellig", TA.filter.ueberfaellig], ["heute", TA.filter.heute], ["woche", TA.filter.woche], ["ohne", TA.filter.ohne]]),
-    reset);
-  const syncFilter = () => { filterEl.querySelectorAll("select").forEach((s) => { s.value = st.filter[s.dataset.filter]; }); };
+  const syncFilter = () => { for (const k of Object.keys(chips)) chips[k].setze(st.filter[k]); };
+  const reset = knopf({ text: TA.filter.zuruecksetzen, variante: "leise", groesse: "s", klasse: "au-reset", daten: { "data-filter-reset": "" },
+    aufKlick: () => { Object.assign(st.filter, FILTER_STANDARD); ctx.lokal.schreib("aufgabenFilter", st.filter); syncFilter(); zeichne(); } });
+  reset.hidden = true;
+  const filterEl = h("div", { klasse: "au-filter", role: "group", "aria-label": TA.filter.label }, chips.prio, chips.quelle, chips.faellig, reset);
   const hinweis = h("div", { klasse: "au-hinweis", role: "status", hidden: true, "data-aufgaben-hinweis": "" },
     symbol("schild", GROESSE.norm), h("span", { text: TA.nichtVertraut }), h("button", { type: "button", klasse: "knopf", text: TA.bestaetigen, aufClick: () => ctx.fragVertrauen() }));
   const ansage = h("div", { klasse: "au-ansage", role: "status", "aria-live": "polite" });
@@ -145,15 +147,15 @@ export function baueAufgaben(host, ctx) {
   function karteEl(a, status, nr, von) {
     const f = faelligInfo(a);
     const prio = prioEl(a.prioritaet);
-    const mehr = h("button", { type: "button", klasse: "au-mehr", "data-aufgabe-menue": "", "aria-label": TA.karte.menue, title: TA.karte.menue, tabindex: "-1",
+    const mehr = h("button", { type: "button", klasse: "au-mehr", "data-aufgabe-menue": "", "aria-label": TA.karte.menue, tabindex: "-1",
       aufClick: (ev) => { ev.stopPropagation(); oeffneKartenMenue(a, mehr); } }, symbol("punkte", GROESSE.text));
-    const el = h("article", { klasse: "au-karte" + (f?.ueber ? " ueberfaellig" : "") + (st.neuPfad === a.pfad ? " neu" : ""), role: "listitem", tabindex: "0", draggable: st.vertraut ? "true" : "false",
+    tooltip(mehr, TA.karte.menue);
+    const vorlaeufig = !!a.vorlaeufig;
+    const el = h("article", { klasse: "au-karte" + (f?.ueber ? " ueberfaellig" : "") + (st.neuPfad === a.pfad ? " neu" : "") + (vorlaeufig ? " vorlaeufig" : "") + (st.landet === a.pfad ? " landet" : ""), role: "listitem", tabindex: "0", "data-ziehbar": String(st.vertraut && !vorlaeufig), "aria-busy": vorlaeufig ? "true" : null,
       "data-karte-aufgabe": "", "data-pfad": a.pfad, "data-status": a.status, "data-prio": a.prioritaet, "data-quelle": a.quelle,
       "aria-label": `${a.titel}. ${TA.spalten[status]}, Platz ${nr} von ${von}.${f ? ` ${f.text}.` : ""}`, title: `${a.titel}\n${TA.karte.hinweisTasten}`,
-      aufClick: () => ctx.oeffneDatei(a.pfad),
-      aufContextmenu: (ev) => { ev.preventDefault(); oeffneKartenMenue(a, mehr); },
-      aufDragstart: (ev) => dragStart(ev, a, el),
-      aufDragend: () => dragEnde() },
+      aufClick: () => { if (!vorlaeufig) ctx.oeffneDatei(a.pfad); },
+      aufContextmenu: (ev) => { ev.preventDefault(); if (!vorlaeufig) oeffneKartenMenue(a, mehr); } },
       h("div", { klasse: "au-karte-kopf" }, h("div", { klasse: "au-titel", text: a.titel }), mehr),
       a.vorschau ? h("div", { klasse: "au-vorschau", text: a.vorschau }) : null,
       h("div", { klasse: "au-meta" },
@@ -165,26 +167,24 @@ export function baueAufgaben(host, ctx) {
   function spalteEl(status) {
     const { karten, alte } = sichtbarInSpalte(status);
     const zahl = String(karten.length);
-    const liste = h("div", { klasse: "au-karten", role: "list", "aria-label": TA.spalten[status], "data-spalte-karten": status },
-      karten.map((a, i) => karteEl(a, status, i + 1, karten.length)));
-    if (!karten.length) liste.append(h("div", { klasse: "au-spalte-leer", text: TA.spalteLeer }));
+    const laedt = !st.geladen; // Skelett statt leerer Spalten: es blendet erst nach 150 ms ein (bausteine.css), schnelle Ladevorgänge flackern nicht
+    const liste = h("div", { klasse: "au-karten", role: "list", "aria-label": TA.spalten[status], "data-spalte-karten": status, "aria-busy": laedt ? "true" : null },
+      laedt ? [skelett("au-sk-karte"), skelett("au-sk-karte kurz")] : karten.map((a, i) => karteEl(a, status, i + 1, karten.length)));
+    if (!laedt && !karten.length) liste.append(h("div", { klasse: "au-spalte-leer", text: TA.spalteLeer }));
     const fuss = status === "erledigt" && alte > 0
       ? h("button", { type: "button", klasse: "knopf-text au-alte", "data-alte-umschalten": "", "aria-pressed": String(st.alteZeigen), text: st.alteZeigen ? TA.erledigtAlteZu : TA.erledigtAlte(alte),
         aufClick: () => { st.alteZeigen = !st.alteZeigen; zeichne(); } })
       : null;
     const el = h("section", { klasse: "au-spalte", "data-spalte": status, "aria-label": TA.spalten[status] },
-      h("header", { klasse: "au-spalte-kopf" }, h("span", { klasse: `au-punkt ${status}`, "aria-hidden": "true" }), h("h3", { text: TA.spalten[status] }), h("span", { klasse: "au-spalte-zahl", text: zahl })),
+      h("header", { klasse: "au-spalte-kopf" }, h("span", { klasse: `au-punkt ${status}`, "aria-hidden": "true" }), h("h3", { text: TA.spalten[status] }), h("span", { klasse: "au-spalte-zahl", text: laedt ? "" : zahl })),
       liste, fuss);
-    el.addEventListener("dragover", (ev) => dragUeber(ev, el, status));
-    el.addEventListener("dragleave", (ev) => { if (!el.contains(ev.relatedTarget)) { el.classList.remove("ziel"); entferneMarke(); } });
-    el.addEventListener("drop", (ev) => dragAblegen(ev));
     return el;
   }
   function zeichne() {
     const heute = heuteIso();
     let offen = 0, ueber = 0;
     for (const a of st.liste) if (a.status !== "erledigt") { offen++; if (a.faellig && a.faellig < heute) ueber++; }
-    zahlEl.textContent = TA.zahl(offen, ueber);
+    zahlEl.textContent = st.geladen ? TA.zahl(offen, ueber) : "";
     zahlEl.classList.toggle("warn", ueber > 0);
     hinweis.hidden = st.vertraut;
     eingabe.disabled = !st.vertraut;
@@ -203,26 +203,44 @@ export function baueAufgaben(host, ctx) {
       return;
     }
     const sichtbar = SPALTEN.reduce((n, s) => n + sichtbarInSpalte(s).karten.length, 0);
+    // Scrollstand der Spalten merken: ein Neuzeichnen darf nichts nach oben springen lassen
+    const scroll = new Map([...brett.querySelectorAll("[data-spalte-karten]")].map((e) => [e.dataset.spalteKarten, e.scrollTop]));
     brett.replaceChildren(...SPALTEN.map(spalteEl));
+    for (const [sp, y] of scroll) { const e = brett.querySelector(`[data-spalte-karten="${sp}"]`); if (e && y) e.scrollTop = y; }
     if (aktiv && !sichtbar) brett.prepend(h("div", { klasse: "au-leer klein", "data-aufgaben-gefiltert": "" }, h("p", { text: TA.filter.keine })));
     if (fokus) brett.querySelector(`[data-karte-aufgabe][data-pfad="${CSS.escape(fokus)}"]`)?.focus({ preventScroll: false });
     if (st.neuPfad) { const neu = st.neuPfad; setTimeout(() => { if (st.neuPfad === neu) st.neuPfad = null; }, 1600); }
   }
 
   // ---------- Anlegen ----------
+  // Optimistisch: die Karte steht sofort da (blass, „vorläufig“), die Werkstatt bestätigt sie mit dem echten Pfad oder sie verschwindet mit Hinweis wieder.
+  let tempNr = 0;
   async function erfasse() {
     const titel = eingabe.value.trim();
-    if (!titel) { ansage.textContent = TA.erfassen.leer; eingabe.focus(); return; }
+    if (!titel) { ansage.textContent = TA.erfassen.leer; eingabe.focus(); feld.feld.classList.add("fehlerhaft"); setTimeout(() => feld.feld.classList.remove("fehlerhaft"), 900); return; }
     if (!st.vertraut) { ctx.fragVertrauen(); return; }
+    const rangMax = st.liste.filter((x) => x.status === "offen").reduce((m, x) => Math.max(m, Number.isFinite(x.rang) ? x.rang : 0), 0);
+    const temp = { pfad: `__neu-${++tempNr}`, titel, status: "offen", prioritaet: "normal", quelle: "mensch", rang: rangMax + 1000, erstellt: "9999", geaendert: "", vorschau: "", faellig: null, vorlaeufig: true };
+    st.liste.push(temp);
+    st.neuPfad = temp.pfad;
+    eingabe.value = ""; feld.sync();
+    zeichne();
+    brett.querySelector(`[data-spalte-karten="offen"] [data-pfad="${CSS.escape(temp.pfad)}"]`)?.scrollIntoView({ block: "nearest" });
     try {
       const r = await reihe(() => api.aufgabeNeu({ titel }));
-      st.liste.push(r.aufgabe);
-      st.neuPfad = r.pfad;
-      eingabe.value = "";
+      const i = st.liste.indexOf(temp);
+      if (i >= 0) st.liste[i] = r.aufgabe; else st.liste.push(r.aufgabe);
+      st.neuPfad = null;
       zeichne();
       ctx.toast(TA.erfassen.angelegt(r.aufgabe.titel));
       ctx.beiAenderung?.();
-    } catch (e) { behandleFehler(e, TA.fehler.anlegen); }
+    } catch (e) {
+      st.liste = st.liste.filter((x) => x !== temp);
+      st.neuPfad = null;
+      if (!eingabe.value) { eingabe.value = titel; feld.sync(); } // der Text geht nicht verloren
+      zeichne();
+      behandleFehler(e, TA.fehler.anlegen);
+    }
     eingabe.focus();
   }
   function behandleFehler(e, standard) {
@@ -263,12 +281,13 @@ export function baueAufgaben(host, ctx) {
     return 1000;
   }
   function verschiebe(a, status, davorPfad, danachPfad) {
-    if (!st.vertraut) { ctx.fragVertrauen(); return; }
+    if (!st.vertraut) { ctx.fragVertrauen(); return false; }
     const davor = davorPfad ? finde(davorPfad) : null, danach = danachPfad ? finde(danachPfad) : null;
     // nichts zu tun, wenn die Karte schon genau dort steht
     const alle = spalteVon(a.status), i = alle.findIndex((x) => x.pfad === a.pfad);
-    if (status === a.status && (alle[i - 1]?.pfad ?? null) === (davorPfad ?? null) && (alle[i + 1]?.pfad ?? null) === (danachPfad ?? null)) return;
+    if (status === a.status && (alle[i - 1]?.pfad ?? null) === (davorPfad ?? null) && (alle[i + 1]?.pfad ?? null) === (danachPfad ?? null)) return false;
     aendere(a, { status }, { lokal: { status, rang: rangLokal(davor, danach) }, platz: { davor: davorPfad || null, danach: danachPfad || null }, zielText: TA.spalten[status] });
+    return true;
   }
 
   // ---------- Menü an der Karte ----------
@@ -285,52 +304,157 @@ export function baueAufgaben(host, ctx) {
       { name: TA.karte.faelligHeute, id: "faellig-heute", symbol: "kalender", tun: () => setzeFaellig(heute) },
       { name: TA.karte.faelligMorgen, id: "faellig-morgen", symbol: "kalender", tun: () => setzeFaellig(plusTage(heute, 1)) },
       { name: TA.karte.faelligWoche, id: "faellig-woche", symbol: "kalender", tun: () => setzeFaellig(plusTage(heute, 7)) },
+      { name: TA.karte.faelligWaehlen, id: "faellig-datum", symbol: "kalender", tun: () => oeffneDatumsauswahl(anker, { wert: a.faellig, rechts: true, beiWahl: setzeFaellig }) },
       ...(a.faellig ? [{ name: TA.karte.faelligKein, id: "faellig-kein", symbol: "schliessen", tun: () => setzeFaellig(null) }] : []),
       { trenner: true },
       { name: TA.karte.oeffnen, id: "oeffnen", symbol: "notiz", tun: () => ctx.oeffneDatei(a.pfad) },
     ], { rechts: true });
   }
 
-  // ---------- Ziehen mit der Maus ----------
-  let marke = null;
-  function entferneMarke() { marke?.remove(); marke = null; }
-  function dragStart(ev, a, el) {
-    if (!st.vertraut) { ev.preventDefault(); return; }
-    st.drag = { pfad: a.pfad, ziel: null };
-    ev.dataTransfer.effectAllowed = "move";
-    ev.dataTransfer.setData("text/plain", a.pfad);
-    setTimeout(() => el.classList.add("zieht"), 0);
+  // ---------- Ziehen mit dem Zeiger ----------
+  // Zeiger-Ereignisse statt HTML5-Drag&Drop: die Karte hängt angehoben (Schatten, leicht größer) am Zeiger, ihre Stelle bleibt als Platzhalter stehen, die Nachbarn rücken weich nach
+  // (FLIP), die Zielspalte hebt sich, beim Loslassen rastet die Karte ein. Esc bricht ab. Am Rand von Spalte und Brett wird mitgescrollt. Ein Klick nach dem Ziehen wird verschluckt.
+  const SCHWELLE = 4;
+  let zug = null;
+  const istKarte = (e) => !!e && e.classList?.contains("au-karte") && !e.classList.contains("platzhalter");
+  function geistVon(el, r) {
+    const g = el.cloneNode(true);
+    for (const e of [g, ...g.querySelectorAll("*")]) for (const at of [...e.attributes]) if (/^(data-|id$|role$|aria-|tabindex$)/.test(at.name)) e.removeAttribute(at.name);
+    g.classList.remove("au-karte", "platzhalter", "neu", "vorlaeufig", "landet");
+    g.classList.add("au-schwebt");
+    g.setAttribute("aria-hidden", "true"); g.inert = true;
+    g.style.width = r.width + "px"; g.style.height = r.height + "px";
+    return g;
   }
-  function dragEnde() {
-    st.drag = null; entferneMarke();
-    brett.querySelectorAll(".zieht").forEach((e) => e.classList.remove("zieht"));
-    brett.querySelectorAll(".ziel").forEach((e) => e.classList.remove("ziel"));
-    zeichne(); // Änderungen von außen, die während des Ziehens kamen, nachholen
+  brett.addEventListener("pointerdown", (ev) => {
+    if (ev.button !== 0 || !ev.isPrimary || zug) return;
+    const el = ev.target.closest?.("[data-karte-aufgabe]");
+    if (!el || el.dataset.ziehbar !== "true" || ev.target.closest(".au-mehr")) return;
+    const a = finde(el.dataset.pfad);
+    if (!a) return;
+    zug = { a, el, x0: ev.clientX, y0: ev.clientY, x: ev.clientX, y: ev.clientY, aktiv: false, ziel: null, raf: 0 };
+    document.addEventListener("pointermove", zugBewege);
+    document.addEventListener("pointerup", zugLos);
+    document.addEventListener("pointercancel", zugAbbruch);
+    document.addEventListener("keydown", zugTaste, true);
+  });
+  function zugAbmelden() {
+    document.removeEventListener("pointermove", zugBewege);
+    document.removeEventListener("pointerup", zugLos);
+    document.removeEventListener("pointercancel", zugAbbruch);
+    document.removeEventListener("keydown", zugTaste, true);
+    if (zug) cancelAnimationFrame(zug.raf);
   }
-  function dragUeber(ev, el, status) {
-    if (!st.drag) return;
-    ev.preventDefault();
-    ev.dataTransfer.dropEffect = "move";
-    const behaelter = el.querySelector(".au-karten");
-    const karten = [...behaelter.querySelectorAll(".au-karte:not(.zieht)")];
-    const i = karten.findIndex((k) => { const r = k.getBoundingClientRect(); return ev.clientY < r.top + r.height / 2; });
-    const vor = i < 0 ? null : karten[i];
-    st.drag.ziel = { status, davor: (i < 0 ? karten[karten.length - 1] : karten[i - 1])?.dataset.pfad ?? null, danach: vor?.dataset.pfad ?? null };
-    brett.querySelectorAll(".au-spalte.ziel").forEach((e) => { if (e !== el) e.classList.remove("ziel"); });
-    el.classList.add("ziel");
-    if (!marke) marke = h("div", { klasse: "au-marke", "aria-hidden": "true" });
-    behaelter.querySelector(".au-spalte-leer")?.remove();
-    if (vor) behaelter.insertBefore(marke, vor); else behaelter.append(marke);
+  function zugBewege(ev) {
+    if (!zug) return;
+    zug.x = ev.clientX; zug.y = ev.clientY;
+    if (!zug.aktiv) {
+      if (Math.hypot(zug.x - zug.x0, zug.y - zug.y0) < SCHWELLE) return;
+      zugStart();
+    }
+    zugAktualisiere();
   }
-  function dragAblegen(ev) {
-    if (!st.drag) return;
-    ev.preventDefault();
-    const { pfad, ziel } = st.drag;
-    entferneMarke();
+  function zugStart() {
+    const { el } = zug;
+    const r = el.getBoundingClientRect();
+    zug.aktiv = true;
+    zug.versatz = { x: zug.x0 - r.left, y: zug.y0 - r.top };
+    zug.geist = geistVon(el, r);
+    zug.geist.style.translate = `${r.left}px ${r.top}px`;
+    (document.getElementById("menue-host") || document.body).append(zug.geist);
+    zug.geist.getBoundingClientRect();
+    zug.geist.classList.add("angehoben"); // Anheben: Schatten und Größe gleiten ein
+    el.classList.add("platzhalter");
+    el.blur();
+    st.drag = { pfad: zug.a.pfad, ziel: null };
+    document.body.classList.add("au-zieht-aktiv");
+    zug.raf = requestAnimationFrame(zugTick);
+  }
+  // Layout-Mitte einer Karte, unabhängig von laufenden FLIP-Verschiebungen (offsetTop kennt keine Transformationen)
+  const mitteY = (liste, k) => liste.getBoundingClientRect().top + k.offsetTop - liste.scrollTop + k.offsetHeight / 2;
+  function zugAktualisiere() {
+    const { geist, versatz, x, y, el } = zug;
+    geist.style.translate = `${x - versatz.x}px ${y - versatz.y}px`;
+    const br = brett.getBoundingClientRect();
+    let ziel = null;
+    if (y >= br.top - 40 && y <= br.bottom + 40 && x >= br.left - 40 && x <= br.right + 40) {
+      let best = Infinity;
+      for (const sp of brett.querySelectorAll(".au-spalte")) { const r = sp.getBoundingClientRect(); const d = x < r.left ? r.left - x : x > r.right ? x - r.right : 0; if (d < best) { best = d; ziel = sp; } }
+    }
+    brett.querySelectorAll(".au-spalte.au-ziel").forEach((e) => { if (e !== ziel) e.classList.remove("au-ziel"); });
+    if (!ziel) { zug.ziel = null; return; }
+    ziel.classList.add("au-ziel");
+    const liste = ziel.querySelector(".au-karten");
+    const kinder = [...liste.children];
+    const karten = kinder.filter(istKarte);
+    const vor = karten.find((k) => y < mitteY(liste, k)) || null;
+    const schonDort = el.parentNode === liste && (vor ? el.nextElementSibling === vor : !kinder.slice(kinder.indexOf(el) + 1).some(istKarte));
+    if (!schonDort) {
+      // FLIP: Positionen davor merken, umhängen, die Nachbarn gleiten von alt nach neu
+      const alle = [...brett.querySelectorAll(".au-karte")].filter((k) => k !== el);
+      const davor = new Map(alle.map((k) => [k, k.getBoundingClientRect()]));
+      if (vor) liste.insertBefore(el, vor); else liste.append(el);
+      if (!wenigBewegung()) for (const k of alle) {
+        const a = davor.get(k), b = k.getBoundingClientRect();
+        const dx = a.left - b.left, dy = a.top - b.top;
+        if (dx || dy) k.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }], { duration: 170, easing: "cubic-bezier(.16, 1, .3, 1)" });
+      }
+    }
+    const nachbar = (e, richtung) => { for (let n = e[richtung]; n; n = n[richtung]) if (istKarte(n)) return n; return null; };
+    zug.ziel = { status: ziel.dataset.spalte, davor: nachbar(el, "previousElementSibling")?.dataset.pfad ?? null, danach: nachbar(el, "nextElementSibling")?.dataset.pfad ?? null };
+    st.drag.ziel = zug.ziel;
+  }
+  // Mitscrollen am Rand: Spalte senkrecht, Brett waagerecht
+  function zugTick() {
+    if (!zug?.aktiv) return;
+    const tempo = (d) => Math.min(18, 3 + d / 4);
+    let bewegt = false;
+    const sp = brett.querySelector(".au-spalte.au-ziel .au-karten");
+    if (sp) {
+      const r = sp.getBoundingClientRect(), rand = 56;
+      const dy = zug.y < r.top + rand ? -tempo(r.top + rand - zug.y) : zug.y > r.bottom - rand ? tempo(zug.y - (r.bottom - rand)) : 0;
+      if (dy) { const vorher = sp.scrollTop; sp.scrollTop += dy; bewegt ||= sp.scrollTop !== vorher; }
+    }
+    const br = brett.getBoundingClientRect();
+    const dx = zug.x < br.left + 64 ? -tempo(br.left + 64 - zug.x) : zug.x > br.right - 64 ? tempo(zug.x - (br.right - 64)) : 0;
+    if (dx) { const vorher = brett.scrollLeft; brett.scrollLeft += dx; bewegt ||= brett.scrollLeft !== vorher; }
+    if (bewegt) zugAktualisiere();
+    zug.raf = requestAnimationFrame(zugTick);
+  }
+  function zugLos(ev) {
+    if (!zug) return;
+    if (!zug.aktiv) { zugAbmelden(); zug = null; return; }
+    zug.x = ev.clientX; zug.y = ev.clientY;
+    zugAktualisiere();
+    zugBeenden(zug.ziel);
+  }
+  function zugAbbruch() { if (zug?.aktiv) zugBeenden(null); else { zugAbmelden(); zug = null; } }
+  function zugTaste(ev) { if (ev.key === "Escape" && zug) { ev.preventDefault(); ev.stopPropagation(); zugAbbruch(); } }
+  // ziel = null: abgebrochen, die Karte fliegt zurück
+  function zugBeenden(ziel) {
+    const z = zug;
+    zugAbmelden(); zug = null;
+    const schlucken = (e) => { e.stopPropagation(); e.preventDefault(); };
+    document.addEventListener("click", schlucken, true);
+    setTimeout(() => document.removeEventListener("click", schlucken, true), 0);
+    document.body.classList.remove("au-zieht-aktiv");
+    brett.querySelectorAll(".au-ziel").forEach((e) => e.classList.remove("au-ziel"));
     st.drag = null;
-    const a = finde(pfad);
-    if (a && ziel) verschiebe(a, ziel.status, ziel.davor, ziel.danach);
-    else zeichne();
+    st.landet = z.a.pfad;
+    const bewegt = ziel ? verschiebe(z.a, ziel.status, ziel.davor, ziel.danach) : false;
+    if (!bewegt) zeichne(); // Platzhalter zurück, Änderungen von außen nachholen
+    const neu = brett.querySelector(`[data-karte-aufgabe][data-pfad="${CSS.escape(z.a.pfad)}"]`);
+    const fertig = () => { z.geist.remove(); if (st.landet === z.a.pfad) st.landet = null; brett.querySelector(`[data-pfad="${CSS.escape(z.a.pfad)}"]`)?.classList.remove("landet"); };
+    if (!neu || wenigBewegung()) { fertig(); return; }
+    // Einrasten: die Karte gleitet in die Lücke, Anheben klingt ab
+    const r = neu.getBoundingClientRect();
+    z.geist.classList.remove("angehoben");
+    z.geist.classList.add("landet");
+    z.geist.style.translate = `${r.left}px ${r.top}px`;
+    let aus = false;
+    const einmal = () => { if (!aus) { aus = true; fertig(); } };
+    z.geist.addEventListener("transitionend", (e) => { if (e.propertyName === "translate") einmal(); });
+    setTimeout(einmal, 260);
   }
 
   // ---------- Tastatur ----------
@@ -370,7 +494,7 @@ export function baueAufgaben(host, ctx) {
   return {
     lade,
     fokusErfassen: () => { eingabe.focus(); eingabe.select(); },
-    zerstoere: () => { st.weg = true; entferneMarke(); host.replaceChildren(); },
+    zerstoere: () => { st.weg = true; if (zug) { zugAbmelden(); zug.geist?.remove(); zug = null; document.body.classList.remove("au-zieht-aktiv"); st.drag = null; } host.replaceChildren(); },
     // Stand von außen (Index hat sich geändert): leise nachladen, aber nicht mitten im Ziehen
     aktualisiere: () => { if (!st.drag) return lade({ leise: true }); },
     liste: () => st.liste,

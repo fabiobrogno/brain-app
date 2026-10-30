@@ -1,0 +1,211 @@
+/* Bausteine (bausteine.js): einheitliche Bedienelemente. Nur Tokens aus studio.css (Akzent hell #5B4ED6 / dunkel #A89FFF, Radien, 4-pt-Raster), Hell/Dunkel über light-dark(),
+   prefers-reduced-motion schaltet Übergänge ab (studio.css). Höhen: S = 28 px, M = 32 px. Übergänge 100–200 ms, ease-out. Wird nach studio.css geladen. */
+:root {
+  --bs-h-s: 28px; --bs-h-m: 32px;
+  --bs-aus: cubic-bezier(.16, 1, .3, 1);
+  --bs-rand: color-mix(in srgb, var(--text) 12%, var(--linie-stark));
+  --bs-flaeche: color-mix(in srgb, var(--erhoben) 94%, transparent);
+  --bs-schatten: 0 0 0 .5px light-dark(rgba(20, 16, 10, .16), rgba(255, 255, 255, .10)), 0 1px 3px light-dark(rgba(30, 20, 10, .08), rgba(0, 0, 0, .35)), 0 12px 32px light-dark(rgba(30, 20, 10, .18), rgba(0, 0, 0, .55));
+}
+.bs-nur-lesen { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* ---------- Popover: gemeinsame Fläche (Menüs, Listen, Kalender) ---------- */
+.bs-pop, .bs-geist { position: fixed; z-index: 1; pointer-events: auto; opacity: 0; transform: scale(.97) translateY(-4px); transition: opacity 120ms ease-out, transform 170ms var(--bs-aus); }
+.bs-pop[data-seite="oben"], .bs-geist[data-seite="oben"] { transform: scale(.97) translateY(4px); }
+.bs-pop.offen { opacity: 1; transform: none; }
+.bs-pop.zu, .bs-geist.zu { opacity: 0; transition: opacity 100ms ease-out, transform 100ms ease-out; pointer-events: none; }
+.bs-geist { pointer-events: none; }
+.menue, .menue-geist, .bs-liste, .bs-kal { background: var(--bs-flaeche); -webkit-backdrop-filter: blur(24px) saturate(1.6); backdrop-filter: blur(24px) saturate(1.6); border-radius: 12px; box-shadow: var(--bs-schatten); animation: none; overscroll-behavior: contain; }
+.menue, .menue-geist, .bs-liste { padding: 5px; }
+:is(.menue, .menue-geist) .m-eintrag, .bs-opt { min-height: 28px; padding: 0 10px; border-radius: 7px; font-size: 13px; transition: background-color 80ms ease-out; }
+:is(.menue, .menue-geist) .m-eintrag[data-aktiv="true"], :is(.menue, .menue-geist) .m-eintrag:hover, .bs-opt[data-aktiv="true"] { background: var(--akzent-weich); }
+:is(.menue, .menue-geist) .m-eintrag:active, .bs-opt:active { background: color-mix(in srgb, var(--akzent) 18%, transparent); }
+:is(.menue, .menue-geist) .m-gruppe { padding: 8px 10px 3px; letter-spacing: .05em; }
+:is(.menue, .menue-geist) .m-trenner, .bs-trenner { height: 1px; margin: 4px 8px; background: var(--linie); }
+:is(.menue, .menue-geist) .m-segmente { border-radius: 9px; }
+
+/* Auswahlliste */
+.bs-liste { min-width: 160px; max-width: 360px; max-height: min(60vh, 360px); overflow-y: auto; outline: 0; }
+.bs-opt { display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text); }
+.bs-opt .sym { color: var(--text-2); flex: none; }
+.bs-opt-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bs-opt[aria-selected="true"] .bs-opt-text { font-weight: 600; }
+.bs-opt-sub { color: var(--text-3); font-size: 11.5px; }
+.bs-haken-slot { width: 16px; flex: none; display: grid; place-items: center; color: var(--akzent); }
+
+/* ---------- Auswahl (Knopf mit Wert + Chevron) ---------- */
+.bs-auswahl { display: inline-flex; min-width: 0; max-width: 100%; vertical-align: middle; }
+.bs-auswahl.breit { display: flex; width: 100%; }
+.bs-auswahl-knopf { display: inline-flex; align-items: center; gap: 8px; width: 100%; min-width: 0; height: var(--bs-h-m); padding: 0 8px 0 10px; border: 1px solid var(--bs-rand); border-radius: var(--r); background: var(--erhoben); color: var(--text);
+  font: 13px/1 var(--schrift); text-align: left; cursor: pointer; box-shadow: var(--schatten-klein); transition: border-color 120ms ease-out, box-shadow 120ms ease-out, background-color 120ms ease-out; }
+.bs-auswahl-knopf.bs-s { height: var(--bs-h-s); font-size: 12.5px; }
+.bs-auswahl-knopf:hover { border-color: var(--text-3); }
+.bs-auswahl-knopf[aria-expanded="true"] { border-color: var(--akzent); box-shadow: var(--fokus-ring); }
+.bs-auswahl-knopf:focus-visible { outline: 0; border-color: var(--akzent); box-shadow: var(--fokus-ring); }
+.bs-wert { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bs-wert.platzhalter { color: var(--text-3); }
+.bs-ikon { display: inline-grid; place-items: center; flex: none; color: var(--text-2); }
+.bs-chevron { display: grid; place-items: center; flex: none; color: var(--text-3); transition: transform 170ms var(--bs-aus), opacity 120ms ease-out; }
+[aria-expanded="true"] > .bs-chevron { transform: rotate(180deg); }
+
+/* ---------- Filter-Chip ---------- */
+.bs-chip { position: relative; display: inline-flex; align-items: center; vertical-align: middle; }
+.bs-chip-knopf { display: inline-flex; align-items: center; gap: 5px; height: var(--bs-h-s); padding: 0 28px 0 11px; border: 1px solid var(--bs-rand); border-radius: var(--r-pille); background: var(--erhoben); color: var(--text);
+  font: 12.5px/1 var(--schrift); cursor: pointer; white-space: nowrap; transition: border-color 120ms ease-out, background-color 120ms ease-out, color 120ms ease-out, box-shadow 120ms ease-out; }
+.bs-chip-knopf.bs-m { height: var(--bs-h-m); }
+.bs-chip-knopf:hover { border-color: var(--text-3); }
+.bs-chip-knopf:focus-visible, .bs-chip-knopf[aria-expanded="true"] { outline: 0; border-color: var(--akzent); box-shadow: var(--fokus-ring); }
+.bs-chip-label { color: var(--text-2); }
+.bs-chip-label::after { content: ":"; }
+.bs-chip-wert { font-weight: 550; }
+.bs-chip > .bs-chevron, .bs-chip-knopf > .bs-chevron { position: absolute; right: 9px; top: 50%; margin-top: -6px; pointer-events: none; }
+.bs-chip-x { position: absolute; right: 4px; top: 50%; margin-top: -10px; width: 20px; height: 20px; display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: var(--akzent); cursor: pointer; opacity: 0; pointer-events: none; transform: scale(.7); transition: opacity 120ms ease-out, transform 140ms var(--bs-aus), background-color 100ms; }
+.bs-chip-x:hover { background: color-mix(in srgb, var(--akzent) 16%, transparent); }
+.bs-chip-x:focus-visible { outline: 0; box-shadow: var(--fokus-ring); }
+.bs-chip[data-aktiv="true"] .bs-chip-knopf { border-color: var(--akzent-rand); background: var(--akzent-weich); color: var(--akzent); }
+.bs-chip[data-aktiv="true"] .bs-chip-label { color: color-mix(in srgb, var(--akzent) 72%, var(--text-2)); }
+.bs-chip[data-aktiv="true"] .bs-chevron { opacity: 0; }
+.bs-chip[data-aktiv="true"] .bs-chip-x { opacity: 1; pointer-events: auto; transform: none; }
+
+/* ---------- Textfeld, Suchfeld, Textbereich ---------- */
+.bs-feldblock { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.bs-feld { display: flex; align-items: center; gap: 6px; min-width: 0; height: var(--bs-h-m); padding: 0 8px 0 10px; border: 1px solid var(--bs-rand); border-radius: var(--r); background: var(--bs-feld-grund, var(--papier)); color: var(--text);
+  cursor: text; transition: border-color 120ms ease-out, box-shadow 120ms ease-out, background-color 120ms ease-out; }
+.bs-feld.bs-s { height: var(--bs-h-s); }
+.bs-feld:hover { border-color: var(--text-3); }
+.bs-feld:focus-within { border-color: var(--akzent); box-shadow: var(--fokus-ring); }
+.bs-feld.fehlerhaft { border-color: var(--rot); }
+.bs-feld.fehlerhaft:focus-within { box-shadow: 0 0 0 3px color-mix(in srgb, var(--rot) 22%, transparent); }
+.bs-feld-symbol { display: grid; color: var(--text-3); flex: none; }
+.bs-input { flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; outline: 0; background: transparent; color: var(--text); font: 13.5px/1.45 var(--schrift); -webkit-user-select: text; user-select: text; cursor: text; text-overflow: ellipsis; }
+.bs-input::placeholder { color: var(--text-3); }
+.bs-input:disabled { cursor: not-allowed; opacity: .6; }
+.bs-feld:has(.bs-input:disabled) { opacity: .7; cursor: not-allowed; background: var(--seite); }
+.bs-loeschen { flex: none; width: 18px; height: 18px; display: grid; place-items: center; border: 0; border-radius: 50%; background: color-mix(in srgb, var(--text) 14%, transparent); color: var(--erhoben); cursor: pointer; transition: background-color 100ms; }
+.bs-loeschen:hover { background: color-mix(in srgb, var(--text) 26%, transparent); }
+.bs-loeschen .sym { width: 9px; height: 9px; }
+.bs-fehler { color: var(--rot); font-size: 12px; line-height: 1.4; }
+.bs-bereich { height: auto; align-items: stretch; padding: 7px 10px; }
+.bs-bereich .bs-input { height: auto; resize: none; line-height: 19px; display: block; }
+
+/* ---------- Knöpfe (auch alle bestehenden .knopf im Studio) ---------- */
+.knopf, .bs-knopf, .knopf-fuss { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: var(--bs-h-m); padding: 0 14px; border: 1px solid var(--bs-rand); border-radius: var(--r); background: var(--erhoben); color: var(--text);
+  font: 500 13px/1 var(--schrift); white-space: nowrap; cursor: pointer; box-shadow: var(--schatten-klein);
+  transition: background-color 110ms ease-out, border-color 110ms ease-out, box-shadow 110ms ease-out, filter 110ms ease-out, transform 90ms ease-out; }
+.knopf:hover, .bs-knopf:hover { background: var(--hover); border-color: var(--text-3); }
+.knopf:active, .bs-knopf:active { transform: scale(.98); }
+.knopf:focus-visible, .bs-knopf:focus-visible { outline: 0; box-shadow: var(--fokus-ring); border-color: var(--akzent); }
+.knopf.klein, .bs-knopf.klein { height: var(--bs-h-s); padding: 0 10px; font-size: 12.5px; }
+.knopf.gross { height: 36px; padding: 0 18px; }
+.knopf.primaer, .bs-knopf.primaer, .knopf-fuss.primaer { background: var(--akzent); border-color: var(--akzent); color: var(--akzent-text); font-weight: 600; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .18), var(--schatten-klein); }
+.knopf.primaer:hover, .bs-knopf.primaer:hover { background: var(--akzent); border-color: var(--akzent); filter: brightness(1.08); }
+.knopf.primaer:active, .bs-knopf.primaer:active { filter: brightness(.94); }
+.knopf.leise, .bs-knopf.leise { border-color: transparent; background: transparent; box-shadow: none; color: var(--text-2); }
+.knopf.leise:hover, .bs-knopf.leise:hover { background: var(--hover-2); border-color: transparent; color: var(--text); }
+.knopf.gefahr, .bs-knopf.gefahr { color: var(--rot); border-color: var(--rot-rand); }
+.knopf.gefahr:hover, .bs-knopf.gefahr:hover { background: var(--rot-weich); border-color: var(--rot); }
+.knopf:disabled, .bs-knopf:disabled { opacity: .45; cursor: default; box-shadow: none; transform: none; pointer-events: none; }
+.bs-knopf.nur-symbol { width: var(--bs-h-m); padding: 0; }
+.bs-knopf.nur-symbol.klein { width: var(--bs-h-s); }
+.knopf-fuss { flex: 1; color: var(--text-2); gap: 6px; }
+.knopf-fuss:hover { background: var(--hover); color: var(--text); }
+/* Ladezustand: Beschriftung bleibt stehen (Breite unverändert), Spinner liegt darüber */
+.knopf.laedt, .bs-knopf.laedt { cursor: progress; }
+.knopf.laedt > *, .bs-knopf.laedt > * { visibility: hidden; }
+.knopf.laedt::after, .bs-knopf.laedt::after { content: ""; position: absolute; left: 50%; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; border: 2px solid color-mix(in srgb, currentColor 25%, transparent); border-top-color: currentColor; animation: bs-dreh .7s linear infinite; }
+.knopf.laedt:not(:has(> *))::after { color: var(--text-2); }
+.knopf.laedt:not(:has(> *)) { color: transparent; }
+@keyframes bs-dreh { to { transform: rotate(360deg); } }
+
+/* ---------- Segment-Schalter ---------- */
+.bs-segment { position: relative; display: inline-flex; align-items: stretch; height: var(--bs-h-m); padding: 2px; border-radius: 9px; background: color-mix(in srgb, var(--text) 7%, transparent); vertical-align: middle; }
+.bs-segment.bs-s { height: var(--bs-h-s); }
+.bs-daumen { position: absolute; top: 2px; bottom: 2px; left: 0; width: var(--daumen-b, 0); border-radius: 7px; background: var(--erhoben); box-shadow: 0 0 0 .5px var(--linie-stark), 0 1px 2px light-dark(rgba(30, 20, 10, .12), rgba(0, 0, 0, .4)); transform: translateX(var(--daumen-x, 2px)); opacity: 0; }
+.bs-segment.bereit .bs-daumen { opacity: 1; transition: transform 190ms var(--bs-aus), width 190ms var(--bs-aus); }
+.bs-seg { position: relative; z-index: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 12px; border: 0; border-radius: 7px; background: transparent; color: var(--text-2); font: 500 12.5px/1 var(--schrift); cursor: pointer; white-space: nowrap; transition: color 120ms ease-out; }
+.bs-seg:hover { color: var(--text); }
+.bs-seg[aria-checked="true"] { color: var(--text); font-weight: 600; }
+.bs-seg:focus-visible { outline: 0; box-shadow: var(--fokus-ring); }
+
+/* ---------- Umschalter (Switch) ---------- */
+.bs-schalter { position: relative; flex: none; width: 36px; height: 20px; padding: 0; border: 0; border-radius: var(--r-pille); background: color-mix(in srgb, var(--text) 22%, transparent); cursor: pointer; transition: background-color 160ms ease-out; }
+.bs-schalter-knauf { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .3); transition: transform 180ms var(--bs-aus); }
+.bs-schalter[aria-checked="true"] { background: var(--akzent); }
+.bs-schalter[aria-checked="true"] .bs-schalter-knauf { transform: translateX(16px); background: var(--akzent-text); }
+.bs-schalter:active .bs-schalter-knauf { width: 19px; }
+.bs-schalter[aria-checked="true"]:active .bs-schalter-knauf { transform: translateX(13px); }
+.bs-schalter:focus-visible { outline: 0; box-shadow: var(--fokus-ring); }
+.bs-schalter-zeile { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: var(--bs-h-m); cursor: pointer; }
+
+/* ---------- Checkbox, Radio (alle input[type=checkbox|radio] im Studio) ---------- */
+input[type=checkbox], input[type=radio] { -webkit-appearance: none; appearance: none; position: relative; flex: none; width: 16px; height: 16px; margin: 0; border: 1.5px solid var(--bs-rand); background: var(--erhoben); cursor: pointer;
+  transition: background-color 120ms ease-out, border-color 120ms ease-out, box-shadow 120ms ease-out; }
+input[type=checkbox] { border-radius: 5px; }
+input[type=radio] { border-radius: 50%; }
+input[type=checkbox]:hover, input[type=radio]:hover { border-color: var(--text-3); }
+input[type=checkbox]:checked, input[type=radio]:checked { background: var(--akzent); border-color: var(--akzent); }
+input[type=checkbox]::before { content: ""; position: absolute; left: 4px; top: 1px; width: 4px; height: 8px; border: solid var(--akzent-text); border-width: 0 2px 2px 0; transform: rotate(45deg) scale(0); transition: transform 140ms var(--bs-aus); }
+input[type=checkbox]:checked::before { transform: rotate(45deg) scale(1); }
+input[type=radio]::before { content: ""; position: absolute; inset: 3.5px; border-radius: 50%; background: var(--akzent-text); transform: scale(0); transition: transform 140ms var(--bs-aus); }
+input[type=radio]:checked::before { transform: scale(1); }
+input[type=checkbox]:focus-visible, input[type=radio]:focus-visible { outline: 0; box-shadow: var(--fokus-ring); }
+input[type=checkbox]:disabled, input[type=radio]:disabled { opacity: .45; cursor: default; }
+.bs-haken { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.bs-haken-text { font-size: 13px; }
+
+/* ---------- Datumsauswahl ---------- */
+.bs-datum { display: inline-flex; }
+.bs-datum-knopf { min-width: 150px; }
+.bs-kal { width: 264px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.bs-kal-schnell { display: flex; gap: 4px; }
+.bs-kal-schnell .knopf { flex: 1; padding: 0 6px; background: var(--hover); }
+.bs-kal-schnell .knopf:hover { background: var(--hover-2); }
+.bs-kal-kopf { display: flex; align-items: center; gap: 2px; }
+.bs-kal-titel { flex: 1; font-size: 13px; font-weight: 650; padding-left: 4px; }
+.bs-kal-nav { width: 26px; height: 26px; display: grid; place-items: center; border: 0; border-radius: var(--r-s); background: transparent; color: var(--text-2); cursor: pointer; transition: background-color 100ms; }
+.bs-kal-nav:hover { background: var(--hover-2); color: var(--text); }
+.bs-kal-nav:focus-visible { outline: 0; box-shadow: var(--fokus-ring); }
+.bs-kal-raster { display: flex; flex-direction: column; gap: 2px; }
+.bs-kal-zeile { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.bs-kal-wt { height: 22px; display: grid; place-items: center; font-size: 11px; font-weight: 600; color: var(--text-3); }
+.bs-tag { height: 30px; display: grid; place-items: center; border: 0; border-radius: 8px; background: transparent; color: var(--text); font: 12.5px/1 var(--schrift); font-variant-numeric: tabular-nums; cursor: pointer; transition: background-color 80ms ease-out; }
+.bs-tag:hover { background: var(--hover-2); }
+.bs-tag.draussen { color: var(--text-3); }
+.bs-tag.heute { color: var(--akzent); font-weight: 700; box-shadow: inset 0 0 0 1.5px var(--akzent-rand); }
+.bs-tag[aria-selected="true"] { background: var(--akzent); color: var(--akzent-text); font-weight: 650; box-shadow: none; }
+.bs-tag:focus-visible { outline: 0; box-shadow: var(--fokus-ring); }
+.bs-kal-fuss { display: flex; justify-content: flex-end; border-top: 1px solid var(--linie); padding-top: 6px; }
+
+/* ---------- Tooltip ---------- */
+.bs-tipp { position: fixed; z-index: 2; max-width: 280px; padding: 5px 9px; border-radius: 7px; background: var(--text); color: var(--papier); font-size: 12px; line-height: 1.35; box-shadow: var(--schatten); pointer-events: none; opacity: 0; transform: translateY(2px); transition: opacity 120ms ease-out, transform 140ms ease-out; }
+.bs-tipp.offen { opacity: 1; transform: none; }
+
+/* ---------- Skelett: erscheint erst nach 150 ms (kein Flackern bei schnellen Ladevorgängen) ---------- */
+.bs-skelett { border-radius: var(--r); background: linear-gradient(90deg, var(--hover) 0%, var(--hover-2) 50%, var(--hover) 100%); background-size: 200% 100%; opacity: 0;
+  animation: bs-sichtbar 160ms ease-out 150ms forwards, bs-schimmer 1.4s ease-in-out 150ms infinite; }
+@keyframes bs-sichtbar { to { opacity: 1; } }
+@keyframes bs-schimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+
+/* ---------- Dialog, Schleier, Toast: einheitlicher Auftritt ---------- */
+.schleier { animation: ein 140ms ease-out; -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
+.dialog, .palette { border-radius: 16px; animation: hoch 180ms var(--bs-aus); overscroll-behavior: contain; }
+.dialog-fuss { padding: 12px 20px 14px; }
+.toast { border-radius: 12px; animation: hoch 180ms var(--bs-aus); font-size: 13px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .bs-skelett { opacity: 1 !important; animation: none !important; }
+  .knopf.laedt::after, .bs-knopf.laedt::after { animation: bs-dreh 1.6s linear infinite !important; }
+  .bs-pop, .bs-geist { transform: none; }
+}
+
+/* ---------- Einbettung in bestehende Dialoge ---------- */
+.bs-feld:has(.bs-input[aria-invalid="true"]) { border-color: var(--rot); }
+.bs-feld:has(.bs-input[aria-invalid="true"]):focus-within { box-shadow: 0 0 0 3px color-mix(in srgb, var(--rot) 22%, transparent); }
+.w-karte .bs-feld, .w-modal .bs-feld { height: 40px; border-radius: 10px; padding: 0 12px; }
+.w-karte .bs-input { font-size: 15px; }
+.rm-dialog .bs-feld { height: 40px; }
+.dialog .feld .bs-auswahl-knopf, .dialog .feld .bs-feld { width: 100%; }
+.pe-reiter-leiste { display: flex; }
+.liste-suche { transition: border-color 120ms ease-out; }
+.dateiliste label { transition: background-color 100ms ease-out; }
+.liste-suche .bs-feld > .sym { color: var(--text-3); flex: none; }
