@@ -374,7 +374,7 @@ test("KI verbinden mit Claude je Profil: das Standardprofil ohne CLAUDE_CONFIG_D
   }
 });
 
-test("Hintergrunddienst mit Profil: ein anderes Profil kommt als CLAUDE_CONFIG_DIR in die plist, das Standardprofil nicht", { skip: process.platform !== "darwin" }, async () => {
+test("Hintergrunddienst mit Profil: die plist trägt KEIN CLAUDE_CONFIG_DIR mehr (das Konto kommt je Vault aus der Pflege-Einstellung); ein unbekanntes Profil wird weiter abgelehnt", { skip: process.platform !== "darwin" }, async () => {
   const h = mehrProfilHome();
   const fake = fakeLaunchctl();
   process.env.BRAIN_LAUNCHCTL = fake.skript;
@@ -384,7 +384,7 @@ test("Hintergrunddienst mit Profil: ein anderes Profil kommt als CLAUDE_CONFIG_D
     const plist = join(h.heim, "Library", "LaunchAgents", "de.brain.tageslauf.plist");
     let r = await e.rufe("POST", "/api/kern/verdrahten", { was: "dienst", an: true, profil: h.privat });
     assert.equal(r.status, 200, JSON.stringify(r.j));
-    assert.ok(readFileSync(plist, "utf8").includes(`<key>CLAUDE_CONFIG_DIR</key><string>${h.privat}</string>`));
+    assert.ok(!readFileSync(plist, "utf8").includes("CLAUDE_CONFIG_DIR"), "das mitgeschickte Profil kommt nicht in die plist");
     r = await e.rufe("POST", "/api/kern/verdrahten", { was: "dienst", an: true, profil: h.standard });
     assert.equal(r.status, 200, JSON.stringify(r.j));
     assert.ok(!readFileSync(plist, "utf8").includes("CLAUDE_CONFIG_DIR"));

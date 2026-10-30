@@ -212,6 +212,21 @@ export function pflegeFuer(daten, vault) {
 }
 // LESEN-ENDE
 
+// ───────────────────────────── Pflege-Konto (Anzeige und Prüfung der Werkstatt) ─────────────────────────────
+// Was die Pflege eines Vaults tatsächlich tun wird — dieselbe Regel wie kern/pflege-konto.mjs#pflegeAufloesen (Test: Tests/Node/pflege-konto.test.mjs prüft beide gegeneinander).
+// → { modus: "alt" | "konto" | "aus", stufe, konto, bewusst, problem: null | "kein-konto" | "stufe" | "programm" | "unlesbar" }
+export function pflegeWirksam(daten, vault) {
+  const p = pflegeFuer(daten, vault);
+  if (!p.gesetzt) return { modus: "alt", stufe: "mittel", konto: null, bewusst: false, problem: null };
+  const aus = (problem, bewusst = false) => ({ modus: "aus", stufe: p.stufe, konto: p.konto, bewusst, problem: bewusst ? null : problem });
+  if (p.ungueltig) return aus("unlesbar");
+  if (p.stufe === "aus") return aus(null, true);
+  if (!p.konto) return aus("kein-konto");
+  if (daten.konten[p.konto].programm !== "claude") return aus("programm");
+  if (!darfMindestens(stufeFuer(daten, vault, p.konto), "erweitert")) return aus("stufe");
+  return { modus: "konto", stufe: p.stufe, konto: p.konto, bewusst: false, problem: null };
+}
+
 // ───────────────────────────── Schreiben (nur Werkstatt) ─────────────────────────────
 export const leerDaten = () => ({ version: 1, konten: {}, vaults: {} });
 export const pruefeDaten = (j) => formOk(j);

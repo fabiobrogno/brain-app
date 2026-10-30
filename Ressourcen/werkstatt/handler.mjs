@@ -19,7 +19,8 @@ import { erzeugeVerdrahtung } from "./verdrahtung.mjs";
 import { erzeugeUmstellung } from "./umstellung.mjs";
 import { profilZuPfad, mitProfil, mitCodexHome } from "./profile.mjs";
 import { erzeugeKonten } from "./konten.mjs";
-import { STUFEN } from "../gemeinsam/ki-konten.mjs";
+import { STUFEN, pflegeFuer, stufeFuer, darfMindestens } from "../gemeinsam/ki-konten.mjs";
+import { erzeugePflege } from "./pflege.mjs";
 import { merkeRemoteBestaetigt } from "../gemeinsam/sicherungsmerker.mjs";
 import { ADAPTER, erkenneProgramme } from "./ki-programme/index.mjs";
 
@@ -162,7 +163,26 @@ export function erzeugeHandler(o) {
   // Einrichtung über den Starter der App (Hooks bei Claude Code, Prüfung vor dem Speichern, Hintergrunddienst): werkstatt/verdrahtung.mjs. o.starter = Ersatz für Tests.
   const verdrahtung = erzeugeVerdrahtung({ starter: o.starter || join(vaultOpt.support || supportOrdner(), "bin", "kortex"), support: vaultOpt.support || supportOrdner(),
     kontoFuerProfil: (pfad) => { if (o.kontenAus === true) return null; try { return konten.kontoFuerProfil(pfad) || (konten.synchronisiere(), konten.kontoFuerProfil(pfad)); } catch { return null; } },
-    freigeben: (konto, vault, stufe, ausdruecklich = false) => konten.setzeZugriff({ konto, vault: vault.wurzel, stufe, quelle: "assistent", ausdruecklich }) });
+    freigeben: (konto, vault, stufe, ausdruecklich = false) => konten.setzeZugriff({ konto, vault: vault.wurzel, stufe, quelle: "assistent", ausdruecklich }) ,
+    // Ein Profil, das der Assistent beim Einrichten des Dienstes mitschickt, schlägt nur das Pflege-Konto vor: nur mit „erweitert“ für diesen Vault und nur, wenn der Vault noch keine Pflege-Einstellung hat.
+    pflegeAusProfil: (vault, profilPfad) => {
+      if (o.kontenAus === true) return;
+      const id = konten.kontoFuerProfil(profilPfad); const d = konten.lade();
+      if (!id || !d || pflegeFuer(d, vault.wurzel).gesetzt || !darfMindestens(stufeFuer(d, vault.wurzel, id), "erweitert")) return;
+      konten.setzePflege({ vault: vault.wurzel, konto: id, stufe: "mittel" });
+    } });
+  // Pflege je Vault (letzter/nächster Lauf, Dienst, Übernahme des alten Profils der plist): werkstatt/pflege.mjs
+  const pflege = erzeugePflege({ support: vaultOpt.support || supportOrdner(), konten, ...(o.kontenHome ? { home: () => o.kontenHome } : {}), vaults: () => vaultsFn.leseVaults(optV()).vaults });
+  // Die einmalige Übernahme des festen Claude-Profils aus der alten plist (docs/plaene/ki-konten.md, P3). Die plist verliert die Variable beim nächsten „dienst an“ für einen Vault des Dienstes:
+  // hier, wenn der offene Vault dazugehört (ein Vault, der nicht im Dienst war, wird dadurch nie neu eingeschaltet). Fehler bleiben still: die Einstellung gilt trotzdem, die alte plist bleibt Rückfall.
+  async function migrierePflege(v) {
+    if (o.kontenAus === true) return;
+    let r; try { r = pflege.migriere(); } catch { return; }
+    if (!r.gemacht || !r.plistNeu || !v) return;
+    let echt = v.wurzel; try { echt = realpathSync.native(v.wurzel); } catch { /* wie angegeben */ }
+    if (!pflege.dienstVaults().includes(echt)) return;
+    try { await verdrahtung.verdrahte(v, { was: "dienst", an: true }); } catch { /* bleibt als Rückfall */ }
+  }
   // Umstellung eines Vaults aus der Kit-Zeit (P7a Befund, P7b Probelauf/Phase A/Rückweg): werkstatt/umstellung.mjs
   const umstellung = erzeugeUmstellung({ starter: o.starter || join(vaultOpt.support || supportOrdner(), "bin", "kortex"), support: vaultOpt.support || supportOrdner() });
 
@@ -305,10 +325,15 @@ export function erzeugeHandler(o) {
       }
       // KI-Konten (docs/plaene/ki-konten.md): Liste mit Stufen je Vault · Name/Abo setzen · Stufe eines Kontos in einem Vault setzen
       case "/api/ki/konten":
-        if (methode === "GET") return konten.stand();
+        if (methode === "GET") { await migrierePflege(v); return konten.stand(); }
         nur("POST"); return konten.setzeName(eingabe());
       case "/api/ki/zugriff": nur("PUT"); return konten.setzeZugriff(eingabe());
       case "/api/ki/standard": nur("PUT"); return konten.setzeStandard(eingabe());
+      // Pflege je Vault: Konto und KI-Stufe setzen · Stand lesen (letzter/nächster Lauf) · jetzt einmal pflegen
+      case "/api/ki/pflege":
+        if (methode === "GET") { const vp = q.get("vault"); if (!vp) throw new HttpFehler(400, "Der Vault muss angegeben werden."); return pflege.status(vp); }
+        nur("POST"); return konten.setzePflege(eingabe());
+      case "/api/ki/pflege/jetzt": nur("POST"); return verdrahtung.jetztPflegen(v);
       case "/api/ki/schutz": nur("POST"); return konten.setzeSchutz(eingabe());
       case "/api/ki/hinweis": nur("POST"); return konten.quittiereHinweis();
       // Altform (Eintrag oder Hooks ohne --konto) mit Konto neu verbinden: ändert nur die Einträge von Kortex, nie die Stufe des Kontos (das Konto wird dadurch nicht freigegeben).
@@ -685,5 +710,6 @@ export function erzeugeHandler(o) {
   }
   behandle.aktuellerVaultPfad = () => (aktuell ? aktuell.wurzel : null);
   behandle.konten = konten; // werkstatt.mjs gleicht die Liste beim Start ab
+  behandle.migrierePflege = () => migrierePflege(aktuell); // und übernimmt danach einmal das alte Profil der plist in die Pflege-Einstellung
   return behandle;
 }
