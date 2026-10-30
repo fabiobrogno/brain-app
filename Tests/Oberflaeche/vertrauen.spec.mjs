@@ -571,7 +571,7 @@ test("UI-5: unbekannte Gründe der App (auch die alten „nicht-vertraut“ und 
   // ein Grund, den die Oberfläche nicht kennt (oder gar keiner): der allgemeine Satz statt Schweigen
   await antwort(page, { ok: false, grund: "vault-fehlt" });
   await uebersichtPalette(page);
-  await expect(page.locator(".toast.fehler", { hasText: "Die Übersicht ließ sich nicht öffnen." })).toBeVisible();
+  await expect(page.locator(".toast.fehler", { hasText: "Die Übersicht ließ sich nicht öffnen." })).toHaveCount(2); // die erste Meldung steht noch
   await antwort(page, { ok: false });
   await uebersichtPalette(page);
   await expect.poll(() => aktionen(page, "ansicht").then((a) => a.length)).toBe(3);
