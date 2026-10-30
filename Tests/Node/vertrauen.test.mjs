@@ -213,6 +213,15 @@ test("Von Kortex neu angelegt (Vorlage und leer) → vertraut (quelle „angeleg
   assert.equal(existsSync(join(p1, "brain.config.json")), true, "Dateien bleiben");
 }));
 
+test("Der Beispiel-Vault („Erst mal ausprobieren“: <Home>/Kortex-Beispiel, aus der Vorlage) ist von Kortex angelegt und damit vertraut", echt(async () => {
+  const home = tmp("brain-home-bsp-"), s = process.env.BRAIN_APP_SUPPORT;
+  const ziel = join(home, "Kortex-Beispiel");
+  const r = await Vaults.neuesVault({ art: "vorlage", name: "Kortex-Beispiel", ordner: ziel }, { ...OPT, home });
+  assert.equal(r.vault.pfad, realpathSync(ziel));
+  assert.deepEqual(V.pruefeVertrauen(ziel, { support: s }), { erlaubt: true, noetig: false, gitGesperrt: false, quelle: "angelegt" });
+  assert.equal(Kern.vertrauensStand(ziel, { support: s }).quelle, "angelegt");
+}));
+
 test("Geklont → nur vertraut, wenn das Repository dem angemeldeten GitHub-Konto gehört (quelle „geklont“); ein fremdes Repository wird wie ein von außen geöffneter Ordner gefragt", echt(async () => {
   const s = process.env.BRAIN_APP_SUPPORT;
   const eigene = bareMitInhalt();
