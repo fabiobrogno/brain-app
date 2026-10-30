@@ -17,6 +17,7 @@ import { liesZustand, ablageOrdner } from "../umstellung/protokoll.mjs";
 import { kennung, kennungen } from "../umstellung/ziele.mjs";
 import { merkerDateiFuer } from "../backup.mjs";
 import { codexAbschnitte } from "../umstellung/mcp-schritt.mjs";
+import { schreibeVertrauen } from "../umstellung/vertrauen-merker.mjs";
 import { hakenDiff, hakenZurueck } from "../umstellung/schritte.mjs";
 import { KERN } from "../pfade.mjs";
 
@@ -560,6 +561,39 @@ test("Roter A9: die Phase gilt NICHT als abgeschlossen (phase bleibt leer), kein
     assert.equal(r2.a9.ampel, "gruen", JSON.stringify(r2.a9));
     assert.equal(r2.phase, "A");
     assert.equal(liesZustand(h.z()).vertrauen, "vermerken");
+  } finally { h.weg(); }
+});
+
+test("P5 (echter Merker): ohne Vertrauen enden Probelauf und Phase A VOR A0 mit nicht-vertraut; nach dem Bestätigen läuft alles, der echte Merker bleibt unberührt, die Kopie hat ihren eigenen", async () => {
+  const h = umstellungsFixture(["hooks-alt-sh", "credential-helper", "plist-alt-dieser"], { vertrauen: "kein" });
+  try {
+    assert.equal(process.env.KORTEX_VAULT_VERTRAUT, undefined, "der Testschalter ist aus: es gilt die echte Regel");
+    const z = h.z();
+    await assert.rejects(probelauf(z, { bestaetigt: true }), (e) => e.code === "nicht-vertraut" && e.exit === 6);
+    freigabe(z);
+    await assert.rejects(phaseA(z, { bestaetigt: true }), (e) => e.code === "nicht-vertraut" && e.exit === 6);
+    assert.ok(!existsSync(join(ablageOrdner(z), "vor-kortex.bundle")) && !existsSync(join(h.a.vault, ".git", "config.vor-kortex")), "kein A0");
+    // der Nutzer bestätigt den Vault (im Studio schreibt das die Werkstatt; hier derselbe Merker im Temp-Support)
+    schreibeVertrauen(h.a.support, h.a.vault, "bestaetigt");
+    const merkerHash = sha(join(h.a.support, "vertrauen.json"));
+    const p = await probelauf(h.z(), { bestaetigt: true });
+    assert.equal(p.ok, true, JSON.stringify(p.kriterien));
+    assert.equal(sha(join(h.a.support, "vertrauen.json")), merkerHash, "der Probelauf ändert den echten Merker nicht");
+    const r = await phaseA(h.z(), { bestaetigt: true });
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.equal(r.phase, "A");
+    assert.equal(r.a9.ampel, "gruen", JSON.stringify(r.a9));
+    assert.equal(json(join(h.a.support, "vertrauen.json"))[realpathSync.native(h.a.vault)].quelle, "bestaetigt", "die Herkunft des Vertrauens bleibt");
+  } finally { h.weg(); }
+});
+
+test("P5: wird das Vertrauen nach dem Probelauf entzogen, endet Phase A vor A0 mit nicht-vertraut", async () => {
+  const h = umstellungsFixture(["hooks-alt-sh"]);
+  try {
+    freigabe(h.z());
+    rmSync(join(h.a.support, "vertrauen.json"));      // Vertrauen entzogen
+    await assert.rejects(phaseA(h.z(), { bestaetigt: true }), (e) => e.code === "nicht-vertraut");
+    assert.equal(liesZustand(h.z()).phase, null);
   } finally { h.weg(); }
 });
 

@@ -11,10 +11,9 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { ALT_KIT_ORDNER, liesConfigRoh } from "../pfade.mjs";
 import { uebernehmeOrdner, bestaetigeRemote, pruefeBackupPfad, merkerDateiFuer } from "../backup.mjs";
-import { findeClaude } from "../ernte.mjs";
 import { LABEL, bauePlist, profilAusPlist, launchctl, domain } from "../tageslauf/dienst.mjs";
 import { hooksPfadArt, adressArt } from "./git-lage.mjs";
-import { gitLauf, kernSkript, kennung } from "./ziele.mjs";
+import { gitLauf, kernSkript, kennung, findeClaudeProgramm } from "./ziele.mjs";
 import { hashDatei, sichereDatei, sicherungsPfad, stelleHer, modusVon, schreibeAtomar, echtesDateiZiel, hashText } from "./protokoll.mjs";
 import { nennt, pruefeBefehleUndSkills } from "./restverweise.mjs";
 import { spawnSync } from "node:child_process";
@@ -198,7 +197,8 @@ export function hakenZurueck(doc, diff) {
 }
 
 export function vorschauProfil(z, profil) {
-  const r = kernSkript(z, INSTALL, [z.musterVault, "--vorschau", "--claude-home", profil.pfad]);
+  // der Vault ist das ORIGINAL (nur für die Erkennung alter Einträge): sein Vertrauen steht im echten Support-Ordner, nicht im Probe-Support
+  const r = kernSkript(z, INSTALL, [z.musterVault, "--vorschau", "--claude-home", profil.pfad], { extraEnv: { BRAIN_APP_SUPPORT: z.supportOriginal || z.support } });
   const j = r.status === 0 ? jsonZeile(r.stdout) : null;
   return { status: r.status, vorschau: j && j.vorschau ? j : null, stderr: r.stderr };
 }
@@ -341,7 +341,7 @@ export const A6 = {
     if (!z.kern || !z.starter) throw new Error("kein-stabiler-kern");
     if (!z.launchctl) {
       // Probelauf: die neue plist nur rendern (in den Probe-Ordner) und prüfen, kein launchctl
-      const claude = findeClaude({ env: z.env, home: z.home });
+      const claude = findeClaudeProgramm(z);
       const { text } = bauePlist({ starter: z.starter, node: z.node, claude, profilRoh: l.profil, home: z.home, support: z.festSupport });
       mkdirSync(z.launchAgents, { recursive: true });
       const ziel = plistDatei(z);
@@ -355,7 +355,7 @@ export const A6 = {
     const merkerSich = sichereDatei(z, ctx.sicherungsDir, merker, "dienst-json.vor-a6");
     // Die neue plist vorher rendern: ihr Hash kommt als `hashErwartet` in die Rückweg-Angaben, damit der Rückweg sie auch erkennt, wenn `dienst an` mitten im Schreiben scheitert
     // (hashNachher steht erst nach Erfolg fest). Im Fehlerfall desselben Laufs stellt der Rückweg ohnehin immer aus der Sicherung her (ctx.imFehler).
-    const erwartet = bauePlist({ starter: z.starter, node: z.node, claude: findeClaude({ env: z.env, home: z.home }), profilRoh: l.profil, home: z.home, support: z.festSupport });
+    const erwartet = bauePlist({ starter: z.starter, node: z.node, claude: findeClaudeProgramm(z), profilRoh: l.profil, home: z.home, support: z.festSupport });
     const undo = { plist: { rel: sich && sich.rel, hashVorher: sich && sich.hash, hashNachher: null, hashErwartet: hashText(erwartet.text), modus: modusVon(plistDatei(z)) },
       merkerVorher: merkerSich ? merkerSich.rel : null, merkerHashVorher: merkerSich ? merkerSich.hash : null, merkerHashNachher: null,
       geladenVorher: launchctl(["print", `${domain()}/${LABEL}`]) };

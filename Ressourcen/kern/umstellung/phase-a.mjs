@@ -46,11 +46,13 @@ export function standPhaseA(z) {
   };
 }
 
-// Vertrauen (P5, Workspace-Trust): ist der Vault in Kortex noch nicht als deiner bestätigt, ändert die Umstellung nichts – vor A0, nicht erst im ersten Kindprozess (Exit 5 der Installer).
-// Solange pfade.mjs keine vaultVertraut() hat (P5 nicht gemerged), gilt jeder Vault als vertraut; Tests können z.vertrautPruefer setzen.
+// Vertrauen (P5, Workspace-Trust): ist der Vault in Kortex noch nicht als deiner bestätigt, ändert die Umstellung nichts – vor A0, nicht erst im ersten Kindprozess (die Installer
+// enden dort mit Exit 5). Geprüft wird die echte Regel des Kerns (pfade.mjs#vaultVertraut: Merker <Support>/vertrauen.json) mit dem Umgebungsfilter dieser Ziele (der Testschalter
+// KORTEX_VAULT_VERTRAUT=alle wirkt nur, wenn er in z.env steht). Ein Kit-Vault, der nie im alten Studio bestätigt war, ist hier „nicht vertraut“: der Nutzer bestätigt ihn zuerst im
+// Studio („Kommt dieser Vault von dir?“) – die Umstellung schreibt aus dem Inhalt des Vaults in ~/.claude*, LaunchAgents und die globale git-Konfiguration. Tests können z.vertrautPruefer setzen.
 export function pruefeVertrauen(z) {
-  const pruefer = z.vertrautPruefer || (typeof pfadeNs.vaultVertraut === "function" ? (v) => pfadeNs.vaultVertraut(v) : null);
-  if (pruefer && pruefer(z.vault) === false) throw new UmstellungsFehler("nicht-vertraut", "Dieser Vault ist in Kortex noch nicht als deiner bestätigt. Bestätige ihn zuerst („Diesem Vault vertrauen“), dann geht die Umstellung. Es wurde nichts verändert.", 6);
+  const pruefer = z.vertrautPruefer || ((v) => pfadeNs.vaultVertraut(v, { support: z.support, env: z.env }));
+  if (pruefer(z.vault) === false) throw new UmstellungsFehler("nicht-vertraut", "Dieser Vault ist in Kortex noch nicht als deiner bestätigt. Bestätige ihn zuerst („Diesem Vault vertrauen“), dann geht die Umstellung. Es wurde nichts verändert.", 6);
 }
 
 function pruefeVorbedingungen(z, ent, { schritte }) {

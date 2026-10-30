@@ -13,8 +13,8 @@
 //   launchAgents   Ordner der plist (Original: ~/Library/LaunchAgents; Probelauf: Ordner in Temp)
 //   schreibeClaude / schreibeMcp / launchctl   false im Probelauf: Claude-Einstellungen, MCP-Einträge und der Hintergrunddienst werden nicht verändert
 //   env            Basis der Umgebung für Kindprozesse (PATH und Testhaken, nie Zugangsdaten)
-import { realpathSync, lstatSync, readdirSync, mkdirSync, rmSync, existsSync, statfsSync } from "node:fs";
-import { join, resolve, dirname, isAbsolute } from "node:path";
+import { realpathSync, lstatSync, readdirSync, mkdirSync, rmSync, existsSync, statfsSync, accessSync, constants } from "node:fs";
+import { join, resolve, dirname, isAbsolute, delimiter } from "node:path";
 import { homedir } from "node:os";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
@@ -54,7 +54,7 @@ export function echteZiele({ vault, home = homedir(), env = process.env, claudeH
   const festSupport = kern ? dirname(dirname(kern)) : support;
   const gg = typeof env.GIT_CONFIG_GLOBAL === "string" && isAbsolute(env.GIT_CONFIG_GLOBAL) ? env.GIT_CONFIG_GLOBAL : join(home, ".gitconfig");
   return {
-    probe: false, vault, musterVault: vault, home, support, festSupport, kern, starter,
+    probe: false, vault, musterVault: vault, home, support, supportOriginal: support, festSupport, kern, starter,
     node: join(festSupport, "bin", "node"), mcpServer: kern ? join(kern, "mcp", "brain-mcp.mjs") : null,
     gitGlobal: gg, gitGlobalEnv: typeof env.GIT_CONFIG_GLOBAL === "string" && isAbsolute(env.GIT_CONFIG_GLOBAL),
     claudeProfile: claudeHomes && claudeHomes.length ? profileAusPfaden(claudeHomes, home) : erkenneProfile(home),
@@ -134,6 +134,18 @@ export function freierPlatz(z, pfad) {
   let p = pfad;
   for (let i = 0; i < 20 && !existsSync(p); i++) p = dirname(p);
   try { const s = statfsSync(p); return Number(s.bavail) * Number(s.bsize); } catch { return Number.MAX_SAFE_INTEGER; }   // unbekannt: nicht blockieren
+}
+
+// claude auffinden, ohne die Vertrauensregel von ernte.mjs#findeClaude (die prüft ALLE im Prozess angemeldeten Vaults – im Probelauf auch die Kopie, die im echten Support nicht
+// vertraut ist). Die Umstellung hat das Vertrauen des Vaults vorher selbst geprüft (phase-a.mjs#pruefeVertrauen). Testhaken BRAIN_CLAUDE nur in der Testumgebung.
+export function findeClaudeProgramm(z) {
+  const env = z.env, test = env.KORTEX_KERN_UNSTABIL_ERLAUBT === "1" || env.BRAIN_TESTMODUS === "1";
+  if (test && env.BRAIN_CLAUDE) return { befehl: process.execPath, args: [env.BRAIN_CLAUDE] };
+  if (process.platform === "win32") return null;
+  const ausfuehrbar = (p) => { try { accessSync(p, constants.X_OK); return lstatSync(p).isFile() || lstatSync(p).isSymbolicLink(); } catch { return false; } };
+  for (const dir of String(env.PATH || "").split(delimiter).filter(Boolean)) { const p = join(dir, "claude"); if (ausfuehrbar(p)) return { befehl: p, args: [] }; }
+  for (const p of [join(z.home, ".local", "bin", "claude"), join(z.home, ".claude", "local", "claude")]) if (ausfuehrbar(p)) return { befehl: p, args: [] };
+  return null;
 }
 
 export function raeumeWeg(ordner) { try { rmSync(ordner, { recursive: true, force: true }); } catch { /* bleibt */ } }

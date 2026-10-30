@@ -11,6 +11,7 @@ const MERKEN = ["HOME", "KORTEX_KERN_UNSTABIL_ERLAUBT", "KORTEX_KERN_TEMP_WURZEL
   "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "FAKE_LAUNCHCTL_LOG", "FAKE_MCP_LOG", "CLAUDE_CONFIG_DIR"];
 const fake = (n) => pfad("..", "Tests", "Kern", n);
 const { erzeugeHandler } = await import(pfad("werkstatt", "handler.mjs"));
+const { erlaube, pruefeVertrauen: vertrauensStand } = await import(pfad("gemeinsam", "vertrauen.mjs"));
 const { erzeugeUmstellung, entscheidungenArgument } = await import(pfad("werkstatt", "umstellung.mjs"));
 const q = (p) => `'${String(p).replaceAll("'", "'\\''")}'`;
 
@@ -31,8 +32,10 @@ function mitFixture(faelle) {
   writeFileSync(starter, `#!/bin/sh\nKORTEX_KERN_PFAD=${q(join(a.support, "bin", "kern"))}\nexport KORTEX_KERN_PFAD\nexec ${q(process.execPath)} ${q(pfad("kern", "brain.mjs"))} "$@"\n`);
   chmodSync(starter, 0o755);
   delete process.env.CLAUDE_CONFIG_DIR;
+  delete process.env.KORTEX_VAULT_VERTRAUT;   // Workspace-Trust (P5): der Vault ist über den ECHTEN Merker im Temp-Support vertraut, nicht über den Testschalter
+  erlaube(a.vault, { support: a.support, quelle: "geklont" });
   Object.assign(process.env, {
-    HOME: a.home, KORTEX_KERN_UNSTABIL_ERLAUBT: "1", KORTEX_KERN_TEMP_WURZELN: "", KORTEX_VAULT_VERTRAUT: "alle", BRAIN_APP_SUPPORT: a.support, GIT_CONFIG_GLOBAL: global,
+    HOME: a.home, KORTEX_KERN_UNSTABIL_ERLAUBT: "1", KORTEX_KERN_TEMP_WURZELN: "", BRAIN_APP_SUPPORT: a.support, GIT_CONFIG_GLOBAL: global,
     BRAIN_LAUNCHCTL: fake("fake-launchctl.mjs"), FAKE_LAUNCHCTL_LOG: join(a.basis, "launchctl.log"), FAKE_MCP_LOG: join(a.basis, "mcp.log"),
     BRAIN_CLAUDE: fake("fake-claude-mcp.mjs"), KORTEX_CODEX_PROGRAMM: fake("fake-codex-mcp.mjs"),
     GIT_AUTHOR_NAME: "T", GIT_AUTHOR_EMAIL: "t@example.org", GIT_COMMITTER_NAME: "T", GIT_COMMITTER_EMAIL: "t@example.org",

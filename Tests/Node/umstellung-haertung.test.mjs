@@ -11,6 +11,7 @@ const MERKEN = ["HOME", "KORTEX_KERN_UNSTABIL_ERLAUBT", "KORTEX_KERN_TEMP_WURZEL
   "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "FAKE_LAUNCHCTL_LOG", "FAKE_MCP_LOG", "CLAUDE_CONFIG_DIR"];
 const fake = (n) => pfad("..", "Tests", "Kern", n);
 const { erzeugeHandler } = await import(pfad("werkstatt", "handler.mjs"));
+const { erlaube, pruefeVertrauen: vertrauensStand } = await import(pfad("gemeinsam", "vertrauen.mjs"));
 const { erzeugeUmstellung, entscheidungenArgument } = await import(pfad("werkstatt", "umstellung.mjs"));
 const q = (p) => `'${String(p).replaceAll("'", "'\\''")}'`;
 
@@ -31,8 +32,10 @@ function mitFixture(faelle) {
   writeFileSync(starter, `#!/bin/sh\nKORTEX_KERN_PFAD=${q(join(a.support, "bin", "kern"))}\nexport KORTEX_KERN_PFAD\nexec ${q(process.execPath)} ${q(pfad("kern", "brain.mjs"))} "$@"\n`);
   chmodSync(starter, 0o755);
   delete process.env.CLAUDE_CONFIG_DIR;
+  delete process.env.KORTEX_VAULT_VERTRAUT;   // Workspace-Trust (P5): der Vault ist über den ECHTEN Merker im Temp-Support vertraut, nicht über den Testschalter
+  erlaube(a.vault, { support: a.support, quelle: "geklont" });
   Object.assign(process.env, {
-    HOME: a.home, KORTEX_KERN_UNSTABIL_ERLAUBT: "1", KORTEX_KERN_TEMP_WURZELN: "", KORTEX_VAULT_VERTRAUT: "alle", BRAIN_APP_SUPPORT: a.support, GIT_CONFIG_GLOBAL: global,
+    HOME: a.home, KORTEX_KERN_UNSTABIL_ERLAUBT: "1", KORTEX_KERN_TEMP_WURZELN: "", BRAIN_APP_SUPPORT: a.support, GIT_CONFIG_GLOBAL: global,
     BRAIN_LAUNCHCTL: fake("fake-launchctl.mjs"), FAKE_LAUNCHCTL_LOG: join(a.basis, "launchctl.log"), FAKE_MCP_LOG: join(a.basis, "mcp.log"),
     BRAIN_CLAUDE: fake("fake-claude-mcp.mjs"), KORTEX_CODEX_PROGRAMM: fake("fake-codex-mcp.mjs"),
     GIT_AUTHOR_NAME: "T", GIT_AUTHOR_EMAIL: "t@example.org", GIT_COMMITTER_NAME: "T", GIT_COMMITTER_EMAIL: "t@example.org",
@@ -103,5 +106,24 @@ test("Kennung/Merker: Kern (backup.mjs) und Werkstatt (sicherungsmerker.mjs) fin
       writeFileSync(join(f.a.support, "backup", `${ids[1]}.json`), "{}\n");
       assert.equal(kern.merkerDateiFuer(f.a.vault, f.a.support), werk.merkerDatei(f.a.vault, f.a.support));
     }
+  } finally { f.weg(); }
+});
+
+test("Vertrauen nach Phase A: ein vorhandenes Vertrauen (und seine Herkunft) wird nicht überschrieben; fehlt es, trägt die Werkstatt „bestaetigt“ ein", async () => {
+  const f = mitFixture(["hooks-alt-sh"]);
+  try {
+    const { pruefeVertrauen } = await import(pfad("gemeinsam", "vertrauen.mjs"));
+    const v = { wurzel: f.a.vault };
+    const u = erzeugeUmstellung({ starter: f.starter, support: f.a.support });          // echtes Modul aus gemeinsam/vertrauen.mjs
+    assert.equal((await u.probelauf(v, { bestaetigt: true })).ok, true);
+    assert.equal((await u.phaseA(v, { bestaetigt: true })).phase, "A");
+    assert.equal(pruefeVertrauen(f.a.vault, { support: f.a.support }).quelle, "geklont", "die Herkunft „geklont“ bleibt");
+    const aufrufe = [];
+    const mock = { pruefeVertrauen: () => ({ erlaubt: false }), erlaube: (w, o) => aufrufe.push(o.quelle) };
+    await u.rueckweg(v, { bestaetigt: true, alles: true });
+    const u2 = erzeugeUmstellung({ starter: f.starter, support: f.a.support, vertrauen: mock });
+    assert.equal((await u2.probelauf(v, { bestaetigt: true })).ok, true);
+    assert.equal((await u2.phaseA(v, { bestaetigt: true })).phase, "A");
+    assert.deepEqual(aufrufe, ["bestaetigt"], "meldet das Vertrauensmodul „nicht erlaubt“, wird mit der Quelle bestaetigt eingetragen");
   } finally { f.weg(); }
 });

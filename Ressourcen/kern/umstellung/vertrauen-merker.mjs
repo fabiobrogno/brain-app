@@ -1,32 +1,30 @@
-// umstellung/vertrauen-merker.mjs — die EINE Stelle, an der die Umstellung (P7) und das Workspace-Trust (P5, Branch feat/vault-vertrauen) zusammentreffen.
+// umstellung/vertrauen-merker.mjs — wo die Umstellung (P7) und das Workspace-Trust (P5) zusammentreffen. P5 ist in main; die Regeln:
 //
-// Stand dieses Branches: P5 ist noch nicht in main. Darum nimmt der Kern hier nichts vorweg und schreibt keinen Merker in <Support>/vertrauen.json (den schreibt nach P5 nur die
-// Werkstatt, gemeinsam/vertrauen.mjs; der Kern liest ihn nur). Beim Merge von P5 sind genau zwei Dinge zu tun:
-//
-//  1. Ein umgestellter Vault gilt als vertraut. phaseA() setzt dafür `zustand.vertrauen = "vermerken"` und liefert `phase: "A"`; die Werkstatt (werkstatt/umstellung.mjs, Funktion
-//     `vermerkeVertrauen`) ruft danach `erlaube(vault, { support, quelle })` aus gemeinsam/vertrauen.mjs – ist das Modul noch nicht da (P5 fehlt), bleibt der Aufruf ein stiller
-//     Leerlauf. Der Nutzer hat die Umstellung selbst bestätigt (Probelauf, Klick „Jetzt umstellen“); als `quelle` taugt darum "bestaetigt". Wer lieber unterscheiden will, ergänzt
-//     eine Quelle "umgestellt" in QUELLEN (kern/vertrauen.mjs UND gemeinsam/vertrauen.mjs) und ändert VERTRAUEN_QUELLE unten.
-//  2. Die Probekopie braucht Vertrauen, sonst sperrt P5 dort git, Hooks und Dienst und der Probelauf wäre immer rot: `vertraueProbeKopie` schreibt den Merker im Format von P5
-//     ({ "<realpath>": { seit, ordner: "dev:ino:birthtimeMs", quelle } }, 0600) in den EIGENEN Support-Ordner der Probe (Temp), nie in den echten. Ohne P5 ist die Datei wirkungslos.
-//     Zusätzlich setzt kindUmgebung in Tests KORTEX_VAULT_VERTRAUT=alle (nur Testumgebung, wird aus der Umgebung des Tests durchgereicht).
-//  3. Alle Kindprozesse der Phase A (claude-hooks, hooks-install, dienst an, skills-build) enden unter P5 mit Exit 5, wenn der Vault nicht vertraut ist; die Schritte melden das als
-//     Grund "vault-nicht-vertraut" (der Vault ist vor der Umstellung fast immer „migriert“, weil er in vaults.json steht).
+//  1. VORAUSSETZUNG, nicht Folge: Probelauf und Phase A verlangen einen vertrauten Vault (phase-a.mjs#pruefeVertrauen → pfade.mjs#vaultVertraut, Merker <Support>/vertrauen.json),
+//     und zwar VOR A0 (Code `nicht-vertraut`, Exit 6). Grund: die Umstellung schreibt aus dem Inhalt des Vaults in ~/.claude*, LaunchAgents und die globale git-Konfiguration; ein
+//     von außen kopierter Ordner darf das nicht auslösen. Ein Kit-Vault, der nie im alten Studio bestätigt war, bestätigt der Nutzer zuerst im Studio („Kommt dieser Vault von dir?“).
+//     Unter P5 enden außerdem claude-hooks, hooks-install, dienst an und skills-build mit Exit 5, wenn das Vertrauen unterwegs verschwindet → Grund "vault-nicht-vertraut".
+//  2. KEINE eigene Quelle „umgestellt“: der Vault ist vor der Umstellung ohnehin vertraut (angelegt/geklont/bestaetigt/migriert), die Quelle sagt, WOHER das Vertrauen kommt – das
+//     bleibt so. Die Werkstatt (werkstatt/umstellung.mjs#vermerkeVertrauen) trägt darum nach Phase A nur dann etwas ein, wenn der Merker fehlt (z. B. in der Zwischenzeit entzogen);
+//     ein vorhandenes Vertrauen wird nie überschrieben (kein Herabstufen von „angelegt“ auf „bestaetigt“). Eintrag dann mit quelle "bestaetigt".
+//  3. Die Probekopie braucht Vertrauen, sonst sperrt P5 dort git, Hooks und Dienst und der Probelauf wäre immer rot: `schreibeVertrauen` legt den Merker im Format von P5
+//     ({ "<realpath>": { seit, ordner: "dev:ino:birthtimeMs", quelle } }, 0600) in den EIGENEN Support-Ordner der Probe (Temp), nie in den echten.
 import { mkdirSync, statSync, realpathSync, writeFileSync, renameSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 
 export const VERTRAUEN_QUELLE = "bestaetigt";
 
-export function vertraueProbeKopie(supportProbe, kopie) {
-  const echt = realpathSync.native(kopie);
+export function schreibeVertrauen(support, vault, quelle = VERTRAUEN_QUELLE) {
+  const echt = realpathSync.native(vault);
   const st = statSync(echt);
-  mkdirSync(supportProbe, { recursive: true, mode: 0o700 });
-  const datei = join(supportProbe, "vertrauen.json");
+  mkdirSync(support, { recursive: true, mode: 0o700 });
+  const datei = join(support, "vertrauen.json");
   const tmp = `${datei}.tmp-${process.pid}`;
-  writeFileSync(tmp, JSON.stringify({ [echt]: { seit: new Date().toISOString(), ordner: `${st.dev}:${st.ino}:${st.birthtimeMs}`, quelle: VERTRAUEN_QUELLE } }, null, 2) + "\n", { mode: 0o600 });
+  writeFileSync(tmp, JSON.stringify({ [echt]: { seit: new Date().toISOString(), ordner: `${st.dev}:${st.ino}:${st.birthtimeMs}`, quelle } }, null, 2) + "\n", { mode: 0o600 });
   chmodSync(tmp, 0o600);
   renameSync(tmp, datei);
 }
+export const vertraueProbeKopie = (supportProbe, kopie) => schreibeVertrauen(supportProbe, kopie);
 
 // Anschlussstelle für die Werkstatt: nichts zu schreiben im Kern (siehe oben). Gibt zurück, ob die Umstellung den Vermerk verlangt.
 export function vermerkeUmgestellt() { return { vermerken: true, quelle: VERTRAUEN_QUELLE }; }

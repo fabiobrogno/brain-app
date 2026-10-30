@@ -6,8 +6,9 @@
 //   POST /api/umstellung/rueckweg    { bestaetigt: true, alles?: true | schritte: ["A4"] }      → Ergebnis je Schritt (ohne `bestaetigt` nur, was sich zurücknehmen lässt)
 // Die Logik lebt im Kern; die Werkstatt ruft den Starter der App (`kortex umstellung … --vault <v> --json`, Muster verdrahtung.mjs) und reicht das Ergebnis durch. Es steht nie ein
 // Wert in einer Antwort (kein Hook-Befehl, kein MCP-Eintrag, kein git-Wert). Geschrieben wird NUR mit `bestaetigt: true` im Body – das setzt die Oberfläche erst nach dem Klick des Nutzers.
-// Vertrauen (P5): ein erfolgreich umgestellter Vault gilt als vertraut. `vermerkeVertrauen` ist die Anschlussstelle: sie ruft `erlaube` aus gemeinsam/vertrauen.mjs, sobald es das Modul
-// gibt (Branch feat/vault-vertrauen / P5), sonst bleibt sie ein stiller Leerlauf. Siehe kern/umstellung/vertrauen-merker.mjs.
+// Vertrauen (P5): Probelauf und Phase A verlangen einen vertrauten Vault (Kern: Code `nicht-vertraut`, Exit 6 → hier 409 mit art „nicht-vertraut“). `vermerkeVertrauen` trägt nach einer
+// vollständigen Phase A nur dann etwas ein, wenn das Vertrauen inzwischen fehlt; ein vorhandenes bleibt mit seiner Herkunft unberührt (keine eigene Quelle „umgestellt“, siehe
+// kern/umstellung/vertrauen-merker.mjs).
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { HttpFehler, kindUmgebung } from "../gemeinsam/basis.mjs";
@@ -94,12 +95,15 @@ export function erzeugeUmstellung({ starter, support = null, vertrauen = null })
     if (vertrauenNachher && bestaetigt && j.ok === true && j.phase === "A") await vermerkeVertrauen(v);
     return j;
   }
-  // P5-Anschluss (siehe Kopf): kein Fehler, wenn es das Vertrauensmodul noch nicht gibt
+  // Kein Fehler, wenn der Merker nicht schreibbar ist: die Umstellung gilt trotzdem
   async function vermerkeVertrauen(v) {
     try {
       const m = vertrauen || await import("../gemeinsam/vertrauen.mjs");
-      if (m && typeof m.erlaube === "function") m.erlaube(v.wurzel, { support, quelle: "bestaetigt" });
-    } catch { /* P5 fehlt oder kein Merker schreibbar: die Umstellung gilt trotzdem */ }
+      if (!m || typeof m.erlaube !== "function") return;
+      const stand = typeof m.pruefeVertrauen === "function" ? m.pruefeVertrauen(v.wurzel, { support }) : null;
+      if (stand && stand.erlaubt) return;                       // schon vertraut: Herkunft nicht überschreiben
+      m.erlaube(v.wurzel, { support, quelle: "bestaetigt" });
+    } catch { /* kein Merker schreibbar */ }
   }
 
   return {

@@ -9,9 +9,8 @@
 import { readFileSync, statSync } from "node:fs";
 import { join, delimiter } from "node:path";
 import { spawnSync } from "node:child_process";
-import { findeClaude } from "../ernte.mjs";
 import { mcpLage, claudeServer, codexServer, cursorServer } from "./mcp-lage.mjs";
-import { kindUmgebung } from "./ziele.mjs";
+import { kindUmgebung, findeClaudeProgramm } from "./ziele.mjs";
 import { hashDatei, sichereDatei, sicherungsPfad, stelleHer, schreibeAtomar, echtesDateiZiel, modusVon } from "./protokoll.mjs";
 
 export const id = "A5";
@@ -101,7 +100,7 @@ export function wende(z, ctx) {
     if (e.ziel === "claude") {
       const p = ctx.profile.find((x) => x.pfad === e.profil) || { pfad: e.profil, name: e.profilName, standard: false };
       const alt = claudeNutzerEintrag(z, p);
-      const prog = findeClaude({ env: z.env, home: z.home });
+      const prog = findeClaudeProgramm(z);
       if (!alt || typeof alt.command !== "string" || (alt.type && alt.type !== "stdio")) { uebersprungen.push("claude-projektebene"); continue; }
       if (!prog) { uebersprungen.push("claude-fehlt"); continue; }
       undo.eintraege.push({ ziel: "claude", profil: p.pfad, standard: !!p.standard, alt });
@@ -170,7 +169,7 @@ export function zurueck(z, ctx, undo) {
     if (e.ziel === "claude") {
       const p = { pfad: e.profil, standard: !!e.standard, name: e.profil };
       const jetzt = claudeNutzerEintrag(z, p);
-      const prog = findeClaude({ env: z.env, home: z.home });
+      const prog = findeClaudeProgramm(z);
       if (gleichWert(jetzt, e.alt)) continue;                                              // schon wieder der alte Eintrag
       if (jetzt !== null && !istGleich(jetzt, z)) { hinweise.push("mcp-claude-geaendert"); continue; }   // du hast ihn inzwischen selbst geändert: bleibt
       if (!prog) { hinweise.push("claude-fehlt"); continue; }
