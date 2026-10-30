@@ -10,24 +10,13 @@ import BrainCore
 /// Eine dynamische `NSColor` leistet im Code dasselbe, und ein Test bindet die Werte an das Studio.
 /// Grenze: Systemelemente, die nicht SwiftUI sind (Knöpfe in `NSAlert`, Fokusring im Dateidialog), folgen der Akzentfarbe des Systems.
 enum Kortex {
-    /// Akzent als Fläche, Linie oder Schrift. Hell `#5B4ED6`, dunkel `#A89FFF`.
-    static let akzent = dynamisch(hell: KortexFarben.akzentHell, dunkel: KortexFarben.akzentDunkel)
+    /// Akzent als Fläche, Linie oder Schrift. Hell `#5B4ED6`, dunkel `#A89FFF`. Gleiche Farbe wie `KortexFarbe.akzent` (BrainCore; dort auch
+    /// vom Fenster „Schnell erfassen“ benutzt, das sich in Tests fotografieren lässt).
+    static let akzent = KortexFarbe.akzent
     /// Beschriftung auf einer Akzent-Fläche (Kontrast ≥ 4,5 : 1 in beiden Erscheinungsbildern).
-    static let akzentText = dynamisch(hell: KortexFarben.akzentTextHell, dunkel: KortexFarben.akzentTextDunkel)
+    static let akzentText = KortexFarbe.akzentText
 
-    static func nsFarbe(hell: String, dunkel: String) -> NSColor {
-        NSColor(name: nil) { erscheinung in
-            let istDunkel = erscheinung.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            return farbe(istDunkel ? dunkel : hell)
-        }
-    }
-
-    private static func dynamisch(hell: String, dunkel: String) -> Color { Color(nsColor: nsFarbe(hell: hell, dunkel: dunkel)) }
-
-    private static func farbe(_ hex: String) -> NSColor {
-        let c = KortexFarben.komponenten(hex) ?? (0, 0, 0)
-        return NSColor(srgbRed: c.r, green: c.g, blue: c.b, alpha: 1)
-    }
+    static func nsFarbe(hell: String, dunkel: String) -> NSColor { KortexFarbe.nsFarbe(hell: hell, dunkel: dunkel) }
 }
 
 /// Hauptknopf: Akzent-Fläche mit Beschriftung in `akzentText` (statt `.borderedProminent`, dessen weiße Schrift auf dem hellen
