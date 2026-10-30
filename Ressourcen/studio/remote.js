@@ -1,6 +1,7 @@
 // Dialog „Remote hinzufügen“: Adresse eingeben, prüfen lassen, verbinden.
 import { h, dialog, arbeitBeginnt, ausTabelle } from "./hilfen.js";
 import { symbol } from "./symbole.js";
+import { markenLogo } from "./marken.js";
 import { api, gitGesperrt, ausgangUnklar, zeitText, ladeStandNeu } from "./api.js";
 import { TV } from "./texte-verlauf.js";
 import { istRohGit, detailsBlock } from "./verlauf.js";
@@ -34,6 +35,9 @@ export function oeffneRemoteDialog({ beiFertig, beiStandNeu } = {}) {
   const knopf = h("button", { klasse: "knopf primaer gross", type: "submit", "data-aktion": "verbinden" }, h("span", { text: TV.remote.verbinden }));
   const abbrechen = h("button", { klasse: "knopf gross", type: "button", "data-aktion": "abbrechen", text: TV.remote.abbrechen });
   const zu = h("button", { klasse: "knopf-icon rm-zu", type: "button", "aria-label": TV.remote.schliessen, title: TV.remote.schliessen }, zeichen("schliessen", 14));
+  // Zeigt die Adresse auf GitHub, steht dessen Logo im Kopf (Marke statt Wolke), sonst die Wolke.
+  const kopfZeichen = h("span", { klasse: "rm-zeichen" }, zeichen("wolke", 20));
+  const zeigeKopfzeichen = (adresse) => kopfZeichen.replaceChildren(/(^|[@/.])github\.com([:/]|$)/i.test(adresse) ? markenLogo("github", 20, { dekorativ: true }) : zeichen("wolke", 20));
   const form = h("form", { klasse: "rm-form", novalidate: true },
     h("div", { klasse: "feld" }, h("label", { for: "rm-adresse", text: TV.remote.label }), eingabe),
     h("p", { klasse: "rm-hinweis", id: "rm-hinweis", text: TV.remote.hinweis }),
@@ -41,7 +45,7 @@ export function oeffneRemoteDialog({ beiFertig, beiStandNeu } = {}) {
     h("div", { klasse: "rm-fuss" }, abbrechen, knopf));
   const box = h("div", { klasse: "dialog rm-dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "rm-titel", "data-dialog": "remote" },
     zu,
-    h("div", { klasse: "rm-kopf" }, h("span", { klasse: "rm-zeichen" }, zeichen("wolke", 18)), h("h2", { klasse: "rm-titel", id: "rm-titel", text: TV.remote.titel })),
+    h("div", { klasse: "rm-kopf" }, kopfZeichen, h("h2", { klasse: "rm-titel", id: "rm-titel", text: TV.remote.titel })),
     h("p", { klasse: "rm-text", text: TV.remote.erklaerung }),
     form);
 
@@ -62,7 +66,7 @@ export function oeffneRemoteDialog({ beiFertig, beiStandNeu } = {}) {
 
   zu.addEventListener("click", () => d.schliessen());
   abbrechen.addEventListener("click", () => d.schliessen());
-  eingabe.addEventListener("input", () => { if (!laeuft) zeige("", ""); });
+  eingabe.addEventListener("input", () => { zeigeKopfzeichen(eingabe.value); if (!laeuft) zeige("", ""); });
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     if (laeuft || verbunden) return;

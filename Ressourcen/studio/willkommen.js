@@ -4,6 +4,7 @@ import { h, dialog, speichereLokal, leseLokal, arbeitBeginnt } from "./hilfen.js
 import * as API from "./api.js";
 import { symbol } from "./symbole.js";
 import { kiLogo } from "./ki-logos.js";
+import { markenLogo } from "./marken.js";
 import { TW } from "./texte-willkommen.js";
 
 const api = API.api;
@@ -133,7 +134,7 @@ function meldeZone() {
     knoten,
     leer: () => knoten.replaceChildren(),
     arbeit: (text) => knoten.replaceChildren(h("div", { klasse: "w-arbeit links" }, spinner(), h("span", { text }))),
-    fehler: (text) => knoten.replaceChildren(h("div", { klasse: "w-fehlerbox fehlertext", role: "alert" }, symbol("warnung", 15), h("span", { text }))),
+    fehler: (text) => knoten.replaceChildren(h("div", { klasse: "w-fehlerbox fehlertext", role: "alert" }, symbol("warnung", 14), h("span", { text }))),
   };
 }
 
@@ -151,7 +152,7 @@ function baueKiInhalt({ kompakt = false, beiVerbunden } = {}) {
     const hatAgenten = d.agenten.length > 0;
     if (kopf) {
       kachel.className = `w-kachel-gross ${hatAgenten ? "ton-gruen" : "ton-grau"}`;
-      kachel.replaceChildren(symbol(hatAgenten ? "kreis-haken" : "stecker", 26));
+      kachel.replaceChildren(symbol(hatAgenten ? "kreis-haken" : "stecker", 24));
       titel.textContent = hatAgenten ? TW.ki.titel : TW.ki.titelOptional;
       text.textContent = hatAgenten ? TW.ki.text : TW.ki.textOptional;
     }
@@ -183,7 +184,7 @@ function baueKiInhalt({ kompakt = false, beiVerbunden } = {}) {
 // Erfolg: der Beschreibungstext der Zeile wird zur Bestätigung (Häkchen + Satz), Live-Region meldet es.
 function zeigeOk(beschreibung, zone, text) {
   zone.leer();
-  beschreibung.replaceChildren(h("div", { klasse: "w-ok" }, symbol("kreis-haken", 15), h("span", { text })));
+  beschreibung.replaceChildren(h("div", { klasse: "w-ok" }, symbol("kreis-haken", 14), h("span", { text })));
 }
 
 // beiVerbunden: wird erst nach geglücktem Verbinden mit Claude gerufen (200, auch { schonVerbunden: true }), nie beim bloßen Schließen.
@@ -219,17 +220,17 @@ function baueVerbinden({ beiVerbunden, agenten = [], cursorDa = false } = {}) {
     try {
       const r = await api.mcpSelbsttest();
       const n = Array.isArray(r?.werkzeuge) ? r.werkzeuge.length : 0;
-      zone.knoten.replaceChildren(h("div", { klasse: "w-ergebnis", "data-bereich": "selbsttest" }, symbol("kreis-haken", 15),
+      zone.knoten.replaceChildren(h("div", { klasse: "w-ergebnis", "data-bereich": "selbsttest" }, symbol("kreis-haken", 14),
         h("span", { text: TW.ki.selbsttestOk(n, appName) })));
     } catch (e) {
-      zone.knoten.replaceChildren(h("div", { klasse: "w-fehlerbox fehlertext", role: "alert", "data-bereich": "selbsttest" }, symbol("warnung", 15), h("span", { text: TW.ki.selbsttestFehlt(meldungVon(e)) })));
+      zone.knoten.replaceChildren(h("div", { klasse: "w-fehlerbox fehlertext", role: "alert", "data-bereich": "selbsttest" }, symbol("warnung", 14), h("span", { text: TW.ki.selbsttestFehlt(meldungVon(e)) })));
     } finally { sperreWahl(false); }
   }
   const erfolg = async () => {
     knopf.disabled = false;
     knopf.className = "knopf fertig";
     knopf.replaceChildren(symbol("haken", 14), TW.ki.verbundenKnopf);
-    beschreibung.replaceChildren(h("div", { klasse: "w-ok" }, symbol("kreis-haken", 15), h("span", { text: ziel === "claude" ? TW.ki.verbunden : TW.ki.verbundenFuer(name()) })));
+    beschreibung.replaceChildren(h("div", { klasse: "w-ok" }, symbol("kreis-haken", 14), h("span", { text: ziel === "claude" ? TW.ki.verbunden : TW.ki.verbundenFuer(name()) })));
     if (ziel === "claude") { try { beiVerbunden?.(); } catch (e) { console.error(e); } }
     await selbsttest();
   };
@@ -253,7 +254,7 @@ function baueVerbinden({ beiVerbunden, agenten = [], cursorDa = false } = {}) {
       knopf.disabled = false;
       const befehl = typeof e?.daten?.befehl === "string" ? e.daten.befehl : null;
       if (!umstellen && e?.status === 409 && e?.daten?.art === "anders") { frage(); return; }
-      if (befehl) zone.knoten.replaceChildren(...(e?.daten?.art === "kaputt" ? [h("div", { klasse: "w-fehlerbox fehlertext", role: "alert" }, symbol("warnung", 15), h("span", { text: e.message }))] : []), befehlBlock(befehl, ziel === "cursor" ? TW.ki.cursorKaputt : undefined));
+      if (befehl) zone.knoten.replaceChildren(...(e?.daten?.art === "kaputt" ? [h("div", { klasse: "w-fehlerbox fehlertext", role: "alert" }, symbol("warnung", 14), h("span", { text: e.message }))] : []), befehlBlock(befehl, ziel === "cursor" ? TW.ki.cursorKaputt : undefined));
       else zone.fehler(meldungVon(e));
       knopf.focus();
       return;
@@ -313,7 +314,7 @@ function baueProbe(notizen) {
       const treffer = Array.isArray(r?.treffer) ? r.treffer : [];
       if (!treffer.length) zone.knoten.replaceChildren(h("div", { klasse: "w-ergebnis leer", "data-bereich": "probe-ergebnis" }, TW.ki.probeKeine));
       else zone.knoten.replaceChildren(h("div", { klasse: "w-ergebnis", "data-bereich": "probe-ergebnis" },
-        h("div", { klasse: "w-ergebnis-titel" }, symbol("kreis-haken", 15), h("span", { text: TW.ki.probeTitel(treffer.length) })),
+        h("div", { klasse: "w-ergebnis-titel" }, symbol("kreis-haken", 14), h("span", { text: TW.ki.probeTitel(treffer.length) })),
         h("ul", null, treffer.slice(0, 3).map((t) => h("li", null, symbol("notiz", 14), h("span", { text: t.titel || t.pfad || "" }))))));
     } catch (e) { zone.fehler(meldungVon(e)); }
     finally { knopf.disabled = false; }
@@ -337,7 +338,7 @@ const WEGE = [
   { id: "vorlage", symbol: "rakete", ton: "ton-akzent" },
   { id: "leer", symbol: "plus", ton: "ton-gelb" },
   { id: "ordner", symbol: "ordner-offen", ton: "ton-gruen" },
-  { id: "klonen", symbol: "github", ton: "ton-grau" },
+  { id: "klonen", marke: "github", ton: "ton-grau" },
 ];
 
 let aktiv = null;
@@ -417,7 +418,7 @@ async function starteKarte({ modus = "start", beiFertig, beiAbbruch, beiStandNeu
     }
   }
   function zeigeFehler(s, e) {
-    s.meldung.replaceChildren(h("div", { klasse: "w-fehlerbox fehlertext", role: "alert" }, symbol("warnung", 15), h("span", { text: typeof e === "string" ? e : meldungVon(e) })));
+    s.meldung.replaceChildren(h("div", { klasse: "w-fehlerbox fehlertext", role: "alert" }, symbol("warnung", 14), h("span", { text: typeof e === "string" ? e : meldungVon(e) })));
     setTimeout(() => { if (z.aktuell === s) s.fokusNachFehler?.(); }, 0);
   }
   const leereMeldung = (s) => s.meldung.replaceChildren();
@@ -450,7 +451,7 @@ async function starteKarte({ modus = "start", beiFertig, beiAbbruch, beiStandNeu
     const titelId = nid("w-t");
     const meldung = h("div", { klasse: "w-meldung", "aria-live": "polite" });
     const zeilen = WEGE.map((w) => h("button", { klasse: `w-weg ${w.ton}`, type: "button", "data-weg": w.id, aufClick: () => waehleWeg(w.id) },
-      h("span", { klasse: "w-kachel" }, symbol(w.symbol, 20)),
+      h("span", { klasse: "w-kachel" }, w.marke ? markenLogo(w.marke, 20, { dekorativ: true }) : symbol(w.symbol, 20)),
       h("span", { klasse: "w-weg-text" }, h("span", { klasse: "w-weg-titel", text: TW.wege[w.id].titel }), h("span", { klasse: "w-weg-text2", text: TW.wege[w.id].text }))));
     let zeile = zeilen[0];
     zeilen.forEach((el) => el.addEventListener("focus", () => { zeile = el; }));
@@ -522,7 +523,7 @@ async function starteKarte({ modus = "start", beiFertig, beiAbbruch, beiStandNeu
     const s = {
       name: "name", titelId, abbrechbar: true, meldung, zurueck: () => zeige(schrittWahl()),
       knoten: h("div", null,
-        h("header", { klasse: "w-kopf" }, h("div", { klasse: `w-kachel-gross ${art === "vorlage" ? "ton-akzent" : "ton-gelb"}` }, symbol(art === "vorlage" ? "rakete" : "plus", 26)),
+        h("header", { klasse: "w-kopf" }, h("div", { klasse: `w-kachel-gross ${art === "vorlage" ? "ton-akzent" : "ton-gelb"}` }, symbol(art === "vorlage" ? "rakete" : "plus", 24)),
           h("h2", { klasse: "w-titel klein", id: titelId, text: t.titel }),
           h("p", { klasse: "w-untertitel", text: t.text })),
         h("div", { klasse: "w-formular" },
@@ -565,7 +566,7 @@ async function starteKarte({ modus = "start", beiFertig, beiAbbruch, beiStandNeu
     const s = {
       name: "klonen", titelId, abbrechbar: true, meldung, zurueck: () => zeige(schrittWahl()),
       knoten: h("div", null,
-        h("header", { klasse: "w-kopf" }, h("div", { klasse: "w-kachel-gross ton-grau" }, symbol("github", 26)),
+        h("header", { klasse: "w-kopf" }, h("div", { klasse: "w-kachel-gross ton-grau" }, markenLogo("github", 24, { dekorativ: true })),
           h("h2", { klasse: "w-titel klein", id: titelId, text: TW.klonen.titel }),
           h("p", { klasse: "w-untertitel", text: TW.klonen.text })),
         h("div", { klasse: "w-formular" },
@@ -604,7 +605,7 @@ async function starteKarte({ modus = "start", beiFertig, beiAbbruch, beiStandNeu
     const s = {
       name: "git", titelId, meldung, escape: () => weiter(),
       knoten: h("div", null,
-        h("header", { klasse: "w-kopf" }, h("div", { klasse: "w-kachel-gross ton-akzent" }, symbol("zweig", 26)),
+        h("header", { klasse: "w-kopf" }, h("div", { klasse: "w-kachel-gross ton-akzent" }, symbol("zweig", 24)),
           h("h2", { klasse: "w-titel klein", id: titelId, text: TW.git.titel }),
           h("p", { klasse: "w-untertitel", text: TW.git.text }),
           h("p", { klasse: "mini w-kopf-hilfe", text: TW.git.hilfe })),
@@ -663,9 +664,9 @@ async function starteKarte({ modus = "start", beiFertig, beiAbbruch, beiStandNeu
     return {
       name: "fehler", titelId, meldung, escape: () => abbrechen(),
       knoten: h("div", null,
-        h("header", { klasse: "w-kopf" }, h("div", { klasse: "w-kachel-gross ton-gelb" }, symbol("warnung", 26)),
+        h("header", { klasse: "w-kopf" }, h("div", { klasse: "w-kachel-gross ton-gelb" }, symbol("warnung", 24)),
           h("h2", { klasse: "w-titel klein", id: titelId, text: TW.fehler.titel })),
-        h("div", { klasse: "w-fehlerbox fehlertext gross", role: "alert" }, symbol("warnung", 15), h("span", { text: meldungVon(e) })),
+        h("div", { klasse: "w-fehlerbox fehlertext gross", role: "alert" }, symbol("warnung", 14), h("span", { text: meldungVon(e) })),
         h("div", { klasse: "w-fuss-knoepfe" }, zu, nochmal)),
       fokus: () => nochmal.focus(),
     };

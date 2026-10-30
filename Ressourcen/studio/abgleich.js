@@ -32,7 +32,7 @@ export function zeigeFehlerDetails({ text, titel = TV.roh.titel } = {}) {
   const kopieren = h("button", { klasse: "knopf gross", type: "button", text: TV.roh.kopieren });
   const zu = h("button", { klasse: "knopf primaer gross", type: "button", text: TV.roh.schliessen });
   const box = h("div", { klasse: "dialog rm-dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "roh-titel", "data-dialog": "details" },
-    h("div", { klasse: "rm-kopf" }, h("span", { klasse: "rm-zeichen" }, zeichen("info", 18)), h("h2", { klasse: "rm-titel", id: "roh-titel", text: titel })),
+    h("div", { klasse: "rm-kopf" }, h("span", { klasse: "rm-zeichen" }, zeichen("info", 20)), h("h2", { klasse: "rm-titel", id: "roh-titel", text: titel })),
     h("p", { klasse: "rm-text", text: TV.roh.hinweis }),
     h("pre", { klasse: "roh-text gross", tabindex: "0", text: String(text || "") }),
     h("div", { klasse: "rm-fuss" }, kopieren, zu));
@@ -182,7 +182,7 @@ export function oeffneKonfliktDialog({ dateien, api = standardApi, datum, beiFer
   });
 
   const box = h("div", { klasse: "dialog rm-dialog ab-dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "ab-titel", "data-dialog": "konflikt" },
-    h("div", { klasse: "rm-kopf" }, h("span", { klasse: "rm-zeichen warn" }, zeichen("warnung", 18)), h("h2", { klasse: "rm-titel", id: "ab-titel", text: liste.length ? T.titel : T.leerTitel })),
+    h("div", { klasse: "rm-kopf" }, h("span", { klasse: "rm-zeichen warn" }, zeichen("warnung", 20)), h("h2", { klasse: "rm-titel", id: "ab-titel", text: liste.length ? T.titel : T.leerTitel })),
     h("p", { klasse: "rm-text", text: liste.length ? T.erklaerung : T.leerText }),
     fortschritt,
     h("div", { klasse: "ab-liste" }, karten),
@@ -244,7 +244,7 @@ export function oeffneZurueckholen({ pfad, sha, wann, api = standardApi, beiFert
   const lade = h("div", { klasse: "ab-sk-block zh-lade", "aria-busy": "true" }, h("span", { klasse: "ab-sk" }), h("span", { klasse: "ab-sk k" }), h("span", { klasse: "ab-sk m" }));
   const sicher = h("p", { klasse: "zh-sicher", hidden: true }, zeichen("schild", 14), h("span", { text: Z.sicher }));
   const box = h("div", { klasse: "dialog rm-dialog ab-dialog zh-dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "zh-titel", "data-dialog": "zurueckholen" },
-    h("div", { klasse: "rm-kopf" }, h("span", { klasse: "rm-zeichen" }, zeichen("uhr", 18)), h("h2", { klasse: "rm-titel", id: "zh-titel", text: Z.titel })),
+    h("div", { klasse: "rm-kopf" }, h("span", { klasse: "rm-zeichen" }, zeichen("uhr", 20)), h("h2", { klasse: "rm-titel", id: "zh-titel", text: Z.titel })),
     h("p", { klasse: "rm-text", text: Z.text(datei, wann || Z.wannUnbekannt) }),
     h("div", { klasse: "zh-kopf" }, vorschauKopf, stat),
     lade, karte, sicher, meldung.el,

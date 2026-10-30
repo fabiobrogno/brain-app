@@ -519,3 +519,16 @@ input[type=checkbox] { accent-color: var(--akzent); width: 14px; height: 14px; m
 .ki-logo-cursor { color: var(--text); }
 .ki-logo-initiale { border-radius: 50%; background: var(--hover-2); color: var(--text-2); font-weight: 600; font-size: calc(var(--ki-logo-groesse, 16px) * 0.56); line-height: 1; }
 .ki-logo-initiale::before { content: attr(data-initiale); }
+
+/* Marken-Logos (marken.js): einfarbig in der Textfarbe, gleiche Größen-Mechanik wie die KI-Logos */
+.marken-logo { display: inline-flex; flex: none; align-items: center; justify-content: center; width: var(--marken-logo-groesse, 16px); height: var(--marken-logo-groesse, 16px); vertical-align: middle; color: var(--text); }
+.marken-logo svg { display: block; }
+.knopf.mit-logo { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.knopf.primaer.mit-logo .marken-logo { color: inherit; }
+
+/* Einheitliche Zustände für alles, was ein Symbol trägt: gleicher Fokusring, gedrückt wie Hover, deaktiviert gedämpft */
+.eintrag:focus-visible, .m-eintrag:focus-visible, .knopf-icon:focus-visible, .knopf-text:focus-visible, .vault-knopf:focus-visible,
+button.st:focus-visible, .baum .zeile:focus-visible, .baum .pfeil:focus-visible, .knopf-fuss:focus-visible { outline: 0; box-shadow: var(--fokus-ring), inset 0 0 0 1px var(--akzent); }
+.knopf-icon:active, .knopf-text:active, .eintrag:active, .m-eintrag:active, button.st:active { background: var(--hover-2); }
+.knopf-icon:disabled, .knopf-icon[aria-disabled="true"] { opacity: .4; cursor: default; pointer-events: none; }
+.sym, .marken-logo svg { shape-rendering: geometricPrecision; }
