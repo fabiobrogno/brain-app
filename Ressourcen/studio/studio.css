@@ -425,6 +425,7 @@ button.st { cursor: pointer; } button.st:hover { background: var(--hover-2); col
 .feld input:not(.bs-input):focus, .feld textarea:not(.bs-input):focus, .feld select:focus { border-color: var(--akzent); box-shadow: 0 0 0 3px var(--akzent-weich); }
 .dateiliste { border: 1px solid var(--linie); border-radius: var(--r); max-height: 232px; overflow-y: auto; }
 .dateiliste label { display: flex; align-items: center; gap: 8px; padding: 6px 10px; cursor: pointer; border-bottom: 1px solid var(--linie); }
+.dateiliste .bs-haken { display: flex; }
 .dateiliste label:last-child { border-bottom: 0; }
 .dateiliste label:hover { background: var(--seite); }
 .dateiliste .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -444,7 +445,9 @@ button.st { cursor: pointer; } button.st:hover { background: var(--hover-2); col
 
 /* Palette */
 .palette { width: min(600px, calc(100vw - 32px)); background: var(--erhoben); border: 1px solid var(--linie-stark); border-radius: 14px; box-shadow: var(--schatten); overflow: hidden; animation: hoch .18s var(--ease); }
-.palette input { width: 100%; border: 0; border-bottom: 1px solid var(--linie); padding: 16px 20px; font: 16px var(--schrift); background: transparent; color: var(--text); outline: 0; -webkit-user-select: text; user-select: text; }
+.palette .bs-feld { height: 56px; padding: 0 20px; border: 0; border-bottom: 1px solid var(--linie); border-radius: 0; background: transparent; box-shadow: none; }
+.palette .bs-feld:hover, .palette .bs-feld:focus-within { border-color: var(--linie); box-shadow: none; }
+.palette .bs-input { font-size: 16px; }
 .pal-liste { max-height: 360px; overflow-y: auto; padding: 8px; }
 .pal-gruppe { padding: 8px 12px 4px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); }
 .pal-eintrag { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-radius: var(--r); cursor: pointer; }

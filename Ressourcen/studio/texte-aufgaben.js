@@ -9,7 +9,7 @@ export const TA = {
     label: "Filter", prio: "Priorität", quelle: "Quelle", faellig: "Fällig",
     alle: "Alle", mensch: "Von mir", ki: "Von einer KI",
     ueberfaellig: "Überfällig", heute: "Heute", woche: "Diese Woche", ohne: "Ohne Datum",
-    zuruecksetzen: "Filter zurücksetzen", keine: "Keine Aufgabe passt zu diesem Filter.",
+    zuruecksetzen: "Filter zurücksetzen", aktiv: (n) => (n === 1 ? "1 Filter aktiv" : `${n} Filter aktiv`), keine: "Keine Aufgabe passt zu diesem Filter.",
   },
   leer: { titel: "Noch keine Aufgaben", text: "Schreibe oben hin, was du nicht vergessen willst, und drücke Enter. Auch Claude kann hier Aufgaben für diesen Vault anlegen." },
   spalteLeer: "Hierher ziehen",

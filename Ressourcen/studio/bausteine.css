@@ -111,11 +111,12 @@
 .knopf-fuss:hover { background: var(--hover); color: var(--text); }
 /* Ladezustand: Beschriftung bleibt stehen (Breite unverändert), Spinner liegt darüber */
 .knopf.laedt, .bs-knopf.laedt { cursor: progress; }
-.knopf.laedt > *, .bs-knopf.laedt > * { visibility: hidden; }
-.knopf.laedt::after, .bs-knopf.laedt::after { content: ""; position: absolute; left: 50%; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; border: 2px solid color-mix(in srgb, currentColor 25%, transparent); border-top-color: currentColor; animation: bs-dreh .7s linear infinite; }
+.knopf.laedt > *, .bs-knopf.laedt > * { animation: bs-weg 1ms 140ms forwards; }
+.knopf.laedt::after, .bs-knopf.laedt::after { content: ""; position: absolute; left: 50%; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; border: 2px solid color-mix(in srgb, currentColor 25%, transparent); border-top-color: currentColor; opacity: 0; animation: bs-sichtbar 90ms ease-out 140ms forwards, bs-dreh .7s linear infinite; }
 .knopf.laedt:not(:has(> *))::after { color: var(--text-2); }
 .knopf.laedt:not(:has(> *)) { color: transparent; }
 @keyframes bs-dreh { to { transform: rotate(360deg); } }
+@keyframes bs-weg { to { visibility: hidden; } }
 
 /* ---------- Segment-Schalter ---------- */
 .bs-segment { position: relative; display: inline-flex; align-items: stretch; height: var(--bs-h-m); padding: 2px; border-radius: 9px; background: color-mix(in srgb, var(--text) 7%, transparent); vertical-align: middle; }
@@ -194,7 +195,8 @@ input[type=checkbox]:disabled, input[type=radio]:disabled { opacity: .45; cursor
 
 @media (prefers-reduced-motion: reduce) {
   .bs-skelett { opacity: 1 !important; animation: none !important; }
-  .knopf.laedt::after, .bs-knopf.laedt::after { animation: bs-dreh 1.6s linear infinite !important; }
+  .knopf.laedt::after, .bs-knopf.laedt::after { opacity: 1; animation: bs-dreh 1.6s linear infinite !important; }
+  .knopf.laedt > *, .bs-knopf.laedt > * { visibility: hidden; }
   .bs-pop, .bs-geist { transform: none; }
 }
 

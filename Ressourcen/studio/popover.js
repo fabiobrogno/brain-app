@@ -37,19 +37,32 @@ export function oeffnePopover(anker, box, o = {}) {
   if (gleicheBreite) box.style.minWidth = Math.round(anker.getBoundingClientRect().width) + "px";
   else if (minBreite) box.style.minWidth = minBreite + "px";
 
+  // Kollisionserkennung: die Fläche liegt nie (auch nicht teilweise) außerhalb des Fensters. Waagerecht: bevorzugte Kante (links bzw. rechts am Anker),
+  // passt sie nicht, die andere, sonst an den Rand geschoben. Senkrecht: bevorzugte Seite, sonst die andere, sonst die mit mehr Platz; ist auch dort zu wenig
+  // Platz, wird die Fläche in der Höhe/Breite begrenzt und scrollt (nie abgeschnitten).
+  const RAND = 8;
   const platz = () => {
     const a = anker.getBoundingClientRect();
-    const bw = box.offsetWidth, bh = box.offsetHeight;
-    let x = rechts ? a.right - bw : a.left;
-    x = Math.max(8, Math.min(x, window.innerWidth - bw - 8));
-    const passtUnten = a.bottom + abstand + bh <= window.innerHeight - 8;
-    const passtOben = a.top - abstand - bh >= 8;
-    const unten = oben ? !passtOben : passtUnten || !passtOben;
+    const vb = window.innerWidth, vh = window.innerHeight;
+    box.style.maxWidth = (vb - 2 * RAND) + "px";
+    box.style.maxHeight = "";
+    const bw = box.offsetWidth;
+    const links = a.left, rechtsBuendig = a.right - bw;
+    const passt = (x) => x >= RAND && x + bw <= vb - RAND;
+    let x = rechts ? rechtsBuendig : links;
+    if (!passt(x)) x = passt(rechts ? links : rechtsBuendig) ? (rechts ? links : rechtsBuendig) : x;
+    x = Math.max(RAND, Math.min(x, vb - bw - RAND));
+    let bh = box.offsetHeight;
+    const platzUnten = vh - RAND - (a.bottom + abstand), platzOben = a.top - abstand - RAND;
+    const passtUnten = bh <= platzUnten, passtOben = bh <= platzOben;
+    const unten = oben ? !passtOben && (passtUnten || platzUnten >= platzOben) : passtUnten || (!passtOben && platzUnten >= platzOben);
+    const verfuegbar = Math.max(96, Math.floor(unten ? platzUnten : platzOben));
+    if (bh > verfuegbar) { box.style.maxHeight = verfuegbar + "px"; box.style.overflowY = "auto"; bh = box.offsetHeight; }
     let y = unten ? a.bottom + abstand : a.top - abstand - bh;
-    y = Math.max(8, Math.min(y, window.innerHeight - bh - 8));
+    y = Math.max(RAND, Math.min(y, vh - bh - RAND));
     box.style.left = Math.round(x) + "px";
     box.style.top = Math.round(y) + "px";
-    box.style.transformOrigin = `${Math.round(Math.min(Math.max(a.left + a.width / 2 - x, 12), bw - 12))}px ${unten ? "0" : "100%"}`;
+    box.style.transformOrigin = `${Math.round(Math.min(Math.max(a.left + a.width / 2 - x, 12), Math.max(12, bw - 12)))}px ${unten ? "0" : "100%"}`;
     box.dataset.seite = unten ? "unten" : "oben";
   };
   platz();
