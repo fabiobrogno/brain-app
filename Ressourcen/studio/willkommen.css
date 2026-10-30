@@ -81,8 +81,8 @@
 .w-formular { display: flex; flex-direction: column; gap: 18px; margin-top: 28px; }
 .w-karte .feld { gap: 6px; }
 .w-karte .feld > label { font-size: 13px; font-weight: 600; color: var(--text); }
-.w-karte .feld input[type=text] { padding: 10px 12px; font-size: 15px; border-radius: 10px; background: var(--papier); }
-.w-karte .feld input::placeholder { color: var(--text-3); }
+.w-karte .feld input[type=text]:not(.bs-input) { padding: 10px 12px; font-size: 15px; border-radius: 10px; background: var(--papier); }
+.w-karte .feld input:not(.bs-input)::placeholder { color: var(--text-3); }
 .w-ort { display: flex; align-items: center; gap: 12px; padding: 10px 10px 10px 14px; border: 1px solid var(--linie); border-radius: var(--r-l); background: var(--seite); }
 .w-ort-symbol { flex: none; display: grid; place-items: center; color: var(--text-3); }
 .w-ort-text { flex: 1; min-width: 0; font-size: 13.5px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -147,7 +147,7 @@
 .w-modal { width: min(460px, 100%); padding: 20px; background: var(--erhoben); color: var(--text); border: 1px solid var(--linie-stark); border-radius: 14px; box-shadow: var(--schatten); display: flex; flex-direction: column; gap: 14px; animation: w-karte-ein 200ms var(--ease) both; font-family: var(--schrift); }
 .w-modal h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -.01em; }
 .w-modal .w-modal-fuss { display: flex; justify-content: flex-end; gap: 8px; margin-top: 2px; }
-.w-modal .feld input[type=text] { padding: 9px 12px; font-size: 14px; border-radius: 10px; background: var(--papier); }
+.w-modal .feld input[type=text]:not(.bs-input) { padding: 9px 12px; font-size: 14px; border-radius: 10px; background: var(--papier); }
 
 @keyframes w-host-ein { from { opacity: 0; } }
 @keyframes w-karte-ein { from { opacity: 0; transform: translateY(10px) scale(.985); } }

@@ -5,6 +5,7 @@ import { api, aktion, aktionMitAntwort, inApp, gitGesperrt, andererVault, nichtV
 import { erstelleEditor } from "./editor.js";
 import { h, dialog, dialogOffen, schliesseDialoge, toast, vorMinuten, dateiName, ohneEndung, ordnerVon, istBearbeitbar, speichereLokal, leseLokal, leseEntwurf, speichereEntwurf, sucheGrad, suchFormen, ausTabelle, arbeitBeginnt, laufendeArbeiten } from "./hilfen.js";
 import { symbol } from "./symbole.js";
+import { textfeld, textbereich, auswahl, knopf as baueKnopf, setzeLaedt } from "./bausteine.js";
 import { kiLogo } from "./ki-logos.js";
 import { TV } from "./texte-verlauf.js";
 import { istRohGit } from "./verlauf.js";
@@ -278,7 +279,7 @@ function setzeFenstertitel() {
 
 // ======================================================= Index (Notizen, Typen, Ansichten)
 // Wie der Werkstatt-Index: _-Ordner im Posteingang sind maschinell, Vorlagen und Agenten-Anweisungen in der Wurzel keine Notizen
-const bereichVonPfad = (p) => (/^90_/.test(p) ? "archiv" : /^00_inbox\/_/.test(p) ? "maschine" : p.startsWith("01_vorlagen/") ? "vorlage"
+const bereichVonPfad = (p) => (/^90_/.test(p) || (S.aufgabenOrdner && p.toLowerCase().startsWith(S.aufgabenOrdner.toLowerCase() + "/archiv/") && p.split("/").length === 3) ? "archiv" : /^00_inbox\/_/.test(p) ? "maschine" : p.startsWith("01_vorlagen/") ? "vorlage"
   : /^(claude|agents|gemini)\.md$/i.test(p) ? "system" : p.startsWith("00_inbox/") ? "inbox" : p.startsWith("09_wiki/") ? "wissen" : (S.aufgabenOrdner && p.toLowerCase().startsWith(S.aufgabenOrdner.toLowerCase() + "/") && p.split("/").length === 2) ? "aufgabe" : "notiz");
 const SICHTBAR = new Set(["inbox", "notiz", "wissen"]); // erscheinen in „Alle Notizen“, Typen und Ansichten
 const istNotiz = (n) => SICHTBAR.has(n.bereich) && !n.generiert;
@@ -1323,6 +1324,11 @@ async function oeffneKonten() {
     m.oeffneKontenDialog({ api, vault: S.info?.vault || null });
   } catch { toast("Das geht in dieser Version noch nicht.", { fehler: true }); }
 }
+// „Lizenzen …“: Hinweise zu Software und Material von Dritten (lizenzen.js, lädt bei Bedarf)
+async function oeffneLizenzen() {
+  try { const m = await import("./lizenzen.js"); m.oeffneLizenzen(); }
+  catch { toast(T.umstellung.nichtGeoeffnet, { fehler: true }); }
+}
 function oeffneEinstellungen(anker) {
   oeffneMenue(anker, [
     { gruppe: T.status.darstellung },
@@ -1337,6 +1343,7 @@ function oeffneEinstellungen(anker) {
     ...(S.umstellung ? [{ name: S.umstellung.umgestellt ? T.umstellung.fertig : T.umstellung.menue, symbol: "sync", id: "umstellen", tun: oeffneUmstellung }] : []),
     ...(inApp() ? [{ name: T.befehle.ordner, symbol: "ordner", id: "finder", tun: () => aktion("ordner-zeigen", S.pfad || undefined) }, { name: T.befehle.ansicht, symbol: "ansicht", id: "uebersicht", tun: oeffneUebersicht }] : []),
     { trenner: true },
+    { name: T.befehle.lizenzen, symbol: "buch", id: "lizenzen", tun: oeffneLizenzen },
     { name: `${PRODUKT} ${S.info?.appVersion || ""}`.trim(), symbol: "info", id: "version", tun: () => {} },
   ], { rechts: true, oben: true, breite: 240 });
 }
@@ -1398,9 +1405,10 @@ async function oeffneCommit() {
   const liste = S.git.geaendert || [];
   if (!liste.length) { toast(T.commit.nichts); return; }
   const haken = new Map(liste.map((g) => [g.pfad, true]));
-  const msg = h("input", { type: "text", "data-feld": "nachricht", value: T.commit.vorbelegt(liste.map((g) => ohneEndung(dateiName(g.pfad))), liste.length) });
+  const msgFeld = textfeld({ wert: T.commit.vorbelegt(liste.map((g) => ohneEndung(dateiName(g.pfad))), liste.length), label: T.commit.nachricht, daten: { "data-feld": "nachricht" } });
+  const msg = msgFeld.input;
   const fehlerEl = h("div", { klasse: "fehlertext", hidden: true });
-  const knopf = h("button", { klasse: "knopf primaer", text: T.commit.sichern, "data-aktion": "commit" });
+  const knopf = baueKnopf({ text: T.commit.sichern, variante: "primaer", aktion: "commit" });
   const boxen = liste.map((g) => {
     const cb = h("input", { type: "checkbox", checked: true, "data-datei": g.pfad, aufChange: () => { haken.set(g.pfad, cb.checked); aktualisiere(); } });
     return h("label", null, cb, h("span", { klasse: "n", text: g.pfad, title: g.pfad }), h("span", { klasse: "c", text: T.commit.codes[g.code?.trim()] || T.commit.codes[g.code?.trim()?.[0]] || "geändert" }));
@@ -1410,17 +1418,17 @@ async function oeffneCommit() {
   const d = dialog({
     titel: T.commit.titel, breit: true,
     rumpf: [
-      h("div", { klasse: "feld" }, h("label", { text: T.commit.nachricht }), msg),
+      h("div", { klasse: "feld" }, h("label", { text: T.commit.nachricht }), msgFeld.el),
       h("div", { klasse: "feld" }, h("label", null, h("span", { text: `${T.commit.dateien} · ${liste.length}` }), h("span", { klasse: "mini" }, h("a", { text: T.commit.alle, aufClick: () => setzeAlle(true) }), " · ", h("a", { text: T.commit.keine, aufClick: () => setzeAlle(false) }))), h("div", { klasse: "dateiliste" }, boxen)),
       fehlerEl,
     ],
-    knoepfe: [h("button", { klasse: "knopf", text: T.commit.abbrechen, aufClick: () => d.schliessen() }), knopf],
+    knoepfe: [baueKnopf({ text: T.commit.abbrechen, aufKlick: () => d.schliessen() }), knopf],
   });
   const tun = async () => {
     const gewaehlt = [...haken].filter(([, v]) => v).map(([k]) => k);
     if (!gewaehlt.length) { fehlerEl.hidden = false; fehlerEl.textContent = T.commit.nichtsGewaehlt; return; }
     if (!msg.value.trim()) { fehlerEl.hidden = false; fehlerEl.textContent = T.commit.keineNachricht; return; }
-    knopf.disabled = true;
+    knopf.disabled = true; setzeLaedt(knopf, true);
     const ende = arbeitBeginnt("commit"); // Schließen des Fensters fragt nach, solange das läuft
     try { await api.commit(msg.value.trim(), gewaehlt); d.schliessen(); toast(T.commit.fertig); await ladeGit(); ladeInfo(); if (S.sicht.art === "verlauf") verlaufInst?.aktualisieren?.(); }
     catch (e) {
@@ -1437,7 +1445,7 @@ async function oeffneCommit() {
       }
       else if (ausgangUnklar(e)) { d.schliessen(); await nachZeitueberschreitung(e); ladeInfo(); if (S.sicht.art === "verlauf") verlaufInst?.aktualisieren?.(); } // status 0: die Brücke hat aufgegeben, ob gesichert wurde, ist offen
       else { fehlerEl.hidden = false; fehlerEl.replaceChildren(document.createTextNode(e.message), ...(e.daten?.ausgabe ? [h("pre", { text: e.daten.ausgabe })] : [])); knopf.disabled = false; }
-    } finally { ende(); }
+    } finally { ende(); setzeLaedt(knopf, false); }
   };
   knopf.addEventListener("click", tun);
   msg.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); tun(); } });
@@ -1449,23 +1457,26 @@ function oeffneNeu(vorTitel) {
   if (dialogOffen()) return;
   const ordner = S.baum.filter((e) => e.art === "ordner" && !e.schreibschutz).map((e) => e.pfad);
   const vorOrdner = S.sicht.art === "ordner" ? S.sicht.id : S.pfad && ordnerVon(S.pfad) ? ordnerVon(S.pfad) : ordner.includes("00_inbox") ? "00_inbox" : ordner[0] || "";
-  const sel = h("select", { "data-feld": "ordner" }, ordner.length ? ordner.map((o) => h("option", { value: o, selected: o === vorOrdner, text: o })) : h("option", { value: "", text: "Hauptordner" }));
-  const titel = h("input", { type: "text", "data-feld": "titel", placeholder: T.neu.platzhalter, value: typeof vorTitel === "string" ? vorTitel : "" });
+  const sel = auswahl({ optionen: ordner.length ? ordner.map((o) => ({ wert: o, text: o, symbol: "ordner" })) : [{ wert: "", text: "Hauptordner", symbol: "ordner" }], wert: ordner.length ? vorOrdner : "", label: T.neu.ordner, breit: true, daten: { "data-feld": "ordner" } });
+  const titelFeld = textfeld({ wert: typeof vorTitel === "string" ? vorTitel : "", platzhalter: T.neu.platzhalter, label: T.neu.name, daten: { "data-feld": "titel" } });
+  const titel = titelFeld.input;
   const fehlerEl = h("div", { klasse: "fehlertext", hidden: true });
   const tun = async () => {
     if (!titel.value.trim()) { titel.focus(); return; }
     try { const r = await api.neu(sel.value, titel.value.trim()); d.schliessen(); await ladeBaum(); await oeffne(r.pfad); planeGitRefresh(); }
     catch (e) { fehlerEl.hidden = false; fehlerEl.textContent = e.message; }
   };
-  const d = dialog({ titel: T.neu.titel, rumpf: [h("div", { klasse: "feld" }, h("label", { text: T.neu.name }), titel), h("div", { klasse: "feld" }, h("label", { text: T.neu.ordner }), sel), fehlerEl],
-    knoepfe: [h("button", { klasse: "knopf", text: T.commit.abbrechen, aufClick: () => d.schliessen() }), h("button", { klasse: "knopf primaer", text: T.neu.anlegen, "data-aktion": "anlegen", aufClick: tun })] });
+  const d = dialog({ titel: T.neu.titel, rumpf: [h("div", { klasse: "feld" }, h("label", { text: T.neu.name }), titelFeld.el), h("div", { klasse: "feld" }, h("label", { text: T.neu.ordner }), sel), fehlerEl],
+    knoepfe: [baueKnopf({ text: T.commit.abbrechen, aufKlick: () => d.schliessen() }), baueKnopf({ text: T.neu.anlegen, variante: "primaer", aktion: "anlegen", aufKlick: tun })] });
   titel.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); tun(); } });
 }
 function oeffneMerken() {
   if (dialogOffen()) return;
   const entwurf = leseEntwurf("merken") || {};
-  const text = h("textarea", { "data-feld": "text", placeholder: T.merken.text, autofocus: true, text: entwurf.text || "" });
-  const titel = h("input", { type: "text", "data-feld": "titel", placeholder: T.merken.titelFeld, value: entwurf.titel || "" });
+  const textFeld = textbereich({ wert: entwurf.text || "", platzhalter: T.merken.text, label: T.merken.text, minZeilen: 6, maxZeilen: 14, autofocus: true, daten: { "data-feld": "text" } });
+  const text = textFeld.textarea;
+  const titelFeld = textfeld({ wert: entwurf.titel || "", platzhalter: T.merken.titelFeld, label: T.merken.titelFeld, daten: { "data-feld": "titel" } });
+  const titel = titelFeld.input;
   let abgelegt = false;
   const fehlerEl = h("div", { klasse: "fehlertext", hidden: true });
   const tun = async () => {
@@ -1479,8 +1490,9 @@ function oeffneMerken() {
   const d = dialog({ titel: T.merken.titel,
     // Esc/Klick daneben verliert nichts: der Text bleibt als Entwurf, bis er abgelegt wird
     beiSchliessen: () => { if (abgelegt || !text.value.trim()) { speichereEntwurf("merken", null); } else { speichereEntwurf("merken", { text: text.value, titel: titel.value }); toast(T.merken.entwurf); } },
-    rumpf: [h("div", { klasse: "feld" }, text), h("div", { klasse: "feld" }, titel), fehlerEl, h("div", { klasse: "mini", text: "⌘↩ zum Ablegen" })],
-    knoepfe: [h("button", { klasse: "knopf", text: T.commit.abbrechen, aufClick: () => d.schliessen() }), h("button", { klasse: "knopf primaer", text: T.merken.sichern, "data-aktion": "merken", aufClick: tun })] });
+    rumpf: [h("div", { klasse: "feld" }, textFeld.el), h("div", { klasse: "feld" }, titelFeld.el), fehlerEl, h("div", { klasse: "mini", text: "⌘↩ zum Ablegen" })],
+    knoepfe: [baueKnopf({ text: T.commit.abbrechen, aufKlick: () => d.schliessen() }), baueKnopf({ text: T.merken.sichern, variante: "primaer", aktion: "merken", aufKlick: tun })] });
+  textFeld.passe();
   text.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); tun(); } });
 }
 async function oeffneGesundheit() {

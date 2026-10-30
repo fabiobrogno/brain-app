@@ -9,7 +9,7 @@
   --line-2: rgba(255,255,255,.14);
   --glass: rgba(10,13,22,.66);
   --glass-2: rgba(255,255,255,.035);
-  --accent: #9fb8ff;
+  --accent: #a89fff;
   /* Bereichsfarben: feste Palette, Zuordnung über brain.config.json → clusters[].farbe */
   --c-blau: #5fb8ff;
   --c-orange: #ff9d5c;
@@ -38,7 +38,7 @@
   --line-2: rgba(20,24,36,.16);
   --glass: rgba(255,255,255,.72);
   --glass-2: rgba(20,24,36,.035);
-  --accent: #3552c8;
+  --accent: #5b4ed6;
   --c-blau: #2f6fe0;
   --c-orange: #d97a1e;
   --c-gruen: #0f9e72;

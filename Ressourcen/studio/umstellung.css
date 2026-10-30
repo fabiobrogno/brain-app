@@ -54,7 +54,6 @@
 .um-wahlgruppe legend { padding: 0; margin-bottom: 6px; font-weight: 600; }
 .um-wahl { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; line-height: 1.4; }
 .um-wahl input { margin-top: 2px; flex: none; }
-input[type=radio] { accent-color: var(--akzent); width: 14px; height: 14px; margin: 0; }
 .um-gruppe[data-art="frage"] > .um-wahlgruppe { padding: 10px 12px; border: 1px solid var(--linie); border-radius: var(--r); background: var(--seite); }
 
 /* Schritte, Probelauf, Ampel */
@@ -82,7 +81,7 @@ input[type=radio] { accent-color: var(--akzent); width: 14px; height: 14px; marg
 .um-schritt-name { flex: 1; min-width: 0; }
 .um-schritt, .um-rw-zeile { align-items: center; }
 .um-schritt .um-marke, .um-rw-zeile .um-marke { margin-top: 0; }
-.um-rw-zeile .knopf { height: 26px; padding: 0 10px; }
+.um-rw-zeile .knopf { height: 28px; padding: 0 10px; }
 .um-rw-zeile .um-schritt-status { min-width: 110px; text-align: right; }
 .um-bestaetigung { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: var(--r); border: 1px solid var(--akzent-rand); background: var(--akzent-weich); }
 .um-bestaetigung p { margin: 0; }

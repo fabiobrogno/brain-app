@@ -24,6 +24,7 @@ pruefe "Tests/Node/v2-api.test.mjs"         fftft
 pruefe "Tests/Oberflaeche/v2.spec.mjs"      ffftt
 pruefe "scripts/baue-app.sh"                tffft
 pruefe "scripts/ci-aenderungen.sh"            ttttt
+pruefe "THIRD-PARTY-NOTICES.md"             fftft
 pruefe "Ressourcen/AppIcon.icns"            tffft
 pruefe "Ressourcen/icon-entwuerfe/x.svg"    fffff
 pruefe "Package.swift"                      tffft

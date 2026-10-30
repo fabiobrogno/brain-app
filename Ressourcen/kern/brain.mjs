@@ -2,7 +2,7 @@
 // brain.mjs — ein Einstieg für alle Agenten und Menschen. Kein Agent-spezifischer Code hier.
 // Befehle: index | search "<frage>" [n] | lint | ingest-check <datei> | refresh | hooks-install | claude-hooks | version | pflege | messlatte | status [--json]
 //   | lernschleife | antworten | wirkung | tageslauf | rueckfragen | zurueck | traum | dienst | nachernte | gedaechtnis | gesundheit
-//   | aufgabe neu|erledigt|status | aufgaben
+//   | aufgabe neu|erledigt|status|archivieren | aufgaben
 // Skill-Helfer (statt POSIX-Shell, laufen gleich auf macOS/Windows/Linux): lock | unlock | sha <datei> | jetzt | review-erledigt
 // Exit-Codes: 0 ok, 2 Befunde (lint) / unbekannte Option (zeig), 3 Secrets (ingest-check), 64 falscher Aufruf.
 import { execFileSync, spawnSync, spawn } from "node:child_process";
@@ -356,12 +356,13 @@ const befehle = {
     return 0;
   },
   // „brain aufgabe neu "<titel>" [--prio niedrig|normal|hoch] [--faellig JJJJ-MM-TT] [--text "…"] “, „brain aufgabe erledigt <pfad>“,
-  // „brain aufgabe status <pfad> offen|in-arbeit|warten|erledigt“, „brain aufgaben [--status offen] [--alle] [--json]“ — Aufgaben im Vault (aufgaben.mjs, je Aufgabe eine
+  // „brain aufgabe status <pfad> offen|in-arbeit|warten|erledigt“, „brain aufgabe archivieren <pfad> | --alte [--tage 30]“ (erledigte Aufgaben in den Unterordner
+  // „archiv“ verschieben, nie löschen), „brain aufgaben [--status offen] [--alle] [--json]“ — Aufgaben im Vault (aufgaben.mjs, je Aufgabe eine
   // Markdown-Datei). Schreibende Unterbefehle laufen nur in einem vertrauten Vault (unten, WIRKEND).
   aufgabe: async (unter, ...a) => {
     const m = await import("./aufgaben.mjs");
-    const { pos, opt } = leseOptionen(a, ["prio", "faellig", "text", "quelle", "status", "bezug"]);
-    const nutzung = () => { console.error("Nutzung: kortex aufgabe neu \"<titel>\" [--prio hoch] [--faellig 2026-11-03] [--text \"…\"] | kortex aufgabe erledigt <pfad> | kortex aufgabe status <pfad> <status>"); return 64; };
+    const { pos, opt } = leseOptionen(a, ["prio", "faellig", "text", "quelle", "status", "bezug", "tage"]);
+    const nutzung = () => { console.error("Nutzung: kortex aufgabe neu \"<titel>\" [--prio hoch] [--faellig 2026-11-03] [--text \"…\"] | kortex aufgabe erledigt <pfad> | kortex aufgabe status <pfad> <status> | kortex aufgabe archivieren <pfad> | kortex aufgabe archivieren --alte [--tage 30]"); return 64; };
     try {
       if (unter === "neu") {
         const titel = pos.join(" ").trim();
@@ -370,6 +371,22 @@ const befehle = {
         const r = m.legeAn(vault, { titel, ...(opt.prio ? { prioritaet: opt.prio } : {}), ...(opt.faellig ? { faellig: opt.faellig } : {}),
           ...(opt.text ? { text: opt.text } : {}), quelle: m.quelleAusUmgebung(process.env), ...(opt.bezug ? { bezug: opt.bezug.split(",") } : {}) });
         console.log(`Aufgabe angelegt: ${r.pfad}`);
+        return 0;
+      }
+      if (unter === "archivieren") {
+        // verschiebt nur nach <aufgaben-ordner>/archiv/ — gelöscht wird nichts; archiviert werden nur erledigte Aufgaben
+        if (opt.alte) {
+          if (pos.length) return nutzung();
+          const tage = opt.tage === undefined ? m.ARCHIV_TAGE : (/^\d+$/.test(String(opt.tage)) ? Number(opt.tage) : NaN);
+          const r = m.archiviereAlte(vault, { tage });
+          for (const x of r.archiviert) console.log(`Archiviert: ${x.von} → ${x.pfad}`);
+          console.log(r.archiviert.length ? `${r.archiviert.length} erledigte Aufgabe(n) archiviert (älter als ${r.tage} Tage).` : `Keine erledigte Aufgabe älter als ${r.tage} Tage.`);
+          if (r.uebersprungen) console.error(`Hinweis: ${r.uebersprungen} Aufgabe(n) ließen sich nicht verschieben und blieben stehen.`);
+          return 0;
+        }
+        if (opt.tage !== undefined || !pos[0] || pos.length > 1) return nutzung();
+        const r = m.archiviere(vault, m.findePfad(vault, pos[0]));
+        console.log(`Archiviert: ${r.von} → ${r.pfad}`);
         return 0;
       }
       if (unter === "erledigt" || unter === "status") {

@@ -209,6 +209,9 @@ export function erzeugeHandler(o) {
       return gefunden.length ? `In diesem Vault liegt der Ordner „${gefunden[0]}“, der selbst ein Vault ist. KI-Konten sehen ihn nicht als Teil dieses Vaults: Die Zugriffsrechte gelten je Vault (Einstellungen → KI-Konten).` : null;
     };
     const neuerStand = (r, herkunft = "geoeffnet") => { const warnung = verschachtelt(r.vault.pfad); try { konten.vaultHinzu(r.vault.pfad, herkunft); } catch { /* der Vault ist gesperrt, bis die Liste wieder geht */ } wechsleZu(r.vault.pfad); return { ...vaultListe(aktuell), vault: r.vault, git: r.git, ...(warnung ? { warnung } : {}) }; };
+    // POST /api/aufgaben/archivieren { pfad } | { aelterAlsTage }: erledigte Aufgaben ins Archiv verschieben (kein Löschen; nur in einem vertrauten Vault).
+    // Vor der PATCH-Route: „archivieren“ ist nie ein Aufgabenpfad (die haben immer den Ordner davor).
+    if (pfad === "/api/aufgaben/archivieren") { nur("POST"); return V().aufgabenArchivieren(eingabe()); }
     // PATCH /api/aufgaben/<pfad der Aufgabe im Vault>: Status, Rang, Felder einer Aufgabe ändern
     if (pfad.startsWith("/api/aufgaben/")) {
       nur("PATCH");

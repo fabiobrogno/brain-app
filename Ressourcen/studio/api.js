@@ -62,6 +62,8 @@ export const api = {
   aufgaben: () => anfrage("GET", "/api/aufgaben"),
   aufgabeNeu: (daten) => anfrage("POST", "/api/aufgaben", daten),
   aufgabeAendern: (pfad, daten) => anfrage("PATCH", "/api/aufgaben/" + pfad.split("/").map(encodeURIComponent).join("/"), daten),
+  // archivieren: { pfad } (eine erledigte Aufgabe) oder { aelterAlsTage } (alle erledigten, die länger nicht geändert wurden); verschoben wird nur, gelöscht nie
+  aufgabenArchivieren: (daten) => anfrage("POST", "/api/aufgaben/archivieren", daten),
   suche: (frage) => anfrage("GET", "/api/suche" + q({ q: frage })),
   pruefung: (pfad) => anfrage("GET", "/api/pruefung" + q({ pfad })),
   gesundheit: () => anfrage("GET", "/api/gesundheit"),
