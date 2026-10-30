@@ -43,6 +43,7 @@ while IFS= read -r f; do
     Tests/Aktionskanal/*) ;;                                                     # nur vom Rauchtest (rauchtest.yml) genutzt
     scripts/ci-aenderungen.sh|scripts/teste-ci-aenderungen.sh) alle ;;           # der Filter selbst
     scripts/*) swift=true ;;                                                     # Bau-/Prüfskripte laufen im macOS-Job (Kern-Manifest, Vorschau)
+    THIRD-PARTY-NOTICES.md) node=true ;;                                         # Lizenzhinweise: Tests/Node/lizenzen.test.mjs prüft sie gegen vendor/ und die Versionen
     docs/*|*.md|LICENSE) ;;                                                      # Doku: nichts
     *) alle ;;                                                                   # unbekannt (.github/**, neue Ordner, "?") -> alles
   esac

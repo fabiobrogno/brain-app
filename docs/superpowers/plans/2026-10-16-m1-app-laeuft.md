@@ -8,7 +8,7 @@
 
 **Tech Stack:** Swift 6.2 (Sprachmodus 5), SwiftUI `MenuBarExtra`, AppKit, WebKit, CryptoKit, Swift Testing; Node (offizielles darwin-arm64-Release, Version in `scripts/node-version.txt`); Kit: Node-ESM, `node --test`; Bash-Skripte.
 
-**Spec:** `/Users/fbFirma/source/brain-app/docs/superpowers/specs/2026-10-16-brain-app-design.md` (Meilenstein M1 in §14; Bausteine §5.2; Sicherheit §11; Tests §13)
+**Spec:** `<home>/source/brain-app/docs/superpowers/specs/2026-10-16-brain-app-design.md` (Meilenstein M1 in §14; Bausteine §5.2; Sicherheit §11; Tests §13)
 
 ## Global Constraints
 
