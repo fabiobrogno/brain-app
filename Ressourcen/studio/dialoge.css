@@ -6,7 +6,7 @@
    Siehe THIRD-PARTY-NOTICES.md und docs/plaene/design-wizards.md. Nur Tokens aus studio.css (Hell/Dunkel wechseln dort). */
 
 /* ---------- Dialog: Titel · ein Satz · Inhalt · Fußleiste ---------- */
-.dialog { --dlg-rand: 24px; --dlg-abstand: 16px; border-radius: 14px; }
+.dialog { --dlg-rand: 24px; --dlg-abstand: 16px; border-radius: var(--r-xl); }
 .dialog-kopf { padding: var(--dlg-rand) var(--dlg-rand) 0; font-size: 17px; line-height: 1.3; font-weight: 650; letter-spacing: -.015em; }
 .dialog-satz { margin: 6px 0 0; padding: 0 var(--dlg-rand); font-size: 13.5px; line-height: 1.5; color: var(--text-2); text-wrap: pretty; }
 .dialog-rumpf { padding: var(--dlg-abstand) var(--dlg-rand) var(--dlg-rand); gap: var(--dlg-abstand); }
