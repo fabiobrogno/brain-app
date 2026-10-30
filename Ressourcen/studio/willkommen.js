@@ -199,7 +199,7 @@ function baueVerbinden({ beiVerbunden, agenten = [], cursorDa = false, weitere =
   const zielName = { ...TW.ki.zielName, ...Object.fromEntries(weitere.map((id) => [id, TW.ki.weitereName[id]])) };
   const gefunden = (id) => agenten.some((a) => a.id === id);
   let ziel = "claude";
-  if (!gefunden("claude")) ziel = gefunden("codex") ? "codex" : (gefunden("cursor-agent") || cursorDa) ? "cursor" : "claude";
+  if (!gefunden("claude")) ziel = gefunden("codex") ? "codex" : (gefunden("cursor-agent") || cursorDa) ? "cursor" : (weitere[0] || "claude");
   const name = () => zielName[ziel];
   const knopf = h("button", { klasse: "knopf primaer", type: "button", "data-aktion": "claude-verbinden", text: ziel === "claude" ? TW.ki.verbinden : TW.ki.verbindenMit(name()) });
   const beschreibung = h("div", { klasse: "w-aktion-text", "aria-live": "polite", text: ziel === "claude" ? TW.ki.verbindenText : TW.ki.verbindenTextFuer(name()) });

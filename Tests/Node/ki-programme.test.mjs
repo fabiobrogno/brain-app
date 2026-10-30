@@ -309,3 +309,31 @@ console.error("unbekannte Argumente: " + a.join(" ")); process.exit(64);\n`);
     assert.equal(r.j.agenten.find((x) => x.id === "gemini").version, "0.12.3");
   } finally { process.env.PATH = alt.P; if (alt.E === undefined) delete process.env.BRAIN_CLAUDE_EXTRA; else process.env.BRAIN_CLAUDE_EXTRA = alt.E; }
 }));
+
+// ── Schutz vor Beschädigung (Befunde des Reviews) ──
+test("Ungültiges UTF-8, schreibgeschützte Datei und toter Symlink: Kortex ändert nichts (422), die Datei bleibt Byte für Byte gleich", async () => mitHome(async (home) => {
+  const rufe = handler();
+  const datei = join(home, FORMEN.zed.datei);
+  mkdirSync(dirname(datei), { recursive: true });
+  // ungültiges UTF-8 (Byte 0xFC in einem Kommentar)
+  const roh = Buffer.concat([Buffer.from("{\n  // gr"), Buffer.from([0xfc]), Buffer.from('n\n  "context_servers": {}\n}\n')]);
+  writeFileSync(datei, roh);
+  for (const [m, p] of [["POST", "/api/mcp/verbinden"], ["POST", "/api/mcp/trennen"]]) {
+    const r = await rufe(m, p, { ziel: "zed" });
+    assert.equal(r.status, 422); assert.equal(r.j.art, "kaputt"); assert.match(r.j.fehler, /UTF-8/);
+    assert.ok(readFileSync(datei).equals(roh), "unverändert");
+  }
+  // schreibgeschützt
+  writeFileSync(datei, '{"context_servers": {}}'); chmodSync(datei, 0o444);
+  const s = await rufe("POST", "/api/mcp/verbinden", { ziel: "zed" });
+  assert.equal(s.status, 422); assert.match(s.j.fehler, /schreibgeschützt/);
+  assert.equal(readFileSync(datei, "utf8"), '{"context_servers": {}}'); assert.equal(statSync(datei).mode & 0o777, 0o444);
+  chmodSync(datei, 0o644); rmSync(datei);
+  // toter Symlink bleibt ein Symlink, nichts wird angelegt
+  const dot = tmp("brain-dotfiles-");
+  symlinkSync(join(dot, "fehlt.json"), datei);
+  const l = await rufe("POST", "/api/mcp/verbinden", { ziel: "zed" });
+  assert.equal(l.status, 422); assert.equal(l.j.art, "kaputt");
+  assert.ok(lstatSync(datei).isSymbolicLink()); assert.deepEqual(readdirSync(dot), []);
+  assert.equal((await rufe("POST", "/api/mcp/trennen", { ziel: "zed" })).j.art, "kaputt");
+}));

@@ -596,6 +596,16 @@ test("KI verbinden: erkannte weitere Programme erscheinen in der Auswahl (mit Lo
   expect(z.anfragen.filter((a) => a.pfad === "/api/mcp/verbinden").map((a) => a.body)).toEqual([{ ziel: "zed" }]);
 });
 
+test("KI verbinden: ist nur ein weiteres Programm da (kein Claude, Codex, Cursor), ist genau das vorgewählt", async ({ page }) => {
+  const z = await rahmen(page, { vault: "/Users/test/Brain/Privat", agenten: [], programme: [{ id: "claude-desktop", name: "Claude Desktop", gefunden: true, version: "1.4.2", quelle: "app" }] });
+  const d = await oeffneKi(page);
+  await expect(d.locator('[data-ziel="claude-desktop"]')).toHaveAttribute("aria-checked", "true");
+  await expect(d.locator('[data-aktion="claude-verbinden"]')).toHaveText("Mit Claude Desktop verbinden");
+  await d.locator('[data-aktion="claude-verbinden"]').click();
+  await expect(d.locator('[data-zeile="verbinden"] .w-ok')).toContainText("Starte Claude Desktop neu");
+  expect(z.anfragen.filter((a) => a.pfad === "/api/mcp/verbinden").map((a) => a.body)).toEqual([{ ziel: "claude-desktop" }]);
+});
+
 test("KI verbinden: bei einem fremden Eintrag in Zed fragt der Dialog erst, dann mit „umstellen“", async ({ page }) => {
   const z = await rahmen(page, { vault: "/Users/test/Brain/Privat", mcp: "anders", programme: [{ id: "zed", name: "Zed", gefunden: true, version: null, quelle: "app" }] });
   const d = await oeffneKi(page);

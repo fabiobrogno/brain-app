@@ -148,7 +148,12 @@ public struct WerkstattDienste: EinrichtungsDienste {
             guard let id = p["id"] as? String else { return nil }
             return KiProgramm(id: id, name: p["name"] as? String ?? id, version: p["version"] as? String, gefunden: (p["gefunden"] as? Bool) == true)
         }
-        return agenten + weitere + [cursor]
+        // Wer als Agent (Befehl) und als Programm (App oder Befehl) vorkommt, zählt mit dem Eintrag aus `programme`: er kennt auch die App.
+        let ids = Set(weitere.map(\.id))
+        return agenten.filter { !ids.contains($0.id) } + weitere.map { p in
+            let agent = agenten.first { $0.id == p.id }
+            return KiProgramm(id: p.id, name: p.name, version: p.version ?? agent?.version, gefunden: p.gefunden || agent?.gefunden == true)
+        } + [cursor]
     }
 
     public func verbinde(_ ziel: KiZiel, umstellen: Bool, profil: String?) async throws -> KiVerbindung {

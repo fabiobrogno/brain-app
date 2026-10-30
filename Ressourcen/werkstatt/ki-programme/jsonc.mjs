@@ -18,7 +18,7 @@ function scanne(text) {
     for (;;) {
       const c = text[i];
       if (c !== undefined && WS.test(c)) { i++; continue; }
-      if (c === "/" && text[i + 1] === "/") { while (i < text.length && text[i] !== "\n") i++; continue; }
+      if (c === "/" && text[i + 1] === "/") { while (i < text.length && text[i] !== "\n" && text[i] !== "\r") i++; continue; }
       if (c === "/" && text[i + 1] === "*") {
         const ende = text.indexOf("*/", i + 2);
         if (ende < 0) fehler("Kommentar nicht beendet");
@@ -154,7 +154,7 @@ function fuegeEin(text, obj, name, wert, einheit) {
   let k = nachLetztem; let hatKomma = false;
   for (;;) {
     while (k < obj.ende - 1 && WS.test(text[k])) k++;
-    if (text.startsWith("//", k)) { while (k < obj.ende - 1 && text[k] !== "\n") k++; continue; }
+    if (text.startsWith("//", k)) { while (k < obj.ende - 1 && text[k] !== "\n" && text[k] !== "\r") k++; continue; }
     if (text.startsWith("/*", k)) { k = text.indexOf("*/", k + 2) + 2; continue; }
     break;
   }
@@ -167,7 +167,8 @@ function fuegeEin(text, obj, name, wert, einheit) {
     // alles bis zur schließenden Klammer bleibt; die neue Eigenschaft kommt direkt hinter das Komma
     const vorKlammer = /\s*$/.exec(rest)[0];
     const kern = rest.slice(0, rest.length - vorKlammer.length);
-    return text.slice(0, nachKomma) + kern + (mehrzeilig ? `\n${ein}` : " ") + eigenschaft + "," + vorKlammer + text.slice(obj.ende - 1);
+    const zeilenKommentar = /\/\/[^\n\r]*$/.test(kern); // sonst landete die Eigenschaft im Kommentar
+    return text.slice(0, nachKomma) + kern + (mehrzeilig || zeilenKommentar ? `\n${ein}` : " ") + eigenschaft + "," + vorKlammer + text.slice(obj.ende - 1);
   }
   return text.slice(0, nachLetztem) + "," + (mehrzeilig ? `\n${ein}` : " ") + eigenschaft + text.slice(nachLetztem);
 }

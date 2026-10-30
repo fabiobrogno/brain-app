@@ -61,4 +61,5 @@ Siehe `Ressourcen/logos/HERKUNFT.md`: Quelle Simple Icons 16.36.0 (CC0) für Cla
 
 - Windsurf/Devin Desktop, Antigravity und VS Code: wieder prüfen, wenn die Doku sich gesetzt hat.
 - GUI-gestartete Programme erben nicht den Shell-PATH. Kortex trägt deshalb den **absoluten** Pfad des mitgelieferten Node ein (wie bisher bei Claude Code, Codex und Cursor).
+- Bekannte Grenzen des Adapters (Review): Die Sicherungen liegen neben der Datei; liegt der ganze Ordner in einem Dotfiles-Repository, liegen sie dort mit (sie können fremde Tokens enthalten). Ein Hardlink wird beim Schreiben (`rename`) aufgetrennt. „Umstellen“ ersetzt den ganzen Eintrag „brain“ (eigene Zusatzfelder wie `env` gehen verloren, die Sicherung hat sie). Ändert das Programm die Datei in den Millisekunden zwischen Sicherung und Ersetzen, bricht Kortex mit 409 ab statt darüber zu schreiben. Ungültiges UTF-8, schreibgeschützte Dateien und tote Symlinks werden nie angefasst (422).
 - Profile je Programm und Zugriffsregeln für den Vault plant ein anderer Arbeitsstrang.

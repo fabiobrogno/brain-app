@@ -56,3 +56,11 @@ test("Hin und zurück: setzen und wieder entfernen ergibt denselben Wert wie vor
   assert.deepEqual(parseJsonc(entferneEigenschaft(mit, ["mcp"], "brain")), parseJsonc(q));
   assert.ok(entferneEigenschaft(mit, ["mcp"], "brain").includes("// kopf"));
 });
+
+test("Zeilenkommentare enden auch bei reinem CR; ein Kommentar hinter dem letzten Eintrag verschluckt die neue Eigenschaft nicht", () => {
+  const cr = '{"a":1, // c\r"servers": {"x": 1}\n}';
+  assert.deepEqual(parseJsonc(cr), { a: 1, servers: { x: 1 } });
+  assert.deepEqual(parseJsonc(setzeEigenschaft(cr, ["servers"], "brain", W)), { a: 1, servers: { x: 1, brain: W } });
+  const einzeilig = '{"servers": {"a": 1, // c\n}}';
+  assert.deepEqual(parseJsonc(setzeEigenschaft(einzeilig, ["servers"], "brain", W)), { servers: { a: 1, brain: W } });
+});

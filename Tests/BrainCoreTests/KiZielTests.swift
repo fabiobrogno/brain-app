@@ -67,6 +67,20 @@ private func treffer(_ muster: String, in text: String) throws -> [String] {
     #expect(WerkstattDienste.programme(aus: ["agenten": []]).map(\.id) == ["cursor"])
 }
 
+/// OpenCode und Gemini stehen als Agent (nur Befehl) UND als Programm (auch App): es zählt der Eintrag aus `programme`, die Version bleibt erhalten.
+@Test func agentUndProgrammMitDerselbenIdWerdenZusammengefuehrt() {
+    let liste = WerkstattDienste.programme(aus: [
+        "agenten": [["id": "opencode", "name": "OpenCode", "version": NSNull(), "pfad": NSNull()],
+                    ["id": "gemini", "name": "Gemini CLI", "version": "0.12.3", "pfad": "/x/gemini"]],
+        "programme": [["id": "opencode", "name": "OpenCode", "gefunden": true, "version": NSNull(), "quelle": "app"],
+                      ["id": "gemini", "name": "Gemini CLI", "gefunden": true, "version": NSNull(), "quelle": "cli"]],
+        "cursorDa": false,
+    ])
+    #expect(liste.map(\.id) == ["opencode", "gemini", "cursor"])
+    #expect(liste[0].gefunden, "nur die App ist da: trotzdem gefunden")
+    #expect(liste[1] == KiProgramm(id: "gemini", name: "Gemini CLI", version: "0.12.3", gefunden: true), "Version aus dem Agenten")
+}
+
 // MARK: Logos
 
 private func ansichtZahlen(_ s: String) -> [Double] { s.split(separator: " ").compactMap { Double($0) } }

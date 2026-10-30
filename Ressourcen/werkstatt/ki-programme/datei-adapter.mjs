@@ -8,7 +8,7 @@
 // ctx = { home, a: [node, mcp.mjs] | null, art(command, args) → "gleich"|"alt"|"anders", ordner?: <Konfig-Ordner statt Standardort> }.
 // `ordner` ist für spätere Profile gedacht (mehrere Konfig-Ordner je Programm); ohne Angabe gilt der Standardort des Programms.
 // Vergleich NUR intern: Command/Args eines vorhandenen Eintrags stehen nie in einer Antwort (fremde Einträge können Zugangsdaten enthalten).
-import { readFileSync, realpathSync, statSync, writeFileSync, copyFileSync, mkdirSync, renameSync, readdirSync, rmSync, chmodSync, constants as fsKonst } from "node:fs";
+import { readFileSync, realpathSync, statSync, lstatSync, writeFileSync, copyFileSync, mkdirSync, renameSync, readdirSync, rmSync, chmodSync, constants as fsKonst } from "node:fs";
 import { dirname, basename, join } from "node:path";
 import { HttpFehler } from "../../gemeinsam/vault.mjs";
 import { parseJsonc, setzeEigenschaft, entferneEigenschaft } from "./jsonc.mjs";
@@ -78,8 +78,27 @@ export function erzeugeDateiAdapter(def) {
   function lies(datei, befehl, ohneBefehl) {
     const zusatz = ohneBefehl ? {} : { befehl };
     let roh;
-    try { roh = readFileSync(datei, "utf8"); } catch (err) {
-      if (err && err.code === "ENOENT") return { vorhanden: false, roh: "", doc: {} };
+    try {
+      const puffer = readFileSync(datei);
+      roh = puffer.toString("utf8");
+      // ungültiges UTF-8 würde beim Zurückschreiben still verändert (U+FFFD): dann nicht anfassen
+      if (!Buffer.from(roh, "utf8").equals(puffer)) throw Object.assign(new Error("utf8"), { code: "KEIN_UTF8" });
+    } catch (err) {
+      if (err && err.code === "KEIN_UTF8") {
+        throw new HttpFehler(422, ohneBefehl
+          ? `Die Datei ${anzeige} ist nicht in UTF-8 gespeichert. Kortex ändert sie deshalb nicht. Entferne den Eintrag „brain“ dort von Hand.`
+          : `Die Datei ${anzeige} ist nicht in UTF-8 gespeichert. Kortex Studio ändert sie deshalb nicht. Ergänze den Eintrag von Hand:`, { art: "kaputt", ...zusatz });
+      }
+      if (err && err.code === "ENOENT") {
+        // ein Symlink, dessen Ziel fehlt: nicht durch eine normale Datei ersetzen
+        let istLink = false; try { istLink = lstatSync(datei).isSymbolicLink(); } catch { /* kein Link */ }
+        if (istLink) {
+          throw new HttpFehler(422, ohneBefehl
+            ? `Die Datei ${anzeige} ist ein Verweis auf eine Datei, die es nicht gibt. Kortex ändert sie deshalb nicht.`
+            : `Die Datei ${anzeige} ist ein Verweis auf eine Datei, die es nicht gibt. Kortex Studio ändert sie deshalb nicht. Ergänze den Eintrag von Hand:`, { art: "kaputt", ...zusatz });
+        }
+        return { vorhanden: false, roh: "", doc: {} };
+      }
       throw new HttpFehler(502, ohneBefehl ? `Die Datei ${anzeige} ließ sich nicht lesen. Entferne den Eintrag „brain“ dort von Hand.` : `Die Datei ${anzeige} ließ sich nicht lesen. Ergänze den Eintrag von Hand:`, zusatz);
     }
     if (!roh.trim()) return { vorhanden: true, roh, doc: {} }; // leere Datei zählt wie neu
@@ -116,11 +135,13 @@ export function erzeugeDateiAdapter(def) {
       if (vorhanden) {
         try { ziel = realpathSync(datei); } catch { /* bleibt datei */ }
         modus = statSync(ziel).mode & 0o777;
+        if (!(modus & 0o200)) throw new HttpFehler(422, `Die Datei ${anzeige} ist schreibgeschützt. Kortex Studio ändert sie deshalb nicht. Ergänze den Eintrag von Hand:`, { art: "kaputt", befehl });
         if (!roh.trim()) neu = JSON.stringify(nestle(pfad, eintrag), null, 2) + "\n";
         else try { neu = setzeEigenschaft(roh, pfad, "brain", eintrag); } catch {
           throw new HttpFehler(422, `Die Datei ${anzeige} lässt sich nicht sicher ändern. Kortex Studio ändert sie deshalb nicht. Ergänze den Eintrag von Hand:`, { art: "kaputt", befehl });
         }
         sicherung = sichereDatei(datei, ziel, modus);
+        pruefeUnveraendert(ziel, roh, anzeige, befehl);
       } else {
         mkdirSync(ordner, { recursive: true });
         neu = JSON.stringify(nestle(pfad, eintrag), null, 2) + "\n";
@@ -146,11 +167,13 @@ export function erzeugeDateiAdapter(def) {
       let ziel = datei;
       try { ziel = realpathSync(datei); } catch { /* bleibt datei */ }
       const modus = statSync(ziel).mode & 0o777;
+      if (!(modus & 0o200)) throw new HttpFehler(422, `Die Datei ${anzeige} ist schreibgeschützt. Kortex ändert sie deshalb nicht. Entferne den Eintrag „brain“ dort von Hand.`, { art: "kaputt" });
       let neu;
       try { neu = entferneEigenschaft(roh, pfad, "brain"); } catch {
         throw new HttpFehler(422, `Die Datei ${anzeige} lässt sich nicht sicher ändern. Kortex ändert sie deshalb nicht. Entferne den Eintrag „brain“ dort von Hand.`, { art: "kaputt" });
       }
       const sicherung = sichereDatei(datei, ziel, modus);
+      pruefeUnveraendert(ziel, roh, anzeige, null);
       schreibeAtomar(ziel, neu, modus);
       return { ok: true, sicherung };
     } catch (err) {
@@ -160,6 +183,15 @@ export function erzeugeDateiAdapter(def) {
   }
 
   return { id, name, anzeige, art: "datei", def, verbinde, trenne, konfiguration, datei: dateiVon };
+}
+
+// Kurz vor dem Ersetzen noch einmal lesen: hat das Programm die Datei inzwischen selbst geändert, schreiben wir nicht darüber (409).
+function pruefeUnveraendert(ziel, roh, anzeige, befehl) {
+  let jetzt = null;
+  try { jetzt = readFileSync(ziel, "utf8"); } catch { /* unlesbar: gilt als geändert */ }
+  if (jetzt !== roh) {
+    throw new HttpFehler(409, `Die Datei ${anzeige} hat sich gerade geändert. Kortex hat sie deshalb nicht angefasst. Versuche es noch einmal.`, { art: "geaendert", ...(befehl ? { befehl } : {}) });
+  }
 }
 
 function nestle(pfad, eintrag) {
