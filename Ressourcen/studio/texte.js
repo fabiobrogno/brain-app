@@ -17,7 +17,7 @@ export const T = {
   liste: {
     verlauf: "Verlauf", suchergebnisse: "Suchergebnisse", erstellt: "Erstellt",
     leer: { titel: "Hier ist noch nichts", text: "In diesem Bereich liegen noch keine Notizen." },
-    leerSuche: { titel: "Nichts gefunden", text: "Versuche ein anderes Wort." },
+    leerSuche: { titel: "Nichts gefunden", text: "Versuche ein anderes Wort." }, sucheLoeschen: "Suche löschen", alleNotizen: "Alle Notizen zeigen",
     leerFavoriten: { titel: "Noch keine Favoriten", text: "Markiere eine Notiz mit dem Stern, dann steht sie hier." },
     leerInbox: { titel: "Posteingang ist leer", text: "Mit „Schnell merken“ (⌘⇧M) landet ein Gedanke in 5 Sekunden hier." },
     leerAnsicht: { titel: "Alles in Ordnung", text: "Zu dieser Ansicht gibt es nichts zu tun." },

@@ -5,7 +5,7 @@
 //   auswahl({ optionen, wert, aufAenderung, label, … })     Knopf mit Wert + Chevron, Popover-Liste (ersetzt <select>)
 //   filterChip({ label, optionen, wert, standard, … })       „Priorität: Alle ▾“, aktiv farbig, ✕ setzt zurück
 //   textfeld({ … }) / textbereich({ … })                      Eingabe mit Fokusring, Löschen-Knopf, Inline-Fehler / automatische Höhe
-//   knopf({ … }) + setzeLaedt(knopf, an)                     primär/sekundär/leise/gefährlich, S/M, Spinner ohne Breitensprung
+//   knopf({ … }) + setzeLaedt(knopf, an) / mitLaden(knopf, fn)   primär/sekundär/leise/gefährlich, S/M/L, Spinner ohne Breitensprung und ohne Flackern
 //   segment({ … }), umschalter({ … }), hakenFeld({ … })       Segment-Schalter, Switch, Checkbox/Radio
 //   datumsauswahl({ … }) / oeffneDatumsauswahl(anker, …)      Kalender-Popover mit Schnellwahl
 //   tooltip(el, text), toast(text, …)
@@ -108,13 +108,13 @@ function auswahlKern({ knopf, optionen, hole, setze, gleicheBreite = true, recht
 
 // Ersetzt <select>. Rückgabe: <span class="bs-auswahl"> mit .value (lesen/setzen), .setze(wert), .knopf (der Combobox-Knopf), verstecktes <input name> für Formulare.
 // daten: Attribute für den Knopf (z. B. { "data-feld": "ordner" }). groesse: "s" (28 px) | "m" (32 px).
-export function auswahl({ optionen, wert, aufAenderung, label, platzhalter = TB.waehlen, daten = {}, klasse = "", groesse = "m", name, breit = false } = {}) {
+export function auswahl({ optionen, wert, aufAenderung, label, platzhalter = TB.waehlen, daten = {}, klasse = "", groesse = "m", name, breit = false, disabled = false } = {}) {
   let aktuell = wert ?? optionen.find((o) => !o.trenner)?.wert ?? "";
   const wertId = neueId("wert"), labelId = neueId("label");
   const ikon = h("span", { klasse: "bs-ikon", "aria-hidden": "true" });
   const wertEl = h("span", { klasse: "bs-wert", id: wertId });
   const knopf = h("button", { type: "button", klasse: klassen("bs-auswahl-knopf", `bs-${groesse}`), role: "combobox", "aria-haspopup": "listbox", "aria-expanded": "false",
-    "aria-labelledby": label ? `${labelId} ${wertId}` : wertId, ...daten }, ikon, wertEl, h("span", { klasse: "bs-chevron", "aria-hidden": "true" }, symbol("chevron-unten", GROESSE.klein)));
+    "aria-labelledby": label ? `${labelId} ${wertId}` : wertId, disabled: disabled || null, ...daten }, ikon, wertEl, h("span", { klasse: "bs-chevron", "aria-hidden": "true" }, symbol("chevron-unten", GROESSE.klein)));
   const versteckt = h("input", { type: "hidden", name });
   const wrap = h("span", { klasse: klassen("bs-auswahl", breit && "breit", klasse) }, label ? nurLesen(labelId, label) : null, knopf, versteckt);
   const zeige = () => {
@@ -207,20 +207,28 @@ export function textbereich({ wert = "", platzhalter, label, minZeilen = 3, maxZ
 }
 
 // ======================================================= Knöpfe
-// variante: "sekundaer" | "primaer" | "leise" | "gefahr"; groesse: "s" (28 px) | "m" (32 px). Mit text und/oder symbol; nur Symbol → quadratisch (label nötig).
-export function knopf({ text, variante = "sekundaer", groesse = "m", symbol: sym, aufKlick, typ = "button", daten = {}, titel, label, klasse = "", laedt = false, aktion } = {}) {
-  const b = h("button", { type: typ, klasse: klassen("knopf", "bs-knopf", variante !== "sekundaer" && variante, groesse === "s" && "klein", !text && "nur-symbol", klasse),
-    title: titel, "aria-label": label, "data-aktion": aktion, ...daten }, sym ? symbol(sym, GROESSE.text) : null, text ? h("span", { klasse: "bs-knopf-text", text }) : null);
+// variante: "sekundaer" | "primaer" | "leise" | "gefahr"; groesse: "s" (28 px) | "m" (32 px) | "l" (36 px, Dialoge/Assistent). Mit text und/oder symbol; nur Symbol → quadratisch (label nötig).
+// kinder: weitere Knoten vor dem Text (z. B. Marken-Logo), nach: Knoten hinter dem Text (z. B. Chevron). disabled/hidden/autofocus wie am <button>.
+export function knopf({ text, variante = "sekundaer", groesse = "m", symbol: sym, aufKlick, typ = "button", daten = {}, titel, label, klasse = "", laedt = false, aktion, disabled, hidden, autofocus, kinder = [], nach = [] } = {}) {
+  const b = h("button", { type: typ, klasse: klassen("knopf", "bs-knopf", variante !== "sekundaer" && variante, groesse === "s" && "klein", groesse === "l" && "gross", !text && !kinder.length && !nach.length && "nur-symbol", klasse),
+    title: titel, "aria-label": label, "data-aktion": aktion, disabled: disabled || null, hidden: hidden || null, autofocus: autofocus || null, ...daten },
+  sym ? symbol(sym, GROESSE.text) : null, kinder, text ? h("span", { klasse: "bs-knopf-text", text }) : null, nach);
   b.addEventListener("click", (ev) => { if (b.getAttribute("aria-busy") === "true") { ev.preventDefault(); ev.stopImmediatePropagation(); } }, true);
   if (aufKlick) b.addEventListener("click", aufKlick);
   if (laedt) setzeLaedt(b, true);
   return b;
 }
-// Ladezustand: Spinner in der Mitte, Beschriftung bleibt (unsichtbar) stehen → die Breite ändert sich nicht; Klicks werden ignoriert, der Fokus bleibt.
+// Ladezustand: Beschriftung bleibt (unsichtbar) stehen → die Breite ändert sich nicht; Klicks werden ignoriert, der Fokus bleibt.
+// Der Spinner blendet erst nach ~140 ms ein: schnelle Vorgänge flackern nicht.
 export function setzeLaedt(b, an) {
   b.classList.toggle("laedt", !!an);
   if (an) { b.setAttribute("aria-busy", "true"); b.setAttribute("aria-disabled", "true"); }
   else { b.removeAttribute("aria-busy"); b.removeAttribute("aria-disabled"); }
+}
+// Führt fn aus und zeigt am Knopf solange den Ladezustand (auch bei Fehlern wird er wieder zurückgenommen).
+export async function mitLaden(b, fn) {
+  setzeLaedt(b, true);
+  try { return await fn(); } finally { setzeLaedt(b, false); }
 }
 
 // Segment-Schalter (radiogroup): optionen [{ wert, text, symbol? }]; Pfeiltasten wechseln, die Auswahl gleitet.

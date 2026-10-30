@@ -1,6 +1,6 @@
 // Dialog „Remote hinzufügen“: Adresse eingeben, prüfen lassen, verbinden.
 import { h, dialog, arbeitBeginnt, ausTabelle } from "./hilfen.js";
-import { textfeld } from "./bausteine.js";
+import { textfeld, knopf as baueKnopf, setzeLaedt } from "./bausteine.js";
 import { symbol } from "./symbole.js";
 import { markenLogo } from "./marken.js";
 import { api, gitGesperrt, ausgangUnklar, zeitText, ladeStandNeu } from "./api.js";
@@ -34,8 +34,8 @@ export function oeffneRemoteDialog({ beiFertig, beiStandNeu } = {}) {
   const adressFeld = textfeld({ id: "rm-adresse", platzhalter: TV.remote.platzhalter, beschreibung: "rm-hinweis rm-meldung", daten: { "data-feld": "adresse" } });
   const eingabe = adressFeld.input;
   const meldung = h("div", { klasse: "rm-meldung", id: "rm-meldung", "aria-live": "polite" });
-  const knopf = h("button", { klasse: "knopf primaer gross", type: "submit", "data-aktion": "verbinden" }, h("span", { text: TV.remote.verbinden }));
-  const abbrechen = h("button", { klasse: "knopf gross", type: "button", "data-aktion": "abbrechen", text: TV.remote.abbrechen });
+  const knopf = baueKnopf({ variante: "primaer", groesse: "l", typ: "submit", aktion: "verbinden", kinder: [h("span", { text: TV.remote.verbinden })] });
+  const abbrechen = baueKnopf({ text: TV.remote.abbrechen, groesse: "l", aktion: "abbrechen" });
   const zu = h("button", { klasse: "knopf-icon rm-zu", type: "button", "aria-label": TV.remote.schliessen, title: TV.remote.schliessen }, zeichen("schliessen", 14));
   // Zeigt die Adresse auf GitHub, steht dessen Logo im Kopf (Marke statt Wolke), sonst die Wolke.
   const kopfZeichen = h("span", { klasse: "rm-zeichen" }, zeichen("wolke", 20));
@@ -61,9 +61,8 @@ export function oeffneRemoteDialog({ beiFertig, beiStandNeu } = {}) {
   const beschaeftigt = (an) => {
     laeuft = an;
     eingabe.disabled = an;
-    knopf.disabled = an;
+    setzeLaedt(knopf, an); // Spinner im Knopf (erscheint erst nach ~140 ms), die Breite bleibt
     abbrechen.disabled = an;
-    knopf.replaceChildren(...(an ? [h("span", { klasse: "rm-spinner", "aria-hidden": "true" }), h("span", { text: TV.remote.verbinden })] : [h("span", { text: TV.remote.verbinden })]));
   };
 
   zu.addEventListener("click", () => d.schliessen());
@@ -86,8 +85,7 @@ export function oeffneRemoteDialog({ beiFertig, beiStandNeu } = {}) {
       const r = await api.gitRemote(url);
       clearTimeout(spaet);
       verbunden = true;
-      eingabe.disabled = true; knopf.disabled = true; abbrechen.disabled = true;
-      knopf.replaceChildren(h("span", { text: TV.remote.verbinden }));
+      eingabe.disabled = true; setzeLaedt(knopf, false); knopf.disabled = true; abbrechen.disabled = true;
       zeige("erfolg", r?.ergebnis === "gesendet" ? TV.remote.erfolgGesendet : r?.ergebnis === "geholt" ? TV.remote.erfolgGeholt : TV.remote.erfolg, "haken");
       setTimeout(() => { melde(); d.schliessen(); }, r?.ergebnis === "gesendet" || r?.ergebnis === "geholt" ? 1600 : 800);
     } catch (err) {
