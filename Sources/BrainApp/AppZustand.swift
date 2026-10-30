@@ -32,7 +32,8 @@ final class AppZustand: ObservableObject {
     var menueZeilen: [MenueZeile] {
         MenueStatus.zeilen(vaultName: vaultName, anzeige: menueAnzeige, vertrauen: vertrauen, zahlen: status?.zahlen,
                            entwicklerVault: status?.quellVault == true, kernMeldung: kernBereitschaft.meldung,
-                           zufuehrungsZeilen: zufuehrungen.menueZeilen, aufgaben: status?.aufgaben)
+                           zufuehrungsZeilen: zufuehrungen.menueZeilen, aufgaben: status?.aufgaben,
+                           sicherung: status?.sicherung)
     }
     /// Studio (Editor, Werkstatt-Brücke) und Übersicht (Kit-Ansicht, Kit-Brücke).
     private let studio: FensterSteuerung

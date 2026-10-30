@@ -11,12 +11,13 @@ import { leseLetzter } from "./tageslauf/protokoll.mjs";
 import { sichtbare } from "./rueckfragen.mjs";
 import { umstellungHinweis } from "./umstellung/hinweis.mjs";
 import { zaehle as zaehleAufgaben } from "./aufgaben.mjs";
+import { leseAbgleichStand } from "./backup.mjs";
 
 const SYMBOL = { ok: "✓", hinweis: "⚠", problem: "✕" };
 
-export function bewerte({ fehler, berichtFehlt, zuTun, vorschlaege }) {
+export function bewerte({ fehler, berichtFehlt, zuTun, vorschlaege, sicherung = false }) {
   if (fehler) return "problem";
-  if (berichtFehlt || zuTun > 0 || vorschlaege > 0) return "hinweis";
+  if (berichtFehlt || zuTun > 0 || vorschlaege > 0 || sicherung) return "hinweis";
   return "ok";
 }
 
@@ -60,10 +61,14 @@ export async function brainStatus(vault, { jetzt = Date.now(), support } = {}) {
   // Aufgaben (aufgaben.mjs): offene und überfällige für die Menüleiste; ohne Aufgaben-Ordner 0/0
   let aufgaben = { offen: 0, ueberfaellig: 0 };
   try { aufgaben = zaehleAufgaben(vault); } catch { /* bleibt 0 */ }
+  // Sicherung/Abgleich mit mehreren Geräten (backup.mjs): Konflikt, Anmeldung oder Neues auf dem Server → Hinweis in der Menüleiste (zustand „hinweis“, erste Meldung)
+  let sicherung = null;
+  try { sicherung = leseAbgleichStand(vault, support ? { support } : {}); } catch { /* ohne Hinweis */ }
+  if (sicherung) meldungen.unshift(sicherung.text);
   return {
     version, quellVault: false,   // Feld bleibt für die App (Status-Modell); den Entwickler-Vault gibt es im Kern-Umzug nicht mehr
-    zustand: bewerte({ fehler, berichtFehlt, zuTun, vorschlaege }),
-    meldungen, zahlen: { vorschlaege, konflikte, abgelaufen, zuTun, rueckfragen }, tageslauf, umstellung, aufgaben,
+    zustand: bewerte({ fehler, berichtFehlt, zuTun, vorschlaege, sicherung: !!sicherung }),
+    meldungen, zahlen: { vorschlaege, konflikte, abgelaufen, zuTun, rueckfragen }, tageslauf, umstellung, aufgaben, sicherung,
   };
 }
 

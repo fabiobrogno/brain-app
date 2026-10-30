@@ -540,6 +540,7 @@ export async function tageslauf(vault, opt = {}) {
       } else {
       if (!nurAntworten) kiBefehl(ctx, { ueberschreibe: true });   // KI-Schritte entfallen, der Lauf gilt nicht als erfolgreich
       if (!probe) await schritt(ctx, zahl, "Reste aufräumen", () => raeumeResteAuf(vault, {}));   // Reste abgestürzter Läufe (verändert Git → nie in der Probe)
+      if (!probe && werte.sicherungTaeglich !== false) await schritt(ctx, zahl, "Server holen", async () => { (await import("./backup.mjs")).holenGedrosselt(vault); });   // Änderungen anderer Geräte holen (nur bestätigtes Remote, Fast-Forward nur bei sauberem Arbeitsbaum; wirft nie)
       await schritt(ctx, zahl, "Autostufe", () => aktualisiereAutostufe(ctx));
       if (!probe) await schritt(ctx, zahl, "Protokoll", () => { const p = protokollGesund(vault); if (!p.ok) protokollKaputt(ctx, zahl, p.fehler); });   // Tor fail-closed (N3)
       if (!probe && !ctx.protokollKaputt) await schritt(ctx, zahl, "Protokoll heilen", () => heileLauf(ctx, zahl));                // Übernahmen ohne Aktion nachtragen (vor dem Tor)

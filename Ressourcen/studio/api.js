@@ -89,6 +89,8 @@ export const api = {
   notizKontext: (pfad) => anfrage("GET", "/api/notiz/kontext" + q({ pfad })),
   typen: () => anfrage("GET", "/api/typen"),
   ansichten: () => anfrage("GET", "/api/ansichten"),
+  indexAlles: () => anfrage("GET", "/api/index"),
+  teilIndex: (pfade) => anfrage("POST", "/api/teilindex", { pfade }),
   gitLog: ({ max, vor } = {}) => anfrage("GET", "/api/git/log" + q({ max, vor })),
   gitRemote: (url) => anfrage("POST", "/api/git/remote", { url }),
   // ---- v3: Abgleich mit Konflikten, Nachsehen, Version zurückholen
