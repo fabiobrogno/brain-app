@@ -39,3 +39,23 @@ export function merkeRemoteBestaetigt(wurzel, url, { support } = {}) {
     return true;
   } catch { return false; }
 }
+
+// Stand des Abgleichs bei mehreren Geräten (kern/backup.mjs schreibt ihn): abgleich = { stand: "konflikt" | "anmeldung" | "neues", zeit }.
+// Das Studio zeigt „Konflikt – im Studio lösen“ damit auch dann, wenn der Konflikt im Hintergrund (Sicherung) entstand und der Arbeitsbaum wieder sauber ist.
+export function leseAbgleichStand(wurzel, support) {
+  const a = leseMerker(wurzel, support).abgleich;
+  return a && typeof a === "object" && ["konflikt", "anmeldung", "neues"].includes(a.stand) ? a.stand : null;
+}
+// Nach einem erfolgreichen Abgleich im Studio gilt der Vermerk nicht mehr. Wirft nie.
+export function loescheAbgleichStand(wurzel, { support } = {}) {
+  try {
+    const m = leseMerker(wurzel, support);
+    if (!("abgleich" in m)) return false;
+    delete m.abgleich;
+    const datei = merkerDatei(wurzel, support);
+    const tmp = `${datei}.${process.pid}.tmp`;
+    writeFileSync(tmp, JSON.stringify(m) + "\n");
+    renameSync(tmp, datei);
+    return true;
+  } catch { return false; }
+}

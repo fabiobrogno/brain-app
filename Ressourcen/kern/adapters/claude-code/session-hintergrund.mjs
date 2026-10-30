@@ -86,37 +86,41 @@ if (AUTOMATIK.luecken) node("lernschleife.mjs", [V, "--woche"]);
 // (altes Verhalten vor dieser Sicherung-Funktion bleibt für bestehende Vaults unverändert).
 // Sicherung nur bei neuem HEAD und höchstens alle 15 min (§12.1 Nr. 2). Ordner-Sicherung zusätzlich höchstens 1×/Tag:
 // sonst würde bei jedem SessionStart ein neues Bundle geschrieben.
+// Holen (backup.mjs#holenGedrosselt): Änderungen anderer Geräte (zum Beispiel Aufgaben vom iPhone) kommen hier an, bevor gesichert wird. Nur mit einem vom Nutzer
+// bestätigten Remote, höchstens alle 10 Minuten; Fast-Forward nur bei sauberem Arbeitsbaum, sonst bleibt es bei einem Hinweis in der Menüleiste (brain status).
+if (AUTOMATIK.sicherungTaeglich !== false) try {
+  const { holenGedrosselt } = await import("../../backup.mjs");
+  const h = holenGedrosselt(V);
+  if (!["uebersprungen", "aktuell", "nicht-bestaetigt"].includes(h.art)) log(`Holen: ${h.art}${h.text ? ` — ${h.text}` : ""}`);
+} catch (e) { log(`Hinweis: Holen übersprungen (${e.message})`); }
+
 if (AUTOMATIK.sicherungTaeglich !== false) try {
   const head = aktuellerHead(V);
   const takt = sicherungNoetig(V, { head });
   if (!takt.noetig) log(`Sicherung übersprungen (${takt.grund})`);
   else {
     const cfg = ladeConfig(V);
-    const { leseBackupOrdner, ortstag } = await import("../../backup.mjs");
+    const { leseBackupOrdner, ortstag, sichernErgebnis } = await import("../../backup.mjs");
     const backupOrdner = leseBackupOrdner(V);
     let ok = false;
-    if (!cfg.backup) {
-      const remote = spawnSync(GIT, ["-C", V, "remote"], { encoding: "utf8", windowsHide: true });
-      if ((remote.stdout || "").trim()) {
-        // nur zu einem vom Nutzer bestätigten Remote (ein fremder Vault kann ein origin mitbringen); sonst keine Sicherung, nur eine Logzeile
-        const { pushErlaubnis } = await import("../../backup.mjs");
-        const erlaubnis = pushErlaubnis(V);
-        if (!erlaubnis.ok) log(`Push übersprungen: Remote nicht bestätigt (${erlaubnis.grund})`);
-        else {
-          const r = spawnSync(GIT, ["-C", V, "push", "-q"], { encoding: "utf8", windowsHide: true });
-          log((r.stdout || "") + (r.stderr || ""));
-          ok = r.status === 0;
-        }
-      }
-    } else if (
-      cfg.backup.art === "ordner" && backupOrdner &&
+    if (
+      cfg.backup?.art === "ordner" && backupOrdner &&
       existsSync(join(backupOrdner, `brain-${ortstag()}.bundle`)) // Ortszeit wie beim Anlegen des Bundles (backup.mjs), Ordner aus dem Support-Ordner
     ) {
       // heute schon gesichert — überspringen
-    } else {
+    } else if (cfg.backup?.art === "ordner") {
       ok = node("brain.mjs", ["backup"]).status === 0;
+    } else if (cfg.backup?.art === "keins") {
+      ok = true; // bewusst keine Sicherung: nichts zu tun, nichts zu wiederholen
+    } else {
+      // Online (oder ältere Vaults ohne backup-Eintrag, aber mit Remote): erst holen und zusammenführen, dann senden (backup.mjs#abgleichen) — nur zu einem
+      // vom Nutzer bestätigten Remote (ein fremder Vault kann ein origin mitbringen). Gelingt es nicht, wird der Stand nicht als gesichert gemerkt: nächster Versuch beim nächsten Start.
+      const r = sichernErgebnis(V);
+      if (r.art === "nicht-bestaetigt") { const { pushErlaubnis } = await import("../../backup.mjs"); log(`Push übersprungen: Remote nicht bestätigt (${pushErlaubnis(V).grund})`); }
+      else log(`Sicherung: ${r.art} — ${r.text}`);
+      ok = r.ok;
     }
-    if (ok) merkeSicherung(V, { head });
+    if (ok) merkeSicherung(V, { head: aktuellerHead(V) || head }); // nach dem Zusammenführen mit dem Server ist der HEAD ein anderer als vorher
   }
 } catch (e) { log(`Hinweis: Sicherung übersprungen (${e.message})`); }
 

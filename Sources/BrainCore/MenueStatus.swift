@@ -57,7 +57,8 @@ public enum MenueStatus {
                               entwicklerVault: Bool,
                               kernMeldung: String?,
                               zufuehrungsZeilen: [String],
-                              aufgaben: BrainStatus.Aufgaben? = nil) -> [MenueZeile] {
+                              aufgaben: BrainStatus.Aufgaben? = nil,
+                              sicherung: BrainStatus.Sicherung? = nil) -> [MenueZeile] {
         var z: [MenueZeile] = []
         if let name = vaultName, !name.isEmpty {
             z.append(MenueZeile(symbol: "folder", text: kurz(name), art: .kopf, erklaerung: name.count > hoechstZeichen ? name : "Vault wechseln …", aktion: .vaultWechseln))
@@ -75,6 +76,10 @@ public enum MenueStatus {
             let ueberfaellig = (aufgaben?.ueberfaellig ?? 0) > 0
             z.append(MenueZeile(symbol: ueberfaellig ? "exclamationmark.circle" : "checklist", text: text, art: ueberfaellig ? .hinweis : .normal,
                                 erklaerung: "Öffnet das Aufgaben-Board im Studio.", aktion: .aufgabenOeffnen))
+        }
+        if vaultName != nil, let s = sicherung {
+            z.append(MenueZeile(symbol: "exclamationmark.icloud", text: kurz(s.text), art: .hinweis,
+                                erklaerung: "Die Online-Sicherung wartet. Klicke, um das Studio zu öffnen und dort abzugleichen.", aktion: .studioOeffnen))
         }
         if entwicklerVault {
             z.append(MenueZeile(symbol: "hammer", text: "Entwickler-Vault — bekommt keine Updates", art: .normal))

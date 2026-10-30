@@ -12,6 +12,7 @@ import { HttpFehler, MAX_DATEI, loese, imVault, falte, kindUmgebung, supportOrdn
 import { pruefeText, berlinHeute, leseKopf } from "./pruefung.mjs";
 import * as gitFn from "./git.mjs";
 import * as vertrauenFn from "./vertrauen.mjs";
+import { leseAbgleichStand, loescheAbgleichStand } from "./sicherungsmerker.mjs";
 import { erzeugeNotizIndex, titelAus } from "./notizen.mjs";
 import { wertAus } from "./nutzung.mjs";
 import { erzeugePosteingang } from "./posteingang.mjs";
@@ -80,6 +81,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
     titelCache.set(rel, { k: schluessel, t });
     return t;
   }
+  const dateiEintrag = (rel, abs, st) => ({ pfad: rel, art: "datei", geaendert: st.mtime.toISOString(), groesse: st.size, schreibschutz: schreibgeschuetzt(rel, abs, st), titel: titelFuerBaum(rel, abs, st) });
   function baum() {
     const eintraege = [];
     const geh = (relOrdner) => {
@@ -108,11 +110,37 @@ export function oeffneVault(vaultPfad, opts = {}) {
       for (const f of dateien) {
         const a = join(wurzel, f.rel);
         let st; try { st = statSync(a); } catch { continue; }
-        eintraege.push({ pfad: f.rel, art: "datei", geaendert: st.mtime.toISOString(), groesse: st.size, schreibschutz: schreibgeschuetzt(f.rel, a, st), titel: titelFuerBaum(f.rel, a, st) });
+        eintraege.push(dateiEintrag(f.rel, a, st));
       }
     };
     geh("");
     return { eintraege };
+  }
+
+  // Teil-Index für die Live-Aktualisierung der Oberfläche: Baum-Eintrag und Notiz-Zeile nur der genannten Dateien (geändert, bereits bekannt) — kein
+  // Verzeichnislauf. { voll: true } heißt: das reicht nicht (neue, entfernte oder unbekannte Pfade, Ordner, Symlinks, Titel/Alias geändert, zu viele,
+  // noch kein Vollauf) — die Oberfläche lädt dann wie bisher Baum und Index ganz. Rein lesend.
+  const TEIL_MAX = 200;
+  async function teilIndex(pfade) {
+    const VOLL = { voll: true };
+    if (!Array.isArray(pfade) || !pfade.length || pfade.length > TEIL_MAX) return VOLL;
+    const dateien = [];
+    for (const p of pfade) {
+      if (typeof p !== "string") return VOLL;
+      let l; try { l = loese(wurzel, p); } catch { return VOLL; }
+      if (l.segmente.some(gesperrterName) || imUnterVault(l.abs)) return VOLL;
+      dateien.push(l);
+    }
+    const eintraege = [];
+    for (const { rel, abs } of dateien) {
+      let st; try { st = lstatSync(abs); } catch { return VOLL; }
+      if (st.isSymbolicLink() || !st.isFile()) return VOLL;
+      eintraege.push(dateiEintrag(rel, abs, st));
+    }
+    const notizPfade = dateien.filter((d) => BEARBEITBAR.test(d.rel)).map((d) => d.rel);
+    let teil = null;
+    if (notizPfade.length) { teil = notizIndex.teil(notizPfade); if (!teil) return VOLL; }
+    return { voll: false, baum: eintraege, notizen: teil ? teil.zeilen : [], ...(teil ? { typen: teil.typen, ansichten: teil.ansichten } : {}), aufgabenOrdner: await aufgabenFn.ordnerName() };
   }
 
   // ---------- Lesen / Schreiben ----------
@@ -191,6 +219,22 @@ export function oeffneVault(vaultPfad, opts = {}) {
     return { pfad: legeFreiAn(o ? loese(wurzel, o).rel : "", slug(t, 60), `# ${t}\n`) };
   }
 
+  // Der Posteingang des Vaults: brain.config.json → ordner.inbox (wie kern/pfade.mjs#ordner), sonst 00_inbox. Die Config sind Vault-Daten: nur ein einzelner
+  // Ordnername (Buchstaben, Ziffern, _ . -), kein versteckter Ordner und nie der Ordner von Wiki oder Archiv — alles andere fällt auf den Standard zurück.
+  const INBOX_STANDARD = "00_inbox";
+  function inboxOrdner() {
+    try {
+      const datei = join(wurzel, "brain.config.json");
+      const st = lstatSync(datei);
+      if (!st.isFile() || st.size > 1024 * 1024) return INBOX_STANDARD;
+      const cfg = JSON.parse(readFileSync(datei, "utf8").replace(/^\uFEFF/, ""));
+      const n = cfg?.ordner?.inbox;
+      if (typeof n !== "string" || n.startsWith(".") || !/^[\p{L}\p{N}_.-]+$/u.test(n)) return INBOX_STANDARD;
+      const andere = [cfg.ordner?.wiki, cfg.wiki?.ordner, cfg.ordner?.archiv, "09_wiki", "90_archiv", "node_modules"].filter((a) => typeof a === "string");
+      return andere.some((a) => falte(a) === falte(n)) ? INBOX_STANDARD : n;
+    } catch { return INBOX_STANDARD; }
+  }
+
   function merken({ text, titel }) {
     if (typeof text !== "string" || !text.trim()) throw new HttpFehler(400, "Bitte einen Text eingeben.");
     if (Buffer.byteLength(text) > 1024 * 1024) throw new HttpFehler(413, "Der Text ist zu lang.");
@@ -206,7 +250,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
       inhalt = `# ${t}\n\n${koerper}\n`;
     }
     const datum = berlinHeute(jetzt());
-    return { pfad: legeFreiAn("00_inbox", `${datum}_${slug(t)}`, inhalt) };
+    return { pfad: legeFreiAn(inboxOrdner(), `${datum}_${slug(t)}`, inhalt) };
   }
 
   // ---------- Suche ----------
@@ -325,6 +369,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
   // Kontext eines Git-Aufrufs: vertraut/sshEigen und, was der Nutzer selbst eingestellt hat (sshGlobal, gpgGlobal) — ohne Vertrauen ersetzen wir
   // nur die Einstellungen des Vaults, nie seine eigenen.
   const ctxVon = (s) => ({ vertraut: s.vertraut, hooks: s.hooks, sshEigen: s.sshEigen, sshGlobal: s.sshGlobal, gpgGlobal: s.gpgGlobal });
+  const mitSicherungsStand = (s) => (s && s.repo ? { ...s, sicherungStand: leseAbgleichStand(wurzel, opts.support) } : s);
   const gitCtx = (extra = {}) => { const s = gitSicht(); if (s.gesperrt) throw gesperrtFehler(s); return { ...ctxVon(s), ...extra }; };
 
   // ---------- Notiz-Index (Spec v2 §5) ----------
@@ -396,20 +441,30 @@ export function oeffneVault(vaultPfad, opts = {}) {
     posteingangVerwerfen: posteingang.verwerfen, posteingangSpaeter: posteingang.spaeter, posteingangUebernehmen: posteingang.uebernehmen,
     aufgaben: aufgabenFn.aufgaben, aufgabeAnlegen: aufgabenFn.anlegen, aufgabeAendern: aufgabenFn.aendern, aufgabenArchivieren: aufgabenFn.archivieren, aufgabenFuerKi: aufgabenFn.fuerKi, aufgabenOrdnerName: aufgabenFn.ordnerName, aufgabePfad: aufgabenFn.findePfad,
     notizen: async () => ({ ...(await notizIndex.notizen()), aufgabenOrdner: await aufgabenFn.ordnerName() }), notizKontext: notizIndex.kontext, typen: notizIndex.typen, ansichten: notizIndex.ansichten,
+    indexAlles: async () => ({ ...(await notizIndex.alles()), aufgabenOrdner: await aufgabenFn.ordnerName() }), teilIndex,
     gitLog: async (a) => gitFn.log(wurzel, a || {}, gitCtx()),
     gitRemote: async (url, extra = {}) => gitFn.remoteHinzufuegen(wurzel, url, gitCtx({ limit: opts.gitLimitRemote, ...extra })),
+    // sicherungStand: "konflikt" | "anmeldung" | "neues" | null — die Hintergrund-Sicherung des Kerns (kern/backup.mjs) vermerkt, wenn sie nicht senden konnte
     gitStatus: async () => {
       const s = gitSicht();
       if (s.gesperrt) return { repo: true, gesperrt: true, grund: s.grund };
-      return gitFn.status(wurzel, ctxVon(s));
+      return mitSicherungsStand(await gitFn.status(wurzel, ctxVon(s)));
     },
     gitCommit: async (a) => gitFn.commit(wurzel, a || {}, gitCtx({ limit: opts.gitLimitCommit })),
     // konflikteLoesen: bei Konflikten die Zusammenführung offen lassen, damit die Oberfläche pro Datei wählen lässt (sonst wie bisher: abbrechen, 409)
-    gitSync: async (a) => gitFn.sync(wurzel, gitCtx({ limitSync: opts.gitLimitSync, limitGesamt: opts.gitLimitAbgleich, konflikteLoesen: !!(a && a.konflikteLoesen === true) })),
+    gitSync: async (a) => {
+      const r = await gitFn.sync(wurzel, gitCtx({ limitSync: opts.gitLimitSync, limitGesamt: opts.gitLimitAbgleich, konflikteLoesen: !!(a && a.konflikteLoesen === true) }));
+      loescheAbgleichStand(wurzel, { support: opts.support }); // der Abgleich lief durch: der Vermerk der Hintergrund-Sicherung (Konflikt, Anmeldung, Neues) gilt nicht mehr
+      return r;
+    },
     gitKonflikte: async (pfad) => gitFn.konflikte(wurzel, pfad, gitCtx()),
-    gitKonfliktAbschliessen: async (a) => gitFn.konfliktAbschliessen(wurzel, a || {}, gitCtx({ limit: opts.gitLimitCommit })),
+    gitKonfliktAbschliessen: async (a) => {
+      const r = await gitFn.konfliktAbschliessen(wurzel, a || {}, gitCtx({ limit: opts.gitLimitCommit }));
+      loescheAbgleichStand(wurzel, { support: opts.support }); // der Konflikt ist gelöst: der Hinweis der Hintergrund-Sicherung gilt nicht mehr
+      return r;
+    },
     gitKonfliktAbbrechen: async () => gitFn.konfliktAbbrechen(wurzel, gitCtx({ limit: opts.gitLimitCommit })),
-    gitNachsehen: async () => gitFn.nachsehen(wurzel, gitCtx()),
+    gitNachsehen: async () => mitSicherungsStand(await gitFn.nachsehen(wurzel, gitCtx())),
     gitWiederherstellenVorschau: async (pfad, sha) => gitFn.wiederherstellenVorschau(wurzel, pfad, sha, gitCtx()),
     gitWiederherstellen: async (a) => gitFn.wiederherstellen(wurzel, a || {}, gitCtx({ limit: opts.gitLimitCommit })),
     gitVerlauf: async (pfad, max) => gitFn.verlauf(wurzel, pfad, max, gitCtx()),
