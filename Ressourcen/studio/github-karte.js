@@ -3,6 +3,7 @@
 // Version nicht eingerichtet (keine Client-ID), bleibt der Knoten `hidden` und start() liefert false.
 // Das Token sieht die Oberfläche nie: die Werkstatt liefert nur Zustand, Code und Kontoname.
 import { h } from "./hilfen.js";
+import { knopf as baueKnopf } from "./bausteine.js";
 import { api, aktion, inApp } from "./api.js";
 import { symbol } from "./symbole.js";
 import { markenLogo } from "./marken.js";
@@ -23,17 +24,17 @@ export function baueGitHubKarte({ beiAngemeldet } = {}) {
   const zeigeStart = (meldung) => setze(
     h("h3", { klasse: "w-abschnitt" }, markenLogo("github", 14, { dekorativ: true }), h("span", { text: T.titel })), h("div", { klasse: "w-aktion-text", text: T.text }),
     meldung ? fehlerBox(meldung) : null,
-    h("button", { klasse: "knopf primaer mit-logo", type: "button", "data-aktion": "github-anmelden", aufClick: starte }, markenLogo("github", 14, { dekorativ: true }), h("span", { text: meldung ? T.nochmal : T.anmelden })));
+    baueKnopf({ variante: "primaer", klasse: "mit-logo", aktion: "github-anmelden", aufKlick: starte, kinder: [markenLogo("github", 14, { dekorativ: true }), h("span", { text: meldung ? T.nochmal : T.anmelden })] }));
 
   const zeigeFertig = (login) => {
     setze(h("div", { klasse: "w-ok", "data-zustand": "fertig" }, symbol("kreis-haken", 14), h("span", { text: T.erfolg(login) })),
-      h("button", { klasse: "knopf", type: "button", "data-aktion": "github-abmelden", text: T.abmelden, aufClick: abmelden }));
+      baueKnopf({ text: T.abmelden, aktion: "github-abmelden", aufKlick: abmelden }));
     if (!gemeldet) { gemeldet = true; try { beiAngemeldet?.({ login: login || null }); } catch (e) { console.error(e); } }
   };
 
   function zeigeWarten(z) {
     const meld = h("div", { klasse: "w-aktion-text", role: "status" });
-    const knopf = h("button", { klasse: "knopf primaer", type: "button", "data-aktion": "github-kopieren-oeffnen", text: T.kopierenOeffnen });
+    const knopf = baueKnopf({ text: T.kopierenOeffnen, variante: "primaer", aktion: "github-kopieren-oeffnen" });
     knopf.addEventListener("click", async () => {
       try { await navigator.clipboard.writeText(z.code); meld.textContent = T.kopiert; } catch { meld.textContent = T.kopierFehler; }
       if (!(inApp() && aktion("extern", z.url))) window.open(z.url, "_blank", "noopener");
@@ -42,7 +43,7 @@ export function baueGitHubKarte({ beiAngemeldet } = {}) {
       h("div", { klasse: "w-github-code", "aria-label": T.codeLabel, "data-code": "", text: z.code }),
       knopf, meld,
       h("div", { klasse: "w-arbeit links" }, h("span", { klasse: "w-dreh", "aria-hidden": "true" }), h("span", { text: T.wartet })),
-      h("button", { klasse: "knopf", type: "button", "data-aktion": "github-abbrechen", text: T.abbrechen, aufClick: abmelden }));
+      baueKnopf({ text: T.abbrechen, aktion: "github-abbrechen", aufKlick: abmelden }));
   }
 
   async function beobachte() {

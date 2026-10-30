@@ -1,6 +1,6 @@
 // Dialog „Remote hinzufügen“: Adresse eingeben, prüfen lassen, verbinden.
 import { h, dialog, arbeitBeginnt, ausTabelle } from "./hilfen.js";
-import { textfeld } from "./bausteine.js";
+import { textfeld, knopf as baueKnopf, setzeLaedt } from "./bausteine.js";
 import { symbol } from "./symbole.js";
 import { markenLogo } from "./marken.js";
 import { api, gitGesperrt, ausgangUnklar, zeitText, ladeStandNeu } from "./api.js";
@@ -34,8 +34,8 @@ export function oeffneRemoteDialog({ beiFertig, beiStandNeu } = {}) {
   const adressFeld = textfeld({ id: "rm-adresse", platzhalter: TV.remote.platzhalter, beschreibung: "rm-hinweis rm-meldung", daten: { "data-feld": "adresse" } });
   const eingabe = adressFeld.input;
   const meldung = h("div", { klasse: "rm-meldung", id: "rm-meldung", "aria-live": "polite" });
-  const knopf = h("button", { klasse: "knopf primaer", type: "submit", form: "rm-form", "data-aktion": "verbinden" }, h("span", { text: TV.remote.verbinden }));
-  const abbrechen = h("button", { klasse: "knopf", type: "button", "data-aktion": "abbrechen", text: TV.remote.abbrechen });
+  const knopf = baueKnopf({ variante: "primaer", typ: "submit", aktion: "verbinden", daten: { form: "rm-form" }, kinder: [h("span", { text: TV.remote.verbinden })] });
+  const abbrechen = baueKnopf({ text: TV.remote.abbrechen, aktion: "abbrechen" });
   const form = h("form", { klasse: "rm-form", id: "rm-form", novalidate: true },
     h("div", { klasse: "feld" }, h("label", { for: "rm-adresse", text: TV.remote.label }), adressFeld.el),
     h("p", { klasse: "rm-hinweis", id: "rm-hinweis", text: TV.remote.hinweis }),
@@ -60,9 +60,8 @@ export function oeffneRemoteDialog({ beiFertig, beiStandNeu } = {}) {
   const beschaeftigt = (an) => {
     laeuft = an;
     eingabe.disabled = an;
-    knopf.disabled = an;
+    setzeLaedt(knopf, an); // Spinner im Knopf (erscheint erst nach ~140 ms), die Breite bleibt
     abbrechen.disabled = an;
-    knopf.replaceChildren(...(an ? [h("span", { klasse: "rm-spinner", "aria-hidden": "true" }), h("span", { text: TV.remote.verbinden })] : [h("span", { text: TV.remote.verbinden })]));
   };
 
   abbrechen.addEventListener("click", () => d.schliessen());
@@ -84,8 +83,7 @@ export function oeffneRemoteDialog({ beiFertig, beiStandNeu } = {}) {
       const r = await api.gitRemote(url);
       clearTimeout(spaet);
       verbunden = true;
-      eingabe.disabled = true; knopf.disabled = true; abbrechen.disabled = true;
-      knopf.replaceChildren(h("span", { text: TV.remote.verbinden }));
+      eingabe.disabled = true; setzeLaedt(knopf, false); knopf.disabled = true; abbrechen.disabled = true;
       zeige("erfolg", r?.ergebnis === "gesendet" ? TV.remote.erfolgGesendet : r?.ergebnis === "geholt" ? TV.remote.erfolgGeholt : TV.remote.erfolg, "haken");
       setTimeout(() => { melde(); d.schliessen(); }, r?.ergebnis === "gesendet" || r?.ergebnis === "geholt" ? 1600 : 800);
     } catch (err) {

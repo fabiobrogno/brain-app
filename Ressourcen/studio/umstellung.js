@@ -3,6 +3,7 @@
 //   Befund in vier Gruppen · Entscheidungen · Schritt 1 Probelauf an einer Kopie · Schritt 2 Umstellen · Rückweg · Protokoll · Kopie löschen.
 // Geschrieben wird nur nach einem Klick (die Routen verlangen bestaetigt: true). Kein innerHTML mit fremden Daten: alles über h() und textContent.
 import { h, dialog, arbeitBeginnt, toast, speichereLokal, leseLokal } from "./hilfen.js";
+import { knopf as baueKnopf, hakenFeld } from "./bausteine.js";
 import { symbol } from "./symbole.js";
 import { api as standardApi, nichtVertraut, ausgangUnklar } from "./api.js";
 import { TU } from "./texte-umstellung.js";
@@ -73,8 +74,8 @@ export async function leseUmstellungHinweis(api = standardApi) {
 }
 export function baueUmstellungBanner({ beiOeffnen, beiZu } = {}) {
   ladeUmstellungCss();
-  const auf = h("button", { klasse: "knopf primaer", type: "button", "data-aktion": "umstellung-banner-oeffnen", text: TU.banner.knopf, aufClick: () => beiOeffnen?.() });
-  const zu = h("button", { klasse: "knopf", type: "button", "data-aktion": "umstellung-banner-zu", title: TU.banner.zuTitel, text: TU.banner.zu, aufClick: () => beiZu?.() });
+  const auf = baueKnopf({ text: TU.banner.knopf, variante: "primaer", aktion: "umstellung-banner-oeffnen", aufKlick: () => beiOeffnen?.() });
+  const zu = baueKnopf({ text: TU.banner.zu, aktion: "umstellung-banner-zu", titel: TU.banner.zuTitel, aufKlick: () => beiZu?.() });
   return h("div", { klasse: "banner kit um-banner", role: "status", "data-banner": "umstellung" },
     zeichen("info", 14),
     h("div", { klasse: "b-text" }, h("div", { klasse: "b-titel", text: TU.banner.titel }), h("div", { klasse: "b-sub", text: TU.banner.text })),
@@ -110,8 +111,8 @@ export function oeffneUmstellungDialog({ api = standardApi, vault = null, vertra
   const haupt = h("div", { klasse: "um-haupt" }, secHinweis, secBefund, secProbe, secUmstellen, secRueckweg, secKopie);
   const secProtokoll = h("div", { klasse: "um-haupt", "data-um": "protokoll", hidden: true });
   const rumpf = h("div", { klasse: "um-rumpf" }, haupt, secProtokoll);
-  const protokollKnopf = h("button", { klasse: "knopf", type: "button", "data-aktion": "umstellung-protokoll", text: TU.protokoll.knopf, aufClick: () => zeigeProtokoll() });
-  const zuKnopf = h("button", { klasse: "knopf gross", type: "button", "data-aktion": "umstellung-schliessen", text: TU.schliessen, aufClick: () => { if (S.ansicht === "protokoll") { S.ansicht = "haupt"; zeichneAnsicht(); } else d.schliessen(); } });
+  const protokollKnopf = baueKnopf({ text: TU.protokoll.knopf, aktion: "umstellung-protokoll", aufKlick: () => zeigeProtokoll() });
+  const zuKnopf = baueKnopf({ text: TU.schliessen, groesse: "l", aktion: "umstellung-schliessen", aufKlick: () => { if (S.ansicht === "protokoll") { S.ansicht = "haupt"; zeichneAnsicht(); } else d.schliessen(); } });
   const box = h("div", { klasse: "dialog um-dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "um-titel", "data-dialog": "umstellung" },
     h("div", { klasse: "um-kopf" }, h("h2", { klasse: "um-titel", id: "um-titel", text: TU.titel }), intro),
     rumpf,
@@ -230,13 +231,13 @@ export function oeffneUmstellungDialog({ api = standardApi, vault = null, vertra
       const satz = nichtVertraut(S.fehler) ? null : (S.fehler.message || TU.fehler.laden);
       teile.push(h("div", { klasse: "um-karte fehler", role: "alert", "data-um": "fehler" },
         h("p", { text: satz || TU.fehler.laden }),
-        h("div", { klasse: "um-zeile-knoepfe" }, h("button", { klasse: "knopf", type: "button", "data-aktion": "umstellung-nochmal", text: TU.fehler.nochmal, aufClick: () => lade() }))));
+        h("div", { klasse: "um-zeile-knoepfe" }, baueKnopf({ text: TU.fehler.nochmal, aktion: "umstellung-nochmal", aufKlick: () => lade() }))));
     }
     if (S.nichtVertraut) {
       teile.push(h("div", { klasse: "um-karte warn", role: "alert", "data-um": "nicht-vertraut" },
         h("p", { klasse: "um-karte-titel", text: TU.nichtVertraut.titel }),
         h("p", { text: TU.nichtVertraut.text }),
-        h("div", { klasse: "um-zeile-knoepfe" }, h("button", { klasse: "knopf primaer", type: "button", "data-aktion": "umstellung-vertrauen", text: TU.nichtVertraut.knopf, aufClick: () => { d.schliessen(); beiVertrauen?.(); } }))));
+        h("div", { klasse: "um-zeile-knoepfe" }, baueKnopf({ text: TU.nichtVertraut.knopf, variante: "primaer", aktion: "umstellung-vertrauen", aufKlick: () => { d.schliessen(); beiVertrauen?.(); } }))));
     }
     secHinweis.replaceChildren(...teile);
   }
@@ -255,27 +256,25 @@ export function oeffneUmstellungDialog({ api = standardApi, vault = null, vertra
     if (key === "weitereMacs") {
       const E = TU.entscheidung.weitereMacs;
       const name = "um-ent-weitereMacs";
-      const radio = (wert, text) => h("label", { klasse: "um-wahl" }, h("input", { type: "radio", name, value: wert, "data-ent": "weitereMacs", checked: S.ent.weitereMacs === wert, aufChange: () => { S.ent.weitereMacs = wert; geaendert(); zeichneBefund(); } }), h("span", { text }));
+      const radio = (wert, text) => hakenFeld({ typ: "radio", klasse: "um-wahl", text, name, wert, checked: S.ent.weitereMacs === wert, daten: { "data-ent": "weitereMacs" }, aufChange: () => { S.ent.weitereMacs = wert; geaendert(); zeichneBefund(); } });
       return h("fieldset", { klasse: "um-wahlgruppe", "data-wahl": "weitereMacs" }, h("legend", { text: E.frage }), radio("nein", E.nein), radio("ja", E.ja),
         S.ent.weitereMacs === "ja" ? h("p", { klasse: "mini", "data-um": "weitere-macs-hinweis", text: E.jaHinweis }) : null);
     }
     const E = TU.entscheidung[key];
     const name = `um-ent-${key}`;
-    const radio = (wert, text) => h("label", { klasse: "um-wahl" },
-      h("input", { type: "radio", name, value: wert ? "ja" : "nein", "data-ent": key, checked: !!S.ent[key] === wert, aufChange: () => { S.ent[key] = wert; geaendert(); } }), h("span", { text }));
+    const radio = (wert, text) => hakenFeld({ typ: "radio", klasse: "um-wahl", text, name, wert: wert ? "ja" : "nein", checked: !!S.ent[key] === wert, daten: { "data-ent": key }, aufChange: () => { S.ent[key] = wert; geaendert(); } });
     return h("fieldset", { klasse: "um-wahlgruppe", "data-wahl": key }, radio(true, E.ja), radio(false, E.nein), h("p", { klasse: "mini", text: E.rueckweg }));
   }
   function profilBlock() {
     const ps = profile();
     if (ps.length < 2) return null;
-    const boxen = ps.map((p) => h("label", { klasse: "um-wahl" },
-      h("input", { type: "checkbox", "data-profil": p.pfad, checked: (S.ent.profile || []).includes(p.pfad), aufChange: (ev) => {
+    const boxen = ps.map((p) => hakenFeld({ klasse: "um-wahl", text: p.standard ? `${p.name} (${TU.profile.standard})` : p.name, checked: (S.ent.profile || []).includes(p.pfad), daten: { "data-profil": p.pfad },
+      aufChange: (an1) => {
         const an = new Set(S.ent.profile || []);
-        if (ev.target.checked) an.add(p.pfad); else an.delete(p.pfad);
+        if (an1) an.add(p.pfad); else an.delete(p.pfad);
         S.ent.profile = ps.map((x) => x.pfad).filter((x) => an.has(x));
         geaendert(); zeichneBefund();
-      } }),
-      h("span", { text: p.standard ? `${p.name} (${TU.profile.standard})` : p.name })));
+      } }));
     return h("fieldset", { klasse: "um-wahlgruppe", "data-wahl": "profile" }, h("legend", { text: TU.profile.titel }), boxen,
       h("p", { klasse: "mini", text: (S.ent.profile || []).length ? TU.profile.hinweis : TU.profile.keins }));
   }
@@ -322,7 +321,7 @@ export function oeffneUmstellungDialog({ api = standardApi, vault = null, vertra
     const teile = [h("h3", { klasse: "um-schritt-titel", text: TU.probe.titel }), h("p", { text: TU.probe.text }), h("p", { klasse: "mini", text: TU.probe.platz })];
     if (gesperrt) teile.push(h("p", { klasse: "um-sperre", "data-um": "sperre", text: TU.probe.gesperrt }), h("p", { klasse: "mini", text: TU.blockerSperre }));
     if (p.platzFehler) {
-      teile.push(h("label", { klasse: "um-wahl" }, h("input", { type: "checkbox", "data-ent": "nachbarkopie", checked: !!S.ent.nachbarkopie, aufChange: (ev) => { S.ent.nachbarkopie = ev.target.checked; geaendert(); } }), h("span", { text: TU.probe.nachbarkopie })),
+      teile.push(hakenFeld({ klasse: "um-wahl", text: TU.probe.nachbarkopie, checked: !!S.ent.nachbarkopie, daten: { "data-ent": "nachbarkopie" }, aufChange: (an) => { S.ent.nachbarkopie = an; geaendert(); } }),
         h("p", { klasse: "mini", text: TU.probe.nachbarkopieHinweis }));
     }
     if (p.laeuft) {
@@ -349,7 +348,7 @@ export function oeffneUmstellungDialog({ api = standardApi, vault = null, vertra
     }
     const hatErgebnis = !!p.ergebnis || !!S.stand?.probelauf;
     teile.push(h("div", { klasse: "um-zeile-knoepfe" },
-      h("button", { klasse: `knopf gross${hatErgebnis ? "" : " primaer"}`, type: "button", "data-aktion": "umstellung-probelauf", disabled: gesperrt || p.laeuft || S.um.laeuft || S.nichtVertraut, text: hatErgebnis ? TU.probe.wiederholen : TU.probe.start, aufClick: probelaufStarten })));
+      baueKnopf({ text: hatErgebnis ? TU.probe.wiederholen : TU.probe.start, variante: hatErgebnis ? "sekundaer" : "primaer", groesse: "l", aktion: "umstellung-probelauf", disabled: gesperrt || p.laeuft || S.um.laeuft || S.nichtVertraut, aufKlick: probelaufStarten, laedt: !!p.laeuft })));
     secProbe.replaceChildren(h("div", { klasse: "um-karte", "data-schritt": "1" }, teile));
   }
   async function probelaufStarten() {
@@ -435,12 +434,12 @@ export function oeffneUmstellungDialog({ api = standardApi, vault = null, vertra
       teile.push(h("div", { klasse: "um-bestaetigung", role: "alertdialog", "aria-label": TU.umstellen.frageTitel, "data-um": "bestaetigung" },
         h("p", { klasse: "um-karte-titel", text: TU.umstellen.frageTitel }), h("p", { text: TU.umstellen.frageText }), h("p", { klasse: "mini", text: TU.umstellen.frageNeustart }),
         h("div", { klasse: "um-zeile-knoepfe" },
-          h("button", { klasse: "knopf", type: "button", "data-aktion": "umstellung-abbrechen", text: TU.umstellen.abbrechen, autofocus: true, aufClick: () => { S.um.frage = false; zeichneUmstellen(); } }),
-          h("button", { klasse: "knopf primaer", type: "button", "data-aktion": "umstellung-bestaetigen", text: TU.umstellen.bestaetigen, aufClick: phaseAStarten }))));
+          baueKnopf({ text: TU.umstellen.abbrechen, aktion: "umstellung-abbrechen", autofocus: true, aufKlick: () => { S.um.frage = false; zeichneUmstellen(); } }),
+          baueKnopf({ text: TU.umstellen.bestaetigen, variante: "primaer", aktion: "umstellung-bestaetigen", aufKlick: phaseAStarten }))));
     } else if (!u.laeuft) {
       const weiter = unterbrochen(S.stand) || u.ergebnis?.ok === false;
       teile.push(h("div", { klasse: "um-zeile-knoepfe" },
-        h("button", { klasse: "knopf primaer gross", type: "button", "data-aktion": "umstellung-umstellen", disabled: !gruen || S.nichtVertraut || S.probe.laeuft, text: weiter ? TU.umstellen.weiter : TU.umstellen.start, aufClick: () => { S.um.frage = true; zeichneUmstellen(); } })));
+        baueKnopf({ text: weiter ? TU.umstellen.weiter : TU.umstellen.start, variante: "primaer", groesse: "l", aktion: "umstellung-umstellen", disabled: !gruen || S.nichtVertraut || S.probe.laeuft, aufKlick: () => { S.um.frage = true; zeichneUmstellen(); } })));
     }
     secUmstellen.replaceChildren(h("div", { klasse: "um-karte", "data-schritt": "2" }, teile));
     if (u.frage && !u.laeuft) secUmstellen.querySelector('[data-aktion="umstellung-abbrechen"]')?.focus();
@@ -495,7 +494,7 @@ export function oeffneUmstellungDialog({ api = standardApi, vault = null, vertra
       return h("li", { klasse: "um-rw-zeile", "data-rueckweg": s.id, "data-status": status },
         marke(statusArt(status)), h("span", { klasse: "um-schritt-name", text: schrittName(s.id) }),
         h("span", { klasse: "um-schritt-status", text: Object.hasOwn(R.status, status) ? R.status[status] : status }),
-        h("button", { klasse: "knopf", type: "button", "data-aktion": "umstellung-rueckweg-schritt", "data-schritt": s.id, disabled: !s.hatRueckweg || !!S.rw.laeuft || S.um.laeuft || S.probe.laeuft, text: laeuftHier ? R.laeuft : R.schritt, aufClick: () => zuruecknehmen({ schritte: [s.id] }) }));
+        baueKnopf({ text: laeuftHier ? R.laeuft : R.schritt, aktion: "umstellung-rueckweg-schritt", disabled: !s.hatRueckweg || !!S.rw.laeuft || S.um.laeuft || S.probe.laeuft, aufKlick: () => zuruecknehmen({ schritte: [s.id] }), daten: { "data-schritt": s.id } }));
     });
     if (zeilen.length) teile.push(h("ul", { klasse: "um-rw-liste", "data-um": "rueckweg-liste" }, zeilen));
     const kannAlles = sichtbar.some((s) => s.hatRueckweg);
@@ -503,10 +502,10 @@ export function oeffneUmstellungDialog({ api = standardApi, vault = null, vertra
       teile.push(h("div", { klasse: "um-bestaetigung", role: "alertdialog", "aria-label": R.allesFrage, "data-um": "rueckweg-bestaetigung" },
         h("p", { klasse: "um-karte-titel", text: R.allesFrage }), h("p", { text: R.allesText }),
         h("div", { klasse: "um-zeile-knoepfe" },
-          h("button", { klasse: "knopf", type: "button", "data-aktion": "umstellung-rueckweg-nein", text: TU.umstellen.abbrechen, autofocus: true, aufClick: () => { S.rw.frageAlles = false; zeichneRueckweg(); } }),
-          h("button", { klasse: "knopf gefahr", type: "button", "data-aktion": "umstellung-rueckweg-alles-ja", text: R.allesBestaetigen, aufClick: () => zuruecknehmen({ alles: true }) }))));
+          baueKnopf({ text: TU.umstellen.abbrechen, aktion: "umstellung-rueckweg-nein", autofocus: true, aufKlick: () => { S.rw.frageAlles = false; zeichneRueckweg(); } }),
+          baueKnopf({ text: R.allesBestaetigen, variante: "gefahr", aktion: "umstellung-rueckweg-alles-ja", aufKlick: () => zuruecknehmen({ alles: true }) }))));
     } else if (sichtbar.length) {
-      teile.push(h("div", { klasse: "um-zeile-knoepfe" }, h("button", { klasse: "knopf", type: "button", "data-aktion": "umstellung-rueckweg-alles", disabled: !kannAlles || !!S.rw.laeuft || S.um.laeuft || S.probe.laeuft, text: R.alles, aufClick: () => { S.rw.frageAlles = true; zeichneRueckweg(); } })));
+      teile.push(h("div", { klasse: "um-zeile-knoepfe" }, baueKnopf({ text: R.alles, aktion: "umstellung-rueckweg-alles", disabled: !kannAlles || !!S.rw.laeuft || S.um.laeuft || S.probe.laeuft, aufKlick: () => { S.rw.frageAlles = true; zeichneRueckweg(); } })));
     }
     if (S.rw.laeuft) teile.push(h("div", { klasse: "um-fortschritt", role: "status" }, h("span", { klasse: "um-balken", role: "progressbar", "aria-label": R.laeuft }, h("span", { klasse: "um-balken-fuell" })), h("p", { text: R.laeuft })));
     const e = S.rw.ergebnis;
@@ -552,7 +551,7 @@ export function oeffneUmstellungDialog({ api = standardApi, vault = null, vertra
     if (secKopie.hidden) { secKopie.replaceChildren(); return; }
     secKopie.replaceChildren(h("div", { klasse: "um-karte schmal", "data-um": "kopie-karte" },
       h("p", { klasse: "um-kopie-text", text: `${TU.kopie.hinweis(n)} ${TU.kopie.frage}` }),
-      h("div", { klasse: "um-zeile-knoepfe" }, h("button", { klasse: "knopf", type: "button", "data-aktion": "umstellung-kopie-loeschen", disabled: S.kopie.laeuft || S.probe.laeuft || S.um.laeuft, text: TU.kopie.knopf, aufClick: kopieLoeschen }))));
+      h("div", { klasse: "um-zeile-knoepfe" }, baueKnopf({ text: TU.kopie.knopf, aktion: "umstellung-kopie-loeschen", disabled: S.kopie.laeuft || S.probe.laeuft || S.um.laeuft, aufKlick: kopieLoeschen }))));
   }
   async function kopieLoeschen() {
     if (S.kopie.laeuft) return;
@@ -584,7 +583,7 @@ export function oeffneUmstellungDialog({ api = standardApi, vault = null, vertra
     if (p.daten) {
       const ort = `${p.daten.ordner}/${p.daten.datei}`;
       teile.push(h("div", { klasse: "um-ort" }, h("span", { klasse: "um-ort-label", text: P.ort }), h("code", { klasse: "um-ort-pfad", "data-um": "protokoll-ort", text: ort }),
-        h("button", { klasse: "knopf", type: "button", "data-aktion": "umstellung-ort-kopieren", text: P.kopieren, aufClick: async () => { try { await navigator.clipboard.writeText(ort); toast(P.kopiert); } catch { /* ohne Zwischenablage */ } } })));
+        baueKnopf({ text: P.kopieren, aktion: "umstellung-ort-kopieren", aufKlick: async () => { try { await navigator.clipboard.writeText(ort); toast(P.kopiert); } catch { /* ohne Zwischenablage */ } } })));
       if (!p.daten.zeilen.length) teile.push(h("p", { klasse: "um-leer", text: P.leer }));
       else {
         if (p.daten.gekuerzt) teile.push(h("p", { klasse: "mini", text: P.gekuerzt(p.daten.zeilen.length, p.daten.gesamt) }));
