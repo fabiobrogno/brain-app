@@ -48,6 +48,7 @@ let offen = 0, stdinZu = false, beendet = false;
 function beende() {
   if (beendet) return;
   beendet = true;
+  try { handler.ereignisse.beende(); } catch { /* wartende Ereignis-Abrufe sofort beantworten: sie halten sonst das Ende bis zu 30 s auf */ }
   process.stdout.write("", () => process.exit(0)); // Callback erst, wenn alles Vorherige geschrieben ist
 }
 const vielleichtEnde = () => { if (stdinZu && offen === 0) beende(); };
@@ -77,7 +78,7 @@ rl.on("line", (zeile) => {
   offen++;
   bearbeite(zeile).finally(() => { offen--; vielleichtEnde(); });
 });
-rl.on("close", () => { stdinZu = true; vielleichtEnde(); });
+rl.on("close", () => { stdinZu = true; try { handler.ereignisse.beende(); } catch { /* s. beende() */ } vielleichtEnde(); });
 // SIGTERM/SIGINT (die App beendet uns nach 2 s): zuerst laufende Git-Prozessgruppen beenden und einen gerade laufenden Merge des Abgleichs
 // mit `git merge --abort` zurücknehmen (synchron, höchstens ~1,5 s) — sonst bliebe der Vault halb zusammengeführt —, dann zurücknehmen, was
 // ein laufendes Anlegen/Klonen/„Git einschalten“ schon im Dateisystem angelegt hat (dessen catch läuft nach dem Beenden nie mehr), dann beenden.
@@ -88,4 +89,5 @@ const abraeumenUndEnde = () => {
 };
 process.on("SIGTERM", abraeumenUndEnde);
 process.on("SIGINT", abraeumenUndEnde);
+try { handler.ereignisse.aktiviere(); } catch { /* ohne Beobachtung bleibt es bei den bisherigen Wegen */ } // schon vor dem ersten Abruf beobachten: kein Ereignis geht zwischen App-Start und Studio verloren
 sende({ bereit: true, version: appVersionLesen(), vaultId });

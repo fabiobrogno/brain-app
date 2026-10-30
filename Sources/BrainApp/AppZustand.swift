@@ -452,6 +452,10 @@ final class AppZustand: ObservableObject {
             log.schreibe("aktion vertrauen-geaendert")
             Task { await aktualisiere() }
             return ok
+        case .statusAuffrischen:
+            // Live-Aktualisierung: im Vault hat sich etwas geändert (Aufgaben, Posteingang …). Bewusst ohne Log: kommt bei jeder Änderung.
+            planeStatusAuffrischung()
+            return ok
         case .titel(let text):
             // Bewusst ohne Log: Die Oberfläche meldet den Titel bei jeder Notiz (Notiztitel gehören nicht ins Protokoll).
             studio.setzeTitel(text)
@@ -460,6 +464,18 @@ final class AppZustand: ObservableObject {
             // JavaScript-Fehler der Studio-Oberfläche (Fehlerhaken): ohne Hinweis darauf bliebe ein weißes Fenster stumm.
             log.schreibe("js-fehler \(ort) \(text)")
             return ok
+        }
+    }
+
+    /// Live-Aktualisierung: Meldungen des Studios („im Vault hat sich etwas geändert“) bündeln und drosseln, dann den Status (Zähler der Menüleiste) neu lesen.
+    private var auffrischung = StatusAuffrischung()
+    private func planeStatusAuffrischung() {
+        guard let wann = auffrischung.anfordern(jetzt: Date()) else { return } // ein Lauf ist schon geplant: er liest ohnehin den neuesten Stand
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(max(0, wann.timeIntervalSinceNow)))
+            guard let self else { return }
+            self.auffrischung.gelaufen(jetzt: Date())
+            await self.aktualisiere()
         }
     }
 

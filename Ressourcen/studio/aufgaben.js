@@ -518,6 +518,7 @@ export function baueAufgaben(host, ctx) {
     st.drag = null;
     st.landet = z.a.pfad;
     const bewegt = ziel ? verschiebe(z.a, ziel.status, ziel.davor, ziel.danach) : false;
+    if (st.nachZug) { st.nachZug = false; if (unterwegs > 0) nachladen = true; else lade({ leise: true }); } // Live-Ereignis während des Ziehens: jetzt nachholen (nach der eigenen Änderung)
     if (!bewegt) zeichne(); // Platzhalter zurück, Änderungen von außen nachholen
     const neu = brett.querySelector(`[data-karte-aufgabe][data-pfad="${CSS.escape(z.a.pfad)}"]`);
     const fertig = () => { z.geist.remove(); if (st.landet === z.a.pfad) st.landet = null; brett.querySelector(`[data-pfad="${CSS.escape(z.a.pfad)}"]`)?.classList.remove("landet"); };
@@ -572,7 +573,7 @@ export function baueAufgaben(host, ctx) {
     fokusErfassen: () => { eingabe.focus(); eingabe.select(); },
     zerstoere: () => { st.weg = true; if (zug) { zugAbmelden(); zug.geist?.remove(); zug = null; document.body.classList.remove("au-zieht-aktiv"); st.drag = null; } host.replaceChildren(); },
     // Stand von außen (Index hat sich geändert): leise nachladen, aber nicht mitten im Ziehen
-    aktualisiere: () => { if (!st.drag) return lade({ leise: true }); },
+    aktualisiere: () => { if (!st.drag) return lade({ leise: true }); st.nachZug = true; }, // mitten im Ziehen nicht anfassen (die Karte würde springen): nach dem Loslassen nachholen
     liste: () => st.liste,
   };
 }
