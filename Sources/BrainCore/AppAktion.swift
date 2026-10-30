@@ -173,6 +173,9 @@ public enum StudioBefehl: String, Sendable, CaseIterable {
     case einstellungen
     /// Menüleiste „Vault umstellen …“ (nur, wenn der Status Altlasten meldet): öffnet im Studio die Umstellungs-Ansicht (P7c).
     case umstellung
+    /// Aufgaben-Board öffnen (Menü „Gehe zu“, Menüleiste bei offenen Aufgaben) und „Aufgabe erfassen …“ (Board mit Eingabefeld im Fokus).
+    case aufgaben
+    case aufgabeErfassen = "aufgabe-erfassen"
 
     public var skript: String { "window.studio?.befehl('\(rawValue)')" }
 }

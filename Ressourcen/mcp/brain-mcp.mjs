@@ -13,6 +13,7 @@ import { bereinigePfad } from "../gemeinsam/basis.mjs";
 import { leseKopf } from "../gemeinsam/pruefung.mjs";
 import { protokolliere } from "../gemeinsam/nutzung.mjs";
 import { leseAntwort, begrenzeKontext } from "../gemeinsam/ki-antworten.mjs";
+import { AUFGABEN_WERKZEUGE, istAufgabenWerkzeug, rufeAufgabenWerkzeug } from "./aufgaben-werkzeuge.mjs";
 
 const VERSIONEN = ["2025-06-18", "2025-03-26", "2024-11-05"];
 export const WERKZEUGE = [
@@ -30,7 +31,12 @@ export const WERKZEUGE = [
     inputSchema: { type: "object", properties: { pfad: { type: "string" }, max: { type: "integer", minimum: 1, maximum: 100, description: "Standard 20" } }, required: ["pfad"], additionalProperties: false } },
   { name: "brain_kontext", description: "Kontext-Paket zum aktuellen Projekt: bis zu 4 passende Seiten des Vaults (Pfad, Titel, Stand, Prüf-Stufe, ein Satz). Zu Beginn einer Sitzung mit dem Projektnamen aufrufen.",
     inputSchema: { type: "object", properties: { projekt: { type: "string", description: "Repo- oder Ordnername des Projekts" }, cwd: { type: "string", description: "Arbeitsordner (optional); schärft die Zuordnung über `pfade`" } }, required: ["projekt"], additionalProperties: false } },
+  ...AUFGABEN_WERKZEUGE,   // Aufgaben-Board (eigene Datei, damit der konto-bewusste Umbau sie leicht einbinden kann)
 ];
+
+// Zustand einer MCP-Verbindung (initialize → clientInfo.name, Zahl der angelegten Aufgaben): aus dem Namen wird die Quelle „ki:<client>“. Der Server läuft je
+// Verbindung als eigener Prozess und legt in haupt() eine eigene Sitzung an; die Standard-Sitzung gilt nur für Aufrufe von bearbeite() ohne Angabe (Tests).
+const standardSitzung = { klient: "", angelegt: 0 };
 
 const text = (t) => ({ content: [{ type: "text", text: t }] });
 const fehlerText = (t) => ({ content: [{ type: "text", text: t }], isError: true });
@@ -93,7 +99,7 @@ function kontextBegrenzt(treffer, projekt, spur) {
 
 // v: ein geöffneter Vault, eine Funktion, die den aktuellen liefert (Server ohne Vault-Argument), oder null.
 // spur.seiten sammelt die Seiten, die diese Antwort der KI nennt (für das lokale Nutzungsprotokoll, nutzung.mjs).
-async function rufe(vArg, name, a, spur = { seiten: [] }) {
+async function rufe(vArg, name, a, spur = { seiten: [] }, sitzung = standardSitzung) {
   const v = typeof vArg === "function" ? vArg() : vArg;
   if (name === "brain_vaults") return text(vaultText(v));
   if (!v) return fehlerText(KEIN_VAULT);
@@ -140,12 +146,12 @@ async function rufe(vArg, name, a, spur = { seiten: [] }) {
       if (!eintraege.length) return text("Kein Verlauf gefunden (Datei nicht in Git oder noch nicht committet).");
       return text(eintraege.map((e) => `${e.kurz} ${zeit(e.zeit)} ${e.autor}: ${e.nachricht}`).join("\n"));
     }
-    default: return null;
+    default: return istAufgabenWerkzeug(name) ? rufeAufgabenWerkzeug(v, name, a, sitzung) : null;
   }
 }
 
 // Eine JSON-RPC-Nachricht → Antwortobjekt oder null (Benachrichtigung). Exportiert für Tests.
-export async function bearbeite(v, msg, version = "0.2.0") {
+export async function bearbeite(v, msg, version = "0.2.0", sitzung = standardSitzung) {
   if (!msg || typeof msg !== "object" || msg.jsonrpc !== "2.0" || typeof msg.method !== "string") {
     return { jsonrpc: "2.0", id: msg && msg.id !== undefined ? msg.id : null, error: { code: -32600, message: "Invalid Request" } };
   }
@@ -155,6 +161,8 @@ export async function bearbeite(v, msg, version = "0.2.0") {
   switch (msg.method) {
     case "initialize": {
       const gewollt = msg.params && msg.params.protocolVersion;
+      const ci = msg.params && msg.params.clientInfo;
+      if (ci && typeof ci.name === "string") sitzung.klient = ci.name;
       return ok({ protocolVersion: VERSIONEN.includes(gewollt) ? gewollt : VERSIONEN[0], capabilities: { tools: {} },
         serverInfo: { name: "brain", version }, instructions: "Kortex: durchsuche und lies das Wissen im Vault des Nutzers; merke Neues nur über brain_merken (landet in der Inbox)." });
     }
@@ -172,7 +180,7 @@ export async function bearbeite(v, msg, version = "0.2.0") {
         return antwort;
       };
       try {
-        return ok(merke(await rufe(v, p.name, p.arguments && typeof p.arguments === "object" ? p.arguments : {}, spur)));
+        return ok(merke(await rufe(v, p.name, p.arguments && typeof p.arguments === "object" ? p.arguments : {}, spur, sitzung)));
       } catch (e) {
         if (e instanceof HttpFehler) return ok(merke(fehlerText(e.message)));
         process.stderr.write(`brain-mcp: ${(e && e.stack) || e}\n`);
@@ -199,6 +207,7 @@ function haupt() {
     if (p !== aktuellPfad) { aktuellPfad = p; aktuell = null; if (p) { try { aktuell = oeffneVault(p); } catch { /* nicht lesbar → kein Vault */ } } }
     return aktuell;
   };
+  const sitzung = { klient: "", angelegt: 0 };   // diese Verbindung
   process.stdout.on("error", () => process.exit(0));
   const sende = (o) => process.stdout.write(JSON.stringify(o) + "\n");
   let offen = 0, zu = false;
@@ -212,10 +221,10 @@ function haupt() {
       try { m = JSON.parse(zeile); } catch { return sende({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }); }
       if (Array.isArray(m) && !m.length) return sende({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "Invalid Request" } });
       if (Array.isArray(m)) {
-        const r = (await Promise.all(m.map((x) => bearbeite(v, x)))).filter(Boolean);
+        const r = (await Promise.all(m.map((x) => bearbeite(v, x, undefined, sitzung)))).filter(Boolean);
         if (r.length) sende(r);
       } else {
-        const r = await bearbeite(v, m);
+        const r = await bearbeite(v, m, undefined, sitzung);
         if (r) sende(r);
       }
     })().catch((e) => process.stderr.write(`brain-mcp: ${e}\n`)).finally(() => { offen--; ende(); });

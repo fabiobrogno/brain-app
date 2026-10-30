@@ -14,12 +14,12 @@ const neu = () => { const v = join(mkdtempSync(join(tmpdir(), "brain pfad ")), "
 
 test("Defaults = heutige Ordnernamen", () => {
   const v = neu(); writeFileSync(join(v, "brain.config.json"), "{}");
-  assert.deepEqual(ordner(v), { inbox: "00_inbox", wiki: "09_wiki", archiv: "90_archiv" });
+  assert.deepEqual(ordner(v), { inbox: "00_inbox", wiki: "09_wiki", archiv: "90_archiv", aufgaben: "05_aufgaben" });
 });
 test("Config überschreibt Ordnernamen, alter Schlüssel wiki.ordner gilt weiter", () => {
   const v = neu();
   writeFileSync(join(v, "brain.config.json"), JSON.stringify({ ordner: { inbox: "inbox", archiv: "archiv" }, wiki: { ordner: "wiki" } }));
-  assert.deepEqual(ordner(v), { inbox: "inbox", wiki: "wiki", archiv: "archiv" });
+  assert.deepEqual(ordner(v), { inbox: "inbox", wiki: "wiki", archiv: "archiv", aufgaben: "05_aufgaben" });
 });
 const ohneUmgebung = (extra = {}) => ({ ...process.env, BRAIN_VAULT: "", BRAIN_APP_SUPPORT: join(tmpdir(), "pfad-test-leer-nie-vorhanden"), ...extra });
 
@@ -269,13 +269,13 @@ test("gitAnzeige: ohne Config fällt auf den bisherigen Rückfall zurück (win32
 test("ordner(): nur ein einzelnes relatives Segment — '../aussen', Absolutes, Pfade, Shell-Zeichen fallen auf den Standard (landen so nie in Pfaden, Hooks, gerenderten Texten)", () => {
   const v = neu();
   const mit = (o) => ordner(v, o);
-  assert.deepEqual(mit({ ordner: { inbox: "../aussen", wiki: "/tmp/x", archiv: "a/b" } }), { inbox: "00_inbox", wiki: "09_wiki", archiv: "90_archiv" });
-  assert.deepEqual(mit({ ordner: { inbox: "..", wiki: ".", archiv: "" } }), { inbox: "00_inbox", wiki: "09_wiki", archiv: "90_archiv" });
-  assert.deepEqual(mit({ ordner: { wiki: "$(evil)", inbox: "x y", archiv: "a;b" } }), { inbox: "00_inbox", wiki: "09_wiki", archiv: "90_archiv" });
+  assert.deepEqual(mit({ ordner: { inbox: "../aussen", wiki: "/tmp/x", archiv: "a/b", aufgaben: "../x" } }), { inbox: "00_inbox", wiki: "09_wiki", archiv: "90_archiv", aufgaben: "05_aufgaben" });
+  assert.deepEqual(mit({ ordner: { inbox: "..", wiki: ".", archiv: "" } }), { inbox: "00_inbox", wiki: "09_wiki", archiv: "90_archiv", aufgaben: "05_aufgaben" });
+  assert.deepEqual(mit({ ordner: { wiki: "$(evil)", inbox: "x y", archiv: "a;b" } }), { inbox: "00_inbox", wiki: "09_wiki", archiv: "90_archiv", aufgaben: "05_aufgaben" });
   assert.equal(mit({ wiki: { ordner: "../aussen" } }).wiki, "09_wiki", "auch der ältere Schlüssel wiki.ordner");
   assert.equal(mit({ ordner: { wiki: "../aussen" }, wiki: { ordner: "Wissen" } }).wiki, "Wissen", "ungültig → nächster Schlüssel → Standard");
-  assert.deepEqual(mit({ ordner: { inbox: "Eingang_Ü", wiki: "wiki-1.x", archiv: "90_archiv" } }), { inbox: "Eingang_Ü", wiki: "wiki-1.x", archiv: "90_archiv" });
-  assert.deepEqual(mit({ ordner: { inbox: 5, wiki: null, archiv: ["x"] } }), { inbox: "00_inbox", wiki: "09_wiki", archiv: "90_archiv" });
+  assert.deepEqual(mit({ ordner: { inbox: "Eingang_Ü", wiki: "wiki-1.x", archiv: "90_archiv", aufgaben: "Todo" } }), { inbox: "Eingang_Ü", wiki: "wiki-1.x", archiv: "90_archiv", aufgaben: "Todo" });
+  assert.deepEqual(mit({ ordner: { inbox: 5, wiki: null, archiv: ["x"] } }), { inbox: "00_inbox", wiki: "09_wiki", archiv: "90_archiv", aufgaben: "05_aufgaben" });
 });
 test("renderVorlage: {{WIKI}}/{{INBOX}}/{{ARCHIV}} aus einer Vault-Config mit Pfad oder Shell-Zeichen werden zum Standard (Prompt-Injection in ~/.claude*/commands)", () => {
   const v = neu();
