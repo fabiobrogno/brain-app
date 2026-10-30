@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { registriereVault, registrierteVaults } from "./vault-schutz.mjs";
 import { vertrauensStand, alleVertraut } from "./vertrauen.mjs";
+import { kontoStufe, darfMindestens } from "./ki-konten.mjs";
 
 export const KERN = dirname(fileURLToPath(import.meta.url));
 
@@ -182,6 +183,14 @@ export function tageslaufArbeitsbaumWurzeln(env = process.env) {
   if ((env.KORTEX_KERN_UNSTABIL_ERLAUBT === "1" || env.BRAIN_TESTMODUS === "1") && env.BRAIN_TAGESLAUF_CACHE && isAbsolute(env.BRAIN_TAGESLAUF_CACHE)) w.push(env.BRAIN_TAGESLAUF_CACHE);
   return w;
 }
+// KI-Konten (docs/plaene/ki-konten.md): welche Stufe hat das Konto dieses Aufrufs im Vault? Ein Hook läuft immer in Claude Code und erbt dessen Umgebung: fehlt
+// CLAUDE_CONFIG_DIR, ist es das Standardprofil. Konto = --konto (Hook-Befehl) und Umgebung; bei Widerspruch gilt das strengere Recht. Defekte Liste → gesperrt.
+export function hookKontoStufe(vault, opt = {}) {
+  return kontoStufe(vault, { support: typeof opt.support === "string" ? opt.support : supportOrdner(opt),
+    arg: opt.kontoArg !== undefined ? opt.kontoArg : ARG_KONTO, env: opt.env || process.env, programm: "claude", vollstaendig: true });
+}
+// Darf dieser Aufruf (Konto) in diesem Vault mindestens `mindest` ("lesen" | "posteingang" | "erweitert")?
+export const kontoDarf = (vault, mindest = "lesen", opt = {}) => darfMindestens(hookKontoStufe(vault, opt), mindest);
 export const NICHT_VERTRAUT_TEXT = "Dieser Vault ist in Kortex noch nicht als deiner bestätigt, darum tut der Kern hier nichts, was am Vault etwas ändert (kein git, kein Hintergrunddienst, keine KI-Pflege, keine Hooks). Bestätige ihn im Studio; Lesen und Suchen gehen schon jetzt.";
 // Werkzeug-Einstiege, die am Vault etwas bewirken: ohne Vertrauen Meldung auf stderr und Exit 5.
 export function vertrauterVaultOderEnde(vault, opt = {}) {
@@ -223,6 +232,29 @@ function nimm(argv) {
 }
 export function nimmVaultArg(argv) { return nimm(argv).wert; }
 const ARG = nimm(process.argv);
+
+// --konto <id> bzw. --konto=<id> (KI-Konten, docs/plaene/ki-konten.md): Kortex trägt die Kennung des KI-Kontos beim Verbinden in die Hook-Befehle und den MCP-Eintrag
+// ein. Wie --vault wird sie beim Laden aus process.argv genommen, damit Werkzeuge mit eigener Argumentauswertung sie nie sehen. Ein fehlender oder ungültiger Wert
+// und mehrere verschiedene Werte ergeben "?" — ein Konto, das es nicht gibt (die Stufe ist dann gesperrt), nie ein stiller Rückfall auf „kein Konto“.
+function nimmKonto(argv) {
+  let wert = null;
+  const setze = (w) => { wert = wert === null || wert === w ? w : "?"; };
+  for (let i = 2; i < argv.length;) {
+    const a = argv[i];
+    if (a === "--") break;
+    if (a === "--konto") {
+      const w = argv[i + 1];
+      const gut = typeof w === "string" && w !== "" && !w.startsWith("-");
+      setze(gut ? w : "?"); argv.splice(i, gut ? 2 : 1); continue;
+    }
+    if (typeof a === "string" && a.startsWith("--konto=")) { setze(a.slice(8) || "?"); argv.splice(i, 1); continue; }
+    i++;
+  }
+  return wert;
+}
+const ARG_KONTO = nimmKonto(process.argv);
+// Die mit --konto angegebene Kennung (ungeprüft) oder null.
+export const angegebenesKonto = () => ARG_KONTO;
 // Der mit --vault ausdrücklich angegebene Pfad (ungeprüft) – nur für den Befund der Umstellung (umstellung/cli.mjs), der auch einen Vault beschreibt, den pruefeVault ablehnt.
 export const angegebenerVaultPfad = () => ARG.wert;
 
@@ -256,6 +288,9 @@ export function vaultPfadOderEnde(argv = process.argv, { still = false, ...opt }
     const v = vaultPfad(argv, opt);
     // Hook-Einstiege (still:true) wirken nur in einem vertrauten Vault (P5); sonst enden sie ebenso leise wie ohne Vault.
     if (still && !vaultVertraut(v, opt)) process.exit(0);
+    // KI-Konten: ein Hook liefert nichts für einen Vault, den sein Konto nicht sehen darf. Hilfsprozesse, die ein Hook erst gestartet hat (Suchindex, Aufwärmen …)
+    // und nichts an eine KI liefern, schalten das mit kontoPruefen:false ab; wer mehr als Lesen braucht, nennt `mindest`.
+    if (still && opt.kontoPruefen !== false && !kontoDarf(v, opt.mindest || "lesen", opt)) process.exit(0);
     return v;
   } catch (e) {
     if (!(e instanceof KeinVaultFehler)) throw e;

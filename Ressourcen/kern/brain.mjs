@@ -9,7 +9,7 @@ import { readFileSync, writeFileSync, mkdirSync, statSync, rmSync, existsSync } 
 import { createHash } from "node:crypto";
 import { join, dirname, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { vaultPfad, KeinVaultFehler, ladeConfig, kernVersion, angegebenerVaultPfad, vaultVertraut, NICHT_VERTRAUT_TEXT } from "./pfade.mjs";
+import { vaultPfad, KeinVaultFehler, ladeConfig, kernVersion, angegebenerVaultPfad, angegebenesKonto, vaultVertraut, NICHT_VERTRAUT_TEXT } from "./pfade.mjs";
 import { findeSecrets } from "./secrets-muster.mjs";
 import { minisuche } from "./minisuche.mjs";
 import { qmdAufruf } from "./qmd-befehl.mjs";
@@ -251,7 +251,7 @@ const befehle = {
   // „brain hooks-install [--aus|--stand|--ersetzen]" — core.hooksPath des Vaults auf die Hooks des Kerns (stabiler Pfad); --aus nimmt ihn wieder heraus.
   "hooks-install": (...a) => node("install-git-hooks.mjs", vault, ...a),
   // „brain claude-hooks [--entfernen|--stand] [--claude-home <ordner>]" — Hooks, Statuszeile und Brain-Befehle in Claude Code eintragen bzw. entfernen.
-  "claude-hooks": (...a) => node(join("adapters", "claude-code", "install.mjs"), ...(vault ? [vault] : []), ...a),
+  "claude-hooks": (...a) => node(join("adapters", "claude-code", "install.mjs"), ...(vault ? [vault] : []), ...a, ...(angegebenesKonto() ? ["--konto", angegebenesKonto()] : [])), // --konto nimmt pfade.mjs aus process.argv: hier wieder anhängen
   // „brain umstellung befund [--json] [--claude-home <ordner>]…“ — Befund für Vaults aus der Kit-Zeit (umstellung/, nur lesend). Beschreibt auch einen Vault, den pruefeVault ablehnt.
   umstellung: (...a) => node(join("umstellung", "cli.mjs"), vault || angegebenerVaultPfad() || process.env.BRAIN_VAULT || "", ...a),
   doctor: () => node("doctor.mjs", vault),

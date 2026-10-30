@@ -19,7 +19,7 @@ const STABIL = "/Users/x/Library/Application Support/Kortex/bin/node";
 const ALT_PFADE = ["/Users/x/Library/Application Support/Brain/node/v24.0.0/bin/node", "/Users/x/Library/Application Support/Kortex/node/v24.0.0/bin/node"];
 const vault = () => { const d = tmp(); schreibe(d, "00_inbox/n.md", "# Notiz\n"); return d; };
 const mcpDatei = () => { const m = tmp("brain-mcpdir-"); schreibe(m, "brain-mcp.mjs", "// fake\n"); return join(m, "brain-mcp.mjs"); };
-const handlerFuer = (mcp, extra = {}) => aufruf(erzeugeHandler({ vault: vault(), mcpPfad: mcp, nodePfad: STABIL, vaultOptionen: { support: tmp("brain-support-") }, ...extra }));
+const handlerFuer = (mcp, extra = {}) => aufruf(erzeugeHandler({ kontenAus: true, vault: vault(), mcpPfad: mcp, nodePfad: STABIL, vaultOptionen: { support: tmp("brain-support-") }, ...extra }));
 async function mitPfad(bin, fn) {
   const alt = { PATH: process.env.PATH, EXTRA: process.env.BRAIN_CLAUDE_EXTRA };
   process.env.PATH = `${bin}:${alt.PATH}`; process.env.BRAIN_CLAUDE_EXTRA = "";

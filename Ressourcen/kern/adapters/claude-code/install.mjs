@@ -7,6 +7,9 @@
 // Nutzung: install.mjs [vault] [--claude-home <ordner>] [--ohne-statusline]
 //          install.mjs --entfernen [--claude-home <ordner>]   (nimmt alle Brain-Hooks, die Statuszeile und die Brain-Befehle wieder heraus; Fremdes bleibt)
 //          install.mjs --stand [--claude-home <ordner>]       (eine JSON-Zeile: was eingetragen ist; schreibt nichts)
+//          --konto <id>   Kennung des KI-Kontos (docs/plaene/ki-konten.md): steht in jedem Hook-Befehl (`… hook <name> --konto <id>`), damit der Hook weiß, für welches
+//                         Konto er läuft. Hat das Konto für den Vault keine Stufe („gesperrt“), werden keine Kortex-Befehle für ihn in <profil>/commands geschrieben;
+//                         vorhandene Kortex-Befehle (Marke) werden dann entfernt. Ohne --konto: Altform wie bisher (der Hook erkennt das Konto an CLAUDE_CONFIG_DIR).
 //          install.mjs [vault] --vorschau [--claude-home <ordner>]   (rechnet die Eintragung NUR im Speicher und gibt eine JSON-Zeile aus: { eintraege: [{ereignis, aktion}], restVerweise, geaendert, … };
 //                                                                       schreibt weder settings.json noch Befehle — Probelauf der Umstellung, Paket P7b)
 import { readFileSync, writeFileSync, existsSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, readdirSync, statSync, renameSync, chmodSync, lstatSync, readlinkSync, realpathSync } from "node:fs";
@@ -14,7 +17,8 @@ import { join, dirname, resolve } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
-import { vaultPfadOderEnde, vertrauterVaultOderEnde, kernStabilOderEnde, starterOderEnde, hookBefehl, hookNameAusBefehl, shellQuote, ALT_KIT_ORDNER } from "../../pfade.mjs";
+import { vaultPfadOderEnde, vertrauterVaultOderEnde, kernStabilOderEnde, starterOderEnde, hookBefehl, hookNameAusBefehl, shellQuote, ALT_KIT_ORDNER, angegebenesKonto, supportOrdner } from "../../pfade.mjs";
+import { kontoStufe, darfMindestens, KONTO_ID } from "../../ki-konten.mjs";
 import { nennt } from "../../umstellung/restverweise.mjs";
 // Gleiche Marke wie skills-build.mjs::schreibeGeneriert — hier erneut, weil die Commands jetzt erst in
 // einen Temp-Ordner gerendert und danach HIER (nicht in skills-build.mjs) ins echte Ziel platziert werden,
@@ -123,19 +127,26 @@ function entfernen(home) {
 }
 
 // Stand als eine JSON-Zeile (liest nur): wie viele der Brain-Hooks eingetragen sind, ob die Statuszeile von Brain ist, wie viele Brain-Befehle da sind.
+const KONTO_IM_BEFEHL = /(?:^|\s)--konto[ =]'?(k_[0-9a-f]{8}|[^\s']*)'?(?:\s|$)/;
 function stand(home) {
   const s = liesSettings(join(home, "settings.json"));
   let da = 0, neu = 0;
+  const kontoIds = new Set();
   for (const n of HOOK_DATEIEN) {
     const treffer = Object.values(s.hooks && typeof s.hooks === "object" ? s.hooks : {}).flat().flatMap((e) => (Array.isArray(e?.hooks) ? e.hooks : []))
       .map((h) => h?.command).filter((c) => typeof c === "string" && (hookNameAusBefehl(c) === n || c.includes(`${MARKER}${n}.mjs`)));
     if (treffer.length) da++;
     if (treffer.some((c) => hookNameAusBefehl(c) === n)) neu++;
+    for (const c of treffer) { const m = KONTO_IM_BEFEHL.exec(c); kontoIds.add(m ? m[1] : null); }
   }
   const sl = s.statusLine?.command;
   const statuszeile = !sl ? null : eigeneStatuszeile(sl) ? "brain" : "fremd";
   // „aktiv“ = alle Hooks in der neuen Form (die ältere Form mit Kern-Pfad zählt als veraltet und wird beim Einrichten ersetzt).
-  console.log(JSON.stringify({ hooks: { soll: HOOK_DATEIEN.length, eingetragen: da, neueForm: neu }, statuszeile, befehle: brainCommands(join(home, "commands")).length, aktiv: neu === HOOK_DATEIEN.length }));
+  // konto: die Kennung, die in ALLEN eingetragenen Hook-Befehlen steht (sonst null: keine oder uneinheitlich); mitKonto: alle eingetragenen Hooks tragen eine.
+  const eine = kontoIds.size === 1 ? [...kontoIds][0] : null;
+  const kontoSoll = angegebenesKonto();
+  console.log(JSON.stringify({ hooks: { soll: HOOK_DATEIEN.length, eingetragen: da, neueForm: neu }, statuszeile, befehle: brainCommands(join(home, "commands")).length, aktiv: neu === HOOK_DATEIEN.length,
+    konto: eine, mitKonto: da > 0 && !kontoIds.has(null), ...(kontoSoll ? { kontoStimmt: da > 0 && eine === kontoSoll } : {}) }));
 }
 
 function hauptlauf() {
@@ -151,7 +162,11 @@ const meld = VORSCHAU
 if (args.includes("--entfernen")) return entfernen(home);
 if (args.includes("--stand")) return stand(home);
 // Der Vault (nur für die Commands und die Erkennung älterer Einträge): Argument oder --vault/BRAIN_VAULT/aktiver Vault — immer absolut und geprüft.
+const KONTO = angegebenesKonto(); // pfade.mjs nimmt --konto aus process.argv; ungültig → "?"
+if (KONTO !== null && !KONTO_ID.test(KONTO)) { console.error("Die Kennung des KI-Kontos (--konto) ist ungültig — ich habe nichts an deinen Einstellungen geändert."); process.exit(2); }
 const vault = vertrauterVaultOderEnde(vaultPfadOderEnde(args[0] && !args[0].startsWith("--") ? ["", "", args[0]] : [])); // Workspace-Trust (P5): Commands und Hooks für die KI nur für einen vertrauten Vault
+// KI-Konten: Hat das Konto für diesen Vault keine Stufe, schreibt der Installer keine Kortex-Befehle dafür (die Hooks bleiben, sie enden dort still).
+const BEFEHLE_ERLAUBT = KONTO === null || darfMindestens(kontoStufe(vault, { support: supportOrdner(), arg: KONTO, env: {} }), "lesen");
 // Ohne stabilen Kern-Pfad (KORTEX_KERN_PFAD) trägt der Installer nichts ein: Hooks würden beim nächsten App-Update ins Leere zeigen. Dazu gehört der Starter der App.
 const KERN_STABIL = kernStabilOderEnde();
 const STARTER = process.platform === "win32" ? null : starterOderEnde();
@@ -177,7 +192,8 @@ const pfad = (f) => shellQuote(`${KERN_FWD}/adapters/claude-code/${f}`);
 // im PATH der Hooks hat). Windows behält den erkannten Pfad (kein /bin/sh).
 const NODE = shellQuote(process.execPath); // nur Windows (kein /bin/sh, kein Starter): Node mit dem Kern-Pfad direkt
 // macOS/Linux: der Starter-Befehl mit Stille bei fehlendem Starter (pfade.mjs#hookBefehl).
-const hookCmd = (datei, args = "") => (process.platform === "win32" ? `${NODE} ${pfad(datei)}${args}` : hookBefehl(STARTER, datei.replace(/\.mjs$/, ""), args));
+const KONTO_ARG = KONTO ? ` --konto ${KONTO}` : ""; // die Kennung ist hier schon auf k_ + 8 Hex geprüft: nichts, was die Shell auswerten würde
+const hookCmd = (datei, args = "") => (process.platform === "win32" ? `${NODE} ${pfad(datei)}${args}${KONTO_ARG}` : hookBefehl(STARTER, datei.replace(/\.mjs$/, ""), `${args}${KONTO_ARG}`));
 // Ein Eintrag je Brain-Hook. PreToolUse hat DREI eigene Einträge (wiki-guard, werkzeug-protokoll, regeln-lesen), damit
 // der wiki-guard-Matcher unverändert bleibt; PreCompact sichert den Arbeitsstand (kompakt-sichern, M2a) UND startet die
 // Ernte; SessionEnd startet die Ernte UND trägt die Sitzung aus .logs/laufend/ aus (sitzung-ende, M2a).
@@ -237,6 +253,7 @@ for (const { ev, datei: hookDatei, args: hookArgs = "", cmd, matcher, altFassung
   // Eigener Eintrag = zeigt in einen adapters/claude-code/-Ordner auf genau diese Hook-Datei (mit denselben Argumenten) — gleich welcher Vault, welcher Kern-Ort
   // oder welche Quotierung drinsteht (altes <vault>/<alter Kit-Ordner>/…, früheres --vault, anderer Kern-Pfad). Fremde Hooks erfüllen das nie.
   const hookName = hookDatei.replace(/\.mjs$/, "");
+  // hookArgs ohne --konto: ein Eintrag in älterer Form (ohne Kennung oder mit einer anderen) ist derselbe Hook und wird auf den aktuellen Befehl gehoben.
   const meinEintrag = (h) => typeof h.command === "string" && ((h.command.includes(MARKER) && h.command.includes(hookDatei)) || hookNameAusBefehl(h.command) === hookName) && (!hookArgs || h.command.includes(hookArgs.trim()));
   const istAktuell = (h) => typeof h.command === "string" && h.command === cmd;
   // Eigene Einträge mit anderem Aufruf (anderer Vault/Kern-Ort, nacktes "node", altes --vault …) → auf den aktuellen Befehl heben; Dubletten desselben
@@ -343,8 +360,8 @@ if (existsSync(commandsZiel) && !statSync(commandsZiel).isDirectory()) {
 // A4: Claude-Commands in einen frischen Temp-Ordner rendern (stdio abgefangen, kein roher Stacktrace
 // mehr im Terminal, egal was skills-build.mjs dabei schiefgeht).
 const commandsTemp = mkdtempSync(join(tmpdir(), "brain-commands-"));
-let commandsAusgabe;
-try {
+let commandsAusgabe = "";
+if (BEFEHLE_ERLAUBT) try {
   commandsAusgabe = execFileSync(process.execPath, [join(A, "..", "..", "skills-build.mjs"), vault, "--ziel", "claude-commands", commandsTemp], { windowsHide: true, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 } catch (e) {
   aufraeumen(commandsTemp);
@@ -358,8 +375,15 @@ try {
 // unangetastet — das sagt die Meldung auch so (die Commands können an dieser Stelle teilweise
 // geschrieben sein, darum keine pauschale "nichts geändert"-Aussage mehr).
 try {
-  mkdirSync(commandsZiel, { recursive: true });
-  for (const name of readdirSync(commandsTemp)) platziereCommand(join(commandsZiel, name), readFileSync(join(commandsTemp, name), "utf8"));
+  if (BEFEHLE_ERLAUBT) {
+    mkdirSync(commandsZiel, { recursive: true });
+    for (const name of readdirSync(commandsTemp)) platziereCommand(join(commandsZiel, name), readFileSync(join(commandsTemp, name), "utf8"));
+  } else {
+    // gesperrtes Konto: die Kortex-Befehle (Marke) verschwinden aus dem Profil, fremde Dateien bleiben
+    let weg = 0;
+    for (const n of brainCommands(commandsZiel)) { try { rmSync(join(commandsZiel, n), { force: true }); weg++; } catch { /* bleibt */ } }
+    console.log(weg ? `Kortex-Befehle entfernt (${weg}): dieses KI-Konto darf den Vault nicht nutzen` : "Keine Kortex-Befehle: dieses KI-Konto darf den Vault nicht nutzen");
+  }
 } catch (e) {
   aufraeumen(commandsTemp);
   console.error(`Die Claude-Commands unter ${commandsZiel} ließen sich gerade nicht vollständig schreiben — settings.json wurde NICHT geändert. Bitte sag deiner KI, es noch einmal zu versuchen.`);
@@ -367,7 +391,7 @@ try {
 }
 aufraeumen(commandsTemp);
 if (commandsAusgabe.trim()) console.log(commandsAusgabe.trimEnd());
-console.log(`Commands: ${commandsZiel}`);
+if (BEFEHLE_ERLAUBT) console.log(`Commands: ${commandsZiel}`);
 
 // B2: settings.json schreiben. Schlägt das fehl, sind die Commands oben bereits geschrieben — die
 // Meldung sagt das ausdrücklich, statt pauschal "nichts geändert" zu behaupten.

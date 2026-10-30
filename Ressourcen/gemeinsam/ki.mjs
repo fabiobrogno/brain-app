@@ -110,7 +110,7 @@ const schluessel = (env) => JSON.stringify([env.PATH || "", env.BRAIN_CLAUDE_EXT
 
 // Cursor ist auch ohne `cursor-agent` verbindbar, wenn die App oder ihr Konfigurationsordner da ist. Immer frisch geprüft (zwei stat-Aufrufe), nicht im Zwischenspeicher.
 // home und appOrdner sind nur für Tests austauschbar.
-function cursorVorhanden(home, appOrdner) {
+export function cursorVorhanden(home, appOrdner) {
   // Vorschau: nur das Vorschau-Home zählt — die Apps dieses Rechners gehören nicht zu einem frisch installierten Mac.
   const apps = vorschauOrdner() ? [] : [join(appOrdner, "Cursor.app")];
   try { return existsSync(join(home, ".cursor")) || apps.some((a) => existsSync(a)) || existsSync(join(home, "Applications", "Cursor.app")); } catch { return false; }

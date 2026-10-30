@@ -17,7 +17,7 @@ const FRIST = 30_000;
 const NICHT_VERTRAUT = "Das geht erst, wenn du diesem Vault vertraust: Bestätige ihn in der Statusleiste des Studios („Nur ansehen“). Bis dahin tut Kortex an diesem Vault nichts außer Lesen und Suchen.";
 const kurz = (t) => String(t || "").trim().split("\n").filter(Boolean).slice(0, 6).join("\n").slice(0, 600);
 
-export function erzeugeVerdrahtung({ starter, support = null, istVorschau = () => !!process.env.KORTEX_VORSCHAU }) {
+export function erzeugeVerdrahtung({ starter, support = null, istVorschau = () => !!process.env.KORTEX_VORSCHAU, kontoFuerProfil = () => null, freigeben = null }) {
   const vorhanden = () => existsSync(starter);
 
   async function lauf(args, frist, profil = undefined) {
@@ -87,7 +87,13 @@ export function erzeugeVerdrahtung({ starter, support = null, istVorschau = () =
       const gewaehlt = [...new Set(gewuenscht)].map((x) => profilZuPfad(x));
       if (!gewaehlt.length) throw new HttpFehler(409, "Es ist kein Claude-Profil gewählt.", { art: "kein-profil" });
       if (gewaehlt.some((x) => !x)) throw new HttpFehler(409, "Eines der Claude-Profile gibt es nicht mehr. Suche die Profile bitte neu.", { art: "profil-weg" });
-      claudeLaeufe = gewaehlt.map((pr) => ({ pr, args: an ? ["claude-hooks", "--vault", v.wurzel, "--claude-home", pr.pfad] : ["claude-hooks", "--entfernen", "--claude-home", pr.pfad] }));
+      // KI-Konten: die Hook-Befehle des Profils tragen `--konto <id>` (der Hook weiß, für welches Konto er läuft; ohne Konto bleibt es die Altform).
+      // Wer die Hooks eines Profils einträgt, kann dem Konto dabei den offenen Vault freigeben ({ zugriff: <Stufe> }); ohne Angabe bleibt die Liste der KI-Konten maßgeblich.
+      if (e.zugriff !== undefined && an) {
+        if (!["gesperrt", "lesen", "posteingang", "erweitert"].includes(e.zugriff)) throw new HttpFehler(400, "„zugriff“ muss gesperrt, lesen, posteingang oder erweitert sein.");
+        for (const pr of gewaehlt) { const k = kontoFuerProfil(pr.pfad); if (k && freigeben) freigeben(k, v, e.zugriff); }
+      }
+      claudeLaeufe = gewaehlt.map((pr) => { const k = an ? kontoFuerProfil(pr.pfad) : null; return { pr, args: an ? ["claude-hooks", "--vault", v.wurzel, "--claude-home", pr.pfad, ...(k ? ["--konto", k] : [])] : ["claude-hooks", "--entfernen", "--claude-home", pr.pfad] }; });
       was = "Das Eintragen bei Claude Code";
     } else if (e.was === "git") {
       if (!v) throw new HttpFehler(409, "Es ist noch kein Vault geöffnet.", { keinVault: true });

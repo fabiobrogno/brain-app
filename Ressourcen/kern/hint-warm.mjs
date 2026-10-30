@@ -8,7 +8,7 @@ import { suche } from "./hint-kind.mjs";
 import { frageDienst } from "./dienst-client.mjs";
 import { vaultPfadOderEnde } from "./pfade.mjs";
 
-const vault = vaultPfadOderEnde(process.argv, { still: true });
+const vault = vaultPfadOderEnde(process.argv, { still: true, kontoPruefen: false }); // Hilfsprozess, liefert nichts an eine KI
 const t0 = Date.now();
 const modul = process.env.BRAIN_HINT_SEARCH_MODULE || fileURLToPath(new URL("./qmd-vector.mjs", import.meta.url));
 // Läuft der Suchdienst, ist schon alles warm — kein zweites Modell laden

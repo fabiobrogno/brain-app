@@ -37,3 +37,11 @@ export function mitProfil(env, profil) {
   if (profil && !profil.standard) e.CLAUDE_CONFIG_DIR = profil.pfad;
   return e;
 }
+
+// Umgebung für einen `codex`-Aufruf im Konto-Ordner: nur ein NICHT-Standardordner (~/.codex-*) setzt CODEX_HOME; sonst wird eine geerbte Variable entfernt.
+export function mitCodexHome(env, konto) {
+  const e = { ...env };
+  delete e.CODEX_HOME;
+  if (konto && konto.programm === "codex" && !konto.standard) e.CODEX_HOME = konto.ordner;
+  return e;
+}

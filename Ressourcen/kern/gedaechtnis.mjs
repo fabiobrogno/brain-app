@@ -75,7 +75,7 @@ import { homedir, tmpdir } from "node:os";
 import { spawnSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { vaultPfadOderEnde, ladeConfig } from "./pfade.mjs";
+import { vaultPfadOderEnde, ladeConfig, kontoDarf } from "./pfade.mjs";
 import { leseAutomatik, STANDARD } from "./einstellungen.mjs";
 import { gitBefehl } from "./werkzeug.mjs";
 
@@ -1018,6 +1018,7 @@ function starteLosgeloest({ vault, projekt }) {
 export function starteAbgleichFuerSitzung({ vault, eingabe, werte, starte = starteLosgeloest } = {}) {
   try {
     if (werte?.gedaechtnisTeilen !== "an") return { gestartet: false, grund: "aus" };
+    if (!kontoDarf(vault, "posteingang")) return { gestartet: false, grund: "konto" }; // KI-Konten: das Teilen schreibt in den Vault
     const projekt = projektAusTranskript(eingabe?.transcript_path);
     if (!projekt) return { gestartet: false, grund: "kein-projekt" };
     starte({ vault, projekt });

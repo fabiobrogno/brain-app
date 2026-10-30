@@ -119,3 +119,15 @@ Bühne (`Ressourcen/kern/` + `Tests/Kern/` als `tests/`), setzt `KORTEX_KERN` au
 ## P5: Workspace-Trust
 - `Ressourcen/kern/vertrauen.mjs` liest den Merker `<Support>/vertrauen.json` (geschrieben von der Werkstatt, `gemeinsam/vertrauen.mjs`); `pfade.mjs#vaultVertraut`, `geprueftVaultsVertraut`, `vertrauterVaultOderEnde`, `NICHT_VERTRAUT_TEXT`. Ohne Vertrauen: `git-gesperrt` statt `git-sicher` (`werkzeug.mjs#gitBefehl`), Hooks (`vaultPfadOderEnde` mit `still`) enden still, kein Dienst, kein `findeClaude`, `skills-build.mjs`/`claude-hooks`/`hooks-install`/`tageslauf`/… verweigern mit Exit 5. Einzelheiten und Abwägungen: `docs/plaene/kern-umzug.md` „P5 umgesetzt“.
 - Testschalter `KORTEX_VAULT_VERTRAUT=alle` (nur mit `BRAIN_TESTMODUS=1` oder `KORTEX_KERN_UNSTABIL_ERLAUBT=1`): `Tests/Kern/setup.mjs`, `plattform.sh`, `stage.sh` setzen ihn; `Tests/Kern/test-vertrauen.mjs` prüft die Sperre mit Marken (Schein-git, Schein-claude) ohne ihn.
+
+## KI-Konten und Vault-Zugriff (Paket P1, Plan `docs/plaene/ki-konten.md`)
+- `Ressourcen/kern/ki-konten.mjs` liest `<Support>/ki-konten.json` (geschrieben von der Werkstatt, `Ressourcen/gemeinsam/ki-konten.mjs`, atomar, Modus 0600): Stufe je KI-Konto und Vault
+  (`gesperrt` · `lesen` · `posteingang` · `erweitert`). Der Abschnitt zwischen den Marken `LESEN-BEGINN`/`LESEN-ENDE` ist in beiden Dateien wortgleich (Test: `Tests/Node/ki-konten-paritaet.test.mjs`).
+- `pfade.mjs`: `--konto <id>` wird wie `--vault` beim Laden aus `process.argv` genommen (`angegebenesKonto`); `vaultPfadOderEnde({ still: true })` beendet einen Hook still, wenn das Konto den Vault nicht
+  mindestens lesen darf (`kontoDarf`, `hookKontoStufe`; `mindest` und `kontoPruefen:false` für Sonderfälle). Schreibende Wege prüfen `kontoDarf(vault, "posteingang")` selbst: `starteErnte`, `starteLektionen`,
+  `starteW7`, `arbeiteOffeneAb`, `loese` (`ernte-ausloeser.mjs`), `starteAbgleichFuerSitzung` (`gedaechtnis.mjs`). `wiki-guard.mjs` verweigert für ein gesperrtes Konto das Schreiben unter dem Vault.
+- Konto bestimmen: `--konto` und Umgebung (`CLAUDE_CONFIG_DIR`/`CODEX_HOME`), bei Widerspruch das strengere Recht; unbekannte Kennung oder unbekannter Ordner = gesperrt; ohne erkennbares Konto gilt `ohneKonto` des Vaults.
+  Beschädigte, verlinkte oder nicht lesbare Liste = gesperrt (fail-closed); fehlt die Liste ganz (die neue App lief noch nie), gilt das bisherige Verhalten.
+- `adapters/claude-code/install.mjs --konto <id>`: Die Kennung steht in jedem Hook-Befehl; ein gesperrtes Konto bekommt keine Kortex-Befehle für den Vault. `brain.mjs claude-hooks` reicht `--konto` durch.
+- Tests: `Tests/Kern/test-konto-hooks.mjs` (Hooks mit ausdrücklich gebauter Umgebung, `Tests/Kern/konto-hilfe.mjs`), `Tests/Node/ki-konten*.test.mjs`.
+

@@ -1,12 +1,17 @@
 #!/usr/bin/env node
 // mcp/brain-mcp.mjs — lokaler MCP-Server für Brain Studio (Spec §7): stdio, JSON-RPC 2.0 zeilengetrennt, ohne
-// Abhängigkeiten. Nur stdout für JSON-RPC, Logs nach stderr. Aufruf: node brain-mcp.mjs [<vault>]
-// Mit Vault-Argument (oder BRAIN_VAULT) ist der Server an diesen Vault gebunden. Ohne Argument folgt er dem aktiven Vault aus
+// Abhängigkeiten. Nur stdout für JSON-RPC, Logs nach stderr. Aufruf: node brain-mcp.mjs [<vault>] [--konto <id>] [--vault <pfad>] [--nur-lesen]
+// Mit Vault-Argument (oder --vault, BRAIN_VAULT) ist der Server an diesen Vault gebunden. Ohne Argument folgt er dem aktiven Vault aus
 // <support>/vaults.json (bei jedem Werkzeugaufruf geprüft) — gibt es keinen, antworten die Werkzeuge mit einem Hinweis.
+// KI-Konten (docs/plaene/ki-konten.md): --konto <id> sagt, für welches KI-Konto der Server läuft (Kortex trägt es beim Verbinden ein). Welche Stufe das Konto
+// im Vault hat (gesperrt · lesen · posteingang · erweitert), wird bei JEDEM Aufruf aus <support>/ki-konten.json gelesen; zusätzlich zählt die Umgebung
+// (CLAUDE_CONFIG_DIR, CODEX_HOME), und bei Widerspruch gilt das strengere Recht. Ein gesperrter Vault wird weder genannt noch gezählt noch gelesen;
+// brain_merken braucht „posteingang“; --nur-lesen deckelt die Stufe auf „lesen“.
 import { createInterface } from "node:readline";
 import { realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { oeffneVault, HttpFehler, STUFE_TEXT as STUFE } from "../gemeinsam/vault.mjs";
+import { oeffneVault, HttpFehler, STUFE_TEXT as STUFE, supportOrdner } from "../gemeinsam/vault.mjs";
+import { liesKonten, bestimmeKonto, stufeFuerBestimmung, darfMindestens, schwaecher } from "../gemeinsam/ki-konten.mjs";
 import { leseVaults, aktiverVaultPfad } from "../gemeinsam/vaults.mjs";
 import { beendeLaufendes } from "../gemeinsam/git.mjs";
 import { bereinigePfad } from "../gemeinsam/basis.mjs";
@@ -37,13 +42,54 @@ const fehlerText = (t) => ({ content: [{ type: "text", text: t }], isError: true
 const zeit = (iso) => String(iso || "").slice(0, 16).replace("T", " ");
 
 const KEIN_VAULT = "Es ist noch kein Vault eingerichtet. Lege in Kortex einen an (Willkommen → Kortex-Vorlage) und versuche es dann noch einmal.";
+// KI-Konten: ein Text für „nichts freigegeben“ — er sagt nichts darüber, ob es Vaults gibt, wie viele und wie sie heißen.
+const KEIN_ZUGRIFF = "Für dieses KI-Konto ist gerade kein Vault freigegeben. Lege in Kortex einen Vault an oder gib einen unter „KI-Konten“ frei.";
+const KONTEN_DEFEKT = "Die Kontenliste von Kortex ist beschädigt. Öffne Kortex, dann wird sie neu angelegt. Bis dahin liefert Kortex nichts an KIs.";
+const NUR_LESEN = "Dieses KI-Konto darf in diesem Vault nur lesen. Notizen anlegen braucht die Stufe „Posteingang“ (Kortex → KI-Konten).";
+// Mindeststufe je Werkzeug, alle übrigen: „lesen“. Die Prüfung läuft zentral in rufe() VOR dem Werkzeug und bei jedem Aufruf; neue schreibende Werkzeuge tragen sich hier ein
+// (Aufgaben anlegen, PR #50: "posteingang") und müssen selbst nichts prüfen. tools/list blendet Werkzeuge aus, die über „lesen“ liegen, wenn die Stufe fehlt.
+export const MINDEST_STUFE = { brain_merken: "posteingang" };
 
-function vaultText(v) {
+// Zugriff dieses Servers auf Vaults: das Konto (--konto, Umgebung) und die Regeln aus ki-konten.json; alles wird bei jedem Aufruf frisch gelesen (ein Entzug wirkt sofort).
+// → { stufe(vaultPfad), defekt(), heimat() }. nurLesen deckelt jede Stufe auf „lesen“ (Frag-deinen-Vault, Paket P4).
+export function erzeugeZugriff({ support = supportOrdner(), arg = null, env = process.env, nurLesen = false } = {}) {
+  const deckel = (s) => (nurLesen ? schwaecher(s, "lesen") : s);
+  return {
+    stufe(vaultPfad) {
+      const { zustand, daten } = liesKonten(support);
+      if (zustand === "fehlt") return deckel("posteingang"); // Übergang vor dem ersten Start der neuen App: bisheriges Verhalten
+      if (zustand !== "ok") return "gesperrt";
+      return deckel(stufeFuerBestimmung(daten, vaultPfad, bestimmeKonto({ arg, env, daten }).ids));
+    },
+    defekt: () => liesKonten(support).zustand === "defekt",
+    // Das erkannte Konto dieses Servers (genau eins) für die Herkunft einer Notiz oder Aufgabe, z. B. `ki:<programm>/<id>` (PR #50) — sonst null. Nie der Name aus dem Login.
+    konto() {
+      const { zustand, daten } = liesKonten(support);
+      if (zustand !== "ok") return null;
+      const ids = bestimmeKonto({ arg, env, daten }).ids;
+      return ids.length === 1 && ids[0] !== null ? { id: ids[0], programm: daten.konten[ids[0]].programm } : null;
+    },
+    // Gilt überhaupt ein Kontofilter? Nein, solange die Liste fehlt (die neue App lief noch nie): dann gilt das bisherige Verhalten samt seinen Texten.
+    gefiltert: () => liesKonten(support).zustand !== "fehlt",
+    // Der Heimat-Vault des Kontos (konten[id].heimat), nur wenn genau EIN Konto erkannt ist.
+    heimat() {
+      const { zustand, daten } = liesKonten(support);
+      if (zustand !== "ok") return null;
+      const ids = bestimmeKonto({ arg, env, daten }).ids;
+      const h = ids.length === 1 && ids[0] !== null ? daten.konten[ids[0]].heimat : null;
+      return typeof h === "string" && h ? h : null;
+    },
+  };
+}
+const sehen = (z, pfad) => !z || darfMindestens(z.stufe(pfad), "lesen");
+
+function vaultText(v, zugriff) {
   const l = leseVaults();
   const dieser = v ? v.wurzel : null;
-  if (!l.vaults.length && !dieser) return KEIN_VAULT;
-  const zeilen = l.vaults.map((e, i) => `${i + 1}. ${e.pfad === dieser ? "*" : " "} ${e.name} — ${e.pfad}${l.aktiv === e.pfad && e.pfad !== dieser ? " (in der App aktiv)" : ""}`);
-  if (dieser && !l.vaults.some((e) => e.pfad === dieser)) zeilen.push(`*  ${v.name} — ${dieser} (nicht in der Liste der App)`);
+  const sichtbar = l.vaults.filter((e) => sehen(zugriff, e.pfad)); // gesperrte Vaults fehlen ganz: kein Name, kein Pfad, keine Zahl
+  if (!sichtbar.length && !dieser) return zugriff && zugriff.gefiltert() ? KEIN_ZUGRIFF : KEIN_VAULT;
+  const zeilen = sichtbar.map((e, i) => `${i + 1}. ${e.pfad === dieser ? "*" : " "} ${e.name} — ${e.pfad}${l.aktiv === e.pfad && e.pfad !== dieser ? " (in der App aktiv)" : ""}`);
+  if (dieser && !sichtbar.some((e) => e.pfad === dieser)) zeilen.push(`*  ${v.name} — ${dieser} (nicht in der Liste der App)`);
   return `Vaults (* = von diesem Server genutzt):\n${zeilen.join("\n")}`;
 }
 
@@ -93,10 +139,15 @@ function kontextBegrenzt(treffer, projekt, spur) {
 
 // v: ein geöffneter Vault, eine Funktion, die den aktuellen liefert (Server ohne Vault-Argument), oder null.
 // spur.seiten sammelt die Seiten, die diese Antwort der KI nennt (für das lokale Nutzungsprotokoll, nutzung.mjs).
-async function rufe(vArg, name, a, spur = { seiten: [] }) {
-  const v = typeof vArg === "function" ? vArg() : vArg;
-  if (name === "brain_vaults") return text(vaultText(v));
-  if (!v) return fehlerText(KEIN_VAULT);
+async function rufe(vArg, name, a, spur = { seiten: [] }, zugriff = null) {
+  if (zugriff && zugriff.defekt()) return fehlerText(KONTEN_DEFEKT); // fail-closed: nichts an KIs
+  const v0 = typeof vArg === "function" ? vArg() : vArg;
+  // Die Stufe wird für JEDEN Aufruf neu bestimmt (nicht nur beim Start): ein Vault, den das Konto nicht (mehr) sehen darf, zählt als „kein Vault“.
+  const stufe = v0 && zugriff ? zugriff.stufe(v0.wurzel) : "erweitert";
+  const v = v0 && darfMindestens(stufe, "lesen") ? v0 : null;
+  if (name === "brain_vaults") return text(vaultText(v, zugriff));
+  if (!v) return fehlerText(zugriff && zugriff.gefiltert() ? KEIN_ZUGRIFF : KEIN_VAULT);
+  if (!darfMindestens(stufe, MINDEST_STUFE[name] || "lesen")) return fehlerText(NUR_LESEN);
   const arg = (k) => { if (typeof a[k] !== "string" || !a[k].trim()) throw new HttpFehler(400, `Der Parameter „${k}“ fehlt.`); return a[k]; };
   switch (name) {
     case "brain_suchen": {
@@ -145,7 +196,8 @@ async function rufe(vArg, name, a, spur = { seiten: [] }) {
 }
 
 // Eine JSON-RPC-Nachricht → Antwortobjekt oder null (Benachrichtigung). Exportiert für Tests.
-export async function bearbeite(v, msg, version = "0.2.0") {
+// zugriff: erzeugeZugriff(…); ohne (nur Tests der Werkzeuge selbst) gilt kein Kontofilter.
+export async function bearbeite(v, msg, version = "0.2.0", zugriff = null) {
   if (!msg || typeof msg !== "object" || msg.jsonrpc !== "2.0" || typeof msg.method !== "string") {
     return { jsonrpc: "2.0", id: msg && msg.id !== undefined ? msg.id : null, error: { code: -32600, message: "Invalid Request" } };
   }
@@ -159,7 +211,13 @@ export async function bearbeite(v, msg, version = "0.2.0") {
         serverInfo: { name: "brain", version }, instructions: "Kortex: durchsuche und lies das Wissen im Vault des Nutzers; merke Neues nur über brain_merken (landet in der Inbox)." });
     }
     case "ping": return ok({});
-    case "tools/list": return ok({ tools: WERKZEUGE });
+    case "tools/list": {
+      // Werkzeuge mit höherer Mindeststufe (brain_merken: „posteingang“) erscheinen nur, wenn das Konto im aktuellen Vault sie hat (spart Tokens, vermeidet Fehlversuche).
+      if (!zugriff) return ok({ tools: WERKZEUGE });
+      const vv = typeof v === "function" ? v() : v;
+      const st = !zugriff.defekt() && vv ? zugriff.stufe(vv.wurzel) : "gesperrt";
+      return ok({ tools: WERKZEUGE.filter((w) => MINDEST_STUFE[w.name] === undefined || darfMindestens(st, MINDEST_STUFE[w.name])) });
+    }
     case "tools/call": {
       const p = msg.params || {};
       if (typeof p.name !== "string" || !WERKZEUGE.some((w) => w.name === p.name)) return nein(-32602, `Unbekanntes Werkzeug: ${String(p.name)}`);
@@ -168,11 +226,11 @@ export async function bearbeite(v, msg, version = "0.2.0") {
       // BRAIN_NUTZUNG=aus: die App-eigene Probe-Frage und der Selbsttest zählen nicht als KI-Nutzung (und wer nichts protokollieren will, schaltet es so ab).
       const merke = (antwort) => {
         if (process.env.BRAIN_NUTZUNG === "aus") return antwort;
-        try { const vv = typeof v === "function" ? v() : v; if (vv && vv.wurzel) protokolliere(vv.wurzel, { werkzeug: p.name, seiten: antwort && antwort.isError ? [] : spur.seiten, ok: !(antwort && antwort.isError), ms: Date.now() - t0 }); } catch { /* Beiwerk */ }
+        try { const vv = typeof v === "function" ? v() : v; if (vv && vv.wurzel && (!zugriff || (!zugriff.defekt() && sehen(zugriff, vv.wurzel)))) protokolliere(vv.wurzel, { werkzeug: p.name, seiten: antwort && antwort.isError ? [] : spur.seiten, ok: !(antwort && antwort.isError), ms: Date.now() - t0 }); } catch { /* Beiwerk */ }
         return antwort;
       };
       try {
-        return ok(merke(await rufe(v, p.name, p.arguments && typeof p.arguments === "object" ? p.arguments : {}, spur)));
+        return ok(merke(await rufe(v, p.name, p.arguments && typeof p.arguments === "object" ? p.arguments : {}, spur, zugriff)));
       } catch (e) {
         if (e instanceof HttpFehler) return ok(merke(fehlerText(e.message)));
         process.stderr.write(`brain-mcp: ${(e && e.stack) || e}\n`);
@@ -185,17 +243,40 @@ export async function bearbeite(v, msg, version = "0.2.0") {
   }
 }
 
+// Kommandozeile: [<vault>] [--vault <pfad>] [--konto <id>] [--nur-lesen]. Ein fehlender oder ungültiger --konto-Wert und mehrere verschiedene Werte ergeben "?":
+// ein Konto, das es nicht gibt (Stufe gesperrt) — nie ein stiller Rückfall auf „kein Konto“.
+export function leseArgumente(argv) {
+  const r = { vault: "", konto: null, nurLesen: false };
+  const konto = (w) => { r.konto = r.konto === null || r.konto === w ? w : "?"; };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--") break;
+    if (a === "--konto") { const w = argv[i + 1]; const gut = typeof w === "string" && w !== "" && !w.startsWith("-"); konto(gut ? w : "?"); if (gut) i++; }
+    else if (a.startsWith("--konto=")) konto(a.slice(8) || "?");
+    else if (a === "--vault") { const w = argv[i + 1]; if (typeof w === "string" && w && !w.startsWith("-")) { r.vault = w; i++; } }
+    else if (a.startsWith("--vault=")) r.vault = a.slice(8);
+    else if (a === "--nur-lesen") r.nurLesen = true;
+    else if (!a.startsWith("--") && !r.vault) r.vault = a;
+  }
+  return r;
+}
+
 function haupt() {
   // Claude Code startet uns mit seiner eigenen Umgebung: ein leerer oder relativer PATH-Eintrag ließe `git` aus dem Vault laufen, noch bevor
   // jemand diesem Vault vertraut hat (Vertrauen v2, §8). Danach gilt in Node nur noch, was absolut ist.
   bereinigePfad();
-  const gebunden = process.argv[2] || process.env.BRAIN_VAULT || "";
+  const arg = leseArgumente(process.argv.slice(2));
+  const gebunden = arg.vault || process.env.BRAIN_VAULT || "";
+  const zugriff = erzeugeZugriff({ arg: arg.konto, nurLesen: arg.nurLesen });
   let aktuell = null, aktuellPfad;
   if (gebunden) { try { aktuell = oeffneVault(gebunden); } catch (e) { process.stderr.write(`${e.message}\n`); process.exit(2); } }
   // Ohne Argument: aktiven Vault der App nehmen; wechselt er, wird neu geöffnet (billig: nur vaults.json lesen).
+  // KI-Konten: darf das Konto den aktiven Vault nicht lesen, folgt der Server seinem Heimat-Vault (falls es einen hat und er erlaubt ist), sonst gibt es keinen Vault.
   const v = () => {
     if (gebunden) return aktuell;
     let p = null; try { p = aktiverVaultPfad(); } catch { /* keine Liste → kein Vault */ }
+    if (p && !sehen(zugriff, p)) p = null;
+    if (!p) { const h = zugriff.heimat(); if (h && sehen(zugriff, h)) p = h; }
     if (p !== aktuellPfad) { aktuellPfad = p; aktuell = null; if (p) { try { aktuell = oeffneVault(p); } catch { /* nicht lesbar → kein Vault */ } } }
     return aktuell;
   };
@@ -212,10 +293,10 @@ function haupt() {
       try { m = JSON.parse(zeile); } catch { return sende({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }); }
       if (Array.isArray(m) && !m.length) return sende({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "Invalid Request" } });
       if (Array.isArray(m)) {
-        const r = (await Promise.all(m.map((x) => bearbeite(v, x)))).filter(Boolean);
+        const r = (await Promise.all(m.map((x) => bearbeite(v, x, undefined, zugriff)))).filter(Boolean);
         if (r.length) sende(r);
       } else {
-        const r = await bearbeite(v, m);
+        const r = await bearbeite(v, m, undefined, zugriff);
         if (r) sende(r);
       }
     })().catch((e) => process.stderr.write(`brain-mcp: ${e}\n`)).finally(() => { offen--; ende(); });

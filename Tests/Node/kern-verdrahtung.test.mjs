@@ -46,7 +46,7 @@ const aufruf = (h) => async (methode, p, daten) => {
 function einrichtung(opt = {}) {
   const s = baueSupport(opt);
   const v = vault(opt);
-  const rufe = aufruf(erzeugeHandler({ vault: v, vaultOptionen: { support: s.support }, starter: s.starter }));
+  const rufe = aufruf(erzeugeHandler({ kontenAus: true, vault: v, vaultOptionen: { support: s.support }, starter: s.starter }));
   return { ...s, v, rufe };
 }
 const settingsDatei = join(HOME, ".claude", "settings.json");
@@ -354,7 +354,7 @@ test("KI verbinden mit Claude je Profil: das Standardprofil ohne CLAUDE_CONFIG_D
   process.env.PATH = `${c.bin}:${altPfad}`; process.env.BRAIN_CLAUDE_EXTRA = "";
   process.env.CLAUDE_CONFIG_DIR = "/geerbt/aus/der/shell";   // so eine Variable darf das Standardprofil nie beeinflussen
   try {
-    const rufe = aufruf(erzeugeHandler({ vault: vault(), mcpPfad: join(mcpDir, "brain-mcp.mjs"), vaultOptionen: { support: tmp("kortex-s-") } }));
+    const rufe = aufruf(erzeugeHandler({ kontenAus: true, vault: vault(), mcpPfad: join(mcpDir, "brain-mcp.mjs"), vaultOptionen: { support: tmp("kortex-s-") } }));
     let r = await rufe("POST", "/api/mcp/verbinden", { ziel: "claude", profil: h.privat });
     assert.equal(r.status, 200, JSON.stringify(r.j));
     r = await rufe("POST", "/api/mcp/verbinden", { ziel: "claude", profil: h.standard });

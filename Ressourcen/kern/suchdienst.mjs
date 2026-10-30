@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { vaultPfadOderEnde } from "./pfade.mjs";
 
-const vault = vaultPfadOderEnde(process.argv, { still: true });
+const vault = vaultPfadOderEnde(process.argv, { still: true, kontoPruefen: false }); // Hilfsprozess, liefert nichts an eine KI
 const logs = join(vault, ".logs"), sock = join(logs, "suchdienst.sock"), pidDatei = join(logs, "suchdienst.pid");
 const log = (s) => { try { appendFileSync(join(logs, "hooks.log"), `${new Date().toISOString().slice(0, 19)} suchdienst ${s}\n`); } catch {} };
 if (Buffer.byteLength(sock) > 100) { log("fehler=SOCKPFAD"); process.exit(0); }   // macOS-Grenze für Unix-Sockets ~104 Bytes

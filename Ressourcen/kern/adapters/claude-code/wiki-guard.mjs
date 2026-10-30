@@ -6,7 +6,7 @@
 if (process.env.BRAIN_ERNTE === "1") process.exit(0);
 import { readFileSync, existsSync, statSync, utimesSync, realpathSync } from "node:fs";
 import { resolve, join, sep, basename, dirname } from "node:path";
-import { vaultPfadOderEnde, ladeConfig, ordner } from "../../pfade.mjs";
+import { vaultPfadOderEnde, ladeConfig, ordner, kontoDarf } from "../../pfade.mjs";
 
 function leseStdin() {
   try { return readFileSync(0, "utf8"); } catch { return ""; }
@@ -21,7 +21,9 @@ const unter = (pfad, ordnerPfad) => {
 };
 
 // resolve: BRAIN_VAULT darf unter Windows mit "/" kommen (C:/…) — Vergleiche unten laufen auf der nativen Form.
-const V = resolve(vaultPfadOderEnde(process.argv, { still: true }));
+// kontoPruefen:false — für ein gesperrtes Konto endet dieser Hook nicht still, sondern verweigert unten das Schreiben in den Vault (KI-Konten).
+const V = resolve(vaultPfadOderEnde(process.argv, { still: true, kontoPruefen: false }));
+const KONTO_DARF = kontoDarf(V, "lesen");
 let eingabe;
 try { eingabe = JSON.parse(leseStdin()); } catch { process.exit(0); }
 const F0 = eingabe?.tool_input?.file_path ?? eingabe?.tool_input?.notebook_path ?? "";
@@ -46,10 +48,17 @@ else {
   }
 }
 
+function blockiere(msg) { process.stderr.write(msg + "\n"); process.exit(2); }
+
+// KI-Konten: Hat das Konto dieser Sitzung für den Vault keine Stufe, wird jedes Schreiben unter ihm verweigert (best effort: der Hook sieht nur file_path).
+// Die Meldung nennt nur den Pfad, den die KI selbst angegeben hat; sonst nichts über den Vault. Ohne Treffer bleibt der Hook still.
+if (!KONTO_DARF) {
+  if (unter(F, VN) || unter(F, V) || gleich(F, VN) || gleich(F, V)) blockiere("Kortex: Dieses KI-Konto darf diesen Vault nicht verändern.");
+  process.exit(0);
+}
+
 const { wiki } = ordner(V, ladeConfig(V));
 const wikiDir = join(VN, wiki);
-
-function blockiere(msg) { process.stderr.write(msg + "\n"); process.exit(2); }
 
 if (gleich(F, join(VN, "INDEX.md")) || gleich(F, join(VN, "graph.json")) || gleich(F, join(wikiDir, "_index.md"))) {
   blockiere(`Kortex-Riegel: ${F} ist generiert (Indexer) — nie von Hand editieren.`);

@@ -35,7 +35,7 @@ const BEKANNT = vault();
 const handlerFuer = (k, extra = {}) => {
   const support = tmp("brain-vsupport-");
   writeFileSync(join(support, "vaults.json"), JSON.stringify({ vaults: [{ name: "bekannt", pfad: BEKANNT, farbe: "#7C8798" }], aktiv: BEKANNT }));
-  return aufruf(erzeugeHandler({ vault: vault(), kern: k.kern, nodePfad: STABIL, vaultOptionen: { support }, ...extra }));
+  return aufruf(erzeugeHandler({ kontenAus: true, vault: vault(), kern: k.kern, nodePfad: STABIL, vaultOptionen: { support }, ...extra }));
 };
 
 async function mitPfad(bin, fn) {

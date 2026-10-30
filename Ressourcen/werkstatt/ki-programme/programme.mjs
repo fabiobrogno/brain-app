@@ -13,7 +13,8 @@ import { join } from "node:path";
 import { erzeugeDateiAdapter } from "./datei-adapter.mjs";
 
 // Der häufigste Fall: { command, args } wie im Modell-Context-Protokoll-Beispiel.
-const standard = (a) => ({ command: a[0], args: [a[1]] });
+// a = [node, mcp.mjs] oder mit Konto [node, mcp.mjs, "--konto", id]: alle Argumente nach dem Programm gehören in den Eintrag.
+const standard = (a) => ({ command: a[0], args: a.slice(1) });
 const liesStandard = (o) => (typeof o.command === "string" ? { command: o.command, args: o.args } : null);
 const inHome = (...teile) => ({ home, ordner }) => join(ordner || join(home, ...teile.slice(0, -1)), teile[teile.length - 1]);
 
@@ -27,13 +28,13 @@ export const BESCHREIBUNGEN = [
     pfad: ["mcpServers"], baue: standard, lies: liesStandard, erkennung: { cli: ["gemini"] } },
   // Copilot CLI: gemeinsame Copilot-Datei; `type` und `tools` stehen so in der Doku von GitHub.
   { id: "copilot", name: "GitHub Copilot", anzeige: "~/.copilot/mcp-config.json", datei: inHome(".copilot", "mcp-config.json"),
-    pfad: ["mcpServers"], baue: (a) => ({ type: "local", command: a[0], args: [a[1]], tools: ["*"] }), lies: liesStandard, erkennung: { cli: ["copilot"] } },
+    pfad: ["mcpServers"], baue: (a) => ({ type: "local", command: a[0], args: a.slice(1), tools: ["*"] }), lies: liesStandard, erkennung: { cli: ["copilot"] } },
   // Zed: die Einstellungen sind JSONC (Kommentare sind üblich) — der Adapter lässt sie stehen.
   { id: "zed", name: "Zed", anzeige: "~/.config/zed/settings.json", datei: inHome(".config", "zed", "settings.json"),
     pfad: ["context_servers"], baue: standard, lies: liesStandard, erkennung: { apps: ["Zed.app", "Zed Preview.app"], cli: ["zed"] } },
   // OpenCode: `command` ist EIN Feld mit Liste (Programm und Argumente zusammen), kein getrenntes `args`.
   { id: "opencode", name: "OpenCode", anzeige: "~/.config/opencode/opencode.json", datei: inHome(".config", "opencode", "opencode.json"),
-    pfad: ["mcp"], baue: (a) => ({ type: "local", command: [a[0], a[1]], enabled: true }),
+    pfad: ["mcp"], baue: (a) => ({ type: "local", command: [...a], enabled: true }),
     lies: (o) => (Array.isArray(o.command) && typeof o.command[0] === "string" ? { command: o.command[0], args: o.command.slice(1) } : null),
     erkennung: { apps: ["OpenCode.app"], cli: ["opencode"] } },
   { id: "warp", name: "Warp", anzeige: "~/.warp/.mcp.json", datei: inHome(".warp", ".mcp.json"),
