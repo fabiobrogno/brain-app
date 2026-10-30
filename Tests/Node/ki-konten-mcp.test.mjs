@@ -238,3 +238,26 @@ test("Ohne Vault in der App und ohne Freigabe sagt der Server in beiden Fällen 
   assert.equal((await m1.rufe("brain_vaults")).text, (await m2.rufe("brain_vaults")).text);
   await m1.ende(); await m2.ende();
 });
+
+test("Aufgaben-Werkzeuge: Anlegen und Status ändern brauchen „posteingang“ (sonst auch nicht in tools/list), Auflisten genügt „lesen“, gesperrt liefert nichts", async () => {
+  const s = szenario();
+  const m = starteMcp(s, ["--konto", "k_aaaaaaaa"]);
+  s.setze("gesperrt");
+  for (const [name, a] of [["brain_aufgaben", {}], ["brain_aufgabe_anlegen", { titel: "Test" }], ["brain_aufgabe_status", { pfad: "x", status: "erledigt" }]]) {
+    const r = await m.rufe(name, a);
+    assert.equal(r.fehler, true, name); assert.match(r.text, KEIN_ZUGRIFF); rein(s, r.text);
+  }
+  s.setze("lesen");
+  const liste = await m.werkzeuge();
+  assert.ok(liste.includes("brain_aufgaben") && !liste.includes("brain_aufgabe_anlegen") && !liste.includes("brain_aufgabe_status"));
+  assert.equal((await m.rufe("brain_aufgaben")).fehler, false);
+  for (const [name, a] of [["brain_aufgabe_anlegen", { titel: "Test" }], ["brain_aufgabe_status", { pfad: "x", status: "erledigt" }]]) {
+    const r = await m.rufe(name, a);
+    assert.equal(r.fehler, true, name); assert.match(r.text, /nur lesen/);
+  }
+  s.setze("posteingang");
+  assert.ok((await m.werkzeuge()).includes("brain_aufgabe_anlegen"));
+  const r = await m.rufe("brain_aufgabe_anlegen", { titel: "Test" });
+  assert.equal(r.fehler, false, r.text); assert.match(r.text, /Aufgabe angelegt/);
+  await m.ende();
+});
