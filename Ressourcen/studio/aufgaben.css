@@ -48,6 +48,7 @@
 .au-karten::-webkit-scrollbar { width: 10px; }
 .au-karten::-webkit-scrollbar-thumb { background: var(--linie-stark); border-radius: 6px; border: 2.5px solid transparent; background-clip: content-box; }
 .au-spalte-leer { display: grid; place-items: center; min-height: 64px; border: 1.5px dashed var(--linie-stark); border-radius: var(--r); color: var(--text-3); font-size: 12px; }
+.au-fuss { display: flex; flex-direction: column; align-items: flex-start; }
 .au-alte { align-self: flex-start; margin: 0 8px 8px; }
 .au-marke { flex: none; height: 3px; margin: -1px 2px; border-radius: 2px; background: var(--akzent); }
 

@@ -55,6 +55,9 @@ export function passt(a, f, heute = heuteIso()) {
 // Erledigt und seit mehr als TA.tage Tagen nicht mehr geändert → eingeklappt
 const istAlt = (a) => a.status === "erledigt" && Number.isFinite(Date.parse(a.geaendert)) && Date.parse(a.geaendert) < Date.now() - TA.tage * TAG;
 
+// Erledigt und seit mehr als TA.archiv.tage Tagen nicht mehr geändert → darf ins Archiv (die Werkstatt rechnet beim Archivieren selbst nach)
+const archivReifSeit = (a, jetzt = Date.now()) => a.status === "erledigt" && Number.isFinite(Date.parse(a.geaendert)) && Date.parse(a.geaendert) < jetzt - TA.archiv.tage * TAG;
+
 // ---------- Kleine Bausteine ----------
 function quelleEl(quelle) {
   if (String(quelle).startsWith("ki:")) {
@@ -79,7 +82,11 @@ export function baueAufgaben(host, ctx) {
 
   // Änderungen laufen nacheinander: schnelles Ziehen mehrerer Karten darf sich nicht überholen.
   // Solange eine Änderung unterwegs ist, wird nicht nachgeladen (das ließe die Karte kurz zurückspringen); danach holt `fertig` es nach.
-  let kette = Promise.resolve(), unterwegs = 0, nachladen = false;
+  // aenderNr zählt jede lokale Änderung: ein Nachladen, das vor einer Änderung losging, kommt mit veraltetem Stand zurück und wird verworfen
+  // (sonst sprängen Karten zurück). ausstehend: je Karte die noch nicht beantworteten Änderungen — die Antwort einer früheren Änderung darf den
+  // sofort sichtbaren Stand einer späteren nicht überschreiben (schnelle Alt+Pfeil-Folgen).
+  let kette = Promise.resolve(), unterwegs = 0, nachladen = false, aenderNr = 0;
+  const ausstehend = new Map();
   const reihe = (fn) => {
     unterwegs++;
     const lauf = kette.then(fn);
@@ -120,10 +127,12 @@ export function baueAufgaben(host, ctx) {
   // ---------- Daten ----------
   async function lade({ leise = false } = {}) {
     if (unterwegs > 0 && st.geladen) { nachladen = true; return; }
-    const nr = ++st.ladeNr;
+    const nr = ++st.ladeNr, stand = aenderNr;
     try {
       const r = await api.aufgaben();
       if (st.weg || nr !== st.ladeNr) return;
+      // Seit dem Start dieses Ladens hat sich hier etwas geändert: der Stand ist veraltet — verwerfen und (sobald nichts mehr unterwegs ist) neu holen
+      if (stand !== aenderNr && st.geladen) { if (unterwegs > 0) nachladen = true; else lade({ leise: true }); return; }
       st.liste = Array.isArray(r?.aufgaben) ? r.aufgaben : [];
       st.vertraut = r?.vertraut !== false;
       st.fehler = null;
@@ -171,9 +180,13 @@ export function baueAufgaben(host, ctx) {
     const liste = h("div", { klasse: "au-karten", role: "list", "aria-label": TA.spalten[status], "data-spalte-karten": status, "aria-busy": laedt ? "true" : null },
       laedt ? [skelett("au-sk-karte"), skelett("au-sk-karte kurz")] : karten.map((a, i) => karteEl(a, status, i + 1, karten.length)));
     if (!laedt && !karten.length) liste.append(h("div", { klasse: "au-spalte-leer", text: TA.spalteLeer }));
-    const fuss = status === "erledigt" && alte > 0
-      ? h("button", { type: "button", klasse: "knopf-text au-alte", "data-alte-umschalten": "", "aria-pressed": String(st.alteZeigen), text: st.alteZeigen ? TA.erledigtAlteZu : TA.erledigtAlte(alte),
-        aufClick: () => { st.alteZeigen = !st.alteZeigen; zeichne(); } })
+    const archivReif = status === "erledigt" && !laedt ? zuArchivieren().length : 0;
+    const fuss = status === "erledigt" && (alte > 0 || archivReif > 0)
+      ? h("div", { klasse: "au-fuss" },
+        alte > 0 ? h("button", { type: "button", klasse: "knopf-text au-alte", "data-alte-umschalten": "", "aria-pressed": String(st.alteZeigen), text: st.alteZeigen ? TA.erledigtAlteZu : TA.erledigtAlte(alte),
+          aufClick: () => { st.alteZeigen = !st.alteZeigen; zeichne(); } }) : null,
+        archivReif > 0 ? h("button", { type: "button", klasse: "knopf-text au-alte", "data-archiv-alle": "", title: TA.archiv.alleTitel, text: TA.archiv.alle(archivReif),
+          aufClick: () => archiviereAlte() }) : null)
       : null;
     const el = h("section", { klasse: "au-spalte", "data-spalte": status, "aria-label": TA.spalten[status] },
       h("header", { klasse: "au-spalte-kopf" }, h("span", { klasse: `au-punkt ${status}`, "aria-hidden": "true" }), h("h3", { text: TA.spalten[status] }), h("span", { klasse: "au-spalte-zahl", text: laedt ? "" : zahl })),
@@ -219,6 +232,7 @@ export function baueAufgaben(host, ctx) {
     const titel = eingabe.value.trim();
     if (!titel) { ansage.textContent = TA.erfassen.leer; eingabe.focus(); feld.feld.classList.add("fehlerhaft"); setTimeout(() => feld.feld.classList.remove("fehlerhaft"), 900); return; }
     if (!st.vertraut) { ctx.fragVertrauen(); return; }
+    aenderNr++;
     const rangMax = st.liste.filter((x) => x.status === "offen").reduce((m, x) => Math.max(m, Number.isFinite(x.rang) ? x.rang : 0), 0);
     const temp = { pfad: `__neu-${++tempNr}`, titel, status: "offen", prioritaet: "normal", quelle: "mensch", rang: rangMax + 1000, erstellt: "9999", geaendert: "", vorschau: "", faellig: null, vorlaeufig: true };
     st.liste.push(temp);
@@ -248,23 +262,62 @@ export function baueAufgaben(host, ctx) {
     ctx.toast(e?.message || standard, { fehler: true });
   }
 
+  // ---------- Archivieren (verschiebt nur, löscht nie) ----------
+  const zuArchivieren = () => st.liste.filter((a) => archivReifSeit(a));
+  async function archiviere(a) {
+    if (!st.vertraut) { ctx.fragVertrauen(); return; }
+    aenderNr++;
+    try {
+      await reihe(() => api.aufgabenArchivieren({ pfad: a.pfad }));
+      st.liste = st.liste.filter((x) => x.pfad !== a.pfad);
+      zeichne();
+      ansage.textContent = TA.archiv.erledigt(a.titel);
+      ctx.toast(TA.archiv.erledigt(a.titel));
+      ctx.beiAenderung?.();
+    } catch (e) { behandleFehler(e, TA.archiv.fehler); lade({ leise: true }); }
+  }
+  async function archiviereAlte() {
+    if (!st.vertraut) { ctx.fragVertrauen(); return; }
+    aenderNr++;
+    try {
+      const r = await reihe(() => api.aufgabenArchivieren({ aelterAlsTage: TA.archiv.tage }));
+      const weg = new Set((Array.isArray(r?.archiviert) ? r.archiviert : []).map((x) => x.von)), n = weg.size;
+      st.liste = st.liste.filter((x) => !weg.has(x.pfad));
+      zeichne();
+      lade({ leise: true }); // gleicht mit der Platte ab (die Werkstatt rechnet das Alter selbst)
+      ctx.toast(n ? TA.archiv.erledigtViele(n) : TA.archiv.nichts);
+      if (n) ctx.beiAenderung?.();
+    } catch (e) { behandleFehler(e, TA.archiv.fehler); lade({ leise: true }); }
+  }
+
   // ---------- Ändern ----------
   // felder: an die Werkstatt; lokal: sofort sichtbarer Stand; platz: { davor, danach } (Pfade) für die Stelle in der Spalte
   async function aendere(a, felder, { lokal, platz, zielText } = {}) {
-    const vorher = { ...a };
+    const vorher = { ...a }, pfad = a.pfad;
+    aenderNr++;
+    ausstehend.set(pfad, (ausstehend.get(pfad) || 0) + 1);
+    // genau einmal abbuchen (Antwort oder Fehler); true = zu dieser Karte ist keine weitere Änderung mehr unterwegs
+    let abgebucht = false;
+    const bucheAb = () => {
+      if (!abgebucht) { abgebucht = true; const n = (ausstehend.get(pfad) || 1) - 1; if (n > 0) ausstehend.set(pfad, n); else ausstehend.delete(pfad); }
+      return !ausstehend.has(pfad);
+    };
     Object.assign(a, lokal || felder);
     st.fokusPfad = a.pfad;
     zeichne();
     try {
       const r = await reihe(() => api.aufgabeAendern(a.pfad, platz ? { ...felder, platz } : felder));
+      const letzte = bucheAb();
       if (r.geaendert && r.geaendert.length > 1) await lade({ leise: true });
-      else { Object.assign(a, r.aufgabe); st.fokusPfad = a.pfad; zeichne(); }
+      // Die Antwort einer früheren Änderung zeigt den Stand VOR der späteren: nur die letzte Antwort einer Karte wird übernommen
+      else if (letzte) { Object.assign(a, r.aufgabe); st.fokusPfad = a.pfad; zeichne(); }
       ctx.beiAenderung?.();
       if (zielText) {
         const sp = spalteVon(a.status), i = sp.findIndex((x) => x.pfad === a.pfad);
         ansage.textContent = TA.ansage.verschoben(a.titel, zielText, i + 1, sp.length);
       }
     } catch (e) {
+      bucheAb();
       Object.assign(a, vorher);
       st.fokusPfad = a.pfad;
       zeichne();
@@ -308,6 +361,7 @@ export function baueAufgaben(host, ctx) {
       ...(a.faellig ? [{ name: TA.karte.faelligKein, id: "faellig-kein", symbol: "schliessen", tun: () => setzeFaellig(null) }] : []),
       { trenner: true },
       { name: TA.karte.oeffnen, id: "oeffnen", symbol: "notiz", tun: () => ctx.oeffneDatei(a.pfad) },
+      ...(a.status === "erledigt" ? [{ name: TA.karte.archivieren, id: "archivieren", symbol: "archiv", tun: () => archiviere(a) }] : []),
     ], { rechts: true });
   }
 

@@ -72,6 +72,7 @@ Lesen ist nachsichtig: eine von Hand oder von einer anderen App geschriebene Dat
 - **Karte öffnen** = die Datei im vorhandenen Editor; „Zurück zum Board“ führt zurück.
 - **Filter:** Priorität, Quelle (Mensch/KI), Fälligkeit (überfällig, heute, diese Woche, ohne Datum); die Auswahl bleibt erhalten.
 - **Erledigte** werden nach 7 Tagen (nach `geaendert`) eingeklappt; ein Knopf zeigt sie.
+- **Archivieren:** Im Karten-Menü einer erledigten Aufgabe („Archivieren“) und als Knopf unter der Spalte „Erledigt“ („n erledigte (älter als 30 Tage) archivieren“). Die Datei wandert unverändert nach `<aufgaben-ordner>/archiv/` (atomar: erst ein zweiter Name, dann fällt der alte weg; ein gleicher Name im Archiv wird nie überschrieben, die neue Datei bekommt `-2`, `-3` …). Gelöscht wird nichts; zurückholen = die Datei von Hand zurück in den Aufgaben-Ordner legen. Board, Zähler und Seitenleiste lesen nur Dateien direkt im Aufgaben-Ordner und sehen das Archiv nie; im Notiz-Index zählt der Ordner als Bereich „Archiv“. Archiviert werden nur erledigte Aufgaben (409 sonst), nur in einem vertrauten Vault; ein Verweis als `archiv/` oder als Aufgaben-Ordner wird nie benutzt.
 - Ohne Vertrauen: Board lesbar, Eingabe gesperrt, Hinweis mit „Bestätigen …“.
 
 ## 5. Werkstatt-Routen
@@ -81,6 +82,7 @@ Lesen ist nachsichtig: eine von Hand oder von einer anderen App geschriebene Dat
 | `GET /api/aufgaben` | `{ ordner, vertraut, zaehler: { offen, ueberfaellig }, aufgaben: [...] }`, sortiert; je Aufgabe alle Felder plus `vorschau` (160 Zeichen) |
 | `POST /api/aufgaben` | `{ titel, text?, prioritaet?, faellig?, status?, bezug? }` → `{ pfad, aufgabe }`; Rang vergibt der Server, `quelle` ist immer `mensch` (eine Quelle in der Anfrage zählt nicht) |
 | `PATCH /api/aufgaben/<pfad>` | `{ status?, prioritaet?, faellig? (null löscht), titel?, bezug?, rang? , platz?: { davor, danach } }` → `{ pfad, geaendert, aufgabe }`; `platz` nennt die Nachbarn (Pfade), der Server rechnet den Rang |
+| `POST /api/aufgaben/archivieren` | `{ pfad }` (eine erledigte Aufgabe) oder `{ aelterAlsTage }` (alle erledigten, länger nicht geändert; Standard 30) → `{ archiviert: [{ von, pfad }], uebersprungen }`; verschiebt nur nach `<aufgaben-ordner>/archiv/`, löscht nie; Vertrauen wie beim Ändern |
 
 Pfadschutz: `basis.mjs` `loese`/`sauber` für jeden Pfad von außen (400/403), zusätzlich nur Dateien direkt im Aufgaben-Ordner, nie Verweise oder Unterordner, nur Dateien mit `typ: aufgabe` (422). Schreiben ohne Vertrauen: `409` mit `art: "nicht-vertraut"`. Der Text einer Aufgabe wird über die Routen nicht geändert (dafür gibt es den Editor). Die Swift-Brücke lässt dafür `PATCH` zu.
 
@@ -99,6 +101,8 @@ kortex aufgabe neu "<titel>" [--prio hoch] [--faellig 2026-11-03] [--text "…"]
 kortex aufgaben [--status offen] [--alle] [--json]
 kortex aufgabe erledigt <pfad|dateiname|namensteil>
 kortex aufgabe status <aufgabe> offen|in-arbeit|warten|erledigt
+kortex aufgabe archivieren <aufgabe>                 # eine erledigte Aufgabe nach archiv/
+kortex aufgabe archivieren --alte [--tage 30]        # alle erledigten, die länger als n Tage nicht geändert wurden
 ```
 
 Exit 5 in einem nicht bestätigten Vault (nur die schreibenden Unterbefehle), 64 bei falscher Eingabe, 1 wenn die Aufgabe fehlt. Für Claude Code gibt es den Skill `aufgabe` (`kern/skills/aufgabe/SKILL.md`), den der Kern als Befehl `/aufgabe …` rendert; die AGENTS.md des Vaults verweist darauf.
