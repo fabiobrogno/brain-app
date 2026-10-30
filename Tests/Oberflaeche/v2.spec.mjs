@@ -299,10 +299,10 @@ test("Statusleiste: alle Elemente und Hell/Dunkel-Umschalter", async ({ page }) 
   const farbe = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
   expect(await farbe()).toBe("rgb(255, 255, 255)");
   await page.click('[data-st="theme"]');
-  expect(await farbe()).toBe("rgb(31, 30, 27)");
+  expect(await farbe()).toBe("rgb(10, 10, 10)");
   await page.reload();
   await page.waitForSelector("[data-karte]");
-  expect(await farbe()).toBe("rgb(31, 30, 27)"); // gemerkt
+  expect(await farbe()).toBe("rgb(10, 10, 10)"); // gemerkt
   await page.click('[data-st="einstellungen"]');
   await page.click('.menue [data-wert="hell"]');
   expect(await farbe()).toBe("rgb(255, 255, 255)");
@@ -315,7 +315,7 @@ test("Menübefehle: alle Swift-Befehle sind belegt, hell-dunkel schaltet das The
   const farbe = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
   expect(await farbe()).toBe("rgb(255, 255, 255)");
   await befehl("hell-dunkel");
-  await expect.poll(farbe).toBe("rgb(31, 30, 27)");
+  await expect.poll(farbe).toBe("rgb(10, 10, 10)");
   await befehl("hell-dunkel");
   await expect.poll(farbe).toBe("rgb(255, 255, 255)");
   await befehl("posteingang");

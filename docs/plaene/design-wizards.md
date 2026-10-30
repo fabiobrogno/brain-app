@@ -96,3 +96,45 @@ Alle bisherigen Funktionen bleiben erreichbar: Menü „Kortex einrichten …“
 - Swift: `EinrichtungsZustandTests`, `EinrichtungsAblaufTests` (angepasst: nach dem Vault gilt die Einrichtung als fertig; neue Tests für Karten).
 - Studio: Playwright-Specs (`willkommen`, `lizenzen`, `studio`, `v2`, `verlauf`, `git-oberflaeche` u. a.) laufen unverändert; Bilder vorher/nachher hell und dunkel.
 - Bilder: SwiftUI per `NSHostingView` offscreen, Studio per Playwright, jeweils hell und dunkel (Ablage im Scratchpad, nicht im Repo).
+
+## 6. Design-System v2 (P1)
+
+Stand: 30.10.2026 · Branch `feat/design-fundament` · Paket P1 „Fundament“ aus `UMSETZUNG.md` des freigegebenen Prototyps (Orca-Niveau; Einrichtung und Hauptfenster).
+Hier geht es nur um das **Fundament** (Tokens, Schrift, Bausteine, Optik der bestehenden Flächen). Die Struktur des Hauptfensters (P3) und der neue Einrichtungs-Assistent (P2)
+folgen und bauen auf diesen Tokens auf.
+
+**Herkunft.** Orca (MIT, Copyright (c) 2026 Lovecast Inc.), gelesen am Commit `9bccd6795593abbe47dfebc7c2df5393712ce69c` (30. Oktober 2026), Dateien
+`src/renderer/src/assets/main.css`, `docs/STYLEGUIDE.md`, `components/ui/{button,input,switch,toggle-group,badge,dropdown-menu,command,dialog}.tsx`,
+`assets/text-shimmer.css`. Übernommen sind Werte und Regeln, von Hand nachgebaut; kein Quelltext, keine Grafik, kein Name. Der Lizenztext steht in `THIRD-PARTY-NOTICES.md`,
+an den Stellen im Code steht ein kurzer Herkunftskommentar (`studio/studio.css` Kopf, `studio/bausteine.css` Kopf, `studio/dialoge.css`, `studio/aufgaben.css`).
+
+| Bereich | Wert | Quelle in Orca | Token in Kortex (`studio/studio.css`) |
+|---|---|---|---|
+| Flächen hell | Canvas `#fff`, Seitenleiste `#fafafa`, Muted `#f5f5f5`, Hover `#f4f4f5`, Active `#ececed` | `main.css` `:root` | `--papier`, `--seite`, `--seite-2`, `--hover`, `--hover-2`, `--erhoben` |
+| Flächen dunkel | `#0a0a0a`, `#121212`, Card `#171717`, Muted `#222`, Hover `#1f1f1f`, Active `#2a2a2a` | `main.css` `.dark` | dieselben Tokens (`light-dark()`) |
+| Text | `#0a0a0a` / `#fafafa`; gedämpft `#737373` / `#a1a1a1`; **tertiär `#8c8c8c` / `#787878`** (eigene Anhebung) | `--foreground`, `--muted-foreground` | `--text`, `--text-2`, `--text-3` |
+| Ränder | `#e5e5e5` hell; dunkel weiß 7 % (Rand) und 13 % (Feld, stark) | `--border`, `--input` | `--linie`, `--linie-stark`, `--eingabe` |
+| Radien | `--radius: 0.625rem` und die Faktoren 0,6 / 0,8 / 1 / 1,4 / 1,8 → 6 / 8 / 10 / 14 / 18 px | `@theme inline` | `--r-s`, `--r`, `--r-l`, `--r-xl`, `--r-2xl` |
+| Höhenstufen | Haarlinie, `shadow-xs`, `shadow-floating` (0 10 24), Dialog/Palette (0 20 60) | `main.css`, `STYLEGUIDE.md` („Radius and elevation“), `ui/command.tsx` | `--schatten-klein`, `--schatten-float`, `--schatten-dialog`, `--dialog-rand` |
+| Auswahl in Listen, Baum, Palette, Menüs | Vordergrund 7 % eingemischt (dunkel `#2c2c2c`) + innerer Ring 14 % / 12 % — **keine Akzentfläche** | `.jump-palette-item[data-selected]` | `--auswahl`, `--auswahl-ring` |
+| Schrift | Geist, `letter-spacing: .01em`, Skala 14 / 13 / 12 / 11, Kategorien 11 px Großbuchstaben `.05em` | `@layer base`, `STYLEGUIDE.md` („Typography“) | `--schrift`, `--mono` (Geist Mono), `body` |
+| Bewegung | 180 ms `cubic-bezier(.16,1,.3,1)` (Auf-/Zuklappen, Hover), 120 ms schnell, Layout 760 ms `(.22,1,.36,1)`, Dialog/Palette zoom 96 % + Einblenden | `main.css`, `OnboardingFlow.tsx` | `--ease-out`, `--ease-flow`, `--d-fast`, `--d`, `--d-layout`, `@keyframes zoom` |
+| Knöpfe, Felder, Schalter, Segmente | Knopf outline = Rand + Karte + xs-Schatten; Feld 32 px, Fokus Rand Akzent 55 % + 3-px-Ring 38 %; Schalter 32 × 18 (Knauf 14); Segment = gedämpfte Fläche mit Rand, Wahl als Karte | `ui/button.tsx`, `input.tsx`, `switch.tsx`, `toggle-group.tsx` | `bausteine.css` (`.knopf`, `.bs-feld`, `.bs-schalter`, `.bs-segment`) |
+| Text-Schimmer (laufende Vorgänge) | Verlauf 110°, 2 s linear | `assets/text-shimmer.css` (Quelle shadcn/ui, MIT) | `.bs-text-schimmer` (neu geschrieben) |
+
+**Eigen (nicht aus Orca).** Kortex-Lila bleibt die einzige Akzentfarbe (`--akzent` hell `#5b4ed6` / dunkel `#a89fff`, `--akzent-hover`, `--akzent-tinte` für Text auf weicher
+Akzentfläche); Zustandsfarben (grün, gelb, rot) bleiben die der App; Symbole bleiben das eigene Set (`symbole.js`).
+
+**Schrift.** Geist und Geist Mono (SIL OFL 1.1, schon in den Hinweisen) liegen jetzt auch unter `Ressourcen/studio/vendor/fonts/` und werden per `@font-face` mit relativer URL geladen
+(Content-Security-Policy `font-src 'self'`; nichts von außen). Standard im Studio, im Editor und für Code.
+
+**Kontrast** (Test `Tests/Oberflaeche/tokens.spec.mjs`, gemessen in der echten Oberfläche, hell und dunkel): `--text` ≥ 4,5:1 auf Papier, Seite, Karte, Hover und Auswahl;
+`--text-2` ≥ 4,5:1 auf Papier, Seite und Karte (hell 4,74 / 4,54 / 4,74); **`--text-3` ≥ 3:1** auf Papier, Seite, Karte und Hover (hell 3,36 / 3,22 / 3,36 / 3,06, dunkel 4,48 / 4,24 / 4,06 / 3,73);
+Akzent als Text und Text auf Akzentfläche ≥ 4,5:1. Der alte Wert `--text-3 #a09d96` lag bei etwa 2,7:1.
+
+**Was sich sichtbar ändert.** Neutrale Graustufen statt warmer Grautöne; Geist statt der Systemschrift; die gewählte Zeile (Seitenleiste, Baum, Notizliste, Palette, Menüs) ist grau mit feinem Ring
+statt Lila-Fläche; Notizliste als einzelne abgerundete Zeilen ohne Trennlinien; Menüs, Toasts und Palette als deckende Karten mit Höhenstufen (Toast jetzt unten rechts, Eintritt von rechts);
+Dialoge und Palette erscheinen per Zoom; Aufgaben-Board mit Spalten (Radius 14) und Karten (Radius 10); Statusleiste 28 px. **Unverändert:** Struktur, Funktionen, Tastenkürzel, Maße der Spalten (P3).
+
+**Prüfung.** Alle Playwright-Specs (angepasst nur dort, wo Farbwerte geprüft werden: Hintergrund dunkel `rgb(10, 10, 10)`, Chip-Text `#4c3fc6`, Fokusrand Akzent 55 %), neue Spec `tokens.spec.mjs`;
+Bilder des echten Studios hell/dunkel vorher/nachher im Scratchpad (`ui-p1/`), verglichen mit dem Prototyp.
