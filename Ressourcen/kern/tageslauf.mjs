@@ -615,7 +615,7 @@ if (aufruf && aufruf === realpathSync(selbst)) {
   }
   const vault = o.vault || vaultPfadOderEnde([]);
   // Dienst-Lauf (LaunchAgent): nur für Vaults, für die der Dienst eingeschaltet wurde (tageslauf/dienst-merker.mjs).
-  if (o.dienst && !(await import("./tageslauf/dienst-merker.mjs")).dienstErlaubt(vault)) {
+  if (o.dienst && !((await import("./pfade.mjs")).vaultVertraut(vault) && (await import("./tageslauf/dienst-merker.mjs")).dienstErlaubt(vault))) {
     console.error(`${new Date().toISOString()} Hintergrunddienst: für diesen Vault ist der Dienst nicht eingeschaltet — Lauf übersprungen.`);
     process.exit(0);
   }

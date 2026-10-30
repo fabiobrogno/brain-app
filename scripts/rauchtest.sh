@@ -16,10 +16,12 @@
 #  D) Marken-Vault: ein altes Kit (<vault>/.tools/brain.mjs, ansicht/bruecke.mjs), Git-Hooks, core.fsmonitor und eine
 #     `node_modules/.bin/git` schreiben je eine Marke, falls sie je laufen. Zwei Läufe, beide mit relativem PATH-Eintrag
 #     ('node_modules/.bin:$PATH') und mit den Aktionen `vertrauen-geaendert` und `ansicht` aus der Studio-Oberfläche (--test-skript,
-#     BRAIN_TESTMODUS=1). Der Vault ist nicht vertraut; trotzdem darf das alte .tools NIE laufen (der Kern kommt aus dem Paket):
-#       haken    — Git-Einstellungen, die die App entschärft (Hooks, fsmonitor): Die Werkstatt committet sogar (Hooks aus), Marken: KEINE.
-#       gesperrt — Git-Einstellungen, die Programme starten und sich nicht entschärfen lassen (filter.*.clean, remote.*.uploadpack,
-#                  Partial Clone mit Nachladen, diff.external, credential.helper): Git bleibt gesperrt (409), Marken: KEINE.
+#     BRAIN_TESTMODUS=1). Der Vault ist von außen geöffnet, also nicht vertraut (Workspace-Trust, P5): Git ist ganz gesperrt (status
+#     200/gesperrt, sync/commit/verlauf 409 gitGesperrt), und das alte .tools darf NIE laufen (der Kern kommt aus dem Paket):
+#       haken    — core.hooksPath im Arbeitsbaum (.githooks) und core.fsmonitor: erst gesperrt; dann bestätigt die Probe den Vault wie die App
+#                  (POST /api/vertrauen): Die Werkstatt committet (200), führt aber den Hook-Ordner im Arbeitsbaum nicht aus, Marken: KEINE.
+#       gesperrt — Git-Einstellungen, die Programme starten (filter.*.clean, remote.*.uploadpack, Partial Clone mit Nachladen,
+#                  diff.external, credential.helper): Git bleibt gesperrt (409), Marken: KEINE (der Vault wird hier nie bestätigt).
 #       umleitung — core.worktree und .logs zeigen aus dem Vault hinaus, brain.config.json nennt Ordner wie „../aussen“: Der Kern
 #                  schreibt nichts außerhalb (Ordner vorher/nachher gleich), Marken: KEINE.
 #     Der Markenpfad steht fest in den Marken-Skripten (keine Umgebungsvariable, die eine bereinigte Umgebung verschluckt), und eine
@@ -213,12 +215,15 @@ process.stdin.resume();'
   printf '# Notiz\n' > "$vd/notiz.md"; printf '# Neu\n' > "$vd/neu.md"
   d_git -C "$vd" add notiz.md && d_git -C "$vd" commit -q -m Start || fehl "D/$art: erster Commit ist gescheitert"
   # Ein `git` im Vault, das nur ein relativer PATH-Eintrag ('node_modules/.bin') vor das echte setzt — schon das Lesen der
-  # Git-Einstellungen bei der Vertrauensprüfung startet git im Vault-Ordner (Review SW-3).
+  # Git-Einstellungen (Werkstatt: git config --list im Vault-Ordner) startet git im Vault-Ordner (Review SW-3).
   mkdir -p "$vd/node_modules/.bin"; d_marke_sh "$vd/node_modules/.bin/git" fremdes-git "$marke"
   case "$art" in
     haken)
-      # Einstellungen, die die App entschärft (-c core.hooksPath=/dev/null, -c core.fsmonitor=false).
-      for h in pre-commit commit-msg post-commit post-checkout post-merge pre-push; do d_marke_sh "$vd/.git/hooks/$h" "hook-$h" "$marke" ok; done
+      # Hook-Ordner IM Arbeitsbaum (so liefen die Hooks alter Kit-Vaults, `.tools/git-hooks`; ein Abgleich könnte sie austauschen) und fsmonitor:
+      # auch im bestätigten Vault führt die Werkstatt beides nicht aus (core.hooksPath=/dev/null bzw. nur .git/hooks und die Hooks des Kerns).
+      mkdir -p "$vd/.githooks"
+      for h in pre-commit commit-msg post-commit post-checkout post-merge pre-push; do d_marke_sh "$vd/.githooks/$h" "hook-$h" "$marke" ok; done
+      d_git -C "$vd" config core.hooksPath .githooks
       d_marke_sh "$basis/marken/fsmonitor.sh" fsmonitor "$marke"
       d_git -C "$vd" config core.fsmonitor "$basis/marken/fsmonitor.sh"
       erwartet="brain.mjs bruecke.mjs werkzeug fremdes-git hook-pre-commit hook-commit-msg hook-post-commit fsmonitor"
@@ -276,7 +281,9 @@ process.stdin.resume();'
   aussen_vorher="$(aussen_stand)"
   # Die Probe im Studio: vertrauen-geaendert und ansicht (öffnet die Übersicht des Kerns) aus der Oberfläche, dazu die Git-Wege der Werkstatt (nur mit BRAIN_TESTMODUS=1)
   probe="$basis/probe.js"
-  cat > "$probe" <<'JS'
+  # Die Probe kennt den Vault-Pfad und ob sie ihn bestätigen soll (nur „haken“): zwei Zeilen davor, der Rest ist fest.
+  { printf 'const VAULT = %s;\nconst BESTAETIGEN = %s;\n' "$("$RNODE" -e 'process.stdout.write(JSON.stringify(process.argv[1]))' "$vd")" "$([ "$art" = haken ] && echo true || echo false)"
+  cat <<'JS'
 const A = window.webkit.messageHandlers.aktion;
 const K = window.webkit.messageHandlers.brain;
 const web = async (methode, pfad, daten) => {
@@ -295,8 +302,16 @@ t.push("status=" + await web("GET", "/api/git/status"));
 t.push("sync=" + await web("POST", "/api/git/sync", {}));
 t.push("commit=" + await web("POST", "/api/git/commit", { nachricht: "Probe", dateien: ["neu.md"] }));
 t.push("verlauf=" + await web("GET", "/api/git/verlauf?pfad=notiz.md"));
+if (BESTAETIGEN) {
+  // wie die App nach dem Klick auf „Vertrauen“: POST /api/vertrauen mit dem gezeigten Vault
+  t.push("vertrauen=" + await web("POST", "/api/vertrauen", { erlauben: true, vault: VAULT }));
+  t.push("status2=" + await web("GET", "/api/git/status"));
+  t.push("commit2=" + await web("POST", "/api/git/commit", { nachricht: "Probe", dateien: ["neu.md"] }));
+  t.push("verlauf2=" + await web("GET", "/api/git/verlauf?pfad=notiz.md"));
+}
 return t.join(" ");
 JS
+  } > "$probe"
   # PATH mit relativem Eintrag: Ohne die Bereinigung fände jeder Kindprozess im Vault das git aus node_modules/.bin zuerst.
   ( export BRAIN_TESTMODUS=1 PATH="node_modules/.bin:$PATH"
     exec "$APP/Contents/MacOS/BrainApp" --vault "$vd" --test-fenster --test-skript "$probe" --test-fenster-schliessen-nach 16 --test-beenden-nach 22 >/dev/null 2>&1 ) &
@@ -323,16 +338,20 @@ JS
   if [ "$art" != umleitung ]; then
     case " $ergebnis " in *" ansicht=offen "*) ;; *) fehl "D/$art: ansicht (Übersicht des Kerns) antwortet nicht ok: $ergebnis" ;; esac
   fi
+  # Nicht vertraut (alle Läufe): Git ist ganz gesperrt — die Marken bleiben aus, weil gar kein git startet
+  case " $ergebnis " in *" status=200/gesperrt "*) ;; *) fehl "D/$art: Git-Status meldet ohne Vertrauen nicht 'gesperrt': $ergebnis" ;; esac
+  for w in sync commit verlauf; do
+    case " $ergebnis " in *" $w=409/gitGesperrt "*) ;; *) fehl "D/$art: $w ist ohne Vertrauen nicht gesperrt (erwartet 409/gitGesperrt): $ergebnis" ;; esac
+  done
   if [ "$art" = haken ]; then
-    # Der Commit erreicht Git wirklich (200) und löst trotzdem keinen Hook aus — sonst bewiese 'keine Marke' nichts.
-    case " $ergebnis " in *" commit=200 "*) ;; *) fehl "D/$art: Der Commit der Werkstatt ging nicht bis Git (erwartet 200, ohne Hooks): $ergebnis" ;; esac
+    # Nach der Bestätigung (wie die App): Git geht (Commit 200), aber der Hook-Ordner im Arbeitsbaum läuft nicht — sonst bewiese 'keine Marke' nichts.
+    case " $ergebnis " in *" vertrauen=200 "*) ;; *) fehl "D/$art: Die Bestätigung (POST /api/vertrauen) ging nicht durch: $ergebnis" ;; esac
+    case " $ergebnis " in *" status2=200 "*) ;; *) fehl "D/$art: Git-Status nach der Bestätigung nicht frei (erwartet 200): $ergebnis" ;; esac
+    case " $ergebnis " in *" commit2=200 "*) ;; *) fehl "D/$art: Der Commit der Werkstatt ging nach der Bestätigung nicht bis Git (erwartet 200, ohne Hooks): $ergebnis" ;; esac
+    case " $ergebnis " in *" verlauf2=200 "*) ;; *) fehl "D/$art: Der Verlauf ist nach der Bestätigung nicht frei (erwartet 200): $ergebnis" ;; esac
+    [ "$(d_git -C "$vd" log --format=%s -1 2>/dev/null)" = "Probe" ] || fehl "D/$art: Der Commit nach der Bestätigung steht nicht im Verlauf"
   fi
-  if [ "$art" = gesperrt ]; then
-    case " $ergebnis " in *" status=200/gesperrt "*) ;; *) fehl "D/$art: Git-Status meldet nicht 'gesperrt': $ergebnis" ;; esac
-    case " $ergebnis " in *" sync=409/gitGesperrt "*) ;; *) fehl "D/$art: Der Abgleich ist trotz gefährlicher Git-Einstellung nicht gesperrt: $ergebnis" ;; esac
-    case " $ergebnis " in *" commit=409/gitGesperrt "*) ;; *) fehl "D/$art: Der Commit ist trotz gefährlicher Git-Einstellung nicht gesperrt: $ergebnis" ;; esac
-  fi
-  echo "OK D/$art: ohne Freigabe läuft nichts aus dem Vault (Probe: $ergebnis; Marken unberührt, Status und Übersicht kamen vom Kern)"
+  echo "OK D/$art: ohne Vertrauen ist Git gesperrt, auch bestätigt läuft nichts aus dem Vault (Probe: $ergebnis; Marken unberührt, Status und Übersicht kamen vom Kern)"
 }
 
 phase_d() {

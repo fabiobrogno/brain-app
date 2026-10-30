@@ -1,6 +1,6 @@
 import Foundation
 
-/// Umgebung für alle Node-Kindprozesse (Brücken, brain.mjs, Vertrauensprüfung): Eine GUI-App erbt die Umgebung ihres Starters;
+/// Umgebung für alle Node-Kindprozesse (Brücken, brain.mjs): Eine GUI-App erbt die Umgebung ihres Starters;
 /// Variablen, die Node, den Lader oder Git umlenken, dürfen nicht in die mitgelieferte Laufzeit gelangen.
 public enum NodeUmgebung {
     /// Entfernt: Node-Optionen/-Pfade (fremder Code per `--require`), Electron-Modus, TLS-Abschaltung, `DYLD_*`/`LD_*` (Bibliotheken
@@ -13,10 +13,18 @@ public enum NodeUmgebung {
     ]
     static let gesperrtePraefixe = ["DYLD_", "LD_", "GIT_"]
 
-    /// Der Testschalter der Werkstatt (`BRAIN_TESTMODUS=1`: Test-Hilfen wie `--erlauben` der Vertrauensprüfung). Swift liest ihn
+    /// Der Testschalter der Werkstatt (`BRAIN_TESTMODUS=1`: Test-Hilfen der Werkstatt). Swift liest ihn
     /// selbst für `--test-skript`; an Kindprozesse geht er nur in Debug-Builds — ein Release-Build gibt ihn nie weiter, auch nicht,
     /// wenn der Starter ihn gesetzt hat.
     static let testmodusName = "BRAIN_TESTMODUS"
+    /// Weitere Testschalter des Kerns und der Werkstatt, die Schutzmaßnahmen abschalten (`KORTEX_VAULT_VERTRAUT=alle` macht jeden Vault
+    /// vertraut, `KORTEX_KERN_UNSTABIL_ERLAUBT` erlaubt unbeständige Kern-Pfade, die übrigen biegen Starter, Temp-Wurzeln, git und Hook-Ordner
+    /// um). Wie der Testmodus gehen sie nur in Debug-Builds an Kindprozesse; ein Release-Build entfernt sie aus der geerbten Umgebung und
+    /// aus den Vorgaben.
+    static let testSchalter: Set<String> = [
+        "KORTEX_VAULT_VERTRAUT", "KORTEX_KERN_UNSTABIL_ERLAUBT", "KORTEX_STARTER_PFAD", "KORTEX_KERN_TEMP_WURZELN",
+        "BRAIN_GIT_PROGRAMM", "BRAIN_GIT_HOOKS_ERLAUBT",
+    ]
     /// Marke der Vorschau (`VorschauModus.kindVorgaben`): Wer sie als Vorgabe setzt, bekommt keine Standardordner im PATH.
     /// Aus der geerbten Umgebung fliegt sie raus (`gesperrt`) — sie kommt nur von der App selbst.
     static let vorschauName = "KORTEX_VORSCHAU"
@@ -28,7 +36,8 @@ public enum NodeUmgebung {
 
     public static func bereinigt(_ env: [String: String], testmodusWeitergeben: Bool = NodeUmgebung.testmodusWeitergeben) -> [String: String] {
         env.filter { k, _ in
-            !gesperrt.contains(k) && !gesperrtePraefixe.contains { k.hasPrefix($0) } && (testmodusWeitergeben || k != testmodusName)
+            !gesperrt.contains(k) && !gesperrtePraefixe.contains { k.hasPrefix($0) }
+                && (testmodusWeitergeben || (k != testmodusName && !testSchalter.contains(k)))
         }
     }
 
@@ -42,7 +51,7 @@ public enum NodeUmgebung {
                                 testmodusWeitergeben: Bool = NodeUmgebung.testmodusWeitergeben) -> [String: String] {
         var env = bereinigt(basis, testmodusWeitergeben: testmodusWeitergeben)
         env["BRAIN_VAULT"] = vault?.path
-        for (k, v) in vorgaben where testmodusWeitergeben || k != testmodusName { env[k] = v }
+        for (k, v) in vorgaben where testmodusWeitergeben || (k != testmodusName && !testSchalter.contains(k)) { env[k] = v }
         if env[vorschauName] != nil {
             // Vorschau: nur absolute Einträge, aber NICHT Homebrew und /usr/local — dort liegt das echte claude des Rechners.
             let absolut = (env["PATH"] ?? "").split(separator: ":").map(String.init).filter { $0.hasPrefix("/") }

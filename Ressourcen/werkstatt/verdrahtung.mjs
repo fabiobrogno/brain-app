@@ -14,6 +14,7 @@ import { starte, neueFrist } from "../gemeinsam/prozess.mjs";
 import { erkenneProfile, profilZuPfad, mitProfil } from "./profile.mjs";
 
 const FRIST = 30_000;
+const NICHT_VERTRAUT = "Das geht erst, wenn du diesem Vault vertraust: Bestätige ihn in der Statusleiste des Studios („Nur ansehen“). Bis dahin tut Kortex an diesem Vault nichts außer Lesen und Suchen.";
 const kurz = (t) => String(t || "").trim().split("\n").filter(Boolean).slice(0, 6).join("\n").slice(0, 600);
 
 export function erzeugeVerdrahtung({ starter, support = null, istVorschau = () => !!process.env.KORTEX_VORSCHAU }) {
@@ -61,7 +62,8 @@ export function erzeugeVerdrahtung({ starter, support = null, istVorschau = () =
     };
     const [claude, git, dienst] = await Promise.all([
       profilStand(),
-      v && (await v.istGitRepo()) ? abschnitt(["hooks-install", ...vaultArgs, "--stand"], (j) => ({ moeglich: true, aktiv: !!j.aktiv, fremder: !!j.fremder })) : Promise.resolve({ moeglich: false }),
+      // Ohne Vertrauen (P5) tut der Kern nichts am Vault: die Prüfung vor dem Speichern lässt sich dann nicht einschalten
+      v && (await v.istGitRepo()) && v.vertrauenStand().erlaubt ? abschnitt(["hooks-install", ...vaultArgs, "--stand"], (j) => ({ moeglich: true, aktiv: !!j.aktiv, fremder: !!j.fremder })) : Promise.resolve({ moeglich: false }),
       process.platform === "darwin" && !vorschau && v && (!testmodus() || process.env.BRAIN_LAUNCHCTL)
         ? abschnitt(["dienst", "status", "--json", ...vaultArgs], (j) => ({ verfuegbar: true, eingerichtet: !!j.eingerichtet && !!j.fuerDiesenVault, geladen: !!j.geladen }))
         : Promise.resolve({ verfuegbar: false }),
@@ -78,6 +80,7 @@ export function erzeugeVerdrahtung({ starter, support = null, istVorschau = () =
     let claudeLaeufe = null;
     if (e.was === "claude") {
       if (an && !v) throw new HttpFehler(409, "Es ist noch kein Vault geöffnet.", { keinVault: true });
+      if (an && !v.vertrauenStand().erlaubt) throw new HttpFehler(409, NICHT_VERTRAUT, { art: "nicht-vertraut" }); // Befehle und Hinweise für die KI nur für einen vertrauten Vault
       // Profile: nur Pfade aus der erkannten Liste (nie ein frei gewählter Pfad); ohne Angabe das Standardprofil, falls es eines gibt.
       const gewuenscht = e.profile === undefined ? erkenneProfile().filter((p) => p.standard).map((p) => p.pfad) : e.profile;
       if (!Array.isArray(gewuenscht) || gewuenscht.some((x) => typeof x !== "string")) throw new HttpFehler(400, "„profile“ muss eine Liste von Pfaden sein.");
@@ -88,6 +91,7 @@ export function erzeugeVerdrahtung({ starter, support = null, istVorschau = () =
       was = "Das Eintragen bei Claude Code";
     } else if (e.was === "git") {
       if (!v) throw new HttpFehler(409, "Es ist noch kein Vault geöffnet.", { keinVault: true });
+      if (an && !v.vertrauenStand().erlaubt) throw new HttpFehler(409, NICHT_VERTRAUT, { art: "nicht-vertraut" });
       if (!(await v.istGitRepo())) throw new HttpFehler(409, "Dieser Ordner hat keinen Versionsverlauf — die Prüfung vor dem Speichern gibt es nur mit einem.", { art: "kein-git" });
       args = ["hooks-install", "--vault", v.wurzel, ...(an ? (e.ersetzen === true ? ["--ersetzen"] : []) : ["--aus"])];
       was = "Das Einschalten der Prüfung";
@@ -97,6 +101,7 @@ export function erzeugeVerdrahtung({ starter, support = null, istVorschau = () =
       if (istVorschau()) throw new HttpFehler(409, "In der Vorschau wird kein Hintergrunddienst eingerichtet.", { art: "vorschau" });
       if (testmodus() && !process.env.BRAIN_LAUNCHCTL) throw new HttpFehler(409, "Im Testmodus ist kein echter Hintergrunddienst erlaubt.", { art: "testmodus" });
       if (!v) throw new HttpFehler(409, "Es ist noch kein Vault geöffnet.", { keinVault: true });
+      if (an && !v.vertrauenStand().erlaubt) throw new HttpFehler(409, NICHT_VERTRAUT, { art: "nicht-vertraut" });
       args = ["dienst", an ? "an" : "aus", "--vault", v.wurzel];
       was = "Der Hintergrunddienst";
       // Der Dienst ruft `claude -p` auf: er soll das gewählte Profil nutzen (nur ein anderes als das Standardprofil wird in die plist geschrieben).

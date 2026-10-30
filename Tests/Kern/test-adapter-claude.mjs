@@ -366,7 +366,7 @@ test("settings.json wird atomar geschrieben (Temp + rename, keine Reste) und beh
 test("Ohne stabilen Kern-Pfad (KORTEX_KERN_PFAD fehlt oder ist unbeständig) trägt der Installer nichts ein: Exit 3 mit klarer Meldung", () => {
   const { h, v } = setup();
   const vorher = readFileSync(join(h, "settings.json"), "utf8");
-  const ohne = { ...ohneGit(), HOME: TEMP_HOME, USERPROFILE: TEMP_HOME, KORTEX_KERN_UNSTABIL_ERLAUBT: "" };
+  const ohne = { ...ohneGit(), HOME: TEMP_HOME, USERPROFILE: TEMP_HOME, KORTEX_KERN_UNSTABIL_ERLAUBT: "", BRAIN_TESTMODUS: "1" }; // BRAIN_TESTMODUS: der Wegwerf-Vault gilt als vertraut (P5)
   delete ohne.KORTEX_KERN_PFAD;
   for (const extra of [{}, { KORTEX_KERN_PFAD: "relativ/kern" }, { KORTEX_KERN_PFAD: join(tmpdir(), "gibt-es-nicht") }, { KORTEX_KERN_PFAD: tmpdir() }, { KORTEX_KERN_PFAD: "/Applications/Kortex.app/Contents/Resources/kern" }]) {
     const r = spawnSync(process.execPath, [inst, v, "--claude-home", h], { encoding: "utf8", env: { ...ohne, ...extra } });

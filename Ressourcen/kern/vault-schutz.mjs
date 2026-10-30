@@ -183,3 +183,5 @@ export function registriereVault(lexikalisch, echt) {
   if (!wurzeln.some((w) => w.lexikalisch === l && w.echt === e)) wurzeln.push({ lexikalisch: l, echt: e });
   installiere();
 }
+// Die echten Pfade der Vaults, die dieser Prozess geprüft hat (pruefeVault) — werkzeug.mjs#gitBefehl fragt danach, ob sie vertraut sind.
+export function registrierteVaults() { return [...new Set(wurzeln.map((w) => w.echt))]; }

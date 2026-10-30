@@ -2,8 +2,8 @@
 // Hermetisch: eigenes Home (Git liest keine echte ~/.gitconfig), eigener Support-Ordner (hilfe.mjs), kein Netzwerk.
 import test, { beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync, existsSync, readdirSync, symlinkSync, mkdirSync, rmSync, chmodSync, lstatSync, statSync } from "node:fs";
-import { join, basename } from "node:path";
+import { readFileSync, writeFileSync, existsSync, readdirSync, symlinkSync, mkdirSync, rmSync, chmodSync, lstatSync, statSync, realpathSync } from "node:fs";
+import { join, basename, dirname } from "node:path";
 import { userInfo } from "node:os";
 import { execFileSync } from "node:child_process";
 import { tmp, schreibe, repo, g, pfad } from "./hilfe.mjs";
@@ -28,7 +28,18 @@ const OPT = { heute: HEUTE };
 const LEER = { vaults: [], aktiv: null };
 
 const VAULTS_JSON = () => join(SUPPORT(), "vaults.json");
+// Im Testmodus ist der „Besitzer“ eines lokalen Repositorys der Name seines Elternordners; ein Klon gilt als eigener, wenn das Konto so heißt (F3).
+const loginVon = (bare) => basename(dirname(bare));
 const VERTRAUEN_JSON = () => join(SUPPORT(), "vertrauen.json");
+// Das neue Vault trägt sein eigenes Vertrauen (P5: angelegt/geklont, ohne Reste des alten Eintrags); alles andere ist der Rest, der übrig bleibt.
+function restOhne(pfad, quelle) {
+  const m = JSON.parse(readFileSync(VERTRAUEN_JSON(), "utf8")), echtPfad = realpathSync(pfad);
+  assert.ok(m[echtPfad], `Vertrauen für ${pfad} fehlt: ${JSON.stringify(Object.keys(m))}`);
+  assert.equal(m[echtPfad].quelle, quelle); assert.equal(m[echtPfad].code, undefined, "nichts vom alten Eintrag geerbt");
+  assert.match(m[echtPfad].ordner, /^\d+:\d+:[\d.]+$/);
+  delete m[echtPfad];
+  return m;
+}
 // Sicherungen defekter Listen (neue Namen mit Zeit, alte Einzeldatei) liegen im Support-Ordner und werden je Test weggeräumt.
 const sicherungen = () => readdirSync(SUPPORT()).filter((n) => /^vaults\.json\.defekt-/.test(n)).sort();
 // Ebenso die Sicherungen einer kaputten vertrauen.json (Befund V4): vertrauen.json.defekt-<Zeit>.
@@ -697,7 +708,7 @@ test("klone: lokales Bare-Repo (Testmodus) → Vault aktiv, git:true, Name aus d
 test("klone: ohne Ordner nach <home>/Kortex, in einen vorhandenen leeren Ordner (auch mit .DS_Store) geht", async () => {
   const bare = bareMitInhalt();
   const home = tmp("brain-home6-");
-  const r = await klone({ url: bare }, { ...OPT, home });
+  const r = await klone({ url: bare }, { ...OPT, home, githubLogin: loginVon(bare) });
   assert.equal(r.vault.pfad, join(home, "Kortex"));
   assert.ok(existsSync(join(home, "Kortex", "wissen.md")));
   const leer = tmp("brain-kl-leer-");
@@ -804,9 +815,9 @@ test("klone: eine alte Freigabe für den Zielpfad wird vergessen (echter und ges
   const andere = tmp("brain-vg1-a-");
   const bleibt = { seit: "2026-10-02T00:00:00Z", ordner: "1:2:3", code: "abc" };
   schreibeJson(VERTRAUEN_JSON(), { [echt]: { seit: "2026-10-01T00:00:00Z" }, [join(link, "Ziel")]: { seit: "x" }, [echt.toUpperCase()]: { seit: "y" }, [andere]: bleibt });
-  const r = await klone({ url: bare, ordner: join(link, "Ziel") }, OPT);
+  const r = await klone({ url: bare, ordner: join(link, "Ziel") }, { ...OPT, githubLogin: loginVon(bare) });
   assert.equal(r.vault.pfad, echt);
-  assert.deepEqual(leseJson(VERTRAUEN_JSON()), { [andere]: bleibt }, "nur die Einträge des Zielpfads fallen weg");
+  assert.deepEqual(restOhne(echt, "geklont"), { [andere]: bleibt }, "nur die alten Einträge des Zielpfads fallen weg; der Klon ist neu vertraut");
   assert.equal(statSync(VERTRAUEN_JSON()).mode & 0o777, 0o600);
   assert.deepEqual(readdirSync(SUPPORT()).filter((n) => n.includes(".tmp")), [], "keine Reste");
 });
@@ -816,13 +827,13 @@ test("klone und neuesVault ohne Ordner: die alte Freigabe für <home>/Kortex wir
   const home = tmp("brain-vg2-");
   const brain = join(home, "Kortex"), anderes = tmp();
   schreibeJson(VERTRAUEN_JSON(), { [brain]: { seit: "x" }, [anderes]: { seit: "y" } });
-  const r = await klone({ url: bare }, { ...OPT, home });
+  const r = await klone({ url: bare }, { ...OPT, home, githubLogin: loginVon(bare) });
   assert.equal(r.vault.pfad, brain);
-  assert.deepEqual(leseJson(VERTRAUEN_JSON()), { [anderes]: { seit: "y" } });
+  assert.deepEqual(restOhne(brain, "geklont"), { [anderes]: { seit: "y" } });
   schreibeJson(VERTRAUEN_JSON(), { [join(home, "Kortex 2")]: { seit: "x" }, [anderes]: { seit: "y" } });
   const n = await neuesVault({ art: "leer" }, { ...OPT, home });
   assert.equal(n.vault.pfad, join(home, "Kortex 2"));
-  assert.deepEqual(leseJson(VERTRAUEN_JSON()), { [anderes]: { seit: "y" } });
+  assert.deepEqual(restOhne(join(home, "Kortex 2"), "angelegt"), { [anderes]: { seit: "y" } });
 });
 
 test("neuesVault (vorlage und leer): die alte Freigabe für den Zielordner wird vergessen, andere bleiben", async () => {
@@ -831,7 +842,7 @@ test("neuesVault (vorlage und leer): die alte Freigabe für den Zielordner wird 
     const ziel = join(tmp("brain-vg3-"), "V");
     schreibeJson(VERTRAUEN_JSON(), { [ziel]: { seit: "x" }, [andere]: { seit: "y" } });
     await neuesVault({ art, ordner: ziel }, OPT);
-    assert.deepEqual(leseJson(VERTRAUEN_JSON()), { [andere]: { seit: "y" } }, art);
+    assert.deepEqual(restOhne(ziel, "angelegt"), { [andere]: { seit: "y" } }, art);
   }
 });
 
@@ -871,7 +882,7 @@ test("kaputte vertrauen.json: klone, neu und entfernen laufen — der kaputte In
     writeFileSync(VERTRAUEN_JSON(), roh);
     const basis = tmp("brain-vg6-");
     const a = tmp(); registriere(a);
-    const k = await klone({ url: bare, ordner: join(basis, "K") }, OPT);
+    const k = await klone({ url: bare, ordner: join(basis, "K") }, { ...OPT, githubLogin: loginVon(bare) });
     const n = await neuesVault({ art: "vorlage", ordner: join(basis, "N") }, OPT);
     assert.equal(k.vault.pfad, join(basis, "K"), `klone läuft (${JSON.stringify(roh)})`);
     assert.equal(n.vault.pfad, join(basis, "N"), "neuesVault läuft");
@@ -883,7 +894,9 @@ test("kaputte vertrauen.json: klone, neu und entfernen laufen — der kaputte In
       assert.equal(s.length, 1, `genau eine Sicherung (${JSON.stringify(roh)}): ${s}`);
       assert.match(s[0], /^vertrauen\.json\.defekt-\d{8}-\d{6}$/);
       assert.equal(readFileSync(join(SUPPORT(), s[0]), "utf8"), roh, "der kaputte Inhalt steht unverändert in der Sicherung");
-      assert.equal(existsSync(VERTRAUEN_JSON()), false, "die kaputte Datei liegt beiseite — am alten Ort steht nichts mehr, das als Freigabe gelten könnte");
+      const neu = leseJson(VERTRAUEN_JSON());
+      assert.deepEqual(Object.keys(neu).sort(), [join(basis, "K"), join(basis, "N")].sort(), "die kaputte Datei liegt beiseite — die neue kennt nur die beiden neuen Vaults");
+      assert.deepEqual([neu[join(basis, "K")].quelle, neu[join(basis, "N")].quelle], ["geklont", "angelegt"]);
     } else assert.deepEqual(s, [], "eine leere Datei hat nichts zu bewahren");
     for (const f of vertrauenSicherungen()) rmSync(join(SUPPORT(), f)); // je Fall frisch zählen
     nr++;
@@ -913,7 +926,7 @@ test("kaputte vertrauen.json: ein Eintrag für den Zielpfad in einer kaputten Da
   const s = vertrauenSicherungen();
   assert.equal(s.length, 1);
   assert.equal(readFileSync(join(SUPPORT(), s[0]), "utf8"), inhalt);
-  assert.equal(existsSync(VERTRAUEN_JSON()), false, "keine Freigabe für den neuen Vault");
+  assert.deepEqual(restOhne(ziel, "angelegt"), {}, "die neue Datei kennt nur den neuen Vault — nichts aus der kaputten");
 });
 
 // ---------------------------------------------------------------- Entfernen: nur ein aktiver Vault, dessen Ordner es gibt
@@ -993,13 +1006,18 @@ test("oeffneOrdner mit Git-Einschalten: läuft die Frist ab, wird nur Eigenes zu
   }
 });
 
-test("oeffneOrdner ohne Git-Wunsch: hängt schon die Repo-Prüfung, kommt nach der Frist ein klarer Fehler und kein Eintrag", async () => {
+test("oeffneOrdner ohne Git-Wunsch startet gar kein git (Workspace-Trust: ein von außen geöffneter Ordner ist nicht vertraut) — ein hängendes git stört nicht; mit Git-Wunsch kommt nach der Frist ein klarer Fehler und kein Eintrag", async () => {
   const d = tmp("brain-frist4-"); schreibe(d, "a.md", "# a\n");
   const f = attrappeMit({ "rev-parse": HAENGT });
-  const e = await mitPfad(f.dir, () => wirftAsync(oeffneOrdner({ pfad: d }, { ...OPT, frist: 700 })));
+  const r = await mitPfad(f.dir, () => oeffneOrdner({ pfad: d }, { ...OPT, frist: 700 }));
+  assert.equal(r.git, false); assert.deepEqual(f.aufrufe(), [], "git wurde nie gestartet");
+  entferne(d);
+  const d2 = tmp("brain-frist4b-"); schreibe(d2, "a.md", "# a\n");
+  const f2 = attrappeMit({ "rev-parse": HAENGT });
+  const e = await mitPfad(f2.dir, () => wirftAsync(oeffneOrdner({ pfad: d2, gitEinschalten: true }, { ...OPT, frist: 700 })));
   assert.equal(e.status, 504);
-  assert.match(e.message, /^Git hat nicht rechtzeitig geantwortet\. Es wurde nichts verändert/);
-  assert.ok(await prozessTot(f.pid()));
+  assert.match(e.message, /^Das Einschalten des Versionsverlaufs hat zu lange gedauert/);
+  assert.ok(await prozessTot(f2.pid()));
   assert.deepEqual(leseVaults(), LEER);
 });
 

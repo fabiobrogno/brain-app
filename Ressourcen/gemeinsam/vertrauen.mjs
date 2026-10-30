@@ -1,21 +1,33 @@
-// gemeinsam/vertrauen.mjs — Vertrauen v2 (Studio-v2-Spec §8): Nichts aus einem Vault startet ein Programm, bevor der Nutzer
-// diesem Vault vertraut hat — weder Kit-Code (.tools) noch Git-Hooks noch Git-Einstellungen, die Programme starten.
-// Der Merker liegt außerhalb des Vaults: <support>/vertrauen.json = { "<realpath>": { seit, ordner, code } }.
-//   ordner = "dev:ino:birthtimeMs" des Vault-Ordners (gelöscht und neu geklont = neue Frage, auch am selben Pfad)
-//   code   = sha256 über alles, was Programme starten oder laden kann (Änderung = neue Frage): Code unter .tools samt package.json,
-//            node_modules (Metadaten) und den Zielen von Ordner-Verweisen, die Hook-Dateien, brain.config.json, package.json der
-//            Vault-Wurzel und die Werte der Git-Schlüssel, die Programme starten (lokal, auch über include.path)
-// Der Schlüssel ist der kanonische Pfad (realpath.native: Groß/klein und Unicode-Form wie auf der Platte); gelesen und gelöscht wird
-// ohne Groß/klein und Unicode-Form — der Ordner selbst ist durch „ordner“ gebunden.
-// Einträge im alten Format (nur „seit“) sind ungültig. Dieselbe Logik nutzen Werkstatt, MCP-Server und die CLI für Swift
-// (werkstatt/vertrauen-pruefen.mjs); nichts davon führt Code aus dem Vault aus — nur Dateien lesen und `git config --list`.
-import { realpathSync, statSync, lstatSync, readdirSync, readFileSync, readlinkSync, writeFileSync, mkdirSync, renameSync, unlinkSync, existsSync } from "node:fs";
-import { join, resolve, dirname, isAbsolute } from "node:path";
-import { homedir, tmpdir } from "node:os";
-import { createHash, randomBytes } from "node:crypto";
+// gemeinsam/vertrauen.mjs — Workspace-Trust je Vault (Kern-Umzug P5; löst „Vertrauen v2“ ab, das Programmcode unter .tools, Hooks und
+// Git-Einstellungen mit einem Fingerabdruck band).
+//
+// Vertraut ist ein Vault, wenn
+//   · Kortex ihn selbst angelegt hat (Assistent „neu“, quelle „angelegt“) oder über den Assistenten/das Studio von GitHub geklont hat („geklont“),
+//   · der Nutzer im Studio „Vertrauen“ gesagt hat („bestaetigt“; die Frage „Kommt dieser Vault von dir?“ stellt das Studio einmal je von außen
+//     geöffnetem Ordner), oder
+//   · der Vault schon in der Vaultliste stand, die Werkstatt vor diesem Stand ihm vertraut hatte UND er sich seither nicht verändert hat („migriert“, siehe migriereAltesVertrauen).
+// Bis dahin: Lesen, Suchen und Ansehen gehen; es läuft aber KEIN git (weder in der Werkstatt noch im Kern), kein Hintergrunddienst, keine
+// Hooks, keine KI-Pflege. Der Rückweg ist widerrufe() („Vertrauen entziehen“ in den Einstellungen des Studios).
+//
+// Der Merker liegt außerhalb des Vaults: <support>/vertrauen.json = { "<realpath>": { seit, ordner, quelle } }
+//   ordner = "dev:ino:birthtimeMs" des Vault-Ordners (gelöscht und neu geklont oder durch eine Kopie ersetzt = neue Frage, auch am selben Pfad)
+// Der Schlüssel ist der kanonische Pfad (realpath.native: Groß/klein und Unicode-Form wie auf der Platte); gelesen und gelöscht wird ohne
+// Groß/klein und Unicode-Form — der Ordner selbst ist durch „ordner“ gebunden. Atomar geschrieben (Temp + rename), Modus 0600.
+// Gelesen wird derselbe Merker vom Kern (Ressourcen/kern/vertrauen.mjs; Test: Tests/Node/vertrauen-kern.test.mjs). Nichts hier führt Code aus
+// dem Vault aus — nur Dateien lesen und, bei einem vertrauten Vault, `git config --list`.
+import { realpathSync, statSync, lstatSync, readFileSync, writeFileSync, mkdirSync, renameSync, unlinkSync, existsSync } from "node:fs";
+import { join, resolve, dirname, isAbsolute, sep } from "node:path";
+import { tmpdir, homedir } from "node:os";
+import { randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { HttpFehler, supportOrdner, kindUmgebung, falte, absoluterGitPfad } from "./basis.mjs";
+import { HttpFehler, supportOrdner, kindUmgebung, falte, absoluterGitPfad, testmodus } from "./basis.mjs";
 import { sicherungFuer } from "./sicherung.mjs";
+import { alterFingerabdruck } from "./vertrauen-alt.mjs";
+
+export const QUELLEN = ["angelegt", "geklont", "bestaetigt", "migriert"];
+
+// Nur Testumgebungen (BRAIN_TESTMODUS=1 oder KORTEX_KERN_UNSTABIL_ERLAUBT=1): KORTEX_VAULT_VERTRAUT=alle lässt jeden Vault als vertraut gelten.
+const alleVertraut = () => process.env.KORTEX_VAULT_VERTRAUT === "alle" && (testmodus() || process.env.KORTEX_KERN_UNSTABIL_ERLAUBT === "1");
 
 // ───────────────────────────── Merker ─────────────────────────────
 const merkerDatei = (support) => join(support || supportOrdner(), "vertrauen.json");
@@ -46,11 +58,11 @@ function schreibeMerker(support, m) {
     const tmp = `${datei}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
     try { writeFileSync(tmp, JSON.stringify(m, null, 2) + "\n", { mode: 0o600, flag: "wx" }); renameSync(tmp, datei); }
     catch (e) { try { unlinkSync(tmp); } catch { /* schon weg */ } throw e; }
-  } catch { throw new HttpFehler(500, "Die Freigabe konnte nicht gespeichert werden."); }
+  } catch { throw new HttpFehler(500, "Das Vertrauen konnte nicht gespeichert werden."); }
 }
 
 // Der kanonische Pfad des Ordners (Schreibweise wie auf der Platte). Auf einem case-insensitiven APFS liefert realpathSync (die JS-Fassung)
-// die Schreibweise der Eingabe zurück, realpathSync.native die gespeicherte — nur so wird aus „…/MeinBrain“ und „…/meinbrain“ derselbe Schlüssel.
+// die Schreibweise der Eingabe zurück, realpathSync.native die gespeicherte — nur so wird aus „…/MeinVault“ und „…/meinvault“ derselbe Schlüssel.
 const echterPfad = (p) => realpathSync.native(p);
 // Alle Schreibweisen, unter denen ein Eintrag für diesen Pfad stehen kann (ohne Groß/klein und Unicode-Form verglichen).
 function kandidaten(pfad) {
@@ -61,127 +73,93 @@ function kandidaten(pfad) {
 const gleicherOrt = (a, b) => falte(a) === falte(b);
 const schluesselFuer = (m, wurzel) => (Object.hasOwn(m, wurzel) ? wurzel : Object.keys(m).find((k) => gleicherOrt(k, wurzel)) ?? null);
 
-// ───────────────────────────── Ordner-Kennung ─────────────────────────────
 export function ordnerKennung(wurzel) {
   const st = statSync(wurzel);
   return `${st.dev}:${st.ino}:${st.birthtimeMs}`;
 }
 
-// ───────────────────────────── Code-Fingerabdruck ─────────────────────────────
-const CODE_ENDUNGEN = new Set(["mjs", "js", "cjs", "ts", "sh", "py", "rb", "pl", "bash", "zsh",
-  "node", "wasm", "dylib", "so", "mts", "cts", "command"]); // die zweite Reihe ist eine Ergänzung zu §8: lädt Node/ein Programm ebenfalls als Code
-const GROSS = 2 * 1024 * 1024; // größere Dateien: Größe + Änderungszeit statt Inhalt (nie einfach auslassen)
-const MAX_EINTRAEGE = 50_000;  // je Durchlauf (Schutz vor Verweisen auf riesige Ordner); danach eine feste Marke, nie ein stilles Abschneiden
-const dateiCache = new Map(); // abs → { size, mtimeMs, ino, wert } (sha256 je Datei, nur gültig bei gleicher Größe/Zeit/Inode)
-const sha = (daten) => createHash("sha256").update(daten).digest("hex");
+// ───────────────────────────── Stand ─────────────────────────────
+const LEER = { erlaubt: false, noetig: false, gitGesperrt: false, quelle: null };
 
-function inhaltsAngabe(abs, st) {
-  if (st.size > GROSS) return `gross:${st.mtimeMs}`;
-  const c = dateiCache.get(abs);
-  if (c && c.size === st.size && c.mtimeMs === st.mtimeMs && c.ino === st.ino) return c.wert;
-  let wert;
-  try { wert = sha(readFileSync(abs)); } catch { wert = "unlesbar"; }
-  if (dateiCache.size > 50_000) dateiCache.clear();
-  dateiCache.set(abs, { size: st.size, mtimeMs: st.mtimeMs, ino: st.ino, wert });
-  return wert;
+// → { erlaubt, noetig, gitGesperrt, quelle }. noetig: die Frage ist offen (nicht vertraut) · gitGesperrt: ohne Vertrauen läuft kein git.
+//   Einträge im alten Format ({ seit, ordner, code }) gelten nie; sie werden nur von migriereAltesVertrauen umgeschrieben.
+export function pruefeVertrauen(vault, { support } = {}) {
+  let wurzel, ordner;
+  try { wurzel = echterPfad(vault); if (!statSync(wurzel).isDirectory()) throw 0; ordner = ordnerKennung(wurzel); } catch { return { ...LEER }; }
+  const gesperrt = { erlaubt: false, noetig: true, gitGesperrt: true, quelle: null };
+  if (alleVertraut()) return { erlaubt: true, noetig: false, gitGesperrt: false, quelle: "bestaetigt" };
+  const m = leseMerker(support);
+  const k = schluesselFuer(m, wurzel);
+  const e = k === null ? null : m[k];
+  if (!e || typeof e !== "object" || e.ordner !== ordner) return gesperrt;
+  const quelle = typeof e.quelle === "string" && QUELLEN.includes(e.quelle) ? e.quelle : null;
+  return quelle ? { erlaubt: true, noetig: false, gitGesperrt: false, quelle } : gesperrt;
 }
 
-const istCode = (name, st) => {
-  const i = name.lastIndexOf(".");
-  return (i > 0 && CODE_ENDUNGEN.has(name.slice(i + 1).toLowerCase())) || (st.mode & 0o111) !== 0;
-};
-
-// Verweis: Text des Ziels (so steht er im Fingerabdruck) — zusätzlich der Inhalt des Ziels, wenn es eine Datei ist (strenger als §8: ein
-// Verweis auf eine Datei außerhalb des Vaults darf nicht nachträglich ausgetauscht werden; unter node_modules nur Größe und Änderungszeit).
-// Ein Ziel, das ein Ordner ist, wird in sammleZeilen verfolgt (sein Inhalt steht dort Zeile für Zeile im Fingerabdruck).
-function verweisAngabe(abs, nurMeta) {
-  let text = "?";
-  try { text = readlinkSync(abs); } catch { /* unlesbar */ }
-  let ziel = "-";
-  try {
-    const st = statSync(abs);
-    if (st.isFile()) ziel = nurMeta ? `meta:${st.size}:${st.mtimeMs}` : `${st.size}:${inhaltsAngabe(abs, st)}`;
-    else if (st.isDirectory()) ziel = "ordner";
-  } catch { /* Verweis ins Leere */ }
-  return `link\0${text}\0${ziel}`;
+// Vertraut den Vault ab jetzt (genau diesen Ordner). Wirft 400, wenn es den Ordner nicht gibt, 500, wenn der Merker nicht geschrieben werden konnte.
+export function erlaube(vault, { support, quelle = "bestaetigt" } = {}) {
+  if (!QUELLEN.includes(quelle)) throw new HttpFehler(500, "Unbekannte Herkunft des Vertrauens.");
+  let wurzel, ordner;
+  try { wurzel = echterPfad(vault); if (!statSync(wurzel).isDirectory()) throw 0; ordner = ordnerKennung(wurzel); }
+  catch { throw new HttpFehler(400, "Der Vault-Ordner existiert nicht."); }
+  const m = leseMerker(support);
+  for (const k of Object.keys(m)) if (gleicherOrt(k, wurzel)) delete m[k]; // eine andere Schreibweise desselben Ordners wird ersetzt
+  m[wurzel] = { seit: new Date().toISOString(), ordner, quelle };
+  schreibeMerker(support, m);
+  return pruefeVertrauen(wurzel, { support });
 }
 
-// Zeilen „<vorsatz><relativer Pfad>\0<Größe>\0<sha256>“ für alle passenden Dateien unter basis. → { zeilen, bedeutend }
-//   bedeutend: Zahl der Zeilen, die Programme sind oder sein können (Code, Verweise, Hooks) — ohne package.json und node_modules-Metadaten.
-// Was Node oder ein Programm laden kann, steht drin:
-//  · package.json (überall, auch unter node_modules): sie steuert type/main/exports/imports, also WELCHER Code geladen wird — mit Inhalt.
-//  · Alles unter einem Ordner „node_modules“: Pfad, Größe und Änderungszeit (nicht der Inhalt: die Ordner sind groß; ein Kit aus fremder Hand
-//    gehört nicht mit node_modules ausgeliefert). Eine neue oder geänderte Datei dort ändert den Fingerabdruck.
-//  · Verweise auf Ordner werden verfolgt: das Ziel zählt mit seinem Inhalt (auch außerhalb des Vaults; Kreise und doppelte Ziele einmal).
-// Die Reihenfolge ist fest (nach Namen), damit auch die Marke bei zu vielen Einträgen immer dieselbe ist.
-function sammleZeilen(basis, vorsatz, { nurCode = false, ohneSample = false } = {}) {
-  const zeilen = [];
-  let bedeutend = 0, zaehler = 0, voll = false;
-  const besucht = new Set();
-  try { besucht.add(echterPfad(basis)); } catch { /* Ordner gibt es nicht → unten nichts zu lesen */ }
-  const geh = (abs, rel, tiefe, inModules) => {
-    if (tiefe > 40 || voll) return;
-    let liste;
-    try { liste = readdirSync(abs, { withFileTypes: true }); } catch { return; }
-    liste.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-    for (const d of liste) {
-      if (voll) return;
-      if (++zaehler > MAX_EINTRAEGE) { voll = true; zeilen.push(`${vorsatz}!zu-viele-eintraege`); return; }
-      const a = join(abs, d.name), r = rel ? `${rel}/${d.name}` : d.name;
-      const imModules = inModules || falte(d.name) === "node_modules";
-      let st;
-      try { st = lstatSync(a); } catch { continue; }
-      if (st.isSymbolicLink()) {
-        zeilen.push(`${vorsatz}${r}\0${verweisAngabe(a, imModules)}`); bedeutend++;
-        let ziel;
-        try { ziel = statSync(a); } catch { continue; } // ins Leere: steht mit „-“ schon drin
-        if (!ziel.isDirectory()) continue;
-        let echt;
-        try { echt = echterPfad(a); } catch { continue; }
-        if (!besucht.has(echt)) { besucht.add(echt); geh(a, r, tiefe + 1, imModules); }
-        continue;
+// Nimmt das Vertrauen zurück (der Eintrag verschwindet, in jeder Schreibweise; andere Vaults bleiben).
+export function widerrufe(vault, { support } = {}) {
+  const orte = kandidaten(vault);
+  const m = leseMerker(support);
+  const weg = Object.keys(m).filter((k) => orte.some((o) => gleicherOrt(k, o)));
+  if (weg.length) { for (const k of weg) delete m[k]; schreibeMerker(support, m); }
+  return pruefeVertrauen(orte[orte.length - 1], { support });
+}
+
+// Für Neuanlage, Klonen und Entfernen (vaults.mjs): den Eintrag eines Zielpfads löschen — mit und ohne Auflösung des Pfads.
+export function vergissVertrauen(pfad, { support } = {}) {
+  const orte = kandidaten(pfad);
+  const m = leseMerker(support);
+  const weg = Object.keys(m).filter((k) => orte.some((o) => gleicherOrt(k, o)));
+  if (!weg.length) return;
+  for (const k of weg) delete m[k];
+  schreibeMerker(support, m);
+}
+
+// Migration (einmal beim Start der Werkstatt, idempotent): Einträge im alten Format ({ seit, ordner, code }) für Vaults, die in der Vaultliste stehen, deren
+// Ordner noch derselbe ist UND deren alter Code-Fingerabdruck (vertrauen-alt.mjs) heute noch zu dem Stand passt, dem der Nutzer zugestimmt hatte, werden zu
+// { seit, ordner, quelle: "migriert" }. Passt der Fingerabdruck nicht mehr (der Nutzer hatte „Nur ansehen“ gewählt oder der Vault hat sich verändert), wird
+// nicht migriert: dort kommt die Frage. Alle übrigen alten oder kaputten Einträge fallen weg; neue bleiben unberührt. → Zahl der übernommenen Einträge.
+export function migriereAltesVertrauen({ support, vaultPfade = [] } = {}) {
+  const m = leseMerker(support);
+  const listen = [];
+  for (const p of vaultPfade) { try { listen.push(echterPfad(p)); } catch { /* Ordner fehlt */ } }
+  let geaendert = false, uebernommen = 0;
+  for (const k of Object.keys(m)) {
+    const e = m[k];
+    if (e && typeof e === "object" && typeof e.quelle === "string" && QUELLEN.includes(e.quelle) && typeof e.ordner === "string") continue;
+    geaendert = true;
+    let ok = false;
+    try {
+      const echt = echterPfad(k);
+      ok = !!e && typeof e === "object" && typeof e.code === "string" && typeof e.ordner === "string" && e.ordner === ordnerKennung(echt) && listen.some((l) => gleicherOrt(l, echt));
+      if (ok) {
+        const konfig = liesGitKonfiguration(echt, { frisch: true });
+        ok = konfig.lesbar && alterFingerabdruck(echt, konfig.eintraege, konfig.vorhanden) === e.code;
       }
-      if (st.isDirectory()) { geh(a, r, tiefe + 1, imModules); continue; }
-      if (!st.isFile()) continue;
-      if (ohneSample && d.name.endsWith(".sample")) continue;
-      if (falte(d.name) === "package.json") { zeilen.push(`${vorsatz}${r}\0${st.size}\0${inhaltsAngabe(a, st)}`); continue; }
-      if (imModules) { zeilen.push(`${vorsatz}${r}\0meta\0${st.size}\0${st.mtimeMs}`); continue; }
-      if (nurCode && !istCode(d.name, st)) continue;
-      zeilen.push(`${vorsatz}${r}\0${st.size}\0${inhaltsAngabe(a, st)}`); bedeutend++;
-    }
-  };
-  geh(basis, "", 0, false);
-  return { zeilen, bedeutend };
+      if (ok) m[k] = { seit: typeof e.seit === "string" ? e.seit : new Date().toISOString(), ordner: e.ordner, quelle: "migriert" };
+    } catch { ok = false; /* Ordner fehlt oder nicht lesbar: kein Vertrauen */ }
+    if (ok) uebernommen++; else delete m[k];
+  }
+  if (geaendert) schreibeMerker(support, m);
+  return uebernommen;
 }
 
-// Einzelne Datei in der Vault-Wurzel: null = gibt es nicht (kein Eintrag im Fingerabdruck), sonst Größe + Inhalt.
-function dateiAngabe(abs) {
-  let st;
-  try { st = statSync(abs); } catch { return null; }
-  return st.isFile() ? `${st.size}:${inhaltsAngabe(abs, st)}` : "keine-datei";
-}
-const kanonisch = (v) => JSON.stringify(v, (_, w) => (w && typeof w === "object" && !Array.isArray(w) ? Object.fromEntries(Object.keys(w).sort().map((k) => [k, w[k]])) : w));
-// brain.config.json: das Kit liest dort Programmangaben (z. B. werkzeuge.git) — und startet sie, auch von Swifts `brain status`. Gezählt wird der
-// Inhalt als JSON (Schlüssel sortiert, Formatierung egal), OHNE den Teilbaum „automatik“: den schreibt die Steuerzentrale des Kits im Alltag
-// (schemageprüfte Einstellungen wie Schalter, Stufen und Zahlen, keine Programmangaben) — sonst fragte jeder Klick dort neu nach dem Vertrauen.
-function configAngabe(abs) {
-  let st;
-  try { st = statSync(abs); } catch { return null; }
-  if (!st.isFile()) return "keine-datei";
-  if (st.size > GROSS) return `gross:${st.size}:${st.mtimeMs}`;
-  let roh;
-  try { roh = readFileSync(abs); } catch { return "unlesbar"; }
-  let j;
-  try { j = JSON.parse(roh.toString("utf8")); } catch { return `roh:${sha(roh)}`; } // kein JSON: Byte für Byte
-  if (j && typeof j === "object" && !Array.isArray(j)) delete j.automatik;
-  return `json:${sha(kanonisch(j))}`;
-}
-
-const fingerabdruck = (zeilen) => createHash("sha256").update("brain-vertrauen-v2\n" + [...zeilen].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)).join("\n")).digest("hex");
-
-// ───────────────────────────── Git-Konfiguration des Vaults ─────────────────────────────
+// ───────────────────────────── Git-Konfiguration eines vertrauten Vaults ─────────────────────────────
 // Gelesen wird mit Git selbst (`git config --list --show-scope --show-origin --null`): so gibt es keinen Parser-Unterschied zu Git
-// (include.path, Anführungszeichen, Escapes). Das startet nichts aus dem Vault; core.fsmonitor/hooksPath sind zusätzlich aus.
+// (include.path, Anführungszeichen, Escapes). Nur für einen VERTRAUTEN Vault; core.fsmonitor/hooksPath sind dabei trotzdem aus.
 const REPO_GEBUNDEN = ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
   "GIT_COMMON_DIR", "GIT_PREFIX", "GIT_NAMESPACE", "GIT_QUARANTINE_PATH"];
 const SCOPES = new Set(["system", "global", "local", "worktree", "command"]);
@@ -218,8 +196,8 @@ function fuehreKonfigurationAus(cwd) {
 }
 
 // → { vorhanden, lesbar, eintraege: [{ scope, quelle, key, wert }], quellen: [abs] }
-//   vorhanden: der Ordner hat ein .git; lesbar: false, wenn Git die Einstellungen nicht ausgeben konnte (dann gilt Git als gesperrt).
-//   frisch: den kurzen Zwischenspeicher übergehen (nach einem Abgleich, der Dateien ausgetauscht haben kann).
+//   vorhanden: der Ordner hat ein .git; lesbar: false, wenn Git die Einstellungen nicht ausgeben konnte.
+//   frisch: den kurzen Zwischenspeicher übergehen.
 export function liesGitKonfiguration(wurzel, { frisch = false } = {}) {
   const gitEintrag = join(wurzel, ".git");
   if (!existsSync(gitEintrag)) return { vorhanden: false, lesbar: true, eintraege: [], quellen: [] };
@@ -233,37 +211,9 @@ export function liesGitKonfiguration(wurzel, { frisch = false } = {}) {
   return wert;
 }
 
-// Schlüssel aus der lokalen Konfiguration (auch config.worktree und alles, was per include.path dazukommt), die Git ein Programm starten
-// lassen — Liste aus §8; ergänzt um credential.<url>.helper (dasselbe wie credential.helper je Adresse), remote.*.vcs und die Programm-
-// schlüssel der Signierung (gpg.program, gpg.<Format>.program, gpg.ssh.defaultKeyCommand und alles unter gpg.ssh., das auf program/command endet).
-const GEFAEHRLICH = [/^credential(\..+)?\.helper$/, /^core\.askpass$/, /^core\.gitproxy$/, /^core\.alternaterefscommand$/, /^gpg\.program$/, /^gpg\..+\.program$/,
-  /^gpg\.ssh\..*(program|command)$/, /^merge\..+\.driver$/, /^filter\..+\.(clean|smudge|process)$/, /^remote\..+\.(uploadpack|receivepack|vcs)$/];
-const lokal = (e) => e.scope === "local" || e.scope === "worktree";
-export function gefaehrlicheSchluessel(eintraege) {
-  const aus = [];
-  for (const e of eintraege) {
-    if (!lokal(e)) continue;
-    const k = e.key.toLowerCase();
-    if (GEFAEHRLICH.some((re) => re.test(k)) || (/^protocol(\..+)?\.allow$/.test(k) && e.wert.trim().toLowerCase() !== "never")) aus.push(e.key);
-  }
-  return [...new Set(aus)];
-}
-// Was an der Git-Konfiguration zum Fingerabdruck gehört: die gefährlichen Schlüssel (mit Wert, auch protocol.*.allow = never) und die zwei,
-// die wir mit Vertrauen nicht mehr entschärfen — core.sshCommand (lokal) und core.hooksPath. Ändert sich einer, gilt die Freigabe nicht mehr.
-function gitZeilen(eintraege) {
-  const z = [];
-  for (const e of eintraege) {
-    if (!lokal(e)) continue;
-    const k = e.key.toLowerCase();
-    if (GEFAEHRLICH.some((re) => re.test(k)) || /^protocol(\..+)?\.allow$/.test(k) || k === "core.sshcommand" || k === "core.hookspath") z.push(`git:${k}\0${e.wert}`);
-  }
-  return z;
-}
 const sshEigenGesetzt = (eintraege) => eintraege.some((e) => e.key.toLowerCase() === "core.sshcommand" && e.scope !== "command");
 
-// Was der Nutzer selbst eingestellt hat (System und global, nie lokal): core.sshCommand und die Signierwünsche. Ohne Vertrauen ersetzen wir
-// nur die Einstellungen des Vaults, nie die des Nutzers: GIT_SSH_COMMAND bekommt seinen Wert (sonst unser BatchMode-Befehl), und commit/tag/
-// push.gpgSign bekommen seinen Wert (sonst „false“).
+// Was der Nutzer selbst eingestellt hat (System und global, nie lokal): core.sshCommand und die Signierwünsche.
 const nutzerWert = (eintraege, key) => { let w = null; for (const e of eintraege) if ((e.scope === "system" || e.scope === "global") && e.key.toLowerCase() === key) w = e.wert; return w; };
 function nutzerEinstellungen(eintraege) {
   const gpg = {};
@@ -276,108 +226,62 @@ export function nutzerGitEinstellungen() {
   return k.lesbar ? nutzerEinstellungen(k.eintraege) : { sshGlobal: null, gpgGlobal: {} };
 }
 
-// Verzeichnis, aus dem Git Hooks ausführen würde: core.hooksPath aus der lokalen Konfiguration (relativ = zum Arbeitsordner), sonst <gitdir>/hooks
-// (bei „.git“ als Datei: Verweis auf das Git-Verzeichnis, bei Worktrees das gemeinsame).
-function hooksVerzeichnis(wurzel, eintraege) {
+// Wo Git Hooks ausführen würde (lokal/worktree gesetztes core.hooksPath) und ob das ein Ort ist, dem ein vertrauter Vault die Hooks überlassen darf:
+// der übliche `<gitdir>/hooks` (kein Verweis) oder der Hook-Ordner des Kerns (so richtet install-git-hooks.mjs den Schutz ein). Liegt der Hook-Ordner im
+// Arbeitsbaum (alte Kit-Vaults: `.tools/git-hooks`) oder sonstwo, kann ihn ein Abgleich austauschen — dann laufen in der Werkstatt keine Hooks (wie bei
+// git-sicher). → true = Hooks dürfen laufen.
+function hooksErlaubt(wurzel, eintraege, kern) {
   let pfad = null;
   for (const e of eintraege) if ((e.scope === "local" || e.scope === "worktree") && e.key.toLowerCase() === "core.hookspath") pfad = e.wert;
+  const echt = (p) => { try { return realpathSync.native(p); } catch { return resolve(p); } };
   if (pfad !== null && pfad.trim() !== "") {
     if (pfad === "~" || pfad.startsWith("~/")) pfad = join(homedir(), pfad.slice(1));
-    return isAbsolute(pfad) ? pfad : resolve(wurzel, pfad);
+    const ziel = echt(isAbsolute(pfad) ? pfad : resolve(wurzel, pfad));
+    const kernHooks = kern ? echt(join(kern, "git-hooks")) : null;
+    return kernHooks !== null && ziel === kernHooks;
   }
-  let gitDir = join(wurzel, ".git");
+  // Standard: <gitdir>/hooks — nur ein echter Ordner im Git-Verzeichnis (ein Verweis könnte in den Arbeitsbaum zeigen)
   try {
-    if (lstatSync(gitDir).isFile()) {
-      const m = /^gitdir:\s*(.+)$/m.exec(readFileSync(gitDir, "utf8"));
-      if (!m) return null;
-      gitDir = resolve(wurzel, m[1].trim());
-      try { gitDir = resolve(gitDir, readFileSync(join(gitDir, "commondir"), "utf8").trim()); } catch { /* kein Worktree */ }
-    }
-  } catch { return null; }
-  return join(gitDir, "hooks");
+    const punktGit = join(wurzel, ".git");
+    const st = lstatSync(punktGit);
+    if (!st.isDirectory()) return false; // .git als Datei (Worktree/Submodul): gemeinsames Git-Verzeichnis nicht prüfbar → keine Hooks
+    return !lstatSync(join(punktGit, "hooks")).isSymbolicLink();
+  } catch (e) { return !!e && e.code === "ENOENT"; }
 }
 
-// ───────────────────────────── Prüfung ─────────────────────────────
-const KURZ = (liste, n = 4) => liste.slice(0, n).join(", ") + (liste.length > n ? " …" : "");
+// Lokal gesetzte Programm-Schlüssel (Filter, Merge-Treiber, Diff-Befehle, Credential-Helper, ssh, Remote-Programme), deren Befehl ein Programm IM Arbeitsbaum
+// nennt (absoluter Pfad darin, „./x“, „../x“ oder ein relativer Pfad mit „/“): ein Abgleich kann es austauschen. → Name des ersten Schlüssels oder null.
+const PROGRAMM_SCHLUESSEL = [/^credential(\..+)?\.helper$/, /^core\.(sshcommand|askpass|gitproxy|alternaterefscommand|fsmonitor|editor|pager)$/, /^gpg(\..+)?\.program$/,
+  /^gpg\.ssh\..*(program|command)$/, /^merge\..+\.(driver|recursivedriver)$/, /^filter\..+\.(clean|smudge|process)$/, /^diff\..+\.(command|textconv)$/, /^diff\.external$/,
+  /^remote\..+\.(uploadpack|receivepack|vcs)$/, /^sequence\.editor$/];
+function programmImArbeitsbaum(wurzel, eintraege) {
+  const w = wurzel + sep;
+  for (const e of eintraege) {
+    if (e.scope !== "local" && e.scope !== "worktree") continue;
+    const k = e.key.toLowerCase();
+    if (!PROGRAMM_SCHLUESSEL.some((re) => re.test(k))) continue;
+    const teile = String(e.wert).split(/[\s"'`;&|()<>=]+/).filter(Boolean);
+    // Das Git-Verzeichnis selbst (.git/…) gehört nicht zum Arbeitsbaum: ein Abgleich kann es nicht austauschen.
+    const imGitDir = (t) => /^(\.\/)?\.git\//.test(t) || t.startsWith(wurzel + sep + ".git" + sep);
+    const imBaum = teile.some((t) => !imGitDir(t) && ((isAbsolute(t) && (t === wurzel || t.startsWith(w))) || t.startsWith("./") || t.startsWith("../") || (/^[^/~$-][^\s]*\//.test(t) && !isAbsolute(t))));
+    if (imBaum) return e.key;
+  }
+  return null;
+}
 
-function analysiere(vault, support, { frisch = false } = {}) {
+// Für die Git-Aufrufe der Werkstatt. Nicht vertraut: gesperrt (+ grund) — es läuft gar kein git. Vertraut: Repo-Konfiguration wie gewohnt, aber
+// `hooks` (false: keine Hooks, siehe hooksErlaubt), sshEigen (core.sshCommand ist irgendwo gesetzt — dann setzen wir kein eigenes GIT_SSH_COMMAND),
+// sshGlobal und gpgGlobal (was der Nutzer selbst eingestellt hat). Verweist eine lokale Programm-Einstellung in den Arbeitsbaum: gesperrt (grund nennt den Schlüssel).
+// kern: Ordner des gebündelten Kerns (für den erlaubten Hook-Ordner `<kern>/git-hooks`).
+export const GRUND_GESPERRT = "Dieser Vault ist in Kortex noch nicht als deiner bestätigt. Bestätige ihn in der Statusleiste („Nur ansehen“), dann geht Git.";
+export function gitSicht(vault, { support, kern } = {}) {
+  const zu = (grund) => ({ vertraut: false, gesperrt: true, grund, sshEigen: false, sshGlobal: null, gpgGlobal: {}, hooks: false });
+  const v = pruefeVertrauen(vault, { support });
+  if (!v.erlaubt) return zu(GRUND_GESPERRT);
   let wurzel;
-  try { wurzel = echterPfad(vault); if (!statSync(wurzel).isDirectory()) throw 0; } catch { return null; }
-  const konfig = liesGitKonfiguration(wurzel, { frisch });
-  const gefaehrlich = gefaehrlicheSchluessel(konfig.eintraege);
-  const kit = sammleZeilen(join(wurzel, ".tools"), "tools:", { nurCode: true });
-  const hookDir = konfig.vorhanden ? hooksVerzeichnis(wurzel, konfig.eintraege) : null;
-  const hooks = hookDir ? sammleZeilen(hookDir, "hooks:", { ohneSample: true }) : { zeilen: [], bedeutend: 0 };
-  const wurzelZeilen = [];
-  const cfg = configAngabe(join(wurzel, "brain.config.json")), pkg = dateiAngabe(join(wurzel, "package.json"));
-  if (cfg !== null) wurzelZeilen.push(`config:brain.config.json\0${cfg}`);
-  if (pkg !== null) wurzelZeilen.push(`wurzel:package.json\0${pkg}`);
-  const code = fingerabdruck([...kit.zeilen, ...hooks.zeilen, ...wurzelZeilen, ...gitZeilen(konfig.eintraege)]);
-  const ordner = ordnerKennung(wurzel);
-  const m = leseMerker(support);
-  const schluessel = schluesselFuer(m, wurzel);
-  const e = schluessel === null ? undefined : m[schluessel];
-  const erlaubt = !!e && typeof e === "object" && e.ordner === ordner && e.code === code;
-  const geaendert = !!e && !erlaubt; // Eintrag da, aber Ordner ersetzt, Code geändert oder altes Format
-  const gruende = [];
-  if (kit.bedeutend) gruende.push({ art: "kit", text: "Dieser Ordner enthält Programmcode (das Brain-Kit unter „.tools“). Er läuft erst, wenn du diesem Vault vertraust." });
-  if (hooks.bedeutend) gruende.push({ art: "hooks", text: "Dieser Ordner hat Git-Hooks — Programme, die Git beim Sichern oder Senden ausführt. Sie laufen erst, wenn du diesem Vault vertraust." });
-  let gitGrund = null;
-  if (gefaehrlich.length) gitGrund = `Die Git-Einstellungen dieses Ordners können Programme starten (${KURZ(gefaehrlich)}). Git bleibt gesperrt, bis du diesem Vault vertraust.`;
-  else if (konfig.vorhanden && !konfig.lesbar) gitGrund = "Die Git-Einstellungen dieses Ordners ließen sich nicht lesen. Git bleibt gesperrt, bis du diesem Vault vertraust.";
-  if (gitGrund) gruende.push({ art: "git", text: gitGrund });
-  return { wurzel, ordner, code, erlaubt, geaendert, gruende, gitGrund, sshEigen: sshEigenGesetzt(konfig.eintraege), ...nutzerEinstellungen(konfig.eintraege) };
+  try { wurzel = echterPfad(vault); } catch { return zu(GRUND_GESPERRT); }
+  const k = liesGitKonfiguration(wurzel);
+  const imBaum = programmImArbeitsbaum(wurzel, k.eintraege);
+  if (imBaum) return { ...zu(`Die Git-Einstellung „${imBaum}“ dieses Vaults startet ein Programm aus dem Vault selbst. Git bleibt gesperrt, bis du sie entfernst.`), vertraut: true };
+  return { vertraut: true, gesperrt: false, grund: null, hooks: hooksErlaubt(wurzel, k.eintraege, kern), sshEigen: sshEigenGesetzt(k.eintraege), ...nutzerEinstellungen(k.eintraege) };
 }
-
-const LEER = { erlaubt: false, noetig: false, geaendert: false, gitGesperrt: false, gruende: [] };
-
-// → { erlaubt, noetig, geaendert, gitGesperrt, gruende:[{art:"kit"|"hooks"|"git", text}] }
-//   noetig: es gibt etwas, das Programme starten würde · geaendert: es gab eine Erlaubnis, sie gilt nicht mehr (neuer Ordner, neuer Code, altes Format)
-//   gitGesperrt: gefährliche Git-Einstellungen und (noch) kein Vertrauen — Git läuft dann gar nicht.
-export function pruefeVertrauen(vault, { support, frisch } = {}) {
-  const a = analysiere(vault, support, { frisch });
-  if (!a) return { ...LEER, gruende: [] };
-  return { erlaubt: a.erlaubt, noetig: a.gruende.length > 0, geaendert: a.geaendert, gitGesperrt: !a.erlaubt && a.gitGrund !== null, gruende: a.gruende };
-}
-
-// Für die Git-Aufrufe: vertraut (Hooks und Repo-Konfiguration wie gewohnt), gesperrt (+ grund), sshEigen (core.sshCommand ist irgendwo
-// gesetzt — dann setzen wir bei Vertrauen kein eigenes GIT_SSH_COMMAND), sshGlobal und gpgGlobal (was der Nutzer selbst eingestellt hat;
-// ohne Vertrauen ersetzen wir nur die Einstellungen des Vaults). frisch: Konfiguration neu lesen (nach einem Abgleich).
-export function gitSicht(vault, { support, frisch } = {}) {
-  const a = analysiere(vault, support, { frisch });
-  if (!a) return { vertraut: false, gesperrt: false, grund: null, sshEigen: false, sshGlobal: null, gpgGlobal: {} };
-  return { vertraut: a.erlaubt, gesperrt: !a.erlaubt && a.gitGrund !== null, grund: !a.erlaubt ? a.gitGrund : null, sshEigen: a.sshEigen, sshGlobal: a.sshGlobal, gpgGlobal: a.gpgGlobal };
-}
-
-// Erlaubt genau den heutigen Stand (Ordner + Code). Wirft 400, wenn es den Ordner nicht gibt.
-export function erlaube(vault, { support } = {}) {
-  const a = analysiere(vault, support, { frisch: true });
-  if (!a) throw new HttpFehler(400, "Der Vault-Ordner existiert nicht.");
-  const m = leseMerker(support);
-  for (const k of Object.keys(m)) if (gleicherOrt(k, a.wurzel)) delete m[k]; // eine andere Schreibweise desselben Ordners wird ersetzt
-  m[a.wurzel] = { seit: new Date().toISOString(), ordner: a.ordner, code: a.code };
-  schreibeMerker(support, m);
-  return pruefeVertrauen(a.wurzel, { support });
-}
-
-// Nimmt die Erlaubnis zurück (der Eintrag verschwindet, in jeder Schreibweise; andere Vaults bleiben).
-export function widerrufe(vault, { support } = {}) {
-  const orte = kandidaten(vault);
-  const m = leseMerker(support);
-  const weg = Object.keys(m).filter((k) => orte.some((o) => gleicherOrt(k, o)));
-  if (weg.length) { for (const k of weg) delete m[k]; schreibeMerker(support, m); }
-  return pruefeVertrauen(orte[orte.length - 1], { support });
-}
-
-// Für Neuanlage, Klonen und Entfernen (vaults.mjs): den Eintrag eines Zielpfads löschen — mit und ohne Auflösung des Pfads.
-export function vergissVertrauen(pfad, { support } = {}) {
-  const orte = kandidaten(pfad);
-  const m = leseMerker(support);
-  const weg = Object.keys(m).filter((k) => orte.some((o) => gleicherOrt(k, o)));
-  if (!weg.length) return;
-  for (const k of weg) delete m[k];
-  schreibeMerker(support, m);
-}
-
-// Für den Test, der die Liste der Programm-Schlüssel des Kerns (kern/git-sicher) gegen diese hält (Tests/Node/kern-git-haertung.test.mjs).
-export const GEFAEHRLICH_MUSTER = GEFAEHRLICH;

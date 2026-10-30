@@ -25,7 +25,7 @@ const REPO_GEBUNDEN = ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT
 // Submodule: Git geht für status/diff, fetch, push und die Checkout-Befehle in eingerichtete Submodule und nähme dort DEREN Konfiguration
 // (clean-Filter, credential.helper, uploadpack …), die Vertrauen v2 nie prüft — also nirgends hinein (zusätzlich --ignore-submodules=all
 // bei status/diff und --no-recurse-submodules beim Holen).
-const GRUND = ["-c", "core.quotepath=false", "-c", "core.fsmonitor=false", "-c", "protocol.ext.allow=never",
+const GRUND = ["-c", "core.quotepath=false", "-c", "safe.bareRepository=explicit", "-c", "core.fsmonitor=false", "-c", "protocol.ext.allow=never",
   "-c", "submodule.recurse=false", "-c", "fetch.recurseSubmodules=false", "-c", "push.recurseSubmodules=no",
   "-c", "diff.ignoreSubmodules=all", "-c", "status.submoduleSummary=false"];
 const OHNE_HOOKS = ["-c", "core.hooksPath=/dev/null"];
@@ -58,12 +58,12 @@ export function gitUmgebung({ vertraut = false, sshEigen = false, sshGlobal = nu
 
 // → {code, stdout, stderr}; wirft nur bei Zeitüberschreitung (HttpFehler 504, extra.gestartet = Startzeit ms; die ganze Prozessgruppe
 // ist dann beendet) oder wenn git fehlt. frist = Gesamtfrist der Route: der Aufruf bekommt höchstens das Restbudget.
-// ohneHooks: auch in einem vertrauten Vault ohne Hooks (Abgleich, Rückweg). vault: Wert für BRAIN_VAULT (Standard: cwd; null = keiner,
+// hooks: false = auch im vertrauten Vault keine Hooks (der Hook-Ordner liegt im Arbeitsbaum o. ä., siehe vertrauen.mjs#hooksErlaubt). ohneHooks: auch in einem vertrauten Vault ohne Hooks (Abgleich, Rückweg). vault: Wert für BRAIN_VAULT (Standard: cwd; null = keiner,
 // z. B. beim Klonen, wo cwd der Elternordner ist). sshGlobal/gpgGlobal: Einstellungen des Nutzers (siehe gitUmgebung, OHNE_SIGNIEREN).
-export function git(cwd, args, { timeout = LIMIT, buffer = false, vertraut = false, sshEigen = false, sshGlobal = null, gpgGlobal = null, ohneHooks = false, frist = null, vault = cwd, githubHelper = null } = {}) {
+export function git(cwd, args, { timeout = LIMIT, buffer = false, vertraut = false, hooks = true, sshEigen = false, sshGlobal = null, gpgGlobal = null, ohneHooks = false, frist = null, vault = cwd, githubHelper = null } = {}) {
   const programm = absoluterGitPfad(); // nie der nackte Name „git“: der würde nach dem Wechsel in den (womöglich fremden) Vault gesucht
   if (!programm) return Promise.reject(new HttpFehler(500, "Git ist auf diesem Mac nicht installiert."));
-  return starte(programm, [...GRUND, ...githubHelperArgs(githubHelper), ...(vertraut ? [] : OHNE_SIGNIEREN(gpgGlobal)), ...(vertraut && !ohneHooks ? [] : OHNE_HOOKS), ...args],
+  return starte(programm, [...GRUND, ...githubHelperArgs(githubHelper), ...(vertraut ? [] : OHNE_SIGNIEREN(gpgGlobal)), ...(vertraut && hooks !== false && !ohneHooks ? [] : OHNE_HOOKS), ...args],
     { cwd, env: gitUmgebung({ vertraut, sshEigen, sshGlobal, vault }), timeout, frist, buffer,
       fehlt: "Git ist auf diesem Mac nicht installiert.", zuLange: "Git hat zu lange gebraucht und wurde abgebrochen." });
 }
@@ -79,7 +79,7 @@ export function githubHelperArgs(helper) {
 }
 // Git-Aufruf mit dem Kontext einer Route (Vertrauen, Frist); extra überschreibt (z. B. { frist: null, timeout: GNADE } für den Rückweg).
 const binde = (wurzel, ctx = {}) => (args, extra) => git(wurzel, args, { ...ctx, ...extra });
-const kontext = (o = {}, frist) => ({ vertraut: !!o.vertraut, sshEigen: !!o.sshEigen, sshGlobal: o.sshGlobal ?? null, gpgGlobal: o.gpgGlobal ?? null, githubHelper: o.githubHelper ?? null, frist });
+const kontext = (o = {}, frist) => ({ vertraut: !!o.vertraut, hooks: o.hooks !== false, sshEigen: !!o.sshEigen, sshGlobal: o.sshGlobal ?? null, gpgGlobal: o.gpgGlobal ?? null, githubHelper: o.githubHelper ?? null, frist });
 const rueckweg = { frist: null, timeout: GNADE, ohneHooks: true };
 
 const kuerze = (s, n = 4000) => (s.length > n ? s.slice(0, n) + "\n… (gekürzt)" : s);
@@ -302,13 +302,10 @@ async function mitAbbruchSchutz(G, wurzel, lauf) {
   }
 }
 
-// opt: limitSync = Frist je Git-Aufruf (Standard 120 s), limitGesamt = Gesamtfrist der Route (Standard 360 s), vertraut/sshEigen/… aus vault.mjs,
-// neuBewerten = () => { vertraut, gesperrt } (Vertrauen NEU lesen; ohne Angabe wird nach dem Holen nicht neu bewertet).
-// Der Abgleich bringt fremde Commits in den Arbeitsbaum — auch Hook-Dateien und Programmcode im Vault (z. B. ein altes Kit bei core.hooksPath=.tools/git-hooks, das die App selbst nicht mehr ausführt). Holen und
-// Zusammenführen laufen deshalb IMMER ohne Hooks, auch in einem vertrauten Vault: ein vom Server geholter Hook liefe sonst, bevor die Frage nach
-// dem Vertrauen neu gestellt wird (§8). Nach dem Holen wird das Vertrauen neu bewertet; gilt es nicht mehr, wird nichts gesendet (der Hook
-// pre-push wäre der neue, nicht freigegebene Code) und das Ergebnis trägt vertrauenGeaendert: die Oberfläche fragt neu, danach sendet der
-// nächste Abgleich. Gilt es noch, laufen beim Senden die Hooks wie gewohnt.
+// opt: limitSync = Frist je Git-Aufruf (Standard 120 s), limitGesamt = Gesamtfrist der Route (Standard 360 s), vertraut/sshEigen/… aus vault.mjs.
+// Der Abgleich bringt fremde Commits in den Arbeitsbaum — auch Hook-Dateien im Vault (z. B. ein Ordner mit Hooks, auf den ein lokales core.hooksPath
+// zeigt). Holen, Zusammenführen UND Senden laufen deshalb IMMER ohne Hooks, auch in einem vertrauten Vault: ein vom Server geholter Hook liefe
+// sonst mit dem nächsten Senden, ohne dass ihn jemand gesehen hat (P5: das Vertrauen gilt dem Vault, nicht mehr einem Fingerabdruck seiner Hooks).
 async function syncOhneSperre(wurzel, opt = {}) {
   const limitSync = opt.limitSync > 0 ? opt.limitSync : LIMIT_SYNC;
   const frist = opt.frist || neueFrist(opt.limitGesamt > 0 ? opt.limitGesamt : LIMIT_ABGLEICH);
@@ -333,14 +330,7 @@ async function syncOhneSperre(wurzel, opt = {}) {
     else neuerZweig = true;
   }
 
-  let geholt = false, gesendet = false, vertrauenGeaendert = false, versteckteBehalten_ = [];
-  // Das Geholte kann Hooks, Kit-Code oder Git-Einstellungen geändert haben: Vertrauen NEU bewerten. true = gilt weiter (oder war nie gegeben).
-  const bewerteNeu = () => {
-    if (!opt.vertraut || typeof opt.neuBewerten !== "function") return true;
-    let neu = null;
-    try { neu = opt.neuBewerten(); } catch { /* nicht prüfbar: wie „nicht mehr vertraut“ */ }
-    return !!(neu && neu.vertraut && !neu.gesperrt);
-  };
+  let geholt = false, gesendet = false, versteckteBehalten_ = [];
   if (up) {
     const { zurueck } = await vorZurueck(G);
     if (zurueck > 0) {
@@ -373,27 +363,20 @@ async function syncOhneSperre(wurzel, opt = {}) {
           throw new HttpFehler(409, "Ungesicherte Änderungen stehen im Weg. Bitte zuerst committen, dann abgleichen.", { dateien: [], ausgabe: ausgabeVon(m) });
         }
       } finally { markeWeg(); }
-      if (!bewerteNeu()) vertrauenGeaendert = true;
     }
     const nach = await vorZurueck(G);
-    // Noch nicht gesendete Zusammenführungen (z. B. nach gelösten Konflikten, siehe konfliktAbschliessen) haben fremde Commits gebracht: auch dann
-    // das Vertrauen neu bewerten, bevor beim Senden Hooks laufen.
-    if (!geholt && nach.vor > 0 && opt.vertraut) {
-      const mg = await G(["rev-list", "--merges", "--count", "@{u}..HEAD"]);
-      if (mg.code !== 0 || Number(mg.stdout.trim()) > 0) { if (!bewerteNeu()) vertrauenGeaendert = true; }
-    }
-    if (nach.vor > 0 && !vertrauenGeaendert) {
-      const p = await G(["push", "--quiet"], { timeout: limitSync });
+    if (nach.vor > 0) {
+      const p = await G(["push", "--quiet"], { ...OH, timeout: limitSync });
       if (p.code !== 0) throw new HttpFehler(409, "Der Server hat das Senden abgelehnt (es gab dort inzwischen Neues). Bitte noch einmal abgleichen.", { dateien: [], ausgabe: ausgabeVon(p) });
       gesendet = true;
     }
   } else if (neuerZweig) {
-    const p = await G(["push", "--quiet", "-u", remote, z], { timeout: limitSync });
+    const p = await G(["push", "--quiet", "-u", remote, z], { ...OH, timeout: limitSync });
     if (p.code !== 0) throw new HttpFehler(409, "Der Server hat das Senden abgelehnt.", { dateien: [], ausgabe: ausgabeVon(p) });
     gesendet = true;
   }
   const ergebnis = geholt && gesendet ? "beides" : geholt ? "geholt" : gesendet ? "gesendet" : "aktuell";
-  return { ergebnis, letzterSync: merkeSync(wurzel), ...(vertrauenGeaendert ? { vertrauenGeaendert: true } : {}),
+  return { ergebnis, letzterSync: merkeSync(wurzel),
     ...(versteckteBehalten_.length ? { versteckteBehalten: versteckteBehalten_ } : {}) };
 }
 

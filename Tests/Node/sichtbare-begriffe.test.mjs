@@ -42,13 +42,6 @@ const AUSNAHMEN = [
   { datei: "Sources/BrainCore/AppPfade.swift", muster: /./, grund: "Ordnername des früheren Support-Ordners" },
   { datei: "Sources/BrainApp/AppZustand.swift", muster: /Ordner „Brain“/, grund: "Hinweis zum früheren Support-Ordner namens Brain" },
   { datei: "Sources/BrainCore/VorschauPlatzhalter.swift", muster: /./, grund: "Shell-Platzhalter, der die Ausgabe von `claude mcp` nachbildet (Servername „brain“)" },
-  // Vertrauens-/Kit-Texte: gehören dem Paket „Vertrauen“ (P5); danach diese Ausnahmen entfernen.
-  { datei: "Ressourcen/studio/texte.js", muster: /Ein altes Brain-Kit|startet Brain davon|Brain konnte/, grund: "Vertrauens-/Kit-Texte (P5)" },
-  { datei: "Ressourcen/gemeinsam/vertrauen.mjs", muster: /./, grund: "Vertrauens-Texte (P5)" },
-  { datei: "Ressourcen/werkstatt/vertrauen-pruefen.mjs", muster: /./, grund: "Vertrauens-Texte (P5)" },
-  { datei: "Sources/BrainCore/KitVertrauen", muster: /./, grund: "Vertrauens-Texte (P5)" },
-  { datei: "Sources/BrainCore/KitStand", muster: /./, grund: "Kit-Texte (P5)" },
-  { datei: "Sources/BrainCore/BrainStatus.swift", muster: /Kit|Vertrau/, grund: "Kit-/Vertrauenstexte der Statusanzeige (P5)" },
 ];
 
 function dateien(ordner, endungen, aus = []) {

@@ -40,7 +40,7 @@ import { haengeAn, zeitstempel } from "./logs.mjs";
 import { leseAutomatik } from "./einstellungen.mjs";
 import { schreibeVorschlag } from "./vorschlaege.mjs";
 import { nenntThema, THEMA_GRUND } from "./thema-ausschluss.mjs";
-import { vaultPfadOderEnde, entferneBom } from "./pfade.mjs";
+import { vaultPfadOderEnde, entferneBom, geprueftVaultsVertraut } from "./pfade.mjs";
 
 export const MAX_TRANSKRIPT = 24000;
 export const MIN_PROMPTS = 5;
@@ -113,6 +113,8 @@ function ausCmdShim(dir) {
 
 // { befehl, args } | null. Nie über eine Shell. Testhaken BRAIN_CLAUDE=<skript> → node <skript>.
 export function findeClaude({ plattform = process.platform, pfad = process.env.PATH ?? "", env = process.env, home = homedir() } = {}) {
+  // Workspace-Trust (P5): keine KI-Pflege, Ernte oder Antwort-Messlatte für einen Vault, den der Nutzer nicht bestätigt hat — wie „claude fehlt“.
+  if (!geprueftVaultsVertraut()) return null;
   if (env.BRAIN_CLAUDE) return { befehl: process.execPath, args: [env.BRAIN_CLAUDE] };
   if (plattform === "win32") {
     const dirs = String(pfad).split(";").filter(Boolean);

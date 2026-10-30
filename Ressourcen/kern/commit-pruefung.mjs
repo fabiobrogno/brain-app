@@ -11,7 +11,7 @@ import { join, isAbsolute, relative, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { istWikiSeite } from "./wiki-pfade.mjs";
-import { ladeConfig, ordner, entferneBom, KERN, ALT_KIT_ORDNER } from "./pfade.mjs";
+import { ladeConfig, ordner, entferneBom, KERN, ALT_KIT_ORDNER, vaultVertraut } from "./pfade.mjs";
 import { gitBefehl } from "./werkzeug.mjs";
 import { findeSecrets } from "./secrets-muster.mjs";
 
@@ -19,9 +19,11 @@ const unterTemp = (p) => [tmpdir(), realpathSync(tmpdir())].some((t) => { const 
 const ersatzLintErlaubt = (p) => typeof p === "string" && p !== "" && isAbsolute(p) && !!process.env.NODE_TEST_CONTEXT && unterTemp(p);
 
 // Vault noch unbekannt → noch keine Config zum Laden; gitBefehl() fällt ohne cfg auf den MinGit-Ort bzw. "git" zurück.
-const vault = process.argv[2] || execFileSync(gitBefehl(), ["rev-parse", "--show-toplevel"], { encoding: "utf8", windowsHide: true }).trim();
+const vault = process.argv[2] || execFileSync(gitBefehl({ ohneVault: true }), ["rev-parse", "--show-toplevel"], { encoding: "utf8", windowsHide: true }).trim();
+// Workspace-Trust (P5): In einem Vault, den der Nutzer nicht bestätigt hat, hat dieser Hook keine Wirkung (und der Kern startet dort kein git).
+if (!vaultVertraut(vault)) process.exit(0);
 const cfg = ladeConfig(vault);
-const GIT = gitBefehl({ cfg });
+const GIT = gitBefehl({ cfg, vault });
 const git = (...a) => execFileSync(GIT, ["-C", vault, ...a], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], windowsHide: true, maxBuffer: 256 * 1024 * 1024 });
 const { wiki, archiv } = ordner(vault, cfg);
 const blockiert = [], hinweise = [];

@@ -3,7 +3,7 @@ import Foundation
 /// Aktionen der Oberfläche an die App (Nachrichtenkanal `aktion`, mit Antwort an die Seite, aber kein Datenweg). Die Prüfung
 /// hier ist die einzige Stelle, die Werte der Seite in etwas Ausführbares verwandelt: nur bekannte Aktionen, Pfade nur im Vault,
 /// nur https. `ordner-waehlen`, `vault-gewechselt`, `vertrauen-geaendert`, `titel` und `fehler` gelten nur für das Studio — die
-/// Übersicht (Kit-Seite aus dem Vault) darf nur `ansicht`, `ordner-zeigen` und `extern`.
+/// Übersicht (Seite des Kerns) darf nur `ansicht`, `ordner-zeigen` und `extern`.
 public enum AppAktion: Equatable, Sendable {
     case ansicht
     case ordnerZeigen(URL)
@@ -12,9 +12,9 @@ public enum AppAktion: Equatable, Sendable {
     case ordnerWaehlen(titel: String?, vorschlag: URL?)
     /// Das Backend hat den aktiven Vault gewechselt (steht in vaults.json): Menüleiste auffrischen, Übersicht schließen.
     case vaultGewechselt
-    /// Das Backend hat das Vertrauen in den Vault geändert (`POST /api/kit/vertrauen`, Studio-v2-Spec §8): die App prüft neu und
-    /// aktualisiert Status und Übersicht. Nur das Studio darf das melden — die Übersicht ist Kit-Code aus dem Vault und soll
-    /// keine Prüfungen oder Status-Läufe anstoßen können.
+    /// Das Backend hat das Vertrauen in den Vault geändert (`POST /api/vertrauen`, Workspace-Trust): Der Kern arbeitet in einem nicht
+    /// vertrauten Vault ohne git (Menüleiste und Übersicht zeigen dann andere Werte), darum liest die App den Status neu. Nur das Studio
+    /// darf das melden — die Übersicht (Seite des Kerns) soll keine Status-Läufe anstoßen können.
     case vertrauenGeaendert
     /// Fenstertitel des Studios (nil = Standardtitel).
     case titel(String?)

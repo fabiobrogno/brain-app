@@ -10,9 +10,24 @@ export const pfad = (...t) => join(WURZEL, ...t);
 const aufraeumen = [];
 // Tests nie gegen echte Nutzerdaten: eigener Support-Ordner (Vertrauens-Merker), Test-Schalter an.
 process.env.BRAIN_TESTMODUS = "1";
+// Workspace-Trust (P5): die Wegwerf-Vaults der Suite gelten als vertraut (sonst bliebe Git gesperrt). Die Tests der Sperre (vertrauen*.test.mjs) entfernen die Variable.
+process.env.KORTEX_VAULT_VERTRAUT = "alle";
 process.env.BRAIN_APP_SUPPORT = realpathSync(mkdtempSync(join(tmpdir(), "brain-support-")));
 aufraeumen.push(process.env.BRAIN_APP_SUPPORT);
 process.on("exit", () => { for (const d of aufraeumen) try { rmSync(d, { recursive: true, force: true }); } catch { /* egal */ } });
+
+// Führt fn ohne den Testschalter KORTEX_VAULT_VERTRAUT aus: es gilt die echte Vertrauensprüfung (Workspace-Trust, P5). Für Tests, die „nicht vertraut“ brauchen.
+// Der Schalter hängt an process.env und wäre sonst nach einer Zeitüberschreitung des Tests (node:test bricht fn nicht ab) im nächsten Test gelöscht oder
+// später wieder gesetzt. Der Timer bleibt absichtlich referenziert (kein unref): sonst läuft die Event-Loop leer, bevor er feuert, wenn der Test auf ein nie aufgelöstes Promise wartet. Darum stellt echt() ihn selbst nach spätestens `zeit` ms wieder her (und nie ein zweites Mal): ein hängender Test lässt den
+// Schalter nicht in den Folgetest durchschlagen, und ein Nachzügler überschreibt nichts.
+export async function echt(fn, { zeit = 45_000 } = {}) {
+  const alt = process.env.KORTEX_VAULT_VERTRAUT;
+  delete process.env.KORTEX_VAULT_VERTRAUT;
+  let zurueck = false, uhr;
+  const stelleHer = () => { if (zurueck) return; zurueck = true; clearTimeout(uhr); if (alt !== undefined) process.env.KORTEX_VAULT_VERTRAUT = alt; };
+  const frist = new Promise((_, nein) => { uhr = setTimeout(() => { stelleHer(); nein(new Error(`echt(): Zeitüberschreitung nach ${zeit} ms — der Testschalter ist wiederhergestellt`)); }, zeit); });
+  try { return await Promise.race([Promise.resolve().then(fn), frist]); } finally { stelleHer(); }
+}
 
 export function tmp(praefix = "brain-test-") {
   const d = realpathSync(mkdtempSync(join(tmpdir(), praefix)));
