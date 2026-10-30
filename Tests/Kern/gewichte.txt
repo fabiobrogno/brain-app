@@ -57,3 +57,4 @@
 4 test-index.sh
 4 test-cli.sh
 10 test-umstellung-befund.mjs
+20 test-backup-abgleich.mjs

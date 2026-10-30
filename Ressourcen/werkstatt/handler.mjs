@@ -310,6 +310,9 @@ export function erzeugeHandler(o) {
       case "/api/notiz/kontext": nur("GET"); return V().notizKontext(q.get("pfad"));
       case "/api/typen": nur("GET"); return V().typen();
       case "/api/ansichten": nur("GET"); return V().ansichten();
+      // Notizen + Typen + Ansichten aus EINEM Lauf (Oberfläche: ein Abruf statt drei) und Teil-Index nach Live-Ereignissen (nur die genannten, bereits bekannten Dateien)
+      case "/api/index": nur("GET"); return V().indexAlles();
+      case "/api/teilindex": nur("POST"); return V().teilIndex(eingabe().pfade);
       case "/api/probe": {
         nur("POST");
         const e = eingabe();

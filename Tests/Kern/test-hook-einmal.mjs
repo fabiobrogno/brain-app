@@ -18,7 +18,14 @@ const { ersterAufruf, markenOrdner, FENSTER_MS, FENSTER_HINT_MS, AUFBEWAHREN_MS 
 const ADAPTER = join(KIT, "adapters", "claude-code");
 
 const OHNE_GIT = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_") && !k.startsWith("BRAIN_")));
-const hookEnv = (vault, extra = {}) => ({ ...OHNE_GIT, HOME: TEMP_HOME, USERPROFILE: TEMP_HOME, QMD_BIN: process.env.QMD_BIN, BRAIN_VAULT: vault, BRAIN_EINMAL: "an", ...extra });
+// Ursache des früheren Wackelns: „Dublette innerhalb des Fensters" (5 s bei brain-hint) wurde gegen die Wanduhr gemessen — von der Marke des ersten
+// Hooks bis zur Prüfung des nächsten Prozesses, jeder mit eigenem Node-Start und Modul-Imports. Unter Last (CI, parallele Testdateien) dehnt sich das
+// über das Fenster, und die Wiederholung lief fälschlich. Darum bekommen die Kindprozesse ein großes Fenster (BRAIN_EINMAL_FENSTER_MS, nur Prüfstand):
+// „Dublette" hängt dann nicht mehr an der Startzeit. Schritte, die das ECHTE Fenster prüfen (Marke ist älter), laufen mit ECHTES_FENSTER; dort
+// zählt nur „älter als das Fenster", und das macht Last nicht falsch (altern() setzt die Marke weit zurück).
+const GROSSES_FENSTER = { BRAIN_EINMAL_FENSTER_MS: String(60 * 60 * 1000) };
+const ECHTES_FENSTER = { BRAIN_EINMAL_FENSTER_MS: "" };   // leer = ungültig = die festen Fenster des Hooks
+const hookEnv = (vault, extra = {}) => ({ ...OHNE_GIT, HOME: TEMP_HOME, USERPROFILE: TEMP_HOME, QMD_BIN: process.env.QMD_BIN, BRAIN_VAULT: vault, BRAIN_EINMAL: "an", ...GROSSES_FENSTER, ...extra });
 // Startet einen Hook asynchron (damit zwei Aufrufe wirklich gleichzeitig laufen) → Promise<{ status, stdout, stderr }>
 function starte(name, args, eingabe, env) {
   return new Promise((fertig) => {
@@ -167,7 +174,7 @@ test("brain-hint: verschiedene Prompts derselben Sitzung → beide laufen; Marke
   await starte("brain-hint.mjs", [], ein(HINT_PROMPT), hookEnv(v));
   assert.equal(zeilen(log).length, 2, "derselbe Prompt gleich noch einmal (frische Marke, < 5 s) → Dublette");
   altern(v, 40);
-  await gleichzeitig(starte("brain-hint.mjs", [], ein(HINT_PROMPT), hookEnv(v)), starte("brain-hint.mjs", [], ein(HINT_PROMPT), hookEnv(v)));
+  await gleichzeitig(starte("brain-hint.mjs", [], ein(HINT_PROMPT), hookEnv(v, ECHTES_FENSTER)), starte("brain-hint.mjs", [], ein(HINT_PROMPT), hookEnv(v, ECHTES_FENSTER)));
   assert.equal(zeilen(log).length, 3, "Marke > 5 s alt: von zwei gleichzeitigen läuft genau einer wieder");
 });
 
@@ -180,7 +187,7 @@ test("brain-hint: derselbe Prompt nach Esc (Marke 6 s alt, Fenster 5 s) → Hinw
   await starte("brain-hint.mjs", [], ein, hookEnv(v));
   assert.equal(zeilen(log).length, 1);
   altern(v, 6);                                                // der Nutzer drückt Esc und sendet denselben Prompt nach ein paar Sekunden noch einmal
-  await starte("brain-hint.mjs", [], ein, hookEnv(v));
+  await starte("brain-hint.mjs", [], ein, hookEnv(v, ECHTES_FENSTER));
   assert.equal(zeilen(log).length, 2, "nach 6 s kein „Dublette“ mehr");
   // Unit: Fenster-Grenze mit der Zeit als Parameter
   const w = tempVault();
@@ -249,7 +256,7 @@ test("session-start: zwei gleichzeitige Aufrufe → Meldung und hooks.log-Zeile 
   const d = await starte("session-start.mjs", [], { ...ein, session_id: "s-anders" }, env);
   assert.match(d.stdout, /Kortex-Inbox/, "andere Sitzung");
   altern(v, 40);
-  const e = await starte("session-start.mjs", [], ein, env);
+  const e = await starte("session-start.mjs", [], ein, { ...env, ...ECHTES_FENSTER });
   assert.match(e.stdout, /Kortex-Inbox/, "Marke > 30 s alt → läuft wieder");
 });
 
