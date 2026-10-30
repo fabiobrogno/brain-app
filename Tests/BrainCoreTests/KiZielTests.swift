@@ -81,69 +81,85 @@ private func treffer(_ muster: String, in text: String) throws -> [String] {
     #expect(liste[1] == KiProgramm(id: "gemini", name: "Gemini CLI", version: "0.12.3", gefunden: true), "Version aus dem Agenten")
 }
 
-// MARK: Logos
+// MARK: Logos und Katalog
+
+private func katalog() throws -> KiKatalog {
+    try #require(KiKatalog.laden(ressourcen: ressourcen()), "Ressourcen/gemeinsam/ki-katalog.json fehlt oder ist nicht lesbar")
+}
 
 private func ansichtZahlen(_ s: String) -> [Double] { s.split(separator: " ").compactMap { Double($0) } }
 
-@Test func ansichtenSindQuadratischUndLiegenUmDieGlypheNeuAngelegt() {
+/// Die verbindbaren Ziele in Swift und die Einträge des Katalogs (`verbindbar: true`) sind dieselbe Liste: gleiche ids, Namen und Reihenfolge.
+@Test func verbindbareZieleStimmenMitDemKatalogUeberein() throws {
+    let k = try katalog()
+    let imKatalog = k.eintraege.filter(\.verbindbar)
+    #expect(Set(imKatalog.map(\.id)) == Set(KiZiel.verbindbar.map(\.ziel)))
     for ki in KiZiel.allCases {
-        guard let a = ki.logoAnsicht else { #expect(ki.logoDatei == nil); continue }
-        let z = ansichtZahlen(a)
-        #expect(z.count == 4 && z[2] == z[3] && z[2] >= 24, "Quadrat, nie kleiner als die Zeichenfläche: \(ki.name)")
-        // die Mitte der Zeichenfläche (12, 12) liegt in der Mitte der Ansicht — die Glyphen von Simple Icons sind auf 24×24 zentriert
-        #expect(abs(z[0] + z[2] / 2 - 12) < 0.02 && abs(z[1] + z[3] / 2 - 12) < 0.02, Comment(rawValue: ki.name))
+        let e = try #require(k.eintrag(ki.ziel), "\(ki.ziel) fehlt im Katalog")
+        #expect(e.verbindbar && e.name == ki.name, Comment(rawValue: ki.ziel))
+    }
+    // gleiche Reihenfolge wie im Katalog (Claude Code zuerst)
+    #expect(KiZiel.verbindbar.map(\.ziel) == imKatalog.map(\.id).filter { id in KiZiel.verbindbar.contains { $0.ziel == id } })
+}
+
+@Test func ansichtenSindQuadratischUndLiegenUmDieGlypheNeuAngelegt() throws {
+    for e in try katalog().eintraege {
+        guard let l = e.logo else { continue }
+        if l.istSVG {
+            let z = ansichtZahlen(try #require(l.ansicht, Comment(rawValue: e.id)))
+            #expect(z.count == 4 && z[2] == z[3] && z[2] > 0, "Quadrat: \(e.name)")
+        } else {
+            #expect(l.ansicht == nil, "PNG hat keine Ansicht: \(e.name)")
+        }
     }
 }
 
-/// Die Daten für die Darstellung sind die Datei mit anderem `viewBox` — der Pfad bleibt Zeichen für Zeichen derselbe.
+/// Die Daten für die Darstellung sind die Datei mit anderem `viewBox` — alles andere bleibt Zeichen für Zeichen dasselbe.
 @Test func logoDatenAendernNurDenViewBox() throws {
-    for ki in KiZiel.allCases where ki.logoDatei != nil {
+    func ohneViewBox(_ s: String) -> String { s.replacingOccurrences(of: #"viewBox="[^"]*""#, with: "", options: .regularExpression) }
+    for ki in KiZiel.allCases {
+        guard let info = ki.logo(ressourcen: ressourcen()), info.istSVG else { continue }
         let url = try #require(KILogoQuelle.url(ki, ressourcen: ressourcen()))
         let original = try String(contentsOf: url, encoding: .utf8)
         let daten = try #require(KILogoQuelle.daten(ki, ressourcen: ressourcen()), Comment(rawValue: ki.name))
         let neu = try #require(String(data: daten, encoding: .utf8))
-        #expect(neu == original.replacingOccurrences(of: "viewBox=\"0 0 24 24\"", with: "viewBox=\"\(ki.logoAnsicht!)\""))
-        #expect(neu.contains(try #require(treffer(#"<path d="([^"]+)""#, in: original).first)))
+        #expect(neu.contains("viewBox=\"\(info.ansicht!)\""), Comment(rawValue: ki.name))
+        #expect(ohneViewBox(neu) == ohneViewBox(original), Comment(rawValue: ki.name))
     }
-    #expect(KILogoQuelle.daten(.codex, ressourcen: ressourcen()) == nil)
     #expect(KILogoQuelle.daten(.claude, ressourcen: nil) == nil)
+    #expect(KILogoQuelle.mitAnsicht("<svg xmlns=\"x\"><path d=\"M0 0\"/></svg>", "0 0 24 24") == nil, "ohne viewBox keine Darstellung")
+    #expect(KILogoQuelle.mitAnsicht("<svg viewBox=\"0 0 24 24\"><script>x</script></svg>", "0 0 24 24") == nil, "Skripte nie")
+    #expect(KILogoQuelle.mitAnsicht("<svg viewBox=\"0 0 24 24\"><path d=\"M0 0\"/></svg>", "0 0 30 30") == "<svg viewBox=\"0 0 30 30\"><path d=\"M0 0\"/></svg>")
 }
 
-/// Die Zahlen im Studio (`ki-logos.js`) und hier sind dieselben, sonst sähe dasselbe Logo in App und Studio verschieden groß aus.
-@Test func ansichtenGleichenDenenImStudio() throws {
-    let js = try lies("studio/ki-logos.js")
-    let block = try #require(js.components(separatedBy: "export const ANSICHT = {").last?.components(separatedBy: "};").first)
-    let eintraege = try treffer(#"(\w+): "[-\d. ]+""#, in: block)
-    #expect(eintraege.count == 7)
-    for name in eintraege {
-        let wert = try #require(treffer("\(name): \"([-\\d. ]+)\"", in: block).first)
-        let ki: KiZiel = try #require(KiZiel.allCases.first { ($0.logoDatei ?? "") == "\(name).svg" })
-        #expect(ki.logoAnsicht == wert, Comment(rawValue: name))
-    }
-    // und die Pfaddaten im Studio sind die der Dateien
-    for ki in KiZiel.allCases {
-        guard let datei = ki.logoDatei else { continue }
-        let svg = try String(contentsOf: ressourcen().appendingPathComponent("logos/\(datei)"), encoding: .utf8)
-        let d = try #require(treffer(#"<path d="([^"]+)""#, in: svg).first)
-        #expect(js.contains("\"\(d)\""), Comment(rawValue: datei))
+/// Das Studio (`ki-katalog.js`, erzeugt von scripts/erzeuge-ki-katalog.mjs) trägt dieselben ids, Namen und Ansichten wie der Katalog, sonst
+/// sähe dasselbe Logo in App und Studio verschieden groß aus.
+@Test func katalogImStudioGleichtDemKatalog() throws {
+    let js = try lies("studio/ki-katalog.js")
+    for e in try katalog().eintraege {
+        #expect(js.contains("\"id\":\"\(e.id)\",\"name\":\"\(e.name)\""), Comment(rawValue: e.id))
+        if let l = e.logo, l.istSVG { #expect(js.contains("viewBox=\\\"\(l.ansicht!)\\\""), Comment(rawValue: e.id)) }
     }
 }
 
-/// Markenfarbe nur bei mindestens 3:1 Kontrast auf Weiß UND auf dem dunklen Fenster (#1E1E1E); sonst Textfarbe. Die schwarzen und die zu
-/// dunklen oder zu hellen Marken (Zed, Warp) stehen deshalb einfarbig.
-@Test func markenfarbeNurBeiAusreichendemKontrastAufHellUndDunkel() {
+/// Markenfarbe nur bei mindestens 3:1 Kontrast auf Weiß UND auf dem dunklen Fenster (#1E1E1E); sonst Textfarbe oder Bild.
+@Test func markenfarbeNurBeiAusreichendemKontrastAufHellUndDunkel() throws {
     func luminanz(_ hex: String) -> Double {
         let w = UInt32(hex, radix: 16) ?? 0
         func k(_ v: UInt32) -> Double { let c = Double(v) / 255; return c <= 0.03928 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4) }
         return 0.2126 * k((w >> 16) & 0xFF) + 0.7152 * k((w >> 8) & 0xFF) + 0.0722 * k(w & 0xFF)
     }
     func kontrast(_ a: String, _ b: String) -> Double { let x = max(luminanz(a), luminanz(b)), y = min(luminanz(a), luminanz(b)); return (x + 0.05) / (y + 0.05) }
-    for ki in KiZiel.allCases {
-        if let f = ki.logoFarbeHex {
-            #expect(kontrast(f, "FFFFFF") >= 3 && kontrast(f, "1E1E1E") >= 3, Comment(rawValue: ki.name))
-        }
+    var gesehen = 0
+    for e in try katalog().eintraege {
+        guard let l = e.logo, l.modus == .marke else { continue }
+        let f = try #require(l.farbeHex, Comment(rawValue: e.id))
+        #expect(kontrast(f, "FFFFFF") >= 3 && kontrast(f, "1E1E1E") >= 3, Comment(rawValue: e.name))
+        gesehen += 1
     }
-    #expect(Set(KiZiel.allCases.filter { $0.logoFarbeHex != nil }) == [.claude, .claudeDesktop, .gemini])
+    #expect(gesehen >= 2, "Claude und Gemini behalten ihre Markenfarbe")
+    #expect(KiZiel.claude.logo(ressourcen: ressourcen())?.farbeHex == "D97757" && KiZiel.claudeDesktop.logo(ressourcen: ressourcen())?.farbeHex == "D97757")
     // diese Marken wären auf einem der beiden Hintergründe unter 3:1 und bleiben deshalb einfarbig
     #expect(kontrast("084CCF", "1E1E1E") < 3 && kontrast("01A4FF", "FFFFFF") < 3)
+    #expect(KiZiel.zed.logo(ressourcen: ressourcen())?.modus == .einfarbig && KiZiel.warp.logo(ressourcen: ressourcen())?.modus == .einfarbig)
 }

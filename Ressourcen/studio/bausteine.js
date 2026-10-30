@@ -8,12 +8,13 @@
 //   knopf({ … }) + setzeLaedt(knopf, an) / mitLaden(knopf, fn)   primär/sekundär/leise/gefährlich, S/M/L, Spinner ohne Breitensprung und ohne Flackern
 //   segment({ … }), umschalter({ … }), hakenFeld({ … })       Segment-Schalter, Switch, Checkbox/Radio
 //   datumsauswahl({ … }) / oeffneDatumsauswahl(anker, …)      Kalender-Popover mit Schnellwahl
+//   kiAuswahl({ erkennung, wert, mehrfach, waehlbar, aufAenderung })   Karten der gefundenen KIs + aufklappbare, durchsuchbare Liste aller KIs
 //   tooltip(el, text), toast(text, …)
 //
 // Alle Fabriken geben ein Element zurück (textfeld/textbereich ein Objekt { el, input|textarea, … }), das mit h(…) eingebaut wird.
 import { h, toast } from "./hilfen.js";
 import { symbol, GROESSE } from "./symbole.js";
-import { kiLogo } from "./ki-logos.js";
+import { kiLogo, kiKatalog } from "./ki-logos.js";
 import { oeffnePopover, schliessePopover, popoverOffen, wenigBewegung } from "./popover.js";
 import { TB } from "./texte-bausteine.js";
 
@@ -430,4 +431,189 @@ export function leerBlock({ symbol: sym, titel, text, aktion = null, daten = {},
     h("h3", { text: titel }),
     text ? h("p", { text }) : null,
     aktion ? knopf({ text: aktion.text, variante: aktion.variante, groesse: aktion.groesse, aktion: aktion.name || "leer-aktion", aufKlick: aktion.tun }) : null);
+}
+
+// ======================================================= KI-Auswahl
+// Oben die gefundenen KIs (sonst die beliebten) als große Karten mit Logo, Name und Status; darunter „Weitere KIs anzeigen (N)“ klappt eine
+// durchsuchbare, kompakte Liste aller anderen KIs des Katalogs auf (Terminal-KIs, Editoren, Apps; Logos lokal, nie aus dem Netz).
+// Muster: Orca, Einrichtung „Agent wählen“ (AgentStep.tsx @9bccd67, MIT, Lovecast Inc.; THIRD-PARTY-NOTICES.md).
+//
+//   erkennung   { [id]: { gefunden, version } } aus GET /api/ki/erkennen (`katalog`); null = die Suche läuft noch
+//   wert        gewählte ids; mehrfach: true = Mehrfachauswahl (Kästchen), false = genau eine (Auswahlkreis)
+//   waehlbar    (eintrag) => boolean; nicht wählbare Einträge (Kortex kann sich dort noch nicht eintragen) stehen ausgegraut da
+//   aufAenderung(ids)   ids in der Reihenfolge des Katalogs
+//   → { el, wert(), setzeWert(ids), setzeErkennung(erkennung), sperre(an), oeffne(), schliesse(), fokus() }
+// Tastatur: Tab erreicht die Karten (←→↑↓ wechseln, Leertaste/Enter wählt), den Knopf „Weitere KIs“ (Enter öffnet und setzt den Fokus ins Suchfeld),
+// im Suchfeld filtert Tippen, ↓ springt in die Liste; in der Liste ↑↓ Pos1 Ende bewegen, Leertaste/Enter wählt, Tippen geht zurück ins Suchfeld, Esc leert die Suche.
+const kiNorm = (s) => String(s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[\s_-]+/g, "");
+
+export function kiAuswahl({ erkennung = null, wert = [], mehrfach = true, waehlbar = () => true, aufAenderung, label = TB.ki.label, beliebteAnzahl = 8, daten = {}, klasse = "" } = {}) {
+  const katalog = kiKatalog();
+  const index = new Map(katalog.map((e, i) => [e.id, i]));
+  const S = { erkennung, auswahl: new Set(wert.filter((id) => index.has(id))), q: "", offen: false, obenIds: [], obenGefunden: false, gesperrt: false };
+  const fund = (e) => (S.erkennung ? S.erkennung[e.id] : null);
+  const gefunden = (e) => fund(e)?.gefunden === true;
+  const frei = (e) => !!waehlbar(e);
+  const listeWert = () => katalog.map((e) => e.id).filter((id) => S.auswahl.has(id));
+  const statusText = (e) => {
+    if (!S.erkennung) return TB.ki.sucht;
+    if (!gefunden(e)) return TB.ki.nichtDa;
+    if (!frei(e)) return TB.ki.gefundenNichtVerbindbar;
+    return TB.ki.gefunden(fund(e)?.version);
+  };
+
+  const rolleKarte = mehrfach ? "checkbox" : "radio";
+  const kopfTitel = h("span", { klasse: "ka-titel" });
+  const kopfZahl = h("span", { klasse: "ka-zahl" });
+  const karten = h("div", { klasse: "ka-karten", role: mehrfach ? "group" : "radiogroup", "aria-label": label });
+  const listeId = neueId("ka-liste"), aufId = neueId("ka-auf");
+  const suche = textfeld({ typ: "search", platzhalter: TB.ki.suchen, label: TB.ki.suchen, klasse: "ka-suche", beiEingabe: (q) => { S.q = q; zeichneListe(); } });
+  const treffer = h("div", { klasse: "bs-nur-lesen", "aria-live": "polite" });
+  const leer = h("div", { klasse: "ka-leer", hidden: true });
+  const liste = h("div", { klasse: "ka-liste", role: "listbox", id: listeId, "aria-label": TB.ki.alleLabel, "aria-multiselectable": mehrfach ? "true" : null });
+  const hinweis = h("div", { klasse: "ka-hinweis", hidden: true, text: TB.ki.nichtWaehlbarHinweis });
+  const mehrText = h("span", { klasse: "ka-mehr-text" });
+  const mehr = h("button", { type: "button", klasse: "ka-mehr", "aria-expanded": "false", "aria-controls": aufId, "data-aktion": "ki-weitere",
+    aufClick: () => (S.offen ? schliesse() : oeffne({ fokus: true })) }, mehrText, h("span", { klasse: "bs-chevron", "aria-hidden": "true" }, symbol("chevron-unten", GROESSE.klein)));
+  const innen = h("div", { klasse: "ka-weitere-innen" }, h("div", { klasse: "ka-suchzeile" }, suche.el), liste, leer, hinweis, treffer);
+  const aufklapp = h("div", { klasse: "ka-aufklapp", id: aufId, "data-offen": "false", "aria-hidden": "true", inert: true }, innen);
+  const el = h("div", { klasse: klassen("ka", klasse), "data-ki-auswahl": "", ...daten },
+    h("div", { klasse: "ka-kopf" }, kopfTitel, kopfZahl), karten, mehr, aufklapp);
+
+  // ---- Karten (oben)
+  function berechneOben() {
+    const alle = S.erkennung ? katalog.filter(gefunden).sort((a, b) => (frei(b) - frei(a)) || (index.get(a.id) - index.get(b.id))) : [];
+    const ziel = alle.length ? alle : katalog.filter((e) => e.beliebt);
+    S.obenGefunden = alle.length > 0;
+    S.obenIds = ziel.slice(0, Math.max(beliebteAnzahl, 1)).map((e) => e.id);
+  }
+  function karte(e) {
+    const ok = frei(e);
+    return h("button", { type: "button", klasse: "ka-karte", role: rolleKarte, "aria-checked": "false", "data-ki": e.id, "data-ziel": e.id, "aria-disabled": ok ? null : "true", title: ok ? null : TB.ki.nichtWaehlbarTitel(e.name),
+      aufClick: () => wechsle(e.id), aufKeydown: (ev) => kartenTaste(ev) },
+      h("span", { klasse: "ka-kachel" }, kiLogo(e.id, 26, { dekorativ: true })),
+      h("span", { klasse: "ka-text" }, h("span", { klasse: "ka-name", text: e.name }),
+        h("span", { klasse: "ka-status", "data-gefunden": String(gefunden(e)) }, gefunden(e) ? h("span", { klasse: "ka-punkt", "aria-hidden": "true" }) : null, h("span", { klasse: "ka-status-text", text: statusText(e) }))),
+      h("span", { klasse: "ka-haken", "aria-hidden": "true" }, symbol("haken", GROESSE.klein)));
+  }
+  function zeichneKarten() {
+    berechneOben();
+    karten.replaceChildren(...S.obenIds.map((id) => karte(katalog[index.get(id)])));
+    kopfTitel.textContent = S.obenGefunden ? TB.ki.gefundenTitel : TB.ki.beliebtTitel;
+    kopfZahl.textContent = String(S.obenIds.length);
+    el.dataset.erkennung = !S.erkennung ? "sucht" : S.obenGefunden ? "gefunden" : "keine";
+    syncAuswahl();
+  }
+  function kartenTaste(ev) {
+    const alle = [...karten.querySelectorAll(".ka-karte")];
+    const i = alle.indexOf(ev.currentTarget);
+    const ziel = { ArrowRight: i + 1, ArrowDown: i + 1, ArrowLeft: i - 1, ArrowUp: i - 1, Home: 0, End: alle.length - 1 }[ev.key];
+    if (ziel === undefined || ev.altKey || ev.ctrlKey || ev.metaKey) return;
+    ev.preventDefault();
+    alle[Math.min(Math.max(ziel, 0), alle.length - 1)]?.focus();
+  }
+
+  // ---- Liste (weitere)
+  function suchWert(e, tokens) {
+    const heu = kiNorm([e.name, e.id, TB.ki.art[e.art]].join(" "));
+    const name = kiNorm(e.name);
+    let w = 0;
+    for (const t of tokens) {
+      const n = kiNorm(t);
+      if (!n) continue;
+      if (name.startsWith(n)) w += 3; else if (name.includes(n)) w += 2; else if (heu.includes(n)) w += 1; else return -1;
+    }
+    return w;
+  }
+  function zeile(e) {
+    const ok = frei(e);
+    return h("div", { klasse: "ka-zeile", role: "option", id: `${listeId}-${e.id}`, tabindex: "-1", "aria-selected": "false", "aria-disabled": ok ? null : "true", "data-ki": e.id, "data-ziel": e.id,
+      title: ok ? null : TB.ki.nichtWaehlbarTitel(e.name), aufClick: () => wechsle(e.id), aufKeydown: (ev) => zeilenTaste(ev) },
+      h("span", { klasse: klassen("ka-box", !mehrfach && "rund"), "aria-hidden": "true" }, ok ? symbol("haken", GROESSE.klein) : null),
+      h("span", { klasse: "ka-z-logo" }, kiLogo(e.id, 20, { dekorativ: true })),
+      h("span", { klasse: "ka-z-name", text: e.name }),
+      h("span", { klasse: "ka-art", text: TB.ki.art[e.art] }),
+      h("span", { klasse: "ka-z-status", "data-gefunden": String(gefunden(e)) }, gefunden(e) ? h("span", { klasse: "ka-punkt", "aria-hidden": "true" }) : null, h("span", { text: statusText(e) })));
+  }
+  function zeichneListe() {
+    const rest = katalog.filter((e) => !S.obenIds.includes(e.id));
+    const tokens = S.q.trim().split(/\s+/).filter(Boolean);
+    const gewertet = rest.map((e) => ({ e, w: tokens.length ? suchWert(e, tokens) : 0 })).filter((x) => x.w >= 0)
+      .sort((a, b) => (b.w - a.w) || (gefunden(b.e) - gefunden(a.e)) || (frei(b.e) - frei(a.e)) || (index.get(a.e.id) - index.get(b.e.id)));
+    liste.replaceChildren(...gewertet.map((x) => zeile(x.e)));
+    const erste = liste.firstElementChild;
+    if (erste) erste.tabIndex = 0;
+    const q = S.q.trim();
+    const oben = q && !gewertet.length ? katalog.filter((e) => S.obenIds.includes(e.id) && suchWert(e, tokens) >= 0) : [];
+    leer.hidden = gewertet.length > 0;
+    leer.textContent = !gewertet.length ? (oben.length ? TB.ki.schonOben(q) : TB.ki.keine(q)) : "";
+    hinweis.hidden = !gewertet.some((x) => !frei(x.e));
+    treffer.textContent = q ? TB.ki.treffer(gewertet.length) : "";
+    mehrText.textContent = S.offen ? TB.ki.weniger : TB.ki.mehr(rest.length);
+    syncAuswahl();
+  }
+  const leereSuche = () => { suche.input.value = ""; suche.sync(); S.q = ""; zeichneListe(); };
+  const tippeInSuche = (aendere) => { suche.input.focus(); suche.input.value = aendere(suche.input.value); suche.input.dispatchEvent(new Event("input", { bubbles: true })); };
+  function zeilenTaste(ev) {
+    const zeilen = [...liste.querySelectorAll(".ka-zeile")];
+    const i = zeilen.indexOf(ev.currentTarget);
+    const gehe = (n) => { const z = zeilen[Math.min(Math.max(n, 0), zeilen.length - 1)]; if (z) { for (const x of zeilen) x.tabIndex = -1; z.tabIndex = 0; z.focus(); z.scrollIntoView({ block: "nearest" }); } };
+    if (ev.altKey || ev.ctrlKey || ev.metaKey) return;
+    if (ev.key === "ArrowDown") { ev.preventDefault(); gehe(i + 1); }
+    else if (ev.key === "ArrowUp") { ev.preventDefault(); if (i === 0) suche.input.focus(); else gehe(i - 1); }
+    else if (ev.key === "Home") { ev.preventDefault(); gehe(0); }
+    else if (ev.key === "End") { ev.preventDefault(); gehe(zeilen.length - 1); }
+    else if (ev.key === "PageDown") { ev.preventDefault(); gehe(i + 6); }
+    else if (ev.key === "PageUp") { ev.preventDefault(); gehe(i - 6); }
+    else if (ev.key === " " || ev.key === "Enter") { ev.preventDefault(); wechsle(ev.currentTarget.dataset.ki); }
+    else if (ev.key === "Escape" && S.q) { ev.preventDefault(); ev.stopPropagation(); leereSuche(); suche.input.focus(); }
+    else if (ev.key === "Backspace") { ev.preventDefault(); tippeInSuche((v) => v.slice(0, -1)); }
+    else if (ev.key.length === 1) { ev.preventDefault(); tippeInSuche((v) => v + ev.key); }
+  }
+  suche.input.addEventListener("keydown", (ev) => {
+    if (ev.key === "ArrowDown") { const z = liste.querySelector(".ka-zeile"); if (z) { ev.preventDefault(); z.focus(); } }
+    else if (ev.key === "Enter") { const z = liste.querySelector(".ka-zeile"); if (z && S.q.trim()) { ev.preventDefault(); wechsle(z.dataset.ki); } }
+    else if (ev.key === "Escape" && S.q) { ev.preventDefault(); ev.stopPropagation(); leereSuche(); }
+  });
+
+  // ---- Zustand
+  function syncAuswahl() {
+    for (const k of el.querySelectorAll(".ka-karte")) k.setAttribute("aria-checked", String(S.auswahl.has(k.dataset.ki)));
+    for (const z of liste.querySelectorAll(".ka-zeile")) z.setAttribute("aria-selected", String(S.auswahl.has(z.dataset.ki)));
+  }
+  function wechsle(id) {
+    const e = katalog[index.get(id)];
+    if (!e || !frei(e) || S.gesperrt) return;
+    if (mehrfach) { if (S.auswahl.has(id)) S.auswahl.delete(id); else S.auswahl.add(id); }
+    else if (S.auswahl.has(id) && S.auswahl.size === 1) return;
+    else S.auswahl = new Set([id]);
+    syncAuswahl();
+    try { aufAenderung?.(listeWert()); } catch (err) { console.error(err); }
+  }
+  function oeffne({ fokus = false } = {}) {
+    S.offen = true;
+    mehr.setAttribute("aria-expanded", "true");
+    aufklapp.dataset.offen = "true"; aufklapp.removeAttribute("aria-hidden"); aufklapp.inert = false;
+    mehrText.textContent = TB.ki.weniger;
+    if (fokus) setTimeout(() => suche.input.focus({ preventScroll: true }), wenigBewegung() ? 0 : 60);
+  }
+  function schliesse() {
+    S.offen = false;
+    mehr.setAttribute("aria-expanded", "false");
+    aufklapp.dataset.offen = "false"; aufklapp.setAttribute("aria-hidden", "true"); aufklapp.inert = true;
+    zeichneListe();
+  }
+  const klappAuf = () => { if (!S.offen && listeWert().some((id) => !S.obenIds.includes(id))) oeffne(); };
+
+  zeichneKarten(); zeichneListe(); klappAuf();
+  return {
+    el,
+    wert: listeWert,
+    setzeWert(ids) { S.auswahl = new Set((ids || []).filter((id) => index.has(id))); syncAuswahl(); klappAuf(); },
+    setzeErkennung(neu) { S.erkennung = neu; zeichneKarten(); zeichneListe(); klappAuf(); },
+    oeffne, schliesse,
+    // Während etwas läuft, das von der Auswahl abhängt: nichts ändern lassen
+    sperre(an) { S.gesperrt = !!an; el.toggleAttribute("data-gesperrt", !!an); for (const k of karten.querySelectorAll(".ka-karte")) k.disabled = !!an; },
+    fokus() { (karten.querySelector(".ka-karte[aria-checked='true']") || karten.querySelector(".ka-karte") || mehr).focus(); },
+  };
 }

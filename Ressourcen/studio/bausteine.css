@@ -234,3 +234,64 @@ input[type=checkbox]:disabled, input[type=radio]:disabled { opacity: .45; cursor
 
 /* Leere Zustände: Zeichen, Text, Aktion – gleiche Abstände überall */
 .leer-liste .knopf, .au-leer .knopf { margin-top: 12px; }
+
+/* ---------- KI-Auswahl (kiAuswahl in bausteine.js) ----------
+   Karten oben (gleiche Höhe, ein Name pro Zeile, nie Umbruch), darunter aufklappbare Liste mit Suche (Zeilen 40 px). Nur Tokens aus studio.css. */
+.ka { display: flex; flex-direction: column; gap: 12px; min-width: 0; container: ka / inline-size; }
+.ka-kopf { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--text-2); }
+.ka-zahl { font-weight: 500; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.ka-karten { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 232px), 1fr)); gap: 10px; }
+.ka-karte { display: grid; grid-template-columns: 40px minmax(0, 1fr) 20px; align-items: center; column-gap: 12px; height: 64px; min-width: 0; padding: 0 14px 0 12px; border: 1px solid var(--bs-rand); border-radius: var(--r-l);
+  background: var(--erhoben); color: var(--text); font: inherit; text-align: left; cursor: pointer; box-shadow: var(--schatten-klein);
+  transition: border-color 120ms ease-out, background-color 120ms ease-out, box-shadow 120ms ease-out; }
+.ka-karte:hover { border-color: var(--text-3); }
+.ka-karte:focus-visible { outline: 0; border-color: var(--akzent); box-shadow: var(--fokus-ring); }
+.ka-karte[aria-checked="true"] { border-color: var(--akzent); background: color-mix(in srgb, var(--akzent) 7%, var(--erhoben)); box-shadow: inset 0 0 0 1px var(--akzent), var(--schatten-klein); }
+.ka-karte[aria-disabled="true"], .ka-zeile[aria-disabled="true"] { opacity: .6; cursor: default; }
+.ka-karte[aria-disabled="true"]:hover { border-color: var(--bs-rand); }
+.ka-kachel { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; background: var(--seite); box-shadow: inset 0 0 0 1px var(--linie); }
+.ka-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.ka-name { font-size: 13.5px; font-weight: 600; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ka-status, .ka-z-status { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; line-height: 1.2; color: var(--text-3); white-space: nowrap; }
+.ka-status > span:last-child, .ka-z-status > span:last-child { overflow: hidden; text-overflow: ellipsis; }
+.ka-punkt { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--gruen); }
+[data-gefunden="true"] > span:last-child { color: var(--text-2); }
+.ka-haken { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--bs-rand); color: transparent; transition: background-color 120ms ease-out, border-color 120ms ease-out, color 120ms ease-out; }
+.ka-karte:not([aria-disabled="true"]):hover .ka-haken { border-color: var(--text-3); }
+.ka-karte[aria-checked="true"] .ka-haken { background: var(--akzent); border-color: var(--akzent); color: var(--akzent-text); }
+.ka-karte[aria-disabled="true"] .ka-haken { visibility: hidden; }
+
+.ka-mehr { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; height: var(--bs-h-s); margin-left: -6px; padding: 0 8px 0 6px; border: 0; border-radius: var(--r-s); background: transparent; color: var(--text-2); font: 500 12.5px/1 var(--schrift); cursor: pointer;
+  transition: background-color 100ms ease-out, color 100ms ease-out; }
+.ka-mehr:hover { background: var(--hover-2); color: var(--text); }
+.ka-mehr:focus-visible { outline: 0; box-shadow: var(--fokus-ring); }
+
+/* Aufklappen: Höhe gleitet über grid-template-rows (kein Springen, kein festes Maß) */
+.ka-aufklapp { display: grid; grid-template-rows: 0fr; margin-top: -4px; transition: grid-template-rows 190ms var(--bs-aus), opacity 140ms ease-out; opacity: 0; }
+.ka-aufklapp[data-offen="true"] { grid-template-rows: 1fr; opacity: 1; margin-top: 0; }
+.ka-weitere-innen { min-height: 0; overflow: hidden; display: flex; flex-direction: column; border-radius: var(--r-l); }
+.ka-aufklapp[data-offen="true"] .ka-weitere-innen { border: 1px solid var(--bs-rand); background: var(--erhoben); }
+.ka-suchzeile { padding: 8px; border-bottom: 1px solid var(--linie); }
+.ka-suche { --bs-feld-grund: var(--seite); }
+.ka-liste { display: flex; flex-direction: column; gap: 1px; max-height: clamp(160px, calc(100vh - 560px), 296px); overflow-y: auto; padding: 4px; outline: 0; scrollbar-width: thin; }
+.ka-liste:empty { display: none; }
+.ka-zeile { display: grid; grid-template-columns: 18px 22px minmax(0, 1fr) auto auto; align-items: center; column-gap: 10px; flex: none; height: 40px; padding: 0 10px; border-radius: var(--r); font-size: 13px; color: var(--text); cursor: pointer;
+  transition: background-color 80ms ease-out; }
+.ka-zeile:hover { background: var(--hover); }
+.ka-zeile:focus-visible { outline: 0; background: var(--akzent-weich); box-shadow: inset 0 0 0 1px var(--akzent-rand); }
+.ka-box { display: grid; place-items: center; width: 16px; height: 16px; border-radius: 5px; border: 1.5px solid var(--bs-rand); color: transparent; transition: background-color 120ms ease-out, border-color 120ms ease-out, color 120ms ease-out; }
+.ka-box.rund { border-radius: 50%; }
+.ka-zeile[aria-selected="true"] .ka-box { background: var(--akzent); border-color: var(--akzent); color: var(--akzent-text); }
+.ka-zeile[aria-disabled="true"] .ka-box { visibility: hidden; }
+.ka-z-logo { display: grid; place-items: center; width: 22px; }
+.ka-z-name { min-width: 0; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ka-art { min-width: 52px; text-align: right; font-size: 11.5px; color: var(--text-3); white-space: nowrap; }
+.ka-z-status { justify-content: flex-end; min-width: 112px; }
+.ka-leer { padding: 18px 16px; text-align: center; font-size: 12.5px; color: var(--text-2); }
+.ka-hinweis { padding: 8px 14px 10px; border-top: 1px solid var(--linie); font-size: 11.5px; color: var(--text-3); }
+@container ka (max-width: 440px) {
+  .ka-zeile { grid-template-columns: 18px 22px minmax(0, 1fr) auto; }
+  .ka-art { display: none; }
+  .ka-z-status { min-width: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .ka-aufklapp { transition: none; } }
