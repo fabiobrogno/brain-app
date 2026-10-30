@@ -8,7 +8,7 @@
 
 **Tech Stack:** Node ≥ 20 (ESM, nur Standardbibliothek), Git (worktree, ff-merge, revert), `node:test`, `fake-claude.mjs`, macOS launchd.
 
-**Spec:** `/Users/fbFirma/source/brain-app/docs/superpowers/specs/2026-10-21-brain-lernkreislauf-design.md` (§5 komplett, §6.1, §6.3, §8 B2-Abnahme, §10 B2-Tests). Codebasis: Worktree `~/brain-kit-v0.7` (Branch `kit-v0.7`), alle Pfade unten relativ dazu.
+**Spec:** `<home>/source/brain-app/docs/superpowers/specs/2026-10-21-brain-lernkreislauf-design.md` (§5 komplett, §6.1, §6.3, §8 B2-Abnahme, §10 B2-Tests). Codebasis: Worktree `~/brain-kit-v0.7` (Branch `kit-v0.7`), alle Pfade unten relativ dazu.
 
 ## Global Constraints
 
