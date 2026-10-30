@@ -124,7 +124,7 @@ export function erzeugeHandler(o) {
   const fristen = { mcpVerbinden: 25_000, probe: 10_000, ...(o.fristen || {}) };
   // Einrichtung über den Starter der App (Hooks bei Claude Code, Prüfung vor dem Speichern, Hintergrunddienst): werkstatt/verdrahtung.mjs. o.starter = Ersatz für Tests.
   const verdrahtung = erzeugeVerdrahtung({ starter: o.starter || join(vaultOpt.support || supportOrdner(), "bin", "kortex"), support: vaultOpt.support || supportOrdner() });
-  // Umstellung eines Vaults aus der Kit-Zeit (P7a, nur lesend): werkstatt/umstellung.mjs
+  // Umstellung eines Vaults aus der Kit-Zeit (P7a Befund, P7b Probelauf/Phase A/Rückweg): werkstatt/umstellung.mjs
   const umstellung = erzeugeUmstellung({ starter: o.starter || join(vaultOpt.support || supportOrdner(), "bin", "kortex"), support: vaultOpt.support || supportOrdner() });
 
   // Liste für die Oberfläche: gespeicherte Vaults (+ ein nur für diesen Start geöffneter, der nicht in vaults.json steht).
@@ -209,6 +209,10 @@ export function erzeugeHandler(o) {
       case "/api/kern/stand": nur("GET"); return verdrahtung.stand(v);
       case "/api/kern/verdrahten": nur("POST"); return verdrahtung.verdrahte(v, eingabe());
       case "/api/umstellung/befund": nur("GET"); return umstellung.befund(v);
+      case "/api/umstellung/stand": nur("GET"); return umstellung.stand(v);
+      case "/api/umstellung/probelauf": nur("POST"); return umstellung.probelauf(v, eingabe());
+      case "/api/umstellung/phase-a": nur("POST"); return umstellung.phaseA(v, eingabe());
+      case "/api/umstellung/rueckweg": nur("POST"); return umstellung.rueckweg(v, eingabe());
       case "/api/mcp/verbinden": { nur("POST"); V(); return verbinde(eingabe()); }
       case "/api/mcp/trennen": { nur("POST"); return trenne(eingabe()); }
       case "/api/mcp/konfiguration": { nur("GET"); return konfiguration(); }

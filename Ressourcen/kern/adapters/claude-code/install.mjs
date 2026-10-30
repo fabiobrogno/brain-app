@@ -7,12 +7,15 @@
 // Nutzung: install.mjs [vault] [--claude-home <ordner>] [--ohne-statusline]
 //          install.mjs --entfernen [--claude-home <ordner>]   (nimmt alle Brain-Hooks, die Statuszeile und die Brain-Befehle wieder heraus; Fremdes bleibt)
 //          install.mjs --stand [--claude-home <ordner>]       (eine JSON-Zeile: was eingetragen ist; schreibt nichts)
-import { readFileSync, writeFileSync, existsSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, readdirSync, statSync, renameSync, chmodSync, lstatSync, readlinkSync } from "node:fs";
+//          install.mjs [vault] --vorschau [--claude-home <ordner>]   (rechnet die Eintragung NUR im Speicher und gibt eine JSON-Zeile aus: { eintraege: [{ereignis, aktion}], restVerweise, geaendert, … };
+//                                                                       schreibt weder settings.json noch Befehle — Probelauf der Umstellung, Paket P7b)
+import { readFileSync, writeFileSync, existsSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, readdirSync, statSync, renameSync, chmodSync, lstatSync, readlinkSync, realpathSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { vaultPfadOderEnde, vertrauterVaultOderEnde, kernStabilOderEnde, starterOderEnde, hookBefehl, hookNameAusBefehl, shellQuote, ALT_KIT_ORDNER } from "../../pfade.mjs";
+import { nennt } from "../../umstellung/restverweise.mjs";
 // Gleiche Marke wie skills-build.mjs::schreibeGeneriert — hier erneut, weil die Commands jetzt erst in
 // einen Temp-Ordner gerendert und danach HIER (nicht in skills-build.mjs) ins echte Ziel platziert werden,
 // damit ein fremder, nicht markierter Command vor dem Überschreiben weiter gesichert wird.
@@ -139,6 +142,12 @@ function hauptlauf() {
 const A = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
 const home = args.includes("--claude-home") ? args[args.indexOf("--claude-home") + 1] : join(homedir(), ".claude");
+const VORSCHAU = args.includes("--vorschau");
+// Im Vorschau-Modus (Probelauf) wird nichts ausgegeben und nichts geschrieben: die Meldungen der Berechnung landen als Einträge in dieser Liste.
+const aktionen = [];
+const meld = VORSCHAU
+  ? (z) => { const m = /^([~+-]) (?:Hook (\w+)|(Statusline))/.exec(String(z)); if (m) aktionen.push({ ereignis: m[2] || "statusLine", aktion: m[1] === "+" ? "neu" : m[1] === "~" ? "aktualisiert" : "entfernt" }); }
+  : console.log;
 if (args.includes("--entfernen")) return entfernen(home);
 if (args.includes("--stand")) return stand(home);
 // Der Vault (nur für die Commands und die Erkennung älterer Einträge): Argument oder --vault/BRAIN_VAULT/aktiver Vault — immer absolut und geprüft.
@@ -190,14 +199,23 @@ const soll = [
 const ALT_HANDOFF_ECHO = `echo 'Kontext-Kompression steht bevor: offenen Arbeitsstand sichern (Skill handoff).'`;
 
 // Ältere Brain-Einträge derselben Vault erkennen (Migration): <vault>/<alter Kit-Ordner>/<basis>.<ext> — Stand vor dem Umzug in den
-// Unterordner adapters/claude-code/ — mit oder ohne Anführungszeichen, auch die unexpandierte $HOME/brain-Schreibweise, wenn <vault>
-// genau homedir()/brain entspricht. Einträge mit dem Pfad <vault>/<alter Kit-Ordner>/adapters/claude-code/ (Stand vor dem Kern-Umzug)
+// Unterordner adapters/claude-code/ — mit oder ohne Anführungszeichen, auch in den Schreibweisen mit ~/, $HOME/ und dem aufgelösten Pfad (siehe unten).
+// Einträge mit dem Pfad <vault>/<alter Kit-Ordner>/adapters/claude-code/ (Stand vor dem Kern-Umzug)
 // werden unten auf den Kern der App umgestellt.
 const escapeReg = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const vaultFwd = vault.split("\\").join("/");
-const homeBrainFwd = join(homedir(), "brain").split("\\").join("/");
-const vaultAliases = [vaultFwd];
-if (vaultFwd === homeBrainFwd) vaultAliases.push("$HOME/brain");
+// Schreibweisen des Vaults in älteren Einträgen: wie angegeben, aufgelöst (realpath, z. B. /private/var/… statt /var/…) und – liegt er unter dem Home – die
+// unexpandierten Formen $HOME/…, ${HOME}/… und ~/… (Plan P7, Abschnitt 8.3, Lücke 2).
+const fwdOhneEnde = (p) => String(p).split("\\").join("/").replace(/\/+$/, "");
+const echterPfad = (p) => { try { return realpathSync(p); } catch { return p; } };
+const vaultFormen = [...new Set([fwdOhneEnde(vaultFwd), fwdOhneEnde(echterPfad(vault))])];
+const heimFormen = [...new Set([fwdOhneEnde(homedir()), fwdOhneEnde(echterPfad(homedir()))])].filter(Boolean);
+const vaultAliases = [...vaultFormen];
+for (const form of vaultFormen) for (const heim of heimFormen) {
+  if (!form.startsWith(`${heim}/`)) continue;
+  const rest = form.slice(heim.length);
+  for (const a of [`$HOME${rest}`, `\${HOME}${rest}`, `~${rest}`]) if (!vaultAliases.includes(a)) vaultAliases.push(a);
+}
 function altMuster(basis, exts) {
   const alts = vaultAliases.map(escapeReg).join("|");
   const extAlt = exts.join("|");
@@ -229,9 +247,9 @@ for (const { ev, datei: hookDatei, args: hookArgs = "", cmd, matcher, altFassung
     for (let i = 0; i < eintrag.hooks.length; i++) {
       const h = eintrag.hooks[i];
       if (!meinEintrag(h)) continue;
-      if (gesehen) { eintrag.hooks.splice(i, 1); i--; console.log(`- Hook ${ev} entfernt (doppelter Eintrag)`); continue; }
+      if (gesehen) { eintrag.hooks.splice(i, 1); i--; meld(`- Hook ${ev} entfernt (doppelter Eintrag)`); continue; }
       gesehen = true;
-      if (h.command !== cmd) { h.command = cmd; console.log(`~ Hook ${ev} aktualisiert`); }
+      if (h.command !== cmd) { h.command = cmd; meld(`~ Hook ${ev} aktualisiert`); }
     }
   }
   for (let i = liste.length - 1; i >= 0; i--) if (Array.isArray(liste[i].hooks) && liste[i].hooks.length === 0) liste.splice(i, 1);
@@ -263,11 +281,11 @@ for (const { ev, datei: hookDatei, args: hookArgs = "", cmd, matcher, altFassung
       if (liste[i].hooks && liste[i].hooks.length === 0) liste.splice(i, 1);
     }
   }
-  if (ersetzt) console.log(`~ Hook ${ev} ersetzt (alte Fassung${matcherAngepasst ? ", matcher angepasst" : ""})`);
-  if (entfernt) console.log(`- Hook ${ev} entfernt (alte Fassung)`);
+  if (ersetzt) meld(`~ Hook ${ev} ersetzt (alte Fassung${matcherAngepasst ? ", matcher angepasst" : ""})`);
+  if (entfernt) meld(`- Hook ${ev} entfernt (alte Fassung)`);
   if (!aktuellVorhanden) {
     liste.push(matcher ? { matcher, hooks: [{ type: "command", command: cmd }] } : { hooks: [{ type: "command", command: cmd }] });
-    console.log(`+ Hook ${ev}${matcher && !altFassung ? ` (${matcher})` : ""}`);
+    meld(`+ Hook ${ev}${matcher && !altFassung ? ` (${matcher})` : ""}`);
   }
 }
 {
@@ -280,29 +298,41 @@ for (const { ev, datei: hookDatei, args: hookArgs = "", cmd, matcher, altFassung
     }
   }
   for (let i = liste.length - 1; i >= 0; i--) if (Array.isArray(liste[i].hooks) && liste[i].hooks.length === 0) liste.splice(i, 1);
-  if (entfernt) console.log("- Hook PreCompact entfernt (Hinweis „Skill handoff“ — ersetzt durch den Arbeitsstand)");
+  if (entfernt) meld("- Hook PreCompact entfernt (Hinweis „Skill handoff“ — ersetzt durch den Arbeitsstand)");
 }
 // Ist das Plugin brain-mods aktiv, zeigt dessen Brain-Band denselben Stand über dem Prompt — die Statusline wäre doppelt.
 // Dann eine eigene (Brain-)Statusline entfernen und keine neu anlegen; fremde Statuslines bleiben unangetastet.
 const brainModsAktiv = Object.entries(s.enabledPlugins || {}).some(([k, v]) => v === true && k.startsWith("brain-mods@"));
 if (brainModsAktiv && !args.includes("--ohne-statusline")) {
   if (eigeneStatuszeile(s.statusLine?.command)) {
-    delete s.statusLine; console.log("- Statusline entfernt (das Band von brain-mods zeigt den Stand)");
+    delete s.statusLine; meld("- Statusline entfernt (das Band von brain-mods zeigt den Stand)");
   }
 } else if (!args.includes("--ohne-statusline")) {
   const statusCmd = hookCmd("statusline.mjs");
-  if (!s.statusLine) { s.statusLine = { type: "command", command: statusCmd }; console.log("+ Statusline"); }
+  if (!s.statusLine) { s.statusLine = { type: "command", command: statusCmd }; meld("+ Statusline"); }
   else if (s.statusLine.command === statusCmd) { /* schon aktuell, idempotent still */ }
-  else if (eigeneStatuszeile(s.statusLine.command)) { s.statusLine.command = statusCmd; console.log("~ Statusline aktualisiert"); }
-  else if (typeof s.statusLine.command === "string" && alteStatusMuster.test(s.statusLine.command)) { s.statusLine.command = statusCmd; console.log("~ Statusline ersetzt (alte Fassung)"); }
+  else if (eigeneStatuszeile(s.statusLine.command)) { s.statusLine.command = statusCmd; meld("~ Statusline aktualisiert"); }
+  else if (typeof s.statusLine.command === "string" && alteStatusMuster.test(s.statusLine.command)) { s.statusLine.command = statusCmd; meld("~ Statusline ersetzt (alte Fassung)"); }
   // Auch ruhende Terminals sollen den aktuellen Brain-Stand zeigen (Änderungen anderer Sitzungen): Claude Code
   // führt die Statusline sonst nur bei eigener Aktivität aus. Ein eigener Wert der Person bleibt unangetastet.
   if (s.statusLine?.command === statusCmd && s.statusLine.refreshInterval === undefined) {
-    s.statusLine.refreshInterval = 10; console.log("~ Statusline aktualisiert sich alle 10 s");
+    s.statusLine.refreshInterval = 10; meld("~ Statusline aktualisiert sich alle 10 s");
   }
-  if (s.statusLine?.command !== statusCmd) console.log("Statusline vorhanden, nicht geändert");
+  if (s.statusLine?.command !== statusCmd) meld("Statusline vorhanden, nicht geändert");
 }
 const geaendert = JSON.stringify(s) !== vorher;
+
+if (VORSCHAU) {
+  // Zählung der Stellen, die auch nach der Umstellung noch auf den alten Kit-Ordner zeigen (eigene Skripte, Plugins …): nur Zahlen, nie Texte.
+  const zaehle = (w) => (typeof w === "string" ? (nennt(w) ? 1 : 0) : Array.isArray(w) ? w.reduce((a, x) => a + zaehle(x), 0) : w && typeof w === "object" ? Object.values(w).reduce((a, x) => a + zaehle(x), 0) : 0);
+  const neueForm = soll.filter((e) => (s.hooks[e.ev] || []).some((x) => (x.hooks || []).some((h) => h.command === e.cmd))).length;
+  const sl = s.statusLine?.command;
+  console.log(JSON.stringify({
+    vorschau: true, geaendert, eintraege: aktionen, restVerweise: zaehle(s),
+    hooks: { soll: soll.length, neueForm }, statuszeile: !sl ? "keine" : sl === hookCmd("statusline.mjs") ? "neu" : eigeneStatuszeile(sl) ? "alt" : "fremd",
+  }));
+  return;
+}
 
 // A3: Commands-Ziel prüfen — nicht vorhanden oder ein Ordner ist in Ordnung, eine reguläre Datei nicht.
 if (existsSync(commandsZiel) && !statSync(commandsZiel).isDirectory()) {

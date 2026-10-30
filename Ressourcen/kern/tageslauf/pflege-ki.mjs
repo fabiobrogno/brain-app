@@ -45,7 +45,7 @@ export const SONNET_MAX_RUNDEN = 25, SONNET_MAX_USD = 3;
 export const SONNET_EINSTELLUNGEN = { disableAllHooks: true, permissions: { blockReadsOutsideWorkingDirectories: true } };
 // Bereiche der Kopie, die die KI nie ändern darf: Git-Zeiger (Worktree → echter Vault), Werkzeug-Code (läuft über Bash und beim
 // Commit-Hook), Claude-Settings/MCP (Hooks, Rechte), Konfiguration.
-const KOPIE_GESPERRT = [".git", ".git/**", `${ALT_KIT_ORDNER}/**`, ".claude/**", ".mcp.json", "brain.config.json"];
+const KOPIE_GESPERRT = [".git", ".git/**", `${ALT_KIT_ORDNER}/**`, ".claude/**", ".kortex/**", ".mcp.json", "brain.config.json"];
 // Home: lesen UND schreiben verboten (Zugangsdaten) · nur schreiben verboten (Start-/Konfigurationsdateien, Code, Dienste).
 const HOME_GEHEIM = [".ssh", ".aws", ".gnupg", ".config"];
 const HOME_NUR_SCHREIBEN = [".claude*/**", ".claude.json*", ".zshrc", ".zshenv", ".zprofile", ".bashrc", ".bash_profile", ".profile", ".gitconfig",

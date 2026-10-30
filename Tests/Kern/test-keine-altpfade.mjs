@@ -31,7 +31,6 @@ export const REGELN = [
 export const ALLOWLIST = [
   { datei: "pfade.mjs", regel: "alter-kit-ordner", anzahl: 1, zeile: /^export const ALT_KIT_ORDNER = "\.tools";/, grund: "Einzige Definition (ALT_KIT_ORDNER) des alten Kit-Ordners; alle anderen Module erkennen/schützen ihn nur über diese Konstante (noch nicht umgestellte Vaults, P7)." },
   { datei: "HERKUNFT.md", regel: "alter-kit-ordner", anzahl: 4, zeile: /\.tools/, grund: "Dokumentation der Herkunft: beschreibt das alte Layout <vault>/.tools, aus dem der Kern stammt." },
-  { datei: "adapters/claude-code/install.mjs", regel: "home-brain", anzahl: 2, zeile: /^(?:const homeBrainFwd = join\(homedir\(\), "brain"\)|if \(vaultFwd === homeBrainFwd\) vaultAliases\.push\("\$HOME\/brain"\))/, grund: "Migration: ältere Hook-Einträge in der $HOME/brain-Schreibweise werden erkannt und durch den neuen Aufruf ersetzt (kein Rückfall auf einen Vault)." },
 ];
 
 const TEXT_ENDUNGEN = /\.(mjs|js|cjs|sh|md|json|css|html|txt|yml|yaml)$/i;

@@ -20,12 +20,14 @@ const git = (...a) => execFileSync(GIT, ["-C", V, ...a], { encoding: "utf8", win
 const sollKern = () => stabilerKern() || (process.env.KORTEX_KERN_UNSTABIL_ERLAUBT === "1" ? KERN : null);
 const lies =() => { try { return git("config", "--local", "core.hooksPath"); } catch { return ""; } };
 
-// Gehört der Eintrag zu Kortex? Der stabile Pfad, ein früherer Kern-Ort (…/bin/kern/git-hooks, …/kern/<Version>/git-hooks) oder der alte Kit-Ordner im Vault.
+// Gehört der Eintrag zu Kortex? Der stabile Pfad, ein früherer Kern-Ort (…/bin/kern/git-hooks, …/kern/<Version>/git-hooks) oder der alte Kit-Ordner im Vault –
+// in der absoluten Form und in der relativen Form, die das Kit selbst eintrug (<Kit-Ordner>/git-hooks; Plan P7, Abschnitt 8.3, Lücke 1).
 function istKortex(wert, stabil) {
   const w = fwd(wert).replace(/\/+$/, "");
   if (!w) return false;
   if (stabil && w === fwd(join(stabil, "git-hooks"))) return true;
   return /\/Application Support\/(?:Kortex|Brain)\/(?:bin\/kern|kern\/[^/]+)\/git-hooks$/.test(w)
+    || w === `${ALT_KIT_ORDNER}/git-hooks` || w === `./${ALT_KIT_ORDNER}/git-hooks`
     || w === `${fwd(V)}/${ALT_KIT_ORDNER}/git-hooks` || w.endsWith(`/${ALT_KIT_ORDNER}/git-hooks`);
 }
 

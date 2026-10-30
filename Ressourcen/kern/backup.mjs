@@ -10,8 +10,18 @@ const git = (v, ...a) => execFileSync(gitBefehl({ cfg: ladeConfig(v) }), ["-C", 
 // Der Sicherungsordner steht NICHT in der brain.config.json des Vaults (Vault-Daten dürfen nicht bestimmen, wohin der Kern schreibt), sondern je
 // Vault im Support-Ordner der App: <Support>/backup/<Kennung des Vaults>.json = { "pfad": "<absoluter Ordner>" }. Gesetzt wird er nur von
 // `brain backup einrichten ordner:<pfad>` (Kern/App). Ein „pfad“ in der Vault-Config (ältere Vaults) zählt nicht mehr — neu einrichten.
-const kennung = (vault) => { let e = vault; try { e = realpathSync(vault); } catch {} return createHash("sha256").update(e).digest("hex").slice(0, 16); };
-const backupDatei = (vault) => join(supportOrdner(), "backup", `${kennung(vault)}.json`);
+// Kennung des Vaults: Hash des kanonischen Pfads (realpath.native); Übergang: eine unter der früheren Kennung (JS-realpath) angelegte Datei wird weiter gefunden.
+const hashPfad = (p) => createHash("sha256").update(p).digest("hex").slice(0, 16);
+export const kennungen = (vault) => {
+  const e = (f) => { try { return f(vault); } catch { return vault; } };
+  return [...new Set([hashPfad(e(realpathSync.native)), hashPfad(e(realpathSync))])];
+};
+const kennung = (vault) => kennungen(vault)[0];
+const backupDatei = (vault, support = supportOrdner()) => {
+  const ids = kennungen(vault);
+  return join(support, "backup", `${ids.find((i) => existsSync(join(support, "backup", `${i}.json`))) || ids[0]}.json`);
+};
+export const merkerDateiFuer = (vault, support = supportOrdner()) => backupDatei(vault, support);
 // Absolut, ein Ordner (falls schon vorhanden), kein Verweis. → Fehlertext oder null
 export function pruefeBackupPfad(p) {
   if (typeof p !== "string" || !p || p.includes("\0") || !isAbsolute(p)) return "Der Sicherungsordner muss ein absoluter Pfad sein.";
@@ -21,12 +31,27 @@ export function pruefeBackupPfad(p) {
   if (st && !st.isDirectory()) return "Der Sicherungsordner ist kein Ordner.";
   return null;
 }
-const leseDatei = (vault) => { try { const o = JSON.parse(readFileSync(backupDatei(vault), "utf8")); return o && typeof o === "object" && !Array.isArray(o) ? o : {}; } catch { return {}; } };
-const schreibeDatei = (vault, o) => {
-  mkdirSync(join(supportOrdner(), "backup"), { recursive: true });
-  if (!Object.keys(o).length) rmSync(backupDatei(vault), { force: true });
-  else writeFileSync(backupDatei(vault), JSON.stringify(o) + "\n");
+const leseDatei = (vault, support) => { try { const o = JSON.parse(readFileSync(backupDatei(vault, support), "utf8")); return o && typeof o === "object" && !Array.isArray(o) ? o : {}; } catch { return {}; } };
+const schreibeDatei = (vault, o, support = supportOrdner()) => {
+  mkdirSync(join(support, "backup"), { recursive: true });
+  if (!Object.keys(o).length) rmSync(backupDatei(vault, support), { force: true });
+  else writeFileSync(backupDatei(vault, support), JSON.stringify(o) + "\n");
 };
+// Umstellung (P7b, Schritt A1): übernimmt den Sicherungsordner aus dem alten Eintrag der Vault-Config in den Support-Ordner – OHNE die Config zu ändern und ohne Commit
+// (einrichten() schreibt die Config und committet). Der Ordner muss pruefeBackupPfad bestehen. `support` lenkt die Ablage um (Probelauf/Tests).
+// → { ok, grund?, vorher: Inhalt der Merker-Datei oder null } (grund: "ungueltig" | "abweichend")
+export function uebernehmeOrdner(vault, pfad, { support = supportOrdner(), ueberschreiben = false } = {}) {
+  if (pruefeBackupPfad(pfad)) return { ok: false, grund: "ungueltig", vorher: null };
+  const datei = backupDatei(vault, support);
+  let vorher = null;
+  try { vorher = readFileSync(datei, "utf8"); } catch { /* fehlt */ }
+  const d = leseDatei(vault, support);
+  if (typeof d.pfad === "string" && d.pfad && d.pfad !== pfad && !ueberschreiben) return { ok: false, grund: "abweichend", vorher };
+  if (d.pfad === pfad) return { ok: true, geaendert: false, vorher };
+  d.pfad = pfad;
+  schreibeDatei(vault, d, support);
+  return { ok: true, geaendert: true, vorher };
+}
 // → absoluter Pfad oder null (nicht eingerichtet / ungültig)
 export function leseBackupOrdner(vault) {
   const p = leseDatei(vault).pfad;
@@ -44,8 +69,8 @@ export function pushErlaubnis(vault) {
   return { ok: true, url };
 }
 // Vermerkt dieses Remote als vom Nutzer bestätigt (Aufrufer: einrichten github, Tests). Wirft nie.
-export function bestaetigeRemote(vault, url) {
-  try { const d = leseDatei(vault); d.remoteBestaetigt = String(url); schreibeDatei(vault, d); return true; } catch { return false; }
+export function bestaetigeRemote(vault, url, { support } = {}) {
+  try { const d = leseDatei(vault, support); d.remoteBestaetigt = String(url); schreibeDatei(vault, d, support); return true; } catch { return false; }
 }
 export const PUSH_NICHT_BESTAETIGT = "Die Online-Sicherung wartet: Das Ziel dieses Vaults ist noch nicht von dir bestätigt (ein Vault kann ein fremdes Ziel mitbringen). Richte die Sicherung in Kortex ein (Einrichtung → Sicherung) oder sag „richte mir eine Sicherung ein“ — dann sichere ich dorthin.";
 // Datum nach Ortszeit (wie der Kalender des Nutzers), nicht UTC — gilt für den Dateinamen und die „heute schon gesichert“-Prüfung des Sitzungsstarts

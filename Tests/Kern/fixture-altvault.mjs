@@ -30,9 +30,10 @@ export function altvault({ faelle = [], vaultName = null } = {}) {
   const name = vaultName || (faelle.includes("pfad-sonderzeichen") ? "Vault Ä 'x" : "vault");
   const vault = imHome ? join(home, name) : join(basis, name);
   for (const d of [home, support, extern, vault, join(support, "bin", "kern", "mcp"), join(support, "bin", "kern", "git-hooks"), join(home, "Library", "LaunchAgents"), join(home, ".claude")]) mkdirSync(d, { recursive: true });
-  writeFileSync(join(support, "bin", "node"), "#!/bin/sh\n");
+  // bin/node startet das Node dieses Tests, der MCP-Server ist ein kleiner Ersatz (fake-mcp-server.mjs): so lässt sich die Probe-Frage der Umstellung (P7b) wirklich stellen
+  writeFileSync(join(support, "bin", "node"), `#!/bin/sh\nexec '${process.execPath.replaceAll("'", `'\\''`)}' "$@"\n`, { mode: 0o755 });
   writeFileSync(join(support, "bin", "kortex"), "#!/bin/sh\n", { mode: 0o755 });
-  writeFileSync(join(support, "bin", "kern", "mcp", "brain-mcp.mjs"), "// mcp\n");
+  writeFileSync(join(support, "bin", "kern", "mcp", "brain-mcp.mjs"), readFileSync(new URL("./fake-mcp-server.mjs", import.meta.url), "utf8"));
 
   const ENV = { PATH: process.env.PATH, HOME: home, LC_ALL: "C", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1", GIT_AUTHOR_NAME: "T", GIT_AUTHOR_EMAIL: "t@example.org", GIT_COMMITTER_NAME: "T", GIT_COMMITTER_EMAIL: "t@example.org" };
   const g = (...a) => execFileSync("git", ["-C", vault, ...a], { env: ENV, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
@@ -126,6 +127,9 @@ export function altvault({ faelle = [], vaultName = null } = {}) {
     "url-insteadof": () => { g("config", `url.https://${GEHEIM}@example.org/.insteadOf`, "https://example.org/"); },
     "http-extraheader": () => { g("config", "http.https://example.org/.extraheader", `AUTHORIZATION: bearer ${GEHEIM}`); },
     "lfs-filter": () => { g("config", "filter.lfs.clean", "git-lfs clean -- %f"); g("config", "filter.lfs.smudge", "git-lfs smudge -- %f"); g("config", "filter.lfs.process", "git-lfs filter-process"); g("config", "filter.lfs.required", "true"); g("config", "lfs.repositoryformatversion", "0"); },
+    "safe-directory": () => { g("config", "safe.directory", "*"); },
+    "git-pfad-relativ": () => { g("config", "core.excludesFile", "./ignorieren-extern"); },
+    "git-pfad-im-vault": () => { g("config", "core.sshCommand", `${vault}/ssh-wrapper`); },
     "include-path": () => { g("config", "include.path", `../${GEHEIM}.cfg`); },
     "user-name-ungueltig": () => { g("config", "user.name", `Max & ${GEHEIM}`); },
     "remote-prune": () => { g("config", "remote.origin.prune", "true"); g("config", "remote.origin.tagopt", "--no-tags"); },

@@ -5,17 +5,22 @@
 // Merker dort, wo der Nutzer das Remote selbst einrichtet: Assistent „Sicherung“ (/api/sicherung/verbinden), Studio „Remote hinzufügen“
 // (/api/git/remote) und `brain backup einrichten github` im Kern. Derselbe Ort und dieselbe Kennung wie kern/backup.mjs
 // (Test: Tests/Node/sicherungsmerker.test.mjs hält beide zusammen). Die Datei kann auch den Sicherungsordner ("pfad") enthalten; er bleibt erhalten.
-import { readFileSync, writeFileSync, mkdirSync, realpathSync, renameSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, realpathSync, renameSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { supportOrdner } from "./basis.mjs";
 
-export function kennung(wurzel) {
-  let e = wurzel;
-  try { e = realpathSync(wurzel); } catch { /* bleibt */ }
-  return createHash("sha256").update(e).digest("hex").slice(0, 16);
+// Kennung = Hash des kanonischen Pfads (realpath.native), wie kern/backup.mjs; Übergang: eine unter der früheren Kennung (JS-realpath) angelegte Datei wird weiter gefunden.
+const hashPfad = (p) => createHash("sha256").update(p).digest("hex").slice(0, 16);
+export function kennungen(wurzel) {
+  const e = (f) => { try { return f(wurzel); } catch { return wurzel; } };
+  return [...new Set([hashPfad(e(realpathSync.native)), hashPfad(e(realpathSync))])];
 }
-export const merkerDatei = (wurzel, support = supportOrdner()) => join(support, "backup", `${kennung(wurzel)}.json`);
+export const kennung = (wurzel) => kennungen(wurzel)[0];
+export function merkerDatei(wurzel, support = supportOrdner()) {
+  const ids = kennungen(wurzel);
+  return join(support, "backup", `${ids.find((i) => existsSync(join(support, "backup", `${i}.json`))) || ids[0]}.json`);
+}
 
 export function leseMerker(wurzel, support) {
   try { const o = JSON.parse(readFileSync(merkerDatei(wurzel, support), "utf8")); return o && typeof o === "object" && !Array.isArray(o) ? o : {}; } catch { return {}; }
