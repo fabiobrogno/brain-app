@@ -112,6 +112,11 @@ export const api = {
   githubKonto: () => anfrage("GET", "/api/github/konto"),
   githubAbmelden: () => anfrage("POST", "/api/github/abmelden", {}),
   probe: (frage) => anfrage("POST", "/api/probe", { frage }),
+  // ---- Frag deinen Vault (P4): Start, Long-Poll auf den Stand, Abbruch. Nichts wird gespeichert.
+  frageBereit: () => anfrage("GET", "/api/frage/bereit"),
+  frageStart: (frage, konto, modell) => anfrage("POST", "/api/frage/start", { frage, konto, ...(modell ? { modell } : {}) }),
+  frageStand: ({ id, ab, text, epoche }) => anfrage("GET", "/api/frage/stand" + q({ id, ab, text, epoche })),
+  frageAbbrechen: (id) => anfrage("POST", "/api/frage/abbrechen", { id }),
   // ---- KI-Konten und Vault-Zugriff (Paket P2). Das Leseverbot in Claude Code wird nur mit claudeSperre: true geschrieben, der Strenge Schutz nur mit bestaetigt: true — beides setzt die Oberfläche erst nach dem Klick.
   kiKonten: () => anfrage("GET", "/api/ki/konten"),
   kiKontoName: (id, name) => anfrage("POST", "/api/ki/konten", { id, name }),

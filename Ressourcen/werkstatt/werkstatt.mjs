@@ -14,6 +14,7 @@ import { isAbsolute } from "node:path";
 import { erzeugeHandler, appVersionLesen, MAX_KOERPER } from "./handler.mjs";
 import { HttpFehler } from "../gemeinsam/vault.mjs";
 import { beendeLaufendes } from "../gemeinsam/git.mjs";
+import { beendeAlleProzesse } from "../gemeinsam/prozess.mjs";
 import { beendeVorgaenge } from "../gemeinsam/vaults.mjs";
 import { bereinigePfad, vorschauFehler } from "../gemeinsam/basis.mjs";
 
@@ -48,6 +49,9 @@ let offen = 0, stdinZu = false, beendet = false;
 function beende() {
   if (beendet) return;
   beendet = true;
+  // Alle Kindprozesse (auch eine laufende Frage an `claude`, samt MCP-Server) mit SIGKILL an ihre Gruppen, SYNCHRON vor dem Exit: sonst liefen sie als Waisen weiter
+  // (Stdin zu, /api/stopp und Signale enden hier, die Eskalations-Timer der Frage sterben mit dem Prozess).
+  try { beendeAlleProzesse(); } catch { /* beenden wir trotzdem */ }
   try { handler.ereignisse.beende(); } catch { /* wartende Ereignis-Abrufe sofort beantworten: sie halten sonst das Ende bis zu 30 s auf */ }
   process.stdout.write("", () => process.exit(0)); // Callback erst, wenn alles Vorherige geschrieben ist
 }

@@ -81,3 +81,72 @@ export function starte(programm, args, o = {}) {
     }
   });
 }
+
+// Streaming-Variante von `starte` (Frag deinen Vault, docs/plaene/ki-konten.md §4): das Programm läuft in einer eigenen Prozessgruppe, jede Zeile von stdout geht
+// sofort an `onZeile` (ein Chunk kann mehrere Zeilen enthalten, eine Zeile mehrere Chunks). Grenzen: Gesamtfrist, Gesamtmenge von stdout, Länge einer Zeile —
+// bei Überschreitung wird sanft beendet (stopp). Wirft nie; Fehler stehen im Ergebnis.
+//   o: cwd, env, stdin (Text, wird geschrieben und geschlossen), onZeile(text), frist (ms), maxBytes, maxZeile, stderrBytes (letzte Bytes von stderr, die behalten werden)
+//   → { kind, stopp(grund), fertig: Promise<{ code, signal, grund, stderr, gestartet }> }
+//   stopp(grund): SIGINT an die Gruppe (beendet den Turn von `claude -p`), nach 2 s SIGTERM, nach 5 s SIGKILL. Mehrfaches Aufrufen ist harmlos (der erste Grund zählt).
+//   grund: null (ohne Eingriff beendet) | der Text von stopp(…) | "frist" | "ausgabe" | "zeile" | "start" (Programm fehlt oder ließ sich nicht starten).
+export function starteStrom(programm, args, o = {}) {
+  const { cwd, env, stdin, onZeile = () => {}, frist = 120_000, maxBytes = 1024 * 1024, maxZeile = 256 * 1024, stderrBytes = 4096 } = o;
+  const gestartet = Date.now();
+  const nichts = (g) => ({ kind: null, stopp: () => {}, fertig: Promise.resolve({ code: null, signal: null, grund: g, stderr: "", gestartet }) });
+  if (wirdBeendet) return nichts("start");
+  let kind;
+  try { kind = spawn(programm, args, { cwd, env, detached: true, stdio: [stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"], windowsHide: true }); }
+  catch { return nichts("start"); }
+  const eintrag = registriere(kind, cwd);
+  if (stdin !== undefined) { kind.stdin.on("error", () => { /* Programm schon fertig */ }); kind.stdin.end(stdin); kind.once("exit", () => kind.stdin.destroy()); }
+  let grund = null, gestoppt = false, rest = Buffer.alloc(0), menge = 0, fehl = Buffer.alloc(0);
+  const timer = new Set();
+  const spaeter = (ms, f) => { const t = setTimeout(f, ms); timer.add(t); return t; };
+  const gruppe = (sig) => { try { process.kill(-kind.pid, sig); } catch { try { kind.kill(sig); } catch { /* schon weg */ } } };
+  const stopp = (g = "abgebrochen") => {
+    if (grund === null) grund = g;
+    if (gestoppt) return;
+    gestoppt = true;
+    gruppe("SIGINT");
+    spaeter(2000, () => gruppe("SIGTERM"));
+    spaeter(5000, () => beendeGruppe(kind));
+  };
+  const zeilen = (chunk) => {
+    rest = rest.length ? Buffer.concat([rest, chunk]) : chunk;
+    let i;
+    while ((i = rest.indexOf(10)) >= 0) {
+      const zeile = rest.subarray(0, i).toString("utf8").replace(/\r$/, "");
+      rest = rest.subarray(i + 1);
+      if (zeile) { try { onZeile(zeile); } catch { /* ein Fehler beim Aufrufer bricht den Strom nicht ab */ } }
+    }
+    if (rest.length > maxZeile) { rest = Buffer.alloc(0); stopp("zeile"); }
+  };
+  kind.stdout.on("data", (d) => {
+    menge += d.length;
+    if (menge > maxBytes) { stopp("ausgabe"); return; }
+    if (grund === "zeile") return;
+    zeilen(d);
+  });
+  kind.stderr.on("data", (d) => { fehl = Buffer.concat([fehl, d]); if (fehl.length > stderrBytes) fehl = fehl.subarray(fehl.length - stderrBytes); });
+  kind.stdout.on("error", () => { /* Kanal zu: egal */ }); kind.stderr.on("error", () => { /* Kanal zu: egal */ });
+  spaeter(frist, () => stopp("frist"));
+  const fertig = new Promise((aufloesen) => {
+    let erledigt = false;
+    const ende = (code, signal, start = false) => {
+      if (erledigt) return;
+      erledigt = true;
+      for (const t of timer) clearTimeout(t);
+      timer.clear();
+      laufende.delete(eintrag);
+      beendeGruppe(kind); // Reste der Gruppe (MCP-Server, Hooks) aufräumen, auch wenn der Hauptprozess selbst schon weg ist
+      try { kind.stdout.destroy(); kind.stderr.destroy(); } catch { /* weg */ }
+      if (rest.length && grund === null) { try { onZeile(rest.toString("utf8")); } catch { /* egal */ } }
+      aufloesen({ code: code ?? null, signal: signal ?? null, grund: start ? "start" : grund, stderr: fehl.toString("utf8"), gestartet });
+    };
+    kind.on("error", () => ende(null, null, true));
+    // „exit“ vor „close“: hält ein Enkelprozess die Kanäle offen, warten wir höchstens kurz auf die letzten Daten
+    kind.on("exit", (code, signal) => { spaeter(1000, () => ende(code, signal)); });
+    kind.on("close", (code, signal) => ende(code, signal));
+  });
+  return { kind, stopp, fertig };
+}
