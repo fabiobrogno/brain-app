@@ -122,16 +122,60 @@ for sig in TERM HUP; do
   rm -f "$LOG.mode"
 done
 
-echo "== Alte Ordner: nur eigene mit toter Prozess-Nummer werden weggeräumt =="
-mkdir -p "$BASIS/kortex-vorschau-tot" "$BASIS/kortex-vorschau-lebt" "$BASIS/kortex-vorschau-fremd"
-: > "$BASIS/kortex-vorschau-tot/.kortex-vorschau"; echo 999999 > "$BASIS/kortex-vorschau-tot/.pid"
-: > "$BASIS/kortex-vorschau-lebt/.kortex-vorschau"; echo $$ > "$BASIS/kortex-vorschau-lebt/.pid"
-: > "$BASIS/kortex-vorschau-fremd/wichtig.txt"
+echo "== Alte Ordner: nur weg, wenn ALLES zutrifft — Name+Marke, älter als ein Tag, kein laufender Prozess =="
+# Alter der Marke setzen: <Ordner> <Stunden alt>. BSD-date (macOS) und GNU-date (Linux) kennen verschiedene Schalter.
+alt_machen() { touch -t "$(date -v-"$2"H +%Y%m%d%H%M 2>/dev/null || date -d "$2 hours ago" +%Y%m%d%H%M)" "$1/.kortex-vorschau"; }
+neuer_ordner() { # <Name> <Stunden alt> <pid-Inhalt oder "-" für keine Datei>: Ordner mit Marke
+  mkdir -p "$BASIS/$1"; : > "$BASIS/$1/.kortex-vorschau"; echo "inhalt" > "$BASIS/$1/home-datei.txt"
+  if [ "$3" != "-" ]; then echo "$3" > "$BASIS/$1/.pid"; fi
+  alt_machen "$BASIS/$1" "$2"
+}
+# sicher weg: Marke da, 3 Tage alt, Prozess tot
+neuer_ordner kortex-vorschau-tot 72 999999
+# knapp über einem Tag: weg; knapp darunter: bleibt (auch mit totem Prozess)
+neuer_ordner kortex-vorschau-25h 25 999999
+neuer_ordner kortex-vorschau-23h 23 999999
+neuer_ordner kortex-vorschau-frisch 0 999999
+# bleibt: alt, aber der Prozess läuft noch (hier: dieses Testskript)
+neuer_ordner kortex-vorschau-lebt 72 $$
+# bleibt: alt, Marke da, aber .pid fehlt / ist kein Zahlenwert / leer (unbekannt = nicht anfassen)
+neuer_ordner kortex-vorschau-ohnepid 72 -
+neuer_ordner kortex-vorschau-pidmuell 72 "abc; touch $BASIS/EINDRINGLING"
+neuer_ordner kortex-vorschau-pidleer 72 ""
+# bleibt: alt, Prozess tot, aber KEINE Marke
+mkdir -p "$BASIS/kortex-vorschau-fremd"; echo 999999 > "$BASIS/kortex-vorschau-fremd/.pid"; : > "$BASIS/kortex-vorschau-fremd/wichtig.txt"
+touch -t "$(date -v-72H +%Y%m%d%H%M 2>/dev/null || date -d '72 hours ago' +%Y%m%d%H%M)" "$BASIS/kortex-vorschau-fremd" "$BASIS/kortex-vorschau-fremd/wichtig.txt"
+# bleibt: falscher Name (Marke, alt, toter Prozess)
+neuer_ordner andere-vorschau-xyz 72 999999
+neuer_ordner "kortex-vorschau" 72 999999
+# bleibt: ein Verweis mit passendem Namen — samt Ziel (das Ziel hat Marke, ist alt und hat einen toten Prozess)
+neuer_ordner ziel-des-verweises 72 999999
+ln -s "$BASIS/ziel-des-verweises" "$BASIS/kortex-vorschau-verweis"
+# bleibt: eine Datei mit passendem Namen
+: > "$BASIS/kortex-vorschau-datei"
+# bleibt: die Marke ist ein Verweis (zeigt auf eine alte Datei)
+mkdir -p "$BASIS/kortex-vorschau-markenverweis"; : > "$ARBEIT/alte-marke"; ln -s "$ARBEIT/alte-marke" "$BASIS/kortex-vorschau-markenverweis/.kortex-vorschau"
+echo 999999 > "$BASIS/kortex-vorschau-markenverweis/.pid"
 lauf bash "$SKRIPT" >/dev/null 2>&1
-weg "$BASIS/kortex-vorschau-tot" "toter Vorschau-Ordner weggeräumt" "toter Vorschau-Ordner nicht weggeräumt"
-da "$BASIS/kortex-vorschau-lebt" "Ordner mit lebendem Prozess bleibt" "Ordner mit lebendem Prozess gelöscht"
-da "$BASIS/kortex-vorschau-fremd/wichtig.txt" "Ordner ohne Marke bleibt" "Ordner ohne Marke gelöscht"
-rm -rf "$BASIS/kortex-vorschau-lebt" "$BASIS/kortex-vorschau-fremd"
+weg "$BASIS/kortex-vorschau-tot" "alt + Marke + toter Prozess: weggeräumt" "alt + Marke + toter Prozess: NICHT weggeräumt"
+weg "$BASIS/kortex-vorschau-25h" "25 Stunden alt: weggeräumt" "25 Stunden alt: NICHT weggeräumt"
+da "$BASIS/kortex-vorschau-23h/home-datei.txt" "23 Stunden alt: bleibt (noch nicht älter als ein Tag)" "23 Stunden alt: gelöscht"
+da "$BASIS/kortex-vorschau-frisch/home-datei.txt" "frischer Ordner mit totem Prozess: bleibt" "frischer Ordner gelöscht"
+da "$BASIS/kortex-vorschau-lebt/home-datei.txt" "alt, aber Prozess läuft: bleibt" "Ordner mit lebendem Prozess gelöscht"
+da "$BASIS/kortex-vorschau-ohnepid/home-datei.txt" "alt, ohne .pid: bleibt" "Ordner ohne .pid gelöscht"
+da "$BASIS/kortex-vorschau-pidmuell/home-datei.txt" "alt, .pid kein Zahlenwert: bleibt" "Ordner mit unlesbarer .pid gelöscht"
+weg "$BASIS/EINDRINGLING" "der Inhalt der .pid wird nie ausgeführt" "Inhalt der .pid wurde ausgeführt"
+da "$BASIS/kortex-vorschau-pidleer/home-datei.txt" "alt, .pid leer: bleibt" "Ordner mit leerer .pid gelöscht"
+da "$BASIS/kortex-vorschau-fremd/wichtig.txt" "alt ohne Marke: bleibt" "Ordner ohne Marke gelöscht"
+da "$BASIS/andere-vorschau-xyz/home-datei.txt" "falscher Name (andere-vorschau-…): bleibt" "Ordner mit falschem Namen gelöscht"
+da "$BASIS/kortex-vorschau/home-datei.txt" "Name ohne Bindestrich-Zusatz (kortex-vorschau): bleibt" "Ordner kortex-vorschau gelöscht"
+da "$BASIS/ziel-des-verweises/home-datei.txt" "Ziel eines Verweises bleibt" "Ziel eines Verweises gelöscht"
+if [ -L "$BASIS/kortex-vorschau-verweis" ]; then ok "Verweis mit passendem Namen bleibt"; else fail "Verweis mit passendem Namen gelöscht"; fi
+da "$BASIS/kortex-vorschau-datei" "Datei mit passendem Namen bleibt" "Datei mit passendem Namen gelöscht"
+da "$BASIS/kortex-vorschau-markenverweis/.pid" "Marke als Verweis: Ordner bleibt" "Ordner mit Marken-Verweis gelöscht"
+da "$ARBEIT/alte-marke" "Ziel des Marken-Verweises bleibt" "Ziel des Marken-Verweises gelöscht"
+pruefe "das echte HOME ist weiter unverändert" "$(abdruck "$ECHT")" "$vorher"
+rm -rf "$BASIS"/kortex-vorschau-* "$BASIS"/kortex-vorschau "$BASIS"/andere-vorschau-xyz "$BASIS"/ziel-des-verweises
 
 echo "== Fehlerfälle =="
 lauf bash "$SKRIPT" --vorschau /tmp/x >/dev/null 2>&1
