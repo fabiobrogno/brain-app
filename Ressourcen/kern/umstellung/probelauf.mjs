@@ -8,43 +8,85 @@
 //  Original    Momentaufnahme vorher/nachher (Hashes von .git/config, brain.config.json, git status, HEAD, settings.json samt Änderungszeit je Profil, plist, globaler git-Konfiguration,
 //              MCP-Einträgen): jede Abweichung macht den Probelauf rot (Kriterium 9).
 //  Ergebnis    Ampel je Kriterium + Merker im Support-Ordner. Die Kopie wird nach Erfolg gelöscht, nach einem Fehler behalten (7 Tage; die Oberfläche bietet „Kopie jetzt löschen“).
-import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, chmodSync, rmSync, lstatSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, chmodSync, rmSync, lstatSync, existsSync, readdirSync, realpathSync, cpSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { kernVersion, ALT_KIT_ORDNER } from "../pfade.mjs";
-import { probeZiele, kennung, ordnerGroesseGrob, raeumeWeg } from "./ziele.mjs";
+import { probeZiele, kennung, ordnerGroesseGrob, raeumeWeg, freierPlatz } from "./ziele.mjs";
+import { gitVerzeichnis } from "./git-lage.mjs";
+import { erstelleBefund } from "./befund.mjs";
 import { bereitFehler, normalisiereEntscheidungen, waehleProfile, UmstellungsFehler, SCHRITTE } from "./schrittliste.mjs";
-import { phaseA, entscheidungenHash } from "./phase-a.mjs";
+import { phaseA, entscheidungenHash, pruefeVertrauen } from "./phase-a.mjs";
 import { protokolliere, jetztIso, oeffneAblage } from "./protokoll.mjs";
 import { momentaufnahme, fingerabdruck, unterschiede, kriterium1, kriterium2, kriterium3, kriterium4, kriterium5, kriterium6, kriterium7, ampel } from "./pruefung.mjs";
 import { schreibeProbelaufMerker, loescheProbelaufMerker } from "./probelauf-merker.mjs";
 import { vertraueProbeKopie } from "./vertrauen-merker.mjs";
 import { profilAusPlist, LABEL } from "../tageslauf/dienst.mjs";
 
+// Frist des Kopierens; die Werkstatt wartet länger (werkstatt/umstellung.mjs: FRIST_SCHREIBEN ≥ KOPIE_FRIST_MS + Rest des Probelaufs)
+export const KOPIE_FRIST_MS = 30 * 60_000;
+const PUFFER = 64 * 1024 * 1024;              // Reserve für Protokoll, Bundle, Test-Commit …
+const FAKTOR = 1.2;
+
 // Standard-Kopierer: macOS klont (cp -c), sonst/zur Not normal kopieren. `art`: "klon" | "voll". Verweise werden nie verfolgt (cp -R kopiert sie als Verweise).
 export function kopiereVault(quelle, ziel, { art = "klon", plattform = process.platform } = {}) {
   const flags = art === "klon" && plattform === "darwin" ? "-cR" : "-R";
-  const r = spawnSync("/bin/cp", [flags, quelle, ziel], { encoding: "utf8", timeout: 30 * 60_000, windowsHide: true });
+  const r = spawnSync("/bin/cp", [flags, quelle, ziel], { encoding: "utf8", timeout: KOPIE_FRIST_MS, windowsHide: true });
   if (r.status !== 0) { try { rmSync(ziel, { recursive: true, force: true }); } catch { /* weg */ } const e = new Error(String(r.stderr || "cp fehlgeschlagen").split("\n")[0]); e.code = /cross-device|different/i.test(r.stderr || "") ? "EXDEV" : /not supported|ENOTSUP/i.test(r.stderr || "") ? "ENOTSUP" : "EIO"; throw e; }
   return { art: flags === "-cR" ? "klon" : "voll" };
 }
 
-// → { kopie, wurzel, art, nachbar } – legt die Probekopie an (Reihenfolge: Klon in Temp → Klon im Nachbarordner → volle Kopie in Temp)
-function legeKopieAn(z, wurzel, kopierer) {
+// Alte Probekopien dieses Vaults (nach einem Fehler oder Abbruch liegen geblieben) wegräumen: ältere als 7 Tage – so lange bleibt eine rote Kopie zur Ansicht. → Anzahl
+export function raeumeAlteProben(z, { tage = 7, jetzt = Date.now() } = {}) {
+  let n = 0;
+  const praefix = `kortex-probelauf-${kennung(z.vault)}-`;
+  let namen = [];
+  try { namen = readdirSync(tmpdir()); } catch { return 0; }
+  for (const name of namen) {
+    if (!name.startsWith(praefix)) continue;
+    const p = join(tmpdir(), name);
+    try { if (jetzt - lstatSync(p).mtimeMs > tage * 86_400_000) { rmSync(p, { recursive: true, force: true }); n++; } } catch { /* bleibt */ }
+  }
+  return n;
+}
+
+// → { kopie, art, nachbar } – legt die Probekopie an. Reihenfolge: Klon in Temp → (nur mit ausdrücklicher Zustimmung, Entscheidung `nachbarkopie`: Klon im Nachbarordner des
+// Vaults auf demselben Laufwerk) → volle Kopie in Temp. Vor jedem Versuch wird der freie Platz geprüft (volle Kopie: Größe × 1,2 + Puffer).
+function legeKopieAn(z, wurzel, kopierer, { nachbarkopie = false } = {}) {
   const ziel = join(wurzel, "vault");
+  const groesse = ordnerGroesseGrob(z.vault);
   const versuche = [
     { ort: ziel, art: "klon", nachbar: false },
-    { ort: join(dirname(z.vault), `kortex-probelauf-${kennung(z.vault)}-${randomBytes(3).toString("hex")}`), art: "klon", nachbar: true },
+    ...(nachbarkopie ? [{ ort: join(dirname(z.vault), `kortex-probelauf-${kennung(z.vault)}-${randomBytes(3).toString("hex")}`), art: "klon", nachbar: true }] : []),
     { ort: ziel, art: "voll", nachbar: false },
   ];
-  let letzter = null;
+  let letzter = null, platzMangel = false;
   for (const v of versuche) {
+    const noetig = v.art === "voll" ? Math.ceil(groesse * FAKTOR) + PUFFER : PUFFER;
+    if (freierPlatz(z, dirname(v.ort)) < noetig) { platzMangel = true; continue; }
     try { const r = kopierer(z.vault, v.ort, { art: v.art }); return { kopie: v.ort, art: (r && r.art) || v.art, nachbar: v.nachbar }; }
     catch (e) { letzter = e; try { rmSync(v.ort, { recursive: true, force: true }); } catch { /* weg */ } }
   }
+  if (platzMangel && !letzter) throw new UmstellungsFehler("zu-wenig-platz", "Für die Probekopie ist nicht genug freier Platz da. Am Original wurde nichts geändert.", 1);
   throw new UmstellungsFehler("kopie-fehlgeschlagen", `Die Probekopie konnte nicht angelegt werden (${(letzter && letzter.code) || "Fehler"}). Am Original wurde nichts geändert.`, 1);
+}
+
+// Die Kopie muss ein in sich geschlossener Versionsverlauf sein: kein .git außerhalb, keine fremden Objektspeicher; Verweise im .git-Ordner (die cp als Verweise ins ORIGINAL
+// mitbrächte) werden durch echte Kopien ersetzt – sonst schriebe git in der Kopie ins Original. Sonst Abbruch (die Kopie wird dann gelöscht).
+export function sichereKopieGit(kopie) {
+  const gv = gitVerzeichnis(kopie);
+  if (gv.art === "keins") return;
+  if (gv.art !== "ordner" || gv.draussen || gv.alternates) throw new UmstellungsFehler("kopie-git", "Der Versionsverlauf dieses Vaults liegt nicht vollständig im Vault-Ordner. Eine Probekopie wäre nicht abgeschottet; es wurde nichts geändert.", 4);
+  for (const rel of gv.verweise) {
+    const p = join(kopie, ".git", rel);
+    let ziel;
+    try { ziel = realpathSync(p); } catch { throw new UmstellungsFehler("kopie-git", "Im Versionsverlauf zeigt eine Verknüpfung ins Leere. Es wurde nichts geändert.", 4); }
+    if (ordnerGroesseGrob(ziel) > 50 * 1024 * 1024) throw new UmstellungsFehler("kopie-git", "Eine Verknüpfung im Versionsverlauf zeigt auf etwas sehr Großes. Es wurde nichts geändert.", 4);
+    rmSync(p, { force: true });
+    cpSync(ziel, p, { recursive: true, dereference: true });
+  }
 }
 
 function schreibeProbeSupport(z, wurzel, kopie) {
@@ -63,20 +105,25 @@ export function planProbelauf(z) {
 }
 
 export async function probelauf(z, { entscheidungen = {}, bestaetigt = false, kopierer = kopiereVault, behalten = false } = {}) {
+  // Die Entscheidungen so, wie sie gewählt wurden: der Merker hasht sie, Phase A vergleicht mit denselben (die Schritte an der Kopie bestätigen ein Online-Ziel nie – phaseA(probe) erzwingt es)
   const ent = normalisiereEntscheidungen(entscheidungen);
-  ent.remoteBestaetigen = false;
   if (!bestaetigt) return { ok: true, plan: true, bestaetigt: false, ...planProbelauf(z) };
   const bf = bereitFehler(z);
   if (bf) throw bf;
+  pruefeVertrauen(z);
+  const befund = erstelleBefund({ vault: z.vault, home: z.home, support: z.support, claudeHomes: null });
+  if (!befund.umstellbar) throw new UmstellungsFehler("blocker", "Vorher muss etwas behoben werden (siehe Befund). Es wurde nichts verändert.", 4);
   oeffneAblage(z);
+  raeumeAlteProben(z);
   const vorher = momentaufnahme(z);
   const wurzel = mkdtempSync(join(tmpdir(), `kortex-probelauf-${kennung(z.vault)}-`));
   chmodSync(wurzel, 0o700);
   let kopie = null, nachbar = null;
   const aufraeumen = () => { raeumeWeg(wurzel); if (nachbar) raeumeWeg(nachbar); };
   try {
-    const k = legeKopieAn(z, wurzel, kopierer);
+    const k = legeKopieAn(z, wurzel, kopierer, { nachbarkopie: ent.nachbarkopie === true });
     kopie = k.kopie; if (k.nachbar) nachbar = k.kopie;
+    sichereKopieGit(kopie);
     schreibeProbeSupport(z, wurzel, kopie);
     const pz = probeZiele(z, { wurzel, kopie });
     pz.kopieArt = k.art;

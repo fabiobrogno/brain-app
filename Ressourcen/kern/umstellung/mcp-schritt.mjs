@@ -47,16 +47,34 @@ function claudeNutzerEintrag(z, p) {
   try { const d = JSON.parse(readFileSync(claudeDatei(z, p), "utf8")); return istObjekt(d.mcpServers) && istObjekt(d.mcpServers.brain) ? d.mcpServers.brain : null; } catch { return null; }
 }
 const claudeEnv = (p) => (p.standard ? {} : { CLAUDE_CONFIG_DIR: p.pfad });
-const mitEnv = (alt) => (istObjekt(alt.env) ? Object.entries(alt.env).filter(([, v]) => typeof v === "string").flatMap(([k, v]) => ["-e", `${k}=${v}`]) : []);
-function claudeSetze(z, prog, p, e) {   // e = { command, args, env? } oder null (nur entfernen)
-  lauf(z, prog, ["mcp", "remove", "-s", "user", "brain"], claudeEnv(p));
-  if (!e) return true;
-  return lauf(z, prog, ["mcp", "add", "-s", "user", ...mitEnv(e), "brain", "--", e.command, ...(Array.isArray(e.args) ? e.args : [])], claudeEnv(p)).status === 0;
+const gleichWert = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+// Claude Code: den NEUEN Eintrag setzen (remove, dann add – beides mit geprüftem Exit-Code) und den ALTEN verlustfrei wieder eintragen (`add-json` mit dem gesicherten Eintrag, nie
+// `add -e …`: --env ist variadisch und frisst den Namen). → true, wenn der Zustand danach stimmt.
+function claudeNeuSetzen(z, prog, p) {
+  if (lauf(z, prog, ["mcp", "remove", "-s", "user", "brain"], claudeEnv(p)).status !== 0) return false;
+  return lauf(z, prog, ["mcp", "add", "-s", "user", "brain", "--", z.node, z.mcpServer], claudeEnv(p)).status === 0 && istGleich(claudeNutzerEintrag(z, p), z);
 }
-function codexSetze(z, prog, e) {
-  lauf(z, prog, ["mcp", "remove", "brain"]);
-  if (!e) return true;
-  return lauf(z, prog, ["mcp", "add", "brain", "--", e.command, ...(Array.isArray(e.args) ? e.args : [])]).status === 0;
+function claudeAltHerstellen(z, prog, p, alt) {
+  const jetzt = claudeNutzerEintrag(z, p);
+  if (gleichWert(jetzt, alt)) return true;
+  if (jetzt && lauf(z, prog, ["mcp", "remove", "-s", "user", "brain"], claudeEnv(p)).status !== 0) return false;
+  return lauf(z, prog, ["mcp", "add-json", "-s", "user", "brain", JSON.stringify(alt)], claudeEnv(p)).status === 0 && gleichWert(claudeNutzerEintrag(z, p), alt);
+}
+// Codex: der Eintrag besteht aus [mcp_servers.brain] und Unterabschnitten (z. B. .env) in config.toml. Wir sichern den Text dieser Abschnitte vollständig (Zusatzfelder, env) und
+// stellen ihn als Text wieder her; neu setzen geht über das Programm.
+const CODEX_ABSCHNITT = /^\[mcp_servers\.(?:"brain"|brain)(?:\.[^\]]*)?\]/;
+export function codexAbschnitte(text) {
+  const teile = String(text || "").split(/^(?=\[)/m);
+  return { brain: teile.filter((x) => CODEX_ABSCHNITT.test(x)).join(""), rest: teile.filter((x) => !CODEX_ABSCHNITT.test(x)).join("") };
+}
+function codexNeuSetzen(z, prog) {
+  if (lauf(z, prog, ["mcp", "remove", "brain"]).status !== 0) return false;
+  return lauf(z, prog, ["mcp", "add", "brain", "--", z.node, z.mcpServer]).status === 0 && istGleich(codexServer(z.home).servers.brain, z);
+}
+function codexAltHerstellen(datei, altText, modus) {
+  const t = (() => { try { return readFileSync(datei, "utf8"); } catch { return ""; } })();
+  const { rest } = codexAbschnitte(t);
+  schreibeAtomar(echtesDateiZiel(datei), rest + (rest && !rest.endsWith("\n") && altText ? "\n" : "") + altText, modus || 0o600);
 }
 
 export function lage(z, ctx) {
@@ -88,7 +106,12 @@ export function wende(z, ctx) {
       if (!prog) { uebersprungen.push("claude-fehlt"); continue; }
       undo.eintraege.push({ ziel: "claude", profil: p.pfad, standard: !!p.standard, alt });
       ctx.merkeUndo(undo);
-      if (!claudeSetze(z, prog, p, sollEintrag(z)) || !istGleich(claudeNutzerEintrag(z, p), z)) { claudeSetze(z, prog, p, alt); throw new Error("mcp-claude-fehlgeschlagen"); }
+      if (!claudeNeuSetzen(z, prog, p)) {
+        // zurück auf den alten Eintrag; gelingt auch das nicht, steht er vollständig in den Rückweg-Angaben (der Rückweg versucht es noch einmal)
+        if (!claudeAltHerstellen(z, prog, p, alt)) throw new Error("mcp-claude-eintrag-verloren");
+        throw new Error("mcp-claude-fehlgeschlagen");
+      }
+      ctx.pruefpunkt("nach-claude");
       anzahl++;
     } else if (e.ziel === "codex") {
       const prog = findeCodex(z);
@@ -96,10 +119,15 @@ export function wende(z, ctx) {
       if (!prog) { uebersprungen.push("codex-fehlt"); continue; }
       const alt = codexServer(z.home).servers.brain;
       const s = sichereDatei(z, ctx.sicherungsDir, datei, "codex-config.vor-a5.toml");
-      const eintrag = { ziel: "codex", alt: alt ? { command: alt.command, args: alt.args } : null, datei, rel: s && s.rel, hashVorher: s && s.hash, hashNachher: null, modus: modusVon(datei) };
+      const eintrag = { ziel: "codex", altText: codexAbschnitte((() => { try { return readFileSync(datei, "utf8"); } catch { return ""; } })()).brain, datei, rel: s && s.rel, hashVorher: s && s.hash, hashNachher: null, modus: modusVon(datei) };
       undo.eintraege.push(eintrag);
       ctx.merkeUndo(undo);
-      if (!codexSetze(z, prog, sollEintrag(z)) || !istGleich(codexServer(z.home).servers.brain, z)) { codexSetze(z, prog, eintrag.alt); throw new Error("mcp-codex-fehlgeschlagen"); }
+      if (!codexNeuSetzen(z, prog)) {
+        // Fehlerpfad: die gesicherte Datei Byte für Byte zurück (verliert nichts, auch env und Zusatzfelder nicht)
+        if (eintrag.rel) stelleHer(datei, sicherungsPfad(z, eintrag.rel), eintrag.modus || 0o600);
+        throw new Error("mcp-codex-fehlgeschlagen");
+      }
+      ctx.pruefpunkt("nach-codex");
       eintrag.hashNachher = hashDatei(datei);
       ctx.merkeUndo(undo);
       anzahl++;
@@ -143,14 +171,16 @@ export function zurueck(z, ctx, undo) {
       const p = { pfad: e.profil, standard: !!e.standard, name: e.profil };
       const jetzt = claudeNutzerEintrag(z, p);
       const prog = findeClaude({ env: z.env, home: z.home });
-      if (istGleich(jetzt, z) && prog) { claudeSetze(z, prog, p, e.alt); n++; }
-      else if (!istGleich(jetzt, z)) { if (!(jetzt && jetzt.command === e.alt.command && JSON.stringify(jetzt.args || []) === JSON.stringify(e.alt.args || []))) hinweise.push("mcp-claude-geaendert"); }
-      else hinweise.push("claude-fehlt");
+      if (gleichWert(jetzt, e.alt)) continue;                                              // schon wieder der alte Eintrag
+      if (jetzt !== null && !istGleich(jetzt, z)) { hinweise.push("mcp-claude-geaendert"); continue; }   // du hast ihn inzwischen selbst geändert: bleibt
+      if (!prog) { hinweise.push("claude-fehlt"); continue; }
+      if (claudeAltHerstellen(z, prog, p, e.alt)) n++; else hinweise.push("mcp-claude-nicht-zurueck");
     } else if (e.ziel === "codex") {
       const jetzt = hashDatei(e.datei);
       if (jetzt === e.hashVorher) continue;
-      if (e.hashNachher && jetzt === e.hashNachher && e.rel) { stelleHer(e.datei, sicherungsPfad(z, e.rel), e.modus || 0o600); n++; }
-      else if (istGleich(codexServer(z.home).servers.brain, z)) { const prog = findeCodex(z); if (prog) { codexSetze(z, prog, e.alt); n++; } else hinweise.push("codex-fehlt"); }
+      if ((ctx && ctx.imFehler) && e.rel) { stelleHer(e.datei, sicherungsPfad(z, e.rel), e.modus || 0o600); n++; }
+      else if (e.hashNachher && jetzt === e.hashNachher && e.rel) { stelleHer(e.datei, sicherungsPfad(z, e.rel), e.modus || 0o600); n++; }
+      else if (istGleich(codexServer(z.home).servers.brain, z) || (e.hashNachher === null && !codexServer(z.home).servers.brain)) { codexAltHerstellen(e.datei, e.altText || "", e.modus); n++; }
       else hinweise.push("mcp-codex-geaendert");
     } else if (e.ziel === "cursor") {
       const jetzt = hashDatei(e.datei);

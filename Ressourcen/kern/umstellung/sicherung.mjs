@@ -6,7 +6,7 @@
 import { existsSync, lstatSync, rmSync, chmodSync, copyFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { ablageOrdner, hashDatei, sichereDatei } from "./protokoll.mjs";
-import { gitLauf } from "./ziele.mjs";
+import { gitLauf, freierPlatz, ordnerGroesseGrob } from "./ziele.mjs";
 
 export const id = "A0";
 export const titel = "Sicherung anlegen";
@@ -26,6 +26,8 @@ export function wende(z, ctx) {
     if (existsSync(ziel)) bundle = "vorhanden";
     else {
       mkdirSync(ablageOrdner(z), { recursive: true, mode: 0o700 });
+      // das Bundle enthält alle Commits: genug Platz (Größe des Versionsverlaufs × 1,2 + Puffer) im Support-Ordner?
+      if (freierPlatz(z, ablageOrdner(z)) < Math.ceil(ordnerGroesseGrob(join(z.vault, ".git")) * 1.2) + 64 * 1024 * 1024) throw new Error("zu-wenig-platz");
       const r = gitLauf(z, ["bundle", "create", ziel, "--all"]);
       if (r.status !== 0) {
         try { rmSync(ziel, { force: true }); } catch { /* weg */ }
@@ -45,7 +47,12 @@ export function wende(z, ctx) {
   const undo = { bundle };
   if (hatRepo(z) && existsSync(join(z.vault, ".git", "config"))) {
     const kopie = join(z.vault, ".git", "config.vor-kortex");
-    if (!existsSync(kopie)) { copyFileSync(join(z.vault, ".git", "config"), kopie); chmodSync(kopie, 0o600); undo.gitConfigKopie = { datei: ".git/config.vor-kortex", hash: hashDatei(kopie) }; }
+    if (!existsSync(kopie)) {
+      undo.gitConfigKopie = { datei: ".git/config.vor-kortex", hash: hashDatei(join(z.vault, ".git", "config")) };   // der Hash der Kopie ist der der Quelle; vor dem Kopieren vermerkt
+      ctx.merkeUndo(undo);
+      copyFileSync(join(z.vault, ".git", "config"), kopie); chmodSync(kopie, 0o600);
+      ctx.pruefpunkt("nach-kopie");
+    }
     kopiere(join(z.vault, ".git", "config"), "git-config.vor-kortex");
   }
   ctx.merkeUndo(undo);

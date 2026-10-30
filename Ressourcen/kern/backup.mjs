@@ -10,8 +10,18 @@ const git = (v, ...a) => execFileSync(gitBefehl({ cfg: ladeConfig(v) }), ["-C", 
 // Der Sicherungsordner steht NICHT in der brain.config.json des Vaults (Vault-Daten dürfen nicht bestimmen, wohin der Kern schreibt), sondern je
 // Vault im Support-Ordner der App: <Support>/backup/<Kennung des Vaults>.json = { "pfad": "<absoluter Ordner>" }. Gesetzt wird er nur von
 // `brain backup einrichten ordner:<pfad>` (Kern/App). Ein „pfad“ in der Vault-Config (ältere Vaults) zählt nicht mehr — neu einrichten.
-const kennung = (vault) => { let e = vault; try { e = realpathSync(vault); } catch {} return createHash("sha256").update(e).digest("hex").slice(0, 16); };
-const backupDatei = (vault, support = supportOrdner()) => join(support, "backup", `${kennung(vault)}.json`);
+// Kennung des Vaults: Hash des kanonischen Pfads (realpath.native); Übergang: eine unter der früheren Kennung (JS-realpath) angelegte Datei wird weiter gefunden.
+const hashPfad = (p) => createHash("sha256").update(p).digest("hex").slice(0, 16);
+export const kennungen = (vault) => {
+  const e = (f) => { try { return f(vault); } catch { return vault; } };
+  return [...new Set([hashPfad(e(realpathSync.native)), hashPfad(e(realpathSync))])];
+};
+const kennung = (vault) => kennungen(vault)[0];
+const backupDatei = (vault, support = supportOrdner()) => {
+  const ids = kennungen(vault);
+  return join(support, "backup", `${ids.find((i) => existsSync(join(support, "backup", `${i}.json`))) || ids[0]}.json`);
+};
+export const merkerDateiFuer = (vault, support = supportOrdner()) => backupDatei(vault, support);
 // Absolut, ein Ordner (falls schon vorhanden), kein Verweis. → Fehlertext oder null
 export function pruefeBackupPfad(p) {
   if (typeof p !== "string" || !p || p.includes("\0") || !isAbsolute(p)) return "Der Sicherungsordner muss ein absoluter Pfad sein.";

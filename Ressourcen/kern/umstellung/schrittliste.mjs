@@ -27,8 +27,9 @@ export const STANDARD_ENTSCHEIDUNGEN = Object.freeze({
   dienstAnderer: false,         // einen Hintergrunddienst eines anderen Vaults umstellen (A6)
   profile: null,                // Pfade der Claude-Profile, die umgestellt werden (null = alle erkannten)
   weitereMacs: null,            // "ja" | "nein" | null – nur zur Erinnerung für Phase B
+  nachbarkopie: false,          // die Probekopie notfalls im Nachbarordner des Vaults anlegen (sonst nur in Temp)
 });
-const BOOL = ["gitSchluessel", "verweiseAufloesen", "remoteEntfernen", "remoteBestaetigen", "hooksErsetzen", "mcpAnders", "dienstAnderer"];
+const BOOL = ["gitSchluessel", "verweiseAufloesen", "remoteEntfernen", "remoteBestaetigen", "hooksErsetzen", "mcpAnders", "dienstAnderer", "nachbarkopie"];
 export function normalisiereEntscheidungen(roh) {
   const e = { ...STANDARD_ENTSCHEIDUNGEN };
   if (roh && typeof roh === "object" && !Array.isArray(roh)) {
@@ -57,10 +58,15 @@ export function waehleProfile(z, ent) {
 
 // Kontext eines Schritts: schreibt die Rückweg-Angaben SOFORT (ctx.merkeUndo) und hält sie im Zustand fest, damit auch ein Absturz mitten im Schritt umkehrbar bleibt.
 // Läuft ein Schritt in einem späteren Lauf erneut und tut wieder etwas, bleibt die Rückweg-Angabe des früheren Laufs erhalten (`fruehere`) – der Rückweg nimmt beide zurück.
-export function schrittKontext(z, { schritt, entscheidungen, profile, lauf, sicherungsDir, zustand }) {
+// Prüfmarke für Tests: simuliert den Abbruch des Prozesses (kein Rückweg des laufenden Schritts, die Sperre wird gelöst)
+export class TestAbbruch extends Error { constructor(wo) { super(`Testabbruch ${wo}`); this.name = "TestAbbruch"; } }
+
+export function schrittKontext(z, { schritt, entscheidungen, profile, lauf, sicherungsDir, zustand, abbruchBei = null }) {
   const frueher = zustand.schritte[schritt.id] && zustand.schritte[schritt.id].undo;
   const c = {
     entscheidungen, profile, lauf, sicherungsDir, undo: null, nachDaten: undefined,
+    // Prüfpunkte der Schritte (z. B. „A4:nach-install“): nur in Tests löst einer einen simulierten Absturz aus – genau dort, wo ein echter Absturz die Rückweg-Angaben am schwersten träfe
+    pruefpunkt(name) { if (abbruchBei === `${schritt.id}:${name}`) throw new TestAbbruch(`bei ${schritt.id}:${name}`); },
     merkeUndo(obj) {
       c.undo = obj;
       const rel = schreibeUndo(z, sicherungsDir, schritt.id, obj);

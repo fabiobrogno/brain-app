@@ -44,7 +44,7 @@ const FAELLE = {
   "url-insteadof": ["git-schluessel"],
   "http-extraheader": ["git-schluessel"],
   "lfs-filter": ["git-schluessel"],
-  "include-path": ["git-schluessel"],
+  "include-path": ["git-struktur"],
   "user-name-ungueltig": ["git-schluessel"],
   "remote-prune": ["git-schluessel"],
   "maintenance": ["git-schluessel"],

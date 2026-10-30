@@ -14,7 +14,7 @@ import { entscheidungenHash } from "../umstellung/phase-a.mjs";
 
 const FAKE = (n) => new URL(`./${n}`, import.meta.url).pathname;
 const MERKEN = ["KORTEX_KERN_PFAD", "KORTEX_KERN_TEMP_WURZELN", "KORTEX_KERN_UNSTABIL_ERLAUBT", "BRAIN_LAUNCHCTL", "BRAIN_CLAUDE", "KORTEX_CODEX_PROGRAMM", "GIT_CONFIG_GLOBAL", "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL",
-  "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "FAKE_MCP_LOG", "FAKE_LAUNCHCTL_LOG", "BRAIN_APP_SUPPORT", "HOME", "KORTEX_VAULT_VERTRAUT", "BRAIN_TESTMODUS"];
+  "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "FAKE_MCP_LOG", "FAKE_MCP_FAIL", "FAKE_LAUNCHCTL_LOG", "FAKE_LAUNCHCTL_FAIL", "FAKE_LAUNCHCTL_VORGELADEN", "BRAIN_APP_SUPPORT", "HOME", "KORTEX_VAULT_VERTRAUT", "BRAIN_TESTMODUS", "CLAUDE_CONFIG_DIR"];
 
 export function umstellungsFixture(faelle = [], { globalText = "[user]\n\tname = Test\n\temail = test@example.org\n", ohneMcpAttrappen = false, vaultName = null } = {}) {
   const a = altvault({ faelle, vaultName });
@@ -26,6 +26,7 @@ export function umstellungsFixture(faelle = [], { globalText = "[user]\n\tname =
   const gitGlobal = join(a.basis, "gitconfig-global");
   writeFileSync(gitGlobal, globalText);
   const log = join(a.basis, "launchctl.log"), mcpLog = join(a.basis, "mcp.log");
+  delete process.env.CLAUDE_CONFIG_DIR;   // nie das echte Profil der Entwicklungsumgebung: kein Test darf es erreichen
   Object.assign(process.env, {
     HOME: a.home, KORTEX_KERN_PFAD: join(a.support, "bin", "kern"), KORTEX_KERN_TEMP_WURZELN: "", KORTEX_KERN_UNSTABIL_ERLAUBT: "1", KORTEX_VAULT_VERTRAUT: "alle",
     BRAIN_LAUNCHCTL: FAKE("fake-launchctl.mjs"), FAKE_LAUNCHCTL_LOG: log, FAKE_MCP_LOG: mcpLog, BRAIN_APP_SUPPORT: a.support, GIT_CONFIG_GLOBAL: gitGlobal,

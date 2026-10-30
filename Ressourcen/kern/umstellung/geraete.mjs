@@ -11,9 +11,10 @@ import { hostname } from "node:os";
 import { randomBytes } from "node:crypto";
 import { kernVersion, liesConfigRoh } from "../pfade.mjs";
 import { gitLauf, gitSicherLauf } from "./ziele.mjs";
-import { hashDatei, sichereDatei, sicherungsPfad, schreibeAtomar, stelleHer, modusVon } from "./protokoll.mjs";
+import { hashDatei, hashText, sichereDatei, sicherungsPfad, schreibeAtomar, stelleHer, modusVon, echtesDateiZiel } from "./protokoll.mjs";
 
 export const id = "A8";
+const MELDUNG = "Kortex: Gerät umgestellt";
 export const titel = "Gerät im Vault vermerken";
 
 function versionKleiner(a, b) {
@@ -65,30 +66,38 @@ export function wende(z, ctx) {
   let configSauber = hatGit;
   if (hatGit) { const s = gitLauf(z, ["status", "--porcelain", "-z", "--", "brain.config.json"]); configSauber = s.status === 0 && s.stdout.trim() === ""; }
   const cs = sichereDatei(z, ctx.sicherungsDir, configDatei, "brain.config.vor-a8.json");
-  const undo = { rel, datei, merkerVorherHash: hashDatei(datei), config: { rel: cs && cs.rel, hashVorher: cs && cs.hash, hashNachher: null, modus: modusVon(configDatei) }, commit: null, committet: [] };
-  ctx.merkeUndo(undo);
+  // Alle Inhalte und ihre Hashes stehen FEST, bevor etwas geschrieben wird – so erkennt der Rückweg unsere Dateien auch nach einem Absturz mitten im Schritt.
   const merker = { name: geraeteName(), kortexVersion: kernVersion(), phaseA: heute() };
-  mkdirSync(join(z.vault, ".kortex", "geraete"), { recursive: true });
   const mtext = JSON.stringify(merker, null, 2) + "\n";
-  if (l.merkerNoetig) writeFileSync(datei, mtext);
+  let cfgText = null;
   if (l.kvNoetig) {
-    const cfg = { ...l.roh.cfg, kernVersion: kernVersion() };
     const bom = (() => { try { const b = readFileSync(configDatei); return b.length >= 3 && b[0] === 0xef && b[1] === 0xbb && b[2] === 0xbf; } catch { return false; } })();
+    cfgText = (bom ? "\uFEFF" : "") + JSON.stringify({ ...l.roh.cfg, kernVersion: kernVersion() }, null, 2) + "\n";
+  }
+  const head = hatGit ? gitLauf(z, ["rev-parse", "--verify", "-q", "HEAD"]) : null;
+  const undo = {
+    rel, datei, merkerVorherHash: hashDatei(datei), merkerNachherHash: l.merkerNoetig ? hashText(mtext) : hashDatei(datei),
+    config: { rel: cs && cs.rel, hashVorher: cs && cs.hash, hashNachher: cfgText === null ? null : hashText(cfgText), modus: modusVon(configDatei) },
+    headVorher: head && head.status === 0 ? head.stdout.trim() : null, commit: null, committet: [],
+  };
+  ctx.merkeUndo(undo);
+  mkdirSync(join(z.vault, ".kortex", "geraete"), { recursive: true });
+  if (l.merkerNoetig) writeFileSync(datei, mtext);
+  if (cfgText !== null) {
     // optimistisch: hat sich die Datei zwischen Lesen und Schreiben geändert, nichts überschreiben
     if (liesConfigRoh(z.vault).stand !== l.roh.stand) throw new Error("config-geaendert");
-    schreibeAtomar(configDatei, (bom ? "\uFEFF" : "") + JSON.stringify(cfg, null, 2) + "\n", undo.config.modus);
-    undo.config.hashNachher = hashDatei(configDatei);
+    schreibeAtomar(echtesDateiZiel(configDatei), cfgText, undo.config.modus);
   }
-  undo.merkerNachherHash = hashDatei(datei);
-  ctx.merkeUndo(undo);
+  ctx.pruefpunkt("nach-schreiben");
   // ein Commit nur dieser Pfade
   let commit = false, grund;
   if (hatGit) {
     const pfade = [...(l.merkerNoetig || existsSync(datei) ? [rel] : []), ...(l.kvNoetig && configSauber ? ["brain.config.json"] : [])];
     const a = gitSicherLauf(z, ["add", "--", ...pfade]);
     if (a.status === 0) {
-      const c = gitSicherLauf(z, ["commit", "-q", "-m", "Kortex: Gerät umgestellt", "--", ...pfade]);
+      const c = gitSicherLauf(z, ["commit", "-q", "-m", MELDUNG, "--", ...pfade]);
       if (c.status === 0) {
+        ctx.pruefpunkt("nach-commit");
         const h = gitSicherLauf(z, ["rev-parse", "HEAD"]);
         undo.commit = h.status === 0 ? h.stdout.trim() : null; undo.committet = pfade; commit = !!undo.commit;
         ctx.merkeUndo(undo);
@@ -114,15 +123,20 @@ export function zurueck(z, ctx, undo) {
   const hinweise = [];
   if (!undo) return { status: "nichts", hinweise };
   let n = 0;
-  const committet = Array.isArray(undo.committet) ? undo.committet : [];
-  if (undo.commit) {
-    const r = gitSicherLauf(z, ["revert", "--no-edit", undo.commit]);
+  // Den Commit finden – auch wenn der Absturz zwischen `git commit` und dem Vermerken kam: HEAD ist dann unser Commit, wenn er direkt auf dem früheren HEAD sitzt und unsere Meldung trägt
+  let commit = undo.commit;
+  if (!commit && undo.headVorher) {
+    const h = gitSicherLauf(z, ["rev-parse", "HEAD"]).stdout.trim();
+    if (h && h !== undo.headVorher && gitSicherLauf(z, ["rev-parse", "HEAD^"]).stdout.trim() === undo.headVorher && gitSicherLauf(z, ["log", "-1", "--format=%s"]).stdout.trim() === MELDUNG) commit = h;
+  }
+  if (commit) {
+    const r = gitSicherLauf(z, ["revert", "--no-edit", commit]);
     if (r.status !== 0) { gitSicherLauf(z, ["revert", "--abort"]); hinweise.push("revert-fehlgeschlagen"); return { status: "nichts", hinweise }; }
     n++;
   } else if (undo.merkerNachherHash && hashDatei(undo.datei) === undo.merkerNachherHash && undo.merkerVorherHash === null) { rmSync(undo.datei, { force: true }); n++; }
   else if (existsSync(undo.datei) && hashDatei(undo.datei) !== undo.merkerVorherHash) hinweise.push("geraetemerker-geaendert");
-  // die Config: war sie Teil des Commits, hat der Revert sie schon hergestellt; sonst (Config hatte vorher eigene Änderungen oder kein Commit) aus der Sicherung, wenn unverändert
-  if (committet.includes("brain.config.json")) { leereDirs(z); return { status: "ok", hinweise }; }
+  // die Config: war sie Teil des Commits, hat der Revert sie schon hergestellt (ihr Hash ist dann wieder der alte); sonst (Config hatte vorher eigene Änderungen oder kein Commit)
+  // aus der Sicherung, wenn sie unverändert unsere Fassung ist
   const c = undo.config || {};
   const configDatei = join(z.vault, "brain.config.json");
   if (c.hashNachher && hashDatei(configDatei) === c.hashNachher && c.rel) { stelleHer(configDatei, sicherungsPfad(z, c.rel), c.modus || 0o644); n++; }

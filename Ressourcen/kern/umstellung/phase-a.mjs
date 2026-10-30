@@ -7,9 +7,10 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { kernVersion } from "../pfade.mjs";
+import * as pfadeNs from "../pfade.mjs";
 import { erstelleBefund } from "./befund.mjs";
 import {
-  SCHRITTE, ALLE_IDS, UmstellungsFehler, normalisiereEntscheidungen, waehleProfile, schrittKontext, bereitFehler,
+  SCHRITTE, ALLE_IDS, UmstellungsFehler, normalisiereEntscheidungen, waehleProfile, schrittKontext, bereitFehler, TestAbbruch,
 } from "./schrittliste.mjs";
 import {
   liesZustand, schreibeZustand, protokolliere, setzeSperre, loeseSperre, setzeVaultSperre, loeseVaultSperre, pruefeSperre, ablageOrdner, sicherungsOrdner, stempel, jetztIso, oeffneAblage, hashText,
@@ -18,8 +19,7 @@ import { momentaufnahme, fingerabdruck, pruefeAmOriginal, ampel } from "./pruefu
 import { leseProbelaufMerker } from "./probelauf-merker.mjs";
 import { vermerkeUmgestellt } from "./vertrauen-merker.mjs";
 
-// Prüfmarke für Tests: simuliert den Abbruch des Prozesses (kein Rückweg des laufenden Schritts, die Sperre wird gelöst)
-export class TestAbbruch extends Error { constructor(wo) { super(`Testabbruch ${wo}`); this.name = "TestAbbruch"; } }
+export { TestAbbruch };
 
 export const entscheidungenHash = (ent) => hashText(JSON.stringify(Object.fromEntries(Object.entries(ent).sort())));
 
@@ -46,10 +46,18 @@ export function standPhaseA(z) {
   };
 }
 
+// Vertrauen (P5, Workspace-Trust): ist der Vault in Kortex noch nicht als deiner bestätigt, ändert die Umstellung nichts – vor A0, nicht erst im ersten Kindprozess (Exit 5 der Installer).
+// Solange pfade.mjs keine vaultVertraut() hat (P5 nicht gemerged), gilt jeder Vault als vertraut; Tests können z.vertrautPruefer setzen.
+export function pruefeVertrauen(z) {
+  const pruefer = z.vertrautPruefer || (typeof pfadeNs.vaultVertraut === "function" ? (v) => pfadeNs.vaultVertraut(v) : null);
+  if (pruefer && pruefer(z.vault) === false) throw new UmstellungsFehler("nicht-vertraut", "Dieser Vault ist in Kortex noch nicht als deiner bestätigt. Bestätige ihn zuerst („Diesem Vault vertrauen“), dann geht die Umstellung. Es wurde nichts verändert.", 6);
+}
+
 function pruefeVorbedingungen(z, ent, { schritte }) {
   const bf = bereitFehler(z);
   if (bf) throw bf;
   if (z.probe) return;
+  pruefeVertrauen(z);
   // Blocker der Phase A (Befund): Einstellungen kaputt, Ordnernamen ungültig, Verknüpfungen aus dem Vault …
   const befund = erstelleBefund({ vault: z.vault, home: z.home, support: z.support, claudeHomes: null });
   if (!befund.umstellbar) throw new UmstellungsFehler("blocker", "Vorher muss etwas behoben werden (siehe Befund). Es wurde nichts verändert.", 4);
@@ -61,7 +69,7 @@ function pruefeVorbedingungen(z, ent, { schritte }) {
 }
 
 // Hauptfunktion. Optionen: entscheidungen, schritte (Liste von IDs; sonst alle), bestaetigt, abbruchNach/abbruchIn (nur Tests).
-export async function phaseA(z, { entscheidungen = {}, schritte = null, bestaetigt = false, abbruchNach = null, abbruchIn = null, ohneVaultSperre = false } = {}) {
+export async function phaseA(z, { entscheidungen = {}, schritte = null, bestaetigt = false, abbruchNach = null, abbruchIn = null, abbruchBei = null, ohneVaultSperre = false } = {}) {
   const ent = normalisiereEntscheidungen(entscheidungen);
   if (z.probe) ent.remoteBestaetigen = false;                 // der Probelauf bestätigt nie ein Online-Ziel
   const plan = planPhaseA(z, { entscheidungen: ent });
@@ -93,7 +101,7 @@ export async function phaseA(z, { entscheidungen = {}, schritte = null, bestaeti
       zustand.laeuft = { ...zustand.laeuft, schritt: s.id };
       schreibeZustand(z, zustand);
       protokolliere(z, { schritt: s.id, ereignis: "start" });
-      const c = schrittKontext(z, { schritt: s, entscheidungen: ent, profile, lauf, sicherungsDir, zustand });
+      const c = schrittKontext(z, { schritt: s, entscheidungen: ent, profile, lauf, sicherungsDir, zustand, abbruchBei });
       let res;
       try {
         res = s.wende(z, c);
@@ -103,14 +111,18 @@ export async function phaseA(z, { entscheidungen = {}, schritte = null, bestaeti
         if (e instanceof TestAbbruch) throw e;
         // nur dieser Schritt wird zurückgenommen, die Phase hält an
         let rueck = null;
+        c.imFehler = true;
         try { rueck = c.undo ? s.zurueck(z, c, c.undo) : null; } catch { /* der Rückweg meldet sich unten */ }
         const grund = String((e && e.message) || "fehler").split("\n")[0].slice(0, 80);
-        zustand.schritte[s.id] = { ...(zustand.schritte[s.id] || {}), status: "fehler", zeit: jetztIso(), grund, zurueckgenommen: !!rueck };
+        // „zurückgenommen“ nur, wenn der Rückweg vollständig und ohne Hinweis war; sonst bleibt der Schritt als unvollständig zurückgenommen gemeldet (Hinweise = feste Kurztexte)
+        const sauber = c.undo ? !!rueck && !(rueck.hinweise && rueck.hinweise.length) : true;   // ohne Rückweg-Angaben wurde nichts geschrieben; sonst nur ohne Hinweise des Rückwegs
+        const rueckHinweise = rueck && rueck.hinweise && rueck.hinweise.length ? rueck.hinweise : undefined;
+        zustand.schritte[s.id] = { ...(zustand.schritte[s.id] || {}), status: "fehler", zeit: jetztIso(), grund, zurueckgenommen: sauber, ...(rueckHinweise ? { rueckwegHinweise: rueckHinweise } : {}) };
         zustand.laeuft = null;
         schreibeZustand(z, zustand);
         protokolliere(z, { schritt: s.id, ereignis: "fehler", grund, sicherung: zustand.schritte[s.id].undo });
-        if (rueck) protokolliere(z, { schritt: s.id, ereignis: "rueckweg", grund: "nach-fehler" });
-        return { ok: false, fehlerBei: s.id, grund, schritte: [...ergebnis, { id: s.id, titel: s.titel, status: "fehler", grund }], zurueckgenommen: !!rueck };
+        if (rueck) protokolliere(z, { schritt: s.id, ereignis: "rueckweg", grund: sauber ? "nach-fehler" : "nach-fehler-unvollstaendig" });
+        return { ok: false, fehlerBei: s.id, grund, schritte: [...ergebnis, { id: s.id, titel: s.titel, status: "fehler", grund }], zurueckgenommen: sauber, ...(rueckHinweise ? { rueckwegHinweise: rueckHinweise } : {}) };
       }
       // „nichts“ nach einem früheren „ok“ lässt das frühere Ergebnis (und seine Rückweg-Angaben) stehen
       const bleibt = res.status === "nichts" && vorher.status === "ok";
@@ -132,14 +144,17 @@ export async function phaseA(z, { entscheidungen = {}, schritte = null, bestaeti
       ergebnis.push({ id: "A9", titel: "Prüfung am Original", status: a9.ampel === "gruen" ? "ok" : "rot", kriterien: a9.kriterien });
     }
     const fertig = SCHRITTE.every((s) => zustand.schritte[s.id] && ["ok", "nichts", "uebersprungen"].includes(zustand.schritte[s.id].status));
-    if (fertig && (!schritte || !schritte.length)) {
+    // Ein roter A9 heißt: die Umstellung ist NICHT abgeschlossen (keine Phase „A“, kein Vertrauensvermerk) – Ergebnis „mit Warnungen“, der Rückweg wird angeboten
+    const rot = !!a9 && a9.ampel === "rot";
+    if (rot) { zustand.phase = null; delete zustand.vertrauen; }
+    if (fertig && !rot && (!schritte || !schritte.length)) {
       zustand.phase = "A";
       zustand.weitereMacs = ent.weitereMacs;
       zustand.vertrauen = vermerkeUmgestellt().vermerken ? "vermerken" : null;   // die Werkstatt trägt den Vault als vertraut ein (vertrauen-merker.mjs)
     }
     zustand.laeuft = null;
     schreibeZustand(z, zustand);
-    return { ok: true, phase: zustand.phase, schritte: ergebnis, a9, hinweis: a9 && a9.ampel === "rot" ? "pruefung-rot" : undefined };
+    return { ok: true, phase: zustand.phase, schritte: ergebnis, a9, ...(rot ? { mitWarnungen: true, hinweis: "pruefung-rot" } : {}) };
   } finally {
     loeseSperre(z);
     if (vaultSperre.ok) loeseVaultSperre(z);

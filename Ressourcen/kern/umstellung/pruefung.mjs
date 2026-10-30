@@ -13,7 +13,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { KERN, liesConfigRoh, istOrdnerName, pruefeVault, kernVersion, ordner as ordnerNamen } from "../pfade.mjs";
 import { minisuche } from "../minisuche.mjs";
-import { pruefeBackupPfad } from "../backup.mjs";
+import { pruefeBackupPfad, merkerDateiFuer } from "../backup.mjs";
 import { LABEL } from "../tageslauf/dienst.mjs";
 import { echtesGit, adressArt, pruefungAlle } from "./git-lage.mjs";
 import { mcpLage, claudeServer, codexServer, cursorServer } from "./mcp-lage.mjs";
@@ -276,7 +276,7 @@ export function kriterium7(z, ctx) {
   const roh = liesConfigRoh(z.vault);
   const bp = roh.cfg && istObjekt(roh.cfg.backup) && typeof roh.cfg.backup.pfad === "string" ? roh.cfg.backup.pfad : null;
   let merker = {};
-  try { const o = JSON.parse(readFileSync(join(z.support, "backup", `${kennung(z.vault)}.json`), "utf8")); if (istObjekt(o)) merker = o; } catch { /* keiner */ }
+  try { const o = JSON.parse(readFileSync(merkerDateiFuer(z.vault, z.support), "utf8")); if (istObjekt(o)) merker = o; } catch { /* keiner */ }
   if (bp) {
     if (merker.pfad !== bp) {
       // ein ungültiger oder abweichender alter Ordner wird nicht übernommen: Frage, kein Fehler der Umstellung

@@ -11,7 +11,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync, lstatSyn
 import { join, dirname, resolve } from "node:path";
 import { echtesGit, lokaleKonfiguration, pruefungAlle, ordneSchluesselEin, formSchluessel, lokaleRemotes, alsPrueflistenName, gitVerzeichnis } from "./git-lage.mjs";
 import { gitLauf, kennung } from "./ziele.mjs";
-import { hashDatei, hashText, schreibeAtomar, sichereDatei, sicherungsPfad, echtesDateiZiel } from "./protokoll.mjs";
+import { hashDatei, hashText, schreibeAtomar, schreibeMitLock, sichereDatei, sicherungsPfad, echtesDateiZiel } from "./protokoll.mjs";
 
 export const id = "A2";
 export const titel = "Persönliche git-Einstellungen verschieben";
@@ -66,7 +66,7 @@ export function setzeBlock(gitGlobal, k, block) {
   if (neu && !neu.endsWith("\n")) neu += "\n";
   if (neu) neu += "\n";
   neu += block;
-  schreibeAtomar(ziel, neu, 0o600);
+  schreibeMitLock(ziel, neu, 0o600);
   return { vorher: alt === null ? null : hashText(alt), nachher: hashText(neu), dateiFehlte: alt === null };
 }
 // → true, wenn der Block da war und entfernt wurde. Eine Datei, die danach leer ist und vorher fehlte (leereDatei), wird gelöscht.
@@ -75,8 +75,8 @@ export function entferneBlock(gitGlobal, k, { loescheWennLeer = false } = {}) {
   const alt = lies(ziel);
   if (alt === null || !hatBlock(alt, k)) return false;
   const neu = entferneBlockAusText(alt, k);
-  if (!neu.trim() && loescheWennLeer) rmSync(ziel, { force: true });
-  else schreibeAtomar(ziel, neu, 0o600);
+  if (!neu.trim() && loescheWennLeer) schreibeMitLock(ziel, null);
+  else schreibeMitLock(ziel, neu, 0o600);
   return true;
 }
 
@@ -99,7 +99,13 @@ export function lage(z, ctx) {
   const rest = pruef.namen.filter((n) => !lokal.has(n));
   const ein = ordneSchluesselEin(rest.map(formSchluessel));
   const verschiebbar = new Set(rest.filter((n) => ein.verschiebbar.includes(formSchluessel(n))));
-  const verschieb = e.gitSchluessel === false ? [] : konfig.filter((k) => verschiebbar.has(alsPrueflistenName(k.schluessel)));
+  // Werte, die nie unverändert in die Datei je Vault wandern: relative Pfade (./…, ../…: sie hätten dort eine andere Bedeutung) und alles, was in den Vault selbst zeigt (ein
+  // Programm aus dem Vault liefe sonst für alle Versionsverläufe dieses Nutzers an dieser Stelle – Programme kommen nie aus dem Vault).
+  const vaultFormen = [...new Set([z.vault, z.musterVault, (() => { try { return realpathSync(z.vault); } catch { return z.vault; } })()])];
+  const bedenklich = (k) => typeof k.wert === "string" && (/(^|[\s"'=])\.{1,2}\//.test(k.wert) || vaultFormen.some((v) => k.wert.includes(v)));
+  const kandidaten = e.gitSchluessel === false ? [] : konfig.filter((k) => verschiebbar.has(alsPrueflistenName(k.schluessel)));
+  const abgelehnt = kandidaten.filter(bedenklich);
+  const verschieb = kandidaten.filter((k) => !bedenklich(k));
   const remotes = [];
   if (e.remoteEntfernen === true) {
     const namen = new Set(konfig.filter((k) => lokal.has(alsPrueflistenName(k.schluessel))).map((k) => /^remote\.(.+)\.(?:url|pushurl)$/i.exec(k.schluessel)?.[1]).filter(Boolean));
@@ -107,7 +113,7 @@ export function lage(z, ctx) {
   }
   const verweise = e.verweiseAufloesen === true ? gv.verweise : [];
   return {
-    moeglich: true, verschieb, remotes, verweise,
+    moeglich: true, verschieb, remotes, verweise, abgelehnt: abgelehnt.length,
     struktur: rest.filter((n) => ein.strukturell.includes(formSchluessel(n))), offen: pruef.namen,
   };
 }
@@ -131,8 +137,21 @@ export function wende(z, ctx) {
   const konfigDatei = join(z.vault, ".git", "config");
   const sich = sichereDatei(z, ctx.sicherungsDir, konfigDatei, "git-config.vor-a2");
   const vorherPerVault = sichereDatei(z, ctx.sicherungsDir, datei, "git-pervault.vor-a2");
+  // Die .git/config nach unseren Änderungen vorab auf einer Kopie berechnen: ihr Hash (`hashErwartet`) steht vor dem ersten Schreiben in den Rückweg-Angaben, damit der Rückweg die
+  // Datei auch nach einem Absturz mitten im Schritt (hashNachher unbekannt) als „unsere“ erkennt und Byte für Byte herstellen kann.
+  const erwartet = (() => {
+    try {
+      const tmp = join(ctx.sicherungsDir, "git-config.erwartet");
+      copyFileSync(konfigDatei, tmp);
+      for (const key of new Set(l.verschieb.map((k) => k.schluessel))) gitLauf(z, ["config", "--file", tmp, "--unset-all", key], { ohneOrdner: true });
+      for (const r of l.remotes) gitLauf(z, ["config", "--file", tmp, "--remove-section", `remote.${r.name}`], { ohneOrdner: true });
+      const h = hashDatei(tmp);
+      rmSync(tmp, { force: true });
+      return l.verweise.length ? null : h;       // Verweise ändern die Datei nicht, aber ihre Auflösung ist hier nicht vorab zu berechnen
+    } catch { return null; }
+  })();
   const undo = {
-    gitConfig: { sicherung: sich && sich.rel, hashVorher: sich && sich.hash, modus: (() => { try { return statSync(konfigDatei).mode & 0o777; } catch { return 0o600; } })() },
+    gitConfig: { sicherung: sich && sich.rel, hashVorher: sich && sich.hash, hashErwartet: erwartet, modus: (() => { try { return statSync(konfigDatei).mode & 0o777; } catch { return 0o600; } })() },
     verschoben: l.verschieb.map((k) => ({ schluessel: k.schluessel, wert: k.wert })),
     remotes: l.remotes.map((r) => ({ name: r.name, eintraege: r.eintraege.map((k) => ({ schluessel: k.schluessel, wert: k.wert })) })),
     aufgeloest: [],
@@ -151,8 +170,13 @@ export function wende(z, ctx) {
     }
     chmodSync(datei, 0o600);
     const block = einbindungsBlock({ vaultEcht, datei, k: kennung(z.vault), caseInsensitiv: z.caseInsensitiv ?? istCaseInsensitiv(z.vault) });
+    // Rückweg-Angaben VOR dem Schreiben der globalen Konfiguration (ein Absturz mitten im Schreiben bleibt umkehrbar; entferneBlock findet nur, was wirklich da ist)
+    const globalVorher = lies(echtesDateiZiel(z.gitGlobal));
+    undo.blockGesetzt = true; undo.global = { vorher: globalVorher === null ? null : hashText(globalVorher), nachher: null, dateiFehlte: globalVorher === null };
+    ctx.merkeUndo(undo);
+    ctx.pruefpunkt("vor-block");
     const gb = setzeBlock(z.gitGlobal, kennung(z.vault), block);
-    undo.blockGesetzt = true; undo.global = { vorher: gb.vorher, nachher: gb.nachher, dateiFehlte: gb.dateiFehlte };
+    undo.global.nachher = gb.nachher;
     ctx.merkeUndo(undo);
     // Wirkt die Einbindung? Die Einträge müssen aus der Datei je Vault kommen, solange die lokalen noch da sind.
     const o = gitLauf(z, ["config", "--show-origin", "--list", "-z"]);
@@ -173,10 +197,11 @@ export function wende(z, ctx) {
     undo.aufgeloest.push({ rel, ziel, hash: hashDatei(p) });
     ctx.merkeUndo(undo);
   }
+  ctx.pruefpunkt("nach-config");
   undo.gitConfig.hashNachher = hashDatei(konfigDatei);
   ctx.merkeUndo(undo);
   ctx.nachpruefenDaten = { verschieb: l.verschieb, offenVorher: l.offen };
-  return { status: "ok", anzahl: l.verschieb.length + l.remotes.length + l.verweise.length, details: { verschoben: l.verschieb.length, remotesEntfernt: l.remotes.length, verweiseAufgeloest: l.verweise.length, strukturell: l.struktur.length } };
+  return { status: "ok", anzahl: l.verschieb.length + l.remotes.length + l.verweise.length, details: { verschoben: l.verschieb.length, remotesEntfernt: l.remotes.length, verweiseAufgeloest: l.verweise.length, strukturell: l.struktur.length, abgelehnt: l.abgelehnt } };
 }
 
 // Wirkt es? Die verschobenen Schlüssel liefern über die Einbindung dieselben Werte in derselben Reihenfolge, und die Prüfung der Erlaubnisliste beanstandet sie nicht mehr.
@@ -206,12 +231,12 @@ export function zurueck(z, ctx, undo) {
   const konfigDatei = join(z.vault, ".git", "config");
   const jetzt = hashDatei(konfigDatei);
   const g = undo.gitConfig || {};
-  const unveraendert = g.hashNachher ? jetzt === g.hashNachher : false;
+  const unveraendert = jetzt !== null && (jetzt === g.hashNachher || jetzt === g.hashErwartet);
   const nichtGeaendert = g.hashVorher ? jetzt === g.hashVorher : false;
   if (g.sicherung && unveraendert) {
     // seit A2 unverändert → die ursprüngliche Datei Byte für Byte zurück
     const quelle = sicherungsPfad(z, g.sicherung);
-    if (existsSync(quelle)) { schreibeAtomar(konfigDatei, readFileSync(quelle), g.modus || 0o600); }
+    if (existsSync(quelle)) { schreibeAtomar(echtesDateiZiel(konfigDatei), readFileSync(quelle), g.modus || 0o600); }
   } else if (!nichtGeaendert) {
     // inzwischen anders: nur unsere Schlüssel einzeln zurückschreiben (nichts anderes anfassen)
     const aktuell = git ? (lokaleKonfiguration(git, z.vault, { home: z.home }) || []) : [];

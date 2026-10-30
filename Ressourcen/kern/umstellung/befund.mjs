@@ -13,10 +13,9 @@
 import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { homedir, tmpdir } from "node:os";
-import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { ALT_KIT_ORDNER, kernVersion, liesConfigRoh, istOrdnerName, pruefeVault, supportOrdner } from "../pfade.mjs";
-import { pruefeBackupPfad } from "../backup.mjs";
+import { pruefeBackupPfad, merkerDateiFuer } from "../backup.mjs";
 import { echtesGit, gitLesen, lokaleKonfiguration, werte, pruefungAlle, ordneSchluesselEin, zaehleFormen, formSchluessel, adressArt, lokaleRemotes, hooksPfadArt, gitVerzeichnis } from "./git-lage.mjs";
 import { pruefeEinstellungen, pruefeBekannteMaerkte, pruefeBefehleUndSkills, pruefeShellDateien, zeilenMitVerweis, nennt } from "./restverweise.mjs";
 import { mcpLage } from "./mcp-lage.mjs";
@@ -33,10 +32,9 @@ const falte = (s) => String(s).normalize("NFC").toLowerCase();
 const istObjekt = (x) => x && typeof x === "object" && !Array.isArray(x);
 const unxml = (s) => String(s).replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
 const mehrzahl = (n, eins, viele) => (n === 1 ? eins : viele);
-const kennung = (vault) => createHash("sha256").update(echt(vault)).digest("hex").slice(0, 16);
 // <Support>/backup/<Kennung>.json (Sicherungsordner „pfad“, bestätigtes Online-Ziel „remoteBestaetigt“) – fehlt die Datei, ist es {}
 function leseMerker(support, vault) {
-  try { const o = JSON.parse(readFileSync(join(support, "backup", `${kennung(vault)}.json`), "utf8")); return istObjekt(o) ? o : {}; } catch { return {}; }
+  try { const o = JSON.parse(readFileSync(merkerDateiFuer(vault, support), "utf8")); return istObjekt(o) ? o : {}; } catch { return {}; }
 }
 
 // Versionsvergleich „0.5.1“ < „1.0.0“ (Zahlenteile; unbekannt = 0)
@@ -195,7 +193,7 @@ export function erstelleBefund({ vault, home = homedir(), env = process.env, sup
         f("E10", "git-schluessel", "frage", "Versionsverlauf des Vaults", verschiebbar.length, "git-schluessel-verschieben", `Im Versionsverlauf dieses Vaults ${mehrzahl(verschiebbar.length, "ist eine persönliche Einstellung", "sind " + verschiebbar.length + " persönliche Einstellungen")} eingetragen, die Kortex aus Sicherheitsgründen sperrt (${namen.join(", ")}). Kortex kann ${mehrzahl(verschiebbar.length, "sie", "sie")} in deine persönlichen Einstellungen verschieben – sie gelten dann weiter nur für diesen Vault.`, { details: { schluessel: form(verschiebbar) } });
       }
       const struktur = rest.filter((n) => einteilung.strukturell.includes(formSchluessel(n))), wert = rest.filter((n) => einteilung.repoWert.includes(formSchluessel(n)));
-      if (struktur.length) f("E10", "git-struktur", "hinweis", "Versionsverlauf des Vaults", struktur.length, "info", `Der Versionsverlauf dieses Vaults hat ${mehrzahl(struktur.length, "eine Einstellung", struktur.length + " Einstellungen")}, die zu seinem Aufbau gehören (${[...new Set(struktur.map(formSchluessel))].join(", ")}). Kortex kann sie nicht verschieben: Der Vault arbeitet in Kortex ohne Versionsverlauf, bis er anders eingerichtet ist, zum Beispiel frisch aus der Online-Sicherung.`, { details: { schluessel: form(struktur) } });
+      if (struktur.length) f("E10", "git-struktur", "hinweis", "Versionsverlauf des Vaults", struktur.length, "info", `Der Versionsverlauf dieses Vaults hat ${mehrzahl(struktur.length, "eine Einstellung", struktur.length + " Einstellungen")}, die zu seinem Aufbau gehören oder nur als allgemeine Einstellung des Nutzers wirken (Einbindungen, Sicherheitsfreigaben) (${[...new Set(struktur.map(formSchluessel))].join(", ")}). Kortex kann sie nicht verschieben: Der Vault arbeitet in Kortex ohne Versionsverlauf, bis er anders eingerichtet ist, zum Beispiel frisch aus der Online-Sicherung.`, { details: { schluessel: form(struktur) } });
       if (wert.length) f("E10", "git-wert-ungueltig", "hinweis", "Versionsverlauf des Vaults", wert.length, "info", `Im Versionsverlauf dieses Vaults ${mehrzahl(wert.length, "hat eine Einstellung", wert.length + " Einstellungen haben")} einen Wert, den Kortex nicht akzeptiert (${[...new Set(wert.map(formSchluessel))].join(", ")}). Bitte korrigiere ${mehrzahl(wert.length, "sie", "sie")} von Hand.`, { details: { schluessel: form(wert) } });
     }
     // Kit-Ordner im Versionsverlauf (E2) und AGENTS.md (E23) – nur Unterbefehle, die keinen Treiber starten

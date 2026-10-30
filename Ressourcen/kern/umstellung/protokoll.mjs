@@ -7,7 +7,7 @@
 //     sicherungen/<zeit>/…   Kopien und Rückweg-Angaben MIT Werten (0600) – nur hier
 //     vor-kortex.bundle, probelauf.json, laeuft, bericht.txt
 //   Der Probelauf-Merker (probelauf.json) gilt nur für denselben Stand (Fingerabdruck, siehe pruefung.mjs).
-import { mkdirSync, writeFileSync, readFileSync, renameSync, rmSync, rmdirSync, copyFileSync, chmodSync, appendFileSync, existsSync, readdirSync, lstatSync, statSync, realpathSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync, renameSync, rmSync, rmdirSync, openSync, closeSync, copyFileSync, chmodSync, appendFileSync, existsSync, readdirSync, lstatSync, statSync, realpathSync } from "node:fs";
 import { join, dirname, relative } from "node:path";
 import { createHash } from "node:crypto";
 import { kennung } from "./ziele.mjs";
@@ -41,6 +41,25 @@ export function schreibeAtomar(ziel, inhalt, modus = 0o600) {
     chmodSync(tmp, m);
     renameSync(tmp, ziel);
   } catch (e) { try { rmSync(tmp, { force: true }); } catch { /* weg */ } throw e; }
+}
+
+// Wie git selbst schreibt: <Datei>.lock exklusiv anlegen (existiert sie schon, schreibt gerade jemand – dann KEIN Schreiben), Inhalt hineinschreiben, über die Datei umbenennen.
+// Für die globale git-Konfiguration des Nutzers (~/.gitconfig): ein gleichzeitig laufendes `git config --global` verliert so nichts. `inhalt === null` löscht die Datei (unter derselben Sperre).
+export function schreibeMitLock(ziel, inhalt, modus = 0o600) {
+  const lock = `${ziel}.lock`;
+  mkdirSync(dirname(ziel), { recursive: true });
+  let fd = null;
+  try { fd = openSync(lock, "wx", modus); } catch (e) { const f = new Error("git-config-gesperrt"); f.code = e && e.code; throw f; }
+  try {
+    if (inhalt === null) { closeSync(fd); fd = null; rmSync(ziel, { force: true }); rmSync(lock, { force: true }); return; }
+    writeFileSync(fd, inhalt); closeSync(fd); fd = null;
+    chmodSync(lock, modusVon(ziel, modus));
+    renameSync(lock, ziel);
+  } catch (e) {
+    if (fd !== null) { try { closeSync(fd); } catch { /* weg */ } }
+    try { rmSync(lock, { force: true }); } catch { /* weg */ }
+    throw e;
+  }
 }
 
 // Ein Verweis auf eine Datei (z. B. settings.json aus einem Dotfiles-Ordner) bleibt ein Verweis: geschrieben wird beim echten Ziel.

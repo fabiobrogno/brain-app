@@ -86,14 +86,20 @@ test("Kopierer: Rückfall auf den Nachbarordner und auf die volle Kopie (einspri
       if (versuche.length === 1) { const e = new Error("EXDEV"); e.code = "EXDEV"; throw e; }
       return kopiereVault(q, ziel, { art: "voll" });
     };
-    const r = await probelauf(z, { bestaetigt: true, kopierer });
+    // ohne ausdrückliche Zustimmung gibt es nie eine Kopie neben dem Vault (nur Temp): der zweite Versuch ist die volle Kopie in Temp
+    const r0 = await probelauf(z, { bestaetigt: true, kopierer });
+    assert.equal(r0.ok, true, JSON.stringify(r0.kriterien));
+    assert.equal(versuche.length, 2);
+    assert.ok(!versuche[1].ziel.startsWith(dirname(h.a.vault) + "/kortex-probelauf-"), "kein Nachbarordner ohne Zustimmung");
+    versuche.length = 0;
+    const r = await probelauf(z, { bestaetigt: true, kopierer, entscheidungen: { nachbarkopie: true } });
     assert.equal(r.ok, true, JSON.stringify(r.kriterien));
     assert.equal(versuche.length, 2);
     assert.ok(versuche[1].ziel.startsWith(dirname(h.a.vault) + "/kortex-probelauf-"), "zweiter Versuch im Nachbarordner");
     assert.ok(!readdirSync(dirname(h.a.vault)).some((n) => n.startsWith("kortex-probelauf-")), "der Nachbarordner ist wieder weg");
     const alle = [];
     const k2 = (q, ziel) => { alle.push(ziel); const e = new Error("EXDEV"); e.code = "EXDEV"; if (alle.length < 3) throw e; return kopiereVault(q, ziel, { art: "voll" }); };
-    const r2 = await probelauf(z, { bestaetigt: true, kopierer: k2 });
+    const r2 = await probelauf(z, { bestaetigt: true, kopierer: k2, entscheidungen: { nachbarkopie: true } });
     assert.equal(r2.kopieArt, "voll");
   } finally { h.weg(); }
 });

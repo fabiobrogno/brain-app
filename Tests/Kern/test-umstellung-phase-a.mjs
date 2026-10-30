@@ -153,7 +153,8 @@ test("Rückweg A4: eine inzwischen geänderte settings.json wird nicht überschr
     const rw = await zurueck(h, { schritte: ["A5", "A4", "A1"] });
     assert.equal(rw.ok, true);
     assert.equal(json(s).eigenerSchluessel, "meins", "geänderte settings.json bleibt");
-    assert.ok(!befehle(json(s)).some((x) => x.includes("kortex' hook")), "unsere Hook-Einträge sind trotzdem weg");
+    assert.ok(!befehle(json(s)).some((x) => x.includes("kortex' hook session-start")), "unser Hook-Eintrag ist trotzdem weg (und nur er: die schon vorher vorhandenen bleiben)");
+    assert.ok(befehle(json(s)).some((x) => x.includes("session-start.sh")), "der alte Eintrag ist wieder da");
     assert.ok(rw.hinweise.some((x) => x.startsWith("A4:")), JSON.stringify(rw.hinweise));
     assert.equal(json(m).meinSchluessel, 1, "fremder Schlüssel im Merker bleibt");
     assert.equal(json(m).pfad, undefined, "unser Pfad ist weg");

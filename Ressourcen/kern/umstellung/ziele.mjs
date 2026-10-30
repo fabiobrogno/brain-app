@@ -13,7 +13,7 @@
 //   launchAgents   Ordner der plist (Original: ~/Library/LaunchAgents; Probelauf: Ordner in Temp)
 //   schreibeClaude / schreibeMcp / launchctl   false im Probelauf: Claude-Einstellungen, MCP-Einträge und der Hintergrunddienst werden nicht verändert
 //   env            Basis der Umgebung für Kindprozesse (PATH und Testhaken, nie Zugangsdaten)
-import { realpathSync, lstatSync, readdirSync, mkdirSync, rmSync, existsSync } from "node:fs";
+import { realpathSync, lstatSync, readdirSync, mkdirSync, rmSync, existsSync, statfsSync } from "node:fs";
 import { join, resolve, dirname, isAbsolute } from "node:path";
 import { homedir } from "node:os";
 import { createHash } from "node:crypto";
@@ -23,13 +23,20 @@ import { echtesGit } from "./git-lage.mjs";
 import { erkenneProfile, profileAusPfaden } from "./profile.mjs";
 
 export const echt = (p) => { try { return realpathSync(p); } catch { return resolve(p); } };
-// Wie befund.mjs und backup.mjs: die ersten 16 Hex-Zeichen des SHA-256 des aufgelösten Vault-Pfads.
-export const kennung = (vault) => createHash("sha256").update(echt(vault)).digest("hex").slice(0, 16);
+// Kennung eines Vaults: die ersten 16 Hex-Zeichen des SHA-256 des KANONISCHEN Pfads (realpath.native: auf APFS in der Schreibweise des Dateisystems, also unabhängig davon, wie der
+// Pfad eingegeben wurde). Gleich in backup.mjs, befund.mjs und gemeinsam/sicherungsmerker.mjs. Übergang: Merker, die unter der früheren Kennung (JS-realpath) liegen, werden weiter
+// gefunden (kennungen() liefert beide, die neue zuerst; backup.mjs#merkerDateiFuer nimmt die vorhandene Datei).
+const hashPfad = (p) => createHash("sha256").update(p).digest("hex").slice(0, 16);
+export const kennungen = (vault) => {
+  const neu = (() => { try { return realpathSync.native(vault); } catch { return resolve(vault); } })();
+  return [...new Set([hashPfad(neu), hashPfad(echt(vault))])];
+};
+export const kennung = (vault) => kennungen(vault)[0];
 
 // Nur diese Variablen erbt ein Kindprozess (kein GIT_*, kein BRAIN_VAULT, keine Zugangsdaten); Testhaken nur, wenn sie gesetzt sind.
 const ERBEN = ["PATH", "LANG", "LC_ALL", "TMPDIR", "TERM", "NODE_TEST_CONTEXT", "KORTEX_KERN_UNSTABIL_ERLAUBT", "KORTEX_KERN_TEMP_WURZELN", "KORTEX_STARTER_PFAD",
   "KORTEX_VAULT_VERTRAUT", "BRAIN_TESTMODUS", "BRAIN_LAUNCHCTL", "BRAIN_CLAUDE", "KORTEX_CODEX_PROGRAMM", "BRAIN_GIT_PROGRAMM", "BRAIN_GIT_HOOKS_ERLAUBT", "BRAIN_TAGESLAUF_CACHE",
-  "BRAIN_EINMAL", "QMD_BIN", "FAKE_MCP_LOG", "FAKE_LAUNCHCTL_LOG"];
+  "BRAIN_EINMAL", "QMD_BIN", "FAKE_MCP_LOG", "FAKE_MCP_FAIL", "FAKE_LAUNCHCTL_LOG", "FAKE_LAUNCHCTL_FAIL", "FAKE_LAUNCHCTL_VORGELADEN"];
 const TESTIDENTITAET = ["GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"];
 export function basisUmgebung(env = process.env) {
   const aus = {};
@@ -119,6 +126,14 @@ export function ordnerGroesseGrob(wurzel, grenze = 200_000) {
   };
   lauf(wurzel);
   return bytes;
+}
+
+// Freier Platz (Bytes) auf dem Laufwerk von `pfad` (der Ordner muss nicht existieren: der nächste vorhandene Elternordner zählt). Tests setzen z.freierPlatz = (pfad) => Bytes.
+export function freierPlatz(z, pfad) {
+  if (typeof z.freierPlatz === "function") return z.freierPlatz(pfad);
+  let p = pfad;
+  for (let i = 0; i < 20 && !existsSync(p); i++) p = dirname(p);
+  try { const s = statfsSync(p); return Number(s.bavail) * Number(s.bsize); } catch { return Number.MAX_SAFE_INTEGER; }   // unbekannt: nicht blockieren
 }
 
 export function raeumeWeg(ordner) { try { rmSync(ordner, { recursive: true, force: true }); } catch { /* bleibt */ } }

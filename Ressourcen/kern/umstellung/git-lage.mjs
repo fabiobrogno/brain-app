@@ -77,7 +77,9 @@ export function formSchluessel(name) {
 //  strukturell: gehört zum Aufbau des Repositories, lässt sich nicht in die Konfiguration des Nutzers verschieben
 //  repo-wert:   remote.*/branch.*-Schlüssel mit einem unzulässigen Wert (kein Schlüssel des Nutzers)
 //  verschiebbar: alles übrige (Vorlieben und Programme des Nutzers, auch Schlüssel der Erlaubnisliste mit unzulässigem Wert)
-const STRUKTUR = [/^core\.(worktree|bare)$/, /^extensions\./, /^remote\.\*\.(promisor|partialclonefilter)$/, /^submodule\./];
+// Zu den strukturellen zählen auch Schlüssel, die sich NICHT in eine Datei je Vault verschieben lassen: include.path / includeIf.*.path (ein Pfad in einer Einbindung gilt relativ zur
+// einbindenden Datei und könnte auf Dateien im Vault zeigen) und Schlüssel, die nur als globale Einstellung des Nutzers wirken (safe.*, uploadpack.packObjectsHook).
+const STRUKTUR = [/^core\.(worktree|bare)$/, /^extensions\./, /^remote\.\*\.(promisor|partialclonefilter)$/, /^submodule\./, /^include\.path$/, /^includeif\.\*\.path$/, /^safe\./, /^uploadpack\.packobjectshook$/];
 const REPO_WERT = [/^remote\.\*\.(?:url|pushurl|fetch)$/, /^branch\.\*\.(?:remote|pushremote|merge|rebase|description|vscode-merge-base)$/];
 export function ordneSchluesselEin(formen) {
   const aus = { verschiebbar: [], strukturell: [], repoWert: [] };

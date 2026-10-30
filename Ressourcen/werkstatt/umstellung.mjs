@@ -15,8 +15,9 @@ import { starte, neueFrist } from "../gemeinsam/prozess.mjs";
 import { erkenneProfile } from "./profile.mjs";
 
 const FRIST_LESEN = 60_000;
-const FRIST_SCHREIBEN = 15 * 60_000;
-const BOOL = ["gitSchluessel", "verweiseAufloesen", "remoteEntfernen", "remoteBestaetigen", "hooksErsetzen", "mcpAnders", "dienstAnderer"];
+// länger als das Kopieren im Kern (KOPIE_FRIST_MS = 30 min) plus der Rest des Probelaufs
+export const FRIST_SCHREIBEN = 45 * 60_000;
+const BOOL = ["gitSchluessel", "verweiseAufloesen", "remoteEntfernen", "remoteBestaetigen", "hooksErsetzen", "mcpAnders", "dienstAnderer", "nachbarkopie"];
 const SCHRITT = /^A[0-9]$/;
 
 // Entscheidungen aus dem Body → "a=ja,b=nein,profile=<pfad>+<pfad>" (nur bekannte Schlüssel, nur Profile aus der erkannten Liste)
@@ -55,9 +56,11 @@ export function erzeugeUmstellung({ starter, support = null, vertrauen = null })
   // Fehler des Kerns (Exit 3 nicht bereit, 4 Vorbedingung, 5 läuft schon …) → HttpFehler mit dem Satz des Kerns
   function fehlerAus(r, j, was) {
     const meldung = j && typeof j.meldung === "string" ? j.meldung : null;
+    // „nicht vertraut“ (Exit 6, P5) und „läuft schon“ (Exit 5) sind verschiedene Lagen mit verschiedenen Sätzen – der feste Code des Kerns entscheidet, nicht der Exit-Code allein
+    if (r.code === 6 || (j && j.fehler === "nicht-vertraut")) return new HttpFehler(409, meldung || "Dieser Vault ist in Kortex noch nicht als deiner bestätigt. Bestätige ihn zuerst, dann geht die Umstellung.", { art: "nicht-vertraut", code: "nicht-vertraut" });
     if (r.code === 3) return new HttpFehler(409, meldung || "Kortex ist noch nicht ganz eingerichtet.", { art: "nicht-stabil", code: j && j.fehler });
     if (r.code === 4) return new HttpFehler(409, meldung || "Eine Voraussetzung fehlt.", { art: "vorbedingung", code: j && j.fehler });
-    if (r.code === 5) return new HttpFehler(409, meldung || "Es läuft gerade schon etwas.", { art: "belegt", code: j && j.fehler });
+    if (r.code === 5) return new HttpFehler(409, meldung || "Es läuft gerade schon etwas.", { art: "belegt", code: (j && j.fehler) || "laeuft-schon" });
     if (r.code === 2) return new HttpFehler(409, meldung || "Dieser Ordner ist kein Vault.", { keinVault: true });
     return new HttpFehler(502, `${was} hat nicht geklappt. Am Original wurde nichts Halbes hinterlassen.`, { code: j && j.fehler });
   }

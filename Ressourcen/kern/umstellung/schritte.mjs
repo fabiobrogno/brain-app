@@ -10,7 +10,7 @@ import { existsSync, readFileSync, readdirSync, mkdirSync, rmSync, rmdirSync, wr
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { ALT_KIT_ORDNER, liesConfigRoh } from "../pfade.mjs";
-import { uebernehmeOrdner, bestaetigeRemote, pruefeBackupPfad } from "../backup.mjs";
+import { uebernehmeOrdner, bestaetigeRemote, pruefeBackupPfad, merkerDateiFuer } from "../backup.mjs";
 import { findeClaude } from "../ernte.mjs";
 import { LABEL, bauePlist, profilAusPlist, launchctl, domain } from "../tageslauf/dienst.mjs";
 import { hooksPfadArt, adressArt } from "./git-lage.mjs";
@@ -21,7 +21,7 @@ import { spawnSync } from "node:child_process";
 
 const istObjekt = (x) => x && typeof x === "object" && !Array.isArray(x);
 const liesText = (p) => { try { return readFileSync(p, "utf8"); } catch { return null; } };
-const merkerDatei = (z) => join(z.support, "backup", `${kennung(z.vault)}.json`);
+const merkerDatei = (z) => merkerDateiFuer(z.vault, z.support);
 
 // ===================================================================================================================================
 // A1 — Sicherungsziel übernehmen
@@ -56,17 +56,17 @@ export const A1 = {
     if (!aufgaben.length) return { status: "nichts" };
     const datei = merkerDatei(z);
     const vorherText = liesText(datei);
-    const undo = { datei, vorherText, hashVorher: vorherText === null ? null : hashText(vorherText), gesetzt: {} };
+    // Was wir setzen WOLLEN, steht vor dem Schreiben in den Rückweg-Angaben: der Rückweg entfernt nur Schlüssel, die noch genau diesen Wert tragen (auch nach einem Absturz)
+    const undo = { datei, vorherText, hashVorher: vorherText === null ? null : hashText(vorherText), gesetzt: { ...(aufgaben.includes("pfad") ? { pfad: l.pfad } : {}), ...(aufgaben.includes("remote") ? { remoteBestaetigt: l.origin } : {}) } };
     ctx.merkeUndo(undo);
     if (aufgaben.includes("pfad")) {
       const r = uebernehmeOrdner(z.vault, l.pfad, { support: z.support });
       if (!r.ok) throw new Error("sicherungsordner-uebernehmen");
-      undo.gesetzt.pfad = l.pfad;
     }
     if (aufgaben.includes("remote")) {
       if (!bestaetigeRemote(z.vault, l.origin, { support: z.support })) throw new Error("remote-bestaetigen");
-      undo.gesetzt.remoteBestaetigt = l.origin;
     }
+    ctx.pruefpunkt("nach-schreiben");
     undo.hashNachher = hashDatei(datei);
     ctx.merkeUndo(undo);
     ctx.nachDaten = { gesetzt: undo.gesetzt, datei };
@@ -95,7 +95,7 @@ export const A1 = {
       if (jetztObj[k] !== v) continue;
       if (k in vorherObj) jetztObj[k] = vorherObj[k]; else delete jetztObj[k];
     }
-    if (Object.keys(jetztObj).length) schreibeAtomar(undo.datei, JSON.stringify(jetztObj) + "\n", 0o600); else rmSync(undo.datei, { force: true });
+    if (Object.keys(jetztObj).length) schreibeAtomar(undo.datei, JSON.stringify(jetztObj) + "\n", 0o600); else { rmSync(undo.datei, { force: true }); try { rmdirSync(join(undo.datei, "..")); } catch { /* nicht leer */ } }
     return { status: "ok", hinweise: ["merker-einzeln-zurueck"] };
   },
 };
@@ -156,6 +156,47 @@ const bakDateien = (profil) => {
   return aus;
 };
 
+// --- gezielte Umkehr der Hook-Einträge (A4-Rückweg bei inzwischen geänderter settings.json) --------------------------------------------------------------------------------
+// Aus der Sicherung vor A4 und dem Stand danach ergibt sich genau, was der Installer geändert hat: `neu` = Hook-Einträge, die er hinzugefügt oder umgeschrieben hat, `alt` = die
+// Einträge, die dafür weggefallen sind (mit Gruppe/Matcher und dem ganzen Hook-Objekt). Der Rückweg nimmt NUR `neu` heraus und setzt `alt` wieder ein – alles andere in der Datei bleibt.
+const hakenListe = (doc) => {
+  const aus = [];
+  for (const [ev, liste] of Object.entries(istObjekt(doc && doc.hooks) ? doc.hooks : {})) for (const g of Array.isArray(liste) ? liste : []) for (const h of Array.isArray(g && g.hooks) ? g.hooks : []) aus.push({ ev, matcher: g.matcher ?? null, hook: h });
+  return aus;
+};
+const hakenSchluessel = (x) => `${x.ev}\u0000${x.matcher ?? ""}\u0000${JSON.stringify(x.hook)}`;
+export function hakenDiff(vorher, nachher) {
+  const v = hakenListe(vorher), n = hakenListe(nachher);
+  const vs = new Set(v.map(hakenSchluessel)), ns = new Set(n.map(hakenSchluessel));
+  return {
+    neu: n.filter((x) => !vs.has(hakenSchluessel(x))), alt: v.filter((x) => !ns.has(hakenSchluessel(x))),
+    statusVorher: istObjekt(vorher && vorher.statusLine) ? vorher.statusLine : null, statusNachher: istObjekt(nachher && nachher.statusLine) ? nachher.statusLine : null,
+  };
+}
+export function hakenZurueck(doc, diff) {
+  doc.hooks = istObjekt(doc.hooks) ? doc.hooks : {};
+  for (const x of diff.neu) {
+    const liste = doc.hooks[x.ev];
+    if (!Array.isArray(liste)) continue;
+    for (const g of liste) {
+      if (!Array.isArray(g && g.hooks) || (g.matcher ?? null) !== x.matcher) continue;
+      const i = g.hooks.findIndex((h) => JSON.stringify(h) === JSON.stringify(x.hook));
+      if (i >= 0) { g.hooks.splice(i, 1); break; }
+    }
+    doc.hooks[x.ev] = liste.filter((g) => !(Array.isArray(g && g.hooks) && g.hooks.length === 0));
+    if (!doc.hooks[x.ev].length) delete doc.hooks[x.ev];
+  }
+  for (const x of diff.alt) {
+    if (hakenListe(doc).some((y) => hakenSchluessel(y) === hakenSchluessel(x))) continue;
+    const liste = (doc.hooks[x.ev] = Array.isArray(doc.hooks[x.ev]) ? doc.hooks[x.ev] : []);
+    const g = liste.find((y) => Array.isArray(y && y.hooks) && (y.matcher ?? null) === x.matcher);
+    if (g) g.hooks.push(x.hook); else liste.unshift({ ...(x.matcher === null ? {} : { matcher: x.matcher }), hooks: [x.hook] });
+  }
+  if (JSON.stringify(doc.statusLine ?? null) === JSON.stringify(diff.statusNachher)) { if (diff.statusVorher) doc.statusLine = diff.statusVorher; else delete doc.statusLine; }
+  if (istObjekt(doc.hooks) && !Object.keys(doc.hooks).length) delete doc.hooks;
+  return doc;
+}
+
 export function vorschauProfil(z, profil) {
   const r = kernSkript(z, INSTALL, [z.musterVault, "--vorschau", "--claude-home", profil.pfad]);
   const j = r.status === 0 ? jsonZeile(r.stdout) : null;
@@ -199,7 +240,9 @@ export const A4 = {
       if (r.status === 3) throw new Error("kein-stabiler-kern");
       if (r.status === 5) throw new Error("vault-nicht-vertraut");
       if (r.status !== 0) throw new Error("claude-hooks-fehlgeschlagen");
+      ctx.pruefpunkt("nach-install");
       eintrag.settings.hashNachher = hashDatei(settings);
+      try { eintrag.diff = hakenDiff(s ? JSON.parse(readFileSync(sicherungsPfad(z, s.rel), "utf8")) : {}, JSON.parse(readFileSync(settings, "utf8"))); } catch { eintrag.diff = null; }
       eintrag.befehleNachher = befehleStand(p.pfad);
       eintrag.bakNeu = bakDateien(p.pfad).filter((f) => !eintrag.bakVorher.includes(f)).map((f) => ({ pfad: f, hash: hashDatei(f) }));
       ctx.merkeUndo(undo);
@@ -225,10 +268,18 @@ export const A4 = {
         if (st.existierte && st.rel) stelleHer(settings, sicherungsPfad(z, st.rel), st.modus || 0o600); else rmSync(echtesDateiZiel(settings), { force: true });
         n++;
       } else {
-        // inzwischen von dir oder einem Programm geändert: nur unsere Einträge entfernen, nichts zurückspielen
-        const r = kernSkript(z, INSTALL, ["--entfernen", "--claude-home", e.pfad]);
-        hinweise.push(r.status === 0 ? "settings-geaendert-eintraege-entfernt" : "settings-geaendert");
-        n++;
+        // inzwischen von dir oder einem Programm geändert: gezielt umkehren – nur die Einträge entfernen, die der Installer eingetragen hat, die ersetzten alten wieder einsetzen,
+        // alles andere (auch Hooks, die schon vorher in neuer Form da waren) bleibt. Ohne Angaben (Absturz mitten im Schritt): nichts anfassen.
+        let doc = null;
+        try { doc = JSON.parse(readFileSync(settings, "utf8")); } catch { /* defekt */ }
+        // Absturz vor dem Vermerken des Stands (hashNachher/diff fehlen): die Änderung ergibt sich aus der Sicherung und dem jetzigen Stand
+        let diff = e.diff;
+        if (!diff && doc && !st.hashNachher) { try { diff = hakenDiff(st.existierte && st.rel ? JSON.parse(readFileSync(sicherungsPfad(z, st.rel), "utf8")) : {}, doc); } catch { diff = null; } }
+        if (doc && diff) {
+          schreibeAtomar(echtesDateiZiel(settings), JSON.stringify(hakenZurueck(doc, diff), null, 2) + "\n", st.modus || 0o600);
+          hinweise.push("settings-geaendert-gezielt-zurueck");
+          n++;
+        } else hinweise.push("settings-geaendert");
       }
       // Befehle
       const jetztB = befehleStand(e.pfad), vorher = e.befehleVorher || {}, nachher = e.befehleNachher || {};
@@ -237,6 +288,9 @@ export const A4 = {
         if (jetztB[name] !== h) continue;                                                   // von dir geändert: bleibt
         if (name in vorher) { const rel = e.befehleSicherung && e.befehleSicherung[name]; if (rel && vorher[name] !== h) stelleHer(datei, sicherungsPfad(z, rel)); }
         else rmSync(datei, { force: true });
+      }
+      for (const [name, rel] of Object.entries(e.befehleSicherung || {})) {             // ein von uns überschriebener, inzwischen gelöschter Befehl kommt aus der Sicherung wieder
+        if (!(name in jetztB) && rel) { mkdirSync(join(e.pfad, "commands"), { recursive: true }); stelleHer(join(e.pfad, "commands", name), sicherungsPfad(z, rel)); n++; }
       }
       for (const b of e.bakNeu || []) { if (hashDatei(b.pfad) === b.hash) rmSync(b.pfad, { force: true }); }
       if (e.befehleOrdnerNeu) { try { rmdirSync(join(e.pfad, "commands")); } catch { /* nicht leer */ } }
@@ -299,12 +353,17 @@ export const A6 = {
     const sich = sichereDatei(z, ctx.sicherungsDir, plistDatei(z), "dienst.vor-a6.plist");
     const merker = join(z.support, "dienst.json");
     const merkerSich = sichereDatei(z, ctx.sicherungsDir, merker, "dienst-json.vor-a6");
-    const undo = { plist: { rel: sich && sich.rel, hashVorher: sich && sich.hash, hashNachher: null, modus: modusVon(plistDatei(z)) }, merkerVorher: merkerSich ? merkerSich.rel : null, merkerHashVorher: merkerSich && merkerSich.hash, merkerHashNachher: null,
+    // Die neue plist vorher rendern: ihr Hash kommt als `hashErwartet` in die Rückweg-Angaben, damit der Rückweg sie auch erkennt, wenn `dienst an` mitten im Schreiben scheitert
+    // (hashNachher steht erst nach Erfolg fest). Im Fehlerfall desselben Laufs stellt der Rückweg ohnehin immer aus der Sicherung her (ctx.imFehler).
+    const erwartet = bauePlist({ starter: z.starter, node: z.node, claude: findeClaude({ env: z.env, home: z.home }), profilRoh: l.profil, home: z.home, support: z.festSupport });
+    const undo = { plist: { rel: sich && sich.rel, hashVorher: sich && sich.hash, hashNachher: null, hashErwartet: hashText(erwartet.text), modus: modusVon(plistDatei(z)) },
+      merkerVorher: merkerSich ? merkerSich.rel : null, merkerHashVorher: merkerSich ? merkerSich.hash : null, merkerHashNachher: null,
       geladenVorher: launchctl(["print", `${domain()}/${LABEL}`]) };
     ctx.merkeUndo(undo);
     const r = kernSkript(z, "brain.mjs", ["dienst", "an", "--vault", z.vault], { extraEnv: l.profil ? { CLAUDE_CONFIG_DIR: l.profil } : {} });
     if (r.status === 5) throw new Error("vault-nicht-vertraut");
     if (r.status !== 0) throw new Error("dienst-an-fehlgeschlagen");
+    ctx.pruefpunkt("nach-dienst");
     undo.plist.hashNachher = hashDatei(plistDatei(z));
     undo.merkerHashNachher = hashDatei(merker);
     ctx.merkeUndo(undo);
@@ -323,18 +382,25 @@ export const A6 = {
     const hinweise = [];
     if (!undo || !undo.plist) return { status: "nichts", hinweise };
     const datei = plistDatei(z), jetzt = hashDatei(datei), p = undo.plist;
+    const erzwingen = ctx && ctx.imFehler === true;                          // der Schritt ist in diesem Lauf gescheitert: immer aus der Sicherung herstellen
     let n = 0;
+    const text = liesText(datei);
+    const siehtNeuAus = text !== null && z.starter && text.includes(z.starter) && !analysierePlist(text, [z.vault, z.musterVault]).alt;
+    const unsere = jetzt !== null && (jetzt === p.hashNachher || jetzt === p.hashErwartet || (p.hashNachher === null && siehtNeuAus));
     if (jetzt === p.hashVorher) { /* unverändert */ }
-    else if (p.hashNachher && jetzt === p.hashNachher) {
+    else if (erzwingen || unsere) {
       if (z.launchctl) launchctl(["bootout", `${domain()}/${LABEL}`]);
       if (p.rel) stelleHer(datei, sicherungsPfad(z, p.rel), p.modus || 0o644); else rmSync(datei, { force: true });
-      if (z.launchctl && p.rel && undo.geladenVorher) launchctl(["bootstrap", domain(), datei]);
+      if (z.launchctl && p.rel && undo.geladenVorher) {
+        if (!launchctl(["bootstrap", domain(), datei])) hinweise.push("dienst-nicht-geladen");
+      }
       n++;
     } else hinweise.push("plist-geaendert");
     // Dienst-Merker (dienst.json) auf den vorherigen Stand
     const merker = join(z.support, "dienst.json");
     const mj = hashDatei(merker);
-    if (undo.merkerHashNachher !== null && undo.merkerHashNachher !== undefined && mj === undo.merkerHashNachher && mj !== undo.merkerHashVorher) {
+    const merkerUnserer = mj !== undo.merkerHashVorher && (erzwingen || undo.merkerHashNachher === null || undo.merkerHashNachher === undefined || mj === undo.merkerHashNachher);
+    if (merkerUnserer) {
       if (undo.merkerVorher) stelleHer(merker, sicherungsPfad(z, undo.merkerVorher)); else rmSync(merker, { force: true });
       n++;
     }
