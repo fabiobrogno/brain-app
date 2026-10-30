@@ -36,6 +36,11 @@ FIXTURE="$W/Tests/Kern/fixture"
 [ -x "$ORIGINAL/Contents/MacOS/BrainApp" ] || { echo "FAIL: zuerst bash scripts/baue-app.sh"; exit 1; }
 [ -f "$ORIGINAL/Contents/Resources/werkstatt/werkstatt.mjs" ] || { echo "FAIL: werkstatt.mjs fehlt im Paket"; exit 1; }
 [ -f "$ORIGINAL/Contents/Resources/kern/brain.mjs" ] || { echo "FAIL: Kern fehlt im App-Paket (Contents/Resources/kern)"; exit 1; }
+# Lizenzhinweise (Drittanbieter) liegen im Paket: im Ressourcen-Ordner, neben der Oberfläche (Einstellungen → „Lizenzen …“) und mit dem Volltext der Node-Lizenz
+for lizenz in THIRD-PARTY-NOTICES.md studio/THIRD-PARTY-NOTICES.md LICENSE node-runtime/LICENSE; do
+  [ -s "$ORIGINAL/Contents/Resources/$lizenz" ] || { echo "FAIL: $lizenz fehlt im Paket (Lizenzhinweise)"; exit 1; }
+done
+grep -q "Sparkle 2" "$ORIGINAL/Contents/Resources/studio/THIRD-PARTY-NOTICES.md" || { echo "FAIL: Sparkle fehlt in den Lizenzhinweisen im Paket"; exit 1; }
 [ -f "$FIXTURE/brain.config.json" ] || { echo "FAIL: Tests/Kern/fixture fehlt"; exit 1; }
 # Eigene Kopie mit eigener Bundle-ID: Die Einstellungen und WebKit-Daten der installierten App bleiben unberührt, und ein
 # Neubau von build/Kortex.app während des Laufs stört nicht.

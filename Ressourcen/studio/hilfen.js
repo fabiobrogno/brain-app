@@ -1,4 +1,5 @@
 // Kleine DOM-Helfer, Dialoge, Toasts. Kein innerHTML mit fremden Daten.
+import { popoverOffen } from "./popover.js";
 export function h(tag, attrs, ...kinder) {
   const e = document.createElement(tag);
   if (attrs) for (const [k, v] of Object.entries(attrs)) {
@@ -52,7 +53,7 @@ export function dialog({ titel, rumpf, knoepfe = [], breit = false, beiSchliesse
     if (davor && document.contains(davor)) davor.focus?.();
   };
   const taste = (e) => {
-    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); zu(); }
+    if (e.key === "Escape") { if (popoverOffen()) return; e.preventDefault(); e.stopPropagation(); zu(); } // ein offenes Popover (Auswahl, Datum, Menü) schließt zuerst
     else if (e.key === "Tab") {
       const f = [...box.querySelectorAll("button:not(:disabled), input, textarea, select, [tabindex='0']")].filter((x) => x.offsetParent !== null);
       if (!f.length) return;

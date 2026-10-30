@@ -55,20 +55,29 @@ test("symbol(): jedes Symbol hat das 16er-Raster und in jeder Größe 1,5 px Str
   expect(r.anzahl).toBeGreaterThan(60);
 });
 
-test("symbol(\"marke\"): das Netz-K der App (fünf Knoten, ein Linienzug), nicht mehr das alte Kästchen mit Dreieck", async ({ page }) => {
+test("symbol(\"marke\"): die Windung der App (eine durchgehende Linie aus vier Bahnen, keine Knoten), oben/unten spiegelgleich, im 16er Raster", async ({ page }) => {
   await start(page);
   const r = await page.evaluate(async () => {
     const m = await import("/symbole.js");
     const s = m.symbol("marke", 56);
-    const k = [...s.querySelectorAll("circle")].map((c) => ({ x: Number(c.getAttribute("cx")), y: Number(c.getAttribute("cy")), r: Number(c.getAttribute("r")) }));
-    return { kreise: k, pfade: s.querySelectorAll("path").length };
+    document.body.append(s);
+    const pfad = s.querySelector("path");
+    const b = pfad.getBBox();
+    const d = pfad.getAttribute("d");
+    s.remove();
+    return { kreise: s.querySelectorAll("circle").length, pfade: s.querySelectorAll("path").length, d, box: { x: b.x, y: b.y, w: b.width, h: b.height } };
   });
-  expect(r.kreise).toHaveLength(5);
-  expect(r.pfade).toBe(1);
-  const kern = r.kreise.reduce((a, b) => (b.r > a.r ? b : a));
-  expect(r.kreise.filter((k) => k.r === kern.r)).toHaveLength(1); // ein großer Kern
-  expect(kern.x).toBeLessThan(8); // Kern links, Arme rechts (wie das K im Icon)
-  for (const k of r.kreise) expect(k.x - k.r >= 0 && k.x + k.r <= 16 && k.y - k.r >= 0 && k.y + k.r <= 16).toBe(true);
+  expect(r.kreise).toBe(0); // nicht mehr das Netz aus Knoten
+  expect(r.pfade).toBe(1); // ein durchgehender Strang
+  expect(r.d.match(/M/g)).toHaveLength(1);
+  expect(r.d.match(/a[\d.]+ [\d.]+ 0 [01][01]/gi)).toHaveLength(3); // drei Wendungen: vier Bahnen
+  const rand = 0.75; // halbe Strichstärke im Raster
+  expect(r.box.x - rand).toBeGreaterThanOrEqual(0);
+  expect(r.box.x + r.box.w + rand).toBeLessThanOrEqual(16);
+  expect(r.box.y - rand).toBeGreaterThanOrEqual(0);
+  expect(r.box.y + r.box.h + rand).toBeLessThanOrEqual(16);
+  expect(Math.abs(r.box.x + r.box.w / 2 - 8)).toBeLessThan(0.05); // waagerecht und senkrecht mittig
+  expect(Math.abs(r.box.y + r.box.h / 2 - 8)).toBeLessThan(0.05);
 });
 
 test("Marken-Logo GitHub: Pfad stimmt mit Ressourcen/logos/github.svg überein, Bild mit Namen, unbekannte Marke liefert nichts", async ({ page }) => {
@@ -122,9 +131,20 @@ test("Remote-Dialog: bei einer GitHub-Adresse steht deren Logo im Kopf, sonst di
   await expect(kopf.locator(".marken-logo")).toHaveCount(0);
 });
 
+// Nach dem Start lädt die App noch Git-Stand, Gesundheit, KI und Vault-Liste nach; jede Antwort zeichnet die Statusleiste NEU (replaceChildren,
+// in der Regel vier- bis fünfmal in den ersten ~500 ms). Ein Element, das der Test eben fokussiert hat, hängt dann plötzlich nicht mehr im
+// Dokument (getComputedStyle liefert "" statt "none"). Darum erst messen, wenn die App ruhig ist: Start abgeschlossen, keine Anfrage mehr
+// unterwegs (Playwright: networkidle), und die Antworten sind verarbeitet (zwei Frames). Geprüft wird danach genau dasselbe wie vorher.
+async function warteBisRuhig(page) {
+  await page.waitForFunction(() => window.__studioBereit === true);
+  await page.waitForLoadState("networkidle");
+  await page.evaluate(() => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok))));
+}
+
 test("Fokus: Tastaturfokus auf Seitenleiste, Werkzeug und Statusleiste zeigt denselben Ring (kein Standard-Umriss)", async ({ page }) => {
   await start(page);
-  await page.waitForLoadState("networkidle"); // die Statusleiste zeichnet sich nach den letzten Antworten neu: erst danach fokussieren, sonst geht der Fokus verloren
+  await warteBisRuhig(page);
+  await expect(page.locator('[data-st="theme"]')).toBeVisible(); // die Statusleiste ist vollständig gezeichnet
   for (const sel of ['.eintrag[data-bereich]', "#knopf-neu", '[data-st="theme"]']) {
     const el = page.locator(sel).first();
     await el.focus();

@@ -17,13 +17,28 @@ public enum NodeUmgebung {
     /// selbst für `--test-skript`; an Kindprozesse geht er nur in Debug-Builds — ein Release-Build gibt ihn nie weiter, auch nicht,
     /// wenn der Starter ihn gesetzt hat.
     static let testmodusName = "BRAIN_TESTMODUS"
-    /// Weitere Testschalter des Kerns und der Werkstatt, die Schutzmaßnahmen abschalten (`KORTEX_VAULT_VERTRAUT=alle` macht jeden Vault
-    /// vertraut, `KORTEX_KERN_UNSTABIL_ERLAUBT` erlaubt unbeständige Kern-Pfade, die übrigen biegen Starter, Temp-Wurzeln, git und Hook-Ordner
-    /// um). Wie der Testmodus gehen sie nur in Debug-Builds an Kindprozesse; ein Release-Build entfernt sie aus der geerbten Umgebung und
-    /// aus den Vorgaben.
+    /// Weitere Testschalter des Kerns und der Werkstatt: Sie schalten Schutzmaßnahmen ab (`KORTEX_VAULT_VERTRAUT=alle` macht jeden Vault
+    /// vertraut, `KORTEX_KERN_UNSTABIL_ERLAUBT` erlaubt unbeständige Kern-Pfade), ersetzen Programme, Skripte, Module, Zeitwerte und
+    /// Messdateien durch Attrappen (`BRAIN_LAUNCHCTL`, `BRAIN_CLAUDE`, `BRAIN_*_SKRIPT`, `BRAIN_OEFFNER` …) oder biegen Starter,
+    /// Temp-Wurzeln, die Versionsverwaltung und Hook-Ordner um. Wie der Testmodus gehen sie nur in Debug-Builds an Kindprozesse; ein
+    /// Release-Build entfernt sie aus der geerbten Umgebung und aus den Vorgaben.
+    ///
+    /// Neue Testhaken MÜSSEN hier eingetragen werden: `NodeUmgebungTests.testSchalterListeDecktAlleNamenInRessourcenAb` gleicht die Liste
+    /// gegen alle `BRAIN_*`/`KORTEX_*`-Namen in `Ressourcen/**` ab und schlägt bei jedem unbekannten Namen an. Eine Variable, die auch im
+    /// Betrieb gebraucht wird (z. B. `BRAIN_VAULT`, `BRAIN_ERNTE`), gehört NICHT hierher, sondern in die Betriebsliste dieses Tests.
     static let testSchalter: Set<String> = [
         "KORTEX_VAULT_VERTRAUT", "KORTEX_KERN_UNSTABIL_ERLAUBT", "KORTEX_STARTER_PFAD", "KORTEX_KERN_TEMP_WURZELN",
         "BRAIN_GIT_PROGRAMM", "BRAIN_GIT_HOOKS_ERLAUBT", "KORTEX_DIENST_PLATTFORM",
+        // Programme, Skripte und Module durch Attrappen ersetzen
+        "BRAIN_LAUNCHCTL", "BRAIN_CLAUDE", "BRAIN_CLAUDE_EXTRA", "KORTEX_CODEX_PROGRAMM", "BRAIN_OEFFNER", "BRAIN_HINT_SEARCH_MODULE",
+        "BRAIN_ANTWORT_SKRIPT", "BRAIN_ERNTE_SKRIPT", "BRAIN_LEKTIONEN_SKRIPT", "BRAIN_W7_SKRIPT", "BRAIN_PFLEGELAUF_SKRIPT",
+        "BRAIN_TAGESLAUF_SKRIPT", "BRAIN_LINT_SKRIPT", "BRAIN_DIENST_LIB",
+        // Orte, Quellen und Messdateien umlenken
+        "BRAIN_TAGESLAUF_CACHE", "BRAIN_QUELLE", "BRAIN_EVAL_DATEI", "BRAIN_EVAL_ZIEL", "BRAIN_IOREG_DATEI", "BRAIN_PMSET_DATEI",
+        "BRAIN_GITHUB_API", "BRAIN_GITHUB_BASIS", "BRAIN_GITHUB_HELPER", "BRAIN_APP_VERSION",
+        // Verhalten und Zeiten für Tests umschalten
+        "BRAIN_EINMAL", "BRAIN_KONTEN_START", "BRAIN_SESSION_NUR_STATUS", "BRAIN_NODE_KEINE_ORTE", "BRAIN_DIENST_AUS",
+        "BRAIN_DIENST_IDLE_MS", "BRAIN_DIENST_KARENZ_MS", "BRAIN_DIENST_LEERLAUF_MS", "BRAIN_DIENST_RUHE_MS",
     ]
     /// Marke der Vorschau (`VorschauModus.kindVorgaben`): Wer sie als Vorgabe setzt, bekommt keine Standardordner im PATH.
     /// Aus der geerbten Umgebung fliegt sie raus (`gesperrt`) — sie kommt nur von der App selbst.

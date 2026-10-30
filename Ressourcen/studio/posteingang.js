@@ -6,6 +6,7 @@ import { api } from "./api.js";
 import { h, dialog, dialogOffen, toast, dateiName, ohneEndung, sucheGrad } from "./hilfen.js";
 import { symbol } from "./symbole.js";
 import { oeffneMenue } from "./menue.js";
+import { textfeld, auswahl, segment, knopf as baueKnopf } from "./bausteine.js";
 import { datumKurz } from "./format.js";
 
 const P = T.posteingang;
@@ -61,16 +62,18 @@ export function oeffneUebernehmen(n, ctx) {
   const bereiche = ctx.wikiBereiche();
   let modus = seiten.length ? "seite" : "neu", gewaehlt = null;
   const fehlerEl = h("div", { klasse: "fehlertext", hidden: true, role: "alert" });
-  const suche = h("input", { type: "text", "data-feld": "seitensuche", placeholder: P.seiteSuchen, autocomplete: "off", "aria-label": P.seiteSuchen });
+  const sucheFeld = textfeld({ typ: "search", platzhalter: P.seiteSuchen, label: P.seiteSuchen, daten: { "data-feld": "seitensuche" } });
+  const suche = sucheFeld.input;
   const liste = h("div", { klasse: "pe-seiten", role: "listbox", "aria-label": P.seiteWaehlen });
-  const neuTitel = h("input", { type: "text", "data-feld": "neuTitel", value: n.titel || "", placeholder: P.neuTitel, "aria-label": P.neuTitel });
-  const bereich = h("select", { "data-feld": "bereich", "aria-label": P.neuBereich },
-    (bereiche.length ? bereiche : ["wissen"]).map((b) => h("option", { value: b, selected: b === "wissen", text: b })));
-  const ok = h("button", { klasse: "knopf primaer", "data-aktion": "uebernehmen-ok", disabled: true, text: P.uebernehmenOk, aufClick: () => tun() });
-  const seiteBox = h("div", { klasse: "pe-modus", "data-modus-box": "seite" }, suche, liste);
+  const neuFeld = textfeld({ wert: n.titel || "", platzhalter: P.neuTitel, label: P.neuTitel, daten: { "data-feld": "neuTitel" } });
+  const neuTitel = neuFeld.input;
+  const bereich = auswahl({ optionen: (bereiche.length ? bereiche : ["wissen"]).map((b) => ({ wert: b, text: b, symbol: "ordner" })), wert: "wissen", label: P.neuBereich, breit: true, daten: { "data-feld": "bereich" } });
+  const ok = baueKnopf({ text: P.uebernehmenOk, variante: "primaer", aktion: "uebernehmen-ok", aufKlick: () => tun() });
+  ok.disabled = true;
+  const seiteBox = h("div", { klasse: "pe-modus", "data-modus-box": "seite" }, sucheFeld.el, liste);
   const neuBox = h("div", { klasse: "pe-modus", "data-modus-box": "neu" },
-    h("div", { klasse: "feld" }, h("label", { text: P.neuTitel }), neuTitel), h("div", { klasse: "feld" }, h("label", { text: P.neuBereich }), bereich));
-  const schalter = ["seite", "neu"].map((m) => h("button", { type: "button", klasse: "pe-reiter", "data-modus": m, text: m === "seite" ? P.bestehend : P.neu, aufClick: () => setze(m) }));
+    h("div", { klasse: "feld" }, h("label", { text: P.neuTitel }), neuFeld.el), h("div", { klasse: "feld" }, h("label", { text: P.neuBereich }), bereich));
+  const schalter = segment({ optionen: [{ wert: "seite", text: P.bestehend, daten: { "data-modus": "seite" } }, { wert: "neu", text: P.neu, daten: { "data-modus": "neu" } }], wert: modus, label: P.uebernehmen, aufAenderung: (m) => setze(m) });
 
   const zeichneListe = () => {
     const q = suche.value.trim();
@@ -82,7 +85,7 @@ export function oeffneUebernehmen(n, ctx) {
   const pruefe = () => { ok.disabled = modus === "seite" ? !gewaehlt : !neuTitel.value.trim(); };
   const setze = (m) => {
     modus = m;
-    schalter.forEach((s) => s.setAttribute("aria-pressed", String(s.dataset.modus === m)));
+    schalter.value = m;
     seiteBox.hidden = m !== "seite"; neuBox.hidden = m !== "neu";
     pruefe();
     (m === "seite" ? suche : neuTitel).focus();
@@ -107,8 +110,8 @@ export function oeffneUebernehmen(n, ctx) {
     } finally { laeuft.delete(n.pfad); }
   };
   const d = dialog({ titel: P.uebernehmenTitel(n.titel || P.ohneTitel), breit: true,
-    rumpf: [h("div", { klasse: "pe-reiter-leiste", role: "group" }, schalter), seiteBox, neuBox, h("p", { klasse: "leise", text: P.uebernehmenHinweis }), fehlerEl],
-    knoepfe: [h("button", { klasse: "knopf", text: T.commit.abbrechen, "data-aktion": "abbrechen", aufClick: () => d.schliessen() }), ok] });
+    rumpf: [h("div", { klasse: "pe-reiter-leiste" }, schalter), seiteBox, neuBox, h("p", { klasse: "leise", text: P.uebernehmenHinweis }), fehlerEl],
+    knoepfe: [baueKnopf({ text: T.commit.abbrechen, aktion: "abbrechen", aufKlick: () => d.schliessen() }), ok] });
   suche.addEventListener("input", zeichneListe);
   neuTitel.addEventListener("input", pruefe);
   for (const el of [suche, neuTitel]) el.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); tun(); } });

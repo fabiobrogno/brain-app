@@ -1,6 +1,7 @@
 // Einstieg ohne Vault: Willkommen-Karte (vier Wege), Name/Ort, Klonen, Versionsverlauf-Rückfrage, KI verbinden.
 // Wird per dynamischem import() geladen und hat beim Import keine Nebenwirkungen.
 import { h, dialog, speichereLokal, leseLokal, arbeitBeginnt } from "./hilfen.js";
+import { textfeld } from "./bausteine.js";
 import * as API from "./api.js";
 import { symbol } from "./symbole.js";
 import { kiLogo } from "./ki-logos.js";
@@ -75,14 +76,15 @@ function pfadDialog(titel) {
     const host = document.getElementById("willkommen-host");
     const davor = document.activeElement;
     const id = nid("w-pfad");
-    const eingabe = h("input", { type: "text", id: `${id}-feld`, autocomplete: "off", spellcheck: "false", placeholder: TW.pfad.platzhalter, "aria-describedby": `${id}-hilfe`, "data-feld": "pfad" });
+    const pfadFeld = textfeld({ id: `${id}-feld`, platzhalter: TW.pfad.platzhalter, beschreibung: `${id}-hilfe`, daten: { "data-feld": "pfad" } });
+    const eingabe = pfadFeld.input;
     const fehler = h("div", { klasse: "fehlertext", role: "alert" });
     const abbrechen = h("button", { klasse: "knopf", type: "button", "data-aktion": "pfad-abbrechen", text: TW.abbrechen });
     const uebernehmen = h("button", { klasse: "knopf primaer", type: "button", "data-aktion": "pfad-uebernehmen", text: TW.pfad.uebernehmen });
     const box = h("div", { klasse: "w-modal", role: "dialog", "aria-modal": "true", "aria-labelledby": `${id}-titel`, "data-schritt": "pfad" },
       h("h2", { id: `${id}-titel`, text: titel || TW.pfad.titel }),
       h("div", { klasse: "feld" },
-        h("label", { for: `${id}-feld`, text: TW.pfad.feld }), eingabe,
+        h("label", { for: `${id}-feld`, text: TW.pfad.feld }), pfadFeld.el,
         h("div", { klasse: "mini", id: `${id}-hilfe`, text: TW.pfad.hilfe })),
       fehler,
       h("div", { klasse: "w-modal-fuss" }, abbrechen, uebernehmen));
@@ -517,7 +519,8 @@ async function starteKarte({ modus = "start", beiFertig, beiAbbruch, beiStandNeu
     const titelId = nid("w-t");
     const meldung = h("div", { klasse: "w-meldung", "aria-live": "polite" });
     const feldId = nid("w-f");
-    const eingabe = h("input", { type: "text", id: feldId, value: z.name ?? TW.name.vorgabe, autocomplete: "off", spellcheck: "false", maxlength: "80", "data-feld": "name" });
+    const nameFeld = textfeld({ id: feldId, wert: z.name ?? TW.name.vorgabe, maxlaenge: 80, daten: { "data-feld": "name" } });
+    const eingabe = nameFeld.input;
     const ortPfad = h("b", { text: kurzPfad(z.ordner) });
     const hilfe = h("p", { klasse: "mini w-hilfe", text: TW.name.freigabe });
     hilfe.hidden = !!z.ordner;
@@ -534,7 +537,7 @@ async function starteKarte({ modus = "start", beiFertig, beiAbbruch, beiStandNeu
           h("h2", { klasse: "w-titel klein", id: titelId, text: t.titel }),
           h("p", { klasse: "w-untertitel", text: t.text })),
         h("div", { klasse: "w-formular" },
-          h("div", { klasse: "feld" }, h("label", { for: feldId, text: TW.name.feld }), eingabe),
+          h("div", { klasse: "feld" }, h("label", { for: feldId, text: TW.name.feld }), nameFeld.el),
           h("div", { klasse: "w-ort" }, h("span", { klasse: "w-ort-symbol" }, symbol("ordner", 16)), h("span", { klasse: "w-ort-text" }, `${TW.name.ortVor} `, ortPfad), wechseln),
           hilfe, knopf),
         meldung),
@@ -562,7 +565,8 @@ async function starteKarte({ modus = "start", beiFertig, beiAbbruch, beiStandNeu
     const titelId = nid("w-t");
     const meldung = h("div", { klasse: "w-meldung", "aria-live": "polite" });
     const feldId = nid("w-f");
-    const eingabe = h("input", { type: "text", id: feldId, value: z.url || null, autocomplete: "off", spellcheck: "false", autocapitalize: "off", placeholder: TW.klonen.urlPlatzhalter, "data-feld": "url" });
+    const urlFeld = textfeld({ id: feldId, wert: z.url || "", platzhalter: TW.klonen.urlPlatzhalter, daten: { "data-feld": "url" } });
+    const eingabe = urlFeld.input;
     const ortPfad = h("b", { text: kurzPfad(z.ordner) });
     const wechseln = h("button", { klasse: "knopf", type: "button", "data-aktion": "ordner-wechseln", text: TW.klonen.andererOrdner, aufClick: async () => {
       const p = await waehleOrdner(TW.klonen.dialogTitel);
@@ -577,7 +581,7 @@ async function starteKarte({ modus = "start", beiFertig, beiAbbruch, beiStandNeu
           h("h2", { klasse: "w-titel klein", id: titelId, text: TW.klonen.titel }),
           h("p", { klasse: "w-untertitel", text: TW.klonen.text })),
         h("div", { klasse: "w-formular" },
-          h("div", { klasse: "feld" }, h("label", { for: feldId, text: TW.klonen.urlFeld }), eingabe),
+          h("div", { klasse: "feld" }, h("label", { for: feldId, text: TW.klonen.urlFeld }), urlFeld.el),
           h("div", { klasse: "feld" }, h("label", { text: TW.klonen.zielFeld }),
             h("div", { klasse: "w-ort" }, h("span", { klasse: "w-ort-symbol" }, symbol("ordner", 16)), h("span", { klasse: "w-ort-text" }, `${TW.klonen.ortVor} `, ortPfad), wechseln)),
           h("p", { klasse: "mini w-hilfe", text: TW.klonen.anmeldung }),

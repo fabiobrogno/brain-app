@@ -52,7 +52,7 @@ Ein Konto ist ein **Programm plus Konfig-Ordner**. Kortex erkennt es selbst, der
   "konten": {
     "k_3f9a1c07": {
       "programm": "claude",                 // claude | codex | cursor | gemini (ids wie gemeinsam/ki.mjs#AGENTEN)
-      "ordner": "/Users/x/.claude-privat",  // realpath, kein Symlink (Regel aus profile.mjs)
+      "ordner": "/Users/x/.claude-<profil>",  // realpath, kein Symlink (Regel aus profile.mjs)
       "standard": false,                    // true = ~/.claude bzw. ~/.codex: Umgebungsvariable NICHT setzen
       "name": "Privat",                     // vom Nutzer, max. 40 Zeichen; Vorschlag aus dem Ordnernamen („privat“)
       "abo": "max",                         // optional: pro | max | team | enterprise | api | unbekannt (nur Anzeige, Kostenhinweis)
@@ -175,13 +175,13 @@ Der Tageslauf nimmt für **den Vault, den er gerade bearbeitet**, `vaults[v].pfl
 ## 3. UI
 
 ### 3.1 Studio → Einstellungen → „KI-Konten …“ (neues Modul `studio/ki-konten.js`, wird bei Bedarf geladen wie `umstellung.js`)
-- **Liste der Konten:** Logo (`ki-logos.js`), Name (umbenennbar), Programm, Ordner kurz (`~/.claude-privat`), Abo (optional), Zustand in Punkten: *verbunden* (MCP eingetragen), *Helfer* (Hooks), *Sperre in Claude Code aktiv* (Deny-Regeln vorhanden und aktuell). „Neu suchen“, „Verbinden/Trennen“ je Zeile. Die Logik von `willkommen.js#oeffneKiDialog` wird übernommen und je Konto statt je Programm angezeigt.
+- **Liste der Konten:** Logo (`ki-logos.js`), Name (umbenennbar), Programm, Ordner kurz (`~/.claude-<profil>`), Abo (optional), Zustand in Punkten: *verbunden* (MCP eingetragen), *Helfer* (Hooks), *Sperre in Claude Code aktiv* (Deny-Regeln vorhanden und aktuell). „Neu suchen“, „Verbinden/Trennen“ je Zeile. Die Logik von `willkommen.js#oeffneKiDialog` wird übernommen und je Konto statt je Programm angezeigt.
 - **Je-Vault-Ansicht „Wer darf diesen Vault sehen?“** (Standard, weil man meist an einen Vault denkt): je Konto ein Segment *Gesperrt · Lesen · Posteingang · Erweitert*, darunter „Neue Konten: gesperrt / lesen“. Ab 2 Vaults × 2 Konten gibt es zusätzlich eine Matrix-Ansicht (Konten × Vaults, gleiche Segmente als kompakte Auswahl).
 - **Sperren** öffnet einen Bestätigungsdialog mit genauem Text:
   > **Was Kortex sperrt:** Dieses Konto findet den Vault nicht mehr über Kortex (Suche, Lesen, Hinweise beim Fragen, Kortex-Befehle, Ernte, Pflege, Fragefeld). In Claude Code trägt Kortex zusätzlich ein Leseverbot für den Ordner ein.
   > **Was das nicht verhindert:** Shell-Befehle, die Dateien selbst öffnen (außer mit „Strenger Schutz“), andere MCP-Server, Codex/Cursor/Gemini außerhalb von Kortex, und dich selbst am Terminal. Für eine echte Trennung nutze einen eigenen macOS-Benutzer.
 - **Pflege** (im selben Bereich je Vault): „Pflege läuft über [Konto ▾] · Stufe [Klein · Mittel · Ohne KI]“. Angeboten werden nur Konten mit `erweitert`. Wählt man ein Konto mit niedrigerer Stufe, fragt Kortex einmal nach und hebt die Stufe an.
-- Begriffe: „Kortex“, „Vault“, „KI-Konto“, „Posteingang“. Kein „Profil“ in der UI, außer als Erklärung („Claude-Code-Profil ~/.claude-privat“).
+- Begriffe: „Kortex“, „Vault“, „KI-Konto“, „Posteingang“. Kein „Profil“ in der UI, außer als Erklärung („Claude-Code-Profil ~/.claude-<profil>“).
 
 ### 3.2 Einrichtungsassistent, Schritt `.ki`
 - `ProfilAuswahl` wird zu `KontenAuswahl`: Erkannte Konten mit Namensfeld (vorbelegt), Häkchen „darf diesen Vault sehen“ (Standard: das erste/aktuelle Konto an, weitere aus, nach Entscheidung 1). Bei angehakten Konten ein kleiner Stufenwähler (Standard Posteingang).

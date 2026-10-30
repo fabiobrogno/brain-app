@@ -69,6 +69,21 @@ export function erzeugeAufgaben(deps) {
     } catch (err) { throw uebersetze(m, err); }
   }
 
+  // POST: erledigte Aufgabe(n) ins Archiv (<aufgaben-ordner>/archiv/) verschieben — nichts wird gelöscht. e: { pfad } für eine einzelne Aufgabe oder
+  // { aelterAlsTage } für alle erledigten, die länger nicht geändert wurden (Standard 30). Der Pfad kommt von außen und wird geschützt; geschrieben wird nur in einen vertrauten Vault.
+  async function archivieren(e) {
+    const m = await kernModul();
+    if (!e || typeof e !== "object") throw new HttpFehler(400, "Die Eingabe fehlt.");
+    const einzeln = e.pfad !== undefined;
+    if (einzeln && e.aelterAlsTage !== undefined) throw new HttpFehler(400, "Entweder eine Aufgabe (pfad) oder alle älteren (aelterAlsTage), nicht beides.");
+    const rel = einzeln ? loese(wurzel, e.pfad).rel : null;
+    vorSchreiben();
+    try {
+      if (einzeln) { const r = m.archiviere(wurzel, rel); return { archiviert: [{ von: r.von, pfad: r.pfad }], uebersprungen: 0 }; }
+      return m.archiviereAlte(wurzel, { tage: e.aelterAlsTage ?? m.ARCHIV_TAGE, jetzt: deps.jetzt() });
+    } catch (err) { throw uebersetze(m, err); }
+  }
+
   // Für MCP: Liste mit Filter (Status), nur das Nötige; und Status setzen über Pfad oder Dateiname.
   async function fuerKi({ status } = {}) {
     const m = await kernModul();
@@ -92,5 +107,5 @@ export function erzeugeAufgaben(deps) {
     try { return (await kernModul()).ordnerName(wurzel); } catch { return "05_aufgaben"; }
   }
 
-  return { aufgaben, anlegen, aendern, fuerKi, findePfad, vorSchreiben, ordnerName };
+  return { aufgaben, anlegen, aendern, archivieren, fuerKi, findePfad, vorSchreiben, ordnerName };
 }

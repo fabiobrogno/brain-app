@@ -25,7 +25,9 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - name: Toolchain anzeigen
         id: toolchain
         run: |
@@ -34,17 +36,20 @@ jobs:
           swift --version
           echo "xcode=$(xcodebuild -version | tr -s '\n ' '-')" >> "$GITHUB_OUTPUT"
       - name: SwiftPM-Cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: .build
           key: spm-release-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
           restore-keys: |
             spm-release-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-
       - name: Build
+        timeout-minutes: 15
         run: swift build
       - name: Test
+        timeout-minutes: 20
         run: swift test
       - name: App bauen (Node mit Prüfsumme)
+        timeout-minutes: 15
         run: bash scripts/baue-app.sh
       # Signieren + Notarisieren nur für Stable-Tags vX.Y.Z; Betas bleiben ad-hoc signiert.
       # workflow_dispatch mit signier_probe=true macht denselben Weg als Trockenlauf (--trocken, nichts wird signiert).
@@ -88,6 +93,7 @@ jobs:
           done
           exit "$fehlt"
       - name: Sparkle-Werkzeuge holen
+        timeout-minutes: 5
         if: steps.modus.outputs.signieren == 'ja'
         run: |
           set -euo pipefail
@@ -99,6 +105,7 @@ jobs:
           tar -xf "$D/s.tar.xz" -C "$D" ./bin
           echo "SPARKLE_BIN=$D/bin" >> "$GITHUB_ENV"
       - name: Schlüsselbund anlegen und Zertifikat importieren
+        timeout-minutes: 5
         if: steps.modus.outputs.signieren == 'ja'
         env:
           MACOS_CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
@@ -119,6 +126,7 @@ jobs:
           security list-keychains -d user -s "$KC" login.keychain-db
           echo "BRAIN_KEYCHAIN=$KC" >> "$GITHUB_ENV"
       - name: Signieren + notarisieren + DMG + Appcast
+        timeout-minutes: 30
         if: steps.modus.outputs.signieren == 'ja'
         env:
           BRAIN_SIGNIER_ID: ${{ secrets.BRAIN_SIGNIER_ID }}
@@ -139,6 +147,7 @@ jobs:
           # shellcheck disable=SC2086
           bash scripts/veroeffentlichen.sh $TROCKEN --app build/Kortex.app
       - name: Schlüssel und Schlüsselbund löschen
+        timeout-minutes: 5
         if: always() && steps.modus.outputs.signieren == 'ja'
         run: |
           rm -f "$RUNNER_TEMP/cert.p12" "$RUNNER_TEMP/notar.p8" "$RUNNER_TEMP/sparkle.key"
@@ -146,12 +155,53 @@ jobs:
             security delete-keychain "$BRAIN_KEYCHAIN" || true
             security list-keychains -d user -s login.keychain-db || true
           fi
+      # Prüfung nach der Notarisierung, unabhängig vom Signierskript (das prüft in seinem letzten Schritt selbst): so, wie Gatekeeper beim Nutzer urteilt.
+      # Läuft nicht im Trockenlauf (da ist nichts signiert). Ein Fehler hier bricht ab, bevor irgendetwas hochgeladen wird.
+      - name: Gatekeeper-Prüfung (spctl, stapler) an App und DMG
+        if: steps.modus.outputs.signieren == 'ja' && steps.modus.outputs.trocken == ''
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          APP=build/Kortex.app
+          VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
+          DMG="build/Kortex-$VERSION.dmg"
+          [ -f "$DMG" ] || { echo "::error::$DMG fehlt."; exit 1; }
+          echo "== App"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          spctl -a -vv -t exec "$APP"
+          xcrun stapler validate "$APP"
+          echo "== DMG"
+          codesign --verify --strict --verbose=2 "$DMG"
+          spctl -a -vv -t open --context context:primary-signature "$DMG"
+          xcrun stapler validate "$DMG"
+          echo "== App in der DMG, wie sie der Nutzer bekommt"
+          MNT="$(mktemp -d)"
+          hdiutil attach -nobrowse -readonly -noverify -mountpoint "$MNT" "$DMG" >/dev/null
+          trap 'hdiutil detach "$MNT" -force >/dev/null 2>&1 || true' EXIT
+          [ -L "$MNT/Programme" ] || { echo "::error::In der DMG fehlt die Verknüpfung „Programme“."; exit 1; }
+          spctl -a -vv -t exec "$MNT/Kortex.app"
+          xcrun stapler validate "$MNT/Kortex.app"
+          codesign -d --verbose=2 "$MNT/Kortex.app" 2>&1 | grep -E 'flags=.*runtime' >/dev/null || { echo "::error::Hardened Runtime fehlt an der App."; exit 1; }
+          echo "Gatekeeper akzeptiert App und DMG, Notar-Beleg ist geheftet."
+      - name: Appcast gegen Tag und DMG prüfen
+        if: steps.modus.outputs.signieren == 'ja' && steps.modus.outputs.trocken == ''
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          APPCAST=build/appcast.xml
+          xmllint --noout "$APPCAST"
+          grep -q "<sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>" "$APPCAST" || { echo "::error::Version $VERSION fehlt im Appcast."; exit 1; }
+          grep -q "enclosure url=\"https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/Kortex-$VERSION.dmg\"" "$APPCAST" || { echo "::error::Download-Adresse im Appcast passt nicht zu Tag und DMG."; exit 1; }
+          grep -q 'sparkle:edSignature="' "$APPCAST" || { echo "::error::Die EdDSA-Signatur fehlt im Appcast."; exit 1; }
+          echo "Appcast passt zu $GITHUB_REF_NAME."
       - name: Zippen
+        timeout-minutes: 5
         run: |
           NAME="${GITHUB_REF_TYPE}-${GITHUB_REF_NAME//\//-}"
           ditto -c -k --keepParent build/Kortex.app "Kortex-${NAME}.zip"
           shasum -a 256 "Kortex-${NAME}.zip" | tee "Kortex-${NAME}.zip.sha256"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: Kortex-paket
           path: |
@@ -174,10 +224,11 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       TAG: ${{ github.ref_name }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: Kortex-paket
       - name: Release anlegen
+        timeout-minutes: 5
         run: |
           if [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
             ART=(--prerelease)
@@ -199,3 +250,15 @@ jobs:
           fi
           gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" \
             --generate-notes "${ART[@]}" Kortex-*.zip Kortex-*.zip.sha256 "${EXTRA[@]}"
+      - name: Dateien des Releases prüfen
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          # Nur Tags, aus denen "Release anlegen" wirklich ein Release gemacht hat
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$ ]] || { echo "Tag $TAG ist kein Release-Tag, nichts zu prüfen."; exit 0; }
+          if [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then ERWARTET=(appcast.xml); else ERWARTET=(); fi
+          NAMEN="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
+          echo "$NAMEN"
+          for n in "${ERWARTET[@]}"; do echo "$NAMEN" | grep -qx "$n" || { echo "::error::$n fehlt im Release $TAG."; exit 1; }; done
+          if [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then echo "$NAMEN" | grep -Eq '^Kortex-[0-9.]+\.dmg$' || { echo "::error::Die DMG fehlt im Release $TAG."; exit 1; }; fi
+          echo "$NAMEN" | grep -Eq '\.zip$' || { echo "::error::Das Zip fehlt im Release $TAG."; exit 1; }

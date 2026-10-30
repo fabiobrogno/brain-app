@@ -14,6 +14,9 @@
 # $TMPDIR/kortex-vorschau-XXXX. Application Support, HOME aller Kindprozesse (git, Node, claude …), Zugangsdaten statt Schlüsselbund
 # und Vaults liegen darin. Beim Beenden — auch mit Strg-C — räumt das Skript den Ordner und die Spuren der Vorschau-Kennung auf.
 #
+# Aufräumen beim Start: Wegwerf-Ordner $TMPDIR/kortex-vorschau-*, die ein hart beendetes Skript hinterlassen hat, werden entfernt — aber nur
+# solche, die älter als ein Tag sind, die Marke .kortex-vorschau tragen und zu keinem laufenden Prozess gehören (.pid). Alles andere bleibt.
+#
 # Test-Hilfen: KORTEX_VORSCHAU_PROGRAMM=<ausführbare Datei> startet diese statt der App (ohne Build, Kopie und Aufräumen im System).
 set -euo pipefail
 
@@ -38,14 +41,21 @@ PROGRAMM_VORGABE="${KORTEX_VORSCHAU_PROGRAMM:-}"
 BASIS="${TMPDIR:-/tmp}"
 BASIS="${BASIS%/}"
 
-# ---------- alte Vorschau-Ordner (Skript hart beendet) wegräumen: nur eigene, deren Prozess nicht mehr läuft ----------
+# ---------- alte Vorschau-Ordner (Skript hart beendet) wegräumen ----------
+# Weg kommt ein Ordner NUR, wenn ALLES zutrifft: Name $TMPDIR/kortex-vorschau-*, echter Ordner (kein Verweis) mit der Marke .kortex-vorschau
+# (auch sie keine Verknüpfung), die Marke ist älter als ein Tag UND die Prozess-Nummer in .pid gehört zu keinem laufenden Prozess. Fehlt .pid oder
+# ist sie unlesbar, bleibt der Ordner (unbekannt = nicht anfassen). Alles andere in $TMPDIR bleibt unberührt.
 ordner_sicher() { # nur ein echter (kein Verweis) Ordner mit unserer Marke und unserem Namen
   case "$1" in */kortex-vorschau-*) ;; *) return 1 ;; esac
-  [ -d "$1" ] && [ ! -L "$1" ] && [ -f "$1/.kortex-vorschau" ]
+  [ -d "$1" ] && [ ! -L "$1" ] && [ -f "$1/.kortex-vorschau" ] && [ ! -L "$1/.kortex-vorschau" ]
+}
+aelter_als_ein_tag() { # die Marke wird beim Start geschrieben und nie verändert: ihre Zeit ist das Alter des Ordners
+  [ -n "$(find "$1/.kortex-vorschau" -maxdepth 0 -mmin +1440 -print 2>/dev/null)" ]
 }
 for alt in "$BASIS"/kortex-vorschau-*; do
-  [ -e "$alt" ] || continue
+  [ -e "$alt" ] || [ -L "$alt" ] || continue
   ordner_sicher "$alt" || continue
+  aelter_als_ein_tag "$alt" || continue
   pid="$(cat "$alt/.pid" 2>/dev/null || true)"
   case "$pid" in ''|*[!0-9]*) continue ;; esac
   kill -0 "$pid" 2>/dev/null && continue

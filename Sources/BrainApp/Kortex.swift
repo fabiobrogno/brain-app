@@ -79,8 +79,8 @@ extension View {
     func kortexAkzent() -> some View { tint(Kortex.akzent) }
 }
 
-/// Das Netz-K der App als einfarbiges Menüleisten-Bild (Template: das System färbt es hell/dunkel). Geometrie und Zeichnung stehen in
-/// `BrainCore/KortexMenueSymbol.swift` (aus Entwurf 2 „Netz“, `Ressourcen/icon-entwuerfe/kortex-2-netz.svg`, ohne Fläche) und werden dort
+/// Die Windung der App als einfarbiges Menüleisten-Bild (Template: das System färbt es hell/dunkel). Geometrie und Zeichnung stehen in
+/// `BrainCore/KortexMenueSymbol.swift` (aus Entwurf 3 „Windung“, `Ressourcen/icon-entwuerfe/kortex-3-windung-v2a.svg`, vereinfacht, ohne Fläche) und werden dort
 /// getestet. Das Bild wird für jede Auflösung (1x/2x/3x) frisch gezeichnet, ist also immer scharf.
 @MainActor
 enum KortexMenueBild {

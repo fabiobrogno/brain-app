@@ -173,6 +173,77 @@ test("Vertrauen: ohne Bestätigung lesen ja, anlegen und ändern nein (409 nicht
   assert.equal((await rufe("GET", "/api/aufgaben")).j.vertraut, true);
 }));
 
+// ───────────────────────────── Archivieren ─────────────────────────────
+
+test("POST /api/aufgaben/archivieren { pfad }: eine erledigte Aufgabe wandert unverändert nach archiv/; Board und Zähler sehen sie nicht mehr", async () => {
+  const d = vaultOrdner();
+  const rufe = aufruf(erzeugeHandler({ vault: d, jetzt: () => JETZT }));
+  const a = (await rufe("POST", "/api/aufgaben", { titel: "Fertig", text: "Mit Text" })).j.pfad;
+  const b = (await rufe("POST", "/api/aufgaben", { titel: "Noch offen" })).j.pfad;
+  await rufe("PATCH", `/api/aufgaben/${a}`, { status: "erledigt" });
+  const vorher = lesen(d, a);
+  const r = await rufe("POST", "/api/aufgaben/archivieren", { pfad: a });
+  assert.equal(r.status, 200, JSON.stringify(r.j));
+  const neu = `05_aufgaben/archiv/${a.split("/").pop()}`;
+  assert.deepEqual(r.j, { archiviert: [{ von: a, pfad: neu }], uebersprungen: 0 });
+  assert.equal(lesen(d, neu), vorher, "Byte für Byte");
+  assert.equal(existsSync(join(d, a)), false);
+  const l = await rufe("GET", "/api/aufgaben");
+  assert.deepEqual(titel(l), ["Noch offen"]);
+  assert.deepEqual(l.j.zaehler, { offen: 1, ueberfaellig: 0 });
+  // das Archiv zählt im Notiz-Index als Archiv: weder Aufgaben-Bereich noch „Alle Notizen“
+  const n = (await rufe("GET", "/api/notizen")).j.notizen;
+  assert.equal(n.find((x) => x.pfad === neu)?.bereich, "archiv");
+  assert.equal(n.find((x) => x.pfad === b)?.bereich, "aufgabe");
+});
+
+test("POST /api/aufgaben/archivieren { aelterAlsTage }: nur erledigte, die länger nicht geändert wurden (Standard 30 Tage)", async () => {
+  const d = vaultOrdner();
+  const rufe = aufruf(erzeugeHandler({ vault: d, jetzt: () => JETZT }));
+  const datei = (name, status, geaendert) => schreibe(d, `05_aufgaben/${name}.md`, `---\ntyp: aufgabe\ntitel: ${name}\nstatus: ${status}\nerstellt: 2026-01-01T00:00:00Z\ngeaendert: ${geaendert}\n---\n`);
+  datei("alt-erledigt", "erledigt", "2026-09-01T00:00:00Z"); datei("neu-erledigt", "erledigt", "2026-10-25T00:00:00Z"); datei("alt-offen", "offen", "2026-01-01T00:00:00Z");
+  const r = await rufe("POST", "/api/aufgaben/archivieren", { aelterAlsTage: 30 });
+  assert.equal(r.status, 200, JSON.stringify(r.j));
+  assert.deepEqual(r.j.archiviert.map((x) => x.von), ["05_aufgaben/alt-erledigt.md"]);
+  assert.deepEqual(dateien(d), ["alt-offen.md", "archiv", "neu-erledigt.md"]);
+  const alle = await rufe("POST", "/api/aufgaben/archivieren", { aelterAlsTage: 3 });
+  assert.deepEqual(alle.j.archiviert.map((x) => x.von), ["05_aufgaben/neu-erledigt.md"]);
+  const ohne = await rufe("POST", "/api/aufgaben/archivieren", {});
+  assert.equal(ohne.status, 200); assert.deepEqual(ohne.j.archiviert, [], "ohne Angabe gilt der Standard (30 Tage)");
+});
+
+test("POST /api/aufgaben/archivieren: Fehler — nicht erledigt 409, falscher Pfad 400/403, Tage ungültig 400, beides zugleich 400, falsche Methode 405, nichts geht verloren", async () => {
+  const d = vaultOrdner();
+  const rufe = aufruf(erzeugeHandler({ vault: d, jetzt: () => JETZT }));
+  const a = (await rufe("POST", "/api/aufgaben", { titel: "Offen" })).j.pfad;
+  const vorher = lesen(d, a);
+  const nein = async (daten, status) => { const r = await rufe("POST", "/api/aufgaben/archivieren", daten); assert.equal(r.status, status, JSON.stringify(daten) + JSON.stringify(r.j)); return r; };
+  await nein({ pfad: a }, 409);
+  await nein({ pfad: "notiz.md" }, 400);
+  await nein({ pfad: "../aussen.md" }, 403); await nein({ pfad: "05_aufgaben/../notiz.md" }, 403); await nein({ pfad: "/etc/passwd" }, 403);
+  await nein({ pfad: 5 }, 400); await nein({ pfad: "" }, 400);
+  await nein({ aelterAlsTage: 0 }, 400); await nein({ aelterAlsTage: "30" }, 400); await nein({ aelterAlsTage: 99999 }, 400);
+  await nein({ pfad: a, aelterAlsTage: 30 }, 400);
+  assert.equal((await rufe("GET", "/api/aufgaben/archivieren")).status, 405);
+  assert.equal((await rufe("PATCH", "/api/aufgaben/archivieren", { status: "erledigt" })).status, 405, "„archivieren“ ist nie ein Aufgabenpfad");
+  assert.equal(lesen(d, a), vorher);
+  assert.equal(existsSync(join(d, "05_aufgaben", "archiv")), false);
+});
+
+test("POST /api/aufgaben/archivieren: ohne Bestätigung des Vaults 409 nicht-vertraut, nichts wird verschoben", echt(async () => {
+  const d = vaultOrdner(), s = tmp("brain-support-");
+  const rufe = aufruf(erzeugeHandler({ vault: d, vaultOptionen: { support: s } }));
+  schreibe(d, "05_aufgaben/x.md", "---\ntyp: aufgabe\ntitel: X\nstatus: erledigt\ngeaendert: 2020-01-01T00:00:00Z\n---\n");
+  for (const daten of [{ pfad: "05_aufgaben/x.md" }, { aelterAlsTage: 30 }]) {
+    const r = await rufe("POST", "/api/aufgaben/archivieren", daten);
+    assert.equal(r.status, 409); assert.equal(r.j.art, "nicht-vertraut");
+  }
+  assert.deepEqual(dateien(d), ["x.md"]);
+  assert.equal((await rufe("POST", "/api/vertrauen", { erlauben: true, vault: d })).status, 200);
+  assert.equal((await rufe("POST", "/api/aufgaben/archivieren", { aelterAlsTage: 30 })).j.archiviert.length, 1);
+  assert.deepEqual(dateien(d), ["archiv"]);
+}));
+
 // ───────────────────────────── MCP ─────────────────────────────
 
 let nr = 0;

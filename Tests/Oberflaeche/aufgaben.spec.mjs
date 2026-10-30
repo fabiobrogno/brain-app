@@ -49,6 +49,11 @@ async function oeffneBoard(page) {
   await expect(page.locator('[data-ansicht="aufgaben"]')).toBeVisible();
   await expect(karte(page, p.a)).toBeVisible();
 }
+// Filter-Chip öffnen und den Eintrag per Rolle wählen (Combobox → Option)
+async function waehleFilter(page, name, wert) {
+  await page.locator(`[data-filter="${name}"]`).click();
+  await page.locator(`[role="listbox"] [role="option"][data-wert="${wert}"]`).click();
+}
 const geaendertSeit = () => git(vault, "status", "--porcelain").toString().split("\n").filter(Boolean).map((z) => z.slice(3));
 
 test("Seitenleiste: „Aufgaben“ steht direkt unter Posteingang und zählt die offenen (nicht die erledigten)", async ({ page }) => {
@@ -153,11 +158,18 @@ test("Tastatur: Alt+Pfeile verschieben, Pfeile wechseln die Karte, Enter öffnet
   await expect.poll(() => feld(vault, p.b, "status")).toBe("in-arbeit");
   await page.keyboard.press("Alt+ArrowUp");
   await expect.poll(async () => (await titelIn(page, "in-arbeit")).join("|")).toBe("Steuer vorbereiten|Website-Text schreiben");
-  await page.keyboard.press("Alt+ArrowRight");
-  await page.keyboard.press("Alt+ArrowRight");
-  await expect.poll(() => feld(vault, p.b, "status")).toBe("erledigt");
-  await page.keyboard.press("Alt+ArrowLeft");
-  await expect.poll(() => feld(vault, p.b, "status")).toBe("warten");
+  // Jeder Schritt wartet, bis Datei UND Anzeige den neuen Stand haben und die Karte wieder den Fokus hat: die Antwort der Werkstatt zeichnet das Board neu und überholt sonst
+  // eine zweite Taste, die schon gedrückt wurde (auf dem langsamen Runner ging „Links“ dann von der falschen Spalte aus).
+  const schiebe = async (taste, soll) => {
+    await page.keyboard.press(taste);
+    await expect.poll(() => feld(vault, p.b, "status")).toBe(soll);
+    await expect(spalte(page, soll).locator(`[data-pfad="${p.b}"]`)).toBeVisible();
+    await expect(karte(page, p.b)).toBeFocused();
+    await page.waitForTimeout(400);
+  };
+  await schiebe("Alt+ArrowRight", "warten");
+  await schiebe("Alt+ArrowRight", "erledigt");
+  await schiebe("Alt+ArrowLeft", "warten");
   // Enter öffnet die Datei im Editor
   await page.keyboard.press("Enter");
   await expect(page.locator(".cm-content")).toContainText("Datei-Kopf"); // der Kopf der Aufgabe, im Editor eingeklappt
@@ -196,27 +208,68 @@ test("Menü an der Karte: Spalte, Priorität und Fälligkeit ändern (jeweils ei
   expect(geaendertSeit()).toEqual([p.b]);
 });
 
+test("Archivieren: Karten-Menü einer erledigten Aufgabe verschiebt die Datei nach archiv/ (Board und Zähler blenden sie aus, nichts wird gelöscht); offene Karten bieten es nicht an", async ({ page }) => {
+  await oeffneBoard(page);
+  // offene Karte: kein Eintrag „Archivieren“
+  await karte(page, p.a).click({ button: "right" });
+  await expect(page.locator('[data-menue="spalte-offen"]')).toBeVisible();
+  await expect(page.locator('[data-menue="archivieren"]')).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  // erledigte Karte: Menü → Archivieren
+  const f = p.f, vorher = lese(vault, f), name = f.split("/").pop();
+  await expect(karte(page, f)).toBeVisible();
+  await karte(page, f).click({ button: "right" });
+  await page.locator('[data-menue="archivieren"]').click();
+  await expect(karte(page, f)).toHaveCount(0);
+  await expect.poll(() => existsSync(join(vault, "05_aufgaben", "archiv", name))).toBe(true);
+  expect(existsSync(join(vault, f))).toBe(false);
+  expect(lese(vault, `05_aufgaben/archiv/${name}`)).toBe(vorher); // unverändert, nicht gelöscht
+  await expect(page.locator("[data-aufgaben-zahl]")).toHaveText("5 offen · 1 überfällig"); // das Archiv zählt nicht
+  await expect(page.locator('[data-bereich="aufgaben"] .zahl')).toHaveText("5");
+  // nach dem Neuladen bleibt es weg, die anderen Karten sind unverändert da
+  await page.reload();
+  await page.click('[data-bereich="aufgaben"]');
+  await expect(karte(page, p.a)).toBeVisible();
+  await expect(karte(page, f)).toHaveCount(0);
+  expect(await titelIn(page, "erledigt")).toEqual([]); // die alte ist eingeklappt, die frische ist archiviert
+});
+
+test("Archivieren: „alle erledigten älter als 30 Tage“ — nur die alte erledigte wandert ins Archiv, frische und offene bleiben", async ({ page }) => {
+  await oeffneBoard(page);
+  const knopf = page.locator("[data-archiv-alle]");
+  await expect(knopf).toHaveText("1 erledigte (älter als 30 Tage) archivieren");
+  await expect(spalte(page, "erledigt").locator(`[data-pfad="${p.f}"]`)).toBeVisible(); // frisch: bleibt
+  await knopf.click();
+  await expect(knopf).toHaveCount(0);
+  await expect.poll(() => existsSync(join(vault, "05_aufgaben", "archiv", p.g.split("/").pop()))).toBe(true);
+  expect(existsSync(join(vault, p.g))).toBe(false);
+  for (const bleibt of [p.a, p.b, p.c, p.d, p.e, p.f]) expect(existsSync(join(vault, bleibt)), bleibt).toBe(true);
+  expect(readdirSync(join(vault, "05_aufgaben", "archiv"))).toEqual([p.g.split("/").pop()]);
+  await expect(page.locator('[data-alte-umschalten]')).toHaveCount(0); // keine eingeklappten Alten mehr
+  await expect(page.locator("[data-aufgaben-zahl]")).toHaveText("5 offen · 1 überfällig");
+});
+
 test("Filter: Priorität, Quelle, Fälligkeit; zurücksetzen; Auswahl bleibt nach dem Neuladen", async ({ page }) => {
   await oeffneBoard(page);
-  await page.selectOption('[data-filter="prio"]', "hoch");
+  await waehleFilter(page, "prio", "hoch");
   expect(await titelIn(page, "offen")).toEqual(["Lieferanten anrufen"]);
   expect(await titelIn(page, "in-arbeit")).toEqual([]);
   await page.click("[data-filter-reset]");
   expect(await titelIn(page, "offen")).toHaveLength(3);
-  await page.selectOption('[data-filter="quelle"]', "ki");
+  await waehleFilter(page, "quelle", "ki");
   expect(await titelIn(page, "offen")).toEqual(["Angebot prüfen"]);
-  await page.selectOption('[data-filter="quelle"]', "mensch");
+  await waehleFilter(page, "quelle", "mensch");
   expect(await titelIn(page, "offen")).toEqual(["Lieferanten anrufen", "Steuer vorbereiten"]);
-  await page.selectOption('[data-filter="faellig"]', "ueberfaellig");
+  await waehleFilter(page, "faellig", "ueberfaellig");
   expect(await titelIn(page, "offen")).toEqual(["Lieferanten anrufen"]);
   await page.reload();
   await page.click('[data-bereich="aufgaben"]');
-  await expect(page.locator('[data-filter="faellig"]')).toHaveValue("ueberfaellig");
-  await expect(page.locator('[data-filter="quelle"]')).toHaveValue("mensch");
+  await expect(page.locator('[data-filter="faellig"]')).toHaveAttribute("data-wert", "ueberfaellig");
+  await expect(page.locator('[data-filter="quelle"]')).toHaveAttribute("data-wert", "mensch");
   await page.click("[data-filter-reset]");
-  await page.selectOption('[data-filter="faellig"]', "ohne");
+  await waehleFilter(page, "faellig", "ohne");
   expect(await titelIn(page, "offen")).toEqual(["Angebot prüfen"]);
-  await page.selectOption('[data-filter="faellig"]', "heute");
+  await waehleFilter(page, "faellig", "heute");
   await expect(page.locator("[data-aufgaben-gefiltert]")).toBeVisible();
 });
 
@@ -252,7 +305,7 @@ test("Vault noch nicht bestätigt: lesen ja, anlegen und ziehen nein; Hinweis mi
   await expect(karte(page, p.a)).toBeVisible();
   await expect(page.locator("[data-aufgaben-hinweis]")).toBeVisible();
   await expect(page.locator("[data-aufgabe-eingabe]")).toBeDisabled();
-  await expect(karte(page, p.a)).toHaveAttribute("draggable", "false");
+  await expect(karte(page, p.a)).toHaveAttribute("data-ziehbar", "false");
   // auch die Werkstatt verweigert das Schreiben
   const r = await page.evaluate(async (pfad) => {
     const a = await fetch("/api/aufgaben", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ titel: "Böse" }) });
@@ -310,7 +363,7 @@ for (const schema of ["light", "dark"]) {
     await karte(page, p.b).locator("[data-aufgabe-menue]").click();
     await page.screenshot({ path: join(ziel, `menue-${schema}.png`) });
     await page.keyboard.press("Escape");
-    await page.selectOption('[data-filter="prio"]', "hoch");
+    await waehleFilter(page, "prio", "hoch");
     await page.screenshot({ path: join(ziel, `filter-${schema}.png`) });
   });
 }

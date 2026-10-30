@@ -1,6 +1,6 @@
 #!/bin/bash
 # Baut build/Kortex.app (nur arm64): Release-Build, Paket-Struktur, mitgelieferte Node-Laufzeit, Studio-Ressourcen
-# (alle Ordner unter Ressourcen/: studio, werkstatt, mcp, gemeinsam, …), Ad-hoc-Signatur.
+# (alle Ordner unter Ressourcen/: studio, werkstatt, mcp, gemeinsam, …), Lizenzhinweise (THIRD-PARTY-NOTICES.md), Ad-hoc-Signatur.
 # Das Node behält seine Original-Signatur (Prüfsumme im Manifest bleibt gültig); Developer-ID-Signatur und
 # Notarisierung kommen in M5. Sparkle.framework wird nach Contents/Frameworks kopiert und ad-hoc von innen nach außen signiert.
 set -euo pipefail
@@ -30,6 +30,14 @@ for d in Ressourcen/*/; do
   [ "$ordner" = "icon-entwuerfe" ] && continue # Entwürfe fürs App-Icon: gehören nicht ins Paket
   cp -R "Ressourcen/$ordner" "$NEU/Contents/Resources/$ordner"
 done
+# Lizenzen: Hinweise zu Software von Dritten (THIRD-PARTY-NOTICES.md) und die eigene Lizenz ins Paket. Die Hinweise liegen zweimal da:
+# im Wurzelordner der Ressourcen (auffindbar im Paket) und neben der Oberfläche (Studio: Einstellungen → „Lizenzen …“ lädt sie von dort).
+for f in THIRD-PARTY-NOTICES.md LICENSE; do
+  [ -f "$f" ] || { echo "FEHLER: $f fehlt — ohne Lizenzhinweise darf die App nicht gebaut werden." >&2; exit 1; }
+done
+cp THIRD-PARTY-NOTICES.md "$NEU/Contents/Resources/THIRD-PARTY-NOTICES.md"
+cp THIRD-PARTY-NOTICES.md "$NEU/Contents/Resources/studio/THIRD-PARTY-NOTICES.md"
+cp LICENSE "$NEU/Contents/Resources/LICENSE"
 # Kern (Brain-Logik, Ressourcen/kern): Der MCP-Server samt gemeinsamem Code kommt zusätzlich in den Kern (kern/mcp, kern/gemeinsam), damit
 # die MCP-Einträge der KI-Programme auf den stabilen Pfad <support>/bin/kern/mcp/brain-mcp.mjs zeigen können und nicht auf das App-Paket
 # (Kern-Umzug P4). Relative Importe (../gemeinsam/…) bleiben dabei gültig. Die Quellen bleiben Ressourcen/mcp und Ressourcen/gemeinsam.
@@ -56,6 +64,10 @@ for t in "$SPK"/XPCServices/*.xpc "$SPK/Autoupdate" "$SPK/Updater.app" "$NEU/Con
 done
 codesign --force --sign - "$NEU"
 codesign --verify --strict "$NEU"
+# Lizenzhinweise im fertigen Paket: vorhanden und nicht leer (auch der Volltext der Node-Lizenz, auf den die Hinweise verweisen)
+for f in Resources/THIRD-PARTY-NOTICES.md Resources/studio/THIRD-PARTY-NOTICES.md Resources/LICENSE Resources/node-runtime/LICENSE; do
+  [ -s "$NEU/Contents/$f" ] || { echo "FEHLER: $f fehlt im Paket." >&2; exit 1; }
+done
 rm -rf "$APP"
 mv "$NEU" "$APP"
 echo "Gebaut: $APP"
