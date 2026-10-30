@@ -1,4 +1,4 @@
-// Alle KI-Logos im 22-px-Raster (ki-logos.js): gleiche optische Größe, mittig, Farbe nach Regel, in Hell und Dunkel gut lesbar.
+// Alle KI-Logos im 20-px-Raster (ki-logos.js): gleiche optische Größe, mittig, Farbe nach Regel, in Hell und Dunkel gut lesbar.
 // Optional Bilder: KI_LOGO_BILDER=/Ordner/ npx playwright test ki-logos-alle.spec.mjs
 import { test, expect } from "./basis.mjs";
 import { mkdirSync } from "node:fs";
@@ -17,7 +17,7 @@ async function raster(page) {
   await mockeV2(page, vault);
   await page.goto(server.url + "?pfad=" + encodeURIComponent("10_notizen/Reise nach Lissabon.md"));
   await page.waitForSelector(".cm-content .cm-line");
-  // Prüfseite im Studio: je Logo eine Kachel mit dem Logo in 22 px (wie im Assistenten) und in 44 px, auf dem Hintergrund des Studios
+  // Prüfseite im Studio: je Logo eine Kachel mit dem Logo in 20 px (feste Stufe wie im Assistenten) und in 48 px (zum Messen), auf dem Hintergrund des Studios
   await page.evaluate(async () => {
     const { kiLogo, kiLogoName } = await import("/ki-logos.js");
     document.querySelector("#kl-test")?.remove();
@@ -28,8 +28,8 @@ async function raster(page) {
       const kachel = document.createElement("div");
       kachel.dataset.kachel = id;
       kachel.style.cssText = "display:flex;align-items:center;gap:12px;padding:12px;border-radius:10px;background:var(--hover-2, rgba(128,128,128,.12))";
-      const klein = kiLogo(id, 22, { dekorativ: true }), gross = kiLogo(id, 44, { dekorativ: true });
-      klein.dataset.groesse = "22"; gross.dataset.groesse = "44";
+      const klein = kiLogo(id, 20, { dekorativ: true }), gross = kiLogo(id, 48, { dekorativ: true });
+      klein.dataset.groesse = "20"; gross.dataset.groesse = "48";
       const name = document.createElement("span");
       name.textContent = kiLogoName(id);
       name.style.cssText = "font:13px system-ui;flex:1";
@@ -40,9 +40,9 @@ async function raster(page) {
   });
 }
 
-test("22-px-Raster: jedes Logo füllt das Quadrat ähnlich stark (70 bis 97 %), liegt in der Mitte und wird nicht abgeschnitten", async ({ page }) => {
+test("20-px-Raster: jedes Logo füllt das Quadrat ähnlich stark (70 bis 97 %), liegt in der Mitte und wird nicht abgeschnitten", async ({ page }) => {
   await raster(page);
-  const werte = await page.evaluate(() => [...document.querySelectorAll('#kl-test [data-groesse="44"]')].map((el) => {
+  const werte = await page.evaluate(() => [...document.querySelectorAll('#kl-test [data-groesse="48"]')].map((el) => {
     const id = el.dataset.kiLogo;
     const pfad = el.querySelector("svg path");
     if (!pfad) return { id, initiale: true };
@@ -70,7 +70,7 @@ for (const schema of ["hell", "dunkel"]) {
     const r = await page.evaluate(() => {
       const kachelHg = (el) => { let e = el; while (e) { const c = getComputedStyle(e).backgroundColor; if (c && c !== "rgba(0, 0, 0, 0)" && c !== "transparent") return c; e = e.parentElement; } return "rgb(255, 255, 255)"; };
       const text = getComputedStyle(document.querySelector("#kl-test")).color;
-      return { text, logos: [...document.querySelectorAll('#kl-test [data-groesse="22"]')].map((el) => ({ id: el.dataset.kiLogo, farbe: getComputedStyle(el).color, hg: kachelHg(el.parentElement.parentElement) })) };
+      return { text, logos: [...document.querySelectorAll('#kl-test [data-groesse="20"]')].map((el) => ({ id: el.dataset.kiLogo, farbe: getComputedStyle(el).color, hg: kachelHg(el.parentElement.parentElement) })) };
     });
     const zahlen = (s) => s.match(/[\d.]+/g).slice(0, 3).map(Number);
     const lum = (rgb) => { const c = rgb.map((v) => v / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };

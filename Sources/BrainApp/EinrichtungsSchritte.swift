@@ -87,7 +87,7 @@ private struct VaultAnsicht: View {
                 Button("Anlegen") { modell.legeNeuenVaultAn() }.buttonStyle(.kortexHaupt).keyboardShortcut(.defaultAction)
             }
             HStack(spacing: 6) {
-                Image(systemName: "folder").foregroundStyle(.secondary).accessibilityHidden(true)
+                KSymbol(name: "folder").foregroundStyle(.secondary)
                 Text(modell.ordnerText).font(.callout).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                 Button("Ort ändern …") { modell.waehleZielordner() }.buttonStyle(.kortexLink).font(.callout)
             }
@@ -100,7 +100,7 @@ private struct VaultAnsicht: View {
             Text("Kortex legt den Vault „\(BeispielVault.name)“ mit ein paar Seiten an. Alles bleibt auf deinem Mac, es wird nichts gesendet. Eigene Notizen legst du später in einem eigenen Vault an; das Beispiel kannst du dann einfach löschen.")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 6) {
-                Image(systemName: "folder").foregroundStyle(.secondary).accessibilityHidden(true)
+                KSymbol(name: "folder").foregroundStyle(.secondary)
                 Text(VaultAuswahl.kurz(BeispielVault.ordner(home: modell.home), home: modell.home))
                     .font(.callout).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                 Spacer(minLength: 8)
@@ -110,7 +110,7 @@ private struct VaultAnsicht: View {
     }
 
     private var klonen: some View {
-        Karte(symbol: "arrow.down.circle", titel: "Von GitHub holen", text: "Dein Vault von einem anderen Mac oder aus einem Repository.",
+        Karte(symbol: "arrow.down.circle", marke: .github, titel: "Von GitHub holen", text: "Dein Vault von einem anderen Mac oder aus einem Repository.",
               offen: modell.weg == .klonen) {
             modell.weg = .klonen
             modell.tu { await $0.ladeGitHubStand() }
@@ -160,7 +160,7 @@ private struct KlonAnmeldung: View {
             GitHubCode(modell: modell, code: c, kompakt: true)
         case .angemeldet(let login):
             Label(login.map { "Bei GitHub angemeldet als \($0)" } ?? "Bei GitHub angemeldet", systemImage: "checkmark.circle.fill")
-                .font(.callout).foregroundStyle(.green)
+                .labelStyle(.kortex).font(.callout).foregroundStyle(.green)
         case .unbekannt, .nichtVerfuegbar:
             EmptyView()
         }
@@ -195,20 +195,20 @@ private struct GitHubAnsicht: View {
     var body: some View {
         switch modell.anzeige.github {
         case .unbekannt, .startet:
-            Titel(symbol: "person.badge.key", titel: "GitHub", text: nil)
+            Titel(symbol: "person.badge.key", marke: .github, titel: "GitHub", text: nil)
             Arbeit(text: "Einen Moment …")
         case .nichtVerfuegbar:
-            Titel(symbol: "person.badge.key", titel: "GitHub", text: "Die Anmeldung ist in dieser Version nicht eingerichtet.")
+            Titel(symbol: "person.badge.key", marke: .github, titel: "GitHub", text: "Die Anmeldung ist in dieser Version nicht eingerichtet.")
         case .abgemeldet, .abgelaufen, .abgelehnt:
-            Titel(symbol: "person.badge.key", titel: "Bei GitHub anmelden",
+            Titel(symbol: "person.badge.key", marke: .github, titel: "Bei GitHub anmelden",
                   text: "Für die Sicherung deines Vaults und für private Repositories. Du bekommst einen Code, den du auf github.com eingibst. Kortex speichert nur ein Zugangszeichen im Schlüsselbund deines Macs — kein Passwort.")
             if case .abgelaufen = modell.anzeige.github { FehlerBox(text: "Der Code ist abgelaufen. Bitte melde dich noch einmal an.") }
             if case .abgelehnt(let g) = modell.anzeige.github {
                 FehlerBox(text: g == "schluesselbund" ? "Das Zugangszeichen ließ sich nicht im Schlüsselbund speichern." : "GitHub hat die Anmeldung abgelehnt.")
             }
-            GrosserKnopf(titel: "Bei GitHub anmelden") { modell.tu { await $0.meldeBeiGitHubAn() } }
+            GrosserKnopf(titel: "Bei GitHub anmelden", marke: .github) { modell.tu { await $0.meldeBeiGitHubAn() } }
         case .wartet(let c):
-            Titel(symbol: "person.badge.key", titel: "Gib diesen Code bei GitHub ein", text: nil)
+            Titel(symbol: "person.badge.key", marke: .github, titel: "Gib diesen Code bei GitHub ein", text: nil)
             GitHubCode(modell: modell, code: c)
         case .angemeldet(let login):
             Titel(symbol: "checkmark.seal", titel: "Bei GitHub angemeldet", text: login.map { "Konto: \($0)" })
@@ -244,12 +244,12 @@ private struct SicherungAnsicht: View {
                     Titel(symbol: "lock.shield", titel: "Deinen Vault sichern", text: nil)
                     Arbeit(text: "Einen Moment …")
                 case .wartet(let c):
-                    Titel(symbol: "person.badge.key", titel: "Gib diesen Code bei GitHub ein", text: nil)
+                    Titel(symbol: "person.badge.key", marke: .github, titel: "Gib diesen Code bei GitHub ein", text: nil)
                     GitHubCode(modell: modell, code: c)
                 case .abgemeldet, .abgelaufen, .abgelehnt, .nichtVerfuegbar:
                     Titel(symbol: "lock.shield", titel: "Deinen Vault sichern",
                           text: "Dafür brauchst du ein GitHub-Konto. Melde dich an — Kortex speichert nur ein Zugangszeichen im Schlüsselbund deines Macs, kein Passwort.")
-                    GrosserKnopf(titel: "Bei GitHub anmelden") { modell.tu { await $0.meldeBeiGitHubAn() } }
+                    GrosserKnopf(titel: "Bei GitHub anmelden", marke: .github) { modell.tu { await $0.meldeBeiGitHubAn() } }
                 }
             }
         }
@@ -442,7 +442,7 @@ private struct AndereKi: View {
                 if modell.anzeige.konfiguration == .holt {
                     ProgressView().controlSize(.small)
                 } else if modell.konfigurationKopiert {
-                    Label("Kopiert", systemImage: "checkmark").foregroundStyle(.green).fixedSize()
+                    Label("Kopiert", systemImage: "checkmark.circle.fill").labelStyle(.kortex).foregroundStyle(.green).fixedSize()
                 } else {
                     Button("Konfiguration kopieren") { modell.kopiereKonfiguration() }.fixedSize()
                 }
@@ -568,7 +568,7 @@ private struct KiReihe: View {
                 EmptyView()
             }
             if let h = modell.anzeige.kiHinweise[zeile.ziel], !zeile.istVerbunden {
-                Label(h, systemImage: "checkmark.circle").font(.callout).foregroundStyle(.secondary)
+                Label(h, systemImage: "checkmark.circle.fill").labelStyle(.kortex).font(.callout).foregroundStyle(.secondary)
             }
             if let f = modell.anzeige.kiTrennFehler[zeile.ziel] { FehlerBox(text: f) }
         }
@@ -592,7 +592,7 @@ private struct KiReihe: View {
             ProgressView().controlSize(.small)
         case .verbunden:
             HStack(spacing: 10) {
-                Label("Verbunden", systemImage: "checkmark.circle.fill").foregroundStyle(.green).fixedSize()
+                Label("Verbunden", systemImage: "checkmark.circle.fill").labelStyle(.kortex).foregroundStyle(.green).fixedSize()
                 Button("Trennen") { modell.tu { await $0.trenne(zeile.ziel) } }
                     .controlSize(.small)
                     .help("Nimmt den Eintrag von Kortex bei \(zeile.ziel.name) wieder heraus. Andere Einträge bleiben.")
@@ -649,7 +649,7 @@ private struct ProbeErfolg: View {
                       : beispiel ? "Die Suche im Beispiel liefert:" : "Die Suche in deinem Vault liefert:")
             if !treffer.isEmpty {
                 Flaeche {
-                    ForEach(treffer.prefix(3), id: \.self) { t in Label(t, systemImage: "doc.text").lineLimit(1) }
+                    ForEach(treffer.prefix(3), id: \.self) { t in Label(t, systemImage: "doc.text").labelStyle(.kortex).lineLimit(1) }
                 }
             }
         }
@@ -675,7 +675,8 @@ struct FertigAnsicht: View {
                 ForEach(EinrichtungsSchritt.allCases.filter { !modell.zustand.uebergangen.contains($0) }, id: \.self) { s in
                     let stand = modell.zustand.stand(s)
                     Label(stand == .erledigt ? "\(s.anzeigeName): fertig" : "\(s.anzeigeName): übersprungen — im Menü „Kortex einrichten …“ nachholen",
-                          systemImage: stand == .erledigt ? "checkmark.circle.fill" : "minus.circle")
+                          systemImage: stand == .erledigt ? "checkmark.circle.fill" : "minus.circle.fill")
+                        .labelStyle(.kortex)
                         .foregroundStyle(stand == .erledigt ? Color.primary : Color.secondary)
                         .font(.callout)
                 }

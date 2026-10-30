@@ -1,6 +1,6 @@
-# Herkunft der KI-Logos
+# Herkunft der Marken-Logos
 
-Die Logos dienen nur dazu, KI-Apps zu kennzeichnen, mit denen Kortex sich verbindet.
+Die Logos dienen nur dazu, KI-Apps und Dienste zu kennzeichnen, mit denen Kortex sich verbindet (Claude, Cursor, GitHub).
 
 **Marken gehören den jeweiligen Inhabern, Nutzung nur zur Kennzeichnung der Integration.** Kortex ist weder mit Anthropic, OpenAI, Anysphere (Cursor), Google, GitHub/Microsoft, Zed Industries, dem OpenCode-Projekt noch Warp verbunden und wird von ihnen nicht empfohlen oder unterstützt. Die Logos werden nicht verändert (keine Verzerrung, kein Umfärben der Form; dargestellt wird in der Markenfarbe oder einfarbig in der Textfarbe, siehe „Darstellung“).
 
@@ -13,9 +13,10 @@ Die Logos dienen nur dazu, KI-Apps zu kennzeichnen, mit denen Kortex sich verbin
 | `zed.svg` | Zed (Zed Industries) | Simple Icons, `icons/zedindustries.svg`, Markenfarbe `#084CCF` (nicht verwendet, siehe unten) | simple-icons 16.36.0 (npm) | CC0 1.0 | 2026-10-30 |
 | `opencode.svg` | OpenCode | Simple Icons, `icons/opencode.svg`, einfarbig (Marke `#000000`) | simple-icons 16.36.0 (npm) | CC0 1.0 | 2026-10-30 |
 | `warp.svg` | Warp | Simple Icons, `icons/warp.svg`, Markenfarbe `#01A4FF` (nicht verwendet, siehe unten) | simple-icons 16.36.0 (npm) | CC0 1.0 | 2026-10-30 |
+| `github.svg` | GitHub (GitHub, Inc.; Anmeldung, Sicherung, Abgleich, Klonen) | Simple Icons, `icons/github.svg` (Marke: https://github.com/logos), einfarbig in der Textfarbe | simple-icons 16.36.0 (npm) | CC0 1.0 | 2026-10-30 |
 | (keine Datei) | Codex (OpenAI) | siehe unten | - | - | 2026-10-30 |
 
-Alle Dateien sind unverändert aus dem Paket `simple-icons@16.36.0` übernommen (`npm pack`, entpackt in einen leeren Ordner, nur gelesen, nichts ausgeführt); nur der Dateiname ist kürzer (`googlegemini` → `gemini`, `githubcopilot` → `copilot`, `zedindustries` → `zed`). Der Lizenztext steht in `LIZENZ-simple-icons-CC0.md`. CC0 gilt für die SVG-Daten des Projekts Simple Icons; die Markenrechte bleiben bei den Inhabern.
+Alle Dateien (auch `github.svg`) sind unverändert aus dem Paket `simple-icons@16.36.0` übernommen (`npm pack`, entpackt in einen leeren Ordner, nur gelesen, nichts ausgeführt); nur der Dateiname ist kürzer (`googlegemini` → `gemini`, `githubcopilot` → `copilot`, `zedindustries` → `zed`). Der Lizenztext steht in `LIZENZ-simple-icons-CC0.md`. CC0 gilt für die SVG-Daten des Projekts Simple Icons; die Markenrechte bleiben bei den Inhabern.
 
 ## Darstellung: einheitliche Größe und Farbe
 
@@ -54,3 +55,8 @@ Kiro, Goose, Roo Code, Google Antigravity und VS Code haben in Simple Icons 16.3
 ## Aktualisieren
 
 Neue Version von `simple-icons` mit `npm pack` in einen neuen leeren Ordner holen, nur die Dateien dieser Tabelle vergleichen und hier ersetzen, Version und Datum in der Tabelle anpassen. Wenn sich ein Pfad ändert: Tintendichte und Ansicht neu messen, die Tabelle oben, `KILogoQuelle.swift` und `ki-logos.js` angleichen (der Test `ansichtenGleichenDenenImStudio` meldet Abweichungen).
+
+## Wo die Logos eingebaut sind
+
+- Studio (Web-Oberfläche): `Ressourcen/studio/ki-logos.js` (Claude, Cursor, Gemini, GitHub Copilot, Zed, OpenCode, Warp) und `Ressourcen/studio/marken.js` (GitHub). Die Pfaddaten stehen dort unverändert aus den SVG-Dateien; ein Test (`Tests/BrainCoreTests/MarkenLogoTests.swift`) prüft, dass `marken.js` und `github.svg` übereinstimmen, `KiZielTests` dasselbe für `ki-logos.js`.
+- App (SwiftUI): `Sources/BrainCore/KILogoQuelle.swift` und `Sources/BrainApp/KILogo.swift` für die KI-Apps, `Sources/BrainCore/MarkenLogo.swift` (Zuordnung Marke zu Datei) und `Sources/BrainApp/MarkenLogoAnsicht.swift` für GitHub im Einrichtungsassistenten.

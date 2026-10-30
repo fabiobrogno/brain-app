@@ -26,3 +26,19 @@ Gewählt ist Entwurf C (`kortex-c-k.svg`). Daraus entsteht `Ressourcen/AppIcon.i
 (inkl. 16@2x) die Kleinvariante `kortex-c-k-klein.svg`: größerer Squircle, kein Glanz, dickere Striche, gerades Bein.
 Alle übrigen Größen (32@2x bis 1024) kommen aus dem vollen Entwurf. Das Menüleisten-Symbol (`KortexMenueBild` in
 `Sources/BrainApp/Kortex.swift`) zeichnet dieselben Striche der Kleinvariante einfarbig als Template.
+
+## Entwürfe v2 (Auswahl offen, nicht im Bundle)
+Fünf neue Entwürfe nach macOS-26-Raster: Squircle (Superellipse, 824er Körper auf 1024er Fläche), Licht von oben, dezenter Schlagschatten,
+feiner Innenrand, Zeichen mit weichem Schatten. Palette: Kortex-Lila (`#5B4ED6` Mitte, `#8F85F7` oben, `#3A2EA6` unten; Entwurf 5 dunkel mit `#A89FFF`-Licht).
+Ansicht aller Entwürfe groß und klein, hell und dunkel: `uebersicht.html`. Proben (16/32/64 px) liegen in `proben/`.
+
+| Datei | Idee |
+|---|---|
+| kortex-1-boegen | K aus Stamm und zwei spiegelgleichen Rindenbögen (gleicher Radius) |
+| kortex-2-netz | K als Graph: großer heller Kern, vier Endknoten, klare Hierarchie |
+| kortex-3-windung | Eine durchgehende Windungslinie (Serpentine), Umriss wie ein Gehirn von oben, ohne Buchstaben |
+| kortex-4-papier | Monogramm K auf Notizblatt mit umgeschlagener Ecke |
+| kortex-5-bahn | Dunkle Variante: leuchtendes K, oberer Arm endet in einem Impuls-Knoten |
+
+PNG 1024 und Proben mit `rsvg-convert -w <px> -h <px> <name>.svg -o <ziel>.png`. Für den Einbau würde die Wahl wie bei Entwurf C
+nach `scripts/baue-icon.sh` übernommen (bei 16/32 px ggf. eine Kleinvariante mit kräftigeren Strichen und ohne Glanz).

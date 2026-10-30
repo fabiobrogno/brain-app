@@ -5,6 +5,7 @@
 import { h } from "./hilfen.js";
 import { api, aktion, inApp } from "./api.js";
 import { symbol } from "./symbole.js";
+import { markenLogo } from "./marken.js";
 import { TW } from "./texte-willkommen.js";
 
 const T = TW.github;
@@ -17,15 +18,15 @@ export function baueGitHubKarte({ beiAngemeldet } = {}) {
   let uhr = null, lebt = true, gemeldet = false;
   const halt = () => { clearTimeout(uhr); uhr = null; };
   const setze = (...k) => inhalt.replaceChildren(...k.filter(Boolean));
-  const fehlerBox = (text) => h("div", { klasse: "w-fehlerbox fehlertext", role: "alert" }, symbol("warnung", 15), h("span", { text }));
+  const fehlerBox = (text) => h("div", { klasse: "w-fehlerbox fehlertext", role: "alert" }, symbol("warnung", 14), h("span", { text }));
 
   const zeigeStart = (meldung) => setze(
-    h("h3", { klasse: "w-abschnitt" }, symbol("github", 14), h("span", { text: T.titel })), h("div", { klasse: "w-aktion-text", text: T.text }),
+    h("h3", { klasse: "w-abschnitt" }, markenLogo("github", 14, { dekorativ: true }), h("span", { text: T.titel })), h("div", { klasse: "w-aktion-text", text: T.text }),
     meldung ? fehlerBox(meldung) : null,
-    h("button", { klasse: "knopf primaer", type: "button", "data-aktion": "github-anmelden", text: meldung ? T.nochmal : T.anmelden, aufClick: starte }));
+    h("button", { klasse: "knopf primaer mit-logo", type: "button", "data-aktion": "github-anmelden", aufClick: starte }, markenLogo("github", 14, { dekorativ: true }), h("span", { text: meldung ? T.nochmal : T.anmelden })));
 
   const zeigeFertig = (login) => {
-    setze(h("div", { klasse: "w-ok", "data-zustand": "fertig" }, symbol("kreis-haken", 15), h("span", { text: T.erfolg(login) })),
+    setze(h("div", { klasse: "w-ok", "data-zustand": "fertig" }, symbol("kreis-haken", 14), h("span", { text: T.erfolg(login) })),
       h("button", { klasse: "knopf", type: "button", "data-aktion": "github-abmelden", text: T.abmelden, aufClick: abmelden }));
     if (!gemeldet) { gemeldet = true; try { beiAngemeldet?.({ login: login || null }); } catch (e) { console.error(e); } }
   };
