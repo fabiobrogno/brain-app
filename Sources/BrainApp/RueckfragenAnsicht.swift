@@ -96,7 +96,7 @@ struct RueckfragenAnsicht: View {
             fragenTeil
             Divider()
             berichtTeil
-            if let m = modell.meldung { Label(m, systemImage: "info.circle").foregroundStyle(.secondary) }
+            if let m = modell.meldung { Label(m, systemImage: "info.circle.fill").labelStyle(.kortex).foregroundStyle(.secondary) }
         }
         .padding(20)
         .frame(width: 520)
@@ -108,10 +108,10 @@ struct RueckfragenAnsicht: View {
         case .laedt:
             ProgressView("Rückfragen werden geholt …")
         case .fehler(let m):
-            Label(m, systemImage: "exclamationmark.triangle")
+            Label(m, systemImage: "exclamationmark.triangle.fill").labelStyle(.kortex)
             Button("Nochmal versuchen") { Task { await modell.lade() } }
         case .fertig:
-            Label(modell.stapel.beantwortet > 0 ? "Alles beantwortet — danke." : "Keine Rückfragen offen.", systemImage: "checkmark.circle")
+            Label(modell.stapel.beantwortet > 0 ? "Alles beantwortet — danke." : "Keine Rückfragen offen.", systemImage: "checkmark.circle.fill").labelStyle(.kortex)
             if modell.stapel.wartend > 0 { Text("Weitere \(modell.stapel.wartend) warten, bis Platz ist.").foregroundStyle(.secondary) }
         case .fragen:
             if let f = modell.stapel.aktuell { frage(f) }
@@ -130,7 +130,7 @@ struct RueckfragenAnsicht: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
             }
-            if !f.seite.isEmpty { Label(f.seite, systemImage: "doc.text").font(.caption).foregroundStyle(.secondary) }
+            if !f.seite.isEmpty { Label(f.seite, systemImage: "doc.text").labelStyle(.kortex).font(.caption).foregroundStyle(.secondary) }
             HStack {
                 ForEach(f.optionen) { o in
                     Button(o.label) { Task { await modell.antworte(o) } }.help(o.wirkung)

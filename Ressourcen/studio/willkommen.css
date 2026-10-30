@@ -178,7 +178,8 @@
 /* GitHub-Karte: Gerätecode als ruhige Karte, Zustand klar erkennbar */
 .w-github-inhalt { align-items: stretch; gap: 14px; }
 .w-github-inhalt .w-abschnitt { display: flex; align-items: center; gap: 8px; margin: 0; }
-.w-github-inhalt .w-abschnitt .sym { color: var(--text); }
+.w-github-inhalt .w-abschnitt .sym, .w-github-inhalt .w-abschnitt .marken-logo { color: var(--text); }
+.w-kachel .marken-logo, .w-kachel-gross .marken-logo { color: inherit; }
 .w-github-code { align-self: flex-start; display: inline-flex; padding: 12px 20px; border: 1px solid var(--linie-stark); border-radius: var(--r-l); background: var(--seite); box-shadow: var(--schatten-klein), inset 0 0 0 4px var(--erhoben); font-variant-numeric: tabular-nums; -webkit-user-select: all; user-select: all; }
 .w-github-inhalt .w-ok { align-items: center; padding: 10px 12px; border-radius: var(--r); background: var(--gruen-weich); border: 1px solid var(--gruen-rand); font-weight: 500; }
 .w-github-inhalt .knopf { align-self: flex-start; }

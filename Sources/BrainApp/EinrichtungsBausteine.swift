@@ -10,9 +10,57 @@ enum AssistentMass {
     static let abstand: CGFloat = 16
 }
 
-/// Kopf eines Schritts: Symbol in einem getönten Kreis, Überschrift, ein kurzer Satz.
+/// Einheitliche Symbolstufen für alle SF Symbols des Assistenten (und des Menüs): immer dieselbe Gewichtung (`.medium`), nur drei Größen,
+/// einfarbig (`.monochrome`), in einer festen Breite, damit Texte daneben auf einer Linie stehen. Marken (GitHub) kommen nicht aus SF Symbols,
+/// sondern über `MarkenLogoAnsicht`; ihre Größen entsprechen diesen Stufen.
+enum SymbolStufe {
+    /// Neben Text: Hinweise, Meldungen, Ordnerzeilen, Menüzeilen.
+    case zeile
+    /// In einer Auswahlkarte.
+    case karte
+    /// Im Kopf eines Schritts (im getönten Kreis).
+    case titel
+
+    var punkte: CGFloat { switch self { case .zeile: 14; case .karte: 18; case .titel: 22 } }
+    var breite: CGFloat { switch self { case .zeile: 18; case .karte: 28; case .titel: 22 } }
+}
+
+/// Ein SF Symbol in einer festen Stufe. Gefüllte Varianten (`.fill`) sind Zuständen vorbehalten (angemeldet, Warnung, Hinweis); im Kopf eines
+/// Schritts und in Karten steht immer die Linienform, damit die Symbole zur Linienoptik des Studios passen.
+struct KSymbol: View {
+    let name: String
+    var stufe: SymbolStufe = .zeile
+
+    var body: some View {
+        Image(systemName: name)
+            .symbolRenderingMode(.monochrome)
+            .font(.system(size: stufe.punkte, weight: .medium))
+            .frame(width: stufe.breite, height: stufe.breite)
+            .accessibilityHidden(true)
+    }
+
+    /// Linienform eines Symbolnamens (`checkmark.seal.fill` → `checkmark.seal`).
+    static func linie(_ name: String) -> String { name.replacingOccurrences(of: ".fill", with: "") }
+}
+
+/// Beschriftung mit Symbol in der Zeilenstufe: gleiche Größe, Gewichtung und Abstand wie überall im Assistenten (statt der Standardgröße von `Label`).
+struct KortexLabelStil: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            configuration.icon.font(.system(size: SymbolStufe.zeile.punkte, weight: .medium)).frame(width: SymbolStufe.zeile.breite)
+            configuration.title
+        }
+    }
+}
+
+extension LabelStyle where Self == KortexLabelStil {
+    static var kortex: KortexLabelStil { KortexLabelStil() }
+}
+
+/// Kopf eines Schritts: Symbol (oder Marken-Logo) in einem getönten Kreis, Überschrift, ein kurzer Satz.
 struct Titel: View {
     let symbol: String
+    var marke: MarkenLogo? = nil
     let titel: String
     let text: String?
 
@@ -20,7 +68,11 @@ struct Titel: View {
         VStack(spacing: 8) {
             ZStack {
                 Circle().fill(Kortex.akzent.opacity(0.14))
-                Image(systemName: symbol).font(.system(size: 22, weight: .medium)).foregroundStyle(Kortex.akzent)
+                if let marke {
+                    MarkenLogoAnsicht(marke: marke, groesse: SymbolStufe.titel.punkte + 2)
+                } else {
+                    KSymbol(name: KSymbol.linie(symbol), stufe: .titel).foregroundStyle(Kortex.akzent)
+                }
             }
             .frame(width: 52, height: 52)
             .accessibilityHidden(true)
@@ -54,7 +106,7 @@ struct FehlerBox: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).accessibilityHidden(true)
+            KSymbol(name: "exclamationmark.triangle.fill").foregroundStyle(.orange)
             VStack(alignment: .leading, spacing: 8) {
                 Text(text).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                 if let wiederholen { Button("Noch einmal versuchen", action: wiederholen).controlSize(.small) }
@@ -75,7 +127,7 @@ struct HinweisBox: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "info.circle.fill").foregroundStyle(Kortex.akzent).accessibilityHidden(true)
+            KSymbol(name: "info.circle.fill").foregroundStyle(Kortex.akzent)
             Text(text).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
@@ -101,15 +153,24 @@ struct Arbeit: View {
 
 struct GrosserKnopf: View {
     let titel: String
+    var marke: MarkenLogo? = nil
     let aktion: () -> Void
     var haupt = true
 
+    private var beschriftung: some View {
+        HStack(spacing: 8) {
+            if let marke { MarkenLogoAnsicht(marke: marke, groesse: SymbolStufe.zeile.punkte + 2, farbe: haupt ? Kortex.akzentText : nil).accessibilityHidden(true) }
+            Text(titel)
+        }
+        .frame(minWidth: 220)
+    }
+
     var body: some View {
         if haupt {
-            Button(action: aktion) { Text(titel).frame(minWidth: 220) }
+            Button(action: aktion) { beschriftung }
                 .buttonStyle(.kortexHaupt).controlSize(.large).keyboardShortcut(.defaultAction)
         } else {
-            Button(action: aktion) { Text(titel).frame(minWidth: 220) }.controlSize(.large)
+            Button(action: aktion) { beschriftung }.controlSize(.large)
         }
     }
 }
@@ -117,6 +178,7 @@ struct GrosserKnopf: View {
 /// Auswahlkarte mit Kreis (offen/gewählt). Nur die Kopfzeile ist ein Knopf; der Inhalt darunter hat seine eigenen Bedienelemente.
 struct Karte<Inhalt: View>: View {
     let symbol: String
+    var marke: MarkenLogo? = nil
     let titel: String
     let text: String
     let offen: Bool
@@ -128,7 +190,10 @@ struct Karte<Inhalt: View>: View {
         VStack(alignment: .leading, spacing: 12) {
             Button(action: aktion) {
                 HStack(spacing: 12) {
-                    Image(systemName: symbol).font(.title3).frame(width: 28).foregroundStyle(Kortex.akzent).accessibilityHidden(true)
+                    Group {
+                        if let marke { MarkenLogoAnsicht(marke: marke, groesse: SymbolStufe.karte.punkte + 2) } else { KSymbol(name: KSymbol.linie(symbol), stufe: .karte) }
+                    }
+                    .frame(width: SymbolStufe.karte.breite).foregroundStyle(Kortex.akzent).accessibilityHidden(true) // Marken-Logos behalten ihre eigene Farbe (GitHub: Textfarbe)
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
                             Text(titel).font(.headline)
@@ -141,9 +206,8 @@ struct Karte<Inhalt: View>: View {
                         Text(text).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 0)
-                    Image(systemName: offen ? "largecircle.fill.circle" : "circle")
+                    KSymbol(name: offen ? "circle.inset.filled" : "circle")
                         .foregroundStyle(offen ? Kortex.akzent : Color.secondary.opacity(0.6))
-                        .accessibilityHidden(true)
                 }
                 .contentShape(Rectangle())
             }

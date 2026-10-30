@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kortex: Logo-Entwürfe v2</title>
+<style>
+  :root { --bg: #f4f3fb; --karte: #ffffff; --text: #1d1b3a; --leise: #6b688a; --linie: #dedcf0; --dock: #e9e7f6; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 -apple-system, "SF Pro Text", system-ui, sans-serif; padding: 32px 24px 56px; }
+  main { max-width: 1240px; margin: 0 auto; }
+  h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .unter { color: var(--leise); margin: 0 0 28px; max-width: 70ch; }
+  .raster { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 20px; }
+  .karte { background: var(--karte); border: 1px solid var(--linie); border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+  .karte h2 { font-size: 15px; margin: 0; }
+  .karte h2 span { color: var(--leise); font-weight: 400; }
+  .karte p { margin: 0; color: var(--leise); font-size: 13px; }
+  .gross { width: 100%; aspect-ratio: 1; border-radius: 12px; display: grid; place-items: center; }
+  .gross img { width: 88%; height: 88%; display: block; }
+  .hell { background: #f7f6fd; } .dunkel { background: #17152b; }
+  .proben { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+  .feld { border-radius: 10px; padding: 12px; display: flex; align-items: flex-end; justify-content: center; gap: 12px; min-width: 0; }
+  .feld img { display: block; image-rendering: auto; }
+  .feld small { display: none; }
+  .legende { margin: -6px 0 0; font-size: 11px; color: var(--leise); text-align: center; }
+  .hell { color: #1d1b3a; } .dunkel { color: #e8e6ff; }
+  .aktuell { border-style: dashed; }
+  .dock { display: flex; gap: 14px; align-items: center; margin-top: 36px; padding: 18px; background: var(--dock); border-radius: 18px; flex-wrap: wrap; }
+  .dock img { width: 64px; height: 64px; }
+  .dock h2 { font-size: 15px; margin: 0 14px 0 0; width: 100%; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #121121; --karte: #1b1a30; --text: #ebe9ff; --leise: #9a97bd; --linie: #2e2c4d; --dock: #1b1a30; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Kortex: Logo-Entwürfe v2</h1>
+  <p class="unter">Fünf neue Entwürfe im macOS-26-Raster (1024er Fläche, 824er Squircle, Licht von oben, dezente Tiefe) und zum Vergleich der aktuell eingebaute Entwurf C. Jeder Entwurf steht groß auf hellem und dunklem Grund, darunter die echten Proben bei 16, 32 und 64 px. Nichts davon ist im Bundle; die Wahl trifft der Nutzer.</p>
+
+  <section class="raster">
+    <article class="karte">
+      <h2>1 · Bögen <span>(kortex-1-boegen)</span></h2>
+      <div class="gross hell"><img src="kortex-1-boegen.svg" alt="Entwurf 1: K aus Stamm und zwei Rindenbögen"></div>
+      <div class="gross dunkel" style="aspect-ratio:2.2"><img style="height:auto;width:40%" src="kortex-1-boegen.svg" alt=""></div>
+      <div class="proben">
+        <div class="feld hell"><img src="proben/kortex-1-boegen-16.png" width="16" height="16" alt=""><img src="proben/kortex-1-boegen-32.png" width="32" height="32" alt=""><img src="proben/kortex-1-boegen-64.png" width="64" height="64" alt=""><small>16 · 32 · 64</small></div>
+        <div class="feld dunkel"><img src="proben/kortex-1-boegen-16.png" width="16" height="16" alt=""><img src="proben/kortex-1-boegen-32.png" width="32" height="32" alt=""><img src="proben/kortex-1-boegen-64.png" width="64" height="64" alt=""><small>16 · 32 · 64</small></div>
+      </div>
+      <div class="legende">16 · 32 · 64 px, hell und dunkel</div>
+      <p>K aus einem Stamm und zwei spiegelgleichen Kreisbögen gleichen Radius, die sich wie Rindenfalten im Stamm treffen. Ruhigstes, klarstes Zeichen.</p>
+    </article>
+
+    <article class="karte">
+      <h2>2 · Netz <span>(kortex-2-netz)</span></h2>
+      <div class="gross hell"><img src="kortex-2-netz.svg" alt="Entwurf 2: K aus Knoten und Kanten"></div>
+      <div class="gross dunkel" style="aspect-ratio:2.2"><img style="height:auto;width:40%" src="kortex-2-netz.svg" alt=""></div>
+      <div class="proben">
+        <div class="feld hell"><img src="proben/kortex-2-netz-16.png" width="16" height="16" alt=""><img src="proben/kortex-2-netz-32.png" width="32" height="32" alt=""><img src="proben/kortex-2-netz-64.png" width="64" height="64" alt=""><small>16 · 32 · 64</small></div>
+        <div class="feld dunkel"><img src="proben/kortex-2-netz-16.png" width="16" height="16" alt=""><img src="proben/kortex-2-netz-32.png" width="32" height="32" alt=""><img src="proben/kortex-2-netz-64.png" width="64" height="64" alt=""><small>16 · 32 · 64</small></div>
+      </div>
+      <div class="legende">16 · 32 · 64 px, hell und dunkel</div>
+      <p>K als Graph: der große, helle Kern in der Mitte, vier kleinere Knoten an den Enden. Hierarchie statt Gleichförmigkeit; Vernetzung ist sofort lesbar.</p>
+    </article>
+
+    <article class="karte">
+      <h2>3 · Windung <span>(kortex-3-windung)</span></h2>
+      <div class="gross hell"><img src="kortex-3-windung.svg" alt="Entwurf 3: eine durchgehende Windungslinie"></div>
+      <div class="gross dunkel" style="aspect-ratio:2.2"><img style="height:auto;width:40%" src="kortex-3-windung.svg" alt=""></div>
+      <div class="proben">
+        <div class="feld hell"><img src="proben/kortex-3-windung-16.png" width="16" height="16" alt=""><img src="proben/kortex-3-windung-32.png" width="32" height="32" alt=""><img src="proben/kortex-3-windung-64.png" width="64" height="64" alt=""><small>16 · 32 · 64</small></div>
+        <div class="feld dunkel"><img src="proben/kortex-3-windung-16.png" width="16" height="16" alt=""><img src="proben/kortex-3-windung-32.png" width="32" height="32" alt=""><img src="proben/kortex-3-windung-64.png" width="64" height="64" alt=""><small>16 · 32 · 64</small></div>
+      </div>
+      <div class="legende">16 · 32 · 64 px, hell und dunkel</div>
+      <p>Eine einzige Linie, die sich in sechs Bahnen faltet, im Umriss wie ein Gehirn von oben. Abstrakt, ohne Buchstaben; verzichtet bewusst auf das K.</p>
+    </article>
+
+    <article class="karte">
+      <h2>4 · Papier <span>(kortex-4-papier)</span></h2>
+      <div class="gross hell"><img src="kortex-4-papier.svg" alt="Entwurf 4: Monogramm K auf Notizblatt mit Falz"></div>
+      <div class="gross dunkel" style="aspect-ratio:2.2"><img style="height:auto;width:40%" src="kortex-4-papier.svg" alt=""></div>
+      <div class="proben">
+        <div class="feld hell"><img src="proben/kortex-4-papier-16.png" width="16" height="16" alt=""><img src="proben/kortex-4-papier-32.png" width="32" height="32" alt=""><img src="proben/kortex-4-papier-64.png" width="64" height="64" alt=""><small>16 · 32 · 64</small></div>
+        <div class="feld dunkel"><img src="proben/kortex-4-papier-16.png" width="16" height="16" alt=""><img src="proben/kortex-4-papier-32.png" width="32" height="32" alt=""><img src="proben/kortex-4-papier-64.png" width="64" height="64" alt=""><small>16 · 32 · 64</small></div>
+      </div>
+      <div class="legende">16 · 32 · 64 px, hell und dunkel</div>
+      <p>Monogramm K auf einem Blatt mit umgeschlagener Ecke: der Bezug zu Notizen. Das Blatt hat die hellste Fläche, bei kleiner Größe bleibt das K kontrastreich.</p>
+    </article>
+
+    <article class="karte">
+      <h2>5 · Bahn <span>(kortex-5-bahn)</span></h2>
+      <div class="gross hell"><img src="kortex-5-bahn.svg" alt="Entwurf 5: leuchtendes K als Nervenbahn auf dunklem Lila"></div>
+      <div class="gross dunkel" style="aspect-ratio:2.2"><img style="height:auto;width:40%" src="kortex-5-bahn.svg" alt=""></div>
+      <div class="proben">
+        <div class="feld hell"><img src="proben/kortex-5-bahn-16.png" width="16" height="16" alt=""><img src="proben/kortex-5-bahn-32.png" width="32" height="32" alt=""><img src="proben/kortex-5-bahn-64.png" width="64" height="64" alt=""><small>16 · 32 · 64</small></div>
+        <div class="feld dunkel"><img src="proben/kortex-5-bahn-16.png" width="16" height="16" alt=""><img src="proben/kortex-5-bahn-32.png" width="32" height="32" alt=""><img src="proben/kortex-5-bahn-64.png" width="64" height="64" alt=""><small>16 · 32 · 64</small></div>
+      </div>
+      <div class="legende">16 · 32 · 64 px, hell und dunkel</div>
+      <p>Dunkle Variante: ein leuchtendes K, dessen oberer Arm in einem Impuls-Knoten endet (Nervenbahn). Hebt sich im Dock von hellen Icons ab.</p>
+    </article>
+
+    <article class="karte aktuell">
+      <h2>Aktuell · C <span>(kortex-c-k)</span></h2>
+      <div class="gross hell"><img src="kortex-c-k.png" alt="Aktuell eingebauter Entwurf C"></div>
+      <div class="gross dunkel" style="aspect-ratio:2.2"><img style="height:auto;width:40%" src="kortex-c-k.png" alt=""></div>
+      <div class="proben">
+        <div class="feld hell"><img src="proben/kortex-c-k-16.png" width="16" height="16" alt=""><img src="proben/kortex-c-k-32.png" width="32" height="32" alt=""><img src="proben/kortex-c-k-64.png" width="64" height="64" alt=""><small>16 · 32 · 64</small></div>
+        <div class="feld dunkel"><img src="proben/kortex-c-k-16.png" width="16" height="16" alt=""><img src="proben/kortex-c-k-32.png" width="32" height="32" alt=""><img src="proben/kortex-c-k-64.png" width="64" height="64" alt=""><small>16 · 32 · 64</small></div>
+      </div>
+      <div class="legende">16 · 32 · 64 px, hell und dunkel</div>
+      <p>Zum Vergleich: der eingebaute Entwurf mit Rundrechteck statt Squircle und der verspielten Furche. (Die 16-px-Probe hier ist der volle Entwurf; im Bundle ersetzt ihn die Kleinvariante.)</p>
+    </article>
+  </section>
+
+  <section class="dock">
+    <h2>Nebeneinander bei 64 px</h2>
+    <img src="proben/kortex-1-boegen-64.png" alt="1"><img src="proben/kortex-2-netz-64.png" alt="2"><img src="proben/kortex-3-windung-64.png" alt="3"><img src="proben/kortex-4-papier-64.png" alt="4"><img src="proben/kortex-5-bahn-64.png" alt="5"><img src="proben/kortex-c-k-64.png" alt="aktuell C">
+  </section>
+</main>
+</body>
+</html>

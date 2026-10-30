@@ -11,6 +11,7 @@ struct EinrichtungsAnsicht: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Kortex kann nicht starten").font(.title2.bold())
             Label(zustand.anzeige.titel, systemImage: zustand.anzeige.symbol)
+                .labelStyle(.kortex)
                 .foregroundStyle(.red)
                 .fixedSize(horizontal: false, vertical: true)
             Text("Das Studio braucht die mitgelieferte Laufzeit. Bitte installiere die App neu — dein Vault wird dabei nicht verändert.")
