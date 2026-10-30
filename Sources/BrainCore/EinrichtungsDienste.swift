@@ -145,6 +145,12 @@ public enum KiVerbindung: Equatable, Sendable {
     case schonVerbunden
 }
 
+/// Ergebnis von „Trennen“: Kortex hat seinen Eintrag herausgenommen, oder es gab keinen (dann ist nichts zu tun).
+public enum KiTrennung: Equatable, Sendable {
+    case getrennt
+    case warNichtVerbunden
+}
+
 /// Wo sich Kortex zusätzlich einträgt (Kern-Umzug P6). Alles läuft über den Starter der App und zeigt nur auf feste Pfade
 /// (`bin/kortex`, `bin/kern`) — nach einem App-Update bleibt es gültig. Jeder Eintrag lässt sich wieder herausnehmen.
 public enum Verdrahtung: String, CaseIterable, Sendable {
@@ -263,6 +269,12 @@ public protocol EinrichtungsDienste: Sendable {
     func erkenneKIs() async throws -> [KiProgramm]
     /// `profil`: nur bei Claude Code — der Pfad eines gefundenen Profils (`VerdrahtungsStand.profile`); nil = Standard wie bisher.
     func verbinde(_ ziel: KiZiel, umstellen: Bool, profil: String?) async throws -> KiVerbindung
+
+    /// Rückweg von `verbinde`: nimmt NUR den Eintrag „brain“ heraus, und nur, wenn er von Kortex stammt. Ein fremder Eintrag bleibt
+    /// stehen (Fehler mit `art == "anders"`). Hooks und Statuszeile sind ein eigener Schalter (`verdrahte`).
+    func trenne(_ ziel: KiZiel, profil: String?) async throws -> KiTrennung
+    /// Konfiguration (JSON, Feld `mcpServers`) zum Einfügen in andere KI-Programme. Liest nur.
+    func konfiguration() async throws -> String
 
     // Verdrahtung (Hooks bei Claude Code, Prüfung vor dem Speichern, Hintergrunddienst)
     /// Was eingetragen ist. Liest nur.

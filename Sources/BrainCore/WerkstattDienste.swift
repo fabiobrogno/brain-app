@@ -153,6 +153,21 @@ public struct WerkstattDienste: EinrichtungsDienste {
         return (j["schonVerbunden"] as? Bool) == true ? .schonVerbunden : .verbunden
     }
 
+    public func trenne(_ ziel: KiZiel, profil: String?) async throws -> KiTrennung {
+        var b: [String: Any] = ["ziel": ziel.ziel]
+        if ziel == .claude, let profil { b["profil"] = profil }
+        let j = try await rufe("POST", "/api/mcp/trennen", b)
+        return (j["warNichtVerbunden"] as? Bool) == true ? .warNichtVerbunden : .getrennt
+    }
+
+    public func konfiguration() async throws -> String {
+        let j = try await rufe("GET", "/api/mcp/konfiguration")
+        guard let text = j["json"] as? String, !text.isEmpty else {
+            throw EinrichtungsFehler("Die Antwort des Hintergrunddienstes war unvollständig.")
+        }
+        return text
+    }
+
     // MARK: Verdrahtung
 
     public func verdrahtungsStand() async throws -> VerdrahtungsStand {
