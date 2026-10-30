@@ -5,9 +5,9 @@
 import { api } from "./api.js";
 import { h, leseLokal, speichereLokal, dialogOffen } from "./hilfen.js";
 import { symbol } from "./symbole.js";
-import { kiLogo } from "./ki-logos.js";
 import { TF } from "./texte-frage.js";
 import { rendereMarkdown } from "./frage-markdown.js";
+import { auswahl, segment, textbereich, knopf as baueKnopf } from "./bausteine.js";
 
 const wartePause = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -22,7 +22,7 @@ export function erzeugeFragePanel(z) {
 
   const kopf = h("header", { klasse: "frage-kopf" },
     h("div", { klasse: "frage-titel" }, symbol("frage", 16), h("h2", { id: "frage-titel", text: TF.titel })),
-    h("button", { klasse: "knopf-icon", type: "button", "data-aktion": "frage-zu", title: `${TF.schliessen} (Esc)`, "aria-label": TF.schliessen, aufClick: () => schliesse() }, symbol("schliessen", 12)));
+    baueKnopf({ symbol: "schliessen", variante: "leise", groesse: "s", aktion: "frage-zu", titel: `${TF.schliessen} (Esc)`, label: TF.schliessen, aufKlick: () => schliesse() }));
   const leer = h("div", { klasse: "frage-leer", hidden: true, "data-frage": "leer" });
   const formular = h("form", { klasse: "frage-form", hidden: true, "data-frage": "formular", novalidate: true });
   const ausgabe = h("div", { klasse: "frage-ausgabe", "data-frage": "ausgabe" });
@@ -69,8 +69,8 @@ export function erzeugeFragePanel(z) {
   }
   function zeichneLeer(l) {
     const knoepfe = [];
-    if (l.aktion) knoepfe.push(h("button", { klasse: "knopf primaer", type: "button", "data-aktion": "frage-leer-aktion", text: l.knopf, aufClick: () => l.aktion() }));
-    if (l.art && l.aktion !== ladeBereit) knoepfe.push(h("button", { klasse: "knopf", type: "button", "data-aktion": "frage-neu-pruefen", text: "Noch einmal prüfen", aufClick: () => ladeBereit() }));
+    if (l.aktion) knoepfe.push(baueKnopf({ text: l.knopf, variante: "primaer", aktion: "frage-leer-aktion", aufKlick: () => l.aktion() }));
+    if (l.art && l.aktion !== ladeBereit) knoepfe.push(baueKnopf({ text: "Noch einmal prüfen", aktion: "frage-neu-pruefen", aufKlick: () => ladeBereit() }));
     leer.replaceChildren(h("div", { klasse: "frage-leer-zeichen" }, symbol(l.symbol || "frage", 24)), h("h3", { text: l.titel }), h("p", { text: l.text }), h("div", { klasse: "frage-leer-knoepfe" }, ...knoepfe));
     if (l.art) leer.dataset.grund = l.art; else delete leer.dataset.grund;
   }
@@ -79,39 +79,27 @@ export function erzeugeFragePanel(z) {
   function zeichneFormular() {
     const erlaubte = (bereit?.konten || []).filter((k) => k.erlaubt);
     const andere = (bereit?.konten || []).filter((k) => !k.erlaubt);
-    const laeuft = !!(lauf && !lauf.fertig);
-    const gruppe = h("div", { klasse: "frage-konten", role: "radiogroup", "aria-label": TF.konto, "data-frage": "konten" });
-    const waehle = (id) => { if (laeuft) return; konto = id; speichereLokal(`frage.konto@${vaultSchluessel()}`, id); zeichneFormular(); formular.querySelector("textarea")?.focus(); };
-    erlaubte.forEach((k, i) => {
-      const b = h("button", { klasse: "frage-konto", type: "button", role: "radio", "aria-checked": String(k.id === konto), tabindex: k.id === konto ? "0" : "-1", "data-konto": k.id, disabled: laeuft && k.id !== konto, title: TF.kontoHinweis,
-        aufClick: () => waehle(k.id),
-        aufKeydown: (e) => {
-          const d = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
-          if (!d) return;
-          e.preventDefault();
-          waehle(erlaubte[(i + d + erlaubte.length) % erlaubte.length].id);
-          formular.querySelector(`[data-konto="${erlaubte[(i + d + erlaubte.length) % erlaubte.length].id}"]`)?.focus();
-        } },
-        kiLogo(k.programm, 16, { dekorativ: true }) || symbol("claude", 16), h("span", { klasse: "frage-konto-name", text: k.name }));
-      gruppe.append(b);
-    });
-    const modellGruppe = h("div", { klasse: "frage-modell", role: "radiogroup", "aria-label": TF.modell, "data-frage": "modell" },
-      ...bereit.modelle.map((m) => h("button", { klasse: "frage-segment", type: "button", role: "radio", "aria-checked": String(m === modell), "data-modell": m, title: TF.modellHinweis[m] || "", disabled: laeuft,
-        aufClick: () => { modell = m; speichereLokal("frage.modell", m); zeichneFormular(); } }, TF.modelle[m] || m)));
-    const eingabe = h("textarea", { klasse: "frage-eingabe", rows: "3", maxlength: String(bereit.grenzen.frageMax), placeholder: TF.platzhalter, "aria-label": TF.titel, spellcheck: "true", disabled: laeuft, "data-frage": "eingabe" });
-    eingabe.value = text;
-    eingabe.addEventListener("input", () => { text = eingabe.value; knopf.disabled = !text.trim(); });
-    eingabe.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.isComposing) { e.preventDefault(); sende(); } });
-    const knopf = h("button", { klasse: "knopf primaer", type: "submit", "data-aktion": "frage-senden", disabled: !text.trim() }, h("span", { text: TF.fragen }), h("kbd", { text: TF.fragenKurz }));
     const k = kontoDaten(konto);
+    // Bedienelemente aus bausteine.js (Auswahl mit Logo, Segment, Textbereich, Knopf), nicht die nativen des Systems
+    const kontoWahl = auswahl({ optionen: erlaubte.map((x) => ({ wert: x.id, text: x.name, logo: x.programm })), wert: konto, label: TF.konto, breit: true, daten: { "data-frage": "konto", title: TF.kontoHinweis },
+      aufAenderung: (id) => { konto = id; speichereLokal(`frage.konto@${vaultSchluessel()}`, id); zeichneFormular(); formular.querySelector("textarea")?.focus(); } });
+    const modellWahl = segment({ optionen: bereit.modelle.map((m) => ({ wert: m, text: TF.modelle[m] || m, daten: { title: TF.modellHinweis[m] || "" } })), wert: modell, label: TF.modell, daten: { "data-frage": "modell" },
+      aufAenderung: (m) => { modell = m; speichereLokal("frage.modell", m); } });
+    const eingabe = textbereich({ platzhalter: TF.platzhalter, label: TF.titel, minZeilen: 3, maxZeilen: 9, daten: { "data-frage": "eingabe", maxlength: String(bereit.grenzen.frageMax) }, wert: text,
+      beiEingabe: (t) => { text = t; senden.disabled = !t.trim(); } });
+    eingabe.textarea.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.isComposing) { e.preventDefault(); sende(); } });
+    const senden = baueKnopf({ text: TF.fragen, variante: "primaer", typ: "submit", aktion: "frage-senden" });
+    senden.append(h("kbd", { text: TF.fragenKurz }));
+    senden.disabled = !text.trim();
     const hinweise = [k ? h("p", { klasse: "frage-weg", "data-frage": "weg", text: TF.weg(k.name, TF.anbieter) }) : null,
       andere.length ? h("p", { klasse: "frage-hinweis", "data-frage": "nur-claude", text: TF.leer.nurClaude }) : null];
     formular.replaceChildren(
-      h("div", { klasse: "frage-zeile" }, h("span", { klasse: "frage-label", text: TF.konto }), gruppe),
-      h("div", { klasse: "frage-zeile" }, h("span", { klasse: "frage-label", text: TF.modell }), modellGruppe),
-      eingabe,
-      h("div", { klasse: "frage-aktionen" }, knopf),
+      h("div", { klasse: "frage-zeile" }, h("span", { klasse: "frage-label", text: TF.konto }), kontoWahl),
+      h("div", { klasse: "frage-zeile" }, h("span", { klasse: "frage-label", text: TF.modell }), modellWahl),
+      eingabe.el,
+      h("div", { klasse: "frage-aktionen" }, senden),
       ...hinweise);
+    eingabe.passe();
   }
   formular.addEventListener("submit", (e) => { e.preventDefault(); sende(); });
 
@@ -136,7 +124,7 @@ export function erzeugeFragePanel(z) {
     if (!l.fertig) {
       teile.push(h("div", { klasse: "frage-status", "data-frage": "status" },
         h("span", { klasse: "frage-punkte", "aria-hidden": "true" }), h("span", { klasse: "frage-status-text", role: "status", text: l.abbrechend ? "Wird abgebrochen …" : l.status || TF.wartet }),
-        h("button", { klasse: "knopf", type: "button", "data-aktion": "frage-abbrechen", disabled: !!l.abbrechend, aufClick: () => abbrechen() }, TF.abbrechen)));
+        baueKnopf({ text: TF.abbrechen, aktion: "frage-abbrechen", groesse: "s", aufKlick: () => abbrechen(), laedt: !!l.abbrechend })));
     }
     if (l.antwort) {
       const a = h("div", { klasse: "frage-antwort", "data-frage": "antwort", "aria-busy": String(!l.fertig) });
@@ -167,7 +155,7 @@ export function erzeugeFragePanel(z) {
       const v = TF.verbrauchText(e, l.abo, l.kontoName);
       if (v) teile.push(h("p", { klasse: "frage-verbrauch", "data-frage": "verbrauch", title: TF.verbrauch.titel }, h("span", { klasse: "frage-label", text: `${TF.verbrauch.titel}: ` }), v));
     }
-    if (l.fertig) teile.push(h("div", { klasse: "frage-aktionen" }, h("button", { klasse: "knopf", type: "button", "data-aktion": "frage-neue", text: TF.neu, aufClick: () => neueFrage() })));
+    if (l.fertig) teile.push(h("div", { klasse: "frage-aktionen" }, baueKnopf({ text: TF.neu, aktion: "frage-neue", aufKlick: () => neueFrage() })));
     ausgabe.replaceChildren(...teile);
     if (!l.fertig && fixiert) rumpf.scrollTop = rumpf.scrollHeight; // während des Schreibens mitlaufen, solange niemand nach oben gescrollt hat
   }
@@ -200,6 +188,13 @@ export function erzeugeFragePanel(z) {
     neu.id = id;
     pollen(neu);
   }
+  // Während des Schreibens höchstens alle 250 ms neu zeichnen (das Markdown wird jedes Mal ganz gebaut); das Ende zeichnet sofort (zeichneRumpf).
+  let letzteZeichnung = 0, zeichenTimer = null;
+  const zeichneJetzt = () => { clearTimeout(zeichenTimer); zeichenTimer = null; letzteZeichnung = Date.now(); zeichneAusgabe(); };
+  function planeAusgabe() {
+    const warte = 250 - (Date.now() - letzteZeichnung);
+    if (warte <= 0) zeichneJetzt(); else if (!zeichenTimer) zeichenTimer = setTimeout(zeichneJetzt, warte);
+  }
   async function pollen(l) {
     let fehler = 0;
     while (!l.fertig && lauf === l) {
@@ -215,9 +210,10 @@ export function erzeugeFragePanel(z) {
       l.quellen = r.quellen; l.verweise = r.verweise || {}; l.unbekannt = r.unbekannt || 0; l.gekuerzt = !!r.gekuerzt;
       l.status = statusAus(r.ereignisse) || (l.antwort ? TF.schreibt : l.status);
       if (r.fertig) { l.fertig = true; l.ergebnis = r.ergebnis; }
-      zeichneAusgabe();
+      planeAusgabe();
     }
     if (lauf !== l) return;
+    clearTimeout(zeichenTimer); zeichenTimer = null;
     zeichneRumpf();
     if (l.ergebnis?.ok) ansage(`${TF.antwort} ist fertig.`);
   }

@@ -4,6 +4,7 @@
 // Verweisen auf Seiten dieses Vaults ([[Seite]], aufgelöst von der Werkstatt: nur Seiten, die es gibt).
 //   rendereMarkdown(text, { verweise: { "<Ziel im Text>": "<Pfad im Vault>"|null }, oeffne: (pfad) => … }) → DocumentFragment
 const MAX_TIEFE = 4;
+const MAX_ZEILE = 20_000; // eine längere Zeile wird als reiner Text gezeigt (die Muster unten sind begrenzt, das hier ist die zweite Absicherung gegen Rechenzeit)
 const el = (tag, klasse, ...kinder) => {
   const e = document.createElement(tag);
   if (klasse) e.className = klasse;
@@ -13,11 +14,10 @@ const el = (tag, klasse, ...kinder) => {
 const basis = (p) => p.split("/").pop().replace(/\.(md|txt)$/i, "");
 
 // ---------- Inline ----------
-const INLINE = /(`+)([^`][\s\S]*?[^`]|[^`])\1(?!`)|\[\[([^\[\]\n]{1,300})\]\]|\*\*([^*\n]+?)\*\*|(?<![\p{L}\p{N}_])__([^_\n]+?)__(?![\p{L}\p{N}_])|~~([^~\n]+?)~~|(?<![\p{L}\p{N}*])\*([^*\s][^*\n]*?)\*(?![\p{L}\p{N}*])|(?<![\p{L}\p{N}_])_([^_\s][^_\n]*?)_(?![\p{L}\p{N}_])|\[([^\]\n]{1,300})\]\(([^)\s]{1,500})\)/gu;
+const INLINE = /(?<!`)(`{1,2})(?!`)([^`\n]{1,500}?)\1(?!`)|\[\[([^\[\]\n]{1,300})\]\]|\*\*([^*\n]+?)\*\*|(?<![\p{L}\p{N}_])__([^_\n]+?)__(?![\p{L}\p{N}_])|~~([^~\n]+?)~~|(?<![\p{L}\p{N}*])\*([^*\s][^*\n]*?)\*(?![\p{L}\p{N}*])|(?<![\p{L}\p{N}_])_([^_\s][^_\n]*?)_(?![\p{L}\p{N}_])|\[([^\]\n]{1,300})\]\(([^)\s]{1,500})\)/gu;
 function inline(text, ziel, opt, tiefe = 0) {
-  if (tiefe > MAX_TIEFE) { ziel.append(document.createTextNode(text)); return; }
+  if (tiefe > MAX_TIEFE || text.length > MAX_ZEILE) { ziel.append(document.createTextNode(text)); return; }
   let pos = 0;
-  INLINE.lastIndex = 0;
   const re = new RegExp(INLINE.source, INLINE.flags);
   for (let m; (m = re.exec(text)); ) {
     if (m.index > pos) ziel.append(document.createTextNode(text.slice(pos, m.index)));
@@ -141,6 +141,6 @@ function bloecke(text, ziel, opt, tiefe = 0) {
 
 export function rendereMarkdown(text, opt = {}) {
   const f = document.createDocumentFragment();
-  bloecke(String(text ?? "").slice(0, 200_000), f, { verweise: opt.verweise || {}, oeffne: typeof opt.oeffne === "function" ? opt.oeffne : null });
+  bloecke(String(text ?? "").slice(0, 100_000), f, { verweise: opt.verweise || {}, oeffne: typeof opt.oeffne === "function" ? opt.oeffne : null });
   return f;
 }

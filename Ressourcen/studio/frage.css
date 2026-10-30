@@ -13,20 +13,6 @@
 .frage-label { font-size: 11px; font-weight: 600; letter-spacing: .02em; color: var(--text-2); margin: 0; }
 .frage-form { display: flex; flex-direction: column; gap: 10px; }
 .frage-zeile { display: flex; flex-direction: column; gap: 5px; }
-.frage-konten { display: flex; flex-wrap: wrap; gap: 6px; }
-.frage-konto { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 12px 0 9px; border: 1px solid var(--linie-stark); border-radius: var(--r-pille); background: var(--papier); color: var(--text-2); cursor: pointer; font: inherit; max-width: 100%; }
-.frage-konto:hover:not(:disabled) { border-color: var(--text-3); color: var(--text); }
-.frage-konto[aria-checked="true"] { border-color: var(--akzent); background: var(--akzent-weich); color: var(--text); font-weight: 600; }
-.frage-konto:disabled { opacity: .5; cursor: default; }
-.frage-konto .ki-logo { color: inherit; flex: none; }
-.frage-konto-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.frage-modell { display: inline-flex; padding: 2px; gap: 2px; border-radius: var(--r); background: var(--seite-2); align-self: flex-start; }
-.frage-segment { height: 24px; padding: 0 12px; border: 0; border-radius: var(--r-s); background: transparent; color: var(--text-2); cursor: pointer; font: inherit; }
-.frage-segment[aria-checked="true"] { background: var(--erhoben); color: var(--text); font-weight: 600; box-shadow: var(--schatten-klein); }
-.frage-segment:disabled { opacity: .5; cursor: default; }
-.frage-eingabe { width: 100%; box-sizing: border-box; min-height: 76px; max-height: 220px; resize: vertical; padding: 9px 11px; border: 1px solid var(--linie-stark); border-radius: var(--r); background: var(--papier); color: var(--text); font: 13.5px/1.5 var(--schrift-text); outline: 0; }
-.frage-eingabe:focus { border-color: var(--akzent); box-shadow: 0 0 0 3px var(--akzent-weich); }
-.frage-eingabe:disabled { opacity: .6; }
 .frage-aktionen { display: flex; justify-content: flex-end; gap: 8px; }
 .frage-aktionen .knopf kbd { margin-left: 8px; opacity: .75; font-weight: 500; }
 .frage-weg, .frage-hinweis { margin: 0; color: var(--text-2); font-size: 12px; line-height: 17px; }

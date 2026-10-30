@@ -3,6 +3,8 @@
 // ECHTEN brain-mcp.mjs aus --mcp-config. Jede Kindprozess-Umgebung kommt aus baueTestUmgebung (HOME, Support, PATH im Temp-Ordner); der Test ändert process.env nicht.
 import test, { after } from "node:test";
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { createInterface } from "node:readline";
 import { writeFileSync, mkdirSync, realpathSync, readFileSync, existsSync, readdirSync, statSync, chmodSync, rmSync } from "node:fs";
 import { join, relative, basename } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -24,7 +26,7 @@ async function bis(f, ms = 8000, text = "Bedingung") {
 }
 
 // Ein Vault mit zwei Seiten, zwei Claude-Konten (A: „max“, nicht Standard · B gesperrt), einem Codex-Konto und dem Standard-Claude-Konto; alles unter dem Temp-Ordner.
-function szenario({ grenzen = {}, mitClaude = true, stufeA = "lesen" } = {}) {
+function szenario({ grenzen = {}, mitClaude = true, stufeA = "lesen", tempImVault = false } = {}) {
   const home = realpathSync(tmp("brain-home-")), support = realpathSync(tmp("brain-support-")), bin = realpathSync(tmp("brain-bin-")), temp = realpathSync(tmp("brain-frage-temp-"));
   const vault = realpathSync(tmp("vault-")), anderer = realpathSync(tmp("vault-zwei-"));
   for (const v of [vault, anderer]) schreibe(v, "brain.config.json", "{}\n");
@@ -49,7 +51,7 @@ function szenario({ grenzen = {}, mitClaude = true, stufeA = "lesen" } = {}) {
     chmodSync(join(bin, "claude"), 0o755);
   }
   const env = baueTestUmgebung({ HOME: home, BRAIN_APP_SUPPORT: support, PATH: `${bin}:/usr/bin:/bin`, BRAIN_CLAUDE_EXTRA: "" });
-  const h = erzeugeHandler({ vault, vaultOptionen: { support }, kontenHome: home, kontenErkennung: () => [], frageEnv: env, frageGrenzen: grenzen, frageTemp: temp });
+  const h = erzeugeHandler({ vault, vaultOptionen: { support }, kontenHome: home, kontenErkennung: () => [], frageEnv: env, frageGrenzen: grenzen, frageTemp: tempImVault ? (mkdirSync(join(vault, "tmp-in")), join(vault, "tmp-in")) : temp });
   const api = async (methode, p, daten) => {
     const q = p.indexOf("?");
     const r = await h({ methode, pfad: q < 0 ? p : p.slice(0, q), query: q < 0 ? null : p.slice(q + 1), body: daten === undefined ? undefined : Buffer.from(JSON.stringify(daten)) });
@@ -125,7 +127,9 @@ test("Aufruf: genau die dokumentierten Optionen, Frage über stdin, cwd leer und
   assert.equal(opt("--output-format"), "stream-json");
   for (const f of ["-p", "--verbose", "--include-partial-messages", "--strict-mcp-config", "--no-session-persistence", "--disable-slash-commands"]) assert.ok(a.args.includes(f), f);
   assert.equal(opt("--permission-mode"), "dontAsk");
-  assert.deepEqual(JSON.parse(opt("--settings")), { disableAllHooks: true });
+  assert.deepEqual(JSON.parse(opt("--settings")), { disableAllHooks: true, autoMemoryEnabled: false });
+  assert.equal(opt("--max-turns"), "10");
+  assert.equal(opt("--max-budget-usd"), "1", "mittleres Modell: 1 $");
   assert.equal(opt("--setting-sources"), "user");
   assert.equal(opt("--allowedTools"), "mcp__brain__brain_suchen,mcp__brain__brain_lesen,mcp__brain__brain_kontext");
   const mcp = JSON.parse(opt("--mcp-config")).mcpServers;
@@ -137,7 +141,7 @@ test("Aufruf: genau die dokumentierten Optionen, Frage über stdin, cwd leer und
   // cwd: ein leerer Ordner im Temp-Ordner, nicht der Vault
   assert.ok(a.cwd.startsWith(s.temp) && !a.cwd.startsWith(s.vault));
   // Umgebung: nichts außer der ausdrücklichen Liste (die Testumgebung selbst hat viel mehr: npm_*, NODE_*, evtl. ANTHROPIC_API_KEY …)
-  const ERLAUBT = new Set(["PATH", "HOME", "LANG", "TMPDIR", "NODE_EXTRA_CA_CERTS", "CLAUDE_CONFIG_DIR", "BRAIN_ERNTE", "BRAIN_TESTMODUS", "__CF_USER_TEXT_ENCODING"]); // letzteres fügt macOS jedem Kindprozess selbst hinzu
+  const ERLAUBT = new Set(["PATH", "HOME", "LANG", "TMPDIR", "NODE_EXTRA_CA_CERTS", "CLAUDE_CONFIG_DIR", "BRAIN_ERNTE", "BRAIN_TESTMODUS", "CLAUDE_CODE_DISABLE_CLAUDE_MDS", "CLAUDE_CODE_DISABLE_AUTO_MEMORY", "__CF_USER_TEXT_ENCODING"]); // letzteres fügt macOS jedem Kindprozess selbst hinzu
   assert.deepEqual(a.envSchluessel.filter((k) => !ERLAUBT.has(k)), [], "keine fremde Variable in der Umgebung");
   assert.equal(a.claudeConfigDir, s.a);
 });
@@ -151,7 +155,7 @@ test("Umgebung: Standard-Konto ohne CLAUDE_CONFIG_DIR; ein geerbtes CLAUDE_CONFI
   assert.ok(!a.envSchluessel.includes("CLAUDE_CONFIG_DIR"));
   // reine Funktion: ein geerbtes CLAUDE_CONFIG_DIR (fremdes Konto) verschwindet; ein fremder Schlüssel kommt nicht durch
   const e = baueFrageUmgebung({ basis: { PATH: "/usr/bin:relativ:", CLAUDE_CONFIG_DIR: "/fremd", ANTHROPIC_API_KEY: "geheim", GITHUB_TOKEN: "geheim", BRAIN_VAULT: "/x", LANG: "de_DE.UTF-8" }, home: s.home, claudePfad: join(s.bin, "claude"), konto: { ordner: s.std, standard: true } });
-  assert.deepEqual(Object.keys(e).sort(), ["BRAIN_ERNTE", "HOME", "LANG", "PATH"]);
+  assert.deepEqual(Object.keys(e).sort(), ["BRAIN_ERNTE", "CLAUDE_CODE_DISABLE_AUTO_MEMORY", "CLAUDE_CODE_DISABLE_CLAUDE_MDS", "HOME", "LANG", "PATH"]);
   assert.equal(e.PATH, `${s.bin}:/usr/bin:/usr/bin:/bin`, "ein relativer PATH-Eintrag fällt weg");
   assert.equal(e.HOME, s.home); assert.equal(e.LANG, "de_DE.UTF-8"); assert.equal(e.BRAIN_ERNTE, "1");
   assert.ok(!JSON.stringify(e).includes("geheim"));
@@ -387,3 +391,78 @@ test("Der Aufruf von claude ist eine Argumentliste (keine Shell): Anführungszei
   assert.equal(s.aufrufe()[0].stdin, frage);
   assert.equal(existsSync("/tmp/kortex-test-nie"), false);
 });
+
+test("Kosten und Runden: klein 0,25 $, mittel 1 $, höchstens 10 Runden; Limit erreicht → freundliche Meldung, der bisherige Text bleibt", async () => {
+  const s = szenario();
+  s.szen({ ohneMcp: true, mcpText: { brain_suchen: "Keine Treffer." }, lesen: [], art: "max-turns", antwort: "Zwischenstand zur Frage." });
+  const r = await s.frage("Kaffee?");
+  const opt = (n) => s.aufrufe()[0].args[s.aufrufe()[0].args.indexOf(n) + 1];
+  assert.equal(opt("--model"), "haiku"); assert.equal(opt("--max-budget-usd"), "0.25"); assert.equal(opt("--max-turns"), "10");
+  assert.equal(r.ergebnis.ok, false);
+  assert.match(r.ergebnis.fehler, /Die Frage war zu umfangreich – frage genauer/);
+  assert.equal(r.text, "Zwischenstand zur Frage.", "der bisher geschriebene Text bleibt stehen");
+  assert.match(baueClaudeArgs({ modell: "haiku", mcpKonfig: {} }).at(-1), /höchstens 4 Seiten/);
+});
+
+test("Temp-Ordner wird bei einem frühen Fehler wieder gelöscht (hier: er läge im Vault)", async () => {
+  const s = szenario({ tempImVault: true });
+  const x = await s.api("POST", "/api/frage/start", { frage: "Kaffee?", konto: "k_aaaaaaaa" });
+  assert.equal(x.status, 500);
+  assert.deepEqual(readdirSync(join(s.vault, "tmp-in")), [], "kein kortex-frage-Ordner bleibt liegen");
+  assert.deepEqual(s.aufrufe(), []);
+});
+
+test("Nach dem Abbruch ist sofort eine neue Frage möglich (Vault-Wechsel), auch wenn der alte Prozess noch endet", async () => {
+  const s = szenario();
+  s.szen({ warteMs: 60000, ignoriereSigint: true, ignoriereSigterm: true });
+  const st = await s.api("POST", "/api/frage/start", { frage: "Kaffee?", konto: "k_aaaaaaaa" });
+  await bis(() => existsSync(join(s.bin, "wartet")), 8000, "Attrappe wartet");
+  const pid = readFileSync(join(s.bin, "wartet"), "utf8");
+  assert.equal((await s.api("POST", "/api/vaults/aktiv", { pfad: s.anderer })).status, 200);
+  s.szen({ ohneMcp: true, mcpText: { brain_suchen: "Keine Treffer." }, lesen: [] });
+  const t0 = Date.now();
+  const neu = await s.api("POST", "/api/frage/start", { frage: "Zwei?", konto: "k_aaaaaaaa" });
+  assert.equal(neu.status, 200, JSON.stringify(neu.j));
+  assert.ok(Date.now() - t0 < 1500, "keine Sperre durch die endende Frage");
+  assert.equal((await s.folge(neu.j.id)).ergebnis.ok, true);
+  // dasselbe im selben Vault: ein Abbruch gibt die Sperre sofort frei
+  s.szen({ warteMs: 60000, ignoriereSigint: true, ignoriereSigterm: true });
+  rmSync(join(s.bin, "wartet"), { force: true });
+  const a = await s.api("POST", "/api/frage/start", { frage: "Drei?", konto: "k_aaaaaaaa" });
+  await bis(() => existsSync(join(s.bin, "wartet")), 8000, "Attrappe wartet (2)");
+  await s.api("POST", "/api/frage/abbrechen", { id: a.j.id });
+  s.szen({ ohneMcp: true, mcpText: { brain_suchen: "Keine Treffer." }, lesen: [] });
+  assert.equal((await s.api("POST", "/api/frage/start", { frage: "Vier?", konto: "k_aaaaaaaa" })).status, 200);
+  beendeAlleProzesse();
+  await bis(() => frei(pid), 4000, "alter Prozess beendet");
+});
+
+// Die Werkstatt endet (App beendet, stdin zu, /api/stopp, SIGTERM): `claude` samt MCP-Server darf nicht als Waise weiterlaufen — auch wenn er SIGINT und SIGTERM ignoriert.
+for (const weg of ["stopp", "stdin", "sigterm"]) {
+  test(`Werkstatt-Ende (${weg}) beendet eine laufende Frage samt Prozessgruppe, auch wenn claude SIGINT und SIGTERM ignoriert`, async () => {
+    const s = szenario();
+    const vertrauen = await import(pfad("gemeinsam", "vertrauen.mjs"));
+    vertrauen.erlaube(s.vault, { support: s.support, quelle: "angelegt" });
+    s.szen({ warteMs: 120000, ignoriereSigint: true, ignoriereSigterm: true });
+    const p = spawn(process.execPath, [pfad("werkstatt", "werkstatt.mjs"), s.vault], { stdio: ["pipe", "pipe", "pipe"], env: s.env });
+    const wartende = new Map(); let n = 0, bereit = null;
+    const fertig = new Promise((ok) => bereit = ok);
+    createInterface({ input: p.stdout }).on("line", (z) => { const o = JSON.parse(z); if (o.bereit) bereit(); else wartende.get(o.id)?.(o); });
+    p.stderr.on("data", () => {});
+    const ende = new Promise((ok) => p.on("exit", (code, sig) => ok({ code, sig })));
+    await fertig;
+    const rufe = (methode, pf, daten) => new Promise((ok) => { const id = ++n; wartende.set(id, ok); p.stdin.write(JSON.stringify({ id, methode, pfad: pf, query: null, body: daten === undefined ? null : Buffer.from(JSON.stringify(daten)).toString("base64") }) + "\n"); });
+    const st = await rufe("POST", "/api/frage/start", { frage: "Kaffee?", konto: "k_aaaaaaaa" });
+    assert.equal(st.status, 200, Buffer.from(st.body, "base64").toString());
+    await bis(() => existsSync(join(s.bin, "wartet")), 10000, "Attrappe wartet");
+    const pid = readFileSync(join(s.bin, "wartet"), "utf8"), mcp = readFileSync(join(s.bin, "mcp-pid"), "utf8");
+    assert.equal(frei(pid), false);
+    if (weg === "stopp") await rufe("POST", "/api/stopp", {});
+    else if (weg === "stdin") p.stdin.end();
+    else p.kill("SIGTERM");
+    const e = await Promise.race([ende, warte(10000).then(() => ({ code: "haengt" }))]);
+    assert.notEqual(e.code, "haengt", "die Werkstatt endet");
+    await bis(() => frei(pid) && frei(mcp), 3000, "claude und MCP-Server sind weg (kein Waise)");
+    try { p.kill("SIGKILL"); } catch { /* weg */ }
+  });
+}

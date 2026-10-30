@@ -49,6 +49,7 @@ async function oeffnePanel(page) {
   await page.click("#knopf-frage");
   await expect(panel(page)).toBeVisible();
 }
+const waehleKonto = async (page, id) => { await page.click('[data-frage="konto"]'); await page.click(`.bs-opt[data-wert="${id}"]`); };
 const frageStellen = async (page, text) => {
   await page.fill('[data-frage="eingabe"]', text);
   await page.click('[data-aktion="frage-senden"]');
@@ -67,16 +68,25 @@ test("Panel: Knopf und ⌘J öffnen, Esc schließt; nur erlaubte Konten mit Logo
   await page.click("#knopf-frage");
   await expect(panel(page)).toBeVisible();
   // Konten: Arbeit und Privat (Claude), Logo + Name; das gesperrte „Geheimkonto“ und Codex sind nicht wählbar
-  const konten = page.locator("[data-konto]");
-  await expect(konten).toHaveCount(2);
-  await expect(konten.nth(0)).toContainText("Arbeit");
-  await expect(konten.nth(0).locator(".ki-logo")).toHaveCount(1);
-  await expect(konten.nth(0)).toHaveAttribute("aria-checked", "true");
+  const wahl = page.locator('[data-frage="konto"]'); // Baustein „Auswahl“ (bausteine.js), kein natives <select>
+  await expect(wahl).toContainText("Arbeit");
+  await expect(wahl.locator(".ki-logo")).toHaveCount(1);
+  await expect(panel(page).locator("select")).toHaveCount(0);
+  await wahl.click();
+  await expect(page.locator(".bs-opt")).toHaveCount(2);
+  await expect(page.locator(".bs-opt").nth(0)).toContainText("Arbeit");
+  await expect(page.locator(".bs-opt").nth(1)).toContainText("Privat");
+  await expect(page.locator(".bs-opt .ki-logo")).toHaveCount(2);
+  await bild(page, "01b-konto-auswahl-hell");
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".bs-opt")).toHaveCount(0);
+  await expect(panel(page)).toBeVisible(); // Esc schloss nur die Liste
   await expect(panel(page)).not.toContainText("Geheimkonto");
+  await expect(page.locator('[data-frage="modell"] .bs-seg')).toHaveCount(2);
   await expect(page.locator('[data-frage="nur-claude"]')).toContainText("Nur Claude Code");
   await expect(page.locator('[data-frage="weg"]')).toContainText("gehen an Anthropic über das Konto „Arbeit“");
   await expect(page.locator('[data-frage="fuss"]')).toContainText("Nichts wird gespeichert");
-  await page.click('[data-konto="k_bbbbbbbb"]');
+  await waehleKonto(page, "k_bbbbbbbb");
   await expect(page.locator('[data-frage="weg"]')).toContainText("Konto „Privat“");
   await expect(page.locator('[data-aktion="frage-senden"]')).toBeDisabled(); // ohne Text kein Senden
   // ⌘J über den Befehl in der Palette ebenso
@@ -132,7 +142,7 @@ test("Streaming: Status, wachsende Antwort, Quellen nur aus dem Vault (klickbar)
   await expect(page.locator('[data-frage="eingabe"]')).toBeEnabled();
   await expect(page.locator('[data-frage="eingabe"]')).toHaveValue("");
   szenario({ antwort: "Reise im Mai. [[10_notizen/Reise nach Lissabon.md]]", kosten: 0.0345 });
-  await page.click('[data-konto="k_bbbbbbbb"]');
+  await waehleKonto(page, "k_bbbbbbbb");
   await frageStellen(page, "Wann ist die Reise?");
   await expect(page.locator('[data-frage="verbrauch"]')).toContainText("ca. 0,03 $ (Schätzung von Claude Code)", { timeout: 15000 });
   await expect(page.locator('[data-frage="verbrauch"]')).not.toContainText("Kontingent");
@@ -287,3 +297,17 @@ for (const modus of ["hell", "dunkel"]) {
     await bild(page, `10-bereit-${modus}`);
   });
 }
+
+test("Rechenzeit: Antworten mit pathologischem Markdown (Treppe aus Backticks, 80 KB) rendern in Bruchteilen einer Sekunde", async ({ page }) => {
+  await aufbauen();
+  await oeffneStudio(page);
+  const ms = await page.evaluate(async () => {
+    const { rendereMarkdown } = await import("/frage-markdown.js");
+    let treppe = ""; for (let i = 1; treppe.length < 80_000; i++) treppe += "`".repeat(i) + "a";
+    const varianten = [treppe, "`a ".repeat(26_000), "**a ".repeat(20_000), "[[x ".repeat(20_000), "_a ".repeat(26_000), ("*".repeat(300) + "a").repeat(260), "x".repeat(80_000)];
+    const t0 = performance.now();
+    for (const v of varianten) rendereMarkdown(v);
+    return performance.now() - t0;
+  });
+  expect(ms).toBeLessThan(1500);
+});

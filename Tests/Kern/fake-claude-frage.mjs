@@ -68,7 +68,10 @@ if (v["setting-sources"] !== "user") verletzt.push("--setting-sources user fehlt
 if (!v["disable-slash-commands"]) verletzt.push("--disable-slash-commands fehlt");
 if (!v["append-system-prompt"]) verletzt.push("--append-system-prompt fehlt");
 if (p.positionals.length) verletzt.push(`Positionsargumente (die Frage darf nicht im Aufruf stehen): ${p.positionals.length}`);
-try { if (JSON.parse(v.settings).disableAllHooks !== true) verletzt.push("disableAllHooks fehlt"); } catch { verletzt.push("--settings fehlt"); }
+try { const st = JSON.parse(v.settings); if (st.disableAllHooks !== true) verletzt.push("disableAllHooks fehlt"); if (st.autoMemoryEnabled !== false) verletzt.push("autoMemoryEnabled:false fehlt"); } catch { verletzt.push("--settings fehlt"); }
+for (const n of ["CLAUDE_CODE_DISABLE_CLAUDE_MDS", "CLAUDE_CODE_DISABLE_AUTO_MEMORY"]) if (process.env[n] !== "1") verletzt.push(`${n}=1 fehlt (CLAUDE.md und Memory des Profils würden geladen)`);
+if (v["max-turns"] !== "10") verletzt.push("--max-turns 10 erwartet");
+if (!(Number(v["max-budget-usd"]) <= 1)) verletzt.push("--max-budget-usd über 1");
 const erlaubt = liste("allowedTools", "allowed-tools");
 const soll = ["mcp__brain__brain_suchen", "mcp__brain__brain_lesen", "mcp__brain__brain_kontext"];
 if (JSON.stringify([...erlaubt].sort()) !== JSON.stringify([...soll].sort())) verletzt.push(`--allowedTools ist nicht genau die drei Lesewerkzeuge: ${erlaubt.join(",")}`);
