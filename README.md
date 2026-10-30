@@ -21,6 +21,9 @@ erhält deinen Text Byte für Byte.
   des Vaults.
 - **Suche und Schnell merken:** Suche über alle Seiten; was du nicht verlieren willst, landet mit einem Handgriff im Posteingang.
 - **Aufgaben:** Ein Board im Vault, auf dem du und deine KI Aufgaben anlegen, verschieben und abhaken.
+- **Schnell erfassen:** Von überall mit ⌃⌥Leertaste (in dem Fenster änderbar): ein kleines Fenster für eine Aufgabe oder eine
+  Notiz, auch bei geschlossenem Studio. Kurzformen wie „morgen“ oder „!hoch“ setzen Fälligkeit und Priorität; Diktat geht mit Fn
+  zweimal. Das Kürzel braucht keine Bedienungshilfen-Rechte.
 - **Abgleich und Sicherung mit git:** Änderungen ansehen und auswählen, sichern, Verlauf mit Vergleich, alte Fassungen
   wiederherstellen. Abgleich mit deinem eigenen git-Remote oder GitHub; Konflikte werden erklärt, nichts wird still überschrieben.
   Auf Wunsch sichert der Assistent den Vault in ein privates GitHub-Repository.
