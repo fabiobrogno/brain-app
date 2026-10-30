@@ -115,11 +115,14 @@ export function erzeugeKi({ vaultPfad, beiAenderung, oeffneExtern, kopiere, meld
   function baueKatalog() {
     const knopfMehr = h("button", { type: "button", klasse: "e-mehr-knopf", "aria-expanded": String(z.weitereOffen), "data-aktion": "weitere" },
       symbol("chevron-rechts", 12), z.weitereOffen ? TE.ki.mehrAus : TE.ki.mehr(z.weitere.length));
-    knopfMehr.addEventListener("click", () => { z.weitereOffen = !z.weitereOffen; zeichne(); });
+    knopfMehr.addEventListener("click", () => {
+      z.weitereOffen = !z.weitereOffen; zeichne();
+      if (z.weitereOffen) wurzel.querySelector(".e-weitere")?.scrollIntoView({ block: "end", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    });
     return [knopfMehr, ...(z.weitereOffen ? [h("div", { klasse: "e-weitere", "data-bereich": "weitere" }, z.weitere.map((id) => linkKachel(id, 14)))] : [])];
   }
-  function linkKachel(id, g) {
-    const a = h("a", { href: SEITE[id], "data-ki-link": id, title: TE.ki.anleitungOeffnet }, h("span", { klasse: "e-logo-tile" }, kiLogo(id, g, { dekorativ: true })), KI_NAME[id], symbol("extern", 12));
+  function linkKachel(id, g, kurz = false) {
+    const a = h("a", { href: SEITE[id], "data-ki-link": id, title: TE.ki.anleitungOeffnet }, h("span", { klasse: "e-logo-tile" }, kiLogo(id, g, { dekorativ: true })), kurz ? KI_NAME[id].replace(" Code", "") : KI_NAME[id], symbol("extern", 12));
     a.addEventListener("click", (e) => { e.preventDefault(); oeffneExtern(SEITE[id]); });
     return a;
   }
@@ -127,7 +130,7 @@ export function erzeugeKi({ vaultPfad, beiAenderung, oeffneExtern, kopiere, meld
   function leer() {
     const erneut = baueKnopf({ text: TE.ki.erneut, groesse: "s", symbol: "sync", klasse: "e-erneut", aktion: "suchen", aufKlick: async () => { z.suchtNeu = true; await mitLaden(erneut, () => lade(true)); z.suchtNeu = false; if (!z.programme.length) melde(TE.ki.nichtsNeues, "info"); } });
     return h("div", { klasse: "e-leer" }, h("span", { klasse: "e-kreis" }, symbol("gehirn", 24)), h("b", { text: TE.ki.leerTitel }), h("p", { text: TE.ki.leerText }),
-      h("div", { klasse: "e-beliebt" }, ["claude", "cursor", "codex"].map((id) => linkKachel(id, 14))), erneut);
+      h("div", { klasse: "e-beliebt" }, ["claude", "cursor", "codex"].map((id) => linkKachel(id, 14, true))), erneut);
   }
 
   function zeichne() {

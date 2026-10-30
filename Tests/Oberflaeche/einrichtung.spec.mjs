@@ -131,7 +131,7 @@ for (const thema of ["light", "dark"]) {
       z.codeZustand = "fertig";
       // nach der Anmeldung holt der Assistent den Vault von selbst und geht weiter
       await expect.poll(() => anfragen(z, "/api/vaults/klonen").length, { timeout: 12000 }).toBe(2);
-      await expect(page.locator(".toast")).toContainText("Vault „wissen“ ist bereit");
+      await expect(page.locator(".toast", { hasText: "Vault „wissen“ ist bereit" })).toBeVisible();
       await expect(page.locator("#win")).toHaveAttribute("data-step", "2");
     });
 

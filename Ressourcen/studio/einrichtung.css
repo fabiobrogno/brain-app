@@ -427,3 +427,7 @@ html.e-app .e-ampel { display: none; }
 .e-stepper .e-windung { margin: -10px 0; }
 .e-spalte-innen > .e-stepper { width: 100%; }
 .e-gh .marken-logo { color: inherit; }
+.e-win #dialog-host .schleier { align-items: center; padding-top: 0; z-index: 90; }
+.e-win .dialog { width: min(400px, calc(100% - 32px)); }
+.e-win .dialog-rumpf:empty { display: none; }
+.e-win .dialog > .dialog-satz { padding-bottom: 18px; }
