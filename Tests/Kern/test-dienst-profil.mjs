@@ -96,7 +96,8 @@ test("brain dienst an/status (CLI): `an` schreibt kein Profil (auch nicht aus de
   const v = neuerTestVault();
   const launchctl = fakeLaunchctl();
   const lauf = (args, profilDerSitzung) => {
-    const env = { ...process.env, HOME, USERPROFILE: HOME, BRAIN_LAUNCHCTL: launchctl };
+    // KORTEX_DIENST_PLATTFORM: `dienst an` gibt es nur auf dem Mac; die Testumgebung (KORTEX_KERN_UNSTABIL_ERLAUBT) darf die Plattform vorgeben, damit der Test auch auf Linux-Runnern läuft
+    const env = { ...process.env, HOME, USERPROFILE: HOME, BRAIN_LAUNCHCTL: launchctl, KORTEX_KERN_UNSTABIL_ERLAUBT: "1", KORTEX_DIENST_PLATTFORM: "darwin" };
     delete env.CLAUDE_CONFIG_DIR;
     if (profilDerSitzung) env.CLAUDE_CONFIG_DIR = profilDerSitzung;
     const r = spawnSync(process.execPath, [DIENST_CLI, v, ...args], { encoding: "utf8", env });
