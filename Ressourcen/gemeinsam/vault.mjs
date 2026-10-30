@@ -13,7 +13,6 @@ import { pruefeText, berlinHeute, leseKopf } from "./pruefung.mjs";
 import * as gitFn from "./git.mjs";
 import * as vertrauenFn from "./vertrauen.mjs";
 import { erzeugeNotizIndex, titelAus } from "./notizen.mjs";
-import { leseVaults } from "./vaults.mjs";
 import { wertAus } from "./nutzung.mjs";
 import { erzeugePosteingang } from "./posteingang.mjs";
 import { SUCHE_STANDARD, SUCHE_MAX, sucheWoerter, suchAuszug, sucheText } from "./ki-antworten.mjs";
@@ -253,8 +252,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
   // Der gebündelte Kern läuft aus dem App-Paket (per Manifest geprüft, der Vault liefert nur Daten). Ob an einem Vault etwas bewirkt werden darf
   // (git, Hintergrunddienst, Hooks, KI-Pflege), entscheidet das Vertrauen: angelegt/geklont von Kortex oder vom Nutzer im Studio bestätigt. Der
   // Merker liegt außerhalb des Vaults (<support>/vertrauen.json, siehe vertrauen.mjs); er wirkt auch für den MCP-Server und den Kern.
-  const imListe = (echt) => leseVaults({ support: opts.support }).vaults.some((v) => { try { return realpathSync(v.pfad) === echt; } catch { return false; } });
-  const stuetze = () => ({ support: opts.support, imListe });
+  const stuetze = () => ({ support: opts.support });
   const stand = () => vertrauenFn.pruefeVertrauen(wurzel, stuetze());
   const rueckfragenPfad = join(kern, "rueckfragen.mjs");
   // „Kit vorhanden“ heißt jetzt: der Vault ist ein Brain im Sinne des Kerns (brain.config.json) UND der Kern ist da.
@@ -309,11 +307,11 @@ export function oeffneVault(vaultPfad, opts = {}) {
   // ---------- Git unter Workspace-Trust (P5) ----------
   // Jeder Git-Aufruf läuft gehärtet (git.mjs). Ist dem Vault nicht vertraut, ist Git GANZ gesperrt: status meldet es, alle anderen Git-Routen
   // antworten 409 { gitGesperrt: true }, der Notiz-Index fragt Git gar nicht. Mit Vertrauen laufen Hooks und Repo-Konfiguration wie gewohnt.
-  const gitSicht = () => vertrauenFn.gitSicht(wurzel, stuetze());
+  const gitSicht = () => vertrauenFn.gitSicht(wurzel, { ...stuetze(), kern });
   const gesperrtFehler = (s) => new HttpFehler(409, `Git ist für diesen Vault gesperrt. ${s.grund}`, { gitGesperrt: true, grund: s.grund });
   // Kontext eines Git-Aufrufs: vertraut/sshEigen und, was der Nutzer selbst eingestellt hat (sshGlobal, gpgGlobal) — ohne Vertrauen ersetzen wir
   // nur die Einstellungen des Vaults, nie seine eigenen.
-  const ctxVon = (s) => ({ vertraut: s.vertraut, sshEigen: s.sshEigen, sshGlobal: s.sshGlobal, gpgGlobal: s.gpgGlobal });
+  const ctxVon = (s) => ({ vertraut: s.vertraut, hooks: s.hooks, sshEigen: s.sshEigen, sshGlobal: s.sshGlobal, gpgGlobal: s.gpgGlobal });
   const gitCtx = (extra = {}) => { const s = gitSicht(); if (s.gesperrt) throw gesperrtFehler(s); return { ...ctxVon(s), ...extra }; };
 
   // ---------- Notiz-Index (Spec v2 §5) ----------

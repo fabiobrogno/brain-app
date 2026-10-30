@@ -25,7 +25,7 @@ const REPO_GEBUNDEN = ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT
 // Submodule: Git geht für status/diff, fetch, push und die Checkout-Befehle in eingerichtete Submodule und nähme dort DEREN Konfiguration
 // (clean-Filter, credential.helper, uploadpack …), die Vertrauen v2 nie prüft — also nirgends hinein (zusätzlich --ignore-submodules=all
 // bei status/diff und --no-recurse-submodules beim Holen).
-const GRUND = ["-c", "core.quotepath=false", "-c", "core.fsmonitor=false", "-c", "protocol.ext.allow=never",
+const GRUND = ["-c", "core.quotepath=false", "-c", "safe.bareRepository=explicit", "-c", "core.fsmonitor=false", "-c", "protocol.ext.allow=never",
   "-c", "submodule.recurse=false", "-c", "fetch.recurseSubmodules=false", "-c", "push.recurseSubmodules=no",
   "-c", "diff.ignoreSubmodules=all", "-c", "status.submoduleSummary=false"];
 const OHNE_HOOKS = ["-c", "core.hooksPath=/dev/null"];
@@ -58,12 +58,12 @@ export function gitUmgebung({ vertraut = false, sshEigen = false, sshGlobal = nu
 
 // → {code, stdout, stderr}; wirft nur bei Zeitüberschreitung (HttpFehler 504, extra.gestartet = Startzeit ms; die ganze Prozessgruppe
 // ist dann beendet) oder wenn git fehlt. frist = Gesamtfrist der Route: der Aufruf bekommt höchstens das Restbudget.
-// ohneHooks: auch in einem vertrauten Vault ohne Hooks (Abgleich, Rückweg). vault: Wert für BRAIN_VAULT (Standard: cwd; null = keiner,
+// hooks: false = auch im vertrauten Vault keine Hooks (der Hook-Ordner liegt im Arbeitsbaum o. ä., siehe vertrauen.mjs#hooksErlaubt). ohneHooks: auch in einem vertrauten Vault ohne Hooks (Abgleich, Rückweg). vault: Wert für BRAIN_VAULT (Standard: cwd; null = keiner,
 // z. B. beim Klonen, wo cwd der Elternordner ist). sshGlobal/gpgGlobal: Einstellungen des Nutzers (siehe gitUmgebung, OHNE_SIGNIEREN).
-export function git(cwd, args, { timeout = LIMIT, buffer = false, vertraut = false, sshEigen = false, sshGlobal = null, gpgGlobal = null, ohneHooks = false, frist = null, vault = cwd, githubHelper = null } = {}) {
+export function git(cwd, args, { timeout = LIMIT, buffer = false, vertraut = false, hooks = true, sshEigen = false, sshGlobal = null, gpgGlobal = null, ohneHooks = false, frist = null, vault = cwd, githubHelper = null } = {}) {
   const programm = absoluterGitPfad(); // nie der nackte Name „git“: der würde nach dem Wechsel in den (womöglich fremden) Vault gesucht
   if (!programm) return Promise.reject(new HttpFehler(500, "Git ist auf diesem Mac nicht installiert."));
-  return starte(programm, [...GRUND, ...githubHelperArgs(githubHelper), ...(vertraut ? [] : OHNE_SIGNIEREN(gpgGlobal)), ...(vertraut && !ohneHooks ? [] : OHNE_HOOKS), ...args],
+  return starte(programm, [...GRUND, ...githubHelperArgs(githubHelper), ...(vertraut ? [] : OHNE_SIGNIEREN(gpgGlobal)), ...(vertraut && hooks !== false && !ohneHooks ? [] : OHNE_HOOKS), ...args],
     { cwd, env: gitUmgebung({ vertraut, sshEigen, sshGlobal, vault }), timeout, frist, buffer,
       fehlt: "Git ist auf diesem Mac nicht installiert.", zuLange: "Git hat zu lange gebraucht und wurde abgebrochen." });
 }
@@ -79,7 +79,7 @@ export function githubHelperArgs(helper) {
 }
 // Git-Aufruf mit dem Kontext einer Route (Vertrauen, Frist); extra überschreibt (z. B. { frist: null, timeout: GNADE } für den Rückweg).
 const binde = (wurzel, ctx = {}) => (args, extra) => git(wurzel, args, { ...ctx, ...extra });
-const kontext = (o = {}, frist) => ({ vertraut: !!o.vertraut, sshEigen: !!o.sshEigen, sshGlobal: o.sshGlobal ?? null, gpgGlobal: o.gpgGlobal ?? null, githubHelper: o.githubHelper ?? null, frist });
+const kontext = (o = {}, frist) => ({ vertraut: !!o.vertraut, hooks: o.hooks !== false, sshEigen: !!o.sshEigen, sshGlobal: o.sshGlobal ?? null, gpgGlobal: o.gpgGlobal ?? null, githubHelper: o.githubHelper ?? null, frist });
 const rueckweg = { frist: null, timeout: GNADE, ohneHooks: true };
 
 const kuerze = (s, n = 4000) => (s.length > n ? s.slice(0, n) + "\n… (gekürzt)" : s);

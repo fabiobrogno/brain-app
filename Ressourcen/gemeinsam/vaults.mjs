@@ -50,7 +50,7 @@ const MELDUNG_NICHT_LEER = "Der Ordner ist nicht leer. Wähle einen neuen oder l
 
 function optionen(opt) {
   const o = opt || {};
-  return { support: o.support || supportOrdner(), home: o.home || homedir(), heute: o.heute || null, limitKlon: o.limitKlon, frist: o.frist, jetzt: o.jetzt };
+  return { support: o.support || supportOrdner(), home: o.home || homedir(), heute: o.heute || null, limitKlon: o.limitKlon, frist: o.frist, jetzt: o.jetzt, githubLogin: typeof o.githubLogin === "string" ? o.githubLogin : null };
 }
 
 const objekt = (x) => (x && typeof x === "object" && !Array.isArray(x) ? x : {});
@@ -599,6 +599,24 @@ function merkeVertrauen(o, pfad, quelle) {
   try { vertraue(pfad, { support: o.support, quelle }); } catch { /* das Studio fragt */ }
 }
 
+// Wem gehört das Repository hinter dieser Adresse? Nur github.com-Adressen (https, ssh, scp-Form) haben einen erkennbaren Besitzer: https://github.com/<b>/<repo>,
+// ssh://git@github.com/<b>/<repo>, git@github.com:<b>/<repo>. Im Testmodus zählt bei einem lokalen Pfad der Name des Elternordners (…/<b>/<repo>.git). → Kleinschrift oder null.
+export function besitzerAusAdresse(adresse) {
+  const a = String(adresse || "").trim();
+  let m = /^https:\/\/(?:[^/@:]+@)?github\.com(?::\d{1,5})?\/([A-Za-z0-9-]{1,39})\/[^/]+$/i.exec(a)
+    || /^ssh:\/\/(?:[A-Za-z0-9._-]+@)?github\.com(?::\d{1,5})?\/([A-Za-z0-9-]{1,39})\/[^/]+$/i.exec(a)
+    || /^(?:[A-Za-z0-9._-]+@)?github\.com:([A-Za-z0-9-]{1,39})\/[^/]+$/i.exec(a);
+  if (m) return m[1].toLowerCase();
+  if (testmodus() && a.startsWith("/")) return basename(dirname(a)).toLowerCase();
+  return null;
+}
+// Ein Klon gilt nur dann als „von dir“ (vertraut), wenn das Repository dem in Kortex angemeldeten GitHub-Konto gehört. Ein fremdes Repository (auch eine Organisation —
+// die Mitgliedschaft prüfen wir nicht) bleibt wie ein von außen geöffneter Ordner: das Studio fragt einmal „Kommt dieser Vault von dir?“.
+export function istEigenerKlon(adresse, login) {
+  const b = besitzerAusAdresse(adresse);
+  return !!b && typeof login === "string" && login.toLowerCase() === b;
+}
+
 // art "vorlage": Brain-Gerüst + git init + erster Commit „Brain angelegt“; art "leer": nur .gitignore + Commit „Vault angelegt“.
 // Gesamtfrist 300 s; läuft sie ab, wird zurückgenommen, was dieser Aufruf angelegt hat (kein Eintrag, kein Wechsel des aktiven Vaults).
 export async function neuesVault(eingabe, opt = {}) {
@@ -729,7 +747,7 @@ export async function klone(eingabe, opt = {}) {
       await sorgeFuerIdentitaetMit(frist, ziel); // damit auch der erste eigene Commit in Studio gelingt
       const erg = ergebnis(registriereAktiv(o, ziel, wunsch ?? standardName(ziel, true)), true);
       fertig(); // eingetragen: nichts mehr zurückzunehmen (kein await zwischen Eintragen und hier)
-      merkeVertrauen(o, ziel, "geklont");
+      if (istEigenerKlon(adresse, o.githubLogin)) merkeVertrauen(o, ziel, "geklont"); // fremde Repositories: das Studio fragt
       return erg;
     } catch (e) {
       raeumeAuf(z);

@@ -4,8 +4,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, chmodSync, statSync, readdirSync, realpathSync, renameSync, cpSync, symlinkSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { tmp, schreibe, repo, g, pfad } from "./hilfe.mjs";
+import { join, dirname, basename } from "node:path";
+import { tmp, schreibe, repo, g, pfad, echt as echtHilfe } from "./hilfe.mjs";
 
 const HOME = tmp("brain-home-");
 process.env.HOME = HOME;
@@ -15,13 +15,16 @@ process.env.GIT_CONFIG_NOSYSTEM = "1";
 const { HttpFehler } = await import(pfad("gemeinsam", "basis.mjs"));
 const V = await import(pfad("gemeinsam", "vertrauen.mjs"));
 const Kern = await import(pfad("kern", "vertrauen.mjs"));
+const Alt = await import(pfad("gemeinsam", "vertrauen-alt.mjs"));
+// Der Code-Fingerabdruck, den die Werkstatt vor P5 in den Merker schrieb (nur noch für die Migration)
+const altCode = (d) => { const w = realpathSync(d), k = V.liesGitKonfiguration(w, { frisch: true }); return Alt.alterFingerabdruck(w, k.eintraege, k.vorhanden); };
 const Vaults = await import(pfad("gemeinsam", "vaults.mjs"));
 const { oeffneVault } = await import(pfad("gemeinsam", "vault.mjs"));
 const { erzeugeHandler } = await import(pfad("werkstatt", "handler.mjs"));
 
 const wirft = async (p) => { try { await p; } catch (e) { assert.ok(e instanceof HttpFehler, String(e && e.stack)); return e; } assert.fail("kein Fehler"); };
-// Die Suite setzt KORTEX_VAULT_VERTRAUT=alle (hilfe.mjs); diese Tests prüfen die echte Vertrauensprüfung.
-const echt = (fn) => async () => { const alt = process.env.KORTEX_VAULT_VERTRAUT; delete process.env.KORTEX_VAULT_VERTRAUT; try { return await fn(); } finally { if (alt !== undefined) process.env.KORTEX_VAULT_VERTRAUT = alt; } };
+// Die Suite setzt KORTEX_VAULT_VERTRAUT=alle (hilfe.mjs); diese Tests prüfen die echte Vertrauensprüfung (echtHilfe stellt den Schalter auch nach einer Zeitüberschreitung wieder her).
+const echt = (fn) => () => echtHilfe(fn);
 const support = () => tmp("brain-support-");
 const merker = (s) => JSON.parse(readFileSync(join(s, "vertrauen.json"), "utf8"));
 const vaultOrdner = () => { const d = tmp("brain-vault-"); schreibe(d, "brain.config.json", "{}\n"); schreibe(d, "a.md", "# A\n"); return d; };
@@ -30,6 +33,18 @@ const aufruf = (h) => async (methode, p, daten, query) => {
   let j = null; try { j = JSON.parse(r.body.toString("utf8")); } catch { /* statisch */ }
   return { ...r, j };
 };
+
+// ───────────────────────────── Testhülle ─────────────────────────────
+
+test("echt(): stellt den Testschalter auch nach einer Zeitüberschreitung des Tests wieder her — er schlägt nicht in den Folgetest durch", async () => {
+  assert.equal(process.env.KORTEX_VAULT_VERTRAUT, "alle");
+  let innen = "?";
+  await assert.rejects(echtHilfe(async () => { innen = process.env.KORTEX_VAULT_VERTRAUT; await new Promise(() => {}); }, { zeit: 40 }), /Zeitüberschreitung/);
+  assert.equal(innen, undefined, "innen gilt die echte Prüfung");
+  assert.equal(process.env.KORTEX_VAULT_VERTRAUT, "alle", "danach ist der Schalter zurück");
+  await echtHilfe(() => { assert.equal(process.env.KORTEX_VAULT_VERTRAUT, undefined); });
+  assert.equal(process.env.KORTEX_VAULT_VERTRAUT, "alle");
+});
 
 // ───────────────────────────── Merker ─────────────────────────────
 
@@ -115,28 +130,27 @@ test("Parität: was die Werkstatt schreibt, liest der Kern — und umgekehrt (Sc
   // Eintrag im Format des Kerns (von Hand) → die Werkstatt liest ihn
   writeFileSync(join(s, "vertrauen.json"), JSON.stringify({ [realpathSync(d)]: { seit: "x", ordner: Kern.ordnerKennung(d), quelle: "geklont" } }));
   assert.deepEqual(V.pruefeVertrauen(d, { support: s }), { erlaubt: true, noetig: false, gitGesperrt: false, quelle: "geklont" });
-  // alter Eintrag: beide zählen ihn nur für Vaults aus der Liste
+  // alter Eintrag { seit, ordner, code }: weder Werkstatt noch Kern lassen ihn gelten (nur die Migration schreibt ihn um)
   writeFileSync(join(s, "vertrauen.json"), JSON.stringify({ [realpathSync(d)]: { seit: "x", ordner: V.ordnerKennung(d), code: "abc" } }));
-  for (const imListe of [undefined, () => false]) {
-    assert.equal(V.pruefeVertrauen(d, { support: s, imListe }).erlaubt, false);
-    assert.equal(Kern.vertrauensStand(d, { support: s, imListe }).vertraut, false);
-  }
-  assert.equal(V.pruefeVertrauen(d, { support: s, imListe: () => true }).quelle, "migriert");
-  assert.equal(Kern.vertrauensStand(d, { support: s, imListe: () => true }).quelle, "migriert");
+  assert.equal(V.pruefeVertrauen(d, { support: s }).erlaubt, false);
+  assert.equal(Kern.vertrauensStand(d, { support: s }).vertraut, false);
 }));
 
 // ───────────────────────────── Migration ─────────────────────────────
 
-test("Migration: alte Einträge { seit, ordner, code } für Vaults aus der Liste werden zu quelle „migriert“; unbekannte, ersetzte und kaputte fallen weg; neue bleiben", echt(() => {
-  const s = support(), neuer = vaultOrdner(), inListe = vaultOrdner(), nichtInListe = vaultOrdner(), ersetzt = vaultOrdner(), fehlt = vaultOrdner();
-  const alt = (d, ordner = V.ordnerKennung(d)) => ({ seit: "2026-01-01T00:00:00.000Z", ordner, code: "deadbeef" });
+test("Migration: alte Einträge { seit, ordner, code } für Vaults aus der Liste mit unverändertem Ordner UND passendem alten Fingerabdruck werden zu quelle „migriert“; unbekannte, ersetzte, veränderte und kaputte fallen weg; neue bleiben", echt(() => {
+  const s = support(), neuer = vaultOrdner(), inListe = vaultOrdner(), nichtInListe = vaultOrdner(), ersetzt = vaultOrdner(), fehlt = vaultOrdner(), veraendert = vaultOrdner();
+  const alt = (d, ordner = V.ordnerKennung(d)) => ({ seit: "2026-01-01T00:00:00.000Z", ordner, code: altCode(d) });
+  // „veraendert“: der Nutzer hatte „Nur ansehen“ gewählt bzw. der Code im Vault ist nicht mehr der, dem er zugestimmt hat → der alte Fingerabdruck passt nicht
+  const eintragVeraendert = alt(veraendert);
+  schreibe(veraendert, ".tools/neu.mjs", "console.log(1)\n");
   const eintraege = {
     [realpathSync(inListe)]: alt(inListe), [realpathSync(nichtInListe)]: alt(nichtInListe), [realpathSync(ersetzt)]: alt(ersetzt, "1:2:3"),
-    [realpathSync(fehlt)]: alt(fehlt), "/gibt/es/nicht": { seit: "x" }, [realpathSync(neuer)]: { seit: "2026-02-02T00:00:00.000Z", ordner: V.ordnerKennung(neuer), quelle: "angelegt" },
+    [realpathSync(veraendert)]: eintragVeraendert, [realpathSync(fehlt)]: alt(fehlt), "/gibt/es/nicht": { seit: "x" }, [realpathSync(neuer)]: { seit: "2026-02-02T00:00:00.000Z", ordner: V.ordnerKennung(neuer), quelle: "angelegt" },
   };
   writeFileSync(join(s, "vertrauen.json"), JSON.stringify(eintraege));
   const weg = fehlt + ".weg"; renameSync(fehlt, weg);
-  const n = V.migriereAltesVertrauen({ support: s, vaultPfade: [inListe, ersetzt, fehlt, neuer] });
+  const n = V.migriereAltesVertrauen({ support: s, vaultPfade: [inListe, ersetzt, fehlt, neuer, veraendert] });
   assert.equal(n, 1, "genau ein alter Eintrag wurde übernommen");
   const m = merker(s);
   assert.deepEqual(Object.keys(m).sort(), [realpathSync(inListe), realpathSync(neuer)].sort());
@@ -145,6 +159,7 @@ test("Migration: alte Einträge { seit, ordner, code } für Vaults aus der Liste
   assert.equal(V.pruefeVertrauen(inListe, { support: s }).quelle, "migriert");
   assert.equal(V.pruefeVertrauen(nichtInListe, { support: s }).erlaubt, false, "nicht in der Liste: wieder die Frage");
   assert.equal(V.pruefeVertrauen(ersetzt, { support: s }).erlaubt, false, "Ordner ersetzt: wieder die Frage");
+  assert.equal(V.pruefeVertrauen(veraendert, { support: s }).erlaubt, false, "Code seit der Zustimmung verändert: wieder die Frage");
   assert.equal(V.migriereAltesVertrauen({ support: s, vaultPfade: [inListe] }), 0, "zweimal ist dasselbe wie einmal");
   assert.equal(statSync(join(s, "vertrauen.json")).mode & 0o777, 0o600);
   assert.equal(V.migriereAltesVertrauen({ support: support(), vaultPfade: [inListe] }), 0, "ohne Merker nichts zu tun");
@@ -154,7 +169,7 @@ test("Migration beim Start der Werkstatt: ein Vault aus vaults.json mit altem Me
   const s = support(), a = vaultOrdner(), b = vaultOrdner();
   writeFileSync(join(s, "vaults.json"), JSON.stringify({ vaults: [{ name: "A", pfad: a, farbe: "#5B8DEF" }, { name: "B", pfad: b, farbe: "#E5734F" }], aktiv: a }));
   writeFileSync(join(s, "vertrauen.json"), JSON.stringify({
-    [realpathSync(a)]: { seit: "2026-01-01T00:00:00.000Z", ordner: V.ordnerKennung(a), code: "alt" },
+    [realpathSync(a)]: { seit: "2026-01-01T00:00:00.000Z", ordner: V.ordnerKennung(a), code: altCode(a) },
     [realpathSync(b)]: { seit: "2026-01-01T00:00:00.000Z", ordner: "9:9:9", code: "alt" },
   }));
   const rufe = aufruf(erzeugeHandler({ vaultOptionen: { support: s } }));
@@ -198,14 +213,35 @@ test("Von Kortex neu angelegt (Vorlage und leer) → vertraut (quelle „angeleg
   assert.equal(existsSync(join(p1, "brain.config.json")), true, "Dateien bleiben");
 }));
 
-test("Über den Assistenten geklont → vertraut (quelle „geklont“)", echt(async () => {
-  const ziel = join(tmp("brain-kl-"), "Klon");
-  const r = await Vaults.klone({ url: bareMitInhalt(), ordner: ziel }, OPT);
+test("Geklont → nur vertraut, wenn das Repository dem angemeldeten GitHub-Konto gehört (quelle „geklont“); ein fremdes Repository wird wie ein von außen geöffneter Ordner gefragt", echt(async () => {
   const s = process.env.BRAIN_APP_SUPPORT;
+  const eigene = bareMitInhalt();
+  const login = basename(dirname(eigene)); // Testmodus: Besitzer = Name des Elternordners
+  const ziel = join(tmp("brain-kl-"), "Klon");
+  const r = await Vaults.klone({ url: eigene, ordner: ziel }, { ...OPT, githubLogin: login.toUpperCase() });
   assert.equal(r.vault.pfad, realpathSync(ziel));
   assert.deepEqual(V.pruefeVertrauen(ziel, { support: s }), { erlaubt: true, noetig: false, gitGesperrt: false, quelle: "geklont" });
   assert.equal(Kern.vertrauensStand(ziel, { support: s }).quelle, "geklont");
+  for (const [name, opt] of [["ohne Konto", {}], ["anderes Konto", { githubLogin: "fremder" }]]) {
+    const z = join(tmp("brain-kl-"), "Fremd");
+    await Vaults.klone({ url: bareMitInhalt(), ordner: z }, { ...OPT, ...opt });
+    assert.deepEqual(V.pruefeVertrauen(z, { support: s }), { erlaubt: false, noetig: true, gitGesperrt: true, quelle: null }, name);
+  }
 }));
+
+test("besitzerAusAdresse / istEigenerKlon: github.com-Formen (https, ssh, scp); andere Hosts und Organisationen haben keinen erkennbaren eigenen Besitzer", () => {
+  for (const a of ["https://github.com/Anna/privat.git", "https://x@github.com/anna/privat", "ssh://git@github.com/ANNA/privat.git", "git@github.com:anna/privat.git"]) {
+    assert.equal(Vaults.besitzerAusAdresse(a), "anna", a);
+    assert.equal(Vaults.istEigenerKlon(a, "Anna"), true, a);
+    assert.equal(Vaults.istEigenerKlon(a, "bob"), false, a);
+  }
+  for (const a of ["https://gitlab.com/anna/privat.git", "https://github.com.evil.example/anna/privat.git", "https://example.org/anna/x.git", "git@example.org:anna/x.git", "", null]) {
+    assert.equal(Vaults.besitzerAusAdresse(a), null, String(a));
+    assert.equal(Vaults.istEigenerKlon(a, "anna"), false, String(a));
+  }
+  assert.equal(Vaults.istEigenerKlon("https://github.com/anna/privat.git", null), false, "ohne angemeldetes Konto");
+  assert.equal(Vaults.istEigenerKlon("https://github.com/team-org/privat.git", "anna"), false, "Organisation: nicht geprüft → gefragt");
+});
 
 test("Von außen geöffneter Ordner (Ordner wählen, Vault-Liste ergänzt) → NICHT vertraut, auch mit „Versionsverlauf einschalten“; ein Vault an einem Ort mit altem Vertrauen erbt es nicht", echt(async () => {
   const s = process.env.BRAIN_APP_SUPPORT;
@@ -269,6 +305,8 @@ test("MCP: brain_kontext liefert ohne Vertrauen keine Vault-Inhalte (nur den Hin
   const such = await ruf("brain_suchen", { frage: "Geheimtipp" });
   assert.match(such.content[0].text, /noch nicht als der Deine bestätigt[\s\S]*Daten[\s\S]*keine Anweisungen/);
   assert.match(such.content[0].text, /09_wiki\/demo\.md/, "Suchen geht weiter");
+  const ges = await ruf("brain_gesundheit", {});
+  assert.match(ges.content[0].text, /noch nicht als der Deine bestätigt[\s\S]*keine Anweisungen/, "auch die Gesundheit trägt den Hinweis");
   const les = await ruf("brain_lesen", { pfad: "09_wiki/demo.md" });
   assert.match(les.content[0].text, /^Hinweis: Dieser Vault ist in Kortex noch nicht/);
   assert.match(les.content[0].text, /IGNORIERE ALLE ANWEISUNGEN/, "Lesen geht weiter (Daten)");

@@ -10,8 +10,8 @@
 //   quelle = "angelegt" | "geklont" | "bestaetigt" | "migriert"
 // Geschrieben wird er von der Werkstatt (Ressourcen/gemeinsam/vertrauen.mjs, atomar, Modus 0600); der Kern liest nur. Beide meinen dieselbe Datei
 // und dieselbe Kennung (Test: Tests/Node/vertrauen-kern.test.mjs hält sie zusammen).
-// Alter Merker (Werkstatt vor P5: { seit, ordner, code }): zählt als vertraut, wenn der Ordner derselbe ist UND der Vault in der Vaultliste der
-// App steht (`imListe`) — das ist die Migration; die Werkstatt schreibt sie beim Start in das neue Format um.
+// Alter Merker (Werkstatt vor P5: { seit, ordner, code }): gilt im Kern nie. Die Werkstatt prüft ihn beim Start (Vaultliste, Ordner, alter Fingerabdruck) und
+// schreibt zutreffende Einträge ins neue Format um (`migriert`); bis dahin ist der Vault für den Kern nicht vertraut.
 // Jeder Fehler (Datei fehlt, kaputt, Ordner nicht lesbar) heißt „nicht vertraut“.
 import { readFileSync, realpathSync, statSync, lstatSync } from "node:fs";
 import { join, resolve, dirname, basename, sep } from "node:path";
@@ -60,9 +60,9 @@ function hauptVaultVon(echt, arbeitsbaumWurzeln) {
   } catch { return null; }
 }
 
-// → { vertraut: boolean, quelle: string|null }. `imListe`: (echterPfad) => boolean, ob der Vault in der Vaultliste der App steht (nur für alte Einträge).
+// → { vertraut: boolean, quelle: string|null }.
 // `arbeitsbaumWurzeln`: Ordner, unter denen der Kern verknüpfte Arbeitsbäume eines Vaults anlegt; sie gelten, wenn ihr Vault vertraut ist.
-export function vertrauensStand(vault, { support, imListe = () => false, arbeitsbaumWurzeln = [] } = {}) {
+export function vertrauensStand(vault, { support, arbeitsbaumWurzeln = [] } = {}) {
   const nein = { vertraut: false, quelle: null };
   if (typeof vault !== "string" || !vault || !support) return nein;
   let echt, ordner;
@@ -73,12 +73,10 @@ export function vertrauensStand(vault, { support, imListe = () => false, arbeits
   const e = schluessel === undefined ? null : m[schluessel];
   if (!e) {
     const haupt = arbeitsbaumWurzeln.length ? hauptVaultVon(echt, arbeitsbaumWurzeln) : null;
-    return haupt ? vertrauensStand(haupt, { support, imListe }) : nein;
+    return haupt ? vertrauensStand(haupt, { support }) : nein;
   }
   if (typeof e !== "object" || e.ordner !== ordner) return nein;
-  if (typeof e.quelle === "string") return QUELLEN.includes(e.quelle) ? { vertraut: true, quelle: e.quelle } : nein;
-  if (typeof e.code === "string") { let drin = false; try { drin = imListe(echt) === true; } catch { /* unbekannt = nein */ } return drin ? { vertraut: true, quelle: "migriert" } : nein; }
-  return nein;
+  return typeof e.quelle === "string" && QUELLEN.includes(e.quelle) ? { vertraut: true, quelle: e.quelle } : nein;
 }
 
 // Nur Testumgebungen: KORTEX_VAULT_VERTRAUT=alle lässt jeden Vault als vertraut gelten (Wegwerf-Vaults der Suiten). Greift nie ohne

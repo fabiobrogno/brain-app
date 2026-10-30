@@ -220,7 +220,11 @@ export function erzeugeHandler(o) {
       }
       case "/api/vaults/neu": nur("POST"); return neuerStand(await vaultsFn.neuesVault(eingabe(), optV()));
       case "/api/vaults/oeffnen": nur("POST"); return neuerStand(await vaultsFn.oeffneOrdner(eingabe(), optV()));
-      case "/api/vaults/klonen": nur("POST"); return neuerStand(await vaultsFn.klone(eingabe(), optV()));
+      case "/api/vaults/klonen": {
+        nur("POST");
+        let login = null; try { login = (await github.konto()).login || null; } catch { /* nicht angemeldet: der Klon gilt nicht als eigener */ }
+        return neuerStand(await vaultsFn.klone(eingabe(), { ...optV(), githubLogin: login }));
+      }
       case "/api/vaults/entfernen": {
         nur("POST");
         const e = eingabe();

@@ -5,7 +5,7 @@
 //   · Kortex ihn selbst angelegt hat (Assistent „neu“, quelle „angelegt“) oder über den Assistenten/das Studio von GitHub geklont hat („geklont“),
 //   · der Nutzer im Studio „Vertrauen“ gesagt hat („bestaetigt“; die Frage „Kommt dieser Vault von dir?“ stellt das Studio einmal je von außen
 //     geöffnetem Ordner), oder
-//   · der Vault schon in der Vaultliste stand und die Werkstatt vor diesem Stand ihm vertraut hatte („migriert“, siehe migriereAltesVertrauen).
+//   · der Vault schon in der Vaultliste stand, die Werkstatt vor diesem Stand ihm vertraut hatte UND er sich seither nicht verändert hat („migriert“, siehe migriereAltesVertrauen).
 // Bis dahin: Lesen, Suchen und Ansehen gehen; es läuft aber KEIN git (weder in der Werkstatt noch im Kern), kein Hintergrunddienst, keine
 // Hooks, keine KI-Pflege. Der Rückweg ist widerrufe() („Vertrauen entziehen“ in den Einstellungen des Studios).
 //
@@ -15,13 +15,14 @@
 // Groß/klein und Unicode-Form — der Ordner selbst ist durch „ordner“ gebunden. Atomar geschrieben (Temp + rename), Modus 0600.
 // Gelesen wird derselbe Merker vom Kern (Ressourcen/kern/vertrauen.mjs; Test: Tests/Node/vertrauen-kern.test.mjs). Nichts hier führt Code aus
 // dem Vault aus — nur Dateien lesen und, bei einem vertrauten Vault, `git config --list`.
-import { realpathSync, statSync, readFileSync, writeFileSync, mkdirSync, renameSync, unlinkSync, existsSync } from "node:fs";
-import { join, resolve, dirname } from "node:path";
-import { tmpdir } from "node:os";
+import { realpathSync, statSync, lstatSync, readFileSync, writeFileSync, mkdirSync, renameSync, unlinkSync, existsSync } from "node:fs";
+import { join, resolve, dirname, isAbsolute, sep } from "node:path";
+import { tmpdir, homedir } from "node:os";
 import { randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { HttpFehler, supportOrdner, kindUmgebung, falte, absoluterGitPfad, testmodus } from "./basis.mjs";
 import { sicherungFuer } from "./sicherung.mjs";
+import { alterFingerabdruck } from "./vertrauen-alt.mjs";
 
 export const QUELLEN = ["angelegt", "geklont", "bestaetigt", "migriert"];
 
@@ -81,8 +82,8 @@ export function ordnerKennung(wurzel) {
 const LEER = { erlaubt: false, noetig: false, gitGesperrt: false, quelle: null };
 
 // → { erlaubt, noetig, gitGesperrt, quelle }. noetig: die Frage ist offen (nicht vertraut) · gitGesperrt: ohne Vertrauen läuft kein git.
-//   imListe: (echterPfad) => boolean — nur für Einträge im alten Format (siehe migriereAltesVertrauen); ohne Angabe gelten sie nicht.
-export function pruefeVertrauen(vault, { support, imListe } = {}) {
+//   Einträge im alten Format ({ seit, ordner, code }) gelten nie; sie werden nur von migriereAltesVertrauen umgeschrieben.
+export function pruefeVertrauen(vault, { support } = {}) {
   let wurzel, ordner;
   try { wurzel = echterPfad(vault); if (!statSync(wurzel).isDirectory()) throw 0; ordner = ordnerKennung(wurzel); } catch { return { ...LEER }; }
   const gesperrt = { erlaubt: false, noetig: true, gitGesperrt: true, quelle: null };
@@ -91,9 +92,7 @@ export function pruefeVertrauen(vault, { support, imListe } = {}) {
   const k = schluesselFuer(m, wurzel);
   const e = k === null ? null : m[k];
   if (!e || typeof e !== "object" || e.ordner !== ordner) return gesperrt;
-  let quelle = null;
-  if (typeof e.quelle === "string") quelle = QUELLEN.includes(e.quelle) ? e.quelle : null;
-  else if (typeof e.code === "string" && typeof imListe === "function") { try { if (imListe(wurzel) === true) quelle = "migriert"; } catch { /* unbekannt = nein */ } }
+  const quelle = typeof e.quelle === "string" && QUELLEN.includes(e.quelle) ? e.quelle : null;
   return quelle ? { erlaubt: true, noetig: false, gitGesperrt: false, quelle } : gesperrt;
 }
 
@@ -129,9 +128,10 @@ export function vergissVertrauen(pfad, { support } = {}) {
   schreibeMerker(support, m);
 }
 
-// Migration (einmal beim Start der Werkstatt, idempotent): Einträge im alten Format ({ seit, ordner, code }) für Vaults, die in der Vaultliste
-// stehen UND deren Ordner noch derselbe ist, werden zu { seit, ordner, quelle: "migriert" }. Alle anderen alten oder kaputten Einträge fallen weg
-// (für sie gilt wieder die Frage). Neue Einträge bleiben unberührt. → Zahl der übernommenen Einträge.
+// Migration (einmal beim Start der Werkstatt, idempotent): Einträge im alten Format ({ seit, ordner, code }) für Vaults, die in der Vaultliste stehen, deren
+// Ordner noch derselbe ist UND deren alter Code-Fingerabdruck (vertrauen-alt.mjs) heute noch zu dem Stand passt, dem der Nutzer zugestimmt hatte, werden zu
+// { seit, ordner, quelle: "migriert" }. Passt der Fingerabdruck nicht mehr (der Nutzer hatte „Nur ansehen“ gewählt oder der Vault hat sich verändert), wird
+// nicht migriert: dort kommt die Frage. Alle übrigen alten oder kaputten Einträge fallen weg; neue bleiben unberührt. → Zahl der übernommenen Einträge.
 export function migriereAltesVertrauen({ support, vaultPfade = [] } = {}) {
   const m = leseMerker(support);
   const listen = [];
@@ -145,8 +145,12 @@ export function migriereAltesVertrauen({ support, vaultPfade = [] } = {}) {
     try {
       const echt = echterPfad(k);
       ok = !!e && typeof e === "object" && typeof e.code === "string" && typeof e.ordner === "string" && e.ordner === ordnerKennung(echt) && listen.some((l) => gleicherOrt(l, echt));
+      if (ok) {
+        const konfig = liesGitKonfiguration(echt, { frisch: true });
+        ok = konfig.lesbar && alterFingerabdruck(echt, konfig.eintraege, konfig.vorhanden) === e.code;
+      }
       if (ok) m[k] = { seit: typeof e.seit === "string" ? e.seit : new Date().toISOString(), ordner: e.ordner, quelle: "migriert" };
-    } catch { /* Ordner fehlt: kein Vertrauen */ }
+    } catch { ok = false; /* Ordner fehlt oder nicht lesbar: kein Vertrauen */ }
     if (ok) uebernommen++; else delete m[k];
   }
   if (geaendert) schreibeMerker(support, m);
@@ -222,14 +226,62 @@ export function nutzerGitEinstellungen() {
   return k.lesbar ? nutzerEinstellungen(k.eintraege) : { sshGlobal: null, gpgGlobal: {} };
 }
 
-// Für die Git-Aufrufe der Werkstatt. Nicht vertraut: gesperrt (+ grund) — es läuft gar kein git. Vertraut: Hooks und Repo-Konfiguration wie gewohnt,
-// sshEigen (core.sshCommand ist irgendwo gesetzt — dann setzen wir kein eigenes GIT_SSH_COMMAND), sshGlobal und gpgGlobal (was der Nutzer selbst eingestellt hat).
+// Wo Git Hooks ausführen würde (lokal/worktree gesetztes core.hooksPath) und ob das ein Ort ist, dem ein vertrauter Vault die Hooks überlassen darf:
+// der übliche `<gitdir>/hooks` (kein Verweis) oder der Hook-Ordner des Kerns (so richtet install-git-hooks.mjs den Schutz ein). Liegt der Hook-Ordner im
+// Arbeitsbaum (alte Kit-Vaults: `.tools/git-hooks`) oder sonstwo, kann ihn ein Abgleich austauschen — dann laufen in der Werkstatt keine Hooks (wie bei
+// git-sicher). → true = Hooks dürfen laufen.
+function hooksErlaubt(wurzel, eintraege, kern) {
+  let pfad = null;
+  for (const e of eintraege) if ((e.scope === "local" || e.scope === "worktree") && e.key.toLowerCase() === "core.hookspath") pfad = e.wert;
+  const echt = (p) => { try { return realpathSync.native(p); } catch { return resolve(p); } };
+  if (pfad !== null && pfad.trim() !== "") {
+    if (pfad === "~" || pfad.startsWith("~/")) pfad = join(homedir(), pfad.slice(1));
+    const ziel = echt(isAbsolute(pfad) ? pfad : resolve(wurzel, pfad));
+    const kernHooks = kern ? echt(join(kern, "git-hooks")) : null;
+    return kernHooks !== null && ziel === kernHooks;
+  }
+  // Standard: <gitdir>/hooks — nur ein echter Ordner im Git-Verzeichnis (ein Verweis könnte in den Arbeitsbaum zeigen)
+  try {
+    const punktGit = join(wurzel, ".git");
+    const st = lstatSync(punktGit);
+    if (!st.isDirectory()) return false; // .git als Datei (Worktree/Submodul): gemeinsames Git-Verzeichnis nicht prüfbar → keine Hooks
+    return !lstatSync(join(punktGit, "hooks")).isSymbolicLink();
+  } catch (e) { return !!e && e.code === "ENOENT"; }
+}
+
+// Lokal gesetzte Programm-Schlüssel (Filter, Merge-Treiber, Diff-Befehle, Credential-Helper, ssh, Remote-Programme), deren Befehl ein Programm IM Arbeitsbaum
+// nennt (absoluter Pfad darin, „./x“, „../x“ oder ein relativer Pfad mit „/“): ein Abgleich kann es austauschen. → Name des ersten Schlüssels oder null.
+const PROGRAMM_SCHLUESSEL = [/^credential(\..+)?\.helper$/, /^core\.(sshcommand|askpass|gitproxy|alternaterefscommand|fsmonitor|editor|pager)$/, /^gpg(\..+)?\.program$/,
+  /^gpg\.ssh\..*(program|command)$/, /^merge\..+\.(driver|recursivedriver)$/, /^filter\..+\.(clean|smudge|process)$/, /^diff\..+\.(command|textconv)$/, /^diff\.external$/,
+  /^remote\..+\.(uploadpack|receivepack|vcs)$/, /^sequence\.editor$/];
+function programmImArbeitsbaum(wurzel, eintraege) {
+  const w = wurzel + sep;
+  for (const e of eintraege) {
+    if (e.scope !== "local" && e.scope !== "worktree") continue;
+    const k = e.key.toLowerCase();
+    if (!PROGRAMM_SCHLUESSEL.some((re) => re.test(k))) continue;
+    const teile = String(e.wert).split(/[\s"'`;&|()<>=]+/).filter(Boolean);
+    // Das Git-Verzeichnis selbst (.git/…) gehört nicht zum Arbeitsbaum: ein Abgleich kann es nicht austauschen.
+    const imGitDir = (t) => /^(\.\/)?\.git\//.test(t) || t.startsWith(wurzel + sep + ".git" + sep);
+    const imBaum = teile.some((t) => !imGitDir(t) && ((isAbsolute(t) && (t === wurzel || t.startsWith(w))) || t.startsWith("./") || t.startsWith("../") || (/^[^/~$-][^\s]*\//.test(t) && !isAbsolute(t))));
+    if (imBaum) return e.key;
+  }
+  return null;
+}
+
+// Für die Git-Aufrufe der Werkstatt. Nicht vertraut: gesperrt (+ grund) — es läuft gar kein git. Vertraut: Repo-Konfiguration wie gewohnt, aber
+// `hooks` (false: keine Hooks, siehe hooksErlaubt), sshEigen (core.sshCommand ist irgendwo gesetzt — dann setzen wir kein eigenes GIT_SSH_COMMAND),
+// sshGlobal und gpgGlobal (was der Nutzer selbst eingestellt hat). Verweist eine lokale Programm-Einstellung in den Arbeitsbaum: gesperrt (grund nennt den Schlüssel).
+// kern: Ordner des gebündelten Kerns (für den erlaubten Hook-Ordner `<kern>/git-hooks`).
 export const GRUND_GESPERRT = "Dieser Vault ist in Kortex noch nicht als deiner bestätigt. Bestätige ihn in der Statusleiste („Nur ansehen“), dann geht Git.";
-export function gitSicht(vault, { support, imListe } = {}) {
-  const v = pruefeVertrauen(vault, { support, imListe });
-  if (!v.erlaubt) return { vertraut: false, gesperrt: true, grund: GRUND_GESPERRT, sshEigen: false, sshGlobal: null, gpgGlobal: {} };
+export function gitSicht(vault, { support, kern } = {}) {
+  const zu = (grund) => ({ vertraut: false, gesperrt: true, grund, sshEigen: false, sshGlobal: null, gpgGlobal: {}, hooks: false });
+  const v = pruefeVertrauen(vault, { support });
+  if (!v.erlaubt) return zu(GRUND_GESPERRT);
   let wurzel;
-  try { wurzel = echterPfad(vault); } catch { return { vertraut: false, gesperrt: true, grund: GRUND_GESPERRT, sshEigen: false, sshGlobal: null, gpgGlobal: {} }; }
+  try { wurzel = echterPfad(vault); } catch { return zu(GRUND_GESPERRT); }
   const k = liesGitKonfiguration(wurzel);
-  return { vertraut: true, gesperrt: false, grund: null, sshEigen: sshEigenGesetzt(k.eintraege), ...nutzerEinstellungen(k.eintraege) };
+  const imBaum = programmImArbeitsbaum(wurzel, k.eintraege);
+  if (imBaum) return { ...zu(`Die Git-Einstellung „${imBaum}“ dieses Vaults startet ein Programm aus dem Vault selbst. Git bleibt gesperrt, bis du sie entfernst.`), vertraut: true };
+  return { vertraut: true, gesperrt: false, grund: null, hooks: hooksErlaubt(wurzel, k.eintraege, kern), sshEigen: sshEigenGesetzt(k.eintraege), ...nutzerEinstellungen(k.eintraege) };
 }

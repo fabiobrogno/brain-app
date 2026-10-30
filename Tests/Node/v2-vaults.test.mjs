@@ -3,7 +3,7 @@
 import test, { beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, existsSync, readdirSync, symlinkSync, mkdirSync, rmSync, chmodSync, lstatSync, statSync, realpathSync } from "node:fs";
-import { join, basename } from "node:path";
+import { join, basename, dirname } from "node:path";
 import { userInfo } from "node:os";
 import { execFileSync } from "node:child_process";
 import { tmp, schreibe, repo, g, pfad } from "./hilfe.mjs";
@@ -28,6 +28,8 @@ const OPT = { heute: HEUTE };
 const LEER = { vaults: [], aktiv: null };
 
 const VAULTS_JSON = () => join(SUPPORT(), "vaults.json");
+// Im Testmodus ist der „Besitzer“ eines lokalen Repositorys der Name seines Elternordners; ein Klon gilt als eigener, wenn das Konto so heißt (F3).
+const loginVon = (bare) => basename(dirname(bare));
 const VERTRAUEN_JSON = () => join(SUPPORT(), "vertrauen.json");
 // Das neue Vault trägt sein eigenes Vertrauen (P5: angelegt/geklont, ohne Reste des alten Eintrags); alles andere ist der Rest, der übrig bleibt.
 function restOhne(pfad, quelle) {
@@ -706,7 +708,7 @@ test("klone: lokales Bare-Repo (Testmodus) → Vault aktiv, git:true, Name aus d
 test("klone: ohne Ordner nach <home>/Kortex, in einen vorhandenen leeren Ordner (auch mit .DS_Store) geht", async () => {
   const bare = bareMitInhalt();
   const home = tmp("brain-home6-");
-  const r = await klone({ url: bare }, { ...OPT, home });
+  const r = await klone({ url: bare }, { ...OPT, home, githubLogin: loginVon(bare) });
   assert.equal(r.vault.pfad, join(home, "Kortex"));
   assert.ok(existsSync(join(home, "Kortex", "wissen.md")));
   const leer = tmp("brain-kl-leer-");
@@ -813,7 +815,7 @@ test("klone: eine alte Freigabe für den Zielpfad wird vergessen (echter und ges
   const andere = tmp("brain-vg1-a-");
   const bleibt = { seit: "2026-10-02T00:00:00Z", ordner: "1:2:3", code: "abc" };
   schreibeJson(VERTRAUEN_JSON(), { [echt]: { seit: "2026-10-01T00:00:00Z" }, [join(link, "Ziel")]: { seit: "x" }, [echt.toUpperCase()]: { seit: "y" }, [andere]: bleibt });
-  const r = await klone({ url: bare, ordner: join(link, "Ziel") }, OPT);
+  const r = await klone({ url: bare, ordner: join(link, "Ziel") }, { ...OPT, githubLogin: loginVon(bare) });
   assert.equal(r.vault.pfad, echt);
   assert.deepEqual(restOhne(echt, "geklont"), { [andere]: bleibt }, "nur die alten Einträge des Zielpfads fallen weg; der Klon ist neu vertraut");
   assert.equal(statSync(VERTRAUEN_JSON()).mode & 0o777, 0o600);
@@ -825,7 +827,7 @@ test("klone und neuesVault ohne Ordner: die alte Freigabe für <home>/Kortex wir
   const home = tmp("brain-vg2-");
   const brain = join(home, "Kortex"), anderes = tmp();
   schreibeJson(VERTRAUEN_JSON(), { [brain]: { seit: "x" }, [anderes]: { seit: "y" } });
-  const r = await klone({ url: bare }, { ...OPT, home });
+  const r = await klone({ url: bare }, { ...OPT, home, githubLogin: loginVon(bare) });
   assert.equal(r.vault.pfad, brain);
   assert.deepEqual(restOhne(brain, "geklont"), { [anderes]: { seit: "y" } });
   schreibeJson(VERTRAUEN_JSON(), { [join(home, "Kortex 2")]: { seit: "x" }, [anderes]: { seit: "y" } });
@@ -880,7 +882,7 @@ test("kaputte vertrauen.json: klone, neu und entfernen laufen — der kaputte In
     writeFileSync(VERTRAUEN_JSON(), roh);
     const basis = tmp("brain-vg6-");
     const a = tmp(); registriere(a);
-    const k = await klone({ url: bare, ordner: join(basis, "K") }, OPT);
+    const k = await klone({ url: bare, ordner: join(basis, "K") }, { ...OPT, githubLogin: loginVon(bare) });
     const n = await neuesVault({ art: "vorlage", ordner: join(basis, "N") }, OPT);
     assert.equal(k.vault.pfad, join(basis, "K"), `klone läuft (${JSON.stringify(roh)})`);
     assert.equal(n.vault.pfad, join(basis, "N"), "neuesVault läuft");

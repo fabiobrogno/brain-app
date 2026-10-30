@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, chmodSync, symlinkSync, statSync, appendFileSync, utimesSync } from "node:fs";
 import { join } from "node:path";
-import { tmp, schreibe, repo, g, pfad, kernAttrappe } from "./hilfe.mjs";
+import { tmp, schreibe, repo, g, pfad, kernAttrappe, echt } from "./hilfe.mjs";
 process.env.HOME = tmp("brain-home-");          // os.homedir() liest $HOME: keine echte ~/.gitconfig
 process.env.GIT_CONFIG_NOSYSTEM = "1";          // und keine System-Konfiguration
 
@@ -16,8 +16,7 @@ const V = await import(pfad("gemeinsam", "vertrauen.mjs"));
 const { oeffneVault } = await import(pfad("gemeinsam", "vault.mjs"));
 const { erzeugeHandler } = await import(pfad("werkstatt", "handler.mjs"));
 const wirft = async (p) => { try { await p; } catch (e) { assert.ok(e instanceof HttpFehler, String(e && e.stack)); return e; } assert.fail("kein Fehler"); };
-// Die Suite setzt KORTEX_VAULT_VERTRAUT=alle (hilfe.mjs); diese Tests prüfen die echte Vertrauensprüfung.
-const echt = async (fn) => { const alt = process.env.KORTEX_VAULT_VERTRAUT; delete process.env.KORTEX_VAULT_VERTRAUT; try { return await fn(); } finally { if (alt !== undefined) process.env.KORTEX_VAULT_VERTRAUT = alt; } };
+// Die Suite setzt KORTEX_VAULT_VERTRAUT=alle (hilfe.mjs); diese Tests prüfen die echte Vertrauensprüfung (echt() aus hilfe.mjs stellt den Schalter auch nach einer Zeitüberschreitung wieder her).
 
 const neuerSupport = () => tmp("brain-support-");
 const KIT = `console.log(JSON.stringify({version:1,ampel:"gruen",warnungen:0,pruefungen:[]}));\n`;
@@ -77,29 +76,61 @@ test("Härtung: ext::-Transport ist bei jedem Aufruf aus (protocol.ext.allow=nev
   assert.notEqual(r.code, 0); assert.equal(existsSync(marke), false);
 });
 
-test("Hooks: in einem vertrauten Vault laufen .git/hooks und core.hooksPath wie gewohnt; ohne Vertrauen ist Git ganz gesperrt — kein Commit, kein Hook", () => echt(async () => {
+test("Hooks: in einem vertrauten Vault laufen nur .git/hooks und die Hooks des Kerns; ein Hook-Ordner im Arbeitsbaum (core.hooksPath=.tools/git-hooks) läuft nie — auch nicht, wenn ein Abgleich ihn austauscht; ohne Vertrauen ist Git ganz gesperrt", () => echt(async () => {
   const d = repo();
   const marke = join(tmp("brain-marke-"), "HOOK");
-  schreibe(d, ".git/hooks/pre-commit", `#!/bin/sh\necho x >> '${marke}'\nexit 0\n`); chmodSync(join(d, ".git/hooks/pre-commit"), 0o755);
-  schreibe(d, ".githooks/pre-commit", `#!/bin/sh\necho y >> '${marke}'\nexit 0\n`); chmodSync(join(d, ".githooks/pre-commit"), 0o755);
-  g(d, "config", "core.hooksPath", ".githooks");
+  const hook = (rel, name) => { schreibe(d, rel, `#!/bin/sh\necho ${name} >> '${marke}'\nexit 0\n`); chmodSync(join(d, rel), 0o755); };
+  hook(".git/hooks/pre-commit", "x"); hook(".tools/git-hooks/pre-commit", "y");
+  const kern = kernAttrappe({ "git-hooks/pre-commit": `#!/bin/sh\necho kern >> '${marke}'\nexit 0\n` });
+  chmodSync(join(kern, "git-hooks/pre-commit"), 0o755);
+  g(d, "config", "core.hooksPath", ".tools/git-hooks");
   const support = neuerSupport();
-  const v = mitSupport(d, support);
+  const v = mitSupport(d, support, { kern });
   schreibe(d, "a.md", "# a\n");
   const e = await wirft(v.gitCommit({ nachricht: "ohne Vertrauen", dateien: ["a.md"] }));
   assert.equal(e.status, 409); assert.equal(e.extra.gitGesperrt, true);
   assert.equal(existsSync(marke), false, "ohne Vertrauen kein Hook (und kein Commit)");
   v.vertrauen(true);
-  await v.gitCommit({ nachricht: "mit Vertrauen", dateien: ["a.md"] });
-  assert.equal(readFileSync(marke, "utf8"), "y\n", "mit Vertrauen läuft der Hook aus core.hooksPath");
-  g(d, "config", "--unset", "core.hooksPath");
+  assert.equal(V.gitSicht(d, { support, kern }).hooks, false, "Hook-Ordner im Arbeitsbaum: keine Hooks");
+  await v.gitCommit({ nachricht: "Hook-Ordner im Arbeitsbaum", dateien: ["a.md"] });
+  assert.equal(existsSync(marke), false, "der Hook aus dem Arbeitsbaum läuft nicht (auch nicht nach einem Abgleich, der ihn ausgetauscht hat)");
+  // Hook-Ordner des Kerns: erlaubt
+  g(d, "config", "core.hooksPath", join(kern, "git-hooks"));
   schreibe(d, "b.md", "# b\n");
-  await v.gitCommit({ nachricht: ".git/hooks", dateien: ["b.md"] });
-  assert.equal(readFileSync(marke, "utf8"), "y\nx\n", ".git/hooks/pre-commit läuft im vertrauten Vault");
-  v.vertrauen(false);
+  await v.gitCommit({ nachricht: "Kern-Hooks", dateien: ["b.md"] });
+  assert.equal(readFileSync(marke, "utf8"), "kern\n", "die Hooks des Kerns laufen");
+  // Standard: .git/hooks
+  g(d, "config", "--unset", "core.hooksPath");
   schreibe(d, "c.md", "# c\n");
-  await wirft(v.gitCommit({ nachricht: "Vertrauen entzogen", dateien: ["c.md"] }));
-  assert.equal(readFileSync(marke, "utf8"), "y\nx\n", "nach dem Entziehen läuft nichts mehr");
+  await v.gitCommit({ nachricht: ".git/hooks", dateien: ["c.md"] });
+  assert.equal(readFileSync(marke, "utf8"), "kern\nx\n", ".git/hooks/pre-commit läuft im vertrauten Vault");
+  // .git/hooks als Verweis in den Arbeitsbaum: keine Hooks
+  rmSync(join(d, ".git/hooks"), { recursive: true }); symlinkSync(join(d, ".tools/git-hooks"), join(d, ".git/hooks"));
+  schreibe(d, "e.md", "# e\n");
+  await v.gitCommit({ nachricht: "Verweis", dateien: ["e.md"] });
+  assert.equal(readFileSync(marke, "utf8"), "kern\nx\n", "Verweis im Git-Verzeichnis: keine Hooks");
+  v.vertrauen(false);
+  schreibe(d, "f.md", "# f\n");
+  await wirft(v.gitCommit({ nachricht: "Vertrauen entzogen", dateien: ["f.md"] }));
+}));
+
+test("Programm-Einstellung, die in den Arbeitsbaum zeigt (filter.clean, merge.driver … mit Pfad im Vault): Git bleibt gesperrt, auch im vertrauten Vault; eine Einstellung mit Programm aus dem PATH nicht", () => echt(async () => {
+  const marke = join(tmp("brain-marke-"), "FILTER");
+  const d = repo();
+  schreibe(d, ".tools/clean.sh", `#!/bin/sh\ntouch '${marke}'\ncat\n`); chmodSync(join(d, ".tools/clean.sh"), 0o755);
+  schreibe(d, ".gitattributes", "*.md filter=probe\n");
+  const support = neuerSupport();
+  mitSupport(d, support).vertrauen(true);
+  for (const wert of [`${join(d, ".tools/clean.sh")}`, "./.tools/clean.sh", ".tools/clean.sh", `sh -c '${join(d, ".tools/clean.sh")}'`]) {
+    g(d, "config", "filter.probe.clean", wert);
+    const s = V.gitSicht(d, { support });
+    assert.equal(s.gesperrt, true, wert); assert.equal(s.vertraut, true); assert.match(s.grund, /filter\.probe\.clean/);
+    const v = mitSupport(d, support);
+    assert.equal((await wirft(v.gitCommit({ nachricht: "x", dateien: [] }))).extra.gitGesperrt, true);
+  }
+  g(d, "config", "filter.probe.clean", "cat");
+  assert.equal(V.gitSicht(d, { support }).gesperrt, false, "ein Programm aus dem PATH ist in Ordnung");
+  assert.equal(existsSync(marke), false, "nie gelaufen");
 }));
 
 test("Git gesperrt: ohne Vertrauen → status 200 { repo, gesperrt, grund }, übrige Routen 409 { gitGesperrt }, nichts läuft (auch der Filter aus .git/config nicht); nach dem Vertrauen normal", () => echt(async () => {

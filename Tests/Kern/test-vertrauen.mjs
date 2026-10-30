@@ -78,21 +78,14 @@ test("Merker: Pfad über Verweis, andere Groß/klein- und Unicode-Schreibweise f
   assert.equal(V.vertrauensStand(s.v.replace("/Vault", "/VAULT"), { support: s.support }).vertraut, process.platform === "darwin", "Groß/klein (nur auf dem case-insensitiven APFS derselbe Ordner)");
 });
 
-test("alter Merker (Stand vor P5: seit/ordner/code): vertraut nur für Vaults aus der Vaultliste; sonst Frage", () => {
+test("alter Merker (Stand vor P5: seit/ordner/code) gilt im Kern nie — auch nicht für Vaults aus der Vaultliste; erst die Migration der Werkstatt schreibt ihn um", () => {
   const s = neu();
   const echt = realpathSync(s.v);
   writeFileSync(join(s.support, "vertrauen.json"), JSON.stringify({ [echt]: { seit: "2026-01-01T00:00:00.000Z", ordner: V.ordnerKennung(s.v), code: "abc" } }));
-  assert.equal(V.vertrauensStand(s.v, { support: s.support }).vertraut, false, "ohne Listenwissen: nein");
-  assert.equal(V.vertrauensStand(s.v, { support: s.support, imListe: () => false }).vertraut, false, "nicht in der Liste: nein");
-  assert.deepEqual(V.vertrauensStand(s.v, { support: s.support, imListe: (p) => p === echt }), { vertraut: true, quelle: "migriert" });
-  assert.equal(V.vertrauensStand(s.v, { support: s.support, imListe: () => { throw new Error("x"); } }).vertraut, false, "Fehler in der Prüfung = nein");
-  // und über pfade.mjs: die Liste der App (vaults.json im Support-Ordner)
-  const r = (liste) => {
-    if (liste) writeFileSync(join(s.support, "vaults.json"), JSON.stringify({ vaults: [{ name: "V", pfad: s.v, farbe: "#000000" }], aktiv: s.v }));
-    return spawnSync(NODE, ["--input-type=module", "-e", `import { vaultVertraut } from ${JSON.stringify(pathToFileURL(join(KERN, "pfade.mjs")).href)}; process.stdout.write(String(vaultVertraut(${JSON.stringify(s.v)})));`], { encoding: "utf8", env: s.env() }).stdout;
-  };
-  assert.equal(r(false), "false");
-  assert.equal(r(true), "true");
+  writeFileSync(join(s.support, "vaults.json"), JSON.stringify({ vaults: [{ name: "V", pfad: s.v, farbe: "#000000" }], aktiv: s.v }));
+  assert.equal(V.vertrauensStand(s.v, { support: s.support }).vertraut, false);
+  const r = spawnSync(NODE, ["--input-type=module", "-e", `import { vaultVertraut } from ${JSON.stringify(pathToFileURL(join(KERN, "pfade.mjs")).href)}; process.stdout.write(String(vaultVertraut(${JSON.stringify(s.v)})));`], { encoding: "utf8", env: s.env() });
+  assert.equal(r.stdout, "false");
 });
 
 test("Testschalter KORTEX_VAULT_VERTRAUT=alle gilt nur zusammen mit einem Testflag", () => {

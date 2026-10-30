@@ -166,26 +166,13 @@ export function aktiverVaultAusListe(opt = {}) {
   try { return pruefeVault(kandidat); } catch { return null; }
 }
 
-// Steht der Vault (echter Pfad) in der Vaultliste der App? Gebraucht nur für die Migration alter Vertrauens-Merker (vertrauen.mjs).
-export function vaultInListe(vault, opt = {}) {
-  const gesucht = [resolve(vault), echterPfadOderSelbst(resolve(vault))].map(falte);
-  for (const ordner of supportOrte(opt)) {
-    const r = leseListeDatei(ordner);
-    if (r.zustand === "defekt") return false;
-    if (r.zustand !== "ok") continue;
-    return (r.wurzel.vaults || []).some((e) => e && typeof e === "object" && typeof e.pfad === "string" && !e.pfad.includes("\0") && isAbsolute(e.pfad)
-      && [resolve(e.pfad), echterPfadOderSelbst(resolve(e.pfad))].map(falte).some((f) => gesucht.includes(f)));
-  }
-  return false;
-}
-
 // ---------------------------------------------------------------------------------------------------------------------
 // Workspace-Trust (P5): vertraut ist ein Vault, den Kortex angelegt oder geklont hat oder den der Nutzer im Studio bestätigt hat (vertrauen.mjs).
 // Ohne Vertrauen: kein git, kein Hintergrunddienst, keine Hooks, keine KI-Pflege — Lesen, Suchen und Ansehen gehen.
 export function vaultVertraut(vault, opt = {}) {
   const env = opt.env || process.env;
   if (alleVertraut(env)) return true;
-  return vertrauensStand(vault, { support: typeof opt.support === "string" ? opt.support : supportOrdner(opt), imListe: (v) => vaultInListe(v, opt),
+  return vertrauensStand(vault, { support: typeof opt.support === "string" ? opt.support : supportOrdner(opt),
     arbeitsbaumWurzeln: tageslaufArbeitsbaumWurzeln(env) }).vertraut;
 }
 // Wo der Tageslauf die verknüpften Arbeitsbäume eines Vaults anlegt (tageslauf/arbeitskopie.mjs; dieselbe Ausnahme kennt git-sicher). Der Testhaken

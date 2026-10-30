@@ -125,3 +125,16 @@ import Foundation
     #expect(a.body == body)
     await b.beende()
 }
+
+@Test func testSchalterGehenNurInDebugBuildsAnKindprozesse() {
+    let schalter = ["KORTEX_VAULT_VERTRAUT": "alle", "KORTEX_KERN_UNSTABIL_ERLAUBT": "1", "KORTEX_STARTER_PFAD": "/x/kortex", "KORTEX_KERN_TEMP_WURZELN": "",
+                    "BRAIN_GIT_PROGRAMM": "/x/git", "BRAIN_GIT_HOOKS_ERLAUBT": "/x/hooks"]
+    let roh = schalter.merging(["PATH": "/usr/bin", "HOME": "/h"]) { a, _ in a }
+    let release = NodeUmgebung.bereinigt(roh, testmodusWeitergeben: false)
+    for k in schalter.keys { #expect(release[k] == nil, "\(k) darf im Release nicht in den Kindprozess") }
+    #expect(release["HOME"] == "/h")
+    let kindRelease = NodeUmgebung.fuerKind(basis: roh, vault: nil, vorgaben: schalter, testmodusWeitergeben: false)
+    for k in schalter.keys { #expect(kindRelease[k] == nil, "\(k) auch nicht als Vorgabe") }
+    let debug = NodeUmgebung.bereinigt(roh, testmodusWeitergeben: true)
+    for (k, v) in schalter { #expect(debug[k] == v) }
+}
