@@ -308,7 +308,7 @@ test("Statusleiste: alle Elemente und Hell/Dunkel-Umschalter", async ({ page }) 
   expect(await farbe()).toBe("rgb(255, 255, 255)");
 });
 
-test("Menübefehle: alle elf Swift-Befehle sind belegt, hell-dunkel schaltet das Theme", async ({ page }) => {
+test("Menübefehle: alle Swift-Befehle sind belegt, hell-dunkel schaltet das Theme", async ({ page }) => {
   await page.emulateMedia({ colorScheme: "light" });
   await start(page);
   const befehl = (n) => page.evaluate((x) => window.studio.befehl(x), n);
@@ -339,6 +339,9 @@ test("Menübefehle: alle elf Swift-Befehle sind belegt, hell-dunkel schaltet das
   await page.keyboard.press("Escape");
   await befehl("vault-wechseln");
   await expect(page.locator(".menue")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await befehl("einstellungen"); // Menüleiste „Einstellungen …“: das Zahnrad-Menü der Statusleiste
+  await expect(page.locator('.menue [data-wert="hell"]')).toBeVisible();
   await page.keyboard.press("Escape");
   await befehl("verlauf");
   await expect(page.locator("#app")).toHaveAttribute("data-modus", "verlauf");

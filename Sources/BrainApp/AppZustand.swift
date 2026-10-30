@@ -20,12 +20,20 @@ final class AppZustand: ObservableObject {
     @Published private(set) var vaultName: String?
     /// Ist der aktive Vault ein Brain im Sinne des Kerns (`brain.config.json`)? Nur dann gibt es Kern-Status, Übersicht und Rückfragen.
     @Published private(set) var kitVorhanden = false
+    /// Vertraut Kortex dem aktiven Vault? Nur zum Anzeigen im Menü („Nur ansehen“); gelesen aus dem Merker der Werkstatt, nie geschrieben.
+    @Published private(set) var vertrauen: VaultVertrauen?
 
     let pfade: AppPfade
     let log: AppLog
     private let argumente = StartArgumente.lies(CommandLine.arguments)
     /// Was die Menüleiste zeigt: der Kit-Status, bei stillstehender Zuführung als ⚠ (nur dort, wo sonst ✓ stünde).
     var menueAnzeige: StatusAnzeige { anzeige.mit(zufuehrungen: zufuehrungen) }
+    /// Statuszeilen im Kopf des Menüs: Vault mit Namen, Zustand, Vertrauen („Nur ansehen“), offene Zahlen, Warnungen (Darstellung in `MenueStatus`).
+    var menueZeilen: [MenueZeile] {
+        MenueStatus.zeilen(vaultName: vaultName, anzeige: menueAnzeige, vertrauen: vertrauen, zahlen: status?.zahlen,
+                           entwicklerVault: status?.quellVault == true, kernMeldung: kernBereitschaft.meldung,
+                           zufuehrungsZeilen: zufuehrungen.menueZeilen)
+    }
     /// Studio (Editor, Werkstatt-Brücke) und Übersicht (Kit-Ansicht, Kit-Brücke).
     private let studio: FensterSteuerung
     private let uebersicht: FensterSteuerung
@@ -288,6 +296,7 @@ final class AppZustand: ObservableObject {
         guard alt?.standardizedFileURL.path != neu?.standardizedFileURL.path else { return false }
         vault = neu
         status = nil
+        vertrauen = nil
         anzeige = neu == nil ? .keinVault : StatusAnzeige.fuer(nil, fehler: "Wird geprüft …")
         if alt != nil { uebersicht.schliesse() } // die offene Übersicht gehört zum alten Vault
         log.schreibe("vault-wechsel \(neu?.path ?? "keiner")")
@@ -316,11 +325,13 @@ final class AppZustand: ObservableObject {
         guard let vault else {
             status = nil
             zufuehrungen = .keine
+            vertrauen = nil
             anzeige = .keinVault
             return
         }
-        // Reine Datei (kein Prozess): bei jedem Abruf frisch lesen.
+        // Reine Dateien (kein Prozess): bei jedem Abruf frisch lesen.
         zufuehrungen = ZufuehrungenStand.lade(vault: vault)
+        vertrauen = VaultVertrauen.lade(vault: vault, support: pfade.basis)
         switch VaultAuswahl.pruefe(vault) {
         case .fehlt:
             status = nil
@@ -476,7 +487,7 @@ final class AppZustand: ObservableObject {
                                        tageslauf: status?.tageslauf, log: log) { [weak self] in
             Task { await self?.aktualisiere() }
         }
-        let w = NSWindow(contentViewController: NSHostingController(rootView: RueckfragenAnsicht(modell: modell)))
+        let w = NSWindow(contentViewController: NSHostingController(rootView: RueckfragenAnsicht(modell: modell).kortexAkzent()))
         w.title = "Rückfragen"
         w.styleMask = [.titled, .closable]
         w.isReleasedWhenClosed = false
@@ -511,7 +522,7 @@ final class AppZustand: ObservableObject {
             NSApp.activate()
             return
         }
-        let w = NSWindow(contentViewController: NSHostingController(rootView: EinrichtungsAnsicht(zustand: self)))
+        let w = NSWindow(contentViewController: NSHostingController(rootView: EinrichtungsAnsicht(zustand: self).kortexAkzent()))
         w.title = "Kortex kann nicht starten"
         w.styleMask = [.titled, .closable]
         w.isReleasedWhenClosed = false
@@ -544,7 +555,7 @@ final class AppZustand: ObservableObject {
         }
         let modell = EinrichtungsModell(dienste: dienste, speicher: EinrichtungsSpeicher(pfade: pfade), log: log, vorschau: vorschau)
         let vaultVorher = vaultFrisch()
-        let w = NSWindow(contentViewController: NSHostingController(rootView: EinrichtungsAssistentAnsicht(modell: modell)))
+        let w = NSWindow(contentViewController: NSHostingController(rootView: EinrichtungsAssistentAnsicht(modell: modell).kortexAkzent()))
         w.title = vorschau == nil ? "Kortex einrichten" : "Kortex einrichten — Vorschau"
         w.styleMask = [.titled, .closable]
         w.isReleasedWhenClosed = false

@@ -32,7 +32,8 @@ while IFS= read -r f; do
   [ -n "$f" ] || continue
   case "$f" in
     Sources/*|Tests/BrainCoreTests/*|Package.swift|Package.resolved) swift=true ;;
-    Ressourcen/Info.plist|Ressourcen/node.entitlements) swift=true ;;
+    Ressourcen/Info.plist|Ressourcen/node.entitlements|Ressourcen/AppIcon.icns) swift=true ;;
+    Ressourcen/icon-entwuerfe/*) ;;                                              # Icon-Entwürfe (SVG/PNG): nur Vorlage für scripts/baue-icon.sh, kein Testgegenstand
     Ressourcen/kern/*|Tests/Kern/*|scripts/node-version.txt) kern=true ;;       # auch deren .md (Skills, Fixtures) sind Testgegenstand
     Ressourcen/gemeinsam/*|Ressourcen/werkstatt/*) swift=true; node=true; ui=true ;;
     Ressourcen/studio/*) node=true; ui=true ;;

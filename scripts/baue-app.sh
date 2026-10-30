@@ -21,6 +21,8 @@ rm -rf "$NEU"
 mkdir -p "$NEU/Contents/MacOS" "$NEU/Contents/Resources"
 cp "$BIN" "$NEU/Contents/MacOS/BrainApp"
 cp Ressourcen/Info.plist "$NEU/Contents/Info.plist"
+[ -f Ressourcen/AppIcon.icns ] || { echo "FEHLER: Ressourcen/AppIcon.icns fehlt (scripts/baue-icon.sh erzeugt es)." >&2; exit 1; }
+cp Ressourcen/AppIcon.icns "$NEU/Contents/Resources/AppIcon.icns" # App-Icon (Info.plist: CFBundleIconFile)
 cp -R build/node-runtime "$NEU/Contents/Resources/node-runtime"
 # Alle Ressourcen-Ordner ins Paket (studio, werkstatt, mcp, gemeinsam und was das Backend sonst mitbringt, z. B. Vorlagen)
 for d in Ressourcen/*/; do

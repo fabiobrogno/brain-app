@@ -65,6 +65,12 @@ if [ -f "$APP/Contents/Info.plist" ]; then
   [ -n "$VERSION" ] && ok "Version $VERSION (Build $BUILD)" || fehlt "In der App steht keine Versionsnummer (CFBundleShortVersionString)."
 fi
 
+if [ -d "$APP" ]; then
+  if [ -f "$APP/Contents/Resources/AppIcon.icns" ]; then ok "App-Icon im Paket"; else
+    fehlt "Im Paket fehlt Contents/Resources/AppIcon.icns. Neu bauen: bash scripts/baue-app.sh"
+  fi
+fi
+
 if [ -f "$ENTITLEMENTS" ]; then ok "Rechte-Datei für Node: Ressourcen/node.entitlements"; else
   fehlt "Die Datei Ressourcen/node.entitlements fehlt."
 fi

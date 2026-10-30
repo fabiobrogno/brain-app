@@ -84,12 +84,12 @@ private struct VaultAnsicht: View {
             HStack {
                 TextField("Name", text: $modell.name).textFieldStyle(.roundedBorder).focused($nameFokus)
                     .onSubmit { modell.legeNeuenVaultAn() }
-                Button("Anlegen") { modell.legeNeuenVaultAn() }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+                Button("Anlegen") { modell.legeNeuenVaultAn() }.buttonStyle(.kortexHaupt).keyboardShortcut(.defaultAction)
             }
             HStack(spacing: 6) {
                 Image(systemName: "folder").foregroundStyle(.secondary).accessibilityHidden(true)
                 Text(modell.ordnerText).font(.callout).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                Button("Ort ändern …") { modell.waehleZielordner() }.buttonStyle(.link).font(.callout)
+                Button("Ort ändern …") { modell.waehleZielordner() }.buttonStyle(.kortexLink).font(.callout)
             }
         }
     }
@@ -104,7 +104,7 @@ private struct VaultAnsicht: View {
                 Text(VaultAuswahl.kurz(BeispielVault.ordner(home: modell.home), home: modell.home))
                     .font(.callout).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                 Spacer(minLength: 8)
-                Button("Beispiel anlegen") { modell.legeBeispielAn() }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+                Button("Beispiel anlegen") { modell.legeBeispielAn() }.buttonStyle(.kortexHaupt).keyboardShortcut(.defaultAction)
             }
         }
     }
@@ -136,7 +136,7 @@ private struct VaultAnsicht: View {
         VStack(alignment: .leading, spacing: 10) {
             HinweisBox(text: h.text)
             HStack {
-                Button("Dort einen neuen Vault anlegen") { modell.nimmUnterordnerStattdessen() }.buttonStyle(.borderedProminent)
+                Button("Dort einen neuen Vault anlegen") { modell.nimmUnterordnerStattdessen() }.buttonStyle(.kortexHaupt)
                 Button("Anderen Ordner wählen …") { modell.oeffneVorhandenenOrdner() }
             }
         }
@@ -152,7 +152,7 @@ private struct KlonAnmeldung: View {
         case .abgemeldet, .abgelaufen, .abgelehnt:
             HStack(spacing: 4) {
                 Text("Privates Repository?").font(.callout).foregroundStyle(.secondary)
-                Button("Bei GitHub anmelden") { modell.tu { await $0.meldeBeiGitHubAn() } }.buttonStyle(.link).font(.callout)
+                Button("Bei GitHub anmelden") { modell.tu { await $0.meldeBeiGitHubAn() } }.buttonStyle(.kortexLink).font(.callout)
             }
         case .startet:
             Arbeit(text: "GitHub wird gefragt …")
@@ -181,9 +181,9 @@ private struct GitHubCode: View {
                 .textSelection(.enabled)
                 .accessibilityLabel("Code: \(code.code)")
             Button("Code kopieren und GitHub öffnen") { modell.kopiereCodeUndOeffneGitHub(code) }
-                .buttonStyle(.borderedProminent).controlSize(kompakt ? .regular : .large).keyboardShortcut(.defaultAction)
+                .buttonStyle(.kortexHaupt).controlSize(kompakt ? .regular : .large).keyboardShortcut(.defaultAction)
             Arbeit(text: "Warte auf deine Bestätigung bei GitHub …")
-            Button("Abbrechen") { modell.tu { await $0.brecheGitHubAb() } }.buttonStyle(.link)
+            Button("Abbrechen") { modell.tu { await $0.brecheGitHubAb() } }.buttonStyle(.kortexLink)
         }
         .frame(maxWidth: .infinity)
     }
@@ -278,7 +278,7 @@ private struct SicherungAnsicht: View {
             Titel(symbol: "exclamationmark.shield", titel: "Dieses Repository passt nicht zu deinem Vault", text: text)
             Text("Kortex hat nichts gesendet und nichts überschrieben.").font(.callout).foregroundStyle(.secondary)
             HStack {
-                Button("Neues Repository anlegen") { modell.ablauf.schliesseKonfliktAb(); modell.sicherungsWeg = .neu }.buttonStyle(.borderedProminent)
+                Button("Neues Repository anlegen") { modell.ablauf.schliesseKonfliktAb(); modell.sicherungsWeg = .neu }.buttonStyle(.kortexHaupt)
                 Button("Anderes wählen") { modell.ablauf.schliesseKonfliktAb(); modell.sicherungsWeg = .vorhanden }
             }
         }
@@ -307,11 +307,11 @@ private struct SicherungAnsicht: View {
                 TextField("Name des Repositories", text: $modell.repoName).textFieldStyle(.roundedBorder)
                     .onSubmit { anlegen() }
                 Button("Anlegen und sichern") { anlegen() }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.kortexHaupt)
                     .disabled(RepoName.fehler(modell.repoName) != nil).keyboardShortcut(.defaultAction)
             }
             if let vergeben = s.vergebenerName {
-                Button("Das vorhandene Repository „\(vergeben)“ nehmen") { modell.tu { await $0.nimmGleichnamigesRepo() } }.buttonStyle(.link)
+                Button("Das vorhandene Repository „\(vergeben)“ nehmen") { modell.tu { await $0.nimmGleichnamigesRepo() } }.buttonStyle(.kortexLink)
             }
             if let fehler {
                 Text(fehler).font(.callout).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
@@ -475,7 +475,7 @@ private struct VerdrahtungsBlock: View {
                     Text("In diesem Ordner ist schon eine andere Prüfung vor dem Speichern eingetragen. Ersetzen? Dann wird sie durch die von Kortex abgelöst.").font(.callout)
                     HStack {
                         Button("Nicht ändern") { modell.ablauf.lehneGitErsetzenAb() }
-                        Button("Ersetzen") { modell.tu { await $0.schalte(.git, an: true, ersetzen: true) } }.buttonStyle(.borderedProminent)
+                        Button("Ersetzen") { modell.tu { await $0.schalte(.git, an: true, ersetzen: true) } }.buttonStyle(.kortexHaupt)
                     }
                 }
             }
@@ -525,7 +525,7 @@ private struct KiReihe: View {
                 Text("Bei \(zeile.ziel.name) gibt es schon einen Eintrag „brain“, der woanders hinzeigt. Auf diesen Vault umstellen?").font(.callout)
                 HStack {
                     Button("Nicht ändern") { modell.ablauf.lehneUmstellenAb(zeile.ziel) }
-                    Button("Umstellen") { modell.tu { await $0.verbinde(zeile.ziel, umstellen: true) } }.buttonStyle(.borderedProminent)
+                    Button("Umstellen") { modell.tu { await $0.verbinde(zeile.ziel, umstellen: true) } }.buttonStyle(.kortexHaupt)
                 }
             case .fehler(let meldung, let befehl):
                 FehlerBox(text: meldung)
@@ -561,7 +561,7 @@ private struct KiReihe: View {
     @ViewBuilder private var aktion: some View {
         switch zeile.status {
         case .bereit, .fehler:
-            Button("Verbinden") { modell.tu { await $0.verbinde(zeile.ziel) } }.buttonStyle(.borderedProminent)
+            Button("Verbinden") { modell.tu { await $0.verbinde(zeile.ziel) } }.buttonStyle(.kortexHaupt)
                 .accessibilityLabel("\(zeile.ziel.name) verbinden")
         case .verbindet, .trennt:
             ProgressView().controlSize(.small)

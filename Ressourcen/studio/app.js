@@ -1628,6 +1628,7 @@ function bestaetigeEntfernen(v) {
 const MENUE_BEFEHLE = {
   neu: () => oeffneNeu(), merken: oeffneMerken, infospalte: umschalteInfo, palette: () => oeffnePalette(), commit: oeffneCommit, sync, suche: fokusSuche,
   "vault-oeffnen": vaultOeffnen, "vault-wechseln": oeffneVaultMenue, verlauf: oeffneVerlauf,
+  einstellungen: () => { const anker = stEl.querySelector('[data-st="einstellungen"]'); if (anker) oeffneEinstellungen(anker); }, // Menüleiste „Einstellungen …“: das Zahnrad-Menü der Statusleiste
   posteingang: () => waehleSicht({ art: "bereich", id: "inbox" }), alle: () => waehleSicht({ art: "bereich", id: "alle" }), wissen: () => waehleSicht({ art: "bereich", id: "wissen" }),
   "hell-dunkel": () => setzeTheme(istDunkel() ? "hell" : "dunkel"),
 };
