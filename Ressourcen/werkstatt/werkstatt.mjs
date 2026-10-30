@@ -29,6 +29,10 @@ let handler;
 try { handler = erzeugeHandler({ ...(vault ? { vault } : {}), ...(mcpNode ? { nodePfad: mcpNode } : {}) }); }
 catch (e) { process.stderr.write(`${e instanceof HttpFehler ? e.message : e}\n`); process.exit(2); }
 
+// KI-Konten: die Liste beim Start abgleichen (erster Start nach dem Update = Migration der bestehenden Verbindungen). Fehler bleiben still: bis dahin gilt, was gilt
+// (gesperrt bei beschädigter Liste, sonst das bisherige Verhalten). Nicht im Testmodus: die Suiten starten die Werkstatt mit dem echten Benutzerordner.
+if (process.env.BRAIN_TESTMODUS !== "1" || process.env.BRAIN_KONTEN_START === "1") { try { handler.konten.synchronisiere(); } catch { /* stand wird beim Öffnen der KI-Konten gemeldet */ } }
+
 const MAX_ZEILE = 2 * MAX_KOERPER + 4096; // base64 (×4/3) + JSON-Hülle; größere Zeilen sind nie gültig
 const aktiverPfad = handler.aktuellerVaultPfad();
 const vaultId = aktiverPfad ? createHash("sha256").update(realpathSync(aktiverPfad)).digest("hex").slice(0, 16) : null;

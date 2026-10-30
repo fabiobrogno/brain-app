@@ -288,7 +288,7 @@ test("MCP verbinden: nicht vorhanden → eintragen; gleicher Befehl → schonVer
   const mcp = tmp("brain-mcpdir-"); schreibe(mcp, "brain-mcp.mjs", "// fake\n");
   const mcpReal = realpathSync(join(mcp, "brain-mcp.mjs"));
   const c = fakeClaude();
-  const rufe = aufruf(erzeugeHandler({ vault: d, mcpPfad: join(mcp, "brain-mcp.mjs"), vaultOptionen: { support: neuerSupport() } }));
+  const rufe = aufruf(erzeugeHandler({ kontenAus: true, vault: d, mcpPfad: join(mcp, "brain-mcp.mjs"), vaultOptionen: { support: neuerSupport() } }));
   await mitClaude(c.bin, async () => {
     let r = await rufe("POST", "/api/mcp/verbinden", { ziel: "claude" });
     assert.equal(r.status, 200); assert.equal(r.j.ok, true); assert.match(r.j.ausgabe, /Added/);

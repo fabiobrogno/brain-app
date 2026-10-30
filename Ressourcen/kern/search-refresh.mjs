@@ -14,7 +14,7 @@ import { qmdAufruf } from "./qmd-befehl.mjs";
 
 const T = dirname(fileURLToPath(import.meta.url));
 // Vault als Positionsargument erlaubt (session-hintergrund.mjs ruft mit [V] auf), sonst --vault/BRAIN_VAULT/aktiver Vault der App (pfade.mjs)
-const vault = vaultPfadOderEnde(process.argv, { still: true });
+const vault = vaultPfadOderEnde(process.argv, { still: true, kontoPruefen: false }); // Hilfsprozess, liefert nichts an eine KI
 // QMD_BIN (Tests) geht vor der Plattform-Auflösung — qmdAufruf (qmd-befehl.mjs) regelt das für alle Aufrufer gleich.
 const b = qmdAufruf();
 const stamp = join(vault, ".logs", "search-refreshed");

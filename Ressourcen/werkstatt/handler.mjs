@@ -17,7 +17,9 @@ import { erzeugeGitHub } from "../gemeinsam/github.mjs";
 import { sicherungStand } from "../gemeinsam/gitsicherung.mjs";
 import { erzeugeVerdrahtung } from "./verdrahtung.mjs";
 import { erzeugeUmstellung } from "./umstellung.mjs";
-import { profilZuPfad, mitProfil } from "./profile.mjs";
+import { profilZuPfad, mitProfil, mitCodexHome } from "./profile.mjs";
+import { erzeugeKonten } from "./konten.mjs";
+import { STUFEN } from "../gemeinsam/ki-konten.mjs";
 import { merkeRemoteBestaetigt } from "../gemeinsam/sicherungsmerker.mjs";
 import { ADAPTER, erkenneProgramme } from "./ki-programme/index.mjs";
 
@@ -110,27 +112,56 @@ export function erzeugeHandler(o) {
     if (p) { try { aktuell = oeffne(p); } catch { aktuell = null; } }
   }
 
+  // KI-Konten (docs/plaene/ki-konten.md): welche Konten gibt es, was darf jedes in welchem Vault. Die Werkstatt gleicht die Liste beim Start der App ab (werkstatt.mjs)
+  // und bei jedem Aufruf von /api/ki/konten. o.kontenErkennung / o.kontenVerbunden / o.kontenHome: Ersatz für Tests (nie die echten Orte des Rechners lesen).
+  const konten = erzeugeKonten({ support: vaultOpt.support || supportOrdner(), vaults: () => vaultsFn.leseVaults(optV()).vaults,
+    ...(o.kontenHome ? { home: () => o.kontenHome } : {}), ...(o.kontenErkennung ? { erkennung: o.kontenErkennung } : {}), ...(o.kontenVerbunden ? { verbunden: o.kontenVerbunden } : {}) });
+
   // Der Eintrag bei Claude Code nennt keinen Vault: der MCP-Server folgt dem aktiven Vault aus vaults.json (Spec v2 §8).
   // Der Kern-Pfad bleibt wie er ist (kein realpath: der Symlink bin/kern ist der stabile Teil), der Paket-Pfad ist der aufgelöste (Rückfall).
-  const mcpArgs = () => {
-    if (kernMcp) { try { statSync(kernMcp); return [nodePfad, kernMcp]; } catch { /* nicht im Kern: Rückfall auf das App-Paket */ } }
-    try { statSync(mcpPfad); } catch { return null; }
-    return [nodePfad, realpathSync(mcpPfad)];
+  // Mit `konto` trägt der Eintrag `--konto <id>`: der Server weiß dann, für welches KI-Konto er läuft (Stufen je Vault).
+  const mcpArgs = (konto = null) => {
+    let basis = null;
+    if (kernMcp) { try { statSync(kernMcp); basis = [nodePfad, kernMcp]; } catch { /* nicht im Kern: Rückfall auf das App-Paket */ } }
+    if (!basis) { try { statSync(mcpPfad); } catch { return null; } basis = [nodePfad, realpathSync(mcpPfad)]; }
+    return konto ? [...basis, "--konto", konto] : basis;
   };
-  const mcpBefehl = () => { const a = mcpArgs(); return a ? `claude mcp add -s user brain -- ${a.map(shellText).join(" ")}` : null; };
-  const codexBefehl = () => { const a = mcpArgs(); return a ? `codex mcp add brain -- ${a.map(shellText).join(" ")}` : null; };
+  const mcpBefehl = (konto = null) => { const a = mcpArgs(konto); return a ? `claude mcp add -s user brain -- ${a.map(shellText).join(" ")}` : null; };
+  const codexBefehl = (konto = null) => { const a = mcpArgs(konto); return a ? `codex mcp add brain -- ${a.map(shellText).join(" ")}` : null; };
+  // Welches Konto gehört zu diesem Verbinden/Trennen? e.konto (id aus der Liste) · bei Claude e.profil · sonst das Standardkonto des Programms (beim Verbinden wird es
+  // bei Bedarf eingetragen). Fehlt es, bleibt der Eintrag in der Altform ohne --konto (ohne Konto gilt dann „ohneKonto“ des Vaults).
+  // o.kontenAus (nur Tests, die die Altform der Einträge prüfen): kein Konto, nie `--konto`.
+  const kontoFuer = (e, programm, { anlegen = false } = {}) => {
+    if (o.kontenAus === true) return null;
+    try {
+      if (e.konto !== undefined) {
+        const k = typeof e.konto === "string" ? konten.kontoDaten(e.konto) : null;
+        if (!k || k.programm !== programm) throw new HttpFehler(400, "Dieses KI-Konto gibt es nicht (mehr). Suche die Konten bitte neu.");
+        return e.konto;
+      }
+      if (programm === "claude" && e.profil !== undefined) {
+        const pr = profilZuPfad(e.profil);
+        if (!pr) return null;
+        let id = konten.kontoFuerProfil(pr.pfad);
+        if (!id && anlegen) { konten.synchronisiere(); id = konten.kontoFuerProfil(pr.pfad); }
+        return id;
+      }
+      return konten.kontoFuerProgramm(programm, { anlegen });
+    } catch (err) { if (err instanceof HttpFehler) throw err; return null; }
+  };
+  // Claude-Profil und Codex-Ordner eines Kontos für die Umgebung der Kindprozesse.
+  const profilVon = (kontoId) => { const k = kontoId ? konten.kontoDaten(kontoId) : null; return k && k.programm === "claude" ? { pfad: k.ordner, standard: k.standard === true } : null; };
   // KI-Programme mit Einstellungsdatei (Cursor, Claude Desktop, Gemini CLI …): ki-programme/. Alle laufen durch denselben Adapter.
   // Vergleich eines vorhandenen Eintrags mit unserem: "gleich" | "alt" | "anders" (siehe befehlsArt); Command/Args stehen nie in Antworten.
-  const eintragArt = (command, args) => {
-    const a = mcpArgs();
-    return a ? befehlsArt(command, JSON.stringify(args || []) === JSON.stringify(a.slice(1)), a, Array.isArray(args) && args.length === 1 ? args[0] : null) : "anders";
-  };
-  const adapterCtx = () => ({ home: homedir(), a: mcpArgs(), art: eintragArt });
-  const adapterText = (id) => ADAPTER[id].konfiguration(adapterCtx());
+  const eintragArtMit = (a, command, args) => (a ? vergleicheEintrag(command, args, a) : "anders");
+  const adapterCtx = (konto = null) => { const a = mcpArgs(konto); return { home: homedir(), a, art: (command, args) => eintragArtMit(a, command, args) }; };
+  const adapterText = (id, konto = null) => ADAPTER[id].konfiguration(adapterCtx(konto));
   // Gesamtfristen je Route in ms (nur im Test kürzer): mcp/verbinden 25 s, Probe über den MCP-Server 10 s.
   const fristen = { mcpVerbinden: 25_000, probe: 10_000, ...(o.fristen || {}) };
   // Einrichtung über den Starter der App (Hooks bei Claude Code, Prüfung vor dem Speichern, Hintergrunddienst): werkstatt/verdrahtung.mjs. o.starter = Ersatz für Tests.
-  const verdrahtung = erzeugeVerdrahtung({ starter: o.starter || join(vaultOpt.support || supportOrdner(), "bin", "kortex"), support: vaultOpt.support || supportOrdner() });
+  const verdrahtung = erzeugeVerdrahtung({ starter: o.starter || join(vaultOpt.support || supportOrdner(), "bin", "kortex"), support: vaultOpt.support || supportOrdner(),
+    kontoFuerProfil: (pfad) => { if (o.kontenAus === true) return null; try { return konten.kontoFuerProfil(pfad) || (konten.synchronisiere(), konten.kontoFuerProfil(pfad)); } catch { return null; } },
+    freigeben: (konto, vault, stufe) => konten.setzeZugriff({ konto, vault: vault.wurzel, stufe }) });
   // Umstellung eines Vaults aus der Kit-Zeit (P7a Befund, P7b Probelauf/Phase A/Rückweg): werkstatt/umstellung.mjs
   const umstellung = erzeugeUmstellung({ starter: o.starter || join(vaultOpt.support || supportOrdner(), "bin", "kortex"), support: vaultOpt.support || supportOrdner() });
 
@@ -152,7 +183,8 @@ export function erzeugeHandler(o) {
     const nur = (erlaubt) => { if (methode !== erlaubt) throw new HttpFehler(405, "Diese Methode ist hier nicht erlaubt."); };
     // Routen ohne Vault: info, vaults/*, ki/erkennen, stopp. Alle anderen brauchen einen offenen Vault.
     const V = () => { if (!v) throw new HttpFehler(409, "Es ist noch kein Vault geöffnet.", { keinVault: true }); return v; };
-    const neuerStand = (r) => { wechsleZu(r.vault.pfad); return { ...vaultListe(aktuell), vault: r.vault, git: r.git }; };
+    // Ein von Kortex angelegter/geklonter/geöffneter Vault kommt in die Liste der KI-Konten (alle gesperrt; das einzige Konto bei angelegt/geklont posteingang).
+    const neuerStand = (r, herkunft = "geoeffnet") => { try { konten.vaultHinzu(r.vault.pfad, herkunft); } catch { /* der Vault ist gesperrt, bis die Liste wieder geht */ } wechsleZu(r.vault.pfad); return { ...vaultListe(aktuell), vault: r.vault, git: r.git }; };
     // PATCH /api/aufgaben/<pfad der Aufgabe im Vault>: Status, Rang, Felder einer Aufgabe ändern
     if (pfad.startsWith("/api/aufgaben/")) {
       nur("PATCH");
@@ -165,7 +197,8 @@ export function erzeugeHandler(o) {
         nur("GET");
         if (!v) return { vault: null, name: null, appVersion, kitVersion: null, git: false, mcpBefehl: null, kit: { vorhanden: false }, vertrauen: null };
         const stand = v.vertrauenStand();
-        return { vault: v.wurzel, name: v.name, appVersion, kitVersion: v.kitVersion(), git: await v.istGitRepo(), mcpBefehl: mcpBefehl(), mcpBefehle: { claude: mcpBefehl(), codex: codexBefehl(), ...Object.fromEntries(Object.keys(ADAPTER).map((id) => [id, adapterText(id)])) }, kit: v.kit(), vertrauen: stand };
+        const kc = (programm) => { if (o.kontenAus === true) return null; try { return konten.kontoFuerProgramm(programm); } catch { return null; } }; // nur nachsehen, nichts anlegen
+        return { vault: v.wurzel, name: v.name, appVersion, kitVersion: v.kitVersion(), git: await v.istGitRepo(), mcpBefehl: mcpBefehl(kc("claude")), mcpBefehle: { claude: mcpBefehl(kc("claude")), codex: codexBefehl(kc("codex")), ...Object.fromEntries(Object.keys(ADAPTER).map((id) => [id, adapterText(id, kc(id))])) }, kit: v.kit(), vertrauen: stand };
       }
       case "/api/vertrauen": {
         // Workspace-Trust (P5). { erlauben, vault }: vault ist der Pfad, den der Dialog gezeigt hat. Der offene Vault kann zwischen Anzeige und Klick
@@ -235,7 +268,7 @@ export function erzeugeHandler(o) {
       case "/api/umstellung/probelauf": nur("POST"); return umstellung.probelauf(v, eingabe());
       case "/api/umstellung/phase-a": nur("POST"); return umstellung.phaseA(v, eingabe());
       case "/api/umstellung/rueckweg": nur("POST"); return umstellung.rueckweg(v, eingabe());
-      case "/api/mcp/verbinden": { nur("POST"); V(); return verbinde(eingabe()); }
+      case "/api/mcp/verbinden": { nur("POST"); V(); return verbinde(eingabe(), v); }
       case "/api/mcp/trennen": { nur("POST"); return trenne(eingabe()); }
       case "/api/mcp/konfiguration": { nur("GET"); return konfiguration(q); }
       case "/api/ki/erkennen": {
@@ -243,6 +276,11 @@ export function erzeugeHandler(o) {
         const erg = await erkenneAgenten({ neu: q.get("neu") === "1" });
         return { ...erg, programme: erkenneProgramme({ agenten: erg.agenten }) }; // Programme mit Einstellungsdatei (Cursor meldet weiter `cursorDa`)
       }
+      // KI-Konten (docs/plaene/ki-konten.md): Liste mit Stufen je Vault · Name/Abo setzen · Stufe eines Kontos in einem Vault setzen
+      case "/api/ki/konten":
+        if (methode === "GET") return konten.stand();
+        nur("POST"); return konten.setzeName(eingabe());
+      case "/api/ki/zugriff": nur("PUT"); return konten.setzeZugriff(eingabe());
       case "/api/vaults": nur("GET"); return vaultListe(v);
       case "/api/vaults/aktiv": {
         nur("POST");
@@ -250,12 +288,12 @@ export function erzeugeHandler(o) {
         wechsleZu(l.aktiv);
         return vaultListe(aktuell);
       }
-      case "/api/vaults/neu": nur("POST"); return neuerStand(await vaultsFn.neuesVault(eingabe(), optV()));
-      case "/api/vaults/oeffnen": nur("POST"); return neuerStand(await vaultsFn.oeffneOrdner(eingabe(), optV()));
+      case "/api/vaults/neu": nur("POST"); return neuerStand(await vaultsFn.neuesVault(eingabe(), optV()), "angelegt");
+      case "/api/vaults/oeffnen": nur("POST"); return neuerStand(await vaultsFn.oeffneOrdner(eingabe(), optV()), "geoeffnet");
       case "/api/vaults/klonen": {
         nur("POST");
         let login = null; try { login = (await github.konto()).login || null; } catch { /* nicht angemeldet: der Klon gilt nicht als eigener */ }
-        return neuerStand(await vaultsFn.klone(eingabe(), { ...optV(), githubLogin: login }));
+        return neuerStand(await vaultsFn.klone(eingabe(), { ...optV(), githubLogin: login }), "geklont");
       }
       case "/api/vaults/entfernen": {
         nur("POST");
@@ -329,18 +367,45 @@ export function erzeugeHandler(o) {
     }
     return "anders";
   };
+  // `--konto <id>` am Ende gehört zu Kortex: derselbe Server mit anderer oder fehlender Kennung ist ein früherer Stand desselben Eintrags ("alt"), kein fremder.
+  const KONTO_ENDE = /^k_[0-9a-f]{8}$/;
+  const ohneKontoListe = (l) => { const n = l.length; return n >= 2 && l[n - 2] === "--konto" && KONTO_ENDE.test(l[n - 1]) ? l.slice(0, n - 2) : l; };
+  const ohneKontoText = (t) => t.replace(/ --konto k_[0-9a-f]{8}$/, "");
+  const eigenerNode = (cmd, a) => typeof cmd === "string" && (cmd === a[0] || ALTER_APP_NODE.test(cmd));
+  function vergleicheEintrag(command, args, a) {
+    const liste = Array.isArray(args) ? args : [];
+    if (JSON.stringify(liste) === JSON.stringify(a.slice(1))) return befehlsArt(command, true, a);
+    if (eigenerNode(command, a) && JSON.stringify(ohneKontoListe(liste)) === JSON.stringify(ohneKontoListe(a.slice(1)))) return "alt";
+    return befehlsArt(command, false, a, liste.length === 1 ? liste[0] : null);
+  }
   const artClaude = (text, a) => {
     const cmd = /^\s*Command:\s*(.+?)\s*$/m.exec(text), args = /^\s*Args:\s*(.*?)\s*$/m.exec(text);
     const argsText = args ? args[1] : "";
-    return cmd ? befehlsArt(cmd[1], argsText === a.slice(1).join(" "), a, argsText) : "anders";
+    if (!cmd) return "anders";
+    const soll = a.slice(1).join(" ");
+    if (argsText === soll) return befehlsArt(cmd[1], true, a);
+    if (eigenerNode(cmd[1], a) && ohneKontoText(argsText) === ohneKontoText(soll)) return "alt";
+    return befehlsArt(cmd[1], false, a, argsText);
   };
 
   // Gesamtfrist 25 s für get/remove/add zusammen; bei Ablauf wird der laufende Aufruf samt Prozessgruppe beendet.
-  function verbinde(e) {
-    if (e.ziel === "codex") return verbindeCodex(e);
-    if (Object.hasOwn(ADAPTER, e.ziel)) return ADAPTER[e.ziel].verbinde(adapterCtx(), e);
-    if (e.ziel !== "claude") throw new HttpFehler(400, ZIELE_TEXT);
-    return verbindeClaude(e);
+  // Wer ein Konto ausdrücklich verbindet, kann ihm dabei den offenen Vault freigeben: { zugriff: "gesperrt" | "lesen" | "posteingang" | "erweitert" } (der Assistent
+  // fragt das). Ohne Angabe bleibt, was die Liste der KI-Konten sagt (ein neu erkanntes Konto ist gesperrt).
+  async function verbinde(e, v = null) {
+    const gewaehren = e.zugriff;
+    if (gewaehren !== undefined && !STUFEN.includes(gewaehren)) throw new HttpFehler(400, `„zugriff“ muss eine von ${STUFEN.join(", ")} sein.`);
+    let erg;
+    if (e.ziel === "codex") erg = await verbindeCodex(e);
+    else if (Object.hasOwn(ADAPTER, e.ziel)) erg = await ADAPTER[e.ziel].verbinde(adapterCtx(kontoFuer(e, e.ziel, { anlegen: true })), e);
+    else if (e.ziel === "claude") erg = await verbindeClaude(e);
+    else throw new HttpFehler(400, ZIELE_TEXT);
+    if (gewaehren !== undefined) {
+      const id = kontoFuer(e, e.ziel, { anlegen: true });
+      let gesetzt = false;
+      if (id && v) { try { konten.setzeZugriff({ konto: id, vault: v.wurzel, stufe: gewaehren }); gesetzt = true; } catch { /* z. B. ein nur für diesen Start geöffneter Vault: nicht in der Liste */ } }
+      return { ...erg, zugriffGesetzt: gesetzt };
+    }
+    return erg;
   }
 
   // ---------- Trennen (Rückweg von „Verbinden“) ----------
@@ -348,20 +413,21 @@ export function erzeugeHandler(o) {
   // dem Namen „brain“ bleibt stehen (409, art "anders"); gibt es keinen Eintrag, ist nichts zu tun ({ ok, warNichtVerbunden }).
   // Hooks und Statuszeile bei Claude Code sind ein eigener Schalter (/api/kern/verdrahten) und bleiben unberührt.
   function trenne(e) {
-    if (e.ziel === "codex") return trenneCodex();
-    if (Object.hasOwn(ADAPTER, e.ziel)) return ADAPTER[e.ziel].trenne(adapterCtx());
+    if (e.ziel === "codex") return trenneCodex(e);
+    if (Object.hasOwn(ADAPTER, e.ziel)) return ADAPTER[e.ziel].trenne(adapterCtx(kontoFuer(e, e.ziel)));
     if (e.ziel !== "claude") throw new HttpFehler(400, ZIELE_TEXT);
     return trenneClaude(e);
   }
 
   async function trenneClaude(e) {
-    const a = mcpArgs();
+    const konto = kontoFuer(e, "claude");
+    const a = mcpArgs(konto);
     if (!a) throw new HttpFehler(404, "Der MCP-Server wurde nicht gefunden.");
     const claude = findeClaude();
     if (!claude) throw new HttpFehler(404, "Claude Code wurde nicht gefunden.");
     const frist = neueFrist(fristen.mcpVerbinden);
-    const profil = e.profil === undefined ? null : profilZuPfad(e.profil);
-    if (e.profil !== undefined && !profil) throw new HttpFehler(400, "Dieses Claude-Profil gibt es nicht (mehr). Suche die Profile bitte neu.");
+    const profil = e.konto !== undefined ? profilVon(konto) : e.profil === undefined ? null : profilZuPfad(e.profil);
+    if (e.profil !== undefined && e.konto === undefined && !profil) throw new HttpFehler(400, "Dieses Claude-Profil gibt es nicht (mehr). Suche die Profile bitte neu.");
     const lauf = (args) => starte(claude, args, { cwd: homedir(), env: profil ? mitProfil(kindUmgebung({ CI: "1" }), profil) : kindUmgebung({ CI: "1" }), frist, timeout: fristen.mcpVerbinden, fehlt: "Claude Code wurde nicht gefunden.", zuLange: "Claude Code hat nicht rechtzeitig geantwortet." });
     try {
       const vorher = await lauf(["mcp", "get", "brain"]);
@@ -377,20 +443,21 @@ export function erzeugeHandler(o) {
     }
   }
 
-  async function trenneCodex() {
-    const a = mcpArgs();
+  async function trenneCodex(e = {}) {
+    const konto = kontoFuer(e, "codex");
+    const a = mcpArgs(konto);
     if (!a) throw new HttpFehler(404, "Der MCP-Server wurde nicht gefunden.");
     const codex = findeProgramm("codex");
     if (!codex) throw new HttpFehler(404, "Codex wurde nicht gefunden.");
     const frist = neueFrist(fristen.mcpVerbinden);
-    const lauf = (args) => starte(codex, args, { cwd: homedir(), env: kindUmgebung({ CI: "1" }), frist, timeout: fristen.mcpVerbinden, fehlt: "Codex wurde nicht gefunden.", zuLange: "Codex hat nicht rechtzeitig geantwortet." });
+    const lauf = (args) => starte(codex, args, { cwd: homedir(), env: mitCodexHome(kindUmgebung({ CI: "1" }), konten.kontoDaten(konto)), frist, timeout: fristen.mcpVerbinden, fehlt: "Codex wurde nicht gefunden.", zuLange: "Codex hat nicht rechtzeitig geantwortet." });
     try {
       const vorher = await lauf(["mcp", "get", "brain", "--json"]);
       if (vorher.code !== 0) return { ok: true, warNichtVerbunden: true };
       let art = "anders";
       try {
         const t = JSON.parse(String(vorher.stdout || "")).transport;
-        if (t) art = befehlsArt(t.command, JSON.stringify(t.args || []) === JSON.stringify(a.slice(1)), a, Array.isArray(t.args) && t.args.length === 1 ? t.args[0] : null);
+        if (t) art = vergleicheEintrag(t.command, t.args, a);
       } catch { /* bleibt "anders" */ }
       if (art === "anders") throw new HttpFehler(409, "Bei Codex steht unter dem Namen „brain“ ein anderer Eintrag, nicht der von Kortex. Kortex lässt ihn stehen.", { art: "anders" });
       const weg = await lauf(["mcp", "remove", "brain"]);
@@ -408,24 +475,27 @@ export function erzeugeHandler(o) {
     const ziel = q.get("ziel");
     if (ziel && !Object.hasOwn(ADAPTER, ziel)) throw new HttpFehler(400, ZIELE_TEXT);
     const ad = ziel ? ADAPTER[ziel] : ADAPTER.cursor;
-    const text = ad.konfiguration(adapterCtx());
+    let kid = null; if (o.kontenAus !== true) { try { kid = konten.kontoFuerProgramm(ziel || "cursor"); } catch { /* ohne Kennung */ } }
+    const text = ad.konfiguration(adapterCtx(kid));
     if (!text) throw new HttpFehler(404, "Der MCP-Server wurde nicht gefunden.");
     return { json: text, ...(ziel ? { ort: ad.anzeige } : {}) };
   }
 
   // Codex: `codex mcp get brain --json` (nur zum Vergleichen), bei fremdem Eintrag nach Rückfrage `remove`, dann `add`.
   async function verbindeCodex(e) {
-    const a = mcpArgs(), befehl = codexBefehl();
+    const konto = kontoFuer(e, "codex", { anlegen: true });
+    const a = mcpArgs(konto), befehl = codexBefehl(konto);
     if (!a) throw new HttpFehler(404, "Der MCP-Server wurde nicht gefunden.", { befehl: null });
     const codex = findeProgramm("codex");
     if (!codex) throw new HttpFehler(404, "Codex wurde nicht gefunden. Kopiere den Befehl und führe ihn im Terminal aus.", { befehl });
     const frist = neueFrist(fristen.mcpVerbinden);
-    const lauf = (args) => starte(codex, args, { cwd: homedir(), env: kindUmgebung({ CI: "1" }), frist, timeout: fristen.mcpVerbinden, fehlt: "Codex wurde nicht gefunden.", zuLange: "Codex hat nicht rechtzeitig geantwortet." });
+    // Ein eigenes Konto (~/.codex-*) wird über CODEX_HOME angesprochen; das Standardkonto ohne die Variable.
+    const lauf = (args) => starte(codex, args, { cwd: homedir(), env: mitCodexHome(kindUmgebung({ CI: "1" }), konten.kontoDaten(konto)), frist, timeout: fristen.mcpVerbinden, fehlt: "Codex wurde nicht gefunden.", zuLange: "Codex hat nicht rechtzeitig geantwortet." });
     const ausgabeVon = (r) => (String(r.stdout || "") + String(r.stderr || "")).trim().slice(0, 2000);
     const art = (text) => { // Vergleich nur intern, nichts davon in Antworten
       try {
         const t = JSON.parse(text).transport;
-        return !t ? "anders" : befehlsArt(t.command, JSON.stringify(t.args || []) === JSON.stringify(a.slice(1)), a, Array.isArray(t.args) && t.args.length === 1 ? t.args[0] : null);
+        return !t ? "anders" : vergleicheEintrag(t.command, t.args, a);
       } catch { return "anders"; }
     };
     try {
@@ -448,14 +518,15 @@ export function erzeugeHandler(o) {
   }
 
   async function verbindeClaude(e) {
-    const a = mcpArgs(), befehl = mcpBefehl();
+    const konto = kontoFuer(e, "claude", { anlegen: true });
+    const a = mcpArgs(konto), befehl = mcpBefehl(konto);
     if (!a) throw new HttpFehler(404, "Der MCP-Server wurde nicht gefunden.", { befehl: null });
     const claude = findeClaude();
     if (!claude) throw new HttpFehler(404, "Claude Code wurde nicht gefunden. Kopiere den Befehl und führe ihn im Terminal aus.", { befehl });
     const frist = neueFrist(fristen.mcpVerbinden);
     // Claude-Profil (Auswahl im Assistenten): nur ein erkanntes Profil; das Standardprofil nutzt ~/.claude.json, ein anderes <Profil>/.claude.json (CLAUDE_CONFIG_DIR).
-    const profil = e.profil === undefined ? null : profilZuPfad(e.profil);
-    if (e.profil !== undefined && !profil) throw new HttpFehler(400, "Dieses Claude-Profil gibt es nicht (mehr). Suche die Profile bitte neu.", { befehl });
+    const profil = e.konto !== undefined ? profilVon(konto) : e.profil === undefined ? null : profilZuPfad(e.profil);
+    if (e.profil !== undefined && e.konto === undefined && !profil) throw new HttpFehler(400, "Dieses Claude-Profil gibt es nicht (mehr). Suche die Profile bitte neu.", { befehl });
     const lauf = (args) => starte(claude, args, { cwd: homedir(), env: profil ? mitProfil(kindUmgebung({ CI: "1" }), profil) : kindUmgebung({ CI: "1" }), frist, timeout: fristen.mcpVerbinden, fehlt: "Claude Code wurde nicht gefunden.", zuLange: "Claude Code hat nicht rechtzeitig geantwortet." });
     const ausgabeVon = (r) => (String(r.stdout || "") + String(r.stderr || "")).trim().slice(0, 2000);
     try {
@@ -490,8 +561,15 @@ export function erzeugeHandler(o) {
     if (!aktivPfad || echterPfad(aktivPfad) !== v.wurzel) {
       throw new HttpFehler(409, `Dieser Vault ist in Kortex Studio nicht als aktiver Vault eingetragen — ${wer} würde ihn so nicht finden. Wähle ihn zuerst aus.`, { art: "nicht-aktiv" });
     }
-    const env = kindUmgebung({ BRAIN_APP_SUPPORT: vaultOpt.support || supportOrdner(), BRAIN_NUTZUNG: "aus" }); // Probe und Selbsttest sind keine KI-Nutzung
-    delete env.BRAIN_VAULT;
+    // KI-Konten: Der Server prüft bei jedem Aufruf das Konto. Gibt es die Liste, läuft die Probe als ein Konto, das den Vault lesen darf (claude zuerst);
+    // darf keines, wäre „nichts gefunden“ irreführend — die KI würde den Vault so ja auch nicht sehen.
+    const pk = konten.probeKonto(v.wurzel);
+    if (pk.liste && !pk.konto) throw new HttpFehler(409, `Kein KI-Konto darf diesen Vault lesen — ${wer} würde ihn so nicht finden. Gib ihn unter „KI-Konten“ frei.`, { art: "kein-zugriff" });
+    const pkDaten = pk.konto ? konten.kontoDaten(pk.konto) : null;
+    const env0 = kindUmgebung({ BRAIN_APP_SUPPORT: vaultOpt.support || supportOrdner(), BRAIN_NUTZUNG: "aus" }); // Probe und Selbsttest sind keine KI-Nutzung
+    delete env0.BRAIN_VAULT;
+    // die Umgebung des Kontos nachbilden (nie die der Werkstatt erben: ein fremdes CLAUDE_CONFIG_DIR widerspräche dem Konto)
+    const env = mitCodexHome(mitProfil(env0, pkDaten && pkDaten.programm === "claude" ? { pfad: pkDaten.ordner, standard: pkDaten.standard === true } : null), pkDaten);
     const frist = neueFrist(fristen.probe);
     const nachricht = (m) => JSON.stringify({ jsonrpc: "2.0", ...m }) + "\n";
     return new Promise((ok, nein) => {
@@ -511,7 +589,7 @@ export function erzeugeHandler(o) {
         beendeGruppe(kind);
         if (fehler) nein(fehler); else ok(wert);
       };
-      try { kind = spawn(a[0], [a[1]], { cwd: homedir(), env, detached: true, stdio: ["pipe", "pipe", "ignore"], windowsHide: true }); }
+      try { kind = spawn(a[0], [a[1], ...(pk.konto ? ["--konto", pk.konto] : [])], { cwd: homedir(), env, detached: true, stdio: ["pipe", "pipe", "ignore"], windowsHide: true }); }
       catch { return nein(new HttpFehler(502, "Der MCP-Server ließ sich nicht starten.", { art: "mcp" })); }
       registriere(kind, null);
       const nichtAntwort = () => ende(new HttpFehler(502, `Der MCP-Server hat nicht geantwortet — ${wer} würde deinen Vault so nicht finden.`, { art: "mcp" }));
@@ -555,5 +633,6 @@ export function erzeugeHandler(o) {
     }
   }
   behandle.aktuellerVaultPfad = () => (aktuell ? aktuell.wurzel : null);
+  behandle.konten = konten; // werkstatt.mjs gleicht die Liste beim Start ab
   return behandle;
 }

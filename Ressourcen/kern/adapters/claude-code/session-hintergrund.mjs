@@ -17,7 +17,7 @@ const { leseAutomatik } = await import("../../einstellungen.mjs");
 const { sicherungNoetig, merkeSicherung, aktuellerHead } = await import("../../sicherung-takt.mjs");
 
 const TOOLS = KERN;
-const V = vaultPfadOderEnde(process.argv, { still: true });
+const V = vaultPfadOderEnde(process.argv, { still: true, kontoPruefen: false }); // vom Hook gestartet, der das Konto schon geprüft hat
 const LOG = join(V, ".logs", "hooks.log");
 // EIN git-Pfad für die ganze Datei — gilt auch für die Aufrufe gegen ~/.claude unten (dort geht es nur um
 // den WERKZEUG-Ort, nicht um das Zielrepo).

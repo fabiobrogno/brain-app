@@ -17,7 +17,7 @@ import { readFileSync, existsSync, realpathSync, mkdirSync, writeFileSync, readd
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
-import { vaultPfadOderEnde } from "../../pfade.mjs";
+import { vaultPfadOderEnde, kontoDarf } from "../../pfade.mjs";
 import { leseAutomatik } from "../../einstellungen.mjs";
 import { ersterAufruf } from "./einmal.mjs";
 
@@ -69,6 +69,7 @@ function spawnErnte(vault, { art, transkript, sid, cwd, auftrag = "" }) {
 // etwas zu ernten gibt. Rückgabe: true, wenn ein Prozess gestartet wurde.
 export function starteErnte(vault, { art, transkript, sid = "", cwd = "" } = {}) {
   if (process.env.BRAIN_ERNTE === "1") return false;
+  if (!kontoDarf(vault, "posteingang")) return false; // KI-Konten: die Ernte schreibt Vorschläge in den Vault, das braucht mindestens die Stufe „posteingang“
   if (art !== "fakt" && art !== "stand") return false;
   if (typeof transkript !== "string" || !transkript || !existsSync(transkript)) return false;
   const job = { art, transkript, sid: saubereSid(sid), cwd: String(cwd || "") };
@@ -102,6 +103,7 @@ export function raeumeMarkenAuf(vault, jetzt = Date.now()) {
 // löschen. Rückgabe: Name des gestarteten Auftrags oder "".
 export function arbeiteOffeneAb(vault, { jetzt = Date.now() } = {}) {
   if (process.env.BRAIN_ERNTE === "1") return "";
+  if (!kontoDarf(vault, "posteingang")) return "";
   const namen = raeumeMarkenAuf(vault, jetzt);
   if (!namen.length) return "";
   const werte = leseAutomatik(vault).werte;
@@ -132,12 +134,12 @@ const lesbar = (t) => typeof t === "string" && t !== "" && existsSync(t);
 
 // Session-Auswerter losgelöst starten (Schalter prüft der Aufrufer, ernteNichtIn prüft lektionen.mjs selbst).
 export function starteLektionen(vault, job = {}) {
-  if (process.env.BRAIN_ERNTE === "1" || !lesbar(job.transkript)) return false;
+  if (process.env.BRAIN_ERNTE === "1" || !lesbar(job.transkript) || !kontoDarf(vault, "posteingang")) return false;
   return starteLosgeloest(vault, process.env.BRAIN_LEKTIONEN_SKRIPT || LEKTIONEN, jobArgs(job));
 }
 // Fehler-Signal W7 losgelöst starten (ernteNichtIn und Config prüft w7.mjs selbst).
 export function starteW7(vault, job = {}) {
-  if (process.env.BRAIN_ERNTE === "1" || !lesbar(job.transkript)) return false;
+  if (process.env.BRAIN_ERNTE === "1" || !lesbar(job.transkript) || !kontoDarf(vault, "posteingang")) return false;
   return starteLosgeloest(vault, process.env.BRAIN_W7_SKRIPT || W7, jobArgs(job));
 }
 
@@ -145,6 +147,7 @@ export function starteW7(vault, job = {}) {
 // Rückgabe wie bisher: true, wenn die Ernte gestartet wurde (der Session-Auswerter zählt nicht).
 export function loese(vault, art, eingabe) {
   if (process.env.BRAIN_ERNTE === "1") return false;
+  if (!kontoDarf(vault, "posteingang")) return false;
   const { werte, fehler } = leseAutomatik(vault);
   const job = {
     transkript: eingabe?.transcript_path ? String(eingabe.transcript_path) : "",

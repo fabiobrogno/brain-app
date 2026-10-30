@@ -44,7 +44,7 @@ async function mitPfad(bin, fn) {
 test("Codex verbinden: neu → eintragen; gleich → schonVerbunden; fremd → 409 ohne Details; umstellen → ersetzt", async () => {
   const mcp = mcpDatei(), real = realpathSync(mcp);
   const c = fakeCodex();
-  const rufe = aufruf(erzeugeHandler({ vault: vault(), mcpPfad: mcp, vaultOptionen: { support: tmp("brain-support-") } }));
+  const rufe = aufruf(erzeugeHandler({ kontenAus: true, vault: vault(), mcpPfad: mcp, vaultOptionen: { support: tmp("brain-support-") } }));
   await mitPfad(c.bin, async () => {
     const info = (await rufe("GET", "/api/info")).j;
     assert.equal(info.mcpBefehle.codex, `codex mcp add brain -- ${process.execPath} ${real}`);
@@ -70,7 +70,7 @@ test("Codex verbinden: neu → eintragen; gleich → schonVerbunden; fremd → 4
 
 test("Codex verbinden: nicht gefunden → 404 mit Befehl zum Kopieren; abgelehnt → 502 mit Befehl", async () => {
   const mcp = mcpDatei();
-  const rufe = aufruf(erzeugeHandler({ vault: vault(), mcpPfad: mcp, vaultOptionen: { support: tmp("brain-support-") } }));
+  const rufe = aufruf(erzeugeHandler({ kontenAus: true, vault: vault(), mcpPfad: mcp, vaultOptionen: { support: tmp("brain-support-") } }));
   const alt = { PATH: process.env.PATH, T: process.env.BRAIN_TESTMODUS, E: process.env.BRAIN_CLAUDE_EXTRA };
   process.env.PATH = tmp("brain-leer-"); process.env.BRAIN_TESTMODUS = "1"; process.env.BRAIN_CLAUDE_EXTRA = "";
   try {
@@ -91,7 +91,7 @@ const sicherungen = () => (existsSync(join(HOME, ".cursor")) ? readdirSync(join(
 
 test("Cursor verbinden: Datei fehlt → wird angelegt; schon vorhanden → schonVerbunden; fremder Eintrag → 409, umstellen mit Sicherung; andere Einträge bleiben", async () => {
   const mcp = mcpDatei(), real = realpathSync(mcp);
-  const rufe = aufruf(erzeugeHandler({ vault: vault(), mcpPfad: mcp, vaultOptionen: { support: tmp("brain-support-") } }));
+  const rufe = aufruf(erzeugeHandler({ kontenAus: true, vault: vault(), mcpPfad: mcp, vaultOptionen: { support: tmp("brain-support-") } }));
   cursorLeeren();
   let r = await rufe("POST", "/api/mcp/verbinden", { ziel: "cursor" });
   assert.equal(r.status, 200); assert.equal(r.j.ok, true); assert.equal(r.j.sicherung, undefined, "nichts zu sichern");
@@ -124,7 +124,7 @@ test("Cursor verbinden: Datei fehlt → wird angelegt; schon vorhanden → schon
 
 test("Cursor verbinden: kaputtes JSON (oder falsche Form) wird nie überschrieben → 422 mit Text zum Kopieren", async () => {
   const mcp = mcpDatei();
-  const rufe = aufruf(erzeugeHandler({ vault: vault(), mcpPfad: mcp, vaultOptionen: { support: tmp("brain-support-") } }));
+  const rufe = aufruf(erzeugeHandler({ kontenAus: true, vault: vault(), mcpPfad: mcp, vaultOptionen: { support: tmp("brain-support-") } }));
   for (const inhalt of ['{ "mcpServers": { kaputt', "[1,2]", '{"mcpServers": []}', '{"mcpServers": null}']) {
     cursorLeeren(); mkdirSync(join(HOME, ".cursor"));
     writeFileSync(cursorDatei(), inhalt);
@@ -140,7 +140,7 @@ test("Cursor verbinden: kaputtes JSON (oder falsche Form) wird nie überschriebe
 
 // ── Cursor: Rechte, Symlink, Sicherungen, Fehlermeldung ──
 const modus = (p) => statSync(p).mode & 0o777;
-const handlerCursor = () => aufruf(erzeugeHandler({ vault: vault(), mcpPfad: mcpDatei(), vaultOptionen: { support: tmp("brain-support-") } }));
+const handlerCursor = () => aufruf(erzeugeHandler({ kontenAus: true, vault: vault(), mcpPfad: mcpDatei(), vaultOptionen: { support: tmp("brain-support-") } }));
 const FREMD = JSON.stringify({ mcpServers: { anderes: { command: "foo", env: { TOKEN: "geheim-1" } } } });
 
 test("Cursor verbinden: Rechte der vorhandenen Datei bleiben (0600 bleibt 0600), neue Datei bekommt 0600, Sicherung hat die Rechte des Originals", async () => {
@@ -209,7 +209,7 @@ test("Cursor verbinden: Schreibfehler nennt den Fehlercode; die Temp-Datei bleib
 });
 
 test("Unbekanntes Ziel → 400", async () => {
-  const rufe = aufruf(erzeugeHandler({ vault: vault(), mcpPfad: mcpDatei(), vaultOptionen: { support: tmp("brain-support-") } }));
+  const rufe = aufruf(erzeugeHandler({ kontenAus: true, vault: vault(), mcpPfad: mcpDatei(), vaultOptionen: { support: tmp("brain-support-") } }));
   assert.equal((await rufe("POST", "/api/mcp/verbinden", { ziel: "gpt" })).status, 400);
 });
 
@@ -218,7 +218,7 @@ test("Selbsttest: startet den echten MCP-Server, tools/list + eine Suche → ok 
   const support = tmp("brain-support-");
   const d = vault();
   writeFileSync(join(support, "vaults.json"), JSON.stringify({ vaults: [{ name: "v", pfad: realpathSync(d), farbe: "#5B8DEF" }], aktiv: realpathSync(d) }));
-  const rufe = aufruf(erzeugeHandler({ vault: d, vaultOptionen: { support } }));
+  const rufe = aufruf(erzeugeHandler({ kontenAus: true, vault: d, vaultOptionen: { support } }));
   const r = await rufe("POST", "/api/mcp/selbsttest", {});
   assert.equal(r.status, 200); assert.equal(r.j.ok, true);
   assert.ok(r.j.werkzeuge.includes("brain_suchen"));
@@ -235,17 +235,17 @@ createInterface({ input: process.stdin }).on("line", (z) => { const m = JSON.par
   if (m.method === "initialize") console.log(JSON.stringify({ jsonrpc: "2.0", id: m.id, result: { protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "x", version: "1" } } }));
   if (m.method === "tools/list") console.log(JSON.stringify({ jsonrpc: "2.0", id: m.id, result: { tools: [{ name: "anderes" }] } }));
   if (m.method === "tools/call") console.log(JSON.stringify({ jsonrpc: "2.0", id: m.id, result: { content: [{ type: "text", text: "x" }] } })); });\n`);
-  const ohne = aufruf(erzeugeHandler({ vault: d, mcpPfad: join(skripte, "ohne-suche.mjs"), vaultOptionen: { support } }));
+  const ohne = aufruf(erzeugeHandler({ kontenAus: true, vault: d, mcpPfad: join(skripte, "ohne-suche.mjs"), vaultOptionen: { support } }));
   const f = await ohne("POST", "/api/mcp/selbsttest", {});
   assert.equal(f.status, 502); assert.match(f.j.fehler, /brain_suchen/);
-  const weg = aufruf(erzeugeHandler({ vault: d, mcpPfad: join(skripte, "gibtsnicht.mjs"), vaultOptionen: { support } }));
+  const weg = aufruf(erzeugeHandler({ kontenAus: true, vault: d, mcpPfad: join(skripte, "gibtsnicht.mjs"), vaultOptionen: { support } }));
   assert.equal((await weg("POST", "/api/mcp/selbsttest", {})).status, 404);
 });
 
 // ── Trennen (Rückweg von „Verbinden“) und Konfiguration zum Kopieren ──
 test("Cursor trennen: nimmt nur den eigenen Eintrag „brain“ heraus (mit Sicherung), andere Einträge bleiben; ohne Eintrag oder Datei ist nichts zu tun", async () => {
   const mcp = mcpDatei();
-  const rufe = aufruf(erzeugeHandler({ vault: vault(), mcpPfad: mcp, vaultOptionen: { support: tmp("brain-support-") } }));
+  const rufe = aufruf(erzeugeHandler({ kontenAus: true, vault: vault(), mcpPfad: mcp, vaultOptionen: { support: tmp("brain-support-") } }));
   cursorLeeren();
   let r = await rufe("POST", "/api/mcp/trennen", { ziel: "cursor" });
   assert.deepEqual(r.j, { ok: true, warNichtVerbunden: true }, "keine Datei");
@@ -267,7 +267,7 @@ test("Cursor trennen: nimmt nur den eigenen Eintrag „brain“ heraus (mit Sich
 });
 
 test("Cursor trennen: ein fremder Eintrag „brain“ bleibt stehen (409), kaputtes JSON wird nie überschrieben (422)", async () => {
-  const rufe = aufruf(erzeugeHandler({ vault: vault(), mcpPfad: mcpDatei(), vaultOptionen: { support: tmp("brain-support-") } }));
+  const rufe = aufruf(erzeugeHandler({ kontenAus: true, vault: vault(), mcpPfad: mcpDatei(), vaultOptionen: { support: tmp("brain-support-") } }));
   cursorLeeren(); mkdirSync(join(HOME, ".cursor"));
   const fremd = JSON.stringify({ mcpServers: { brain: { command: "/usr/bin/fremd", args: ["--key=geheim-6"] } } });
   writeFileSync(cursorDatei(), fremd);
@@ -285,7 +285,7 @@ test("Cursor trennen: ein fremder Eintrag „brain“ bleibt stehen (409), kaput
 test("Codex trennen: eigener Eintrag → remove; fremder → 409 ohne remove; kein Eintrag → nichts zu tun", async () => {
   const mcp = mcpDatei();
   const c = fakeCodex();
-  const rufe = aufruf(erzeugeHandler({ vault: vault(), mcpPfad: mcp, vaultOptionen: { support: tmp("brain-support-") } }));
+  const rufe = aufruf(erzeugeHandler({ kontenAus: true, vault: vault(), mcpPfad: mcp, vaultOptionen: { support: tmp("brain-support-") } }));
   await mitPfad(c.bin, async () => {
     let r = await rufe("POST", "/api/mcp/trennen", { ziel: "codex" });
     assert.deepEqual(r.j, { ok: true, warNichtVerbunden: true });
@@ -320,7 +320,7 @@ if (a[0] === "mcp" && a[1] === "add") { const i = a.indexOf("--"); fs.writeFileS
 process.exit(3);\n`);
   chmodSync(join(bin, "claude"), 0o755);
   const aufrufe = () => (existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : []);
-  const rufe = aufruf(erzeugeHandler({ vault: vault(), mcpPfad: mcp, vaultOptionen: { support: tmp("brain-support-") } }));
+  const rufe = aufruf(erzeugeHandler({ kontenAus: true, vault: vault(), mcpPfad: mcp, vaultOptionen: { support: tmp("brain-support-") } }));
   await mitPfad(bin, async () => {
     let r = await rufe("POST", "/api/mcp/trennen", { ziel: "claude" });
     assert.deepEqual(r.j, { ok: true, warNichtVerbunden: true });
@@ -338,18 +338,18 @@ process.exit(3);\n`);
 });
 
 test("Trennen: unbekanntes Ziel → 400; nur POST", async () => {
-  const rufe = aufruf(erzeugeHandler({ vault: vault(), mcpPfad: mcpDatei(), vaultOptionen: { support: tmp("brain-support-") } }));
+  const rufe = aufruf(erzeugeHandler({ kontenAus: true, vault: vault(), mcpPfad: mcpDatei(), vaultOptionen: { support: tmp("brain-support-") } }));
   assert.equal((await rufe("POST", "/api/mcp/trennen", { ziel: "gpt" })).status, 400);
   assert.equal((await rufe("GET", "/api/mcp/trennen")).status, 405);
 });
 
 test("Konfiguration zum Kopieren: JSON mit mcpServers.brain (Pfade dieser Installation); fehlt der Server → 404", async () => {
   const mcp = mcpDatei(), real = realpathSync(mcp);
-  const rufe = aufruf(erzeugeHandler({ mcpPfad: mcp, vaultOptionen: { support: tmp("brain-support-") } }));
+  const rufe = aufruf(erzeugeHandler({ kontenAus: true, mcpPfad: mcp, vaultOptionen: { support: tmp("brain-support-") } }));
   const r = await rufe("GET", "/api/mcp/konfiguration");
   assert.equal(r.status, 200);
   assert.deepEqual(JSON.parse(r.j.json), { mcpServers: { brain: { command: process.execPath, args: [real] } } });
   assert.equal((await rufe("POST", "/api/mcp/konfiguration", {})).status, 405);
-  const weg = aufruf(erzeugeHandler({ mcpPfad: join(tmp("brain-leer-"), "gibtsnicht.mjs"), vaultOptionen: { support: tmp("brain-support-") } }));
+  const weg = aufruf(erzeugeHandler({ kontenAus: true, mcpPfad: join(tmp("brain-leer-"), "gibtsnicht.mjs"), vaultOptionen: { support: tmp("brain-support-") } }));
   assert.equal((await weg("GET", "/api/mcp/konfiguration")).status, 404);
 });

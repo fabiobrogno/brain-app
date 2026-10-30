@@ -30,7 +30,7 @@ const aufruf = (h) => async (methode, p, daten) => {
 const mcpDatei = () => { const m = tmp("brain-mcpdir-"); schreibe(m, "brain-mcp.mjs", "// fake\n"); return join(m, "brain-mcp.mjs"); };
 const vault = () => { const d = tmp(); schreibe(d, "00_inbox/n.md", "# Notiz\n"); return d; };
 // Handler mit Wegwerf-Vault, eigenem MCP-Server-Attrappe und eigenem Support-Ordner
-const handlerMit = (mcp = mcpDatei(), extra = {}) => aufruf(erzeugeHandler({ vault: vault(), mcpPfad: mcp, vaultOptionen: { support: tmp("brain-support-") }, ...extra }));
+const handlerMit = (mcp = mcpDatei(), extra = {}) => aufruf(erzeugeHandler({ kontenAus: true, vault: vault(), mcpPfad: mcp, vaultOptionen: { support: tmp("brain-support-") }, ...extra }));
 const handler = () => handlerMit();
 
 // Ein frisches HOME je Test (homedir() liest $HOME bei jedem Aufruf).
