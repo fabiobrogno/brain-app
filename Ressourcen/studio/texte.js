@@ -190,7 +190,7 @@ export const T = {
   kuerzel: {
     titel: "Tastenkürzel",
     gruppen: [
-      { name: "Allgemein", zeilen: [["⌘K", "Springen und Befehle"], ["⌘N", "Neue Notiz"], ["⌘⇧M", "Schnell merken"], ["⌘⇧A", "Aufgabe erfassen"], ["⌘⇧F", "Im ganzen Vault suchen"], ["⌘/", "Diese Übersicht"]] },
+      { name: "Allgemein", zeilen: [["⌘K", "Springen und Befehle"], ["⌘N", "Neue Notiz"], ["⌘⇧M", "Schnell merken"], ["⌘⇧A", "Aufgabe erfassen"], ["⌘J", "Frag deinen Vault"], ["⌘⇧F", "Im ganzen Vault suchen"], ["⌘/", "Diese Übersicht"]] },
       { name: "Notiz", zeilen: [["⌘S", "Jetzt speichern"], ["⌘F", "In der Notiz suchen"], ["⌘⌥I", "Eigenschaften ein- oder ausblenden"], ["⌘⇧G", "Änderungen sichern"]] },
       { name: "Liste", zeilen: [["↑ ↓", "Nächste oder vorige Notiz öffnen"], ["↵", "In die Notiz springen"], ["Esc", "Suche oder Dialog schließen"]] },
     ],
