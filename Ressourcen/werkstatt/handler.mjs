@@ -10,7 +10,7 @@ import { createInterface } from "node:readline";
 import { oeffneVault, HttpFehler } from "../gemeinsam/vault.mjs";
 import { kindUmgebung, supportOrdner, falte, kernOrdner } from "../gemeinsam/basis.mjs";
 import { starte, neueFrist, registriere, beendeGruppe } from "../gemeinsam/prozess.mjs";
-import { findeProgramm, erkenneAgenten } from "../gemeinsam/ki.mjs";
+import { findeProgramm, erkenneAgenten, erkenneKatalog } from "../gemeinsam/ki.mjs";
 import * as vaultsFn from "../gemeinsam/vaults.mjs";
 import * as vertrauenFn from "../gemeinsam/vertrauen.mjs";
 import { erzeugeGitHub } from "../gemeinsam/github.mjs";
@@ -349,8 +349,10 @@ export function erzeugeHandler(o) {
       case "/api/mcp/konfiguration": { nur("GET"); return konfiguration(q); }
       case "/api/ki/erkennen": {
         nur("GET");
-        const erg = await erkenneAgenten({ neu: q.get("neu") === "1" });
-        return { ...erg, programme: erkenneProgramme({ agenten: erg.agenten }) }; // Programme mit Einstellungsdatei (Cursor meldet weiter `cursorDa`)
+        const neu = q.get("neu") === "1";
+        const erg = await erkenneAgenten({ neu });
+        // Programme mit Einstellungsdatei (Cursor meldet weiter `cursorDa`); `katalog`: alle Programme des KI-Katalogs (gemeinsam/ki-katalog.json) mit Fund und Version
+        return { ...erg, programme: erkenneProgramme({ agenten: erg.agenten }), katalog: await erkenneKatalog({ neu }) };
       }
       // KI-Konten (docs/plaene/ki-konten.md): Liste mit Stufen je Vault · Name/Abo setzen · Stufe eines Kontos in einem Vault setzen
       case "/api/ki/konten":

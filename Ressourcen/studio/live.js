@@ -1,6 +1,6 @@
 // Live-Aktualisierung (Studio-Seite): hält einen Long-Poll auf GET /api/ereignisse offen und reicht Ereignisse der Werkstatt weiter.
 // Die Werkstatt beobachtet den Vault (werkstatt/ereignisse.mjs); hier wird nur zugehört — gezeichnet wird in app.js über die bestehenden Wege.
-import { kiLogoName } from "./ki-logos.js";
+import { kiKurzname } from "./ki-logos.js";
 import { TL } from "./texte-live.js";
 
 const KI_QUELLE = /^ki:/;
@@ -65,7 +65,7 @@ export function kiHinweis(ki) {
   if (!ki.length) return null;
   const namen = new Set(ki.map((k) => k.quelle));
   const id = ki[0].quelle.slice(3);
-  const name = namen.size === 1 ? (kiLogoName(id) || id.replace(/^./, (c) => c.toUpperCase())) : null;
+  const name = namen.size === 1 ? (kiKurzname(id) || id.replace(/^./, (c) => c.toUpperCase())) : null;
   return TL.aufgabeAngelegt(name, ki.map((k) => k.titel));
 }
 
