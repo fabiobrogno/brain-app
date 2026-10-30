@@ -55,6 +55,22 @@ test("symbol(): jedes Symbol hat das 16er-Raster und in jeder Größe 1,5 px Str
   expect(r.anzahl).toBeGreaterThan(60);
 });
 
+test("symbol(\"marke\"): das Netz-K der App (fünf Knoten, ein Linienzug), nicht mehr das alte Kästchen mit Dreieck", async ({ page }) => {
+  await start(page);
+  const r = await page.evaluate(async () => {
+    const m = await import("/symbole.js");
+    const s = m.symbol("marke", 56);
+    const k = [...s.querySelectorAll("circle")].map((c) => ({ x: Number(c.getAttribute("cx")), y: Number(c.getAttribute("cy")), r: Number(c.getAttribute("r")) }));
+    return { kreise: k, pfade: s.querySelectorAll("path").length };
+  });
+  expect(r.kreise).toHaveLength(5);
+  expect(r.pfade).toBe(1);
+  const kern = r.kreise.reduce((a, b) => (b.r > a.r ? b : a));
+  expect(r.kreise.filter((k) => k.r === kern.r)).toHaveLength(1); // ein großer Kern
+  expect(kern.x).toBeLessThan(8); // Kern links, Arme rechts (wie das K im Icon)
+  for (const k of r.kreise) expect(k.x - k.r >= 0 && k.x + k.r <= 16 && k.y - k.r >= 0 && k.y + k.r <= 16).toBe(true);
+});
+
 test("Marken-Logo GitHub: Pfad stimmt mit Ressourcen/logos/github.svg überein, Bild mit Namen, unbekannte Marke liefert nichts", async ({ page }) => {
   await start(page);
   const r = await page.evaluate(async () => {
