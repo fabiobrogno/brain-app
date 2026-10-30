@@ -84,7 +84,7 @@ export function oeffneKontenDialog({ api = standardApi, vault = null, beiZu, bei
   const secStreng = h("section", { klasse: "kk-sektion", "data-kk": "streng-abschnitt" });
   const secEhrlich = h("section", { klasse: "kk-sektion", "data-kk": "ehrlich" });
   const rumpf = h("div", { klasse: "kk-rumpf" }, h("div", { klasse: "kk-haupt" }, secMeldung, secFrage, secHinweis, secKonten, secZugriff, secStreng, secEhrlich));
-  const zuKnopf = baueKnopf({ text: TK.schliessen, groesse: "l", aktion: "konten-schliessen", aufKlick: () => d.schliessen() });
+  const zuKnopf = baueKnopf({ text: TK.schliessen, variante: "primaer", groesse: "l", aktion: "konten-schliessen", aufKlick: () => d.schliessen() });
   const box = h("div", { klasse: "dialog kk-dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "kk-titel", "data-dialog": "ki-konten" },
     h("div", { klasse: "kk-kopf" }, h("h2", { klasse: "kk-titel", id: "kk-titel", text: TK.titel }), intro),
     rumpf,
