@@ -452,7 +452,7 @@ function zeichneFavoriten() {
 function zeichneAnsichten() {
   const zeilen = ANSICHTEN.map((id) => {
     const n = (S.ansichtMitglieder[id] || []).length;
-    return eintragEl({ data: { "data-ansicht": id }, symbolName: id === "zuletzt" ? "uhr" : id === "strittig" ? "warnung" : id === "abgelaufen" ? "verlauf" : "filter",
+    return eintragEl({ data: { "data-ansicht": id }, symbolName: id === "zuletzt" ? "uhr" : id === "strittig" ? "warnung" : id === "abgelaufen" ? "sanduhr" : "filter",
       name: T.ansichten[id], zahl: n, zahlKlasse: (id === "strittig" || id === "abgelaufen") && n ? "warn" : "", titel: T.ansichtenHinweis[id],
       aktiv: S.sicht.art === "ansicht" && S.sicht.id === id, tun: () => waehleSicht({ art: "ansicht", id }) });
   });
@@ -519,7 +519,7 @@ function zeichneListenKopf() {
   $("knopf-suche").hidden = verlauf;
   $("knopf-neu").hidden = verlauf;
   const sk = $("knopf-sort");
-  sk.replaceChildren(symbol("sortierung", 13), h("span", { text: T.sortierung[S.sortierung] }));
+  sk.replaceChildren(symbol("sortierung", 14), h("span", { text: T.sortierung[S.sortierung] }));
   let zu = document.getElementById("verlauf-zu");
   if (verlauf && !zu) { zu = h("button", { id: "verlauf-zu", klasse: "knopf-icon", title: "Verlauf schließen", "aria-label": "Verlauf schließen", aufClick: schliesseVerlauf }, symbol("schliessen", 14)); document.querySelector(".liste-werkzeuge").append(zu); }
   if (!verlauf) zu?.remove();
@@ -527,7 +527,7 @@ function zeichneListenKopf() {
 function leerZustand() {
   const { art, id } = S.sicht;
   const t = art === "favoriten" ? T.liste.leerFavoriten : art === "ansicht" ? T.liste.leerAnsicht : art === "bereich" && id === "inbox" ? T.liste.leerInbox : T.liste.leer;
-  return h("div", { klasse: "leer-liste", "data-leer": "liste" }, h("div", { klasse: "zeichen" }, symbol(art === "ansicht" ? "kreis-haken" : "notiz", 22)), h("h3", { text: t.titel }), h("p", { text: t.text }),
+  return h("div", { klasse: "leer-liste", "data-leer": "liste" }, h("div", { klasse: "zeichen" }, symbol(art === "ansicht" ? "kreis-haken" : "notiz", 24)), h("h3", { text: t.titel }), h("p", { text: t.text }),
     art === "bereich" && (id === "inbox" || id === "alle") ? h("button", { klasse: "knopf primaer", text: T.seitenleiste.neu, aufClick: () => oeffneNeu() }) : null,
     h("div", { klasse: "kurz" }, h("span", null, h("kbd", { text: "⌘K" }), "suchen"), h("span", null, h("kbd", { text: "⌘N" }), "neu")));
 }
@@ -540,7 +540,7 @@ function baueKarte(n) {
     h("div", { klasse: "karte-kopf" },
       h("div", { klasse: "karte-titel", text: n.titel || T.liste.ohneTitel }),
       h("div", { klasse: "karte-marken" },
-        symbol(typ ? typSymbol(typ.symbol) : "notiz", 15),
+        symbol(typ ? typSymbol(typ.symbol) : "notiz", 14),
         stufe ? h("span", { klasse: "punkt " + stufe, "data-punkt": n.pfad, title: T.stufen[stufe] || "" }) : null)),
     h("div", { klasse: "karte-vorschau", text: vorschauText(n.vorschau) }),
     h("div", { klasse: "karte-fuss" }, h("span", { text: datumKurz(n.geaendert) }),
@@ -662,7 +662,7 @@ function zeichneRueckfragenKarte() {
   const host = $("liste-koerper");
   const n = Number(S.rueckfragen?.offen) || 0;
   S.sichtListe = [];
-  host.replaceChildren(h("div", { klasse: "leer-liste", "data-leer": "rueckfragen" }, h("div", { klasse: "zeichen" }, symbol("info", 22)), h("h3", { text: T.liste.rueckfragen.titel }),
+  host.replaceChildren(h("div", { klasse: "leer-liste", "data-leer": "rueckfragen" }, h("div", { klasse: "zeichen" }, symbol("info", 24)), h("h3", { text: T.liste.rueckfragen.titel }),
     h("p", { text: n ? T.liste.rueckfragen.text(n) : "Keine offenen Fragen." }), h("p", { text: T.liste.rueckfragen.hinweis }),
     h("button", { klasse: "knopf", text: T.liste.rueckfragen.kopieren, aufClick: async () => { try { await navigator.clipboard.writeText("/rueckfragen"); toast(T.liste.rueckfragen.kopiert); } catch { /* ohne Zwischenablage */ } } })));
 }
@@ -722,12 +722,12 @@ function zeichneSuchergebnisse() {
   const host = $("liste-koerper");
   zeichneListenKopf();
   if (!S.suche.frage) return;
-  if (!S.suche.treffer.length) { host.replaceChildren(h("div", { klasse: "leer-liste", "data-suche": "leer" }, h("div", { klasse: "zeichen" }, symbol("suche", 22)), h("h3", { text: T.liste.leerSuche.titel }), h("p", { text: T.liste.leerSuche.text }))); return; }
+  if (!S.suche.treffer.length) { host.replaceChildren(h("div", { klasse: "leer-liste", "data-suche": "leer" }, h("div", { klasse: "zeichen" }, symbol("suche", 24)), h("h3", { text: T.liste.leerSuche.titel }), h("p", { text: T.liste.leerSuche.text }))); return; }
   host.replaceChildren(...S.suche.treffer.map((t, i) => {
     const n = S.nMap.get(t.pfad);
     const typ = n?.typ ? (S.typMap.get(n.typ) || { name: n.typ }) : null;
     const karte = h("div", { klasse: "karte", role: "option", "data-suche": "treffer", "data-karte": "", "data-pfad": t.pfad, "aria-selected": String(i === S.suche.auswahl), aufClick: () => oeffne(t.pfad, { zeile: t.zeile }) },
-      h("div", { klasse: "karte-kopf" }, h("div", { klasse: "karte-titel", text: t.titel || ohneEndung(dateiName(t.pfad)) }), h("div", { klasse: "karte-marken" }, symbol(typ ? typSymbol(typ.symbol) : "notiz", 15))),
+      h("div", { klasse: "karte-kopf" }, h("div", { klasse: "karte-titel", text: t.titel || ohneEndung(dateiName(t.pfad)) }), h("div", { klasse: "karte-marken" }, symbol(typ ? typSymbol(typ.symbol) : "notiz", 14))),
       t.auszug ? h("div", { klasse: "auszug", text: t.auszug }) : null, h("div", { klasse: "pfadzeile", text: t.pfad }));
     return typ ? setzeTypFarbe(karte, typ) : karte;
   }));
@@ -788,7 +788,7 @@ async function zeichneVerlauf() {
     host.replaceChildren();
     verlaufInst = m.zeichneVerlauf(host, { api, beiDatei: zeigeDiff, beiGesperrt: oeffneVertrauen });
   } catch (e) {
-    host.replaceChildren(h("div", { klasse: "leer-liste" }, h("div", { klasse: "zeichen" }, symbol("verlauf", 22)), h("h3", { text: T.liste.verlauf }), h("p", { text: "Der Verlauf ist gerade nicht verfügbar." })));
+    host.replaceChildren(h("div", { klasse: "leer-liste" }, h("div", { klasse: "zeichen" }, symbol("verlauf", 24)), h("h3", { text: T.liste.verlauf }), h("p", { text: "Der Verlauf ist gerade nicht verfügbar." })));
   }
 }
 function oeffneVerlauf() {
@@ -1000,7 +1000,7 @@ async function ladeInfo() {
     if (pr.stufe !== "grau") {
       const stand = felder.stand || sig.find((x) => x.art === "stand")?.text?.replace(/^Stand\s+/, "");
       if (stand) zus.push(reihe(T.eigenschaften.stand, h("span", { text: datumKurz(stand) || stand }), { rechts: true, symbol: "uhr", feld: "stand" }));
-      if (felder.pruefen_bis) zus.push(reihe(T.eigenschaften.pruefenBis, h("span", { text: datumKurz(felder.pruefen_bis) || String(felder.pruefen_bis) }), { rechts: true, symbol: "verlauf", feld: "pruefen_bis" }));
+      if (felder.pruefen_bis) zus.push(reihe(T.eigenschaften.pruefenBis, h("span", { text: datumKurz(felder.pruefen_bis) || String(felder.pruefen_bis) }), { rechts: true, symbol: "sanduhr", feld: "pruefen_bis" }));
       const her = felder.quelle || felder.herkunft;
       const nQuellen = Array.isArray(felder.quellen) ? felder.quellen.length : 0;
       if (her || nQuellen) zus.push(reihe(T.eigenschaften.herkunft, h("span", { text: her ? String(her) : pluralisiere(nQuellen, "Quelle", "Quellen") }), { rechts: true, symbol: "buch", feld: "herkunft" }));
@@ -1018,7 +1018,7 @@ async function ladeInfo() {
     const felder = k.felder || {};
     const typId = n?.typ || felder.typ || felder.type || null;
     const typ = typId ? (S.typMap.get(typId) || { name: typId }) : null;
-    const zeilen = [reihe(T.eigenschaften.typ, typ ? setzeTypFarbe(h("span", { klasse: "chip", "data-typ-chip": typ.name }, symbol(typSymbol(typ.symbol), 13), typName(typ.name)), typ) : h("span", { text: T.eigenschaften.keinTyp }), { symbol: "thema", leise: !typ, feld: "typ" })];
+    const zeilen = [reihe(T.eigenschaften.typ, typ ? setzeTypFarbe(h("span", { klasse: "chip", "data-typ-chip": typ.name }, symbol(typSymbol(typ.symbol), 14), typName(typ.name)), typ) : h("span", { text: T.eigenschaften.keinTyp }), { symbol: "thema", leise: !typ, feld: "typ" })];
     const wissen = n?.bereich === "wissen";
     const rest = Object.entries(felder).filter(([key, w]) => !SCHUTZ_FELDER.has(key.toLowerCase()) && !key.startsWith("_") && !hatWiki(w) && !(wissen && IM_WAHRHEITSBLOCK.has(key.toLowerCase())));
     for (const [key, w] of rest) { const f = feldWert(w); zeilen.push(reihe(schoenerName(key), f.n, { leise: f.leise, feld: key })); }
@@ -1178,9 +1178,9 @@ function zeichneStatus() {
     const w = Array.isArray(gs.warnungen) ? gs.warnungen.length : Number(gs.warnungen) || 0;
     const ampel = String(gs.ampel || "").toLowerCase();
     const farbe = /rot|red/.test(ampel) ? "rot" : /gelb|yellow|orange/.test(ampel) || w ? "gelb" : "";
-    k.push(st("gesundheit", [symbol(farbe ? "warnung" : "herz", 14), h("span", { text: T.status.gesundheit }), h("span", { text: w ? String(w) : "✓" })], { klick: oeffneGesundheit, klasse: farbe === "rot" ? "schlecht" : farbe ? "warn" : "gut" }));
+    k.push(st("gesundheit", [symbol(farbe ? "warnung" : "herz", 14), h("span", { text: T.status.gesundheit }), (w ? h("span", { text: String(w) }) : symbol("haken", 12))], { klick: oeffneGesundheit, klasse: farbe === "rot" ? "schlecht" : farbe ? "warn" : "gut" }));
   }
-  k.push(st("nutzung", [symbol("verlauf", 14), h("span", { text: T.status.nutzung })], { klick: oeffneNutzung, titel: T.status.nutzungTitel }));
+  k.push(st("nutzung", [symbol("balken", 14), h("span", { text: T.status.nutzung })], { klick: oeffneNutzung, titel: T.status.nutzungTitel }));
   k.push(h("span", { klasse: "trenner" }));
   k.push(st("theme", [symbol(istDunkel() ? "sonne" : "mond", 14)], { klick: () => setzeTheme(istDunkel() ? "hell" : "dunkel"), titel: istDunkel() ? T.status.zuHell : T.status.zuDunkel }));
   k.push(st("einstellungen", [symbol("zahnrad", 14)], { klick: (e) => oeffneEinstellungen(e.currentTarget), titel: T.status.einstellungen }));
@@ -1956,13 +1956,13 @@ function zeigeLeer() {
   $("editor").hidden = true; el.hidden = false;
   if (!hatDateien) {
     el.replaceChildren(
-      h("div", { klasse: "zeichen" }, symbol("notiz", 26)),
+      h("div", { klasse: "zeichen" }, symbol("notiz", 24)),
       h("h2", { text: T.leer.titel }), h("p", { text: T.leer.text }),
       h("div", null, h("button", { klasse: "knopf primaer gross", "data-aktion": "erste", text: T.leer.knopf, aufClick: () => oeffneNeu() })),
       S.info && !S.info.git ? h("p", { klasse: "mini", style: "margin-top:14px", text: "Dieser Ordner ist noch nicht mit Git gesichert. Du kannst trotzdem schreiben." }) : null);
   } else {
     el.replaceChildren(
-      h("div", { klasse: "zeichen" }, symbol("marke", 28)),
+      h("div", { klasse: "zeichen" }, symbol("marke", 24)),
       h("h2", { text: T.editor.leer }), h("p", { text: T.editor.leerHinweis }),
       h("div", { klasse: "kurz" }, h("span", null, h("kbd", { text: "⌘K" }), "Springen"), h("span", null, h("kbd", { text: "⌘N" }), "Neu"), h("span", null, h("kbd", { text: "⌘⇧M" }), "Merken")));
   }

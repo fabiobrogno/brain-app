@@ -19,7 +19,7 @@ enum VorschauBand {
 struct VorschauBandAnsicht: View {
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: "eye")
+            KSymbol(name: "eye")
             Text(VorschauBand.text)
         }
         .font(.caption)
