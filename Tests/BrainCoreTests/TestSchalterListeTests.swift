@@ -20,6 +20,7 @@ private let betriebsNamen: [String: String] = [
     "KORTEX_GITHUB_CLIENT_ID": "kommt aus der Info.plist der App",
     "KORTEX_KERN_PFAD": "stabiler Kern-Pfad, den der Starter setzt",
     "BRAIN_PORT": "Entwicklungsserver (entwicklung.mjs), nicht Teil der App",
+    "BRAIN_WATCH": "Live-Aktualisierung: „poll“ erzwingt Polling statt fs.watch (Entwicklung/CI); ohne Wirkung auf Schutz oder Ablauf der Dateien",
     "BRAIN_BEFUND_DEBUG": "reine Diagnoseausgabe, ohne Wirkung auf Schutz oder Ablauf",
     "KORTEX_VON_KORTEX": "JavaScript-Konstante, keine Umgebungsvariable",
     "BRAIN_GO_LIVE": "JavaScript-Konstante, keine Umgebungsvariable",
