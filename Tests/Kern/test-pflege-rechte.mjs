@@ -125,16 +125,18 @@ test("sonnetArgs ohne Kopie wirft — ohne Pfad lassen sich keine Pfadregeln bil
   assert.throws(() => K.sonnetRechte(""), /Arbeitskopie/);
 });
 
-test("sonnetUmgebung: Vault hart auf die Kopie, keine fremden BRAIN_*-Variablen, keine Sitzungs-/GIT_-Variablen, Rest bleibt", () => {
+test("sonnetUmgebung: Vault hart auf die Kopie, keine fremden BRAIN_*-Variablen, keine Sitzungs-/GIT_-Variablen, keine fremden Anmeldungen (ANTHROPIC_*, CLAUDE_CODE_* außer der Erlaubt-Liste), Rest bleibt", () => {
   const kopie = tempOrdner("kopie");
   const u = K.sonnetUmgebung(kopie, { BRAIN_VAULT: "/echter/vault", BRAIN_TAGESLAUF_CACHE: "/x", BRAIN_CLAUDE: "/y", BRAIN_NODE: "/z", BRAIN_KIT_HOME: "/h",
-    GIT_DIR: "/g", CLAUDECODE: "1", CLAUDE_PID: "7", PATH: "/usr/bin", ANTHROPIC_BASE_URL: "k", LANG: "de_DE.UTF-8" });
+    GIT_DIR: "/g", CLAUDECODE: "1", CLAUDE_PID: "7", PATH: "/usr/bin", ANTHROPIC_BASE_URL: "k", ANTHROPIC_API_KEY: "sk-x", CLAUDE_CODE_OAUTH_TOKEN: "o", CLAUDE_CODE_GIT_BASH_PATH: "/b", LANG: "de_DE.UTF-8" });
   assert.equal(u.BRAIN_VAULT, realpathSync(kopie));
   assert.equal(u.BRAIN_ERNTE, "1");
   assert.deepEqual(Object.keys(u).filter((k) => k.startsWith("BRAIN_")).sort(), ["BRAIN_ERNTE", "BRAIN_VAULT"]);
   assert.ok(!("GIT_DIR" in u) && !("CLAUDECODE" in u) && !("CLAUDE_PID" in u));
   assert.equal(u.PATH, "/usr/bin");
-  assert.equal(u.ANTHROPIC_BASE_URL, "k");     // claude braucht seine Anmeldung/Konfiguration
+  // Die Anmeldung kommt allein aus dem Konto (CLAUDE_CONFIG_DIR, Pflege-Einstellung): fremde Zugangsdaten und Umleitungen der Umgebung erreichen das Kind nie (kern/pflege-konto.mjs#ohneFremdeAnmeldung)
+  assert.ok(!("ANTHROPIC_BASE_URL" in u) && !("ANTHROPIC_API_KEY" in u) && !("CLAUDE_CODE_OAUTH_TOKEN" in u));
+  assert.equal(u.CLAUDE_CODE_GIT_BASH_PATH, "/b");   // nur ein Programmpfad, keine Anmeldung
   assert.equal(u.LANG, "de_DE.UTF-8");
 });
 
