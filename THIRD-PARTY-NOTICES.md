@@ -394,7 +394,7 @@ kopiert: Maße, Aufbau und Abläufe wurden von Hand nach CSS, Vanilla-JavaScript
   Sperrung) nach `src/renderer/src/components/sidebar/AddRepoStartSteps.tsx`
   → `studio/willkommen.js` und `studio/dialoge.css` („Andere Wege“), `Sources/BrainApp/EinrichtungsBausteine.swift` (`WegZeile`, `WegGruppe`);
 - der leere Zustand als Kreis (48 px) mit Symbol, einem kurzen Satz und höchstens einer Aktion nach
-  `src/renderer/src/components/native-chat/NativeChatEmptyState.tsx` → `studio/dialoge.css`, `studio/hilfen.js` (`leerBlock()`).
+  `src/renderer/src/components/native-chat/NativeChatEmptyState.tsx` → `studio/dialoge.css`, `studio/bausteine.js` (`leerBlock()`).
 
 Orca ist MIT-lizenziert. Lizenztext (Copyright-Zeile wie in der Datei `LICENSE` von Orca):
 
