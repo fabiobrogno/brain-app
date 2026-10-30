@@ -28,7 +28,7 @@ public enum SupportMigration {
             case .nichtNoetig, .umbenannt: return nil
             case .umbenanntOhneLink(let grund):
                 return "Der Ordner „\(alt.path)“ wurde nach „\(neu.path)“ umbenannt. Ein Verweis vom alten Namen auf den neuen ließ sich nicht anlegen (\(grund)). "
-                    + "Falls Claude Code, Codex oder Cursor Brain nicht mehr findet, verbinde sie im Studio unter „KI verbinden“ neu."
+                    + "Falls Claude Code, Codex oder Cursor Kortex nicht mehr finden, verbinde sie im Studio unter „KI verbinden“ neu."
             case .beideVorhanden:
                 return "Es gibt zwei Ordner: „\(alt.path)“ (alt) und „\(neu.path)“ (neu). Kortex nutzt nur den neuen und hat den alten nicht angefasst. "
                     + "Falls im alten noch Einstellungen oder Vault-Listen liegen, die du brauchst, kopiere sie von Hand in den neuen."

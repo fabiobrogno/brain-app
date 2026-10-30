@@ -25,8 +25,8 @@ public enum VaultAuswahl {
     public static func meldung(_ p: VaultPruefung) -> String? {
         switch p {
         case .ok: return nil
-        case .fehlt: return "Brain-Ordner nicht gefunden"
-        case .keinBrain: return "Dieser Ordner ist kein Brain — darin fehlt brain.config.json"
+        case .fehlt: return "Vault-Ordner nicht gefunden"
+        case .keinBrain: return "Dieser Ordner ist kein Kortex-Vault — darin fehlt brain.config.json"
         }
     }
 }

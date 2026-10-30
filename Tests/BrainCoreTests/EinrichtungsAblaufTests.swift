@@ -32,7 +32,7 @@ private final class FalscheDienste: EinrichtungsDienste, @unchecked Sendable {
     var sicherungVerbinden: [Result<SicherungErgebnis, EinrichtungsFehler>] = [.success(.gesendet)]
     var kis: [Result<[KiProgramm], EinrichtungsFehler>] = [.success([claudeDa])]
     var verbinden: [Result<KiVerbindung, EinrichtungsFehler>] = [.success(.verbunden)]
-    var probeAntworten: [Result<ProbeErgebnis, EinrichtungsFehler>] = [.success(ProbeErgebnis(frage: "Brain", treffer: ["Willkommen"]))]
+    var probeAntworten: [Result<ProbeErgebnis, EinrichtungsFehler>] = [.success(ProbeErgebnis(frage: "Vault", treffer: ["Willkommen"]))]
     private(set) var verbindeUmstellen: [Bool] = []
     private(set) var verbindeProfile: [String?] = []
     /// Verdrahtung: der Stand, den die Dienste melden; `verdrahte` ändert ihn wie die echte Werkstatt (oder wirft der Reihe nach `verdrahtenFehler`).
@@ -445,8 +445,8 @@ private func beiKi(_ a: Aufbau) async {
     await a.ablauf.weiter()
     #expect(a.zustand.stand(.ki) == .erledigt)
     #expect(a.zustand.aktuell == nil, "die Probe läuft beim Betreten von selbst und gelingt")
-    #expect(a.anzeige.probe == .ok(ProbeErgebnis(frage: "Brain", treffer: ["Willkommen"])))
-    #expect(a.dienste.aufrufe.contains("probe Brain"))
+    #expect(a.anzeige.probe == .ok(ProbeErgebnis(frage: "Vault", treffer: ["Willkommen"])))
+    #expect(a.dienste.aufrufe.contains("probe Vault"))
 }
 
 @Test @MainActor func fremderEintragFragtErstUndStelltNurMitJaUm() async {
@@ -536,7 +536,7 @@ private func beiKi(_ a: Aufbau) async {
     let a = Aufbau()
     await beiKi(a)
     a.dienste.probeAntworten = [.failure(EinrichtungsFehler("Der MCP-Server hat nicht geantwortet.", status: 502)),
-                                .success(ProbeErgebnis(frage: "Brain", treffer: []))]
+                                .success(ProbeErgebnis(frage: "Vault", treffer: []))]
     await a.ablauf.verbinde(.claude)
     await a.ablauf.weiter()
     #expect(a.zustand.aktuell == .probe)
@@ -583,12 +583,12 @@ private func beiKi(_ a: Aufbau) async {
 
     // neue Sitzung, derselbe Speicher; git/Vault/GitHub kommen wieder aus der Wirklichkeit
     a.neuerAblauf()
-    a.dienste.probeAntworten = [.success(ProbeErgebnis(frage: "Brain", treffer: ["x"]))]
+    a.dienste.probeAntworten = [.success(ProbeErgebnis(frage: "Vault", treffer: ["x"]))]
     await a.ablauf.starte()
     #expect(a.zustand.stand(.ki) == .erledigt, "KI-Verbindung ist gemerkt")
     #expect(a.dienste.anzahl("erkenneKIs") == 1, "die KI-Suche lief nur in der ersten Sitzung")
     #expect(a.zustand.istFertig)
-    #expect(a.anzeige.probe == .ok(ProbeErgebnis(frage: "Brain", treffer: ["x"])))
+    #expect(a.anzeige.probe == .ok(ProbeErgebnis(frage: "Vault", treffer: ["x"])))
 }
 
 @Test @MainActor func wiederaufnahmeMerktWasDerNutzerUebersprungenHat() async {
@@ -701,7 +701,7 @@ private func beiKi(_ a: Aufbau) async {
     await a.ablauf.weiter()
     #expect(a.zustand.istFertig)
     await a.ablauf.zurueck() // von „fertig“ zur Probe: läuft noch einmal
-    #expect(a.dienste.anzahl("probe Brain") == 2)
+    #expect(a.dienste.anzahl("probe Vault") == 2)
     #expect(a.zustand.istFertig)
 }
 

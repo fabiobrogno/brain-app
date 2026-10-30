@@ -89,7 +89,7 @@ if (!process.env.BRAIN_SESSION_NUR_STATUS) {
 // Sicherheitswarnung der Pflege (Integrität verletzt): immer ZUERST und unabhängig vom Tageslauf-Schalter.
 try { aus((await import("../../tageslauf/morgen.mjs")).integritaetsZeile(V)); } catch {}
 
-if (configFehler(V)) aus("Brain: Die Einstellungsdatei brain.config.json ist beschädigt — es gelten Standardwerte. Sag „repariere meine Brain-Einstellungen“.");
+if (configFehler(V)) aus("Kortex: Die Einstellungsdatei brain.config.json ist beschädigt — es gelten Standardwerte. Sag „repariere meine Kortex-Einstellungen“.");
 
 // Gesundheits-Wächter (tageslauf/gesundheit.mjs): GENAU EINE Zeile, nur bei Warnungen (grün = nichts); nach einer Kompaktierung nicht noch einmal.
 if (QUELLE !== "compact") { try { aus((await import("../../tageslauf/gesundheit.mjs")).gesundheitsZeile(V)); } catch {} }
@@ -107,7 +107,7 @@ const { inbox: inboxName, wiki: wikiName } = ordner(V, cfg);
 // Inbox-Dateien, die auf /ingest warten (Zählweise in vault-dateien.mjs, damit der Gesundheits-Wächter dieselbe Zahl sieht).
 let INBOX = 0;
 try { INBOX = (await import("../../vault-dateien.mjs")).zaehleInboxDateien(join(V, inboxName)); } catch {}
-if (INBOX !== 0) aus(`Brain-Inbox: ${INBOX} Datei(en) warten auf /ingest.`);
+if (INBOX !== 0) aus(`Kortex-Inbox: ${INBOX} Datei(en) warten auf /ingest.`);
 
 // v0.4: Wochen-Zeile aus dem Cache der letzten Berechnung (session-hintergrund rechnet den Pflegebericht losgelöst
 // nach .logs/pflege-bericht.json — hier 0 Wartezeit, W1-Review #6). Schalter wochenbericht, einmal je 7 Tage.
@@ -125,7 +125,7 @@ if (automatik.wochenbericht !== false) {
 // in der Woche mit Wochen-Zeile entfällt sie (die nennt die Konflikte schon).
 let KONFLIKTE = 0;
 try { KONFLIKTE = (await import("../../entscheidungen.mjs")).offeneKonfliktSeiten(V); } catch {}
-if (KONFLIKTE !== 0 && !WOCHE) aus(`Brain-Wiki: offene Konflikte auf ${KONFLIKTE} Seite(n) — Entscheidung nötig (/brain-lint).`);
+if (KONFLIKTE !== 0 && !WOCHE) aus(`Kortex-Wiki: offene Konflikte auf ${KONFLIKTE} Seite(n) — Entscheidung nötig (/brain-lint).`);
 
 // Eine Sammelzeile für Pflege (direkt berechnet, nicht aus dem Lint-Cache): Review fällig, offene Rückmeldungen
 const M = join(V, ".logs", "letzter-review");
@@ -138,7 +138,7 @@ if (existsSync(fbDatei)) {
   FB = readFileSync(fbDatei, "utf8").split("\n").filter(z => z.slice(0, 19) > MISO).length;
 }
 if (FB !== 0) P = P ? `${P}, ${FB} offene Rückmeldung(en)` : `${FB} offene Rückmeldung(en)`;
-if (P) aus(`Brain-Pflege: ${P} — /brain-review`);
+if (P) aus(`Kortex-Pflege: ${P} — /brain-review`);
 
 // ---------- v0.3: Vorschläge, Ich-Karte, Projektseite ----------
 // v0.4: Lektions-Vorschläge haben eine eigene Zeile und zählen hier nicht mit.
@@ -155,7 +155,7 @@ try {
   const alle = listeVorschlaege(V);
   LEKTIONEN_WARTEN = alle.filter(x => x.art === "lektion").length;
   const n = alle.length - LEKTIONEN_WARTEN;
-  if (n > 0 && !TAGESLAUF_ERSETZT) aus(`${n === 1 ? "1 neuer Vorschlag" : `${n} neue Vorschläge`} — im Gehirn prüfen („zeig mir mein Brain“)`);
+  if (n > 0 && !TAGESLAUF_ERSETZT) aus(`${n === 1 ? "1 neuer Vorschlag" : `${n} neue Vorschläge`} — in der Ansicht prüfen („zeig mir meinen Vault“)`);
 } catch {}
 
 // ---------- v0.4: Wochen-Zeile, Entscheidungen, Lektionen ----------
@@ -166,12 +166,12 @@ function zaehleMd(dir, ohne = () => false) {
 }
 const ENTSCHEIDUNGEN = zaehleMd(join(V, inboxName, "_entscheidungen"));
 if (ENTSCHEIDUNGEN > 0) aus(`${ENTSCHEIDUNGEN === 1 ? "1 Entscheidung wartet" : `${ENTSCHEIDUNGEN} Entscheidungen warten`} auf Umsetzung — /ingest`);
-if (LEKTIONEN_WARTEN > 0 && !TAGESLAUF_ERSETZT) aus(`${LEKTIONEN_WARTEN === 1 ? "1 Lektion wartet" : `${LEKTIONEN_WARTEN} Lektionen warten`} auf Übernahme — im Gehirn unter Vorschläge`);
+if (LEKTIONEN_WARTEN > 0 && !TAGESLAUF_ERSETZT) aus(`${LEKTIONEN_WARTEN === 1 ? "1 Lektion wartet" : `${LEKTIONEN_WARTEN} Lektionen warten`} auf Übernahme — in der Ansicht unter Vorschläge`);
 // (Keine eigene Zeile für übernommene Lektionen — nicht in der Spec, 0-Token-Regel; sie stehen im Pflegebericht.)
 // B2: allgemeine Lektionen (ohne „Gilt für“) — höchstens 600 Zeichen, neueste zuerst. Schalter tageslauf „aus“: wie bisher, nichts Neues.
 try {
   const allg = automatik.tageslauf === "aus" ? [] : (await import("../../regeln.mjs")).allgemeineLektionen(V);
-  if (allg.length) aus(`Brain-Regeln (allgemein):\n${allg.join("\n")}`);
+  if (allg.length) aus(`Kortex-Regeln (allgemein):\n${allg.join("\n")}`);
 } catch {}
 
 const ICH_MAX = 1500;
@@ -184,7 +184,7 @@ function ichKarte(vault, wikiOrdner) {
   return t.length > ICH_MAX ? t.slice(0, ICH_MAX).trimEnd() + " …" : t;
 }
 if (automatik.ichKarte) {
-  try { const k = ichKarte(V, wikiName); if (k) aus(`Brain-Ich-Karte (${wikiName}/ich.md):\n${k}`); } catch {}
+  try { const k = ichKarte(V, wikiName); if (k) aus(`Kortex-Ich-Karte (${wikiName}/ich.md):\n${k}`); } catch {}
 }
 
 // Hook-JSON (cwd) von stdin — mit kurzer Frist, denn ohne Claude Code (Tests, Hand-Aufruf) kann stdin offen bleiben.

@@ -489,7 +489,7 @@ test("Brain-Kandidat: nur bei „Übernehmen“ als Notiz in 00_inbox/, nie im G
   assert.equal(e.brainKandidaten.length, 1, "nur der Kandidat mit wörtlichem Zitat");
   assert.ok(e.verworfen.some((v) => v.regel === "beleg"));
   const rf = rfTraum(a.v)[0];
-  assert.match(rf.beschreibung, /Brain-Kandidaten[\s\S]*Müller GmbH/);
+  assert.match(rf.beschreibung, /Vault-Kandidaten[\s\S]*Müller GmbH/);
   assert.deepEqual(readdirSync(join(a.v, "00_inbox")).filter((n) => n.endsWith(".md")), [], "vor der Freigabe liegt nichts in der Inbox");
   assert.ok(!readdirSync(a.dir).some((n) => /muller|müller/i.test(readFileSync(join(a.dir, n), "utf8"))), "nie im Gedächtnis");
   beantworte(a, rf.id, "uebernehmen");

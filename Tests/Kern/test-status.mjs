@@ -59,7 +59,7 @@ test("brainStatus: quellVault bleibt für die App im JSON, ist aber immer false 
 
 test("statusText: Symbol und Zahlen", () => {
   const t = statusText({ version: "0.6.0", quellVault: false, zustand: "hinweis", meldungen: ["X"], zahlen: { vorschlaege: 2, konflikte: 1, abgelaufen: 0, zuTun: 3 } });
-  assert.match(t, /^⚠ Brain 0\.6\.0\n/);
+  assert.match(t, /^⚠ Kortex 0\.6\.0\n/);
   assert.match(t, /Vorschläge: 2 · Konflikte: 1 · abgelaufen: 0 · zu tun: 3/);
 });
 

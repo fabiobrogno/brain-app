@@ -60,7 +60,7 @@ const ART_TEXT = { inbox: "Inbox eingearbeitet", konsolidieren: "Seite konsolidi
 const ART_KURZ = { inbox: "Inbox", konsolidieren: "Konsolidieren", "neue-seite": "Neue Seite", entscheidung: "Entscheidung" };
 const GRUND_TEXT = {
   "diff-rot": "die Prüfung der Änderung hat angeschlagen", "pruefung-rot": "Commit-Prüfung (Lint/pre-commit) rot",
-  "vault-veraendert": "im Brain hat sich währenddessen etwas geändert — Pflege für heute beendet",
+  "vault-veraendert": "im Vault hat sich währenddessen etwas geändert — Pflege für heute beendet",
   "gegenprobe-nein": "Gegenprobe: eine Aussage wäre verloren gegangen", "ki-nichts": "die KI fand nichts einzuarbeiten",
   "ki-fehler": "KI nicht erreichbar oder Antwort unbrauchbar", "ziel-ungueltig": "die KI wollte die Quelle an einen unzulässigen Ort legen",
   "quelle-veraendert": "die KI hat die Quelle verändert", secrets: "enthält vermutlich Zugangsdaten — bitte selbst einarbeiten (/ingest)",

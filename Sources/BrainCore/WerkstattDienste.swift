@@ -88,13 +88,13 @@ public struct WerkstattDienste: EinrichtungsDienste {
             switch j["zustand"] as? String {
             case "gesichert": return .gesichert
             case "bereit": return .bereit
-            case "blockiert": return .blockiert((j["text"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Dein Brain kann gerade nicht gesichert werden.")
+            case "blockiert": return .blockiert((j["text"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Dein Vault kann gerade nicht gesichert werden.")
             default: return .blockiert("Die Antwort des Hintergrunddienstes war unvollständig.")
             }
         } catch {
             // Nicht lesbar heißt NICHT „keine Sicherung“: sonst würde ein Repository angelegt, das sich danach nicht verbinden lässt.
             let grund = (error as? EinrichtungsFehler)?.meldung ?? error.localizedDescription
-            return .blockiert("Kortex konnte den Stand deines Brains nicht prüfen: \(grund) Es wurde nichts bei GitHub angelegt.")
+            return .blockiert("Kortex konnte den Stand deines Vaults nicht prüfen: \(grund) Es wurde nichts bei GitHub angelegt.")
         }
     }
 

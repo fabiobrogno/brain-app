@@ -53,7 +53,7 @@ test("regelnFuer: spezifischste zuerst, Zugangsdaten nie, gezeigte nicht noch ei
   const v = vaultMitLektionen();
   const datei = "/h/source/brain-app/Sources/App.swift";
   const r = regelnFuer(v, datei, { home: "/h" });
-  assert.match(r.text, /^Brain-Regeln für diese Datei \(wörtlich aus 09_wiki\/_lektionen\.md\):\n- \*\*Brain-App\*\*.*\n- \*\*Swift bauen\*\*/);
+  assert.match(r.text, /^Kortex-Regeln für diese Datei \(wörtlich aus 09_wiki\/_lektionen\.md\):\n- \*\*Brain-App\*\*.*\n- \*\*Swift bauen\*\*/);
   assert.doesNotMatch(r.text, /abcdefgh12345678|Ohne Muster|Kit-Tests/);
   assert.equal(r.ids.length, 2);
   assert.ok(r.text.length <= REGEL_BUDGET);
@@ -73,7 +73,7 @@ test("regeln-lesen: nur JSON additionalContext, je Sitzung einmal, andere Sitzun
   const a = lesen(v, "s1", datei);
   assert.equal(a.status, 0);
   assert.equal(JSON.parse(a.stdout).hookSpecificOutput.hookEventName, "PreToolUse");
-  assert.match(kontext(a), /^Brain-Regeln für diese Datei/);
+  assert.match(kontext(a), /^Kortex-Regeln für diese Datei/);
   assert.match(kontext(a), /Brain-App[\s\S]*Swift bauen/);
   assert.doesNotMatch(a.stdout, /abcdefgh12345678/);
   assert.equal(lesen(v, "s1", datei).stdout, "", "Dedupe je Sitzung");

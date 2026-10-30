@@ -105,7 +105,7 @@ test("ernte: Nutzer/Werkzeug → gespeichert mit Beleg; web bleibt mit Adresse; 
   assert.match(logZeile(v), / vorschlaege=2 verworfen=0 ohneBeleg=2 nurKi=1 ungedeckt=0$/);
 });
 
-test("ernte: eingespielter und eigener Text (system-reminder, Brain-Hinweis, Skill, Agent, Sitzung im Vault) → nurKi, nie gespeichert", async () => {
+test("ernte: eingespielter und eigener Text (system-reminder, Kortex-Hinweis, Skill, Agent, Sitzung im Vault) → nurKi, nie gespeichert", async () => {
   const v = tempVault();
   fakeAusgabe([
     "### Erdbeeren", "Stroh unter Erdbeeren.", "Zitat: Die Erdbeeren brauchen Stroh als Unterlage.", "",

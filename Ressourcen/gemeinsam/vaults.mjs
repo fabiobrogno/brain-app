@@ -66,7 +66,7 @@ const istUnter = (p, basis) => teile(p).length > teile(basis).length && hatPraef
 const istUnterOderGleich = (p, basis) => hatPraefix(p, basis);
 
 // Ordnername als Vault-Name (höchstens 80 Zeichen); beim Klonen ohne die Endung „.git“.
-const standardName = (p, ohneGit = false) => [...((ohneGit ? basename(p).replace(/\.git$/i, "") : basename(p)) || "Brain")].slice(0, 80).join("");
+const standardName = (p, ohneGit = false) => [...((ohneGit ? basename(p).replace(/\.git$/i, "") : basename(p)) || "Kortex")].slice(0, 80).join("");
 
 // Name: fehlt er (undefined/null) → undefined (Aufrufer nimmt den Ordnernamen); sonst getrimmt, 1–80 Zeichen, keine Steuerzeichen.
 function pruefeName(name) {
@@ -128,7 +128,7 @@ function pruefeRegeln(p, home, support) {
   const system = "Dieser Ordner gehört dem System und kann kein Vault sein. Wähle einen Ordner in deinem Benutzerordner, zum Beispiel unter „Dokumente“.";
   const segs = teile(p);
   if (!segs.length || (segs.length === 1 && (segs[0] === "users" || segs[0] === "volumes"))) verbot(system);
-  if (istGleich(p, home)) verbot("Dein Benutzerordner selbst ist als Vault zu groß. Lege dafür einen eigenen Ordner an, zum Beispiel „Brain“.");
+  if (istGleich(p, home)) verbot("Dein Benutzerordner selbst ist als Vault zu groß. Lege dafür einen eigenen Ordner an, zum Beispiel „Kortex“.");
   // auch die Vorfahren der Systemordner (/private, /private/var, /var): ein Vault dort würde das System enthalten
   for (const s of SYSTEM_PRAEFIXE) if (istUnterOderGleich(p, s) || istUnterOderGleich(s, p)) verbot(system);
   const lib = join(home, "Library");
@@ -188,12 +188,12 @@ export function pruefeVaultPfad(pfad, optionenUndListe) {
 // <home>/Brain; gibt es das schon, <home>/Brain 2, Brain 3 …
 export function standardOrdner(opt = {}) {
   const o = optionen(opt);
-  const basis = join(o.home, "Brain");
+  const basis = join(o.home, "Kortex");
   for (let n = 1; n < 1000; n++) {
     const p = n === 1 ? basis : `${basis} ${n}`;
     if (!gibtEs(p)) return p;
   }
-  throw new HttpFehler(409, "Es gibt schon zu viele Ordner namens „Brain“. Bitte wähle selbst einen Ordner.");
+  throw new HttpFehler(409, "Es gibt schon zu viele Ordner namens „Kortex“. Bitte wähle selbst einen Ordner.");
 }
 
 // ---------- Vertrauen vergessen ----------
@@ -618,7 +618,7 @@ export async function neuesVault(eingabe, opt = {}) {
       vergissVertrauen(o, [pfad, lex], "Es wurde nichts angelegt."); // der Ort ist neu oder leer: altes Vertrauen für ihn erbt der neue Vault nie
       if (art === "vorlage") {
         const dateien = await legeVorlageAn(pfad, { name: vaultName, heute: o.heute || berlinHeute() });
-        await starteRepo(pfad, dateien, "Brain angelegt", frist);
+        await starteRepo(pfad, dateien, "Kortex-Vault angelegt", frist);
       } else {
         writeFileSync(join(pfad, ".gitignore"), GITIGNORE, { flag: "wx" });
         await starteRepo(pfad, [".gitignore"], "Vault angelegt", frist);

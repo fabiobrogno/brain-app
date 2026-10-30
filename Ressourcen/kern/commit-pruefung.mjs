@@ -40,7 +40,7 @@ try {
     for (const t of findeSecrets(blob.toString("utf8"))) blockiert.push(`SECRETS: ${f} Zeile ${t.zeile} — Credential-Muster; Wert entfernen, nur den Speicherort nennen. Falls das kein echtes Secret ist: umformulieren, z. B. ‚Token liegt im Passwort-Manager‘ statt den Wert auszuschreiben.`);
   }
 } catch (e) {
-  console.log("Brain-Commit blockiert: Die Sicherheitsprüfung auf Passwörter und Schlüssel konnte nicht laufen — bitte erneut versuchen oder deiner KI Bescheid sagen.");
+  console.log("Vault-Commit blockiert: Die Sicherheitsprüfung auf Passwörter und Schlüssel konnte nicht laufen — bitte erneut versuchen oder deiner KI Bescheid sagen.");
   process.exit(2);
 }
 const tmp = mkdtempSync(join(tmpdir(), "brain-commit-"));
@@ -132,7 +132,7 @@ try {
 
   hinweise.forEach(h => console.log("Hinweis: " + h));
   if (blockiert.length) {
-    console.log("Brain-Commit blockiert (pre-commit, gestagter Stand):");
+    console.log("Vault-Commit blockiert (pre-commit, gestagter Stand):");
     blockiert.forEach(b => console.log("- " + b));
     const wikiPrefix = new RegExp(`^${wiki.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`);
     const betroffen = gestagt.filter(f => blockiert.some(b => b.includes(f.replace(wikiPrefix, "")) || (f.endsWith("_log.md") && b.startsWith("LOG"))));
@@ -146,6 +146,6 @@ try {
   const secrets = blockiert.filter(b => b.startsWith("SECRETS:"));
   blockiert.length = 0; blockiert.push(...secrets);
   console.log(`Hinweis: Commit-Prüfung übersprungen (${e.code || e.message.split("\n")[0]})`);
-  if (secrets.length) { console.log("Brain-Commit blockiert (pre-commit, gestagter Stand):"); secrets.forEach(b => console.log("- " + b)); }
+  if (secrets.length) { console.log("Vault-Commit blockiert (pre-commit, gestagter Stand):"); secrets.forEach(b => console.log("- " + b)); }
 } finally { rmSync(tmp, { recursive: true, force: true }); }
 process.exit(blockiert.length ? 2 : 0);

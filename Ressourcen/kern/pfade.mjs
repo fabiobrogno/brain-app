@@ -80,7 +80,7 @@ export function pruefeVault(pfad) {
   let istOrdner = false;
   try { istOrdner = statSync(echt).isDirectory(); } catch { /* fehlt */ }
   if (!istOrdner) throw new KeinVaultFehler(`Vault nicht gefunden: ${p} ist kein Ordner.`);
-  if (!existsSync(join(echt, "brain.config.json"))) throw new KeinVaultFehler(`Das ist kein Brain-Vault: in ${p} fehlt brain.config.json.`);
+  if (!existsSync(join(echt, "brain.config.json"))) throw new KeinVaultFehler(`Das ist kein Kortex-Vault: in ${p} fehlt brain.config.json.`);
   zieleImVault(echt);
   registriereVault(p, echt); // ab jetzt bleiben alle Schreibzugriffe unter diesem Vault im Vault (vault-schutz.mjs)
   return p;
@@ -236,6 +236,8 @@ function nimm(argv) {
 }
 export function nimmVaultArg(argv) { return nimm(argv).wert; }
 const ARG = nimm(process.argv);
+// Der mit --vault ausdrücklich angegebene Pfad (ungeprüft) – nur für den Befund der Umstellung (umstellung/cli.mjs), der auch einen Vault beschreibt, den pruefeVault ablehnt.
+export const angegebenerVaultPfad = () => ARG.wert;
 
 // Reihenfolge: --vault > (Altform, wo ein Werkzeug sie kennt) erstes Positionsargument von `argv` > BRAIN_VAULT > aktiver Vault der App.
 // Wurde ein Vault ANGEGEBEN (Flag, Argument, BRAIN_VAULT), gilt genau dieser: ist er kein gültiger Vault, gibt es einen Fehler und nie einen Ausweichen

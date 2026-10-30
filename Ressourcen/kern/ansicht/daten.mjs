@@ -107,7 +107,7 @@ function ersterAbsatz(body) {
 export function baueAnsichtsDaten(vault, { jetzt = Date.now() } = {}) {
   // Tippfehler im Pfad darf nie still einen Ordnerbaum anlegen — klare Meldung statt leerem Gehirn
   let istOrdner = false; try { istOrdner = statSync(vault).isDirectory(); } catch {}
-  if (!istOrdner) throw new Error(`Brain-Ordner nicht gefunden: ${vault} — bitte den Pfad prüfen.`);
+  if (!istOrdner) throw new Error(`Vault nicht gefunden: ${vault} — bitte den Pfad prüfen.`);
   const warnungen = [];
   const cf = configFehler(vault);
   if (cf) warnungen.push(`brain.config.json ist kaputt (${cf}) — ich nutze die Standard-Einstellungen, Bereiche können fehlen.`);

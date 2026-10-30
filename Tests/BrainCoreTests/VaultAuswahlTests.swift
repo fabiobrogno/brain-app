@@ -44,7 +44,7 @@ private func brain(_ name: String = "brain", in home: URL, mitTools: Bool = fals
     let v = brain(in: home)
     try FileManager.default.moveItem(at: v, to: home.appendingPathComponent("anderswo"))
     #expect(VaultAuswahl.pruefe(v) == .fehlt)
-    #expect(VaultAuswahl.meldung(.fehlt) == "Brain-Ordner nicht gefunden")
+    #expect(VaultAuswahl.meldung(.fehlt) == "Vault-Ordner nicht gefunden")
 }
 
 @Test func vorschlagNimmtZuerstTildeBrain() {

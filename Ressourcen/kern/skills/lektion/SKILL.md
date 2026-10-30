@@ -3,7 +3,7 @@ name: lektion
 description: Übernommene Lektionen (aus wiederholten Korrekturen/Fehlschlägen) an den richtigen Ort schreiben — Memory, Lektionsliste oder Skill-Entwurf
 ---
 
-Übernommene Lektionen liegen als Auftrag im Inbox-Unterordner `_lektionen/` (übernommen im Gehirn unter Vorschläge).
+Übernommene Lektionen liegen als Auftrag im Inbox-Unterordner `_lektionen/` (übernommen in der Ansicht unter Vorschläge).
 Dieser Ablauf schreibt sie an den richtigen Ort und archiviert sie danach. Nie etwas installieren, nie Secrets schreiben.
 
 1. Liste holen (lokal, 0 Tokens): `{{NODE}} "{{KERN}}/lektionen.mjs" --vault "{{VAULT}}" liste` → je Lektion `id`, `titel`, `ziel`

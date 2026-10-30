@@ -145,7 +145,7 @@ test("7 Cluster ohne Farbe → kein doppeltes Paar (farbe, region); ungültige f
 
 test("fehlender Vault → verständlicher Fehler, kein Ordner angelegt", () => {
   const v = join(tempVault(), "brian");
-  assert.throws(() => erzeugeAnsichtsDaten(v), /Brain-Ordner nicht gefunden/);
+  assert.throws(() => erzeugeAnsichtsDaten(v), /Vault nicht gefunden/);
   assert.equal(existsSync(v), false);
 });
 

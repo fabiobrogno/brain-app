@@ -1,4 +1,4 @@
-// gemeinsam/vorlage.mjs — die „Brain-Vorlage“: das Gerüst, das Studio für ein neues Brain anlegt (Spec v2 §2).
+// gemeinsam/vorlage.mjs — die „Kortex-Vorlage“: das Gerüst, das Studio für einen neuen Vault anlegt (Spec v2 §2).
 // Nur Dateien — Git (init, Identität, erster Commit) macht vaults.mjs. Alles deutsch, keine privaten Inhalte.
 // Die Prüfregeln von Studio stehen in pruefung.mjs; Schema und Beispielseiten sind darauf abgestimmt
 // (beide Beispielseiten ergeben dort die Stufe „gruen“). Keine Abhängigkeiten außer basis/pruefung.
@@ -18,7 +18,7 @@ export const GITIGNORE = [
   "# Programmpakete, falls ein Werkzeug welche anlegt",
   "node_modules/",
   "",
-  "# Temporäre Dateien des Brains",
+  "# Temporäre Dateien des Vaults",
   ".brain-tmp-*",
   "",
 ].join("\n");
@@ -42,7 +42,7 @@ function datum(heute) {
 }
 
 // Der Name landet als Überschrift in Markdown: eckige Klammern würden einen Link daraus machen.
-const titelVon = (name) => String(name === undefined || name === null ? "" : name).replace(/[[\]\r\n]/g, "").trim() || "Brain";
+const titelVon = (name) => String(name === undefined || name === null ? "" : name).replace(/[[\]\r\n]/g, "").trim() || "Vault";
 
 // ---- Texte -----------------------------------------------------------------------------------------------
 // Wörtliche Zitate der Belege stehen hier und im Schema — ein Test prüft, dass sie dort wirklich vorkommen.
@@ -56,7 +56,7 @@ function agents(name) {
   return md(
     `# ${name} — Arbeitsregeln für KI`,
     "",
-    "Dieser Ordner ist ein Brain: Notizen und Wissen als einfache Textdateien (Markdown).",
+    "Dieser Ordner ist ein Kortex-Vault: Notizen und Wissen als einfache Textdateien (Markdown).",
     ZITAT_KI,
     "",
     "## Wissensfragen",
@@ -65,7 +65,7 @@ function agents(name) {
     "2. Achte auf die Prüf-Signale einer Seite:",
     "   - Fakt-Zeilen mit Beleg-Link gelten als belegt.",
     "   - `> [!KONFLIKT]`, PRÜFBEDÜRFTIG oder ein abgelaufenes `pruefen_bis` heißen: Vorsicht. Sag der Person, dass die Aussage unsicher ist.",
-    "3. Lies nie das ganze Brain ein. Öffne nur, was zur Frage passt.",
+    "3. Lies nie den ganzen Vault ein. Öffne nur, was zur Frage passt.",
     "",
     "## Schreiben",
     "",
@@ -84,12 +84,12 @@ function agents(name) {
     "- `brain_lesen` — eine Seite mit ihren Prüf-Signalen lesen",
     "- `brain_merken` — eine Notiz in die Inbox legen",
     "- `brain_verlauf` — Git-Verlauf einer Datei",
-    "- `brain_gesundheit` — Zustand des Brains prüfen",
+    "- `brain_gesundheit` — Zustand des Vaults prüfen",
     "- `brain_vaults` — alle Vaults der App und den aktiven zeigen",
     "",
     "## Git",
     "",
-    "Dieses Brain ist ein Git-Repository. Committe Änderungen mit einer kurzen, verständlichen Nachricht. Benutze nie `--force`.",
+    "Dieser Vault ist ein Git-Repository. Committe Änderungen mit einer kurzen, verständlichen Nachricht. Benutze nie `--force`.",
   );
 }
 
@@ -108,7 +108,7 @@ const SCHEMA = md(
   "## Ordner",
   "",
   "- Jede Seite liegt in `09_wiki/<bereich>/…`, zum Beispiel in `wissen`, `projekte` oder `persoenlich`. Eigene Bereiche sind erlaubt. Wähle den Ort, an dem du die Seite zuerst suchen würdest.",
-  "- Dateinamen behalten ihr Präfix und sind im ganzen Brain eindeutig. Auf Seiten verweist du mit `[[dateiname-ohne-md]]`.",
+  "- Dateinamen behalten ihr Präfix und sind im ganzen Vault eindeutig. Auf Seiten verweist du mit `[[dateiname-ohne-md]]`.",
   "- Dateien, die mit `_` beginnen (`_schema.md`, `_log.md`, `_index.md`), verwalten das Wiki und sind keine Wissensseiten.",
   "",
   "## Kopfzeilen jeder Seite (Frontmatter)",
@@ -180,8 +180,8 @@ function protokoll(name, d) {
     "    - Seiten neu oder geändert: <Liste>",
     "    - Konflikte: <keine / neu markiert / entschieden>",
     "",
-    `## ${d.iso}: Brain angelegt`,
-    "- Seiten neu: `wissen/thema_so-funktioniert-dein-brain.md`, `wissen/thema_wissen-belegen.md` (Beispiele — behalte sie als Vorlage oder lösche sie).",
+    `## ${d.iso}: Kortex-Vault angelegt`,
+    "- Seiten neu: `wissen/thema_so-funktioniert-dein-vault.md`, `wissen/thema_wissen-belegen.md` (Beispiele — behalte sie als Vorlage oder lösche sie).",
     "- Konflikte: keine.",
   );
 }
@@ -190,11 +190,11 @@ function protokoll(name, d) {
 // so können Link und Datei nie auseinanderlaufen.
 const SEITEN = [
   {
-    datei: "thema_so-funktioniert-dein-brain",
-    beschreibung: "Wie dein Brain aufgebaut ist — Inbox für Neues, Wiki für Belegtes, eine Regeldatei für jede KI.",
-    titel: "So funktioniert dein Brain",
+    datei: "thema_so-funktioniert-dein-vault",
+    beschreibung: "Wie dein Vault aufgebaut ist — Inbox für Neues, Wiki für Belegtes, eine Regeldatei für jede KI.",
+    titel: "So funktioniert dein Vault",
     einleitung: [
-      "Dein Brain ist ein Ordner mit Textdateien. Neue Gedanken landen zuerst in der Inbox, belegtes Wissen steht im Wiki, und jede KI arbeitet nach denselben Regeln. Wie du Aussagen absicherst, zeigt [[thema_wissen-belegen]].",
+      "Dein Vault ist ein Ordner mit Textdateien. Neue Gedanken landen zuerst in der Inbox, belegtes Wissen steht im Wiki, und jede KI arbeitet nach denselben Regeln. Wie du Aussagen absicherst, zeigt [[thema_wissen-belegen]].",
     ],
     quellen: ["AGENTS.md"],
     fakten: [
@@ -214,7 +214,7 @@ const SEITEN = [
     beschreibung: "Warum hinter jeder Tatsache im Wiki ein Beleg steht und wie Widersprüche behandelt werden.",
     titel: "Wissen belegen",
     einleitung: [
-      "Ein Brain ist nur so gut wie seine Belege. Darum steht hinter jeder Tatsache im Wiki ein Link auf eine Beleg-Datei. Wie das Brain im Ganzen aufgebaut ist, steht in [[thema_so-funktioniert-dein-brain]].",
+      "Ein Vault ist nur so gut wie seine Belege. Darum steht hinter jeder Tatsache im Wiki ein Link auf eine Beleg-Datei. Wie der Vault im Ganzen aufgebaut ist, steht in [[thema_so-funktioniert-dein-vault]].",
     ],
     quellen: ["09_wiki/_schema.md"],
     fakten: [

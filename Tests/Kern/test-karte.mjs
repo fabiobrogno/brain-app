@@ -14,7 +14,7 @@ const lies = (p) => readFileSync(p, "utf8").replace(/\r\n/g, "\n");
 test("Karte-Vorlage: unter 200 Zeilen, mit „Wahrheit vor Zustimmung“ und Verweis auf Ordner-Indexe", () => {
   const karte = lies(join(T, "kit", "AGENTS.md"));
   assert.ok(karte.split("\n").length < 200, "Karte hat 200 Zeilen oder mehr");
-  assert.match(karte, /Wahrheit vor Zustimmung.*Widerspricht eine Anfrage den Fakten im Brain, sag es klar/);
+  assert.match(karte, /Wahrheit vor Zustimmung.*Widerspricht eine Anfrage den Fakten im Vault, sag es klar/);
   assert.match(karte, /_<ordnername>\.md/);
 });
 

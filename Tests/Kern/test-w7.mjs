@@ -1,4 +1,4 @@
-// .tools/tests/test-w7.mjs — Fehler-Signal W7 (B1, §4.4): Brain-Hinweis → Antwort → Korrektur → .logs/w7.jsonl, genau einmal.
+// .tools/tests/test-w7.mjs — Fehler-Signal W7 (B1, §4.4): Kortex-Hinweis → Antwort → Korrektur → .logs/w7.jsonl, genau einmal.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
@@ -7,7 +7,7 @@ import { spawn } from "node:child_process";
 import { nutzer, assistent, hinweis, schreibeVerlauf, tempVault, tempOrdner, TEMP_HOME, KIT } from "./verlauf-fixture.mjs";
 import { istKorrektur, hinweisSeiten, erkenneW7, schreibeW7, leseW7, w7Lauf } from "../w7.mjs";
 
-const KOPF = "Brain-Treffer (lokal, ungelesen — nur öffnen, wenn für die Aufgabe relevant):";
+const KOPF = "Kortex-Treffer (lokal, ungelesen — nur öffnen, wenn für die Aufgabe relevant):";
 const V = "/vault/garten brän";
 const H = (seiten, vault = V) => hinweis(`${KOPF}\n${seiten.map((s) => `- ${vault}/${s} — Beschreibung`).join("\n")}`);
 const z = (n) => `2026-10-21T08:0${n}:00.000Z`;

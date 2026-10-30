@@ -1,13 +1,13 @@
-# Brain
+# Kortex
 
 **Ein Editor für dein Wissen, der weiß, was davon stimmt, und deine KI arbeitet direkt mit.**
 
-Brain ist eine Mac-App für einen Ordner mit Markdown-Notizen. Zu jeder Seite zeigt sie, ob sie belegt, abgelaufen,
-strittig oder noch ungeprüft ist. Der Ordner bleibt die einzige Wahrheit: Brain liest und schreibt nur normale Dateien
+Kortex ist eine Mac-App für einen Ordner mit Markdown-Notizen, den Vault. Zu jeder Seite zeigt sie, ob sie belegt, abgelaufen,
+strittig oder noch ungeprüft ist. Der Vault bleibt die einzige Wahrheit: Kortex liest und schreibt nur normale Dateien
 und erhält deinen Text Byte für Byte.
 
-> **Frühe Version.** Brain ist jung und wird noch viel angefasst. Ecken und Fehler sind wahrscheinlich.
-> Dein Ordner liegt in Git, sodass du Änderungen jederzeit zurückholen kannst. Eine Sicherung ersetzt das trotzdem nicht.
+> **Frühe Version.** Kortex ist jung und wird noch viel angefasst. Ecken und Fehler sind wahrscheinlich.
+> Dein Vault liegt in Git, sodass du Änderungen jederzeit zurückholen kannst. Eine Sicherung ersetzt das trotzdem nicht.
 
 ## Funktionen
 
@@ -28,29 +28,29 @@ und erhält deinen Text Byte für Byte.
 
 ## Installation
 
-1. Die neueste `Brain-<Version>.dmg` (nur Apple Silicon, arm64) unter **Releases** laden.
-2. Öffnen und **Brain** auf **Programme** ziehen.
-3. Starten und ein neues Brain anlegen oder einen vorhandenen Ordner verbinden.
+1. Die neueste `Kortex-<Version>.dmg` (nur Apple Silicon, arm64) unter **Releases** laden.
+2. Öffnen und **Kortex** auf **Programme** ziehen.
+3. Starten und einen neuen Vault anlegen oder einen vorhandenen Ordner öffnen.
 
 Die App ist von Apple geprüft (notarisiert) und aktualisiert sich selbst, sobald die Update-Funktion eingebaut ist.
 
 ## Mit Claude Code verbinden
 
-Brain bringt einen lokalen MCP-Server mit (Standard-Ein-/Ausgabe, kein Netzwerk-Port). Die App kann ihn für Claude Code
+Kortex bringt einen lokalen MCP-Server mit (Standard-Ein-/Ausgabe, kein Netzwerk-Port). Die App kann ihn für Claude Code
 einrichten. Von Hand geht es mit:
 
 ```bash
-claude mcp add -s user brain -- <node> <brain-mcp.mjs> <dein-brain-ordner>
+claude mcp add -s user brain -- <node> <brain-mcp.mjs> <dein-vault-ordner>
 ```
 
-Den genauen Befehl mit den richtigen Pfaden zeigt Brain an. Werkzeuge: `brain_suchen`, `brain_lesen`, `brain_merken`,
+Den genauen Befehl mit den richtigen Pfaden zeigt Kortex an. Werkzeuge: `brain_suchen`, `brain_lesen`, `brain_merken`,
 `brain_gesundheit`, `brain_verlauf`.
 
 ## Datenschutz
 
 - Keine Telemetrie, keine Analyse, kein Absturz-Upload. Berichte bleiben auf deinem Mac.
 - Kein offener Netzwerk-Port. Die Oberfläche spricht über eine interne Brücke mit der App.
-- Brain arbeitet nur in deinem Brain-Ordner und in `~/Library/Application Support/Kortex`.
+- Kortex arbeitet nur in deinem Vault und in `~/Library/Application Support/Kortex`.
 - Wenn du ein Git-Remote einträgst, geht dein Wissen dorthin und nirgendwo sonst hin.
 
 ## Entwicklung
@@ -59,7 +59,7 @@ Den genauen Befehl mit den richtigen Pfaden zeigt Brain an. Werkzeuge: `brain_su
 swift build                      # Swift-Teil bauen
 swift test                       # Swift-Tests
 bash scripts/teste-node.sh       # Node-Tests (Brücke, MCP, Dateizugriff, Git)
-bash scripts/baue-app.sh         # baut build/Brain.app (arm64)
+bash scripts/baue-app.sh         # baut build/Kortex.app (arm64)
 bash scripts/selbstfoto.sh <vault-kopie> <ordner>   # Studio fotografiert sich selbst (hell/dunkel) und meldet js-fehler
 ```
 
@@ -75,14 +75,14 @@ MIT, siehe [LICENSE](LICENSE). Copyright 2026 Fabio Brogno.
 
 ## English (short)
 
-**Brain** is a free, open-source Mac app: an editor for a folder of Markdown notes that knows which pages are
+**Kortex** is a free, open-source Mac app: an editor for a folder of Markdown notes (the vault) that knows which pages are
 backed by sources, which have expired, and which are disputed. Git is built in (review, commit, history, restore,
 sync with your own remote). A local MCP server (stdio, no network port) lets Claude Code, Codex or Cursor search and
 read your notes with provenance; agents can only drop notes into the inbox.
 
-- No server, no cost, no telemetry. Everything stays in your folder.
+- No server, no cost, no telemetry. Everything stays in your vault folder.
 - Requires Apple Silicon and macOS 26 or later.
 - **Early version:** expect rough edges. Keep backups.
-- Install: download the notarized DMG from Releases, drag Brain to Applications.
+- Install: download the notarized DMG from Releases, drag Kortex to Applications.
 - Develop: `swift test`, `bash scripts/teste-node.sh`, `bash scripts/baue-app.sh`; UI tests (Playwright) in `Tests/Oberflaeche`.
 - License: MIT.

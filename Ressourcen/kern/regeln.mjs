@@ -73,7 +73,7 @@ export function regelnFuer(vault, datei, { gezeigt = new Set(), max = REGEL_BUDG
   if (!passend.length) return leer;
   passend.sort((a, b) => b.best - a.best);
   const quelle = `${wiki}/_lektionen.md`;
-  const kopf = `Brain-Regeln für diese Datei (wörtlich aus ${quelle}):`;
+  const kopf = `Kortex-Regeln für diese Datei (wörtlich aus ${quelle}):`;
   const hinweis = (n) => `(${n} weitere passende ${n === 1 ? "Regel" : "Regeln"} in ${quelle})`;
   const rest = max - kopf.length - hinweis(99).length - 2;
   const gewaehlt = [];

@@ -19,7 +19,7 @@ public enum KernBereitschaft: Equatable, Sendable {
     public static func pruefe(_ status: Laufzeit.KernStatus, kern: URL) -> KernBereitschaft {
         switch status {
         case .nichtEnthalten:
-            return .nichtBereit(meldung: "Der Kern (die Brain-Logik) fehlt im App-Paket — bitte Kortex neu installieren.")
+            return .nichtBereit(meldung: "Der Kern von Kortex fehlt im App-Paket — bitte Kortex neu installieren.")
         case .fehler(let f):
             return .nichtBereit(meldung: "\(f.beschreibung) Bitte Kortex neu starten oder neu installieren.")
         case .bereit:

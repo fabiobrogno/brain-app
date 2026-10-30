@@ -352,44 +352,44 @@ test("Pfadregeln: opt.home und opt.support gelten bei jedem Aufruf frisch", () =
   finally { process.env.HOME = altHome; }
 });
 
-test("standardOrdner: <home>/Brain, bei Kollision Brain 2, Brain 3", () => {
+test("standardOrdner: <home>/Kortex, bei Kollision Kortex 2, Kortex 3", () => {
   const home = tmp("brain-home3-");
-  assert.equal(standardOrdner({ home }), join(home, "Brain"));
-  mkdirSync(join(home, "Brain"));
-  assert.equal(standardOrdner({ home }), join(home, "Brain 2"));
-  schreibe(home, "Brain 2", "ich bin eine Datei");
-  assert.equal(standardOrdner({ home }), join(home, "Brain 3"));
-  assert.match(standardOrdner(), /\/Brain( \d+)?$/);
+  assert.equal(standardOrdner({ home }), join(home, "Kortex"));
+  mkdirSync(join(home, "Kortex"));
+  assert.equal(standardOrdner({ home }), join(home, "Kortex 2"));
+  schreibe(home, "Kortex 2", "ich bin eine Datei");
+  assert.equal(standardOrdner({ home }), join(home, "Kortex 3"));
+  assert.match(standardOrdner(), /\/Kortex( \d+)?$/);
   assert.equal(standardOrdner().startsWith(HOME + "/"), true, "Standard-Home ist $HOME");
 });
 
 // ---------------------------------------------------------------- Neu anlegen
 
-test("neuesVault vorlage: Gerüst, ein Commit „Brain angelegt“, sauber, Identität trotz leerem HOME, Beispielseiten grün", async () => {
-  const ziel = join(tmp("brain-neu-"), "Mein Brain");
-  const r = await neuesVault({ art: "vorlage", name: "Mein Brain", ordner: ziel }, OPT);
+test("neuesVault vorlage: Gerüst, ein Commit „Kortex-Vault angelegt“, sauber, Identität trotz leerem HOME, Beispielseiten grün", async () => {
+  const ziel = join(tmp("brain-neu-"), "Mein Vault");
+  const r = await neuesVault({ art: "vorlage", name: "Mein Vault", ordner: ziel }, OPT);
   assert.deepEqual(Object.keys(r).sort(), ["git", "liste", "vault"]);
   assert.equal(r.git, true);
-  assert.deepEqual(r.vault, { name: "Mein Brain", pfad: ziel, farbe: PALETTE[0], git: true });
-  assert.deepEqual(r.liste, { vaults: [{ name: "Mein Brain", pfad: ziel, farbe: PALETTE[0] }], aktiv: ziel });
+  assert.deepEqual(r.vault, { name: "Mein Vault", pfad: ziel, farbe: PALETTE[0], git: true });
+  assert.deepEqual(r.liste, { vaults: [{ name: "Mein Vault", pfad: ziel, farbe: PALETTE[0] }], aktiv: ziel });
   assert.deepEqual(leseVaults(), r.liste);
   assert.equal(aktiverVaultPfad(), ziel);
 
   // Dateiliste vollständig
-  const erwartet = ["00_inbox/.gitkeep", "09_wiki/_log.md", "09_wiki/_schema.md", "09_wiki/wissen/thema_so-funktioniert-dein-brain.md",
+  const erwartet = ["00_inbox/.gitkeep", "09_wiki/_log.md", "09_wiki/_schema.md", "09_wiki/wissen/thema_so-funktioniert-dein-vault.md",
     "09_wiki/wissen/thema_wissen-belegen.md", "AGENTS.md", "CLAUDE.md", ".gitignore", "brain.config.json"];
   const liste = verfolgt(ziel);
   for (const p of erwartet) assert.ok(liste.includes(p), p);
   const belege = liste.filter((p) => p.startsWith("09_wiki/wissen/belege/2026-10/"));
   assert.equal(belege.length, 4);
   assert.equal(liste.length, erwartet.length + belege.length, "nichts Unerwartetes");
-  for (const x of vorlageDateien({ name: "Mein Brain", heute: HEUTE })) {
+  for (const x of vorlageDateien({ name: "Mein Vault", heute: HEUTE })) {
     assert.ok(liste.includes(x.pfad), x.pfad);
     assert.equal(readFileSync(join(ziel, x.pfad), "utf8"), x.inhalt, x.pfad);
   }
 
   // Git: ein Commit, sauber, Zweig main, Identität nur lokal (HOME ist leer)
-  assert.equal(g(ziel, "log", "--format=%s").trim(), "Brain angelegt");
+  assert.equal(g(ziel, "log", "--format=%s").trim(), "Kortex-Vault angelegt");
   assert.equal(g(ziel, "rev-list", "--count", "HEAD").trim(), "1");
   assert.equal(g(ziel, "status", "--porcelain").trim(), "");
   assert.equal(g(ziel, "symbolic-ref", "--short", "HEAD").trim(), "main");
@@ -405,13 +405,13 @@ test("neuesVault vorlage: Gerüst, ein Commit „Brain angelegt“, sauber, Iden
   assert.equal(readFileSync(join(ziel, "00_inbox", ".gitkeep"), "utf8"), "");
   assert.equal(readFileSync(join(ziel, ".gitignore"), "utf8"), GITIGNORE);
   for (const eintrag of [".DS_Store", ".logs/", "node_modules/", ".brain-tmp-*"]) assert.ok(GITIGNORE.split("\n").includes(eintrag), eintrag);
-  assert.match(readFileSync(join(ziel, "09_wiki", "_log.md"), "utf8"), /^## 2026-10-24: Brain angelegt$/m);
+  assert.match(readFileSync(join(ziel, "09_wiki", "_log.md"), "utf8"), /^## 2026-10-24: Kortex-Vault angelegt$/m);
 });
 
 test("neuesVault vorlage: beide Beispielseiten ergeben „gruen“, Beleg-Links lösen auf, Zitate stehen wörtlich in der Herkunftsdatei", async () => {
   const ziel = join(tmp("brain-neu2-"), "B");
   await neuesVault({ art: "vorlage", ordner: ziel }, OPT);
-  for (const n of ["thema_so-funktioniert-dein-brain", "thema_wissen-belegen"]) {
+  for (const n of ["thema_so-funktioniert-dein-vault", "thema_wissen-belegen"]) {
     const rel = `09_wiki/wissen/${n}.md`;
     const text = readFileSync(join(ziel, rel), "utf8");
     assert.equal(pruefeText(rel, text, { heute: HEUTE }).stufe, "gruen", n);
@@ -433,18 +433,18 @@ test("neuesVault vorlage: beide Beispielseiten ergeben „gruen“, Beleg-Links 
       assert.ok(readFileSync(join(ziel, kopf("herkunft")), "utf8").includes(kopf("zitat")), `${l}: Zitat steht nicht wörtlich in ${kopf("herkunft")}`);
       assert.equal(pruefeText(`09_wiki/${l}.md`, beleg, { heute: HEUTE }).stufe, "ohne");
     }
-    const andere = n === "thema_wissen-belegen" ? "thema_so-funktioniert-dein-brain" : "thema_wissen-belegen";
+    const andere = n === "thema_wissen-belegen" ? "thema_so-funktioniert-dein-vault" : "thema_wissen-belegen";
     assert.ok(links.includes(andere), `Querverweis auf ${andere}`);
     assert.ok(existsSync(join(ziel, "09_wiki", "wissen", andere + ".md")));
   }
 });
 
 test("Vorlage: Inhalte passen zu den Vorgaben, ohne private Bezüge, Name wird bereinigt", () => {
-  const dateien = vorlageDateien({ name: "Mein [[Brain]]", heute: HEUTE });
+  const dateien = vorlageDateien({ name: "Mein [[Vault]]", heute: HEUTE });
   const von = (p) => dateien.find((x) => x.pfad === p).inhalt;
   for (const x of dateien) assert.doesNotMatch(x.inhalt, /Fabio|Brogno|jarvis/i, x.pfad);
   const agents = von("AGENTS.md");
-  assert.match(agents, /^# Mein Brain — /);
+  assert.match(agents, /^# Mein Vault — /);
   for (const w of ["brain_suchen", "brain_lesen", "brain_merken", "brain_verlauf", "brain_gesundheit", "brain_vaults", "00_inbox/", "09_wiki/_schema.md", "--force", "INDEX.md", "_index.md", "graph.json", "pruefen_bis", "> [!KONFLIKT]", "PRÜFBEDÜRFTIG", "Claude Code", "Codex", "Gemini", "Cursor"]) assert.ok(agents.includes(w), `AGENTS.md: ${w}`);
   const schema = von("09_wiki/_schema.md");
   for (const w of ["thema_<slug>.md", "entitaet_<slug>.md", "synthese_<slug>.md", "quelle_<slug>.md", "name:", "description:", "typ:", "stand:", "quellen:", "09_wiki/<bereich>/",
@@ -453,9 +453,9 @@ test("Vorlage: Inhalte passen zu den Vorgaben, ohne private Bezüge, Name wird b
   assert.equal(pruefeText("09_wiki/_schema.md", schema, { heute: HEUTE }).stufe, "grau");
   assert.equal(pruefeText("09_wiki/_log.md", von("09_wiki/_log.md"), { heute: HEUTE }).stufe, "grau");
   assert.equal(von("CLAUDE.md"), "@AGENTS.md\n");
-  assert.equal(vorlageDateien({ heute: HEUTE }).find((x) => x.pfad === "AGENTS.md").inhalt.startsWith("# Brain — "), true, "ohne Namen: „Brain“");
+  assert.equal(vorlageDateien({ heute: HEUTE }).find((x) => x.pfad === "AGENTS.md").inhalt.startsWith("# Vault — "), true, "ohne Namen: „Vault“");
   assert.equal(wirft(() => vorlageDateien({ name: "x", heute: "gestern" })).status, 500);
-  assert.match(vorlageDateien({ name: "x" }).find((x) => x.pfad === "09_wiki/_log.md").inhalt, /^## \d{4}-\d\d-\d\d: Brain angelegt$/m, "ohne heute: Berliner Datum");
+  assert.match(vorlageDateien({ name: "x" }).find((x) => x.pfad === "09_wiki/_log.md").inhalt, /^## \d{4}-\d\d-\d\d: Kortex-Vault angelegt$/m, "ohne heute: Berliner Datum");
 });
 
 test("neuesVault vorlage: auch wenn eine globale Ignore-Datei CLAUDE.md und AGENTS.md ausschließt, sind sie im ersten Commit", async () => {
@@ -504,14 +504,14 @@ test("neuesVault: Eingaben werden geprüft, bevor etwas angelegt wird", async ()
   assert.deepEqual(leseVaults(), LEER);
 });
 
-test("neuesVault ohne Ordner: <home>/Brain, danach Brain 2; Name wird getrimmt", async () => {
+test("neuesVault ohne Ordner: <home>/Kortex, danach Kortex 2; Name wird getrimmt", async () => {
   const home = tmp("brain-home4-");
   const a = await neuesVault({ art: "leer" }, { ...OPT, home });
-  assert.equal(a.vault.pfad, join(home, "Brain")); assert.equal(a.vault.name, "Brain");
+  assert.equal(a.vault.pfad, join(home, "Kortex")); assert.equal(a.vault.name, "Kortex");
   const b = await neuesVault({ art: "leer", name: "  Zweites  " }, { ...OPT, home });
-  assert.equal(b.vault.pfad, join(home, "Brain 2")); assert.equal(b.vault.name, "Zweites");
+  assert.equal(b.vault.pfad, join(home, "Kortex 2")); assert.equal(b.vault.name, "Zweites");
   assert.equal(b.vault.farbe, PALETTE[1]);
-  assert.equal(leseVaults().aktiv, join(home, "Brain 2"));
+  assert.equal(leseVaults().aktiv, join(home, "Kortex 2"));
   assert.equal(leseVaults().vaults.length, 2);
 });
 
@@ -703,12 +703,12 @@ test("klone: lokales Bare-Repo (Testmodus) → Vault aktiv, git:true, Name aus d
   assert.equal(r3.liste.aktiv, r3.vault.pfad);
 });
 
-test("klone: ohne Ordner nach <home>/Brain, in einen vorhandenen leeren Ordner (auch mit .DS_Store) geht", async () => {
+test("klone: ohne Ordner nach <home>/Kortex, in einen vorhandenen leeren Ordner (auch mit .DS_Store) geht", async () => {
   const bare = bareMitInhalt();
   const home = tmp("brain-home6-");
   const r = await klone({ url: bare }, { ...OPT, home });
-  assert.equal(r.vault.pfad, join(home, "Brain"));
-  assert.ok(existsSync(join(home, "Brain", "wissen.md")));
+  assert.equal(r.vault.pfad, join(home, "Kortex"));
+  assert.ok(existsSync(join(home, "Kortex", "wissen.md")));
   const leer = tmp("brain-kl-leer-");
   writeFileSync(join(leer, ".DS_Store"), "x");
   const r2 = await klone({ url: bare, ordner: leer }, OPT);
@@ -820,18 +820,18 @@ test("klone: eine alte Freigabe für den Zielpfad wird vergessen (echter und ges
   assert.deepEqual(readdirSync(SUPPORT()).filter((n) => n.includes(".tmp")), [], "keine Reste");
 });
 
-test("klone und neuesVault ohne Ordner: die alte Freigabe für <home>/Brain wird vergessen (der Fall des früher vertrauten ~/Brain)", async () => {
+test("klone und neuesVault ohne Ordner: die alte Freigabe für <home>/Kortex wird vergessen (der Fall des früher vertrauten ~/Kortex)", async () => {
   const bare = bareMitInhalt();
   const home = tmp("brain-vg2-");
-  const brain = join(home, "Brain"), anderes = tmp();
+  const brain = join(home, "Kortex"), anderes = tmp();
   schreibeJson(VERTRAUEN_JSON(), { [brain]: { seit: "x" }, [anderes]: { seit: "y" } });
   const r = await klone({ url: bare }, { ...OPT, home });
   assert.equal(r.vault.pfad, brain);
   assert.deepEqual(restOhne(brain, "geklont"), { [anderes]: { seit: "y" } });
-  schreibeJson(VERTRAUEN_JSON(), { [join(home, "Brain 2")]: { seit: "x" }, [anderes]: { seit: "y" } });
+  schreibeJson(VERTRAUEN_JSON(), { [join(home, "Kortex 2")]: { seit: "x" }, [anderes]: { seit: "y" } });
   const n = await neuesVault({ art: "leer" }, { ...OPT, home });
-  assert.equal(n.vault.pfad, join(home, "Brain 2"));
-  assert.deepEqual(restOhne(join(home, "Brain 2"), "angelegt"), { [anderes]: { seit: "y" } });
+  assert.equal(n.vault.pfad, join(home, "Kortex 2"));
+  assert.deepEqual(restOhne(join(home, "Kortex 2"), "angelegt"), { [anderes]: { seit: "y" } });
 });
 
 test("neuesVault (vorlage und leer): die alte Freigabe für den Zielordner wird vergessen, andere bleiben", async () => {

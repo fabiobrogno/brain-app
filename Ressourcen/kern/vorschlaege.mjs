@@ -270,7 +270,7 @@ export function entscheide(vault, id, aktion) {
   catch (e) { if (e.code === 400) throw e; }
   mkdirSync(zielDir, { recursive: true });
   const zielDirEcht = echt(zielDir);
-  if (!liegtIn(zielDirEcht, vaultEcht)) throw fehlerMit(400, "Zielordner liegt außerhalb des Brains.");
+  if (!liegtIn(zielDirEcht, vaultEcht)) throw fehlerMit(400, "Zielordner liegt außerhalb des Vaults.");
   if (liegtImWiki(vault, zielDirEcht)) throw fehlerMit(400, "Zielordner liegt im Wiki.");
   // _lektionen/_pflege muss ein echter Ordner genau unter der Inbox sein (kein Symlink, etwa ins Wiki).
   if (aktion === "uebernehmen" && auftragsOrdner

@@ -16,7 +16,7 @@ echo "$OUT" | grep -q 'CONFIG: brain.config.json ist kein gültiges JSON' || { e
 [ $RC -eq 2 ] || { echo "FAIL: struktur-Modus blockiert nicht (rc=$RC)"; exit 1; }
 
 OUT=$(BRAIN_VAULT="$V" BRAIN_SESSION_NUR_STATUS=1 node "$D/../adapters/claude-code/session-start.mjs"); RC=$?
-echo "$OUT" | grep -q 'Brain: Die Einstellungsdatei brain.config.json ist beschädigt' || { echo "FAIL: session-start meldet kaputte Config nicht: $OUT"; exit 1; }
+echo "$OUT" | grep -q 'Kortex: Die Einstellungsdatei brain.config.json ist beschädigt' || { echo "FAIL: session-start meldet kaputte Config nicht: $OUT"; exit 1; }
 [ $RC -eq 0 ] || { echo "FAIL: session-start bricht ab (rc=$RC)"; exit 1; }
 
 ERR=$(mktemp)

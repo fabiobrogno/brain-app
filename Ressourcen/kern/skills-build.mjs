@@ -24,7 +24,7 @@ function schreibeGeneriert(datei, inhalt) {
     if (!alt.includes(MARKER)) {
       const bak = `${datei}.bak-${stempel()}`;
       copyFileSync(datei, bak);
-      console.log(`Eigene Datei gesichert: ${bak} (ersetzt durch die Brain-Fassung)`);
+      console.log(`Eigene Datei gesichert: ${bak} (ersetzt durch die Kortex-Fassung)`);
     }
   }
   writeFileSync(datei, inhalt);

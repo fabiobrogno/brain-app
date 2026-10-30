@@ -7,7 +7,7 @@ public enum StudioFenster {
     public static let minimum = CGSize(width: 1100, height: 700)
     public static let standard = CGSize(width: 1440, height: 900)
     /// Titel, bis die Oberfläche den Namen des aktiven Vaults meldet (Aktion `titel`).
-    public static let standardTitel = "Brain Studio"
+    public static let standardTitel = "Kortex Studio"
     /// Name der automatisch gemerkten Fensterposition (AppKit speichert sie unter „NSWindow Frame <Name>“).
     public static let rahmenName = "StudioFenster"
 

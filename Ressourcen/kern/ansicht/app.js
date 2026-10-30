@@ -8,16 +8,16 @@
 
   // ================================================================== Texte (Rückfall, solange texte.js fehlt)
   const STANDARD = {
-    ansicht3d: "3D-Ansicht des Brains", suchen: "Suchen", filter: "Filter",
+    ansicht3d: "3D-Ansicht des Vaults", suchen: "Suchen", filter: "Filter",
     pflege: "Pflege", pflegeTitel: "Pflege (P)", zuruecksetzen: "Ansicht zurücksetzen", zuruecksetzenTitel: "Ansicht zurücksetzen (R)",
     hellDunkel: "Hell oder dunkel", hellDunkelTitel: "Hell / Dunkel (T)", schliessen: "Schließen",
     bereiche: "Bereiche", seitentyp: "Seitentyp", status: "Status",
     wachstumAbspielen: "Wachstum abspielen", zeitleiste: "Zeitleiste", keineSeiten: "Noch keine Seiten",
     hinweisZiehen: "Ziehen", hinweisDrehen: "drehen", hinweisScrollen: "Scrollen", hinweisZoomen: "zoomen",
     hinweisShiftKlick: "Shift-Klick", hinweisWeg: "Weg zwischen zwei Seiten",
-    keineDaten: "Noch keine Daten — sag ‚zeig mir mein Brain‘", datenFehler: "Die Daten konnten nicht geladen werden — sag ‚zeig mir mein Brain‘",
-    startFehler: "3D-Ansicht konnte nicht starten: {grund}.", fehltThree: "three.js oder das Gehirn-Modell fehlt", fehltSkripte: "markdown.js oder suche.js fehlt",
-    neuOeffnen: "Die Ansicht ist nicht mehr verbunden — sag ‚zeig mir mein Brain‘, um sie neu zu öffnen.",
+    keineDaten: "Noch keine Daten — sag ‚zeig mir meinen Vault‘", datenFehler: "Die Daten konnten nicht geladen werden — sag ‚zeig mir meinen Vault‘",
+    startFehler: "3D-Ansicht konnte nicht starten: {grund}.", fehltThree: "three.js oder das 3D-Modell fehlt", fehltSkripte: "markdown.js oder suche.js fehlt",
+    neuOeffnen: "Die Ansicht ist nicht mehr verbunden — sag ‚zeig mir meinen Vault‘, um sie neu zu öffnen.",
     typThema: "Thema", typEntitaet: "Steckbrief", typQuelle: "Quelle", typSynthese: "Synthese", typUeberblick: "Überblick", typNotiz: "Notiz", typMcp: "MCP-Server",
     bereichZentrum: "Überblick", bereichArchiv: "Archiv", bereichInbox: "Inbox", bereichWerkzeuge: "Werkzeuge",
     leer: "leer", keine: "keine", frisch: "frisch", offenerKonflikt: "Offener Konflikt", pruefbeduerftig: "Prüfbedürftig",
@@ -26,14 +26,14 @@
     mcpServer: "MCP-Server", fussWeg: "Klick: Weg zu einer zweiten Seite", fussZurueck: "zurück",
     weg: "Weg", schritte: "{n} Schritte", keineVerbindung: "keine Verbindung",
     wegText: "Kürzeste Verbindung über Links und Quellen.", wegKeiner: "Zwischen diesen Seiten gibt es im sichtbaren Bereich keine Verbindung.",
-    weitereTreffer: "{n} weitere leuchten im Brain", keinTreffer: "Kein Treffer",
+    weitereTreffer: "{n} weitere leuchten im Vault", keinTreffer: "Kein Treffer",
     statusKonflikt: "Konflikt", statusPruef: "Prüfbedürftig", statusOk: "In Ordnung",
     konfliktOffen: "Konflikt offen", pruefKlein: "prüfbedürftig", keineBefunde: "Keine offenen Befunde",
     frischText: "{n} Seiten in den letzten 2 Tagen eingearbeitet — sie pulsieren.",
     vonSeiten: "{n} von {gesamt} Seiten", statistik: "{seiten} Seiten · {verbindungen} Verbindungen",
     mcpWerkzeuge: "Werkzeuge", mcpBenutzt: "Benutzt", mcpZuletzt: "Zuletzt", mcpMal: "{n}×", mcpNie: "nie",
     mcpKeineWerkzeuge: "Noch kein Werkzeug benutzt", mcpSeiten: "Verknüpfte Seiten",
-    mcpKeineSeite: "Noch keine Brain-Seite zu diesem Werkzeug", mcpGenutzt: "genutzt",
+    mcpKeineSeite: "Noch keine Vault-Seite zu diesem Werkzeug", mcpGenutzt: "genutzt",
   };
 
   // ================================================================== reine Hilfen (ohne DOM; test-ansicht-app.mjs)
