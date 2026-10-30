@@ -122,8 +122,20 @@ test("Remote-Dialog: bei einer GitHub-Adresse steht deren Logo im Kopf, sonst di
   await expect(kopf.locator(".marken-logo")).toHaveCount(0);
 });
 
+// Nach dem Start lädt die App noch Git-Stand, Gesundheit, KI und Vault-Liste nach; jede Antwort zeichnet die Statusleiste NEU (replaceChildren,
+// in der Regel vier- bis fünfmal in den ersten ~500 ms). Ein Element, das der Test eben fokussiert hat, hängt dann plötzlich nicht mehr im
+// Dokument (getComputedStyle liefert "" statt "none"). Darum erst messen, wenn die App ruhig ist: Start abgeschlossen, keine Anfrage mehr
+// unterwegs (Playwright: networkidle), und die Antworten sind verarbeitet (zwei Frames). Geprüft wird danach genau dasselbe wie vorher.
+async function warteBisRuhig(page) {
+  await page.waitForFunction(() => window.__studioBereit === true);
+  await page.waitForLoadState("networkidle");
+  await page.evaluate(() => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok))));
+}
+
 test("Fokus: Tastaturfokus auf Seitenleiste, Werkzeug und Statusleiste zeigt denselben Ring (kein Standard-Umriss)", async ({ page }) => {
   await start(page);
+  await warteBisRuhig(page);
+  await expect(page.locator('[data-st="theme"]')).toBeVisible(); // die Statusleiste ist vollständig gezeichnet
   for (const sel of ['.eintrag[data-bereich]', "#knopf-neu", '[data-st="theme"]']) {
     const el = page.locator(sel).first();
     await el.focus();
