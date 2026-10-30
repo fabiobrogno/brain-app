@@ -751,11 +751,11 @@ public final class EinrichtungsAblauf {
     }
 
     /// Holt die Konfiguration zum Kopieren (JSON für andere KI-Programme). Gibt den Text zurück; bei einem Fehler steht er in `anzeige.konfiguration`.
-    public func holeKonfiguration() async -> String? {
+    public func holeKonfiguration(fuer ziel: KiZiel? = nil) async -> String? {
         anzeige.konfiguration = .holt
         melde()
         do {
-            let text = try await dienste.konfiguration()
+            let text = try await dienste.konfiguration(fuer: ziel)
             anzeige.konfiguration = .offen
             melde()
             return text

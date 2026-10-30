@@ -385,9 +385,11 @@ private struct KiAnsicht: View {
                modell.anzeige.kis.contains(where: { $0.ziel == .claude && $0.status != .nichtGefunden }) {
                 ProfilAuswahl(modell: modell, profile: stand.profile)
             }
+            // Erkannte Programme zuerst; alles, was Kortex auf diesem Mac nicht gefunden hat, steht eingeklappt unter „Weitere“.
             VStack(spacing: 10) {
-                ForEach(modell.anzeige.kis, id: \.ziel) { z in KiReihe(modell: modell, zeile: z) }
+                ForEach(modell.anzeige.kis.filter { $0.status != .nichtGefunden }, id: \.ziel) { z in KiReihe(modell: modell, zeile: z) }
             }
+            WeitereKis(modell: modell, zeilen: modell.anzeige.kis.filter { $0.status == .nichtGefunden })
             if !modell.anzeige.kis.contains(where: { $0.status != .nichtGefunden }) && !modell.anzeige.kiSuchtGerade {
                 Text("Kortex hat hier kein unterstütztes KI-Programm gefunden. Installiere eines und suche dann neu — oder überspringe diesen Schritt, du kannst ihn später im Menü wiederholen.")
                     .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
@@ -397,6 +399,29 @@ private struct KiAnsicht: View {
             if let stand = modell.anzeige.verdrahtung.stand, stand.starterVorhanden {
                 VerdrahtungsBlock(modell: modell, stand: stand)
             }
+        }
+    }
+}
+
+/// Programme, die Kortex auf diesem Mac nicht gefunden hat: eingeklappt. Wer eines später installiert, wählt „Neu suchen“ oder kopiert die
+/// Konfiguration für dieses Programm und fügt sie dort selbst ein.
+private struct WeitereKis: View {
+    @ObservedObject var modell: EinrichtungsModell
+    let zeilen: [KiZeile]
+    @State private var offen = false
+
+    var body: some View {
+        if !zeilen.isEmpty {
+            DisclosureGroup(isExpanded: $offen) {
+                VStack(spacing: 10) {
+                    ForEach(zeilen, id: \.ziel) { z in KiReihe(modell: modell, zeile: z) }
+                    Button("Neu suchen") { modell.tu { await $0.sucheKIsNeu() } }.controlSize(.small)
+                }
+                .padding(.top, 8)
+            } label: {
+                Text("Weitere Programme (\(zeilen.count))").font(.headline)
+            }
+            .accessibilityIdentifier("ki-weitere")
         }
     }
 }
@@ -573,7 +598,19 @@ private struct KiReihe: View {
                     .help("Nimmt den Eintrag von Kortex bei \(zeile.ziel.name) wieder heraus. Andere Einträge bleiben.")
                     .accessibilityLabel("\(zeile.ziel.name) trennen")
             }
-        case .nichtGefunden, .umstellenFragen:
+        case .nichtGefunden:
+            // Nicht gefunden: Kortex trägt nichts ein, aber wer das Programm später installiert, kann den Eintrag für seine Einstellungsdatei kopieren
+            if let ort = zeile.ziel.dateiOrt {
+                if modell.kopiertesZiel == zeile.ziel {
+                    Label("Kopiert", systemImage: "checkmark").foregroundStyle(.green).fixedSize()
+                } else {
+                    Button("Konfiguration kopieren") { modell.kopiereKonfiguration(fuer: zeile.ziel) }
+                        .controlSize(.small)
+                        .help("Kopiert den Eintrag für \(ort).")
+                        .accessibilityLabel("Konfiguration für \(zeile.ziel.name) kopieren")
+                }
+            }
+        case .umstellenFragen:
             EmptyView()
         }
     }

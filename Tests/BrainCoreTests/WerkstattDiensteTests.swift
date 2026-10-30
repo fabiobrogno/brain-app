@@ -215,7 +215,8 @@ private func dienste(_ w: FalscheWerkstatt, pfade: AppPfade? = nil, home: URL? =
 // MARK: Ziele
 
 @Test func nurVerbindbareKiZieleStehenInDerListe() {
-    #expect(KiZiel.verbindbar == [.claude, .codex, .cursor])
+    #expect(KiZiel.verbindbar == KiZiel.allCases, "jedes Ziel ist verbindbar, in fester Reihenfolge")
+    #expect(KiZiel.verbindbar.prefix(3) == [.claude, .codex, .cursor])
     #expect(KiZiel.claude.ziel == "claude" && KiZiel.claude.agentId == "claude")
     #expect(KiZiel.codex.ziel == "codex" && KiZiel.codex.agentId == "codex")
     #expect(KiZiel.cursor.ziel == "cursor" && KiZiel.cursor.agentId == "cursor")

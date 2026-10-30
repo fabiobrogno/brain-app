@@ -112,6 +112,10 @@ export const TW = {
     verbinden: "Mit Claude verbinden",
     verbindenText: "Danach kann Claude in deinen Notizen nachschlagen.",
     zielName: { claude: "Claude", codex: "Codex", cursor: "Cursor" },
+    // Programme mit Einstellungsdatei: stehen nur in der Auswahl, wenn sie auf diesem Computer gefunden wurden
+    weitereName: { "claude-desktop": "Claude Desktop", gemini: "Gemini CLI", copilot: "GitHub Copilot", zed: "Zed", opencode: "OpenCode", warp: "Warp" },
+    andersFuer: (n) => `In ${n} gibt es schon einen Eintrag „brain“, der woanders hinzeigt. Auf diesen Vault umstellen?`,
+    kaputtFuer: (n) => `${n} wurde nicht verändert. Füge diesen Eintrag in die MCP-Einstellungen von ${n} ein:`,
     zielWahl: "KI-App wählen",
     verbindenMit: (n) => `Mit ${n} verbinden`,
     verbindenTextFuer: (n) => `Danach kann ${n} in deinen Notizen nachschlagen.`,

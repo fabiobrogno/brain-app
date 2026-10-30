@@ -32,6 +32,8 @@ final class EinrichtungsModell: ObservableObject {
     @Published var repoSuche = ""
     /// Die Konfiguration liegt gerade in der Zwischenablage (kurze Rückmeldung am Knopf).
     @Published private(set) var konfigurationKopiert = false
+    /// Für welches Programm die Konfiguration gerade kopiert wurde (kurze Rückmeldung in dessen Zeile).
+    @Published private(set) var kopiertesZiel: KiZiel?
 
     private(set) var ablauf: EinrichtungsAblauf!
     private var aufgaben: [Task<Void, Never>] = []
@@ -171,14 +173,14 @@ final class EinrichtungsModell: ObservableObject {
 
     /// „Konfiguration kopieren“: der Eintrag für andere KI-Programme (JSON) in die Zwischenablage. Die Werkstatt liefert ihn mit den
     /// Pfaden dieser Installation; ein Fehler steht in `anzeige.konfiguration`.
-    func kopiereKonfiguration() {
+    func kopiereKonfiguration(fuer ziel: KiZiel? = nil) {
         let a = ablauf!
         aufgaben.append(Task {
-            guard let text = await a.holeKonfiguration() else { return }
+            guard let text = await a.holeKonfiguration(fuer: ziel) else { return }
             kopiere(text)
-            konfigurationKopiert = true
+            if let ziel { kopiertesZiel = ziel } else { konfigurationKopiert = true }
             try? await Task.sleep(for: .seconds(2.5))
-            konfigurationKopiert = false
+            if ziel != nil { kopiertesZiel = nil } else { konfigurationKopiert = false }
         })
     }
 }

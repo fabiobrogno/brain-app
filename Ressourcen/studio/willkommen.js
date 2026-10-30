@@ -123,7 +123,12 @@ const AGENT_TON = { claude: "ton-orange" };
 async function ladeKiDaten() {
   const [ki, info, nz] = await Promise.all([sicher(() => api.kiErkennen()), sicher(() => api.info()), sicher(() => api.notizen())]);
   const agenten = Array.isArray(ki?.agenten) ? ki.agenten.filter((a) => a && (a.pfad || a.version)) : [];
-  return { erkannt: !!ki, agenten, cursorDa: ki?.cursorDa === true, info, notizen: Array.isArray(nz?.notizen) ? nz.notizen : null };
+  // Programme mit Einstellungsdatei (Claude Desktop, Gemini CLI, GitHub Copilot, Zed, OpenCode, Warp): nur die erkannten stehen in der Auswahl
+  const gefundene = Array.isArray(ki?.programme) ? ki.programme.filter((p) => p && p.gefunden && Object.hasOwn(TW.ki.weitereName, p.id)) : [];
+  const weitere = gefundene.map((p) => p.id);
+  // in der Liste „Auf diesem Computer erkannt“ stehen sie auch, wenn es kein Agent mit Befehl ist (Claude Desktop, Zed, Warp …)
+  for (const p of gefundene) if (!agenten.some((a) => a.id === p.id)) agenten.push({ id: p.id, name: TW.ki.weitereName[p.id], version: typeof p.version === "string" ? p.version : null, pfad: null });
+  return { erkannt: !!ki, agenten, cursorDa: ki?.cursorDa === true, weitere, info, notizen: Array.isArray(nz?.notizen) ? nz.notizen : null };
 }
 
 // Ein Bereich mit Live-Region für Ergebnis/Fehler unter einer Aktion.
@@ -168,9 +173,9 @@ function baueKiInhalt({ kompakt = false, beiVerbunden } = {}) {
     }
     // Claude verbinden: nur wenn Claude gefunden wurde (oder die Erkennung selbst nicht antwortet).
     const claudeDa = d.erkannt ? d.agenten.some((a) => a.id === "claude") : true;
-    const verbindbar = claudeDa || d.cursorDa || d.agenten.some((a) => a.id === "codex" || a.id === "cursor-agent");
+    const verbindbar = claudeDa || d.cursorDa || d.weitere.length > 0 || d.agenten.some((a) => a.id === "codex" || a.id === "cursor-agent");
     const zeilen = [];
-    if (verbindbar) zeilen.push(baueVerbinden({ beiVerbunden, agenten: d.agenten, cursorDa: d.cursorDa }));
+    if (verbindbar) zeilen.push(baueVerbinden({ beiVerbunden, agenten: d.agenten, cursorDa: d.cursorDa, weitere: d.weitere }));
     if (HINWEISE_VERFUEGBAR && claudeDa && d.info?.kit?.vorhanden) zeilen.push(baueHinweise());
     if (claudeDa || hatAgenten) zeilen.push(baueProbe(d.notizen));
     if (zeilen.length) teile.push(h("div", { klasse: "w-gruppe", "data-gruppe": "aktionen" }, zeilen.map((x) => x.knoten)));
@@ -188,18 +193,20 @@ function zeigeOk(beschreibung, zone, text) {
 
 // beiVerbunden: wird erst nach geglücktem Verbinden mit Claude gerufen (200, auch { schonVerbunden: true }), nie beim bloßen Schließen.
 // Danach läuft bei jedem Ziel automatisch der Selbsttest. Er prüft nur unseren Server, nicht ob die fremde App ihn schon geladen hat.
-function baueVerbinden({ beiVerbunden, agenten = [], cursorDa = false } = {}) {
+function baueVerbinden({ beiVerbunden, agenten = [], cursorDa = false, weitere = [] } = {}) {
   const zone = meldeZone();
+  // Auswahl: Claude, Codex, Cursor immer; dazu die erkannten Programme mit Einstellungsdatei (ki-programme/ in der Werkstatt)
+  const zielName = { ...TW.ki.zielName, ...Object.fromEntries(weitere.map((id) => [id, TW.ki.weitereName[id]])) };
   const gefunden = (id) => agenten.some((a) => a.id === id);
   let ziel = "claude";
   if (!gefunden("claude")) ziel = gefunden("codex") ? "codex" : (gefunden("cursor-agent") || cursorDa) ? "cursor" : "claude";
-  const name = () => TW.ki.zielName[ziel];
+  const name = () => zielName[ziel];
   const knopf = h("button", { klasse: "knopf primaer", type: "button", "data-aktion": "claude-verbinden", text: ziel === "claude" ? TW.ki.verbinden : TW.ki.verbindenMit(name()) });
   const beschreibung = h("div", { klasse: "w-aktion-text", "aria-live": "polite", text: ziel === "claude" ? TW.ki.verbindenText : TW.ki.verbindenTextFuer(name()) });
   let gesperrt = false; // während des Selbsttests bleibt die Auswahl stehen, sonst stimmt der App-Name im Ergebnis nicht
   const wahl = h("div", { klasse: "w-ziele", role: "radiogroup", "aria-label": TW.ki.zielWahl, "data-bereich": "ziel-wahl" },
-    Object.keys(TW.ki.zielName).map((id) => {
-      const b = h("button", { klasse: "knopf" + (id === ziel ? " aktiv" : ""), type: "button", role: "radio", "aria-checked": String(id === ziel), "data-ziel": id }, kiLogo(id, 16, { dekorativ: true }), h("span", { text: TW.ki.zielName[id] }));
+    Object.keys(zielName).map((id) => {
+      const b = h("button", { klasse: "knopf" + (id === ziel ? " aktiv" : ""), type: "button", role: "radio", "aria-checked": String(id === ziel), "data-ziel": id }, kiLogo(id, 16, { dekorativ: true }), h("span", { text: zielName[id] }));
       b.addEventListener("click", () => {
         if (knopf.disabled || gesperrt) return;
         ziel = id;
@@ -239,7 +246,7 @@ function baueVerbinden({ beiVerbunden, agenten = [], cursorDa = false } = {}) {
     const ja = h("button", { klasse: "knopf primaer", type: "button", "data-aktion": "umstellen", text: TW.ki.umstellen });
     nein.addEventListener("click", () => { zone.leer(); knopf.focus(); });
     ja.addEventListener("click", () => verbinde(true));
-    const text = ziel === "codex" ? TW.ki.codexAnders : ziel === "cursor" ? TW.ki.cursorAnders : TW.ki.anders;
+    const text = ziel === "codex" ? TW.ki.codexAnders : ziel === "cursor" ? TW.ki.cursorAnders : ziel === "claude" ? TW.ki.anders : TW.ki.andersFuer(name());
     zone.knoten.replaceChildren(h("div", { klasse: "w-frage", "data-bereich": "umstellen", role: "group" },
       h("div", { klasse: "w-aktion-text", text }), h("div", { klasse: "w-frage-knoepfe" }, nein, ja)));
     setTimeout(() => nein.focus(), 0);
@@ -253,7 +260,7 @@ function baueVerbinden({ beiVerbunden, agenten = [], cursorDa = false } = {}) {
       knopf.disabled = false;
       const befehl = typeof e?.daten?.befehl === "string" ? e.daten.befehl : null;
       if (!umstellen && e?.status === 409 && e?.daten?.art === "anders") { frage(); return; }
-      if (befehl) zone.knoten.replaceChildren(...(e?.daten?.art === "kaputt" ? [h("div", { klasse: "w-fehlerbox fehlertext", role: "alert" }, symbol("warnung", 15), h("span", { text: e.message }))] : []), befehlBlock(befehl, ziel === "cursor" ? TW.ki.cursorKaputt : undefined));
+      if (befehl) zone.knoten.replaceChildren(...(e?.daten?.art === "kaputt" ? [h("div", { klasse: "w-fehlerbox fehlertext", role: "alert" }, symbol("warnung", 15), h("span", { text: e.message }))] : []), befehlBlock(befehl, ziel === "cursor" ? TW.ki.cursorKaputt : Object.hasOwn(TW.ki.weitereName, ziel) ? TW.ki.kaputtFuer(name()) : undefined));
       else zone.fehler(meldungVon(e));
       knopf.focus();
       return;

@@ -90,7 +90,7 @@ async function rahmen(page, o = {}) {
         { const f = z.klonenFehler?.shift(); if (f) return json(f.status, { fehler: f.fehler }); }
         z.vault = "/Users/test/Brain/vault";
         return json(200, { pfad: z.vault });
-      case "/api/ki/erkennen": return json(200, { agenten: z.agenten ?? AGENTEN, ...(z.cursorDa !== undefined ? { cursorDa: z.cursorDa } : {}) });
+      case "/api/ki/erkennen": return json(200, { agenten: z.agenten ?? AGENTEN, ...(z.cursorDa !== undefined ? { cursorDa: z.cursorDa } : {}), ...(z.programme ? { programme: z.programme } : {}) });
       case "/api/notizen": return json(200, { notizen: z.notizen ?? NOTIZEN });
       case "/api/mcp/verbinden":
         if (z.mcp === "befehl") return json(404, { fehler: "Claude Code wurde nicht gefunden. Kopiere den Befehl und führe ihn im Terminal aus.", befehl: BEFEHL });
@@ -572,6 +572,39 @@ test("Arbeit läuft: Klonen wird für vorSchliessen gemeldet und danach wieder f
   expect(await page.evaluate(async () => (await import("/hilfen.js")).laufendeArbeiten())).toEqual(["klonen"]);
   await deckend(schritt(page, "ki"));
   expect(await page.evaluate(async () => (await import("/hilfen.js")).laufendeArbeiten())).toEqual([]);
+});
+
+// Weitere Programme mit Einstellungsdatei: nur erkannte stehen in der Auswahl, ihr Ziel geht unverändert an die Werkstatt
+test("KI verbinden: erkannte weitere Programme erscheinen in der Auswahl (mit Logo) und schicken ihr Ziel; nicht erkannte fehlen", async ({ page }) => {
+  const z = await rahmen(page, { vault: "/Users/test/Brain/Privat", programme: [
+    { id: "claude-desktop", name: "Claude Desktop", gefunden: true, version: "1.4.2", quelle: "app" },
+    { id: "gemini", name: "Gemini CLI", gefunden: false, version: null, quelle: null },
+    { id: "zed", name: "Zed", gefunden: true, version: null, quelle: "app" },
+  ] });
+  const d = await oeffneKi(page);
+  const wahl = d.locator('[data-bereich="ziel-wahl"]');
+  await expect(wahl.locator("[data-ziel]")).toHaveText(["Claude", "Codex", "Cursor", "Claude Desktop", "Zed"]);
+  await expect(wahl.locator('[data-ziel="zed"] [data-ki-logo="zed"] svg path')).toHaveCount(1);
+  await expect(d.locator('[data-liste="agenten"] [data-agent="zed"] [data-ki-logo="zed"]')).toHaveCount(1);
+  await expect(d.locator('[data-liste="agenten"] [data-agent="gemini"]')).toHaveCount(0);
+  await expect(wahl.locator('[data-ziel="claude-desktop"] [data-ki-logo="claude-desktop"] svg path')).toHaveCount(1);
+  await wahl.locator('[data-ziel="zed"]').click();
+  const knopf = d.locator('[data-aktion="claude-verbinden"]');
+  await expect(knopf).toHaveText("Mit Zed verbinden");
+  await knopf.click();
+  await expect(d.locator('[data-zeile="verbinden"] .w-ok')).toContainText("Starte Zed neu");
+  expect(z.anfragen.filter((a) => a.pfad === "/api/mcp/verbinden").map((a) => a.body)).toEqual([{ ziel: "zed" }]);
+});
+
+test("KI verbinden: bei einem fremden Eintrag in Zed fragt der Dialog erst, dann mit „umstellen“", async ({ page }) => {
+  const z = await rahmen(page, { vault: "/Users/test/Brain/Privat", mcp: "anders", programme: [{ id: "zed", name: "Zed", gefunden: true, version: null, quelle: "app" }] });
+  const d = await oeffneKi(page);
+  await d.locator('[data-ziel="zed"]').click();
+  await d.locator('[data-aktion="claude-verbinden"]').click();
+  await expect(d.locator('[data-bereich="umstellen"]')).toContainText("In Zed gibt es schon einen Eintrag");
+  await d.locator('[data-aktion="umstellen"]').click();
+  await expect(d.locator('[data-zeile="verbinden"] .w-ok')).toContainText("Starte Zed neu");
+  expect(z.anfragen.filter((a) => a.pfad === "/api/mcp/verbinden").map((a) => a.body)).toEqual([{ ziel: "zed" }, { ziel: "zed", umstellen: true }]);
 });
 
 // FBL-70: Auswahl Claude / Codex / Cursor, danach Selbsttest
@@ -1111,9 +1144,10 @@ test("KI-Logos: eigenständiges Logo ist ein Bild mit aria-label, unbekannte KI 
     const m = await import("/ki-logos.js");
     const e = m.kiLogo("claude", 20);
     return { rolle: e.getAttribute("role"), label: e.getAttribute("aria-label"), titel: e.title, hatSvg: !!e.querySelector("svg"),
-      alias: m.kiLogo("cursor-agent", 16)?.dataset.kiLogo, gemini: m.kiLogo("gemini"), markup: m.kiLogoMarkup("codex") };
+      alias: m.kiLogo("cursor-agent", 16)?.dataset.kiLogo, unbekannt: m.kiLogo("windsurf"), markup: m.kiLogoMarkup("codex"),
+      gemini: m.kiLogo("gemini")?.getAttribute("aria-label"), desktop: m.kiLogoMarkup("claude-desktop") === m.kiLogoMarkup("claude") };
   });
-  expect(r).toEqual({ rolle: "img", label: "Claude", titel: "Claude", hatSvg: true, alias: "cursor", gemini: null, markup: null });
+  expect(r).toEqual({ rolle: "img", label: "Claude", titel: "Claude", hatSvg: true, alias: "cursor", unbekannt: null, markup: null, gemini: "Gemini CLI", desktop: true });
 });
 
 // Optional: Bilder für die visuelle Kontrolle (KI_LOGO_BILDER=/Ordner/ npx playwright test -g "KI-Logos Bilder")
@@ -1129,6 +1163,22 @@ test.describe("KI-Logos Bilder", () => {
       await page.waitForTimeout(400);
       mkdirSync(process.env.KI_LOGO_BILDER, { recursive: true });
       await page.screenshot({ path: `${process.env.KI_LOGO_BILDER}ki-verbinden-${schema}.png` });
+    });
+    test(`KI verbinden mit weiteren Programmen (${schema})`, async ({ page }) => {
+      await page.emulateMedia({ colorScheme: schema === "hell" ? "light" : "dark", reducedMotion: "no-preference" });
+      await rahmen(page, { vault: "/Users/test/Brain/Privat", programme: [
+        { id: "claude-desktop", name: "Claude Desktop", gefunden: true, version: "1.4.2", quelle: "app" },
+        { id: "gemini", name: "Gemini CLI", gefunden: true, version: "0.12.3", quelle: "cli" },
+        { id: "copilot", name: "GitHub Copilot", gefunden: true, version: null, quelle: "cli" },
+        { id: "zed", name: "Zed", gefunden: true, version: "0.230.1", quelle: "app" },
+        { id: "opencode", name: "OpenCode", gefunden: true, version: null, quelle: "cli" },
+        { id: "warp", name: "Warp", gefunden: true, version: null, quelle: "app" },
+      ] });
+      const d = await oeffneKi(page);
+      await expect(d.locator('[data-ziel="warp"] [data-ki-logo="warp"]')).toBeVisible();
+      await page.waitForTimeout(400);
+      mkdirSync(process.env.KI_LOGO_BILDER, { recursive: true });
+      await page.screenshot({ path: `${process.env.KI_LOGO_BILDER}ki-verbinden-weitere-${schema}.png` });
     });
   }
 });
