@@ -13,13 +13,22 @@ struct OrtsHinweis: Equatable {
 /// Aktionen des Ablaufs als Aufgaben, die beim Schließen des Fensters abgebrochen werden.
 @MainActor
 final class EinrichtungsModell: ObservableObject {
-    enum Weg: Equatable { case neu, beispiel, klonen }
+    /// Die Wege im Willkommensbild, in der Reihenfolge der Pfeiltasten.
+    enum Weg: CaseIterable, Equatable { case neu, oeffnen, klonen, beispiel }
+    /// Welches Bild gerade vor dem Vault gezeigt wird: die Wege oder die Adresse zum Klonen.
+    enum Bild: Equatable { case willkommen, klonen }
+    /// Die freiwilligen Karten auf dem Abschlussbild.
+    enum Karte: Hashable { case ki, sicherung, probe }
     /// Schritt „Sicherung“: neues privates Repository anlegen oder ein vorhandenes wählen.
     enum SicherungsWeg: Equatable { case neu, vorhanden }
 
     @Published private(set) var zustand = EinrichtungsZustand()
     @Published private(set) var anzeige = EinrichtungsAnzeige()
-    @Published var weg: Weg? = .neu
+    @Published var gewaehlt: Weg = .neu
+    @Published var bild: Bild = .willkommen
+    /// Welche Karte des Abschlussbilds gerade offen ist (nil = die Übersicht).
+    @Published var offeneKarte: Karte?
+    private var kartenAngestossen = false
     @Published var name = "Kortex"
     @Published var klonAdresse = ""
     /// Der Ort, den der Nutzer gewählt hat: dort entsteht ein eigener Ordner mit dem Namen des Vaults. nil = Standard (`~/Kortex`).
@@ -50,11 +59,20 @@ final class EinrichtungsModell: ObservableObject {
         ablauf = EinrichtungsAblauf(dienste: dienste, speicher: speicher, log: { log.schreibe($0) }) { [weak self] z, a in
             self?.zustand = z
             self?.anzeige = a
+            self?.stosseKartenAn()
         }
     }
 
     var aktuell: EinrichtungsSchritt? { zustand.aktuell }
-    var istFertig: Bool { zustand.istFertig }
+    /// Das Nötige steht (git und Vault): ab hier gilt der Assistent als durchgelaufen, alles Weitere sind Karten.
+    var istFertig: Bool { zustand.grundeingerichtet }
+
+    /// Sobald der Vault steht, liest der Ablauf im Hintergrund, was die Karten brauchen (GitHub-Konto, Sicherung, KI-Programme).
+    private func stosseKartenAn() {
+        guard zustand.grundeingerichtet, !kartenAngestossen else { return }
+        kartenAngestossen = true
+        tu { await $0.ladeKarten() }
+    }
     func kannWeiter(_ s: EinrichtungsSchritt) -> Bool { ablauf.kannWeiter(s) }
 
     /// Der Benutzerordner — in der Vorschau der Vorschau-Ordner.
@@ -89,6 +107,9 @@ final class EinrichtungsModell: ObservableObject {
     var neuerVaultOrdner: URL? { eigenerOrt.map { VaultAuswahl.vaultOrdner(in: $0, name: name) } }
 
     var ordnerText: String { neuerVaultOrdner.map(kurz) ?? "~/Kortex" }
+
+    /// Der Ort des aktiven Vaults in Kurzform (`~/Kortex`), für das Abschlussbild.
+    var vaultOrtText: String? { anzeige.vault.map { kurz(URL(fileURLWithPath: $0.pfad, isDirectory: true)) } }
 
     func waehleZielordner() {
         let start = eigenerOrt ?? home
@@ -141,7 +162,41 @@ final class EinrichtungsModell: ObservableObject {
         guard let h = ordnerHinweis else { return }
         eigenerOrt = h.ort
         ordnerHinweis = nil
-        weg = .neu
+        gewaehlt = .neu
+    }
+
+    /// Führt einen Weg des Willkommensbilds aus (Klick oder ⏎ auf der gewählten Zeile).
+    func gehe(_ weg: Weg) {
+        gewaehlt = weg
+        switch weg {
+        case .neu: ordnerHinweis = nil; legeNeuenVaultAn()
+        case .oeffnen: oeffneVorhandenenOrdner()
+        case .klonen:
+            ordnerHinweis = nil
+            bild = .klonen
+            tu { await $0.ladeGitHubStand() }
+        case .beispiel: ordnerHinweis = nil; legeBeispielAn()
+        }
+    }
+
+    /// Pfeiltasten im Willkommensbild.
+    func waehleNaechsten(_ schritt: Int) {
+        let alle = Weg.allCases
+        guard let i = alle.firstIndex(of: gewaehlt) else { return }
+        gewaehlt = alle[(i + schritt + alle.count) % alle.count]
+    }
+
+    func holeVonGitHub() {
+        let url = klonAdresse.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !url.isEmpty else { return }
+        tu { await $0.klone(url: url) }
+    }
+
+    /// Öffnet eine Karte des Abschlussbilds. Die Probe läuft beim Öffnen von selbst.
+    func oeffneKarte(_ k: Karte) {
+        offeneKarte = k
+        tu { await $0.ladeKarten() }
+        if k == .probe { tu { await $0.starteProbe() } }
     }
 
     private static func waehleOrdner(titel: String, knopf: String, start: URL? = nil) -> URL? {
@@ -187,7 +242,7 @@ final class EinrichtungsModell: ObservableObject {
 
 // MARK: - Rahmen
 
-/// Kurze, verständliche Namen für die Fortschrittsanzeige (die Fachnamen stehen nur im Code).
+/// Kurze, verständliche Namen für die Karten und Meldungen (die Fachnamen stehen nur im Code).
 extension EinrichtungsSchritt {
     var anzeigeName: String {
         switch self {
@@ -201,29 +256,27 @@ extension EinrichtungsSchritt {
     }
 }
 
+/// Das Fenster des Assistenten. Es gibt nur zwei Bilder, die der Nutzer wirklich entscheiden muss:
+/// 1. Willkommen — drei Wege plus „Erst mal ausprobieren“ (git prüft Kortex von selbst; nur wenn es fehlt, erscheint ein eigenes Bild),
+/// 2. Fertig — mit freiwilligen Karten (KI verbinden, bei GitHub sichern, Probe), die man auch später nachholen kann.
+/// Keine Fortschrittsleiste, keine Pflichtschritte nach dem Vault.
 struct EinrichtungsAssistentAnsicht: View {
     @ObservedObject var modell: EinrichtungsModell
 
-    /// Fensterbreite und -höhe des Inhalts (ohne Vorschau-Band): Platz für die Repository-Liste und drei KI-Zeilen ohne Scrollen bei kurzen Texten.
-    static let breite: CGFloat = 640
-    static let hoehe: CGFloat = 680
+    /// Fensterbreite und -höhe des Inhalts (ohne Vorschau-Band).
+    static let breite: CGFloat = 540
+    static let hoehe: CGFloat = 560
 
     var body: some View {
         VStack(spacing: 0) {
             if modell.vorschau != nil { VorschauBandAnsicht() }
-            Fortschritt(zustand: modell.zustand)
             ScrollView {
-                Group {
-                    if let s = modell.aktuell {
-                        SchrittAnsicht(schritt: s, modell: modell)
-                    } else {
-                        FertigAnsicht(modell: modell)
-                    }
-                }
-                .frame(maxWidth: 480)
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, 40)
-                .padding(.vertical, 18)
+                inhalt
+                    .frame(maxWidth: 460)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 40)
+                    .padding(.top, 36)
+                    .padding(.bottom, 20)
             }
             .scrollBounceBehavior(.basedOnSize)
             .frame(maxHeight: .infinity)
@@ -233,72 +286,67 @@ struct EinrichtungsAssistentAnsicht: View {
         .frame(width: Self.breite, height: modell.vorschau == nil ? Self.hoehe : Self.hoehe + 22)
         .background(Color(nsColor: .windowBackgroundColor))
     }
-}
 
-/// Fortschritt: ein Balken je Schritt (Form und Text, nicht nur Farbe) und darunter „Schritt 2 von 5 · Vault“.
-/// Schritte, die hier entfallen (keine GitHub-Anmeldung in dieser Version, Ordner ohne Versionsverlauf), zählen nicht mit.
-private struct Fortschritt: View {
-    let zustand: EinrichtungsZustand
-
-    private var sichtbar: [EinrichtungsSchritt] { EinrichtungsSchritt.allCases.filter { !zustand.uebergangen.contains($0) } }
-
-    private var text: String {
-        guard let s = zustand.aktuell, let i = sichtbar.firstIndex(of: s) else { return "Fertig" }
-        return "Schritt \(i + 1) von \(sichtbar.count) · \(s.anzeigeName)"
-    }
-
-    var body: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 6) {
-                ForEach(sichtbar, id: \.self) { s in
-                    let stand = zustand.stand(s)
-                    let dran = zustand.aktuell == s
-                    Capsule()
-                        .fill(stand == .erledigt ? Kortex.akzent : dran ? Kortex.akzent.opacity(0.55) : Color.primary.opacity(stand == .uebersprungen ? 0.22 : 0.1))
-                        .frame(height: 4)
+    @ViewBuilder private var inhalt: some View {
+        if !modell.zustand.grundeingerichtet {
+            if modell.anzeige.git?.istVorhanden == true {
+                switch modell.bild {
+                case .willkommen: WillkommenAnsicht(modell: modell)
+                case .klonen: KlonAnsicht(modell: modell)
                 }
+            } else {
+                GitAnsicht(modell: modell)
+                if let f = modell.zustand.fehler[.git] { FehlerBox(text: f) }
             }
-            Text(text).font(.callout).foregroundStyle(.secondary)
+        } else if let k = modell.offeneKarte {
+            KartenAnsicht(karte: k, modell: modell)
+        } else {
+            FertigAnsicht(modell: modell)
         }
-        .padding(.horizontal, 40)
-        .padding(.top, 16)
-        .padding(.bottom, 2)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(text)
-        .accessibilityValue(zustand.istFertig ? "alle Schritte erledigt" : "\(zustand.fortschritt.fertig) von \(zustand.fortschritt.gesamt) erledigt")
     }
 }
 
+/// Fußleiste: links leise Wege, rechts höchstens ein Hauptknopf.
 private struct Fuss: View {
     @ObservedObject var modell: EinrichtungsModell
 
     var body: some View {
-        HStack(spacing: 10) {
-            if modell.zustand.vorherigerSchritt != nil {
-                Button("Zurück") { modell.tu { await $0.zurueck() } }
-                    .keyboardShortcut(.leftArrow, modifiers: .command)
-                    .help("Zum vorigen Schritt (⌘←)")
+        if modell.zustand.grundeingerichtet {
+            if modell.offeneKarte != nil {
+                Fussleiste {
+                    Button("Zurück") { modell.offeneKarte = nil }
+                        .buttonStyle(.kortexLink).keyboardShortcut(.cancelAction)
+                        .help("Zurück zur Übersicht (Esc)")
+                } haupt: {
+                    Button("Fertig") { modell.offeneKarte = nil }.buttonStyle(.kortexHaupt).controlSize(.large)
+                }
+            } else {
+                Fussleiste {
+                    Text("Den Rest später: Menü „Kortex einrichten …“").font(.caption).foregroundStyle(.secondary)
+                } haupt: {
+                    Button("Studio öffnen") { modell.beiStudioOeffnen() }
+                        .buttonStyle(.kortexHaupt).controlSize(.large).keyboardShortcut(.defaultAction)
+                }
             }
-            if !modell.istFertig {
+        } else if modell.anzeige.git?.istVorhanden == true, modell.bild == .klonen {
+            Fussleiste {
+                Button("Zurück") { modell.bild = .willkommen }.buttonStyle(.kortexLink).keyboardShortcut(.cancelAction)
+                    .disabled(modell.anzeige.vaultArbeitet != nil)
+            } haupt: {
+                Button("Holen") { modell.holeVonGitHub() }
+                    .buttonStyle(.kortexHaupt).controlSize(.large).keyboardShortcut(.defaultAction)
+                    .disabled(modell.anzeige.vaultArbeitet != nil || modell.klonAdresse.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        } else {
+            Fussleiste {
                 Button("Später") { modell.ablauf.spaeter(); modell.beiSchliessen() }
                     .buttonStyle(.kortexLink)
                     .help("Der Assistent erscheint nicht mehr von selbst. Du findest ihn im Menü unter „Kortex einrichten …“.")
-            }
-            Spacer()
-            if let s = modell.aktuell {
-                if s.darfUebersprungenWerden && !(s == .sicherung && modell.kannWeiter(s)) {
-                    Button(s == .sicherung ? "Später sichern" : "Überspringen") { modell.tu { await $0.ueberspringe() } }
-                        .help(s == .sicherung ? "Du kannst die Sicherung jederzeit im Menü unter „Kortex einrichten …“ nachholen." : "Diesen Schritt auslassen. Du kannst ihn später im Menü „Kortex einrichten …“ nachholen.")
-                }
-                if modell.kannWeiter(s) {
-                    Button("Weiter") { modell.tu { await $0.weiter() } }
-                        .keyboardShortcut(.defaultAction)
-                        .buttonStyle(.kortexHaupt)
-                        .controlSize(.large)
+            } haupt: {
+                if modell.anzeige.git?.istVorhanden == true {
+                    Text("↑ ↓ wählen   ⏎ öffnen").font(.caption).foregroundStyle(.secondary).accessibilityHidden(true)
                 }
             }
         }
-        .padding(.horizontal, 28)
-        .padding(.vertical, 14)
     }
 }

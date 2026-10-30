@@ -17,6 +17,9 @@ keeps your text byte for byte. The app is in German for now.
 - **Studio editor:** Markdown with live preview, `[[wikilinks]]`, autosave, command palette (Cmd-K), a review signal per page, a health overview and a 3D view.
 - **Search and quick capture:** search all pages; drop a thought into the inbox in one step.
 - **Tasks:** a board inside the vault where you and your AI add and move tasks.
+- **Quick capture:** from anywhere with ⌃⌥Space (changeable in the window): a small panel for a task or a note, even when the Studio
+  is closed. Shortcuts in the text such as "morgen" or "!hoch" set due date and priority; dictation works with Fn twice.
+  The hotkey needs no accessibility permission.
 - **git sync and backup:** review and choose changes, commit, history with diff, restore old versions, sync with your own remote or GitHub; conflicts are explained and nothing is silently overwritten.
 - **Connect your AI:** Kortex detects your AI programs and registers its local MCP server there: Claude Code, Claude Desktop, Codex, Cursor, Gemini CLI, GitHub Copilot (CLI), Zed, OpenCode and Warp. The AI reads your notes with sources and leaves notes in the inbox; it never writes into the wiki directly.
 - **AI accounts and access:** per AI account and vault you decide: blocked, read, inbox or extended. New accounts start blocked. Enforcement is built in; the screen for it follows in upcoming betas.

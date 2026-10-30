@@ -19,7 +19,7 @@ export const T = {
     leer: { titel: "Hier ist noch nichts", text: "In diesem Bereich liegen noch keine Notizen." },
     leerSuche: { titel: "Nichts gefunden", text: "Versuche ein anderes Wort." }, sucheLoeschen: "Suche löschen", alleNotizen: "Alle Notizen zeigen",
     leerFavoriten: { titel: "Noch keine Favoriten", text: "Markiere eine Notiz mit dem Stern, dann steht sie hier." },
-    leerInbox: { titel: "Posteingang ist leer", text: "Mit „Schnell merken“ (⌘⇧M) landet ein Gedanke in 5 Sekunden hier." },
+    leerInbox: { titel: "Posteingang ist leer", text: "Neue Gedanken landen hier, bevor du sie einsortierst." },
     leerAnsicht: { titel: "Alles in Ordnung", text: "Zu dieser Ansicht gibt es nichts zu tun." },
     mehr: "Weitere laden …",
     rueckfragen: { titel: "Offene Rückfragen", text: (n) => (n === 1 ? "Eine Frage wartet auf deine Antwort." : `${n} Fragen warten auf deine Antwort.`), hinweis: "Beantworten kannst du sie im Terminal mit /rueckfragen.", kopieren: "Befehl kopieren", kopiert: "Befehl kopiert." },
@@ -60,7 +60,7 @@ export const T = {
   },
   editor: {
     leer: "Wähle links eine Notiz.",
-    leerHinweis: "Oder lege mit ⌘N eine neue an.",
+    leerHinweis: "Oder lege eine neue an.",
     schreibschutz: "Diese Datei wird automatisch erzeugt und ist hier nur lesbar.",
     frontmatter: (n) => `Datei-Kopf · ${n} ${n === 1 ? "Feld" : "Felder"}`,
     gespeichert: "Gespeichert",
@@ -135,6 +135,7 @@ export const T = {
   },
   commit: {
     titel: "Änderungen sichern",
+    satz: "Kortex merkt sich den Stand deiner Änderungen als Version.",
     nachricht: "Nachricht",
     dateien: "Dateien",
     alle: "Alle",
@@ -148,7 +149,7 @@ export const T = {
     codes: { "M": "geändert", "A": "neu", "??": "neu", "D": "gelöscht", "R": "umbenannt", "U": "Konflikt" },
     vorbelegt: (liste, n) => (n === 1 ? `Aktualisiert: ${liste[0]}` : `${n} Dateien aktualisiert: ${liste.slice(0, 3).join(", ")}${n > 3 ? " …" : ""}`),
   },
-  neu: { titel: "Neue Notiz", ordner: "Ordner", name: "Titel", anlegen: "Anlegen", platzhalter: "Wie soll sie heißen?" },
+  neu: { titel: "Neue Notiz", satz: "Eine leere Seite in dem Ordner, den du wählst.", ordner: "Ordner", name: "Titel", anlegen: "Anlegen", platzhalter: "Wie soll sie heißen?" },
   vertrauen: {
     titel: "Kommt dieser Vault von dir?",
     intro: "Du hast diesen Ordner von außen geöffnet. Er könnte von dir stammen, aber auch aus einer Zip-Datei, per AirDrop oder aus einer Cloud.",
@@ -177,7 +178,7 @@ export const T = {
     nichtGeoeffnet: "Die Übersicht ließ sich nicht öffnen.",
   },
   speicherFehler: { titel: "Änderungen konnten nicht gespeichert werden", text: "Wechselst du jetzt, geht der ungespeicherte Text verloren.", nochmal: "Nochmal versuchen", kopieren: "Text kopieren", verwerfen: "Verwerfen und wechseln", kopiert: "Text kopiert.", kopierFehler: "Kopieren war nicht möglich." },
-  merken: { entwurf: "Entwurf bleibt erhalten.", titel: "Schnell merken", text: "Was willst du festhalten?", titelFeld: "Titel (optional)", sichern: "In die Inbox", fertig: "In der Inbox abgelegt.", offen: "Öffnen" },
+  merken: { entwurf: "Entwurf bleibt erhalten.", titel: "Schnell merken", satz: "Halte einen Gedanken fest. Er landet im Posteingang, sortieren kannst du später.", text: "Was willst du festhalten?", titelFeld: "Titel (optional)", sichern: "In die Inbox", fertig: "In der Inbox abgelegt.", offen: "Öffnen" },
   palette: { platzhalter: "Notiz suchen oder Befehl eingeben …", notizen: "Notizen", befehle: "Befehle", nichts: "Nichts passt.", nichtsGefunden: "Nichts gefunden", anlegen: (t) => `Neue Notiz „${t}“ anlegen` },
   befehle: {
     neu: "Neue Notiz", merken: "Schnell merken", commit: "Änderungen sichern …", sync: "Mit Remote abgleichen",
@@ -185,6 +186,7 @@ export const T = {
     lizenzen: "Lizenzen …", ordner: "Vault im Finder zeigen", ansicht: "Übersicht öffnen", mcp: "KI (Claude) verbinden", konten: "KI-Konten …", umstellen: "Vault umstellen …",
     inNotiz: "In der Notiz suchen",
   },
+  dialog: { schliessen: "Schließen" },
   kuerzel: {
     titel: "Tastenkürzel",
     gruppen: [
@@ -194,7 +196,7 @@ export const T = {
     ],
     schliessen: "Schließen",
   },
-  gesundheit: { titel: "Gesundheit des Wissens", keine: "Noch keine Auswertung verfügbar.", ok: "Keine Befunde." },
+  gesundheit: { titel: "Gesundheit des Wissens", satz: "So steht es um die Seiten deines Vaults.", keine: "Noch keine Auswertung verfügbar.", ok: "Keine Befunde." },
   nutzung: {
     titel: "Was die KI von deinem Wissen abruft",
     lokal: "Nur auf diesem Rechner protokolliert (.logs/mcp.log), ohne Suchbegriffe. Nichts wird gesendet.",

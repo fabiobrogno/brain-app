@@ -81,6 +81,13 @@ final class AppZustand: ObservableObject {
     /// Vorschau „wie frisch installiert“ (`--vorschau <Ordner>`): nil im normalen Start.
     let vorschau: VorschauModus?
 
+    /// „Schnell erfassen“: globales Tastenkürzel und schwebendes Fenster (`ErfassenFenster.swift`). Ein Kürzel belegt die App nur im
+    /// normalen Betrieb, nicht in Vorschau und Testläufen. Gespeichert wird über eine kurzlebige Werkstatt (Node und Skript aus dem Paket).
+    private(set) lazy var erfassen = ErfassenSteuerung(pfade: pfade, log: log, kuerzelErlaubt: vorschau == nil && !argumente.fluechtig) { [weak self] in
+        guard let self, let node = self.node, let skript = self.werkstattSkript else { return nil }
+        return ErfassenSteuerung.Werkstatt(node: node, skript: skript, umgebung: self.werkstattUmgebung)
+    }
+
     init() {
         // Vorschau zuerst und fail-closed: ungültiger Ordner, fehlende Umlenkung des Benutzerordners oder die echte Bundle-ID beenden
         // die App, bevor sie irgendwo etwas liest oder schreibt. Danach zeigt alles (Support, Logs, Kindprozesse) in den Vorschau-Ordner.
@@ -214,6 +221,7 @@ final class AppZustand: ObservableObject {
         Task { startLog.schreibe("git \(await gitPruefer.pruefe().logText)") }
         pruefeVaultWechsel()
         log.schreibe(vault.map { "vault \($0.path)" } ?? "kein-vault")
+        erfassen.starte()
         taktgeber = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(15 * 60))
@@ -627,6 +635,7 @@ final class AppZustand: ObservableObject {
     func beende() {
         vorschau?.raeumeDefaultsAuf() // nur die Einstellungen der Vorschau-Kennung; die echte App bleibt unberührt
         taktgeber?.cancel()
+        erfassen.beende()
         studio.schliesse()
         uebersicht.schliesse()
         rueckfragenFenster?.close()

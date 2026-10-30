@@ -17,6 +17,7 @@ vorab gebautes Bündel (siehe CodeMirror).
 | Gehirnoberfläche (aus AOMIC-ID1000) | 1.2.1 | CC0 1.0 | `kern/ansicht/vendor/brain-mesh/brain-mesh.js` |
 | Simple Icons (Logos der KI-Programme und Dienste) | 16.36.0 | CC0 1.0 | `logos/`, `studio/ki-logos.js`, `studio/marken.js` |
 | Simple Icons (MCP-Logos der 3D-Ansicht) | 16.33.0 | CC0 1.0 | `kern/ansicht/vendor/icons/` |
+| Orca (Gestaltungsmuster für Dialoge, Einrichtung, leere Zustände) | Commit cf5b462 | MIT | `studio/dialoge.css`, `studio/hilfen.js`, `studio/willkommen.js` (Gestaltung; Oberfläche der App: `EinrichtungsBausteine.swift`) |
 
 Die Pfade sind relativ zu `Kortex.app/Contents/Resources`, außer Sparkle (relativ zu `Kortex.app/Contents`).
 
@@ -377,7 +378,55 @@ zoom.svg.
 MCP-Dienste). Kortex nutzt sie nur, um Programme und Dienste zu kennzeichnen, mit denen es sich verbindet. **Kortex ist mit keinem dieser
 Unternehmen verbunden und wird von ihnen weder empfohlen noch unterstützt.** Das OpenAI/Codex-Logo ist bewusst nicht enthalten.
 
+## Orca (Gestaltungsmuster, MIT)
+
+Die Gestaltung der Einrichtung, der Dialoge und der leeren Zustände in Kortex folgt dem Vorbild der Desktop-App **Orca** (https://github.com/stablyai/orca,
+Website https://orca.dev), Stand Commit `cf5b462fba8462678256b25d05cec2adb8dca412` (Hauptzweig, 30. Oktober 2026). Es ist kein Quelltext
+kopiert: Maße, Aufbau und Abläufe wurden von Hand nach CSS, Vanilla-JavaScript und SwiftUI übertragen, mit eigenen Texten, eigenen Farben
+(Kortex-Akzent) und eigenen Symbolen. Übernommen sind:
+
+- das Aufbaumuster eines Dialogs (Titel, ein Satz Beschreibung, Inhalt, Fußleiste rechtsbündig mit dem Hauptknopf; 24 px Innenabstand, 16 px Abstand
+  zwischen den Teilen, 8 px zwischen den Knöpfen; Enter bestätigt, Esc schließt; Enter-Hinweis am Hauptknopf) nach
+  `src/renderer/src/components/ui/dialog.tsx` und `src/renderer/src/components/onboarding/OnboardingFooter.tsx`
+  → `studio/dialoge.css`, `studio/hilfen.js` (`dialog()`), `Sources/BrainApp/EinrichtungsAssistent.swift` (Fußleiste);
+- das Muster „eine große Hauptaktion, darunter eine gruppierte Liste weiterer Wege, gewählte Zeile mit Rahmen und Enter-Hinweis, Pfeiltasten
+  wechseln die Zeile“ samt Zeilenmaßen (Symbolkachel 28 px mit 6 px Ecke, Titel 14 px, Beschreibung 12 px, Gruppenüberschrift in Großbuchstaben mit
+  Sperrung) nach `src/renderer/src/components/sidebar/AddRepoStartSteps.tsx`
+  → `studio/willkommen.js` und `studio/dialoge.css` („Andere Wege“), `Sources/BrainApp/EinrichtungsBausteine.swift` (`WegZeile`, `WegGruppe`);
+- der leere Zustand als Kreis (48 px) mit Symbol, einem kurzen Satz und höchstens einer Aktion nach
+  `src/renderer/src/components/native-chat/NativeChatEmptyState.tsx` → `studio/dialoge.css`, `studio/bausteine.js` (`leerBlock()`).
+
+Orca ist MIT-lizenziert. Lizenztext (Copyright-Zeile wie in der Datei `LICENSE` von Orca):
+
+```
+MIT License
+
+Copyright (c) 2026 Lovecast Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+Name, Marke und Logo von Orca sind nicht übernommen; Kortex ist mit Orca nicht verbunden. Die Muster aus dem Projekt Tolaria
+(https://github.com/refactoringhq/tolaria, AGPL-3.0) sind nur als Prinzipien in `docs/plaene/design-wizards.md` beschrieben, es wurde nichts
+daraus übernommen.
+
 ## Nicht mitgeliefert
 
 Git, Claude Code, Codex und die anderen KI-Programme werden nicht mit Kortex ausgeliefert. Kortex benutzt, was auf deinem Mac
-installiert ist. Das App-Symbol und die Oberfläche von Kortex sind eigene Arbeit (MIT).
+installiert ist. Das App-Symbol und die Oberfläche von Kortex sind eigene Arbeit (MIT), mit den oben genannten Gestaltungsmustern von Orca (MIT).

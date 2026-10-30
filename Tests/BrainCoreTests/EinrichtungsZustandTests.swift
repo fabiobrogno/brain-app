@@ -253,3 +253,20 @@ private typealias S = EinrichtungsSchritt
     #expect(zurueck && uebersprungen)
     #expect(z.datei(abgeschlossen: false, automatischAus: false).uebersprungen == ["sicherung"])
 }
+
+// MARK: Hauptschritte und Karten
+
+@Test func nurGitUndVaultSindHauptschritte() {
+    #expect(EinrichtungsSchritt.allCases.filter(\.istHauptschritt) == [.git, .vault])
+}
+
+@Test func grundeingerichtetBrauchtGitUndVaultNichtsSonst() {
+    var z = EinrichtungsZustand()
+    #expect(!z.grundeingerichtet)
+    z.meldeErledigt(.git)
+    #expect(!z.grundeingerichtet)
+    z.meldeErledigt(.vault)
+    #expect(z.grundeingerichtet, "KI, Sicherung und Probe sind freiwillige Karten")
+    #expect(z.aktuell == .github && !z.istFertig, "die Folge selbst bleibt: sie läuft für die Karten weiter")
+    #expect(z.stand(.ki) == .offen && z.stand(.probe) == .offen)
+}

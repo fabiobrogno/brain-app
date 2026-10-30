@@ -1,0 +1,57 @@
+/* Einheitliche Hülle für Dialoge und leere Zustände (Einrichtung, Wizards, Dialoge nach dem Vorbild von Orca, MIT).
+   Gestaltungswerte (Innenabstand 24 px, 16 px Abstand zwischen Titel, Satz, Inhalt und Fußleiste, Titel als Überschrift mit Satz darunter,
+   Fußleiste rechtsbündig mit 8 px Abstand, Hauptknopf mit Enter-Hinweis, leerer Zustand als Kreis mit Symbol, einem Satz und einer Aktion)
+   stammen aus Orcas Dialog- und Leerzustand-Komponenten (src/renderer/src/components/ui/dialog.tsx, onboarding/OnboardingFooter.tsx,
+   native-chat/NativeChatEmptyState.tsx; Stand cf5b462; MIT, Copyright (c) 2026 Lovecast Inc.). Farben, Schrift und Symbole sind Kortex' eigene.
+   Siehe THIRD-PARTY-NOTICES.md und docs/plaene/design-wizards.md. Nur Tokens aus studio.css (Hell/Dunkel wechseln dort). */
+
+/* ---------- Dialog: Titel · ein Satz · Inhalt · Fußleiste ---------- */
+.dialog { --dlg-rand: 24px; --dlg-abstand: 16px; border-radius: 14px; }
+.dialog-kopf { padding: var(--dlg-rand) var(--dlg-rand) 0; font-size: 17px; line-height: 1.3; font-weight: 650; letter-spacing: -.015em; }
+.dialog-satz { margin: 6px 0 0; padding: 0 var(--dlg-rand); font-size: 13.5px; line-height: 1.5; color: var(--text-2); text-wrap: pretty; }
+.dialog-rumpf { padding: var(--dlg-abstand) var(--dlg-rand) var(--dlg-rand); gap: var(--dlg-abstand); }
+.dialog-fuss { gap: 8px; padding: 14px var(--dlg-rand) 16px; align-items: center; }
+.dialog-fuss .knopf { height: 34px; padding: 0 16px; font-size: 13.5px; border-radius: var(--r); }
+/* Der Hauptknopf zeigt, dass Enter ihn auslöst (Pseudo-Inhalt: zählt nicht zum Text des Knopfes und wird nicht vorgelesen). */
+.dialog-fuss .knopf.primaer { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
+.dialog-fuss .knopf.primaer:not(:disabled)::after {
+  content: "↩" / ""; display: inline-grid; place-items: center; min-width: 20px; height: 18px; padding: 0 5px;
+  font-size: 11px; font-weight: 500; line-height: 1; border-radius: 5px;
+  border: 1px solid color-mix(in srgb, var(--akzent-text) 35%, transparent); color: color-mix(in srgb, var(--akzent-text) 85%, transparent);
+}
+.dialog-fuss .knopf.primaer[data-enter="meta"]:not(:disabled)::after { content: "⌘↩" / ""; }
+.dialog .feld { gap: 6px; }
+.dialog .feld > label { font-size: 13px; font-weight: 600; color: var(--text); }
+
+/* ---------- Leere Zustände: Symbol · ein Satz · eine Aktion ---------- */
+.leer-liste, .au-leer, .leer { color: var(--text-2); text-align: center; }
+.leer-liste .zeichen, .au-leer .zeichen, .leer .zeichen { display: grid; place-items: center; width: 48px; height: 48px; margin: 0 auto 6px; border-radius: 50%; background: var(--hover); border: 0; color: var(--text-2); }
+.au-brett > .au-leer { grid-column: 1 / -1; }
+.leer-liste h3, .au-leer h3 { margin: 0; font-size: 14px; font-weight: 600; color: var(--text); }
+.leer h2 { margin: 0; font-size: 16px; font-weight: 600; color: var(--text); letter-spacing: -.01em; }
+.leer-liste p, .au-leer p, .leer p { margin: 0; max-width: 280px; line-height: 1.5; font-size: 13px; text-wrap: balance; }
+.leer-liste p, .leer-liste .knopf { margin-inline: auto; }
+.leer-liste .knopf, .au-leer .knopf, .leer .knopf { margin-top: 14px; height: 34px; padding: 0 16px; }
+.leer .mini { color: var(--text-3); }
+/* Wo eine ältere Regel (z. B. .rm-text im Verlauf) Titel oder Satz einer Hülle trifft, gilt trotzdem das Maß der Hülle. */
+.dialog > .dialog-kopf { margin: 0; padding: var(--dlg-rand) var(--dlg-rand) 0; }
+.dialog > .dialog-satz { margin: 6px 0 0; padding: 0 var(--dlg-rand); font-size: 13.5px; line-height: 1.5; max-width: none; }
+.dialog .rm-form .feld { gap: 6px; }
+.dialog .rm-hinweis { margin: 10px 0 0; }
+
+/* ---------- Willkommen im Studio: ein Hauptweg, die anderen ruhig darunter ---------- */
+.w-wege { gap: 20px; }
+.w-andere { display: flex; flex-direction: column; }
+.w-andere .w-abschnitt { margin: 0 0 8px 2px; }
+.w-gruppe-wege { display: flex; flex-direction: column; border: 1px solid var(--linie-stark); border-radius: var(--r-l); background: var(--erhoben); overflow: hidden; }
+.w-gruppe-wege .w-weg { gap: 14px; padding: 12px 16px; border: 0; border-radius: 0; background: transparent; --w-ton: var(--text-2); }
+.w-gruppe-wege .w-weg + .w-weg { border-top: 1px solid var(--linie); }
+.w-gruppe-wege .w-weg:hover { background: var(--hover); }
+.w-gruppe-wege .w-weg:focus { box-shadow: inset 0 0 0 2px var(--akzent); }
+.w-gruppe-wege .w-kachel { width: 32px; height: 32px; border-radius: 8px; background: var(--hover); }
+.w-gruppe-wege .w-weg-titel { font-size: 14px; }
+.w-gruppe-wege .w-weg-text2 { font-size: 12.5px; }
+.w-weg.haupt { padding: 16px; border-color: var(--akzent); background: color-mix(in srgb, var(--akzent) 5%, var(--erhoben)); }
+.w-weg.haupt:hover { background: color-mix(in srgb, var(--akzent) 9%, var(--erhoben)); }
+.dialog > .dialog-kopf.rm-titel { display: flex; align-items: center; gap: 10px; }
+.dialog-kopf .rm-zeichen { flex: none; display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 0; background: none; color: var(--text-2); }

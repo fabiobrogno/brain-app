@@ -24,7 +24,7 @@ struct MenueInhalt: View {
             .disabled(zustand.vault == nil || !zustand.kitVorhanden || !zustand.kernBereitschaft.istBereit)
         Divider()
         Button("Studio öffnen") { zustand.oeffneStudio() }.keyboardShortcut("o")
-        Button("Aufgabe erfassen …") { zustand.sende(.aufgabeErfassen) }.keyboardShortcut("a", modifiers: [.command, .shift]).disabled(zustand.vault == nil)
+        Button("Schnell erfassen …") { zustand.erfassen.zeige() }.keyboardShortcut("a", modifiers: [.command, .shift])
         Button("Übersicht öffnen") { Task { await zustand.oeffneFenster() } }.keyboardShortcut("u").disabled(!zustand.uebersichtMoeglich)
         Button("Jetzt abgleichen") { zustand.sende(.abgleichen) }.keyboardShortcut("s").disabled(zustand.vault == nil)
         Divider()

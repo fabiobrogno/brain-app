@@ -29,18 +29,24 @@ export const laufendeArbeiten = () => [...arbeiten.values()];
 let dialogZaehler = 0;
 const offeneDialoge = new Set(); // die Schließen-Funktionen aller offenen Dialoge
 // Öffnet einen Dialog. Gibt { schliessen } zurück. Esc schließt. Mehrfaches Schließen ist harmlos (beiSchliessen läuft nur einmal).
-export function dialog({ titel, rumpf, knoepfe = [], breit = false, beiSchliessen, eigen }) {
+// Einheitliche Hülle: Titel, ein Satz (satz), Inhalt (rumpf), Fußleiste (knoepfe) mit GENAU EINEM Hauptknopf (.knopf.primaer) rechts.
+// Enter bestätigt den Hauptknopf (auch aus einem Textfeld; im mehrzeiligen Feld mit ⌘/Strg+Enter), Esc schließt.
+// Aufbau und Maße folgen dem Dialog-Muster von Orca (MIT, siehe THIRD-PARTY-NOTICES.md): Titel, Beschreibung, 16 px Abstand, Fußleiste rechts.
+export function dialog({ titel, satz, rumpf, knoepfe = [], breit = false, beiSchliessen, eigen }) {
   const host = document.getElementById("dialog-host");
   const davor = document.activeElement;
   const id = "dlg" + ++dialogZaehler;
   let box;
   if (eigen) box = eigen;
   else {
-    box = h("div", { klasse: "dialog" + (breit ? " breit" : ""), role: "dialog", "aria-modal": "true", "aria-labelledby": id },
+    box = h("div", { klasse: "dialog" + (breit ? " breit" : ""), role: "dialog", "aria-modal": "true", "aria-labelledby": id, ...(satz ? { "aria-describedby": id + "-satz" } : {}) },
       h("div", { klasse: "dialog-kopf", id, text: titel }),
+      satz ? h("p", { klasse: "dialog-satz", id: id + "-satz", text: satz }) : null,
       h("div", { klasse: "dialog-rumpf" }, rumpf),
       knoepfe.length ? h("div", { klasse: "dialog-fuss" }, knoepfe) : null);
   }
+  // Mit einem mehrzeiligen Feld im Inhalt löst ⌘↩ (nicht Enter) den Hauptknopf aus: der Hinweis am Knopf sagt es.
+  if (!eigen && box.querySelector(".dialog-rumpf textarea")) box.querySelector(".dialog-fuss .knopf.primaer")?.setAttribute("data-enter", "meta");
   const schleier = h("div", { klasse: "schleier" }, box);
   let geschlossen = false;
   const zu = () => {
@@ -54,7 +60,14 @@ export function dialog({ titel, rumpf, knoepfe = [], breit = false, beiSchliesse
   };
   const taste = (e) => {
     if (e.key === "Escape") { if (popoverOffen()) return; e.preventDefault(); e.stopPropagation(); zu(); } // ein offenes Popover (Auswahl, Datum, Menü) schließt zuerst
-    else if (e.key === "Tab") {
+    else if (e.key === "Enter" && !e.isComposing && !e.altKey && !e.shiftKey && !popoverOffen()) {
+      // Enter = Hauptknopf der Fußleiste. Knöpfe, Links, Auswahlfelder und Listen behalten ihr eigenes Enter; ein mehrzeiliges Feld braucht ⌘/Strg dazu.
+      const ziel = e.target;
+      const eigenesEnter = ziel.closest?.("button, a, select, [role=combobox], [role=listbox], [role=option], summary");
+      const mehrzeilig = ziel.tagName === "TEXTAREA" || ziel.isContentEditable;
+      const haupt = box.querySelector(".dialog-fuss .knopf.primaer");
+      if (haupt && !haupt.disabled && !eigenesEnter && (!mehrzeilig || e.metaKey || e.ctrlKey)) { e.preventDefault(); e.stopImmediatePropagation(); haupt.click(); }
+    } else if (e.key === "Tab") {
       const f = [...box.querySelectorAll("button:not(:disabled), input, textarea, select, [tabindex='0']")].filter((x) => x.offsetParent !== null);
       if (!f.length) return;
       const i = f.indexOf(document.activeElement);

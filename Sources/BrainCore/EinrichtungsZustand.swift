@@ -1,6 +1,8 @@
 import Foundation
 
-/// Die Schritte des Assistenten „Kortex einrichten“ in fester Reihenfolge (Nordstern Meilenstein 2, App-Spec §9.1). Eine weitere
+/// Die Schritte des Assistenten „Kortex einrichten“ in fester Reihenfolge (Nordstern Meilenstein 2, App-Spec §9.1). Der Nutzer sieht
+/// davon nur zwei Bilder: Willkommen (der Vault; git prüft Kortex ohne eigenes Bild) und Fertig. GitHub, Sicherung, KI und Probe sind
+/// Karten auf dem Fertig-Bild (`istHauptschritt`), die Folge selbst bleibt als Zustandsmaschine bestehen. Eine weitere
 /// Stufe kommt hier als neuer Fall an die richtige Stelle in die Liste; Zustandsmaschine, Speicher und Fortschrittsanzeige richten
 /// sich nach `allCases`. „Sicherung“ (FBL-88) steht hinter GitHub: sie braucht die Anmeldung.
 ///
@@ -25,6 +27,15 @@ public enum EinrichtungsSchritt: String, CaseIterable, Codable, Sendable {
         switch self {
         case .git, .vault: return false
         case .github, .sicherung, .ki, .probe: return true
+        }
+    }
+
+    /// Hauptschritte sind das, was der Assistent wirklich verlangt: git (ohne Klick, wenn vorhanden) und ein Vault. Alles andere
+    /// (GitHub, Sicherung, KI, Probe) sind Karten auf dem Abschlussbild: freiwillig, jederzeit nachholbar, nie im Weg.
+    public var istHauptschritt: Bool {
+        switch self {
+        case .git, .vault: return true
+        case .github, .sicherung, .ki, .probe: return false
         }
     }
 
@@ -74,6 +85,12 @@ public struct EinrichtungsZustand: Equatable, Sendable {
     }
 
     public var istFertig: Bool { aktuell == nil }
+
+    /// Das Nötige steht: git ist da und ein Vault ist aktiv. Ab hier zeigt die Oberfläche das Abschlussbild mit den Karten; die
+    /// übrigen Schritte der Folge (GitHub, Sicherung, KI, Probe) sind dann nur noch freiwillige Karten.
+    public var grundeingerichtet: Bool {
+        EinrichtungsSchritt.allCases.filter(\.istHauptschritt).allSatisfy { stand($0) == .erledigt }
+    }
 
     public func stand(_ s: EinrichtungsSchritt) -> SchrittStand { staende[s] ?? .offen }
 

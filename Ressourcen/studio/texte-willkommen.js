@@ -11,6 +11,7 @@ export const TW = {
     titel: `Willkommen bei ${PRODUKT}`,
     untertitel: `Dein Vault ist ein Ordner mit Notizen auf deinem Computer. Wie möchtest du starten?`,
     wegeLabel: "So kannst du starten",
+    andere: "Andere Wege",
     fuss: "Alles bleibt als normale Textdatei in deinem Ordner. Es gibt kein Konto und keine Cloud von uns.",
   },
   wege: {

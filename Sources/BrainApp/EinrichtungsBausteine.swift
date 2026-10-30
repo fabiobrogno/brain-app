@@ -221,3 +221,153 @@ struct Karte<Inhalt: View>: View {
         .overlay(RoundedRectangle(cornerRadius: AssistentMass.eckenGross, style: .continuous).stroke(offen ? Kortex.akzent : Color.primary.opacity(0.08), lineWidth: offen ? 1.5 : 1))
     }
 }
+
+// MARK: - Wege und Zeilen (Gestaltungsmuster aus Orca, MIT)
+
+// Herkunft: Das Muster „eine große Hauptaktion, darunter eine gruppierte Liste weiterer Wege, die gewählte Zeile mit Rahmen und ⏎-Chip,
+// Pfeiltasten wechseln die Zeile“ und die Maße der Zeilen (Symbolkachel 28 pt mit 6 pt Ecke, Titel 14 pt medium, Beschreibung 12 pt,
+// Gruppe mit 6 pt Ecke und feiner Trennlinie, Kleinbuchstaben-Überschrift mit Sperrung) stammen aus dem Dialog „Add a project“ von Orca
+// (src/renderer/src/components/sidebar/AddRepoStartSteps.tsx, Stand cf5b462, MIT, Copyright (c) 2026
+// Lovecast Inc.). Übertragen nach SwiftUI, mit eigenen Texten, Farben (Kortex-Akzent) und Symbolen. Siehe THIRD-PARTY-NOTICES.md.
+
+/// Ein Weg im Willkommensbild. `haupt`: große Zeile mit eigenem Rahmen; sonst Zeile in der Gruppe darunter.
+struct WegZeile: View {
+    let symbol: String
+    var marke: MarkenLogo? = nil
+    let titel: String
+    let text: String
+    var gewaehlt = false
+    var haupt = false
+    var aktiv = true
+    let aktion: () -> Void
+
+    var body: some View {
+        Button(action: aktion) {
+            HStack(spacing: 12) {
+                Group {
+                    if let marke { MarkenLogoAnsicht(marke: marke, groesse: SymbolStufe.karte.punkte) } else { KSymbol(name: KSymbol.linie(symbol), stufe: .karte) }
+                }
+                .frame(width: 28, height: 28)
+                .foregroundStyle(gewaehlt ? Kortex.akzent : (haupt ? Color.primary : Color.secondary))
+                .background(gewaehlt ? Color(nsColor: .controlBackgroundColor).opacity(0.7) : .clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(titel).font(.system(size: 14, weight: .medium))
+                    Text(text).font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                if gewaehlt { EnterChip() }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, haupt ? 11 : 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(gewaehlt ? Kortex.akzent.opacity(0.10) : (haupt ? Color.primary.opacity(0.03) : .clear),
+                        in: RoundedRectangle(cornerRadius: haupt ? 8 : 0, style: .continuous))
+            .overlay {
+                if haupt {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(gewaehlt ? Kortex.akzent : Color.primary.opacity(0.14), lineWidth: gewaehlt ? 1.5 : 1)
+                } else if gewaehlt {
+                    Rectangle().stroke(Kortex.akzent, lineWidth: 1.5)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!aktiv)
+        .opacity(aktiv ? 1 : 0.4)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(titel). \(text)")
+        .accessibilityAddTraits(gewaehlt ? .isSelected : [])
+    }
+}
+
+/// Kleines Tastenfeld „⏎“ an der gewählten Zeile.
+struct EnterChip: View {
+    var body: some View {
+        Image(systemName: "return")
+            .font(.system(size: 10, weight: .medium))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 6).padding(.vertical, 3)
+            .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).stroke(Color.primary.opacity(0.2), lineWidth: 1))
+            .accessibilityHidden(true)
+    }
+}
+
+/// Gruppe weiterer Wege: eine Fläche mit feinem Rahmen, die Zeilen durch dünne Linien getrennt.
+struct WegGruppe<Inhalt: View>: View {
+    let ueberschrift: String?
+    @ViewBuilder let inhalt: Inhalt
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let ueberschrift {
+                Text(ueberschrift.uppercased()).font(.system(size: 11, weight: .medium)).tracking(0.8).foregroundStyle(.secondary)
+            }
+            Group(subviews: inhalt) { zeilen in
+                VStack(spacing: 0) {
+                    ForEach(zeilen.indices, id: \.self) { i in
+                        if i > 0 { Divider().opacity(0.7) }
+                        zeilen[i]
+                    }
+                }
+            }
+            .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Color.primary.opacity(0.14), lineWidth: 1))
+        }
+    }
+}
+
+/// Fußleiste jedes Bildes: links leise Wege (Zurück, Später), rechts GENAU EIN Hauptknopf (⏎). Aufbau wie die Fußleiste der Einrichtung in Orca
+/// (OnboardingFooter.tsx, MIT, siehe oben und THIRD-PARTY-NOTICES.md).
+struct Fussleiste<Links: View, Haupt: View>: View {
+    @ViewBuilder let links: Links
+    @ViewBuilder let haupt: Haupt
+
+    var body: some View {
+        HStack(spacing: 14) {
+            links
+            Spacer(minLength: 8)
+            haupt
+        }
+        .padding(.horizontal, 28)
+        .padding(.vertical, 14)
+    }
+}
+
+/// Zeile einer Karte auf dem Abschlussbild: Symbol, Titel, ein Satz, rechts Stand (erledigt) oder ein Pfeil.
+struct AufgabenZeile: View {
+    let symbol: String
+    var marke: MarkenLogo? = nil
+    let titel: String
+    let text: String
+    var erledigt = false
+    let aktion: () -> Void
+
+    var body: some View {
+        Button(action: aktion) {
+            HStack(spacing: 12) {
+                Group {
+                    if let marke { MarkenLogoAnsicht(marke: marke, groesse: SymbolStufe.karte.punkte) } else { KSymbol(name: KSymbol.linie(symbol), stufe: .karte) }
+                }
+                .frame(width: 28, height: 28).foregroundStyle(Color.secondary).accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(titel).font(.system(size: 14, weight: .medium))
+                    Text(text).font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                if erledigt {
+                    KSymbol(name: "checkmark.circle.fill").foregroundStyle(.green).accessibilityLabel("erledigt")
+                } else {
+                    KSymbol(name: "chevron.right").foregroundStyle(.tertiary).accessibilityHidden(true)
+                }
+            }
+            .padding(.horizontal, 12).padding(.vertical, 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(titel). \(text)\(erledigt ? ". Erledigt" : "")")
+    }
+}

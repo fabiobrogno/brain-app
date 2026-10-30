@@ -6,7 +6,7 @@ import { h } from "./hilfen.js";
 import { symbol, GROESSE } from "./symbole.js";
 import { kiLogo, kiLogoName } from "./ki-logos.js";
 import { oeffneMenue } from "./menue.js";
-import { textfeld, filterChip, knopf, oeffneDatumsauswahl, tooltip, skelett } from "./bausteine.js";
+import { textfeld, leerBlock, filterChip, knopf, oeffneDatumsauswahl, tooltip, skelett } from "./bausteine.js";
 import { wenigBewegung } from "./popover.js";
 import { TA } from "./texte-aufgaben.js";
 
@@ -234,8 +234,8 @@ export function baueAufgaben(host, ctx) {
       return;
     }
     if (st.geladen && !st.liste.length) {
-      brett.replaceChildren(h("div", { klasse: "au-leer", "data-aufgaben-leer": "" }, symbol("aufgaben", GROESSE.kachel), h("h3", { text: TA.leer.titel }), h("p", { text: TA.leer.text }),
-        knopf({ text: TA.leer.aktion, variante: "primaer", aktion: "aufgabe-erste", aufKlick: () => eingabe.focus() })));
+      brett.replaceChildren(leerBlock({ klasse: "au-leer", symbol: "aufgaben", titel: TA.leer.titel, text: TA.leer.text, daten: { "data-aufgaben-leer": "" },
+        aktion: { text: TA.leer.aktion, name: "aufgabe-erste", variante: "primaer", tun: () => eingabe.focus() } }));
       return;
     }
     const sichtbar = SPALTEN.reduce((n, s) => n + sichtbarInSpalte(s).karten.length, 0);

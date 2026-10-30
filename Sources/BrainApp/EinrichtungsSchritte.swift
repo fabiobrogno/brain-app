@@ -4,28 +4,34 @@ import BrainCore
 
 // Die Bilder des Assistenten „Kortex einrichten“, ein Bild je Schritt. Texte kurz, ohne Fachwörter; was Kortex wo einträgt, steht dabei.
 
-struct SchrittAnsicht: View {
-    let schritt: EinrichtungsSchritt
+/// Eine Karte des Abschlussbilds geöffnet: ihr Inhalt (die Ansichten der früheren Schritte) und, falls etwas schiefging, die Meldung.
+struct KartenAnsicht: View {
+    let karte: EinrichtungsModell.Karte
     @ObservedObject var modell: EinrichtungsModell
 
     var body: some View {
         VStack(spacing: AssistentMass.abstand + 2) {
-            switch schritt {
-            case .git: GitAnsicht(modell: modell)
-            case .vault: VaultAnsicht(modell: modell)
-            case .github: GitHubAnsicht(modell: modell)
-            case .sicherung: SicherungAnsicht(modell: modell)
+            switch karte {
             case .ki: KiAnsicht(modell: modell)
+            case .sicherung: SicherungAnsicht(modell: modell)
             case .probe: ProbeAnsicht(modell: modell)
             }
-            if let f = modell.zustand.fehler[schritt] { FehlerBox(text: f) }
+            if let f = fehler { FehlerBox(text: f) }
+        }
+    }
+
+    private var fehler: String? {
+        switch karte {
+        case .ki: return modell.zustand.fehler[.ki]
+        case .sicherung: return modell.zustand.fehler[.sicherung] ?? modell.zustand.fehler[.github]
+        case .probe: return modell.zustand.fehler[.probe]
         }
     }
 }
 
 // MARK: git
 
-private struct GitAnsicht: View {
+struct GitAnsicht: View {
     @ObservedObject var modell: EinrichtungsModell
 
     var body: some View {
@@ -52,83 +58,54 @@ private struct GitAnsicht: View {
     }
 }
 
-// MARK: Vault
+// MARK: Willkommen (der Vault)
 
-private struct VaultAnsicht: View {
+/// Das erste Bild: ein Hauptweg, darunter die anderen. Vorgaben statt Fragen — Name „Kortex“, Ort `~/Kortex`, git prüft Kortex selbst.
+struct WillkommenAnsicht: View {
     @ObservedObject var modell: EinrichtungsModell
-    @FocusState private var nameFokus: Bool
+    @FocusState private var fokus: Bool
 
     var body: some View {
-        VStack(spacing: AssistentMass.abstand) {
-            Titel(symbol: "folder", titel: "Wo sollen deine Notizen liegen?",
-                  text: "Ein Vault ist ein ganz normaler Ordner auf deinem Mac. Du behältst ihn und kannst ihn jederzeit selbst öffnen.")
+        VStack(spacing: AssistentMass.abstand + 4) {
+            Titel(symbol: "sparkles", titel: "Willkommen bei Kortex",
+                  text: "Dein Wissen liegt in einem Vault — einem ganz normalen Ordner auf deinem Mac.")
             if let arbeit = modell.anzeige.vaultArbeitet {
                 Arbeit(text: arbeit).padding(.top, 24)
             } else {
-                neu
-                beispiel
-                Karte(symbol: "folder.badge.plus", titel: "Vorhandenen Ordner öffnen", text: "Deine Notizen bleiben, wo sie sind.", offen: false) {
-                    modell.weg = nil
-                    modell.oeffneVorhandenenOrdner()
-                } inhalt: { EmptyView() }
+                VStack(alignment: .leading, spacing: 8) {
+                    WegZeile(symbol: "sparkles", titel: "Neuen Vault anlegen", text: "Der einfachste Start — mit ein paar Beispielseiten.",
+                             gewaehlt: modell.gewaehlt == .neu, haupt: true) { modell.gehe(.neu) }
+                    HStack(spacing: 6) {
+                        KSymbol(name: "folder").foregroundStyle(.secondary)
+                        Text(modell.ordnerText).font(.callout).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                        Button("Ort ändern …") { modell.waehleZielordner() }.buttonStyle(.kortexLink).font(.callout)
+                    }
+                    .padding(.horizontal, 4)
+                }
+                WegGruppe(ueberschrift: "Andere Wege") {
+                    WegZeile(symbol: "folder.badge.plus", titel: "Vorhandenen Ordner öffnen", text: "Deine Notizen bleiben, wo sie sind.",
+                             gewaehlt: modell.gewaehlt == .oeffnen) { modell.gehe(.oeffnen) }
+                    WegZeile(symbol: "arrow.down.circle", marke: .github, titel: "Von GitHub holen", text: "Dein Vault von einem anderen Mac.",
+                             gewaehlt: modell.gewaehlt == .klonen) { modell.gehe(.klonen) }
+                    WegZeile(symbol: "leaf", titel: "Erst mal ausprobieren", text: "Ein Beispiel ohne deine Notizen — alles bleibt auf diesem Mac.",
+                             gewaehlt: modell.gewaehlt == .beispiel) { modell.gehe(.beispiel) }
+                }
                 if let h = modell.ordnerHinweis { zuBreit(h) }
-                klonen
             }
+            if let f = modell.zustand.fehler[.vault] { FehlerBox(text: f) }
         }
-        .onChange(of: modell.weg) { _, neu in if neu == .neu { nameFokus = true } }
-    }
-
-    private var neu: some View {
-        Karte(symbol: "sparkles", titel: "Neuen Vault anlegen", text: "Mit Vorlage und ein paar Beispielseiten — der einfachste Start.",
-              offen: modell.weg == .neu, empfohlen: true) { modell.weg = .neu } inhalt: {
-            HStack {
-                TextField("Name", text: $modell.name).textFieldStyle(.roundedBorder).focused($nameFokus)
-                    .onSubmit { modell.legeNeuenVaultAn() }
-                Button("Anlegen") { modell.legeNeuenVaultAn() }.buttonStyle(.kortexHaupt).keyboardShortcut(.defaultAction)
-            }
-            HStack(spacing: 6) {
-                KSymbol(name: "folder").foregroundStyle(.secondary)
-                Text(modell.ordnerText).font(.callout).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                Button("Ort ändern …") { modell.waehleZielordner() }.buttonStyle(.kortexLink).font(.callout)
-            }
+        // Pfeiltasten wählen die Zeile, ⏎ führt sie aus (wie im Dialog „Add a project“ in Orca, MIT — siehe Bausteine).
+        .focusable()
+        .focusEffectDisabled()
+        .focused($fokus)
+        .onAppear { fokus = true }
+        .onKeyPress(.upArrow) { modell.waehleNaechsten(-1); return .handled }
+        .onKeyPress(.downArrow) { modell.waehleNaechsten(1); return .handled }
+        .onKeyPress(.return) {
+            guard modell.anzeige.vaultArbeitet == nil else { return .ignored }
+            modell.gehe(modell.gewaehlt)
+            return .handled
         }
-    }
-
-    private var beispiel: some View {
-        Karte(symbol: "leaf", titel: "Erst mal ausprobieren", text: "Ein Beispiel-Vault zum Anschauen — ohne deine eigenen Notizen.",
-              offen: modell.weg == .beispiel) { modell.weg = .beispiel } inhalt: {
-            Text("Kortex legt den Vault „\(BeispielVault.name)“ mit ein paar Seiten an. Alles bleibt auf deinem Mac, es wird nichts gesendet. Eigene Notizen legst du später in einem eigenen Vault an; das Beispiel kannst du dann einfach löschen.")
-                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 6) {
-                KSymbol(name: "folder").foregroundStyle(.secondary)
-                Text(VaultAuswahl.kurz(BeispielVault.ordner(home: modell.home), home: modell.home))
-                    .font(.callout).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                Spacer(minLength: 8)
-                Button("Beispiel anlegen") { modell.legeBeispielAn() }.buttonStyle(.kortexHaupt).keyboardShortcut(.defaultAction)
-            }
-        }
-    }
-
-    private var klonen: some View {
-        Karte(symbol: "arrow.down.circle", marke: .github, titel: "Von GitHub holen", text: "Dein Vault von einem anderen Mac oder aus einem Repository.",
-              offen: modell.weg == .klonen) {
-            modell.weg = .klonen
-            modell.tu { await $0.ladeGitHubStand() }
-        } inhalt: {
-            HStack {
-                TextField("https://github.com/…", text: $modell.klonAdresse).textFieldStyle(.roundedBorder)
-                    .onSubmit { klone() }
-                Button("Holen") { klone() }
-                    .disabled(modell.klonAdresse.trimmingCharacters(in: .whitespaces).isEmpty).keyboardShortcut(.defaultAction)
-            }
-            KlonAnmeldung(modell: modell)
-        }
-    }
-
-    private func klone() {
-        let url = modell.klonAdresse.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !url.isEmpty else { return }
-        modell.tu { await $0.klone(url: url) }
     }
 
     /// Der gewählte Ordner ist als Vault zu breit: erklären und einen Ausweg anbieten, statt nur abzulehnen.
@@ -140,6 +117,29 @@ private struct VaultAnsicht: View {
                 Button("Anderen Ordner wählen …") { modell.oeffneVorhandenenOrdner() }
             }
         }
+    }
+}
+
+/// „Von GitHub holen“: nur die Adresse; private Repositories bekommen darunter die Anmeldung.
+struct KlonAnsicht: View {
+    @ObservedObject var modell: EinrichtungsModell
+    @FocusState private var adresseFokus: Bool
+
+    var body: some View {
+        VStack(spacing: AssistentMass.abstand + 4) {
+            Titel(symbol: "arrow.down.circle", marke: .github, titel: "Von GitHub holen", text: "Füge die Adresse deines Vault-Repositories ein.")
+            if let arbeit = modell.anzeige.vaultArbeitet {
+                Arbeit(text: arbeit).padding(.top, 8)
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    TextField("https://github.com/…", text: $modell.klonAdresse).textFieldStyle(.roundedBorder).controlSize(.large)
+                        .focused($adresseFokus).onSubmit { modell.holeVonGitHub() }
+                    KlonAnmeldung(modell: modell)
+                }
+            }
+            if let f = modell.zustand.fehler[.vault] { FehlerBox(text: f) }
+        }
+        .onAppear { adresseFokus = true }
     }
 }
 
@@ -189,36 +189,9 @@ private struct GitHubCode: View {
     }
 }
 
-private struct GitHubAnsicht: View {
-    @ObservedObject var modell: EinrichtungsModell
-
-    var body: some View {
-        switch modell.anzeige.github {
-        case .unbekannt, .startet:
-            Titel(symbol: "person.badge.key", marke: .github, titel: "GitHub", text: nil)
-            Arbeit(text: "Einen Moment …")
-        case .nichtVerfuegbar:
-            Titel(symbol: "person.badge.key", marke: .github, titel: "GitHub", text: "Die Anmeldung ist in dieser Version nicht eingerichtet.")
-        case .abgemeldet, .abgelaufen, .abgelehnt:
-            Titel(symbol: "person.badge.key", marke: .github, titel: "Bei GitHub anmelden",
-                  text: "Für die Sicherung deines Vaults und für private Repositories. Du bekommst einen Code, den du auf github.com eingibst. Kortex speichert nur ein Zugangszeichen im Schlüsselbund deines Macs — kein Passwort.")
-            if case .abgelaufen = modell.anzeige.github { FehlerBox(text: "Der Code ist abgelaufen. Bitte melde dich noch einmal an.") }
-            if case .abgelehnt(let g) = modell.anzeige.github {
-                FehlerBox(text: g == "schluesselbund" ? "Das Zugangszeichen ließ sich nicht im Schlüsselbund speichern." : "GitHub hat die Anmeldung abgelehnt.")
-            }
-            GrosserKnopf(titel: "Bei GitHub anmelden", marke: .github) { modell.tu { await $0.meldeBeiGitHubAn() } }
-        case .wartet(let c):
-            Titel(symbol: "person.badge.key", marke: .github, titel: "Gib diesen Code bei GitHub ein", text: nil)
-            GitHubCode(modell: modell, code: c)
-        case .angemeldet(let login):
-            Titel(symbol: "checkmark.seal", titel: "Bei GitHub angemeldet", text: login.map { "Konto: \($0)" })
-        }
-    }
-}
-
 // MARK: Sicherung
 
-private struct SicherungAnsicht: View {
+struct SicherungAnsicht: View {
     @ObservedObject var modell: EinrichtungsModell
 
     private var s: SicherungAnzeige { modell.anzeige.sicherung }
@@ -235,7 +208,7 @@ private struct SicherungAnsicht: View {
             } else if let grund = s.blockiert {
                 Titel(symbol: "lock.trianglebadge.exclamationmark", titel: "Dein Vault lässt sich gerade nicht sichern", text: grund)
                 Button("Erneut prüfen") { modell.tu { await $0.pruefeSicherungNeu() } }.controlSize(.large)
-                Text("Oder überspringe den Schritt — du kannst ihn im Menü „Kortex einrichten …“ nachholen.").font(.callout).foregroundStyle(.secondary)
+                Text("Du kannst das jederzeit später nachholen — im Menü „Kortex einrichten …“.").font(.callout).foregroundStyle(.secondary)
                     .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
             } else {
                 switch modell.anzeige.github {
@@ -371,7 +344,7 @@ private struct SicherungAnsicht: View {
 
 // MARK: KI
 
-private struct KiAnsicht: View {
+struct KiAnsicht: View {
     @ObservedObject var modell: EinrichtungsModell
 
     var body: some View {
@@ -397,7 +370,7 @@ private struct KiAnsicht: View {
             }
             WeitereKis(modell: modell, zeilen: modell.anzeige.kis.filter { $0.status == .nichtGefunden })
             if !modell.anzeige.kis.contains(where: { $0.status != .nichtGefunden }) && !modell.anzeige.kiSuchtGerade {
-                Text("Kortex hat hier kein unterstütztes KI-Programm gefunden. Installiere eines und suche dann neu — oder überspringe diesen Schritt, du kannst ihn später im Menü wiederholen.")
+                Text("Kortex hat hier kein unterstütztes KI-Programm gefunden. Installiere eines und suche dann neu — du kannst das jederzeit später im Menü „Kortex einrichten …“ wiederholen.")
                     .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
                 Button("Neu suchen") { modell.tu { await $0.sucheKIsNeu() } }.controlSize(.large)
             }
@@ -547,6 +520,8 @@ private struct VerdrahtungsBlock: View {
 private struct KiReihe: View {
     @ObservedObject var modell: EinrichtungsModell
     let zeile: KiZeile
+    /// Die Stufe ist vorbelegt (Posteingang); die Auswahl erscheint erst, wenn der Nutzer „Ändern“ wählt.
+    @State private var stufeOffen = false
 
     private var gefunden: Bool { zeile.status != .nichtGefunden }
 
@@ -604,17 +579,27 @@ private struct KiReihe: View {
     }
 
     /// Wie weit dieses KI-Konto in den Vault schauen darf — vorbelegt mit „Posteingang“ (nachschlagen und Neues ablegen, wie bisher).
-    private var stufenWahl: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Picker("Darf diesen Vault", selection: Binding(
-                get: { modell.anzeige.kiStufe(zeile.ziel) },
-                set: { modell.ablauf.waehleKiStufe(zeile.ziel, $0) })) {
-                ForEach(KiStufe.allCases, id: \.self) { Text($0.name).tag($0) }
+    @ViewBuilder private var stufenWahl: some View {
+        if stufeOffen {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Darf diesen Vault").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                Picker("Darf diesen Vault", selection: Binding(
+                    get: { modell.anzeige.kiStufe(zeile.ziel) },
+                    set: { modell.ablauf.waehleKiStufe(zeile.ziel, $0) })) {
+                    ForEach(KiStufe.allCases, id: \.self) { Text($0.name).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .accessibilityIdentifier("ki-stufe-\(zeile.ziel.rawValue)")
+                Text(modell.anzeige.kiStufe(zeile.ziel).erklaerung)
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
-            .pickerStyle(.segmented)
-            .accessibilityIdentifier("ki-stufe-\(zeile.ziel.rawValue)")
-            Text(modell.anzeige.kiStufe(zeile.ziel).erklaerung)
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        } else {
+            HStack(spacing: 6) {
+                Text("Darf diesen Vault: \(modell.anzeige.kiStufe(zeile.ziel).name)").font(.callout).foregroundStyle(.secondary)
+                Button("Ändern") { stufeOffen = true }.buttonStyle(.kortexLink).font(.callout)
+                    .accessibilityLabel("Stufe für \(zeile.ziel.name) ändern")
+            }
         }
     }
 
@@ -658,7 +643,7 @@ private struct KiReihe: View {
 
 // MARK: Probe
 
-private struct ProbeAnsicht: View {
+struct ProbeAnsicht: View {
     @ObservedObject var modell: EinrichtungsModell
 
     var body: some View {
@@ -698,30 +683,38 @@ private struct ProbeErfolg: View {
 
 // MARK: Fertig
 
+/// Das zweite Bild: der Vault steht. Dazu drei freiwillige Karten — jede öffnet ihren Inhalt, keine ist Pflicht.
 struct FertigAnsicht: View {
     @ObservedObject var modell: EinrichtungsModell
 
+    private var zeigeSicherung: Bool {
+        modell.anzeige.github != .nichtVerfuegbar && modell.anzeige.vault?.git != false
+    }
+    private var kiVerbunden: Bool { modell.anzeige.kis.contains { $0.istVerbunden } }
+    private var probeOk: Bool {
+        switch modell.anzeige.probe {
+        case .ok, .leer: return true
+        default: return false
+        }
+    }
+
     var body: some View {
-        VStack(spacing: 20) {
-            switch modell.anzeige.probe {
-            case .ok(let e): ProbeErfolg(treffer: e.treffer, beispiel: modell.anzeige.vaultIstBeispiel)
-            case .leer: ProbeErfolg(treffer: [], beispiel: modell.anzeige.vaultIstBeispiel)
-            default: Titel(symbol: "checkmark.seal.fill", titel: "Kortex ist eingerichtet", text: nil)
-            }
+        VStack(spacing: AssistentMass.abstand + 4) {
+            Titel(symbol: "checkmark.seal", titel: modell.anzeige.vaultIstBeispiel ? "Das Beispiel ist bereit" : "Dein Vault ist bereit",
+                  text: modell.vaultOrtText.map { "Er liegt in \($0)." })
             if modell.anzeige.vaultIstBeispiel {
-                HinweisBox(text: "Du arbeitest gerade im Beispiel „\(BeispielVault.name)“. Einen eigenen Vault legst du später im Studio an — oder öffne diesen Assistenten noch einmal über das Menü „Kortex einrichten …“.")
+                HinweisBox(text: "Du arbeitest im Beispiel „\(BeispielVault.name)“. Einen eigenen Vault legst du jederzeit im Studio an.")
             }
-            Flaeche {
-                ForEach(EinrichtungsSchritt.allCases.filter { !modell.zustand.uebergangen.contains($0) }, id: \.self) { s in
-                    let stand = modell.zustand.stand(s)
-                    Label(stand == .erledigt ? "\(s.anzeigeName): fertig" : "\(s.anzeigeName): übersprungen — im Menü „Kortex einrichten …“ nachholen",
-                          systemImage: stand == .erledigt ? "checkmark.circle.fill" : "minus.circle.fill")
-                        .labelStyle(.kortex)
-                        .foregroundStyle(stand == .erledigt ? Color.primary : Color.secondary)
-                        .font(.callout)
+            WegGruppe(ueberschrift: "Wenn du magst") {
+                AufgabenZeile(symbol: "sparkles", titel: "Deine KI verbinden", text: "Damit sie in deinem Vault nachschlagen kann.",
+                              erledigt: kiVerbunden) { modell.oeffneKarte(.ki) }
+                if zeigeSicherung {
+                    AufgabenZeile(symbol: "lock.shield", marke: .github, titel: "Bei GitHub sichern", text: "Eine private Kopie — falls dein Mac mal ausfällt.",
+                                  erledigt: modell.anzeige.sicherung.istVerbunden) { modell.oeffneKarte(.sicherung) }
                 }
+                AufgabenZeile(symbol: "magnifyingglass", titel: "Kurze Probe", text: "Kortex fragt deinen Vault, wie es deine KI tut.",
+                              erledigt: probeOk) { modell.oeffneKarte(.probe) }
             }
-            GrosserKnopf(titel: "Studio öffnen") { modell.beiStudioOeffnen() }
         }
     }
 }
