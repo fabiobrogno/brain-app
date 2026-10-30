@@ -9,7 +9,8 @@ import { join, dirname, resolve, delimiter, isAbsolute, sep } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
-import { registriereVault } from "./vault-schutz.mjs";
+import { registriereVault, registrierteVaults } from "./vault-schutz.mjs";
+import { vertrauensStand, alleVertraut } from "./vertrauen.mjs";
 
 export const KERN = dirname(fileURLToPath(import.meta.url));
 
@@ -166,6 +167,36 @@ export function aktiverVaultAusListe(opt = {}) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
+// Workspace-Trust (P5): vertraut ist ein Vault, den Kortex angelegt oder geklont hat oder den der Nutzer im Studio bestätigt hat (vertrauen.mjs).
+// Ohne Vertrauen: kein git, kein Hintergrunddienst, keine Hooks, keine KI-Pflege — Lesen, Suchen und Ansehen gehen.
+export function vaultVertraut(vault, opt = {}) {
+  const env = opt.env || process.env;
+  if (alleVertraut(env)) return true;
+  return vertrauensStand(vault, { support: typeof opt.support === "string" ? opt.support : supportOrdner(opt),
+    arbeitsbaumWurzeln: tageslaufArbeitsbaumWurzeln(env) }).vertraut;
+}
+// Wo der Tageslauf die verknüpften Arbeitsbäume eines Vaults anlegt (tageslauf/arbeitskopie.mjs; dieselbe Ausnahme kennt git-sicher). Der Testhaken
+// BRAIN_TAGESLAUF_CACHE gilt nur in der Testumgebung.
+export function tageslaufArbeitsbaumWurzeln(env = process.env) {
+  const w = [process.platform === "darwin" ? join(homedir(), "Library", "Caches", "brain-tageslauf") : join(tmpdir(), "brain-tageslauf")];
+  if ((env.KORTEX_KERN_UNSTABIL_ERLAUBT === "1" || env.BRAIN_TESTMODUS === "1") && env.BRAIN_TAGESLAUF_CACHE && isAbsolute(env.BRAIN_TAGESLAUF_CACHE)) w.push(env.BRAIN_TAGESLAUF_CACHE);
+  return w;
+}
+export const NICHT_VERTRAUT_TEXT = "Dieser Vault ist in Kortex noch nicht als deiner bestätigt, darum tut der Kern hier nichts, was am Vault etwas ändert (kein git, kein Hintergrunddienst, keine KI-Pflege, keine Hooks). Bestätige ihn im Studio; Lesen und Suchen gehen schon jetzt.";
+// Werkzeug-Einstiege, die am Vault etwas bewirken: ohne Vertrauen Meldung auf stderr und Exit 5.
+export function vertrauterVaultOderEnde(vault, opt = {}) {
+  if (vaultVertraut(vault, opt)) return vault;
+  console.error(NICHT_VERTRAUT_TEXT);
+  process.exit(5);
+}
+// Alle Vaults, die dieser Prozess über pruefeVault geprüft hat, sind vertraut. Ohne geprüften Vault: nein (fail-closed) — außer in der Testumgebung.
+export function geprueftVaultsVertraut(opt = {}) {
+  if (alleVertraut(opt.env || process.env)) return true;
+  const alle = registrierteVaults();
+  return alle.length > 0 && alle.every((v) => vaultVertraut(v, opt));
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
 // Vault bestimmen
 
 // --vault <pfad> bzw. --vault=<pfad> steht an beliebiger Stelle der Kommandozeile (bis zu einem „--“). Beim Laden dieses Moduls wird die Angabe aus
@@ -221,8 +252,12 @@ export function vaultUndRest(args, istBefehl, opt = {}) {
 // Für Werkzeug-Einstiege: kein gültiger Vault → Meldung auf stderr und Exit 2. Hook-Einstiege (still:true) beenden sich leise mit Exit 0 —
 // ein Hook darf nie eine Sitzung stören, nur weil gerade kein Vault gewählt ist.
 export function vaultPfadOderEnde(argv = process.argv, { still = false, ...opt } = {}) {
-  try { return vaultPfad(argv, opt); }
-  catch (e) {
+  try {
+    const v = vaultPfad(argv, opt);
+    // Hook-Einstiege (still:true) wirken nur in einem vertrauten Vault (P5); sonst enden sie ebenso leise wie ohne Vault.
+    if (still && !vaultVertraut(v, opt)) process.exit(0);
+    return v;
+  } catch (e) {
     if (!(e instanceof KeinVaultFehler)) throw e;
     if (!still) console.error(e.message);
     process.exit(still ? 0 : 2);

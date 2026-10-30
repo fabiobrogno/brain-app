@@ -1076,8 +1076,11 @@ function zeichneStatus() {
   if (S.info.appVersion) k.push(st("version", [symbol("info", 14), h("span", { text: S.info.appVersion })], { titel: T.status.version(S.info.appVersion) }));
   k.push(h("span", { klasse: "trenner" }));
   const vertrauen = vertrauenVon(S.info);
-  if (istGitGesperrt()) {
-    // Statt der Git-Angaben: gesperrt, bis der Nutzer dem Vault vertraut (Klick öffnet die Frage)
+  if (vertrauen && !vertrauen.erlaubt) {
+    // Statt der Git-Angaben: „Nur ansehen“, bis der Nutzer dem Vault vertraut (Klick öffnet die Frage)
+    k.push(st("vertrauen", [symbol("schild", 14), h("span", { text: T.status.nurAnsehen })], { klick: oeffneVertrauen, titel: T.status.nurAnsehenTitel, klasse: "warn" }));
+  } else if (istGitGesperrt()) {
+    // Git ist gesperrt, obwohl der Vault vertraut ist (z. B. die Werkstatt meldet es für diesen Zustand): Klick zeigt den Grund
     k.push(st("git-gesperrt", [symbol("schild", 14), h("span", { text: T.status.gitGesperrt })], { klick: oeffneVertrauen, titel: T.status.gitGesperrtTitel, klasse: "warn" }));
   } else if (!S.info.git || (g && !g.repo)) {
     k.push(st("kein-git", [punktEl("grau"), h("span", { text: T.status.keinGit })], { titel: "Dieser Ordner ist nicht mit Git gesichert." }));
@@ -1095,9 +1098,6 @@ function zeichneStatus() {
     k.push(st("verlauf", [symbol("verlauf", 14), h("span", { text: T.status.verlauf })], { klick: oeffneVerlauf, titel: T.status.verlaufTitel, klasse: S.sicht.art === "verlauf" ? "aktiv" : "" }));
   }
   k.push(h("span", { klasse: "sp" }));
-  if (vertrauen && vertrauen.noetig && !vertrauen.erlaubt && !istGitGesperrt()) {
-    k.push(st("vertrauen", [symbol("schild", 14), h("span", { text: T.status.nichtVertraut })], { klick: oeffneVertrauen, titel: T.status.nichtVertrautTitel, klasse: "warn" }));
-  }
   const verbunden = S.kiVerbunden || S.ki?.agenten?.some((a) => a.id === "claude" && a.verbunden === true);
   k.push(st("claude", [kiLogo("claude", 14, { dekorativ: true }), h("span", { text: T.status.claude }), symbol(verbunden ? "haken" : "schliessen", 12)], { klick: oeffneKi, titel: verbunden ? T.status.claudeVerbunden : T.status.claudeNicht, klasse: verbunden ? "gut" : "" }));
   const gs = S.gesundheit;
@@ -1248,28 +1248,22 @@ function oeffneEinstellungen(anker) {
     { trenner: true },
     { name: S.breit ? T.werkzeuge.schmal : T.werkzeuge.breit, symbol: "breite", id: "breite", tun: () => { umschalteBreit(); } },
     { name: T.befehle.mcp, logo: "claude", id: "ki", tun: oeffneKi },
+    ...(S.info?.vault && vertrauenVon(S.info) ? [vertrauenVon(S.info).erlaubt
+      ? { name: T.vertrauen.entziehenMenue, symbol: "schild", id: "vertrauen-entziehen", tun: oeffneVertrauenEntziehen }
+      : { name: T.vertrauen.vertrauenMenue, symbol: "schild", id: "vertrauen", tun: oeffneVertrauen }] : []),
     ...(inApp() ? [{ name: T.befehle.ordner, symbol: "ordner", id: "finder", tun: () => aktion("ordner-zeigen", S.pfad || undefined) }, { name: T.befehle.ansicht, symbol: "ansicht", id: "uebersicht", tun: oeffneUebersicht }] : []),
     { trenner: true },
     { name: `${PRODUKT} ${S.info?.appVersion || ""}`.trim(), symbol: "info", id: "version", tun: () => {} },
   ], { rechts: true, oben: true, breite: 240 });
 }
 
-// „Übersicht öffnen“: die App antwortet { ok: true } oder { ok: false, grund } (Spec §8). Ohne Brain-Vault (brain.config.json) oder ohne
-// bereiten Kern öffnet sich nichts, und das sagen wir: „kein-kit“ und „kern-nicht-bereit“ bekommen je einen Satz. „nicht-vertraut“ und
-// „pruefung-fehlgeschlagen“ kennt nur noch eine ältere App (der gebündelte Kern braucht kein Vertrauen). Im Browser (keine App) tut der Aufruf nichts.
+// „Übersicht öffnen“: die App antwortet { ok: true } oder { ok: false, grund } (Spec §8). Ohne Vault-Marke (brain.config.json) oder ohne
+// bereiten Kern öffnet sich nichts, und das sagen wir: „kein-kit“ und „kern-nicht-bereit“ bekommen je einen Satz. Im Browser (keine App) tut der Aufruf nichts.
 async function oeffneUebersicht() {
   const r = await aktionMitAntwort("ansicht");
   if (!r || r.ok !== false) return;
   if (r.grund === "kein-kit") { toast(T.uebersicht.keinKit); return; }
   if (r.grund === "kern-nicht-bereit") { toast(T.uebersicht.kernNichtBereit, { fehler: true }); return; }
-  if (r.grund === "pruefung-fehlgeschlagen") { toast(T.uebersicht.pruefung, { fehler: true }); return; }
-  if (r.grund === "nicht-vertraut") {
-    await ladeInfoLeise(); // die App prüft frisch: unseren Stand angleichen, bevor wir fragen
-    const v = vertrauenVon(S.info);
-    if (v && !v.erlaubt) { toast(T.uebersicht.nichtVertraut); oeffneVertrauen(); }
-    else toast(T.uebersicht.nichtBestaetigt, { fehler: true }); // wir halten den Vault für vertraut, die App nicht: ehrlich sagen
-    return;
-  }
   toast(T.uebersicht.nichtGeoeffnet, { fehler: true });
 }
 
@@ -1669,37 +1663,30 @@ function markiereBereit() {
   while (wartendeBefehle.length) { try { fuehreBefehlAus(wartendeBefehle.shift()); } catch { /* ein Befehl darf die anderen nicht stoppen */ } }
 }
 
-// ======================================================= Vertrauen (Spec §8)
-// Nichts aus einem Vault startet ein Programm, bevor der Nutzer ihm vertraut hat: Git-Hooks, Git-Einstellungen (und ein altes .tools, falls
-// Hooks es starten). Der gebündelte Kern der App braucht kein Vertrauen.
-// info.vertrauen = { erlaubt, noetig, geaendert, gitGesperrt, gruende: [{ art, text }] }; eine ältere Werkstatt kennt nur info.kit.
+// ======================================================= Vertrauen (Workspace-Trust, P5)
+// Ein Vault, den Kortex angelegt oder von GitHub geklont hat, ist vertraut. Einen von außen geöffneten Ordner fragen wir einmal: „Kommt dieser Vault
+// von dir?“ Bis zur Antwort (oder bei „Nur ansehen“) kannst du lesen, suchen und schreiben; Git, Hintergrunddienst, Hooks und KI-Pflege sind aus.
+// info.vertrauen = { erlaubt, noetig, gitGesperrt, quelle }; zurücknehmen kannst du es in den Einstellungen.
 function vertrauenVon(info) {
   if (!info?.vault) return null;
   const v = info.vertrauen;
-  if (v && typeof v === "object") {
-    return { erlaubt: !!v.erlaubt, noetig: !!v.noetig, geaendert: !!v.geaendert, gitGesperrt: !!v.gitGesperrt,
-      gruende: (Array.isArray(v.gruende) ? v.gruende : []).filter((g) => g && typeof g === "object") };
-  }
-  const kit = info.kit;
-  if (kit && kit.vorhanden) return { erlaubt: !!kit.vertraut, noetig: true, geaendert: false, gitGesperrt: false, gruende: [{ art: "kit" }] };
-  return null;
+  if (!v || typeof v !== "object") return null;
+  return { erlaubt: !!v.erlaubt, noetig: !!v.noetig, gitGesperrt: !!v.gitGesperrt, quelle: typeof v.quelle === "string" ? v.quelle : null };
 }
 const istGitGesperrt = () => !!(S.info?.vertrauen?.gitGesperrt || S.git?.gesperrt);
-const grundText = (g) => (typeof g.text === "string" && g.text.trim() ? g.text.trim() : ausTabelle(T.vertrauen.gruende, g.art) || T.vertrauen.gruende.sonst);
 
-// Von selbst fragen wir je Vault und Sitzung einmal (und noch einmal, wenn sich der Code danach ändert); später geht es über die Statusleiste.
+// Von selbst fragen wir je Vault und Sitzung einmal; später geht es über die Statusleiste („Nur ansehen“) und die Einstellungen.
 const vertrauenGefragt = new Set();
 function fragVertrauenEinmal() {
   const v = vertrauenVon(S.info);
   if (!v || !v.noetig || v.erlaubt) return;
-  const schluessel = S.info.vault + (v.geaendert ? "|geaendert" : "");
-  if (vertrauenGefragt.has(schluessel)) return;
+  if (vertrauenGefragt.has(S.info.vault)) return;
   // Erst eintragen, wenn die Frage wirklich aufgeht: sonst bliebe dieser Vault für den Rest der Sitzung ungefragt
-  if (oeffneVertrauen()) vertrauenGefragt.add(schluessel);
+  if (oeffneVertrauen()) vertrauenGefragt.add(S.info.vault);
 }
 
 // Die offene Frage gehört zu GENAU einem Vault: dem, dessen Name und Pfad im Dialog stehen. Wechselt der Vault, geht sie mit zu
-// (zuruecksetzen), und erlaubt wird nur, was gezeigt wurde: der Pfad geht beim Klick mit (POST /api/kit/vertrauen { erlauben, vault }).
+// (zuruecksetzen), und vertraut wird nur, was gezeigt wurde: der Pfad geht beim Klick mit (POST /api/vertrauen { erlauben, vault }).
 let vertrauenFrage = null; // { d, fuer }
 function oeffneVertrauen() {
   const v = vertrauenVon(S.info);
@@ -1710,22 +1697,18 @@ function oeffneVertrauen() {
     if (vertrauenFrage.fuer === fuer && vertrauenFrage.d.box.isConnected) return vertrauenFrage.d; // schon offen, für denselben Vault
     vertrauenFrage.d.schliessen(); // gehörte zu einem anderen Vault
   }
-  const gruende = v.gruende.length ? v.gruende : [{ art: istGitGesperrt() ? "git" : "sonst" }];
   const fehlerEl = h("div", { klasse: "fehlertext", role: "alert", hidden: true });
-  // „Nicht jetzt“ hat den Fokus: ein versehentliches Enter erteilt kein Vertrauen
+  // „Nur ansehen“ hat den Fokus: ein versehentliches Enter erteilt kein Vertrauen
   const nein = h("button", { klasse: "knopf", type: "button", "data-aktion": "vertrauen-spaeter", text: T.vertrauen.spaeter, autofocus: true, aufClick: () => d.schliessen() });
   const ja = h("button", { klasse: "knopf primaer", type: "button", "data-aktion": "vertrauen-erlauben", text: T.vertrauen.erlauben });
   const d = dialog({
     titel: T.vertrauen.titel, breit: true,
     beiSchliessen: () => { if (vertrauenFrage?.d === d) vertrauenFrage = null; },
     rumpf: [
-      v.geaendert ? h("p", { klasse: "vt-geaendert", "data-vertrauen": "geaendert", text: T.vertrauen.geaendert }) : null,
       h("p", { klasse: "mini vt-vault", title: fuer, text: `${S.info.name || PRODUKT} · ${fuer.replace(/^\/Users\/[^/]+(?=\/|$)/, "~")}` }),
-      h("p", { text: T.vertrauen.intro }),
-      h("ul", { klasse: "vt-gruende", "data-liste": "gruende" }, gruende.map((g) =>
-        h("li", { "data-grund": typeof g.art === "string" ? g.art : "sonst" }, symbol(g.art === "kit" ? "code" : "zweig", 14), h("span", { text: grundText(g) })))),
-      h("p", { klasse: "leise", text: T.vertrauen.folge }),
-      v.gitGesperrt || istGitGesperrt() ? h("p", { klasse: "vt-git", "data-vertrauen": "git-gesperrt", text: T.vertrauen.gitGesperrt }) : null,
+      h("p", { "data-vertrauen": "intro", text: T.vertrauen.intro }),
+      h("p", { klasse: "leise", "data-vertrauen": "folge", text: T.vertrauen.folge }),
+      h("p", { klasse: "vt-git", "data-vertrauen": "git-gesperrt", text: T.vertrauen.gitGesperrt }),
       h("p", { klasse: "mini", text: T.vertrauen.vorsicht }),
       fehlerEl,
     ],
@@ -1735,13 +1718,13 @@ function oeffneVertrauen() {
   d.box.setAttribute("data-dialog", "vertrauen");
   d.box.setAttribute("data-vault", fuer);
   ja.addEventListener("click", async () => {
-    // Zwischen Öffnen und Klick kann der Vault gewechselt haben: dann wird nichts erlaubt, sondern für den jetzigen neu gefragt
+    // Zwischen Öffnen und Klick kann der Vault gewechselt haben: dann wird nichts vertraut, sondern für den jetzigen neu gefragt
     if (S.info?.vault !== fuer) { d.schliessen(); oeffneVertrauen(); return; }
     ja.disabled = nein.disabled = true; ja.textContent = T.vertrauen.speichert; fehlerEl.hidden = true;
     let fehler = null;
     try { if (!(await vertrauenSetzen(true, fuer))) fehler = T.vertrauen.nichtGespeichert; }
     catch (e) {
-      // Die Werkstatt hat inzwischen einen anderen Vault offen: nichts wurde erlaubt, die Oberfläche war veraltet
+      // Die Werkstatt hat inzwischen einen anderen Vault offen: nichts wurde vertraut, die Oberfläche war veraltet
       if (andererVault(e)) { await nachAnderemVault(d); return; }
       fehler = e.message || T.vertrauen.nichtGespeichert;
     }
@@ -1752,7 +1735,46 @@ function oeffneVertrauen() {
   return d;
 }
 
-// 409 anderer-vault: die Frage gehörte zu einem Vault, den die Werkstatt nicht (mehr) offen hat. Sie hat nichts erlaubt; hier die Frage
+// Einstellungen → „Vertrauen entziehen …“: der Rückweg. Eine Rückfrage, dann ist der Vault wieder „nur ansehen“.
+let entziehenFrage = null;
+function oeffneVertrauenEntziehen() {
+  const v = vertrauenVon(S.info);
+  if (!v) return null;
+  if (!v.erlaubt) { toast(T.vertrauen.nochNicht); return oeffneVertrauen(); }
+  if (entziehenFrage?.box.isConnected) return entziehenFrage;
+  const fuer = S.info.vault;
+  const fehlerEl = h("div", { klasse: "fehlertext", role: "alert", hidden: true });
+  const nein = h("button", { klasse: "knopf", type: "button", "data-aktion": "vertrauen-behalten", text: T.vertrauen.behalten, autofocus: true, aufClick: () => d.schliessen() });
+  const ja = h("button", { klasse: "knopf gefahr", type: "button", "data-aktion": "vertrauen-entziehen", text: T.vertrauen.entziehenKnopf });
+  const d = dialog({
+    titel: T.vertrauen.entziehenTitel,
+    beiSchliessen: () => { if (entziehenFrage === d) entziehenFrage = null; },
+    rumpf: [
+      h("p", { klasse: "mini vt-vault", title: fuer, text: `${S.info.name || PRODUKT} · ${fuer.replace(/^\/Users\/[^/]+(?=\/|$)/, "~")}` }),
+      h("p", { text: T.vertrauen.entziehenText }),
+      fehlerEl,
+    ],
+    knoepfe: [nein, ja],
+  });
+  entziehenFrage = d;
+  d.box.setAttribute("data-dialog", "vertrauen-entziehen");
+  ja.addEventListener("click", async () => {
+    if (S.info?.vault !== fuer) { d.schliessen(); return; }
+    ja.disabled = nein.disabled = true; fehlerEl.hidden = true;
+    try {
+      await vertrauenSetzen(false, fuer);
+      vertrauenGefragt.add(fuer); // wer das Vertrauen bewusst zurückgenommen hat, wird in dieser Sitzung nicht gleich wieder gefragt
+      d.schliessen(); toast(T.vertrauen.entzogen); return;
+    } catch (e) {
+      if (andererVault(e)) { d.schliessen(); toast(T.vertrauen.andererVault, { fehler: true, ms: 8000 }); return; }
+      fehlerEl.hidden = false; fehlerEl.textContent = e.message || T.vertrauen.nichtGespeichert;
+    }
+    ja.disabled = nein.disabled = false;
+  });
+  return d;
+}
+
+// 409 anderer-vault: die Frage gehörte zu einem Vault, den die Werkstatt nicht (mehr) offen hat. Sie hat nichts geändert; hier die Frage
 // zu, den Stand neu holen (anderer Vault: alles neu laden, das fragt dann für den jetzigen Vault von selbst).
 async function nachAnderemVault(d) {
   d.schliessen();
@@ -1762,14 +1784,14 @@ async function nachAnderemVault(d) {
   else { await ladeInfoLeise(); oeffneVertrauen(); }
 }
 
-// POST /api/kit/vertrauen { erlauben, vault } → { kit, vertrauen }. Danach sagt die App Bescheid (Swift prüft neu), und Info, Git-Status, Index und Gesundheit
+// POST /api/vertrauen { erlauben, vault } → { kit, vertrauen }. Danach sagt die App Bescheid (Swift liest den Status neu), und Info, Git-Status, Index und Gesundheit
 // werden neu geladen. Fiel die Git-Sperre weg, zeigen Verlauf-Ansicht und Notiz-Verlauf wieder den Verlauf statt „Git gesperrt“.
-// true = der Vault ist jetzt vertraut.
+// true = der Vault ist jetzt vertraut (beim Entziehen: true, wenn er es nicht mehr ist).
 async function vertrauenSetzen(erlauben, vault) {
   const warGesperrt = istGitGesperrt();
-  const r = await api.kitVertrauen(erlauben, vault); // wirft bei Fehler: dann ist nichts passiert
+  const r = await api.vertrauen(erlauben, vault); // wirft bei Fehler: dann ist nichts passiert
   aktion("vertrauen-geaendert");
-  if (r?.vertrauen && S.info && S.info.vault === vault) S.info = { ...S.info, vertrauen: r.vertrauen, ...(r.kit ? { kit: r.kit } : {}) };
+  if (r?.vertrauen && S.info && S.info.vault === vault) S.info = { ...S.info, vertrauen: r.vertrauen };
   zeichneStatus();
   const nachAntwort = vertrauenVon(S.info);
   const [infoOk] = await Promise.all([ladeInfoLeise(), ladeGit(), ladeBaum(), ladeGesundheit()]);
@@ -1778,17 +1800,17 @@ async function vertrauenSetzen(erlauben, vault) {
     if (S.sicht.art === "verlauf") verlaufInst?.aktualisieren?.();
     ladeInfo(); // „Verlauf“ der offenen Notiz in den Eigenschaften
   }
-  return !erlauben || !jetzt || jetzt.erlaubt;
+  return erlauben ? !jetzt || jetzt.erlaubt : !jetzt || !jetzt.erlaubt;
 }
 
-// Info desselben Vaults übernehmen. Ging dabei das Vertrauen verloren (ein Abgleich hat anderen Code oder andere Hooks geholt), sagt die
-// Oberfläche es der App (sie prüft neu und schließt die Übersicht) und die Frage kommt noch einmal (Spec §8, Vertrauen v2).
+// Info desselben Vaults übernehmen. Ging dabei das Vertrauen verloren (z. B. in einem anderen Fenster entzogen), sagt die Oberfläche es der App
+// (sie liest den Status neu) und die Frage kommt noch einmal.
 function setzeInfo(neu) {
   const davor = S.info && neu && S.info.vault === neu.vault ? vertrauenVon(S.info) : null;
   S.info = neu;
   const jetzt = vertrauenVon(neu);
   if (davor?.erlaubt && jetzt && !jetzt.erlaubt) {
-    vertrauenGefragt.delete(neu.vault); vertrauenGefragt.delete(neu.vault + "|geaendert");
+    vertrauenGefragt.delete(neu.vault);
     aktion("vertrauen-geaendert");
   }
 }

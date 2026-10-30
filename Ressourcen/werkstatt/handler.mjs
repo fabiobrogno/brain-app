@@ -12,6 +12,7 @@ import { kindUmgebung, supportOrdner, falte, kernOrdner } from "../gemeinsam/bas
 import { starte, neueFrist, registriere, beendeGruppe } from "../gemeinsam/prozess.mjs";
 import { findeProgramm, erkenneAgenten } from "../gemeinsam/ki.mjs";
 import * as vaultsFn from "../gemeinsam/vaults.mjs";
+import * as vertrauenFn from "../gemeinsam/vertrauen.mjs";
 import { erzeugeGitHub } from "../gemeinsam/github.mjs";
 import { sicherungStand } from "../gemeinsam/gitsicherung.mjs";
 import { erzeugeVerdrahtung } from "./verdrahtung.mjs";
@@ -87,6 +88,11 @@ export function erzeugeHandler(o) {
   // App-Verschieben und -Updates. Ein ausdrücklich übergebener `mcpPfad` (Tests) gilt nur zusammen mit einem ausdrücklichen `kern`.
   const kernMcp = o.kern || !o.mcpPfad ? join(o.kern || kernOrdner(), "mcp", "brain-mcp.mjs") : null;
 
+  // Workspace-Trust (P5): alte Vertrauens-Merker (Stand vor P5) für Vaults aus der Liste werden einmal übernommen, alle anderen alten fallen weg.
+  try {
+    vertrauenFn.migriereAltesVertrauen({ support: vaultOpt.support || supportOrdner(), vaultPfade: vaultsFn.leseVaults(optV()).vaults.map((e) => e.pfad) });
+  } catch { /* die Frage im Studio fängt es ab */ }
+
   // GitHub-Anmeldung (Gerätecode): die Client-ID kommt aus der Umgebung (Info.plist → App), nie aus dem Code. o.github = Ersatz für Tests.
   const github = o.github || erzeugeGitHub({ clientId: process.env.KORTEX_GITHUB_CLIENT_ID, basis: process.env.BRAIN_GITHUB_BASIS, apiBasis: process.env.BRAIN_GITHUB_API,
     helper: process.env.BRAIN_GITHUB_HELPER });
@@ -143,13 +149,13 @@ export function erzeugeHandler(o) {
     switch (pfad) {
       case "/api/info": {
         nur("GET");
-        if (!v) return { vault: null, name: null, appVersion, kitVersion: null, git: false, mcpBefehl: null, kit: { vorhanden: false, vertraut: false }, vertrauen: null };
-        const stand = v.vertrauenStand(); // einmal prüfen: kit.vertraut === vertrauen.erlaubt
-        return { vault: v.wurzel, name: v.name, appVersion, kitVersion: v.kitVersion(), git: await v.istGitRepo(), mcpBefehl: mcpBefehl(), mcpBefehle: { claude: mcpBefehl(), codex: codexBefehl(), cursor: cursorText() }, kit: v.kit(stand), vertrauen: stand };
+        if (!v) return { vault: null, name: null, appVersion, kitVersion: null, git: false, mcpBefehl: null, kit: { vorhanden: false }, vertrauen: null };
+        const stand = v.vertrauenStand();
+        return { vault: v.wurzel, name: v.name, appVersion, kitVersion: v.kitVersion(), git: await v.istGitRepo(), mcpBefehl: mcpBefehl(), mcpBefehle: { claude: mcpBefehl(), codex: codexBefehl(), cursor: cursorText() }, kit: v.kit(), vertrauen: stand };
       }
-      case "/api/kit/vertrauen": {
-        // { erlauben, vault }: vault ist der Pfad, den der Dialog gezeigt hat. Der offene Vault kann zwischen Anzeige und Klick gewechselt haben
-        // (Vault-Wechsel, Abgleich, anderes Fenster) — freigegeben (oder widerrufen) wird nie ein Vault, den der Nutzer nicht vor sich hatte.
+      case "/api/vertrauen": {
+        // Workspace-Trust (P5). { erlauben, vault }: vault ist der Pfad, den der Dialog gezeigt hat. Der offene Vault kann zwischen Anzeige und Klick
+        // gewechselt haben (Vault-Wechsel, Abgleich, anderes Fenster) — vertraut (oder entzogen) wird nie ein Vault, den der Nutzer nicht vor sich hatte.
         nur("POST");
         const e = eingabe();
         if (typeof e.erlauben !== "boolean") throw new HttpFehler(400, "„erlauben“ muss true oder false sein.");
@@ -220,7 +226,11 @@ export function erzeugeHandler(o) {
       }
       case "/api/vaults/neu": nur("POST"); return neuerStand(await vaultsFn.neuesVault(eingabe(), optV()));
       case "/api/vaults/oeffnen": nur("POST"); return neuerStand(await vaultsFn.oeffneOrdner(eingabe(), optV()));
-      case "/api/vaults/klonen": nur("POST"); return neuerStand(await vaultsFn.klone(eingabe(), optV()));
+      case "/api/vaults/klonen": {
+        nur("POST");
+        let login = null; try { login = (await github.konto()).login || null; } catch { /* nicht angemeldet: der Klon gilt nicht als eigener */ }
+        return neuerStand(await vaultsFn.klone(eingabe(), { ...optV(), githubLogin: login }));
+      }
       case "/api/vaults/entfernen": {
         nur("POST");
         const e = eingabe();

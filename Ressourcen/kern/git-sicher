@@ -185,6 +185,6 @@ esac
 
 exec "$ECHT" -c core.fsmonitor=false -c "core.hooksPath=$HOOKS" -c protocol.ext.allow=never \
   -c submodule.recurse=false -c fetch.recurseSubmodules=false -c push.recurseSubmodules=no \
-  -c diff.ignoreSubmodules=all -c status.submoduleSummary=false \
+  -c diff.ignoreSubmodules=all -c status.submoduleSummary=false -c safe.bareRepository=explicit \
   -c commit.gpgSign=false -c tag.gpgSign=false -c push.gpgSign=false \
   "$@"

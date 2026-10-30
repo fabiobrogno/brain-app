@@ -472,7 +472,7 @@ test("Routen: sync mit konflikteLoesen, konflikt, konflikt/loesen, wiederherstel
 
 // ───────────────────────────── Vertrauen nach gelösten Konflikten ─────────────────────────────
 
-test("Nach gelösten Konflikten wird das Vertrauen vor dem Senden neu bewertet: kein Hook aus fremdem Code, nichts gesendet", async () => {
+test("Nach gelösten Konflikten sendet der Abgleich ohne Hooks: ein pre-push-Hook aus fremdem Code läuft nie, gesendet wird trotzdem", async () => {
   const { sync } = await import(pfad("gemeinsam", "git.mjs"));
   const { a, v, bare } = await konfliktAufbauen();
   const marke = join(tmp("brain-marke-"), "hook-lief");
@@ -480,13 +480,10 @@ test("Nach gelösten Konflikten wird das Vertrauen vor dem Senden neu bewertet: 
   writeFileSync(hook, `#!/bin/sh\ntouch '${marke}'\nexit 0\n`, { mode: 0o755 });
   await v.gitKonfliktAbschliessen({ auswahl: [{ pfad: "start.md", wahl: "meine" }] });
   const serverVorher = g(bare, "rev-parse", "main").trim();
-  const r1 = await sync(a, { vertraut: true, neuBewerten: () => ({ vertraut: false, gesperrt: false }) });
-  assert.equal(r1.vertrauenGeaendert, true); assert.equal(r1.ergebnis, "aktuell");
-  assert.equal(g(bare, "rev-parse", "main").trim(), serverVorher, "nichts gesendet");
-  assert.equal(existsSync(marke), false, "kein Hook gelaufen");
-  const r2 = await sync(a, { vertraut: true, neuBewerten: () => ({ vertraut: true, gesperrt: false }) });
-  assert.equal(r2.ergebnis, "gesendet"); assert.equal(r2.vertrauenGeaendert, undefined);
-  assert.equal(existsSync(marke), true, "bei bestehendem Vertrauen laufen die Hooks wie gewohnt");
+  const r1 = await sync(a, { vertraut: true });
+  assert.equal(r1.ergebnis, "gesendet"); assert.equal(r1.vertrauenGeaendert, undefined);
+  assert.notEqual(g(bare, "rev-parse", "main").trim(), serverVorher, "gesendet");
+  assert.equal(existsSync(marke), false, "kein Hook gelaufen: Holen, Zusammenführen und Senden laufen immer ohne Hooks, auch im vertrauten Vault");
 });
 
 // ───────────────────────────── Nachbesserungen aus dem Review ─────────────────────────────

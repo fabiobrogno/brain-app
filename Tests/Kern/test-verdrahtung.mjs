@@ -68,7 +68,7 @@ test("Installer ohne Testschalter und ohne Starter: Exit 3 mit klarer Meldung, n
   const support = mkdtempSync(join(tmpdir(), "verdr-sup "));
   mkdirSync(join(support, "bin"));
   execFileSync("ln", ["-s", KERN, join(support, "bin", "kern")]);
-  const r = lauf([inst, v, "--claude-home", h], { KORTEX_KERN_UNSTABIL_ERLAUBT: "", KORTEX_KERN_TEMP_WURZELN: "", KORTEX_KERN_PFAD: join(support, "bin", "kern") });
+  const r = lauf([inst, v, "--claude-home", h], { KORTEX_KERN_UNSTABIL_ERLAUBT: "", BRAIN_TESTMODUS: "1", KORTEX_KERN_TEMP_WURZELN: "", KORTEX_KERN_PFAD: join(support, "bin", "kern") }); // BRAIN_TESTMODUS: der Wegwerf-Vault gilt als vertraut (P5)
   assert.equal(r.status, 3);
   assert.match(r.stderr, /Kern-Pfad|Starter/);
   assert.ok(!existsSync(join(h, "settings.json")));
@@ -178,7 +178,7 @@ test("install-git-hooks: ein fremder core.hooksPath bleibt (Exit 4) — auch bei
 
 test("install-git-hooks ohne stabilen Kern-Pfad: Exit 3, nichts eingetragen", () => {
   const v = gitVault();
-  const r = spawnSync(process.execPath, [instGit, v], { encoding: "utf8", env: { ...GIT_ENV(), KORTEX_KERN_UNSTABIL_ERLAUBT: "" } });
+  const r = spawnSync(process.execPath, [instGit, v], { encoding: "utf8", env: { ...GIT_ENV(), KORTEX_KERN_UNSTABIL_ERLAUBT: "", BRAIN_TESTMODUS: "1" } }); // BRAIN_TESTMODUS: der Wegwerf-Vault gilt als vertraut (P5)
   assert.equal(r.status, 3);
   assert.equal(lokal(v), "");
 });

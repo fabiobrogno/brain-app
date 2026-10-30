@@ -121,8 +121,8 @@ final class AppZustand: ObservableObject {
     private var umgebung: [String: String] {
         ["BRAIN_NODE": brainNode].merging(vorschau?.kindVorgaben ?? [:]) { _, neu in neu }
     }
-    /// Die Werkstatt liest und schreibt `vaults.json` und ihren Vertrauens-Merker (`vertrauen.json`, Hooks und Repo-Einstellungen) im
-    /// echten Application-Support-Ordner der App.
+    /// Die Werkstatt liest und schreibt `vaults.json` und den Vertrauens-Merker (`vertrauen.json`, Workspace-Trust je Vault; der Kern liest
+    /// ihn nur) im echten Application-Support-Ordner der App.
     /// Die öffentliche GitHub-Client-ID (Info.plist `KortexGitHubClientID`) geht per Umgebung an die Werkstatt; die ID ist öffentlich (kein Client-Secret); leer/fehlt = Anmeldung ausgeblendet.
     private var werkstattUmgebung: [String: String] {
         // BRAIN_MCP_NODE: der stabile Node-Pfad (<support>/bin/node), den die Werkstatt in neue MCP-Einträge schreibt.
@@ -434,8 +434,8 @@ final class AppZustand: ObservableObject {
             vaultGewechselt()
             return ok
         case .vertrauenGeaendert:
-            // Das Backend hat das Vertrauen geändert (Hooks und Repo-Einstellungen des Vaults): Status neu lesen. Für den gebündelten
-            // Kern ist das Vertrauen nicht nötig. Die Antwort wartet nicht auf `brain status`.
+            // Das Backend hat das Vertrauen in den Vault geändert (Workspace-Trust): Der Kern arbeitet ohne Vertrauen ohne git, darum den
+            // Status neu lesen. Die Antwort wartet nicht auf `brain status`.
             log.schreibe("aktion vertrauen-geaendert")
             Task { await aktualisiere() }
             return ok

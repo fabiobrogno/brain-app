@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { writeFileSync, readFileSync, existsSync, chmodSync } from "node:fs";
 import { join } from "node:path";
-import { tmp, repo, g, pfad } from "./hilfe.mjs";
+import { tmp, repo, g, pfad, echt } from "./hilfe.mjs";
 
 process.env.HOME = tmp("brain-home-");
 process.env.GIT_CONFIG_NOSYSTEM = "1";
@@ -68,7 +68,7 @@ test("sicherungStand: jeder Zustand und jede Sperre", () => {
   }
 });
 
-test("bereit über die Route: bereit, losgelöst, gesperrt (credential.helper im Vault), ohne Version, Remote ohne Upstream", async () => {
+test("bereit über die Route: bereit, losgelöst, gesperrt (Vault nicht vertraut), ohne Version, Remote ohne Upstream", async () => {
   const v = repo();
   const { rufe } = aufbau(v, { repoJson: privat });
   assert.deepEqual((await rufe("GET", "/api/sicherung/bereit")).j, { zustand: "bereit" });
@@ -84,9 +84,10 @@ test("bereit über die Route: bereit, losgelöst, gesperrt (credential.helper im
   assert.deepEqual([r.zustand, r.grund], ["blockiert", "losgeloest"]);
   g(v, "checkout", "-q", "main");
 
-  g(v, "config", "credential.helper", "!echo");
-  r = (await rufe("GET", "/api/sicherung/bereit")).j;
-  assert.deepEqual([r.zustand, r.grund], ["blockiert", "gesperrt"]);
+  await echt(async () => { // Workspace-Trust: ohne Vertrauen ist Git gesperrt, es wird nichts gesichert
+    r = (await rufe("GET", "/api/sicherung/bereit")).j;
+    assert.deepEqual([r.zustand, r.grund], ["blockiert", "gesperrt"]);
+  });
 
   const leer = tmp("brain-leer-"); g(leer, "init", "-q", "-b", "main");
   r = (await aufbau(leer, { repoJson: privat }).rufe("GET", "/api/sicherung/bereit")).j;
@@ -141,10 +142,10 @@ test("verbinden: ein öffentliches, archiviertes oder nicht beschreibbares Repos
   assert.equal((await rufe("POST", "/api/sicherung/verbinden", VERBINDEN)).status, 404);
 });
 
-test("verbinden: gesperrter Vault, losgelöster Kopf oder ungültige Eingabe → Fehler OHNE einen Aufruf an GitHub", async () => {
-  const gesperrt = repo(); g(gesperrt, "config", "credential.helper", "!echo");
+test("verbinden: nicht vertrauter Vault, losgelöster Kopf oder ungültige Eingabe → Fehler OHNE einen Aufruf an GitHub", async () => {
+  const gesperrt = repo();
   const a = aufbau(gesperrt, { repoJson: privat });
-  let r = await a.rufe("POST", "/api/sicherung/verbinden", VERBINDEN);
+  let r = await echt(() => a.rufe("POST", "/api/sicherung/verbinden", VERBINDEN));
   assert.equal(r.status, 409); assert.equal(r.j.grund, "gesperrt"); assert.equal(a.aufrufe.length, 0);
 
   const lose = repo(); g(lose, "checkout", "-q", "--detach");

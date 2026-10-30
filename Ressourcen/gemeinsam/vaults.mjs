@@ -35,7 +35,7 @@ import { HttpFehler, supportOrdner, testmodus, falte, BEARBEITBAR, vorschauOrdne
 import { git } from "./git.mjs";
 import { pruefeGitUrl, uebersetzeGitFehler } from "./gitwerkzeug.mjs";
 import { sicherungFuer } from "./sicherung.mjs";
-import { sichereDefektenMerker, nutzerGitEinstellungen } from "./vertrauen.mjs";
+import { sichereDefektenMerker, nutzerGitEinstellungen, erlaube as vertraue } from "./vertrauen.mjs";
 import { berlinHeute } from "./pruefung.mjs";
 import { legeVorlageAn, GITIGNORE } from "./vorlage.mjs";
 
@@ -50,7 +50,7 @@ const MELDUNG_NICHT_LEER = "Der Ordner ist nicht leer. Wähle einen neuen oder l
 
 function optionen(opt) {
   const o = opt || {};
-  return { support: o.support || supportOrdner(), home: o.home || homedir(), heute: o.heute || null, limitKlon: o.limitKlon, frist: o.frist, jetzt: o.jetzt };
+  return { support: o.support || supportOrdner(), home: o.home || homedir(), heute: o.heute || null, limitKlon: o.limitKlon, frist: o.frist, jetzt: o.jetzt, githubLogin: typeof o.githubLogin === "string" ? o.githubLogin : null };
 }
 
 const objekt = (x) => (x && typeof x === "object" && !Array.isArray(x) ? x : {});
@@ -243,9 +243,9 @@ function lexikalisch(pfad, o) {
   return isAbsolute(p) && !p.includes("\0") ? resolve(p) : null;
 }
 
-// Das Kit-Vertrauen klebt am Pfad: <support>/vertrauen.json = { "<realpath des Vaults>": { … } } (schreibt vault.mjs / das
-// Vertrauensmodul). Ein neuer Vault am Ort eines alten (neu angelegt, geklont, nach „Entfernen“ wieder hineingelegt) darf die alte
-// Freigabe nie erben. Hier wird nur GELÖSCHT: jeder Schlüssel, der einen der Pfade meint (ohne Groß/klein und Unicode-Form), fällt weg;
+// Das Vertrauen klebt am Pfad: <support>/vertrauen.json = { "<realpath des Vaults>": { … } } (schreibt das Vertrauensmodul). Ein neuer
+// Vault am Ort eines alten (neu angelegt, geklont, nach „Entfernen“ wieder hineingelegt) darf das alte Vertrauen nie erben; vertraut wird er
+// erst danach, durch Anlegen oder Klonen hier (angelegt/geklont) oder durch die Frage im Studio. Hier wird nur GELÖSCHT: jeder Schlüssel, der einen der Pfade meint (ohne Groß/klein und Unicode-Form), fällt weg;
 // alle anderen Einträge bleiben, geschrieben wird atomar mit Modus 0600.
 // Die Datei wird so gelesen wie im Vertrauensmodul: Was dort als „nichts freigegeben“ gilt (leer, „[]“, kein JSON), hat auch hier nichts zu
 // vergessen — der Vorgang läuft weiter (eine kaputte Datei schützt nichts und dürfte den Nutzer nicht aussperren). Damit nichts still
@@ -254,8 +254,8 @@ function lexikalisch(pfad, o) {
 // Gibt es die Datei nicht → nichts zu tun.
 function vergissVertrauen(o, pfade, folge) {
   const datei = join(o.support, "vertrauen.json");
-  const nichtLesbar = (grund) => new HttpFehler(500, `Die Liste der freigegebenen Vaults (Datei vertrauen.json im App-Ordner) lässt sich nicht lesen. ${folge} ` +
-    "Prüfe, ob die Datei lesbar ist, oder lösche sie, und versuche es noch einmal — Vaults mit Kit müssen dann erneut freigegeben werden.", { ausgabe: grund });
+  const nichtLesbar = (grund) => new HttpFehler(500, `Die Liste der vertrauten Vaults (Datei vertrauen.json im App-Ordner) lässt sich nicht lesen. ${folge} ` +
+    "Prüfe, ob die Datei lesbar ist, oder lösche sie, und versuche es noch einmal — die Vaults müssen dann erneut bestätigt werden.", { ausgabe: grund });
   let text;
   try { text = readFileSync(datei, "utf8"); }
   catch (e) {
@@ -267,7 +267,7 @@ function vergissVertrauen(o, pfade, folge) {
   if (merker === null) {
     try { sichereDefektenMerker(o.support, { jetzt: o.jetzt }); }
     catch (e) {
-      throw new HttpFehler(500, `Die kaputte Liste der freigegebenen Vaults (Datei vertrauen.json im App-Ordner) ließ sich nicht sichern. ${folge}`, { ausgabe: String((e && e.code) || (e && e.message) || e) });
+      throw new HttpFehler(500, `Die kaputte Liste der vertrauten Vaults (Datei vertrauen.json im App-Ordner) ließ sich nicht sichern. ${folge}`, { ausgabe: String((e && e.code) || (e && e.message) || e) });
     }
     return false;
   }
@@ -279,7 +279,7 @@ function vergissVertrauen(o, pfade, folge) {
   try { writeFileSync(tmp, JSON.stringify(merker, null, 2) + "\n", { mode: 0o600 }); renameSync(tmp, datei); }
   catch (e) {
     try { rmSync(tmp, { force: true }); } catch { /* weg */ }
-    throw new HttpFehler(500, `Die alte Freigabe für diesen Ordner konnte nicht zurückgenommen werden. ${folge}`, { ausgabe: String((e && e.code) || (e && e.message) || e) });
+    throw new HttpFehler(500, `Das alte Vertrauen für diesen Ordner konnte nicht zurückgenommen werden. ${folge}`, { ausgabe: String((e && e.code) || (e && e.message) || e) });
   }
   return true;
 }
@@ -493,7 +493,7 @@ export function waehleAktiv(pfad, opt = {}) {
 }
 
 // Nur aus der Liste — Dateien bleiben unangetastet. War er aktiv, wird der erste verbleibende aktiv, dessen Ordner es gibt (sonst keiner).
-// Die Freigabe (Kit-Vertrauen) für den Ordner wird vorher zurückgenommen; geht das nicht, bleibt alles wie es war.
+// Das Vertrauen für den Ordner wird vorher zurückgenommen; geht das nicht, bleibt alles wie es war.
 export function entferne(pfad, opt = {}) {
   const o = optionen(opt);
   const { liste, zustand } = ladeListe(o, false);
@@ -599,14 +599,8 @@ const ZEIT_EINSCHALTEN = "Das Einschalten des Versionsverlaufs hat zu lange geda
 const ZEIT_GIT = "Git hat nicht rechtzeitig geantwortet. Es wurde nichts verändert und nichts in die Liste eingetragen — bitte später noch einmal versuchen.";
 const ZEIT_KLONEN = "Das Herunterladen hat zu lange gedauert. Es wurde nichts angelegt und nichts in die Liste eingetragen — bitte später noch einmal versuchen.";
 
-// Wie git.istRepo und gitwerkzeug.sorgeFuerIdentitaet — beide nehmen kein Zeitlimit je Aufruf, hier muss aber jeder Aufruf mit dem
-// Restbudget laufen (und bei Ablauf wirklich beendet werden). Git nicht installiert → „kein Repo“ (der Aufrufer meldet es später selbst).
-async function istRepoMit(frist, wurzel) {
-  try {
-    const r = await gitMit(frist, wurzel, ["rev-parse", "--show-toplevel"]);
-    return r.code === 0 && realpathSync(r.stdout.trim()) === wurzel;
-  } catch (e) { if (e instanceof HttpFehler && e.status === 500) return false; throw e; }
-}
+// Wie gitwerkzeug.sorgeFuerIdentitaet — nimmt kein Zeitlimit je Aufruf, hier muss aber jeder Aufruf mit dem Restbudget laufen (und bei Ablauf
+// wirklich beendet werden).
 // Fehlt user.name/user.email überall (system/global/lokal), wird sie NUR in diesem Repo gesetzt: Mac-Benutzername und <name>@localhost.
 async function sorgeFuerIdentitaetMit(frist, wurzel) {
   const lies = async (k) => { const r = await gitMit(frist, wurzel, ["config", "--get", k]); return r.code === 0 ? r.stdout.trim() : ""; };
@@ -636,6 +630,30 @@ const zielOrdner = (ordner, o, liste) => {
   return { pfad: pruefeVaultPfad(roh, { vaults: liste.vaults, breit: true, ...o }), lex: lexikalisch(roh, o) };
 };
 
+// Workspace-Trust (P5): was Kortex selbst angelegt oder über den Assistenten geklont hat, gilt als vertraut. Misslingt das Schreiben des Merkers,
+// ist der Vault trotzdem da — das Studio fragt dann einmal nach („Kommt dieser Vault von dir?“).
+function merkeVertrauen(o, pfad, quelle) {
+  try { vertraue(pfad, { support: o.support, quelle }); } catch { /* das Studio fragt */ }
+}
+
+// Wem gehört das Repository hinter dieser Adresse? Nur github.com-Adressen (https, ssh, scp-Form) haben einen erkennbaren Besitzer: https://github.com/<b>/<repo>,
+// ssh://git@github.com/<b>/<repo>, git@github.com:<b>/<repo>. Im Testmodus zählt bei einem lokalen Pfad der Name des Elternordners (…/<b>/<repo>.git). → Kleinschrift oder null.
+export function besitzerAusAdresse(adresse) {
+  const a = String(adresse || "").trim();
+  let m = /^https:\/\/(?:[^/@:]+@)?github\.com(?::\d{1,5})?\/([A-Za-z0-9-]{1,39})\/[^/]+$/i.exec(a)
+    || /^ssh:\/\/(?:[A-Za-z0-9._-]+@)?github\.com(?::\d{1,5})?\/([A-Za-z0-9-]{1,39})\/[^/]+$/i.exec(a)
+    || /^(?:[A-Za-z0-9._-]+@)?github\.com:([A-Za-z0-9-]{1,39})\/[^/]+$/i.exec(a);
+  if (m) return m[1].toLowerCase();
+  if (testmodus() && a.startsWith("/")) return basename(dirname(a)).toLowerCase();
+  return null;
+}
+// Ein Klon gilt nur dann als „von dir“ (vertraut), wenn das Repository dem in Kortex angemeldeten GitHub-Konto gehört. Ein fremdes Repository (auch eine Organisation —
+// die Mitgliedschaft prüfen wir nicht) bleibt wie ein von außen geöffneter Ordner: das Studio fragt einmal „Kommt dieser Vault von dir?“.
+export function istEigenerKlon(adresse, login) {
+  const b = besitzerAusAdresse(adresse);
+  return !!b && typeof login === "string" && login.toLowerCase() === b;
+}
+
 // art "vorlage": Brain-Gerüst + git init + erster Commit „Brain angelegt“; art "leer": nur .gitignore + Commit „Vault angelegt“.
 // Gesamtfrist 300 s; läuft sie ab, wird zurückgenommen, was dieser Aufruf angelegt hat (kein Eintrag, kein Wechsel des aktiven Vaults).
 export async function neuesVault(eingabe, opt = {}) {
@@ -652,7 +670,7 @@ export async function neuesVault(eingabe, opt = {}) {
     try { z = bereiteZiel(pfad); } catch (e) { throw wandleFehler(e); }
     const fertig = merkeVorgang(() => raeumeAuf(z)); // beendet sich die Werkstatt mittendrin, nimmt beendeVorgaenge() es zurück
     try {
-      vergissVertrauen(o, [pfad, lex], "Es wurde nichts angelegt."); // der Ort ist neu oder leer: eine alte Freigabe für ihn erbt der neue Vault nie
+      vergissVertrauen(o, [pfad, lex], "Es wurde nichts angelegt."); // der Ort ist neu oder leer: altes Vertrauen für ihn erbt der neue Vault nie
       if (art === "vorlage") {
         const dateien = await legeVorlageAn(pfad, { name: vaultName, heute: o.heute || berlinHeute() });
         await starteRepo(pfad, dateien, "Kortex-Vault angelegt", frist);
@@ -662,6 +680,7 @@ export async function neuesVault(eingabe, opt = {}) {
       }
       const erg = ergebnis(registriereAktiv(o, pfad, wunsch), true);
       fertig(); // eingetragen: nichts mehr zurückzunehmen (kein await zwischen Eintragen und hier)
+      merkeVertrauen(o, pfad, "angelegt");
       return erg;
     } catch (e) {
       raeumeAuf(z);
@@ -724,7 +743,9 @@ export async function oeffneOrdner(eingabe, opt = {}) {
   return mitSperre(p, async () => {
     const frist = neueFrist(gesamtfrist(o));
     try {
-      let istGit = await istRepoMit(frist, p);
+      // Ein von außen geöffneter Ordner ist (noch) nicht vertraut: kein git, auch kein rev-parse — ob es ein Repository ist, sagt das .git im Ordner.
+      // Nur der ausdrückliche Wunsch „Versionsverlauf einschalten“ startet git (gehärtet, ohne Hooks) und nur in einem Ordner ohne .git.
+      let istGit = gibtEs(join(p, ".git"));
       if (gitWunsch && !istGit) { await schalteGitEin(p, frist); istGit = true; }
       return ergebnis(registriereAktiv(o, p, undefined), istGit);
     } catch (err) { throw zeitFehler(err, gitWunsch ? ZEIT_EINSCHALTEN : ZEIT_GIT); }
@@ -749,7 +770,7 @@ export async function klone(eingabe, opt = {}) {
     } catch (e) { throw wandleFehler(e); }
     const fertig = merkeVorgang(() => raeumeAuf(z)); // beendet sich die Werkstatt mittendrin, nimmt beendeVorgaenge() es zurück
     try {
-      vergissVertrauen(o, [ziel, lex], "Es wurde nichts angelegt."); // der Ort ist neu oder leer: eine alte Freigabe für ihn erbt der Klon nie
+      vergissVertrauen(o, [ziel, lex], "Es wurde nichts angelegt."); // der Ort ist neu oder leer: altes Vertrauen für ihn erbt der Klon nie
       const protokolle = testmodus() ? ["-c", "protocol.file.allow=always"] : ["-c", "protocol.allow=never", "-c", "protocol.https.allow=always", "-c", "protocol.ssh.allow=always"];
       // Beim Klonen gibt es noch keine Vault-Konfiguration, die man entschärfen müsste: was der Nutzer selbst für Git eingestellt hat (core.sshCommand,
       // Signierwünsche) gilt unverändert — sonst scheitert ein Klon, der im Terminal klappt (zweites GitHub-Konto mit eigenem Schlüssel).
@@ -763,6 +784,7 @@ export async function klone(eingabe, opt = {}) {
       await sorgeFuerIdentitaetMit(frist, ziel); // damit auch der erste eigene Commit in Studio gelingt
       const erg = ergebnis(registriereAktiv(o, ziel, wunsch ?? standardName(ziel, true)), true);
       fertig(); // eingetragen: nichts mehr zurückzunehmen (kein await zwischen Eintragen und hier)
+      if (istEigenerKlon(adresse, o.githubLogin)) merkeVertrauen(o, ziel, "geklont"); // fremde Repositories: das Studio fragt
       return erg;
     } catch (e) {
       raeumeAuf(z);

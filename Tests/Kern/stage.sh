@@ -23,6 +23,7 @@ _kern_hier="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 unset BRAIN_VAULT KORTEX_KERN_PFAD
 export BRAIN_APP_SUPPORT="${BRAIN_APP_SUPPORT:-${TMPDIR:-/tmp}/kortex-test-support-leer}"
 export KORTEX_KERN_UNSTABIL_ERLAUBT="${KORTEX_KERN_UNSTABIL_ERLAUBT:-1}"   # Testschalter: die Bühne (Temp) darf als Kern-Pfad eingetragen werden
+export KORTEX_VAULT_VERTRAUT="${KORTEX_VAULT_VERTRAUT:-alle}"   # Workspace-Trust (P5): Wegwerf-Vaults der Suite gelten als vertraut
 
 if [ -f "$_kern_hier/../brain.mjs" ]; then
   KORTEX_KERN="$(cd "$_kern_hier/.." && pwd)"

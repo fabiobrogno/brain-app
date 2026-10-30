@@ -1,0 +1,9 @@
+#!/bin/sh
+# git-gesperrt — Platzhalter für git, solange der Vault nicht vertraut ist (Kern-Umzug P5, Workspace-Trust). werkzeug.mjs#gitBefehl liefert
+# diese Datei statt git-sicher, wenn ein geprüfter Vault dieses Prozesses nicht vertraut ist: der Kern startet dann kein git, auch keins mit Härtung.
+# `git --version` bleibt harmlos (doctor). Alles andere endet mit Exit 126 und einem Satz auf stderr.
+for a in "$@"; do
+  if [ "$a" = "--version" ]; then echo "git version (gesperrt)"; exit 0; fi
+done
+echo "Kortex: Dieser Vault ist noch nicht als deiner bestätigt, darum startet der Kern kein git. Bestätige ihn im Studio (Statusleiste „Nur ansehen“)." >&2
+exit 126

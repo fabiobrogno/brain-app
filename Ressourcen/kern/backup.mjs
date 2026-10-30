@@ -141,12 +141,14 @@ export function wiederherstellen(quelle, ziel) {
   try { nichtLeer = existsSync(ziel) && readdirSync(ziel).length > 0; } catch { nichtLeer = true; }
   if (nichtLeer) return { ok: false, text: `Der Zielordner ${ziel} ist nicht leer — ich stelle nur in einen leeren oder neuen Ordner wieder her.` };
   try {
-    execFileSync(gitBefehl(), ["clone", "-q", quelle, ziel], { stdio: "ignore", windowsHide: true });
+    execFileSync(gitBefehl({ ohneVault: true }), ["clone", "-q", quelle, ziel], { stdio: "ignore", windowsHide: true });
     // Aus einer Bundle-Datei oder einem lokalen Ordner geklont: das „origin“ zeigt auf einen lokalen Pfad. Lokale Remotes sind im Kern nicht erlaubt
     // (ein Push startete die Hooks des Ziels) und würden den wiederhergestellten Vault sperren — also entfernen.
+    // Der Klon gehört zu keinem Vault dieses Prozesses (Workspace-Trust, P5): git-sicher ohne Vertrauensprüfung, nur für diese beiden Befehle.
+    const gitZiel = (...a) => execFileSync(gitBefehl({ ohneVault: true }), ["-C", ziel, ...a], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
     try {
-      const u = git(ziel, "config", "--get", "remote.origin.url").trim();
-      if (u.startsWith("/") || u.startsWith("file:")) git(ziel, "config", "--remove-section", "remote.origin");
+      const u = gitZiel("config", "--get", "remote.origin.url").trim();
+      if (u.startsWith("/") || u.startsWith("file:")) gitZiel("config", "--remove-section", "remote.origin");
     } catch { /* kein origin */ }
     return { ok: true, text: `Wiederhergestellt nach ${ziel}.` };
   } catch {

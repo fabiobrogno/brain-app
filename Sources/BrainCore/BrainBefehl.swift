@@ -30,8 +30,8 @@ public struct BrainBefehl: Sendable {
 
     /// Eine GUI-App startet mit Minimal-PATH — Homebrew- und /usr/local-Programme (z. B. git) müssen auffindbar sein.
     /// Übernommen werden nur absolute Einträge. Ein leerer oder relativer Eintrag (`.`, `node_modules/.bin`, `~/bin`) löst Node
-    /// (libuv) und jede Shell gegen das Arbeitsverzeichnis des KINDES auf — und das ist bei der Vertrauensprüfung und bei den
-    /// Git-Aufrufen der Werkstatt ein fremder, noch nie freigegebener Vault: Läge dort ein `git`, liefe es vor dem echten, schon
+    /// (libuv) und jede Shell gegen das Arbeitsverzeichnis des KINDES auf — und das ist bei den Git-Aufrufen der
+    /// Werkstatt ein fremder, noch nie bestätigter Vault: Läge dort ein `git`, liefe es vor dem echten, schon
     /// bevor der Nutzer vertraut hat (Studio-v2-Spec §8, Review SW-3). Bleibt nichts übrig, gelten die Systemordner.
     public static func pfadMitStandardOrdnern(_ pfad: String?) -> String {
         var vorhanden = (pfad ?? "").split(separator: ":").map(String.init).filter { $0.hasPrefix("/") }

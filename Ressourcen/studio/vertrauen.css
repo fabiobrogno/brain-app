@@ -1,11 +1,6 @@
-/* Vertrauen (Spec §8): Frage „Diesem Vault vertrauen?“, Statusleiste „Git gesperrt“ / „Nicht freigegeben“, Rückfrage beim Umstellen der KI-Verbindung. */
-.dialog[data-dialog="vertrauen"] .vt-geaendert { margin: 0; padding: 8px 12px; border-radius: var(--r); background: color-mix(in srgb, var(--gelb) 14%, var(--erhoben)); border: 1px solid color-mix(in srgb, var(--gelb) 40%, transparent); font-weight: 600; }
-.dialog[data-dialog="vertrauen"] p { margin: 0; }
-.dialog[data-dialog="vertrauen"] .vt-vault { color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; -webkit-user-select: text; user-select: text; }
-.vt-gruende { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.vt-gruende li { display: flex; align-items: flex-start; gap: 8px; padding: 8px 12px; border-radius: var(--r); background: var(--seite); border: 1px solid var(--linie); }
-.vt-gruende li .sym { flex: none; margin-top: 2px; color: var(--gelb); }
-.vt-gruende li span:last-child { min-width: 0; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }
+/* Vertrauen (Workspace-Trust, P5): Frage „Kommt dieser Vault von dir?“, Statusleiste „Nur ansehen“ / „Git gesperrt“, Vertrauen entziehen, Rückfrage beim Umstellen der KI-Verbindung. */
+.dialog[data-dialog="vertrauen"] p, .dialog[data-dialog="vertrauen-entziehen"] p { margin: 0; }
+.dialog[data-dialog="vertrauen"] .vt-vault, .dialog[data-dialog="vertrauen-entziehen"] .vt-vault { color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; -webkit-user-select: text; user-select: text; }
 .dialog[data-dialog="vertrauen"] .vt-git { color: var(--text); font-weight: 500; }
 .dialog[data-dialog="vertrauen"] .leise { color: var(--text-2); }
 
@@ -13,3 +8,5 @@
 .w-frage { display: flex; flex-direction: column; gap: 10px; padding: 10px 12px; border-radius: var(--r); background: color-mix(in srgb, var(--gelb) 12%, var(--erhoben)); border: 1px solid color-mix(in srgb, var(--gelb) 38%, transparent); }
 .w-frage .w-aktion-text { margin: 0; color: var(--text); }
 .w-frage-knoepfe { display: flex; justify-content: flex-end; gap: 8px; }
+
+.knopf.gefahr { color: var(--rot); border-color: var(--rot-rand); }

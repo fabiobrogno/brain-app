@@ -116,7 +116,7 @@ private func vaultMitDatei(_ inhalt: String?) -> URL {
     // neutral: nichts ändert sich
     #expect(ok.mit(zufuehrungen: .keine) == ok)
     // ein Problem- oder Sperr-Zustand behält seine Aussage (✕ steht über ⚠)
-    for anders in [StatusAnzeige.problem("x"), .keinVault, .kitNichtErlaubt, .kitPruefungFehlgeschlagen] {
+    for anders in [StatusAnzeige.problem("x"), .keinVault] {
         #expect(anders.mit(zufuehrungen: stand) == anders)
     }
     // ein bereits gelber Status bleibt (⚠ ist schon da, die Zeilen im Menü nennen die Zuführung)
