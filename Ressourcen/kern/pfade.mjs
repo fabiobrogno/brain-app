@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { registriereVault, registrierteVaults } from "./vault-schutz.mjs";
 import { vertrauensStand, alleVertraut } from "./vertrauen.mjs";
-import { kontoStufe, darfMindestens } from "./ki-konten.mjs";
+import { kontoStufe, darfMindestens, kontenOrte, liesKonten } from "./ki-konten.mjs";
 
 export const KERN = dirname(fileURLToPath(import.meta.url));
 
@@ -152,6 +152,32 @@ function altVaultAusConfig(ordner, home, support) {
   } catch { return null; }
 }
 
+// Alle Vault-Pfade, die Kortex kennt (für Prüfungen, die einen Ordner einem Vault zuordnen müssen, z. B. das Gedächtnis-Teilen): die Einträge der vaults.json (jeder
+// Eintrag mit absolutem Pfad, auch wenn ihn die Ortsregeln nicht erlauben — hier zählt „im Zweifel ein Vault“), der Vault der alten config.json und die Vault-Schlüssel
+// der KI-Kontenliste. Jeder Pfad in beiden Formen (wie angegeben und realpath). Nie ein Fehler nach außen; eine beschädigte Liste liefert, was die anderen Quellen kennen.
+export function bekannteVaultPfade(opt = {}) {
+  const aus = new Set();
+  const nimmPfad = (p) => {
+    if (typeof p !== "string" || !p || p.includes("\0") || !isAbsolute(p)) return;
+    const lex = resolve(p); aus.add(lex); aus.add(echterPfadOderSelbst(lex));
+  };
+  try {
+    for (const ordner of typeof opt.support === "string" && opt.support ? [opt.support] : supportOrte(opt)) {
+      const r = leseListeDatei(ordner);
+      if (r.zustand === "ok") for (const e of r.wurzel.vaults || []) if (e && typeof e === "object") nimmPfad(e.pfad);
+      try { const c = JSON.parse(readFileSync(join(ordner, "config.json"), "utf8")); if (c && typeof c.vault === "string") nimmPfad(c.vault.trim()); } catch { /* keine alte Config */ }
+    }
+  } catch { /* weiter mit den übrigen Quellen */ }
+  try {
+    const support = typeof opt.support === "string" ? opt.support : supportOrdner(opt);
+    for (const ort of kontenOrte(support)) {
+      const { zustand, daten } = liesKonten(ort);
+      if (zustand === "ok" && daten && daten.vaults) for (const k of Object.keys(daten.vaults)) nimmPfad(k);
+    }
+  } catch { /* weiter */ }
+  return [...aus];
+}
+
 // → absoluter Pfad des aktiven App-Vaults oder null. Nur gültige Vaults (pruefeVault) werden geliefert.
 export function aktiverVaultAusListe(opt = {}) {
   const home = opt.home || homedir();
@@ -191,6 +217,18 @@ export function hookKontoStufe(vault, opt = {}) {
 }
 // Darf dieser Aufruf (Konto) in diesem Vault mindestens `mindest` ("lesen" | "posteingang" | "erweitert")?
 export const kontoDarf = (vault, mindest = "lesen", opt = {}) => darfMindestens(hookKontoStufe(vault, opt), mindest);
+// Hintergrunddienst und KI-Pflege (Tageslauf, Pflege-Lauf, Traum, Antwort-Messlatte): Vault-Inhalt geht an `claude -p`, und das Konto bestimmt die Umgebung dieses PROZESSES
+// (CLAUDE_CONFIG_DIR, vom Dienst gesetzt; fehlt sie, läuft das Standardprofil). Das Konto braucht für den Vault mindestens `mindest` (Standard „erweitert“), sonst läuft die Pflege ohne KI.
+// Fehlt die Liste überall und gibt es keine Spur (Übergang vor dem ersten Start der neuen App), gilt das bisherige Verhalten (KI darf). Eine beschädigte oder gelöschte Liste,
+// ein unbekanntes Konto oder ein nicht zugeordneter Vault heißt nein (fail-closed). Kein --konto: ein Dienstprozess trägt keines.
+export function kiKontoDarf(vault, mindest = "erweitert", opt = {}) {
+  try {
+    const support = typeof opt.support === "string" ? opt.support : supportOrdner(opt);
+    if (kontenOrte(support).every((ort) => liesKonten(ort).zustand === "fehlt")) return true;
+    const profil = (opt.env || process.env).CLAUDE_CONFIG_DIR;
+    return darfMindestens(kontoStufe(vault, { support, env: typeof profil === "string" && profil ? { CLAUDE_CONFIG_DIR: profil } : {}, programm: "claude", vollstaendig: true }), mindest);
+  } catch { return false; }
+}
 export const NICHT_VERTRAUT_TEXT = "Dieser Vault ist in Kortex noch nicht als deiner bestätigt, darum tut der Kern hier nichts, was am Vault etwas ändert (kein git, kein Hintergrunddienst, keine KI-Pflege, keine Hooks). Bestätige ihn im Studio; Lesen und Suchen gehen schon jetzt.";
 // Werkzeug-Einstiege, die am Vault etwas bewirken: ohne Vertrauen Meldung auf stderr und Exit 5.
 export function vertrauterVaultOderEnde(vault, opt = {}) {

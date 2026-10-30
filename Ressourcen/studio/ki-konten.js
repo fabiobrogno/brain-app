@@ -102,7 +102,9 @@ export function oeffneKontenDialog({ api = standardApi, vault = null, beiZu, bei
   // Antwort der Werkstatt übernehmen. Bei einem Fehler in den Einstellungen von Claude Code steht die Meldung oben.
   function uebernimm(antwort) {
     if (!antwort) return null;
-    const { claude, ...stand } = antwort;
+    const { claude, warnungen, ...rest } = antwort;
+    if (Array.isArray(warnungen) && warnungen.length) S.warnung = warnungen.join(" ");
+    const stand = rest.stand && rest.stand.konten ? rest.stand : rest; // „Neu verbinden“ liefert den Stand in .stand
     if (stand.konten) S.daten = stand;
     return claude || null;
   }
@@ -120,7 +122,7 @@ export function oeffneKontenDialog({ api = standardApi, vault = null, beiZu, bei
   // Führt eine Änderung aus; währenddessen sind die Knöpfe gesperrt. fn() → Antwort der Werkstatt.
   async function tue(fn, { erfolg } = {}) {
     if (S.beschaeftigt) return null;
-    S.beschaeftigt = true; S.meldung = null; zeichneMeldung(); box.setAttribute("aria-busy", "true");
+    S.beschaeftigt = true; S.meldung = null; S.warnung = null; zeichneMeldung(); box.setAttribute("aria-busy", "true");
     try {
       const antwort = await fn();
       if (tot) return null;
@@ -192,6 +194,7 @@ export function oeffneKontenDialog({ api = standardApi, vault = null, beiZu, bei
   const fokusAufKonto = (id) => requestAnimationFrame(() => { if (!tot) (secZugriff.querySelector(`[data-konto="${id}"] [role="radio"][aria-checked="true"]`) || secZugriff.querySelector(`tr[data-konto="${id}"] select`))?.focus(); });
   function zeichneMeldung() {
     secMeldung.replaceChildren();
+    if (S.warnung) secMeldung.append(h("div", { klasse: "kk-karte warn", role: "status", "data-kk": "warnung-text" }, marke("warn"), h("p", { text: S.warnung })));
     if (!S.meldung) return;
     secMeldung.append(h("div", { klasse: "kk-karte fehler", role: "alert", "data-kk": "meldung-text" }, marke("rot"), h("p", { text: S.meldung })));
   }
@@ -204,7 +207,7 @@ export function oeffneKontenDialog({ api = standardApi, vault = null, beiZu, bei
     if (S.daten.vorherDa) knoepfe.push(h("button", { klasse: "knopf", type: "button", "data-aktion": "konten-vorher", disabled: S.beschaeftigt, text: TK.defekt.vorher, aufClick: () => { S.frage = { art: "vorher" }; zeichneAlles(); zeigeFrage(); } }));
     secHinweis.append(h("div", { klasse: "kk-karte warn", role: "status", "data-kk": "defekt" },
       h("div", { klasse: "kk-karte-kopf" }, marke("warn"), h("div", { klasse: "kk-karte-titel", text: TK.defekt.titel })),
-      h("p", { text: TK.defekt.text }),
+      h("p", { text: S.daten.hinweisGrund === "geloescht" ? TK.defekt.textGeloescht : TK.defekt.text }),
       h("div", { klasse: "kk-knoepfe" }, knoepfe)));
   }
 
@@ -237,6 +240,7 @@ export function oeffneKontenDialog({ api = standardApi, vault = null, beiZu, bei
       secFrage.append(h("div", { klasse: "kk-karte bestaetigung", role: "group", "aria-labelledby": "kk-frage-titel", "data-kk": "frage-streng" },
         h("div", { klasse: "kk-karte-titel", id: "kk-frage-titel", text: TK.streng.dialogTitel(k.name) }),
         h("p", { text: TK.streng.dialogWas }),
+        h("p", { text: TK.streng.dialogEinstellungen }),
         h("div", { klasse: "kk-block" }, h("div", { klasse: "kk-block-titel", text: TK.streng.dialogFolgenTitel }), h("p", { text: TK.streng.dialogFolgen })),
         h("p", { klasse: "mini", text: TK.streng.dialogRueckweg }),
         h("div", { klasse: "kk-knoepfe" }, abbrechen, h("button", { klasse: "knopf primaer", type: "button", "data-aktion": "konten-streng-ja", text: TK.streng.dialogJa, aufClick: () => schalteStreng(k, true) }))));
@@ -279,6 +283,12 @@ export function oeffneKontenDialog({ api = standardApi, vault = null, beiZu, bei
     kopf.append(h("span", { klasse: "kk-logo" }, logoFuer(k)), h("div", { klasse: "kk-konto-text" }, name,
       h("div", { klasse: "kk-meta", "data-kk": "meta", text: TK.konten.programmOrdner(k.programmName || k.programm, k.ordner) })), chips);
     li.append(kopf);
+    // Altform: Eintrag oder Hooks ohne --konto → mit Konto neu verbinden (ändert nur die Einträge von Kortex, nie die Stufe)
+    if (k.altform && (k.altform.mcp || k.altform.hooks)) {
+      li.append(h("div", { klasse: "kk-altform", "data-kk": "altform" }, marke("warn"),
+        h("div", { klasse: "kk-altform-text" }, h("div", { klasse: "kk-block-titel", text: TK.konten.altformTitel }), h("div", { klasse: "mini", text: TK.konten.altformText })),
+        h("button", { klasse: "knopf", type: "button", "data-aktion": "konto-neu-verbinden", text: TK.konten.altformKnopf, aufClick: () => tue(() => api.kiNeuVerbinden(k.id), { erfolg: () => TK.konten.altformErfolg }) })));
+    }
     return li;
   }
   function namensFeld(k) {
@@ -298,6 +308,9 @@ export function oeffneKontenDialog({ api = standardApi, vault = null, beiZu, bei
     const claude = konten().filter((k) => k.schutz?.moeglich);
     if (!claude.length) return;
     secStreng.append(h("h3", { klasse: "kk-gruppe-titel", text: TK.streng.titel }), h("p", { klasse: "mini", text: TK.streng.hilfe }));
+    const warn = [...new Set(claude.flatMap((k) => (k.schutz.strenger ? k.schutz.warnungen || [] : []).map((w) => `${k.name}: ${TK.streng.warnungen[w] || w}`)))];
+    if (claude.some((k) => k.schutz.strenger)) warn.push(TK.streng.projektHinweis);
+    if (warn.length) secStreng.append(h("div", { klasse: "kk-karte warn", role: "status", "data-kk": "streng-warnung" }, marke("warn"), h("ul", { klasse: "kk-punkte" }, warn.map((t) => h("li", { text: t })))));
     const liste = h("ul", { klasse: "kk-konten", "data-kk": "streng-liste" });
     for (const k of claude) liste.append(strengZeile(k));
     secStreng.append(liste);
@@ -405,7 +418,7 @@ export function oeffneKontenDialog({ api = standardApi, vault = null, beiZu, bei
     secEhrlich.replaceChildren();
     if (S.laedt || S.fehler || !S.daten || !konten().length) return;
     secEhrlich.append(h("div", { klasse: "kk-karte schmal", "data-kk": "ehrlich-karte" }, h("div", { klasse: "kk-block-titel", text: TK.ehrlich.titel }),
-      h("ul", { klasse: "kk-punkte" }, [TK.ehrlich.claude, TK.ehrlich.andere, TK.ehrlich.keine].map((t) => h("li", { text: t })))));
+      h("ul", { klasse: "kk-punkte" }, [TK.ehrlich.kennung, TK.ehrlich.claude, TK.ehrlich.andere, TK.ehrlich.keine].map((t) => h("li", { text: t })))));
   }
 
   zeichneAlles();

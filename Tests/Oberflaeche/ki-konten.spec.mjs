@@ -104,7 +104,7 @@ test("Sperren fragt nach: Claude Code mit Leseverbot (Haken vorbelegt), ehrlich 
   await expect(frage).toContainText("Was das nicht verhindert");
   await expect(frage).toContainText("eigenen macOS-Benutzer");
   await expect(frage).toContainText("~/.claude/settings.json");
-  await expect(frage).toContainText("Beim Entsperren nimmt Kortex genau diese zwei Regeln wieder heraus");
+  await expect(frage).toContainText("Beim Entsperren nimmt Kortex genau diese Regeln wieder heraus");
   await expect(frage.locator('[data-kk="claude-haken"]')).toBeChecked();
   await ruhig(page); await page.screenshot({ path: shot("sperren-claude-hell") });
   // Abbrechen: nichts gesendet, Stufe bleibt
@@ -310,4 +310,47 @@ test("Hell und dunkel: dieselbe Ansicht in beiden Darstellungen, ohne waagerecht
   expect(ueberlauf).toBeLessThanOrEqual(1);
   await page.emulateMedia({ colorScheme: "light" });
   await ruhig(page); await page.screenshot({ path: shot("schmal-hell") });
+});
+
+test("Ehrlichkeit: die Kennung ist eine Selbstauskunft; ohne Strengen Schutz kann eine KI per Shell lesen — das steht in der Rückfrage und unten im Dialog", async ({ page }) => {
+  await start(page);
+  const d = dlg(page);
+  await expect(d.locator('[data-kk="ehrlich-karte"]')).toContainText("Selbstauskunft");
+  await expect(d.locator('[data-kk="ehrlich-karte"]')).toContainText("grep -r");
+  await stufeKnopf(page, "k_aaaa0001", "gesperrt").click();
+  const frage = d.locator('[data-kk="frage-sperren"]');
+  await expect(frage).toContainText("Ohne „Strenger Schutz“ kann eine KI über die Shell trotzdem lesen");
+  await expect(frage).toContainText("Einstellungen von Kortex und die Einstellungsdateien");
+});
+
+test("Altform: ein Eintrag ohne Kontokennung wird angezeigt, „Mit Konto neu verbinden“ ändert nur den Eintrag (keine Stufe)", async ({ page }) => {
+  const z = await start(page, { altform: { k_aaaa0001: { mcp: true, hooks: false }, k_aaaa0003: { mcp: false, hooks: true } } });
+  const d = dlg(page);
+  const alt = d.locator('.kk-konto[data-konto="k_aaaa0001"] [data-kk="altform"]');
+  await expect(alt).toContainText("Älterer Eintrag ohne Kontokennung");
+  await expect(alt).toContainText("am strengsten gesperrte Konto");
+  await expect(d.locator('.kk-konto[data-konto="k_aaaa0002"] [data-kk="altform"]')).toHaveCount(0);
+  await alt.locator('[data-aktion="konto-neu-verbinden"]').click();
+  await expect(alt).toHaveCount(0);
+  expect(z.log("/api/ki/neu-verbinden").at(-1).body).toEqual({ konto: "k_aaaa0001" });
+  expect(z.log("/api/ki/zugriff")).toHaveLength(0);
+  await ruhig(page); await page.screenshot({ path: shot("altform-hell") });
+});
+
+test("Gelöschte Liste: eigener Hinweistext; Strenger Schutz zeigt Warnungen (allowRead, excludedCommands, lokale Einstellungen) und den Projekt-Hinweis", async ({ page }) => {
+  await start(page, { hinweis: "defekt-neu", hinweisGrund: "geloescht", vorherDa: true, warnungen: ["allowRead", "excludedCommands", "lokal"] });
+  const d = dlg(page);
+  await expect(d.locator('[data-kk="defekt"]')).toContainText("fehlte, obwohl es sie schon gab");
+  await d.locator('[data-aktion="konten-hinweis-verstanden"]').click();
+  await stufeKnopf(page, "k_aaaa0001", "gesperrt").click();
+  await d.locator('[data-aktion="konten-sperren-ja"]').click();
+  await d.locator('[data-kk="streng"][data-konto="k_aaaa0001"] [data-aktion="streng-an"]').click();
+  await expect(d.locator('[data-kk="frage-streng"]')).toContainText("Einstellungen von Kortex");
+  await d.locator('[data-aktion="konten-streng-ja"]').click();
+  const w = d.locator('[data-kk="streng-warnung"]');
+  await expect(w).toContainText("allowRead");
+  await expect(w).toContainText("excludedCommands");
+  await expect(w).toContainText("settings.local.json");
+  await expect(w).toContainText("innerhalb eines Projekts");
+  await ruhig(page); await page.screenshot({ path: shot("streng-warnung-dunkel") });
 });

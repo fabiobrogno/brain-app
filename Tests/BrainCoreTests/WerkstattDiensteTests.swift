@@ -351,11 +351,11 @@ private let stSt = "/Users/t/.claude", stPriv = "/Users/t/.claude-privat"
 @Test func verbindenSchicktDieGewaehlteStufeMitNurWennSieGewaehltWurde() async throws {
     let w = FalscheWerkstatt(antwort(#"{"ok":true}"#))
     let d = dienste(w)
-    _ = try await d.verbinde(.claude, umstellen: false, profil: "/Users/t/.claude-privat", zugriff: .lesen)
-    _ = try await d.verbinde(.codex, umstellen: false, profil: nil, zugriff: .posteingang)
+    _ = try await d.verbinde(.claude, umstellen: false, profil: "/Users/t/.claude-privat", zugriff: KiZugriff(stufe: .lesen, ausdruecklich: true))
+    _ = try await d.verbinde(.codex, umstellen: false, profil: nil, zugriff: KiZugriff(stufe: .posteingang, ausdruecklich: false))
     _ = try await d.verbinde(.cursor, umstellen: false, profil: nil)
     #expect(w.aufrufe.map(\.pfad) == ["/api/mcp/verbinden", "/api/mcp/verbinden", "/api/mcp/verbinden"])
-    #expect(w.aufrufe[0].body == ["ziel": "claude", "profil": "/Users/t/.claude-privat", "zugriff": "lesen"])
+    #expect(w.aufrufe[0].body == ["ziel": "claude", "profil": "/Users/t/.claude-privat", "zugriff": "lesen", "zugriffAusdruecklich": true])
     #expect(w.aufrufe[1].body == ["ziel": "codex", "zugriff": "posteingang"])
     #expect(w.aufrufe[2].body == ["ziel": "cursor"], "ohne Angabe bleibt, was die Liste der KI-Konten sagt")
 }
@@ -363,9 +363,9 @@ private let stSt = "/Users/t/.claude", stPriv = "/Users/t/.claude-privat"
 @Test func hooksEintragenSchicktDieStufeNurFuerClaudeUndNurBeimEintragen() async throws {
     let w = FalscheWerkstatt(antwort(#"{"ok":true,"stand":{"starter":{"vorhanden":true}}}"#))
     let d = dienste(w)
-    _ = try await d.verdrahte(.claude, an: true, ersetzen: false, profile: ["/Users/t/.claude"], zugriff: .posteingang)
-    _ = try await d.verdrahte(.claude, an: false, ersetzen: false, profile: ["/Users/t/.claude"], zugriff: .posteingang)
-    _ = try await d.verdrahte(.git, an: true, ersetzen: false, profile: [], zugriff: .posteingang)
+    _ = try await d.verdrahte(.claude, an: true, ersetzen: false, profile: ["/Users/t/.claude"], zugriff: KiZugriff(stufe: .posteingang, ausdruecklich: false))
+    _ = try await d.verdrahte(.claude, an: false, ersetzen: false, profile: ["/Users/t/.claude"], zugriff: KiZugriff(stufe: .posteingang, ausdruecklich: false))
+    _ = try await d.verdrahte(.git, an: true, ersetzen: false, profile: [], zugriff: KiZugriff(stufe: .posteingang, ausdruecklich: false))
     #expect(w.aufrufe[0].body == ["was": "claude", "an": true, "profile": ["/Users/t/.claude"], "zugriff": "posteingang"])
     #expect(w.aufrufe[1].body == ["was": "claude", "an": false, "profile": ["/Users/t/.claude"]])
     #expect(w.aufrufe[2].body == ["was": "git", "an": true])

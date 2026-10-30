@@ -153,10 +153,15 @@ test("Widerspruch zwischen --konto und Umgebung: das strengere Recht gilt; ohne 
   assert.equal((await m.rufe("brain_merken", { text: "x", titel: "umgebung" })).fehler, false); await m.ende();
   m = starteMcp(s, [], { CLAUDE_CONFIG_DIR: s.b });
   assert.equal((await m.rufe("brain_suchen", { frage: "zebra" })).fehler, true); await m.ende();
-  // weder Argument noch Umgebung: ohneKonto des Vaults (hier lesen)
+  // weder Argument noch Umgebung: ohneKonto des Vaults, aber nie lockerer als das strengste Konto: B ist gesperrt → gesperrt
+  m = starteMcp(s, []);
+  assert.equal((await m.rufe("brain_suchen", { frage: "zebra" })).fehler, true); await m.ende();
+  // sind alle Konten des Vaults mindestens „lesen“, gilt ohneKonto (hier lesen)
+  s.setze("posteingang", "lesen", { ohneKonto: "lesen" });
   m = starteMcp(s, []);
   assert.equal((await m.rufe("brain_suchen", { frage: "zebra" })).fehler, false);
   assert.match((await m.rufe("brain_merken", { text: "x" })).text, /nur lesen/); await m.ende();
+  s.setze("posteingang", "gesperrt", { ohneKonto: "lesen" });
   // ein Ordner, den Kortex nicht als Konto kennt, ist gesperrt — auch wenn --konto ein erlaubtes Konto nennt
   m = starteMcp(s, ["--konto", "k_aaaaaaaa"], { CLAUDE_CONFIG_DIR: tmp("brain-fremd-") });
   assert.equal((await m.rufe("brain_suchen", { frage: "zebra" })).fehler, true); await m.ende();
@@ -200,11 +205,16 @@ test("Beschädigte Liste: der Server liefert nichts (auch nicht brain_vaults) un
     assert.equal(r.fehler, true, name); assert.match(r.text, /beschädigt/, name); rein(s, r.text); assert.ok(!r.text.includes(s.offen), name);
   }
   assert.ok(!(await m.werkzeuge()).includes("brain_merken"));
-  // repariert (gültige Datei) → es geht sofort wieder
-  rmSync(datei); s.setze("lesen");
+  // repariert (gültige Datei, Spuren der alten Liste weg) → es geht sofort wieder
+  const spuren = () => { for (const n of ["", ".vorher"]) rmSync(`${datei}${n}`, { force: true }); rmSync(join(s.support, "ki-konten.angelegt"), { force: true }); };
+  spuren(); s.setze("lesen");
   assert.equal((await m.rufe("brain_suchen", { frage: "zebra" })).fehler, false);
-  // Liste weg (die neue App lief noch nie): Übergang, alles wie bisher — auch ohne Argument
-  rmSync(datei); rmSync(`${datei}.vorher`, { force: true });
+  // Liste weg, aber es gab sie schon (Spur: ki-konten.angelegt/.vorher): wie beschädigt, NICHT wie „noch nie gelaufen“ — ein Löschen öffnet nichts
+  rmSync(datei);
+  const geloescht = await m.rufe("brain_suchen", { frage: "zebra" });
+  assert.equal(geloescht.fehler, true); assert.match(geloescht.text, /beschädigt/);
+  // Liste weg (die neue App lief noch nie, keine Spur): Übergang, alles wie bisher — auch ohne Argument
+  spuren();
   assert.equal((await m.rufe("brain_merken", { text: "x", titel: "uebergang" })).fehler, false);
   await m.ende();
   const alt = starteMcp(s, []);

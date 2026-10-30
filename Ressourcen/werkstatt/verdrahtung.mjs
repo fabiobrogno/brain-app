@@ -91,7 +91,7 @@ export function erzeugeVerdrahtung({ starter, support = null, istVorschau = () =
       // Wer die Hooks eines Profils einträgt, kann dem Konto dabei den offenen Vault freigeben ({ zugriff: <Stufe> }); ohne Angabe bleibt die Liste der KI-Konten maßgeblich.
       if (e.zugriff !== undefined && an) {
         if (!["gesperrt", "lesen", "posteingang", "erweitert"].includes(e.zugriff)) throw new HttpFehler(400, "„zugriff“ muss gesperrt, lesen, posteingang oder erweitert sein.");
-        for (const pr of gewaehlt) { const k = kontoFuerProfil(pr.pfad); if (k && freigeben) freigeben(k, v, e.zugriff); }
+        for (const pr of gewaehlt) { const k = kontoFuerProfil(pr.pfad); if (k && freigeben) freigeben(k, v, e.zugriff, e.zugriffAusdruecklich === true); }
       }
       claudeLaeufe = gewaehlt.map((pr) => { const k = an ? kontoFuerProfil(pr.pfad) : null; return { pr, args: an ? ["claude-hooks", "--vault", v.wurzel, "--claude-home", pr.pfad, ...(k ? ["--konto", k] : [])] : ["claude-hooks", "--entfernen", "--claude-home", pr.pfad] }; });
       was = "Das Eintragen bei Claude Code";

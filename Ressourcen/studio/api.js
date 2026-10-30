@@ -1,5 +1,6 @@
 // Verbindung zur Werkstatt: in der App über den Nachrichtenkanal (brain://), im Browser per fetch.
 import { T } from "./texte.js";
+import { toast } from "./hilfen.js";
 
 const kanal = (() => {
   const w = window;
@@ -43,6 +44,8 @@ const q = (o) => {
   const s = Object.entries(o).filter(([, v]) => v !== undefined && v !== null && v !== "").map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
   return s ? "?" + s : "";
 };
+
+const mitWarnung = (p) => p.then((r) => { if (r && typeof r.warnung === "string") { try { toast(r.warnung, { ms: 15000 }); } catch { /* ohne Oberfläche */ } } return r; });
 
 export const api = {
   info: () => anfrage("GET", "/api/info"),
@@ -92,9 +95,10 @@ export const api = {
   // ---- v2: Vaults, KI, Probe
   vaults: () => anfrage("GET", "/api/vaults"),
   vaultAktiv: (pfad) => anfrage("POST", "/api/vaults/aktiv", { pfad }),
-  vaultNeu: (art, name, ordner) => anfrage("POST", "/api/vaults/neu", ordner ? { art, name, ordner } : { art, name }),
-  vaultOeffnen: (pfad, extra) => anfrage("POST", "/api/vaults/oeffnen", { pfad, ...(extra || {}) }),
-  vaultKlonen: (url, ordner) => anfrage("POST", "/api/vaults/klonen", ordner ? { url, ordner } : { url }),
+  // Liegt der Vault in einem anderen Vault (oder umgekehrt), meldet die Werkstatt eine Warnung: Zugriffsrechte der KI-Konten gelten je Vault.
+  vaultNeu: (art, name, ordner) => mitWarnung(anfrage("POST", "/api/vaults/neu", ordner ? { art, name, ordner } : { art, name })),
+  vaultOeffnen: (pfad, extra) => mitWarnung(anfrage("POST", "/api/vaults/oeffnen", { pfad, ...(extra || {}) })),
+  vaultKlonen: (url, ordner) => mitWarnung(anfrage("POST", "/api/vaults/klonen", ordner ? { url, ordner } : { url })),
   vaultEntfernen: (pfad) => anfrage("POST", "/api/vaults/entfernen", { pfad }),
   kiErkennen: () => anfrage("GET", "/api/ki/erkennen"),
   kitHooks: () => anfrage("POST", "/api/kit/hooks", {}),
@@ -110,6 +114,7 @@ export const api = {
   kiZugriff: ({ konto, vault, stufe, claudeSperre }) => anfrage("PUT", "/api/ki/zugriff", { konto, vault, stufe, ...(typeof claudeSperre === "boolean" ? { claudeSperre } : {}) }),
   kiStandard: (vault, stufe) => anfrage("PUT", "/api/ki/standard", { vault, stufe }),
   kiSchutz: (konto, sandbox) => anfrage("POST", "/api/ki/schutz", sandbox ? { konto, sandbox: true, bestaetigt: true } : { konto, sandbox: false }),
+  kiNeuVerbinden: (konto) => anfrage("POST", "/api/ki/neu-verbinden", { konto }),
   kiHinweis: () => anfrage("POST", "/api/ki/hinweis", {}),
   kiVorher: () => anfrage("POST", "/api/ki/vorher", { bestaetigt: true }),
   // ---- Umstellung eines Vaults aus der Kit-Zeit (P7). Geschrieben wird nur mit bestaetigt: true — das setzt die Oberfläche erst nach dem Klick des Nutzers.

@@ -21,6 +21,7 @@ import { schreibeVorschlag, KI_BEFUNDE } from "./vorschlaege.mjs";
 import { vaultPfadOderEnde, ordner, entferneBom } from "./pfade.mjs";
 import { findeClaude, rufeHaiku, leseClaudeAntwort, nimmLock } from "./ernte.mjs";
 import { lektionenAusVerlaeufen } from "./lektionen.mjs";
+import { kiKontoErlaubt, KI_KONTO_GRUND, KI_STUFE } from "./tageslauf/ki.mjs";
 
 const HIER = dirname(fileURLToPath(import.meta.url));
 export const MAX_VORSCHLAEGE = 8;
@@ -249,7 +250,7 @@ export async function pflegeLauf(vault, { claudeBefehl, jetzt = Date.now(), anla
       if (werte.lektionen !== "aus") {
         const verlaeufe = verlaeufeDerWoche(vault, { home, jetzt });
         if (verlaeufe.length) {
-          const r = await lektionenAusVerlaeufen(vault, verlaeufe, { claudeBefehl, jetzt, anlass: "pflege-lauf" });
+          const r = await lektionenAusVerlaeufen(vault, verlaeufe, { claudeBefehl, jetzt, anlass: "pflege-lauf", kiStufe: KI_STUFE });
           lektionen = r.vorschlaege?.length || 0;
         }
       }
@@ -262,6 +263,10 @@ export async function pflegeLauf(vault, { claudeBefehl, jetzt = Date.now(), anla
         protokoll("ok", ` ein=0 aus=0 vorschlaege=0 verworfen=0 lektionen=${lektionen} grund=nichts-zu-pruefen`);
         return ergebnis("ok", "nichts zu prüfen", { lektionen });
       }
+      if (!kiKontoErlaubt(vault)) {   // KI-Konten: das Konto dieses Prozesses darf diesen Vault nicht an eine KI geben → ohne KI, wie bei „claude fehlt“
+        protokoll("fehler", ` ein=0 aus=0 lektionen=${lektionen} grund=ki-konto`);
+        return ergebnis("fehler", KI_KONTO_GRUND, { lektionen });
+      }
       const befehl = claudeBefehl === undefined ? findeClaude() : claudeBefehl;
       if (!befehl) {
         protokoll("fehler", ` ein=0 aus=0 lektionen=${lektionen} grund=claude-fehlt`);
@@ -269,7 +274,7 @@ export async function pflegeLauf(vault, { claudeBefehl, jetzt = Date.now(), anla
       }
       const eingabe = (BERICHT_KOPF + (bText || "(kein Bericht)") + SEITEN_KOPF + (sText || "(keine geänderten Seiten)") + "\n").slice(0, MAX_EINGABE + 200);
       const einZeichen = PFLEGE_AUFTRAG.length + eingabe.length;
-      const r = await rufeHaiku(befehl, PFLEGE_AUFTRAG, eingabe, vault, { zweck: "pflege" });
+      const r = await rufeHaiku(befehl, PFLEGE_AUFTRAG, eingabe, vault, { zweck: "pflege", konto: KI_STUFE });
       const antwort = r.fehler ? null : leseClaudeAntwort(r.ausgabe);
       const f = r.fehler || antwort.fehler;
       const tok = (t) => (t ? ` tokEin=${t.ein} tokAus=${t.aus}` : "");

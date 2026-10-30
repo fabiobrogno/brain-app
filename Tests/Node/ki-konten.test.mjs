@@ -107,7 +107,7 @@ test("Stufen je Konto und Vault; unbekanntes Konto und unbekannter Vault sind ge
   assert.equal(stufe(e.s, e.v2, {}, { arg: "k_00000003" }), "gesperrt", "bekanntes Konto ohne Eintrag: neueKonten = gesperrt");
   assert.equal(stufe(e.s, e.v1, {}, { arg: "k_99999999" }), "gesperrt", "unbekannte Kennung");
   assert.equal(stufe(e.s, e.v1, {}, { arg: "../../etc" }), "gesperrt", "ungültige Kennung");
-  assert.equal(stufe(e.s, e.v1), "posteingang", "kein Konto erkennbar (Altform): ohneKonto des Vaults");
+  assert.equal(stufe(e.s, e.v1), "gesperrt", "kein Konto erkennbar (Altform): nie lockerer als das strengste Konto des Vaults (hier k_00000003 = gesperrt), auch wenn ohneKonto posteingang sagt");
   assert.equal(stufe(e.s, e.v2), "gesperrt");
   assert.equal(stufe(e.s, neuesVault(), {}, { arg: "k_00000001" }), "gesperrt", "ein Vault, den die Liste nicht kennt");
 });
@@ -186,7 +186,8 @@ test("Migration: Konten mit bestehender Verbindung behalten ihre heutigen Rechte
   for (const v of [v1, v2]) {
     assert.equal(K.stufeFuer(d, v, id(a)), "posteingang");
     assert.equal(K.stufeFuer(d, v, id(b)), "gesperrt", "nicht verbunden → gesperrt");
-    assert.equal(K.stufeFuer(d, v, null), "posteingang", "alte Einträge ohne --konto behalten ihr Recht");
+    assert.equal(K.stufeFuer(d, v, null), "gesperrt", "alte Einträge ohne --konto: nie lockerer als das strengste Konto des Vaults (b ist gesperrt) — sie müssen mit Konto neu verbunden werden");
+    assert.equal(d.vaults[v].ohneKonto, "posteingang", "die Migration vermerkt den früheren Wert weiter; wirksam ist das Minimum");
     assert.equal(d.vaults[v].neueKonten, "gesperrt");
   }
   // ein Vault, der später dazukommt, ist für alle gesperrt (auch für die Altform)

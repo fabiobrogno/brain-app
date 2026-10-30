@@ -23,7 +23,7 @@ import { ordner, vaultPfadOderEnde } from "./pfade.mjs";
 import { leseAutomatik, TAGESLAUF_BUDGETS } from "./einstellungen.mjs";
 import { istHeikel } from "./heikel.mjs";
 import { aussageGedeckt, kernsatz, FUNDSTELLE_MUSTER } from "./beleg-ernte.mjs";
-import { findeClaude } from "./ernte.mjs";
+import { kiBefehl } from "./tageslauf/ki.mjs";
 import { findeSecrets, ohneSecrets } from "./secrets-muster.mjs";
 import { nenntThema, THEMA_GRUND } from "./thema-ausschluss.mjs";
 import { legeRueckfrageAn, sichtbare, verfallen, konfliktRueckfragen, stichprobenAuffuellen, archiviereRueckfrage, listeRueckfragen, istAutostufeRueckfrage, AUTOSTUFE_QUELLE } from "./rueckfragen.mjs";
@@ -525,13 +525,13 @@ export async function tageslauf(vault, opt = {}) {
     let status = "fehler";
     try {
       if (nurPflege) {                                            // B3-Nachlauf: nur Autostufe (Lernmodus-Stand) + Pflege, keine B2-Schritte
-        if (!(ctx.claudeBefehl === undefined ? findeClaude() : ctx.claudeBefehl)) { ctx.ohneKi = true; ctx.grund = "claude nicht gefunden"; }
+        kiBefehl(ctx, { ueberschreibe: true });
         await schritt(ctx, zahl, "Autostufe", () => aktualisiereAutostufe(ctx));
         try { await b3Schritte(ctx); }
         catch (e) { notiere(ctx, { id: "b3", stufe: "fehler", grund: `Pflege: ${kurz(e?.message, 140)}` }); }
         status = zahl.teilweise ? "teilweise" : "ok";
       } else {
-      if (!nurAntworten && !(ctx.claudeBefehl === undefined ? findeClaude() : ctx.claudeBefehl)) { ctx.ohneKi = true; ctx.grund = "claude nicht gefunden"; }   // KI-Schritte entfallen, der Lauf gilt nicht als erfolgreich
+      if (!nurAntworten) kiBefehl(ctx, { ueberschreibe: true });   // KI-Schritte entfallen, der Lauf gilt nicht als erfolgreich
       if (!probe) await schritt(ctx, zahl, "Reste aufräumen", () => raeumeResteAuf(vault, {}));   // Reste abgestürzter Läufe (verändert Git → nie in der Probe)
       await schritt(ctx, zahl, "Autostufe", () => aktualisiereAutostufe(ctx));
       if (!probe) await schritt(ctx, zahl, "Protokoll", () => { const p = protokollGesund(vault); if (!p.ok) protokollKaputt(ctx, zahl, p.fehler); });   // Tor fail-closed (N3)

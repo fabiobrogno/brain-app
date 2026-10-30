@@ -42,12 +42,16 @@ function aufbau({ konten = [["a", HOOKS], ["b", {}]], vaults = 2 } = {}) {
   const h = erzeugeHandler({ vault: vs[0], vaultOptionen: { support: s }, mcpPfad: join(mcp, "brain-mcp.mjs") });
   return { home, s, profile, vs, rufe: aufruf(h) };
 }
+// Die Einstellungsregeln (Kortex-Einstellungen, Einstellungsdateien des Profils, .mcp.json) gehören zum Leseverbot; die Tests prüfen sie getrennt von den Regeln für Vaults.
+const istEinst = (r) => /\.mcp\.json|\.claude\/settings|settings\.json|\.claude\.json|vaults\.json|ki-konten\.json|brain-support-/.test(r);
+const ohneEinst = (liste) => (liste || []).filter((r) => !istEinst(r));
+const nurEinst = (liste) => (liste || []).filter(istEinst);
 const kontoVon = (j, p) => j.konten.find((k) => k.ordner.endsWith(p.split("/").pop()));
 
 // ───────────────────────────── Regeln: Pfadformen ─────────────────────────────
 test("Regel: absoluter Pfad mit //, gitignore- und Regelzeichen werden maskiert, Leerzeichen und Umlaute bleiben, beide Pfadformen bei Symlinks", () => {
   assert.equal(S.regelPfad("/Users/x/Vault"), "//Users/x/Vault");
-  assert.equal(S.regelPfad("/Users/x/Mein [Vault] (a)*?"), "//Users/x/Mein \\[Vault\\] \\(a\\)\\*\\?");
+  assert.equal(S.regelPfad("/Users/x/Mein [Vault] (a)*?"), "//Users/x/Mein \\[Vault\\] (a)\\*\\?", "Klammern bleiben unmaskiert (die Doku maskiert sie nicht)");
   assert.equal(S.regelPfad("/Users/x/a\\b"), "//Users/x/a\\\\b");
   assert.equal(S.regelPfad("/Users/x/Büro Äö ß/Wiki"), "//Users/x/Büro Äö ß/Wiki");
   assert.equal(S.regelPfad("/Users/x/Vault/"), "//Users/x/Vault", "kein doppelter Schrägstrich am Ende");
@@ -57,17 +61,28 @@ test("Regel: absoluter Pfad mit //, gitignore- und Regelzeichen werden maskiert,
   assert.deepEqual(regeln, [`Read(//${verweis.slice(1)}/**)`, `Edit(//${verweis.slice(1)}/**)`, `Read(//${echt.slice(1)}/**)`, `Edit(//${echt.slice(1)}/**)`]);
   assert.deepEqual(S.vaultRegeln(echt, echt), [`Read(//${echt.slice(1)}/**)`, `Edit(//${echt.slice(1)}/**)`], "gleiche Form nur einmal");
   assert.throws(() => S.vaultRegeln("/Users/x/a\nb"), /Steuerzeichen/);
+  // NFC und NFD: beide Schreibweisen, wenn sie sich unterscheiden (macOS speichert Umlaute zerlegt)
+  const nfd = S.vaultRegeln("/Users/x/Bücher".normalize("NFD"));
+  assert.ok(nfd.includes(`Read(//Users/x/${"Bücher".normalize("NFC")}/**)`) && nfd.includes(`Read(//Users/x/${"Bücher".normalize("NFD")}/**)`), JSON.stringify(nfd));
+  assert.equal(S.vaultRegeln("/Users/x/Buecher").length, 2, "ohne Umlaut nur eine Form");
   assert.deepEqual(S.sandboxPfade(verweis, echt), [verweis, echt], "in der Sandbox ist /pfad absolut, ohne Maskierung");
 });
 
-test("Pfade mit Sonderzeichen: Leerzeichen, Umlaute, Klammern landen maskiert in der settings.json und gehen wieder heraus", () => {
+test("Pfade mit Sonderzeichen: Leerzeichen, Umlaute, Klammern (unmaskiert), eckige Klammern (maskiert) in der settings.json und gehen wieder heraus", () => {
   const p = tmp("brain-profil-"), vault = join(tmp("brain-vaults-"), "Büro [Firma] (neu)");
   mkdirSync(vault);
   const regeln = S.vaultRegeln(vault);
-  S.tragRegelnEin(p, regeln);
-  assert.ok(settings(p).permissions.deny.every((r) => r.includes("\\[Firma\\] \\(neu\\)")));
-  S.nimmRegelnHeraus(p, regeln);
-  assert.deepEqual(settings(p), {}, "nichts bleibt übrig, auch kein leeres permissions");
+  const r = S.tragRegelnEin(p, regeln);
+  assert.deepEqual(r.angelegt, ["permissions", "deny"], "Kortex meldet, welche Behälter es angelegt hat");
+  assert.ok(settings(p).permissions.deny.every((x) => x.includes("\\[Firma\\] (neu)")));
+  S.nimmRegelnHeraus(p, regeln, r.angelegt);
+  assert.deepEqual(settings(p), {}, "nichts bleibt übrig: die Behälter hat Kortex angelegt, also nimmt es sie wieder mit");
+  // …aber leere Behälter, die schon da waren, bleiben stehen
+  writeFileSync(join(p, "settings.json"), JSON.stringify({ permissions: { deny: [] } }));
+  const r2 = S.tragRegelnEin(p, regeln);
+  assert.deepEqual(r2.angelegt, [], "nichts angelegt");
+  S.nimmRegelnHeraus(p, regeln, r2.angelegt);
+  assert.deepEqual(settings(p), { permissions: { deny: [] } }, "der leere Behälter des Nutzers bleibt");
 });
 
 // ───────────────────────────── Leseverbot über die Route ─────────────────────────────
@@ -91,7 +106,10 @@ test("Sperren mit claudeSperre schreibt Read- und Edit-Verbot in die settings.js
     const soll = [`Read(//${v1.slice(1)}/**)`, `Edit(//${v1.slice(1)}/**)`];
     assert.deepEqual(r.j.claude.regeln, soll);
     const sb = settings(pb);
-    assert.deepEqual(sb.permissions.deny, ["Read(//etc/**)", "Bash(rm:*)", ...soll], "Fremdes bleibt, die eigenen kommen dazu");
+    assert.deepEqual(ohneEinst(sb.permissions.deny), ["Read(//etc/**)", "Bash(rm:*)", ...soll], "Fremdes bleibt, die eigenen kommen dazu");
+    // dazu die Einstellungsregeln: Support-Ordner, Einstellungsdateien des Profils, Projektdateien (die KI darf ihre Kennung und die Sperren nicht umschreiben)
+    const einst = nurEinst(sb.permissions.deny);
+    for (const erwartet of [`Edit(//${s.slice(1)}/**)`, `Read(//${s.slice(1)}/vaults.json)`, `Read(//${s.slice(1)}/ki-konten.json*)`, `Edit(//${pb.slice(1)}/settings.json)`, `Read(//${pb.slice(1)}/settings.json*)`, `Edit(//${pb.slice(1)}/.claude.json)`, "Edit(**/.mcp.json)", "Edit(**/.claude/settings.json)", "Edit(**/.claude/settings.local.json)"]) assert.ok(einst.includes(erwartet), erwartet);
     assert.deepEqual(sb.permissions.allow, ["Bash(ls:*)"]);
     assert.equal(sb.permissions.defaultMode, "default"); assert.equal(sb.model, "opus"); assert.deepEqual(sb.env, { X: "1" });
     assert.equal(baks(pb).length, 1, "eine Sicherung vor dem Schreiben");
@@ -101,6 +119,7 @@ test("Sperren mit claudeSperre schreibt Read- und Edit-Verbot in die settings.js
     // der Merker nennt, was Kortex eingetragen hat
     const d = K.liesKonten(s).daten;
     assert.deepEqual(d.eingetragen[b.id].claudeDeny[v1], soll);
+    assert.deepEqual(d.eingetragen[b.id].claudeDeny["@einstellungen"], einst, "auch die Einstellungsregeln sind als von Kortex vermerkt");
     assert.equal((statSync(K.kontenPfad(s)).mode & 0o777), 0o600);
     // Zustand in der Anzeige
     r = await rufe("GET", "/api/ki/konten");
@@ -111,7 +130,7 @@ test("Sperren mit claudeSperre schreibt Read- und Edit-Verbot in die settings.js
     assert.equal(kontoVon((await rufe("GET", "/api/ki/konten")).j, pb).schutz.vaults[v2], undefined, "nur gesperrte Vaults erscheinen");
     // zweites Eintragen ändert nichts (idempotent, keine zweite Sicherung)
     r = await rufe("PUT", "/api/ki/zugriff", { konto: b.id, vault: v1, stufe: "gesperrt", claudeSperre: true });
-    assert.deepEqual(settings(pb).permissions.deny, ["Read(//etc/**)", "Bash(rm:*)", ...soll]);
+    assert.deepEqual(ohneEinst(settings(pb).permissions.deny), ["Read(//etc/**)", "Bash(rm:*)", ...soll]);
     assert.equal(baks(pb).length, 1);
     // der Nutzer nimmt eine Regel selbst heraus → Anzeige „fehlt“, erneutes Eintragen stellt sie wieder her
     const doc = settings(pb); doc.permissions.deny = doc.permissions.deny.filter((x) => x !== soll[1]); writeFileSync(join(pb, "settings.json"), JSON.stringify(doc, null, 2));
@@ -122,7 +141,7 @@ test("Sperren mit claudeSperre schreibt Read- und Edit-Verbot in die settings.js
     // Entsperren (jede Stufe über gesperrt) nimmt genau die eigenen Regeln heraus
     r = await rufe("PUT", "/api/ki/zugriff", { konto: b.id, vault: v1, stufe: "lesen" });
     assert.equal(r.j.claude.aktion, "entfernt");
-    assert.deepEqual(settings(pb).permissions.deny, ["Read(//etc/**)", "Bash(rm:*)"]);
+    assert.deepEqual(settings(pb).permissions.deny, ["Read(//etc/**)", "Bash(rm:*)"], "mit dem letzten Leseverbot gehen auch die Einstellungsregeln");
     assert.deepEqual(settings(pb).permissions.allow, ["Bash(ls:*)"]);
     assert.equal(K.liesKonten(s).daten.eingetragen, undefined, "kein Vermerk mehr");
     // noch einmal entsperren: nichts zu tun
@@ -130,7 +149,7 @@ test("Sperren mit claudeSperre schreibt Read- und Edit-Verbot in die settings.js
     assert.equal(r.j.claude.aktion, "nichts");
     // ein zweiter Vault, claudeSperre:false bei gesperrt entfernt ebenfalls
     await rufe("PUT", "/api/ki/zugriff", { konto: b.id, vault: v2, stufe: "gesperrt", claudeSperre: true });
-    assert.equal(settings(pb).permissions.deny.length, 4);
+    assert.equal(ohneEinst(settings(pb).permissions.deny).length, 4);
     r = await rufe("PUT", "/api/ki/zugriff", { konto: b.id, vault: v2, stufe: "gesperrt", claudeSperre: false });
     assert.equal(r.j.claude.aktion, "entfernt");
     assert.deepEqual(settings(pb).permissions.deny, ["Read(//etc/**)", "Bash(rm:*)"]);
@@ -146,10 +165,10 @@ test("Eine Regel, die der Nutzer schon selbst hat, gehört ihm: Kortex vermerkt 
   await mitHome(home, async () => {
     const a = kontoVon((await rufe("GET", "/api/ki/konten")).j, pa);
     await rufe("PUT", "/api/ki/zugriff", { konto: a.id, vault: v1, stufe: "gesperrt", claudeSperre: true });
-    assert.deepEqual(settings(pa).permissions.deny, [lese, edit]);
+    assert.deepEqual(ohneEinst(settings(pa).permissions.deny), [lese, edit]);
     assert.deepEqual(K.liesKonten(s).daten.eingetragen[a.id].claudeDeny[v1], [edit], "nur das Hinzugekommene ist vermerkt");
     await rufe("PUT", "/api/ki/zugriff", { konto: a.id, vault: v1, stufe: "lesen" });
-    assert.deepEqual(settings(pa).permissions.deny, [lese], "die eigene Regel des Nutzers bleibt");
+    assert.deepEqual(settings(pa).permissions.deny, [lese], "die eigene Regel des Nutzers bleibt (und nur sie)");
   });
 });
 
@@ -166,7 +185,7 @@ test("settings.json als Symlink (Dotfiles): das Ziel wird geändert, der Link bl
     assert.equal(r.j.claude.aktion, "eingetragen", JSON.stringify(r.j.claude));
     assert.ok(lstatSync(link).isSymbolicLink(), "der Link bleibt ein Link");
     assert.equal(JSON.parse(readFileSync(ziel, "utf8")).model, "x");
-    assert.equal(JSON.parse(readFileSync(ziel, "utf8")).permissions.deny.length, 2);
+    assert.equal(ohneEinst(JSON.parse(readFileSync(ziel, "utf8")).permissions.deny).length, 2);
     assert.equal(statSync(ziel).mode & 0o777, 0o640, "die Rechte der bisherigen Datei bleiben");
     assert.equal(baks(pa).length, 1);
     await rufe("PUT", "/api/ki/zugriff", { konto: a.id, vault: v1, stufe: "lesen" });
@@ -253,16 +272,22 @@ test("Strenger Schutz: nur mit Bestätigung und nur mit einem gesperrten Vault; 
     assert.equal(r.status, 200, JSON.stringify(r.j));
     let sb = settings(pa);
     assert.equal(sb.sandbox.enabled, true); assert.equal(sb.sandbox.allowUnsandboxedCommands, false); assert.equal(sb.sandbox.failIfUnavailable, true);
-    assert.deepEqual(sb.sandbox.filesystem.denyRead, ["/fremd/pfad", v1], "Fremdes bleibt, der gesperrte Vault kommt als absoluter Pfad dazu");
+    const dr = sb.sandbox.filesystem.denyRead, dw = sb.sandbox.filesystem.denyWrite;
+    assert.equal(dr[0], "/fremd/pfad", "Fremdes bleibt vorn stehen");
+    for (const erwartet of [v1, `${s}/vaults.json`, `${s}/ki-konten.json`, `${pa}/settings.json`]) assert.ok(dr.includes(erwartet), `denyRead: ${erwartet}`);
+    for (const erwartet of [v1, s, pa]) assert.ok(dw.includes(erwartet), `denyWrite: ${erwartet}`);
+    assert.ok(nurEinst(sb.permissions.deny).length > 0, "der Strenge Schutz bringt die Einstellungsregeln mit");
     assert.deepEqual(sb.sandbox.filesystem.allowWrite, ["/x"]); assert.deepEqual(sb.sandbox.excludedCommands, ["git"]);
     assert.equal(sb.model, "x");
     assert.equal(kontoVon(r.j, pa).schutz.strenger, true); assert.equal(kontoVon(r.j, pa).schutz.strengerAktiv, true);
     // ein weiterer gesperrter Vault wird nachgeführt, ein entsperrter fällt heraus
     await rufe("PUT", "/api/ki/zugriff", { konto: a.id, vault: v2, stufe: "gesperrt" });
-    assert.deepEqual(settings(pa).sandbox.filesystem.denyRead, ["/fremd/pfad", v1, v2]);
+    assert.ok(settings(pa).sandbox.filesystem.denyRead.includes(v1) && settings(pa).sandbox.filesystem.denyRead.includes(v2));
+    assert.ok(settings(pa).sandbox.filesystem.denyWrite.includes(v2));
     await rufe("PUT", "/api/ki/zugriff", { konto: a.id, vault: v1, stufe: "lesen" });
-    assert.deepEqual(settings(pa).sandbox.filesystem.denyRead, ["/fremd/pfad", v2]);
-    assert.deepEqual(settings(pa).permissions, undefined, "das Leseverbot für v1 ist mit dem Entsperren heraus");
+    assert.ok(!settings(pa).sandbox.filesystem.denyRead.includes(v1) && settings(pa).sandbox.filesystem.denyRead.includes(v2));
+    assert.ok(!settings(pa).sandbox.filesystem.denyWrite.includes(v1));
+    assert.deepEqual(ohneEinst(settings(pa).permissions.deny), [], "das Leseverbot für v1 ist mit dem Entsperren heraus (die Einstellungsregeln bleiben, solange der Strenge Schutz an ist)");
     // aus: die früheren Werte kommen zurück, Fremdes bleibt
     r = await rufe("POST", "/api/ki/schutz", { konto: a.id, sandbox: false });
     assert.equal(r.status, 200);

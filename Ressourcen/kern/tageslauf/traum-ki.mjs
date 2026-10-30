@@ -3,7 +3,8 @@
 // 50 Runden und 1,5 USD je Aufruf, Arbeitsordner = temporärer Ordner außerhalb von Vault, Wurzel und Konten (die sind zusätzlich für die KI gesperrt).
 // Eigenes Budget (ctx.traumBudget, getrennt von B2 und B3), eigene Zähler (ctx.traumAufrufe, ctx.traumTokens). Wirft nie.
 import { execFile } from "node:child_process";
-import { findeClaude, leseClaudeAntwort } from "../ernte.mjs";
+import { leseClaudeAntwort } from "../ernte.mjs";
+import { kiBefehl } from "./ki.mjs";
 import { sonnetArgs, sonnetUmgebung } from "./pflege-ki.mjs";
 
 export const TRAUM_WERKZEUGE = "Read,Edit,Write,Glob,Grep";
@@ -18,8 +19,8 @@ export async function rufeTraum(ctx, { system, eingabe, cwd, sperren = [], zeitl
   if (ctx.ohneKi) return { ohneKi: true };
   const b = ctx.traumBudget;
   if (b && !b.frei()) return { budget: true };
-  const befehl = ctx.claudeBefehl === undefined ? findeClaude() : ctx.claudeBefehl;
-  if (!befehl) { ctx.ohneKi = true; ctx.grund ||= "claude nicht gefunden"; return { ohneKi: true }; }
+  const befehl = kiBefehl(ctx);
+  if (!befehl) return { ohneKi: true };
   b?.zaehle();
   ctx.traumAufrufe = (ctx.traumAufrufe || 0) + 1;
   const r = await new Promise((resolve) => {

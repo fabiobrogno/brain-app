@@ -136,6 +136,12 @@ public struct EinrichtungsAnzeige: Equatable, Sendable {
     public var kiTrennFehler: [KiZiel: String] = [:]
     /// Die Stufe, mit der das KI-Konto den Vault sehen soll, je KI (Standard: `KiStufe.standard`). Gilt beim Verbinden und beim Eintragen der Hooks.
     public var kiStufen: [KiZiel: KiStufe] = [:]
+    /// Für welche KI der Nutzer die Stufe ausdrücklich gewählt hat (sonst bleibt ein von ihm gesperrtes Konto gesperrt).
+    public var kiStufeGewaehlt: Set<KiZiel> = []
+    /// Je Claude-Profil (Pfad) eine eigene Stufe; ohne Eintrag gilt die der KI.
+    public var profilStufen: [String: KiStufe] = [:]
+    /// KI, die verbunden wurde, deren Konto aber für diesen Vault vom Nutzer gesperrt ist und bleibt.
+    public var kiGesperrtBleibt: Set<KiZiel> = []
     /// Die Konfiguration zum Kopieren ist gerade in der Zwischenablage (kurze Rückmeldung) bzw. ließ sich nicht holen.
     public var konfiguration = KonfigurationsAnzeige.offen
     public var verdrahtung = VerdrahtungsAnzeige()
@@ -145,6 +151,11 @@ public struct EinrichtungsAnzeige: Equatable, Sendable {
 
     /// Die gewählte Stufe für diese KI.
     public func kiStufe(_ ziel: KiZiel) -> KiStufe { kiStufen[ziel] ?? .standard }
+    /// Die Stufe für ein Claude-Profil und ob sie ausdrücklich gewählt wurde (für das Profil oder für die KI).
+    public func zugriff(_ ziel: KiZiel, profil: String?) -> KiZugriff {
+        if let profil, let s = profilStufen[profil] { return KiZugriff(stufe: s, ausdruecklich: true) }
+        return KiZugriff(stufe: kiStufe(ziel), ausdruecklich: kiStufeGewaehlt.contains(ziel))
+    }
     /// Der Hinweis auf weitere KI-Konten erscheint, sobald überhaupt ein KI-Programm gefunden wurde.
     public var zeigeWeitereKontenHinweis: Bool { kis.contains { $0.status != .nichtGefunden } }
 }
@@ -669,7 +680,7 @@ public final class EinrichtungsAblauf {
         anzeige.verdrahtung.arbeitet = was
         melde()
         do {
-            anzeige.verdrahtung.stand = try await dienste.verdrahte(was, an: an, ersetzen: ersetzen, profile: profile, zugriff: was == .claude ? anzeige.kiStufe(.claude) : nil)
+            anzeige.verdrahtung.stand = try await dienste.verdrahte(was, an: an, ersetzen: ersetzen, profile: profile)
             log("einrichtung verdrahtung \(was.rawValue) \(an ? "an" : "aus")")
         } catch let e as EinrichtungsFehler {
             if was == .git, an, e.status == 409, e.art == "anders" {
@@ -709,6 +720,13 @@ public final class EinrichtungsAblauf {
     /// Die Stufe wählen, mit der das KI-Konto den Vault sehen soll (vor dem Verbinden; sonst gilt `KiStufe.standard`).
     public func waehleKiStufe(_ ziel: KiZiel, _ stufe: KiStufe) {
         anzeige.kiStufen[ziel] = stufe
+        anzeige.kiStufeGewaehlt.insert(ziel)
+        melde()
+    }
+
+    /// Eigene Stufe für ein Claude-Profil (mehrere Konten, jedes mit eigenem Recht).
+    public func waehleProfilStufe(_ pfad: String, _ stufe: KiStufe) {
+        anzeige.profilStufen[pfad] = stufe
         melde()
     }
 
@@ -725,10 +743,13 @@ public final class EinrichtungsAblauf {
                 guard !gewaehlt.isEmpty else { throw EinrichtungsFehler("Wähle bitte mindestens ein Claude-Profil aus.") }
                 ziele = gewaehlt
             }
-            var alleSchon = true
+            var alleSchon = true, gesperrtBleibt = false
             for profil in ziele {
-                if try await dienste.verbinde(ziel, umstellen: umstellen, profil: profil, zugriff: anzeige.kiStufe(ziel)) != .schonVerbunden { alleSchon = false }
+                let r = try await dienste.verbinde(ziel, umstellen: umstellen, profil: profil, zugriff: anzeige.zugriff(ziel, profil: profil))
+                if r != .schonVerbunden { alleSchon = false }
+                if r == .verbundenGesperrt { gesperrtBleibt = true }
             }
+            if gesperrtBleibt { anzeige.kiGesperrtBleibt.insert(ziel) } else { anzeige.kiGesperrtBleibt.remove(ziel) }
             setzeKi(ziel, .verbunden(schon: alleSchon))
             zustand.loescheFehler(.ki)
             log("einrichtung ki-verbunden \(ziel.rawValue)")

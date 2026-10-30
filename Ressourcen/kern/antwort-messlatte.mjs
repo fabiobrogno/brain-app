@@ -18,6 +18,7 @@ import { haengeAn, zeitstempel, leseZeilen } from "./logs.mjs";
 import { leseAutomatik } from "./einstellungen.mjs";
 import { vaultPfadOderEnde, ordner, entferneBom } from "./pfade.mjs";
 import { findeClaude, rufeHaiku, leseClaudeAntwort, nimmLock } from "./ernte.mjs";
+import { kiKontoErlaubt, KI_KONTO_GRUND, KI_STUFE } from "./tageslauf/ki.mjs";
 import { walk } from "./vault-dateien.mjs";
 import { istWikiSeite } from "./wiki-pfade.mjs";
 
@@ -122,6 +123,10 @@ export async function antwortLauf(vault, { claudeBefehl, jetzt = Date.now(), anl
     if (!nimmLock(LOCK(vault), jetzt)) return ergebnis("uebersprungen", "läuft schon");
     try { unlinkSync(GESTARTET(vault)); } catch {}
     try {
+      if (!kiKontoErlaubt(vault)) {   // KI-Konten: das Konto dieses Prozesses darf diesen Vault nicht an eine KI geben → ohne KI, wie bei „claude fehlt“
+        schreibe(`art=lauf status=fehler anlass=${a} fragen=${faelle.length} grund=ki-konto`);
+        return ergebnis("fehler", KI_KONTO_GRUND);
+      }
       const befehl = claudeBefehl === undefined ? findeClaude() : claudeBefehl;
       if (!befehl) {
         schreibe(`art=lauf status=fehler anlass=${a} fragen=${faelle.length} grund=claude-fehlt`);
@@ -141,7 +146,7 @@ export async function antwortLauf(vault, { claudeBefehl, jetzt = Date.now(), anl
         }
         let text = "";
         try { text = seitenText(vault, rel); } catch {}
-        const r = await rufeHaiku(befehl, ANTWORT_AUFTRAG, SEITE_KOPF + (text || "(leer)") + FRAGE_KOPF + fall.frage + "\n", vault, { zweck: "antwort" });
+        const r = await rufeHaiku(befehl, ANTWORT_AUFTRAG, SEITE_KOPF + (text || "(leer)") + FRAGE_KOPF + fall.frage + "\n", vault, { zweck: "antwort", konto: KI_STUFE });
         const antwort = r.fehler ? null : leseClaudeAntwort(r.ausgabe);
         if (antwort?.tokens) { tokEin += antwort.tokens.ein; tokAus += antwort.tokens.aus; mitTokens = true; }
         const f = r.fehler || antwort.fehler;

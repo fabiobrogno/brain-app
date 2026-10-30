@@ -13,7 +13,7 @@
 import { readdirSync, lstatSync, openSync, readSync, fstatSync, closeSync, realpathSync } from "node:fs";
 import { join, isAbsolute, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
-import { vaultPfadOderEnde, entferneBom } from "./pfade.mjs";
+import { vaultPfadOderEnde, entferneBom, kiKontoDarf } from "./pfade.mjs";
 import { leseAutomatik } from "./einstellungen.mjs";
 import { ernte, findeClaude, istAusgeschlossen, leseNachernteMarken, leseNachernteMarke, schreibeNachernteMarke, nachernteFertig, MAX_FENSTER } from "./ernte.mjs";
 
@@ -68,7 +68,7 @@ export function sitzungsOrdner(pfad) {
 }
 
 // → { gesamt, erledigt, geerntet, vorschlaege, uebersprungen, fehler, aufrufe, offen, abbruch }
-// abbruch: null | "budget" | "läuft schon" | "claude-fehlt" | "claude-fehler" | "config".
+// abbruch: null | "budget" | "läuft schon" | "claude-fehlt" | "claude-fehler" | "config" | "konto".
 // Optionen: budget (Aufrufe gesamt, Standard 250), maxFenster (je Sitzung, Standard 8), claudeBefehl (Test), jetzt (Test), nurZaehlen,
 // versuche/warteMs/warte (Wartezeit,
 // wenn gerade eine andere Ernte läuft — dieselbe Sperre wie bei der Ernte aus dem Hook).
@@ -84,6 +84,7 @@ export async function nachernteAlle(vault, { budget = STANDARD_AUFRUFE, maxFenst
   // Fail-closed wie die Ernte: ohne lesbare Config lässt sich ernteNichtIn nicht prüfen.
   const { werte, fehler: configFehler } = leseAutomatik(vault);
   if (configFehler) { r.abbruch = "config"; return r; }
+  if (!kiKontoDarf(vault, "posteingang")) { r.abbruch = "konto"; return r; }   // KI-Konten: das Konto dieses Aufrufs darf hier nichts an eine KI geben und nichts in den Vault schreiben
   const claude = claudeBefehl === undefined ? findeClaude() : claudeBefehl;
   if (!claude) { r.abbruch = "claude-fehlt"; return r; }
   const zeit = () => jetzt ?? Date.now();
@@ -122,7 +123,7 @@ export async function nachernteAlle(vault, { budget = STANDARD_AUFRUFE, maxFenst
 }
 
 const ABBRUCH_TEXT = { budget: "Budget aufgebraucht", "läuft schon": "es läuft gerade eine andere Ernte", "claude-fehlt": "claude nicht gefunden",
-  "claude-fehler": "claude fällt aus", config: "Einstellungen unlesbar" };
+  "claude-fehler": "claude fällt aus", config: "Einstellungen unlesbar", konto: "dieses KI-Konto hat dafür keine Freigabe" };
 export function zusammenfassung(r, { budget = STANDARD_AUFRUFE, zaehlen = false } = {}) {
   if (zaehlen) return `Nach-Ernte: ${r.gesamt} Sitzungen, ${r.erledigt} erledigt, ${r.offen} offen.`;
   return `Nach-Ernte: geerntet ${r.geerntet} Sitzungen (${r.vorschlaege} Vorschläge) · übersprungen ${r.uebersprungen} · Fehler ${r.fehler}`

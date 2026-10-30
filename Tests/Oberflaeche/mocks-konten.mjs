@@ -13,17 +13,17 @@ export const KONTEN = [
 
 // opt.vaults = [{ pfad, name }] · opt.konten · opt.zugriff (Standard: verbundene posteingang, übrige gesperrt) · opt.hinweis ("defekt-neu") · opt.vorherDa
 // opt.fehlerClaude: Text → PUT /api/ki/zugriff meldet, dass die Einstellungen von Claude Code nicht geändert werden konnten
-export async function mockeKonten(page, { vaults, konten = KONTEN, zugriff = null, hinweis = null, vorherDa = false, fehlerClaude = null, leer = false } = {}) {
+export async function mockeKonten(page, { vaults, konten = KONTEN, zugriff = null, hinweis = null, hinweisGrund = "defekt", vorherDa = false, fehlerClaude = null, leer = false, altform = {}, warnungen = [] } = {}) {
   const z = {
-    konten: leer ? [] : konten.map((k) => ({ ...k })), vaults: vaults.map((v) => ({ neueKonten: "gesperrt", ...v })), hinweis, vorherDa, anfragen: [], sperren: {}, streng: {}, fehlerClaude, wartet: null,
+    konten: leer ? [] : konten.map((k) => ({ ...k })), vaults: vaults.map((v) => ({ neueKonten: "gesperrt", ...v })), hinweis, hinweisGrund, vorherDa, anfragen: [], altform: { ...altform }, warnungen, sperren: {}, streng: {}, fehlerClaude, wartet: null,
   };
   z.zugriff = zugriff || Object.fromEntries(z.konten.map((k) => [k.id, Object.fromEntries(z.vaults.map((v) => [v.pfad, k.verbunden ? "posteingang" : "gesperrt"]))]));
   const stand = () => ({
-    zustand: "ok", ...(z.hinweis ? { hinweis: z.hinweis, hinweisSeit: "2026-10-30T10:00:00.000Z", vorherDa: z.vorherDa } : {}), stufen: STUFEN,
+    zustand: "ok", ...(z.hinweis ? { hinweis: z.hinweis, hinweisGrund: z.hinweisGrund, hinweisSeit: "2026-10-30T10:00:00.000Z", vorherDa: z.vorherDa } : {}), stufen: STUFEN,
     konten: z.konten.map((k) => ({
-      ...k,
+      ...k, altform: z.altform[k.id] || { mcp: false, hooks: false },
       schutz: k.programm !== "claude" ? { moeglich: false } : {
-        moeglich: true, strenger: !!z.streng[k.id], strengerAktiv: !!z.streng[k.id],
+        moeglich: true, strenger: !!z.streng[k.id], strengerAktiv: !!z.streng[k.id], warnungen: z.streng[k.id] ? z.warnungen : [],
         vaults: Object.fromEntries(z.vaults.filter((v) => z.zugriff[k.id]?.[v.pfad] === "gesperrt").map((v) => [v.pfad, z.sperren[`${k.id}|${v.pfad}`] ? "aktiv" : "aus"])),
       },
     })),
@@ -67,6 +67,11 @@ export async function mockeKonten(page, { vaults, konten = KONTEN, zugriff = nul
     if (b.sandbox === true && b.bestaetigt !== true) return fehler(route, 400, "Bestätigung fehlt.", { art: "bestaetigung" });
     if (b.sandbox) z.streng[b.konto] = true; else delete z.streng[b.konto];
     return route.fulfill({ json: stand() });
+  });
+  await page.route("**/api/ki/neu-verbinden", async (route) => {
+    const b = body(route); z.anfragen.push({ methode: route.request().method(), pfad: "/api/ki/neu-verbinden", body: b });
+    delete z.altform[b.konto];
+    return route.fulfill({ json: { ok: true, mcp: { ok: true }, hooks: null, stand: stand() } });
   });
   await page.route("**/api/ki/hinweis", async (route) => { z.anfragen.push({ methode: route.request().method(), pfad: "/api/ki/hinweis" }); z.hinweis = null; return route.fulfill({ json: stand() }); });
   await page.route("**/api/ki/vorher", async (route) => {
