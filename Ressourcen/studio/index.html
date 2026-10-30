@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="willkommen.css">
 <link rel="stylesheet" href="vertrauen.css">
 <link rel="stylesheet" href="aufgaben.css">
+<link rel="stylesheet" href="frage.css">
 <link rel="stylesheet" href="live.css">
 <link rel="stylesheet" href="bausteine.css">
 </head>
@@ -63,6 +64,7 @@
       <div class="werkzeug-rechts">
         <span id="pille" class="pille" hidden></span>
         <span id="speicherstand" class="speicherstand" aria-live="polite"></span>
+        <button id="knopf-frage" class="knopf-icon" type="button" title="Frag deinen Vault (⌘J)" aria-label="Frag deinen Vault" aria-keyshortcuts="Meta+J" aria-pressed="false"></button>
         <div id="werkzeuge" class="werkzeuge" role="toolbar" aria-label="Werkzeuge der Notiz"></div>
       </div>
     </header>
@@ -84,6 +86,7 @@
   <div class="griff" data-griff="info" role="separator" aria-orientation="vertical" aria-label="Breite der Eigenschaften" tabindex="0"></div>
 </div>
 <div id="willkommen-host" hidden></div>
+<div id="frage-host"></div>
 <div id="dialog-host"></div>
 <div id="menue-host"></div>
 <div id="toast-host" aria-live="polite"></div>

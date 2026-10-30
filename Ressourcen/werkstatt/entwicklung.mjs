@@ -8,6 +8,7 @@ import { createServer } from "node:http";
 import { erzeugeHandler, MAX_KOERPER } from "./handler.mjs";
 import { HttpFehler } from "../gemeinsam/vault.mjs";
 import { beendeLaufendes } from "../gemeinsam/git.mjs";
+import { beendeAlleProzesse } from "../gemeinsam/prozess.mjs";
 import { beendeVorgaenge } from "../gemeinsam/vaults.mjs";
 import { bereinigePfad } from "../gemeinsam/basis.mjs";
 
@@ -42,7 +43,7 @@ const server = createServer(async (req, res) => {
   catch { r = { status: 500, headers: { "Content-Type": "application/json; charset=utf-8" }, body: Buffer.from('{"fehler":"Interner Fehler"}') }; }
   res.writeHead(r.status, r.headers || {});
   res.end(req.method === "HEAD" ? undefined : r.body);
-  if (r.stopp) { server.close(() => process.exit(0)); server.closeAllConnections?.(); }
+  if (r.stopp) { try { beendeAlleProzesse(); } catch { /* egal */ } server.close(() => process.exit(0)); server.closeAllConnections?.(); }
 });
 server.listen(portWunsch, "127.0.0.1", () => {
   process.stdout.write(`Bereit: http://127.0.0.1:${server.address().port}/\n`);
