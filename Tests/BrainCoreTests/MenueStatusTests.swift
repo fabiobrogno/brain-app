@@ -117,3 +117,32 @@ private func statusMitUmstellung(_ block: String?) throws -> BrainStatus {
     // Der Eintrag „Vault umstellen …“ ist eine Aktion unter den Vault-Befehlen, keine Statuszeile: der Kopf bleibt, wie er war
     #expect(zeilen().map(\.text) == ["Mein Vault", "Alles in Ordnung"])
 }
+
+// MARK: Aufgaben in der Menüleiste
+
+private func zeilenMitAufgaben(_ a: BrainStatus.Aufgaben?, name: String? = "Mein Vault") -> [MenueZeile] {
+    MenueStatus.zeilen(vaultName: name, anzeige: ok, vertrauen: .vertraut, zahlen: nil, entwicklerVault: false,
+                       kernMeldung: nil, zufuehrungsZeilen: [], aufgaben: a)
+}
+
+@Test func aufgabenTextMitEinzahlMehrzahlUndUeberfaelligen() {
+    #expect(MenueStatus.aufgabenText(nil) == nil)
+    #expect(MenueStatus.aufgabenText(.init(offen: 0, ueberfaellig: 0)) == nil)
+    #expect(MenueStatus.aufgabenText(.init(offen: 1, ueberfaellig: 0)) == "1 Aufgabe offen")
+    #expect(MenueStatus.aufgabenText(.init(offen: 4, ueberfaellig: 0)) == "4 Aufgaben offen")
+    #expect(MenueStatus.aufgabenText(.init(offen: 4, ueberfaellig: 2)) == "4 Aufgaben offen · 2 überfällig")
+}
+
+@Test func aufgabenZeileFuehrtZumBoardUndWarntBeiUeberfaelligem() {
+    let ruhig = zeilenMitAufgaben(.init(offen: 3, ueberfaellig: 0))
+    #expect(ruhig.map(\.text) == ["Mein Vault", "Alles in Ordnung", "3 Aufgaben offen"])
+    #expect(ruhig[2].art == .normal && ruhig[2].aktion == .aufgabenOeffnen && ruhig[2].symbol == "checklist")
+    let dringend = zeilenMitAufgaben(.init(offen: 3, ueberfaellig: 1))
+    #expect(dringend[2].art == .hinweis && dringend[2].symbol == "exclamationmark.circle" && dringend[2].text.hasSuffix("1 überfällig"))
+}
+
+@Test func ohneOffeneAufgabenOderOhneVaultKeineAufgabenZeile() {
+    #expect(zeilenMitAufgaben(.init(offen: 0, ueberfaellig: 0)).count == 2)
+    #expect(zeilenMitAufgaben(nil).count == 2)
+    #expect(zeilenMitAufgaben(.init(offen: 5, ueberfaellig: 0), name: nil).count == 1)
+}

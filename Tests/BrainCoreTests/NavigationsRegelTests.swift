@@ -56,6 +56,10 @@ private func url(_ s: String) -> URL { URL(string: s)! }
     #expect(String(decoding: try #require(put.body), as: UTF8.self) == #"{"werte":{"a":1}}"#)
     #expect(throws: SchemaAntwort.AnfrageFehler.ungueltig) { try SchemaAntwort.anfrage(ausNachricht: ["methode": "GET", "pfad": "/index.html"]) }
     #expect(throws: SchemaAntwort.AnfrageFehler.ungueltig) { try SchemaAntwort.anfrage(ausNachricht: ["methode": "DELETE", "pfad": "/api/daten"]) }
+    // PATCH ändert einzelne Felder einer Aufgabe (/api/aufgaben/<pfad>)
+    let patch = try SchemaAntwort.anfrage(ausNachricht: ["methode": "patch", "pfad": "/api/aufgaben/05_aufgaben/x.md", "daten": ["status": "erledigt"]])
+    #expect(patch.methode == "PATCH")
+    #expect(String(decoding: try #require(patch.body), as: UTF8.self) == #"{"status":"erledigt"}"#)
     #expect(throws: SchemaAntwort.AnfrageFehler.ungueltig) { try SchemaAntwort.anfrage(ausNachricht: "kein objekt") }
 }
 

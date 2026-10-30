@@ -79,7 +79,7 @@ test("Claude-Commands: backup heißt brain-backup, alle tragen die brain-kit-Mar
   const v = mkdtempSync(join(tmpdir(), "v-")); writeFileSync(join(v, "brain.config.json"), "{}");
   execFileSync(process.execPath, [build, v, "--ziel", "claude-commands", z]);
   const dateien = readdirSync(z).sort();
-  assert.deepEqual(dateien, ["brain-backup.md", "brain-feedback.md", "brain-import.md", "brain-lektion.md", "brain-lint.md", "brain-review.md", "handoff.md", "ingest.md", "rueckfragen.md"]);
+  assert.deepEqual(dateien, ["aufgabe.md", "brain-backup.md", "brain-feedback.md", "brain-import.md", "brain-lektion.md", "brain-lint.md", "brain-review.md", "handoff.md", "ingest.md", "rueckfragen.md"]);
   for (const d of dateien) assert.match(readFileSync(join(z, d), "utf8"), /^---\n[\s\S]*?\n---\n<!-- brain-kit -->\n/, d);
 });
 test("Gleichnamiger fremder Command ohne Marke: Backup .bak-<zeit> + ersetzt + Meldung; eigener wird still überschrieben", () => {

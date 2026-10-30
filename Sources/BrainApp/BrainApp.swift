@@ -104,6 +104,7 @@ final class AppDelegat: NSObject, NSApplicationDelegate {
         haupt.addItem(menue("Ablage", [
             befehl("Neue Notiz", .neu, "n"),
             befehl("Schnell merken", .merken, "m", [.command, .shift]),
+            befehl("Aufgabe erfassen …", .aufgabeErfassen, "a", [.command, .shift]),
             .separator(),
             befehl("Vault öffnen …", .vaultOeffnen, "o", [.command, .shift]),
             befehl("Vault wechseln", .vaultWechseln, "v", [.control, .command]),
@@ -129,6 +130,7 @@ final class AppDelegat: NSObject, NSApplicationDelegate {
             befehl("Posteingang", .posteingang, "1"),
             befehl("Alle Notizen", .alle, "2"),
             befehl("Wissen", .wissen, "3"),
+            befehl("Aufgaben", .aufgaben, "4"),
             .separator(),
             befehl("Befehlspalette", .palette, "k"),
         ]))

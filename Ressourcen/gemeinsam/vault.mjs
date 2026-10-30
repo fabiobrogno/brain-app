@@ -15,6 +15,7 @@ import * as vertrauenFn from "./vertrauen.mjs";
 import { erzeugeNotizIndex, titelAus } from "./notizen.mjs";
 import { wertAus } from "./nutzung.mjs";
 import { erzeugePosteingang } from "./posteingang.mjs";
+import { erzeugeAufgaben } from "./aufgaben-vault.mjs";
 import { SUCHE_STANDARD, SUCHE_MAX, sucheWoerter, suchAuszug, sucheText } from "./ki-antworten.mjs";
 
 export { HttpFehler, pruefeText, berlinHeute, supportOrdner };
@@ -316,7 +317,8 @@ export function oeffneVault(vaultPfad, opts = {}) {
 
   // ---------- Notiz-Index (Spec v2 §5) ----------
   const notizIndex = erzeugeNotizIndex({ wurzel, jetzt, heute: () => opts.heute || berlinHeute(jetzt()),
-    gitKontext: () => { const s = gitSicht(); return s.gesperrt ? null : ctxVon(s); } });
+    gitKontext: () => { const s = gitSicht(); return s.gesperrt ? null : ctxVon(s); },
+    aufgabenOrdner: () => aufgabenFn.ordnerName() });
 
   // Lokale Nutzungsmessung (FBL-72): welche Seiten die KI per MCP abruft (.logs/mcp.log). Als „nie genutzt“ kommen nur echte Wiki-Seiten
   // in Frage (09_wiki/, Markdown, nicht generiert, kein Unterstrich-Name). Rein lesend, ohne Kit-Code.
@@ -335,6 +337,9 @@ export function oeffneVault(vaultPfad, opts = {}) {
       commit: async (a) => gitFn.commit(wurzel, a, gitCtx({ limit: opts.gitLimitCommit })),
     },
   });
+
+  // ---------- Aufgaben (kern/aufgaben.mjs): je Aufgabe eine Markdown-Datei; geschrieben wird nur in einen vertrauten Vault ----------
+  const aufgabenFn = erzeugeAufgaben({ wurzel, kern, vertraut: () => { try { return stand().erlaubt === true; } catch { return false; } }, jetzt });
 
   // Dieselbe Suche für MCP brain_suchen und die Probe-Frage: strukturiert (treffer) und als Text, wie ihn die KI sieht.
   // Rangfolge wie die CLI-Suche (`brain search`, Profil minimal): BM25 aus dem gebündelten Kern (minisuche.mjs), ODER über die Wörter der
@@ -377,7 +382,8 @@ export function oeffneVault(vaultPfad, opts = {}) {
   return {
     wurzel, name: basename(wurzel), rueckfragen, kitVersion, kitVorhanden, kit, vertrauen, vertrauenStand: stand, baum, lies, schreibe, neu, merken, suche, suchenFuerKi, pruefung, gesundheit, nutzung,
     posteingangVerwerfen: posteingang.verwerfen, posteingangSpaeter: posteingang.spaeter, posteingangUebernehmen: posteingang.uebernehmen,
-    notizen: notizIndex.notizen, notizKontext: notizIndex.kontext, typen: notizIndex.typen, ansichten: notizIndex.ansichten,
+    aufgaben: aufgabenFn.aufgaben, aufgabeAnlegen: aufgabenFn.anlegen, aufgabeAendern: aufgabenFn.aendern, aufgabenFuerKi: aufgabenFn.fuerKi, aufgabePfad: aufgabenFn.findePfad,
+    notizen: async () => ({ ...(await notizIndex.notizen()), aufgabenOrdner: await aufgabenFn.ordnerName() }), notizKontext: notizIndex.kontext, typen: notizIndex.typen, ansichten: notizIndex.ansichten,
     gitLog: async (a) => gitFn.log(wurzel, a || {}, gitCtx()),
     gitRemote: async (url, extra = {}) => gitFn.remoteHinzufuegen(wurzel, url, gitCtx({ limit: opts.gitLimitRemote, ...extra })),
     gitStatus: async () => {
