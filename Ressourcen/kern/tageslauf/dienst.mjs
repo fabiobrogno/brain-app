@@ -13,13 +13,14 @@
 // <Support>/ki-konten.json (vaults[…].pflege) und wird bei jedem KI-Aufruf gesetzt (kern/pflege-konto.mjs). Eine ältere plist mit der Variable bleibt als Rückfall wirksam, bis die Werkstatt
 // sie in die Pflege-Einstellung übernommen und die plist neu geschrieben hat (`dienst an`). Nur `dienst an --profil-behalten` (die Umstellung der Kit-Zeit) schreibt das Profil noch hinein.
 // `brain dienst status` zeigt das Profil an, das eine ältere plist noch trägt.
-import { writeFileSync, readFileSync, mkdirSync, existsSync, unlinkSync, realpathSync } from "node:fs";
+import { writeFileSync, readFileSync, mkdirSync, existsSync, unlinkSync, realpathSync, copyFileSync } from "node:fs";
 import { join, dirname, isAbsolute, resolve } from "node:path";
 import { homedir, userInfo } from "node:os";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { nodePfad, starterPfad, supportOrdner, KernNichtStabilFehler, vaultUndRest, vaultVertraut, NICHT_VERTRAUT_TEXT } from "../pfade.mjs";
 import { findeClaude } from "../ernte.mjs";
+import { liesKonten, kontenOrte } from "../ki-konten.mjs";
 import { erlaubeVault, widerrufeAlle, dienstErlaubt } from "./dienst-merker.mjs";
 
 export const LABEL = "de.brain.tageslauf";
@@ -86,6 +87,15 @@ export function bauePlist({ starter, node = nodePfad(), claude = findeClaude(), 
   return { profil, log, text: plistInhalt({ starter, pfad, log, profil }) };
 }
 
+// Hat die Werkstatt das feste Profil der plist schon in die Pflege-Einstellung der Vaults übernommen? (Vermerk `pflegeMigration` in ki-konten.json.) Vorher darf `dienst an` die Variable nicht
+// wegwerfen: sie ist bis dahin das Konto der Pflege (Rückfall „alter Weg“).
+export function pflegeMigrationVermerkt() {
+  try {
+    for (const ort of kontenOrte(supportOrdner())) { const r = liesKonten(ort); if (r.zustand === "ok" && r.daten.pflegeMigration) return true; }
+  } catch { /* unlesbar: nicht vermerkt */ }
+  return false;
+}
+
 export function dienstAn(vault, { home = homedir(), plattform = dienstPlattform(), node = nodePfad(), claude = findeClaude(), profil: profilRoh = null } = {}) {
   // Workspace-Trust (P5): der Dienst läuft nur für einen Vault, den der Nutzer als seinen bestätigt hat.
   if (!vaultVertraut(vault)) return { ok: false, nichtVertraut: true, text: NICHT_VERTRAUT_TEXT };
@@ -96,19 +106,34 @@ export function dienstAn(vault, { home = homedir(), plattform = dienstPlattform(
   if (process.env.KORTEX_KERN_UNSTABIL_ERLAUBT !== "1" && !existsSync(starter)) {
     return { ok: false, nichtStabil: true, text: "Der Starter von Kortex fehlt. Öffne die Kortex-App einmal, dann wird er angelegt, und versuche es danach noch einmal." };
   }
+  const datei = plistPfad({ home });
+  // Solange die Pflege-Einstellung das Profil nicht übernommen hat, bleibt ein vorhandenes festes Profil stehen (es ist das Konto der Pflege, bis Kortex es übernommen hat).
+  if (profilRoh === null && existsSync(datei) && !pflegeMigrationVermerkt()) profilRoh = profilAusPlist(datei);
   const { profil, text } = bauePlist({ starter, node, claude, profilRoh, home });
   mkdirSync(dirname(join(supportOrdner(), "logs", "dienst.log")), { recursive: true });
-  const datei = plistPfad({ home });
   mkdirSync(dirname(datei), { recursive: true });
-  if (existsSync(datei)) launchctl(["bootout", `${domain()}/${LABEL}`]);
+  // Sicherung der alten Einstellung (nur einmal, nie überschrieben): trug sie ein festes Profil, bleibt es als <plist>.vor-pflege erhalten. Scheitert das Laden der neuen, kommt die alte zurück (wie A6 der Umstellung).
+  let alt = null;
+  if (existsSync(datei)) {
+    try { alt = readFileSync(datei, "utf8"); } catch { alt = null; }
+    if (alt !== null && /<key>CLAUDE_CONFIG_DIR<\/key>/.test(alt) && !/<key>CLAUDE_CONFIG_DIR<\/key>/.test(text) && !existsSync(`${datei}.vor-pflege`)) { try { copyFileSync(datei, `${datei}.vor-pflege`); } catch { /* die Sicherung ist eine Zugabe */ } }
+    launchctl(["bootout", `${domain()}/${LABEL}`]);
+  }
   // Kein fester Node-Pfad und kein Vault — der Ordner des heutigen Node steht nur noch als PATH-Hinweis drin.
   writeFileSync(datei, text);
   erlaubeVault(vault);
-  const ok = launchctl(["bootstrap", domain(), datei]);
+  let ok = launchctl(["bootstrap", domain(), datei]);
+  let zurueck = false;
+  if (!ok && alt !== null && alt !== text) {
+    writeFileSync(datei, alt);
+    launchctl(["bootout", `${domain()}/${LABEL}`]);
+    zurueck = launchctl(["bootstrap", domain(), datei]);
+  }
   return {
-    ok, ohneClaude: !claude, profil,
+    ok, ohneClaude: !claude, profil, ...(alt !== null && !ok ? { alteWiederHergestellt: true, alteGeladen: zurueck } : {}),
     text: ok ? "Hintergrunddienst an: Der Tageslauf läuft einmal am Tag, wenn der Mac am Netzteil ist und 10 Minuten ruht. Welches KI-Konto die Pflege nutzt, stellst du je Vault in Kortex ein (Einstellungen → KI-Konten)."
-      : `Die Einstellung ist geschrieben (${datei}), aber macOS hat sie nicht geladen — „brain dienst status“ zeigt den Zustand.`,
+      : alt !== null && alt !== text ? `Die neue Einstellung ließ sich nicht laden. Die bisherige ist wieder eingetragen${zurueck ? " und geladen" : ", aber auch sie ließ sich nicht laden — „brain dienst status“ zeigt den Zustand"}.`
+        : `Die Einstellung ist geschrieben (${datei}), aber macOS hat sie nicht geladen — „brain dienst status“ zeigt den Zustand.`,
   };
 }
 export function dienstAus(vault, { home = homedir() } = {}) {
@@ -150,7 +175,9 @@ if (aufruf && aufruf === realpathSync(selbst)) {
     else console.log(s.eingerichtet ? `Hintergrunddienst eingerichtet${s.geladen ? " und geladen" : ", aber nicht geladen — „brain dienst an“ erneut ausführen"}.`
       : "Hintergrunddienst ist nicht eingerichtet — der Tageslauf startet beim Sitzungsstart, wenn er fällig ist.");
     if (s.eingerichtet && !process.argv.includes("--json")) {
-      if (s.profil) console.log(`Hinweis: Die Einstellung des Dienstes trägt noch ein festes Claude-Profil (${s.profil}). Die Pflege nutzt das KI-Konto, das du je Vault in Kortex einstellst — „brain dienst an“ schreibt die Einstellung ohne das feste Profil neu.`);
+      if (s.profil) console.log(pflegeMigrationVermerkt()
+        ? `Hinweis: Die Einstellung des Dienstes trägt noch ein festes Claude-Profil (${s.profil}). Die Pflege nutzt das KI-Konto, das du je Vault in Kortex einstellst — „brain dienst an“ schreibt die Einstellung ohne das feste Profil neu.`
+        : `Hinweis: Die Einstellung des Dienstes trägt ein festes Claude-Profil (${s.profil}). Kortex übernimmt es beim nächsten Start als KI-Konto der Pflege in die Einstellungen (KI-Konten) — bis dahin bleibt es wirksam. Öffne dazu Kortex.`);
     }
   } else {
     const r = befehl === "an" ? dienstAn(vault, process.argv.includes("--profil-behalten") ? { profil: process.env.CLAUDE_CONFIG_DIR } : {}) : dienstAus(vault);

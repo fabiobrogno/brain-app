@@ -5,9 +5,10 @@ import { findeClaude, rufeHaiku, leseClaudeAntwort } from "../ernte.mjs";
 import { kiKontoDarf } from "../pfade.mjs";
 import { pflegeAufloesen } from "../pflege-konto.mjs";
 
-// KI-Konten (docs/plaene/ki-konten.md): DER Weg, auf dem jede KI-Stelle des Hintergrunds (Tageslauf, B3, Traum, Pflege-Lauf, Antwort-Messlatte) ihren claude-Befehl bekommt.
-// Vault-Inhalt geht nur an eine KI, wenn das Konto dieses Prozesses (CLAUDE_CONFIG_DIR der Umgebung, sonst Standardprofil) für den Vault mindestens „erweitert“ hat
-// (pfade.mjs#kiKontoDarf); sonst läuft die Pflege „ohne KI“ wie bei fehlendem claude. Die Meldung nennt weder Konto noch Pfade.
+// KI-Konten (docs/plaene/ki-konten.md): DER Weg, auf dem jede KI-Stelle des Tageslaufs (B2, B3, Richter, Traum) ihren claude-Befehl bekommt. Das Konto bestimmt die Pflege-Einstellung des Vaults
+// (pflegeVon, kern/pflege-konto.mjs); fehlt sie, gilt der alte Weg: das Konto der Prozess-Umgebung (CLAUDE_CONFIG_DIR, sonst Standardprofil). In beiden Fällen geht Vault-Inhalt nur an eine KI, wenn dieses
+// Konto für den Vault mindestens „erweitert“ hat (pfade.mjs#kiKontoDarf); sonst läuft die Pflege „ohne KI“. Die Meldung nennt weder Konto noch Pfade.
+// NICHT über diesen Weg laufen der Pflege-Lauf (pflegelauf.mjs) und die Antwort-Messlatte: sie prüfen nur kiKontoErlaubt (Konto ihres Prozesses) und folgen der Pflege-Einstellung nicht.
 export const KI_STUFE = "erweitert";
 export const KI_KONTO_GRUND = "Das KI-Konto dieses Dienstes hat für diesen Vault keine ausreichende Freigabe — die Pflege läuft ohne KI";
 export const kiKontoErlaubt = (vault) => kiKontoDarf(vault, KI_STUFE);

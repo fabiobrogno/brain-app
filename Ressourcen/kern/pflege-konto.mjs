@@ -18,9 +18,22 @@ export const PFLEGE_GRUND_STUFE = "Das gewählte KI-Konto hat für diesen Vault 
 export const PFLEGE_GRUND_PROGRAMM = "Das gewählte KI-Konto ist kein Claude-Code-Konto — die Pflege läuft ohne KI";
 export const PFLEGE_GRUND_UNLESBAR = "Die Pflege-Einstellung ist nicht lesbar — die Pflege läuft ohne KI";
 
-// Umgebung für einen `claude`-Aufruf im Konto: nur ein NICHT-Standardprofil setzt CLAUDE_CONFIG_DIR, sonst wird eine geerbte Variable entfernt (wie profile.mjs#mitProfil).
+// Fremde Zugangsdaten und Umleitungen: Ein Aufruf im Pflege-Konto meldet sich mit dem Konto an, das die Liste nennt (CLAUDE_CONFIG_DIR). Variablen wie ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN,
+// CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_BASE_URL oder CLAUDE_CODE_USE_BEDROCK/VERTEX in der Umgebung des Prozesses (Terminal, Werkstatt) würden sonst die Anmeldung des Kontos übersteuern und die Prüfung
+// „hat dieses Konto die Stufe erweitert?“ umgehen (Rückfall beim Sitzungsstart, `brain tageslauf` im Terminal, „Jetzt pflegen“). Darum fliegen alle ANTHROPIC_* und CLAUDE_CODE_* heraus, außer der
+// Erlaubt-Liste: CLAUDE_CODE_GIT_BASH_PATH ist nur ein Programmpfad (Windows), keine Anmeldung. AWS_BEARER_TOKEN_BEDROCK ist ein Zugangstoken für Bedrock.
+export const FREMD_ERLAUBT = new Set(["CLAUDE_CODE_GIT_BASH_PATH"]);
+const FREMD_MUSTER = /^(ANTHROPIC_|CLAUDE_CODE_)/;
+export const istFremdeAnmeldung = (name) => (FREMD_MUSTER.test(name) && !FREMD_ERLAUBT.has(name)) || name === "AWS_BEARER_TOKEN_BEDROCK";
+export function ohneFremdeAnmeldung(env) {
+  const out = {};
+  for (const [k, w] of Object.entries(env || {})) if (!istFremdeAnmeldung(k)) out[k] = w;
+  return out;
+}
+
+// Umgebung für einen `claude`-Aufruf im Konto: nur ein NICHT-Standardprofil setzt CLAUDE_CONFIG_DIR, sonst wird eine geerbte Variable entfernt (wie profile.mjs#mitProfil); fremde Anmeldungen fliegen heraus.
 export function umgebungFuer(daten, kontoId, basis = process.env) {
-  const env = { ...basis };
+  const env = ohneFremdeAnmeldung(basis);
   delete env.CLAUDE_CONFIG_DIR;
   const k = daten && daten.konten && typeof kontoId === "string" && Object.hasOwn(daten.konten, kontoId) ? daten.konten[kontoId] : null;
   if (k && k.programm === "claude" && k.standard !== true && typeof k.ordner === "string" && k.ordner) env.CLAUDE_CONFIG_DIR = k.ordner;

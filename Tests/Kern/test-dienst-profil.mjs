@@ -3,7 +3,7 @@
 // Nur Temp-HOME, nie echtes launchctl (Ersatzprogramm über BRAIN_LAUNCHCTL), nie echtes claude (fake-claude).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, rmSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { isoliere, neuerTestVault, FAKE_BEFEHL, KIT } from "./tageslauf-hilfe.mjs";
@@ -12,6 +12,7 @@ import { tempOrdner, nutzer, assistent, schreibeVerlauf } from "./verlauf-fixtur
 const HOME = isoliere();
 const PROFIL = join(HOME, "Profile & Mehr", ".claude-zweit");
 const D = await import("../tageslauf/dienst.mjs");
+const { supportOrdner } = await import("../pfade.mjs");
 const { kindUmgebung, rufeHaiku, ernte } = await import("../ernte.mjs");
 const { kiAufruf, neuesBudget } = await import("../tageslauf/ki.mjs");
 const DIENST_CLI = join(KIT, "tageslauf", "dienst.mjs");
@@ -28,6 +29,9 @@ async function mitProfil(wert, f) {
   if (wert === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = wert;
   try { return await f(); } finally { if (alt === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = alt; }
 }
+// Die Werkstatt hat das feste Profil in die Pflege-Einstellung übernommen: Vermerk `pflegeMigration` in ki-konten.json (erst dann darf `dienst an` die Variable entfernen).
+const markiereMigriert = () => { mkdirSync(supportOrdner(), { recursive: true }); writeFileSync(join(supportOrdner(), "ki-konten.json"), JSON.stringify({ version: 1, konten: {}, vaults: {}, pflegeMigration: { seit: "2026-10-30T10:00:00.000Z", hinweise: [] } })); };
+const unmarkiere = () => rmSync(join(supportOrdner(), "ki-konten.json"), { force: true });
 const schluessel = (plist) => [...plist.split("<key>EnvironmentVariables</key>")[1].split("</dict>")[0].matchAll(/<key>([^<]+)<\/key>/g)].map((m) => m[1]);
 const DIENST_AN = (v, extra = {}) => D.dienstAn(v, { home: HOME, plattform: "darwin", node: process.execPath, claude: { befehl: "/opt/claude/bin/claude", args: [] }, ...extra });
 
@@ -61,10 +65,17 @@ test("dienstAn: die plist trägt KEIN CLAUDE_CONFIG_DIR mehr, auch wenn die Umge
     const behalten = await mitProfil(undefined, () => DIENST_AN(v, { profil: "/anderes/profil" }));
     assert.equal(behalten.profil, "/anderes/profil");
     assert.ok(readFileSync(D.plistPfad({ home: HOME }), "utf8").includes("<key>CLAUDE_CONFIG_DIR</key><string>/anderes/profil</string>"));
-    // Ein erneutes „dienst an“ schreibt die plist ohne die Variable neu (Migration der Werkstatt).
+    // Solange die Werkstatt das Profil nicht übernommen hat (kein Vermerk), behält ein erneutes „dienst an“ die Variable: sie ist bis dahin das Konto der Pflege.
+    unmarkiere();
+    const bleibt = await mitProfil(PROFIL, () => DIENST_AN(v));
+    assert.equal(bleibt.profil, "/anderes/profil");
+    assert.ok(readFileSync(D.plistPfad({ home: HOME }), "utf8").includes("<string>/anderes/profil</string>"), "ohne Vermerk bleibt das feste Profil");
+    // Nach dem Vermerk schreibt „dienst an“ die plist ohne die Variable neu; die alte Fassung bleibt als *.vor-pflege.
+    markiereMigriert();
     await mitProfil(PROFIL, () => DIENST_AN(v));
     assert.ok(!readFileSync(D.plistPfad({ home: HOME }), "utf8").includes("CLAUDE_CONFIG_DIR"));
-  } finally { D.dienstAus(v, { home: HOME }); delete process.env.BRAIN_LAUNCHCTL; delete process.env[fremd]; }
+    assert.ok(readFileSync(`${D.plistPfad({ home: HOME })}.vor-pflege`, "utf8").includes("<string>/anderes/profil</string>"), "Sicherung der alten plist");
+  } finally { D.dienstAus(v, { home: HOME }); unmarkiere(); rmSync(`${D.plistPfad({ home: HOME })}.vor-pflege`, { force: true }); delete process.env.BRAIN_LAUNCHCTL; delete process.env[fremd]; }
 });
 
 test("dienstAn mit ausdrücklichem Profil: ein relativer oder ~-Pfad wird absolut gemacht (launchd kennt weder Arbeitsordner noch ~)", async () => {
@@ -85,11 +96,12 @@ test("dienstStatus: zeigt das Profil, das eine ältere plist noch trägt (Pfad),
     assert.equal(D.dienstStatus(v, { home: HOME }).profil, null, "nicht eingerichtet");
     await mitProfil(undefined, () => DIENST_AN(v, { profil: PROFIL }));
     assert.equal(D.dienstStatus(v, { home: HOME }).profil, PROFIL, "XML-Escaping wird rückgängig gemacht");
+    markiereMigriert();                                    // erst nach der Übernahme in die Pflege-Einstellung entfernt „dienst an“ das Profil
     await mitProfil(PROFIL, () => DIENST_AN(v));
     const s = D.dienstStatus(v, { home: HOME });
     assert.equal(s.eingerichtet, true);
     assert.equal(s.profil, null, "die neue plist trägt kein Profil");
-  } finally { D.dienstAus(v, { home: HOME }); delete process.env.BRAIN_LAUNCHCTL; }
+  } finally { D.dienstAus(v, { home: HOME }); unmarkiere(); rmSync(`${D.plistPfad({ home: HOME })}.vor-pflege`, { force: true }); delete process.env.BRAIN_LAUNCHCTL; }
 });
 
 test("brain dienst an/status (CLI): `an` schreibt kein Profil (auch nicht aus der Sitzung), `an --profil-behalten` schon; status weist auf ein altes Profil in der plist hin", async () => {
@@ -114,10 +126,16 @@ test("brain dienst an/status (CLI): `an` schreibt kein Profil (auch nicht aus de
     lauf(["an", "--profil-behalten"], PROFIL);
     assert.ok(plistText().includes(`<key>CLAUDE_CONFIG_DIR</key><string>${PROFIL.replace(/&/g, "&amp;")}</string>`), "Rückfall für die Umstellung");
     const mit = lauf(["status"]);
-    assert.ok(mit.includes(PROFIL) && /festes Claude-Profil/.test(mit) && /KI-Konto/.test(mit), mit);
+    assert.ok(mit.includes(PROFIL) && /festes Claude-Profil/.test(mit) && /KI-Konto der Pflege/.test(mit) && /Öffne dazu Kortex/.test(mit), mit);
     lauf(["an"]);
-    assert.ok(!plistText().includes("CLAUDE_CONFIG_DIR"), "ein erneutes `an` entfernt es");
-  } finally { D.dienstAus(v, { home: HOME }); delete process.env.BRAIN_LAUNCHCTL; }
+    assert.ok(plistText().includes("CLAUDE_CONFIG_DIR"), "ohne Vermerk der Übernahme bleibt das feste Profil");
+    markiereMigriert();
+    assert.ok(/Die Einstellung des Dienstes trägt noch ein festes Claude-Profil/.test(lauf(["status"])), "nach dem Vermerk der Hinweis auf `dienst an`");
+    lauf(["an"]);
+    assert.ok(!plistText().includes("CLAUDE_CONFIG_DIR"), "nach dem Vermerk entfernt ein erneutes `an` es");
+    assert.ok(existsSync(`${D.plistPfad({ home: HOME })}.vor-pflege`));
+    unmarkiere();
+  } finally { D.dienstAus(v, { home: HOME }); unmarkiere(); rmSync(`${D.plistPfad({ home: HOME })}.vor-pflege`, { force: true }); delete process.env.BRAIN_LAUNCHCTL; }
 });
 
 test("kindUmgebung: CLAUDE_CONFIG_DIR bleibt erhalten (wird nicht als Sitzungsvariable weggefiltert)", () => {
@@ -182,4 +200,34 @@ test("Ernte und Nach-Ernte: der KI-Aufruf erbt CLAUDE_CONFIG_DIR", async () => {
       assert.equal(f.protokoll().claudeConfigDir, PROFIL, "Nach-Ernte");
     });
   } finally { f.weg(); }
+});
+
+// launchctl-Attrappe: scheitert beim ersten `bootstrap` (nach dem Zähler) und protokolliert jeden Aufruf
+function launchctlMitFehler(scheitern) {
+  const d = tempOrdner("launchctl-fehler"); const skript = join(d, "launchctl.mjs"); const log = join(d, "aufrufe.log");
+  writeFileSync(skript, `import { appendFileSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+const a = process.argv.slice(2); appendFileSync(${JSON.stringify(log)}, a[0] + "\\n");
+if (a[0] === "bootstrap") { const z = ${JSON.stringify(join(d, "zaehler"))}; const n = existsSync(z) ? Number(readFileSync(z, "utf8")) : 0; writeFileSync(z, String(n + 1)); if (n < ${scheitern}) process.exit(1); }
+process.exit(0);\n`);
+  return { skript, aufrufe: () => (existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : []) };
+}
+
+test("dienstAn: scheitert das Laden der neuen plist, kommt die alte (mit ihrem Profil) zurück und wird erneut geladen — die Sicherung *.vor-pflege bleibt", async () => {
+  const v = neuerTestVault();
+  const l = launchctlMitFehler(0);
+  process.env.BRAIN_LAUNCHCTL = l.skript;
+  try {
+    markiereMigriert();
+    await mitProfil(undefined, () => DIENST_AN(v, { profil: "/altes/profil" }));          // alte Fassung mit Profil (bootstrap klappt: Zähler 0 → scheitert nie)
+    const alt = readFileSync(D.plistPfad({ home: HOME }), "utf8");
+    assert.ok(alt.includes("/altes/profil"));
+    const f = launchctlMitFehler(1);                                                          // das nächste bootstrap scheitert, das danach klappt
+    process.env.BRAIN_LAUNCHCTL = f.skript;
+    const r = await mitProfil(undefined, () => DIENST_AN(v));
+    assert.equal(r.ok, false); assert.equal(r.alteWiederHergestellt, true); assert.equal(r.alteGeladen, true);
+    assert.match(r.text, /Die bisherige ist wieder eingetragen und geladen/);
+    assert.equal(readFileSync(D.plistPfad({ home: HOME }), "utf8"), alt, "die alte plist liegt wieder da");
+    assert.ok(readFileSync(`${D.plistPfad({ home: HOME })}.vor-pflege`, "utf8").includes("/altes/profil"));
+    assert.deepEqual(f.aufrufe(), ["bootout", "bootstrap", "bootout", "bootstrap"], "bootout, neu laden (Fehler), bootout, alte laden");
+  } finally { D.dienstAus(v, { home: HOME }); rmSync(`${D.plistPfad({ home: HOME })}.vor-pflege`, { force: true }); unmarkiere(); delete process.env.BRAIN_LAUNCHCTL; }
 });

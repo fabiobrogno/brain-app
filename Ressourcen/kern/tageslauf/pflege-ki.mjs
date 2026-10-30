@@ -31,6 +31,7 @@ import { homedir } from "node:os";
 import { resolve, relative, isAbsolute } from "node:path";
 import { kindUmgebung, rufeHaiku, leseClaudeAntwort } from "../ernte.mjs";
 import { kiBefehl, pflegeVon, KI_STUFE } from "./ki.mjs";
+import { istFremdeAnmeldung } from "../pflege-konto.mjs";
 import { KERN, ALT_KIT_ORDNER } from "../pfade.mjs";
 import { sperreAusgeschlossenes } from "./pflege-sperre.mjs";
 
@@ -107,7 +108,8 @@ export function sonnetArgs(systemPrompt, kopiePfad, { vault, sperren, werkzeuge 
 // Weitere BRAIN_*-Variablen (Testhaken, Pfade, Cache) bekommt das Kind nie. `env` ist die Umgebung des Pflege-Kontos (kern/pflege-konto.mjs#umgebungFuer): sie ergänzt nur CLAUDE_CONFIG_DIR, die Härtung bleibt.
 export function sonnetUmgebung(kopiePfad, env = process.env) {
   const out = {};
-  for (const [k, w] of Object.entries(kindUmgebung(env))) if (!k.startsWith("BRAIN_")) out[k] = w;
+  // Keine fremden Anmeldungen (ANTHROPIC_*, CLAUDE_CODE_* außer der Erlaubt-Liste): das Kind meldet sich nur mit dem Konto an, das CLAUDE_CONFIG_DIR nennt (pflege-konto.mjs#ohneFremdeAnmeldung).
+  for (const [k, w] of Object.entries(kindUmgebung(env))) if (!k.startsWith("BRAIN_") && !istFremdeAnmeldung(k)) out[k] = w;
   out.BRAIN_ERNTE = "1";
   out.BRAIN_VAULT = echt(kopiePfad);
   return out;

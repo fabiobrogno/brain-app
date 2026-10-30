@@ -211,3 +211,25 @@ test("Attrappe und Umgebung: baueTestUmgebung lehnt Orte außerhalb des Temp-Ord
   assert.throws(() => baueTestUmgebung({ HOME, BRAIN_APP_SUPPORT: SUPPORT, CLAUDE_CONFIG_DIR: "/Users/jemand/.claude" }), /außerhalb des Temp-Ordners/);
   assert.doesNotThrow(() => baueTestUmgebung({ HOME, BRAIN_APP_SUPPORT: SUPPORT, CLAUDE_CONFIG_DIR: PROFIL_A }));
 });
+
+test("Fremde Zugangsdaten: im Pflege-Konto erreichen ANTHROPIC_* und CLAUDE_CODE_* (außer der Erlaubt-Liste) weder den Haiku- noch den Sonnet-Aufruf — das Konto der Liste bleibt das einzige, mit dem sich claude anmeldet", async () => {
+  const v = aufbau();
+  const fremd = { ANTHROPIC_API_KEY: "sk-test-1", ANTHROPIC_AUTH_TOKEN: "t-2", CLAUDE_CODE_OAUTH_TOKEN: "o-3", ANTHROPIC_BASE_URL: "https://fremd.example", CLAUDE_CODE_USE_BEDROCK: "1", CLAUDE_CODE_USE_VERTEX: "1", ANTHROPIC_MODEL: "x", AWS_BEARER_TOKEN_BEDROCK: "b-4", CLAUDE_CODE_GIT_BASH_PATH: "/opt/bash" };
+  const alt = {};
+  for (const [k, w] of Object.entries(fremd)) { alt[k] = process.env[k]; process.env[k] = w; }
+  try {
+    for (const [pflege, erwartetKonto] of [[{ konto: "k_0000000b", stufe: "mittel" }, PROFIL_B], [{ konto: "k_00000001", stufe: "klein" }, null]]) {
+      schreibeListe({ [v]: { konten: ALLE_ERWEITERT, pflege } });
+      leereLog();
+      assert.equal((await kiAufruf(frischerCtx(v), { system: "S", eingabe: "E" })).fehler, undefined);
+      assert.deepEqual(aufrufe().map((a) => [a.konto, a.fremd]), [[erwartetKonto, ["CLAUDE_CODE_GIT_BASH_PATH"]]], "Haiku: nur die Erlaubt-Liste bleibt");
+      const env = sonnetUmgebung("/tmp/kopie", pflegeVon(frischerCtx(v)).env);
+      assert.deepEqual(Object.keys(env).filter((k) => /^(ANTHROPIC_|CLAUDE_CODE_|AWS_BEARER_)/.test(k)), ["CLAUDE_CODE_GIT_BASH_PATH"], "Sonnet-Weg (B3, Traum)");
+    }
+    // der Sonnet-Weg ist auch ohne Pflege-Einstellung (alter Weg) sauber
+    assert.deepEqual(Object.keys(sonnetUmgebung("/tmp/kopie", process.env)).filter((k) => /^(ANTHROPIC_|CLAUDE_CODE_|AWS_BEARER_)/.test(k)), ["CLAUDE_CODE_GIT_BASH_PATH"]);
+    // umgebungFuer allein
+    const e = umgebungFuer({ konten: KONTEN }, "k_0000000a", process.env);
+    assert.ok(!Object.keys(e).some((k) => /^(ANTHROPIC_|AWS_BEARER_)/.test(k)) && e.CLAUDE_CONFIG_DIR === PROFIL_A);
+  } finally { for (const [k, w] of Object.entries(alt)) { if (w === undefined) delete process.env[k]; else process.env[k] = w; } }
+});
