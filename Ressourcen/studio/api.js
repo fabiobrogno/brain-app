@@ -123,6 +123,10 @@ export const api = {
   kiZugriff: ({ konto, vault, stufe, claudeSperre }) => anfrage("PUT", "/api/ki/zugriff", { konto, vault, stufe, ...(typeof claudeSperre === "boolean" ? { claudeSperre } : {}) }),
   kiStandard: (vault, stufe) => anfrage("PUT", "/api/ki/standard", { vault, stufe }),
   kiSchutz: (konto, sandbox) => anfrage("POST", "/api/ki/schutz", sandbox ? { konto, sandbox: true, bestaetigt: true } : { konto, sandbox: false }),
+  // Pflege je Vault (P3): Stand lesen (letzter/nächster Lauf), Konto und Stufe setzen, jetzt einmal pflegen
+  kiPflege: (vault) => anfrage("GET", `/api/ki/pflege?vault=${encodeURIComponent(vault)}`),
+  kiPflegeSetzen: ({ vault, konto, stufe }) => anfrage("POST", "/api/ki/pflege", { vault, konto: konto ?? null, stufe }),
+  kiPflegeJetzt: () => anfrage("POST", "/api/ki/pflege/jetzt", {}),
   kiNeuVerbinden: (konto) => anfrage("POST", "/api/ki/neu-verbinden", { konto }),
   kiHinweis: () => anfrage("POST", "/api/ki/hinweis", {}),
   kiVorher: () => anfrage("POST", "/api/ki/vorher", { bestaetigt: true }),

@@ -21,7 +21,8 @@ import { erzeugeEreignisse } from "./ereignisse.mjs";
 import { profilZuPfad, mitProfil, mitCodexHome } from "./profile.mjs";
 import { erzeugeKonten } from "./konten.mjs";
 import { erzeugeFrage } from "./frage.mjs";
-import { STUFEN } from "../gemeinsam/ki-konten.mjs";
+import { STUFEN, pflegeFuer, stufeFuer, darfMindestens } from "../gemeinsam/ki-konten.mjs";
+import { erzeugePflege } from "./pflege.mjs";
 import { merkeRemoteBestaetigt } from "../gemeinsam/sicherungsmerker.mjs";
 import { ADAPTER, erkenneProgramme } from "./ki-programme/index.mjs";
 
@@ -168,7 +169,34 @@ export function erzeugeHandler(o) {
   // Einrichtung über den Starter der App (Hooks bei Claude Code, Prüfung vor dem Speichern, Hintergrunddienst): werkstatt/verdrahtung.mjs. o.starter = Ersatz für Tests.
   const verdrahtung = erzeugeVerdrahtung({ starter: o.starter || join(vaultOpt.support || supportOrdner(), "bin", "kortex"), support: vaultOpt.support || supportOrdner(),
     kontoFuerProfil: (pfad) => { if (o.kontenAus === true) return null; try { return konten.kontoFuerProfil(pfad) || (konten.synchronisiere(), konten.kontoFuerProfil(pfad)); } catch { return null; } },
-    freigeben: (konto, vault, stufe, ausdruecklich = false) => konten.setzeZugriff({ konto, vault: vault.wurzel, stufe, quelle: "assistent", ausdruecklich }) });
+    freigeben: (konto, vault, stufe, ausdruecklich = false) => konten.setzeZugriff({ konto, vault: vault.wurzel, stufe, quelle: "assistent", ausdruecklich }) ,
+    // Ein Profil, das der Assistent beim Einrichten des Dienstes mitschickt, schlägt nur das Pflege-Konto vor: nur mit „erweitert“ für diesen Vault und nur, wenn der Vault noch keine Pflege-Einstellung hat.
+    pflegeAusProfil: (vault, profilPfad) => {
+      if (o.kontenAus === true) return;
+      const id = konten.kontoFuerProfil(profilPfad); const d = konten.lade();
+      if (!id || !d || pflegeFuer(d, vault.wurzel).gesetzt || !darfMindestens(stufeFuer(d, vault.wurzel, id), "erweitert")) return;
+      konten.setzePflege({ vault: vault.wurzel, konto: id, stufe: "mittel" }, { nurWennUngesetzt: true });   // Stufe und „noch nichts eingestellt“ werden unter der Sperre der Liste geprüft
+    } });
+  // Pflege je Vault (letzter/nächster Lauf, Dienst, Übernahme des alten Profils der plist): werkstatt/pflege.mjs
+  const pflege = erzeugePflege({ support: vaultOpt.support || supportOrdner(), konten, ...(o.kontenHome ? { home: () => o.kontenHome } : {}), vaults: () => vaultsFn.leseVaults(optV()).vaults });
+  // Die Übernahme des festen Claude-Profils aus der alten plist (docs/plaene/ki-konten.md, P3), idempotent und bei jedem Start und jedem Öffnen der KI-Konten erneut versucht, solange die plist die Variable trägt:
+  // erst die Pflege-Einstellung der Vaults des Dienstes (pflege.migriere), dann die plist neu schreiben (`dienst an` mit Sicherung *.vor-pflege und Rückfall bei Ladefehler, Kern). Die plist wird nur für einen
+  // Vault neu geschrieben, der zum Dienst gehört (ein anderer wird dadurch nie neu eingeschaltet). Misserfolg: `plistOffen` + Grund in der Liste, das Studio zeigt es; die alte plist bleibt wirksam.
+  async function plistNeuSchreiben(v) {
+    if (!v) return { grund: "kein-vault" };
+    let echt = v.wurzel; try { echt = realpathSync.native(v.wurzel); } catch { /* wie angegeben */ }
+    if (!pflege.dienstVaults().includes(echt)) return { grund: "nicht-im-dienst" };
+    try { await verdrahtung.verdrahte(v, { was: "dienst", an: true }); return { ok: true }; }
+    catch (e) { return { grund: e instanceof HttpFehler && e.extra && typeof e.extra.art === "string" ? e.extra.art : "fehler" }; }
+  }
+  // Das Neuschreiben (bootout/bootstrap des LaunchAgents) wird beim Start und danach höchstens alle 10 Minuten versucht, nicht bei jedem Öffnen der KI-Konten; die Übernahme in die Einstellungen läuft immer.
+  let letzterPlistVersuch = 0;
+  async function migrierePflege(v, { start = false } = {}) {
+    if (o.kontenAus === true) return;
+    const jetzt = Date.now();
+    const versuch = start || jetzt - letzterPlistVersuch > 600_000;
+    try { await pflege.migriere({ neuschreiben: versuch ? async () => { letzterPlistVersuch = Date.now(); return plistNeuSchreiben(v); } : null }); } catch { /* bleibt als Rückfall */ }
+  }
   // „Frag deinen Vault“ (P4): eine Frage an Claude Code, die den Vault nur über den Kortex-MCP liest — werkstatt/frage.mjs. o.frageEnv / o.frageGrenzen / o.frageTemp: Ersatz für Tests
   // (Umgebung für Programmsuche und Kindprozess, kürzere Grenzen, Temp-Ordner); sonst gilt die Umgebung dieser Werkstatt als Quelle für PATH/HOME/LANG, nie mehr.
   const frage = erzeugeFrage({ support: vaultOpt.support || supportOrdner(), konten, mcpBasis: () => mcpArgs(), basisEnv: o.frageEnv || process.env,
@@ -323,7 +351,7 @@ export function erzeugeHandler(o) {
       }
       // KI-Konten (docs/plaene/ki-konten.md): Liste mit Stufen je Vault · Name/Abo setzen · Stufe eines Kontos in einem Vault setzen
       case "/api/ki/konten":
-        if (methode === "GET") return konten.stand();
+        if (methode === "GET") { await migrierePflege(v); return konten.stand(); }
         nur("POST"); return konten.setzeName(eingabe());
       case "/api/ki/zugriff": nur("PUT"); return konten.setzeZugriff(eingabe());
       // Frag deinen Vault (P4): Start → Long-Poll auf den Stand → Abbruch. Nichts wird gespeichert.
@@ -332,6 +360,11 @@ export function erzeugeHandler(o) {
       case "/api/frage/stand": nur("GET"); return frage.stand(q, V());
       case "/api/frage/abbrechen": nur("POST"); return frage.abbrechen(eingabe(), V());
       case "/api/ki/standard": nur("PUT"); return konten.setzeStandard(eingabe());
+      // Pflege je Vault: Konto und KI-Stufe setzen · Stand lesen (letzter/nächster Lauf) · jetzt einmal pflegen
+      case "/api/ki/pflege":
+        if (methode === "GET") { const vp = q.get("vault"); if (!vp) throw new HttpFehler(400, "Der Vault muss angegeben werden."); return pflege.status(vp); }
+        nur("POST"); return konten.setzePflege(eingabe());
+      case "/api/ki/pflege/jetzt": nur("POST"); return verdrahtung.jetztPflegen(v, { schalter: (p) => pflege.schalter(p), laeuft: (p) => pflege.laeuftSchon(p) });
       case "/api/ki/schutz": nur("POST"); return konten.setzeSchutz(eingabe());
       case "/api/ki/hinweis": nur("POST"); return konten.quittiereHinweis();
       // Altform (Eintrag oder Hooks ohne --konto) mit Konto neu verbinden: ändert nur die Einträge von Kortex, nie die Stufe des Kontos (das Konto wird dadurch nicht freigegeben).
@@ -730,6 +763,7 @@ export function erzeugeHandler(o) {
   }
   behandle.aktuellerVaultPfad = () => (aktuell ? aktuell.wurzel : null);
   behandle.konten = konten; // werkstatt.mjs gleicht die Liste beim Start ab
+  behandle.migrierePflege = () => migrierePflege(aktuell, { start: true }); // und übernimmt danach einmal das alte Profil der plist in die Pflege-Einstellung
   behandle.ereignisse = ereignisse; // werkstatt.mjs beendet wartende Abrufe, bevor es sich schließt
   return behandle;
 }

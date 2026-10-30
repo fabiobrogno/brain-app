@@ -1,8 +1,8 @@
 // „KI-Konten“ (Paket P2, Plan docs/plaene/ki-konten.md, Abschnitt 3.1): Liste der KI-Konten, je Vault „Wer darf diesen Vault sehen?“ (Stufe je Konto), Übersicht aller Vaults,
-// Standard für neue Konten, Leseverbot in Claude Code und „Strenger Schutz“. Die Routen der Werkstatt (werkstatt/konten.mjs) tun die Arbeit; hier steht nur, was der Nutzer sieht und
+// Standard für neue Konten, Pflege (Konto und wie viel KI je Vault), Leseverbot in Claude Code und „Strenger Schutz“. Die Routen der Werkstatt (werkstatt/konten.mjs) tun die Arbeit; hier steht nur, was der Nutzer sieht und
 // entscheidet. Geschrieben wird nur nach einem Klick; ein Sperren fragt vorher nach und sagt ehrlich, was es schützt und was nicht. Kein innerHTML mit fremden Daten: alles über h().
 import { h, dialog, toast } from "./hilfen.js";
-import { knopf as baueKnopf, auswahl, textfeld, hakenFeld } from "./bausteine.js";
+import { knopf as baueKnopf, auswahl, segment, textfeld, hakenFeld } from "./bausteine.js";
 import { symbol } from "./symbole.js";
 import { kiLogo, kiLogoId } from "./ki-logos.js";
 import { api as standardApi } from "./api.js";
@@ -71,6 +71,9 @@ export function oeffneKontenDialog({ api = standardApi, vault = null, beiZu, bei
     meldung: null,            // Satz, wenn die Einstellungen von Claude Code nicht geändert werden konnten
     umbenenne: null,          // Konto-Kennung, deren Name gerade bearbeitet wird
     namensFehler: null,
+    pflegeStatus: {},         // letzter/nächster Lauf je Vault-Pfad (GET /api/ki/pflege)
+    pflegeEntwurf: {},        // eine noch unvollständige Wahl (Stufe gewählt, Konto fehlt) je Vault-Pfad
+    pflegeFehler: null,
     frage: null,              // offene Bestätigung: { art: "sperren", konto, vault, claude } | { art: "streng", konto } | { art: "vorher" }
   };
   let tot = false;
@@ -81,9 +84,10 @@ export function oeffneKontenDialog({ api = standardApi, vault = null, beiZu, bei
   const secHinweis = h("div", { klasse: "kk-sektion", "data-kk": "hinweis" });
   const secKonten = h("section", { klasse: "kk-sektion", "data-kk": "konten" });
   const secZugriff = h("section", { klasse: "kk-sektion", "data-kk": "zugriff" });
+  const secPflege = h("section", { klasse: "kk-sektion", "data-kk": "pflege-abschnitt" });
   const secStreng = h("section", { klasse: "kk-sektion", "data-kk": "streng-abschnitt" });
   const secEhrlich = h("section", { klasse: "kk-sektion", "data-kk": "ehrlich" });
-  const rumpf = h("div", { klasse: "kk-rumpf" }, h("div", { klasse: "kk-haupt" }, secMeldung, secFrage, secHinweis, secKonten, secZugriff, secStreng, secEhrlich));
+  const rumpf = h("div", { klasse: "kk-rumpf" }, h("div", { klasse: "kk-haupt" }, secMeldung, secFrage, secHinweis, secKonten, secZugriff, secPflege, secStreng, secEhrlich));
   const zuKnopf = baueKnopf({ text: TK.schliessen, variante: "primaer", groesse: "l", aktion: "konten-schliessen", aufKlick: () => d.schliessen() });
   const box = h("div", { klasse: "dialog kk-dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "kk-titel", "data-dialog": "ki-konten" },
     h("div", { klasse: "kk-kopf" }, h("h2", { klasse: "kk-titel", id: "kk-titel", text: TK.titel }), intro),
@@ -119,6 +123,15 @@ export function oeffneKontenDialog({ api = standardApi, vault = null, beiZu, bei
     } catch (e) { if (tot) return; S.fehler = e; }
     S.laedt = false;
     zeichneAlles();
+    ladePflegeStatus();
+  }
+  // Letzter/nächster Lauf des gewählten Vaults. Ein Fehler zeigt nur eine Zeile im Pflege-Block, nie den ganzen Dialog als kaputt.
+  async function ladePflegeStatus() {
+    const v = aktuellerVault();
+    if (!v || S.fehler || !S.daten) return;
+    try { const st = await api.kiPflege(v.pfad); if (tot) return; S.pflegeStatus[v.pfad] = st; S.pflegeFehler = null; }
+    catch (e) { if (tot) return; S.pflegeFehler = e; }
+    zeichnePflege();
   }
   // Führt eine Änderung aus; währenddessen sind die Knöpfe gesperrt. fn() → Antwort der Werkstatt.
   async function tue(fn, { erfolg } = {}) {
@@ -163,6 +176,19 @@ export function oeffneKontenDialog({ api = standardApi, vault = null, beiZu, bei
     S.frage = null;
     await tue(() => api.kiSchutz(k.id, an), { erfolg: () => (an ? TK.streng.erfolgAn : TK.streng.erfolgAus) });
   }
+  // Pflege: Konto und Stufe eines Vaults speichern. Ohne Konto geht nur „Ohne KI“; wählt der Nutzer eine Stufe vor dem Konto, merkt sich der Block die Wahl (Entwurf) und sagt, was fehlt.
+  async function setzePflege(v, konto, stufe) {
+    if (S.beschaeftigt) return;
+    if (stufe !== "aus" && !konto) { S.pflegeEntwurf[v.pfad] = { konto: null, stufe }; zeichnePflege(); return; }
+    delete S.pflegeEntwurf[v.pfad];
+    const k = kontoMitId(konto);
+    await tue(() => api.kiPflegeSetzen({ vault: v.pfad, konto: konto || null, stufe }), { erfolg: () => (stufe === "aus" ? TK.pflege.gespeichertAus : TK.pflege.gespeichert(k?.name || "", TK.pflege.stufen[stufe].name)) });
+    ladePflegeStatus();
+  }
+  async function pflegeJetzt() {
+    const antwort = await tue(() => api.kiPflegeJetzt(), { erfolg: () => TK.pflege.jetztGestartet });
+    if (antwort) setTimeout(() => { if (!tot) ladePflegeStatus(); }, 2500);
+  }
   async function speichereName(k, text) {
     const name = String(text).replace(/\s+/g, " ").trim();
     if (!name) { S.namensFehler = TK.konten.nameLeer; zeichneKonten(); return; }
@@ -187,7 +213,7 @@ export function oeffneKontenDialog({ api = standardApi, vault = null, beiZu, bei
   }
   function zeichneAlles() {
     const wieder = merkeFokus();
-    zeichneMeldung(); zeichneFrage(); zeichneHinweis(); zeichneKonten(); zeichneZugriff(); zeichneStreng(); zeichneEhrlich();
+    zeichneMeldung(); zeichneFrage(); zeichneHinweis(); zeichneKonten(); zeichneZugriff(); zeichnePflege(); zeichneStreng(); zeichneEhrlich();
     box.setAttribute("aria-busy", S.beschaeftigt ? "true" : "false");
     wieder();
   }
@@ -350,10 +376,98 @@ export function oeffneKontenDialog({ api = standardApi, vault = null, beiZu, bei
     if (S.ansicht === "matrix") zeichneMatrix(); else zeichneVaultAnsicht();
     secZugriff.append(legende());
   }
+  // ---- Pflege: Konto und wie viel KI, je Vault. Konten zur Wahl nur mit Stufe „Erweitert“ für diesen Vault; die Liste der Schritte sagt in Alltagssprache, was bei der gewählten Stufe passiert.
+  const zeitText = (iso) => { try { return new Intl.DateTimeFormat("de-DE", { dateStyle: "medium", timeStyle: "short" }).format(new Date(iso)); } catch { return iso; } };
+  function zeichnePflege() {
+    secPflege.replaceChildren();
+    if (S.laedt || S.fehler || !S.daten || !konten().length || !vaults().length) return;
+    const v = aktuellerVault();
+    if (!v) return;
+    const P = TK.pflege;
+    const p = v.pflege || { gesetzt: false, wirksam: "alt" };
+    const entwurf = S.pflegeEntwurf[v.pfad] || null;
+    const kontoId = entwurf ? entwurf.konto : p.konto || null;
+    const stufe = entwurf ? entwurf.stufe : p.gesetzt ? p.stufe : "mittel";
+    secPflege.append(h("div", { klasse: "kk-zugriff-kopf" }, h("h3", { klasse: "kk-gruppe-titel", text: P.titel })), h("p", { klasse: "mini", "data-kk": "pflege-intro", text: P.intro }));
+    if (S.ansicht === "matrix" && vaults().length > 1) secPflege.append(vaultAuswahl());
+    else if (vaults().length > 1) secPflege.append(h("div", { klasse: "kk-vault-name", "data-kk": "pflege-vault" }, zeichen("vault", 14), h("span", { text: v.name })));
+    // Hinweis aus der Migration des Dienstes, Problem der Einstellung
+    const hinweis = (S.daten.pflegeHinweise || []).find((x) => gleicherPfad(x.vault, v.schluessel || v.pfad) || gleicherPfad(x.vault, v.pfad));
+    if (hinweis) {
+      const k = kontoMitId(hinweis.konto);
+      secPflege.append(h("div", { klasse: "kk-karte warn", role: "status", "data-kk": "pflege-migration" }, marke("warn"),
+        h("p", { text: hinweis.grund === "stufe" ? P.migration.stufe(k?.name || "") : P.migration["kein-konto"] })));
+    } else if (p.problem && p.gesetzt) {
+      secPflege.append(h("div", { klasse: "kk-karte warn", role: "status", "data-kk": "pflege-problem", "data-problem": p.problem }, marke("warn"), h("p", { text: P.problem[p.problem] || P.problem.unlesbar })));
+    }
+    // Die plist des Dienstes trägt noch das alte feste Konto (Neuschreiben offen oder gescheitert): sagen, warum
+    if (S.daten.pflegePlist && S.daten.pflegePlist.offen) {
+      secPflege.append(h("div", { klasse: "kk-karte warn", role: "status", "data-kk": "pflege-plist", "data-grund": S.daten.pflegePlist.grund }, marke("warn"),
+        h("div", { klasse: "kk-block" }, h("div", { klasse: "kk-block-titel", text: P.plist.titel }), h("p", { text: P.plist.text }), h("p", { klasse: "mini", text: P.plist.grund[S.daten.pflegePlist.grund] || P.plist.grund.fehler }))));
+    }
+    // Konto: nur Claude-Code-Konten mit „Erweitert“ in diesem Vault
+    const eignung = konten().filter((k) => k.programm === "claude" && stufeVon(k, v) === "erweitert");
+    const optionen = eignung.map((k) => ({ wert: k.id, text: k.name, logo: kiLogoId(k.programm) ? k.programm : undefined, sub: k.ordner }));
+    const gewaehlt = kontoMitId(kontoId);
+    if (gewaehlt && !optionen.some((o) => o.wert === gewaehlt.id)) optionen.push({ wert: gewaehlt.id, text: gewaehlt.name, logo: kiLogoId(gewaehlt.programm) ? gewaehlt.programm : undefined, sub: stufeName(stufeVon(gewaehlt, v)) });
+    const zeile = h("div", { klasse: "kk-pflege-zeile" });
+    if (!optionen.length) {
+      zeile.append(h("div", { klasse: "kk-karte schmal", "data-kk": "pflege-kein-konto" }, marke("aus"), h("p", { text: P.keinKonto })));
+    } else {
+      const wahl = auswahl({ optionen, wert: kontoId || "",   // "" = noch keins gewählt (zeigt den Platzhalter; undefined nähme die erste Option)
+         platzhalter: P.kontoPlatzhalter, label: P.konto, breit: true, daten: { "data-kk": "pflege-konto" },
+        aufAenderung: (w) => { const n = S.pflegeEntwurf[v.pfad]; setzePflege(v, w, n ? n.stufe : p.gesetzt && p.stufe !== "aus" ? p.stufe : "mittel"); } });
+      zeile.append(h("div", { klasse: "kk-pflege-feld" }, h("span", { klasse: "kk-block-titel", "aria-hidden": "true", text: P.konto }), wahl));
+    }
+    const seg = segment({ optionen: ["klein", "mittel", "aus"].map((s) => ({ wert: s, text: P.stufen[s].name, daten: { "data-stufe-wahl": s } })), wert: stufe, label: P.stufe, daten: { "data-kk": "pflege-stufe" },
+      aufAenderung: (s) => {
+        let k = kontoId;
+        if (!k && s !== "aus" && eignung.length === 1) k = eignung[0].id;     // genau ein Konto zur Wahl: kein zweiter Klick nötig
+        setzePflege(v, k, s);
+      } });
+    zeile.append(h("div", { klasse: "kk-pflege-feld" }, h("span", { klasse: "kk-block-titel", "aria-hidden": "true", text: P.stufe }), seg));
+    secPflege.append(zeile);
+    secPflege.append(h("p", { klasse: "kk-stufentext", "data-kk": "pflege-stufentext", text: P.stufen[stufe].text }));
+    if (entwurf && !entwurf.konto) secPflege.append(h("p", { klasse: "kk-fehlertext", role: "status", "data-kk": "pflege-waehle-zuerst", text: P.waehleZuerst }));
+    if (!p.gesetzt && !entwurf) secPflege.append(h("p", { klasse: "mini", "data-kk": "pflege-alt", text: P.alt }));
+
+    // Was die Pflege tut
+    const gruppe = (titel, zustandAn, punkte, kennung) => h("div", { klasse: "kk-tut-gruppe", "data-kk": kennung, "data-aktiv": String(zustandAn) },
+      h("div", { klasse: "kk-tut-kopf" }, marke(zustandAn ? "gruen" : "aus"), h("span", { klasse: "kk-block-titel", text: titel }), h("span", { klasse: "kk-tut-zustand", text: zustandAn ? P.aktiv : P.ruht })),
+      h("ul", { klasse: "kk-punkte" }, punkte.map((x) => h("li", { text: x }))));
+    secPflege.append(h("div", { klasse: "kk-karte schmal", "data-kk": "pflege-tut" }, h("div", { klasse: "kk-block-titel", text: P.tutTitel }),
+      gruppe(P.immer, true, P.immerListe, "tut-immer"),
+      gruppe(P.haikuTitel, stufe !== "aus", P.mitKiListe.haiku, "tut-haiku"),
+      gruppe(P.sonnetTitel, stufe === "mittel", P.mitKiListe.sonnet, "tut-sonnet")));
+
+    // Letzter und nächster Lauf, Jetzt pflegen
+    const st = S.pflegeStatus[v.pfad];
+    const lauf = h("div", { klasse: "kk-karte schmal", "data-kk": "pflege-lauf" }, h("div", { klasse: "kk-block-titel", text: P.lauf }));
+    if (S.pflegeFehler && !st) lauf.append(h("p", { klasse: "kk-fehlertext", text: P.fehlerLaden }));
+    else if (st) {
+      const l = st.letzter;
+      if (!l || !l.zeit) lauf.append(h("p", { "data-kk": "pflege-letzter", text: P.nochNie }));
+      else {
+        lauf.append(h("div", { klasse: "kk-lauf-zeile", "data-kk": "pflege-letzter", "data-status": l.status }, marke(l.erfolgreich ? "gruen" : "warn"),
+          h("span", { text: `${P.letzter(zeitText(l.zeit))} — ${P.status[l.status] || P.status.unbekannt} · ${P.zahlen(l.aufrufe, l.tokEin, l.tokAus)}` })));
+        if (l.modus === "probe") lauf.append(h("p", { klasse: "mini", text: P.probe }));
+        if (l.grund && !l.erfolgreich) lauf.append(h("p", { klasse: "mini", "data-kk": "pflege-grund", text: l.grund }));
+      }
+      const n = st.naechster || {};
+      lauf.append(h("p", { "data-kk": "pflege-naechster", text: n.art === "dienst" ? P.naechster.dienst(n.fruehestens ? zeitText(n.fruehestens) : null) : P.naechster[n.art] || "" }));
+      const offen = gleicherPfad(v.pfad, vault);
+      const knopf = baueKnopf({ text: P.jetzt, variante: "primaer", aktion: "pflege-jetzt", daten: { "data-kk": "pflege-jetzt" }, aufKlick: () => pflegeJetzt() });
+      if (!offen || st.schalter === "aus" || S.beschaeftigt) knopf.disabled = true;
+      lauf.append(h("div", { klasse: "kk-pflege-jetzt" }, knopf,
+        !offen ? h("span", { klasse: "mini", text: P.jetztNurOffener }) : st.schalter === "probe" ? h("span", { klasse: "mini", text: P.jetztProbe }) : null));
+    }
+    secPflege.append(lauf);
+  }
+
   function vaultAuswahl() {
     if (vaults().length === 1) return h("div", { klasse: "kk-vault-name", "data-kk": "vault-name" }, zeichen("vault", 14), h("span", { text: vaults()[0].name }));
     const sel = auswahl({ optionen: vaults().map((v) => ({ wert: v.pfad, text: v.name })), wert: aktuellerVault()?.pfad || "", label: TK.vault.wahl, daten: { "data-kk": "vault-wahl" }, klasse: "kk-auswahl",
-      aufAenderung: (pfad) => { S.vaultPfad = pfad; S.frage = null; zeichneAlles(); } });
+      aufAenderung: (pfad) => { S.vaultPfad = pfad; S.frage = null; zeichneAlles(); ladePflegeStatus(); } });
     return h("div", { klasse: "kk-vault-wahl" }, h("span", { klasse: "kk-vault-label", "aria-hidden": "true", text: TK.vault.wahl }), sel);
   }
   function zeichneVaultAnsicht() {

@@ -34,6 +34,7 @@ import { notiere, TL_DIR } from "./protokoll.mjs";
 import { git, verwerfeArbeitskopie, nimmIngestSperre, gibIngestSperreFrei } from "./arbeitskopie.mjs";
 import { ZURUECK_NACH } from "./autostufe.mjs";
 import { pflegeBudget, PFLEGE_BUDGET } from "./pflege-ki.mjs";
+import { istKlein } from "./ki.mjs";
 import { legePflegeKopieAn, uebernehmePflege } from "./pflege-kopie.mjs";
 import { leseStand, lernEintrag, setzeLern, loescheLern } from "./pflege-stand.mjs";
 import { erzeugePatch, patchAnzeige, speicherePatch, freigabePatch, ladePatch, seitenStand, PATCH_FEHLT } from "./pflege-patch.mjs";
@@ -213,7 +214,8 @@ export async function b3Schritte(ctx, { schritte = SCHRITTE } = {}) {
     merkePflegeTag(ctx.vault, art, ctx.heute);                    // VOR dem ersten KI-Aufruf: kein zweiter Lauf heute
     ctx.probe = probe;
     ctx.kiFehlerFolge = 0;
-    const nurOhneKi = !!ctx.ohneKi;
+    const nurOhneKi = !!ctx.ohneKi || istKlein(ctx);                 // Stufe „klein“: die Schreibpflege (Sonnet) läuft nicht, nur die Schritte ohne KI (Entscheidungen)
+    if (istKlein(ctx)) bericht.klein = true;
     const stand = () => leseStand(ctx.vault);
     // Durchgang 1: gemergt. Ohne Lernmodus laufen alle Schritte; im Lernmodus Entscheidungen + freigegebene Einheiten.
     const kopie = legePflegeKopieAn(ctx.vault, ctx.lauf);
@@ -292,6 +294,7 @@ export function pflegeBerichtZeilen(ctx) {
   if (ctx.pflegeFreigabenAus === "integritaet") z.push("- Freigaben nicht angewendet: eine Sicherheits-Rückfrage (Kopf „Sicherheit“) ist noch offen — erst nachsehen und als „geprüft“ abhaken, dann werden freigegebene Vorschläge übernommen");
   if (b) {
     const st = b.budget || { sonnet: 0, haiku: 0 };
+    if (b.klein) z.push("- Pflege-Stufe „klein“: die Schreibpflege (Sonnet) läuft nicht, nur die Schritte ohne KI");
     z.push(`- ${b.modus === "probe" ? "Probe (nichts übernommen)" : "scharf"}${b.lernmodus ? " · Lernmodus (nichts Inhaltliches ohne deine Freigabe)" : ""} · Sonnet ${st.sonnet}/${PFLEGE_BUDGET.sonnet} · Haiku ${st.haiku}/${PFLEGE_BUDGET.haiku}`
       + `${b.merge && !["ok", "probe"].includes(b.merge) ? ` · nicht übernommen (${b.merge})` : ""}${b.ohneKi ? " · KI nicht erreichbar" : ""}`);
     for (const p of b.posten) {

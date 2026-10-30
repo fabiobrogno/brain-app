@@ -115,3 +115,15 @@
   .kk-seg { flex-wrap: wrap; }
 }
 .kk-vault-wahl .bs-auswahl { min-width: 220px; }
+
+/* Pflege (Paket P3): Konto und wie viel KI je Vault, was die Pflege tut, letzter/nächster Lauf */
+.kk-pflege-zeile { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: flex-end; }
+.kk-pflege-feld { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 0 1 auto; }
+.kk-pflege-feld .bs-auswahl { min-width: 240px; max-width: 100%; }
+.kk-pflege-zeile .kk-karte { flex: 1 1 100%; flex-direction: row; align-items: flex-start; gap: 10px; }
+.kk-tut-gruppe { display: flex; flex-direction: column; gap: 4px; padding-top: 4px; }
+.kk-tut-kopf { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.kk-tut-zustand { margin-left: auto; font-size: 12px; color: var(--text-2); }
+.kk-tut-gruppe[data-aktiv="false"] .kk-punkte { opacity: .6; }
+.kk-lauf-zeile { display: flex; align-items: center; gap: 8px; line-height: 1.4; }
+.kk-pflege-jetzt { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding-top: 4px; }

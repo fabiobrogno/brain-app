@@ -13,9 +13,9 @@ export const KONTEN = [
 
 // opt.vaults = [{ pfad, name }] · opt.konten · opt.zugriff (Standard: verbundene posteingang, übrige gesperrt) · opt.hinweis ("defekt-neu") · opt.vorherDa
 // opt.fehlerClaude: Text → PUT /api/ki/zugriff meldet, dass die Einstellungen von Claude Code nicht geändert werden konnten
-export async function mockeKonten(page, { vaults, konten = KONTEN, zugriff = null, hinweis = null, hinweisGrund = "defekt", vorherDa = false, fehlerClaude = null, leer = false, altform = {}, warnungen = [] } = {}) {
+export async function mockeKonten(page, { vaults, konten = KONTEN, zugriff = null, hinweis = null, hinweisGrund = "defekt", vorherDa = false, fehlerClaude = null, leer = false, altform = {}, warnungen = [], pflege = {}, letzter = null, schalter = "an", naechster = { art: "sitzungsstart" }, pflegeHinweise = [], pflegePlist = null } = {}) {
   const z = {
-    konten: leer ? [] : konten.map((k) => ({ ...k })), vaults: vaults.map((v) => ({ neueKonten: "gesperrt", ...v })), hinweis, hinweisGrund, vorherDa, anfragen: [], altform: { ...altform }, warnungen, sperren: {}, streng: {}, fehlerClaude, wartet: null,
+    konten: leer ? [] : konten.map((k) => ({ ...k })), vaults: vaults.map((v) => ({ neueKonten: "gesperrt", ...v })), hinweis, hinweisGrund, vorherDa, anfragen: [], altform: { ...altform }, warnungen, sperren: {}, streng: {}, fehlerClaude, wartet: null, pflege: { ...pflege }, letzter, schalter, naechster, pflegeHinweise: [...pflegeHinweise], pflegePlist,
   };
   z.zugriff = zugriff || Object.fromEntries(z.konten.map((k) => [k.id, Object.fromEntries(z.vaults.map((v) => [v.pfad, k.verbunden ? "posteingang" : "gesperrt"]))]));
   const stand = () => ({
@@ -27,9 +27,16 @@ export async function mockeKonten(page, { vaults, konten = KONTEN, zugriff = nul
         vaults: Object.fromEntries(z.vaults.filter((v) => z.zugriff[k.id]?.[v.pfad] === "gesperrt").map((v) => [v.pfad, z.sperren[`${k.id}|${v.pfad}`] ? "aktiv" : "aus"])),
       },
     })),
-    vaults: z.vaults.map((v) => ({ pfad: v.pfad, name: v.name, neueKonten: v.neueKonten, ohneKonto: "gesperrt", schluessel: v.pfad })),
-    zugriff: z.zugriff,
+    vaults: z.vaults.map((v) => ({ pfad: v.pfad, name: v.name, neueKonten: v.neueKonten, ohneKonto: "gesperrt", schluessel: v.pfad, pflege: pflegeStand(v.pfad) })),
+    zugriff: z.zugriff, ...(z.pflegeHinweise.length ? { pflegeHinweise: z.pflegeHinweise } : {}), ...(z.pflegePlist ? { pflegePlist: z.pflegePlist } : {}),
   });
+  // Pflege je Vault wie werkstatt/konten.mjs: gesetzt, wirksam (konto | aus | alt), bewusst, problem
+  const pflegeStand = (pfad) => {
+    const p = z.pflege[pfad];
+    if (!p) return { gesetzt: false, wirksam: "alt" };
+    const problem = p.stufe === "aus" ? null : !p.konto ? "kein-konto" : z.zugriff[p.konto]?.[pfad] !== "erweitert" ? "stufe" : null;
+    return { gesetzt: true, konto: p.konto, stufe: p.stufe, wirksam: p.stufe === "aus" || problem ? "aus" : "konto", bewusst: p.stufe === "aus", ...(problem ? { problem } : {}) };
+  };
   const body = (route) => { try { return JSON.parse(route.request().postData() || "{}"); } catch { return {}; } };
   const fehler = (route, status, text, extra = {}) => route.fulfill({ status, json: { fehler: text, ...extra } });
   await page.route("**/api/ki/konten", async (route) => {
@@ -79,6 +86,26 @@ export async function mockeKonten(page, { vaults, konten = KONTEN, zugriff = nul
     if (b.bestaetigt !== true) return fehler(route, 400, "Bestätigung fehlt.", { art: "bestaetigung" });
     z.hinweis = null; z.vorherDa = false;
     return route.fulfill({ json: stand() });
+  });
+  // Pflege: GET Stand (letzter/nächster Lauf) · POST Konto und Stufe · POST jetzt
+  await page.route(/\/api\/ki\/pflege(\?.*)?$/, async (route) => {
+    const m = route.request().method();
+    if (m === "GET") {
+      const vault = new URL(route.request().url()).searchParams.get("vault");
+      z.anfragen.push({ methode: m, pfad: "/api/ki/pflege", body: { vault } });
+      if (!z.vaults.some((v) => v.pfad === vault)) return fehler(route, 404, "Diesen Vault kennt Kortex nicht (mehr).");
+      return route.fulfill({ json: { vault, schalter: z.schalter, letzter: z.letzter, naechster: z.naechster, dienst: { eingerichtet: false, fuerVault: false, profilAlt: false } } });
+    }
+    const b = body(route); z.anfragen.push({ methode: m, pfad: "/api/ki/pflege", body: b });
+    if (!z.vaults.some((v) => v.pfad === b.vault) || !["klein", "mittel", "aus"].includes(b.stufe)) return fehler(route, 400, "Eingabe ungültig.");
+    if (b.konto && z.zugriff[b.konto]?.[b.vault] !== "erweitert" && b.stufe !== "aus") return fehler(route, 409, "Dieses Konto darf den Vault noch nicht pflegen. Gib ihm unter „Wer darf diesen Vault sehen?“ die Stufe „Erweitert“, dann kannst du es hier wählen.", { art: "stufe" });
+    z.pflege[b.vault] = { konto: b.konto ?? null, stufe: b.stufe };
+    z.pflegeHinweise = z.pflegeHinweise.filter((x) => x.vault !== b.vault);
+    return route.fulfill({ json: stand() });
+  });
+  await page.route("**/api/ki/pflege/jetzt", async (route) => {
+    z.anfragen.push({ methode: route.request().method(), pfad: "/api/ki/pflege/jetzt" });
+    return route.fulfill({ json: { ok: true, gestartet: true } });
   });
   z.stand = stand;
   z.log = (pfad, methode) => z.anfragen.filter((a) => a.pfad === pfad && (!methode || a.methode === methode));

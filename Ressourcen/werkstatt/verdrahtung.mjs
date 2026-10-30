@@ -6,7 +6,10 @@
 //   POST /api/kern/verdrahten  { was: "claude" | "git" | "dienst", an: true|false, ersetzen?: true, profile?: [<pfad>], profil?: <pfad> } → { ok, ausgabe, stand }
 //   Hintergrunddienst: läuft nur für Vaults, für die er eingeschaltet wurde (tageslauf/dienst-merker.mjs); `eingerichtet` heißt: für DIESEN Vault.
 //   Claude-Profile (profile.mjs): die App kennt CLAUDE_CONFIG_DIR nicht (Start aus dem Finder). „claude“ wirkt auf die gewählten Profile (Pfade aus der erkannten
-//   Liste, je Profil --claude-home); „dienst“ nutzt das Profil `profil` (nur wenn es nicht das Standardprofil ist, wird CLAUDE_CONFIG_DIR gesetzt).
+//   Liste, je Profil --claude-home); „dienst“ schreibt KEIN Profil mehr in die plist (docs/plaene/ki-konten.md, P3): das Konto der Pflege steht je Vault in der Liste der KI-Konten
+//   (POST /api/ki/pflege). Ein mitgeschicktes `profil` (alter Assistent) wird nur noch als Vorschlag gelesen: hat das Konto dieses Profils für den Vault „erweitert“ und gibt es noch
+//   keine Pflege-Einstellung, wird es das Pflege-Konto (Stufe mittel).
+//   POST /api/ki/pflege/jetzt → Tageslauf des offenen Vaults einmal im Hintergrund starten (jetztPflegen)
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { HttpFehler, kindUmgebung, testmodus } from "../gemeinsam/basis.mjs";
@@ -17,7 +20,7 @@ const FRIST = 30_000;
 const NICHT_VERTRAUT = "Das geht erst, wenn du diesem Vault vertraust: Bestätige ihn in der Statusleiste des Studios („Nur ansehen“). Bis dahin tut Kortex an diesem Vault nichts außer Lesen und Suchen.";
 const kurz = (t) => String(t || "").trim().split("\n").filter(Boolean).slice(0, 6).join("\n").slice(0, 600);
 
-export function erzeugeVerdrahtung({ starter, support = null, istVorschau = () => !!process.env.KORTEX_VORSCHAU, kontoFuerProfil = () => null, freigeben = null }) {
+export function erzeugeVerdrahtung({ starter, support = null, istVorschau = () => !!process.env.KORTEX_VORSCHAU, kontoFuerProfil = () => null, freigeben = null, pflegeAusProfil = null }) {
   const vorhanden = () => existsSync(starter);
 
   async function lauf(args, frist, profil = undefined) {
@@ -76,7 +79,7 @@ export function erzeugeVerdrahtung({ starter, support = null, istVorschau = () =
     if (typeof e.an !== "boolean") throw new HttpFehler(400, "„an“ muss true oder false sein.");
     if (!vorhanden()) throw new HttpFehler(409, "Der Starter von Kortex fehlt noch. Starte Kortex einmal neu, dann wird er angelegt — danach geht es hier weiter.", { art: "kein-starter" });
     const frist = neueFrist(FRIST);
-    let args, was, dienstProfil;
+    let args, was, dienstProfilWunsch;
     let claudeLaeufe = null;
     if (e.was === "claude") {
       if (an && !v) throw new HttpFehler(409, "Es ist noch kein Vault geöffnet.", { keinVault: true });
@@ -110,10 +113,10 @@ export function erzeugeVerdrahtung({ starter, support = null, istVorschau = () =
       if (an && !v.vertrauenStand().erlaubt) throw new HttpFehler(409, NICHT_VERTRAUT, { art: "nicht-vertraut" });
       args = ["dienst", an ? "an" : "aus", "--vault", v.wurzel];
       was = "Der Hintergrunddienst";
-      // Der Dienst ruft `claude -p` auf: er soll das gewählte Profil nutzen (nur ein anderes als das Standardprofil wird in die plist geschrieben).
+      // Ein mitgeschicktes Profil kommt nicht mehr in die plist; es schlägt nur das Pflege-Konto vor (nach dem Einrichten, siehe unten).
       if (e.profil !== undefined) {
-        dienstProfil = profilZuPfad(e.profil);
-        if (!dienstProfil) throw new HttpFehler(409, "Das Claude-Profil gibt es nicht mehr. Suche die Profile bitte neu.", { art: "profil-weg" });
+        dienstProfilWunsch = profilZuPfad(e.profil);
+        if (!dienstProfilWunsch) throw new HttpFehler(409, "Das Claude-Profil gibt es nicht mehr. Suche die Profile bitte neu.", { art: "profil-weg" });
       }
     } else throw new HttpFehler(400, "„was“ muss claude, git oder dienst sein.");
     if (claudeLaeufe) {
@@ -127,10 +130,35 @@ export function erzeugeVerdrahtung({ starter, support = null, istVorschau = () =
       if (erster) { const f = fehlerAus(erster.r, was); if (claudeLaeufe.length > 1) f.message = `${erster.name}: ${f.message}`; throw f; }
       return { ok: true, ausgabe: ausgaben.join("\n").slice(0, 600), stand: await stand(v) };
     }
-    const r = await lauf(args, frist, dienstProfil === undefined ? undefined : dienstProfil);
+    const r = await lauf(args, frist);
     if (r.code !== 0) throw fehlerAus(r, was);
+    if (dienstProfilWunsch && an && pflegeAusProfil) { try { pflegeAusProfil(v, dienstProfilWunsch.pfad); } catch { /* der Vorschlag ist nur eine Zugabe */ } }
     return { ok: true, ausgabe: kurz(r.stdout), stand: await stand(v) };
   }
 
-  return { stand, verdrahte };
+  // „Jetzt pflegen“: der Tageslauf dieses Vaults, einmal, im Hintergrund (derselbe Weg wie der Dienst: Starter, dann brain tageslauf). Er richtet sich nach den Schaltern des Vaults
+  // (tageslauf aus/probe/an) und nach dem Pflege-Konto und der Stufe aus der Liste der KI-Konten.
+  // Vorher geprüft (409 mit ehrlichem Satz statt eines Starts, der gleich wieder endet): Schalter „aus“ · läuft schon einer (Sperre des Kerns, `laeuft`) · eine kurze Sperre je Vault gegen Mehrfachklicks.
+  // `gestartet: true` nur, wenn der Kern den losgelösten Lauf wirklich gestartet hat.
+  const kurzGesperrt = new Map();
+  async function jetztPflegen(v, { schalter = () => "an", laeuft = () => false } = {}) {
+    if (!v) throw new HttpFehler(409, "Es ist noch kein Vault geöffnet.", { keinVault: true });
+    if (!v.vertrauenStand().erlaubt) throw new HttpFehler(409, NICHT_VERTRAUT, { art: "nicht-vertraut" });
+    if (istVorschau()) throw new HttpFehler(409, "In der Vorschau wird nichts gepflegt.", { art: "vorschau" });
+    const s = schalter(v.wurzel);
+    if (s === "aus") throw new HttpFehler(409, "Die Pflege ist für diesen Vault ausgeschaltet. Schalte sie unter Einstellungen → Automatik ein (oder auf Probe), dann geht es hier.", { art: "schalter-aus" });
+    if (laeuft(v.wurzel)) throw new HttpFehler(409, "Die Pflege läuft gerade schon. Das Ergebnis steht danach hier.", { art: "laeuft-schon" });
+    const jetzt = Date.now();
+    if ((kurzGesperrt.get(v.wurzel) || 0) > jetzt) throw new HttpFehler(409, "Die Pflege wurde gerade erst gestartet. Warte einen Moment, das Ergebnis steht danach hier.", { art: "laeuft-schon" });
+    kurzGesperrt.set(v.wurzel, jetzt + 20_000);
+    try {
+      const r = await lauf(["tageslauf", "--losgeloest", "--vault", v.wurzel], neueFrist(FRIST));
+      if (r.code !== 0) throw fehlerAus(r, "Das Pflegen");
+      const aus = kurz(r.stdout);
+      if (!/läuft im Hintergrund/.test(aus)) throw new HttpFehler(409, `Die Pflege wurde nicht gestartet${aus ? `: ${aus.replace(/^Tageslauf nicht gestartet:\s*/, "")}` : "."}`, { art: "nicht-gestartet" });
+      return { ok: true, gestartet: true, ...(s === "probe" ? { probe: true } : {}) };
+    } catch (e) { kurzGesperrt.delete(v.wurzel); throw e; }
+  }
+
+  return { stand, verdrahte, jetztPflegen };
 }

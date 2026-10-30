@@ -363,7 +363,8 @@ export const A6 = {
       merkerVorher: merkerSich ? merkerSich.rel : null, merkerHashVorher: merkerSich ? merkerSich.hash : null, merkerHashNachher: null,
       geladenVorher: launchctl(["print", `${domain()}/${LABEL}`]) };
     ctx.merkeUndo(undo);
-    const r = kernSkript(z, "brain.mjs", ["dienst", "an", "--vault", z.vault], { extraEnv: l.profil ? { CLAUDE_CONFIG_DIR: l.profil } : {} });
+    // --profil-behalten: das Claude-Profil des alten Dienstes bleibt als Rückfall in der plist, bis die Werkstatt es in die Pflege-Einstellung des Vaults übernommen hat (docs/plaene/ki-konten.md, P3).
+    const r = kernSkript(z, "brain.mjs", ["dienst", "an", "--vault", z.vault, ...(l.profil ? ["--profil-behalten"] : [])], { extraEnv: l.profil ? { CLAUDE_CONFIG_DIR: l.profil } : {} });
     if (r.status === 5) throw new Error("vault-nicht-vertraut");
     if (r.status !== 0) throw new Error("dienst-an-fehlgeschlagen");
     ctx.pruefpunkt("nach-dienst");

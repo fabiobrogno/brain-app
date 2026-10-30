@@ -30,7 +30,8 @@ import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve, relative, isAbsolute } from "node:path";
 import { kindUmgebung, rufeHaiku, leseClaudeAntwort } from "../ernte.mjs";
-import { kiBefehl, KI_STUFE } from "./ki.mjs";
+import { kiBefehl, pflegeVon, KI_STUFE } from "./ki.mjs";
+import { istFremdeAnmeldung } from "../pflege-konto.mjs";
 import { KERN, ALT_KIT_ORDNER } from "../pfade.mjs";
 import { sperreAusgeschlossenes } from "./pflege-sperre.mjs";
 
@@ -104,10 +105,11 @@ export function sonnetArgs(systemPrompt, kopiePfad, { vault, sperren, werkzeuge 
 
 // Umgebung des Sonnet-Kindes: wie kindUmgebung (BRAIN_ERNTE=1, keine Sitzungs-/GIT_-Variablen), aber der Vault HART auf die Kopie.
 // Sonst träfe `node brain.mjs …` über ein geerbtes BRAIN_VAULT (Dienst/Hintergrundprozess setzen es) den ECHTEN Vault.
-// Weitere BRAIN_*-Variablen (Testhaken, Pfade, Cache) bekommt das Kind nie.
+// Weitere BRAIN_*-Variablen (Testhaken, Pfade, Cache) bekommt das Kind nie. `env` ist die Umgebung des Pflege-Kontos (kern/pflege-konto.mjs#umgebungFuer): sie ergänzt nur CLAUDE_CONFIG_DIR, die Härtung bleibt.
 export function sonnetUmgebung(kopiePfad, env = process.env) {
   const out = {};
-  for (const [k, w] of Object.entries(kindUmgebung(env))) if (!k.startsWith("BRAIN_")) out[k] = w;
+  // Keine fremden Anmeldungen (ANTHROPIC_*, CLAUDE_CODE_* außer der Erlaubt-Liste): das Kind meldet sich nur mit dem Konto an, das CLAUDE_CONFIG_DIR nennt (pflege-konto.mjs#ohneFremdeAnmeldung).
+  for (const [k, w] of Object.entries(kindUmgebung(env))) if (!k.startsWith("BRAIN_") && !istFremdeAnmeldung(k)) out[k] = w;
   out.BRAIN_ERNTE = "1";
   out.BRAIN_VAULT = echt(kopiePfad);
   return out;
@@ -158,7 +160,7 @@ function auswerten(ctx, r) {
 
 export async function rufeSonnet(ctx, { system, eingabe, cwd, zeitlimitMs = SONNET_ZEITLIMIT_MS }) {
   let args, env;
-  try { args = sonnetArgs(system, cwd, { vault: ctx.vault }); env = sonnetUmgebung(cwd); }
+  try { args = sonnetArgs(system, cwd, { vault: ctx.vault }); env = sonnetUmgebung(cwd, pflegeVon(ctx).env); }
   catch { return { fehler: "Arbeitsverzeichnis fehlt — keine Rechte ohne Pfad" }; }     // vor dem Budget: nichts gezählt, nichts gestartet
   const v = vorab(ctx, "sonnet");
   if (!v.befehl) return v;
@@ -183,7 +185,7 @@ export async function rufeSonnet(ctx, { system, eingabe, cwd, zeitlimitMs = SONN
 export async function pflegeHaiku(ctx, { system, eingabe, zweck = "pflege" }) {
   const v = vorab(ctx, "haiku");
   if (!v.befehl) return v;
-  return auswerten(ctx, await rufeHaiku(v.befehl, system, eingabe, ctx.vault, { zweck: `b3${zweck}`, konto: KI_STUFE }));
+  return auswerten(ctx, await rufeHaiku(v.befehl, system, eingabe, ctx.vault, { zweck: `b3${zweck}`, konto: KI_STUFE, env: pflegeVon(ctx).env }));
 }
 
 // Letztes JSON-Objekt in einem KI-Text (Sonnet schreibt oft Erklärungen davor). Kein Objekt → null.

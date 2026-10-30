@@ -197,7 +197,35 @@ export function kontoStufe(vault, { support, arg, env = {}, programm = null, vol
   }
   return best === null ? "posteingang" : best;
 }
+// Pflege (Plan docs/plaene/ki-konten.md, Abschnitt 5): welches Konto die Hintergrund-Pflege eines Vaults nutzt und wie viel KI sie darf.
+//   vaults[<pfad>].pflege = { konto: "<kontoId>" | null, stufe: "klein" | "mittel" | "aus" }. Fehlt der Eintrag, gilt der alte Weg (Konto der Prozess-Umgebung).
+export const PFLEGE_STUFEN = ["klein", "mittel", "aus"];
+// → { gesetzt: false } | { gesetzt: true, konto, stufe, ungueltig?, kontoUnbekannt? }. Eine unlesbare Form heißt „aus“ ohne Konto (fail-closed), nie „alter Weg“.
+export function pflegeFuer(daten, vault) {
+  const t = vaultEintrag(daten, vault);
+  if (!t || !t.eintrag || t.eintrag.pflege === undefined) return { gesetzt: false };
+  const p = t.eintrag.pflege;
+  if (!istObj(p) || !PFLEGE_STUFEN.includes(p.stufe)) return { gesetzt: true, konto: null, stufe: "aus", ungueltig: true };
+  const genannt = p.konto !== null && p.konto !== undefined;
+  const konto = typeof p.konto === "string" && KONTO_ID.test(p.konto) && Object.hasOwn(daten.konten, p.konto) ? p.konto : null;
+  return { gesetzt: true, konto, stufe: p.stufe, ...(genannt && konto === null ? { kontoUnbekannt: true } : {}) };
+}
 // LESEN-ENDE
+
+// ───────────────────────────── Pflege-Konto (Anzeige und Prüfung der Werkstatt) ─────────────────────────────
+// Was die Pflege eines Vaults tatsächlich tun wird — dieselbe Regel wie kern/pflege-konto.mjs#pflegeAufloesen (Test: Tests/Node/pflege-konto.test.mjs prüft beide gegeneinander).
+// → { modus: "alt" | "konto" | "aus", stufe, konto, bewusst, problem: null | "kein-konto" | "stufe" | "programm" | "unlesbar" }
+export function pflegeWirksam(daten, vault) {
+  const p = pflegeFuer(daten, vault);
+  if (!p.gesetzt) return { modus: "alt", stufe: "mittel", konto: null, bewusst: false, problem: null };
+  const aus = (problem, bewusst = false) => ({ modus: "aus", stufe: p.stufe, konto: p.konto, bewusst, problem: bewusst ? null : problem });
+  if (p.ungueltig) return aus("unlesbar");
+  if (p.stufe === "aus") return aus(null, true);
+  if (!p.konto) return aus("kein-konto");
+  if (daten.konten[p.konto].programm !== "claude") return aus("programm");
+  if (!darfMindestens(stufeFuer(daten, vault, p.konto), "erweitert")) return aus("stufe");
+  return { modus: "konto", stufe: p.stufe, konto: p.konto, bewusst: false, problem: null };
+}
 
 // ───────────────────────────── Schreiben (nur Werkstatt) ─────────────────────────────
 export const leerDaten = () => ({ version: 1, konten: {}, vaults: {} });

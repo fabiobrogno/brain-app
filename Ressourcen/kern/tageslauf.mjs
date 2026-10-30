@@ -23,7 +23,7 @@ import { ordner, vaultPfadOderEnde } from "./pfade.mjs";
 import { leseAutomatik, TAGESLAUF_BUDGETS } from "./einstellungen.mjs";
 import { istHeikel } from "./heikel.mjs";
 import { aussageGedeckt, kernsatz, FUNDSTELLE_MUSTER } from "./beleg-ernte.mjs";
-import { kiBefehl } from "./tageslauf/ki.mjs";
+import { kiBefehl, pflegeVon } from "./tageslauf/ki.mjs";
 import { findeSecrets, ohneSecrets } from "./secrets-muster.mjs";
 import { nenntThema, THEMA_GRUND } from "./thema-ausschluss.mjs";
 import { legeRueckfrageAn, sichtbare, verfallen, konfliktRueckfragen, stichprobenAuffuellen, archiviereRueckfrage, listeRueckfragen, istAutostufeRueckfrage, AUTOSTUFE_QUELLE } from "./rueckfragen.mjs";
@@ -70,7 +70,7 @@ const R34_GRUENDE = ["seite-seither-geaendert", "seitenwahl"];
 const R345_GRUENDE = [...R34_GRUENDE, ALTBESTAND_GRUND];
 const AUS_GRUND = "autostufe-aus";
 const STATUS_TEXT = { ok: "fertig", teilweise: "teilweise", abgebrochen: "Budget aufgebraucht, geht beim nächsten Lauf weiter",
-  "ohne-ki": "ohne KI", fehler: "mit Fehler abgebrochen" };
+  "ohne-ki": "ohne KI", "ok-ohne-ki": "fertig, ohne KI (so eingestellt)", fehler: "mit Fehler abgebrochen" };
 const PROTOKOLL_TEXT = `Das Aktionsprotokoll lässt sich nicht schreiben (${PROTOKOLL_GRUND}) — keine automatischen Übernahmen, bis es wieder geht`;
 const kurz = (s, n = 160) => String(s ?? "").replace(/\s+/g, " ").trim().slice(0, n);
 const iso = (ms) => new Date(ms).toISOString().slice(0, 19) + "Z";
@@ -419,6 +419,10 @@ function urteilsZeilen(ctx) {
   return zeilen;
 }
 
+// Eine Zeile zur KI-Stufe der Pflege (nur wenn der Lauf sie bestimmt hat): so sieht man im Bericht, wie viel KI der Lauf hatte.
+const KI_STUFE_ZEILE = { klein: "klein (nur Haiku, keine Schreibpflege und kein Traum)", mittel: "mittel (Haiku für Urteile, Sonnet für Richter, Schreibpflege und Traum)", aus: "ohne KI (nur die Schritte, die ohne KI laufen)" };
+const pflegeKiZeile = (ctx) => (ctx.pflege ? [`- KI der Pflege: ${ctx.pflege.modus === "aus" && ctx.pflege.stufe !== "aus" ? "ohne KI (Einstellung unvollständig)" : KI_STUFE_ZEILE[ctx.pflege.stufe] || ctx.pflege.stufe}${ctx.pflege.modus === "alt" ? " · Konto aus der Umgebung des Dienstes" : ""}`] : []);
+
 function schreibeBericht(ctx, { status, z, nurAntworten, nurPflege }) {
   const name = `${ctx.heute}${ctx.probe ? "-probe" : ""}.md`;
   const a = ctx.aktionen, e = ctx.einschwingen;
@@ -431,6 +435,7 @@ function schreibeBericht(ctx, { status, z, nurAntworten, nurPflege }) {
     `- ${ctx.probe ? "würde übernehmen" : "übernommen"}: ${z.uebernommen} · aussortiert: ${z.aussortiert} · neue Rückfragen: ${z.rueckfragenNeu} · wartet: ${z.wartenNeu} · Fehler: ${z.fehler}`,
     `- seite-passt-nicht: ${z.seitePasstNicht} (wartet auf eine passende Seite) · kurzlebig: ${z.kurzlebig} (aussortiert)`,
     ...(z.seitenGewaehlt || z.seitenOhneWahl ? [`- Seitenwahl (mehrdeutig): ${z.seitenGewaehlt} gewählt · ${z.seitenOhneWahl} ohne Wahl`] : []),
+    ...pflegeKiZeile(ctx),
     ...urteilsZeilen(ctx),
     `- Rückfragen offen: ${z.rueckfragen}${z.wartend ? ` (${z.wartend} davon warten über dem Deckel)` : ""} · Autostufe ${ctx.autostufe} · Fehlerquote ${ctx.quote.fehler}/${ctx.quote.geprueft} · KI-Aufrufe ${ctx.aufrufe} · Tokens ${ctx.tokens.ein}/${ctx.tokens.aus}`,
     ...(!ctx.probe && e && e.ziel > 0 && (e.aktiv || e.neu > 0 || e.beendet)
@@ -479,13 +484,14 @@ function abschluss(ctx, { status, nurAntworten, nurPflege = false, probeFlag, we
   const z = { ...zaehle(ctx), rueckfragen: s.fragen.length + s.wartend, wartend: s.wartend,
     warten: bestand(vault, UNTERORDNER.warten), rest: bestand(vault, UNTERORDNER.vorschlaege), offen: zahl.offen };
   const alt = leseLetzter(vault) || {};
-  const erfolgreich = status === "ok" || status === "abgebrochen";
+  const erfolgreich = status === "ok" || status === "abgebrochen" || status === "ok-ohne-ki";   // ok-ohne-ki: „Ohne KI“ ist bewusst gewählt — kein Fehler, keine Warnung
   const letzter = (nurAntworten || nurPflege) && alt.lauf
     ? { ...alt, zahlen: { ...(alt.zahlen || {}), rueckfragen: z.rueckfragen, wartend: z.wartend },
         antworten: { lauf: ctx.lauf, zeit: iso(ctx.jetzt), status, uebernommen: z.uebernommen } }
     : { lauf: ctx.lauf, zeit: iso(ctx.jetzt), modus: ctx.probe ? "probe" : "an", art: nurAntworten ? "antworten" : nurPflege ? "pflege" : "voll", status,
         erfolgreich: !nurAntworten && !nurPflege && erfolgreich, letzterErfolg: !nurAntworten && !nurPflege && erfolgreich ? iso(ctx.jetzt) : alt.letzterErfolg || null,
         seit: !nurAntworten && !nurPflege && erfolgreich ? null : alt.seit || iso(ctx.jetzt), grund: ctx.grund || null, zahlen: z,
+        ...(ctx.pflege ? { ki: { modus: ctx.pflege.modus, stufe: ctx.pflege.stufe, ...(ctx.pflege.bewusst ? { bewusst: true } : {}) } } : {}),
         fehlerquote: ctx.quote, autostufe: ctx.autostufe, ...(ctx.lernmodus ? { lernmodus: true } : {}), aufrufe: ctx.aufrufe, tokEin: ctx.tokens.ein, tokAus: ctx.tokens.aus,
         ...(ctx.pflegeAufrufe ? { pflege: { ...ctx.pflegeAufrufe, tokEin: ctx.pflegeTokens?.ein || 0, tokCache: ctx.pflegeTokens?.cache || 0, tokAus: ctx.pflegeTokens?.aus || 0 } } : {}) };
   if (ctx.gesundheit) letzter.gesundheit = gesundheitKurz(ctx.gesundheit);              // Gesundheits-Wächter: Kurzfassung (Stand für die Startzeile: gesundheit.json)
@@ -520,6 +526,7 @@ export async function tageslauf(vault, opt = {}) {
     if (!(probeFlag && werte.tageslauf === "an")) markeStart(vault, jetzt);   // eine Probe von Hand ist kein Start für den Rückfall
     const ctx = neuerLauf(vault, { probe, jetzt, claudeBefehl, home,
       budget: { ...(TAGESLAUF_BUDGETS[werte.tageslaufBudget] || TAGESLAUF_BUDGETS.normal), ...budget } });
+    pflegeVon(ctx);                                                                     // Pflege-Konto und -Stufe dieses Vaults, einmal je Lauf (kern/pflege-konto.mjs)
     ctx.haken = haken;                                                                  // Testhaken { vorSchreiben(ctx), nachMerge(ctx) } — im Betrieb leer
     const zahl = { teilweise: false, offen: 0 };
     let status = "fehler";
@@ -559,7 +566,7 @@ export async function tageslauf(vault, opt = {}) {
         await traumSchritt(ctx);                                  // 9b Traum (traum.mjs): eigene Fehlergrenze und eigenes Budget, nie ein Grund für „teilweise"
         await gesundheitSchritt(ctx);                                                                                           // 9c Gesundheits-Wächter (0 Tokens, wirft nie)
       }
-      status = ctx.ohneKi ? "ohne-ki" : zahl.teilweise ? "teilweise" : ctx.budgetErschoepft || ctx.budget.zeitUm() ? "abgebrochen" : "ok";
+      status = ctx.ohneKi ? (ctx.kiBewusstOhne ? (zahl.teilweise ? "teilweise" : "ok-ohne-ki") : "ohne-ki") : zahl.teilweise ? "teilweise" : ctx.budgetErschoepft || ctx.budget.zeitUm() ? "abgebrochen" : "ok";
       }
     } catch (e) {
       ctx.grund = `Unerwarteter Fehler: ${kurz(e?.message)}`;

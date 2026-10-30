@@ -2,7 +2,7 @@
 // Tests/Kern/fake-ki-protokoll.mjs — Attrappe für `claude -p` in den Konto-Tests (Testhaken BRAIN_CLAUDE). Ruft NIE das echte claude.
 // - strenges Argument-Parsing (node:util parseArgs, strict): jede unbekannte Option beendet den Aufruf mit Exit 4
 // - verlangt BRAIN_ERNTE=1 (Selbstaufruf-Schutz), sonst Exit 3
-// - protokolliert JEDEN Aufruf als eine JSON-Zeile in $FAKE_KI_LOG ({ modell, konto: CLAUDE_CONFIG_DIR | null, eingabe: erste 40 Zeichen })
+// - protokolliert JEDEN Aufruf als eine JSON-Zeile in $FAKE_KI_LOG ({ modell, konto: CLAUDE_CONFIG_DIR | null, fremd: Namen der ANTHROPIC_*/CLAUDE_CODE_*-Variablen, eingabe: erste 40 Zeichen })
 // - antwortet wie `claude -p --output-format json` mit dem Text aus $FAKE_KI_ANTWORT (Standard: NICHTS)
 import { appendFileSync } from "node:fs";
 import { parseArgs } from "node:util";
@@ -24,5 +24,5 @@ if (!v.p || !["haiku", "sonnet"].includes(v.model) || v["output-format"] !== "js
 const teile = [];
 for await (const c of process.stdin) teile.push(c);
 const eingabe = Buffer.concat(teile).toString("utf8");
-if (process.env.FAKE_KI_LOG) appendFileSync(process.env.FAKE_KI_LOG, JSON.stringify({ modell: v.model, konto: process.env.CLAUDE_CONFIG_DIR ?? null, eingabe: eingabe.slice(0, 40) }) + "\n");
+if (process.env.FAKE_KI_LOG) appendFileSync(process.env.FAKE_KI_LOG, JSON.stringify({ modell: v.model, konto: process.env.CLAUDE_CONFIG_DIR ?? null, fremd: Object.keys(process.env).filter((k) => /^(ANTHROPIC_|CLAUDE_CODE_|AWS_BEARER_)/.test(k)).sort(), eingabe: eingabe.slice(0, 40) }) + "\n");
 process.stdout.write(JSON.stringify({ type: "result", subtype: "success", is_error: false, result: process.env.FAKE_KI_ANTWORT ?? "NICHTS", usage: { input_tokens: 10, output_tokens: 2 } }));

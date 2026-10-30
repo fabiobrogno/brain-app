@@ -30,7 +30,7 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { ordner, vaultPfadOderEnde } from "../pfade.mjs";
-import { kiBefehl, KI_KONTO_GRUND } from "./ki.mjs";
+import { kiBefehl, istKlein, ohneKiText } from "./ki.mjs";
 import { ladeConfig } from "../pfade.mjs";
 import { gitBefehl } from "../werkzeug.mjs";
 import { gleicheAb, istEchterProjektSchluessel, nimmSperre as nimmWurzelSperre, gibSperre as gibWurzelSperre } from "../gedaechtnis.mjs";      // Sperre der Wurzel: dieselbe wie im Abgleich
@@ -337,7 +337,8 @@ export async function traumSchritt(ctx, opt = {}) {
     let wurzelOk = false;
     try { wurzelOk = lstatSync(cfg.wurzel).isDirectory(); } catch { /* fehlt */ }
     if (!wurzelOk) return weiter("wurzel-fehlt", "Gedächtnis-Wurzel nicht gefunden (gedaechtnisWurzel) — heute kein Traum");
-    if (ctx.ohneKi || !kiBefehl(ctx)) { b.ohneKi = true; return weiter("ohne-ki", ctx.kiKontoGesperrt ? `${KI_KONTO_GRUND} — heute kein Traum` : "keine KI erreichbar (claude nicht gefunden) — heute kein Traum"); }
+    if (istKlein(ctx)) return weiter("klein", "Pflege-Stufe „klein“ — der Traum (Sonnet) läuft nur in der Stufe „mittel“");
+    if (ctx.ohneKi || !kiBefehl(ctx)) { b.ohneKi = true; return weiter("ohne-ki", `${ctx.kiBewusstOhne || ctx.kiKontoGesperrt ? ohneKiText(ctx) : "keine KI erreichbar (claude nicht gefunden)"} — heute kein Traum`); }
     const stand = leseTraumStand(ctx.vault);
     const tagArt = probe ? "probe" : "scharf";
     if (!opt.erzwingen && stand.tag[tagArt] === ctx.heute) return { lauf: false, grund: "heute-schon" };

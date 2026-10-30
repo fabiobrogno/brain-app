@@ -4,7 +4,7 @@
 // Eigenes Budget (ctx.traumBudget, getrennt von B2 und B3), eigene Zähler (ctx.traumAufrufe, ctx.traumTokens). Wirft nie.
 import { execFile } from "node:child_process";
 import { leseClaudeAntwort } from "../ernte.mjs";
-import { kiBefehl } from "./ki.mjs";
+import { kiBefehl, pflegeVon } from "./ki.mjs";
 import { sonnetArgs, sonnetUmgebung } from "./pflege-ki.mjs";
 
 export const TRAUM_WERKZEUGE = "Read,Edit,Write,Glob,Grep";
@@ -14,7 +14,7 @@ export const TRAUM_MINUTEN = 40;                                   // Zeitanteil
 // → { text } | { fehler } | { budget: true } | { ohneKi: true }
 export async function rufeTraum(ctx, { system, eingabe, cwd, sperren = [], zeitlimitMs = TRAUM_ZEITLIMIT_MS }) {
   let args, env;
-  try { args = sonnetArgs(system, cwd, { vault: ctx.vault, sperren, werkzeuge: TRAUM_WERKZEUGE, maxRunden: TRAUM_MAX_RUNDEN, maxUsd: TRAUM_MAX_USD }); env = sonnetUmgebung(cwd); }
+  try { args = sonnetArgs(system, cwd, { vault: ctx.vault, sperren, werkzeuge: TRAUM_WERKZEUGE, maxRunden: TRAUM_MAX_RUNDEN, maxUsd: TRAUM_MAX_USD }); env = sonnetUmgebung(cwd, pflegeVon(ctx).env); }
   catch { return { fehler: "Arbeitsverzeichnis fehlt — keine Rechte ohne Pfad" }; }
   if (ctx.ohneKi) return { ohneKi: true };
   const b = ctx.traumBudget;

@@ -17,13 +17,16 @@
 //   POST /api/ki/schutz     { konto, sandbox, bestaetigt }   — „Strenger Schutz“ (Sandbox von Claude Code) je Konto, nur mit bestaetigt:true
 //   POST /api/ki/hinweis    { quittiert: true }              — den Hinweis „Liste war beschädigt“ ausblenden
 //   POST /api/ki/vorher     { bestaetigt: true }             — die frühere Fassung der Liste zurückholen (kann Sperren lockern: nur nach Bestätigung)
+// P3 (Pflege-Konto und Modell je Vault):
+//   POST /api/ki/pflege   { vault, konto|null, stufe: klein|mittel|aus }  — vaults[v].pflege = { konto, stufe }; nur ein Claude-Code-Konto mit der Stufe „erweitert“ für diesen Vault
+//   Migration (einmal): ein festes CLAUDE_CONFIG_DIR in der alten plist des Dienstes wird das Pflege-Konto der Vaults in dienst.json (hat das Konto erweitert: Stufe mittel, sonst ohne KI + Hinweis)
 //  · Was Kortex in settings.json eingetragen hat, steht in ki-konten.json unter `eingetragen` (je Konto), der Wunsch „Strenger Schutz“ unter `schutz`. Der Rückweg entfernt nur das.
 import { readFileSync, realpathSync, lstatSync } from "node:fs";
 import { join, dirname, sep } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { HttpFehler, testmodus } from "../gemeinsam/basis.mjs";
 import * as vertrauenFn from "../gemeinsam/vertrauen.mjs";
-import { STUFEN, ABOS, kontenPfad, pruefeDaten, stelleVorherWiederHer, sichereSpur, liesKonten, aendere, repariere, leerDaten, neueId, pruefeName, vaultEintrag, stufeFuer, kennungVon, echterOrt, stufeNr, darfMindestens } from "../gemeinsam/ki-konten.mjs";
+import { STUFEN, ABOS, kontenPfad, pruefeDaten, stelleVorherWiederHer, sichereSpur, liesKonten, aendere, repariere, leerDaten, neueId, pruefeName, vaultEintrag, stufeFuer, kennungVon, echterOrt, stufeNr, darfMindestens, PFLEGE_STUFEN, pflegeFuer, pflegeWirksam } from "../gemeinsam/ki-konten.mjs";
 import { vaultRegeln, sandboxPfade, einstellungsRegeln, sandboxGeheim, sandboxSchreibschutz, eineSicherung, tragRegelnEin, nimmRegelnHeraus, liesRegelStand, gleicheSandboxAb, liesSandboxStand } from "../gemeinsam/claude-sperre.mjs";
 import { erkenneKonten } from "./konten-erkennung.mjs";
 import { BESCHREIBUNGEN } from "./ki-programme/programme.mjs";
@@ -348,12 +351,22 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
     const vs = liste.map((v) => {
       const t = vaultEintrag(daten, v.pfad);
       const e = t && t.eintrag ? t.eintrag : null;
-      return { pfad: v.pfad, name: v.name, neueKonten: e ? e.neueKonten || "gesperrt" : "gesperrt", ohneKonto: e ? e.ohneKonto || "gesperrt" : "gesperrt", ...(t && t.schluessel ? { schluessel: t.schluessel } : {}), ...(t && t.ausgetauscht ? { ausgetauscht: true } : {}) };
+      const p = e ? pflegeFuer(daten, v.pfad) : { gesetzt: false };
+      const w = e ? pflegeWirksam(daten, v.pfad) : null;
+      const pflege = p.gesetzt ? { gesetzt: true, konto: p.konto, stufe: p.stufe, wirksam: w.modus, bewusst: w.bewusst, ...(w.problem ? { problem: w.problem } : {}) } : { gesetzt: false, wirksam: "alt" };
+      return { pfad: v.pfad, name: v.name, neueKonten: e ? e.neueKonten || "gesperrt" : "gesperrt", ohneKonto: e ? e.ohneKonto || "gesperrt" : "gesperrt", pflege, ...(t && t.schluessel ? { schluessel: t.schluessel } : {}), ...(t && t.ausgetauscht ? { ausgetauscht: true } : {}) };
     });
     const hinweis = s.hinweis || (daten.hinweis && daten.hinweis.art === "defekt-neu" ? "defekt-neu" : null);
     const hinweisGrund = (daten.hinweis && daten.hinweis.grund) || s.hinweisGrund || "defekt";
-    return { zustand: "ok", ...(hinweis ? { hinweis, hinweisGrund, ...(daten.hinweis && daten.hinweis.seit ? { hinweisSeit: daten.hinweis.seit } : {}), vorherDa: vorherBrauchbar() } : {}), stufen: STUFEN, konten, vaults: vs, zugriff };
+    return { zustand: "ok", ...(hinweis ? { hinweis, hinweisGrund, ...(daten.hinweis && daten.hinweis.seit ? { hinweisSeit: daten.hinweis.seit } : {}), vorherDa: vorherBrauchbar() } : {}), stufen: STUFEN, konten, vaults: vs, zugriff, ...(pflegeHinweise(daten).length ? { pflegeHinweise: pflegeHinweise(daten) } : {}),
+      ...(istObj(daten.pflegeMigration) && daten.pflegeMigration.plistOffen === true ? { pflegePlist: { offen: true, grund: typeof daten.pflegeMigration.plistGrund === "string" ? daten.pflegeMigration.plistGrund : "fehler" } } : {}) };
   }
+  // Hinweise der Migration (Konto des Dienstes hatte nicht „erweitert“): nur solange der Vault noch auf „ohne KI“ aus der Migration steht
+  const pflegeHinweise = (daten) => {
+    const m = daten && istObj(daten.pflegeMigration) ? daten.pflegeMigration : null;
+    if (!m || !Array.isArray(m.hinweise)) return [];
+    return m.hinweise.filter((h) => istObj(h) && typeof h.vault === "string" && Object.hasOwn(daten.vaults, h.vault)).map((h) => ({ vault: h.vault, grund: h.grund, ...(typeof h.konto === "string" && Object.hasOwn(daten.konten, h.konto) ? { konto: h.konto } : {}) }));
+  };
 
   function setzeName(e) {
     if (typeof e.id !== "string") throw new HttpFehler(400, "Die Konto-Kennung fehlt.");
@@ -514,6 +527,96 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
     return stand();
   }
 
+  // ───────────── Pflege-Konto je Vault ─────────────
+  const vaultSchluessel = (pfad) => {
+    const wunsch = (() => { try { return falte(realpathSync.native(pfad)); } catch { return null; } })();
+    const bekannt = vaultListe().find((v) => v.pfad === pfad || falte(v.pfad) === falte(pfad) || (wunsch !== null && (() => { try { return falte(realpathSync.native(v.pfad)) === wunsch; } catch { return false; } })()));
+    if (!bekannt) throw new HttpFehler(404, "Diesen Vault kennt Kortex nicht (mehr).");
+    try { return realpathSync.native(bekannt.pfad); } catch { throw new HttpFehler(404, "Der Ordner dieses Vaults fehlt."); }
+  };
+  // POST /api/ki/pflege { vault, konto|null, stufe } — Nur Vaults und Konten aus den Listen; das Konto muss Claude Code sein und für diesen Vault „erweitert“ haben (sonst 409 art „stufe“ mit dem Weg dorthin).
+  // Geprüft wird UNTER der Sperre der Liste (im Callback von aendere), nicht davor: zwischen Prüfung und Schreiben kann sonst eine Stufe sinken. nurWennUngesetzt (nur intern, Vorschlag des Assistenten):
+  // schreibt nichts, wenn der Vault schon eine Einstellung hat.
+  function setzePflege(e, { nurWennUngesetzt = false } = {}) {
+    if (typeof e.vault !== "string") throw new HttpFehler(400, "Der Vault muss angegeben werden.");
+    if (!PFLEGE_STUFEN.includes(e.stufe)) throw new HttpFehler(400, `Die Stufe muss eine von ${PFLEGE_STUFEN.join(", ")} sein.`);
+    if (e.konto !== null && e.konto !== undefined && typeof e.konto !== "string") throw new HttpFehler(400, "Das KI-Konto muss eine Kennung oder leer sein.");
+    ladeOderSynchronisiere();
+    const echt = vaultSchluessel(e.vault);
+    const konto = typeof e.konto === "string" ? e.konto : null;
+    if (konto === null && e.stufe !== "aus") throw new HttpFehler(409, "Wähle ein KI-Konto für die Pflege oder stelle „Ohne KI“ ein.", { art: "kein-konto" });
+    let geschrieben = true;
+    aendere(support, (alt) => {
+      if (!alt) throw new HttpFehler(500, "Die Liste der KI-Konten ist nicht verfügbar.");
+      let ziel = null;
+      if (konto !== null) {
+        if (!Object.hasOwn(alt.konten, konto)) throw new HttpFehler(404, "Dieses KI-Konto gibt es nicht (mehr).");
+        if (alt.konten[konto].programm !== "claude") { if (e.stufe !== "aus") throw new HttpFehler(409, "Die Pflege läuft über Claude Code. Wähle ein Claude-Code-Konto.", { art: "kein-claude" }); }
+        else {
+          if (e.stufe !== "aus" && !darfMindestens(stufeFuer(alt, echt, konto), "erweitert")) {
+            throw new HttpFehler(409, "Dieses Konto darf den Vault noch nicht pflegen. Gib ihm unter „Wer darf diesen Vault sehen?“ die Stufe „Erweitert“, dann kannst du es hier wählen.", { art: "stufe" });
+          }
+          ziel = konto;
+        }
+      }
+      const t = vaultEintrag(alt, echt);
+      if (!t || !t.eintrag) throw new HttpFehler(404, "Dieser Vault ist in der Liste der KI-Konten noch nicht eingetragen. Öffne die KI-Konten einmal neu.");
+      if (nurWennUngesetzt && t.eintrag.pflege !== undefined) { geschrieben = false; return null; }
+      t.eintrag.pflege = { konto: ziel, stufe: e.stufe };
+      // Wer die Pflege selbst einstellt, hat den Hinweis aus der Migration gesehen
+      if (istObj(alt.pflegeMigration) && Array.isArray(alt.pflegeMigration.hinweise)) alt.pflegeMigration.hinweise = alt.pflegeMigration.hinweise.filter((h) => !(istObj(h) && h.vault === t.schluessel));
+      return alt;
+    });
+    return nurWennUngesetzt ? { geschrieben } : stand();
+  }
+
+  // Migration: Die alte plist des Dienstes trug EIN festes CLAUDE_CONFIG_DIR für alle Vaults. Es wird das Pflege-Konto der Vaults, für die der Dienst eingeschaltet ist (dienst.json) und die noch keine
+  // Pflege-Einstellung haben: hat das Konto „erweitert“, gilt Stufe „mittel“, sonst „ohne KI“ mit Hinweis. Ohne Variable in der plist lief der Dienst im Standardprofil → dessen Konto (nur beim ersten Mal,
+  // solange es noch keinen Vermerk gibt: später heißt eine plist ohne Variable „neue Form“). Idempotent: je Vault nur, wenn noch nichts eingestellt ist; läuft bei jedem Start, solange die plist eine Variable trägt.
+  // Der Vermerk `pflegeMigration` heißt „die Übernahme ist geschehen“; `plistOffen` bleibt wahr, bis die plist neu geschrieben ist (vermerkePlist) — vorher behält `dienst an` das feste Profil (kern/tageslauf/dienst.mjs).
+  // profil: Pfad aus der plist | null · dienstVaults: Pfade aus dienst.json. → { gemacht, vaults, hinweise }
+  function migrierePflege({ profil, dienstVaults }) {
+    const aus = { gemacht: false, vaults: [], hinweise: [] };
+    if (!lade()) return aus;
+    aendere(support, (alt) => {
+      if (!alt) return null;
+      const vermerkt = istObj(alt.pflegeMigration);
+      if (vermerkt && !profil) return null;                                  // neue Form der plist, nichts zu übernehmen
+      const konten0 = Object.entries(alt.konten).filter(([, k]) => k.programm === "claude");
+      const kontoId = profil ? (nachOrt(alt, "claude", profil) || null) : (konten0.find(([, k]) => k.standard === true) || [null])[0];
+      const m = vermerkt ? alt.pflegeMigration : { seit: jetzt(), hinweise: [], plistOffen: !!profil };
+      if (!Array.isArray(m.hinweise)) m.hinweise = [];
+      for (const pfad of dienstVaults) {
+        const t = vaultEintrag(alt, pfad);
+        if (!t || !t.eintrag || t.eintrag.pflege !== undefined) continue;
+        if (kontoId && darfMindestens(stufeFuer(alt, t.schluessel, kontoId), "erweitert")) t.eintrag.pflege = { konto: kontoId, stufe: "mittel" };
+        else {
+          t.eintrag.pflege = { konto: kontoId, stufe: "aus" };
+          if (!m.hinweise.some((h) => h && h.vault === t.schluessel)) m.hinweise.push({ vault: t.schluessel, grund: kontoId ? "stufe" : "kein-konto", ...(kontoId ? { konto: kontoId } : {}) });
+        }
+        aus.vaults.push(t.schluessel);
+      }
+      aus.hinweise = m.hinweise;
+      if (!vermerkt) { alt.pflegeMigration = m; aus.gemacht = true; }
+      else if (aus.vaults.length) aus.gemacht = true;
+      else return null;
+      return alt;
+    });
+    return aus;
+  }
+  const migrationVermerkt = () => { const d = lade(); return !!(d && istObj(d.pflegeMigration)); };
+  // Ob die plist des Dienstes noch ein festes Profil trägt (offen) und warum sie nicht neu geschrieben werden konnte (grund: kein-vault · nicht-im-dienst · kein-starter · unlesbar · fehler …).
+  function vermerkePlist({ offen, grund = null }) {
+    if (!lade()) return;
+    aendere(support, (alt) => {
+      if (!alt || !istObj(alt.pflegeMigration)) return null;
+      const m = alt.pflegeMigration;
+      if (offen) { if (m.plistOffen === true && m.plistGrund === grund) return null; m.plistOffen = true; if (grund) m.plistGrund = grund; else delete m.plistGrund; }
+      else { if (m.plistOffen !== true && m.plistGrund === undefined) return null; m.plistOffen = false; delete m.plistGrund; }
+      return alt;
+    });
+  }
+
   // Der Hinweis „Die Liste war beschädigt“ wurde gelesen.
   function quittiereHinweis() {
     ladeOderSynchronisiere();
@@ -599,5 +702,5 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
     return { konto: null, liste: true };
   }
 
-  return { synchronisiere, altform: (id) => { const k = lade() && Object.hasOwn(lade().konten, id) ? lade().konten[id] : null; return k && homeErlaubt(home()) ? altformStandard(k, home()) : { mcp: false, hooks: false }; }, stand, setzeName, setzeZugriff, setzeStandard, setzeSchutz, quittiereHinweis, holeVorher, vaultHinzu, kontoFuerProfil, kontoFuerProgramm, kontoDaten, probeKonto, lade };
+  return { synchronisiere, altform: (id) => { const k = lade() && Object.hasOwn(lade().konten, id) ? lade().konten[id] : null; return k && homeErlaubt(home()) ? altformStandard(k, home()) : { mcp: false, hooks: false }; }, stand, setzeName, setzeZugriff, setzeStandard, setzePflege, migrierePflege, migrationVermerkt, vermerkePlist, setzeSchutz, quittiereHinweis, holeVorher, vaultHinzu, kontoFuerProfil, kontoFuerProgramm, kontoDaten, probeKonto, lade };
 }
