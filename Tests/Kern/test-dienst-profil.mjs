@@ -1,5 +1,5 @@
-// .tools/tests/test-dienst-profil.mjs — Befund #8: Der Hintergrunddienst übernimmt das Claude-Profil (CLAUDE_CONFIG_DIR) des
-// Einrichtens, „brain dienst status“ zeigt es, und der KI-Aufruf (Tageslauf, Ernte, Nach-Ernte) erbt die Variable.
+// .tools/tests/test-dienst-profil.mjs — Befund #8, seit P3 (Pflege-Konto je Vault) angepasst: Die plist des Dienstes trägt KEIN festes CLAUDE_CONFIG_DIR mehr
+// (nur `--profil-behalten` der Umstellung als Rückfall); „brain dienst status“ zeigt ein altes Profil, und der KI-Aufruf (Tageslauf, Ernte, Nach-Ernte) erbt die Variable der Umgebung.
 // Nur Temp-HOME, nie echtes launchctl (Ersatzprogramm über BRAIN_LAUNCHCTL), nie echtes claude (fake-claude).
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -43,7 +43,7 @@ test("plistInhalt: mit profil steht CLAUDE_CONFIG_DIR (XML-escaped) in den Envir
   }
 });
 
-test("dienstAn: ein gesetztes CLAUDE_CONFIG_DIR der Umgebung kommt in die plist, nichts sonst aus der Umgebung", async () => {
+test("dienstAn: die plist trägt KEIN CLAUDE_CONFIG_DIR mehr, auch wenn die Umgebung eines hat (das Konto kommt je Vault aus der Pflege-Einstellung); nur ein ausdrücklich übergebenes Profil (Umstellung) bleibt als Rückfall", async () => {
   const v = neuerTestVault();
   process.env.BRAIN_LAUNCHCTL = fakeLaunchctl();
   const fremd = "DIENST_PROFIL_PROBE_" + process.pid;
@@ -51,73 +51,71 @@ test("dienstAn: ein gesetztes CLAUDE_CONFIG_DIR der Umgebung kommt in die plist,
   try {
     const an = await mitProfil(PROFIL, () => DIENST_AN(v));
     assert.equal(an.ok, true);
-    assert.equal(an.profil, PROFIL);
+    assert.equal(an.profil, null);
+    assert.match(an.text, /KI-Konten/, "der Text verweist auf die Einstellung je Vault");
     const plist = readFileSync(D.plistPfad({ home: HOME }), "utf8");
-    assert.ok(plist.includes(`<key>CLAUDE_CONFIG_DIR</key><string>${PROFIL.replace(/&/g, "&amp;")}</string>`));
-    assert.deepEqual(schluessel(plist), ["PATH", "CLAUDE_CONFIG_DIR"]);
+    assert.ok(!plist.includes("CLAUDE_CONFIG_DIR") && !plist.includes(PROFIL), "kein festes Profil in der plist");
+    assert.deepEqual(schluessel(plist), ["PATH"]);
     assert.ok(!plist.includes(fremd), "keine weitere Umgebungsvariable wird übernommen");
-
-    const ohne = await mitProfil(undefined, () => DIENST_AN(v));
-    assert.equal(ohne.profil, null);
-    assert.ok(!readFileSync(D.plistPfad({ home: HOME }), "utf8").includes("CLAUDE_CONFIG_DIR"), "ohne Variable keine Zeile (Standardprofil)");
-    const leer = await mitProfil("  ", () => DIENST_AN(v));
-    assert.equal(leer.profil, null, "leere Variable zählt als nicht gesetzt");
-    // Ausdrücklich übergebenes Profil gewinnt gegen die Umgebung.
-    const ausdruecklich = await mitProfil(PROFIL, () => DIENST_AN(v, { profil: "/anderes/profil" }));
-    assert.equal(ausdruecklich.profil, "/anderes/profil");
-    assert.ok(readFileSync(D.plistPfad({ home: HOME }), "utf8").includes("<string>/anderes/profil</string>"));
+    // Ausdrücklich übergebenes Profil (Umstellung der Kit-Zeit: --profil-behalten) steht als Rückfall drin.
+    const behalten = await mitProfil(undefined, () => DIENST_AN(v, { profil: "/anderes/profil" }));
+    assert.equal(behalten.profil, "/anderes/profil");
+    assert.ok(readFileSync(D.plistPfad({ home: HOME }), "utf8").includes("<key>CLAUDE_CONFIG_DIR</key><string>/anderes/profil</string>"));
+    // Ein erneutes „dienst an“ schreibt die plist ohne die Variable neu (Migration der Werkstatt).
+    await mitProfil(PROFIL, () => DIENST_AN(v));
+    assert.ok(!readFileSync(D.plistPfad({ home: HOME }), "utf8").includes("CLAUDE_CONFIG_DIR"));
   } finally { D.dienstAus(v, { home: HOME }); delete process.env.BRAIN_LAUNCHCTL; delete process.env[fremd]; }
 });
 
-test("dienstAn: ein relativer oder ~-Pfad wird absolut gemacht (launchd kennt weder Arbeitsordner noch ~)", async () => {
+test("dienstAn mit ausdrücklichem Profil: ein relativer oder ~-Pfad wird absolut gemacht (launchd kennt weder Arbeitsordner noch ~)", async () => {
   const v = neuerTestVault();
   process.env.BRAIN_LAUNCHCTL = fakeLaunchctl();
   try {
-    const rel = await mitProfil("profile/zweit", () => DIENST_AN(v));
+    const rel = await mitProfil(undefined, () => DIENST_AN(v, { profil: "profile/zweit" }));
     assert.ok(rel.profil.startsWith("/") && rel.profil.endsWith("/profile/zweit"), rel.profil);
-    const tilde = await mitProfil("~/.claude-zweit", () => DIENST_AN(v));
+    const tilde = await mitProfil(undefined, () => DIENST_AN(v, { profil: "~/.claude-zweit" }));
     assert.equal(tilde.profil, join(HOME, ".claude-zweit"));
   } finally { D.dienstAus(v, { home: HOME }); delete process.env.BRAIN_LAUNCHCTL; }
 });
 
-test("dienstStatus: zeigt das Profil aus der plist (Pfad) bzw. null für das Standardprofil; nicht eingerichtet → null", async () => {
+test("dienstStatus: zeigt das Profil, das eine ältere plist noch trägt (Pfad), sonst null; nicht eingerichtet → null", async () => {
   const v = neuerTestVault();
   process.env.BRAIN_LAUNCHCTL = fakeLaunchctl();
   try {
     assert.equal(D.dienstStatus(v, { home: HOME }).profil, null, "nicht eingerichtet");
-    await mitProfil(PROFIL, () => DIENST_AN(v));
+    await mitProfil(undefined, () => DIENST_AN(v, { profil: PROFIL }));
     assert.equal(D.dienstStatus(v, { home: HOME }).profil, PROFIL, "XML-Escaping wird rückgängig gemacht");
-    await mitProfil(undefined, () => DIENST_AN(v));
+    await mitProfil(PROFIL, () => DIENST_AN(v));
     const s = D.dienstStatus(v, { home: HOME });
     assert.equal(s.eingerichtet, true);
-    assert.equal(s.profil, null);
+    assert.equal(s.profil, null, "die neue plist trägt kein Profil");
   } finally { D.dienstAus(v, { home: HOME }); delete process.env.BRAIN_LAUNCHCTL; }
 });
 
-test("brain dienst status (CLI): nennt das verwendete Profil als Pfad bzw. „Standardprofil“, warnt bei abweichender Sitzung", async () => {
+test("brain dienst an/status (CLI): `an` schreibt kein Profil (auch nicht aus der Sitzung), `an --profil-behalten` schon; status weist auf ein altes Profil in der plist hin", async () => {
   const v = neuerTestVault();
   const launchctl = fakeLaunchctl();
-  const status = (profilDerSitzung) => {
+  const lauf = (args, profilDerSitzung) => {
     const env = { ...process.env, HOME, USERPROFILE: HOME, BRAIN_LAUNCHCTL: launchctl };
     delete env.CLAUDE_CONFIG_DIR;
     if (profilDerSitzung) env.CLAUDE_CONFIG_DIR = profilDerSitzung;
-    const r = spawnSync(process.execPath, [DIENST_CLI, v, "status"], { encoding: "utf8", env });
+    const r = spawnSync(process.execPath, [DIENST_CLI, v, ...args], { encoding: "utf8", env });
     assert.equal(r.status, 0, r.stderr);
     return r.stdout;
   };
+  const plistText = () => readFileSync(D.plistPfad({ home: HOME }), "utf8");
   process.env.BRAIN_LAUNCHCTL = launchctl;
   try {
-    assert.ok(!/Profil/.test(status()), "nicht eingerichtet → keine Profil-Zeile");
-    await mitProfil(PROFIL, () => DIENST_AN(v));
-    const mit = status(PROFIL);
-    assert.ok(mit.includes(`Profil: ${PROFIL}`), mit);
-    assert.ok(!/anderes Profil/.test(status()), "Dienst mit Profil, Sitzung ohne Variable → keine Warnung (nur Rauschen)");
-    assert.ok(!/Standardprofil/.test(mit) && !/anderes Profil/.test(mit), "Sitzung und Dienst gleich → keine Warnung");
-    const abweichend = status("/ganz/anderes/profil");
-    assert.ok(abweichend.includes(`Profil: ${PROFIL}`) && /anderes Profil/.test(abweichend) && abweichend.includes("/ganz/anderes/profil"), abweichend);
-    await mitProfil(undefined, () => DIENST_AN(v));
-    assert.ok(/Profil: Standardprofil/.test(status()), "ohne Variable beim Einrichten");
-    assert.ok(/anderes Profil/.test(status(PROFIL)), "Sitzung hat ein Profil, Dienst nicht → Hinweis");
+    assert.ok(!/Profil/.test(lauf(["status"])), "nicht eingerichtet → keine Profil-Zeile");
+    lauf(["an"], PROFIL);
+    assert.ok(!plistText().includes("CLAUDE_CONFIG_DIR"), "`an` übernimmt das Profil der Sitzung nicht mehr");
+    assert.ok(!/Profil/.test(lauf(["status"], PROFIL)), "ohne festes Profil keine Hinweiszeile");
+    lauf(["an", "--profil-behalten"], PROFIL);
+    assert.ok(plistText().includes(`<key>CLAUDE_CONFIG_DIR</key><string>${PROFIL.replace(/&/g, "&amp;")}</string>`), "Rückfall für die Umstellung");
+    const mit = lauf(["status"]);
+    assert.ok(mit.includes(PROFIL) && /festes Claude-Profil/.test(mit) && /KI-Konto/.test(mit), mit);
+    lauf(["an"]);
+    assert.ok(!plistText().includes("CLAUDE_CONFIG_DIR"), "ein erneutes `an` entfernt es");
   } finally { D.dienstAus(v, { home: HOME }); delete process.env.BRAIN_LAUNCHCTL; }
 });
 

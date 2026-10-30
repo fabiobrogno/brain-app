@@ -9,9 +9,10 @@
 // Der Nutzer führt `brain dienst an` selbst aus — Claude ändert keine LaunchAgents (Spec §9).
 // Testhaken: BRAIN_LAUNCHCTL (Ersatzprogramm, per node gestartet). Unter `node --test` (NODE_TEST_CONTEXT) ohne Ersatz:
 // Fehler statt echtem launchctl.
-// Claude-Profil: launchd kennt die Umgebung der Sitzung nicht. Ist beim Einrichten CLAUDE_CONFIG_DIR gesetzt, wandert genau diese
-// eine Variable (ein Pfad, kein Geheimnis) in die EnvironmentVariables der plist — sonst liefe `claude -p` des Tageslaufs mit dem
-// Standardprofil (~/.claude), also womöglich mit einem anderen Konto. `brain dienst status` zeigt das Profil des Dienstes.
+// KI-Konto der Pflege: Seit „Pflege-Konto je Vault“ (docs/plaene/ki-konten.md, P3) trägt die plist KEIN CLAUDE_CONFIG_DIR mehr. Welches Konto die Pflege nutzt, steht je Vault in
+// <Support>/ki-konten.json (vaults[…].pflege) und wird bei jedem KI-Aufruf gesetzt (kern/pflege-konto.mjs). Eine ältere plist mit der Variable bleibt als Rückfall wirksam, bis die Werkstatt
+// sie in die Pflege-Einstellung übernommen und die plist neu geschrieben hat (`dienst an`). Nur `dienst an --profil-behalten` (die Umstellung der Kit-Zeit) schreibt das Profil noch hinein.
+// `brain dienst status` zeigt das Profil an, das eine ältere plist noch trägt.
 import { writeFileSync, readFileSync, mkdirSync, existsSync, unlinkSync, realpathSync } from "node:fs";
 import { join, dirname, isAbsolute, resolve } from "node:path";
 import { homedir, userInfo } from "node:os";
@@ -77,7 +78,7 @@ export const domain = () => `gui/${userInfo().uid}`;
 
 // Der Inhalt der plist samt Profil – eine Stelle für „dienst an“ und für die Umstellung (P7b: Probelauf rendert nur, ohne zu schreiben und ohne launchctl).
 // → { profil, text, log }
-export function bauePlist({ starter, node = nodePfad(), claude = findeClaude(), profilRoh = process.env.CLAUDE_CONFIG_DIR, home = homedir(), support = supportOrdner() } = {}) {
+export function bauePlist({ starter, node = nodePfad(), claude = findeClaude(), profilRoh = null, home = homedir(), support = supportOrdner() } = {}) {
   const profil = profilPfad(profilRoh, { home });
   const claudeDir = claude && claude.args.length === 0 ? dirname(claude.befehl) : null;
   const pfad = [...new Set([dirname(node), claudeDir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].filter(Boolean))].join(":");
@@ -85,7 +86,7 @@ export function bauePlist({ starter, node = nodePfad(), claude = findeClaude(), 
   return { profil, log, text: plistInhalt({ starter, pfad, log, profil }) };
 }
 
-export function dienstAn(vault, { home = homedir(), plattform = dienstPlattform(), node = nodePfad(), claude = findeClaude(), profil: profilRoh = process.env.CLAUDE_CONFIG_DIR } = {}) {
+export function dienstAn(vault, { home = homedir(), plattform = dienstPlattform(), node = nodePfad(), claude = findeClaude(), profil: profilRoh = null } = {}) {
   // Workspace-Trust (P5): der Dienst läuft nur für einen Vault, den der Nutzer als seinen bestätigt hat.
   if (!vaultVertraut(vault)) return { ok: false, nichtVertraut: true, text: NICHT_VERTRAUT_TEXT };
   if (plattform !== "darwin") return { ok: false, text: "Den Hintergrunddienst gibt es nur auf dem Mac — der Tageslauf startet dann beim Sitzungsstart, wenn er fällig ist." };
@@ -106,7 +107,7 @@ export function dienstAn(vault, { home = homedir(), plattform = dienstPlattform(
   const ok = launchctl(["bootstrap", domain(), datei]);
   return {
     ok, ohneClaude: !claude, profil,
-    text: ok ? `Hintergrunddienst an: Der Tageslauf läuft einmal am Tag, wenn der Mac am Netzteil ist und 10 Minuten ruht. Claude-Profil: ${profil || "Standardprofil"}.`
+    text: ok ? "Hintergrunddienst an: Der Tageslauf läuft einmal am Tag, wenn der Mac am Netzteil ist und 10 Minuten ruht. Welches KI-Konto die Pflege nutzt, stellst du je Vault in Kortex ein (Einstellungen → KI-Konten)."
       : `Die Einstellung ist geschrieben (${datei}), aber macOS hat sie nicht geladen — „brain dienst status“ zeigt den Zustand.`,
   };
 }
@@ -149,13 +150,10 @@ if (aufruf && aufruf === realpathSync(selbst)) {
     else console.log(s.eingerichtet ? `Hintergrunddienst eingerichtet${s.geladen ? " und geladen" : ", aber nicht geladen — „brain dienst an“ erneut ausführen"}.`
       : "Hintergrunddienst ist nicht eingerichtet — der Tageslauf startet beim Sitzungsstart, wenn er fällig ist.");
     if (s.eingerichtet && !process.argv.includes("--json")) {
-      console.log(`Profil: ${s.profil || "Standardprofil"}`);
-      // Nur wenn DIESE Sitzung ausdrücklich ein Profil hat, das der Dienst nicht nutzt — sonst wäre der Hinweis nur Rauschen.
-      const sitzung = profilPfad();
-      if (sitzung && sitzung !== s.profil) console.log(`Hinweis: Diese Sitzung nutzt ein anderes Profil (${sitzung}). Der Dienst bleibt bei seinem — soll er das der Sitzung nehmen, führe „brain dienst an“ hier erneut aus.`);
+      if (s.profil) console.log(`Hinweis: Die Einstellung des Dienstes trägt noch ein festes Claude-Profil (${s.profil}). Die Pflege nutzt das KI-Konto, das du je Vault in Kortex einstellst — „brain dienst an“ schreibt die Einstellung ohne das feste Profil neu.`);
     }
   } else {
-    const r = befehl === "an" ? dienstAn(vault) : dienstAus(vault);
+    const r = befehl === "an" ? dienstAn(vault, process.argv.includes("--profil-behalten") ? { profil: process.env.CLAUDE_CONFIG_DIR } : {}) : dienstAus(vault);
     console.log(r.text);
     if (r.ohneClaude) console.log("Hinweis: „claude“ wurde nicht gefunden — ohne claude laufen nur die Regel-Schritte.");
     process.exitCode = r.ok ? 0 : 1;

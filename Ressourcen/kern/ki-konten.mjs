@@ -187,4 +187,17 @@ export function kontoStufe(vault, { support, arg, env = {}, programm = null, vol
   }
   return best === null ? "posteingang" : best;
 }
+// Pflege (Plan docs/plaene/ki-konten.md, Abschnitt 5): welches Konto die Hintergrund-Pflege eines Vaults nutzt und wie viel KI sie darf.
+//   vaults[<pfad>].pflege = { konto: "<kontoId>" | null, stufe: "klein" | "mittel" | "aus" }. Fehlt der Eintrag, gilt der alte Weg (Konto der Prozess-Umgebung).
+export const PFLEGE_STUFEN = ["klein", "mittel", "aus"];
+// → { gesetzt: false } | { gesetzt: true, konto, stufe, ungueltig?, kontoUnbekannt? }. Eine unlesbare Form heißt „aus“ ohne Konto (fail-closed), nie „alter Weg“.
+export function pflegeFuer(daten, vault) {
+  const t = vaultEintrag(daten, vault);
+  if (!t || !t.eintrag || t.eintrag.pflege === undefined) return { gesetzt: false };
+  const p = t.eintrag.pflege;
+  if (!istObj(p) || !PFLEGE_STUFEN.includes(p.stufe)) return { gesetzt: true, konto: null, stufe: "aus", ungueltig: true };
+  const genannt = p.konto !== null && p.konto !== undefined;
+  const konto = typeof p.konto === "string" && KONTO_ID.test(p.konto) && Object.hasOwn(daten.konten, p.konto) ? p.konto : null;
+  return { gesetzt: true, konto, stufe: p.stufe, ...(genannt && konto === null ? { kontoUnbekannt: true } : {}) };
+}
 // LESEN-ENDE

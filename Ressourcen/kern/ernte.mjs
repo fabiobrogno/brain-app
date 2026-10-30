@@ -459,9 +459,10 @@ function rufeClaude(claudeBefehl, art, eingabe, vault) {
 // Schlanker Haiku-Aufruf mit eigenem Systemprompt; Eingabe über stdin. → { ausgabe } | { fehler }.
 // KI-Konten: letzte Sicherung vor dem Start — das Konto dieses Prozesses (CLAUDE_CONFIG_DIR) braucht für den Vault mindestens `konto` (Standard „posteingang“, wie die Ernte-Hooks;
 // der Hintergrunddienst und die KI-Pflege verlangen „erweitert“, siehe tageslauf/ki.mjs#kiBefehl). Sonst wird nichts gestartet und kein Vault-Inhalt weitergegeben.
-export function rufeHaiku(claudeBefehl, systemPrompt, eingabe, vault, { zweck = "", modell = "haiku", konto = "posteingang" } = {}) {
+// `env`: die Umgebung des Kindes statt der des Prozesses (die Pflege setzt hier das Konto aus der Liste, kern/pflege-konto.mjs); geprüft wird dann das Konto DIESER Umgebung.
+export function rufeHaiku(claudeBefehl, systemPrompt, eingabe, vault, { zweck = "", modell = "haiku", konto = "posteingang", env = undefined } = {}) {
   return new Promise((resolve) => {
-    if (!kiKontoDarf(vault, konto)) { resolve({ fehler: "KI-Konto ohne Berechtigung" }); return; }
+    if (!kiKontoDarf(vault, konto, env ? { env } : {})) { resolve({ fehler: "KI-Konto ohne Berechtigung" }); return; }
     let arbeitsDir;
     try { arbeitsDir = legeArbeitsOrdnerAn(vault, zweck); }
     catch { resolve({ fehler: "kein Temp-Ordner" }); return; }
@@ -470,7 +471,7 @@ export function rufeHaiku(claudeBefehl, systemPrompt, eingabe, vault, { zweck = 
     try {
       kind = execFile(claudeBefehl.befehl,
         [...claudeBefehl.args, ...haikuArgs(systemPrompt, modell)],
-        { cwd: arbeitsDir, env: kindUmgebung(), timeout: ZEITLIMIT_MS,
+        { cwd: arbeitsDir, env: kindUmgebung(env || process.env), timeout: ZEITLIMIT_MS,
           windowsHide: true, maxBuffer: 1024 * 1024, encoding: "utf8" },
         (err, stdout) => {
           aufraeumen();
