@@ -11,6 +11,7 @@
 //   gitGlobal      Datei der globalen git-Konfiguration (Original: ~/.gitconfig bzw. GIT_CONFIG_GLOBAL; Probelauf: Kopie in Temp)
 //   claudeProfile  [{ pfad, name, standard }]
 //   launchAgents   Ordner der plist (Original: ~/Library/LaunchAgents; Probelauf: Ordner in Temp)
+//   plattform      Plattform des Hintergrunddienstes (macOS = "darwin"; nur die Testumgebung darf sie vorgeben) – sonst ist A6 „nicht anwendbar“ und rotes Kriterium 6 entfällt
 //   schreibeClaude / schreibeMcp / launchctl   false im Probelauf: Claude-Einstellungen, MCP-Einträge und der Hintergrunddienst werden nicht verändert
 //   env            Basis der Umgebung für Kindprozesse (PATH und Testhaken, nie Zugangsdaten)
 import { realpathSync, lstatSync, readdirSync, mkdirSync, rmSync, existsSync, statfsSync, accessSync, constants } from "node:fs";
@@ -36,7 +37,7 @@ export const kennung = (vault) => kennungen(vault)[0];
 // Nur diese Variablen erbt ein Kindprozess (kein GIT_*, kein BRAIN_VAULT, keine Zugangsdaten); Testhaken nur, wenn sie gesetzt sind.
 const ERBEN = ["PATH", "LANG", "LC_ALL", "TMPDIR", "TERM", "NODE_TEST_CONTEXT", "KORTEX_KERN_UNSTABIL_ERLAUBT", "KORTEX_KERN_TEMP_WURZELN", "KORTEX_STARTER_PFAD",
   "KORTEX_VAULT_VERTRAUT", "BRAIN_TESTMODUS", "BRAIN_LAUNCHCTL", "BRAIN_CLAUDE", "KORTEX_CODEX_PROGRAMM", "BRAIN_GIT_PROGRAMM", "BRAIN_GIT_HOOKS_ERLAUBT", "BRAIN_TAGESLAUF_CACHE",
-  "BRAIN_EINMAL", "QMD_BIN", "FAKE_MCP_LOG", "FAKE_MCP_FAIL", "FAKE_LAUNCHCTL_LOG", "FAKE_LAUNCHCTL_FAIL", "FAKE_LAUNCHCTL_VORGELADEN"];
+  "BRAIN_EINMAL", "QMD_BIN", "FAKE_MCP_LOG", "FAKE_MCP_FAIL", "FAKE_LAUNCHCTL_LOG", "FAKE_LAUNCHCTL_FAIL", "FAKE_LAUNCHCTL_VORGELADEN", "KORTEX_DIENST_PLATTFORM"];
 const TESTIDENTITAET = ["GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"];
 export function basisUmgebung(env = process.env) {
   const aus = {};
@@ -55,6 +56,7 @@ export function echteZiele({ vault, home = homedir(), env = process.env, claudeH
   const gg = typeof env.GIT_CONFIG_GLOBAL === "string" && isAbsolute(env.GIT_CONFIG_GLOBAL) ? env.GIT_CONFIG_GLOBAL : join(home, ".gitconfig");
   return {
     probe: false, vault, musterVault: vault, home, support, supportOriginal: support, festSupport, kern, starter,
+    plattform: (env.KORTEX_KERN_UNSTABIL_ERLAUBT === "1" || env.BRAIN_TESTMODUS === "1") && env.KORTEX_DIENST_PLATTFORM ? env.KORTEX_DIENST_PLATTFORM : process.platform,   // Hintergrunddienst nur auf macOS
     node: join(festSupport, "bin", "node"), mcpServer: kern ? join(kern, "mcp", "brain-mcp.mjs") : null,
     gitGlobal: gg, gitGlobalEnv: typeof env.GIT_CONFIG_GLOBAL === "string" && isAbsolute(env.GIT_CONFIG_GLOBAL),
     claudeProfile: claudeHomes && claudeHomes.length ? profileAusPfaden(claudeHomes, home) : erkenneProfile(home),

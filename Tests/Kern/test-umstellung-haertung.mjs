@@ -597,4 +597,25 @@ test("P5: wird das Vertrauen nach dem Probelauf entzogen, endet Phase A vor A0 m
   } finally { h.weg(); }
 });
 
+test("Linux (injizierte Plattform): kein Hintergrunddienst → A6 „nicht anwendbar“, Kriterium 6 übersprungen, A9 bleibt grün, Phase A wird abgeschlossen, kein launchctl", async () => {
+  const h = umstellungsFixture(["plist-alt-dieser", "hooks-alt-sh"]);
+  try {
+    const z = h.z();
+    z.plattform = "linux";
+    const plistVor = sha(plistPfad(h));
+    const p = await probelauf(z, { bestaetigt: true });
+    assert.equal(p.ok, true, JSON.stringify(p.kriterien));
+    assert.equal(p.kriterien.find((c) => c.nr === 6).status, "uebersprungen");
+    assert.equal(p.kriterien.find((c) => c.nr === 6).grund, "kein-mac");
+    const r = await phaseA(z, { bestaetigt: true });
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.equal(r.schritte.find((s) => s.id === "A6").status, "uebersprungen");
+    assert.equal(r.schritte.find((s) => s.id === "A6").grund, "kein-mac");
+    assert.equal(r.a9.ampel, "gruen", JSON.stringify(r.a9));
+    assert.equal(r.phase, "A");
+    assert.equal(sha(plistPfad(h)), plistVor, "die plist bleibt unangetastet");
+    assert.equal(h.zeilen(h.log).length, 0, "kein launchctl");
+  } finally { h.weg(); }
+});
+
 void inhaltsStand; void KERN; void dirname;

@@ -22,6 +22,8 @@ import { findeClaude } from "../ernte.mjs";
 import { erlaubeVault, widerrufeAlle, dienstErlaubt } from "./dienst-merker.mjs";
 
 export const LABEL = "de.brain.tageslauf";
+// Plattform des Dienstes: nur die Testumgebung darf sie vorgeben (KORTEX_DIENST_PLATTFORM=darwin) – so läuft die Logik (plist rendern, Rückweg) auch auf Linux-Runnern; launchctl bleibt eine Attrappe.
+export const dienstPlattform = (env = process.env) => ((env.KORTEX_KERN_UNSTABIL_ERLAUBT === "1" || env.BRAIN_TESTMODUS === "1") && env.KORTEX_DIENST_PLATTFORM ? env.KORTEX_DIENST_PLATTFORM : process.platform);
 export const plistPfad = ({ home = homedir() } = {}) => join(home, "Library", "LaunchAgents", `${LABEL}.plist`);
 export const dienstEingerichtet = ({ home = homedir() } = {}) => existsSync(plistPfad({ home }));
 const xml = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -83,7 +85,7 @@ export function bauePlist({ starter, node = nodePfad(), claude = findeClaude(), 
   return { profil, log, text: plistInhalt({ starter, pfad, log, profil }) };
 }
 
-export function dienstAn(vault, { home = homedir(), plattform = process.platform, node = nodePfad(), claude = findeClaude(), profil: profilRoh = process.env.CLAUDE_CONFIG_DIR } = {}) {
+export function dienstAn(vault, { home = homedir(), plattform = dienstPlattform(), node = nodePfad(), claude = findeClaude(), profil: profilRoh = process.env.CLAUDE_CONFIG_DIR } = {}) {
   // Workspace-Trust (P5): der Dienst läuft nur für einen Vault, den der Nutzer als seinen bestätigt hat.
   if (!vaultVertraut(vault)) return { ok: false, nichtVertraut: true, text: NICHT_VERTRAUT_TEXT };
   if (plattform !== "darwin") return { ok: false, text: "Den Hintergrunddienst gibt es nur auf dem Mac — der Tageslauf startet dann beim Sitzungsstart, wenn er fällig ist." };

@@ -260,6 +260,7 @@ export async function kriterium5(z, ctx, { probe = false } = {}) {
 }
 
 export function kriterium6(z, ctx, { probe = false } = {}) {
+  if (z.plattform !== "darwin") return uebersprungen(6, "dienst", "kein-mac");   // nicht anwendbar: kein Hintergrunddienst, A9 wird davon nie rot
   const datei = join(z.launchAgents, `${LABEL}.plist`);
   let text = null; try { text = readFileSync(datei, "utf8"); } catch { /* keiner */ }
   if (text === null) return uebersprungen(6, "dienst", "kein-dienst");
@@ -267,7 +268,7 @@ export function kriterium6(z, ctx, { probe = false } = {}) {
   if (a.alt) return rot(6, "dienst", "plist-noch-alt");
   if (/BRAIN_VAULT|node-start\.sh|\/bin\/sh/.test(text)) return rot(6, "dienst", "plist-noch-alt");
   if (!z.starter || !text.includes(z.starter) || !/tageslauf<\/string>\s*<string>--wenn-faellig<\/string>\s*<string>--dienst/.test(text)) return rot(6, "dienst", "plist-ohne-starter");
-  if (existsSync("/usr/bin/plutil") && spawnSync("/usr/bin/plutil", ["-lint", datei], { encoding: "utf8" }).status !== 0) return rot(6, "dienst", "plist-ungueltig");
+  if (existsSync("/usr/bin/plutil") && spawnSync("/usr/bin/plutil", ["-lint", datei], { encoding: "utf8", windowsHide: true }).status !== 0) return rot(6, "dienst", "plist-ungueltig");
   if (probe && ctx.altesProfil) { if (!text.includes(`<key>CLAUDE_CONFIG_DIR</key><string>${ctx.altesProfil}</string>`) && !text.includes(ctx.altesProfil)) return rot(6, "dienst", "profil-verloren"); }
   return gruen(6, "dienst");
 }

@@ -337,7 +337,7 @@ export const A6 = {
     const l = this.lage(z, ctx);
     if (l.art === "kein-dienst" || l.art === "schon-neu") return { status: "nichts" };
     if (l.art === "alt-anderer" && ctx.entscheidungen.dienstAnderer !== true) return { status: "uebersprungen", grund: "anderer-vault" };
-    if (process.platform !== "darwin") return { status: "uebersprungen", grund: "kein-mac" };
+    if (z.plattform !== "darwin") return { status: "uebersprungen", grund: "kein-mac" };
     if (!z.kern || !z.starter) throw new Error("kein-stabiler-kern");
     if (!z.launchctl) {
       // Probelauf: die neue plist nur rendern (in den Probe-Ordner) und prüfen, kein launchctl
@@ -346,7 +346,7 @@ export const A6 = {
       mkdirSync(z.launchAgents, { recursive: true });
       const ziel = plistDatei(z);
       writeFileSync(ziel, text);
-      const lint = existsSync("/usr/bin/plutil") ? spawnSync("/usr/bin/plutil", ["-lint", ziel], { encoding: "utf8" }).status === 0 : true;
+      const lint = existsSync("/usr/bin/plutil") ? spawnSync("/usr/bin/plutil", ["-lint", ziel], { encoding: "utf8", windowsHide: true }).status === 0 : true;
       if (!lint) throw new Error("plist-ungueltig");
       return { status: "ok", anzahl: 1, details: { gerendert: true } };
     }

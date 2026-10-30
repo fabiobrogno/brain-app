@@ -15,7 +15,7 @@ import { entscheidungenHash } from "../umstellung/phase-a.mjs";
 
 const FAKE = (n) => new URL(`./${n}`, import.meta.url).pathname;
 const MERKEN = ["KORTEX_KERN_PFAD", "KORTEX_KERN_TEMP_WURZELN", "KORTEX_KERN_UNSTABIL_ERLAUBT", "BRAIN_LAUNCHCTL", "BRAIN_CLAUDE", "KORTEX_CODEX_PROGRAMM", "GIT_CONFIG_GLOBAL", "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL",
-  "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "FAKE_MCP_LOG", "FAKE_MCP_FAIL", "FAKE_LAUNCHCTL_LOG", "FAKE_LAUNCHCTL_FAIL", "FAKE_LAUNCHCTL_VORGELADEN", "BRAIN_APP_SUPPORT", "HOME", "KORTEX_VAULT_VERTRAUT", "BRAIN_TESTMODUS", "CLAUDE_CONFIG_DIR"];
+  "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "FAKE_MCP_LOG", "FAKE_MCP_FAIL", "FAKE_LAUNCHCTL_LOG", "FAKE_LAUNCHCTL_FAIL", "FAKE_LAUNCHCTL_VORGELADEN", "BRAIN_APP_SUPPORT", "HOME", "KORTEX_VAULT_VERTRAUT", "BRAIN_TESTMODUS", "CLAUDE_CONFIG_DIR", "KORTEX_DIENST_PLATTFORM"];
 
 export function umstellungsFixture(faelle = [], { globalText = "[user]\n\tname = Test\n\temail = test@example.org\n", ohneMcpAttrappen = false, vaultName = null, vertrauen = "echt" } = {}) {
   const a = altvault({ faelle, vaultName });
@@ -34,7 +34,7 @@ export function umstellungsFixture(faelle = [], { globalText = "[user]\n\tname =
   else if (vertrauen === "alle") process.env.KORTEX_VAULT_VERTRAUT = "alle";
   delete process.env.CLAUDE_CONFIG_DIR;   // nie das echte Profil der Entwicklungsumgebung: kein Test darf es erreichen
   Object.assign(process.env, {
-    HOME: a.home, KORTEX_KERN_PFAD: join(a.support, "bin", "kern"), KORTEX_KERN_TEMP_WURZELN: "", KORTEX_KERN_UNSTABIL_ERLAUBT: "1",
+    HOME: a.home, KORTEX_DIENST_PLATTFORM: "darwin", KORTEX_KERN_PFAD: join(a.support, "bin", "kern"), KORTEX_KERN_TEMP_WURZELN: "", KORTEX_KERN_UNSTABIL_ERLAUBT: "1",
     BRAIN_LAUNCHCTL: FAKE("fake-launchctl.mjs"), FAKE_LAUNCHCTL_LOG: log, FAKE_MCP_LOG: mcpLog, BRAIN_APP_SUPPORT: a.support, GIT_CONFIG_GLOBAL: gitGlobal,
     GIT_AUTHOR_NAME: "T", GIT_AUTHOR_EMAIL: "t@example.org", GIT_COMMITTER_NAME: "T", GIT_COMMITTER_EMAIL: "t@example.org",
     ...(ohneMcpAttrappen ? {} : { BRAIN_CLAUDE: FAKE("fake-claude-mcp.mjs"), KORTEX_CODEX_PROGRAMM: FAKE("fake-codex-mcp.mjs") }),

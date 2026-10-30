@@ -10,7 +10,7 @@
 // Jeder Aufruf wird (ohne Argumente) in $FAKE_MCP_LOG vermerkt, falls gesetzt. $FAKE_MCP_FAIL="add,add-json,remove" lässt diese Unterbefehle mit Exit 1 scheitern (ohne etwas zu ändern).
 import { readFileSync, writeFileSync, mkdirSync, appendFileSync, realpathSync } from "node:fs";
 import { join, dirname } from "node:path";
-import { tmpdir } from "node:os";
+import { tmpdir, homedir } from "node:os";
 
 const fehler = (text, code = 1) => { process.stderr.write(`${text}\n`); process.exit(code); };
 
@@ -38,7 +38,7 @@ function nurTemp(pfad) {
 }
 
 export function lauf(art) {
-  nurTemp(process.env.CLAUDE_CONFIG_DIR || process.env.HOME || "/nicht-gesetzt");
+  nurTemp(process.env.CLAUDE_CONFIG_DIR || homedir() || "/nicht-gesetzt");   // homedir() liest HOME (bzw. den Passwort-Eintrag)
   const a = process.argv.slice(2);
   if (process.env.FAKE_MCP_LOG) appendFileSync(process.env.FAKE_MCP_LOG, `${art} ${a[0]} ${a[1]}\n`);
   if (a[0] !== "mcp") fehler("unbekannter Befehl", 64);
@@ -47,7 +47,7 @@ export function lauf(art) {
   const o = parse(a.slice(2));
   const [name, json] = o.positionell;
   if (art === "claude") {
-    const datei = process.env.CLAUDE_CONFIG_DIR ? join(process.env.CLAUDE_CONFIG_DIR, ".claude.json") : join(process.env.HOME, ".claude.json");
+    const datei = process.env.CLAUDE_CONFIG_DIR ? join(process.env.CLAUDE_CONFIG_DIR, ".claude.json") : join(homedir(), ".claude.json");
     let d = {}; try { d = JSON.parse(readFileSync(datei, "utf8")); } catch { /* neu */ }
     d.mcpServers ||= {};
     if (o.scope && o.scope !== "user") fehler("nur -s user wird nachgebildet");
@@ -71,7 +71,7 @@ export function lauf(art) {
     mkdirSync(dirname(datei), { recursive: true });
     writeFileSync(datei, JSON.stringify(d, null, 2) + "\n");
   } else {
-    const datei = join(process.env.HOME, ".codex", "config.toml");
+    const datei = join(homedir(), ".codex", "config.toml");
     let t = ""; try { t = readFileSync(datei, "utf8"); } catch { /* neu */ }
     const teile = t.split(/^(?=\[)/m);
     const istUnser = (x) => new RegExp(`^\\[mcp_servers\\.${name}(?:\\.[^\\]]*)?\\]`).test(x);
