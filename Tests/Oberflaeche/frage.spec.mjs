@@ -311,3 +311,30 @@ test("Rechenzeit: Antworten mit pathologischem Markdown (Treppe aus Backticks, 8
   });
   expect(ms).toBeLessThan(1500);
 });
+
+test("Live-Ereignisse stören das Panel nicht: Änderungen von außen im Vault, während gefragt wird und danach — Panel bleibt offen, Antwort und Quellen bleiben stehen", async ({ page }) => {
+  await aufbauen();
+  szenario({ deltaMs: 150, antwort: "Kaffee ist ein Heißgetränk aus gerösteten Bohnen. Siehe [[09_wiki/wissen/Kaffee.md]]." });
+  await page.goto(server.url);
+  await page.waitForSelector("#liste-koerper .karte", { timeout: 15000 });
+  await page.waitForSelector('html[data-live="an"]', { timeout: 10000 });
+  await page.waitForTimeout(300);
+  await oeffnePanel(page);
+  await frageStellen(page, "Was ist Kaffee?");
+  await expect(page.locator('[data-frage="status"]')).toBeVisible();
+  writeFileSync(join(vault, "10_notizen", "Live-Neu-Eins.md"), "# Live Neu Eins\n\nWährend der Frage angelegt.\n"); // von außen, mitten in der Frage
+  await expect(page.locator("#liste-koerper")).toContainText("Live Neu Eins", { timeout: 15000 });
+  await expect(panel(page)).toBeVisible();
+  await expect(page.locator('[data-aktion="frage-neue"]')).toBeVisible({ timeout: 15000 });
+  const antwort = page.locator('[data-frage="antwort"]');
+  await expect(antwort).toContainText("gerösteten Bohnen");
+  const davor = await antwort.textContent();
+  // nach der Antwort: noch Änderungen von außen (Notiz ändern, neue Datei)
+  writeFileSync(join(vault, "10_notizen", "Reise nach Lissabon.md"), "# Reise nach Lissabon\n\nFlug im Juni (von außen geändert).\n");
+  writeFileSync(join(vault, "10_notizen", "Live-Neu-Zwei.md"), "# Live Neu Zwei\n\nNach der Antwort angelegt.\n");
+  await expect(page.locator("#liste-koerper")).toContainText("Live Neu Zwei", { timeout: 15000 });
+  await expect(panel(page)).toBeVisible();
+  await expect(page.locator('[data-frage="antwort"]')).toHaveText(davor);
+  await expect(page.locator(".frage-quelle").first()).toHaveAttribute("data-pfad", "09_wiki/wissen/Kaffee.md");
+  await expect(page.locator('[data-frage="gefragt"]')).toContainText("Was ist Kaffee?");
+});
