@@ -79,8 +79,9 @@ extension View {
     func kortexAkzent() -> some View { tint(Kortex.akzent) }
 }
 
-/// Das K der App als einfarbiges Menüleisten-Bild (Template: das System färbt es hell/dunkel). Aus den Strichen der Kleinvariante des
-/// Icons (`Ressourcen/icon-entwuerfe/kortex-c-k-klein.svg`) gezeichnet, ohne Fläche — bei 18 pt kräftig genug zum Erkennen.
+/// Das Netz-K der App als einfarbiges Menüleisten-Bild (Template: das System färbt es hell/dunkel). Geometrie und Zeichnung stehen in
+/// `BrainCore/KortexMenueSymbol.swift` (aus Entwurf 2 „Netz“, `Ressourcen/icon-entwuerfe/kortex-2-netz.svg`, ohne Fläche) und werden dort
+/// getestet. Das Bild wird für jede Auflösung (1x/2x/3x) frisch gezeichnet, ist also immer scharf.
 @MainActor
 enum KortexMenueBild {
     static let k: NSImage = zeichne(punkt: 18)
@@ -88,21 +89,8 @@ enum KortexMenueBild {
     /// Auch für die Bildprüfung in beliebiger Größe.
     static func zeichne(punkt: CGFloat) -> NSImage {
         let bild = NSImage(size: NSSize(width: punkt, height: punkt), flipped: false) { rect in
-            // SVG-Raum 1024: Striche von (284, 210) bis (762, 814) samt Linienbreite; auf 88 % der Höhe skaliert, mittig.
-            let hoehe = 604.0, breite = 478.0
-            let s = rect.height * 0.88 / hoehe
-            let ox = rect.midX - (284 + breite / 2) * s
-            let oy = rect.midY + (210 + hoehe / 2) * s
-            func p(_ x: Double, _ y: Double) -> NSPoint { NSPoint(x: ox + x * s, y: oy - y * s) }
-            let pfad = NSBezierPath()
-            pfad.move(to: p(352, 278)); pfad.line(to: p(352, 746))
-            pfad.move(to: p(376, 536)); pfad.curve(to: p(694, 300), controlPoint1: p(470, 520), controlPoint2: p(570, 450))
-            pfad.move(to: p(430, 560)); pfad.line(to: p(690, 746))
-            pfad.lineWidth = 136 * s
-            pfad.lineCapStyle = .round
-            pfad.lineJoinStyle = .round
-            NSColor.black.setStroke()
-            pfad.stroke()
+            guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
+            KortexMenueSymbol.zeichne(in: ctx, groesse: Double(rect.height))
             return true
         }
         bild.isTemplate = true
