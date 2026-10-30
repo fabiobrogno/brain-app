@@ -5,7 +5,8 @@
 // Der Abschnitt zwischen den Marken LESEN-BEGINN/LESEN-ENDE ist wortgleich mit gemeinsam/ki-konten.mjs (Test: Tests/Node/ki-konten-paritaet.test.mjs).
 // Jeder Fehler (Datei kaputt, Link, nicht lesbar) heißt „gesperrt“ (fail-closed). Fehlt die Datei ganz (die neue App lief noch nie), gilt das bisherige
 // Verhalten (posteingang), damit ein Update nichts bricht; die Werkstatt legt die Datei beim ersten Start an.
-import { openSync, closeSync, fstatSync, readSync, realpathSync, statSync, constants } from "node:fs";
+import { openSync, closeSync, fstatSync, readSync, realpathSync, statSync, lstatSync, constants } from "node:fs";
+import { userInfo, tmpdir, homedir } from "node:os";
 import { join, resolve, dirname, basename } from "node:path";
 
 // LESEN-BEGINN
@@ -16,6 +17,14 @@ export const darfMindestens = (stufe, mindest) => stufeNr(stufe) >= stufeNr(mind
 export const KONTO_ID = /^k_[0-9a-f]{8}$/;
 export const DATEI_NAME = "ki-konten.json";
 export const kontenPfad = (support) => join(support, DATEI_NAME);
+// Spur: Wurde die Liste schon einmal geschrieben? Das Schreiben legt <support>/ki-konten.angelegt an, und die vorige Fassung bleibt als ki-konten.json.vorher. Fehlt die Liste, die Spur aber
+// nicht, wurde die Datei gelöscht (oder der Ordner zurückgesetzt): das gilt als beschädigt (fail-closed), nicht als „noch nie gelaufen“ — sonst öffnete ein Löschen alle Sperren.
+export const SPUR_DATEI = "ki-konten.angelegt";
+export function hatSpur(support) {
+  if (typeof support !== "string" || !support) return false;
+  for (const n of [SPUR_DATEI, `${DATEI_NAME}.vorher`]) { try { lstatSync(join(support, n)); return true; } catch { /* keine Spur */ } }
+  return false;
+}
 const NIEDRIG = ["gesperrt", "lesen", "posteingang"];
 const MAX_GROESSE = 4 * 1024 * 1024;
 const falteK = (s) => String(s).normalize("NFC").toLowerCase();
@@ -43,7 +52,7 @@ function formOk(j) {
   return true;
 }
 
-// → { zustand: "fehlt" | "ok" | "defekt", daten }. Gelesen wird ohne Symlinks zu folgen (O_NOFOLLOW; ein Link an dieser Stelle ist „defekt“). Der Zwischenspeicher
+// → { zustand: "fehlt" | "ok" | "defekt" | "geloescht", daten } („geloescht“: die Datei fehlt, aber es gibt Spuren, dass sie einmal da war). Gelesen wird ohne Symlinks zu folgen (O_NOFOLLOW; ein Link an dieser Stelle ist „defekt“). Der Zwischenspeicher
 // hängt an Inode, Größe und Zeiten: jedes atomare Schreiben (neuer Inode) wirkt beim nächsten Aufruf. Nie ein Fehler nach außen.
 const lesecache = new Map();
 export function liesKonten(support) {
@@ -52,7 +61,7 @@ export function liesKonten(support) {
   const datei = kontenPfad(support);
   let fd;
   try { fd = openSync(datei, constants.O_RDONLY | (constants.O_NOFOLLOW || 0)); }
-  catch (e) { return e && (e.code === "ENOENT" || e.code === "ENOTDIR") ? { zustand: "fehlt", daten: null } : defekt; }
+  catch (e) { return e && (e.code === "ENOENT" || e.code === "ENOTDIR") ? (hatSpur(support) ? { zustand: "geloescht", daten: null } : { zustand: "fehlt", daten: null }) : defekt; }
   try {
     const st = fstatSync(fd);
     if (!st.isFile() || st.size > MAX_GROESSE) return defekt;
@@ -93,7 +102,12 @@ export function stufeFuer(daten, vault, kontoId) {
   const t = vaultEintrag(daten, vault);
   if (!t || !t.eintrag) return "gesperrt";
   const e = t.eintrag;
-  if (kontoId === null || kontoId === undefined) return gueltig(e.ohneKonto, NIEDRIG);
+  if (kontoId === null || kontoId === undefined) {
+    // Ein Aufruf ohne erkennbares Konto (Altform ohne --konto) ist nie lockerer als das strengste bekannte Konto: eine Sperre darf sich so nicht umgehen lassen.
+    let s = gueltig(e.ohneKonto, NIEDRIG);
+    for (const id of Object.keys(daten.konten)) s = schwaecher(s, stufeFuer(daten, vault, id));
+    return s;
+  }
   if (typeof kontoId !== "string" || !Object.hasOwn(daten.konten, kontoId)) return "gesperrt";
   if (istObj(e.konten) && Object.hasOwn(e.konten, kontoId)) return gueltig(e.konten[kontoId], STUFEN);
   return gueltig(e.neueKonten, NIEDRIG);
@@ -140,12 +154,37 @@ export function stufeFuerBestimmung(daten, vault, ids) {
   return ids.reduce((s, id) => schwaecher(s, id === null ? "gesperrt" : stufeFuer(daten, vault, id)), "erweitert"); // null = ein Konto, das Kortex nicht kennt
 }
 
-// Die Stufe für einen Aufruf (Hook, MCP-Server): liest die Datei (mit Zwischenspeicher), bestimmt das Konto, wendet die Regeln an.
-//   fehlt: Übergang vor dem ersten Start der neuen App → das bisherige Verhalten (posteingang). defekt/unlesbar: gesperrt (fail-closed).
-export function kontoStufe(vault, { support, arg, env = {}, programm = null, vollstaendig = false } = {}) {
-  const { zustand, daten } = liesKonten(support);
-  if (zustand === "fehlt") return "posteingang";
-  if (zustand !== "ok") return "gesperrt";
-  return stufeFuerBestimmung(daten, vault, bestimmeKonto({ arg, env, programm, daten, vollstaendig }).ids);
+// Wo gilt die Liste? Der Support-Ordner der App ist der Standardort; BRAIN_APP_SUPPORT lenkt ihn um (Tests, Vorschau) — eine KI, die einen MCP-Eintrag oder eine Umgebung ändern kann, könnte sonst auf einen
+// leeren Ordner zeigen („Datei fehlt“ = offen). Darum zählt außerhalb von Tests und Vorschau immer auch der Standardort (aus dem Benutzereintrag des Systems, nicht aus HOME), und bei mehreren Orten gilt das
+// strengere Ergebnis. Im Test (BRAIN_TESTMODUS, Kern-Testläufer, HOME im Temp-Ordner) und in der Vorschau gilt nur der übergebene Ordner: kein Zugriff auf den echten Support-Ordner des Rechners.
+const tempWurzel = () => { try { return realpathSync(tmpdir()); } catch { return tmpdir(); } };
+const homeImTemp = () => { try { const h = realpathSync(homedir()); const t = tempWurzel(); return h === t || h.startsWith(`${t}/`); } catch { return false; } };
+const abgeschottet = () => process.env.BRAIN_TESTMODUS === "1" || process.env.KORTEX_KERN_UNSTABIL_ERLAUBT === "1" || (typeof process.env.KORTEX_VORSCHAU === "string" && process.env.KORTEX_VORSCHAU !== "") || homeImTemp();
+export function standardSupport() { try { return join(userInfo().homedir, "Library", "Application Support", "Kortex"); } catch { return null; } }
+export function kontenOrte(support, { standard = undefined, abgeschottet: ab = undefined } = {}) {
+  const orte = [];
+  if (!(ab === undefined ? abgeschottet() : ab)) { const std = standard === undefined ? standardSupport() : standard; if (std) orte.push(std); }
+  if (typeof support === "string" && support && !orte.some((o) => resolve(o) === resolve(support))) orte.push(support);
+  return orte;
+}
+// → die erste lesbare Liste (Standardort zuerst) { zustand, daten, ort } für Dinge, die nur EINE Liste brauchen (Konto der Herkunft, Heimat-Vault). Gibt es keine, ist es die des übergebenen Ordners.
+export function massgeblicheListe(support, opt = {}) {
+  const orte = kontenOrte(support, opt);
+  for (const ort of orte) { const r = liesKonten(ort); if (r.zustand === "ok") return { ...r, ort }; }
+  const r = liesKonten(orte[orte.length - 1] ?? support);
+  return { ...r, ort: orte[orte.length - 1] ?? support };
+}
+// Die Stufe für einen Aufruf (Hook, MCP-Server): liest die Liste(n) (mit Zwischenspeicher), bestimmt das Konto, wendet die Regeln an.
+//   fehlt überall: Übergang vor dem ersten Start der neuen App → das bisherige Verhalten (posteingang). Ein Ort mit Liste, die defekt/unlesbar/gelöscht ist: gesperrt (fail-closed).
+//   Mehrere Orte: das strengste Ergebnis; ein Ort, an dem die Liste schlicht fehlt, zählt dabei nicht mit.
+export function kontoStufe(vault, { support, arg, env = {}, programm = null, vollstaendig = false, standard = undefined, abgeschottet = undefined } = {}) {
+  let best = null;
+  for (const ort of kontenOrte(support, { standard, abgeschottet })) {
+    const { zustand, daten } = liesKonten(ort);
+    if (zustand === "fehlt") continue;
+    const s = zustand !== "ok" ? "gesperrt" : stufeFuerBestimmung(daten, vault, bestimmeKonto({ arg, env, programm, daten, vollstaendig }).ids);
+    best = best === null ? s : schwaecher(best, s);
+  }
+  return best === null ? "posteingang" : best;
 }
 // LESEN-ENDE

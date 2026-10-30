@@ -40,6 +40,11 @@ test("Beide Hälften ergeben bei denselben Eingaben dieselben Zustände und Stuf
   writeFileSync(datei, "{ kaputt");
   assert.equal(KERN.liesKonten(support).zustand, "defekt"); assert.equal(G.liesKonten(support).zustand, "defekt");
   assert.ok(lauf().every((s) => s === "gesperrt"));
+  // gelöscht, aber mit Spur (ki-konten.angelegt): beide Hälften melden „geloescht“ und sperren
+  (await import("node:fs")).rmSync(datei); writeFileSync(join(support, G.SPUR_DATEI), "");
+  assert.equal(KERN.liesKonten(support).zustand, "geloescht"); assert.equal(G.liesKonten(support).zustand, "geloescht");
+  assert.ok(lauf().every((s) => s === "gesperrt"));
+  (await import("node:fs")).rmSync(join(support, G.SPUR_DATEI)); writeFileSync(datei, "{ kaputt");
   // ein Link
   const ziel = join(tmp(), "z.json"); writeFileSync(ziel, JSON.stringify(G.leerDaten()));
   (await import("node:fs")).rmSync(datei); symlinkSync(ziel, datei);
@@ -51,7 +56,7 @@ test("Beide Hälften ergeben bei denselben Eingaben dieselben Zustände und Stuf
     konten: { k_aaaaaaaa: { programm: "claude", ordner: a, standard: false, ordnerKennung: G.kennungVon(a) }, k_bbbbbbbb: { programm: "claude", ordner: b, standard: false, ordnerKennung: G.kennungVon(b) } },
     vaults: { [v1]: { ordnerKennung: G.kennungVon(v1), neueKonten: "lesen", ohneKonto: "posteingang", konten: { k_aaaaaaaa: "erweitert", k_bbbbbbbb: "gesperrt" } }, [v2]: { ordnerKennung: G.kennungVon(v2), konten: { k_aaaaaaaa: "kaputt" } } } }));
   const stufen = new Set(lauf());
-  assert.ok(stufen.has("gesperrt") && stufen.has("erweitert") && stufen.has("posteingang"), `die Fälle decken mehrere Stufen ab: ${[...stufen]}`);
+  assert.ok(stufen.has("gesperrt") && stufen.has("erweitert"), `die Fälle decken mehrere Stufen ab: ${[...stufen]}`);
   // ändern → beide sehen es sofort
   G.aendere(support, (alt) => { alt.vaults[v1].konten.k_aaaaaaaa = "lesen"; return alt; });
   assert.equal(KERN.kontoStufe(v1, { support, arg: "k_aaaaaaaa" }), "lesen"); lauf();

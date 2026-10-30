@@ -107,7 +107,7 @@ test("Stufen je Konto und Vault; unbekanntes Konto und unbekannter Vault sind ge
   assert.equal(stufe(e.s, e.v2, {}, { arg: "k_00000003" }), "gesperrt", "bekanntes Konto ohne Eintrag: neueKonten = gesperrt");
   assert.equal(stufe(e.s, e.v1, {}, { arg: "k_99999999" }), "gesperrt", "unbekannte Kennung");
   assert.equal(stufe(e.s, e.v1, {}, { arg: "../../etc" }), "gesperrt", "ungültige Kennung");
-  assert.equal(stufe(e.s, e.v1), "posteingang", "kein Konto erkennbar (Altform): ohneKonto des Vaults");
+  assert.equal(stufe(e.s, e.v1), "gesperrt", "kein Konto erkennbar (Altform): nie lockerer als das strengste Konto des Vaults (hier k_00000003 = gesperrt), auch wenn ohneKonto posteingang sagt");
   assert.equal(stufe(e.s, e.v2), "gesperrt");
   assert.equal(stufe(e.s, neuesVault(), {}, { arg: "k_00000001" }), "gesperrt", "ein Vault, den die Liste nicht kennt");
 });
@@ -186,7 +186,8 @@ test("Migration: Konten mit bestehender Verbindung behalten ihre heutigen Rechte
   for (const v of [v1, v2]) {
     assert.equal(K.stufeFuer(d, v, id(a)), "posteingang");
     assert.equal(K.stufeFuer(d, v, id(b)), "gesperrt", "nicht verbunden → gesperrt");
-    assert.equal(K.stufeFuer(d, v, null), "posteingang", "alte Einträge ohne --konto behalten ihr Recht");
+    assert.equal(K.stufeFuer(d, v, null), "gesperrt", "alte Einträge ohne --konto: nie lockerer als das strengste Konto des Vaults (b ist gesperrt) — sie müssen mit Konto neu verbunden werden");
+    assert.equal(d.vaults[v].ohneKonto, "posteingang", "die Migration vermerkt den früheren Wert weiter; wirksam ist das Minimum");
     assert.equal(d.vaults[v].neueKonten, "gesperrt");
   }
   // ein Vault, der später dazukommt, ist für alle gesperrt (auch für die Altform)
@@ -237,9 +238,9 @@ test("Neu erkanntes Konto startet gesperrt (ausdrücklich in jedem Vault), auch 
   assert.equal(K.stufeFuer(d, v, neu), "gesperrt");
 });
 
-test("Genau EIN Konto insgesamt bekommt für von Kortex angelegte oder geklonte Vaults automatisch posteingang; geöffnete Ordner und mehrere Konten nicht", () => {
+test("Genau EIN verbundenes Konto bekommt für von Kortex angelegte oder geklonte Vaults automatisch posteingang; geöffnete Ordner und mehrere verbundene Konten nicht", () => {
   const home = neueHome(), s = sup();
-  claudeProfil(home);
+  claudeProfil(home, "", true);
   const angelegt = neuesVault(), geklont = neuesVault(), geoeffnet = neuesVault();
   const liste = [];
   const k = erzeugeKonten({ support: s, home: () => home, vaults: () => liste.map((p) => ({ pfad: p, name: "v" })), erkennung: () => erkenneKonten({ home, programme: [] }), quelleVon: (p) => (p === angelegt ? "angelegt" : p === geklont ? "geklont" : "bestaetigt") });
@@ -251,14 +252,33 @@ test("Genau EIN Konto insgesamt bekommt für von Kortex angelegte oder geklonte 
   assert.equal(K.stufeFuer(d, geklont, id), "posteingang");
   assert.equal(K.stufeFuer(d, geoeffnet, id), "gesperrt");
   assert.equal(K.stufeFuer(d, angelegt, null), "gesperrt", "die Altform ohne Konto bleibt gesperrt");
-  // zwei Konten: auch ein angelegter Vault bleibt für beide gesperrt
+  // zwei verbundene Konten: auch ein angelegter Vault bleibt für beide gesperrt
   const home2 = neueHome(), s2 = sup();
-  claudeProfil(home2); claudeProfil(home2, "zwei");
+  claudeProfil(home2, "", true); claudeProfil(home2, "zwei", true);
   const w = neuesVault();
   const k2 = erzeuge(home2, s2, [w], { quelleVon: () => "angelegt" });
-  k2.synchronisiere(); k2.vaultHinzu(w, "angelegt");
+  k2.synchronisiere();
+  const w2 = neuesVault();
+  k2.vaultHinzu(w2, "angelegt");
   const d2 = K.liesKonten(s2).daten;
-  for (const i of Object.keys(d2.konten)) assert.equal(K.stufeFuer(d2, w, i), "gesperrt");
+  for (const i of Object.keys(d2.konten)) assert.equal(K.stufeFuer(d2, w2, i), "gesperrt");
+  // zwei erkannte Konten, aber nur EINES verbunden: nur das verbundene zählt, es bekommt posteingang; das nicht verbundene bleibt gesperrt
+  const home3 = neueHome(), s3 = sup();
+  const verbundenes = claudeProfil(home3, "", true); claudeProfil(home3, "frei", false);
+  const x = neuesVault();
+  const k3 = erzeuge(home3, s3, [], { quelleVon: () => "angelegt" });
+  k3.synchronisiere();
+  k3.vaultHinzu(x, "angelegt");
+  const d3 = K.liesKonten(s3).daten;
+  for (const [i, kto] of Object.entries(d3.konten)) assert.equal(K.stufeFuer(d3, x, i), kto.ordner === verbundenes ? "posteingang" : "gesperrt", kto.ordner);
+  // gar kein verbundenes Konto: niemand bekommt die Ausnahme
+  const home4 = neueHome(), s4 = sup();
+  claudeProfil(home4, "", false);
+  const y = neuesVault();
+  const k4 = erzeuge(home4, s4, [], { quelleVon: () => "angelegt" });
+  k4.synchronisiere(); k4.vaultHinzu(y, "angelegt");
+  const d4 = K.liesKonten(s4).daten;
+  for (const i of Object.keys(d4.konten)) assert.equal(K.stufeFuer(d4, y, i), "gesperrt");
 });
 
 test("Das erste Konto, das nach einem angelegten Vault auftaucht, ist das einzige Konto → posteingang für diesen Vault", () => {
@@ -267,7 +287,7 @@ test("Das erste Konto, das nach einem angelegten Vault auftaucht, ist das einzig
   const k = erzeuge(home, s, [v], { quelleVon: () => "angelegt" });
   k.synchronisiere();
   k.vaultHinzu(v, "angelegt"); // noch kein Konto
-  claudeProfil(home);
+  claudeProfil(home, "", true);
   k.synchronisiere();
   const d = K.liesKonten(s).daten;
   assert.equal(K.stufeFuer(d, v, Object.keys(d.konten)[0]), "posteingang");
@@ -379,13 +399,14 @@ test("Routen: GET liefert Konten, Vaults und Stufen; POST setzt Name und Abo; PU
   });
 });
 
-test("Ein von Kortex angelegter Vault kommt in die Liste: gesperrt für alle; mit genau einem Konto bekommt es posteingang", async () => {
+test("Ein von Kortex angelegter Vault kommt in die Liste: gesperrt für alle; mit genau einem verbundenen Konto bekommt es posteingang", async () => {
   const home = neueHome(), s = sup();
-  claudeProfil(home);
+  const profil = claudeProfil(home);
   const v = neuesVault();
   await mitHome(home, async () => {
     const rufe = handlerMit({ home, s, vaultOrdner: v, vaultsListe: [v] });
     await rufe("GET", "/api/ki/konten"); // Abgleich = Migration (ein Konto, ohne Verbindung)
+    writeFileSync(join(profil, "settings.json"), JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: "command", command: "[ -x '/x/bin/kortex' ] && exec '/x/bin/kortex' hook session-start || exit 0" }] }] } })); // jetzt ist es verbunden
     const r = await rufe("POST", "/api/vaults/neu", { art: "leer", name: "Neu" });
     assert.equal(r.status, 200, JSON.stringify(r.j));
     const d = K.liesKonten(s).daten;

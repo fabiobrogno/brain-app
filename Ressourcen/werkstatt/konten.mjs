@@ -10,12 +10,21 @@
 //    Rechte — „posteingang“ für alle Vaults der App; ebenso ältere Einträge ohne --konto (ohneKonto). Alle anderen Konten starten gesperrt.
 //  · Ist die Datei beschädigt, wird sie beiseitegelegt und leer neu angelegt: alles gesperrt (nie lockerer als vorher). Die frühere Fassung bleibt als .vorher liegen.
 //  · Konten und Vaults nennen die Routen nur aus den erkannten Listen (nie ein frei gewählter Pfad).
+// P2 (Oberfläche, Sperre in Claude Code):
+//   PUT  /api/ki/zugriff    { konto, vault, stufe, heimat?, claudeSperre? }  — „gesperrt“ + claudeSperre:true trägt das Leseverbot in die settings.json des Claude-Profils ein;
+//                           jede andere Stufe (oder claudeSperre:false) nimmt genau die eigenen Regeln wieder heraus
+//   PUT  /api/ki/standard   { vault, stufe }                 — was für ein neu erkanntes Konto in diesem Vault gilt (gesperrt | lesen | posteingang)
+//   POST /api/ki/schutz     { konto, sandbox, bestaetigt }   — „Strenger Schutz“ (Sandbox von Claude Code) je Konto, nur mit bestaetigt:true
+//   POST /api/ki/hinweis    { quittiert: true }              — den Hinweis „Liste war beschädigt“ ausblenden
+//   POST /api/ki/vorher     { bestaetigt: true }             — die frühere Fassung der Liste zurückholen (kann Sperren lockern: nur nach Bestätigung)
+//  · Was Kortex in settings.json eingetragen hat, steht in ki-konten.json unter `eingetragen` (je Konto), der Wunsch „Strenger Schutz“ unter `schutz`. Der Rückweg entfernt nur das.
 import { readFileSync, realpathSync, lstatSync } from "node:fs";
 import { join, dirname, sep } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { HttpFehler, testmodus } from "../gemeinsam/basis.mjs";
 import * as vertrauenFn from "../gemeinsam/vertrauen.mjs";
-import { STUFEN, ABOS, liesKonten, aendere, repariere, leerDaten, neueId, pruefeName, vaultEintrag, stufeFuer, kennungVon, echterOrt, stufeNr, darfMindestens } from "../gemeinsam/ki-konten.mjs";
+import { STUFEN, ABOS, kontenPfad, pruefeDaten, stelleVorherWiederHer, sichereSpur, liesKonten, aendere, repariere, leerDaten, neueId, pruefeName, vaultEintrag, stufeFuer, kennungVon, echterOrt, stufeNr, darfMindestens } from "../gemeinsam/ki-konten.mjs";
+import { vaultRegeln, sandboxPfade, einstellungsRegeln, sandboxGeheim, sandboxSchreibschutz, eineSicherung, tragRegelnEin, nimmRegelnHeraus, liesRegelStand, gleicheSandboxAb, liesSandboxStand } from "../gemeinsam/claude-sperre.mjs";
 import { erkenneKonten } from "./konten-erkennung.mjs";
 import { BESCHREIBUNGEN } from "./ki-programme/programme.mjs";
 import { parseJsonc } from "./ki-programme/jsonc.mjs";
@@ -53,6 +62,36 @@ export function verbundenStandard(k, home = homedir()) {
   } catch { return false; }
 }
 
+// Altform: Hat dieses Konto einen MCP-Eintrag „brain“ oder Kortex-Hooks OHNE `--konto <id>`? Solche Einträge sagen dem Server nicht, für wen er läuft; für sie gilt nur die Umgebung bzw. „ohneKonto“ des
+// Vaults (nie lockerer als das strengste Konto). Gelesen wird nur, ob `--konto` fehlt — nichts davon wird behalten oder ausgegeben. → { mcp: bool, hooks: bool }
+export function altformStandard(k, home = homedir()) {
+  const aus = { mcp: false, hooks: false };
+  try {
+    const ohne = (args) => !(Array.isArray(args) && args.includes("--konto"));
+    if (k.programm === "claude") {
+      const s = dateiText(join(k.ordner, "settings.json"));
+      if (s) { const j = JSON.parse(s); const cmds = Object.values(istObj(j.hooks) ? j.hooks : {}).flat().flatMap((e) => (istObj(e) && Array.isArray(e.hooks) ? e.hooks : [])).map((h) => h && h.command).filter((c) => typeof c === "string" && /kortex' hook [a-z]/.test(c)); aus.hooks = cmds.length > 0 && cmds.some((c) => !/ --konto k_[0-9a-f]{8}/.test(c)); }
+      const cj = dateiText(k.standard ? join(home, ".claude.json") : join(k.ordner, ".claude.json"));
+      if (cj) { const j = JSON.parse(cj); const e = istObj(j) && istObj(j.mcpServers) ? j.mcpServers.brain : undefined; aus.mcp = istObj(e) && ohne(e.args); }
+      return aus;
+    }
+    if (k.programm === "codex") {
+      const t = dateiText(join(k.ordner, "config.toml"));
+      const m = t ? /^\s*\[mcp_servers\.brain\]([\s\S]*?)(?=^\s*\[|$(?![\s\S]))/m.exec(t) : null;
+      if (m) { const a = /args\s*=\s*\[([\s\S]*?)\]/.exec(m[1]); aus.mcp = !a || !a[1].includes("--konto"); }
+      return aus;
+    }
+    const b = BESCHREIBUNGEN.find((x) => x.id === k.programm);
+    if (!b) return aus;
+    const t = dateiText(b.datei({ home }));
+    if (!t || !t.trim()) return aus;
+    const verz = holeAm(parseJsonc(t), b.pfad);
+    const e = istObj(verz) ? verz.brain : undefined;
+    aus.mcp = istObj(e) && ohne(e.args);
+  } catch { /* nicht lesbar: keine Aussage */ }
+  return aus;
+}
+
 // Im Testmodus liest die Erkennung nur ein Home unter dem Temp-Ordner — nie den echten Benutzerordner des Rechners, auf dem die Tests laufen.
 const echtPfad = (p) => { try { return realpathSync.native(p); } catch { return p; } };
 const homeErlaubt = (h) => !testmodus() || echtPfad(h).startsWith(echtPfad(tmpdir()) + sep);
@@ -83,14 +122,20 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
       if (migration && istVerbunden(daten.konten[id])) verbundene.add(id);
     }
     const ids = Object.keys(daten.konten);
-    const einziges = ids.length === 1 ? ids[0] : null;
-    const darfAuto = (id, q) => !c.streng && id === einziges && KORTEX_VON_KORTEX.includes(q);
+    // „Genau ein Konto“ zählt nur Konten eines tatsächlich verbundenen KI-Programms (Hooks oder MCP-Eintrag „brain“); ein erkanntes, aber nicht verbundenes Programm
+    // verhindert die Ausnahme nicht, bekommt sie aber auch nicht.
+    let einzigesCache;
+    const einziges = () => { if (einzigesCache === undefined) { const vb = ids.filter((id) => istVerbunden(daten.konten[id])); einzigesCache = vb.length === 1 ? vb[0] : null; } return einzigesCache; };
+    const darfAuto = (id, q) => !c.streng && KORTEX_VON_KORTEX.includes(q) && id === einziges();
     for (const v of c.vaults) {
       let echt, kennung;
       try { echt = realpathSync.native(v.pfad); kennung = kennungVon(echt); } catch { continue; }
       const t = vaultEintrag(daten, echt);
       if (t && t.eintrag) { // umbenannt oder verschoben: dieselben Regeln gelten weiter
-        if (t.schluessel !== echt) { delete daten.vaults[t.schluessel]; daten.vaults[echt] = t.eintrag; }
+        if (t.schluessel !== echt) {
+          delete daten.vaults[t.schluessel]; daten.vaults[echt] = t.eintrag;
+          for (const e of Object.values(istObj(daten.eingetragen) ? daten.eingetragen : {})) if (istObj(e) && istObj(e.claudeDeny) && Object.hasOwn(e.claudeDeny, t.schluessel)) { e.claudeDeny[echt] = e.claudeDeny[t.schluessel]; delete e.claudeDeny[t.schluessel]; }
+        }
         continue;
       }
       if (t && t.ausgetauscht) continue; // anderer Ordner am selben Pfad: bleibt gesperrt, bis der Nutzer ausdrücklich entscheidet
@@ -104,28 +149,189 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
       if (!istObj(e.konten)) e.konten = {};
       if (!Object.hasOwn(e.konten, id)) e.konten[id] = darfAuto(id, quelle(pfad)) ? "posteingang" : "gesperrt";
     }
+    if (c.streng) daten.hinweis = { art: "defekt-neu", seit: jetzt(), grund: c.grund || "defekt" }; // bleibt, bis der Nutzer ihn quittiert (die Werkstatt gleicht schon beim App-Start ab)
     return daten;
   }
 
   // Gleicht die Liste mit dem Rechner ab (Konten, Vaults). → { zustand, hinweis? } Der erste Start (Datei fehlt) ist die Migration.
   function synchronisiere() {
-    let hinweis = null, streng = false;
+    let hinweis = null, streng = false, grund = null;
     let r = liesKonten(support);
-    if (r.zustand === "defekt") {
-      repariere(support);
-      hinweis = "defekt-neu"; streng = true;
+    if (r.zustand === "defekt" || r.zustand === "geloescht") {
+      // beschädigt ODER gelöscht (die Datei fehlt, aber es gibt Spuren, dass sie einmal da war): neu anfangen, alles gesperrt, keine Migration (sie würde alte Rechte wieder öffnen)
+      const rep = repariere(support);
+      hinweis = "defekt-neu"; streng = true; grund = r.zustand === "geloescht" || rep.grund === "geloescht" ? "geloescht" : "defekt";
       r = liesKonten(support);
     }
     const migration = r.zustand === "fehlt" && !streng;
     const erkannt = erkenne();
-    aendere(support, (alt) => rechne(alt, { erkannt, vaults: vaultListe(), migration, streng }));
-    return { zustand: liesKonten(support).zustand, ...(hinweis ? { hinweis } : {}) };
+    aendere(support, (alt) => rechne(alt, { erkannt, vaults: vaultListe(), migration, streng, grund }), { neuAnfangen: streng });
+    if (liesKonten(support).zustand === "ok") { sichereSpur(support); nachfuehren(); }
+    return { zustand: liesKonten(support).zustand, ...(hinweis ? { hinweis, hinweisGrund: grund } : {}) };
   }
 
   const lade = () => { const r = liesKonten(support); return r.zustand === "ok" ? r.daten : null; };
   const ladeOderSynchronisiere = () => { let d = lade(); if (!d) { synchronisiere(); d = lade(); } if (!d) throw new HttpFehler(500, "Die Liste der KI-Konten ist nicht verfügbar."); return d; };
 
   const kurz = (p) => { const h = home(); return p === h ? "~" : p.startsWith(`${h}/`) ? `~${p.slice(h.length)}` : p; };
+
+  // ───────────── Sperre in Claude Code (nur Konten, die die Werkstatt kennt; nur das Programm „claude“) ─────────────
+  // Im Testmodus schreibt Kortex nie in einen Ordner außerhalb des Temp-Ordners (nie ins echte ~/.claude des Rechners, auf dem die Tests laufen).
+  const ordnerErlaubt = (o) => !testmodus() || echtPfad(o).startsWith(echtPfad(tmpdir()) + sep);
+  const claudeOrdner = (daten, kontoId) => {
+    const k = daten && Object.hasOwn(daten.konten, kontoId) ? daten.konten[kontoId] : null;
+    if (!k || k.programm !== "claude") throw new HttpFehler(409, "Das Leseverbot in den Einstellungen gibt es nur für Claude Code.", { art: "kein-claude" });
+    if (!ordnerErlaubt(k.ordner)) throw new HttpFehler(409, "Im Testmodus schreibt Kortex nur unter dem Temp-Ordner.", { art: "testmodus" });
+    return k.ordner;
+  };
+  // Der Schlüssel „@einstellungen“ in eingetragen.<konto>.claudeDeny steht für die Einstellungsregeln (Kortex-Einstellungen und Einstellungsdateien des Profils), kein Vault.
+  const EINST = "@einstellungen";
+  const eingetragenVon = (daten, kontoId) => {
+    const e = istObj(daten.eingetragen) && istObj(daten.eingetragen[kontoId]) ? daten.eingetragen[kontoId] : {};
+    return { claudeDeny: istObj(e.claudeDeny) ? e.claudeDeny : {}, sandbox: istObj(e.sandbox) ? e.sandbox : null, denyAngelegt: Array.isArray(e.denyAngelegt) ? e.denyAngelegt : [] };
+  };
+  // Alle Orte eines Vaults aus der Liste der App (wie angegeben und aufgelöst) — daraus die Regeln.
+  const vaultOrte = (schluessel) => { const bekannt = vaultListe().find((v) => { try { return falte(realpathSync.native(v.pfad)) === falte(schluessel); } catch { return false; } }); return bekannt ? [bekannt.pfad, schluessel] : [schluessel]; };
+  const gesperrteVaults = (daten, kontoId) => Object.keys(daten.vaults).filter((k) => stufeFuer(daten, k, kontoId) === "gesperrt");
+  const speichere = (fn) => aendere(support, (alt) => { if (!alt) throw new HttpFehler(500, "Die Liste der KI-Konten ist nicht verfügbar."); fn(alt); return alt; }).daten;
+  const setzeEingetragen = (daten, kontoId, teil) => {
+    if (!istObj(daten.eingetragen)) daten.eingetragen = {};
+    daten.eingetragen[kontoId] = { ...(istObj(daten.eingetragen[kontoId]) ? daten.eingetragen[kontoId] : {}), ...teil };
+    const e = daten.eingetragen[kontoId];
+    if (e.claudeDeny && !Object.keys(e.claudeDeny).length) delete e.claudeDeny;
+    if (e.sandbox === null || e.sandbox === undefined) delete e.sandbox;
+    if (Array.isArray(e.denyAngelegt) && (!e.denyAngelegt.length || !e.claudeDeny)) delete e.denyAngelegt;
+    if (!Object.keys(e).length) delete daten.eingetragen[kontoId];
+    if (!Object.keys(daten.eingetragen).length) delete daten.eingetragen;
+  };
+  const sollRegeln = (daten, kontoId, schluessel) => (schluessel === EINST
+    ? einstellungsRegeln({ support, profil: daten.konten[kontoId].ordner, home: home(), standard: daten.konten[kontoId].standard === true })
+    : vaultRegeln(...vaultOrte(schluessel)));
+
+  // Bringt das Leseverbot eines Vaults (oder die Einstellungsregeln, schluessel = EINST) in den gewünschten Zustand: an = die Regeln stehen in der settings.json (und nur diese sind als „von Kortex“
+  // vermerkt), aus = genau die vermerkten Regeln sind heraus. Vermerkt wird VOR dem Schreiben (ein Absturz dazwischen hinterlässt keine Regel ohne Vermerk); schlägt das Schreiben fehl, geht der Vermerk
+  // zurück. Leere Behälter in der settings.json entfernt nur, wer sie angelegt hat (denyAngelegt). → { aktion, regeln }
+  function leseverbot(kontoId, schluessel, an) {
+    const daten = lade();
+    const eing = eingetragenVon(daten, kontoId);
+    const vermerkt = eing.claudeDeny[schluessel] || [];
+    if (!an && !vermerkt.length) return { aktion: "nichts", regeln: [] }; // nichts von Kortex eingetragen: die Einstellungen von Claude Code werden nicht einmal geöffnet
+    const ordner = claudeOrdner(daten, kontoId);
+    if (!an) {
+      const r = nimmRegelnHeraus(ordner, vermerkt, eing.denyAngelegt);
+      speichere((d) => { const e = eingetragenVon(d, kontoId); delete e.claudeDeny[schluessel]; setzeEingetragen(d, kontoId, { claudeDeny: e.claudeDeny, denyAngelegt: e.denyAngelegt.filter((x) => !r.entfernt.includes(x)) }); });
+      return { aktion: "entfernt", regeln: vermerkt };
+    }
+    const soll = sollRegeln(daten, kontoId, schluessel);
+    // Was Kortex früher eingetragen hat und jetzt nicht mehr gilt (z. B. der Vault wurde verschoben): heraus.
+    const veraltet = vermerkt.filter((r) => !soll.includes(r));
+    // Eine Regel, die schon vor Kortex da war, gehört dem Nutzer: sie wird nicht vermerkt und nie von Kortex entfernt.
+    const vorschau = liesRegelStand(ordner, soll);
+    if (vorschau.zustand === "defekt") throw new HttpFehler(409, "Die Einstellungen von Claude Code (settings.json) sind kaputt oder nicht lesbar. Kortex ändert nichts daran — bitte zuerst reparieren.", { art: "einstellungen-defekt" });
+    const eigene = soll.filter((r) => vermerkt.includes(r) || !vorschau.da.includes(r));
+    speichere((d) => { const e = eingetragenVon(d, kontoId); e.claudeDeny[schluessel] = eigene; setzeEingetragen(d, kontoId, { claudeDeny: e.claudeDeny }); });
+    try {
+      if (veraltet.length) nimmRegelnHeraus(ordner, veraltet);
+      const r = tragRegelnEin(ordner, soll);
+      if (r.angelegt.length) speichere((d) => { const e = eingetragenVon(d, kontoId); setzeEingetragen(d, kontoId, { denyAngelegt: [...new Set([...e.denyAngelegt, ...r.angelegt])] }); });
+    } catch (err) {
+      try { speichere((d) => { const e = eingetragenVon(d, kontoId); if (vermerkt.length) e.claudeDeny[schluessel] = vermerkt; else delete e.claudeDeny[schluessel]; setzeEingetragen(d, kontoId, { claudeDeny: e.claudeDeny }); }); } catch { /* der Vermerk ist harmlos: er entfernt höchstens eine Regel, die es nicht gibt */ }
+      throw err;
+    }
+    return { aktion: "eingetragen", regeln: soll };
+  }
+
+  // Die Einstellungsregeln gehören zum Schutz, solange das Konto irgendein Leseverbot oder den Strengen Schutz hat — und nur dann.
+  function einstellungsSchutz(kontoId) {
+    const daten = lade();
+    const e = eingetragenVon(daten, kontoId);
+    const gewuenscht = istObj(daten.schutz) && istObj(daten.schutz[kontoId]) && daten.schutz[kontoId].sandbox === true;
+    const wollen = gewuenscht || Object.keys(e.claudeDeny).some((k) => k !== EINST && (e.claudeDeny[k] || []).length);
+    if (!wollen && !(e.claudeDeny[EINST] || []).length) return { aktion: "nichts" };
+    return leseverbot(kontoId, EINST, wollen);
+  }
+
+  // „Strenger Schutz“ nachführen: ist er für das Konto gewünscht, gehören alle gesperrten Vaults in sandbox.filesystem.denyRead UND denyWrite, dazu die Kortex-Listen (denyRead) und der Support-Ordner und
+  // das Profil (denyWrite); sonst ist alles von Kortex Eingetragene heraus.
+  function strengerSchutz(kontoId) {
+    const daten = lade();
+    const gewuenscht = istObj(daten.schutz) && istObj(daten.schutz[kontoId]) && daten.schutz[kontoId].sandbox === true;
+    const frueher = eingetragenVon(daten, kontoId).sandbox;
+    if (!gewuenscht && !frueher) return { aktion: "nichts" };
+    const ordner = claudeOrdner(daten, kontoId);
+    const k = daten.konten[kontoId];
+    let soll = null;
+    if (gewuenscht) {
+      const vaultPfade = [...new Set(gesperrteVaults(daten, kontoId).flatMap((s) => sandboxPfade(...vaultOrte(s))))];
+      soll = {
+        denyRead: [...vaultPfade, ...sandboxGeheim({ support, profil: ordner })],
+        denyWrite: [...vaultPfade, ...sandboxSchreibschutz({ support, profil: ordner, home: home(), standard: k.standard === true })],
+      };
+    }
+    const neu = gleicheSandboxAb(ordner, frueher, soll);
+    speichere((d) => setzeEingetragen(d, kontoId, { sandbox: neu }));
+    einstellungsSchutz(kontoId);
+    return { aktion: gewuenscht ? "an" : "aus", pfade: soll ? soll.denyRead : [] };
+  }
+
+  // Alles nachführen, was an Orten hängt, die sich ändern können: verschobene oder neu hinzugekommene Vaults (Regeln und Pfade des Strengen Schutzes), Einstellungsregeln. Nur was der Nutzer schon
+  // ausdrücklich eingeschaltet hat (Leseverbot für diesen Vault, Strenger Schutz) — nie ein neues Leseverbot von selbst. Fehler bleiben still (die Anzeige zeigt „fehlt“ oder „veraltet“).
+  function nachfuehren() {
+    const daten = lade();
+    if (!daten) return;
+    for (const [id, k] of Object.entries(daten.konten)) {
+      if (k.programm !== "claude" || !istObj(daten.eingetragen) || !istObj(daten.eingetragen[id])) continue;
+      try {
+        eineSicherung(() => {
+          const e = eingetragenVon(lade(), id);
+          for (const schluessel of Object.keys(e.claudeDeny)) {
+            if (schluessel === EINST) continue;
+            if (stufeFuer(lade(), schluessel, id) !== "gesperrt") { leseverbot(id, schluessel, false); continue; }
+            const soll = sollRegeln(lade(), id, schluessel);
+            const vermerkt = e.claudeDeny[schluessel] || [];
+            if (vermerkt.length !== soll.length || vermerkt.some((r) => !soll.includes(r))) leseverbot(id, schluessel, true);
+          }
+          strengerSchutz(id);
+          einstellungsSchutz(id);
+        });
+      } catch { /* nächste Anzeige zeigt es */ }
+    }
+  }
+
+  // Die Meldung an die Oberfläche, wenn das Schreiben in die Einstellungen von Claude Code scheitert (die Stufe in Kortex ist dann trotzdem gesetzt).
+  const fehlerText = (err) => (err instanceof HttpFehler ? err.message : "Die Einstellungen von Claude Code ließen sich nicht ändern.");
+
+  // Zustand des Schutzes je Konto für die Anzeige (liest nur).
+  function schutzStand(daten, kontoId, k) {
+    if (k.programm !== "claude") return { moeglich: false };
+    const gewuenscht = istObj(daten.schutz) && istObj(daten.schutz[kontoId]) && daten.schutz[kontoId].sandbox === true;
+    const e = eingetragenVon(daten, kontoId);
+    const erlaubt = ordnerErlaubt(k.ordner);
+    const vaults = {};
+    for (const schluessel of Object.keys(daten.vaults)) {
+      if (stufeFuer(daten, schluessel, kontoId) !== "gesperrt") continue;
+      const vermerkt = e.claudeDeny[schluessel] || [];
+      if (!erlaubt) { vaults[schluessel] = vermerkt.length ? "fehlt" : "aus"; continue; }
+      const soll = vaultRegeln(...vaultOrte(schluessel));
+      const st = liesRegelStand(k.ordner, vermerkt.length ? vermerkt : soll);
+      if (st.zustand === "defekt") vaults[schluessel] = "defekt";
+      else if (!vermerkt.length) vaults[schluessel] = soll.every((r) => st.da.includes(r)) ? "eigene" : "aus"; // steht schon eine Regel des Nutzers da, gilt sie
+      else if (vermerkt.some((r) => !soll.includes(r))) vaults[schluessel] = "veraltet";
+      else vaults[schluessel] = vermerkt.every((r) => st.da.includes(r)) ? "aktiv" : "fehlt";
+    }
+    let strengAktiv = false, warnungen = [];
+    if (gewuenscht || e.sandbox) {
+      const st = erlaubt ? liesSandboxStand(k.ordner, (e.sandbox && e.sandbox.denyRead) || []) : { an: false, da: [], warnungen: [] };
+      strengAktiv = st.an && (!e.sandbox || (e.sandbox.denyRead || []).every((p) => st.da.includes(p)));
+      warnungen = st.warnungen || [];
+    }
+    return { moeglich: true, strenger: gewuenscht, strengerAktiv: strengAktiv, warnungen, vaults };
+  }
+
+  const programmName = (id) => (id === "claude" ? "Claude Code" : id === "codex" ? "Codex" : (BESCHREIBUNGEN.find((x) => x.id === id) || {}).name || id);
+  function vorherBrauchbar() {
+    try { const v = `${kontenPfad(support)}.vorher`; const st = lstatSync(v); return st.isFile() && st.size <= 4 * 1024 * 1024 && pruefeDaten(JSON.parse(readFileSync(v, "utf8"))); } catch { return false; }
+  }
 
   function stand() {
     const s = synchronisiere();
@@ -134,16 +340,19 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
     const liste = vaultListe();
     const konten = Object.entries(daten.konten).map(([id, k]) => {
       let vorhanden = false; try { vorhanden = lstatSync(k.ordner).isDirectory(); } catch { /* weg */ }
-      return { id, programm: k.programm, name: k.name, ...(k.abo ? { abo: k.abo } : {}), standard: k.standard === true, ordner: kurz(k.ordner), vorhanden, ...(k.heimat ? { heimat: k.heimat } : {}) };
+      return { id, programm: k.programm, programmName: programmName(k.programm), name: k.name, ...(k.abo ? { abo: k.abo } : {}), standard: k.standard === true, ordner: kurz(k.ordner), vorhanden,
+        verbunden: istVerbunden(k), altform: homeErlaubt(home()) ? altformStandard(k, home()) : { mcp: false, hooks: false }, schutz: schutzStand(daten, id, k), ...(k.heimat ? { heimat: k.heimat } : {}) };
     });
     const zugriff = {};
     for (const id of Object.keys(daten.konten)) zugriff[id] = Object.fromEntries(liste.map((v) => [v.pfad, stufeFuer(daten, v.pfad, id)]));
     const vs = liste.map((v) => {
       const t = vaultEintrag(daten, v.pfad);
       const e = t && t.eintrag ? t.eintrag : null;
-      return { pfad: v.pfad, name: v.name, neueKonten: e ? e.neueKonten || "gesperrt" : "gesperrt", ohneKonto: e ? e.ohneKonto || "gesperrt" : "gesperrt", ...(t && t.ausgetauscht ? { ausgetauscht: true } : {}) };
+      return { pfad: v.pfad, name: v.name, neueKonten: e ? e.neueKonten || "gesperrt" : "gesperrt", ohneKonto: e ? e.ohneKonto || "gesperrt" : "gesperrt", ...(t && t.schluessel ? { schluessel: t.schluessel } : {}), ...(t && t.ausgetauscht ? { ausgetauscht: true } : {}) };
     });
-    return { zustand: "ok", ...(s.hinweis ? { hinweis: s.hinweis } : {}), stufen: STUFEN, konten, vaults: vs, zugriff };
+    const hinweis = s.hinweis || (daten.hinweis && daten.hinweis.art === "defekt-neu" ? "defekt-neu" : null);
+    const hinweisGrund = (daten.hinweis && daten.hinweis.grund) || s.hinweisGrund || "defekt";
+    return { zustand: "ok", ...(hinweis ? { hinweis, hinweisGrund, ...(daten.hinweis && daten.hinweis.seit ? { hinweisSeit: daten.hinweis.seit } : {}), vorherDa: vorherBrauchbar() } : {}), stufen: STUFEN, konten, vaults: vs, zugriff };
   }
 
   function setzeName(e) {
@@ -163,8 +372,9 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
   // Ein Eintrag für einen Vault, den es in der Liste noch nicht (oder nur ausgetauscht) gibt — alles gesperrt, außer der Ausnahme für das einzige Konto.
   function frischerEintrag(daten, echt, q, kennung) {
     const ids = Object.keys(daten.konten);
-    const einziges = ids.length === 1 ? ids[0] : null;
-    const konten = Object.fromEntries(ids.map((id) => [id, id === einziges && KORTEX_VON_KORTEX.includes(q) ? "posteingang" : "gesperrt"]));
+    const verbunden = KORTEX_VON_KORTEX.includes(q) ? ids.filter((id) => istVerbunden(daten.konten[id])) : [];
+    const einziges = verbunden.length === 1 ? verbunden[0] : null;
+    const konten = Object.fromEntries(ids.map((id) => [id, id === einziges ? "posteingang" : "gesperrt"]));
     return { ordnerKennung: kennung, neueKonten: "gesperrt", ohneKonto: "gesperrt", konten };
   }
   const entferneEintraege = (daten, echt, kennung) => {
@@ -175,6 +385,7 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
     if (typeof e.konto !== "string" || typeof e.vault !== "string") throw new HttpFehler(400, "Konto und Vault müssen angegeben werden.");
     if (!STUFEN.includes(e.stufe)) throw new HttpFehler(400, `Die Stufe muss eine von ${STUFEN.join(", ")} sein.`);
     if (e.heimat !== undefined && typeof e.heimat !== "boolean") throw new HttpFehler(400, "„heimat“ muss true oder false sein.");
+    if (e.claudeSperre !== undefined && typeof e.claudeSperre !== "boolean") throw new HttpFehler(400, "„claudeSperre“ muss true oder false sein.");
     ladeOderSynchronisiere();
     // Nur Vaults aus der Liste der App (nie ein frei gewählter Pfad).
     const echtVon = (p) => { try { return falte(realpathSync.native(p)); } catch { return null; } };
@@ -184,6 +395,14 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
     let echt;
     try { echt = realpathSync.native(bekannt.pfad); } catch { throw new HttpFehler(404, "Der Ordner dieses Vaults fehlt."); }
     const kennung = kennungVon(echt);
+    let schluessel = echt;
+    // Der Assistent („KI verbinden“) darf ein Konto, das der Nutzer selbst für diesen Vault gesperrt hat, nie still wieder öffnen: ohne ausdrückliche Wahl (ausdruecklich:true) bleibt es gesperrt.
+    if (e.quelle === "assistent" && e.stufe !== "gesperrt") {
+      const daten = lade(), t0 = daten ? vaultEintrag(daten, echt) : null;
+      if (t0 && t0.eintrag && stufeFuer(daten, echt, e.konto) === "gesperrt" && istObj(t0.eintrag.gesperrtNutzer) && t0.eintrag.gesperrtNutzer[e.konto] === true && e.ausdruecklich !== true) {
+        return { ...stand(), zugriffGesetzt: false, zugriffGrund: "vom-nutzer-gesperrt" };
+      }
+    }
     aendere(support, (alt) => {
       if (!alt || !Object.hasOwn(alt.konten, e.konto)) throw new HttpFehler(404, "Dieses KI-Konto gibt es nicht (mehr).");
       let t = vaultEintrag(alt, echt);
@@ -195,13 +414,117 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
         t = { eintrag: frisch, schluessel: echt };
       }
       const eintrag = t.eintrag;
+      schluessel = t.schluessel;
       if (!istObj(eintrag.konten)) eintrag.konten = {};
       eintrag.konten[e.konto] = e.stufe;
+      // Wer sperrt, sperrt auch die Altform: Einträge ohne --konto (ohneKonto) dürfen die Sperre nicht umgehen (wirksam ist ohnehin das Minimum, siehe stufeFuer)
+      if (e.stufe === "gesperrt") eintrag.ohneKonto = "gesperrt";
+      // Wer ausdrücklich sperrt (nicht der Assistent), dessen Sperre bleibt vermerkt: nur eine ausdrückliche Wahl hebt sie wieder auf.
+      if (!istObj(eintrag.gesperrtNutzer)) eintrag.gesperrtNutzer = {};
+      if (e.stufe === "gesperrt" && e.quelle !== "assistent") eintrag.gesperrtNutzer[e.konto] = true; else if (e.stufe !== "gesperrt") delete eintrag.gesperrtNutzer[e.konto];
+      if (!Object.keys(eintrag.gesperrtNutzer).length) delete eintrag.gesperrtNutzer;
       const k = alt.konten[e.konto];
       if (e.heimat === true && stufeNr(e.stufe) >= stufeNr("lesen")) k.heimat = t.schluessel;
       else if (e.heimat === false || stufeNr(e.stufe) < stufeNr("lesen")) { if (k.heimat && falte(k.heimat) === falte(t.schluessel)) delete k.heimat; }
       return alt;
     });
+    // Zweiter Schritt: Claude Code. Die Stufe in Kortex gilt schon; scheitert das Schreiben in die Einstellungen, meldet die Antwort es ausdrücklich.
+    //  · gesperrt + claudeSperre:true → Leseverbot eintragen (nur nach ausdrücklicher Bestätigung der Oberfläche) · jede andere Stufe oder claudeSperre:false → eigene Regeln heraus
+    //  · ist „Strenger Schutz“ an, wird die Liste der gesperrten Pfade nachgeführt
+    const claude = { aktion: "nichts" };
+    const k = programmVon(e.konto);
+    if (k && k.programm === "claude") {
+      try {
+        eineSicherung(() => {
+          if (e.stufe === "gesperrt") { if (e.claudeSperre === true) Object.assign(claude, leseverbot(e.konto, schluessel, true)); else if (e.claudeSperre === false) Object.assign(claude, leseverbot(e.konto, schluessel, false)); }
+          else Object.assign(claude, leseverbot(e.konto, schluessel, false));
+          const sb = strengerSchutz(e.konto);
+          if (sb.aktion !== "nichts") claude.strenger = sb.aktion;
+          einstellungsSchutz(e.konto);
+        });
+      } catch (err) { claude.aktion = "fehler"; claude.fehler = fehlerText(err); }
+    } else if (e.claudeSperre === true && e.stufe === "gesperrt") { claude.aktion = "nicht-moeglich"; }
+    const warnungen = e.stufe === "gesperrt" && k ? gedaechtnisWarnung(k) : [];
+    return { ...stand(), claude, ...(warnungen.length ? { warnungen } : {}) };
+  }
+
+  // Der Gedächtnis-Abgleich (kern/gedaechtnis.mjs) verteilt Projekt-Gedächtnisse an die Konten, die ein Vault in brain.config.json unter automatik.gedaechtnisKonten nennt (Standard ~/.claude), wenn
+  // automatik.gedaechtnisTeilen „an“ ist. Seit der Sperre bekommt ein Konto die Projekte eines für es gesperrten Vaults nicht mehr; schon kopierte Dateien bleiben. → Warnungen (Text ohne Vault-Namen)
+  function gedaechtnisWarnung(k) {
+    try {
+      const echtOrt = (p) => falte(echterOrt(p));
+      const meins = echtOrt(k.ordner);
+      for (const v of vaultListe()) {
+        let cfg; try { cfg = JSON.parse(readFileSync(join(v.pfad, "brain.config.json"), "utf8")); } catch { continue; }
+        const auto = istObj(cfg) && istObj(cfg.automatik) ? cfg.automatik : {};
+        if (auto.gedaechtnisTeilen !== "an") continue;
+        const liste = Array.isArray(auto.gedaechtnisKonten) ? auto.gedaechtnisKonten : ["~/.claude"];
+        const h = home();
+        if (liste.some((x) => typeof x === "string" && echtOrt(x === "~" ? h : x.startsWith("~/") ? join(h, x.slice(2)) : x) === meins)) {
+          return ["Dieses Konto steht im Gedächtnis-Abgleich. Gedächtnisse von Projekten gesperrter Vaults werden ihm nicht mehr zugeteilt; was schon in diesem Konto liegt, bleibt dort (Kortex entfernt es nicht)."];
+        }
+      }
+    } catch { /* keine Aussage */ }
+    return [];
+  }
+
+  // Was für ein neu erkanntes Konto in diesem Vault gilt (gesperrt | lesen | posteingang) — „Standard für neue Konten“.
+  function setzeStandard(e) {
+    if (typeof e.vault !== "string") throw new HttpFehler(400, "Der Vault muss angegeben werden.");
+    if (!["gesperrt", "lesen", "posteingang"].includes(e.stufe)) throw new HttpFehler(400, "Für neue Konten gilt gesperrt, lesen oder posteingang.");
+    ladeOderSynchronisiere();
+    const bekannt = vaultListe().find((v) => v.pfad === e.vault || falte(v.pfad) === falte(e.vault));
+    if (!bekannt) throw new HttpFehler(404, "Diesen Vault kennt Kortex nicht (mehr).");
+    let echt, kennung;
+    try { echt = realpathSync.native(bekannt.pfad); kennung = kennungVon(echt); } catch { throw new HttpFehler(404, "Der Ordner dieses Vaults fehlt."); }
+    aendere(support, (alt) => {
+      if (!alt) throw new HttpFehler(500, "Die Liste der KI-Konten ist nicht verfügbar.");
+      let t = vaultEintrag(alt, echt);
+      if (!t || !t.eintrag) {
+        entferneEintraege(alt, echt, kennung);
+        const frisch = frischerEintrag(alt, echt, null, kennung);
+        for (const id of Object.keys(frisch.konten)) frisch.konten[id] = "gesperrt";
+        alt.vaults[echt] = frisch; t = { eintrag: frisch, schluessel: echt };
+      }
+      t.eintrag.neueKonten = e.stufe;
+      return alt;
+    });
+    return stand();
+  }
+
+  // „Strenger Schutz“ (Sandbox von Claude Code) je Konto. Ändert, wie Claude Code ALLE Shell-Befehle dieses Profils ausführt — darum nur mit bestaetigt:true.
+  function setzeSchutz(e) {
+    if (typeof e.konto !== "string") throw new HttpFehler(400, "Das KI-Konto muss angegeben werden.");
+    if (typeof e.sandbox !== "boolean") throw new HttpFehler(400, "„sandbox“ muss true oder false sein.");
+    if (e.sandbox === true && e.bestaetigt !== true) throw new HttpFehler(400, "Der Strenge Schutz ändert, wie Claude Code Befehle ausführt. Kortex schaltet ihn nur nach deiner Bestätigung ein.", { art: "bestaetigung" });
+    const d0 = ladeOderSynchronisiere();
+    claudeOrdner(d0, e.konto); // 404/409 für Unbekanntes, Nicht-Claude
+    if (e.sandbox === true && !gesperrteVaults(d0, e.konto).length) throw new HttpFehler(409, "Der Strenge Schutz schützt nur Vaults, die für dieses Konto gesperrt sind. Sperre zuerst einen Vault.", { art: "kein-gesperrter-vault" });
+    const vorher = istObj(d0.schutz) && istObj(d0.schutz[e.konto]) ? d0.schutz[e.konto].sandbox === true : false;
+    speichere((d) => {
+      if (!istObj(d.schutz)) d.schutz = {};
+      if (e.sandbox) d.schutz[e.konto] = { ...(istObj(d.schutz[e.konto]) ? d.schutz[e.konto] : {}), sandbox: true };
+      else { delete d.schutz[e.konto]; if (!Object.keys(d.schutz).length) delete d.schutz; }
+    });
+    try { eineSicherung(() => strengerSchutz(e.konto)); }
+    catch (err) {
+      try { speichere((d) => { if (!istObj(d.schutz)) d.schutz = {}; if (vorher) d.schutz[e.konto] = { sandbox: true }; else { delete d.schutz[e.konto]; if (!Object.keys(d.schutz).length) delete d.schutz; } }); } catch { /* bleibt */ }
+      throw err;
+    }
+    return stand();
+  }
+
+  // Der Hinweis „Die Liste war beschädigt“ wurde gelesen.
+  function quittiereHinweis() {
+    ladeOderSynchronisiere();
+    speichere((d) => { delete d.hinweis; });
+    return stand();
+  }
+  // Die frühere Fassung der Liste zurückholen. Sie kann Sperren enthalten, die der Nutzer inzwischen gelockert hat, oder fehlen lassen, die er gesetzt hat: nur nach Bestätigung.
+  function holeVorher(e) {
+    if (e.bestaetigt !== true) throw new HttpFehler(400, "Das Zurückholen kann Sperren verändern. Kortex macht es nur nach deiner Bestätigung.", { art: "bestaetigung" });
+    stelleVorherWiederHer(support);
+    try { speichere((d) => { delete d.hinweis; }); } catch { /* der Hinweis bleibt */ }
     return stand();
   }
 
@@ -219,6 +542,7 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
       daten.vaults[echt] = frischerEintrag(daten, echt, q, kennung);
       return daten;
     });
+    nachfuehren(); // ein neuer Vault ist für die meisten Konten gesperrt: bei eingeschaltetem Strengen Schutz gehört er sofort in die Pfade
   }
 
   // Die Konto-Kennung für ein Programm/Profil, damit der Eintrag bei der KI `--konto <id>` tragen kann. null = kein Konto bekannt (Altform).
@@ -275,5 +599,5 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
     return { konto: null, liste: true };
   }
 
-  return { synchronisiere, stand, setzeName, setzeZugriff, vaultHinzu, kontoFuerProfil, kontoFuerProgramm, kontoDaten, probeKonto, lade };
+  return { synchronisiere, altform: (id) => { const k = lade() && Object.hasOwn(lade().konten, id) ? lade().konten[id] : null; return k && homeErlaubt(home()) ? altformStandard(k, home()) : { mcp: false, hooks: false }; }, stand, setzeName, setzeZugriff, setzeStandard, setzeSchutz, quittiereHinweis, holeVorher, vaultHinzu, kontoFuerProfil, kontoFuerProgramm, kontoDaten, probeKonto, lade };
 }

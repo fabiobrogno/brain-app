@@ -25,7 +25,7 @@ import { haengeAn, zeitstempel } from "./logs.mjs";
 import { leseAutomatik } from "./einstellungen.mjs";
 import { nenntThema, THEMA_GRUND } from "./thema-ausschluss.mjs";
 import { schreibeVorschlag, lektionOrdner, leseVorschlagDatei, ID_MUSTER, liegtImWiki } from "./vorschlaege.mjs";
-import { vaultPfadOderEnde, ordner, entferneBom } from "./pfade.mjs";
+import { vaultPfadOderEnde, ordner, entferneBom, kiKontoDarf } from "./pfade.mjs";
 import {
   leseEnde, istAusgeschlossen, findeClaude, rufeHaiku, leseClaudeAntwort, nimmLock,
 } from "./ernte.mjs";
@@ -329,7 +329,7 @@ function rohVorschlag(k) {
 // formuliereLektionen(vault, kandidaten, { mitKi, claudeBefehl, jetzt }) → { status, vorschlaege: [id], verworfen, tokens, fehler? }
 // Höchstens 3 Kandidaten. Ohne KI (oder wenn claude fehlt/scheitert) → Rohkandidat mit Auszug.
 // ohneThema (ernteOhneThema): ein Kandidat oder eine Lektion, die eines dieser Wörter nennt, wird nie an die KI geschickt und nie angelegt (thema zählt).
-export async function formuliereLektionen(vault, kandidaten, { mitKi = false, claudeBefehl = null, jetzt = Date.now(), ohneThema = [] } = {}) {
+export async function formuliereLektionen(vault, kandidaten, { mitKi = false, claudeBefehl = null, jetzt = Date.now(), ohneThema = [], kiStufe = "posteingang", keinKiGrund = "claude nicht gefunden" } = {}) {
   const gueltig = (Array.isArray(kandidaten) ? kandidaten : []).filter(k => k && typeof k.auszug === "string" && !unsauber(k.auszug) && !unsauber(k.thema));
   const ohneTreffer = gueltig.filter(k => !nenntThema(ohneThema, k.thema, k.auszug));
   const auswahl = ohneTreffer.slice(0, MAX_JE_LAUF);
@@ -337,11 +337,11 @@ export async function formuliereLektionen(vault, kandidaten, { mitKi = false, cl
   if (!auswahl.length) return ergebnis;
   let formuliert = null;
   if (mitKi) {
-    if (!claudeBefehl) ergebnis.fehler = "claude nicht gefunden";
+    if (!claudeBefehl) ergebnis.fehler = keinKiGrund;
     else {
       const eingabe = KANDIDATEN_KOPF + auswahl.map((k, i) => `## Kandidat ${i + 1} (${k.art}, ${k.anzahl}×): ${k.thema}\n${k.auszug}`).join("\n\n") + "\n";
       ergebnis.ein = LEKTION_AUFTRAG.length + eingabe.length;
-      const r = await rufeHaiku(claudeBefehl, LEKTION_AUFTRAG, eingabe, vault, { zweck: "lektion" });
+      const r = await rufeHaiku(claudeBefehl, LEKTION_AUFTRAG, eingabe, vault, { zweck: "lektion", konto: kiStufe });
       const antwort = r.fehler ? null : leseClaudeAntwort(r.ausgabe);
       const fehler = r.fehler || antwort.fehler;
       if (fehler) ergebnis.fehler = fehler;
@@ -384,7 +384,8 @@ function schreibeGesehen(vault, sid, set) {
 
 // verlaeufe: [{ transkript, sid, cwd }]. Schon gemeldete Themen je Sitzung (.logs/lektionen/<sid>.json) kommen
 // nicht noch einmal (SessionEnd und PreCompact feuern beide). → { status, grund?, kandidaten, vorschlaege, … }
-export async function lektionenAusVerlaeufen(vault, verlaeufe, { claudeBefehl, jetzt = Date.now(), anlass = "sitzungsende" } = {}) {
+// kiStufe: die Mindeststufe des KI-Kontos für den KI-Aufruf — Sitzungsende (Hook, Konto der Sitzung) „posteingang“, der Pflege-Lauf des Dienstes „erweitert“.
+export async function lektionenAusVerlaeufen(vault, verlaeufe, { claudeBefehl, jetzt = Date.now(), anlass = "sitzungsende", kiStufe = "posteingang" } = {}) {
   const ergebnis = (status, grund, extra = {}) => ({ status, ...(grund ? { grund } : {}), kandidaten: 0, vorschlaege: [], ...extra });
   if (process.env.BRAIN_ERNTE === "1") return ergebnis("uebersprungen", "Selbstaufruf");
   const log = join(vault, ".logs", "lektionen.log");
@@ -410,8 +411,9 @@ export async function lektionenAusVerlaeufen(vault, verlaeufe, { claudeBefehl, j
       }
       alle.sort((a, b) => b.anzahl - a.anzahl);
       const auswahl = alle.slice(0, MAX_JE_LAUF);
-      const befehl = mitKi ? (claudeBefehl === undefined ? findeClaude() : claudeBefehl) : null;
-      const r = await formuliereLektionen(vault, auswahl, { mitKi, claudeBefehl: befehl, jetzt, ohneThema: werte.ernteOhneThema });
+      const kontoOk = kiKontoDarf(vault, kiStufe);   // KI-Konten: ohne ausreichende Stufe geht nichts an die KI (Rückfall: Rohkandidaten, wie bei „claude fehlt“)
+      const befehl = mitKi && kontoOk ? (claudeBefehl === undefined ? findeClaude() : claudeBefehl) : null;
+      const r = await formuliereLektionen(vault, auswahl, { mitKi, claudeBefehl: befehl, jetzt, ohneThema: werte.ernteOhneThema, kiStufe, ...(kontoOk ? {} : { keinKiGrund: "KI-Konto ohne Berechtigung" }) });
       thema += r.thema || 0;
       for (const k of auswahl) gesehen.get(k._sid)?.add(k.schluessel);
       for (const [sid, set] of gesehen) if (auswahl.some(k => k._sid === sid)) schreibeGesehen(vault, sid, set);
