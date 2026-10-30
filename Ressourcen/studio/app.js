@@ -5,7 +5,7 @@ import { api, aktion, aktionMitAntwort, inApp, gitGesperrt, andererVault, nichtV
 import { erstelleEditor } from "./editor.js";
 import { h, dialog, dialogOffen, schliesseDialoge, toast, vorMinuten, dateiName, ohneEndung, ordnerVon, istBearbeitbar, speichereLokal, leseLokal, leseEntwurf, speichereEntwurf, sucheGrad, suchFormen, ausTabelle, arbeitBeginnt, laufendeArbeiten } from "./hilfen.js";
 import { symbol } from "./symbole.js";
-import { textfeld, textbereich, auswahl, hakenFeld, knopf as baueKnopf, setzeLaedt, mitLaden } from "./bausteine.js";
+import { textfeld, textbereich, auswahl, hakenFeld, knopf as baueKnopf, setzeLaedt, wenigBewegung } from "./bausteine.js";
 import { kiLogo } from "./ki-logos.js";
 import { TV } from "./texte-verlauf.js";
 import { istRohGit } from "./verlauf.js";
@@ -49,6 +49,7 @@ document.title = PRODUKT;
 $("suche").placeholder = T.suche.platzhalter;
 document.querySelector('[data-t="neu"]').textContent = T.seitenleiste.neu;
 document.querySelector('[data-t="merken"]').textContent = T.seitenleiste.merken;
+$("fuss-merken").title = T.seitenleiste.merken; $("fuss-merken").setAttribute("aria-label", T.seitenleiste.merken); // bleibt benannt, wenn die Seitenleiste nur das Symbol zeigt
 document.querySelectorAll("[data-sym]").forEach((el) => el.replaceWith(symbol(el.dataset.sym, 16)));
 $("knopf-suche").replaceChildren(symbol("suche", 16));
 $("knopf-neu").replaceChildren(symbol("plus", 16));
@@ -346,6 +347,13 @@ const BEREICHE = [
   ["inbox", "inbox"], ["aufgaben", "aufgaben"], ["rueckfragen", "info"], ["alle", "notiz"], ["wissen", "buch"], ["archiv", "archiv"],
 ];
 const istAufgabenSicht = () => S.sicht.art === "bereich" && S.sicht.id === "aufgaben";
+// Weicher Ansichtswechsel (Notizen ↔ Aufgaben ↔ Posteingang): kurzes Einblenden (140 ms), ohne Bewegung bei „Bewegung reduzieren“
+function weicherWechsel() {
+  if (wenigBewegung()) return;
+  const a = $("app");
+  a.classList.remove("ansicht-wechsel"); void a.offsetWidth; a.classList.add("ansicht-wechsel");
+  setTimeout(() => a.classList.remove("ansicht-wechsel"), 170);
+}
 // Fenster-Modus: liste (Standard) · verlauf · aufgaben (Board füllt den Platz) · aufgaben-datei (Karte als Datei im Editor)
 function setzeModus() {
   $("app").dataset.modus = S.sicht.art === "verlauf" ? "verlauf" : istAufgabenSicht() ? (S.aufgabeDatei ? "aufgaben-datei" : "aufgaben") : "liste";
@@ -371,9 +379,11 @@ function waehleSicht(sicht, { merken = true } = {}) {
   if (sicht.art !== "verlauf") S.vorVerlauf = null;
   schliesseSuche(false);
   if (!gleicheSicht(S.sicht, sicht)) S.zeigeZurueckgestellt = false;
+  const vorherModus = $("app").dataset.modus, vorherId = S.sicht.id;
   S.sicht = sicht;
   S.aufgabeDatei = false;
   if (merken && sicht.art !== "verlauf") lokal.schreib("sicht", sicht);
+  if (vorherModus !== (S.sicht.art === "verlauf" ? "verlauf" : istAufgabenSicht() ? "aufgaben" : "liste") || vorherId !== sicht.id) weicherWechsel();
   setzeModus();
   zeichneSeite(); zeichneListe();
   $("liste-koerper").scrollTop = 0;
@@ -523,7 +533,8 @@ function zeichneListenKopf() {
   $("knopf-suche").hidden = verlauf;
   $("knopf-neu").hidden = verlauf;
   const sk = $("knopf-sort");
-  sk.replaceChildren(symbol("sortierung", 14), h("span", { text: T.sortierung[S.sortierung] }));
+  sk.replaceChildren(symbol("sortierung", 14), h("span", { klasse: "sort-text", text: T.sortierung[S.sortierung] }));
+  sk.title = `${T.sortierung.menue}: ${T.sortierung[S.sortierung]}`;
   let zu = document.getElementById("verlauf-zu");
   if (verlauf && !zu) { zu = h("button", { id: "verlauf-zu", klasse: "knopf-icon", title: "Verlauf schließen", "aria-label": "Verlauf schließen", aufClick: schliesseVerlauf }, symbol("schliessen", 14)); document.querySelector(".liste-werkzeuge").append(zu); }
   if (!verlauf) zu?.remove();
@@ -532,7 +543,8 @@ function leerZustand() {
   const { art, id } = S.sicht;
   const t = art === "favoriten" ? T.liste.leerFavoriten : art === "ansicht" ? T.liste.leerAnsicht : art === "bereich" && id === "inbox" ? T.liste.leerInbox : T.liste.leer;
   return h("div", { klasse: "leer-liste", "data-leer": "liste" }, h("div", { klasse: "zeichen" }, symbol(art === "ansicht" ? "kreis-haken" : "notiz", 24)), h("h3", { text: t.titel }), h("p", { text: t.text }),
-    art === "bereich" && (id === "inbox" || id === "alle") ? baueKnopf({ text: T.seitenleiste.neu, variante: "primaer", aufKlick: () => oeffneNeu() }) : null,
+    art === "bereich" && (id === "inbox" || id === "alle") ? baueKnopf({ text: T.seitenleiste.neu, variante: "primaer", aufKlick: () => oeffneNeu() })
+      : baueKnopf({ text: T.liste.alleNotizen, aktion: "alle-notizen", aufKlick: () => waehleSicht({ art: "bereich", id: "alle" }) }),
     h("div", { klasse: "kurz" }, h("span", null, h("kbd", { text: "⌘K" }), "suchen"), h("span", null, h("kbd", { text: "⌘N" }), "neu")));
 }
 function baueKarte(n) {
@@ -726,7 +738,8 @@ function zeichneSuchergebnisse() {
   const host = $("liste-koerper");
   zeichneListenKopf();
   if (!S.suche.frage) return;
-  if (!S.suche.treffer.length) { host.replaceChildren(h("div", { klasse: "leer-liste", "data-suche": "leer" }, h("div", { klasse: "zeichen" }, symbol("suche", 24)), h("h3", { text: T.liste.leerSuche.titel }), h("p", { text: T.liste.leerSuche.text }))); return; }
+  if (!S.suche.treffer.length) { host.replaceChildren(h("div", { klasse: "leer-liste", "data-suche": "leer" }, h("div", { klasse: "zeichen" }, symbol("suche", 24)), h("h3", { text: T.liste.leerSuche.titel }), h("p", { text: T.liste.leerSuche.text }),
+    baueKnopf({ text: T.liste.sucheLoeschen, variante: "leise", groesse: "s", aktion: "suche-loeschen", aufKlick: () => { sucheEl.value = ""; sucheEl.dispatchEvent(new Event("input")); sucheEl.focus(); } }))); return; }
   host.replaceChildren(...S.suche.treffer.map((t, i) => {
     const n = S.nMap.get(t.pfad);
     const typ = n?.typ ? (S.typMap.get(n.typ) || { name: n.typ }) : null;
@@ -1182,13 +1195,16 @@ function zeichneStatus() {
     const w = Array.isArray(gs.warnungen) ? gs.warnungen.length : Number(gs.warnungen) || 0;
     const ampel = String(gs.ampel || "").toLowerCase();
     const farbe = /rot|red/.test(ampel) ? "rot" : /gelb|yellow|orange/.test(ampel) || w ? "gelb" : "";
-    k.push(st("gesundheit", [symbol(farbe ? "warnung" : "herz", 14), h("span", { text: T.status.gesundheit }), (w ? h("span", { text: String(w) }) : symbol("haken", 12))], { klick: oeffneGesundheit, klasse: farbe === "rot" ? "schlecht" : farbe ? "warn" : "gut" }));
+    k.push(st("gesundheit", [symbol(farbe ? "warnung" : "herz", 14), h("span", { text: T.status.gesundheit }), (w ? h("span", { text: String(w) }) : symbol("haken", 12))], { klick: oeffneGesundheit, titel: T.befehle.gesundheit, klasse: farbe === "rot" ? "schlecht" : farbe ? "warn" : "gut" }));
   }
   k.push(st("nutzung", [symbol("balken", 14), h("span", { text: T.status.nutzung })], { klick: oeffneNutzung, titel: T.status.nutzungTitel }));
   k.push(h("span", { klasse: "trenner" }));
   k.push(st("theme", [symbol(istDunkel() ? "sonne" : "mond", 14)], { klick: () => setzeTheme(istDunkel() ? "hell" : "dunkel"), titel: istDunkel() ? T.status.zuHell : T.status.zuDunkel }));
   k.push(st("einstellungen", [symbol("zahnrad", 14)], { klick: (e) => oeffneEinstellungen(e.currentTarget), titel: T.status.einstellungen }));
+  // Fokus merken: das Neuzeichnen (alle 30 s, nach jedem Git-Stand) darf den Tastaturfokus nicht verlieren
+  const fokusId = stEl.contains(document.activeElement) ? document.activeElement.closest?.("[data-st]")?.dataset.st : null;
   stEl.replaceChildren(...k);
+  if (fokusId) { const neu = stEl.querySelector(`[data-st="${CSS.escape(fokusId)}"]`); if (neu && neu.tagName === "BUTTON") neu.focus({ preventScroll: true }); }
 }
 setInterval(() => { if (S.git) zeichneStatus(); }, 30000);
 window.addEventListener("online", () => { S.offline = false; if (S.git) { zeichneStatus(); nachsehen(true); } });

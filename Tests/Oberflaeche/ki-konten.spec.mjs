@@ -61,10 +61,19 @@ test("Einstellungen → KI-Konten: Liste mit Logo, Name, Programm, Ordner und ve
   await ruhig(page); await page.screenshot({ path: shot("liste-hell") });
 });
 
+// Auswahl-Baustein: Combobox öffnen, Option wählen
+async function waehleAus(page, combobox, wert) {
+  // Ein Neuzeichnen des Dialogs (Antwort der Werkstatt) schließt eine offene Liste (Scrollen außerhalb) – dann erneut öffnen
+  await expect(async () => {
+    if (!(await page.locator('.bs-liste').count())) await combobox.click();
+    await page.locator(`.bs-liste [role="option"][data-wert="${wert}"]`).click({ timeout: 2000 });
+  }).toPass({ timeout: 15000 });
+}
+
 test("Wer darf diesen Vault sehen: eine Stufe je Konto, die Erklärung wechselt mit; Lesen und Posteingang sofort, Neue Konten als Standard je Vault", async ({ page }) => {
   const z = await start(page);
   const d = dlg(page);
-  await expect(d.locator('[data-kk="vault-wahl"]')).toHaveValue(vault);
+  await expect(d.locator('[data-kk="vault-wahl"]')).toHaveAttribute("data-wert", vault);
   await expect(zeile(page, "k_aaaa0001")).toHaveAttribute("data-stufe", "posteingang");
   await expect(stufeKnopf(page, "k_aaaa0001", "posteingang")).toHaveAttribute("aria-checked", "true");
   await expect(zeile(page, "k_aaaa0001").locator('[data-kk="stufentext"]')).toContainText("Neues im Posteingang ablegen");
@@ -86,7 +95,7 @@ test("Wer darf diesen Vault sehen: eine Stufe je Konto, die Erklärung wechselt 
   await expect(neu.locator('[data-stufe-wahl="lesen"]')).toHaveAttribute("aria-checked", "true");
   expect(z.log("/api/ki/standard").at(-1).body).toEqual({ vault, stufe: "lesen" });
   // anderer Vault wählen: die Stufen gehören zu diesem Vault
-  await d.locator('[data-kk="vault-wahl"]').selectOption(FIRMA);
+  await waehleAus(page, d.locator('[data-kk="vault-wahl"]'), FIRMA);
   await expect(zeile(page, "k_aaaa0001")).toHaveAttribute("data-stufe", "posteingang");
   await expect(neu.locator('[data-stufe-wahl="gesperrt"]')).toHaveAttribute("aria-checked", "true");
   await ruhig(page); await page.screenshot({ path: shot("vault-hell") });
@@ -193,16 +202,16 @@ test("Übersicht aller Vaults: Konten × Vaults als Auswahlfelder; eine Sperre f
   const m = d.locator('[data-kk="matrix"]');
   await expect(m).toBeVisible();
   await expect(m.locator("thead th")).toHaveCount(3);
-  await expect(m.locator('tr[data-konto="k_aaaa0001"] select').first()).toHaveValue("posteingang");
-  await expect(m.locator('tr[data-konto="k_aaaa0002"] select').first()).toHaveValue("gesperrt");
-  await m.locator('tr[data-konto="k_aaaa0003"] td[data-vault="' + FIRMA + '"] select').selectOption("lesen");
-  await expect(m.locator('tr[data-konto="k_aaaa0003"] td[data-vault="' + FIRMA + '"] select')).toHaveValue("lesen");
+  await expect(m.locator('tr[data-konto="k_aaaa0001"] [data-kk="matrix-zelle"]').first()).toHaveAttribute("data-wert", "posteingang");
+  await expect(m.locator('tr[data-konto="k_aaaa0002"] [data-kk="matrix-zelle"]').first()).toHaveAttribute("data-wert", "gesperrt");
+  await waehleAus(page, m.locator('tr[data-konto="k_aaaa0003"] td[data-vault="' + FIRMA + '"] [data-kk="matrix-zelle"]'), "lesen");
+  await expect(m.locator('tr[data-konto="k_aaaa0003"] td[data-vault="' + FIRMA + '"] [data-kk="matrix-zelle"]')).toHaveAttribute("data-wert", "lesen");
   expect(z.log("/api/ki/zugriff").at(-1).body).toEqual({ konto: "k_aaaa0003", vault: FIRMA, stufe: "lesen" });
-  await m.locator('tr[data-konto="k_aaaa0003"] td[data-vault="' + FIRMA + '"] select').selectOption("gesperrt");
+  await waehleAus(page, m.locator('tr[data-konto="k_aaaa0003"] td[data-vault="' + FIRMA + '"] [data-kk="matrix-zelle"]'), "gesperrt");
   await expect(d.locator('[data-kk="frage-sperren"]')).toBeVisible();
-  await expect(m.locator('tr[data-konto="k_aaaa0003"] td[data-vault="' + FIRMA + '"] select')).toHaveValue("lesen");   // noch nicht gesperrt
+  await expect(m.locator('tr[data-konto="k_aaaa0003"] td[data-vault="' + FIRMA + '"] [data-kk="matrix-zelle"]')).toHaveAttribute("data-wert", "lesen");   // noch nicht gesperrt
   await d.locator('[data-aktion="konten-sperren-ja"]').click();
-  await expect(m.locator('tr[data-konto="k_aaaa0003"] td[data-vault="' + FIRMA + '"] select')).toHaveValue("gesperrt");
+  await expect(m.locator('tr[data-konto="k_aaaa0003"] td[data-vault="' + FIRMA + '"] [data-kk="matrix-zelle"]')).toHaveAttribute("data-wert", "gesperrt");
   await ruhig(page); await page.screenshot({ path: shot("matrix-hell") });
   await d.locator('[data-ansicht="vault"]').click();
   await expect(d.locator('[data-kk="zugriff-liste"]')).toBeVisible();

@@ -347,7 +347,7 @@ button:focus-visible, [tabindex]:focus-visible, a:focus-visible { outline: 2px s
 .rueck.link-gold { color: var(--akzent); }
 
 /* ---------- Statusleiste ---------- */
-.status { grid-area: status; display: flex; align-items: center; gap: 2px; padding: 0 8px; border-top: 1px solid var(--linie); background: var(--seite); color: var(--text-2); font-size: 12px; min-width: 0; overflow: hidden; }
+.status { container: status / inline-size; grid-area: status; display: flex; align-items: center; gap: 2px; padding: 0 8px; border-top: 1px solid var(--linie); background: var(--seite); color: var(--text-2); font-size: 12px; min-width: 0; overflow: hidden; }
 .status .sp { flex: 1; }
 .st { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border: 0; background: transparent; border-radius: 5px; color: inherit; cursor: default; white-space: nowrap; font-variant-numeric: tabular-nums; flex: none; transition: background var(--t), color var(--t); }
 button.st { cursor: pointer; } button.st:hover { background: var(--hover-2); color: var(--text); }
@@ -529,3 +529,29 @@ button.st:focus-visible, .baum .zeile:focus-visible, .baum .pfeil:focus-visible,
 .knopf-icon:active, .knopf-text:active, .eintrag:active, .m-eintrag:active, button.st:active { background: var(--hover-2); }
 .knopf-icon:disabled, .knopf-icon[aria-disabled="true"] { opacity: .4; cursor: default; pointer-events: none; }
 .sym, .marken-logo svg { shape-rendering: geometricPrecision; }
+
+/* ---------- Responsiv: Statusleiste, Seitenleiste, Listenkopf, Kopfzeile des Editors (nichts ragt über den Rand) ---------- */
+@container status (max-width: 1180px) { .st[data-st="version"], .st[data-st="remote"] > span { display: none; } .st[data-st="remote"] { padding: 0 6px; } }
+@container status (max-width: 960px) {
+  .st[data-st="verlauf"] > span, .st[data-st="claude"] > span:not(.ki-logo), .st[data-st="nutzung"] > span, .st[data-st="gesundheit"] > span:first-of-type:not(:last-child) { display: none; }
+  .st[data-st="vault"] > span:last-child { max-width: 90px; overflow: hidden; text-overflow: ellipsis; }
+  .st.sync .sync-aktion { display: none; }
+}
+@container status (max-width: 780px) {
+  .st[data-st="vault"] > span:last-child, .st[data-st="geaendert"] > span:not(.st-zahl), .st.sync .sync-zustand > span:last-child { display: none; }
+  .st[data-st="zweig"] > span:nth-of-type(2) { display: none; }
+  .st.sync .sync-zustand { padding: 0 8px; }
+}
+#seite { container: seite / inline-size; }
+@container seite (max-width: 270px) {
+  #fuss-merken { flex: 0 0 36px; padding: 0; }
+  #fuss-merken > span:last-child { display: none; }
+}
+.knopf-fuss { min-width: 0; overflow: hidden; }
+.knopf-fuss > span:last-child { overflow: hidden; text-overflow: ellipsis; }
+#liste { container: liste / inline-size; }
+@container liste (max-width: 300px) { #knopf-sort .sort-text { display: none; } #knopf-sort { padding: 0 6px; } }
+.werkzeug-rechts { min-width: 0; }
+.werkzeuge { flex-wrap: nowrap; }
+.seite-fuss .knopf-fuss.primaer { flex: 0 0 auto; padding: 0 18px; }
+.seite-fuss .knopf-fuss:not(.primaer) { flex: 1 1 0; }

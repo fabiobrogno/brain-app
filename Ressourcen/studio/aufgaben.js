@@ -234,7 +234,8 @@ export function baueAufgaben(host, ctx) {
       return;
     }
     if (st.geladen && !st.liste.length) {
-      brett.replaceChildren(h("div", { klasse: "au-leer", "data-aufgaben-leer": "" }, symbol("aufgaben", GROESSE.kachel), h("h3", { text: TA.leer.titel }), h("p", { text: TA.leer.text })));
+      brett.replaceChildren(h("div", { klasse: "au-leer", "data-aufgaben-leer": "" }, symbol("aufgaben", GROESSE.kachel), h("h3", { text: TA.leer.titel }), h("p", { text: TA.leer.text }),
+        knopf({ text: TA.leer.aktion, variante: "primaer", aktion: "aufgabe-erste", aufKlick: () => eingabe.focus() })));
       return;
     }
     const sichtbar = SPALTEN.reduce((n, s) => n + sichtbarInSpalte(s).karten.length, 0);
@@ -242,7 +243,8 @@ export function baueAufgaben(host, ctx) {
     const scroll = new Map([...brett.querySelectorAll("[data-spalte-karten]")].map((e) => [e.dataset.spalteKarten, e.scrollTop]));
     brett.replaceChildren(...SPALTEN.map(spalteEl));
     for (const [sp, y] of scroll) { const e = brett.querySelector(`[data-spalte-karten="${sp}"]`); if (e && y) e.scrollTop = y; }
-    if (aktiv && !sichtbar) brett.prepend(h("div", { klasse: "au-leer klein", "data-aufgaben-gefiltert": "" }, h("p", { text: TA.filter.keine })));
+    if (aktiv && !sichtbar) brett.prepend(h("div", { klasse: "au-leer klein", "data-aufgaben-gefiltert": "" }, h("p", { text: TA.filter.keine }),
+      knopf({ text: TA.filter.keineAktion, variante: "leise", groesse: "s", aktion: "filter-zurueck", aufKlick: () => { Object.assign(st.filter, FILTER_STANDARD); ctx.lokal.schreib("aufgabenFilter", st.filter); syncFilter(); zeichne(); } })));
     if (fokus) brett.querySelector(`[data-karte-aufgabe][data-pfad="${CSS.escape(fokus)}"]`)?.focus({ preventScroll: false });
     if (st.neuPfad) { const neu = st.neuPfad; setTimeout(() => { if (st.neuPfad === neu) st.neuPfad = null; }, 1600); }
   }
