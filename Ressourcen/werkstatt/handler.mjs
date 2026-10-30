@@ -281,6 +281,10 @@ export function erzeugeHandler(o) {
         if (methode === "GET") return konten.stand();
         nur("POST"); return konten.setzeName(eingabe());
       case "/api/ki/zugriff": nur("PUT"); return konten.setzeZugriff(eingabe());
+      case "/api/ki/standard": nur("PUT"); return konten.setzeStandard(eingabe());
+      case "/api/ki/schutz": nur("POST"); return konten.setzeSchutz(eingabe());
+      case "/api/ki/hinweis": nur("POST"); return konten.quittiereHinweis();
+      case "/api/ki/vorher": nur("POST"); return konten.holeVorher(eingabe());
       case "/api/vaults": nur("GET"); return vaultListe(v);
       case "/api/vaults/aktiv": {
         nur("POST");

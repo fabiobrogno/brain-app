@@ -104,6 +104,14 @@ export const api = {
   githubKonto: () => anfrage("GET", "/api/github/konto"),
   githubAbmelden: () => anfrage("POST", "/api/github/abmelden", {}),
   probe: (frage) => anfrage("POST", "/api/probe", { frage }),
+  // ---- KI-Konten und Vault-Zugriff (Paket P2). Das Leseverbot in Claude Code wird nur mit claudeSperre: true geschrieben, der Strenge Schutz nur mit bestaetigt: true — beides setzt die Oberfläche erst nach dem Klick.
+  kiKonten: () => anfrage("GET", "/api/ki/konten"),
+  kiKontoName: (id, name) => anfrage("POST", "/api/ki/konten", { id, name }),
+  kiZugriff: ({ konto, vault, stufe, claudeSperre }) => anfrage("PUT", "/api/ki/zugriff", { konto, vault, stufe, ...(typeof claudeSperre === "boolean" ? { claudeSperre } : {}) }),
+  kiStandard: (vault, stufe) => anfrage("PUT", "/api/ki/standard", { vault, stufe }),
+  kiSchutz: (konto, sandbox) => anfrage("POST", "/api/ki/schutz", sandbox ? { konto, sandbox: true, bestaetigt: true } : { konto, sandbox: false }),
+  kiHinweis: () => anfrage("POST", "/api/ki/hinweis", {}),
+  kiVorher: () => anfrage("POST", "/api/ki/vorher", { bestaetigt: true }),
   // ---- Umstellung eines Vaults aus der Kit-Zeit (P7). Geschrieben wird nur mit bestaetigt: true — das setzt die Oberfläche erst nach dem Klick des Nutzers.
   umstellungHinweis: () => anfrage("GET", "/api/umstellung/hinweis"),
   umstellungBefund: () => anfrage("GET", "/api/umstellung/befund"),

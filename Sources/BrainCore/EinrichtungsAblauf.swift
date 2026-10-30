@@ -12,6 +12,11 @@ public struct KiZeile: Equatable, Sendable {
         /// Die KI-App hat schon einen anderen Eintrag „brain“: nur mit Ja des Nutzers umstellen.
         case umstellenFragen
         case fehler(String, befehl: String?)
+
+        public var istFehler: Bool {
+            if case .fehler = self { return true }
+            return false
+        }
     }
 
     public let ziel: KiZiel
@@ -129,12 +134,19 @@ public struct EinrichtungsAnzeige: Equatable, Sendable {
     public var kiHinweise: [KiZiel: String] = [:]
     /// Fehler beim Trennen, je KI.
     public var kiTrennFehler: [KiZiel: String] = [:]
+    /// Die Stufe, mit der das KI-Konto den Vault sehen soll, je KI (Standard: `KiStufe.standard`). Gilt beim Verbinden und beim Eintragen der Hooks.
+    public var kiStufen: [KiZiel: KiStufe] = [:]
     /// Die Konfiguration zum Kopieren ist gerade in der Zwischenablage (kurze Rückmeldung) bzw. ließ sich nicht holen.
     public var konfiguration = KonfigurationsAnzeige.offen
     public var verdrahtung = VerdrahtungsAnzeige()
     public var probe = ProbeAnzeige.offen
 
     public init() {}
+
+    /// Die gewählte Stufe für diese KI.
+    public func kiStufe(_ ziel: KiZiel) -> KiStufe { kiStufen[ziel] ?? .standard }
+    /// Der Hinweis auf weitere KI-Konten erscheint, sobald überhaupt ein KI-Programm gefunden wurde.
+    public var zeigeWeitereKontenHinweis: Bool { kis.contains { $0.status != .nichtGefunden } }
 }
 
 /// Der Ablauf des Assistenten „Kortex einrichten“: stellt aus der Wirklichkeit fest, was schon erledigt ist (git da? Vault aktiv?
@@ -657,7 +669,7 @@ public final class EinrichtungsAblauf {
         anzeige.verdrahtung.arbeitet = was
         melde()
         do {
-            anzeige.verdrahtung.stand = try await dienste.verdrahte(was, an: an, ersetzen: ersetzen, profile: profile)
+            anzeige.verdrahtung.stand = try await dienste.verdrahte(was, an: an, ersetzen: ersetzen, profile: profile, zugriff: was == .claude ? anzeige.kiStufe(.claude) : nil)
             log("einrichtung verdrahtung \(was.rawValue) \(an ? "an" : "aus")")
         } catch let e as EinrichtungsFehler {
             if was == .git, an, e.status == 409, e.art == "anders" {
@@ -694,6 +706,12 @@ public final class EinrichtungsAblauf {
         melde()
     }
 
+    /// Die Stufe wählen, mit der das KI-Konto den Vault sehen soll (vor dem Verbinden; sonst gilt `KiStufe.standard`).
+    public func waehleKiStufe(_ ziel: KiZiel, _ stufe: KiStufe) {
+        anzeige.kiStufen[ziel] = stufe
+        melde()
+    }
+
     public func verbinde(_ ziel: KiZiel, umstellen: Bool = false) async {
         anzeige.kiHinweise[ziel] = nil
         anzeige.kiTrennFehler[ziel] = nil
@@ -709,7 +727,7 @@ public final class EinrichtungsAblauf {
             }
             var alleSchon = true
             for profil in ziele {
-                if try await dienste.verbinde(ziel, umstellen: umstellen, profil: profil) != .schonVerbunden { alleSchon = false }
+                if try await dienste.verbinde(ziel, umstellen: umstellen, profil: profil, zugriff: anzeige.kiStufe(ziel)) != .schonVerbunden { alleSchon = false }
             }
             setzeKi(ziel, .verbunden(schon: alleSchon))
             zustand.loescheFehler(.ki)

@@ -215,7 +215,10 @@ function schreibeDatei(support, daten) {
   const datei = kontenPfad(support);
   mkdirSync(dirname(datei), { recursive: true, mode: 0o700 });
   const nonce = `${process.pid}.${randomBytes(4).toString("hex")}`;
-  if (liesKonten(support).zustand === "ok") {
+  // Solange der Hinweis „Liste war beschädigt“ gilt (daten.hinweis), bleibt .vorher die letzte gute Fassung von VOR dem Schaden: sonst wäre sie mit dem ersten Schreiben danach überschrieben,
+  // und „frühere Fassung zurückholen“ (stelleVorherWiederHer) hätte nichts mehr zurückzuholen.
+  const jetzt = liesKonten(support);
+  if (jetzt.zustand === "ok" && !(jetzt.daten.hinweis && jetzt.daten.hinweis.art === "defekt-neu")) {
     const vor = `${datei}.vorher.${nonce}.tmp`;
     try { copyFileSync(datei, vor, constants.COPYFILE_EXCL); chmodSync(vor, 0o600); renameSync(vor, `${datei}.vorher`); }
     catch { try { unlinkSync(vor); } catch { /* weg */ } }

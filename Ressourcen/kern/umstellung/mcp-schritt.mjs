@@ -10,6 +10,7 @@ import { readFileSync, statSync } from "node:fs";
 import { join, delimiter } from "node:path";
 import { spawnSync } from "node:child_process";
 import { mcpLage, claudeServer, codexServer, cursorServer } from "./mcp-lage.mjs";
+import { kontoLeser, kontoFuerZiel } from "./konto.mjs";
 import { kindUmgebung, findeClaudeProgramm } from "./ziele.mjs";
 import { hashDatei, sichereDatei, sicherungsPfad, stelleHer, schreibeAtomar, echtesDateiZiel, modusVon } from "./protokoll.mjs";
 
@@ -34,8 +35,12 @@ export function findeCodex(z) {
   }
   return null;
 }
-const sollEintrag = (z) => ({ command: z.node, args: [z.mcpServer] });
-const istGleich = (e, z) => !!e && e.command === z.node && Array.isArray(e.args) && e.args.length === 1 && e.args[0] === z.mcpServer;
+// KI-Konten: ein Eintrag trägt `--konto <id>` am Ende, sobald Kortex das Konto kennt (docs/plaene/ki-konten.md); ohne Kennung bleibt es die Altform.
+const serverArgs = (z, konto) => [z.mcpServer, ...(konto ? ["--konto", konto] : [])];
+const sollEintrag = (z, konto = null) => ({ command: z.node, args: serverArgs(z, konto) });
+const istGleich = (e, z, konto = null) => !!e && e.command === z.node && Array.isArray(e.args) && JSON.stringify(e.args) === JSON.stringify(serverArgs(z, konto));
+// Die Liste der KI-Konten liegt im echten Support-Ordner (auch im Probelauf), gelesen wird nur.
+const kontoLies = (z) => kontoLeser(z.supportOriginal || z.support);
 function lauf(z, prog, args, extra = {}) {
   const r = spawnSync(prog.befehl, [...prog.args, ...args], { encoding: "utf8", env: kindUmgebung(z, { CI: "1", ...extra }), cwd: z.home, timeout: FRIST, windowsHide: true });
   return { status: r.status === null ? 1 : r.status, stdout: String(r.stdout || ""), stderr: String(r.stderr || "") };
@@ -49,9 +54,9 @@ const claudeEnv = (p) => (p.standard ? {} : { CLAUDE_CONFIG_DIR: p.pfad });
 const gleichWert = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 // Claude Code: den NEUEN Eintrag setzen (remove, dann add – beides mit geprüftem Exit-Code) und den ALTEN verlustfrei wieder eintragen (`add-json` mit dem gesicherten Eintrag, nie
 // `add -e …`: --env ist variadisch und frisst den Namen). → true, wenn der Zustand danach stimmt.
-function claudeNeuSetzen(z, prog, p) {
+function claudeNeuSetzen(z, prog, p, konto = null) {
   if (lauf(z, prog, ["mcp", "remove", "-s", "user", "brain"], claudeEnv(p)).status !== 0) return false;
-  return lauf(z, prog, ["mcp", "add", "-s", "user", "brain", "--", z.node, z.mcpServer], claudeEnv(p)).status === 0 && istGleich(claudeNutzerEintrag(z, p), z);
+  return lauf(z, prog, ["mcp", "add", "-s", "user", "brain", "--", z.node, ...serverArgs(z, konto)], claudeEnv(p)).status === 0 && istGleich(claudeNutzerEintrag(z, p), z, konto);
 }
 function claudeAltHerstellen(z, prog, p, alt) {
   const jetzt = claudeNutzerEintrag(z, p);
@@ -66,9 +71,9 @@ export function codexAbschnitte(text) {
   const teile = String(text || "").split(/^(?=\[)/m);
   return { brain: teile.filter((x) => CODEX_ABSCHNITT.test(x)).join(""), rest: teile.filter((x) => !CODEX_ABSCHNITT.test(x)).join("") };
 }
-function codexNeuSetzen(z, prog) {
+function codexNeuSetzen(z, prog, konto = null) {
   if (lauf(z, prog, ["mcp", "remove", "brain"]).status !== 0) return false;
-  return lauf(z, prog, ["mcp", "add", "brain", "--", z.node, z.mcpServer]).status === 0 && istGleich(codexServer(z.home).servers.brain, z);
+  return lauf(z, prog, ["mcp", "add", "brain", "--", z.node, ...serverArgs(z, konto)]).status === 0 && istGleich(codexServer(z.home).servers.brain, z, konto);
 }
 function codexAltHerstellen(datei, altText, modus) {
   const t = (() => { try { return readFileSync(datei, "utf8"); } catch { return ""; } })();
@@ -78,7 +83,8 @@ function codexAltHerstellen(datei, altText, modus) {
 
 export function lage(z, ctx) {
   if (!z.mcpServer) return [];
-  return mcpLage({ home: z.home, support: z.festSupport, profile: ctx.profile, vaults: bekannteVaults(z) });
+  const lies = kontoLies(z);
+  return mcpLage({ home: z.home, support: z.festSupport, profile: ctx.profile, vaults: bekannteVaults(z), konto: (ziel, profil) => kontoFuerZiel(lies, ziel, z.home, profil) });
 }
 const handeln = (e, ctx) => e.art === "alt" || (e.art === "anders" && ctx.entscheidungen.mcpAnders === true);
 
@@ -103,9 +109,9 @@ export function wende(z, ctx) {
       const prog = findeClaudeProgramm(z);
       if (!alt || typeof alt.command !== "string" || (alt.type && alt.type !== "stdio")) { uebersprungen.push("claude-projektebene"); continue; }
       if (!prog) { uebersprungen.push("claude-fehlt"); continue; }
-      undo.eintraege.push({ ziel: "claude", profil: p.pfad, standard: !!p.standard, alt });
+      undo.eintraege.push({ ziel: "claude", profil: p.pfad, standard: !!p.standard, alt, konto: e.konto || null });
       ctx.merkeUndo(undo);
-      if (!claudeNeuSetzen(z, prog, p)) {
+      if (!claudeNeuSetzen(z, prog, p, e.konto || null)) {
         // zurück auf den alten Eintrag; gelingt auch das nicht, steht er vollständig in den Rückweg-Angaben (der Rückweg versucht es noch einmal)
         if (!claudeAltHerstellen(z, prog, p, alt)) throw new Error("mcp-claude-eintrag-verloren");
         throw new Error("mcp-claude-fehlgeschlagen");
@@ -118,10 +124,10 @@ export function wende(z, ctx) {
       if (!prog) { uebersprungen.push("codex-fehlt"); continue; }
       const alt = codexServer(z.home).servers.brain;
       const s = sichereDatei(z, ctx.sicherungsDir, datei, "codex-config.vor-a5.toml");
-      const eintrag = { ziel: "codex", altText: codexAbschnitte((() => { try { return readFileSync(datei, "utf8"); } catch { return ""; } })()).brain, datei, rel: s && s.rel, hashVorher: s && s.hash, hashNachher: null, modus: modusVon(datei) };
+      const eintrag = { ziel: "codex", konto: e.konto || null, altText: codexAbschnitte((() => { try { return readFileSync(datei, "utf8"); } catch { return ""; } })()).brain, datei, rel: s && s.rel, hashVorher: s && s.hash, hashNachher: null, modus: modusVon(datei) };
       undo.eintraege.push(eintrag);
       ctx.merkeUndo(undo);
-      if (!codexNeuSetzen(z, prog)) {
+      if (!codexNeuSetzen(z, prog, e.konto || null)) {
         // Fehlerpfad: die gesicherte Datei Byte für Byte zurück (verliert nichts, auch env und Zusatzfelder nicht)
         if (eintrag.rel) stelleHer(datei, sicherungsPfad(z, eintrag.rel), eintrag.modus || 0o600);
         throw new Error("mcp-codex-fehlgeschlagen");
@@ -136,17 +142,17 @@ export function wende(z, ctx) {
       try { doc = JSON.parse(readFileSync(datei, "utf8")); } catch { uebersprungen.push("cursor-unlesbar"); continue; }
       if (!istObjekt(doc) || !istObjekt(doc.mcpServers)) { uebersprungen.push("cursor-unlesbar"); continue; }
       const s = sichereDatei(z, ctx.sicherungsDir, datei, "cursor-mcp.vor-a5.json");
-      const eintrag = { ziel: "cursor", datei, rel: s && s.rel, hashVorher: s && s.hash, hashNachher: null, modus: modusVon(datei), alt: doc.mcpServers.brain };
+      const eintrag = { ziel: "cursor", konto: e.konto || null, datei, rel: s && s.rel, hashVorher: s && s.hash, hashNachher: null, modus: modusVon(datei), alt: doc.mcpServers.brain };
       undo.eintraege.push(eintrag);
       ctx.merkeUndo(undo);
-      doc.mcpServers.brain = sollEintrag(z);
+      doc.mcpServers.brain = sollEintrag(z, e.konto || null);
       schreibeAtomar(echtesDateiZiel(datei), JSON.stringify(doc, null, 2) + "\n", eintrag.modus);
       eintrag.hashNachher = hashDatei(datei);
       ctx.merkeUndo(undo);
       anzahl++;
     }
   }
-  ctx.nachDaten = { eintraege: undo.eintraege.map((x) => ({ ziel: x.ziel, profil: x.profil })) };
+  ctx.nachDaten = { eintraege: undo.eintraege.map((x) => ({ ziel: x.ziel, profil: x.profil, konto: x.konto || null })) };
   if (!anzahl) return { status: "uebersprungen", grund: uebersprungen[0] || "nichts-moeglich" };
   return { status: "ok", anzahl, details: { uebersprungen } };
 }
@@ -156,9 +162,9 @@ export function nachpruefen(z, ctx) {
   if (!d) return true;
   const profile = (p) => ctx.profile.find((x) => x.pfad === p);
   return d.eintraege.every((e) => {
-    if (e.ziel === "claude") { const p = profile(e.profil); return !!p && istGleich(claudeServer(p, z.home).servers.brain, z); }
-    if (e.ziel === "codex") return istGleich(codexServer(z.home).servers.brain, z);
-    return istGleich(cursorServer(z.home).servers.brain, z);
+    if (e.ziel === "claude") { const p = profile(e.profil); return !!p && istGleich(claudeServer(p, z.home).servers.brain, z, e.konto || null); }
+    if (e.ziel === "codex") return istGleich(codexServer(z.home).servers.brain, z, e.konto || null);
+    return istGleich(cursorServer(z.home).servers.brain, z, e.konto || null);
   });
 }
 
@@ -171,7 +177,7 @@ export function zurueck(z, ctx, undo) {
       const jetzt = claudeNutzerEintrag(z, p);
       const prog = findeClaudeProgramm(z);
       if (gleichWert(jetzt, e.alt)) continue;                                              // schon wieder der alte Eintrag
-      if (jetzt !== null && !istGleich(jetzt, z)) { hinweise.push("mcp-claude-geaendert"); continue; }   // du hast ihn inzwischen selbst geändert: bleibt
+      if (jetzt !== null && !istGleich(jetzt, z, e.konto || null)) { hinweise.push("mcp-claude-geaendert"); continue; }   // du hast ihn inzwischen selbst geändert: bleibt
       if (!prog) { hinweise.push("claude-fehlt"); continue; }
       if (claudeAltHerstellen(z, prog, p, e.alt)) n++; else hinweise.push("mcp-claude-nicht-zurueck");
     } else if (e.ziel === "codex") {
@@ -179,7 +185,7 @@ export function zurueck(z, ctx, undo) {
       if (jetzt === e.hashVorher) continue;
       if ((ctx && ctx.imFehler) && e.rel) { stelleHer(e.datei, sicherungsPfad(z, e.rel), e.modus || 0o600); n++; }
       else if (e.hashNachher && jetzt === e.hashNachher && e.rel) { stelleHer(e.datei, sicherungsPfad(z, e.rel), e.modus || 0o600); n++; }
-      else if (istGleich(codexServer(z.home).servers.brain, z) || (e.hashNachher === null && !codexServer(z.home).servers.brain)) { codexAltHerstellen(e.datei, e.altText || "", e.modus); n++; }
+      else if (istGleich(codexServer(z.home).servers.brain, z, e.konto || null) || (e.hashNachher === null && !codexServer(z.home).servers.brain)) { codexAltHerstellen(e.datei, e.altText || "", e.modus); n++; }
       else hinweise.push("mcp-codex-geaendert");
     } else if (e.ziel === "cursor") {
       const jetzt = hashDatei(e.datei);
@@ -187,7 +193,7 @@ export function zurueck(z, ctx, undo) {
       if (e.hashNachher && jetzt === e.hashNachher && e.rel) { stelleHer(e.datei, sicherungsPfad(z, e.rel), e.modus || 0o600); n++; }
       else {
         let doc = null; try { doc = JSON.parse(readFileSync(e.datei, "utf8")); } catch { /* unlesbar */ }
-        if (doc && istObjekt(doc.mcpServers) && istGleich(doc.mcpServers.brain, z)) { if (e.alt === undefined) delete doc.mcpServers.brain; else doc.mcpServers.brain = e.alt; schreibeAtomar(echtesDateiZiel(e.datei), JSON.stringify(doc, null, 2) + "\n", e.modus || 0o600); n++; }
+        if (doc && istObjekt(doc.mcpServers) && istGleich(doc.mcpServers.brain, z, e.konto || null)) { if (e.alt === undefined) delete doc.mcpServers.brain; else doc.mcpServers.brain = e.alt; schreibeAtomar(echtesDateiZiel(e.datei), JSON.stringify(doc, null, 2) + "\n", e.modus || 0o600); n++; }
         else hinweise.push("mcp-cursor-geaendert");
       }
     }

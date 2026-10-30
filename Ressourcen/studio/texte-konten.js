@@ -1,0 +1,131 @@
+// Texte der Ansicht „KI-Konten“ (KI-Konten und Vault-Zugriff, Paket P2). Deutsch, Du-Form, für Nicht-Techniker: App „Kortex“, Datenordner „Vault“, „KI-Konto“ statt Profil,
+// „Posteingang“. Fachwörter (settings.json, Sandbox) stehen nur dort, wo Kortex genau sagen muss, was es in welcher Datei ändert.
+export const TK = {
+  titel: "KI-Konten",
+  menue: "KI-Konten …",
+  schliessen: "Fertig",
+  laedt: "Kortex sucht die KI-Konten auf diesem Mac …",
+  intro: "Ein KI-Konto ist ein KI-Programm mit seiner Anmeldung, zum Beispiel Claude Code mit deinem privaten Zugang. Hier legst du fest, welches Konto welchen Vault über Kortex sehen darf.",
+  keineKonten: "Kortex hat auf diesem Mac noch kein KI-Konto gefunden. Installiere ein KI-Programm und verbinde es über „KI verbinden“ — dann erscheint es hier.",
+  neuSuchen: "Neu suchen",
+  fehlerLaden: "Die KI-Konten konnten nicht gelesen werden. Es wurde nichts verändert.",
+  nochmal: "Nochmal versuchen",
+  fehlerAllgemein: "Das hat nicht geklappt. Es wurde nichts Halbes hinterlassen.",
+
+  // ---- Beschädigte Liste
+  defekt: {
+    titel: "Die Liste der KI-Konten war beschädigt",
+    text: "Kortex hat sie neu angelegt und aus Vorsicht jedes Konto für jeden Vault gesperrt. Prüfe unten, wer welchen Vault sehen darf. Die beschädigte Datei liegt als Sicherung im Ordner von Kortex.",
+    verstanden: "Verstanden",
+    vorher: "Frühere Fassung zurückholen …",
+    vorherTitel: "Die frühere Fassung zurückholen?",
+    vorherText: "Das ist die Liste, wie sie vor dem Schaden war. Sie kann Sperren enthalten, die du inzwischen anders gesetzt hast, oder Konten, die es nicht mehr gibt. Danach gilt wieder, was dort stand.",
+    vorherJa: "Zurückholen",
+    vorherErfolg: "Die frühere Fassung ist wieder da.",
+  },
+
+  // ---- Konten
+  konten: {
+    titel: "Deine KI-Konten",
+    verbunden: "Verbunden",
+    nichtVerbunden: "Nicht verbunden",
+    nichtGefunden: "Ordner nicht gefunden",
+    umbenennen: "Umbenennen",
+    umbenennenFuer: (n) => `${n} umbenennen`,
+    nameFeld: "Name des KI-Kontos",
+    speichern: "Speichern",
+    abbrechen: "Abbrechen",
+    nameZuLang: "Der Name darf höchstens 40 Zeichen haben.",
+    nameLeer: "Der Name darf nicht leer sein.",
+    programmOrdner: (programm, ordner) => `${programm} · ${ordner}`,
+    standardKonto: "Standardkonto",
+    benannt: "Name gespeichert.",
+  },
+
+  // ---- Wer darf diesen Vault sehen?
+  vault: {
+    titel: "Wer darf diesen Vault sehen?",
+    wahl: "Vault",
+    ansichtVault: "Pro Vault",
+    ansichtMatrix: "Alle Vaults",
+    keinVault: "Es ist noch kein Vault eingerichtet. Lege zuerst einen Vault an oder öffne einen.",
+    keineKonten: "Es gibt noch kein KI-Konto, das du zuordnen könntest.",
+    neueKonten: "Neu gefundene Konten",
+    neueKontenHilfe: "Was für ein KI-Konto gilt, das Kortex in diesem Vault später zum ersten Mal sieht.",
+    neueKontenGesperrt: "Wird gesperrt",
+    neueKontenStufen: { gesperrt: "Gesperrt", lesen: "Lesen", posteingang: "Posteingang" },
+    neueKontenGespeichert: "Gespeichert.",
+    legende: "Was die Stufen bedeuten",
+    zeileFuer: (konto, vault) => `${konto} im Vault ${vault}`,
+    matrixKonto: "KI-Konto",
+    matrixHinweis: "Jede Zelle ist die Stufe eines Kontos in einem Vault. Eine Sperre fragt vorher nach.",
+    stufeGesetzt: (konto, stufe) => `${konto}: ${stufe}.`,
+  },
+  stufen: {
+    gesperrt: { name: "Gesperrt", text: "Das Konto findet diesen Vault über Kortex nicht: keine Suche, kein Lesen, keine Hinweise beim Fragen, nichts wird dort abgelegt." },
+    lesen: { name: "Lesen", text: "Das Konto darf nachschlagen: suchen und Notizen lesen. Es legt nichts im Vault ab." },
+    posteingang: { name: "Posteingang", text: "Das Konto darf nachschlagen und Neues im Posteingang ablegen, zum Beispiel Notizen und Aufgaben. Bestehende Notizen ändert es nicht." },
+    erweitert: { name: "Erweitert", text: "Wie Posteingang. Außerdem darf dieses Konto später den Vault pflegen (aufräumen, zusammenfassen). Gedacht für das Hauptkonto dieses Vaults." },
+  },
+
+  // ---- Leseverbot in Claude Code (Zustand je gesperrtem Vault)
+  sperre: {
+    aktiv: "Leseverbot in Claude Code eingetragen",
+    fehlt: "Das Leseverbot fehlt in den Einstellungen von Claude Code",
+    veraltet: "Das Leseverbot zeigt auf einen alten Ort dieses Vaults",
+    aus: "Kein Leseverbot in Claude Code",
+    eigene: "Leseverbot in Claude Code vorhanden (von dir eingetragen)",
+    defekt: "Die Einstellungen von Claude Code sind nicht lesbar",
+    anderesProgramm: (programm) => `Bei ${programm} schützt Kortex nur seine eigenen Wege.`,
+    eintragen: "Leseverbot eintragen …",
+    erneuern: "Leseverbot erneuern …",
+    entfernt: "Das Leseverbot in Claude Code ist wieder herausgenommen.",
+    eingetragen: "Das Leseverbot ist in Claude Code eingetragen.",
+    fehlerSatz: (text) => `Die Stufe gilt in Kortex, aber die Einstellungen von Claude Code ließen sich nicht ändern: ${text}`,
+  },
+
+  // ---- Bestätigung beim Sperren
+  sperren: {
+    titel: (konto, vault) => `${konto} den Vault „${vault}“ sperren?`,
+    schuetztTitel: "Was Kortex sperrt",
+    schuetzt: "Dieses Konto findet den Vault nicht mehr über Kortex: keine Suche, kein Lesen, keine Hinweise beim Fragen, keine Kortex-Befehle, keine Ernte, keine Pflege. Der Vault taucht in der Liste der Vaults für dieses Konto nicht mehr auf.",
+    claudeTitel: "In Claude Code zusätzlich",
+    claudeHaken: "Zusätzlich in Claude Code ein Leseverbot für diesen Ordner eintragen (empfohlen)",
+    claudeText: (datei) => `Kortex ergänzt ${datei} um zwei Regeln: Lesen und Ändern in diesem Ordner ist dann verboten. Vorher legt Kortex eine Sicherung der Datei an, alles andere in der Datei bleibt. Beim Entsperren nimmt Kortex genau diese zwei Regeln wieder heraus.`,
+    claudeWirkt: "Claude Code liest den Ordner dann nicht mehr mit seinen eigenen Werkzeugen, und Dateibefehle wie cat werden abgelehnt.",
+    andereTitel: (programm) => `Bei ${programm}`,
+    andere: (programm) => `${programm} kennt kein Leseverbot, das Kortex für dich eintragen könnte. Kortex schützt hier nur seine eigenen Wege: Suche, Lesen, Hinweise und Ablegen. Das Programm selbst kann Dateien weiterhin öffnen, wenn du es ihm erlaubst.`,
+    grenzenTitel: "Was das nicht verhindert",
+    grenzen: "Befehle, die Programme starten, die Dateien selbst öffnen (außer mit „Strenger Schutz“), andere Zusatzprogramme deiner KI, ein Programm, das du selbst im Vault öffnest, und dich selbst am Terminal. Für eine echte Trennung brauchst du einen eigenen macOS-Benutzer.",
+    ja: "Sperren",
+    abbrechen: "Abbrechen",
+  },
+
+  // ---- Strenger Schutz
+  streng: {
+    titel: "Strenger Schutz",
+    aus: "Aus",
+    an: "An",
+    inaktiv: "Eingetragen, aber gerade nicht wirksam",
+    hilfe: "Nur für Claude Code. Hält auch Programme auf, die Claude Code über die Shell startet (zum Beispiel node, python oder grep), und nicht nur seine eigenen Werkzeuge. Geschützt sind die Vaults, die für das Konto gesperrt sind.",
+    keinGesperrter: "Sperre zuerst einen Vault für dieses Konto. Der Strenge Schutz schützt nur gesperrte Vaults.",
+    einschalten: "Einschalten …",
+    ausschalten: "Ausschalten",
+    dialogTitel: (konto) => `Strengen Schutz für ${konto} einschalten?`,
+    dialogWas: "Kortex schaltet in den Einstellungen dieses Kontos die Sandbox von Claude Code ein und nennt ihr die gesperrten Vaults als nicht lesbar. Danach kann kein Befehl, den Claude Code ausführt, diese Vaults lesen, auch nicht über node, python oder grep.",
+    dialogFolgenTitel: "Was sich dadurch ändert",
+    dialogFolgen: "Die Sandbox gilt für alle Shell-Befehle dieses Kontos, in jedem Projekt. Netzwerk und Schreibrechte der Befehle können sich ändern, und manche Befehle laufen nicht mehr. Die Werkzeuge Lesen, Ändern und Schreiben von Claude Code, Hooks und die Statuszeile laufen weiter außerhalb der Sandbox.",
+    dialogRueckweg: "Rückweg: „Ausschalten“ nimmt genau das wieder heraus und stellt die Werte von vorher wieder her. Vorher legt Kortex eine Sicherung der Einstellungen an.",
+    dialogJa: "Strengen Schutz einschalten",
+    erfolgAn: "Der Strenge Schutz ist an.",
+    erfolgAus: "Der Strenge Schutz ist aus, die früheren Einstellungen sind wieder da.",
+  },
+
+  // ---- Hinweis bei allen Programmen
+  ehrlich: {
+    titel: "Was Kortex schützt — und was nicht",
+    claude: "Claude Code: Kortex sperrt seine eigenen Wege und trägt auf Wunsch ein Leseverbot in die Einstellungen ein. Mit „Strenger Schutz“ hält Claude Code auch Befehle auf, die Dateien über die Shell öffnen.",
+    andere: "Alle anderen Programme: Kortex sperrt nur seine eigenen Wege (Suche, Lesen, Hinweise, Ablegen). Das Programm selbst kann Dateien weiterhin öffnen, wenn du es ihm erlaubst.",
+    keine: "Eine echte Trennung zwischen Konten gibt es nur mit eigenen macOS-Benutzern oder einem zweiten Rechner.",
+  },
+};

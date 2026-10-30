@@ -74,8 +74,18 @@ export function codexServer(home) {
 // --- Einstufung ----------------------------------------------------------------------------------------------------------------
 // soll: { node, server } = die Pfade, die ein neuer Eintrag hätte (<Support>/bin/node, <Support>/bin/kern/mcp/brain-mcp.mjs).
 // bekannt(ordner): gehört dieser Ordner (Elternordner des alten Kit-Ordners) zu einem bekannten Vault?
-export function einstufung(e, soll, bekannt) {
-  if (!e || typeof e.command !== "string") return "anders";
+// KI-Konten (docs/plaene/ki-konten.md): `--konto <id>` am Ende gehört zu Kortex. Ein Eintrag mit anderer oder fehlender Kennung ist derselbe Server in früherer Form („alt“, wird
+// umgestellt), wenn soll.konto bekannt ist; ist es nicht bekannt (die Liste der KI-Konten gibt es noch nicht), bleibt ein Eintrag mit Kennung „gleich“.
+const KONTO_ID = /^k_[0-9a-f]{8}$/;
+export const ohneKonto = (args) => { const n = args.length; return n >= 2 && args[n - 2] === "--konto" && KONTO_ID.test(args[n - 1]) ? { args: args.slice(0, n - 2), konto: args[n - 1] } : { args, konto: null }; };
+export function einstufung(eRoh, soll, bekannt) {
+  if (!eRoh || typeof eRoh.command !== "string") return "anders";
+  const { args: stripped, konto: eKonto } = ohneKonto(eRoh.args);
+  const art = einstufungOhneKonto({ ...eRoh, args: stripped }, soll, bekannt);
+  if (art === "gleich" && soll.konto && eKonto !== soll.konto) return "alt";
+  return art;
+}
+function einstufungOhneKonto(e, soll, bekannt) {
   const [a0, ...weitere] = e.args;
   if (e.args.length === 1 && e.command === soll.node && a0 === soll.server) return "gleich";
   if (e.args.length === 1 && typeof a0 === "string" && weitere.length === 0) {
@@ -97,14 +107,16 @@ export function vaultBekannt(vaults) {
 export const zeigtInKit = (e) => !!e && ((typeof e.command === "string" && nennt(e.command)) || e.args.some((a) => nennt(a)));
 
 // → [{ ziel: "claude"|"codex"|"cursor", profil?, art: "gleich"|"alt"|"anders"|"fehlt", fremd: n (andere Namen mit Verweis) }]
-export function mcpLage({ home, support, profile, vaults }) {
+// konto(ziel, profil) → die Kennung des KI-Kontos zu diesem Eintrag (oder null): sie gehört in den neuen Eintrag (`--konto <id>`).
+export function mcpLage({ home, support, profile, vaults, konto = () => null }) {
   const soll = { node: join(support, "bin", "node"), server: join(support, "bin", "kern", "mcp", "brain-mcp.mjs") };
   const bekannt = vaultBekannt(vaults);
   const lage = [];
   const bewerte = (ziel, profil, q) => {
     const brain = q.servers.brain;
     const fremd = Object.entries(q.servers).filter(([n, e]) => n !== "brain" && zeigtInKit(e)).length;
-    lage.push({ ziel, ...(profil ? { profil: profil.pfad, profilName: profil.name } : {}), art: brain ? einstufung(brain, soll, bekannt) : "fehlt", fremd, lesbar: q.lesbar });
+    const k = konto(ziel, profil) || null;
+    lage.push({ ziel, ...(profil ? { profil: profil.pfad, profilName: profil.name } : {}), ...(k ? { konto: k } : {}), art: brain ? einstufung(brain, { ...soll, konto: k }, bekannt) : "fehlt", fremd, lesbar: q.lesbar });
   };
   for (const p of profile) bewerte("claude", p, claudeServer(p, home));
   bewerte("codex", null, codexServer(home));

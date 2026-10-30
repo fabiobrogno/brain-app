@@ -17,7 +17,20 @@
 >   - Konto aus der Umgebung: Hooks erben die Umgebung von Claude Code (fehlt `CLAUDE_CONFIG_DIR`, läuft das Standardprofil); beim MCP-Server ist eine fehlende Variable „keine Angabe“ (die Umgebung kann gefiltert sein).
 >   - `POST /api/mcp/verbinden` nimmt optional `konto` (Kennung aus der Liste) und beide, auch `POST /api/kern/verdrahten`, optional `zugriff` (Stufe für den offenen Vault) entgegen; ohne `zugriff` bleibt ein neu verbundenes Konto gesperrt (es sei denn, es ist das einzige und der Vault wurde von Kortex angelegt oder geklont).
 >   - Aufgaben (PR #50): das Anlegen einer Aufgabe braucht mindestens `posteingang`. Die Prüfung läuft zentral im MCP-Server vor jedem Werkzeug: neue schreibende Werkzeuge tragen ihre Mindeststufe in `MINDEST_STUFE` (`mcp/brain-mcp.mjs`) ein und müssen selbst nichts prüfen; `erzeugeZugriff(...).konto()` liefert `{ id, programm }` für die Herkunft `ki:<programm>/<id>`.
-> - **P2–P4** (Sperre in Claude Code und Oberfläche, Pflege-Konto und Modellstufe, „Frag deinen Vault“) folgen wie unten beschrieben.
+> - **P2 (Oberfläche, Sperre in Claude Code, Assistent): umgesetzt** (Branch `feat/ki-konten-oberflaeche`). Abweichungen und Ergänzungen gegenüber Abschnitt 2b/3/6:
+>   - Das Leseverbot schreibt die Werkstatt selbst (`gemeinsam/claude-sperre.mjs`, aufgerufen aus `werkstatt/konten.mjs`), nicht über einen Kern-Befehl `kortex claude-sperre`: kein zweiter Prozess, gleiche Hilfen wie `install.mjs`
+>     (JSON parsen, kaputt → nichts ändern, atomar mit Rechten der alten Datei, Symlink bleibt Symlink, Sicherung `settings.json.bak-<zeit>`). Regeln: `Read(//<pfad>/**)` und `Edit(//<pfad>/**)`, Pfad maskiert
+>     (`\ * ? [ ] ( )`), beide Formen bei `realpath` ≠ Pfad.
+>   - „Von Kortex“ steht in `ki-konten.json` (`eingetragen.<konto>.claudeDeny.<vault>` = die Regeln, die Kortex selbst hinzugefügt hat; `eingetragen.<konto>.sandbox` = Pfade und frühere Werte). Eine Regel, die der
+>     Nutzer schon hatte, wird nicht vermerkt und nie entfernt. Vermerkt wird vor dem Schreiben; scheitert das Schreiben, geht der Vermerk zurück.
+>   - Das Leseverbot wird nur geschrieben, wenn die Oberfläche es ausdrücklich verlangt (`PUT /api/ki/zugriff { stufe: "gesperrt", claudeSperre: true }`, nach der Rückfrage); jede andere Stufe nimmt die eigenen Regeln wieder
+>     heraus. Scheitert das Schreiben (z. B. kaputte settings.json), gilt die Stufe in Kortex trotzdem und die Antwort enthält `claude: { aktion: "fehler", fehler }`.
+>   - „Strenger Schutz“ (`POST /api/ki/schutz { konto, sandbox, bestaetigt }`): setzt `sandbox.enabled`, `allowUnsandboxedCommands: false`, `failIfUnavailable: true` und führt `sandbox.filesystem.denyRead` mit allen für das Konto
+>     gesperrten Vaults nach (absolute Pfade). Aus: die früheren Werte kommen zurück; geändert wird nur, was noch so steht, wie Kortex es gesetzt hat. Nur mit mindestens einem gesperrten Vault.
+>   - Neu: `PUT /api/ki/standard` (Standard für neue Konten je Vault), `POST /api/ki/hinweis` und `POST /api/ki/vorher` (der Hinweis „Liste war beschädigt“ bleibt bis zum Quittieren stehen; solange hält `.vorher` die Fassung von vor dem Schaden).
+>   - P1-Punkt (a): Die Ausnahme „genau ein Konto“ zählt nur Konten mit tatsächlicher Verbindung (Kortex-Hooks oder MCP-Eintrag „brain“). (b): Die Umstellung schreibt `--konto <id>` (siehe `Ressourcen/kern/HERKUNFT.md`).
+>   - Offen (nicht in CI machbar): der Rauchtest aus Abschnitt 6/P2 (`claude -p` gegen einen Testordner mit Read, `cat`, `grep -r`, `node -e` mit und ohne Sandbox, `bypassPermissions`) und die Cursor-Option „auch in Cursor sperren“.
+> - **P3–P4** (Pflege-Konto und Modellstufe, „Frag deinen Vault“) folgen wie unten beschrieben.
 
 Stand 30.10.2026. Repo `brain-app` auf `main` (a70a8a6, `git pull --ff-only` ohne Änderungen). Ich habe nur gelesen und geplant, im Repo nichts geändert.
 Die Doku-Angaben stammen aus zwei Recherchen vom 30.10.2026: Claude-Code-Doku (code.claude.com/docs: permissions, sandboxing, cli-reference, headless, env-vars, settings) und OpenAI-/Cursor-/Gemini-Doku. Was die Doku nicht hergibt, ist mit **[nicht belegt]** markiert.

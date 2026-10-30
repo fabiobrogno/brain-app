@@ -38,6 +38,9 @@ private final class FalscheDienste: EinrichtungsDienste, @unchecked Sendable {
     private(set) var trenneProfile: [String?] = []
     private(set) var verbindeUmstellen: [Bool] = []
     private(set) var verbindeProfile: [String?] = []
+    /// Die Stufe, mit der verbunden wurde (KI-Konten): nil = ohne Angabe.
+    private(set) var verbindeZugriff: [KiStufe?] = []
+    private(set) var verdrahteZugriff: [KiStufe?] = []
     /// Verdrahtung: der Stand, den die Dienste melden; `verdrahte` ändert ihn wie die echte Werkstatt (oder wirft der Reihe nach `verdrahtenFehler`).
     var verdrahtung = VerdrahtungsStand(starterVorhanden: true, profile: [profilStandard], gitMoeglich: true, dienstVerfuegbar: true)
     private(set) var verdrahtetProfile: [[String]] = []
@@ -93,9 +96,13 @@ private final class FalscheDienste: EinrichtungsDienste, @unchecked Sendable {
 
     func erkenneKIs() async throws -> [KiProgramm] { merke("erkenneKIs"); return try nimm(&kis).get() }
     func verbinde(_ ziel: KiZiel, umstellen: Bool, profil: String?) async throws -> KiVerbindung {
+        try await verbinde(ziel, umstellen: umstellen, profil: profil, zugriff: nil)
+    }
+    func verbinde(_ ziel: KiZiel, umstellen: Bool, profil: String?, zugriff: KiStufe?) async throws -> KiVerbindung {
         merke("verbinde \(ziel.rawValue)")
         verbindeUmstellen.append(umstellen)
         verbindeProfile.append(profil)
+        verbindeZugriff.append(zugriff)
         return try nimm(&verbinden).get()
     }
     func trenne(_ ziel: KiZiel, profil: String?) async throws -> KiTrennung {
@@ -110,6 +117,10 @@ private final class FalscheDienste: EinrichtungsDienste, @unchecked Sendable {
         return verdrahtung
     }
     func verdrahte(_ was: Verdrahtung, an: Bool, ersetzen: Bool, profile: [String]) async throws -> VerdrahtungsStand {
+        try await verdrahte(was, an: an, ersetzen: ersetzen, profile: profile, zugriff: nil)
+    }
+    func verdrahte(_ was: Verdrahtung, an: Bool, ersetzen: Bool, profile: [String], zugriff: KiStufe?) async throws -> VerdrahtungsStand {
+        verdrahteZugriff.append(zugriff)
         merke("verdrahte \(was.rawValue) \(an ? "an" : "aus")\(ersetzen ? " ersetzen" : "")")
         verdrahtetProfile.append(profile)
         if !verdrahtenFehler.isEmpty, let f = verdrahtenFehler.removeFirst() { throw f }
@@ -440,6 +451,61 @@ private func beiKi(_ a: Aufbau) async {
     a.dienste.vault = vaultA
     a.dienste.konto = [.success(GitHubKonto(verfuegbar: true, angemeldet: true, login: "fabio"))]
     await a.ablauf.starte()
+}
+
+// KI-Konten (Paket P2): beim Verbinden wählt der Nutzer je KI die Stufe für den Vault, den er gerade einrichtet; Vorgabe ist „Posteingang“.
+@Test func kiStufenHabenAlltagstexteUndDenRichtigenStandard() {
+    #expect(KiStufe.standard == .posteingang)
+    #expect(KiStufe.allCases.map(\.rawValue) == ["gesperrt", "lesen", "posteingang", "erweitert"], "dieselben Werte wie die Werkstatt")
+    #expect(KiStufe.allCases.map(\.name) == ["Gesperrt", "Lesen", "Posteingang", "Erweitert"])
+    for stufe in KiStufe.allCases {
+        #expect(stufe.erklaerung.count > 30)
+        #expect(!stufe.erklaerung.contains("Brain") && !stufe.erklaerung.contains("MCP"))
+    }
+    #expect(KiStufe.hinweisWeitereKonten.contains("Einstellungen → KI-Konten"))
+    #expect(KiStufe.hinweisWeitereKonten.contains("gesperrt"))
+}
+
+@Test @MainActor func kiVerbindenGibtDemKontoStandardmaessigPosteingang() async {
+    let a = Aufbau()
+    await beiKi(a)
+    #expect(a.anzeige.kiStufe(.claude) == .posteingang)
+    await a.ablauf.verbinde(.claude)
+    #expect(a.dienste.verbindeZugriff == [.posteingang])
+}
+
+@Test @MainActor func kiVerbindenReichtDieGewaehlteStufeAnDieWerkstattWeiter() async {
+    let a = Aufbau()
+    await beiKi(a)
+    a.ablauf.waehleKiStufe(.claude, .lesen)
+    #expect(a.anzeige.kiStufe(.claude) == .lesen)
+    #expect(a.anzeige.kiStufe(.codex) == .posteingang, "die Wahl gilt nur für diese KI")
+    await a.ablauf.verbinde(.claude)
+    #expect(a.dienste.verbindeZugriff == [.lesen])
+    // auch „gesperrt“ ist erlaubt: das Programm ist verbunden, sieht den Vault aber nicht
+    let b = Aufbau()
+    await beiKi(b)
+    b.ablauf.waehleKiStufe(.claude, .gesperrt)
+    await b.ablauf.verbinde(.claude)
+    #expect(b.dienste.verbindeZugriff == [.gesperrt])
+}
+
+@Test @MainActor func hooksBekommenDieselbeStufeWieDasVerbindenUndNurBeimEintragen() async {
+    let a = Aufbau()
+    await beiKi(a)
+    a.ablauf.waehleKiStufe(.claude, .erweitert)
+    await a.ablauf.schalte(.claude, an: true)
+    await a.ablauf.schalte(.claude, an: false)
+    #expect(a.dienste.verdrahteZugriff == [.erweitert, .erweitert], "der Aufruf trägt die Stufe; die Werkstatt wertet sie nur beim Eintragen aus")
+    await a.ablauf.schalte(.git, an: true)
+    #expect(a.dienste.verdrahteZugriff.last! == nil, "nur Claude Code bekommt die Stufe")
+}
+
+@Test @MainActor func hinweisAufWeitereKontenErscheintErstMitEinemGefundenenProgramm() async {
+    let a = Aufbau()
+    #expect(!a.anzeige.zeigeWeitereKontenHinweis)
+    await beiKi(a)
+    #expect(a.anzeige.zeigeWeitereKontenHinweis)
 }
 
 @Test @MainActor func kiVerbindenZeigtErfolgUndWeiterGehtZurProbe() async {

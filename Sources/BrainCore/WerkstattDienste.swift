@@ -157,9 +157,14 @@ public struct WerkstattDienste: EinrichtungsDienste {
     }
 
     public func verbinde(_ ziel: KiZiel, umstellen: Bool, profil: String?) async throws -> KiVerbindung {
+        try await verbinde(ziel, umstellen: umstellen, profil: profil, zugriff: nil)
+    }
+
+    public func verbinde(_ ziel: KiZiel, umstellen: Bool, profil: String?, zugriff: KiStufe?) async throws -> KiVerbindung {
         var b: [String: Any] = ["ziel": ziel.ziel]
         if umstellen { b["umstellen"] = true }
         if ziel == .claude, let profil { b["profil"] = profil }
+        if let zugriff { b["zugriff"] = zugriff.rawValue }
         let j = try await rufe("POST", "/api/mcp/verbinden", b)
         return (j["schonVerbunden"] as? Bool) == true ? .schonVerbunden : .verbunden
     }
@@ -187,9 +192,14 @@ public struct WerkstattDienste: EinrichtungsDienste {
     }
 
     public func verdrahte(_ was: Verdrahtung, an: Bool, ersetzen: Bool, profile: [String]) async throws -> VerdrahtungsStand {
+        try await verdrahte(was, an: an, ersetzen: ersetzen, profile: profile, zugriff: nil)
+    }
+
+    public func verdrahte(_ was: Verdrahtung, an: Bool, ersetzen: Bool, profile: [String], zugriff: KiStufe?) async throws -> VerdrahtungsStand {
         var b: [String: Any] = ["was": was.rawValue, "an": an]
         if ersetzen { b["ersetzen"] = true }
         if was == .claude { b["profile"] = profile }
+        if was == .claude, an, let zugriff { b["zugriff"] = zugriff.rawValue }
         if was == .dienst, let erstes = profile.first { b["profil"] = erstes }
         let j = try await rufe("POST", "/api/kern/verdrahten", b)
         return Self.verdrahtungsStand(aus: j["stand"] as? [String: Any] ?? [:])

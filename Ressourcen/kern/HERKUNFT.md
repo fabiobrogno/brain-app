@@ -130,4 +130,8 @@ Bühne (`Ressourcen/kern/` + `Tests/Kern/` als `tests/`), setzt `KORTEX_KERN` au
   Beschädigte, verlinkte oder nicht lesbare Liste = gesperrt (fail-closed); fehlt die Liste ganz (die neue App lief noch nie), gilt das bisherige Verhalten.
 - `adapters/claude-code/install.mjs --konto <id>`: Die Kennung steht in jedem Hook-Befehl; ein gesperrtes Konto bekommt keine Kortex-Befehle für den Vault. `brain.mjs claude-hooks` reicht `--konto` durch.
 - Tests: `Tests/Kern/test-konto-hooks.mjs` (Hooks mit ausdrücklich gebauter Umgebung, `Tests/Kern/konto-hilfe.mjs`), `Tests/Node/ki-konten*.test.mjs`.
+- P2: `umstellung/konto.mjs` (`kontoLeser`) liest die Kennung des KI-Kontos zu einem Programm-Ordner aus `ki-konten.json` (nur lesen). Die Umstellung (A4, A5) schreibt damit Hook-Befehle und MCP-Einträge mit
+  `--konto <id>` (Claude-Profil, `~/.codex`, `~/.cursor`); ohne Liste oder ohne Eintrag bleibt es die Altform. `umstellung/mcp-lage.mjs#einstufung` kennt `--konto` am Ende: mit bekannter Kennung ist ein
+  Eintrag mit fehlender oder anderer Kennung „alt“ (wird umgestellt), ohne bekannte Kennung bleibt ein Eintrag mit Kennung „gleich“. Befund und Prüfung (Kriterium 5) übergeben keine Kennung und fassen
+  deshalb nur Einträge an, die auch vorher schon „alt“ waren. Test: `Tests/Kern/test-umstellung-konto.mjs`.
 
