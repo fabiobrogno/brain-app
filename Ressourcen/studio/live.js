@@ -42,13 +42,13 @@ export function starteLive({ api, beiEreignisse, beiAlles, beiBereit, warteS = 2
 }
 
 // Ereignisse → was zu tun ist (rein, damit es sich ohne Oberfläche testen lässt):
-//   { index, aufgaben, git, info, konten, menue, pfade (zum Hervorheben), ki: [{ quelle, titel }] }
+//   { index, aufgaben, git, info, konten, menue, strukturell (Datei angelegt/entfernt/verschoben, Ordner: der Teil-Index reicht nicht), pfade (zum Hervorheben), ki: [{ quelle, titel }] }
 export function planeAus(ereignisse) {
-  const p = { index: false, aufgaben: false, git: false, info: false, konten: false, menue: false, pfade: [], ki: [] };
+  const p = { index: false, aufgaben: false, git: false, info: false, konten: false, menue: false, strukturell: false, pfade: [], ki: [] };
   for (const e of ereignisse) {
     switch (e.typ) {
-      case "aufgabe": p.index = p.aufgaben = p.menue = true; break;
-      case "notiz": case "posteingang": p.index = p.menue = true; break;
+      case "aufgabe": p.index = p.aufgaben = p.menue = true; if (e.art !== "geaendert") p.strukturell = true; break;
+      case "notiz": case "posteingang": p.index = p.menue = true; if (e.art !== "geaendert") p.strukturell = true; break;
       case "git": p.git = p.menue = true; break;
       case "vertrauen": p.info = p.git = p.aufgaben = p.menue = true; break;
       case "konten": p.konten = true; break;

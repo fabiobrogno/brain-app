@@ -146,3 +146,16 @@ private func zeilenMitAufgaben(_ a: BrainStatus.Aufgaben?, name: String? = "Mein
     #expect(zeilenMitAufgaben(nil).count == 2)
     #expect(zeilenMitAufgaben(.init(offen: 5, ueberfaellig: 0), name: nil).count == 1)
 }
+
+// MARK: Online-Sicherung bei mehreren Geräten
+
+@Test func sicherungshinweisStehtImMenueUndOeffnetDasStudio() {
+    let s = BrainStatus.Sicherung(stand: "konflikt", text: "Konflikt – im Studio lösen")
+    let r = MenueStatus.zeilen(vaultName: "Mein Vault", anzeige: ok, vertrauen: .vertraut, zahlen: nil, entwicklerVault: false,
+                               kernMeldung: nil, zufuehrungsZeilen: [], sicherung: s)
+    let zeile = r.first { $0.text == "Konflikt – im Studio lösen" }
+    #expect(zeile?.art == .hinweis)
+    #expect(zeile?.aktion == .studioOeffnen)
+    #expect(MenueStatus.zeilen(vaultName: "Mein Vault", anzeige: ok, vertrauen: .vertraut, zahlen: nil, entwicklerVault: false,
+                               kernMeldung: nil, zufuehrungsZeilen: []).count == 2, "ohne Hinweis keine zusätzliche Zeile")
+}

@@ -61,3 +61,4 @@
 70 test-umstellung-phase-b-grenzen.mjs
 9 test-umstellung-phase-b-macs.mjs
 14 test-umstellung-aufraeumen.mjs
+20 test-backup-abgleich.mjs
