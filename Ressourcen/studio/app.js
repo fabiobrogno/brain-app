@@ -13,6 +13,9 @@ import { diffAnsicht } from "./diff.js";
 import { oeffneMenue, schliesseMenue } from "./menue.js";
 import { baueAktionen, istZurueckgestellt, spaeterBis } from "./posteingang.js";
 import { TA as TAUF } from "./texte-aufgaben.js";
+import { erzeugeFragePanel } from "./frage.js";
+import { TF } from "./texte-frage.js";
+import { starteLive, planeAus, kiHinweis, hebeHervor } from "./live.js";
 import { datumKurz, datumLang, datumZeit, istDatumText, bytesText, setzeTypFarbe, typSymbol, typName, wortAnzahl, relativ, pluralisiere, vorschauText, typTextFarbe } from "./format.js";
 
 const $ = (id) => document.getElementById(id);
@@ -55,6 +58,10 @@ $("suche-zu").replaceChildren(symbol("schliessen", 12));
 $("vault-pfeil").replaceChildren(symbol("chevron-auf-ab", 14));
 $("au-zurueck").replaceChildren(symbol("pfeil-links", 14), h("span", { text: TAUF.zurueck }));
 $("au-zurueck").addEventListener("click", () => zurueckZumBoard());
+// Frag deinen Vault (P4): Panel rechts, Knopf in der Kopfzeile, ⌘J und Befehlspalette. Die KI liest nur über Kortex, nichts wird gespeichert (frage.js).
+const frage = erzeugeFragePanel({ vaultPfad: () => S.info?.vault || null, oeffneSeite: (p) => oeffne(p), oeffneVertrauen: () => oeffneVertrauen(), oeffneKi: () => oeffneKi() });
+$("knopf-frage").replaceChildren(symbol("frage", 16));
+$("knopf-frage").addEventListener("click", () => { if (S.info?.vault) frage.umschalten(); });
 
 // ======================================================= Erscheinungsbild
 function wendeThemeAn() {
@@ -752,7 +759,7 @@ async function zeichneAufgaben() {
           api, toast, istNichtVertraut: nichtVertraut, lokal,
           oeffneDatei: (pfad) => oeffneAufgabeDatei(pfad),
           fragVertrauen: () => { oeffneVertrauen(); },
-          beiAenderung: () => { ladeBaum(); },
+          beiAenderung: () => { ladeBaum(); liveMenue(); },
         });
         return aufgabenInst.lade();
       }).finally(() => { aufgabenLaedt = null; });
@@ -1214,14 +1221,71 @@ async function ladeKi() {
 // Nach Abgleich, Zusammenführen oder Zurückholen: Dateibaum und die offene Datei vom Datenträger auffrischen (Eingaben gehen nie verloren)
 async function ladeNachAbgleich() {
   await ladeBaum();
+  await abgleichOffeneDatei();
+}
+// Die offene Datei mit dem Datenträger abgleichen (nach Abgleich, Zusammenführen und bei Live-Ereignissen): unverändert → still nachladen
+// (Auswahl und Scrollposition bleiben), sonst die bestehende Konfliktlogik (basisHash) — ungespeicherte Eingaben gehen nie verloren.
+async function abgleichOffeneDatei() {
   const pfad = S.pfad;
   if (!pfad) return;
   const d = await api.datei(pfad).catch(() => null);
   // erst NACH dem Laden prüfen: inzwischen getippt oder Datei gewechselt?
   if (d && S.pfad === pfad && d.hash !== S.hash) {
-    if (S.dirty || S.speichert) { if (!S.konflikt) { S.konflikt = { aktuellerHash: d.hash }; zeigeBanner(); zeigeStand("konflikt"); } }
-    else { S.hash = d.hash; ed.setzeText(d.inhalt, { nurLesen: !!d.schreibschutz }); }
+    if (S.dirty || S.speichert || laufendesSpeichern) { if (!S.konflikt) { S.konflikt = { aktuellerHash: d.hash }; zeigeBanner(); zeigeStand("konflikt"); } }
+    else { S.hash = d.hash; ed.setzeText(d.inhalt, { nurLesen: !!d.schreibschutz, behalte: true }); zeigeStand(d.schreibschutz ? "schutz" : "gespeichert", true); ladeInfo(); }
   }
+}
+
+// ======================================================= Live-Aktualisierung (live.js; Ereignisse der Werkstatt, werkstatt/ereignisse.mjs)
+// Wenn Claude oder ein anderes Programm im Vault schreibt, zeichnen Board, Notizliste, Seitenleiste, Statusleiste und die offene Datei sich neu —
+// über dieselben Wege wie sonst (ladeBaum, Board.aktualisiere, abgleichOffeneDatei), gebündelt (60 ms) und nur, wenn sich etwas geändert hat.
+let live = null, liveTimer = null, liveLaeuft = false, liveNochmal = false, menueTimer = null;
+let liveSammlung = { pfade: [], aufgaben: false, alles: false };
+// Menüleiste: Zähler (offene/überfällige Aufgaben, Posteingang) neu lesen lassen — gebündelt; die App drosselt zusätzlich
+function liveMenue() { clearTimeout(menueTimer); menueTimer = setTimeout(() => aktion("status-auffrischen"), 1200); }
+async function liveNeuladen() {
+  if (liveLaeuft) { liveNochmal = true; return; }
+  liveLaeuft = true;
+  try {
+    do {
+      liveNochmal = false;
+      const { pfade, aufgaben, alles } = liveSammlung;
+      liveSammlung = { pfade: [], aufgaben: false, alles: false };
+      const vault = S.info?.vault;
+      await ladeBaum();
+      if (vault !== S.info?.vault) return; // währenddessen Vault gewechselt: ladeAlles räumt auf
+      if (aufgaben && aufgabenInst && istAufgabenSicht() && !S.aufgabeDatei) await aufgabenInst.aktualisiere();
+      if (S.pfad && (pfade.includes(S.pfad) || alles)) await abgleichOffeneDatei();
+      hebeHervor($("liste-koerper"), pfade); hebeHervor($("aufgaben-host"), pfade);
+    } while (liveNochmal);
+  } finally { liveLaeuft = false; }
+}
+// Hinweis „Claude hat eine Aufgabe angelegt: …“: kommen mehrere nacheinander (eine KI legt zehn an), wird daraus EIN Hinweis (kurz sammeln)
+let kiSammlung = [], kiTimer = null;
+function kiHinweisPlanen(ki) {
+  if (!ki.length) return;
+  kiSammlung.push(...ki);
+  clearTimeout(kiTimer);
+  kiTimer = setTimeout(() => { const t = kiHinweis(kiSammlung); kiSammlung = []; if (t) toast(t, { ms: 5200 }); }, 600);
+}
+function beiLiveEreignisse(liste) {
+  const p = planeAus(liste);
+  kiHinweisPlanen(p.ki);
+  if (p.info) ladeInfoLeise();
+  if (p.git) ladeGit(); else if (p.index) planeGitRefresh(); // Statusleiste: „N geändert“ (gebündelt, nicht bei jeder Datei ein Statusabruf)
+  if (p.konten) { ladeKi(); window.dispatchEvent(new CustomEvent("kortex-konten")); }
+  if (p.menue) liveMenue();
+  if (p.index) {
+    for (const x of p.pfade) if (!liveSammlung.pfade.includes(x)) liveSammlung.pfade.push(x);
+    liveSammlung.aufgaben ||= p.aufgaben;
+    clearTimeout(liveTimer); liveTimer = setTimeout(liveNeuladen, 60);
+  } else if (p.aufgaben && aufgabenInst && istAufgabenSicht() && !S.aufgabeDatei) aufgabenInst.aktualisiere();
+}
+// Nummer verpasst, anderer Vault oder Dauerfeuer: alles Sichtbare neu lesen
+function beiLiveAlles() {
+  ladeInfoLeise(); ladeGit(); ladeGesundheit(); liveMenue();
+  liveSammlung.aufgaben = true; liveSammlung.alles = true; liveSammlung.pfade = [];
+  clearTimeout(liveTimer); liveTimer = setTimeout(liveNeuladen, 60);
 }
 
 // Konflikt-Dialog: pro Datei „meine Fassung“, „Fassung vom anderen Mac“ oder „beide behalten“; danach wird zusammengeführt und abgeglichen.
@@ -1536,7 +1600,7 @@ function oeffnePalette(vorgabe = "") {
   if (dialogOffen()) return;
   const befehle = [
     [T.befehle.neu, "⌘N", oeffneNeu], [T.befehle.merken, "⌘⇧M", oeffneMerken], [TAUF.erfassen.befehl, "⌘⇧A", aufgabeErfassen], [T.befehle.commit, "⌘⇧G", oeffneCommit], [T.befehle.sync, "", sync],
-    [T.befehle.suche, "⌘⇧F", fokusSuche], [T.befehle.inNotiz, "⌘F", () => ed.suchen()], [T.befehle.info, "⌘⌥I", umschalteInfo], [T.befehle.gesundheit, "", oeffneGesundheit], [T.befehle.nutzung, "", oeffneNutzung],
+    [TF.befehl, "⌘J", () => frage.oeffne()], [T.befehle.suche, "⌘⇧F", fokusSuche], [T.befehle.inNotiz, "⌘F", () => ed.suchen()], [T.befehle.info, "⌘⌥I", umschalteInfo], [T.befehle.gesundheit, "", oeffneGesundheit], [T.befehle.nutzung, "", oeffneNutzung],
     [T.liste.verlauf, "", oeffneVerlauf],
     ...(inApp() ? [[T.befehle.ordner, "", () => aktion("ordner-zeigen", S.pfad || undefined)], [T.befehle.ansicht, "", oeffneUebersicht]] : []),
     [T.befehle.mcp, "", oeffneKi],
@@ -1681,6 +1745,7 @@ window.addEventListener("keydown", (e) => {
   else if (k === "m" && e.shiftKey) tun(oeffneMerken);
   else if (k === "a" && e.shiftKey && !e.altKey && !dialogOffen()) tun(aufgabeErfassen);
   else if ((k === "k" || k === "p") && !e.shiftKey && !e.altKey) tun(() => oeffnePalette());
+  else if (k === "j" && !e.shiftKey && !e.altKey && !dialogOffen() && S.info?.vault) tun(() => frage.umschalten());
   else if (k === "f" && e.shiftKey) tun(fokusSuche);
   else if (k === "f" && !e.shiftKey && !e.altKey && !dialogOffen() && S.pfad && !e.target.closest?.("input, textarea, select")) tun(() => ed.suchen());
   else if ((k === "i" || e.code === "KeyI") && e.altKey) tun(umschalteInfo);
@@ -2004,13 +2069,15 @@ async function zeigeWillkommenFlow() {
 
 let intervalle = false;
 function zuruecksetzen() {
-  clearTimeout(speicherTimer); clearTimeout(gitTimer); clearTimeout(baumTimer);
+  clearTimeout(speicherTimer); clearTimeout(gitTimer); clearTimeout(baumTimer); clearTimeout(liveTimer); clearTimeout(menueTimer); clearTimeout(kiTimer); kiSammlung = [];
+  liveSammlung = { pfade: [], aufgaben: false, alles: false };
   S.pfad = null; S.hash = null; S.dirty = false; S.konflikt = null; S.schutz = false; S.speichert = false; S.aktuellePruefung = null;
   S.notizen = []; S.nMap = new Map(); S.baum = []; S.eintraege = new Map(); S.git = null; S.gesundheit = null; S.rueckfragen = null; S.syncFehler = null;
   S.suche = { aktiv: false, treffer: [], auswahl: 0, frage: "" }; S.vorVerlauf = null;
   S.sichtListe = []; S.gerendert = 0;
   ed.setzeText("", { nurLesen: false });
   schliesseDialoge(); // offene Dialoge (Vertrauen, Sichern, Neue Notiz …) gehören zum alten Vault; für den neuen fragt ladeAlles selbst
+  frage.zuruecksetzen(); // eine Frage gehört zum alten Vault (die Werkstatt hat sie beim Wechsel schon beendet)
   schliesseDiff(); schliesseSuche(false);
   S.umstellung = null; $("umstellung-host").replaceChildren();
   $("banner-host").replaceChildren(); $("pille").hidden = true; $("speicherstand").textContent = "";
@@ -2024,6 +2091,7 @@ async function ladeAlles() {
   catch (e) { $("leer").hidden = false; $("leer").replaceChildren(h("h2", { text: T.fehler.verbindung }), h("p", { text: e.message })); return; }
   if (!S.info.vault) { await zeigeWillkommenFlow(); markiereBereit(); return; } // auch der Einstieg ist „bereit“: Menübefehle (Ordner öffnen) gehen sofort
   $("willkommen-host").hidden = true; $("willkommen-host").replaceChildren();
+  if (live) live.neuStarten(); else live = starteLive({ api, beiEreignisse: beiLiveEreignisse, beiAlles: beiLiveAlles, beiBereit: () => { document.documentElement.dataset.live = "an"; } });
   S.offen = new Set(lokal.lies("offen", [])); S.zu = new Set(lokal.lies("zu", [])); S.favoriten = new Set(lokal.lies("favoriten", [])); S.zuletzt = lokal.lies("zuletzt", []);
   S.sortierung = lokal.lies("sort", "geaendert");
   const sicht = lokal.lies("sicht", null);

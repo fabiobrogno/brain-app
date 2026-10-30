@@ -62,6 +62,8 @@ export const api = {
   aufgaben: () => anfrage("GET", "/api/aufgaben"),
   aufgabeNeu: (daten) => anfrage("POST", "/api/aufgaben", daten),
   aufgabeAendern: (pfad, daten) => anfrage("PATCH", "/api/aufgaben/" + pfad.split("/").map(encodeURIComponent).join("/"), daten),
+  // ---- Live-Aktualisierung: Long-Poll auf Ereignisse der Werkstatt (ohne seit nur der Grundstand; sonst bis zu warte Sekunden)
+  ereignisse: (seit, epoche, warte) => anfrage("GET", "/api/ereignisse" + q({ seit, epoche, warte })),
   // archivieren: { pfad } (eine erledigte Aufgabe) oder { aelterAlsTage } (alle erledigten, die länger nicht geändert wurden); verschoben wird nur, gelöscht nie
   aufgabenArchivieren: (daten) => anfrage("POST", "/api/aufgaben/archivieren", daten),
   suche: (frage) => anfrage("GET", "/api/suche" + q({ q: frage })),
@@ -110,6 +112,11 @@ export const api = {
   githubKonto: () => anfrage("GET", "/api/github/konto"),
   githubAbmelden: () => anfrage("POST", "/api/github/abmelden", {}),
   probe: (frage) => anfrage("POST", "/api/probe", { frage }),
+  // ---- Frag deinen Vault (P4): Start, Long-Poll auf den Stand, Abbruch. Nichts wird gespeichert.
+  frageBereit: () => anfrage("GET", "/api/frage/bereit"),
+  frageStart: (frage, konto, modell) => anfrage("POST", "/api/frage/start", { frage, konto, ...(modell ? { modell } : {}) }),
+  frageStand: ({ id, ab, text, epoche }) => anfrage("GET", "/api/frage/stand" + q({ id, ab, text, epoche })),
+  frageAbbrechen: (id) => anfrage("POST", "/api/frage/abbrechen", { id }),
   // ---- KI-Konten und Vault-Zugriff (Paket P2). Das Leseverbot in Claude Code wird nur mit claudeSperre: true geschrieben, der Strenge Schutz nur mit bestaetigt: true — beides setzt die Oberfläche erst nach dem Klick.
   kiKonten: () => anfrage("GET", "/api/ki/konten"),
   kiKontoName: (id, name) => anfrage("POST", "/api/ki/konten", { id, name }),

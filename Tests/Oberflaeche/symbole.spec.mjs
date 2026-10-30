@@ -142,6 +142,8 @@ async function warteBisRuhig(page) {
 }
 
 test("Fokus: Tastaturfokus auf Seitenleiste, Werkzeug und Statusleiste zeigt denselben Ring (kein Standard-Umriss)", async ({ page }) => {
+  // Die Live-Aktualisierung hält einen Long-Poll offen (nie „networkidle“): hier ohne sie — eine ältere Werkstatt antwortet 404, dann hört das Studio nicht zu
+  await page.route("**/api/ereignisse**", (route) => route.fulfill({ status: 404, contentType: "application/json", body: '{"fehler":"nicht gefunden"}' }));
   await start(page);
   await warteBisRuhig(page);
   await expect(page.locator('[data-st="theme"]')).toBeVisible(); // die Statusleiste ist vollständig gezeichnet

@@ -17,8 +17,10 @@ import { erzeugeGitHub } from "../gemeinsam/github.mjs";
 import { sicherungStand } from "../gemeinsam/gitsicherung.mjs";
 import { erzeugeVerdrahtung } from "./verdrahtung.mjs";
 import { erzeugeUmstellung } from "./umstellung.mjs";
+import { erzeugeEreignisse } from "./ereignisse.mjs";
 import { profilZuPfad, mitProfil, mitCodexHome } from "./profile.mjs";
 import { erzeugeKonten } from "./konten.mjs";
+import { erzeugeFrage } from "./frage.mjs";
 import { STUFEN, pflegeFuer, stufeFuer, darfMindestens } from "../gemeinsam/ki-konten.mjs";
 import { erzeugePflege } from "./pflege.mjs";
 import { merkeRemoteBestaetigt } from "../gemeinsam/sicherungsmerker.mjs";
@@ -107,12 +109,16 @@ export function erzeugeHandler(o) {
   // Start: Vault-Argument hat Vorrang; sonst der aktive Vault aus vaults.json; sonst ohne Vault (Willkommen).
   let aktuell = null;
   const oeffne = (pfad) => oeffneVault(pfad, vaultOpt);
-  const wechsleZu = (pfad) => { aktuell = pfad ? oeffne(pfad) : null; };
+  // Live-Aktualisierung (ereignisse.mjs): beobachtet den offenen Vault, sobald die Oberfläche zum ersten Mal nach Ereignissen fragt. o.ereignisse = Einstellungen für Tests.
+  const ereignisse = erzeugeEreignisse({ support: vaultOpt.support || supportOrdner(), ...(o.ereignisse || {}) });
+  // Eine laufende Frage („Frag deinen Vault“) gehört zum bisherigen Vault: bei jedem Wechsel endet sie (frage.brichAb).
+  const wechsleZu = (pfad) => { frage.brichAb("vault"); aktuell = pfad ? oeffne(pfad) : null; ereignisse.richteAuf(aktuell ? aktuell.wurzel : null); };
   if (o.vault) aktuell = oeffne(o.vault); // falscher Ordner → HttpFehler wie bisher
   else {
     const p = vaultsFn.aktiverVaultPfad(optV());
     if (p) { try { aktuell = oeffne(p); } catch { aktuell = null; } }
   }
+  ereignisse.richteAuf(aktuell ? aktuell.wurzel : null);
 
   // KI-Konten (docs/plaene/ki-konten.md): welche Konten gibt es, was darf jedes in welchem Vault. Die Werkstatt gleicht die Liste beim Start der App ab (werkstatt.mjs)
   // und bei jedem Aufruf von /api/ki/konten. o.kontenErkennung / o.kontenVerbunden / o.kontenHome: Ersatz für Tests (nie die echten Orte des Rechners lesen).
@@ -183,6 +189,10 @@ export function erzeugeHandler(o) {
     if (!pflege.dienstVaults().includes(echt)) return;
     try { await verdrahtung.verdrahte(v, { was: "dienst", an: true }); } catch { /* bleibt als Rückfall */ }
   }
+  // „Frag deinen Vault“ (P4): eine Frage an Claude Code, die den Vault nur über den Kortex-MCP liest — werkstatt/frage.mjs. o.frageEnv / o.frageGrenzen / o.frageTemp: Ersatz für Tests
+  // (Umgebung für Programmsuche und Kindprozess, kürzere Grenzen, Temp-Ordner); sonst gilt die Umgebung dieser Werkstatt als Quelle für PATH/HOME/LANG, nie mehr.
+  const frage = erzeugeFrage({ support: vaultOpt.support || supportOrdner(), konten, mcpBasis: () => mcpArgs(), basisEnv: o.frageEnv || process.env,
+    home: () => o.kontenHome || homedir(), grenzen: o.frageGrenzen || {}, tempBasis: o.frageTemp || null });
   // Umstellung eines Vaults aus der Kit-Zeit (P7a Befund, P7b Probelauf/Phase A/Rückweg): werkstatt/umstellung.mjs
   const umstellung = erzeugeUmstellung({ starter: o.starter || join(vaultOpt.support || supportOrdner(), "bin", "kortex"), support: vaultOpt.support || supportOrdner() });
 
@@ -260,6 +270,14 @@ export function erzeugeHandler(o) {
         }
         return offen.vertrauen(e.erlauben);
       }
+      // Live-Aktualisierung: Long-Poll auf Ereignisse. seit fehlt → nur den Stand nennen; sonst sofort, was nach <seit> kam, oder bis zu <warte> Sekunden warten.
+      case "/api/ereignisse": {
+        nur("GET");
+        if (v) { try { ereignisse.setzeAufgabenOrdner(await v.aufgabenOrdnerName()); } catch { /* Standardordner */ } }
+        const seit = q.get("seit"), warte = Number(q.get("warte") ?? 25);
+        if (seit !== null && seit !== "" && !/^\d{1,15}$/.test(seit)) throw new HttpFehler(400, "„seit“ ist eine Ereignis-Nummer.");
+        return ereignisse.warte({ seit: seit === null || seit === "" ? null : Number(seit), epoche: q.get("epoche") || null, warteMs: (Number.isFinite(warte) ? Math.max(0, warte) : 25) * 1000 });
+      }
       case "/api/baum": nur("GET"); return V().baum();
       case "/api/datei":
         if (methode === "GET") return V().lies(q.get("pfad"));
@@ -328,6 +346,11 @@ export function erzeugeHandler(o) {
         if (methode === "GET") { await migrierePflege(v); return konten.stand(); }
         nur("POST"); return konten.setzeName(eingabe());
       case "/api/ki/zugriff": nur("PUT"); return konten.setzeZugriff(eingabe());
+      // Frag deinen Vault (P4): Start → Long-Poll auf den Stand → Abbruch. Nichts wird gespeichert.
+      case "/api/frage/bereit": nur("GET"); return frage.bereit(V());
+      case "/api/frage/start": nur("POST"); return frage.start(eingabe(), V());
+      case "/api/frage/stand": nur("GET"); return frage.stand(q, V());
+      case "/api/frage/abbrechen": nur("POST"); return frage.abbrechen(eingabe(), V());
       case "/api/ki/standard": nur("PUT"); return konten.setzeStandard(eingabe());
       // Pflege je Vault: Konto und KI-Stufe setzen · Stand lesen (letzter/nächster Lauf) · jetzt einmal pflegen
       case "/api/ki/pflege":
@@ -361,7 +384,7 @@ export function erzeugeHandler(o) {
         if (v && weg === v.wurzel) { // der offene Vault wurde aus der Liste genommen → nächster oder Willkommen
           // Der Nachfolger ist schon gespeichert: lässt er sich nicht öffnen, ist jetzt eben kein Vault offen (200, aktiv: null — die
           // Oberfläche zeigt Willkommen). Ein 400 NACH dem Speichern ließe die Oberfläche beim entfernten Vault stehen.
-          try { wechsleZu(l.aktiv); } catch { aktuell = null; }
+          try { wechsleZu(l.aktiv); } catch { frage.brichAb("vault"); aktuell = null; }
         }
         return vaultListe(aktuell);
       }
@@ -386,7 +409,7 @@ export function erzeugeHandler(o) {
         merkeRemote(V().wurzel, repo.url);
         return erg;
       }
-      case "/api/stopp": nur("POST"); return { __stopp: true };
+      case "/api/stopp": nur("POST"); frage.brichAb("ende"); return { __stopp: true };
       default: throw new HttpFehler(404, "nicht gefunden");
     }
   }
@@ -699,17 +722,40 @@ export function erzeugeHandler(o) {
     }
     const q = query instanceof URLSearchParams ? query : new URLSearchParams(query || "");
     const v = aktuell; // dieser Vault gilt für die ganze Anfrage, auch wenn währenddessen gewechselt wird
+    // Schreibende Anfragen der Oberfläche sind keine „externen Änderungen“: Die Meldung wartet, bis die Anfrage fertig ist, und die berührten Dateien gelten als eigen.
+    const schreibt = methode !== "GET" && methode !== "HEAD";
+    if (schreibt) ereignisse.beginneEigenes();
+    let eigen = [], eigenKopf = false;
     try {
       const erg = await api(methode, pfad, q, body, v);
+      if (schreibt) { eigen = eigenePfade(pfad, body, erg); eigenKopf = /^\/api\/(git|posteingang|sicherung|vaults|umstellung)\//.test(pfad); }
       if (erg && erg.__stopp) return { ...json(200, { ok: true }), stopp: true };
       return json(200, erg === undefined ? { ok: true } : erg);
     } catch (e) {
+      if (schreibt) eigen = eigenePfade(pfad, body, null);
       if (e instanceof HttpFehler) return fehler(e.status, e.message, e.extra);
       return fehler(500, "Interner Fehler");
+    } finally {
+      if (schreibt) ereignisse.endeEigenes(eigen, { kopf: eigenKopf });
+      else if (/^\/api\/ki\/konten\/?$/.test(pfad)) ereignisse.markiereEigen(["@support/ki-konten.json"]); // der Abgleich beim Abruf schreibt die Liste selbst
     }
+  }
+  // Welche Dateien hat diese schreibende Anfrage (vermutlich) angefasst? Vault-relative Pfade aus Anfrage und Antwort, dazu die Dateien im Benutzerordner.
+  function eigenePfade(pfad, body, erg) {
+    const k = new Set();
+    const rel = (x) => { if (typeof x === "string" && x && !x.startsWith("/") && !x.includes("..") && x.length < 1000) k.add(x); };
+    let e = null;
+    try { e = body && body.length ? JSON.parse(body.toString("utf8")) : null; } catch { e = null; }
+    if (pfad.startsWith("/api/aufgaben/")) { try { rel(decodeURIComponent(pfad.slice("/api/aufgaben/".length))); } catch { /* ungültig */ } }
+    if (e && typeof e === "object") { rel(e.pfad); rel(e.ziel); if (e.platz && typeof e.platz === "object") { rel(e.platz.davor); rel(e.platz.danach); } }
+    if (erg && typeof erg === "object") { rel(erg.pfad); rel(erg.ziel); if (Array.isArray(erg.geaendert)) erg.geaendert.forEach(rel); if (Array.isArray(erg.archiviert)) for (const x of erg.archiviert) { rel(x?.von); rel(x?.pfad); } }
+    if (/^\/api\/vertrauen\/?$/.test(pfad) || pfad.startsWith("/api/vaults")) k.add("@support/vertrauen.json");
+    if (/^\/api\/(ki|mcp)\//.test(pfad) || pfad.startsWith("/api/vaults")) k.add("@support/ki-konten.json");
+    return [...k];
   }
   behandle.aktuellerVaultPfad = () => (aktuell ? aktuell.wurzel : null);
   behandle.konten = konten; // werkstatt.mjs gleicht die Liste beim Start ab
   behandle.migrierePflege = () => migrierePflege(aktuell); // und übernimmt danach einmal das alte Profil der plist in die Pflege-Einstellung
+  behandle.ereignisse = ereignisse; // werkstatt.mjs beendet wartende Abrufe, bevor es sich schließt
   return behandle;
 }
