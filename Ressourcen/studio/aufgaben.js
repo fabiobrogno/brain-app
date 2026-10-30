@@ -4,7 +4,7 @@
 // Kein innerHTML mit Daten aus dem Vault: alles läuft über h()/textContent.
 import { h } from "./hilfen.js";
 import { symbol, GROESSE } from "./symbole.js";
-import { kiLogo, kiLogoName } from "./ki-logos.js";
+import { kiLogo, kiKurzname } from "./ki-logos.js";
 import { oeffneMenue } from "./menue.js";
 import { textfeld, leerBlock, filterChip, knopf, oeffneDatumsauswahl, tooltip, skelett } from "./bausteine.js";
 import { wenigBewegung } from "./popover.js";
@@ -62,7 +62,7 @@ const archivReifSeit = (a, jetzt = Date.now()) => a.status === "erledigt" && Num
 function quelleEl(quelle) {
   if (String(quelle).startsWith("ki:")) {
     const id = quelle.slice(3);
-    const name = kiLogoName(id) || id.charAt(0).toUpperCase() + id.slice(1);
+    const name = kiKurzname(id) || id.charAt(0).toUpperCase() + id.slice(1);
     const text = TA.quelle.ki(name);
     return h("span", { klasse: "au-quelle ki", title: text, role: "img", "aria-label": text, "data-quelle": quelle }, kiLogo(id, 14, { dekorativ: true }) || symbol("funke", GROESSE.text));
   }

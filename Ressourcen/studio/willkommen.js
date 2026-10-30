@@ -1,10 +1,10 @@
 // Einstieg ohne Vault: Willkommen-Karte (vier Wege), Name/Ort, Klonen, Versionsverlauf-Rückfrage, KI verbinden.
 // Wird per dynamischem import() geladen und hat beim Import keine Nebenwirkungen.
 import { h, dialog, speichereLokal, leseLokal, arbeitBeginnt } from "./hilfen.js";
-import { textfeld, knopf as baueKnopf, setzeLaedt } from "./bausteine.js";
+import { textfeld, knopf as baueKnopf, setzeLaedt, kiAuswahl } from "./bausteine.js";
 import * as API from "./api.js";
 import { symbol } from "./symbole.js";
-import { kiLogo } from "./ki-logos.js";
+import { kiLogoName, kiKatalog } from "./ki-logos.js";
 import { markenLogo } from "./marken.js";
 import { TW } from "./texte-willkommen.js";
 
@@ -119,20 +119,38 @@ function pfadDialog(titel) {
 }
 
 // ---------------------------------------------------------------- KI verbinden (Inhalt, wiederverwendbar)
-const AGENT_SYMBOL = { claude: "claude", codex: "code", gemini: "funke", "cursor-agent": "stecker", opencode: "code" };
-const AGENT_NAME = { claude: "Claude Code", codex: "Codex", gemini: "Gemini", "cursor-agent": "Cursor Agent", opencode: "OpenCode" };
-const AGENT_TON = { claude: "ton-orange" };
+// Die Wahl der KI ist der Baustein kiAuswahl (bausteine.js, Katalog: gemeinsam/ki-katalog.json): oben die gefundenen bzw. beliebten KIs als Karten,
+// darunter „Weitere KIs anzeigen“. Gewählt werden können die KIs, bei denen sich Kortex selbst eintragen kann (`verbindbar`); mehrere gleichzeitig.
+const VORWAHL = ["claude", "codex", "cursor"];
+
+// Ergebnis von GET /api/ki/erkennen → { [id]: { gefunden, version } }. Neue Werkstatt: Feld `katalog`; ältere Antworten (und Testattrappen) nur mit agenten/programme/cursorDa.
+function erkennungAus(ki) {
+  if (!ki) return {};
+  if (Array.isArray(ki.katalog)) return Object.fromEntries(ki.katalog.filter((k) => k && typeof k.id === "string").map((k) => [k.id, { gefunden: k.gefunden === true, version: typeof k.version === "string" ? k.version : null }]));
+  const agenten = Array.isArray(ki.agenten) ? ki.agenten.filter((a) => a && (a.pfad || a.version)) : [];
+  const m = {};
+  const agent = (id) => agenten.find((a) => a.id === id);
+  for (const id of ["claude", "codex", "gemini", "opencode"]) if (agent(id)) m[id] = { gefunden: true, version: agent(id).version || null };
+  if (agent("cursor-agent") || ki.cursorDa === true) m.cursor = { gefunden: true, version: agent("cursor-agent")?.version || null };
+  for (const p of Array.isArray(ki.programme) ? ki.programme : []) if (p && p.gefunden && typeof p.id === "string") m[p.id] = { gefunden: true, version: typeof p.version === "string" ? p.version : null };
+  return m;
+}
 
 async function ladeKiDaten() {
   const [ki, info, nz] = await Promise.all([sicher(() => api.kiErkennen()), sicher(() => api.info()), sicher(() => api.notizen())]);
-  const agenten = Array.isArray(ki?.agenten) ? ki.agenten.filter((a) => a && (a.pfad || a.version)) : [];
-  // Programme mit Einstellungsdatei (Claude Desktop, Gemini CLI, GitHub Copilot, Zed, OpenCode, Warp): nur die erkannten stehen in der Auswahl
-  const gefundene = Array.isArray(ki?.programme) ? ki.programme.filter((p) => p && p.gefunden && Object.hasOwn(TW.ki.weitereName, p.id)) : [];
-  const weitere = gefundene.map((p) => p.id);
-  // in der Liste „Auf diesem Computer erkannt“ stehen sie auch, wenn es kein Agent mit Befehl ist (Claude Desktop, Zed, Warp …)
-  for (const p of gefundene) if (!agenten.some((a) => a.id === p.id)) agenten.push({ id: p.id, name: TW.ki.weitereName[p.id], version: typeof p.version === "string" ? p.version : null, pfad: null });
-  return { erkannt: !!ki, agenten, cursorDa: ki?.cursorDa === true, weitere, info, notizen: Array.isArray(nz?.notizen) ? nz.notizen : null };
+  return { erkannt: !!ki, erkennung: erkennungAus(ki), info, notizen: Array.isArray(nz?.notizen) ? nz.notizen : null };
 }
+
+// Vorgewählt: Claude Code, wenn vorhanden (oder wenn die Erkennung selbst nicht antwortet); sonst die erste gefundene KI, die sich verbinden lässt.
+function vorwahl(d) {
+  if (!d.erkannt) return ["claude"];
+  const da = (id) => d.erkennung[id]?.gefunden === true;
+  if (da("claude")) return ["claude"];
+  const erste = kiKatalog().find((e) => e.verbindbar && da(e.id));
+  return erste ? [erste.id] : [];
+}
+
+const namenListe = (namen) => (namen.length <= 1 ? namen.join("") : `${namen.slice(0, -1).join(", ")} und ${namen[namen.length - 1]}`);
 
 // Ein Bereich mit Live-Region für Ergebnis/Fehler unter einer Aktion.
 function meldeZone() {
@@ -156,7 +174,7 @@ function baueKiInhalt({ kompakt = false, beiVerbunden } = {}) {
   const wurzel = h("div", { klasse: "w-ki" + (kompakt ? " kompakt" : ""), "data-bereich": "ki" }, kopf, inhalt);
 
   ladeKiDaten().then((d) => {
-    const hatAgenten = d.agenten.length > 0;
+    const hatAgenten = Object.values(d.erkennung).some((x) => x.gefunden);
     if (kopf) {
       kachel.className = `w-kachel-gross ${hatAgenten ? "ton-gruen" : "ton-grau"}`;
       kachel.replaceChildren(symbol(hatAgenten ? "kreis-haken" : "stecker", 24));
@@ -164,24 +182,13 @@ function baueKiInhalt({ kompakt = false, beiVerbunden } = {}) {
       text.textContent = hatAgenten ? TW.ki.text : TW.ki.textOptional;
     }
     const teile = [];
-    if (hatAgenten) {
-      teile.push(h("h3", { klasse: "w-abschnitt", text: TW.ki.erkannt }));
-      teile.push(h("ul", { klasse: "w-agenten", "data-liste": "agenten" }, d.agenten.map((a) =>
-        h("li", { klasse: `w-agent ${AGENT_TON[a.id] || ""}`, "data-agent": a.id },
-          h("span", { klasse: "w-agent-symbol" }, kiLogo(a.id, 20, { dekorativ: true }) || symbol(AGENT_SYMBOL[a.id] || "stecker", 20)),
-          h("span", { klasse: "w-agent-text" },
-            h("span", { klasse: "w-agent-name", text: a.name || AGENT_NAME[a.id] || a.id }),
-            h("span", { klasse: "w-agent-version", text: a.version ? TW.ki.version(a.version) : TW.ki.versionUnbekannt })),
-          h("span", { klasse: "w-pille", text: TW.ki.installiert })))));
-    }
-    // Claude verbinden: nur wenn Claude gefunden wurde (oder die Erkennung selbst nicht antwortet).
-    const claudeDa = d.erkannt ? d.agenten.some((a) => a.id === "claude") : true;
-    const verbindbar = claudeDa || d.cursorDa || d.weitere.length > 0 || d.agenten.some((a) => a.id === "codex" || a.id === "cursor-agent");
-    const zeilen = [];
-    if (verbindbar) zeilen.push(baueVerbinden({ beiVerbunden, agenten: d.agenten, cursorDa: d.cursorDa, weitere: d.weitere }));
+    const claudeDa = d.erkannt ? d.erkennung.claude?.gefunden === true : true;
+    const verbinden = baueVerbinden({ beiVerbunden, erkennung: d.erkennung, vorgewaehlt: vorwahl(d) });
+    teile.push(verbinden.auswahl.el);
+    const zeilen = [verbinden];
     if (HINWEISE_VERFUEGBAR && claudeDa && d.info?.kit?.vorhanden) zeilen.push(baueHinweise());
     if (claudeDa || hatAgenten) zeilen.push(baueProbe(d.notizen));
-    if (zeilen.length) teile.push(h("div", { klasse: "w-gruppe", "data-gruppe": "aktionen" }, zeilen.map((x) => x.knoten)));
+    teile.push(h("div", { klasse: "w-gruppe", "data-gruppe": "aktionen" }, zeilen.map((x) => x.knoten)));
     inhalt.replaceChildren(...teile);
   });
 
@@ -195,36 +202,33 @@ function zeigeOk(beschreibung, zone, text) {
 }
 
 // beiVerbunden: wird erst nach geglücktem Verbinden mit Claude gerufen (200, auch { schonVerbunden: true }), nie beim bloßen Schließen.
-// Danach läuft bei jedem Ziel automatisch der Selbsttest. Er prüft nur unseren Server, nicht ob die fremde App ihn schon geladen hat.
-function baueVerbinden({ beiVerbunden, agenten = [], cursorDa = false, weitere = [] } = {}) {
+// Danach läuft automatisch der Selbsttest. Er prüft nur unseren Server, nicht ob die fremde App ihn schon geladen hat.
+// Mehrere gewählte KIs werden nacheinander verbunden; was nicht klappt (Rückfrage „umstellen?“, Befehl zum Kopieren, Fehler), steht je KI darunter,
+// die übrigen sind trotzdem verbunden. Ein erneuter Klick ist unschädlich (schon Verbundenes meldet 200).
+function baueVerbinden({ beiVerbunden, erkennung = {}, vorgewaehlt = [] } = {}) {
   const zone = meldeZone();
-  // Auswahl: Claude, Codex, Cursor immer; dazu die erkannten Programme mit Einstellungsdatei (ki-programme/ in der Werkstatt)
-  const zielName = { ...TW.ki.zielName, ...Object.fromEntries(weitere.map((id) => [id, TW.ki.weitereName[id]])) };
-  const gefunden = (id) => agenten.some((a) => a.id === id);
-  let ziel = "claude";
-  if (!gefunden("claude")) ziel = gefunden("codex") ? "codex" : (gefunden("cursor-agent") || cursorDa) ? "cursor" : (weitere[0] || "claude");
-  const name = () => zielName[ziel];
-  const knopf = baueKnopf({ text: ziel === "claude" ? TW.ki.verbinden : TW.ki.verbindenMit(name()), variante: "primaer", aktion: "claude-verbinden" });
-  const beschreibung = h("div", { klasse: "w-aktion-text", "aria-live": "polite", text: ziel === "claude" ? TW.ki.verbindenText : TW.ki.verbindenTextFuer(name()) });
+  let sel = [...vorgewaehlt];
+  const name = (id) => kiLogoName(id) || id;
+  const namen = () => sel.map(name);
+  const ok = new Set(), probleme = new Map(); // ok: verbundene ids, probleme: id → Fehler dieses Laufs
   let gesperrt = false; // während des Selbsttests bleibt die Auswahl stehen, sonst stimmt der App-Name im Ergebnis nicht
-  const wahl = h("div", { klasse: "w-ziele", role: "radiogroup", "aria-label": TW.ki.zielWahl, "data-bereich": "ziel-wahl" },
-    Object.keys(zielName).map((id) => {
-      const b = baueKnopf({ klasse: id === ziel ? "aktiv" : "", daten: { role: "radio", "aria-checked": String(id === ziel), "data-ziel": id }, kinder: [kiLogo(id, 16, { dekorativ: true }), h("span", { text: zielName[id] })] });
-      b.addEventListener("click", () => {
-        if (knopf.getAttribute("aria-busy") === "true" || gesperrt) return;
-        ziel = id;
-        for (const x of wahl.children) { const an = x.dataset.ziel === id; x.classList.toggle("aktiv", an); x.setAttribute("aria-checked", String(an)); }
-        knopf.className = "knopf bs-knopf primaer";
-        knopf.textContent = id === "claude" ? TW.ki.verbinden : TW.ki.verbindenMit(name());
-        beschreibung.replaceChildren(document.createTextNode(id === "claude" ? TW.ki.verbindenText : TW.ki.verbindenTextFuer(name())));
-        zone.leer();
-      });
-      return b;
-    }));
-  const sperreWahl = (an) => { gesperrt = an; for (const x of wahl.children) x.disabled = an; };
-  async function selbsttest() {
-    const appName = name(); // jetzt festhalten: die Auswahl könnte sich sonst ändern
-    sperreWahl(true);
+  const knopf = baueKnopf({ variante: "primaer", aktion: "claude-verbinden" });
+  const beschreibung = h("div", { klasse: "w-aktion-text", "aria-live": "polite" });
+  const auswahl = kiAuswahl({ erkennung, wert: sel, mehrfach: true, waehlbar: (e) => e.verbindbar, daten: { "data-bereich": "ziel-wahl" },
+    aufAenderung: (ids) => { if (gesperrt || knopf.getAttribute("aria-busy") === "true") { auswahl.setzeWert(sel); return; } sel = ids; ok.clear(); probleme.clear(); zone.leer(); zeichneKnopf(); } });
+
+  function zeichneKnopf() {
+    knopf.className = "knopf bs-knopf primaer";
+    knopf.disabled = sel.length === 0;
+    const label = sel.length === 0 ? TW.ki.verbindenLeer : sel.length === 1 ? TW.ki.verbindenMit(name(sel[0])) : TW.ki.verbindenMehrere(sel.length);
+    knopf.replaceChildren(document.createTextNode(label));
+    const fehlend = sel.filter((id) => erkennung[id]?.gefunden !== true && Object.keys(erkennung).length > 0);
+    const text = sel.length === 0 ? TW.ki.waehleEine : sel.length === 1 ? TW.ki.verbindenTextFuer(name(sel[0])) : TW.ki.verbindenTextMehrere(namenListe(namen()));
+    beschreibung.replaceChildren(document.createTextNode(text + (fehlend.length ? " " + TW.ki.nichtInstalliert(namenListe(fehlend.map(name))) : "")));
+  }
+
+  async function selbsttest(appName) {
+    gesperrt = true; auswahl.sperre(true);
     zone.arbeit(TW.ki.selbsttestLaeuft);
     try {
       const r = await api.mcpSelbsttest();
@@ -233,45 +237,65 @@ function baueVerbinden({ beiVerbunden, agenten = [], cursorDa = false, weitere =
         h("span", { text: TW.ki.selbsttestOk(n, appName) })));
     } catch (e) {
       zone.knoten.replaceChildren(h("div", { klasse: "w-fehlerbox fehlertext", role: "alert", "data-bereich": "selbsttest" }, symbol("warnung", 14), h("span", { text: TW.ki.selbsttestFehlt(meldungVon(e)) })));
-    } finally { sperreWahl(false); }
+    } finally { gesperrt = false; auswahl.sperre(false); }
   }
-  const erfolg = async () => {
+  async function erfolg(ids) {
     setzeLaedt(knopf, false);
     knopf.className = "knopf bs-knopf fertig";
     knopf.replaceChildren(symbol("haken", 14), TW.ki.verbundenKnopf);
-    beschreibung.replaceChildren(h("div", { klasse: "w-ok" }, symbol("kreis-haken", 14), h("span", { text: ziel === "claude" ? TW.ki.verbunden : TW.ki.verbundenFuer(name()) })));
-    if (ziel === "claude") { try { beiVerbunden?.(); } catch (e) { console.error(e); } }
-    await selbsttest();
-  };
-  // Es gibt schon einen Eintrag „brain“, der woanders hinzeigt (409 art „anders“): erst fragen, dann mit { umstellen: true } ersetzen
-  const frage = () => {
-    const nein = baueKnopf({ text: TW.ki.nichtUmstellen, aktion: "nicht-umstellen" });
-    const ja = baueKnopf({ text: TW.ki.umstellen, variante: "primaer", aktion: "umstellen" });
-    nein.addEventListener("click", () => { zone.leer(); knopf.focus(); });
-    ja.addEventListener("click", () => verbinde(true));
-    const text = ziel === "codex" ? TW.ki.codexAnders : ziel === "cursor" ? TW.ki.cursorAnders : ziel === "claude" ? TW.ki.anders : TW.ki.andersFuer(name());
-    zone.knoten.replaceChildren(h("div", { klasse: "w-frage", "data-bereich": "umstellen", role: "group" },
-      h("div", { klasse: "w-aktion-text", text }), h("div", { klasse: "w-frage-knoepfe" }, nein, ja)));
-    setTimeout(() => nein.focus(), 0);
-  };
-  async function verbinde(umstellen) {
-    setzeLaedt(knopf, true);
-    zone.arbeit(TW.ki.verbindet);
-    try {
-      await api.mcpVerbinden({ ...(umstellen ? { umstellen: true } : {}), ...(ziel === "claude" ? {} : { ziel }) });
-    } catch (e) {
-      setzeLaedt(knopf, false);
-      const befehl = typeof e?.daten?.befehl === "string" ? e.daten.befehl : null;
-      if (!umstellen && e?.status === 409 && e?.daten?.art === "anders") { frage(); return; }
-      if (befehl) zone.knoten.replaceChildren(...(e?.daten?.art === "kaputt" ? [h("div", { klasse: "w-fehlerbox fehlertext", role: "alert" }, symbol("warnung", 14), h("span", { text: e.message }))] : []), befehlBlock(befehl, ziel === "cursor" ? TW.ki.cursorKaputt : Object.hasOwn(TW.ki.weitereName, ziel) ? TW.ki.kaputtFuer(name()) : undefined));
-      else zone.fehler(meldungVon(e));
-      knopf.focus();
-      return;
-    }
-    await erfolg();
+    const ns = ids.map(name);
+    beschreibung.replaceChildren(h("div", { klasse: "w-ok" }, symbol("kreis-haken", 14),
+      h("span", { text: ids.length === 1 ? (ids[0] === "claude" ? TW.ki.verbunden : TW.ki.verbundenFuer(ns[0])) : TW.ki.verbundenMehrere(namenListe(ns)) })));
+    if (ids.includes("claude")) { try { beiVerbunden?.(); } catch (e) { console.error(e); } }
+    await selbsttest(namenListe(ns));
   }
-  knopf.addEventListener("click", () => verbinde(false));
-  return { knoten: h("div", { klasse: "w-aktion", "data-zeile": "verbinden" }, beschreibung, knopf, wahl, zone.knoten), knopf };
+
+  // Ein Problem je KI: Rückfrage (es gibt schon einen Eintrag „brain“, der woanders hinzeigt: 409 art „anders“), Befehl zum Kopieren oder Fehlertext.
+  function problemBlock(id, e) {
+    const befehl = typeof e?.daten?.befehl === "string" ? e.daten.befehl : null;
+    if (e?.status === 409 && e?.daten?.art === "anders") {
+      const nein = baueKnopf({ text: TW.ki.nichtUmstellen, aktion: "nicht-umstellen" });
+      const ja = baueKnopf({ text: TW.ki.umstellen, variante: "primaer", aktion: "umstellen" });
+      nein.addEventListener("click", () => { probleme.delete(id); zeichneProbleme(); knopf.focus(); });
+      ja.addEventListener("click", () => lauf([id], new Set([id])));
+      const t = id === "codex" ? TW.ki.codexAnders : id === "cursor" ? TW.ki.cursorAnders : id === "claude" ? TW.ki.anders : TW.ki.andersFuer(name(id));
+      setTimeout(() => nein.focus(), 0);
+      return h("div", { klasse: "w-frage", "data-bereich": "umstellen", "data-ziel": id, role: "group" }, h("div", { klasse: "w-aktion-text", text: t }), h("div", { klasse: "w-frage-knoepfe" }, nein, ja));
+    }
+    if (befehl) {
+      const kaputt = e?.daten?.art === "kaputt" ? [h("div", { klasse: "w-fehlerbox fehlertext", role: "alert" }, symbol("warnung", 14), h("span", { text: e.message }))] : [];
+      return h("div", { "data-ziel": id }, ...kaputt, befehlBlock(befehl, id === "cursor" ? TW.ki.cursorKaputt : id !== "claude" && id !== "codex" ? TW.ki.kaputtFuer(name(id)) : undefined));
+    }
+    return h("div", { klasse: "w-fehlerbox fehlertext", role: "alert", "data-ziel": id }, symbol("warnung", 14), h("span", { text: sel.length > 1 ? `${name(id)}: ${meldungVon(e)}` : meldungVon(e) }));
+  }
+  function zeichneProbleme() {
+    if (!probleme.size) { zone.leer(); return; }
+    const teile = [];
+    if (ok.size && sel.length > 1) teile.push(h("div", { klasse: "w-ok", "data-bereich": "teil-ok" }, symbol("kreis-haken", 14), h("span", { text: TW.ki.teilVerbunden(namenListe([...ok].map(name))) })));
+    for (const [id, e] of probleme) teile.push(problemBlock(id, e));
+    zone.knoten.replaceChildren(...teile);
+  }
+
+  // ids der Reihe nach verbinden; `umstellen`: ids, bei denen der vorhandene Eintrag ersetzt werden soll
+  async function lauf(ids, umstellen = new Set()) {
+    setzeLaedt(knopf, true);
+    gesperrt = true; auswahl.sperre(true);
+    zone.arbeit(TW.ki.verbindet);
+    for (const id of ids) {
+      try {
+        await api.mcpVerbinden({ ziel: id, ...(umstellen.has(id) ? { umstellen: true } : {}) });
+        ok.add(id); probleme.delete(id);
+      } catch (e) { ok.delete(id); probleme.set(id, e); }
+    }
+    gesperrt = false; auswahl.sperre(false);
+    setzeLaedt(knopf, false);
+    if (!probleme.size && sel.every((id) => ok.has(id))) { await erfolg(sel.slice()); return; }
+    zeichneProbleme();
+    if (!document.activeElement || document.activeElement === document.body) knopf.focus();
+  }
+  knopf.addEventListener("click", () => { if (!sel.length) return; ok.clear(); probleme.clear(); lauf(sel.slice()); });
+  zeichneKnopf();
+  return { knoten: h("div", { klasse: "w-aktion", "data-zeile": "verbinden" }, beschreibung, knopf, zone.knoten), knopf, auswahl };
 }
 
 function befehlBlock(befehl, hinweis = TW.ki.befehl) {

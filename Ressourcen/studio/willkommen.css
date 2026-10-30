@@ -112,21 +112,14 @@
 .w-ki-kopf .w-titel { margin-top: 0; }
 .w-abschnitt { margin: 26px 0 10px; font-size: 11px; font-weight: 600; line-height: 1.2; letter-spacing: .07em; text-transform: uppercase; color: var(--text-2); }
 .w-ki.kompakt .w-abschnitt:first-child { margin-top: 0; }
-.w-agenten { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.w-agent { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 10px 14px; background: var(--erhoben); border: 1px solid var(--linie-stark); border-radius: var(--r-l); }
-.w-agent-symbol { flex: none; width: 24px; height: 24px; display: grid; place-items: center; color: var(--w-ton, var(--text-2)); }
-.w-agent-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
-.w-agent-name { font-size: 14px; font-weight: 600; line-height: 1.3; }
-.w-agent-version { font-size: 12.5px; line-height: 1.35; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.w-pille { flex: none; padding: 3px 11px; border-radius: 999px; font-size: 12px; font-weight: 600; line-height: 1.4; color: color-mix(in srgb, var(--gruen) 78%, var(--text)); background: color-mix(in srgb, var(--gruen) 15%, transparent); }
 .w-gruppe { margin-top: 12px; border: 1px solid var(--linie-stark); border-radius: var(--r-l); background: var(--erhoben); overflow: hidden; }
-.w-agenten + .w-gruppe { margin-top: 12px; }
+.ka + .w-gruppe { margin-top: 6px; } /* KI-Auswahl (bausteine.js) steht über der Aktionsgruppe */
 .w-aktion { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px 16px; padding: 14px 16px; }
 .w-aktion + .w-aktion { border-top: 1px solid var(--linie); }
 .w-aktion-text { font-size: 13px; line-height: 1.45; color: var(--text-2); overflow-wrap: anywhere; }
 .w-aktion-unten { grid-column: 1 / -1; min-width: 0; }
 .w-aktion-unten:empty { display: none; }
-.w-aktion .knopf { height: 32px; width: 200px; padding: 0 12px; border-radius: var(--r); font-size: 13px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.w-aktion .knopf { height: 32px; min-width: 200px; max-width: 100%; padding: 0 12px; border-radius: var(--r); font-size: 13px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .w-aktion .knopf.fertig { background: color-mix(in srgb, var(--gruen) 14%, transparent); border-color: color-mix(in srgb, var(--gruen) 35%, transparent); color: color-mix(in srgb, var(--gruen) 78%, var(--text)); font-weight: 600; opacity: 1; }
 .w-ok { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; line-height: 1.45; color: color-mix(in srgb, var(--gruen) 78%, var(--text)); }
 .w-ok svg { flex: none; margin-top: 1px; }
@@ -166,9 +159,6 @@
 }
 
 /* KI verbinden: Auswahl Claude / Codex / Cursor */
-.w-ziele { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
-.w-aktion .w-ziele .knopf { width: auto; height: 28px; display: inline-flex; align-items: center; gap: 6px; }
-.w-aktion .w-ziele .knopf.aktiv { background: color-mix(in srgb, var(--akzent) 16%, transparent); border-color: color-mix(in srgb, var(--akzent) 45%, transparent); font-weight: 600; }
 
 /* GitHub-Anmeldung (github-karte.js) */
 .w-github { gap: 12px; }
