@@ -490,6 +490,7 @@ export function erzeugeNotizIndex({ wurzel, jetzt = () => new Date(), heute, git
       else if (e.teile.length === 1 && SYSTEM_DATEIEN.has(falte(e.rel))) bereich = "system"; // CLAUDE.md, AGENTS.md, GEMINI.md in der Wurzel (Groß/klein egal)
       else if (oben === "00_inbox" && !unterhalb.some((s) => s.startsWith("_"))) bereich = "inbox";
       else if (oben === "09_wiki") bereich = "wissen";
+      else if (oben === "05_aufgaben" && c.typ === "aufgabe") bereich = "aufgabe"; // Aufgaben-Board (kern/aufgaben.mjs): eigene Ansicht, nicht in „Alle Notizen“
       else if (!hatInbox && !c.typ && !c.links.length && !rueck.has(e.rel)) bereich = "inbox"; // Vault ohne 00_inbox: lose Notizen ohne Typ und Verknüpfung
       else bereich = "notiz";
 

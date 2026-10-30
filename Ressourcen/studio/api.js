@@ -55,6 +55,10 @@ export const api = {
   verwerfen: (pfad) => anfrage("POST", "/api/posteingang/verwerfen", { pfad }),
   zurueckstellen: (pfad, tage) => anfrage("POST", "/api/posteingang/spaeter", tage === null ? { pfad, bis: null } : { pfad, tage }),
   uebernehmen: (pfad, ziel) => anfrage("POST", "/api/posteingang/uebernehmen", { pfad, ziel }),
+  // ---- Aufgaben-Board: je Aufgabe eine Datei; Ändern schickt nur die geänderten Felder (PATCH), platz = { davor, danach } für die Stelle in der Spalte
+  aufgaben: () => anfrage("GET", "/api/aufgaben"),
+  aufgabeNeu: (daten) => anfrage("POST", "/api/aufgaben", daten),
+  aufgabeAendern: (pfad, daten) => anfrage("PATCH", "/api/aufgaben/" + pfad.split("/").map(encodeURIComponent).join("/"), daten),
   suche: (frage) => anfrage("GET", "/api/suche" + q({ q: frage })),
   pruefung: (pfad) => anfrage("GET", "/api/pruefung" + q({ pfad })),
   gesundheit: () => anfrage("GET", "/api/gesundheit"),

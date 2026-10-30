@@ -1,7 +1,7 @@
 // Brain Studio v2 — Oberfläche. Vier Spalten: Seitenleiste · Notizliste · Editor · Eigenschaften, Statusleiste.
 // Zustand, Navigation, Editor-Anbindung (verlustfrei), Speichern/Konflikt, Dialoge, Vault-Verwaltung.
 import { T, PRODUKT } from "./texte.js";
-import { api, aktion, aktionMitAntwort, inApp, gitGesperrt, andererVault, ausgangUnklar, zeitText as zeitFehlerText, ladeStandNeu } from "./api.js";
+import { api, aktion, aktionMitAntwort, inApp, gitGesperrt, andererVault, nichtVertraut, ausgangUnklar, zeitText as zeitFehlerText, ladeStandNeu } from "./api.js";
 import { erstelleEditor } from "./editor.js";
 import { h, dialog, dialogOffen, schliesseDialoge, toast, vorMinuten, dateiName, ohneEndung, ordnerVon, istBearbeitbar, speichereLokal, leseLokal, leseEntwurf, speichereEntwurf, sucheGrad, suchFormen, ausTabelle, arbeitBeginnt, laufendeArbeiten } from "./hilfen.js";
 import { symbol } from "./symbole.js";
@@ -11,6 +11,7 @@ import { istRohGit } from "./verlauf.js";
 import { diffAnsicht } from "./diff.js";
 import { oeffneMenue, schliesseMenue } from "./menue.js";
 import { baueAktionen, istZurueckgestellt, spaeterBis } from "./posteingang.js";
+import { TA as TAUF } from "./texte-aufgaben.js";
 import { datumKurz, datumLang, datumZeit, istDatumText, bytesText, setzeTypFarbe, typSymbol, typName, wortAnzahl, relativ, pluralisiere, vorschauText, typTextFarbe } from "./format.js";
 
 const $ = (id) => document.getElementById(id);
@@ -33,6 +34,7 @@ const S = {
   ladeNr: 0, bereit: false,
   umstellung: null,                          // P7c: { altlasten, umgestellt, angefangen } oder null (alter Werkzeug-Ordner im Vault und Stand der Umstellung)
   zeigeZurueckgestellt: false,               // Posteingang: false = offene Notizen, true = die mit „Später“ zurückgestellten
+  aufgabeDatei: false,                       // Aufgaben: true = eine Karte ist als Datei im Editor geöffnet (das Board ist dann verdeckt)
 };
 const lokal = {
   k: (n) => n + "@" + (S.info?.vault || ""),
@@ -49,6 +51,8 @@ $("knopf-suche").replaceChildren(symbol("suche", 16));
 $("knopf-neu").replaceChildren(symbol("plus", 16));
 $("suche-zu").replaceChildren(symbol("schliessen", 12));
 $("vault-pfeil").replaceChildren(symbol("chevron-auf-ab", 14));
+$("au-zurueck").replaceChildren(symbol("pfeil-links", 14), h("span", { text: TAUF.zurueck }));
+$("au-zurueck").addEventListener("click", () => zurueckZumBoard());
 
 // ======================================================= Erscheinungsbild
 function wendeThemeAn() {
@@ -115,7 +119,7 @@ async function legeWikiZielAn(ziel) {
 }
 
 // ======================================================= Datei öffnen / speichern
-async function oeffne(pfad, { zeile, ausListe } = {}) {
+async function oeffne(pfad, { zeile, ausListe, ausBoard } = {}) {
   if (pfad === S.pfad) { schliesseDiff(); if (zeile) ed.springeZu(zeile); else if (!ausListe) ed.fokus(); return true; }
   if (S.konflikt) { toast(`Löse zuerst den Konflikt in „${ohneEndung(dateiName(S.pfad))}“.`, { fehler: true }); return false; }
   const nr = ++S.ladeNr;
@@ -145,6 +149,8 @@ async function oeffne(pfad, { zeile, ausListe } = {}) {
   if (zeile) ed.springeZu(zeile);
   else if (!ausListe && !document.querySelector(".schleier")) ed.fokus();
   lokal.schreib("pfad", d.pfad);
+  // Im Aufgaben-Board öffnet jede Datei (Karte, Befehlspalette) den Editor; „Zurück zum Board“ führt wieder hin
+  if (istAufgabenSicht() && !S.aufgabeDatei && (ausBoard || !ausListe)) { S.aufgabeDatei = true; setzeModus(); }
   return true;
 }
 
@@ -272,7 +278,7 @@ function setzeFenstertitel() {
 // ======================================================= Index (Notizen, Typen, Ansichten)
 // Wie der Werkstatt-Index: _-Ordner im Posteingang sind maschinell, Vorlagen und Agenten-Anweisungen in der Wurzel keine Notizen
 const bereichVonPfad = (p) => (/^90_/.test(p) ? "archiv" : /^00_inbox\/_/.test(p) ? "maschine" : p.startsWith("01_vorlagen/") ? "vorlage"
-  : /^(claude|agents|gemini)\.md$/i.test(p) ? "system" : p.startsWith("00_inbox/") ? "inbox" : p.startsWith("09_wiki/") ? "wissen" : "notiz");
+  : /^(claude|agents|gemini)\.md$/i.test(p) ? "system" : p.startsWith("00_inbox/") ? "inbox" : p.startsWith("09_wiki/") ? "wissen" : p.startsWith("05_aufgaben/") ? "aufgabe" : "notiz");
 const SICHTBAR = new Set(["inbox", "notiz", "wissen"]); // erscheinen in „Alle Notizen“, Typen und Ansichten
 const istNotiz = (n) => SICHTBAR.has(n.bereich) && !n.generiert;
 function notizenAusBaum() {
@@ -333,8 +339,27 @@ async function ladeBaum() {
 
 // ======================================================= Sicht (Seitenleiste → Liste)
 const BEREICHE = [
-  ["inbox", "inbox"], ["rueckfragen", "info"], ["alle", "notiz"], ["wissen", "buch"], ["archiv", "archiv"],
+  ["inbox", "inbox"], ["aufgaben", "aufgaben"], ["rueckfragen", "info"], ["alle", "notiz"], ["wissen", "buch"], ["archiv", "archiv"],
 ];
+const istAufgabenSicht = () => S.sicht.art === "bereich" && S.sicht.id === "aufgaben";
+// Fenster-Modus: liste (Standard) · verlauf · aufgaben (Board füllt den Platz) · aufgaben-datei (Karte als Datei im Editor)
+function setzeModus() {
+  $("app").dataset.modus = S.sicht.art === "verlauf" ? "verlauf" : istAufgabenSicht() ? (S.aufgabeDatei ? "aufgaben-datei" : "aufgaben") : "liste";
+}
+// Zähler für die Seitenleiste aus dem Notiz-Index: offen = noch nicht erledigt, überfällig = mit Fälligkeit vor heute
+function aufgabenZaehler() {
+  const heute = new Date().toLocaleDateString("sv-SE");
+  let offen = 0, ueber = 0;
+  for (const n of S.notizen) {
+    if (n.bereich !== "aufgabe") continue;
+    const st = String(n.felder?.status || "offen").trim().toLowerCase();
+    if (st === "erledigt") continue;
+    offen++;
+    const f = n.felder?.faellig;
+    if (typeof f === "string" && /^\d{4}-\d{2}-\d{2}/.test(f) && f.slice(0, 10) < heute) ueber++;
+  }
+  return { offen, ueber };
+}
 const ANSICHTEN = ["abgelaufen", "strittig", "ungeprueft", "zuletzt"];
 const gleicheSicht = (a, b) => a.art === b.art && (a.id ?? null) === (b.id ?? null);
 function waehleSicht(sicht, { merken = true } = {}) {
@@ -343,8 +368,9 @@ function waehleSicht(sicht, { merken = true } = {}) {
   schliesseSuche(false);
   if (!gleicheSicht(S.sicht, sicht)) S.zeigeZurueckgestellt = false;
   S.sicht = sicht;
+  S.aufgabeDatei = false;
   if (merken && sicht.art !== "verlauf") lokal.schreib("sicht", sicht);
-  $("app").dataset.modus = sicht.art === "verlauf" ? "verlauf" : "liste";
+  setzeModus();
   zeichneSeite(); zeichneListe();
   $("liste-koerper").scrollTop = 0;
 }
@@ -409,8 +435,10 @@ function eintragEl({ id, data, symbolName, name, zahl, aktiv, typ, zahlKlasse, t
 function zeichneBereiche() {
   const z = zaehler();
   const rf = S.rueckfragen && S.rueckfragen.verfuegbar !== false && Number.isFinite(S.rueckfragen.offen) ? S.rueckfragen.offen : null;
+  const az = aufgabenZaehler();
   const zeilen = BEREICHE.filter(([id]) => id !== "rueckfragen" || rf !== null).map(([id, sym]) =>
-    eintragEl({ data: { "data-bereich": id }, symbolName: sym, name: T.bereiche[id], zahl: id === "rueckfragen" ? rf : z[id], zahlKlasse: id === "rueckfragen" && rf ? "warn" : "",
+    eintragEl({ data: { "data-bereich": id }, symbolName: sym, name: T.bereiche[id], zahl: id === "rueckfragen" ? rf : id === "aufgaben" ? az.offen : z[id],
+      zahlKlasse: (id === "rueckfragen" && rf) || (id === "aufgaben" && az.ueber) ? "warn" : "", titel: id === "aufgaben" && az.ueber ? TAUF.zahl(az.offen, az.ueber) : null,
       aktiv: S.sicht.art === "bereich" && S.sicht.id === id, tun: () => waehleSicht({ art: "bereich", id }) }));
   $("bereiche").replaceChildren(...zeilen);
 }
@@ -531,6 +559,7 @@ function rendereMehr(bis) {
 }
 let verlaufInst = null;
 function zeichneListe({ behalte = false } = {}) {
+  setzeModus();
   zeichneListenKopf();
   const host = $("liste-koerper");
   const scroll = behalte ? host.scrollTop : 0;
@@ -538,6 +567,7 @@ function zeichneListe({ behalte = false } = {}) {
   verlaufInst?.zerstoere?.(); verlaufInst = null;
   if (S.suche.aktiv) { zeichneSuchergebnisse(); return; }
   if (S.sicht.art === "bereich" && S.sicht.id === "rueckfragen") { zeichneRueckfragenKarte(); return; }
+  if (istAufgabenSicht()) { S.sichtListe = []; zeichneAufgaben(); return; }
   S.sichtListe = sortiere(sichtNotizen());
   S.gerendert = 0;
   host.replaceChildren();
@@ -703,7 +733,49 @@ function zeichneSuchergebnisse() {
   }));
   host.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
 }
-function fokusSuche() { oeffneSuche(); }
+function fokusSuche() {
+  if (istAufgabenSicht()) waehleSicht({ art: "bereich", id: "alle" }); // die Notizliste ist im Board nicht sichtbar
+  oeffneSuche();
+}
+
+// ======================================================= Aufgaben (Modul: aufgaben.js)
+let aufgabenInst = null, aufgabenLaedt = null;
+async function zeichneAufgaben() {
+  const host = $("aufgaben-host");
+  try {
+    if (!aufgabenInst) {
+      aufgabenLaedt ??= import("./aufgaben.js").then((m) => {
+        aufgabenInst = m.baueAufgaben(host, {
+          api, toast, istNichtVertraut: nichtVertraut, lokal,
+          oeffneDatei: (pfad) => oeffneAufgabeDatei(pfad),
+          fragVertrauen: () => { oeffneVertrauen(); },
+          beiAenderung: () => { ladeBaum(); },
+        });
+        return aufgabenInst.lade();
+      }).finally(() => { aufgabenLaedt = null; });
+      await aufgabenLaedt;
+    } else await aufgabenInst.aktualisiere();
+    if (S.aufgabeErfassen && istAufgabenSicht()) { S.aufgabeErfassen = false; aufgabenInst?.fokusErfassen(); }
+  } catch { host.replaceChildren(h("div", { klasse: "leer-liste" }, h("p", { text: TAUF.fehler.laden }))); aufgabenInst = null; }
+}
+async function oeffneAufgabeDatei(pfad) {
+  if (!istAufgabenSicht()) return;
+  const ok = await oeffne(pfad, { ausListe: true, ausBoard: true });
+  if (ok === false) return;
+  S.aufgabeDatei = true; setzeModus();
+}
+async function zurueckZumBoard() {
+  if (!(await speichereAlles())) return;
+  S.aufgabeDatei = false; setzeModus();
+  aufgabenInst?.aktualisiere();
+}
+// Menü „Aufgabe erfassen …“, ⌘⇧A: Board öffnen, Eingabefeld in den Fokus
+function aufgabeErfassen() {
+  S.aufgabeErfassen = true;
+  if (istAufgabenSicht() && !S.aufgabeDatei && aufgabenInst) { S.aufgabeErfassen = false; aufgabenInst.fokusErfassen(); return; }
+  if (istAufgabenSicht() && S.aufgabeDatei) { zurueckZumBoard().then(() => { S.aufgabeErfassen = false; aufgabenInst?.fokusErfassen(); }); return; }
+  waehleSicht({ art: "bereich", id: "aufgaben" });
+}
 
 // ======================================================= Verlauf-Modus (Module: verlauf.js)
 async function zeichneVerlauf() {
@@ -755,11 +827,11 @@ function zeichnePfad() {
   const n = S.nMap.get(S.pfad);
   const bereich = n?.bereich || bereichVonPfad(S.pfad);
   const teile = ordnerVon(S.pfad) ? ordnerVon(S.pfad).split("/") : [];
-  const bereichWurzel = bereich === "inbox" || bereich === "maschine" ? "00_inbox" : bereich === "wissen" ? "09_wiki" : bereich === "vorlage" ? "01_vorlagen" : null;
-  const bereichText = bereich === "inbox" || bereich === "maschine" ? T.bereiche.inbox : bereich === "wissen" ? T.bereiche.wissen : bereich === "archiv" ? T.bereiche.archiv
+  const bereichWurzel = bereich === "aufgabe" ? "05_aufgaben" : bereich === "inbox" || bereich === "maschine" ? "00_inbox" : bereich === "wissen" ? "09_wiki" : bereich === "vorlage" ? "01_vorlagen" : null;
+  const bereichText = bereich === "aufgabe" ? T.bereiche.aufgaben : bereich === "inbox" || bereich === "maschine" ? T.bereiche.inbox : bereich === "wissen" ? T.bereiche.wissen : bereich === "archiv" ? T.bereiche.archiv
     : bereich === "vorlage" ? T.bereiche.vorlagen : "Notizen";
   const zuBereich = () => (bereich === "vorlage" ? waehleSicht({ art: "ordner", id: "01_vorlagen" })
-    : waehleSicht({ art: "bereich", id: bereich === "maschine" ? "inbox" : ["inbox", "wissen", "archiv"].includes(bereich) ? bereich : "alle" }));
+    : waehleSicht({ art: "bereich", id: bereich === "maschine" ? "inbox" : ["inbox", "wissen", "archiv", "aufgabe"].includes(bereich) ? (bereich === "aufgabe" ? "aufgaben" : bereich) : "alle" }));
   const kinder = [h("span", { klasse: "krume link", text: bereichText, aufClick: zuBereich })];
   let acc = "";
   teile.forEach((t) => {
@@ -1441,7 +1513,7 @@ const stufenKlasse = (s) => (/rot|red|fehler/i.test(s || "") ? "rot" : /gelb|war
 function oeffnePalette(vorgabe = "") {
   if (dialogOffen()) return;
   const befehle = [
-    [T.befehle.neu, "⌘N", oeffneNeu], [T.befehle.merken, "⌘⇧M", oeffneMerken], [T.befehle.commit, "⌘⇧G", oeffneCommit], [T.befehle.sync, "", sync],
+    [T.befehle.neu, "⌘N", oeffneNeu], [T.befehle.merken, "⌘⇧M", oeffneMerken], [TAUF.erfassen.befehl, "⌘⇧A", aufgabeErfassen], [T.befehle.commit, "⌘⇧G", oeffneCommit], [T.befehle.sync, "", sync],
     [T.befehle.suche, "⌘⇧F", fokusSuche], [T.befehle.inNotiz, "⌘F", () => ed.suchen()], [T.befehle.info, "⌘⌥I", umschalteInfo], [T.befehle.gesundheit, "", oeffneGesundheit], [T.befehle.nutzung, "", oeffneNutzung],
     [T.liste.verlauf, "", oeffneVerlauf],
     ...(inApp() ? [[T.befehle.ordner, "", () => aktion("ordner-zeigen", S.pfad || undefined)], [T.befehle.ansicht, "", oeffneUebersicht]] : []),
@@ -1585,6 +1657,7 @@ window.addEventListener("keydown", (e) => {
   if (k === "s" && !e.shiftKey) tun(() => { clearTimeout(speicherTimer); speichere(); });
   else if (k === "n" && !e.shiftKey) tun(() => oeffneNeu());
   else if (k === "m" && e.shiftKey) tun(oeffneMerken);
+  else if (k === "a" && e.shiftKey && !e.altKey && !dialogOffen()) tun(aufgabeErfassen);
   else if ((k === "k" || k === "p") && !e.shiftKey && !e.altKey) tun(() => oeffnePalette());
   else if (k === "f" && e.shiftKey) tun(fokusSuche);
   else if (k === "f" && !e.shiftKey && !e.altKey && !dialogOffen() && S.pfad && !e.target.closest?.("input, textarea, select")) tun(() => ed.suchen());
@@ -1667,6 +1740,7 @@ const MENUE_BEFEHLE = {
   "vault-oeffnen": vaultOeffnen, "vault-wechseln": oeffneVaultMenue, verlauf: oeffneVerlauf,
   umstellung: () => oeffneUmstellung(), // Menüleiste „Vault umstellen …“ (nur wenn der Status Altlasten meldet): dieselbe Ansicht wie in den Einstellungen
   einstellungen: () => { const anker = stEl.querySelector('[data-st="einstellungen"]'); if (anker) oeffneEinstellungen(anker); }, // Menüleiste „Einstellungen …“: das Zahnrad-Menü der Statusleiste
+  aufgaben: () => waehleSicht({ art: "bereich", id: "aufgaben" }), "aufgabe-erfassen": () => aufgabeErfassen(),
   posteingang: () => waehleSicht({ art: "bereich", id: "inbox" }), alle: () => waehleSicht({ art: "bereich", id: "alle" }), wissen: () => waehleSicht({ art: "bereich", id: "wissen" }),
   "hell-dunkel": () => setzeTheme(istDunkel() ? "hell" : "dunkel"),
 };
@@ -1767,7 +1841,7 @@ function oeffneVertrauen() {
       if (andererVault(e)) { await nachAnderemVault(d); return; }
       fehler = e.message || T.vertrauen.nichtGespeichert;
     }
-    if (!fehler) { d.schliessen(); toast(T.vertrauen.erteilt); return; }
+    if (!fehler) { d.schliessen(); toast(T.vertrauen.erteilt); aufgabenInst?.lade({ leise: true }); return; }
     fehlerEl.hidden = false; fehlerEl.textContent = fehler;
     ja.disabled = nein.disabled = false; ja.textContent = T.vertrauen.erlauben;
   });
@@ -1932,7 +2006,7 @@ async function ladeAlles() {
   S.sortierung = lokal.lies("sort", "geaendert");
   const sicht = lokal.lies("sicht", null);
   S.sicht = sicht && sicht.art && sicht.art !== "verlauf" ? sicht : { art: "bereich", id: "alle" };
-  $("app").dataset.modus = "liste";
+  S.aufgabeDatei = false; setzeModus();
   vaultKopf(); setzeFenstertitel();
   zeichneWerkzeuge();
   await ladeBaum();

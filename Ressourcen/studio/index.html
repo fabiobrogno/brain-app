@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="verlauf.css">
 <link rel="stylesheet" href="willkommen.css">
 <link rel="stylesheet" href="vertrauen.css">
+<link rel="stylesheet" href="aufgaben.css">
 </head>
 <body>
 <div id="app" data-info="an" data-modus="liste">
@@ -53,6 +54,7 @@
 
   <main id="haupt">
     <header class="werkzeug">
+      <button id="au-zurueck" class="knopf-text au-zurueck" type="button" data-aktion="aufgaben-zurueck"></button>
       <div id="pfad" class="pfad" aria-label="Pfad der Notiz"></div>
       <div class="werkzeug-rechts">
         <span id="pille" class="pille" hidden></span>
@@ -62,6 +64,7 @@
     </header>
     <div id="umstellung-host"></div>
     <div id="banner-host"></div>
+    <div id="aufgaben-host"></div>
     <div id="editor"></div>
     <section id="leer" class="leer" hidden></section>
     <section id="diff-host" class="diff-host" hidden aria-label="Änderung"></section>

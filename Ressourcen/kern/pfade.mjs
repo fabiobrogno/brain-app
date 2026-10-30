@@ -316,6 +316,7 @@ export function ordner(vault, cfg = ladeConfig(vault)) {
     inbox: nimm(cfg.ordner?.inbox, "00_inbox"),
     wiki: nimm(cfg.ordner?.wiki, nimm(cfg.wiki?.ordner, "09_wiki")),
     archiv: nimm(cfg.ordner?.archiv, "90_archiv"),
+    aufgaben: nimm(cfg.ordner?.aufgaben, "05_aufgaben"),   // je Aufgabe eine Markdown-Datei (aufgaben.mjs)
   };
 }
 
@@ -324,7 +325,7 @@ export function ordner(vault, cfg = ladeConfig(vault)) {
 // ist der Ordner kein Vault für den Kern (Exit 2; Hooks enden still mit Exit 0).
 function zieleImVault(echt) {
   const o = ordner(echt);
-  const ziele = [".logs", o.inbox, o.wiki, o.archiv, "AGENTS.md", "CLAUDE.md", "graph.json", join(o.wiki, "_index.md"), join(o.wiki, "INDEX.md")];
+  const ziele = [".logs", o.inbox, o.wiki, o.archiv, o.aufgaben, "AGENTS.md", "CLAUDE.md", "graph.json", join(o.wiki, "_index.md"), join(o.wiki, "INDEX.md")];
   for (const rel of ziele) {
     const p = join(echt, rel);
     let real;

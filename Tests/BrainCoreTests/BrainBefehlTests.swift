@@ -137,6 +137,12 @@ private let kernAttrappe = URL(fileURLWithPath: "/tmp/Kortex Test/bin/kern", isD
     #expect(throws: StatusFehler.leereAusgabe) { try BrainStatus.aus(ausgabe: "\n \n") }
 }
 
+@Test func statusTraegtAufgabenFallsVorhanden() throws {
+    #expect(try BrainStatus.aus(ausgabe: statusJSON).aufgaben == nil)   // älterer Kern: kein Block
+    let mit = try BrainStatus.aus(ausgabe: statusJSON.replacingOccurrences(of: "}}", with: "},\"aufgaben\":{\"offen\":4,\"ueberfaellig\":1}}"))
+    #expect(mit.aufgaben == BrainStatus.Aufgaben(offen: 4, ueberfaellig: 1))
+}
+
 @Test func anzeigeHatImmerEinSymbol() throws {
     let ok = try BrainStatus.aus(ausgabe: statusJSON.replacingOccurrences(of: "\"hinweis\"", with: "\"ok\""))
     #expect(StatusAnzeige.fuer(ok) == StatusAnzeige(symbol: "checkmark.circle", zeichen: "✓", titel: "Alles in Ordnung"))

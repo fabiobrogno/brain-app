@@ -24,6 +24,7 @@ struct MenueInhalt: View {
             .disabled(zustand.vault == nil || !zustand.kitVorhanden || !zustand.kernBereitschaft.istBereit)
         Divider()
         Button("Studio öffnen") { zustand.oeffneStudio() }.keyboardShortcut("o")
+        Button("Aufgabe erfassen …") { zustand.sende(.aufgabeErfassen) }.keyboardShortcut("a", modifiers: [.command, .shift]).disabled(zustand.vault == nil)
         Button("Übersicht öffnen") { Task { await zustand.oeffneFenster() } }.keyboardShortcut("u").disabled(!zustand.uebersichtMoeglich)
         Button("Jetzt abgleichen") { zustand.sende(.abgleichen) }.keyboardShortcut("s").disabled(zustand.vault == nil)
         Divider()
@@ -58,6 +59,8 @@ struct MenueInhalt: View {
             Button { zustand.oeffneStudio() } label: { beschriftung }.help(zeile.erklaerung ?? "")
         case .protokollZeigen:
             Button { zustand.zeigeProtokoll() } label: { beschriftung }.help(zeile.erklaerung ?? "")
+        case .aufgabenOeffnen:
+            Button { zustand.sende(.aufgaben) } label: { beschriftung }.help(zeile.erklaerung ?? "")
         }
     }
 }

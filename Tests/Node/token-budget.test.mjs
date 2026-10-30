@@ -11,7 +11,7 @@ const { bearbeite, WERKZEUGE } = await import(pfad("mcp", "brain-mcp.mjs"));
 process.env.BRAIN_NUTZUNG = "aus";
 
 // Obergrenzen in Zeichen
-const GRENZE = { werkzeugliste: 2700, sucheStandard: 1500, sucheMax20: 4200, lesenKlein: 6600, lesenLang: 7000, lesenTeil: 6800, kontext: 2000 };
+const GRENZE = { werkzeugliste: 3700, sucheStandard: 1500, sucheMax20: 4200, lesenKlein: 6600, lesenLang: 7000, lesenTeil: 6800, kontext: 2000 };
 
 // deterministischer Fließtext
 const WOERTER = "Kortex Vault Seite Pflege Tageslauf Inbox Wissen Hinweis Suche Werkzeug Antwort Kontext Projekt Prüfung Sicherung Verlauf Abschnitt Gliederung Zeile Treffer Ranking Frage Stufe Beleg Quelle".split(" ");

@@ -146,6 +146,13 @@ export function erzeugeHandler(o) {
     // Routen ohne Vault: info, vaults/*, ki/erkennen, stopp. Alle anderen brauchen einen offenen Vault.
     const V = () => { if (!v) throw new HttpFehler(409, "Es ist noch kein Vault geöffnet.", { keinVault: true }); return v; };
     const neuerStand = (r) => { wechsleZu(r.vault.pfad); return { ...vaultListe(aktuell), vault: r.vault, git: r.git }; };
+    // PATCH /api/aufgaben/<pfad der Aufgabe im Vault>: Status, Rang, Felder einer Aufgabe ändern
+    if (pfad.startsWith("/api/aufgaben/")) {
+      nur("PATCH");
+      let rel;
+      try { rel = decodeURIComponent(pfad.slice("/api/aufgaben/".length)); } catch { throw new HttpFehler(400, "Der Pfad der Aufgabe ist ungültig."); }
+      return V().aufgabeAendern(rel, eingabe());
+    }
     switch (pfad) {
       case "/api/info": {
         nur("GET");
@@ -173,6 +180,11 @@ export function erzeugeHandler(o) {
         throw new HttpFehler(405, "Diese Methode ist hier nicht erlaubt.");
       case "/api/neu": nur("POST"); return V().neu(eingabe());
       case "/api/merken": nur("POST"); return V().merken(eingabe());
+      // Aufgaben (kern/aufgaben.mjs): lesen immer, anlegen und ändern nur in einem vertrauten Vault (409 art „nicht-vertraut“)
+      case "/api/aufgaben":
+        if (methode === "GET") return V().aufgaben();
+        if (methode === "POST") return V().aufgabeAnlegen(eingabe());
+        throw new HttpFehler(405, "Diese Methode ist hier nicht erlaubt.");
       case "/api/posteingang/verwerfen": nur("POST"); return V().posteingangVerwerfen(eingabe());
       case "/api/posteingang/spaeter": nur("POST"); return V().posteingangSpaeter(eingabe());
       case "/api/posteingang/uebernehmen": nur("POST"); return V().posteingangUebernehmen(eingabe());

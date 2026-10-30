@@ -403,7 +403,7 @@ test("neuesVault vorlage: Gerüst, ein Commit „Kortex-Vault angelegt“, saube
   assert.equal(readFileSync(join(ziel, "CLAUDE.md"), "utf8"), "@AGENTS.md\n");
   // Nur Daten + brain.config.json: kein .tools, und die Marke macht den Ordner zu einem Vault für den Kern
   assert.equal(existsSync(join(ziel, ".tools")), false, "ein neuer Vault braucht kein .tools");
-  assert.deepEqual(JSON.parse(readFileSync(join(ziel, "brain.config.json"), "utf8")), { ordner: { inbox: "00_inbox", wiki: "09_wiki", archiv: "90_archiv" }, sprache: "de" });
+  assert.deepEqual(JSON.parse(readFileSync(join(ziel, "brain.config.json"), "utf8")), { ordner: { inbox: "00_inbox", wiki: "09_wiki", archiv: "90_archiv", aufgaben: "05_aufgaben" }, sprache: "de" });
   assert.equal(readFileSync(join(ziel, "00_inbox", ".gitkeep"), "utf8"), "");
   assert.equal(readFileSync(join(ziel, ".gitignore"), "utf8"), GITIGNORE);
   for (const eintrag of [".DS_Store", ".logs/", "node_modules/", ".brain-tmp-*"]) assert.ok(GITIGNORE.split("\n").includes(eintrag), eintrag);

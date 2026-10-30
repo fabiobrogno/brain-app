@@ -24,6 +24,8 @@ public struct MenueZeile: Equatable, Sendable {
         case studioOeffnen
         /// Der Kern ist nicht bereit: zeigt das Protokoll.
         case protokollZeigen
+        /// Offene Aufgaben: öffnet im Studio das Aufgaben-Board.
+        case aufgabenOeffnen
     }
 
     public let symbol: String
@@ -54,7 +56,8 @@ public enum MenueStatus {
                               zahlen: BrainStatus.Zahlen?,
                               entwicklerVault: Bool,
                               kernMeldung: String?,
-                              zufuehrungsZeilen: [String]) -> [MenueZeile] {
+                              zufuehrungsZeilen: [String],
+                              aufgaben: BrainStatus.Aufgaben? = nil) -> [MenueZeile] {
         var z: [MenueZeile] = []
         if let name = vaultName, !name.isEmpty {
             z.append(MenueZeile(symbol: "folder", text: kurz(name), art: .kopf, erklaerung: name.count > hoechstZeichen ? name : "Vault wechseln …", aktion: .vaultWechseln))
@@ -67,6 +70,11 @@ public enum MenueStatus {
         }
         if let text = zahlenText(zahlen) {
             z.append(MenueZeile(symbol: "list.bullet", text: text, art: .normal))
+        }
+        if vaultName != nil, let text = aufgabenText(aufgaben) {
+            let ueberfaellig = (aufgaben?.ueberfaellig ?? 0) > 0
+            z.append(MenueZeile(symbol: ueberfaellig ? "exclamationmark.circle" : "checklist", text: text, art: ueberfaellig ? .hinweis : .normal,
+                                erklaerung: "Öffnet das Aufgaben-Board im Studio.", aktion: .aufgabenOeffnen))
         }
         if entwicklerVault {
             z.append(MenueZeile(symbol: "hammer", text: "Entwickler-Vault — bekommt keine Updates", art: .normal))
@@ -106,6 +114,13 @@ public enum MenueStatus {
         if z.konflikte > 0 { teile.append(z.konflikte == 1 ? "1 Konflikt" : "\(z.konflikte) Konflikte") }
         if z.abgelaufen > 0 { teile.append("\(z.abgelaufen) abgelaufen") }
         return teile.isEmpty ? nil : teile.joined(separator: " · ")
+    }
+
+    /// „3 Aufgaben offen · 1 überfällig“ — nil, wenn nichts offen ist (dann steht keine Zeile im Menü).
+    static func aufgabenText(_ a: BrainStatus.Aufgaben?) -> String? {
+        guard let a, a.offen > 0 else { return nil }
+        let offen = a.offen == 1 ? "1 Aufgabe offen" : "\(a.offen) Aufgaben offen"
+        return a.ueberfaellig > 0 ? "\(offen) · \(a.ueberfaellig) überfällig" : offen
     }
 
     static func kurz(_ text: String) -> String {

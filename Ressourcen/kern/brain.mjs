@@ -2,6 +2,7 @@
 // brain.mjs — ein Einstieg für alle Agenten und Menschen. Kein Agent-spezifischer Code hier.
 // Befehle: index | search "<frage>" [n] | lint | ingest-check <datei> | refresh | hooks-install | claude-hooks | version | pflege | messlatte | status [--json]
 //   | lernschleife | antworten | wirkung | tageslauf | rueckfragen | zurueck | traum | dienst | nachernte | gedaechtnis | gesundheit
+//   | aufgabe neu|erledigt|status | aufgaben
 // Skill-Helfer (statt POSIX-Shell, laufen gleich auf macOS/Windows/Linux): lock | unlock | sha <datei> | jetzt | review-erledigt
 // Exit-Codes: 0 ok, 2 Befunde (lint) / unbekannte Option (zeig), 3 Secrets (ingest-check), 64 falscher Aufruf.
 import { execFileSync, spawnSync, spawn } from "node:child_process";
@@ -211,6 +212,18 @@ function parseEinstellungsWert(schema, roh) {
   return roh;
 }
 
+// Optionen der Form „--name wert“ (Liste `mitWert`) und „--name“ (Schalter) von den übrigen Wörtern trennen.
+function leseOptionen(args, mitWert = []) {
+  const pos = [], opt = {};
+  for (let i = 0; i < args.length; i++) {
+    const m = /^--([a-z-]+)(?:=(.*))?$/s.exec(args[i]);
+    if (!m) { pos.push(args[i]); continue; }
+    if (mitWert.includes(m[1])) opt[m[1]] = m[2] !== undefined ? m[2] : (args[++i] ?? "");
+    else opt[m[1]] = true;
+  }
+  return { pos, opt };
+}
+
 const befehle = {
   jetzt: () => (console.log(jetzt()), 0),
   // Lock für Wiki-Änderungen (Riegel-Hook verlangt ihn). Ein frischer fremder Lock (< 30 min) heißt: eine
@@ -342,6 +355,48 @@ const befehle = {
     console.log("Einstellungen gespeichert.");
     return 0;
   },
+  // „brain aufgabe neu "<titel>" [--prio niedrig|normal|hoch] [--faellig JJJJ-MM-TT] [--text "…"] [--quelle ki:<programm>]“, „brain aufgabe erledigt <pfad>“,
+  // „brain aufgabe status <pfad> offen|in-arbeit|warten|erledigt“, „brain aufgaben [--status offen] [--alle] [--json]“ — Aufgaben im Vault (aufgaben.mjs, je Aufgabe eine
+  // Markdown-Datei). Schreibende Unterbefehle laufen nur in einem vertrauten Vault (unten, WIRKEND).
+  aufgabe: async (unter, ...a) => {
+    const m = await import("./aufgaben.mjs");
+    const { pos, opt } = leseOptionen(a, ["prio", "faellig", "text", "quelle", "status", "bezug"]);
+    const nutzung = () => { console.error("Nutzung: kortex aufgabe neu \"<titel>\" [--prio hoch] [--faellig 2026-11-03] [--text \"…\"] | kortex aufgabe erledigt <pfad> | kortex aufgabe status <pfad> <status>"); return 64; };
+    try {
+      if (unter === "neu") {
+        const titel = pos.join(" ").trim();
+        if (!titel) return nutzung();
+        const r = m.legeAn(vault, { titel, ...(opt.prio ? { prioritaet: opt.prio } : {}), ...(opt.faellig ? { faellig: opt.faellig } : {}),
+          ...(opt.text ? { text: opt.text } : {}), quelle: opt.quelle || process.env.BRAIN_QUELLE || "mensch", ...(opt.bezug ? { bezug: opt.bezug.split(",") } : {}) });
+        console.log(`Aufgabe angelegt: ${r.pfad}`);
+        return 0;
+      }
+      if (unter === "erledigt" || unter === "status") {
+        const ziel = pos[0], status = unter === "erledigt" ? "erledigt" : pos[1];
+        if (!ziel || !status) return nutzung();
+        const r = m.aendere(vault, m.findePfad(vault, ziel), { status });
+        console.log(`${r.aufgabe.titel}: ${r.aufgabe.status}`);
+        return 0;
+      }
+    } catch (e) {
+      if (e instanceof m.AufgabeFehler) { console.error(e.message); return e.code === 404 ? 1 : 64; }
+      throw e;
+    }
+    return nutzung();
+  },
+  aufgaben: async (...a) => {
+    const m = await import("./aufgaben.mjs");
+    const { opt } = leseOptionen(a, ["status"]);
+    let l = m.liste(vault);
+    if (opt.status) {
+      if (!m.STATUS.includes(opt.status)) { console.error(`Status: ${m.STATUS.join(" | ")}`); return 64; }
+      l = l.filter((x) => x.status === opt.status);
+    } else if (!opt.alle) l = l.filter((x) => x.status !== "erledigt");
+    if (opt.json) console.log(JSON.stringify(l.map(({ text, ...rest }) => rest)));
+    else if (!l.length) console.log("Keine Aufgaben.");
+    else for (const x of l) console.log(m.zeile(x));
+    return 0;
+  },
   backup: async (unter, a, b) => {
     const m = await import("./backup.mjs");
     if (!unter) { console.log(m.sichern(vault)); return 0; }
@@ -379,7 +434,7 @@ if (befehl === "tageslauf" && rest.includes("--dienst")) {
 if (!vault && !OHNE_VAULT.has(befehl)) { console.error(vaultFehler.message); process.exit(2); }
 // Workspace-Trust (P5): Befehle, die am Vault etwas bewirken (git, Hintergrunddienst, KI-Pflege, Hooks eintragen), laufen nur in einem Vault, den Kortex angelegt
 // oder geklont oder der Nutzer im Studio bestätigt hat. Lesen, Suchen, Ansehen, Status, Lint und die Einstellungen bleiben möglich.
-const WIRKEND = new Set(["tageslauf", "dienst", "traum", "nachernte", "antworten", "zurueck", "backup", "hooks-install", "gedaechtnis"]);
+const WIRKEND = new Set(["tageslauf", "dienst", "traum", "nachernte", "antworten", "zurueck", "backup", "hooks-install", "gedaechtnis", "aufgabe"]);
 if (vault && WIRKEND.has(befehl) && !(befehl === "backup" && rest[0] === "wiederherstellen") && !(befehl === "dienst" && ["status", "aus"].includes(rest[0])) && !vaultVertraut(vault)) {
   console.error(NICHT_VERTRAUT_TEXT);
   process.exit(5);

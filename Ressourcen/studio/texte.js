@@ -4,7 +4,7 @@ export const PRODUKT = "Kortex";
 export const T = {
   produkt: PRODUKT,
   suche: { platzhalter: "Suchen", keine: "Nichts gefunden.", zeile: "Zeile" },
-  bereiche: { inbox: "Posteingang", rueckfragen: "Rückfragen", alle: "Alle Notizen", wissen: "Wissen", archiv: "Archiv", vorlagen: "Vorlagen" },
+  bereiche: { inbox: "Posteingang", aufgaben: "Aufgaben", rueckfragen: "Rückfragen", alle: "Alle Notizen", wissen: "Wissen", archiv: "Archiv", vorlagen: "Vorlagen" },
   abschnitte: { favoriten: "Favoriten", ansichten: "Ansichten", typen: "Typen", ordner: "Ordner" },
   ansichten: { abgelaufen: "Abgelaufen", strittig: "Strittig", ungeprueft: "Ungeprüft", zuletzt: "Zuletzt geändert" },
   ansichtenHinweis: {
@@ -188,7 +188,7 @@ export const T = {
   kuerzel: {
     titel: "Tastenkürzel",
     gruppen: [
-      { name: "Allgemein", zeilen: [["⌘K", "Springen und Befehle"], ["⌘N", "Neue Notiz"], ["⌘⇧M", "Schnell merken"], ["⌘⇧F", "Im ganzen Vault suchen"], ["⌘/", "Diese Übersicht"]] },
+      { name: "Allgemein", zeilen: [["⌘K", "Springen und Befehle"], ["⌘N", "Neue Notiz"], ["⌘⇧M", "Schnell merken"], ["⌘⇧A", "Aufgabe erfassen"], ["⌘⇧F", "Im ganzen Vault suchen"], ["⌘/", "Diese Übersicht"]] },
       { name: "Notiz", zeilen: [["⌘S", "Jetzt speichern"], ["⌘F", "In der Notiz suchen"], ["⌘⌥I", "Eigenschaften ein- oder ausblenden"], ["⌘⇧G", "Änderungen sichern"]] },
       { name: "Liste", zeilen: [["↑ ↓", "Nächste oder vorige Notiz öffnen"], ["↵", "In die Notiz springen"], ["Esc", "Suche oder Dialog schließen"]] },
     ],

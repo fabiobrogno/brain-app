@@ -27,7 +27,7 @@ export const GITIGNORE = [
 // enthält sonst nur Daten — kein `.tools`, keinen Kern-Code (der liegt im App-Paket, Kern-Umzug P4). Die Ordnernamen entsprechen den
 // Standardwerten des Kerns und dem Gerüst unten (00_inbox, 09_wiki, 90_archiv).
 export const BRAIN_CONFIG = JSON.stringify({
-  ordner: { inbox: "00_inbox", wiki: "09_wiki", archiv: "90_archiv" },
+  ordner: { inbox: "00_inbox", wiki: "09_wiki", archiv: "90_archiv", aufgaben: "05_aufgaben" },
   sprache: "de",
 }, null, 2) + "\n";
 
@@ -83,6 +83,7 @@ function agents(name) {
     "- `brain_suchen` — Wissen finden",
     "- `brain_lesen` — eine Seite mit ihren Prüf-Signalen lesen",
     "- `brain_merken` — eine Notiz in die Inbox legen",
+    "- `brain_aufgabe_anlegen`, `brain_aufgaben`, `brain_aufgabe_status` — Aufgaben-Board (Ordner `05_aufgaben/`)",
     "- `brain_verlauf` — Git-Verlauf einer Datei",
     "- `brain_gesundheit` — Zustand des Vaults prüfen",
     "- `brain_vaults` — alle Vaults der App und den aktiven zeigen",

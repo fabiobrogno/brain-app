@@ -69,11 +69,11 @@ public enum SchemaAntwort {
         }
     }
 
-    /// Nachricht von api.js → Anfrage an die Brücke. Nur /api/…, nur GET/POST/PUT, Daten als JSON-Objekt, Körper ≤ Grenze der Oberfläche (Studio 8 MB, Übersicht 64 KB).
+    /// Nachricht von api.js → Anfrage an die Brücke. Nur /api/…, nur GET/POST/PUT/PATCH (PATCH: einzelne Felder einer Aufgabe), Daten als JSON-Objekt, Körper ≤ Grenze der Oberfläche (Studio 8 MB, Übersicht 64 KB).
     public static func anfrage(ausNachricht nachricht: Any, oberflaeche: Oberflaeche = .app) throws -> (methode: String, pfad: String, body: Data?) {
         guard let d = nachricht as? [String: Any], let pfad = d["pfad"] as? String, pfad.hasPrefix("/api/") else { throw AnfrageFehler.ungueltig }
         let methode = ((d["methode"] as? String) ?? "GET").uppercased()
-        guard ["GET", "POST", "PUT"].contains(methode) else { throw AnfrageFehler.ungueltig }
+        guard ["GET", "POST", "PUT", "PATCH"].contains(methode) else { throw AnfrageFehler.ungueltig }
         var body: Data?
         if let daten = d["daten"], !(daten is NSNull) {
             guard JSONSerialization.isValidJSONObject(daten),

@@ -23,6 +23,14 @@ public struct BrainStatus: Decodable, Equatable, Sendable {
     /// Umstellung eines Vaults aus der Kit-Zeit (P7c, Kern `status.mjs`): liegt der alte Werkzeug-Ordner noch im Vault und ist die Umstellung nicht durch?
     /// Fehlt bei älteren Kernen. Die App zeigt daraufhin nur den Menüeintrag „Vault umstellen …“; die Umstellung selbst läuft im Studio.
     public let umstellung: Umstellung?
+    /// Aufgaben im Vault (Kern `aufgaben.mjs`): offen = noch nicht erledigt, überfällig = offen mit Fälligkeit vor heute. Fehlt bei älteren Kernen.
+    public let aufgaben: Aufgaben?
+
+    public struct Aufgaben: Decodable, Equatable, Sendable {
+        public let offen: Int
+        public let ueberfaellig: Int
+        public init(offen: Int, ueberfaellig: Int) { self.offen = offen; self.ueberfaellig = ueberfaellig }
+    }
 
     public struct Umstellung: Decodable, Equatable, Sendable {
         public let altlasten: Bool

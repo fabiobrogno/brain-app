@@ -24,6 +24,7 @@ Memory (Skill **lektion** schreibt sie dorthin); diese Datei ist für andere Wer
 ## Alltag
 - „merk dir …" → Notiz nach `{{INBOX}}/`, dann Skill **ingest**.
 - „was weiß ich über …" → `{{NODE}} "{{KERN}}/brain.mjs" --vault "{{VAULT}}" search "<frage>"`.
+- „leg eine Aufgabe an …" / „erinnere mich an …" → Skill **aufgabe** (`{{KERN}}/skills/aufgabe/SKILL.md`), kurz: `{{NODE}} "{{KERN}}/brain.mjs" --vault "{{VAULT}}" aufgabe neu "<titel>" --quelle ki:<dein-programm>`.
 - „sichere meinen Vault" / „sichere mein Brain" → `{{NODE}} "{{KERN}}/brain.mjs" --vault "{{VAULT}}" backup`.
 - „richte mir eine Sicherung ein" → Skill **backup** (`{{KERN}}/skills/backup/SKILL.md`).
 - Updates: Kortex aktualisiert sich selbst; der Kern gehört zur App.
@@ -48,7 +49,7 @@ Memory (Skill **lektion** schreibt sie dorthin); diese Datei ist für andere Wer
 - Zeit, Lock und Prüfsumme nie per Shell-Werkzeug, sondern: `{{NODE}} "{{KERN}}/brain.mjs" --vault "{{VAULT}}" jetzt` · `… lock` · `… unlock` · `… sha <datei>`.
 
 ## Skills
-ingest · import · lint · review · feedback · handoff · backup · lektion — je `{{KERN}}/skills/<name>/SKILL.md`. Kann dein Werkzeug keine Skills laden, lies die Datei und arbeite sie ab.
+ingest · import · lint · review · feedback · handoff · backup · lektion · aufgabe — je `{{KERN}}/skills/<name>/SKILL.md`. Kann dein Werkzeug keine Skills laden, lies die Datei und arbeite sie ab.
 
 # Compact instructions
 
