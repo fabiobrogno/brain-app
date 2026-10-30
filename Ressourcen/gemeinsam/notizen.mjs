@@ -280,7 +280,7 @@ const gleichRang = (a, b) => { for (let i = 0; i < a.length; i++) if (a[i] !== b
 
 // gitKontext (optional): Funktion, die den Git-Kontext der Anfrage liefert ({ vertraut, sshEigen, sshGlobal, gpgGlobal }) — oder null, wenn Git für diesen
 // Vault gesperrt ist (Vertrauen v2, §8): dann fragt der Index Git gar nicht und nimmt überall die Dateizeiten.
-export function erzeugeNotizIndex({ wurzel, jetzt = () => new Date(), heute, gitKontext }) {
+export function erzeugeNotizIndex({ wurzel, jetzt = () => new Date(), heute, gitKontext, aufgabenOrdner }) {
   const heuteJetzt = () => (typeof heute === "function" ? heute() : heute) || berlinHeute(jetzt());
   const cache = new Map(); // rel → { k, heute, ...analysiere() }
 
@@ -475,6 +475,8 @@ export function erzeugeNotizIndex({ wurzel, jetzt = () => new Date(), heute, git
     // gilt er auch für diese Anfrage — die Prüfung der Dateizeit unten (≤ status.start) macht das sicher.
     const gctx = typeof gitKontext === "function" ? gitKontext() : {}; // null = Git gesperrt: nichts fragen, nur Dateizeiten
     const [karte, status] = gctx === null ? [null, null] : await Promise.all([mitFrist(ladeGitKarte(gctx)), mitFrist(ladeGitStatus(gctx))]);
+    let aufgabenName = "05_aufgaben"; // Aufgaben-Board: Ordnername aus der Konfiguration (kern/pfade.mjs ordner().aufgaben)
+    try { if (typeof aufgabenOrdner === "function") aufgabenName = falte((await aufgabenOrdner()) || aufgabenName); } catch { aufgabenName = falte(aufgabenName); }
     const hatInbox = roh.some((e) => falte(e.teile[0]) === "00_inbox") || existsSync(join(wurzel, "00_inbox"));
     const zuletztAb = jetztMs - SIEBEN_TAGE;
 
@@ -490,7 +492,7 @@ export function erzeugeNotizIndex({ wurzel, jetzt = () => new Date(), heute, git
       else if (e.teile.length === 1 && SYSTEM_DATEIEN.has(falte(e.rel))) bereich = "system"; // CLAUDE.md, AGENTS.md, GEMINI.md in der Wurzel (Groß/klein egal)
       else if (oben === "00_inbox" && !unterhalb.some((s) => s.startsWith("_"))) bereich = "inbox";
       else if (oben === "09_wiki") bereich = "wissen";
-      else if (oben === "05_aufgaben" && c.typ === "aufgabe") bereich = "aufgabe"; // Aufgaben-Board (kern/aufgaben.mjs): eigene Ansicht, nicht in „Alle Notizen“
+      else if (oben === falte(aufgabenName) && e.teile.length === 2 && !e.teile[1].startsWith("_") && String(c.typ || "").trim().toLowerCase() === "aufgabe") bereich = "aufgabe"; // Aufgaben-Board (kern/aufgaben.mjs): nur direkte Kinder des konfigurierten Ordners
       else if (!hatInbox && !c.typ && !c.links.length && !rueck.has(e.rel)) bereich = "inbox"; // Vault ohne 00_inbox: lose Notizen ohne Typ und Verknüpfung
       else bereich = "notiz";
 

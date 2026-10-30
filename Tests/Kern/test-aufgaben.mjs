@@ -133,7 +133,7 @@ test("liste: überspringt Nicht-Aufgaben, Verweise, Unterordner, versteckte und 
   mkdirSync(join(o, "unter")); writeFileSync(join(o, "unter", "x.md"), "---\ntyp: aufgabe\ntitel: Tief\n---\n");
   symlinkSync(join(v, "brain.config.json"), join(o, "link.md"));
   assert.deepEqual(A.liste(v).map((a) => a.titel), ["Echt"]);
-  assert.deepEqual(A.liste(vault()), []);   // kein Ordner → leer
+  assert.deepEqual([...A.liste(vault())], []);   // kein Ordner → leer
 });
 test("aendere: Status ohne Platz → ans Ende der neuen Spalte; nur diese Datei ändert sich; Text bleibt", () => {
   const v = vault();
@@ -181,13 +181,16 @@ test("findePfad: voller Pfad, Dateiname, Namensteil — mehrdeutig und unbekannt
 });
 
 // ---------- Kommandozeile ----------
-const brain = (v, ...args) => spawnSync(process.execPath, [join(KERN, "brain.mjs"), "--vault", v, ...args], { encoding: "utf8", env: { ...process.env, BRAIN_VAULT: "", BRAIN_QUELLE: "" } });
+// Umgebung ausdrücklich gebaut: weder ein KI-Programm der Sitzung (CLAUDECODE …) noch eine Quelle aus der Shell darf in die Tests durchschlagen
+const KEIN_KI = { BRAIN_VAULT: "", BRAIN_QUELLE: "", CLAUDECODE: "", GEMINI_CLI: "", CODEX_SANDBOX: "", CODEX_CI: "" };
+const brain = (v, ...args) => spawnSync(process.execPath, [join(KERN, "brain.mjs"), "--vault", v, ...args], { encoding: "utf8", env: { ...process.env, ...KEIN_KI } });
+const brainMit = (extra, v, ...args) => spawnSync(process.execPath, [join(KERN, "brain.mjs"), "--vault", v, ...args], { encoding: "utf8", env: { ...process.env, ...KEIN_KI, ...extra } });
 test("CLI: aufgabe neu / aufgaben / aufgabe erledigt / aufgabe status", () => {
   const v = vault();
   let r = brain(v, "aufgabe", "neu", "Lieferanten", "anrufen", "--prio", "hoch", "--faellig", "2099-11-03");
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /^Aufgabe angelegt: 05_aufgaben\/\d{4}-\d{2}-\d{2}-lieferanten-anrufen\.md\n$/);
-  r = brain(v, "aufgabe", "neu", "Von der KI", "--quelle", "ki:codex", "--text", "Details");
+  r = brainMit({ BRAIN_TESTMODUS: "1", BRAIN_QUELLE: "ki:codex" }, v, "aufgabe", "neu", "Von der KI", "--text", "Details");
   assert.equal(r.status, 0, r.stderr);
   r = brain(v, "aufgaben");
   assert.equal(r.status, 0);
@@ -206,18 +209,29 @@ test("CLI: aufgabe neu / aufgaben / aufgabe erledigt / aufgabe status", () => {
   assert.equal(r.status, 0); assert.match(r.stdout, /Von der KI: in-arbeit/);
   assert.equal(brain(v, "aufgaben", "--status", "in-arbeit").stdout.trim().split("\n").length, 1);
 });
-test("CLI: Fehler sind verständlich und enden mit Exit 64 bzw. 1, nie mit Stacktrace; BRAIN_QUELLE setzt die Quelle", () => {
+test("CLI: Fehler sind verständlich und enden mit Exit 64 bzw. 1, nie mit Stacktrace", () => {
   const v = vault();
   for (const [args, code, re] of [[["aufgabe"], 64, /Nutzung/], [["aufgabe", "neu"], 64, /Nutzung/], [["aufgabe", "neu", "X", "--prio", "sehr"], 64, /Priorität/],
-    [["aufgabe", "neu", "X", "--faellig", "bald"], 64, /Datum/], [["aufgabe", "neu", "X", "--quelle", "bot"], 64, /Quelle/], [["aufgabe", "erledigt", "gibtsnicht"], 1, /gibt es nicht/],
+    [["aufgabe", "neu", "X", "--faellig", "bald"], 64, /Datum/], [["aufgabe", "neu", "X", "--quelle", "ki:claude-code"], 64, /automatisch bestimmt/], [["aufgabe", "erledigt", "gibtsnicht"], 1, /gibt es nicht/],
     [["aufgaben", "--status", "fertig"], 64, /Status/]]) {
     const r = brain(v, ...args);
     assert.equal(r.status, code, args.join(" ") + r.stdout + r.stderr);
     assert.match(r.stderr, re); assert.doesNotMatch(r.stderr, /at .*\.mjs/);
   }
-  const r = spawnSync(process.execPath, [join(KERN, "brain.mjs"), "--vault", v, "aufgabe", "neu", "Per Umgebung"], { encoding: "utf8", env: { ...process.env, BRAIN_VAULT: "", BRAIN_QUELLE: "ki:gemini" } });
-  assert.equal(r.status, 0, r.stderr);
-  assert.equal(A.liste(v)[0].quelle, "ki:gemini");
+  assert.deepEqual([...A.liste(v)], [], "keine der Fehleingaben hat etwas angelegt");
+});
+test("CLI: Quelle nicht von der KI wählbar — aus der Umgebung abgeleitet (CLAUDECODE → ki:claude-code, sonst mensch); BRAIN_QUELLE nur im Testmodus", () => {
+  const v = vault();
+  const quelleVon = (extra, titel) => { const r = brainMit(extra, v, "aufgabe", "neu", titel); assert.equal(r.status, 0, r.stderr); return A.liste(v).find((a) => a.titel === titel).quelle; };
+  assert.equal(quelleVon({}, "Von Hand"), "mensch");
+  assert.equal(quelleVon({ CLAUDECODE: "1" }, "Aus Claude Code"), "ki:claude-code");
+  assert.equal(quelleVon({ GEMINI_CLI: "1" }, "Aus Gemini"), "ki:gemini");
+  assert.equal(quelleVon({ CODEX_SANDBOX: "seatbelt" }, "Aus Codex"), "ki:codex");
+  assert.equal(quelleVon({ BRAIN_QUELLE: "ki:anders" }, "Ohne Testmodus"), "mensch", "BRAIN_QUELLE gilt nur im Testmodus");
+  assert.equal(quelleVon({ BRAIN_TESTMODUS: "1", BRAIN_QUELLE: "ki:gemini" }, "Testhaken"), "ki:gemini");
+  const r = brainMit({ CLAUDECODE: "1" }, v, "aufgabe", "neu", "Mit Flag", "--quelle", "mensch");
+  assert.equal(r.status, 64); assert.match(r.stderr, /automatisch bestimmt/);
+  assert.equal(A.quelleAusUmgebung({}), "mensch"); assert.equal(A.quelleAusUmgebung({ CLAUDECODE: "1", BRAIN_TESTMODUS: "1", BRAIN_QUELLE: "mensch" }), "mensch");
 });
 test("CLI: schreibende Unterbefehle nur in einem vertrauten Vault (Exit 5), Lesen geht immer", () => {
   const v = vault();
@@ -247,13 +261,13 @@ test("status: aufgaben { offen, ueberfaellig } in JSON und Text; ohne Aufgaben 0
 });
 
 // ---------- Skill ----------
-test("Skill „aufgabe“ liegt im Kern und wird als Befehl gebaut (Quelle: ki:<programm>)", () => {
+test("Skill „aufgabe“ liegt im Kern und wird als Befehl gebaut", () => {
   const z = mkdtempSync(join(tmpdir(), "cmd-")); const v = vault();
   const r = spawnSync(process.execPath, [join(KERN, "skills-build.mjs"), v, "--ziel", "claude-commands", z], { encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
   assert.ok(existsSync(join(z, "aufgabe.md")));
   const t = readFileSync(join(z, "aufgabe.md"), "utf8");
   assert.match(t, /^---\ndescription: .*Aufgabe.*\nargument-hint: .*\n---\n/);
-  assert.match(t, /aufgabe neu "<titel>" --quelle ki:<dein-programm>/);
+  assert.match(t, /aufgabe neu "<titel>"/); assert.doesNotMatch(t, /--quelle/, "die KI wählt die Quelle nicht");
   assert.doesNotMatch(t, /\{\{/);
 });

@@ -183,7 +183,7 @@ export function erzeugeHandler(o) {
       // Aufgaben (kern/aufgaben.mjs): lesen immer, anlegen und ändern nur in einem vertrauten Vault (409 art „nicht-vertraut“)
       case "/api/aufgaben":
         if (methode === "GET") return V().aufgaben();
-        if (methode === "POST") return V().aufgabeAnlegen(eingabe());
+        if (methode === "POST") return V().aufgabeAnlegen({ ...eingabe(), quelle: "mensch" }); // die Quelle gibt nie die Anfrage vor
         throw new HttpFehler(405, "Diese Methode ist hier nicht erlaubt.");
       case "/api/posteingang/verwerfen": nur("POST"); return V().posteingangVerwerfen(eingabe());
       case "/api/posteingang/spaeter": nur("POST"); return V().posteingangSpaeter(eingabe());

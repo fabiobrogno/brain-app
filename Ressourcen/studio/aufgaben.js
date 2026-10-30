@@ -3,7 +3,7 @@
 // Bedienung: Karte ziehen (Maus) oder Alt+Pfeiltasten (Tastatur), Enter öffnet die Datei im Editor, das Menü „⋯“ (auch Rechtsklick) ändert Spalte, Priorität, Fälligkeit.
 // Kein innerHTML mit Daten aus dem Vault: alles läuft über h()/textContent.
 import { h } from "./hilfen.js";
-import { symbol } from "./symbole.js";
+import { symbol, GROESSE } from "./symbole.js";
 import { kiLogo, kiLogoName } from "./ki-logos.js";
 import { oeffneMenue } from "./menue.js";
 import { TA } from "./texte-aufgaben.js";
@@ -59,9 +59,9 @@ function quelleEl(quelle) {
     const id = quelle.slice(3);
     const name = kiLogoName(id) || id.charAt(0).toUpperCase() + id.slice(1);
     const text = TA.quelle.ki(name);
-    return h("span", { klasse: "au-quelle ki", title: text, role: "img", "aria-label": text, "data-quelle": quelle }, kiLogo(id, 14, { dekorativ: true }) || symbol("funke", 14));
+    return h("span", { klasse: "au-quelle ki", title: text, role: "img", "aria-label": text, "data-quelle": quelle }, kiLogo(id, 14, { dekorativ: true }) || symbol("funke", GROESSE.text));
   }
-  return h("span", { klasse: "au-quelle", title: TA.quelle.mensch, role: "img", "aria-label": TA.quelle.mensch, "data-quelle": "mensch" }, symbol("person", 14));
+  return h("span", { klasse: "au-quelle", title: TA.quelle.mensch, role: "img", "aria-label": TA.quelle.mensch, "data-quelle": "mensch" }, symbol("person", GROESSE.text));
 }
 function prioEl(prio) {
   if (prio === "normal") return null;
@@ -89,7 +89,7 @@ export function baueAufgaben(host, ctx) {
   const eingabe = h("input", { type: "text", klasse: "au-eingabe", "data-aufgabe-eingabe": "", placeholder: TA.erfassen.platzhalter, "aria-label": TA.erfassen.label,
     maxlength: "200", autocomplete: "off", spellcheck: "false" });
   const form = h("form", { klasse: "au-erfassen", novalidate: "", aufSubmit: (e) => { e.preventDefault(); erfasse(); } },
-    symbol("plus", 16), eingabe, h("button", { type: "submit", klasse: "knopf primaer", "data-aufgabe-anlegen": "", text: TA.erfassen.knopf }));
+    symbol("plus", GROESSE.norm), eingabe, h("button", { type: "submit", klasse: "knopf primaer", "data-aufgabe-anlegen": "", text: TA.erfassen.knopf }));
   const zahlEl = h("span", { klasse: "au-zahl", "data-aufgaben-zahl": "" });
   const waehle = (name, label, optionen) => {
     const sel = h("select", { "data-filter": name, "aria-label": label, aufChange: (e) => { st.filter[name] = e.target.value; ctx.lokal.schreib("aufgabenFilter", st.filter); zeichne(); } },
@@ -105,12 +105,12 @@ export function baueAufgaben(host, ctx) {
     reset);
   const syncFilter = () => { filterEl.querySelectorAll("select").forEach((s) => { s.value = st.filter[s.dataset.filter]; }); };
   const hinweis = h("div", { klasse: "au-hinweis", role: "status", hidden: true, "data-aufgaben-hinweis": "" },
-    symbol("schild", 16), h("span", { text: TA.nichtVertraut }), h("button", { type: "button", klasse: "knopf", text: TA.bestaetigen, aufClick: () => ctx.fragVertrauen() }));
+    symbol("schild", GROESSE.norm), h("span", { text: TA.nichtVertraut }), h("button", { type: "button", klasse: "knopf", text: TA.bestaetigen, aufClick: () => ctx.fragVertrauen() }));
   const ansage = h("div", { klasse: "au-ansage", role: "status", "aria-live": "polite" });
   const brett = h("div", { klasse: "au-brett", "data-aufgaben-brett": "" });
   const wurzel = h("section", { klasse: "au", "aria-label": TA.titel, "data-ansicht": "aufgaben" },
     h("header", { klasse: "au-kopf" },
-      h("div", { klasse: "au-titelzeile" }, h("h2", { klasse: "au-titel-h" }, symbol("aufgaben", 18), h("span", { text: TA.titel })), zahlEl),
+      h("div", { klasse: "au-titelzeile" }, h("h2", { klasse: "au-titel-h" }, symbol("aufgaben", GROESSE.gross), h("span", { text: TA.titel })), zahlEl),
       form, filterEl, hinweis),
     brett, ansage);
   host.replaceChildren(wurzel);
@@ -146,7 +146,7 @@ export function baueAufgaben(host, ctx) {
     const f = faelligInfo(a);
     const prio = prioEl(a.prioritaet);
     const mehr = h("button", { type: "button", klasse: "au-mehr", "data-aufgabe-menue": "", "aria-label": TA.karte.menue, title: TA.karte.menue, tabindex: "-1",
-      aufClick: (ev) => { ev.stopPropagation(); oeffneKartenMenue(a, mehr); } }, symbol("punkte", 14));
+      aufClick: (ev) => { ev.stopPropagation(); oeffneKartenMenue(a, mehr); } }, symbol("punkte", GROESSE.text));
     const el = h("article", { klasse: "au-karte" + (f?.ueber ? " ueberfaellig" : "") + (st.neuPfad === a.pfad ? " neu" : ""), role: "listitem", tabindex: "0", draggable: st.vertraut ? "true" : "false",
       "data-karte-aufgabe": "", "data-pfad": a.pfad, "data-status": a.status, "data-prio": a.prioritaet, "data-quelle": a.quelle,
       "aria-label": `${a.titel}. ${TA.spalten[status]}, Platz ${nr} von ${von}.${f ? ` ${f.text}.` : ""}`, title: `${a.titel}\n${TA.karte.hinweisTasten}`,
@@ -194,12 +194,12 @@ export function baueAufgaben(host, ctx) {
     const fokus = st.fokusPfad || (host.contains(document.activeElement) ? document.activeElement.closest?.("[data-karte-aufgabe]")?.dataset.pfad : null);
     st.fokusPfad = null;
     if (st.fehler && !st.liste.length) {
-      brett.replaceChildren(h("div", { klasse: "au-leer", "data-aufgaben-fehler": "" }, symbol("warnung", 22), h("h3", { text: TA.fehler.laden }), h("p", { text: st.fehler }),
+      brett.replaceChildren(h("div", { klasse: "au-leer", "data-aufgaben-fehler": "" }, symbol("warnung", GROESSE.kachel), h("h3", { text: TA.fehler.laden }), h("p", { text: st.fehler }),
         h("button", { type: "button", klasse: "knopf", text: "Neu laden", aufClick: () => lade() })));
       return;
     }
     if (st.geladen && !st.liste.length) {
-      brett.replaceChildren(h("div", { klasse: "au-leer", "data-aufgaben-leer": "" }, symbol("aufgaben", 28), h("h3", { text: TA.leer.titel }), h("p", { text: TA.leer.text })));
+      brett.replaceChildren(h("div", { klasse: "au-leer", "data-aufgaben-leer": "" }, symbol("aufgaben", GROESSE.kachel), h("h3", { text: TA.leer.titel }), h("p", { text: TA.leer.text })));
       return;
     }
     const sichtbar = SPALTEN.reduce((n, s) => n + sichtbarInSpalte(s).karten.length, 0);

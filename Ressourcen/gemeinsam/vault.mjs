@@ -317,7 +317,8 @@ export function oeffneVault(vaultPfad, opts = {}) {
 
   // ---------- Notiz-Index (Spec v2 §5) ----------
   const notizIndex = erzeugeNotizIndex({ wurzel, jetzt, heute: () => opts.heute || berlinHeute(jetzt()),
-    gitKontext: () => { const s = gitSicht(); return s.gesperrt ? null : ctxVon(s); } });
+    gitKontext: () => { const s = gitSicht(); return s.gesperrt ? null : ctxVon(s); },
+    aufgabenOrdner: () => aufgabenFn.ordnerName() });
 
   // Lokale Nutzungsmessung (FBL-72): welche Seiten die KI per MCP abruft (.logs/mcp.log). Als „nie genutzt“ kommen nur echte Wiki-Seiten
   // in Frage (09_wiki/, Markdown, nicht generiert, kein Unterstrich-Name). Rein lesend, ohne Kit-Code.
@@ -382,7 +383,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
     wurzel, name: basename(wurzel), rueckfragen, kitVersion, kitVorhanden, kit, vertrauen, vertrauenStand: stand, baum, lies, schreibe, neu, merken, suche, suchenFuerKi, pruefung, gesundheit, nutzung,
     posteingangVerwerfen: posteingang.verwerfen, posteingangSpaeter: posteingang.spaeter, posteingangUebernehmen: posteingang.uebernehmen,
     aufgaben: aufgabenFn.aufgaben, aufgabeAnlegen: aufgabenFn.anlegen, aufgabeAendern: aufgabenFn.aendern, aufgabenFuerKi: aufgabenFn.fuerKi, aufgabePfad: aufgabenFn.findePfad,
-    notizen: notizIndex.notizen, notizKontext: notizIndex.kontext, typen: notizIndex.typen, ansichten: notizIndex.ansichten,
+    notizen: async () => ({ ...(await notizIndex.notizen()), aufgabenOrdner: await aufgabenFn.ordnerName() }), notizKontext: notizIndex.kontext, typen: notizIndex.typen, ansichten: notizIndex.ansichten,
     gitLog: async (a) => gitFn.log(wurzel, a || {}, gitCtx()),
     gitRemote: async (url, extra = {}) => gitFn.remoteHinzufuegen(wurzel, url, gitCtx({ limit: opts.gitLimitRemote, ...extra })),
     gitStatus: async () => {

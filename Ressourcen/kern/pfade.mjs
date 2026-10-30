@@ -312,12 +312,17 @@ const ORDNER_NAME = /^[\p{L}\p{N}_.-]+$/u;
 export const istOrdnerName = (w) => typeof w === "string" && w !== "." && w !== ".." && ORDNER_NAME.test(w);
 export function ordner(vault, cfg = ladeConfig(vault)) {
   const nimm = (wert, standard) => (istOrdnerName(wert) ? wert : standard);
-  return {
+  const o = {
     inbox: nimm(cfg.ordner?.inbox, "00_inbox"),
     wiki: nimm(cfg.ordner?.wiki, nimm(cfg.wiki?.ordner, "09_wiki")),
     archiv: nimm(cfg.ordner?.archiv, "90_archiv"),
-    aufgaben: nimm(cfg.ordner?.aufgaben, "05_aufgaben"),   // je Aufgabe eine Markdown-Datei (aufgaben.mjs)
   };
+  // Aufgaben (je Aufgabe eine Markdown-Datei, aufgaben.mjs): kein versteckter Ordner (.git, .claude …) und nie einer der anderen Kern-Ordner —
+  // sonst schriebe die KI an der Schutzregel „Wiki nur über ingest“ vorbei. Groß/Klein zählt nicht (macOS, Windows).
+  const belegt = new Set([o.inbox, o.wiki, o.archiv, "00_inbox", "09_wiki", "90_archiv", "node_modules"].map((n) => n.normalize("NFC").toLowerCase()));
+  const a = cfg.ordner?.aufgaben;
+  o.aufgaben = istOrdnerName(a) && !a.startsWith(".") && !belegt.has(a.normalize("NFC").toLowerCase()) ? a : "05_aufgaben";
+  return o;
 }
 
 // Schreibziele des Kerns, die als Ordner oder Datei im Vault liegen müssen (Symlink nach draußen: gesundheit schriebe nach <draußen>/…,

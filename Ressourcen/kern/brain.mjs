@@ -355,7 +355,7 @@ const befehle = {
     console.log("Einstellungen gespeichert.");
     return 0;
   },
-  // „brain aufgabe neu "<titel>" [--prio niedrig|normal|hoch] [--faellig JJJJ-MM-TT] [--text "…"] [--quelle ki:<programm>]“, „brain aufgabe erledigt <pfad>“,
+  // „brain aufgabe neu "<titel>" [--prio niedrig|normal|hoch] [--faellig JJJJ-MM-TT] [--text "…"] “, „brain aufgabe erledigt <pfad>“,
   // „brain aufgabe status <pfad> offen|in-arbeit|warten|erledigt“, „brain aufgaben [--status offen] [--alle] [--json]“ — Aufgaben im Vault (aufgaben.mjs, je Aufgabe eine
   // Markdown-Datei). Schreibende Unterbefehle laufen nur in einem vertrauten Vault (unten, WIRKEND).
   aufgabe: async (unter, ...a) => {
@@ -366,8 +366,9 @@ const befehle = {
       if (unter === "neu") {
         const titel = pos.join(" ").trim();
         if (!titel) return nutzung();
+        if (opt.quelle !== undefined) { console.error("Die Quelle der Aufgabe wird automatisch bestimmt (Mensch oder das KI-Programm, aus dem der Befehl läuft)."); return 64; }
         const r = m.legeAn(vault, { titel, ...(opt.prio ? { prioritaet: opt.prio } : {}), ...(opt.faellig ? { faellig: opt.faellig } : {}),
-          ...(opt.text ? { text: opt.text } : {}), quelle: opt.quelle || process.env.BRAIN_QUELLE || "mensch", ...(opt.bezug ? { bezug: opt.bezug.split(",") } : {}) });
+          ...(opt.text ? { text: opt.text } : {}), quelle: m.quelleAusUmgebung(process.env), ...(opt.bezug ? { bezug: opt.bezug.split(",") } : {}) });
         console.log(`Aufgabe angelegt: ${r.pfad}`);
         return 0;
       }
@@ -387,7 +388,8 @@ const befehle = {
   aufgaben: async (...a) => {
     const m = await import("./aufgaben.mjs");
     const { opt } = leseOptionen(a, ["status"]);
-    let l = m.liste(vault);
+    const roh = m.liste(vault, { kopf: true });
+    let l = roh;
     if (opt.status) {
       if (!m.STATUS.includes(opt.status)) { console.error(`Status: ${m.STATUS.join(" | ")}`); return 64; }
       l = l.filter((x) => x.status === opt.status);
@@ -395,6 +397,7 @@ const befehle = {
     if (opt.json) console.log(JSON.stringify(l.map(({ text, ...rest }) => rest)));
     else if (!l.length) console.log("Keine Aufgaben.");
     else for (const x of l) console.log(m.zeile(x));
+    if (roh.abgeschnitten) console.error(`Hinweis: Es gibt mehr als ${m.MAX_DATEIEN} Aufgaben — gezeigt werden die neuesten.`);
     return 0;
   },
   backup: async (unter, a, b) => {

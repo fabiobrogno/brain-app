@@ -35,7 +35,7 @@ test("GET /api/aufgaben: leerer Vault → leere Liste, Zähler 0, vertraut", asy
   const rufe = aufruf(erzeugeHandler({ vault: d }));
   const r = await rufe("GET", "/api/aufgaben");
   assert.equal(r.status, 200);
-  assert.deepEqual(r.j, { ordner: "05_aufgaben", vertraut: true, zaehler: { offen: 0, ueberfaellig: 0 }, aufgaben: [] });
+  assert.deepEqual(r.j, { ordner: "05_aufgaben", vertraut: true, abgeschnitten: false, zaehler: { offen: 0, ueberfaellig: 0 }, aufgaben: [] });
   assert.equal(existsSync(join(d, "05_aufgaben")), false, "Lesen legt nichts an");
 });
 
@@ -59,7 +59,7 @@ test("POST /api/aufgaben legt eine Datei an (Quelle mensch), GET listet sie mit 
 test("POST: ungültige Eingaben → 400 mit Alltagsmeldung, es entsteht nichts; ein Rang von außen wird ignoriert", async () => {
   const d = vaultOrdner();
   const rufe = aufruf(erzeugeHandler({ vault: d }));
-  for (const [e, re] of [[{}, /Titel/], [{ titel: "  " }, /Titel/], [{ titel: "X", faellig: "bald" }, /Datum/], [{ titel: "X", prioritaet: "x" }, /Priorität/], [{ titel: "X", status: "y" }, /Status/], [{ titel: "X", quelle: "bot" }, /Quelle/]]) {
+  for (const [e, re] of [[{}, /Titel/], [{ titel: "  " }, /Titel/], [{ titel: "X", faellig: "bald" }, /Datum/], [{ titel: "X", prioritaet: "x" }, /Priorität/], [{ titel: "X", status: "y" }, /Status/]]) {
     const r = await rufe("POST", "/api/aufgaben", e);
     assert.equal(r.status, 400, JSON.stringify(e)); assert.match(r.j.fehler, re);
   }

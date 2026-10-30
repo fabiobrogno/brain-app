@@ -24,7 +24,7 @@ Memory (Skill **lektion** schreibt sie dorthin); diese Datei ist für andere Wer
 ## Alltag
 - „merk dir …" → Notiz nach `{{INBOX}}/`, dann Skill **ingest**.
 - „was weiß ich über …" → `{{NODE}} "{{KERN}}/brain.mjs" --vault "{{VAULT}}" search "<frage>"`.
-- „leg eine Aufgabe an …" / „erinnere mich an …" → Skill **aufgabe** (`{{KERN}}/skills/aufgabe/SKILL.md`), kurz: `{{NODE}} "{{KERN}}/brain.mjs" --vault "{{VAULT}}" aufgabe neu "<titel>" --quelle ki:<dein-programm>`.
+- „leg eine Aufgabe an …" / „erinnere mich an …" → Skill **aufgabe** (`{{KERN}}/skills/aufgabe/SKILL.md`), kurz: `{{NODE}} "{{KERN}}/brain.mjs" --vault "{{VAULT}}" aufgabe neu "<titel>"`.
 - „sichere meinen Vault" / „sichere mein Brain" → `{{NODE}} "{{KERN}}/brain.mjs" --vault "{{VAULT}}" backup`.
 - „richte mir eine Sicherung ein" → Skill **backup** (`{{KERN}}/skills/backup/SKILL.md`).
 - Updates: Kortex aktualisiert sich selbst; der Kern gehört zur App.

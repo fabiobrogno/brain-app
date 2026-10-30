@@ -34,6 +34,7 @@ const S = {
   ladeNr: 0, bereit: false,
   umstellung: null,                          // P7c: { altlasten, umgestellt, angefangen } oder null (alter Werkzeug-Ordner im Vault und Stand der Umstellung)
   zeigeZurueckgestellt: false,               // Posteingang: false = offene Notizen, true = die mit „Später“ zurückgestellten
+  aufgabenOrdner: "05_aufgaben",             // Ordnername der Aufgaben (Antwort von /api/notizen, Konfiguration ordner.aufgaben)
   aufgabeDatei: false,                       // Aufgaben: true = eine Karte ist als Datei im Editor geöffnet (das Board ist dann verdeckt)
 };
 const lokal = {
@@ -278,7 +279,7 @@ function setzeFenstertitel() {
 // ======================================================= Index (Notizen, Typen, Ansichten)
 // Wie der Werkstatt-Index: _-Ordner im Posteingang sind maschinell, Vorlagen und Agenten-Anweisungen in der Wurzel keine Notizen
 const bereichVonPfad = (p) => (/^90_/.test(p) ? "archiv" : /^00_inbox\/_/.test(p) ? "maschine" : p.startsWith("01_vorlagen/") ? "vorlage"
-  : /^(claude|agents|gemini)\.md$/i.test(p) ? "system" : p.startsWith("00_inbox/") ? "inbox" : p.startsWith("09_wiki/") ? "wissen" : p.startsWith("05_aufgaben/") ? "aufgabe" : "notiz");
+  : /^(claude|agents|gemini)\.md$/i.test(p) ? "system" : p.startsWith("00_inbox/") ? "inbox" : p.startsWith("09_wiki/") ? "wissen" : (S.aufgabenOrdner && p.toLowerCase().startsWith(S.aufgabenOrdner.toLowerCase() + "/") && p.split("/").length === 2) ? "aufgabe" : "notiz");
 const SICHTBAR = new Set(["inbox", "notiz", "wissen"]); // erscheinen in „Alle Notizen“, Typen und Ansichten
 const istNotiz = (n) => SICHTBAR.has(n.bereich) && !n.generiert;
 function notizenAusBaum() {
@@ -315,6 +316,7 @@ function leiteAnsichtenAb(apiAnsichten) {
 }
 async function ladeIndex() {
   const [n, t, a] = await Promise.allSettled([api.notizen(), api.typen(), api.ansichten()]);
+  if (n.status === "fulfilled" && typeof n.value?.aufgabenOrdner === "string" && n.value.aufgabenOrdner) S.aufgabenOrdner = n.value.aufgabenOrdner;
   S.notizen = n.status === "fulfilled" && Array.isArray(n.value?.notizen) ? n.value.notizen : notizenAusBaum();
   S.nMap = new Map(S.notizen.map((x) => [x.pfad, x]));
   S.typen = t.status === "fulfilled" && Array.isArray(t.value?.typen) ? t.value.typen : typenAusNotizen();
@@ -827,7 +829,7 @@ function zeichnePfad() {
   const n = S.nMap.get(S.pfad);
   const bereich = n?.bereich || bereichVonPfad(S.pfad);
   const teile = ordnerVon(S.pfad) ? ordnerVon(S.pfad).split("/") : [];
-  const bereichWurzel = bereich === "aufgabe" ? "05_aufgaben" : bereich === "inbox" || bereich === "maschine" ? "00_inbox" : bereich === "wissen" ? "09_wiki" : bereich === "vorlage" ? "01_vorlagen" : null;
+  const bereichWurzel = bereich === "aufgabe" ? S.aufgabenOrdner : bereich === "inbox" || bereich === "maschine" ? "00_inbox" : bereich === "wissen" ? "09_wiki" : bereich === "vorlage" ? "01_vorlagen" : null;
   const bereichText = bereich === "aufgabe" ? T.bereiche.aufgaben : bereich === "inbox" || bereich === "maschine" ? T.bereiche.inbox : bereich === "wissen" ? T.bereiche.wissen : bereich === "archiv" ? T.bereiche.archiv
     : bereich === "vorlage" ? T.bereiche.vorlagen : "Notizen";
   const zuBereich = () => (bereich === "vorlage" ? waehleSicht({ art: "ordner", id: "01_vorlagen" })

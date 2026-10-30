@@ -5,7 +5,7 @@
 //
 // Dieses Modul ist die einzige Stelle, die das Format kennt (Kommandozeile, Werkstatt und MCP rufen es auf). Der Teil oben ist rein (Text rein, Text
 // raus), der Teil unten liest und schreibt Dateien: nur Dateien direkt im Aufgaben-Ordner, nie Verweise, atomar (Temp-Datei + Umbenennen).
-import { readFileSync, readdirSync, lstatSync, mkdirSync, writeFileSync, renameSync, unlinkSync, realpathSync } from "node:fs";
+import { readFileSync, readdirSync, lstatSync, mkdirSync, writeFileSync, renameSync, unlinkSync, realpathSync, openSync, readSync, closeSync } from "node:fs";
 import { join, sep } from "node:path";
 import { randomBytes } from "node:crypto";
 import { ordner } from "./pfade.mjs";
@@ -14,11 +14,14 @@ export const STATUS = ["offen", "in-arbeit", "warten", "erledigt"];
 export const PRIORITAET = ["niedrig", "normal", "hoch"];
 export const STANDARD_ORDNER = "05_aufgaben";
 export const RANG_SCHRITT = 1000;
-const MAX_DATEI = 256 * 1024;
+const MAX_DATEI = 256 * 1024;          // Bytes: größere Dateien werden nicht gelesen
+const MAX_NEU = MAX_DATEI - 16 * 1024; // Bytes: so groß darf eine geschriebene Datei höchstens werden (Reserve für spätere Änderungen)
 const MAX_TITEL = 200;
-const MAX_TEXT = 100_000;
+const MAX_TEXT = 100_000;              // Bytes (UTF-8), nicht Zeichen
 const MAX_BEZUG = 20;
-const MAX_DATEIEN = 5000;
+const MAX_BEZUG_LAENGE = 200;
+export const MAX_DATEIEN = 5000;       // so viele Aufgaben liest eine Liste höchstens; darüber meldet sie `abgeschnitten`
+const KOPF_BYTES = 2048;               // Kopf-Lesen (Zähler, Rang, Auflisten für die KI): nur der Anfang jeder Datei
 
 // Fehler mit Statuscode: 400 Eingabe, 404 gibt es nicht, 409 Konflikt, 422 Datei unlesbar
 export class AufgabeFehler extends Error {
@@ -48,7 +51,12 @@ export function slug(s, max = 50) {
   return t || "aufgabe";
 }
 
-const einzeilig = (s, max) => String(s ?? "").replace(/[\u0000-\u001f\u007f\u2028\u2029]+/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
+// Eine Zeile ohne Steuerzeichen: C0/C1 und Zeilentrenner werden zu Leerzeichen, Bidi-Zeichen (Umkehr der Leserichtung) verschwinden.
+const einzeilig = (s, max) => String(s ?? "").replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ").replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "")
+  .replace(/\s+/g, " ").trim().slice(0, max);
+// Dateinamen, die in Listen und KI-Antworten nichts zu suchen haben (Zeilenumbruch, Steuer- und Bidi-Zeichen)
+const UNSICHERER_NAME = /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u200e\u200f\u202a-\u202e\u2066-\u2069]/;
+const falte = (x) => String(x).normalize("NFC").toLowerCase();
 
 // Wert in den Kopf schreiben: schlichter Text bleibt schlicht, alles mit Sonderzeichen kommt in Anführungszeichen (nur \" und \\ als Escapes —
 // so liest es auch der Notiz-Index des Studios).
@@ -80,9 +88,22 @@ function zerlege(text) {
   const felder = {};
   for (let i = 1; i < ende; i++) {
     const m = /^([A-Za-z_][\w-]*)\s*:\s*(.*)$/.exec(z(i));
-    if (m) felder[m[1]] = m[2];
+    if (!m) continue;
+    const j = blockEnde((x) => z(x), i, ende);
+    // Block-Skalar („titel: >“) und Block-Liste („bezug:“ + „- …“): die Folgezeilen gehören zum Wert
+    felder[m[1]] = j > i + 1 && (m[2].trim() === "" || /^[>|][+-]?\s*$/.test(m[2])) ? Array.from({ length: j - i - 1 }, (_, k) => z(i + 1 + k).trim().replace(/^-\s+/, "- ")).join(" ") : m[2];
+    i = j - 1;
   }
   return { felder, ende, zeilen, eol, bom };
+}
+// Index hinter der letzten Folgezeile des Schlüssels in Zeile i (eingerückt, oder bei leerem Wert auch „- …“); i + 1, wenn es keine gibt.
+function blockEnde(z, i, ende) {
+  const m = /^[A-Za-z_][\w-]*\s*:\s*(.*)$/.exec(z(i));
+  const leer = !!m && (m[1].trim() === "" || /^[>|][+-]?\s*$/.test(m[1]));
+  let j = i + 1;
+  if (!leer) return j;
+  while (j < ende && (/^[ \t]+\S/.test(z(j)) || (m[1].trim() === "" && /^-\s/.test(z(j))))) j++;
+  return j;
 }
 
 function normStatus(s) {
@@ -101,7 +122,7 @@ function zahl(s) {
 function bezugAus(roh) {
   const aus = [];
   for (const m of String(roh ?? "").matchAll(/\[\[([^\]\n|]+?)(?:\|[^\]\n]*)?\]\]/g)) {
-    const ziel = m[1].trim();
+    const ziel = einzeilig(m[1], MAX_BEZUG_LAENGE);
     if (ziel && !aus.includes(ziel)) aus.push(ziel);
   }
   return aus.slice(0, MAX_BEZUG);
@@ -148,6 +169,17 @@ export function pruefeQuelle(q, { still = false } = {}) {
   throw new AufgabeFehler("Die Quelle ist „mensch“ oder „ki:<programm>“, zum Beispiel ki:claude-code.");
 }
 
+// Quelle für Aufgaben, die über die Kommandozeile entstehen: nicht frei wählbar, sondern aus der Umgebung abgeleitet. Läuft der Befehl in einem KI-Programm
+// (Claude Code setzt CLAUDECODE=1, die Gemini-CLI GEMINI_CLI=1, Codex CODEX_SANDBOX/CODEX_CI), steht ki:<programm> dort, sonst mensch. Nur im Testmodus
+// (BRAIN_TESTMODUS=1) gilt BRAIN_QUELLE.
+export function quelleAusUmgebung(env = process.env) {
+  if (env.BRAIN_TESTMODUS === "1" && env.BRAIN_QUELLE) return pruefeQuelle(env.BRAIN_QUELLE);
+  if (env.CLAUDECODE === "1") return "ki:claude-code";
+  if (env.GEMINI_CLI === "1") return "ki:gemini";
+  if (env.CODEX_SANDBOX || env.CODEX_CI) return "ki:codex";
+  return "mensch";
+}
+
 // Eingaben prüfen und bereinigen. Wirft AufgabeFehler (400). Nicht genannte Felder bleiben ungesetzt.
 export function pruefeEingabe(e = {}) {
   const aus = {};
@@ -179,14 +211,14 @@ export function pruefeEingabe(e = {}) {
   if (e.quelle !== undefined) aus.quelle = pruefeQuelle(e.quelle);
   if (e.text !== undefined) {
     if (typeof e.text !== "string") throw new AufgabeFehler("Der Text muss Text sein.");
-    if (e.text.length > MAX_TEXT) throw new AufgabeFehler("Der Text ist zu lang.");
+    if (Buffer.byteLength(e.text, "utf8") > MAX_TEXT) throw new AufgabeFehler("Der Text ist zu lang (höchstens 100 KB).");
     aus.text = e.text.replace(/\r\n/g, "\n").replace(/^\n+|\s+$/g, "");
   }
   if (e.bezug !== undefined) {
     const liste = Array.isArray(e.bezug) ? e.bezug : [e.bezug];
     const ziele = [];
     for (const b of liste) {
-      const ziel = String(b ?? "").trim().replace(/^\[\[|\]\]$/g, "").replace(/[\]\n[|"\\]/g, "").trim();
+      const ziel = einzeilig(String(b ?? "").trim().replace(/^\[\[|\]\]$/g, "").replace(/[\][|"\\]/g, ""), MAX_BEZUG_LAENGE);
       if (ziel && !ziele.includes(ziel)) ziele.push(ziel);
     }
     aus.bezug = ziele.slice(0, MAX_BEZUG);
@@ -207,7 +239,9 @@ export function baueText(felder, jetzt = new Date()) {
     ...(f.bezug && f.bezug.length ? [`bezug: ${bezugZeile(f.bezug)}`] : []),
     "---",
   ];
-  return `${kopf.join("\n")}\n${f.text ? `\n${f.text}\n` : ""}`;
+  const text = `${kopf.join("\n")}\n${f.text ? `\n${f.text}\n` : ""}`;
+  if (Buffer.byteLength(text, "utf8") > MAX_NEU) throw new AufgabeFehler("Die Aufgabe wäre zu groß (höchstens etwa 240 KB).");
+  return text;
 }
 
 // Felder im Kopf einer bestehenden Aufgabe ändern, zeilengenau: der Rest der Datei (Text, Zeilenenden, fremde Felder) bleibt Byte für Byte.
@@ -220,10 +254,14 @@ export function setzeFelder(text, felder, jetzt = new Date()) {
   const cr = eol === "\r\n" ? "\r" : "";
   const gesetzt = (schluessel, wert) => {
     const treffer = kopf.map((z, n) => (n > 0 && new RegExp(`^${schluessel}\\s*:`).test(z) ? n : -1)).filter((n) => n >= 0);
-    if (wert === null) { for (const n of treffer.reverse()) kopf.splice(n, 1); return; }
+    // ein Schlüssel samt seinen Folgezeilen (Block-Liste, Block-Skalar) wird ersetzt bzw. entfernt — nichts bleibt als Waise stehen
+    const bis = (n) => blockEnde((x) => kopf[x].replace(/\r$/, ""), n, kopf.length);
+    if (wert === null) { for (const n of treffer.reverse()) kopf.splice(n, bis(n) - n); return; }
     const neu = `${schluessel}: ${wert}${cr}`;
-    if (treffer.length) { kopf[treffer[0]] = neu; for (const n of treffer.slice(1).reverse()) kopf.splice(n, 1); }
-    else kopf.push(neu);
+    if (treffer.length) {
+      for (const n of treffer.slice(1).reverse()) kopf.splice(n, bis(n) - n);
+      kopf.splice(treffer[0], bis(treffer[0]) - treffer[0], neu);
+    } else kopf.push(neu);
   };
   if (felder.titel !== undefined) gesetzt("titel", kopfWert(felder.titel));
   if (felder.status !== undefined) gesetzt("status", felder.status);
@@ -237,6 +275,7 @@ export function setzeFelder(text, felder, jetzt = new Date()) {
     const zeilen = [...kopf, rest[0]].join("\n");
     neuText = `${bom}${zeilen}${eol}${felder.text ? `${eol}${felder.text.replace(/\n/g, eol)}${eol}` : ""}`;
   }
+  if (Buffer.byteLength(neuText, "utf8") > MAX_DATEI) throw new AufgabeFehler("Die Aufgabe wäre zu groß. Es wurde nichts geändert.", 422);
   return neuText;
 }
 
@@ -303,7 +342,7 @@ export function zaehleAus(liste, heute = heuteBerlin()) {
 
 // Kompakte Darstellung (für KI-Antworten): eine Zeile je Aufgabe.
 export function zeile(a, { heute = heuteBerlin() } = {}) {
-  const teile = [`[${a.status}]`, a.prioritaet === "normal" ? "" : a.prioritaet, a.pfad, a.titel];
+  const teile = [`[${a.status}]`, a.prioritaet === "normal" ? "" : a.prioritaet, einzeilig(a.pfad, 300), a.titel];
   if (a.faellig) teile.push(`(fällig ${a.faellig}${a.status !== "erledigt" && a.faellig < heute ? ", überfällig" : ""})`);
   return teile.filter(Boolean).join(" ");
 }
@@ -319,19 +358,27 @@ export function ordnerName(vault) {
   try { return ordner(vault).aufgaben || STANDARD_ORDNER; } catch { return STANDARD_ORDNER; }
 }
 
-// Absoluter Ordner; wirft, wenn er (als Verweis) aus dem Vault hinauszeigt. Fehlt er, wird er nur auf Wunsch angelegt.
+// Der Ordner auf der Platte: Groß-/Kleinschreibung kann von der Konfiguration abweichen (macOS, Windows) — dann gilt der Name, wie er auf der Platte steht.
+// Ein Verweis (Symlink) wird nie benutzt, auch keiner innerhalb des Vaults (sonst landeten Aufgaben z. B. im Wiki). Fehlt der Ordner, wird er nur auf Wunsch angelegt.
 function ordnerAbs(vault, { anlegen = false } = {}) {
-  const name = ordnerName(vault);
+  const gewollt = ordnerName(vault);
+  let namen = [];
+  try { namen = readdirSync(vault); } catch { throw new AufgabeFehler("Der Vault-Ordner ist nicht lesbar.", 422); }
+  const vorhanden = namen.find((n) => n === gewollt) ?? namen.find((n) => falte(n) === falte(gewollt)) ?? null;
+  const name = vorhanden ?? gewollt;
   const abs = join(vault, name);
-  let st = null;
-  try { st = lstatSync(abs); } catch { /* fehlt */ }
-  if (!st) {
+  if (vorhanden) {
+    let st;
+    try { st = lstatSync(abs); } catch { throw new AufgabeFehler(`Der Ordner „${name}“ ist nicht lesbar.`, 422); }
+    if (st.isSymbolicLink()) throw new AufgabeFehler(`„${name}“ ist ein Verweis und wird nicht benutzt: Aufgaben liegen als echter Ordner direkt im Vault.`, 403);
+    if (!st.isDirectory()) throw new AufgabeFehler(`„${name}“ ist eine Datei, kein Ordner.`, 422);
+  } else {
     if (!anlegen) return { name, abs, da: false };
-    mkdirSync(abs, { recursive: true });
-  } else if (!st.isDirectory() && !st.isSymbolicLink()) throw new AufgabeFehler(`„${name}“ ist eine Datei, kein Ordner.`, 422);
+    try { mkdirSync(abs); } catch (e) { if (e.code !== "EEXIST") throw e; }
+  }
   let echt, wurzel;
   try { echt = realpathSync(abs); wurzel = realpathSync(vault); } catch { throw new AufgabeFehler(`Der Ordner „${name}“ ist nicht lesbar.`, 422); }
-  if (echt !== join(wurzel, name) && !echt.startsWith(wurzel + sep)) throw new AufgabeFehler(`Der Ordner „${name}“ zeigt aus dem Vault hinaus und wird nicht benutzt.`, 403);
+  if (falte(echt) !== falte(join(wurzel, name))) throw new AufgabeFehler(`Der Ordner „${name}“ liegt nicht direkt im Vault und wird nicht benutzt.`, 403);
   return { name, abs, da: true };
 }
 
@@ -340,22 +387,44 @@ function leseDatei(abs) {
   if (!st.isFile() || st.size > MAX_DATEI) return null;
   return readFileSync(abs, "utf8");
 }
+// Nur der Anfang einer Datei (der Kopf): genug für Status, Rang, Titel — ohne große Texte zu lesen. Ist der Kopf länger, gilt die ganze Datei.
+function leseKopfDatei(abs) {
+  const st = lstatSync(abs);
+  if (!st.isFile() || st.size > MAX_DATEI) return null;
+  if (st.size <= KOPF_BYTES) return readFileSync(abs, "utf8");
+  let fd;
+  try {
+    fd = openSync(abs, "r");
+    const b = Buffer.alloc(KOPF_BYTES);
+    const n = readSync(fd, b, 0, KOPF_BYTES, 0);
+    const zeilen = b.subarray(0, n).toString("utf8").split("\n").slice(0, -1);   // die letzte Zeile ist angeschnitten
+    const t = zeilen.join("\n");
+    if (zerlege(t)) return t;
+  } finally { if (fd !== undefined) try { closeSync(fd); } catch { /* egal */ } }
+  return readFileSync(abs, "utf8");
+}
 
-// Alle Aufgaben (sortiert nach rang). Eine unlesbare Datei wird übersprungen, nie ein Fehler für die ganze Liste.
-export function liste(vault) {
+// Alle Aufgaben (sortiert nach rang). Eine unlesbare Datei wird übersprungen, nie ein Fehler für die ganze Liste. kopf: nur die Köpfe lesen (text bleibt leer).
+// Mehr als MAX_DATEIEN Dateien: die neuesten (nach Dateiname = Datum) kommen in die Liste, `abgeschnitten` ist true.
+export function liste(vault, { kopf = false } = {}) {
   const o = ordnerAbs(vault);
-  if (!o.da) return [];
+  const leer = [];
+  leer.abgeschnitten = false;
+  if (!o.da) return leer;
   let namen;
-  try { namen = readdirSync(o.abs); } catch { return []; }
+  try { namen = readdirSync(o.abs); } catch { return leer; }
+  namen = namen.filter((n) => /\.md$/i.test(n) && !n.startsWith(".") && !n.startsWith("_") && !UNSICHERER_NAME.test(n)).sort().reverse();
+  const abgeschnitten = namen.length > MAX_DATEIEN;
   const aus = [];
   for (const n of namen.slice(0, MAX_DATEIEN)) {
-    if (!/\.md$/i.test(n) || n.startsWith(".") || n.startsWith("_")) continue;
-    let text; try { text = leseDatei(join(o.abs, n)); } catch { continue; }
+    let text; try { text = kopf ? leseKopfDatei(join(o.abs, n)) : leseDatei(join(o.abs, n)); } catch { continue; }
     if (text === null) continue;
     const a = parseAufgabe(text, `${o.name}/${n}`);
-    if (a) aus.push(a);
+    if (a) aus.push(kopf ? { ...a, text: "" } : a);
   }
-  return sortiere(aus);
+  const r = sortiere(aus);
+  r.abgeschnitten = abgeschnitten;
+  return r;
 }
 
 function schreibeAtomar(abs, text) {
@@ -364,12 +433,32 @@ function schreibeAtomar(abs, text) {
   catch (e) { try { unlinkSync(tmp); } catch { /* weg */ } throw e; }
 }
 
+// Felder in eine bestehende Datei schreiben. Vor dem Ersetzen wird der Inhalt noch einmal verglichen: hat in der Zwischenzeit ein anderer Prozess die Datei
+// geändert (Studio und Kommandozeile gleichzeitig), wird die Änderung auf den neuen Stand angewendet, nicht auf den alten. Gibt den neuen Text zurück.
+function aendereDatei(abs, felder, jetzt, gelesen) {
+  let text = gelesen;
+  for (let versuch = 0; versuch < 3; versuch++) {
+    const neu = setzeFelder(text, felder, jetzt);
+    let aktuell;
+    try { aktuell = leseDatei(abs); } catch { throw new AufgabeFehler("Diese Aufgabe gibt es nicht (mehr).", 404); }
+    if (aktuell === text) { schreibeAtomar(abs, neu); return neu; }
+    if (aktuell === null) throw new AufgabeFehler("Das ist keine gewöhnliche Datei.", 422);
+    text = aktuell;
+  }
+  throw new AufgabeFehler("Die Aufgabe wird gerade von jemand anderem geändert. Bitte noch einmal versuchen.", 409);
+}
+
 // Neue Aufgabe. e: { titel, text?, prioritaet?, faellig?, status?, quelle?, bezug?, rang? }. Gibt { pfad, aufgabe } zurück.
+// Der Rang am Ende der Spalte kommt aus den Köpfen der vorhandenen Aufgaben (keine Datei wird ganz gelesen); der Dateiname ist über `wx` eindeutig.
 export function legeAn(vault, e, { jetzt = new Date() } = {}) {
   const f = pruefeEingabe(e);
   if (!f.titel) throw new AufgabeFehler("Bitte einen Titel angeben.");
   const o = ordnerAbs(vault, { anlegen: true });
-  if (f.rang === undefined) f.rang = rangAmEnde(liste(vault), f.status || "offen");
+  if (f.rang === undefined) {
+    const vorhanden = liste(vault, { kopf: true });
+    if (vorhanden.abgeschnitten) throw new AufgabeFehler(`Es gibt schon mehr als ${MAX_DATEIEN} Aufgaben. Bitte erst erledigte aufräumen oder archivieren.`, 409);
+    f.rang = rangAmEnde(vorhanden, f.status || "offen");
+  }
   const text = baueText(f, jetzt);
   const stamm = dateiname(f.titel, jetzt);
   for (let i = 1; i < 1000; i++) {
@@ -386,30 +475,32 @@ export function legeAn(vault, e, { jetzt = new Date() } = {}) {
 export function findePfad(vault, eingabe) {
   const roh = String(eingabe ?? "").trim().replace(/\\/g, "/").replace(/^\.\//, "");
   if (!roh) throw new AufgabeFehler("Bitte die Aufgabe angeben (Pfad oder Dateiname).");
-  const alle = liste(vault);
+  if (UNSICHERER_NAME.test(roh)) throw new AufgabeFehler("Der Name enthält ungültige Zeichen.");
+  const alle = liste(vault, { kopf: true });
   const name = ordnerName(vault);
   const mitEndung = /\.md$/i.test(roh) ? roh : `${roh}.md`;
   const voll = mitEndung.includes("/") ? mitEndung : `${name}/${mitEndung}`;
-  const genau = alle.find((a) => a.pfad === voll);
+  const genau = alle.find((a) => falte(a.pfad) === falte(voll));
   if (genau) return genau.pfad;
-  if (roh.includes("/")) throw new AufgabeFehler(`Diese Aufgabe gibt es nicht: ${roh}`, 404);
-  const teil = alle.filter((a) => a.pfad.split("/").pop().toLowerCase().includes(roh.toLowerCase().replace(/\.md$/, "")));
+  if (roh.includes("/")) throw new AufgabeFehler(`Diese Aufgabe gibt es nicht: ${einzeilig(roh, 200)}`, 404);
+  const gesucht = falte(roh).replace(/\.md$/, "");
+  const teil = alle.filter((a) => falte(a.pfad.split("/").pop()).includes(gesucht));
   if (teil.length === 1) return teil[0].pfad;
-  if (teil.length > 1) throw new AufgabeFehler(`„${roh}“ passt auf mehrere Aufgaben (${teil.slice(0, 3).map((a) => a.pfad.split("/").pop()).join(", ")} …). Bitte genauer angeben.`, 409);
-  throw new AufgabeFehler(`Diese Aufgabe gibt es nicht: ${roh}`, 404);
+  if (teil.length > 1) throw new AufgabeFehler(`„${einzeilig(roh, 200)}“ passt auf mehrere Aufgaben (${teil.slice(0, 3).map((a) => einzeilig(a.pfad.split("/").pop(), 100)).join(", ")} …). Bitte genauer angeben.`, 409);
+  throw new AufgabeFehler(`Diese Aufgabe gibt es nicht: ${einzeilig(roh, 200)}`, 404);
 }
 
 // Felder einer Aufgabe ändern. e: { titel?, status?, prioritaet?, faellig?, rang?, bezug?, text? } plus platz: { davor, danach } (Pfade) für die Stelle in der
 // Spalte. basisText: Text, den der Aufrufer gesehen hat (nur wenn er Änderungen von anderswo erkennen will; sonst gilt immer der aktuelle Stand).
 // Gibt { pfad, aufgabe, geaendert: [pfad …] } zurück (geaendert nennt auch Karten, die beim Neu-Nummerieren mitgezogen wurden).
-export function aendere(vault, pfad, e, { jetzt = new Date(), basisText } = {}) {
+export function aendere(vault, pfad, e, { jetzt = new Date(), basisText, zwischen } = {}) {
   const { platz, ...rest } = e || {};
   const f = pruefeEingabe(rest);
   const o = ordnerAbs(vault);
   if (!o.da) throw new AufgabeFehler("Diese Aufgabe gibt es nicht.", 404);
-  const rel = String(pfad ?? "").replace(/\\/g, "/");
-  const m = /^([^/]+)\/([^/]+\.md)$/i.exec(rel);
-  if (!m || m[1] !== o.name || m[2].startsWith(".") || m[2].startsWith("_")) throw new AufgabeFehler("Das ist keine Aufgabe in diesem Vault.", 400);
+  const m = /^([^/]+)\/([^/]+\.md)$/i.exec(String(pfad ?? "").replace(/\\/g, "/"));
+  if (!m || falte(m[1]) !== falte(o.name) || m[2].startsWith(".") || m[2].startsWith("_") || UNSICHERER_NAME.test(m[2])) throw new AufgabeFehler("Das ist keine Aufgabe in diesem Vault.", 400);
+  const rel = `${o.name}/${m[2]}`;   // Ordnername wie auf der Platte
   const abs = join(o.abs, m[2]);
   let text;
   try { text = leseDatei(abs); } catch { throw new AufgabeFehler("Diese Aufgabe gibt es nicht (mehr).", 404); }
@@ -421,19 +512,22 @@ export function aendere(vault, pfad, e, { jetzt = new Date(), basisText } = {}) 
   const zielStatus = f.status ?? alt.status;
   // Spalte gewechselt oder Stelle genannt, aber kein fester Rang → Rang aus der Stelle berechnen (ohne Stelle: ans Ende der neuen Spalte)
   if (f.rang === undefined && (platz || zielStatus !== alt.status)) {
-    const alle = liste(vault);
+    const alle = liste(vault, { kopf: true });
+    const gleich = (a, b) => falte(a) === falte(b);
+    const nachbar = (p) => (typeof p === "string" && p ? alle.find((a) => gleich(a.pfad, p))?.pfad ?? null : null);
     if (platz) {
-      const p = plane(alle.filter((a) => a.status === zielStatus), rel, platz.davor, platz.danach);
+      const p = plane(alle.filter((a) => a.status === zielStatus), rel, nachbar(platz.davor), nachbar(platz.danach));
       f.rang = p.rang;
       for (const u of p.umnummerieren) {
         const fabs = join(o.abs, u.pfad.split("/").pop());
-        const t = leseDatei(fabs);
-        if (t !== null) { schreibeAtomar(fabs, setzeFelder(t, { rang: u.rang }, jetzt)); geaendert.push(u.pfad); }
+        let t; try { t = leseDatei(fabs); } catch { continue; }
+        if (t !== null) { aendereDatei(fabs, { rang: u.rang }, jetzt, t); geaendert.push(u.pfad); }
       }
     } else f.rang = rangAmEnde(alle.filter((a) => a.pfad !== rel), zielStatus);
   }
-  schreibeAtomar(abs, setzeFelder(text, f, jetzt));
+  if (typeof zwischen === "function") zwischen();   // Testhaken: ein anderer Prozess ändert die Datei zwischen Lesen und Schreiben
+  aendereDatei(abs, f, jetzt, text);
   return { pfad: rel, aufgabe: parseAufgabe(readFileSync(abs, "utf8"), rel), geaendert };
 }
 
-export const zaehle = (vault, heute) => zaehleAus(liste(vault), heute);
+export const zaehle = (vault, heute) => zaehleAus(liste(vault, { kopf: true }), heute);

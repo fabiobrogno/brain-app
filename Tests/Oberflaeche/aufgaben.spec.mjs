@@ -275,6 +275,27 @@ test("Menü „Aufgabe erfassen“ (Befehl der App) öffnet das Board mit dem Ei
   await expect(page.locator("[data-aufgabe-eingabe]")).toBeFocused();
 });
 
+test("Eigener Ordnername (ordner.aufgaben): Seitenleiste, Board, Brotkrumen und „Alle Notizen“ folgen der Konfiguration", async ({ page }) => {
+  server.stopp();
+  const { vault: v } = baueVault();
+  writeFileSync(join(v, "brain.config.json"), JSON.stringify({ ordner: { aufgaben: "todo" } }));
+  mkdirSync(join(v, "todo"), { recursive: true });
+  const datei = (n, t, status) => { writeFileSync(join(v, "todo", n), `---\ntyp: aufgabe\ntitel: ${t}\nstatus: ${status}\nprioritaet: normal\nrang: 1000\nerstellt: 2026-10-20T08:00:00Z\ngeaendert: ${jetzt()}\nquelle: mensch\n---\n`); return `todo/${n}`; };
+  const a = datei("2026-10-20-eins.md", "Eins", "offen");
+  datei("2026-10-20-zwei.md", "Zwei", "erledigt");
+  git(v, "add", "--", "todo", "brain.config.json"); git(v, "commit", "-q", "-m", "todo");
+  server = await starteServer(v);
+  await page.goto(server.url);
+  await page.waitForSelector("[data-karte], [data-leer]");
+  await expect(page.locator('[data-bereich="aufgaben"] .zahl')).toHaveText("1");
+  await page.click('[data-bereich="alle"]');
+  await expect(page.locator(`#liste-koerper [data-pfad="${a}"]`)).toHaveCount(0);
+  await page.click('[data-bereich="aufgaben"]');
+  await expect(karte(page, a)).toBeVisible();
+  await karte(page, a).click();
+  await expect(page.locator("#pfad")).toContainText("Aufgaben");
+});
+
 for (const schema of ["light", "dark"]) {
   test(`Bilder (${schema}): Board für die Sichtprüfung`, async ({ page }) => {
     await page.emulateMedia({ colorScheme: schema });

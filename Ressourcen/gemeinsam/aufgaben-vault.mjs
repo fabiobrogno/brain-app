@@ -38,10 +38,11 @@ export function erzeugeAufgaben(deps) {
     const m = await kernModul();
     let l;
     try { l = m.liste(wurzel); } catch (e) { throw uebersetze(m, e); }
-    return { ordner: m.ordnerName(wurzel), vertraut: deps.vertraut(), zaehler: m.zaehleAus(l, m.heuteBerlin(deps.jetzt())), aufgaben: l.map(kurz) };
+    return { ordner: m.ordnerName(wurzel), vertraut: deps.vertraut(), abgeschnitten: l.abgeschnitten === true, zaehler: m.zaehleAus(l, m.heuteBerlin(deps.jetzt())), aufgaben: l.map(kurz) };
   }
 
-  // POST: neue Aufgabe. e: { titel, text?, prioritaet?, faellig?, status?, bezug?, quelle? }. Die Quelle gibt der Aufrufer an („mensch“ im Studio, „ki:<client>“ bei MCP).
+  // neue Aufgabe. e: { titel, text?, prioritaet?, faellig?, status?, bezug?, quelle? }. Die Quelle bestimmt der AUFRUFER im Programm, nie die Eingabe von außen:
+  // die Route POST /api/aufgaben setzt sie fest auf „mensch“ (handler.mjs), der MCP-Server auf „ki:<client>“.
   async function anlegen(e) {
     const m = await kernModul();
     if (!e || typeof e !== "object") throw new HttpFehler(400, "Die Eingabe fehlt.");
@@ -72,18 +73,24 @@ export function erzeugeAufgaben(deps) {
   async function fuerKi({ status } = {}) {
     const m = await kernModul();
     let l;
-    try { l = m.liste(wurzel); } catch (err) { throw uebersetze(m, err); }
+    try { l = m.liste(wurzel, { kopf: true }); } catch (err) { throw uebersetze(m, err); }
+    const abgeschnitten = l.abgeschnitten === true;
     if (status) {
       if (!m.STATUS.includes(status) && status !== "alle") throw new HttpFehler(400, `Der Status ist einer von: ${m.STATUS.join(", ")}, alle.`);
       if (status !== "alle") l = l.filter((a) => a.status === status);
     } else l = l.filter((a) => a.status !== "erledigt");
     const heute = m.heuteBerlin(deps.jetzt());
-    return { aufgaben: l, zeilen: l.map((a) => m.zeile(a, { heute })), zaehler: m.zaehleAus(l, heute) };
+    return { aufgaben: l, abgeschnitten, zeilen: l.map((a) => m.zeile(a, { heute })), zaehler: m.zaehleAus(l, heute) };
   }
   async function findePfad(eingabe) {
     const m = await kernModul();
     try { return m.findePfad(wurzel, eingabe); } catch (err) { throw uebersetze(m, err); }
   }
 
-  return { aufgaben, anlegen, aendern, fuerKi, findePfad, vorSchreiben };
+  // Ordnername wie in der Konfiguration (für den Notiz-Index und die Oberfläche); ohne Kern der Standard
+  async function ordnerName() {
+    try { return (await kernModul()).ordnerName(wurzel); } catch { return "05_aufgaben"; }
+  }
+
+  return { aufgaben, anlegen, aendern, fuerKi, findePfad, vorSchreiben, ordnerName };
 }
