@@ -92,12 +92,6 @@ button:focus-visible, [tabindex]:focus-visible, a:focus-visible { outline: 2px s
 .knopf-icon.klein { width: 22px; height: 22px; }
 .knopf-text { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 8px; border: 0; background: transparent; color: var(--text-2); border-radius: var(--r-s); cursor: pointer; font-size: 12px; white-space: nowrap; transition: background var(--t), color var(--t); }
 .knopf-text:hover, .knopf-text[aria-expanded="true"] { background: var(--hover-2); color: var(--text); }
-.knopf { height: 28px; padding: 0 12px; border-radius: var(--r-s); border: 1px solid var(--linie-stark); background: var(--erhoben); cursor: pointer; white-space: nowrap; transition: border-color var(--t), filter var(--t); }
-.knopf:hover { border-color: var(--text-3); }
-.knopf.primaer { background: var(--akzent); border-color: var(--akzent); color: var(--akzent-text); font-weight: 600; }
-.knopf.primaer:hover { filter: brightness(1.07); }
-.knopf:disabled { opacity: .45; cursor: default; }
-.knopf.gross { height: 32px; padding: 0 16px; }
 
 /* ---------- Seitenleiste ---------- */
 #seite { grid-area: seite; background: var(--seite); border-right: 1px solid var(--linie); display: flex; flex-direction: column; min-height: 0; min-width: 0; }
@@ -156,8 +150,8 @@ button:focus-visible, [tabindex]:focus-visible, a:focus-visible { outline: 2px s
 .liste-titel { display: flex; align-items: center; gap: 8px; margin: 0; min-width: 0; font-size: 14px; font-weight: 600; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .liste-titel .sym { color: var(--akzent); }
 .liste-werkzeuge { display: flex; align-items: center; gap: 2px; flex: none; }
-.liste-suche { display: flex; align-items: center; gap: 8px; height: 44px; flex: none; padding: 0 8px 0 16px; border-bottom: 1px solid var(--linie); color: var(--text-3); animation: ein var(--t) var(--ease); }
-.liste-suche input { flex: 1; min-width: 0; border: 0; background: transparent; outline: 0; font: 14px var(--schrift); color: var(--text); -webkit-user-select: text; user-select: text; }
+.liste-suche { display: flex; align-items: center; height: 44px; flex: none; padding: 0 10px; border-bottom: 1px solid var(--linie); color: var(--text-3); animation: ein var(--t) var(--ease); }
+.liste-suche .bs-feld { flex: 1; padding-right: 3px; }
 .liste-suche input::-webkit-search-cancel-button { display: none; }
 .liste-suche input::placeholder { color: var(--text-3); }
 .liste-koerper { flex: 1; min-height: 0; overflow-y: auto; outline: 0; position: relative; }
@@ -399,21 +393,21 @@ button.st { cursor: pointer; } button.st:hover { background: var(--hover-2); col
 
 /* ---------- Menüs (Popover) ---------- */
 #menue-host { position: fixed; inset: 0; z-index: 70; pointer-events: none; }
-.menue { position: fixed; pointer-events: auto; min-width: 200px; max-width: 320px; max-height: min(70vh, 480px); overflow-y: auto; padding: 4px; background: var(--erhoben); border-radius: 10px; box-shadow: var(--schatten-menue); animation: hoch var(--t) var(--ease); transform-origin: top left; }
-.menue .m-gruppe { padding: 8px 10px 4px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); }
-.menue .m-trenner { height: 1px; background: var(--linie); margin: 4px 6px; }
-.menue .m-eintrag { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 30px; padding: 0 10px; border: 0; background: transparent; border-radius: var(--r-s); cursor: pointer; text-align: left; font-size: 13px; color: var(--text); }
-.menue .m-eintrag[data-aktiv="true"], .menue .m-eintrag:hover { background: var(--hover-2); }
-.menue .m-eintrag .sym { color: var(--text-2); }
-.menue .m-eintrag .m-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.menue .m-eintrag .m-sub { color: var(--text-3); font-size: 11.5px; }
-.menue .m-eintrag .m-haken { color: var(--akzent); width: 16px; display: grid; }
-.menue .m-eintrag.gefahr { color: var(--rot); } .menue .m-eintrag.gefahr .sym { color: var(--rot); }
-.menue .m-farbe { width: 16px; height: 16px; border-radius: 5px; flex: none; background: var(--vault-farbe, var(--akzent)); }
-.menue .m-leer { padding: 12px 10px; color: var(--text-3); font-size: 12.5px; }
-.menue .m-segmente { display: flex; padding: 3px; margin: 4px 6px; border-radius: 8px; background: var(--hover-2); gap: 2px; }
-.menue .m-segmente button { flex: 1; height: 26px; border: 0; background: transparent; border-radius: 6px; color: var(--text-2); cursor: pointer; font-size: 12.5px; display: flex; align-items: center; justify-content: center; gap: 6px; }
-.menue .m-segmente button[aria-pressed="true"] { background: var(--erhoben); color: var(--text); box-shadow: var(--schatten-klein); font-weight: 600; }
+.menue, .menue-geist { position: fixed; pointer-events: auto; min-width: 200px; max-width: 320px; max-height: min(70vh, 480px); overflow-y: auto; padding: 4px; background: var(--erhoben); border-radius: 10px; box-shadow: var(--schatten-menue); animation: hoch var(--t) var(--ease); transform-origin: top left; }
+:is(.menue, .menue-geist) .m-gruppe { padding: 8px 10px 4px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); }
+:is(.menue, .menue-geist) .m-trenner { height: 1px; background: var(--linie); margin: 4px 6px; }
+:is(.menue, .menue-geist) .m-eintrag { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 30px; padding: 0 10px; border: 0; background: transparent; border-radius: var(--r-s); cursor: pointer; text-align: left; font-size: 13px; color: var(--text); }
+:is(.menue, .menue-geist) .m-eintrag[data-aktiv="true"], :is(.menue, .menue-geist) .m-eintrag:hover { background: var(--hover-2); }
+:is(.menue, .menue-geist) .m-eintrag .sym { color: var(--text-2); }
+:is(.menue, .menue-geist) .m-eintrag .m-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:is(.menue, .menue-geist) .m-eintrag .m-sub { color: var(--text-3); font-size: 11.5px; }
+:is(.menue, .menue-geist) .m-eintrag .m-haken { color: var(--akzent); width: 16px; display: grid; }
+:is(.menue, .menue-geist) .m-eintrag.gefahr { color: var(--rot); } .menue .m-eintrag.gefahr .sym { color: var(--rot); }
+:is(.menue, .menue-geist) .m-farbe { width: 16px; height: 16px; border-radius: 5px; flex: none; background: var(--vault-farbe, var(--akzent)); }
+:is(.menue, .menue-geist) .m-leer { padding: 12px 10px; color: var(--text-3); font-size: 12.5px; }
+:is(.menue, .menue-geist) .m-segmente { display: flex; padding: 3px; margin: 4px 6px; border-radius: 8px; background: var(--hover-2); gap: 2px; }
+:is(.menue, .menue-geist) .m-segmente button { flex: 1; height: 26px; border: 0; background: transparent; border-radius: 6px; color: var(--text-2); cursor: pointer; font-size: 12.5px; display: flex; align-items: center; justify-content: center; gap: 6px; }
+:is(.menue, .menue-geist) .m-segmente button[aria-pressed="true"] { background: var(--erhoben); color: var(--text); box-shadow: var(--schatten-klein); font-weight: 600; }
 .gliederung-eintrag { padding-left: calc(10px + var(--ebene, 0) * 14px) !important; }
 
 /* ---------- Dialoge ---------- */
@@ -426,16 +420,15 @@ button.st { cursor: pointer; } button.st:hover { background: var(--hover-2); col
 .dialog-fuss { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--linie); }
 .feld { display: flex; flex-direction: column; gap: 4px; }
 .feld > label { font-size: 12px; color: var(--text-2); font-weight: 500; display: flex; justify-content: space-between; }
-.feld input[type=text], .feld textarea, .feld select { width: 100%; padding: 8px 10px; border: 1px solid var(--linie-stark); border-radius: var(--r); background: var(--papier); color: var(--text); font: 13.5px/1.45 var(--schrift); outline: 0; -webkit-user-select: text; user-select: text; }
-.feld textarea { min-height: 128px; resize: vertical; }
-.feld input:focus, .feld textarea:focus, .feld select:focus { border-color: var(--akzent); box-shadow: 0 0 0 3px var(--akzent-weich); }
+.feld input[type=text]:not(.bs-input), .feld textarea:not(.bs-input), .feld select { width: 100%; padding: 8px 10px; border: 1px solid var(--linie-stark); border-radius: var(--r); background: var(--papier); color: var(--text); font: 13.5px/1.45 var(--schrift); outline: 0; -webkit-user-select: text; user-select: text; }
+.feld textarea:not(.bs-input) { min-height: 128px; resize: vertical; }
+.feld input:not(.bs-input):focus, .feld textarea:not(.bs-input):focus, .feld select:focus { border-color: var(--akzent); box-shadow: 0 0 0 3px var(--akzent-weich); }
 .dateiliste { border: 1px solid var(--linie); border-radius: var(--r); max-height: 232px; overflow-y: auto; }
 .dateiliste label { display: flex; align-items: center; gap: 8px; padding: 6px 10px; cursor: pointer; border-bottom: 1px solid var(--linie); }
 .dateiliste label:last-child { border-bottom: 0; }
 .dateiliste label:hover { background: var(--seite); }
 .dateiliste .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dateiliste .c { color: var(--text-3); font-size: 12px; }
-input[type=checkbox] { accent-color: var(--akzent); width: 14px; height: 14px; margin: 0; }
 .fehlertext { color: var(--rot); font-size: 12.5px; }
 .fehlertext pre { margin: 4px 0 0; font: 11.5px/1.5 var(--mono); white-space: pre-wrap; color: var(--text-2); max-height: 120px; overflow: auto; -webkit-user-select: text; user-select: text; }
 .mini { color: var(--text-2); font-size: 12px; }

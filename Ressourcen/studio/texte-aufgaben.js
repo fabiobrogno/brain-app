@@ -18,7 +18,7 @@ export const TA = {
   faellig: { heute: "Heute", morgen: "Morgen", gestern: "Gestern", ueberfaellig: "Überfällig", am: (d) => `bis ${d}` },
   quelle: { mensch: "Von dir angelegt", ki: (name) => `Angelegt von ${name}` },
   karte: { menue: "Aufgabe verschieben oder ändern", oeffnen: "Datei öffnen", verschieben: "Verschieben nach", prioritaet: "Priorität", faelligGruppe: "Fällig",
-    faelligHeute: "Heute", faelligMorgen: "Morgen", faelligWoche: "In einer Woche", faelligKein: "Kein Datum",
+    faelligHeute: "Heute", faelligMorgen: "Morgen", faelligWoche: "In einer Woche", faelligKein: "Kein Datum", faelligWaehlen: "Datum wählen …",
     hinweisTasten: "Alt+Pfeiltasten verschieben die Karte, Enter öffnet die Datei.", archivieren: "Archivieren" },
   // Archivieren: erledigte Aufgaben wandern unverändert in den Unterordner „archiv“ des Aufgaben-Ordners; gelöscht wird nichts.
   archiv: {
