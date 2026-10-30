@@ -168,6 +168,9 @@ public enum StudioBefehl: String, Sendable, CaseIterable {
     case infospalte, verlauf
     case hellDunkel = "hell-dunkel"
     case posteingang, alle, wissen, palette
+    /// Menüleiste „Abgleichen“ (Neues holen, eigene Änderungen senden) und „Einstellungen“ (Darstellung, KI, Vertrauen) — wie der Knopf in der Statusleiste des Studios.
+    case abgleichen = "sync"
+    case einstellungen
 
     public var skript: String { "window.studio?.befehl('\(rawValue)')" }
 }

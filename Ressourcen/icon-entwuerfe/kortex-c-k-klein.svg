@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<!-- Kleinvariante von kortex-c-k.svg fuer 16 und 32 px: groesserer Squircle (weniger Rand), kein Glanz/Innenlicht/Rand,
+     dickere Striche, Bein ohne Schwung. Gleiche Farben wie der Entwurf. -->
+<defs>
+<linearGradient id="bg" x1="0.15" y1="0" x2="0.85" y2="1"><stop offset="0" stop-color="#8479F7"/><stop offset="0.5" stop-color="#5B4FE0"/><stop offset="1" stop-color="#3427A8"/></linearGradient>
+</defs>
+<rect x="56" y="56" width="912" height="912" rx="205" fill="url(#bg)"/>
+<g fill="none" stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round" stroke-width="136">
+<path d="M352 278 L352 746"/>
+<path d="M376 536 C470 520 570 450 694 300"/>
+<path d="M430 560 L690 746"/>
+</g>
+</svg>

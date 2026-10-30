@@ -252,7 +252,7 @@ private struct Fortschritt: View {
                     let stand = zustand.stand(s)
                     let dran = zustand.aktuell == s
                     Capsule()
-                        .fill(stand == .erledigt ? Color.accentColor : dran ? Color.accentColor.opacity(0.55) : Color.primary.opacity(stand == .uebersprungen ? 0.22 : 0.1))
+                        .fill(stand == .erledigt ? Kortex.akzent : dran ? Kortex.akzent.opacity(0.55) : Color.primary.opacity(stand == .uebersprungen ? 0.22 : 0.1))
                         .frame(height: 4)
                 }
             }
@@ -279,7 +279,7 @@ private struct Fuss: View {
             }
             if !modell.istFertig {
                 Button("Später") { modell.ablauf.spaeter(); modell.beiSchliessen() }
-                    .buttonStyle(.link)
+                    .buttonStyle(.kortexLink)
                     .help("Der Assistent erscheint nicht mehr von selbst. Du findest ihn im Menü unter „Kortex einrichten …“.")
             }
             Spacer()
@@ -291,7 +291,7 @@ private struct Fuss: View {
                 if modell.kannWeiter(s) {
                     Button("Weiter") { modell.tu { await $0.weiter() } }
                         .keyboardShortcut(.defaultAction)
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.kortexHaupt)
                         .controlSize(.large)
                 }
             }

@@ -19,6 +19,10 @@ sanfter Lila-Verlauf, Innenlicht, Glanz oben, feiner heller Rand, kein Schlagsch
 (analog fuer b-netz und c-k). `qlmanage -t -s 1024` liefert dagegen einen weissen Hintergrund
 ausserhalb des Squircles und ist deshalb nicht verwendet.
 
-## Hinweis
-Die Auswahl trifft der Koordinator. Das Final-Icon wird spaeter als .icon (Icon Composer) bzw. .icns
-gebaut; diese Entwuerfe sind nicht im App-Bundle eingebunden.
+## Entscheidung und Einbau
+Gewählt ist Entwurf C (`kortex-c-k.svg`). Daraus entsteht `Ressourcen/AppIcon.icns` (`bash scripts/baue-icon.sh`, braucht
+`rsvg-convert` und `iconutil`); `Info.plist` nennt es mit `CFBundleIconFile`, `scripts/baue-app.sh` legt es nach
+`Contents/Resources`. Bei 16 px verschwimmt das K des vollen Entwurfs (dünne Striche, Glanz), darum nutzen 16 und 32 px
+(inkl. 16@2x) die Kleinvariante `kortex-c-k-klein.svg`: größerer Squircle, kein Glanz, dickere Striche, gerades Bein.
+Alle übrigen Größen (32@2x bis 1024) kommen aus dem vollen Entwurf. Das Menüleisten-Symbol (`KortexMenueBild` in
+`Sources/BrainApp/Kortex.swift`) zeichnet dieselben Striche der Kleinvariante einfarbig als Template.

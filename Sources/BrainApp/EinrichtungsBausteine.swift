@@ -19,8 +19,8 @@ struct Titel: View {
     var body: some View {
         VStack(spacing: 8) {
             ZStack {
-                Circle().fill(Color.accentColor.opacity(0.14))
-                Image(systemName: symbol).font(.system(size: 22, weight: .medium)).foregroundStyle(Color.accentColor)
+                Circle().fill(Kortex.akzent.opacity(0.14))
+                Image(systemName: symbol).font(.system(size: 22, weight: .medium)).foregroundStyle(Kortex.akzent)
             }
             .frame(width: 52, height: 52)
             .accessibilityHidden(true)
@@ -75,13 +75,13 @@ struct HinweisBox: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "info.circle.fill").foregroundStyle(Color.accentColor).accessibilityHidden(true)
+            Image(systemName: "info.circle.fill").foregroundStyle(Kortex.akzent).accessibilityHidden(true)
             Text(text).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: AssistentMass.eckenKlein, style: .continuous))
+        .background(Kortex.akzent.opacity(0.10), in: RoundedRectangle(cornerRadius: AssistentMass.eckenKlein, style: .continuous))
     }
 }
 
@@ -107,7 +107,7 @@ struct GrosserKnopf: View {
     var body: some View {
         if haupt {
             Button(action: aktion) { Text(titel).frame(minWidth: 220) }
-                .buttonStyle(.borderedProminent).controlSize(.large).keyboardShortcut(.defaultAction)
+                .buttonStyle(.kortexHaupt).controlSize(.large).keyboardShortcut(.defaultAction)
         } else {
             Button(action: aktion) { Text(titel).frame(minWidth: 220) }.controlSize(.large)
         }
@@ -128,21 +128,21 @@ struct Karte<Inhalt: View>: View {
         VStack(alignment: .leading, spacing: 12) {
             Button(action: aktion) {
                 HStack(spacing: 12) {
-                    Image(systemName: symbol).font(.title3).frame(width: 28).foregroundStyle(Color.accentColor).accessibilityHidden(true)
+                    Image(systemName: symbol).font(.title3).frame(width: 28).foregroundStyle(Kortex.akzent).accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
                             Text(titel).font(.headline)
                             if empfohlen {
-                                Text("Empfohlen").font(.caption2.weight(.semibold)).foregroundStyle(Color.accentColor)
+                                Text("Empfohlen").font(.caption2.weight(.semibold)).foregroundStyle(Kortex.akzent)
                                     .padding(.horizontal, 6).padding(.vertical, 1)
-                                    .background(Color.accentColor.opacity(0.14), in: Capsule())
+                                    .background(Kortex.akzent.opacity(0.14), in: Capsule())
                             }
                         }
                         Text(text).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 0)
                     Image(systemName: offen ? "largecircle.fill.circle" : "circle")
-                        .foregroundStyle(offen ? Color.accentColor : Color.secondary.opacity(0.6))
+                        .foregroundStyle(offen ? Kortex.akzent : Color.secondary.opacity(0.6))
                         .accessibilityHidden(true)
                 }
                 .contentShape(Rectangle())
@@ -154,6 +154,6 @@ struct Karte<Inhalt: View>: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.primary.opacity(offen ? 0.07 : 0.04), in: RoundedRectangle(cornerRadius: AssistentMass.eckenGross, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: AssistentMass.eckenGross, style: .continuous).stroke(offen ? Color.accentColor : Color.primary.opacity(0.08), lineWidth: offen ? 1.5 : 1))
+        .overlay(RoundedRectangle(cornerRadius: AssistentMass.eckenGross, style: .continuous).stroke(offen ? Kortex.akzent : Color.primary.opacity(0.08), lineWidth: offen ? 1.5 : 1))
     }
 }
