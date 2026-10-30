@@ -11,7 +11,7 @@ export const TA = {
     ueberfaellig: "Überfällig", heute: "Heute", woche: "Diese Woche", ohne: "Ohne Datum",
     zuruecksetzen: "Filter zurücksetzen", keine: "Keine Aufgabe passt zu diesem Filter.",
   },
-  leer: { titel: "Noch keine Aufgaben", text: "Schreibe oben hin, was du nicht vergessen willst, und drücke Enter. Auch Claude kann hier Aufgaben für diesen Vault anlegen." },
+  leer: { titel: "Noch keine Aufgaben", text: "Schreibe auf, was du nicht vergessen willst. Auch Claude kann hier Aufgaben anlegen.", knopf: "Aufgabe erfassen" },
   spalteLeer: "Hierher ziehen",
   erledigtAlte: (n) => (n === 1 ? "1 ältere erledigte anzeigen" : `${n} ältere erledigte anzeigen`),
   erledigtAlteZu: "Ältere erledigte einklappen",

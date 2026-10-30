@@ -3,7 +3,7 @@
 import { T, PRODUKT } from "./texte.js";
 import { api, aktion, aktionMitAntwort, inApp, gitGesperrt, andererVault, nichtVertraut, ausgangUnklar, zeitText as zeitFehlerText, ladeStandNeu } from "./api.js";
 import { erstelleEditor } from "./editor.js";
-import { h, dialog, dialogOffen, schliesseDialoge, toast, vorMinuten, dateiName, ohneEndung, ordnerVon, istBearbeitbar, speichereLokal, leseLokal, leseEntwurf, speichereEntwurf, sucheGrad, suchFormen, ausTabelle, arbeitBeginnt, laufendeArbeiten } from "./hilfen.js";
+import { h, dialog, leerBlock, dialogOffen, schliesseDialoge, toast, vorMinuten, dateiName, ohneEndung, ordnerVon, istBearbeitbar, speichereLokal, leseLokal, leseEntwurf, speichereEntwurf, sucheGrad, suchFormen, ausTabelle, arbeitBeginnt, laufendeArbeiten } from "./hilfen.js";
 import { symbol } from "./symbole.js";
 import { textfeld, textbereich, auswahl, knopf as baueKnopf, setzeLaedt } from "./bausteine.js";
 import { kiLogo } from "./ki-logos.js";
@@ -531,9 +531,10 @@ function zeichneListenKopf() {
 function leerZustand() {
   const { art, id } = S.sicht;
   const t = art === "favoriten" ? T.liste.leerFavoriten : art === "ansicht" ? T.liste.leerAnsicht : art === "bereich" && id === "inbox" ? T.liste.leerInbox : T.liste.leer;
-  return h("div", { klasse: "leer-liste", "data-leer": "liste" }, h("div", { klasse: "zeichen" }, symbol(art === "ansicht" ? "kreis-haken" : "notiz", 24)), h("h3", { text: t.titel }), h("p", { text: t.text }),
-    art === "bereich" && (id === "inbox" || id === "alle") ? h("button", { klasse: "knopf primaer", text: T.seitenleiste.neu, aufClick: () => oeffneNeu() }) : null,
-    h("div", { klasse: "kurz" }, h("span", null, h("kbd", { text: "⌘K" }), "suchen"), h("span", null, h("kbd", { text: "⌘N" }), "neu")));
+  // Eine Aktion, wo es eine sinnvolle gibt: Posteingang → festhalten, Alle Notizen → neue Notiz
+  const aktion = art === "bereich" && id === "inbox" ? { text: T.seitenleiste.merken, tun: () => oeffneMerken() }
+    : art === "bereich" && id === "alle" ? { text: T.befehle.neu, tun: () => oeffneNeu() } : null;
+  return leerBlock({ symbol: art === "ansicht" ? "kreis-haken" : "notiz", titel: t.titel, text: t.text, aktion, daten: { "data-leer": "liste" } });
 }
 function baueKarte(n) {
   const typ = n.typ ? (S.typMap.get(n.typ) || { name: n.typ }) : null;
@@ -726,7 +727,7 @@ function zeichneSuchergebnisse() {
   const host = $("liste-koerper");
   zeichneListenKopf();
   if (!S.suche.frage) return;
-  if (!S.suche.treffer.length) { host.replaceChildren(h("div", { klasse: "leer-liste", "data-suche": "leer" }, h("div", { klasse: "zeichen" }, symbol("suche", 24)), h("h3", { text: T.liste.leerSuche.titel }), h("p", { text: T.liste.leerSuche.text }))); return; }
+  if (!S.suche.treffer.length) { host.replaceChildren(leerBlock({ symbol: "suche", titel: T.liste.leerSuche.titel, text: T.liste.leerSuche.text, aktion: { text: T.palette.anlegen(S.suche.frage), tun: () => oeffneNeu(S.suche.frage) }, daten: { "data-suche": "leer" } })); return; }
   host.replaceChildren(...S.suche.treffer.map((t, i) => {
     const n = S.nMap.get(t.pfad);
     const typ = n?.typ ? (S.typMap.get(n.typ) || { name: n.typ }) : null;
@@ -1474,7 +1475,7 @@ async function oeffneCommit() {
   const aktualisiere = () => { knopf.disabled = ![...haken.values()].some(Boolean); };
   const setzeAlle = (v) => { boxen.forEach((l) => { const c = l.querySelector("input"); c.checked = v; haken.set(c.dataset.datei, v); }); aktualisiere(); };
   const d = dialog({
-    titel: T.commit.titel, breit: true,
+    titel: T.commit.titel, satz: T.commit.satz, breit: true,
     rumpf: [
       h("div", { klasse: "feld" }, h("label", { text: T.commit.nachricht }), msgFeld.el),
       h("div", { klasse: "feld" }, h("label", null, h("span", { text: `${T.commit.dateien} · ${liste.length}` }), h("span", { klasse: "mini" }, h("a", { text: T.commit.alle, aufClick: () => setzeAlle(true) }), " · ", h("a", { text: T.commit.keine, aufClick: () => setzeAlle(false) }))), h("div", { klasse: "dateiliste" }, boxen)),
@@ -1524,7 +1525,7 @@ function oeffneNeu(vorTitel) {
     try { const r = await api.neu(sel.value, titel.value.trim()); d.schliessen(); await ladeBaum(); await oeffne(r.pfad); planeGitRefresh(); }
     catch (e) { fehlerEl.hidden = false; fehlerEl.textContent = e.message; }
   };
-  const d = dialog({ titel: T.neu.titel, rumpf: [h("div", { klasse: "feld" }, h("label", { text: T.neu.name }), titelFeld.el), h("div", { klasse: "feld" }, h("label", { text: T.neu.ordner }), sel), fehlerEl],
+  const d = dialog({ titel: T.neu.titel, satz: T.neu.satz, rumpf: [h("div", { klasse: "feld" }, h("label", { text: T.neu.name }), titelFeld.el), h("div", { klasse: "feld" }, h("label", { text: T.neu.ordner }), sel), fehlerEl],
     knoepfe: [baueKnopf({ text: T.commit.abbrechen, aufKlick: () => d.schliessen() }), baueKnopf({ text: T.neu.anlegen, variante: "primaer", aktion: "anlegen", aufKlick: tun })] });
   titel.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); tun(); } });
 }
@@ -1545,10 +1546,10 @@ function oeffneMerken() {
       await ladeBaum(); planeGitRefresh();
     } catch (e) { fehlerEl.hidden = false; fehlerEl.textContent = e.message; }
   };
-  const d = dialog({ titel: T.merken.titel,
+  const d = dialog({ titel: T.merken.titel, satz: T.merken.satz,
     // Esc/Klick daneben verliert nichts: der Text bleibt als Entwurf, bis er abgelegt wird
     beiSchliessen: () => { if (abgelegt || !text.value.trim()) { speichereEntwurf("merken", null); } else { speichereEntwurf("merken", { text: text.value, titel: titel.value }); toast(T.merken.entwurf); } },
-    rumpf: [h("div", { klasse: "feld" }, textFeld.el), h("div", { klasse: "feld" }, titelFeld.el), fehlerEl, h("div", { klasse: "mini", text: "⌘↩ zum Ablegen" })],
+    rumpf: [h("div", { klasse: "feld" }, textFeld.el), h("div", { klasse: "feld" }, titelFeld.el), fehlerEl],
     knoepfe: [baueKnopf({ text: T.commit.abbrechen, aufKlick: () => d.schliessen() }), baueKnopf({ text: T.merken.sichern, variante: "primaer", aktion: "merken", aufKlick: tun })] });
   textFeld.passe();
   text.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); tun(); } });
@@ -1562,7 +1563,8 @@ async function oeffneGesundheit() {
       h("div", { klasse: "k" }, h("span", { klasse: "punkt " + stufenKlasse(p.stufe) }), h("span", { text: p.name || p.id })),
       p.text ? h("p", { text: p.text }) : null,
       (p.befunde || []).length ? h("ul", null, (p.befunde || []).slice(0, 8).map((b) => h("li", { text: b.kurz }))) : null));
-  dialog({ titel: T.gesundheit.titel, breit: true, rumpf: inhalt.length ? inhalt : [h("p", { klasse: "leise", text: T.gesundheit.ok })], knoepfe: [] });
+  const dg = dialog({ titel: T.gesundheit.titel, satz: T.gesundheit.satz, breit: true, rumpf: inhalt.length ? inhalt : [h("p", { klasse: "leise", text: T.gesundheit.ok })],
+    knoepfe: [baueKnopf({ text: T.dialog.schliessen, variante: "primaer", aufKlick: () => dg.schliessen() })] });
 }
 // Lokale Nutzungsmessung (FBL-72): was die KI per MCP abruft, aus .logs/mcp.log (GET /api/nutzung).
 async function oeffneNutzung() {
@@ -1573,7 +1575,7 @@ async function oeffneNutzung() {
   const seiteEl = (p, rechts) => h("li", { klasse: "nutzung-zeile" },
     h("button", { klasse: "knopf-text nutzung-seite", "data-pfad": p, title: p, text: ohneEndung(dateiName(p)), aufClick: () => { d.schliessen(); oeffne(p); } }),
     h("span", { klasse: "leise", text: rechts || "" }));
-  const rumpf = [h("p", { klasse: "leise", text: N.lokal })];
+  const rumpf = [];
   if (fehler || !w) rumpf.push(h("p", { klasse: "fehlertext", text: N.fehler }));
   else if (w.fehler) rumpf.push(h("p", { klasse: "fehlertext", "data-fehler": "nutzung", text: N.protokollFehler(w.fehler) }));
   else if (!w.protokoll) rumpf.push(h("p", { "data-leer": "nutzung", text: N.keine }));
@@ -1585,7 +1587,7 @@ async function oeffneNutzung() {
     rumpf.push(w.nieGenutztGesamt ? h("p", { klasse: "leise", text: N.nieHinweis(w.nieGenutzt.length, w.nieGenutztGesamt) }) : h("p", { klasse: "leise", text: N.nieLeer }));
     if (w.nieGenutzt.length) rumpf.push(h("ul", { klasse: "nutzung-liste", "data-liste": "nie" }, w.nieGenutzt.map((p) => seiteEl(p))));
   }
-  const d = dialog({ titel: N.titel, breit: true, rumpf, knoepfe: [] });
+  const d = dialog({ titel: N.titel, satz: N.lokal, breit: true, rumpf, knoepfe: [baueKnopf({ text: T.dialog.schliessen, variante: "primaer", aufKlick: () => d.schliessen() })] });
 }
 const stufenKlasse = (s) => (/rot|red|fehler/i.test(s || "") ? "rot" : /gelb|warn|yellow/i.test(s || "") ? "gelb" : /gr[uü]n|ok|green/i.test(s || "") ? "gruen" : "grau");
 
@@ -2039,12 +2041,12 @@ function zeigeLeer() {
       h("div", { klasse: "zeichen" }, symbol("notiz", 24)),
       h("h2", { text: T.leer.titel }), h("p", { text: T.leer.text }),
       h("div", null, h("button", { klasse: "knopf primaer gross", "data-aktion": "erste", text: T.leer.knopf, aufClick: () => oeffneNeu() })),
-      S.info && !S.info.git ? h("p", { klasse: "mini", style: "margin-top:14px", text: "Dieser Ordner ist noch nicht mit Git gesichert. Du kannst trotzdem schreiben." }) : null);
+      ...(S.info && !S.info.git ? [h("p", { klasse: "mini", style: "margin-top:14px", text: "Dieser Ordner ist noch nicht mit Git gesichert. Du kannst trotzdem schreiben." })] : []));
   } else {
     el.replaceChildren(
       h("div", { klasse: "zeichen" }, symbol("marke", 24)),
       h("h2", { text: T.editor.leer }), h("p", { text: T.editor.leerHinweis }),
-      h("div", { klasse: "kurz" }, h("span", null, h("kbd", { text: "⌘K" }), "Springen"), h("span", null, h("kbd", { text: "⌘N" }), "Neu"), h("span", null, h("kbd", { text: "⌘⇧M" }), "Merken")));
+      h("div", null, h("button", { klasse: "knopf", "data-aktion": "leer-neu", text: T.befehle.neu, aufClick: () => oeffneNeu() })));
   }
 }
 

@@ -318,7 +318,8 @@ struct WegGruppe<Inhalt: View>: View {
     }
 }
 
-/// Fußleiste jedes Bildes: links leise Wege (Zurück, Später), rechts GENAU EIN Hauptknopf (⏎).
+/// Fußleiste jedes Bildes: links leise Wege (Zurück, Später), rechts GENAU EIN Hauptknopf (⏎). Aufbau wie die Fußleiste der Einrichtung in Orca
+/// (OnboardingFooter.tsx, MIT, siehe oben und THIRD-PARTY-NOTICES.md).
 struct Fussleiste<Links: View, Haupt: View>: View {
     @ViewBuilder let links: Links
     @ViewBuilder let haupt: Haupt

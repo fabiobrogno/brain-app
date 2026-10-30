@@ -2,7 +2,7 @@
 // das Board liest sie über GET /api/aufgaben und ändert sie über PATCH /api/aufgaben/<pfad> — je Änderung genau eine Datei.
 // Bedienung: Karte ziehen (Maus) oder Alt+Pfeiltasten (Tastatur), Enter öffnet die Datei im Editor, das Menü „⋯“ (auch Rechtsklick) ändert Spalte, Priorität, Fälligkeit.
 // Kein innerHTML mit Daten aus dem Vault: alles läuft über h()/textContent.
-import { h } from "./hilfen.js";
+import { h, leerBlock } from "./hilfen.js";
 import { symbol, GROESSE } from "./symbole.js";
 import { kiLogo, kiLogoName } from "./ki-logos.js";
 import { oeffneMenue } from "./menue.js";
@@ -212,7 +212,8 @@ export function baueAufgaben(host, ctx) {
       return;
     }
     if (st.geladen && !st.liste.length) {
-      brett.replaceChildren(h("div", { klasse: "au-leer", "data-aufgaben-leer": "" }, symbol("aufgaben", GROESSE.kachel), h("h3", { text: TA.leer.titel }), h("p", { text: TA.leer.text })));
+      brett.replaceChildren(leerBlock({ klasse: "au-leer", symbol: "aufgaben", titel: TA.leer.titel, text: TA.leer.text, daten: { "data-aufgaben-leer": "" },
+        aktion: { text: TA.leer.knopf, tun: () => eingabe.focus() } }));
       return;
     }
     const sichtbar = SPALTEN.reduce((n, s) => n + sichtbarInSpalte(s).karten.length, 0);
