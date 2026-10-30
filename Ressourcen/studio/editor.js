@@ -582,14 +582,18 @@ export function erstelleEditor(eltern, ctx) {
     view,
     zeilenende: () => ende,
     // Lädt Text als neuen Zustand (eigene Rückgängig-Liste). Zeilenende wird erkannt.
-    setzeText(text, { nurLesen = false } = {}) {
+    // behalte: derselbe Text von außen verändert (Live-Aktualisierung) — Auswahl und Scrollposition bleiben, soweit der neue Text sie noch hat
+    setzeText(text, { nurLesen = false, behalte = false } = {}) {
+      const alt = behalte ? view.state.selection.main : null, scroll = behalte ? view.scrollDOM.scrollTop : 0;
       ende = text.includes("\r\n") ? "\r\n" : (text.includes("\r") && !text.includes("\n") ? "\r" : "\n");
       let state = EditorState.create({ doc: text, extensions: erweiterungen(ende) });
       // Der Cursor beginnt hinter dem (zugeklappten) Datei-Kopf. Die Position kommt aus dem Dokument, nicht aus dem Rohtext: dort zählt jedes
       // CRLF zwei Zeichen, der Cursor säße in einer CRLF-Datei mitten in der ersten Zeile oder, bei einer reinen Kopf-Datei, hinter dem Ende.
       const b = kopfBereich(state.doc);
-      if (b) state = state.update({ selection: { anchor: Math.min(state.doc.length, b.bis + 1) } }).state;
+      if (alt) state = state.update({ selection: { anchor: Math.min(state.doc.length, alt.anchor), head: Math.min(state.doc.length, alt.head) } }).state;
+      else if (b) state = state.update({ selection: { anchor: Math.min(state.doc.length, b.bis + 1) } }).state;
       view.setState(state);
+      if (alt) view.scrollDOM.scrollTop = scroll;
       if (ctx.roh?.()) view.dispatch({ effects: fmUmschalten.of(false) });
       // Der neue State kennt den Fokus noch nicht: den Ist-Stand eintragen (sonst bliebe der Absatz am Cursor verbunden)
       view.dispatch({ effects: [schreibschutzFeld.reconfigure(nurLesen ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []), fokusGeaendert.of(view.hasFocus)] });

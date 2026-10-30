@@ -2,7 +2,7 @@ import Foundation
 
 /// Aktionen der Oberfläche an die App (Nachrichtenkanal `aktion`, mit Antwort an die Seite, aber kein Datenweg). Die Prüfung
 /// hier ist die einzige Stelle, die Werte der Seite in etwas Ausführbares verwandelt: nur bekannte Aktionen, Pfade nur im Vault,
-/// nur https. `ordner-waehlen`, `vault-gewechselt`, `vertrauen-geaendert`, `titel` und `fehler` gelten nur für das Studio — die
+/// nur https. `ordner-waehlen`, `vault-gewechselt`, `vertrauen-geaendert`, `status-auffrischen`, `titel` und `fehler` gelten nur für das Studio — die
 /// Übersicht (Seite des Kerns) darf nur `ansicht`, `ordner-zeigen` und `extern`.
 public enum AppAktion: Equatable, Sendable {
     case ansicht
@@ -16,6 +16,9 @@ public enum AppAktion: Equatable, Sendable {
     /// vertrauten Vault ohne git (Menüleiste und Übersicht zeigen dann andere Werte), darum liest die App den Status neu. Nur das Studio
     /// darf das melden — die Übersicht (Seite des Kerns) soll keine Status-Läufe anstoßen können.
     case vertrauenGeaendert
+    /// Das Studio hat über die Live-Aktualisierung gemerkt, dass sich im Vault etwas geändert hat (Aufgaben, Notizen, Posteingang, Git): die App liest
+    /// den Status für die Menüleiste neu — gebündelt und gedrosselt (`StatusAuffrischung`). Trägt keine Daten; nur das Studio darf das melden.
+    case statusAuffrischen
     /// Fenstertitel des Studios (nil = Standardtitel).
     case titel(String?)
     /// JavaScript-Fehler der Studio-Oberfläche (Fehlerhaken, `fehlerhaken.js`): nur fürs App-Log, kein Datenweg.
@@ -54,6 +57,8 @@ public enum AppAktion: Equatable, Sendable {
             return oberflaeche == .studio ? .vaultGewechselt : nil
         case "vertrauen-geaendert":
             return oberflaeche == .studio ? .vertrauenGeaendert : nil
+        case "status-auffrischen":
+            return oberflaeche == .studio ? .statusAuffrischen : nil
         case "titel":
             return oberflaeche == .studio ? pruefeTitel(wert) : nil
         case "fehler":

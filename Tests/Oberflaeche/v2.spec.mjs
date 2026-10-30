@@ -439,7 +439,7 @@ test("W6: Vault wechseln im Konfliktzustand bricht nicht still ab, sondern sagt 
   await page.locator('.menue [data-menue="vault"]').nth(1).click();
   const toast = page.locator(".toast.fehler");
   await expect(toast).toContainText("Erst den Konflikt dieser Notiz lösen");
-  await expect(toast).toContainText("Reise nach Lissabon");
+  await expect(toast).toContainText(/Reise nach Lissabon|Von außen geändert/); // Titel der Notiz: seit der Live-Aktualisierung steht schon der neue (von außen geänderte) da
   expect(stand.aktiv).toEqual([]); // nichts gewechselt
   await expect(page.locator(".cm-content")).toContainText("meine Eingabe");
 });
