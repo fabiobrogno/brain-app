@@ -17,7 +17,7 @@ import { randomBytes } from "node:crypto";
 import { HttpFehler, bereinigterPfad } from "../gemeinsam/basis.mjs";
 import { starteStrom } from "../gemeinsam/prozess.mjs";
 import { findeProgramm } from "../gemeinsam/ki.mjs";
-import { stufeFuer, darfMindestens } from "../gemeinsam/ki-konten.mjs";
+import { stufeFuer, darfMindestens, kontoStufe } from "../gemeinsam/ki-konten.mjs";
 import { mitProfil } from "./profile.mjs";
 
 export const MCP_NAME = "brain";
@@ -121,12 +121,17 @@ export function erzeugeFrage({ support, konten, mcpBasis, basisEnv = process.env
   const claudePfad = () => findeProgramm("claude", basisEnv);
   const vertraut = (v) => { try { return v.vertrauenStand().erlaubt === true; } catch { return false; } };
 
+  // Darf dieses Konto den Vault lesen? Zwei Fragen an die gemeinsame Logik (gemeinsam/ki-konten.mjs, keine eigene Kopie): die Stufe in der Liste der Werkstatt, und dieselbe Bestimmung, die
+  // der MCP-Server später selbst macht (Konto aus --konto UND CLAUDE_CONFIG_DIR/CODEX_HOME, alle Orte der Liste inkl. Standard-Support, strengstes Ergebnis). Beides muss „lesen“ oder mehr sagen.
+  const darfLesen = (v, id, k, daten) => darfMindestens(stufeFuer(daten, v.wurzel, id), "lesen")
+    && darfMindestens(kontoStufe(v.wurzel, { support, arg: id, env: k.standard === true ? {} : { [k.programm === "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR"]: k.ordner } }), "lesen");
+
   function bereit(v) {
     const daten = ladeKonten();
     const liste = [];
     if (daten) {
       for (const [id, k] of Object.entries(daten.konten)) {
-        if (!darfMindestens(stufeFuer(daten, v.wurzel, id), "lesen")) continue; // gesperrte Konten kommen nie vor: weder Name noch Zahl
+        if (!darfLesen(v, id, k, daten)) continue; // gesperrte Konten kommen nie vor: weder Name noch Zahl
         liste.push({ id, name: k.name, programm: k.programm, ...(k.abo ? { abo: k.abo } : {}), erlaubt: k.programm === "claude", ...(k.programm === "claude" ? {} : { grund: "programm" }) });
       }
     }
@@ -306,7 +311,7 @@ export function erzeugeFrage({ support, konten, mcpBasis, basisEnv = process.env
     if (!daten) throw new HttpFehler(409, "Die Liste der KI-Konten ist gerade nicht verfügbar. Öffne Kortex neu und versuche es noch einmal.", { art: "konten" });
     const keinZugriff = new HttpFehler(409, "Dieses KI-Konto darf diesen Vault nicht lesen. Gib ihn unter „KI-Konten“ frei oder wähle ein anderes Konto.", { art: "kein-zugriff" });
     if (typeof e.konto !== "string" || !Object.hasOwn(daten.konten, e.konto)) throw keinZugriff;
-    if (!darfMindestens(stufeFuer(daten, v.wurzel, e.konto), "lesen")) throw keinZugriff; // die Stufe kommt aus der Liste der Werkstatt, nie aus der Anfrage
+    if (!darfLesen(v, e.konto, daten.konten[e.konto], daten)) throw keinZugriff; // die Stufe kommt aus der Liste der Werkstatt, nie aus der Anfrage
     const konto = daten.konten[e.konto];
     if (konto.programm !== "claude") throw new HttpFehler(409, "Fragen geht bisher nur mit Claude Code. Wähle ein Claude-Konto.", { art: "programm" });
     // Eine Frage, die schon abgebrochen wird (endet) oder zu einem anderen Vault gehört, sperrt nicht: ihr Prozess ist unterwegs zum Ende (SIGINT, spätestens nach 5 s SIGKILL)
