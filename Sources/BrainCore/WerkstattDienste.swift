@@ -88,13 +88,13 @@ public struct WerkstattDienste: EinrichtungsDienste {
             switch j["zustand"] as? String {
             case "gesichert": return .gesichert
             case "bereit": return .bereit
-            case "blockiert": return .blockiert((j["text"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Dein Brain kann gerade nicht gesichert werden.")
+            case "blockiert": return .blockiert((j["text"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Dein Vault kann gerade nicht gesichert werden.")
             default: return .blockiert("Die Antwort des Hintergrunddienstes war unvollständig.")
             }
         } catch {
             // Nicht lesbar heißt NICHT „keine Sicherung“: sonst würde ein Repository angelegt, das sich danach nicht verbinden lässt.
             let grund = (error as? EinrichtungsFehler)?.meldung ?? error.localizedDescription
-            return .blockiert("Kortex konnte den Stand deines Brains nicht prüfen: \(grund) Es wurde nichts bei GitHub angelegt.")
+            return .blockiert("Kortex konnte den Stand deines Vaults nicht prüfen: \(grund) Es wurde nichts bei GitHub angelegt.")
         }
     }
 
@@ -151,6 +151,21 @@ public struct WerkstattDienste: EinrichtungsDienste {
         if ziel == .claude, let profil { b["profil"] = profil }
         let j = try await rufe("POST", "/api/mcp/verbinden", b)
         return (j["schonVerbunden"] as? Bool) == true ? .schonVerbunden : .verbunden
+    }
+
+    public func trenne(_ ziel: KiZiel, profil: String?) async throws -> KiTrennung {
+        var b: [String: Any] = ["ziel": ziel.ziel]
+        if ziel == .claude, let profil { b["profil"] = profil }
+        let j = try await rufe("POST", "/api/mcp/trennen", b)
+        return (j["warNichtVerbunden"] as? Bool) == true ? .warNichtVerbunden : .getrennt
+    }
+
+    public func konfiguration() async throws -> String {
+        let j = try await rufe("GET", "/api/mcp/konfiguration")
+        guard let text = j["json"] as? String, !text.isEmpty else {
+            throw EinrichtungsFehler("Die Antwort des Hintergrunddienstes war unvollständig.")
+        }
+        return text
     }
 
     // MARK: Verdrahtung

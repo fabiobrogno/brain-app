@@ -44,7 +44,7 @@ private func brain(_ name: String = "brain", in home: URL, mitTools: Bool = fals
     let v = brain(in: home)
     try FileManager.default.moveItem(at: v, to: home.appendingPathComponent("anderswo"))
     #expect(VaultAuswahl.pruefe(v) == .fehlt)
-    #expect(VaultAuswahl.meldung(.fehlt) == "Brain-Ordner nicht gefunden")
+    #expect(VaultAuswahl.meldung(.fehlt) == "Vault-Ordner nicht gefunden")
 }
 
 @Test func vorschlagNimmtZuerstTildeBrain() {
@@ -77,4 +77,64 @@ private func brain(_ name: String = "brain", in home: URL, mitTools: Bool = fals
 @Test func startArgumenteOhneWertOderMitUnsinn() {
     let a = StartArgumente.lies(["BrainApp", "--test-beenden-nach", "abc", "--vault"])
     #expect(a == StartArgumente())
+}
+
+// MARK: Zu breite Orte (dieselben Fälle prüft Tests/Node/v2-vaults.test.mjs für die Werkstatt)
+
+@Test func zuBreiteOrteWerdenErkanntUndBekommenEinenUnterordnerVorschlag() {
+    let home = tempOrdner()
+    for (ordner, anzeige) in [("Desktop", "Schreibtisch"), ("Documents", "Dokumente"), ("Downloads", "Downloads"), ("Pictures", "Bilder"),
+                              ("Movies", "Filme"), ("Music", "Musik"), ("Public", "Öffentlich"), ("Applications", "Programme")] {
+        let b = VaultAuswahl.breiterOrt(home.appendingPathComponent(ordner), home: home)
+        #expect(b?.name == anzeige, "\(ordner)")
+        #expect(b?.vorschlag?.path == home.appendingPathComponent(ordner).appendingPathComponent("Kortex").path, "\(ordner)")
+    }
+    #expect(VaultAuswahl.breiterOrt(home, home: home)?.name == "Benutzerordner")
+    #expect(VaultAuswahl.breiterOrt(home, home: home)?.vorschlag?.lastPathComponent == "Kortex")
+    #expect(VaultAuswahl.breiterOrt(home.appendingPathComponent("documents"), home: home)?.name == "Dokumente", "ohne Groß/klein")
+    let icloud = home.appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs")
+    #expect(VaultAuswahl.breiterOrt(icloud, home: home)?.name == "iCloud Drive")
+    #expect(VaultAuswahl.breiterOrt(home.appendingPathComponent("Library/Mobile Documents"), home: home)?.name == "iCloud Drive")
+    #expect(VaultAuswahl.breiterOrt(home.appendingPathComponent("Library/CloudStorage"), home: home)?.name == "Cloud-Speicher")
+    #expect(VaultAuswahl.breiterOrt(home.appendingPathComponent("Library/CloudStorage/Dropbox"), home: home)?.name == "Dropbox")
+}
+
+@Test func untergeordneteOrdnerSindErlaubt() {
+    let home = tempOrdner()
+    for rel in ["Kortex", "Documents/Kortex", "Desktop/Notizen/Privat", "Library/CloudStorage/Dropbox/Kortex",
+                "Library/Mobile Documents/com~apple~CloudDocs/Kortex", "Dokumente", "Dokumente/Notizen"] {
+        #expect(VaultAuswahl.breiterOrt(home.appendingPathComponent(rel), home: home) == nil, "\(rel)")
+    }
+}
+
+@Test func einVerweisAufEinenBreitenOrtIstAuchZuBreit() throws {
+    let home = tempOrdner()
+    let docs = home.appendingPathComponent("Documents")
+    try FileManager.default.createDirectory(at: docs, withIntermediateDirectories: true)
+    let verweis = home.appendingPathComponent("Notizen-Link")
+    try FileManager.default.createSymbolicLink(at: verweis, withDestinationURL: docs)
+    #expect(VaultAuswahl.breiterOrt(verweis, home: home)?.name == "Dokumente")
+}
+
+@Test func hinweistextNenntOrtUndUnterordner() {
+    let home = tempOrdner()
+    let t = VaultAuswahl.breiterOrt(home.appendingPathComponent("Documents"), home: home)!.text(home: home)
+    #expect(t.contains("„Dokumente“ ist als Vault zu groß"))
+    #expect(t.contains("„Kortex“ (~/Documents/Kortex)"))
+}
+
+@Test func ordnernameAusVaultNameIstEinSichtbarerEinzelnerOrdner() {
+    #expect(VaultAuswahl.ordnername(fuer: "Mein Vault") == "Mein Vault")
+    #expect(VaultAuswahl.ordnername(fuer: "a/b:c") == "a-b-c")
+    #expect(VaultAuswahl.ordnername(fuer: "..versteckt") == "versteckt")
+    #expect(VaultAuswahl.ordnername(fuer: "   ") == "Kortex")
+    let ort = URL(fileURLWithPath: "/Users/test/Documents")
+    #expect(VaultAuswahl.vaultOrdner(in: ort, name: "Kortex").path == "/Users/test/Documents/Kortex")
+}
+
+@Test func beispielOrdnerNimmtDenErstenFreienNamen() {
+    let home = URL(fileURLWithPath: "/Users/test")
+    #expect(BeispielVault.ordner(home: home, vorhanden: { _ in false }).path == "/Users/test/Kortex-Beispiel")
+    #expect(BeispielVault.ordner(home: home, vorhanden: { $0 == "/Users/test/Kortex-Beispiel" }).path == "/Users/test/Kortex-Beispiel 2")
+    #expect(BeispielVault.ordner(home: home, vorhanden: { $0.hasSuffix("Kortex-Beispiel") || $0.hasSuffix("Beispiel 2") }).path == "/Users/test/Kortex-Beispiel 3")
 }

@@ -242,15 +242,15 @@ test("session-start: zwei gleichzeitige Aufrufe → Meldung und hooks.log-Zeile 
   const [a, b] = await gleichzeitig(starte("session-start.mjs", [], ein, env), starte("session-start.mjs", [], ein, env));
   const aus = [a.stdout, b.stdout].filter(Boolean);
   assert.equal(aus.length, 1, `genau ein Aufruf gibt aus: [${a.stdout}] [${b.stdout}]`);
-  assert.match(aus[0], /Brain-Inbox: 1 Datei\(en\) warten auf \/ingest\./);
+  assert.match(aus[0], /Kortex-Inbox: 1 Datei\(en\) warten auf \/ingest\./);
   assert.equal(zeilen(join(v, ".logs", "hooks.log")).filter((l) => l.includes("session-start")).length, 1, "eine Start-Zeile im Log");
   const c = await starte("session-start.mjs", [], { ...ein, source: "resume" }, env);
-  assert.match(c.stdout, /Brain-Inbox/, "andere Quelle (resume) ist kein Duplikat");
+  assert.match(c.stdout, /Kortex-Inbox/, "andere Quelle (resume) ist kein Duplikat");
   const d = await starte("session-start.mjs", [], { ...ein, session_id: "s-anders" }, env);
-  assert.match(d.stdout, /Brain-Inbox/, "andere Sitzung");
+  assert.match(d.stdout, /Kortex-Inbox/, "andere Sitzung");
   altern(v, 40);
   const e = await starte("session-start.mjs", [], ein, env);
-  assert.match(e.stdout, /Brain-Inbox/, "Marke > 30 s alt → läuft wieder");
+  assert.match(e.stdout, /Kortex-Inbox/, "Marke > 30 s alt → läuft wieder");
 });
 
 // ------------------------------------------------------------------------------------------ kompakt-sichern

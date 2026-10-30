@@ -1,6 +1,6 @@
 ---
 name: rueckfragen
-description: Offene Brain-Rückfragen beantworten — kurze Ja/Nein/A/B-Fragen aus dem Tageslauf (Widersprüche, heikle Fakten, Lektionen, Stichproben). Auslöser „Rückfragen“, „Brain fragt“
+description: Offene Kortex-Rückfragen beantworten — kurze Ja/Nein/A/B-Fragen aus dem Tageslauf (Widersprüche, heikle Fakten, Lektionen, Stichproben). Auslöser „Rückfragen“, „Kortex fragt“, „Brain fragt“
 ---
 
 Der Tageslauf fragt nur, was er nicht allein entscheiden darf. Dieser Ablauf stellt die Fragen, speichert die Antworten und

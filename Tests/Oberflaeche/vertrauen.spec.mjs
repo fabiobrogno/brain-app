@@ -230,7 +230,7 @@ test("W4: Eintrag „brain“ zeigt woandershin (409 anders): Rückfrage, Umstel
   await statusClaude(page).click();
   await page.click('.dialog [data-aktion="claude-verbinden"]');
   const frage = page.locator('.dialog [data-bereich="umstellen"]');
-  await expect(frage).toContainText("In Claude gibt es schon einen Eintrag „brain“, der woanders hinzeigt. Auf dieses Brain umstellen?");
+  await expect(frage).toContainText("In Claude gibt es schon einen Eintrag „brain“, der woanders hinzeigt. Auf diesen Vault umstellen?");
   await expect(frage.locator('[data-aktion="nicht-umstellen"]')).toBeFocused();
   await frage.locator('[data-aktion="nicht-umstellen"]').click();
   await expect(frage).toHaveCount(0);
@@ -564,7 +564,7 @@ test("UI-5: der Kern ist nicht bereit: klarer Satz, keine Vertrauensfrage (Kern-
   await startMitAntworten(page, { vertrauen: vertrauenAntwort({ erlaubt: true }) });
   await antwort(page, { ok: false, grund: "kern-nicht-bereit" });
   await uebersichtPalette(page);
-  await expect(page.locator(".toast.fehler")).toContainText("Der Kern von Kortex (die Brain-Logik) ist nicht bereit.");
+  await expect(page.locator(".toast.fehler")).toContainText("Der Kern von Kortex ist nicht bereit.");
   await expect(dialogVertrauen(page)).toHaveCount(0);
   expect(await aktionen(page, "ansicht")).toHaveLength(1);
 });

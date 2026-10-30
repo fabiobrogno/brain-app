@@ -52,7 +52,7 @@ const wikiDir = join(VN, wiki);
 function blockiere(msg) { process.stderr.write(msg + "\n"); process.exit(2); }
 
 if (gleich(F, join(VN, "INDEX.md")) || gleich(F, join(VN, "graph.json")) || gleich(F, join(wikiDir, "_index.md"))) {
-  blockiere(`Brain-Riegel: ${F} ist generiert (Indexer) — nie von Hand editieren.`);
+  blockiere(`Kortex-Riegel: ${F} ist generiert (Indexer) — nie von Hand editieren.`);
 }
 
 if (!unter(F, wikiDir)) process.exit(0);
@@ -61,7 +61,7 @@ if (!unter(F, wikiDir)) process.exit(0);
 const elternName = basename(dirname(F));
 const dateiName = basename(F);
 if (gleich(dateiName, `_${elternName}.md`)) {
-  blockiere(`Brain-Riegel: ${F} ist eine generierte Ordner-Übersicht (Indexer) — nie von Hand editieren.`);
+  blockiere(`Kortex-Riegel: ${F} ist eine generierte Ordner-Übersicht (Indexer) — nie von Hand editieren.`);
 }
 
 // Sonst: <wiki>/… nur mit frischem .logs/ingest.lock (< 30 min), dann auffrischen
@@ -74,4 +74,4 @@ if (existsSync(lockPfad)) {
     process.exit(0);
   }
 }
-blockiere(`Brain-Riegel: ${wiki} wird nur über /ingest verändert (kein frisches ingest.lock). Erst /ingest starten bzw. Lock nach User-Freigabe setzen.`);
+blockiere(`Kortex-Riegel: ${wiki} wird nur über /ingest verändert (kein frisches ingest.lock). Erst /ingest starten bzw. Lock nach User-Freigabe setzen.`);

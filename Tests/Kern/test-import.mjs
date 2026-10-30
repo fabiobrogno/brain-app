@@ -202,7 +202,7 @@ test("importiere Obsidian: Quelle bytegleich, nur Ziel beschrieben, Duplikate, G
   assert.match(md, /ergänzt Seite `09_wiki\/thema_gartenplan\.md`/);
   assert.match(md, /`Willkommen\.md` verweist auf Seite `09_wiki\/thema_gartenplan\.md`/);
   assert.match(md, /3 exakte Duplikate übersprungen/);
-  assert.match(md, /schon im Brain/);
+  assert.match(md, /schon im Vault/);
   assert.ok(r.pakete.some(p => p.name === "Garten" && p.tokenSchaetzung === Math.ceil(p.zeichen / 4 * 1.6)));
   assert.equal(r.tokenSchaetzung, r.pakete.reduce((s, p) => s + p.tokenSchaetzung, 0));
 
@@ -338,7 +338,7 @@ test("Zip: Notion-Export (Store + Deflate) importiert; Zip64 und verschlüsselt 
 
 test("Quelle, die das Brain enthält, wird abgelehnt; Logseq-Titel und Aliase", () => {
   const v = neuesVault();
-  assert.throws(() => importiere(v, dirname(v)), /enthält dieses Brain/);
+  assert.throws(() => importiere(v, dirname(v)), /enthält diesen Vault/);
   const r = importiere(v, join(FIX, "logseq"), { name: "Werkstatt Notizen", jetzt: JETZT });
   assert.equal(r.art, "logseq");
   assert.equal(r.name, "werkstatt-notizen");

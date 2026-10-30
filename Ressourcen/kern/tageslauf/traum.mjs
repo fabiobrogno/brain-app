@@ -210,12 +210,12 @@ function eingabeText({ schluessel, ctx, anlass, projekt, kiTexte, maskeAnzahl, v
     `GESCHÜTZTE ZEILEN: ${maskeAnzahl}`, "", "Führe den Traum jetzt durch und schreibe traum-bericht.json."].join("\n");
 }
 
-const ARTEN_TEXT = { zusammengefuehrt: "zusammengeführt", ueberholt: "überholt", erledigt: "erledigt", neu: "neu", konflikt: "Konflikt aufgelöst", "brain-kandidat": "Brain-Kandidat" };
+const ARTEN_TEXT = { zusammengefuehrt: "zusammengeführt", ueberholt: "überholt", erledigt: "erledigt", neu: "neu", konflikt: "Konflikt aufgelöst", "brain-kandidat": "Vault-Kandidat" };
 // Zeilen der Konflikt-Kopie, die bewusst NICHT übernommen wurden: gehen mit der Kopie beim nächsten Abgleich verloren — darum steht es sichtbar in der Frage.
 const nichtUebernommenText = (e) => (e.nichtUebernommen ? ` — Zeilen der Kopie bewusst NICHT übernommen (gehen beim Aufräumen verloren): „${kurz(e.nichtUebernommen, 200)}“` : "");
 function begruendungsListe(erg, { belegLaenge = 200 } = {}) {
   const z = erg.bericht.map((e) => `- ${ARTEN_TEXT[e.art] || e.art} · ${e.datei} — ${kurz(e.grund, 240)}${e.beleg ? ` (Beleg: „${kurz(e.beleg, belegLaenge)}“)` : ""}${nichtUebernommenText(e)}`);
-  if (erg.brainKandidaten.length) z.push("", "Brain-Kandidaten (Fakten über Welt/Firma — kommen NICHT ins Gedächtnis; nur bei „Übernehmen“ als Notiz in die Inbox):",
+  if (erg.brainKandidaten.length) z.push("", "Vault-Kandidaten (Fakten über Welt/Firma — kommen NICHT ins Gedächtnis; nur bei „Übernehmen“ als Notiz in die Inbox):",
     ...erg.brainKandidaten.map((b) => `- ${kurz(b.grund, 240)} (Beleg: „${kurz(b.beleg, belegLaenge)}“)`));
   if (erg.verworfen.length) z.push("", `Von der Prüfung verworfen (${erg.verworfen.length}): ${erg.verworfen.slice(0, 6).map((v) => `${v.datei} (${v.regel})`).join(", ")}${erg.verworfen.length > 6 ? " …" : ""}`);
   return z;
@@ -287,7 +287,7 @@ async function traumProjekt(ctx, cfg, p, { probe }) {
     const lose = beruehrt.filter((n) => LOSE.has(n)), exakt = beruehrt.filter((n) => !LOSE.has(n));
     const fpDateien = standAusTexten(projekt.dateien, exakt);
     if (exakt.length && dateienStand(projekt.dir, exakt) !== fpDateien) { entry.status = "gedaechtnis-geaendert"; return entry; }
-    const { patch, anzeige } = erg.dateien.size ? erzeugePatch(ctx, schluessel, basis, erg.dateien, maske) : { patch: "", anzeige: "(keine Änderung am Gedächtnis — nur Brain-Kandidaten)" };
+    const { patch, anzeige } = erg.dateien.size ? erzeugePatch(ctx, schluessel, basis, erg.dateien, maske) : { patch: "", anzeige: "(keine Änderung am Gedächtnis — nur Vault-Kandidaten)" };
     entry.diff = anzeige;
     if (anzeige.length > (probe ? MAX_DIFF_PROBE : MAX_DIFF_ZEICHEN) && erg.dateien.size) {
       entry.status = "zu-gross";
@@ -488,7 +488,7 @@ function schreibeBrainNotizen(ctx, schluessel, kandidaten, woerter) {
     const titel = kurz(k.grund, 80);
     const inhalt = `---\ntitel: ${JSON.stringify(titel)}\ndatum: ${ctx.heute}\ntags: [traum, brain-kandidat]\n---\n# ${titel}\n\n${kurz(k.grund, 400)}\n\n`
       + `Beleg (wörtlich aus einem Verlauf): „${kurz(k.beleg, 600)}“\n\nHerkunft: Traum ${ctx.lauf}, Gedächtnis-Projekt ${schluessel}${k.datei && k.datei !== "-" ? `, Datei ${k.datei}` : ""}. `
-      + `Ein Fakt über Welt/Firma gehört ins Brain, nicht ins Claude-Gedächtnis — bitte per /ingest prüfen und einarbeiten.\n`;
+      + `Ein Fakt über Welt/Firma gehört in deinen Vault, nicht ins Claude-Gedächtnis — bitte per /ingest prüfen und einarbeiten.\n`;
     try { writeFileSync(join(inbox, `traum-${ctx.heute}-${String(i + 1).padStart(2, "0")}-${slug(titel).slice(0, 40)}.md`), inhalt, { flag: "wx" }); n++; } catch { /* gibt es schon */ }
   }
   return n;
@@ -564,7 +564,7 @@ export function wendeTraumAntwortAn(ctx, r) {
   loescheVorschlag(ctx.vault, r.id);
   try { aendereTraumStand(ctx.vault, (s) => { if (s.projekte[k]) s.projekte[k] = { ...s.projekte[k], commit }; }); } catch { /* nur Stand */ }
   notiere(ctx, { id: r.id, stufe: "traum", grund: "angewendet", ziel: k, seiten: dateien, ...(commit ? { commit } : {}), notizen });
-  return fertig(`angewendet${commit ? ` (${commit.slice(0, 8)})` : ""}${notizen ? `, ${notizen} Brain-Notiz(en) in der Inbox` : ""}`, "angewendet");
+  return fertig(`angewendet${commit ? ` (${commit.slice(0, 8)})` : ""}${notizen ? `, ${notizen} Vault-Notiz(en) in der Inbox` : ""}`, "angewendet");
 }
 
 // ---------- Bericht (Abschnitt „### Traum“ im Tageslauf-Bericht, auch von der CLI) ----------
@@ -596,10 +596,10 @@ function baueBerichtZeilen(ctx) {
     for (const s of e.vorhandeneSecrets || []) z.push(`  - Zugangsdaten-Muster im Gedächtnis: ${s.datei} Zeile ${s.zeile} (Wert nicht gezeigt) — bitte selbst entfernen`);
     for (const v of (e.verworfen || []).slice(0, 8)) z.push(`  - von der Prüfung verworfen: ${v.datei} (${v.regel}: ${v.meldung})`);
     if (e.berichtFehlt) z.push("  - die KI hat keinen lesbaren traum-bericht.json hinterlassen — Änderungen ohne Begründung wurden verworfen");
-    if (e.brainKandidaten?.length) z.push(`  - Brain-Kandidaten: ${e.brainKandidaten.length} (nur bei „Übernehmen“ als Notiz in die Inbox)`);
+    if (e.brainKandidaten?.length) z.push(`  - Vault-Kandidaten: ${e.brainKandidaten.length} (nur bei „Übernehmen“ als Notiz in die Inbox)`);
     if (b.modus === "probe" && e.diff && ["vorschlag-probe", "zu-gross"].includes(e.status)) {
       z.push("", "  Begründung:", ...(e.bericht || []).map((x) => `  - ${ARTEN_TEXT[x.art] || x.art} · ${x.datei} — ${kurz(x.grund, 200)}${x.beleg ? ` (Beleg: „${kurz(x.beleg, 120)}“)` : ""}${nichtUebernommenText(x)}`),
-        ...(e.brainKandidaten || []).map((x) => `  - Brain-Kandidat: ${kurz(x.grund, 200)} (Beleg: „${kurz(x.beleg, 120)}“)`), "", diffCodeblock(e.diff), "");
+        ...(e.brainKandidaten || []).map((x) => `  - Vault-Kandidat: ${kurz(x.grund, 200)} (Beleg: „${kurz(x.beleg, 120)}“)`), "", diffCodeblock(e.diff), "");
     }
   }
   return ["", "### Traum", ...z];

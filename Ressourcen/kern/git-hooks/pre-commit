@@ -1,5 +1,5 @@
 #!/bin/sh
-# Brain pre-commit: prüft den gestagten Stand (nur neue Befunde blockieren). Installiert via install-git-hooks.mjs.
+# Kortex pre-commit: prüft den gestagten Stand (nur neue Befunde blockieren). Installiert via install-git-hooks.mjs.
 # Der Hook liegt im Kern-Ordner (core.hooksPath zeigt hierher), die Prüfung daneben: ein Ordner nach oben.
 # Node zuerst im PATH, sonst das private Node der App bzw. des alten Kits. Ohne Node: Commit blockieren (fail closed) —
 # sonst liefe die Sicherheitsprüfung auf Passwörter und Schlüssel still nicht.
@@ -14,7 +14,7 @@ else
   done
 fi
 if [ -z "$NODE" ]; then
-  echo "Brain-Commit blockiert: Node wurde nicht gefunden, darum kann die Sicherheitsprüfung nicht laufen — öffne die Kortex-App und führe die Einrichtung erneut aus."
+  echo "Vault-Commit blockiert: Node wurde nicht gefunden, darum kann die Sicherheitsprüfung nicht laufen — öffne die Kortex-App und führe die Einrichtung erneut aus."
   exit 1
 fi
 exec "$NODE" "$KERN_ORDNER/commit-pruefung.mjs" "$(git rev-parse --show-toplevel 2>/dev/null || pwd)"

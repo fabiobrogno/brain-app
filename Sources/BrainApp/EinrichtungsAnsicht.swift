@@ -13,7 +13,7 @@ struct EinrichtungsAnsicht: View {
             Label(zustand.anzeige.titel, systemImage: zustand.anzeige.symbol)
                 .foregroundStyle(.red)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("Das Studio braucht die mitgelieferte Laufzeit. Bitte installiere die App neu — dein Brain wird dabei nicht verändert.")
+            Text("Das Studio braucht die mitgelieferte Laufzeit. Bitte installiere die App neu — dein Vault wird dabei nicht verändert.")
                 .fixedSize(horizontal: false, vertical: true)
             HStack {
                 Button("Protokoll zeigen") { zustand.zeigeProtokoll() }

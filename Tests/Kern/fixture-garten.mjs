@@ -25,7 +25,7 @@ export function gartenEintraege({ vault = GARTEN_VAULT } = {}) {
     ki(9, [nutzung("t-wiki", "Read", { file_path: `${vault}/09_wiki/garten/thema_beet.md` })]),
     nutzer(10, [ergebnis("t-wiki", "Das Hochbeet Süd bekommt Schneckenkragen.")]),
     basis(11, { type: "attachment", attachment: { type: "hook_success", hookEvent: "UserPromptSubmit", hookName: "UserPromptSubmit",
-      content: `Brain-Treffer (lokal, ungelesen — nur öffnen, wenn für die Aufgabe relevant):\n- ${vault}/09_wiki/garten/thema_kartoffel.md — Kartoffeln vertragen keinen Frost.` } }),
+      content: `Kortex-Treffer (lokal, ungelesen — nur öffnen, wenn für die Aufgabe relevant):\n- ${vault}/09_wiki/garten/thema_kartoffel.md — Kartoffeln vertragen keinen Frost.` } }),
     nutzer(12, "Base directory for this skill: /skills/garten\n\nMulch hält die Feuchtigkeit im Boden.", { isMeta: true }),
     nutzer(13, "<system-reminder>Der Rasen wird nur samstags gemäht.</system-reminder>\nBitte merke dir: Der Rasenmäher steht im Schuppen links."),
     ki(14, [nutzung("t-agent", "Agent", { prompt: "Recherchiere den Apfelbaum." })]),

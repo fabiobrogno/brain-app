@@ -290,7 +290,7 @@ test("W7 auf einer Seite, die die Pflege geschrieben hat, zählt als Fehler", ()
   assert.deepEqual(PR.lesePruefungen(v).map((p) => [p.art, p.fehler, p.seite]), [["w7", true, TEE]]);
 });
 
-test("Brain-Hinweis: Seite mit herkunft_web zeigt „(teils laut Web-Recherche)“", () => {
+test("Kortex-Hinweis: Seite mit herkunft_web zeigt „(teils laut Web-Recherche)“", () => {
   const v = neuerPflegeVault({ seiten: { ...SEITEN, [TEE]: seite({ name: "tee", description: "Tee", herkunft_web: ["Matcha"] }, "# Tee\n") } });
   assert.match(seitenStatus(v, TEE).zusatz, /\(teils laut Web-Recherche\)/);
   assert.doesNotMatch(seitenStatus(v, ORION).zusatz, /Web-Recherche/);

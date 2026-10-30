@@ -50,10 +50,10 @@ const MAX_LISTE = 20, MAX_ZEILEN = 150, BALD_TAGE = 14, TAG_MS = 86400000;
 const SCHRITT = {
   abgelaufen: "Inhalt prüfen und aktualisieren — sag „prüf die abgelaufenen Seiten“; danach die Frist erneuern (neues pruefen_bis, bei verfall reicht ein neuer Commit).",
   bald: "Bald fällig — nichts Eiliges, beim nächsten Einarbeiten mitprüfen.",
-  konflikte: "Im Gehirn unter „Pflege“ entscheiden, welche Aussage gilt.",
+  konflikte: "In der Ansicht unter „Pflege“ entscheiden, welche Aussage gilt.",
   konflikteKaputt: "Konflikt-Kasten unvollständig — A und B ergänzen oder den Kasten entfernen (sag „reparier die Konflikt-Kästen“).",
   entscheidungen: "Sag „arbeite die Entscheidungen ein“ — sie werden dann in den Quellen und im Wiki umgesetzt.",
-  vorschlaege: "Im Gehirn unter „Vorschläge“ übernehmen oder verwerfen.",
+  vorschlaege: "In der Ansicht unter „Vorschläge“ übernehmen oder verwerfen.",
   lektionen: "Sag „übernimm die Lektionen“ — sie werden dann an den richtigen Ort geschrieben.",
   pflegeAuftraege: "Sag „arbeite die Pflege-Aufträge ab“ — sie werden gegen die echten Quellen geprüft (ein Auftrag ist keine Quelle).",
   verwaist: "Von einer passenden Seite aus verlinken oder ins Archiv legen.",
@@ -359,7 +359,7 @@ const EIGENE_ZEILE = new Set(["vorschlaege", "entscheidungen"]);
 export function wochenZeile(bericht) {
   if (!bericht || !Array.isArray(bericht.posten)) return "";
   const teile = bericht.posten.filter(p => p.anzahl > 0 && !NUR_HINWEIS.has(p.schluessel) && !EIGENE_ZEILE.has(p.schluessel)).slice(0, 3).map(kurz);
-  return teile.length ? `Brain-Woche: ${teile.join(" · ")} — im Gehirn unter Pflege` : "";
+  return teile.length ? `Kortex-Woche: ${teile.join(" · ")} — in der Ansicht unter Pflege` : "";
 }
 
 // ---------- Cache (W1-Review #6): der Bericht kostet bei großen Vaults Sekunden — der Sitzungsstart wartet nie darauf.
@@ -464,7 +464,7 @@ if (aufruf && aufruf === realpathSync(selbst)) {
     const b = mitFrischenZufuehrungen(vault, pflegebericht(vault), Date.now());
     console.log(process.argv.includes("--json") ? JSON.stringify(b) : textBericht(b));
   } catch {
-    console.error(`Pflegebericht nicht möglich — ist ${vault} wirklich ein Brain?`);
+    console.error(`Pflegebericht nicht möglich — ist ${vault} wirklich ein Vault?`);
     process.exit(1);
   }
 }

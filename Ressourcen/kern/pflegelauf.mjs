@@ -139,7 +139,7 @@ function eigeneWochenZeile(bericht) {
   const teile = bericht.posten
     .filter(p => p && Object.hasOwn(WOCHE_LABEL, p.schluessel) && Number(p.anzahl) > 0)
     .map(p => WOCHE_LABEL[p.schluessel](Math.round(Number(p.anzahl))));
-  return teile.length ? `Brain-Woche: ${teile.slice(0, 4).join(" · ")} — im Gehirn unter Pflege` : "";
+  return teile.length ? `Kortex-Woche: ${teile.slice(0, 4).join(" · ")} — in der Ansicht unter Pflege` : "";
 }
 // Bericht aus dem Cache der letzten Berechnung (.logs/pflege-bericht.json, geschrieben von session-hintergrund
 // über `pflege.mjs --cache`) — 0 Wartezeit im Sitzungsstart (W1-Review #6). Fehlt er oder ist er älter als eine

@@ -1,5 +1,5 @@
 // Alle sichtbaren Texte der Oberfläche (Deutsch). Produktname nur hier.
-export const PRODUKT = "Brain";
+export const PRODUKT = "Kortex";
 
 export const T = {
   produkt: PRODUKT,
@@ -116,7 +116,7 @@ export const T = {
     sauber: "Alles gesichert",
     inbox: (n) => `Inbox ${n}`,
     rueckfragen: (n) => `Rückfragen ${n}`,
-    rueckfragenHinweis: "Offene Brain-Rückfragen — beantworten im Terminal mit /rueckfragen",
+    rueckfragenHinweis: "Offene Rückfragen von Kortex — beantworten im Terminal mit /rueckfragen",
     gesundheit: "Gesundheit",
     nutzung: "KI-Nutzung", nutzungTitel: "Welche Seiten die KI abgerufen hat (nur auf diesem Rechner)",
     abgleichen: "Abgleichen",
@@ -172,8 +172,8 @@ export const T = {
   // Antwort der App auf „Übersicht öffnen“, wenn sie nicht aufgeht (grund „kein-kit“ oder „kern-nicht-bereit“; „nicht-vertraut“ und
   // „pruefung-fehlgeschlagen“ kennt nur noch eine ältere App)
   uebersicht: {
-    keinKit: "Für diesen Ordner gibt es keine Übersicht: Es fehlt die Datei brain.config.json (sie macht ihn zu einem Brain).",
-    kernNichtBereit: "Die Übersicht öffnet sich nicht: Der Kern von Kortex (die Brain-Logik) ist nicht bereit. Starte Kortex neu oder installiere die App neu.",
+    keinKit: "Für diesen Ordner gibt es keine Übersicht: Es fehlt die Datei brain.config.json (sie macht den Ordner zu einem Kortex-Vault).",
+    kernNichtBereit: "Die Übersicht öffnet sich nicht: Der Kern von Kortex ist nicht bereit. Starte Kortex neu oder installiere die App neu.",
     nichtVertraut: "Die Übersicht öffnet sich erst, wenn du diesem Vault vertraust.",
     nichtBestaetigt: "Die Übersicht öffnet sich nicht: Brain konnte das Vertrauen zu diesem Vault gerade nicht bestätigen.",
     pruefung: "Die Übersicht öffnet sich nicht: Brain konnte gerade nicht prüfen, ob du diesem Vault vertraust. Versuche es gleich noch einmal.",
@@ -201,7 +201,7 @@ export const T = {
   nutzung: {
     titel: "Was die KI von deinem Wissen abruft",
     lokal: "Nur auf diesem Rechner protokolliert (.logs/mcp.log), ohne Suchbegriffe. Nichts wird gesendet.",
-    keine: "Noch keine Abrufe protokolliert. Sobald deine KI über die Brain-Verbindung etwas sucht oder liest, erscheint es hier.",
+    keine: "Noch keine Abrufe protokolliert. Sobald deine KI über die Kortex-Verbindung etwas sucht oder liest, erscheint es hier.",
     fehler: "Die Auswertung ist gerade nicht verfügbar.",
     protokollFehler: (grund) => `Das Protokoll lässt sich nicht lesen: ${grund}`,
     kopf: (n, seit) => `${n} ${n === 1 ? "Aufruf" : "Aufrufe"} seit ${seit}`,

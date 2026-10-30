@@ -66,7 +66,7 @@ const istUnter = (p, basis) => teile(p).length > teile(basis).length && hatPraef
 const istUnterOderGleich = (p, basis) => hatPraefix(p, basis);
 
 // Ordnername als Vault-Name (höchstens 80 Zeichen); beim Klonen ohne die Endung „.git“.
-const standardName = (p, ohneGit = false) => [...((ohneGit ? basename(p).replace(/\.git$/i, "") : basename(p)) || "Brain")].slice(0, 80).join("");
+const standardName = (p, ohneGit = false) => [...((ohneGit ? basename(p).replace(/\.git$/i, "") : basename(p)) || "Kortex")].slice(0, 80).join("");
 
 // Name: fehlt er (undefined/null) → undefined (Aufrufer nimmt den Ordnernamen); sonst getrimmt, 1–80 Zeichen, keine Steuerzeichen.
 function pruefeName(name) {
@@ -128,7 +128,7 @@ function pruefeRegeln(p, home, support) {
   const system = "Dieser Ordner gehört dem System und kann kein Vault sein. Wähle einen Ordner in deinem Benutzerordner, zum Beispiel unter „Dokumente“.";
   const segs = teile(p);
   if (!segs.length || (segs.length === 1 && (segs[0] === "users" || segs[0] === "volumes"))) verbot(system);
-  if (istGleich(p, home)) verbot("Dein Benutzerordner selbst ist als Vault zu groß. Lege dafür einen eigenen Ordner an, zum Beispiel „Brain“.");
+  if (istGleich(p, home)) verbot("Dein Benutzerordner selbst ist als Vault zu groß. Lege dafür einen eigenen Ordner an, zum Beispiel „Kortex“.");
   // auch die Vorfahren der Systemordner (/private, /private/var, /var): ein Vault dort würde das System enthalten
   for (const s of SYSTEM_PRAEFIXE) if (istUnterOderGleich(p, s) || istUnterOderGleich(s, p)) verbot(system);
   const lib = join(home, "Library");
@@ -155,9 +155,45 @@ function pruefeVorschauOrt(lex, echt) {
   if (!drin(lex) || !drin(echt)) throw new HttpFehler(403, "In der Vorschau kann nur im Vorschau-Ordner gearbeitet werden. Wähle einen Ordner darin (der vorgeschlagene Ort passt).");
 }
 
+// ---------- Zu breite Ordner ----------
+
+// Ordner, in denen ein Vault nicht selbst liegen soll, sondern in einem eigenen Unterordner: Kortex würde sonst alles darin als Notizen
+// behandeln und versionieren. Die Regel gilt NUR beim Anlegen, Öffnen und Klonen (nicht beim Lesen von vaults.json: ein älterer Eintrag
+// darf weiter geöffnet und entfernt werden). Swift prüft dieselben Orte vorab (VaultAuswahl.breiterOrt) — beide Listen müssen gleich bleiben.
+// [Ordnername im Home, Anzeigename im deutschen Finder]
+export const BREITE_ORDNER = [
+  ["Desktop", "Schreibtisch"], ["Documents", "Dokumente"], ["Downloads", "Downloads"], ["Pictures", "Bilder"],
+  ["Movies", "Filme"], ["Music", "Musik"], ["Public", "Öffentlich"], ["Applications", "Programme"],
+];
+
+// → null (in Ordnung) oder { name, vorschlag }: der zu breite Ort und ein Unterordner, der stattdessen passt.
+function breiterOrt(p, home) {
+  const bei = (rel) => istGleich(p, join(home, ...rel));
+  for (const [ordner, anzeige] of BREITE_ORDNER) if (bei([ordner])) return { name: anzeige, vorschlag: join(home, ordner, "Kortex") };
+  const lib = ["Library"];
+  if (bei([...lib, "Mobile Documents"]) || bei([...lib, "Mobile Documents", "com~apple~CloudDocs"])) {
+    return { name: "iCloud Drive", vorschlag: join(home, "Library", "Mobile Documents", "com~apple~CloudDocs", "Kortex") };
+  }
+  if (bei([...lib, "CloudStorage"])) return { name: "Cloud-Speicher", vorschlag: null };
+  // direkte Unterordner von CloudStorage sind die Wurzeln der Anbieter (Dropbox, Google Drive, OneDrive …)
+  const cs = join(home, "Library", "CloudStorage");
+  if (istUnter(p, cs) && teile(p).length === teile(cs).length + 1) return { name: basename(p), vorschlag: join(p, "Kortex") };
+  return null;
+}
+
+function pruefeBreit(lex, echt, o) {
+  const homes = [resolve(o.home), versuchEchter(resolve(o.home))];
+  for (const [p, h] of [[lex, homes[0]], [echt, homes[1]]]) {
+    const b = breiterOrt(p, h);
+    if (!b) continue;
+    const wohin = b.vorschlag ? ` Lege darin einen eigenen Ordner an, zum Beispiel „${basename(b.vorschlag)}“ (${b.vorschlag.replace(h, "~")}).` : " Lege darin einen eigenen Ordner an.";
+    throw new HttpFehler(403, `„${b.name}“ ist als Vault zu groß: Kortex würde alles darin als Notizen behandeln.${wohin}`, { art: "zu-breit", vorschlag: b.vorschlag });
+  }
+}
+
 // → bereinigter absoluter Pfad (Symlinks aufgelöst) oder HttpFehler 400/403/409. Legt nichts an, ändert nichts.
 export function pruefeVaultPfad(pfad, optionenUndListe) {
-  const { vaults, ...opt } = objekt(optionenUndListe);
+  const { vaults, breit, ...opt } = objekt(optionenUndListe);
   const o = optionen(opt);
   if (typeof pfad !== "string" || !pfad.trim()) throw new HttpFehler(400, "Bitte einen vollständigen Ordnerpfad angeben");
   if (pfad.length > 1000) throw new HttpFehler(400, "Der Pfad ist zu lang.");
@@ -171,6 +207,7 @@ export function pruefeVaultPfad(pfad, optionenUndListe) {
   pruefeRegeln(lex, homeLex, supportLex);
   const echt = echterPfad(lex);
   pruefeRegeln(echt, versuchEchter(homeLex), versuchEchter(supportLex));
+  if (breit === true) pruefeBreit(lex, echt, o); // nur beim Anlegen, Öffnen, Klonen
   pruefeVorschauOrt(lex, echt);
 
   const alle = Array.isArray(vaults) ? vaults : ladeListe(o, false).liste.vaults;
@@ -188,12 +225,12 @@ export function pruefeVaultPfad(pfad, optionenUndListe) {
 // <home>/Brain; gibt es das schon, <home>/Brain 2, Brain 3 …
 export function standardOrdner(opt = {}) {
   const o = optionen(opt);
-  const basis = join(o.home, "Brain");
+  const basis = join(o.home, "Kortex");
   for (let n = 1; n < 1000; n++) {
     const p = n === 1 ? basis : `${basis} ${n}`;
     if (!gibtEs(p)) return p;
   }
-  throw new HttpFehler(409, "Es gibt schon zu viele Ordner namens „Brain“. Bitte wähle selbst einen Ordner.");
+  throw new HttpFehler(409, "Es gibt schon zu viele Ordner namens „Kortex“. Bitte wähle selbst einen Ordner.");
 }
 
 // ---------- Vertrauen vergessen ----------
@@ -596,7 +633,7 @@ async function starteRepo(pfad, dateien, nachricht, frist) {
 // → { pfad: bereinigter Zielpfad (Symlinks aufgelöst), lex: derselbe Pfad wie geschrieben (nur ~ und .. bereinigt) }
 const zielOrdner = (ordner, o, liste) => {
   const roh = ordner === undefined || ordner === null ? standardOrdner(o) : ordner;
-  return { pfad: pruefeVaultPfad(roh, { vaults: liste.vaults, ...o }), lex: lexikalisch(roh, o) };
+  return { pfad: pruefeVaultPfad(roh, { vaults: liste.vaults, breit: true, ...o }), lex: lexikalisch(roh, o) };
 };
 
 // art "vorlage": Brain-Gerüst + git init + erster Commit „Brain angelegt“; art "leer": nur .gitignore + Commit „Vault angelegt“.
@@ -618,7 +655,7 @@ export async function neuesVault(eingabe, opt = {}) {
       vergissVertrauen(o, [pfad, lex], "Es wurde nichts angelegt."); // der Ort ist neu oder leer: eine alte Freigabe für ihn erbt der neue Vault nie
       if (art === "vorlage") {
         const dateien = await legeVorlageAn(pfad, { name: vaultName, heute: o.heute || berlinHeute() });
-        await starteRepo(pfad, dateien, "Brain angelegt", frist);
+        await starteRepo(pfad, dateien, "Kortex-Vault angelegt", frist);
       } else {
         writeFileSync(join(pfad, ".gitignore"), GITIGNORE, { flag: "wx" });
         await starteRepo(pfad, [".gitignore"], "Vault angelegt", frist);
@@ -682,7 +719,7 @@ export async function oeffneOrdner(eingabe, opt = {}) {
   const gitWunsch = (e.gitEinschalten !== undefined ? e.gitEinschalten : e.git) === true;
   const o = optionen(opt);
   const { liste } = ladeListe(o, false);
-  const p = pruefeVaultPfad(pfad, { vaults: liste.vaults, ...o });
+  const p = pruefeVaultPfad(pfad, { vaults: liste.vaults, breit: true, ...o });
   if (!istOrdner(p)) throw new HttpFehler(404, "Diesen Ordner gibt es nicht (mehr).");
   return mitSperre(p, async () => {
     const frist = neueFrist(gesamtfrist(o));

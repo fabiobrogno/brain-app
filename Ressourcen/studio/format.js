@@ -80,7 +80,7 @@ export function wortAnzahl(text) {
 export const pluralisiere = (n, eins, viele) => `${n} ${n === 1 ? eins : viele}`;
 export function hexNachRgb(hex) { const m = /^#([0-9a-f]{6})$/i.exec(hex || ""); return m ? [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16)) : null; }
 
-// Anzeigenamen der bekannten Brain-Typen; sonst erster Buchstabe groß
+// Anzeigenamen der bekannten Seitentypen; sonst erster Buchstabe groß
 const TYP_NAMEN = { thema: "Thema", quelle: "Quelle", entitaet: "Entität", projekt: "Projekt", person: "Person", entscheidung: "Entscheidung", vorschlag: "Vorschlag", ueberblick: "Überblick", notiz: "Notiz" };
 export function typName(name) {
   const s = String(name || "");

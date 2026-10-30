@@ -32,7 +32,10 @@ private final class FalscheDienste: EinrichtungsDienste, @unchecked Sendable {
     var sicherungVerbinden: [Result<SicherungErgebnis, EinrichtungsFehler>] = [.success(.gesendet)]
     var kis: [Result<[KiProgramm], EinrichtungsFehler>] = [.success([claudeDa])]
     var verbinden: [Result<KiVerbindung, EinrichtungsFehler>] = [.success(.verbunden)]
-    var probeAntworten: [Result<ProbeErgebnis, EinrichtungsFehler>] = [.success(ProbeErgebnis(frage: "Brain", treffer: ["Willkommen"]))]
+    var probeAntworten: [Result<ProbeErgebnis, EinrichtungsFehler>] = [.success(ProbeErgebnis(frage: "Vault", treffer: ["Willkommen"]))]
+    var trennen: [Result<KiTrennung, EinrichtungsFehler>] = [.success(.getrennt)]
+    var konfigurationAntwort: Result<String, EinrichtungsFehler> = .success("{ \"mcpServers\": { \"brain\": {} } }")
+    private(set) var trenneProfile: [String?] = []
     private(set) var verbindeUmstellen: [Bool] = []
     private(set) var verbindeProfile: [String?] = []
     /// Verdrahtung: der Stand, den die Dienste melden; `verdrahte` ändert ihn wie die echte Werkstatt (oder wirft der Reihe nach `verdrahtenFehler`).
@@ -95,6 +98,12 @@ private final class FalscheDienste: EinrichtungsDienste, @unchecked Sendable {
         verbindeProfile.append(profil)
         return try nimm(&verbinden).get()
     }
+    func trenne(_ ziel: KiZiel, profil: String?) async throws -> KiTrennung {
+        merke("trenne \(ziel.rawValue)")
+        trenneProfile.append(profil)
+        return try nimm(&trennen).get()
+    }
+    func konfiguration() async throws -> String { merke("konfiguration"); return try konfigurationAntwort.get() }
     func verdrahtungsStand() async throws -> VerdrahtungsStand {
         merke("verdrahtungsStand")
         if let f = verdrahtungLesefehler { throw f }
@@ -445,8 +454,8 @@ private func beiKi(_ a: Aufbau) async {
     await a.ablauf.weiter()
     #expect(a.zustand.stand(.ki) == .erledigt)
     #expect(a.zustand.aktuell == nil, "die Probe läuft beim Betreten von selbst und gelingt")
-    #expect(a.anzeige.probe == .ok(ProbeErgebnis(frage: "Brain", treffer: ["Willkommen"])))
-    #expect(a.dienste.aufrufe.contains("probe Brain"))
+    #expect(a.anzeige.probe == .ok(ProbeErgebnis(frage: "Vault", treffer: ["Willkommen"])))
+    #expect(a.dienste.aufrufe.contains("probe Vault"))
 }
 
 @Test @MainActor func fremderEintragFragtErstUndStelltNurMitJaUm() async {
@@ -536,7 +545,7 @@ private func beiKi(_ a: Aufbau) async {
     let a = Aufbau()
     await beiKi(a)
     a.dienste.probeAntworten = [.failure(EinrichtungsFehler("Der MCP-Server hat nicht geantwortet.", status: 502)),
-                                .success(ProbeErgebnis(frage: "Brain", treffer: []))]
+                                .success(ProbeErgebnis(frage: "Vault", treffer: []))]
     await a.ablauf.verbinde(.claude)
     await a.ablauf.weiter()
     #expect(a.zustand.aktuell == .probe)
@@ -583,12 +592,12 @@ private func beiKi(_ a: Aufbau) async {
 
     // neue Sitzung, derselbe Speicher; git/Vault/GitHub kommen wieder aus der Wirklichkeit
     a.neuerAblauf()
-    a.dienste.probeAntworten = [.success(ProbeErgebnis(frage: "Brain", treffer: ["x"]))]
+    a.dienste.probeAntworten = [.success(ProbeErgebnis(frage: "Vault", treffer: ["x"]))]
     await a.ablauf.starte()
     #expect(a.zustand.stand(.ki) == .erledigt, "KI-Verbindung ist gemerkt")
     #expect(a.dienste.anzahl("erkenneKIs") == 1, "die KI-Suche lief nur in der ersten Sitzung")
     #expect(a.zustand.istFertig)
-    #expect(a.anzeige.probe == .ok(ProbeErgebnis(frage: "Brain", treffer: ["x"])))
+    #expect(a.anzeige.probe == .ok(ProbeErgebnis(frage: "Vault", treffer: ["x"])))
 }
 
 @Test @MainActor func wiederaufnahmeMerktWasDerNutzerUebersprungenHat() async {
@@ -701,7 +710,7 @@ private func beiKi(_ a: Aufbau) async {
     await a.ablauf.weiter()
     #expect(a.zustand.istFertig)
     await a.ablauf.zurueck() // von „fertig“ zur Probe: läuft noch einmal
-    #expect(a.dienste.anzahl("probe Brain") == 2)
+    #expect(a.dienste.anzahl("probe Vault") == 2)
     #expect(a.zustand.istFertig)
 }
 
@@ -1203,4 +1212,85 @@ private let gesperrtText = "Git ist für dieses Brain gesperrt, bis du ihm im St
     a.dienste.verdrahtung.profile = [profilPrivat]
     await a.ablauf.starte()
     #expect(a.anzeige.verdrahtung.auswahl == [profilPrivat.pfad])
+}
+
+// MARK: KI trennen, Konfiguration kopieren, Beispiel-Vault
+
+@MainActor private func mitVerbundenemClaude() async -> Aufbau {
+    let a = Aufbau()
+    a.dienste.vault = vaultA
+    a.dienste.konto = [.success(GitHubKonto(verfuegbar: true, angemeldet: true, login: "fabio"))]
+    await a.ablauf.starte()
+    await a.ablauf.verbinde(.claude)
+    return a
+}
+
+@Test @MainActor func trennenNimmtDenEintragHerausUndZeigtEinenHinweis() async {
+    let a = await mitVerbundenemClaude()
+    #expect(a.anzeige.kis.first?.status == .verbunden(schon: false))
+    await a.ablauf.trenne(.claude)
+    #expect(a.dienste.aufrufe.contains("trenne claude"))
+    #expect(a.anzeige.kis.first?.status == .bereit, "danach lässt sich wieder verbinden")
+    #expect(a.anzeige.kiHinweise[.claude]?.contains("Getrennt") == true)
+    #expect(a.anzeige.kiTrennFehler[.claude] == nil)
+    #expect(!a.ablauf.kannWeiter(.ki), "ohne verbundene KI geht es nicht weiter")
+    await a.ablauf.verbinde(.claude)
+    #expect(a.anzeige.kiHinweise[.claude] == nil, "der Hinweis verschwindet beim nächsten Verbinden")
+}
+
+@Test @MainActor func trennenGehtInJedemGewaehltenClaudeProfil() async {
+    let a = Aufbau()
+    a.dienste.vault = vaultA
+    a.dienste.konto = [.success(GitHubKonto(verfuegbar: true, angemeldet: true, login: "fabio"))]
+    a.dienste.verdrahtung.profile = [profilStandard, profilPrivat]
+    await a.ablauf.starte()
+    a.ablauf.waehleProfil(profilPrivat.pfad, gewaehlt: true)
+    await a.ablauf.verbinde(.claude)
+    await a.ablauf.trenne(.claude)
+    #expect(a.dienste.trenneProfile == [profilStandard.pfad, profilPrivat.pfad])
+}
+
+@Test @MainActor func trennenFehlerBleibtSichtbarUndDieKiBleibtVerbunden() async {
+    let a = await mitVerbundenemClaude()
+    a.dienste.trennen = [.failure(EinrichtungsFehler("Bei Claude Code steht unter dem Namen „brain“ ein anderer Eintrag.", status: 409, art: "anders"))]
+    await a.ablauf.trenne(.claude)
+    #expect(a.anzeige.kis.first?.status == .verbunden(schon: false))
+    #expect(a.anzeige.kiTrennFehler[.claude]?.contains("anderer Eintrag") == true)
+}
+
+@Test @MainActor func trennenOhneVerbindungTutNichts() async {
+    let a = Aufbau()
+    a.dienste.vault = vaultA
+    a.dienste.konto = [.success(GitHubKonto(verfuegbar: true, angemeldet: true, login: "fabio"))]
+    await a.ablauf.starte()
+    await a.ablauf.trenne(.claude)
+    #expect(a.dienste.anzahl("trenne claude") == 0)
+}
+
+@Test @MainActor func konfigurationKommtVonDerWerkstattUndFehlerSindSichtbar() async {
+    let a = Aufbau()
+    #expect(await a.ablauf.holeKonfiguration()?.contains("mcpServers") == true)
+    #expect(a.anzeige.konfiguration == .offen)
+    a.dienste.konfigurationAntwort = .failure(EinrichtungsFehler("Der MCP-Server wurde nicht gefunden.", status: 404))
+    #expect(await a.ablauf.holeKonfiguration() == nil)
+    #expect(a.anzeige.konfiguration == .fehler("Der MCP-Server wurde nicht gefunden."))
+}
+
+@Test @MainActor func beispielVaultWirdAusDerVorlageAngelegtUndGekennzeichnet() async {
+    let a = Aufbau()
+    a.dienste.vaultAntworten = [.success(VaultInfo(name: BeispielVault.name, pfad: "/Users/test/Kortex-Beispiel", git: true))]
+    await a.ablauf.starte()
+    await a.ablauf.legeBeispielVaultAn(ordner: "/Users/test/Kortex-Beispiel")
+    #expect(a.dienste.aufrufe.contains("legeVaultAn vorlage Kortex-Beispiel /Users/test/Kortex-Beispiel"))
+    #expect(a.anzeige.vaultIstBeispiel)
+    #expect(a.zustand.stand(.vault) == .erledigt)
+}
+
+@Test @MainActor func scheitertDasBeispielIstEsNichtAlsBeispielGekennzeichnet() async {
+    let a = Aufbau()
+    a.dienste.vaultAntworten = [.failure(EinrichtungsFehler("Der Ordner ist nicht leer.", status: 409))]
+    await a.ablauf.starte()
+    await a.ablauf.legeBeispielVaultAn(ordner: "/Users/test/Kortex-Beispiel")
+    #expect(!a.anzeige.vaultIstBeispiel)
+    #expect(a.zustand.fehler[.vault] != nil)
 }

@@ -39,7 +39,7 @@ if (args.includes("--stand")) {
   const wert = lies();
   if (!wert) console.log("Die Git-Prüfung war nicht eingeschaltet.");
   else if (!istKortex(wert, sollKern())) console.log(`Der Git-Hook-Ordner (${wert}) gehört nicht zu Kortex — ich lasse ihn unverändert.`);
-  else { git("config", "--local", "--unset", "core.hooksPath"); console.log("Brain-Hooks aus: core.hooksPath entfernt."); }
+  else { git("config", "--local", "--unset", "core.hooksPath"); console.log("Kortex-Hooks aus: core.hooksPath entfernt."); }
 } else {
   // Ohne stabilen Kern-Pfad (KORTEX_KERN_PFAD) wird nichts eingetragen: Exit 3 mit klarer Meldung.
   const HOOKS = join(kernStabilOderEnde(), "git-hooks");
@@ -53,5 +53,5 @@ if (args.includes("--stand")) {
   }
   execFileSync(GIT, ["-C", V, "config", "core.hooksPath", HOOKS.split("\\").join("/")], { windowsHide: true });
   const aktiv = execFileSync(GIT, ["-C", V, "config", "core.hooksPath"], { encoding: "utf8", windowsHide: true }).trim();
-  console.log(`Brain-Hooks aktiv: ${aktiv}`);
+  console.log(`Kortex-Hooks aktiv: ${aktiv}`);
 }

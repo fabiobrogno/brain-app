@@ -113,7 +113,7 @@ if (aufruf && aufruf === realpathSync(selbst)) {
     if (process.argv.includes("--json")) console.log(JSON.stringify(e));
     else {
       console.log(`Messlatte ${e.datum}: Treffer ${e.positiv}, still ${e.still}, Kontrolle ${e.kontrolle}, Holdout ${e.holdout}, p95 ${e.p95ms} ms — ${e.ok ? "im Ziel" : "unter Ziel"}.`);
-      console.log("Gespeichert in .logs/hint-eval.log (Verlauf im Gehirn unter Analyse).");
+      console.log("Gespeichert in .logs/hint-eval.log (Verlauf in der Ansicht unter Analyse).");
     }
   } catch (e) {
     console.error(String(e?.message || e).split("\n")[0]);

@@ -90,7 +90,7 @@ export function einrichten(vault, wahl) {
   try {
     // Ohne git-Identität (frischer Rechner, wiederhergestellter Vault) scheiterte der Commit sonst still —
     // gleicher Rückfall wie in install.mjs, nur für diesen Vault.
-    try { git(vault, "config", "user.email"); } catch { git(vault, "config", "user.email", "brain@localhost"); git(vault, "config", "user.name", "Second Brain"); }
+    try { git(vault, "config", "user.email"); } catch { git(vault, "config", "user.email", "brain@localhost"); git(vault, "config", "user.name", "Kortex"); }
     git(vault, "add", "--", "brain.config.json");
     git(vault, "commit", "-q", "-m", "brain: Sicherung eingerichtet", "--", "brain.config.json");
   } catch {}

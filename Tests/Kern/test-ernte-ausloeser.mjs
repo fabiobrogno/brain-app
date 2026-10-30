@@ -214,12 +214,12 @@ test("session-start (v0.4): Zeilen für wartende Lektionen und Entscheidungen; V
   r = ss();
   const zeilen = r.stdout.trim().split(/\r?\n/);
   assert.deepEqual(zeilen, [
-    "1 neuer Vorschlag — im Gehirn prüfen („zeig mir mein Brain“)",
+    "1 neuer Vorschlag — in der Ansicht prüfen („zeig mir meinen Vault“)",
     "1 Entscheidung wartet auf Umsetzung — /ingest",
-    "2 Lektionen warten auf Übernahme — im Gehirn unter Vorschläge",
+    "2 Lektionen warten auf Übernahme — in der Ansicht unter Vorschläge",
   ], r.stdout);
   assert.ok(!/übernommene Lektion/.test(r.stdout), "nicht in der Spec (0-Token-Regel, W1-Review #7)");
-  assert.ok(!/Brain-Inbox/.test(r.stdout), "_entscheidungen/_lektionen/_pflege zählen nicht als Inbox");
+  assert.ok(!/Kortex-Inbox/.test(r.stdout), "_entscheidungen/_lektionen/_pflege zählen nicht als Inbox");
 });
 
 test("--art stand nur mit staendeIntervallStunden > 0; fehlendes Transkript → nichts; kaputtes stdin → Exit 0 still", async () => {
@@ -334,7 +334,7 @@ test("session-start (v0.4): Wochen-Zeile nur aus dem Cache (0 Wartezeit); ohne V
   // ohne Cache: keine Wochen-Zeile, keine Marke — aber die Konfliktzeile
   let r = ss();
   assert.equal(r.status, 0);
-  assert.deepEqual(r.stdout.trim().split(/\r?\n/), ["Brain-Wiki: offene Konflikte auf 1 Seite(n) — Entscheidung nötig (/brain-lint)."]);
+  assert.deepEqual(r.stdout.trim().split(/\r?\n/), ["Kortex-Wiki: offene Konflikte auf 1 Seite(n) — Entscheidung nötig (/brain-lint)."]);
   assert.ok(!existsSync(join(v, ".logs", "pflege-woche")), "ohne Cache keine Marke");
   // beide Kästen entschieden → keine Konfliktzeile mehr (Auftrag wartet, eigene Zeile)
   schreibeEntscheidung(v, { seite: "09_wiki/geräte/drucker.md", nr: 1, wahl: "a" });
@@ -358,12 +358,12 @@ test("session-start (v0.4): Wochen-Zeile nur aus dem Cache (0 Wartezeit); ohne V
   r = ss();
   assert.ok(Date.now() - t0 < 5000);
   const zeilen = r.stdout.trim().split(/\r?\n/);
-  assert.deepEqual(zeilen, ["Brain-Woche: 2 abgelaufen · 1 Konflikt · 1 Lektion wartet — im Gehirn unter Pflege", "2 Entscheidungen warten auf Umsetzung — /ingest"], r.stdout);
+  assert.deepEqual(zeilen, ["Kortex-Woche: 2 abgelaufen · 1 Konflikt · 1 Lektion wartet — in der Ansicht unter Pflege", "2 Entscheidungen warten auf Umsetzung — /ingest"], r.stdout);
   assert.ok(existsSync(join(v, ".logs", "pflege-woche")), "Marke nach Ausgabe");
   // innerhalb der Woche: wieder die Konfliktzeile statt der Wochen-Zeile
   r = ss();
-  assert.match(r.stdout, /^Brain-Wiki: offene Konflikte auf 1 Seite\(n\)/m);
-  assert.ok(!/Brain-Woche/.test(r.stdout));
+  assert.match(r.stdout, /^Kortex-Wiki: offene Konflikte auf 1 Seite\(n\)/m);
+  assert.ok(!/Kortex-Woche/.test(r.stdout));
   void t;
 });
 
@@ -404,7 +404,7 @@ test("W7 Ende-zu-Ende: echte w7.mjs, zweimal ausgelöst (PreCompact + SessionEnd
   const zeile = (o) => JSON.stringify({ cwd: "/projekte/garten", ...o });
   writeFileSync(tr, [
     zeile({ type: "user", uuid: "p1", timestamp: "2026-10-21T08:00:00.000Z", message: { role: "user", content: "Wann gieße ich das Beet?" } }),
-    zeile({ type: "attachment", attachment: { type: "hook_success", hookEvent: "UserPromptSubmit", content: `Brain-Treffer (lokal, ungelesen — nur öffnen, wenn für die Aufgabe relevant):\n- ${v}/09_wiki/garten/thema_beet.md — Beet` } }),
+    zeile({ type: "attachment", attachment: { type: "hook_success", hookEvent: "UserPromptSubmit", content: `Kortex-Treffer (lokal, ungelesen — nur öffnen, wenn für die Aufgabe relevant):\n- ${v}/09_wiki/garten/thema_beet.md — Beet` } }),
     zeile({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "Um 7 Uhr." }] } }),
     zeile({ type: "user", uuid: "p2", timestamp: "2026-10-21T08:01:00.000Z", message: { role: "user", content: "Nein, das stimmt nicht." } }),
   ].join("\n") + "\n");

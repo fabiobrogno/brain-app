@@ -52,7 +52,7 @@ import { traumSchritt, traumBerichtZeilen } from "./tageslauf/traum.mjs";
 const TAG = 86400e3;
 const DAUERHAFT = new Set(["seite-unlesbar", "seite-fehlt", "kritisch", "kein-cluster", "auftrag-unbekannt", "pruefung-rot", "schreiben-fehlgeschlagen"]);
 const MERGE_TEXT = {
-  "vault-nicht-auf-main": "Das Brain steht nicht auf main — Übernahmen beim nächsten Lauf",
+  "vault-nicht-auf-main": "Der Vault steht nicht auf main — Übernahmen beim nächsten Lauf",
   konflikt: "Eine Zielseite wurde inzwischen geändert — Übernahmen beim nächsten Lauf",
   "lokale-aenderung": "Ungespeicherte Änderungen an einer Zielseite — Übernahmen beim nächsten Lauf",
 };

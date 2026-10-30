@@ -97,7 +97,7 @@ RC=0; OUT=$(BRAIN_VAULT="$V" node "$B" zeig --stopp 2>&1) || RC=$?
 warte_bis "! lebt $PID" || { echo "FAIL: Dienst läuft nach --stopp weiter"; exit 1; }
 [ -f "$DJ" ] && { echo "FAIL: dienst.json nach --stopp noch da"; exit 1; }
 OUT=$(BRAIN_VAULT="$V" node "$K/doctor.mjs" "$V" 2>&1)
-echo "$OUT" | grep -qF "OK Ansicht-Dienst — aus (startet bei ‚zeig mir mein Brain‘)" || { echo "FAIL: doctor-Zeile (aus) fehlt: $OUT"; exit 1; }
+echo "$OUT" | grep -qF "OK Ansicht-Dienst — aus (startet bei ‚zeig mir meinen Vault‘)" || { echo "FAIL: doctor-Zeile (aus) fehlt: $OUT"; exit 1; }
 # --stopp ohne laufenden Dienst: freundlich, Exit 0
 RC=0; OUT=$(BRAIN_VAULT="$V" node "$B" zeig --stopp 2>&1) || RC=$?
 [ "$RC" = 0 ] || { echo "FAIL: zweites --stopp rc=$RC: $OUT"; exit 1; }

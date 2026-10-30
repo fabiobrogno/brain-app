@@ -206,10 +206,10 @@ private func dienste(_ w: FalscheWerkstatt, pfade: AppPfade? = nil, home: URL? =
 }
 
 @Test func probeLiefertTrefferTitelOderPfade() async throws {
-    let w = FalscheWerkstatt(antwort(#"{"frage":"Brain","treffer":[{"titel":"Willkommen","pfad":"a.md"},{"titel":"","pfad":"b.md"},{"pfad":"c.md"}],"text":"…"}"#))
-    let r = try await dienste(w).probe(frage: "Brain")
-    #expect(r == ProbeErgebnis(frage: "Brain", treffer: ["Willkommen", "b.md", "c.md"]))
-    #expect(w.aufrufe.first == .init(methode: "POST", pfad: "/api/probe", body: ["frage": "Brain"]))
+    let w = FalscheWerkstatt(antwort(#"{"frage":"Vault","treffer":[{"titel":"Willkommen","pfad":"a.md"},{"titel":"","pfad":"b.md"},{"pfad":"c.md"}],"text":"…"}"#))
+    let r = try await dienste(w).probe(frage: "Vault")
+    #expect(r == ProbeErgebnis(frage: "Vault", treffer: ["Willkommen", "b.md", "c.md"]))
+    #expect(w.aufrufe.first == .init(methode: "POST", pfad: "/api/probe", body: ["frage": "Vault"]))
 }
 
 // MARK: Ziele

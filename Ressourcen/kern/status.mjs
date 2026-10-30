@@ -26,11 +26,11 @@ export async function brainStatus(vault, { jetzt = Date.now() } = {}) {
   try { istOrdner = statSync(vault).isDirectory(); } catch { /* fehlt */ }
   if (!istOrdner) {
     fehler = true;
-    meldungen.push("Der Brain-Ordner wurde nicht gefunden.");
+    meldungen.push("Der Vault-Ordner wurde nicht gefunden.");
   }
   if (configFehler(vault)) {
     fehler = true;
-    meldungen.push("Die Einstellungsdatei brain.config.json ist beschädigt — sag „repariere meine Brain-Einstellungen“.");
+    meldungen.push("Die Einstellungsdatei brain.config.json ist beschädigt — sag „repariere meine Kortex-Einstellungen“.");
   }
   let vorschlaege = 0, konflikte = 0, abgelaufen = 0, zuTun = 0;
   try { vorschlaege = anzahlVorschlaege(vault); } catch { /* ohne Vorschlagsordner: 0 */ }
@@ -62,7 +62,7 @@ export async function brainStatus(vault, { jetzt = Date.now() } = {}) {
 export function statusText(s) {
   const z = s.zahlen;
   return [
-    `${SYMBOL[s.zustand] || "?"} Brain ${s.version}`,
+    `${SYMBOL[s.zustand] || "?"} Kortex ${s.version}`,
     `Vorschläge: ${z.vorschlaege} · Konflikte: ${z.konflikte} · abgelaufen: ${z.abgelaufen} · zu tun: ${z.zuTun}`,
     ...(s.tageslauf && s.tageslauf.schalter !== "aus"
       ? [`Tageslauf: ${s.tageslauf.schalter} · zuletzt ${s.tageslauf.zeit ? s.tageslauf.zeit.slice(0, 10) : "noch nie"}${s.tageslauf.status ? ` (${s.tageslauf.status})` : ""} · Rückfragen offen: ${z.rueckfragen ?? 0} · Autostufe ${s.tageslauf.autostufe}${s.tageslauf.lernmodus ? " (Lernmodus)" : ""}`]

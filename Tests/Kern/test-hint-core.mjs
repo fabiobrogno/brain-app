@@ -149,7 +149,7 @@ const w6Treffer = (page, extra = {}) => [{ page, score: 0.6, description: "Gieß
 test("W6: ersetzte Seite nie als aktuell — „ersetzt → [[neu]]“; ungültig → „(Nachfolger fehlt)“; nur echtes Frontmatter; Import unverändert", () => {
   const v = w6Vault();
   assert.equal(format(w6Treffer("09_wiki/garten/alt.md"), { vault: v }),
-    `Brain-Treffer (lokal, ungelesen — nur öffnen, wenn für die Aufgabe relevant):\n- ${anzeigePfad(v, "09_wiki/garten/alt.md")} — ersetzt → [[thema_beet_neu]], nicht mehr aktuell`);
+    `Kortex-Treffer (lokal, ungelesen — nur öffnen, wenn für die Aufgabe relevant):\n- ${anzeigePfad(v, "09_wiki/garten/alt.md")} — ersetzt → [[thema_beet_neu]], nicht mehr aktuell`);
   assert.match(format(w6Treffer("09_wiki/garten/kaputt.md"), { vault: v }), / — ersetzt → \(Nachfolger fehlt\), nicht mehr aktuell$/);
   assert.match(format(w6Treffer("09_wiki/garten/text.md"), { vault: v }), /text\.md — Gießplan alt$/);
   assert.match(format(w6Treffer("09_wiki/garten/alt.md", { import: true }), { vault: v }), /alt\.md — Gießplan alt$/);
