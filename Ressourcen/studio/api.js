@@ -59,6 +59,8 @@ export const api = {
   aufgaben: () => anfrage("GET", "/api/aufgaben"),
   aufgabeNeu: (daten) => anfrage("POST", "/api/aufgaben", daten),
   aufgabeAendern: (pfad, daten) => anfrage("PATCH", "/api/aufgaben/" + pfad.split("/").map(encodeURIComponent).join("/"), daten),
+  // ---- Live-Aktualisierung: Long-Poll auf Ereignisse der Werkstatt (ohne seit nur der Grundstand; sonst bis zu warte Sekunden)
+  ereignisse: (seit, epoche, warte) => anfrage("GET", "/api/ereignisse" + q({ seit, epoche, warte })),
   suche: (frage) => anfrage("GET", "/api/suche" + q({ q: frage })),
   pruefung: (pfad) => anfrage("GET", "/api/pruefung" + q({ pfad })),
   gesundheit: () => anfrage("GET", "/api/gesundheit"),

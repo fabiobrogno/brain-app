@@ -17,6 +17,7 @@ import { erzeugeGitHub } from "../gemeinsam/github.mjs";
 import { sicherungStand } from "../gemeinsam/gitsicherung.mjs";
 import { erzeugeVerdrahtung } from "./verdrahtung.mjs";
 import { erzeugeUmstellung } from "./umstellung.mjs";
+import { erzeugeEreignisse } from "./ereignisse.mjs";
 import { profilZuPfad, mitProfil, mitCodexHome } from "./profile.mjs";
 import { erzeugeKonten } from "./konten.mjs";
 import { STUFEN } from "../gemeinsam/ki-konten.mjs";
@@ -105,12 +106,15 @@ export function erzeugeHandler(o) {
   // Start: Vault-Argument hat Vorrang; sonst der aktive Vault aus vaults.json; sonst ohne Vault (Willkommen).
   let aktuell = null;
   const oeffne = (pfad) => oeffneVault(pfad, vaultOpt);
-  const wechsleZu = (pfad) => { aktuell = pfad ? oeffne(pfad) : null; };
+  // Live-Aktualisierung (ereignisse.mjs): beobachtet den offenen Vault, sobald die Oberfläche zum ersten Mal nach Ereignissen fragt. o.ereignisse = Einstellungen für Tests.
+  const ereignisse = erzeugeEreignisse({ support: vaultOpt.support || supportOrdner(), ...(o.ereignisse || {}) });
+  const wechsleZu = (pfad) => { aktuell = pfad ? oeffne(pfad) : null; ereignisse.richteAuf(aktuell ? aktuell.wurzel : null); };
   if (o.vault) aktuell = oeffne(o.vault); // falscher Ordner → HttpFehler wie bisher
   else {
     const p = vaultsFn.aktiverVaultPfad(optV());
     if (p) { try { aktuell = oeffne(p); } catch { aktuell = null; } }
   }
+  ereignisse.richteAuf(aktuell ? aktuell.wurzel : null);
 
   // KI-Konten (docs/plaene/ki-konten.md): welche Konten gibt es, was darf jedes in welchem Vault. Die Werkstatt gleicht die Liste beim Start der App ab (werkstatt.mjs)
   // und bei jedem Aufruf von /api/ki/konten. o.kontenErkennung / o.kontenVerbunden / o.kontenHome: Ersatz für Tests (nie die echten Orte des Rechners lesen).
@@ -212,6 +216,14 @@ export function erzeugeHandler(o) {
           throw new HttpFehler(409, "Der geöffnete Vault ist inzwischen ein anderer als der, für den die Frage galt. Es wurde nichts geändert — bitte noch einmal prüfen.", { art: "anderer-vault" });
         }
         return offen.vertrauen(e.erlauben);
+      }
+      // Live-Aktualisierung: Long-Poll auf Ereignisse. seit fehlt → nur den Stand nennen; sonst sofort, was nach <seit> kam, oder bis zu <warte> Sekunden warten.
+      case "/api/ereignisse": {
+        nur("GET");
+        if (v) { try { ereignisse.setzeAufgabenOrdner(await v.aufgabenOrdnerName()); } catch { /* Standardordner */ } }
+        const seit = q.get("seit"), warte = Number(q.get("warte") ?? 25);
+        if (seit !== null && seit !== "" && !/^\d{1,15}$/.test(seit)) throw new HttpFehler(400, "„seit“ ist eine Ereignis-Nummer.");
+        return ereignisse.warte({ seit: seit === null || seit === "" ? null : Number(seit), epoche: q.get("epoche") || null, warteMs: (Number.isFinite(warte) ? Math.max(0, warte) : 25) * 1000 });
       }
       case "/api/baum": nur("GET"); return V().baum();
       case "/api/datei":
@@ -623,16 +635,39 @@ export function erzeugeHandler(o) {
     }
     const q = query instanceof URLSearchParams ? query : new URLSearchParams(query || "");
     const v = aktuell; // dieser Vault gilt für die ganze Anfrage, auch wenn währenddessen gewechselt wird
+    // Schreibende Anfragen der Oberfläche sind keine „externen Änderungen“: Die Meldung wartet, bis die Anfrage fertig ist, und die berührten Dateien gelten als eigen.
+    const schreibt = methode !== "GET" && methode !== "HEAD";
+    if (schreibt) ereignisse.beginneEigenes();
+    let eigen = [], eigenKopf = false;
     try {
       const erg = await api(methode, pfad, q, body, v);
+      if (schreibt) { eigen = eigenePfade(pfad, body, erg); eigenKopf = /^\/api\/(git|posteingang|sicherung|vaults|umstellung)\//.test(pfad); }
       if (erg && erg.__stopp) return { ...json(200, { ok: true }), stopp: true };
       return json(200, erg === undefined ? { ok: true } : erg);
     } catch (e) {
+      if (schreibt) eigen = eigenePfade(pfad, body, null);
       if (e instanceof HttpFehler) return fehler(e.status, e.message, e.extra);
       return fehler(500, "Interner Fehler");
+    } finally {
+      if (schreibt) ereignisse.endeEigenes(eigen, { kopf: eigenKopf });
+      else if (/^\/api\/ki\/konten\/?$/.test(pfad)) ereignisse.markiereEigen(["@support/ki-konten.json"]); // der Abgleich beim Abruf schreibt die Liste selbst
     }
+  }
+  // Welche Dateien hat diese schreibende Anfrage (vermutlich) angefasst? Vault-relative Pfade aus Anfrage und Antwort, dazu die Dateien im Benutzerordner.
+  function eigenePfade(pfad, body, erg) {
+    const k = new Set();
+    const rel = (x) => { if (typeof x === "string" && x && !x.startsWith("/") && !x.includes("..") && x.length < 1000) k.add(x); };
+    let e = null;
+    try { e = body && body.length ? JSON.parse(body.toString("utf8")) : null; } catch { e = null; }
+    if (pfad.startsWith("/api/aufgaben/")) { try { rel(decodeURIComponent(pfad.slice("/api/aufgaben/".length))); } catch { /* ungültig */ } }
+    if (e && typeof e === "object") { rel(e.pfad); rel(e.ziel); if (e.platz && typeof e.platz === "object") { rel(e.platz.davor); rel(e.platz.danach); } }
+    if (erg && typeof erg === "object") { rel(erg.pfad); rel(erg.ziel); if (Array.isArray(erg.geaendert)) erg.geaendert.forEach(rel); }
+    if (/^\/api\/vertrauen\/?$/.test(pfad) || pfad.startsWith("/api/vaults")) k.add("@support/vertrauen.json");
+    if (/^\/api\/(ki|mcp)\//.test(pfad) || pfad.startsWith("/api/vaults")) k.add("@support/ki-konten.json");
+    return [...k];
   }
   behandle.aktuellerVaultPfad = () => (aktuell ? aktuell.wurzel : null);
   behandle.konten = konten; // werkstatt.mjs gleicht die Liste beim Start ab
+  behandle.ereignisse = ereignisse; // werkstatt.mjs beendet wartende Abrufe, bevor es sich schließt
   return behandle;
 }

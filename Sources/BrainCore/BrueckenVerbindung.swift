@@ -191,7 +191,7 @@ public actor BrueckenVerbindung {
     /// Zeitlimit je Pfad, immer etwas über der Gesamtfrist, die die Werkstatt selbst einhält (Studio-v2-Spec §8): Vault öffnen,
     /// neu anlegen und klonen (`/api/vaults/oeffnen`, `…/neu`, `…/klonen`; Node-Frist je 300 s) 330 s, Remote hinzufügen
     /// (`/api/git/remote`; Node-Gesamtfrist 120 s, darin Historien-Prüfung und erster Push) 150 s, Repository-Liste (`/api/github/repos`) 45 s, Commit (`/api/git/commit`;
-    /// Node-Frist 75 s) 90 s, Git-Abgleich (`/api/git/sync`) 400 s, übrige `/api/git/…` und `/api/posteingang/…` (enden in einem Commit) 90 s, Umstellung (P7): Probelauf, Phase A und Rückweg (`/api/umstellung/probelauf|phase-a|rueckweg`, Node-Frist je 45 min) 46 min, die übrigen `/api/umstellung/…` (Befund, Stand, Protokoll, Kopie löschen; Node-Frist 60 s) 75 s, alles andere 30 s. Die Zuordnung
+    /// Node-Frist 75 s) 90 s, Git-Abgleich (`/api/git/sync`) 400 s, Ereignis-Abruf (`/api/ereignisse`, Long-Poll bis 30 s) 40 s, übrige `/api/git/…` und `/api/posteingang/…` (enden in einem Commit) 90 s, Umstellung (P7): Probelauf, Phase A und Rückweg (`/api/umstellung/probelauf|phase-a|rueckweg`, Node-Frist je 45 min) 46 min, die übrigen `/api/umstellung/…` (Befund, Stand, Protokoll, Kopie löschen; Node-Frist 60 s) 75 s, alles andere 30 s. Die Zuordnung
     /// gilt für den Pfad ohne Query; die Einzelpfade nur für genau diesen Pfad (auch mit „/“ am Ende), nicht für Unterpfade.
     /// Läuft ein Limit ab, wird die Anfrage nie wiederholt (`darfWiederholen`): ein zweites POST könnte doppelt klonen oder pushen.
     public static func zeitlimit(fuerPfad pfad: String) -> Duration {
@@ -200,6 +200,7 @@ public actor BrueckenVerbindung {
         func ist(_ ziel: String) -> Bool { p == ziel || p == ziel + "/" }
         if ist("/api/vaults/oeffnen") || ist("/api/vaults/neu") || ist("/api/vaults/klonen") { return .seconds(330) }
         if ist("/api/git/sync") { return .seconds(400) }
+        if ist("/api/ereignisse") { return .seconds(40) } // Live-Aktualisierung: Long-Poll, die Werkstatt antwortet spätestens nach 30 s
         if ist("/api/umstellung/probelauf") || ist("/api/umstellung/phase-a") || ist("/api/umstellung/rueckweg") { return .seconds(46 * 60) } // Kopie anlegen und alle Schritte: Node-Frist 45 min
         if p.hasPrefix("/api/umstellung/") { return .seconds(75) } // Befund, Stand, Protokoll, Kopie löschen: Node-Frist 60 s
         if ist("/api/git/remote") { return .seconds(150) }
