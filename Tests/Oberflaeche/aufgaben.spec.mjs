@@ -153,11 +153,18 @@ test("Tastatur: Alt+Pfeile verschieben, Pfeile wechseln die Karte, Enter öffnet
   await expect.poll(() => feld(vault, p.b, "status")).toBe("in-arbeit");
   await page.keyboard.press("Alt+ArrowUp");
   await expect.poll(async () => (await titelIn(page, "in-arbeit")).join("|")).toBe("Steuer vorbereiten|Website-Text schreiben");
+  // Jeder Schritt wartet, bis die Datei den neuen Status trägt und die Karte wieder den Fokus hat: zwei Tasten hintereinander gingen sonst ins Leere (Karte wird gerade neu gezeichnet)
+  const schiebe = async (taste, soll) => {
+    await page.keyboard.press(taste);
+    await expect.poll(() => feld(vault, p.b, "status")).toBe(soll);
+    await expect(karte(page, p.b)).toBeFocused();
+  };
+  const davor = await feld(vault, p.b, "status");
   await page.keyboard.press("Alt+ArrowRight");
-  await page.keyboard.press("Alt+ArrowRight");
-  await expect.poll(() => feld(vault, p.b, "status")).toBe("erledigt");
-  await page.keyboard.press("Alt+ArrowLeft");
-  await expect.poll(() => feld(vault, p.b, "status")).toBe("warten");
+  await expect.poll(() => feld(vault, p.b, "status")).not.toBe(davor);
+  await expect(karte(page, p.b)).toBeFocused();
+  await schiebe("Alt+ArrowRight", "erledigt");
+  await schiebe("Alt+ArrowLeft", "warten");
   // Enter öffnet die Datei im Editor
   await page.keyboard.press("Enter");
   await expect(page.locator(".cm-content")).toContainText("Datei-Kopf"); // der Kopf der Aufgabe, im Editor eingeklappt
