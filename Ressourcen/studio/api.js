@@ -145,6 +145,12 @@ export const api = {
   umstellungRueckwegListe: () => anfrage("POST", "/api/umstellung/rueckweg", {}),
   umstellungRueckweg: ({ schritte, alles } = {}) => anfrage("POST", "/api/umstellung/rueckweg", { bestaetigt: true, ...(alles ? { alles: true } : { schritte }) }),
   umstellungKopieLoeschen: () => anfrage("POST", "/api/umstellung/kopie-loeschen", { bestaetigt: true }),
+  // Abschluss (P7d): Tor ohne bestaetigt = nur lesend (Plan + Freigabe-Tor); Probelauf und Aufräumen erst nach dem Klick. Angebote: Papierkorb statt Löschen, nur mit bestaetigt.
+  umstellungPhaseBTor: (entscheidungen) => anfrage("POST", "/api/umstellung/phase-b", { entscheidungen }),
+  umstellungPhaseBProbelauf: (entscheidungen) => anfrage("POST", "/api/umstellung/phase-b", { probelauf: true, bestaetigt: true, entscheidungen }),
+  umstellungPhaseB: (entscheidungen) => anfrage("POST", "/api/umstellung/phase-b", { bestaetigt: true, entscheidungen }),
+  umstellungAngebote: () => anfrage("GET", "/api/umstellung/aufraeumen"),
+  umstellungAufraeumen: ({ was, name }) => anfrage("POST", "/api/umstellung/aufraeumen", { was, ...(name ? { name } : {}), bestaetigt: true }),
 };
 
 // Fehler „Vault noch nicht als deiner bestätigt“ (Workspace-Trust): die Werkstatt antwortet 409 mit art „nicht-vertraut“; dort hat die Umstellung nichts verändert.

@@ -81,6 +81,7 @@ import Foundation
     #expect(BrueckenVerbindung.zeitlimit(fuerPfad: "/api/sicherung/bereit") == .seconds(90))
     #expect(BrueckenVerbindung.zeitlimit(fuerPfad: "/api/umstellung/probelauf") == .seconds(46 * 60), "der Probelauf kopiert den Vault und braucht Minuten")
     #expect(BrueckenVerbindung.zeitlimit(fuerPfad: "/api/umstellung/phase-a") == .seconds(46 * 60))
+    #expect(BrueckenVerbindung.zeitlimit(fuerPfad: "/api/umstellung/phase-b") == .seconds(46 * 60), "Phase B kopiert im Probelauf den Vault und notfalls den alten Werkzeug-Ordner über eine Laufwerksgrenze")
     #expect(BrueckenVerbindung.zeitlimit(fuerPfad: "/api/umstellung/rueckweg/") == .seconds(46 * 60))
     #expect(BrueckenVerbindung.zeitlimit(fuerPfad: "/api/umstellung/befund") == .seconds(75))
     #expect(BrueckenVerbindung.zeitlimit(fuerPfad: "/api/umstellung/stand?x=1") == .seconds(75))
