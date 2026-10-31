@@ -103,7 +103,7 @@ export function erzeugeEreignisse(o = {}) {
   const eigen = new Map();    // Schlüssel → { hash, bis }
 
   const supportPfad = (name) => (o.support ? join(o.support, name) : null);
-  const SUPPORT_TYP = { "vertrauen.json": "vertrauen", "ki-konten.json": "konten", "einstellungen.json": "einstellungen" };
+  const SUPPORT_TYP = { "vertrauen.json": "vertrauen", "ki-konten.json": "konten", "einstellungen.json": "einstellungen", "tastenkuerzel.json": "tastenkuerzel" };
 
   // ---------- Ring und Long-Poll ----------
   function melde(e) {

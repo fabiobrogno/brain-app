@@ -97,6 +97,7 @@ const ICONS = {
   // Einstellungen (P5): Bereiche der Seitenleiste
   glocke: p("M3.8 11.2c.9-.8 1.2-1.8 1.2-3.2V6.6a3 3 0 016 0V8c0 1.4.3 2.4 1.2 3.2zM6.6 13.4a1.5 1.5 0 002.8 0"),
   handy: p("M5 2h6a1 1 0 011 1v10a1 1 0 01-1 1H5a1 1 0 01-1-1V3a1 1 0 011-1z") + p("M7 12h2"),
+  zuruecksetzen: p("M3.2 8.2A4.8 4.8 0 108 3.2H5.2") + p("M7 1.2L5 3.2l2 2"),
   tastatur: p("M2.5 4.5h11a1 1 0 011 1v5a1 1 0 01-1 1h-11a1 1 0 01-1-1v-5a1 1 0 011-1z") + p("M4.5 7h.01M7 7h.01M9.5 7h.01M12 7h.01M5 9.5h6"),
 };
 
