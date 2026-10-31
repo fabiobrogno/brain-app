@@ -89,7 +89,7 @@ test("Pfade mit Sonderzeichen: Leerzeichen, Umlaute, Klammern (unmaskiert), ecki
 test("Sperren mit claudeSperre schreibt Read- und Edit-Verbot in die settings.json genau dieses Kontos; Entsperren nimmt nur die eigenen Regeln heraus, Fremdes bleibt", async () => {
   const { home, s, profile: [pa, pb], vs: [v1, v2], rufe } = aufbau({ konten: [["a", HOOKS], ["b", { permissions: { allow: ["Bash(ls:*)"], deny: ["Read(//etc/**)", "Bash(rm:*)"], defaultMode: "default" }, model: "opus", env: { X: "1" } }]] });
   await mitHome(home, async () => {
-    let r = await rufe("GET", "/api/ki/konten");
+    let r = await rufe("POST", "/api/ki/konten/abgleich");
     const b = kontoVon(r.j, pb), a = kontoVon(r.j, pa);
     assert.equal(b.schutz.moeglich, true);
     const vorherB = readFileSync(join(pb, "settings.json"), "utf8");
@@ -122,19 +122,19 @@ test("Sperren mit claudeSperre schreibt Read- und Edit-Verbot in die settings.js
     assert.deepEqual(d.eingetragen[b.id].claudeDeny["@einstellungen"], einst, "auch die Einstellungsregeln sind als von Kortex vermerkt");
     assert.equal((statSync(K.kontenPfad(s)).mode & 0o777), 0o600);
     // Zustand in der Anzeige
-    r = await rufe("GET", "/api/ki/konten");
+    r = await rufe("POST", "/api/ki/konten/abgleich");
     assert.equal(kontoVon(r.j, pb).schutz.vaults[v1], "aktiv");
     assert.equal(kontoVon(r.j, pb).schutz.vaults[v2], "aus", "v2 ist (wie jeder Vault für ein nie zugeordnetes Konto) gesperrt, aber ohne Leseverbot in Claude Code");
     assert.equal(kontoVon(r.j, pa).schutz.vaults[v2], undefined, "a ist verbunden und behält die Rechte von heute: nichts gesperrt");
     await rufe("PUT", "/api/ki/zugriff", { konto: b.id, vault: v2, stufe: "lesen" });
-    assert.equal(kontoVon((await rufe("GET", "/api/ki/konten")).j, pb).schutz.vaults[v2], undefined, "nur gesperrte Vaults erscheinen");
+    assert.equal(kontoVon((await rufe("POST", "/api/ki/konten/abgleich")).j, pb).schutz.vaults[v2], undefined, "nur gesperrte Vaults erscheinen");
     // zweites Eintragen ändert nichts (idempotent, keine zweite Sicherung)
     r = await rufe("PUT", "/api/ki/zugriff", { konto: b.id, vault: v1, stufe: "gesperrt", claudeSperre: true });
     assert.deepEqual(ohneEinst(settings(pb).permissions.deny), ["Read(//etc/**)", "Bash(rm:*)", ...soll]);
     assert.equal(baks(pb).length, 1);
     // der Nutzer nimmt eine Regel selbst heraus → Anzeige „fehlt“, erneutes Eintragen stellt sie wieder her
     const doc = settings(pb); doc.permissions.deny = doc.permissions.deny.filter((x) => x !== soll[1]); writeFileSync(join(pb, "settings.json"), JSON.stringify(doc, null, 2));
-    r = await rufe("GET", "/api/ki/konten");
+    r = await rufe("POST", "/api/ki/konten/abgleich");
     assert.equal(kontoVon(r.j, pb).schutz.vaults[v1], "fehlt");
     await rufe("PUT", "/api/ki/zugriff", { konto: b.id, vault: v1, stufe: "gesperrt", claudeSperre: true });
     assert.ok(settings(pb).permissions.deny.includes(soll[1]));
@@ -163,7 +163,7 @@ test("Eine Regel, die der Nutzer schon selbst hat, gehört ihm: Kortex vermerkt 
   const lese = `Read(//${v1.slice(1)}/**)`, edit = `Edit(//${v1.slice(1)}/**)`;
   writeFileSync(join(pa, "settings.json"), JSON.stringify({ permissions: { deny: [lese] } }));
   await mitHome(home, async () => {
-    const a = kontoVon((await rufe("GET", "/api/ki/konten")).j, pa);
+    const a = kontoVon((await rufe("POST", "/api/ki/konten/abgleich")).j, pa);
     await rufe("PUT", "/api/ki/zugriff", { konto: a.id, vault: v1, stufe: "gesperrt", claudeSperre: true });
     assert.deepEqual(ohneEinst(settings(pa).permissions.deny), [lese, edit]);
     assert.deepEqual(K.liesKonten(s).daten.eingetragen[a.id].claudeDeny[v1], [edit], "nur das Hinzugekommene ist vermerkt");
@@ -180,7 +180,7 @@ test("settings.json als Symlink (Dotfiles): das Ziel wird geändert, der Link bl
   mkdirSync(join(pa, "projects")); // so erkennt Kortex das Profil auch mit einem Symlink als settings.json
   const fs = await import("node:fs"); fs.rmSync(link); symlinkSync(ziel, link);
   await mitHome(home, async () => {
-    const a = kontoVon((await rufe("GET", "/api/ki/konten")).j, pa);
+    const a = kontoVon((await rufe("POST", "/api/ki/konten/abgleich")).j, pa);
     const r = await rufe("PUT", "/api/ki/zugriff", { konto: a.id, vault: v1, stufe: "gesperrt", claudeSperre: true });
     assert.equal(r.j.claude.aktion, "eingetragen", JSON.stringify(r.j.claude));
     assert.ok(lstatSync(link).isSymbolicLink(), "der Link bleibt ein Link");
@@ -199,7 +199,7 @@ test("Kaputte settings.json (kein JSON, falsche Form): Stufe gilt in Kortex, Cla
   for (const inhalt of ["{ kaputt", "[]", JSON.stringify({ permissions: "nein" }), JSON.stringify({ permissions: { deny: "x" } })]) {
     const { home, profile: [pa], vs: [v1], rufe, s } = aufbau({ konten: [["a", {}]], vaults: 1 });
     await mitHome(home, async () => {
-      const a = kontoVon((await rufe("GET", "/api/ki/konten")).j, pa);
+      const a = kontoVon((await rufe("POST", "/api/ki/konten/abgleich")).j, pa);
       writeFileSync(join(pa, "settings.json"), inhalt);
       const r = await rufe("PUT", "/api/ki/zugriff", { konto: a.id, vault: v1, stufe: "gesperrt", claudeSperre: true });
       assert.equal(r.status, 200);
@@ -219,7 +219,7 @@ test("Fehlt die settings.json ganz, legt Kortex sie an (nur permissions.deny); b
   const fs = await import("node:fs"); fs.rmSync(join(pa, "settings.json"));
   mkdirSync(join(pa, "projects"));
   await mitHome(home, async () => {
-    const a = kontoVon((await rufe("GET", "/api/ki/konten")).j, pa);
+    const a = kontoVon((await rufe("POST", "/api/ki/konten/abgleich")).j, pa);
     const r = await rufe("PUT", "/api/ki/zugriff", { konto: a.id, vault: v1, stufe: "gesperrt", claudeSperre: true });
     assert.equal(r.j.claude.aktion, "eingetragen");
     assert.deepEqual(Object.keys(settings(pa)), ["permissions"]);
@@ -232,7 +232,7 @@ test("Nur Claude Code und nur bekannte Konten; im Testmodus nie außerhalb des T
   const { home, profile: [pa], vs: [v1], rufe, s } = aufbau({ konten: [["a", {}]], vaults: 1 });
   mkdirSync(join(home, ".codex")); writeFileSync(join(home, ".codex", "config.toml"), "model = \"x\"\n");
   await mitHome(home, async () => {
-    let r = await rufe("GET", "/api/ki/konten");
+    let r = await rufe("POST", "/api/ki/konten/abgleich");
     const codex = r.j.konten.find((k) => k.programm === "codex");
     assert.ok(codex, "Codex erkannt");
     assert.equal(codex.schutz.moeglich, false);
@@ -242,7 +242,7 @@ test("Nur Claude Code und nur bekannte Konten; im Testmodus nie außerhalb des T
     assert.equal((await rufe("POST", "/api/ki/schutz", { konto: codex.id, sandbox: true, bestaetigt: true })).status, 409);
     assert.equal((await rufe("POST", "/api/ki/schutz", { konto: "k_00000000", sandbox: true, bestaetigt: true })).status, 409);
     // ein Konto mit Ordner außerhalb des Temp-Ordners (z. B. das echte ~/.claude): Kortex schreibt im Testmodus nie dorthin
-    const a = kontoVon(r.j, pa) || kontoVon((await rufe("GET", "/api/ki/konten")).j, pa);
+    const a = kontoVon(r.j, pa) || kontoVon((await rufe("POST", "/api/ki/konten/abgleich")).j, pa);
     K.aendere(s, (d) => { d.konten[a.id].ordner = "/Users/niemand/.claude"; return d; });
     const r2 = await rufe("PUT", "/api/ki/zugriff", { konto: a.id, vault: v1, stufe: "gesperrt", claudeSperre: true });
     assert.equal(r2.j.claude.aktion, "fehler");
@@ -256,7 +256,7 @@ test("Strenger Schutz: nur mit Bestätigung und nur mit einem gesperrten Vault; 
   const eigen = { sandbox: { enabled: false, allowUnsandboxedCommands: true, filesystem: { denyRead: ["/fremd/pfad"], allowWrite: ["/x"] }, excludedCommands: ["git"] }, model: "x" };
   const { home, profile: [pa], vs: [v1, v2], rufe, s } = aufbau({ konten: [["a", eigen]], vaults: 2 });
   await mitHome(home, async () => {
-    const a = kontoVon((await rufe("GET", "/api/ki/konten")).j, pa);
+    const a = kontoVon((await rufe("POST", "/api/ki/konten/abgleich")).j, pa);
     // ohne Bestätigung: 400, nichts geschrieben
     let r = await rufe("POST", "/api/ki/schutz", { konto: a.id, sandbox: true });
     assert.equal(r.status, 400); assert.equal(r.j.art, "bestaetigung");
@@ -300,7 +300,7 @@ test("Strenger Schutz: nur mit Bestätigung und nur mit einem gesperrten Vault; 
 test("Strenger Schutz aus: ein Wert, den der Nutzer inzwischen selbst geändert hat, bleibt; fehlende Schalter werden wieder entfernt", async () => {
   const { home, profile: [pa], vs: [v1], rufe } = aufbau({ konten: [["a", {}]], vaults: 1 });
   await mitHome(home, async () => {
-    const a = kontoVon((await rufe("GET", "/api/ki/konten")).j, pa);
+    const a = kontoVon((await rufe("POST", "/api/ki/konten/abgleich")).j, pa);
     await rufe("PUT", "/api/ki/zugriff", { konto: a.id, vault: v1, stufe: "gesperrt" });
     await rufe("POST", "/api/ki/schutz", { konto: a.id, sandbox: true, bestaetigt: true });
     const doc = settings(pa); doc.sandbox.failIfUnavailable = false; doc.sandbox.network = { allowedDomains: ["example.org"] }; writeFileSync(join(pa, "settings.json"), JSON.stringify(doc));
@@ -313,14 +313,14 @@ test("Strenger Schutz aus: ein Wert, den der Nutzer inzwischen selbst geändert 
 test("Standard für neue Konten: PUT /api/ki/standard setzt neueKonten je Vault; nur gesperrt, lesen, posteingang; nur Vaults der App", async () => {
   const { home, vs: [v1, v2], rufe, s } = aufbau({ konten: [["a", HOOKS]] });
   await mitHome(home, async () => {
-    let r = await rufe("GET", "/api/ki/konten");
+    let r = await rufe("POST", "/api/ki/konten/abgleich");
     assert.ok(r.j.vaults.every((v) => v.neueKonten === "gesperrt"));
     r = await rufe("PUT", "/api/ki/standard", { vault: v2, stufe: "lesen" });
     assert.equal(r.status, 200, JSON.stringify(r.j));
     assert.equal(r.j.vaults.find((v) => v.pfad === v2).neueKonten, "lesen"); assert.equal(r.j.vaults.find((v) => v.pfad === v1).neueKonten, "gesperrt");
     // ein neu erkanntes Konto bekommt die Stufe, die der Vault vorgibt
     profil(home, "neu");
-    r = await rufe("GET", "/api/ki/konten");
+    r = await rufe("POST", "/api/ki/konten/abgleich");
     const neu = kontoVon(r.j, join(home, ".claude-neu"));
     assert.equal(r.j.zugriff[neu.id][v2], "gesperrt", "neu erkannte Konten starten gesperrt (Entscheidung 1); der Standard gilt für bekannte Konten ohne eigenen Eintrag");
     assert.equal(K.stufeFuer(K.liesKonten(s).daten, v2, "k_00000000"), "gesperrt");
@@ -333,19 +333,19 @@ test("Standard für neue Konten: PUT /api/ki/standard setzt neueKonten je Vault;
 test("Defekte ki-konten.json: Hinweis bleibt über mehrere Abfragen stehen, bis er quittiert wird; alles gesperrt; die frühere Fassung nur nach Bestätigung zurück", async () => {
   const { home, vs: [v1], rufe, s, profile: [pa] } = aufbau({ konten: [["a", HOOKS]], vaults: 1 });
   await mitHome(home, async () => {
-    let r = await rufe("GET", "/api/ki/konten");
+    let r = await rufe("POST", "/api/ki/konten/abgleich");
     const a = kontoVon(r.j, pa);
     assert.equal(r.j.hinweis, undefined);
     assert.equal(r.j.zugriff[a.id][v1], "posteingang");
     await rufe("POST", "/api/ki/konten", { id: a.id, name: "Zwei" }); // schreibt .vorher
     writeFileSync(K.kontenPfad(s), "{ kaputt");
-    r = await rufe("GET", "/api/ki/konten");
+    r = await rufe("POST", "/api/ki/konten/abgleich");
     assert.equal(r.j.hinweis, "defekt-neu");
     assert.equal(r.j.vorherDa, true);
     const neu = kontoVon(r.j, pa); // nach dem Neuanfang hat das Konto eine neue Kennung
     assert.notEqual(neu.id, a.id);
     assert.equal(r.j.zugriff[neu.id][v1], "gesperrt");
-    r = await rufe("GET", "/api/ki/konten");
+    r = await rufe("POST", "/api/ki/konten/abgleich");
     assert.equal(r.j.hinweis, "defekt-neu", "der Hinweis verschwindet nicht von allein");
     assert.equal(r.j.zugriff[neu.id][v1], "gesperrt");
     // früher Stand: ohne Bestätigung 400
@@ -354,11 +354,11 @@ test("Defekte ki-konten.json: Hinweis bleibt über mehrere Abfragen stehen, bis 
     // quittieren
     r = await rufe("POST", "/api/ki/hinweis", {});
     assert.equal(r.j.hinweis, undefined);
-    r = await rufe("GET", "/api/ki/konten");
+    r = await rufe("POST", "/api/ki/konten/abgleich");
     assert.equal(r.j.hinweis, undefined);
     // früherer Stand zurück: danach gilt wieder, was vorher galt
     writeFileSync(K.kontenPfad(s), "{ wieder kaputt");
-    r = await rufe("GET", "/api/ki/konten"); assert.equal(r.j.hinweis, "defekt-neu");
+    r = await rufe("POST", "/api/ki/konten/abgleich"); assert.equal(r.j.hinweis, "defekt-neu");
     r = await rufe("POST", "/api/ki/vorher", { bestaetigt: true });
     assert.equal(r.status, 200, JSON.stringify(r.j));
     assert.equal(r.j.hinweis, undefined);
@@ -369,13 +369,13 @@ test("Defekte ki-konten.json: Hinweis bleibt über mehrere Abfragen stehen, bis 
 test("Anzeige: verbunden ja/nein je Konto (Hooks oder MCP-Eintrag „brain“), Programmname, kurzer Ordner", async () => {
   const { home, rufe, profile: [pa, pb] } = aufbau({ konten: [["a", HOOKS], ["b", {}]], vaults: 1 });
   await mitHome(home, async () => {
-    const r = await rufe("GET", "/api/ki/konten");
+    const r = await rufe("POST", "/api/ki/konten/abgleich");
     const a = kontoVon(r.j, pa), b = kontoVon(r.j, pb);
     assert.equal(a.verbunden, true); assert.equal(b.verbunden, false);
     assert.equal(a.programmName, "Claude Code");
     assert.ok(a.ordner.startsWith("~/.claude"), a.ordner);
     // MCP-Eintrag in der Claude-Konfiguration des Profils zählt auch
     writeFileSync(join(pb, ".claude.json"), JSON.stringify({ mcpServers: { brain: { command: "x" } } }));
-    assert.equal(kontoVon((await rufe("GET", "/api/ki/konten")).j, pb).verbunden, true);
+    assert.equal(kontoVon((await rufe("POST", "/api/ki/konten/abgleich")).j, pb).verbunden, true);
   });
 });

@@ -449,7 +449,7 @@ const befehle = {
     let eingabe = {};
     if (a.includes("--stdin")) { try { eingabe = JSON.parse(readFileSync(0, "utf8") || "{}"); } catch { return gib({ ok: false, fehler: "Die Eingabe war nicht lesbar.", status: 400 }); } }
     try {
-      if (unter === "markieren") return gib(m.markiere(vault, { vorherAbwesend: eingabe.vorherAbwesend === true }));
+      if (unter === "markieren") return gib(m.markiere(vault, { vorherAbwesend: eingabe.vorherAbwesend === true, ziel: typeof eingabe.ziel === "string" ? eingabe.ziel : null }));
       if (unter === "verwerfen") return gib(m.verwerfen(vault));
       if (unter === "ansicht") return gib({ ok: true, ...m.ansicht(vault), rueckgaengig: m.rueckgaengigStand(vault) });
       if (unter === "loesen") return gib(m.loesen(vault, { auswahl: eingabe.auswahl, gesehen: eingabe.gesehen }));

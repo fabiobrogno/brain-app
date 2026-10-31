@@ -29,10 +29,10 @@ export const KONTEN = [
 
 // opt.vaults = [{ pfad, name }] · opt.konten · opt.zugriff (Standard: verbundene posteingang, übrige gesperrt) · opt.hinweis ("defekt-neu") · opt.vorherDa
 // opt.fehlerClaude: Text → PUT /api/ki/zugriff meldet, dass die Einstellungen von Claude Code nicht geändert werden konnten
-export async function mockeKonten(page, { vaults, konten = KONTEN, zugriff = null, hinweis = null, hinweisGrund = "defekt", vorherDa = false, fehlerClaude = null, leer = false, altform = {}, warnungen = [], pflege = {}, letzter = null, schalter = "an", naechster = { art: "sitzungsstart" }, pflegeHinweise = [], pflegePlist = null, programme = PROGRAMME, programmeFehler = false, login = {}, zuletzt = {}, kern = KERN(), kernFehler = null, pruefungAnders = false, frage = null, anmeldenFehler = null } = {}) {
+export async function mockeKonten(page, { vaults, konten = KONTEN, zugriff = null, hinweis = null, hinweisGrund = "defekt", vorherDa = false, fehlerClaude = null, leer = false, altform = {}, warnungen = [], pflege = {}, neuKonten = [], letzter = null, schalter = "an", naechster = { art: "sitzungsstart" }, pflegeHinweise = [], pflegePlist = null, programme = PROGRAMME, programmeFehler = false, login = {}, zuletzt = {}, kern = KERN(), kernFehler = null, pruefungAnders = false, frage = null, anmeldenFehler = null } = {}) {
   const z = {
     konten: leer ? [] : konten.map((k) => ({ ...k })), vaults: vaults.map((v) => ({ neueKonten: "gesperrt", ...v })), hinweis, hinweisGrund, vorherDa, anfragen: [], altform: { ...altform }, warnungen, sperren: {}, streng: {}, fehlerClaude, wartet: null, pflege: { ...pflege }, letzter, schalter, naechster, pflegeHinweise: [...pflegeHinweise], pflegePlist,
-    programme: programme.map((p) => ({ ...p })), programmeFehler, login: { ...login }, zuletzt: { ...zuletzt }, kern, kernFehler, pruefungAnders, anmeldenFehler, neu: 0,
+    programme: programme.map((p) => ({ ...p })), programmeFehler, login: { ...login }, zuletzt: { ...zuletzt }, kern, kernFehler, pruefungAnders, anmeldenFehler, neu: 0, neuKonten: neuKonten.map((k) => ({ ...k })),
   };
   z.zugriff = zugriff || Object.fromEntries(z.konten.map((k) => [k.id, Object.fromEntries(z.vaults.map((v) => [v.pfad, k.verbunden ? "posteingang" : "gesperrt"]))]));
   const schutzMit = (k) => {
@@ -50,6 +50,16 @@ export async function mockeKonten(page, { vaults, konten = KONTEN, zugriff = nul
     })),
     vaults: z.vaults.map((v) => ({ pfad: v.pfad, name: v.name, neueKonten: v.neueKonten, ohneKonto: "gesperrt", schluessel: v.pfad, pflege: pflegeStand(v.pfad) })),
     zugriff: z.zugriff, ...(z.pflegeHinweise.length ? { pflegeHinweise: z.pflegeHinweise } : {}), ...(z.pflegePlist ? { pflegePlist: z.pflegePlist } : {}),
+    neu: z.neuKonten.map((k) => ({ programm: k.programm, programmName: k.programmName, name: k.name, ordner: k.ordner, standard: k.standard === true })), // GET liest nur: Neues steht hier, nicht in `konten`
+  });
+  // POST /api/ki/konten/abgleich: der ausdrückliche Abgleich trägt die neu erkannten Konten ein (gesperrt)
+  await page.route("**/api/ki/konten/abgleich", async (route) => {
+    z.anfragen.push({ methode: route.request().method(), pfad: "/api/ki/konten/abgleich" });
+    for (const k of z.neuKonten.splice(0)) {
+      z.konten.push({ ...k, vorhanden: true, verbunden: false });
+      z.zugriff[k.id] = Object.fromEntries(z.vaults.map((v) => [v.pfad, "gesperrt"]));
+    }
+    return route.fulfill({ json: stand() });
   });
   // Pflege je Vault wie werkstatt/konten.mjs: gesetzt, wirksam (konto | aus | alt), bewusst, problem
   const pflegeStand = (pfad) => {

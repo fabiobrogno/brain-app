@@ -134,14 +134,14 @@ test("Migration: das feste Profil der alten plist wird das Pflege-Konto der Vaul
   mkdirSync(join(a.home, "Library", "LaunchAgents"), { recursive: true });
   writeFileSync(plist, `<?xml version="1.0"?><plist><dict><key>EnvironmentVariables</key><dict><key>PATH</key><string>/usr/bin</string>\n<key>CLAUDE_CONFIG_DIR</key><string>${a.P.A}</string></dict></dict></plist>`);
   const rufe = handler(a);
-  const r = await rufe("GET", "/api/ki/konten");
+  const r = await rufe("POST", "/api/ki/konten/abgleich");
   assert.equal(r.status, 200, JSON.stringify(r.j));
   assert.deepEqual(pflegeVon(a.s, a.v1), { gesetzt: true, konto: "k_0000000a", stufe: "mittel" }, "Konto A hat erweitert → mittel (wie heute)");
   assert.deepEqual(pflegeVon(a.s, a.v2), { gesetzt: true, konto: "k_00000001", stufe: "klein" }, "eine vorhandene Einstellung bleibt");
   assert.equal(pflegeVon(a.s, v3).gesetzt, false, "ein Vault ohne Dienst bekommt nichts");
   assert.equal(r.j.pflegeHinweise, undefined);
   const nach = readFileSync(G.kontenPfad(a.s), "utf8");
-  await rufe("GET", "/api/ki/konten");
+  await rufe("POST", "/api/ki/konten/abgleich");
   assert.equal(readFileSync(G.kontenPfad(a.s), "utf8"), nach, "zweiter Aufruf: nichts mehr zu tun (einmalig)");
   assert.ok(G.liesKonten(a.s).daten.pflegeMigration.seit);
 });
@@ -152,7 +152,7 @@ test("Migration: hat das Konto des Dienstes nicht erweitert (oder gibt es das Pr
   writeFileSync(join(a.s, "dienst.json"), JSON.stringify({ vaults: [a.v1] }));
   const plistMit = (home, profil) => { const d = join(home, "Library", "LaunchAgents"); mkdirSync(d, { recursive: true }); writeFileSync(join(d, "de.brain.tageslauf.plist"), `<plist><dict><key>EnvironmentVariables</key><dict><key>PATH</key><string>/usr/bin</string>${profil ? `<key>CLAUDE_CONFIG_DIR</key><string>${profil}</string>` : ""}</dict></dict></plist>`); };
   plistMit(a.home, a.P.B);
-  let r = await handler(a)("GET", "/api/ki/konten");
+  let r = await handler(a)("POST", "/api/ki/konten/abgleich");
   assert.deepEqual(pflegeVon(a.s, a.v1), { gesetzt: true, konto: "k_0000000b", stufe: "aus" });
   assert.deepEqual(r.j.pflegeHinweise, [{ vault: a.v1, grund: "stufe", konto: "k_0000000b" }]);
   assert.deepEqual(r.j.vaults.find((v) => v.pfad === a.v1).pflege.bewusst, true);
@@ -163,17 +163,17 @@ test("Migration: hat das Konto des Dienstes nicht erweitert (oder gibt es das Pr
   // ein Profil, das Kortex nicht kennt
   a = aufbau(); writeFileSync(join(a.s, "dienst.json"), JSON.stringify({ vaults: [a.v1] }));
   plistMit(a.home, join(a.home, ".claude-gibtesnicht"));
-  r = await handler(a)("GET", "/api/ki/konten");
+  r = await handler(a)("POST", "/api/ki/konten/abgleich");
   assert.deepEqual(pflegeVon(a.s, a.v1), { gesetzt: true, konto: null, stufe: "aus" });
   assert.equal(r.j.pflegeHinweise[0].grund, "kein-konto");
   // ohne Variable: Standardprofil
   a = aufbau(); writeFileSync(join(a.s, "dienst.json"), JSON.stringify({ vaults: [a.v1] }));
   plistMit(a.home, null);
-  await handler(a)("GET", "/api/ki/konten");
+  await handler(a)("POST", "/api/ki/konten/abgleich");
   assert.deepEqual(pflegeVon(a.s, a.v1), { gesetzt: true, konto: "k_00000001", stufe: "mittel" });
   // ohne plist: nichts, und kein Vermerk (eine spätere plist ist schon die neue Form)
   a = aufbau(); writeFileSync(join(a.s, "dienst.json"), JSON.stringify({ vaults: [a.v1] }));
-  await handler(a)("GET", "/api/ki/konten");
+  await handler(a)("POST", "/api/ki/konten/abgleich");
   assert.equal(pflegeVon(a.s, a.v1).gesetzt, false);
   assert.equal(G.liesKonten(a.s).daten.pflegeMigration, undefined);
 });
@@ -277,7 +277,7 @@ test("Handler: Übernahme gelingt, das Neuschreiben nicht → Grund je Fall: off
   let a = aufbau();
   writeFileSync(join(a.s, "dienst.json"), JSON.stringify({ vaults: [a.v2] }));
   schreibePlist(a.home, plistText(a.P.A));
-  let r = await handler(a)("GET", "/api/ki/konten");
+  let r = await handler(a)("POST", "/api/ki/konten/abgleich");
   assert.equal(r.status, 200, JSON.stringify(r.j));
   assert.deepEqual(r.j.pflegePlist, { offen: true, grund: "nicht-im-dienst" });
   assert.deepEqual(pflegeVon(a.s, a.v2), { gesetzt: true, konto: "k_0000000a", stufe: "mittel" });
@@ -287,7 +287,7 @@ test("Handler: Übernahme gelingt, das Neuschreiben nicht → Grund je Fall: off
   a = aufbau();
   writeFileSync(join(a.s, "dienst.json"), JSON.stringify({ vaults: [a.v1] }));
   schreibePlist(a.home, plistText(a.P.A));
-  r = await handler(a, { starter: join(tmp("brain-ohne-starter-"), "kortex") })("GET", "/api/ki/konten");
+  r = await handler(a, { starter: join(tmp("brain-ohne-starter-"), "kortex") })("POST", "/api/ki/konten/abgleich");
   assert.deepEqual(r.j.pflegePlist, { offen: true, grund: "kein-starter" });
   assert.deepEqual(pflegeVon(a.s, a.v1), { gesetzt: true, konto: "k_0000000a", stufe: "mittel" });
   // kein Vault offen (Start der Werkstatt ohne Vault)
@@ -391,7 +391,7 @@ test("Migration mit echtem `dienst an` (Attrappe statt launchctl): Einstellung �
     const plist = schreibePlist(a.home, plistText(a.P.A));
     // 1) Laden der neuen plist scheitert: die alte kommt zurück, die Übernahme in die Einstellungen gilt trotzdem, der Vermerk bleibt offen
     process.env.BRAIN_LAUNCHCTL = launchd(1);
-    let r = await handler(a, { starter })("GET", "/api/ki/konten");
+    let r = await handler(a, { starter })("POST", "/api/ki/konten/abgleich");
     assert.deepEqual(pflegeVon(a.s, a.v1), { gesetzt: true, konto: "k_0000000a", stufe: "mittel" });
     assert.ok(readFileSync(plist, "utf8").includes(a.P.A), "die alte plist ist wieder eingetragen");
     assert.equal(r.j.pflegePlist.offen, true);
@@ -399,7 +399,7 @@ test("Migration mit echtem `dienst an` (Attrappe statt launchctl): Einstellung �
     // 2) neuer Start: klappt, die plist trägt keine Variable mehr, erledigt
     process.env.BRAIN_LAUNCHCTL = launchd(0);
     const h = handler(a, { starter });
-    r = await h("GET", "/api/ki/konten");
+    r = await h("POST", "/api/ki/konten/abgleich");
     assert.ok(!readFileSync(plist, "utf8").includes("CLAUDE_CONFIG_DIR"), readFileSync(plist, "utf8"));
     assert.equal(r.j.pflegePlist, undefined);
     assert.equal(G.liesKonten(a.s).daten.pflegeMigration.plistOffen, false);

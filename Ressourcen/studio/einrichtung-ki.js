@@ -24,9 +24,10 @@ export function erzeugeKi({ vaultPfad, beiAenderung, kopiere, melde }) {
   const wurzel = h("div", { klasse: "e-ki-wurzel", id: "ki-koerper" });
   const zeilenEl = h("div", { klasse: "e-ki-liste", id: "ki-zeilen" });
   const hinweisEl = h("div", { klasse: "e-ki-hinweis", hidden: true });
+  const neuEl = h("div", { klasse: "e-ki-neu", "data-bereich": "neue-konten", hidden: true }); // neu gefundene Konten: beim Öffnen wird nichts angelegt, erst der Klick trägt sie ein
   const konfigEl = h("div", { klasse: "e-ki-konfig" });
   const zusatzEl = h("div", { klasse: "e-zusatz", id: "ki-zusatz", hidden: true });
-  let auswahl = null;
+  let auswahl = null, abgleichVersucht = false;
   const zeilen = new Map(); // id → { el, aktual }
   let zusatzGeladen = false;
 
@@ -70,24 +71,38 @@ export function erzeugeKi({ vaultPfad, beiAenderung, kopiere, melde }) {
 
   // ---------------------------------------------------------------- Erkennung
   async function lade(neu = false) {
-    const [erk, kon] = await Promise.allSettled([api.kiErkennen(neu), api.kiKonten()]);
+    const [erk, kon] = await Promise.allSettled([api.kiErkennen(neu), api.kiKonten()]); // beide rein lesend
     const e = erk.status === "fulfilled" ? erk.value : null;
-    const kv = kon.status === "fulfilled" ? kon.value : null;
+    let kv = kon.status === "fulfilled" ? kon.value : null;
+    // Fehlt die Liste oder ist sie beschädigt, legt der ausdrückliche Abgleich sie an (höchstens einmal); neu gefundene Konten trägt nur der Klick ein
+    if (kv && kv.zustand !== "ok" && !abgleichVersucht) { abgleichVersucht = true; try { kv = await api.kiKontenAbgleich(); } catch { /* der Assistent geht ohne Liste weiter */ } }
     z.konten = Array.isArray(kv?.konten) ? kv.konten : [];
     z.zugriff = kv?.zugriff && typeof kv.zugriff === "object" ? kv.zugriff : {};
     z.vaults = Array.isArray(kv?.vaults) ? kv.vaults : [];
+    z.neu = Array.isArray(kv?.neu) ? kv.neu : [];
     z.erkennung = erkennungAus(e);
     const erkannt = !!e;
     for (const id of Object.keys(z.ki)) if (!z.ki[id].stufeGewaehlt && !z.ki[id].verbunden) belege(z.ki[id]);
     if (!auswahl) {
       auswahl = kiAuswahl({ erkennung: z.erkennung, wert: vorwahl(erkannt), mehrfach: true, waehlbar: (k) => k.verbindbar, daten: { "data-bereich": "ziel-wahl" },
         aufAenderung: () => { if (z.busy) { auswahl.setzeWert(an()); return; } for (const id of gewaehlt()) zustandFuer(id); zeichneZeilen(); ladeZusatz(); beiAenderung(); } });
-      wurzel.replaceChildren(auswahl.el, hinweisEl, zeilenEl, konfigEl, zusatzEl);
+      wurzel.replaceChildren(auswahl.el, hinweisEl, neuEl, zeilenEl, konfigEl, zusatzEl);
     } else auswahl.setzeErkennung(z.erkennung);
+    zeichneNeu();
     z.geladen = true;
     for (const id of gewaehlt()) zustandFuer(id);
     zeichneZeilen(); zeichneKonfig(); beiAenderung();
     ladeZusatz();
+  }
+  function zeichneNeu() {
+    const liste = Array.isArray(z.neu) ? z.neu : [];
+    neuEl.hidden = !liste.length;
+    if (!liste.length) { neuEl.replaceChildren(); return; }
+    const namen = liste.map((k) => (k.name ? `„${k.name}“` : k.programmName)).join(", ");
+    const eintragen = baueKnopf({ text: TE.ki.neuKontenEintragen, groesse: "s", aktion: "konten-eintragen", aufKlick: async () => {
+      try { await mitLaden(eintragen, () => api.kiKontenAbgleich()); await lade(false); } catch (e) { melde(meldungVon(e)); }
+    } });
+    neuEl.replaceChildren(h("p", { klasse: "e-hint", text: TE.ki.neuKonten(namen) }), eintragen);
   }
   function sucht() { wurzel.replaceChildren(h("div", { klasse: "e-abschnitt-kopf" }, h("span", { klasse: "e-shimmer", text: TE.ki.sucht }))); }
   sucht();

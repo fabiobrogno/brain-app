@@ -400,15 +400,20 @@ export function oeffneVault(vaultPfad, opts = {}) {
     const detail = leseAbgleichDetail(wurzel, opts.support);
     if (detail && detail.haelt) throw new HttpFehler(409, "Es warten noch Entscheidungen zu einem Konflikt. Bitte schließe sie zuerst ab.", { konflikt: true, dateien: detail.dateien, haelt: true });
     // Markiert wird nur, wenn dieser Abgleich die Zusammenführung SELBST begonnen hat: vorher war keine offen (MERGE_HEAD fehlte), und die 409 trägt `gestartet`
+    // Geprüft wird INNERHALB der Sperren (in der Sperr-Funktion, nach der gemeinsamen Dateisperre): der Aufruf von gitFn.sync bleibt der erste Schritt („wer zuerst aufruft, gewinnt“), und niemand
+    // kann dazwischen eine Zusammenführung beginnen. Den Pfad von MERGE_HEAD nennt Git selbst (auch bei einer .git-Datei), nie .git/ angenommen.
     let vorherAbwesend = false;
-    try { vorherAbwesend = statSync(join(wurzel, ".git")).isDirectory() && !existsSync(join(wurzel, ".git", "MERGE_HEAD")); } catch { /* unklar: nicht markieren */ }
     let r;
     try {
       r = await gitFn.sync(wurzel, gitCtx({ limitSync: opts.gitLimitSync, limitGesamt: opts.gitLimitAbgleich, konflikteLoesen: !!(a && a.konflikteLoesen === true),
-        sperre: async () => { const sp = await abgleichSperre("studio-abgleich"); if (!sp.ok) throw new HttpFehler(409, BESETZT_TEXT, { art: "laeuft" }); return sp; } }));
+        sperre: async () => {
+          const sp = await abgleichSperre("studio-abgleich"); if (!sp.ok) throw new HttpFehler(409, BESETZT_TEXT, { art: "laeuft" });
+          try { const mh = await gitFn.mergeKopfPfad(wurzel, gitCtx()); vorherAbwesend = !!mh && !existsSync(mh); } catch { /* unklar: nicht markieren */ }
+          return sp;
+        } }));
     } catch (e) {
       // Die Zusammenführung blieb offen: Kortex merkt sich, dass SIE sie begonnen hat (nur dann lösen oder brechen wir sie später ab)
-      if (vorherAbwesend && e instanceof HttpFehler && e.status === 409 && e.extra && e.extra.konflikt && e.extra.gestartet === true) { try { await gitFn.gitExklusiv(wurzel, () => kernAbgleich("markieren", { vorherAbwesend: true })); } catch { /* ohne Marke bleibt sie „fremd“: nur ansehen */ } }
+      if (vorherAbwesend && e instanceof HttpFehler && e.status === 409 && e.extra && e.extra.konflikt && e.extra.gestartet === true) { try { await gitFn.gitExklusiv(wurzel, () => kernAbgleich("markieren", { vorherAbwesend: true, ...(typeof e.extra.ziel === "string" ? { ziel: e.extra.ziel } : {}) })); } catch { /* ohne Marke bleibt sie „fremd“: nur ansehen */ } }
       throw e;
     }
     loescheAbgleichStand(wurzel, { support: opts.support }); // der Abgleich lief durch: der Vermerk der Hintergrund-Sicherung (Konflikt, Anmeldung, Neues) gilt nicht mehr

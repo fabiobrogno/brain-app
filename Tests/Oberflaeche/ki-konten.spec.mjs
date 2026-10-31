@@ -89,6 +89,21 @@ test("Neu suchen: der Knopf fragt die App noch einmal (neu=1); ohne Programme st
   expect(calls[calls.length - 1].body.neu).toBe("1");
 });
 
+test("Neu gefundenes Konto: beim Öffnen nur als „neu, noch nicht eingetragen“ gemeldet (kein Abgleich); erst der Klick trägt es ein", async ({ page }) => {
+  const NEU = { id: "k_aaaa0090", programm: "claude", programmName: "Claude Code", name: "Claude Code · neu", standard: false, ordner: "~/.claude-neu", pfad: "/Users/test/.claude-neu" };
+  const z = await start(page, { ...VOLL(), neuKonten: [NEU] });
+  await warteKonten(page);
+  const hinweis = page.locator('[data-kk="neu-gefunden"]');
+  await expect(hinweis).toContainText("Neu gefundene Konten");
+  await expect(hinweis).toContainText("Claude Code · neu");
+  await expect(konto(page, "k_aaaa0090")).toHaveCount(0);
+  expect(z.log("/api/ki/konten/abgleich"), "beim Öffnen läuft kein Abgleich").toHaveLength(0);
+  await page.click('[data-aktion="konten-eintragen"]');
+  await expect(hinweis).toHaveCount(0);
+  await expect(konto(page, "k_aaaa0090")).toBeVisible();
+  expect(z.log("/api/ki/konten/abgleich", "POST")).toHaveLength(1);
+});
+
 test("Fehler bei der Suche: Satz mit dem nächsten Schritt statt einer leeren Seite", async ({ page }) => {
   const z = await start(page, { ...VOLL(), programmeFehler: true });
   await expect(page.locator('[data-kx="programme-fehler"]').first()).toContainText("Klicke auf „Neu suchen“");
