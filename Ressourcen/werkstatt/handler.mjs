@@ -335,7 +335,6 @@ export function erzeugeHandler(o) {
       case "/api/git/konflikt/loesen": nur("POST"); return V().gitKonfliktLoesen(eingabe());
       case "/api/git/konflikt/rueckgaengig": nur("POST"); return V().gitKonfliktRueckgaengig();
       case "/api/git/konflikt/verwerfen": nur("POST"); return V().gitKonfliktVerwerfen();
-      case "/api/git/konflikt/uebernehmen": nur("POST"); return V().gitKonfliktUebernehmen();
       case "/api/git/konflikt/abbrechen": nur("POST"); return V().gitKonfliktAbbrechen();
       case "/api/git/nachsehen": nur("POST"); return V().gitNachsehen();
       case "/api/git/wiederherstellen/vorschau": nur("GET"); return V().gitWiederherstellenVorschau(q.get("pfad"), q.get("sha"));

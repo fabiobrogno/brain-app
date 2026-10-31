@@ -187,6 +187,7 @@ const sichtbareDateien = (liste) => (Array.isArray(liste) ? liste : []).filter((
 export function merkeStand(vault, stand, support, extra = {}) {
   try {
     const d = leseDatei(vault, support);
+    if (!stand && d.konfliktBasis) return; // ein gemerkter Stand (Konflikt wartet auf Entscheidungen) wird nie nebenbei geräumt — nur Lösen, Verwerfen oder die Oberfläche tun das
     const alt = d.abgleich && typeof d.abgleich === "object" ? d.abgleich : null;
     const dateien = stand === "konflikt" && Array.isArray(extra.dateien) ? sichtbareDateien(extra.dateien) : null;
     const gleich = alt && alt.stand === stand && (!dateien || JSON.stringify(dateien) === JSON.stringify(alt.dateien || []));
@@ -344,7 +345,7 @@ function holenInnen(vault, support) {
   try {
     if (!pushErlaubnis(vault, support).ok) return { art: "nicht-bestaetigt", ok: false, text: PUSH_NICHT_BESTAETIGT };
     const ergebnis = (art, ok = OK_ARTEN.has(art)) => ({ art, ok, text: MELDUNG[art] || STAND_TEXT[art] || "" });
-    if (mergeOffen(vault)) return ergebnis("konflikt", false);
+    if (mergeOffen(vault) || leseDatei(vault, support).konfliktBasis) return ergebnis("konflikt", false); // offene Zusammenführung oder gemerkter Stand: nichts anfassen
     if (ingestGesperrt(vault)) return ergebnis("beschaeftigt", false);
     const zw = gitLauf(vault, ["symbolic-ref", "--short", "-q", "HEAD"]);
     if (zw.code !== 0) return ergebnis("kein-zweig", false);

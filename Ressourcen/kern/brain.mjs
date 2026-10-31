@@ -2,7 +2,7 @@
 // brain.mjs — ein Einstieg für alle Agenten und Menschen. Kein Agent-spezifischer Code hier.
 // Befehle: index | search "<frage>" [n] | lint | ingest-check <datei> | refresh | hooks-install | claude-hooks | version | pflege | messlatte | status [--json]
 //   | lernschleife | antworten | wirkung | tageslauf | rueckfragen | zurueck | traum | dienst | nachernte | gedaechtnis | gesundheit
-//   | aufgabe neu|erledigt|status|archivieren | aufgaben | abgleich markieren|ansicht|loesen|abbrechen|rueckgaengig
+//   | aufgabe neu|erledigt|status|archivieren | aufgaben | abgleich markieren|verwerfen|ansicht|loesen|abbrechen|rueckgaengig
 // Skill-Helfer (statt POSIX-Shell, laufen gleich auf macOS/Windows/Linux): lock | unlock | sha <datei> | jetzt | review-erledigt
 // Exit-Codes: 0 ok, 2 Befunde (lint) / unbekannte Option (zeig), 3 Secrets (ingest-check), 64 falscher Aufruf.
 import { execFileSync, spawnSync, spawn } from "node:child_process";
@@ -449,14 +449,13 @@ const befehle = {
     let eingabe = {};
     if (a.includes("--stdin")) { try { eingabe = JSON.parse(readFileSync(0, "utf8") || "{}"); } catch { return gib({ ok: false, fehler: "Die Eingabe war nicht lesbar.", status: 400 }); } }
     try {
-      if (unter === "markieren") return gib(m.markiere(vault));
-      if (unter === "uebernehmen") return gib(m.uebernehmen(vault));
+      if (unter === "markieren") return gib(m.markiere(vault, { vorherAbwesend: eingabe.vorherAbwesend === true }));
       if (unter === "verwerfen") return gib(m.verwerfen(vault));
       if (unter === "ansicht") return gib({ ok: true, ...m.ansicht(vault), rueckgaengig: m.rueckgaengigStand(vault) });
       if (unter === "loesen") return gib(m.loesen(vault, { auswahl: eingabe.auswahl, gesehen: eingabe.gesehen }));
       if (unter === "abbrechen") return gib(m.abbrechen(vault));
       if (unter === "rueckgaengig") return gib(m.rueckgaengig(vault));
-      console.error("Nutzung: brain abgleich markieren|uebernehmen|verwerfen|ansicht|loesen|abbrechen|rueckgaengig [--stdin]");
+      console.error("Nutzung: brain abgleich markieren|verwerfen|ansicht|loesen|abbrechen|rueckgaengig [--stdin]");
       return 64;
     } catch (e) {
       if (e instanceof m.KonfliktFehler) return gib({ ok: false, fehler: e.message, status: e.status, ...e.extra });

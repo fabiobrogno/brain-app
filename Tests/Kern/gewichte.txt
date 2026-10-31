@@ -62,6 +62,6 @@
 9 test-umstellung-phase-b-macs.mjs
 14 test-umstellung-aufraeumen.mjs
 20 test-backup-abgleich.mjs
-45 test-abgleich-konflikt.mjs
+110 test-abgleich-konflikt.mjs
 70 test-umstellung-phase-b-review.mjs
 20 test-umstellung-geraet-version.mjs

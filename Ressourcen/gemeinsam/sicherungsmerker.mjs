@@ -48,16 +48,20 @@ export function leseAbgleichStand(wurzel, support) {
 }
 // Dazu die Notizen im Konflikt (kern/backup.mjs vermerkt sie): { stand, dateien: [Pfad], zeit } oder null.
 export function leseAbgleichDetail(wurzel, support) {
-  const a = leseMerker(wurzel, support).abgleich;
-  if (!a || typeof a !== "object" || !["konflikt", "anmeldung", "neues"].includes(a.stand)) return null;
-  const dateien = Array.isArray(a.dateien) ? a.dateien.filter((p) => typeof p === "string").slice(0, 200) : [];
   const m = leseMerker(wurzel, support);
-  // haelt: ein gemerkter Stand wartet auf neue Entscheidungen (nach „Rückgängig“): bis dahin wird nichts gesendet
-  return { stand: a.stand, dateien, zeit: typeof a.zeit === "string" ? a.zeit : null, haelt: !!(m.konfliktBasis && typeof m.konfliktBasis === "object"), haeltSeit: m.konfliktBasis && typeof m.konfliktBasis.zeit === "string" ? m.konfliktBasis.zeit : null };
+  const a = m.abgleich;
+  const basis = m.konfliktBasis && typeof m.konfliktBasis === "object" ? m.konfliktBasis : null;
+  // haelt: ein gemerkter Stand wartet auf neue Entscheidungen (nach „Rückgängig“ oder einem Abbruch): bis dahin wird nichts gesendet — auch wenn der Vermerk der Sicherung fehlt
+  const abgleichOk = a && typeof a === "object" && ["konflikt", "anmeldung", "neues"].includes(a.stand);
+  if (!abgleichOk && !basis) return null;
+  const quelle = abgleichOk && Array.isArray(a.dateien) ? a.dateien : basis && Array.isArray(basis.dateien) ? basis.dateien : [];
+  const dateien = quelle.filter((p) => typeof p === "string").slice(0, 200);
+  return { stand: abgleichOk ? a.stand : "konflikt", dateien, zeit: abgleichOk && typeof a.zeit === "string" ? a.zeit : null, haelt: !!basis, haeltSeit: basis && typeof basis.zeit === "string" ? basis.zeit : null };
 }
 // Nach einem erfolgreichen Abgleich im Studio gilt der Vermerk nicht mehr. Wirft nie.
 export function loescheAbgleichStand(wurzel, { support } = {}) {
   try {
+    if (leseMerker(wurzel, support).konfliktBasis) return false; // ein gemerkter Stand wird nie nebenbei geräumt
     const m = leseMerker(wurzel, support);
     if (!("abgleich" in m)) return false;
     delete m.abgleich;

@@ -243,3 +243,6 @@ mark.w { background: var(--k-wort); color: inherit; border-radius: 3px; padding:
 .k-haelt p { margin: 0; }
 .k-frage { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--linie-stark); }
 .k-frage-knoepfe { display: flex; gap: 6px; margin-top: 8px; }
+.k-haelt-notiz { margin: 8px 0 0; padding: 7px 9px; border-radius: var(--r); border: 1px solid var(--linie-stark); background: var(--seite-2); font-size: 12px; line-height: 1.45; color: var(--text-2); }
+.konflikt[data-phase="leer"] { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); overflow-y: auto; }
+.konflikt[data-phase="leer"] .k-haelt { text-align: left; width: 100%; margin-top: 14px; }

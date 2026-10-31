@@ -77,7 +77,7 @@ function konfliktAufbau() {
 const alleWahl = (w) => ({ "10_notizen/kickoff.md": w, "10_notizen/zeitplan.md": w, "10_notizen/ideen.md": w, "10_notizen/schlicht.md": w, "05_aufgaben/budget.md": w });
 const auswahlVon = (m) => Object.entries(m).map(([pfad, wahl]) => (typeof wahl === "string" ? { pfad, wahl } : { pfad, ...wahl }));
 // Studio-Ablauf: die Zusammenführung bleibt offen (git.mjs#sync) und wird als „von Kortex begonnen“ markiert
-function oeffneMerge(mac, support) { assert.throws(() => g(mac, "merge", "--no-edit", "origin/main")); K.markiere(mac, { support }); }
+function oeffneMerge(mac, support) { assert.throws(() => g(mac, "merge", "--no-edit", "origin/main")); K.markiere(mac, { support, vorherAbwesend: true }); }
 const gesehenVon = (wurzel, support) => { const a = K.ansicht(wurzel, { support }); return { meine: a.meine, andere: a.andere }; };
 const loes = (wurzel, o) => K.loesen(wurzel, { gesehen: gesehenVon(wurzel, o.support), ...o });
 const betreffs = (wurzel, n = 20) => g(wurzel, "log", `-${n}`, "--format=%s").trim().split("\n");
@@ -600,11 +600,13 @@ test("W4: ohne gemerkten Stand lässt sich nichts „neu“ entscheiden; vorgeme
   g(mac, "checkout", "-q", "--", "10_notizen/schlicht.md");
   speichern(mac, "10_notizen/schlicht.md", "# Schlicht\n\nweitergearbeitet\n", "Mac: weiter");
   const an = K.ansicht(mac, { support });
-  assert.equal(an.dateien.length, 4); assert.deepEqual(an.veraltet, ["10_notizen/schlicht.md"]);
+  assert.equal(an.dateien.length, 4); assert.deepEqual(an.weitergearbeitet.map((w) => w.pfad), ["10_notizen/schlicht.md"]);
   assert.equal(lies(mac, "10_notizen/schlicht.md"), "# Schlicht\n\nweitergearbeitet\n");
   for (const p of ["10_notizen/kickoff.md", "10_notizen/zeitplan.md", "10_notizen/ideen.md", "05_aufgaben/budget.md"]) speichern(mac, p, lies(mac, p) + "\nnoch eine Zeile\n", "Mac: weiter " + p);
-  assert.equal(K.ansicht(mac, { support }).aktiv, false);
-  assert.equal(leseMerker(support).konfliktBasis, undefined, "der Stand ist weg, die Sicherung ist frei");
+  const alle = K.ansicht(mac, { support });
+  assert.equal(alle.aktiv, true, "nie still geräumt: die Oberfläche zeigt, dass seitdem weitergearbeitet wurde"); assert.equal(alle.dateien.length, 0); assert.equal(alle.weitergearbeitet.length, 5);
+  K.verwerfen(mac, { support });
+  assert.equal(leseMerker(support).konfliktBasis, undefined, "erst Verwerfen räumt den Stand, dann ist die Sicherung frei");
 });
 
 test("W5: jede Fassung nennt ihre Blob-Kennung; Entscheidungen auf einem anderen Stand als dem gesehenen werden abgelehnt (409 „veraltet“)", () => {
@@ -621,7 +623,7 @@ test("W5: jede Fassung nennt ihre Blob-Kennung; Entscheidungen auf einem anderen
 
 function grossAufbau() {
   const a = aufbau();
-  const zeilen = (x) => Array.from({ length: 90_000 }, (_, i) => (i === 45_000 ? x : `Zeile ${i} mit etwas mehr Text, damit die Datei groß wird`)).join("\n") + "\n";
+  const zeilen = (x) => Array.from({ length: 30_000 }, (_, i) => (i === 15_000 ? x : `Zeile ${i} mit etwas mehr Text, damit die Datei groß wird ${"-".repeat(130)}`)).join("\n") + "\n";
   speichern(a.mac, "10_notizen/gross.md", zeilen("Basis"), "Mac: groß"); g(a.mac, "push", "-q"); g(a.handy, "pull", "-q");
   speichern(a.handy, "10_notizen/gross.md", zeilen("vom Handy"), "Handy: groß", HANDY_MAIL); g(a.handy, "push", "-q");
   speichern(a.mac, "10_notizen/gross.md", zeilen("vom Mac"), "Mac: groß 2");
@@ -629,13 +631,9 @@ function grossAufbau() {
   oeffneMerge(a.mac, a.support);
   return a;
 }
-test("W6: eine Datei über 5 MB im Konflikt blockiert nichts: „andere“ wird VOR jedem Eingriff abgelehnt, Später sichert Bearbeitetes als Objekt (_blobs.txt), „diese“ geht ohne Kopie", () => {
+test("W6: eine Datei über 5 MB im Konflikt blockiert nichts: Später sichert Bearbeitetes als Objekt (_blobs.txt), „diese“ geht ohne Kopie, „andere“ geht als Strom", () => {
   const { mac, support } = grossAufbau();
   assert.ok(statSync(join(mac, "10_notizen/gross.md")).size > 5 * 1024 * 1024);
-  const kopfVorher = kopf(mac);
-  assert.throws(() => loes(mac, { support, auswahl: auswahlVon({ "10_notizen/gross.md": "andere" }) }), (e) => e.status === 413);
-  assert.equal(kopf(mac), kopfVorher, "kein Zusammenführungs-Eintrag");
-  assert.ok(existsSync(join(mac, ".git", "MERGE_HEAD")));
   schreibe(mac, "10_notizen/gross.md", readFileSync(join(mac, "10_notizen/gross.md"), "utf8") + "meine Handarbeit\n");
   const s = K.abbrechen(mac, { support });
   assert.equal(s.sicherung.dateien.length, 0); assert.equal(s.sicherung.blobs.length, 1);
@@ -721,54 +719,127 @@ test("Verwerfen: der gemerkte Stand fällt weg, die Sicherung sendet wieder; der
   assert.throws(() => K.verwerfen(mac, { support }), (e) => e.status === 409);
 });
 
-test("Übernehmen: eine Zusammenführung ohne Marke aus dem Studio-Abgleich einer älteren Version (MERGE_HEAD = origin/<Zweig>, Abgleich-Meldung) lässt sich als Kortex-eigene übernehmen — danach geht Lösen", () => {
+// ───────────────────────────── Zweite Prüfung: Marke nur für eigene Zusammenführungen, Sicherheitsnetz, gemerkter Stand ─────────────────────────────
+test("K-neu-1: markieren setzt die Marke nie ohne ausdrückliches „vorher war keine offen“ — eine Zusammenführung aus dem Terminal bleibt fremd, Später ist 409", () => {
   const a = aufbau();
   speichern(a.handy, "10_notizen/schlicht.md", "# Schlicht\n\nHandy\n", "Handy", HANDY_MAIL); g(a.handy, "push", "-q");
   speichern(a.mac, "10_notizen/schlicht.md", "# Schlicht\n\nMac\n", "Mac");
   g(a.mac, "fetch", "-q", "origin");
-  assert.throws(() => g(a.mac, "merge", "--no-edit", "origin/main")); // wie ein älteres Studio: ohne markieren()
-  const an = K.ansicht(a.mac, { support: a.support });
-  assert.equal(an.fremd, true); assert.equal(an.uebernehmbar, true);
-  assert.throws(() => K.abbrechen(a.mac, { support: a.support }), (e) => e.extra.art === "fremd");
-  const r = K.uebernehmen(a.mac, { support: a.support });
-  assert.equal(r.ok, true);
-  const an2 = K.ansicht(a.mac, { support: a.support });
-  assert.equal(an2.fremd, false);
-  assert.equal(K.uebernehmen(a.mac, { support: a.support }).schon, true, "zweimal ist harmlos");
-  const l = loes(a.mac, { support: a.support, auswahl: auswahlVon({ "10_notizen/schlicht.md": "andere" }) });
-  assert.equal(l.ok, true); assert.equal(lies(a.mac, "10_notizen/schlicht.md"), "# Schlicht\n\nHandy\n");
+  assert.throws(() => g(a.mac, "merge", "--no-edit", "origin/main")); // Terminal
+  schreibe(a.mac, "10_notizen/schlicht.md", "# Schlicht\n\nvon Hand im Terminal gelöst\n");
+  // der Abgleich der Oberfläche läuft auf eine schon offene Zusammenführung: kein vorherAbwesend → keine Marke
+  const m = K.markiere(a.mac, { support: a.support });
+  assert.equal(m.markiert, false);
+  assert.equal(leseMerker(a.support).konfliktOffen, undefined);
+  assert.equal(K.ansicht(a.mac, { support: a.support }).fremd, true);
+  assert.throws(() => K.abbrechen(a.mac, { support: a.support }), (e) => e.status === 409 && e.extra.art === "fremd");
+  assert.equal(lies(a.mac, "10_notizen/schlicht.md"), "# Schlicht\n\nvon Hand im Terminal gelöst\n", "Handarbeit unangetastet");
 });
 
-test("Übernehmen nur, wenn wirklich alles dafür spricht: keine Hand-Arbeit in Konfliktdateien, MERGE_HEAD ist der Stand des Servers, Meldung passt", () => {
-  // 1) schon von Hand gelöst (keine Konfliktmarken mehr)
-  let a = aufbau();
-  speichern(a.handy, "10_notizen/schlicht.md", "# Schlicht\n\nHandy\n", "Handy", HANDY_MAIL); g(a.handy, "push", "-q");
-  speichern(a.mac, "10_notizen/schlicht.md", "# Schlicht\n\nMac\n", "Mac");
-  g(a.mac, "fetch", "-q", "origin");
-  assert.throws(() => g(a.mac, "merge", "--no-edit", "origin/main"));
-  schreibe(a.mac, "10_notizen/schlicht.md", "# Schlicht\n\nvon Hand gelöst\n");
-  let an = K.ansicht(a.mac, { support: a.support });
-  assert.equal(an.fremd, true); assert.equal(an.uebernehmbar, false); assert.match(an.uebernahmeGrund, /von Hand bearbeitet/);
-  assert.throws(() => K.uebernehmen(a.mac, { support: a.support }), (e) => e.status === 409 && /nicht sicher/.test(e.message));
-  assert.equal(lies(a.mac, "10_notizen/schlicht.md"), "# Schlicht\n\nvon Hand gelöst\n", "nichts angefasst");
-  // 2) eine Zusammenführung eines anderen Zweigs (nicht der Stand des Servers)
-  a = aufbau();
-  g(a.mac, "checkout", "-q", "-b", "andere");
-  speichern(a.mac, "10_notizen/schlicht.md", "# Schlicht\n\nZweig\n", "Zweig");
-  g(a.mac, "checkout", "-q", "main");
-  speichern(a.mac, "10_notizen/schlicht.md", "# Schlicht\n\nMain\n", "Main");
-  assert.throws(() => g(a.mac, "merge", "--no-edit", "andere"));
-  an = K.ansicht(a.mac, { support: a.support });
-  assert.equal(an.fremd, true); assert.equal(an.uebernehmbar, false); assert.match(an.uebernahmeGrund, /Stand des Servers/);
-  assert.throws(() => K.uebernehmen(a.mac, { support: a.support }), (e) => e.extra.art === "fremd");
-  // 3) Server-Stand, aber eine eigene Meldung (git merge -m)
-  a = aufbau();
-  speichern(a.handy, "10_notizen/schlicht.md", "# Schlicht\n\nHandy\n", "Handy", HANDY_MAIL); g(a.handy, "push", "-q");
-  speichern(a.mac, "10_notizen/schlicht.md", "# Schlicht\n\nMac\n", "Mac");
-  g(a.mac, "fetch", "-q", "origin");
-  assert.throws(() => g(a.mac, "merge", "-m", "Meine eigene Zusammenführung", "origin/main"));
-  an = K.ansicht(a.mac, { support: a.support });
-  assert.equal(an.uebernehmbar, false); assert.match(an.uebernahmeGrund, /Meldung/);
+test("Sicherheitsnetz: gesichert wird alles, was vom reinen Ergebnis der Zusammenführung abweicht — vorgemerkt UND nicht vorgemerkt, auch ohne Merker-Abweichung", () => {
+  const a = aufbau();
+  const { mac, handy, support } = a;
+  speichern(handy, "10_notizen/schlicht.md", "# Schlicht\n\nHandy\n", "Handy", HANDY_MAIL);
+  speichern(handy, "10_notizen/frei.md", "# Frei\n\nvom Handy\n", "Handy: frei", HANDY_MAIL);
+  speichern(handy, "10_notizen/zeitplan.md", "# Zeitplan\n\n- 5. Dez: Abnahme\n- 12. Dez: Test\n", "Handy: zeit", HANDY_MAIL); g(handy, "push", "-q");
+  speichern(mac, "10_notizen/schlicht.md", "# Schlicht\n\nMac\n", "Mac");
+  speichern(mac, "10_notizen/zeitplan.md", "# Zeitplan\n\n- 28. Nov: Abnahme\n- 12. Dez: Erster Test\n", "Mac: zeit");
+  g(mac, "fetch", "-q", "origin");
+  oeffneMerge(mac, support);
+  // (1) nur Konfliktdatei unverändert (Git-Marken) und saubere Dateien → nichts zu sichern
+  assert.equal(K.abbrechen(mac, { support }).sicherung, null);
+  g(mac, "fetch", "-q", "origin");
+  oeffneMerge(mac, support);
+  // (2) die konfliktfrei zusammengeführte Datei wurde im Terminal verändert UND vorgemerkt; eine Konfliktdatei von Hand gelöst und vorgemerkt; eine weitere unvorgemerkt bearbeitet
+  schreibe(mac, "10_notizen/frei.md", "# Frei\n\nvorgemerkte Handarbeit\n"); g(mac, "add", "--", "10_notizen/frei.md");
+  schreibe(mac, "10_notizen/zeitplan.md", "# Zeitplan\n\nvon Hand gelöst und vorgemerkt\n"); g(mac, "add", "--", "10_notizen/zeitplan.md");
+  schreibe(mac, "10_notizen/schlicht.md", "# Schlicht\n\nnur im Arbeitsbaum bearbeitet\n");
+  let s = null; // ob Git das Zurücknehmen zulässt oder ablehnt: die Sicherung liegt in jedem Fall da
+  try { s = K.abbrechen(mac, { support }).sicherung; } catch (x) { s = x.extra && x.extra.sicherung ? x.extra.sicherung : null; }
+  assert.ok(s, "gesichert");
+  assert.equal(readFileSync(join(s.ordner, "10_notizen/schlicht.md"), "utf8"), "# Schlicht\n\nnur im Arbeitsbaum bearbeitet\n");
+  // vorgemerkte Dateien liegen im Arbeitsbaum genau wie im Index: sie stehen unter _vorgemerkt/ (die Arbeitskopie wäre dieselbe)
+  assert.deepEqual(s.vorgemerkt.sort(), ["10_notizen/frei.md", "10_notizen/zeitplan.md"]);
+  assert.equal(readFileSync(join(s.ordner, "_vorgemerkt/10_notizen/frei.md"), "utf8"), "# Frei\n\nvorgemerkte Handarbeit\n", "auch das Vorgemerkte liegt für sich da");
+  assert.equal(readFileSync(join(s.ordner, "_vorgemerkt/10_notizen/zeitplan.md"), "utf8"), "# Zeitplan\n\nvon Hand gelöst und vorgemerkt\n");
+});
+
+test("W-neu-3: Fremdes im Index (nicht Teil der Zusammenführung) → 409 vor jedem Eingriff; der Zusammenführungs-Eintrag nimmt es nie mit", () => {
+  const { mac, support } = konfliktAufbau();
+  schreibe(mac, "10_notizen/fremd.md", "# Fremd\n"); g(mac, "add", "--", "10_notizen/fremd.md");
+  const vorher = kopf(mac);
+  const e = (() => { try { loes(mac, { support, auswahl: auswahlVon(alleWahl("meine")) }); } catch (x) { return x; } return null; })();
+  assert.equal(e.status, 409); assert.equal(e.extra.art, "vorgemerkt"); assert.deepEqual(e.extra.dateien, ["10_notizen/fremd.md"]);
+  assert.equal(kopf(mac), vorher); assert.ok(existsSync(join(mac, ".git", "MERGE_HEAD")));
+  g(mac, "reset", "-q", "--", "10_notizen/fremd.md");
+  const r = loes(mac, { support, auswahl: auswahlVon(alleWahl("meine")) });
+  assert.equal(r.ok, true);
+  assert.equal(g(mac, "ls-tree", "-r", "--name-only", "HEAD").includes("10_notizen/fremd.md"), false);
+});
+
+test("W-neu-1: holen räumt den gemerkten Stand nicht (auch ohne Neues auf dem Server); er bleibt, bis er entschieden oder verworfen ist", () => {
+  const { mac, support } = konfliktAufbau();
+  loes(mac, { support, auswahl: auswahlVon(alleWahl("andere")) });
+  K.rueckgaengig(mac, { support });
+  assert.ok(leseMerker(support).konfliktBasis);
+  const h = B.holen(mac, { support });
+  assert.equal(h.art, "konflikt"); assert.equal(h.ok, false);
+  assert.ok(leseMerker(support).konfliktBasis, "der gemerkte Stand ist noch da");
+  assert.equal(B.leseAbgleichStand(mac, { support }).stand, "konflikt");
+  const hg = B.holenGedrosselt(mac, { support, jetzt: Date.now() + 11 * 60_000 });
+  assert.equal(hg.ok, false);
+  assert.ok(leseMerker(support).konfliktBasis);
+  assert.equal(B.abgleichen(mac, { support }).art, "konflikt");
+  B.loescheAbgleichStand(mac, { support }); // auch das ausdrückliche Räumen des Vermerks lässt den Stand stehen
+  assert.ok(leseMerker(support).konfliktBasis);
+});
+
+test("W-neu-2: passt der gemerkte Stand nicht mehr zum Vault (reset --hard), bleibt er sichtbar mit Hinweis und Verwerfen — nie still geräumt; Lösen ist 409", () => {
+  const { remote, mac, support } = konfliktAufbau();
+  const vorMerge = g(mac, "rev-parse", "HEAD^1").trim();
+  loes(mac, { support, auswahl: auswahlVon(alleWahl("meine")) });
+  K.rueckgaengig(mac, { support });
+  g(mac, "reset", "-q", "--hard", vorMerge); // zurück vor die Zusammenführung: der andere Stand ist kein Vorfahr mehr
+  const an = K.ansicht(mac, { support });
+  assert.equal(an.aktiv, true); assert.equal(an.ungueltig, true); assert.equal(an.haelt, true); assert.deepEqual(an.dateien, []);
+  assert.ok(leseMerker(support).konfliktBasis, "nicht still geräumt");
+  assert.equal(B.abgleichen(mac, { support }).art, "konflikt");
+  assert.throws(() => loes(mac, { support, auswahl: [] }), (e) => e.status === 409 && e.extra.art === "ungueltig");
+  const serverKopf = kopfRemote(remote);
+  K.verwerfen(mac, { support });
+  assert.equal(K.ansicht(mac, { support }).aktiv, false);
+  assert.equal(leseMerker(support).konfliktBasis, undefined);
+  assert.equal(kopfRemote(remote), serverKopf);
+});
+
+test("Seitdem weitergearbeitet: die Datei bleibt mit Hinweis sichtbar (nie still entfernt); nur „Verwerfen“ räumt den Stand", () => {
+  const { mac, support } = konfliktAufbau();
+  loes(mac, { support, auswahl: auswahlVon(alleWahl("andere")) });
+  K.rueckgaengig(mac, { support });
+  for (const p of ["10_notizen/kickoff.md", "10_notizen/zeitplan.md", "10_notizen/ideen.md", "05_aufgaben/budget.md", "10_notizen/schlicht.md"]) speichern(mac, p, lies(mac, p) + "\nnoch eine Zeile\n", "Mac: weiter " + p);
+  const an = K.ansicht(mac, { support });
+  assert.equal(an.aktiv, true); assert.equal(an.dateien.length, 0); assert.equal(an.weitergearbeitet.length, 5);
+  assert.ok(an.weitergearbeitet.every((w) => typeof w.pfad === "string" && w.titel));
+  assert.ok(leseMerker(support).konfliktBasis, "nicht still geräumt");
+  K.verwerfen(mac, { support });
+  assert.equal(K.ansicht(mac, { support }).aktiv, false);
+});
+
+test("Große Datei (über 5 MB): „beide“ und „andere“ gehen als Strom aus dem Objekt — ohne Puffer-Limit, Ergebnis ist byte-gleich", () => {
+  for (const wahl of ["andere", "beide"]) {
+    const { mac, handy, support } = grossAufbau();
+    const r = loes(mac, { support, auswahl: auswahlVon({ "10_notizen/gross.md": wahl }) });
+    assert.equal(r.ok, true);
+    const vomHandy = g(handy, "rev-parse", "HEAD:10_notizen/gross.md").trim();
+    const arbeit = (p) => g(mac, "hash-object", "--", p).trim();
+    if (wahl === "andere") assert.equal(arbeit("10_notizen/gross.md"), vomHandy);
+    else {
+      assert.equal(r.kopien.length, 1);
+      assert.equal(arbeit(r.kopien[0].pfad), vomHandy, "die Kopie ist die Fassung des anderen Geräts, Byte für Byte");
+      assert.ok(statSync(join(mac, r.kopien[0].pfad)).size > 5 * 1024 * 1024);
+    }
+    assert.equal(g(mac, "status", "--porcelain").trim(), "");
+  }
 });
 
 // ───────────────────────────── Kommandozeile (so startet die Werkstatt den Kern) ─────────────────────────────
@@ -780,7 +851,7 @@ test("brain abgleich ansicht|loesen: JSON auf stdout, Fehler als { ok: false, st
     assert.equal(r.status, 0, r.stderr);
     return JSON.parse(r.stdout);
   };
-  assert.equal(lauf("markieren").ok, true);
+  assert.equal(lauf("markieren", { vorherAbwesend: true }).markiert, true);
   const a = lauf("ansicht", {});
   assert.equal(a.ok, true); assert.equal(a.aktiv, true); assert.equal(a.dateien.length, 5); assert.equal(a.rueckgaengig.moeglich, false);
   const gesehen = { meine: a.meine, andere: a.andere };

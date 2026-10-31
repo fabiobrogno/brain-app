@@ -1417,8 +1417,7 @@ async function oeffneKonflikt() {
     konfliktInst = m.zeigeKonflikt($("konflikt-host"), { api, daten: r, aufgabenOrdner: S.aufgabenOrdner,
       beiZustand: ({ label }) => zeichnePfadKonflikt(label), beiSchliessen: ({ phase }) => schliesseKonflikt(phase), beiStandNeu: nachZeitueberschreitung,
       beiFertig: konfliktFertig, beiVeraltet: async () => { await schliesseKonflikt("liste"); oeffneKonflikt(); },
-      beiVerworfen: async () => { await schliesseKonflikt("fertig"); toast(TK.haelt.verworfen, { ms: 9000 }); },
-      beiUebernommen: async () => { await schliesseKonflikt("fertig"); oeffneKonflikt(); }, beiZurueck: async () => { await ladeNachAbgleich().catch(() => {}); await ladeGit(); ladeInfo(); } });
+      beiVerworfen: async () => { await schliesseKonflikt("fertig"); toast(TK.haelt.verworfen, { ms: 9000 }); }, beiZurueck: async () => { await ladeNachAbgleich().catch(() => {}); await ladeGit(); ladeInfo(); } });
     if (konfliktMerke) { konfliktInst.setzeEntscheidungen(konfliktMerke); konfliktMerke = null; }
     zeichnePfadKonflikt(konfliktInst.label());
     for (const t of document.querySelectorAll("#toast-host .toast")) if (t.textContent.startsWith(TK.mitteilung.titel)) t.remove(); // die Mitteilung hat ihren Zweck erfüllt (und verdeckte den Abschluss-Knopf)

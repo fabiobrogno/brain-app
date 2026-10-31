@@ -399,13 +399,16 @@ export function oeffneVault(vaultPfad, opts = {}) {
     // Wartet ein gemerkter Stand auf neue Entscheidungen (nach „Rückgängig“), sendet auch der Studio-Abgleich nichts: die Oberfläche öffnet die Ansicht
     const detail = leseAbgleichDetail(wurzel, opts.support);
     if (detail && detail.haelt) throw new HttpFehler(409, "Es warten noch Entscheidungen zu einem Konflikt. Bitte schließe sie zuerst ab.", { konflikt: true, dateien: detail.dateien, haelt: true });
+    // Markiert wird nur, wenn dieser Abgleich die Zusammenführung SELBST begonnen hat: vorher war keine offen (MERGE_HEAD fehlte), und die 409 trägt `gestartet`
+    let vorherAbwesend = false;
+    try { vorherAbwesend = statSync(join(wurzel, ".git")).isDirectory() && !existsSync(join(wurzel, ".git", "MERGE_HEAD")); } catch { /* unklar: nicht markieren */ }
     let r;
     try {
       r = await gitFn.sync(wurzel, gitCtx({ limitSync: opts.gitLimitSync, limitGesamt: opts.gitLimitAbgleich, konflikteLoesen: !!(a && a.konflikteLoesen === true),
         sperre: async () => { const sp = await abgleichSperre("studio-abgleich"); if (!sp.ok) throw new HttpFehler(409, BESETZT_TEXT, { art: "laeuft" }); return sp; } }));
     } catch (e) {
       // Die Zusammenführung blieb offen: Kortex merkt sich, dass SIE sie begonnen hat (nur dann lösen oder brechen wir sie später ab)
-      if (e instanceof HttpFehler && e.status === 409 && e.extra && e.extra.konflikt) { try { await gitFn.gitExklusiv(wurzel, () => kernAbgleich("markieren")); } catch { /* ohne Marke bleibt sie „fremd“: nur ansehen */ } }
+      if (vorherAbwesend && e instanceof HttpFehler && e.status === 409 && e.extra && e.extra.konflikt && e.extra.gestartet === true) { try { await gitFn.gitExklusiv(wurzel, () => kernAbgleich("markieren", { vorherAbwesend: true })); } catch { /* ohne Marke bleibt sie „fremd“: nur ansehen */ } }
       throw e;
     }
     loescheAbgleichStand(wurzel, { support: opts.support }); // der Abgleich lief durch: der Vermerk der Hintergrund-Sicherung (Konflikt, Anmeldung, Neues) gilt nicht mehr
@@ -502,7 +505,6 @@ export function oeffneVault(vaultPfad, opts = {}) {
     gitKonfliktAbbrechen: async () => kernGesperrt("abbrechen"),
     gitKonfliktRueckgaengig: async () => kernGesperrt("rueckgaengig"),
     gitKonfliktVerwerfen: async () => kernGesperrt("verwerfen"),
-    gitKonfliktUebernehmen: async () => kernGesperrt("uebernehmen"),
     gitNachsehen: async () => mitSicherungsStand(await gitFn.nachsehen(wurzel, gitCtx())),
     gitWiederherstellenVorschau: async (pfad, sha) => gitFn.wiederherstellenVorschau(wurzel, pfad, sha, gitCtx()),
     gitWiederherstellen: async (a) => { umstellungSperre(); return gitFn.wiederherstellen(wurzel, a || {}, gitCtx({ limit: opts.gitLimitCommit })); },

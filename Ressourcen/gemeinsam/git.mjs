@@ -267,7 +267,12 @@ function mergeReste(wurzel, ab) {
 // opt.sperre (optional, von vault.mjs): nimmt die gemeinsame Sperre aller Abgleiche (Kern und Studio, kern/abgleich-sperre.mjs) — erst NACH der Sperre im Prozess,
 // damit „wer zuerst aufruft, gewinnt“ bleibt. Sie liefert { freigeben() } oder wirft (409).
 // Dieselbe Sperre im Prozess für Aufrufe außerhalb dieser Datei (der Kern-Befehl `brain abgleich` fasst Index und Arbeitsbaum an: nie zugleich mit Commit, Abgleich oder Nachsehen)
-export function gitExklusiv(wurzel, fn) { return exklusiv(wurzel, fn); }
+// Wartet kurz (höchstens 3 s), statt gleich mit 409 abzulehnen: das Nachsehen beim Start hält die Sperre nur einen Moment.
+export async function gitExklusiv(wurzel, fn, warteMs = 3000) {
+  const ende = Date.now() + warteMs;
+  while (laufend.has(wurzel) && Date.now() < ende) await new Promise((ok) => setTimeout(ok, 40));
+  return exklusiv(wurzel, fn);
+}
 export function sync(wurzel, opt = {}) {
   return exklusiv(wurzel, async () => {
     const dateiSperre = typeof opt.sperre === "function" ? await opt.sperre() : null;
@@ -362,7 +367,7 @@ async function syncOhneSperre(wurzel, opt = {}) {
             else await G(["merge", "--abort"], rueckweg);
             throw e;
           }
-          if (offen.length) throw new HttpFehler(409, KONFLIKT_TEXT, { konflikt: true, dateien: offen.map((e) => e.pfad), versteckteBehalten: versteckteBehalten_ });
+          if (offen.length) throw new HttpFehler(409, KONFLIKT_TEXT, { konflikt: true, gestartet: true, dateien: offen.map((e) => e.pfad), versteckteBehalten: versteckteBehalten_ }); // gestartet: DIESER Abgleich hat die Zusammenführung begonnen (nicht keinMergeOffen)
           m = { code: 0 }; // alles war automatisch lösbar: Zusammenführung ist abgeschlossen
         }
         if (m.code !== 0) {

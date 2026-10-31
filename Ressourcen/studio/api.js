@@ -109,7 +109,6 @@ export const api = {
   gitKonfliktLoesen: (auswahl, gesehen) => anfrage("POST", "/api/git/konflikt/loesen", { auswahl, gesehen }),
   gitKonfliktAbbrechen: () => anfrage("POST", "/api/git/konflikt/abbrechen", {}),
   gitKonfliktVerwerfen: () => anfrage("POST", "/api/git/konflikt/verwerfen", {}),
-  gitKonfliktUebernehmen: () => anfrage("POST", "/api/git/konflikt/uebernehmen", {}),
   gitKonfliktRueckgaengig: () => anfrage("POST", "/api/git/konflikt/rueckgaengig", {}),
   gitNachsehen: () => anfrage("POST", "/api/git/nachsehen", {}),
   zurueckholenVorschau: (pfad, sha) => anfrage("GET", "/api/git/wiederherstellen/vorschau" + q({ pfad, sha })),

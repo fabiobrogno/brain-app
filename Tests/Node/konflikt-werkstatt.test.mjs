@@ -176,26 +176,58 @@ test("Ohne bestätigtes Ziel sendet das Lösen nicht (nur ein Hinweis), auch nic
   assert.equal(g(a, "status", "--porcelain").trim(), "");
 });
 
-test("Zusammenführung, die nicht über den Studio-Abgleich begonnen wurde: Ansicht ja (fremd), Lösen und Später 409; der Studio-Abgleich markiert seine eigene", async () => {
+test("K-neu-1: eine schon offene Zusammenführung aus dem Terminal (mit Handarbeit) wird vom Studio-Abgleich oder „Jetzt sichern“ NIE markiert — Später ist 409, die Handarbeit bleibt", async () => {
   const { a, b, v } = mitRemote();
   commitIn(b, "start.md", "# Start\nB\n", "B", true);
   commitIn(a, "start.md", "# Start\nA\n", "A");
   g(a, "fetch", "-q", "origin");
-  assert.throws(() => g(a, "merge", "--no-edit", "origin/main"));
+  assert.throws(() => g(a, "merge", "--no-edit", "origin/main")); // im Terminal begonnen
+  schreibe(a, "start.md", "# Start\nim Terminal von Hand gelöst\n");
+  // „Abgleichen“ in der Oberfläche (Palette, Statusleiste): die 409 kommt von der schon offenen Zusammenführung, nicht von einem eigenen Start
+  const e = await wirft(v.gitSync({ konflikteLoesen: true }));
+  assert.equal(e.status, 409); assert.equal(e.extra.konflikt, true); assert.notEqual(e.extra.gestartet, true);
+  // „Jetzt sichern“
+  assert.equal((await wirft(v.gitCommit({ nachricht: "x", dateien: ["start.md"] }))).status, 409);
   const an = await v.gitKonfliktAnsicht();
   assert.equal(an.fremd, true);
   assert.equal((await wirft(loesen(v, [{ pfad: "start.md", wahl: "meine" }]))).extra.art, "fremd");
   assert.equal((await wirft(v.gitKonfliktAbbrechen())).extra.art, "fremd");
-  g(a, "merge", "--abort");
-  await wirft(v.gitSync({ konflikteLoesen: true }));
-  assert.equal((await v.gitKonfliktAnsicht()).fremd, false, "der Studio-Abgleich hat die Marke gesetzt");
+  assert.ok(existsSync(join(a, ".git", "MERGE_HEAD")));
+  assert.equal(lies(a, "start.md"), "# Start\nim Terminal von Hand gelöst\n");
 });
 
-test("Kern-Befehle laufen unter der Sperre im Prozess: neben einem laufenden Abgleich gibt es 409 „läuft schon“ statt einer Kollision auf dem Index", async () => {
+test("Der Studio-Abgleich markiert nur die Zusammenführung, die er SELBST begonnen hat", async () => {
+  const { a, b, v } = mitRemote();
+  commitIn(b, "start.md", "# Start\nB\n", "B", true);
+  commitIn(a, "start.md", "# Start\nA\n", "A");
+  const e = await wirft(v.gitSync({ konflikteLoesen: true }));
+  assert.equal(e.extra.gestartet, true);
+  assert.equal((await v.gitKonfliktAnsicht()).fremd, false);
+  assert.equal((await v.gitKonfliktAbbrechen()).offen, true);
+});
+
+test("Kern-Befehle laufen unter der Sperre im Prozess und warten kurz (statt gleich 409): ein Abgleich und ein Kern-Befehl kollidieren nicht auf dem Index", async () => {
+  const gitFn = await import(pfad("gemeinsam", "git.mjs"));
+  const wurzel = tmp("brain-sperre-");
+  const zeiten = [];
+  const arbeit = (name, ms) => gitFn.gitExklusiv(wurzel, async () => { zeiten.push(`${name}+`); await new Promise((ok) => setTimeout(ok, ms)); zeiten.push(`${name}-`); return name; });
+  const t0 = Date.now();
+  const [x, y] = await Promise.allSettled([arbeit("a", 300), arbeit("b", 10)]);
+  assert.equal(x.status, "fulfilled"); assert.equal(y.status, "fulfilled", "der zweite wartet, statt abgelehnt zu werden");
+  assert.deepEqual(zeiten, ["a+", "a-", "b+", "b-"], "nie gleichzeitig");
+  assert.ok(Date.now() - t0 >= 290);
+  // länger als die Wartezeit: dann 409
+  const lang = gitFn.gitExklusiv(wurzel, () => new Promise((ok) => setTimeout(ok, 700)));
+  await new Promise((ok) => setTimeout(ok, 20));
+  const kurz = await wirft(gitFn.gitExklusiv(wurzel, async () => 1, 100));
+  assert.equal(kurz.status, 409); assert.match(kurz.message, /Abgleich läuft schon/);
+  await lang;
+  // über die Werkstatt: Später neben einem laufenden Studio-Abgleich bricht nicht mit einer Kollision ab
   const { v } = await konfliktAufbauen();
   await v.gitKonfliktAbbrechen();
   const [s, r] = await Promise.allSettled([v.gitSync({}), v.gitKonfliktRueckgaengig()]);
-  assert.equal(r.status, "rejected"); assert.equal(r.reason.status, 409); assert.match(r.reason.message, /Abgleich läuft schon/);
+  assert.ok(r.status === "fulfilled" || r.reason.status === 409, String(r.reason && r.reason.message));
+  if (r.status === "rejected") assert.doesNotMatch(r.reason.message, /index\.lock/);
   void s;
 });
 
@@ -223,21 +255,4 @@ test("Gemerkter Stand: Status meldet seit wann die Sicherung wartet (Tage); Verw
   assert.equal(g(a, "rev-parse", "HEAD").trim(), kopfVorher, "der Verlauf ist unberührt");
   assert.equal((await rufe("POST", "/api/git/konflikt/verwerfen")).status, 409);
   assert.equal((await v.gitKonfliktAnsicht()).aktiv, false);
-});
-
-test("Übernehmen über die Werkstatt: eine ältere Zusammenführung ohne Marke wird nach Bestätigung zur eigenen; Methode und Fehler der Route", async () => {
-  const { a, b, v } = mitRemote();
-  const h = erzeugeHandler({ vault: a });
-  const rufe = async (methode, p) => { const r = await h({ methode, pfad: p, query: null }); return { status: r.status, j: JSON.parse(r.body.toString("utf8")) }; };
-  assert.equal((await rufe("POST", "/api/git/konflikt/uebernehmen")).status, 409, "keine offene Zusammenführung");
-  commitIn(b, "start.md", "# Start\nB\n", "B", true);
-  commitIn(a, "start.md", "# Start\nA\n", "A");
-  g(a, "fetch", "-q", "origin");
-  assert.throws(() => g(a, "merge", "--no-edit", "origin/main"));
-  const an = await v.gitKonfliktAnsicht();
-  assert.equal(an.fremd, true); assert.equal(an.uebernehmbar, true);
-  assert.equal((await rufe("GET", "/api/git/konflikt/uebernehmen")).status, 405);
-  assert.equal((await rufe("POST", "/api/git/konflikt/uebernehmen")).status, 200);
-  assert.equal((await v.gitKonfliktAnsicht()).fremd, false);
-  assert.equal((await loesen(v, [{ pfad: "start.md", wahl: "meine" }])).ok, true);
 });

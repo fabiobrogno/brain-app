@@ -132,22 +132,12 @@ export function zeigeKonflikt(host, ctx) {
   host.replaceChildren(wurzel);
 
   const nurAnsehen = !!daten.fremd;
-  // ---------- „Nur ansehen“ (Zusammenführung ohne Marke): Hinweis mit kopierbaren Befehlen, ggf. „Als Kortex-Zusammenführung übernehmen“ ----------
+  // ---------- „Nur ansehen“ (Zusammenführung ohne Marke): Hinweis mit kopierbaren Befehlen ----------
   const kopiere = async (text) => { try { await navigator.clipboard.writeText(text); toast(TK.fremd.kopiert); } catch { toast(TK.fremd.kopierenFehler, { fehler: true }); } };
   const befehl = (cmd, hinweis) => h("div", { klasse: "k-cmd" }, h("code", { text: cmd }), h("span", { text: hinweis }), baueKnopf({ text: TK.fremd.kopieren, groesse: "s", symbol: "kopieren", daten: { "data-kopieren": cmd }, aufKlick: () => kopiere(cmd) }));
   function fremdPanel() {
     const kinder = [h("p", { text: TK.fremd.text }), h("p", { klasse: "k-fremd-schritt", text: TK.fremd.schritte }), befehl(TK.fremd.weiter, TK.fremd.weiterHinweis), befehl(TK.fremd.abbruch, TK.fremd.abbruchHinweis)];
-    if (daten.uebernehmbar) {
-      if (KS.uebernehmenFrage) kinder.push(h("div", { klasse: "k-frage", "data-frage": "uebernehmen" }, h("p", { text: TK.fremd.uebernehmenFrage }),
-        h("div", { klasse: "k-frage-knoepfe" }, baueKnopf({ text: TK.fremd.ja, variante: "primaer", groesse: "s", daten: { "data-k": "uebernehmen-ja" }, aufKlick: () => uebernehmenAusfuehren() }), baueKnopf({ text: TK.fremd.nein, groesse: "s", aufKlick: () => { KS.uebernehmenFrage = false; zeichne(); } }))));
-      else kinder.push(baueKnopf({ text: TK.fremd.uebernehmen, groesse: "s", daten: { "data-k": "uebernehmen-frage" }, aufKlick: () => { KS.uebernehmenFrage = true; zeichne(); } }));
-    } else if (daten.uebernahmeGrund) kinder.push(h("p", { klasse: "k-fremd-grund", text: TK.fremd.uebernehmenGeht(daten.uebernahmeGrund) }));
     return h("div", { klasse: "k-fremd", "data-fremd": "", role: "status" }, ...kinder);
-  }
-  async function uebernehmenAusfuehren() {
-    if (KS.laeuft) return; KS.laeuft = true;
-    try { await api.gitKonfliktUebernehmen(); KS.laeuft = false; toast(TK.fremd.uebernommen, { ms: 6000 }); await ctx.beiUebernommen?.(); }
-    catch (err) { KS.laeuft = false; KS.uebernehmenFrage = false; toast(err?.message || TK.fehler.loesen, { fehler: true, ms: 9000 }); zeichne(); }
   }
   // ---------- Gemerkter Stand (nach „Rückgängig“ oder einem Abbruch): Verwerfen mit Bestätigung im Fenster ----------
   function haeltPanel() {
@@ -460,7 +450,7 @@ export function zeigeKonflikt(host, ctx) {
   function liste() {
     const beschr = items.every((i) => i.typ === "geloescht") ? TK.liste.geloescht : items.some((i) => i.typ === "board" || i.typ === "geloescht") ? TK.liste.gemischt : TK.liste.standard;
     return [h("div", { klasse: "k-liste-kopf" }, h("h2", null, TK.liste.titel, h("span", { klasse: "n", text: String(items.length) })), h("p", { text: beschr }),
-      nurAnsehen ? fremdPanel() : null, daten.haelt ? haeltPanel() : null),
+      nurAnsehen ? fremdPanel() : null, (daten.weitergearbeitet || []).length ? h("p", { klasse: "k-haelt-notiz", "data-weitergearbeitet": "", text: TK.haelt.weitergearbeitetNotiz(daten.weitergearbeitet.map((w) => w.titel || nameVon(w.pfad)).join(", ")) }) : null, daten.haelt ? haeltPanel() : null),
       h("div", { klasse: "k-liste-scroll", role: "listbox", "aria-label": TK.liste.beschriftung }, ...items.map((it, i) => {
         const u = it.typ === "umbenannt" ? TK.umbenannt.listeU(nameVon(it.pfad), nameVon(it.pfadAndere)) : it.typ === "geloescht" ? (it.wer === "andere" ? TK.liste.geloeschtAndere(gName) : TK.liste.geloeschtMac(gName)) : it.typ === "board" ? TK.liste.karte
           : TK.liste.unterschiede(DIESER_MAC, it.andere.geraet || G || gKurz, it.segs ? bloecke(it).length : 1);
@@ -502,10 +492,20 @@ export function zeigeKonflikt(host, ctx) {
     d.replaceChildren(kopf(it), akts, folge, body);
     if (gleich) body.scrollTop = y;
   }
+  // Nichts zu entscheiden, aber ein Stand hält die Sicherung an (ungültig oder seitdem weitergearbeitet): Erklärung und „Verwerfen“, nie stilles Räumen
+  function leerAnsicht() {
+    const ung = !!daten.ungueltig;
+    return h("div", { klasse: "k-mitte", "data-konflikt-leer": "" }, h("div", { klasse: "k-kreis" }, zeichen("warnung", 24)),
+      h("h2", { text: ung ? TK.haelt.ungueltigTitel : TK.haelt.weitergearbeitetTitel }), h("p", { text: ung ? TK.haelt.ungueltigText : TK.haelt.weitergearbeitetText }),
+      (daten.weitergearbeitet || []).length ? h("ul", { klasse: "k-zus" }, ...daten.weitergearbeitet.map((w) => h("li", null, zeichen("notiz", 16), h("div", null, h("b", { text: w.titel || nameVon(w.pfad) }), h("span", { text: w.pfad }))))) : null,
+      haeltPanel(),
+      h("div", { klasse: "knoepfe" }, baueKnopf({ text: TK.haelt.spaeter, nach: [kbd("esc")], aktion: "konflikt-spaeter", aufKlick: () => schliessen() })));
+  }
   function zeichne() {
     if (KS.zerstoert) return;
     wurzel.dataset.phase = KS.phase;
-    if (KS.phase === "sync") { wurzel.replaceChildren(syncAnsicht()); }
+    if (!items.length) { wurzel.dataset.phase = "leer"; wurzel.replaceChildren(leerAnsicht()); }
+    else if (KS.phase === "sync") { wurzel.replaceChildren(syncAnsicht()); }
     else if (KS.phase === "fertig") { wurzel.replaceChildren(fertigAnsicht()); }
     else {
       const y = wurzel.querySelector(".k-liste-scroll")?.scrollTop || 0;
