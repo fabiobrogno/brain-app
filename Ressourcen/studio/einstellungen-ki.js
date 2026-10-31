@@ -520,10 +520,10 @@ export function erzeugeKi(o) {
     if (!kt.schutz?.moeglich) return h("span", { klasse: "kx-schutz", "data-kx": "sperrzustand", "data-zustand": "kortex", title: T.zugriff.nurKortexTitel, text: T.zugriff.nurKortex });
     const z = kt.schutz.vaults?.[v.schluessel || v.pfad] || kt.schutz.vaults?.[v.pfad] || "aus";
     const gut = z === "aktiv" || z === "eigene";
-    if (gut && kt.schutz.strenger && kt.schutz.strengerAktiv) return h("span", { klasse: "kx-schutz ok", "data-kx": "sperrzustand", "data-zustand": "streng", title: T.zugriff.strengTitel }, symbol("schild", 11), T.zugriff.streng);
-    if (gut) return h("span", { klasse: "kx-schutz ok", "data-kx": "sperrzustand", "data-zustand": z, title: T.zugriff.leseverbotTitel }, symbol("schild", 11), T.zugriff.leseverbot);
+    if (gut && kt.schutz.strenger && kt.schutz.strengerAktiv) return h("span", { klasse: "kx-schutz ok", "data-kx": "sperrzustand", "data-zustand": "streng", title: T.zugriff.strengTitel }, symbol("schild", 12), T.zugriff.streng);
+    if (gut) return h("span", { klasse: "kx-schutz ok", "data-kx": "sperrzustand", "data-zustand": z, title: T.zugriff.leseverbotTitel }, symbol("schild", 12), T.zugriff.leseverbot);
     return h("button", { type: "button", klasse: "kx-schutz warn", "data-kx": "sperrzustand", "data-zustand": z, "data-aktion": "leseverbot-eintragen", title: TK.sperre[z] || TK.sperre.aus, disabled: S.beschaeftigt || z === "defekt",
-      aufClick: () => sperrDialog(kt, v, true) }, symbol("warnung", 11), T.zugriff.nurKortex);
+      aufClick: () => sperrDialog(kt, v, true) }, symbol("warnung", 12), T.zugriff.nurKortex);
   }
   function stufenMenue(ev, kt, v, aktuell) {
     oeffneMenue(ev.currentTarget, STUFEN.map((s) => ({ name: stufeName(s), sub: T.zugriff.legende[s], haken: s === aktuell, id: `stufe-${s}`, tun: () => waehleStufe(kt, v, s) })), { breite: 250 });
