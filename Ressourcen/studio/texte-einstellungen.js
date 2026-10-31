@@ -92,11 +92,37 @@ export const BEREICHE = [
   },
   {
     id: "ki", name: "KI & Konten", gruppe: "Wissen", symbol: "funke", woerter: ["konto", "claude", "codex", "anmelden", "abo"],
-    intro: "Kortex arbeitet mit den KI-Programmen, die du schon hast, und mit deinem eigenen Abo. Diese Ansicht zieht mit dem nächsten Update hierher um; bis dahin öffnest du sie wie gewohnt.",
+    intro: "Kortex arbeitet mit den KI-Programmen, die du schon hast, und mit deinem eigenen Abo. Hier siehst du, welche Konten angemeldet sind und was jedes Konto in welchem Vault darf.",
     abschnitte: [
-      { id: "konten", titel: "Programme und Konten", zeilen: [
-        { id: "ki-konten", sonder: true, titel: "KI-Konten und Zugriff", text: "Wer darf welchen Vault sehen? Konten, Stufen und Schutz.", woerter: ["konto", "zugriff", "stufe", "gesperrt", "leseverbot", "schutz", "matrix", "claude", "codex", "berechtigung"] },
-        { id: "ki-verbinden", sonder: true, titel: "KI verbinden", text: "Trägt Kortex bei Claude Code oder Codex ein, damit sie deinen Vault finden.", woerter: ["verbinden", "mcp", "claude", "codex", "cursor", "eintragen", "schnittstelle"] },
+      { id: "uebersicht", titel: "", zeilen: [
+        { id: "ki-uebersicht", sonder: true, titel: "Übersicht der KI-Konten", text: "Wie viele Konten angemeldet sind, wie viele deine Anmeldung brauchen und wie viele Sperren gelten.", woerter: ["übersicht", "angemeldet", "anmeldung", "zahlen", "konten", "sperren"] },
+      ] },
+      { id: "konten", titel: "Programme und Konten", text: "Kortex sucht im Pfad deiner Login-Shell, in /opt/homebrew/bin, /usr/local/bin und /Applications. Ein Konto ist eine eigene Anmeldung mit eigenem Einstellungsordner.", zeilen: [
+        { id: "ki-konten", sonder: true, titel: "Programme und Konten", text: "Gefundene KI-Programme mit Pfad und Version, ihre Konten, Anmelden, Umbenennen, Entfernen und ein weiteres Konto hinzufügen.", woerter: ["konto", "programm", "anmelden", "abmelden", "neu suchen", "hinzufügen", "entfernen", "umbenennen", "claude", "codex", "cursor", "gemini", "version", "pfad", "verbinden", "mcp", "eintragen", "schnittstelle", "ordner"] },
+      ] },
+      { id: "zugriff", titel: "Wer darf welchen Vault sehen?", text: "Jede Zelle ist die Stufe eines Kontos in einem Vault. Sperren fragt vorher nach.", zeilen: [
+        { id: "ki-zugriff", sonder: true, titel: "Zugriff je Konto und Vault", text: "Gesperrt, Lesen, Posteingang oder Erweitert, je KI-Konto und Vault. Dazu die Stufe für neu gefundene Konten.", woerter: ["zugriff", "stufe", "gesperrt", "lesen", "posteingang", "erweitert", "matrix", "berechtigung", "neue konten", "sperren"] },
+      ] },
+      { id: "schutz", titel: "Wie fest ist die Sperre?", text: "Drei Stufen, ehrlich benannt. Nur Claude Code kennt Stufe 2 und 3; bei anderen Programmen sperrt Kortex seine eigenen Wege.", zeilen: [
+        { id: "ki-schutz", sonder: true, titel: "Schutz-Ampel je Claude-Konto", text: "Kortex-Wege, Leseverbot in Claude Code und Strenger Schutz (Sandbox): was die Sperre wirklich hält.", woerter: ["schutz", "ampel", "leseverbot", "sandbox", "streng", "strenger schutz", "sperre", "shell", "claude"] },
+      ] },
+      { id: "frage", titel: "Frag deinen Vault", zeilen: [
+        { id: "ki-frage-konto", sonder: true, titel: "Antwortet mit", text: "Wenn du in „Frag“ nichts anderes wählst. Nur Konten, die den offenen Vault lesen dürfen.", woerter: ["frage", "frag", "standard", "konto", "antwort"] },
+        { id: "ki-frage-modell", sonder: true, titel: "Gründlichkeit", text: "Schnell nutzt das kleine Modell und antwortet rasch. Gründlich nimmt ein größeres Modell.", woerter: ["frage", "modell", "schnell", "gründlich", "haiku", "sonnet"] },
+      ] },
+      { id: "pflege", titel: "Pflege je Vault", text: "Einmal am Tag räumt Kortex im Hintergrund auf. Wählbar sind nur Konten mit Stufe „Erweitert“.", zeilen: [
+        { id: "ki-pflege", sonder: true, titel: "Pflege-Konto und wie viel KI", text: "Welches Konto die tägliche Pflege eines Vaults übernimmt und wie viel KI dabei mitarbeitet. Jetzt pflegen.", woerter: ["pflege", "konto", "klein", "mittel", "ohne ki", "jetzt pflegen", "tageslauf", "haiku", "sonnet"] },
+      ] },
+      { id: "arbeit", titel: "Kortex bei der Arbeit", text: "Zusätzliche Eintragungen, jede nur auf deinen Klick und mit Rückweg. Die Texte sagen genau, was wo eingetragen wird.", zeilen: [
+        { id: "ki-hooks", sonder: true, titel: "Claude Code: Kortex beim Arbeiten dabeihaben", text: "Trägt in die gewählten Claude-Profile kleine Helfer ein: passende Notizen beim Fragen, Schutz vor versehentlichen Änderungen am Wiki, Arbeitsstand, Statuszeile und Kortex-Befehle. Ausschalten nimmt genau das wieder heraus.", woerter: ["hooks", "claude", "profil", "statuszeile", "befehle", "settings", "eintragen"] },
+        { id: "ki-git", sonder: true, titel: "Vor jedem Speichern nach Passwörtern und Schlüsseln suchen", text: "Beim Speichern einer Version prüft Kortex, ob Passwörter oder Schlüssel in den Notizen stehen, und hält das Speichern dann an. Gilt nur in diesem Vault.", woerter: ["passwort", "schlüssel", "prüfung", "speichern", "git", "commit", "hook", "secrets", "geheimnisse"] },
+        { id: "ki-dienst", sonder: true, titel: "Kortex darf diesen Vault im Hintergrund aufräumen", text: "Richtet einen Dienst auf deinem Mac ein, der einmal am Tag genau diesen Vault pflegt. Ausschalten löscht ihn wieder.", woerter: ["hintergrund", "dienst", "launchagent", "tageslauf", "aufräumen", "automatik", "netzteil"] },
+      ] },
+      { id: "aktivitaet", titel: "Was deine KIs zuletzt getan haben", text: "Nur über Kortex. Bleibt auf diesem Mac.", zeilen: [
+        { id: "ki-aktivitaet", sonder: true, titel: "Aktivität der KIs", text: "Die letzten Pflege-Läufe. Zugriffe und Abweisungen folgen mit den Mitteilungen.", woerter: ["aktivität", "protokoll", "abweisung", "zugriff", "verlauf", "pflege", "mitteilungen"] },
+      ] },
+      { id: "ehrlich", titel: "Was Kortex schützt – und was nicht", zeilen: [
+        { id: "ki-ehrlich", sonder: true, titel: "Was Kortex schützt – und was nicht", text: "Kortex-Wege, Claude Code, andere Programme und echte Trennung ehrlich benannt.", woerter: ["schutz", "ehrlich", "grenzen", "trennung", "sicherheit", "macos-benutzer", "selbstauskunft"] },
       ] },
     ],
   },
@@ -240,6 +266,7 @@ export const TE = {
   speichertGerade: "Speichert …",
   statusDatei: "Einstellungen werden sofort gespeichert",
   bald: "bald",
+  braucht: "Ein Konto braucht deine Anmeldung",
   laedt: "Kortex liest die Einstellungen …",
   fehlerLaden: "Die Einstellungen konnten nicht gelesen werden. Es wurde nichts verändert.",
   nochmal: "Nochmal versuchen",

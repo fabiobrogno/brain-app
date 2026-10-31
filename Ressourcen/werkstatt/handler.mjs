@@ -11,6 +11,7 @@ import { oeffneVault, HttpFehler } from "../gemeinsam/vault.mjs";
 import { kindUmgebung, supportOrdner, falte, kernOrdner } from "../gemeinsam/basis.mjs";
 import { starte, neueFrist, registriere, beendeGruppe } from "../gemeinsam/prozess.mjs";
 import { findeProgramm, erkenneAgenten, erkenneKatalog } from "../gemeinsam/ki.mjs";
+import { ladeKatalog } from "../gemeinsam/ki-katalog.mjs";
 import * as vaultsFn from "../gemeinsam/vaults.mjs";
 import * as vertrauenFn from "../gemeinsam/vertrauen.mjs";
 import { erzeugeGitHub } from "../gemeinsam/github.mjs";
@@ -149,7 +150,7 @@ export function erzeugeHandler(o) {
         return e.konto;
       }
       if (programm === "claude" && e.profil !== undefined) {
-        const pr = profilZuPfad(e.profil);
+        const pr = profilZuPfad(e.profil, undefined, vaultOpt.support || supportOrdner());
         if (!pr) return null;
         let id = konten.kontoFuerProfil(pr.pfad);
         if (!id && anlegen) { konten.synchronisiere(); id = konten.kontoFuerProfil(pr.pfad); }
@@ -363,6 +364,25 @@ export function erzeugeHandler(o) {
         // Programme mit Einstellungsdatei (Cursor meldet weiter `cursorDa`); `katalog`: alle Programme des KI-Katalogs (gemeinsam/ki-katalog.json) mit Fund und Version
         return { ...erg, programme: erkenneProgramme({ agenten: erg.agenten }), katalog: await erkenneKatalog({ neu }) };
       }
+      // Programme für „Einstellungen → KI & Konten“: in der App antwortet Swift selbst (Login-Shell-PATH, KiErkennung.swift) und fängt diese Route ab; hier der Rückfall für Browser und Entwicklung
+      // (Suche über PATH und die üblichen Ordner, gleiche Antwortform). Anmelden gibt es nur in der App.
+      case "/api/ki/programme": {
+        nur("GET");
+        const neu = q.get("neu") === "1";
+        const kat = await erkenneKatalog({ neu });
+        const programme = ladeKatalog().map((k) => ({ k, f: kat.find((x) => x.id === k.id) })).filter((x) => x.f && x.f.gefunden).map(({ k, f }) => {
+          const befehl = f.quelle === "cli" ? k.befehle.find((b) => findeProgramm(b)) || null : null;
+          const pfad = befehl ? findeProgramm(befehl) : (f.quelle === "app" ? k.apps.map((a) => join("/Applications", a)).find((p) => { try { return statSync(p).isDirectory(); } catch { return false; } }) || null : null);
+          return { id: k.id, name: k.name, art: k.art, pfad, version: f.version ?? null, quelle: f.quelle, befehl };
+        });
+        return { programme, gesucht: new Date().toISOString(), ausShell: false, nurBrowser: true };
+      }
+      case "/api/ki/anmeldestatus": nur("POST"); return { zustand: "unbekannt", grund: "nur-app" };
+      case "/api/ki/anmelden": nur("POST"); throw new HttpFehler(409, "Das Anmelden öffnet das Terminal und geht nur in der Kortex-App. Öffne Kortex als App und klicke dann auf „Anmelden …“.", { art: "nur-app" });
+      case "/api/ki/konto-neu": nur("POST"); return konten.legeKontoAn(eingabe());
+      case "/api/ki/ordner-papierkorb": nur("POST"); return konten.papierkorbOrdner(eingabe());
+      case "/api/ki/konto-entfernen": nur("POST"); return konten.entferneKonto(eingabe());
+      case "/api/ki/anmeldung": nur("POST"); return konten.anmeldung(eingabe());
       // KI-Konten (docs/plaene/ki-konten.md): Liste mit Stufen je Vault · Name/Abo setzen · Stufe eines Kontos in einem Vault setzen
       case "/api/ki/konten":
         if (methode === "GET") { await migrierePflege(v); return konten.stand(); }
@@ -547,7 +567,7 @@ export function erzeugeHandler(o) {
     const claude = findeClaude();
     if (!claude) throw new HttpFehler(404, "Claude Code wurde nicht gefunden.");
     const frist = neueFrist(fristen.mcpVerbinden);
-    const profil = e.konto !== undefined ? profilVon(konto) : e.profil === undefined ? null : profilZuPfad(e.profil);
+    const profil = e.konto !== undefined ? profilVon(konto) : e.profil === undefined ? null : profilZuPfad(e.profil, undefined, vaultOpt.support || supportOrdner());
     if (e.profil !== undefined && e.konto === undefined && !profil) throw new HttpFehler(400, "Dieses Claude-Profil gibt es nicht (mehr). Suche die Profile bitte neu.");
     const lauf = (args) => starte(claude, args, { cwd: homedir(), env: profil ? mitProfil(kindUmgebung({ CI: "1" }), profil) : kindUmgebung({ CI: "1" }), frist, timeout: fristen.mcpVerbinden, fehlt: "Claude Code wurde nicht gefunden.", zuLange: "Claude Code hat nicht rechtzeitig geantwortet." });
     try {
@@ -646,7 +666,7 @@ export function erzeugeHandler(o) {
     if (!claude) throw new HttpFehler(404, "Claude Code wurde nicht gefunden. Kopiere den Befehl und führe ihn im Terminal aus.", { befehl });
     const frist = neueFrist(fristen.mcpVerbinden);
     // Claude-Profil (Auswahl im Assistenten): nur ein erkanntes Profil; das Standardprofil nutzt ~/.claude.json, ein anderes <Profil>/.claude.json (CLAUDE_CONFIG_DIR).
-    const profil = e.konto !== undefined ? profilVon(konto) : e.profil === undefined ? null : profilZuPfad(e.profil);
+    const profil = e.konto !== undefined ? profilVon(konto) : e.profil === undefined ? null : profilZuPfad(e.profil, undefined, vaultOpt.support || supportOrdner());
     if (e.profil !== undefined && e.konto === undefined && !profil) throw new HttpFehler(400, "Dieses Claude-Profil gibt es nicht (mehr). Suche die Profile bitte neu.", { befehl });
     const lauf = (args) => starte(claude, args, { cwd: homedir(), env: profil ? mitProfil(kindUmgebung({ CI: "1" }), profil) : kindUmgebung({ CI: "1" }), frist, timeout: fristen.mcpVerbinden, fehlt: "Claude Code wurde nicht gefunden.", zuLange: "Claude Code hat nicht rechtzeitig geantwortet." });
     const ausgabeVon = (r) => (String(r.stdout || "") + String(r.stderr || "")).trim().slice(0, 2000);
