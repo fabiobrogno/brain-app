@@ -294,7 +294,7 @@ test("Remote hinzufügen: Statusleiste bei Kein Remote öffnet den Dialog", asyn
 
 test("Statusleiste: alle Elemente und Hell/Dunkel-Umschalter", async ({ page }) => {
   await start(page);
-  for (const id of ["version", "zweig", "remote", "sync", "geaendert", "verlauf", "theme", "einstellungen"]) await expect(page.locator(`[data-st="${id}"]`)).toBeVisible();
+  for (const id of ["version", "zweig", "remote", "sync", "geaendert", "verlauf", "claude", "theme", "einstellungen"]) await expect(page.locator(`[data-st="${id}"]`)).toBeVisible();
   await expect(page.locator('[data-st="vault"]')).toHaveCount(0); // P3: der Name steht oben in der Seitenleiste, der Ort nur als Hinweis am Vault-Wechsler
   await page.emulateMedia({ colorScheme: "light" });
   const farbe = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);

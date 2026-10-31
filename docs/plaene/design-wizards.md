@@ -276,6 +276,7 @@ Getestet mit pausierten Animationen (Init-Skript `animation-play-state: paused`)
 - **Keine Sprünge beim Laden:** erste Ladung zeigt Platzhalter (Liste sechs Karten, Seitenleiste fünf Zeilen) an der Stelle des Inhalts, erst nach 150 ms sichtbar (kein Flackern bei schnellen Ladungen); gemessen CLS beim Start 0,009.
 - **Scrollkanten:** Seitenleiste, Notizliste, Eigenschaften, Frag, Palette, Board-Spalten laufen dort, wo es weiter geht, mit 18 px Verlauf aus (`data-kanten` → `data-kante`, Maske).
 - **Tooltips:** jeder Symbolknopf mit `title` zeigt den eigenen Tooltip (500 ms bei Maus, sofort bei Tastaturfokus) statt des trägen System-Tooltips; das `title` kehrt danach zurück, der zugängliche Name (`aria-label`) bleibt.
+- **Statusleiste ohne Doppelungen:** KI steht nur einmal: ohne Konto der einzige Knopf „KI verbinden“ (der leere Konto-Platz ist ausgeblendet), mit Konto nur Konto und Kontingent (der Eintrag „KI verbinden“ ist per CSS weg); der lokale Stand heißt „Keine Änderungen“ statt zweitem „Alles gesichert" neben dem Abgleich-Stand; Test: jede Angabe der Leiste kommt genau einmal vor.
 - **Leere Zustände** gleichen Aufbau (Symbol in Kachel, Titel, ein Satz, höchstens eine Aktion); kleine Hinweise zentriert.
 - **Kein „null“/„undefined“:** Prüfung des sichtbaren Texts in Liste, Posteingang, Board, Notiz, Frag, Palette (Test).
 - **Schmale Fenster:** einzeilige Texte (Seitenleiste, Kopf, Karten, Statusleiste) kürzen statt umzubrechen; getestet bei 1000 px.

@@ -113,7 +113,7 @@ export const T = {
     gesichert: (z) => `Gesichert ${z}`,
     nieGesichert: "Noch nie abgeglichen",
     keinRemote: "Kein Remote", remoteHinzu: "Remote hinzufügen …", remoteTitel: "Noch kein Online-Ort. Klicke, um einen Remote hinzuzufügen.",
-    pullNoetig: "Neues vom anderen Mac", konflikt: "Konflikt", konfliktLoesen: "Konflikt lösen", konfliktErst: "Es wartet noch ein Abgleich mit Konflikten. Bitte löse ihn zuerst — danach kannst du sichern.", konfliktTitel: "Beide Seiten haben dieselbe Datei geändert. Klicke, um zu wählen, welche Fassung gelten soll.", fehler: "Fehler", verlauf: "Verlauf", verlaufTitel: "Verlauf des Vaults zeigen", claude: "Claude", claudeVerbinden: "Claude verbinden", claudeVerbunden: "Claude ist verbunden", claudeNicht: "Claude ist nicht verbunden — klicke zum Verbinden",
+    pullNoetig: "Neues vom anderen Mac", konflikt: "Konflikt", konfliktLoesen: "Konflikt lösen", konfliktErst: "Es wartet noch ein Abgleich mit Konflikten. Bitte löse ihn zuerst — danach kannst du sichern.", konfliktTitel: "Beide Seiten haben dieselbe Datei geändert. Klicke, um zu wählen, welche Fassung gelten soll.", fehler: "Fehler", verlauf: "Verlauf", verlaufTitel: "Verlauf des Vaults zeigen", claude: "Claude", claudeVerbinden: "KI verbinden", claudeVerbunden: "Claude ist verbunden", claudeNicht: "Claude ist nicht verbunden — klicke zum Verbinden",
     hell: "Hell", dunkel: "Dunkel", system: "System", darstellung: "Darstellung", einstellungen: "Einstellungen", zuDunkel: "Zum dunklen Erscheinungsbild wechseln", zuHell: "Zum hellen Erscheinungsbild wechseln",
     version: (v) => `Version ${v}`,
     keinGit: "Kein Git",

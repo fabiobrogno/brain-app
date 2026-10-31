@@ -1382,7 +1382,11 @@ function zeichneStatus() {
     for (const e of teile) { e.dataset.datei = ""; e.hidden = !datei; }
     k.push(...teile);
   }
-  // KI steht nur EINMAL in der Leiste: das Konto mit Kontingent (Platz oben, kontingent.js); ohne Konto ist es der Knopf „KI verbinden …“ (kein zweiter „Claude verbinden“ daneben, P4)
+  const verbunden = S.kiVerbunden || S.ki?.agenten?.some((a) => a.id === "claude" && a.verbunden === true);
+  // KI steht nur EINMAL in der Leiste (P4): hat der Vault ein Konto, zeigt der Konto-Platz (kontingent.js) Konto und Kontingent und dieser Eintrag ist per CSS (bewegung.css) ausgeblendet;
+  // ohne Konto ist er der einzige Knopf „KI verbinden“ (der leere Zustand des Konto-Platzes ist dann ausgeblendet).
+  // Verbunden: Haken. Nicht verbunden: „verbinden“ mit Plus (kein ✕, das las sich wie „schließen“); der Klick öffnet in beiden Fällen den Dialog „KI verbinden“
+  k.push(st("claude", [kiLogo("claude", 14, { dekorativ: true }), h("span", { text: verbunden ? T.status.claude : T.status.claudeVerbinden }), symbol(verbunden ? "haken" : "plus", 12)], { klick: oeffneKi, titel: verbunden ? T.status.claudeVerbunden : T.status.claudeNicht, klasse: verbunden ? "gut" : "" }));
   const gs = S.gesundheit;
   if (gs && gs.verfuegbar !== false) {
     const w = Array.isArray(gs.warnungen) ? gs.warnungen.length : Number(gs.warnungen) || 0;

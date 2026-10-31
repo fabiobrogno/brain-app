@@ -83,4 +83,10 @@
 .eintrag .name, .vault-name, .pfad, .pfad > *, .kopf-suche-text, .karte-titel, .pal-eintrag .n, .frage-quelle-titel, .frage-quelle-pfad { min-width: 0; }
 .pfad { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .erfassen-text { white-space: nowrap; }
+
+/* ---------- Statusleiste: KI nur einmal ----------
+   Hat der Vault ein Konto, zeigt der Konto-Platz Konto und Kontingent (mit Menü); der Eintrag „KI verbinden“ (data-st="claude") bleibt dann weg.
+   Ohne Konto ist dieser Eintrag der einzige Knopf; der leere Zustand des Konto-Platzes („KI verbinden …“) ist dann ausgeblendet. */
+#status:has(.kt-leiste[data-konto]:not([hidden])) [data-st="claude"] { display: none; }
+.kt-leiste[data-zustand="leer"] { display: none; }
 .st { white-space: nowrap; min-width: 0; }
