@@ -10,6 +10,10 @@ const laden = (name) => import("data:text/javascript;base64," + Buffer.from(read
 const S = await laden("einstellungen-suche.js");
 const { BEREICHE, GRUPPEN, STANDARD_VORSCHLAEGE } = await laden("texte-einstellungen.js");
 
+// Die Zeilen des Bereichs „Tastenkürzel“ (ein Befehl je Zeile) kommen aus dem Register der Tastenkürzel und werden beim Öffnen der Seite eingehängt (einstellungen.js)
+const KZ = await laden("tastenkuerzel-logik.js");
+BEREICHE.find((b) => b.id === "tasten").abschnitte = KZ.abschnitteAusRegister(JSON.parse(readFileSync(pfad("gemeinsam", "tastenkuerzel-register.json"), "utf8")));
+
 const bereich = (id) => BEREICHE.find((b) => b.id === id);
 const zeile = (id) => { for (const b of BEREICHE) for (const a of b.abschnitte) for (const z of a.zeilen) if (z.id === id) return z; throw new Error(id); };
 

@@ -27,47 +27,30 @@ final class ErfassenSteuerung {
 
     private let pfade: AppPfade
     private let log: AppLog
-    /// Nein in der Vorschau und in Testläufen: Dort darf die App kein globales Kürzel belegen (es gehört der echten App).
-    private let kuerzelErlaubt: Bool
+    /// Die Tastenkürzel der App (Paket P10): Das globale Kürzel meldet `KuerzelSteuerung` an (Register + `tastenkuerzel.json`); hier bleiben Fenster und Anzeige des Kürzels.
+    private let kuerzel: KuerzelSteuerung
     private let werkstatt: () -> Werkstatt?
-    private let registrierung = CarbonKuerzel()
-    private var verwaltung: KuerzelVerwaltung?
     private var modell: ErfassenModell?
     private var panel: ErfassenPanel?
     private var vorherige: NSRunningApplication?
     private var schliesst = false
 
-    init(pfade: AppPfade, log: AppLog, kuerzelErlaubt: Bool, werkstatt: @escaping () -> Werkstatt?) {
+    init(pfade: AppPfade, log: AppLog, kuerzel: KuerzelSteuerung, werkstatt: @escaping () -> Werkstatt?) {
         self.pfade = pfade
         self.log = log
-        self.kuerzelErlaubt = kuerzelErlaubt
+        self.kuerzel = kuerzel
         self.werkstatt = werkstatt
     }
 
     // MARK: Tastenkürzel
 
-    /// Meldet das Kürzel an (gespeichertes, sonst ⌃⌥Leertaste). Gibt es ein Problem, steht es im Log und im Fenster.
-    func starte() {
-        guard kuerzelErlaubt else { log.schreibe("erfassen-kuerzel aus (Vorschau oder Testlauf)"); return }
-        let v = KuerzelVerwaltung(
-            registrierung: registrierung, gespeichert: ErfassenEinstellungen.lade(pfade).kuerzel, system: { SystemKuerzelLeser.ausSystem() },
-            sichere: { [pfade] k in
-                var e = ErfassenEinstellungen.lade(pfade)
-                e.kuerzel = k
-                try? e.speichere(pfade)
-            },
-            aktion: { [weak self] in self?.umschalten() })
-        verwaltung = v
-        if let hinweis = v.starte() {
-            log.schreibe("erfassen-kuerzel-hinweis \(v.kuerzel.anzeige) \(hinweis)")
-            modellErzeugenFallsNoetig().kuerzelMeldung = hinweis
-        } else {
-            log.schreibe("erfassen-kuerzel \(v.kuerzel.anzeige)")
-        }
-    }
+    /// Ein Hinweis zum Kürzel (vom System belegt, von einem anderen Programm gehalten) steht im Fenster, bis der Nutzer ein Kürzel wählt.
+    func zeigeKuerzelHinweis(_ text: String) { modellErzeugenFallsNoetig().kuerzelMeldung = text }
+
+    /// Das Kürzel hat sich geändert (im Studio oder hier): das Fenster zeigt das gültige.
+    func setzeKuerzel(_ k: Tastenkuerzel) { modell?.setzeKuerzel(k) }
 
     func beende() {
-        verwaltung?.beende()
         panel?.orderOut(nil)
     }
 
@@ -130,7 +113,7 @@ final class ErfassenSteuerung {
         let halter = SteuerungsHalter(self)
         let speicher = AppErfassenSpeicher { await MainActor.run { halter.steuerung?.speicherErzeugen() } }
         let m = ErfassenModell(
-            art: einstellungen.art ?? .aufgabe, kuerzel: einstellungen.wirksamesKuerzel, speicher: speicher,
+            art: einstellungen.art ?? .aufgabe, kuerzel: kuerzel.kuerzelFuerErfassen, speicher: speicher,
             vaultQuelle: { [pfade] in ErfassenVault.lade(pfade) },
             vertrauen: { [pfade] vault in VaultVertrauen.lade(vault: vault, support: pfade.basis) },
             merkeArt: { [pfade] art in
@@ -139,12 +122,7 @@ final class ErfassenSteuerung {
                 try? e.speichere(pfade)
             })
         m.beiSchliessen = { [weak self] in self?.schliesse() }
-        m.aendereKuerzel = { [weak self] k in
-            guard let v = self?.verwaltung else { return "Das Tastenkürzel ist in dieser Sitzung nicht aktiv (Vorschau oder Testlauf)." }
-            let fehler = v.aendere(k)
-            if fehler == nil { self?.log.schreibe("erfassen-kuerzel geaendert \(k.anzeige)") }
-            return fehler
-        }
+        m.aendereKuerzel = { [weak self] k in self?.kuerzel.aendereAusErfassen(k) } // prüft, meldet an und speichert in tastenkuerzel.json (wie das Studio)
         modell = m
         return m
     }
