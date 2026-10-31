@@ -7,7 +7,6 @@ import { join } from "node:path";
 import { baueVault } from "./vault.mjs";
 import { starteServer } from "./start.mjs";
 import { mockeV2 } from "./mocks.mjs";
-import { KONTEN } from "./mocks-konten.mjs";
 
 const BILDER = process.env.UI_P3_BILDER;
 if (BILDER) mkdirSync(BILDER, { recursive: true });
@@ -18,10 +17,12 @@ test.beforeEach(async () => { ({ vault } = baueVault()); server = await starteSe
 test.afterEach(() => { server?.stopp(); server = null; });
 
 const NOTIZ = "10_notizen/Reise nach Lissabon.md";
-async function start(page, { breite = 1440, hoehe = 900, pfad = NOTIZ, konten = true } = {}) {
+// Erkannte KI-Programme (GET /api/ki/erkennen, nur lesend); die KI-Zeile liest bewusst nicht /api/ki/konten (das legt beim Lesen Konten an)
+const erkennen = (ids) => ({ agenten: ids.map((id) => ({ id, name: id, version: "1", pfad: "/usr/bin/" + id })), katalog: ids.map((id) => ({ id, gefunden: true, version: "1", quelle: "cli" })), cursorDa: false, programme: [] });
+async function start(page, { breite = 1440, hoehe = 900, pfad = NOTIZ, ki = ["claude", "codex", "cursor"] } = {}) {
   await page.setViewportSize({ width: breite, height: hoehe });
   await mockeV2(page, vault);
-  if (konten) await page.route("**/api/ki/konten", (r) => r.fulfill({ json: { zustand: "ok", stufen: [], konten: KONTEN, vaults: [], zugriff: {} } }));
+  await page.route("**/api/ki/erkennen**", (r) => r.fulfill({ json: erkennen(ki) }));
   await page.goto(server.url + (pfad ? "?pfad=" + encodeURIComponent(pfad) : ""));
   await page.waitForFunction(() => window.__studioBereit === true);
   if (pfad) await page.waitForSelector(".cm-content .cm-line");
@@ -55,11 +56,11 @@ test("Aufbau: Kopfzeile mit Suchfeld in der Mitte, Knöpfe rechts; Seitenleiste 
   // Wissen und Archiv gibt es weiter, jetzt unter „Sichten“
   await expect(page.locator('[data-abschnitt="sichten"] [data-bereich="wissen"]')).toBeVisible();
   await expect(page.locator('[data-abschnitt="sichten"] [data-bereich="archiv"]')).toBeVisible();
-  // KI-Zeile unten mit Logos: zwei Programme in den Attrappen-Konten (Claude, Codex), drei Konten
+  // KI-Zeile unten mit Logos: drei erkannte Programme (Claude, Codex, Cursor)
   const ki = page.locator("#ki-zeile");
   await expect(ki).toBeVisible();
   await expect(ki).toContainText("3 KIs");
-  await expect(ki.locator(".ki-logo")).toHaveCount(2);
+  await expect(ki.locator(".ki-logo")).toHaveCount(3);
   const kiBox = await ki.boundingBox(), seiteBox = await box(page, "#seite");
   expect(kiBox.y + kiBox.height).toBeLessThanOrEqual(seiteBox.y + seiteBox.height + 1);
   // Statusleiste: Wörter und Format der offenen Notiz, leerer Platz für P7
@@ -71,13 +72,20 @@ test("Aufbau: Kopfzeile mit Suchfeld in der Mitte, Knöpfe rechts; Seitenleiste 
   await bild(page, "01-aufbau");
 });
 
-test("KI-Zeile: ohne Konten „KI verbinden“, offene Rückfragen als „braucht dich“", async ({ page }) => {
-  await start(page, { konten: false });
-  await page.route("**/api/ki/konten", (r) => r.fulfill({ json: { zustand: "ok", stufen: [], konten: [], vaults: [], zugriff: {} } }));
-  await page.reload();
-  await page.waitForFunction(() => window.__studioBereit === true);
+test("KI-Zeile: ohne erkannte KI „KI verbinden“; offene Rückfragen als „braucht dich“; sie liest nichts, was Konten anlegt", async ({ page }) => {
+  const abgefragt = [];
+  page.on("request", (r) => { if (/\/api\/ki\/konten/.test(r.url())) abgefragt.push(r.url()); });
+  await start(page, { ki: [] });
   await expect(page.locator("#ki-zeile")).toContainText("KI verbinden");
   await expect(page.locator("#ki-zeile .ki-logo")).toHaveCount(0);
+  expect(abgefragt).toEqual([]); // GET /api/ki/konten gleicht die Konten-Liste ab (Nebenwirkung): die Seitenleiste fragt es nie beim Start
+  // offene Rückfragen: „1 braucht dich“
+  await page.route("**/api/rueckfragen", (r) => r.fulfill({ json: { verfuegbar: true, offen: 2 } }));
+  await page.route("**/api/ki/erkennen**", (r) => r.fulfill({ json: erkennen(["claude"]) }));
+  await page.reload();
+  await page.waitForFunction(() => window.__studioBereit === true);
+  await expect(page.locator("#ki-zeile")).toContainText("1 KI · 2 brauchen dich");
+  await expect(page.locator("#ki-zeile")).toHaveAttribute("data-zustand", "braucht");
 });
 
 test("Tastatur: ⌘1 Posteingang, ⌘2 Alle Notizen, ⌘3 Aufgaben, ⌘K Palette, ⌘J Frag, ⌘\\ Eigenschaften; Esc schließt", async ({ page }) => {

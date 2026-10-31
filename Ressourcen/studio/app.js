@@ -599,7 +599,9 @@ function zeichneSeite() {
   zeichneBereiche(); zeichneFavoriten(); zeichneAnsichten(); zeichneTypen(); zeichneOrdner(); kiZeile.zeichne();
 }
 // KI-Zeile unten in der Seitenleiste (ki-zeile.js)
-const kiZeile = baueKiZeile($("ki-zeile"), { api, rueckfragen: () => S.rueckfragen && S.rueckfragen.verfuegbar !== false ? Number(S.rueckfragen.offen) || 0 : 0,
+// Erkannte KI-Programme aus S.ki (GET /api/ki/erkennen, nur lesend): der Katalog mit „gefunden“, sonst die Liste der Programme mit Pfad
+const erkannteKIs = () => (S.ki ? (Array.isArray(S.ki.katalog) ? S.ki.katalog.filter((k) => k.gefunden).map((k) => k.id) : (S.ki.agenten || []).filter((a) => a.pfad).map((a) => a.id)) : null);
+const kiZeile = baueKiZeile($("ki-zeile"), { erkannt: erkannteKIs, rueckfragen: () => S.rueckfragen && S.rueckfragen.verfuegbar !== false ? Number(S.rueckfragen.offen) || 0 : 0,
   vorhanden: () => !!S.info?.vault, oeffneKonten: () => oeffneKonten(), oeffneKi: () => oeffneKi() });
 
 // ======================================================= Notizliste
@@ -1331,7 +1333,7 @@ async function ladeGesundheit() {
 }
 async function ladeKi() {
   try { S.ki = await api.kiErkennen(); } catch { S.ki = null; }
-  zeichneStatus(); kiZeile.lade();
+  zeichneStatus(); kiZeile.zeichne();
 }
 
 // Nach Abgleich, Zusammenführen oder Zurückholen: Dateibaum und die offene Datei vom Datenträger auffrischen (Eingaben gehen nie verloren)
@@ -2276,10 +2278,10 @@ function zeigeOhneVault(host) {
 
 let intervalle = false;
 function zuruecksetzen() {
-  clearTimeout(speicherTimer); clearTimeout(gitTimer); clearTimeout(baumTimer); clearTimeout(liveTimer); clearTimeout(menueTimer); clearTimeout(kiTimer); kiSammlung = []; kiZeile.zuruecksetzen();
+  clearTimeout(speicherTimer); clearTimeout(gitTimer); clearTimeout(baumTimer); clearTimeout(liveTimer); clearTimeout(menueTimer); clearTimeout(kiTimer); kiSammlung = [];
   liveSammlung = { pfade: [], aufgaben: false, alles: false };
   S.pfad = null; S.hash = null; S.dirty = false; S.konflikt = null; S.schutz = false; S.speichert = false; S.aktuellePruefung = null;
-  S.notizen = []; S.nMap = new Map(); S.baum = []; S.eintraege = new Map(); S.git = null; S.gesundheit = null; S.rueckfragen = null; S.syncFehler = null;
+  S.notizen = []; S.nMap = new Map(); S.baum = []; S.eintraege = new Map(); S.git = null; S.gesundheit = null; S.rueckfragen = null; S.syncFehler = null; S.ki = null;
   S.suche = { aktiv: false, treffer: [], auswahl: 0, frage: "" }; S.vorVerlauf = null;
   S.sichtListe = []; S.gerendert = 0;
   ed.setzeText("", { nurLesen: false });

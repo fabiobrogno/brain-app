@@ -11,9 +11,9 @@ export const T = {
   kopf: { suche: "Suchen oder Befehl …", sucheTitel: "Suchen oder Befehl ausführen", verlauf: "Verlauf" },
   frageZeile: "Frag deinen Vault",
   kiZeile: {
-    keine: "KI verbinden", keineTitel: "Noch keine KI verbunden. Klicke, um eine zu verbinden.",
+    keine: "KI verbinden", keineTitel: "Kortex hat auf diesem Mac keine KI erkannt. Klicke, um eine zu verbinden.",
     anzahl: (n) => (n === 1 ? "1 KI" : `${n} KIs`), braucht: (n) => `${n} braucht dich`, brauchenMehr: (n) => `${n} brauchen dich`,
-    titel: (n, b) => `${n === 1 ? "1 KI-Konto" : `${n} KI-Konten`} bekannt${b ? `, ${b === 1 ? "eine offene Rückfrage" : `${b} offene Rückfragen`} warten auf dich` : ""}. Klicke für KI & Konten.`,
+    titel: (n, b) => `${n === 1 ? "1 KI-Programm" : `${n} KI-Programme`} auf diesem Mac erkannt${b ? `, ${b === 1 ? "eine offene Rückfrage wartet" : `${b} offene Rückfragen warten`} auf dich` : ""}. Klicke für KI & Konten.`,
   },
   statusInfo: { woerter: (n) => `${n.toLocaleString("de-DE")} ${n === 1 ? "Wort" : "Wörter"}`, markdown: "Markdown", text: "Text", datei: "Datei", kontingentSlot: "Platz für Konto und Kontingent (Paket P7)" },
   ansichten: { abgelaufen: "Abgelaufen", strittig: "Strittig", ungeprueft: "Ungeprüft", zuletzt: "Zuletzt geändert" },
