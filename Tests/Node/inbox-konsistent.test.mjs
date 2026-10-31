@@ -100,3 +100,41 @@ test("Beobachter: meldet Dateien im konfigurierten Posteingang als „posteingan
     assert.equal(e2.find((x) => x.pfad === "00_inbox/c.md").typ, "posteingang");
   } finally { h.beende(); }
 });
+
+// ---------- Review: derselbe Schlüssel wie im Kern (wiki.ordner) und ein sichtbarer Hinweis bei ungültiger Konfiguration ----------
+const { inboxHinweisVon } = await import(pfad("gemeinsam", "basis.mjs"));
+const { ordner: kernOrdner } = await import(pfad("kern", "pfade.mjs"));
+
+test("Wiki-Ordner wie im Kern: ordner.wiki gewinnt vor dem alten Schlüssel wiki.ordner — gemeinsam und Kern entscheiden gleich", () => {
+  const faelle = [
+    { ordner: { inbox: "Notizen" }, wiki: { ordner: "Notizen" } },                                       // alter Schlüssel nennt den Namen → abgelehnt
+    { ordner: { inbox: "Notizen", wiki: "Wissen" }, wiki: { ordner: "Notizen" } },                       // ordner.wiki gewinnt → Notizen ist frei
+    { ordner: { inbox: "Notizen", wiki: "../kaputt" }, wiki: { ordner: "Notizen" } },                    // ungültiges ordner.wiki → der alte Schlüssel gilt
+    { ordner: { inbox: "Archiv", archiv: "Archiv" } },
+    { ordner: { inbox: "NOTIZEN", wiki: "notizen" } },                                                    // Groß/klein zählt nicht
+    { ordner: { inbox: "Eingang" } },
+    { ordner: { inbox: ".versteckt" } },
+  ];
+  for (const f of faelle) {
+    const d = tmp("brain-inbox-kern-");
+    schreibe(d, "brain.config.json", JSON.stringify(f));
+    assert.equal(inboxOrdnerVon(d), kernOrdner(d).inbox, JSON.stringify(f));
+  }
+});
+
+test("ungültiger Posteingang in der Konfiguration: nicht still — notizen() und indexAlles() tragen einen Hinweis, gültige und fehlende Einträge nicht", async () => {
+  for (const [cfg, wert] of [[{ ordner: { inbox: ".git" } }, ".git"], [{ ordner: { inbox: "09_wiki" } }, "09_wiki"], [{ ordner: { inbox: "a/b" } }, "a/b"], [{ ordner: { inbox: 7 } }, "7"]]) {
+    const { d, v } = vault(cfg);
+    const h = inboxHinweisVon(d);
+    assert.match(h, new RegExp(`„${wert.replace(/[./]/g, "\\$&")}“`), JSON.stringify(cfg));
+    assert.match(h, /00_inbox/);
+    assert.equal((await v.notizen()).inboxHinweis, h);
+    assert.equal((await v.indexAlles()).inboxHinweis, h);
+    assert.equal((await v.notizen()).inboxOrdner, "00_inbox");
+  }
+  for (const cfg of [undefined, {}, { ordner: { inbox: "Eingang" } }, { ordner: { inbox: "" } }, "{kaputt"]) {
+    const { d, v } = vault(cfg);
+    assert.equal(inboxHinweisVon(d), null, JSON.stringify(cfg));
+    assert.equal(Object.hasOwn(await v.notizen(), "inboxHinweis"), false);
+  }
+});

@@ -8,6 +8,10 @@ import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { baueVault, git } from "./vault.mjs";
 import { starteServer } from "./start.mjs";
+import { pathToFileURL } from "node:url";
+
+// Das Ziel gilt als vom Nutzer bestätigt (Assistent „Sicherung“): nur dorthin sendet das Lösen
+async function bestaetige(vault, remote, support) { const m = await import(pathToFileURL(join(process.cwd(), "..", "..", "Ressourcen/gemeinsam/sicherungsmerker.mjs")).href); m.merkeRemoteBestaetigt(vault, remote, { support }); }
 
 const BILDER = process.env.KONFLIKT_BILDER || null;
 if (BILDER) mkdirSync(BILDER, { recursive: true });
@@ -86,7 +90,7 @@ async function mocke(page, daten, opt = {}) {
     r.fulfill({ json: { ok: true, merge: "m", eintraege: [], kopien: [], versteckteBehalten: [], abgleich: opt.abgleich || { art: "gesendet", ok: true, text: "Online gesichert." } } });
   });
   await page.route(/\/api\/git\/konflikt\/abbrechen$/, (r) => { gesendet.abbrechen++; r.fulfill({ json: { ok: true, offen: true } }); });
-  await page.route(/\/api\/git\/konflikt\/rueckgaengig$/, (r) => { gesendet.rueckgaengig++; aktiv = true; r.fulfill({ json: { ok: true, commit: "u", dateien: daten.dateien.map((d) => d.pfad), basis: { meine: "a".repeat(40), andere: "b".repeat(40), dateien: daten.dateien.map((d) => d.pfad) } } }); });
+  await page.route(/\/api\/git\/konflikt\/rueckgaengig$/, (r) => { gesendet.rueckgaengig++; aktiv = true; r.fulfill({ json: { ok: true, commit: "u", dateien: daten.dateien.map((d) => d.pfad), } }); });
   await page.route(/\/api\/frage\/bereit$/, (r) => r.fulfill({ json: opt.ki === false ? { vertraut: true, claude: true, konten: [], kontenDefekt: false } : { vertraut: true, claude: true, kontenDefekt: false, konten: [{ id: "k1", name: "Standard", erlaubt: true, programm: "claude-code", stufe: "lesen" }] } }));
   await page.route(/\/api\/frage\/start$/, (r) => { gesendet.ki.push(r.request().postDataJSON()); r.fulfill({ json: { id: "f1" } }); });
   await page.route(/\/api\/frage\/stand/, async (r) => {
@@ -245,8 +249,9 @@ for (const schema of ["hell", "dunkel"]) {
       expect(a[1]).toEqual({ pfad: "10_notizen/Zeitplan Q4.md", wahl: "meine" });
     });
 
-    test("KI fragen: Vorschlag als Karte (Übernehmen · Selbst anpassen · Verwerfen); die Karte nennt Konto und Rechte", async ({ page }) => {
-      const g = await start(page, DATEN.standard(), { kiAntwort: "EMPFEHLUNG: zusammen\nBEGRUENDUNG: Die beiden Fassungen ergänzen sich, nichts widerspricht sich.\nPUNKTE:\n- Rollen: Abgehakt, wie auf dem iPhone.\n- Entscheidungen: Beide neuen Punkte stehen drin.\nTEXT:\n## Ziel\nZusammengesetzt.\n" }, { schema });
+    test("KI fragen: Vorschlag als Karte; ein zusammengeführter Text wird nie ungesehen übernommen (erst „Text ansehen“, dort übernehmen)", async ({ page }) => {
+      const text = KICKOFF_MEINE.join("\n") + "\n- Lea wegen der Zahlen erinnern\n";
+      const g = await start(page, DATEN.standard(), { kiAntwort: "EMPFEHLUNG: zusammen\nBEGRUENDUNG: Die beiden Fassungen ergänzen sich, nichts widerspricht sich.\nPUNKTE:\n- Rollen: Abgehakt, wie auf dem iPhone.\n- Entscheidungen: Beide neuen Punkte stehen drin.\nTEXT:\n" + text }, { schema });
       await oeffne(page);
       await page.keyboard.press("k");
       await expect(page.locator('[data-ki="denkt"]')).toBeVisible();
@@ -256,18 +261,40 @@ for (const schema of ["hell", "dunkel"]) {
       expect(g.ki).toHaveLength(1);
       expect(g.ki[0].konto).toBe("k1");
       expect(g.ki[0].frage).toContain("brain_lesen");
+      expect(g.ki[0].frage).toContain("ohne Quellenangaben");
       await expect(page.locator('[data-ki="da"]')).toContainText("Vorschlag von Claude Code");
       await expect(page.locator('[data-ki="da"]')).toContainText("Die beiden Fassungen ergänzen sich");
       await expect(page.locator('[data-ki="da"] li')).toHaveCount(2);
+      await expect(page.locator('[data-ki="da"]')).toContainText("noch nicht übernommen");
       await expect(page.locator('[data-ki="da"]')).toContainText("Darf hier: Lesen. Liest nur diese beiden Fassungen und ändert nichts, bis du übernimmst.");
+      await expect(page.locator('[data-k="ki-ja"]')).toHaveCount(0);
       await bild(page, "k7-ki-vorschlag", schema);
       await page.locator('[data-k="ki-nein"]').click();
       await expect(page.locator("[data-ki]")).toHaveCount(0);
       await expect(item(page, 0)).toContainText("Offen");
       await page.keyboard.press("k");
-      await page.locator('[data-k="ki-ja"]').click();
+      await page.locator('[data-k="ki-anpassen"]').click();
+      await expect(item(page, 0)).toContainText("Offen"); // noch nichts entschieden
+      const feld = page.locator(".k-frei textarea");
+      await expect(feld).toHaveValue(text);
+      await page.locator('[data-k="uebernehmen"]').click();
       await expect(item(page, 0)).toContainText("Mit KI zusammengeführt");
       await expect(page.locator("#k-folge")).toContainText("Mit der KI gelöst.");
+      await expect(page.locator("#k-folge")).toContainText("noch einmal ansehen");
+    });
+
+    test("KI-Text, der nicht zu den Fassungen passt (Konfliktmarken, zu kurz, fremde Verweise), wird nicht angeboten", async ({ page }) => {
+      const text = KICKOFF_MEINE.join("\n") + "\n";
+      for (const antwort of ["TEXT:\n## Ziel\nZusammengesetzt.\n", "TEXT:\n<<<<<<< Mac\n" + text + "=======\n>>>>>>> iPhone\n", "TEXT:\n" + text + "\nQuelle: [[09_wiki/etwas-anderes.md]]\n"]) {
+        const kopf = "EMPFEHLUNG: zusammen\nBEGRUENDUNG: x\nPUNKTE:\n- a: b\n";
+        await page.unrouteAll({ behavior: "ignoreErrors" });
+        await start(page, DATEN.standard(), { kiAntwort: kopf + antwort }, { schema });
+        await oeffne(page);
+        await page.keyboard.press("k");
+        await expect(page.locator('[data-ki="fehler"]')).toBeVisible();
+        await expect(page.locator('[data-ki="fehler"]')).toContainText("nicht lesbar");
+        await expect(page.locator('[data-k="ki-anpassen"]')).toHaveCount(0);
+      }
     });
 
     test("KI fragen fehlt ganz, wenn es kein KI-Konto mit Recht „lesen“ für diesen Vault gibt", async ({ page }) => {
@@ -362,7 +389,8 @@ for (const schema of ["hell", "dunkel"]) {
       await page.keyboard.press("Meta+Enter");
       await expect(page.locator("[data-konflikt-fertig]")).toBeVisible({ timeout: 8000 });
       expect(g.loesen).toHaveLength(2);
-      expect(g.loesen[1].basis).toEqual({ meine: "a".repeat(40), andere: "b".repeat(40), dateien: ["10_notizen/Kickoff Projekt Atlas.md", "10_notizen/Zeitplan Q4.md"] });
+      expect(g.loesen[1].basis).toBeUndefined(); // die Oberfläche schickt nie einen Stand, nur das Gesehene
+      expect(g.loesen[1].gesehen).toEqual({ meine: "a".repeat(40), andere: "b".repeat(40) });
     });
 
     test("Fehler beim Abschließen: ruhiger Satz, Ansicht und Entscheidungen bleiben", async ({ page }) => {
@@ -399,6 +427,115 @@ test("schmales Fenster (1180 px): nichts läuft über, Liste und Detail bleiben 
   await expect(page.locator(".k-merge")).toBeVisible();
 });
 
+
+// ---------------------------------------------------------------- Review: Umbenennung, fremde Zusammenführung, veralteter Stand, merkende Entscheidungen, Zeilenenden, Sicherung, Editor gesperrt
+const mitBlobs = (daten) => { for (const d of daten.dateien) for (const k of ["meine", "andere"]) d[k].blob = d[k].vorhanden ? `${k[0]}-${d.pfad}` : null; return daten; };
+const umbenanntDaten = () => ({ ...DATEN.standard(), dateien: [{ pfad: "10_notizen/Kickoff-mac.md", pfadAndere: "10_notizen/Kickoff-iphone.md", basisPfad: "10_notizen/Kickoff.md", titel: "Kickoff Projekt Atlas", art: "umbenannt", typ: "umbenannt",
+  meine: { vorhanden: true, text: KICKOFF_MEINE.join("\n") + "\n", zeit: vorMin(3), geraet: null }, andere: { vorhanden: true, text: KICKOFF_ANDERE.join("\n") + "\n", zeit: vorMin(12), geraet: "iPhone" } }] });
+
+test("Umbenennung auf beiden Seiten: ein Eintrag mit beiden Namen statt zwei „gelöscht“; Namen wählen oder beide behalten", async ({ page }) => {
+  const g = await start(page, umbenanntDaten(), {});
+  await expect(page.locator('[data-st="sync"]')).toContainText("Konflikt in 1 Notiz");
+  await oeffne(page);
+  await expect(item(page, 0)).toContainText("Umbenannt: Kickoff-mac und Kickoff-iphone");
+  await expect(page.locator(".k-kopf h1")).toContainText("Auf beiden Geräten umbenannt");
+  await expect(page.locator(".k-erkl")).toContainText("„Kickoff-mac“, auf iPhone „Kickoff-iphone“");
+  await expect(page.locator('.k-akt [data-a="meine"]')).toContainText("Diesen Namen behalten");
+  await expect(page.locator('.k-akt [data-a="andere"]')).toContainText("Anderen Namen nehmen");
+  await expect(page.locator('.k-akt [data-a="beide"]')).toContainText("Beide behalten");
+  await page.locator('.k-akt [data-a="beide"]').hover();
+  await expect(page.locator("#k-folge")).toContainText("unter beiden Namen: „Kickoff-mac“ und „Kickoff-iphone“");
+  await page.keyboard.press("2");
+  await expect(item(page, 0)).toContainText("Name von iPhone");
+  await page.keyboard.press("Meta+Enter");
+  await expect(page.locator("[data-konflikt-fertig]")).toBeVisible({ timeout: 8000 });
+  await expect(page.locator(".k-zus")).toContainText("Die Notiz heißt „Kickoff-iphone“.");
+  expect(g.loesen[0].auswahl).toEqual([{ pfad: "10_notizen/Kickoff-mac.md", wahl: "andere" }]);
+});
+
+test("Zusammenführung, die Kortex nicht begonnen hat: nur ansehen — Hinweis, Entscheidungen und Abschluss gesperrt", async ({ page }) => {
+  await start(page, { ...DATEN.standard(), fremd: true }, {});
+  await oeffne(page);
+  await expect(page.locator("[data-fremd]")).toContainText("nicht Kortex begonnen");
+  await expect(page.locator('[data-aktion="konflikt-abgleichen"]')).toBeDisabled();
+  await page.keyboard.press("1");
+  await expect(item(page, 0)).toContainText("Offen");
+  await page.keyboard.press("Meta+Enter");
+  await expect(page.locator("[data-konflikt-sync]")).toHaveCount(0);
+});
+
+test("Der Konflikt hat sich geändert (409 „veraltet“): ruhiger Satz, die Ansicht wird neu geladen, nichts wird abgeschlossen", async ({ page }) => {
+  const g = await start(page, DATEN.standard(), {});
+  await page.route(/\/api\/git\/konflikt\/loesen$/, (r) => r.fulfill({ status: 409, json: { fehler: "Der Konflikt hat sich seit deiner Ansicht geändert. Öffne den Abgleich noch einmal.", art: "veraltet" } }));
+  await oeffne(page);
+  await entscheide(page, "1", "1");
+  await page.keyboard.press("Meta+Enter");
+  await expect(page.locator(".toast.fehler")).toContainText("Der Konflikt hat sich geändert");
+  await expect.poll(() => g.abbrechen).toBe(1);
+  await expect(page.locator("#konflikt .k-item")).toHaveCount(2); // neu geöffnet
+  await expect(page.locator("[data-konflikt-fertig]")).toHaveCount(0);
+});
+
+test("Gemerkte Entscheidungen gelten nur, wo beide Fassungen noch dieselben sind (Blob-Kennung): geänderte Notizen sind wieder offen", async ({ page }) => {
+  const daten = mitBlobs(DATEN.standard());
+  await start(page, daten, {});
+  await oeffne(page);
+  await entscheide(page, "1", "2");
+  await page.keyboard.press("Escape"); // Später
+  await expect(page.locator("#konflikt")).toHaveCount(0);
+  daten.dateien[1].andere.blob = "a-geaendert"; // die zweite Notiz wurde inzwischen auf dem anderen Gerät noch einmal geändert
+  await page.locator('[data-aktion="konflikt-ansehen"]').click();
+  await expect(item(page, 0)).toContainText("Dieser Mac behalten");
+  await expect(item(page, 1)).toContainText("Offen");
+  await expect(page.locator(".k-fuss")).toContainText("1 von 2 gelöst");
+});
+
+test("Selbst zusammenführen behält die Zeilenenden: CRLF bleibt CRLF, auch bei eigenem Text", async ({ page }) => {
+  const crlf = (t) => t.replace(/\n/g, "\r\n");
+  const d = DATEN.standard();
+  d.dateien[0].meine.text = crlf(d.dateien[0].meine.text); d.dateien[0].andere.text = crlf(d.dateien[0].andere.text);
+  const g = await start(page, d, {});
+  await oeffne(page);
+  await page.keyboard.press("4");
+  await page.locator('[data-alle="meine"]').click();
+  await page.locator('#k-b3 [data-w="eigen"]').click();
+  await page.locator('[data-eigen="3"] textarea').fill("- Zeile eins\n- Zeile zwei");
+  await page.locator(".k-erg-kopf").click();
+  await page.locator('[data-k="uebernehmen"]').click();
+  await expect(item(page, 0)).toContainText("Selbst zusammengeführt");
+  await expect(item(page, 1)).toHaveAttribute("aria-current", "true");
+  await page.keyboard.press("1");
+  await page.keyboard.press("Meta+Enter");
+  await expect(page.locator("[data-konflikt-fertig]")).toBeVisible({ timeout: 8000 });
+  const t = g.loesen[0].auswahl[0].text;
+  expect(t).toContain("\r\n- Zeile eins\r\n- Zeile zwei\r\n");
+  expect(t.replace(/\r\n/g, "")).not.toContain("\n");
+  expect(t.endsWith("\r\n")).toBe(true);
+});
+
+test("Später nennt, wo eine Sicherung von Hand Bearbeitetem liegt; scheitert das Zurücknehmen, steht der Satz (mit Pfad) im Fenster — nie still", async ({ page }) => {
+  const g = await start(page, DATEN.standard(), {});
+  await page.route(/\/api\/git\/konflikt\/abbrechen$/, (r) => { g.abbrechen++; r.fulfill({ json: { ok: true, offen: true, sicherung: { ordner: "/Vault/.git/brain-sicherung/2026-10-31T10-00-00-000Z", dateien: ["10_notizen/Zeitplan Q4.md"], blobs: [] } } }); });
+  await oeffne(page);
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".toast").last()).toContainText("Deine Bearbeitungen liegen gesichert in: /Vault/.git/brain-sicherung/2026-10-31T10-00-00-000Z");
+  await page.route(/\/api\/git\/konflikt\/abbrechen$/, (r) => r.fulfill({ status: 409, json: { fehler: "Eine zusammengeführte Datei wurde seit dem Abgleich noch einmal geändert. Eine Kopie liegt gesichert in: /Vault/.git/brain-sicherung/x", art: "geaendert" } }));
+  await page.locator('[data-aktion="konflikt-ansehen"]').click();
+  await expect(item(page, 0)).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".toast.fehler")).toContainText("Eine Kopie liegt gesichert in: /Vault/.git/brain-sicherung/x");
+});
+
+test("Dateien in einer offenen Zusammenführung sind im Editor schreibgeschützt (Konfliktmarken)", async ({ page }) => {
+  const daten = DATEN.standard();
+  daten.dateien[0].pfad = "10_notizen/Reise nach Lissabon.md";
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await mocke(page, daten, {});
+  await page.goto(server.url + "?pfad=" + encodeURIComponent("10_notizen/Reise nach Lissabon.md"));
+  await expect(page.locator('[data-banner="schutz"]')).toBeVisible({ timeout: 10000 });
+  await expect(page.locator('[data-banner="abgleich"]')).toBeVisible();
+});
+
 // ---------------------------------------------------------------- Ende zu Ende: echter Kern, zwei Klone, ein Remote (Temp)
 function aufbauEchterKonflikt() {
   const { dir, vault: v } = baueVault();
@@ -420,6 +557,7 @@ test("Ende zu Ende: Abgleichen öffnet die Ansicht mit echten Fassungen; entsche
   const e = aufbauEchterKonflikt();
   server?.stopp();
   server = await starteServer(e.vault);
+  await bestaetige(e.vault, e.remote, server.support);
   page.on("response", async (r) => { if (r.status() >= 400) console.log("ANTWORT", r.status(), r.url(), (await r.text().catch(() => "")).slice(0, 300)); });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(server.url);
@@ -465,6 +603,7 @@ test("Ende zu Ende: „Später“ nimmt die Zusammenführung zurück — keine K
   const e = aufbauEchterKonflikt();
   server?.stopp();
   server = await starteServer(e.vault);
+  await bestaetige(e.vault, e.remote, server.support);
   await page.goto(server.url);
   await page.waitForSelector('[data-st="sync"]');
   // das Nachsehen beim Start hält kurz die Sperre im Prozess (409 „läuft schon“): dann noch einmal klicken

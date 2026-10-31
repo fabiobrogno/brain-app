@@ -156,7 +156,7 @@ async function oeffne(pfad, { zeile, ausListe, ausBoard } = {}) {
     clearTimeout(speicherTimer);
     if (!(await sichereVorWechsel()) || nr !== S.ladeNr) return false;
   }
-  S.pfad = d.pfad; S.hash = d.hash; S.schutz = !!d.schreibschutz; S.dirty = false; S.konflikt = null;
+  S.pfad = d.pfad; S.hash = d.hash; S.schutz = !!d.schreibschutz || imKonflikt(d.pfad); S.dirty = false; S.konflikt = null; // Dateien in einer offenen Zusammenführung enthalten Konfliktmarken: nur lesen
   S.bearbeitbar = istBearbeitbar(d.pfad);
   S.aktuellePruefung = null;
   ed.setzeText(d.inhalt, { nurLesen: S.schutz || !S.bearbeitbar });
@@ -301,7 +301,7 @@ function setzeFenstertitel() {
 // ======================================================= Index (Notizen, Typen, Ansichten)
 // Wie der Werkstatt-Index: _-Ordner im Posteingang sind maschinell, Vorlagen und Agenten-Anweisungen in der Wurzel keine Notizen
 const inboxName = () => S.inboxOrdner || "00_inbox";
-const bereichVonPfad = (p) => (/^90_/.test(p) || (S.aufgabenOrdner && p.toLowerCase().startsWith(S.aufgabenOrdner.toLowerCase() + "/archiv/") && p.split("/").length === 3) ? "archiv" : /^00_inbox\/_/.test(p) ? "maschine" : p.startsWith("01_vorlagen/") ? "vorlage"
+const bereichVonPfad = (p) => (/^90_/.test(p) || (S.aufgabenOrdner && p.toLowerCase().startsWith(S.aufgabenOrdner.toLowerCase() + "/archiv/") && p.split("/").length === 3) ? "archiv" : p.toLowerCase().startsWith(inboxName().toLowerCase() + "/_") ? "maschine" : p.startsWith("01_vorlagen/") ? "vorlage"
   : /^(claude|agents|gemini)\.md$/i.test(p) ? "system" : p.toLowerCase().startsWith(inboxName().toLowerCase() + "/") ? "inbox" : p.startsWith("09_wiki/") ? "wissen" : (S.aufgabenOrdner && p.toLowerCase().startsWith(S.aufgabenOrdner.toLowerCase() + "/") && p.split("/").length === 2) ? "aufgabe" : "notiz");
 const SICHTBAR = new Set(["inbox", "notiz", "wissen"]); // erscheinen in „Alle Notizen“, Typen und Ansichten
 const istNotiz = (n) => SICHTBAR.has(n.bereich) && !n.generiert;
@@ -343,11 +343,13 @@ async function ladeIndex() {
   try {
     const r = await api.indexAlles();
     if (!Array.isArray(r?.notizen)) throw new Error("kein Index");
-    n = { status: "fulfilled", value: { notizen: r.notizen, aufgabenOrdner: r.aufgabenOrdner, inboxOrdner: r.inboxOrdner } };
+    n = { status: "fulfilled", value: { notizen: r.notizen, aufgabenOrdner: r.aufgabenOrdner, inboxOrdner: r.inboxOrdner, inboxHinweis: r.inboxHinweis } };
     t = { status: "fulfilled", value: r.typen }; a = { status: "fulfilled", value: r.ansichten };
   } catch { [n, t, a] = await Promise.allSettled([api.notizen(), api.typen(), api.ansichten()]); }
   if (n.status === "fulfilled" && typeof n.value?.aufgabenOrdner === "string" && n.value.aufgabenOrdner) S.aufgabenOrdner = n.value.aufgabenOrdner;
   if (n.status === "fulfilled" && typeof n.value?.inboxOrdner === "string" && n.value.inboxOrdner) S.inboxOrdner = n.value.inboxOrdner;
+  S.inboxHinweis = n.status === "fulfilled" && typeof n.value?.inboxHinweis === "string" ? n.value.inboxHinweis : null;
+  if (S.inboxHinweis && S.inboxHinweisGezeigt !== S.inboxHinweis) { S.inboxHinweisGezeigt = S.inboxHinweis; toast(S.inboxHinweis, { fehler: true, ms: 14000 }); }
   S.notizen = n.status === "fulfilled" && Array.isArray(n.value?.notizen) ? n.value.notizen : notizenAusBaum();
   S.nMap = new Map(S.notizen.map((x) => [x.pfad, x]));
   S.typen = t.status === "fulfilled" && Array.isArray(t.value?.typen) ? t.value.typen : typenAusNotizen();
@@ -1194,6 +1196,8 @@ const punktEl = (farbe) => h("span", { klasse: "d " + (farbe || "") });
 const istOffline = () => S.offline || (typeof navigator !== "undefined" && navigator.onLine === false);
 // Notizen im Konflikt: die offene Zusammenführung oder der Vermerk der Hintergrund-Sicherung (Kern). → Pfade
 const konfliktPfade = () => (S.git?.konflikt?.dateien?.length ? S.git.konflikt.dateien.map((d) => (typeof d === "string" ? d : d?.pfad)) : Array.isArray(S.git?.sicherungDateien) ? S.git.sicherungDateien : []).filter((p) => typeof p === "string");
+// Liegt diese Datei in einer offenen Zusammenführung (Konfliktmarken im Text)? Dann bleibt der Editor schreibgeschützt.
+const imKonflikt = (pfad) => !!(S.git && !S.git.gesperrt && (S.git.konflikt?.dateien || []).some((d) => (typeof d === "string" ? d : d?.pfad) === pfad));
 const istKonflikt = () => !!(S.git && !S.git.gesperrt && (S.git.konflikt || S.git.sicherungStand === "konflikt"));
 function konfliktText() {
   const p = konfliktPfade(), af = (S.aufgabenOrdner || "").toLowerCase();
@@ -1412,7 +1416,7 @@ async function oeffneKonflikt() {
     const m = await import("./konflikt.js");
     konfliktInst = m.zeigeKonflikt($("konflikt-host"), { api, daten: r, aufgabenOrdner: S.aufgabenOrdner,
       beiZustand: ({ label }) => zeichnePfadKonflikt(label), beiSchliessen: ({ phase }) => schliesseKonflikt(phase), beiStandNeu: nachZeitueberschreitung,
-      beiFertig: konfliktFertig, beiZurueck: async () => { await ladeNachAbgleich().catch(() => {}); await ladeGit(); ladeInfo(); } });
+      beiFertig: konfliktFertig, beiVeraltet: async () => { await schliesseKonflikt("liste"); oeffneKonflikt(); }, beiZurueck: async () => { await ladeNachAbgleich().catch(() => {}); await ladeGit(); ladeInfo(); } });
     if (konfliktMerke) { konfliktInst.setzeEntscheidungen(konfliktMerke); konfliktMerke = null; }
     zeichnePfadKonflikt(konfliktInst.label());
     for (const t of document.querySelectorAll("#toast-host .toast")) if (t.textContent.startsWith(TK.mitteilung.titel)) t.remove(); // die Mitteilung hat ihren Zweck erfüllt (und verdeckte den Abschluss-Knopf)
@@ -1427,8 +1431,12 @@ async function schliesseKonflikt(phase) {
   if (phase === "liste") konfliktMerke = inst.entscheidungen(); else konfliktMerke = null;
   inst.zerstoere(); konfliktInst = null;
   weicherWechsel(); setzeModus(); zeichnePfad(); zeigeBanner();
-  try { if (phase === "liste") await api.gitKonfliktAbbrechen(); }
-  catch (e) { if (e.status !== 409 || !/noch einmal geändert/.test(e.message || "")) console.error(e); else toast(e.message, { fehler: true, ms: 9000 }); }
+  try {
+    if (phase === "liste") {
+      const r = await api.gitKonfliktAbbrechen();
+      if (r?.sicherung?.ordner) toast(TK.fertig.gesichert(r.sicherung.ordner), { ms: 12000 }); // von Hand Bearbeitetes liegt vorher gesichert
+    }
+  } catch (e) { toast(e?.message || T.fehler.allgemein, { fehler: true, ms: 14000 }); } // nie still: der Satz sagt auch, wo eine Kopie liegt
   await ladeNachAbgleich().catch(() => {}); await ladeGit(); ladeInfo();
   if (S.sicht.art === "verlauf") verlaufInst?.aktualisieren?.();
 }

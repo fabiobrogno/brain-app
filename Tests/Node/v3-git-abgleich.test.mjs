@@ -250,7 +250,8 @@ test("Keine Optionen oder Transporte durchschleusbar: ext::, -o…, --output, He
   // dasselbe für die Konfliktauswahl
   const x = await konfliktAufbauen();
   for (const wahl of [`ext::sh -c "touch ${marke}" x`, "--theirs", "-X", "meine ", "Meine", ""]) {
-    assert.equal((await wirft(x.v.gitKonfliktLoesen({ auswahl: [{ pfad: "start.md", wahl }] }))).status, 400, wahl);
+    const an = await x.v.gitKonfliktAnsicht();
+    assert.equal((await wirft(x.v.gitKonfliktLoesen({ auswahl: [{ pfad: "start.md", wahl }], gesehen: { meine: an.meine, andere: an.andere } }))).status, 400, wahl);
   }
   assert.equal(existsSync(marke), false); assert.equal(existsSync(join(d, "x")), false);
   assert.equal(g(d, "status", "--porcelain").trim(), "");

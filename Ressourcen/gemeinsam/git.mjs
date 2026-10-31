@@ -266,6 +266,8 @@ function mergeReste(wurzel, ab) {
 
 // opt.sperre (optional, von vault.mjs): nimmt die gemeinsame Sperre aller Abgleiche (Kern und Studio, kern/abgleich-sperre.mjs) — erst NACH der Sperre im Prozess,
 // damit „wer zuerst aufruft, gewinnt“ bleibt. Sie liefert { freigeben() } oder wirft (409).
+// Dieselbe Sperre im Prozess für Aufrufe außerhalb dieser Datei (der Kern-Befehl `brain abgleich` fasst Index und Arbeitsbaum an: nie zugleich mit Commit, Abgleich oder Nachsehen)
+export function gitExklusiv(wurzel, fn) { return exklusiv(wurzel, fn); }
 export function sync(wurzel, opt = {}) {
   return exklusiv(wurzel, async () => {
     const dateiSperre = typeof opt.sperre === "function" ? await opt.sperre() : null;

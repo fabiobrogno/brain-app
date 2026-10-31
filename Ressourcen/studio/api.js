@@ -96,9 +96,10 @@ export const api = {
   gitRemote: (url) => anfrage("POST", "/api/git/remote", { url }),
   // ---- v3: Abgleich mit Konflikten, Nachsehen, Version zurückholen
   // Konflikt-Ansicht (Kern): beide Fassungen je Datei · Entscheidungen festhalten und abgleichen · „Später“ · „Rückgängig“.
-  // basis nur nach „Rückgängig“ ({ meine, andere, dateien }): dann zeigt die Ansicht den gemerkten Stand.
-  gitKonflikt: (basis) => (basis ? anfrage("POST", "/api/git/konflikt", { basis }) : anfrage("GET", "/api/git/konflikt")),
-  gitKonfliktLoesen: (auswahl, basis) => anfrage("POST", "/api/git/konflikt/loesen", { auswahl, ...(basis ? { basis } : {}) }),
+  // Nach „Rückgängig“ zeigt die Ansicht den gemerkten Stand (er liegt im Support-Ordner, nicht in der Anfrage).
+  gitKonflikt: () => anfrage("GET", "/api/git/konflikt"),
+  // gesehen = { meine, andere }: der Stand, den die Ansicht gezeigt hat (die Werkstatt lehnt ab, wenn er sich geändert hat)
+  gitKonfliktLoesen: (auswahl, gesehen) => anfrage("POST", "/api/git/konflikt/loesen", { auswahl, gesehen }),
   gitKonfliktAbbrechen: () => anfrage("POST", "/api/git/konflikt/abbrechen", {}),
   gitKonfliktRueckgaengig: () => anfrage("POST", "/api/git/konflikt/rueckgaengig", {}),
   gitNachsehen: () => anfrage("POST", "/api/git/nachsehen", {}),

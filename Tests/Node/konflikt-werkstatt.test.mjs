@@ -11,10 +11,10 @@ process.env.GIT_CONFIG_NOSYSTEM = "1";
 
 const { oeffneVault, HttpFehler } = await import(pfad("gemeinsam", "vault.mjs"));
 const { erzeugeHandler } = await import(pfad("werkstatt", "handler.mjs"));
-const { kennung } = await import(pfad("gemeinsam", "sicherungsmerker.mjs"));
+const { kennung, merkeRemoteBestaetigt } = await import(pfad("gemeinsam", "sicherungsmerker.mjs"));
 const wirft = async (p) => { try { await p; } catch (e) { assert.ok(e instanceof HttpFehler, String(e && e.stack)); return e; } assert.fail("kein Fehler"); };
 
-function mitRemote() {
+function mitRemote({ bestaetigt = true } = {}) {
   const bare = tmp("brain-bare-");
   g(bare, "init", "-q", "--bare", "-b", "main");
   const a = repo();
@@ -23,12 +23,15 @@ function mitRemote() {
   const b = tmp("brain-klon-");
   g(b, "clone", "-q", bare, ".");
   g(b, "config", "user.name", "B"); g(b, "config", "user.email", "b@Fabios-iPhone.local");
+  if (bestaetigt) merkeRemoteBestaetigt(a, bare, { support: process.env.BRAIN_APP_SUPPORT }); // das Ziel ist vom Nutzer bestätigt (Assistent „Sicherung“)
   return { bare, a, b, v: oeffneVault(a) };
 }
 const commitIn = (d, datei, inhalt, msg, push = false) => { schreibe(d, datei, inhalt); g(d, "add", "--", datei); g(d, "commit", "-q", "-m", msg); if (push) g(d, "push", "-q"); };
 const lies = (d, rel) => readFileSync(join(d, rel), "utf8");
-async function konfliktAufbauen() {
-  const x = mitRemote();
+// Lösen wie die Oberfläche: mit dem gesehenen Stand
+const loesen = async (v, auswahl) => { const an = await v.gitKonfliktAnsicht(); return v.gitKonfliktLoesen({ auswahl, gesehen: { meine: an.meine, andere: an.andere } }); };
+async function konfliktAufbauen(opt) {
+  const x = mitRemote(opt);
   commitIn(x.b, "start.md", "# Start\nVersion von B\n", "B ändert start\n\nKortex-Geraet: Fabios iPhone", true);
   commitIn(x.a, "start.md", "# Start\nVersion von A\n", "A ändert start");
   const e = await wirft(x.v.gitSync({ konflikteLoesen: true }));
@@ -58,7 +61,7 @@ test("Ansicht ohne Konflikt: aktiv false", async () => {
 
 test("Lösen: Entscheidung ist ein Eintrag im Verlauf, danach ist alles gesendet (auch ohne bestätigtes Ziel: der Studio-Abgleich sendet)", async () => {
   const { a, b, bare, v } = await konfliktAufbauen();
-  const r = await v.gitKonfliktLoesen({ auswahl: [{ pfad: "start.md", wahl: "beide" }] });
+  const r = await loesen(v, [{ pfad: "start.md", wahl: "beide" }]);
   assert.equal(r.ok, true);
   assert.equal(r.kopien.length, 1);
   assert.equal(r.kopien[0].pfad, "start (Fabios iPhone).md");
@@ -75,12 +78,12 @@ test("Lösen: Entscheidung ist ein Eintrag im Verlauf, danach ist alles gesendet
 
 test("Lösen prüft die Auswahl (400), kein Konflikt → 409; Fehler des Kerns kommen als HttpFehler mit Status", async () => {
   const { a, v } = await konfliktAufbauen();
-  assert.equal((await wirft(v.gitKonfliktLoesen({ auswahl: [] }))).status, 400);
-  for (const wahl of ["--theirs", "meine ", "Meine", "", `ext::sh -c "touch x" x`]) assert.equal((await wirft(v.gitKonfliktLoesen({ auswahl: [{ pfad: "start.md", wahl }] }))).status, 400, wahl);
-  assert.equal((await wirft(v.gitKonfliktLoesen({ auswahl: [{ pfad: "../x", wahl: "meine" }] }))).status, 400);
+  assert.equal((await wirft(loesen(v, []))).status, 400);
+  for (const wahl of ["--theirs", "meine ", "Meine", "", `ext::sh -c "touch x" x`]) assert.equal((await wirft(loesen(v, [{ pfad: "start.md", wahl }]))).status, 400, wahl);
+  assert.equal((await wirft(loesen(v, [{ pfad: "../x", wahl: "meine" }]))).status, 400);
   assert.ok(existsSync(join(a, ".git", "MERGE_HEAD")), "nichts angefasst");
   await v.gitKonfliktAbbrechen();
-  assert.equal((await wirft(v.gitKonfliktLoesen({ auswahl: [] }))).status, 409);
+  assert.equal((await wirft(loesen(v, []))).status, 409);
 });
 
 test("Später (Abbrechen): Arbeitsstand wie vorher; der Konflikt bleibt in der Statusanzeige (Kern-Vermerk)", async () => {
@@ -107,21 +110,26 @@ test("Rückgängig und neu entscheiden über die Routen; Methoden und Fehler der
     return { status: r.status, j };
   };
   assert.equal((await rufe("GET", "/api/git/konflikt")).j.aktiv, false);
-  let r = await rk("GET", "/api/git/konflikt");
+  const r0 = await rk("GET", "/api/git/konflikt");
+  let r = r0;
   assert.equal(r.status, 200); assert.equal(r.j.dateien[0].andere.text, "# Start\nVersion von B\n");
   assert.equal((await rk("GET", "/api/git/konflikt/loesen")).status, 405);
   assert.equal((await rk("GET", "/api/git/konflikt/rueckgaengig")).status, 405);
   assert.equal((await rk("POST", "/api/git/konflikt/loesen")).status, 400);
-  r = await rk("POST", "/api/git/konflikt/loesen", { auswahl: [{ pfad: "start.md", wahl: "andere" }] });
+  r = await rk("POST", "/api/git/konflikt/loesen", { auswahl: [{ pfad: "start.md", wahl: "andere" }], gesehen: { meine: r0.j.meine, andere: r0.j.andere } });
   assert.equal(r.status, 200); assert.equal(lies(k.a, "start.md"), "# Start\nVersion von B\n");
   r = await rk("GET", "/api/git/konflikt");
   assert.equal(r.j.aktiv, false); assert.equal(r.j.rueckgaengig.moeglich, true);
   r = await rk("POST", "/api/git/konflikt/rueckgaengig");
   assert.equal(r.status, 200); assert.equal(lies(k.a, "start.md"), "# Start\nVersion von A\n");
-  const basis = r.j.basis;
-  r = await rk("POST", "/api/git/konflikt", { basis });
-  assert.equal(r.j.aktiv, true); assert.equal(r.j.modus, "stand"); assert.equal(r.j.dateien[0].andere.text, "# Start\nVersion von B\n");
-  r = await rk("POST", "/api/git/konflikt/loesen", { auswahl: [{ pfad: "start.md", wahl: "text", text: "# Start\nzusammen\n" }], basis });
+  // der gemerkte Stand kommt aus dem Support-Ordner; die Oberfläche schickt keinen
+  r = await rk("GET", "/api/git/konflikt");
+  assert.equal(r.j.aktiv, true); assert.equal(r.j.modus, "stand"); assert.equal(r.j.haelt, true); assert.equal(r.j.dateien[0].andere.text, "# Start\nVersion von B\n");
+  assert.equal((await rk("POST", "/api/git/konflikt", {})).status, 405);
+  // solange der Stand wartet, sendet auch der Studio-Abgleich nichts: 409 mit dem Hinweis auf den Konflikt
+  r = await rk("POST", "/api/git/sync", {});
+  assert.equal(r.status, 409); assert.equal(r.j.haelt, true); assert.equal(r.j.konflikt, true);
+  r = await rk("POST", "/api/git/konflikt/loesen", { auswahl: [{ pfad: "start.md", wahl: "text", text: "# Start\nzusammen\n" }], gesehen: { meine: r0.j.meine, andere: r0.j.andere } });
   assert.equal(r.status, 200); assert.equal(lies(k.a, "start.md"), "# Start\nzusammen\n");
   assert.equal((await rk("POST", "/api/git/konflikt/rueckgaengig")).status, 200);
   assert.equal((await rk("POST", "/api/git/konflikt/rueckgaengig")).status, 409, "nur einmal");
@@ -135,7 +143,7 @@ test("Gemeinsame Sperre: solange der Kern-Hintergrund (oder ein anderer Prozess)
   writeFileSync(datei, JSON.stringify({ pid: process.pid, zeit: Date.now(), art: "sicherung", marke: "kern" }));
   const e = await wirft(v.gitSync({}));
   assert.equal(e.status, 409); assert.equal(e.extra.art, "laeuft");
-  assert.equal((await wirft(v.gitKonfliktLoesen({ auswahl: [] }))).status, 409);
+  assert.equal((await wirft(loesen(v, []))).status, 409);
   assert.equal(existsSync(datei), true, "eine fremde Sperre wird nie freigegeben");
   // verwaist (Prozess nicht mehr da) blockiert nicht
   writeFileSync(datei, JSON.stringify({ pid: 2 ** 22 - 3, zeit: Date.now(), art: "sicherung", marke: "tot" }));
@@ -150,10 +158,43 @@ test("Umstellung (Phase B) läuft: Abgleich, Lösen, Später und Rückgängig me
   mkdirSync(join(a, ".logs"), { recursive: true });
   const sperre = join(a, ".logs", "umstellung-phase-b.lock");
   writeFileSync(sperre, JSON.stringify({ pid: process.pid, zeit: new Date().toISOString() }));
-  for (const f of [() => v.gitSync({}), () => v.gitKonfliktLoesen({ auswahl: [{ pfad: "start.md", wahl: "meine" }] }), () => v.gitKonfliktAbbrechen(), () => v.gitKonfliktRueckgaengig()]) {
+  for (const f of [() => v.gitSync({}), () => v.gitKonfliktLoesen({ auswahl: [{ pfad: "start.md", wahl: "meine" }], gesehen: {} }), () => v.gitKonfliktAbbrechen(), () => v.gitKonfliktRueckgaengig()]) {
     const e = await wirft(f()); assert.equal(e.status, 409); assert.match(e.message, /räumt gerade/);
   }
   assert.equal((await v.gitKonfliktAnsicht()).aktiv, true);
   writeFileSync(sperre, JSON.stringify({ pid: process.pid, zeit: new Date(Date.now() - 2 * 3600_000).toISOString() })); // zu alt: zählt nicht
-  assert.equal((await v.gitKonfliktLoesen({ auswahl: [{ pfad: "start.md", wahl: "meine" }] })).ok, true);
+  assert.equal((await loesen(v, [{ pfad: "start.md", wahl: "meine" }])).ok, true);
+});
+
+test("Ohne bestätigtes Ziel sendet das Lösen nicht (nur ein Hinweis), auch nicht über den Studio-Abgleich — dieselbe Regel wie bei der Sicherung", async () => {
+  const { a, bare, v } = await konfliktAufbauen({ bestaetigt: false });
+  const vorher = g(bare, "rev-parse", "main").trim();
+  const r = await loesen(v, [{ pfad: "start.md", wahl: "meine" }]);
+  assert.equal(r.ok, true);
+  assert.equal(r.abgleich.art, "nicht-bestaetigt"); assert.equal(r.abgleich.ok, false);
+  assert.equal(g(bare, "rev-parse", "main").trim(), vorher, "nichts gesendet");
+  assert.equal(g(a, "status", "--porcelain").trim(), "");
+});
+
+test("Zusammenführung, die nicht über den Studio-Abgleich begonnen wurde: Ansicht ja (fremd), Lösen und Später 409; der Studio-Abgleich markiert seine eigene", async () => {
+  const { a, b, v } = mitRemote();
+  commitIn(b, "start.md", "# Start\nB\n", "B", true);
+  commitIn(a, "start.md", "# Start\nA\n", "A");
+  g(a, "fetch", "-q", "origin");
+  assert.throws(() => g(a, "merge", "--no-edit", "origin/main"));
+  const an = await v.gitKonfliktAnsicht();
+  assert.equal(an.fremd, true);
+  assert.equal((await wirft(loesen(v, [{ pfad: "start.md", wahl: "meine" }]))).extra.art, "fremd");
+  assert.equal((await wirft(v.gitKonfliktAbbrechen())).extra.art, "fremd");
+  g(a, "merge", "--abort");
+  await wirft(v.gitSync({ konflikteLoesen: true }));
+  assert.equal((await v.gitKonfliktAnsicht()).fremd, false, "der Studio-Abgleich hat die Marke gesetzt");
+});
+
+test("Kern-Befehle laufen unter der Sperre im Prozess: neben einem laufenden Abgleich gibt es 409 „läuft schon“ statt einer Kollision auf dem Index", async () => {
+  const { v } = await konfliktAufbauen();
+  await v.gitKonfliktAbbrechen();
+  const [s, r] = await Promise.allSettled([v.gitSync({}), v.gitKonfliktRueckgaengig()]);
+  assert.equal(r.status, "rejected"); assert.equal(r.reason.status, 409); assert.match(r.reason.message, /Abgleich läuft schon/);
+  void s;
 });

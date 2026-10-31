@@ -1,16 +1,21 @@
 // abgleich-konflikt.mjs — Konflikt beim Abgleich: beide Fassungen zeigen, entscheiden, abschließen, zurücknehmen. EINE Wahrheit für Studio und Kern.
 //
 // Datenfluss: Die Hintergrund-Sicherung (backup.mjs#abgleichen) merkt einen Konflikt im Support-Ordner (<Support>/backup/<Kennung>.json → abgleich) und
-// nimmt ihre Zusammenführung zurück. Das Studio holt auf Wunsch noch einmal und lässt die Zusammenführung offen (gemeinsam/git.mjs#sync); dieses Modul
-// liest dann beide Fassungen jeder Datei (ansicht), nimmt die Entscheidungen entgegen (loesen), schließt die Zusammenführung ab und gleicht danach wie
-// die Sicherung ab (backup.mjs#abgleichen: holen, senden, nur an das bestätigte Ziel), räumt den Konfliktstand und kann die Entscheidungen zurücknehmen
-// (rueckgaengig). Aufgerufen wird es vom Kern-Befehl `brain abgleich <ansicht|loesen|abbrechen|rueckgaengig>` (JSON auf stdout); die Werkstatt startet ihn
-// als Kindprozess (gemeinsam/vault.mjs). Alle git-Aufrufe laufen über git-sicher (backup.mjs#gitLauf), die Zusammenführung immer ohne Hooks.
+// nimmt ihre Zusammenführung zurück. Das Studio holt auf Wunsch noch einmal und lässt die Zusammenführung offen (gemeinsam/git.mjs#sync) und ruft danach
+// `markieren`: Kortex merkt sich, DASS es diese Zusammenführung begonnen hat (HEAD, MERGE_HEAD, Fingerabdruck der Dateien). Nur dann lösen oder brechen
+// ab diese Funktionen sie ab — eine Zusammenführung, die jemand anderes begonnen hat (Terminal), fassen sie nie an (409 „fremd“); wurde eine Konfliktdatei
+// seit dem Markieren von Hand bearbeitet, wird nichts überschrieben (409 „bearbeitet“; „Später“ sichert die Bearbeitung vor dem Zurücknehmen).
+// `ansicht` liest beide Fassungen jeder Datei, `loesen` nimmt die Entscheidungen entgegen, schließt die Zusammenführung ab und gleicht danach wie die
+// Sicherung ab (backup.mjs#abgleichen: holen, senden, nur an das bestätigte Ziel), räumt den Konfliktstand; `rueckgaengig` nimmt die Entscheidungen zurück.
+// Aufgerufen wird es vom Kern-Befehl `brain abgleich <markieren|ansicht|loesen|abbrechen|rueckgaengig>` (JSON auf stdout); die Werkstatt startet ihn als
+// Kindprozess (gemeinsam/vault.mjs). Alle git-Aufrufe laufen über git-sicher (backup.mjs#gitLauf), die Zusammenführung immer ohne Hooks.
 //
-// Entscheidungen je Datei: meine (diese behalten) · andere (die andere Fassung nehmen) · beide (meine bleibt, die andere liegt als Kopie „<Name> (<Gerät>)“ daneben) ·
-// text (zusammengeführter Text, selbst geschrieben). Eine Aufgaben-Karte kennt nur meine/andere. Verlauf: Die Zusammenführung selbst hält zuerst überall
-// „meine“ fest; JEDE Entscheidung ist danach ein eigener Eintrag im Verlauf („Konflikt gelöst: …“) — darüber lässt sich jede Fassung zurückholen, und
-// „Rückgängig“ (letzter Abgleich) legt die Fassungen von vor den Entscheidungen als neuen Eintrag wieder hin. Nie Rebase, nie Reset, nie Force.
+// Entscheidungen je Datei: meine · andere · beide (meine bleibt, die andere liegt als Kopie „<Name> (<Gerät>)“ daneben) · text (zusammengeführter Text).
+// Eine Aufgaben-Karte kennt nur meine/andere. Auf beiden Geräten umbenannt („umbenannt“): meine = mein Name, andere = der andere Name, beide = beide Namen.
+// Verlauf: Die Zusammenführung selbst hält zuerst überall „meine“ fest; JEDE Entscheidung ist danach ein eigener Eintrag („Konflikt gelöst: …“) — ohne
+// Pfadangabe geschrieben (der Eintrag enthält genau das, was diese Entscheidung vormerkt). „Rückgängig“ (letzter Abgleich) legt die Fassungen von vor den
+// Entscheidungen als neuen Eintrag wieder hin und merkt den Stand in der Merker-Datei (`konfliktBasis`): die Sicherung sendet nichts, solange er offen ist,
+// und nur dieser gemerkte Stand — nie einer aus der Oberfläche — darf neu entschieden werden. Nie Rebase, nie Reset, nie Force.
 import { spawnSync } from "node:child_process";
 import { existsSync, lstatSync, readFileSync, writeFileSync, mkdirSync, copyFileSync, rmSync, realpathSync, readdirSync, statSync } from "node:fs";
 import { join, dirname, basename, extname, sep, isAbsolute } from "node:path";
@@ -42,13 +47,29 @@ const istCommit = (vault, sha) => istSha(sha) && g(vault, ["cat-file", "-e", `${
 const istVorfahr = (vault, a, b) => g(vault, ["merge-base", "--is-ancestor", a, b]).code === 0;
 const hatInSha = (vault, sha, pfad) => !!sha && g(vault, ["cat-file", "-e", `${sha}:${pfad}`]).code === 0;
 const blobVon = (vault, sha, pfad) => { if (!sha) return null; const r = gBytes(vault, ["cat-file", "blob", `${sha}:${pfad}`]); return r.code === 0 ? r.out : null; };
-const blobId = (vault, sha, pfad) => { const r = g(vault, ["rev-parse", "-q", "--verify", `${sha}:${pfad}`]); return r.code === 0 ? r.out.trim() : null; };
+const blobId = (vault, sha, pfad) => { if (!sha) return null; const r = g(vault, ["rev-parse", "-q", "--verify", `${sha}:${pfad}`]); return r.code === 0 ? r.out.trim() : null; };
 const identFlags = (vault) => (g(vault, ["config", "user.email"]).code === 0 && g(vault, ["config", "user.name"]).code === 0 ? [] : ["-c", "user.email=brain@localhost", "-c", "user.name=Kortex"]);
 const versteckt = (pfad) => pfad.split("/").some((t) => t.startsWith(".") || t.toLowerCase() === "node_modules");
+// Fingerabdruck der Arbeitsdatei (null: fehlt oder keine reguläre Datei)
+function arbeitId(vault, pfad) {
+  try { if (!lstatSync(join(vault, ...pfad.split("/"))).isFile()) return null; } catch { return null; }
+  const r = g(vault, ["hash-object", "--no-filters", "--", pfad]);
+  return r.code === 0 ? r.out.trim() : null;
+}
+function indexId(vault, pfad) { // Blob im Index (Stufe 0, sonst Stufe 2 = meine)
+  const r = g(vault, ["ls-files", "-s", "-z", "--", pfad]);
+  if (r.code !== 0) return null;
+  let zwei = null;
+  for (const z of r.out.split("\0")) { const m = /^\d{6} ([0-9a-f]+) ([0-3])\t/.exec(z); if (!m) continue; if (m[2] === "0") return m[1]; if (m[2] === "2") zwei = m[1]; }
+  return zwei;
+}
 
 // ───────────────────────────── Namen, Texte ─────────────────────────────
-const einzeiler = (s, max = 80) => String(s ?? "").replace(/[\x00-\x1f\x7f]/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
+// Steuerzeichen, Zeilenumbrüche und unsichtbare Umlenker (Bidi, Breite null) fliegen aus Namen: sie täuschten im Dateinamen oder Verlauf etwas anderes vor
+const UNSICHTBAR = /[​-‏‪-‮⁠-⁤⁦-⁩﻿؜᠎]/g;
+const einzeiler = (s, max = 80) => String(s ?? "").replace(/[\x00-\x1f\x7f\u0080-\u009f]/g, " ").replace(UNSICHTBAR, "").replace(/\s+/g, " ").trim().slice(0, max);
 const dateiNamenTeil = (s) => einzeiler(s, 40).replace(/[\\/:*?"<>|]/g, "").replace(/^\.+/, "").trim();
+const bytes = (s) => Buffer.byteLength(s, "utf8");
 
 // Name dieses Geräts (Gerätemerker): <Support>/geraet.json → { name } vom Nutzer, sonst BRAIN_GERAET_NAME (Test), sonst der Computername (macOS), sonst der Rechnername.
 export function eigenerGeraetName({ support = supportOrdner() } = {}) {
@@ -83,7 +104,8 @@ const titelAus = (text, pfad) => {
 
 // ───────────────────────────── Lage lesen ─────────────────────────────
 // Offene Zusammenführung (MERGE_HEAD): meine = HEAD, andere = MERGE_HEAD, die Dateien aus dem Index (Stufen 1/2/3).
-// Oder ein Stand aus `basis` { meine, andere, dateien } (nach „Rückgängig“: beide Seiten sind schon zusammengeführt, die Entscheidungen werden neu getroffen).
+// Oder der gemerkte Stand `konfliktBasis` (nach „Rückgängig“ oder einem Abbruch mitten im Festhalten): beide Seiten sind schon zusammengeführt,
+// die Entscheidungen werden neu getroffen. Dieser Stand kommt NUR aus der Merker-Datei, nie von außen.
 function artVon(hat1, hat2, hat3) {
   if (hat2 && hat3) return "beide";
   if (hat1 && hat3) return "meine-geloescht";
@@ -113,24 +135,29 @@ export function sauberer(pfad) { // → relativer Vault-Pfad mit "/" oder wirft
   if (teile.some((t) => !t || t === "." || t === "..")) throw new KonfliktFehler(400, "Ungültiger Pfad.");
   return teile.join("/");
 }
-function lage(vault, basis) {
+const merkerBasis = (vault, support) => { const b = leseMerkerDatei(vault, support).konfliktBasis; return b && typeof b === "object" ? b : null; };
+function lage(vault, support) {
   const merge = mergeSha(vault);
   if (merge) {
     const kopf = kopfSha(vault);
     return { modus: "offen", meine: kopf, andere: merge, dateien: indexKonflikte(vault) };
   }
-  if (!basis || typeof basis !== "object") return null;
+  const basis = merkerBasis(vault, support);
+  if (!basis) return null;
   const kopf = kopfSha(vault);
   if (!kopf || !istCommit(vault, basis.meine) || !istCommit(vault, basis.andere) || !istVorfahr(vault, basis.meine, kopf) || !istVorfahr(vault, basis.andere, kopf)) return null;
   const mb = g(vault, ["merge-base", basis.meine, basis.andere]);
   const stamm = mb.code === 0 ? mb.out.trim() : null;
-  const dateien = [];
-  for (const p of Array.isArray(basis.dateien) ? basis.dateien.slice(0, 200) : []) {
+  const dateien = [], veraltet = [];
+  const blobs = basis.kopfBlobs && typeof basis.kopfBlobs === "object" ? basis.kopfBlobs : {};
+  for (const p of Array.isArray(basis.dateien) ? basis.dateien.slice(0, 400) : []) {
     let pfad; try { pfad = sauberer(p); } catch { continue; }
+    // seitdem weitergearbeitet? Dann gehört diese Datei nicht mehr zum Konflikt (die neuere Arbeit gewinnt)
+    if (Object.hasOwn(blobs, pfad) && blobId(vault, "HEAD", pfad) !== blobs[pfad]) { veraltet.push(pfad); continue; }
     const art = artVon(hatInSha(vault, stamm, pfad), hatInSha(vault, basis.meine, pfad), hatInSha(vault, basis.andere, pfad));
     if (art !== "beide-geloescht") dateien.push({ pfad, art, eingebettet: false, versteckt: versteckt(pfad) });
   }
-  return { modus: "stand", meine: basis.meine, andere: basis.andere, stamm, dateien };
+  return { modus: "stand", meine: basis.meine, andere: basis.andere, stamm, dateien, veraltet };
 }
 
 function commitInfo(vault, sha, pfad, geloescht = false) {
@@ -150,27 +177,57 @@ function kartenWerte(text, pfad) {
   return a ? { spalte: a.status, faellig: a.faellig, titel: a.titel } : null;
 }
 
+// Umbenennungen zwischen dem gemeinsamen Stand und einer Seite: alter Pfad → neuer Pfad
+function umbenennungen(vault, stamm, sha) {
+  const m = new Map();
+  if (!stamm || !sha) return m;
+  const r = g(vault, ["diff-tree", "-r", "-M", "--name-status", "-z", stamm, sha]);
+  if (r.code !== 0) return m;
+  const t = r.out.split("\0");
+  for (let i = 0; i < t.length; i++) { if (/^R\d*$/.test(t[i])) { m.set(t[i + 1], t[i + 2]); i += 2; } else if (/^[A-Z]\d*$/.test(t[i])) i += /^[CR]/.test(t[i]) ? 2 : 1; }
+  return m;
+}
+// Paare „auf beiden Seiten umbenannt“ unter den Konfliktdateien: meine Datei M und die des anderen A gehen aus DEMSELBEN Pfad hervor
+function findePaare(vault, l, stamm) {
+  const nurM = new Set(l.dateien.filter((e) => e.art === "nur-meine").map((e) => e.pfad)), nurA = new Set(l.dateien.filter((e) => e.art === "nur-andere").map((e) => e.pfad));
+  const paare = new Map(); // M → { a, basis }
+  if (!nurM.size || !nurA.size) return paare;
+  const rm = umbenennungen(vault, stamm, l.meine), ra = umbenennungen(vault, stamm, l.andere);
+  for (const [alt, m] of rm) { const a = ra.get(alt); if (a && a !== m && nurM.has(m) && nurA.has(a)) paare.set(m, { a, basis: alt }); }
+  return paare;
+}
+
 // ───────────────────────────── Ansicht ─────────────────────────────
-// → { aktiv: false } | { aktiv: true, modus, meine, andere, eigen, geraet, seit, dateien: [...], versteckt }
-// dateien[i] = { pfad, titel, art, typ: "text"|"geloescht"|"board", wer?, meine: { vorhanden, text, gross?, binaer?, zeit, geraet }, andere: {...}, karte? }
-export function ansicht(vault, { support = supportOrdner(), basis = null } = {}) {
-  const l = lage(vault, basis);
-  if (!l) return { aktiv: false, dateien: [] };
+// → { aktiv: false } | { aktiv: true, modus, meine, andere, eigen, geraet, seit, dateien: [...], versteckt, fremd?, haelt?, veraltet? }
+// dateien[i] = { pfad, titel, art, typ: "text"|"geloescht"|"board"|"umbenannt", wer?, meine: { vorhanden, text, blob, zeit, geraet }, andere: {...}, karte?, neueZeilen?, pfadAndere? }
+// fremd: die offene Zusammenführung hat Kortex nicht begonnen (nur ansehen, nie lösen). Rein lesend — bis auf das Aufräumen eines gemerkten Stands, der nichts mehr betrifft.
+export function ansicht(vault, { support = supportOrdner() } = {}) {
+  return baueAnsicht(vault, support).ansicht;
+}
+function baueAnsicht(vault, support) {
+  const l = lage(vault, support);
+  if (!l) return { ansicht: { aktiv: false, dateien: [] }, l: null, paare: new Map() };
   const aufgabenOrdner = ordner(vault).aufgaben;
   const eigen = eigenerGeraetName({ support });
+  const stammSha = l.modus === "offen" ? (g(vault, ["merge-base", l.meine, l.andere]).out.trim() || null) : l.stamm;
+  const paare = findePaare(vault, l, stammSha);
+  const alsA = new Set([...paare.values()].map((p) => p.a));
   const dateien = [];
   let verborgen = 0;
-  const stammSha = l.modus === "offen" ? (g(vault, ["merge-base", l.meine, l.andere]).out.trim() || null) : l.stamm;
   for (const e of l.dateien) {
-    if (e.versteckt || e.art === "beide-geloescht") { verborgen++; continue; }
+    if (e.versteckt) { verborgen++; continue; }
+    if (e.art === "beide-geloescht" || alsA.has(e.pfad)) continue;
+    const paar = paare.get(e.pfad);
     const vM = e.art === "beide" || e.art === "andere-geloescht" || e.art === "nur-meine";
-    const vA = e.art === "beide" || e.art === "meine-geloescht" || e.art === "nur-andere";
-    const bM = vM ? blobVon(vault, l.meine, e.pfad) : null, bA = vA ? blobVon(vault, l.andere, e.pfad) : null;
+    const vA = paar ? true : e.art === "beide" || e.art === "meine-geloescht" || e.art === "nur-andere";
+    const pfadA = paar ? paar.a : e.pfad;
+    const bM = vM ? blobVon(vault, l.meine, e.pfad) : null, bA = vA ? blobVon(vault, l.andere, pfadA) : null;
     const tM = textVon(bM), tA = textVon(bA);
-    const seite = (vorhanden, t, sha) => ({ vorhanden, text: t ? t.text : null, ...(t && t.gross ? { gross: true } : {}), ...(t && t.binaer ? { binaer: true } : {}), ...seitenMeta(vault, sha, e.pfad, vorhanden) });
-    const geloescht = e.art !== "beide";
-    const d = { pfad: e.pfad, art: e.art, titel: titelAus(tM?.text ?? tA?.text, e.pfad), meine: seite(vM, tM, l.meine), andere: seite(vA, tA, l.andere) };
-    d.typ = geloescht ? "geloescht" : "text";
+    const seite = (vorhanden, t, sha, p) => ({ vorhanden, text: t ? t.text : null, blob: vorhanden ? blobId(vault, sha, p) : null, ...(t && t.gross ? { gross: true } : {}), ...(t && t.binaer ? { binaer: true } : {}), ...seitenMeta(vault, sha, p, vorhanden) });
+    const geloescht = !paar && e.art !== "beide";
+    const d = { pfad: e.pfad, art: paar ? "umbenannt" : e.art, titel: titelAus(tM?.text ?? tA?.text, e.pfad), meine: seite(vM, tM, l.meine, e.pfad), andere: seite(vA, tA, l.andere, pfadA) };
+    d.typ = paar ? "umbenannt" : geloescht ? "geloescht" : "text";
+    if (paar) { d.pfadAndere = paar.a; d.basisPfad = paar.basis; }
     if (geloescht) {
       d.wer = vM ? "andere" : "meine"; // wer hat gelöscht (bzw. hat die Datei nicht)
       // Zeilen, die seit dem gemeinsamen Stand dazugekommen sind (die Oberfläche hebt sie hervor)
@@ -181,7 +238,7 @@ export function ansicht(vault, { support = supportOrdner(), basis = null } = {})
       }
     }
     const imAufgaben = e.pfad.toLowerCase().startsWith(`${aufgabenOrdner.toLowerCase()}/`) && /\.md$/i.test(e.pfad);
-    if (!geloescht && imAufgaben) {
+    if (!geloescht && !paar && imAufgaben) {
       const km = kartenWerte(tM?.text, e.pfad), ka = kartenWerte(tA?.text, e.pfad);
       if (km && ka) {
         d.typ = "board";
@@ -192,9 +249,18 @@ export function ansicht(vault, { support = supportOrdner(), basis = null } = {})
     }
     dateien.push(d);
   }
+  if (l.modus === "stand" && !dateien.length) { // nichts mehr zu entscheiden (seitdem weitergearbeitet): der gemerkte Stand und die Sperre der Sicherung fallen weg
+    aendereMerker(vault, (m) => { delete m.konfliktBasis; return m; }, { support });
+    loescheAbgleichStand(vault, { support });
+    return { ansicht: { aktiv: false, dateien: [] }, l: null, paare };
+  }
   const seit = stammSha ? (commitInfo(vault, stammSha) || {}).zeit || null : null;
   const aInfo = commitInfo(vault, l.andere);
-  return { aktiv: true, modus: l.modus, meine: l.meine, andere: l.andere, eigen, geraet: aInfo ? geraetAusCommit(aInfo) : null, seit, dateien, versteckt: verborgen };
+  const ans = { aktiv: true, modus: l.modus, meine: l.meine, andere: l.andere, eigen, geraet: aInfo ? geraetAusCommit(aInfo) : null, seit, dateien, versteckt: verborgen };
+  if (l.modus === "offen") { const m = leseMerkerDatei(vault, support).konfliktOffen; ans.fremd = !(m && m.kopf === l.meine && m.merge === l.andere); }
+  else ans.haelt = true;
+  if (l.veraltet && l.veraltet.length) ans.veraltet = l.veraltet;
+  return { ansicht: ans, l, paare };
 }
 
 // ───────────────────────────── Schreiben ─────────────────────────────
@@ -223,18 +289,42 @@ function entferne(vault, pfad) {
   if (r.code !== 0) throw new KonfliktFehler(500, `„${pfad}“ ließ sich nicht entfernen.`);
   try { rmSync(imVault(vault, pfad), { force: true }); } catch (e) { if (e instanceof KonfliktFehler) throw e; }
 }
-function freierKopieName(vault, pfad, geraet) {
+// Name der Kopie „<Name> (<Gerät>).<Endung>“, höchstens 255 Bytes (UTF-8) lang; `belegt` = schon für andere Kopien vergebene Namen
+function freierKopieName(vault, pfad, geraet, belegt = new Set()) {
   const ord = dirname(pfad) === "." ? "" : dirname(pfad) + "/";
-  const ext = extname(pfad), stamm = basename(pfad, ext).slice(0, 100);
+  const ext = extname(pfad);
+  const baue = (stamm, i) => `${stamm} (${geraet}${i ? " " + (i + 1) : ""})${ext}`;
   for (let i = 0; i < 100; i++) {
-    const rel = `${ord}${stamm} (${geraet}${i ? " " + (i + 1) : ""})${ext}`;
-    if (!existsSync(imVault(vault, rel)) && g(vault, ["ls-files", "--error-unmatch", "--", rel]).code !== 0) return rel;
+    let stamm = [...basename(pfad, ext)].slice(0, 100).join("");
+    while (stamm.length > 1 && bytes(baue(stamm, i)) > 255) stamm = [...stamm].slice(0, -1).join("");
+    const name = baue(stamm, i);
+    if (bytes(name) > 255) throw new KonfliktFehler(422, `Für „${pfad}“ lässt sich kein Name für die Kopie bilden (zu lang).`);
+    const rel = ord + name;
+    if (!belegt.has(rel) && !existsSync(imVault(vault, rel)) && g(vault, ["ls-files", "--error-unmatch", "--", rel]).code !== 0) return rel;
   }
   throw new KonfliktFehler(409, `Für „${pfad}“ gibt es schon zu viele Kopien.`);
 }
-// Kopie der Arbeitsdateien vor dem Eingriff: <git-dir>/brain-sicherung/<Zeit>/ (30 Tage). Lässt sich eine vorhandene Datei nicht sichern: 409, nichts angefasst.
-function sichereArbeitsstand(vault, pfade) {
-  if (!pfade.length) return null;
+
+// Sicherung dessen, was von Hand verändert wurde, vor dem Eingriff: <git-dir>/brain-sicherung/<Zeit>/ (30 Tage). Gesichert wird jede Arbeitsdatei, die von dem abweicht,
+// was Git selbst hineingeschrieben hat (Konfliktdateien: Fingerabdruck beim Markieren; andere: der Stand im Index) — aus `git diff HEAD` plus den Konfliktdateien.
+// Große Dateien (über MAX_DATEI) kommen als Objekt in die Versionsverwaltung (hash-object -w) und stehen mit ihrer Kennung in _blobs.txt.
+// → { ordner, dateien: [Pfad], blobs: [{ pfad, id }] } oder null, wenn es nichts zu sichern gab. Scheitert eine Sicherung ganz: 409, nichts angefasst.
+function sichereArbeitsstand(vault, konfliktPfade, marke) {
+  const namen = new Set(konfliktPfade);
+  const d = g(vault, ["diff", "--name-only", "-z", "HEAD"]);
+  if (d.code === 0) for (const p of d.out.split("\0")) if (p) namen.add(p);
+  const hashes = marke && marke.hashes && typeof marke.hashes === "object" ? marke.hashes : {};
+  const zuSichern = [];
+  for (const p of namen) {
+    const quelle = join(vault, ...p.split("/"));
+    let st; try { st = lstatSync(quelle); } catch { continue; }
+    if (st.isSymbolicLink() || !st.isFile()) continue;
+    const jetzt = arbeitId(vault, p);
+    const bekannt = Object.hasOwn(hashes, p) ? hashes[p] : indexId(vault, p);
+    if (jetzt && bekannt && jetzt === bekannt) continue; // nichts von Hand verändert
+    zuSichern.push({ p, quelle, groesse: st.size });
+  }
+  if (!zuSichern.length) return null;
   const gp = g(vault, ["rev-parse", "--path-format=absolute", "--git-path", "brain-sicherung"]);
   const wurzel = gp.code === 0 ? gp.out.trim() : join(vault, ".git", "brain-sicherung");
   try {
@@ -242,19 +332,21 @@ function sichereArbeitsstand(vault, pfade) {
       if (e.isDirectory() && /^\d{4}-\d\d-\d\dT[\d-]+Z$/.test(e.name)) { const p = join(wurzel, e.name); if (Date.now() - statSync(p).mtimeMs > 30 * 86_400_000) rmSync(p, { recursive: true, force: true }); }
     }
   } catch { /* nur Komfort */ }
-  const basis = join(wurzel, new Date().toISOString().replace(/[:.]/g, "-"));
-  const nicht = []; let n = 0;
-  for (const p of pfade) {
-    const quelle = join(vault, ...p.split("/")), ziel = join(basis, ...p.split("/"));
-    let st; try { st = lstatSync(quelle); } catch { continue; }
-    if (st.isSymbolicLink()) continue;
+  const ordnerPfad = join(wurzel, new Date().toISOString().replace(/[:.]/g, "-"));
+  const dateien = [], blobs = [], nicht = [];
+  for (const { p, quelle, groesse } of zuSichern) {
     try {
-      if (!st.isFile() || st.size > MAX_DATEI) throw new Error("nicht sicherbar");
-      mkdirSync(dirname(ziel), { recursive: true }); copyFileSync(quelle, ziel); n++;
-    } catch { nicht.push(p); }
+      if (groesse > MAX_DATEI) throw new Error("gross");
+      const ziel = join(ordnerPfad, ...p.split("/"));
+      mkdirSync(dirname(ziel), { recursive: true }); copyFileSync(quelle, ziel); dateien.push(p);
+    } catch {
+      const r = g(vault, ["hash-object", "-w", "--no-filters", "--", p]);
+      if (r.code === 0 && r.out.trim()) blobs.push({ pfad: p, id: r.out.trim() }); else nicht.push(p);
+    }
   }
-  if (nicht.length) throw new KonfliktFehler(409, `Von „${nicht[0]}“ ließ sich keine Sicherungskopie anlegen (zu groß oder nicht lesbar). Es wurde nichts verändert.`, { dateien: nicht });
-  return n ? basis : null;
+  if (nicht.length) throw new KonfliktFehler(409, `Von „${nicht[0]}“ ließ sich keine Sicherungskopie anlegen. Es wurde nichts verändert.`, { dateien: nicht });
+  if (blobs.length) { mkdirSync(ordnerPfad, { recursive: true }); writeFileSync(join(ordnerPfad, "_blobs.txt"), blobs.map((b) => `${b.id}  ${b.pfad}`).join("\n") + "\n"); }
+  return { ordner: ordnerPfad, dateien, blobs };
 }
 
 function mitSperre(vault, support, art, fn) {
@@ -262,6 +354,29 @@ function mitSperre(vault, support, art, fn) {
   const s = nimmSperre(sperrDateiFuer(vault, support), { art });
   if (!s.ok) throw new KonfliktFehler(409, "Gerade läuft ein anderer Abgleich. Bitte kurz warten und noch einmal versuchen.", { art: "laeuft" });
   try { return fn(); } finally { s.freigeben(); }
+}
+
+// ───────────────────────────── Markieren ─────────────────────────────
+// Das Studio hat die Zusammenführung begonnen (git.mjs#sync) und ruft das gleich danach: nur so ist sie „von Kortex“.
+export function markiere(vault, { support = supportOrdner() } = {}) {
+  const merge = mergeSha(vault);
+  if (!merge) return { ok: true, offen: false };
+  const kopf = kopfSha(vault);
+  const hashes = {};
+  for (const e of indexKonflikte(vault)) { const h = arbeitId(vault, e.pfad); if (h) hashes[e.pfad] = h; }
+  aendereMerker(vault, (m) => { m.konfliktOffen = { kopf, merge, hashes, zeit: new Date().toISOString() }; return m; }, { support });
+  return { ok: true, offen: true };
+}
+// Gehört die offene Zusammenführung Kortex? → die Marke oder 409 „fremd“
+function pruefeMarke(vault, support, l) {
+  const m = leseMerkerDatei(vault, support).konfliktOffen;
+  if (!m || m.kopf !== l.meine || m.merge !== l.andere) throw new KonfliktFehler(409, "Diese Zusammenführung hat nicht Kortex begonnen (sondern zum Beispiel das Terminal). Schließe sie dort ab; Kortex fasst sie nicht an.", { art: "fremd" });
+  return m;
+}
+// Seit dem Markieren von Hand bearbeitete Konfliktdateien
+function bearbeitet(vault, marke, l) {
+  const hashes = marke.hashes && typeof marke.hashes === "object" ? marke.hashes : {};
+  return l.dateien.map((e) => e.pfad).filter((p) => Object.hasOwn(hashes, p) && arbeitId(vault, p) !== hashes[p]);
 }
 
 // ───────────────────────────── Entscheidungen ─────────────────────────────
@@ -272,6 +387,7 @@ function entscheidungsText(d, wahl, geraet, kopie) {
     return behalten ? "Notiz bleibt" : "Löschung übernommen";
   }
   if (d.typ === "board") return wahl === "meine" ? "Karte bleibt, wie sie hier steht" : `Karte so, wie sie ${SEITE_TEXT(geraet)} steht`;
+  if (d.typ === "umbenannt") return { meine: "eigener Name bleibt", andere: `Name ${SEITE_TEXT(geraet)} übernommen`, beide: "beide Namen behalten", text: "selbst zusammengeführt" }[wahl];
   return { meine: "Dieser Mac behalten", andere: `Fassung ${SEITE_TEXT(geraet)} übernommen`, beide: `beide behalten, Kopie „${kopie ? basename(kopie).replace(/\.[^.]+$/, "") : ""}“`, text: "selbst zusammengeführt" }[wahl];
 }
 function pruefeAuswahl(auswahl, sichtbar, ansichtDateien) {
@@ -294,27 +410,71 @@ function pruefeAuswahl(auswahl, sichtbar, ansichtDateien) {
   if (fehlt.length) throw new KonfliktFehler(400, `Bitte für jede Datei eine Entscheidung treffen (es fehlt: ${fehlt.slice(0, 3).join(", ")}).`, { dateien: fehlt });
   return wahlen;
 }
-function commitEintrag(vault, nachricht, pfade) {
-  const basis = [...OHNE_HOOKS, ...identFlags(vault), "commit", "-q", "--allow-empty", "-m", nachricht];
-  const r = g(vault, [...basis, "--", ...pfade], OHNE_ZEIT);
+// Ein Eintrag im Verlauf OHNE Pfadangabe: er enthält genau das, was diese Entscheidung vorgemerkt hat (ein Pfad, den es im Stand gar nicht mehr gibt, ließ ihn scheitern)
+function commitEintrag(vault, nachricht) {
+  const r = g(vault, [...OHNE_HOOKS, ...identFlags(vault), "commit", "-q", "--allow-empty", "-m", nachricht], OHNE_ZEIT);
   if (r.code !== 0) throw new KonfliktFehler(422, "Die Entscheidung ließ sich nicht festhalten.", { ausgabe: r.err.slice(0, 500) });
   return kopfSha(vault);
 }
 
-// Schließt den Konflikt ab. auswahl: [{ pfad, wahl, text? }] für jede sichtbare Datei; basis nur nach „Rückgängig“.
-// → { ok: true, merge, eintraege: [{ pfad, wahl, commit, kopie? }], kopien, versteckteBehalten, abgleich: { art, ok, text } }
-export function loesen(vault, { auswahl, basis = null, support = supportOrdner() } = {}) {
+// Alles, was schiefgehen kann, VOR dem ersten Eingriff prüfen: Größen, lesbare Fassungen, Namen der Kopien.
+function plane(vault, l, wahlen, ad, andereGeraetVon) {
+  const geplant = new Map(), belegt = new Set();
+  for (const [pfad, x] of wahlen) {
+    const d = ad.get(pfad);
+    const p = { x, d, geraet: andereGeraetVon(d), kopie: null };
+    const lies = (sha, pf) => {
+      const buf = blobVon(vault, sha, pf);
+      if (buf === null) throw new KonfliktFehler(500, `„${pf}“ war nicht lesbar.`);
+      if (buf.length > MAX_DATEI) throw new KonfliktFehler(413, `„${pf}“ ist zu groß.`);
+      return buf;
+    };
+    if (d.typ === "umbenannt") {
+      if (x.wahl === "andere" || x.wahl === "beide") p.blobA = lies(l.andere, d.pfadAndere);
+    } else if (x.wahl === "andere" && d.andere.vorhanden) p.blobA = lies(l.andere, pfad);
+    else if (x.wahl === "meine" && d.meine.vorhanden && l.modus === "stand") p.blobM = lies(l.meine, pfad);
+    else if (x.wahl === "beide" && d.meine.vorhanden && d.andere.vorhanden) {
+      p.blobA = lies(l.andere, pfad);
+      p.kopie = freierKopieName(vault, pfad, dateiNamenTeil(p.geraet) || "anderes Gerät", belegt); belegt.add(p.kopie);
+    } else if (x.wahl === "beide" && d.andere.vorhanden && !d.meine.vorhanden) p.blobA = lies(l.andere, pfad);
+    geplant.set(pfad, p);
+  }
+  return geplant;
+}
+
+// Stand nach einem Abbruch mitten im Festhalten oder nach „Rückgängig“: nur noch diese Dateien sind zu entscheiden
+function merkeBasis(vault, support, l, dateien) {
+  const kopfBlobs = {};
+  for (const p of dateien) kopfBlobs[p] = blobId(vault, "HEAD", p);
+  aendereMerker(vault, (m) => { m.konfliktBasis = { meine: l.meine, andere: l.andere, dateien, kopfBlobs, kopf: kopfSha(vault), zeit: new Date().toISOString() }; return m; }, { support });
+  merkeStand(vault, "konflikt", support, { dateien });
+}
+
+// Schließt den Konflikt ab. auswahl: [{ pfad, wahl, text? }] für jede sichtbare Datei; gesehen: { meine, andere } = die Stände, die die Oberfläche gezeigt hat.
+// → { ok: true, merge, eintraege: [{ pfad, wahl, commit, neu, kopie?, partner? }], kopien, versteckteBehalten, sicherung, abgleich: { art, ok, text } }
+export function loesen(vault, { auswahl, gesehen, support = supportOrdner() } = {}) {
   return mitSperre(vault, support, "konflikt", () => {
-    const l = lage(vault, basis);
+    const { ansicht: a, l } = baueAnsicht(vault, support);
     if (!l) throw new KonfliktFehler(409, "Es gibt keinen offenen Konflikt.");
-    const a = ansicht(vault, { support, basis });
+    if (!gesehen || gesehen.meine !== l.meine || gesehen.andere !== l.andere) throw new KonfliktFehler(409, "Der Konflikt hat sich seit deiner Ansicht geändert. Öffne den Abgleich noch einmal.", { art: "veraltet" });
+    let marke = null;
+    if (l.modus === "offen") {
+      marke = pruefeMarke(vault, support, l);
+      const b = bearbeitet(vault, marke, l);
+      if (b.length) throw new KonfliktFehler(409, `„${b[0]}“ wurde seit dem Öffnen von Hand bearbeitet. Wähle „Später“ — deine Bearbeitung wird gesichert — und öffne den Abgleich neu.`, { art: "bearbeitet", dateien: b });
+    } else {
+      if (g(vault, ["diff", "--cached", "--quiet"]).code !== 0) throw new KonfliktFehler(409, "Es gibt vorgemerkte, noch nicht gesicherte Änderungen. Sichere sie zuerst, dann geht es weiter.", { art: "geaendert" });
+      const pf = l.dateien.map((e) => e.pfad);
+      if (pf.length && g(vault, ["status", "--porcelain", "--", ...pf]).out.trim()) throw new KonfliktFehler(409, "An diesen Notizen gibt es nicht gesicherte Änderungen. Sichere sie zuerst, dann geht es weiter.", { art: "geaendert" });
+    }
     const ad = new Map(a.dateien.map((d) => [d.pfad, d]));
     const wahlen = pruefeAuswahl(auswahl, new Set(ad.keys()), ad);
     const eigen = a.eigen;
-    const andereGeraet = a.geraet;
+    const geraetVon = (d) => d.andere.geraet || a.geraet || null; // dasselbe Gerät wie in der Oberfläche: je Datei
     const verborgen = l.dateien.filter((e) => e.versteckt && e.art !== "beide-geloescht").map((e) => e.pfad);
     for (const e of l.dateien) if (e.eingebettet) throw new KonfliktFehler(422, `„${e.pfad}“ ist ein eingebettetes Repository — das kann Kortex nicht zusammenführen.`);
-    const sicherung = sichereArbeitsstand(vault, l.dateien.filter((e) => e.art !== "beide-geloescht").map((e) => e.pfad));
+    const geplant = plane(vault, l, wahlen, ad, geraetVon); // wirft vor jedem Eingriff
+    const sicherung = l.modus === "offen" ? sichereArbeitsstand(vault, l.dateien.filter((e) => e.art !== "beide-geloescht").map((e) => e.pfad), marke) : null;
     let merge = null;
     if (l.modus === "offen") {
       // 1. Zusammenführung: überall „meine“ festhalten (versteckte Orte bleiben ohnehin bei meiner Fassung, beidseitig Gelöschtes bleibt gelöscht)
@@ -332,45 +492,55 @@ export function loesen(vault, { auswahl, basis = null, support = supportOrdner()
       const r = g(vault, [...OHNE_HOOKS, ...identFlags(vault), "commit", "-q", "-m", `${kopf}\n\nKortex-Geraet: ${eigen}`], OHNE_ZEIT);
       if (r.code !== 0) throw new KonfliktFehler(422, "Das Zusammenführen konnte nicht abgeschlossen werden.", { ausgabe: r.err.slice(0, 500) });
       merge = kopfSha(vault);
+      aendereMerker(vault, (m) => { delete m.konfliktOffen; return m; }, { support });
     }
     const vorKopf = kopfSha(vault);
     // 2. Je Entscheidung ein eigener Eintrag im Verlauf
     const eintraege = [], kopien = [];
-    for (const [pfad, x] of wahlen) {
-      const d = ad.get(pfad);
-      let kopie = null;
-      const hatM = d.meine.vorhanden, hatA = d.andere.vorhanden;
-      const setze = (seite) => { // Inhalt der gewählten Seite herstellen
-        const sha = seite === "meine" ? l.meine : l.andere;
-        if (seite === "meine" ? hatM : hatA) {
-          const buf = blobVon(vault, sha, pfad);
-          if (buf === null) throw new KonfliktFehler(500, `„${pfad}“ war nicht lesbar.`);
-          if (buf.length > MAX_DATEI) throw new KonfliktFehler(413, `„${pfad}“ ist zu groß.`);
-          const abs = imVault(vault, pfad);
-          let gleich = false; try { gleich = Buffer.compare(readFileSync(abs), buf) === 0; } catch { /* fehlt */ }
-          if (!gleich) schreibeDatei(vault, pfad, buf);
-          fuegeHinzu(vault, pfad);
-        } else entferne(vault, pfad);
-      };
-      if (x.wahl === "meine") setze("meine");
-      else if (x.wahl === "andere") setze("andere");
-      else if (x.wahl === "text") { schreibeDatei(vault, pfad, x.text); fuegeHinzu(vault, pfad); }
-      else { // beide: meine bleibt, die andere Fassung liegt als Kopie daneben (fehlt eine Seite, bleibt die vorhandene)
-        if (!hatM) setze("andere");
-        else if (!hatA) setze("meine");
-        else {
-          setze("meine");
-          kopie = freierKopieName(vault, pfad, dateiNamenTeil(andereGeraet) || "anderes Gerät");
-          schreibeDatei(vault, kopie, blobVon(vault, l.andere, pfad), { neu: true });
-          fuegeHinzu(vault, kopie);
-          kopien.push({ pfad: kopie, von: pfad });
+    const merkeLetzte = () => aendereMerker(vault, (m) => { m.abgleichLetzter = { zeit: new Date().toISOString(), meine: l.meine, andere: l.andere, vorKopf, merge, eintraege }; return m; }, { support });
+    try {
+      for (const [pfad, x] of wahlen) {
+        // Testhaken: nach so vielen festgehaltenen Entscheidungen abbrechen (nur Prüfstand)
+        if (process.env.KORTEX_KERN_UNSTABIL_ERLAUBT === "1" && process.env.BRAIN_KONFLIKT_ABBRUCH_NACH !== undefined && Number(process.env.BRAIN_KONFLIKT_ABBRUCH_NACH) === eintraege.length) throw new Error("Testabbruch");
+        const p = geplant.get(pfad), d = p.d;
+        const neu = [];
+        const hatM = d.meine.vorhanden, hatA = d.andere.vorhanden;
+        const stelleHer = (rel, buf) => { const abs = imVault(vault, rel); let gleich = false; try { gleich = Buffer.compare(readFileSync(abs), buf) === 0; } catch { /* fehlt */ } if (!gleich) schreibeDatei(vault, rel, buf); fuegeHinzu(vault, rel); };
+        if (d.typ === "umbenannt") {
+          if (x.wahl === "andere") { entferne(vault, pfad); stelleHer(d.pfadAndere, p.blobA); neu.push(d.pfadAndere); }
+          else if (x.wahl === "beide") { stelleHer(d.pfadAndere, p.blobA); neu.push(d.pfadAndere); }
+          else if (x.wahl === "text") { schreibeDatei(vault, pfad, x.text); fuegeHinzu(vault, pfad); }
+          else if (l.modus === "stand") { const bm = blobVon(vault, l.meine, pfad); if (bm) stelleHer(pfad, bm); }
+        } else if (x.wahl === "meine") {
+          if (l.modus === "stand") { if (hatM) stelleHer(pfad, p.blobM); else entferne(vault, pfad); }
+          else if (!hatM) entferne(vault, pfad); else fuegeHinzu(vault, pfad);
+        } else if (x.wahl === "andere") { if (hatA) stelleHer(pfad, p.blobA); else entferne(vault, pfad); }
+        else if (x.wahl === "text") { schreibeDatei(vault, pfad, x.text); fuegeHinzu(vault, pfad); }
+        else if (!hatM) { stelleHer(pfad, p.blobA); } // beide, meine Seite fehlt: die vorhandene bleibt
+        else if (!hatA) { fuegeHinzu(vault, pfad); }
+        else { // beide: meine bleibt, die andere Fassung liegt als Kopie daneben
+          if (l.modus === "stand") { const bm = blobVon(vault, l.meine, pfad); if (bm) stelleHer(pfad, bm); } else fuegeHinzu(vault, pfad);
+          schreibeDatei(vault, p.kopie, p.blobA, { neu: true });
+          fuegeHinzu(vault, p.kopie); neu.push(p.kopie);
+          kopien.push({ pfad: p.kopie, von: pfad });
         }
+        const nachricht = `Konflikt gelöst: „${einzeiler(d.titel, 60)}“ – ${entscheidungsText(d, x.wahl, p.geraet, p.kopie)}`;
+        const commit = commitEintrag(vault, nachricht);
+        eintraege.push({ pfad, wahl: x.wahl, commit, neu, ...(p.kopie ? { kopie: p.kopie } : {}), ...(d.pfadAndere ? { partner: d.pfadAndere } : {}) });
       }
-      const nachricht = `Konflikt gelöst: „${einzeiler(d.titel, 60)}“ – ${entscheidungsText(d, x.wahl, andereGeraet, kopie)}`;
-      const commit = commitEintrag(vault, nachricht, kopie ? [pfad, kopie] : [pfad]);
-      eintraege.push({ pfad, wahl: x.wahl, commit, ...(kopie ? { kopie } : {}) });
+    } catch (e) {
+      // mitten im Festhalten gescheitert: was schon festgehalten ist, bleibt rückgängig-fähig; der Rest wird als Stand gemerkt (die Sicherung sendet bis dahin nichts)
+      try {
+        merkeLetzte();
+        const erledigt = new Set(eintraege.map((x) => x.pfad));
+        const rest = [...wahlen.keys()].filter((p) => !erledigt.has(p)).flatMap((p) => [p, geplant.get(p).d.pfadAndere].filter(Boolean));
+        if (rest.length) merkeBasis(vault, support, l, rest);
+      } catch { /* beste Mühe */ }
+      if (e instanceof KonfliktFehler) { e.extra = { ...e.extra, teilweise: true, festgehalten: eintraege.length }; throw e; }
+      throw new KonfliktFehler(500, "Das Festhalten ist nicht ganz gelungen. Ein Teil der Entscheidungen ist festgehalten, der Rest wartet.", { teilweise: true, festgehalten: eintraege.length });
     }
-    aendereMerker(vault, (m) => { m.abgleichLetzter = { zeit: new Date().toISOString(), meine: l.meine, andere: l.andere, vorKopf, merge, eintraege }; return m; }, { support });
+    merkeLetzte();
+    aendereMerker(vault, (m) => { delete m.konfliktBasis; return m; }, { support });
     loescheAbgleichStand(vault, { support }); // der Konflikt ist gelöst; ein neuer wird beim Abgleich unten wieder vermerkt
     // 3. Abgleich wie die Sicherung: holen, senden — nur an das vom Nutzer bestätigte Ziel
     let abgleich;
@@ -381,24 +551,27 @@ export function loesen(vault, { auswahl, basis = null, support = supportOrdner()
 }
 
 // „Später“ / Abbrechen: die offene Zusammenführung zurücknehmen — der Arbeitsstand ist danach wie vorher, der Konflikt bleibt vermerkt.
+// Nur eine Zusammenführung, die Kortex begonnen hat (409 „fremd“). Von Hand Bearbeitetes liegt vorher gesichert in brain-sicherung/ (sicherung in der Antwort).
 export function abbrechen(vault, { support = supportOrdner() } = {}) {
   return mitSperre(vault, support, "konflikt", () => {
     if (!mergeSha(vault)) return { ok: true, offen: false };
-    const l = lage(vault, null);
+    const l = lage(vault, support);
+    const marke = pruefeMarke(vault, support, l);
     const namen = l.dateien.filter((e) => !e.versteckt && e.art !== "beide-geloescht").map((e) => e.pfad);
-    const sicherung = sichereArbeitsstand(vault, l.dateien.filter((e) => e.art !== "beide-geloescht").map((e) => e.pfad));
+    const sicherung = sichereArbeitsstand(vault, l.dateien.filter((e) => e.art !== "beide-geloescht").map((e) => e.pfad), marke);
     const r = g(vault, [...OHNE_HOOKS, "merge", "--abort"], OHNE_ZEIT);
     if (r.code !== 0 || mergeSha(vault)) {
-      if (/not uptodate|would be overwritten|local changes/i.test(r.err)) throw new KonfliktFehler(409, "Eine zusammengeführte Datei wurde seit dem Abgleich noch einmal geändert. Zum Abbrechen müsste sie zurückgesetzt werden — dabei ginge deine Änderung verloren.", { art: "geaendert" });
+      if (/not uptodate|would be overwritten|local changes/i.test(r.err)) throw new KonfliktFehler(409, `Eine zusammengeführte Datei wurde seit dem Abgleich noch einmal geändert. Zum Zurücknehmen müsste sie zurückgesetzt werden — dabei ginge deine Änderung verloren. ${sicherung ? `Eine Kopie liegt gesichert in: ${sicherung.ordner}` : ""}`.trim(), { art: "geaendert", ...(sicherung ? { sicherung } : {}) });
       throw new KonfliktFehler(500, "Der Abgleich ließ sich nicht zurücknehmen.");
     }
+    aendereMerker(vault, (m) => { delete m.konfliktOffen; return m; }, { support });
     merkeStand(vault, "konflikt", support, { dateien: namen });
     return { ok: true, offen: true, sicherung };
   });
 }
 
 // „Rückgängig“ für den letzten Abgleich: Fassungen von vor den Entscheidungen kommen als NEUER Eintrag zurück (nie Reset). Geht nur, solange an diesen Dateien nicht
-// weitergearbeitet wurde. Danach kann die Oberfläche mit basis { meine, andere, dateien } noch einmal entscheiden lassen.
+// weitergearbeitet wurde. Der Stand wird als `konfliktBasis` gemerkt: die Oberfläche kann noch einmal entscheiden lassen, die Sicherung sendet bis dahin nichts.
 export function rueckgaengig(vault, { support = supportOrdner() } = {}) {
   return mitSperre(vault, support, "konflikt", () => {
     const m = leseMerkerDatei(vault, support).abgleichLetzter;
@@ -409,28 +582,24 @@ export function rueckgaengig(vault, { support = supportOrdner() } = {}) {
     if (!kopf || !istCommit(vault, letzter) || !istVorfahr(vault, letzter, kopf)) throw new KonfliktFehler(409, "Seitdem hat sich der Verlauf geändert — Zurücknehmen geht nicht mehr.", { art: "geaendert" });
     const aendern = m.eintraege.filter((e) => e.wahl !== "meine");
     const pfade = new Set();
-    for (const e of aendern) { pfade.add(e.pfad); if (e.kopie) pfade.add(e.kopie); }
+    for (const e of aendern) { pfade.add(e.pfad); for (const n of Array.isArray(e.neu) ? e.neu : (e.kopie ? [e.kopie] : [])) pfade.add(n); }
     for (const p of pfade) {
       const jetzt = blobId(vault, "HEAD", p), damals = blobId(vault, letzter, p);
       if (jetzt !== damals) throw new KonfliktFehler(409, `„${p}“ wurde seit dem Abgleich noch einmal geändert. Zurücknehmen würde diese Änderung überschreiben.`, { art: "geaendert", dateien: [p] });
     }
+    if (g(vault, ["diff", "--cached", "--quiet"]).code !== 0) throw new KonfliktFehler(409, "Es gibt vorgemerkte, noch nicht gesicherte Änderungen. Zurücknehmen würde sie mitnehmen.", { art: "geaendert" });
     if (pfade.size && g(vault, ["status", "--porcelain", "--", ...pfade]).out.trim()) throw new KonfliktFehler(409, "Diese Dateien haben nicht gesicherte Änderungen. Zurücknehmen würde sie überschreiben.", { art: "geaendert" });
     for (const e of aendern) {
-      if (e.kopie) entferne(vault, e.kopie);
+      for (const n of Array.isArray(e.neu) ? e.neu : (e.kopie ? [e.kopie] : [])) entferne(vault, n);
       const buf = blobVon(vault, m.vorKopf, e.pfad);
       if (buf === null) entferne(vault, e.pfad); else { schreibeDatei(vault, e.pfad, buf); fuegeHinzu(vault, e.pfad); }
     }
-    const liste = [...pfade];
     let commit = null;
-    if (liste.length) {
-      const r = g(vault, [...OHNE_HOOKS, ...identFlags(vault), "commit", "-q", "--allow-empty", "-m", `Abgleich zurückgenommen: ${aendern.length} ${aendern.length === 1 ? "Entscheidung" : "Entscheidungen"} rückgängig gemacht`, "--", ...liste], OHNE_ZEIT);
-      if (r.code !== 0) throw new KonfliktFehler(422, "Das Zurücknehmen ließ sich nicht festhalten.", { ausgabe: r.err.slice(0, 500) });
-      commit = kopfSha(vault);
-    }
-    const dateien = m.eintraege.map((e) => e.pfad);
+    if (pfade.size) commit = commitEintrag(vault, `Abgleich zurückgenommen: ${aendern.length} ${aendern.length === 1 ? "Entscheidung" : "Entscheidungen"} rückgängig gemacht`);
+    const dateien = [...new Set(m.eintraege.flatMap((e) => [e.pfad, e.partner].filter(Boolean)))];
     aendereMerker(vault, (d) => { delete d.abgleichLetzter; return d; }, { support });
-    merkeStand(vault, "konflikt", support, { dateien });
-    return { ok: true, commit, dateien, basis: { meine: m.meine, andere: m.andere, dateien } };
+    merkeBasis(vault, support, { meine: m.meine, andere: m.andere }, dateien);
+    return { ok: true, commit, dateien };
   });
 }
 

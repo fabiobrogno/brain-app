@@ -51,7 +51,9 @@ export function leseAbgleichDetail(wurzel, support) {
   const a = leseMerker(wurzel, support).abgleich;
   if (!a || typeof a !== "object" || !["konflikt", "anmeldung", "neues"].includes(a.stand)) return null;
   const dateien = Array.isArray(a.dateien) ? a.dateien.filter((p) => typeof p === "string").slice(0, 200) : [];
-  return { stand: a.stand, dateien, zeit: typeof a.zeit === "string" ? a.zeit : null };
+  const m = leseMerker(wurzel, support);
+  // haelt: ein gemerkter Stand wartet auf neue Entscheidungen (nach „Rückgängig“): bis dahin wird nichts gesendet
+  return { stand: a.stand, dateien, zeit: typeof a.zeit === "string" ? a.zeit : null, haelt: !!(m.konfliktBasis && typeof m.konfliktBasis === "object") };
 }
 // Nach einem erfolgreichen Abgleich im Studio gilt der Vermerk nicht mehr. Wirft nie.
 export function loescheAbgleichStand(wurzel, { support } = {}) {

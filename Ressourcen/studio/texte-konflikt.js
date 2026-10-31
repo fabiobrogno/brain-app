@@ -41,6 +41,21 @@ export const TK = {
     erklGeloeschtMac: (g) => `Du hast diese Notiz gelöscht, während sie auf ${g} weiter geändert wurde. Soll sie bleiben oder verschwinden?`,
     erklKarte: (g) => `Dieselbe Karte wurde hier und auf ${g} in eine andere Spalte gezogen. Es kann nur eine Spalte gelten.`,
   },
+  umbenannt: {
+    marke: "Auf beiden Geräten umbenannt",
+    erkl: (a, b, g) => `Die Notiz heißt hier „${a}“, ${g} „${b}“. Wähle, welcher Name bleiben soll. Der Inhalt steht unten nebeneinander.`,
+    meine: "Diesen Namen behalten", andere: "Anderen Namen nehmen", beide: "Beide behalten",
+    listeU: (a, b) => `Umbenannt: ${a} und ${b}`,
+    folgeMeine: (a) => `Die Notiz heißt weiter „${a}“. Der andere Name wird nicht übernommen.`,
+    folgeAndere: (b) => `Die Notiz heißt künftig „${b}“.`,
+    folgeBeide: (a, b) => `Es gibt die Notiz unter beiden Namen: „${a}“ und „${b}“.`,
+    kurzMeine: "Eigener Name", kurzAndere: (g) => `Name von ${g}`, kurzBeide: "Beide Namen",
+    zusMeine: (a) => `Die Notiz heißt „${a}“.`, zusAndere: (b) => `Die Notiz heißt „${b}“.`, zusBeide: (a, b) => `Beide Namen bleiben: „${a}“ und „${b}“.`,
+  },
+  fremd: {
+    titel: "Nur ansehen", text: "Diese Zusammenführung hat nicht Kortex begonnen (zum Beispiel das Terminal). Du kannst sie hier ansehen; abschließen musst du sie dort, wo du sie begonnen hast.",
+    knopfTitel: "Nur ansehen: Kortex hat diese Zusammenführung nicht begonnen",
+  },
   aktion: {
     meine: "Diese behalten", andere: "Andere behalten", beide: "Beide behalten", zusammen: "Selbst zusammenführen",
     notizBehalten: "Notiz behalten", geloeschtLassen: "Gelöscht lassen", loeschenUebernehmen: "Löschung übernehmen",
@@ -58,7 +73,7 @@ export const TK = {
     zusammen: "Du wählst Abschnitt für Abschnitt, was in die Notiz kommt.",
     karteMeine: (sp, f, von) => `Die Karte steht in „${sp}“${f ? `, fällig ${f}` : ""}. Die Änderung ${von} wird nicht übernommen.`,
     karteAndere: (sp, f) => `Die Karte steht in „${sp}“${f ? `, fällig ${f}` : ""}. Deine Änderung wird nicht übernommen.`,
-    kiGeloest: "Mit der KI gelöst.", ergebnisSehen: "Das Ergebnis siehst du im Abschnitt „Selbst zusammenführen“.",
+    kiGeloest: "Mit der KI gelöst.", ergebnisSehen: "Den Text kannst du unter „Selbst zusammenführen“ (4) noch einmal ansehen und ändern.",
   },
   kurz: {
     notizBleibt: "Notiz bleibt", loeschung: "Löschung übernommen",
@@ -94,7 +109,8 @@ export const TK = {
   },
   ki: {
     titelDenkt: "Die KI liest beide Fassungen", titelFertig: (name) => `Vorschlag von ${name}`,
-    denkt: "Vergleicht die Fassungen …", abbrechen: "Abbrechen", verwerfen: "Verwerfen", anpassen: "Selbst anpassen", uebernehmen: "Übernehmen",
+    denkt: "Vergleicht die Fassungen …", abbrechen: "Abbrechen", verwerfen: "Verwerfen", anpassen: "Selbst anpassen", uebernehmen: "Übernehmen", textAnsehen: "Text ansehen",
+    textHinweis: "Der zusammengeführte Text der KI ist noch nicht übernommen. Sieh ihn dir an und übernimm ihn erst dann.", unplausibel: "Der Text der KI passt nicht zu den beiden Fassungen (zu kurz, zu lang oder mit fremden Verweisen). Er wird nicht angeboten.",
     fuss: (stufe, art) => `Darf hier: ${stufe}. Liest nur ${art} und ändert nichts, bis du übernimmst.`,
     art: { text: "diese beiden Fassungen", geloescht: "die Notiz und den Löschvermerk", board: "die beiden Fassungen der Karte" },
     stufe: { lesen: "Lesen", vorschlagen: "Vorschlagen", schreiben: "Schreiben", posteingang: "Posteingang" },
@@ -116,6 +132,7 @@ export const TK = {
     zurueck: "Zurück zu den Notizen", rueckgaengig: "Rückgängig",
     klein: "Nicht gewählte Fassungen bleiben im Verlauf der Notiz. Dort kannst du sie jederzeit zurückholen.",
     nurLokal: (t) => `Die Entscheidungen sind festgehalten. ${t}`,
+    gesichert: (o) => `Deine Bearbeitungen liegen gesichert in: ${o}`,
     zus: {
       meine: "Deine Fassung gilt. Die andere liegt im Verlauf.", andere: (von) => `Die Fassung ${von} gilt. Deine liegt im Verlauf.`,
       beide: (von, titel, g) => `Beide Fassungen bleiben, ${von} als Kopie „${titel} (${g})“.`, text: (n, ki) => `${n} ${mz(n, "Abschnitt", "Abschnitte")} ${ki ? "mit der KI " : ""}zusammengeführt.`,
@@ -130,7 +147,7 @@ export const TK = {
     nichtMehr: "Zurücknehmen geht nicht mehr: an diesen Notizen wurde seitdem weitergearbeitet.",
   },
   fehler: {
-    laden: "Die Fassungen ließen sich gerade nicht laden.", nochmal: "Noch einmal versuchen", loesen: "Der Abgleich hat nicht geklappt. Deine Entscheidungen sind noch da.",
+    veraltet: "Der Konflikt hat sich geändert. Die Ansicht wird neu geladen.", laden: "Die Fassungen ließen sich gerade nicht laden.", nochmal: "Noch einmal versuchen", loesen: "Der Abgleich hat nicht geklappt. Deine Entscheidungen sind noch da.",
     keinKonflikt: "Es gibt gerade keinen Konflikt mehr.", gesperrt: "Der Abgleich ist für diesen Vault gesperrt, bis du ihm vertraust.",
     laeuft: "Gerade läuft ein anderer Abgleich. Bitte kurz warten.",
   },

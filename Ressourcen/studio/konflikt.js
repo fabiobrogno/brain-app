@@ -8,6 +8,9 @@ import { symbol } from "./symbole.js";
 import { gitGesperrt, ausgangUnklar } from "./api.js";
 import { TK, konfliktLabel, ANDERES_GERAET, DIESER_MAC } from "./texte-konflikt.js";
 
+const istText = (it) => it.typ === "text" || it.typ === "umbenannt";
+const nameVon = (p) => String(p || "").split("/").pop().replace(/\.[^.]+$/, "");
+
 const MAX_ZEILEN = 4000; // darüber wird nicht Zeile für Zeile verglichen (Rechenzeit): die Fassungen sind nur wählbar
 const zeichen = (name, groesse = 14) => { const s = symbol(name, groesse); s.setAttribute("aria-hidden", "true"); return s; };
 const kbd = (t) => h("kbd", { klasse: "k-kbd", text: t });
@@ -117,17 +120,18 @@ export function zeigeKonflikt(host, ctx) {
   const vonDatei = (it) => (gDatei(it) ? `von ${gDatei(it)}` : "vom anderen Gerät"), aufDatei = (it) => (gDatei(it) ? `auf ${gDatei(it)}` : "auf dem anderen Gerät"), nameDatei = (it) => gDatei(it) || "dem anderen Gerät";
   const items = (daten.dateien || []).map((d) => {
     const it = { ...d, id: d.pfad, entscheidung: null, text: null, modus: "vergleich", kiStand: "aus", viaKI: false, ki: null };
-    if (d.typ === "text" && d.meine.text != null && d.andere.text != null) {
+    if ((d.typ === "text" || d.typ === "umbenannt") && d.meine.text != null && d.andere.text != null) {
       const za = zeilenVon(d.meine.text), zb = zeilenVon(d.andere.text);
       if (za.length <= MAX_ZEILEN && zb.length <= MAX_ZEILEN) it.segs = zeilenAbschnitte(za, zb);
     }
-    it.nurWahl = d.typ === "text" && !it.segs;
+    it.nurWahl = (d.typ === "text" || d.typ === "umbenannt") && !it.segs;
     return it;
   });
-  const KS = { phase: "liste", sel: 0, auf: {}, weiter: null, ki: { verfuegbar: false, konto: null, name: "", stufe: "lesen" }, snap: null, basis: daten.basis || null, laeuft: false, zerstoert: false };
+  const KS = { phase: "liste", sel: 0, auf: {}, weiter: null, ki: { verfuegbar: false, konto: null, name: "", stufe: "lesen" }, snap: null, laeuft: false, zerstoert: false };
   const wurzel = h("div", { klasse: "konflikt", id: "konflikt", "data-phase": "liste", "data-konflikt": "" });
   host.replaceChildren(wurzel);
 
+  const nurAnsehen = !!daten.fremd; // die offene Zusammenführung hat Kortex nicht begonnen: nur ansehen
   const bloecke = (it) => (it.segs || []).filter((s) => s.t === "block");
   const alleGeloest = () => items.length > 0 && items.every((i) => i.entscheidung);
   const akt = () => items[KS.sel];
@@ -222,7 +226,9 @@ export function zeigeKonflikt(host, ctx) {
     });
     return out;
   }
-  const ergebnisText = (it) => ergebnisZeilen(it).filter((r) => !r.offen).map((r) => r.z).join("\n") + (it.meine.text?.endsWith("\n") ? "\n" : "");
+  // Zeilenenden der Notiz bleiben erhalten (CRLF bleibt CRLF), auch für selbst geschriebene Zeilen
+  const zeilenEnde = (it) => (/\r\n/.test(it.meine.text || "") || (/\r\n/.test(it.andere.text || "") && !/(^|[^\r])\n/.test(it.meine.text || "")) ? "\r\n" : "\n");
+  const ergebnisText = (it) => { const eol = zeilenEnde(it); return ergebnisZeilen(it).filter((r) => !r.offen).map((r) => r.z.replace(/\r?\n/g, eol)).join(eol) + (/\n$/.test(it.meine.text || "") ? eol : ""); };
   function ergebnisBox(it) {
     const bl = bloecke(it), n = bl.filter((b) => b.wahl).length;
     const q = { meine: TK.merge.quelleMac, anderes: it.andere.geraet || G || ANDERES_GERAET, eigen: TK.merge.quelleEigen };
@@ -272,7 +278,7 @@ export function zeigeKonflikt(host, ctx) {
   }
   function zeichneErgebnis() { const it = akt(); const e = wurzel.querySelector("#k-erg"); if (e && it) e.replaceChildren(...ergebnisBox(it)); }
   function mergeUebernehmen(it) {
-    if (it.typ !== "text" || bloecke(it).some((b) => !b.wahl)) return;
+    if (!istText(it) || bloecke(it).some((b) => !b.wahl)) return;
     it.entscheidung = "zusammen"; it.text = ergebnisText(it); it.viaKI = false; it.modus = "vergleich";
     zeichne(); weiter();
   }
@@ -281,7 +287,7 @@ export function zeigeKonflikt(host, ctx) {
     const tb = textbereich({ wert: it.freiText ?? it.text ?? "", minZeilen: 12, maxZeilen: 28, label: TK.merge.freiLabel, beiEingabe: (w) => { it.freiText = w; } });
     const fuss = h("div", { klasse: "k-merge-fuss" }, h("span", { text: TK.merge.freiTitel }), h("span", { klasse: "sp" }),
       baueKnopf({ text: TK.merge.zurueck, groesse: "s", nach: [kbd("esc")], aufKlick: () => { it.modus = "vergleich"; zeichneDetail(); } }),
-      baueKnopf({ text: TK.merge.uebernehmen, variante: "primaer", groesse: "s", nach: [h("span", { klasse: "chip-key", text: "⌘↩" })], daten: { "data-k": "uebernehmen" }, aufKlick: () => { it.entscheidung = "zusammen"; it.text = it.freiText ?? it.text ?? ""; it.viaKI = true; it.modus = "vergleich"; zeichne(); weiter(); } }));
+      baueKnopf({ text: TK.merge.uebernehmen, variante: "primaer", groesse: "s", nach: [h("span", { klasse: "chip-key", text: "⌘↩" })], daten: { "data-k": "uebernehmen" }, aufKlick: () => { it.entscheidung = "zusammen"; it.text = it.freiText ?? it.text ?? ""; it.viaKI = !!it.kiVorschau; it.kiVorschau = false; it.modus = "vergleich"; zeichne(); weiter(); } }));
     setTimeout(() => tb.fokus(), 0);
     return [h("div", { klasse: "k-frei" }, tb.el), fuss];
   }
@@ -294,32 +300,43 @@ export function zeigeKonflikt(host, ctx) {
     if (it.kiStand === "denkt") return h("div", { klasse: "k-ki", "data-ki": "denkt" }, kopf(TK.ki.titelDenkt, [baueKnopf({ text: TK.ki.abbrechen, variante: "leise", groesse: "s", daten: { "data-k": "ki-nein" }, aufKlick: () => kiAbbrechen(it) })]),
       h("div", { klasse: "k-ki-denkt" }, h("span", { klasse: "sp" }), h("span", { klasse: "bs-text-schimmer", text: TK.ki.denkt })));
     if (it.kiStand === "fehler") return h("div", { klasse: "k-ki", "data-ki": "fehler" }, kopf(TK.ki.titelFertig(k.name), [baueKnopf({ text: TK.ki.verwerfen, variante: "leise", groesse: "s", aufKlick: () => { it.kiStand = "aus"; zeichneDetail(); } })]), h("div", { klasse: "k-ki-text" }, h("p", { text: it.kiFehler || TK.ki.fehler })));
-    const anpassen = it.ki.wahl === "zusammen" && it.typ === "text";
+    const zusammen = it.ki.wahl === "zusammen" && istText(it);
     return h("div", { klasse: "k-ki", "data-ki": "da" }, kopf(TK.ki.titelFertig(k.name), [
       baueKnopf({ text: TK.ki.verwerfen, variante: "leise", groesse: "s", daten: { "data-k": "ki-nein" }, aufKlick: () => { it.kiStand = "aus"; zeichneDetail(); } }),
-      ...(anpassen ? [baueKnopf({ text: TK.ki.anpassen, variante: "leise", groesse: "s", daten: { "data-k": "ki-anpassen" }, aufKlick: () => { it.freiText = it.ki.text; it.kiStand = "aus"; it.modus = "frei"; zeichneDetail(); } })] : []),
-      baueKnopf({ text: TK.ki.uebernehmen, groesse: "s", symbol: "haken", daten: { "data-k": "ki-ja" }, aufKlick: () => kiUebernehmen(it) })]),
-    h("div", { klasse: "k-ki-text" }, h("p", { text: it.ki.satz }), it.ki.punkte.length ? h("ul", null, ...it.ki.punkte.map(([a, b]) => h("li", null, h("b", { text: a }), h("span", { text: b })))) : null),
+      // ein zusammengeführter Text der KI wird nie ungesehen übernommen: erst ansehen (und ändern können), dort übernehmen
+      zusammen ? baueKnopf({ text: TK.ki.textAnsehen, groesse: "s", symbol: "stift", daten: { "data-k": "ki-anpassen" }, aufKlick: () => { it.freiText = it.ki.text; it.kiStand = "aus"; it.modus = "frei"; it.kiVorschau = true; zeichneDetail(); } })
+        : baueKnopf({ text: TK.ki.uebernehmen, groesse: "s", symbol: "haken", daten: { "data-k": "ki-ja" }, aufKlick: () => kiUebernehmen(it) })]),
+    h("div", { klasse: "k-ki-text" }, h("p", { text: it.ki.satz }), it.ki.punkte.length ? h("ul", null, ...it.ki.punkte.map(([a, b]) => h("li", null, h("b", { text: a }), h("span", { text: b })))) : null, zusammen ? h("p", { klasse: "k-ki-hinweis", text: TK.ki.textHinweis }) : null),
     h("div", { klasse: "k-ki-fuss" }, zeichen("schild", 12), h("span", { text: TK.ki.fuss(TK.ki.stufe[k.stufe] || k.stufe, art) })));
   };
   const kiFrage = (it) => {
     const kopfZ = it.typ === "geloescht" ? `Die Notiz „${it.pfad}“ wurde auf einem Gerät gelöscht und auf dem anderen weiter geändert.` : it.typ === "board" ? `Die Aufgaben-Karte „${it.pfad}“ wurde auf zwei Geräten verschoben.` : `Die Notiz „${it.pfad}“ wurde auf zwei Geräten gleichzeitig geändert.`;
     return `${kopfZ} Lies die Datei mit brain_lesen: Zwischen den Zeilen mit <<<<<<< und >>>>>>> stehen beide Fassungen (oben: Dieser Mac, unten: ${gKurz}). Vergleiche sie und antworte GENAU in diesem Format, ohne weiteren Text:\n`
-      + `EMPFEHLUNG: ${it.typ === "text" ? "dieser | andere | beide | zusammen" : "dieser | andere"}\nBEGRUENDUNG: ein Satz\nPUNKTE:\n- Stichwort: kurzer Satz\n`
-      + `${it.typ === "text" ? "Bei zusammen folgt danach eine Zeile TEXT: und darunter der vollständige zusammengeführte Text der Notiz.\n" : ""}`;
+      + `EMPFEHLUNG: ${istText(it) ? "dieser | andere | beide | zusammen" : "dieser | andere"}\nBEGRUENDUNG: ein Satz\nPUNKTE:\n- Stichwort: kurzer Satz\n`
+      + `${istText(it) ? "Bei zusammen folgt danach eine Zeile TEXT: und darunter der vollständige zusammengeführte Text der Notiz, ohne Quellenangaben und ohne neue Verweise.\n" : ""}`;
   };
+  // Der Text der KI muss zu den beiden Fassungen passen: keine Konfliktmarken, Länge zwischen der halben kürzeren und der Summe beider, keine Verweise [[…]], die in keiner Fassung stehen
+  function textPlausibel(it, text) {
+    if (/^(<{7}|={7}|>{7})/m.test(text)) return false;
+    const la = it.meine.text.length, lb = it.andere.text.length, n = text.length;
+    if (n < Math.min(la, lb) * 0.5 || n > (la + lb) * 1.1 + 200) return false;
+    const links = (t) => new Set((t.match(/\[\[[^\]]+\]\]/g) || []));
+    const erlaubt = new Set([...links(it.meine.text), ...links(it.andere.text)]);
+    for (const l of links(text)) if (!erlaubt.has(l)) return false;
+    return true;
+  }
   function kiLesen(it, antwort) {
     const rohe = String(antwort || "");
     const m = /^\s*EMPFEHLUNG:\s*(dieser|andere|beide|zusammen)\b/im.exec(rohe);
     if (!m) return null;
     let wahl = m[1].toLowerCase();
-    if (it.typ !== "text" && (wahl === "beide" || wahl === "zusammen")) wahl = "dieser";
+    if (!istText(it) && (wahl === "beide" || wahl === "zusammen")) wahl = "dieser";
     const satz = (/^\s*BEGRUENDUNG:\s*(.+)$/im.exec(rohe) || [])[1]?.trim() || "";
     const punkte = [];
     const pm = /PUNKTE:\s*\n([\s\S]*?)(?:\n\s*TEXT:|$)/i.exec(rohe);
     if (pm) for (const z of pm[1].split("\n")) { const x = /^\s*-\s*([^:]{1,60}):\s*(.+)$/.exec(z); if (x) punkte.push([x[1].trim(), x[2].trim()]); }
     let text = null;
-    if (wahl === "zusammen") { const t = /\n\s*TEXT:\s*\n?([\s\S]*)$/i.exec(rohe); text = t ? t[1].replace(/^```\w*\n?|\n?```\s*$/g, "").trimEnd() + "\n" : null; if (!text || !text.trim()) return null; }
+    if (wahl === "zusammen") { const t = /\n\s*TEXT:\s*\n?([\s\S]*)$/i.exec(rohe); text = t ? t[1].replace(/^```\w*\n?|\n?```\s*$/g, "").trimEnd() + "\n" : null; if (!text || !text.trim() || !textPlausibel(it, text)) return null; }
     return { wahl: { dieser: "meine", andere: "andere", beide: "beide", zusammen: "zusammen" }[wahl], text, satz: satz || "—", punkte: punkte.slice(0, 5) };
   }
   async function kiFragen(it) {
@@ -342,8 +359,8 @@ export function zeigeKonflikt(host, ctx) {
   function kiAbbrechen(it) { const l = it.kiLauf; it.kiLauf = null; it.kiStand = "aus"; if (l?.id) { try { api.frageAbbrechen?.(l.id); } catch { /* egal */ } } zeichneDetail(); }
   function kiUebernehmen(it) {
     const w = it.ki.wahl;
-    if (w === "zusammen") { it.entscheidung = "zusammen"; it.text = it.ki.text; }
-    else it.entscheidung = w;
+    if (w === "zusammen") return; // nie ungesehen: nur über „Text ansehen“
+    it.entscheidung = w;
     it.viaKI = true; it.kiStand = "aus"; it.modus = "vergleich";
     zeichne(); weiter();
   }
@@ -355,8 +372,9 @@ export function zeigeKonflikt(host, ctx) {
       const gelA = it.wer === "andere";
       a.push(["meine", 1, gelA ? TK.aktion.notizBehalten : TK.aktion.geloeschtLassen, gelA ? "notiz" : "papierkorb", e === "meine"], ["andere", 2, gelA ? TK.aktion.loeschenUebernehmen : TK.aktion.notizBehalten, gelA ? "papierkorb" : "notiz", e === "andere"]);
     } else {
-      a.push(["meine", 1, TK.aktion.meine, symFuer(DIESER_MAC), e === "meine" && !it.viaKI], ["andere", 2, TK.aktion.andere, symFuer(it.andere.geraet || G), e === "andere" && !it.viaKI]);
-      if (it.typ === "text" && !it.nurWahl) a.push(["beide", 3, TK.aktion.beide, "kopieren", e === "beide"], ["zusammen", 4, TK.aktion.zusammen, "stift", it.modus === "merge" || (e === "zusammen" && !it.viaKI)]);
+      const um = it.typ === "umbenannt";
+      a.push(["meine", 1, um ? TK.umbenannt.meine : TK.aktion.meine, symFuer(DIESER_MAC), e === "meine" && !it.viaKI], ["andere", 2, um ? TK.umbenannt.andere : TK.aktion.andere, symFuer(it.andere.geraet || G), e === "andere" && !it.viaKI]);
+      if (istText(it) && !it.nurWahl) a.push(["beide", 3, um ? TK.umbenannt.beide : TK.aktion.beide, "kopieren", e === "beide"], ["zusammen", 4, TK.aktion.zusammen, "stift", it.modus === "merge" || (e === "zusammen" && !it.viaKI)]);
     }
     return a;
   };
@@ -368,12 +386,14 @@ export function zeigeKonflikt(host, ctx) {
       return behalten ? TK.folge.notizBleibt : gelA ? TK.folge.loeschenHier : TK.folge.loeschenAnderswo(gName);
     }
     if (it.typ === "board") return k === "meine" ? TK.folge.karteMeine(spaltenName(it.karte.meine.spalte), fmtFaellig(it.karte.meine.faellig), vonDatei(it)) : TK.folge.karteAndere(spaltenName(it.karte.andere.spalte), fmtFaellig(it.karte.andere.faellig));
+    if (it.typ === "umbenannt" && k !== "zusammen") return { meine: TK.umbenannt.folgeMeine(nameVon(it.pfad)), andere: TK.umbenannt.folgeAndere(nameVon(it.pfadAndere)), beide: TK.umbenannt.folgeBeide(nameVon(it.pfad), nameVon(it.pfadAndere)) }[k];
     return { meine: TK.folge.meine(vonDatei(it)), andere: TK.folge.andere(vonDatei(it)), beide: TK.folge.beide(vonDatei(it), it.titel, it.andere.geraet || G || gKurz), zusammen: TK.folge.zusammen }[k];
   }
   function ergebnisKurz(it) {
     const e = it.entscheidung;
     if (it.typ === "geloescht") return (it.wer === "andere") === (e === "meine") ? TK.kurz.notizBleibt : TK.kurz.loeschung;
     if (it.typ === "board") return e === "meine" ? TK.kurz.karteBleibt(spaltenName(it.karte.meine.spalte)) : TK.kurz.karteKommt(spaltenName(it.karte.andere.spalte));
+    if (it.typ === "umbenannt" && e !== "zusammen") return { meine: TK.umbenannt.kurzMeine, andere: TK.umbenannt.kurzAndere(it.andere.geraet || G || ANDERES_GERAET), beide: TK.umbenannt.kurzBeide }[e];
     return { meine: TK.kurz.meine, andere: TK.kurz.andere(it.andere.geraet || G || ANDERES_GERAET), beide: TK.kurz.beide, zusammen: it.viaKI ? TK.kurz.textKi : TK.kurz.text }[e];
   }
   function waehle(it, a) {
@@ -393,8 +413,14 @@ export function zeigeKonflikt(host, ctx) {
     }, wenigBewegung() ? 150 : 520);
   }
   function aktion(it, a) {
-    if (a === "zusammen") { if (it.typ !== "text" || it.nurWahl) return; it.modus = it.modus === "merge" ? "vergleich" : "merge"; zeichneDetail(); return; }
-    if ((a === "beide") && (it.typ !== "text" || it.nurWahl)) return;
+    if (nurAnsehen) return;
+    if (a === "zusammen") {
+      if (!istText(it) || it.nurWahl) return;
+      if (it.viaKI && it.text != null) { it.freiText = it.text; it.modus = it.modus === "frei" ? "vergleich" : "frei"; } // der Text der KI: ansehen und ändern
+      else it.modus = it.modus === "merge" ? "vergleich" : "merge";
+      zeichneDetail(); return;
+    }
+    if ((a === "beide") && (!istText(it) || it.nurWahl)) return;
     waehle(it, a);
   }
 
@@ -403,9 +429,10 @@ export function zeigeKonflikt(host, ctx) {
   const label = () => konfliktLabel(notizAnzahl(), items.length - notizAnzahl());
   function liste() {
     const beschr = items.every((i) => i.typ === "geloescht") ? TK.liste.geloescht : items.some((i) => i.typ === "board" || i.typ === "geloescht") ? TK.liste.gemischt : TK.liste.standard;
-    return [h("div", { klasse: "k-liste-kopf" }, h("h2", null, TK.liste.titel, h("span", { klasse: "n", text: String(items.length) })), h("p", { text: beschr })),
+    return [h("div", { klasse: "k-liste-kopf" }, h("h2", null, TK.liste.titel, h("span", { klasse: "n", text: String(items.length) })), h("p", { text: beschr }),
+      nurAnsehen ? h("p", { klasse: "k-fremd", "data-fremd": "", role: "status", text: TK.fremd.text }) : null),
       h("div", { klasse: "k-liste-scroll", role: "listbox", "aria-label": TK.liste.beschriftung }, ...items.map((it, i) => {
-        const u = it.typ === "geloescht" ? (it.wer === "andere" ? TK.liste.geloeschtAndere(gName) : TK.liste.geloeschtMac(gName)) : it.typ === "board" ? TK.liste.karte
+        const u = it.typ === "umbenannt" ? TK.umbenannt.listeU(nameVon(it.pfad), nameVon(it.pfadAndere)) : it.typ === "geloescht" ? (it.wer === "andere" ? TK.liste.geloeschtAndere(gName) : TK.liste.geloeschtMac(gName)) : it.typ === "board" ? TK.liste.karte
           : TK.liste.unterschiede(DIESER_MAC, it.andere.geraet || G || gKurz, it.segs ? bloecke(it).length : 1);
         return h("button", { klasse: "k-item", type: "button", role: "option", "data-i": String(i), "data-pfad": it.pfad, "aria-current": String(i === KS.sel), "aria-selected": String(i === KS.sel),
           aufClick: () => { KS.sel = i; clearTimeout(KS.weiter); zeichne(); } },
@@ -418,11 +445,11 @@ export function zeigeKonflikt(host, ctx) {
     const n = items.length, done = items.filter((i) => i.entscheidung).length, rest = n - done;
     return [h("div", { klasse: "k-prog" }, h("div", { klasse: "bars", "aria-hidden": "true" }, ...items.map((i) => h("i", { klasse: i.entscheidung ? "ok" : "" }))), h("span", { "data-fortschritt": "" }, rest ? h("b", { text: `${done} von ${n}` }) : null, rest ? ` gelöst · noch ${rest} offen` : h("b", { text: "Alles gelöst" }))),
       baueKnopf({ text: TK.fuss.spaeter, groesse: "s", titel: TK.fuss.spaeterTitel, nach: [kbd("esc")], aktion: "konflikt-spaeter", aufKlick: () => schliessen() }),
-      baueKnopf({ text: TK.fuss.abgleichen, variante: "primaer", nach: [h("span", { klasse: "chip-key", text: "⌘↩" })], disabled: rest > 0, aktion: "konflikt-abgleichen", daten: { id: "k-fertig" }, aufKlick: () => abgleichen() })];
+      baueKnopf({ text: TK.fuss.abgleichen, variante: "primaer", nach: [h("span", { klasse: "chip-key", text: "⌘↩" })], disabled: rest > 0 || nurAnsehen, titel: nurAnsehen ? TK.fremd.knopfTitel : undefined, aktion: "konflikt-abgleichen", daten: { id: "k-fertig" }, aufKlick: () => abgleichen() })];
   }
   function kopf(it) {
-    const kw = it.typ === "geloescht" ? (it.wer === "andere" ? TK.kopf.geloeschtAndere(nameDatei(it)) : TK.kopf.geloeschtMac) : it.typ === "board" ? TK.kopf.karte : TK.kopf.geaendert;
-    const erkl = it.typ === "geloescht" ? (it.wer === "andere" ? TK.kopf.erklGeloeschtAndere(nameDatei(it)) : TK.kopf.erklGeloeschtMac(nameDatei(it))) : it.typ === "board" ? TK.kopf.erklKarte(nameDatei(it)) : TK.kopf.erklText(uhrzeit(daten.seit), aufDatei(it));
+    const kw = it.typ === "umbenannt" ? TK.umbenannt.marke : it.typ === "geloescht" ? (it.wer === "andere" ? TK.kopf.geloeschtAndere(nameDatei(it)) : TK.kopf.geloeschtMac) : it.typ === "board" ? TK.kopf.karte : TK.kopf.geaendert;
+    const erkl = it.typ === "umbenannt" ? TK.umbenannt.erkl(nameVon(it.pfad), nameVon(it.pfadAndere), aufDatei(it)) : it.typ === "geloescht" ? (it.wer === "andere" ? TK.kopf.erklGeloeschtAndere(nameDatei(it)) : TK.kopf.erklGeloeschtMac(nameDatei(it))) : it.typ === "board" ? TK.kopf.erklKarte(nameDatei(it)) : TK.kopf.erklText(uhrzeit(daten.seit), aufDatei(it));
     const ordner = it.pfad.includes("/") ? it.pfad.slice(0, it.pfad.lastIndexOf("/")).replaceAll("/", " / ") : "";
     return h("div", { klasse: "k-kopf" }, h("div", null,
       h("div", { klasse: "k-pfad" }, zeichen("ordner", 12), h("span", { text: ordner || "Vault" })),
@@ -468,6 +495,7 @@ export function zeigeKonflikt(host, ctx) {
   const schrittSetzen = (n, zustand) => { const li = wurzel.querySelector(`#k-schritte [data-s="${n}"]`); if (!li) return; li.className = zustand; const st = li.querySelector(".st"); st.replaceChildren(...(zustand === "ok" ? [zeichen("haken", 12)] : [])); };
   function zusammenfassung(it) {
     const e = it.entscheidung;
+    if (it.typ === "umbenannt" && e !== "zusammen") return { meine: TK.umbenannt.zusMeine(nameVon(it.pfad)), andere: TK.umbenannt.zusAndere(nameVon(it.pfadAndere)), beide: TK.umbenannt.zusBeide(nameVon(it.pfad), nameVon(it.pfadAndere)) }[e];
     if (it.typ === "geloescht") return (it.wer === "andere") === (e === "meine") ? TK.fertig.zus.notizBleibt : TK.fertig.zus.geloescht;
     if (it.typ === "board") { const s = e === "meine" ? it.karte.meine : it.karte.andere; return TK.fertig.zus.karte(spaltenName(s.spalte), fmtFaellig(s.faellig)); }
     return { meine: TK.fertig.zus.meine, andere: TK.fertig.zus.andere(vonDatei(it)), beide: TK.fertig.zus.beide(vonDatei(it), it.titel, it.andere.geraet || G || gKurz), zusammen: TK.fertig.zus.text(it.segs ? bloecke(it).length : 1, it.viaKI) }[e];
@@ -481,6 +509,7 @@ export function zeigeKonflikt(host, ctx) {
       h("ul", { klasse: "k-zus" }, ...items.map((it) => h("li", null, zeichen("kreis-haken", 16), h("div", null, h("b", { text: it.titel }), h("span", { text: zusammenfassung(it) }))))),
       h("div", { klasse: "knoepfe" }, baueKnopf({ text: TK.fertig.zurueck, variante: "primaer", nach: [kbd("esc")], aktion: "konflikt-zurueck", aufKlick: () => schliessen() }),
         baueKnopf({ text: TK.fertig.rueckgaengig, aktion: "konflikt-rueckgaengig", aufKlick: () => rueckgaengig() })),
+      r.sicherung && r.sicherung.ordner ? h("p", { klasse: "klein", "data-sicherung": "", text: TK.fertig.gesichert(r.sicherung.ordner) }) : null,
       h("p", { klasse: "klein", text: TK.fertig.klein }));
   }
   async function abgleichen() {
@@ -488,12 +517,13 @@ export function zeigeKonflikt(host, ctx) {
     clearTimeout(KS.weiter); KS.laeuft = true; KS.phase = "sync"; zeichne();
     const auswahl = items.map((it) => ({ pfad: it.pfad, wahl: it.entscheidung === "zusammen" ? "text" : it.entscheidung, ...(it.entscheidung === "zusammen" ? { text: it.text ?? "" } : {}) }));
     let r;
-    try { r = await api.gitKonfliktLoesen(auswahl, KS.basis); }
+    try { r = await api.gitKonfliktLoesen(auswahl, { meine: daten.meine, andere: daten.andere }); }
     catch (err) {
       KS.laeuft = false; KS.phase = "liste"; zeichne();
       if (gitGesperrt(err)) toast(TK.fehler.gesperrt, { fehler: true });
       else if (ausgangUnklar(err)) { try { await ctx.beiStandNeu?.(err); } catch (x) { console.error(x); } toast(TK.fehler.loesen, { fehler: true }); }
       else if (err?.status === 409 && err?.daten?.art === "laeuft") toast(TK.fehler.laeuft, { fehler: true });
+      else if (err?.status === 409 && err?.daten?.art === "veraltet") { toast(TK.fehler.veraltet, { fehler: true, ms: 8000 }); ctx.beiVeraltet?.(); }
       else toast(err?.message || TK.fehler.loesen, { fehler: true, ms: 9000 });
       return;
     }
@@ -511,7 +541,7 @@ export function zeigeKonflikt(host, ctx) {
     KS.laeuft = true;
     try {
       const r = await api.gitKonfliktRueckgaengig();
-      KS.basis = r.basis || null; KS.laeuft = false;
+      KS.laeuft = false;
       KS.phase = "liste"; KS.sel = 0;
       toast(TK.rueck.ok, { ms: 6000 });
       await ctx.beiZurueck?.(r);
@@ -575,8 +605,9 @@ export function zeigeKonflikt(host, ctx) {
     zerstoere() { KS.zerstoert = true; clearTimeout(KS.weiter); document.removeEventListener("keydown", taste); for (const i of items) if (i.kiLauf) kiAbbrechen(i); wurzel.remove(); },
     istFertig: () => KS.phase === "fertig", laeuft: () => KS.laeuft,
     // vom Aufrufer (nach „Rückgängig“ oder Neuladen): neue Fassungen einlesen, Entscheidungen bleiben
-    entscheidungen: () => Object.fromEntries(items.filter((i) => i.entscheidung).map((i) => [i.pfad, { wahl: i.entscheidung, text: i.text, viaKI: i.viaKI }])),
-    setzeEntscheidungen(map) { for (const i of items) { const e = map?.[i.pfad]; if (e) { i.entscheidung = e.wahl; i.text = e.text ?? null; i.viaKI = !!e.viaKI; } } zeichne(); },
+    // Entscheidungen merken samt der Kennung beider Fassungen: nur wo sie noch dieselben sind, gelten sie wieder (sonst wurde die Notiz seitdem geändert)
+    entscheidungen: () => Object.fromEntries(items.filter((i) => i.entscheidung).map((i) => [i.pfad, { wahl: i.entscheidung, text: i.text, viaKI: i.viaKI, blobM: i.meine.blob ?? null, blobA: i.andere.blob ?? null }])),
+    setzeEntscheidungen(map) { for (const i of items) { const e = map?.[i.pfad]; if (e && e.blobM === (i.meine.blob ?? null) && e.blobA === (i.andere.blob ?? null)) { i.entscheidung = e.wahl; i.text = e.text ?? null; i.viaKI = !!e.viaKI; } } zeichne(); },
     zeichne,
   };
 }

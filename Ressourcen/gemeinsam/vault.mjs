@@ -8,7 +8,7 @@ import { join, basename, relative, sep } from "node:path";
 import { createHash, randomBytes } from "node:crypto";
 import { execFile } from "node:child_process";
 import { pathToFileURL } from "node:url";
-import { HttpFehler, MAX_DATEI, inboxOrdnerVon, loese, imVault, falte, kindUmgebung, supportOrdner, kernOrdner, BEARBEITBAR, generiertName, wikiGeneriert, gesperrterName } from "./basis.mjs";
+import { HttpFehler, MAX_DATEI, inboxOrdnerVon, inboxHinweisVon, loese, imVault, falte, kindUmgebung, supportOrdner, kernOrdner, BEARBEITBAR, generiertName, wikiGeneriert, gesperrterName } from "./basis.mjs";
 import { pruefeText, berlinHeute, leseKopf } from "./pruefung.mjs";
 import * as gitFn from "./git.mjs";
 import * as vertrauenFn from "./vertrauen.mjs";
@@ -141,7 +141,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
     const notizPfade = dateien.filter((d) => BEARBEITBAR.test(d.rel)).map((d) => d.rel);
     let teil = null;
     if (notizPfade.length) { teil = notizIndex.teil(notizPfade); if (!teil) return VOLL; }
-    return { voll: false, baum: eintraege, notizen: teil ? teil.zeilen : [], ...(teil ? { typen: teil.typen, ansichten: teil.ansichten } : {}), aufgabenOrdner: await aufgabenFn.ordnerName(), inboxOrdner: inboxOrdnerVon(wurzel) };
+    return { voll: false, baum: eintraege, notizen: teil ? teil.zeilen : [], ...(teil ? { typen: teil.typen, ansichten: teil.ansichten } : {}), aufgabenOrdner: await aufgabenFn.ordnerName(), inboxOrdner: inboxOrdnerVon(wurzel), ...hinweisFeld() };
   }
 
   // ---------- Lesen / Schreiben ----------
@@ -222,6 +222,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
 
   // Der Posteingang des Vaults (Regel und Begründung: basis.mjs#inboxOrdnerVon).
   const inboxOrdner = () => inboxOrdnerVon(wurzel);
+  const hinweisFeld = () => { const t = inboxHinweisVon(wurzel); return t ? { inboxHinweis: t } : {}; }; // nur bei einem ungültigen Eintrag in der Konfiguration
 
   function merken({ text, titel }) {
     if (typeof text !== "string" || !text.trim()) throw new HttpFehler(400, "Bitte einen Text eingeben.");
@@ -393,22 +394,23 @@ export function oeffneVault(vaultPfad, opts = {}) {
 
   async function gitSyncLaufen(a) {
     umstellungSperre();
-    const r = await gitFn.sync(wurzel, gitCtx({ limitSync: opts.gitLimitSync, limitGesamt: opts.gitLimitAbgleich, konflikteLoesen: !!(a && a.konflikteLoesen === true),
-      sperre: async () => { const sp = await abgleichSperre("studio-abgleich"); if (!sp.ok) throw new HttpFehler(409, BESETZT_TEXT, { art: "laeuft" }); return sp; } }));
+    // Wartet ein gemerkter Stand auf neue Entscheidungen (nach „Rückgängig“), sendet auch der Studio-Abgleich nichts: die Oberfläche öffnet die Ansicht
+    const detail = leseAbgleichDetail(wurzel, opts.support);
+    if (detail && detail.haelt) throw new HttpFehler(409, "Es warten noch Entscheidungen zu einem Konflikt. Bitte schließe sie zuerst ab.", { konflikt: true, dateien: detail.dateien, haelt: true });
+    let r;
+    try {
+      r = await gitFn.sync(wurzel, gitCtx({ limitSync: opts.gitLimitSync, limitGesamt: opts.gitLimitAbgleich, konflikteLoesen: !!(a && a.konflikteLoesen === true),
+        sperre: async () => { const sp = await abgleichSperre("studio-abgleich"); if (!sp.ok) throw new HttpFehler(409, BESETZT_TEXT, { art: "laeuft" }); return sp; } }));
+    } catch (e) {
+      // Die Zusammenführung blieb offen: Kortex merkt sich, dass SIE sie begonnen hat (nur dann lösen oder brechen wir sie später ab)
+      if (e instanceof HttpFehler && e.status === 409 && e.extra && e.extra.konflikt) { try { await gitFn.gitExklusiv(wurzel, () => kernAbgleich("markieren")); } catch { /* ohne Marke bleibt sie „fremd“: nur ansehen */ } }
+      throw e;
+    }
     loescheAbgleichStand(wurzel, { support: opts.support }); // der Abgleich lief durch: der Vermerk der Hintergrund-Sicherung (Konflikt, Anmeldung, Neues) gilt nicht mehr
     return r;
   }
-  // Konflikt abschließen: der Kern hält die Entscheidungen fest und gleicht wie die Sicherung ab. Ist das Ziel für die Hintergrund-Sicherung noch nicht bestätigt,
-  // sendet der Studio-Abgleich (ein ausdrücklicher Klick der Nutzerin) wie bisher.
-  async function konfliktLoesen(a) {
-    umstellungSperre();
-    const r = await kernAbgleich("loesen", { auswahl: a && a.auswahl, basis: (a && a.basis) || undefined }, 420_000);
-    if (r && r.abgleich && r.abgleich.art === "nicht-bestaetigt") {
-      try { const s = await gitSyncLaufen({}); r.abgleich = { art: s.ergebnis, ok: true, text: "Gesichert." }; }
-      catch (e) { r.abgleich = { art: e && e.status === 409 && e.extra && e.extra.konflikt ? "konflikt" : "fehler", ok: false, text: e && e.message ? e.message : "Das Senden hat nicht geklappt." }; }
-    }
-    return r;
-  }
+  // Kern-Befehle, die Index und Arbeitsbaum anfassen, laufen unter derselben Sperre im Prozess wie Commit, Abgleich und Nachsehen
+  const kernGesperrt = (unter, eingabe, frist) => { umstellungSperre(); return gitFn.gitExklusiv(wurzel, () => kernAbgleich(unter, eingabe, frist)); };
 
   // ---------- Notiz-Index (Spec v2 §5) ----------
   const notizIndex = erzeugeNotizIndex({ wurzel, jetzt, heute: () => opts.heute || berlinHeute(jetzt()),
@@ -478,8 +480,8 @@ export function oeffneVault(vaultPfad, opts = {}) {
     wurzel, name: basename(wurzel), rueckfragen, kitVersion, kitVorhanden, kit, vertrauen, vertrauenStand: stand, baum, lies, imUnterVault: (rel) => { try { return imUnterVault(loese(wurzel, rel).abs); } catch { return false; } }, schreibe, neu, merken, suche, suchenFuerKi, pruefung, gesundheit, nutzung,
     posteingangVerwerfen: posteingang.verwerfen, posteingangSpaeter: posteingang.spaeter, posteingangUebernehmen: posteingang.uebernehmen,
     aufgaben: aufgabenFn.aufgaben, aufgabeAnlegen: aufgabenFn.anlegen, aufgabeAendern: aufgabenFn.aendern, aufgabenArchivieren: aufgabenFn.archivieren, aufgabenFuerKi: aufgabenFn.fuerKi, aufgabenOrdnerName: aufgabenFn.ordnerName, aufgabePfad: aufgabenFn.findePfad,
-    notizen: async () => ({ ...(await notizIndex.notizen()), aufgabenOrdner: await aufgabenFn.ordnerName(), inboxOrdner: inboxOrdnerVon(wurzel) }), notizKontext: notizIndex.kontext, typen: notizIndex.typen, ansichten: notizIndex.ansichten,
-    indexAlles: async () => ({ ...(await notizIndex.alles()), aufgabenOrdner: await aufgabenFn.ordnerName(), inboxOrdner: inboxOrdnerVon(wurzel) }), teilIndex,
+    notizen: async () => ({ ...(await notizIndex.notizen()), aufgabenOrdner: await aufgabenFn.ordnerName(), inboxOrdner: inboxOrdnerVon(wurzel), ...hinweisFeld() }), notizKontext: notizIndex.kontext, typen: notizIndex.typen, ansichten: notizIndex.ansichten,
+    indexAlles: async () => ({ ...(await notizIndex.alles()), aufgabenOrdner: await aufgabenFn.ordnerName(), inboxOrdner: inboxOrdnerVon(wurzel), ...hinweisFeld() }), teilIndex,
     gitLog: async (a) => gitFn.log(wurzel, a || {}, gitCtx()),
     gitRemote: async (url, extra = {}) => gitFn.remoteHinzufuegen(wurzel, url, gitCtx({ limit: opts.gitLimitRemote, ...extra })),
     // sicherungStand: "konflikt" | "anmeldung" | "neues" | null — die Hintergrund-Sicherung des Kerns (kern/backup.mjs) vermerkt, wenn sie nicht senden konnte
@@ -492,10 +494,11 @@ export function oeffneVault(vaultPfad, opts = {}) {
     // konflikteLoesen: bei Konflikten die Zusammenführung offen lassen, damit die Oberfläche pro Datei wählen lässt (sonst wie bisher: abbrechen, 409)
     gitSync: (a) => gitSyncLaufen(a),
     // Konflikt-Ansicht (Kern): beide Fassungen je Datei · Entscheidungen abschließen (mit Abgleich wie die Sicherung) · „Später“ · „Rückgängig“
-    gitKonfliktAnsicht: async (basis) => kernAbgleich("ansicht", { basis: basis || undefined }),
-    gitKonfliktLoesen: (a) => konfliktLoesen(a),
-    gitKonfliktAbbrechen: async () => { umstellungSperre(); return kernAbgleich("abbrechen"); },
-    gitKonfliktRueckgaengig: async () => { umstellungSperre(); return kernAbgleich("rueckgaengig"); },
+    gitKonfliktAnsicht: async () => kernAbgleich("ansicht"),
+    // Ohne vom Nutzer bestätigtes Ziel sendet das Lösen NICHT (nur ein Hinweis in der Antwort) — dieselbe Regel wie bei der Sicherung (#67)
+    gitKonfliktLoesen: async (a) => kernGesperrt("loesen", { auswahl: a && a.auswahl, gesehen: a && a.gesehen }, 420_000),
+    gitKonfliktAbbrechen: async () => kernGesperrt("abbrechen"),
+    gitKonfliktRueckgaengig: async () => kernGesperrt("rueckgaengig"),
     gitNachsehen: async () => mitSicherungsStand(await gitFn.nachsehen(wurzel, gitCtx())),
     gitWiederherstellenVorschau: async (pfad, sha) => gitFn.wiederherstellenVorschau(wurzel, pfad, sha, gitCtx()),
     gitWiederherstellen: async (a) => { umstellungSperre(); return gitFn.wiederherstellen(wurzel, a || {}, gitCtx({ limit: opts.gitLimitCommit })); },

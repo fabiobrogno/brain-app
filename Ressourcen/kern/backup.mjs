@@ -269,6 +269,8 @@ function abgleichenInnen(vault, support) {
   };
   try {
     if (mergeOffen(vault)) return fertig("konflikt"); // eine offene Zusammenführung (im Studio begonnen) wartet auf den Nutzer
+    // Nach „Rückgängig“ (oder einem Abbruch mitten im Festhalten) wartet ein gemerkter Stand auf neue Entscheidungen: bis dahin sendet die Sicherung nichts
+    if (leseDatei(vault, support).konfliktBasis) return fertig("konflikt");
     if (ingestGesperrt(vault)) return fertig("beschaeftigt");
     const zw = gitLauf(vault, ["symbolic-ref", "--short", "-q", "HEAD"]);
     if (zw.code !== 0) return fertig("kein-zweig");

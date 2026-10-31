@@ -4,7 +4,7 @@
 // geräumt, Rückgängig, Abbrechen, die gemeinsame Sperre (auch zwischen zwei Prozessen). Nie echte Nutzerorte: HOME und Support-Ordner liegen in Temp.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, cpSync, rmSync, readdirSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, cpSync, rmSync, readdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -70,12 +70,16 @@ function konfliktAufbau() {
   speichern(mac, "10_notizen/schlicht.md", "# Schlicht\n\neine Zeile vom Mac\n", "Mac: schlicht");
   speichern(mac, "05_aufgaben/budget.md", karte("in-arbeit", "2026-11-14"), "Mac: Karte");
   g(mac, "fetch", "-q", "origin");
-  assert.throws(() => g(mac, "merge", "--no-edit", "origin/main"));
+  oeffneMerge(mac, a.support);
   assert.ok(existsSync(join(mac, ".git", "MERGE_HEAD")));
   return a;
 }
 const alleWahl = (w) => ({ "10_notizen/kickoff.md": w, "10_notizen/zeitplan.md": w, "10_notizen/ideen.md": w, "10_notizen/schlicht.md": w, "05_aufgaben/budget.md": w });
 const auswahlVon = (m) => Object.entries(m).map(([pfad, wahl]) => (typeof wahl === "string" ? { pfad, wahl } : { pfad, ...wahl }));
+// Studio-Ablauf: die Zusammenführung bleibt offen (git.mjs#sync) und wird als „von Kortex begonnen“ markiert
+function oeffneMerge(mac, support) { assert.throws(() => g(mac, "merge", "--no-edit", "origin/main")); K.markiere(mac, { support }); }
+const gesehenVon = (wurzel, support) => { const a = K.ansicht(wurzel, { support }); return { meine: a.meine, andere: a.andere }; };
+const loes = (wurzel, o) => K.loesen(wurzel, { gesehen: gesehenVon(wurzel, o.support), ...o });
 const betreffs = (wurzel, n = 20) => g(wurzel, "log", `-${n}`, "--format=%s").trim().split("\n");
 
 // ───────────────────────────── Ansicht ─────────────────────────────
@@ -131,7 +135,7 @@ test("Gerätename: Marke „Kortex-Geraet“ im Commit gewinnt, sonst die Standa
 test("alle Entscheidungsarten: Ergebnis stimmt, jede Entscheidung ist ein Eintrag im Verlauf, gesendet, Konfliktstand geräumt", () => {
   const { remote, mac, handy, support } = konfliktAufbau();
   B.leseAbgleichStand(mac, { support });
-  const r = K.loesen(mac, { support, auswahl: auswahlVon({
+  const r = loes(mac, { support, auswahl: auswahlVon({
     "10_notizen/kickoff.md": "beide",
     "10_notizen/zeitplan.md": { wahl: "text", text: "# Zeitplan\n\n- 5. Dez: Abnahme\n- 12. Dez: Erster Test\n" },
     "10_notizen/ideen.md": "meine",
@@ -175,7 +179,7 @@ test("alle Entscheidungsarten: Ergebnis stimmt, jede Entscheidung ist ein Eintra
 
 test("gelöscht↔geändert: „Löschung übernehmen“ entfernt die Notiz überall; „andere“ bei einer fehlenden Seite ebenso", () => {
   const { remote, mac, handy, support } = konfliktAufbau();
-  const r = K.loesen(mac, { support, auswahl: auswahlVon({ ...alleWahl("meine"), "10_notizen/ideen.md": "andere" }) });
+  const r = loes(mac, { support, auswahl: auswahlVon({ ...alleWahl("meine"), "10_notizen/ideen.md": "andere" }) });
   assert.equal(r.ok, true);
   assert.equal(existsSync(join(mac, "10_notizen/ideen.md")), false);
   assert.equal(g(mac, "ls-files", "--", "10_notizen/ideen.md").trim(), "");
@@ -185,16 +189,16 @@ test("gelöscht↔geändert: „Löschung übernehmen“ entfernt die Notiz übe
   assert.equal(existsSync(join(handy, "10_notizen/ideen.md")), false);
 });
 
-test("hier gelöscht, dort geändert: „diese behalten“ löscht, „andere“ bringt die Notiz zurück; „beide“ behält die vorhandene", () => {
+test("hier gelöscht, dort geändert: „beide“ behält die vorhandene Fassung (das Löschen behalten und „andere“ prüfen die Tests mit K1)", () => {
   const a = aufbau();
   const { mac, handy, support } = a;
   speichern(handy, "10_notizen/ideen.md", "# Ideen\n\n- Offline-Modus\n- Neu vom Handy\n", "Handy: Ideen", HANDY_MAIL); g(handy, "push", "-q");
   g(mac, "rm", "-q", "--", "10_notizen/ideen.md"); g(mac, "commit", "-q", "-m", "Mac: Ideen gelöscht");
   g(mac, "fetch", "-q", "origin");
-  assert.throws(() => g(mac, "merge", "--no-edit", "origin/main"));
+  oeffneMerge(mac, support);
   const d = K.ansicht(mac, { support }).dateien[0];
   assert.equal(d.typ, "geloescht"); assert.equal(d.wer, "meine"); assert.equal(d.meine.vorhanden, false); assert.match(d.andere.text, /Neu vom Handy/);
-  const r = K.loesen(mac, { support, auswahl: auswahlVon({ "10_notizen/ideen.md": "beide" }) });
+  const r = loes(mac, { support, auswahl: auswahlVon({ "10_notizen/ideen.md": "beide" }) });
   assert.equal(r.ok, true);
   assert.deepEqual(r.kopien, []);
   assert.match(lies(mac, "10_notizen/ideen.md"), /Neu vom Handy/, "die vorhandene Fassung bleibt");
@@ -203,7 +207,7 @@ test("hier gelöscht, dort geändert: „diese behalten“ löscht, „andere“
 test("Eingaben werden geprüft: unvollständige Auswahl, unbekannter Pfad, Karte mit „beide“, Text fehlt — nichts wird verändert", () => {
   const { mac, support } = konfliktAufbau();
   const vorher = kopf(mac);
-  const fehler = (auswahl) => { try { K.loesen(mac, { support, auswahl }); } catch (e) { return e; } return null; };
+  const fehler = (auswahl) => { try { loes(mac, { support, auswahl }); } catch (e) { return e; } return null; };
   assert.equal(fehler([{ pfad: "10_notizen/kickoff.md", wahl: "meine" }]).status, 400);
   assert.equal(fehler(auswahlVon({ ...alleWahl("meine"), "../draussen.md": "meine" })).status, 400);
   assert.equal(fehler(auswahlVon({ ...alleWahl("meine"), "05_aufgaben/budget.md": "beide" })).status, 400);
@@ -216,7 +220,7 @@ test("Eingaben werden geprüft: unvollständige Auswahl, unbekannter Pfad, Karte
 
 test("kein Konflikt offen: loesen und abbrechen sind harmlos bzw. 409", () => {
   const { mac, support } = aufbau();
-  assert.throws(() => K.loesen(mac, { support, auswahl: [] }), (e) => e.status === 409);
+  assert.throws(() => loes(mac, { support, auswahl: [] }), (e) => e.status === 409);
   assert.deepEqual(K.abbrechen(mac, { support }), { ok: true, offen: false });
 });
 
@@ -224,7 +228,7 @@ test("ohne bestätigtes Ziel: gelöst und festgehalten, aber nichts gesendet", (
   const { remote, mac, support } = konfliktAufbau();
   B.bestaetigeRemote(mac, "https://example.invalid/x.git", { support });
   const serverKopf = kopfRemote(remote);
-  const r = K.loesen(mac, { support, auswahl: auswahlVon(alleWahl("meine")) });
+  const r = loes(mac, { support, auswahl: auswahlVon(alleWahl("meine")) });
   assert.equal(r.ok, true);
   assert.equal(r.abgleich.art, "nicht-bestaetigt");
   assert.equal(kopfRemote(remote), serverKopf, "nichts gesendet");
@@ -242,11 +246,11 @@ test("Verborgene Orte bleiben bei der eigenen Fassung, beide Seiten gelöscht bl
   speichern(mac, ".obsidian/app.json", "{\"a\":3}\n", "Mac: versteckt");
   speichern(mac, "10_notizen/schlicht.md", "# Schlicht\n\nMac\n", "Mac: schlicht");
   g(mac, "fetch", "-q", "origin");
-  assert.throws(() => g(mac, "merge", "--no-edit", "origin/main"));
+  oeffneMerge(mac, support);
   const an = K.ansicht(mac, { support });
   assert.deepEqual(an.dateien.map((d) => d.pfad), ["10_notizen/schlicht.md"]);
   assert.equal(an.versteckt, 1);
-  const r = K.loesen(mac, { support, auswahl: auswahlVon({ "10_notizen/schlicht.md": "andere" }) });
+  const r = loes(mac, { support, auswahl: auswahlVon({ "10_notizen/schlicht.md": "andere" }) });
   assert.deepEqual(r.versteckteBehalten, [".obsidian/app.json"]);
   assert.equal(lies(mac, ".obsidian/app.json"), "{\"a\":3}\n");
 });
@@ -254,7 +258,7 @@ test("Verborgene Orte bleiben bei der eigenen Fassung, beide Seiten gelöscht bl
 // ───────────────────────────── Rückgängig ─────────────────────────────
 test("Rückgängig: die Fassungen von vor den Entscheidungen kommen als neuer Eintrag zurück; danach lässt sich neu entscheiden", () => {
   const { remote, mac, support } = konfliktAufbau();
-  const r1 = K.loesen(mac, { support, auswahl: auswahlVon({ ...alleWahl("andere"), "10_notizen/kickoff.md": "beide" }) });
+  const r1 = loes(mac, { support, auswahl: auswahlVon({ ...alleWahl("andere"), "10_notizen/kickoff.md": "beide" }) });
   assert.equal(r1.ok, true);
   assert.equal(K.rueckgaengigStand(mac, { support }).moeglich, true);
   const vorRueck = kopf(mac);
@@ -270,13 +274,13 @@ test("Rückgängig: die Fassungen von vor den Entscheidungen kommen als neuer Ei
   assert.equal(B.leseAbgleichStand(mac, { support }).stand, "konflikt");
   assert.deepEqual(B.leseAbgleichStand(mac, { support }).dateien.length, 5);
   assert.equal(g(mac, "status", "--porcelain").trim(), "");
-  // neu entscheiden: die Ansicht kommt aus dem gemerkten Stand (beide Seiten sind schon zusammengeführt)
-  const basis = u.basis;
-  const an = K.ansicht(mac, { support, basis });
+  // neu entscheiden: die Ansicht kommt aus dem gemerkten Stand (beide Seiten sind schon zusammengeführt) — nie aus einer Angabe der Oberfläche
+  const an = K.ansicht(mac, { support });
+  assert.equal(u.basis, undefined);
   assert.equal(an.modus, "stand");
   assert.equal(an.dateien.length, 5);
   assert.match(an.dateien.find((d) => d.pfad === "10_notizen/kickoff.md").andere.text, /Lea und Jonas/);
-  const r2 = K.loesen(mac, { support, basis, auswahl: auswahlVon({ ...alleWahl("meine"), "10_notizen/schlicht.md": "andere" }) });
+  const r2 = loes(mac, { support, auswahl: auswahlVon({ ...alleWahl("meine"), "10_notizen/schlicht.md": "andere" }) });
   assert.equal(r2.ok, true);
   assert.equal(lies(mac, "10_notizen/schlicht.md"), "# Schlicht\n\neine Zeile vom Handy\n");
   assert.equal(r2.abgleich.ok, true, r2.abgleich.text);
@@ -286,13 +290,13 @@ test("Rückgängig: die Fassungen von vor den Entscheidungen kommen als neuer Ei
 
 test("Rückgängig weigert sich, wenn an einer Datei seitdem weitergearbeitet wurde (nichts Fremdes überschreiben)", () => {
   const { mac, support } = konfliktAufbau();
-  K.loesen(mac, { support, auswahl: auswahlVon(alleWahl("andere")) });
+  loes(mac, { support, auswahl: auswahlVon(alleWahl("andere")) });
   speichern(mac, "10_notizen/schlicht.md", "# Schlicht\n\nweitergearbeitet\n", "Mac: weiter");
   assert.throws(() => K.rueckgaengig(mac, { support }), (e) => e.status === 409 && /noch einmal geändert/.test(e.message));
   assert.equal(lies(mac, "10_notizen/schlicht.md"), "# Schlicht\n\nweitergearbeitet\n");
   // ungesicherte Änderung: ebenso
   const a2 = konfliktAufbau();
-  K.loesen(a2.mac, { support: a2.support, auswahl: auswahlVon(alleWahl("andere")) });
+  loes(a2.mac, { support: a2.support, auswahl: auswahlVon(alleWahl("andere")) });
   schreibe(a2.mac, "10_notizen/schlicht.md", "# Schlicht\n\nnoch nicht gesichert\n");
   assert.throws(() => K.rueckgaengig(a2.mac, { support: a2.support }), (e) => e.status === 409);
 });
@@ -327,8 +331,8 @@ test("Die Hintergrund-Sicherung vermerkt die Notizen im Konflikt (ohne versteckt
   assert.ok(s.zeit);
   // nach dem Lösen im Studio (Zusammenführung offen lassen, entscheiden) ist der Stand weg
   g(mac, "fetch", "-q", "origin");
-  assert.throws(() => g(mac, "merge", "--no-edit", "origin/main"));
-  const l = K.loesen(mac, { support, auswahl: auswahlVon({ "10_notizen/schlicht.md": "meine" }) });
+  oeffneMerge(mac, support);
+  const l = loes(mac, { support, auswahl: auswahlVon({ "10_notizen/schlicht.md": "meine" }) });
   assert.equal(l.abgleich.ok, true, l.abgleich.text);
   assert.equal(B.leseAbgleichStand(mac, { support }), null);
   assert.equal(kopfRemote(remote), kopf(mac));
@@ -420,7 +424,7 @@ test("Sperre: die Sicherung wartet, solange das Studio abgleicht (und umgekehrt)
     assert.equal(B.abgleichen(mac, { support }).art, "laeuft");
     assert.equal(B.holen(mac, { support }).art, "laeuft");
     assert.equal(kopfRemote(remote), serverKopf, "nichts gesendet, solange gesperrt");
-    assert.throws(() => K.loesen(mac, { support, auswahl: [] }), (e) => e.status === 409 && e.extra.art === "laeuft");
+    assert.throws(() => loes(mac, { support, auswahl: [] }), (e) => e.status === 409 && e.extra.art === "laeuft");
     assert.throws(() => K.abbrechen(mac, { support }), (e) => e.status === 409 && e.extra.art === "laeuft");
   } finally { halter.stdin.write("x"); await new Promise((ok) => halter.on("exit", ok)); }
   assert.equal(B.abgleichen(mac, { support }).art, "gesendet", "danach geht es wieder");
@@ -439,6 +443,254 @@ test("Sperre: eine verwaiste Sperre (Prozess beendet) blockiert die Sicherung ni
   assert.equal(kopfRemote(remote), kopf(mac));
 });
 
+// ───────────────────────────── Review: Löschung behalten, Umbenennung, fremde Zusammenführung, Bearbeitung, gemerkter Stand ─────────────────────────────
+const leseMerker = (support) => { const d = join(support, "backup"); const n = readdirSync(d).find((x) => x.endsWith(".json") && !x.includes(".holen.")); return JSON.parse(readFileSync(join(d, n), "utf8")); };
+function loeschenAufbau() { // hier gelöscht, dort geändert
+  const a = aufbau();
+  speichern(a.handy, "10_notizen/ideen.md", "# Ideen\n\n- Offline-Modus\n- Neu vom Handy\n", "Handy: Ideen", HANDY_MAIL); g(a.handy, "push", "-q");
+  g(a.mac, "rm", "-q", "--", "10_notizen/ideen.md"); g(a.mac, "commit", "-q", "-m", "Mac: Ideen gelöscht");
+  g(a.mac, "fetch", "-q", "origin");
+  oeffneMerge(a.mac, a.support);
+  return a;
+}
+test("K1: „hier gelöscht, dort geändert“ + „diese behalten“ (also gelöscht lassen) scheitert nicht nach dem Zusammenführen; die Entscheidung wird festgehalten", () => {
+  const { remote, mac, support } = loeschenAufbau();
+  const r = loes(mac, { support, auswahl: auswahlVon({ "10_notizen/ideen.md": "meine" }) });
+  assert.equal(r.ok, true);
+  assert.equal(existsSync(join(mac, "10_notizen/ideen.md")), false);
+  assert.equal(g(mac, "ls-files", "--", "10_notizen/ideen.md").trim(), "");
+  assert.equal(r.eintraege.length, 1);
+  assert.match(g(mac, "log", "-1", "--format=%s").trim(), /^Konflikt gelöst: „Ideen“ – Löschung übernommen$/);
+  assert.equal(K.rueckgaengigStand(mac, { support }).moeglich, true, "die Rückgängig-Marke ist da");
+  assert.equal(r.abgleich.ok, true, r.abgleich.text);
+  assert.equal(kopfRemote(remote), kopf(mac));
+});
+test("K1: nach einer gelöschten Datei laufen die weiteren Entscheidungen in derselben Runde weiter (nicht still „meine“)", () => {
+  const a = aufbau();
+  const { mac, handy, support } = a;
+  speichern(handy, "10_notizen/ideen.md", "# Ideen\n\n- Neu vom Handy\n", "Handy: Ideen", HANDY_MAIL);
+  speichern(handy, "10_notizen/schlicht.md", "# Schlicht\n\nvom Handy\n", "Handy: schlicht", HANDY_MAIL); g(handy, "push", "-q");
+  g(mac, "rm", "-q", "--", "10_notizen/ideen.md"); g(mac, "commit", "-q", "-m", "Mac: Ideen gelöscht");
+  speichern(mac, "10_notizen/schlicht.md", "# Schlicht\n\nvom Mac\n", "Mac: schlicht");
+  g(mac, "fetch", "-q", "origin");
+  oeffneMerge(mac, support);
+  const r = loes(mac, { support, auswahl: auswahlVon({ "10_notizen/ideen.md": "meine", "10_notizen/schlicht.md": "andere" }) });
+  assert.equal(r.eintraege.length, 2);
+  assert.equal(lies(mac, "10_notizen/schlicht.md"), "# Schlicht\n\nvom Handy\n");
+});
+
+function renameAufbau() {
+  const a = aufbau();
+  g(a.handy, "mv", "10_notizen/kickoff.md", "10_notizen/kickoff-handy.md"); gAls(a.handy, HANDY_MAIL, "commit", "-q", "-m", "Handy: umbenannt"); g(a.handy, "push", "-q");
+  g(a.mac, "mv", "10_notizen/kickoff.md", "10_notizen/kickoff-mac.md"); g(a.mac, "commit", "-q", "-m", "Mac: umbenannt");
+  g(a.mac, "fetch", "-q", "origin");
+  oeffneMerge(a.mac, a.support);
+  return a;
+}
+test("Umbenennung auf beiden Seiten: ein Eintrag „umbenannt“ statt zwei „gelöscht“; mein Name · der andere Name · beide", () => {
+  for (const wahl of ["meine", "andere", "beide"]) {
+    const { mac, support } = renameAufbau();
+    const a = K.ansicht(mac, { support });
+    assert.equal(a.dateien.length, 1, JSON.stringify(a.dateien.map((d) => d.pfad)));
+    const d = a.dateien[0];
+    assert.equal(d.typ, "umbenannt");
+    assert.equal(d.pfad, "10_notizen/kickoff-mac.md"); assert.equal(d.pfadAndere, "10_notizen/kickoff-handy.md");
+    assert.match(d.meine.text, /Karten-App/); assert.match(d.andere.text, /Karten-App/);
+    const r = loes(mac, { support, auswahl: auswahlVon({ [d.pfad]: wahl }) });
+    assert.equal(r.ok, true);
+    const mit = (p) => existsSync(join(mac, p));
+    assert.equal(mit("10_notizen/kickoff.md"), false, "der alte Name ist weg");
+    assert.equal(mit("10_notizen/kickoff-mac.md"), wahl !== "andere", wahl);
+    assert.equal(mit("10_notizen/kickoff-handy.md"), wahl !== "meine", wahl);
+    assert.equal(g(mac, "status", "--porcelain").trim(), "");
+    if (wahl !== "meine") { // Rückgängig stellt „mein Name“ wieder her
+      K.rueckgaengig(mac, { support });
+      assert.equal(mit("10_notizen/kickoff-mac.md"), true); assert.equal(mit("10_notizen/kickoff-handy.md"), false);
+      const an2 = K.ansicht(mac, { support });
+      assert.equal(an2.dateien.length, 1); assert.equal(an2.dateien[0].typ, "umbenannt");
+    }
+  }
+});
+
+test("W1: eine Zusammenführung, die Kortex nicht begonnen hat (Terminal), wird nur angezeigt: Lösen und Später sind 409 „fremd“, nichts wird angefasst", () => {
+  const a = aufbau();
+  speichern(a.handy, "10_notizen/schlicht.md", "# Schlicht\n\nHandy\n", "Handy", HANDY_MAIL); g(a.handy, "push", "-q");
+  speichern(a.mac, "10_notizen/schlicht.md", "# Schlicht\n\nMac\n", "Mac");
+  g(a.mac, "fetch", "-q", "origin");
+  assert.throws(() => g(a.mac, "merge", "--no-edit", "origin/main")); // ohne markieren()
+  schreibe(a.mac, "10_notizen/schlicht.md", "# Schlicht\n\nvon Hand im Terminal gelöst\n");
+  const an = K.ansicht(a.mac, { support: a.support });
+  assert.equal(an.aktiv, true); assert.equal(an.fremd, true);
+  const vorher = kopf(a.mac);
+  assert.throws(() => K.abbrechen(a.mac, { support: a.support }), (e) => e.status === 409 && e.extra.art === "fremd");
+  assert.throws(() => loes(a.mac, { support: a.support, auswahl: auswahlVon({ "10_notizen/schlicht.md": "meine" }) }), (e) => e.status === 409 && e.extra.art === "fremd");
+  assert.ok(existsSync(join(a.mac, ".git", "MERGE_HEAD")));
+  assert.equal(kopf(a.mac), vorher);
+  assert.equal(lies(a.mac, "10_notizen/schlicht.md"), "# Schlicht\n\nvon Hand im Terminal gelöst\n");
+});
+
+test("W1/W2: Später sichert von Hand Bearbeitetes (auch Dateien, die Git selbst zusammengeführt hat) in brain-sicherung/; Unverändertes wird nicht kopiert", () => {
+  const { mac, handy, support } = konfliktAufbau();
+  const sicher = K.abbrechen(mac, { support });
+  assert.equal(sicher.sicherung, null, "nichts von Hand verändert: keine Kopie");
+  assert.equal(existsSync(join(mac, ".git", "MERGE_HEAD")), false);
+  speichern(handy, "10_notizen/frei.md", "# Frei\n\nvom Handy\n", "Handy: frei", HANDY_MAIL); g(handy, "push", "-q");
+  g(mac, "fetch", "-q", "origin");
+  oeffneMerge(mac, support);
+  assert.match(lies(mac, "10_notizen/schlicht.md"), /<<<<<<</);
+  schreibe(mac, "10_notizen/schlicht.md", "# Schlicht\n\nvon Hand gelöst, das ist mir wichtig\n");
+  const a = K.abbrechen(mac, { support });
+  assert.ok(a.sicherung && existsSync(a.sicherung.ordner), "Sicherungsordner genannt");
+  assert.equal(readFileSync(join(a.sicherung.ordner, "10_notizen/schlicht.md"), "utf8"), "# Schlicht\n\nvon Hand gelöst, das ist mir wichtig\n");
+  assert.deepEqual(readdirSync(join(a.sicherung.ordner, "10_notizen")), ["schlicht.md"], "nur Bearbeitetes");
+  assert.equal(existsSync(join(mac, ".git", "MERGE_HEAD")), false);
+  // eine von Git selbst zusammengeführte Datei des anderen Geräts, die danach von Hand verändert wurde: das Zurücknehmen würde sie verlieren → 409 MIT Sicherung
+  g(mac, "fetch", "-q", "origin");
+  oeffneMerge(mac, support);
+  schreibe(mac, "10_notizen/frei.md", "# Frei\n\nvom Handy, aber ich habe weitergeschrieben\n");
+  const e = (() => { try { K.abbrechen(mac, { support }); } catch (x) { return x; } return null; })();
+  assert.equal(e.status, 409); assert.equal(e.extra.art, "geaendert");
+  assert.equal(readFileSync(join(e.extra.sicherung.ordner, "10_notizen/frei.md"), "utf8"), "# Frei\n\nvom Handy, aber ich habe weitergeschrieben\n");
+  assert.match(e.message, /gesichert in/);
+  assert.equal(lies(mac, "10_notizen/frei.md"), "# Frei\n\nvom Handy, aber ich habe weitergeschrieben\n", "nichts verloren");
+});
+
+test("W2: Von Hand bearbeitete Konfliktdatei wird beim Lösen nie überschrieben: 409 „bearbeitet“ mit Dateiliste; nach „Später“ liegt die Bearbeitung gesichert da", () => {
+  const { mac, support } = konfliktAufbau();
+  schreibe(mac, "10_notizen/schlicht.md", "# Schlicht\n\nhier habe ich selbst gelöst\n");
+  const e = (() => { try { loes(mac, { support, auswahl: auswahlVon(alleWahl("meine")) }); } catch (x) { return x; } return null; })();
+  assert.equal(e.status, 409); assert.equal(e.extra.art, "bearbeitet"); assert.deepEqual(e.extra.dateien, ["10_notizen/schlicht.md"]);
+  assert.match(e.message, /Später/);
+  assert.ok(existsSync(join(mac, ".git", "MERGE_HEAD")), "nichts angefasst");
+  assert.equal(lies(mac, "10_notizen/schlicht.md"), "# Schlicht\n\nhier habe ich selbst gelöst\n");
+  const a = K.abbrechen(mac, { support });
+  assert.equal(readFileSync(join(a.sicherung.ordner, "10_notizen/schlicht.md"), "utf8"), "# Schlicht\n\nhier habe ich selbst gelöst\n");
+  assert.equal(lies(mac, "10_notizen/schlicht.md"), "# Schlicht\n\neine Zeile vom Mac\n");
+});
+
+test("W3: Rückgängig merkt den Stand im Support-Ordner: die Sicherung sendet bis zur neuen Entscheidung nichts; die Ansicht kommt NUR von dort (ein „basis“ von außen zählt nicht)", () => {
+  const { remote, mac, support } = konfliktAufbau();
+  loes(mac, { support, auswahl: auswahlVon(alleWahl("andere")) });
+  const serverKopf = kopfRemote(remote);
+  K.rueckgaengig(mac, { support });
+  assert.ok(leseMerker(support).konfliktBasis, "der Stand steht in der Merker-Datei");
+  speichern(mac, "10_notizen/anderes.md", "# Anderes\n", "Mac: etwas Neues"); // die Sicherung WÜRDE sonst senden
+  const r = B.abgleichen(mac, { support });
+  assert.equal(r.art, "konflikt"); assert.equal(r.ok, false);
+  assert.equal(kopfRemote(remote), serverKopf, "es wurde nichts gesendet");
+  const an = K.ansicht(mac, { support, basis: { meine: "0".repeat(40), andere: "1".repeat(40), dateien: ["10_notizen/zeitplan.md"] } }); // fremde Angabe wird ignoriert
+  assert.equal(an.modus, "stand"); assert.equal(an.haelt, true); assert.equal(an.dateien.length, 5);
+  const r2 = loes(mac, { support, auswahl: auswahlVon(alleWahl("meine")) });
+  assert.equal(r2.ok, true);
+  assert.equal(leseMerker(support).konfliktBasis, undefined, "Stand geräumt");
+  assert.equal(r2.abgleich.ok, true, r2.abgleich.text);
+  assert.equal(kopfRemote(remote), kopf(mac));
+});
+
+test("W4: ohne gemerkten Stand lässt sich nichts „neu“ entscheiden; vorgemerkte oder nicht gesicherte Arbeit blockiert (409); seitdem weitergearbeitete Dateien fallen aus dem Stand", () => {
+  const { mac, support } = konfliktAufbau();
+  assert.throws(() => K.loesen(mac, { support, auswahl: [], gesehen: { meine: "a".repeat(40), andere: "b".repeat(40) }, basis: { meine: kopf(mac), andere: kopf(mac), dateien: ["x.md"] } }), (e) => e.status === 409 && e.extra.art === "veraltet");
+  loes(mac, { support, auswahl: auswahlVon(alleWahl("andere")) });
+  K.rueckgaengig(mac, { support });
+  schreibe(mac, "10_notizen/stage.md", "x\n"); g(mac, "add", "--", "10_notizen/stage.md");
+  assert.throws(() => loes(mac, { support, auswahl: auswahlVon(alleWahl("meine")) }), (e) => e.status === 409 && e.extra.art === "geaendert");
+  g(mac, "reset", "-q"); rmSync(join(mac, "10_notizen/stage.md"));
+  schreibe(mac, "10_notizen/schlicht.md", "# Schlicht\n\nnoch nicht gesichert\n");
+  assert.throws(() => loes(mac, { support, auswahl: auswahlVon(alleWahl("meine")) }), (e) => e.status === 409 && e.extra.art === "geaendert");
+  g(mac, "checkout", "-q", "--", "10_notizen/schlicht.md");
+  speichern(mac, "10_notizen/schlicht.md", "# Schlicht\n\nweitergearbeitet\n", "Mac: weiter");
+  const an = K.ansicht(mac, { support });
+  assert.equal(an.dateien.length, 4); assert.deepEqual(an.veraltet, ["10_notizen/schlicht.md"]);
+  assert.equal(lies(mac, "10_notizen/schlicht.md"), "# Schlicht\n\nweitergearbeitet\n");
+  for (const p of ["10_notizen/kickoff.md", "10_notizen/zeitplan.md", "10_notizen/ideen.md", "05_aufgaben/budget.md"]) speichern(mac, p, lies(mac, p) + "\nnoch eine Zeile\n", "Mac: weiter " + p);
+  assert.equal(K.ansicht(mac, { support }).aktiv, false);
+  assert.equal(leseMerker(support).konfliktBasis, undefined, "der Stand ist weg, die Sicherung ist frei");
+});
+
+test("W5: jede Fassung nennt ihre Blob-Kennung; Entscheidungen auf einem anderen Stand als dem gesehenen werden abgelehnt (409 „veraltet“)", () => {
+  const { mac, support } = konfliktAufbau();
+  const a = K.ansicht(mac, { support });
+  const k = a.dateien.find((d) => d.pfad === "10_notizen/kickoff.md");
+  assert.equal(k.meine.blob, g(mac, "rev-parse", `${a.meine}:10_notizen/kickoff.md`).trim());
+  assert.equal(k.andere.blob, g(mac, "rev-parse", `${a.andere}:10_notizen/kickoff.md`).trim());
+  const e = (() => { try { K.loesen(mac, { support, auswahl: auswahlVon(alleWahl("meine")), gesehen: { meine: a.meine, andere: a.meine } }); } catch (x) { return x; } return null; })();
+  assert.equal(e.status, 409); assert.equal(e.extra.art, "veraltet");
+  assert.throws(() => K.loesen(mac, { support, auswahl: auswahlVon(alleWahl("meine")) }), (x) => x.status === 409 && x.extra.art === "veraltet", "ohne gesehen: auch abgelehnt");
+  assert.ok(existsSync(join(mac, ".git", "MERGE_HEAD")));
+});
+
+function grossAufbau() {
+  const a = aufbau();
+  const zeilen = (x) => Array.from({ length: 90_000 }, (_, i) => (i === 45_000 ? x : `Zeile ${i} mit etwas mehr Text, damit die Datei groß wird`)).join("\n") + "\n";
+  speichern(a.mac, "10_notizen/gross.md", zeilen("Basis"), "Mac: groß"); g(a.mac, "push", "-q"); g(a.handy, "pull", "-q");
+  speichern(a.handy, "10_notizen/gross.md", zeilen("vom Handy"), "Handy: groß", HANDY_MAIL); g(a.handy, "push", "-q");
+  speichern(a.mac, "10_notizen/gross.md", zeilen("vom Mac"), "Mac: groß 2");
+  g(a.mac, "fetch", "-q", "origin");
+  oeffneMerge(a.mac, a.support);
+  return a;
+}
+test("W6: eine Datei über 5 MB im Konflikt blockiert nichts: „andere“ wird VOR jedem Eingriff abgelehnt, Später sichert Bearbeitetes als Objekt (_blobs.txt), „diese“ geht ohne Kopie", () => {
+  const { mac, support } = grossAufbau();
+  assert.ok(statSync(join(mac, "10_notizen/gross.md")).size > 5 * 1024 * 1024);
+  const kopfVorher = kopf(mac);
+  assert.throws(() => loes(mac, { support, auswahl: auswahlVon({ "10_notizen/gross.md": "andere" }) }), (e) => e.status === 413);
+  assert.equal(kopf(mac), kopfVorher, "kein Zusammenführungs-Eintrag");
+  assert.ok(existsSync(join(mac, ".git", "MERGE_HEAD")));
+  schreibe(mac, "10_notizen/gross.md", readFileSync(join(mac, "10_notizen/gross.md"), "utf8") + "meine Handarbeit\n");
+  const s = K.abbrechen(mac, { support });
+  assert.equal(s.sicherung.dateien.length, 0); assert.equal(s.sicherung.blobs.length, 1);
+  assert.match(readFileSync(join(s.sicherung.ordner, "_blobs.txt"), "utf8"), /^[0-9a-f]{40} {2}10_notizen\/gross\.md$/m);
+  assert.ok(Number(g(mac, "cat-file", "-s", s.sicherung.blobs[0].id)) > 5 * 1024 * 1024, "das Objekt ist die ganze große Datei");
+  g(mac, "fetch", "-q", "origin");
+  oeffneMerge(mac, support);
+  const r = loes(mac, { support, auswahl: auswahlVon({ "10_notizen/gross.md": "meine" }) });
+  assert.equal(r.ok, true); assert.equal(r.sicherung, null);
+});
+
+test("Mitten im Festhalten gescheitert: was festgehalten ist, bleibt rückgängig-fähig, der Rest wird als Stand gemerkt (die Sicherung sendet nichts)", () => {
+  const a = aufbau();
+  const { mac, handy, support, remote } = a;
+  speichern(handy, "10_notizen/schlicht.md", "# Schlicht\n\nHandy\n", "Handy", HANDY_MAIL);
+  speichern(handy, "10_notizen/zeitplan.md", "# Zeitplan\n\n- 5. Dez: Abnahme\n", "Handy 2", HANDY_MAIL); g(handy, "push", "-q");
+  speichern(mac, "10_notizen/schlicht.md", "# Schlicht\n\nMac\n", "Mac");
+  speichern(mac, "10_notizen/zeitplan.md", "# Zeitplan\n\n- 28. Nov: Abnahme\n", "Mac 2");
+  g(mac, "fetch", "-q", "origin");
+  oeffneMerge(mac, support);
+  const serverKopf = kopfRemote(remote);
+  process.env.BRAIN_KONFLIKT_ABBRUCH_NACH = "1"; // die zweite Entscheidung scheitert (Testhaken im Kern)
+  let fehler;
+  try { loes(mac, { support, auswahl: auswahlVon({ "10_notizen/schlicht.md": "meine", "10_notizen/zeitplan.md": "andere" }) }); } catch (e) { fehler = e; } finally { delete process.env.BRAIN_KONFLIKT_ABBRUCH_NACH; }
+  assert.ok(fehler, "die Entscheidung muss scheitern");
+  assert.equal(fehler.extra.teilweise, true); assert.equal(fehler.extra.festgehalten, 1);
+  assert.equal(K.rueckgaengigStand(mac, { support }).moeglich, true, "die erste Entscheidung steht in der Rückgängig-Marke");
+  assert.deepEqual(leseMerker(support).konfliktBasis.dateien, ["10_notizen/zeitplan.md"]);
+  assert.equal(B.abgleichen(mac, { support }).art, "konflikt");
+  assert.equal(kopfRemote(remote), serverKopf);
+  const r = loes(mac, { support, auswahl: auswahlVon({ "10_notizen/zeitplan.md": "andere" }) });
+  assert.equal(r.ok, true); assert.match(lies(mac, "10_notizen/zeitplan.md"), /5\. Dez/);
+});
+
+test("Namen: unsichtbare Umlenker (Bidi, Breite null) fliegen aus dem Gerätenamen; der Name der Kopie ist höchstens 255 Bytes lang; je Datei der Name DES Geräts dieser Datei", () => {
+  assert.equal(K.geraetAusCommit({ nachricht: "Kortex-Geraet: ‮evil​⁦Gerät⁩\n", email: "" }), "evilGerät");
+  assert.equal(K.geraetAusCommit({ nachricht: "x", email: "a@Mac‮mini.local" }), "Macmini");
+  const a = aufbau();
+  const lang = "日".repeat(80); // 240 Bytes
+  speichern(a.handy, `10_notizen/${lang}.md`, "# Lang\n\nBasis\n", "Handy: lang", HANDY_MAIL);
+  speichern(a.handy, "10_notizen/zeitplan.md", "# Zeitplan\n\n- 5. Dez\n", "Handy: zeit", HANDY_MAIL);
+  g(a.handy, "push", "-q"); g(a.mac, "pull", "-q");
+  speichern(a.handy, `10_notizen/${lang}.md`, "# Lang\n\nHandy\n", "Handy: lang 2", HANDY_MAIL);
+  speichern(a.handy, "10_notizen/zeitplan.md", "# Zeitplan\n\n- 5. Dez: Abnahme\n", "Handy: zeit 2\n\nKortex-Geraet: Pixel Tablet", "x@Pixel.local"); g(a.handy, "push", "-q");
+  speichern(a.mac, `10_notizen/${lang}.md`, "# Lang\n\nMac\n", "Mac: lang");
+  speichern(a.mac, "10_notizen/zeitplan.md", "# Zeitplan\n\n- 28. Nov: Abnahme\n", "Mac: zeit");
+  g(a.mac, "fetch", "-q", "origin");
+  oeffneMerge(a.mac, a.support);
+  const r = loes(a.mac, { support: a.support, auswahl: auswahlVon({ [`10_notizen/${lang}.md`]: "beide", "10_notizen/zeitplan.md": "beide" }) });
+  const kopien = r.kopien.map((k) => k.pfad);
+  for (const k of kopien) { assert.ok(Buffer.byteLength(k.split("/").pop()) <= 255, k); assert.ok(existsSync(join(a.mac, k))); }
+  assert.ok(kopien.some((k) => k.endsWith("zeitplan (Pixel Tablet).md")), kopien.join("|"));
+  assert.ok(kopien.some((k) => /\(Fabios iPhone\)\.md$/.test(k)), kopien.join("|"));
+});
+
 // ───────────────────────────── Kommandozeile (so startet die Werkstatt den Kern) ─────────────────────────────
 test("brain abgleich ansicht|loesen: JSON auf stdout, Fehler als { ok: false, status }", () => {
   const { mac, support } = konfliktAufbau();
@@ -448,11 +700,13 @@ test("brain abgleich ansicht|loesen: JSON auf stdout, Fehler als { ok: false, st
     assert.equal(r.status, 0, r.stderr);
     return JSON.parse(r.stdout);
   };
+  assert.equal(lauf("markieren").ok, true);
   const a = lauf("ansicht", {});
   assert.equal(a.ok, true); assert.equal(a.aktiv, true); assert.equal(a.dateien.length, 5); assert.equal(a.rueckgaengig.moeglich, false);
-  const f = lauf("loesen", { auswahl: [{ pfad: "10_notizen/kickoff.md", wahl: "meine" }] });
+  const gesehen = { meine: a.meine, andere: a.andere };
+  const f = lauf("loesen", { gesehen, auswahl: [{ pfad: "10_notizen/kickoff.md", wahl: "meine" }] });
   assert.equal(f.ok, false); assert.equal(f.status, 400); assert.match(f.fehler, /für jede Datei/);
-  const ok = lauf("loesen", { auswahl: auswahlVon(alleWahl("meine")) });
+  const ok = lauf("loesen", { gesehen, auswahl: auswahlVon(alleWahl("meine")) });
   assert.equal(ok.ok, true); assert.equal(ok.eintraege.length, 5);
   assert.equal(lauf("ansicht", {}).aktiv, false);
   const r = lauf("rueckgaengig");
@@ -468,7 +722,7 @@ test("Umstellung (Phase B) läuft: Sicherung, Holen und Konfliktlösung warten, 
   const serverKopf = kopfRemote(remote);
   assert.equal(B.abgleichen(mac, { support }).art, "umstellung");
   assert.equal(B.holen(mac, { support }).art, "umstellung");
-  assert.throws(() => K.loesen(mac, { support, auswahl: [] }), (e) => e.status === 409 && e.extra.art === "umstellung");
+  assert.throws(() => loes(mac, { support, auswahl: [] }), (e) => e.status === 409 && e.extra.art === "umstellung");
   assert.equal(kopfRemote(remote), serverKopf);
   assert.equal(existsSync(B.sperrDateiFuer(mac, support)), false, "die gemeinsame Sperre wurde gar nicht erst genommen");
   writeFileSync(sperre, JSON.stringify({ pid: 2 ** 22 - 3, zeit: new Date().toISOString() })); // Prozess gibt es nicht
