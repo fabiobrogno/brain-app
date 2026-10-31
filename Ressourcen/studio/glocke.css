@@ -1,0 +1,67 @@
+/* Glocke in der Kopfzeile und Mitteilungsliste (Paket P8b). Maße nach dem freigegebenen Prototyp (app.html, #mitteil=1, bilder/b2-mitteilungen-dunkel.png): Panel 400 px,
+   Kopf 46 px mit „Alle als gelesen“ und Zahnrad, Filter als Chips, Gruppen Heute / Gestern / Früher, Eintrag mit Logo-Kachel 28 px und Punkt für „ungelesen“.
+   Nur Tokens aus studio.css (hell und dunkel über light-dark()); „Bewegung reduzieren“ und prefers-reduced-motion schalten das Hüpfen der Zahl ab. */
+
+/* ---------- Knopf mit Zahl ---------- */
+#knopf-glocke { position: relative; }
+#knopf-glocke[aria-expanded="true"] { color: var(--text); background: var(--auswahl); }
+.glocke-zahl { position: absolute; top: -2px; right: -4px; min-width: 15px; height: 15px; padding: 0 4px; box-sizing: border-box; border-radius: 8px; background: var(--akzent); color: var(--akzent-text);
+  font-size: 9.5px; font-weight: 700; line-height: 1; letter-spacing: 0; display: grid; place-items: center; box-shadow: 0 0 0 2px var(--papier); pointer-events: none; font-variant-numeric: tabular-nums; }
+.glocke-zahl.hupf { animation: glocke-hupf 500ms var(--ease-flow); }
+@keyframes glocke-hupf { 0% { transform: scale(.6); } 45% { transform: scale(1.22); } 100% { transform: scale(1); } }
+:root[data-bewegung="reduziert"] .glocke-zahl.hupf { animation: none; }
+@media (prefers-reduced-motion: reduce) { .glocke-zahl.hupf { animation: none; } }
+
+/* ---------- Panel ---------- */
+.glocke { width: 400px; max-width: calc(100vw - 16px); max-height: min(640px, calc(100vh - 72px)); display: flex; flex-direction: column; overflow: hidden; z-index: 90; outline: 0;
+  background: var(--erhoben); border-radius: var(--r-xl); box-shadow: var(--schatten-menue); color: var(--text); font-size: 13px; }
+.glocke.bs-pop { overflow: hidden; } /* der Popover-Motor darf nur die Höhe begrenzen; gescrollt wird die Liste */
+.gl-kopf { flex: none; display: flex; align-items: center; gap: 6px; height: 46px; padding: 0 8px 0 16px; border-bottom: 1px solid var(--linie); }
+.gl-kopf b { margin-right: auto; font-size: 13.5px; font-weight: 600; }
+.gl-filter { flex: none; display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 12px 4px; }
+.gl-chip { height: 24px; padding: 0 10px; border: 1px solid var(--linie); border-radius: var(--r-pille); background: transparent; color: var(--text-2); font: inherit; font-size: 11.5px; cursor: pointer;
+  transition: background-color var(--d-fast), border-color var(--d-fast), color var(--d-fast); }
+.gl-chip:hover { background: var(--hover); color: var(--text); }
+.gl-chip[aria-pressed="true"] { background: var(--auswahl); color: var(--text); border-color: var(--linie-stark); }
+.gl-chip:focus-visible, .gl-link:focus-visible { outline: 2px solid var(--akzent); outline-offset: 1px; }
+.gl-liste { flex: 1 1 auto; min-height: 120px; overflow-y: auto; overscroll-behavior: contain; padding: 4px 6px 8px; scrollbar-width: thin; }
+.gl-gruppe { padding: 10px 10px 4px; font-size: 11px; font-weight: 500; color: var(--text-3); }
+.gl-gruppe:first-child { padding-top: 6px; }
+
+/* ---------- Eintrag ---------- */
+.gl-eintrag { position: relative; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; padding: 10px 28px 10px 10px; border-radius: var(--r-l); outline: 0;
+  transition: background-color var(--d-fast); }
+.gl-eintrag:hover { background: var(--hover); }
+.gl-eintrag:focus-visible { background: var(--auswahl); box-shadow: var(--auswahl-ring); }
+.gl-logo { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: var(--seite); border: 1px solid var(--linie); color: var(--text); }
+.gl-logo .sym { color: var(--text-2); }
+.gl-text { min-width: 0; }
+.gl-satz { line-height: 1.45; overflow-wrap: anywhere; }
+.gl-satz b { font-weight: 600; }
+.gl-punkt { display: inline-block; position: absolute; right: 12px; top: 16px; width: 7px; height: 7px; border-radius: 50%; background: var(--akzent); }
+.gl-rest { margin-top: 1px; font-size: 12px; line-height: 1.4; color: var(--text-2); overflow-wrap: anywhere; }
+.gl-meta { margin-top: 2px; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; font-size: 11.5px; line-height: 1.4; color: var(--text-3); }
+.gl-marke { display: inline-flex; align-items: center; gap: 3px; font-weight: 500; }
+.gl-marke.abw { color: var(--rot); }
+.gl-marke.warn { color: var(--gelb); }
+.gl-sep { opacity: .7; }
+.gl-aktionen { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 4px; }
+.gl-aktionen .bs-knopf { height: 26px; padding: 0 10px; font-size: 12px; }
+/* Abweisung: Warnung, nicht Fehler — roter Ring um das Logo und eine zarte rote Fläche */
+.gl-eintrag.abweisung .gl-logo { box-shadow: 0 0 0 2px var(--rot-weich); border-color: var(--rot-rand); }
+.gl-eintrag.abweisung { background: color-mix(in srgb, var(--rot) 4%, transparent); }
+.gl-eintrag.abweisung:hover { background: color-mix(in srgb, var(--rot) 8%, var(--hover)); }
+.gl-eintrag.leseverbot .gl-logo { box-shadow: 0 0 0 2px var(--gelb-weich); border-color: var(--gelb-rand); }
+.gl-hinweis { margin-top: 8px; display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 4px 7px; align-items: start; padding: 8px 10px; border-radius: var(--r); background: var(--gelb-weich); border: 1px solid var(--gelb-rand);
+  font-size: 12px; line-height: 1.4; color: var(--text); }
+.gl-hinweis > .sym { margin-top: 1px; color: var(--gelb); }
+.gl-hinweis .bs-knopf { grid-column: 2; justify-self: start; margin-top: 2px; height: 26px; padding: 0 10px; font-size: 12px; }
+
+/* ---------- Leerer Zustand und Fuß ---------- */
+.gl-leer { padding: 36px 24px 40px; text-align: center; color: var(--text-3); }
+.gl-leer-zeichen { width: 40px; height: 40px; margin: 0 auto 10px; border-radius: 50%; display: grid; place-items: center; background: var(--seite-2); color: var(--text-3); }
+.gl-leer-titel { font-size: 13px; font-weight: 600; color: var(--text); }
+.gl-leer p { margin: 4px 0 0; font-size: 12.5px; line-height: 1.45; }
+.gl-fuss { flex: none; border-top: 1px solid var(--linie); padding: 6px 10px; display: flex; }
+.gl-link { display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 8px; border: 0; border-radius: var(--r-s); background: transparent; color: var(--akzent-tinte); font: inherit; font-size: 12px; font-weight: 500; cursor: pointer; }
+.gl-link:hover { background: var(--hover); }
