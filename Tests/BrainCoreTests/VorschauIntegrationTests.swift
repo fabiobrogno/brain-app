@@ -3,7 +3,7 @@ import Foundation
 import CryptoKit
 @testable import BrainCore
 
-/// Ende-zu-Ende der Vorschau mit der echten Werkstatt (Node): Die Dienste des Assistenten fahren mit Platzhaltern (`--mit-ki`) bis „Vault angelegt“,
+/// Ende-zu-Ende der Vorschau mit der echten Werkstatt (Node): Die Routen des Assistenten (Vault anlegen, KI erkennen, verbinden, Probe) fahren mit Platzhaltern (`--mit-ki`) bis „Vault angelegt“,
 /// KI verbunden und Probe — und danach ist außerhalb des Vorschau-Ordners NICHTS entstanden oder verändert.
 /// Das „echte“ HOME ist ein Temp-Ordner mit Ködern (eigene .gitconfig, .claude.json, ein claude im „echten“ ~/.local/bin); die
 /// geerbte Umgebung der Kindprozesse ist ausdrücklich synthetisch (`basisUmgebung`): das echte HOME dieses Rechners kommt nicht vor.
@@ -46,16 +46,57 @@ private func abdruck(_ ordner: URL) -> [String] {
     }.sorted()
 }
 
-private func baueDienste(_ modus: VorschauModus, echtesHome: URL, node: URL) -> (WerkstattDienste, BrueckenVerbindung) {
+/// Die Routen der Werkstatt, wie sie der Assistent früher aufrief — jetzt nur noch als Testhilfe über die Brücke.
+private struct Routen {
+    let modus: VorschauModus
+    let bruecke: BrueckenVerbindung
+
+    func rufe(_ methode: String, _ pfad: String, _ body: [String: Any]? = nil) async throws -> [String: Any] {
+        let daten = try body.map { try JSONSerialization.data(withJSONObject: $0) }
+        return try WerkstattAntwort.auswerten(try await bruecke.anfrage(methode: methode, pfad: pfad, body: daten))
+    }
+
+    /// Name des aktiven Vaults laut `vaults.json` (der Ordner muss existieren), sonst nil.
+    func aktiverVaultName() -> String? {
+        guard let url = VaultListe.aktiverVault(modus.pfade, home: modus.home) else { return nil }
+        var istOrdner: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &istOrdner), istOrdner.boolValue else { return nil }
+        return VaultListe.lade(modus.pfade, home: modus.home)?.anzeigename(fuer: url) ?? url.lastPathComponent
+    }
+
+    func legeVaultAn(art: String, name: String?, ordner: String?) async throws -> (name: String, pfad: String) {
+        var b: [String: Any] = ["art": art]
+        if let name { b["name"] = name }
+        if let ordner { b["ordner"] = ordner }
+        let j = try await rufe("POST", "/api/vaults/neu", b)
+        let v = try #require(j["vault"] as? [String: Any])
+        return (try #require(v["name"] as? String), try #require(v["pfad"] as? String))
+    }
+
+    /// Die Antwort von `/api/ki/erkennen`: Agenten (Befehl) und Programme (App oder Befehl).
+    func erkenneKIs() async throws -> [String: Any] { try await rufe("GET", "/api/ki/erkennen?neu=1") }
+
+    func verbindeClaude() async throws -> Bool {
+        let j = try await rufe("POST", "/api/mcp/verbinden", ["ziel": "claude", "zugriff": "posteingang"])
+        return (j["schonVerbunden"] as? Bool) == true
+    }
+}
+
+private func agent(_ j: [String: Any], _ id: String) -> [String: Any]? {
+    (j["agenten"] as? [[String: Any]])?.first { $0["id"] as? String == id }
+}
+private func gefunden(_ j: [String: Any], _ id: String) -> Bool {
+    agent(j, id)?["pfad"] is String
+        || ((j["programme"] as? [[String: Any]])?.first { $0["id"] as? String == id }?["gefunden"] as? Bool) == true
+}
+
+private func baueRouten(_ modus: VorschauModus, echtesHome: URL, node: URL) -> (Routen, BrueckenVerbindung) {
     // Geerbte Umgebung des „Starters“: das echte HOME (Köder) samt PATH mit dessen ~/.local/bin, Homebrew und /usr/local.
     let geerbt = ["HOME": echtesHome.path, "PATH": "\(echtesHome.path)/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
                   "GIT_CONFIG_GLOBAL": echtesHome.path + "/.gitconfig", "SSH_AUTH_SOCK": "/private/tmp/echter-agent"]
     let bruecke = BrueckenVerbindung(node: node, vault: nil, skript: werkstattSkript, umgebung: modus.kindVorgaben,
                                      arbeitsordner: modus.support, basisUmgebung: geerbt)
-    let dienste = WerkstattDienste(pfade: modus.pfade, git: modus.gitPruefer(), home: modus.home) { m, p, b in
-        try await bruecke.anfrage(methode: m, pfad: p, body: b)
-    }
-    return (dienste, bruecke)
+    return (Routen(modus: modus, bruecke: bruecke), bruecke)
 }
 
 @Test(.enabled(if: moeglich)) func vorschauMitKiFaehrtBisVaultKiUndProbeUndLaesstDasEchteHomeUnberuehrt() async throws {
@@ -64,41 +105,41 @@ private func baueDienste(_ modus: VorschauModus, echtesHome: URL, node: URL) -> 
     let vorher = abdruck(echt)
     let modus = VorschauModus(ordner: vorschauTempOrdner("kortex-vorschau"), mitKi: true)
     try modus.vorbereiten()
-    let (dienste, bruecke) = baueDienste(modus, echtesHome: echt, node: node)
+    let (dienste, bruecke) = baueRouten(modus, echtesHome: echt, node: node)
     defer { Task { await bruecke.beende() } }
 
     // frischer Nutzer: kein Vault
-    #expect(await dienste.aktiverVault() == nil)
+    #expect(dienste.aktiverVaultName() == nil)
 
     // Vault anlegen ohne eigenen Ordner: Standardort ist <Vorschau-home>/Kortex
-    let vault = try await dienste.legeVaultAn(art: .vorlage, name: nil, ordner: nil)
+    let vault = try await dienste.legeVaultAn(art: "vorlage", name: nil, ordner: nil)
     #expect(URL(fileURLWithPath: vault.pfad).resolvingSymlinksInPath().path == modus.home.appendingPathComponent("Kortex").resolvingSymlinksInPath().path)
     #expect(FileManager.default.fileExists(atPath: modus.home.appendingPathComponent("Kortex/.git").path))
     #expect(FileManager.default.fileExists(atPath: modus.support.appendingPathComponent("vaults.json").path))
-    #expect(await dienste.aktiverVault()?.name == vault.name)
+    #expect(dienste.aktiverVaultName() == vault.name)
 
     // KI: nur die Platzhalter im Vorschau-Ordner werden gefunden, nie das claude im „echten“ HOME
     // Die Versionsabfrage hat ein Zeitlimit; unter Last darf sie einmal leer bleiben — dann gilt eine Wiederholung.
-    var programme = try await dienste.erkenneKIs()
-    var version = programme.first { $0.id == "claude" }?.version
+    var kis = try await dienste.erkenneKIs()
+    var version = agent(kis, "claude")?["version"] as? String
     for _ in 0..<3 where version == nil {
-        programme = try await dienste.erkenneKIs()
-        version = programme.first { $0.id == "claude" }?.version
+        kis = try await dienste.erkenneKIs()
+        version = agent(kis, "claude")?["version"] as? String
     }
-    #expect(programme.first { $0.id == "claude" }?.gefunden == true)
+    #expect(gefunden(kis, "claude"))
     #expect(version == "2.1.0")
-    #expect(programme.first { $0.id == "codex" }?.gefunden == true)
-    #expect(programme.first { $0.id == "cursor-agent" }?.gefunden == true)
-    #expect(programme.first { $0.id == "gemini" }?.gefunden == false)
+    #expect(gefunden(kis, "codex"))
+    #expect(gefunden(kis, "cursor-agent"))
+    #expect(!gefunden(kis, "gemini"))
 
     // Verbinden schreibt nur in die Vorschau-Konfiguration
-    #expect(try await dienste.verbinde(.claude, umstellen: false, profil: nil, zugriff: KiZugriff(stufe: .standard, ausdruecklich: false)) == .verbunden)
+    #expect(try await dienste.verbindeClaude() == false, "erstes Verbinden trägt ein")
     #expect(FileManager.default.fileExists(atPath: modus.home.appendingPathComponent(".claude.json").path))
-    #expect(try await dienste.verbinde(.claude, umstellen: false, profil: nil, zugriff: KiZugriff(stufe: .standard, ausdruecklich: false)) == .schonVerbunden)
+    #expect(try await dienste.verbindeClaude() == true, "zweites Verbinden: schon verbunden")
 
     // Probe-Frage über den MCP-Server des neuen Vaults
-    let ergebnis = try await dienste.probe(frage: "Vault")
-    #expect(!ergebnis.treffer.isEmpty)
+    let ergebnis = try await dienste.rufe("POST", "/api/probe", ["frage": "Vault"])
+    #expect(!(ergebnis["treffer"] as? [Any] ?? []).isEmpty)
 
     // Nichts außerhalb des Vorschau-Ordners
     #expect(abdruck(echt) == vorher, "das „echte“ HOME ist unverändert")
@@ -112,34 +153,33 @@ private func baueDienste(_ modus: VorschauModus, echtesHome: URL, node: URL) -> 
     let vorher = abdruck(echt)
     let modus = VorschauModus(ordner: vorschauTempOrdner("kortex-vorschau"))
     try modus.vorbereiten()
-    let (dienste, bruecke) = baueDienste(modus, echtesHome: echt, node: node)
+    let (dienste, bruecke) = baueRouten(modus, echtesHome: echt, node: node)
     defer { Task { await bruecke.beende() } }
 
     // Ein Ordner im „echten“ HOME wird abgelehnt (auch wenn ihn der Nutzer im Dialog wählt) — der Fehler ist lesbar
     do {
-        _ = try await dienste.legeVaultAn(art: .leer, name: "Echt", ordner: echt.appendingPathComponent("Kortex").path)
+        _ = try await dienste.legeVaultAn(art: "leer", name: "Echt", ordner: echt.appendingPathComponent("Kortex").path)
         Issue.record("Ein Ordner im echten HOME hätte abgelehnt werden müssen")
     } catch let fehler as EinrichtungsFehler {
         #expect(fehler.meldung.contains("Vorschau"), "\(fehler.meldung)")
     }
-    #expect(await dienste.aktiverVault() == nil)
+    #expect(dienste.aktiverVaultName() == nil)
 
-    _ = try await dienste.legeVaultAn(art: .leer, name: nil, ordner: nil)
-    #expect(await dienste.aktiverVault() != nil)
-    let programme = try await dienste.erkenneKIs()
-    #expect(programme.allSatisfy { !$0.gefunden }, "frisch installiert: keine KI — auch nicht das claude im „echten“ ~/.local/bin oder in Homebrew")
+    _ = try await dienste.legeVaultAn(art: "leer", name: nil, ordner: nil)
+    #expect(dienste.aktiverVaultName() != nil)
+    let kis = try await dienste.erkenneKIs()
+    let alle = ((kis["agenten"] as? [[String: Any]] ?? []).map { $0["pfad"] is String }
+        + (kis["programme"] as? [[String: Any]] ?? []).map { ($0["gefunden"] as? Bool) == true } + [(kis["cursorDa"] as? Bool) == true])
+    #expect(alle.allSatisfy { !$0 }, "frisch installiert: keine KI — auch nicht das claude im „echten“ ~/.local/bin oder in Homebrew")
     #expect(abdruck(echt) == vorher)
 }
 
-@Test(.enabled(if: moeglich)) func vorschauOhneGitZeigtFehltUndInstalliertNichts() async throws {
-    let node = try #require(findeNode())
-    let echt = try baueEchtesHome()
+@Test func vorschauOhneGitZeigtFehltUndInstalliertNichts() async throws {
     let modus = VorschauModus(ordner: vorschauTempOrdner("kortex-vorschau"), ohneGit: true)
     try modus.vorbereiten()
-    let (dienste, bruecke) = baueDienste(modus, echtesHome: echt, node: node)
-    defer { Task { await bruecke.beende() } }
+    let git = modus.gitPruefer()
 
-    #expect(await dienste.gitStand() == .fehlt)
-    #expect(await dienste.gitInstallationStarten() != .dialogAusgeloest, "der Klick „installieren“ löst in der Vorschau keinen Apple-Dialog aus")
-    #expect(await dienste.gitStand() == .fehlt)
+    #expect(await git.pruefe() == .fehlt)
+    #expect(await git.starteInstallation() != .dialogAusgeloest, "der Klick „installieren“ löst in der Vorschau keinen Apple-Dialog aus")
+    #expect(await git.pruefe() == .fehlt)
 }

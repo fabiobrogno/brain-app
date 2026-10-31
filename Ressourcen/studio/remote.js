@@ -1,5 +1,5 @@
 // Dialog „Remote hinzufügen“: Adresse eingeben, prüfen lassen, verbinden.
-import { h, dialog, arbeitBeginnt, ausTabelle } from "./hilfen.js";
+import { h, dialog, dialogEinmalig, arbeitBeginnt, ausTabelle } from "./hilfen.js";
 import { textfeld, knopf as baueKnopf, setzeLaedt } from "./bausteine.js";
 import { symbol } from "./symbole.js";
 import { markenLogo } from "./marken.js";
@@ -24,7 +24,8 @@ export function istGitAdresse(s) {
 const zeichen = (name, groesse) => { const s = symbol(name, groesse); s.setAttribute("aria-hidden", "true"); return s; };
 
 // beiStandNeu(stand): die App frischt nach unklarem Ausgang (Zeitüberschreitung) Info, Vault-Liste und Git-Status auf.
-export function oeffneRemoteDialog({ beiFertig, beiStandNeu } = {}) {
+export function oeffneRemoteDialog(opt = {}) { return dialogEinmalig("remote", () => baueRemoteDialog(opt)); }
+function baueRemoteDialog({ beiFertig, beiStandNeu } = {}) {
   ladeCss();
   let verbunden = false;
   let gemeldet = false;

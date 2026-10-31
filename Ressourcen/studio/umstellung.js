@@ -3,7 +3,7 @@
 //   Befund in vier Gruppen · Entscheidungen · Schritt 1 Probelauf an einer Kopie · Schritt 2 Umstellen · Rückweg · Protokoll · Kopie löschen.
 //   Nach Phase A (stand.phase === "A"): Abschluss = den alten Werkzeug-Ordner aufräumen (Freigabe-Tor, Probelauf, Aufräumen, Rückweg; stand.phaseB) und die Angebote „Aufräumen nach der Umstellung“.
 // Geschrieben wird nur nach einem Klick (die Routen verlangen bestaetigt: true). Kein innerHTML mit fremden Daten: alles über h() und textContent.
-import { h, dialog, arbeitBeginnt, toast, speichereLokal, leseLokal } from "./hilfen.js";
+import { h, dialog, dialogEinmalig, arbeitBeginnt, toast, speichereLokal, leseLokal } from "./hilfen.js";
 import { knopf as baueKnopf, hakenFeld } from "./bausteine.js";
 import { symbol } from "./symbole.js";
 import { api as standardApi, nichtVertraut, ausgangUnklar } from "./api.js";
@@ -88,7 +88,9 @@ export function baueUmstellungBanner({ beiOeffnen, beiZu } = {}) {
 // ---------------------------------------------------------------- Dialog
 // vault = Pfad des offenen Vaults (merkt den Probelauf), vertraut = Stand aus /api/info (null = unbekannt), beiVertrauen() öffnet die Vertrauensfrage der App,
 // beiAenderung() meldet der App, dass sich Umstellung oder Vertrauen geändert haben (Status der Menüleiste neu lesen, Hinweis neu prüfen).
-export function oeffneUmstellungDialog({ api = standardApi, vault = null, vertraut = null, beiVertrauen, beiAenderung, beiZu } = {}) {
+// Es gibt nur einen: ein zweiter Aufruf (Menü, Banner, Einstellungen) holt den offenen Dialog nach vorn und liefert dessen Rückgabe.
+export function oeffneUmstellungDialog(opt = {}) { return dialogEinmalig("umstellung", () => baueUmstellungDialog(opt)); }
+function baueUmstellungDialog({ api = standardApi, vault = null, vertraut = null, beiVertrauen, beiAenderung, beiZu } = {}) {
   ladeUmstellungCss();
   const S = {
     ansicht: "haupt", laedt: true, fehler: null, befund: null, stand: null, nichtVertraut: vertraut === false,

@@ -238,6 +238,7 @@ test("Konto hinzufügen: öffnet den Ablauf „KI verbinden“ beim Konto; eigen
   await expect(zelle(page, k.id, vault)).toHaveAttribute("data-stufe", "gesperrt");
   // gleicher Name zweimal: die Werkstatt lehnt ab, der Satz steht im Formular
   await page.click('[data-aktion="konto-hinzu"][data-programm="claude"]');
+  await expect(dlg(page, "ki-verbinden").locator('[data-kv="konto-neu"]')).toBeVisible(); // erst wenn das Formular steht: ein späteres Neuzeichnen verschluckte sonst den Namen
   await dlg(page, "ki-verbinden").locator('[data-kx="neu-name"]').fill("kunde müller");
   await dlg(page, "ki-verbinden").locator('[data-aktion="konto-neu-ok"]').click();
   await expect(dlg(page, "ki-verbinden").locator('[data-kx="neu-fehler"]')).toContainText("Ein Konto mit diesem Namen gibt es schon");

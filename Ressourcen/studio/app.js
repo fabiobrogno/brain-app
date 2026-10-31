@@ -1517,7 +1517,7 @@ async function ansehenAktivitaet(ziel, ereignisse = []) {
   if (!da) return;
   if (aufgabe) await oeffneAufgabeDatei(pfad); else await oeffne(pfad, { ausListe: true });
 }
-const mitteilungen = erzeugeMitteilungen({ api, toast, beiAnsehen: ansehenAktivitaet });
+const mitteilungen = erzeugeMitteilungen({ api, toast, beiAnsehen: ansehenAktivitaet, vaultPfad: () => S.info?.vault || null, beiWechseln: (pfad) => wechsleVault(pfad) });
 const glocke = erzeugeGlocke({ mitteilungen, api, beiAnsehen: ansehenAktivitaet, beiEinstellungen: (ziel) => oeffneEinstellungenSeite(ziel) }); // P8b: Zähler und Liste (⌘⇧B, Register „mitteilungen“)
 function beiLiveEreignisse(liste) {
   mitteilungen.verarbeiteLive(liste); // Ereignisse typ „aktivitaet“ (Protokoll der KIs): Hinweis, Zähler; alle anderen übergeht es

@@ -449,3 +449,34 @@ test("k2: eine offene Zusammenführung wird über Git selbst erkannt (auch in ei
   assert.ok(existsSync(join(wt, "00_inbox/n.md")));
   h.ereignisse.beende();
 });
+
+test("Rückgängig und Wiederherstellen mit Vault-Angabe: nur der offene Vault zählt, ein anderer → 409 anderer-vault und nichts wird verändert", async () => {
+  const { rufe, ablage, d, support, kennung } = aufbau();
+  const rel = "00_inbox/2026-10-31_vault.md", inhalt = "# Vault\n";
+  const e = ablage(rel, inhalt);
+  const anderer = tmp("akt-r-anderer-");
+  schreibe(anderer, "brain.config.json", "{}\n");
+  writeFileSync(join(support, "vaults.json"), JSON.stringify({ vaults: [{ name: "Haupt", pfad: d, farbe: "#5B8DEF" }, { name: "Firma", pfad: anderer, farbe: "#E0A030" }], aktiv: d }));
+  // der Eintrag gehört zu „Haupt“, offen ist „Haupt“: ein bekannter anderer Vault und ein unbekannter Pfad werden abgelehnt
+  for (const vault of [anderer, "/gibt/es/nicht"]) {
+    const r = await rufe("POST", "/api/aktivitaet/rueckgaengig", { id: e.id, vault });
+    assert.equal(r.status, 409, vault); assert.equal(r.j.art, "anderer-vault");
+    assert.match(r.j.fehler, /anderen Vault/);
+    assert.equal(readFileSync(join(d, rel), "utf8"), inhalt, "die Datei bleibt");
+    assert.equal(existsSync(join(support, "aktivitaet", "papierkorb", kennung)), false, "kein Papierkorb, nichts angefasst");
+  }
+  assert.equal((await rufe("POST", "/api/aktivitaet/rueckgaengig", { id: e.id, vault: 42 })).status, 400);
+  assert.equal((await rufe("GET", "/api/aktivitaet")).j.ereignisse.find((x) => x.id === e.id).zurueckgenommen, null, "nicht als zurückgenommen vermerkt");
+  // der offene Vault geht
+  const r = await rufe("POST", "/api/aktivitaet/rueckgaengig", { id: e.id, vault: d });
+  assert.equal(r.status, 200, JSON.stringify(r.j)); assert.equal(r.j.art, "entfernt");
+  assert.equal(existsSync(join(d, rel)), false);
+  // Wiederherstellen: gleiche Regel
+  const w = await rufe("POST", "/api/aktivitaet/wiederherstellen", { id: e.id, vault: anderer });
+  assert.equal(w.status, 409); assert.equal(w.j.art, "anderer-vault");
+  assert.equal(existsSync(join(d, rel)), false, "nichts wiederhergestellt");
+  assert.equal((await rufe("POST", "/api/aktivitaet/wiederherstellen", { id: e.id, vault: d })).status, 200);
+  assert.equal(readFileSync(join(d, rel), "utf8"), inhalt);
+  // ohne Angabe wie bisher (der offene Vault)
+  assert.equal((await rufe("POST", "/api/aktivitaet/rueckgaengig", { id: e.id })).status, 200);
+});

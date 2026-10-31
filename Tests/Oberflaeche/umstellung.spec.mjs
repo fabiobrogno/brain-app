@@ -404,3 +404,46 @@ test("Dunkel: Befund, Probelauf rot und Rückweg lesbar (Bildschirmfotos)", asyn
   await d.locator('[data-aktion="umstellung-protokoll"]').click();
   await ruhig(page); await page.screenshot({ path: shot("protokoll-dunkel") });
 });
+
+// ---------------------------------------------------------------- Nur ein Dialog (dialogEinmalig in hilfen.js)
+test("Zweiter Aufruf per Befehl oder Menü stapelt keinen zweiten Dialog: der offene bekommt den Fokus", async ({ page }) => {
+  await start(page);
+  await expect(page.locator("#dialog-host .schleier")).toHaveCount(1);
+  // Fokus weg aus dem Dialog (wie nach einem Klick ins Menü), dann zweimal kurz hintereinander derselbe Befehl
+  await page.evaluate(() => { document.activeElement?.blur?.(); });
+  await page.evaluate(() => { window.studio.befehl("umstellung"); window.studio.befehl("umstellung"); });
+  await expect.poll(() => page.evaluate(() => !!document.activeElement?.closest?.('[data-dialog="umstellung"]'))).toBe(true);
+  await ruhig(page); // der Befehl lädt das Modul asynchron: erst danach wäre ein zweiter Dialog sichtbar
+  await expect(page.locator("#dialog-host .schleier")).toHaveCount(1);
+  await expect(dlg(page)).toHaveCount(1);
+  // Schließen gibt die Art wieder frei: der nächste Aufruf öffnet normal
+  await page.keyboard.press("Escape");
+  await expect(dlg(page)).toHaveCount(0);
+  await page.evaluate(() => window.studio.befehl("umstellung"));
+  await expect(dlg(page)).toHaveCount(1);
+});
+
+test("dialogEinmalig: je Art ein Dialog; derselbe Rückgabewert; Fokus nur, wenn nichts anderes darüber liegt", async ({ page }) => {
+  await start(page, {}, { oeffnen: false });
+  const r = await page.evaluate(async () => {
+    const m = await import("/hilfen.js");
+    const mach = (titel) => () => m.dialog({ titel, rumpf: [m.h("input", { type: "text", "data-feld": titel })], knoepfe: [] });
+    const a1 = m.dialogEinmalig("test-a", mach("A"));
+    const a2 = m.dialogEinmalig("test-a", mach("A zweimal"));
+    const nachA = document.querySelectorAll("#dialog-host .schleier").length;
+    const b = m.dialogEinmalig("test-b", mach("B")); // andere Art: eigener Dialog, liegt oben
+    document.activeElement?.blur?.();
+    const a3 = m.dialogEinmalig("test-a", mach("A dreimal")); // A liegt unter B: kein Fokusraub
+    const fokusInA3 = !!document.activeElement?.closest?.("[data-feld='A']");
+    const anzahl = document.querySelectorAll("#dialog-host .schleier").length;
+    b.schliessen();
+    document.activeElement?.blur?.();
+    m.dialogEinmalig("test-a", mach("A viertens")); // jetzt oben: bekommt den Fokus
+    const fokusInA = !!document.activeElement?.closest?.("[data-feld='A']");
+    a1.schliessen();
+    const nachZu = document.querySelectorAll("#dialog-host .schleier").length;
+    const neu = m.dialogEinmalig("test-a", mach("A neu"));
+    return { gleich: a1 === a2 && a2 === a3, nachA, anzahl, fokusInA3, fokusInA, nachZu, neuAnders: neu !== a1, nachNeu: document.querySelectorAll("#dialog-host .schleier").length };
+  });
+  expect(r).toEqual({ gleich: true, nachA: 1, anzahl: 2, fokusInA3: false, fokusInA: true, nachZu: 0, neuAnders: true, nachNeu: 1 });
+});

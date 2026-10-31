@@ -1,7 +1,7 @@
 // werkstatt/ki-programme/programme.mjs — die KI-Programme, in deren Einstellungsdatei Kortex den MCP-Server „brain“ einträgt.
 // Jedes Programm ist nur eine BESCHREIBUNG; das Verhalten (Sicherung, atomar schreiben, Symlinks, kaputte Dateien nie anfassen,
 // nur den eigenen Eintrag trennen) steckt einmal in datei-adapter.mjs. Quellen und Stand der Formate: docs/plaene/ki-programme.md.
-//   id          Wert von `ziel` bei /api/mcp/verbinden|trennen|konfiguration (gleich KiZiel.ziel in Swift)
+//   id          Wert von `ziel` bei /api/mcp/verbinden|trennen|konfiguration
 //   name        Anzeigename
 //   anzeige     Dateiort für Menschen („~/…“)
 //   datei       ({ home, ordner? }) → absoluter Pfad. `ordner` ersetzt den Standard-Konfigurationsordner (für spätere Profile je Programm).

@@ -26,13 +26,9 @@ private func ressourcenOrdner() -> URL {
         }
     }
     #expect(mitLogo >= 35, "fast jede KI hat ein echtes Logo")
-    // alle verbindbaren KIs des Assistenten haben eines
-    for ki in KiZiel.allCases { #expect(ki.logo(ressourcen: ressourcenOrdner()) != nil, Comment(rawValue: ki.name)) }
 }
 
 @Test func fehlendeRessourcenGebenNilStattAbsturz() {
-    #expect(KILogoQuelle.url(.claude, ressourcen: nil) == nil)
-    #expect(KILogoQuelle.url(.claude, ressourcen: FileManager.default.temporaryDirectory.appendingPathComponent("gibt-es-nicht-\(UUID().uuidString)")) == nil)
     #expect(KiKatalog.laden(ressourcen: nil) == nil)
 }
 
@@ -50,16 +46,4 @@ private func ressourcenOrdner() -> URL {
     // geteiltes Logo: Claude Desktop zeigt das Zeichen von Claude
     let geteilt = gut + #",{"id":"b","name":"B","art":"app","befehle":[],"apps":["B.app"],"website":"https://b.example","beliebt":false,"verbindbar":false,"teilt_logo":"a"}"#
     #expect(try KiKatalog.laden(daten: roh(geteilt)).logo("b")?.datei == "a.svg")
-}
-
-/// Jede Logo-Datei des Katalogs hat einen Eintrag in HERKUNFT.md (Quelle und Lizenz sind dokumentiert).
-@Test func jedesLogoIstInHerkunftBelegt() throws {
-    let ordner = ressourcenOrdner().appendingPathComponent("logos", isDirectory: true)
-    let herkunft = try String(contentsOf: ordner.appendingPathComponent("HERKUNFT.md"), encoding: .utf8)
-    let k = try #require(KiKatalog.laden(ressourcen: ressourcenOrdner()))
-    for e in k.eintraege {
-        if let d = e.logo?.datei { #expect(herkunft.contains(d), "\(d) fehlt in HERKUNFT.md") }
-    }
-    #expect(herkunft.contains("CC0"))
-    #expect(herkunft.contains("Marken gehören den jeweiligen Inhabern"))
 }

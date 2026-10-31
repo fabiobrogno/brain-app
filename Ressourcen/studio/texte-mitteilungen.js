@@ -14,6 +14,9 @@ export const TM = {
   },
   weitere: (n) => (n === 1 ? "und 1 weitere Meldung" : `und ${n} weitere Meldungen`),
   ansehen: "Ansehen",
+  // „Ansehen“ eines Hinweises, der zu einem anderen als dem offenen Vault gehört
+  andererVault: (name) => (name ? `Das gehört zu Vault „${name}“ – wechseln?` : "Das gehört zu einem anderen Vault – wechseln?"),
+  wechseln: "Wechseln",
   rueckgaengig: "Rückgängig",
   rueckgaengigLang: (wer) => `Rückgängig: ${wer}`,
   zurueck: "Zurückgenommen",

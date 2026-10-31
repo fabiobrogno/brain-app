@@ -57,11 +57,11 @@ public struct WerkstattErfassenSpeicher: ErfassenSpeicher {
             antwort = try await verbindung.anfrage(methode: "POST", pfad: pfad, body: try JSONSerialization.data(withJSONObject: koerper))
         } catch {
             await verbindung.beende()
-            throw ErfassenFehler(WerkstattDienste.verbindungsfehler(error).meldung)
+            throw ErfassenFehler(WerkstattAntwort.verbindungsfehler(error).meldung)
         }
         await verbindung.beende()
         do {
-            let j = try WerkstattDienste.auswerten(antwort)
+            let j = try WerkstattAntwort.auswerten(antwort)
             guard let datei = j["pfad"] as? String, !datei.isEmpty else { throw ErfassenFehler("Die Antwort des Hintergrunddienstes war unvollständig.") }
             return datei
         } catch let fehler as EinrichtungsFehler {

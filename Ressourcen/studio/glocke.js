@@ -104,7 +104,7 @@ export function erzeugeGlocke({ mitteilungen, api, beiAnsehen, beiEinstellungen,
     const pfad = Array.isArray(e.pfade) && e.pfade[0] ? e.pfade[0] : "";
     const B = TM.bestaetigen;
     schliesse(false);
-    const ja = baueKnopf({ text: B.ja, variante: "primaer", aktion: "glocke-zurueck-ja", aufKlick: () => { d.schliessen(); mitteilungen.rueckgaengig([e.id]); } });
+    const ja = baueKnopf({ text: B.ja, variante: "primaer", aktion: "glocke-zurueck-ja", aufKlick: () => { d.schliessen(); mitteilungen.rueckgaengig([e.id], { vault: e.vaultPfad || undefined }); } });
     const d = dialog({ titel: B.titel, satz: B.satz, rumpf: [h("p", { klasse: "dialog-pfad" }, h("code", { text: pfad })), h("p", { klasse: "dialog-satz", text: B.kopie })],
       knoepfe: [baueKnopf({ text: B.nein, aktion: "glocke-zurueck-nein", aufKlick: () => d.schliessen() }), ja] });
     d.box.dataset.dialog = "aktivitaet-zurueck";
@@ -112,7 +112,7 @@ export function erzeugeGlocke({ mitteilungen, api, beiAnsehen, beiEinstellungen,
   async function stelleWiederHer(e) {
     if (wartet.has(e.id)) return;
     wartet.add(e.id); zeichne();
-    const r = await fuehreWiederherstellenAus(api, e.id);
+    const r = await fuehreWiederherstellenAus(api, e.id, e.vaultPfad);
     wartet.delete(e.id);
     toast(r.ok ? TM.wiederhergestellt : r.meldung, { fehler: !r.ok, ms: r.ok ? 3200 : 7000 });
     await mitteilungen.ladeNeu();
