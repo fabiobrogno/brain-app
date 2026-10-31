@@ -192,3 +192,37 @@ Apple-Installer steht kein Prozentbalken (er meldet keinen Fortschritt), sondern
 `feat/ki-katalog` auf main ist.
 
 **Vertrauen und Sperren (Review).** Der Assistent vergibt nie Vertrauen: „Ordner öffnen“ öffnet den Ordner, ob er „dein Vault“ ist, fragt wie bisher das Studio; der Schalter dort betrifft nur den Versionsverlauf. Eine KI-Stufe geht nur als „ausdrücklich“ an die Werkstatt, wenn du sie selbst angeklickt hast; die Vorbelegung kommt aus `GET /api/ki/konten` (Stufe des Kontos in diesem Vault), ein vom Nutzer gesperrtes Konto bleibt gesperrt. „Zusätzlich, wenn du möchtest“ (Hooks, Prüfung vor dem Speichern, Hintergrunddienst), „Trennen“ und „Konfiguration kopieren“ sind zurück, über dieselben Routen wie die Einstellungen (`/api/kern/stand|verdrahten`, `/api/mcp/trennen|konfiguration`). Die Pflege-Zeile im Schritt „Fertig“ kommt aus `GET /api/ki/pflege` (`dienst.fuerVault`). Aus dem Einrichtungsfenster öffnet `extern` nur https auf github.com; git, Zwischenablage und „Ende“ gelten nur dort.
+
+## 9. Hauptfenster (P3)
+
+Stand: 31.10.2026 · Branch `feat/hauptfenster` · Paket P3 aus `UMSETZUNG.md` des Prototyps (`app.html`, Bilder `a1`–`a8`). Gestaltungswerte wie in §6; neu ist nur die **Struktur**. Alles, was das Studio vorher konnte, bleibt
+(alle Ansichten, Palette, Editor, Eigenschaften, Verlauf, Aufgaben-Board, Posteingang, Live-Aktualisierung, Hinweis zur Umstellung, Vertrauen); verschoben ist nur, wo es steht.
+
+**Raster.** `#app` ist ein Grid: Seitenleiste und rechte Spalte über die ganze Höhe, dazwischen die **Kopfzeile** (44 px, `#kopf`) über Liste und Editor, darunter Liste und Editor, unten die Statusleiste (28 px).
+Spaltenbreiten setzt weiter `app.js` (`--b-seite`, `--b-liste`, `--b-info-voll`, neu `--b-frage`); `--b-rechts` ist die Breite der rechten Spalte je nach Zustand. Die Dateien: `hauptfenster.css` (neu), `ki-zeile.js` (neu), Anpassungen in `studio.css`, `frage.css`, `aufgaben.css`.
+
+| Bereich | Vorher | Jetzt |
+|---|---|---|
+| Kopf des Editors (`.werkzeug`) | Zeile im Editor: Brotkrumen, Frag, Werkzeuge, Eigenschaften | entfällt; **Kopfzeile** `#kopf`: links Brotkrumen (`#pfad`; im Board und ohne Notiz der Name der Ansicht), Mitte Suchfeld „Suchen oder Befehl … ⌘K“ (öffnet die Palette), rechts Status der Notiz, Speicherstand, Notiz-Werkzeuge (`#werkzeuge`: Favorit, Rohtext, Breite, Gliederung), Verlauf (`#knopf-verlauf`), Eigenschaften (`#knopf-info`, Symbol Seitenleiste), „Frag“ (`#knopf-frage`) |
+| Seitenleiste oben | Vault-Wechsler; „Neu“ und „Schnell merken“ als Knöpfe unten | Vault-Wechsler (wechseln, hinzufügen/öffnen, entfernen) und darunter das Feld **„Schnell erfassen ⌥ Leer“** (`#fuss-merken`, öffnet den Merken-Dialog) mit Stift-Knopf für „Neue Notiz“ (`#fuss-neu`) |
+| Bereiche | Posteingang, Aufgaben, Rückfragen, Alle Notizen, Wissen, Archiv | Posteingang (Zähler in Akzent), Alle Notizen, Aufgaben (⌘1 ⌘2 ⌘3), Rückfragen (nur wenn offen), **Frag deinen Vault**; Wissen und Archiv unter „Sichten“ |
+| Favoriten | eine Zeile | die Zeile „Favoriten“ (alle in der Liste) und darunter bis zu fünf Notizen zum direkten Öffnen |
+| Unten in der Seitenleiste | – | **KI-Zeile** („3 KIs · 1 braucht dich“ mit Logos): Zahl = KI-Programme, die Kortex auf diesem Mac erkannt hat (`GET /api/ki/erkennen`, nur lesend; bewusst **nicht** `/api/ki/konten`: das gleicht beim Lesen die Konten-Liste ab und legt Konten an, das darf ein Start nicht auslösen), „braucht dich“ = offene Rückfragen im Vault; Anmeldungen rät sie nicht. Klick: KI & Konten, ohne KI „KI verbinden“ |
+| Frag deinen Vault | Panel über der rechten Spalte (fest, mit Animation „ein“) | **rechte Spalte**: gleitet in 280 ms herein, schiebt den Editor beiseite, wenn er danach mindestens 400 px hat (`data-frage-modus="schiebt"`), sonst liegt es mit Schatten darüber (`"deckt"`). Der Knopf „Eigenschaften“ holt die Eigenschaften zurück und schließt Frag. Die Frag-Logik (`frage.js`) ist dieselbe; neu: `oeffneMit(text)` |
+| Palette | Notizen, Befehle | wie der Prototyp: „Zuletzt geöffnet“, Symbole, Tasten als Chips, Esc-Chip, Fußzeile mit den Tasten; **Ausweg „Frag deinen Vault: „…““** unter den Treffern, **⌘↵** öffnet Frag mit dem getippten Text im Feld (gesendet wird erst nach deinem Klick auf „Fragen“) |
+| Statusleiste | Vault, Version, Zweig, Remote, Abgleichen, Änderungen, Verlauf … | Abgleichen, Änderungen, Verlauf, Zweig/Remote, Ort des Vaults (`~/…`), Version; rechts **Platz für P7** (`[data-st="platz-kontingent"]`, leer und unsichtbar, Kommentar „SLOT P7“ in `zeichneStatus`), **Wörter**, **Format** („Markdown“), KI, Gesundheit, Nutzung, Darstellung, Einstellungen |
+
+**Tastatur.** ⌘1 Posteingang, ⌘2 Alle Notizen, ⌘3 Aufgaben · ⌘K Palette · ⌘J Frag · ⌘\ Eigenschaften ein/aus (wie ⌘⌥I; der Prototyp hat keine zweite einklappbare Seitenleiste) · ⌘N, ⌘⇧M, ⌘⇧A, ⌘⇧F, ⌘/ unverändert.
+Esc schließt Frag, wenn der Fokus im Panel oder nirgends ist (wie vorher).
+
+**Bewegung.** Nur die rechte Spalte gleitet (Klasse `glatt` am `#app` für 360 ms, damit Ziehen und Fenstergröße nicht nachlaufen); „Bewegung reduzieren“ (System oder Einstellung) schaltet sie ab, das Panel ist dann sofort da und weg.
+
+**Enge Fenster.** Kopfzeile ≤ 980 px: nur die letzte Brotkrume, Status als Punkt, Speicherstand als Häkchen; ≤ 820 px: Suchfeld und „Frag“ nur als Symbol. Statusleiste: Format ab 1180 px, Wörter und Ort ab 960 px ausgeblendet. Getestet bei 1100 und 1180 px (nichts läuft über).
+
+**Bewusst offen.** KI-Vorschlag als Block im Editor, Mitteilungs-Glocke (P8) und Konto/Kontingent (P7) kommen mit ihren Paketen; für P7 steht der Platz bereit. Das Board behält seinen eigenen Kopf (Titel, Erfassen, Filter).
+Die Konfliktansicht (PR #73) hängt sich an Statusleiste und Banner (`#banner-host`), die es weiter gibt.
+
+**Gefunden und behoben.** Das Frag-Panel schrieb bei nur einem erlaubten Konto das Wort „null“ ins Formular (`replaceChildren(null)`); jetzt gefiltert.
+
+**Prüfung.** `Tests/Oberflaeche/hauptfenster.spec.mjs` (Aufbau, KI-Zeile, Tastatur, Gleiten, reduzierte Bewegung, Palette mit Ausweg, Favoriten, Board, leerer Vault, hell/dunkel mit Kontrast, 1100/1180 px, 1440 px); angepasst nur die Reihenfolge in `aufgaben.spec.mjs`.
+Bilder im Scratchpad (`ui-p3/`), verglichen mit den Prototyp-Bildern `a1`–`a7`.
