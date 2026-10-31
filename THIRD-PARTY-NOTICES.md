@@ -18,7 +18,7 @@ vorab gebautes Bündel (siehe CodeMirror).
 | Simple Icons (Logos der KI-Programme und Dienste) | 16.36.0 | CC0 1.0 | `logos/`, `studio/ki-katalog.js`, `studio/marken.js` |
 | Logos weiterer KI-Programme (Marken der Inhaber, nur zur Kennzeichnung) | abgerufen 30.10.2026 | Marke des Inhabers | `logos/`, `studio/ki-katalog.js` (Quelle je Datei: `logos/HERKUNFT.md`) |
 | Simple Icons (MCP-Logos der 3D-Ansicht) | 16.33.0 | CC0 1.0 | `kern/ansicht/vendor/icons/` |
-| Orca (Gestaltungsmuster und -werte: Dialoge, Einrichtung, leere Zustände, Design-System v2; Liste der KI-Programme) | Commits cf5b462, 9bccd67 | MIT | `studio/studio.css`, `studio/bausteine.css`, `studio/dialoge.css`, `studio/aufgaben.css`, `studio/hilfen.js`, `studio/willkommen.js`, `studio/einrichtung.css`, `studio/einrichtung.js`, `studio/einrichtung-buehne.js` (Gestaltung), `gemeinsam/ki-katalog.json` (Programmliste) |
+| Orca (Gestaltungsmuster und -werte: Dialoge, Einrichtung, leere Zustände, Design-System v2; Liste der KI-Programme) | Commits cf5b462, 9bccd67 | MIT | `studio/studio.css`, `studio/bausteine.css`, `studio/dialoge.css`, `studio/aufgaben.css`, `studio/hilfen.js`, `studio/willkommen.js`, `studio/einrichtung.css`, `studio/einrichtung.js`, `studio/einrichtung-buehne.js` (Gestaltung), `gemeinsam/ki-katalog.json` (Programmliste), `gemeinsam/kontingent.mjs`, `gemeinsam/kortex-statuszeile.mjs`, `studio/kontingent.js`, `studio/kontingent.css` (Kontingent: Lesen der Fenster, Farbschwellen, Takt, Abfrage von Codex) |
 
 Die Pfade sind relativ zu `Kortex.app/Contents/Resources`, außer Sparkle (relativ zu `Kortex.app/Contents`).
 
@@ -422,6 +422,15 @@ Website https://orca.dev), Stand Commit `cf5b462fba8462678256b25d05cec2adb8dca41
   (Bereichsname 900/850/800, Titel 700/650/600, Beschreibung 500/450/400, Stichwörter 300/250/200; genau, beginnt mit, enthält) nach
   `src/renderer/src/components/settings/Settings.tsx`, `SettingsSidebar.tsx`, `SettingsFormControls.tsx`, `settings-search.ts` und `components/onboarding/ThemeStep.tsx`
   → `studio/einstellungen.js`, `studio/einstellungen.css`, `studio/einstellungen-suche.js` (die Wertung ist in JavaScript neu geschrieben, nichts kopiert), `studio/bausteine.js` (Zeilen-Bausteine).
+
+- das Kontingent der KI-Konten (5 Stunden / Woche): das Lesen der Fenster aus der Statuszeile von Claude Code (`rate_limits.five_hour` / `seven_day`, Prozent, Rücksetzzeit; bei einer Schemaänderung
+  `utilization` und ISO-Zeit), die Zuordnung der Fenster von Codex nach ihrer Länge (300 und 10080 Minuten, eine Minute Toleranz), der Aufruf von `account/rateLimits/read` am eigenen App-Server von Codex mit
+  den Argumenten des kurzen Probelaufs, der Takt (alle 15 Minuten, frühestens 5 Minuten nach der letzten Abfrage, 30 Sekunden bis 15 Minuten Pause nach Fehlern, nach 30 Minuten „veraltet“) und die
+  Balkenfarben (unter 60 % grau, 60–79 % gelb, ab 80 % rot) nach `src/shared/claude-statusline-rate-limits.ts`, `src/main/rate-limits/codex-rpc-rate-limit-probe.ts`,
+  `codex-rate-limit-window-classification.ts`, `codex-rate-limit-window-mapper.ts`, `src/main/codex-cli/codex-read-only-app-server-args.ts`, `src/main/rate-limits/service/service-types.ts` und
+  `src/renderer/src/components/status-bar/provider-extra-usage-section.tsx` (Stand @9bccd67)
+  → `gemeinsam/kortex-statuszeile.mjs`, `gemeinsam/kontingent.mjs`, `studio/kontingent.js` (alles in JavaScript neu geschrieben, nichts kopiert). Nicht übernommen ist Orcas Weg über den
+  OAuth-Token aus dem Schlüsselbund: Kortex liest keine Zugangsdaten anderer Programme und fragt Anthropic und OpenAI nie selbst an.
 
 Orca ist MIT-lizenziert. Lizenztext (Copyright-Zeile wie in der Datei `LICENSE` von Orca):
 

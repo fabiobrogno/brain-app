@@ -14,6 +14,7 @@ import { oeffneMenue, schliesseMenue } from "./menue.js";
 import { baueAktionen, istZurueckgestellt, spaeterBis } from "./posteingang.js";
 import { TA as TAUF } from "./texte-aufgaben.js";
 import { erzeugeFragePanel } from "./frage.js";
+import { kontingentStand, erzeugeKontoLeiste } from "./kontingent.js";
 import { TF } from "./texte-frage.js";
 import { starteLive, planeAus, kiHinweis, hebeHervor } from "./live.js";
 import * as kz from "./tastenkuerzel.js";
@@ -1178,6 +1179,8 @@ async function stelleWiederHer(pfad, sha, zeit) {
 
 // ======================================================= Statusleiste
 const stEl = $("status");
+// Kontingent (P7): aktives KI-Konto mit Mini-Balken und Konto-Menü — ein eigener Baustein (kontingent.js); die Statusleiste setzt nur seinen Knoten ein.
+const kontoLeiste = erzeugeKontoLeiste({ stand: kontingentStand(api), vaultPfad: () => S.info?.vault || null, vaultName: () => S.info?.name || "", oeffneKonten: () => oeffneKonten(), oeffneKi: () => oeffneKi() });
 function st(id, kinder, { klick, titel, klasse = "", tag = null } = {}) {
   const el = h(klick ? "button" : "span", { klasse: "st" + (klasse ? " " + klasse : ""), "data-st": id, title: titel || null, type: klick ? "button" : null, aufClick: klick || null }, ...kinder);
   return el;
@@ -1244,6 +1247,8 @@ function zeichneStatus() {
     k.push(st("verlauf", [symbol("verlauf", 14), h("span", { text: T.status.verlauf })], { klick: oeffneVerlauf, titel: T.status.verlaufTitel, klasse: S.sicht.art === "verlauf" ? "aktiv" : "" }));
   }
   k.push(h("span", { klasse: "sp" }));
+  kontingentStand(api).start(); kontoLeiste.zeichne(); // erst mit offenem Vault (idempotent)
+  k.push(kontoLeiste.knoten());
   const verbunden = S.kiVerbunden || S.ki?.agenten?.some((a) => a.id === "claude" && a.verbunden === true);
   k.push(st("claude", [kiLogo("claude", 14, { dekorativ: true }), h("span", { text: T.status.claude }), symbol(verbunden ? "haken" : "schliessen", 12)], { klick: oeffneKi, titel: verbunden ? T.status.claudeVerbunden : T.status.claudeNicht, klasse: verbunden ? "gut" : "" }));
   const gs = S.gesundheit;
