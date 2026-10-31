@@ -20,6 +20,7 @@ export const REGISTER = {
     {"id":"neue-notiz","gruppe":"kortex","name":"Neue Notiz","text":"Legt eine leere Notiz an.","standard":"Cmd+N","menue":"neu","woerter":["notiz","neu","anlegen"]},
     {"id":"schnell-merken","gruppe":"kortex","name":"Schnell merken","text":"Ein Gedanke in einem Satz, direkt in den Posteingang.","standard":"Shift+Cmd+M","menue":"merken","woerter":["merken","gedanke","posteingang","schnell"]},
     {"id":"aufgabe-erfassen","gruppe":"kortex","name":"Aufgabe erfassen","text":"Eine Aufgabe in einem Satz anlegen.","standard":"Shift+Cmd+A","menue":"aufgabe-erfassen","woerter":["aufgabe","erfassen","todo"]},
+    {"id":"mitteilungen","gruppe":"kortex","name":"Mitteilungen","text":"Öffnet die Liste dessen, was deine KIs in deinem Vault getan haben (die Glocke in der Kopfzeile).","standard":"Shift+Cmd+B","woerter":["mitteilungen","glocke","benachrichtigung","aktivität","ungelesen","abweisung"]},
     {"id":"suche-vault","gruppe":"kortex","name":"Im Vault suchen","text":"Springt in die Suche über alle Notizen.","standard":"Shift+Cmd+F","menue":"suche","woerter":["suche","finden","vault","alle"]},
     {"id":"einstellungen","gruppe":"kortex","name":"Einstellungen","text":"Öffnet diese Seite.","standard":"Cmd+,","menue":"einstellungen","woerter":["einstellungen","optionen","präferenzen"]},
     {"id":"kuerzel-hilfe","gruppe":"kortex","name":"Tastenkürzel anzeigen","text":"Die Übersicht aller Kürzel.","standard":"Cmd+/","woerter":["kürzel","hilfe","übersicht"]},
