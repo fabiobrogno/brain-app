@@ -56,11 +56,11 @@ async function waehleFilter(page, name, wert) {
 }
 const geaendertSeit = () => git(vault, "status", "--porcelain").toString().split("\n").filter(Boolean).map((z) => z.slice(3));
 
-test("Seitenleiste: „Aufgaben“ steht direkt unter Posteingang und zählt die offenen (nicht die erledigten)", async ({ page }) => {
+test("Seitenleiste: „Aufgaben“ steht im oberen Block der Seitenleiste (Posteingang, Alle Notizen, Aufgaben) und zählt die offenen (nicht die erledigten)", async ({ page }) => {
   await page.goto(server.url);
   await page.waitForSelector("[data-karte], [data-leer]");
   const ids = await page.locator("#bereiche [data-bereich]").evaluateAll((l) => l.map((e) => e.dataset.bereich));
-  expect(ids.slice(0, 2)).toEqual(["inbox", "aufgaben"]);
+  expect(ids.slice(0, 3)).toEqual(["inbox", "alle", "aufgaben"]); // Reihenfolge wie im Prototyp (P3): Posteingang, Alle Notizen, Aufgaben (⌘1 ⌘2 ⌘3)
   await expect(page.locator('[data-bereich="aufgaben"] .name')).toHaveText("Aufgaben");
   await expect(page.locator('[data-bereich="aufgaben"] .zahl')).toHaveText("5"); // a b c d e — zwei erledigte zählen nicht
   await expect(page.locator('[data-bereich="aufgaben"] .zahl')).toHaveClass(/warn/); // eine ist überfällig

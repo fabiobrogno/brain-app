@@ -6,7 +6,16 @@ export const T = {
   ohneVault: { titel: "Noch kein Vault", text: `Die Einrichtung führt dich in zwei Minuten zu deinem ersten Vault, mit Sicherung und KI, wenn du möchtest.`, einrichten: `${PRODUKT} einrichten …`, anderer: "Anderen Weg wählen" },
   suche: { platzhalter: "Suchen", keine: "Nichts gefunden.", zeile: "Zeile" },
   bereiche: { inbox: "Posteingang", aufgaben: "Aufgaben", rueckfragen: "Rückfragen", alle: "Alle Notizen", wissen: "Wissen", archiv: "Archiv", vorlagen: "Vorlagen" },
-  abschnitte: { favoriten: "Favoriten", ansichten: "Ansichten", typen: "Typen", ordner: "Ordner" },
+  abschnitte: { favoriten: "Favoriten", ansichten: "Ansichten", typen: "Typen", ordner: "Ordner", sichten: "Sichten" },
+  // Hauptfenster (P3): Kopfzeile, KI-Zeile unten in der Seitenleiste, Zähler der Statusleiste
+  kopf: { suche: "Suchen oder Befehl …", sucheTitel: "Suchen oder Befehl ausführen", verlauf: "Verlauf" },
+  frageZeile: "Frag deinen Vault",
+  kiZeile: {
+    keine: "KI verbinden", keineTitel: "Noch keine KI verbunden. Klicke, um eine zu verbinden.",
+    anzahl: (n) => (n === 1 ? "1 KI" : `${n} KIs`), braucht: (n) => `${n} braucht dich`, brauchenMehr: (n) => `${n} brauchen dich`,
+    titel: (n, b) => `${n === 1 ? "1 KI-Konto" : `${n} KI-Konten`} bekannt${b ? `, ${b === 1 ? "eine offene Rückfrage" : `${b} offene Rückfragen`} warten auf dich` : ""}. Klicke für KI & Konten.`,
+  },
+  statusInfo: { woerter: (n) => `${n.toLocaleString("de-DE")} ${n === 1 ? "Wort" : "Wörter"}`, markdown: "Markdown", text: "Text", datei: "Datei", kontingentSlot: "Platz für Konto und Kontingent (Paket P7)" },
   ansichten: { abgelaufen: "Abgelaufen", strittig: "Strittig", ungeprueft: "Ungeprüft", zuletzt: "Zuletzt geändert" },
   ansichtenHinweis: {
     abgelaufen: "Seiten, deren Prüffrist oder Verfallsdatum vorbei ist.",
@@ -41,7 +50,7 @@ export const T = {
     neuTitel: "Titel der neuen Seite", neuBereich: "Bereich im Wiki", uebernehmenOk: "Übernehmen",
     uebernehmenHinweis: "Der Text wird als eigener Abschnitt ans Ende der Seite gehängt. Die Notiz wandert ins Archiv und bleibt im Verlauf; Belege und Stand ergänzt du danach selbst.",
   },
-  seitenleiste: { neu: "Neu", merken: "Schnell merken", leerBaum: "Hier liegt noch nichts.", laedt: "Lade …", neuerOrdner: "Neuer Ordner" },
+  seitenleiste: { neu: "Neu", merken: "Schnell merken", erfassen: "Schnell erfassen", erfassenTaste: "⌥ Leer", leerBaum: "Hier liegt noch nichts.", laedt: "Lade …", neuerOrdner: "Neuer Ordner" },
   vault: {
     wechseln: "Vault wechseln", oeffnen: "Vault öffnen …", neu: "Neuer Vault …", entfernen: "Aus der Liste entfernen",
     aktiv: "Aktiv", liste: "Deine Vaults", keine: "Noch keine weiteren Vaults.",
@@ -182,19 +191,19 @@ export const T = {
   },
   speicherFehler: { titel: "Änderungen konnten nicht gespeichert werden", text: "Wechselst du jetzt, geht der ungespeicherte Text verloren.", nochmal: "Nochmal versuchen", kopieren: "Text kopieren", verwerfen: "Verwerfen und wechseln", kopiert: "Text kopiert.", kopierFehler: "Kopieren war nicht möglich." },
   merken: { entwurf: "Entwurf bleibt erhalten.", titel: "Schnell merken", satz: "Halte einen Gedanken fest. Er landet im Posteingang, sortieren kannst du später.", text: "Was willst du festhalten?", titelFeld: "Titel (optional)", sichern: "In die Inbox", fertig: "In der Inbox abgelegt.", offen: "Öffnen" },
-  palette: { platzhalter: "Notiz suchen oder Befehl eingeben …", notizen: "Notizen", befehle: "Befehle", nichts: "Nichts passt.", nichtsGefunden: "Nichts gefunden", anlegen: (t) => `Neue Notiz „${t}“ anlegen` },
+  palette: { platzhalter: "Notizen suchen, Befehl ausführen oder Frage stellen …", notizen: "Notizen", zuletzt: "Zuletzt geöffnet", befehle: "Befehle", nichts: "Nichts passt.", nichtsGefunden: "Nichts gefunden", anlegen: (t) => `Neue Notiz „${t}“ anlegen`, frageTitel: (t) => `Frag deinen Vault: „${t}“`, frageGruppe: "Ausweg", esc: "esc", waehlen: "wählen", oeffnen: "öffnen", fragen: "Frag deinen Vault" },
   befehle: {
     neu: "Neue Notiz", merken: "Schnell merken", commit: "Änderungen sichern …", sync: "Mit Remote abgleichen",
     info: "Infospalte ein- oder ausblenden", suche: "Im Vault suchen", gesundheit: "Gesundheit anzeigen", nutzung: "KI-Nutzung anzeigen",
     lizenzen: "Lizenzen …", ordner: "Vault im Finder zeigen", ansicht: "Übersicht öffnen", mcp: "KI (Claude) verbinden", konten: "KI-Konten …", umstellen: "Vault umstellen …",
-    inNotiz: "In der Notiz suchen", alleEinstellungen: "Einstellungen …",
+    inNotiz: "In der Notiz suchen", alleEinstellungen: "Einstellungen …", posteingang: "Posteingang öffnen", alleNotizen: "Alle Notizen öffnen", aufgaben: "Aufgaben-Board öffnen",
   },
   dialog: { schliessen: "Schließen" },
   kuerzel: {
     titel: "Tastenkürzel",
     gruppen: [
-      { name: "Allgemein", zeilen: [["⌘K", "Springen und Befehle"], ["⌘N", "Neue Notiz"], ["⌘⇧M", "Schnell merken"], ["⌘⇧A", "Aufgabe erfassen"], ["⌘J", "Frag deinen Vault"], ["⌘⇧F", "Im ganzen Vault suchen"], ["⌘/", "Diese Übersicht"]] },
-      { name: "Notiz", zeilen: [["⌘S", "Jetzt speichern"], ["⌘F", "In der Notiz suchen"], ["⌘⌥I", "Eigenschaften ein- oder ausblenden"], ["⌘⇧G", "Änderungen sichern"]] },
+      { name: "Allgemein", zeilen: [["⌘K", "Springen und Befehle"], ["⌘1 ⌘2 ⌘3", "Posteingang, Alle Notizen, Aufgaben"], ["⌘N", "Neue Notiz"], ["⌘⇧M", "Schnell merken"], ["⌘⇧A", "Aufgabe erfassen"], ["⌘J", "Frag deinen Vault"], ["⌘⇧F", "Im ganzen Vault suchen"], ["⌘/", "Diese Übersicht"]] },
+      { name: "Notiz", zeilen: [["⌘S", "Jetzt speichern"], ["⌘F", "In der Notiz suchen"], ["⌘\\", "Eigenschaften ein- oder ausblenden (auch ⌘⌥I)"], ["⌘⇧G", "Änderungen sichern"]] },
       { name: "Liste", zeilen: [["↑ ↓", "Nächste oder vorige Notiz öffnen"], ["↵", "In die Notiz springen"], ["Esc", "Suche oder Dialog schließen"]] },
     ],
     schliessen: "Schließen",

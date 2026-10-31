@@ -1,10 +1,13 @@
 /* Frag deinen Vault — Panel rechts über der Infospalte. Farben nur aus den Variablen von studio.css (hell und dunkel). */
-#frage-host { position: fixed; inset: 0 0 30px 0; z-index: 40; pointer-events: none; }
-.frage { position: absolute; top: 0; right: 0; bottom: 0; width: min(440px, 100vw); display: flex; flex-direction: column; background: var(--erhoben); color: var(--text);
-  border-left: 1px solid var(--linie-stark); box-shadow: var(--schatten); pointer-events: auto; animation: ein var(--t) var(--ease); font-size: 13px; }
+/* Die Spalte rechts (#frage-host, hauptfenster.css) trägt das Panel; geschlossen steht es außerhalb und ist unsichtbar (und „inert“), offen gleitet es in 280 ms herein.
+   Reicht der Platz nicht (data-frage-modus="deckt"), liegt es mit Schatten über dem Editor statt ihn zu verengen. */
+.frage { display: flex; flex-direction: column; background: var(--papier); color: var(--text); border-left: 1px solid var(--linie); pointer-events: auto; font-size: 13px;
+  transform: translateX(100%); visibility: hidden; opacity: 0; transition: transform var(--d-panel, 280ms) var(--ease-out), opacity var(--d-panel, 280ms) var(--ease-out), visibility 0s linear var(--d-panel, 280ms); }
+#app[data-frage="an"] .frage { transform: none; visibility: visible; opacity: 1; transition-delay: 0s; }
+#app[data-frage="an"][data-frage-modus="deckt"] .frage { box-shadow: var(--schatten-float); border-left-color: var(--linie-stark); }
 .frage[hidden] { display: none; }
-.frage-kopf { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: none; height: 44px; padding: 0 8px 0 16px; border-bottom: 1px solid var(--linie); }
-.frage-titel { display: flex; align-items: center; gap: 8px; color: var(--akzent); min-width: 0; }
+.frage-kopf { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: none; height: var(--kopf-h, 44px); padding: 0 8px 0 16px; border-bottom: 1px solid var(--linie); }
+.frage-titel { display: flex; align-items: center; gap: 8px; color: var(--text-2); min-width: 0; }
 .frage-titel h2 { margin: 0; font-size: 14px; font-weight: 650; letter-spacing: -.01em; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .frage-rumpf { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 16px 20px; display: flex; flex-direction: column; gap: 14px; -webkit-user-select: text; user-select: text; }
 .frage-fuss { flex: none; display: flex; align-items: flex-start; gap: 8px; padding: 8px 16px; border-top: 1px solid var(--linie); background: var(--seite); color: var(--text-2); font-size: 11.5px; line-height: 16px; }
@@ -68,4 +71,4 @@
 .frage-art.gefunden { opacity: .8; }
 .frage-verbrauch { margin: 0; font-size: 12px; color: var(--text-2); }
 @media (max-width: 520px) { .frage { width: 100vw; } }
-@media (prefers-reduced-motion: reduce) { .frage, .frage-punkte { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .frage { transition: none; } .frage-punkte { animation: none; } }

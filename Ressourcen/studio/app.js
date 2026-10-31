@@ -16,6 +16,7 @@ import { TA as TAUF } from "./texte-aufgaben.js";
 import { erzeugeFragePanel } from "./frage.js";
 import { TF } from "./texte-frage.js";
 import { starteLive, planeAus, kiHinweis, hebeHervor } from "./live.js";
+import { baueKiZeile } from "./ki-zeile.js";
 import { datumKurz, datumLang, datumZeit, istDatumText, bytesText, setzeTypFarbe, typSymbol, typName, wortAnzahl, relativ, pluralisiere, vorschauText, typTextFarbe } from "./format.js";
 
 const $ = (id) => document.getElementById(id);
@@ -49,10 +50,17 @@ const lokal = {
 
 document.title = PRODUKT;
 $("suche").placeholder = T.suche.platzhalter;
-document.querySelector('[data-t="neu"]').textContent = T.seitenleiste.neu;
-document.querySelector('[data-t="merken"]').textContent = T.seitenleiste.merken;
-$("fuss-merken").title = T.seitenleiste.merken; $("fuss-merken").setAttribute("aria-label", T.seitenleiste.merken); // bleibt benannt, wenn die Seitenleiste nur das Symbol zeigt
-document.querySelectorAll("[data-sym]").forEach((el) => el.replaceWith(symbol(el.dataset.sym, 16)));
+document.querySelector('[data-t="merken"]').textContent = T.seitenleiste.erfassen;
+document.querySelector('[data-t="kopfSuche"]').textContent = T.kopf.suche;
+$("fuss-merken").title = `${T.seitenleiste.erfassen} (${T.seitenleiste.erfassenTaste})`; $("fuss-merken").setAttribute("aria-label", T.seitenleiste.erfassen);
+$("fuss-neu").title = `${T.befehle.neu} (⌘N)`; $("fuss-neu").setAttribute("aria-label", T.befehle.neu);
+$("kopf-suche").setAttribute("aria-label", T.kopf.suche); $("kopf-suche").title = `${T.kopf.sucheTitel} (⌘K)`;
+document.querySelectorAll("[data-sym]").forEach((el) => el.replaceWith(symbol(el.dataset.sym, el.dataset.sym === "suche" && el.closest("#kopf-suche") ? 14 : 16)));
+$("knopf-verlauf").replaceChildren(symbol("uhr", 16)); $("knopf-verlauf").title = T.kopf.verlauf; $("knopf-verlauf").setAttribute("aria-label", T.kopf.verlauf);
+$("knopf-info").replaceChildren(symbol("seitenleiste", 16)); $("knopf-info").title = T.werkzeuge.eigenschaften; $("knopf-info").setAttribute("aria-label", T.eigenschaften.titel);
+$("knopf-verlauf").addEventListener("click", () => oeffneVerlauf());
+$("knopf-info").addEventListener("click", () => umschalteInfo());
+$("kopf-suche").addEventListener("click", () => oeffnePalette());
 $("knopf-suche").replaceChildren(symbol("suche", 16));
 $("knopf-neu").replaceChildren(symbol("plus", 16));
 $("suche-zu").replaceChildren(symbol("schliessen", 12));
@@ -60,8 +68,8 @@ $("vault-pfeil").replaceChildren(symbol("chevron-auf-ab", 14));
 $("au-zurueck").replaceChildren(symbol("pfeil-links", 14), h("span", { text: TAUF.zurueck }));
 $("au-zurueck").addEventListener("click", () => zurueckZumBoard());
 // Frag deinen Vault (P4): Panel rechts, Knopf in der Kopfzeile, ⌘J und Befehlspalette. Die KI liest nur über Kortex, nichts wird gespeichert (frage.js).
-const frage = erzeugeFragePanel({ vaultPfad: () => S.info?.vault || null, oeffneSeite: (p) => oeffne(p), oeffneVertrauen: () => oeffneVertrauen(), oeffneKi: () => oeffneKi() });
-$("knopf-frage").replaceChildren(symbol("frage", 16));
+const frage = erzeugeFragePanel({ vaultPfad: () => S.info?.vault || null, oeffneSeite: (p) => oeffne(p), oeffneVertrauen: () => oeffneVertrauen(), oeffneKi: () => oeffneKi(),
+  beiUmschalten: (offen) => { glatt(() => { S.frageAn = offen; begrenzeBreiten(); }); zeichneBereiche(); } });
 $("knopf-frage").addEventListener("click", () => { if (S.info?.vault) frage.umschalten(); });
 
 // ======================================================= Erscheinungsbild
@@ -92,7 +100,7 @@ const ed = erstelleEditor($("editor"), {
   speichernJetzt: () => { clearTimeout(speicherTimer); speichere(); },
   geaendert: () => {
     if (S.schutz || !S.bearbeitbar) return;
-    S.dirty = true;
+    S.dirty = true; planeWoerter();
     if (S.konflikt) { zeigeStand("konflikt"); return; }
     zeigeStand("ungespeichert");
     clearTimeout(speicherTimer);
@@ -162,7 +170,7 @@ async function oeffne(pfad, { zeile, ausListe, ausBoard } = {}) {
   zeigeBanner(); zeigeStand(S.schutz ? "schutz" : "gespeichert", true);
   zuletztMerken(d.pfad);
   klappeAuf(d.pfad);
-  markiereAuswahl(); zeichnePfad(); zeichneWerkzeuge(); zeichneOrdner(); setzeFenstertitel();
+  markiereAuswahl(); zeichnePfad(); zeichneWerkzeuge(); zeichneOrdner(); setzeFenstertitel(); zeichneStatus();
   ladeInfo();
   if (zeile) ed.springeZu(zeile);
   else if (!ausListe && !document.querySelector(".schleier")) ed.fokus();
@@ -408,7 +416,11 @@ function weicherWechsel() {
 }
 // Fenster-Modus: liste (Standard) · verlauf · aufgaben (Board füllt den Platz) · aufgaben-datei (Karte als Datei im Editor)
 function setzeModus() {
+  const vorher = $("app").dataset.modus;
   $("app").dataset.modus = S.sicht.art === "verlauf" ? "verlauf" : istAufgabenSicht() ? (S.aufgabeDatei ? "aufgaben-datei" : "aufgaben") : "liste";
+  if (vorher !== $("app").dataset.modus && S.info?.vault && window.studio?.bereit) zeichneStatus(); // Wörter und Format gelten nur für eine Notiz im Editor, nicht im Board
+  $("knopf-verlauf").setAttribute("aria-pressed", String(S.sicht.art === "verlauf"));
+  zeichnePfad();
 }
 // Zähler für die Seitenleiste aus dem Notiz-Index: offen = noch nicht erledigt, überfällig = mit Fälligkeit vor heute
 function aufgabenZaehler() {
@@ -498,22 +510,33 @@ function eintragEl({ id, data, symbolName, name, zahl, aktiv, typ, zahlKlasse, t
     symbol(symbolName, 16), h("span", { klasse: "name", text: name }), zahl !== undefined && zahl !== null ? h("span", { klasse: "zahl" + (zahlKlasse ? " " + zahlKlasse : ""), text: String(zahl) }) : null);
   return typ ? setzeTypFarbe(el, typ) : el;
 }
+// Oben in der Seitenleiste (Prototyp): Posteingang, Alle Notizen, Aufgaben (⌘1 ⌘2 ⌘3), bei offenen Rückfragen „Rückfragen“, dann „Frag deinen Vault“. Wissen und Archiv stehen unter „Sichten“.
+const BEREICHE_OBEN = ["inbox", "alle", "aufgaben", "rueckfragen"], BEREICHE_SICHTEN = ["wissen", "archiv"];
 function zeichneBereiche() {
   const z = zaehler();
   const rf = S.rueckfragen && S.rueckfragen.verfuegbar !== false && Number.isFinite(S.rueckfragen.offen) ? S.rueckfragen.offen : null;
   const az = aufgabenZaehler();
-  const zeilen = BEREICHE.filter(([id]) => id !== "rueckfragen" || rf !== null).map(([id, sym]) =>
-    eintragEl({ data: { "data-bereich": id }, symbolName: sym, name: T.bereiche[id], zahl: id === "rueckfragen" ? rf : id === "aufgaben" ? az.offen : z[id],
-      zahlKlasse: (id === "rueckfragen" && rf) || (id === "aufgaben" && az.ueber) ? "warn" : "", titel: id === "aufgaben" && az.ueber ? TAUF.zahl(az.offen, az.ueber) : null,
-      aktiv: S.sicht.art === "bereich" && S.sicht.id === id, tun: () => waehleSicht({ art: "bereich", id }) }));
-  $("bereiche").replaceChildren(...zeilen);
+  const zeile = (id) => {
+    const sym = BEREICHE.find((b) => b[0] === id)[1];
+    const klasse = (id === "rueckfragen" && rf) || (id === "aufgaben" && az.ueber) ? "warn" : id === "inbox" && z.inbox ? "akzent" : "";
+    return eintragEl({ data: { "data-bereich": id }, symbolName: sym, name: T.bereiche[id], zahl: id === "rueckfragen" ? rf : id === "aufgaben" ? az.offen : z[id],
+      zahlKlasse: klasse, titel: id === "aufgaben" && az.ueber ? TAUF.zahl(az.offen, az.ueber) : null,
+      aktiv: S.sicht.art === "bereich" && S.sicht.id === id, tun: () => waehleSicht({ art: "bereich", id }) });
+  };
+  const frageEl = eintragEl({ data: { "data-aktion": "frage-oeffnen" }, symbolName: "funke", name: T.frageZeile, aktiv: false, titel: `${T.frageZeile} (⌘J)`, tun: () => { if (S.info?.vault) frage.umschalten(); } });
+  frageEl.classList.add("eintrag-ki"); frageEl.removeAttribute("aria-current"); frageEl.setAttribute("aria-pressed", String(frage.istOffen()));
+  $("bereiche").replaceChildren(...BEREICHE_OBEN.filter((id) => id !== "rueckfragen" || rf !== null).map(zeile), frageEl);
+  abschnitt("sichten", T.abschnitte.sichten, BEREICHE_SICHTEN.map(zeile));
 }
 function zeichneFavoriten() {
   const sec = $("favoriten-abschnitt");
   const n = S.notizen.filter((x) => S.favoriten.has(x.pfad)).length;
   sec.hidden = n === 0 && S.sicht.art !== "favoriten";
   if (sec.hidden) { sec.replaceChildren(); return; }
-  abschnitt("favoriten", T.abschnitte.favoriten, [eintragEl({ data: { "data-ansicht": "favoriten" }, symbolName: "stern", name: T.abschnitte.favoriten, zahl: n, aktiv: S.sicht.art === "favoriten", tun: () => waehleSicht({ art: "favoriten" }) })]);
+  // Die Zeile „Favoriten“ zeigt alle in der Liste; darunter stehen die ersten Notizen zum direkten Öffnen (Prototyp)
+  const notizen = S.notizen.filter((x) => S.favoriten.has(x.pfad)).sort((a, b) => (a.titel || "").localeCompare(b.titel || "", "de", { numeric: true, sensitivity: "base" })).slice(0, 5)
+    .map((x) => { const typ = x.typ ? (S.typMap.get(x.typ) || { name: x.typ }) : null; const el = eintragEl({ data: { "data-favorit": x.pfad }, symbolName: typ ? typSymbol(typ.symbol) : "notiz", name: x.titel || ohneEndung(dateiName(x.pfad)), aktiv: S.pfad === x.pfad, titel: x.pfad, tun: () => oeffne(x.pfad) }); el.classList.add("eintrag-notiz"); return typ ? setzeTypFarbe(el, typ) : el; });
+  abschnitt("favoriten", T.abschnitte.favoriten, [eintragEl({ data: { "data-ansicht": "favoriten" }, symbolName: "stern", name: T.abschnitte.favoriten, zahl: n, aktiv: S.sicht.art === "favoriten", tun: () => waehleSicht({ art: "favoriten" }) }), ...notizen]);
 }
 function zeichneAnsichten() {
   const zeilen = ANSICHTEN.map((id) => {
@@ -573,8 +596,11 @@ function klappeAuf(pfad) {
   if (geaendert) { lokal.schreib("offen", [...S.offen]); }
 }
 function zeichneSeite() {
-  zeichneBereiche(); zeichneFavoriten(); zeichneAnsichten(); zeichneTypen(); zeichneOrdner();
+  zeichneBereiche(); zeichneFavoriten(); zeichneAnsichten(); zeichneTypen(); zeichneOrdner(); kiZeile.zeichne();
 }
+// KI-Zeile unten in der Seitenleiste (ki-zeile.js)
+const kiZeile = baueKiZeile($("ki-zeile"), { api, rueckfragen: () => S.rueckfragen && S.rueckfragen.verfuegbar !== false ? Number(S.rueckfragen.offen) || 0 : 0,
+  vorhanden: () => !!S.info?.vault, oeffneKonten: () => oeffneKonten(), oeffneKi: () => oeffneKi() });
 
 // ======================================================= Notizliste
 function zeichneListenKopf() {
@@ -700,7 +726,7 @@ function schliesseDatei() {
   clearTimeout(speicherTimer);
   S.pfad = null; S.hash = null; S.dirty = false; S.konflikt = null; S.schutz = false; S.aktuellePruefung = null;
   ed.setzeText("", { nurLesen: false });
-  zeigeBanner(); zeichnePfad(); zeichneWerkzeuge(); setzeFenstertitel(); ladeInfo(); zeigeLeer();
+  zeigeBanner(); zeichnePfad(); zeichneWerkzeuge(); setzeFenstertitel(); zeichneStatus(); ladeInfo(); zeigeLeer();
   lokal.schreib("pfad", null);
 }
 const posteingangCtx = {
@@ -893,7 +919,11 @@ function schliesseDiff() { diffInst?.zerstoere?.(); diffInst = null; const host 
 // ======================================================= Kopfzeile: Brotkrumen, Werkzeuge, Pille
 function zeichnePfad() {
   const p = $("pfad");
-  if (!S.pfad) { p.replaceChildren(); p.removeAttribute("title"); return; }
+  // Ohne offene Notiz (und im Aufgaben-Board) zeigt die Kopfzeile, wo du bist: der Name der Ansicht
+  if (!S.pfad || (istAufgabenSicht() && !S.aufgabeDatei)) {
+    const t = sichtTitel().text;
+    p.replaceChildren(...(t && S.info?.vault ? [h("span", { klasse: "krume aktuell", text: t })] : [])); p.removeAttribute("title"); return;
+  }
   const n = S.nMap.get(S.pfad);
   const bereich = n?.bereich || bereichVonPfad(S.pfad);
   const teile = ordnerVon(S.pfad) ? ordnerVon(S.pfad).split("/") : [];
@@ -935,7 +965,7 @@ function zeichneWerkzeuge() {
     k.push(werkzeugKnopf("w-breit", "breite", S.breit ? T.werkzeuge.schmal : T.werkzeuge.breit, umschalteBreit, { gedrueckt: S.breit }));
     k.push(werkzeugKnopf("w-gliederung", "gliederung", T.werkzeuge.gliederung, (e) => zeigeGliederung(e.currentTarget)));
   }
-  k.push(werkzeugKnopf("knopf-info", "eigenschaften", T.werkzeuge.eigenschaften, umschalteInfo, { gedrueckt: $("app").dataset.info === "an", label: T.eigenschaften.titel }));
+  $("knopf-info").setAttribute("aria-pressed", String($("app").dataset.info === "an"));
   $("werkzeuge").replaceChildren(...k);
   $("haupt").dataset.breite = S.breit ? "breit" : "normal";
   $("editor").dataset.roh = S.roh ? "an" : "aus";
@@ -1015,7 +1045,7 @@ function zielKnopf(ziel) {
   return typ ? setzeTypFarbe(knopf, typ) : knopf;
 }
 function infoGeruest() {
-  const kopf = h("div", { klasse: "info-kopf" }, symbol("zahnrad", 16), h("h2", { text: T.eigenschaften.titel }),
+  const kopf = h("div", { klasse: "info-kopf" }, h("h2", { text: T.eigenschaften.titel }),
     h("button", { klasse: "knopf-icon", type: "button", title: T.eigenschaften.schliessen, "aria-label": T.eigenschaften.schliessen, aufClick: umschalteInfo }, symbol("schliessen", 14)));
   const inhalt = h("div", { klasse: "info-inhalt" });
   $("info").replaceChildren(kopf, inhalt);
@@ -1214,12 +1244,21 @@ function sageAn(text) {
   const a = document.getElementById("status-ansage");
   if (a) a.textContent = text;
 }
+// Wörter und Format der offenen Notiz (rechts in der Statusleiste); gezählt wird der Text im Editor ohne Datei-Kopf, bei jeder Änderung kurz entprellt
+const formatName = (p) => (/\.md$/i.test(p) ? T.statusInfo.markdown : /\.txt$/i.test(p) ? T.statusInfo.text : (/\.([A-Za-z0-9]{1,8})$/.exec(p)?.[1] || T.statusInfo.datei).toUpperCase());
+let wortTimer = null;
+const wortZahl = () => (S.pfad ? wortAnzahl(ed.text()) : 0);
+function planeWoerter() {
+  clearTimeout(wortTimer);
+  wortTimer = setTimeout(() => {
+    const el = stEl.querySelector('[data-st="woerter"] > span');
+    if (el && S.pfad) { const t = T.statusInfo.woerter(wortZahl()); if (el.textContent !== t) el.textContent = t; }
+    else if (S.pfad) zeichneStatus();
+  }, 250);
+}
 function zeichneStatus() {
   const g = S.git, k = [];
   if (!S.info || !S.info.vault) { stEl.replaceChildren(); return; }
-  k.push(st("vault", [symbol("vault", 14), h("span", { text: S.info.name || PRODUKT })], { titel: S.info.vault }));
-  if (S.info.appVersion) k.push(st("version", [symbol("info", 14), h("span", { text: S.info.appVersion })], { titel: T.status.version(S.info.appVersion) }));
-  k.push(h("span", { klasse: "trenner" }));
   const vertrauen = vertrauenVon(S.info);
   if (vertrauen && !vertrauen.erlaubt) {
     // Statt der Git-Angaben: „Nur ansehen“, bis der Nutzer dem Vault vertraut (Klick öffnet die Frage)
@@ -1230,19 +1269,31 @@ function zeichneStatus() {
   } else if (!S.info.git || (g && !g.repo)) {
     k.push(st("kein-git", [punktEl("grau"), h("span", { text: T.status.keinGit })], { titel: "Dieser Ordner ist nicht mit Git gesichert." }));
   } else if (g) {
-    k.push(st("zweig", [symbol("zweig", 14), h("span", { text: g.zweig || "–" }), ...(g.upstream ? [h("span", { text: `↑${g.vor} ↓${g.zurueck}` })] : [])], { titel: g.upstream ? `Verbunden mit ${g.upstream}` : "Kein Remote-Zweig" }));
-    if (!g.remote) k.push(st("remote", [symbol("wolke", 14), h("span", { text: T.status.keinRemote })], { klick: oeffneRemote, titel: T.status.remoteTitel, klasse: "warn" }));
-    else k.push(st("remote", [symbol("wolke", 14), h("span", { text: g.upstream ? g.upstream.split("/")[0] : "Remote" })], { titel: g.upstream || "Remote" }));
-    k.push(h("span", { klasse: "trenner" }));
+    // Prototyp: der Sicherungszustand steht ganz links, danach Änderungen und Verlauf; Zweig und Remote rücken dahinter
     const { el: syncEl, sy } = syncKnopf(g);
     k.push(syncEl);
     sageAn(sy.z === "aktuell" || sy.z === "senden" || sy.z === "nie" ? "" : sy.text);
-    k.push(h("span", { klasse: "trenner" }));
     const n = g.geaendert.length;
     k.push(st("geaendert", [symbol("commit", 14), h("span", { text: n ? T.status.geaendert(n) : T.status.sauber })], { klick: oeffneCommit, titel: n ? T.status.geaendertTitel(n) : "Änderungen sichern (⌘⇧G)", klasse: "st-geaendert" + (n ? " hervor" : "") }));
     k.push(st("verlauf", [symbol("verlauf", 14), h("span", { text: T.status.verlauf })], { klick: oeffneVerlauf, titel: T.status.verlaufTitel, klasse: S.sicht.art === "verlauf" ? "aktiv" : "" }));
+    k.push(h("span", { klasse: "trenner" }));
+    k.push(st("zweig", [symbol("zweig", 14), h("span", { text: g.zweig || "–" }), ...(g.upstream ? [h("span", { text: `↑${g.vor} ↓${g.zurueck}` })] : [])], { titel: g.upstream ? `Verbunden mit ${g.upstream}` : "Kein Remote-Zweig" }));
+    if (!g.remote) k.push(st("remote", [symbol("wolke", 14), h("span", { text: T.status.keinRemote })], { klick: oeffneRemote, titel: T.status.remoteTitel, klasse: "warn" }));
+    else k.push(st("remote", [symbol("wolke", 14), h("span", { text: g.upstream ? g.upstream.split("/")[0] : "Remote" })], { titel: g.upstream || "Remote" }));
   }
+  // Ort des Vaults und Version der App (leise, wie im Prototyp „~/Kortex“)
+  k.push(st("vault", [symbol("vault", 14), h("span", { text: kurzPfadVon(S.info.vault) || S.info.name || PRODUKT })], { titel: `${S.info.name || PRODUKT} — ${S.info.vault}` }));
+  if (S.info.appVersion) k.push(st("version", [symbol("info", 14), h("span", { text: S.info.appVersion })], { titel: T.status.version(S.info.appVersion) }));
   k.push(h("span", { klasse: "sp" }));
+  // ---- SLOT P7 (Kontingent): hier zeigt das Paket „Kontingent“ Konto und Verbrauch (Balken, Prozent, Rest). Das leere Element bleibt unsichtbar (hauptfenster.css);
+  // wer es füllt, setzt Inhalt in [data-st="platz-kontingent"] und achtet darauf, dass die Leiste bei 1100 px nichts abschneidet (Test „Statusleiste bei kleinem Fenster“).
+  k.push(h("span", { klasse: "st st-slot", "data-st": "platz-kontingent", "data-slot": "kontingent", title: T.statusInfo.kontingentSlot }));
+  if (S.pfad && !(istAufgabenSicht() && !S.aufgabeDatei)) {
+    const w = wortZahl();
+    k.push(st("woerter", [h("span", { text: T.statusInfo.woerter(w) })], { titel: T.statusInfo.woerter(w) }));
+    k.push(st("format", [h("span", { text: formatName(S.pfad) })], { titel: S.pfad }));
+    k.push(h("span", { klasse: "trenner" }));
+  }
   const verbunden = S.kiVerbunden || S.ki?.agenten?.some((a) => a.id === "claude" && a.verbunden === true);
   k.push(st("claude", [kiLogo("claude", 14, { dekorativ: true }), h("span", { text: T.status.claude }), symbol(verbunden ? "haken" : "schliessen", 12)], { klick: oeffneKi, titel: verbunden ? T.status.claudeVerbunden : T.status.claudeNicht, klasse: verbunden ? "gut" : "" }));
   const gs = S.gesundheit;
@@ -1276,11 +1327,11 @@ function planeBaumRefresh() { clearTimeout(baumTimer); baumTimer = setTimeout(la
 async function ladeGesundheit() {
   try { S.gesundheit = await api.gesundheit(); } catch { S.gesundheit = null; }
   try { S.rueckfragen = await api.rueckfragen(); } catch { S.rueckfragen = null; }
-  zeichneStatus(); zeichneBereiche();
+  zeichneStatus(); zeichneBereiche(); kiZeile.zeichne();
 }
 async function ladeKi() {
   try { S.ki = await api.kiErkennen(); } catch { S.ki = null; }
-  zeichneStatus();
+  zeichneStatus(); kiZeile.lade();
 }
 
 // Nach Abgleich, Zusammenführen oder Zurückholen: Dateibaum und die offene Datei vom Datenträger auffrischen (Eingaben gehen nie verloren)
@@ -1693,11 +1744,15 @@ async function oeffneNutzung() {
 const stufenKlasse = (s) => (/rot|red|fehler/i.test(s || "") ? "rot" : /gelb|warn|yellow/i.test(s || "") ? "gelb" : /gr[uü]n|ok|green/i.test(s || "") ? "gruen" : "grau");
 
 // ======================================================= Palette
+const PAL_SYM = new Map([[T.befehle.neu, "stift"], [T.befehle.merken, "blitz"], [TAUF.erfassen.befehl, "aufgaben"], [T.befehle.commit, "commit"], [T.befehle.sync, "sync"], [TF.befehl, "funke"], [T.befehle.posteingang, "inbox"],
+  [T.befehle.alleNotizen, "notiz"], [T.befehle.aufgaben, "aufgaben"], [T.befehle.suche, "suche"], [T.befehle.inNotiz, "suche"], [T.befehle.info, "seitenleiste"], [T.befehle.gesundheit, "herz"], [T.befehle.nutzung, "balken"],
+  [T.liste.verlauf, "uhr"], [T.befehle.mcp, "stecker"], [T.befehle.konten, "person"], [T.befehle.ordner, "ordner"], [T.befehle.ansicht, "ansicht"]]);
 function oeffnePalette(vorgabe = "") {
   if (dialogOffen()) return;
   const befehle = [
     [T.befehle.neu, "⌘N", oeffneNeu], [T.befehle.merken, "⌘⇧M", oeffneMerken], [TAUF.erfassen.befehl, "⌘⇧A", aufgabeErfassen], [T.befehle.commit, "⌘⇧G", oeffneCommit], [T.befehle.sync, "", sync],
-    [TF.befehl, "⌘J", () => frage.oeffne()], [T.befehle.suche, "⌘⇧F", fokusSuche], [T.befehle.inNotiz, "⌘F", () => ed.suchen()], [T.befehle.info, "⌘⌥I", umschalteInfo], [T.befehle.gesundheit, "", oeffneGesundheit], [T.befehle.nutzung, "", oeffneNutzung],
+    [TF.befehl, "⌘J", () => frage.oeffne()], [T.befehle.posteingang, "⌘1", () => waehleSicht({ art: "bereich", id: "inbox" })], [T.befehle.alleNotizen, "⌘2", () => waehleSicht({ art: "bereich", id: "alle" })], [T.befehle.aufgaben, "⌘3", () => waehleSicht({ art: "bereich", id: "aufgaben" })],
+    [T.befehle.suche, "⌘⇧F", fokusSuche], [T.befehle.inNotiz, "⌘F", () => ed.suchen()], [T.befehle.info, "⌘\\", umschalteInfo], [T.befehle.gesundheit, "", oeffneGesundheit], [T.befehle.nutzung, "", oeffneNutzung],
     [T.liste.verlauf, "", oeffneVerlauf],
     ...(inApp() ? [[T.befehle.ordner, "", () => aktion("ordner-zeigen", S.pfad || undefined)], [T.befehle.ansicht, "", oeffneUebersicht]] : []),
     [T.befehle.mcp, "", oeffneKi], [T.befehle.konten, "", oeffneKonten],
@@ -1723,34 +1778,47 @@ function oeffnePalette(vorgabe = "") {
       : S.zuletzt.filter((p) => S.eintraege.has(p)).slice(0, 6).map((p) => S.eintraege.get(p)));
     const bef = befehle.filter(([t]) => !qq || sucheGrad(t, qq));
     eintraege = [...notizen.map((d) => ({ typ: "notiz", p: d.pfad, titel: S.nMap.get(d.pfad)?.titel || d.titel })), ...bef.map(([t, k, f]) => ({ typ: "befehl", t, k, f }))];
-    // Ausdrücklicher Eintrag am Ende: nie still „Neue Notiz“ öffnen
+    // Ausdrückliche Einträge am Ende: nie still „Neue Notiz“ öffnen; „Frag deinen Vault“ als Ausweg, wenn nichts passt (⌘↩ fragt gleich mit dem getippten Text)
     if (qq && !nur) eintraege.push({ typ: "anlegen", t: T.palette.anlegen(qq), k: "", titel: qq });
-    const nurAnlegen = eintraege.length === 1 && eintraege[0].typ === "anlegen";
+    if (qq && !nur && S.info?.vault) eintraege.push({ typ: "frage", t: T.palette.frageTitel(qq), k: "⌘↵", text: qq });
+    const nurAnlegen = eintraege.length > 0 && eintraege.every((x) => x.typ === "anlegen" || x.typ === "frage");
     idx = nurAnlegen ? -1 : Math.min(Math.max(idx, 0), Math.max(0, eintraege.length - 1));
     const teile = [];
-    if (notizen.length) teile.push(h("div", { klasse: "pal-gruppe", text: qq ? T.palette.notizen : "Zuletzt" }));
+    if (notizen.length) teile.push(h("div", { klasse: "pal-gruppe", text: qq ? T.palette.notizen : T.palette.zuletzt }));
     let i = 0;
     for (const e of eintraege) {
       if (e.typ === "befehl" && i === notizen.length) teile.push(h("div", { klasse: "pal-gruppe", text: T.palette.befehle }));
       if (e.typ === "anlegen" && (i > 0 || nurAnlegen)) teile.push(h("div", { klasse: "pal-gruppe", text: T.palette.nichtsGefunden && nurAnlegen ? T.palette.nichtsGefunden : "Anlegen" }));
+      if (e.typ === "frage" && !nurAnlegen && eintraege[i - 1]?.typ !== "anlegen") teile.push(h("div", { klasse: "pal-gruppe", text: T.palette.frageGruppe }));
       const mein = i;
       const name = e.typ === "notiz" ? (e.titel || ohneEndung(dateiName(e.p))) : e.t;
+      const symName = e.typ === "notiz" ? "notiz" : e.typ === "anlegen" ? "stift" : e.typ === "frage" ? "funke" : (PAL_SYM.get(e.t) || "pfeil");
+      const taste = e.typ === "notiz" ? null : e.k ? h("span", { klasse: "r tasten" }, ...Array.from(e.k).map((c) => h("kbd", { text: c }))) : null;
       teile.push(h("div", { klasse: "pal-eintrag", role: "option", "aria-selected": String(i === idx), "data-pal": e.typ, aufMouseenter: () => { idx = mein; markiere(); }, aufClick: () => waehle(mein) },
+        symName ? symbol(symName, 16) : null,
         h("span", { klasse: "n", text: name }),
-        h("span", { klasse: "r", text: e.typ === "notiz" ? e.p : e.k })));
+        e.typ === "notiz" ? h("span", { klasse: "r", text: e.p }) : (taste || h("span", { klasse: "r", text: "" }))));
       i++;
     }
     liste.replaceChildren(...teile);
   };
   const markiere = () => { [...liste.querySelectorAll(".pal-eintrag")].forEach((el, i) => el.setAttribute("aria-selected", String(i === idx))); liste.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" }); };
-  const waehle = (i) => { const e = eintraege[i]; if (!e) return; d.schliessen(); setTimeout(() => (e.typ === "notiz" ? oeffne(e.p) : e.typ === "anlegen" ? oeffneNeu(e.titel) : e.f()), 0); };
+  const waehle = (i) => { const e = eintraege[i]; if (!e) return; d.schliessen(); setTimeout(() => (e.typ === "notiz" ? oeffne(e.p) : e.typ === "anlegen" ? oeffneNeu(e.titel) : e.typ === "frage" ? frage.oeffneMit(e.text) : e.f()), 0); };
+  const fragen = () => { const q = eingabe.value.trim().replace(/^>\s*/, ""); d.schliessen(); setTimeout(() => (q ? frage.oeffneMit(q) : frage.oeffne()), 0); };
   eingabe.addEventListener("input", () => { idx = 0; zeichne(); });
   eingabe.addEventListener("keydown", (e) => {
     if (e.key === "ArrowDown") { e.preventDefault(); idx = (idx + 1) % Math.max(1, eintraege.length); markiere(); }
     else if (e.key === "ArrowUp") { e.preventDefault(); idx = (idx + eintraege.length - 1) % Math.max(1, eintraege.length); markiere(); }
+    else if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && S.info?.vault) { e.preventDefault(); e.stopPropagation(); fragen(); }
     else if (e.key === "Enter") { e.preventDefault(); waehle(idx); }
   });
-  const d = dialog({ eigen: h("div", { klasse: "palette", role: "dialog", "aria-modal": "true" }, eingabeFeld.el, liste) });
+  (eingabeFeld.el.querySelector(".bs-feld") || eingabeFeld.el).append(h("kbd", { klasse: "pal-esc", text: T.palette.esc }));
+  const fuss = h("footer", { klasse: "pal-fuss" },
+    h("span", { klasse: "pal-hinweis" }, h("kbd", { text: "↑" }), h("kbd", { text: "↓" }), T.palette.waehlen),
+    h("span", { klasse: "pal-hinweis" }, h("kbd", { text: "↵" }), T.palette.oeffnen),
+    S.info?.vault ? h("span", { klasse: "pal-hinweis" }, h("kbd", { text: "⌘" }), h("kbd", { text: "↵" }), T.palette.fragen) : null,
+    h("span", { klasse: "pal-hinweis pal-vault" }, symbol("vault", 12), S.info?.name || PRODUKT));
+  const d = dialog({ eigen: h("div", { klasse: "palette", role: "dialog", "aria-modal": "true" }, eingabeFeld.el, liste, fuss) });
   eingabe.focus(); // sofort, nicht erst im nächsten Takt: schnell getippte Zeichen dürfen nicht verloren gehen
   zeichne();
 }
@@ -1759,6 +1827,11 @@ function oeffnePalette(vorgabe = "") {
 // Ist das Fenster zu schmal, klappt die Spalte von selbst ein (die Einstellung bleibt); ein Klick holt sie trotzdem.
 const infoSichtbar = () => S.infoAn && (!S.infoEng || S.infoErzwungen);
 function umschalteInfo() {
+  // Die rechte Spalte hat einen Platz: ist „Frag deinen Vault“ offen, holt der Knopf die Eigenschaften dorthin zurück
+  if (frage.istOffen()) { frage.schliesse(); S.infoAn = true; S.infoErzwungen = !!S.infoEng; speichereLokal("infoAn", true); glatt(() => begrenzeBreiten()); return; }
+  glatt(() => umschalteInfoInnen());
+}
+function umschalteInfoInnen() {
   if (infoSichtbar()) { S.infoAn = false; S.infoErzwungen = false; }
   else { S.infoAn = true; S.infoErzwungen = !!S.infoEng; }
   speichereLokal("infoAn", S.infoAn);
@@ -1770,17 +1843,26 @@ $("fuss-neu").addEventListener("click", () => oeffneNeu());
 $("fuss-merken").addEventListener("click", oeffneMerken);
 
 // ======================================================= Spaltenbreiten (Ziehen, Tastatur, Doppelklick = Standard)
-const GRENZEN = { seite: [200, 380], liste: [248, 560], info: [248, 520] };
-const standardBreite = (n) => (window.innerWidth < 1200 ? { seite: 224, liste: 272, info: 272 } : { seite: 252, liste: 308, info: 304 })[n];
-const W = { seite: 252, liste: 308, info: 304 }; // gewünschte Breiten (gezogen, gespeichert)
+const GRENZEN = { seite: [200, 380], liste: [248, 560], info: [248, 520], frage: [320, 520] };
+const standardBreite = (n) => (window.innerWidth < 1200 ? { seite: 224, liste: 272, info: 272, frage: 340 } : { seite: 252, liste: 308, info: 304, frage: 380 })[n];
+const W = { seite: 252, liste: 308, info: 304, frage: 380 }; // gewünschte Breiten (gezogen, gespeichert)
 const E = { ...W }; // tatsächliche Breiten, wenn das Fenster nicht für alle Wünsche reicht
-const EDITOR_MIN = 420, EDITOR_MIN_MIT_INFO = 560;
+const EDITOR_MIN = 420, EDITOR_MIN_MIT_INFO = 560, EDITOR_MIN_MIT_FRAGE = 400;
 function wendeBreitenAn() {
   const app = $("app");
-  app.style.setProperty("--b-seite", E.seite + "px"); app.style.setProperty("--b-liste", E.liste + "px"); app.style.setProperty("--b-info-voll", E.info + "px");
+  app.style.setProperty("--b-seite", E.seite + "px"); app.style.setProperty("--b-liste", E.liste + "px"); app.style.setProperty("--b-info-voll", E.info + "px"); app.style.setProperty("--b-frage", E.frage + "px");
+}
+// Öffnen und Schließen der rechten Spalte gleiten (280 ms, frage.css/studio.css); beim Ziehen und Verkleinern des Fensters nicht — das soll der Hand folgen.
+let glattTimer = null;
+function glatt(f) {
+  const a = $("app");
+  if (wenigBewegung()) { f(); return; }
+  a.classList.add("glatt"); clearTimeout(glattTimer);
+  f();
+  glattTimer = setTimeout(() => a.classList.remove("glatt"), 360);
 }
 function begrenzeBreiten() {
-  for (const n of ["seite", "liste", "info"]) W[n] = Math.min(GRENZEN[n][1], Math.max(GRENZEN[n][0], W[n]));
+  for (const n of ["seite", "liste", "info", "frage"]) W[n] = Math.min(GRENZEN[n][1], Math.max(GRENZEN[n][0], W[n]));
   // Neben der Eigenschaften-Spalte soll der Editor mindestens 560 px behalten, sonst klappt sie ein
   S.infoEng = window.innerWidth < GRENZEN.seite[0] + GRENZEN.liste[0] + GRENZEN.info[0] + EDITOR_MIN_MIT_INFO;
   if (!S.infoEng) S.infoErzwungen = false;
@@ -1792,13 +1874,18 @@ function begrenzeBreiten() {
     const nimm = Math.min(E[n] - GRENZEN[n][0], -uebrig); E[n] -= nimm; uebrig += nimm;
   }
   $("app").dataset.info = zeige ? "an" : "aus";
-  $("knopf-info")?.setAttribute("aria-pressed", String(zeige));
+  $("knopf-info")?.setAttribute("aria-pressed", String(zeige && !S.frageAn));
+  // „Frag deinen Vault“ nimmt den Platz der Eigenschaften und schiebt den Editor beiseite, wenn er danach noch mindestens 400 px hat; sonst liegt das Panel darüber
+  if (S.frageAn) {
+    const schiebt = window.innerWidth - E.seite - E.liste - E.frage >= EDITOR_MIN_MIT_FRAGE;
+    $("app").dataset.frageModus = schiebt ? "schiebt" : "deckt";
+  } else delete $("app").dataset.frageModus;
   wendeBreitenAn();
 }
 const speichereBreiten = () => speichereLokal("breiten", W);
 function richteGriffeEin() {
   const gespeichert = leseLokal("breiten", null);
-  for (const n of ["seite", "liste", "info"]) W[n] = gespeichert && Number.isFinite(gespeichert[n]) ? gespeichert[n] : standardBreite(n);
+  for (const n of ["seite", "liste", "info", "frage"]) W[n] = gespeichert && Number.isFinite(gespeichert[n]) ? gespeichert[n] : standardBreite(n);
   begrenzeBreiten();
   const app = $("app");
   document.querySelectorAll(".griff").forEach((g) => {
@@ -1807,7 +1894,7 @@ function richteGriffeEin() {
       if (e.button !== 0) return;
       e.preventDefault(); g.setPointerCapture(e.pointerId);
       const start = e.clientX, b0 = E[name]; // vom sichtbaren Stand aus ziehen
-      app.classList.add("zieht"); g.classList.add("aktiv");
+      app.classList.remove("glatt"); app.classList.add("zieht"); g.classList.add("aktiv");
       const move = (ev) => { W[name] = b0 + (name === "info" ? start - ev.clientX : ev.clientX - start); begrenzeBreiten(); };
       const up = () => { g.removeEventListener("pointermove", move); g.removeEventListener("pointerup", up); g.removeEventListener("pointercancel", up); app.classList.remove("zieht"); g.classList.remove("aktiv"); speichereBreiten(); };
       g.addEventListener("pointermove", move); g.addEventListener("pointerup", up); g.addEventListener("pointercancel", up);
@@ -1819,7 +1906,7 @@ function richteGriffeEin() {
       W[name] = E[name] + (e.key === "ArrowRight" ? 16 : -16) * (name === "info" ? -1 : 1); begrenzeBreiten(); speichereBreiten();
     });
   });
-  window.addEventListener("resize", begrenzeBreiten);
+  window.addEventListener("resize", () => { $("app").classList.remove("glatt"); begrenzeBreiten(); }); // Fenstergröße folgt sofort, nur Öffnen/Schließen gleitet
 }
 
 // ======================================================= Tastatur
@@ -1849,6 +1936,8 @@ window.addEventListener("keydown", (e) => {
   else if (k === "f" && e.shiftKey) tun(fokusSuche);
   else if (k === "f" && !e.shiftKey && !e.altKey && !dialogOffen() && S.pfad && !e.target.closest?.("input, textarea, select")) tun(() => ed.suchen());
   else if ((k === "i" || e.code === "KeyI") && e.altKey) tun(umschalteInfo);
+  else if ((k === "\\" || e.code === "Backslash") && !e.shiftKey && !e.altKey && S.info?.vault) tun(umschalteInfo); // ⌘\: rechte Spalte (Eigenschaften) ein/aus
+  else if ((k === "1" || k === "2" || k === "3") && !e.shiftKey && !e.altKey && !dialogOffen() && S.info?.vault) tun(() => waehleSicht({ art: "bereich", id: { 1: "inbox", 2: "alle", 3: "aufgaben" }[k] })); // ⌘1 Posteingang, ⌘2 Alle Notizen, ⌘3 Aufgaben
   else if (k === "g" && e.shiftKey) tun(oeffneCommit);
   else if ((k === "/" || e.code === "Slash") && !e.shiftKey && !e.altKey) tun(oeffneKuerzel);
 }, true);
@@ -2187,7 +2276,7 @@ function zeigeOhneVault(host) {
 
 let intervalle = false;
 function zuruecksetzen() {
-  clearTimeout(speicherTimer); clearTimeout(gitTimer); clearTimeout(baumTimer); clearTimeout(liveTimer); clearTimeout(menueTimer); clearTimeout(kiTimer); kiSammlung = [];
+  clearTimeout(speicherTimer); clearTimeout(gitTimer); clearTimeout(baumTimer); clearTimeout(liveTimer); clearTimeout(menueTimer); clearTimeout(kiTimer); kiSammlung = []; kiZeile.zuruecksetzen();
   liveSammlung = { pfade: [], aufgaben: false, alles: false };
   S.pfad = null; S.hash = null; S.dirty = false; S.konflikt = null; S.schutz = false; S.speichert = false; S.aktuellePruefung = null;
   S.notizen = []; S.nMap = new Map(); S.baum = []; S.eintraege = new Map(); S.git = null; S.gesundheit = null; S.rueckfragen = null; S.syncFehler = null;

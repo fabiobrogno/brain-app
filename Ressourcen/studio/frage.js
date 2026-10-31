@@ -11,7 +11,8 @@ import { auswahl, segment, textbereich, knopf as baueKnopf } from "./bausteine.j
 
 const wartePause = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// z: { vaultPfad(): string|null, oeffneSeite(pfad), oeffneVertrauen(): Dialog|null, oeffneKi(): void }
+// z: { vaultPfad(): string|null, oeffneSeite(pfad), oeffneVertrauen(): Dialog|null, oeffneKi(): void, beiUmschalten?(offen): void }
+// Das Panel sitzt in der rechten Spalte des Hauptfensters (#frage-host); offen/zu steuert data-frage am #app, das Gleiten übernimmt frage.css.
 export function erzeugeFragePanel(z) {
   const host = document.getElementById("frage-host");
   let offen = false;
@@ -21,14 +22,14 @@ export function erzeugeFragePanel(z) {
   let prueft = 0, fixiert = true;
 
   const kopf = h("header", { klasse: "frage-kopf" },
-    h("div", { klasse: "frage-titel" }, symbol("frage", 16), h("h2", { id: "frage-titel", text: TF.titel })),
+    h("div", { klasse: "frage-titel" }, symbol("funke", 16), h("h2", { id: "frage-titel", text: TF.titel })),
     baueKnopf({ symbol: "schliessen", variante: "leise", groesse: "s", aktion: "frage-zu", titel: `${TF.schliessen} (Esc)`, label: TF.schliessen, aufKlick: () => schliesse() }));
   const leer = h("div", { klasse: "frage-leer", hidden: true, "data-frage": "leer" });
   const formular = h("form", { klasse: "frage-form", hidden: true, "data-frage": "formular", novalidate: true });
   const ausgabe = h("div", { klasse: "frage-ausgabe", "data-frage": "ausgabe" });
   const rumpf = h("div", { klasse: "frage-rumpf" }, leer, formular, ausgabe);
   const fuss = h("footer", { klasse: "frage-fuss", "data-frage": "fuss" }, symbol("schild", 12), h("span", { text: `${TF.nichtGespeichert} ${TF.nurLesen}` }));
-  const panel = h("aside", { id: "frage", klasse: "frage", role: "complementary", "aria-labelledby": "frage-titel", hidden: true, "data-frage": "panel" }, kopf, rumpf, fuss);
+  const panel = h("aside", { id: "frage", klasse: "frage", role: "complementary", "aria-labelledby": "frage-titel", inert: true, "data-frage": "panel" }, kopf, rumpf, fuss);
   host.replaceChildren(panel);
   rumpf.addEventListener("scroll", () => { fixiert = rumpf.scrollHeight - rumpf.scrollTop - rumpf.clientHeight < 40; });
 
@@ -100,7 +101,7 @@ export function erzeugeFragePanel(z) {
       h("div", { klasse: "frage-zeile" }, h("span", { klasse: "frage-label", text: TF.modell }), modellWahl),
       eingabe.el,
       h("div", { klasse: "frage-aktionen" }, senden),
-      ...hinweise);
+      ...hinweise.filter(Boolean)); // ohne Filter schriebe replaceChildren(null) das Wort „null“ ins Panel
     eingabe.passe();
   }
   formular.addEventListener("submit", (e) => { e.preventDefault(); sende(); });
@@ -236,7 +237,8 @@ export function erzeugeFragePanel(z) {
   // ---------- Öffnen und Schließen ----------
   function oeffne() {
     if (!z.vaultPfad()) return;
-    offen = true; panel.hidden = false; document.getElementById("app")?.setAttribute("data-frage", "an"); knopfZustand();
+    if (offen) return;
+    offen = true; panel.inert = false; z.beiUmschalten?.(true); document.getElementById("app")?.setAttribute("data-frage", "an"); knopfZustand();
     fixiert = true;
     ladeBereit();
     setTimeout(() => formular.querySelector("textarea")?.focus(), 0);
@@ -244,7 +246,7 @@ export function erzeugeFragePanel(z) {
   function schliesse() {
     if (!offen) return;
     if (lauf && !lauf.fertig) abbrechen(); // ein Fenster, das zu ist, fragt nicht weiter
-    offen = false; panel.hidden = true; document.getElementById("app")?.removeAttribute("data-frage"); knopfZustand();
+    offen = false; panel.inert = true; z.beiUmschalten?.(false); document.getElementById("app")?.removeAttribute("data-frage"); knopfZustand();
     document.getElementById("knopf-frage")?.focus();
   }
   const umschalten = () => (offen ? schliesse() : oeffne());
@@ -261,7 +263,16 @@ export function erzeugeFragePanel(z) {
   function zuruecksetzen() {
     prueft++; lauf = null; text = ""; bereit = null; bereitFehler = null; konto = null; laedt = false;
     ausgabe.replaceChildren(); formular.replaceChildren();
-    if (offen) { offen = false; panel.hidden = true; document.getElementById("app")?.removeAttribute("data-frage"); knopfZustand(); }
+    if (offen) { offen = false; panel.inert = true; z.beiUmschalten?.(false); document.getElementById("app")?.removeAttribute("data-frage"); knopfZustand(); }
   }
-  return { oeffne, schliesse, umschalten, zuruecksetzen, istOffen: () => offen, laeuft: () => !!(lauf && !lauf.fertig) };
+  // Öffnet das Panel mit einem vorbereiteten Text im Feld (Befehlspalette: ⌘↩). Gesendet wird nichts: die Frage geht erst nach deinem Klick auf „Fragen“.
+  function oeffneMit(t) {
+    if (!z.vaultPfad()) return;
+    if (lauf && lauf.fertig) neueFrage();
+    if (!lauf) text = String(t || "").slice(0, 2000);
+    oeffne();
+    if (!lauf && bereit) zeichneRumpf();
+    setTimeout(() => { const f = formular.querySelector("textarea"); if (f) { f.focus(); f.setSelectionRange(f.value.length, f.value.length); } }, 0);
+  }
+  return { oeffne, oeffneMit, schliesse, umschalten, zuruecksetzen, istOffen: () => offen, laeuft: () => !!(lauf && !lauf.fertig) };
 }
