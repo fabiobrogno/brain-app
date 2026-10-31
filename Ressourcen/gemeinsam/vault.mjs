@@ -454,6 +454,17 @@ export function oeffneVault(vaultPfad, opts = {}) {
       return mitSicherungsStand(await gitFn.status(wurzel, ctxVon(s)));
     },
     // extra.ohneHooks: der Commit läuft auch in einem vertrauten Vault ohne Hooks (Rückgängig für KI-Ablagen, P8a)
+    // Aktivitätsprotokoll (P8a, Rückgängig): Ordnername des Posteingangs; Git beschäftigt?; ist die Datei versioniert UND unverändert gegenüber HEAD (ls-files + diff, ohne Hooks)?
+    inboxOrdnerName: inboxOrdner, umstellungLaeuft: () => umstellungLaeuft(wurzel), gitBeschaeftigt: () => gitFn.gitBeschaeftigt(wurzel),
+    gitVersioniert: async (rel) => {
+      const s = gitSicht();
+      if (s.gesperrt) return false;
+      const ctx = { ...ctxVon(s), ohneHooks: true };
+      const ls = await gitFn.git(wurzel, ["ls-files", "--error-unmatch", "--", rel], ctx);
+      if (ls.code !== 0) return false;
+      const d = await gitFn.git(wurzel, ["diff", "--quiet", "HEAD", "--", rel], ctx);
+      return d.code === 0;
+    },
     gitCommit: async (a, extra = {}) => { umstellungSperre(); return gitFn.commit(wurzel, a || {}, gitCtx({ limit: opts.gitLimitCommit, ...(extra && extra.ohneHooks === true ? { hooks: false } : {}) })); },
     // konflikteLoesen: bei Konflikten die Zusammenführung offen lassen, damit die Oberfläche pro Datei wählen lässt (sonst wie bisher: abbrechen, 409)
     gitSync: async (a) => {

@@ -2,8 +2,8 @@
 // Ein Protokoll je Vault im Support-Ordner der App: <support>/aktivitaet/<Kennung>.jsonl (Format, Rotation, Grenzen: gemeinsam/aktivitaet.mjs, die Werkstatt
 // und MCP-Server benutzen). Der Kern ist in sich geschlossen und importiert nichts aus gemeinsam/: der Abschnitt zwischen den beiden LOG-Marken (Anfang und Ende)
 // ist darum wortgleich in beiden Dateien (Tests/Node/aktivitaet-paritaet.test.mjs vergleicht beide). Geändert wird er immer an beiden Stellen.
-// Nie im Protokoll: Inhalt von Notizen, Titel, Zugangsdaten. Schreiben wirft nie — ein Hook darf wegen des Protokolls nie ausfallen.
-import { appendFileSync, readFileSync, mkdirSync, statSync, renameSync, openSync, readSync, closeSync, realpathSync } from "node:fs";
+// Nie im Protokoll: Inhalt von Notizen, Titel, Zugangsdaten (Pfade sind Dateinamen und können den Titel als Kurzform enthalten). Das Protokoll ist ein Hinweis, nie eine Berechtigung. Schreiben wirft nie — ein Hook darf wegen des Protokolls nie ausfallen.
+import { appendFileSync, readFileSync, mkdirSync, statSync, renameSync, openSync, readSync, closeSync, realpathSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { createHash, randomBytes } from "node:crypto";
 
@@ -60,7 +60,8 @@ export function bereinige(e, { kennung = null } = {}) {
   const pfade = (Array.isArray(e.pfade) ? e.pfade : []).map(relPfad).filter(Boolean).slice(0, MAX_PFADE);
   if (pfade.length) r.pfade = pfade;
   const rg = e.rueckgaengig;
-  if (rg && typeof rg === "object" && rg.art === "ablage-entfernen" && relPfad(rg.pfad) && typeof rg.hash === "string" && /^[0-9a-f]{64}$/.test(rg.hash)) r.rueckgaengig = { art: "ablage-entfernen", pfad: relPfad(rg.pfad), hash: rg.hash };
+  // Rückgängig nur für genau die Datei, die der Eintrag als ersten Pfad nennt (die Oberfläche zeigt sie an): so weiß der Nutzer, was entfernt würde
+  if (rg && typeof rg === "object" && rg.art === "ablage-entfernen" && relPfad(rg.pfad) && pfade[0] === relPfad(rg.pfad) && typeof rg.hash === "string" && /^[0-9a-f]{64}$/.test(rg.hash)) r.rueckgaengig = { art: "ablage-entfernen", pfad: relPfad(rg.pfad), hash: rg.hash };
   if (typeof e.dk === "string" && e.dk) r.dk = einzeilig(e.dk, 120);
   return r;
 }
@@ -75,6 +76,14 @@ function schwanz(datei, bytes = 16384) {
     readSync(fd, b, 0, n, st.size - n);
     return b.toString("utf8");
   } catch { return ""; } finally { if (fd !== undefined) try { closeSync(fd); } catch { /* egal */ } }
+}
+
+function rotiere(datei, max) {
+  const sperre = `${datei}.lock`;
+  try { closeSync(openSync(sperre, "wx", 0o600)); }
+  catch { try { if (Date.now() - statSync(sperre).mtimeMs > 10_000) unlinkSync(sperre); } catch { /* weg */ } return; } // ein anderer Prozess rotiert gerade
+  try { if (statSync(datei).size > max) renameSync(datei, `${datei}.alt`); } catch { /* schon rotiert */ }
+  finally { try { unlinkSync(sperre); } catch { /* weg */ } }
 }
 
 // Hängt ein Ereignis an das Protokoll des Vaults an. → das gespeicherte Ereignis | null (ungültig, gedrosselt, nicht schreibbar).
@@ -98,9 +107,10 @@ export function schreibeEreignis(support, wurzel, e, opt = {}) {
     mkdirSync(aktivitaetOrdner(support), { recursive: true, mode: 0o700 });
     appendFileSync(datei, JSON.stringify(r) + "\n", { mode: 0o600 });
     // Rotieren: zu groß → die Datei wird zur Vorfassung (rename ist atomar; wer gleichzeitig noch anhängt, landet in der Vorfassung, die weiter gelesen wird).
-    // Die Größe wird unmittelbar vor dem Umbenennen noch einmal geprüft: ein zweiter Prozess, der gerade rotiert hat, wird so nicht überrollt.
+    // Nur ein Prozess rotiert (Sperrdatei „wx“, nach 10 s gilt sie als verwaist) und prüft die Größe unter der Sperre noch einmal: zwei Prozesse überschreiben so nie die Vorfassung
+    // mit einer fast leeren Datei.
     const max = Number.isFinite(opt.maxBytes) && opt.maxBytes > 0 ? opt.maxBytes : MAX_BYTES;
-    try { if (statSync(datei).size > max) renameSync(datei, `${datei}.alt`); } catch { /* schon rotiert */ }
+    try { if (statSync(datei).size > max) rotiere(datei, max); } catch { /* schon rotiert */ }
     return r;
   } catch { return null; }
 }

@@ -99,7 +99,9 @@ final class MitteilungsDienst {
             self?.oeffne(ziel)
         }
         zentrum = z
-        let a = MitteilungsAblauf(leser: AktivitaetsLeser(supportOrdner: support), planer: MitteilungsPlaner(), zentrum: z,
+        var regeln = MitteilungsPlaner.Regeln()
+        if let katalog = KiKatalog.laden(ressourcen: Bundle.main.resourceURL) { regeln.bekannteProgramme.formUnion(katalog.eintraege.map(\.name)) }
+        let a = MitteilungsAblauf(leser: AktivitaetsLeser(supportOrdner: support), planer: MitteilungsPlaner(regeln: regeln), zentrum: z,
                                   einstellungen: { MitteilungsEinstellungen.lies(supportOrdner: support) },
                                   istVorne: { [weak self] in NSApp.isActive && (self?.studioSichtbar() ?? false) })
         ablauf = a

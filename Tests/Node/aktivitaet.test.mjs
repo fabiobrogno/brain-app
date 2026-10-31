@@ -118,7 +118,7 @@ test("Anzeige: „Claude Code · Privat“ aus Programm und Kontoname; ohne Kont
   assert.equal(A.werText({ programm: "claude", kontoName: "Privat" }), "Claude Code · Privat");
   assert.equal(A.werText({ programm: "codex" }), "Codex");
   assert.equal(A.werText({ klient: "claude-code" }), "Claude Code");
-  assert.equal(A.werText({ klient: "Mein Werkzeug 2" }), "Mein-werkzeug-2");
+  assert.equal(A.werText({ klient: "Mein Werkzeug 2" }), "Eine KI", "ein Client-Name, den Kortex nicht kennt, steht nie als Freitext in der Anzeige");
   assert.equal(A.werText({ klient: "unbekannt" }), "Eine KI");
   assert.equal(A.werText({}), "Eine KI");
   assert.equal(A.programmAnzeige("cursor-agent"), "Cursor");
@@ -129,4 +129,21 @@ test("Jede Ereignisart hat einen Schalter der Mitteilungen (oder bewusst keinen)
   assert.deepEqual(Object.keys(A.ART_SCHALTER).sort(), [...A.ARTEN].sort());
   for (const [art, schalter] of Object.entries(A.ART_SCHALTER)) if (schalter !== null) assert.ok(Object.hasOwn(APP_SCHEMA, schalter), `${art} → ${schalter}`);
   assert.equal(A.ART_SCHALTER.abweisung, "mitteilungenAbgewiesen"); assert.equal(A.ART_SCHALTER.rueckgaengig, null);
+});
+
+test("k5: rotiert wird nur unter einer Sperrdatei — hält ein anderer Prozess sie, wird nicht rotiert (die Vorfassung wird nie überschrieben); eine verwaiste Sperre gilt nach 10 s nicht mehr", async () => {
+  const { utimesSync } = await import("node:fs");
+  const { support, vault, kennung } = neu();
+  const datei = A.ereignisDatei(support, kennung);
+  const schreibeViele = (n) => { for (let i = 0; i < n; i++) A.schreibeEreignis(support, vault, { art: "pflege", text: `n ${i} ${"y".repeat(100)}` }, { maxBytes: 2000 }); };
+  schreibeViele(1);
+  writeFileSync(`${datei}.lock`, ""); // ein anderer Prozess rotiert gerade
+  schreibeViele(30);
+  assert.equal(existsSync(`${datei}.alt`), false, "unter fremder Sperre wird nicht rotiert");
+  assert.ok(statSync(datei).size > 2000);
+  const alt = new Date(Date.now() - 30_000); utimesSync(`${datei}.lock`, alt, alt); // verwaist
+  schreibeViele(1);
+  schreibeViele(2);
+  assert.ok(existsSync(`${datei}.alt`));
+  assert.equal(existsSync(`${datei}.lock`), false, "die Sperre wird immer freigegeben");
 });

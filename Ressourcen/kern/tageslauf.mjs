@@ -479,6 +479,13 @@ function merkeUebersprungen(vault, grund, jetzt) {
 }
 
 // Aktivitätsprotokoll (P8a): Ende eines echten Pflege-Laufs (nicht der Probe). Nur Zahlen und der Satz des Kerns (ohne Pfade und Namen) — nie ein Titel oder Inhalt.
+// Der Satz des Kerns zum Lauf kann Pfade oder Adressen mit Zugangsdaten enthalten (Fehlertexte): vor dem Protokoll werden Zugangsdaten in Adressen und bekannte Schlüsselformen entfernt und
+// absolute Pfade zu „~“ gekürzt.
+export function grundFuerProtokoll(g) {
+  let t = String(g ?? "").replace(/[a-z][a-z0-9+.-]*:\/\/[^\s/@]+@/gi, (m) => `${m.slice(0, m.indexOf("://") + 3)}***@`);
+  t = t.replace(/\b(?:gh[pousr]_|github_pat_|xox[abprs]-|sk-)[A-Za-z0-9_-]{16,}/g, "[entfernt]");
+  return t.replace(/(^|[\s("'=:])((?:\/[^\s/"')]+){2,})/g, "$1~").replace(/(^|[\s("'=:])~\/[^\s"')]*/g, "$1~").replace(/\s+/g, " ").trim().slice(0, 160);
+}
 export function meldePflege(vault, { status, erfolgreich, z, grund }) {
   try {
     const n = (x) => (Number.isInteger(x) && x > 0 ? x : 0);
@@ -487,7 +494,7 @@ export function meldePflege(vault, { status, erfolgreich, z, grund }) {
     if (n(z.rueckfragen)) teile.push(`${z.rueckfragen} ${z.rueckfragen === 1 ? "Rückfrage wartet" : "Rückfragen warten"}`);
     const e = erfolgreich
       ? { art: "pflege", text: `Pflege fertig${teile.length ? `: ${teile.join(", ")}` : ""}.` }
-      : { art: "pflege-fehler", grund: status === "ohne-ki" ? "ohne-ki" : "fehler", text: `Die Pflege lief nicht ganz durch${grund ? `: ${String(grund).replace(/\s+/g, " ").slice(0, 160)}` : ""}.` };
+      : { art: "pflege-fehler", grund: status === "ohne-ki" ? "ohne-ki" : "fehler", text: `Die Pflege lief nicht ganz durch${grund ? `: ${grundFuerProtokoll(grund)}` : ""}.` };
     schreibeEreignis(supportOrdner(), vault, { ...e, vaultName: basename(vault) }, { drossel: { schluessel: `pflege|${e.art}`, sekunden: 600 } });
   } catch { /* das Protokoll ist Beiwerk */ }
 }

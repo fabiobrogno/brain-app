@@ -337,6 +337,12 @@ public final class AktivitaetsLeser {
             guard let (groesse, nummer) = eigenschaften(name) else { continue }
             var stand = staende[name] ?? Stand(position: 0, dateiNummer: nummer) // neue Datei: alles ist neu
             if groesse < stand.position || (stand.dateiNummer != nil && nummer != nil && stand.dateiNummer != nummer) {
+                // Rotiert (das Backend benennt die Datei in `<name>.alt` um; die Nummer der Datei bleibt dabei dieselbe): was nach der gemerkten Position noch in der Vorfassung steht,
+                // wird einmal nachgelesen, dann beginnt die neue Datei von vorn. Eine andere Datei unter `.alt` (anderer Ursprung) wird nicht angefasst.
+                if let alt = eigenschaften(name + ".alt"), let alte = stand.dateiNummer, alt.1 == alte, alt.0 > stand.position {
+                    var altStand = Stand(position: stand.position, dateiNummer: alt.1)
+                    aus += lies(name + ".alt", stand: &altStand, groesse: alt.0)
+                }
                 stand = Stand(position: 0, dateiNummer: nummer) // rotiert oder ersetzt: von vorn
             }
             stand.dateiNummer = nummer
@@ -392,6 +398,9 @@ public final class MitteilungsPlaner {
         public var maxProMinute = 4
         /// Dieselbe Abweisung (gleicher Handelnder, Vault und Grund) höchstens so oft als Mitteilung.
         public var abweisungsPause: TimeInterval = 600
+        /// Namen der KI-Programme, die als Handelnder in Titel und Text stehen dürfen (Katalog der App). Alles andere wird zu „Eine KI“ bzw. „Kortex“:
+        /// das Protokoll liegt im Support-Ordner, und ein Programm, das es beschreiben kann, soll keine Freitexte in Mitteilungen des Systems bekommen.
+        public var bekannteProgramme: Set<String> = ["Claude Code", "Codex"]
         public init() {}
     }
 
@@ -486,31 +495,50 @@ public final class MitteilungsPlaner {
                           userInfo: MitteilungsZiel.aktivitaet.userInfo(vault: nil, id: nil, art: nil))
     }
 
+    /// Der Handelnde, wenn er aus einem bekannten Programm (und höchstens einem kurzen Kontonamen) besteht: „Claude Code · Privat“. Sonst nil.
+    func bekannterHandelnder(_ wer: String?) -> String? {
+        guard let wer else { return nil }
+        let teile = wer.components(separatedBy: " · ")
+        guard teile.count <= 2, let programm = teile.first, regeln.bekannteProgramme.contains(programm) else { return nil }
+        if teile.count == 2 {
+            let konto = teile[1]
+            guard !konto.isEmpty, konto.count <= 40, konto.unicodeScalars.allSatisfy({ $0.properties.generalCategory != .control && $0.properties.generalCategory != .format }) else { return nil }
+        }
+        return wer
+    }
+
+    /// Der Satz je Ereignisart: fest, aus Art, Grund und Zahl — nie Freitext aus dem Protokoll.
+    static func satz(art: String, grund: String?, anzahl: Int, handelnderBekannt: Bool) -> String {
+        switch art {
+        case "ablage-aufgabe": return "hat \(anzahl == 1 ? "eine Aufgabe" : "\(anzahl) Aufgaben") angelegt."
+        case "ablage-notiz": return "hat \(anzahl == 1 ? "eine Notiz" : "\(anzahl) Notizen") im Posteingang abgelegt."
+        case "aenderung": return anzahl == 1 ? "hat eine Aufgabe geändert." : "hat \(anzahl) Aufgaben geändert."
+        case "abweisung":
+            if grund == "gelesen-ohne-leseverbot" { return "hat in einem gesperrten Vault gelesen. Das Leseverbot ist nicht eingeschaltet." }
+            return anzahl == 1 ? "wurde abgewiesen." : "wurde \(anzahl)-mal abgewiesen."
+        case "pflege": return "Pflege fertig."
+        case "pflege-fehler": return "Die Pflege lief nicht ganz durch."
+        case "sicherung-konflikt": return "Sicherung: Die Fassungen auf zwei Geräten widersprechen sich. Löse den Konflikt im Studio."
+        case "sicherung-fehler": return "Die Online-Sicherung hat nicht geklappt."
+        case "anmeldung-abgelaufen": return "muss sich neu anmelden."
+        default: return "Es gibt Neues in Kortex."
+        }
+    }
+
     private func mitteilung(_ ereignisse: [AktivitaetsEreignis], ton: Bool, jetzt: Date) -> Mitteilung {
         let erstes = ereignisse[0]
         let letztes = ereignisse[ereignisse.count - 1]
         let gesamt = ereignisse.reduce(0) { $0 + ($1.anzahl ?? 1) }
-        let wer = erstes.wer
+        let wer = bekannterHandelnder(erstes.wer)
         let handelnder = wer ?? "Eine KI"
-        let text: String
-        switch erstes.art {
-        case "ablage-aufgabe":
-            text = gesamt == 1 && !erstes.text.isEmpty ? erstes.text : "hat \(gesamt == 1 ? "eine Aufgabe" : "\(gesamt) Aufgaben") angelegt."
-        case "ablage-notiz":
-            text = gesamt == 1 && !erstes.text.isEmpty ? erstes.text : "hat \(gesamt == 1 ? "eine Notiz" : "\(gesamt) Notizen") im Posteingang abgelegt."
-        case "abweisung":
-            text = ereignisse.count == 1 && !erstes.text.isEmpty ? erstes.text : "wurde \(ereignisse.count)-mal abgewiesen."
-        case "aenderung":
-            text = ereignisse.count == 1 && !erstes.text.isEmpty ? erstes.text : "hat \(ereignisse.count) Änderungen vorgenommen."
-        default:
-            text = letztes.text.isEmpty ? "Es gibt Neues in Kortex." : letztes.text
-        }
-        // Ohne Handelnden ist der Satz ein Systemsatz („Die Sicherung …“); bei Handelnden-Sätzen ohne `wer` steht „Eine KI“ davor.
-        let nurGerechnet = ["ablage-aufgabe", "ablage-notiz", "abweisung", "aenderung"].contains(erstes.art)
+        let anzahl = erstes.art == "abweisung" ? ereignisse.count : gesamt
+        let text = Self.satz(art: erstes.art, grund: erstes.grund, anzahl: anzahl, handelnderBekannt: wer != nil)
+        // Ohne bekannten Handelnden ist der Satz ein Systemsatz („Die Sicherung …“); bei Handelnden-Sätzen steht „Eine KI“ davor.
+        let nurGerechnet = ["ablage-aufgabe", "ablage-notiz", "abweisung", "aenderung", "anmeldung-abgelaufen"].contains(erstes.art)
         let anzeige = wer == nil && nurGerechnet ? "\(handelnder) \(text)" : text
         let ziel = MitteilungsZiel.fuer(art: erstes.art)
         return Mitteilung(kennung: neueKennung(jetzt), gruppe: "kortex-\(erstes.vault ?? "alle")-\(Self.familie(erstes))",
-                          titel: wer ?? "Kortex", untertitel: erstes.vaultName, text: anzeige, ton: ton, ziel: ziel,
+                          titel: wer ?? "Kortex", untertitel: erstes.vaultName.map { String($0.unicodeScalars.filter { $0.properties.generalCategory != .control && $0.properties.generalCategory != .format }.prefix(60).map(Character.init)) }, text: anzeige, ton: ton, ziel: ziel,
                           userInfo: ziel.userInfo(vault: erstes.vault, id: letztes.id, art: erstes.art))
     }
 }

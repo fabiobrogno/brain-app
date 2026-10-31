@@ -2,7 +2,7 @@
 // git-sicher mit ausgeschalteten Hooks, sonst Papierkorb) und das Ereignis „aktivitaet“ auf dem Live-Strom (/api/ereignisse). Nur Wegwerf-Ordner.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { writeFileSync, readFileSync, existsSync, readdirSync, mkdirSync, chmodSync } from "node:fs";
+import { writeFileSync, readFileSync, existsSync, readdirSync, mkdirSync, chmodSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { tmp, schreibe, repo, g, pfad, echt } from "./hilfe.mjs";
@@ -146,7 +146,7 @@ test("Rückgängig mit Git: eine schon gesicherte (committete) Ablage wird entfe
   const vorher = g(d, "rev-parse", "HEAD").trim();
   const r = await rufe("POST", "/api/aktivitaet/rueckgaengig", { id: e.id });
   assert.equal(r.status, 200, JSON.stringify(r.j));
-  assert.equal(r.j.art, "entfernt"); assert.equal(r.j.papierkorb, false); assert.match(r.j.commit, /^[0-9a-f]{40}$/);
+  assert.equal(r.j.art, "entfernt"); assert.equal(r.j.papierkorb, true, "auch eine versionierte Datei geht erst in den Papierkorb"); assert.match(r.j.commit, /^[0-9a-f]{40}$/);
   assert.equal(existsSync(join(d, rel)), false);
   assert.equal(g(d, "rev-parse", "HEAD~1").trim(), vorher);
   assert.match(g(d, "log", "-1", "--format=%s"), /^Rückgängig: Ablage einer KI entfernt/);
@@ -221,4 +221,120 @@ test("Anmeldung abgelaufen: /api/ki/anmeldung meldet „nicht angemeldet“ für
   assert.deepEqual([l[0].art, l[0].konto, l[0].wer, l[0].kontoName, l[0].programmName], ["anmeldung-abgelaufen", "k_aaaaaaaa", "Claude Code · Firma", "Firma", "Claude Code"]);
   assert.match(l[0].text, /muss sich neu anmelden/);
   void ev;
+});
+
+// ───────────────────────────── Härtung (Review P8a): ein Eintrag im Protokoll ist ein Hinweis, nie eine Berechtigung ─────────────────────────────
+const rohZeile = (support, d, e) => { // am Schreiber vorbei: so könnte ein Programm mit Zugriff auf den Support-Ordner einen Eintrag fälschen
+  const datei = A.ereignisDatei(support, A.kennungVault(d));
+  mkdirSync(join(support, "aktivitaet"), { recursive: true });
+  writeFileSync(datei, `${existsSync(datei) ? readFileSync(datei, "utf8") : ""}${JSON.stringify({ v: 1, zeit: new Date().toISOString(), konto: null, programm: null, text: "x", ...e })}\n`);
+};
+
+test("K1: ein gefälschter Eintrag kann keine Datei außerhalb der Ablage-Ordner löschen (Wiki, anderer Ordner, falscher Pfad, falsche Art, Unterordner, keine .md)", async () => {
+  const { rufe, d, support, kennung } = aufbau();
+  const inhalt = "# Wichtig\n";
+  const faelle = [
+    ["ablage-notiz", "09_wiki/wichtig.md", "Wiki"],
+    ["ablage-notiz", "10_notizen/meins.md", "anderer Ordner"],
+    ["ablage-aufgabe", "00_inbox/n.md", "Aufgabe, die im Posteingang liegt"],
+    ["ablage-notiz", "05_aufgaben/a.md", "Notiz, die bei den Aufgaben liegt"],
+    ["ablage-notiz", "00_inbox/unter/n.md", "Unterordner"],
+    ["ablage-notiz", "00_inbox/n.txt", "keine .md"],
+    ["abweisung", "00_inbox/n.md", "falsche Art"],
+  ];
+  let n = 0;
+  for (const [art, rel, was] of faelle) {
+    schreibe(d, rel, inhalt);
+    n++;
+    const eid = `a_forg${n}x_abcde${n}`;
+    rohZeile(support, d, { id: eid, art, pfade: [rel], rueckgaengig: { art: "ablage-entfernen", pfad: rel, hash: sha(inhalt) } });
+    const r = await rufe("POST", "/api/aktivitaet/rueckgaengig", { id: eid });
+    assert.ok([400, 409].includes(r.status), `${was}: ${r.status} ${JSON.stringify(r.j)}`);
+    assert.ok(existsSync(join(d, rel)), `${was}: die Datei bleibt`);
+  }
+  assert.equal(existsSync(join(support, "aktivitaet", "papierkorb", kennung)), false, "nichts wurde angefasst, auch kein Papierkorb");
+});
+
+test("K1: pfade[0] und rueckgaengig.pfad müssen dieselbe Datei nennen; der Schreiber lässt sonst gar keine Rückgängig-Möglichkeit zu", async () => {
+  const { rufe, d, support, ev } = aufbau();
+  schreibe(d, "00_inbox/a.md", "# A\n"); schreibe(d, "00_inbox/b.md", "# B\n");
+  const e = ev({ art: "ablage-notiz", text: "x", pfade: ["00_inbox/a.md"], rueckgaengig: { art: "ablage-entfernen", pfad: "00_inbox/b.md", hash: sha("# B\n") } });
+  assert.equal(e.rueckgaengig, undefined);
+  rohZeile(support, d, { id: "a_zzzzzz1_abcdef", art: "ablage-notiz", pfade: ["00_inbox/a.md"], rueckgaengig: { art: "ablage-entfernen", pfad: "00_inbox/b.md", hash: sha("# B\n") } });
+  const r = await rufe("POST", "/api/aktivitaet/rueckgaengig", { id: "a_zzzzzz1_abcdef" });
+  assert.equal(r.status, 409); assert.equal(r.j.art, "unzulaessig");
+  assert.ok(existsSync(join(d, "00_inbox/b.md")) && existsSync(join(d, "00_inbox/a.md")));
+});
+
+test("K1: eine Datei, die nicht zur Zeit des Eintrags angelegt wurde, wird nicht entfernt", async () => {
+  const { rufe, d, ev } = aufbau();
+  const inhalt = "# Alt\n";
+  schreibe(d, "00_inbox/alt.md", inhalt);
+  const e = ev({ art: "ablage-notiz", text: "x", zeit: new Date(Date.now() - 3600_000).toISOString(), pfade: ["00_inbox/alt.md"], rueckgaengig: { art: "ablage-entfernen", pfad: "00_inbox/alt.md", hash: sha(inhalt) } });
+  const r = await rufe("POST", "/api/aktivitaet/rueckgaengig", { id: e.id });
+  assert.equal(r.status, 409); assert.equal(r.j.art, "unzulaessig"); assert.match(r.j.fehler, /anderen Zeit/);
+  assert.ok(existsSync(join(d, "00_inbox/alt.md")));
+});
+
+test("W1: eine ignorierte Datei (nicht versioniert) wird nie ohne Kopie gelöscht und nie per Commit „entfernt“", async () => {
+  const { rufe, d, ablage, support, kennung } = aufbau({ git: true });
+  writeFileSync(join(d, ".gitignore"), "00_inbox/ignoriert.md\n"); g(d, "add", "--", ".gitignore"); g(d, "commit", "-q", "-m", "ignore");
+  const vorher = g(d, "rev-parse", "HEAD").trim();
+  const e = ablage("00_inbox/ignoriert.md", "# Ignoriert\n");
+  assert.equal(g(d, "status", "--porcelain", "--", "00_inbox/ignoriert.md").trim(), "", "Git sieht sie nicht");
+  const r = await rufe("POST", "/api/aktivitaet/rueckgaengig", { id: e.id });
+  assert.equal(r.status, 200, JSON.stringify(r.j));
+  assert.deepEqual([r.j.art, r.j.papierkorb, r.j.commit], ["entfernt", true, null]);
+  assert.equal(g(d, "rev-parse", "HEAD").trim(), vorher, "kein Commit");
+  assert.equal(readFileSync(join(support, "aktivitaet", "papierkorb", kennung, `${e.id}-ignoriert.md`), "utf8"), "# Ignoriert\n");
+});
+
+test("W1: scheitert der Commit, kommt die Datei zurück und die Antwort ist ein Fehler (nie „entfernt“)", async () => {
+  const { rufe, d, ev } = aufbau({ git: true });
+  const rel = "00_inbox/2026-10-31_fest.md", inhalt = "# Fest\n";
+  schreibe(d, rel, inhalt); g(d, "add", "--", rel); g(d, "commit", "-q", "-m", "Sicherung");
+  const e = ev({ art: "ablage-notiz", text: "x", pfade: [rel], rueckgaengig: { art: "ablage-entfernen", pfad: rel, hash: sha(inhalt) } });
+  writeFileSync(join(d, ".git", "index.lock"), ""); // ein anderer Git-Prozess hält die Sperre: der Commit scheitert
+  const r = await rufe("POST", "/api/aktivitaet/rueckgaengig", { id: e.id });
+  rmSync(join(d, ".git", "index.lock"), { force: true });
+  assert.equal(r.status, 500, JSON.stringify(r.j)); assert.equal(r.j.art, "festhalten-fehlgeschlagen");
+  assert.equal(readFileSync(join(d, rel), "utf8"), inhalt, "die Datei ist unverändert wieder da");
+  const l = (await rufe("GET", "/api/aktivitaet")).j.ereignisse;
+  assert.equal(l.find((x) => x.id === e.id).zurueckgenommen, null, "nicht als zurückgenommen vermerkt");
+  assert.equal(l.some((x) => x.art === "rueckgaengig"), false);
+});
+
+test("k2: bei offener Zusammenführung wird nichts entfernt (409 beschaeftigt), danach geht es", async () => {
+  const { rufe, ablage, d } = aufbau({ git: true });
+  const e = ablage("00_inbox/n.md", "# N\n");
+  writeFileSync(join(d, ".git", "MERGE_HEAD"), "0".repeat(40) + "\n");
+  const r = await rufe("POST", "/api/aktivitaet/rueckgaengig", { id: e.id });
+  assert.equal(r.status, 409); assert.equal(r.j.art, "beschaeftigt");
+  assert.ok(existsSync(join(d, "00_inbox/n.md")));
+  rmSync(join(d, ".git", "MERGE_HEAD"));
+  assert.equal((await rufe("POST", "/api/aktivitaet/rueckgaengig", { id: e.id })).status, 200, "danach geht es");
+});
+
+test("W2: der Live-Strom meldet nie Altes — auch nicht nach mehr als 300 und 600 Einträgen und nach Rotationen; Neues kommt genau einmal", async () => {
+  const { erzeugeEreignisse } = await import(pfad("werkstatt", "ereignisse.mjs"));
+  const support = tmp("akt-w2-support-"), d = tmp("akt-w2-vault-"); schreibe(d, "brain.config.json", "{}\n");
+  const alt = Date.now() - 3600_000;
+  for (let i = 0; i < 700; i++) A.schreibeEreignis(support, d, { art: "ablage-notiz", text: `alt ${i}`, zeit: new Date(alt + i * 1000).toISOString() }, { maxBytes: 100_000 });
+  const h = erzeugeEreignisse({ support, aktivitaetPollMs: 30, modus: "poll", pollMs: 80, entprellMs: 40 });
+  h.richteAuf(d, { aufgabenOrdner: "05_aufgaben" });
+  const stand = await h.warte({}); await pause(150);
+  let aktuell = stand.aktuell;
+  const hole = async (ms) => { const aus = []; const ende = Date.now() + ms; while (Date.now() < ende) { const r = await h.warte({ seit: aktuell, epoche: stand.epoche, warteMs: 200 }); aktuell = r.aktuell; aus.push(...r.ereignisse.filter((x) => x.typ === "aktivitaet")); } return aus; };
+  assert.deepEqual(await hole(600), [], "nichts Altes beim Start");
+  const neu = [];
+  for (let i = 0; i < 650; i++) { neu.push(A.schreibeEreignis(support, d, { art: "pflege", text: `neu ${i}` }, { maxBytes: 20_000 }).id); if (i % 50 === 49) await pause(60); }
+  const gemeldet = await hole(1500);
+  const ids = gemeldet.map((x) => x.id).filter(Boolean);
+  assert.equal(new Set(ids).size, ids.length, "keine Doppelten");
+  assert.ok(gemeldet.every((x) => x.art === "zustand" || /^neu /.test(x.text)), "nichts aus der Vorzeit");
+  assert.ok(ids.length > 0 && ids.every((i) => neu.includes(i)));
+  const eins = A.schreibeEreignis(support, d, { art: "abweisung", text: "wollte lesen." });
+  const l = await hole(800);
+  assert.equal(l.filter((x) => x.id === eins.id).length, 1);
+  h.beende();
 });

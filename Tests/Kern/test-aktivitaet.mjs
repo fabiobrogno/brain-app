@@ -61,14 +61,16 @@ test("wiki-guard: ein Konto mit Stufe bekommt keine Abweisung (auch nicht für d
   assert.equal(r.code, 2, "das Wiki ist ohne /ingest zu"); assert.deepEqual(s.ereignisse(), []);
 });
 
-test("werkzeug-protokoll: Read einer Datei im gesperrten Vault → Abweisung „gesperrt“; mit Leseverbot im Profil → „leseverbot“; Read außerhalb oder Konto mit Stufe → nichts", () => {
+test("werkzeug-protokoll: Read einer Datei im gesperrten Vault → ehrlicher Hinweis „gelesen-ohne-leseverbot“; mit Leseverbot im Profil → „leseverbot“; Read außerhalb oder Konto mit Stufe → nichts", () => {
   const s = szenario("gesperrt");
   const lese = (datei) => hook("werkzeug-protokoll", s, { session_id: "s1", tool_name: "Read", tool_input: { file_path: datei }, tool_use_id: `id-${Math.random()}`, cwd: s.vault });
   assert.equal(lese(join(HOME, "irgendwo.md")).code, 0); assert.deepEqual(s.ereignisse(), []);
   const r = lese(join(s.vault, "09_wiki", "seite.md"));
   assert.equal(r.code, 0); assert.equal(r.aus, ""); assert.equal(r.fehler, "");
   let e = s.ereignisse();
-  assert.equal(e.length, 1); assert.equal(e[0].grund, "gesperrt"); assert.match(e[0].text, /wollte den Vault „.+“ lesen und wurde abgewiesen\. Stufe „Gesperrt“ hat gewirkt\./);
+  assert.equal(e.length, 1); assert.equal(e[0].grund, "gelesen-ohne-leseverbot");
+  assert.match(e[0].text, /^hat im gesperrten Vault „.+“ gelesen\. Schalte das Leseverbot ein \(Einstellungen → KI & Konten\), um das zu verhindern\.$/);
+  assert.ok(!/abgewiesen/.test(e[0].text), "ohne Leseverbot hat das Lesen wirklich stattgefunden: nie „abgewiesen“");
   // Leseverbot: die Regel steht in den Einstellungen des Profils (gemeinsam/claude-sperre.mjs: Read(//<vault>/**))
   const s2 = szenario("gesperrt");
   writeFileSync(join(PROFIL_A, "settings.json"), JSON.stringify({ permissions: { deny: [`Read(//${s2.vault.replace(/^\/+/, "")}/**)`] } }));
@@ -116,4 +118,17 @@ test("Online-Sicherung: ein fehlender Sicherungsordner steht als „sicherung-fe
   assert.equal(r1.art, "ordner-fehlt"); assert.equal(r2.art, "ordner-fehlt");
   const e = s.ereignisse();
   assert.equal(e.length, 1); assert.equal(e[0].art, "sicherung-fehler"); assert.equal(e[0].grund, "ordner-fehlt"); assert.ok(!e[0].text.includes(nichtDa), "kein Pfad im Satz");
+});
+
+test("Pflege-Fehlertext: Zugangsdaten in Adressen und absolute Pfade kommen nie ins Protokoll", async () => {
+  const s = szenario("erweitert");
+  process.env.BRAIN_APP_SUPPORT = s.support;
+  const { meldePflege, grundFuerProtokoll } = await import(join(KERN, "tageslauf.mjs"));
+  const roh = "Push nach https://nutzer:geheimespasswort@git.example.org/x.git gescheitert; Datei /Users/anna/Vaults/Firma/.logs/x.log nicht lesbar (ghp_" + "A".repeat(30) + ")";
+  const t = grundFuerProtokoll(roh);
+  assert.ok(!t.includes("geheimespasswort") && !t.includes("nutzer:") && !t.includes("/Users/anna") && !t.includes("ghp_"), t);
+  assert.match(t, /https:\/\/\*\*\*@git\.example\.org/); assert.match(t, /~/);
+  meldePflege(s.vault, { status: "fehler", erfolgreich: false, z: {}, grund: roh });
+  const e = s.ereignisse().at(-1);
+  assert.equal(e.art, "pflege-fehler"); assert.ok(!/geheimespasswort|\/Users\/anna|ghp_/.test(e.text), e.text);
 });

@@ -105,13 +105,18 @@ export function erzeugeEreignisse(o = {}) {
   const eigen = new Map();    // Schlüssel → { hash, bis }
   // Aktivitätsprotokoll (P8a): andere Prozesse (MCP-Server, Hooks, Kern) hängen an <support>/aktivitaet/<Kennung>.jsonl an. Alle `aktPollMs` wird nur Größe und Zeit der Datei(en)
   // angesehen; hat sich etwas geändert, werden die neuen Einträge (Ids, die noch nicht gemeldet wurden) als Ereignis „aktivitaet“ gemeldet.
-  let aktUhr = null, aktSchluessel = "", aktBekannt = new Set();
+  // Hochwassermarke statt Liste bekannter Ids: aktMarke = Zeit des neuesten gemeldeten Eintrags; gemeldet wird nur, was NEUER ist (Zeit ≥ Marke − Toleranz, die Zeit steht VOR dem Anhängen, zwei Prozesse
+  // können sich um Millisekunden überholen) und dessen Id nicht in aktRand steht (Ids der letzten Sekunden). Alte Einträge werden so nie erneut gemeldet — auch nicht nach vielen Einträgen oder einer Rotation.
+  const AKT_TOLERANZ_MS = 3000;
+  let aktUhr = null, aktSchluessel = "", aktMarke = 0, aktRand = new Map();
   const aktDateien = () => { const d = o.support && wurzel ? ereignisDatei(o.support, kennungVault(wurzel)) : null; return d ? [`${d}.alt`, d] : []; };
   const aktAnsehen = () => aktDateien().map((d) => { try { const st = statSync(d); return `${st.size}:${st.mtimeMs}`; } catch { return "-"; } }).join("|");
   function aktStart() {
     if (!o.support || !wurzel) return;
     aktSchluessel = aktAnsehen();
-    aktBekannt = new Set(leseEreignisse(o.support, kennungVault(wurzel)).slice(-300).map((e) => e.id));
+    let neuester = 0;
+    try { for (const e of leseEreignisse(o.support, kennungVault(wurzel))) neuester = Math.max(neuester, Date.parse(e.zeit)); } catch { /* ohne Protokoll */ }
+    aktMarke = Math.max(neuester, Date.now()); aktRand = new Map();   // was beim Start schon im Protokoll stand, ist alt
     if (aktPollMs > 0 && !aktUhr) { aktUhr = setInterval(pruefeAktivitaet, aktPollMs); aktUhr.unref?.(); }
   }
   function pruefeAktivitaet() {
@@ -120,10 +125,10 @@ export function erzeugeEreignisse(o = {}) {
     if (jetzt === aktSchluessel) return;
     aktSchluessel = jetzt;
     let neu = [];
-    try { neu = leseEreignisse(o.support, kennungVault(wurzel)).filter((e) => !aktBekannt.has(e.id)); } catch { return; }
+    try { neu = leseEreignisse(o.support, kennungVault(wurzel), { seit: new Date(aktMarke - AKT_TOLERANZ_MS - 1).toISOString() }).filter((e) => !aktRand.has(e.id)); } catch { return; }
     if (!neu.length) return;
-    for (const e of neu) aktBekannt.add(e.id);
-    if (aktBekannt.size > 600) aktBekannt = new Set([...aktBekannt].slice(-300));
+    for (const e of neu) { aktMarke = Math.max(aktMarke, Date.parse(e.zeit)); aktRand.set(e.id, Date.parse(e.zeit)); }
+    for (const [id, t] of aktRand) if (t < aktMarke - 2 * AKT_TOLERANZ_MS) aktRand.delete(id);
     for (const e of neu.slice(-20)) {
       melde({ typ: "aktivitaet", id: e.id, art: e.art, zeit: e.zeit, ...(e.grund ? { grund: e.grund } : {}), konto: e.konto ?? null, programm: e.programm ?? null, ...(e.quelle ? { quelle: e.quelle } : {}),
         ...(e.wer ? { wer: e.wer } : {}), text: e.text, ...(e.pfade ? { pfade: e.pfade } : {}), rueckgaengig: !!e.rueckgaengig, vaultName: e.vaultName || "" });
@@ -389,7 +394,7 @@ export function erzeugeEreignisse(o = {}) {
     if (pollUhr) clearInterval(pollUhr);
     pollUhr = null; modus = null;
     if (aktUhr) clearInterval(aktUhr);
-    aktUhr = null; aktBekannt = new Set();
+    aktUhr = null; aktRand = new Map(); aktMarke = 0;
     clearTimeout(flushUhr); flushUhr = null; zeitErster = 0;
     offen = new Set(); supportOffen = new Set(); ueberlauf = false;
   }

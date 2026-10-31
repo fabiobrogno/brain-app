@@ -244,12 +244,17 @@ export function meldeAbweisung(vault, { was = "lesen", mindest = "lesen", ...opt
       break;
     }
     const verbot = was === "lesen" && stufe === "gesperrt" && typeof profil === "string" && leseverbotAktiv(profil, vault);
-    const grund = verbot ? "leseverbot" : stufe === "gesperrt" ? "gesperrt" : "stufe";
+    // Ehrlich: Verweigert hat nur das Leseverbot (Claude Code stoppt den Zugriff) und der Riegel beim Schreiben. Ein Read in einen für das Konto gesperrten Vault OHNE Leseverbot ist wirklich
+    // passiert — das steht so da („gelesen-ohne-leseverbot“), mit dem Weg, es zu verhindern, nie „wurde abgewiesen“.
+    const ungebremst = was === "lesen" && stufe === "gesperrt" && !verbot;
+    const grund = verbot ? "leseverbot" : ungebremst ? "gelesen-ohne-leseverbot" : stufe === "gesperrt" ? "gesperrt" : "stufe";
     const name = basename(vault);
     const tat = was === "schreiben" ? `im Vault „${name}“ schreiben` : `den Vault „${name}“ lesen`;
+    const text = ungebremst
+      ? `hat im gesperrten Vault „${name}“ gelesen. Schalte das Leseverbot ein (Einstellungen → KI & Konten), um das zu verhindern.`
+      : `wollte ${tat} und wurde abgewiesen. ${verbot ? "Das Leseverbot hat gewirkt." : `Stufe „${STUFEN_TEXT[stufe] || stufe}“ hat gewirkt.`}`;
     schreibeEreignis(support, vault, {
-      art: "abweisung", grund, konto, programm: "claude", wer: `Claude Code${kontoName ? ` · ${kontoName}` : ""}`, vaultName: name, mindest,
-      text: `wollte ${tat} und wurde abgewiesen. ${verbot ? "Das Leseverbot hat gewirkt." : `Stufe „${STUFEN_TEXT[stufe] || stufe}“ hat gewirkt.`}`,
+      art: "abweisung", grund, konto, programm: "claude", wer: `Claude Code${kontoName ? ` · ${kontoName}` : ""}`, vaultName: name, mindest, text,
     }, { drossel: { schluessel: `abw|${konto || "-"}|${grund}|${was}`, sekunden: 1800 } });
   } catch { /* das Protokoll ist Beiwerk */ }
 }

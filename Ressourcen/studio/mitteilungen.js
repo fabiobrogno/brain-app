@@ -201,6 +201,7 @@ export function erzeugeMitteilungen({ api, toast, beiAnsehen, buendelMs = 600, b
   }
 
   // ---- Live: Ereignisse typ „aktivitaet“ aus dem vorhandenen Strom (die anderen Typen werden übergangen)
+  const frisch = (e) => { const t = Date.parse(e.zeit); return !Number.isFinite(t) || Date.now() - t < 120000; };
   function verarbeiteLive(ereignisse) {
     let neu = false, nachladen = false;
     for (const e of Array.isArray(ereignisse) ? ereignisse : []) {
@@ -209,7 +210,7 @@ export function erzeugeMitteilungen({ api, toast, beiAnsehen, buendelMs = 600, b
       if (!Object.hasOwn(ART_SCHALTER, e.art)) continue;
       if (e.id && gesehen.has(e.id)) continue; // dasselbe Ereignis zweimal gemeldet
       if (e.id) gesehen.add(e.id);
-      if (ABLAGEN.has(e.art)) S.letzteAblage = Date.now();
+      if (ABLAGEN.has(e.art) && frisch(e)) S.letzteAblage = Date.now();
       // Steht es schon in der Liste (ein Abruf war schneller als die Meldung), zählt es nicht doppelt; den Hinweis bekommt es trotzdem
       if (!e.id || !S.ereignisse.some((x) => x.id === e.id)) {
         S.ereignisse = [{
@@ -219,7 +220,7 @@ export function erzeugeMitteilungen({ api, toast, beiAnsehen, buendelMs = 600, b
         S.ungelesen++; S.gesamt++;
         neu = true;
       }
-      if (ART_SCHALTER[e.art] !== null) reihEin(e);
+      if (ART_SCHALTER[e.art] !== null && frisch(e)) reihEin(e); // nie ein Hinweis (und nie „Rückgängig“) für etwas, das schon vor dem Öffnen der Seite da war
     }
     if (neu) melde();
     if (nachladen) ladeNeu();

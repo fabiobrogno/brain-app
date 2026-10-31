@@ -4,8 +4,10 @@
 //   <support>/aktivitaet/<Kennung>.zustand.json  „gelesen“ und „zurückgenommen“ (nur die Werkstatt schreibt; die Schreiber unten nie)
 // Es schreiben: der MCP-Server (Ablagen, Änderungen, Abweisungen), die Hooks und der Kern (Abweisungen, Pflege, Sicherung — kern/aktivitaet.mjs,
 // derselbe Abschnitt LOG-BEGINN … LOG-ENDE, Parität: Tests/Node/aktivitaet-paritaet.test.mjs) und die Werkstatt (Anmeldung, Rückgängig).
-// NIE im Protokoll: Inhalt von Notizen, Titel von Aufgaben, Zugangsdaten. Die Schreiber setzen `text` aus festen Bausteinen zusammen; hier wird
-// alles noch einmal begrenzt (Länge, Zeichen, Pfadform) und bekannte Schlüsselformen werden entfernt. Schreiben wirft nie (ein Hook oder der
+// NIE im Protokoll: Inhalt von Notizen, Titel von Aufgaben, Zugangsdaten. Ehrlich dazu: Die Pfade der Ablagen sind Dateinamen und enthalten darum den Titel als Kurzform (Slug), und der Name des
+// MCP-Clients stammt vom Programm selbst. Die Schreiber setzen `text` aus festen Bausteinen zusammen; hier wird alles noch einmal begrenzt (Länge, Zeichen, Pfadform) und bekannte
+// Schlüsselformen werden entfernt. Das Protokoll liegt außerhalb des Vaults und kann von jedem Programm mit Zugriff auf den Support-Ordner beschrieben werden: ein Eintrag ist ein HINWEIS, nie
+// eine Berechtigung (Rückgängig prüft alles am Vault selbst, werkstatt/aktivitaet.mjs). Schreiben wirft nie (ein Hook oder der
 // MCP-Server darf wegen des Protokolls nie ausfallen); eine Zeile bleibt unter 4 KB, damit parallele Anhänge (O_APPEND) sich nicht mischen.
 import { appendFileSync, readFileSync, writeFileSync, mkdirSync, statSync, renameSync, openSync, readSync, closeSync, realpathSync, unlinkSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -66,7 +68,8 @@ export function bereinige(e, { kennung = null } = {}) {
   const pfade = (Array.isArray(e.pfade) ? e.pfade : []).map(relPfad).filter(Boolean).slice(0, MAX_PFADE);
   if (pfade.length) r.pfade = pfade;
   const rg = e.rueckgaengig;
-  if (rg && typeof rg === "object" && rg.art === "ablage-entfernen" && relPfad(rg.pfad) && typeof rg.hash === "string" && /^[0-9a-f]{64}$/.test(rg.hash)) r.rueckgaengig = { art: "ablage-entfernen", pfad: relPfad(rg.pfad), hash: rg.hash };
+  // Rückgängig nur für genau die Datei, die der Eintrag als ersten Pfad nennt (die Oberfläche zeigt sie an): so weiß der Nutzer, was entfernt würde
+  if (rg && typeof rg === "object" && rg.art === "ablage-entfernen" && relPfad(rg.pfad) && pfade[0] === relPfad(rg.pfad) && typeof rg.hash === "string" && /^[0-9a-f]{64}$/.test(rg.hash)) r.rueckgaengig = { art: "ablage-entfernen", pfad: relPfad(rg.pfad), hash: rg.hash };
   if (typeof e.dk === "string" && e.dk) r.dk = einzeilig(e.dk, 120);
   return r;
 }
@@ -81,6 +84,14 @@ function schwanz(datei, bytes = 16384) {
     readSync(fd, b, 0, n, st.size - n);
     return b.toString("utf8");
   } catch { return ""; } finally { if (fd !== undefined) try { closeSync(fd); } catch { /* egal */ } }
+}
+
+function rotiere(datei, max) {
+  const sperre = `${datei}.lock`;
+  try { closeSync(openSync(sperre, "wx", 0o600)); }
+  catch { try { if (Date.now() - statSync(sperre).mtimeMs > 10_000) unlinkSync(sperre); } catch { /* weg */ } return; } // ein anderer Prozess rotiert gerade
+  try { if (statSync(datei).size > max) renameSync(datei, `${datei}.alt`); } catch { /* schon rotiert */ }
+  finally { try { unlinkSync(sperre); } catch { /* weg */ } }
 }
 
 // Hängt ein Ereignis an das Protokoll des Vaults an. → das gespeicherte Ereignis | null (ungültig, gedrosselt, nicht schreibbar).
@@ -104,9 +115,10 @@ export function schreibeEreignis(support, wurzel, e, opt = {}) {
     mkdirSync(aktivitaetOrdner(support), { recursive: true, mode: 0o700 });
     appendFileSync(datei, JSON.stringify(r) + "\n", { mode: 0o600 });
     // Rotieren: zu groß → die Datei wird zur Vorfassung (rename ist atomar; wer gleichzeitig noch anhängt, landet in der Vorfassung, die weiter gelesen wird).
-    // Die Größe wird unmittelbar vor dem Umbenennen noch einmal geprüft: ein zweiter Prozess, der gerade rotiert hat, wird so nicht überrollt.
+    // Nur ein Prozess rotiert (Sperrdatei „wx“, nach 10 s gilt sie als verwaist) und prüft die Größe unter der Sperre noch einmal: zwei Prozesse überschreiben so nie die Vorfassung
+    // mit einer fast leeren Datei.
     const max = Number.isFinite(opt.maxBytes) && opt.maxBytes > 0 ? opt.maxBytes : MAX_BYTES;
-    try { if (statSync(datei).size > max) renameSync(datei, `${datei}.alt`); } catch { /* schon rotiert */ }
+    try { if (statSync(datei).size > max) rotiere(datei, max); } catch { /* schon rotiert */ }
     return r;
   } catch { return null; }
 }
@@ -144,10 +156,10 @@ export function programmAnzeige(id) {
   if (typeof k !== "string" || !k) return null;
   try { const e = ladeKatalog().find((x) => x.id === k); return e ? e.name : null; } catch { return k === "claude" ? "Claude Code" : k === "codex" ? "Codex" : null; }
 }
-// „Claude Code · Privat“: Programm und Name des Kontos; ohne Konto der Name des MCP-Clients (nur aus dem Katalog oder bereinigt), sonst „Eine KI“. Nie ein Name aus dem Login.
+// „Claude Code · Privat“: Programm und Name des Kontos; ohne Konto der Name des MCP-Clients nur, wenn er im Katalog steht, sonst „Eine KI“. Nie ein Name aus dem Login.
 export function werText({ programm = null, kontoName = null, klient = "" } = {}) {
   const roh = String(klient || "").toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
-  const p = programmAnzeige(programm) || programmAnzeige(roh) || (roh && roh !== "unbekannt" ? roh.replace(/^./, (c) => c.toUpperCase()) : null);
+  const p = programmAnzeige(programm) || programmAnzeige(roh); // nur bekannte Programme beim Namen nennen: der Client-Name ist eine Selbstauskunft und gehört nicht als Freitext in die Anzeige
   const k = typeof kontoName === "string" && kontoName.trim() ? kontoName.trim() : null;
   return p ? (k ? `${p} · ${k}` : p) : (k || "Eine KI");
 }

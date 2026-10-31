@@ -156,7 +156,7 @@ function kontextBegrenzt(treffer, projekt, spur) {
   return r.text;
 }
 
-// Aktivitätsprotokoll (P8a, gemeinsam/aktivitaet.mjs): was dieser Server für ein KI-Konto getan oder verweigert hat. Nie Inhalt, nie Titel: nur Art, Pfad, Zahlen.
+// Aktivitätsprotokoll (P8a, gemeinsam/aktivitaet.mjs): was dieser Server für ein KI-Konto getan oder verweigert hat. Nie Inhalt und nie ein Titel als Text: nur Art, Pfad (der Dateiname enthält den Titel als Kurzform) und Zahlen.
 // BRAIN_NUTZUNG=aus (Probe-Frage und Selbsttest der App) schreibt nichts. Wirft nie.
 const STUFE_ANZEIGE = { gesperrt: "Gesperrt", lesen: "Lesen", posteingang: "Posteingang", erweitert: "Erweitert" };
 function aktivitaet(vaultWurzel, zugriff, sitzung, e, opt) {

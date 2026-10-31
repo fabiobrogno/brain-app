@@ -483,3 +483,20 @@ test("toast(): mit Aktionen pausiert das Ausblenden bei Hover; ohne Hover versch
   await page.mouse.move(5, 5);
   await expect(t).toHaveCount(0, { timeout: 5000 });
 });
+
+test("W2: Ereignisse, die schon vor dem Öffnen der Seite da waren (Zeit älter als 2 Minuten), bekommen nie einen Hinweis und nie „Rückgängig“ — sie zählen nur im Protokoll", async ({ page }) => {
+  fuelleProtokoll();
+  await oeffneStudio(page);
+  const r = await page.evaluate(async () => {
+    const { erzeugeMitteilungen } = await import("/mitteilungen.js");
+    const { api } = await import("/api.js");
+    const hinweise = [];
+    const m = erzeugeMitteilungen({ api, toast: (t, o) => hinweise.push({ t, aktionen: (o?.aktionen || []).map((x) => x.text) }) });
+    const alt = new Date(Date.now() - 10 * 60_000).toISOString();
+    m.verarbeiteLive([{ typ: "aktivitaet", id: "a_altalt_abcdef", art: "ablage-aufgabe", zeit: alt, wer: "Claude Code", text: "hat eine Aufgabe angelegt.", pfade: ["05_aufgaben/x.md"], rueckgaengig: true, vaultName: "V" }]);
+    await new Promise((ok) => setTimeout(ok, 1500));
+    return { hinweise, ungelesen: m.ungelesen(), deckt: m.deckt(Date.now() - 6000) };
+  });
+  expect(r.hinweise).toEqual([]);
+  expect(r.deckt).toBe(false);
+});
