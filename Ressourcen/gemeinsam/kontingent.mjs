@@ -50,6 +50,16 @@ export function klassifiziereCodex(rl) {
   return { session: abbilden(session, FENSTER_5H), weekly: abbilden(weekly, FENSTER_WOCHE) };
 }
 
+// Umgebung für das Codex-Programm: Anmeldung und Konto kommen allein aus dem eigenen Ordner des Kontos (CODEX_HOME bzw. ~/.codex), nie aus der Umgebung von Kortex. Darum fliegen Schlüssel,
+// Tokens, Anbieter-Umleitungen und Konto-Ordner anderer Programme heraus (dieselbe Liste wie für die KI-Programme in Sources/BrainCore/KiErkennung.swift, dazu alles Gleichartige).
+const FREMD_NAMEN = new Set(["CLAUDE_CONFIG_DIR", "CODEX_HOME", "XDG_CONFIG_HOME", "GIT_CONFIG_GLOBAL", "CURSOR_CONFIG_DIR", "GEMINI_CLI_HOME", "AWS_BEARER_TOKEN_BEDROCK"]);
+const FREMD_MUSTER = /^(ANTHROPIC_|CLAUDE_CODE_|OPENAI_|CODEX_API|AZURE_OPENAI_|GEMINI_API|GOOGLE_API)|(_API_KEY|_AUTH_TOKEN|_ACCESS_TOKEN|_TOKEN|_SECRET)$/i;
+export function codexUmgebung(env) {
+  const aus = {};
+  for (const [k, w] of Object.entries(env || {})) if (!FREMD_NAMEN.has(k) && !FREMD_MUSTER.test(k)) aus[k] = w;
+  return aus;
+}
+
 // Fehler der Anmeldung erkennt man am Text der Antwort; nach außen gehen nur feste Arten (nie der Text selbst: er könnte Pfade oder Kennungen enthalten).
 const ANMELDUNG = /sign[ -]?in|log[ -]?in|logged out|not authenticated|unauthori[sz]ed|expired|refresh token|access token|\b401\b|chatgpt session/i;
 

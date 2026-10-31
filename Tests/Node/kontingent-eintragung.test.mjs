@@ -4,7 +4,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { writeFileSync, mkdirSync, readFileSync, readdirSync, statSync, lstatSync, existsSync, symlinkSync, chmodSync, realpathSync } from "node:fs";
+import { writeFileSync, mkdirSync, readFileSync, readdirSync, statSync, lstatSync, existsSync, symlinkSync, chmodSync, realpathSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmp, pfad, schreibe } from "./hilfe.mjs";
 
@@ -330,4 +330,138 @@ test("Über die Werkstatt: GET /api/ki/kontingent und POST …/statuszeile (nach
   r = await rufe("POST", "/api/ki/kontingent/statuszeile", { konto: id, an: false, einwilligung: true });
   assert.equal(r.status, 200); assert.equal(r.j.exakt, true);
   assert.equal(existsSync(settings(verwaltet)), false);
+});
+
+// ---------------------------------------------------------------------- Befunde des Sicherheits-Reviews
+// Eine zweite Sicht auf dasselbe Support-Verzeichnis (z. B. nach neu angelegter Konto-Liste oder verschobenem Node)
+const nochEins = (a, { id = ID, nodePfad = process.execPath } = {}) => {
+  const daten = { konten: { [id]: { programm: "claude", ordner: a.verwaltet, standard: false, name: "Kunde" } } };
+  return erzeugeKontingent({ support: a.support, konten: { lade: () => daten }, nodePfad, home: () => a.home });
+};
+const eintragungen = (a) => { try { return JSON.parse(readFileSync(join(a.k, "eintragung.json"), "utf8")).konten; } catch { return {}; } };
+const leer = (a) => ["eintragung.json", "bin", "kette", "sicherung", `${ID}.json`].filter((n) => existsSync(join(a.k, n)));
+
+test("Neue Konto-Kennung: die Statuszeile geht NICHT verloren — Stand „neu verknüpfen“, Entfernen stellt die frühere Statuszeile aus der Kette der alten Kennung wieder her", () => {
+  const a = aufbau();
+  const original = JSON.stringify({ a: 1, statusLine: { type: "command", command: "echo meine-zeile", padding: 3 } }, null, 2) + "\n";
+  writeFileSync(settings(a.verwaltet), original);
+  schalte(a, ID, true);
+  const neuesKt = nochEins(a, { id: "k_bbbb0009" });
+  assert.equal(neuesKt.stand({}).konten[0].status, "neu-verknuepfen");
+  // Entfernen über die neue Kennung, nachdem die Datei inzwischen geändert wurde (sonst ginge der byteweise Weg): die Kette der ALTEN Kennung liefert die frühere Statuszeile
+  const doc = JSON.parse(readFileSync(settings(a.verwaltet), "utf8")); doc.b = 2; writeFileSync(settings(a.verwaltet), JSON.stringify(doc));
+  const e = neuesKt.schalteStatuszeile({ konto: "k_bbbb0009", an: false, einwilligung: true });
+  assert.equal(e.exakt, false);
+  const nach = JSON.parse(readFileSync(settings(a.verwaltet), "utf8"));
+  assert.deepEqual(nach.statusLine, { type: "command", command: "echo meine-zeile", padding: 3 }, "die frühere Statuszeile ist zurück, nicht gelöscht");
+  assert.equal(nach.b, 2);
+  assert.deepEqual(leer(a), [], "nichts von der alten Kennung bleibt liegen");
+});
+
+test("Neue Konto-Kennung, „Neu verknüpfen“: der Befehl trägt die neue Kennung, die Kette läuft weiter, Merker und Sicherung wandern mit — der Rückweg bleibt byteweise", () => {
+  const a = aufbau();
+  const original = '{\t"x": 1,\n"statusLine": {"type":"command","command":"printf alt"}}';
+  writeFileSync(settings(a.verwaltet), original);
+  schalte(a, ID, true);
+  const neuesKt = nochEins(a, { id: "k_bbbb0009" });
+  const r = neuesKt.schalteStatuszeile({ konto: "k_bbbb0009", an: true, einwilligung: true });
+  assert.equal(r.aktion, "neu-verknuepft"); assert.equal(r.kette, true);
+  const sl = JSON.parse(readFileSync(settings(a.verwaltet), "utf8")).statusLine;
+  assert.ok(sl.command.includes("--konto k_bbbb0009") && !sl.command.includes(ID));
+  assert.equal(fuehreAus(sl.command).stdout.toString(), "alt");
+  assert.ok(existsSync(join(a.k, "k_bbbb0009.json")), "die Werte landen unter der neuen Kennung");
+  assert.deepEqual(Object.keys(eintragungen(a)), ["k_bbbb0009"]);
+  assert.equal(neuesKt.stand({}).konten[0].status, "ok");
+  assert.equal(neuesKt.schalteStatuszeile({ konto: "k_bbbb0009", an: false, einwilligung: true }).exakt, true);
+  assert.equal(readFileSync(settings(a.verwaltet), "utf8"), original);
+});
+
+test("Nie „statusLine“ löschen, solange es eine Kette gibt: fehlt kette/<id>.json, kommt die frühere Statuszeile aus der Sicherung; fehlt auch die, ändert Kortex nichts", () => {
+  const a = aufbau();
+  writeFileSync(settings(a.verwaltet), JSON.stringify({ statusLine: { type: "command", command: "echo aus-der-sicherung" } }, null, 2) + "\n");
+  schalte(a, ID, true);
+  const doc = JSON.parse(readFileSync(settings(a.verwaltet), "utf8")); doc.c = 1; writeFileSync(settings(a.verwaltet), JSON.stringify(doc));   // geändert: kein byteweiser Rückweg
+  rmSync(join(a.k, "kette", `${ID}.json`));
+  assert.equal(schalte(a, ID, false).exakt, false);
+  assert.equal(JSON.parse(readFileSync(settings(a.verwaltet), "utf8")).statusLine.command, "echo aus-der-sicherung");
+  // zweiter Fall: weder Kette noch Sicherung
+  const b = aufbau();
+  writeFileSync(settings(b.verwaltet), JSON.stringify({ statusLine: { type: "command", command: "echo verloren" } }, null, 2) + "\n");
+  schalte(b, ID, true);
+  const d2 = JSON.parse(readFileSync(settings(b.verwaltet), "utf8")); d2.c = 1; writeFileSync(settings(b.verwaltet), JSON.stringify(d2));
+  rmSync(join(b.k, "kette", `${ID}.json`));
+  for (const n of readdirSync(join(b.k, "sicherung"))) rmSync(join(b.k, "sicherung", n));
+  const vorher = readFileSync(settings(b.verwaltet));
+  wirft(() => schalte(b, ID, false), 409, "keine-kette");
+  assert.ok(readFileSync(settings(b.verwaltet)).equals(vorher), "die Datei bleibt unangetastet");
+});
+
+test("Ändert sich settings.json zwischen Lesen und Schreiben, stammen Sicherung und Prüfsumme aus der Fassung, die geschrieben wird — der Rückweg gibt genau die geänderte Fassung zurück", () => {
+  const a = aufbau();
+  const erste = '{"a": 1}\n', zweite = '{"a": 1, "neu": "dazwischen geändert"}\n';
+  writeFileSync(settings(a.verwaltet), erste);
+  let hakenAufrufe = 0;
+  a.kt._setzeHaken((ziel) => { hakenAufrufe++; writeFileSync(ziel, zweite); });   // eine fremde Änderung genau vor dem Umbenennen
+  const r = schalte(a, ID, true);
+  assert.equal(hakenAufrufe, 1);
+  assert.ok(readFileSync(r.sicherung).equals(Buffer.from(zweite)), "die Sicherung ist die geänderte Fassung, nicht die erste");
+  assert.equal(readdirSync(join(a.k, "sicherung")).length, 1, "keine verwaiste Sicherung des ersten Versuchs");
+  assert.equal(JSON.parse(readFileSync(settings(a.verwaltet), "utf8")).neu, "dazwischen geändert", "die fremde Änderung ging nicht verloren");
+  assert.equal(schalte(a, ID, false).exakt, true);
+  assert.equal(readFileSync(settings(a.verwaltet), "utf8"), zweite);
+});
+
+test("Scheitert das Eintragen mittendrin, bleibt nichts liegen: weder Kette, Sicherung, Skript noch Merker — und settings.json ist unverändert", () => {
+  const a = aufbau();
+  const original = JSON.stringify({ statusLine: { type: "command", command: "echo alt" } }) + "\n";
+  writeFileSync(settings(a.verwaltet), original);
+  a.kt._setzeHaken(() => { throw new Error("Platte voll"); });
+  wirft(() => schalte(a, ID, true), 500);
+  assert.equal(readFileSync(settings(a.verwaltet), "utf8"), original);
+  assert.deepEqual(leer(a), []);
+  assert.deepEqual(readdirSync(a.verwaltet).filter((n) => n.includes(".tmp-")), []);
+  // und es geht danach ganz normal
+  assert.equal(schalte(a, ID, true).aktion, "eingetragen");
+});
+
+test("Node oder Skript sind nicht mehr dort, wo der Befehl sie sucht: Stand „reparieren“, „Reparieren“ trägt den Aufruf neu ein (Kette und Merker bleiben)", () => {
+  const a = aufbau();
+  writeFileSync(settings(a.verwaltet), JSON.stringify({ statusLine: { type: "command", command: "printf meine" } }, null, 2) + "\n");
+  schalte(a, ID, true);
+  assert.equal(a.kt.stand({}).konten.find((x) => x.id === ID).status, "keine-werte");
+  // 1) Kortex wurde verschoben/aktualisiert: anderer Node-Pfad
+  const knoten = tmp("brain-node-"); const neuerNode = join(knoten, "node"); symlinkSync(process.execPath, neuerNode);
+  const b = nochEins(a, { nodePfad: neuerNode });
+  assert.equal(b.stand({}).konten[0].status, "reparieren");
+  const r = b.schalteStatuszeile({ konto: ID, an: true, einwilligung: true });
+  assert.equal(r.aktion, "repariert");
+  const befehl = befehlVon(a.verwaltet);
+  assert.ok(befehl.includes(neuerNode));
+  assert.equal(fuehreAus(befehl).stdout.toString(), "meine", "die Kette läuft: die frühere Ausgabe bleibt, nebenbei werden Werte gemerkt");
+  assert.ok(existsSync(join(a.k, `${ID}.json`)));
+  assert.equal(b.stand({}).konten[0].status, "ok");
+  assert.equal(b.schalteStatuszeile({ konto: ID, an: true, einwilligung: true }).aktion, "schon-da");
+  // 2) das Skript fehlt: derselbe Weg, die frühere Statuszeile läuft derweil (Rückfall im Befehl) weiter
+  rmSync(join(a.k, "bin", MARKE));
+  assert.equal(b.stand({}).konten[0].status, "reparieren");
+  assert.equal(fuehreAus(befehlVon(a.verwaltet)).stdout.toString(), "meine");
+  assert.equal(b.schalteStatuszeile({ konto: ID, an: true, einwilligung: true }).aktion, "repariert");
+  assert.ok(existsSync(join(a.k, "bin", MARKE)));
+  // 3) Node fehlt ganz
+  rmSync(neuerNode);
+  assert.equal(b.stand({}).konten[0].status, "reparieren");
+  // der Rückweg bleibt nach all dem byteweise
+  const c = nochEins(a, { nodePfad: process.execPath });
+  assert.equal(c.schalteStatuszeile({ konto: ID, an: true, einwilligung: true }).aktion, "repariert");
+  assert.equal(c.schalteStatuszeile({ konto: ID, an: false, einwilligung: true }).aktion, "entfernt");
+  assert.equal(JSON.parse(readFileSync(settings(a.verwaltet), "utf8")).statusLine.command, "printf meine");
+});
+
+test("Entfernen, wenn die Statuszeile schon weg ist: Aktion „schon-weg“ (die Oberfläche sagt es ehrlich) und die Reste sind aufgeräumt", () => {
+  const a = aufbau();
+  schalte(a, ID, true);
+  writeFileSync(settings(a.verwaltet), JSON.stringify({ statusLine: { type: "command", command: "echo anders" } }));
+  const e = schalte(a, ID, false);
+  assert.equal(e.aktion, "schon-weg");
+  assert.deepEqual(leer(a), []);
 });

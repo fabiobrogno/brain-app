@@ -257,3 +257,27 @@ test("Kein Netz, kein Schlüsselbund, kein Token: der Quelltext des Kontingents 
     for (const v of verboten) assert.ok(!v.test(text), `${ordner}/${name}: ${v} darf im Code nicht vorkommen`);
   }
 });
+
+// ---------------------------------------------------------------------- Befunde des Sicherheits-Reviews
+test("Das Codex-Programm bekommt keine Schlüssel, Tokens und Konto-Ordner anderer Programme (OPENAI_API_KEY, ANTHROPIC_*, … — dieselbe Liste wie für die KI-Programme), aber PATH und das eigene CODEX_HOME", async () => {
+  const { codexUmgebung } = await import(pfad("gemeinsam", "kontingent.mjs"));
+  const e = codexUmgebung({ PATH: "/usr/bin", HOME: "/h", LANG: "de", CODEX_HOME: "/x", CLAUDE_CONFIG_DIR: "/c", OPENAI_API_KEY: "sk-1", OPENAI_BASE_URL: "u", CODEX_API_KEY: "k", ANTHROPIC_API_KEY: "a", ANTHROPIC_AUTH_TOKEN: "t",
+    CLAUDE_CODE_OAUTH_TOKEN: "o", GITHUB_TOKEN: "g", AWS_BEARER_TOKEN_BEDROCK: "b", XDG_CONFIG_HOME: "/q", GIT_CONFIG_GLOBAL: "/g", CURSOR_CONFIG_DIR: "/c2", GEMINI_CLI_HOME: "/g2", DB_SECRET: "s", NODE_EXTRA_CA_CERTS: "/ca.pem" });
+  assert.deepEqual(Object.keys(e).sort(), ["HOME", "LANG", "NODE_EXTRA_CA_CERTS", "PATH"]);
+  // und so kommt es in der Werkstatt an, auch wenn der Prozess selbst Schlüssel in der Umgebung hat
+  const { erzeugeKontingent } = await import(pfad("werkstatt", "kontingent.mjs"));
+  const alt = { o: process.env.OPENAI_API_KEY, a: process.env.ANTHROPIC_API_KEY, c: process.env.CODEX_HOME };
+  process.env.OPENAI_API_KEY = "sk-geheim"; process.env.ANTHROPIC_API_KEY = "sk-ant-geheim"; process.env.CODEX_HOME = "/nicht/meins";
+  try {
+    const support = tmp("brain-support-"), home = tmp("brain-home-");
+    const zweit = join(home, ".codex-zweit"); mkdirSync(zweit, { recursive: true });
+    const daten = { konten: { k_cccc0001: { programm: "codex", ordner: join(home, ".codex"), standard: true, name: "Codex" }, k_cccc0002: { programm: "codex", ordner: zweit, standard: false, name: "Zweit" } } };
+    const gesehen = [];
+    const kt = erzeugeKontingent({ support, konten: { lade: () => daten }, home: () => home, codexProgramm: () => "/x/codex", codexLauf: async (o) => { gesehen.push(o.env); return { ok: false, art: "zeit" }; } });
+    kt.stand({}); await kt.warteAufAbfragen();
+    assert.equal(gesehen.length, 2);
+    for (const env of gesehen) { assert.equal(env.OPENAI_API_KEY, undefined); assert.equal(env.ANTHROPIC_API_KEY, undefined); assert.ok(env.PATH.startsWith("/x:")); assert.equal(env.CI, "1"); }
+    assert.equal(gesehen[0].CODEX_HOME, undefined, "das Standardkonto: kein CODEX_HOME aus der Umgebung des Prozesses");
+    assert.equal(gesehen[1].CODEX_HOME, zweit);
+  } finally { for (const [k, w] of [["OPENAI_API_KEY", alt.o], ["ANTHROPIC_API_KEY", alt.a], ["CODEX_HOME", alt.c]]) { if (w === undefined) delete process.env[k]; else process.env[k] = w; } }
+});

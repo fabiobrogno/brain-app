@@ -281,8 +281,8 @@ export function erzeugeKi(o) {
     if (!e) return null;
     const aktionen = h("div", { klasse: "kt-aktionen" });
     if (e.programm === "claude") {
-      if (e.status === "nicht-eingerichtet" || e.status === "geaendert") aktionen.append(baueKnopf({ text: TKO.status[e.status].knopf, groesse: "s", daten: { "data-aktion": "kt-anzeigen", "data-konto": kt.id }, aufKlick: () => kontingentEinschalten(kt, e) }));
-      else if (e.eingetragen) aktionen.append(textKnopf(TKO.ausschalten, "kt-aus", kt, () => kontingentAusschalten(kt)));
+      if (["nicht-eingerichtet", "geaendert", "neu-verknuepfen", "reparieren"].includes(e.status)) aktionen.append(baueKnopf({ text: TKO.status[e.status].knopf, groesse: "s", daten: { "data-aktion": "kt-anzeigen", "data-konto": kt.id }, aufKlick: () => kontingentEinschalten(kt, e) }));
+      if (e.eingetragen) aktionen.append(textKnopf(TKO.ausschalten, "kt-aus", kt, () => kontingentAusschalten(kt)));
     } else if (e.programm === "codex" && e.status !== "laedt") {
       const spaeter = ktStand.neuAb();
       aktionen.append(textKnopf(TKO.neuLaden, "kt-neu", kt, () => { ktStand.neuLaden(); }, spaeter ? { disabled: true, title: TKO.neuLadenSpaeter(new Date(spaeter).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })) } : { title: TKO.neuLadenTitel }));
@@ -302,7 +302,7 @@ export function erzeugeKi(o) {
       d.schliessen();
       try {
         const r = await api.kiStatuszeile({ konto: kt.id, an: true, bestaetigt: !verwaltet });
-        toast(`${E.fertig(kt.name)}${r?.kette ? ` ${E.fertigKette}` : ""}`, { ms: 6000 });
+        toast(r?.aktion === "repariert" ? E.repariert(kt.name) : r?.aktion === "neu-verknuepft" ? E.neuVerknuepft(kt.name) : r?.aktion === "schon-da" ? E.schonDa(kt.name) : `${E.fertig(kt.name)}${r?.kette ? ` ${E.fertigKette}` : ""}`, { ms: 6000 });
       } catch (err) { toast(err?.status === 0 ? TKO.fehlerSchalten : (err?.message || TKO.fehlerSchalten), { fehler: true, ms: 9000 }); }
       await ktStand.holen(); if (!zu()) behalteFokus(() => zeichne("konten"));
     } });
@@ -312,7 +312,7 @@ export function erzeugeKi(o) {
   function kontingentAusschalten(kt) {
     const ja = baueKnopf({ text: TKO.entfernenJa, variante: "primaer", aktion: "kt-ausschalten", aufKlick: async () => {
       d.schliessen();
-      try { const r = await api.kiStatuszeile({ konto: kt.id, an: false }); toast(TKO.entfernt(kt.name, r?.exakt !== false), { ms: 6000 }); }
+      try { const r = await api.kiStatuszeile({ konto: kt.id, an: false }); toast(r?.aktion === "schon-weg" ? TKO.schonWeg(kt.name) : TKO.entfernt(kt.name, r?.exakt !== false), { ms: 6000 }); }
       catch (err) { toast(err?.status === 0 ? TKO.fehlerSchalten : (err?.message || TKO.fehlerSchalten), { fehler: true, ms: 9000 }); }
       await ktStand.holen(); if (!zu()) behalteFokus(() => zeichne("konten"));
     } });

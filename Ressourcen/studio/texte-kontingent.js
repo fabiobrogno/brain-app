@@ -23,7 +23,9 @@ export const TKO = {
   status: {
     "nicht-eingerichtet": { kurz: "Kontingent nicht eingerichtet", text: "Claude Code meldet sein Kontingent an eine Statuszeile. Kortex trägt sie erst nach deinem Klick ein, und deine eigene Statuszeile bleibt dabei erhalten.", knopf: "Kontingent anzeigen …" },
     "keine-werte": { kurz: "Noch keine Werte", text: "Die Werte erscheinen, sobald du Claude Code mit diesem Konto benutzt hast (ab Version 2.1.80, angemeldet mit deinem Abo). Öffne dazu Claude Code und stelle eine Frage." },
-    "ohne-kontingent": { kurz: "Kontingent nicht abrufbar", text: "Claude Code meldet für dieses Konto kein Kontingent. Das ist bei einer Anmeldung mit API-Schlüssel oder vor Version 2.1.80 so. Aktualisiere Claude Code oder melde das Konto mit deinem Abo an." },
+    "ohne-kontingent": { kurz: "Noch kein Kontingent gemeldet", text: "Claude Code hat für dieses Konto noch kein Kontingent gemeldet. Bei einer neuen Sitzung ist das normal: Stelle in Claude Code eine Frage, dann erscheinen die Werte. Bleiben sie danach aus, nutzt das Konto vermutlich einen API-Schlüssel statt deines Abos, oder Claude Code ist älter als Version 2.1.80." },
+    "neu-verknuepfen": { kurz: "Statuszeile gehört zu einer früheren Kennung", text: "Die Statuszeile in den Einstellungen verweist auf eine frühere Kennung dieses Kontos (die Liste der Konten wurde neu angelegt). Klicke auf „Neu verknüpfen“, dann übernimmt Kortex sie, und deine eigene Statuszeile geht dabei nicht verloren.", knopf: "Neu verknüpfen …" },
+    reparieren: { kurz: "Statuszeile muss repariert werden", text: "Node oder das Skript von Kortex liegt nicht mehr dort, wo die Statuszeile es sucht (zum Beispiel nach einem Update oder Verschieben von Kortex). Deine eigene Statuszeile läuft derweil allein weiter. Klicke auf „Reparieren“, dann trägt Kortex den Aufruf neu ein.", knopf: "Reparieren …" },
     geaendert: { kurz: "Statuszeile geändert", text: "Die Statuszeile in den Einstellungen von Claude Code wurde geändert und gehört nicht mehr zu Kortex. Schalte „Kontingent anzeigen“ noch einmal ein, damit Kortex sie wieder weiterreicht.", knopf: "Kontingent anzeigen …" },
     "einstellungen-defekt": { kurz: "Einstellungen von Claude Code kaputt", text: "Die Einstellungen von Claude Code (settings.json) sind kaputt oder nicht lesbar. Kortex ändert nichts daran. Repariere die Datei, dann geht es hier weiter." },
     laedt: { kurz: "Kortex fragt …", text: "Kortex fragt Codex nach dem Kontingent. Das dauert einen Moment." },
@@ -63,6 +65,9 @@ export const TKO = {
     abbrechen: "Abbrechen",
     fertig: (name) => `Kontingent für „${name}“ wird angezeigt, sobald Claude Code die ersten Werte meldet.`,
     fertigKette: "Deine bisherige Statuszeile läuft unverändert weiter.",
+    schonDa: (name) => `Kontingent für „${name}“ war schon eingetragen. Kortex hat nichts geändert.`,
+    repariert: (name) => `Die Statuszeile für „${name}“ ist repariert. Die Werte erscheinen mit der nächsten Antwort von Claude Code.`,
+    neuVerknuepft: (name) => `Die Statuszeile für „${name}“ ist neu verknüpft. Deine bisherige Statuszeile läuft unverändert weiter.`,
   },
   // System-Standard (~/.claude) und andere Ordner außerhalb von Kortex: zusätzliche Bestätigung in der Seite
   bestaetigung: {
@@ -71,11 +76,12 @@ export const TKO = {
     punkte: {
       sicherung: "Vorher legt Kortex eine Kopie der Datei an (Ordner „kontingent/sicherung“ im Ordner von Kortex, nur für dich lesbar).",
       eintrag: "Der Eintrag ist eindeutig markiert („kortex-statuszeile“). Alles andere in der Datei bleibt, wie es ist.",
-      rueckweg: "Beim Ausschalten bekommst du die Datei genau so zurück, wie sie vorher war.",
+      rueckweg: "Beim Ausschalten bekommst du die Datei genau so zurück, wie sie vorher war, solange du sie nicht inzwischen geändert hast. Sonst nimmt Kortex nur seinen eigenen Eintrag heraus.",
     },
     ja: "Ja, in diesem Konto eintragen",
   },
   fehlerSchalten: "Kortex konnte die Einstellungen von Claude Code nicht ändern. Es wurde nichts verändert. Versuche es noch einmal oder prüfe, ob die Datei settings.json beschreibbar ist.",
+  schonWeg: (name) => `Kontingent für „${name}“ war schon aus: Die Statuszeile von Kortex stand nicht mehr in den Einstellungen. Kortex hat nichts geändert und nur seine Reste aufgeräumt.`,
   entfernt: (name, exakt) => (exakt ? `Kontingent für „${name}“ ist aus. Deine Einstellungen sind wieder genau wie vorher.` : `Kontingent für „${name}“ ist aus. Weil du die Einstellungen inzwischen geändert hast, hat Kortex nur seinen eigenen Eintrag entfernt.`),
   entfernenTitel: (name) => `Kontingent für „${name}“ nicht mehr anzeigen?`,
   entfernenText: "Kortex stellt die Einstellungen von Claude Code wieder her. Eine frühere Statuszeile von dir läuft danach allein weiter.",

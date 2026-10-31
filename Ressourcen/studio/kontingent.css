@@ -56,9 +56,8 @@
 .kt-mini.ohne-werte .kt-mini-text { color: var(--text-3); }
 .kt-mini[data-stufe="rot"] .kt-mini-text { color: var(--rot); }
 .kt-mini-rest { color: var(--text-3); }
-/* Die Statusleiste hat wenig Platz (Geist ist breit): ab 1180 px entfallen Rücksetzzeit und Name, ab 780 px der Balken — Logo und Prozent bleiben. Gleiche Stufen wie studio.css. */
-@container status (max-width: 1180px) { .kt-mini-rest, .kt-leiste .kt-name-text { display: none; } .kt-leiste { gap: 6px; padding: 0 6px; } .kt-mini .kt-balken { width: 30px; } }
-@container status (max-width: 780px) { .kt-mini .kt-balken { display: none; } }
+/* Die Statusleiste hat wenig Platz (Geist ist breit): ab 1180 px entfallen Rücksetzzeit, Name und Balken — Logo und Prozent bleiben. Gleiche Stufen wie studio.css. */
+@container status (max-width: 1180px) { .kt-mini-rest, .kt-leiste .kt-name-text, .kt-mini .kt-balken { display: none; } .kt-leiste { gap: 6px; padding: 0 6px; } }
 
 /* ---------- Konto-Menü (öffnet über der Statusleiste) ---------- */
 .kt-menue { display: flex; flex-direction: column; width: min(420px, calc(100vw - 24px)); padding: 6px; background: var(--erhoben); border-radius: var(--r-xl); box-shadow: var(--schatten-menue); font-size: 12.5px; color: var(--text); }

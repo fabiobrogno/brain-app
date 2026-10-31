@@ -264,19 +264,17 @@ test("Kontingent nicht geladen (Werkstatt-Fehler): die Leiste sagt „nicht abru
   expect(f).toEqual([]);
 });
 
-test("Schmales Fenster: bis 1180 px weichen Rücksetzzeit und Name, bis 780 px der Balken — Logo und Prozent bleiben, die Leiste läuft nie über", async ({ page }) => {
+test("Schmales Fenster: bis 1180 px weichen Rücksetzzeit, Name und Balken — Logo und Prozent bleiben, die Leiste läuft nie über", async ({ page }) => {
   const ueberlauf = () => page.evaluate(() => { const s = document.getElementById("status"), sr = s.getBoundingClientRect(); return { scroll: s.scrollWidth - s.clientWidth, aus: [...s.querySelectorAll(".st")].filter((e) => e.getBoundingClientRect().right > sr.right + 0.5).map((e) => e.dataset.st) }; });
   await start(page, { breite: 1440 });
-  await expect(leiste(page).locator(".kt-mini-rest")).toBeVisible();
-  for (const breite of [1100, 960, 780, 700]) {
+  for (const t of [".kt-mini-rest", ".kt-name-text", ".kt-balken"]) await expect(leiste(page).locator(t)).toBeVisible();
+  for (const breite of [1100, 1000, 960, 780, 700]) {
     await page.setViewportSize({ width: breite, height: 800 });
     await page.waitForTimeout(150);
     expect(await ueberlauf(), `${breite}px`).toEqual({ scroll: 0, aus: [] });
     await expect(leiste(page).locator(".kt-mini-text"), `${breite}px`).toBeVisible();
     await expect(leiste(page).locator(".ki-logo"), `${breite}px`).toBeVisible();
-    await expect(leiste(page).locator(".kt-mini-rest"), `${breite}px`).toBeHidden();
-    await expect(leiste(page).locator(".kt-name-text"), `${breite}px`).toBeHidden();
-    await expect(leiste(page).locator(".kt-balken"), `${breite}px`).toBeVisible({ visible: breite > 780 });
+    for (const t of [".kt-mini-rest", ".kt-name-text", ".kt-balken"]) await expect(leiste(page).locator(t), `${breite}px ${t}`).toBeHidden();
   }
   await foto(page, "statusleiste-schmal-hell");
 });
@@ -306,8 +304,9 @@ test("Einstellungen dunkel: Zustände — noch keine Werte, ohne Kontingent, ver
   await start(page, { dunkel: true, hash: "#einstellungen/ki", konten: [PRIVAT, ARBEIT, FIRMA_K, CODEX, CURSOR], werte: {
     k_aaaa0001: Z.keineWerte(), k_aaaa0002: Z.ohneKontingent(), k_aaaa0004: Z.defekt(), k_aaaa0003: Z.codexFehler("fehlt"), k_aaaa0005: Z.nichtAbrufbar("Cursor") } });
   await expect(spalte(page, "k_aaaa0001")).toContainText("Die Werte erscheinen, sobald du Claude Code mit diesem Konto benutzt hast");
-  await expect(spalte(page, "k_aaaa0002")).toContainText("Claude Code meldet für dieses Konto kein Kontingent");
-  await expect(spalte(page, "k_aaaa0002")).toContainText("Aktualisiere Claude Code oder melde das Konto mit deinem Abo an");
+  await expect(spalte(page, "k_aaaa0002")).toContainText("Claude Code hat für dieses Konto noch kein Kontingent gemeldet");
+  await expect(spalte(page, "k_aaaa0002")).toContainText("Bei einer neuen Sitzung ist das normal: Stelle in Claude Code eine Frage, dann erscheinen die Werte.");
+  await expect(spalte(page, "k_aaaa0002")).toContainText("API-Schlüssel statt deines Abos, oder Claude Code ist älter als Version 2.1.80");
   await expect(spalte(page, "k_aaaa0004")).toContainText("Repariere die Datei, dann geht es hier weiter.");
   await expect(spalte(page, "k_aaaa0003")).toContainText("Codex wurde nicht gefunden. Installiere Codex und klicke dann in den Einstellungen auf „Neu suchen“.");
   await foto(page, "einstellungen-zustaende-dunkel");
@@ -355,7 +354,7 @@ test("Einschalten beim System-Standard (~/.claude): Dialog MIT Bestätigung in d
   await expect(d.locator('[data-kt="bestaetigung"]')).toBeVisible();
   await expect(d.locator('[data-kt="bestaetigung"]')).toContainText("Einstellungen von „Privat“ ändern?");
   await expect(d.locator('[data-kt="bestaetigung"]')).toContainText("Vorher legt Kortex eine Kopie der Datei an");
-  await expect(d.locator('[data-kt="bestaetigung"]')).toContainText("Beim Ausschalten bekommst du die Datei genau so zurück, wie sie vorher war.");
+  await expect(d.locator('[data-kt="bestaetigung"]')).toContainText("Beim Ausschalten bekommst du die Datei genau so zurück, wie sie vorher war, solange du sie nicht inzwischen geändert hast. Sonst nimmt Kortex nur seinen eigenen Eintrag heraus.");
   await expect(d.locator('[data-aktion="kt-einschalten"]')).toHaveText("Ja, in diesem Konto eintragen");
   await foto(page, "einwilligung-standard-hell");
   // Abbrechen: nichts geschieht
@@ -396,4 +395,31 @@ test("Tastatur: Dialog per Tab erreichbar, Esc bricht ab, nichts wird geschriebe
   await page.keyboard.press("Escape");
   await expect(dlg(page, "kt-einwilligung")).toHaveCount(0);
   expect(kt.log("POST")).toHaveLength(0);
+});
+
+test("Neu verknüpfen und Reparieren: Zustand mit Knopf, der Aufruf läuft nach dem Dialog, der Hinweis nennt, was geschah (nicht „eingetragen“)", async ({ page }) => {
+  const { kt } = await start(page, { hash: "#einstellungen/ki", konten: [PRIVAT, ARBEIT], werte: { k_aaaa0001: Z.neuVerknuepfen(), k_aaaa0002: Z.reparieren() } });
+  await expect(spalte(page, "k_aaaa0001")).toContainText("Statuszeile gehört zu einer früheren Kennung");
+  await expect(spalte(page, "k_aaaa0001")).toContainText("deine eigene Statuszeile geht dabei nicht verloren");
+  await expect(spalte(page, "k_aaaa0001").locator('[data-aktion="kt-anzeigen"]')).toHaveText("Neu verknüpfen …");
+  await expect(spalte(page, "k_aaaa0002")).toContainText("Node oder das Skript von Kortex liegt nicht mehr dort");
+  await expect(spalte(page, "k_aaaa0002").locator('[data-aktion="kt-anzeigen"]')).toHaveText("Reparieren …");
+  await expect(spalte(page, "k_aaaa0002").locator('[data-aktion="kt-aus"]')).toBeVisible();
+  await foto(page, "einstellungen-reparieren-hell");
+  await spalte(page, "k_aaaa0002").locator('[data-aktion="kt-anzeigen"]').click();
+  await dlg(page, "kt-einwilligung").locator('[data-aktion="kt-einschalten"]').click();
+  await expect(page.locator(".toast").last()).toContainText("Die Statuszeile für „Arbeit“ ist repariert.");
+  await spalte(page, "k_aaaa0001").locator('[data-aktion="kt-anzeigen"]').click();
+  await dlg(page, "kt-einwilligung").locator('[data-aktion="kt-einschalten"]').click();
+  await expect(page.locator(".toast").last()).toContainText("Die Statuszeile für „Privat“ ist neu verknüpft.");
+  expect(kt.log("POST").map((a) => a.body.konto)).toEqual(["k_aaaa0002", "k_aaaa0001"]);
+});
+
+test("Ausschalten, wenn die Statuszeile schon weg war: der Hinweis sagt „war schon aus“ statt „Einstellungen wie vorher“", async ({ page }) => {
+  const { kt } = await start(page, { hash: "#einstellungen/ki", konten: [PRIVAT], werte: { k_aaaa0001: Z.claudeOk(42, 18) } });
+  kt.aktion = "schon-weg";
+  await spalte(page, "k_aaaa0001").locator('[data-aktion="kt-aus"]').click();
+  await dlg(page, "kt-ausschalten").locator('[data-aktion="kt-ausschalten"]').click();
+  await expect(page.locator(".toast").last()).toContainText("war schon aus: Die Statuszeile von Kortex stand nicht mehr in den Einstellungen.");
+  await expect(page.locator(".toast").last()).not.toContainText("wieder genau wie vorher");
 });

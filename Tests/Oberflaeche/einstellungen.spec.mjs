@@ -34,6 +34,8 @@ async function start(page, { hash = "", breite = 1440, hoehe = 900, dunkel = fal
   await page.waitForFunction(() => window.__studioBereit === true);
 }
 const oeffne = async (page, bereich = "allgemein") => {
+  // Nach dem Neuladen öffnet die Seite aus der Adresse (#einstellungen/…) von selbst, und zwar asynchron: erst abwarten, bis sie steht — sonst überschreibt sie den Bereich, den dieser Aufruf gleich wählt.
+  if ((await page.evaluate(() => location.hash)).startsWith("#einstellungen")) await expect(page.locator('.e-punkt[aria-current="true"]')).toBeVisible();
   await page.evaluate((b) => { location.hash = `#einstellungen/${b}`; }, bereich);
   await expect(seite(page)).toBeVisible();
   await expect(page.locator(`.e-punkt[data-bereich="${bereich}"][aria-current="true"]`)).toBeVisible();

@@ -13,7 +13,7 @@
 // Muster: Orca src/shared/claude-statusline-rate-limits.ts @9bccd67 (MIT, Lovecast Inc.) — Claude Code >= 2.1.80 liefert `rate_limits` an die Statuszeile; Prozent aus
 // `used_percentage` (oder dem verwandten `utilization`), Rücksetzzeit als Epochensekunden (oder ISO-Text, falls sich das Schema ändert).
 import { readFileSync, readSync, writeFileSync, renameSync, statSync, mkdirSync, chmodSync, rmSync, realpathSync } from "node:fs";
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
@@ -65,6 +65,13 @@ export function zeichneAuf(kontingentOrdner, konto, eingabe, jetzt = Date.now())
   const ziel = join(kontingentOrdner, `${konto}.json`);
   try { const d = jetzt - statSync(ziel).mtimeMs; if (d >= 0 && d < MIN_SCHREIB_ABSTAND_MS) return false; } catch { /* noch keine Datei */ }
   const k = leseStatuszeile(eingabe);
+  if (!k) {
+    // Eine Eingabe ohne `rate_limits` ist oft nur eine frische Sitzung (Claude Code meldet sie erst nach der ersten Antwort): sie überschreibt NIE gute Werte.
+    // „ohne“ wird nur geschrieben, wenn es noch keine Datei gibt oder dort schon „ohne“ steht (oder sie unlesbar ist).
+    let alt = null;
+    try { alt = JSON.parse(readFileSync(ziel, "utf8")); } catch { /* keine oder kaputt */ }
+    if (alt && typeof alt === "object" && alt.ohne !== true && (alt.session || alt.weekly)) return false;
+  }
   const stand = k ? { v: FORMAT, geschrieben: new Date(jetzt).toISOString(), session: k.session, weekly: k.weekly } : { v: FORMAT, geschrieben: new Date(jetzt).toISOString(), ohne: true };
   schreibeAtomar(ziel, JSON.stringify(stand) + "\n");
   return true;
@@ -94,22 +101,36 @@ function liesStdin() {
 
 const schreibe = (strom, teile) => new Promise((ok) => { if (!teile.length) return ok(); try { strom.write(Buffer.concat(teile), () => ok()); } catch { ok(); } });
 
-// Ruft die frühere Statuszeile auf (eigene Prozessgruppe: beim Zeitlimit endet auch, was sie gestartet hat) und reicht Ausgabe und Exit-Code durch. → Promise<Exit-Code>
+// Beendet einen Prozess und alles, was er gestartet hat (Kinder, Enkel …): die Kette läuft NICHT in einer eigenen Sitzung/Prozessgruppe — dann bliebe das Terminal von Claude Code erhalten, und eine
+// frühere Statuszeile, die `/dev/tty`, `tput cols` oder `stty size` liest, sähe dasselbe wie ohne Kortex. Darum wird der Baum über `ps` gesucht und einzeln beendet.
+function beendeBaum(wurzel) {
+  const kinder = new Map();
+  try {
+    for (const z of execFileSync("ps", ["-axo", "pid=,ppid="], { encoding: "utf8", timeout: 3000 }).split("\n")) {
+      const m = /^\s*(\d+)\s+(\d+)\s*$/.exec(z);
+      if (m) { const l = kinder.get(Number(m[2])) || []; l.push(Number(m[1])); kinder.set(Number(m[2]), l); }
+    }
+  } catch { /* ohne ps: nur das Kind selbst */ }
+  const baum = [wurzel];
+  for (let i = 0; i < baum.length && baum.length < 500; i++) for (const c of kinder.get(baum[i]) || []) baum.push(c);
+  for (const pid of baum.reverse()) { try { process.kill(pid, "SIGKILL"); } catch { /* schon weg */ } }
+}
+
+// Ruft die frühere Statuszeile auf und reicht Ausgabe und Exit-Code durch. → Promise<Exit-Code>
 function rufeKette(befehl, roh) {
   return new Promise((fertig) => {
     let kind;
-    try { kind = spawn("/bin/sh", ["-c", befehl], { stdio: ["pipe", "pipe", "pipe"], env: process.env, detached: true }); }
+    try { kind = spawn("/bin/sh", ["-c", befehl], { stdio: ["pipe", "pipe", "pipe"], env: process.env }); }
     catch { return fertig(0); }
     const aus = [], fehl = [];
     let menge = 0, ende = false;
-    const beendeAlles = () => { try { process.kill(-kind.pid, "SIGKILL"); } catch { try { kind.kill("SIGKILL"); } catch { /* weg */ } } };
     const schluss = (code) => {
       if (ende) return;
       ende = true; clearTimeout(uhr);
       Promise.all([schreibe(process.stdout, aus), schreibe(process.stderr, fehl)]).then(() => fertig(code));
     };
-    const uhr = setTimeout(() => { beendeAlles(); schluss(1); }, KETTE_FRIST_MS);
-    const sammle = (liste) => (d) => { menge += d.length; if (menge > MAX_AUSGABE) { beendeAlles(); return schluss(1); } liste.push(d); };
+    const uhr = setTimeout(() => { beendeBaum(kind.pid); schluss(1); }, KETTE_FRIST_MS);
+    const sammle = (liste) => (d) => { menge += d.length; if (menge > MAX_AUSGABE) { beendeBaum(kind.pid); return schluss(1); } liste.push(d); };
     kind.stdout.on("data", sammle(aus)); kind.stderr.on("data", sammle(fehl));
     kind.stdout.on("error", () => {}); kind.stderr.on("error", () => {}); kind.stdin.on("error", () => { /* Programm liest nicht: egal */ });
     kind.on("error", () => schluss(0));

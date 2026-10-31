@@ -10,7 +10,7 @@
 //  · Alles andere (das System-Standardkonto ~/.claude, ~/.claude-*): zusätzlich die Bestätigung innerhalb der Seite (`bestaetigt: true`), damit nichts außerhalb von Kortex ungefragt geändert wird.
 // Codex: Kortex fragt das Programm selbst (`codex app-server`, `account/rateLimits/read`, gemeinsam/kontingent.mjs). Kein Token wird gelesen, kein Schlüsselbund geöffnet, und Kortex
 // ruft weder Anthropic noch OpenAI an. Wo es nichts gibt (Cursor, Gemini …), steht ehrlich „nicht abrufbar“.
-import { readFileSync, writeFileSync, renameSync, statSync, mkdirSync, chmodSync, rmSync, copyFileSync, readdirSync, rmdirSync, realpathSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, renameSync, statSync, mkdirSync, chmodSync, rmSync, readdirSync, rmdirSync, realpathSync, existsSync, accessSync, constants } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir, homedir } from "node:os";
 import { randomBytes, createHash } from "node:crypto";
@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 import { HttpFehler, testmodus, kindUmgebung } from "../gemeinsam/basis.mjs";
 import { liesSettings, echtesZiel } from "../gemeinsam/claude-sperre.mjs";
 import { istVerwalteterOrdner, mitCodexHome } from "./profile.mjs";
-import { TAKT_MS, MIN_NEU_MS, VERALTET_MS, fehlerPause, liesCodexKontingent } from "../gemeinsam/kontingent.mjs";
+import { TAKT_MS, MIN_NEU_MS, VERALTET_MS, fehlerPause, liesCodexKontingent, codexUmgebung } from "../gemeinsam/kontingent.mjs";
 import { stufeFuer } from "../gemeinsam/ki-konten.mjs";
 
 export const MARKE = "kortex-statuszeile.mjs";
@@ -66,6 +66,10 @@ export function erzeugeKontingent({ support, konten, nodePfad = process.execPath
   // ───────────── Statuszeile in settings.json ─────────────
   const settingsDatei = (k) => join(k.ordner, "settings.json");
   const istUnsere = (sl) => istObj(sl) && typeof sl.command === "string" && sl.command.includes(`/kontingent/bin/${MARKE}`);
+  // Die Konto-Kennung, die im eingetragenen Befehl steht (`--konto k_…`). Kette, Merker und Sicherung gehören zu DIESER Kennung — auch wenn die Liste der Konten inzwischen eine andere vergeben hat
+  // (Liste neu angelegt): dann gilt „neu verknüpfen“, nie „weg damit“.
+  const idImBefehl = (cmd) => { const m = /--konto (k_[0-9a-f]{8})(?![0-9a-f])/.exec(String(cmd)); return m ? m[1] : null; };
+  const hatKetteImBefehl = (cmd) => /; else \/bin\/sh '/.test(String(cmd));
   // Befehl der Kette. Mit früherer Statuszeile läuft diese weiter, falls das Skript oder Node fehlt (z. B. nach einem Aufräumen): die Ausgabe bleibt dann wie vorher. Ihr Text steht NICHT im Befehl,
   // sondern in kette/<konto>.sh: sonst hielte der Installer der Hooks (kern/adapters/claude-code/install.mjs) einen eingebetteten Aufruf der eigenen Kortex-Statuszeile für seinen Eintrag und ersetzte die Kette.
   function kettenBefehl(id, mitOriginal) {
@@ -73,16 +77,23 @@ export function erzeugeKontingent({ support, konten, nodePfad = process.execPath
     const kern = `${n} ${s} --konto ${id}`;
     return mitOriginal ? `if [ -x ${n} ] && [ -f ${s} ]; then ${kern}; else /bin/sh ${shellText(ketteSh(id))}; fi` : `if [ -x ${n} ] && [ -f ${s} ]; then ${kern}; fi`;
   }
-  // → { zustand: "nicht" | "unsere" | "fremd" | "andere-form" | "defekt", sl, text, doc }
+  // → { zustand: "nicht" | "unsere" | "fremd" | "andere-form", sl, id (bei „unsere“: Kennung im Befehl), text, doc }
+  function klassifiziere(doc, text) {
+    const sl = doc.statusLine;
+    if (sl === undefined || sl === null) return { zustand: "nicht", sl: null, text, doc };
+    if (istUnsere(sl)) return { zustand: "unsere", sl, id: idImBefehl(sl.command), text, doc };
+    if (istObj(sl) && sl.type === "command" && typeof sl.command === "string" && sl.command.trim()) return { zustand: "fremd", sl, text, doc };
+    return { zustand: "andere-form", sl, text, doc };
+  }
+  // → wie klassifiziere, dazu „defekt“, wenn settings.json nicht lesbar oder kaputt ist
   function lieseStatuszeile(k) {
     let r;
     try { r = liesSettings(settingsDatei(k)); } catch (e) { return { zustand: "defekt", fehler: e instanceof HttpFehler ? e.message : null }; }
-    const sl = r.doc.statusLine;
-    if (sl === undefined || sl === null) return { zustand: "nicht", sl: null, text: r.text, doc: r.doc };
-    if (istUnsere(sl)) return { zustand: "unsere", sl, text: r.text, doc: r.doc };
-    if (istObj(sl) && sl.type === "command" && typeof sl.command === "string" && sl.command.trim()) return { zustand: "fremd", sl, text: r.text, doc: r.doc };
-    return { zustand: "andere-form", sl, text: r.text, doc: r.doc };
+    return klassifiziere(r.doc, r.text);
   }
+  // Test-Haken: wird nach dem Schreiben der Temp-Datei und vor dem Prüfen/Umbenennen einmal aufgerufen (ein Test ändert dort die Datei „zwischendurch“).
+  let hakenVorUmbenennen = null;
+  const setzeHaken = (f) => { hakenVorUmbenennen = typeof f === "function" ? f : null; };
   // Schreibt settings.json atomar (Temp-Datei im selben Ordner, Rechte der alten Datei, ein Verweis bleibt ein Verweis); wirft 503, wenn sich die Datei zwischen Lesen und Schreiben ändert.
   function schreibeSettings(datei, neuerText, erwartet) {
     const ziel = echtesZiel(datei);
@@ -92,6 +103,7 @@ export function erzeugeKontingent({ support, konten, nodePfad = process.execPath
     const tmp = `${ziel}.tmp-${process.pid}-${randomBytes(4).toString("hex")}`;
     try {
       writeFileSync(tmp, neuerText, { mode: modus, flag: "wx" }); chmodSync(tmp, modus);
+      if (hakenVorUmbenennen) { const h = hakenVorUmbenennen; hakenVorUmbenennen = null; h(ziel); }
       const jetztInhalt = liesBytes(ziel);
       if ((jetztInhalt === null ? null : jetztInhalt.toString("utf8")) !== erwartet) { rmSync(tmp, { force: true }); throw new HttpFehler(503, "Die Einstellungen von Claude Code werden gerade von einem anderen Vorgang geändert. Versuche es gleich noch einmal."); }
       renameSync(tmp, ziel);
@@ -103,6 +115,14 @@ export function erzeugeKontingent({ support, konten, nodePfad = process.execPath
     return ziel;
   }
   const mitWiederholung = (fn) => { let letzter; for (let i = 0; i < 3; i++) { try { return fn(); } catch (e) { if (!(e instanceof HttpFehler) || e.status !== 503) throw e; letzter = e; } } throw letzter; };
+  // Liest settings.json als Text UND als Bytes und besteht darauf, dass beides dieselbe Fassung ist (sonst 503: neu versuchen). Sicherung und Prüfsumme kommen aus genau diesen Bytes.
+  function liesFassung(datei) {
+    const ziel = echtesZiel(datei);
+    const roh = liesBytes(ziel);
+    const r = liesSettings(datei);
+    if ((roh === null ? null : roh.toString("utf8")) !== r.text) throw new HttpFehler(503, "Die Einstellungen von Claude Code werden gerade von einem anderen Vorgang geändert. Versuche es gleich noch einmal.");
+    return { ziel, roh, r };
+  }
 
   function legeSkriptAb() {
     const quelle = readFileSync(QUELLE);
@@ -110,6 +130,33 @@ export function erzeugeKontingent({ support, konten, nodePfad = process.execPath
     if (!vorhanden || !vorhanden.equals(quelle)) schreibeAtomar(skriptPfad(), quelle, 0o700);
     try { chmodSync(skriptPfad(), 0o700); } catch { /* egal */ }
   }
+  // Wirft weg, was von Kortex für diese Kennung liegt (Kette, Werte); die Sicherung nur auf Wunsch.
+  function raeumeAuf(id, { sicherung = null } = {}) {
+    try {
+      rmSync(ketteDatei(id), { force: true }); rmSync(ketteSh(id), { force: true }); rmSync(kontoDatei(id), { force: true });
+      if (sicherung) rmSync(join(sicherungOrdner(), sicherung), { force: true });
+    } catch { /* egal */ }
+  }
+  // Das Skript und der Merker gehen, wenn kein Konto sie mehr braucht.
+  function raeumeLeer() {
+    const e = liesEintraege();
+    if (Object.keys(e.konten).length) return;
+    try { rmSync(skriptPfad(), { force: true }); rmSync(eintragDatei(), { force: true }); } catch { /* egal */ }
+    for (const d of [join(ordner(), "bin"), join(ordner(), "kette"), sicherungOrdner()]) { try { if (!readdirSync(d).length) rmdirSync(d); } catch { /* nicht leer oder weg */ } }
+  }
+  // Die frühere Statuszeile zu einer Kennung: aus kette/<id>.json (das Objekt, sonst nur der Befehl), sonst aus der Sicherung der settings.json (wenn der Merker eine Kette vermerkt) — sonst null.
+  function fruehereStatuszeile(id, rec) {
+    try {
+      const j = JSON.parse(readFileSync(ketteDatei(id), "utf8"));
+      if (istObj(j) && istObj(j.original)) return { sl: j.original };
+      if (istObj(j) && typeof j.command === "string" && j.command.trim()) return { sl: { type: "command", command: j.command } };
+    } catch { /* keine oder kaputt: die Sicherung versuchen */ }
+    if (rec && rec.kette === true && rec.sicherung) {
+      try { const b = JSON.parse(readFileSync(join(sicherungOrdner(), rec.sicherung), "utf8")); if (istObj(b) && istObj(b.statusLine) && typeof b.statusLine.command === "string") return { sl: b.statusLine }; } catch { /* nicht lesbar */ }
+    }
+    return { sl: null };
+  }
+  const KEINE_KETTE = "Die frühere Statuszeile dieses Kontos ließ sich nicht wiederherstellen (ihre Sicherung fehlt oder ist unlesbar). Kortex ändert nichts, damit sie nicht verloren geht. Stelle sie aus einer Kopie deiner settings.json wieder her oder entferne den Eintrag „statusLine“ selbst.";
 
   function pruefeKonto(id) {
     const k = kontoVon(id);
@@ -118,58 +165,115 @@ export function erzeugeKontingent({ support, konten, nodePfad = process.execPath
     if (!ordnerErlaubt(k.ordner)) throw new HttpFehler(409, "Im Testmodus schreibt Kortex nur unter dem Temp-Ordner.", { art: "testmodus" });
     return k;
   }
+  const defektFehler = (st) => new HttpFehler(409, st.fehler || "Die Einstellungen von Claude Code (settings.json) sind kaputt oder nicht lesbar. Kortex ändert nichts daran — bitte zuerst reparieren, dann geht es hier weiter.", { art: "einstellungen-defekt" });
+  const ANDERE_FORM = "In den Einstellungen dieses Kontos steht eine Statuszeile in einer Form, die Kortex nicht weiterreichen kann. Kortex ändert nichts daran. Du kannst das Kontingent in Claude Code mit /usage ansehen.";
+
+  // Stimmt der eingetragene Befehl noch (Node-Pfad, Skript-Ort) und gibt es Node und Skript noch? → bool. Der Inhalt des Skripts zählt nicht: ein älteres Skript meldet dasselbe.
+  function istIntakt(k, st) {
+    const mit = hatKetteImBefehl(st.sl.command);
+    if (st.sl.command !== kettenBefehl(k.id, mit)) return false;
+    try { accessSync(nodePfad, constants.X_OK); } catch { return false; }
+    if (!liesBytes(skriptPfad())) return false;
+    if (mit && !liesBytes(ketteSh(k.id))) return false;
+    return true;
+  }
+  function merkeHashNachher(id, datei) {
+    const x = liesEintraege();
+    if (!x.konten[id]) return;
+    const nachher = liesBytes(echtesZiel(datei));
+    x.konten[id].hashNachher = nachher ? sha(nachher) : null;
+    speichereEintraege(x);
+  }
 
   // ───────────── Einschalten ─────────────
+  // Die Statuszeile ist schon von Kortex: stimmt alles → „schon-da“; stimmt der Befehl nicht mehr (Node/Skript verschoben) → „repariert“; gehört sie zu einer früheren Kennung → „neu-verknuepft“.
+  function behandleUnsere(k, datei) {
+    return mitWiederholung(() => {
+      const { r } = liesFassung(datei);
+      const st = klassifiziere(r.doc, r.text);
+      if (st.zustand !== "unsere") throw new HttpFehler(409, "Die Statuszeile wurde gerade geändert. Versuche es noch einmal.", { art: "geaendert" });
+      const alt = st.id;
+      const eintraege = liesEintraege();
+      if (alt === k.id) {
+        if (istIntakt(k, st)) { legeSkriptAb(); return { aktion: "schon-da", exakt: true }; }
+        const mit = hatKetteImBefehl(st.sl.command);
+        legeSkriptAb();
+        if (mit && !liesBytes(ketteSh(k.id))) {
+          const f = fruehereStatuszeile(k.id, eintraege.konten[k.id]);
+          if (!f.sl) throw new HttpFehler(409, KEINE_KETTE, { art: "keine-kette" });
+          schreibeAtomar(ketteSh(k.id), `${f.sl.command}\n`);
+        }
+        schreibeSettings(datei, JSON.stringify({ ...r.doc, statusLine: { ...st.sl, command: kettenBefehl(k.id, mit) } }, null, 2) + "\n", r.text);
+        merkeHashNachher(k.id, datei);
+        return { aktion: "repariert", exakt: true };
+      }
+      // Kennung im Befehl ≠ Kennung in der Liste: Kette und Merker der alten Kennung wandern zur neuen (nichts geht verloren)
+      const rec = alt ? eintraege.konten[alt] : null;
+      const mitKette = hatKetteImBefehl(st.sl.command);
+      const f = mitKette ? fruehereStatuszeile(alt || k.id, rec) : { sl: null };
+      if (mitKette && !f.sl) throw new HttpFehler(409, KEINE_KETTE, { art: "keine-kette" });
+      legeSkriptAb();
+      if (f.sl) { schreibeAtomar(ketteDatei(k.id), JSON.stringify({ command: f.sl.command, original: f.sl }) + "\n"); schreibeAtomar(ketteSh(k.id), `${f.sl.command}\n`); }
+      schreibeSettings(datei, JSON.stringify({ ...r.doc, statusLine: { ...st.sl, command: kettenBefehl(k.id, !!f.sl) } }, null, 2) + "\n", r.text);
+      if (rec) { eintraege.konten[k.id] = { ...rec, ordner: k.ordner, kette: !!f.sl }; delete eintraege.konten[alt]; speichereEintraege(eintraege); merkeHashNachher(k.id, datei); }
+      if (alt) raeumeAuf(alt);
+      return { aktion: "neu-verknuepft", exakt: true, kette: !!f.sl };
+    });
+  }
+
   function schalteEin(k, { bestaetigt }) {
     const verwaltet = istVerwalteterOrdner(support, k.ordner, "claude");
     if (!verwaltet && bestaetigt !== true) {
       throw new HttpFehler(409, "Dieses Konto liegt außerhalb von Kortex. Kortex ändert dort nur, wenn du es auf der Seite ausdrücklich bestätigst: Klicke auf „Kontingent anzeigen“ und bestätige die Frage.", { art: "bestaetigung" });
     }
-    const st = lieseStatuszeile(k);
-    if (st.zustand === "defekt") throw new HttpFehler(409, st.fehler || "Die Einstellungen von Claude Code (settings.json) sind kaputt oder nicht lesbar. Kortex ändert nichts daran — bitte zuerst reparieren, dann geht es hier weiter.", { art: "einstellungen-defekt" });
-    if (st.zustand === "andere-form") throw new HttpFehler(409, "In den Einstellungen dieses Kontos steht eine Statuszeile in einer Form, die Kortex nicht weiterreichen kann. Kortex ändert nichts daran. Du kannst das Kontingent in Claude Code mit /usage ansehen.", { art: "andere-form" });
-    const eintraege = liesEintraege();
-    if (st.zustand === "unsere") { // schon eingetragen: nur das Skript auf den neuen Stand bringen
-      legeSkriptAb();
-      return { aktion: "schon-da", exakt: true };
-    }
     const datei = settingsDatei(k);
-    const ziel = echtesZiel(datei);
-    const vorher = liesBytes(ziel);
-    const original = st.zustand === "fremd" ? st.sl : null;
-    const ordnerAngelegt = !existsSync(dirname(ziel)); // z. B. ~/.claude gibt es noch nicht (nur ~/.claude.json): der Rückweg räumt den leeren Ordner wieder weg
-    privatMkdir(ordner());
-    legeSkriptAb();
-    if (original) { schreibeAtomar(ketteDatei(k.id), JSON.stringify({ command: original.command, original }) + "\n"); schreibeAtomar(ketteSh(k.id), `${original.command}\n`); }
-    let sicherung = null;
-    if (vorher) { sicherung = `${k.id}-${zeitstempel()}-${randomBytes(3).toString("hex")}-settings.json`; privatMkdir(sicherungOrdner()); copyFileSync(ziel, join(sicherungOrdner(), sicherung)); chmodSync(join(sicherungOrdner(), sicherung), 0o600); }
-    // vermerkt wird VOR dem Schreiben (ein Absturz dazwischen hinterlässt keinen Eintrag ohne Merker); scheitert das Schreiben, geht der Merker wieder weg
-    eintraege.konten[k.id] = { ordner: k.ordner, seit: new Date(jetzt()).toISOString(), dateiDa: !!vorher, sicherung, hashVorher: vorher ? sha(vorher) : null, hashNachher: null, kette: !!original, ordnerAngelegt };
-    speichereEintraege(eintraege);
+    const erst = lieseStatuszeile(k);
+    if (erst.zustand === "defekt") throw defektFehler(erst);
+    if (erst.zustand === "andere-form") throw new HttpFehler(409, ANDERE_FORM, { art: "andere-form" });
+    if (erst.zustand === "unsere") return behandleUnsere(k, datei);
+    const ordnerAngelegt = !existsSync(dirname(echtesZiel(datei))); // z. B. ~/.claude gibt es noch nicht (nur ~/.claude.json): der Rückweg räumt den leeren Ordner wieder weg
+    let sicherung = null, ergebnis = null;
+    // Alles, was Kortex anlegt (Skript, Kette, Sicherung, Merker), entsteht innerhalb dieses try: scheitert etwas, bleibt nichts zurück.
     try {
       mitWiederholung(() => {
-        const r = liesSettings(datei);
+        // Sicherung, Prüfsumme und Eintrag kommen aus EXAKT der Fassung, die jetzt geschrieben wird: ändert sich die Datei dazwischen, beginnt dieser Durchgang von vorn (503).
+        const { roh, r } = liesFassung(datei);
+        const st = klassifiziere(r.doc, r.text);
+        if (st.zustand === "unsere") throw new HttpFehler(409, "Die Statuszeile wurde gerade geändert. Versuche es noch einmal.", { art: "geaendert" });
+        if (st.zustand === "andere-form") throw new HttpFehler(409, ANDERE_FORM, { art: "andere-form" });
+        const original = st.zustand === "fremd" ? st.sl : null;
+        if (sicherung) { try { rmSync(join(sicherungOrdner(), sicherung), { force: true }); } catch { /* weg */ } sicherung = null; }
+        privatMkdir(ordner());
+        legeSkriptAb();
+        raeumeAuf(k.id);
+        if (original) { schreibeAtomar(ketteDatei(k.id), JSON.stringify({ command: original.command, original }) + "\n"); schreibeAtomar(ketteSh(k.id), `${original.command}\n`); }
+        if (roh) { sicherung = `${k.id}-${zeitstempel()}-${randomBytes(3).toString("hex")}-settings.json`; privatMkdir(sicherungOrdner()); const sp = join(sicherungOrdner(), sicherung); writeFileSync(sp, roh, { mode: 0o600, flag: "wx" }); chmodSync(sp, 0o600); }
+        // vermerkt wird VOR dem Schreiben (ein Absturz dazwischen hinterlässt keinen Eintrag ohne Merker)
+        const eintraege = liesEintraege();
+        eintraege.konten[k.id] = { ordner: k.ordner, seit: new Date(jetzt()).toISOString(), dateiDa: !!roh, sicherung, hashVorher: roh ? sha(roh) : null, hashNachher: null, kette: !!original, ordnerAngelegt };
+        speichereEintraege(eintraege);
         const neu = { ...r.doc, statusLine: { ...(original || { type: "command" }), type: "command", command: kettenBefehl(k.id, !!original) } };
         schreibeSettings(datei, JSON.stringify(neu, null, 2) + "\n", r.text);
+        merkeHashNachher(k.id, datei);
+        ergebnis = { aktion: "eingetragen", kette: !!original, sicherung: sicherung ? join(sicherungOrdner(), sicherung) : null };
       });
     } catch (e) {
       try { const x = liesEintraege(); delete x.konten[k.id]; speichereEintraege(x); } catch { /* der Merker ist harmlos */ }
-      try { rmSync(ketteDatei(k.id), { force: true }); rmSync(ketteSh(k.id), { force: true }); if (sicherung) rmSync(join(sicherungOrdner(), sicherung), { force: true }); } catch { /* egal */ }
+      raeumeAuf(k.id, { sicherung });
+      raeumeLeer();
       throw e;
     }
-    const nachher = liesBytes(echtesZiel(datei));
-    const x = liesEintraege();
-    x.konten[k.id].hashNachher = nachher ? sha(nachher) : null;
-    speichereEintraege(x);
-    return { aktion: "eingetragen", kette: !!original, sicherung: sicherung ? join(sicherungOrdner(), sicherung) : null, bakDatei: vorher ? true : false };
+    return ergebnis;
   }
 
   // ───────────── Ausschalten ─────────────
   function schalteAus(k) {
     const datei = settingsDatei(k);
     const eintraege = liesEintraege();
-    const rec = eintraege.konten[k.id] || null;
     const st = lieseStatuszeile(k);
+    // Kette, Merker und Sicherung gehören zur Kennung, die im EINGETRAGENEN Befehl steht (die Liste der Konten kann inzwischen eine andere vergeben haben).
+    const id = st.zustand === "unsere" && st.id ? st.id : k.id;
+    const rec = eintraege.konten[id] || null;
     const ziel = echtesZiel(datei);
     const aktuell = liesBytes(ziel);
     let exakt = false, aktion = "entfernt";
@@ -189,27 +293,27 @@ export function erzeugeKontingent({ support, konten, nodePfad = process.execPath
       }
     }
     if (!exakt) {
-      if (st.zustand === "defekt") throw new HttpFehler(409, "Die Einstellungen von Claude Code (settings.json) sind kaputt oder nicht lesbar. Kortex ändert nichts daran — bitte zuerst reparieren, dann geht es hier weiter.", { art: "einstellungen-defekt" });
+      if (st.zustand === "defekt") throw defektFehler(st);
       if (st.zustand === "unsere") {
-        // Die Datei wurde seitdem geändert (von dir oder von Claude Code): nur der eigene Eintrag geht heraus, alles andere bleibt; die frühere Statuszeile kommt zurück
-        let frueher = null;
-        try { const j = JSON.parse(readFileSync(ketteDatei(k.id), "utf8")); if (istObj(j) && istObj(j.original)) frueher = j.original; } catch { /* keine frühere Statuszeile */ }
+        // Die Datei wurde seitdem geändert (von dir oder von Claude Code): nur der eigene Eintrag geht heraus, alles andere bleibt; die frühere Statuszeile kommt zurück.
+        // „statusLine“ wird NIE gelöscht, solange es eine Kette zu dieser Kennung gibt: dann kommt die frühere Statuszeile zurück (oder Kortex ändert nichts und sagt es).
+        const hatKette = hatKetteImBefehl(st.sl.command) || existsSync(ketteDatei(id));
+        const frueher = fruehereStatuszeile(id, rec).sl;
+        if (hatKette && !frueher) throw new HttpFehler(409, KEINE_KETTE, { art: "keine-kette" });
         mitWiederholung(() => {
-          const r = liesSettings(datei);
+          const { r } = liesFassung(datei);
           const neu = { ...r.doc };
           if (frueher) neu.statusLine = frueher; else delete neu.statusLine;
           schreibeSettings(datei, JSON.stringify(neu, null, 2) + "\n", r.text);
         });
-        aktion = "entfernt";
       } else aktion = "schon-weg";
     }
-    // aufräumen: Kette, Werte, Sicherung, Merker; das Skript, wenn kein Konto es mehr braucht
-    try { rmSync(ketteDatei(k.id), { force: true }); rmSync(ketteSh(k.id), { force: true }); rmSync(kontoDatei(k.id), { force: true }); if (rec && rec.sicherung) rmSync(join(sicherungOrdner(), rec.sicherung), { force: true }); } catch { /* egal */ }
-    if (rec) { delete eintraege.konten[k.id]; speichereEintraege(eintraege); }
-    if (!Object.keys(eintraege.konten).length) {
-      try { rmSync(skriptPfad(), { force: true }); rmSync(eintragDatei(), { force: true }); } catch { /* egal */ }
-      for (const d of [join(ordner(), "bin"), join(ordner(), "kette"), sicherungOrdner()]) { try { if (!readdirSync(d).length) rmdirSync(d); } catch { /* nicht leer oder weg */ } }
-    }
+    // aufräumen: Kette, Werte, Sicherung, Merker (die Kennung im Befehl und die der Liste); das Skript, wenn kein Konto es mehr braucht
+    raeumeAuf(id, { sicherung: rec && rec.sicherung ? rec.sicherung : null });
+    if (id !== k.id) { const r2 = eintraege.konten[k.id]; raeumeAuf(k.id, { sicherung: r2 && r2.sicherung ? r2.sicherung : null }); delete eintraege.konten[k.id]; }
+    delete eintraege.konten[id];
+    if (rec || id !== k.id) speichereEintraege(eintraege);
+    raeumeLeer();
     return { aktion, exakt };
   }
 
@@ -251,7 +355,7 @@ export function erzeugeKontingent({ support, konten, nodePfad = process.execPath
       if (!prog) erg = { ok: false, art: "fehlt" };
       else {
         try {
-          const env = mitCodexHome(kindUmgebung({ CI: "1", PATH: `${dirname(prog)}:${kindUmgebung().PATH || "/usr/bin:/bin"}` }), k);
+          const env = mitCodexHome(codexUmgebung(kindUmgebung({ CI: "1", PATH: `${dirname(prog)}:${kindUmgebung().PATH || "/usr/bin:/bin"}` })), k);
           erg = await codexLauf({ programm: prog, env, cwd: arbeitsordner() });
         } catch { erg = { ok: false, art: "start" }; }
       }
@@ -279,8 +383,12 @@ export function erzeugeKontingent({ support, konten, nodePfad = process.execPath
     const rec = liesEintraege().konten[k.id];
     if (st.zustand === "defekt") return { ...basis, status: "einstellungen-defekt" };
     if (st.zustand !== "unsere") return { ...basis, status: rec ? "geaendert" : "nicht-eingerichtet", ...(st.zustand === "andere-form" ? { andereForm: true } : {}), ...(st.zustand === "fremd" ? { fremdeStatuszeile: true } : {}) };
-    const w = liesWerte(k.id);
     const eingetragen = { ...basis, eingetragen: true, kette: !!(rec && rec.kette) };
+    // Die Kennung im eingetragenen Befehl ist nicht die der Liste (Liste neu angelegt): „neu verknüpfen“ — nie als eigene Werte lesen
+    if (st.id !== k.id) return { ...eingetragen, status: "neu-verknuepfen" };
+    // Node oder Skript sind nicht mehr dort, wo der Befehl sie sucht (Kortex verschoben, Update): „reparieren“ — die frühere Statuszeile läuft derweil allein weiter
+    if (!istIntakt(k, st)) return { ...eingetragen, status: "reparieren" };
+    const w = liesWerte(k.id);
     if (!w) return { ...eingetragen, status: "keine-werte" };
     if (w.ohne) return { ...eingetragen, status: "ohne-kontingent", aktualisiert: iso(w.geschrieben) };
     const alt = jetzt() - w.geschrieben > VERALTET_MS;
@@ -323,5 +431,5 @@ export function erzeugeKontingent({ support, konten, nodePfad = process.execPath
 
   // Nur für Tests und das Beenden: wartet, bis alle laufenden Codex-Abfragen fertig sind.
   const warteAufAbfragen = () => kette;
-  return { stand, schalteStatuszeile, warteAufAbfragen };
+  return { stand, schalteStatuszeile, warteAufAbfragen, _setzeHaken: setzeHaken };
 }

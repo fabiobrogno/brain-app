@@ -171,3 +171,66 @@ test("Parser: fehlende Felder, ISO-Zeit, utilization, Grenzen, falsche Typen", (
   assert.equal(leseFenster({ used_percentage: 5, resets_at: 0 }, 300).resetsAt, null);
   assert.equal(leseFenster({ used_percentage: 5, resets_at: {} }, 300).resetsAt, null);
 });
+
+// ---------------------------------------------------------------------- Befunde des Sicherheits-Reviews
+test("Eine Eingabe ohne rate_limits (frische Sitzung) überschreibt NIE gute Werte; „ohne“ steht nur, wenn es noch nichts gab", () => {
+  const a = aufbau();
+  const datei = join(a.k, `${ID}.json`);
+  const alt = (ms) => utimesSync(datei, new Date(Date.now() - ms), new Date(Date.now() - ms));
+  // keine Datei: „ohne“ wird geschrieben
+  assert.equal(zeichneAuf(a.k, ID, { model: "x" }), true);
+  assert.equal(JSON.parse(readFileSync(datei, "utf8")).ohne, true);
+  // Werte kommen: ersetzen „ohne“
+  alt(60_000);
+  assert.equal(zeichneAuf(a.k, ID, AUS), true);
+  assert.equal(JSON.parse(readFileSync(datei, "utf8")).session.usedPercent, 42);
+  // Eine Sitzung ohne rate_limits (auch wenn die 15 s längst um sind): die guten Werte bleiben, Byte für Byte
+  alt(60_000);
+  const vorher = readFileSync(datei);
+  for (const eingabe of [{ model: "x" }, { rate_limits: null }, { rate_limits: {} }, { rate_limits: { five_hour: {} } }]) {
+    assert.equal(zeichneAuf(a.k, ID, eingabe), false);
+    assert.ok(readFileSync(datei).equals(vorher));
+  }
+  // Auch über das Programm selbst
+  alt(60_000);
+  assert.equal(lauf(a, ID, JSON.stringify({ session_id: "frisch" })).status, 0);
+  assert.ok(readFileSync(datei).equals(vorher));
+  // Steht dort schon „ohne“, wird es aufgefrischt; eine unlesbare Datei wird ersetzt
+  const b = aufbau();
+  const d2 = join(b.k, `${ID}.json`);
+  zeichneAuf(b.k, ID, {}, Date.now() - 60_000);
+  assert.equal(zeichneAuf(b.k, ID, {}, Date.now()), true);
+  writeFileSync(d2, "{kaputt");
+  utimesSync(d2, new Date(Date.now() - 60_000), new Date(Date.now() - 60_000));
+  assert.equal(zeichneAuf(b.k, ID, {}), true);
+  assert.equal(JSON.parse(readFileSync(d2, "utf8")).ohne, true);
+});
+
+test("Eine Statuszeile, die das Terminal braucht (/dev/tty, tput, stty), sieht es auch in der Kette: die Kette läuft NICHT in einer eigenen Sitzung", { skip: spawnSync("python3", ["--version"]).error ? "python3 fehlt" : false }, () => {
+  const a = aufbau();
+  const befehl = "if (exec 3>/dev/tty) 2>/dev/null; then printf tty; else printf kein-tty; fi";
+  kette(a, ID, befehl);
+  const skriptPy = join(a.home, "pty.py");
+  writeFileSync(skriptPy, [
+    "import pty, os, sys, subprocess",
+    "node, skript, konto, ausgabe, modus = sys.argv[1:6]",
+    "pid, fd = pty.fork()",
+    "if pid == 0:",
+    "    if modus == 'direkt':",
+    "        r = subprocess.run(['/bin/sh', '-c', sys.argv[6]], capture_output=True)",
+    "    else:",
+    "        r = subprocess.run([node, skript, '--konto', konto], input=b'{}', capture_output=True)",
+    "    open(ausgabe, 'wb').write(r.stdout)",
+    "    os._exit(0)",
+    "os.waitpid(pid, 0)",
+  ].join("\n"));
+  const lies = (modus) => {
+    const aus = join(a.home, `aus-${modus}.txt`);
+    const r = spawnSync("python3", ["-I", skriptPy, process.execPath, a.skript, ID, aus, modus, befehl], { env: { PATH: "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin", HOME: a.home }, timeout: 30_000 });
+    assert.equal(r.status, 0, String(r.stderr));
+    return readFileSync(aus, "utf8");
+  };
+  const direkt = lies("direkt");
+  if (direkt !== "tty") return; // diese Umgebung (z. B. ein Container ohne Pseudo-Terminals) kann kein Terminal vortäuschen: nichts zu vergleichen
+  assert.equal(lies("kette"), "tty", "die Ausgabe der Kette muss dieselbe sein wie ohne Kortex");
+});

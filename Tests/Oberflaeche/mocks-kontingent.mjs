@@ -16,6 +16,8 @@ export const ZUSTAND = {
   nichtEingerichtet: (extra = {}) => ({ quelle: "statuszeile", verwaltet: false, bestaetigungNoetig: true, status: "nicht-eingerichtet", ...extra }),
   keineWerte: () => ({ quelle: "statuszeile", verwaltet: false, bestaetigungNoetig: true, eingetragen: true, status: "keine-werte" }),
   ohneKontingent: () => ({ quelle: "statuszeile", verwaltet: false, bestaetigungNoetig: true, eingetragen: true, status: "ohne-kontingent", aktualisiert: new Date(JETZT - min(3)).toISOString() }),
+  neuVerknuepfen: () => ({ quelle: "statuszeile", verwaltet: false, bestaetigungNoetig: true, eingetragen: true, status: "neu-verknuepfen" }),
+  reparieren: () => ({ quelle: "statuszeile", verwaltet: false, bestaetigungNoetig: true, eingetragen: true, status: "reparieren" }),
   geaendert: () => ({ quelle: "statuszeile", verwaltet: false, bestaetigungNoetig: true, status: "geaendert", fremdeStatuszeile: true }),
   defekt: () => ({ quelle: "statuszeile", verwaltet: false, bestaetigungNoetig: true, status: "einstellungen-defekt" }),
   codexOk: (s, w) => ({ quelle: "codex", status: "ok", session: s === null ? null : sitzung(s, std(4) + min(2)), weekly: w === null ? null : woche(w, std(43)), aktualisiert: new Date(JETZT - min(4)).toISOString(), abgefragt: new Date(JETZT - min(4)).toISOString(), neuAb: new Date(JETZT + min(1)).toISOString() }),
@@ -26,8 +28,8 @@ export const ZUSTAND = {
 };
 
 // opt.konten: [{ id, programm, name, standard, verwaltet? }] · opt.werte: { <konto>: Zustand } · opt.jetzt · opt.fehler: GET schlägt fehl (Text)
-export async function mockeKontingent(page, { konten, werte = {}, jetzt = JETZT, fehler = null, schalterFehler = null } = {}) {
-  const z = { konten, werte: { ...werte }, jetzt, anfragen: [], fehler, schalterFehler };
+export async function mockeKontingent(page, { konten, werte = {}, jetzt = JETZT, fehler = null, schalterFehler = null, aktion = null } = {}) {
+  const z = { konten, werte: { ...werte }, jetzt, anfragen: [], fehler, schalterFehler, aktion };
   // stufe: die Stufe des Kontos im offenen Vault (wie die Werkstatt sie aus der Liste der Konten liest); ohne Angabe: verbundene Konten „posteingang“, übrige „gesperrt“ (wie mockeKonten)
   const liste = () => z.konten.map((k) => ({ id: k.id, programm: k.programm, name: k.name, standard: k.standard === true, stufe: k.stufe || (k.verbunden ? "posteingang" : "gesperrt"), ...(z.werte[k.id] || ZUSTAND.nichtAbrufbar()), ...(k.verwaltet ? { verwaltet: true, bestaetigungNoetig: false } : {}) }));
   const stand = () => ({ jetzt: new Date(z.jetzt).toISOString(), takt: { abfrageMs: 900_000, neuFruehestensMs: 300_000, veraltetMs: 1_800_000 }, konten: liste() });
@@ -45,8 +47,11 @@ export async function mockeKontingent(page, { konten, werte = {}, jetzt = JETZT,
     if (b.einwilligung !== true) return route.fulfill({ status: 409, json: { fehler: "Kortex ändert die Einstellungen von Claude Code nur nach deinem Klick.", art: "einwilligung" } });
     if (b.an && !k.verwaltet && b.bestaetigt !== true) return route.fulfill({ status: 409, json: { fehler: "Dieses Konto liegt außerhalb von Kortex. Bestätige es auf der Seite.", art: "bestaetigung" } });
     const fremd = z.werte[k.id]?.fremdeStatuszeile === true;
+    const vorher = z.werte[k.id]?.status;
     z.werte[k.id] = b.an ? ZUSTAND.keineWerte() : ZUSTAND.nichtEingerichtet();
-    return route.fulfill({ json: { ok: true, aktion: b.an ? "eingetragen" : "entfernt", exakt: true, kette: b.an && fremd, stand: stand() } });
+    // wie die Werkstatt: repariert / neu verknüpft / schon weg, je nach Ausgangslage; z.aktion erzwingt eine Antwort
+    const aktion = z.aktion || (b.an ? (vorher === "reparieren" ? "repariert" : vorher === "neu-verknuepfen" ? "neu-verknuepft" : "eingetragen") : (vorher === "nicht-eingerichtet" ? "schon-weg" : "entfernt"));
+    return route.fulfill({ json: { ok: true, aktion, exakt: true, kette: b.an && fremd, stand: stand() } });
   });
   z.log = (methode) => z.anfragen.filter((a) => !methode || a.methode === methode);
   return z;
