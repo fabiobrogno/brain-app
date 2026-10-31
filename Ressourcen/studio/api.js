@@ -105,9 +105,14 @@ export const api = {
   gitLog: ({ max, vor } = {}) => anfrage("GET", "/api/git/log" + q({ max, vor })),
   gitRemote: (url) => anfrage("POST", "/api/git/remote", { url }),
   // ---- v3: Abgleich mit Konflikten, Nachsehen, Version zurückholen
-  gitKonflikt: (pfad) => anfrage("GET", "/api/git/konflikt" + q({ pfad })),
-  gitKonfliktLoesen: (auswahl) => anfrage("POST", "/api/git/konflikt/loesen", { auswahl }),
+  // Konflikt-Ansicht (Kern): beide Fassungen je Datei · Entscheidungen festhalten und abgleichen · „Später“ · „Rückgängig“.
+  // Nach „Rückgängig“ zeigt die Ansicht den gemerkten Stand (er liegt im Support-Ordner, nicht in der Anfrage).
+  gitKonflikt: () => anfrage("GET", "/api/git/konflikt"),
+  // gesehen = { meine, andere }: der Stand, den die Ansicht gezeigt hat (die Werkstatt lehnt ab, wenn er sich geändert hat)
+  gitKonfliktLoesen: (auswahl, gesehen) => anfrage("POST", "/api/git/konflikt/loesen", { auswahl, gesehen }),
   gitKonfliktAbbrechen: () => anfrage("POST", "/api/git/konflikt/abbrechen", {}),
+  gitKonfliktVerwerfen: () => anfrage("POST", "/api/git/konflikt/verwerfen", {}),
+  gitKonfliktRueckgaengig: () => anfrage("POST", "/api/git/konflikt/rueckgaengig", {}),
   gitNachsehen: () => anfrage("POST", "/api/git/nachsehen", {}),
   zurueckholenVorschau: (pfad, sha) => anfrage("GET", "/api/git/wiederherstellen/vorschau" + q({ pfad, sha })),
   zurueckholen: (pfad, sha) => anfrage("POST", "/api/git/wiederherstellen", { pfad, sha }),
@@ -148,6 +153,9 @@ export const api = {
   frageAbbrechen: (id) => anfrage("POST", "/api/frage/abbrechen", { id }),
   // ---- KI-Konten und Vault-Zugriff (Paket P2). Das Leseverbot in Claude Code wird nur mit claudeSperre: true geschrieben, der Strenge Schutz nur mit bestaetigt: true — beides setzt die Oberfläche erst nach dem Klick.
   kiKonten: () => anfrage("GET", "/api/ki/konten"),
+  // Kontingent (P7): Stand lesen (neu = frühere Abfrage bei Codex, frühestens 5 Min nach der letzten) · die Statuszeile von Kortex bei Claude Code ein-/ausschalten (nur nach dem Klick; `bestaetigt` für Orte außerhalb von Kortex)
+  kiKontingent: (neu) => anfrage("GET", "/api/ki/kontingent" + (neu ? "?neu=1" : "")),
+  kiStatuszeile: ({ konto, an, bestaetigt }) => anfrage("POST", "/api/ki/kontingent/statuszeile", { konto, an, einwilligung: true, ...(bestaetigt ? { bestaetigt: true } : {}) }),
   kiKontoName: (id, name) => anfrage("POST", "/api/ki/konten", { id, name }),
   kiZugriff: ({ konto, vault, stufe, claudeSperre }) => anfrage("PUT", "/api/ki/zugriff", { konto, vault, stufe, ...(typeof claudeSperre === "boolean" ? { claudeSperre } : {}) }),
   kiStandard: (vault, stufe) => anfrage("PUT", "/api/ki/standard", { vault, stufe }),

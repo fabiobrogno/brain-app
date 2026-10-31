@@ -8,7 +8,7 @@ import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { createInterface } from "node:readline";
 import { oeffneVault, HttpFehler } from "../gemeinsam/vault.mjs";
-import { kindUmgebung, supportOrdner, falte, kernOrdner } from "../gemeinsam/basis.mjs";
+import { kindUmgebung, supportOrdner, falte, kernOrdner, testmodus } from "../gemeinsam/basis.mjs";
 import { starte, neueFrist, registriere, beendeGruppe } from "../gemeinsam/prozess.mjs";
 import { findeProgramm, erkenneAgenten, erkenneKatalog } from "../gemeinsam/ki.mjs";
 import { ladeKatalog } from "../gemeinsam/ki-katalog.mjs";
@@ -22,6 +22,7 @@ import { erzeugeEreignisse } from "./ereignisse.mjs";
 import { profilZuPfad, mitProfil, mitCodexHome } from "./profile.mjs";
 import { erzeugeKonten } from "./konten.mjs";
 import { erzeugeFrage } from "./frage.mjs";
+import { erzeugeKontingent } from "./kontingent.mjs";
 import { erzeugeEinstellungen } from "./einstellungen.mjs";
 import { erzeugeAktivitaet } from "./aktivitaet.mjs";
 import { erzeugeTastenkuerzel } from "./tastenkuerzel.mjs";
@@ -205,6 +206,11 @@ export function erzeugeHandler(o) {
   // (Umgebung für Programmsuche und Kindprozess, kürzere Grenzen, Temp-Ordner); sonst gilt die Umgebung dieser Werkstatt als Quelle für PATH/HOME/LANG, nie mehr.
   const frage = erzeugeFrage({ support: vaultOpt.support || supportOrdner(), konten, mcpBasis: () => mcpArgs(), basisEnv: o.frageEnv || process.env,
     home: () => o.kontenHome || homedir(), grenzen: o.frageGrenzen || {}, tempBasis: o.frageTemp || null });
+  // Kontingent der KI-Konten (P7, 5 Std / Woche): Claude über die Statuszeile (nur nach Klick eingetragen, als Kette), Codex über das Programm selbst. Nie ein Token, nie ein Schlüsselbund, nie eine eigene
+  // Anfrage an Anthropic oder OpenAI. o.kontingentCodex (Pfad oder null) / o.kontingentLauf / o.kontingentZeit = Ersatz für Tests (im Testmodus sonst kein echtes Codex).
+  const kontingent = erzeugeKontingent({ support: vaultOpt.support || supportOrdner(), konten, nodePfad,
+    ...(o.kontenHome ? { home: () => o.kontenHome } : {}), codexProgramm: o.kontingentCodex !== undefined ? () => o.kontingentCodex : () => (testmodus() ? null : findeProgramm("codex")),
+    ...(o.kontingentLauf ? { codexLauf: o.kontingentLauf } : {}), ...(o.kontingentZeit ? { jetzt: o.kontingentZeit } : {}) });
   // Seite „Einstellungen“ (P5): GET/PUT /api/einstellungen führt die Werte eines Vaults (kern/einstellungen.mjs, wie `brain einstellungen`) und die der App (<support>/einstellungen.json) zusammen.
   const einstellungen = erzeugeEinstellungen({ support: vaultOpt.support || supportOrdner(), kern: () => o.kern || kernOrdner() });
   // Aktivitätsprotokoll (P8a): Liste, „gelesen“, Rückgängig für KI-Ablagen — werkstatt/aktivitaet.mjs. Das Protokoll schreiben MCP-Server, Hooks und Kern.
@@ -344,8 +350,10 @@ export function erzeugeHandler(o) {
       case "/api/git/status": nur("GET"); return V().gitStatus();
       case "/api/git/commit": nur("POST"); return V().gitCommit(eingabe());
       case "/api/git/sync": nur("POST"); return V().gitSync(koerper && koerper.length ? eingabe() : {});
-      case "/api/git/konflikt": nur("GET"); return V().gitKonflikte(q.get("pfad") || undefined);
-      case "/api/git/konflikt/loesen": nur("POST"); return V().gitKonfliktAbschliessen(eingabe());
+      case "/api/git/konflikt": nur("GET"); return V().gitKonfliktAnsicht(); // der gemerkte Stand nach „Rückgängig“ kommt aus dem Support-Ordner, nie aus der Anfrage
+      case "/api/git/konflikt/loesen": nur("POST"); return V().gitKonfliktLoesen(eingabe());
+      case "/api/git/konflikt/rueckgaengig": nur("POST"); return V().gitKonfliktRueckgaengig();
+      case "/api/git/konflikt/verwerfen": nur("POST"); return V().gitKonfliktVerwerfen();
       case "/api/git/konflikt/abbrechen": nur("POST"); return V().gitKonfliktAbbrechen();
       case "/api/git/nachsehen": nur("POST"); return V().gitNachsehen();
       case "/api/git/wiederherstellen/vorschau": nur("GET"); return V().gitWiederherstellenVorschau(q.get("pfad"), q.get("sha"));
@@ -405,6 +413,8 @@ export function erzeugeHandler(o) {
       case "/api/ki/konten":
         if (methode === "GET") { await migrierePflege(v); return konten.stand(); }
         nur("POST"); return konten.setzeName(eingabe());
+      case "/api/ki/kontingent": nur("GET"); return kontingent.stand({ neu: q.get("neu") === "1", vault: v ? v.wurzel : null });
+      case "/api/ki/kontingent/statuszeile": nur("POST"); return kontingent.schalteStatuszeile(eingabe());
       case "/api/ki/zugriff": nur("PUT"); return konten.setzeZugriff(eingabe());
       // Frag deinen Vault (P4): Start → Long-Poll auf den Stand → Abbruch. Nichts wird gespeichert.
       case "/api/frage/bereit": nur("GET"); return frage.bereit(V());
@@ -817,6 +827,7 @@ export function erzeugeHandler(o) {
   }
   behandle.aktuellerVaultPfad = () => (aktuell ? aktuell.wurzel : null);
   behandle.konten = konten; // werkstatt.mjs gleicht die Liste beim Start ab
+  behandle.kontingent = kontingent;
   behandle.migrierePflege = () => migrierePflege(aktuell, { start: true }); // und übernimmt danach einmal das alte Profil der plist in die Pflege-Einstellung
   behandle.ereignisse = ereignisse; // werkstatt.mjs beendet wartende Abrufe, bevor es sich schließt
   return behandle;

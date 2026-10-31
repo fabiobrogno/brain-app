@@ -15,6 +15,9 @@ import { oeffneMenue } from "./menue.js";
 import { kiLogo, kiLogoId, kiLogoName, kiKatalog } from "./ki-logos.js";
 import { TK } from "./texte-konten.js";
 import { TKE as T } from "./texte-ki-einstellungen.js";
+import { kontingentStand, kontingentBlock, kontoAnsicht } from "./kontingent.js";
+import { TKO } from "./texte-kontingent.js";
+import { popoverOffen } from "./popover.js";
 
 export const STUFEN = ["gesperrt", "lesen", "posteingang", "erweitert"];
 const NEUE = ["gesperrt", "lesen", "posteingang"];
@@ -55,6 +58,7 @@ export function erzeugeKi(o) {
     frage: null, frageFehler: null, verbindenOffen: false, verbindenWahl: [], umbenenne: null, namensFehler: null, beschaeftigt: false, meldung: null, warnung: null, tot: false,
     aktivFilter: "alle", aktListe: null, aktFehler: null, aktAlle: false, aktZurueck: new Set(), wartend: new Set(), uberwacht: new Set(),
   };
+  const ktStand = kontingentStand(api); // Kontingent je Konto (P7, kontingent.js): derselbe Stand wie in der Statusleiste
   const hosts = new Map();      // Name → Element
   const zeichner = {};          // Name → () => void
   const offeneDialoge = new Set();
@@ -284,6 +288,54 @@ export function erzeugeKi(o) {
     return panel;
   }
 
+  // ---- Kontingent je Konto (P7): zwei Balken mit Prozent und Rücksetzzeit; ohne Werte der Zustand mit dem nächsten Schritt
+  const textKnopf = (text, id, kt, aufKlick, extra = {}) => h("button", { klasse: "knopf-text", type: "button", "data-aktion": id, "data-konto": kt.id, text, aufClick: aufKlick, ...extra });
+  function kontingentSpalte(kt) {
+    const e = ktStand.eintrag(kt.id);
+    if (!e) return null;
+    const aktionen = h("div", { klasse: "kt-aktionen" });
+    if (e.programm === "claude") {
+      if (["nicht-eingerichtet", "geaendert", "neu-verknuepfen", "reparieren"].includes(e.status)) aktionen.append(baueKnopf({ text: TKO.status[e.status].knopf, groesse: "s", daten: { "data-aktion": "kt-anzeigen", "data-konto": kt.id }, aufKlick: () => kontingentEinschalten(kt, e) }));
+      if (e.eingetragen) aktionen.append(textKnopf(TKO.ausschalten, "kt-aus", kt, () => kontingentAusschalten(kt)));
+    } else if (e.programm === "codex" && e.status !== "laedt") {
+      const spaeter = ktStand.neuAb();
+      aktionen.append(textKnopf(TKO.neuLaden, "kt-neu", kt, () => { ktStand.neuLaden(); }, spaeter ? { disabled: true, title: TKO.neuLadenSpaeter(new Date(spaeter).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })) } : { title: TKO.neuLadenTitel }));
+    }
+    const werte = kontoAnsicht(e, ktStand.jetzt()).hatWerte;
+    return h("div", { klasse: "kt-spalte", "data-kt-konto": kt.id, "data-layout": werte ? "werte" : "text" }, kontingentBlock(e, { jetzt: ktStand.jetzt(), aktion: aktionen.childNodes.length ? aktionen : null }));
+  }
+  // Einschalten: erst der Klick auf „Kontingent anzeigen …“, dann dieser Dialog. Orte außerhalb von Kortex (System-Standard ~/.claude u. a.) brauchen zusätzlich die Bestätigung hier in der Seite.
+  function kontingentEinschalten(kt, e) {
+    const verwaltet = e?.verwaltet === true || kt.verwaltet === true;
+    const E = TKO.einwilligung, B = TKO.bestaetigung;
+    const punkte = [E.punkte.keinToken, E.punkte.nurZahlen, E.punkte.kette, E.punkte.rueckweg];
+    const rumpf = [h("ul", { klasse: "kt-liste", "data-kt": "punkte" }, punkte.map((t) => h("li", { text: t })))];
+    if (!verwaltet) rumpf.push(h("div", { klasse: "kk-karte warn", role: "note", "data-kt": "bestaetigung" }, h("b", { klasse: "kk-karte-titel", text: B.titel(kt.name) }), h("p", { text: B.satz(kt.ordner || kt.pfad || "") }),
+      h("ul", { klasse: "kt-liste" }, [B.punkte.sicherung, B.punkte.eintrag, B.punkte.rueckweg].map((t) => h("li", { text: t })))));
+    const ja = baueKnopf({ text: verwaltet ? E.ja : B.ja, variante: "primaer", aktion: "kt-einschalten", aufKlick: async () => {
+      d.schliessen();
+      try {
+        const r = await api.kiStatuszeile({ konto: kt.id, an: true, bestaetigt: !verwaltet });
+        toast(r?.aktion === "repariert" ? E.repariert(kt.name) : r?.aktion === "neu-verknuepft" ? E.neuVerknuepft(kt.name) : r?.aktion === "schon-da" ? E.schonDa(kt.name) : `${E.fertig(kt.name)}${r?.kette ? ` ${E.fertigKette}` : ""}`, { ms: 6000 });
+      } catch (err) { toast(err?.status === 0 ? TKO.fehlerSchalten : (err?.message || TKO.fehlerSchalten), { fehler: true, ms: 9000 }); }
+      await ktStand.holen(); if (!zu()) behalteFokus(() => zeichne("konten"));
+    } });
+    const d = eigenerDialog({ titel: E.titel(kt.name), satz: E.satz, rumpf, knoepfe: [baueKnopf({ text: E.abbrechen, aufKlick: () => d.schliessen() }), ja] });
+    d.box.dataset.dialog = "kt-einwilligung";
+  }
+  function kontingentAusschalten(kt) {
+    const ja = baueKnopf({ text: TKO.entfernenJa, variante: "primaer", aktion: "kt-ausschalten", aufKlick: async () => {
+      d.schliessen();
+      try { const r = await api.kiStatuszeile({ konto: kt.id, an: false }); toast(r?.aktion === "schon-weg" ? TKO.schonWeg(kt.name) : TKO.entfernt(kt.name, r?.exakt !== false), { ms: 6000 }); }
+      catch (err) { toast(err?.status === 0 ? TKO.fehlerSchalten : (err?.message || TKO.fehlerSchalten), { fehler: true, ms: 9000 }); }
+      await ktStand.holen(); if (!zu()) behalteFokus(() => zeichne("konten"));
+    } });
+    const d = eigenerDialog({ titel: TKO.entfernenTitel(kt.name), rumpf: [h("p", { klasse: "dialog-satz", text: TKO.entfernenText })], knoepfe: [baueKnopf({ text: TKO.einwilligung.abbrechen, aufKlick: () => d.schliessen() }), ja] });
+    d.box.dataset.dialog = "kt-ausschalten";
+  }
+  // Ein neuer Stand (alle 60 s, bei Änderungen, nach dem Einschalten): nur neu zeichnen, solange kein Menü offen ist
+  const beiKontingent = () => { if (!zu() && !popoverOffen()) behalteFokus(() => zeichne("konten")); };
+
   // ---- Konto-Zeile
   function statusMarke(kt) {
     const z = anmZustand(kt);
@@ -335,7 +387,8 @@ export function erzeugeKi(o) {
       S.umbenenne === kt.id ? null : h("button", { klasse: "knopf-text kx-umbenennen", type: "button", "data-aktion": "konto-umbenennen", "aria-label": TK.konten.umbenennenFuer(kt.name), disabled: S.beschaeftigt, text: TK.konten.umbenennen,
         aufClick: () => { S.umbenenne = kt.id; S.namensFehler = null; zeichne("konten"); const f = hosts.get("konten")?.querySelector('[data-kk="name-feld"]'); f?.focus(); f?.select(); } }),
       baueKnopf({ symbol: "punkte", variante: "leise", groesse: "s", label: `Mehr: ${kt.name}`, daten: { "data-aktion": "konto-mehr" }, aufKlick: (ev) => kontoMenue(ev, kt) }));
-    li.append(h("div", { klasse: "kx-zeile" }, av, name, rechts));
+    const ktSpalte = kontingentSpalte(kt);
+    li.append(h("div", { klasse: `kx-zeile${ktSpalte ? (ktSpalte.dataset.layout === "text" ? " kt-unten" : " kt-mit") : ""}` }, av, name, ktSpalte, rechts));
     // Hinweiszeilen: abgelaufene Anmeldung (mit der Folge für die Pflege), Altform ohne Kontokennung
     if (z === "abgelaufen") {
       const pv = vaults().filter((v) => v.pflege?.gesetzt && v.pflege.konto === kt.id && v.pflege.stufe !== "aus").map((v) => `„${v.name}“`);
@@ -914,16 +967,18 @@ export function erzeugeKi(o) {
   let aktTimer = null;
   const beiAktivitaet = () => { clearTimeout(aktTimer); aktTimer = setTimeout(() => { if (!zu()) ladeAktivitaet(); }, 250); };
   window.addEventListener("kortex-aktivitaet", beiAktivitaet);
-  let gestartet = false;
+  let gestartet = false, ktAb = null;
   function start() {
     if (gestartet) return;
     gestartet = true;
     ladeKonten(); ladeProgramme(false); ladeKern(); ladeFrage(); ladeAktivitaet();
+    ktAb = ktStand.abonniere(beiKontingent); ktStand.start();
   }
   function ende() {
     S.tot = true;
     window.removeEventListener("kortex-konten", beiKonten);
     window.removeEventListener("kortex-aktivitaet", beiAktivitaet); clearTimeout(aktTimer);
+    ktAb?.();
     for (const f of [...S.uberwacht]) { try { f(); } catch { /* egal */ } }
     for (const d of [...offeneDialoge]) { try { d.schliessen(); } catch { /* egal */ } }
     hosts.clear();

@@ -74,7 +74,8 @@ export class KeinVaultFehler extends Error {
 // Ein Vault ist ein EXISTIERENDER Ordner (Symlinks werden aufgelöst) mit brain.config.json. Die Marke ist die Minimalbedingung, die jeder von
 // Kortex angelegte Vault erfüllt; ohne sie würden Hooks und Werkzeuge in einem verwaisten oder falsch eingetragenen Pfad AGENTS.md, graph.json und
 // .logs/ anlegen (Geister-Vault). → aufgelöster absoluter Pfad (lexikalisch, nicht realpath) oder KeinVaultFehler.
-export function pruefeVault(pfad) {
+// ohneConfig: nur für den Konflikt-Abgleich des Studios (brain abgleich) — auch ein Ordner mit Versionsverlauf ohne brain.config.json lässt sich dort zusammenführen
+export function pruefeVault(pfad, { ohneConfig = false } = {}) {
   if (typeof pfad !== "string" || !pfad.trim() || pfad.includes("\0")) throw new KeinVaultFehler("Vault nicht gefunden: kein gültiger Pfad.");
   const p = resolve(pfad);
   let echt;
@@ -82,7 +83,7 @@ export function pruefeVault(pfad) {
   let istOrdner = false;
   try { istOrdner = statSync(echt).isDirectory(); } catch { /* fehlt */ }
   if (!istOrdner) throw new KeinVaultFehler(`Vault nicht gefunden: ${p} ist kein Ordner.`);
-  if (!existsSync(join(echt, "brain.config.json"))) throw new KeinVaultFehler(`Das ist kein Kortex-Vault: in ${p} fehlt brain.config.json.`);
+  if (!ohneConfig && !existsSync(join(echt, "brain.config.json"))) throw new KeinVaultFehler(`Das ist kein Kortex-Vault: in ${p} fehlt brain.config.json.`);
   zieleImVault(echt);
   registriereVault(p, echt); // ab jetzt bleiben alle Schreibzugriffe unter diesem Vault im Vault (vault-schutz.mjs)
   return p;
@@ -427,10 +428,15 @@ export const istOrdnerName = (w) => typeof w === "string" && w !== "." && w !== 
 export function ordner(vault, cfg = ladeConfig(vault)) {
   const nimm = (wert, standard) => (istOrdnerName(wert) ? wert : standard);
   const o = {
-    inbox: nimm(cfg.ordner?.inbox, "00_inbox"),
+    inbox: "00_inbox",
     wiki: nimm(cfg.ordner?.wiki, nimm(cfg.wiki?.ordner, "09_wiki")),
     archiv: nimm(cfg.ordner?.archiv, "90_archiv"),
   };
+  // Posteingang: wie Aufgaben unten kein versteckter Ordner und nie Wiki, Archiv oder ein Standardname dieser Ordner (gemeinsam/basis.mjs#inboxOrdnerVon
+  // wendet dieselbe Regel auf die Rohdatei an) — sonst läge die Inbox im Wiki oder in .git. Vergleich NFC + klein.
+  const f = (n) => n.normalize("NFC").toLowerCase();
+  const ib = cfg.ordner?.inbox;
+  if (istOrdnerName(ib) && !ib.startsWith(".") && ![o.wiki, o.archiv, "09_wiki", "90_archiv", "node_modules"].some((n) => f(n) === f(ib))) o.inbox = ib;
   // Aufgaben (je Aufgabe eine Markdown-Datei, aufgaben.mjs): kein versteckter Ordner (.git, .claude …) und nie einer der anderen Kern-Ordner —
   // sonst schriebe die KI an der Schutzregel „Wiki nur über ingest“ vorbei. Groß/Klein zählt nicht (macOS, Windows).
   const belegt = new Set([o.inbox, o.wiki, o.archiv, "00_inbox", "09_wiki", "90_archiv", "node_modules"].map((n) => n.normalize("NFC").toLowerCase()));

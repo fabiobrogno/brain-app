@@ -8,7 +8,7 @@
 // ctx = { vertraut, sshEigen, sshGlobal, gpgGlobal, frist } kommt von vault.mjs (aus vertrauen.mjs); ohne Angabe gilt „nicht vertraut“.
 import { execFile, execFileSync } from "node:child_process";
 import { realpathSync, readFileSync, writeFileSync, statSync, renameSync, lstatSync, unlinkSync, readdirSync, mkdirSync, copyFileSync, existsSync, rmSync } from "node:fs";
-import { join, dirname, basename, extname, sep } from "node:path";
+import { join, dirname, basename, sep } from "node:path";
 import { HttpFehler, sauber, loese, kindUmgebung, falte, absoluterGitPfad, absoluterPfad, MAX_DATEI, testmodus } from "./basis.mjs";
 import { berlinHeute } from "./pruefung.mjs";
 import { starte, neueFrist, beendeAlleProzesse } from "./prozess.mjs";
@@ -266,7 +266,21 @@ function mergeReste(wurzel, ab) {
   }
 }
 
-export function sync(wurzel, opt = {}) { return exklusiv(wurzel, () => syncOhneSperre(wurzel, opt)); }
+// opt.sperre (optional, von vault.mjs): nimmt die gemeinsame Sperre aller Abgleiche (Kern und Studio, kern/abgleich-sperre.mjs) — erst NACH der Sperre im Prozess,
+// damit „wer zuerst aufruft, gewinnt“ bleibt. Sie liefert { freigeben() } oder wirft (409).
+// Dieselbe Sperre im Prozess für Aufrufe außerhalb dieser Datei (der Kern-Befehl `brain abgleich` fasst Index und Arbeitsbaum an: nie zugleich mit Commit, Abgleich oder Nachsehen)
+// Wartet kurz (höchstens 3 s), statt gleich mit 409 abzulehnen: das Nachsehen beim Start hält die Sperre nur einen Moment.
+export async function gitExklusiv(wurzel, fn, warteMs = 3000) {
+  const ende = Date.now() + warteMs;
+  while (laufend.has(wurzel) && Date.now() < ende) await new Promise((ok) => setTimeout(ok, 40));
+  return exklusiv(wurzel, fn);
+}
+export function sync(wurzel, opt = {}) {
+  return exklusiv(wurzel, async () => {
+    const dateiSperre = typeof opt.sperre === "function" ? await opt.sperre() : null;
+    try { return await syncOhneSperre(wurzel, opt); } finally { try { dateiSperre?.freigeben?.(); } catch { /* egal */ } }
+  });
+}
 
 // Läuft git in die Zeitüberschreitung (SIGKILL), kann Git eine halbe Zusammenführung und index.lock hinterlassen.
 // Die Sperrdatei wird nur entfernt, wenn sie nach dem Start unseres Aufrufs entstand und kein git-Prozess mehr läuft.
@@ -342,7 +356,7 @@ async function syncOhneSperre(wurzel, opt = {}) {
         let m = await mitAbbruchSchutz(G, wurzel, () => G(["merge", "--ff-only", "--quiet", "@{u}"], { ...OH, timeout: limitSync }));
         if (m.code !== 0) m = await mitAbbruchSchutz(G, wurzel, () => G(["merge", "--no-edit", "--quiet", "@{u}"], { ...OH, timeout: limitSync }));
         if (m.code !== 0 && opt.konflikteLoesen && (await konfliktDateien(G)).length) {
-          // Konflikte NICHT zurücknehmen: Die Oberfläche lässt pro Datei wählen (konfliktAbschliessen) oder bricht ab (konfliktAbbrechen).
+          // Konflikte NICHT zurücknehmen: Die Oberfläche lässt pro Datei wählen (Kern: abgleich-konflikt.mjs) oder bricht ab.
           // Versteckte Dateien (Punkt-Ordner) kann die Oberfläche nicht zeigen: dort bleibt automatisch die eigene Fassung.
           let offen;
           try {
@@ -355,7 +369,7 @@ async function syncOhneSperre(wurzel, opt = {}) {
             else await G(["merge", "--abort"], rueckweg);
             throw e;
           }
-          if (offen.length) throw new HttpFehler(409, KONFLIKT_TEXT, { konflikt: true, dateien: offen.map((e) => e.pfad), versteckteBehalten: versteckteBehalten_ });
+          if (offen.length) throw new HttpFehler(409, KONFLIKT_TEXT, { konflikt: true, gestartet: true, dateien: offen.map((e) => e.pfad), versteckteBehalten: versteckteBehalten_ }); // gestartet: DIESER Abgleich hat die Zusammenführung begonnen (nicht keinMergeOffen)
           m = { code: 0 }; // alles war automatisch lösbar: Zusammenführung ist abgeschlossen
         }
         if (m.code !== 0) {
@@ -769,7 +783,6 @@ async function remoteHinzufuegenOhneSperre(wurzel, rohUrl, opt) {
 // über eine Konfliktdatei liegt eine Kopie in .git/brain-sicherung/).
 
 const KONFLIKT_TEXT = "Beim Abgleich haben beide Seiten dieselbe Stelle geändert. Bitte wähle pro Datei, welche Fassung gelten soll. Es geht nichts verloren.";
-const WAHL = new Set(["meine", "andere", "beide"]);
 
 // Läuft gerade eine Zusammenführung (MERGE_HEAD)? Auch eine, die außerhalb der App begonnen wurde.
 async function mergeLaeuft(G) { return (await G(["rev-parse", "-q", "--verify", "MERGE_HEAD"])).code === 0; }
@@ -849,45 +862,19 @@ async function sichereArbeitsstand(G, wurzel, pfade) {
   return n ? basis : null;
 }
 
-// Eine Datei auflösen. wahl: meine | andere | beide. Fehlt die gewählte Seite (dort gelöscht), wird auch gelöscht.
-// → { zweiteDatei } wenn „beide“ eine Zusatzdatei angelegt hat.
-async function loeseDatei(G, wurzel, e, wahl, datum) {
-  const hat = (st) => e.stufen.has(st);
-  const behalte = async (seite) => {
-    const a = await G(["checkout", seite === 2 ? "--ours" : "--theirs", "--", e.pfad]);
+// Versteckte Konfliktdateien (Punkt-Ordner) bleiben bei der eigenen Fassung. Fehlt sie dort (gelöscht), wird auch gelöscht.
+// Die Entscheidungen der Nutzerin (diese/andere/beide/zusammengeführt) und der Abschluss liegen im Kern (kern/abgleich-konflikt.mjs), nicht hier.
+async function behalteMeine(G, e) {
+  if (e.modus === "160000") throw new HttpFehler(422, `„${e.pfad}“ ist ein eingebettetes Repository — das kann die App nicht zusammenführen.`);
+  if (e.stufen.has(2)) {
+    const a = await G(["checkout", "--ours", "--", e.pfad]);
     if (a.code !== 0) throw new HttpFehler(500, `„${e.pfad}“ ließ sich nicht übernehmen.`, { ausgabe: ausgabeVon(a) });
     const b = await G(["add", "--", e.pfad]);
     if (b.code !== 0) throw new HttpFehler(500, `„${e.pfad}“ ließ sich nicht vormerken.`, { ausgabe: ausgabeVon(b) });
-  };
-  const loesche = async () => {
+  } else {
     const r = await G(["rm", "-q", "-f", "--", e.pfad]);
     if (r.code !== 0) throw new HttpFehler(500, `„${e.pfad}“ ließ sich nicht entfernen.`, { ausgabe: ausgabeVon(r) });
-  };
-  if (e.modus === "160000") throw new HttpFehler(422, `„${e.pfad}“ ist ein eingebettetes Repository — das kann die App nicht zusammenführen.`);
-  if (wahl === "meine") { if (hat(2)) await behalte(2); else await loesche(); return {}; }
-  if (wahl === "andere") { if (hat(3)) await behalte(3); else await loesche(); return {}; }
-  // beide: meine bleibt, die des anderen Macs wird daneben als „<Name> (Konflikt <Datum>).<Endung>“ gespeichert
-  if (!hat(2)) { await behalte(3); return {}; }   // ich habe gelöscht: die Fassung des anderen bleibt
-  if (!hat(3)) { await behalte(2); return {}; }   // der andere hat gelöscht: meine bleibt
-  const blob = await G(["cat-file", "blob", `:3:${e.pfad}`], { buffer: true });
-  if (blob.code !== 0) throw new HttpFehler(500, `Die Fassung des anderen Macs von „${e.pfad}“ war nicht lesbar.`, { ausgabe: ausgabeVon(blob) });
-  if (blob.stdout.length > MAX_DATEI) throw new HttpFehler(413, `„${e.pfad}“ ist zu groß für „beide behalten“. Bitte wähle eine der beiden Fassungen.`);
-  const ordner = dirname(e.pfad) === "." ? "" : dirname(e.pfad) + "/";
-  const ext = extname(e.pfad), stamm = basename(e.pfad, ext).slice(0, 100);
-  let ziel = null;
-  for (let i = 0; i < 100 && !ziel; i++) {
-    const rel = `${ordner}${stamm} (Konflikt ${datum}${i ? " " + (i + 1) : ""})${ext}`;
-    const l = loese(wurzel, rel); // innerhalb des Vaults, kein Symlink nach draußen
-    if (!existsSync(l.abs) && (await G(["ls-files", "--error-unmatch", "--", l.rel])).code !== 0) ziel = l;
   }
-  if (!ziel) throw new HttpFehler(409, `Für „${e.pfad}“ gibt es schon zu viele Konfliktkopien.`);
-  writeFileSync(ziel.abs, blob.stdout, { flag: "wx" }); // wx: nie eine vorhandene Datei überschreiben
-  try {
-    await behalte(2);
-    const b = await G(["add", "--", ziel.rel]);
-    if (b.code !== 0) throw new HttpFehler(500, "Die Zusatzdatei ließ sich nicht vormerken.", { ausgabe: ausgabeVon(b) });
-  } catch (x) { try { unlinkSync(ziel.abs); } catch { /* schon weg */ } throw x; }
-  return { zweiteDatei: ziel.rel };
 }
 
 // Versteckte Konfliktdateien (Punkt-Ordner) zeigt die Oberfläche nicht: dort bleibt automatisch die eigene Fassung.
@@ -895,7 +882,7 @@ async function versteckteBehalten(G, wurzel) {
   const liste = (await konfliktListe(G)).filter((e) => e.versteckt);
   if (!liste.length) return [];
   await sichereArbeitsstand(G, wurzel, liste.map((e) => e.pfad));
-  for (const e of liste) await loeseDatei(G, wurzel, e, "meine", "");
+  for (const e of liste) await behalteMeine(G, e);
   return liste.map((e) => e.pfad);
 }
 // Beide Seiten haben die Datei gelöscht (nur der Vorgänger ist übrig): bleibt gelöscht, braucht keine Entscheidung.
@@ -916,76 +903,7 @@ async function mergeCommit(G, wurzel, namen) {
   return (await G(["rev-parse", "HEAD"])).stdout.trim();
 }
 
-// Text einer Konfliktseite für die Vorschau (nur lesbarer Text bis 200 KB, sonst { text: null }).
-async function seitenText(G, stufe, pfad) {
-  const r = await G(["cat-file", "blob", `:${stufe}:${pfad}`], { buffer: true });
-  if (r.code !== 0) return null;
-  if (r.stdout.length > 200_000 || r.stdout.includes(0)) return { text: null, gross: r.stdout.length > 200_000 };
-  const text = r.stdout.toString("utf8");
-  return Buffer.compare(Buffer.from(text, "utf8"), r.stdout) === 0 ? { text } : { text: null };
-}
-
-// GET: offene Konflikte. Mit pfad zusätzlich beide Fassungen als Text (meine / andere; null = diese Seite hat gelöscht).
-export async function konflikte(wurzel, pfad, ctx = {}) {
-  const G = binde(wurzel, ctx);
-  await brauchtRepo(G, wurzel);
-  if (!(await mergeLaeuft(G))) return { aktiv: false, dateien: [] };
-  const liste = (await konfliktListe(G)).filter((e) => !e.versteckt && e.art !== "beide-geloescht");
-  const r = { aktiv: true, dateien: liste.map(oeffentlich) };
-  if (pfad !== undefined && pfad !== null && pfad !== "") {
-    const e = liste.find((x) => x.pfad === pfad);
-    if (!e) throw new HttpFehler(404, "Diese Datei hat keinen offenen Konflikt.");
-    const [m, a] = await Promise.all([e.stufen.has(2) ? seitenText(G, 2, e.pfad) : null, e.stufen.has(3) ? seitenText(G, 3, e.pfad) : null]);
-    r.datei = { pfad: e.pfad, art: e.art, meine: m, andere: a };
-  }
-  return r;
-}
-
-// POST { auswahl: [{ pfad, wahl }] }: jede offene Datei bekommt eine Wahl; danach der Merge-Commit. Danach sendet die Oberfläche (sync).
-export function konfliktAbschliessen(wurzel, a, ctx = {}) { return exklusiv(wurzel, () => konfliktAbschliessenOhneSperre(wurzel, a || {}, kontext(ctx, ctx.frist || neueFrist(LIMIT_COMMIT)))); }
-async function konfliktAbschliessenOhneSperre(wurzel, { auswahl }, ctx) {
-  const G = binde(wurzel, ctx);
-  await brauchtRepo(G, wurzel);
-  if (!(await mergeLaeuft(G))) throw new HttpFehler(409, "Es gibt keinen offenen Abgleich.");
-  const liste = await konfliktListe(G);
-  const sichtbar = liste.filter((e) => !e.versteckt && e.art !== "beide-geloescht");
-  if (!Array.isArray(auswahl)) throw new HttpFehler(400, "Bitte für jede Datei eine Fassung wählen.");
-  const wahlen = new Map();
-  for (const x of auswahl) {
-    if (!x || typeof x.pfad !== "string" || !WAHL.has(x.wahl)) throw new HttpFehler(400, "Ungültige Auswahl.");
-    if (!sichtbar.some((e) => e.pfad === x.pfad)) throw new HttpFehler(400, `„${x.pfad}“ hat keinen offenen Konflikt.`);
-    wahlen.set(x.pfad, x.wahl);
-  }
-  const fehlt = sichtbar.filter((e) => !wahlen.has(e.pfad));
-  if (fehlt.length) throw new HttpFehler(400, `Bitte für jede Datei eine Fassung wählen (es fehlt: ${fehlt.slice(0, 3).map((e) => e.pfad).join(", ")}).`, { dateien: fehlt.map((e) => e.pfad) });
-  const datum = berlinHeute();
-  const sicherung = await sichereArbeitsstand(G, wurzel, liste.filter((e) => e.art !== "beide-geloescht").map((e) => e.pfad));
-  return mitAbbruchSchutz(G, wurzel, async () => {
-    const zweite = [];
-    await beideGeloeschtErledigen(G);
-    const versteckt = await versteckteBehalten(G, wurzel);
-    for (const e of sichtbar) { const r = await loeseDatei(G, wurzel, e, wahlen.get(e.pfad), datum); if (r.zweiteDatei) zweite.push(r.zweiteDatei); }
-    const sha = await mergeCommit(G, wurzel, sichtbar.map((e) => e.pfad));
-    return { sha, dateien: sichtbar.length, zweiteDateien: zweite, versteckteBehalten: versteckt, sicherung };
-  });
-}
-
-// POST: Abbrechen = `git merge --abort`. Der Stand ist danach wie vor dem Abgleich; von Hand Bearbeitetes liegt vorher in .git/brain-sicherung/.
-export function konfliktAbbrechen(wurzel, ctx = {}) { return exklusiv(wurzel, () => konfliktAbbrechenOhneSperre(wurzel, kontext(ctx, ctx.frist || neueFrist(LIMIT_COMMIT)))); }
-async function konfliktAbbrechenOhneSperre(wurzel, ctx) {
-  const G = binde(wurzel, ctx);
-  await brauchtRepo(G, wurzel);
-  if (!(await mergeLaeuft(G))) throw new HttpFehler(409, "Es gibt keinen offenen Abgleich.");
-  const sicherung = await sichereArbeitsstand(G, wurzel, (await konfliktListe(G)).filter((e) => e.art !== "beide-geloescht").map((e) => e.pfad));
-  const r = await G(["merge", "--abort"], { ohneHooks: true });
-  if (r.code !== 0 || (await mergeLaeuft(G))) {
-    if (/not uptodate|would be overwritten|local changes/i.test(String(r.stderr))) {
-      throw new HttpFehler(409, "Eine zusammengeführte Datei wurde seit dem Abgleich noch einmal geändert. Zum Abbrechen müsste sie zurückgesetzt werden — dabei ginge deine Änderung verloren. Bitte wähle stattdessen „Zusammenführen“.", { art: "geaendert" });
-    }
-    throw new HttpFehler(500, "Der Abgleich ließ sich nicht abbrechen.", { ausgabe: ausgabeVon(r) });
-  }
-  return { ok: true, sicherung };
-}
+// Konflikte ansehen, entscheiden, abschließen, abbrechen und zurücknehmen: Kern (kern/abgleich-konflikt.mjs), über gemeinsam/vault.mjs.
 
 // POST: beim Server nachsehen (nur holen, nichts zusammenführen) → neuer Status mit vor/zurueck. Läuft gerade ein Abgleich, wird nicht geholt.
 export async function nachsehen(wurzel, ctx = {}) {

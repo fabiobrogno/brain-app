@@ -180,11 +180,12 @@ test("Schreibvarianten der Seiten-ID (Groß/klein, NFD) → ein Auftrag je Kaste
 
 test("Auftragsordner im Wiki (Inbox als Symlink ins Wiki oder ordner.inbox im Wiki) → 400, Wiki unverändert", (t) => {
   const v = neuerVault();
-  writeFileSync(join(v, "brain.config.json"), JSON.stringify({ ordner: { inbox: "09_wiki" } })); // seit P4 nur ein einzelner Ordnername: „die Inbox ist das Wiki selbst“
+  writeFileSync(join(v, "brain.config.json"), JSON.stringify({ ordner: { inbox: "09_wiki" } })); // „die Inbox ist das Wiki selbst“: ordner() weist das ab → Standard 00_inbox
   mkdirSync(join(v, "09_wiki", "x"), { recursive: true });
   const vorher = wikiStand(v);
-  assert.equal(code(() => schreibeEntscheidung(v, { seite: ID, nr: 1, wahl: "a" })), 400);
+  schreibeEntscheidung(v, { seite: ID, nr: 1, wahl: "a" });
   assert.equal(existsSync(join(v, "09_wiki", "_entscheidungen")), false, "kein Auftragsordner im Wiki");
+  assert.equal(existsSync(join(v, "00_inbox", "_entscheidungen")), true, "der Auftrag liegt in der Standard-Inbox");
   const v2 = neuerVault();
   rmSync(join(v2, "00_inbox"), { recursive: true });
   mkdirSync(join(v2, "09_wiki", "eingang"));
