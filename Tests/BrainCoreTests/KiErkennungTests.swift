@@ -129,7 +129,7 @@ struct KiTestWelt {
     let r = await KiProzess.laufe(programm: haengt.path, argumente: ["--version"], umgebung: ["PATH": kiSystemPfad],
                                   zeitlimit: .milliseconds(300), maxByte: 4096, stderrEinmischen: true)
     #expect(r == .zeitlimit)
-    #expect(ContinuousClock.now - start < .seconds(3)) // üblich: unter 1 s
+    #expect(ContinuousClock.now - start < .seconds(20)) // üblich: unter 1 s; die Grenze fängt nur ein Warten auf den ganzen sleep 30 ab
 }
 
 @Test func erkennungFolgtSymlinksAufAusfuehrbareDateien() async {

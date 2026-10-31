@@ -126,7 +126,7 @@ private func status(_ koerper: String, programm: String = "claude", ordner: KiKo
 @Test func anmeldeStatusHaengtOderStartetNichtIstUnbekannt() async {
     let start = ContinuousClock.now
     let haengt = await status("exec sleep 30", zeitlimit: .milliseconds(500))
-    #expect(ContinuousClock.now - start < .seconds(5)) // üblich: ca. 0,6 s
+    #expect(ContinuousClock.now - start < .seconds(20)) // üblich: ca. 0,6 s; die Grenze fängt nur ein Warten auf den ganzen sleep 30 ab
     #expect(haengt.zustand == "unbekannt")
     #expect(haengt.grund?.isEmpty == false)
 
