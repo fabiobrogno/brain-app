@@ -204,7 +204,7 @@ export const T = {
     titel: "Tastenkürzel",
     gruppen: [
       // { id } = Befehl aus dem Register der Tastenkürzel (tastenkuerzel-register.json): gezeigt wird das gerade gültige Kürzel, ohne Kürzel entfällt die Zeile
-      { name: "Allgemein", zeilen: [[{ id: "palette" }, "Springen und Befehle"], [{ id: "neue-notiz" }, "Neue Notiz"], [{ id: "schnell-merken" }, "Schnell merken"], [{ id: "aufgabe-erfassen" }, "Aufgabe erfassen"], [{ id: "frage" }, "Frag deinen Vault"], [{ id: "suche-vault" }, "Im ganzen Vault suchen"], [{ id: "kuerzel-hilfe" }, "Diese Übersicht"]] },
+      { name: "Allgemein", zeilen: [[{ id: "palette" }, "Springen und Befehle"], [{ id: "neue-notiz" }, "Neue Notiz"], [{ id: "schnell-merken" }, "Schnell merken"], [{ id: "aufgabe-erfassen" }, "Aufgabe erfassen"], [{ id: "mitteilungen" }, "Mitteilungen"], [{ id: "frage" }, "Frag deinen Vault"], [{ id: "suche-vault" }, "Im ganzen Vault suchen"], [{ id: "kuerzel-hilfe" }, "Diese Übersicht"]] },
       { name: "Notiz", zeilen: [[{ id: "speichern" }, "Jetzt speichern"], [{ id: "suche-notiz" }, "In der Notiz suchen"], [{ id: "info" }, "Eigenschaften ein- oder ausblenden"], [{ id: "commit" }, "Änderungen sichern"]] },
       { name: "Liste", zeilen: [["↑ ↓", "Nächste oder vorige Notiz öffnen"], ["↵", "In die Notiz springen"], ["Esc", "Suche oder Dialog schließen"]] },
     ],

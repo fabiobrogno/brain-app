@@ -19,6 +19,8 @@ import { TF } from "./texte-frage.js";
 import { TK, konfliktLabel } from "./texte-konflikt.js";
 import { starteLive, planeAus, kiHinweis, hebeHervor } from "./live.js";
 import { erzeugeMitteilungen } from "./mitteilungen.js"; // P8a: Hinweise unten rechts zu Ereignissen des Aktivitätsprotokolls
+import { erzeugeGlocke } from "./glocke.js"; // P8b: Glocke in der Kopfzeile mit Mitteilungsliste
+import { TG } from "./texte-glocke.js";
 import { baueKiZeile } from "./ki-zeile.js";
 import * as kz from "./tastenkuerzel.js";
 import { datumKurz, datumLang, datumZeit, istDatumText, bytesText, setzeTypFarbe, typSymbol, typName, wortAnzahl, relativ, pluralisiere, vorschauText, typTextFarbe } from "./format.js";
@@ -1433,6 +1435,7 @@ async function ansehenAktivitaet(ziel) {
   waehleSicht({ art: "bereich", id: ziel === "aufgaben" ? "aufgaben" : "inbox" });
 }
 const mitteilungen = erzeugeMitteilungen({ api, toast, beiAnsehen: ansehenAktivitaet });
+const glocke = erzeugeGlocke({ mitteilungen, api, beiAnsehen: ansehenAktivitaet, beiEinstellungen: (ziel) => oeffneEinstellungenSeite(ziel) }); // P8b: Zähler und Liste (⌘⇧B, Register „mitteilungen“)
 function beiLiveEreignisse(liste) {
   mitteilungen.verarbeiteLive(liste); // Ereignisse typ „aktivitaet“ (Protokoll der KIs): Hinweis, Zähler; alle anderen übergeht es
   const p = planeAus(liste);
@@ -1452,7 +1455,7 @@ function beiLiveEreignisse(liste) {
 }
 // Nummer verpasst, anderer Vault oder Dauerfeuer: alles Sichtbare neu lesen
 function beiLiveAlles() {
-  ladeInfoLeise(); ladeGit(); ladeGesundheit(); liveMenue();
+  ladeInfoLeise(); ladeGit(); ladeGesundheit(); liveMenue(); mitteilungen.ladeNeu();
   liveSammlung.aufgaben = true; liveSammlung.alles = true; liveSammlung.pfade = [];
   clearTimeout(liveTimer); liveTimer = setTimeout(liveNeuladen, 60);
 }
@@ -1853,14 +1856,14 @@ const stufenKlasse = (s) => (/rot|red|fehler/i.test(s || "") ? "rot" : /gelb|war
 // ======================================================= Palette
 const PAL_SYM = new Map([[T.befehle.neu, "stift"], [T.befehle.merken, "blitz"], [TAUF.erfassen.befehl, "aufgaben"], [T.befehle.commit, "commit"], [T.befehle.sync, "sync"], [TF.befehl, "funke"], [T.befehle.posteingang, "inbox"],
   [T.befehle.alleNotizen, "notiz"], [T.befehle.aufgaben, "aufgaben"], [T.befehle.suche, "suche"], [T.befehle.inNotiz, "suche"], [T.befehle.info, "seitenleiste"], [T.befehle.gesundheit, "herz"], [T.befehle.nutzung, "balken"],
-  [T.liste.verlauf, "uhr"], [T.befehle.mcp, "stecker"], [T.befehle.konten, "person"], [T.befehle.ordner, "ordner"], [T.befehle.ansicht, "ansicht"]]);
+  [T.liste.verlauf, "uhr"], [TG.titel, "glocke"], [T.befehle.mcp, "stecker"], [T.befehle.konten, "person"], [T.befehle.ordner, "ordner"], [T.befehle.ansicht, "ansicht"]]);
 function oeffnePalette(vorgabe = "") {
   if (dialogOffen()) return;
   const befehle = [
     [T.befehle.neu, kz.anzeige("neue-notiz"), oeffneNeu], [T.befehle.merken, kz.anzeige("schnell-merken"), oeffneMerken], [TAUF.erfassen.befehl, kz.anzeige("aufgabe-erfassen"), aufgabeErfassen], [T.befehle.commit, kz.anzeige("commit"), oeffneCommit], [T.befehle.sync, "", sync],
     [TF.befehl, kz.anzeige("frage"), () => frage.oeffne()], [T.befehle.suche, kz.anzeige("suche-vault"), fokusSuche], [T.befehle.inNotiz, kz.anzeige("suche-notiz"), () => ed.suchen()], [T.befehle.info, kz.anzeige("info"), umschalteInfo], [T.befehle.gesundheit, "", oeffneGesundheit], [T.befehle.nutzung, "", oeffneNutzung],
     [T.befehle.posteingang, kz.anzeige("gehe-posteingang"), () => waehleSicht({ art: "bereich", id: "inbox" })], [T.befehle.alleNotizen, kz.anzeige("gehe-alle"), () => waehleSicht({ art: "bereich", id: "alle" })], [T.befehle.aufgaben, kz.anzeige("gehe-aufgaben"), () => waehleSicht({ art: "bereich", id: "aufgaben" })],
-    [T.liste.verlauf, kz.anzeige("verlauf"), oeffneVerlauf],
+    [T.liste.verlauf, kz.anzeige("verlauf"), oeffneVerlauf], [TG.titel, kz.anzeige("mitteilungen"), () => glocke.oeffne()],
     ...(inApp() ? [[T.befehle.ordner, "", () => aktion("ordner-zeigen", S.pfad || undefined)], [T.befehle.ansicht, "", oeffneUebersicht]] : []),
     [T.befehle.mcp, "", oeffneKi], [T.befehle.konten, "", oeffneKonten],
   ];
@@ -2047,6 +2050,7 @@ kz.anmelden("info", () => umschalteInfo());
 kz.anmelden("seitenleiste", () => umschalteInfo(), () => !!S.info?.vault); // ⌘\ (P3): dieselbe rechte Spalte wie „info“, der Knopf neben „Frag“
 kz.anmelden("commit", () => oeffneCommit());
 kz.anmelden("kuerzel-hilfe", () => oeffneKuerzel());
+kz.anmelden("mitteilungen", () => glocke.umschalten(), () => !!S.info?.vault && !dialogOffen());
 
 window.addEventListener("beforeunload", () => { if (S.dirty) { clearTimeout(speicherTimer); speichere(); } });
 window.addEventListener("focus", () => { planeGitRefresh(); if (S.info?.vault) { ladeBaum(); ladeInfoLeise().then(() => fragVertrauenEinmal()); } });
@@ -2428,7 +2432,7 @@ async function ladeAlles() {
   ladeUmstellungHinweis();
   ladeGit().then(() => nachsehen(true)); ladeGesundheit(); ladeKi(); ladeVaults();
   if (!intervalle) { intervalle = true; setInterval(ladeGit, 15000); setInterval(ladeGesundheit, 120000); setInterval(() => nachsehen(), 300000); window.addEventListener("focus", () => nachsehen()); }
-  ladeInfo();
+  ladeInfo(); glocke.schliesse(); mitteilungen.ladeNeu(); // Zähler und Liste der Glocke gehören zum offenen Vault
   const wunsch = new URLSearchParams(location.search).get("pfad") || lokal.lies("pfad", null);
   if (wunsch && S.eintraege.has(wunsch)) await oeffne(wunsch, { ausListe: true });
   zeigeLeer();
