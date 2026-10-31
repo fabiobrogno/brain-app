@@ -212,7 +212,9 @@ test("Umbenennen und Entfernen: Name inline, Entfernen nur für eigene Konten un
   await menueEintrag(page, "konto-entfernen").click();
   await dlg(page, "konto-entfernen").locator('[data-aktion="konto-entfernen-ja"]').click();
   await expect(konto(page, "k_eigen001")).toHaveCount(0);
+  expect(z.log("/api/ki/ordner-papierkorb").at(-1).body).toEqual({ id: "k_eigen001", programm: "claude", ordner: "/Users/test/Library/Application Support/Kortex/ki-konten-ordner/claude-kunde" });
   expect(z.log("/api/ki/konto-entfernen").at(-1).body).toEqual({ id: "k_eigen001" });
+  expect(z.anfragen.findIndex((a) => a.pfad === "/api/ki/ordner-papierkorb"), "erst der Papierkorb, dann die Liste").toBeLessThan(z.anfragen.findIndex((a) => a.pfad === "/api/ki/konto-entfernen"));
 });
 
 test("Matrix: Stufe je Konto und Vault über das Menü; Lesen und Posteingang sofort, Sperren fragt nach (Claude Code: Leseverbot zusätzlich, andere Programme: ehrlicher Satz)", async ({ page }) => {
@@ -225,6 +227,14 @@ test("Matrix: Stufe je Konto und Vault über das Menü; Lesen und Posteingang so
   await oeffneMenueAn(zelle(page, "k_aaaa0004", vault));
   await expect(page.locator(".menue [role=menuitemradio]")).toHaveCount(4);
   await menueEintrag(page, "stufe-lesen").click();
+  // aus einer Sperre heraus: erst die kurze Rückfrage in der Seite, nichts wird vorher geschrieben
+  await expect(dlg(page, "entsperren").locator(".dialog-kopf")).toHaveText("Firma den Vault „Mein Vault“ wieder freigeben?");
+  await expect(dlg(page, "entsperren")).toContainText("Leseverbot in Claude Code, das Kortex dafür eingetragen hat, nimmt Kortex wieder heraus");
+  await dlg(page, "entsperren").locator("button", { hasText: "Abbrechen" }).click();
+  expect(z.log("/api/ki/zugriff")).toHaveLength(0);
+  await oeffneMenueAn(zelle(page, "k_aaaa0004", vault));
+  await menueEintrag(page, "stufe-lesen").click();
+  await dlg(page, "entsperren").locator('[data-aktion="entsperren-ja"]').click();
   expect(z.log("/api/ki/zugriff").at(-1).body).toEqual({ konto: "k_aaaa0004", vault, stufe: "lesen" });
   await expect(zelle(page, "k_aaaa0004", vault)).toHaveAttribute("data-stufe", "lesen");
   // Claude Code: Sperr-Dialog mit Leseverbot (Haken ist voreingestellt)
@@ -282,9 +292,16 @@ test("Wie fest ist die Sperre?: drei Stufen je Claude-Konto, die Ampel folgt dem
   expect(z.log("/api/ki/schutz").at(-1).body).toEqual({ konto: "k_aaaa0004", sandbox: true, bestaetigt: true });
   await expect(k.locator('[data-kk="streng"]')).toHaveAttribute("aria-checked", "true");
   await expect(k.locator('[data-stufe-nr="3"]')).toContainText("Sandbox an");
-  // wieder aus: ohne Rückfrage
+  // wieder aus: erst eine kurze Rückfrage in der Seite (danach kann die Shell wieder lesen)
   await k.locator('[data-kk="streng"]').click();
+  await expect(k.locator('[data-kk="streng"]')).toHaveAttribute("aria-checked", "true");
+  await expect(dlg(page, "streng-aus")).toContainText("können Befehle, die Claude Code über die Shell startet");
+  await dlg(page, "streng-aus").locator("button", { hasText: "Abbrechen" }).click();
+  expect(z.log("/api/ki/schutz").at(-1).body).toEqual({ konto: "k_aaaa0004", sandbox: true, bestaetigt: true });
+  await k.locator('[data-kk="streng"]').click();
+  await dlg(page, "streng-aus").locator('[data-aktion="streng-aus-ja"]').click();
   expect(z.log("/api/ki/schutz").at(-1).body).toEqual({ konto: "k_aaaa0004", sandbox: false });
+  await expect(k.locator('[data-kk="streng"]')).toHaveAttribute("aria-checked", "false");
   // andere Programme
   await expect(page.locator('[data-kx="andere-programme"]')).toContainText("Codex, Cursor: Kortex sperrt hier seine eigenen Wege");
 });

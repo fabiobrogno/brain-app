@@ -221,11 +221,20 @@ public actor KiErkennung {
         return nil
     }
 
-    /// Reguläre, ausführbare Datei; Symlinks auf solche Dateien zählen (stat folgt dem Link).
-    static func istAusfuehrbareDatei(_ pfad: String) -> Bool {
+    /// Reguläre, ausführbare Datei; Symlinks auf solche Dateien zählen (stat folgt dem Link). Nicht gestartet wird, was ein anderer verändern könnte:
+    /// Datei UND Ordner, in dem gesucht wird, dürfen nicht für alle beschreibbar sein (`S_IWOTH`) und müssen dem Benutzer oder root gehören.
+    /// `besitzer` ist nur für Tests austauschbar.
+    static func istAusfuehrbareDatei(_ pfad: String, besitzer: Set<uid_t> = [getuid(), 0]) -> Bool {
         var st = stat()
-        guard stat(pfad, &st) == 0, (st.st_mode & S_IFMT) == S_IFREG else { return false }
+        guard stat(pfad, &st) == 0, (st.st_mode & S_IFMT) == S_IFREG, unveraenderbar(st, besitzer) else { return false }
+        let ordner = (pfad as NSString).deletingLastPathComponent
+        var so = stat()
+        guard stat(ordner, &so) == 0, (so.st_mode & S_IFMT) == S_IFDIR, unveraenderbar(so, besitzer) else { return false }
         return access(pfad, X_OK) == 0
+    }
+
+    private static func unveraenderbar(_ st: stat, _ besitzer: Set<uid_t>) -> Bool {
+        (st.st_mode & S_IWOTH) == 0 && besitzer.contains(st.st_uid)
     }
 
     // MARK: Version

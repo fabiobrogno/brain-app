@@ -12,7 +12,7 @@ process.env.HOME = tmp("brain-home-");
 
 const { erzeugeHandler } = await import(pfad("werkstatt", "handler.mjs"));
 const { schutzAmpel } = await import(pfad("werkstatt", "schutz-ampel.mjs"));
-const { erkenneProfile, profilZuPfad, verwaltetWurzel } = await import(pfad("werkstatt", "profile.mjs"));
+const { erkenneProfile, profilZuPfad, verwaltetWurzel, verwaltetWurzelZustand, istVerwalteterOrdner } = await import(pfad("werkstatt", "profile.mjs"));
 const { erkenneKonten } = await import(pfad("werkstatt", "konten-erkennung.mjs"));
 
 const neuesVault = () => { const d = tmp("brain-vault-"); schreibe(d, "brain.config.json", "{}\n"); schreibe(d, "00_inbox/n.md", "# N\n"); return realpathSync(d); };
@@ -121,15 +121,67 @@ test("Entfernen: nur ein von Kortex angelegtes Konto, sein Ordner kommt in den P
     await a.rufe("PUT", "/api/ki/zugriff", { konto: id, vault: a.vs[0], stufe: "erweitert" });
     const p = await a.rufe("POST", "/api/ki/pflege", { vault: a.vs[0], konto: id, stufe: "mittel" });
     assert.equal(p.status, 200, JSON.stringify(p.j));
+    // Ohne Papierkorb geht Entfernen nicht (kein stilles Löschen), danach schon
+    const zu = await a.rufe("POST", "/api/ki/konto-entfernen", { id });
+    assert.equal(zu.status, 409); assert.equal(zu.j.art, "ordner-da"); assert.ok(existsSync(ordner));
+    const pk = await a.rufe("POST", "/api/ki/ordner-papierkorb", { id });
+    assert.equal(pk.status, 200, JSON.stringify(pk.j));
+    assert.equal(existsSync(ordner), false);
+    assert.ok(existsSync(join(a.home, ".Trash", "claude-weg", "settings.json")), "der Ordner liegt im Papierkorb");
     const e = await a.rufe("POST", "/api/ki/konto-entfernen", { id });
     assert.equal(e.status, 200, JSON.stringify(e.j));
     assert.equal(e.j.konten.some((k) => k.id === id), false);
-    assert.equal(existsSync(ordner), false);
-    assert.ok(existsSync(join(a.home, ".Trash", "claude-weg", "settings.json")), "der Ordner liegt im Papierkorb");
     const v = e.j.vaults.find((x) => x.pfad === a.vs[0]);
     assert.equal(v.pflege.konto ?? null, null);
     assert.equal((await a.rufe("POST", "/api/ki/konto-entfernen", { id })).status, 404);
   });
+});
+
+test("Verweis als Wurzel: zeigt <Support>/ki-konten-ordner auf den Benutzerordner, gilt NICHTS darin als eigenes Konto — kein Entfernen, kein Papierkorb, kein Anlegen, keine Erkennung", async () => {
+  const home = tmp("brain-home-"), s = tmp("brain-support-");
+  const privat = join(home, ".claude-privat"); mkdirSync(privat); writeFileSync(join(privat, "settings.json"), "{}");
+  symlinkSync(home, join(s, "ki-konten-ordner"));                      // die Wurzel ist ein Verweis auf das Home
+  const vault = neuesVault();
+  writeFileSync(join(s, "vaults.json"), JSON.stringify({ vaults: [{ name: "V", pfad: vault, farbe: "#5B8DEF" }], aktiv: vault }));
+  const mcp = tmp("brain-mcpdir-"); schreibe(mcp, "brain-mcp.mjs", "//\n");
+  const rufe = aufruf(erzeugeHandler({ vault, vaultOptionen: { support: s }, mcpPfad: join(mcp, "brain-mcp.mjs") }));
+  assert.equal(verwaltetWurzelZustand(s), "link");
+  assert.deepEqual(erkenneProfile(home, s).filter((p) => p.verwaltet), []);
+  assert.equal(istVerwalteterOrdner(s, privat, "claude", { fehltOk: true }), false);
+  await mitHome(home, async () => {
+    const st = await rufe("GET", "/api/ki/konten");
+    const k = st.j.konten.find((x) => x.pfad.endsWith(".claude-privat"));
+    assert.ok(k, "das Konto aus dem Home ist erkannt");
+    assert.equal(k.verwaltet, false);
+    for (const weg of ["/api/ki/konto-entfernen", "/api/ki/ordner-papierkorb"]) {
+      const r = await rufe("POST", weg, { id: k.id });
+      assert.equal(r.status, 409, weg); assert.equal(r.j.art, "nicht-verwaltet", weg);
+    }
+    const neu = await rufe("POST", "/api/ki/konto-neu", { programm: "claude", name: "Neu" });
+    assert.equal(neu.status, 409); assert.equal(neu.j.art, "wurzel-link");
+    assert.ok(existsSync(join(privat, "settings.json")), "nichts wurde angefasst");
+    assert.equal(existsSync(join(home, ".Trash")), false);
+    assert.deepEqual(readdirSync(home).sort(), [".claude-privat"], "im Home entstand nichts");
+  });
+});
+
+test("Verweis auf einen Konto-Ordner: ein Eintrag in der Wurzel, der auf ~/.claude-… zeigt, ist nie eigen; falscher Name, falsches Programm und tiefere Ordner auch nicht", () => {
+  const home = tmp("brain-home-"), s = tmp("brain-support-");
+  const privat = join(home, ".claude-privat"); mkdirSync(privat);
+  const w = verwaltetWurzel(s); mkdirSync(w);
+  symlinkSync(privat, join(w, "claude-verweis"));
+  mkdirSync(join(w, "claude-echt")); mkdirSync(join(w, "codex-echt")); mkdirSync(join(w, "andere")); mkdirSync(join(w, "claude-echt", "claude-tief"));
+  assert.equal(istVerwalteterOrdner(s, join(w, "claude-verweis"), "claude"), false, "Verweis");
+  assert.equal(istVerwalteterOrdner(s, privat, "claude"), false, "Ordner im Home");
+  assert.equal(istVerwalteterOrdner(s, join(w, "claude-echt"), "claude"), true);
+  assert.equal(istVerwalteterOrdner(s, join(w, "claude-echt"), "codex"), false, "Programm passt nicht zum Namen");
+  assert.equal(istVerwalteterOrdner(s, join(w, "codex-echt"), "claude"), false);
+  assert.equal(istVerwalteterOrdner(s, join(w, "andere"), "claude"), false, "Name ohne Programm-Vorsatz");
+  assert.equal(istVerwalteterOrdner(s, join(w, "claude-echt", "claude-tief"), "claude"), false, "nicht direkt in der Wurzel");
+  assert.equal(istVerwalteterOrdner(s, join(w, "claude-fehlt"), "claude"), false);
+  assert.equal(istVerwalteterOrdner(s, join(w, "claude-fehlt"), "claude", { fehltOk: true }), true, "ein schon entfernter Ordner darf aus der Liste");
+  assert.equal(istVerwalteterOrdner(s, `${w}/../claude-x`, "claude", { fehltOk: true }), false, "Punkte im Pfad");
+  assert.deepEqual(erkenneProfile(home, s).filter((p) => p.verwaltet).map((p) => p.name), ["claude-echt"]);
 });
 
 test("Entfernen: ein Konto aus dem Home (System-Standard oder ~/.claude-…) bleibt unberührt; Ordner bleibt stehen", async () => {
@@ -173,6 +225,7 @@ test("Anmeldestand: „abgelaufen“ erst, wenn das Konto früher angemeldet war
     assert.deepEqual(Object.keys(JSON.parse(readFileSync(join(a.s, "ki-anmeldung.json"), "utf8")).konten[id]), ["zuletzt"]);
     assert.ok(!readFileSync(join(a.s, "ki-konten.json"), "utf8").includes("zuletzt"));
     // Entfernen räumt den Vermerk mit auf
+    await a.rufe("POST", "/api/ki/ordner-papierkorb", { id });
     await a.rufe("POST", "/api/ki/konto-entfernen", { id });
     assert.equal(JSON.parse(readFileSync(join(a.s, "ki-anmeldung.json"), "utf8")).konten[id], undefined);
   });

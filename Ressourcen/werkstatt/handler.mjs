@@ -380,6 +380,7 @@ export function erzeugeHandler(o) {
       case "/api/ki/anmeldestatus": nur("POST"); return { zustand: "unbekannt", grund: "nur-app" };
       case "/api/ki/anmelden": nur("POST"); throw new HttpFehler(409, "Das Anmelden öffnet das Terminal und geht nur in der Kortex-App. Öffne Kortex als App und klicke dann auf „Anmelden …“.", { art: "nur-app" });
       case "/api/ki/konto-neu": nur("POST"); return konten.legeKontoAn(eingabe());
+      case "/api/ki/ordner-papierkorb": nur("POST"); return konten.papierkorbOrdner(eingabe());
       case "/api/ki/konto-entfernen": nur("POST"); return konten.entferneKonto(eingabe());
       case "/api/ki/anmeldung": nur("POST"); return konten.anmeldung(eingabe());
       // KI-Konten (docs/plaene/ki-konten.md): Liste mit Stufen je Vault · Name/Abo setzen · Stufe eines Kontos in einem Vault setzen

@@ -440,7 +440,8 @@ export function erzeugeKi(o) {
   function entfernenDialog(kt) {
     const ok = baueKnopf({ text: T.entfernen.ja, variante: "gefahr", aktion: "konto-entfernen-ja", aufKlick: async () => {
       d.schliessen();
-      await tue(() => api.kiKontoEntfernen(kt.id), { erfolg: () => T.entfernen.erledigt(kt.name) });
+      // Erst der Ordner in den Papierkorb (App: Swift über den Finder-Papierkorb, sonst die Werkstatt), danach das Konto aus der Liste
+      await tue(async () => { await api.kiOrdnerPapierkorb(kt); return api.kiKontoEntfernen(kt.id); }, { erfolg: () => T.entfernen.erledigt(kt.name) });
       S.anm.delete(kt.id);
       zeichne("konten"); zeichne("uebersicht");
       ladePflege();
@@ -531,7 +532,15 @@ export function erzeugeKi(o) {
   async function waehleStufe(kt, v, stufe) {
     if (stufe === stufeVon(kt, v) || S.beschaeftigt) return;
     if (stufe === "gesperrt") { sperrDialog(kt, v); return; }
-    await tue(() => api.kiZugriff({ konto: kt.id, vault: v.pfad, stufe }), { erfolg: (claude) => (claude?.aktion === "entfernt" ? TK.sperre.entfernt : TK.vault.stufeGesetzt(kt.name, stufeName(stufe))) });
+    if (stufeVon(kt, v) === "gesperrt") { entsperrDialog(kt, v, stufe); return; } // aus einer Sperre heraus: erst kurz nachfragen
+    await setzeStufe(kt, v, stufe);
+  }
+  const setzeStufe = (kt, v, stufe) => tue(() => api.kiZugriff({ konto: kt.id, vault: v.pfad, stufe }), { erfolg: (claude) => (claude?.aktion === "entfernt" ? TK.sperre.entfernt : TK.vault.stufeGesetzt(kt.name, stufeName(stufe))) });
+  // Eine Sperre aufheben nimmt auch ein von Kortex eingetragenes Leseverbot heraus: darum eine kurze Rückfrage in der Seite
+  function entsperrDialog(kt, v, stufe) {
+    const ja = baueKnopf({ text: T.entsperren.ja, variante: "primaer", aktion: "entsperren-ja", aufKlick: () => { d.schliessen(); setzeStufe(kt, v, stufe); } });
+    const d = eigenerDialog({ titel: T.entsperren.titel(kt.name, v.name), rumpf: [h("p", { klasse: "dialog-satz", text: T.entsperren.text(stufeName(stufe)) })], knoepfe: [baueKnopf({ text: T.entsperren.abbrechen, aufKlick: () => d.schliessen() }), ja] });
+    d.box.dataset.dialog = "entsperren";
   }
   // Sperren fragt vorher nach und sagt ehrlich, was es schützt und was nicht (Text und Ablauf aus der früheren Ansicht)
   function sperrDialog(kt, v, nurLeseverbot = false) {
@@ -589,6 +598,12 @@ export function erzeugeKi(o) {
     ], knoepfe: [baueKnopf({ text: TK.sperren.abbrechen, aufKlick: () => d.schliessen() }), ja] });
     d.box.dataset.dialog = "streng";
   }
+  // Ausschalten fragt kurz nach: danach können Shell-Befehle die gesperrten Vaults wieder lesen
+  function strengAusDialog(kt) {
+    const ja = baueKnopf({ text: T.schutz.ausJa, variante: "primaer", aktion: "streng-aus-ja", aufKlick: () => { d.schliessen(); schalteStreng(kt, false); } });
+    const d = eigenerDialog({ titel: T.schutz.ausTitel(kt.name), rumpf: [h("p", { klasse: "dialog-satz", text: T.schutz.ausText })], knoepfe: [baueKnopf({ text: T.schutz.ausAbbrechen, aufKlick: () => d.schliessen() }), ja] });
+    d.box.dataset.dialog = "streng-aus";
+  }
   function stufenBox(nr, titel, zustand, text, extra) {
     const an = zustand === "an";
     return h("div", { klasse: `kx-stufe3-box ${an ? "an" : "aus"}`, "data-stufe-nr": String(nr), "data-zustand": zustand },
@@ -599,7 +614,7 @@ export function erzeugeKi(o) {
     const gesperrt = sperrenVon(kt);
     const ohneVerbot = gesperrt.filter((v) => { const z = kt.schutz.vaults?.[v.schluessel || v.pfad] || kt.schutz.vaults?.[v.pfad] || "aus"; return !(z === "aktiv" || z === "eigene"); });
     const an = !!kt.schutz.strenger;
-    const schalter = umschalter({ an, label: T.schutz.schalter(kt.name), daten: { "data-kk": "streng", "data-konto": kt.id, "data-streng": an ? "an" : "aus" }, aufAenderung: (v) => { if (v) { schalter.an = false; strengDialog(kt); } else schalteStreng(kt, false); } });
+    const schalter = umschalter({ an, label: T.schutz.schalter(kt.name), daten: { "data-kk": "streng", "data-konto": kt.id, "data-streng": an ? "an" : "aus" }, aufAenderung: (v) => { if (v) { schalter.an = false; strengDialog(kt); } else { schalter.an = true; strengAusDialog(kt); } } });
     if (!an && gesperrt.length === 0) { schalter.setAttribute("disabled", ""); schalter.title = TK.streng.keinGesperrter; }
     const z2 = a.stufen[1].zustand, z3 = a.stufen[2].zustand;
     const z2Text = z2 === "teil" ? T.schutz.stufe2Zustand.teil(a.wirksam, a.gesperrt) : T.schutz.stufe2Zustand[z2] || T.schutz.stufe2Zustand.aus;

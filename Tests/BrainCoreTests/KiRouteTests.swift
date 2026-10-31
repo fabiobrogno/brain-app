@@ -12,21 +12,31 @@ private final class Oeffnungen: @unchecked Sendable {
     func merke(_ u: URL) -> Bool { sperre.lock(); defer { sperre.unlock() }; urls.append(u); return antwort }
 }
 
+private final class Papierkoerbe: @unchecked Sendable {
+    private let sperre = NSLock()
+    private var urls: [URL] = []
+    var antwort = true
+    var liste: [URL] { sperre.lock(); defer { sperre.unlock() }; return urls }
+    func merke(_ u: URL) -> Bool { sperre.lock(); defer { sperre.unlock() }; urls.append(u); return antwort }
+}
+
 private struct RouteWelt {
     let w = KiTestWelt()
     let oeffnungen = Oeffnungen()
+    let papierkoerbe = Papierkoerbe()
     let route: KiRoute
     let bin: URL
 
-    init(claudeKoerper: String? = "echo 'Claude Code 2.0.0'", codex: Bool = false, oeffnerAntwort: Bool = true) {
+    init(claudeKoerper: String? = "echo 'Claude Code 2.0.0'", codex: Bool = false, oeffnerAntwort: Bool = true, anmeldeAbstand: Duration = .zero, papierkorbAntwort: Bool = true) {
         bin = w.ordner("bin")
         if let k = claudeKoerper { kiAttrappe(k, name: "claude", in: bin) }
         if codex { kiAttrappe("echo 'codex 1.2.3'", name: "codex", in: bin) }
         oeffnungen.antwort = oeffnerAntwort
         let erkennung = w.erkennung(login: [bin])
-        let o = oeffnungen
+        papierkoerbe.antwort = papierkorbAntwort
+        let o = oeffnungen, p = papierkoerbe
         route = KiRoute(erkennung: erkennung, support: w.support, home: w.home, basisUmgebung: ["PATH": kiSystemPfad],
-                        statusZeitlimit: .milliseconds(1500)) { o.merke($0) }
+                        statusZeitlimit: .milliseconds(1500), anmeldeAbstand: anmeldeAbstand, papierkorb: { p.merke($0) }) { o.merke($0) }
     }
 
     func rufe(_ methode: String, _ pfad: String, _ body: String? = nil) async -> BrueckenAntwort? {
@@ -158,4 +168,63 @@ private func objekt(_ a: BrueckenAntwort?) -> [String: Any] {
     #expect((objekt(a)["fehler"] as? String)?.contains("Terminal") == true)
     // Das Skript wurde wieder entfernt.
     if let url = r.oeffnungen.liste.first { #expect(!FileManager.default.fileExists(atPath: url.path)) }
+}
+
+@Test func routeAnmeldenDrosseltDasTerminal() async throws {
+    let r = RouteWelt(anmeldeAbstand: .milliseconds(400))
+    let body = "{\"programm\":\"claude\",\"ordner\":null}"
+    let a = await r.rufe("POST", "/api/ki/anmelden", body)
+    #expect(a?.status == 200)
+    let b = await r.rufe("POST", "/api/ki/anmelden", body)
+    #expect(b?.status == 429)
+    #expect((objekt(b)["fehler"] as? String)?.contains("Warte einen Moment") == true)
+    #expect(r.oeffnungen.liste.count == 1, "nur ein Terminal")
+    try await Task.sleep(for: .milliseconds(500))
+    let c = await r.rufe("POST", "/api/ki/anmelden", body)
+    #expect(c?.status == 200)
+    #expect(r.oeffnungen.liste.count == 2)
+}
+
+@Test func routePapierkorbNurFuerEigeneKontoOrdner() async throws {
+    let r = RouteWelt()
+    let wurzel = r.w.support.appendingPathComponent("ki-konten-ordner", isDirectory: true)
+    let eigen = wurzel.appendingPathComponent("claude-kunde", isDirectory: true)
+    try FileManager.default.createDirectory(at: eigen, withIntermediateDirectories: true)
+    let privat = r.w.home.appendingPathComponent(".claude-privat", isDirectory: true)
+    try FileManager.default.createDirectory(at: privat, withIntermediateDirectories: true)
+    func los(_ programm: String, _ ordner: String?) async -> BrueckenAntwort? {
+        let o = ordner.map { "\"\($0)\"" } ?? "null"
+        return await r.rufe("POST", "/api/ki/ordner-papierkorb", "{\"programm\":\"\(programm)\",\"ordner\":\(o)}")
+    }
+    // ein eigener Ordner geht in den Papierkorb (die Attrappe merkt sich die Adresse)
+    let ja = await los("claude", eigen.path)
+    #expect(ja?.status == 200)
+    #expect(r.papierkoerbe.liste.map(\.lastPathComponent) == ["claude-kunde"])
+    // ein Konto aus dem Benutzerordner, das Standardkonto, das falsche Programm, Punkte im Pfad: nie
+    for (programm, ordner) in [("claude", privat.path), ("claude", nil), ("codex", eigen.path), ("claude", wurzel.path + "/../claude-kunde"), ("claude", "~/.claude-privat")] as [(String, String?)] {
+        let a = await los(programm, ordner)
+        #expect(a?.status == 409, "\(programm) \(ordner ?? "nil")")
+    }
+    #expect(r.papierkoerbe.liste.count == 1)
+    #expect(FileManager.default.fileExists(atPath: privat.path))
+    // Scheitert der Papierkorb, sagt der Satz den nächsten Schritt
+    let r2 = RouteWelt(papierkorbAntwort: false)
+    let w2 = r2.w.support.appendingPathComponent("ki-konten-ordner/claude-x", isDirectory: true)
+    try FileManager.default.createDirectory(at: w2, withIntermediateDirectories: true)
+    let fehl = await r2.rufe("POST", "/api/ki/ordner-papierkorb", "{\"programm\":\"claude\",\"ordner\":\"\(w2.path)\"}")
+    #expect(fehl?.status == 500)
+    #expect((objekt(fehl)["fehler"] as? String)?.contains("Neu suchen") == true)
+}
+
+@Test func routePapierkorbMitVerweisAlsWurzelLehntAb() async throws {
+    let r = RouteWelt()
+    // <support>/ki-konten-ordner ist ein Verweis auf den Benutzerordner: darin liegende Konten gelten nicht als eigene
+    try FileManager.default.createSymbolicLink(at: r.w.support.appendingPathComponent("ki-konten-ordner"), withDestinationURL: r.w.home)
+    let privat = r.w.home.appendingPathComponent("claude-privat", isDirectory: true)
+    try FileManager.default.createDirectory(at: privat, withIntermediateDirectories: true)
+    let ueberLink = r.w.support.appendingPathComponent("ki-konten-ordner/claude-privat").path
+    let a = await r.rufe("POST", "/api/ki/ordner-papierkorb", "{\"programm\":\"claude\",\"ordner\":\"\(ueberLink)\"}")
+    #expect(a?.status == 409)
+    #expect(r.papierkoerbe.liste.isEmpty)
+    #expect(FileManager.default.fileExists(atPath: privat.path))
 }

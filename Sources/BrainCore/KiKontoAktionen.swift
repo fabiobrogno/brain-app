@@ -48,6 +48,15 @@ public enum KiKontoOrdner {
         return .ordner(URL(fileURLWithPath: pfad, isDirectory: true))
     }
 
+    /// Wie `pruefe`, aber nur ein von Kortex angelegter Ordner (`<support>/ki-konten-ordner/<programm>-…`): so weit geht das Entfernen. `~/.claude*`, `~/.codex*`
+    /// und das Standardkonto gehören nie dazu.
+    public static func pruefeVerwaltet(programm: String, ordner: String?, home: URL, support: URL) -> URL? {
+        guard case .ordner(let url)? = pruefe(programm: programm, ordner: ordner, home: home, support: support) else { return nil }
+        let eltern = bereinigt(url.deletingLastPathComponent().path)
+        let wurzeln = [bereinigt(support.path), bereinigt(support.resolvingSymlinksInPath().path)].map { $0 + "/" + supportUnterordner }
+        return wurzeln.contains(eltern) ? url : nil
+    }
+
     private static func bereinigt(_ pfad: String) -> String {
         var p = pfad
         while p.count > 1 && p.hasSuffix("/") { p.removeLast() }

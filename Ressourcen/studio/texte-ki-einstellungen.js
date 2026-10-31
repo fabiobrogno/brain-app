@@ -117,6 +117,13 @@ export const TKE = {
     standardFuer: (v) => `Neu gefundene Konten im Vault ${v}`,
     wahl: (konto, vault, stufe) => `${konto} im Vault ${vault}: ${stufe}`,
   },
+  // ---- Sperre aufheben
+  entsperren: {
+    titel: (konto, vault) => `${konto} den Vault „${vault}“ wieder freigeben?`,
+    text: (stufe) => `Das Konto darf diesen Vault danach als „${stufe}“ sehen. Ein Leseverbot in Claude Code, das Kortex dafür eingetragen hat, nimmt Kortex wieder heraus.`,
+    ja: "Freigeben",
+    abbrechen: "Abbrechen",
+  },
   // ---- Wie fest ist die Sperre?
   schutz: {
     text: "Drei Stufen, ehrlich benannt. Nur Claude Code kennt Stufe 2 und 3; bei anderen Programmen sperrt Kortex seine eigenen Wege.",
@@ -143,6 +150,10 @@ export const TKE = {
     schalter: (konto) => `Strengen Schutz für ${konto}`,
     anderePrograme: "Andere Programme",
     andereText: (namen) => `${namen}: Kortex sperrt hier seine eigenen Wege (Stufe 1). Ein Leseverbot und einen Strengen Schutz gibt es nur bei Claude Code; das Programm selbst kann Dateien weiter öffnen, wenn du es ihm erlaubst.`,
+    ausTitel: (konto) => `Strengen Schutz für ${konto} ausschalten?`,
+    ausText: "Danach können Befehle, die Claude Code über die Shell startet (zum Beispiel grep oder node), die gesperrten Vaults wieder lesen. Kortex nimmt genau das heraus, was es eingetragen hat, und stellt die früheren Werte wieder her.",
+    ausJa: "Ausschalten",
+    ausAbbrechen: "Abbrechen",
     keinClaude: "Es gibt noch kein Claude-Code-Konto. Melde Claude Code an, dann kannst du die Sperre hier verstärken.",
   },
   // ---- Frag deinen Vault

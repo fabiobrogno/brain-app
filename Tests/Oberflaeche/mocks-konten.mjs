@@ -161,11 +161,20 @@ export async function mockeKonten(page, { vaults, konten = KONTEN, zugriff = nul
     z.login[id] = "nicht-angemeldet";
     return route.fulfill({ json: { ...stand(), neuesKonto: { id, programm: b.programm, pfad: ordner } } });
   });
+  await page.route("**/api/ki/ordner-papierkorb", (route) => {
+    const b = body(route); z.anfragen.push({ methode: "POST", pfad: "/api/ki/ordner-papierkorb", body: b });
+    const k = z.konten.find((x) => x.id === b.id);
+    if (!k) return fehler(route, 404, "Dieses KI-Konto gibt es nicht (mehr).");
+    if (!k.verwaltet) return fehler(route, 409, "Dieses Konto hat Kortex nicht angelegt. Kortex entfernt nur eigene Konten; dessen Ordner bleibt, wo er ist.", { art: "nicht-verwaltet" });
+    k.imPapierkorb = true;
+    return route.fulfill({ json: { ok: true } });
+  });
   await page.route("**/api/ki/konto-entfernen", (route) => {
     const b = body(route); z.anfragen.push({ methode: "POST", pfad: "/api/ki/konto-entfernen", body: b });
     const k = z.konten.find((x) => x.id === b.id);
     if (!k) return fehler(route, 404, "Dieses KI-Konto gibt es nicht (mehr).");
     if (!k.verwaltet) return fehler(route, 409, "Dieses Konto hat Kortex nicht angelegt. Kortex entfernt nur eigene Konten; dessen Ordner bleibt, wo er ist.", { art: "nicht-verwaltet" });
+    if (!k.imPapierkorb) return fehler(route, 409, "Der Ordner dieses Kontos liegt noch im Ordner von Kortex.", { art: "ordner-da" });
     z.konten = z.konten.filter((x) => x.id !== b.id); delete z.zugriff[b.id]; delete z.login[b.id];
     return route.fulfill({ json: { ...stand(), entfernt: { id: b.id, papierkorb: true } } });
   });

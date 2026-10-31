@@ -29,7 +29,7 @@ import * as vertrauenFn from "../gemeinsam/vertrauen.mjs";
 import { STUFEN, ABOS, kontenPfad, pruefeDaten, stelleVorherWiederHer, sichereSpur, liesKonten, aendere, repariere, leerDaten, neueId, pruefeName, vaultEintrag, stufeFuer, kennungVon, echterOrt, stufeNr, darfMindestens, PFLEGE_STUFEN, pflegeFuer, pflegeWirksam } from "../gemeinsam/ki-konten.mjs";
 import { vaultRegeln, sandboxPfade, einstellungsRegeln, sandboxGeheim, sandboxSchreibschutz, eineSicherung, tragRegelnEin, nimmRegelnHeraus, liesRegelStand, gleicheSandboxAb, liesSandboxStand } from "../gemeinsam/claude-sperre.mjs";
 import { erkenneKonten } from "./konten-erkennung.mjs";
-import { verwaltetWurzel } from "./profile.mjs";
+import { verwaltetWurzel, verwaltetWurzelZustand, istVerwalteterOrdner } from "./profile.mjs";
 import { schutzAmpel } from "./schutz-ampel.mjs";
 import { BESCHREIBUNGEN } from "./ki-programme/programme.mjs";
 import { parseJsonc } from "./ki-programme/jsonc.mjs";
@@ -628,7 +628,7 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
   const ANLEGBAR = ["claude", "codex"];
   const wurzelVerwaltet = () => verwaltetWurzel(support);
   const ordnerKennzeichen = (name) => String(name).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/ß/g, "ss").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 24) || "konto";
-  const istVerwaltet = (k) => { try { const w = echtPfad(wurzelVerwaltet()); const o = echtPfad(k.ordner); return o.startsWith(w + sep) && o.slice(w.length + 1).indexOf(sep) === -1; } catch { return false; } };
+  const istVerwaltet = (k) => istVerwalteterOrdner(support, k.ordner, k.programm, { fehltOk: true }); // lstat der Wurzel und des Ordners, Name und Ort ohne Auflösen (profile.mjs)
   const supportErlaubt = () => !testmodus() || echtPfad(support).startsWith(echtPfad(tmpdir()) + sep);
 
   function legeKontoAn(e) {
@@ -637,6 +637,7 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
     const stufe = e.stufe === undefined ? "gesperrt" : e.stufe;
     if (!["gesperrt", "lesen"].includes(stufe)) throw new HttpFehler(400, "Ein neues Konto startet gesperrt oder mit „Lesen“.");
     if (!supportErlaubt()) throw new HttpFehler(409, "Im Testmodus legt Kortex Konto-Ordner nur unter dem Temp-Ordner an.", { art: "testmodus" });
+    if (verwaltetWurzelZustand(support) === "link") throw new HttpFehler(409, "Der Ordner für die Konten von Kortex ist ein Verweis oder kein Ordner. Kortex legt darin nichts an. Entferne den Verweis „ki-konten-ordner“ im Ordner von Kortex und versuche es noch einmal.", { art: "wurzel-link" });
     ladeOderSynchronisiere();
     if (Object.values(lade().konten).some((k) => k.programm === e.programm && falte(k.name) === falte(name))) throw new HttpFehler(409, "Ein Konto mit diesem Namen gibt es schon. Wähle einen anderen Namen.", { art: "name-doppelt" });
     const wurzel = wurzelVerwaltet();
@@ -659,7 +660,8 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
     return { ...stand(), neuesKonto: { id, programm: e.programm, pfad: roh } };
   }
 
-  // Papierkorb des Nutzers (Testmodus: nur im Home unter Temp). Ein Ordner mit gleichem Namen dort bekommt eine Zeit-Endung.
+  // Papierkorb des Nutzers — nur der Rückfall für Browser und Entwicklung (Testmodus: nur im Home unter Temp). In der App legt Swift den Ordner über FileManager.trashItem in den Papierkorb
+  // (so kann der Finder ihn „Zurücklegen“); diese Route wird dort gar nicht erreicht. Ein Ordner mit gleichem Namen im Papierkorb bekommt eine Zeit-Endung.
   const inDenPapierkorb = (ordner) => {
     const korb = join(home(), ".Trash");
     if (!homeErlaubt(home())) throw new HttpFehler(409, "Im Testmodus verschiebt Kortex nur im Temp-Ordner.", { art: "testmodus" });
@@ -670,16 +672,27 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
     try { renameSync(ordner, ziel); } catch { throw new HttpFehler(502, "Der Ordner ließ sich nicht in den Papierkorb legen. Lege ihn im Finder selbst in den Papierkorb und klicke dann auf „Neu suchen“.", { art: "papierkorb" }); }
     return ziel;
   };
-
-  function entferneKonto(e) {
+  const eigenesKonto = (e) => {
     if (typeof e.id !== "string") throw new HttpFehler(400, "Die Konto-Kennung fehlt.");
     const d0 = ladeOderSynchronisiere();
     const k = Object.hasOwn(d0.konten, e.id) ? d0.konten[e.id] : null;
     if (!k) throw new HttpFehler(404, "Dieses KI-Konto gibt es nicht (mehr).");
     if (k.standard === true || !ANLEGBAR.includes(k.programm) || !istVerwaltet(k)) throw new HttpFehler(409, "Dieses Konto hat Kortex nicht angelegt. Kortex entfernt nur eigene Konten; dessen Ordner bleibt, wo er ist.", { art: "nicht-verwaltet" });
     if (!supportErlaubt()) throw new HttpFehler(409, "Im Testmodus entfernt Kortex Konto-Ordner nur unter dem Temp-Ordner.", { art: "testmodus" });
-    let papierkorb = null;
-    if (existsSync(k.ordner)) papierkorb = inDenPapierkorb(k.ordner); // scheitert das, bleibt alles, wie es war
+    return k;
+  };
+  // POST /api/ki/ordner-papierkorb { id } — Rückfall (Browser): den Ordner eines EIGENEN Kontos in den Papierkorb legen. Geprüft wird wie in der App: echte Wurzel, Ordner direkt darin, Name passt zum Programm, kein Verweis.
+  function papierkorbOrdner(e) {
+    const k = eigenesKonto(e);
+    if (!existsSync(k.ordner)) return { ok: true, papierkorb: false };
+    inDenPapierkorb(k.ordner);
+    return { ok: true, papierkorb: true };
+  }
+
+  // Entfernt das Konto aus der Liste. Der Ordner liegt dann schon im Papierkorb (Swift bzw. papierkorbOrdner): liegt er noch da, geht es nicht (kein stilles Löschen eines Ordners ohne Papierkorb).
+  function entferneKonto(e) {
+    const k = eigenesKonto(e);
+    if (existsSync(k.ordner)) throw new HttpFehler(409, "Der Ordner dieses Kontos liegt noch im Ordner von Kortex. Lege ihn zuerst in den Papierkorb („Konto entfernen …“ tut das und entfernt dann das Konto).", { art: "ordner-da" });
     speichere((d) => {
       delete d.konten[e.id];
       for (const v of Object.values(d.vaults)) {
@@ -690,7 +703,7 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
       for (const feld of ["schutz", "eingetragen"]) if (istObj(d[feld])) { delete d[feld][e.id]; if (!Object.keys(d[feld]).length) delete d[feld]; }
     });
     anmeldungSchreiben((a) => { delete a.konten[e.id]; });
-    return { ...stand(), entfernt: { id: e.id, papierkorb: papierkorb !== null } };
+    return { ...stand(), entfernt: { id: e.id } };
   }
 
   // Anmeldestand: Kortex liest nie Anmeldedaten. Die App fragt das Programm selbst („claude auth status“ / „codex login status“) und meldet nur das Ergebnis hierher. Die Werkstatt merkt sich,
@@ -801,5 +814,5 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
     return { konto: null, liste: true };
   }
 
-  return { synchronisiere, altform: (id) => { const k = lade() && Object.hasOwn(lade().konten, id) ? lade().konten[id] : null; return k && homeErlaubt(home()) ? altformStandard(k, home()) : { mcp: false, hooks: false }; }, stand, setzeName, setzeZugriff, setzeStandard, setzePflege, migrierePflege, migrationVermerkt, vermerkePlist, setzeSchutz, legeKontoAn, entferneKonto, anmeldung, quittiereHinweis, holeVorher, vaultHinzu, kontoFuerProfil, kontoFuerProgramm, kontoDaten, probeKonto, lade };
+  return { synchronisiere, altform: (id) => { const k = lade() && Object.hasOwn(lade().konten, id) ? lade().konten[id] : null; return k && homeErlaubt(home()) ? altformStandard(k, home()) : { mcp: false, hooks: false }; }, stand, setzeName, setzeZugriff, setzeStandard, setzePflege, migrierePflege, migrationVermerkt, vermerkePlist, setzeSchutz, legeKontoAn, entferneKonto, papierkorbOrdner, anmeldung, quittiereHinweis, holeVorher, vaultHinzu, kontoFuerProfil, kontoFuerProgramm, kontoDaten, probeKonto, lade };
 }

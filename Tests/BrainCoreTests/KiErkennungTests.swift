@@ -328,3 +328,54 @@ struct KiTestWelt {
     // Der Ordner des Programms steht vorn im PATH.
     #expect(text.contains("PATH=\(bin.path):"))
 }
+
+// MARK: Sicherheit der Suche und des Prozesses
+
+@Test func erkennungStartetNichtsAusFuerAlleBeschreibbarenOrdnernOderDateien() async throws {
+    let w = KiTestWelt()
+    let offen = w.ordner("offen")
+    let datei = kiAttrappe("echo 'claude 1.0.0'", name: "claude", in: offen)
+    // Ordner für alle beschreibbar: wird nicht gestartet
+    chmod(offen.path, 0o777)
+    #expect(!KiErkennung.istAusfuehrbareDatei(datei.path))
+    let e = w.erkennung(login: [offen])
+    #expect(await e.programme(neu: true).programme.isEmpty)
+    // Ordner in Ordnung, Datei für alle beschreibbar: auch nicht
+    chmod(offen.path, 0o755)
+    #expect(KiErkennung.istAusfuehrbareDatei(datei.path))
+    chmod(datei.path, 0o777)
+    #expect(!KiErkennung.istAusfuehrbareDatei(datei.path))
+    #expect(await w.erkennung(login: [offen]).programme(neu: true).programme.isEmpty)
+    // wieder in Ordnung
+    chmod(datei.path, 0o755)
+    #expect(await w.erkennung(login: [offen]).programme(neu: true).programme.first?.version == "1.0.0")
+}
+
+@Test func erkennungStartetNichts_wasWederDemBenutzerNochRootGehoert() {
+    let w = KiTestWelt()
+    let ordner = w.ordner("fremd")
+    let datei = kiAttrappe("echo 1.0.0", name: "claude", in: ordner)
+    #expect(KiErkennung.istAusfuehrbareDatei(datei.path))
+    #expect(!KiErkennung.istAusfuehrbareDatei(datei.path, besitzer: []), "gehört keinem der erlaubten Besitzer")
+    #expect(!KiErkennung.istAusfuehrbareDatei(datei.path, besitzer: [getuid() &+ 1]))
+}
+
+@Test func prozessBeendetDieGanzeGruppeBeiZeitlimit() async throws {
+    let w = KiTestWelt()
+    let pidDatei = w.wurzel.appendingPathComponent("kind.pid")
+    // Das Skript startet ein hängendes Kind (und ein zweites Enkelkind) und wartet darauf
+    let skriptDatei = kiAttrappe("""
+    sleep 60 &
+    echo $! > '\(pidDatei.path)'
+    sh -c 'sleep 60' &
+    wait
+    """, name: "haengt", in: w.ordner("bin"))
+    let r = await KiProzess.laufe(programm: skriptDatei.path, argumente: [], umgebung: ["PATH": kiSystemPfad], zeitlimit: .seconds(2), maxByte: 4096, stderrEinmischen: true)
+    #expect(r == .zeitlimit)
+    let text = (try? String(contentsOf: pidDatei, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let kind = try #require(pid_t(text), "das Skript hat sein Kind gestartet")
+    // kurze Frist, bis das System das Kind abgeräumt hat
+    var lebt = true
+    for _ in 0..<50 where lebt { lebt = kill(kind, 0) == 0; if lebt { try await Task.sleep(for: .milliseconds(50)) } }
+    #expect(!lebt, "das Kind des Skripts wurde mit der Gruppe beendet")
+}
