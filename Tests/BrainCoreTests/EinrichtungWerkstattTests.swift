@@ -17,7 +17,7 @@ private func findeNode() -> URL? {
 private let werkstattSkript = repoWurzel().appendingPathComponent("Ressourcen/werkstatt/werkstatt.mjs")
 private let moeglich = findeNode() != nil && FileManager.default.fileExists(atPath: werkstattSkript.path)
 
-@Test(.enabled(if: moeglich)) func echteWerkstattLegtVaultAnUndDerAblaufErkenntEs() async throws {
+@Test(.enabled(if: moeglich)) func echteWerkstattLegtVaultAnUndDieDiensteErkennenEs() async throws {
     let node = try #require(findeNode())
     let support = tempOrdner("support")
     let pfade = AppPfade(basis: support)
@@ -33,21 +33,10 @@ private let moeglich = findeNode() != nil && FileManager.default.fileExists(atPa
     let kis = try await dienste.erkenneKIs()
     #expect(kis.contains { $0.id == "claude" })
 
-    let ablauf = await MainActor.run {
-        EinrichtungsAblauf(dienste: dienste, speicher: EinrichtungsSpeicher(pfade: pfade), schlafe: { _ in }, beiAenderung: { _, _ in })
-    }
-    await ablauf.starte()
-    var aktuell = await ablauf.zustand.aktuell
-    #expect(aktuell == .vault, "git ist auf dem Rechner da, ein Vault fehlt")
-
-    await ablauf.legeVaultAn(art: .leer, name: "Mein Brain", ordner: ziel.path)
-    let fehler = await ablauf.zustand.fehler[.vault]
-    #expect(fehler == nil, "\(fehler ?? "")")
+    // Vault anlegen: die Werkstatt richtet Ordner und Versionsverlauf ein, die App sieht ihn danach in vaults.json.
+    let vault = try await dienste.legeVaultAn(art: .leer, name: "Mein Brain", ordner: ziel.path)
     #expect(FileManager.default.fileExists(atPath: ziel.appendingPathComponent(".git").path))
-    let vault = await ablauf.anzeige.vault
-    #expect(vault?.name == "Mein Brain")
-    aktuell = await ablauf.zustand.aktuell
-    #expect(aktuell == .ki, "GitHub entfällt ohne Client-ID")
+    #expect(vault.name == "Mein Brain")
 
     // Die App liest den Vault aus derselben vaults.json wie die Werkstatt.
     let gelesen = await dienste.aktiverVault()

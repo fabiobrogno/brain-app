@@ -169,3 +169,26 @@ KI-Nutzung und Gesundheit ihre Beschriftung, lange Vault-Namen werden gekürzt �
 
 **Prüfung.** `Tests/Node/einstellungen-route.test.mjs` (Route, Konflikt, Validierung, Vertrauen, Live-Ereignis), `einstellungen-suche.test.mjs` (Wertung, Markierung, null Treffer), `Tests/Oberflaeche/einstellungen.spec.mjs`
 (jeder Bereich hell/dunkel, Speichern, Konflikt, Live, Suche, Tastatur, Sprungziel, Vertrauen, enge Fenster, P1-Befund), Swift-Test für ⌘,.
+
+## 8. Einrichtungs-Assistent im Studio (P2)
+
+Stand: 30.10.2026 · Branch `feat/assistent-studio` · Paket P2 aus `UMSETZUNG.md` des Prototyps. **Ein** Assistent statt zweier Masken: Er lebt als Studio-Seite
+(`Ressourcen/studio/einrichtung.html`, `einrichtung.js`, `einrichtung.css`, Bühne in `einrichtung-buehne.js`, KI-Schritt in `einrichtung-ki.js`, Texte in `texte-einrichtung.js`)
+und wird in einem eigenen Fenster ohne Titelleiste angezeigt (1120 x 720 Punkte, begrenzt auf den sichtbaren Bildschirm, echte Ampel, Zieh-Streifen oben).
+
+**Schritte und Zustände.** Willkommen (selbstzeichnende Windung, stille git-Prüfung: bereit, fehlt, wird installiert, läuft nicht) · 1 Vault (neu, Beispiel, Ordner öffnen
+mit Zählung und „zu breit“, von GitHub holen mit Adresse-Prüfung und Umweg über die Anmeldung bei privaten Repositories) · 2 Sicherung (Gerätecode mit Countdown, abgelaufen,
+abgelehnt, kein Netz, GitHub nicht eingerichtet, schon gesichert, blockiert, Repository anlegen oder ein vorhandenes nehmen, „Nur auf diesem Mac“) · 3 KI (erkannte Programme mit
+Schalter, Konto und Stufe, „Weitere Programme“ mit echten Logos, Rückfrage beim Umstellen, Befehl zum Kopieren bei Fehlern, Pflege-Konto bei „Erweitert“, nichts gefunden) ·
+4 Fertig (Zusammenfassung mit „Ändern“, Probe-Suche mit Quellen, Studio öffnen). Tastatur: ↩ (nicht im Textfeld), ⌘↩, ⌘[, 1–4, Pfeile, Esc (Später-Rückfrage).
+`prefers-reduced-motion` schaltet Gleiten, Kreisen, Fließen und Schimmer ab. Die Windung ist zusätzlich die Fortschrittsanzeige (Idee aus Prototyp B): ein Punkt wandert je Schritt eine Bahn weiter.
+
+**Was in Swift bleibt** (Aktionskanal `aktion`, Prüfung in `AppAktion`): `git-pruefen`, `git-installieren`, `ordner-waehlen` (mit Zählung und Breite-Prüfung), `extern`, `kopieren`,
+`einrichtung-ende` (fertig/später, schreibt `einrichtung.json`, öffnet das Studio), `einrichtung-oeffnen` (Menü, Studio ohne Vault). Alles andere läuft über die vorhandene API.
+
+**Bewusst anders als im Prototyp.** Der Schalter „Automatisch sichern“ fehlt (es gibt keine solche Einstellung; die tägliche Pflege gleicht ab, das steht dort stattdessen). „Hierher ziehen“
+fehlt (eine WebView bekommt von einem gezogenen Ordner keinen Pfad). Die Probe ist eine echte Suche über den MCP-Weg der KI mit den Fundstellen als Chips, keine erfundene Antwort; beim
+Apple-Installer steht kein Prozentbalken (er meldet keinen Fortschritt), sondern ein unbestimmter. KI-Auswahl: Übergangsvariante mit `ki-logos.js`, bis der Baustein „KI-Auswahl“ aus
+`feat/ki-katalog` auf main ist.
+
+**Vertrauen und Sperren (Review).** Der Assistent vergibt nie Vertrauen: „Ordner öffnen“ öffnet den Ordner, ob er „dein Vault“ ist, fragt wie bisher das Studio; der Schalter dort betrifft nur den Versionsverlauf. Eine KI-Stufe geht nur als „ausdrücklich“ an die Werkstatt, wenn du sie selbst angeklickt hast; die Vorbelegung kommt aus `GET /api/ki/konten` (Stufe des Kontos in diesem Vault), ein vom Nutzer gesperrtes Konto bleibt gesperrt. „Zusätzlich, wenn du möchtest“ (Hooks, Prüfung vor dem Speichern, Hintergrunddienst), „Trennen“ und „Konfiguration kopieren“ sind zurück, über dieselben Routen wie die Einstellungen (`/api/kern/stand|verdrahten`, `/api/mcp/trennen|konfiguration`). Die Pflege-Zeile im Schritt „Fertig“ kommt aus `GET /api/ki/pflege` (`dienst.fuerVault`). Aus dem Einrichtungsfenster öffnet `extern` nur https auf github.com; git, Zwischenablage und „Ende“ gelten nur dort.

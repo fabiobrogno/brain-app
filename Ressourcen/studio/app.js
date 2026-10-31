@@ -2160,6 +2160,8 @@ function zeigeLeer() {
 async function zeigeWillkommenFlow() {
   $("app").hidden = true;
   const host = $("willkommen-host");
+  // In der App führt der Einrichtungs-Assistent (eigenes Fenster) durch den Anfang; hier steht nur der Weg dorthin. Im Browser bleibt die Karte.
+  if (inApp() && location.protocol === "brain:") { zeigeOhneVault(host); return; } // nur im echten App-Fenster (brain://), nicht in Tests mit einer Attrappe des Aktionskanals
   try {
     const m = await import("./willkommen.js");
     m.zeigeWillkommen({ modus: "start", beiFertig: async () => { aktion("vault-gewechselt"); await ladeAlles(); }, beiStandNeu: karteStandNeu, beiVerbunden: () => { S.kiVerbunden = true; } });
@@ -2167,6 +2169,20 @@ async function zeigeWillkommenFlow() {
     host.hidden = false;
     host.replaceChildren(h("div", { klasse: "leer", style: "position:static;min-height:100vh" }, h("h2", { text: `Willkommen bei ${PRODUKT}` }), h("p", { text: "Der Einstieg ist gerade nicht verfügbar." })));
   }
+}
+
+// Kein Vault (App): ein ruhiger Leerzustand mit dem Weg zum Assistenten; „Anderen Weg wählen“ zeigt die Karte mit den vier Wegen.
+function zeigeOhneVault(host) {
+  const einrichten = baueKnopf({ text: T.ohneVault.einrichten, variante: "primaer", groesse: "l", aktion: "einrichtung-oeffnen", aufKlick: () => aktion("einrichtung-oeffnen") });
+  const andere = baueKnopf({ text: T.ohneVault.anderer, groesse: "l", aktion: "andere-wege", aufKlick: async () => {
+    try { const m = await import("./willkommen.js"); m.zeigeWillkommen({ modus: "start", beiFertig: async () => { aktion("vault-gewechselt"); await ladeAlles(); }, beiStandNeu: karteStandNeu, beiVerbunden: () => { S.kiVerbunden = true; } }); }
+    catch { /* der Leerzustand bleibt */ }
+  } });
+  host.hidden = false;
+  host.replaceChildren(h("div", { klasse: "w-karte", "data-modus": "ohne-vault" },
+    h("header", { klasse: "w-kopf" }, h("div", { klasse: "w-logo" }, symbol("marke", 56)), h("h1", { klasse: "w-titel", text: T.ohneVault.titel }), h("p", { klasse: "w-untertitel", text: T.ohneVault.text })),
+    h("div", { klasse: "w-fuss-knoepfe" }, andere, einrichten)));
+  setTimeout(() => einrichten.focus(), 0);
 }
 
 let intervalle = false;

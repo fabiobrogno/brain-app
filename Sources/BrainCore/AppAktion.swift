@@ -2,8 +2,10 @@ import Foundation
 
 /// Aktionen der Oberfläche an die App (Nachrichtenkanal `aktion`, mit Antwort an die Seite, aber kein Datenweg). Die Prüfung
 /// hier ist die einzige Stelle, die Werte der Seite in etwas Ausführbares verwandelt: nur bekannte Aktionen, Pfade nur im Vault,
-/// nur https. `ordner-waehlen`, `vault-gewechselt`, `vertrauen-geaendert`, `status-auffrischen`, `titel` und `fehler` gelten nur für das Studio — die
-/// Übersicht (Seite des Kerns) darf nur `ansicht`, `ordner-zeigen` und `extern`.
+/// nur https. `ordner-waehlen`, `vault-gewechselt`, `vertrauen-geaendert`, `status-auffrischen`, `titel`, `fehler` und die Aktionen des
+/// Einrichtungs-Assistenten (`git-pruefen`, `git-installieren`, `kopieren`, `einrichtung-ende`, `einrichtung-oeffnen`) gelten nur für
+/// das Studio (Host `studio`, auch das Fenster „Kortex einrichten“) — die Übersicht (Seite des Kerns) darf nur `ansicht`, `ordner-zeigen`
+/// und `extern`.
 public enum AppAktion: Equatable, Sendable {
     case ansicht
     case ordnerZeigen(URL)
@@ -24,19 +26,33 @@ public enum AppAktion: Equatable, Sendable {
     /// JavaScript-Fehler der Studio-Oberfläche (Fehlerhaken, `fehlerhaken.js`): nur fürs App-Log, kein Datenweg.
     /// `ort` = Datei:Zeile:Spalte ohne Query und ohne Leerzeichen, `text` einzeilig und gekürzt.
     case fehler(text: String, ort: String)
+    /// Einrichtungs-Assistent: Stand von git prüfen (löst nie einen Dialog aus); Antwort `GitAntwort.pruefen`.
+    case gitPruefen
+    /// Einrichtungs-Assistent: Apples Installationsdialog für die Befehlszeilenwerkzeuge auslösen; Antwort `GitAntwort.installieren`.
+    case gitInstallieren
+    /// Text in die Zwischenablage (Gerätecode, Konfigurationsbefehl): einzeilig, druckbar, 1…`maxKopieren` Zeichen.
+    case kopieren(String)
+    /// Der Assistent ist am Ende („Fertig“ oder „Später“); nur wirksam, wenn das Einrichtungsfenster offen ist und die Aktion von dort kommt.
+    case einrichtungEnde(EinrichtungsEnde)
+    /// Das Einrichtungsfenster öffnen (wie das Menü „Kortex einrichten …“), optional ab einer Stelle.
+    case einrichtungOeffnen(ab: EinrichtungsEinstieg?)
 
     /// Längen- und Zeichenbegrenzung für Texte der Seite (Fenstertitel, Dialog-Hinweis).
     static let maxTitel = 120
     static let maxHinweis = 200
     static let maxFehlertext = 300
     static let maxFehlerort = 120
+    /// Längster Text für `kopieren` (Gerätecode, Konfigurationsbefehl).
+    public static let maxKopieren = 400
     /// So viele `fehler`-Meldungen schreibt die App je Fensterleben ins Protokoll (wie `MAX_MELDUNGEN` in `fehlerhaken.js`), danach
     /// einmal „js-fehler gedrosselt“ und der Rest wird verworfen (`MeldungsDrossel`, Review SW-7).
     public static let maxFehlerJeFenster = 20
 
     /// `{aktion:"ansicht"}`, `{aktion:"ordner-zeigen", wert:<rel. Pfad>}`, `{aktion:"extern", wert:<https-URL>}`,
     /// `{aktion:"ordner-waehlen", wert:{titel?, vorschlag?}}`, `{aktion:"vault-gewechselt"}`, `{aktion:"vertrauen-geaendert"}`,
-    /// `{aktion:"titel", wert:<Text>}`, `{aktion:"fehler", wert:{text, ort?}}`.
+    /// `{aktion:"titel", wert:<Text>}`, `{aktion:"fehler", wert:{text, ort?}}`, `{aktion:"git-pruefen"}`, `{aktion:"git-installieren"}`,
+    /// `{aktion:"kopieren", wert:<Text>}`, `{aktion:"einrichtung-ende", wert:{art:"fertig"|"spaeter"}}`,
+    /// `{aktion:"einrichtung-oeffnen", wert?:{ab?:"vault"|"sicherung"|"ki"}}`.
     /// Ohne Angabe gilt die strengste Herkunft (Übersicht): die Studio-Aktionen muss man ausdrücklich freischalten.
     public static func pruefe(_ nachricht: Any, vault: URL?, oberflaeche: Oberflaeche = .app) -> AppAktion? {
         guard let d = nachricht as? [String: Any], let name = d["aktion"] as? String else { return nil }
@@ -63,6 +79,16 @@ public enum AppAktion: Equatable, Sendable {
             return oberflaeche == .studio ? pruefeTitel(wert) : nil
         case "fehler":
             return oberflaeche == .studio ? pruefeFehler(wert) : nil
+        case "git-pruefen":
+            return oberflaeche == .studio ? .gitPruefen : nil
+        case "git-installieren":
+            return oberflaeche == .studio ? .gitInstallieren : nil
+        case "kopieren":
+            return oberflaeche == .studio ? pruefeKopieren(wert) : nil
+        case "einrichtung-ende":
+            return oberflaeche == .studio ? pruefeEinrichtungEnde(wert) : nil
+        case "einrichtung-oeffnen":
+            return oberflaeche == .studio ? pruefeEinrichtungOeffnen(wert) : nil
         default:
             return nil
         }
@@ -91,6 +117,36 @@ public enum AppAktion: Equatable, Sendable {
         guard let d = wert as? [String: Any], let text = d["text"] as? String else { return nil }
         let ort = (d["ort"] as? String).flatMap { fehlerort($0) } ?? "unbekannt"
         return .fehler(text: einzeilig(text, max: maxFehlertext) ?? "(ohne Text)", ort: ort)
+    }
+
+    /// Text für die Zwischenablage: 1…`maxKopieren` Zeichen, einzeilig und nur druckbar. Anders als bei Titeln wird nichts bereinigt,
+    /// sondern abgelehnt (Steuer-, Format- und Zeilentrennzeichen, leer oder nur Leerraum, zu lang): in die Zwischenablage kommt genau
+    /// das, was die Seite zeigt, oder nichts.
+    private static func pruefeKopieren(_ wert: Any?) -> AppAktion? {
+        guard let s = wert as? String, !s.isEmpty, s.count <= maxKopieren,
+              !s.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+        for u in s.unicodeScalars {
+            switch u.properties.generalCategory {
+            case .control, .format, .lineSeparator, .paragraphSeparator, .surrogate, .privateUse, .unassigned: return nil
+            default: continue
+            }
+        }
+        return .kopieren(s)
+    }
+
+    /// `wert` = Objekt mit `art` = `fertig` oder `spaeter` (Pflicht, nichts anderes).
+    private static func pruefeEinrichtungEnde(_ wert: Any?) -> AppAktion? {
+        guard let d = wert as? [String: Any], let art = d["art"] as? String, let ende = EinrichtungsEnde(rawValue: art) else { return nil }
+        return .einrichtungEnde(ende)
+    }
+
+    /// `wert` fehlt/null/leeres Objekt → ohne Einstieg; `ab` muss, wenn es da ist, einer der drei Einstiege sein, sonst wird abgelehnt.
+    private static func pruefeEinrichtungOeffnen(_ wert: Any?) -> AppAktion? {
+        guard let wert, !(wert is NSNull) else { return .einrichtungOeffnen(ab: nil) }
+        guard let d = wert as? [String: Any] else { return nil }
+        guard let roh = d["ab"], !(roh is NSNull) else { return .einrichtungOeffnen(ab: nil) }
+        guard let name = roh as? String, let ab = EinrichtungsEinstieg(rawValue: name) else { return nil }
+        return .einrichtungOeffnen(ab: ab)
     }
 
     /// Ort einer Meldung für die Logzeile `js-fehler <ort> <text>`: der erste Teil bis zu einem Leerzeichen, `?` oder `#`.

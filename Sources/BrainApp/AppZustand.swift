@@ -42,14 +42,22 @@ final class AppZustand: ObservableObject {
     private var brainNode = ""
     private var rueckfragenFenster: NSWindow?
     private var rueckfragenModell: RueckfragenModell?
-    /// Assistent „Kortex einrichten“: Fenster, Modell und seine eigene Werkstatt-Verbindung (ohne Vault, liest vaults.json).
-    private var assistentFenster: NSWindow?
-    private var assistentModell: EinrichtungsModell?
-    private var assistentBruecke: BrueckenVerbindung?
-    /// Beobachter für das Schließen des Assistenten-Fensters; wird beim Schließen wieder abgemeldet.
-    private var assistentBeobachter: NSObjectProtocol?
+    /// Assistent „Kortex einrichten“: ein Fenster mit der Web-Seite `brain://studio/einrichtung.html` und seiner eigenen
+    /// Werkstatt-Verbindung (ohne Vault, liest vaults.json). Die Seite führt durch die Schritte; Swift liefert nur git, Ordner-Dialog,
+    /// Browser, Zwischenablage und das Fenster selbst.
+    private let einrichtung: FensterSteuerung
+    /// Woher der laufende Lauf kam (beim Schließen in `einrichtung.json` gemerkt).
+    private var einrichtungHerkunft = EinrichtungsHerkunft.start
+    /// Der Vault beim Öffnen des Assistenten: Hat er sich beim Schließen geändert, muss das Studio ihn kennen lernen.
+    private var einrichtungVaultVorher: URL?
     /// Hat der Assistent beim Start das Studio verdrängt? Dann öffnet es sich, wenn er zugeht.
-    private var assistentVerdraengtStudio = false
+    private var einrichtungVerdraengtStudio = false
+    /// Wie der Assistent beendet wurde (`einrichtung-ende`); nil = Fenster einfach zu.
+    private var einrichtungEndeArt: EinrichtungsEnde?
+    /// Die App wird beendet: dann öffnet nichts mehr nach dem Schließen der Fenster.
+    private var wirdBeendet = false
+    /// Ein einziger Prüfer für git (er merkt sich, dass der Installationsdialog gerade ausgelöst wurde). In der Vorschau mit Platzhaltern.
+    private lazy var gitPruefer: GitPruefer = vorschau?.gitPruefer() ?? GitPruefer()
     /// Stand der Laufzeit-Prüfung beim Start (Prüfsumme der Node-Datei, rund 120 MB, kann dauern). Erst nach abgeschlossener
     /// Prüfung urteilt die App; vorher heißt es „wird vorbereitet“, nie „bitte neu installieren“.
     private enum LaufzeitStand { case wirdVorbereitet, bereit, fehlgeschlagen }
@@ -143,8 +151,9 @@ final class AppZustand: ObservableObject {
         let l = AppLog(pfade: p)
         pfade = p
         log = l
-        studio = FensterSteuerung(log: l, oberflaeche: .studio)
-        uebersicht = FensterSteuerung(log: l, oberflaeche: .app)
+        studio = FensterSteuerung(log: l, art: .studio)
+        uebersicht = FensterSteuerung(log: l, art: .uebersicht)
+        einrichtung = FensterSteuerung(log: l, art: .einrichtung)
         vaultVorgabe = argumente.vault
     }
 
@@ -208,11 +217,12 @@ final class AppZustand: ObservableObject {
         signal(SIGPIPE, SIG_IGN)
         try? pfade.legeAn()
         // Nach Aktionen im Fenster (Vorschlag übernehmen, Konflikt entscheiden) den Menüstatus auffrischen.
-        for f in [studio, uebersicht] {
+        for f in [studio, uebersicht, einrichtung] {
             f.beiGeschlossen = { [weak self] in Task { await self?.aktualisiere() } }
-            f.beiAktion = { [weak self] aktion in await self?.fuehreAus(aktion) }
+            f.beiAktion = { [weak self] aktion, von in await self?.fuehreAus(aktion, von: von) }
             f.aktuellerVault = { [weak self] in self?.vaultFrisch() }
         }
+        einrichtung.beiGeschlossen = { [weak self] in self?.einrichtungGeschlossen() }
         log.schreibe("start")
         log.schreibe(supportMigration.protokollZeile)
         if let alt = supportAltBasis,
@@ -248,8 +258,8 @@ final class AppZustand: ObservableObject {
         if let v = vorschau { log.schreibe("vorschau \(v.ordner.path) mit-ki=\(v.mitKi) ohne-git=\(v.ohneGit)") }
         // nur lesend, löst nie Apples Installationsdialog aus; in eigener Aufgabe, damit ein hängendes xcode-select den Start nicht aufhält
         let startLog = log
-        let gitPruefer = vorschau?.gitPruefer() ?? GitPruefer()
-        Task { startLog.schreibe("git \(await gitPruefer.pruefe().logText)") }
+        let pruefer = gitPruefer
+        Task { startLog.schreibe("git \(await pruefer.pruefe().logText)") }
         pruefeVaultWechsel()
         log.schreibe(vault.map { "vault \($0.path)" } ?? "kein-vault")
         erfassen.starte()
@@ -263,13 +273,12 @@ final class AppZustand: ObservableObject {
         // Start auf einem Mac ohne Vault (oder nach einem abgebrochenen Assistenten) kommt zuerst der Assistent „Kortex einrichten“
         // und das Studio nach ihm. Testläufe (Rauchtest, Selbstfoto, `--vault`) zeigen ihn nie.
         if argumente.assistentDarfErscheinen, EinrichtungsSpeicher(pfade: pfade).sollErscheinen(hatVault: vault != nil) {
-            assistentVerdraengtStudio = true
-            zeigeAssistent(wiederholung: false)
+            zeigeAssistent(automatisch: true)
         } else {
             oeffneStudio()
         }
         if argumente.fensterOeffnen { Task { await oeffneFenster() } }
-        if let s = argumente.schliessenNach { Task { try? await Task.sleep(for: s); studio.schliesse(); uebersicht.schliesse() } }
+        if let s = argumente.schliessenNach { Task { try? await Task.sleep(for: s); studio.schliesse(); uebersicht.schliesse(); einrichtung.schliesse() } }
         if let s = argumente.beendenNach {
             // Per Timer statt Task: Bei offenem Studio wartet `terminate` in einer eigenen Schleife auf die Antwort der
             // Oberfläche (`applicationShouldTerminate` → terminateLater). Aus einem Task heraus (Block der Haupt-Warteschlange)
@@ -459,8 +468,15 @@ final class AppZustand: ObservableObject {
     }
 
     /// Geprüfte Aktion aus dem Nachrichtenkanal `aktion` (Prüfung in `AppAktion`); der Rückgabewert geht als Antwort an die Seite.
-    private func fuehreAus(_ aktion: AppAktion) async -> Any? {
+    /// `von`: das Fenster, das die Aktion geschickt hat (Ordner-Dialog als Sheet an genau diesem Fenster; `einrichtung-ende` nur von dort).
+    private func fuehreAus(_ aktion: AppAktion, von: FensterSteuerung) async -> Any? {
         let ok: [String: Any] = ["ok": true]
+        // git, Zwischenablage und „Ende“ gehören dem Einrichtungsfenster; aus dem Studio sind sie nicht vorgesehen. Und dort öffnet `extern` nur GitHub.
+        if EinrichtungsFenster.nurAusEinrichtung(aktion), von !== einrichtung { return ["ok": false, "grund": "kein-einrichtungsfenster"] as [String: Any] }
+        if case .extern(let url) = aktion, von === einrichtung, !EinrichtungsFenster.externErlaubt(url) {
+            log.schreibe("aktion extern abgelehnt einrichtung")
+            return ["ok": false, "grund": "adresse-nicht-erlaubt"] as [String: Any]
+        }
         switch aktion {
         case .ansicht:
             log.schreibe("aktion ansicht")
@@ -479,8 +495,12 @@ final class AppZustand: ObservableObject {
             return ok
         case .ordnerWaehlen(let titel, let vorschlag):
             log.schreibe("aktion ordner-waehlen")
-            guard let url = await studio.waehleOrdner(titel: titel, vorschlag: vorschlag, startort: vorschau?.home) else { return nil }
-            return ["pfad": url.path]
+            guard let url = await von.waehleOrdner(titel: titel, vorschlag: vorschlag, startort: vorschau?.home) else { return nil }
+            // Zusätzlich für die Seite: ist der Ort als Vault zu breit, und wie viele Notizen/Ordner liegen darin (begrenzt, abseits
+            // des Main-Threads, ohne symbolischen Links zu folgen)?
+            let zaehlung = await Task.detached(priority: .userInitiated) { OrdnerZaehler.zaehle(url) }.value
+            let home = vorschau?.home ?? FileManager.default.homeDirectoryForCurrentUser
+            return OrdnerWahlAntwort.baue(pfad: url, home: home, zaehlung: zaehlung)
         case .vaultGewechselt:
             log.schreibe("aktion vault-gewechselt")
             vaultGewechselt()
@@ -497,11 +517,36 @@ final class AppZustand: ObservableObject {
             return ok
         case .titel(let text):
             // Bewusst ohne Log: Die Oberfläche meldet den Titel bei jeder Notiz (Notiztitel gehören nicht ins Protokoll).
-            studio.setzeTitel(text)
+            von.setzeTitel(text)
             return ok
         case .fehler(let text, let ort):
             // JavaScript-Fehler der Studio-Oberfläche (Fehlerhaken): ohne Hinweis darauf bliebe ein weißes Fenster stumm.
             log.schreibe("js-fehler \(ort) \(text)")
+            return ok
+        case .gitPruefen:
+            // Bewusst ohne Log: die Seite fragt im Takt von 3 s nach. Nur lesend, löst nie Apples Installationsdialog aus.
+            return GitAntwort.pruefen(await gitPruefer.pruefe())
+        case .gitInstallieren:
+            log.schreibe("aktion git-installieren")
+            return GitAntwort.installieren(await gitPruefer.starteInstallation())
+        case .kopieren(let text):
+            log.schreibe("aktion kopieren") // der Text gehört nicht ins Protokoll (Gerätecode, Befehl)
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+            return ok
+        case .einrichtungEnde(let ende):
+            guard von === einrichtung, einrichtung.istOffen else { return ["ok": false, "grund": "kein-einrichtungsfenster"] as [String: Any] }
+            log.schreibe("aktion einrichtung-ende \(ende.rawValue)")
+            einrichtungEndeArt = ende
+            // Die Antwort geht zuerst an die Seite; erst danach schließt das Fenster (das Schließen erledigt `einrichtungGeschlossen`).
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(150))
+                self?.einrichtung.schliesse()
+            }
+            return ok
+        case .einrichtungOeffnen(let ab):
+            log.schreibe("aktion einrichtung-oeffnen")
+            zeigeAssistent(ab: ab)
             return ok
         }
     }
@@ -591,12 +636,13 @@ final class AppZustand: ObservableObject {
 
     // MARK: Assistent „Kortex einrichten“
 
-    /// Zeigt den Assistenten (beim ersten Start von selbst, sonst über das Menü). Er hat eine eigene Werkstatt-Verbindung ohne
-    /// Vault: sie führt dieselben Routen aus wie das Studio und liest/schreibt dieselbe `vaults.json`. Ein offenes Fenster kommt nur nach vorn.
-    func zeigeAssistent(wiederholung: Bool = true) {
-        if let assistentFenster {
-            assistentFenster.makeKeyAndOrderFront(nil)
-            NSApp.activate()
+    /// Zeigt den Assistenten (beim ersten Start von selbst, sonst über das Menü oder die Aktion `einrichtung-oeffnen`): ein Fenster mit
+    /// der Web-Seite `brain://studio/einrichtung.html` und einer eigenen Werkstatt-Verbindung ohne Vault. Sie führt dieselben Routen
+    /// aus wie das Studio und liest/schreibt dieselbe `vaults.json`. Ein offenes Fenster kommt nur nach vorn. Gibt es schon einen
+    /// aktiven Vault und ist kein Einstieg verlangt, öffnet die Seite ab der Sicherung (`?ab=sicherung`).
+    func zeigeAssistent(automatisch: Bool = false, ab: EinrichtungsEinstieg? = nil) {
+        if einrichtung.istOffen {
+            einrichtung.nachVorn()
             return
         }
         guard let node, let skript = werkstattSkript else {
@@ -605,47 +651,38 @@ final class AppZustand: ObservableObject {
             zeigeEinrichtung()
             return
         }
-        let bruecke = BrueckenVerbindung(node: node, vault: nil, skript: skript, umgebung: werkstattUmgebung, arbeitsordner: pfade.basis)
-        let dienste = WerkstattDienste(pfade: pfade, git: vorschau?.gitPruefer() ?? GitPruefer(),
-                                       home: vorschau?.home ?? FileManager.default.homeDirectoryForCurrentUser) { methode, pfad, body in
-            try await bruecke.anfrage(methode: methode, pfad: pfad, body: body)
-        }
-        let modell = EinrichtungsModell(dienste: dienste, speicher: EinrichtungsSpeicher(pfade: pfade), log: log, vorschau: vorschau)
-        let vaultVorher = vaultFrisch()
-        let w = NSWindow(contentViewController: NSHostingController(rootView: EinrichtungsAssistentAnsicht(modell: modell).kortexAkzent()))
-        w.title = vorschau == nil ? "Kortex einrichten" : "Kortex einrichten — Vorschau"
-        w.styleMask = [.titled, .closable]
-        w.isReleasedWhenClosed = false
-        w.center()
-        assistentFenster = w
-        assistentModell = modell
-        assistentBruecke = bruecke
-        modell.beiSchliessen = { [weak w] in w?.close() }
-        modell.beiStudioOeffnen = { [weak w] in w?.close() }
-        assistentBeobachter = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: w, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.assistentGeschlossen(vaultVorher: vaultVorher) }
-        }
-        log.schreibe("assistent-offen wiederholung=\(wiederholung)")
-        modell.starte(wiederholung: wiederholung)
-        w.makeKeyAndOrderFront(nil)
-        NSApp.activate()
+        einrichtungHerkunft = automatisch ? .start : .menue
+        einrichtungVaultVorher = vaultFrisch()
+        einrichtungVerdraengtStudio = automatisch
+        einrichtungEndeArt = nil
+        // Das Gedächtnis des Assistenten steht ab dem Öffnen da: wird er mittendrin beendet, macht er beim nächsten Start dort weiter.
+        let gedaechtnis = EinrichtungsSpeicher(pfade: pfade)
+        try? gedaechtnis.speichere(EinrichtungsFenster.datei(nach: nil, vorher: gedaechtnis.lade(), herkunft: einrichtungHerkunft))
+        let url = EinrichtungsFenster.url(ab: ab ?? (einrichtungVaultVorher != nil ? .sicherung : nil))
+        log.schreibe("assistent-offen automatisch=\(automatisch)")
+        einrichtung.oeffne(node: node, vault: nil, skript: skript, umgebung: werkstattUmgebung, arbeitsordner: pfade.basis,
+                           fluechtig: argumente.fluechtig, vorschau: vorschau != nil, startURL: url)
     }
 
-    /// Der Assistent ist zu (fertig, „Später“, Fenster geschlossen oder App-Wechsel): Verbindung beenden, und das Studio muss den
-    /// neuen Vault kennen — es hat seine Werkstatt mit dem alten Stand gestartet, also neu öffnen, wenn sich der Vault geändert hat.
-    private func assistentGeschlossen(vaultVorher: URL?) {
-        if let beobachter = assistentBeobachter { NotificationCenter.default.removeObserver(beobachter) }
-        assistentBeobachter = nil
-        let fertig = assistentModell?.istFertig ?? false
-        assistentModell?.beende()
-        let bruecke = assistentBruecke
-        Task { await bruecke?.beende() }
-        assistentFenster = nil
-        assistentModell = nil
-        assistentBruecke = nil
-        let verdraengt = assistentVerdraengtStudio
-        assistentVerdraengtStudio = false
-        log.schreibe("assistent-zu fertig=\(fertig)")
+    /// Der Assistent ist zu (`einrichtung-ende`, rotes X oder ⌘W): Stand in `einrichtung.json` merken (nur „Später“ schaltet das
+    /// automatische Erscheinen ab; ein einfach geschlossenes Fenster macht beim nächsten Start weiter) und das Studio muss den neuen
+    /// Vault kennen — es hat seine Werkstatt mit dem alten Stand gestartet, also neu öffnen, wenn sich der Vault geändert hat.
+    private func einrichtungGeschlossen() {
+        let ende = einrichtungEndeArt
+        einrichtungEndeArt = nil
+        let verdraengt = einrichtungVerdraengtStudio
+        einrichtungVerdraengtStudio = false
+        let vaultVorher = einrichtungVaultVorher
+        einrichtungVaultVorher = nil
+        let speicher = EinrichtungsSpeicher(pfade: pfade)
+        do {
+            try speicher.speichere(EinrichtungsFenster.datei(nach: ende, vorher: speicher.lade(), herkunft: einrichtungHerkunft, vaultAktiv: vaultFrisch() != nil))
+        } catch {
+            log.schreibe("einrichtung speichern-fehlgeschlagen \(error.localizedDescription)")
+        }
+        log.schreibe("assistent-zu ende=\(ende?.rawValue ?? "keins")")
+        Task { await aktualisiere() }
+        guard !wirdBeendet else { return }
         let geaendert = !Self.gleich(vaultVorher, vaultFrisch())
         if geaendert { vaultGewechselt() }
         Task {
@@ -654,7 +691,7 @@ final class AppZustand: ObservableObject {
                 guard await studio.darfSchliessen() else { return }
                 studio.schliesse()
                 oeffneStudio()
-            } else if !studio.istOffen, fertig || verdraengt {
+            } else if !studio.istOffen, ende != nil || verdraengt {
                 oeffneStudio()
             }
         }
@@ -664,11 +701,13 @@ final class AppZustand: ObservableObject {
     func darfBeenden() async -> Bool { await studio.darfSchliessen() }
 
     func beende() {
+        wirdBeendet = true
         vorschau?.raeumeDefaultsAuf() // nur die Einstellungen der Vorschau-Kennung; die echte App bleibt unberührt
         taktgeber?.cancel()
         erfassen.beende()
         studio.schliesse()
         uebersicht.schliesse()
+        einrichtung.schliesse()
         rueckfragenFenster?.close()
     }
 }

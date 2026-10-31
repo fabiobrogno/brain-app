@@ -121,8 +121,13 @@ final class Navigation: NSObject, WKNavigationDelegate {
     var beiGeladen: (() -> Void)?
     var beiFehler: ((String) -> Void)?
     private let oberflaeche: Oberflaeche
+    /// Wohin die Fehlerseite zurückführt (Standard: Startseite der Oberfläche; das Einrichtungsfenster: seine eigene Adresse).
+    private let startURL: URL
 
-    init(oberflaeche: Oberflaeche) { self.oberflaeche = oberflaeche }
+    init(oberflaeche: Oberflaeche, startURL: URL? = nil) {
+        self.oberflaeche = oberflaeche
+        self.startURL = startURL ?? oberflaeche.startURL
+    }
 
     func webView(_ webView: WKWebView, decidePolicyFor aktion: WKNavigationAction) async -> WKNavigationActionPolicy {
         let hauptrahmen = aktion.targetFrame?.isMainFrame ?? true
@@ -149,16 +154,28 @@ final class Navigation: NSObject, WKNavigationDelegate {
         if e.domain == NSURLErrorDomain && e.code == NSURLErrorCancelled { return }
         if e.domain == "WebKitErrorDomain" && e.code == 102 { return }
         beiFehler?("\(e.domain) \(e.code)")
-        webView.loadSimulatedRequest(URLRequest(url: oberflaeche.startURL), responseHTML: SchemaAntwort.fehlerSeiteHTML)
+        webView.loadSimulatedRequest(URLRequest(url: startURL), responseHTML: SchemaAntwort.fehlerSeiteHTML)
     }
 }
 
+/// Fläche im Kopf des Einrichtungsfensters, die das Fenster verschiebbar macht: Die WebView schluckt Klicks in der (durchsichtigen)
+/// Titelleiste, darum liegt dieser unsichtbare Streifen über ihr und fängt sie ab. Die Seite hält dort bewusst nichts Klickbares.
+private final class ZiehStreifen: NSView {
+    override var mouseDownCanMoveWindow: Bool { true }
+    override var isOpaque: Bool { false }
+}
+
 /// Ein Kortex-Fenster (App-Spec §5.2, §7.2; Studio-Spec §9): beim Schließen werden WebView, Kanäle und Brücke beendet.
-/// Die App hat zwei davon: Studio (Werkstatt-Brücke) und Übersicht (Brücke des gebündelten Kerns).
+/// Die App hat drei davon: Studio (Werkstatt-Brücke), Übersicht (Brücke des gebündelten Kerns) und „Kortex einrichten“ (Seite
+/// `einrichtung.html` der Werkstatt, eigene Brücke ohne Vault; festes Fenster ohne Titel, siehe `Art.einrichtung`).
 @MainActor
 final class FensterSteuerung: NSObject, NSWindowDelegate {
+    enum Art { case studio, uebersicht, einrichtung }
+
     private let log: AppLog
-    let oberflaeche: Oberflaeche
+    let art: Art
+    /// Der Host im brain://-Schema: Studio und Einrichtung teilen sich die Oberfläche `studio` (Werkstatt-Brücke).
+    var oberflaeche: Oberflaeche { art == .uebersicht ? .app : .studio }
     private var fenster: NSWindow?
     private var webView: WKWebView?
     private var navigation: Navigation?
@@ -177,7 +194,8 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
     var beiGeschlossen: (() -> Void)?
     /// Führt eine geprüfte Aktion der Oberfläche aus (Übersicht öffnen, Finder, Browser, Vault-Wechsel …) und liefert die
     /// Antwort an die Seite (nil → `null`).
-    var beiAktion: ((AppAktion) async -> Any?)?
+    /// Das Fenster, das die Aktion geschickt hat, kommt mit (Ordner-Dialog als Sheet am richtigen Fenster; `einrichtung-ende` nur von dort).
+    var beiAktion: ((AppAktion, FensterSteuerung) async -> Any?)?
     /// Der aktive Vault für die Pfadprüfung der Aktionen (nil = keiner gewählt).
     var aktuellerVault: (() -> URL?)?
     /// Der offene Ordner-Dialog (Sheet) samt Antwort-Wächter — höchstens einer je Fenster.
@@ -190,13 +208,25 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
     /// geöffnet); danach steht er als `befehl-verworfen` im Log.
     static let befehlsFrist = Duration.seconds(30)
 
-    init(log: AppLog, oberflaeche: Oberflaeche) {
+    init(log: AppLog, art: Art) {
         self.log = log
-        self.oberflaeche = oberflaeche
+        self.art = art
     }
 
-    private var name: String { oberflaeche == .studio ? "studio" : "uebersicht" }
-    private var standardTitel: String { oberflaeche == .studio ? StudioFenster.standardTitel : "Übersicht" }
+    private var name: String {
+        switch art {
+        case .studio: return "studio"
+        case .uebersicht: return "uebersicht"
+        case .einrichtung: return "einrichtung"
+        }
+    }
+    private var standardTitel: String {
+        switch art {
+        case .studio: return StudioFenster.standardTitel
+        case .uebersicht: return "Übersicht"
+        case .einrichtung: return "Kortex einrichten"
+        }
+    }
 
     /// `skript`: nil = Ansicht-Brücke des gebündelten Kerns (`kern` = `bin/kern`, nie Code aus dem Vault), sonst z. B. die Werkstatt
     /// aus dem App-Paket. `vault` nil nur mit `skript`
@@ -204,9 +234,10 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
     /// `test`: Testschalter des Studios (Größe, Bild, Skript) — nur für das Studio, die Übersicht ignoriert sie.
     /// `fluechtig`: irgendein Testschalter ist aktiv (`StartArgumente.fluechtig`) — gilt für beide Fenster: flüchtiger Web-Speicher,
     /// keine gemerkte Fensterposition. `vorStart`: Prüfung vor jedem Start der Brücke (Kern-Brücke: ist der Kern noch bereit?).
+    /// `startURL`: nur fürs Einrichtungsfenster (Seite `einrichtung.html`, ggf. mit `?ab=`); sonst die Startseite der Oberfläche.
     func oeffne(node: URL, vault: URL?, skript: URL? = nil, kern: URL? = nil, umgebung: [String: String], arbeitsordner: URL? = nil,
-                test: StartArgumente? = nil, fluechtig: Bool = false, vorschau: Bool = false, vorStart: (@Sendable () async -> Bool)? = nil,
-                ki: KiRoute? = nil) {
+                test: StartArgumente? = nil, fluechtig: Bool = false, vorschau: Bool = false, startURL: URL? = nil,
+                vorStart: (@Sendable () async -> Bool)? = nil, ki: KiRoute? = nil) {
         if let fenster {
             if fenster.isMiniaturized { fenster.deminiaturize(nil) }
             fenster.makeKeyAndOrderFront(nil)
@@ -216,7 +247,7 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
         let bruecke = BrueckenVerbindung(node: node, vault: vault, skript: skript, kern: kern, umgebung: umgebung,
                                          arbeitsordner: arbeitsordner, vorStart: vorStart)
         let config = WKWebViewConfiguration()
-        let test = oberflaeche == .studio ? test : nil
+        let test = art == .studio ? test : nil
         // Testlauf: flüchtiger Web-Speicher — die Seite liest und schreibt sonst den localStorage der echten App (Theme,
         // letzte Notiz, Spaltenbreiten), das Bild hinge dann vom letzten Lauf ab; und WebKit legte Daten unter
         // ~/Library/WebKit/<Bundle-ID> der installierten App an.
@@ -229,11 +260,12 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
         let aktionsKanal = AktionsKanal(oberflaeche: oberflaeche, vault: { [weak self] in self?.aktuellerVault?() }) { [weak self] aktion in
             guard let self, let f = self.beiAktion else { return nil }
             if case .fehler = aktion, !self.laesstFehlerDurch() { return ["ok": false, "grund": "gedrosselt"] as [String: Any] }
-            return await f(aktion)
+            return await f(aktion, self)
         }
         config.userContentController.addScriptMessageHandler(aktionsKanal, contentWorld: .page, name: "aktion")
         let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 1200, height: 800), configuration: config)
-        let navigation = Navigation(oberflaeche: oberflaeche)
+        let ziel = startURL ?? oberflaeche.startURL
+        let navigation = Navigation(oberflaeche: oberflaeche, startURL: ziel)
         navigation.beiGeladen = { [weak self] in self?.warteAufBereit() }
         navigation.beiFehler = { [weak self] grund in self?.log.schreibe("fenster-ladefehler \(self?.name ?? "") \(grund)") }
         web.navigationDelegate = navigation
@@ -241,11 +273,18 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
         // Ohne fullSizeContentView: Die WebView fängt sonst alle Klicks in der Titelleiste ab (Fenster nicht
         // verschiebbar) und die Ampel-Knöpfe lägen über der Seitenleiste.
         let maske: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .resizable]
-        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800), styleMask: maske, backing: .buffered, defer: false)
-        w.isReleasedWhenClosed = false
-        w.contentView = web
-        w.title = standardTitel
-        if oberflaeche == .studio {
+        let w: NSWindow
+        if art == .einrichtung {
+            w = baueEinrichtungsFenster(web: web, vorschau: vorschau)
+        } else {
+            w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800), styleMask: maske, backing: .buffered, defer: false)
+            w.isReleasedWhenClosed = false
+            w.contentView = web
+            w.title = standardTitel
+        }
+        if art == .einrichtung {
+            // fertig aufgebaut: Größe, Lage und Band stehen in `baueEinrichtungsFenster`
+        } else if oberflaeche == .studio {
             w.titlebarAppearsTransparent = true
             w.minSize = StudioFenster.minimum
             // Erster Start (noch keine gemerkte Position): Standardgröße, mittig. Danach gilt die gemerkte Größe — aber nie
@@ -268,7 +307,7 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
             if w.frame.origin == .zero { w.center() }
         }
         w.delegate = self
-        if vorschau { VorschauBand.anbringen(an: w) }
+        if vorschau, art != .einrichtung { VorschauBand.anbringen(an: w) }
 
         self.bruecke = bruecke
         self.webView = web
@@ -277,12 +316,63 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
         self.fenster = w
         w.makeKeyAndOrderFront(nil)
         NSApp.activate()
-        web.load(URLRequest(url: oberflaeche.startURL))
+        web.load(URLRequest(url: ziel))
         log.schreibe("fenster-auf \(name) \(Int(w.frame.width))x\(Int(w.frame.height))")
         if test != nil { log.schreibe("fenster-inhalt \(name) \(Int(web.bounds.width))x\(Int(web.bounds.height))") }
     }
 
     func schliesse() { fenster?.close() }
+
+    /// Ein offenes Fenster nach vorn holen (aus dem Dock zurückholen, aktivieren).
+    func nachVorn() {
+        guard let fenster else { return }
+        if fenster.isMiniaturized { fenster.deminiaturize(nil) }
+        fenster.makeKeyAndOrderFront(nil)
+        NSApp.activate()
+    }
+
+    /// Das Einrichtungsfenster: feste Größe (1120 x 720, höchstens sichtbare Fläche minus 48 je Achse), mittig, nicht skalierbar, ohne
+    /// sichtbaren Titel; die echte Ampel bleibt (Mini-/Zoom-Knopf aus). Die WebView füllt das ganze Fenster (auch unter der durchsichtigen
+    /// Titelleiste); ein unsichtbarer Streifen darüber macht das Fenster verschiebbar. Eine gemerkte Position gibt es bewusst nicht.
+    private func baueEinrichtungsFenster(web: WKWebView, vorschau: Bool) -> NSWindow {
+        let sichtbar = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame.size ?? CGSize(width: 1440, height: 900)
+        let groesse = EinrichtungsFenster.groesse(sichtbar: sichtbar)
+        let w = NSWindow(contentRect: NSRect(origin: .zero, size: groesse), styleMask: [.titled, .closable, .fullSizeContentView],
+                         backing: .buffered, defer: false)
+        w.isReleasedWhenClosed = false
+        w.title = standardTitel
+        w.titleVisibility = .hidden
+        w.titlebarAppearsTransparent = true
+        w.backgroundColor = .windowBackgroundColor
+        w.standardWindowButton(.miniaturizeButton)?.isEnabled = false
+        w.standardWindowButton(.zoomButton)?.isEnabled = false
+
+        let inhalt = NSView(frame: NSRect(origin: .zero, size: groesse))
+        inhalt.autoresizesSubviews = true
+        web.frame = inhalt.bounds
+        web.autoresizingMask = [.width, .height]
+        inhalt.addSubview(web)
+        let hoehe = EinrichtungsFenster.ziehStreifenHoehe, ab = EinrichtungsFenster.ziehStreifenAb
+        let streifen = ZiehStreifen(frame: NSRect(x: ab, y: groesse.height - hoehe, width: max(0, groesse.width - ab), height: hoehe))
+        streifen.autoresizingMask = [.width, .minYMargin]
+        inhalt.addSubview(streifen) // über der WebView: fängt die Klicks im Kopf ab
+        w.contentView = inhalt
+        w.setContentSize(groesse)
+
+        if vorschau {
+            // Das Band der Vorschau belegt unter der Titelleiste Platz (Zubehör der Titelleiste): die WebView beginnt darunter, das Fenster
+            // wächst um diese Höhe, damit die Seite ihre volle Fläche behält.
+            VorschauBand.anbringen(an: w)
+            inhalt.layoutSubtreeIfNeeded()
+            let oben = inhalt.bounds.height - w.contentLayoutRect.height
+            if oben > 0, oben <= 120 {
+                w.setContentSize(CGSize(width: groesse.width, height: groesse.height + oben))
+                web.frame = NSRect(x: 0, y: 0, width: groesse.width, height: groesse.height)
+            }
+        }
+        w.center()
+        return w
+    }
 
     /// Höchstens `AppAktion.maxFehlerJeFenster` Meldungen `fehler` je Fensterleben kommen durch; die erste darüber steht als
     /// `js-fehler gedrosselt` im Protokoll, der Rest wird verworfen. Die Seite kann sonst mit `postMessage` in einer Schleife das
@@ -424,7 +514,7 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
     /// Darf das Studio jetzt geschlossen werden? Die Oberfläche sichert zuerst; meldet sie „nicht gespeichert“,
     /// entscheidet der Nutzer (auch bei Zeitüberschreitung). Ältere Oberfläche: schließen, Hinweis im Log.
     func darfSchliessen() async -> Bool {
-        guard oberflaeche == .studio, fenster != nil else { return true }
+        guard art == .studio, fenster != nil else { return true }
         switch await frageOberflaeche() {
         case .ok:
             return true
@@ -449,7 +539,7 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
     private var schliessenFreigegeben = false
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        guard oberflaeche == .studio, !schliessenFreigegeben else { return true }
+        guard art == .studio, !schliessenFreigegeben else { return true }
         if schliessenLaeuft { return false }
         schliessenLaeuft = true
         Task { @MainActor [weak self] in
@@ -470,9 +560,13 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
         // app.js), soll das Bild trotzdem entstehen — es zeigt dann, was der Nutzer sähe.
         if let web = webView { starteTestlauf(web) }
         bereitAufgabe?.cancel()
-        let pruefung = oberflaeche == .studio
-            ? "window.studio && document.readyState === 'complete' ? 1 : null"
-            : "window.__brain && window.__brain.ladezeit ? Math.round(window.__brain.ladezeit) : null"
+        // Einrichtung: die Seite hat kein `window.studio`; fertig geladen genügt.
+        let pruefung: String
+        switch art {
+        case .studio: pruefung = "window.studio && document.readyState === 'complete' ? 1 : null"
+        case .einrichtung: pruefung = "document.readyState === 'complete' ? 1 : null"
+        case .uebersicht: pruefung = "window.__brain && window.__brain.ladezeit ? Math.round(window.__brain.ladezeit) : null"
+        }
         bereitAufgabe = Task { @MainActor [weak self] in
             for _ in 0..<120 {
                 guard let self, let web = self.webView, !Task.isCancelled else { return }

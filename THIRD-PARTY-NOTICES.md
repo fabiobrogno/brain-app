@@ -18,7 +18,7 @@ vorab gebautes Bündel (siehe CodeMirror).
 | Simple Icons (Logos der KI-Programme und Dienste) | 16.36.0 | CC0 1.0 | `logos/`, `studio/ki-katalog.js`, `studio/marken.js` |
 | Logos weiterer KI-Programme (Marken der Inhaber, nur zur Kennzeichnung) | abgerufen 30.10.2026 | Marke des Inhabers | `logos/`, `studio/ki-katalog.js` (Quelle je Datei: `logos/HERKUNFT.md`) |
 | Simple Icons (MCP-Logos der 3D-Ansicht) | 16.33.0 | CC0 1.0 | `kern/ansicht/vendor/icons/` |
-| Orca (Gestaltungsmuster und -werte: Dialoge, Einrichtung, leere Zustände, Design-System v2; Liste der KI-Programme) | Commits cf5b462, 9bccd67 | MIT | `studio/studio.css`, `studio/bausteine.css`, `studio/dialoge.css`, `studio/aufgaben.css`, `studio/hilfen.js`, `studio/willkommen.js` (Gestaltung; Oberfläche der App: `EinrichtungsBausteine.swift`), `gemeinsam/ki-katalog.json` (Programmliste) |
+| Orca (Gestaltungsmuster und -werte: Dialoge, Einrichtung, leere Zustände, Design-System v2; Liste der KI-Programme) | Commits cf5b462, 9bccd67 | MIT | `studio/studio.css`, `studio/bausteine.css`, `studio/dialoge.css`, `studio/aufgaben.css`, `studio/hilfen.js`, `studio/willkommen.js`, `studio/einrichtung.css`, `studio/einrichtung.js`, `studio/einrichtung-buehne.js` (Gestaltung), `gemeinsam/ki-katalog.json` (Programmliste) |
 
 Die Pfade sind relativ zu `Kortex.app/Contents/Resources`, außer Sparkle (relativ zu `Kortex.app/Contents`).
 
@@ -396,11 +396,11 @@ Website https://orca.dev), Stand Commit `cf5b462fba8462678256b25d05cec2adb8dca41
 - das Aufbaumuster eines Dialogs (Titel, ein Satz Beschreibung, Inhalt, Fußleiste rechtsbündig mit dem Hauptknopf; 24 px Innenabstand, 16 px Abstand
   zwischen den Teilen, 8 px zwischen den Knöpfen; Enter bestätigt, Esc schließt; Enter-Hinweis am Hauptknopf) nach
   `src/renderer/src/components/ui/dialog.tsx` und `src/renderer/src/components/onboarding/OnboardingFooter.tsx`
-  → `studio/dialoge.css`, `studio/hilfen.js` (`dialog()`), `Sources/BrainApp/EinrichtungsAssistent.swift` (Fußleiste);
+  → `studio/dialoge.css`, `studio/hilfen.js` (`dialog()`);
 - das Muster „eine große Hauptaktion, darunter eine gruppierte Liste weiterer Wege, gewählte Zeile mit Rahmen und Enter-Hinweis, Pfeiltasten
   wechseln die Zeile“ samt Zeilenmaßen (Symbolkachel 28 px mit 6 px Ecke, Titel 14 px, Beschreibung 12 px, Gruppenüberschrift in Großbuchstaben mit
   Sperrung) nach `src/renderer/src/components/sidebar/AddRepoStartSteps.tsx`
-  → `studio/willkommen.js` und `studio/dialoge.css` („Andere Wege“), `Sources/BrainApp/EinrichtungsBausteine.swift` (`WegZeile`, `WegGruppe`);
+  → `studio/willkommen.js` und `studio/dialoge.css` („Andere Wege“);
 - die Liste der KI-Programme (Terminal-KIs mit Erkennungsbefehl und Ersatznamen, Reihenfolge, Webseiten) und das Muster „gefundene bzw. beliebte KIs als Karten, weitere zum Aufklappen“ nach
   `src/shared/tui-agent-config.ts`, `src/shared/tui-agent-favicon-domains.ts`, `src/renderer/src/lib/agent-catalog-entries-*.ts` und
   `src/renderer/src/components/onboarding/AgentStep.tsx` (Stand @9bccd67) → `gemeinsam/ki-katalog.json`, `studio/bausteine.js` (`kiAuswahl()`),

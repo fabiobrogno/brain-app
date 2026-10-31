@@ -351,6 +351,8 @@ export function erzeugeHandler(o) {
       case "/api/umstellung/kopie-loeschen": nur("POST"); return umstellung.kopieLoeschen(v, eingabe());
       case "/api/umstellung/probelauf": nur("POST"); return umstellung.probelauf(v, eingabe());
       case "/api/umstellung/phase-a": nur("POST"); return umstellung.phaseA(v, eingabe());
+      case "/api/umstellung/phase-b": nur("POST"); return umstellung.phaseB(v, eingabe());
+      case "/api/umstellung/aufraeumen": if (methode === "GET") return umstellung.aufraeumen(v); nur("POST"); return umstellung.aufraeumenTun(v, eingabe());
       case "/api/umstellung/rueckweg": nur("POST"); return umstellung.rueckweg(v, eingabe());
       case "/api/mcp/verbinden": { nur("POST"); V(); return verbinde(eingabe(), v); }
       case "/api/mcp/trennen": { nur("POST"); return trenne(eingabe()); }

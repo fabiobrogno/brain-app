@@ -37,6 +37,8 @@ function node(script, args = []) {
 // AGENTS.md ist nicht getrackt (maschinenlokaler, absoluter Vault-Pfad) — jede Sitzung erzeugt sie neu
 // aus der Vorlage (kit/AGENTS.md im Kern), damit sie nie veraltet oder fehlt.
 node("skills-build.mjs", [V, "--ziel", "agents", join(V, "AGENTS.md")]);
+// Umstellung (P7d): die Kortex-Version im Gerätemerker dieses Macs auffrischen (nur wenn es ihn gibt; höchstens eine Datei, ein Commit nur dieses Pfads)
+node(join("umstellung", "geraet-aktualisieren.mjs"), [V]);
 node("brain-index.mjs", [V]);
 node("search-refresh.mjs", [V]);
 
