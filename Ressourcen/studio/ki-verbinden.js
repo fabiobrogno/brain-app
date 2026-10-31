@@ -302,6 +302,8 @@ export function erzeugeKiVerbinden(o = {}) {
     const kopieren = baueKnopf({ text: TKV.waehlen.konfigKopieren, groesse: "s", symbol: "kopieren", aktion: "konfig-kopieren", aufKlick: async () => {
       try { const r = await mitLaden(kopieren, () => api.mcpKonfiguration()); if (r?.json && await kopiere(r.json)) melde(TKV.waehlen.konfigKopiert); else melde(TKV.waehlen.konfigFehler); } catch (e) { melde(meldungVon(e)); } } });
     teile.push(h("div", { klasse: "kv-konfig" }, h("span", {}, h("b", { text: TKV.waehlen.konfigTitel }), ` ${TKV.waehlen.konfigKurz}`), kopieren));
+    // Im Assistenten gehört die Fußleiste dem Host: „Neu suchen“ (ein Programm wurde inzwischen installiert) steht dann hier im Schritt
+    if (fussHost) teile.push(baueKnopf({ text: Z.sucht ? TKV.waehlen.sucht : TKV.waehlen.neuSuchen, symbol: "sync", variante: "leise", groesse: "s", aktion: "ki-neu-suchen", laedt: Z.sucht, aufKlick: () => neuSuchen() }));
     return teile;
   }
 

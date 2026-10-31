@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { baueVault } from "./vault.mjs";
 import { starteServer } from "./start.mjs";
 import { mockeV2, mockeVertrauen, vertrauenAntwort, VERTRAUT } from "./mocks.mjs";
+import { mockeVerbinden } from "./mocks-verbinden.mjs";
 
 let vault, server;
 test.beforeEach(async () => { ({ vault } = baueVault()); server = await starteServer(vault); });
@@ -210,67 +211,81 @@ test("Git-Status mit gesperrt: true (200) reicht, auch ohne info.vertrauen.gitGe
 });
 
 // ---------------------------------------------------------------- W4: „verbunden“ erst nach Erfolg
-const KI_ROUTEN = async (page, mcp) => {
-  await page.route("**/api/ki/erkennen", (r) => r.fulfill({ json: { agenten: [{ id: "claude", name: "Claude Code", version: "2.1.310", pfad: "/usr/local/bin/claude" }] } }));
-  await page.route("**/api/mcp/verbinden", (r) => { mcp.push(r.request().postDataJSON()); return mcp.antwort(r, mcp.length); });
-};
+// Der gemeinsame Ablauf „KI verbinden“ (ki-verbinden.js): Statusleiste → Dialog → Wählen → Konto → Stufe → „Verbinden“ → Prüfen → Fertig. Alle /api/ki/*- und /api/mcp/*-Routen sind Attrappen
+// (mocks-verbinden.mjs, ohne Konto: die Statusleiste zeigt „KI verbinden“); geschrieben wird erst nach „Verbinden“.
+const KI_ROUTEN = (page, mcp = null) => mockeVerbinden(page, { vault: echt(), vaults: [{ pfad: echt(), name: "Mein Vault" }], leer: true, konten: [], mcp });
 const statusClaude = (page) => page.locator('[data-st="claude"]');
-
-test("W4: Schließen des KI-Dialogs allein setzt „Claude verbunden“ nicht; erst nach Erfolg", async ({ page }) => {
-  const mcp = []; mcp.antwort = (r) => r.fulfill({ json: { ok: true } });
+const kiDialog = (page) => page.locator('[data-dialog="ki-verbinden"]');
+const kiKnopf = (page, a) => kiDialog(page).locator(`[data-aktion="${a}"]`);
+const zurKiStufe = async (page) => {
+  await statusClaude(page).click();
+  await expect(kiDialog(page).locator('.ka-karte[data-ki="claude"]')).toHaveAttribute("aria-checked", "true");
+  await kiKnopf(page, "ki-weiter").click(); // Konto (ohne Konto: Hinweis, weiter geht trotzdem)
+  await kiKnopf(page, "ki-weiter").click();
+  await expect(kiDialog(page).locator('[data-kv="stufe"]')).toBeVisible();
+};
+async function oeffneMitKi(page, mcp = null) {
   await mockeV2(page, vault);
-  await KI_ROUTEN(page, mcp);
+  const z = await KI_ROUTEN(page, mcp);
   await page.goto(server.url + "?pfad=" + encodeURIComponent(NOTIZ));
   await page.waitForSelector(".cm-content .cm-line");
+  await expect(statusClaude(page)).toBeVisible();
+  return z;
+}
+
+test("W4: Schließen des KI-Dialogs allein setzt „Claude verbunden“ nicht; erst nach Erfolg", async ({ page }) => {
+  const z = await oeffneMitKi(page);
   await expect(statusClaude(page)).not.toHaveClass(/gut/);
   await statusClaude(page).click();
-  await expect(page.locator('.dialog [data-aktion="claude-verbinden"]')).toBeVisible();
-  await page.click('.dialog [data-aktion="ki-fertig"]'); // geschlossen, ohne zu verbinden
-  await expect(page.locator(".dialog")).toHaveCount(0);
+  await expect(kiDialog(page)).toBeVisible();
+  await expect(kiDialog(page).locator('.ka-karte[data-ki="claude"]')).toHaveAttribute("aria-checked", "true"); // vorgewählt, aber nichts geschrieben
+  await kiKnopf(page, "ki-abbrechen").click(); // geschlossen, ohne zu verbinden
+  await expect(kiDialog(page)).toHaveCount(0);
   await expect(statusClaude(page)).not.toHaveClass(/gut/);
-  expect([...mcp]).toHaveLength(0);
+  expect(z.log("/api/mcp/verbinden")).toHaveLength(0);
+  // auch bis zur Stufe gehen und mit Esc schließen schreibt nichts
+  await zurKiStufe(page);
+  await page.keyboard.press("Escape");
+  await expect(kiDialog(page)).toHaveCount(0);
+  await expect(statusClaude(page)).not.toHaveClass(/gut/);
+  expect(z.log("/api/mcp/verbinden")).toHaveLength(0);
   // jetzt wirklich verbinden
-  await statusClaude(page).click();
-  await page.click('.dialog [data-aktion="claude-verbinden"]');
-  await expect(page.locator('.dialog [data-zeile="verbinden"] .w-ok')).toBeVisible();
+  await zurKiStufe(page);
+  await kiKnopf(page, "ki-verbinden").click();
+  await expect(kiDialog(page).locator('[data-kv="fertig"]')).toBeVisible({ timeout: 10000 });
   await expect(statusClaude(page)).toHaveClass(/gut/);
-  expect([...mcp]).toEqual([{ ziel: "claude" }]);
+  expect(z.log("/api/mcp/verbinden")).toHaveLength(1);
+  expect(z.log("/api/mcp/verbinden")[0].body).toMatchObject({ ziel: "claude" });
 });
 
 test("W4: Eintrag „brain“ zeigt woandershin (409 anders): Rückfrage, Umstellen schickt umstellen:true; Nicht ändern lässt alles", async ({ page }) => {
-  const mcp = []; mcp.antwort = (r) => (r.request().postDataJSON().umstellen ? r.fulfill({ json: { ok: true } }) : r.fulfill({ status: 409, json: { fehler: "Es gibt schon einen Server brain.", art: "anders" } }));
-  await mockeV2(page, vault);
-  await KI_ROUTEN(page, mcp);
-  await page.goto(server.url + "?pfad=" + encodeURIComponent(NOTIZ));
-  await page.waitForSelector(".cm-content .cm-line");
-  await statusClaude(page).click();
-  await page.click('.dialog [data-aktion="claude-verbinden"]');
-  const frage = page.locator('.dialog [data-bereich="umstellen"]');
-  await expect(frage).toContainText("In Claude gibt es schon einen Eintrag „brain“, der woanders hinzeigt. Auf diesen Vault umstellen?");
+  const z = await oeffneMitKi(page, "anders");
+  await zurKiStufe(page);
+  await kiKnopf(page, "ki-verbinden").click();
+  const frage = kiDialog(page).locator('[data-bereich="umstellen"]');
+  await expect(frage).toContainText("schon einen Eintrag „brain“");
   await expect(frage.locator('[data-aktion="nicht-umstellen"]')).toBeFocused();
   await frage.locator('[data-aktion="nicht-umstellen"]').click();
   await expect(frage).toHaveCount(0);
-  await page.click('.dialog [data-aktion="ki-fertig"]');
+  await expect(kiDialog(page).locator('[data-kv="stufe"]')).toBeVisible(); // zurück bei der Stufe, nichts verbunden
+  await page.keyboard.press("Escape");
+  await expect(kiDialog(page)).toHaveCount(0);
   await expect(statusClaude(page)).not.toHaveClass(/gut/);
-  expect([...mcp]).toEqual([{ ziel: "claude" }]);
+  expect(z.log("/api/mcp/verbinden").map((a) => a.body.umstellen === true)).toEqual([false]);
   // zweiter Anlauf: Umstellen
-  await statusClaude(page).click();
-  await page.click('.dialog [data-aktion="claude-verbinden"]');
-  await page.click('.dialog [data-aktion="umstellen"]');
-  await expect(page.locator('.dialog [data-zeile="verbinden"] .w-ok')).toBeVisible();
-  expect({ ...mcp.at(-1) }).toEqual({ ziel: "claude", umstellen: true });
+  await zurKiStufe(page);
+  await kiKnopf(page, "ki-verbinden").click();
+  await kiDialog(page).locator('[data-aktion="umstellen"]').click();
+  await expect(kiDialog(page).locator('[data-kv="fertig"]')).toBeVisible({ timeout: 10000 });
+  expect(z.log("/api/mcp/verbinden").at(-1).body).toMatchObject({ ziel: "claude", umstellen: true });
   await expect(statusClaude(page)).toHaveClass(/gut/);
 });
 
 test("W4: { schonVerbunden: true } zählt als Erfolg", async ({ page }) => {
-  const mcp = []; mcp.antwort = (r) => r.fulfill({ json: { ok: true, schonVerbunden: true } });
-  await mockeV2(page, vault);
-  await KI_ROUTEN(page, mcp);
-  await page.goto(server.url + "?pfad=" + encodeURIComponent(NOTIZ));
-  await page.waitForSelector(".cm-content .cm-line");
-  await statusClaude(page).click();
-  await page.click('.dialog [data-aktion="claude-verbinden"]');
-  await expect(page.locator('.dialog [data-zeile="verbinden"] .w-ok')).toBeVisible();
+  await oeffneMitKi(page, "schon");
+  await zurKiStufe(page);
+  await kiKnopf(page, "ki-verbinden").click();
+  await expect(kiDialog(page).locator('[data-kv="fertig"]')).toBeVisible({ timeout: 10000 });
   await expect(statusClaude(page)).toHaveClass(/gut/);
 });
 
