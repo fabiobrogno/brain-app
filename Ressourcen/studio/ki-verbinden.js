@@ -416,7 +416,7 @@ export function erzeugeKiVerbinden(o = {}) {
     const li = (id) => {
       const s = l.zeilen[id] || "";
       const t = TKV.pruefen.schritte[id];
-      return h("li", { klasse: s, "data-s": id, "data-zustand": s || "wartet" }, h("span", { klasse: "kv-st", "aria-hidden": "true" }, s === "ok" ? symbol("haken", 10) : s === "warn" ? h("span", { klasse: "kv-st-z", text: "!" }) : s === "fehler" ? symbol("schliessen", 10) : null),
+      return h("li", { klasse: s, "data-s": id, "data-zustand": s || "wartet" }, h("span", { klasse: "kv-st", "aria-hidden": "true" }, s === "ok" ? symbol("haken", 12) : s === "warn" ? h("span", { klasse: "kv-st-z", text: "!" }) : s === "fehler" ? symbol("schliessen", 12) : null),
         h("span", { text: typeof t === "function" ? t(name(p)) : t }), l.texte[id] ? h("span", { klasse: "mono", text: l.texte[id] }) : null);
     };
     const teile = [h("ol", { klasse: "kv-schritte", id: "kv-schritte", "data-kv": "schritte-lauf" }, ZEILEN.filter((id) => id !== "anmeldung" || ANMELDBAR.includes(p)).map(li))];

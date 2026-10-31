@@ -1276,7 +1276,7 @@ const stEl = $("status");
 const kontoLeiste = erzeugeKontoLeiste({ stand: kontingentStand(api), vaultPfad: () => S.info?.vault || null, vaultName: () => S.info?.name || "", oeffneKonten: () => oeffneKonten(), oeffneKi: () => oeffneKi() });
 // Platzhalter für den KI-Platz der Statusleiste, solange weder Programme (GET /api/ki/erkennen) noch Konten (GET /api/ki/kontingent) geladen sind
 let kiStatusEl = null;
-const kiPlatzhalter = h("span", { klasse: "st st-platzhalter", "data-st": "ki-laedt", "aria-hidden": "true" }, h("span", { klasse: "bs-skelett" }));
+const kiPlatzhalter = h("span", { klasse: "st st-platzhalter", "data-st": "ki-laedt", "aria-hidden": "true" }, h("span", { klasse: "st-ladebalken" }));
 function setzeKiLaedt() {
   const stand = kontingentStand(api).state;
   const laedt = !S.kiGeladen || (!stand.daten && !stand.fehler);
