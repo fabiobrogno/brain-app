@@ -173,6 +173,15 @@ final class AppZustand: ObservableObject {
 
     var istStudioOffen: Bool { studio.istOffen }
 
+    /// macOS-Mitteilungen zum Aktivitätsprotokoll (P8a). Nur im normalen Betrieb: nicht in der Vorschau und nicht in Testläufen
+    /// (`fluechtig`) — dort darf die App weder den Mitteilungsdienst des Systems berühren noch nach der Erlaubnis fragen.
+    private(set) lazy var mitteilungen = MitteilungsDienst(
+        pfade: pfade, log: log, studioSichtbar: { [weak self] in self?.studio.istSichtbar ?? false },
+        oeffne: { [weak self] ziel in
+            // Klick: Studio nach vorn und an die passende Stelle; ein Klick ohne lesbares Ziel holt nur das Studio.
+            if let ziel { self?.sende(ziel.befehl) } else { self?.oeffneStudio() }
+        })
+
     private var umgebung: [String: String] {
         ["BRAIN_NODE": brainNode].merging(vorschau?.kindVorgaben ?? [:]) { _, neu in neu }
     }
@@ -224,6 +233,7 @@ final class AppZustand: ObservableObject {
         }
         einrichtung.beiGeschlossen = { [weak self] in self?.einrichtungGeschlossen() }
         log.schreibe("start")
+        if vorschau == nil && !argumente.fluechtig { mitteilungen.starte() } // früh: ein Klick auf eine Mitteilung startet die App
         log.schreibe(supportMigration.protokollZeile)
         if let alt = supportAltBasis,
            let text = SupportMigration.anzuzeigenderHinweis(supportMigration, alt: alt, neu: pfade.basis, merker: pfade.ordnerHinweisMerker) {
@@ -548,6 +558,10 @@ final class AppZustand: ObservableObject {
             log.schreibe("aktion einrichtung-oeffnen")
             zeigeAssistent(ab: ab)
             return ok
+        case .mitteilungProbe:
+            log.schreibe("aktion mitteilung-probe")
+            if let grund = await mitteilungen.probe() { return ["ok": false, "grund": grund] as [String: Any] }
+            return ok
         }
     }
 
@@ -704,6 +718,7 @@ final class AppZustand: ObservableObject {
         wirdBeendet = true
         vorschau?.raeumeDefaultsAuf() // nur die Einstellungen der Vorschau-Kennung; die echte App bleibt unberührt
         taktgeber?.cancel()
+        mitteilungen.beende()
         erfassen.beende()
         studio.schliesse()
         uebersicht.schliesse()

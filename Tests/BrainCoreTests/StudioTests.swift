@@ -82,7 +82,7 @@ private func url(_ s: String) -> URL { URL(string: s)! }
     // Die Namensliste ist der Vertrag mit der Oberfläche — jede Änderung hier muss dort nachgezogen werden.
     #expect(StudioBefehl.allCases.map(\.rawValue) == [
         "neu", "merken", "vault-oeffnen", "vault-wechseln", "infospalte", "verlauf", "hell-dunkel",
-        "posteingang", "alle", "wissen", "palette", "sync", "einstellungen", "umstellung", "aufgaben", "aufgabe-erfassen",
+        "posteingang", "alle", "wissen", "palette", "sync", "einstellungen", "umstellung", "aufgaben", "aufgabe-erfassen", "aktivitaet",
     ])
     #expect(StudioBefehl.aufgabeErfassen.skript == "window.studio?.befehl('aufgabe-erfassen')")
     #expect(StudioBefehl.umstellung.skript == "window.studio?.befehl('umstellung')")

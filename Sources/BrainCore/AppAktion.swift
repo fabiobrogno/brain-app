@@ -36,6 +36,9 @@ public enum AppAktion: Equatable, Sendable {
     case einrichtungEnde(EinrichtungsEnde)
     /// Das Einrichtungsfenster öffnen (wie das Menü „Kortex einrichten …“), optional ab einer Stelle.
     case einrichtungOeffnen(ab: EinrichtungsEinstieg?)
+    /// „Probe-Mitteilung senden“ (Einstellungen → Mitteilungen, P8a): eine Beispiel-Mitteilung über den Mitteilungsdienst des Systems; die
+    /// Antwort sagt, ob sie zugestellt wurde (`{ok:true}`) oder warum nicht (`{ok:false, grund}`). Trägt keine Daten.
+    case mitteilungProbe
 
     /// Längen- und Zeichenbegrenzung für Texte der Seite (Fenstertitel, Dialog-Hinweis).
     static let maxTitel = 120
@@ -52,7 +55,7 @@ public enum AppAktion: Equatable, Sendable {
     /// `{aktion:"ordner-waehlen", wert:{titel?, vorschlag?}}`, `{aktion:"vault-gewechselt"}`, `{aktion:"vertrauen-geaendert"}`,
     /// `{aktion:"titel", wert:<Text>}`, `{aktion:"fehler", wert:{text, ort?}}`, `{aktion:"git-pruefen"}`, `{aktion:"git-installieren"}`,
     /// `{aktion:"kopieren", wert:<Text>}`, `{aktion:"einrichtung-ende", wert:{art:"fertig"|"spaeter"}}`,
-    /// `{aktion:"einrichtung-oeffnen", wert?:{ab?:"vault"|"sicherung"|"ki"}}`.
+    /// `{aktion:"einrichtung-oeffnen", wert?:{ab?:"vault"|"sicherung"|"ki"}}`, `{aktion:"mitteilung-probe"}`.
     /// Ohne Angabe gilt die strengste Herkunft (Übersicht): die Studio-Aktionen muss man ausdrücklich freischalten.
     public static func pruefe(_ nachricht: Any, vault: URL?, oberflaeche: Oberflaeche = .app) -> AppAktion? {
         guard let d = nachricht as? [String: Any], let name = d["aktion"] as? String else { return nil }
@@ -89,6 +92,8 @@ public enum AppAktion: Equatable, Sendable {
             return oberflaeche == .studio ? pruefeEinrichtungEnde(wert) : nil
         case "einrichtung-oeffnen":
             return oberflaeche == .studio ? pruefeEinrichtungOeffnen(wert) : nil
+        case "mitteilung-probe":
+            return oberflaeche == .studio ? .mitteilungProbe : nil
         default:
             return nil
         }
@@ -238,6 +243,8 @@ public enum StudioBefehl: String, Sendable, CaseIterable {
     /// Aufgaben-Board öffnen (Menü „Gehe zu“, Menüleiste bei offenen Aufgaben) und „Aufgabe erfassen …“ (Board mit Eingabefeld im Fokus).
     case aufgaben
     case aufgabeErfassen = "aufgabe-erfassen"
+    /// Klick auf eine Mitteilung (P8a): öffnet im Studio Einstellungen → KI & Konten → Aktivitätsprotokoll.
+    case aktivitaet
 
     public var skript: String { "window.studio?.befehl('\(rawValue)')" }
 
