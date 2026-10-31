@@ -407,6 +407,10 @@ Website https://orca.dev), Stand Commit `cf5b462fba8462678256b25d05cec2adb8dca41
   `Sources/BrainCore/KiKatalog.swift`; die Programmlogos von Orca (`agent-icons`) sind nicht übernommen;
 - der leere Zustand als Kreis (48 px) mit Symbol, einem kurzen Satz und höchstens einer Aktion nach
   `src/renderer/src/components/native-chat/NativeChatEmptyState.tsx` → `studio/dialoge.css`, `studio/bausteine.js` (`leerBlock()`);
+- der Ablauf des Tastenkürzel-Editors (Klick → „Press keys …“, Esc bricht ab, Konflikt „{binding} conflicts with {actions}“ → „⌘K gehört schon zu „Befehlspalette“.“, „Reset to default“ je Zeile,
+  Filter Alle / Geändert / Ohne / Konflikte, Kürzel in eigener Datei) und die Konfliktprüfung nach `src/renderer/src/components/settings/ShortcutsPane.tsx`,
+  `ShortcutRecorderButton.tsx`, `ShortcutRowsList.tsx`, `src/shared/keybindings/*` und `src/main/keybindings/keybinding-file.ts` (Stand @9bccd67; in JavaScript und Swift neu geschrieben)
+  → `studio/einstellungen-tasten.js`, `studio/tastenkuerzel-logik.js`, `studio/tastenkuerzel.js`, `werkstatt/tastenkuerzel.mjs`, `Sources/BrainCore/Erfassen/KuerzelBelegung.swift`;
 - die Gestaltungswerte des Design-Systems v2 (Graustufen hell/dunkel, Ränder 7 % und 13 %, Radius-Skala aus `--radius: 0.625rem`, die drei Höhenstufen
   Haarlinie, `shadow-xs` und `shadow-floating` samt Dialogschatten, die Auswahl-Regel für Listenzeilen, Typo-Skala und `letter-spacing: 0.01em`, die Bewegungskurven und -dauern, Maße von
   Knopf, Feld, Schalter und Segment) nach `src/renderer/src/assets/main.css`, `docs/STYLEGUIDE.md` und `src/renderer/src/components/ui/*.tsx`
