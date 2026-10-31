@@ -229,7 +229,8 @@ public enum StudioBefehl: String, Sendable, CaseIterable {
     case infospalte, verlauf
     case hellDunkel = "hell-dunkel"
     case posteingang, alle, wissen, palette
-    /// Menüleiste „Abgleichen“ (Neues holen, eigene Änderungen senden) und „Einstellungen“ (Darstellung, KI, Vertrauen) — wie der Knopf in der Statusleiste des Studios.
+    /// Menüleiste „Abgleichen“ (Neues holen, eigene Änderungen senden) und „Einstellungen …“ (⌘,): öffnet im Studio die Seite „Einstellungen“ (P5; früher das Zahnrad-Menü der Statusleiste,
+    /// das es weiter gibt). Ein natives Einstellungsfenster gab es nie — die Seite im Studio ist der einzige Ort.
     case abgleichen = "sync"
     case einstellungen
     /// Menüleiste „Vault umstellen …“ (nur, wenn der Status Altlasten meldet): öffnet im Studio die Umstellungs-Ansicht (P7c).
@@ -239,4 +240,15 @@ public enum StudioBefehl: String, Sendable, CaseIterable {
     case aufgabeErfassen = "aufgabe-erfassen"
 
     public var skript: String { "window.studio?.befehl('\(rawValue)')" }
+
+    /// Der Eintrag „Einstellungen …“ im Hauptmenü „Kortex“ und in der Menüleiste: Titel, Taste (⌘ plus diese Taste) und Befehl stehen hier an einer Stelle,
+    /// damit beide Menüs und der Test dasselbe meinen.
+    public static let einstellungenEintrag = StudioMenueEintrag(titel: "Einstellungen …", taste: ",", befehl: .einstellungen)
+}
+
+/// Ein Menüeintrag, der einen `StudioBefehl` auslöst (mit ⌘ als Umschalttaste, sonst keine).
+public struct StudioMenueEintrag: Equatable, Sendable {
+    public let titel: String
+    public let taste: String
+    public let befehl: StudioBefehl
 }

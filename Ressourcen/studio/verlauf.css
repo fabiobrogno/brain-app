@@ -8,12 +8,13 @@
 .vl-zeile svg { flex: none; }
 
 /* Tageskopf (haftet beim Scrollen) */
-.vl-tagkopf { position: sticky; top: 0; z-index: 3; height: 30px; padding: 0 12px 0 8px; gap: 4px; background: var(--seite); border-bottom: 1px solid var(--linie); color: var(--text-2); font-size: 12px; font-weight: 500; letter-spacing: 0; white-space: nowrap; transition: background-color var(--t); }
+.vl-tagkopf { position: sticky; top: 0; z-index: 3; min-height: 30px; padding: 4px 12px 4px 8px; gap: 0 4px; flex-wrap: wrap; background: var(--seite); border-bottom: 1px solid var(--linie); color: var(--text-2); font-size: 12px; font-weight: 500; letter-spacing: 0; transition: background-color var(--t); }
 .vl-tagkopf:hover { background-image: linear-gradient(var(--hover), var(--hover)); }
 .vl-chev { display: grid; place-items: center; width: 16px; height: 16px; color: var(--text-3); transition: transform var(--t) var(--ease); }
 .vl-tagkopf[aria-expanded="false"] .vl-chev { transform: rotate(-90deg); }
-.vl-tagtext { overflow: hidden; text-overflow: ellipsis; }
-.vl-tagzahl { margin-left: 2px; flex: none; color: var(--text-3); font-weight: 500; }
+/* Geist ist breiter (P1-Befund): in der schmalen Spalte rutschen „Heute“ und die Zahl der Commits in eine zweite Zeile, statt den Tag mit „…“ abzuschneiden */
+.vl-tagtext { min-width: 0; white-space: nowrap; }
+.vl-tagzahl { margin-left: auto; flex: none; color: var(--text-3); font-weight: 500; white-space: nowrap; }
 
 /* Commit-Zeile */
 .vl-commit { border-bottom: 1px solid var(--linie); }
@@ -22,7 +23,7 @@
 .vl-commitzeile[aria-expanded="true"] { background: var(--hover); }
 .vl-knoten { flex: none; display: grid; margin-top: 2px; color: var(--text-3); }
 .vl-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-.vl-nachricht { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -.006em; color: var(--text); }
+.vl-nachricht { overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -.006em; color: var(--text); }
 .vl-meta { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12px; line-height: 16px; color: var(--text-3); white-space: nowrap; }
 .vl-hash { font: 11.5px/16px var(--mono); letter-spacing: 0; color: var(--text-3); }
 .vl-plus, .vl-aender, .vl-weg { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -37,6 +38,7 @@
 .vl-ungesichert .vl-commit { border-bottom: 0; }
 .vl-ungesichert .vl-knoten { color: var(--akzent); }
 .vl-ungesichert .vl-nachricht { font-weight: 600; }
+.vl-ungesichert .vl-meta { white-space: normal; }
 .vl-zahl { flex: none; align-self: center; display: grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--akzent-weich); color: var(--akzent); font-size: 11.5px; font-weight: 650; font-variant-numeric: tabular-nums; }
 
 /* Dateiliste eines Commits */
@@ -167,8 +169,10 @@
 .vl-avatar { --av: var(--akzent); display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: color-mix(in srgb, var(--av) 18%, var(--liste)); color: color-mix(in srgb, var(--av) 82%, var(--text)); font: 600 10.5px/1 var(--schrift); letter-spacing: .02em; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--av) 22%, transparent); }
 .av1 { --av: var(--gruen); } .av2 { --av: var(--gelb); } .av3 { --av: var(--rot); }
 .av4 { --av: light-dark(#2f7fc1, #6aa8e0); } .av5 { --av: light-dark(#1f93a0, #58bfcb); }
-.vl-autor { min-width: 0; max-width: 14ch; overflow: hidden; text-overflow: ellipsis; color: var(--text-2); }
+.vl-autor { min-width: 4ch; max-width: 14ch; overflow: hidden; text-overflow: ellipsis; color: var(--text-2); }
 .vl-autor::before, .vl-hash::before { content: "·"; margin-right: 8px; color: var(--text-3); }
+/* Schmale Spalte (Mindestgröße des Fensters): der Autor entfällt, damit Zeit, Kürzel und Zähler in einer Zeile bleiben (der Name steht im Tooltip und im Detail) */
+@container liste (max-width: 330px) { .vl-autor { display: none; } }
 .vl-hash::before { font-family: var(--schrift); }
 .vl-tagrel { flex: none; margin-left: 6px; height: 16px; padding: 0 6px; border-radius: var(--r-pille); background: var(--akzent-weich); color: var(--akzent); font-size: 10.5px; line-height: 16px; font-weight: 650; letter-spacing: .01em; }
 .vl-commitzeile:focus-visible, .vl-datei:focus-visible { outline: 0; box-shadow: inset 0 0 0 2px var(--akzent); }

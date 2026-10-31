@@ -139,7 +139,38 @@ Dialoge und Palette erscheinen per Zoom; Aufgaben-Board mit Spalten (Radius 14) 
 **Prüfung.** Alle Playwright-Specs (angepasst nur dort, wo Farbwerte geprüft werden: Hintergrund dunkel `rgb(10, 10, 10)`, Chip-Text `#4c3fc6`, Fokusrand Akzent 55 %), neue Spec `tokens.spec.mjs`;
 Bilder des echten Studios hell/dunkel vorher/nachher im Scratchpad (`ui-p1/`), verglichen mit dem Prototyp.
 
-## 7. Einrichtungs-Assistent im Studio (P2)
+## 7. Einstellungen als eigene Seite (P5)
+
+Stand: 31.10.2026 · Branch `feat/einstellungen-geruest` · Paket P5 aus `UMSETZUNG.md` des freigegebenen Prototyps (`einstellungen.html`).
+
+**Seite.** `studio/einstellungen.js/.css` (lädt bei Bedarf): ganzflächig über dem Studio (`#einstellungen-host`, das Studio dahinter ist `inert`), Seitenleiste 264 px mit den Gruppen Kortex / Wissen / Verbindungen / Mehr,
+„Zurück zu Kortex“ (Esc), Suche (⌘F). Adresse `#einstellungen/<bereich>?ziel=<zeile>`; ein Sprungziel leuchtet 1,6 s auf. ⌘, öffnet die Seite (Hauptmenü „Kortex“ → „Einstellungen …“, Menüleiste, Zahnrad-Menü der Statusleiste);
+ein natives Einstellungsfenster gab es nie, es entfiel also nichts. `StudioBefehl.einstellungenEintrag` hält Titel und Taste für beide Menüs und den Swift-Test.
+Das Zahnrad-Menü der Statusleiste bleibt (Darstellung, KI, Vertrauen, Lizenzen …) und führt oben zur Seite.
+
+**Register und Suche.** `studio/texte-einstellungen.js` ist das Register: Bereich → Abschnitt → Zeile `{ id, titel, text, woerter }` (Orca: title, description, keywords). `studio/einstellungen-suche.js` (reine Funktionen, in Node getestet)
+wertet Bereichsname 900/850/800, Titel 700/650/600, Beschreibung 500/450/400, Stichwörter 300/250/200 (genau / beginnt mit / enthält), Umlaute und Groß/Klein egal, mehrere Wörter alle (150), höchstens 200 Zeichen.
+Treffer werden markiert und je Bereich gezählt (Zähler in der Seitenleiste), Bereiche stehen nach ihrem besten Treffer; ohne Treffer gibt es „Keine Einstellung zu „…““ mit Vorschlägen.
+
+**Speichern.** Kein Speichern-Knopf: Schalter, Segment, Menü, Regler und Listen schreiben sofort, Textfelder 700 ms nach der letzten Eingabe, beim Verlassen und beim Schließen (`einstellTextfeld`, `einstellPfad`, `einstellChips`,
+`einstellRegler`, `einstellZeile`, `einstellAbschnitt` am Ende von `bausteine.js`).
+
+**Route.** `GET/PUT /api/einstellungen` (`werkstatt/einstellungen.mjs`) führt zwei Speicher zusammen, ohne zweite Wahrheit: Werte eines Vaults über `kern/einstellungen.mjs` (`brain.config.json#automatik`, dieselbe Prüfung und Sperre wie
+`brain einstellungen`), Werte der App in `<support>/einstellungen.json` (`gemeinsam/app-einstellungen.mjs`: Schriftgröße, Bewegung, Mitteilungswahl). `stand` = „<SHA-256 der Vault-Datei>.<SHA-256 der App-Datei>“; geprüft wird nur der Stand der berührten Speicher,
+bei Abweichung 409 (art „konflikt“) und die Seite lädt neu und sagt es. Alles wird vor dem Schreiben geprüft (unbekannt/Typ/Bereich → 400, nichts geschrieben); Vault-Werte nur in einem vertrauten Vault (409 „nicht-vertraut“).
+**Live:** `brain.config.json` im Vault und `einstellungen.json` melden dem bestehenden Ereignis-Strom `einstellungen` (eigene Schreibvorgänge ohne Echo); die Seite führt nach, ohne ein Feld zu stören, in dem gerade getippt wird.
+
+**Bereiche.** Echt gefüllt: Allgemein, Darstellung (Thema, Schriftgröße, Bewegung, Textbreite), Mitteilungen (nur Schalter; die Mitteilungen selbst kommen mit P8), Vaults (Liste, Ordner/Themen ohne Lernen, Vertrauen), Pflege & Automatik, Sicherung & GitHub,
+Datenschutz (ehrliche Aussagen, nichts Abschaltbares), Erweitert (MCP, Gesundheits-Schwellen, Gedächtnis-Pfade, Zurücksetzen), Über Kortex. Platzhalter mit Verweis auf die bestehende Ansicht: KI & Konten (zieht in P6 um),
+Tastenkürzel (nur Anzeige, Editor ist P10); iPhone & iPad „bald“. Nicht umgesetzt, weil es dafür in der App noch nichts gibt: Autostart, Menüleisten-Symbol, Sprache, Update-Kanal, Akzentfarbe, Dichte.
+
+**Befund aus P1 (Geist ist breiter).** Verlauf-Panel: Tageskopf und „Ungesicherte Änderungen“ brechen um statt mit „…“ zu enden, der Autor entfällt in der schmalen Spalte (`verlauf.css`). Statusleiste: ab 1180 px verlieren Verlauf,
+KI-Nutzung und Gesundheit ihre Beschriftung, lange Vault-Namen werden gekürzt — vorher schob ein langer Name das Zahnrad aus dem Fenster (`studio.css`). Getestet bei 1100/1000/900 px.
+
+**Prüfung.** `Tests/Node/einstellungen-route.test.mjs` (Route, Konflikt, Validierung, Vertrauen, Live-Ereignis), `einstellungen-suche.test.mjs` (Wertung, Markierung, null Treffer), `Tests/Oberflaeche/einstellungen.spec.mjs`
+(jeder Bereich hell/dunkel, Speichern, Konflikt, Live, Suche, Tastatur, Sprungziel, Vertrauen, enge Fenster, P1-Befund), Swift-Test für ⌘,.
+
+## 8. Einrichtungs-Assistent im Studio (P2)
 
 Stand: 30.10.2026 · Branch `feat/assistent-studio` · Paket P2 aus `UMSETZUNG.md` des Prototyps. **Ein** Assistent statt zweier Masken: Er lebt als Studio-Seite
 (`Ressourcen/studio/einrichtung.html`, `einrichtung.js`, `einrichtung.css`, Bühne in `einrichtung-buehne.js`, KI-Schritt in `einrichtung-ki.js`, Texte in `texte-einrichtung.js`)

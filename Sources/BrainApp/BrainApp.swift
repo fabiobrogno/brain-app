@@ -97,6 +97,9 @@ final class AppDelegat: NSObject, NSApplicationDelegate {
             suchen,
             eintrag("Kortex einrichten …", #selector(assistentOeffnen), "e"),
             .separator(),
+            // ⌘, öffnet im Studio die Seite „Einstellungen“ (nicht mehr nur bei geöffnetem Menüleisten-Menü)
+            befehl(StudioBefehl.einstellungenEintrag.titel, StudioBefehl.einstellungenEintrag.befehl, StudioBefehl.einstellungenEintrag.taste),
+            .separator(),
             standard("Kortex ausblenden", #selector(NSApplication.hide(_:)), "h"),
             .separator(),
             standard("Kortex beenden", #selector(NSApplication.terminate(_:)), "q"),

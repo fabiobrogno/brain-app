@@ -9,7 +9,7 @@ let aktiv = null;
 export const popoverOffen = () => !!aktiv;
 export const popoverAnker = () => aktiv?.anker ?? null;
 export const schliessePopover = (fokus = false) => aktiv?.zu(fokus);
-export const wenigBewegung = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+export const wenigBewegung = () => document.documentElement.dataset.bewegung === "reduziert" || (typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches);
 
 const GEIST_MS = 110;
 const ENTSCHAERFT = /^(data-|aria-|id$|role$|name$|for$|tabindex$|href$)/;
