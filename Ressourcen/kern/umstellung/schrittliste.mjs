@@ -47,6 +47,7 @@ export function entscheidungenAusText(text) {
     if (!k) continue;
     if (k === "profile") { o.profile = (v || "").split("+").filter(Boolean); continue; }
     if (k === "weitereMacs") { o.weitereMacs = v; continue; }
+    if (k === "bewusst") { o.bewusst = (v || "").split("+").filter(Boolean); continue; }     // Phase B: quittierte Verweise (Fund-IDs)
     o[k] = /^(ja|true|1|an)$/i.test(v || "ja");
   }
   return o;
