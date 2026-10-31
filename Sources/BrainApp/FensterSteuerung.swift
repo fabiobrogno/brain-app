@@ -190,6 +190,11 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
     private var fehlerDrossel = MeldungsDrossel(grenze: AppAktion.maxFehlerJeFenster)
 
     var istOffen: Bool { fenster != nil }
+    /// Das Fenster ist offen und für den Nutzer zu sehen (nicht im Dock, nicht ganz verdeckt) — für „ist Kortex vorne“ der Mitteilungen.
+    var istSichtbar: Bool {
+        guard let f = fenster else { return false }
+        return f.isVisible && !f.isMiniaturized && f.occlusionState.contains(.visible)
+    }
     /// Wird nach dem Schließen aufgerufen (z. B. um den Menüstatus aufzufrischen).
     var beiGeschlossen: (() -> Void)?
     /// Führt eine geprüfte Aktion der Oberfläche aus (Übersicht öffnen, Finder, Browser, Vault-Wechsel …) und liefert die

@@ -168,6 +168,8 @@ export async function status(wurzel, ctx = {}) {
 
 // Je Vault nur ein Abgleich/Commit gleichzeitig (Sperre im Prozess). Wird synchron beim Aufruf genommen.
 const laufend = new Set();
+// Läuft gerade ein Abgleich/Commit in diesem Vault? (für Vorab-Prüfungen, z. B. Rückgängig im Aktivitätsprotokoll)
+export const gitBeschaeftigt = (wurzel) => laufend.has(wurzel);
 async function exklusiv(wurzel, fn) {
   if (laufend.has(wurzel)) throw new HttpFehler(409, "Abgleich läuft schon. Bitte kurz warten.");
   laufend.add(wurzel);

@@ -167,6 +167,11 @@ export const api = {
   kiNeuVerbinden: (konto) => anfrage("POST", "/api/ki/neu-verbinden", { konto }),
   kiHinweis: () => anfrage("POST", "/api/ki/hinweis", {}),
   kiVorher: () => anfrage("POST", "/api/ki/vorher", { bestaetigt: true }),
+  // ---- Aktivitätsprotokoll (P8a): { art (Liste oder „abweisungen“), seit (ISO), nur: "ungelesen", vault: "alle" | Pfad, limit }; Rückgängig löscht nur unveränderte Ablagen von Kortex; gelesen: { ids } | { alle: true }
+  aktivitaet: ({ art, seit, nur, vault, limit } = {}) => anfrage("GET", "/api/aktivitaet" + q({ seit, art: Array.isArray(art) ? art.join(",") : art, limit, vault, nur })),
+  aktivitaetRueckgaengig: (id, vault) => anfrage("POST", "/api/aktivitaet/rueckgaengig", { id, ...(vault ? { vault } : {}) }),
+  aktivitaetWiederherstellen: (id, vault) => anfrage("POST", "/api/aktivitaet/wiederherstellen", { id, ...(vault ? { vault } : {}) }),
+  aktivitaetGelesen: ({ ids, alle, vault } = {}) => anfrage("POST", "/api/aktivitaet/gelesen", { ...(alle ? { alle: true } : { ids: ids || [] }), ...(vault ? { vault } : {}) }),
   // ---- Umstellung eines Vaults aus der Kit-Zeit (P7). Geschrieben wird nur mit bestaetigt: true — das setzt die Oberfläche erst nach dem Klick des Nutzers.
   umstellungHinweis: () => anfrage("GET", "/api/umstellung/hinweis"),
   umstellungBefund: () => anfrage("GET", "/api/umstellung/befund"),

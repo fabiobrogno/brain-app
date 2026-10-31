@@ -4,7 +4,7 @@ import {
   realpathSync, statSync, lstatSync, readdirSync, readFileSync, writeFileSync, openSync, readSync, closeSync,
   mkdirSync, renameSync, linkSync, unlinkSync, existsSync,
 } from "node:fs";
-import { join, basename, relative, sep } from "node:path";
+import { join, basename, relative, sep, isAbsolute } from "node:path";
 import { createHash, randomBytes } from "node:crypto";
 import { execFile } from "node:child_process";
 import { pathToFileURL } from "node:url";
@@ -495,7 +495,38 @@ export function oeffneVault(vaultPfad, opts = {}) {
       if (s.gesperrt) return { repo: true, gesperrt: true, grund: s.grund };
       return mitSicherungsStand(await gitFn.status(wurzel, ctxVon(s)));
     },
-    gitCommit: async (a) => { umstellungSperre(); return gitFn.commit(wurzel, a || {}, gitCtx({ limit: opts.gitLimitCommit })); },
+    // extra.ohneHooks: der Commit läuft auch in einem vertrauten Vault ohne Hooks (Rückgängig für KI-Ablagen, P8a)
+    // Aktivitätsprotokoll (P8a, Rückgängig): Ordnername des Posteingangs; Git beschäftigt?; ist die Datei versioniert UND unverändert gegenüber HEAD (ls-files + diff, ohne Hooks)?
+    inboxOrdnerName: inboxOrdner, umstellungLaeuft: () => umstellungLaeuft(wurzel),
+    // Läuft oder wartet gerade ein Abgleich? (Git beschäftigt · die gemeinsame Sperre aller Abgleiche · ein gemerkter Konfliktstand „konfliktBasis“) — dann ändert Kortex nichts am Arbeitsbaum.
+    abgleichBeschaeftigt: async () => {
+      if (gitFn.gitBeschaeftigt(wurzel)) return true;
+      // offene Zusammenführung: den Ort von MERGE_HEAD fragt Git selbst (verknüpfte Arbeitsbäume und andere Git-Ordner haben ihn nicht unter .git/)
+      try {
+        const s = gitSicht();
+        if (!s.gesperrt) {
+          const r = await gitFn.git(wurzel, ["rev-parse", "--git-path", "MERGE_HEAD"], { ...ctxVon(s), ohneHooks: true });
+          const ort = r.code === 0 ? r.stdout.trim() : "";
+          if (ort && existsSync(isAbsolute(ort) ? ort : join(wurzel, ort))) return true;
+        } else if (existsSync(join(wurzel, ".git", "MERGE_HEAD"))) return true;
+      } catch { /* unten */ }
+      try { const d = leseAbgleichDetail(wurzel, opts.support); if (d && d.haelt) return true; } catch { /* unten */ }
+      try {
+        const m = await import(pathToFileURL(join(kern, "abgleich-sperre.mjs")).href);
+        if (m.sperreStand(join(opts.support || supportOrdner(), "backup", `${vaultKennung(wurzel)}.sperre`)).besetzt) return true;
+      } catch { /* ohne Kern keine Sperre */ }
+      return false;
+    },
+    gitVersioniert: async (rel) => {
+      const s = gitSicht();
+      if (s.gesperrt) return false;
+      const ctx = { ...ctxVon(s), ohneHooks: true };
+      const ls = await gitFn.git(wurzel, ["ls-files", "--error-unmatch", "--", rel], ctx);
+      if (ls.code !== 0) return false;
+      const d = await gitFn.git(wurzel, ["diff", "--quiet", "HEAD", "--", rel], ctx);
+      return d.code === 0;
+    },
+    gitCommit: async (a, extra = {}) => { umstellungSperre(); return gitFn.commit(wurzel, a || {}, gitCtx({ limit: opts.gitLimitCommit, ...(extra && extra.ohneHooks === true ? { hooks: false } : {}) })); },
     // konflikteLoesen: bei Konflikten die Zusammenführung offen lassen, damit die Oberfläche pro Datei wählen lässt (sonst wie bisher: abbrechen, 409)
     gitSync: (a) => gitSyncLaufen(a),
     // Konflikt-Ansicht (Kern): beide Fassungen je Datei · Entscheidungen abschließen (mit Abgleich wie die Sicherung) · „Später“ · „Rückgängig“

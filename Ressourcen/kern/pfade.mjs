@@ -5,13 +5,14 @@
 //   VAULT = der Datenordner des Nutzers. Dort liegen Wissen, brain.config.json und alle Laufzeitdaten (.logs/ …).
 // Der Vault wird NIE aus dem Ort des Kerns abgeleitet und es gibt keinen Rückfall auf einen festen Ordner (auch nicht den Vault des Entwicklers).
 import { readFileSync, existsSync, realpathSync, statSync, lstatSync } from "node:fs";
-import { join, dirname, resolve, delimiter, isAbsolute, sep } from "node:path";
+import { join, dirname, resolve, delimiter, isAbsolute, sep, basename } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { registriereVault, registrierteVaults } from "./vault-schutz.mjs";
 import { vertrauensStand, alleVertraut } from "./vertrauen.mjs";
-import { kontoStufe, darfMindestens, kontenOrte, liesKonten } from "./ki-konten.mjs";
+import { kontoStufe, darfMindestens, kontenOrte, liesKonten, bestimmeKonto } from "./ki-konten.mjs";
+import { schreibeEreignis } from "./aktivitaet.mjs";
 
 export const KERN = dirname(fileURLToPath(import.meta.url));
 
@@ -218,6 +219,46 @@ export function hookKontoStufe(vault, opt = {}) {
 }
 // Darf dieser Aufruf (Konto) in diesem Vault mindestens `mindest` ("lesen" | "posteingang" | "erweitert")?
 export const kontoDarf = (vault, mindest = "lesen", opt = {}) => darfMindestens(hookKontoStufe(vault, opt), mindest);
+// Aktivitätsprotokoll (P8a): Versucht ein Claude-Code-Konto, einen für es gesperrten Vault zu lesen oder zu beschreiben (die Hooks sehen es am Pfad), ist das eine ABWEISUNG und steht im Protokoll des Vaults
+// (<support>/aktivitaet/<Kennung>.jsonl, aktivitaet.mjs): wer (Programm · Konto), welcher Vault, welche Stufe gewirkt hat — nie ein Inhalt. Dieselbe Meldung
+// (Konto, Vault, Grund, Art) erscheint höchstens alle 30 Minuten. Ein Hook, der nur nichts liefert, weil das Konto den Vault nicht sehen darf, ist KEIN Versuch der KI und wird nicht gemeldet. Wirft nie.
+// Hat das Konto für diesen Vault das Leseverbot in den Einstellungen seines Claude-Profils (permissions.deny: Read(//<vault>/**), gemeinsam/claude-sperre.mjs)? Nur lesend, nie ein Fehler.
+function leseverbotAktiv(profil, vault) {
+  try {
+    const deny = JSON.parse(readFileSync(join(profil, "settings.json"), "utf8"))?.permissions?.deny;
+    if (!Array.isArray(deny)) return false;
+    let echt = vault; try { echt = realpathSync(vault); } catch { /* wie angegeben */ }
+    return [vault, echt].some((p) => deny.includes(`Read(//${String(p).replace(/[\\*?[\]]/g, "\\$&").replace(/^\/+/, "").replace(/\/+$/, "")}/**)`));
+  } catch { return false; }
+}
+const STUFEN_TEXT = { gesperrt: "Gesperrt", lesen: "Lesen", posteingang: "Posteingang", erweitert: "Erweitert" };
+export function meldeAbweisung(vault, { was = "lesen", mindest = "lesen", ...opt } = {}) {
+  try {
+    const support = typeof opt.support === "string" ? opt.support : supportOrdner(opt);
+    const stufe = hookKontoStufe(vault, opt);
+    let konto = null, kontoName = null, profil = null;
+    for (const ort of kontenOrte(support)) {
+      const r = liesKonten(ort);
+      if (r.zustand !== "ok") continue;
+      const ids = [...new Set(bestimmeKonto({ arg: opt.kontoArg !== undefined ? opt.kontoArg : ARG_KONTO, env: opt.env || process.env, programm: "claude", daten: r.daten, vollstaendig: true }).ids)]; // --konto und Umgebung nennen oft dasselbe Konto
+      if (ids.length === 1 && ids[0]) { konto = ids[0]; kontoName = typeof r.daten.konten[konto].name === "string" ? r.daten.konten[konto].name : null; profil = r.daten.konten[konto].ordner; }
+      break;
+    }
+    const verbot = was === "lesen" && stufe === "gesperrt" && typeof profil === "string" && leseverbotAktiv(profil, vault);
+    // Ehrlich: Verweigert hat nur das Leseverbot (Claude Code stoppt den Zugriff) und der Riegel beim Schreiben. Ein Read in einen für das Konto gesperrten Vault OHNE Leseverbot ist wirklich
+    // passiert — das steht so da („gelesen-ohne-leseverbot“), mit dem Weg, es zu verhindern, nie „wurde abgewiesen“.
+    const ungebremst = was === "lesen" && stufe === "gesperrt" && !verbot;
+    const grund = verbot ? "leseverbot" : ungebremst ? "gelesen-ohne-leseverbot" : stufe === "gesperrt" ? "gesperrt" : "stufe";
+    const name = basename(vault);
+    const tat = was === "schreiben" ? `im Vault „${name}“ schreiben` : `den Vault „${name}“ lesen`;
+    const text = ungebremst
+      ? `hat im gesperrten Vault „${name}“ gelesen. Schalte das Leseverbot ein (Einstellungen → KI & Konten), um das zu verhindern.`
+      : `wollte ${tat} und wurde abgewiesen. ${verbot ? "Das Leseverbot hat gewirkt." : `Stufe „${STUFEN_TEXT[stufe] || stufe}“ hat gewirkt.`}`;
+    schreibeEreignis(support, vault, {
+      art: "abweisung", grund, konto, programm: "claude", wer: `Claude Code${kontoName ? ` · ${kontoName}` : ""}`, vaultName: name, mindest, text,
+    }, { drossel: { schluessel: `abw|${konto || "-"}|${grund}|${was}`, sekunden: 1800 } });
+  } catch { /* das Protokoll ist Beiwerk */ }
+}
 // Hintergrunddienst und KI-Pflege (Tageslauf, Pflege-Lauf, Traum, Antwort-Messlatte): Vault-Inhalt geht an `claude -p`, und das Konto bestimmt die Umgebung dieses PROZESSES
 // (CLAUDE_CONFIG_DIR, vom Dienst gesetzt; fehlt sie, läuft das Standardprofil). Das Konto braucht für den Vault mindestens `mindest` (Standard „erweitert“), sonst läuft die Pflege ohne KI.
 // Fehlt die Liste überall und gibt es keine Spur (Übergang vor dem ersten Start der neuen App), gilt das bisherige Verhalten (KI darf). Eine beschädigte oder gelöschte Liste,

@@ -36,6 +36,9 @@ public enum AppAktion: Equatable, Sendable {
     case einrichtungEnde(EinrichtungsEnde)
     /// Das Einrichtungsfenster öffnen (wie das Menü „Kortex einrichten …“), optional ab einer Stelle.
     case einrichtungOeffnen(ab: EinrichtungsEinstieg?)
+    /// „Probe-Mitteilung senden“ (Einstellungen → Mitteilungen, P8a): eine Beispiel-Mitteilung über den Mitteilungsdienst des Systems; die
+    /// Antwort sagt, ob sie zugestellt wurde (`{ok:true}`) oder warum nicht (`{ok:false, grund}`). Trägt keine Daten.
+    case mitteilungProbe
     /// Tastenkürzel (P10): `tastenkuerzel.json` hat sich geändert (das Studio hat über die Werkstatt gespeichert): die App liest die Datei neu und stellt die Menüs
     /// und die globalen Kürzel um. Trägt keine Daten; nur das Studio darf das melden.
     case kuerzelGeaendert
@@ -58,7 +61,7 @@ public enum AppAktion: Equatable, Sendable {
     /// `{aktion:"ordner-waehlen", wert:{titel?, vorschlag?}}`, `{aktion:"vault-gewechselt"}`, `{aktion:"vertrauen-geaendert"}`,
     /// `{aktion:"titel", wert:<Text>}`, `{aktion:"fehler", wert:{text, ort?}}`, `{aktion:"git-pruefen"}`, `{aktion:"git-installieren"}`,
     /// `{aktion:"kopieren", wert:<Text>}`, `{aktion:"einrichtung-ende", wert:{art:"fertig"|"spaeter"}}`,
-    /// `{aktion:"einrichtung-oeffnen", wert?:{ab?:"vault"|"sicherung"|"ki"}}`.
+    /// `{aktion:"einrichtung-oeffnen", wert?:{ab?:"vault"|"sicherung"|"ki"}}`, `{aktion:"mitteilung-probe"}`.
     /// Ohne Angabe gilt die strengste Herkunft (Übersicht): die Studio-Aktionen muss man ausdrücklich freischalten.
     public static func pruefe(_ nachricht: Any, vault: URL?, oberflaeche: Oberflaeche = .app) -> AppAktion? {
         guard let d = nachricht as? [String: Any], let name = d["aktion"] as? String else { return nil }
@@ -95,6 +98,8 @@ public enum AppAktion: Equatable, Sendable {
             return oberflaeche == .studio ? pruefeEinrichtungEnde(wert) : nil
         case "einrichtung-oeffnen":
             return oberflaeche == .studio ? pruefeEinrichtungOeffnen(wert) : nil
+        case "mitteilung-probe":
+            return oberflaeche == .studio ? .mitteilungProbe : nil
         case "kuerzel-geaendert":
             return oberflaeche == .studio ? .kuerzelGeaendert : nil
         case "kuerzel-global":
@@ -258,6 +263,8 @@ public enum StudioBefehl: String, Sendable, CaseIterable {
     /// Aufgaben-Board öffnen (Menü „Gehe zu“, Menüleiste bei offenen Aufgaben) und „Aufgabe erfassen …“ (Board mit Eingabefeld im Fokus).
     case aufgaben
     case aufgabeErfassen = "aufgabe-erfassen"
+    /// Klick auf eine Mitteilung (P8a): öffnet im Studio Einstellungen → KI & Konten → Aktivitätsprotokoll.
+    case aktivitaet
     /// Das globale Kürzel „Frag deinen Vault“ (P10): Studio nach vorn und die Frage öffnen.
     case frage
 

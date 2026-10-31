@@ -6,11 +6,12 @@
 //   Melden:    Ereignis-Ring (letzte 500) mit fortlaufender Nummer; GET /api/ereignisse?seit=<n> wartet (Long-Poll), bis es Neues gibt.
 //   Grenzen:   höchstens `maxJeFlush` Pfade je Meldung, danach ein einziges „alles“; bei Dauerfeuer drosselt die Rate (Ein „alles“ je Sekunde).
 // Typen: aufgabe (angelegt|geaendert|entfernt|archiviert, mit pfad, titel, status, quelle) · notiz (pfad, art) · posteingang · git (neuer-stand|konflikt)
-//        · vertrauen · konten · einstellungen (brain.config.json des Vaults oder <support>/einstellungen.json) · alles (der Client lädt alles neu).
+//        · aktivitaet (neuer Eintrag im Aktivitätsprotokoll des Vaults, aus <support>/aktivitaet/<Kennung>.jsonl: id, art, zeit, wer, text, rueckgaengig, …; art "zustand" = gelesen/zurückgenommen) · vertrauen · konten · einstellungen (brain.config.json des Vaults oder <support>/einstellungen.json) · alles (der Client lädt alles neu).
 import { watch, statSync, readdirSync, readFileSync, openSync, readSync, closeSync, existsSync } from "node:fs";
 import { createHash, randomBytes } from "node:crypto";
 import { join, sep, basename } from "node:path";
 import { BEARBEITBAR, falte, inboxOrdnerVon } from "../gemeinsam/basis.mjs";
+import { kennungVault, leseEreignisse, ereignisDatei } from "../gemeinsam/aktivitaet.mjs";
 
 const wandUhr = () => performance.timeOrigin + performance.now(); // Wanduhr in ms mit Bruchteilen (Dateizeiten haben Nanosekunden)
 const HASH = (buf) => createHash("sha256").update(buf).digest("hex");
@@ -88,6 +89,7 @@ export function erzeugeEreignisse(o = {}) {
   const entprellMs = o.entprellMs ?? 150, maxWarteMs = o.maxWarteMs ?? 600, pollMs = o.pollMs ?? (modusWunsch === "poll" ? 400 : 2000);
   const ringMax = o.ring ?? 500, maxJeFlush = o.maxJeFlush ?? 200, maxProFenster = o.maxProFenster ?? 300, fensterMs = o.fensterMs ?? 5000;
   const eigenTtl = o.eigenTtlMs ?? 10_000;
+  const aktPollMs = o.aktivitaetPollMs ?? 1000;   // Aktivitätsprotokoll: wie oft die Dateigröße geprüft wird (0 = nie; nur Tests)
 
   let epoche = randomBytes(6).toString("hex");
   let nr = 0;
@@ -101,6 +103,48 @@ export function erzeugeEreignisse(o = {}) {
   let gedrosselt = false;
   let eigenLaeuft = 0, haltSeit = 0, startZeit = 0;
   const eigen = new Map();    // Schlüssel → { hash, bis }
+  // Aktivitätsprotokoll (P8a): andere Prozesse (MCP-Server, Hooks, Kern) hängen an <support>/aktivitaet/<Kennung>.jsonl an. Alle `aktPollMs` wird nur Größe und Zeit der Datei(en)
+  // angesehen; hat sich etwas geändert, werden die neuen Einträge (Ids, die noch nicht gemeldet wurden) als Ereignis „aktivitaet“ gemeldet.
+  // Hochwassermarke statt Liste bekannter Ids: aktMarke = Zeit des neuesten gemeldeten Eintrags; gemeldet wird nur, was NEUER ist (Zeit ≥ Marke − Toleranz, die Zeit steht VOR dem Anhängen, zwei Prozesse
+  // können sich um Millisekunden überholen) und dessen Id nicht in aktRand steht (Ids der letzten Sekunden). Alte Einträge werden so nie erneut gemeldet — auch nicht nach vielen Einträgen oder einer Rotation.
+  // Die Marke steht nie in der Zukunft (min mit der Uhr: ein Eintrag mit falscher Zeit schaltet den Strom nicht ab) und folgt einer zurückgestellten Uhr (springt die Uhr um mehr als die
+  // Toleranz zurück, wird die Marke auf jetzt gesetzt). Einträge mit Zeit weit in der Zukunft (der Schreiber kappt sie auf +60 s; ältere oder gefälschte stehen vielleicht noch im Protokoll) gelten als alt.
+  const AKT_TOLERANZ_MS = 3000, AKT_ZUKUNFT_MS = 60_000;
+  const aktJetzt = typeof o.aktivitaetJetzt === "function" ? o.aktivitaetJetzt : () => Date.now(); // nur Tests: eine Uhr, die springt
+  let aktUhr = null, aktSchluessel = "", aktMarke = 0, aktRand = new Map();
+  const aktDateien = () => { const d = o.support && wurzel ? ereignisDatei(o.support, kennungVault(wurzel)) : null; return d ? [`${d}.alt`, d] : []; };
+  const aktAnsehen = () => aktDateien().map((d) => { try { const st = statSync(d); return `${st.size}:${st.mtimeMs}`; } catch { return "-"; } }).join("|");
+  function aktStart() {
+    if (!o.support || !wurzel) return;
+    aktSchluessel = aktAnsehen();
+    aktMarke = aktJetzt(); aktRand = new Map();
+    // was beim Start schon im Protokoll stand, ist alt: ab der Marke (und alles in der Zukunft) wird die Id gemerkt, früher liegt ohnehin vor der Marke
+    try { for (const e of leseEreignisse(o.support, kennungVault(wurzel)).slice(-1500)) aktRand.set(e.id, Date.parse(e.zeit)); } catch { /* ohne Protokoll */ }
+    if (aktPollMs > 0 && !aktUhr) { aktUhr = setInterval(pruefeAktivitaet, aktPollMs); aktUhr.unref?.(); }
+  }
+  function pruefeAktivitaet() {
+    if (!aktiv || !wurzel || !o.support) return;
+    const jetzt = aktAnsehen();
+    if (jetzt === aktSchluessel) return;
+    aktSchluessel = jetzt;
+    const uhr = aktJetzt();
+    aktMarke = Math.min(aktMarke, uhr); // nie in der Zukunft; eine zurückgestellte Uhr zieht die Marke mit
+    let neu = [];
+    try { neu = leseEreignisse(o.support, kennungVault(wurzel), { seit: new Date(aktMarke - AKT_TOLERANZ_MS - 1).toISOString() }).filter((e) => !aktRand.has(e.id)); } catch { return; }
+    if (!neu.length) return;
+    const zukunft = neu.filter((e) => Date.parse(e.zeit) > uhr + AKT_ZUKUNFT_MS);
+    for (const e of zukunft) aktRand.set(e.id, Date.parse(e.zeit)); // gilt als alt: nie gemeldet, nie die Marke verschoben
+    neu = neu.filter((e) => !zukunft.includes(e));
+    for (const e of neu) { aktMarke = Math.max(aktMarke, Math.min(Date.parse(e.zeit), uhr)); aktRand.set(e.id, Date.parse(e.zeit)); }
+    for (const [id, t] of aktRand) if (t < aktMarke - 2 * AKT_TOLERANZ_MS) aktRand.delete(id);
+    if (aktRand.size > 2000) aktRand = new Map([...aktRand].slice(-1000));
+    if (!neu.length) return;
+    for (const e of neu.slice(-20)) {
+      melde({ typ: "aktivitaet", id: e.id, art: e.art, zeit: e.zeit, ...(e.grund ? { grund: e.grund } : {}), konto: e.konto ?? null, programm: e.programm ?? null, ...(e.quelle ? { quelle: e.quelle } : {}),
+        ...(e.wer ? { wer: e.wer } : {}), text: e.text, ...(e.pfade ? { pfade: e.pfade } : {}), rueckgaengig: !!e.rueckgaengig, vaultName: e.vaultName || "" });
+    }
+    if (neu.length > 20) melde({ typ: "aktivitaet", art: "zustand" });
+  }
 
   const supportPfad = (name) => (o.support ? join(o.support, name) : null);
   const SUPPORT_TYP = { "vertrauen.json": "vertrauen", "ki-konten.json": "konten", "einstellungen.json": "einstellungen", "tastenkuerzel.json": "tastenkuerzel" };
@@ -360,6 +404,8 @@ export function erzeugeEreignisse(o = {}) {
     watcher = null; supportWatcher = null;
     if (pollUhr) clearInterval(pollUhr);
     pollUhr = null; modus = null;
+    if (aktUhr) clearInterval(aktUhr);
+    aktUhr = null; aktRand = new Map(); aktMarke = 0;
     clearTimeout(flushUhr); flushUhr = null; zeitErster = 0;
     offen = new Set(); supportOffen = new Set(); ueberlauf = false;
   }
@@ -372,6 +418,7 @@ export function erzeugeEreignisse(o = {}) {
     gitLetzter = gitStand(wurzel);
     if (modusWunsch === "poll") startePoll(); else starteWatch();
     starteSupport();
+    aktStart();
   }
 
   // Der offene Vault hat gewechselt (oder es gibt keinen): neue Epoche, die Clients laden alles neu
@@ -397,7 +444,7 @@ export function erzeugeEreignisse(o = {}) {
 
   return {
     warte, richteAuf, beende, beginneEigenes, endeEigenes, setzeAufgabenOrdner: (n) => { if (typeof n === "string" && n) aufgabenOrdner = () => n; },
-    markiereEigen, markiereEigenenKopf, aktiviere,
+    markiereEigen, markiereEigenenKopf, aktiviere, pruefeAktivitaet,
     melde: (e) => melde(e), // von der Werkstatt selbst (z. B. Vertrauen geändert)
     stand: () => ({ epoche, aktuell: nr, modus, aktiv }),
     // nur für Tests

@@ -30,7 +30,8 @@ export const quelleVon = (klient) => {
 
 // v: geöffneter Vault (vault.mjs). a: Argumente. sitzung: Zustand EINER MCP-Verbindung { klient, angelegt } (brain-mcp.mjs legt sie je Verbindung an).
 // Gibt ein MCP-Ergebnis zurück; Fehler als HttpFehler (der Server macht Text daraus).
-export async function rufeAufgabenWerkzeug(v, name, a, sitzung = { klient: "", angelegt: 0 }) {
+// hooks: { angelegt(pfad), geaendert(pfad, status) } — der Server meldet damit ins Aktivitätsprotokoll (brain-mcp.mjs); ohne bleibt alles wie es war.
+export async function rufeAufgabenWerkzeug(v, name, a, sitzung = { klient: "", angelegt: 0 }, hooks = {}) {
   const klient = sitzung.klient;
   const str = (k) => { if (typeof a[k] !== "string" || !a[k].trim()) throw new HttpFehler(400, `Der Parameter „${k}“ fehlt.`); return a[k]; };
   switch (name) {
@@ -44,6 +45,7 @@ export async function rufeAufgabenWerkzeug(v, name, a, sitzung = { klient: "", a
         ...(typeof a.prioritaet === "string" ? { prioritaet: a.prioritaet } : {}),
         ...(typeof a.faellig === "string" && a.faellig.trim() ? { faellig: a.faellig } : {}) });
       sitzung.angelegt = (sitzung.angelegt || 0) + 1;
+      try { hooks.angelegt?.(r.pfad); } catch { /* das Protokoll ist Beiwerk */ }
       return text(`Aufgabe angelegt: ${r.pfad}`);
     }
     case "brain_aufgaben": {
@@ -57,6 +59,7 @@ export async function rufeAufgabenWerkzeug(v, name, a, sitzung = { klient: "", a
       const status = str("status");
       const pfad = await v.aufgabePfad(str("pfad"));
       const r = await v.aufgabeAendern(pfad, { status });
+      try { hooks.geaendert?.(r.pfad || pfad, r.aufgabe.status); } catch { /* das Protokoll ist Beiwerk */ }
       return text(`${r.aufgabe.titel}: ${r.aufgabe.status}`);
     }
     default: return null;

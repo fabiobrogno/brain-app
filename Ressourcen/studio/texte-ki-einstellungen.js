@@ -218,14 +218,17 @@ export const TKE = {
     namen: { claude: "Hooks", git: "Prüfung vor dem Speichern", dienst: "Hintergrunddienst" },
     schalter: { claude: "Hooks bei Claude Code", git: "Prüfung vor dem Speichern", dienst: "Hintergrunddienst" },
   },
-  // ---- Aktivität
+  // ---- Aktivitätsprotokoll
   aktivitaet: {
     text: "Nur über Kortex. Bleibt auf diesem Mac.",
-    pflege: (konto, vault, status) => `${konto ? `${konto} · ` : ""}Pflege für ${vault}: ${status}`,
-    leer: "Noch nichts zu zeigen. Sobald eine Pflege gelaufen ist, steht sie hier.",
-    bald: "Zugriffe und Abweisungen",
-    baldText: "Wenn eine KI etwas ablegt oder einen gesperrten Vault lesen wollte und abgewiesen wurde, steht das hier. Das kommt mit den Mitteilungen.",
-    baldMarke: "kommt mit Mitteilungen",
+    filterName: "Filter",
+    listeName: "Aktivität der KIs",
+    leer: "Noch nichts zu zeigen. Sobald eine KI etwas ablegt oder abgewiesen wird, steht es hier.",
+    leerAbweisungen: "Keine Abweisungen. Wenn eine KI einen gesperrten Vault lesen will, steht es hier.",
+    fehler: "Das Protokoll konnte nicht gelesen werden. Es wurde nichts verändert.",
+    zurueckgenommen: "zurückgenommen",
+    allesZeigen: "Alles zeigen",
+    wenigerZeigen: "Weniger zeigen",
     filter: { alle: "Alle", abweisungen: "Abweisungen" },
   },
   // ---- Meldungen

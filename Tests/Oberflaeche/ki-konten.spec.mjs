@@ -401,14 +401,22 @@ test("Kortex bei der Arbeit: lässt sich der Stand nicht lesen, steht ein Satz m
   await expect(page.locator('[data-kx="arbeit-nicht-lesbar"]').first()).toContainText("Klicke auf „Neu suchen“");
 });
 
-test("Aktivität: die letzten Pflege-Läufe; Zugriffe und Abweisungen sind vorbereitet („kommt mit Mitteilungen“)", async ({ page }) => {
-  await start(page, { ...VOLL(), letzter: { zeit: new Date(Date.now() - 4 * 60_000).toISOString(), status: "ok", erfolgreich: true, aufrufe: 3, tokEin: 1, tokAus: 1, modus: "echt" }, pflege: { [vault]: { konto: "k_aaaa0001", stufe: "mittel" } } });
+test("Aktivität: das Protokoll der Werkstatt (P8a) — Einträge, Filter „Abweisungen“, leerer Zustand; mehr in aktivitaet.spec.mjs", async ({ page }) => {
+  await start(page, VOLL());
   await warteKonten(page);
-  await expect(page.locator('[data-kx="aktivitaet-liste"] li').first()).toContainText("Pflege für Mein Vault: fertig");
-  await expect(page.locator('[data-kx="aktivitaet-bald"]')).toContainText("kommt mit Mitteilungen");
+  await expect(page.locator('[data-kx="aktivitaet-leer"]')).toContainText("Noch nichts zu zeigen");
+  await expect(page.locator('[data-kx="aktivitaet-bald"]')).toHaveCount(0);
+  const eintraege = [
+    { id: "a_mvw5l1mb_688653", zeit: new Date(Date.now() - 4 * 60_000).toISOString(), art: "pflege", wer: "Claude Code · Privat", text: "Pflege für Mein Vault: fertig.", programm: "claude", vaultName: "Mein Vault", gelesen: true },
+    { id: "a_mvw5l1mc_688654", zeit: new Date(Date.now() - 3 * 60_000).toISOString(), art: "abweisung", wer: "Codex", text: "wollte den Vault „Firma“ lesen und wurde abgewiesen.", programm: "codex", vaultName: "Firma", gelesen: true },
+  ];
+  await page.route(/\/api\/aktivitaet\?/, (route) => { const art = new URL(route.request().url()).searchParams.get("art"); return route.fulfill({ json: { vault: null, ereignisse: art === "abweisungen" ? eintraege.slice(1) : eintraege, ungelesen: 0, gesamt: 2 } }); });
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("kortex-aktivitaet")));
+  await expect(page.locator('[data-kx="aktivitaet-liste"] li')).toHaveCount(2);
+  await expect(page.locator('[data-kx="aktivitaet-liste"] li').first()).toContainText("Claude Code · Privat Pflege für Mein Vault: fertig.");
   await page.click('[data-filter="abweisungen"]');
-  await expect(page.locator('[data-kx="aktivitaet-liste"]')).toHaveCount(0);
-  await expect(page.locator('[data-kx="aktivitaet-bald"]')).toContainText("Zugriffe und Abweisungen");
+  await expect(page.locator('[data-kx="aktivitaet-liste"] li')).toHaveCount(1);
+  await expect(page.locator('[data-kx="aktivitaet-liste"] li')).toContainText("Codex wollte den Vault „Firma“ lesen und wurde abgewiesen.");
 });
 
 test("Hinweis „Liste war beschädigt“ und Ehrlichkeit: die Karte „Was Kortex schützt – und was nicht“ nennt die Grenzen", async ({ page }) => {

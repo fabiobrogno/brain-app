@@ -24,6 +24,7 @@ import { erzeugeKonten } from "./konten.mjs";
 import { erzeugeFrage } from "./frage.mjs";
 import { erzeugeKontingent } from "./kontingent.mjs";
 import { erzeugeEinstellungen } from "./einstellungen.mjs";
+import { erzeugeAktivitaet } from "./aktivitaet.mjs";
 import { erzeugeTastenkuerzel } from "./tastenkuerzel.mjs";
 import { STUFEN, pflegeFuer, stufeFuer, darfMindestens } from "../gemeinsam/ki-konten.mjs";
 import { erzeugePflege } from "./pflege.mjs";
@@ -212,6 +213,8 @@ export function erzeugeHandler(o) {
     ...(o.kontingentLauf ? { codexLauf: o.kontingentLauf } : {}), ...(o.kontingentZeit ? { jetzt: o.kontingentZeit } : {}) });
   // Seite „Einstellungen“ (P5): GET/PUT /api/einstellungen führt die Werte eines Vaults (kern/einstellungen.mjs, wie `brain einstellungen`) und die der App (<support>/einstellungen.json) zusammen.
   const einstellungen = erzeugeEinstellungen({ support: vaultOpt.support || supportOrdner(), kern: () => o.kern || kernOrdner() });
+  // Aktivitätsprotokoll (P8a): Liste, „gelesen“, Rückgängig für KI-Ablagen — werkstatt/aktivitaet.mjs. Das Protokoll schreiben MCP-Server, Hooks und Kern.
+  const aktivitaet = erzeugeAktivitaet({ support: vaultOpt.support || supportOrdner(), konten, vaults: () => vaultsFn.leseVaults(optV()).vaults, oeffne: (pfad) => oeffne(pfad), ereignisse });
   // Eigene Tastenkürzel (P10): GET/PUT /api/tastenkuerzel auf <support>/tastenkuerzel.json (nur Abweichungen vom Register gemeinsam/tastenkuerzel-register.json), mit `stand`.
   const tastenkuerzel = erzeugeTastenkuerzel({ support: vaultOpt.support || supportOrdner() });
   // Umstellung eines Vaults aus der Kit-Zeit (P7a Befund, P7b Probelauf/Phase A/Rückweg): werkstatt/umstellung.mjs
@@ -299,6 +302,10 @@ export function erzeugeHandler(o) {
         if (seit !== null && seit !== "" && !/^\d{1,15}$/.test(seit)) throw new HttpFehler(400, "„seit“ ist eine Ereignis-Nummer.");
         return ereignisse.warte({ seit: seit === null || seit === "" ? null : Number(seit), epoche: q.get("epoche") || null, warteMs: (Number.isFinite(warte) ? Math.max(0, warte) : 25) * 1000 });
       }
+      case "/api/aktivitaet": nur("GET"); return aktivitaet.lesen(v, q);
+      case "/api/aktivitaet/rueckgaengig": nur("POST"); return aktivitaet.rueckgaengig(v, eingabe());
+      case "/api/aktivitaet/wiederherstellen": nur("POST"); return aktivitaet.wiederherstellen(v, eingabe());
+      case "/api/aktivitaet/gelesen": nur("POST"); return aktivitaet.gelesen(v, eingabe());
       case "/api/einstellungen":
         if (methode === "GET") return einstellungen.lesen(v);
         nur("PUT");
@@ -397,7 +404,12 @@ export function erzeugeHandler(o) {
       case "/api/ki/konto-neu": nur("POST"); return konten.legeKontoAn(eingabe());
       case "/api/ki/ordner-papierkorb": nur("POST"); return konten.papierkorbOrdner(eingabe());
       case "/api/ki/konto-entfernen": nur("POST"); return konten.entferneKonto(eingabe());
-      case "/api/ki/anmeldung": nur("POST"); return konten.anmeldung(eingabe());
+      case "/api/ki/anmeldung": {
+        nur("POST");
+        const e = eingabe(), r = konten.anmeldung(e);
+        if (r.zustand === "abgelaufen") aktivitaet.anmeldungAbgelaufen(v, e.konto); // Aktivitätsprotokoll: „muss sich neu anmelden“
+        return r;
+      }
       // KI-Konten (docs/plaene/ki-konten.md): Liste mit Stufen je Vault · Name/Abo setzen · Stufe eines Kontos in einem Vault setzen
       case "/api/ki/konten":
         if (methode === "GET") { await migrierePflege(v); return konten.stand(); }
@@ -787,7 +799,7 @@ export function erzeugeHandler(o) {
     let eigen = [], eigenKopf = false;
     try {
       const erg = await api(methode, pfad, q, body, v);
-      if (schreibt) { eigen = eigenePfade(pfad, body, erg); eigenKopf = /^\/api\/(git|posteingang|sicherung|vaults|umstellung)\//.test(pfad); }
+      if (schreibt) { eigen = eigenePfade(pfad, body, erg); eigenKopf = /^\/api\/(git|posteingang|sicherung|vaults|umstellung|aktivitaet)\//.test(pfad); }
       if (erg && erg.__stopp) return { ...json(200, { ok: true }), stopp: true };
       return json(200, erg === undefined ? { ok: true } : erg);
     } catch (e) {

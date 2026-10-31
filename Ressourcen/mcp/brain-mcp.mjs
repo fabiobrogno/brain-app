@@ -8,7 +8,9 @@
 // (CLAUDE_CONFIG_DIR, CODEX_HOME), und bei Widerspruch gilt das strengere Recht. Ein gesperrter Vault wird weder genannt noch gezählt noch gelesen;
 // brain_merken braucht „posteingang“; --nur-lesen deckelt die Stufe auf „lesen“.
 import { createInterface } from "node:readline";
-import { realpathSync } from "node:fs";
+import { realpathSync, readFileSync } from "node:fs";
+import { join, basename } from "node:path";
+import { createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { oeffneVault, HttpFehler, STUFE_TEXT as STUFE, supportOrdner } from "../gemeinsam/vault.mjs";
 import { liesKonten, bestimmeKonto, kontoStufe, kontenOrte, massgeblicheListe, darfMindestens, schwaecher } from "../gemeinsam/ki-konten.mjs";
@@ -17,8 +19,9 @@ import { beendeLaufendes } from "../gemeinsam/git.mjs";
 import { bereinigePfad } from "../gemeinsam/basis.mjs";
 import { leseKopf } from "../gemeinsam/pruefung.mjs";
 import { protokolliere } from "../gemeinsam/nutzung.mjs";
+import { melde as meldeAktivitaet, werText } from "../gemeinsam/aktivitaet.mjs";
 import { leseAntwort, begrenzeKontext } from "../gemeinsam/ki-antworten.mjs";
-import { AUFGABEN_WERKZEUGE, istAufgabenWerkzeug, rufeAufgabenWerkzeug } from "./aufgaben-werkzeuge.mjs";
+import { AUFGABEN_WERKZEUGE, istAufgabenWerkzeug, rufeAufgabenWerkzeug, quelleVon } from "./aufgaben-werkzeuge.mjs";
 
 const VERSIONEN = ["2025-06-18", "2025-03-26", "2024-11-05"];
 export const WERKZEUGE = [
@@ -75,6 +78,15 @@ export function erzeugeZugriff({ support = supportOrdner(), arg = null, env = pr
       if (zustand !== "ok") return null;
       const ids = bestimmeKonto({ arg, env, daten, vollstaendig }).ids;
       return ids.length === 1 && ids[0] !== null ? { id: ids[0], programm: daten.konten[ids[0]].programm } : null;
+    },
+    // Wie konto(), mit dem Namen des Kontos in Kortex — nur für das Aktivitätsprotokoll (P8a: „Claude Code · Privat“). Nie der Name aus dem Login.
+    kontoName() {
+      const { zustand, daten } = liste();
+      if (zustand !== "ok") return null;
+      const ids = [...new Set(bestimmeKonto({ arg, env, daten, vollstaendig }).ids)]; // --konto und Umgebung nennen oft dasselbe Konto
+      if (ids.length !== 1 || ids[0] === null) return null;
+      const k = daten.konten[ids[0]];
+      return { id: ids[0], programm: k.programm, name: typeof k.name === "string" ? k.name : null };
     },
     // Gilt überhaupt ein Kontofilter? Nein, solange es nirgends eine Liste gibt (die neue App lief noch nie): dann gilt das bisherige Verhalten samt seinen Texten.
     gefiltert: () => kontenOrte(support, orte).some((o) => liesKonten(o).zustand !== "fehlt"),
@@ -144,6 +156,28 @@ function kontextBegrenzt(treffer, projekt, spur) {
   return r.text;
 }
 
+// Aktivitätsprotokoll (P8a, gemeinsam/aktivitaet.mjs): was dieser Server für ein KI-Konto getan oder verweigert hat. Nie Inhalt und nie ein Titel als Text: nur Art, Pfad (der Dateiname enthält den Titel als Kurzform) und Zahlen.
+// BRAIN_NUTZUNG=aus (Probe-Frage und Selbsttest der App) schreibt nichts. Wirft nie.
+const STUFE_ANZEIGE = { gesperrt: "Gesperrt", lesen: "Lesen", posteingang: "Posteingang", erweitert: "Erweitert" };
+function aktivitaet(vaultWurzel, zugriff, sitzung, e, opt) {
+  if (process.env.BRAIN_NUTZUNG === "aus" || !vaultWurzel) return null;
+  try {
+    const k = zugriff ? zugriff.kontoName() : null;
+    return meldeAktivitaet(vaultWurzel, { vaultName: basename(vaultWurzel), konto: k ? k.id : null, programm: k ? k.programm : null,
+      quelle: quelleVon(sitzung.klient), wer: werText({ programm: k ? k.programm : null, kontoName: k ? k.name : null, klient: sitzung.klient }), ...e }, opt);
+  } catch { return null; }
+}
+// Eine Abweisung: höchstens alle 10 Minuten je Konto, Grund, Werkzeug (eine KI, die es immer wieder versucht, füllt das Protokoll nicht).
+function abweisung(vaultWurzel, zugriff, sitzung, { grund, werkzeug, mindest, stufe }) {
+  const k = zugriff ? zugriff.kontoName() : null;
+  const name = basename(vaultWurzel);
+  const was = grund === "gesperrt" ? `wollte den Vault „${name}“ lesen und wurde abgewiesen. Stufe „${STUFE_ANZEIGE[stufe] || stufe}“ hat gewirkt.`
+    : `wollte in „${name}“ ${werkzeug === "brain_merken" ? "eine Notiz ablegen" : "etwas anlegen"} und wurde abgewiesen. Dafür braucht ihr Konto die Stufe „${STUFE_ANZEIGE[mindest] || mindest}“.`;
+  aktivitaet(vaultWurzel, zugriff, sitzung, { art: "abweisung", grund, werkzeug, ...(mindest ? { mindest } : {}), text: was },
+    { drossel: { schluessel: `abw|${k ? k.id : sitzung.klient || "-"}|${grund}|${werkzeug || "-"}`, sekunden: 600 } });
+}
+const dateiHash = (v, rel) => { try { return createHash("sha256").update(readFileSync(join(v.wurzel, ...rel.split("/")))).digest("hex"); } catch { return null; } };
+
 // v: ein geöffneter Vault, eine Funktion, die den aktuellen liefert (Server ohne Vault-Argument), oder null.
 // spur.seiten sammelt die Seiten, die diese Antwort der KI nennt (für das lokale Nutzungsprotokoll, nutzung.mjs).
 async function rufe(vArg, name, a, spur = { seiten: [] }, sitzung = standardSitzung, zugriff = null) {
@@ -153,8 +187,13 @@ async function rufe(vArg, name, a, spur = { seiten: [] }, sitzung = standardSitz
   const stufe = v0 && zugriff ? zugriff.stufe(v0.wurzel) : "erweitert";
   const v = v0 && darfMindestens(stufe, "lesen") ? v0 : null;
   if (name === "brain_vaults") return text(vaultText(v, zugriff));
-  if (!v) return fehlerText(zugriff && zugriff.gefiltert() ? KEIN_ZUGRIFF : KEIN_VAULT);
-  if (!darfMindestens(stufe, MINDEST_STUFE[name] || "lesen")) return fehlerText(NUR_LESEN);
+  if (!v) {
+    // Abweisung ins Protokoll: das Konto durfte den (gebundenen oder in der App aktiven) Vault nicht sehen
+    if (v0) abweisung(v0.wurzel, zugriff, sitzung, { grund: "gesperrt", werkzeug: name, stufe });
+    else if (typeof vArg === "function" && typeof vArg.abgewiesen === "function" && vArg.abgewiesen()) abweisung(vArg.abgewiesen(), zugriff, sitzung, { grund: "gesperrt", werkzeug: name, stufe: "gesperrt" });
+    return fehlerText(zugriff && zugriff.gefiltert() ? KEIN_ZUGRIFF : KEIN_VAULT);
+  }
+  if (!darfMindestens(stufe, MINDEST_STUFE[name] || "lesen")) { abweisung(v.wurzel, zugriff, sitzung, { grund: "stufe", werkzeug: name, mindest: MINDEST_STUFE[name] || "lesen", stufe }); return fehlerText(NUR_LESEN); }
   const arg = (k) => { if (typeof a[k] !== "string" || !a[k].trim()) throw new HttpFehler(400, `Der Parameter „${k}“ fehlt.`); return a[k]; };
   switch (name) {
     case "brain_suchen": {
@@ -180,6 +219,8 @@ async function rufe(vArg, name, a, spur = { seiten: [] }, sitzung = standardSitz
     case "brain_kontext": return text(kontextText(v, arg("projekt"), typeof a.cwd === "string" ? a.cwd : "", spur));
     case "brain_merken": {
       const r = v.merken({ text: arg("text"), titel: typeof a.titel === "string" ? a.titel : undefined });
+      const hash = dateiHash(v, r.pfad);
+      aktivitaet(v.wurzel, zugriff, sitzung, { art: "ablage-notiz", text: "hat eine Notiz im Posteingang abgelegt.", pfade: [r.pfad], ...(hash ? { rueckgaengig: { art: "ablage-entfernen", pfad: r.pfad, hash } } : {}) });
       return text(`Gemerkt in ${r.pfad}. Erst /ingest macht daraus Wissen im Wiki.`);
     }
     case "brain_gesundheit": {
@@ -199,7 +240,11 @@ async function rufe(vArg, name, a, spur = { seiten: [] }, sitzung = standardSitz
       if (!eintraege.length) return text("Kein Verlauf gefunden (Datei nicht in Git oder noch nicht committet).");
       return text(eintraege.map((e) => `${e.kurz} ${zeit(e.zeit)} ${e.autor}: ${e.nachricht}`).join("\n"));
     }
-    default: return istAufgabenWerkzeug(name) ? rufeAufgabenWerkzeug(v, name, a, sitzung) : null;
+    default: return istAufgabenWerkzeug(name) ? rufeAufgabenWerkzeug(v, name, a, sitzung, {
+      // Aktivitätsprotokoll: die Aufgaben-Werkzeuge melden, was sie angelegt/geändert haben (nur Pfad und Art, nie den Titel)
+      angelegt: (pfad) => { const hash = dateiHash(v, pfad); aktivitaet(v.wurzel, zugriff, sitzung, { art: "ablage-aufgabe", text: "hat eine Aufgabe angelegt.", pfade: [pfad], ...(hash ? { rueckgaengig: { art: "ablage-entfernen", pfad, hash } } : {}) }); },
+      geaendert: (pfad, status) => aktivitaet(v.wurzel, zugriff, sitzung, { art: "aenderung", text: `hat den Status einer Aufgabe auf „${status}“ gesetzt.`, pfade: [pfad] }),
+    }) : null;
   }
 }
 
@@ -278,18 +323,20 @@ function haupt() {
   const arg = leseArgumente(process.argv.slice(2));
   const gebunden = arg.vault || process.env.BRAIN_VAULT || "";
   const zugriff = erzeugeZugriff({ arg: arg.konto, nurLesen: arg.nurLesen });
-  let aktuell = null, aktuellPfad;
+  let aktuell = null, aktuellPfad, abgewiesenPfad = null;
   if (gebunden) { try { aktuell = oeffneVault(gebunden, { ohneUnterVaults: true }); } catch (e) { process.stderr.write(`${e.message}\n`); process.exit(2); } }
   // Ohne Argument: aktiven Vault der App nehmen; wechselt er, wird neu geöffnet (billig: nur vaults.json lesen).
   // KI-Konten: darf das Konto den aktiven Vault nicht lesen, folgt der Server seinem Heimat-Vault (falls es einen hat und er erlaubt ist), sonst gibt es keinen Vault.
   const v = () => {
     if (gebunden) return aktuell;
     let p = null; try { p = aktiverVaultPfad(); } catch { /* keine Liste → kein Vault */ }
-    if (p && !sehen(zugriff, p)) p = null;
+    abgewiesenPfad = null;
+    if (p && !sehen(zugriff, p)) { abgewiesenPfad = p; p = null; } // fürs Aktivitätsprotokoll: der aktive Vault, den dieses Konto nicht sehen darf
     if (!p) { const h = zugriff.heimat(); if (h && sehen(zugriff, h)) p = h; }
     if (p !== aktuellPfad) { aktuellPfad = p; aktuell = null; if (p) { try { aktuell = oeffneVault(p, { ohneUnterVaults: true }); } catch { /* nicht lesbar → kein Vault */ } } }
     return aktuell;
   };
+  v.abgewiesen = () => abgewiesenPfad;
   const sitzung = { klient: "", angelegt: 0 };   // diese Verbindung
   process.stdout.on("error", () => process.exit(0));
   const sende = (o) => process.stdout.write(JSON.stringify(o) + "\n");

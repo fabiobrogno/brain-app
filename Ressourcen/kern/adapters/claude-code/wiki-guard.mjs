@@ -6,7 +6,7 @@
 if (process.env.BRAIN_ERNTE === "1") process.exit(0);
 import { readFileSync, existsSync, statSync, utimesSync, realpathSync } from "node:fs";
 import { resolve, join, sep, basename, dirname } from "node:path";
-import { vaultPfadOderEnde, ladeConfig, ordner, kontoDarf } from "../../pfade.mjs";
+import { vaultPfadOderEnde, ladeConfig, ordner, kontoDarf, meldeAbweisung } from "../../pfade.mjs";
 
 function leseStdin() {
   try { return readFileSync(0, "utf8"); } catch { return ""; }
@@ -54,7 +54,7 @@ function blockiere(msg) { process.stderr.write(msg + "\n"); process.exit(2); }
 // Die Meldung ist neutral (kein „Vault“, kein Name, kein Pfad außer dem, den die KI selbst angegeben hat). Ein Rest bleibt: Wer Pfade ausprobiert, sieht den Unterschied zwischen „verweigert“ und „still“ —
 // das ist ein Existenz-Hinweis für Pfade, die die KI schon kennt, kein Inhalt; ihn ganz zu verhindern ginge nur mit einer Meldung bei JEDEM Pfad.
 if (!KONTO_DARF) {
-  if (unter(F, VN) || unter(F, V) || gleich(F, VN) || gleich(F, V)) blockiere("Kortex: Dieser Pfad ist für dieses KI-Konto nicht freigegeben.");
+  if (unter(F, VN) || unter(F, V) || gleich(F, VN) || gleich(F, V)) { meldeAbweisung(V, { was: "schreiben" }); blockiere("Kortex: Dieser Pfad ist für dieses KI-Konto nicht freigegeben."); } // Aktivitätsprotokoll (P8a)
   process.exit(0);
 }
 
