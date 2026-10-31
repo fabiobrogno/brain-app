@@ -147,7 +147,7 @@ export function erzeugeGlocke({ mitteilungen, api, beiAnsehen, beiEinstellungen,
     const ohneVerbot = istLeseverbotHinweis(e);
     const aktionen = aktionenVon(e);
     const meta = [];
-    if (abw) meta.push(h("span", { klasse: "gl-marke " + (ohneVerbot ? "warn" : "abw") }, symbol(ohneVerbot ? "warnung" : "schild", 11), TG.marke[ohneVerbot ? "gelesen" : "abgewiesen"]));
+    if (abw) meta.push(h("span", { klasse: "gl-marke " + (ohneVerbot ? "warn" : "abw") }, symbol(ohneVerbot ? "warnung" : "schild", 12), TG.marke[ohneVerbot ? "gelesen" : "abgewiesen"]));
     meta.push(h("time", { datetime: e.zeit, title: datumZeit(e.zeit), "data-zeit": gruppe, text: zeitText(e.zeit, gruppe) }));
     if (e.vaultName) meta.push(h("span", { text: TM.vault(e.vaultName) }));
     if (e.zurueckgenommen) meta.push(h("span", { text: TG.zurueckgenommen }));
