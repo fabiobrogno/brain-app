@@ -122,8 +122,11 @@ export function erzeugeKi(o) {
   async function ladeKonten() {
     S.kontenFehler = null;
     let neu = null;
-    try { neu = await api.kiKonten(); }
-    catch (e) { if (zu()) return; S.kontenFehler = e; }
+    try {
+      neu = await api.kiKonten(); // rein lesend
+      // Fehlt die Liste oder ist sie beschädigt (oder wartet die Übernahme des alten Profils), legt der ausdrückliche Abgleich sie an — höchstens einmal je Seite; neue Konten trägt nur der Klick ein
+      if (neu && (neu.zustand !== "ok" || neu.pflegePlist?.offen) && !S.abgleichVersucht) { S.abgleichVersucht = true; neu = await api.kiKontenAbgleich(); }
+    } catch (e) { if (zu()) return; S.kontenFehler = e; }
     if (zu()) return;
     // Unverändert (z. B. ein Ereignis der Werkstatt ohne neue Werte): nichts neu zeichnen, ein offenes Menü bleibt offen
     const roh = neu ? JSON.stringify(neu) : null;
@@ -198,6 +201,14 @@ export function erzeugeKi(o) {
       teile.push(h("div", { klasse: "kk-karte warn", role: "status", "data-kk": "defekt" },
         h("div", { klasse: "kk-karte-kopf" }, marke("warn"), h("div", { klasse: "kk-karte-titel", text: TK.defekt.titel })),
         h("p", { text: S.konten.hinweisGrund === "geloescht" ? TK.defekt.textGeloescht : TK.defekt.text }), h("div", { klasse: "kk-knoepfe" }, knoepfe)));
+    }
+    // Neu erkannte Konten: beim Lesen wird nichts angelegt, erst der Klick trägt sie ein (POST /api/ki/konten/abgleich)
+    if (S.konten && Array.isArray(S.konten.neu) && S.konten.neu.length) {
+      const namen = S.konten.neu.map((k) => (k.name ? `„${k.name}“` : k.programmName)).join(", ");
+      teile.push(h("div", { klasse: "kk-karte warn", role: "status", "data-kk": "neue-konten" },
+        h("div", { klasse: "kk-karte-kopf" }, marke("warn"), h("div", { klasse: "kk-karte-titel", text: TK.neu.titel })),
+        h("p", { text: TK.neu.text(namen) }),
+        h("div", { klasse: "kk-knoepfe" }, baueKnopf({ text: TK.neu.eintragen, groesse: "s", aktion: "konten-eintragen", disabled: S.beschaeftigt, aufKlick: () => tue(() => api.kiKontenAbgleich(), { erfolg: () => TK.neu.fertig }) }))));
     }
     const kacheln = h("div", { klasse: "kx-kacheln", "data-kx": "kacheln" });
     const kachel = (z, warn = false, kennung) => h("div", { klasse: `kx-kachel${warn ? " warn" : ""}`, "data-kachel": kennung }, h("b", { text: z.zahl }), h("span", { text: z.text }));

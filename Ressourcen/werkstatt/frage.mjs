@@ -113,9 +113,10 @@ export function erzeugeFrage({ support, konten, mcpBasis, basisEnv = process.env
   let aktiv = null; // höchstens eine Frage: die laufende oder zuletzt beendete
 
   // ---------- Konten ----------
-  const ladeKonten = () => {
+  // lesend: das Bereit-Signal (GET) legt nie eine Liste an; erst eine gestellte Frage (POST) darf sie anlegen, wenn sie fehlt
+  const ladeKonten = ({ lesend = false } = {}) => {
     let d = konten.lade();
-    if (!d) { try { konten.synchronisiere(); } catch { /* unten */ } d = konten.lade(); }
+    if (!d && !lesend) { try { konten.synchronisiere(); } catch { /* unten */ } d = konten.lade(); }
     return d;
   };
   const claudePfad = () => findeProgramm("claude", basisEnv);
@@ -127,7 +128,7 @@ export function erzeugeFrage({ support, konten, mcpBasis, basisEnv = process.env
     && darfMindestens(kontoStufe(v.wurzel, { support, arg: id, env: k.standard === true ? {} : { [k.programm === "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR"]: k.ordner } }), "lesen");
 
   function bereit(v) {
-    const daten = ladeKonten();
+    const daten = ladeKonten({ lesend: true });
     const liste = [];
     if (daten) {
       for (const [id, k] of Object.entries(daten.konten)) {

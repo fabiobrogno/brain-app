@@ -232,6 +232,7 @@ Der Tageslauf nimmt für **den Vault, den er gerade bearbeitet**, `vaults[v].pfl
 
 ### 3.3 API (Werkstatt, `handler.mjs` + neues `werkstatt/konten.mjs`)
 - `GET  /api/ki/konten` → `{ konten: [...mit zustand], vaults: [{pfad,name,vertraut}], regeln, pflege, schutz }` (nur lesend, startet je Konto höchstens `install.mjs --stand`)
+- `POST /api/ki/konten/abgleich` → der ausdrückliche Abgleich (neu erkannte Konten eintragen, Liste anlegen/reparieren, altes Profil der plist übernehmen); `GET` legt nie etwas an und meldet Neues nur unter `neu` («neu, noch nicht eingetragen»)
 - `POST /api/ki/konto` `{ id, name?, abo? }`
 - `POST /api/ki/regel` `{ konto, vault, stufe }` → schreibt `ki-konten.json`. Bei `gesperrt` werden Befehle aus dem Profil genommen und, falls „Sperre in Claude Code“ an ist, Deny-Regeln eingetragen. Bei einer Lockerung werden genau diese Regeln wieder entfernt.
 - `POST /api/ki/schutz` `{ konto, claudeDeny: bool, sandbox: bool }`
