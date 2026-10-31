@@ -102,8 +102,10 @@ struct BrueckenVerbindungTests {
         try await b.starte()
         let pid = try #require(await b.pid)
         await b.beende()
-        try await Task.sleep(for: .seconds(1))
-        #expect(kill(pid, 0) != 0)
+        // `beende()` schließt stdin und beendet den Prozess spätestens nach 2 s; auf einem belasteten Rechner (parallele Tests) braucht Node dafür länger als 1 s
+        var lebt = true
+        for _ in 0..<80 where lebt { try await Task.sleep(for: .milliseconds(100)); lebt = kill(pid, 0) == 0 }
+        #expect(!lebt)
     }
 }
 
