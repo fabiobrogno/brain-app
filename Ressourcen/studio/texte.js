@@ -202,11 +202,13 @@ export const T = {
   kuerzel: {
     titel: "Tastenkürzel",
     gruppen: [
-      { name: "Allgemein", zeilen: [["⌘K", "Springen und Befehle"], ["⌘1 ⌘2 ⌘3", "Posteingang, Alle Notizen, Aufgaben"], ["⌘N", "Neue Notiz"], ["⌘⇧M", "Schnell merken"], ["⌘⇧A", "Aufgabe erfassen"], ["⌘J", "Frag deinen Vault"], ["⌘⇧F", "Im ganzen Vault suchen"], ["⌘/", "Diese Übersicht"]] },
-      { name: "Notiz", zeilen: [["⌘S", "Jetzt speichern"], ["⌘F", "In der Notiz suchen"], ["⌘\\", "Eigenschaften ein- oder ausblenden (auch ⌘⌥I)"], ["⌘⇧G", "Änderungen sichern"]] },
+      // { id } = Befehl aus dem Register der Tastenkürzel (tastenkuerzel-register.json): gezeigt wird das gerade gültige Kürzel, ohne Kürzel entfällt die Zeile
+      { name: "Allgemein", zeilen: [[{ id: "palette" }, "Springen und Befehle"], [{ id: "neue-notiz" }, "Neue Notiz"], [{ id: "schnell-merken" }, "Schnell merken"], [{ id: "aufgabe-erfassen" }, "Aufgabe erfassen"], [{ id: "frage" }, "Frag deinen Vault"], [{ id: "suche-vault" }, "Im ganzen Vault suchen"], [{ id: "kuerzel-hilfe" }, "Diese Übersicht"]] },
+      { name: "Notiz", zeilen: [[{ id: "speichern" }, "Jetzt speichern"], [{ id: "suche-notiz" }, "In der Notiz suchen"], [{ id: "info" }, "Eigenschaften ein- oder ausblenden"], [{ id: "commit" }, "Änderungen sichern"]] },
       { name: "Liste", zeilen: [["↑ ↓", "Nächste oder vorige Notiz öffnen"], ["↵", "In die Notiz springen"], ["Esc", "Suche oder Dialog schließen"]] },
     ],
     schliessen: "Schließen",
+    anpassen: "Anpassen …",
   },
   gesundheit: { titel: "Gesundheit des Wissens", satz: "So steht es um die Seiten deines Vaults.", keine: "Noch keine Auswertung verfügbar.", ok: "Keine Befunde." },
   nutzung: {

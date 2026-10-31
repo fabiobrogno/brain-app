@@ -65,7 +65,8 @@ public final class KuerzelVerwaltung {
 
     /// Setzt ein neues Kürzel. Nur ein gültiges, nicht belegtes wird gespeichert; bei einem Fehler bleibt das alte angemeldet.
     /// Rückgabe: nil bei Erfolg, sonst der Text für den Nutzer.
-    public func aendere(_ neu: Tastenkuerzel) -> String? {
+    /// `speichern: false`: nur prüfen und anmelden (das Studio hat das Kürzel schon in `tastenkuerzel.json` geschrieben oder tut es gleich selbst).
+    public func aendere(_ neu: Tastenkuerzel, speichern: Bool = true) -> String? {
         if neu == kuerzel, angemeldet { return nil }
         if let problem = KuerzelPruefung.pruefe(neu, system: system()) { return problem.text }
         let alt = kuerzel
@@ -75,7 +76,7 @@ public final class KuerzelVerwaltung {
             _ = anmelden() // das alte wieder anmelden (die Anmeldung des neuen hat es abgemeldet)
             return fehler
         }
-        sichere(neu == .standard ? nil : neu)
+        if speichern { sichere(neu == .standard ? nil : neu) }
         return nil
     }
 

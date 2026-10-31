@@ -16,6 +16,8 @@ import { markenLogo } from "./marken.js";
 import { BEREICHE, GRUPPEN, TE, STANDARD_VORSCHLAEGE } from "./texte-einstellungen.js";
 import { suche as sucheIn, zerlege, vorschlaege } from "./einstellungen-suche.js";
 import { erzeugeKi } from "./einstellungen-ki.js";
+import { erzeugeTasten, tastenAbschnitte } from "./einstellungen-tasten.js";
+import { TKZ } from "./texte-tasten.js";
 
 export const BLINK_MS = 1600; // Sprungziel leuchtet kurz auf (Orca: 3000 ms; ruhiger)
 
@@ -25,7 +27,7 @@ const Z = {
   steuer: new Map(),        // Schlüssel → { setze(wert), offen(), sofort(), el }
   bereichKnoten: new Map(), // Bereichs-ID → <section>
   zeilen: new Map(),        // Zeilen-ID → Element
-  wartend: {}, ki: null, kiBraucht: 0, laeuft: null, davor: null, zielTimer: 0, gespTimer: 0, dynamisch: new Map(), stilGeladen: null, taste: null, nachladenLaeuft: false, ladeNr: 0,
+  wartend: {}, ki: null, tasten: null, kiBraucht: 0, laeuft: null, davor: null, zielTimer: 0, gespTimer: 0, dynamisch: new Map(), stilGeladen: null, taste: null, nachladenLaeuft: false, ladeNr: 0,
 };
 export const istOffen = () => Z.offen;
 
@@ -53,7 +55,7 @@ function ladeEineDatei(name) {
 }
 function ladeStil() {
   if (Z.stilGeladen) return Z.stilGeladen;
-  Z.stilGeladen = Promise.all([ladeEineDatei("einstellungen.css"), ladeEineDatei("einstellungen-ki.css")]).then(() => {});
+  Z.stilGeladen = Promise.all([ladeEineDatei("einstellungen.css"), ladeEineDatei("einstellungen-ki.css"), ladeEineDatei("einstellungen-tasten.css")]).then(() => {});
   return Z.stilGeladen;
 }
 
@@ -436,7 +438,8 @@ function zeileText(id, text) { const e = Z.zeilen.get(id); if (e?.textEl) { e.te
 function bauZeile(b, a, z) {
   let steuerung = null, reg = null, voll = null, unten = null, marke = z.experiment ? einstellMarke(TE.experiment) : null, titel = z.titel;
   if (z.sonder) {
-    if (z.taste) steuerung = kbdGruppe(z.taste);
+    if (z.kuerzelId) { const r = Z.tasten.zeile(z); steuerung = r.steuerung; marke = r.marke; } // Tastenkürzel (P10): einstellungen-tasten.js
+    else if (z.taste) steuerung = kbdGruppe(z.taste);
     else {
       const r = SONDER[z.id]?.(z) || {};
       steuerung = r.steuerung || null; voll = r.voll || null; unten = r.unten || null; marke = r.marke || marke; titel = r.titel || titel;
@@ -452,6 +455,7 @@ function bauZeile(b, a, z) {
   zeile.originalTitel = titel;
   if (titel !== z.titel) zeile.titelEl.textContent = titel;
   if (reg) regelSteuerung(z.schluessel, zeile, reg);
+  if (z.kuerzelId) Z.tasten.nachbau(z, zeile);
   Z.zeilen.set(z.id, zeile);
   return zeile;
 }
@@ -467,6 +471,7 @@ function bauBereich(b) {
   const sec = h("section", { klasse: "e-bereich", "data-bereich": b.id },
     h("div", { klasse: "e-bereich-titel" }, symbol(b.symbol, GROESSE.text), h("span", { text: b.name })),
     b.intro ? h("p", { klasse: "e-intro", text: b.intro }) : null,
+    b.id === "tasten" ? Z.tasten.leiste() : null, // Suche, Filter, „Alle zurücksetzen“
     h("div", { klasse: "ez-hinweis", "data-hinweis": "", role: "status", hidden: true }, symbol("info", GROESSE.text), h("span")));
   for (const a of b.abschnitte) {
     const titel = b.id === "vaults" && a.id === "dieser" ? TE.vaultFuer(Z.daten?.vault?.name || "…") : a.titel;
@@ -477,6 +482,7 @@ function bauBereich(b) {
   }
   Z.bereichKnoten.set(b.id, sec);
   aktualisiereHinweis(b.id, sec);
+  if (b.id === "tasten") Z.tasten.zeichneAlle();
   return sec;
 }
 const holeBereich = (b) => Z.bereichKnoten.get(b.id) || bauBereich(b);
@@ -596,7 +602,8 @@ function zeichneInhalt({ scrollNachOben = true } = {}) {
     renderNav(r.bereiche);
   }
   if (scrollNachOben) inhalt.scrollTop = 0;
-  Z.host.querySelector("[data-einst=dateien]").textContent = [Z.daten?.dateien?.vault, Z.daten?.dateien?.app].filter(Boolean).join(" · ");
+  // Fußzeile: wo die Werte dieser Seite liegen (Tastenkürzel: eigene Datei)
+  Z.host.querySelector("[data-einst=dateien]").textContent = (!q && Z.bereich === "tasten" ? [TKZ.datei] : [Z.daten?.dateien?.vault, Z.daten?.dateien?.app]).filter(Boolean).join(" · ");
 }
 function setzeSuche(text) { const i = Z.suchfeld.input; i.value = text; i.dispatchEvent(new Event("input", { bubbles: true })); i.focus(); }
 
@@ -668,6 +675,9 @@ export async function oeffneEinstellungen({ api, kontext, bereich = null, ziel =
   }
   if (!Z.offen) return false;
   Z.kiBraucht = 0;
+  const bt = BEREICHE.find((b) => b.id === "tasten");
+  if (bt && !bt.abschnitte.length) bt.abschnitte = tastenAbschnitte(); // eine Zeile je Befehl aus dem Register (tastenkuerzel-register.js), damit auch die Suche der Seite sie findet
+  Z.tasten = erzeugeTasten({ inApp: Z.k.inApp, beiSpeichern: zeigeStand });
   Z.ki = erzeugeKi({ api, k: kontext, beiBraucht: (n) => { if (n === Z.kiBraucht) return; Z.kiBraucht = n; if (Z.host?.querySelector(".e-liste")) renderNav(Z.ergebnis ? Z.ergebnis.bereiche : null); } });
   host.replaceChildren(baueGeruest());
   zeichneInhalt();
@@ -684,6 +694,7 @@ export async function schliesse({ fokus = true } = {}) {
   for (const s of Z.steuer.values()) { try { s.sofort?.(); } catch { /* egal */ } }
   Z.offen = false;
   Z.ki?.ende(); Z.ki = null;
+  Z.tasten?.ende(); Z.tasten = null;
   document.removeEventListener("keydown", Z.taste);
   window.removeEventListener("kortex-einstellungen", nachladen);
   clearTimeout(Z.zielTimer); clearTimeout(Z.gespTimer);

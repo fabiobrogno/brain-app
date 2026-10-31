@@ -1,5 +1,5 @@
 // Hauptfenster (Paket P3): Kopfzeile mit Suchfeld, Seitenleiste (Schnell erfassen, Zähler, Favoriten, Ordner, KI-Zeile), „Frag deinen Vault“ als rechte Spalte,
-// Statusleiste (Wörter, Format, Platz für P7), Tastatur (⌘1–3, ⌘K, ⌘J, ⌘\), Palette mit Ausweg zu Frag, enge Fenster, hell und dunkel, „Bewegung reduzieren“.
+// Statusleiste (Wörter, Format, Platz für P7), Tastatur (⌘1–4 aus dem Register der Tastenkürzel, ⌘K, ⌘J, ⌘\), Palette mit Ausweg zu Frag, enge Fenster, hell und dunkel, „Bewegung reduzieren“.
 // Bilder: UI_P3_BILDER=/Ordner npx playwright test hauptfenster.spec.mjs
 import { test, expect } from "./basis.mjs";
 import { mkdirSync } from "node:fs";
@@ -88,13 +88,16 @@ test("KI-Zeile: ohne erkannte KI „KI verbinden“; offene Rückfragen als „b
   await expect(page.locator("#ki-zeile")).toHaveAttribute("data-zustand", "braucht");
 });
 
-test("Tastatur: ⌘1 Posteingang, ⌘2 Alle Notizen, ⌘3 Aufgaben, ⌘K Palette, ⌘J Frag, ⌘\\ Eigenschaften; Esc schließt", async ({ page }) => {
+test("Tastatur (Register P10): ⌘1 Posteingang, ⌘2 Alle Notizen, ⌘3 Wissen, ⌘4 Aufgaben, ⌘K Palette, ⌘J Frag, ⌘\\ Eigenschaften; Esc schließt", async ({ page }) => {
   await start(page);
   const app = page.locator("#app");
   await page.keyboard.press("Meta+1");
   await expect(page.locator("#liste-titel")).toContainText("Posteingang");
   await expect(page.locator('[data-bereich="inbox"]')).toHaveAttribute("aria-current", "true");
   await page.keyboard.press("Meta+3");
+  await expect(page.locator("#liste-titel")).toContainText("Wissen");
+  await expect(page.locator('[data-bereich="wissen"]')).toHaveAttribute("aria-current", "true");
+  await page.keyboard.press("Meta+4");
   await expect(app).toHaveAttribute("data-modus", "aufgaben");
   await expect(page.locator("#pfad")).toContainText("Aufgaben");
   await page.keyboard.press("Meta+2");
@@ -124,7 +127,7 @@ test("Tastatur: ⌘1 Posteingang, ⌘2 Alle Notizen, ⌘3 Aufgaben, ⌘K Palette
   await page.locator('[data-frage="panel"] button').first().focus();
   await page.keyboard.press("Escape");
   await expect(app).not.toHaveAttribute("data-frage", "an");
-  // ⌘1–3 auch aus dem Editor heraus, nicht aber, solange ein Dialog offen ist
+  // ⌘1 auch aus dem Editor heraus, nicht aber, solange ein Dialog offen ist
   await page.locator(".cm-content").click();
   await page.keyboard.press("Meta+1");
   await expect(page.locator("#liste-titel")).toContainText("Posteingang");
@@ -182,7 +185,7 @@ test("Palette: Zuletzt geöffnet, Befehle mit Tasten, Ausweg „Frag deinen Vaul
   const pal = page.locator(".palette");
   await expect(pal.locator(".pal-gruppe").first()).toHaveText("Zuletzt geöffnet");
   await expect(pal.locator(".pal-esc")).toHaveText("esc");
-  await expect(pal.locator('[data-pal="befehl"]', { hasText: "Aufgaben-Board öffnen" }).locator("kbd")).toHaveText(["⌘", "3"]);
+  await expect(pal.locator('[data-pal="befehl"]', { hasText: "Aufgaben-Board öffnen" }).locator("kbd")).toHaveText(["⌘", "4"]);
   await expect(pal.locator(".pal-fuss")).toContainText("Frag deinen Vault");
   await bild(page, "03-palette");
   await page.keyboard.type("Was haben wir zu Kaffee entschieden");
@@ -217,7 +220,7 @@ test("Favoriten: einzelne Notizen unter der Zeile „Favoriten“ in der Seitenl
 
 test("Aufgaben-Board: Kopfzeile bleibt (Brotkrume, Suche, Knöpfe), Notiz-Werkzeuge entfallen", async ({ page }) => {
   await start(page);
-  await page.keyboard.press("Meta+3");
+  await page.keyboard.press("Meta+4");
   await expect(page.locator("#kopf")).toBeVisible();
   await expect(page.locator("#pfad .krume.aktuell")).toHaveText("Aufgaben");
   await expect(page.locator("#werkzeuge")).toBeHidden();

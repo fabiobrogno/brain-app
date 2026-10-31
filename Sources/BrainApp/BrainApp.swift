@@ -14,6 +14,7 @@ final class AppDelegat: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         baueMenue()
+        zustand.kuerzel.beiMenueAenderung = { [weak self] in self?.stelleMenueUm() } // ein geändertes Kürzel gilt sofort in den Menüs
         Task { await zustand.starte() }
     }
 
@@ -66,11 +67,38 @@ final class AppDelegat: NSObject, NSApplicationDelegate {
         return e
     }
 
-    /// Eintrag, der einen `StudioBefehl` an die Oberfläche schickt.
-    private func befehl(_ titel: String, _ befehl: StudioBefehl, _ taste: String = "", _ masken: NSEvent.ModifierFlags = [.command]) -> NSMenuItem {
-        let e = eintrag(titel, #selector(sendeBefehl(_:)), taste, masken)
+    /// Eintrag, der einen `StudioBefehl` an die Oberfläche schickt. Das Kürzel kommt aus dem Register der Tastenkürzel (Standard + eigene), nie von Hand: so stimmen Menü, Studio und
+    /// die Einstellungen immer überein. Ein Befehl ohne Kürzel (oder ohne Eintrag im Register) hat im Menü keines.
+    private func befehl(_ titel: String, _ befehl: StudioBefehl) -> NSMenuItem {
+        let e = eintrag(titel, #selector(sendeBefehl(_:)), "", [])
         e.representedObject = befehl.rawValue
+        if let id = zustand.kuerzel.befehlId(menue: befehl.rawValue) {
+            e.identifier = NSUserInterfaceItemIdentifier(Self.kuerzelPraefix + id)
+            wendeKuerzelAn(e)
+        }
         return e
+    }
+
+    private static let kuerzelPraefix = "kuerzel:"
+
+    /// Setzt Taste und Umschalter eines Eintrags aus der Belegung (kein Kürzel → leer).
+    private func wendeKuerzelAn(_ e: NSMenuItem) {
+        guard let roh = e.identifier?.rawValue, roh.hasPrefix(Self.kuerzelPraefix) else { return }
+        if let m = zustand.kuerzel.menueKuerzel(String(roh.dropFirst(Self.kuerzelPraefix.count))) {
+            e.keyEquivalent = m.zeichen
+            e.keyEquivalentModifierMask = m.masken
+        } else {
+            e.keyEquivalent = ""
+            e.keyEquivalentModifierMask = []
+        }
+    }
+
+    /// Nach einer Änderung der Kürzel: alle Menüeinträge aus dem Register neu belegen.
+    func stelleMenueUm() {
+        func geh(_ menue: NSMenu) {
+            for e in menue.items { wendeKuerzelAn(e); if let u = e.submenu { geh(u) } }
+        }
+        if let m = NSApp.mainMenu { geh(m) }
     }
 
     private func menue(_ titel: String, _ eintraege: [NSMenuItem]) -> NSMenuItem {
@@ -97,20 +125,20 @@ final class AppDelegat: NSObject, NSApplicationDelegate {
             suchen,
             eintrag("Kortex einrichten …", #selector(assistentOeffnen), "e"),
             .separator(),
-            // ⌘, öffnet im Studio die Seite „Einstellungen“ (nicht mehr nur bei geöffnetem Menüleisten-Menü)
-            befehl(StudioBefehl.einstellungenEintrag.titel, StudioBefehl.einstellungenEintrag.befehl, StudioBefehl.einstellungenEintrag.taste),
+            // ⌘, öffnet im Studio die Seite „Einstellungen“ (nicht mehr nur bei geöffnetem Menüleisten-Menü); wie alle Kürzel dieser Befehle aus dem Register
+            befehl(StudioBefehl.einstellungenEintrag.titel, StudioBefehl.einstellungenEintrag.befehl),
             .separator(),
             standard("Kortex ausblenden", #selector(NSApplication.hide(_:)), "h"),
             .separator(),
             standard("Kortex beenden", #selector(NSApplication.terminate(_:)), "q"),
         ]))
         haupt.addItem(menue("Ablage", [
-            befehl("Neue Notiz", .neu, "n"),
-            befehl("Schnell merken", .merken, "m", [.command, .shift]),
-            befehl("Aufgabe erfassen …", .aufgabeErfassen, "a", [.command, .shift]),
+            befehl("Neue Notiz", .neu),
+            befehl("Schnell merken", .merken),
+            befehl("Aufgabe erfassen …", .aufgabeErfassen),
             .separator(),
-            befehl("Vault öffnen …", .vaultOeffnen, "o", [.command, .shift]),
-            befehl("Vault wechseln", .vaultWechseln, "v", [.control, .command]),
+            befehl("Vault öffnen …", .vaultOeffnen),
+            befehl("Vault wechseln", .vaultWechseln),
             .separator(),
             standard("Fenster schließen", #selector(NSWindow.performClose(_:)), "w"),
         ]))
@@ -124,18 +152,18 @@ final class AppDelegat: NSObject, NSApplicationDelegate {
             standard("Alles auswählen", #selector(NSText.selectAll(_:)), "a"),
         ]))
         haupt.addItem(menue("Darstellung", [
-            befehl("Eigenschaften ein-/ausblenden", .infospalte, "i", [.command, .option]),
-            befehl("Verlauf ein-/ausblenden", .verlauf, "h", [.command, .shift]),
+            befehl("Eigenschaften ein-/ausblenden", .infospalte),
+            befehl("Verlauf ein-/ausblenden", .verlauf),
             .separator(),
             befehl("Hell/Dunkel umschalten", .hellDunkel),
         ]))
         haupt.addItem(menue("Gehe zu", [
-            befehl("Posteingang", .posteingang, "1"),
-            befehl("Alle Notizen", .alle, "2"),
-            befehl("Wissen", .wissen, "3"),
-            befehl("Aufgaben", .aufgaben, "4"),
+            befehl("Posteingang", .posteingang),
+            befehl("Alle Notizen", .alle),
+            befehl("Wissen", .wissen),
+            befehl("Aufgaben", .aufgaben),
             .separator(),
-            befehl("Befehlspalette", .palette, "k"),
+            befehl("Befehlspalette", .palette),
         ]))
         // Studio und Übersicht mit ⌥⌘1/⌥⌘2 — ⌘1/⌘2 gehören zu „Gehe zu“.
         let fensterMenue = menue("Fenster", [
@@ -172,7 +200,7 @@ struct BrainApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            MenueInhalt(zustand: delegat.zustand, updater: delegat.updater)
+            MenueInhalt(zustand: delegat.zustand, kuerzel: delegat.zustand.kuerzel, updater: delegat.updater)
         } label: {
             MenueSymbol(zustand: delegat.zustand)
         }

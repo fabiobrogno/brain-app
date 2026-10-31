@@ -30,16 +30,25 @@ public final class CarbonKuerzel: KuerzelRegistrierung {
     private var referenz: EventHotKeyRef?
     private var handler: EventHandlerRef?
     private var aktion: (@MainActor () -> Void)?
-    /// Vier Zeichen, die unser Kürzel im System kennzeichnen ('KTXE').
+    /// Vier Zeichen, die unsere Kürzel im System kennzeichnen ('KTXE').
     private static let signatur: OSType = 0x4B54_5845
+    /// Nummer dieses Kürzels (jedes globale Kürzel der App hat eine eigene; der Handler hört nur auf seine).
+    private let kennung: UInt32
 
-    public init() {}
+    public init(kennung: UInt32 = 1) { self.kennung = kennung }
+
+    /// Ein Objekt, das verschwindet (z. B. nach einer gescheiterten Anmeldung), nimmt sein Kürzel UND seinen Handler mit: Ein Handler, der auf ein freigegebenes Objekt zeigt,
+    /// würde beim nächsten Druck ins Leere greifen (und die Adresse könnte ein neues Objekt bekommen → „Handler schon installiert“).
+    deinit {
+        if let referenz { UnregisterEventHotKey(referenz) }
+        if let handler { RemoveEventHandler(handler) }
+    }
 
     public func registriere(_ kuerzel: Tastenkuerzel, aktion: @escaping @MainActor () -> Void) throws {
         hebeAuf()
         try installiereHandler()
         var neu: EventHotKeyRef?
-        let status = RegisterEventHotKey(kuerzel.taste, kuerzel.carbonUmschalter, EventHotKeyID(signature: Self.signatur, id: 1),
+        let status = RegisterEventHotKey(kuerzel.taste, kuerzel.carbonUmschalter, EventHotKeyID(signature: Self.signatur, id: kennung),
                                          GetApplicationEventTarget(), 0, &neu)
         guard status == noErr, let neu else { throw status == OSStatus(eventHotKeyExistsErr) ? KuerzelFehler.belegt : KuerzelFehler.system(status) }
         referenz = neu
@@ -63,6 +72,7 @@ public final class CarbonKuerzel: KuerzelRegistrierung {
                                       MemoryLayout<EventHotKeyID>.size, nil, &id)
             guard s == noErr, id.signature == CarbonKuerzel.signatur else { return OSStatus(eventNotHandledErr) }
             let selbst = Unmanaged<CarbonKuerzel>.fromOpaque(nutzer).takeUnretainedValue()
+            guard id.id == selbst.kennung else { return OSStatus(eventNotHandledErr) } // ein anderes unserer Kürzel: der nächste Handler ist dran
             MainActor.assumeIsolated { selbst.aktion?() }
             return noErr
         }, 1, &art, Unmanaged.passUnretained(self).toOpaque(), &handler)
