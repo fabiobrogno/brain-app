@@ -89,6 +89,36 @@ final class AppZustand: ObservableObject {
         return ErfassenSteuerung.Werkstatt(node: node, skript: skript, umgebung: self.werkstattUmgebung)
     }
 
+    /// Die KI-Routen `/api/ki/…` des Studios (Programme suchen, Anmeldestatus, Anmelden im Terminal). Eine Erkennung für die ganze App,
+    /// damit ihr Cache über Fensterwechsel hält. Ohne Katalog (Ressourcen fehlen) gibt es keine Routen. In der Vorschau sucht sie nur
+    /// im Vorschau-Ordner (kein Login-Shell-Lauf, keine Systemordner mit dem echten claude).
+    private(set) lazy var kiRoute: KiRoute? = {
+        guard let katalog = KiKatalog.laden(ressourcen: Bundle.main.resourceURL) else { return nil }
+        let erkennung: KiErkennung
+        let home: URL
+        if let v = vorschau {
+            home = v.home
+            var basis = ProcessInfo.processInfo.environment
+            basis["PATH"] = ([v.bin.path, "/usr/bin", "/bin", "/usr/sbin", "/sbin"]).joined(separator: ":")
+            erkennung = KiErkennung(katalog: katalog, shell: "/usr/bin/false", home: home,
+                                    appOrdner: [home.appendingPathComponent("Applications", isDirectory: true)], ersatzOrdner: [],
+                                    basisUmgebung: basis)
+        } else {
+            home = FileManager.default.homeDirectoryForCurrentUser
+            erkennung = KiErkennung(katalog: katalog, home: home)
+        }
+        let terminal = URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app")
+        return KiRoute(erkennung: erkennung, support: pfade.basis, home: home) { skript in
+            await withCheckedContinuation { weiter in
+                let konfig = NSWorkspace.OpenConfiguration()
+                konfig.activates = true
+                NSWorkspace.shared.open([skript], withApplicationAt: terminal, configuration: konfig) { _, fehler in
+                    weiter.resume(returning: fehler == nil)
+                }
+            }
+        }
+    }()
+
     init() {
         // Vorschau zuerst und fail-closed: ungültiger Ordner, fehlende Umlenkung des Benutzerordners oder die echte Bundle-ID beenden
         // die App, bevor sie irgendwo etwas liest oder schreibt. Danach zeigt alles (Support, Logs, Kindprozesse) in den Vorschau-Ordner.
@@ -417,7 +447,7 @@ final class AppZustand: ObservableObject {
             return
         }
         studio.oeffne(node: node, vault: vaultVorgabe, skript: werkstattSkript, umgebung: werkstattUmgebung, arbeitsordner: pfade.basis,
-                      test: argumente.studioTestlauf ? argumente : nil, fluechtig: argumente.fluechtig, vorschau: vorschau != nil)
+                      test: argumente.studioTestlauf ? argumente : nil, fluechtig: argumente.fluechtig, vorschau: vorschau != nil, ki: kiRoute)
     }
 
     /// Menübefehl (⌘N, ⌘⇧M, Vault …, Gehe zu …) an die Studio-Oberfläche; öffnet das Studio, wenn es zu ist.

@@ -50,7 +50,7 @@ export function erzeugeVerdrahtung({ starter, support = null, istVorschau = () =
 
   async function stand(v) {
     const frist = neueFrist(FRIST);
-    const profile = erkenneProfile();
+    const profile = erkenneProfile(undefined, support);
     const aus = { starter: { vorhanden: vorhanden() }, profile, claude: null, git: null, dienst: null };
     if (!aus.starter.vorhanden) return { ...aus, dienst: { verfuegbar: false } };
     const vorschau = istVorschau();
@@ -85,9 +85,9 @@ export function erzeugeVerdrahtung({ starter, support = null, istVorschau = () =
       if (an && !v) throw new HttpFehler(409, "Es ist noch kein Vault geöffnet.", { keinVault: true });
       if (an && !v.vertrauenStand().erlaubt) throw new HttpFehler(409, NICHT_VERTRAUT, { art: "nicht-vertraut" }); // Befehle und Hinweise für die KI nur für einen vertrauten Vault
       // Profile: nur Pfade aus der erkannten Liste (nie ein frei gewählter Pfad); ohne Angabe das Standardprofil, falls es eines gibt.
-      const gewuenscht = e.profile === undefined ? erkenneProfile().filter((p) => p.standard).map((p) => p.pfad) : e.profile;
+      const gewuenscht = e.profile === undefined ? erkenneProfile(undefined, support).filter((p) => p.standard).map((p) => p.pfad) : e.profile;
       if (!Array.isArray(gewuenscht) || gewuenscht.some((x) => typeof x !== "string")) throw new HttpFehler(400, "„profile“ muss eine Liste von Pfaden sein.");
-      const gewaehlt = [...new Set(gewuenscht)].map((x) => profilZuPfad(x));
+      const gewaehlt = [...new Set(gewuenscht)].map((x) => profilZuPfad(x, undefined, support));
       if (!gewaehlt.length) throw new HttpFehler(409, "Es ist kein Claude-Profil gewählt.", { art: "kein-profil" });
       if (gewaehlt.some((x) => !x)) throw new HttpFehler(409, "Eines der Claude-Profile gibt es nicht mehr. Suche die Profile bitte neu.", { art: "profil-weg" });
       // KI-Konten: die Hook-Befehle des Profils tragen `--konto <id>` (der Hook weiß, für welches Konto er läuft; ohne Konto bleibt es die Altform).
@@ -115,7 +115,7 @@ export function erzeugeVerdrahtung({ starter, support = null, istVorschau = () =
       was = "Der Hintergrunddienst";
       // Ein mitgeschicktes Profil kommt nicht mehr in die plist; es schlägt nur das Pflege-Konto vor (nach dem Einrichten, siehe unten).
       if (e.profil !== undefined) {
-        dienstProfilWunsch = profilZuPfad(e.profil);
+        dienstProfilWunsch = profilZuPfad(e.profil, undefined, support);
         if (!dienstProfilWunsch) throw new HttpFehler(409, "Das Claude-Profil gibt es nicht mehr. Suche die Profile bitte neu.", { art: "profil-weg" });
       }
     } else throw new HttpFehler(400, "„was“ muss claude, git oder dienst sein.");

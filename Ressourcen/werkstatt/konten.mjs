@@ -21,7 +21,7 @@
 //   POST /api/ki/pflege   { vault, konto|null, stufe: klein|mittel|aus }  — vaults[v].pflege = { konto, stufe }; nur ein Claude-Code-Konto mit der Stufe „erweitert“ für diesen Vault
 //   Migration (einmal): ein festes CLAUDE_CONFIG_DIR in der alten plist des Dienstes wird das Pflege-Konto der Vaults in dienst.json (hat das Konto erweitert: Stufe mittel, sonst ohne KI + Hinweis)
 //  · Was Kortex in settings.json eingetragen hat, steht in ki-konten.json unter `eingetragen` (je Konto), der Wunsch „Strenger Schutz“ unter `schutz`. Der Rückweg entfernt nur das.
-import { readFileSync, realpathSync, lstatSync } from "node:fs";
+import { readFileSync, realpathSync, lstatSync, mkdirSync, renameSync, writeFileSync, existsSync } from "node:fs";
 import { join, dirname, sep } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { HttpFehler, testmodus } from "../gemeinsam/basis.mjs";
@@ -29,6 +29,8 @@ import * as vertrauenFn from "../gemeinsam/vertrauen.mjs";
 import { STUFEN, ABOS, kontenPfad, pruefeDaten, stelleVorherWiederHer, sichereSpur, liesKonten, aendere, repariere, leerDaten, neueId, pruefeName, vaultEintrag, stufeFuer, kennungVon, echterOrt, stufeNr, darfMindestens, PFLEGE_STUFEN, pflegeFuer, pflegeWirksam } from "../gemeinsam/ki-konten.mjs";
 import { vaultRegeln, sandboxPfade, einstellungsRegeln, sandboxGeheim, sandboxSchreibschutz, eineSicherung, tragRegelnEin, nimmRegelnHeraus, liesRegelStand, gleicheSandboxAb, liesSandboxStand } from "../gemeinsam/claude-sperre.mjs";
 import { erkenneKonten } from "./konten-erkennung.mjs";
+import { verwaltetWurzel } from "./profile.mjs";
+import { schutzAmpel } from "./schutz-ampel.mjs";
 import { BESCHREIBUNGEN } from "./ki-programme/programme.mjs";
 import { parseJsonc } from "./ki-programme/jsonc.mjs";
 
@@ -100,7 +102,7 @@ const echtPfad = (p) => { try { return realpathSync.native(p); } catch { return 
 const homeErlaubt = (h) => !testmodus() || echtPfad(h).startsWith(echtPfad(tmpdir()) + sep);
 
 export function erzeugeKonten({ support, home = () => homedir(), vaults = () => [], erkennung = null, verbunden = null, quelleVon = null } = {}) {
-  const erkenne = () => (erkennung ? erkennung() : homeErlaubt(home()) ? erkenneKonten({ home: home() }) : []);
+  const erkenne = () => (erkennung ? erkennung() : homeErlaubt(home()) ? erkenneKonten({ home: home(), support }) : []);
   const istVerbunden = (k) => (verbunden ? !!verbunden(k) : verbundenStandard(k, home()));
   const quelle = (pfad) => { try { return quelleVon ? quelleVon(pfad) : vertrauenFn.pruefeVertrauen(pfad, { support }).quelle; } catch { return null; } };
   const vaultListe = () => { try { return vaults().filter((v) => v && typeof v.pfad === "string"); } catch { return []; } };
@@ -306,7 +308,7 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
 
   // Zustand des Schutzes je Konto für die Anzeige (liest nur).
   function schutzStand(daten, kontoId, k) {
-    if (k.programm !== "claude") return { moeglich: false };
+    if (k.programm !== "claude") return { moeglich: false, ampel: schutzAmpel({ programm: k.programm, gesperrt: gesperrteVaults(daten, kontoId).length }) };
     const gewuenscht = istObj(daten.schutz) && istObj(daten.schutz[kontoId]) && daten.schutz[kontoId].sandbox === true;
     const e = eingetragenVon(daten, kontoId);
     const erlaubt = ordnerErlaubt(k.ordner);
@@ -328,7 +330,8 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
       strengAktiv = st.an && (!e.sandbox || (e.sandbox.denyRead || []).every((p) => st.da.includes(p)));
       warnungen = st.warnungen || [];
     }
-    return { moeglich: true, strenger: gewuenscht, strengerAktiv: strengAktiv, warnungen, vaults };
+    const roh = { moeglich: true, strenger: gewuenscht, strengerAktiv: strengAktiv, warnungen, vaults };
+    return { ...roh, ampel: schutzAmpel({ programm: "claude", gesperrt: Object.keys(vaults).length, schutz: roh }) };
   }
 
   const programmName = (id) => (id === "claude" ? "Claude Code" : id === "codex" ? "Codex" : (BESCHREIBUNGEN.find((x) => x.id === id) || {}).name || id);
@@ -341,9 +344,10 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
     const daten = lade();
     if (!daten) return { zustand: "defekt", stufen: STUFEN, konten: [], vaults: [], zugriff: {} };
     const liste = vaultListe();
+    const anmeldungen = anmeldungLesen();
     const konten = Object.entries(daten.konten).map(([id, k]) => {
       let vorhanden = false; try { vorhanden = lstatSync(k.ordner).isDirectory(); } catch { /* weg */ }
-      return { id, programm: k.programm, programmName: programmName(k.programm), name: k.name, ...(k.abo ? { abo: k.abo } : {}), standard: k.standard === true, ordner: kurz(k.ordner), vorhanden,
+      return { id, programm: k.programm, programmName: programmName(k.programm), name: k.name, ...(k.abo ? { abo: k.abo } : {}), standard: k.standard === true, ordner: kurz(k.ordner), pfad: k.ordner, verwaltet: istVerwaltet(k), ...(anmeldungen.konten[id]?.zuletzt ? { zuletztAngemeldet: anmeldungen.konten[id].zuletzt } : {}), vorhanden,
         verbunden: istVerbunden(k), altform: homeErlaubt(home()) ? altformStandard(k, home()) : { mcp: false, hooks: false }, schutz: schutzStand(daten, id, k), ...(k.heimat ? { heimat: k.heimat } : {}) };
     });
     const zugriff = {};
@@ -617,6 +621,101 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
     });
   }
 
+  // ───────────── Konto hinzufügen, entfernen, Anmeldestand (Einstellungen → KI & Konten) ─────────────
+  // „Konto hinzufügen“ legt einen NEUEN, eigenen Konfigurationsordner unter <Support>/ki-konten-ordner/<programm>-<kennung> an (CLAUDE_CONFIG_DIR bzw. CODEX_HOME zeigen später dorthin). Nie wird
+  // ein Ordner im Home angelegt oder angefasst: `~/.claude` und `~/.codex` bleiben das „System-Standard“-Konto und werden nur als Ort referenziert. Die Anmeldung läuft im Programm selbst
+  // (Terminal); Kortex liest nie Zugangsdaten. Entfernen verschiebt NUR einen von Kortex angelegten Ordner in den Papierkorb (nie ein Konto aus dem Home) — die Oberfläche fragt vorher.
+  const ANLEGBAR = ["claude", "codex"];
+  const wurzelVerwaltet = () => verwaltetWurzel(support);
+  const ordnerKennzeichen = (name) => String(name).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/ß/g, "ss").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 24) || "konto";
+  const istVerwaltet = (k) => { try { const w = echtPfad(wurzelVerwaltet()); const o = echtPfad(k.ordner); return o.startsWith(w + sep) && o.slice(w.length + 1).indexOf(sep) === -1; } catch { return false; } };
+  const supportErlaubt = () => !testmodus() || echtPfad(support).startsWith(echtPfad(tmpdir()) + sep);
+
+  function legeKontoAn(e) {
+    if (!ANLEGBAR.includes(e.programm)) throw new HttpFehler(400, "Ein weiteres Konto gibt es nur für Claude Code und Codex.");
+    const name = pruefeName(e.name);
+    const stufe = e.stufe === undefined ? "gesperrt" : e.stufe;
+    if (!["gesperrt", "lesen"].includes(stufe)) throw new HttpFehler(400, "Ein neues Konto startet gesperrt oder mit „Lesen“.");
+    if (!supportErlaubt()) throw new HttpFehler(409, "Im Testmodus legt Kortex Konto-Ordner nur unter dem Temp-Ordner an.", { art: "testmodus" });
+    ladeOderSynchronisiere();
+    if (Object.values(lade().konten).some((k) => k.programm === e.programm && falte(k.name) === falte(name))) throw new HttpFehler(409, "Ein Konto mit diesem Namen gibt es schon. Wähle einen anderen Namen.", { art: "name-doppelt" });
+    const wurzel = wurzelVerwaltet();
+    const basis = `${e.programm}-${ordnerKennzeichen(name)}`;
+    let ordner = join(wurzel, basis);
+    for (let i = 2; existsSync(ordner) && i < 100; i++) ordner = join(wurzel, `${basis}-${i}`);
+    if (existsSync(ordner)) throw new HttpFehler(409, "Der Ordner für dieses Konto gibt es schon. Wähle einen anderen Namen.", { art: "ordner-da" });
+    try { mkdirSync(wurzel, { recursive: true, mode: 0o700 }); mkdirSync(ordner, { mode: 0o700 }); } catch { throw new HttpFehler(500, "Der Ordner für das neue Konto ließ sich nicht anlegen. Prüfe, ob Kortex in seinen Ordner schreiben darf, und versuche es noch einmal."); }
+    const roh = echterOrt(ordner);
+    const erkannt = [{ programm: e.programm, ordner: roh, standard: false, name, ordnerKennung: kennungVon(roh) }];
+    let id = null;
+    aendere(support, (alt) => {
+      const daten = rechne(alt, { erkannt, vaults: vaultListe(), migration: false, streng: false });
+      id = Object.entries(daten.konten).find(([, k]) => k.programm === e.programm && falte(k.ordner) === falte(roh))?.[0] || null;
+      if (!id) throw new HttpFehler(500, "Das neue Konto ließ sich nicht eintragen.");
+      daten.konten[id].name = name;
+      if (stufe === "lesen") for (const v of Object.values(daten.vaults)) { if (!istObj(v.konten)) v.konten = {}; v.konten[id] = "lesen"; }
+      return daten;
+    });
+    return { ...stand(), neuesKonto: { id, programm: e.programm, pfad: roh } };
+  }
+
+  // Papierkorb des Nutzers (Testmodus: nur im Home unter Temp). Ein Ordner mit gleichem Namen dort bekommt eine Zeit-Endung.
+  const inDenPapierkorb = (ordner) => {
+    const korb = join(home(), ".Trash");
+    if (!homeErlaubt(home())) throw new HttpFehler(409, "Im Testmodus verschiebt Kortex nur im Temp-Ordner.", { art: "testmodus" });
+    try { mkdirSync(korb, { recursive: true, mode: 0o700 }); } catch { /* existiert */ }
+    const basis = ordner.split(sep).pop();
+    let ziel = join(korb, basis);
+    if (existsSync(ziel)) ziel = join(korb, `${basis} ${new Date().toISOString().replace(/[:.]/g, "-")}`);
+    try { renameSync(ordner, ziel); } catch { throw new HttpFehler(502, "Der Ordner ließ sich nicht in den Papierkorb legen. Lege ihn im Finder selbst in den Papierkorb und klicke dann auf „Neu suchen“.", { art: "papierkorb" }); }
+    return ziel;
+  };
+
+  function entferneKonto(e) {
+    if (typeof e.id !== "string") throw new HttpFehler(400, "Die Konto-Kennung fehlt.");
+    const d0 = ladeOderSynchronisiere();
+    const k = Object.hasOwn(d0.konten, e.id) ? d0.konten[e.id] : null;
+    if (!k) throw new HttpFehler(404, "Dieses KI-Konto gibt es nicht (mehr).");
+    if (k.standard === true || !ANLEGBAR.includes(k.programm) || !istVerwaltet(k)) throw new HttpFehler(409, "Dieses Konto hat Kortex nicht angelegt. Kortex entfernt nur eigene Konten; dessen Ordner bleibt, wo er ist.", { art: "nicht-verwaltet" });
+    if (!supportErlaubt()) throw new HttpFehler(409, "Im Testmodus entfernt Kortex Konto-Ordner nur unter dem Temp-Ordner.", { art: "testmodus" });
+    let papierkorb = null;
+    if (existsSync(k.ordner)) papierkorb = inDenPapierkorb(k.ordner); // scheitert das, bleibt alles, wie es war
+    speichere((d) => {
+      delete d.konten[e.id];
+      for (const v of Object.values(d.vaults)) {
+        if (istObj(v.konten)) delete v.konten[e.id];
+        if (istObj(v.gesperrtNutzer)) { delete v.gesperrtNutzer[e.id]; if (!Object.keys(v.gesperrtNutzer).length) delete v.gesperrtNutzer; }
+        if (istObj(v.pflege) && v.pflege.konto === e.id) v.pflege = { konto: null, stufe: "aus" };
+      }
+      for (const feld of ["schutz", "eingetragen"]) if (istObj(d[feld])) { delete d[feld][e.id]; if (!Object.keys(d[feld]).length) delete d[feld]; }
+    });
+    anmeldungSchreiben((a) => { delete a.konten[e.id]; });
+    return { ...stand(), entfernt: { id: e.id, papierkorb: papierkorb !== null } };
+  }
+
+  // Anmeldestand: Kortex liest nie Anmeldedaten. Die App fragt das Programm selbst („claude auth status“ / „codex login status“) und meldet nur das Ergebnis hierher. Die Werkstatt merkt sich,
+  // WANN ein Konto zuletzt angemeldet war: war es das früher und ist es jetzt nicht mehr, heißt das „Anmeldung abgelaufen“ (ein Abmelden von Hand sieht gleich aus).
+  const anmeldeDatei = () => join(support, "ki-anmeldung.json");
+  function anmeldungLesen() {
+    try { const j = JSON.parse(readFileSync(anmeldeDatei(), "utf8")); if (istObj(j) && istObj(j.konten)) return j; } catch { /* fehlt oder kaputt: leer anfangen */ }
+    return { version: 1, konten: {} };
+  }
+  function anmeldungSchreiben(fn) {
+    const a = anmeldungLesen();
+    fn(a);
+    const tmp = `${anmeldeDatei()}.tmp-${process.pid}`;
+    try { writeFileSync(tmp, JSON.stringify(a), { mode: 0o600 }); renameSync(tmp, anmeldeDatei()); } catch { /* der Vermerk ist Beiwerk */ }
+  }
+  function anmeldung(e) {
+    if (typeof e.konto !== "string") throw new HttpFehler(400, "Die Konto-Kennung fehlt.");
+    if (!["angemeldet", "nicht-angemeldet", "unbekannt"].includes(e.zustand)) throw new HttpFehler(400, "Der Zustand muss angemeldet, nicht-angemeldet oder unbekannt sein.");
+    const d = lade();
+    if (!d || !Object.hasOwn(d.konten, e.konto)) throw new HttpFehler(404, "Dieses KI-Konto gibt es nicht (mehr).");
+    if (e.zustand === "angemeldet") anmeldungSchreiben((a) => { a.konten[e.konto] = { zuletzt: jetzt() }; });
+    const zuletzt = anmeldungLesen().konten[e.konto]?.zuletzt || null;
+    return { zustand: e.zustand === "nicht-angemeldet" && zuletzt ? "abgelaufen" : e.zustand, zuletzt };
+  }
+
   // Der Hinweis „Die Liste war beschädigt“ wurde gelesen.
   function quittiereHinweis() {
     ladeOderSynchronisiere();
@@ -702,5 +801,5 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
     return { konto: null, liste: true };
   }
 
-  return { synchronisiere, altform: (id) => { const k = lade() && Object.hasOwn(lade().konten, id) ? lade().konten[id] : null; return k && homeErlaubt(home()) ? altformStandard(k, home()) : { mcp: false, hooks: false }; }, stand, setzeName, setzeZugriff, setzeStandard, setzePflege, migrierePflege, migrationVermerkt, vermerkePlist, setzeSchutz, quittiereHinweis, holeVorher, vaultHinzu, kontoFuerProfil, kontoFuerProgramm, kontoDaten, probeKonto, lade };
+  return { synchronisiere, altform: (id) => { const k = lade() && Object.hasOwn(lade().konten, id) ? lade().konten[id] : null; return k && homeErlaubt(home()) ? altformStandard(k, home()) : { mcp: false, hooks: false }; }, stand, setzeName, setzeZugriff, setzeStandard, setzePflege, migrierePflege, migrationVermerkt, vermerkePlist, setzeSchutz, legeKontoAn, entferneKonto, anmeldung, quittiereHinweis, holeVorher, vaultHinzu, kontoFuerProfil, kontoFuerProgramm, kontoDaten, probeKonto, lade };
 }

@@ -83,7 +83,7 @@ export const api = {
   fassung: (pfad, sha) => anfrage("GET", "/api/git/fassung" + q({ pfad, sha })),
   // vault = der Pfad, den die Frage gezeigt hat: die Werkstatt erlaubt nur, wenn DAS ihr offener Vault ist (sonst 409 art „anderer-vault“)
   vertrauen: (erlauben, vault) => anfrage("POST", "/api/vertrauen", { erlauben: !!erlauben, ...(typeof vault === "string" && vault ? { vault } : {}) }),
-  mcpVerbinden: ({ umstellen, ziel = "claude" } = {}) => anfrage("POST", "/api/mcp/verbinden", umstellen ? { ziel, umstellen: true } : { ziel }),
+  mcpVerbinden: ({ umstellen, ziel = "claude", konto } = {}) => anfrage("POST", "/api/mcp/verbinden", { ziel, ...(umstellen ? { umstellen: true } : {}), ...(konto ? { konto } : {}) }),
   mcpSelbsttest: () => anfrage("POST", "/api/mcp/selbsttest", {}),
   // ---- v2: Index, Typen, Ansichten, Kontext, Verlauf des Repos
   notizen: () => anfrage("GET", "/api/notizen"),
@@ -110,6 +110,16 @@ export const api = {
   vaultKlonen: (url, ordner) => mitWarnung(anfrage("POST", "/api/vaults/klonen", ordner ? { url, ordner } : { url })),
   vaultEntfernen: (pfad) => anfrage("POST", "/api/vaults/entfernen", { pfad }),
   kiErkennen: () => anfrage("GET", "/api/ki/erkennen"),
+  // ---- KI & Konten in den Einstellungen (P6). Programme, Anmeldestand und Anmelden beantwortet in der App Swift selbst (Login-Shell-PATH, Terminal); im Browser antwortet die Werkstatt mit einem Rückfall.
+  kiProgramme: (neu) => anfrage("GET", "/api/ki/programme" + (neu ? "?neu=1" : "")),
+  kiAnmeldestatus: (programm, ordner) => anfrage("POST", "/api/ki/anmeldestatus", { programm, ordner: ordner || null }),
+  kiAnmelden: (programm, ordner) => anfrage("POST", "/api/ki/anmelden", { programm, ordner: ordner || null }),
+  kiAnmeldung: (konto, zustand) => anfrage("POST", "/api/ki/anmeldung", { konto, zustand }),
+  kiKontoNeu: ({ programm, name, stufe }) => anfrage("POST", "/api/ki/konto-neu", { programm, name, ...(stufe ? { stufe } : {}) }),
+  kiKontoEntfernen: (id) => anfrage("POST", "/api/ki/konto-entfernen", { id }),
+  // Hooks, Prüfung vor dem Speichern, Hintergrunddienst: dieselben Routen wie der Assistent (eine Quelle)
+  kernStand: () => anfrage("GET", "/api/kern/stand"),
+  kernVerdrahten: (daten) => anfrage("POST", "/api/kern/verdrahten", daten),
   kitHooks: () => anfrage("POST", "/api/kit/hooks", {}),
   // ---- GitHub-Anmeldung per Gerätecode (nie ein Token in einer Antwort)
   githubAnmelden: () => anfrage("POST", "/api/github/anmelden", {}),

@@ -65,10 +65,13 @@ func stammtVonEigenerOberflaeche(_ nachricht: WKScriptMessage, _ oberflaeche: Ob
 final class Kanal: NSObject, WKScriptMessageHandlerWithReply {
     private let bruecke: BrueckenVerbindung
     private let oberflaeche: Oberflaeche
+    /// Die KI-Routen `/api/ki/…` (nur Studio): laufen in der App und kommen vor der Brücke dran; alles andere geht an die Werkstatt.
+    private let ki: KiRoute?
 
-    init(bruecke: BrueckenVerbindung, oberflaeche: Oberflaeche) {
+    init(bruecke: BrueckenVerbindung, oberflaeche: Oberflaeche, ki: KiRoute? = nil) {
         self.bruecke = bruecke
         self.oberflaeche = oberflaeche
+        self.ki = ki
     }
 
     func userContentController(_ controller: WKUserContentController, didReceive nachricht: WKScriptMessage) async -> (Any?, String?) {
@@ -76,6 +79,9 @@ final class Kanal: NSObject, WKScriptMessageHandlerWithReply {
         let a: (methode: String, pfad: String, body: Data?)
         do { a = try SchemaAntwort.anfrage(ausNachricht: nachricht.body, oberflaeche: oberflaeche) }
         catch { return (nil, (error as? SchemaAntwort.AnfrageFehler)?.meldung ?? SchemaAntwort.AnfrageFehler.ungueltig.meldung) }
+        if let eigene = await ki?.behandle(methode: a.methode, pfad: a.pfad, body: a.body) {
+            return (SchemaAntwort.kanalAntwort(eigene), nil)
+        }
         do {
             let r = try await bruecke.anfrageMitNeuversuch(methode: a.methode, pfad: a.pfad, body: a.body)
             return (SchemaAntwort.kanalAntwort(r), nil)
@@ -199,7 +205,8 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
     /// `fluechtig`: irgendein Testschalter ist aktiv (`StartArgumente.fluechtig`) — gilt für beide Fenster: flüchtiger Web-Speicher,
     /// keine gemerkte Fensterposition. `vorStart`: Prüfung vor jedem Start der Brücke (Kern-Brücke: ist der Kern noch bereit?).
     func oeffne(node: URL, vault: URL?, skript: URL? = nil, kern: URL? = nil, umgebung: [String: String], arbeitsordner: URL? = nil,
-                test: StartArgumente? = nil, fluechtig: Bool = false, vorschau: Bool = false, vorStart: (@Sendable () async -> Bool)? = nil) {
+                test: StartArgumente? = nil, fluechtig: Bool = false, vorschau: Bool = false, vorStart: (@Sendable () async -> Bool)? = nil,
+                ki: KiRoute? = nil) {
         if let fenster {
             if fenster.isMiniaturized { fenster.deminiaturize(nil) }
             fenster.makeKeyAndOrderFront(nil)
@@ -217,7 +224,7 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
         if fluechtig { config.websiteDataStore = .nonPersistent() }
         if test != nil { config.userContentController.addUserScript(StudioTestlauf.ruhigeAnimationen()) }
         config.setURLSchemeHandler(SchemaHandler(bruecke: bruecke, oberflaeche: oberflaeche), forURLScheme: NavigationsRegel.schema)
-        config.userContentController.addScriptMessageHandler(Kanal(bruecke: bruecke, oberflaeche: oberflaeche), contentWorld: .page, name: "brain")
+        config.userContentController.addScriptMessageHandler(Kanal(bruecke: bruecke, oberflaeche: oberflaeche, ki: oberflaeche == .studio ? ki : nil), contentWorld: .page, name: "brain")
         fehlerDrossel = MeldungsDrossel(grenze: AppAktion.maxFehlerJeFenster)
         let aktionsKanal = AktionsKanal(oberflaeche: oberflaeche, vault: { [weak self] in self?.aktuellerVault?() }) { [weak self] aktion in
             guard let self, let f = self.beiAktion else { return nil }
