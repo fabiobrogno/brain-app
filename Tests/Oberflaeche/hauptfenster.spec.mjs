@@ -223,7 +223,7 @@ test("Aufgaben-Board: Kopfzeile bleibt (Brotkrume, Suche, Knöpfe), Notiz-Werkze
   await expect(page.locator("#werkzeuge")).toBeHidden();
   await expect(page.locator("#kopf-suche")).toBeVisible();
   await expect(page.locator("#knopf-frage")).toBeVisible();
-  await expect(page.locator('[data-st="woerter"]')).toHaveCount(0);
+  await expect(page.locator('[data-st="woerter"]')).toBeHidden();
   await bild(page, "04-board");
   // Frag schiebt auch das Board beiseite (rechte Spalte), das Board behält den Rest
   const vorher = await box(page, "#aufgaben-host");
@@ -241,7 +241,7 @@ test("Leere Zustände: Vault ohne Notizen zeigt je einen Satz und eine Aktion in
   await start(page, { pfad: null });
   await expect(page.locator('[data-leer="liste"]')).toBeVisible();
   await expect(page.locator("#leer")).toBeVisible();
-  await expect(page.locator('[data-st="woerter"]')).toHaveCount(0);
+  await expect(page.locator('[data-st="woerter"]')).toBeHidden();
   await expect(page.locator("#pfad .krume.aktuell")).toHaveText("Alle Notizen");
   await bild(page, "05-leer");
 });

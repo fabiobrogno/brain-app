@@ -170,7 +170,7 @@ async function oeffne(pfad, { zeile, ausListe, ausBoard } = {}) {
   zeigeBanner(); zeigeStand(S.schutz ? "schutz" : "gespeichert", true);
   zuletztMerken(d.pfad);
   klappeAuf(d.pfad);
-  markiereAuswahl(); zeichnePfad(); zeichneWerkzeuge(); zeichneOrdner(); setzeFenstertitel(); zeichneStatus();
+  markiereAuswahl(); zeichnePfad(); zeichneWerkzeuge(); zeichneOrdner(); setzeFenstertitel(); aktualisiereStatusDatei();
   ladeInfo();
   if (zeile) ed.springeZu(zeile);
   else if (!ausListe && !document.querySelector(".schleier")) ed.fokus();
@@ -418,7 +418,7 @@ function weicherWechsel() {
 function setzeModus() {
   const vorher = $("app").dataset.modus;
   $("app").dataset.modus = S.sicht.art === "verlauf" ? "verlauf" : istAufgabenSicht() ? (S.aufgabeDatei ? "aufgaben-datei" : "aufgaben") : "liste";
-  if (vorher !== $("app").dataset.modus && S.info?.vault && window.studio?.bereit) zeichneStatus(); // Wörter und Format gelten nur für eine Notiz im Editor, nicht im Board
+  if (vorher !== $("app").dataset.modus) aktualisiereStatusDatei(); // Wörter und Format gelten nur für eine Notiz im Editor, nicht im Board
   $("knopf-verlauf").setAttribute("aria-pressed", String(S.sicht.art === "verlauf"));
   zeichnePfad();
 }
@@ -728,7 +728,7 @@ function schliesseDatei() {
   clearTimeout(speicherTimer);
   S.pfad = null; S.hash = null; S.dirty = false; S.konflikt = null; S.schutz = false; S.aktuellePruefung = null;
   ed.setzeText("", { nurLesen: false });
-  zeigeBanner(); zeichnePfad(); zeichneWerkzeuge(); setzeFenstertitel(); zeichneStatus(); ladeInfo(); zeigeLeer();
+  zeigeBanner(); zeichnePfad(); zeichneWerkzeuge(); setzeFenstertitel(); aktualisiereStatusDatei(); ladeInfo(); zeigeLeer();
   lokal.schreib("pfad", null);
 }
 const posteingangCtx = {
@@ -1250,13 +1250,23 @@ function sageAn(text) {
 const formatName = (p) => (/\.md$/i.test(p) ? T.statusInfo.markdown : /\.txt$/i.test(p) ? T.statusInfo.text : (/\.([A-Za-z0-9]{1,8})$/.exec(p)?.[1] || T.statusInfo.datei).toUpperCase());
 let wortTimer = null;
 const wortZahl = () => (S.pfad ? wortAnzahl(ed.text()) : 0);
+const zeigeDateiTeile = () => !!S.pfad && !(istAufgabenSicht() && !S.aufgabeDatei);
+// Wörter und Format sind immer in der Leiste, nur versteckt, solange keine Notiz im Editor steht: so ändert das Öffnen einer Datei die Leiste nicht strukturell
+// (ein Neuzeichnen holt den Fokus auf einen neuen Knopf und schlösse ein offenes Menü der Statusleiste).
+function aktualisiereStatusDatei() {
+  const teile = stEl.querySelectorAll("[data-datei]");
+  if (!teile.length) return;
+  const zeigen = zeigeDateiTeile();
+  teile.forEach((e) => { e.hidden = !zeigen; });
+  if (!zeigen) return;
+  const w = stEl.querySelector('[data-st="woerter"]'), f = stEl.querySelector('[data-st="format"]');
+  const wt = T.statusInfo.woerter(wortZahl());
+  if (w) { const sp = w.querySelector("span"); if (sp && sp.textContent !== wt) sp.textContent = wt; w.title = wt; }
+  if (f) { f.querySelector("span").textContent = formatName(S.pfad); f.title = S.pfad; }
+}
 function planeWoerter() {
   clearTimeout(wortTimer);
-  wortTimer = setTimeout(() => {
-    const el = stEl.querySelector('[data-st="woerter"] > span');
-    if (el && S.pfad) { const t = T.statusInfo.woerter(wortZahl()); if (el.textContent !== t) el.textContent = t; }
-    else if (S.pfad) zeichneStatus();
-  }, 250);
+  wortTimer = setTimeout(aktualisiereStatusDatei, 250);
 }
 function zeichneStatus() {
   const g = S.git, k = [];
@@ -1290,11 +1300,11 @@ function zeichneStatus() {
   // ---- SLOT P7 (Kontingent): hier zeigt das Paket „Kontingent“ Konto und Verbrauch (Balken, Prozent, Rest). Das leere Element bleibt unsichtbar (hauptfenster.css);
   // wer es füllt, setzt Inhalt in [data-st="platz-kontingent"] und achtet darauf, dass die Leiste bei 1100 px nichts abschneidet (Test „Statusleiste bei kleinem Fenster“).
   k.push(h("span", { klasse: "st st-slot", "data-st": "platz-kontingent", "data-slot": "kontingent", title: T.statusInfo.kontingentSlot }));
-  if (S.pfad && !(istAufgabenSicht() && !S.aufgabeDatei)) {
-    const w = wortZahl();
-    k.push(st("woerter", [h("span", { text: T.statusInfo.woerter(w) })], { titel: T.statusInfo.woerter(w) }));
-    k.push(st("format", [h("span", { text: formatName(S.pfad) })], { titel: S.pfad }));
-    k.push(h("span", { klasse: "trenner" }));
+  {
+    const datei = zeigeDateiTeile(), w = datei ? T.statusInfo.woerter(wortZahl()) : "";
+    const teile = [st("woerter", [h("span", { text: w })], { titel: w }), st("format", [h("span", { text: datei ? formatName(S.pfad) : "" })], { titel: datei ? S.pfad : "" }), h("span", { klasse: "trenner" })];
+    for (const e of teile) { e.dataset.datei = ""; e.hidden = !datei; }
+    k.push(...teile);
   }
   const verbunden = S.kiVerbunden || S.ki?.agenten?.some((a) => a.id === "claude" && a.verbunden === true);
   k.push(st("claude", [kiLogo("claude", 14, { dekorativ: true }), h("span", { text: T.status.claude }), symbol(verbunden ? "haken" : "schliessen", 12)], { klick: oeffneKi, titel: verbunden ? T.status.claudeVerbunden : T.status.claudeNicht, klasse: verbunden ? "gut" : "" }));

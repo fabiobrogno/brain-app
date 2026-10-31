@@ -102,7 +102,7 @@
 .st[data-st="platz-kontingent"] { display: none; }
 .st[data-st="platz-kontingent"]:not(:empty) { display: inline-flex; }
 @container status (max-width: 1180px) { .st[data-st="format"] { display: none; } }
-@container status (max-width: 960px) { .st[data-st="woerter"] { display: none; } .st[data-st="vault"] { display: none; } }
+@container status (max-width: 1099px) { .st[data-st="woerter"], .st[data-st="vault"] { display: none; } }
 
 /* ---------- Befehlspalette (⌘K): Symbole, Tasten als Chips, Esc im Feld, Fußzeile mit den Tasten (Prototyp a5) ---------- */
 .palette .bs-feld { position: relative; padding-right: 56px; }
