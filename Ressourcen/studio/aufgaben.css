@@ -3,14 +3,14 @@
 /* ---------- Fenster-Modi ----------
    aufgaben        = das Board füllt den Platz neben der Seitenleiste (Notizliste und Eigenschaften sind weg)
    aufgaben-datei  = eine Karte wurde geöffnet: der Editor ersetzt das Board, oben steht „Zurück zum Board“ */
-#app[data-modus^="aufgaben"] { grid-template-columns: var(--b-seite) 0 minmax(0, 1fr) var(--b-info); }
-#app[data-modus="aufgaben"] { grid-template-columns: var(--b-seite) 0 minmax(0, 1fr) 0; }
+#app[data-modus^="aufgaben"] { --b-liste-eff: 0px; }
+#app[data-modus="aufgaben"] { --b-info: 0px; }
 #app[data-modus^="aufgaben"] #liste, #app[data-modus^="aufgaben"] .griff[data-griff="liste"], #app[data-modus="aufgaben"] .griff[data-griff="info"] { display: none; }
 #app[data-modus="aufgaben"] #info { display: none; }
 #aufgaben-host { display: none; flex: 1; min-height: 0; flex-direction: column; }
 #app[data-modus="aufgaben"] #aufgaben-host { display: flex; }
 
-#app[data-modus="aufgaben"] .werkzeug, #app[data-modus="aufgaben"] #editor, #app[data-modus="aufgaben"] #leer,
+#app[data-modus="aufgaben"] #editor, #app[data-modus="aufgaben"] #leer,
 #app[data-modus="aufgaben"] #diff-host, #app[data-modus="aufgaben"] #banner-host { display: none !important; }
 .au-zurueck { display: none; }
 #app[data-modus="aufgaben-datei"] .au-zurueck { display: inline-flex; }

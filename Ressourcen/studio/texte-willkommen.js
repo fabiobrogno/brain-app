@@ -16,14 +16,14 @@ export const TW = {
   },
   wege: {
     vorlage: { titel: `Mit der ${PRODUKT}-Vorlage loslegen`, text: `Ein neuer Vault mit Posteingang, Wiki und Beispielseiten.` },
-    leer: { titel: "Leeren Vault anlegen", text: "Ein leerer Ordner mit Versionsverlauf. Du fängst bei null an." },
+    leer: { titel: "Leeren Vault anlegen", text: "Ein leerer Ordner mit Versionsverlauf. Du fängst neu an." },
     ordner: { titel: "Vorhandenen Ordner öffnen", text: "Wähle einen Ordner mit Notizen, den du schon hast." },
     klonen: { titel: "Von GitHub klonen", text: "Hole einen bestehenden Vault aus einem Git-Repository." },
   },
 
   name: {
     vorlage: { titel: `${PRODUKT}-Vorlage anlegen`, text: `Ein neuer Vault mit Posteingang, Wiki und Beispielseiten.`, arbeit: "Die Vorlage wird angelegt …" },
-    leer: { titel: "Leeren Vault anlegen", text: "Ein leerer Ordner mit Versionsverlauf. Du fängst bei null an.", arbeit: "Der Ordner wird angelegt …" },
+    leer: { titel: "Leeren Vault anlegen", text: "Ein leerer Ordner mit Versionsverlauf. Du fängst neu an.", arbeit: "Der Ordner wird angelegt …" },
     feld: "Name",
     vorgabe: PRODUKT,
     ortVor: "Wird angelegt in",

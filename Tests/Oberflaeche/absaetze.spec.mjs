@@ -78,7 +78,7 @@ test("Listenpunkte mit eingerückter Fortsetzung, auch verschachtelt, nummeriert
     "• Zweiter Punkt kurz.",
     "  • Verschachtelt mit einer langen Zeile, die fest umbrochen wurde und dann in der Fortsetzung weitergeht.", // nur die echte Einrückung des Listenpunkts
     "1. Nummeriert mit einer Fortsetzung, die auch eingerückt ist.",
-    "• [ ] Aufgabe mit zwei Zeilen, die ebenfalls fließen soll.",
+    "Aufgabe mit zwei Zeilen, die ebenfalls fließen soll.", // P3: „- [ ]“ ist ein Kästchen (Widget ohne Text) statt „• [ ]“; der Absatz fließt wie vorher
     "",
   ]);
   for (const z of await zeilen(page)) expect(z.trimStart()).not.toMatch(/\S {2,}\S/); // nirgends doppelter Abstand

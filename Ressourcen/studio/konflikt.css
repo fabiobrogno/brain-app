@@ -8,10 +8,10 @@
 }
 
 /* Ansicht: Seitenleiste bleibt, Liste und Eigenschaften weichen (wie das Aufgaben-Board) */
-#app[data-modus="konflikt"] { grid-template-columns: var(--b-seite) 0 minmax(0, 1fr) 0; }
+#app[data-modus="konflikt"] { --b-liste-eff: 0px; --b-info: 0px; } /* Spalten über die Variablen des Hauptfensters (P3), nicht mehr über grid-template-columns: so gleitet „Frag“ auch hier */
 #app[data-modus="konflikt"] #liste, #app[data-modus="konflikt"] #info, #app[data-modus="konflikt"] .griff[data-griff="liste"], #app[data-modus="konflikt"] .griff[data-griff="info"] { display: none; }
 #app[data-modus="konflikt"] #editor, #app[data-modus="konflikt"] #leer, #app[data-modus="konflikt"] #diff-host, #app[data-modus="konflikt"] #banner-host, #app[data-modus="konflikt"] #aufgaben-host, #app[data-modus="konflikt"] #umstellung-host { display: none !important; }
-#app[data-modus="konflikt"] #pille, #app[data-modus="konflikt"] #speicherstand { display: none; }
+#app[data-modus="konflikt"] #pille, #app[data-modus="konflikt"] #speicherstand, #app[data-modus="konflikt"] #werkzeuge, #app[data-modus="konflikt"] #knopf-info { display: none; }
 #konflikt-host { display: none; min-height: 0; flex: 1; }
 #app[data-modus="konflikt"] #konflikt-host { display: flex; }
 
