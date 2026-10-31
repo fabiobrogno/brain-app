@@ -68,7 +68,8 @@ const ANMELDUNG = /sign[ -]?in|log[ -]?in|logged out|not authenticated|unauthori
 // Das Programm läuft in einer eigenen Prozessgruppe und wird nach der Antwort (oder dem Zeitlimit) mit der ganzen Gruppe beendet; beim Beenden der Werkstatt räumt prozess.mjs auf.
 export function liesCodexKontingent({ programm, env, cwd, initFrist = INIT_FRIST_MS, rpcFrist = RPC_FRIST_MS, signal = null } = {}) {
   return new Promise((aufloesen) => {
-    if (beendetGerade()) return aufloesen({ ok: false, art: "ende" });
+    // Abbruch VOR dem Start: gar nicht erst starten (sonst entstünde ein Prozess, der sofort wieder beendet werden müsste)
+    if (beendetGerade() || (signal && signal.aborted)) return aufloesen({ ok: false, art: "ende" });
     let kind;
     try { kind = spawn(programm, CODEX_ARGS, { cwd, env, detached: true, stdio: ["pipe", "pipe", "pipe"], windowsHide: true }); }
     catch (e) { return aufloesen({ ok: false, art: e && e.code === "ENOENT" ? "fehlt" : "start" }); }
@@ -83,7 +84,9 @@ export function liesCodexKontingent({ programm, env, cwd, initFrist = INIT_FRIST
       aufloesen(erg);
     };
     const beiAbbruch = () => ende({ ok: false, art: "ende" });
-    if (signal) { if (signal.aborted) return ende({ ok: false, art: "ende" }); signal.addEventListener("abort", beiAbbruch, { once: true }); }
+    // Ab hier ist das Kind gestartet und registriert (spawn kehrt erst zurück, wenn der Prozess in seiner eigenen Gruppe läuft): ein Abbruch trifft die ganze Gruppe, auch wenn das
+    // Programm noch hochfährt und noch nichts gelesen oder geschrieben hat.
+    if (signal) signal.addEventListener("abort", beiAbbruch, { once: true });
     const frist = (ms) => { clearTimeout(uhr); uhr = setTimeout(() => ende({ ok: false, art: "zeit" }), ms); };
     const sende = (methode, params) => { const id = ++nr; kind.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method: methode, params: params ?? {} })}\n`); return id; };
     const meldung = (methode) => kind.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: methode, params: {} })}\n`);

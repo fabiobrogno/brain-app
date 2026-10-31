@@ -12,6 +12,7 @@ for (const k of ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "CURSOR_CONFIG_DIR", "GEMINI
 
 const { liesCodexKontingent, klassifiziereCodex, CODEX_ARGS, stufe, fehlerPause, TAKT_MS, MIN_NEU_MS, VERALTET_MS } = await import(pfad("gemeinsam", "kontingent.mjs"));
 const { erzeugeKontingent } = await import(pfad("werkstatt", "kontingent.mjs"));
+const { laufendePids } = await import(pfad("gemeinsam", "prozess.mjs"));
 
 const TEMP = realpathSync(tmpdir());
 // Die Attrappe: Modus aus der Umgebungsvariable FAKE_MODUS (die der Test ausdrücklich setzt), Aufrufe und Prozess-Kennung im Ordner FAKE_ORDNER
@@ -24,6 +25,7 @@ const args = process.argv.slice(2);
 fs.appendFileSync(path.join(ordner, "aufrufe.jsonl"), JSON.stringify({ args, codexHome: process.env.CODEX_HOME || null, pid: process.pid, cwd: process.cwd() }) + "\\n");
 fs.writeFileSync(path.join(ordner, "pid"), String(process.pid));
 const modus = process.env.FAKE_MODUS || "ok";
+if (modus === "haengt" || modus === "haengt-init") setInterval(() => {}, 1000); // lebt weiter, auch wenn der Standardeingang zugeht: nur das Beenden der Gruppe räumt auf
 if (modus === "sofort-ende") { console.error("Please sign in again: your ChatGPT session expired"); process.exit(1); }
 if (modus === "stumm-ende") process.exit(1);
 let puffer = "";
@@ -106,14 +108,56 @@ test("Fehlerarten: Programm fehlt · beendet sich sofort (Anmeldung) · stumm be
   assert.equal(await bisTot(a), true);
 });
 
+// Ob ein Prozess (und seine ganze Gruppe) weg ist, sagt allein seine Kennung: `kill -0` auf pid und -pid. Die Attrappe schreibt ihre Kennung erst nach dem Hochfahren von Node in eine Datei;
+// wer vorher abgebrochen wird (unter Last dauert der Start Sekunden), hat nie eine geschrieben — „keine Datei“ heißt also nicht „läuft noch“. Darum nimmt der Test die Kennung des Kindes
+// beim Start aus der Liste der registrierten Prozesse (laufendePids), nicht aus der Datei der Attrappe.
+const lebt = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code !== "ESRCH"; } };
+const gruppeLebt = (pid) => { try { process.kill(-pid, 0); return true; } catch (e) { return e.code !== "ESRCH"; } };
+async function bisWeg(pid, ms = 10_000) { const bis = Date.now() + ms; while (Date.now() < bis && (lebt(pid) || gruppeLebt(pid))) await warte(20); return !lebt(pid) && !gruppeLebt(pid); }
+const neuePids = (vorher) => laufendePids().filter((p) => !vorher.includes(p));
+
 test("Abbrechen (z. B. beim Beenden der Werkstatt) beendet das Programm sofort", async () => {
   const a = attrappe();
   const ab = new AbortController();
+  const vorher = laufendePids();
   const p = liesCodexKontingent({ programm: a.codex, env: a.env("haengt"), cwd: a.cwd, signal: ab.signal, rpcFrist: 20_000 });
-  await warte(300);
+  const [pid] = neuePids(vorher);
+  assert.ok(pid > 0, "das Kind ist gestartet und registriert");
+  // erst abbrechen, wenn die Attrappe läuft (Kennung-Datei da, Anfrage angekommen): so wird wirklich ein laufendes Programm beendet, wie schnell oder langsam der Rechner auch ist
+  for (let i = 0; i < 400 && !(existsSync(join(a.bin, "rpc.jsonl"))); i++) await warte(25);
+  assert.ok(existsSync(join(a.bin, "pid")), "die Attrappe ist hochgefahren");
   ab.abort();
   assert.deepEqual(await p, { ok: false, art: "ende" });
+  assert.equal(await bisWeg(pid), true, "Programm und Prozessgruppe sind weg");
   assert.equal(await bisTot(a), true);
+});
+
+test("Abbrechen, bevor das Programm hochgefahren ist (gleich nach dem Start, unter Last dauert der Start Sekunden): die ganze Gruppe wird beendet, nichts bleibt zurück", async () => {
+  for (let i = 0; i < 12; i++) {
+    const a = attrappe();
+    const ab = new AbortController();
+    const vorher = laufendePids();
+    const p = liesCodexKontingent({ programm: a.codex, env: a.env("haengt"), cwd: a.cwd, signal: ab.signal, rpcFrist: 20_000 });
+    const [pid] = neuePids(vorher);
+    assert.ok(pid > 0);
+    if (i % 3 === 1) await new Promise((ok) => setImmediate(ok));
+    else if (i % 3 === 2) await warte(i);   // mal ein paar Millisekunden später, mal sofort: das Kind fährt gerade erst hoch
+    ab.abort();
+    assert.deepEqual(await p, { ok: false, art: "ende" });
+    assert.equal(await bisWeg(pid), true, `Lauf ${i}: Programm und Prozessgruppe sind weg`);
+    assert.equal(laufendePids().includes(pid) && lebt(pid), false);
+  }
+});
+
+test("Schon abgebrochen, bevor es losgeht: das Programm wird gar nicht erst gestartet", async () => {
+  const a = attrappe();
+  const ab = new AbortController(); ab.abort();
+  const vorher = laufendePids();
+  const p = liesCodexKontingent({ programm: a.codex, env: a.env("haengt"), cwd: a.cwd, signal: ab.signal });
+  assert.deepEqual(neuePids(vorher), [], "kein Prozess entstanden");
+  assert.deepEqual(await p, { ok: false, art: "ende" });
+  await warte(300);
+  assert.equal(existsSync(join(a.bin, "aufrufe.jsonl")), false, "die Attrappe wurde nie aufgerufen");
 });
 
 test("Fenster erkennen (Orcas Fälle): Länge 300/10080 (±1 Min), Reihenfolge egal, unbekannte Länge = alte Zuordnung, Grenzen 0–100, fehlende Felder", () => {

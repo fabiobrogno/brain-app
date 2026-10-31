@@ -40,7 +40,7 @@ export function saetze(text) {
 }
 // Art-Familie für das Bündeln: Ablagen und Änderungen je für sich, die übrigen nach ihrem Schalter (Sicherung, Rückfragen …)
 export const familie = (art) => (ABLAGEN.has(art) || art === "abweisung" ? art : ART_SCHALTER[art] || art);
-// Wohin „Ansehen“ führt: Aufgaben-Board · Posteingang · sonst das Aktivitätsprotokoll (Einstellungen → KI & Konten)
+// Wohin „Ansehen“ führt: Aufgaben-Board · Posteingang · sonst das Aktivitätsprotokoll (Einstellungen → KI & Konten). Bei genau einer Ablage mit vorhandener Datei im Vault öffnet app.js (ansehenAktivitaet) die Notiz selbst.
 export const zielVon = (art) => (art === "ablage-aufgabe" ? "aufgaben" : art === "ablage-notiz" ? "posteingang" : "protokoll");
 
 // Ereignisse (neueste zuletzt oder beliebig) in Gruppen gleicher (Art-Familie, wer, Vault); die Reihenfolge der ersten Treffer bleibt.

@@ -72,6 +72,10 @@ test("Logos: jede Datei da, sauber, mit Quelle, Datum und Lizenz in HERKUNFT.md;
     assert.match(zeile, /20\d\d-\d\d-\d\d/, `${l.datei}: Abrufdatum`);
     assert.match(zeile, /CC0|Marke des Inhabers/, `${l.datei}: Lizenz bzw. Markenhinweis`);
   }
+  // github.svg gehört zu keinem Katalog-Eintrag (Marke für marken.js), ist aber genauso belegt
+  const gh = herkunft.split("\n").find((z) => z.startsWith("|") && z.includes("`github.svg`"));
+  assert.ok(gh, "github.svg: Zeile in HERKUNFT.md fehlt");
+  assert.match(gh, /https:\/\/.*20\d\d-\d\d-\d\d.*CC0/, "github.svg: Quelle, Abrufdatum und Lizenz");
   const ordner = readdirSync(LOGO_ORDNER).filter((f) => /\.(svg|png)$/.test(f));
   for (const f of ordner) assert.ok(dateien.has(f) || f === "github.svg", `${f} liegt im Logo-Ordner, gehört aber zu keinem Katalog-Eintrag`);
 });

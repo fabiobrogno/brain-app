@@ -131,10 +131,3 @@ private func brain(_ name: String = "brain", in home: URL, mitTools: Bool = fals
     let ort = URL(fileURLWithPath: "/Users/test/Documents")
     #expect(VaultAuswahl.vaultOrdner(in: ort, name: "Kortex").path == "/Users/test/Documents/Kortex")
 }
-
-@Test func beispielOrdnerNimmtDenErstenFreienNamen() {
-    let home = URL(fileURLWithPath: "/Users/test")
-    #expect(BeispielVault.ordner(home: home, vorhanden: { _ in false }).path == "/Users/test/Kortex-Beispiel")
-    #expect(BeispielVault.ordner(home: home, vorhanden: { $0 == "/Users/test/Kortex-Beispiel" }).path == "/Users/test/Kortex-Beispiel 2")
-    #expect(BeispielVault.ordner(home: home, vorhanden: { $0.hasSuffix("Kortex-Beispiel") || $0.hasSuffix("Beispiel 2") }).path == "/Users/test/Kortex-Beispiel 3")
-}

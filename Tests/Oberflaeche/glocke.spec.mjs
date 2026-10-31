@@ -4,8 +4,8 @@
 // angelegt, den auch MCP-Server und Hooks benutzen (gemeinsam/aktivitaet.mjs); die Werkstatt meldet neue Einträge über den Live-Strom (alle ~1 s).
 // UI_SHOTS=<Ordner>: legt die Bildschirmfotos dort ab (sonst screenshots/, ignoriert).
 import { test, expect } from "./basis.mjs";
-import { join } from "node:path";
-import { mkdirSync, writeFileSync, existsSync, realpathSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { mkdirSync, writeFileSync, existsSync, realpathSync, symlinkSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { baueVault } from "./vault.mjs";
@@ -243,21 +243,74 @@ test("Live im offenen Panel: ein neues Ereignis erscheint oben unter „Heute“
 });
 
 // ---- Aktionen
-test("Ansehen: Aufgabe → Aufgaben-Board, Notiz → Posteingang; das Panel schließt, die Meldung gilt als gelesen", async ({ page }) => {
+// Die offene Notiz steht im Editor und im Pfad darüber; das Board ist dann zugunsten des Editors ausgeblendet
+const notizOffen = async (page, name) => { await expect(page.locator("#editor")).toBeVisible(); await expect(page.locator("#pfad")).toContainText(name); };
+
+test("Ansehen: Aufgabe → die Aufgabe selbst, Notiz ohne Datei → Posteingang; das Panel schließt, die Meldung gilt als gelesen", async ({ page }) => {
   const a = aufgabeDatei("ansehen-eins");
   meldeAblage(a, { zeit: vorMin(2) });
-  meldeNotiz({ zeit: vorMin(9) });
+  meldeNotiz({ zeit: vorMin(9) }); // 00_inbox/x.md gibt es nicht → wie bisher der Posteingang
   await oeffneStudio(page);
   await expect(zahl(page)).toHaveText("2", { timeout: 8000 });
   await oeffnePanel(page);
   await eintraege(page).filter({ has: page.locator('[data-ki-logo="claude"]') }).getByRole("button", { name: /^Ansehen/ }).click();
-  await expect(page.locator("[data-spalte='offen']")).toBeVisible();
+  await notizOffen(page, "ansehen-eins");
+  await expect(page.locator("[data-spalte='offen']")).toBeHidden(); // der Editor der Aufgabe steht im Board-Modus („Zurück zum Board“)
   await expect(panel(page)).toHaveCount(0);
   await expect(zahl(page)).toHaveText("1", { timeout: 8000 });
   await oeffnePanel(page);
   await eintraege(page).filter({ has: page.locator('[data-ki-logo="cursor"]') }).getByRole("button", { name: /^Ansehen/ }).click();
   await expect(page.locator('[data-bereich="inbox"][aria-current="true"], [data-bereich="inbox"].aktiv, [data-bereich="inbox"][aria-selected="true"]').first()).toBeVisible();
   await expect(page.locator("[data-spalte='offen']")).toBeHidden();
+});
+
+// „Ansehen“ öffnet die abgelegte Notiz selbst, wenn pfade[0] da ist und im Vault liegt (dieselben Pfadregeln wie beim Rückgängig); sonst wie bisher Board bzw. Posteingang
+function notizDatei(name) {
+  const pfad = `00_inbox/${name}.md`;
+  mkdirSync(join(vault, "00_inbox"), { recursive: true });
+  writeFileSync(join(vault, pfad), `---\ntitel: ${name}\n---\nText von ${name}\n`);
+  return pfad;
+}
+const ansehen = async (page) => { await oeffnePanel(page); await eintraege(page).first().getByRole("button", { name: /^Ansehen/ }).click(); await expect(panel(page)).toHaveCount(0); };
+const boardZeigt = async (page) => { await expect(page.locator("[data-spalte='offen']")).toBeVisible(); await expect(page.locator("#editor")).toBeHidden(); };
+
+test("Ansehen (Glocke): eine Notiz im Posteingang, die es gibt, wird selbst geöffnet; in der Liste steht der Posteingang", async ({ page }) => {
+  const pfad = notizDatei("direkt-notiz");
+  meldeNotiz({ zeit: vorMin(2), pfade: [pfad] });
+  await oeffneStudio(page);
+  await expect(zahl(page)).toHaveText("1", { timeout: 8000 });
+  await ansehen(page);
+  await notizOffen(page, "direkt-notiz");
+  await expect(page.locator(".cm-content")).toContainText("Text von direkt-notiz");
+  await expect(page.locator('[data-bereich="inbox"][aria-current="true"], [data-bereich="inbox"].aktiv, [data-bereich="inbox"][aria-selected="true"]').first()).toBeVisible();
+});
+
+test("Ansehen (Glocke): fehlt die Datei, gibt es sie nur außerhalb des Vaults oder zeigt der Pfad hinaus (.., Verknüpfung, falscher Ordner), bleibt es beim Board", async ({ page }) => {
+  const aussen = join(dirname(vault), "aussen-geheim.md");
+  writeFileSync(aussen, "---\ntitel: aussen\n---\nnicht im Vault\n");
+  aufgabeDatei("board-fuellung"); // damit das Board Spalten zeigt
+  symlinkSync(aussen, join(vault, "05_aufgaben", "verknuepft.md"));
+  mkdirSync(join(vault, "02_tiefer"), { recursive: true });
+  writeFileSync(join(vault, "02_tiefer", "falsch.md"), "---\ntyp: aufgabe\n---\n");
+  const faelle = [
+    "05_aufgaben/gibt-es-nicht.md",
+    "05_aufgaben/../../aussen-geheim.md",
+    "../aussen-geheim.md",
+    "05_aufgaben/verknuepft.md",
+    "02_tiefer/falsch.md",
+    "05_aufgaben/keine-md.txt",
+  ];
+  faelle.forEach((pfad, i) => melde("ablage-aufgabe", { text: `hat Fall ${i} angelegt.`, pfade: [pfad], zeit: vorMin(i + 1) }));
+  await oeffneStudio(page);
+  const gelesen = [];
+  page.on("response", (r) => { if (r.url().includes("/api/datei") && r.status() === 200 && /aussen-geheim/.test(decodeURIComponent(r.url()))) gelesen.push(r.url()); });
+  for (const [i, pfad] of faelle.entries()) {
+    await oeffnePanel(page);
+    await eintraege(page).filter({ hasText: `Fall ${i} ` }).getByRole("button", { name: /^Ansehen/ }).click();
+    await expect(panel(page)).toHaveCount(0);
+    await boardZeigt(page);
+    expect(gelesen, pfad).toEqual([]);
+  }
 });
 
 test("Rückgängig: erst die Rückfrage mit dem genauen Pfad; „Abbrechen“ lässt alles; „Entfernen“ nimmt zurück; danach „Wiederherstellen“", async ({ page }) => {
@@ -338,11 +391,11 @@ test("Tastatur: ⌘⇧B öffnet (Fokus auf dem ersten Eintrag), ↑ ↓ wandern,
   await expect(panel(page)).toBeVisible();
   await page.keyboard.press("Meta+Shift+B");
   await expect(panel(page)).toHaveCount(0);
-  // Enter auf einem Eintrag = Hauptaktion (Ansehen → Board)
+  // Enter auf einem Eintrag = Hauptaktion (Ansehen → die Aufgabe selbst, im Board-Modus)
   await page.keyboard.press("Meta+Shift+B");
   await expect(eintraege(page).nth(0)).toBeFocused();
   await page.keyboard.press("Enter");
-  await expect(page.locator("[data-spalte='offen']")).toBeVisible();
+  await notizOffen(page, "tasten-eins");
   await expect(panel(page)).toHaveCount(0);
 });
 

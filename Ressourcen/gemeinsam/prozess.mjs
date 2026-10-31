@@ -26,6 +26,9 @@ export function registriere(kind, cwd = null) {
   return e;
 }
 
+// Die Kennungen der Prozesse, die gerade registriert sind (nur lesen; für Tests und Diagnose).
+export const laufendePids = () => [...laufende].map((e) => e.kind.pid).filter((p) => p !== undefined);
+
 // Alles Laufende beenden (synchron, SIGKILL an die Gruppen); danach starten keine neuen Prozesse mehr. → [{ pid, cwd, start }]
 export function beendeAlleProzesse() {
   wirdBeendet = true;
