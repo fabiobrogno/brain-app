@@ -424,8 +424,8 @@ test("Ende zu Ende: Abgleichen öffnet die Ansicht mit echten Fassungen; entsche
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(server.url);
   await page.waitForSelector('[data-st="sync"]');
-  await page.locator('[data-st="sync"]').click();
-  await expect(page.locator("#konflikt .k-item")).toHaveCount(2, { timeout: 45000 });
+  // das Nachsehen beim Start hält kurz die Sperre im Prozess (409 „läuft schon“): dann noch einmal klicken
+  await expect(async () => { if (!(await page.locator("#konflikt .k-item").count())) await page.locator('[data-st="sync"]').click(); await expect(page.locator("#konflikt .k-item")).toHaveCount(2, { timeout: 4000 }); }).toPass({ timeout: 60000 });
   await expect(page.locator('[data-st="sync"]')).toContainText("Konflikt in 2 Notizen");
   await expect(item(page, 0)).toContainText("Dieser Mac und Fabios iPhone");
   await expect(page.locator(".k-dk:not(.l)").first()).toContainText("Fabios iPhone");
@@ -467,8 +467,8 @@ test("Ende zu Ende: „Später“ nimmt die Zusammenführung zurück — keine K
   server = await starteServer(e.vault);
   await page.goto(server.url);
   await page.waitForSelector('[data-st="sync"]');
-  await page.locator('[data-st="sync"]').click();
-  await expect(page.locator("#konflikt .k-item")).toHaveCount(2, { timeout: 45000 });
+  // das Nachsehen beim Start hält kurz die Sperre im Prozess (409 „läuft schon“): dann noch einmal klicken
+  await expect(async () => { if (!(await page.locator("#konflikt .k-item").count())) await page.locator('[data-st="sync"]').click(); await expect(page.locator("#konflikt .k-item")).toHaveCount(2, { timeout: 4000 }); }).toPass({ timeout: 60000 });
   expect(existsSync(join(e.vault, ".git/MERGE_HEAD"))).toBe(true);
   await page.keyboard.press("Escape");
   await expect(page.locator("#konflikt")).toHaveCount(0);
