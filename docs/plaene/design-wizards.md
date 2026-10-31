@@ -287,7 +287,7 @@ mit gemerkter Höhe — nicht Sichtbares wird nicht gezeichnet. Gemessen mit Pla
 
 | Messung (150 bzw. 70 Bilder) | Mittel / p95 | Schlechtestes Bild |
 |---|---|---|
-| Scrollen der Notizliste, 5.000 Notizen, 90 px je Bild | 17,5 ms / 16,7 ms | 67–100 ms einmalig (Nachladen eines Stücks; in drei Wiederholungen ohne Ausreißer bei kleinerem Stück) |
+| Scrollen der Notizliste, 5.000 Notizen, 90 px je Bild | 17,5 ms / 16,7 ms | einzelne Ausreißer 33–100 ms (Headless-Rauschen und Nachladen eines Stücks) |
 | Frag öffnen und schließen (280 ms Gleiten) | – / 16,7 ms | 16,8 ms |
 | Palette öffnen und schließen | – / 16,8 ms | 16,8 ms |
 | CLS beim Start / über Start, Posteingang, Board, Alle Notizen, Frag | 0,009 / 0,009 | – |
@@ -300,7 +300,6 @@ keine Zusage für ältere Hardware. Der Vergleich ohne `content-visibility` und 
 - **Startbild des Assistenten hing an Animationen** (Fehler aus der Vorschau): `.e-hero > *` und das sich zeichnende Zeichen starten mit Deckkraft 0 bzw. leerem Strich und warten auf die Animation; in einem Fenster, das WebKit nicht sichtbar findet, kam sie nie.
   Jetzt Ruhenetz plus Timer-Endstände (siehe oben); Test mit pausierten Animationen und Gegenprobe.
 - **Skelett unsichtbar bei „Bewegung reduzieren“ (Einstellung):** die Regel dafür kannte nur die Systemeinstellung; jetzt gespiegelt.
-- **Fester Wert `animation-duration: 140s`/`1.6s` blieb beim Umstellen der Dauern unangetastet** (Orbit, Ladekreis im Assistenten): Dauerläufer sind bewusst nicht auf die Hauptdauern gemappt.
 
 ### Prüfung
 
