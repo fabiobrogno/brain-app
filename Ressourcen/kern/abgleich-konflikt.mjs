@@ -509,12 +509,12 @@ function zielSha(vault) {
 // Das Studio hat die Zusammenführung begonnen (git.mjs#sync) und ruft das gleich danach: nur so ist sie „von Kortex“.
 // Nur wenn der Aufrufer sagt, dass vorher KEINE Zusammenführung offen war (vorherAbwesend) UND sein Abgleich sie begonnen hat — sonst wird nie markiert (eine
 // Zusammenführung aus dem Terminal gehört nicht Kortex).
-export function markiere(vault, { support = supportOrdner(), vorherAbwesend = false } = {}) {
+export function markiere(vault, { support = supportOrdner(), vorherAbwesend = false, ziel: gemerkt = null } = {}) {
   const merge = mergeSha(vault);
   if (!merge) return { ok: true, offen: false };
   if (vorherAbwesend !== true) return { ok: true, offen: true, markiert: false };
   // Außerdem muss MERGE_HEAD genau der Stand des Servers sein, den der Abgleich holen wollte (@{u}, sonst origin/<Zweig>): eine Zusammenführung mit etwas anderem hat nicht der Abgleich begonnen
-  const ziel = zielSha(vault);
+  const ziel = gemerkt && istSha(gemerkt) ? gemerkt : zielSha(vault); // der Stand, den der Abgleich vor dem Merge festgehalten hat; sonst @{u} jetzt
   if (!ziel || ziel !== merge) return { ok: true, offen: true, markiert: false };
   const kopf = kopfSha(vault);
   const hashes = {};

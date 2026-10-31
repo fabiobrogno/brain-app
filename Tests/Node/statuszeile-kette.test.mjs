@@ -182,3 +182,25 @@ test("Unbekannte oder unlesbare Kette: nichts wird angefasst", { skip: !POSIX },
   assert.match(b.installer(), /Statusline vorhanden, nicht geändert/);
   assert.equal(JSON.stringify(b.s().statusLine), v);
 });
+
+test("Nach --entfernen kommt die Kortex-Statuszeile beim Ausschalten des Kontingents nicht aus der Sicherung zurück", { skip: !POSIX }, () => {
+  const alt = hookBefehl("/alter/ort/bin/kortex", "statusline");
+  const a = aufbau({ settings: { model: "x", statusLine: { type: "command", command: alt } } });
+  assert.equal(a.schalte(true).kette, true, "die Kette übernimmt die Kortex-Statuszeile als frühere");
+  a.entferner();
+  assert.equal(existsSync(join(a.kette, `${ID}.json`)), false);
+  a.schalte(false);
+  assert.equal(a.s().statusLine, undefined, "die entfernte Statuszeile bleibt entfernt");
+  assert.equal(a.s().model, "x");
+});
+
+test("Kette in fremder Form (anderer else-Zweig): nichts wird angefasst, kein zweiter else-Zweig", { skip: !POSIX }, () => {
+  const a = aufbau({ settings: { model: "x" } });
+  a.schalte(true);
+  const doc = a.s();
+  doc.statusLine.command = doc.statusLine.command.replace(/; fi$/, "; else echo hallo; fi");
+  writeFileSync(a.datei, JSON.stringify(doc, null, 2) + "\n");
+  const vorher = a.s().statusLine.command;
+  assert.match(a.installer(), /Statusline vorhanden, nicht geändert/);
+  assert.equal(a.s().statusLine.command, vorher);
+});

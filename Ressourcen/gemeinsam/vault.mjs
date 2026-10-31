@@ -413,7 +413,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
         } }));
     } catch (e) {
       // Die Zusammenführung blieb offen: Kortex merkt sich, dass SIE sie begonnen hat (nur dann lösen oder brechen wir sie später ab)
-      if (vorherAbwesend && e instanceof HttpFehler && e.status === 409 && e.extra && e.extra.konflikt && e.extra.gestartet === true) { try { await gitFn.gitExklusiv(wurzel, () => kernAbgleich("markieren", { vorherAbwesend: true })); } catch { /* ohne Marke bleibt sie „fremd“: nur ansehen */ } }
+      if (vorherAbwesend && e instanceof HttpFehler && e.status === 409 && e.extra && e.extra.konflikt && e.extra.gestartet === true) { try { await gitFn.gitExklusiv(wurzel, () => kernAbgleich("markieren", { vorherAbwesend: true, ...(typeof e.extra.ziel === "string" ? { ziel: e.extra.ziel } : {}) })); } catch { /* ohne Marke bleibt sie „fremd“: nur ansehen */ } }
       throw e;
     }
     loescheAbgleichStand(wurzel, { support: opts.support }); // der Abgleich lief durch: der Vermerk der Hintergrund-Sicherung (Konflikt, Anmeldung, Neues) gilt nicht mehr

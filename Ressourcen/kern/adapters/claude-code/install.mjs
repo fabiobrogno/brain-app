@@ -76,10 +76,13 @@ function ketteInfo(statusLine) {
   const c = istObjekt(statusLine) ? statusLine.command : null;
   if (typeof c !== "string" || !c.includes(KETTE_SKRIPT)) return null;
   if (process.platform === "win32") return { lesbar: false };
-  const id = /--konto (k_[0-9a-f]{8})(?![0-9a-f])/.exec(c)?.[1] || null;
-  const f = /\[ -f ('(?:[^']|'\\'')*') \]/.exec(c);
-  const skript = f ? entquote(f[1]) : null;
-  if (!id || !skript || !skript.endsWith(KETTE_SKRIPT) || !c.startsWith("if [ -x ") || !c.endsWith("; fi")) return { lesbar: false };
+  // Genau die Form von kettenBefehl (kontingent.mjs): jede andere Form (anderer else-Zweig, zusätzliche Teile) wird nicht angefasst
+  const Q = "'(?:[^']|'\\\\'')*'";
+  const form = new RegExp(`^if \\[ -x (${Q}) \\] && \\[ -f (${Q}) \\]; then (${Q}) (${Q}) --konto (k_[0-9a-f]{8})(?:; else /bin/sh (${Q}))?; fi$`).exec(c);
+  if (!form || form[1] !== form[3] || form[2] !== form[4]) return { lesbar: false };
+  const id = form[5];
+  const skript = entquote(form[2]);
+  if (!skript || !skript.endsWith(KETTE_SKRIPT)) return { lesbar: false };
   const ordner = join(skript.slice(0, -"/bin/".length - KETTE_MARKE.length), "kette");
   const json = join(ordner, `${id}.json`), sh = join(ordner, `${id}.sh`);
   const mit = SH_ZWEIG.test(c);
@@ -96,8 +99,8 @@ function wendeKetteAn(ops, vor) {
   for (const o of ops.filter((x) => x.vor === vor)) {
     if (o.inhalt === null) { try { rmSync(o.datei, { force: true }); } catch { /* bleibt */ } continue; }
     mkdirSync(dirname(o.datei), { recursive: true, mode: 0o700 });
-    const tmp = `${o.datei}.tmp-${process.pid}`;
-    try { writeFileSync(tmp, o.inhalt, { mode: 0o600, flag: "w" }); chmodSync(tmp, 0o600); renameSync(tmp, o.datei); }
+    const tmp = `${o.datei}.tmp-${process.pid}-${Math.random().toString(16).slice(2, 10)}`;
+    try { writeFileSync(tmp, o.inhalt, { mode: 0o600, flag: "wx" }); chmodSync(tmp, 0o600); renameSync(tmp, o.datei); }
     catch (e) { try { rmSync(tmp, { force: true }); } catch { /* weg */ } throw e; }
   }
 }
