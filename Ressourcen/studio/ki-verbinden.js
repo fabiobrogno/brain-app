@@ -8,7 +8,7 @@
 // gehört dem Assistenten), die Willkommen-Karte (fuss: "eigen", rahmen: "karte") und die Einstellungen (Dialog, mit vorgewähltem Programm/Konto). Auch das Anmelden im Terminal
 // (baueAnmeldung) liegt hier und wird von den Einstellungen (Konto-Menü „Neu anmelden …“) mitbenutzt.
 // Gestaltung nach dem Prototyp (app.html#verbinden=1): Orca-Muster „Agent wählen“ (AgentStep.tsx @9bccd67, MIT, Lovecast Inc.), von Hand nachgebaut; kein Quelltext von Orca.
-import { h, dialog, toast } from "./hilfen.js";
+import { h, dialog, dialogEinmalig, toast } from "./hilfen.js";
 import { api as standardApi } from "./api.js";
 import { symbol } from "./symbole.js";
 import { kiLogo, kiKatalog, kiLogoName } from "./ki-logos.js";
@@ -630,7 +630,8 @@ export function erkennungAus(ki) {
 // ============================================================================================================================================
 // Als Dialog (Statusleiste, Befehlspalette, Konto-Menü, Einstellungen). Löst den Ablauf auf, der Dialog schließt mit Esc oder „Abbrechen“.
 // opt: wie erzeugeKiVerbinden (api, vaultPfad, vaultName, start, beiVerbunden, zeigeEinstellungen, kopiere) + beiFertig({ verbunden }) beim Schließen (egal wie)
-export function oeffneKiVerbinden(opt = {}) {
+export function oeffneKiVerbinden(opt = {}) { return dialogEinmalig("ki-verbinden", () => baueKiVerbindenDialog(opt)); }
+function baueKiVerbindenDialog(opt = {}) {
   let d = null, fluss = null;
   fluss = erzeugeKiVerbinden({ ...opt, rahmen: "dialog", fuss: "eigen", vorwahl: opt.vorwahl !== false, beiFertig: () => d?.schliessen() });
   const box = h("div", { klasse: "dialog kv-box", role: "dialog", "aria-modal": "true", "aria-label": TKV.dialogAria, "data-dialog": "ki-verbinden" }, fluss.el);

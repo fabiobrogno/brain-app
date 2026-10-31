@@ -2,7 +2,7 @@
 // Die Daten stehen in ki-katalog.json (neben dieser Datei). Genutzt von:
 //   - dem Kern/der Werkstatt (Erkennung: gemeinsam/ki.mjs → erkenneKatalog; ki-programme/programme.mjs → Erkennung der Einstellungsdateien),
 //   - dem Studio (Ressourcen/studio/ki-katalog.js wird daraus von scripts/erzeuge-ki-katalog.mjs erzeugt; ein Test prüft, dass es stimmt),
-//   - Swift (Sources/BrainCore/KiKatalog.swift liest dieselbe JSON-Datei; KILogoQuelle nimmt Logo-Datei, Ansicht und Farbe von dort).
+//   - Swift (Sources/BrainCore/KiKatalog.swift liest dieselbe JSON-Datei).
 // Logos: Ressourcen/logos/<datei> (Herkunft je Datei: Ressourcen/logos/HERKUNFT.md).
 //
 // Eintrag:

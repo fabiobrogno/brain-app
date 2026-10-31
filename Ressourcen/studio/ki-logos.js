@@ -5,7 +5,7 @@
 // Einheitliche Größe: jede SVG hat im Katalog eine eigene ANSICHT (viewBox), die um die Glyphe zentriert ist und deren Füllung im Quadrat nach
 // der Tintendichte abgestuft ist (dichte Formen kleiner, luftige größer); PNGs sind beim Erzeugen so beschnitten und aufgefüllt. Die Form
 // selbst wird nie verzerrt. Farbe (Feld modus): "einfarbig" = Textfarbe, "marke" = eine Markenfarbe (nur wenn sie auf Hell UND Dunkel mindestens
-// 3:1 Kontrast hat), "bild" = die Farben der Datei. Dieselben Regeln gelten in der App (Sources/BrainCore/KILogoQuelle.swift).
+// 3:1 Kontrast hat), "bild" = die Farben der Datei. Die Regeln prüft Tests/Node/ki-katalog.test.mjs.
 //
 // kiLogoMarkup("claude")  -> SVG-/IMG-Text (oder null, wenn es für diese KI kein Logo gibt)
 // kiLogo("claude", 16)    -> <span class="ki-logo" data-ki-logo="claude" role="img" aria-label="Claude Code" title="Claude Code">…</span>

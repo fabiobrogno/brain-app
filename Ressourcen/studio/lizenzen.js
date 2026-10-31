@@ -2,7 +2,7 @@
 // Der App-Bau legt sie neben die Oberfläche (Contents/Resources/studio/THIRD-PARTY-NOTICES.md); die Werkstatt liefert sie wie jede andere
 // Studio-Datei aus. Im Entwicklungsserver (ohne App-Bau) fehlt sie: dann sagt der Dialog das, statt leer zu bleiben.
 // Kein innerHTML: alles über h() und textContent. Gezeigt wird schlicht (Überschriften, Absätze, Tabellen und Lizenztexte in fester Schrift).
-import { h, dialog } from "./hilfen.js";
+import { h, dialog, dialogEinmalig } from "./hilfen.js";
 import { knopf as baueKnopf } from "./bausteine.js";
 
 export const LIZENZ_DATEI = "THIRD-PARTY-NOTICES.md";
@@ -62,7 +62,8 @@ export async function ladeLizenzText(holen = (u) => fetch(u, { cache: "no-store"
   return t;
 }
 
-export function oeffneLizenzen({ holen } = {}) {
+export function oeffneLizenzen(opt = {}) { return dialogEinmalig("lizenzen", () => baueLizenzen(opt)); }
+function baueLizenzen({ holen } = {}) {
   const platz = h("div", { klasse: "mini", "data-lizenzen": "platz", text: TEXTE.laedt });
   const zu = baueKnopf({ text: TEXTE.zu, variante: "primaer", aktion: "lizenzen-zu", aufKlick: () => d.schliessen() });
   const d = dialog({ titel: TEXTE.titel, satz: TEXTE.einleitung, breit: true, rumpf: [platz], knoepfe: [zu] });

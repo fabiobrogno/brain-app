@@ -458,6 +458,62 @@ test("API: liste, ungelesen, abonnieren, gelesen markieren, Live-Ereignisse, Zus
   expect(existsSync(join(vault, a.pfad))).toBe(true);
 });
 
+test("Hinweis „Ansehen“ gehört zu seinem Vault: nach einem Vault-Wechsel kein Sprung, sondern „gehört zu Vault X – wechseln?“", async ({ page }) => {
+  await oeffneStudio(page);
+  const r = await page.evaluate(async () => {
+    const { erzeugeMitteilungen } = await import("/mitteilungen.js");
+    const { api } = await import("/api.js");
+    let offen = "/Vaults/eins";
+    const hinweise = [], angesehen = [], gewechselt = [];
+    const m = erzeugeMitteilungen({
+      api, buendelMs: 20, buendelMaxMs: 40,
+      toast: (t, o) => { const el = document.createElement("div"); hinweise.push({ t, aktionen: o?.aktionen || [], el }); return el; },
+      beiAnsehen: (ziel) => angesehen.push(ziel), vaultPfad: () => offen, beiWechseln: (p) => gewechselt.push(p),
+    });
+    const ereignis = (id) => ({ typ: "aktivitaet", id, art: "abweisung", zeit: new Date().toISOString(), wer: "Codex", text: "wollte den Vault „Firma“ lesen und wurde abgewiesen.", programm: "codex", vaultName: "Firma", rueckgaengig: false });
+    const warteAuf = async (n) => { for (let i = 0; i < 100 && hinweise.length < n; i++) await new Promise((ok) => setTimeout(ok, 50)); };
+    const aus = {};
+    // 1) derselbe Vault ist noch offen: „Ansehen“ führt hin; der Hinweis trägt den Vault
+    m.verarbeiteLive([ereignis("a_vault_eins1")]);
+    await warteAuf(1);
+    aus.vaultAmHinweis = hinweise[0].el.getAttribute("data-vault-pfad");
+    hinweise[0].aktionen[0].tun();
+    aus.angesehenGleich = angesehen.slice();
+    aus.hinweiseGleich = hinweise.length;
+    // 2) ein Hinweis, dann wechselt der Vault: kein Sprung, ein Hinweis nennt den Vault und bietet „Wechseln“ an
+    m.verarbeiteLive([ereignis("a_vault_eins2")]);
+    await warteAuf(2);
+    offen = "/Vaults/zwei";
+    hinweise[1].aktionen[0].tun();
+    aus.angesehenAnders = angesehen.slice();
+    aus.hinweisAnders = { t: hinweise[2]?.t, knoepfe: (hinweise[2]?.aktionen || []).map((a) => a.text) };
+    hinweise[2].aktionen[0].tun();
+    aus.gewechselt = gewechselt;
+    return aus;
+  });
+  expect(r.vaultAmHinweis).toBe("/Vaults/eins");
+  expect(r.angesehenGleich).toEqual(["protokoll"]);
+  expect(r.hinweiseGleich).toBe(1);
+  expect(r.angesehenAnders).toEqual(["protokoll"]); // unverändert: der zweite Klick hat nichts geöffnet
+  expect(r.hinweisAnders).toEqual({ t: "Das gehört zu Vault „Firma“ – wechseln?", knoepfe: ["Wechseln"] });
+  expect(r.gewechselt).toEqual(["/Vaults/eins"]);
+});
+
+test("Hinweis „Ansehen“ ohne Vault-Angabe (Tests, Vorschau) prüft nichts und führt wie bisher hin", async ({ page }) => {
+  await oeffneStudio(page);
+  const r = await page.evaluate(async () => {
+    const { erzeugeMitteilungen } = await import("/mitteilungen.js");
+    const { api } = await import("/api.js");
+    const hinweise = [], angesehen = [];
+    const m = erzeugeMitteilungen({ api, buendelMs: 20, buendelMaxMs: 40, toast: (t, o) => { hinweise.push(o?.aktionen || []); return document.createElement("div"); }, beiAnsehen: (z) => angesehen.push(z) });
+    m.verarbeiteLive([{ typ: "aktivitaet", id: "a_vault_ohne1", art: "abweisung", zeit: new Date().toISOString(), wer: "Codex", text: "wurde abgewiesen.", programm: "codex", vaultName: "Firma", rueckgaengig: false }]);
+    for (let i = 0; i < 100 && !hinweise.length; i++) await new Promise((ok) => setTimeout(ok, 50));
+    hinweise[0][0].tun();
+    return angesehen;
+  });
+  expect(r).toEqual(["protokoll"]);
+});
+
 test("API: rueckgaengig(id) — Erfolg, „schon zurückgenommen“ höflich, geänderte Datei bleibt (Rückfrage statt Löschen)", async ({ page }) => {
   const a = aufgabeDatei("api-eins"), b = aufgabeDatei("api-zwei");
   const ea = meldeAblage(a), eb = meldeAblage(b);

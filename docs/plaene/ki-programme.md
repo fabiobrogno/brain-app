@@ -51,7 +51,7 @@ Der Adapter bekommt `ctx = { home, a, art, ordner? }`. **`ordner`** ersetzt den 
 
 Routen (`Ressourcen/werkstatt/handler.mjs`): `POST /api/mcp/verbinden` und `/api/mcp/trennen` mit `{ ziel }` (`claude`, `codex`, oder die `id` aus `programme.mjs`); `GET /api/mcp/konfiguration?ziel=<id>` liefert `{ json, ort }` im Format des Programms; `GET /api/ki/erkennen` liefert zusätzlich `programme: [{ id, name, gefunden, version, quelle }]`.
 
-Swift: `KiZiel` (`Sources/BrainCore/EinrichtungsDienste.swift`) hat die neuen Fälle mit `ziel`, `name`, `dateiOrt`; der Assistent zeigt erkannte Programme zuerst und alle nicht gefundenen eingeklappt unter „Weitere Programme“ (dort je Programm „Konfiguration kopieren“). Das Studio (`willkommen.js`) bietet erkannte Programme in der Auswahl „KI verbinden“ an.
+Der Assistent zeigt erkannte Programme zuerst und alle nicht gefundenen eingeklappt unter „Weitere Programme“ (dort je Programm „Konfiguration kopieren“). Das Studio (`willkommen.js`) bietet erkannte Programme in der Auswahl „KI verbinden“ an.
 
 ## Logos
 

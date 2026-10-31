@@ -113,8 +113,11 @@ export async function fuehreRueckgaengigAus(api, id, vault) {
 }
 
 // ---------------------------------------------------------------- die Instanz
-// opt: { api, toast, beiAnsehen(ziel, ereignisse), bündelMs (600), bündelMaxMs (3000), schalter (() => Werte, nur Tests) }
-export function erzeugeMitteilungen({ api, toast, beiAnsehen, buendelMs = 600, buendelMaxMs = 3000, schalter = null } = {}) {
+// opt: { api, toast, beiAnsehen(ziel, ereignisse), bündelMs (600), bündelMaxMs (3000), schalter (() => Werte, nur Tests),
+//        vaultPfad (() => Pfad des offenen Vaults | null), beiWechseln(vaultPfad) (wechselt den Vault; ohne: der Hinweis nennt nur den Vault) }
+// Ein Hinweis gehört zu dem Vault, der offen war, als das Ereignis kam (`data-vault-pfad` am Hinweis). „Ansehen“ führt nur dorthin, wenn dieser Vault noch offen ist;
+// sonst sagt ein Hinweis, zu welchem Vault es gehört, und bietet das Wechseln an. Ohne `vaultPfad` gibt es keine Prüfung (Tests, Vorschau).
+export function erzeugeMitteilungen({ api, toast, beiAnsehen, buendelMs = 600, buendelMaxMs = 3000, schalter = null, vaultPfad = () => null, beiWechseln = null } = {}) {
   const fenster = typeof window !== "undefined" ? window : null;
   const S = { ereignisse: [], ungelesen: 0, gesamt: 0, werte: null, letzteAblage: 0 };
   const abonnenten = new Set();
@@ -190,10 +193,12 @@ export function erzeugeMitteilungen({ api, toast, beiAnsehen, buendelMs = 600, b
   }
 
   // ---- Hinweis unten rechts: gleiche (Art-Familie, wer, Vault) innerhalb kurzer Zeit werden EIN Hinweis
+  const offenerVault = () => { try { return vaultPfad() || null; } catch { return null; } };
   function reihEin(e) {
-    const k = `${familie(e.art)}|${e.wer || ""}|${e.vaultName || ""}`;
+    const vp = offenerVault(); // der Vault, zu dem das Ereignis gehört: der, der jetzt offen ist
+    const k = `${familie(e.art)}|${e.wer || ""}|${e.vaultName || ""}|${vp || ""}`;
     let g = wartend.get(k);
-    if (!g) { g = { ereignisse: [], erster: Date.now(), timer: null }; wartend.set(k, g); }
+    if (!g) { g = { ereignisse: [], erster: Date.now(), timer: null, vaultPfad: vp }; wartend.set(k, g); }
     g.ereignisse.push(e);
     clearTimeout(g.timer);
     g.timer = setTimeout(() => zeige(k), Math.max(0, Math.min(buendelMs, buendelMaxMs - (Date.now() - g.erster))));
@@ -206,9 +211,20 @@ export function erzeugeMitteilungen({ api, toast, beiAnsehen, buendelMs = 600, b
     const erlaubt = g.ereignisse.filter((e) => istArtAn(e.art, S.werte));
     if (!erlaubt.length || typeof toast !== "function") return;
     const hin = baueHinweis(erlaubt);
-    const aktionen = [{ text: TM.ansehen, primaer: true, tun: () => beiAnsehen?.(hin.ziel, erlaubt) }];
+    const aktionen = [{ text: TM.ansehen, primaer: true, tun: () => ansehen(hin.ziel, erlaubt, g.vaultPfad, erlaubt[0].vaultName) }];
     if (hin.rueckgaengigIds.length) aktionen.push({ text: TM.rueckgaengig, tun: () => rueckgaengig(hin.rueckgaengigIds) });
-    toast(hin.text, { fett: hin.fett, unter: hin.unter, logo: hin.programm && kiLogoId(hin.programm) ? kiLogo(hin.programm, 18, { dekorativ: true }) : null, aktionen, ms: 7000, fehler: hin.abweisung });
+    const t = toast(hin.text, { fett: hin.fett, unter: hin.unter, logo: hin.programm && kiLogoId(hin.programm) ? kiLogo(hin.programm, 18, { dekorativ: true }) : null, aktionen, ms: 7000, fehler: hin.abweisung });
+    if (g.vaultPfad) t?.setAttribute?.("data-vault-pfad", g.vaultPfad);
+  }
+  // „Ansehen“ eines Hinweises: nur im Vault, zu dem er gehört. Ist inzwischen ein anderer offen, führt es nirgends hin (sonst landete der Nutzer in der Aufgaben- oder
+  // Notizliste des falschen Vaults); stattdessen nennt ein Hinweis den richtigen Vault und bietet das Wechseln an.
+  function ansehen(ziel, ereignisse, vp, vaultName) {
+    if (vp && vp !== offenerVault()) {
+      toast?.(TM.andererVault(vaultName || null), { ms: 9000,
+        ...(typeof beiWechseln === "function" ? { aktionen: [{ text: TM.wechseln, primaer: true, tun: () => beiWechseln(vp) }] } : {}) });
+      return;
+    }
+    beiAnsehen?.(ziel, ereignisse);
   }
 
   // ---- Live: Ereignisse typ „aktivitaet“ aus dem vorhandenen Strom (die anderen Typen werden übergangen)

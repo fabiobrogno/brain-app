@@ -66,7 +66,7 @@ Jedes Logo hat einen **Modus**: `einfarbig` (Textfarbe, `currentColor`), `marke`
 4. Füllung `f = min(0,96, max(0,70, 0,82 · (0,40 / d)^0,25))`.
 5. Seite des Quadrats = längste Bbox-Seite / `f`, Mitte = Mitte der Bbox, umgerechnet in die Koordinaten des Original-`viewBox`. Das ist die **Ansicht** (`x y breite höhe`).
 
-Der Pfad bleibt Zeichen für Zeichen derselbe, nichts wird verzerrt oder verschoben; die App (`KILogoQuelle.daten`) und das Studio (`ki-logos.js`) setzen für die Darstellung nur das Attribut `viewBox` neu. **Ansicht je Logo: siehe Feld `ansicht` im Katalog.** Das Verfahren wurde an den sieben vorhandenen Logos geprüft: Es trifft die dort dokumentierten Ansichten auf höchstens 0,2 % genau (größte Abweichung der Seitenlänge: Gemini, 0,19 %); für diese sieben gelten weiter die dokumentierten Werte:
+Der Pfad bleibt Zeichen für Zeichen derselbe, nichts wird verzerrt oder verschoben; das Studio (`ki-logos.js`) setzt für die Darstellung nur das Attribut `viewBox` neu. **Ansicht je Logo: siehe Feld `ansicht` im Katalog.** Das Verfahren wurde an den sieben vorhandenen Logos geprüft: Es trifft die dort dokumentierten Ansichten auf höchstens 0,2 % genau (größte Abweichung der Seitenlänge: Gemini, 0,19 %); für diese sieben gelten weiter die dokumentierten Werte:
 
 | Logo | Ansicht (`x y breite höhe`) |
 |---|---|
@@ -135,4 +135,4 @@ Mit schwachem Logo geliefert (aber echt und offiziell): Amp (nur Schriftzug), Au
 
 - Katalog: `Ressourcen/gemeinsam/ki-katalog.json` ist die einzige Quelle (Name, Art, Erkennung, Reihenfolge, Logo-Datei, Modus, Farbe, Ansicht). Kern und Werkstatt lesen ihn über `gemeinsam/ki-katalog.mjs`, die App über `Sources/BrainCore/KiKatalog.swift`.
 - Studio (Web-Oberfläche): `Ressourcen/studio/ki-katalog.js` wird von `scripts/erzeuge-ki-katalog.mjs` aus dem Katalog und diesen Dateien erzeugt (SVG-Text mit der Ansicht aus dem Katalog, PNG als data:-Adresse; der Erzeuger prüft jede SVG erneut). `ki-logos.js` zeichnet daraus; `marken.js` hält GitHub (ein Test, `Tests/Oberflaeche/symbole.spec.mjs`, prüft, dass `marken.js` und `github.svg` übereinstimmen).
-- App (Swift): `Sources/BrainCore/KILogoQuelle.swift` (Datei, Farbe und Ansicht aus dem Katalog) ist in der App derzeit nirgends eingebaut: die Logos zeichnet allein das Studio. Die Quelle bleibt, weil ihre Tests die Regeln (Ansicht, Farbe, Sauberkeit) gegen den Katalog und das Studio absichern (`Tests/BrainCoreTests/KILogoTests.swift`, `KiZielTests.swift`).
+- App (Swift): zeichnet keine Logos; das Studio allein. Die Regeln (Ansicht, Farbe, Sauberkeit, Herkunft) sichert `Tests/Node/ki-katalog.test.mjs` ab.

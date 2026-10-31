@@ -86,6 +86,24 @@ export function dialog({ titel, satz, rumpf, knoepfe = [], breit = false, beiSch
   return { schliessen: zu, box };
 }
 export const dialogOffen = () => !!document.querySelector("#dialog-host .schleier");
+// Dialoge, die per Menü, Befehl oder Knopf aufgehen und nur EINMAL offen sein sollen (Umstellung, KI verbinden, Remote, Lizenzen …):
+// `dialogEinmalig("art", () => dialog({ … }))`. Ist der Dialog dieser Art schon offen, öffnet sich kein zweiter: der offene bekommt den Fokus
+// (liegt ein anderer Dialog darüber, behält der ihn) und dessen Rückgabe kommt noch einmal zurück. `oeffne` muss synchron einen Wert mit `box` liefern
+// (die Rückgabe von `dialog`, auch mit weiteren Feldern), sonst wird nichts gemerkt. Ein geschlossener Dialog hängt nicht mehr im Dokument und zählt nicht.
+const einmaligeDialoge = new Map(); // Art → Rückgabe des offenen Dialogs
+export function dialogEinmalig(art, oeffne) {
+  const offen = einmaligeDialoge.get(art);
+  if (offen?.box?.isConnected) { fokussiereDialog(offen.box); return offen; }
+  const d = oeffne();
+  if (d?.box) einmaligeDialoge.set(art, d); else einmaligeDialoge.delete(art);
+  return d;
+}
+function fokussiereDialog(box) {
+  const schleier = box.closest(".schleier");
+  if (!schleier || document.getElementById("dialog-host")?.lastElementChild !== schleier || box.contains(document.activeElement)) return;
+  const ziel = box.querySelector("[autofocus], button.primaer:not(:disabled), input, textarea, select, button:not(:disabled)");
+  ziel?.focus();
+}
 // Beim Wechsel des Vaults: alle offenen Dialoge zu. Sie gehören zum alten Vault (Sichern, Neue Notiz, Vertrauen, Palette …);
 // was jemand getippt hat, bleibt über beiSchliessen erhalten (z. B. der Entwurf bei „Schnell merken“).
 export function schliesseDialoge() { for (const zu of [...offeneDialoge]) zu(); }
