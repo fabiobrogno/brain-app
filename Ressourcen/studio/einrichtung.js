@@ -71,7 +71,7 @@ const SCHRITTE = TE.schritte;
 const S = {
   step: 0, max: 0, dir: 1, busy: null,
   git: "pruefe", gitMeldung: "", gitPollt: false,
-  weg: "neu", name: "Kortex", ort: null /* gewählter Elternordner für „Neuer Vault“ */, ordner: null /* { pfad, breit, notizen, ordner, mehr } */, vertraut: true, url: "",
+  weg: "neu", name: "Kortex", ort: null /* gewählter Elternordner für „Neuer Vault“ */, ordner: null /* { pfad, breit, notizen, ordner, mehr } */, verlauf: true /* Versionsverlauf einschalten (nur wenn der Ordner noch keinen hat) */, url: "",
   vault: null /* { pfad, name, schluessel } */, vaultFertig: false, klonFehler: null, wasAnDa: false,
   sync: "start" /* start | code | abgelaufen | abgelehnt | ok | aus | gesichert | blockiert | nichtVerfuegbar | laedt */, syncGeladen: false,
   code: null, sekunden: 899, ablaufMs: 0, login: null, schonRemote: null, repo: "", repoFertig: null, syncFehler: null, syncText: "", vergeben: null, angelegt: null, codeLauf: 0, klonWartet: false,
@@ -96,6 +96,12 @@ async function kopiere(text) {
   try { await navigator.clipboard.writeText(text); return true; } catch { return false; }
 }
 function oeffneExtern(url) { if (!aktion("extern", url)) window.open(url, "_blank", "noopener"); }
+// Die Adresse des Gerätecodes kommt aus der Werkstatt: geöffnet wird sie nur als https-Adresse auf github.com (die App prüft es noch einmal).
+function oeffneGitHub(url) {
+  let u; try { u = new URL(String(url)); } catch { return false; }
+  if (u.protocol !== "https:" || !/^(www\.)?github\.com$/i.test(u.hostname)) return false;
+  oeffneExtern(u.href); return true;
+}
 
 // Ordner wählen: in der App der System-Dialog ({pfad, breit?, notizen?, ordner?, mehr?} oder null), im Browser (Entwicklung) ein Pfadfeld.
 async function waehleOrdner(titel, vorschlag) {
@@ -141,7 +147,7 @@ function vaultName() {
 }
 const zielOrdnerNeu = () => (S.ort ? `${S.ort.replace(/\/+$/, "")}/${ordnername(S.name)}` : `~/${ordnername(S.name)}`);
 // Schlüssel der Eingaben des Schritts „Vault“: bleibt er gleich, ist der Vault schon da und „Weiter“ legt nichts noch einmal an.
-const vaultSchluessel = () => JSON.stringify([S.weg, S.name.trim(), S.ort, S.ordner?.pfad ?? null, S.vertraut, S.weg === "klonen" ? klonAdresse(S.url)?.url : null]);
+const vaultSchluessel = () => JSON.stringify([S.weg, S.name.trim(), S.ort, S.ordner?.pfad ?? null, S.verlauf, S.weg === "klonen" ? klonAdresse(S.url)?.url : null]);
 const gitBereit = () => S.git === "ok" || S.git === "unbekannt";
 
 // ---------------------------------------------------------------- Stepper
@@ -301,9 +307,9 @@ function vaultDetail() {
       return detail(h("div", { klasse: "e-wahl-ordner schlecht" }, h("span", { klasse: "e-ico" }, symbol("warnung", 16)), h("div", { klasse: "e-t" }, h("b", { text: kurzPfad(o.pfad) }), h("span", { text: o.breit.name || TE.vault.breitTitel })), aendern),
         h("div", { klasse: "e-meldung schlecht" }, symbol("info", 14), h("span", null, `${TE.vault.zuBreit()} `, dort)));
     }
-    const schalter = umschalter({ an: S.vertraut, label: TE.vault.selbstAngelegt, aufAenderung: (w) => { S.vertraut = w; renderFuss(); }, daten: { "data-aktion": "vertraut" } });
+    const schalter = umschalter({ an: S.verlauf, label: TE.vault.verlauf, aufAenderung: (w) => { S.verlauf = w; renderFuss(); }, daten: { "data-aktion": "verlauf" } });
     return detail(h("div", { klasse: "e-wahl-ordner" }, h("span", { klasse: "e-ico" }, symbol("ordner", 16)), h("div", { klasse: "e-t" }, h("b", { text: kurzPfad(o.pfad) }), h("span", { text: zaehlung })), aendern),
-      h("div", { klasse: "e-schalt-zeile" }, h("div", null, h("b", { text: TE.vault.selbstAngelegt }), h("span", { text: TE.vault.selbstAngelegtText })), schalter));
+      h("div", { klasse: "e-schalt-zeile" }, h("div", null, h("b", { text: TE.vault.verlauf }), h("span", { text: TE.vault.verlaufText })), schalter));
   }
   // klonen
   const a = klonAdresse(S.url);
@@ -357,7 +363,7 @@ function syncKoerper() {
     case "code": case "abgelaufen": case "abgelehnt": {
       const alt = S.sync !== "code";
       const kop = baueKnopf({ text: TE.sicherung.kopieren, groesse: "s", symbol: "kopieren", aktion: "kopieren", disabled: alt, aufKlick: async () => { if (await kopiere(S.code.code)) toast(TE.sicherung.kopiert); } });
-      const gh = baueKnopf({ text: TE.sicherung.githubOeffnen, groesse: "s", aktion: "github-oeffnen", disabled: alt, nach: [symbol("extern", 12)], aufKlick: () => { oeffneExtern(S.code.url); toast(TE.sicherung.githubGeoeffnet); } });
+      const gh = baueKnopf({ text: TE.sicherung.githubOeffnen, groesse: "s", aktion: "github-oeffnen", disabled: alt, nach: [symbol("extern", 12)], aufKlick: () => { if (oeffneGitHub(S.code.url)) toast(TE.sicherung.githubGeoeffnet); else toast(TE.sicherung.adresseUngueltig, { fehler: true }); } });
       const status = h("div", { klasse: "e-code-status", "aria-live": "polite" },
         ...(S.sync === "code" ? [h("span", { klasse: "e-lade" }), h("span", { klasse: "e-shimmer", text: TE.sicherung.wartet }), h("span", { klasse: "e-zeit e-tnum", id: "zeit", text: zeitText() })]
           : [h("span", { klasse: "e-badge warn" }, symbol("uhr", 12), S.sync === "abgelaufen" ? TE.sicherung.abgelaufen : TE.sicherung.abgelehnt),
@@ -516,7 +522,7 @@ function paneFertig() {
   const kiZ = verb.length
     ? zeile(160, "funke", false, verb.map((p) => p.name).join(", "), verb.map((p) => TE.ki.stufen[ki.z.ki[p.id].stufe].name).join(" · "), false, 3, null, logos)
     : zeile(160, "gehirn", true, TE.fertig.keineKi, TE.fertig.keineKiText, false, 3);
-  const pflegeZ = ki.z.pflege ? zeile(240, "sync", false, TE.fertig.pflege, TE.fertig.pflegeText(ki.z.pflege.name), false, 3) : null;
+  const pflegeZ = ki.z.pflege ? zeile(240, "sync", false, TE.fertig.pflege, TE.fertig.pflegeText(ki.z.pflege.name, ki.z.pflege.imDienst === true), false, 3) : null;
   const zusammen = h("div", { klasse: "e-zusammen" }, zeile(0, "ordner", false, TE.fertig.vault(S.vault?.name || vaultName()), kurzPfad(S.vault?.pfad || ""), true, 1), syncZ, kiZ, pflegeZ);
   return paneHuelle(...paneKopf(TE.fertig.titel, TE.fertig.text), h("div", { klasse: "e-koerper" }, zusammen, probeKnoten(verb), tastenKnoten()));
 }
@@ -630,6 +636,7 @@ async function weiter() {
     if (ki.offen().length) {
       S.busy = TE.ki.arbeit(ki.offen().length); renderFuss(); renderBuehne();
       const alle = await ki.verbinde();
+      await ki.ladePflege();
       S.busy = null; renderFuss(); renderBuehne();
       if (!alle) return; // Fehler stehen in den Zeilen, der Nutzer entscheidet
     }
@@ -648,9 +655,9 @@ async function legeVaultAn() {
       if (art === "neu") r = await api.vaultNeu("vorlage", S.name.trim() || "Kortex", zielOrdnerNeu());
       else if (art === "beispiel") r = await legeBeispielAn();
       else if (art === "oeffnen") {
-        r = await api.vaultOeffnen(S.ordner.pfad, S.vertraut ? { gitEinschalten: true } : undefined);
-        const pfad = pfadAusAntwort(r) || S.ordner.pfad;
-        if (S.vertraut) { try { await api.vertrauen(true, pfad); } catch { /* das Studio fragt dann einmal */ } }
+        // Vertrauen vergibt hier niemand: ein von außen geöffneter Ordner bleibt „nur ansehen“, bis du im Studio „Das ist mein Vault“ wählst.
+        // Der Schalter betrifft nur den Versionsverlauf (die Werkstatt schaltet ihn nur ein, wenn der Ordner noch keinen hat).
+        r = await api.vaultOeffnen(S.ordner.pfad, S.verlauf ? { gitEinschalten: true } : undefined);
       } else {
         const a = klonAdresse(S.url);
         r = await api.vaultKlonen(a.url, `~/${ordnername(a.name)}`);
@@ -661,7 +668,7 @@ async function legeVaultAn() {
       S.vault = { pfad, name: info?.name || vaultName(), schluessel: vaultSchluessel() };
       S.vaultFertig = true; S.syncGeladen = false; S.sync = "start"; S.schonRemote = null; S.repoFertig = null; S.angelegt = null; S.repo = repoVorschlag(S.vault.name);
       S.klonFehler = null;
-      ki.z.pflege = null; for (const k of Object.values(ki.z.ki)) k.verbunden = false;
+      ki.vaultGewechselt();
       toast(TE.vault.bereit(S.vault.name));
       return true;
     } catch (e) {
@@ -710,7 +717,10 @@ function zeigeSpaeter() {
     d.schliessen();
     S.busy = TE.beschaeftigt; renderFuss(); renderStepper();
     if (!hatVault && !S.wasAnDa) {
-      try { await api.vaultNeu("vorlage", "Kortex", "~/Kortex"); } catch { toast(TE.spaeterDialog.vaultFehler, { fehler: true }); }
+      // erst nachsehen: ist der Stand nicht lesbar oder inzwischen ein Vault aktiv, wird nichts angelegt und der aktive Vault bleibt, wie er ist
+      let info; try { info = await api.info(); } catch { info = undefined; }
+      if (info === undefined) toast(TE.spaeterDialog.stand, { fehler: true });
+      else if (!info?.vault) { try { await api.vaultNeu("vorlage", "Kortex", "~/Kortex"); } catch { toast(TE.spaeterDialog.vaultFehler, { fehler: true }); } }
     }
     toast(TE.spaeterDialog.toast);
     await warte(ruhig() ? 80 : 700);
@@ -813,7 +823,8 @@ async function start() {
   // Gibt es schon einen Vault (Menü „Kortex einrichten …“) und wurde ab= verlangt, beginnt der Assistent dort
   const ab = { vault: 1, sicherung: 2, ki: 3 }[param.get("ab")];
   let info = null;
-  if (ab) { try { info = await api.info(); } catch { info = null; } }
+  if (ab) { try { info = await api.info(); } catch { info = undefined; } }
+  if (ab && info === undefined) S.wasAnDa = true; // Stand unklar: von einem vorhandenen Vault ausgehen, „Später“ legt dann nichts an
   if (ab && info?.vault) {
     S.vault = { pfad: info.vault, name: info.name || letzter(info.vault), schluessel: vaultSchluessel() };
     S.vaultFertig = true; S.wasAnDa = true; S.weg = "neu"; S.repo = repoVorschlag(S.vault.name);

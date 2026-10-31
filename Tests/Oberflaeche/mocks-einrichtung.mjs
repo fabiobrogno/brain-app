@@ -68,7 +68,7 @@ export async function mockeEinrichtung(page, o = {}) {
     const json = (status, wert) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(wert) });
     const aktiv = () => (z.vault ? { vault: z.vault.pfad, name: z.vault.name, appVersion: "0.2.0", git: true, kit: { vorhanden: true }, mcpBefehl: null } : { vault: null, name: null, appVersion: "0.2.0", git: false, kit: null, mcpBefehl: null });
     switch (pfad) {
-      case "/api/info": return json(200, aktiv());
+      case "/api/info": if (z.infoFehler) return route.abort("failed"); return json(200, aktiv());
       case "/api/vaults/neu": {
         await warte(z.verzoegerung);
         if (z.neuFehler) return json(z.neuFehler.status, { fehler: z.neuFehler.fehler });
@@ -94,7 +94,7 @@ export async function mockeEinrichtung(page, o = {}) {
         if (req.method() === "POST") {
           if (z.anmeldenFehler) return json(z.anmeldenFehler.status, { fehler: z.anmeldenFehler.fehler, art: z.anmeldenFehler.art });
           z.anmeldungen = (z.anmeldungen || 0) + 1; z.codeZustand = "wartet";
-          return json(200, { code: "WDJB-MJHT", url: "https://github.com/login/device", ablauf: new Date(Date.now() + (z.ablaufSekunden ?? 899) * 1000).toISOString() });
+          return json(200, { code: "WDJB-MJHT", url: z.anmeldeUrl || "https://github.com/login/device", ablauf: new Date(Date.now() + (z.ablaufSekunden ?? 899) * 1000).toISOString() });
         }
         if (z.codeZustand === "fertig") { z.github = { ...z.github, angemeldet: true, login: z.github.login || "fabiobrogno" }; return json(200, { zustand: "fertig", login: z.github.login }); }
         return json(200, z.codeZustand === "wartet" ? { zustand: "wartet", code: "WDJB-MJHT", url: "https://github.com/login/device" } : { zustand: z.codeZustand, ...(z.codeGrund ? { grund: z.codeGrund } : {}) });
@@ -105,15 +105,32 @@ export async function mockeEinrichtung(page, o = {}) {
       case "/api/sicherung/bereit": return json(200, z.sicherungBlockiert ? { zustand: "blockiert", text: "Der Vault hat noch keine Version." } : { zustand: z.gesichert ? "gesichert" : "bereit" });
       case "/api/sicherung/verbinden": if (z.verbindenRepoFehler) return json(z.verbindenRepoFehler.status, { fehler: z.verbindenRepoFehler.fehler }); z.gesichert = true; z.verbunden = body; return json(200, { ergebnis: "verbunden" });
       case "/api/ki/erkennen": return json(200, { agenten: AGENTEN[z.ki], cursorDa: z.ki === "drei", programme: z.programme || [] });
-      case "/api/ki/konten": return json(200, { zustand: "ok", konten: KONTEN.filter((k) => z.ki === "keine" ? false : z.ki === "eine" ? k.programm === "claude" : true), vaults: [], zugriff: {} });
+      case "/api/ki/konten": return json(200, { zustand: "ok", konten: KONTEN.filter((k) => z.ki === "keine" ? false : z.ki === "eine" ? k.programm === "claude" : true),
+        vaults: z.vault ? [{ pfad: z.vault.pfad, name: z.vault.name, schluessel: z.vault.pfad }] : [], zugriff: z.zugriff || {} });
       case "/api/mcp/verbinden": {
         await warte(z.verzoegerung);
         const f = z.verbindenFehler[body.ziel];
         if (f && !(f.art === "anders" && body.umstellen)) return json(f.status, { fehler: f.fehler, ...(f.art ? { art: f.art } : {}), ...(f.befehl ? { befehl: f.befehl } : {}) });
         z.verbunden = [...(z.verbunden || []), body];
+        // der Assistent darf ein vom Nutzer gesperrtes Konto nie still öffnen: ohne ausdrückliche Wahl bleibt es gesperrt (wie werkstatt/konten.mjs)
+        if (body.zugriff && body.zugriff !== "gesperrt" && z.gesperrteKonten?.includes(body.konto) && body.zugriffAusdruecklich !== true) return json(200, { ok: true, zugriffGesetzt: false, zugriffGrund: "vom-nutzer-gesperrt" });
         return json(200, { ok: true, zugriffGesetzt: true });
       }
-      case "/api/ki/pflege": z.pflege = body; return json(200, { ok: true });
+      case "/api/ki/pflege":
+        if (req.method() === "GET") return json(200, { vault: url.searchParams.get("vault"), dienst: { eingerichtet: !!z.dienstFuerVault, fuerVault: !!z.dienstFuerVault } });
+        z.pflege = body; return json(200, { ok: true });
+      case "/api/mcp/trennen": z.getrennt = [...(z.getrennt || []), body]; return json(200, { ok: true });
+      case "/api/mcp/konfiguration": return json(200, { json: '{\n  "mcpServers": { "brain": { "command": "node" } }\n}' });
+      case "/api/kern/stand": z.kern ||= { starter: { vorhanden: true }, profile: [{ pfad: "/Users/test/.claude", name: ".claude", standard: true }], claude: { profile: { "/Users/test/.claude": { aktiv: false } } }, git: { moeglich: true, aktiv: false, fremder: false }, dienst: { verfuegbar: true, eingerichtet: false } };
+        return json(200, z.kern);
+      case "/api/kern/verdrahten": {
+        z.verdrahtet = [...(z.verdrahtet || []), body];
+        z.kern ||= { starter: { vorhanden: true }, profile: [{ pfad: "/Users/test/.claude", name: ".claude", standard: true }], claude: { profile: { "/Users/test/.claude": { aktiv: false } } }, git: { moeglich: true, aktiv: false, fremder: false }, dienst: { verfuegbar: true, eingerichtet: false } };
+        if (body.was === "git" && body.an && z.gitFremd && !body.ersetzen) return json(409, { fehler: "anders", art: "anders" });
+        if (body.was === "claude") for (const p of body.profile || []) z.kern.claude.profile[p] = { aktiv: body.an };
+        else z.kern[body.was === "git" ? "git" : "dienst"][body.was === "git" ? "aktiv" : "eingerichtet"] = body.an;
+        return json(200, { ok: true, stand: z.kern });
+      }
       case "/api/probe": await warte(z.verzoegerung); if (z.probeFehler) return json(500, { fehler: z.probeFehler }); return json(200, { treffer: z.probeTreffer });
       default: return json(404, { fehler: "nicht gefunden" });
     }

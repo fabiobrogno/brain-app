@@ -422,3 +422,7 @@ html.e-app .e-ampel { display: none; }
 .e-win .dialog > .dialog-satz { padding-bottom: 18px; }
 .e-ki-hinweis { display: grid; justify-items: start; gap: 8px; }
 .e-ki-hinweis[hidden] { display: none; }
+.e-zusatz { display: grid; gap: 14px; margin-top: 4px; }
+.e-zusatz[hidden] { display: none; }
+.e-zusatz-zeile > div, .e-konfig-zeile > div { display: grid; gap: 4px; }
+.e-ki-konfig { margin-top: 2px; }

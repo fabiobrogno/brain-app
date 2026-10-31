@@ -207,6 +207,36 @@ import CoreGraphics
     #expect(!f.sollErscheinen(hatVault: false))
 }
 
+@Test func fensterZuOhneWahlMitAktivemVaultGiltAlsEingerichtet() throws {
+    let d = EinrichtungsFenster.datei(nach: nil, vorher: nil, herkunft: .start, vaultAktiv: true)
+    #expect(d.abgeschlossen && !d.automatischAus, "Vault da = eingerichtet; Sicherung und KI sind freiwillig")
+    let ohne = EinrichtungsFenster.datei(nach: nil, vorher: nil, herkunft: .start, vaultAktiv: false)
+    #expect(!ohne.abgeschlossen)
+    let s = EinrichtungsSpeicher(pfade: AppPfade(basis: tempOrdner()))
+    try s.speichere(d)
+    #expect(!s.sollErscheinen(hatVault: true) && !s.sollErscheinen(hatVault: false))
+    // „Später“ nach einem schon fertigen Lauf lässt abgeschlossen stehen
+    #expect(EinrichtungsFenster.datei(nach: .spaeter, vorher: d, herkunft: .menue, vaultAktiv: true).abgeschlossen)
+}
+
+@Test func gitZwischenablageUndEndeGeltenNurAusDemEinrichtungsfenster() {
+    #expect(EinrichtungsFenster.nurAusEinrichtung(.gitPruefen))
+    #expect(EinrichtungsFenster.nurAusEinrichtung(.gitInstallieren))
+    #expect(EinrichtungsFenster.nurAusEinrichtung(.kopieren("WDJB-MJHT")))
+    #expect(EinrichtungsFenster.nurAusEinrichtung(.einrichtungEnde(.fertig)))
+    #expect(!EinrichtungsFenster.nurAusEinrichtung(.vaultGewechselt))
+    #expect(!EinrichtungsFenster.nurAusEinrichtung(.ordnerWaehlen(titel: nil, vorschlag: nil)))
+}
+
+@Test func ausDemEinrichtungsfensterOeffnetExternNurGitHubUeberHttps() {
+    #expect(EinrichtungsFenster.externErlaubt(URL(string: "https://github.com/login/device")!))
+    #expect(EinrichtungsFenster.externErlaubt(URL(string: "https://www.github.com/login/device")!))
+    #expect(!EinrichtungsFenster.externErlaubt(URL(string: "http://github.com/login/device")!))
+    #expect(!EinrichtungsFenster.externErlaubt(URL(string: "https://github.com.evil.example/login/device")!))
+    #expect(!EinrichtungsFenster.externErlaubt(URL(string: "https://evil.example/github.com")!))
+    #expect(!EinrichtungsFenster.externErlaubt(URL(string: "file:///etc/passwd")!))
+}
+
 // MARK: Ordner-Wahl: Zählung und Antwort
 
 private func baueOrdner() throws -> URL {

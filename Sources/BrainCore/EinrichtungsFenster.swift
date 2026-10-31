@@ -50,18 +50,33 @@ public enum EinrichtungsFenster {
     public static func istSeite(_ url: URL) -> Bool { url.path == pfad }
 
     /// Der Stand von `einrichtung.json` nach dem Ende. `ende` nil = Fenster zu, ohne eine Wahl zu treffen: außer `herkunft` ändert sich
-    /// nichts (kein „Später“, damit der Assistent beim nächsten Start weitermacht).
+    /// nichts (kein „Später“, damit der Assistent beim nächsten Start weitermacht) — außer es gibt einen aktiven Vault (`vaultAktiv`):
+    /// dann gilt das Nötige als eingerichtet (`abgeschlossen`), wie bisher beim Assistenten (Vault da = eingerichtet; Sicherung und KI sind freiwillig).
     /// - fertig: `abgeschlossen`, `automatischAus` aus.
     /// - spaeter: `automatischAus` an; `abgeschlossen` bleibt, wie es war.
-    public static func datei(nach ende: EinrichtungsEnde?, vorher: EinrichtungsDatei?, herkunft: EinrichtungsHerkunft) -> EinrichtungsDatei {
+    public static func datei(nach ende: EinrichtungsEnde?, vorher: EinrichtungsDatei?, herkunft: EinrichtungsHerkunft, vaultAktiv: Bool = false) -> EinrichtungsDatei {
         var d = vorher ?? EinrichtungsDatei()
         d.herkunft = herkunft
         switch ende {
         case .fertig?: d.abgeschlossen = true; d.automatischAus = false
         case .spaeter?: d.automatischAus = true
-        case nil: break
+        case nil: if vaultAktiv { d.abgeschlossen = true }
         }
         return d
+    }
+
+    /// Diese Aktionen der Seite gelten nur aus dem Einrichtungsfenster: git prüfen/installieren, Zwischenablage, Ende (die Studio-Seite braucht sie nicht).
+    public static func nurAusEinrichtung(_ aktion: AppAktion) -> Bool {
+        switch aktion {
+        case .gitPruefen, .gitInstallieren, .kopieren, .einrichtungEnde: return true
+        default: return false
+        }
+    }
+
+    /// Aus dem Einrichtungsfenster öffnet `extern` nur GitHub (die Adresse des Gerätecodes kommt aus der Werkstatt, nie ungeprüft): https und Host `github.com`.
+    public static func externErlaubt(_ url: URL) -> Bool {
+        guard url.scheme?.lowercased() == "https", let host = url.host?.lowercased() else { return false }
+        return host == "github.com" || host == "www.github.com"
     }
 }
 

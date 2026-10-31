@@ -90,7 +90,7 @@ for (const thema of ["light", "dark"]) {
       await page.click(sel("weiter"));
       await expect(page.locator("#win")).toHaveAttribute("data-step", "2", { timeout: 6000 });
       expect(anfragen(z, "/api/vaults/oeffnen")[0].body).toEqual({ pfad: "/Users/test/Dokumente/Notizen", gitEinschalten: true });
-      expect(anfragen(z, "/api/vertrauen")[0].body).toEqual({ erlauben: true, vault: "/Users/test/Dokumente/Notizen" });
+      expect(anfragen(z, "/api/vertrauen").length, "Vertrauen vergibt der Assistent nie: das fragt das Studio").toBe(0);
     });
 
     test("Ordner zu breit: gesperrt mit Grund, Vorschlag legt einen Unterordner an", async ({ page }) => {
@@ -247,8 +247,9 @@ for (const thema of ["light", "dark"]) {
       await page.click(sel("weiter"));
       await expect(page.locator("#win")).toHaveAttribute("data-step", "4", { timeout: 8000 });
       const v = (z.verbunden || []).map((b) => b);
+      // ausdrücklich ist nur, was du selbst angeklickt hast: Cursor „Lesen“ ja, die Vorbelegung von Claude nicht
       expect(v).toEqual([
-        { ziel: "claude", konto: "k_claude_firma", zugriff: "posteingang", zugriffAusdruecklich: true },
+        { ziel: "claude", konto: "k_claude_firma", zugriff: "posteingang" },
         { ziel: "cursor", konto: "k_cursor", zugriff: "lesen", zugriffAusdruecklich: true },
       ]);
     });
@@ -313,12 +314,12 @@ for (const thema of ["light", "dark"]) {
       await expect.poll(() => z.ende, { timeout: 5000 }).toEqual({ art: "fertig" });
     });
 
-    test("Später (Esc): Rückfrage, Weiter einrichten schließt sie; Später legt den leeren Vault an und meldet das Ende", async ({ page }) => {
+    test("Später (Esc): Rückfrage, Weiter einrichten schließt sie; Später legt einen Vault mit Grundordnern an und meldet das Ende", async ({ page }) => {
       const z = await oeffne(page);
       await zuVault(page);
       await page.keyboard.press("Escape");
       await expect(page.locator(".dialog")).toContainText("Den Rest später einrichten?");
-      await expect(page.locator(".dialog")).toContainText("leeren Vault unter ~/Kortex");
+      await expect(page.locator(".dialog")).toContainText("Vault mit Grundordnern");
       await bild(page, "w5-spaeter", thema);
       await page.keyboard.press("Escape");
       await expect(page.locator(".dialog")).toHaveCount(0);
@@ -440,5 +441,131 @@ test.describe("Echte Werkstatt ohne Vault (Wegwerf-HOME)", () => {
       // GitHub ist in dieser Werkstatt nicht eingerichtet (keine Client-ID): der Schritt sagt es und lässt weitergehen
       await expect(page.locator("#e-sync")).toContainText("nicht eingerichtet", { timeout: 8000 });
     } finally { s.stopp(); }
+  });
+});
+
+// ---------- Sicherheit und erhaltene Funktionen
+test.describe("Gesperrte Konten, Vertrauen, Zusatz-Eintragungen", () => {
+  const VAULT = "/Users/test/Kortex";
+  test("Ein vom Nutzer gesperrtes Konto bleibt gesperrt: keine Stufe, keine ausdrückliche Wahl, Hinweis statt Freigabe", async ({ page }) => {
+    const z = await oeffne(page, { zugriff: { k_claude_privat: { [VAULT]: "gesperrt" } }, gesperrteKonten: ["k_claude_privat"] });
+    await zuKi(page);
+    await expect(page.locator('.e-ki-zeile[data-ki="claude"] [data-bereich="gesperrt"]')).toContainText("bleibt gesperrt");
+    await expect(page.locator('.e-ki-zeile[data-ki="claude"] [data-wert="gesperrt"]')).toHaveAttribute("aria-checked", "true");
+    await page.click(sel("weiter"));
+    await expect(page.locator("#win")).toHaveAttribute("data-step", "4", { timeout: 8000 });
+    expect(z.verbunden).toEqual([{ ziel: "claude", konto: "k_claude_privat" }]); // weder zugriff noch zugriffAusdruecklich
+    await expect(page.locator(".e-zusammen")).toContainText("Gesperrt");
+  });
+
+  test("Wählst du bei einem gesperrten Konto selbst eine Stufe, gilt sie ausdrücklich; eine vorhandene Stufe ist vorbelegt und nicht ausdrücklich", async ({ page }) => {
+    const z = await oeffne(page, { zugriff: { k_claude_privat: { [VAULT]: "gesperrt" }, k_claude_firma: { [VAULT]: "lesen" } }, gesperrteKonten: ["k_claude_privat"] });
+    await zuKi(page);
+    await page.click('.e-ki-zeile[data-ki="claude"] [data-wert="lesen"]');
+    await page.click('.e-ki-zeile[data-ki="claude"] [data-wert="k_claude_firma"]');
+    await expect(page.locator('.e-ki-zeile[data-ki="claude"] [data-wert="lesen"]')).toHaveAttribute("aria-checked", "true");
+    await page.click(sel("weiter"));
+    await expect(page.locator("#win")).toHaveAttribute("data-step", "4", { timeout: 8000 });
+    expect(z.verbunden).toEqual([{ ziel: "claude", konto: "k_claude_firma", zugriff: "lesen", zugriffAusdruecklich: true }]);
+  });
+
+  test("Vorbelegung aus dem Konto: Lesen bleibt Lesen, ohne ausdrückliche Wahl", async ({ page }) => {
+    const z = await oeffne(page, { zugriff: { k_claude_privat: { [VAULT]: "lesen" } } });
+    await zuKi(page);
+    await expect(page.locator('.e-ki-zeile[data-ki="claude"] [data-wert="lesen"]')).toHaveAttribute("aria-checked", "true");
+    await page.click(sel("weiter"));
+    await expect(page.locator("#win")).toHaveAttribute("data-step", "4", { timeout: 8000 });
+    expect(z.verbunden).toEqual([{ ziel: "claude", konto: "k_claude_privat", zugriff: "lesen" }]);
+  });
+
+  test("Ordner öffnen: kein Vertrauen vom Assistenten; „Versionsverlauf“ ist ein eigener Schalter", async ({ page }) => {
+    const z = await oeffne(page);
+    await zuVault(page);
+    await page.click('[data-weg="oeffnen"]');
+    await page.click(sel("waehle"));
+    await expect(page.locator("#e-detail")).toContainText("Versionsverlauf einschalten");
+    await expect(page.locator("#e-detail")).not.toContainText("selbst angelegt");
+    await page.click(sel("verlauf")); // aus
+    await page.click(sel("weiter"));
+    await expect(page.locator("#win")).toHaveAttribute("data-step", "2", { timeout: 6000 });
+    expect(anfragen(z, "/api/vaults/oeffnen")[0].body).toEqual({ pfad: "/Users/test/Dokumente/Notizen" });
+    expect(anfragen(z, "/api/vertrauen").length).toBe(0);
+  });
+
+  test("Zusätzlich: Hooks, Prüfung vor dem Speichern, Hintergrunddienst über /api/kern/verdrahten; fremde Prüfung wird nur nach „Ersetzen“ abgelöst", async ({ page }) => {
+    const z = await oeffne(page, { gitFremd: true });
+    await zuKi(page);
+    await expect(page.locator("#ki-zusatz")).toContainText("Zusätzlich, wenn du möchtest");
+    await expect(page.locator("#ki-zusatz [data-zusatz]")).toHaveCount(3);
+    await page.click('[data-aktion="zusatz-claude"]');
+    await expect.poll(() => z.verdrahtet?.length).toBe(1);
+    expect(z.verdrahtet[0]).toEqual({ was: "claude", an: true, profile: ["/Users/test/.claude"] });
+    await expect(page.locator('[data-aktion="zusatz-claude"]')).toHaveAttribute("aria-checked", "true");
+    await page.click('[data-aktion="zusatz-git"]');
+    await expect(page.locator('[data-bereich="git-ersetzen"]')).toContainText("schon eine andere Prüfung");
+    await page.click(sel("git-ersetzen"));
+    await expect(page.locator('[data-aktion="zusatz-git"]')).toHaveAttribute("aria-checked", "true");
+    expect(z.verdrahtet.at(-1)).toEqual({ was: "git", an: true, ersetzen: true });
+    await page.click('[data-aktion="zusatz-dienst"]');
+    await expect(page.locator('[data-aktion="zusatz-dienst"]')).toHaveAttribute("aria-checked", "true");
+    await page.click('[data-aktion="zusatz-dienst"]');
+    await expect.poll(() => z.verdrahtet.at(-1)).toEqual({ was: "dienst", an: false });
+  });
+
+  test("Trennen nimmt nur Kortex' Eintrag heraus; „Konfiguration kopieren“ für andere KIs", async ({ page }) => {
+    const z = await oeffne(page);
+    await zuKi(page);
+    await page.click(sel("konfig-kopieren"));
+    await expect.poll(() => z.zwischenablage).toContain('"mcpServers"');
+    await page.click(sel("weiter")); // Claude verbinden
+    await expect(page.locator("#win")).toHaveAttribute("data-step", "4", { timeout: 8000 });
+    await page.click(sel("zurueck"));
+    await expect(page.locator('.e-ki-zeile[data-ki="claude"]')).toHaveClass(/verbunden/);
+    await page.click('.e-ki-zeile[data-ki="claude"] [data-aktion="trennen"]');
+    await expect(page.locator('.e-ki-zeile[data-ki="claude"]')).toContainText("Getrennt");
+    expect(z.getrennt).toEqual([{ ziel: "claude", konto: "k_claude_privat" }]);
+  });
+
+  for (const [dienst, text] of [[false, "beim nächsten Sitzungsstart"], [true, "Täglich im Hintergrund"]]) {
+    test(`Fertig: die Pflege-Zeile sagt ehrlich, ob der Hintergrunddienst läuft (${dienst ? "Dienst da" : "ohne Dienst"})`, async ({ page }) => {
+      const z = await oeffne(page, { dienstFuerVault: dienst });
+      await zuKi(page);
+      await page.click('.e-ki-zeile[data-ki="claude"] [data-wert="erweitert"]');
+      await page.click(sel("weiter"));
+      await expect(page.locator(".e-zusammen")).toContainText(text, { timeout: 8000 });
+      expect(z.pflege).toEqual({ vault: VAULT, konto: "k_claude_privat", stufe: "mittel" });
+    });
+  }
+
+  test("Die Adresse des Gerätecodes wird nur geöffnet, wenn sie https und github.com ist", async ({ page }) => {
+    const z = await oeffne(page, { anmeldeUrl: "https://github.com.evil.example/login/device" });
+    await zuSicherung(page);
+    await page.click(sel("weiter"));
+    await expect(page.locator(".e-code")).toBeVisible();
+    await page.click(sel("github-oeffnen"));
+    await expect(page.locator(".toast.fehler")).toContainText("gehört nicht zu GitHub");
+    expect(z.aktionen.some((a) => a.aktion === "extern")).toBe(false);
+  });
+
+  test("Später ohne lesbaren Stand (?ab=) legt nichts an und ändert den aktiven Vault nicht", async ({ page }) => {
+    const z = await oeffne(page, { infoFehler: true }, "?ab=sicherung");
+    await bereit(page);
+    await page.click(sel("schon")); // Willkommen bleibt bedienbar
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".dialog")).toBeVisible();
+    await page.click(sel("spaeter-ja"));
+    await expect.poll(() => z.ende, { timeout: 5000 }).toEqual({ art: "spaeter" });
+    expect(anfragen(z, "/api/vaults/neu").length).toBe(0);
+  });
+
+  test("Später legt keinen Vault an, wenn inzwischen einer aktiv ist; sonst einen mit Grundordnern", async ({ page }) => {
+    const z = await oeffne(page);
+    await zuVault(page);
+    z.vault = { pfad: "/Users/test/Anderer", name: "Anderer" }; // anderswo wurde ein Vault geöffnet
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".dialog")).toContainText("Grundordnern");
+    await page.click(sel("spaeter-ja"));
+    await expect.poll(() => z.ende, { timeout: 5000 }).toEqual({ art: "spaeter" });
+    expect(anfragen(z, "/api/vaults/neu").length).toBe(0);
   });
 });

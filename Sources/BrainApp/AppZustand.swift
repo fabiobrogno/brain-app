@@ -441,6 +441,12 @@ final class AppZustand: ObservableObject {
     /// `von`: das Fenster, das die Aktion geschickt hat (Ordner-Dialog als Sheet an genau diesem Fenster; `einrichtung-ende` nur von dort).
     private func fuehreAus(_ aktion: AppAktion, von: FensterSteuerung) async -> Any? {
         let ok: [String: Any] = ["ok": true]
+        // git, Zwischenablage und „Ende“ gehören dem Einrichtungsfenster; aus dem Studio sind sie nicht vorgesehen. Und dort öffnet `extern` nur GitHub.
+        if EinrichtungsFenster.nurAusEinrichtung(aktion), von !== einrichtung { return ["ok": false, "grund": "kein-einrichtungsfenster"] as [String: Any] }
+        if case .extern(let url) = aktion, von === einrichtung, !EinrichtungsFenster.externErlaubt(url) {
+            log.schreibe("aktion extern abgelehnt einrichtung")
+            return ["ok": false, "grund": "adresse-nicht-erlaubt"] as [String: Any]
+        }
         switch aktion {
         case .ansicht:
             log.schreibe("aktion ansicht")
@@ -619,6 +625,9 @@ final class AppZustand: ObservableObject {
         einrichtungVaultVorher = vaultFrisch()
         einrichtungVerdraengtStudio = automatisch
         einrichtungEndeArt = nil
+        // Das Gedächtnis des Assistenten steht ab dem Öffnen da: wird er mittendrin beendet, macht er beim nächsten Start dort weiter.
+        let gedaechtnis = EinrichtungsSpeicher(pfade: pfade)
+        try? gedaechtnis.speichere(EinrichtungsFenster.datei(nach: nil, vorher: gedaechtnis.lade(), herkunft: einrichtungHerkunft))
         let url = EinrichtungsFenster.url(ab: ab ?? (einrichtungVaultVorher != nil ? .sicherung : nil))
         log.schreibe("assistent-offen automatisch=\(automatisch)")
         einrichtung.oeffne(node: node, vault: nil, skript: skript, umgebung: werkstattUmgebung, arbeitsordner: pfade.basis,
@@ -637,7 +646,7 @@ final class AppZustand: ObservableObject {
         einrichtungVaultVorher = nil
         let speicher = EinrichtungsSpeicher(pfade: pfade)
         do {
-            try speicher.speichere(EinrichtungsFenster.datei(nach: ende, vorher: speicher.lade(), herkunft: einrichtungHerkunft))
+            try speicher.speichere(EinrichtungsFenster.datei(nach: ende, vorher: speicher.lade(), herkunft: einrichtungHerkunft, vaultAktiv: vaultFrisch() != nil))
         } catch {
             log.schreibe("einrichtung speichern-fehlgeschlagen \(error.localizedDescription)")
         }

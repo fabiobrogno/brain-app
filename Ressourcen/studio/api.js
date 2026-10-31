@@ -86,6 +86,11 @@ export const api = {
   // konto = Kennung eines KI-Kontos, zugriff = Stufe (gesperrt|lesen|posteingang|erweitert) für den offenen Vault (Assistent)
   mcpVerbinden: ({ umstellen, ziel = "claude", konto, zugriff, zugriffAusdruecklich } = {}) => anfrage("POST", "/api/mcp/verbinden",
     { ziel, ...(umstellen ? { umstellen: true } : {}), ...(konto ? { konto } : {}), ...(zugriff ? { zugriff, ...(zugriffAusdruecklich ? { zugriffAusdruecklich: true } : {}) } : {}) }),
+  // Trennen (nur der Eintrag von Kortex bei dieser KI), Konfiguration zum Kopieren, Hooks/Prüfung/Hintergrunddienst (eine Wahrheit mit den Einstellungen)
+  mcpTrennen: ({ ziel, konto } = {}) => anfrage("POST", "/api/mcp/trennen", { ziel, ...(konto ? { konto } : {}) }),
+  mcpKonfiguration: (ziel) => anfrage("GET", "/api/mcp/konfiguration" + q({ ziel })),
+  kernStand: () => anfrage("GET", "/api/kern/stand"),
+  kernVerdrahten: ({ was, an, ersetzen, profile } = {}) => anfrage("POST", "/api/kern/verdrahten", { was, an: !!an, ...(ersetzen ? { ersetzen: true } : {}), ...(profile ? { profile } : {}) }),
   mcpSelbsttest: () => anfrage("POST", "/api/mcp/selbsttest", {}),
   // ---- v2: Index, Typen, Ansichten, Kontext, Verlauf des Repos
   notizen: () => anfrage("GET", "/api/notizen"),
