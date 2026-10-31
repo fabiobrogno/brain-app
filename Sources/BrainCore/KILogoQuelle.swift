@@ -5,10 +5,7 @@ import Foundation
 /// `Contents/Resources/logos`). UI-unabhängig, damit Tests die Zuordnung ohne SwiftUI prüfen. Die Herkunft der Dateien, die Begründung der
 /// Farben und der Ansichten steht in `Ressourcen/logos/HERKUNFT.md`.
 public extension KiZiel {
-    /// Rückfall, wenn kein Logo geladen werden kann.
-    var initiale: String { String(name.prefix(1)).uppercased() }
-
-    /// Das Logo laut Katalog (Datei, Modus, Markenfarbe, Ansicht); `nil` = kein echtes Logo vorhanden (Darstellung als Initiale).
+    /// Das Logo laut Katalog (Datei, Modus, Markenfarbe, Ansicht); `nil` = kein echtes Logo vorhanden.
     func logo(ressourcen: URL? = Bundle.main.resourceURL) -> KiLogoInfo? {
         KiKatalog.laden(ressourcen: ressourcen)?.logo(ziel)
     }

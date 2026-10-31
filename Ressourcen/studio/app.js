@@ -1491,11 +1491,31 @@ function kiHinweisPlanen(ki) {
   // Rückfall (P8a): kommt innerhalb ~1,5 s ein Ereignis des Aktivitätsprotokolls dazu, zeigt mitteilungen.js den Hinweis (mit „Ansehen“/„Rückgängig“); dieser hier nur bei älterer Werkstatt oder ohne Protokoll
   kiTimer = setTimeout(() => { const t = kiHinweis(kiSammlung); kiSammlung = []; if (t && !mitteilungen.deckt(Date.now() - 6000)) toast(t, { ms: 5200 }); }, 1500);
 }
-// Mitteilungen (P8a): „Ansehen“ im Hinweis → Aufgaben-Board, Posteingang oder Aktivitätsprotokoll (Einstellungen → KI & Konten)
-async function ansehenAktivitaet(ziel) {
+// Mitteilungen (P8a): „Ansehen“ im Hinweis und in der Glocke → die abgelegte Notiz selbst, wenn der Eintrag genau eine Ablage nennt und die Datei im Vault liegt;
+// sonst (mehrere Ablagen, Datei weg oder außerhalb, Abweisung, Sicherung …) wie bisher Aufgaben-Board, Posteingang oder Aktivitätsprotokoll (Einstellungen → KI & Konten)
+// Dieselben Pfadregeln wie beim Rückgängig (werkstatt/aktivitaet.mjs, pruefeZiel): genau der erste Pfad des Eintrags, eine .md-Datei direkt im Ordner der Aufgaben bzw. im Posteingang.
+// Das Protokoll liegt außerhalb des Vaults und ist nur ein Hinweis: ob die Datei da ist und im Vault liegt, sagt die Werkstatt (api.datei prüft den Pfad wie jedes Öffnen), nie der Eintrag.
+function ablagePfadVon(e) {
+  if (!e || (e.art !== "ablage-aufgabe" && e.art !== "ablage-notiz")) return null;
+  if (e.vaultPfad && S.info?.vault && e.vaultPfad !== S.info.vault) return null; // Eintrag eines anderen Vaults
+  const p = Array.isArray(e.pfade) ? e.pfade[0] : null;
+  if (typeof p !== "string" || !p || p.startsWith("/") || /[\\\0]/.test(p)) return null;
+  const teile = p.split("/");
+  const ordner = e.art === "ablage-aufgabe" ? S.aufgabenOrdner : inboxName();
+  if (!ordner || teile.length !== 2 || teile.some((t) => !t || t === "." || t === "..") || teile[0].toLowerCase() !== ordner.toLowerCase() || !/\.md$/i.test(teile[1])) return null;
+  return p;
+}
+async function ansehenAktivitaet(ziel, ereignisse = []) {
   if (ziel === "protokoll") return oeffneEinstellungenSeite({ bereich: "ki", ziel: "ki-aktivitaet" });
   if (einstOffen()) await einstModul.schliesse({ fokus: false });
-  waehleSicht({ art: "bereich", id: ziel === "aufgaben" ? "aufgaben" : "inbox" });
+  const e = Array.isArray(ereignisse) && ereignisse.length === 1 ? ereignisse[0] : null; // mehrere Ablagen in einem Hinweis: das Board bzw. der Posteingang zeigt sie alle
+  const pfad = ablagePfadVon(e);
+  let da = false;
+  if (pfad) { try { da = !!(await api.datei(pfad)); } catch { da = false; } }
+  const aufgabe = ziel === "aufgaben";
+  waehleSicht({ art: "bereich", id: aufgabe ? "aufgaben" : "inbox" });
+  if (!da) return;
+  if (aufgabe) await oeffneAufgabeDatei(pfad); else await oeffne(pfad, { ausListe: true });
 }
 const mitteilungen = erzeugeMitteilungen({ api, toast, beiAnsehen: ansehenAktivitaet });
 const glocke = erzeugeGlocke({ mitteilungen, api, beiAnsehen: ansehenAktivitaet, beiEinstellungen: (ziel) => oeffneEinstellungenSeite(ziel) }); // P8b: Zähler und Liste (⌘⇧B, Register „mitteilungen“)

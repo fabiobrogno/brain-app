@@ -478,8 +478,9 @@ test("Schmal (400 px): kein waagerechter Balken im Tor, bei der Bestätigung, be
   await ok("Angebote");
   // Stand „fertig“ mit Rückweg-Frage
   Object.assign(z.stand, standAufgeraeumt("mitWarnungen"));
-  await page.evaluate(() => window.studio.befehl("umstellung"));
+  // erst den alten Dialog schließen, dann den neuen öffnen (der Befehl lädt das Modul asynchron: ein zweiter Befehl vor dem Esc ließ je nach Tempo zwei Dialoge stehen)
   await page.keyboard.press("Escape");
+  await expect(dlg(page)).toHaveCount(0);
   await page.evaluate(() => window.studio.befehl("umstellung"));
   await expect(dlg(page)).toBeVisible();
   await expect(pb(page).locator('[data-um="b-fertig"]')).toBeVisible();
@@ -506,6 +507,7 @@ test("Dunkel: Tor, Probelauf, Stand und Angebote lesbar (Bildschirmfotos)", asyn
   // Stand fertig und mit Warnungen
   Object.assign(z.stand, standAufgeraeumt("mitWarnungen"));
   await page.keyboard.press("Escape");
+  await expect(dlg(page)).toHaveCount(0);
   await page.evaluate(() => window.studio.befehl("umstellung"));
   await expect(pb(page).locator('[data-um="b-fertig"]')).toHaveAttribute("data-ampel", "warn");
   await ruhig(page); await page.screenshot({ path: shot("stand-warnungen-dunkel") });

@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 /// Die Kortex-Farben als SwiftUI-Farben, die dem Erscheinungsbild (hell/dunkel) von selbst folgen. Die Werte stehen in `KortexFarben`
-/// (dort auch der Kontrast-Test); die App benutzt sie als `Kortex.akzent` / `Kortex.akzentText` (`Sources/BrainApp/Kortex.swift`).
+/// (dort auch der Kontrast-Test); die App benutzt sie als `Kortex.akzent` (`Sources/BrainApp/Kortex.swift`).
 /// Eine dynamische `NSColor` leistet im Code dasselbe wie ein Asset-Katalog (das Paket entsteht mit SwiftPM, ohne `actool`).
 public enum KortexFarbe {
     /// Akzent als Fläche, Linie oder Schrift. Hell `#5B4ED6`, dunkel `#A89FFF`.
