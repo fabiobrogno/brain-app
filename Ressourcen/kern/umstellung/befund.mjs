@@ -92,7 +92,7 @@ function laufendeProzesse(vault, env = process.env) {
       const kit = join(v, ALT_KIT_ORDNER);
       let l; try { l = lstatSync(kit); } catch { continue; }
       if (!l.isDirectory()) continue;
-      try { nimm(execFileSync(lsof, ["-t", "+D", kit], { encoding: "utf8", timeout: 20_000, windowsHide: true, stdio: ["ignore", "pipe", "ignore"] })); } catch { /* keine Treffer (Exit 1), nicht prüfbar oder zu langsam: nur pgrep zählt */ }
+      try { nimm(execFileSync(lsof, ["-t", "+D", kit], { encoding: "utf8", timeout: 20_000, windowsHide: true, stdio: ["ignore", "pipe", "ignore"] })); } catch (e) { if (e && e.stdout) nimm(e.stdout); /* lsof endet mit Exit 1 auch bei Treffern, wenn es Warnungen gab: die Ausgabe zählt trotzdem; sonst keine Treffer, nicht prüfbar oder zu langsam: nur pgrep zählt */ }
     }
   }
   return pids.size;

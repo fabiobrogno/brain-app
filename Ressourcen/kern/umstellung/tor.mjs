@@ -16,7 +16,7 @@ import { join } from "node:path";
 import { kernVersion, liesConfigRoh } from "../pfade.mjs";
 import { erstelleBefund } from "./befund.mjs";
 import { liesZustand, liesProtokoll } from "./protokoll.mjs";
-import { versionKleiner, geraeteId } from "./geraete.mjs";
+import { versionKleiner, geraeteId, liesGeraeteVersion } from "./geraete.mjs";
 import { probelaufBStand } from "./probelauf-b-merker.mjs";
 
 export const WARTEZEIT_TAGE = 7;
@@ -38,6 +38,8 @@ export function phaseBBegonnen(zustand) {
   if (zustand.phaseB) return false;
   return ["B1", "B2", "B3"].some((id) => zustand.schritte && zustand.schritte[id] && ["ok", "laeuft"].includes(zustand.schritte[id].status));
 }
+// Die Version eines Macs: die laufend erneuerte Datei .kortex/versionen/<ID>.json, sonst das Feld im Gerätemerker (Stände davor); gilt die höhere
+const hoehere = (a, b) => (a && b ? (versionKleiner(a, b) ? b : a) : a || b || null);
 export function liesGeraete(vault) {
   const aus = [];
   let namen = [];
@@ -46,7 +48,7 @@ export function liesGeraete(vault) {
     const id = n.replace(/\.json$/, "");
     try {
       const j = JSON.parse(readFileSync(join(vault, ".kortex", "geraete", n), "utf8"));
-      if (istObjekt(j)) aus.push({ id, phaseA: typeof j.phaseA === "string" ? j.phaseA : null, phaseB: typeof j.phaseB === "string" ? j.phaseB : null, kortexVersion: typeof j.kortexVersion === "string" ? j.kortexVersion : null });
+      if (istObjekt(j)) aus.push({ id, phaseA: typeof j.phaseA === "string" ? j.phaseA : null, phaseB: typeof j.phaseB === "string" ? j.phaseB : null, kortexVersion: hoehere(liesGeraeteVersion(vault, id), typeof j.kortexVersion === "string" ? j.kortexVersion : null) });
     } catch { aus.push({ id, phaseA: null, phaseB: null, kortexVersion: null, defekt: true }); }
   }
   return aus;

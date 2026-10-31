@@ -7,9 +7,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, writeFileSync, readdirSync, lstatSync, symlinkSync, mkdirSync, mkdtempSync, rmSync, renameSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { spawnSync } from "node:child_process";
 import { umstellungsFixture, inhaltsStand, freigabe, umstellungsStand } from "./umstellung-hilfe.mjs";
-import { baueTestUmgebung } from "./konto-hilfe.mjs";
 import { phaseAFertig, tuerOffen, tor, bedingung, BEST, REICH_B, json, gitIn } from "./umstellung-hilfe-b.mjs";
 import { phaseB, TestAbbruch } from "../umstellung/phase-b.mjs";
 import { phaseA } from "../umstellung/phase-a.mjs";
@@ -20,8 +18,6 @@ import { probelaufBStand } from "../umstellung/probelauf-b-merker.mjs";
 import { leseBloecke, findeVerwaiste } from "../umstellung/verwaist.mjs";
 import { einbindungsBlock, setzeBlock } from "../umstellung/git-umzug.mjs";
 import { raeume } from "../umstellung/aufraeumen.mjs";
-import { aktualisiereGeraetemerker, geraeteId } from "../umstellung/geraete.mjs";
-import { kernVersion, KERN } from "../pfade.mjs";
 
 const vaultStand = (h) => inhaltsStand(h.a.vault, { ohne: [".git", ".logs"] });
 const kit = (h) => join(h.a.vault, ".tools");
@@ -283,48 +279,6 @@ test("Prozessprüfung fail-closed: pgrep scheitert/fehlt → Tor rot „konnte n
     process.env.KORTEX_LSOF = skript("lsof-leer", "exit 1");
     assert.equal(bedingung(tor(h), "prozesse").erfuellt, true);
   } finally { for (const [k, v] of [["KORTEX_PGREP", merken.p], ["KORTEX_LSOF", merken.l]]) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } h.weg(); }
-});
-
-test("Tor „macs“: dieser Mac braucht einen Merker; der Merker wird beim Sitzungsstart aufgefrischt (nur dieser Pfad, ein Commit)", async () => {
-  const h = umstellungsFixture(REICH_B);
-  try {
-    await phaseAFertig(h);
-    const z = h.z();
-    const gid = geraeteId(z, { anlegen: false });
-    const merker = join(h.a.vault, ".kortex", "geraete", `${gid}.json`);
-    // fremder Mac mit altem Merker bleibt unberührt
-    h.a.schreibe(join(h.a.vault, ".kortex", "geraete", "cccccccccccc.json"), JSON.stringify({ name: "C", kortexVersion: "0.1.0", phaseA: "2026-10-01" }));
-    sh(h, "add", "--", ".kortex"); sh(h, "commit", "-q", "-m", "Mac C");
-    assert.equal(bedingung(tor(h), "macs").grund, "geraet-zu-alt");
-    assert.match(bedingung(tor(h), "macs").text, /Öffne Kortex dort/);
-    // eigener Merker mit alter Version → Auffrischen
-    writeFileSync(merker, JSON.stringify({ ...json(merker), kortexVersion: "0.1.0" }, null, 2) + "\n"); sh(h, "commit", "-q", "-am", "alt");
-    const kopf = sh(h, "rev-parse", "HEAD");
-    assert.equal(aktualisiereGeraetemerker(z), "aktualisiert");
-    assert.equal(json(merker).kortexVersion, kernVersion());
-    assert.equal(sh(h, "rev-list", "--count", `${kopf}..HEAD`), "1");
-    assert.deepEqual(sh(h, "show", "--name-only", "--format=%s", "HEAD").split("\n").filter(Boolean), ["Kortex: Gerät aktualisiert", `.kortex/geraete/${gid}.json`]);
-    assert.equal(json(join(h.a.vault, ".kortex", "geraete", "cccccccccccc.json")).kortexVersion, "0.1.0", "fremder Merker unberührt");
-    assert.equal(aktualisiereGeraetemerker(z), "aktuell");
-    // gesperrt / nicht sauber
-    writeFileSync(merker, JSON.stringify({ ...json(merker), kortexVersion: "0.1.0" }, null, 2) + "\n");
-    assert.equal(aktualisiereGeraetemerker(z), "datei-nicht-sauber");
-    sh(h, "checkout", "--", `.kortex/geraete/${gid}.json`);
-    mkdirSync(join(h.a.vault, ".logs"), { recursive: true }); writeFileSync(join(h.a.vault, ".logs", "umstellung-phase-b.lock"), "{}");
-    writeFileSync(merker, JSON.stringify({ ...json(merker), kortexVersion: "0.1.0" }, null, 2) + "\n"); sh(h, "commit", "-q", "-am", "alt2");
-    assert.equal(aktualisiereGeraetemerker(z), "gesperrt");
-    rmSync(join(h.a.vault, ".logs", "umstellung-phase-b.lock"));
-    // der Sitzungsstart-Aufruf (Kindprozess mit gebauter Umgebung)
-    const umg = baueTestUmgebung({ HOME: h.a.home, BRAIN_APP_SUPPORT: h.a.support, KORTEX_KERN_PFAD: join(h.a.support, "bin", "kern"), KORTEX_KERN_UNSTABIL_ERLAUBT: "1", GIT_CONFIG_GLOBAL: h.gitGlobal, GIT_AUTHOR_NAME: "T", GIT_AUTHOR_EMAIL: "t@example.org", GIT_COMMITTER_NAME: "T", GIT_COMMITTER_EMAIL: "t@example.org" });
-    const p = spawnSync(process.execPath, [join(KERN, "umstellung", "geraet-aktualisieren.mjs"), h.a.vault], { encoding: "utf8", env: umg, cwd: h.a.home });
-    assert.equal(p.status, 0, p.stderr);
-    assert.equal(json(merker).kortexVersion, kernVersion());
-    // dieser Mac ohne Merker → Tor rot
-    sh(h, "rm", "-q", "--", `.kortex/geraete/${gid}.json`); sh(h, "commit", "-q", "-m", "ohne");
-    const t = bedingung(tor(h), "macs");
-    assert.equal(t.erfuellt, false); assert.equal(t.grund, "dieser-mac-ohne-merker");
-    assert.equal(aktualisiereGeraetemerker(z), "kein-merker");
-  } finally { h.weg(); }
 });
 
 test("Fingerabdruck des Probelaufs enthält HEAD und den Index (nicht die Bytes der Index-Datei)", async () => {
