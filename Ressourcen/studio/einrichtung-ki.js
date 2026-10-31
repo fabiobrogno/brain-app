@@ -41,8 +41,8 @@ export function erzeugeKi({ vaultPfad, beiAenderung, kopiere, melde }) {
   function stufeAktuell(konto) {
     const p = vaultPfad();
     if (!konto || !p) return null;
-    const v = z.vaults.find((x) => x.pfad === p) || z.vaults.find((x) => x.schluessel === p);
-    const s = z.zugriff?.[konto]?.[v?.schluessel ?? v?.pfad ?? p];
+    const v = z.vaults.find((x) => x.pfad === p);
+    const s = z.zugriff?.[konto]?.[v?.pfad ?? p]; // `zugriff` ist nach Pfad geschlüsselt (werkstatt/konten.mjs), nie nach `schluessel`
     return STUFEN_MIT_SPERRE.includes(s) ? s : null;
   }
   // Vorbelegung eines Kontos: seine jetzige Stufe, sonst „Posteingang“. stufeGewaehlt bleibt aus, bis du selbst eine Stufe anklickst: nur dann gilt die Wahl als ausdrücklich.
@@ -106,7 +106,7 @@ export function erzeugeKi({ vaultPfad, beiAenderung, kopiere, melde }) {
     const kopf = h("div", { klasse: "e-ki-kopf" }, h("span", { klasse: "e-logo-tile" }, kiLogo(id, 20, { dekorativ: true })),
       h("div", { klasse: "e-t" }, h("b", { text: name(id) }), h("span", { text: untertitel })), status, trennen);
     const kontoSeg = konten.length > 1 ? segment({ label: TE.ki.konto, groesse: "s", wert: k.konto, optionen: konten.map((c) => ({ wert: c.id, text: c.name })),
-      aufAenderung: (w) => { k.konto = w; k.verbunden = false; k.status = null; if (!k.stufeGewaehlt) belege(k); zeichneZeilen(); beiAenderung(); } }) : null;
+      aufAenderung: (w) => { k.konto = w; k.verbunden = false; k.status = null; k.stufeGewaehlt = false; belege(k); zeichneZeilen(); beiAenderung(); } }) : null; // eine Stufe, die du für Konto A gewählt hast, gilt nie ausdrücklich für Konto B
     const optionen = (k.vorbelegt === "gesperrt" || k.stufe === "gesperrt" ? STUFEN_MIT_SPERRE : STUFEN).map((s) => ({ wert: s, text: TE.ki.stufen[s].name }));
     const stufeSeg = segment({ label: TE.ki.darf, groesse: "s", wert: k.stufe, optionen,
       aufAenderung: (w) => { k.stufe = w; k.stufeGewaehlt = true; k.verbunden = false; k.status = null; aktual(); beiAenderung(); } });

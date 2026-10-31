@@ -106,7 +106,7 @@ export async function mockeEinrichtung(page, o = {}) {
       case "/api/sicherung/verbinden": if (z.verbindenRepoFehler) return json(z.verbindenRepoFehler.status, { fehler: z.verbindenRepoFehler.fehler }); z.gesichert = true; z.verbunden = body; return json(200, { ergebnis: "verbunden" });
       case "/api/ki/erkennen": return json(200, { agenten: AGENTEN[z.ki], cursorDa: z.ki === "drei", programme: z.programme || [] });
       case "/api/ki/konten": return json(200, { zustand: "ok", konten: KONTEN.filter((k) => z.ki === "keine" ? false : z.ki === "eine" ? k.programm === "claude" : true),
-        vaults: z.vault ? [{ pfad: z.vault.pfad, name: z.vault.name, schluessel: z.vault.pfad }] : [], zugriff: z.zugriff || {} });
+        vaults: z.vault ? [{ pfad: z.vault.pfad, name: z.vault.name, schluessel: "kennung-" + z.vault.pfad }] : [], zugriff: z.zugriff || {} });
       case "/api/mcp/verbinden": {
         await warte(z.verzoegerung);
         const f = z.verbindenFehler[body.ziel];

@@ -462,11 +462,31 @@ test.describe("Gesperrte Konten, Vertrauen, Zusatz-Eintragungen", () => {
     const z = await oeffne(page, { zugriff: { k_claude_privat: { [VAULT]: "gesperrt" }, k_claude_firma: { [VAULT]: "lesen" } }, gesperrteKonten: ["k_claude_privat"] });
     await zuKi(page);
     await page.click('.e-ki-zeile[data-ki="claude"] [data-wert="lesen"]');
-    await page.click('.e-ki-zeile[data-ki="claude"] [data-wert="k_claude_firma"]');
-    await expect(page.locator('.e-ki-zeile[data-ki="claude"] [data-wert="lesen"]')).toHaveAttribute("aria-checked", "true");
     await page.click(sel("weiter"));
     await expect(page.locator("#win")).toHaveAttribute("data-step", "4", { timeout: 8000 });
-    expect(z.verbunden).toEqual([{ ziel: "claude", konto: "k_claude_firma", zugriff: "lesen", zugriffAusdruecklich: true }]);
+    expect(z.verbunden).toEqual([{ ziel: "claude", konto: "k_claude_privat", zugriff: "lesen", zugriffAusdruecklich: true }]);
+  });
+
+  test("Kontowechsel: die Stufe von Konto A gilt nie ausdrücklich für das gesperrte Konto B", async ({ page }) => {
+    const z = await oeffne(page, { zugriff: { k_claude_privat: { [VAULT]: "gesperrt" }, k_claude_firma: { [VAULT]: "lesen" } }, gesperrteKonten: ["k_claude_privat"] });
+    await zuKi(page);
+    await page.click('.e-ki-zeile[data-ki="claude"] [data-wert="k_claude_firma"]');
+    await page.click('.e-ki-zeile[data-ki="claude"] [data-wert="erweitert"]'); // ausdrücklich, für Firma
+    await page.click('.e-ki-zeile[data-ki="claude"] [data-wert="k_claude_privat"]');
+    await expect(page.locator('.e-ki-zeile[data-ki="claude"] [data-wert="gesperrt"]')).toHaveAttribute("aria-checked", "true");
+    await expect(page.locator('.e-ki-zeile[data-ki="claude"] [data-bereich="gesperrt"]')).toBeVisible();
+    await page.click(sel("weiter"));
+    await expect(page.locator("#win")).toHaveAttribute("data-step", "4", { timeout: 8000 });
+    expect(z.verbunden).toEqual([{ ziel: "claude", konto: "k_claude_privat" }]);
+    expect(z.pflege, "keine Pflege über ein gesperrtes Konto").toBeUndefined();
+  });
+
+  test("Die Stufe wird über den Pfad des Vaults nachgeschlagen (zugriff ist nach Pfad geschlüsselt, schluessel ist ein anderer Wert)", async ({ page }) => {
+    const z = await oeffne(page, { zugriff: { k_claude_privat: { [VAULT]: "erweitert", ["kennung-" + VAULT]: "gesperrt" } } });
+    await zuKi(page);
+    await expect(page.locator('.e-ki-zeile[data-ki="claude"] [data-wert="erweitert"]')).toHaveAttribute("aria-checked", "true");
+    await expect(page.locator('.e-ki-zeile[data-ki="claude"] [data-wert="gesperrt"]')).toHaveCount(0);
+    expect(z.verbunden ?? []).toEqual([]);
   });
 
   test("Vorbelegung aus dem Konto: Lesen bleibt Lesen, ohne ausdrückliche Wahl", async ({ page }) => {
