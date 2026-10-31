@@ -53,7 +53,7 @@ const dateiNamenTeil = (s) => einzeiler(s, 40).replace(/[\\/:*?"<>|]/g, "").repl
 // Name dieses Geräts (Gerätemerker): <Support>/geraet.json → { name } vom Nutzer, sonst BRAIN_GERAET_NAME (Test), sonst der Computername (macOS), sonst der Rechnername.
 export function eigenerGeraetName({ support = supportOrdner() } = {}) {
   try { const n = dateiNamenTeil(JSON.parse(readFileSync(join(support, "geraet.json"), "utf8")).name); if (n) return n; } catch { /* kein Merker */ }
-  const env = dateiNamenTeil(process.env.BRAIN_GERAET_NAME);
+  const env = dateiNamenTeil(process.env.BRAIN_TESTMODUS === "1" || process.env.KORTEX_KERN_UNSTABIL_ERLAUBT === "1" ? process.env.BRAIN_GERAET_NAME : "");
   if (env) return env;
   if (process.platform === "darwin" && !process.env.BRAIN_TESTMODUS) {
     try { const r = spawnSync("/usr/sbin/scutil", ["--get", "ComputerName"], { encoding: "utf8", timeout: 2000, stdio: ["ignore", "pipe", "ignore"], windowsHide: true }); const n = dateiNamenTeil(r.stdout); if (n) return n; } catch { /* weiter */ }
