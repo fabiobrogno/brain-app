@@ -1,3 +1,4 @@
+// ERZEUGT von scripts/erzeuge-tastenkuerzel.mjs aus Ressourcen/gemeinsam/tastenkuerzel-logik.mjs — nicht von Hand ändern.
 // Tastenkürzel (Paket P10): die reine Logik — Schreibweise, Anzeige, Tastendruck → Kürzel, Konflikte, reservierte Kürzel, wirksame Belegung.
 // Ohne DOM und ohne Zustand (läuft auch in Node: Tests/Node/tastenkuerzel.test.mjs und die Werkstatt prüft damit ihre Eingaben). Das Register der Befehle
 // (Ressourcen/gemeinsam/tastenkuerzel-register.json, im Studio als tastenkuerzel-register.js) wird immer als Parameter übergeben.

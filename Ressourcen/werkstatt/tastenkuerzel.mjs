@@ -13,7 +13,7 @@ import { join, dirname } from "node:path";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { HttpFehler } from "../gemeinsam/basis.mjs";
-import { pruefe, saeubere, wirksam } from "../studio/tastenkuerzel-logik.js";
+import { pruefe, saeubere, wirksam } from "../gemeinsam/tastenkuerzel-logik.mjs";
 
 export const DATEI = "tastenkuerzel.json";
 const REGISTER_DATEI = join(dirname(fileURLToPath(import.meta.url)), "..", "gemeinsam", "tastenkuerzel-register.json");
