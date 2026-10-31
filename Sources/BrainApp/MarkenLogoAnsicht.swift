@@ -7,7 +7,7 @@ import BrainCore
 /// Lässt sich die Datei nicht laden, steht die Initiale in einem neutralen Kreis. Die Marken gehören den jeweiligen Inhabern
 /// (siehe `Ressourcen/logos/HERKUNFT.md`).
 ///
-/// Eingebaut im Einrichtungsassistenten: Schritt „GitHub“ und „Sicherung“ (Kopf, Anmelde-Hinweis) und die Karte „Von GitHub holen“.
+/// Derzeit nirgends eingebaut: Der Einrichtungs-Assistent ist eine Web-Seite (Marken dort: `Ressourcen/studio/marken.js`).
 struct MarkenLogoAnsicht: View {
     let marke: MarkenLogo
     var groesse: CGFloat = 20

@@ -9,8 +9,8 @@ import BrainCore
 /// Dunkel), `marke` in der Markenfarbe (nur wo sie auf Hell UND Dunkel mindestens 3:1 hat), `bild` unverändert (mehrfarbig, PNG). Ohne Logo-Datei oder
 /// wenn das Laden scheitert, steht die Initiale in einem neutralen Kreis. Die Marken gehören den jeweiligen Inhabern (siehe `Ressourcen/logos/HERKUNFT.md`).
 ///
-/// Eingebaut im Einrichtungsassistenten, Schritt „KI verbinden“ (`Sources/BrainApp/EinrichtungsSchritte.swift`, `KiReihe`), vor dem Namen
-/// jeder KI-Zeile: `KILogo(ki: ziel, groesse: 28)`.
+/// Derzeit nirgends eingebaut: Der Einrichtungs-Assistent ist eine Web-Seite (Logos dort: `Ressourcen/studio/ki-logos.js`); die Quelle
+/// der Dateien (`KILogoQuelle`, BrainCore) hat eigene Tests und bleibt.
 struct KILogo: View {
     let ki: KiZiel
     var groesse: CGFloat = 20

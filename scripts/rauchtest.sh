@@ -152,7 +152,7 @@ phase_e() {
   # --test-frischer-start gilt nur mit BRAIN_APP_SUPPORT auf einen eigenen Ordner (hier der Wegwerf-Ordner), nie gegen den echten.
   "$APP/Contents/MacOS/BrainApp" --test-frischer-start --test-beenden-nach 20 &
   PID=$!
-  warte "assistent-offen wiederholung=false" 80 || fehl "E: der Assistent erscheint beim frischen Start nicht"
+  warte "assistent-offen automatisch=true" 80 || fehl "E: der Assistent erscheint beim frischen Start nicht"
   warte "kein-vault" 20 || fehl "E: App meldet nicht 'kein-vault' im Log"
   [ -z "$(ls "$BRAIN_APP_SUPPORT/vaults.json" 2>/dev/null)" ] || fehl "E: der Assistent hat von selbst einen Vault angelegt"
   sleep 2

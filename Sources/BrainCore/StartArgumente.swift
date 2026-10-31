@@ -34,7 +34,7 @@ public struct StartArgumente: Equatable, Sendable {
     public var testBildWarten: Duration = .seconds(2)
     public var testErscheinungsbild: TestErscheinungsbild?
     public var testSkript: URL?
-    /// `--test-frischer-start`: Der Assistent „Kortex einrichten“ erscheint wie bei einem echten ersten Start (sonst zeigen ihn
+    /// `--test-frischer-start`: Der Assistent „Kortex einrichten“ (Web-Seite im eigenen Fenster) erscheint wie bei einem echten ersten Start (sonst zeigen ihn
     /// Testläufe nie). Nur mit `BRAIN_APP_SUPPORT` auf einen eigenen (Temp-)Ordner — nie gegen den echten Support-Ordner.
     public var frischerStart = false
     /// Vorschau-Ordner (`--vorschau`), standardisiert; nil = normaler Start.

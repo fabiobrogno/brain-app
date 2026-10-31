@@ -1,7 +1,7 @@
 import Foundation
 
 // Schritt „Sicherung“ (FBL-88): das Brain mit einem PRIVATEN GitHub-Repository verbinden. Hier liegen die reinen Bausteine ohne Netz und
-// ohne Prozesse (Datentypen, Namensregeln); der Ablauf steht in `EinrichtungsAblauf`, die Aufrufe an GitHub in der Werkstatt
+// ohne Prozesse (Datentypen, Namensregeln); der Ablauf steht in der Web-Seite des Assistenten (`Ressourcen/studio/einrichtung.*`), die Aufrufe an GitHub in der Werkstatt
 // (`gemeinsam/github.mjs`) — die App sieht nie ein Token.
 
 /// Ein eigenes, privates Repository bei GitHub, so wie die Werkstatt es liefert (nur private kommen überhaupt an).

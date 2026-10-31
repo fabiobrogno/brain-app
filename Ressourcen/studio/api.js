@@ -83,7 +83,14 @@ export const api = {
   fassung: (pfad, sha) => anfrage("GET", "/api/git/fassung" + q({ pfad, sha })),
   // vault = der Pfad, den die Frage gezeigt hat: die Werkstatt erlaubt nur, wenn DAS ihr offener Vault ist (sonst 409 art „anderer-vault“)
   vertrauen: (erlauben, vault) => anfrage("POST", "/api/vertrauen", { erlauben: !!erlauben, ...(typeof vault === "string" && vault ? { vault } : {}) }),
-  mcpVerbinden: ({ umstellen, ziel = "claude" } = {}) => anfrage("POST", "/api/mcp/verbinden", umstellen ? { ziel, umstellen: true } : { ziel }),
+  // konto = Kennung eines KI-Kontos, zugriff = Stufe (gesperrt|lesen|posteingang|erweitert) für den offenen Vault (Assistent)
+  mcpVerbinden: ({ umstellen, ziel = "claude", konto, zugriff, zugriffAusdruecklich } = {}) => anfrage("POST", "/api/mcp/verbinden",
+    { ziel, ...(umstellen ? { umstellen: true } : {}), ...(konto ? { konto } : {}), ...(zugriff ? { zugriff, ...(zugriffAusdruecklich ? { zugriffAusdruecklich: true } : {}) } : {}) }),
+  // Trennen (nur der Eintrag von Kortex bei dieser KI), Konfiguration zum Kopieren, Hooks/Prüfung/Hintergrunddienst (eine Wahrheit mit den Einstellungen)
+  mcpTrennen: ({ ziel, konto } = {}) => anfrage("POST", "/api/mcp/trennen", { ziel, ...(konto ? { konto } : {}) }),
+  mcpKonfiguration: (ziel) => anfrage("GET", "/api/mcp/konfiguration" + q({ ziel })),
+  kernStand: () => anfrage("GET", "/api/kern/stand"),
+  kernVerdrahten: ({ was, an, ersetzen, profile } = {}) => anfrage("POST", "/api/kern/verdrahten", { was, an: !!an, ...(ersetzen ? { ersetzen: true } : {}), ...(profile ? { profile } : {}) }),
   mcpSelbsttest: () => anfrage("POST", "/api/mcp/selbsttest", {}),
   // ---- v2: Index, Typen, Ansichten, Kontext, Verlauf des Repos
   notizen: () => anfrage("GET", "/api/notizen"),
@@ -109,11 +116,16 @@ export const api = {
   vaultOeffnen: (pfad, extra) => mitWarnung(anfrage("POST", "/api/vaults/oeffnen", { pfad, ...(extra || {}) })),
   vaultKlonen: (url, ordner) => mitWarnung(anfrage("POST", "/api/vaults/klonen", ordner ? { url, ordner } : { url })),
   vaultEntfernen: (pfad) => anfrage("POST", "/api/vaults/entfernen", { pfad }),
-  kiErkennen: () => anfrage("GET", "/api/ki/erkennen"),
+  kiErkennen: (neu) => anfrage("GET", "/api/ki/erkennen" + (neu ? "?neu=1" : "")),
   kitHooks: () => anfrage("POST", "/api/kit/hooks", {}),
   // ---- GitHub-Anmeldung per Gerätecode (nie ein Token in einer Antwort)
   githubAnmelden: () => anfrage("POST", "/api/github/anmelden", {}),
   githubZustand: () => anfrage("GET", "/api/github/anmelden"),
+  githubAbbrechen: () => anfrage("POST", "/api/github/abbrechen", {}),
+  githubRepos: () => anfrage("GET", "/api/github/repos"),
+  githubRepoAnlegen: (name) => anfrage("POST", "/api/github/repo-anlegen", { name }),
+  sicherungBereit: () => anfrage("GET", "/api/sicherung/bereit"),
+  sicherungVerbinden: (besitzer, name) => anfrage("POST", "/api/sicherung/verbinden", { besitzer, name }),
   githubKonto: () => anfrage("GET", "/api/github/konto"),
   githubAbmelden: () => anfrage("POST", "/api/github/abmelden", {}),
   probe: (frage) => anfrage("POST", "/api/probe", { frage }),

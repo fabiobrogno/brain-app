@@ -124,7 +124,7 @@ function pfadDialog(titel) {
 const VORWAHL = ["claude", "codex", "cursor"];
 
 // Ergebnis von GET /api/ki/erkennen → { [id]: { gefunden, version } }. Neue Werkstatt: Feld `katalog`; ältere Antworten (und Testattrappen) nur mit agenten/programme/cursorDa.
-function erkennungAus(ki) {
+export function erkennungAus(ki) {
   if (!ki) return {};
   if (Array.isArray(ki.katalog)) return Object.fromEntries(ki.katalog.filter((k) => k && typeof k.id === "string").map((k) => [k.id, { gefunden: k.gefunden === true, version: typeof k.version === "string" ? k.version : null }]));
   const agenten = Array.isArray(ki.agenten) ? ki.agenten.filter((a) => a && (a.pfad || a.version)) : [];

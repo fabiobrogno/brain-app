@@ -16,8 +16,10 @@ public enum SchemaAntwort {
         return HTTPURLResponse(url: url, statusCode: a.status, httpVersion: "HTTP/1.1", headerFields: kopf)!
     }
 
-    /// Ist das die Startseite (Hauptdokument) der Ansicht?
-    public static func istHauptdokument(_ url: URL) -> Bool { ["", "/", "/index.html"].contains(url.path) }
+    /// Ist das die Startseite (Hauptdokument) der Ansicht — oder die Seite des Einrichtungs-Assistenten (Host `studio`)?
+    public static func istHauptdokument(_ url: URL) -> Bool {
+        ["", "/", "/index.html"].contains(url.path) || (url.host == Oberflaeche.studio.host && EinrichtungsFenster.istSeite(url))
+    }
 
     /// API-Pfade gehören dem Nachrichtenkanal; über das Schema (Seitenabruf) sind sie nicht erreichbar.
     public static func istApiPfad(_ url: URL) -> Bool {
