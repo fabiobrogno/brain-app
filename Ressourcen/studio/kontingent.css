@@ -1,0 +1,101 @@
+/* Kortex Studio — Kontingent (Paket P7): Balken 5 Std / Woche, Statusleisten-Abschnitt, Konto-Menü, Frag-Feld. Nur Tokens aus studio.css (Hell/Dunkel wechseln dort).
+   Gestaltung: freigegebener Prototyp (bilder/b1-ki-menue, b10-kontingent-voll, e1-ki). Balkenfarben wie Orca (provider-extra-usage-section.tsx @9bccd67, MIT, Lovecast Inc.):
+   unter 60 % grau, 60–79 % gelb, ab 80 % rot. Klassen mit Präfix kt-. */
+
+/* ---------- Balken ---------- */
+.kt-balken { display: block; flex: none; width: 100%; height: 5px; border-radius: var(--r-pille); background: var(--hover-2); overflow: hidden; --kt-farbe: color-mix(in srgb, var(--text) 38%, transparent); }
+.kt-balken > i { display: block; height: 100%; min-width: 2px; border-radius: inherit; background: var(--kt-farbe); transition: width var(--d) var(--ease-out), background var(--t); }
+.kt-balken[data-stufe="gelb"] { --kt-farbe: var(--gelb); }
+.kt-balken[data-stufe="rot"] { --kt-farbe: var(--rot); }
+@media (prefers-reduced-motion: reduce) { .kt-balken > i { transition: none; } }
+
+/* Eine Zeile: „5 Std  ▬▬▬  42 %  noch 2 h 14 min“ */
+.kt-zeilen { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.kt-zeile { display: grid; grid-template-columns: 38px minmax(56px, 1fr) 42px auto; align-items: center; gap: 8px; font-size: 12px; line-height: 1.3; color: var(--text-2); font-variant-numeric: tabular-nums; min-width: 0; }
+.kt-zeile .kt-name { color: var(--text-2); }
+.kt-zeile .kt-prozent { text-align: right; color: var(--text); font-weight: 500; }
+.kt-zeile .kt-rest { color: var(--text-3); white-space: nowrap; font-size: 11.5px; }
+.kt-zeile[data-stufe="rot"] .kt-prozent { color: var(--rot); }
+.kt-zeile[data-abgelaufen="ja"] .kt-prozent { color: var(--text-3); font-weight: 400; }
+.kt-hinweis { display: flex; align-items: flex-start; gap: 6px; margin: 0; font-size: 12px; line-height: 1.45; color: var(--text-2); min-width: 0; }
+.kt-hinweis > svg { flex: none; margin-top: 2px; color: var(--text-3); }
+.kt-hinweis > span { min-width: 0; }
+.kt-hinweis b { font-weight: 600; color: var(--text); }
+.kt-hinweis.kt-w-veraltet > svg, .kt-hinweis.kt-w-fehler > svg { color: var(--gelb); }
+.kt-leise { margin: 0; font-size: 12px; line-height: 1.45; color: var(--text-2); }
+.kt-block { display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-width: 0; }
+.kt-block .bs-knopf { align-self: flex-start; }
+
+/* ---------- Einstellungen: Konto-Zeile mit Balken (Prototyp e1) ---------- */
+/* Mit Werten stehen die Balken rechts neben dem Namen; ohne Werte steht der Zustand mit dem nächsten Schritt in einer eigenen Zeile unter dem Namen */
+.kx-zeile.kt-mit { grid-template-columns: 28px minmax(0, 1fr) 232px auto; }
+.kx-zeile.kt-unten { grid-template-columns: 28px minmax(0, 1fr) auto; }
+.kx-zeile.kt-unten > .kt-spalte { grid-column: 2 / -1; grid-row: 2; }
+.kx-zeile .kt-spalte { min-width: 0; }
+.kx-zeile .kt-zeilen { gap: 7px; }
+.kx-zeile .kt-zeile { grid-template-columns: 34px minmax(40px, 1fr) 38px; row-gap: 1px; }
+.kx-zeile .kt-zeile .kt-rest { grid-column: 2 / -1; font-size: 11px; line-height: 1.25; }
+@media (max-width: 900px) {
+  .kx-zeile.kt-mit { grid-template-columns: 28px minmax(0, 1fr); }
+  .kx-zeile.kt-mit > .kt-spalte { grid-column: 2; }
+  .kx-zeile.kt-mit > .kx-akt { grid-column: 2; justify-content: flex-start; }
+  .kx-zeile.kt-unten > .kx-akt { grid-column: 2; grid-row: 3; justify-content: flex-start; }
+}
+.kt-aktionen { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: flex-start; margin-top: 2px; }
+.kt-aktionen > * { flex: none; }
+.kt-aktionen .knopf-text { font-size: 12px; padding-left: 0; }
+
+/* ---------- Statusleiste: aktives Konto mit Mini-Balken ---------- */
+.kt-leiste { gap: 7px; }
+.kt-leiste[hidden] { display: none; }
+.kt-leiste .kt-name-text { font-weight: 500; color: var(--text); max-width: 14ch; overflow: hidden; text-overflow: ellipsis; }
+.kt-leiste[data-zustand="leer"] .kt-name-text { font-weight: 400; color: var(--text-2); }
+.kt-mini { display: inline-flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
+.kt-mini .kt-balken { width: 44px; height: 4px; }
+.kt-mini-text { color: var(--text); }
+.kt-mini.ohne-werte .kt-mini-text { color: var(--text-3); }
+.kt-mini[data-stufe="rot"] .kt-mini-text { color: var(--rot); }
+.kt-mini-rest { color: var(--text-3); }
+/* Die Statusleiste hat wenig Platz (Geist ist breit): ab 1180 px entfallen Rücksetzzeit und Name, ab 780 px der Balken — Logo und Prozent bleiben. Gleiche Stufen wie studio.css. */
+@container status (max-width: 1180px) { .kt-mini-rest, .kt-leiste .kt-name-text { display: none; } .kt-leiste { gap: 6px; padding: 0 6px; } .kt-mini .kt-balken { width: 30px; } }
+@container status (max-width: 780px) { .kt-mini .kt-balken { display: none; } }
+
+/* ---------- Konto-Menü (öffnet über der Statusleiste) ---------- */
+.kt-menue { display: flex; flex-direction: column; width: min(420px, calc(100vw - 24px)); padding: 6px; background: var(--erhoben); border-radius: var(--r-xl); box-shadow: var(--schatten-menue); font-size: 12.5px; color: var(--text); }
+.kt-m-titel { display: flex; align-items: center; gap: 10px; padding: 6px 8px 8px; }
+.kt-m-titel b { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kt-m-stand { color: var(--text-3); font-size: 11.5px; white-space: nowrap; }
+.kt-m-neu { display: inline-grid; place-items: center; width: 24px; height: 24px; border: 0; border-radius: var(--r-s); background: transparent; color: var(--text-2); cursor: pointer; }
+.kt-m-neu:hover:not(:disabled) { background: var(--hover); color: var(--text); }
+.kt-m-neu:disabled { opacity: .4; cursor: not-allowed; }
+.kt-m-neu:focus-visible, .kt-m-zeile:focus-visible, .kt-m-aktion:focus-visible { outline: 0; box-shadow: var(--fokus-ring); }
+.kt-m-liste { display: flex; flex-direction: column; gap: 2px; max-height: min(60vh, 440px); overflow-y: auto; }
+.kt-m-zeile { display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 9px 10px; border: 0; border-radius: var(--r-l); background: transparent; color: inherit; text-align: left; font: inherit; cursor: pointer; }
+.kt-m-zeile:hover { background: var(--hover); }
+.kt-m-zeile[data-aktiv="ja"] { background: var(--auswahl); box-shadow: var(--auswahl-ring); }
+.kt-m-zeile[data-wahl="nein"] { cursor: default; }
+.kt-m-zeile[data-gesperrt="ja"] { opacity: .62; cursor: default; }
+.kt-m-zeile[data-gesperrt="ja"]:hover { background: transparent; }
+.kt-m-kopf { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.kt-m-name { font-weight: 500; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kt-m-marke { display: inline-flex; align-items: center; gap: 4px; color: var(--text-2); font-size: 11.5px; }
+.kt-m-marke.kt-gesperrt { color: var(--text-3); }
+.kt-m-rumpf { display: block; padding-left: 24px; min-width: 0; }
+.kt-block.kt-klein .kt-zeile { grid-template-columns: 38px minmax(56px, 1fr) 40px auto; }
+.kt-trenner { height: 1px; margin: 6px 4px; background: var(--linie); }
+.kt-m-aktion { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border: 0; border-radius: var(--r-l); background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.kt-m-aktion:hover { background: var(--hover); }
+.kt-m-aktion svg { color: var(--text-2); }
+.kt-m-aktion span { flex: 1; }
+.kt-m-aktion kbd { font: inherit; font-size: 11px; color: var(--text-3); border: 1px solid var(--linie-stark); border-radius: var(--r-s); padding: 0 5px; }
+.kt-m-fuss { margin: 4px 10px 6px; font-size: 11.5px; line-height: 1.45; color: var(--text-3); }
+
+/* ---------- Frag-Feld ---------- */
+.kt-kompakt { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.kt-kompakt:empty, .frage-kt:empty { display: none; }
+.kt-kompakt .kt-zeile { grid-template-columns: 38px minmax(56px, 1fr) 42px auto; }
+.kt-voll { display: flex; align-items: flex-start; gap: 6px; margin: 0; padding: 8px 10px; border: 1px solid var(--rot-rand); border-radius: var(--r); background: var(--rot-weich); font-size: 12px; line-height: 1.45; color: var(--text); }
+.kt-voll > svg { flex: none; margin-top: 2px; color: var(--rot); }
+
+/* ---------- Dialoge (Einwilligung) ---------- */
+.kt-liste { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; color: var(--text-2); font-size: 12.5px; line-height: 1.5; }

@@ -8,6 +8,7 @@ import { symbol } from "./symbole.js";
 import { TF } from "./texte-frage.js";
 import { rendereMarkdown } from "./frage-markdown.js";
 import { auswahl, segment, textbereich, knopf as baueKnopf } from "./bausteine.js";
+import { kontingentStand, kontingentKompakt, kontoAnsicht, optionSub, FRAGE_KONTO_EREIGNIS } from "./kontingent.js";
 
 const wartePause = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -51,6 +52,26 @@ export function erzeugeFragePanel(z) {
   }
   const kontoDaten = (id) => (bereit?.konten || []).find((k) => k.id === id) || null;
 
+  // Kontingent (P7): beide Balken des gewählten Kontos unter der Auswahl; ist es voll, steht da, ab wann es wieder geht. Ein eigener Behälter, damit ein neuer Stand das Formular nicht neu baut.
+  const kt = kontingentStand(api);
+  const ktHost = h("div", { klasse: "frage-kt", "data-frage": "kontingent" });
+  function fuelleKt() {
+    const k = kontoDaten(konto);
+    if (!k || !bereit) { ktHost.replaceChildren(); return; }
+    const jetzt = kt.jetzt();
+    const andereFrei = (bereit.konten || []).filter((x) => x.erlaubt && x.id !== konto).some((x) => !kontoAnsicht(kt.eintrag(x.id), jetzt).voll);
+    ktHost.replaceChildren(kontingentKompakt(kt.eintrag(konto), { jetzt, name: k.name, andereFrei }));
+  }
+  kt.abonniere(() => fuelleKt());
+  // Das Konto wurde in der Statusleiste gewechselt: dieselbe Wahl gilt hier (nur ein Konto, das dieser Vault für Frag erlaubt)
+  window.addEventListener(FRAGE_KONTO_EREIGNIS, (ev) => {
+    const d = ev.detail || {};
+    if (!bereit || d.vault !== vaultSchluessel() || d.id === konto) return;
+    if (!bereit.konten.some((x) => x.erlaubt && x.id === d.id)) return;
+    konto = d.id;
+    if (!lauf && !formular.hidden) { zeichneFormular(); } else fuelleKt();
+  });
+
   // ---------- Leere Zustände ----------
   function leerZustand() {
     if (!bereit) return bereitFehler ? { ...TF.leer.kontenDefekt, text: bereitFehler, aktion: ladeBereit } : null;
@@ -83,8 +104,9 @@ export function erzeugeFragePanel(z) {
     const andere = (bereit?.konten || []).filter((k) => !k.erlaubt);
     const k = kontoDaten(konto);
     // Bedienelemente aus bausteine.js (Auswahl mit Logo, Segment, Textbereich, Knopf), nicht die nativen des Systems
-    const kontoWahl = auswahl({ optionen: erlaubte.map((x) => ({ wert: x.id, text: x.name, logo: x.programm })), wert: konto, label: TF.konto, breit: true, daten: { "data-frage": "konto", title: TF.kontoHinweis },
-      aufAenderung: (id) => { konto = id; speichereLokal(`frage.konto@${vaultSchluessel()}`, id); zeichneFormular(); formular.querySelector("textarea")?.focus(); } });
+    const jetztKt = kt.jetzt();
+    const kontoWahl = auswahl({ optionen: erlaubte.map((x) => ({ wert: x.id, text: x.name, logo: x.programm, sub: optionSub(kt.eintrag(x.id), jetztKt) })), wert: konto, label: TF.konto, breit: true, daten: { "data-frage": "konto", title: TF.kontoHinweis },
+      aufAenderung: (id) => { konto = id; speichereLokal(`frage.konto@${vaultSchluessel()}`, id); window.dispatchEvent(new CustomEvent(FRAGE_KONTO_EREIGNIS, { detail: { vault: vaultSchluessel(), id } })); zeichneFormular(); formular.querySelector("textarea")?.focus(); } });
     const modellWahl = segment({ optionen: bereit.modelle.map((m) => ({ wert: m, text: TF.modelle[m] || m, daten: { title: TF.modellHinweis[m] || "" } })), wert: modell, label: TF.modell, daten: { "data-frage": "modell" },
       aufAenderung: (m) => { modell = m; speichereLokal("frage.modell", m); } });
     const eingabe = textbereich({ platzhalter: TF.platzhalter, label: TF.titel, minZeilen: 3, maxZeilen: 9, daten: { "data-frage": "eingabe", maxlength: String(bereit.grenzen.frageMax) }, wert: text,
@@ -97,11 +119,13 @@ export function erzeugeFragePanel(z) {
       andere.length ? h("p", { klasse: "frage-hinweis", "data-frage": "nur-claude", text: TF.leer.nurClaude }) : null];
     formular.replaceChildren(
       h("div", { klasse: "frage-zeile" }, h("span", { klasse: "frage-label", text: TF.konto }), kontoWahl),
+      ktHost,
       h("div", { klasse: "frage-zeile" }, h("span", { klasse: "frage-label", text: TF.modell }), modellWahl),
       eingabe.el,
       h("div", { klasse: "frage-aktionen" }, senden),
-      ...hinweise);
+      ...hinweise.filter(Boolean)); // (replaceChildren(null) schriebe sonst den Text „null“)
     eingabe.passe();
+    kt.start(); fuelleKt();
   }
   formular.addEventListener("submit", (e) => { e.preventDefault(); sende(); });
 
