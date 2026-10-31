@@ -1,0 +1,246 @@
+/* Kortex Studio — Bereich „KI & Konten“ der Einstellungen (Paket P6). Nur Tokens aus studio.css (Hell/Dunkel wechseln dort). Klassen mit Präfix kx- (Bereich) und kk- (Karten, Marken, Hinweise aus der früheren
+   Ansicht „KI-Konten“). Gestaltung: freigegebener Prototyp (einstellungen.html, Bereich „KI & Konten“): Kacheln, Programmkarten mit Konten, Zugriffs-Matrix, Schutz-Ampel mit drei Stufen.
+   Muster: Orca (MIT, Copyright (c) 2026 Lovecast Inc., Commit 9bccd67): AgentDetectionCatalog.tsx (Programmliste mit Pfad und Version). Werte von Hand nachgebaut. */
+
+.kx-host { min-width: 0; }
+/* Kacheln, Programmkarten und Matrix tragen ihren Rahmen selbst: die Karte des Abschnitts bleibt ohne Rand */
+.ez-abschnitt[data-abschnitt="ki-uebersicht"] > .ez-karte, .ez-abschnitt[data-abschnitt="ki-konten"] > .ez-karte { border: 0; background: transparent; box-shadow: none; overflow: visible; }
+.ez-abschnitt[data-abschnitt="ki-zugriff"] > .ez-karte { overflow: visible; }
+.kx-host:empty { display: none; }
+.ez-voll > .kx-host { padding: 0; }
+.ez-voll:has(> .kxh-uebersicht), .ez-voll:has(> .kxh-konten), .ez-voll:has(> .kxh-zugriff), .ez-voll:has(> .kxh-schutz), .ez-voll:has(> .kxh-ehrlich) { background: transparent; }
+
+/* ---------- gemeinsame kleine Teile (aus der früheren Ansicht) ---------- */
+.mini { color: var(--text-2); font-size: 12px; line-height: 1.45; margin: 0; }
+.kk-marke { flex: none; width: 16px; height: 16px; border-radius: var(--r-pille); display: inline-grid; place-items: center; border: 1.5px solid var(--text-3); color: var(--text-3); }
+.kk-marke:empty::after { content: ""; width: 6px; height: 1.5px; background: currentColor; border-radius: 1px; }
+.kk-marke[data-marke="gruen"] { border-color: var(--gruen); background: var(--gruen-weich); color: var(--gruen); }
+.kk-marke[data-marke="rot"] { border-color: var(--rot); background: var(--rot-weich); color: var(--rot); }
+.kk-marke[data-marke="warn"] { border-color: var(--gelb); background: var(--gelb-weich); color: var(--gelb); }
+.kk-karte { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; margin-bottom: 12px; border: 1px solid var(--linie-stark); border-radius: var(--r-xl); background: var(--erhoben); font-size: 12.5px; }
+.kk-karte p { margin: 0; line-height: 1.5; -webkit-user-select: text; user-select: text; }
+.kk-karte.warn { background: var(--gelb-weich); border-color: var(--gelb-rand); }
+.kk-karte.fehler { background: var(--rot-weich); border-color: var(--rot-rand); flex-direction: row; align-items: flex-start; gap: 10px; }
+.kk-karte-kopf { display: flex; align-items: center; gap: 8px; }
+.kk-karte-titel { font-weight: 650; }
+.kk-block-titel { font-weight: 600; font-size: 12.5px; }
+.kk-knoepfe { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.kk-fehlertext { color: var(--rot); font-size: 12px; flex-basis: 100%; }
+.kk-wahl { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; line-height: 1.4; }
+.kk-punkte { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; color: var(--text-2); font-size: 12.5px; line-height: 1.45; }
+.kx-leer { margin: 0; padding: 14px 16px; color: var(--text-2); font-size: 12.5px; line-height: 1.5; border-radius: var(--r-xl); border: 1px solid var(--linie); background: var(--erhoben); }
+.kx-fehler { padding: 12px 16px; color: var(--rot); font-size: 12.5px; }
+
+/* ---------- Übersicht: Kacheln ---------- */
+.kx-kacheln { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 18px; }
+.kx-kachel { padding: 12px 14px; border-radius: var(--r-xl); border: 1px solid var(--linie); background: var(--erhoben); box-shadow: var(--schatten-klein); min-width: 0; }
+.kx-kachel b { display: block; font-size: 20px; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.kx-kachel span { display: block; font-size: 12px; color: var(--text-2); }
+.kx-kachel.warn b { color: var(--gelb); }
+.kxh-uebersicht { margin-bottom: 4px; }
+.kxh-uebersicht > .kk-karte:first-child { margin-top: 14px; }
+
+/* ---------- Programme und Konten ---------- */
+.kx-kopf-knoepfe { display: inline-flex; align-items: center; gap: 6px; }
+.kx-sucht { display: flex; align-items: center; gap: 10px; padding: 10px 2px; font-size: 12.5px; color: var(--text-2); }
+.kx-browser { margin: 0 0 10px; font-size: 12px; color: var(--text-2); }
+.kx-progs { display: flex; flex-direction: column; gap: 10px; }
+.kx-prog { border-radius: var(--r-xl); border: 1px solid var(--linie); background: var(--erhoben); overflow: hidden; box-shadow: var(--schatten-klein); }
+.kx-prog-kopf { display: flex; align-items: center; gap: 12px; padding: 12px 14px; }
+.kx-prog[data-gefunden="false"] .kx-logo { opacity: .55; }
+.kx-t { flex: 1; min-width: 0; }
+.kx-t b { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 14px; font-weight: 600; }
+.kx-art { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 10px; border: 1px solid var(--linie-stark); font-size: 11px; font-weight: 450; color: var(--text-2); background: var(--seite); }
+.kx-pfad { display: block; margin-top: 1px; font-size: 12px; color: var(--text-2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kx-pfad .mono { font-size: 11.5px; }
+.kx-logo { width: var(--kx-g, 36px); height: var(--kx-g, 36px); border-radius: calc(var(--kx-g, 36px) * .28); flex: none; display: grid; place-items: center; background: var(--seite); border: 1px solid var(--linie); color: var(--text); }
+.kx-konto { border-top: 1px solid var(--linie); }
+.kx-zeile { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 11px 14px; }
+.kx-leer-zeile { grid-template-columns: minmax(0, 1fr) auto; }
+.kx-av { position: relative; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 600; background: var(--hover-2); color: var(--text-2); }
+.kx-punkt { position: absolute; right: -1px; bottom: -1px; width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--erhoben); background: var(--gruen); }
+.kx-punkt.warn { background: var(--gelb); } .kx-punkt.aus { background: var(--text-3); }
+.kx-n { min-width: 0; }
+.kx-n b { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 13px; font-weight: 500; }
+.kx-sub { display: block; font-size: 11.5px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kx-sub .mono { font-size: 11px; }
+.kx-akt { display: flex; align-items: center; justify-content: flex-end; gap: 4px; flex-wrap: wrap; }
+.kx-umbenennen { font-size: 12px; color: var(--text-2); padding: 0 6px; }
+.kx-name-edit { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.kx-name-edit .kk-eingabe { flex: 1 1 140px; min-width: 0; }
+.kx-hinweis { display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--linie); font-size: 12.5px; line-height: 1.5; color: var(--text-2); }
+.kx-hinweis > .sym { flex: none; margin-top: 2px; }
+.kx-hinweis > span:not(.kx-akt):not(.sym) { flex: 1; min-width: 0; }
+.kx-hinweis .bs-knopf, .kx-hinweis .kx-akt { margin-left: auto; flex: none; }
+.kx-hinweis.warn { background: var(--gelb-weich); color: color-mix(in srgb, var(--gelb) 55%, var(--text)); }
+.kx-hinweis.warn > .sym { color: var(--gelb); }
+.kx-hinweis.fehler { background: var(--rot-weich); border-top: 0; margin-top: 8px; border-radius: var(--r-l); color: var(--text); }
+.kx-weitere { margin: 10px 2px 0; font-size: 12px; color: var(--text-2); line-height: 1.5; }
+.kx-nicht-da { margin-top: 12px; border: 1px solid var(--linie); border-radius: var(--r-xl); background: var(--erhoben); padding: 0 14px; }
+.kx-nicht-da > summary { height: 38px; display: flex; align-items: center; cursor: pointer; font-size: 12.5px; font-weight: 500; color: var(--text-2); }
+.kx-nicht-da p { margin: 0 0 8px; font-size: 12px; color: var(--text-2); }
+.kx-nicht-da-liste { display: flex; flex-wrap: wrap; gap: 8px; padding-bottom: 12px; }
+.kx-nd { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 6px 0 6px; border: 1px solid var(--linie); border-radius: var(--r-l); font-size: 12.5px; background: var(--seite); }
+
+/* KI verbinden (kiAuswahl) */
+.kx-verbinden { margin-bottom: 12px; animation: e-ein var(--d) var(--ease-out) both; }
+.kx-verb-kopf { display: flex; align-items: flex-start; gap: 12px; padding: 14px 14px 0 16px; }
+.kx-verb-kopf > div { flex: 1; min-width: 0; }
+.kx-verb-kopf b { display: block; font-size: 14px; font-weight: 600; }
+.kx-verb-kopf span { display: block; margin-top: 2px; font-size: 12px; color: var(--text-2); line-height: 1.45; }
+.kx-verb-koerper { padding: 14px 16px 16px; }
+.kx-verb-fuss { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--linie); background: var(--seite); }
+.kx-verb-fehler { margin-top: 10px; padding: 10px 12px; border-radius: var(--r-l); background: var(--rot-weich); border: 1px solid var(--rot-rand); font-size: 12.5px; }
+.kx-verb-fehler p { margin: 0; }
+.kx-befehl-zeile { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; font-size: 12px; color: var(--text-2); }
+.kx-befehl-zeile code { padding: 6px 8px; border-radius: var(--r); background: var(--seite); border: 1px solid var(--linie); font-size: 11.5px; -webkit-user-select: text; user-select: text; word-break: break-all; }
+
+/* ---------- Dialoge: Konto hinzufügen, Anmelden, Sperren ---------- */
+.kx-feld { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
+.kx-label { font-size: 12.5px; font-weight: 600; }
+.kx-ordner-anzeige { min-height: 34px; display: flex; align-items: center; padding: 0 10px; border: 1px solid var(--linie-stark); border-radius: var(--r); background: var(--seite); font-size: 12.5px; overflow-wrap: anywhere; }
+.kx-schritte { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.kx-schritt { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text-2); }
+.kx-schritt.fertig, .kx-schritt.laeuft { color: var(--text); }
+.kx-st { width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--linie-stark); display: grid; place-items: center; flex: none; color: #fff; }
+.kx-schritt.fertig .kx-st { background: var(--gruen); border-color: var(--gruen); }
+.kx-schritt.laeuft .kx-st { border-color: var(--akzent-weich); border-top-color: var(--akzent); animation: ez-dreh 800ms linear infinite; }
+.kx-terminal { margin-top: 14px; padding: 12px 14px; border-radius: var(--r-l); background: #0f0f10; color: #f2f2f2; font-family: var(--mono); font-size: 12px; line-height: 1.55; word-break: break-all; }
+.kx-terminal[hidden] { display: none; }
+.kx-dollar { color: #a89fff; }
+.kx-warte { margin-top: 2px; color: #9a9a9e; }
+.kx-block { display: flex; flex-direction: column; gap: 4px; margin-top: 12px; }
+.kx-block p { margin: 0; font-size: 13px; line-height: 1.55; color: var(--text-2); }
+.kx-kasten { margin-top: 12px; padding: 10px 12px; border-radius: var(--r-l); border: 1px solid var(--linie-stark); background: var(--seite); }
+.kx-kasten .kx-block { margin-top: 0; }
+.kx-kasten.warn { background: var(--gelb-weich); border-color: var(--gelb-rand); }
+
+/* ---------- Zugriffs-Matrix ---------- */
+.kx-matrix-rahmen { padding: 0; }
+.kx-schutz-liste { border-radius: var(--r-xl); overflow: hidden; }
+.kx-matrix-scroll { overflow-x: auto; }
+.kx-matrix { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12.5px; }
+.kx-matrix th, .kx-matrix td { padding: 8px 10px; text-align: left; border-top: 1px solid var(--linie); vertical-align: middle; }
+.kx-matrix thead th { border-top: 0; font-size: 11px; font-weight: 600; color: var(--text-2); background: var(--seite); height: 40px; white-space: nowrap; }
+.kx-vk-kopf { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--text); font-weight: 600; }
+.kx-vk { width: 18px; height: 18px; border-radius: 5px; display: inline-grid; place-items: center; font-size: 9.5px; font-weight: 700; color: #fff; background: var(--akzent); flex: none; }
+.kx-matrix tbody th { font-weight: 500; white-space: nowrap; }
+.kx-kz { display: flex; align-items: center; gap: 8px; }
+.kx-kz small { display: block; font-size: 11px; color: var(--text-3); font-weight: 400; max-width: 190px; overflow: hidden; text-overflow: ellipsis; }
+.kx-kz-name { display: block; font-size: 12.5px; }
+.kx-plus { width: 22px; height: 22px; border-radius: 6px; display: inline-grid; place-items: center; background: var(--seite); border: 1px solid var(--linie); color: var(--text-2); flex: none; }
+.kx-standard th, .kx-standard td { background: var(--seite); }
+.kx-zelle { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
+.kx-stufe { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px 0 9px; border-radius: 7px; border: 1px solid var(--linie-stark); background: var(--erhoben); font-size: 12.5px; font-weight: 500; color: var(--text); min-width: 128px; cursor: pointer; font-family: inherit; transition: border-color var(--d), background var(--d); }
+.kx-stufe:hover { border-color: var(--text-3); }
+.kx-stufe:disabled { opacity: .6; cursor: default; }
+.kx-stufe .sym:last-child { margin-left: auto; color: var(--text-3); }
+.kx-stufe-text { white-space: nowrap; }
+.kx-pkt { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.kx-pkt[data-s="gesperrt"] { background: transparent; border: 1.5px solid var(--text-3); }
+.kx-pkt[data-s="lesen"] { background: var(--text-3); }
+.kx-pkt[data-s="posteingang"] { background: var(--akzent); opacity: .6; }
+.kx-pkt[data-s="erweitert"] { background: var(--akzent); box-shadow: 0 0 0 2px var(--akzent-weich); }
+.kx-stufe[data-s="gesperrt"] { color: var(--text-2); background: repeating-linear-gradient(-45deg, transparent 0 5px, color-mix(in srgb, var(--text) 4%, transparent) 5px 6px), var(--erhoben); }
+.kx-schutz { display: inline-flex; align-items: center; gap: 4px; margin: 0; padding: 0; border: 0; background: none; font: inherit; font-size: 11px; color: var(--text-3); }
+.kx-schutz.ok { color: var(--gruen); }
+.kx-schutz.warn { color: var(--gelb); cursor: pointer; }
+.kx-schutz.warn:hover { text-decoration: underline; }
+.kx-schutz.warn:disabled { cursor: default; text-decoration: none; }
+.kx-legende { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 10px 14px; border-top: 1px solid var(--linie); font-size: 11.5px; color: var(--text-2); }
+.kx-legende span { display: inline-flex; align-items: center; gap: 6px; }
+.kx-legende b { color: var(--text); font-weight: 500; }
+
+/* ---------- Wie fest ist die Sperre? ---------- */
+.kx-schutz-liste { display: block; }
+.kx-schutz-karte { padding: 12px 14px 4px; }
+.kx-schutz-karte + .kx-schutz-karte { border-top: 1px solid var(--linie); }
+.kx-schutz-kopf { display: flex; align-items: center; gap: 12px; padding-bottom: 10px; }
+.kx-schutz-titel { flex: 1; min-width: 0; }
+.kx-schutz-titel b { display: block; font-size: 13.5px; font-weight: 600; }
+.kx-schutz-titel span { display: block; font-size: 12px; color: var(--text-2); margin-top: 1px; }
+.kx-ampel { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 9px 0 8px; border-radius: 11px; border: 1px solid var(--linie-stark); font-size: 11px; font-weight: 500; color: var(--text-2); white-space: nowrap; }
+.kx-ampel i { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); }
+.kx-ampel.gruen { color: var(--gruen); border-color: var(--gruen-rand); background: var(--gruen-weich); } .kx-ampel.gruen i { background: var(--gruen); }
+.kx-ampel.gelb { color: var(--gelb); border-color: var(--gelb-rand); background: var(--gelb-weich); } .kx-ampel.gelb i { background: var(--gelb); }
+.kx-ampel.rot { color: var(--rot); border-color: var(--rot-rand); background: var(--rot-weich); } .kx-ampel.rot i { background: var(--rot); }
+.kx-ampel-schutz { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--linie); border-radius: var(--r-l); margin: 0 0 12px; overflow: hidden; background: var(--seite); }
+.kx-stufe3-box { padding: 12px 14px; border-left: 1px solid var(--linie); min-width: 0; }
+.kx-stufe3-box:first-child { border-left: 0; }
+.kx-s3-k { display: flex; align-items: center; gap: 6px; font-size: 12.5px; }
+.kx-s3-z { width: 18px; height: 18px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 10px; font-weight: 700; background: var(--hover-2); color: var(--text-3); flex: none; }
+.kx-stufe3-box.an .kx-s3-z { background: var(--gruen-weich); color: var(--gruen); }
+.kx-stufe3-box p { margin: 4px 0 0; font-size: 11.5px; line-height: 1.45; color: var(--text-2); }
+.kx-stufe3-box .bs-knopf { margin-top: 8px; }
+.kx-andere { padding-bottom: 12px; }
+.kx-andere .kx-schutz-kopf { padding-bottom: 0; align-items: flex-start; }
+.kx-schutz-karte > .kx-hinweis { border-top: 0; margin: 0 -14px; }
+
+/* ---------- Frag-Standard und Pflege ---------- */
+.kx-pflege-zeile { display: grid; grid-template-columns: minmax(0, 150px) minmax(0, 1fr) auto; align-items: center; gap: 8px 14px; padding: 12px 16px; }
+.kx-pflege-zeile + .kx-pflege-zeile { border-top: 1px solid var(--linie); }
+.kx-pflege-name { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; }
+.kx-pflege-name b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kx-pflege-felder { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.kx-pflege-sub { grid-column: 2 / 4; font-size: 11.5px; color: var(--text-2); line-height: 1.45; }
+.kx-warn { color: var(--gelb); }
+.kx-kein-konto { font-size: 12px; color: var(--text-2); padding: 0 4px; }
+.kx-tut-details { border-top: 1px solid var(--linie); padding: 0 16px; }
+.kx-tut-details > summary { height: 40px; display: flex; align-items: center; cursor: pointer; font-size: 12.5px; color: var(--text-2); }
+.kx-tut-details .mini { margin-bottom: 8px; }
+.kx-tut { padding: 6px 0 10px; }
+.kx-tut-kopf { display: flex; align-items: center; gap: 8px; font-size: 12.5px; margin-bottom: 4px; }
+.kx-tut-kopf span { margin-left: auto; font-size: 11px; color: var(--text-3); }
+.kx-tut[data-aktiv="false"] { opacity: .65; }
+
+/* ---------- Kortex bei der Arbeit ---------- */
+.kx-profile { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; padding: 10px 12px; border: 1px solid var(--linie); border-radius: var(--r-l); background: var(--seite); }
+.kx-profile b { font-size: 12.5px; }
+.kx-host.kxh-arbeit-hooks-unten:empty, .kx-host.kxh-arbeit-git-unten:empty, .kx-host.kxh-arbeit-dienst-unten:empty { display: none; }
+.ez-l > .kx-host { margin-top: 8px; }
+.ez-l > .kx-host > .kx-hinweis { border: 1px solid var(--linie); border-radius: var(--r-l); }
+.ez-l > .kx-host > .kx-hinweis.warn { border-color: var(--gelb-rand); }
+
+/* ---------- Aktivität ---------- */
+.kx-filter { display: inline-flex; gap: 4px; padding: 10px 14px 6px; }
+.kx-filter-knopf { height: 24px; padding: 0 10px; border-radius: 12px; border: 1px solid var(--linie); background: transparent; font: inherit; font-size: 12px; color: var(--text-2); cursor: pointer; }
+.kx-filter-knopf[aria-pressed="true"] { background: var(--akzent-weich); border-color: var(--akzent-rand); color: var(--akzent-tinte); }
+.kx-akt-liste { list-style: none; margin: 0; padding: 0; }
+.kx-akt-liste li { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 9px 14px; border-top: 1px solid var(--linie); font-size: 12.5px; }
+.kx-akt-liste li b { font-weight: 500; }
+.kx-akt-liste li.warn { background: var(--gelb-weich); }
+.kx-akt-liste li .kx-d { display: block; font-size: 11.5px; color: var(--text-3); }
+.kx-akt-liste li time { font-size: 11.5px; color: var(--text-3); white-space: nowrap; }
+.kx-bald { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-top: 1px solid var(--linie); font-size: 12px; color: var(--text-2); }
+.kx-bald > .sym { flex: none; color: var(--text-3); }
+.kx-bald > div { flex: 1; min-width: 0; line-height: 1.45; }
+.kx-bald b { display: block; font-size: 12.5px; color: var(--text); font-weight: 500; }
+
+/* ---------- Ehrlich ---------- */
+.kx-ehrlich-liste { list-style: none; margin: 0; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
+.kx-ehrlich-liste li { display: flex; align-items: flex-start; gap: 10px; font-size: 12.5px; line-height: 1.5; color: var(--text-2); }
+.kx-ehrlich-liste li .kk-marke { margin-top: 2px; }
+.kx-ehrlich-liste b { color: var(--text); font-weight: 600; }
+
+/* ---------- Enge Fenster ---------- */
+@media (max-width: 980px) {
+  .kx-kacheln { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kx-ampel-schutz { grid-template-columns: 1fr; }
+  .kx-stufe3-box { border-left: 0; border-top: 1px solid var(--linie); }
+  .kx-stufe3-box:first-child { border-top: 0; }
+  .kx-zeile { grid-template-columns: 28px minmax(0, 1fr); }
+  .kx-zeile > .kx-akt { grid-column: 2; justify-content: flex-start; }
+  .kx-pflege-zeile { grid-template-columns: minmax(0, 1fr); }
+  .kx-pflege-sub { grid-column: 1; }
+}
+@media (max-width: 680px) {
+  .kx-kacheln { grid-template-columns: 1fr 1fr; }
+  .kx-schutz-kopf { flex-wrap: wrap; }
+}
+@media (prefers-reduced-motion: reduce) { .kx-verbinden, .kx-schritt.laeuft .kx-st { animation: none; } }
+:root[data-bewegung="reduziert"] .kx-verbinden, :root[data-bewegung="reduziert"] .kx-schritt.laeuft .kx-st { animation: none; }
+.kxh-aktivitaet > .kx-leer, .kxh-pflege > .kx-leer, .kxh-zugriff > .kx-leer, .kxh-schutz > .kx-leer { border: 0; background: transparent; border-radius: 0; }
+.kx-genau { margin-top: 2px; }
+.kx-genau > summary { cursor: pointer; font-size: 12px; color: var(--text-2); }
+.kx-genau .mini { margin-top: 6px; }
+.e-punkt .e-braucht { width: 8px; height: 8px; border-radius: 50%; background: var(--gelb); flex: none; }

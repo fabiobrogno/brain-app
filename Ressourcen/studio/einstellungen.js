@@ -15,6 +15,7 @@ import { popoverOffen } from "./popover.js";
 import { markenLogo } from "./marken.js";
 import { BEREICHE, GRUPPEN, TE, STANDARD_VORSCHLAEGE } from "./texte-einstellungen.js";
 import { suche as sucheIn, zerlege, vorschlaege } from "./einstellungen-suche.js";
+import { erzeugeKi } from "./einstellungen-ki.js";
 
 export const BLINK_MS = 1600; // Sprungziel leuchtet kurz auf (Orca: 3000 ms; ruhiger)
 
@@ -24,7 +25,7 @@ const Z = {
   steuer: new Map(),        // Schlüssel → { setze(wert), offen(), sofort(), el }
   bereichKnoten: new Map(), // Bereichs-ID → <section>
   zeilen: new Map(),        // Zeilen-ID → Element
-  wartend: {}, laeuft: null, davor: null, zielTimer: 0, gespTimer: 0, dynamisch: new Map(), stilGeladen: null, taste: null, nachladenLaeuft: false, ladeNr: 0,
+  wartend: {}, ki: null, kiBraucht: 0, laeuft: null, davor: null, zielTimer: 0, gespTimer: 0, dynamisch: new Map(), stilGeladen: null, taste: null, nachladenLaeuft: false, ladeNr: 0,
 };
 export const istOffen = () => Z.offen;
 
@@ -40,16 +41,19 @@ const schreibeHash = (bereich, ziel) => { try { history.replaceState(null, "", `
 const loescheHash = () => { try { if (leseHash()) history.replaceState(null, "", location.pathname + location.search); } catch { /* ohne Verlauf */ } };
 
 // ============================================================ Stil
-function ladeStil() {
-  if (Z.stilGeladen) return Z.stilGeladen;
-  if ([...document.querySelectorAll('link[rel="stylesheet"]')].some((l) => /einstellungen\.css/.test(l.getAttribute("href") || ""))) return (Z.stilGeladen = Promise.resolve());
-  Z.stilGeladen = new Promise((ok) => {
-    const l = h("link", { rel: "stylesheet", href: new URL("einstellungen.css", import.meta.url).href });
+function ladeEineDatei(name) {
+  if ([...document.querySelectorAll('link[rel="stylesheet"]')].some((l) => (l.getAttribute("href") || "").includes(name))) return Promise.resolve();
+  return new Promise((ok) => {
+    const l = h("link", { rel: "stylesheet", href: new URL(name, import.meta.url).href });
     l.addEventListener("load", () => ok());
     l.addEventListener("error", () => ok());
     setTimeout(ok, 1500);
     document.head.append(l);
   });
+}
+function ladeStil() {
+  if (Z.stilGeladen) return Z.stilGeladen;
+  Z.stilGeladen = Promise.all([ladeEineDatei("einstellungen.css"), ladeEineDatei("einstellungen-ki.css")]).then(() => {});
   return Z.stilGeladen;
 }
 
@@ -384,8 +388,19 @@ const SONDER = {
   },
   "vaults-liste": () => { const host = h("div", { klasse: "ez-vaults", "data-vaults": "liste" }); Z.dynamisch.set("vaults", vaultZeilen(host)); return { voll: host }; },
   vertrauen: () => { const host = h("div", { klasse: "ez-inline" }); Z.dynamisch.set("vertrauen", vertrauenZeile(host)); return { steuerung: host }; },
-  "ki-konten": () => ({ steuerung: knopfS({ text: TE.kiOeffnen, daten: { "data-aktion": "ki-konten" }, aufKlick: () => Z.k.oeffneKonten() }) }),
-  "ki-verbinden": () => ({ steuerung: knopfS({ text: TE.kiVerbinden, daten: { "data-aktion": "ki-verbinden" }, aufKlick: () => Z.k.oeffneKi() }) }),
+  // KI & Konten (Paket P6): einstellungen-ki.js baut die Inhalte, hier hängen sie als Zeilen im Register (Suche, Sprungziele)
+  "ki-uebersicht": () => ({ voll: Z.ki.host("uebersicht") }),
+  "ki-konten": () => ({ voll: Z.ki.host("konten") }),
+  "ki-zugriff": () => ({ voll: Z.ki.host("zugriff") }),
+  "ki-schutz": () => ({ voll: Z.ki.host("schutz") }),
+  "ki-frage-konto": () => ({ steuerung: Z.ki.host("frage-konto") }),
+  "ki-frage-modell": () => ({ steuerung: Z.ki.host("frage-modell") }),
+  "ki-pflege": () => ({ voll: Z.ki.host("pflege") }),
+  "ki-hooks": () => ({ steuerung: Z.ki.host("arbeit-hooks"), unten: Z.ki.host("arbeit-hooks-unten") }),
+  "ki-git": () => ({ steuerung: Z.ki.host("arbeit-git"), unten: Z.ki.host("arbeit-git-unten") }),
+  "ki-dienst": () => ({ steuerung: Z.ki.host("arbeit-dienst"), unten: Z.ki.host("arbeit-dienst-unten") }),
+  "ki-aktivitaet": () => ({ voll: Z.ki.host("aktivitaet") }),
+  "ki-ehrlich": () => ({ voll: Z.ki.host("ehrlich") }),
   "github-konto": () => { const host = h("div", { klasse: "ez-voll-innen", "data-github": "" }); Z.dynamisch.set("github", githubZeile(host)); return { voll: host }; },
   "sicherung-vault": () => { const host = h("div", { klasse: "ez-voll-innen", "data-sicherung": "" }); Z.dynamisch.set("sicherung", sicherungVault(host)); return { voll: host }; },
   "git-technik": () => {
@@ -404,7 +419,7 @@ const SONDER = {
   "ds-wege": () => ({ steuerung: null }),
   "ds-geheimnisse": (z) => ({ steuerung: pillText(z.badge, "ok") }),
   "ds-themen": () => ({ steuerung: knopfS({ text: TE.zuDenVaults, daten: { "data-aktion": "zu-vaults" }, aufKlick: () => navigiere("vaults", "ernte-ohne-thema") }) }),
-  "ds-zugriff": () => ({ steuerung: knopfS({ text: TE.zuKonten, daten: { "data-aktion": "zu-ki" }, aufKlick: () => navigiere("ki", "ki-konten") }) }),
+  "ds-zugriff": () => ({ steuerung: knopfS({ text: TE.zuKonten, daten: { "data-aktion": "zu-ki" }, aufKlick: () => navigiere("ki", "ki-zugriff") }) }),
   "mcp-verbinden": () => ({ steuerung: knopfS({ text: TE.kiVerbinden, daten: { "data-aktion": "mcp-verbinden" }, aufKlick: () => Z.k.oeffneKi() }) }),
   "datei-vault": () => ({ steuerung: Z.k.inApp && Z.daten?.vault ? knopfS({ text: TE.imFinderZeigen, variante: "leise", daten: { "data-aktion": "datei-vault" }, aufKlick: () => Z.k.aktion("ordner-zeigen", "brain.config.json") }) : null }),
   "datei-app": () => ({ steuerung: einstellMarke("einstellungen.json") }),
@@ -419,19 +434,19 @@ function ueberKarte() {
 function zeileText(id, text) { const e = Z.zeilen.get(id); if (e?.textEl) { e.textEl.textContent = text; e.originalText = text; } }
 
 function bauZeile(b, a, z) {
-  let steuerung = null, reg = null, voll = null, marke = z.experiment ? einstellMarke(TE.experiment) : null, titel = z.titel;
+  let steuerung = null, reg = null, voll = null, unten = null, marke = z.experiment ? einstellMarke(TE.experiment) : null, titel = z.titel;
   if (z.sonder) {
     if (z.taste) steuerung = kbdGruppe(z.taste);
     else {
       const r = SONDER[z.id]?.(z) || {};
-      steuerung = r.steuerung || null; voll = r.voll || null; marke = r.marke || marke; titel = r.titel || titel;
+      steuerung = r.steuerung || null; voll = r.voll || null; unten = r.unten || null; marke = r.marke || marke; titel = r.titel || titel;
       if (z.badge && z.id.startsWith("lizenz-")) steuerung = pillText(z.badge);
     }
   } else if (BAUER[z.art]) {
     const r = BAUER[z.art](z);
     steuerung = r.steuerung; reg = r.reg;
   }
-  const zeile = einstellZeile({ id: z.id, titel, text: z.text, steuerung: voll ? null : steuerung, marke, hoch: z.art === "liste" || z.art === "regler", klasse: voll ? "ez-voll ez-ohne-kopf" : "" });
+  const zeile = einstellZeile({ id: z.id, titel, text: z.text, steuerung: voll ? null : steuerung, unten, marke, hoch: z.art === "liste" || z.art === "regler", klasse: voll ? "ez-voll ez-ohne-kopf" : "" });
   if (z.id.startsWith("lizenz-")) zeile.classList.add("ez-lizenz");
   if (voll) zeile.append(voll);
   zeile.originalTitel = titel;
@@ -442,6 +457,7 @@ function bauZeile(b, a, z) {
 }
 
 function bauAbschnittRechts(b, a) {
+  if (b.id === "ki" && a.id === "konten") return Z.ki.kopfKnoepfe();
   if (b.id === "vaults" && a.id === "liste") return knopfS({ text: TE.vaultHinzu, symbol: "plus", daten: { "data-aktion": "vault-hinzufuegen" }, aufKlick: () => Z.k.vaultOeffnen() });
   if (b.id === "ueber" && a.id === "lizenzen") return knopfS({ text: TE.alleHinweise, variante: "leise", daten: { "data-aktion": "lizenzen" }, aufKlick: () => Z.k.oeffneLizenzen() });
   return null;
@@ -513,6 +529,7 @@ function renderNav(treffer) {
       const n = treffer ? (treffer.find((x) => x.id === b.id)?.treffer || 0) : null;
       html.push(h("button", { type: "button", klasse: `e-punkt${treffer && !n ? " aus" : ""}`, "data-bereich": b.id, "aria-current": String(!treffer && Z.bereich === b.id) },
         symbol(b.symbol, GROESSE.norm), h("span", { klasse: "t", text: b.name }),
+        b.id === "ki" && Z.kiBraucht > 0 ? h("span", { klasse: "e-braucht", "aria-label": TE.braucht, title: TE.braucht }) : null,
         treffer ? (n ? h("span", { klasse: "treffer", "aria-label": TE.trefferJeBereich(n), text: String(n) }) : null) : (b.bald ? h("span", { klasse: "e-bald", text: TE.bald }) : null)));
     }
   }
@@ -650,8 +667,11 @@ export async function oeffneEinstellungen({ api, kontext, bereich = null, ziel =
     return false;
   }
   if (!Z.offen) return false;
+  Z.kiBraucht = 0;
+  Z.ki = erzeugeKi({ api, k: kontext, beiBraucht: (n) => { if (n === Z.kiBraucht) return; Z.kiBraucht = n; if (Z.host?.querySelector(".e-liste")) renderNav(Z.ergebnis ? Z.ergebnis.bereiche : null); } });
   host.replaceChildren(baueGeruest());
   zeichneInhalt();
+  Z.ki.start();
   aktualisiereSteuerungen();
   schreibeHash(Z.bereich, ziel);
   requestAnimationFrame(() => { if (ziel) springeZu(ziel); });
@@ -663,6 +683,7 @@ export async function schliesse({ fokus = true } = {}) {
   if (!Z.offen) return;
   for (const s of Z.steuer.values()) { try { s.sofort?.(); } catch { /* egal */ } }
   Z.offen = false;
+  Z.ki?.ende(); Z.ki = null;
   document.removeEventListener("keydown", Z.taste);
   window.removeEventListener("kortex-einstellungen", nachladen);
   clearTimeout(Z.zielTimer); clearTimeout(Z.gespTimer);

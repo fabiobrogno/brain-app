@@ -123,6 +123,15 @@ export const api = {
   vaultKlonen: (url, ordner) => mitWarnung(anfrage("POST", "/api/vaults/klonen", ordner ? { url, ordner } : { url })),
   vaultEntfernen: (pfad) => anfrage("POST", "/api/vaults/entfernen", { pfad }),
   kiErkennen: (neu) => anfrage("GET", "/api/ki/erkennen" + (neu ? "?neu=1" : "")),
+  // ---- KI & Konten in den Einstellungen (P6). Programme, Anmeldestand und Anmelden beantwortet in der App Swift selbst (Login-Shell-PATH, Terminal); im Browser antwortet die Werkstatt mit einem Rückfall.
+  kiProgramme: (neu) => anfrage("GET", "/api/ki/programme" + (neu ? "?neu=1" : "")),
+  kiAnmeldestatus: (programm, ordner) => anfrage("POST", "/api/ki/anmeldestatus", { programm, ordner: ordner || null }),
+  kiAnmelden: (programm, ordner) => anfrage("POST", "/api/ki/anmelden", { programm, ordner: ordner || null }),
+  kiAnmeldung: (konto, zustand) => anfrage("POST", "/api/ki/anmeldung", { konto, zustand }),
+  kiKontoNeu: ({ programm, name, stufe }) => anfrage("POST", "/api/ki/konto-neu", { programm, name, ...(stufe ? { stufe } : {}) }),
+  // Ordner eines eigenen Kontos in den Papierkorb: in der App legt Swift ihn über den Papierkorb des Finders ab (Zurücklegen geht), im Browser die Werkstatt
+  kiOrdnerPapierkorb: ({ id, programm, pfad }) => anfrage("POST", "/api/ki/ordner-papierkorb", { id, programm, ordner: pfad }),
+  kiKontoEntfernen: (id) => anfrage("POST", "/api/ki/konto-entfernen", { id }),
   kitHooks: () => anfrage("POST", "/api/kit/hooks", {}),
   // ---- GitHub-Anmeldung per Gerätecode (nie ein Token in einer Antwort)
   githubAnmelden: () => anfrage("POST", "/api/github/anmelden", {}),

@@ -108,7 +108,7 @@ for (const dunkel of [false, true]) {
   });
 }
 
-test("Platzhalter: iPhone „bald“, Tastenkürzel nur Anzeige, KI & Konten verweist auf die bestehende Ansicht (öffnet sie)", async ({ page }) => {
+test("Platzhalter: iPhone „bald“, Tastenkürzel nur Anzeige; KI & Konten ist keine Platzhalter-Seite mehr (Programme, Matrix, Schutz, Pflege, Eintragungen)", async ({ page }) => {
   await start(page);
   await oeffne(page, "mobil");
   await expect(page.locator(".e-punkt[data-bereich=mobil] .e-bald")).toHaveText("bald");
@@ -117,12 +117,9 @@ test("Platzhalter: iPhone „bald“, Tastenkürzel nur Anzeige, KI & Konten ver
   await expect(zeileVon(page, "kz-neu").locator("kbd")).toHaveText(["⌘", "N"]);
   await expect(zeileVon(page, "kz-merken").locator("kbd")).toHaveText(["⇧", "⌘", "M"]);
   await page.click('.e-punkt[data-bereich="ki"]');
-  await expect(page.locator(".e-intro")).toContainText("zieht mit dem nächsten Update hierher um");
-  await page.click('[data-aktion="ki-konten"]');
-  await expect(page.locator('.dialog[data-dialog="ki-konten"]')).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(page.locator('.dialog[data-dialog="ki-konten"]')).toBeHidden();
-  await expect(seite(page)).toBeVisible(); // Esc schloss zuerst den Dialog, nicht die Seite
+  await expect(page.locator(".e-intro")).toContainText("Hier siehst du, welche Konten angemeldet sind");
+  for (const id of ["ki-konten", "ki-zugriff", "ki-schutz", "ki-pflege", "ki-hooks", "ki-git", "ki-dienst", "ki-aktivitaet", "ki-ehrlich"]) await expect(zeileVon(page, id)).toBeAttached();
+  await expect(page.locator('.dialog[data-dialog="ki-konten"]')).toHaveCount(0); // der frühere Dialog ist in den Bereich umgezogen
 });
 
 test("Sofort speichern: Schalter und Segment schreiben in brain.config.json (wie `brain einstellungen`), ‚Gespeichert‘ erscheint, nach dem Neuladen steht es noch da", async ({ page }) => {

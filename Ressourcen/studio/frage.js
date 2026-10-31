@@ -42,8 +42,10 @@ export function erzeugeFragePanel(z) {
     catch (e) { if (nr !== prueft) return; bereit = null; bereitFehler = e.message || TF.bereitFehler; }
     laedt = false;
     const erlaubte = (bereit?.konten || []).filter((k) => k.erlaubt);
+    // Die Wahl kann auch in den Einstellungen (KI & Konten → Frag deinen Vault) geändert worden sein: die gemerkten Werte gelten zuerst
     const gemerkt = leseLokal(`frage.konto@${vaultSchluessel()}`, null);
-    konto = erlaubte.find((k) => k.id === konto)?.id || erlaubte.find((k) => k.id === gemerkt)?.id || erlaubte[0]?.id || null;
+    modell = leseLokal("frage.modell", modell);
+    konto = erlaubte.find((k) => k.id === gemerkt)?.id || erlaubte.find((k) => k.id === konto)?.id || erlaubte[0]?.id || null;
     zeichneRumpf();
     if (offen && !lauf) setTimeout(() => formular.querySelector("textarea")?.focus(), 0);
   }

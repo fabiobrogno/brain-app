@@ -1527,13 +1527,8 @@ async function oeffneKi() {
   try { const m = await import("./willkommen.js"); m.oeffneKiDialog({ beiFertig: () => { ladeKi(); }, beiVerbunden: () => { S.kiVerbunden = true; zeichneStatus(); } }); }
   catch { try { await api.mcpVerbinden(); S.kiVerbunden = true; toast(T.mcp.ok); zeichneStatus(); } catch (e) { toast(e.daten?.befehl ? `${T.mcp.befehl} ${e.daten.befehl}` : e.message, { fehler: !e.daten?.befehl, ms: 12000 }); } }
 }
-// Einstellungen → „KI-Konten …“: wer darf welchen Vault sehen (ki-konten.js lädt bei Bedarf)
-async function oeffneKonten() {
-  try {
-    const m = await import("./ki-konten.js");
-    m.oeffneKontenDialog({ api, vault: S.info?.vault || null });
-  } catch { toast("Das geht in dieser Version noch nicht.", { fehler: true }); }
-}
+// „KI-Konten …“ (Menü, Palette, Statusleiste): die Ansicht ist in die Einstellungen umgezogen (Bereich „KI & Konten“, einstellungen-ki.js); alle alten Wege springen dorthin.
+function oeffneKonten() { return oeffneEinstellungenSeite({ bereich: "ki", ziel: "ki-konten" }); }
 // „Lizenzen …“: Hinweise zu Software und Material von Dritten (lizenzen.js, lädt bei Bedarf)
 async function oeffneLizenzen() {
   try { const m = await import("./lizenzen.js"); m.oeffneLizenzen(); }
@@ -1550,7 +1545,7 @@ function einstellungenKontext() {
     theme: { lies: () => S.theme, setze: setzeTheme },
     breit: { lies: () => S.breit, setze: (an) => { if (!!S.breit !== !!an) umschalteBreit(); } },
     wendeAn: wendeEinstellungenAn,
-    oeffneKi, oeffneKonten, oeffneRemote, oeffneLizenzen, sync,
+    oeffneKi, oeffneKonten, oeffneRemote, oeffneLizenzen, sync, beiVerbunden: () => { S.kiVerbunden = true; zeichneStatus(); },
     vaultOeffnen: () => { vaultOeffnen(); }, vaultWechseln: (pfad) => wechsleVault(pfad), vaultEntfernen: (v) => bestaetigeEntfernen(v),
     zeigeVault: () => aktion("ordner-zeigen", "brain.config.json"),
     vertrauen: { erlauben: oeffneVertrauen, entziehen: oeffneVertrauenEntziehen },
@@ -1783,7 +1778,7 @@ function oeffnePalette(vorgabe = "") {
     [TF.befehl, "⌘J", () => frage.oeffne()], [T.befehle.suche, "⌘⇧F", fokusSuche], [T.befehle.inNotiz, "⌘F", () => ed.suchen()], [T.befehle.info, "⌘⌥I", umschalteInfo], [T.befehle.gesundheit, "", oeffneGesundheit], [T.befehle.nutzung, "", oeffneNutzung],
     [T.liste.verlauf, "", oeffneVerlauf],
     ...(inApp() ? [[T.befehle.ordner, "", () => aktion("ordner-zeigen", S.pfad || undefined)], [T.befehle.ansicht, "", oeffneUebersicht]] : []),
-    [T.befehle.mcp, "", oeffneKi],
+    [T.befehle.mcp, "", oeffneKi], [T.befehle.konten, "", oeffneKonten],
   ];
   const eingabeFeld = textfeld({ wert: vorgabe, platzhalter: T.palette.platzhalter, label: T.palette.platzhalter, klasse: "pal-feld", daten: { role: "combobox", "aria-expanded": "true", "aria-controls": "pal-liste" } });
   const eingabe = eingabeFeld.input;
