@@ -148,6 +148,9 @@ export const api = {
   frageAbbrechen: (id) => anfrage("POST", "/api/frage/abbrechen", { id }),
   // ---- KI-Konten und Vault-Zugriff (Paket P2). Das Leseverbot in Claude Code wird nur mit claudeSperre: true geschrieben, der Strenge Schutz nur mit bestaetigt: true — beides setzt die Oberfläche erst nach dem Klick.
   kiKonten: () => anfrage("GET", "/api/ki/konten"),
+  // Kontingent (P7): Stand lesen (neu = frühere Abfrage bei Codex, frühestens 5 Min nach der letzten) · die Statuszeile von Kortex bei Claude Code ein-/ausschalten (nur nach dem Klick; `bestaetigt` für Orte außerhalb von Kortex)
+  kiKontingent: (neu) => anfrage("GET", "/api/ki/kontingent" + (neu ? "?neu=1" : "")),
+  kiStatuszeile: ({ konto, an, bestaetigt }) => anfrage("POST", "/api/ki/kontingent/statuszeile", { konto, an, einwilligung: true, ...(bestaetigt ? { bestaetigt: true } : {}) }),
   kiKontoName: (id, name) => anfrage("POST", "/api/ki/konten", { id, name }),
   kiZugriff: ({ konto, vault, stufe, claudeSperre }) => anfrage("PUT", "/api/ki/zugriff", { konto, vault, stufe, ...(typeof claudeSperre === "boolean" ? { claudeSperre } : {}) }),
   kiStandard: (vault, stufe) => anfrage("PUT", "/api/ki/standard", { vault, stufe }),

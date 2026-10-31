@@ -14,6 +14,7 @@ import { oeffneMenue, schliesseMenue } from "./menue.js";
 import { baueAktionen, istZurueckgestellt, spaeterBis } from "./posteingang.js";
 import { TA as TAUF } from "./texte-aufgaben.js";
 import { erzeugeFragePanel } from "./frage.js";
+import { kontingentStand, erzeugeKontoLeiste } from "./kontingent.js";
 import { TF } from "./texte-frage.js";
 import { starteLive, planeAus, kiHinweis, hebeHervor } from "./live.js";
 import { baueKiZeile } from "./ki-zeile.js";
@@ -1210,6 +1211,9 @@ async function stelleWiederHer(pfad, sha, zeit) {
 
 // ======================================================= Statusleiste
 const stEl = $("status");
+// Kontingent (P7): aktives KI-Konto mit Mini-Balken und Konto-Menü — ein eigener Baustein (kontingent.js); die Statusleiste setzt nur seinen Knoten ein.
+const kontoLeiste = erzeugeKontoLeiste({ stand: kontingentStand(api), vaultPfad: () => S.info?.vault || null, vaultName: () => S.info?.name || "", oeffneKonten: () => oeffneKonten(), oeffneKi: () => oeffneKi() });
+const kontingentSlot = h("span", { klasse: "st-slot", "data-st": "platz-kontingent", "data-slot": "kontingent" }, kontoLeiste.knoten()); // display: contents (hauptfenster.css)
 function st(id, kinder, { klick, titel, klasse = "", tag = null } = {}) {
   const el = h(klick ? "button" : "span", { klasse: "st" + (klasse ? " " + klasse : ""), "data-st": id, title: titel || null, type: klick ? "button" : null, aufClick: klick || null }, ...kinder);
   return el;
@@ -1297,9 +1301,10 @@ function zeichneStatus() {
   // Der Ort des Vaults steht nicht in der Leiste (der Name steht oben in der Seitenleiste, der volle Pfad als Hinweis am Vault-Wechsler); hier nur die Version der App
   if (S.info.appVersion) k.push(st("version", [symbol("info", 14), h("span", { text: S.info.appVersion })], { titel: T.status.version(S.info.appVersion) }));
   k.push(h("span", { klasse: "sp" }));
-  // ---- SLOT P7 (Kontingent): hier zeigt das Paket „Kontingent“ Konto und Verbrauch (Balken, Prozent, Rest). Das leere Element bleibt unsichtbar (hauptfenster.css);
-  // wer es füllt, setzt Inhalt in [data-st="platz-kontingent"] und achtet darauf, dass die Leiste bei 1100 px nichts abschneidet (Test „Statusleiste bei kleinem Fenster“).
-  k.push(h("span", { klasse: "st st-slot", "data-st": "platz-kontingent", "data-slot": "kontingent", title: T.statusInfo.kontingentSlot }));
+  // ---- SLOT P7 (Kontingent, Paket „Kontingent“): der Platz [data-st="platz-kontingent"] ist ein einziger, dauerhafter Knoten (kontingentSlot), der den Knoten der Konto-Leiste trägt;
+  // die Leiste zeichnet sich selbst neu, die Statusleiste setzt nur diesen Knoten wieder ein (kein Neuzeichnen, der Fokus und ein offenes Konto-Menü bleiben).
+  kontingentStand(api).start(); kontoLeiste.zeichne(); // erst mit offenem Vault (idempotent)
+  k.push(kontingentSlot);
   {
     const datei = zeigeDateiTeile(), w = datei ? T.statusInfo.woerter(wortZahl()) : "";
     const teile = [st("woerter", [h("span", { text: w })], { titel: w }), st("format", [h("span", { text: datei ? formatName(S.pfad) : "" })], { titel: datei ? S.pfad : "" }), h("span", { klasse: "trenner" })];

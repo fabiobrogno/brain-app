@@ -66,8 +66,13 @@ test("Aufbau: Kopfzeile mit Suchfeld in der Mitte, Knöpfe rechts; Seitenleiste 
   // Statusleiste: Wörter und Format der offenen Notiz, leerer Platz für P7
   await expect(page.locator('[data-st="woerter"]')).toHaveText("14 Wörter");
   await expect(page.locator('[data-st="format"]')).toHaveText("Markdown");
-  await expect(page.locator('[data-st="platz-kontingent"]')).toBeHidden();
-  await expect(page.locator('[data-st="platz-kontingent"]')).toHaveAttribute("data-slot", "kontingent");
+  // Platz für P7 (Kontingent): ein dauerhafter Knoten, der die Konto-Leiste trägt; er bleibt bei jedem Neuzeichnen der Leiste derselbe Knoten (kein Neuzeichnen, Fokus und Menü bleiben)
+  const slot = page.locator('[data-st="platz-kontingent"]');
+  await expect(slot).toHaveAttribute("data-slot", "kontingent");
+  await expect(slot.locator(".kt-leiste")).toHaveCount(1);
+  await slot.evaluate((e) => { window.__slot = e; });
+  await page.click('[data-st="theme"]'); await page.click('[data-st="theme"]'); // erzwingt ein Neuzeichnen der Leiste
+  expect(await slot.evaluate((e) => window.__slot === e && e.isConnected)).toBe(true);
   await expect(page.locator('[data-st="sync"]')).toBeVisible();
   await bild(page, "01-aufbau");
 });

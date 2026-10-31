@@ -99,8 +99,8 @@
 .st[data-st="vault"] { color: var(--text-3); font-family: var(--mono); font-size: 11px; }
 .st[data-st="vault"] > .sym { display: none; }
 .st[data-st="woerter"], .st[data-st="format"] { cursor: default; }
-.st[data-st="platz-kontingent"] { display: none; }
-.st[data-st="platz-kontingent"]:not(:empty) { display: inline-flex; }
+/* Platz für das Kontingent (P7): ein dauerhafter Knoten, der die Konto-Leiste (kontingent.js) trägt; er selbst nimmt keinen Platz ein */
+.st-slot { display: contents; }
 @container status (max-width: 1180px) { .st[data-st="format"] { display: none; } }
 @container status (max-width: 1099px) { .st[data-st="woerter"], .st[data-st="vault"] { display: none; } }
 
