@@ -88,12 +88,36 @@ export const dialogOffen = () => !!document.querySelector("#dialog-host .schleie
 // was jemand getippt hat, bleibt über beiSchliessen erhalten (z. B. der Entwurf bei „Schnell merken“).
 export function schliesseDialoge() { for (const zu of [...offeneDialoge]) zu(); }
 
-export function toast(text, { fehler = false, aktion, ms = 4200 } = {}) {
+// Hinweis unten rechts. Einfach: toast("Text", { fehler, aktion: { text, tun }, ms }).
+// Mit mehreren Aktionen (Mitteilungen, P8): { aktionen: [{ text, tun, primaer }], fett (hervorgehobener Anfang, z. B. der Name der KI), unter (graue Unterzeile), logo (Element links) }.
+// Bei `aktionen` pausiert das Ausblenden, solange die Maus darüber ist oder ein Knopf den Fokus hat. Gibt das Element zurück.
+export function toast(text, { fehler = false, aktion, aktionen, fett, unter, logo, ms = 4200 } = {}) {
   const host = document.getElementById("toast-host");
-  const t = h("div", { klasse: "toast" + (fehler ? " fehler" : "") }, h("span", { text }),
-    aktion ? h("a", { text: aktion.text, role: "button", aufClick: () => { aktion.tun(); t.remove(); } }) : null);
+  const dauer = fehler ? ms + 2500 : ms;
+  const reich = !!(aktionen?.length || fett || unter || logo);
+  let t;
+  if (!reich) {
+    t = h("div", { klasse: "toast" + (fehler ? " fehler" : "") }, h("span", { text }),
+      aktion ? h("a", { text: aktion.text, role: "button", aufClick: () => { aktion.tun(); t.remove(); } }) : null);
+    host.append(t);
+    setTimeout(() => t.remove(), dauer);
+    return t;
+  }
+  const knoepfe = (aktionen || []).map((a) => h("button", { type: "button", klasse: "toast-knopf" + (a.primaer ? " primaer" : ""), text: a.text, aufClick: () => { t.remove(); try { a.tun(); } catch { /* der Hinweis ist schon weg */ } } }));
+  t = h("div", { klasse: "toast reich" + (fehler ? " fehler" : ""), role: fehler ? "alert" : "status" },
+    logo ? h("span", { klasse: "toast-logo", "aria-hidden": "true" }, logo) : null,
+    h("div", { klasse: "toast-text" }, h("div", { klasse: "toast-titel" }, fett ? h("b", { text: fett }) : null, fett ? " " : null, text), unter ? h("div", { klasse: "toast-unter", text: unter }) : null),
+    knoepfe.length ? h("div", { klasse: "toast-aktionen" }, knoepfe) : null);
   host.append(t);
-  setTimeout(() => t.remove(), fehler ? ms + 2500 : ms);
+  let timer = null, rest = dauer, start = 0;
+  const plane = () => { clearTimeout(timer); start = Date.now(); timer = setTimeout(() => t.remove(), rest); };
+  const halte = () => { clearTimeout(timer); rest = Math.max(2500, rest - (Date.now() - start)); };
+  if (knoepfe.length) {
+    t.addEventListener("mouseenter", halte); t.addEventListener("mouseleave", plane);
+    t.addEventListener("focusin", halte); t.addEventListener("focusout", (e) => { if (!t.contains(e.relatedTarget) && !t.matches(":hover")) plane(); });
+  }
+  plane();
+  return t;
 }
 
 export function vorMinuten(iso) {

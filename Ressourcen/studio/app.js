@@ -16,6 +16,7 @@ import { TA as TAUF } from "./texte-aufgaben.js";
 import { erzeugeFragePanel } from "./frage.js";
 import { TF } from "./texte-frage.js";
 import { starteLive, planeAus, kiHinweis, hebeHervor } from "./live.js";
+import { erzeugeMitteilungen } from "./mitteilungen.js"; // P8a: Hinweise unten rechts zu Ereignissen des Aktivitätsprotokolls
 import { datumKurz, datumLang, datumZeit, istDatumText, bytesText, setzeTypFarbe, typSymbol, typName, wortAnzahl, relativ, pluralisiere, vorschauText, typTextFarbe } from "./format.js";
 
 const $ = (id) => document.getElementById(id);
@@ -1332,9 +1333,18 @@ function kiHinweisPlanen(ki) {
   if (!ki.length) return;
   kiSammlung.push(...ki);
   clearTimeout(kiTimer);
-  kiTimer = setTimeout(() => { const t = kiHinweis(kiSammlung); kiSammlung = []; if (t) toast(t, { ms: 5200 }); }, 600);
+  // Rückfall (P8a): kommt innerhalb ~1,5 s ein Ereignis des Aktivitätsprotokolls dazu, zeigt mitteilungen.js den Hinweis (mit „Ansehen“/„Rückgängig“); dieser hier nur bei älterer Werkstatt oder ohne Protokoll
+  kiTimer = setTimeout(() => { const t = kiHinweis(kiSammlung); kiSammlung = []; if (t && !mitteilungen.deckt(Date.now() - 6000)) toast(t, { ms: 5200 }); }, 1500);
 }
+// Mitteilungen (P8a): „Ansehen“ im Hinweis → Aufgaben-Board, Posteingang oder Aktivitätsprotokoll (Einstellungen → KI & Konten)
+async function ansehenAktivitaet(ziel) {
+  if (ziel === "protokoll") return oeffneEinstellungenSeite({ bereich: "ki", ziel: "ki-aktivitaet" });
+  if (einstOffen()) await einstModul.schliesse({ fokus: false });
+  waehleSicht({ art: "bereich", id: ziel === "aufgaben" ? "aufgaben" : "inbox" });
+}
+const mitteilungen = erzeugeMitteilungen({ api, toast, beiAnsehen: ansehenAktivitaet });
 function beiLiveEreignisse(liste) {
+  mitteilungen.verarbeiteLive(liste); // Ereignisse typ „aktivitaet“ (Protokoll der KIs): Hinweis, Zähler; alle anderen übergeht es
   const p = planeAus(liste);
   kiHinweisPlanen(p.ki);
   if (p.info) ladeInfoLeise();
@@ -1928,6 +1938,7 @@ const MENUE_BEFEHLE = {
   umstellung: () => oeffneUmstellung(), // Menüleiste „Vault umstellen …“ (nur wenn der Status Altlasten meldet): dieselbe Ansicht wie in den Einstellungen
   einstellungen: () => oeffneEinstellungenSeite(), // Menü „Einstellungen …“ (⌘,): die Seite „Einstellungen“ (früher das Zahnrad-Menü der Statusleiste, das es weiter gibt)
   aufgaben: () => waehleSicht({ art: "bereich", id: "aufgaben" }), "aufgabe-erfassen": () => aufgabeErfassen(),
+  aktivitaet: () => ansehenAktivitaet("protokoll"), // Klick auf eine macOS-Mitteilung (Swift: window.studio.befehl('aktivitaet')): Einstellungen → KI & Konten → Aktivitätsprotokoll
   posteingang: () => waehleSicht({ art: "bereich", id: "inbox" }), alle: () => waehleSicht({ art: "bereich", id: "alle" }), wissen: () => waehleSicht({ art: "bereich", id: "wissen" }),
   "hell-dunkel": () => setzeTheme(istDunkel() ? "hell" : "dunkel"),
 };

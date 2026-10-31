@@ -8,3 +8,18 @@
 @media (prefers-reduced-motion: reduce) {
   .live-neu { animation: none !important; outline: 2px solid var(--akzent-rand); outline-offset: -2px; background-color: var(--akzent-weich); }
 }
+
+/* ---------- Hinweis mit Aktionen (Mitteilungen, P8): Logo · Titel mit grauer Unterzeile · „Ansehen“ und „Rückgängig“ ---------- */
+.toast.reich { gap: 12px; max-width: min(520px, calc(100vw - 32px)); padding: 10px 12px; }
+.toast-logo { flex: none; width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; background: var(--seite); border: 1px solid var(--linie); color: var(--text); }
+.toast-text { flex: 1; min-width: 0; line-height: 1.35; }
+.toast-titel { font-size: 13px; color: var(--text); overflow-wrap: anywhere; }
+.toast-titel b { font-weight: 600; }
+.toast-unter { margin-top: 1px; font-size: 11.5px; color: var(--text-3); overflow-wrap: anywhere; }
+.toast-aktionen { flex: none; display: flex; align-items: center; gap: 4px; }
+.toast-knopf { height: 26px; padding: 0 10px; border: 0; border-radius: var(--r-m, 6px); background: transparent; color: var(--text-2); font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer; white-space: nowrap; }
+.toast-knopf:hover { background: var(--hover); color: var(--text); }
+.toast-knopf.primaer { background: var(--seite); color: var(--text); border: 1px solid var(--linie); }
+.toast-knopf.primaer:hover { background: var(--hover); }
+.toast-knopf:focus-visible { outline: 2px solid var(--akzent); outline-offset: 1px; }
+@media (max-width: 560px) { .toast.reich { flex-wrap: wrap; } .toast-aktionen { margin-left: auto; } }

@@ -5,7 +5,10 @@
 // Geschrieben wird nur nach einem Klick; ein Sperren fragt vorher nach und sagt ehrlich, was es schützt und was nicht. Kein innerHTML mit fremden Daten: alles über h().
 // Aufbau und Verhalten nach Orca (AgentDetectionCatalog.tsx, claude-login-session.ts, claude-profile-paths.ts, usage-error-copy.ts @9bccd67, MIT, Lovecast Inc.):
 // Programmkarte mit Pfad und Version, Konto = eigener Konfigurationsordner, Anmelden im Programm selbst, Fehlertexte mit dem nächsten Schritt.
-import { h, dialog, toast, vorMinuten, leseLokal, speichereLokal } from "./hilfen.js";
+import { h, dialog, toast, leseLokal, speichereLokal } from "./hilfen.js";
+import { relativ, datumZeit } from "./format.js";
+import { fuehreRueckgaengigAus, zeilenText } from "./mitteilungen.js";
+import { TM } from "./texte-mitteilungen.js";
 import { symbol, GROESSE } from "./symbole.js";
 import { knopf as baueKnopf, segment, umschalter, auswahl, textfeld, hakenFeld, kiAuswahl, leerBlock, skelett, einstellMarke } from "./bausteine.js";
 import { oeffneMenue } from "./menue.js";
@@ -50,7 +53,7 @@ export function erzeugeKi(o) {
     konten: null, kontenRoh: null, kontenFehler: null, programme: null, programmeFehler: null, suchtProgramme: false, anm: new Map(), pflege: {}, pflegeFehler: {}, pflegeEntwurf: {},
     kern: null, kernFehler: null, kernBusy: null, kernFehlerText: {}, kernFrageErsetzen: false, profilWahl: null,
     frage: null, frageFehler: null, verbindenOffen: false, verbindenWahl: [], umbenenne: null, namensFehler: null, beschaeftigt: false, meldung: null, warnung: null, tot: false,
-    aktivFilter: "alle", wartend: new Set(), uberwacht: new Set(),
+    aktivFilter: "alle", aktListe: null, aktFehler: null, aktAlle: false, aktZurueck: new Set(), wartend: new Set(), uberwacht: new Set(),
   };
   const hosts = new Map();      // Name → Element
   const zeichner = {};          // Name → () => void
@@ -151,13 +154,24 @@ export function erzeugeKi(o) {
     if (zu()) return;
     zeichne("frage-konto"); zeichne("frage-modell");
   }
+  // Aktivitätsprotokoll aller Vaults (P8a): GET /api/aktivitaet?vault=alle. Der Filter „Abweisungen“ fragt die Werkstatt gezielt, damit auch ältere Abweisungen dabei sind.
+  let aktNr = 0;
+  async function ladeAktivitaet() {
+    const nr = ++aktNr;
+    try {
+      const r = await api.aktivitaet({ vault: "alle", limit: 100, ...(S.aktivFilter === "abweisungen" ? { art: "abweisungen" } : {}) });
+      if (zu() || nr !== aktNr) return;
+      S.aktListe = (Array.isArray(r?.ereignisse) ? r.ereignisse : []).filter((e) => e.art !== "rueckgaengig"); S.aktFehler = null;
+    } catch (e) { if (zu() || nr !== aktNr) return; S.aktFehler = e; }
+    behalteFokus(() => zeichne("aktivitaet"));
+  }
   async function ladePflege() {
     await Promise.all(vaults().map(async (v) => {
       try { S.pflege[v.pfad] = await api.kiPflege(v.pfad); delete S.pflegeFehler[v.pfad]; }
       catch (e) { S.pflegeFehler[v.pfad] = e; }
     }));
     if (zu()) return;
-    zeichne("pflege"); zeichne("aktivitaet");
+    zeichne("pflege");
   }
   // Anmeldestand je Claude-/Codex-Konto: das Programm selbst fragen (App), das Ergebnis der Werkstatt melden (sie merkt sich, ob das Konto früher angemeldet war)
   async function pruefeKonto(kt) {
@@ -829,27 +843,54 @@ export function erzeugeKi(o) {
   };
   zeichner["arbeit-dienst-unten"] = (el) => { const f = fehlerKarte("dienst"); el.replaceChildren(...(f ? [f] : [])); };
 
-  // ================================================================== Aktivität (vorbereitet)
+  // ================================================================== Aktivitätsprotokoll
+  // Was die KIs über Kortex getan haben: abgelegt, geändert, abgewiesen, Pflege, Sicherung. Nur Kopfzeilen aus dem Protokoll, nie Inhalte. Die Werkstatt führt es je Vault (gemeinsam/aktivitaet.mjs).
+  const AKT_ZEILEN = 8;
+  const artSymbol = (art) => (/^sicherung/.test(art) ? "wolke" : /^pflege/.test(art) ? "sanduhr" : art === "anmeldung-abgelaufen" ? "schloss" : art === "abweisung" ? "schild" : "funke");
+  function aktKachel(e) {
+    if (e.programm && kiLogoId(e.programm)) return logoKachel(e.programm, 24);
+    const el = h("span", { klasse: "kx-logo", "aria-hidden": "true" }, symbol(artSymbol(e.art), 12));
+    el.style.setProperty("--kx-g", "24px");
+    return el;
+  }
+  async function aktZurueck(e) {
+    if (S.aktZurueck.has(e.id)) return;
+    S.aktZurueck.add(e.id); zeichne("aktivitaet");
+    const r = await fuehreRueckgaengigAus(api, e.id, e.vaultPfad);
+    S.aktZurueck.delete(e.id);
+    if (zu()) return;
+    if (r.ok) toast(TM.zurueck, { ms: 3200 });
+    else toast(r.meldung, { fehler: !r.neutral && !r.rueckfrage, ms: r.rueckfrage ? 9000 : 6000 });
+    ladeAktivitaet();
+  }
+  function aktZeile(e) {
+    const t = zeilenText(e);
+    const abw = e.art === "abweisung";
+    const unter = [e.vaultName ? TM.vault(e.vaultName) : null, t.rest || null, e.zurueckgenommen ? T.aktivitaet.zurueckgenommen : null].filter(Boolean).join(" · ");
+    const kann = e.rueckgaengigMoeglich === true && !e.zurueckgenommen;
+    const wartet = S.aktZurueck.has(e.id);
+    return h("li", { klasse: (abw ? "abweisung" : "") + (e.gelesen === false ? " neu" : ""), "data-id": e.id, "data-art": e.art, "data-vault": e.vaultPfad || null },
+      aktKachel(e),
+      h("div", { klasse: "kx-akt-text" }, h("span", { klasse: "kx-akt-satz" }, t.wer ? h("b", { text: t.wer }) : null, t.wer ? " " : null, t.satz), h("span", { klasse: "kx-d", text: unter })),
+      h("div", { klasse: "kx-akt-rechts" },
+        kann ? h("button", { type: "button", klasse: "kx-akt-zurueck", "data-aktion": "aktivitaet-zurueck", "data-kx-fokus": `akt-${e.id}`, disabled: wartet || null, "aria-label": TM.rueckgaengigLang(`${t.wer ? t.wer + " " : ""}${t.satz}`), text: TM.rueckgaengig, aufClick: () => aktZurueck(e) }) : null,
+        h("time", { datetime: e.zeit, title: datumZeit(e.zeit), text: relativ(e.zeit) })));
+  }
   zeichner.aktivitaet = (el) => {
     const teile = [];
-    const filter = h("div", { klasse: "kx-filter", role: "group", "aria-label": "Filter" }, ["alle", "abweisungen"].map((f) => h("button", { type: "button", klasse: "kx-filter-knopf", "aria-pressed": String(S.aktivFilter === f), "data-filter": f, text: T.aktivitaet.filter[f],
-      aufClick: () => { S.aktivFilter = f; zeichne("aktivitaet"); } })));
-    teile.push(filter);
-    const eintraege = [];
-    if (S.konten) for (const v of vaults()) {
-      const l = S.pflege[v.pfad]?.letzter;
-      if (!l?.zeit) continue;
-      const kt = kontoMit(v.pflege?.konto);
-      eintraege.push({ zeit: l.zeit, kt, v, text: T.aktivitaet.pflege(kt ? `${programmName(kt.programm)} · ${kt.name}` : "", v.name, TK.pflege.status[l.status] || TK.pflege.status.unbekannt), warn: !l.erfolgreich });
-    }
-    eintraege.sort((a, b) => String(b.zeit).localeCompare(String(a.zeit)));
-    if (S.aktivFilter === "abweisungen") teile.push(h("div", { klasse: "kx-bald", "data-kx": "aktivitaet-bald" }, symbol("glocke", GROESSE.text), h("div", {}, h("b", { text: T.aktivitaet.bald }), h("span", { text: T.aktivitaet.baldText })), einstellMarke(T.aktivitaet.baldMarke, "akzent")));
-    else {
-      if (eintraege.length) teile.push(h("ul", { klasse: "kx-akt-liste", "data-kx": "aktivitaet-liste" }, eintraege.slice(0, 8).map((e) => h("li", { klasse: e.warn ? "warn" : "", "data-vault": e.v.pfad }, logoKachel(e.kt?.programm || "claude", 24),
-        h("div", {}, h("b", { text: e.text }), h("span", { klasse: "kx-d", text: `Vault ${e.v.name}` })), h("time", { datetime: e.zeit, text: vorMinuten(e.zeit) })))));
-      else teile.push(h("p", { klasse: "kx-leer", "data-kx": "aktivitaet-leer", text: T.aktivitaet.leer }));
-      teile.push(h("div", { klasse: "kx-bald", "data-kx": "aktivitaet-bald" }, symbol("glocke", GROESSE.text), h("div", {}, h("b", { text: T.aktivitaet.bald }), h("span", { text: T.aktivitaet.baldText })), einstellMarke(T.aktivitaet.baldMarke, "akzent")));
-    }
+    const nurAbweisungen = S.aktivFilter === "abweisungen";
+    const alle = (S.aktListe || []).filter((e) => !nurAbweisungen || e.art === "abweisung");
+    const zeigen = S.aktAlle ? alle : alle.slice(0, AKT_ZEILEN);
+    const kopf = h("div", { klasse: "kx-filter-zeile" },
+      h("div", { klasse: "kx-filter", role: "group", "aria-label": T.aktivitaet.filterName }, ["alle", "abweisungen"].map((f) => h("button", { type: "button", klasse: "kx-filter-knopf", "aria-pressed": String(S.aktivFilter === f), "data-filter": f, text: T.aktivitaet.filter[f],
+        aufClick: () => { if (S.aktivFilter === f) return; S.aktivFilter = f; S.aktAlle = false; zeichne("aktivitaet"); ladeAktivitaet(); } }))),
+      alle.length > AKT_ZEILEN ? h("button", { type: "button", klasse: "kx-akt-alle", "data-kx": "aktivitaet-alle", "aria-expanded": String(S.aktAlle), text: S.aktAlle ? T.aktivitaet.wenigerZeigen : T.aktivitaet.allesZeigen,
+        aufClick: () => { S.aktAlle = !S.aktAlle; behalteFokus(() => zeichne("aktivitaet")); } }) : null);
+    teile.push(kopf);
+    if (S.aktFehler && !S.aktListe) teile.push(h("div", { klasse: "kx-leer-zeile kx-akt-fehler", "data-kx": "aktivitaet-fehler", role: "alert" }, h("span", { text: T.aktivitaet.fehler }), baueKnopf({ text: T.nochmal, aktion: "aktivitaet-nochmal", aufKlick: () => { S.aktFehler = null; ladeAktivitaet(); } })));
+    else if (!S.aktListe) teile.push(skelett("ez-skelett", 24));
+    else if (!alle.length) teile.push(h("p", { klasse: "kx-leer", "data-kx": "aktivitaet-leer", text: nurAbweisungen ? T.aktivitaet.leerAbweisungen : T.aktivitaet.leer }));
+    else teile.push(h("ul", { klasse: "kx-akt-liste", "data-kx": "aktivitaet-liste", "aria-label": T.aktivitaet.listeName }, zeigen.map(aktZeile)));
     el.replaceChildren(...teile);
   };
 
@@ -869,15 +910,20 @@ export function erzeugeKi(o) {
   // ---------------------------------------------------------------- Lebenszyklus
   const beiKonten = () => { if (!zu()) ladeKonten(); };
   window.addEventListener("kortex-konten", beiKonten);
+  // Neues im Protokoll (Live, mitteilungen.js): kurz sammeln, dann neu lesen
+  let aktTimer = null;
+  const beiAktivitaet = () => { clearTimeout(aktTimer); aktTimer = setTimeout(() => { if (!zu()) ladeAktivitaet(); }, 250); };
+  window.addEventListener("kortex-aktivitaet", beiAktivitaet);
   let gestartet = false;
   function start() {
     if (gestartet) return;
     gestartet = true;
-    ladeKonten(); ladeProgramme(false); ladeKern(); ladeFrage();
+    ladeKonten(); ladeProgramme(false); ladeKern(); ladeFrage(); ladeAktivitaet();
   }
   function ende() {
     S.tot = true;
     window.removeEventListener("kortex-konten", beiKonten);
+    window.removeEventListener("kortex-aktivitaet", beiAktivitaet); clearTimeout(aktTimer);
     for (const f of [...S.uberwacht]) { try { f(); } catch { /* egal */ } }
     for (const d of [...offeneDialoge]) { try { d.schliessen(); } catch { /* egal */ } }
     hosts.clear();

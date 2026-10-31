@@ -201,20 +201,27 @@
 .ez-l > .kx-host > .kx-hinweis { border: 1px solid var(--linie); border-radius: var(--r-l); }
 .ez-l > .kx-host > .kx-hinweis.warn { border-color: var(--gelb-rand); }
 
-/* ---------- Aktivität ---------- */
-.kx-filter { display: inline-flex; gap: 4px; padding: 10px 14px 6px; }
+/* ---------- Aktivitätsprotokoll (P8a): Filter, Zeilen mit Logo, Abweisungen rot getönt, Rückgängig in der Zeile ---------- */
+.kx-filter-zeile { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px 6px; }
+.kx-filter { display: inline-flex; gap: 4px; }
 .kx-filter-knopf { height: 24px; padding: 0 10px; border-radius: 12px; border: 1px solid var(--linie); background: transparent; font: inherit; font-size: 12px; color: var(--text-2); cursor: pointer; }
 .kx-filter-knopf[aria-pressed="true"] { background: var(--akzent-weich); border-color: var(--akzent-rand); color: var(--akzent-tinte); }
+.kx-filter-knopf:focus-visible, .kx-akt-alle:focus-visible, .kx-akt-zurueck:focus-visible { outline: 2px solid var(--akzent); outline-offset: 1px; }
+.kx-akt-alle { border: 0; background: transparent; font: inherit; font-size: 12px; color: var(--akzent-tinte); cursor: pointer; padding: 2px 4px; border-radius: 4px; }
+.kx-akt-alle:hover { text-decoration: underline; }
 .kx-akt-liste { list-style: none; margin: 0; padding: 0; }
 .kx-akt-liste li { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 9px 14px; border-top: 1px solid var(--linie); font-size: 12.5px; }
 .kx-akt-liste li b { font-weight: 500; }
-.kx-akt-liste li.warn { background: var(--gelb-weich); }
+.kx-akt-liste li.abweisung { background: var(--rot-weich); }
+.kx-akt-liste li.abweisung b { color: var(--rot); font-weight: 600; }
+.kx-akt-text { min-width: 0; overflow-wrap: anywhere; line-height: 1.4; }
 .kx-akt-liste li .kx-d { display: block; font-size: 11.5px; color: var(--text-3); }
+.kx-akt-rechts { display: flex; align-items: center; gap: 10px; }
 .kx-akt-liste li time { font-size: 11.5px; color: var(--text-3); white-space: nowrap; }
-.kx-bald { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-top: 1px solid var(--linie); font-size: 12px; color: var(--text-2); }
-.kx-bald > .sym { flex: none; color: var(--text-3); }
-.kx-bald > div { flex: 1; min-width: 0; line-height: 1.45; }
-.kx-bald b { display: block; font-size: 12.5px; color: var(--text); font-weight: 500; }
+.kx-akt-zurueck { height: 22px; padding: 0 8px; border: 1px solid var(--linie); border-radius: 11px; background: transparent; font: inherit; font-size: 11.5px; color: var(--text-2); cursor: pointer; white-space: nowrap; }
+.kx-akt-zurueck:hover:not(:disabled) { background: var(--hover); color: var(--text); }
+.kx-akt-zurueck:disabled { opacity: .55; cursor: default; }
+.kx-akt-fehler { margin: 0; padding: 12px 14px; font-size: 12.5px; color: var(--text-2); }
 
 /* ---------- Ehrlich ---------- */
 .kx-ehrlich-liste { list-style: none; margin: 0; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
@@ -234,6 +241,8 @@
   .kx-pflege-sub { grid-column: 1; }
 }
 @media (max-width: 680px) {
+  .kx-akt-liste li { grid-template-columns: 24px minmax(0, 1fr); }
+  .kx-akt-rechts { grid-column: 2; justify-content: space-between; }
   .kx-kacheln { grid-template-columns: 1fr 1fr; }
   .kx-schutz-kopf { flex-wrap: wrap; }
 }

@@ -119,7 +119,7 @@ export const BEREICHE = [
         { id: "ki-dienst", sonder: true, titel: "Kortex darf diesen Vault im Hintergrund aufräumen", text: "Richtet einen Dienst auf deinem Mac ein, der einmal am Tag genau diesen Vault pflegt. Ausschalten löscht ihn wieder.", woerter: ["hintergrund", "dienst", "launchagent", "tageslauf", "aufräumen", "automatik", "netzteil"] },
       ] },
       { id: "aktivitaet", titel: "Was deine KIs zuletzt getan haben", text: "Nur über Kortex. Bleibt auf diesem Mac.", zeilen: [
-        { id: "ki-aktivitaet", sonder: true, titel: "Aktivität der KIs", text: "Die letzten Pflege-Läufe. Zugriffe und Abweisungen folgen mit den Mitteilungen.", woerter: ["aktivität", "protokoll", "abweisung", "zugriff", "verlauf", "pflege", "mitteilungen"] },
+        { id: "ki-aktivitaet", sonder: true, titel: "Aktivität der KIs", text: "Was eine KI über Kortex abgelegt oder geändert hat, wo sie abgewiesen wurde und was die Pflege getan hat. Eine Ablage lässt sich hier zurücknehmen.", woerter: ["aktivität", "protokoll", "abweisung", "zugriff", "verlauf", "pflege", "mitteilungen", "rückgängig", "abgelegt", "abgewiesen"] },
       ] },
       { id: "ehrlich", titel: "Was Kortex schützt – und was nicht", zeilen: [
         { id: "ki-ehrlich", sonder: true, titel: "Was Kortex schützt – und was nicht", text: "Kortex-Wege, Claude Code, andere Programme und echte Trennung ehrlich benannt.", woerter: ["schutz", "ehrlich", "grenzen", "trennung", "sicherheit", "macos-benutzer", "selbstauskunft"] },
