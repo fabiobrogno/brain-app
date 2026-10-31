@@ -1,0 +1,92 @@
+/* Bewegung und Feinschliff (Paket P4). Wird nach allen anderen Stilen geladen. Dauern und Kurven kommen ausschließlich aus den Tokens in studio.css (--d-1 … --d-6, --ease-*);
+   „Bewegung reduzieren“ (System oder Einstellung) setzt sie auf 0 ms und schaltet Animationen aus (studio.css). Gestaltungsprinzip „Bewegung mit Bedeutung“ aus dem Prototyp B:
+   jede Bewegung erklärt etwas (Erfasstes fliegt in den Posteingang und der Zähler hüpft; Antworten entstehen Wort für Wort; Karten landen federnd; Neues blendet ein, Gelöschtes klappt zu).
+   Regeln: nur transform und Deckkraft bewegen sich; Inhalt hängt nie an einer Animation (bewegung.js, Ruhenetz). Siehe docs/plaene/design-wizards.md „Bewegung und Feinschliff (P4)“. */
+
+/* ---------- Echte Feder, wo der Browser sie kann (linear() ab Safari 17.2 / Chromium 113); sonst gilt die Überschwing-Kurve aus studio.css ---------- */
+@supports (transition-timing-function: linear(0, 1)) {
+  :root { --ease-feder: linear(0, .0095 1.2%, .0376 2.6%, .1485 5.5%, .3325 8.7%, .5546 12.1%, .7736 15.8%, .9526 19.6%, 1.0786 23.9%, 1.1406 28.6%, 1.1431 33.4%, 1.0997 38.5%, 1.0429 44.2%, 1.0004 49.9%, .9805 55.6%, .9777 61.5%, .9889 68.1%, 1.0013 75%, 1.0053 83%, 1.0014 91%, 1); }
+}
+
+/* ---------- Windung als Ladeanzeige (windung.js: windungLaden) ---------- */
+.windung-laden { display: block; flex: none; color: var(--akzent); overflow: visible; }
+.windung-laden .wl-spur { stroke: color-mix(in srgb, currentColor 24%, transparent); }
+.windung-laden .wl-lauf { stroke: currentColor; stroke-dasharray: .27 1.03; stroke-dashoffset: .27; animation: windung-lauf calc(var(--d-puls) * .95) cubic-bezier(.45, .05, .55, .95) infinite; }
+@keyframes windung-lauf { to { stroke-dashoffset: -1.03; } }
+@keyframes windung-atmen { 50% { opacity: .45; } }
+.windung-laden.gross { margin: 0 auto; }
+/* Ladeblock: Windung + Text mittig, belegt den Platz des späteren Inhalts (kein Sprung) */
+.laden-block { display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--text-2); font-size: 13px; padding: 28px 16px; min-height: 96px; }
+.laden-block .windung-laden { color: var(--akzent); }
+/* Ohne Bewegung ist die Windung ein Lebenszeichen: die ganze Linie atmet leise (die einzige Ausnahme vom Abschalten, wie die übrigen Ladeanzeigen) */
+@media (prefers-reduced-motion: reduce) {
+  .windung-laden .wl-lauf { stroke-dasharray: none; stroke-dashoffset: 0; animation: none !important; }
+  .windung-laden { animation: windung-atmen calc(var(--d-puls) * 1.5) ease-in-out infinite !important; }
+}
+:root[data-bewegung="reduziert"] .windung-laden .wl-lauf { stroke-dasharray: none; stroke-dashoffset: 0; animation: none !important; }
+:root[data-bewegung="reduziert"] .windung-laden { animation: windung-atmen calc(var(--d-puls) * 1.5) ease-in-out infinite !important; }
+
+/* ---------- Spiegel von „Bewegung reduzieren“ (Einstellung) für Regeln, die bisher nur die Systemeinstellung kannten ---------- */
+:root[data-bewegung="reduziert"] .bs-skelett { opacity: 1 !important; animation: none !important; }
+:root[data-bewegung="reduziert"] :is(.knopf.laedt, .bs-knopf.laedt)::after { opacity: 1; animation: bs-dreh 1.6s linear infinite !important; }
+:root[data-bewegung="reduziert"] :is(.knopf.laedt, .bs-knopf.laedt) > * { visibility: hidden; }
+:root[data-bewegung="reduziert"] :is(.bs-pop, .bs-geist) { transform: none; }
+:root[data-bewegung="reduziert"] :is(.bs-text-schimmer, .st.sync[data-zustand="laeuft"] .sync-zustand > span:last-child) { background: none; -webkit-text-fill-color: currentColor; color: var(--text-2); }
+:root[data-bewegung="reduziert"] .live-neu { outline: 2px solid var(--akzent-rand); outline-offset: -2px; background-color: var(--akzent-weich); }
+:root[data-bewegung="reduziert"] .um-balken-fuell { width: 100%; opacity: .5; }
+:root[data-bewegung="reduziert"] .rm-spinner { animation: rm-dreh 2.4s linear infinite !important; }
+:root[data-bewegung="reduziert"] .e-win .e-lade { animation: e-spin 1.6s linear infinite !important; }
+
+/* ---------- Posteingang: Zähler, Flugmarke ---------- */
+.eintrag .zahl { transform-origin: center; }
+.flug-chip { position: fixed; left: 0; top: 0; z-index: 70; display: inline-flex; align-items: center; gap: 6px; max-width: 220px; height: 28px; padding: 0 10px 0 8px; border-radius: var(--r-pille); pointer-events: none; opacity: 0;
+  background: var(--akzent); color: var(--akzent-text); font-size: 12px; font-weight: 550; white-space: nowrap; box-shadow: var(--schatten-float); will-change: transform, opacity; }
+.flug-chip span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.flug-chip .sym { flex: none; }
+
+/* ---------- Antwort Wort für Wort (frage.js + bewegung.js: worteEinblenden) ---------- */
+.wort-neu { animation: wort-ein var(--d-2) var(--ease-out) both; }
+@keyframes wort-ein { from { opacity: 0; } }
+
+/* ---------- Listen: neue Einträge blenden ein, gelöschte klappen zu (app.js: listenUebergang) ---------- */
+.karte-geist { overflow: hidden; pointer-events: none; }
+.karte-geist > .karte { margin-bottom: 1px; }
+.liste-skelett { padding: 4px 8px 12px; display: grid; gap: 4px; }
+.liste-skelett .bs-skelett { height: 84px; border-radius: var(--r-l); }
+.liste-skelett .bs-skelett:nth-child(3n) { height: 68px; }
+.seite-skelett { display: grid; gap: 4px; padding: 2px 0; }
+.seite-skelett .bs-skelett { height: 30px; border-radius: var(--r); }
+
+/* ---------- Lange Listen: nicht Sichtbares wird nicht gezeichnet (5.000 Notizen scrollen flüssig); die Höhe merkt sich der Browser ---------- */
+.liste-koerper > .karte { content-visibility: auto; contain-intrinsic-size: auto 96px; }
+
+/* ---------- Scrollkanten: der Inhalt läuft zur Kante hin aus, wo es weitergeht (bewegung.js: kantenInstallieren) ---------- */
+[data-kanten] { --kante: 18px; }
+[data-kanten][data-kante="unten"] { -webkit-mask-image: linear-gradient(#000 calc(100% - var(--kante)), transparent); mask-image: linear-gradient(#000 calc(100% - var(--kante)), transparent); }
+[data-kanten][data-kante="oben"] { -webkit-mask-image: linear-gradient(transparent, #000 var(--kante)); mask-image: linear-gradient(transparent, #000 var(--kante)); }
+[data-kanten][data-kante="beide"] { -webkit-mask-image: linear-gradient(transparent, #000 var(--kante), #000 calc(100% - var(--kante)), transparent); mask-image: linear-gradient(transparent, #000 var(--kante), #000 calc(100% - var(--kante)), transparent); }
+
+/* ---------- Einheitliche Zustände: Hover und Drücken (der Fokusring steht zentral in studio.css: Akzent, 2 px, in dichten Listen innen) ---------- */
+:is(.knopf-icon, .knopf-text, .eintrag, .vault-knopf, .kopf-suche, .erfassen-feld, .erfassen-neu, .knopf-frag, button.st, .karte, .pal-eintrag, .m-eintrag, .bs-opt, .baum .zeile) {
+  transition-property: background-color, color, border-color, box-shadow, opacity; transition-duration: var(--d-1); transition-timing-function: var(--ease-out);
+}
+:is(.knopf-icon, .knopf-text, .eintrag, .vault-knopf, .kopf-suche, .erfassen-feld, .erfassen-neu, .knopf-frag, button.st, .karte, .pal-eintrag, .baum .zeile):active { background-color: var(--hover-2); }
+.karte[aria-selected="true"]:active, .eintrag[aria-current="true"]:active { background-color: var(--auswahl); }
+.knopf-icon:active:not(:disabled), .knopf-frag:active { transform: scale(.94); }
+.knopf-icon, .knopf-frag { transition-property: background-color, color, box-shadow, opacity, transform; }
+
+/* ---------- Leere Zustände: ein Aufbau (Symbol in Kachel · Titel · ein Satz · höchstens eine Aktion) ---------- */
+.hinweis-leer { text-align: center; text-wrap: balance; padding: 14px 16px; }
+.leer-liste, .au-leer, .leer { text-wrap: balance; }
+
+/* ---------- Schmale Fenster: einzeilige Texte kürzen statt umbrechen ---------- */
+.eintrag .name, .vault-name, .pfad, .pfad > *, .kopf-suche-text, .karte-titel, .pal-eintrag .n, .frage-quelle-titel, .frage-quelle-pfad { min-width: 0; }
+.pfad { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.erfassen-text { white-space: nowrap; }
+
+/* ---------- Statusleiste: KI nur einmal ----------
+   Hat der Vault ein Konto, zeigt der Konto-Platz Konto und Kontingent (mit Menü); der Eintrag „KI verbinden“ (data-st="claude") bleibt dann weg.
+   Ohne Konto ist dieser Eintrag der einzige Knopf; der leere Zustand des Konto-Platzes („KI verbinden …“) ist dann ausgeblendet. */
+#status:has(.kt-leiste[data-konto]:not([hidden])) [data-st="claude"] { display: none; }
+.kt-leiste[data-zustand="leer"] { display: none; }
+.st { white-space: nowrap; min-width: 0; }

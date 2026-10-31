@@ -112,6 +112,8 @@ test("Streaming: Status, wachsende Antwort, Quellen nur aus dem Vault (klickbar)
   const antwort = page.locator('[data-frage="antwort"]');
   await expect(antwort).toContainText("Kaffee ist");
   const frueh = (await antwort.textContent()).length;
+  // P4: neue Wörter blenden einzeln ein (Deckkraft), ohne dass der Text zurückgehalten wird; der Text im DOM ist immer der volle Stand
+  await page.waitForFunction(() => document.querySelector('[data-frage="antwort"] .wort-neu'), null, { timeout: 8000 });
   await bild(page, "02-streaming-hell");
   await expect(page.locator('[data-frage="status"]')).toBeHidden({ timeout: 15000 });
   const spaet = (await antwort.textContent()).length;

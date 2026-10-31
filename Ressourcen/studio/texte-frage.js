@@ -25,6 +25,7 @@ export const TF = {
   antwort: "Antwort",
   laeuft: "Die KI arbeitet …",
   wartet: "Verbinde mit der KI …",
+  laedt: "Lade …",
   sucht: (t) => (t ? `Sucht nach „${t}“ …` : "Sucht im Vault …"),
   liest: (p) => `Liest ${p} …`,
   kontextHolt: "Holt Kontext …",

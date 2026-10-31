@@ -19,7 +19,11 @@ import { TF } from "./texte-frage.js";
 import { TK, konfliktLabel } from "./texte-konflikt.js";
 import { starteLive, planeAus, kiHinweis, hebeHervor } from "./live.js";
 import { erzeugeMitteilungen } from "./mitteilungen.js"; // P8a: Hinweise unten rechts zu Ereignissen des Aktivitätsprotokolls
+import { erzeugeGlocke } from "./glocke.js"; // P8b: Glocke in der Kopfzeile mit Mitteilungsliste
+import { TG } from "./texte-glocke.js";
 import { baueKiZeile } from "./ki-zeile.js";
+import { ruhenetz, kantenInstallieren, tippsInstallieren, huepfe, fliege, blendeEin, klappeZu, ruhig, dauer } from "./bewegung.js"; // P4: Bewegung mit Bedeutung
+import { windungLaden } from "./windung.js";
 import * as kz from "./tastenkuerzel.js";
 import { datumKurz, datumLang, datumZeit, istDatumText, bytesText, setzeTypFarbe, typSymbol, typName, wortAnzahl, relativ, pluralisiere, vorschauText, typTextFarbe } from "./format.js";
 
@@ -424,7 +428,7 @@ function weicherWechsel() {
   if (wenigBewegung()) return;
   const a = $("app");
   a.classList.remove("ansicht-wechsel"); void a.offsetWidth; a.classList.add("ansicht-wechsel");
-  setTimeout(() => a.classList.remove("ansicht-wechsel"), 170);
+  setTimeout(() => a.classList.remove("ansicht-wechsel"), dauer("--d-2") + 30);
 }
 // Fenster-Modus: liste (Standard) · verlauf · konflikt (Abgleich mit zwei Geräten) · aufgaben (Board füllt den Platz) · aufgaben-datei (Karte als Datei im Editor)
 function setzeModus() {
@@ -540,6 +544,24 @@ function zeichneBereiche() {
   frageEl.classList.add("eintrag-ki"); frageEl.removeAttribute("aria-current"); frageEl.setAttribute("aria-pressed", String(frage.istOffen()));
   $("bereiche").replaceChildren(...BEREICHE_OBEN.filter((id) => id !== "rueckfragen" || rf !== null).map(zeile), frageEl);
   abschnitt("sichten", T.abschnitte.sichten, BEREICHE_SICHTEN.map(zeile));
+  zaehlerHuepft(z.inbox);
+}
+// Posteingang bekommt etwas: der Zähler hüpft. Fliegt gerade eine erfasste Notiz hinein (fliegeInPosteingang), hüpft er erst bei ihrer Ankunft; sonst sofort.
+const POST = { zuletzt: null, vault: null, flug: false, offen: false };
+function zaehlerHuepft(n) {
+  const vault = S.info?.vault || null;
+  const mehr = POST.zuletzt !== null && POST.vault === vault && n > POST.zuletzt;
+  POST.zuletzt = n; POST.vault = vault;
+  if (!mehr) return;
+  if (POST.flug) { POST.offen = true; return; }
+  huepfe(document.querySelector('[data-bereich="inbox"] .zahl'));
+}
+// Erfasste Notiz fliegt vom Dialog in den Posteingang der Seitenleiste
+function fliegeInPosteingang(von, text) {
+  const ziel = document.querySelector('[data-bereich="inbox"]');
+  POST.flug = true; POST.offen = false;
+  const fertig = () => { POST.flug = false; if (POST.offen) { POST.offen = false; huepfe(document.querySelector('[data-bereich="inbox"] .zahl')); } };
+  if (!fliege(von, ziel, { text, symbolName: "inbox", beiAnkunft: fertig })) fertig();
 }
 function zeichneFavoriten() {
   const sec = $("favoriten-abschnitt");
@@ -658,7 +680,7 @@ function baueKarte(n) {
     n.bereich === "inbox" && !n.generiert && S.sicht.art === "bereich" && S.sicht.id === "inbox" ? baueAktionen(n, posteingangCtx) : null);
   return typ ? setzeTypFarbe(karte, typ) : karte;
 }
-const CHUNK = 120;
+const CHUNK = 40; // klein genug, dass das Nachladen beim Scrollen kein Bild über 25 ms kostet (5.000 Notizen: gemessen in bewegung.spec.mjs)
 function rendereMehr(bis) {
   const host = $("liste-koerper");
   const ziel = Math.min(S.sichtListe.length, bis ?? S.gerendert + CHUNK);
@@ -667,19 +689,45 @@ function rendereMehr(bis) {
   host.append(frag);
   S.gerendert = ziel;
 }
+// Neue Einträge blenden ein, gelöschte klappen zu (P4). Nur beim Neuzeichnen derselben Sicht: ein Wechsel der Sicht zeigt alles ohne Einzelanimation (weicherWechsel).
+// Die alten Karten werden vor dem Neuzeichnen gemerkt (mit Höhe); eine verschwundene bleibt als stille Hülle (ohne data-karte, ohne Rolle) an ihrer Stelle und klappt zu.
+const sichtSchluessel = () => JSON.stringify([S.info?.vault || "", S.sicht, S.zeigeZurueckgestellt, S.sortierung]);
+let listeSchluessel = null;
+function merkeKarten(host) {
+  if (ruhig() || listeSchluessel !== sichtSchluessel()) return null;
+  const alt = [...host.querySelectorAll(":scope > [data-karte]")];
+  return alt.length ? alt.map((el) => ({ el, pfad: el.dataset.pfad, hoehe: el.offsetHeight })) : null;
+}
+function listenUebergang(host, alt) {
+  const jetzt = new Set(S.sichtListe.map((n) => n.pfad)), vorher = new Set(alt.map((a) => a.pfad));
+  const karten = new Map([...host.querySelectorAll(":scope > [data-karte]")].map((el) => [el.dataset.pfad, el]));
+  let i = 0;
+  for (const [pfad, el] of karten) if (!vorher.has(pfad)) blendeEin(el, Math.min(i++, 6) * 30);
+  alt.forEach((a, idx) => {
+    if (jetzt.has(a.pfad)) return; // nur wirklich verschwundene (nicht die, die jenseits des gezeichneten Teils liegen)
+    const huelle = h("div", { klasse: "karte-geist", "aria-hidden": "true", style: `height:${a.hoehe}px` });
+    for (const at of ["data-karte", "data-pfad", "role", "aria-selected", "title", "tabindex"]) a.el.removeAttribute(at);
+    a.el.inert = true; huelle.append(a.el);
+    const danach = alt.slice(idx + 1).map((x) => karten.get(x.pfad)).find(Boolean);
+    if (danach) host.insertBefore(huelle, danach); else host.append(huelle);
+    klappeZu(huelle, a.hoehe);
+  });
+}
 let verlaufInst = null;
 function zeichneListe({ behalte = false } = {}) {
   setzeModus();
   zeichneListenKopf();
   const host = $("liste-koerper");
   const scroll = behalte ? host.scrollTop : 0;
-  if (S.sicht.art === "verlauf") { zeichneVerlauf(); return; }
+  if (S.sicht.art === "verlauf") { listeSchluessel = null; zeichneVerlauf(); return; }
   verlaufInst?.zerstoere?.(); verlaufInst = null;
-  if (S.suche.aktiv) { zeichneSuchergebnisse(); return; }
-  if (S.sicht.art === "bereich" && S.sicht.id === "rueckfragen") { zeichneRueckfragenKarte(); return; }
-  if (istAufgabenSicht()) { S.sichtListe = []; zeichneAufgaben(); return; }
+  if (S.suche.aktiv) { listeSchluessel = null; zeichneSuchergebnisse(); return; }
+  if (S.sicht.art === "bereich" && S.sicht.id === "rueckfragen") { listeSchluessel = null; zeichneRueckfragenKarte(); return; }
+  if (istAufgabenSicht()) { listeSchluessel = null; S.sichtListe = []; zeichneAufgaben(); return; }
   S.sichtListe = sortiere(sichtNotizen());
   S.gerendert = 0;
+  const alt = merkeKarten(host);
+  listeSchluessel = sichtSchluessel();
   host.replaceChildren();
   const leiste = posteingangLeiste();
   if (leiste) host.append(leiste);
@@ -687,6 +735,7 @@ function zeichneListe({ behalte = false } = {}) {
   const bisAuswahl = S.pfad ? S.sichtListe.findIndex((n) => n.pfad === S.pfad) : -1;
   rendereMehr(Math.max(CHUNK, scroll ? Math.ceil((scroll + host.clientHeight) / 90) + 20 : 0, bisAuswahl >= 0 ? bisAuswahl + 5 : 0));
   host.scrollTop = scroll;
+  if (alt) listenUebergang(host, alt);
 }
 $("liste-koerper").addEventListener("scroll", (e) => {
   const el = e.currentTarget;
@@ -1261,7 +1310,7 @@ function syncKnopf(g) {
   const sy = syncZustand(g);
   const klick = sy.z === "konflikt" ? () => oeffneKonflikt() : sync;
   const el = h("button", { klasse: "st sync", "data-st": "sync", "data-zustand": sy.z, type: "button", title: sy.titel, "aria-label": sy.z === "konflikt" || sy.z === "laeuft" ? sy.text : `${sy.text}. ${T.status.abgleichen}`, "aria-busy": sy.z === "laeuft" ? "true" : null, aufClick: klick },
-    h("span", { klasse: "sync-zustand" }, symbol(sy.sym, 14), h("span", { text: sy.text })),
+    h("span", { klasse: "sync-zustand" }, sy.z === "laeuft" ? windungLaden(14) : symbol(sy.sym, 14), h("span", { text: sy.text })),
     h("span", { klasse: "sync-aktion", "aria-hidden": "true" }, symbol("sync", 12), h("span", { text: T.status.abgleichen })));
   return { el, sy };
 }
@@ -1334,6 +1383,8 @@ function zeichneStatus() {
     k.push(...teile);
   }
   const verbunden = S.kiVerbunden || S.ki?.agenten?.some((a) => a.id === "claude" && a.verbunden === true);
+  // KI steht nur EINMAL in der Leiste (P4): hat der Vault ein Konto, zeigt der Konto-Platz (kontingent.js) Konto und Kontingent und dieser Eintrag ist per CSS (bewegung.css) ausgeblendet;
+  // ohne Konto ist er der einzige Knopf „KI verbinden“ (der leere Zustand des Konto-Platzes ist dann ausgeblendet).
   // Verbunden: Haken. Nicht verbunden: „verbinden“ mit Plus (kein ✕, das las sich wie „schließen“); der Klick öffnet in beiden Fällen den Dialog „KI verbinden“
   k.push(st("claude", [kiLogo("claude", 14, { dekorativ: true }), h("span", { text: verbunden ? T.status.claude : T.status.claudeVerbinden }), symbol(verbunden ? "haken" : "plus", 12)], { klick: oeffneKi, titel: verbunden ? T.status.claudeVerbunden : T.status.claudeNicht, klasse: verbunden ? "gut" : "" }));
   const gs = S.gesundheit;
@@ -1433,6 +1484,7 @@ async function ansehenAktivitaet(ziel) {
   waehleSicht({ art: "bereich", id: ziel === "aufgaben" ? "aufgaben" : "inbox" });
 }
 const mitteilungen = erzeugeMitteilungen({ api, toast, beiAnsehen: ansehenAktivitaet });
+const glocke = erzeugeGlocke({ mitteilungen, api, beiAnsehen: ansehenAktivitaet, beiEinstellungen: (ziel) => oeffneEinstellungenSeite(ziel) }); // P8b: Zähler und Liste (⌘⇧B, Register „mitteilungen“)
 function beiLiveEreignisse(liste) {
   mitteilungen.verarbeiteLive(liste); // Ereignisse typ „aktivitaet“ (Protokoll der KIs): Hinweis, Zähler; alle anderen übergeht es
   const p = planeAus(liste);
@@ -1452,7 +1504,7 @@ function beiLiveEreignisse(liste) {
 }
 // Nummer verpasst, anderer Vault oder Dauerfeuer: alles Sichtbare neu lesen
 function beiLiveAlles() {
-  ladeInfoLeise(); ladeGit(); ladeGesundheit(); liveMenue();
+  ladeInfoLeise(); ladeGit(); ladeGesundheit(); liveMenue(); mitteilungen.ladeNeu();
   liveSammlung.aufgaben = true; liveSammlung.alles = true; liveSammlung.pfade = [];
   clearTimeout(liveTimer); liveTimer = setTimeout(liveNeuladen, 60);
 }
@@ -1805,7 +1857,8 @@ function oeffneMerken() {
     if (!text.value.trim()) { text.focus(); return; }
     try {
       const r = await api.merken(text.value, titel.value.trim() || undefined);
-      abgelegt = true; d.schliessen(); toast(T.merken.fertig, { aktion: { text: T.merken.offen, tun: () => oeffne(r.pfad) } });
+      const von = d.box?.getBoundingClientRect?.(), erster = (titel.value.trim() || text.value.trim().split("\n")[0] || "").slice(0, 40);
+      abgelegt = true; d.schliessen(); if (von) fliegeInPosteingang(von, erster); toast(T.merken.fertig, { aktion: { text: T.merken.offen, tun: () => oeffne(r.pfad) } });
       await ladeBaum(); planeGitRefresh();
     } catch (e) { fehlerEl.hidden = false; fehlerEl.textContent = e.message; }
   };
@@ -1857,20 +1910,20 @@ const stufenKlasse = (s) => (/rot|red|fehler/i.test(s || "") ? "rot" : /gelb|war
 // ======================================================= Palette
 const PAL_SYM = new Map([[T.befehle.neu, "stift"], [T.befehle.merken, "blitz"], [TAUF.erfassen.befehl, "aufgaben"], [T.befehle.commit, "commit"], [T.befehle.sync, "sync"], [TF.befehl, "funke"], [T.befehle.posteingang, "inbox"],
   [T.befehle.alleNotizen, "notiz"], [T.befehle.aufgaben, "aufgaben"], [T.befehle.suche, "suche"], [T.befehle.inNotiz, "suche"], [T.befehle.info, "seitenleiste"], [T.befehle.gesundheit, "herz"], [T.befehle.nutzung, "balken"],
-  [T.liste.verlauf, "uhr"], [T.befehle.mcp, "stecker"], [T.befehle.konten, "person"], [T.befehle.ordner, "ordner"], [T.befehle.ansicht, "ansicht"]]);
+  [T.liste.verlauf, "uhr"], [TG.titel, "glocke"], [T.befehle.mcp, "stecker"], [T.befehle.konten, "person"], [T.befehle.ordner, "ordner"], [T.befehle.ansicht, "ansicht"]]);
 function oeffnePalette(vorgabe = "") {
   if (dialogOffen()) return;
   const befehle = [
     [T.befehle.neu, kz.anzeige("neue-notiz"), oeffneNeu], [T.befehle.merken, kz.anzeige("schnell-merken"), oeffneMerken], [TAUF.erfassen.befehl, kz.anzeige("aufgabe-erfassen"), aufgabeErfassen], [T.befehle.commit, kz.anzeige("commit"), oeffneCommit], [T.befehle.sync, "", sync],
     [TF.befehl, kz.anzeige("frage"), () => frage.oeffne()], [T.befehle.suche, kz.anzeige("suche-vault"), fokusSuche], [T.befehle.inNotiz, kz.anzeige("suche-notiz"), () => ed.suchen()], [T.befehle.info, kz.anzeige("info"), umschalteInfo], [T.befehle.gesundheit, "", oeffneGesundheit], [T.befehle.nutzung, "", oeffneNutzung],
     [T.befehle.posteingang, kz.anzeige("gehe-posteingang"), () => waehleSicht({ art: "bereich", id: "inbox" })], [T.befehle.alleNotizen, kz.anzeige("gehe-alle"), () => waehleSicht({ art: "bereich", id: "alle" })], [T.befehle.aufgaben, kz.anzeige("gehe-aufgaben"), () => waehleSicht({ art: "bereich", id: "aufgaben" })],
-    [T.liste.verlauf, kz.anzeige("verlauf"), oeffneVerlauf],
+    [T.liste.verlauf, kz.anzeige("verlauf"), oeffneVerlauf], [TG.titel, kz.anzeige("mitteilungen"), () => glocke.oeffne()],
     ...(inApp() ? [[T.befehle.ordner, "", () => aktion("ordner-zeigen", S.pfad || undefined)], [T.befehle.ansicht, "", oeffneUebersicht]] : []),
     [T.befehle.mcp, "", oeffneKi], [T.befehle.konten, "", oeffneKonten],
   ];
   const eingabeFeld = textfeld({ wert: vorgabe, platzhalter: T.palette.platzhalter, label: T.palette.platzhalter, klasse: "pal-feld", daten: { role: "combobox", "aria-expanded": "true", "aria-controls": "pal-liste" } });
   const eingabe = eingabeFeld.input;
-  const liste = h("div", { klasse: "pal-liste", role: "listbox", id: "pal-liste" });
+  const liste = h("div", { klasse: "pal-liste", "data-kanten": true, role: "listbox", id: "pal-liste" });
   let eintraege = [], idx = 0;
   const grad = (d, q) => {
     const gleich = (x) => suchFormen(x).some((f) => suchFormen(q).includes(f));
@@ -2051,6 +2104,7 @@ kz.anmelden("info", () => umschalteInfo());
 kz.anmelden("seitenleiste", () => umschalteInfo(), () => !!S.info?.vault); // ⌘\ (P3): dieselbe rechte Spalte wie „info“, der Knopf neben „Frag“
 kz.anmelden("commit", () => oeffneCommit());
 kz.anmelden("kuerzel-hilfe", () => oeffneKuerzel());
+kz.anmelden("mitteilungen", () => glocke.umschalten(), () => !!S.info?.vault && !dialogOffen());
 
 window.addEventListener("beforeunload", () => { if (S.dirty) { clearTimeout(speicherTimer); speichere(); } });
 window.addEventListener("focus", () => { planeGitRefresh(); if (S.info?.vault) { ladeBaum(); ladeInfoLeise().then(() => fragVertrauenEinmal()); } });
@@ -2390,6 +2444,14 @@ function zeigeOhneVault(host) {
   setTimeout(() => einrichten.focus(), 0);
 }
 
+// Beim ersten Laden stehen Platzhalter an den Stellen des späteren Inhalts (Liste, Seitenleiste): nichts springt, wenn die Daten da sind. Sie blenden erst nach 150 ms ein (bausteine.css).
+function zeigeLadeskelett() {
+  const liste = $("liste-koerper"), bereiche = $("bereiche");
+  const sk = (n, k) => Array.from({ length: n }, () => h("div", { klasse: "bs-skelett", "aria-hidden": "true" }));
+  liste.replaceChildren(h("div", { klasse: "liste-skelett", "aria-hidden": "true", "data-skelett": "liste" }, sk(6)));
+  bereiche.replaceChildren(h("div", { klasse: "seite-skelett", "aria-hidden": "true", "data-skelett": "seite" }, sk(5)));
+}
+
 let intervalle = false;
 function zuruecksetzen() {
   clearTimeout(speicherTimer); clearTimeout(gitTimer); clearTimeout(baumTimer); clearTimeout(liveTimer); clearTimeout(menueTimer); clearTimeout(kiTimer); kiSammlung = [];
@@ -2424,6 +2486,7 @@ async function ladeAlles() {
   S.aufgabeDatei = false; setzeModus();
   vaultKopf(); setzeFenstertitel();
   zeichneWerkzeuge();
+  zeigeLadeskelett();
   await ladeBaum();
   if (S.sicht.art === "ordner" && !S.eintraege.has(S.sicht.id)) S.sicht = { art: "bereich", id: "alle" };
   if (S.sicht.art === "typ" && !S.typMap.has(S.sicht.id)) S.sicht = { art: "bereich", id: "alle" };
@@ -2432,7 +2495,7 @@ async function ladeAlles() {
   ladeUmstellungHinweis();
   ladeGit().then(() => nachsehen(true)); ladeGesundheit(); ladeKi(); ladeVaults();
   if (!intervalle) { intervalle = true; setInterval(ladeGit, 15000); setInterval(ladeGesundheit, 120000); setInterval(() => nachsehen(), 300000); window.addEventListener("focus", () => nachsehen()); }
-  ladeInfo();
+  ladeInfo(); glocke.schliesse(); mitteilungen.ladeNeu(); // Zähler und Liste der Glocke gehören zum offenen Vault
   const wunsch = new URLSearchParams(location.search).get("pfad") || lokal.lies("pfad", null);
   if (wunsch && S.eintraege.has(wunsch)) await oeffne(wunsch, { ausListe: true });
   zeigeLeer();
@@ -2440,4 +2503,5 @@ async function ladeAlles() {
 }
 
 richteGriffeEin();
+ruhenetz(); kantenInstallieren(); tippsInstallieren(); // P4: Netz gegen stehengebliebene Animationen, Scrollkanten, Tooltips für Symbolknöpfe
 ladeAlles();

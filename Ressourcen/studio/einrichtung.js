@@ -11,6 +11,7 @@ import { markenLogo } from "./marken.js";
 import { TE } from "./texte-einrichtung.js";
 import { erzeugeBuehne, markeSvg, windungFortschritt } from "./einrichtung-buehne.js";
 import { erzeugeKi } from "./einrichtung-ki.js";
+import { ruhenetz } from "./bewegung.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const win = $("#win"), panes = $("#panes"), stepperEl = $("#stepper"), fussEl = $("#fuss"), buehneEl = $("#buehne");
@@ -835,6 +836,7 @@ async function start() {
   }
   window.__einrichtungBereit = true;
 }
+ruhenetz(); // der Assistent zeigt seinen Inhalt auch in einem Fenster, das gerade nicht sichtbar ist (WebKit pausiert dort Animationen)
 start();
 // Für die Tests der Oberfläche: der Zustand ist von außen lesbar (nie Eingaben des Nutzers verändern)
 window.einrichtung = { zustand: S, ki };

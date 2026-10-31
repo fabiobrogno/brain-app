@@ -113,7 +113,7 @@ export const T = {
     gesichert: (z) => `Gesichert ${z}`,
     nieGesichert: "Noch nie abgeglichen",
     keinRemote: "Kein Remote", remoteHinzu: "Remote hinzufügen …", remoteTitel: "Noch kein Online-Ort. Klicke, um einen Remote hinzuzufügen.",
-    pullNoetig: "Neues vom anderen Mac", konflikt: "Konflikt", konfliktLoesen: "Konflikt lösen", konfliktErst: "Es wartet noch ein Abgleich mit Konflikten. Bitte löse ihn zuerst — danach kannst du sichern.", konfliktTitel: "Beide Seiten haben dieselbe Datei geändert. Klicke, um zu wählen, welche Fassung gelten soll.", fehler: "Fehler", verlauf: "Verlauf", verlaufTitel: "Verlauf des Vaults zeigen", claude: "Claude", claudeVerbinden: "Claude verbinden", claudeVerbunden: "Claude ist verbunden", claudeNicht: "Claude ist nicht verbunden — klicke zum Verbinden",
+    pullNoetig: "Neues vom anderen Mac", konflikt: "Konflikt", konfliktLoesen: "Konflikt lösen", konfliktErst: "Es wartet noch ein Abgleich mit Konflikten. Bitte löse ihn zuerst — danach kannst du sichern.", konfliktTitel: "Beide Seiten haben dieselbe Datei geändert. Klicke, um zu wählen, welche Fassung gelten soll.", fehler: "Fehler", verlauf: "Verlauf", verlaufTitel: "Verlauf des Vaults zeigen", claude: "Claude", claudeVerbinden: "KI verbinden", claudeVerbunden: "Claude ist verbunden", claudeNicht: "Claude ist nicht verbunden — klicke zum Verbinden",
     hell: "Hell", dunkel: "Dunkel", system: "System", darstellung: "Darstellung", einstellungen: "Einstellungen", zuDunkel: "Zum dunklen Erscheinungsbild wechseln", zuHell: "Zum hellen Erscheinungsbild wechseln",
     version: (v) => `Version ${v}`,
     keinGit: "Kein Git",
@@ -124,7 +124,7 @@ export const T = {
     nichtHochgeladen: (n) => `${n} nicht hochgeladen`,
     nichtHochgeladenTitel: (n) => `${n === 1 ? "1 gesicherte Fassung ist" : `${n} gesicherte Fassungen sind`} noch nicht auf dem Server — klicke zum Abgleichen`,
     neuesTitel: "Auf dem Server liegt Neues vom anderen Mac — klicke zum Abgleichen",
-    sauber: "Alles gesichert",
+    sauber: "Keine Änderungen",
     inbox: (n) => `Inbox ${n}`,
     rueckfragen: (n) => `Rückfragen ${n}`,
     rueckfragenHinweis: "Offene Rückfragen von Kortex — beantworten im Terminal mit /rueckfragen",
@@ -204,7 +204,7 @@ export const T = {
     titel: "Tastenkürzel",
     gruppen: [
       // { id } = Befehl aus dem Register der Tastenkürzel (tastenkuerzel-register.json): gezeigt wird das gerade gültige Kürzel, ohne Kürzel entfällt die Zeile
-      { name: "Allgemein", zeilen: [[{ id: "palette" }, "Springen und Befehle"], [{ id: "neue-notiz" }, "Neue Notiz"], [{ id: "schnell-merken" }, "Schnell merken"], [{ id: "aufgabe-erfassen" }, "Aufgabe erfassen"], [{ id: "frage" }, "Frag deinen Vault"], [{ id: "suche-vault" }, "Im ganzen Vault suchen"], [{ id: "kuerzel-hilfe" }, "Diese Übersicht"]] },
+      { name: "Allgemein", zeilen: [[{ id: "palette" }, "Springen und Befehle"], [{ id: "neue-notiz" }, "Neue Notiz"], [{ id: "schnell-merken" }, "Schnell merken"], [{ id: "aufgabe-erfassen" }, "Aufgabe erfassen"], [{ id: "mitteilungen" }, "Mitteilungen"], [{ id: "frage" }, "Frag deinen Vault"], [{ id: "suche-vault" }, "Im ganzen Vault suchen"], [{ id: "kuerzel-hilfe" }, "Diese Übersicht"]] },
       { name: "Notiz", zeilen: [[{ id: "speichern" }, "Jetzt speichern"], [{ id: "suche-notiz" }, "In der Notiz suchen"], [{ id: "info" }, "Eigenschaften ein- oder ausblenden"], [{ id: "commit" }, "Änderungen sichern"]] },
       { name: "Liste", zeilen: [["↑ ↓", "Nächste oder vorige Notiz öffnen"], ["↵", "In die Notiz springen"], ["Esc", "Suche oder Dialog schließen"]] },
     ],

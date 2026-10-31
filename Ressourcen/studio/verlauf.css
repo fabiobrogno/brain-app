@@ -63,7 +63,7 @@
 .vl-sk-zeile { display: flex; gap: 12px; height: 64px; padding: 14px 16px; border-bottom: 1px solid var(--linie); }
 .vl-sk-punkt { flex: none; width: 16px; height: 16px; margin-top: 2px; border-radius: 50%; background: var(--hover-2); }
 .vl-sk-text { flex: 1; display: flex; flex-direction: column; gap: 9px; padding-top: 3px; }
-.vl-sk-balken { display: block; height: 11px; border-radius: 6px; background: var(--hover-2); animation: vl-puls 1.6s ease-in-out infinite; }
+.vl-sk-balken { display: block; height: 11px; border-radius: 6px; background: var(--hover-2); animation: vl-puls var(--d-puls) ease-in-out infinite; }
 .vl-sk-balken.klein { width: 38%; height: 9px; animation-delay: .15s; }
 @keyframes vl-puls { 50% { opacity: .4; } }
 .vl-leer { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 56px 28px 0; text-align: center; }
@@ -80,7 +80,7 @@
 @keyframes vl-ein { from { opacity: 0; transform: translateY(-3px); } }
 
 /* ------------------------------------------------------------------ Diff-Ansicht */
-.vd { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--papier); color: var(--text); font: 13px/1.45 var(--schrift); animation: vd-ein 180ms var(--ease); }
+.vd { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--papier); color: var(--text); font: 13px/1.45 var(--schrift); animation: vd-ein var(--d-2) var(--ease); }
 @keyframes vd-ein { from { opacity: 0; } }
 .vd-leiste { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; height: 44px; padding: 0 16px 0 10px; background: var(--seite); border-bottom: 1px solid var(--linie); }
 .vd-zurueck { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px 0 8px; border: 0; border-radius: var(--r-s); background: transparent; color: var(--akzent); font-size: 13px; font-weight: 500; cursor: pointer; transition: background-color var(--t); }
@@ -126,7 +126,7 @@
 .vd-hunk { opacity: .85; }
 .vd-kontext { margin-left: 14px; color: var(--text-3); }
 .vd-laedt { display: flex; flex-direction: column; gap: 14px; max-width: 720px; padding: 8px 0; }
-.vd-sk { display: block; height: 12px; border-radius: 6px; background: var(--hover-2); animation: vl-puls 1.6s ease-in-out infinite; }
+.vd-sk { display: block; height: 12px; border-radius: 6px; background: var(--hover-2); animation: vl-puls var(--d-puls) ease-in-out infinite; }
 .vd-sk.k { width: 55%; } .vd-sk.m { width: 72%; animation-delay: .2s; }
 .vd-hinweis { max-width: 360px; margin: 56px auto 0; text-align: center; color: var(--text-2); font-size: 13px; line-height: 1.5; }
 .vd-gekuerzt { margin: 0 0 12px; padding: 8px 12px; border-radius: var(--r); background: color-mix(in srgb, var(--gelb) 12%, transparent); color: var(--text-2); font-size: 12.5px; }
@@ -154,7 +154,7 @@
 .rm-meldung.erfolg svg { color: var(--gruen); }
 .rm-fuss { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 .rm-fuss .knopf { min-width: 88px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
-.rm-spinner { width: 12px; height: 12px; border: 1.5px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: rm-dreh .8s linear infinite; }
+.rm-spinner { width: 12px; height: 12px; border: 1.5px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: rm-dreh var(--d-dreh) linear infinite; }
 @keyframes rm-dreh { to { transform: rotate(360deg); } }
 
 @media (prefers-reduced-motion: reduce) {
@@ -227,7 +227,7 @@
 .ab-fortschritt-text { flex: none; font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); }
 .ab-fortschritt.fertig .ab-fortschritt-text { color: color-mix(in srgb, var(--gruen) 80%, var(--text)); }
 .ab-balken { flex: 1; height: 6px; border-radius: 3px; background: var(--hover-2); overflow: hidden; }
-.ab-balken-fuell { display: block; height: 100%; width: 0; border-radius: 3px; background: var(--akzent); transition: width 240ms var(--ease), background-color var(--t); }
+.ab-balken-fuell { display: block; height: 100%; width: 0; border-radius: 3px; background: var(--akzent); transition: width var(--d-3) var(--ease), background-color var(--t); }
 .ab-fortschritt.fertig .ab-balken-fuell { background: var(--gruen); }
 .ab-liste { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
 .ab-karte { margin: 0; padding: 14px 16px 14px; border: 1px solid var(--linie-stark); border-radius: var(--r-l); background: var(--erhoben); min-width: 0; box-shadow: var(--schatten-klein); transition: border-color var(--t); }
@@ -273,7 +273,7 @@
 .ab-link:hover { text-decoration: underline; }
 .ab-link:focus-visible { outline: 2px solid var(--akzent); outline-offset: 1px; }
 .ab-sk-block { display: flex; flex-direction: column; gap: 9px; padding: 6px 12px; }
-.ab-sk { display: block; height: 10px; border-radius: 5px; background: var(--hover-2); animation: vl-puls 1.6s ease-in-out infinite; }
+.ab-sk { display: block; height: 10px; border-radius: 5px; background: var(--hover-2); animation: vl-puls var(--d-puls) ease-in-out infinite; }
 .ab-sk.k { width: 58%; } .ab-sk.m { width: 76%; animation-delay: .2s; }
 .ab-fuss { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; padding: 14px 28px; border-top: 1px solid var(--linie); background: var(--seite); }
 .ab-fuss .sp { flex: 1; }
