@@ -4,7 +4,7 @@
 // UI_SHOTS=<Ordner>: legt die Bildschirmfotos dort ab (sonst screenshots/, ignoriert).
 import { test, expect } from "./basis.mjs";
 import { join, basename } from "node:path";
-import { mkdirSync, writeFileSync, readFileSync, existsSync, realpathSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync, existsSync, realpathSync, unlinkSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
@@ -168,6 +168,51 @@ test("Hinweis: Notiz im Posteingang abgelegt; „Ansehen“ führt in den Postei
   await expect(t.locator(".toast-unter")).toHaveText("Posteingang · Vault Kortex");
   await expect(t.getByRole("button", { name: "Rückgängig" })).toHaveCount(0);
   await t.getByRole("button", { name: "Ansehen" }).click();
+  await expect(page.locator('[data-bereich="inbox"][aria-current="true"], [data-bereich="inbox"].aktiv, [data-bereich="inbox"][aria-selected="true"]').first()).toBeVisible();
+});
+
+// „Ansehen“ öffnet die abgelegte Notiz selbst, wenn pfade[0] existiert und im Vault liegt (dieselben Pfadregeln wie beim Rückgängig); sonst wie bisher Board bzw. Posteingang
+test("Hinweis: „Ansehen“ bei EINER Aufgabe öffnet die Aufgabe selbst; bei einer fehlenden Datei bleibt es beim Board", async ({ page }) => {
+  await oeffneStudio(page);
+  const a = aufgabeDatei("direkt-aufgabe", ["---", "typ: aufgabe", "titel: \"direkt-aufgabe\"", "status: offen", "prioritaet: normal", "rang: 1000", "erstellt: 2026-10-30T08:00:00Z", "geaendert: 2026-10-30T08:00:00Z", "quelle: ki:claude-code", "---", "Inhalt der direkten Aufgabe", ""].join("\n"));
+  meldeAblage(a);
+  const t = hinweise(page).filter({ hasText: "hat eine Aufgabe angelegt" });
+  await expect(t).toHaveCount(1, { timeout: 8000 });
+  await t.getByRole("button", { name: "Ansehen" }).click();
+  await expect(page.locator("#editor")).toBeVisible();
+  await expect(page.locator("#pfad")).toContainText("direkt-aufgabe");
+  await expect(page.locator(".cm-content")).toContainText("Inhalt der direkten Aufgabe");
+  await expect(page.locator("[data-spalte='offen']")).toBeHidden();
+  await expect(hinweise(page)).toHaveCount(0);
+  // die Datei ist weg (inzwischen gelöscht): wie bisher das Board, kein Fehler-Hinweis
+  const weg = aufgabeDatei("schon-weg"); unlinkSync(join(vault, weg.pfad));
+  await page.getByRole("button", { name: /Zurück zum Board/ }).click();
+  meldeAblage(weg);
+  const t2 = hinweise(page).filter({ hasText: "hat eine Aufgabe angelegt" });
+  await expect(t2).toHaveCount(1, { timeout: 8000 });
+  await t2.getByRole("button", { name: "Ansehen" }).click();
+  await expect(page.locator("[data-spalte='offen']")).toBeVisible();
+  await expect(page.locator("#editor")).toBeHidden();
+  await expect(hinweise(page).filter({ hasText: "nicht" })).toHaveCount(0);
+});
+
+test("Hinweis: „Ansehen“ bei einer Notiz im Posteingang öffnet die Notiz selbst; ein Pfad aus dem Vault hinaus oder in den falschen Ordner führt nur in den Posteingang", async ({ page }) => {
+  await oeffneStudio(page);
+  mkdirSync(join(vault, "00_inbox"), { recursive: true });
+  writeFileSync(join(vault, "00_inbox", "direkt-notiz.md"), "---\ntitel: direkt-notiz\n---\nText der direkten Notiz\n");
+  writeFileSync(join(vault, "09_wiki.md"), "---\ntitel: nicht-im-posteingang\n---\nKein Posteingang\n");
+  melde("ablage-notiz", { text: "hat eine Notiz im Posteingang abgelegt.", pfade: ["00_inbox/direkt-notiz.md"] });
+  const t = hinweise(page).filter({ hasText: "hat eine Notiz im Posteingang abgelegt" });
+  await expect(t).toHaveCount(1, { timeout: 8000 });
+  await t.getByRole("button", { name: "Ansehen" }).click();
+  await expect(page.locator("#pfad")).toContainText("direkt-notiz");
+  await expect(page.locator(".cm-content")).toContainText("Text der direkten Notiz");
+  // eine Datei, die da ist, aber nicht im Posteingang liegt (Eintrag behauptet es nur): nicht öffnen
+  melde("ablage-notiz", { wer: "Cursor", programm: "cursor", text: "hat eine Notiz im Posteingang abgelegt.", pfade: ["09_wiki.md"] });
+  const t2 = hinweise(page).filter({ hasText: "Cursor hat eine Notiz" });
+  await expect(t2).toHaveCount(1, { timeout: 8000 });
+  await t2.getByRole("button", { name: "Ansehen" }).click();
+  await expect(page.locator("#pfad")).not.toContainText("nicht-im-posteingang");
   await expect(page.locator('[data-bereich="inbox"][aria-current="true"], [data-bereich="inbox"].aktiv, [data-bereich="inbox"][aria-selected="true"]').first()).toBeVisible();
 });
 
