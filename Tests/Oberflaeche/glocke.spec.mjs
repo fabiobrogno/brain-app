@@ -93,7 +93,7 @@ test("Zähler: kommt beim Start aus dem Protokoll, wächst live mit neuen Meldun
   await expect(zahl(page)).toHaveText("9+", { timeout: 8000 });
   await expect(glocke(page)).toHaveAttribute("aria-label", "Mitteilungen, 11 ungelesen");
   const kasten = await zahl(page).boundingBox(), knopf = await glocke(page).boundingBox();
-  expect(kasten.x + kasten.width).toBeLessThanOrEqual(knopf.x + knopf.width + 5); // die Zahl sitzt an der Ecke des Knopfes (ragt knapp hinaus), nicht daneben
+  expect(kasten.x + kasten.width).toBeLessThanOrEqual(knopf.x + knopf.width + 12); // die Zahl („9+“ ist breiter) sitzt an der Ecke des Knopfes (ragt knapp hinaus), nicht daneben
   expect(kasten.x).toBeGreaterThan(knopf.x);
   expect(kasten.height).toBeGreaterThanOrEqual(14);
 });
