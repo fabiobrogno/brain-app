@@ -1584,11 +1584,14 @@ async function konfliktFertig({ ergebnis, anzahl, rueckgaengig }) {
 }
 
 // Beim Server nachsehen (nur holen, nichts zusammenführen): so steht „Neues vom anderen Mac“ in der Statusleiste, bevor jemand abgleicht.
-let nachsehenLaeuft = false, letztesNachsehen = 0;
+let nachsehenLaeuft = false, letztesNachsehen = 0, nachsehenEnde = null, nachsehenAus = null;
+// Der Abgleich (sync) wartet, bis ein laufendes Nachsehen fertig ist: beide nehmen in der Werkstatt dieselbe Git-Sperre, und ein Klick auf „Abgleichen“ mitten im Holen
+// bekäme sonst „besetzt“ (409) — in der Statusleiste als „Konflikt“ gelesen, obwohl es keinen gibt.
 async function nachsehen(eilig = false) {
   if (nachsehenLaeuft || S.syncLaeuft || !S.git?.repo || S.git.gesperrt || !S.git.remote || S.git.konflikt || istGitGesperrt()) return;
   if (!eilig && Date.now() - letztesNachsehen < 60000) return;
   nachsehenLaeuft = true; letztesNachsehen = Date.now();
+  nachsehenEnde = new Promise((ok) => { nachsehenAus = ok; });
   const vault = S.info?.vault, davor = S.git;
   try {
     const r = await api.gitNachsehen();
@@ -1596,7 +1599,7 @@ async function nachsehen(eilig = false) {
     if (r?.repo && S.info?.vault === vault && !S.syncLaeuft && S.git === davor) { const { geholt, ...stand } = r; S.git = stand; zeichneStatus(); } // nur wenn S.git unverändert: ein frischerer Stand wird nie überschrieben
     else zeichneStatus();
   } catch (e) { if (!gitGesperrt(e)) { S.offline = true; zeichneStatus(); } /* Server nicht erreichbar: still bleiben (Statusleiste zeigt „Offline“), der Abgleich meldet es selbst */ }
-  finally { nachsehenLaeuft = false; }
+  finally { nachsehenLaeuft = false; nachsehenEnde = null; nachsehenAus?.(); nachsehenAus = null; }
 }
 
 async function sync() {
@@ -1606,6 +1609,7 @@ async function sync() {
   S.syncLaeuft = true; S.syncFehler = null; zeichneStatus();
   const ende = arbeitBeginnt("sync"); // Schließen des Fensters fragt nach, solange das läuft
   try {
+    if (nachsehenEnde) await nachsehenEnde; // ein laufendes Nachsehen zuerst zu Ende (gleiche Git-Sperre in der Werkstatt)
     const r = await api.sync();
     S.offline = false;
     toast(T.status.abgeglichen[r.ergebnis] || T.status.abgeglichen.aktuell);

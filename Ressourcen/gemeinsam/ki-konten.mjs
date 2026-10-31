@@ -155,7 +155,19 @@ export function bestimmeKonto({ arg, env = {}, programm = null, daten, vollstaen
   for (const prog of argProg ? [argProg] : programm ? [programm] : ["claude", "codex"]) {
     const dir = prog === "claude" ? env.CLAUDE_CONFIG_DIR : prog === "codex" ? env.CODEX_HOME : undefined;
     if (typeof dir === "string" && dir) ids.push(amOrt(prog, dir));
-    else if (vollstaendig && prog === "claude") { const s = standardKonto("claude"); if (s !== undefined) ids.push(s); }
+    else if (vollstaendig && prog === "claude") {
+      const s = standardKonto("claude");
+      if (s !== undefined) ids.push(s);
+      else {
+        // Kein Standardkonto in der Liste: läuft das Standardprofil (~/.claude), ist es dort trotzdem eingetragen (ohne Standard-Merkmal) oder ein Konto, das Kortex noch nicht kennt (neu, vor dem Abgleich) — dann „unbekannt“ = gesperrt,
+        // nie das Recht der bekannten Konten (kein Aufruf kommt so lockerer davon als ein eingetragener).
+        // „Es gibt ein Standardprofil“ gilt wie bei der Erkennung der Konten (werkstatt/profile.mjs): Ordner ~/.claude mit settings.json, .claude.json oder projects/ — oder ~/.claude.json im Home.
+        const home = typeof env.HOME === "string" && env.HOME ? env.HOME : homedir(), std = join(home, ".claude");
+        const art = (p) => { try { const l = lstatSync(p); return l.isDirectory() ? "ordner" : l.isFile() ? "datei" : null; } catch { return null; } };
+        const da = art(std) === "ordner" && (art(join(std, "settings.json")) === "datei" || art(join(std, ".claude.json")) === "datei" || art(join(std, "projects")) === "ordner" || art(join(home, ".claude.json")) === "datei");
+        if (da) ids.push(amOrt("claude", std));
+      }
+    }
   }
   return { ids };
 }

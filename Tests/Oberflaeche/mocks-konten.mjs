@@ -32,7 +32,7 @@ export const KONTEN = [
 export async function mockeKonten(page, { vaults, konten = KONTEN, zugriff = null, hinweis = null, hinweisGrund = "defekt", vorherDa = false, fehlerClaude = null, leer = false, altform = {}, warnungen = [], pflege = {}, neuKonten = [], letzter = null, schalter = "an", naechster = { art: "sitzungsstart" }, pflegeHinweise = [], pflegePlist = null, programme = PROGRAMME, programmeFehler = false, login = {}, zuletzt = {}, kern = KERN(), kernFehler = null, pruefungAnders = false, frage = null, anmeldenFehler = null } = {}) {
   const z = {
     konten: leer ? [] : konten.map((k) => ({ ...k })), vaults: vaults.map((v) => ({ neueKonten: "gesperrt", ...v })), hinweis, hinweisGrund, vorherDa, anfragen: [], altform: { ...altform }, warnungen, sperren: {}, streng: {}, fehlerClaude, wartet: null, pflege: { ...pflege }, letzter, schalter, naechster, pflegeHinweise: [...pflegeHinweise], pflegePlist,
-    programme: programme.map((p) => ({ ...p })), programmeFehler, login: { ...login }, zuletzt: { ...zuletzt }, kern, kernFehler, pruefungAnders, anmeldenFehler, neu: 0, neuKonten: neuKonten.map((k) => ({ ...k })),
+    programme: programme.map((p) => ({ ...p })), programmeFehler, login: { ...login }, zuletzt: { ...zuletzt }, kern, kernFehler, pruefungAnders, anmeldenFehler, neu: 0, neuKonten: neuKonten.map((k) => ({ ...k })), zustand: "ok", heilt: true,
   };
   z.zugriff = zugriff || Object.fromEntries(z.konten.map((k) => [k.id, Object.fromEntries(z.vaults.map((v) => [v.pfad, k.verbunden ? "posteingang" : "gesperrt"]))]));
   const schutzMit = (k) => {
@@ -43,18 +43,19 @@ export async function mockeKonten(page, { vaults, konten = KONTEN, zugriff = nul
     return { ...roh, ampel: schutzAmpel({ programm: "claude", gesperrt: gesperrt.length, schutz: roh }) };
   };
   const stand = () => ({
-    zustand: "ok", ...(z.hinweis ? { hinweis: z.hinweis, hinweisGrund: z.hinweisGrund, hinweisSeit: "2026-10-30T10:00:00.000Z", vorherDa: z.vorherDa } : {}), stufen: STUFEN,
+    zustand: z.zustand, ...(z.hinweis ? { hinweis: z.hinweis, hinweisGrund: z.hinweisGrund, hinweisSeit: "2026-10-30T10:00:00.000Z", vorherDa: z.vorherDa } : {}), stufen: STUFEN,
     konten: z.konten.map((k) => ({
       ...k, verwaltet: !!k.verwaltet, pfad: k.pfad || k.ordner.replace("~", "/Users/test"), ...(z.zuletzt[k.id] ? { zuletztAngemeldet: z.zuletzt[k.id] } : {}), altform: z.altform[k.id] || { mcp: false, hooks: false },
       schutz: schutzMit(k),
     })),
     vaults: z.vaults.map((v) => ({ pfad: v.pfad, name: v.name, neueKonten: v.neueKonten, ohneKonto: "gesperrt", schluessel: v.pfad, pflege: pflegeStand(v.pfad) })),
     zugriff: z.zugriff, ...(z.pflegeHinweise.length ? { pflegeHinweise: z.pflegeHinweise } : {}), ...(z.pflegePlist ? { pflegePlist: z.pflegePlist } : {}),
-    neu: z.neuKonten.map((k) => ({ programm: k.programm, programmName: k.programmName, name: k.name, ordner: k.ordner, standard: k.standard === true })), // GET liest nur: Neues steht hier, nicht in `konten`
+    neu: z.neuKonten.map((k) => ({ programm: k.programm, programmName: k.programmName, name: k.name, ordner: k.ordner, standard: k.standard === true, ...(k.startet ? { startet: k.startet } : {}) })), // GET liest nur: Neues steht hier, nicht in `konten`
   });
   // POST /api/ki/konten/abgleich: der ausdrückliche Abgleich trägt die neu erkannten Konten ein (gesperrt)
   await page.route("**/api/ki/konten/abgleich", async (route) => {
     z.anfragen.push({ methode: route.request().method(), pfad: "/api/ki/konten/abgleich" });
+    if (z.heilt) z.zustand = "ok"; // der Abgleich legt die fehlende/beschädigte Liste neu an (z.heilt = false: die Reparatur gelingt nicht)
     for (const k of z.neuKonten.splice(0)) {
       z.konten.push({ ...k, vorhanden: true, verbunden: false });
       z.zugriff[k.id] = Object.fromEntries(z.vaults.map((v) => [v.pfad, "gesperrt"]));

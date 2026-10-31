@@ -37,7 +37,7 @@ async function start(page, opt = {}, { hash = "#einstellungen/ki", breite = 1440
   await page.goto(server.url + "?pfad=" + encodeURIComponent(NOTIZ));
   await page.waitForSelector("#app:not([hidden])");
   await page.waitForFunction(() => window.__studioBereit === true);
-  if (hash) { await page.evaluate((hh) => { location.hash = hh; }, hash); await expect(seite(page)).toBeVisible(); }
+  if (hash) { await page.evaluate((hh) => { location.hash = hh; }, hash); await expect(seite(page)).toBeVisible({ timeout: 20000 }); } // die Seite lädt ihr Modul erst jetzt nach: unter Last dauert das länger als die 5 s einer gewöhnlichen Prüfung
   return z;
 }
 const karte = (page, id) => page.locator(`.kx-prog[data-programm="${id}"]`);
@@ -102,6 +102,52 @@ test("Neu gefundenes Konto: beim Öffnen nur als „neu, noch nicht eingetragen�
   await expect(hinweis).toHaveCount(0);
   await expect(konto(page, "k_aaaa0090")).toBeVisible();
   expect(z.log("/api/ki/konten/abgleich", "POST")).toHaveLength(1);
+});
+
+test("Neu gefundenes Konto: der Hinweis sagt nur dann „außer …“, wenn die Werkstatt meldet, dass ein Konto nicht gesperrt startet (`startet`)", async ({ page }) => {
+  const NEU = { id: "k_aaaa0090", programm: "claude", programmName: "Claude Code", name: "Claude Code · neu", standard: false, ordner: "~/.claude-neu", pfad: "/Users/test/.claude-neu" };
+  const z = await start(page, { ...VOLL(), neuKonten: [{ ...NEU, startet: "gesperrt" }] });
+  await warteKonten(page);
+  const hinweis = page.locator('[data-kk="neu-gefunden"]');
+  await expect(hinweis).toContainText("beim Eintragen starten sie gesperrt.");
+  await expect(hinweis).not.toContainText("Posteingang");
+  z.neuKonten[0].startet = "teils";
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("kortex-konten")));
+  await expect(hinweis).toContainText("außer einem schon mit Kortex verbundenen Konto");
+  await expect(hinweis).toContainText("Posteingang");
+  await expect(hinweis).toContainText("angelegt oder geklont");
+});
+
+test("Reparatur der Liste: höchstens ein Versuch je Fehler — aber ein späterer neuer Fehler und ein anderer Vault bekommen wieder einen", async ({ page }) => {
+  const z = await start(page, { ...VOLL() });
+  await warteKonten(page);
+  const abgleiche = () => z.log("/api/ki/konten/abgleich", "POST").length;
+  const melde = () => page.evaluate(() => window.dispatchEvent(new CustomEvent("kortex-konten")));
+  const warteBis = async (n) => { await expect.poll(abgleiche).toBe(n); };
+  expect(abgleiche(), "eine heile Liste braucht keinen Abgleich").toBe(0);
+  // Die Liste ist kaputt, die Reparatur gelingt nicht: ein Versuch, kein Dauerfeuer
+  z.zustand = "defekt"; z.heilt = false;
+  await melde(); await warteBis(1);
+  await melde(); await melde();
+  await page.waitForTimeout(400);
+  expect(abgleiche(), "kein zweiter Versuch für denselben Fehler").toBe(1);
+  // Anderer Vault (über das Vault-Menü, wie im Alltag): der Versuch gehört zum alten
+  const echtInfo = await (await fetch(server.url + "api/info")).json();
+  let aktiv = echtInfo.vault;
+  await page.route("**/api/info", (r) => r.fulfill({ json: { ...echtInfo, vault: aktiv, name: aktiv === FIRMA ? "Firma" : echtInfo.name } }));
+  await page.route("**/api/vaults", (r) => (r.request().method() === "GET" ? r.fulfill({ json: { vaults: [{ name: "Mein Vault", pfad: echtInfo.vault, farbe: "#5b4ed6" }, { name: "Firma", pfad: FIRMA, farbe: "#2a9ba8" }], aktiv } }) : r.fallback()));
+  await page.route("**/api/vaults/aktiv", (r) => { aktiv = r.request().postDataJSON().pfad; r.fulfill({ json: { ok: true } }); });
+  await page.evaluate(() => window.studio.befehl("vault-wechseln"));
+  await page.locator('.menue [data-menue="vault"]', { hasText: "Firma" }).click();
+  await expect(page.locator("#vault-name")).toHaveText("Firma");
+  await melde(); await warteBis(2);
+  // Heil (die Reparatur hat gewirkt oder ein anderer hat es getan) — und später wieder kaputt: ein neuer Fehler, ein neuer Versuch
+  z.zustand = "ok"; z.heilt = true;
+  await melde(); await page.waitForTimeout(300);
+  expect(abgleiche()).toBe(2);
+  z.zustand = "defekt";
+  await melde(); await warteBis(3);
+  expect(z.zustand, "der Versuch hat repariert").toBe("ok");
 });
 
 test("Fehler bei der Suche: Satz mit dem nächsten Schritt statt einer leeren Seite", async ({ page }) => {

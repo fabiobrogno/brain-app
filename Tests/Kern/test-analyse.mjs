@@ -312,7 +312,7 @@ test("luecken in analyse(): null wenn Schalter aus, sonst gelesene Einträge", (
   assert.equal(e.luecken[0].text, "etwas fehlendes");
 });
 
-test("Leistung: ~50 000 synthetische hint.log-Zeilen über ~1 Jahr → analyse() deutlich unter 1500 ms", () => {
+test("Leistung: ~50 000 synthetische hint.log-Zeilen über ~1 Jahr → analyse() deutlich unter 1500 ms CPU-Zeit", () => {
   const vault = neuerVault();
   const start = ANKER - 360 * 86400000;
   const zeilen = [];
@@ -322,11 +322,14 @@ test("Leistung: ~50 000 synthetische hint.log-Zeilen über ~1 Jahr → analyse()
   }
   schreibeLog(vault, "hint.log", `${zeilen.join("\n")}\n`);
 
-  const t0 = Date.now();
+  // Gemessen wird die CPU-Zeit des Prozesses (analyse() ist synchron und liest nur Dateien), nicht die Wanduhr: Unter Last (parallele Testdateien, volle Runner)
+  // wird der Prozess für Hunderte Millisekunden nicht eingeplant, ohne dass analyse() langsamer wäre — die Wanduhr würde das als „zu langsam“ melden.
+  const t0 = process.cpuUsage();
   const e = analyse(vault, { jetzt: ANKER, tage: 400 });
-  const dauer = Date.now() - t0;
+  const cpu = process.cpuUsage(t0);
+  const dauer = (cpu.user + cpu.system) / 1000;
   assert.ok(e.hinweise.prompts > 0);
-  assert.ok(dauer < 1500, `analyse() brauchte ${dauer} ms`);
+  assert.ok(dauer < 1500, `analyse() brauchte ${dauer} ms CPU-Zeit`);
 });
 
 test("gelesen: echte werkzeug.log-Zeile (protokolliere, sid 36 Zeichen) passt zur 8er-sid in hint.log — auch Seiten mit Leerzeichen/Komma", () => {
