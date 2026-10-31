@@ -304,6 +304,7 @@ export function erzeugeHandler(o) {
       }
       case "/api/aktivitaet": nur("GET"); return aktivitaet.lesen(v, q);
       case "/api/aktivitaet/rueckgaengig": nur("POST"); return aktivitaet.rueckgaengig(v, eingabe());
+      case "/api/aktivitaet/wiederherstellen": nur("POST"); return aktivitaet.wiederherstellen(v, eingabe());
       case "/api/aktivitaet/gelesen": nur("POST"); return aktivitaet.gelesen(v, eingabe());
       case "/api/einstellungen":
         if (methode === "GET") return einstellungen.lesen(v);

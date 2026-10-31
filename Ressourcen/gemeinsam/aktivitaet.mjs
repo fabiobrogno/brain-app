@@ -52,7 +52,7 @@ function relPfad(p) {
 export function bereinige(e, { kennung = null } = {}) {
   if (!e || typeof e !== "object" || !ARTEN.includes(e.art)) return null;
   const r = { v: 1, id: typeof e.id === "string" && /^a_[0-9a-z]{6,12}_[0-9a-f]{6}$/.test(e.id) ? e.id : `a_${Date.now().toString(36)}_${randomBytes(3).toString("hex")}`,
-    zeit: typeof e.zeit === "string" && Number.isFinite(Date.parse(e.zeit)) ? new Date(Date.parse(e.zeit)).toISOString() : new Date().toISOString(), art: e.art };
+    zeit: typeof e.zeit === "string" && Number.isFinite(Date.parse(e.zeit)) ? new Date(Math.min(Date.parse(e.zeit), Date.now() + 60_000)).toISOString() : new Date().toISOString(), art: e.art }; // höchstens 60 s in der Zukunft (eine falsche Uhr oder ein gefälschter Eintrag soll nichts verschieben)
   if (kennung && KENNUNG.test(kennung)) r.vault = kennung;
   const vn = einzeilig(e.vaultName, 60); if (vn) r.vaultName = vn;
   r.konto = typeof e.konto === "string" && /^k_[0-9a-f]{8}$/.test(e.konto) ? e.konto : null;
@@ -169,14 +169,15 @@ export function melde(wurzel, e, opt = {}) { return schreibeEreignis(opt.support
 
 const ZUSTAND_MAX_IDS = 400;
 const zustandDatei = (support, kennung) => join(aktivitaetOrdner(support), `${kennung}.zustand.json`);
-// → { gelesenBis: ISO | null, gelesen: [id], zurueck: { id: ISO } }
+// → { gelesenBis: ISO | null, gelesen: [id], zurueck: { id: ISO }, wieder: { id: ISO } }  (wieder: von Kortex aus dem Papierkorb wiederhergestellt)
 export function leseZustand(support, kennung) {
   try {
     const j = JSON.parse(readFileSync(zustandDatei(support, kennung), "utf8"));
     return { gelesenBis: typeof j.gelesenBis === "string" && Number.isFinite(Date.parse(j.gelesenBis)) ? j.gelesenBis : null,
       gelesen: Array.isArray(j.gelesen) ? j.gelesen.filter((x) => typeof x === "string").slice(-ZUSTAND_MAX_IDS) : [],
-      zurueck: j.zurueck && typeof j.zurueck === "object" && !Array.isArray(j.zurueck) ? Object.fromEntries(Object.entries(j.zurueck).filter(([, v]) => typeof v === "string").slice(-ZUSTAND_MAX_IDS)) : {} };
-  } catch { return { gelesenBis: null, gelesen: [], zurueck: {} }; }
+      zurueck: j.zurueck && typeof j.zurueck === "object" && !Array.isArray(j.zurueck) ? Object.fromEntries(Object.entries(j.zurueck).filter(([, v]) => typeof v === "string").slice(-ZUSTAND_MAX_IDS)) : {},
+      wieder: j.wieder && typeof j.wieder === "object" && !Array.isArray(j.wieder) ? Object.fromEntries(Object.entries(j.wieder).filter(([, v]) => typeof v === "string" && Number.isFinite(Date.parse(v))).slice(-ZUSTAND_MAX_IDS)) : {} };
+  } catch { return { gelesenBis: null, gelesen: [], zurueck: {}, wieder: {} }; }
 }
 function schreibeZustand(support, kennung, z) {
   mkdirSync(aktivitaetOrdner(support), { recursive: true, mode: 0o700 });
@@ -190,6 +191,7 @@ export function aendereZustand(support, kennung, fn) {
   const da = new Set(leseEreignisse(support, kennung).map((e) => e.id));
   z.gelesen = z.gelesen.filter((id) => da.has(id)).slice(-ZUSTAND_MAX_IDS);
   z.zurueck = Object.fromEntries(Object.entries(z.zurueck).filter(([id]) => da.has(id)));
+  z.wieder = Object.fromEntries(Object.entries(z.wieder).filter(([id]) => da.has(id)));
   schreibeZustand(support, kennung, z);
   return z;
 }

@@ -4,7 +4,7 @@ import {
   realpathSync, statSync, lstatSync, readdirSync, readFileSync, writeFileSync, openSync, readSync, closeSync,
   mkdirSync, renameSync, linkSync, unlinkSync, existsSync,
 } from "node:fs";
-import { join, basename, relative, sep } from "node:path";
+import { join, basename, relative, sep, isAbsolute } from "node:path";
 import { createHash, randomBytes } from "node:crypto";
 import { execFile } from "node:child_process";
 import { pathToFileURL } from "node:url";
@@ -501,6 +501,15 @@ export function oeffneVault(vaultPfad, opts = {}) {
     // Läuft oder wartet gerade ein Abgleich? (Git beschäftigt · die gemeinsame Sperre aller Abgleiche · ein gemerkter Konfliktstand „konfliktBasis“) — dann ändert Kortex nichts am Arbeitsbaum.
     abgleichBeschaeftigt: async () => {
       if (gitFn.gitBeschaeftigt(wurzel)) return true;
+      // offene Zusammenführung: den Ort von MERGE_HEAD fragt Git selbst (verknüpfte Arbeitsbäume und andere Git-Ordner haben ihn nicht unter .git/)
+      try {
+        const s = gitSicht();
+        if (!s.gesperrt) {
+          const r = await gitFn.git(wurzel, ["rev-parse", "--git-path", "MERGE_HEAD"], { ...ctxVon(s), ohneHooks: true });
+          const ort = r.code === 0 ? r.stdout.trim() : "";
+          if (ort && existsSync(isAbsolute(ort) ? ort : join(wurzel, ort))) return true;
+        } else if (existsSync(join(wurzel, ".git", "MERGE_HEAD"))) return true;
+      } catch { /* unten */ }
       try { const d = leseAbgleichDetail(wurzel, opts.support); if (d && d.haelt) return true; } catch { /* unten */ }
       try {
         const m = await import(pathToFileURL(join(kern, "abgleich-sperre.mjs")).href);

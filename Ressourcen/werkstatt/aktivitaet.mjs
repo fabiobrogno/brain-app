@@ -59,7 +59,7 @@ export function erzeugeAktivitaet({ support, konten = null, vaults = () => [], o
         const k = kontoVon(e.konto);
         const zurueck = zustand.zurueck[e.id] || null;
         alle.push({ ...rest, vaultName: z.name || e.vaultName || "", ...(wahl === "alle" ? { vaultPfad: z.pfad } : {}), gelesen,
-          rueckgaengigMoeglich: !!rueckgaengig && (e.art === "ablage-aufgabe" || e.art === "ablage-notiz") && !zurueck && z.kennung === offenKennung, zurueckgenommen: zurueck,
+          rueckgaengigMoeglich: !!rueckgaengig && (e.art === "ablage-aufgabe" || e.art === "ablage-notiz") && !zurueck && z.kennung === offenKennung, zurueckgenommen: zurueck, wiederherstellenMoeglich: !!rueckgaengig && !!zurueck && z.kennung === offenKennung && existsSync(korbDatei(z.kennung, e, rueckgaengig.pfad)),
           kontoName: k && typeof k.name === "string" ? k.name : null, programmName: programmAnzeige(e.programm || (k && k.programm) || "") });
       }
     }
@@ -103,6 +103,32 @@ export function erzeugeAktivitaet({ support, konten = null, vaults = () => [], o
     try { for (const n of readdirSync(ordner)) { const p = join(ordner, n); if (Date.now() - statSync(p).mtimeMs > PAPIERKORB_TAGE * 86400e3) rmSync(p, { force: true }); } } catch { /* kein Papierkorb */ }
   }
 
+  // Das Protokoll liegt außerhalb des Vaults und kann von einem Programm beschrieben werden, das den Vault nicht sehen darf: ein Eintrag ist nur ein HINWEIS. Angefasst wird nur,
+  // was nach den Regeln des Vaults selbst eine Ablage ist — nie, was der Eintrag behauptet: .md direkt im Ordner der Aufgaben bzw. im Posteingang, genau der erste Pfad des Eintrags.
+  async function pruefeZiel(vault, e, was) {
+    const { abs, rel } = loese(vault.wurzel, e.rueckgaengig.pfad);
+    const abgelehnt = (text) => new HttpFehler(409, `${text} Kortex ${was === "entfernt" ? "entfernt" : "stellt"} nichts${was === "entfernt" ? "" : " wieder her"}.`, { art: "unzulaessig" });
+    if (!["ablage-aufgabe", "ablage-notiz"].includes(e.art)) throw abgelehnt("Das ist keine Ablage einer KI.");
+    if (!Array.isArray(e.pfade) || e.pfade[0] !== e.rueckgaengig.pfad) throw abgelehnt("Der Eintrag nennt nicht eindeutig, was er betrifft.");
+    const teile = rel.split("/");
+    let erlaubterOrdner = null;
+    try { erlaubterOrdner = e.art === "ablage-aufgabe" ? await vault.aufgabenOrdnerName() : vault.inboxOrdnerName(); } catch { erlaubterOrdner = null; }
+    if (!erlaubterOrdner || teile.length !== 2 || falte(teile[0]) !== falte(erlaubterOrdner) || !/\.md$/i.test(teile[1])) {
+      throw abgelehnt(e.art === "ablage-aufgabe" ? "Das liegt nicht im Ordner der Aufgaben." : "Das liegt nicht im Posteingang.");
+    }
+    return { abs, rel };
+  }
+  const vertrauteVault = (vault) => {
+    let stand = null; try { stand = vault.vertrauenStand(); } catch { /* unten */ }
+    if (!stand || stand.erlaubt !== true) throw new HttpFehler(409, "Dieser Vault ist in Kortex noch nicht als deiner bestätigt, darum ändert Kortex hier nichts. Bestätige ihn in den Einstellungen.", { art: "nicht-vertraut" });
+  };
+  const nichtBeschaeftigt = async (vault, was) => {
+    if (vault.umstellungLaeuft() || (await vault.abgleichBeschaeftigt())) {
+      throw new HttpFehler(409, `Gerade läuft ein Abgleich oder eine Zusammenführung (oder Kortex räumt den Vault auf). Versuche es gleich noch einmal — es wurde nichts ${was}.`, { art: "beschaeftigt" });
+    }
+  };
+  const korbDatei = (kennung, e, rel) => join(aktivitaetOrdner(support), "papierkorb", kennung, `${e.id}-${basename(rel)}`);
+
   // Rückgängig: nur Ablagen von KIs, nur unverändert (Hash), nur in einem vertrauten Vault.
   function rueckgaengig(v, eingabe) {
     return seriell(async () => {
@@ -114,20 +140,8 @@ export function erzeugeAktivitaet({ support, konten = null, vaults = () => [], o
       if (!e) throw new HttpFehler(404, "Dieses Ereignis gibt es nicht (mehr).");
       if (!e.rueckgaengig) throw new HttpFehler(400, "Das lässt sich nicht rückgängig machen.");
       if (leseZustand(support, kennung).zurueck[e.id]) throw new HttpFehler(409, "Das ist schon rückgängig gemacht.", { art: "schon-zurueck" });
-      let stand = null; try { stand = vault.vertrauenStand(); } catch { /* unten */ }
-      if (!stand || stand.erlaubt !== true) throw new HttpFehler(409, "Dieser Vault ist in Kortex noch nicht als deiner bestätigt, darum ändert Kortex hier nichts. Bestätige ihn in den Einstellungen.", { art: "nicht-vertraut" });
-      // Das Protokoll liegt außerhalb des Vaults und kann von einem Programm beschrieben werden, das den Vault nicht sehen darf: ein Eintrag ist nur ein HINWEIS. Gelöscht wird nur,
-      // was nach den Regeln des Vaults selbst eine Ablage ist — nie, was der Eintrag behauptet.
-      const { abs, rel } = loese(vault.wurzel, e.rueckgaengig.pfad);
-      const abgelehnt = (text) => new HttpFehler(409, `${text} Kortex entfernt nichts.`, { art: "unzulaessig" });
-      if (!["ablage-aufgabe", "ablage-notiz"].includes(e.art)) throw abgelehnt("Das ist keine Ablage einer KI.");
-      if (!Array.isArray(e.pfade) || e.pfade[0] !== e.rueckgaengig.pfad) throw abgelehnt("Der Eintrag nennt nicht eindeutig, was er betrifft.");
-      const teile = rel.split("/");
-      let erlaubterOrdner = null;
-      try { erlaubterOrdner = e.art === "ablage-aufgabe" ? await vault.aufgabenOrdnerName() : vault.inboxOrdnerName(); } catch { erlaubterOrdner = null; }
-      if (!erlaubterOrdner || teile.length !== 2 || falte(teile[0]) !== falte(erlaubterOrdner) || !/\.md$/i.test(teile[1])) {
-        throw abgelehnt(e.art === "ablage-aufgabe" ? "Das liegt nicht im Ordner der Aufgaben." : "Das liegt nicht im Posteingang.");
-      }
+      vertrauteVault(vault);
+      const { abs, rel } = await pruefeZiel(vault, e, "entfernt");
       let st = null;
       try { st = lstatSync(abs); } catch { /* weg */ }
       const merke = (art, extra = {}) => {
@@ -141,13 +155,12 @@ export function erzeugeAktivitaet({ support, konten = null, vaults = () => [], o
       if (st.nlink > 1) throw new HttpFehler(423, "Diese Datei ist mehrfach verknüpft. Kortex entfernt sie nicht.", { art: "geaendert" });
       // Die Datei muss zu diesem Ereignis passen: angelegt um die Zeit des Eintrags (eine ältere Datei hat die KI nicht abgelegt)
       const angelegt = st.birthtimeMs > 0 ? st.birthtimeMs : st.ctimeMs;
-      if (Math.abs(angelegt - Date.parse(e.zeit)) > ABLAGE_TOLERANZ_MS) throw abgelehnt("Die Datei stammt nicht aus dieser Ablage (sie wurde zu einer anderen Zeit angelegt).");
+      const bezug = leseZustand(support, kennung).wieder[e.id]; // eine von Kortex wiederhergestellte Datei ist ab der Wiederherstellung „neu“
+      if (Math.abs(angelegt - Date.parse(bezug || e.zeit)) > ABLAGE_TOLERANZ_MS) throw new HttpFehler(409, "Die Datei stammt nicht aus dieser Ablage (sie wurde zu einer anderen Zeit angelegt). Kortex entfernt nichts.", { art: "unzulaessig" });
       const inhalt = readFileSync(abs);
       if (sha(inhalt) !== e.rueckgaengig.hash) throw new HttpFehler(409, "Die Notiz wurde seit der Ablage geändert. Kortex entfernt sie nicht — öffne sie und entscheide selbst.", { art: "geaendert" });
-      // Läuft gerade etwas, das den Vault umbaut oder abgleicht, ändert Kortex jetzt nichts.
-      if (vault.umstellungLaeuft() || existsSync(join(vault.wurzel, ".git", "MERGE_HEAD")) || (await vault.abgleichBeschaeftigt())) {
-        throw new HttpFehler(409, "Gerade läuft ein Abgleich oder eine Zusammenführung (oder Kortex räumt den Vault auf). Versuche es gleich noch einmal — es wurde nichts entfernt.", { art: "beschaeftigt" });
-      }
+      // Läuft gerade etwas, das den Vault umbaut oder abgleicht (Umstellung, Zusammenführung, Abgleich), ändert Kortex jetzt nichts.
+      await nichtBeschaeftigt(vault, "entfernt");
       // Git: nur eine versionierte, gegenüber HEAD unveränderte Datei darf per Commit entfernt werden (ls-files + diff); alles andere (nicht versioniert, ignoriert, geändert, kein Repo) nicht
       let versioniert = false;
       try { versioniert = (await vault.gitVersioniert(rel)) === true; } catch { versioniert = false; }
@@ -175,6 +188,33 @@ export function erzeugeAktivitaet({ support, konten = null, vaults = () => [], o
     });
   }
 
+  // Wiederherstellen: eine zurückgenommene Ablage kommt aus dem Papierkorb von Kortex zurück, wenn der Platz frei ist (nie überschreiben) und die Kopie unverändert ist.
+  function wiederherstellen(v, eingabe) {
+    return seriell(async () => {
+      if (!eingabe || typeof eingabe.id !== "string" || !/^a_[0-9a-z]+_[0-9a-f]{6}$/.test(eingabe.id)) throw new HttpFehler(400, "Die Kennung des Ereignisses fehlt.");
+      const vault = vaultFuer(v, eingabe.vault);
+      if (!vault) throw new HttpFehler(409, "Es ist noch kein Vault geöffnet.", { keinVault: true, art: "kein-vault" });
+      const kennung = kennungVault(vault.wurzel);
+      const e = finde(kennung, eingabe.id);
+      if (!e) throw new HttpFehler(404, "Dieses Ereignis gibt es nicht (mehr).");
+      if (!e.rueckgaengig) throw new HttpFehler(400, "Das lässt sich nicht wiederherstellen.");
+      if (!leseZustand(support, kennung).zurueck[e.id]) throw new HttpFehler(409, "Das wurde nicht rückgängig gemacht.", { art: "nicht-zurueck" });
+      vertrauteVault(vault);
+      const { abs, rel } = await pruefeZiel(vault, e, "wiederherstellen");
+      await nichtBeschaeftigt(vault, "wiederhergestellt");
+      const kopie = korbDatei(kennung, e, rel);
+      let inhalt = null; try { inhalt = readFileSync(kopie); } catch { inhalt = null; }
+      if (!inhalt) throw new HttpFehler(404, "Die Kopie im Papierkorb gibt es nicht mehr (sie wird nach 30 Tagen gelöscht).", { art: "keine-kopie" });
+      if (sha(inhalt) !== e.rueckgaengig.hash) throw new HttpFehler(409, "Die Kopie im Papierkorb ist nicht mehr dieselbe. Kortex stellt sie nicht wieder her.", { art: "kopie-veraendert" });
+      try { copyFileSync(kopie, abs, constants.COPYFILE_EXCL); }
+      catch (err) { if (err && err.code === "EEXIST") throw new HttpFehler(409, "An dieser Stelle liegt schon eine Datei. Kortex überschreibt nichts — die Kopie bleibt im Papierkorb.", { art: "belegt" }); throw new HttpFehler(500, "Das Wiederherstellen hat nicht geklappt."); }
+      aendereZustand(support, kennung, (s) => { delete s.zurueck[e.id]; s.wieder[e.id] = new Date().toISOString(); });
+      melde(vault.wurzel, { art: "rueckgaengig", text: "Wiederhergestellt: Die Ablage der KI liegt wieder im Vault.", pfade: [rel], vaultName: vault.name }, { support });
+      ereignisse?.melde({ typ: "aktivitaet", art: "zustand" });
+      return { ok: true, art: "wiederhergestellt", pfad: rel };
+    });
+  }
+
   // Die Anmeldung eines Kontos ist abgelaufen (aus /api/ki/anmeldung): höchstens alle 6 Stunden je Konto ein Ereignis.
   function anmeldungAbgelaufen(v, kontoId) {
     if (!v) return null;
@@ -186,5 +226,5 @@ export function erzeugeAktivitaet({ support, konten = null, vaults = () => [], o
     return e;
   }
 
-  return { lesen, gelesen, rueckgaengig, anmeldungAbgelaufen, protokollKennungen: () => protokollKennungen(support) };
+  return { lesen, gelesen, rueckgaengig, wiederherstellen, anmeldungAbgelaufen, protokollKennungen: () => protokollKennungen(support) };
 }

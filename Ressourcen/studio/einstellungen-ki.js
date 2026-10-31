@@ -7,7 +7,7 @@
 // Programmkarte mit Pfad und Version, Konto = eigener Konfigurationsordner, Anmelden im Programm selbst, Fehlertexte mit dem nächsten Schritt.
 import { h, dialog, toast, leseLokal, speichereLokal } from "./hilfen.js";
 import { relativ, datumZeit } from "./format.js";
-import { fuehreRueckgaengigAus, zeilenText } from "./mitteilungen.js";
+import { fuehreRueckgaengigAus, fuehreWiederherstellenAus, zeilenText } from "./mitteilungen.js";
 import { TM } from "./texte-mitteilungen.js";
 import { symbol, GROESSE } from "./symbole.js";
 import { knopf as baueKnopf, segment, umschalter, auswahl, textfeld, hakenFeld, kiAuswahl, leerBlock, skelett, einstellMarke } from "./bausteine.js";
@@ -906,6 +906,25 @@ export function erzeugeKi(o) {
     el.style.setProperty("--kx-g", "24px");
     return el;
   }
+  // „Rückgängig“ in der Liste: erst die Bestätigung mit dem genauen Pfad (ein Eintrag im Protokoll ist nur ein Hinweis; Kortex zeigt, was es entfernt) und dem Papierkorb
+  function aktBestaetigen(e) {
+    if (S.aktZurueck.has(e.id)) return;
+    const pfad = Array.isArray(e.pfade) && e.pfade[0] ? e.pfade[0] : "";
+    const B = TM.bestaetigen;
+    const ja = baueKnopf({ text: B.ja, variante: "primaer", aktion: "aktivitaet-zurueck-ja", aufKlick: () => { d.schliessen(); aktZurueck(e); } });
+    const d = eigenerDialog({ titel: B.titel, satz: B.satz, rumpf: [h("p", { klasse: "dialog-pfad" }, h("code", { text: pfad })), h("p", { klasse: "dialog-satz", text: B.kopie })],
+      knoepfe: [baueKnopf({ text: B.nein, aktion: "aktivitaet-zurueck-nein", aufKlick: () => d.schliessen() }), ja] });
+    d.box.dataset.dialog = "aktivitaet-zurueck";
+  }
+  async function aktWieder(e) {
+    if (S.aktZurueck.has(e.id)) return;
+    S.aktZurueck.add(e.id); zeichne("aktivitaet");
+    const r = await fuehreWiederherstellenAus(api, e.id, e.vaultPfad);
+    S.aktZurueck.delete(e.id);
+    if (zu()) return;
+    toast(r.ok ? TM.wiederhergestellt : r.meldung, { fehler: !r.ok, ms: r.ok ? 3200 : 7000 });
+    ladeAktivitaet();
+  }
   async function aktZurueck(e) {
     if (S.aktZurueck.has(e.id)) return;
     S.aktZurueck.add(e.id); zeichne("aktivitaet");
@@ -926,7 +945,8 @@ export function erzeugeKi(o) {
       aktKachel(e),
       h("div", { klasse: "kx-akt-text" }, h("span", { klasse: "kx-akt-satz" }, t.wer ? h("b", { text: t.wer }) : null, t.wer ? " " : null, t.satz), h("span", { klasse: "kx-d", text: unter })),
       h("div", { klasse: "kx-akt-rechts" },
-        kann ? h("button", { type: "button", klasse: "kx-akt-zurueck", "data-aktion": "aktivitaet-zurueck", "data-kx-fokus": `akt-${e.id}`, disabled: wartet || null, "aria-label": TM.rueckgaengigLang(`${t.wer ? t.wer + " " : ""}${t.satz}`), text: TM.rueckgaengig, aufClick: () => aktZurueck(e) }) : null,
+        kann ? h("button", { type: "button", klasse: "kx-akt-zurueck", "data-aktion": "aktivitaet-zurueck", "data-kx-fokus": `akt-${e.id}`, disabled: wartet || null, "aria-label": TM.rueckgaengigLang(`${t.wer ? t.wer + " " : ""}${t.satz}`), text: TM.rueckgaengig, aufClick: () => aktBestaetigen(e) }) : null,
+        e.wiederherstellenMoeglich === true ? h("button", { type: "button", klasse: "kx-akt-zurueck", "data-aktion": "aktivitaet-wieder", disabled: wartet || null, "aria-label": TM.wiederherstellenLang(`${t.wer ? t.wer + " " : ""}${t.satz}`), text: TM.wiederherstellen, aufClick: () => aktWieder(e) }) : null,
         h("time", { datetime: e.zeit, title: datumZeit(e.zeit), text: relativ(e.zeit) })));
   }
   zeichner.aktivitaet = (el) => {

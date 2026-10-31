@@ -103,7 +103,7 @@ test("Zustand „gelesen“ und „zurückgenommen“: gelesenBis und einzelne I
   const e1 = A.schreibeEreignis(support, vault, { art: "abweisung", text: "1", zeit: "2026-10-31T08:00:00.000Z" });
   const e2 = A.schreibeEreignis(support, vault, { art: "abweisung", text: "2", zeit: "2026-10-31T09:00:00.000Z" });
   let z = A.leseZustand(support, kennung);
-  assert.deepEqual(z, { gelesenBis: null, gelesen: [], zurueck: {} });
+  assert.deepEqual(z, { gelesenBis: null, gelesen: [], zurueck: {}, wieder: {} });
   assert.equal(A.istGelesen(z, e1), false);
   z = A.aendereZustand(support, kennung, (s) => { s.gelesenBis = "2026-10-31T08:30:00.000Z"; s.gelesen.push(e2.id, "a_weg_000000"); s.zurueck[e1.id] = "2026-10-31T10:00:00.000Z"; s.zurueck["a_weg_000000"] = "x"; });
   assert.equal(A.istGelesen(z, e1), true); assert.equal(A.istGelesen(z, e2), true);
@@ -111,7 +111,7 @@ test("Zustand „gelesen“ und „zurückgenommen“: gelesenBis und einzelne I
   assert.deepEqual(A.leseZustand(support, kennung), z);
   // kaputte Datei → leerer Zustand, nie ein Fehler
   writeFileSync(join(support, "aktivitaet", `${kennung}.zustand.json`), "{nope");
-  assert.deepEqual(A.leseZustand(support, kennung), { gelesenBis: null, gelesen: [], zurueck: {} });
+  assert.deepEqual(A.leseZustand(support, kennung), { gelesenBis: null, gelesen: [], zurueck: {}, wieder: {} });
 });
 
 test("Anzeige: „Claude Code · Privat“ aus Programm und Kontoname; ohne Konto aus dem Namen des MCP-Clients; sonst „Eine KI“", () => {

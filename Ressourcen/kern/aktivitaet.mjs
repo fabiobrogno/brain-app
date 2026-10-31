@@ -44,7 +44,7 @@ function relPfad(p) {
 export function bereinige(e, { kennung = null } = {}) {
   if (!e || typeof e !== "object" || !ARTEN.includes(e.art)) return null;
   const r = { v: 1, id: typeof e.id === "string" && /^a_[0-9a-z]{6,12}_[0-9a-f]{6}$/.test(e.id) ? e.id : `a_${Date.now().toString(36)}_${randomBytes(3).toString("hex")}`,
-    zeit: typeof e.zeit === "string" && Number.isFinite(Date.parse(e.zeit)) ? new Date(Date.parse(e.zeit)).toISOString() : new Date().toISOString(), art: e.art };
+    zeit: typeof e.zeit === "string" && Number.isFinite(Date.parse(e.zeit)) ? new Date(Math.min(Date.parse(e.zeit), Date.now() + 60_000)).toISOString() : new Date().toISOString(), art: e.art }; // höchstens 60 s in der Zukunft (eine falsche Uhr oder ein gefälschter Eintrag soll nichts verschieben)
   if (kennung && KENNUNG.test(kennung)) r.vault = kennung;
   const vn = einzeilig(e.vaultName, 60); if (vn) r.vaultName = vn;
   r.konto = typeof e.konto === "string" && /^k_[0-9a-f]{8}$/.test(e.konto) ? e.konto : null;

@@ -355,3 +355,97 @@ test("k2: läuft ein Abgleich (gemeinsame Sperre) oder wartet ein gemerkter Konf
   rmSync(merker);
   assert.equal((await rufe("POST", "/api/aktivitaet/rueckgaengig", { id: e.id })).status, 200);
 });
+
+test("W4: ein Eintrag mit Zeit in der Zukunft schaltet den Live-Strom nicht ab (Marke nie nach vorn); eine zurückgestellte Uhr setzt die Marke zurück", async () => {
+  const { erzeugeEreignisse } = await import(pfad("werkstatt", "ereignisse.mjs"));
+  const support = tmp("akt-w4-support-"), d = tmp("akt-w4-vault-"); schreibe(d, "brain.config.json", "{}\n");
+  let versatz = 0; // die Uhr des Hubs: springt um `versatz` ms
+  const h = erzeugeEreignisse({ support, aktivitaetPollMs: 30, modus: "poll", pollMs: 80, entprellMs: 40, aktivitaetJetzt: () => Date.now() + versatz });
+  h.richteAuf(d, { aufgabenOrdner: "05_aufgaben" });
+  const stand = await h.warte({}); await pause(150);
+  let aktuell = stand.aktuell;
+  const hole = async (ms) => { const aus = []; const ende = Date.now() + ms; while (Date.now() < ende) { const r = await h.warte({ seit: aktuell, epoche: stand.epoche, warteMs: 150 }); aktuell = r.aktuell; aus.push(...r.ereignisse.filter((x) => x.typ === "aktivitaet")); } return aus; };
+  // gefälscht: zehn Tage in der Zukunft (am Schreiber vorbei) — wird nie gemeldet und verschiebt nichts
+  rohZeile(support, d, { id: "a_zukunf_abcdef", art: "pflege", text: "aus der Zukunft", zeit: new Date(Date.now() + 10 * 86400_000).toISOString() });
+  assert.deepEqual(await hole(400), []);
+  const e1 = A.schreibeEreignis(support, d, { art: "pflege", text: "normal 1" });
+  assert.deepEqual((await hole(600)).map((x) => x.id), [e1.id], "danach kommen normale Einträge weiter");
+  // der Schreiber selbst kappt die Zeit auf höchstens 60 s nach vorn
+  const e2 = A.schreibeEreignis(support, d, { art: "pflege", text: "kappt", zeit: new Date(Date.now() + 5 * 86400_000).toISOString() });
+  assert.ok(Date.parse(e2.zeit) <= Date.now() + 61_000);
+  await hole(400);
+  h.beende();
+
+  // Uhr springt zurück: der Hub startet mit einer Uhr, die eine Stunde vorgeht (Marke = Zukunft), dann wird sie zurückgestellt
+  let versatz2 = 3600_000;
+  const h2 = erzeugeEreignisse({ support, aktivitaetPollMs: 30, modus: "poll", pollMs: 80, entprellMs: 40, aktivitaetJetzt: () => Date.now() + versatz2 });
+  h2.richteAuf(d, { aufgabenOrdner: "05_aufgaben" });
+  const st2 = await h2.warte({}); await pause(150);
+  versatz2 = 0;
+  const e3 = A.schreibeEreignis(support, d, { art: "pflege", text: "nach dem Zurückstellen" });
+  let a2 = st2.aktuell; const l2 = [];
+  for (const ende = Date.now() + 1200; Date.now() < ende;) { const r = await h2.warte({ seit: a2, epoche: st2.epoche, warteMs: 150 }); a2 = r.aktuell; l2.push(...r.ereignisse.filter((x) => x.typ === "aktivitaet")); }
+  assert.deepEqual(l2.map((x) => x.id), [e3.id], "die Marke ist mit der Uhr zurückgesprungen: der Eintrag wird gemeldet");
+  h2.beende();
+});
+
+test("Wiederherstellen: eine zurückgenommene Ablage kommt aus dem Papierkorb zurück (Platz frei, Kopie unverändert); belegt → nichts wird überschrieben; danach ist Rückgängig wieder möglich", async () => {
+  const { rufe, ablage, d, support, kennung } = aufbau();
+  const rel = "00_inbox/2026-10-31_zurueck.md", inhalt = "# Zurück\n";
+  const e = ablage(rel, inhalt);
+  assert.equal((await rufe("POST", "/api/aktivitaet/wiederherstellen", { id: e.id })).j.art, "nicht-zurueck", "nur Zurückgenommenes");
+  await rufe("POST", "/api/aktivitaet/rueckgaengig", { id: e.id });
+  let l = (await rufe("GET", "/api/aktivitaet")).j.ereignisse.find((x) => x.id === e.id);
+  assert.equal(l.wiederherstellenMoeglich, true); assert.equal(l.rueckgaengigMoeglich, false);
+  // belegt: der Nutzer hat inzwischen etwas Eigenes an diese Stelle gelegt
+  schreibe(d, rel, "# Meins\n");
+  let r = await rufe("POST", "/api/aktivitaet/wiederherstellen", { id: e.id });
+  assert.equal(r.status, 409); assert.equal(r.j.art, "belegt"); assert.equal(readFileSync(join(d, rel), "utf8"), "# Meins\n");
+  rmSync(join(d, rel));
+  r = await rufe("POST", "/api/aktivitaet/wiederherstellen", { id: e.id });
+  assert.equal(r.status, 200, JSON.stringify(r.j)); assert.deepEqual([r.j.art, r.j.pfad], ["wiederhergestellt", rel]);
+  assert.equal(readFileSync(join(d, rel), "utf8"), inhalt);
+  l = (await rufe("GET", "/api/aktivitaet")).j.ereignisse;
+  assert.equal(l.find((x) => x.id === e.id).zurueckgenommen, null); assert.match(l[0].text, /^Wiederhergestellt/);
+  // ein zweites Rückgängig klappt wieder (die Datei gilt ab der Wiederherstellung als „neu“)
+  assert.equal((await rufe("POST", "/api/aktivitaet/rueckgaengig", { id: e.id })).status, 200);
+  // Kopie verändert oder weg → kein Wiederherstellen
+  const kopie = join(support, "aktivitaet", "papierkorb", kennung, `${e.id}-2026-10-31_zurueck.md`);
+  writeFileSync(kopie, "manipuliert");
+  assert.equal((await rufe("POST", "/api/aktivitaet/wiederherstellen", { id: e.id })).j.art, "kopie-veraendert");
+  rmSync(kopie);
+  assert.equal((await rufe("POST", "/api/aktivitaet/wiederherstellen", { id: e.id })).j.art, "keine-kopie");
+  assert.equal((await rufe("GET", "/api/aktivitaet")).j.ereignisse.find((x) => x.id === e.id).wiederherstellenMoeglich, false);
+});
+
+test("Wiederherstellen: ein gefälschter Eintrag kann keine Datei an einen anderen Ort legen (nur die Ordner der Ablagen)", async () => {
+  const { rufe, d, support, kennung } = aufbau();
+  mkdirSync(join(support, "aktivitaet", "papierkorb", kennung), { recursive: true });
+  writeFileSync(join(support, "aktivitaet", "papierkorb", kennung, "a_forgxx_abcdef-x.md"), "# X\n");
+  rohZeile(support, d, { id: "a_forgxx_abcdef", art: "ablage-notiz", pfade: ["09_wiki/x.md"], rueckgaengig: { art: "ablage-entfernen", pfad: "09_wiki/x.md", hash: sha("# X\n") } });
+  const merke = A.aendereZustand(support, kennung, (s) => { s.zurueck["a_forgxx_abcdef"] = new Date().toISOString(); });
+  assert.ok(merke.zurueck["a_forgxx_abcdef"]);
+  const r = await rufe("POST", "/api/aktivitaet/wiederherstellen", { id: "a_forgxx_abcdef" });
+  assert.equal(r.status, 409); assert.equal(r.j.art, "unzulaessig");
+  assert.equal(existsSync(join(d, "09_wiki/x.md")), false);
+});
+
+test("k2: eine offene Zusammenführung wird über Git selbst erkannt (auch in einem verknüpften Arbeitsbaum, wo MERGE_HEAD nicht unter .git/ liegt)", async () => {
+  const hauptRepo = repo("akt-wt-haupt-");
+  const wt = join(tmp("akt-wt-"), "arbeitsbaum");
+  g(hauptRepo, "worktree", "add", "-q", "-b", "zweig", wt);
+  schreibe(wt, "brain.config.json", "{}\n"); schreibe(wt, "00_inbox/.gitkeep", "");
+  const support = tmp("akt-wt-support-");
+  writeFileSync(join(support, "vaults.json"), JSON.stringify({ vaults: [{ name: "WT", pfad: wt }], aktiv: wt }));
+  const h = erzeugeHandler({ vault: wt, vaultOptionen: { support }, ereignisse: { aktivitaetPollMs: 0, modus: "poll" } });
+  const rufe = aufruf(h);
+  const inhalt = "# N\n"; schreibe(wt, "00_inbox/n.md", inhalt);
+  const e = A.schreibeEreignis(support, wt, { art: "ablage-notiz", text: "x", pfade: ["00_inbox/n.md"], rueckgaengig: { art: "ablage-entfernen", pfad: "00_inbox/n.md", hash: sha(inhalt) } });
+  const gitDir = g(wt, "rev-parse", "--git-dir").trim();
+  assert.ok(gitDir.includes("worktrees"), "verknüpfter Arbeitsbaum: der Git-Ordner liegt anderswo");
+  writeFileSync(join(gitDir.startsWith("/") ? gitDir : join(wt, gitDir), "MERGE_HEAD"), "0".repeat(40) + "\n");
+  const r = await rufe("POST", "/api/aktivitaet/rueckgaengig", { id: e.id });
+  assert.equal(r.status, 409); assert.equal(r.j.art, "beschaeftigt");
+  assert.ok(existsSync(join(wt, "00_inbox/n.md")));
+  h.ereignisse.beende();
+});

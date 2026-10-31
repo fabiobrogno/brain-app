@@ -270,12 +270,29 @@ for (const [schema, dunkel] of [["hell", false], ["dunkel", true]]) {
     expect(farben.wer).not.toBe("rgba(0, 0, 0, 0)");
     await page.locator('[data-kx-host="aktivitaet"]').evaluate((e) => e.scrollIntoView({ block: "center", behavior: "instant" }));
     await foto(page, `protokoll-${schema}`);
-    // Rückgängig in der Zeile: Datei weg, Zeile zeigt „zurückgenommen“, der Knopf ist verschwunden
+    // Rückgängig in der Zeile: ERST die Bestätigung mit dem genauen Pfad und dem Papierkorb — „Abbrechen“ lässt alles, wie es ist
     await erste.getByRole("button", { name: /Rückgängig/ }).click();
+    const dlg = page.locator('[data-dialog="aktivitaet-zurueck"]');
+    await expect(dlg).toBeVisible();
+    await expect(dlg).toContainText("Kortex entfernt diese Datei aus deinem Vault");
+    await expect(dlg.locator("code")).toHaveText(a.pfad);
+    await expect(dlg).toContainText("Kortex legt vorher eine Kopie in den Papierkorb (30 Tage)");
+    await foto(page, `protokoll-bestaetigen-${schema}`);
+    await dlg.getByRole("button", { name: "Abbrechen" }).click();
+    await expect(dlg).toHaveCount(0);
+    expect(existsSync(join(vault, a.pfad))).toBe(true);
+    await erste.getByRole("button", { name: /Rückgängig/ }).click();
+    await dlg.getByRole("button", { name: "Entfernen" }).click();
     await expect(hinweise(page).filter({ hasText: /^Zurückgenommen$/ })).toBeVisible({ timeout: 8000 });
     expect(existsSync(join(vault, a.pfad))).toBe(false);
     await expect(zeilen(page).first().locator(".kx-d")).toContainText("zurückgenommen");
     await expect(zeilen(page).first().getByRole("button", { name: /Rückgängig/ })).toHaveCount(0);
+    // Wiederherstellen: die Datei kommt aus dem Papierkorb von Kortex zurück
+    await zeilen(page).first().getByRole("button", { name: /Wiederherstellen/ }).click();
+    await expect(hinweise(page).filter({ hasText: /^Wiederhergestellt\.$/ })).toBeVisible({ timeout: 8000 });
+    expect(existsSync(join(vault, a.pfad))).toBe(true);
+    await expect(zeilen(page).first().getByRole("button", { name: /Wiederherstellen/ })).toHaveCount(0);
+    await expect(zeilen(page).first().getByRole("button", { name: /Rückgängig/ })).toBeVisible();
   });
 }
 

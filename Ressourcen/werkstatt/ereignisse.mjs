@@ -107,16 +107,19 @@ export function erzeugeEreignisse(o = {}) {
   // angesehen; hat sich etwas geändert, werden die neuen Einträge (Ids, die noch nicht gemeldet wurden) als Ereignis „aktivitaet“ gemeldet.
   // Hochwassermarke statt Liste bekannter Ids: aktMarke = Zeit des neuesten gemeldeten Eintrags; gemeldet wird nur, was NEUER ist (Zeit ≥ Marke − Toleranz, die Zeit steht VOR dem Anhängen, zwei Prozesse
   // können sich um Millisekunden überholen) und dessen Id nicht in aktRand steht (Ids der letzten Sekunden). Alte Einträge werden so nie erneut gemeldet — auch nicht nach vielen Einträgen oder einer Rotation.
-  const AKT_TOLERANZ_MS = 3000;
+  // Die Marke steht nie in der Zukunft (min mit der Uhr: ein Eintrag mit falscher Zeit schaltet den Strom nicht ab) und folgt einer zurückgestellten Uhr (springt die Uhr um mehr als die
+  // Toleranz zurück, wird die Marke auf jetzt gesetzt). Einträge mit Zeit weit in der Zukunft (der Schreiber kappt sie auf +60 s; ältere oder gefälschte stehen vielleicht noch im Protokoll) gelten als alt.
+  const AKT_TOLERANZ_MS = 3000, AKT_ZUKUNFT_MS = 60_000;
+  const aktJetzt = typeof o.aktivitaetJetzt === "function" ? o.aktivitaetJetzt : () => Date.now(); // nur Tests: eine Uhr, die springt
   let aktUhr = null, aktSchluessel = "", aktMarke = 0, aktRand = new Map();
   const aktDateien = () => { const d = o.support && wurzel ? ereignisDatei(o.support, kennungVault(wurzel)) : null; return d ? [`${d}.alt`, d] : []; };
   const aktAnsehen = () => aktDateien().map((d) => { try { const st = statSync(d); return `${st.size}:${st.mtimeMs}`; } catch { return "-"; } }).join("|");
   function aktStart() {
     if (!o.support || !wurzel) return;
     aktSchluessel = aktAnsehen();
-    let neuester = 0;
-    try { for (const e of leseEreignisse(o.support, kennungVault(wurzel))) neuester = Math.max(neuester, Date.parse(e.zeit)); } catch { /* ohne Protokoll */ }
-    aktMarke = Math.max(neuester, Date.now()); aktRand = new Map();   // was beim Start schon im Protokoll stand, ist alt
+    aktMarke = aktJetzt(); aktRand = new Map();
+    // was beim Start schon im Protokoll stand, ist alt: ab der Marke (und alles in der Zukunft) wird die Id gemerkt, früher liegt ohnehin vor der Marke
+    try { for (const e of leseEreignisse(o.support, kennungVault(wurzel)).slice(-1500)) aktRand.set(e.id, Date.parse(e.zeit)); } catch { /* ohne Protokoll */ }
     if (aktPollMs > 0 && !aktUhr) { aktUhr = setInterval(pruefeAktivitaet, aktPollMs); aktUhr.unref?.(); }
   }
   function pruefeAktivitaet() {
@@ -124,11 +127,18 @@ export function erzeugeEreignisse(o = {}) {
     const jetzt = aktAnsehen();
     if (jetzt === aktSchluessel) return;
     aktSchluessel = jetzt;
+    const uhr = aktJetzt();
+    aktMarke = Math.min(aktMarke, uhr); // nie in der Zukunft; eine zurückgestellte Uhr zieht die Marke mit
     let neu = [];
     try { neu = leseEreignisse(o.support, kennungVault(wurzel), { seit: new Date(aktMarke - AKT_TOLERANZ_MS - 1).toISOString() }).filter((e) => !aktRand.has(e.id)); } catch { return; }
     if (!neu.length) return;
-    for (const e of neu) { aktMarke = Math.max(aktMarke, Date.parse(e.zeit)); aktRand.set(e.id, Date.parse(e.zeit)); }
+    const zukunft = neu.filter((e) => Date.parse(e.zeit) > uhr + AKT_ZUKUNFT_MS);
+    for (const e of zukunft) aktRand.set(e.id, Date.parse(e.zeit)); // gilt als alt: nie gemeldet, nie die Marke verschoben
+    neu = neu.filter((e) => !zukunft.includes(e));
+    for (const e of neu) { aktMarke = Math.max(aktMarke, Math.min(Date.parse(e.zeit), uhr)); aktRand.set(e.id, Date.parse(e.zeit)); }
     for (const [id, t] of aktRand) if (t < aktMarke - 2 * AKT_TOLERANZ_MS) aktRand.delete(id);
+    if (aktRand.size > 2000) aktRand = new Map([...aktRand].slice(-1000));
+    if (!neu.length) return;
     for (const e of neu.slice(-20)) {
       melde({ typ: "aktivitaet", id: e.id, art: e.art, zeit: e.zeit, ...(e.grund ? { grund: e.grund } : {}), konto: e.konto ?? null, programm: e.programm ?? null, ...(e.quelle ? { quelle: e.quelle } : {}),
         ...(e.wer ? { wer: e.wer } : {}), text: e.text, ...(e.pfade ? { pfade: e.pfade } : {}), rueckgaengig: !!e.rueckgaengig, vaultName: e.vaultName || "" });

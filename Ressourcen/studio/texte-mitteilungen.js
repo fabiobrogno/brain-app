@@ -29,4 +29,22 @@ export const TM = {
   keinVault: "Es ist gerade kein Vault geöffnet. Öffne den Vault, dann geht es hier weiter.",
   keineVerbindung: "Kortex antwortet gerade nicht. Es wurde nichts verändert.",
   allgemein: "Das Zurücknehmen hat nicht geklappt. Es wurde nichts verändert.",
+  // Rückgängig aus der Liste: erst Bestätigung mit dem genauen Pfad (der Hinweis unten rechts bleibt ein Klick: er gilt nur für Frisches)
+  bestaetigen: {
+    titel: "Ablage rückgängig machen?",
+    satz: "Kortex entfernt diese Datei aus deinem Vault:",
+    kopie: "Kortex legt vorher eine Kopie in den Papierkorb (30 Tage). Du kannst sie in dieser Liste wiederherstellen.",
+    ja: "Entfernen",
+    nein: "Abbrechen",
+  },
+  wiederherstellen: "Wiederherstellen",
+  wiederherstellenLang: (satz) => `Wiederherstellen: ${satz}`,
+  wiederhergestellt: "Wiederhergestellt.",
+  wiederherstellenFehler: {
+    belegt: "An dieser Stelle liegt schon eine Datei. Kortex überschreibt nichts — die Kopie bleibt im Papierkorb.",
+    "keine-kopie": "Die Kopie im Papierkorb gibt es nicht mehr (sie wird nach 30 Tagen gelöscht).",
+    "kopie-veraendert": "Die Kopie im Papierkorb ist nicht mehr dieselbe. Kortex stellt sie nicht wieder her.",
+    beschaeftigt: "Gerade läuft ein Abgleich oder eine Zusammenführung. Versuche es gleich noch einmal.",
+    allgemein: "Das Wiederherstellen hat nicht geklappt. Es wurde nichts verändert.",
+  },
 };

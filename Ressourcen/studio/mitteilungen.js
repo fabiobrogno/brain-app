@@ -93,6 +93,17 @@ export function rueckgaengigMeldung(e) {
   return { art: art || "fehler", meldung: werkstatt || TM.allgemein, neutral: false };
 }
 
+// Stellt EINE zurückgenommene Ablage aus dem Papierkorb von Kortex wieder her. → { ok: true, pfad } oder { ok: false, meldung }. Wirft nie.
+export async function fuehreWiederherstellenAus(api, id, vault) {
+  try { const r = await api.aktivitaetWiederherstellen(id, vault); return { ok: true, ...(r?.pfad ? { pfad: r.pfad } : {}) }; }
+  catch (e) {
+    const art = e?.daten?.art || null, F = TM.wiederherstellenFehler;
+    if (e?.status === 0) return { ok: false, meldung: TM.keineVerbindung };
+    if (art === "nicht-vertraut") return { ok: false, meldung: TM.nichtVertraut };
+    return { ok: false, meldung: F[art] || (typeof e?.daten?.fehler === "string" && e.daten.fehler) || F.allgemein };
+  }
+}
+
 // Nimmt EINE Ablage zurück. → { ok: true, art: "entfernt" | "schon-weg" } oder { ok: false, art, meldung, neutral, rueckfrage? }. Wirft nie.
 export async function fuehreRueckgaengigAus(api, id, vault) {
   try {
