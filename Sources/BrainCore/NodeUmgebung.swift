@@ -38,7 +38,7 @@ public enum NodeUmgebung {
         "BRAIN_GITHUB_API", "BRAIN_GITHUB_BASIS", "BRAIN_GITHUB_HELPER", "BRAIN_APP_VERSION",
         // Verhalten und Zeiten für Tests umschalten
         "BRAIN_EINMAL", "BRAIN_EINMAL_FENSTER_MS", "BRAIN_KONTEN_START", "BRAIN_SESSION_NUR_STATUS", "BRAIN_NODE_KEINE_ORTE", "BRAIN_DIENST_AUS",
-        "BRAIN_DIENST_IDLE_MS", "BRAIN_DIENST_KARENZ_MS", "BRAIN_DIENST_LEERLAUF_MS", "BRAIN_DIENST_RUHE_MS",
+        "BRAIN_GERAET_NAME", "BRAIN_KONFLIKT_ABBRUCH_NACH", "BRAIN_DIENST_IDLE_MS", "BRAIN_DIENST_KARENZ_MS", "BRAIN_DIENST_LEERLAUF_MS", "BRAIN_DIENST_RUHE_MS",
     ]
     /// Marke der Vorschau (`VorschauModus.kindVorgaben`): Wer sie als Vorgabe setzt, bekommt keine Standardordner im PATH.
     /// Aus der geerbten Umgebung fliegt sie raus (`gesperrt`) — sie kommt nur von der App selbst.

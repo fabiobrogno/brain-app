@@ -80,6 +80,8 @@ const ICONS = {
   marke: p("M7.29 3.71H10.29a1.43 1.43 0 010 2.86H5.71a1.43 1.43 0 000 2.86h4.58a1.43 1.43 0 010 2.86H7.29"), // Windung der App (Entwurf 3 „Windung“, vereinfacht): eine durchgehende Linie in vier Bahnen
   punkt: c(8, 8, 3, voll),
   ansicht: p("M2 8s2.2-4.5 6-4.5S14 8 14 8s-2.2 4.5-6 4.5S2 8 2 8z") + c(8, 8, 1.8),
+  laptop: p("M3.5 4.5a1 1 0 011-1h7a1 1 0 011 1v5.5h-9zM2 12h12") + p("M2 12l.5.8a1 1 0 00.9.5h9.2a1 1 0 00.9-.5L14 12"),
+  telefon: `<rect x="4.5" y="1.8" width="7" height="12.4" rx="1.8"/>` + p("M7 12h2"),
   papierkorb: p("M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8a1 1 0 001 .9h3.8a1 1 0 001-.9l.6-8"),
   aufgaben: p("M2.5 4.4l1.2 1.2 2.1-2.4M2.5 10l1.2 1.2 2.1-2.4M8.5 4.6h5M8.5 10.2h5"),
   punkte: punkt(3.5, 8, 1.1) + punkt(8, 8, 1.1) + punkt(12.5, 8, 1.1),

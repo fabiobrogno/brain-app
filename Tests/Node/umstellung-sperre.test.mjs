@@ -33,7 +33,7 @@ test("Werkstatt: Commit, Abgleich, Wiederherstellen und Konflikt-Aktionen warten
   const f = join(d, SPERRE_DATEI);
   writeFileSync(f, JSON.stringify({ pid: process.pid, zeit: new Date().toISOString() }));
   for (const [name, fn] of [["gitCommit", () => v.gitCommit({ nachricht: "x", dateien: ["a.md"] })], ["gitSync", () => v.gitSync({})], ["gitWiederherstellen", () => v.gitWiederherstellen({ pfad: "a.md", sha: "abc" })],
-    ["gitKonfliktAbbrechen", () => v.gitKonfliktAbbrechen()], ["gitKonfliktAbschliessen", () => v.gitKonfliktAbschliessen({})]]) {
+    ["gitKonfliktAbbrechen", () => v.gitKonfliktAbbrechen()], ["gitKonfliktAbschliessen", () => v.gitKonfliktLoesen({})]]) {
     const e = await wirft(fn());
     assert.equal(e.status, 409, name);
     assert.match(e.message, /räumt gerade/, name);

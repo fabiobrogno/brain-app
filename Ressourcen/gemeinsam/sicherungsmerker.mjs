@@ -46,9 +46,22 @@ export function leseAbgleichStand(wurzel, support) {
   const a = leseMerker(wurzel, support).abgleich;
   return a && typeof a === "object" && ["konflikt", "anmeldung", "neues"].includes(a.stand) ? a.stand : null;
 }
+// Dazu die Notizen im Konflikt (kern/backup.mjs vermerkt sie): { stand, dateien: [Pfad], zeit } oder null.
+export function leseAbgleichDetail(wurzel, support) {
+  const m = leseMerker(wurzel, support);
+  const a = m.abgleich;
+  const basis = m.konfliktBasis && typeof m.konfliktBasis === "object" ? m.konfliktBasis : null;
+  // haelt: ein gemerkter Stand wartet auf neue Entscheidungen (nach „Rückgängig“ oder einem Abbruch): bis dahin wird nichts gesendet — auch wenn der Vermerk der Sicherung fehlt
+  const abgleichOk = a && typeof a === "object" && ["konflikt", "anmeldung", "neues"].includes(a.stand);
+  if (!abgleichOk && !basis) return null;
+  const quelle = abgleichOk && Array.isArray(a.dateien) ? a.dateien : basis && Array.isArray(basis.dateien) ? basis.dateien : [];
+  const dateien = quelle.filter((p) => typeof p === "string").slice(0, 200);
+  return { stand: abgleichOk ? a.stand : "konflikt", dateien, zeit: abgleichOk && typeof a.zeit === "string" ? a.zeit : null, haelt: !!basis, haeltSeit: basis && typeof basis.zeit === "string" ? basis.zeit : null };
+}
 // Nach einem erfolgreichen Abgleich im Studio gilt der Vermerk nicht mehr. Wirft nie.
 export function loescheAbgleichStand(wurzel, { support } = {}) {
   try {
+    if (leseMerker(wurzel, support).konfliktBasis) return false; // ein gemerkter Stand wird nie nebenbei geräumt
     const m = leseMerker(wurzel, support);
     if (!("abgleich" in m)) return false;
     delete m.abgleich;

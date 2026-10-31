@@ -211,16 +211,18 @@ test("pflege: _pflege als Symlink (etwa ins Wiki) → 400, Vorschlag bleibt lieg
   assert.equal(listeVorschlaege(v).length, 1);
 });
 
-test("Inbox im Wiki (ordner.inbox im Wiki) → übernehmen 400, Vorschlag bleibt liegen (W1-Review #14)", () => {
+test("ordner.inbox im Wiki → ordner() fällt auf 00_inbox zurück: übernehmen landet dort, nichts im Wiki (W1-Review #14)", () => {
   const v = neuerVault();
-  writeFileSync(join(v, "brain.config.json"), JSON.stringify({ ordner: { inbox: "09_wiki" } })); // seit P4 nur ein einzelner Ordnername: „die Inbox ist das Wiki selbst“
+  writeFileSync(join(v, "brain.config.json"), JSON.stringify({ ordner: { inbox: "09_wiki" } })); // „die Inbox ist das Wiki selbst“: ordner() weist das ab
   mkdirSync(join(v, "09_wiki", "eingang"), { recursive: true });
+  const wikiVorher = readdirSync(join(v, "09_wiki")).sort();
   const fakt = schreibeVorschlag(v, vorschlag({ titel: "fakt" }));
   const lektion = schreibeVorschlag(v, vorschlag({ titel: "lektion", art: "lektion" }));
-  assert.equal(code(() => entscheide(v, fakt, "uebernehmen")), 400);
-  assert.equal(code(() => entscheide(v, lektion, "uebernehmen")), 400);
-  assert.equal(existsSync(join(v, "09_wiki", "_lektionen")), false, "kein Lektionsordner im Wiki angelegt");
-  assert.equal(listeVorschlaege(v).length, 2);
+  assert.equal(readdirSync(join(v, "00_inbox", "_vorschlaege")).length, 2, "Vorschläge liegen in der Standard-Inbox");
+  entscheide(v, fakt, "uebernehmen");
+  entscheide(v, lektion, "uebernehmen");
+  assert.deepEqual(readdirSync(join(v, "09_wiki")).sort(), wikiVorher, "nichts im Wiki angelegt");
+  assert.equal(existsSync(join(v, "00_inbox", "_lektionen")), true);
 });
 
 test("übernommener Pflege-Vorschlag: Lint zählt <inbox>/_pflege nicht als Inbox, eine lose Inbox-Datei schon (Final-Review #1)", async () => {

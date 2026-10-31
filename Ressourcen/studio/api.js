@@ -105,9 +105,14 @@ export const api = {
   gitLog: ({ max, vor } = {}) => anfrage("GET", "/api/git/log" + q({ max, vor })),
   gitRemote: (url) => anfrage("POST", "/api/git/remote", { url }),
   // ---- v3: Abgleich mit Konflikten, Nachsehen, Version zurückholen
-  gitKonflikt: (pfad) => anfrage("GET", "/api/git/konflikt" + q({ pfad })),
-  gitKonfliktLoesen: (auswahl) => anfrage("POST", "/api/git/konflikt/loesen", { auswahl }),
+  // Konflikt-Ansicht (Kern): beide Fassungen je Datei · Entscheidungen festhalten und abgleichen · „Später“ · „Rückgängig“.
+  // Nach „Rückgängig“ zeigt die Ansicht den gemerkten Stand (er liegt im Support-Ordner, nicht in der Anfrage).
+  gitKonflikt: () => anfrage("GET", "/api/git/konflikt"),
+  // gesehen = { meine, andere }: der Stand, den die Ansicht gezeigt hat (die Werkstatt lehnt ab, wenn er sich geändert hat)
+  gitKonfliktLoesen: (auswahl, gesehen) => anfrage("POST", "/api/git/konflikt/loesen", { auswahl, gesehen }),
   gitKonfliktAbbrechen: () => anfrage("POST", "/api/git/konflikt/abbrechen", {}),
+  gitKonfliktVerwerfen: () => anfrage("POST", "/api/git/konflikt/verwerfen", {}),
+  gitKonfliktRueckgaengig: () => anfrage("POST", "/api/git/konflikt/rueckgaengig", {}),
   gitNachsehen: () => anfrage("POST", "/api/git/nachsehen", {}),
   zurueckholenVorschau: (pfad, sha) => anfrage("GET", "/api/git/wiederherstellen/vorschau" + q({ pfad, sha })),
   zurueckholen: (pfad, sha) => anfrage("POST", "/api/git/wiederherstellen", { pfad, sha }),

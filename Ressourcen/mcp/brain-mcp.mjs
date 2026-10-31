@@ -26,7 +26,7 @@ export const WERKZEUGE = [
     inputSchema: { type: "object", properties: { frage: { type: "string", description: "Suchbegriffe oder Frage" }, anzahl: { type: "integer", minimum: 1, maximum: 20, description: "Höchstzahl der Treffer (Standard 5)" } }, required: ["frage"], additionalProperties: false } },
   { name: "brain_lesen", description: "Liest eine Seite des Vaults samt Prüf-Signalen und Stand. Lange Seiten kommen als Gliederung und Anfang; den Rest holt man mit abschnitt oder von/bis.",
     inputSchema: { type: "object", properties: { pfad: { type: "string", description: "Pfad relativ zum Vault, z. B. 09_wiki/firma/amazon/thema_x.md" }, abschnitt: { type: "string", description: "Nur dieser Abschnitt (Nummer oder Überschrift aus der Gliederung)" }, von: { type: "integer", minimum: 1, description: "Erste Zeile" }, bis: { type: "integer", minimum: 1, description: "Letzte Zeile" } }, required: ["pfad"], additionalProperties: false } },
-  { name: "brain_merken", description: "Legt eine neue Notiz in 00_inbox/ ab. Schreibt nie ins Wiki; erst /ingest macht daraus Wissen.",
+  { name: "brain_merken", description: "Legt eine neue Notiz im Posteingang des Vaults ab (Standard 00_inbox/). Schreibt nie ins Wiki; erst /ingest macht daraus Wissen.",
     inputSchema: { type: "object", properties: { text: { type: "string" }, titel: { type: "string" } }, required: ["text"], additionalProperties: false } },
   { name: "brain_gesundheit", description: "Kurzfassung der Vault-Gesundheit (Ampel und Befunde) aus dem Kern von Kortex, falls der Vault ein Kortex-Vault ist (brain.config.json).",
     inputSchema: { type: "object", properties: {}, additionalProperties: false } },
