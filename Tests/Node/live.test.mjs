@@ -179,14 +179,20 @@ test("Echo über den Handler: PUT /api/datei, POST /api/aufgaben und PATCH melde
 test("Long-Poll: Grundstand sofort, Neues sofort, sonst Warten bis zur Frist (leer, gleiche Nummer); falsche Epoche und zu alte Nummer → verpasst", async () => {
   const d = vaultOrdner(); const h = hub(d, { ring: 5 });
   const s = await grundstand(h);
-  const t0 = Date.now();
-  const leer = await h.warte({ seit: 0, epoche: s.epoche, warteMs: 250 });
-  assert.ok(Date.now() - t0 >= 200, "wartet bis zur Frist");
+  // Keine Wanduhr-Schwellen (200 ms): unter Last werden Prozesse für Hunderte Millisekunden nicht eingeplant, und eine Messung „dauerte < 200 ms“ bzw. „≥ 200 ms“ kippt.
+  // Stattdessen die Reihenfolge, die der Taktgeber garantiert: ein eigener, kürzerer Timer, im selben Atemzug gestartet, feuert immer vor der Frist des Abrufs;
+  // und „sofort“ heißt: schon beantwortet, bevor die nächste Runde der Ereignisschleife (setImmediate) überhaupt beginnt — unabhängig von der Last.
+  let fertig = false;
+  const leerP = h.warte({ seit: 0, epoche: s.epoche, warteMs: 250 }).then((x) => { fertig = true; return x; });
+  await pause(100);
+  assert.equal(fertig, false, "wartet bis zur Frist (nicht schon nach dem kürzeren Timer beantwortet)");
+  const leer = await leerP;
   assert.deepEqual([leer.aktuell, leer.ereignisse.length, leer.verpasst], [0, 0, false]);
   h.melde({ typ: "notiz", pfad: "a.md", art: "geaendert" });
-  const sofort = Date.now();
-  const r = await h.warte({ seit: 0, epoche: s.epoche, warteMs: 5000 });
-  assert.ok(Date.now() - sofort < 200, "Neues kommt ohne Warten");
+  const SPAET = Symbol("spaet");
+  const rennen = await Promise.race([h.warte({ seit: 0, epoche: s.epoche, warteMs: 5000 }), new Promise((ok) => setImmediate(() => ok(SPAET)))]);
+  assert.notEqual(rennen, SPAET, "Neues kommt ohne Warten");
+  const r = rennen;
   assert.deepEqual(r.ereignisse.map((x) => [x.n, x.pfad]), [[1, "a.md"]]);
   // wartender Abruf wird vom nächsten Ereignis geweckt
   const wartend = h.warte({ seit: 1, epoche: s.epoche, warteMs: 5000 });

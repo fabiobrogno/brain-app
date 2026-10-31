@@ -342,10 +342,15 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
 
   // Welche erkannten Konten stehen (noch) nicht in der Liste? Dieselbe Zuordnung wie in rechne — aber rein lesend: nichts wird angelegt.
   // → [{ programm, programmName, name, ordner, standard }]; ohne Liste (daten = null) sind es alle erkannten.
-  function neuErkannt(daten) {
+  // `startet`: womit das Konto nach dem Eintragen beginnt — "gesperrt" in jedem Vault, oder "teils", wenn es in mindestens einem Vault mehr als „gesperrt“ bekäme (die einzige verbundene
+  // Konto-Ausnahme in einem von Kortex angelegten oder geklonten Vault, oder die Übernahme bestehender Verbindungen beim ersten Start). Das rät nicht der Text, sondern es kommt aus derselben Rechnung
+  // wie der Abgleich (rechne, auf einer Kopie) und dieselbe Regel für die Stufe (stufeFuer): so kann der Hinweis der Oberfläche nicht von dem abweichen, was der Klick tut.
+  // zustand: Zustand der Liste, wenn es keine lesbare gibt ("fehlt" = erster Start/Übernahme; "defekt"/"geloescht" = streng, alles gesperrt).
+  function neuErkannt(daten, zustand = "fehlt") {
     const neu = [];
     let erkannt = [];
     try { erkannt = erkenne(); } catch { return neu; }
+    const roh = [];
     for (const e of erkannt) {
       if (daten) {
         const f = falte(e.ordner);
@@ -353,7 +358,22 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
         if (gleich.find((k) => k.ordnerKennung === e.ordnerKennung) || gleich.find((k) => k.ordnerKennung === "")) continue;
         if (gleich.length && !e.ordnerKennung) continue;
       }
-      neu.push({ programm: e.programm, programmName: programmName(e.programm), name: e.name, ordner: kurz(e.ordner), standard: e.standard === true });
+      roh.push(e);
+    }
+    if (!roh.length) return neu;
+    let sim = null;
+    try {
+      const kopie = daten ? JSON.parse(JSON.stringify(daten)) : null;
+      sim = rechne(kopie, { erkannt, vaults: vaultListe(), migration: !daten && zustand === "fehlt", streng: !daten && zustand !== "fehlt" });
+    } catch { sim = null; }
+    for (const e of roh) {
+      let startet = "gesperrt";
+      if (sim) {
+        const f = falte(e.ordner);
+        const treffer = Object.entries(sim.konten).find(([, k]) => k.programm === e.programm && falte(k.ordner) === f && k.ordnerKennung === e.ordnerKennung);
+        if (treffer && Object.keys(sim.vaults).some((v) => stufeFuer(sim, v, treffer[0]) !== "gesperrt")) startet = "teils";
+      }
+      neu.push({ programm: e.programm, programmName: programmName(e.programm), name: e.name, ordner: kurz(e.ordner), standard: e.standard === true, startet });
     }
     return neu;
   }
@@ -366,7 +386,7 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
     const s = lesend ? (opt.s || {}) : synchronisiere();
     const r = lesend ? liesKonten(support) : null;
     const daten = lade();
-    if (!daten) return { zustand: lesend && r ? r.zustand : "defekt", stufen: STUFEN, konten: [], vaults: [], zugriff: {}, ...(lesend ? { neu: neuErkannt(null) } : {}) };
+    if (!daten) return { zustand: lesend && r ? r.zustand : "defekt", stufen: STUFEN, konten: [], vaults: [], zugriff: {}, ...(lesend ? { neu: neuErkannt(null, r ? r.zustand : "defekt") } : {}) };
     const liste = vaultListe();
     const anmeldungen = anmeldungLesen();
     const konten = Object.entries(daten.konten).map(([id, k]) => {

@@ -506,8 +506,13 @@ test("Enge Fenster (640/800/1000 px): nichts wird abgeschnitten, die Seitenleist
 test("Statusleiste bei kleinem Fenster: auch mit langem Vault-Namen und vielen Änderungen bleibt das Zahnrad (Einstellungen) im Fenster", async ({ page }) => {
   for (const breite of [1100, 1000, 900]) {
     await start(page, { breite, hoehe: 700 });
+    // Der breiteste Zustand der Leiste, jedes Mal gleich: das Gesundheits-Zeichen kommt sonst erst nach einem eigenen Abruf dazu (und ein späteres Neuzeichnen setzt den eingesetzten Text zurück) —
+    // gemessen würde mal die schmale, mal die breite Leiste. Darum Gesundheit festlegen, abwarten, erst dann den langen Text einsetzen und messen.
+    await page.route("**/api/gesundheit", (route) => route.fulfill({ json: { ampel: "gelb", warnungen: [1, 2], pruefungen: [] } }));
     await page.goto(server.url + "?pfad=" + encodeURIComponent("10_notizen/Reise nach Lissabon.md"));
     await page.waitForSelector(".cm-content .cm-line");
+    await expect(page.locator('[data-st="gesundheit"]')).toBeVisible();
+    await expect(page.locator('[data-st="claude"]')).toBeVisible();
     await page.evaluate(() => {
       const set = (sel, t) => { const e = document.querySelector(sel); const s = e && [...e.querySelectorAll("span")].pop(); if (s) s.textContent = t; };
       set('[data-st="vault"]', "Firmenwissen-Projekt-Alpha");

@@ -28,9 +28,10 @@ export const TK = {
   // Beim Öffnen wird nichts angelegt: neu gefundene Konten stehen hier, bis du sie einträgst
   neu: {
     titel: "Neu gefundene Konten – noch nicht eingetragen",
-    text: (namen) => `Kortex hat ${namen} gefunden. Bis du sie einträgst, hat jedes davon keinen Zugriff auf deine Vaults; beim Eintragen starten sie gesperrt.`,
+    // teils: nach dem Eintragen bekäme mindestens ein Konto in einem Vault mehr als „gesperrt“ (Feld `startet` der Werkstatt, gerechnet mit derselben Regel wie der Abgleich)
+    text: (namen, teils = false) => `Kortex hat ${namen} gefunden. Bis du sie einträgst, hat jedes davon keinen Zugriff auf deine Vaults; beim Eintragen starten sie gesperrt${teils ? ", außer einem schon mit Kortex verbundenen Konto: das darf in manchen Vaults hinein („Posteingang“), nämlich dort, wo es das einzige verbundene Konto ist und Kortex den Vault angelegt oder geklont hat" : ""}.`,
     eintragen: "Eintragen",
-    fertig: "Die neuen Konten sind eingetragen (gesperrt).",
+    fertig: "Die neuen Konten sind eingetragen.",
   },
 
   // ---- Konten

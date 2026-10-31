@@ -161,6 +161,25 @@ test("Statusleiste zeigt Zweig und geändert; Sync-Knopf", async ({ page }) => {
   await expect(page.locator('[data-st="sync"]')).toContainText(/Gesichert (vor \d+ Min|gerade eben)/, { timeout: 8000 });
 });
 
+test("Abgleichen mitten im Nachsehen: der Abgleich wartet, bis das Holen fertig ist (kein „besetzt“, das die Leiste als „Konflikt“ zeigt)", async ({ page }) => {
+  writeFileSync(join(vault, "00_inbox/neu.md"), "N\n");
+  let holt = false, ueberschnitten = false, nachsehenStart;
+  const nachsehenGestartet = new Promise((ok) => { nachsehenStart = ok; });
+  await page.route("**/api/git/nachsehen", async (route) => {
+    holt = true; nachsehenStart();
+    await new Promise((r) => setTimeout(r, 1500)); // das Holen dauert (Netz, volle Maschine)
+    const antwort = await route.fetch();
+    holt = false;
+    await route.fulfill({ response: antwort });
+  });
+  await page.route("**/api/git/sync", async (route) => { if (holt) ueberschnitten = true; await route.fallback(); });
+  await oeffne(page, "09_wiki/wissen/Kaffee.md");
+  await nachsehenGestartet;
+  await page.click('[data-st="sync"]');
+  await expect(page.locator('[data-st="sync"]')).toContainText(/Gesichert (vor \d+ Min|gerade eben)/, { timeout: 12000 });
+  expect(ueberschnitten).toBe(false);
+});
+
 test("Schreibschutz-Banner bei generierter Datei; Prüf-Punkt an der Karte", async ({ page }) => {
   await oeffne(page, "09_wiki/INDEX.md");
   await expect(page.locator('[data-banner="schutz"]')).toBeVisible();
@@ -373,6 +392,8 @@ test("Sync-Neuladen überschreibt Getipptes nicht: Konflikt-Hinweis", async ({ p
 test("Schnell merken: Esc behält den Entwurf, Ablegen löscht ihn", async ({ page }) => {
   await oeffne(page, DATEI_A);
   await page.keyboard.press("Meta+Shift+m");
+  // Der Dialog setzt den Fokus erst im nächsten Takt (setTimeout 0). Unter Last käme das nach dem Ausfüllen des Titels und risse den Fokus aus dem Feld zurück: erst abwarten.
+  await expect(page.locator('[data-feld="text"]')).toBeFocused();
   await page.fill('[data-feld="text"]', "Gedanke, der nicht verloren gehen darf");
   await page.fill('[data-feld="titel"]', "Titelchen");
   await page.keyboard.press("Escape");

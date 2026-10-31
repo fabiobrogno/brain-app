@@ -101,7 +101,7 @@ export function erzeugeKi(o) {
     const { claude, warnungen, ...rest } = antwort;
     if (Array.isArray(warnungen) && warnungen.length) S.warnung = warnungen.join(" ");
     const stand = rest.stand && rest.stand.konten ? rest.stand : rest;
-    if (stand.konten) { S.konten = stand; S.kontenRoh = JSON.stringify(stand); }
+    if (stand.konten) { S.konten = stand; S.kontenRoh = JSON.stringify(stand); S.kontenNr = (S.kontenNr || 0) + 1; } // jünger als jedes noch laufende Lesen
     return claude || null;
   }
   // Eine Änderung ausführen; währenddessen sind die Knöpfe gesperrt. fn() → Antwort der Werkstatt.
@@ -125,12 +125,22 @@ export function erzeugeKi(o) {
   async function ladeKonten() {
     S.kontenFehler = null;
     let neu = null;
+    // Reihenfolge: eine Antwort, die ein später begonnenes Lesen oder eine Änderung (tue/uebernimm) überholt hat, ist veraltet und wird verworfen — sonst überschriebe ein langsames GET
+    // die Antwort auf „Eintragen“ und der Hinweis „neu gefunden“ käme zurück
+    const nr = S.kontenNr = (S.kontenNr || 0) + 1;
+    let ausAbgleich = false; // die Antwort des Abgleichs ist die jüngste Wahrheit, auch wenn inzwischen ein weiteres Lesen begann
+    // Ein anderer Vault ist offen: das Bisherige (auch „Reparatur schon versucht“) gehört zum alten
+    const vaultJetzt = offenerVaultPfad();
+    if (S.abgleichVault !== vaultJetzt) { S.abgleichVault = vaultJetzt; S.abgleichVersucht = false; }
     try {
       neu = await api.kiKonten(); // rein lesend
-      // Fehlt die Liste oder ist sie beschädigt (oder wartet die Übernahme des alten Profils), legt der ausdrückliche Abgleich sie an — höchstens einmal je Seite; neue Konten trägt nur der Klick ein
-      if (neu && (neu.zustand !== "ok" || neu.pflegePlist?.offen) && !S.abgleichVersucht) { S.abgleichVersucht = true; neu = await api.kiKontenAbgleich(); }
-    } catch (e) { if (zu()) return; S.kontenFehler = e; }
-    if (zu()) return;
+      const kaputt = !!neu && (neu.zustand !== "ok" || neu.pflegePlist?.offen);
+      // Heil: ein späterer Fehler ist ein NEUER Fehler und darf wieder repariert werden (sonst bliebe eine Liste, die erst nach dem Öffnen der Seite kaputtgeht, für diese Seite kaputt)
+      if (neu && !kaputt) S.abgleichVersucht = false;
+      // Fehlt die Liste oder ist sie beschädigt (oder wartet die Übernahme des alten Profils), legt der ausdrückliche Abgleich sie an — höchstens einmal je Fehler; neue Konten trägt nur der Klick ein
+      else if (kaputt && !S.abgleichVersucht) { S.abgleichVersucht = true; neu = await api.kiKontenAbgleich(); ausAbgleich = true; if (neu && neu.zustand === "ok" && !neu.pflegePlist?.offen) S.abgleichVersucht = false; }
+    } catch (e) { if (zu() || (nr !== S.kontenNr && !ausAbgleich)) return; S.kontenFehler = e; }
+    if (zu() || (nr !== S.kontenNr && !ausAbgleich)) return;
     // Unverändert (z. B. ein Ereignis der Werkstatt ohne neue Werte): nichts neu zeichnen, ein offenes Menü bleibt offen
     const roh = neu ? JSON.stringify(neu) : null;
     if (neu && S.kontenRoh === roh && !S.kontenFehler) return;
@@ -221,7 +231,7 @@ export function erzeugeKi(o) {
       const namen = S.konten.neu.map((k) => (k.name ? `„${k.name}“` : k.programmName)).join(", ");
       teile.push(h("div", { klasse: "kk-karte warn", role: "status", "data-kk": "neu-gefunden" },
         h("div", { klasse: "kk-karte-kopf" }, marke("warn"), h("div", { klasse: "kk-karte-titel", text: TK.neu.titel })),
-        h("p", { text: TK.neu.text(namen) }),
+        h("p", { text: TK.neu.text(namen, S.konten.neu.some((k) => k.startet === "teils")) }),
         h("div", { klasse: "kk-knoepfe" }, baueKnopf({ text: TK.neu.eintragen, groesse: "s", aktion: "konten-eintragen", disabled: S.beschaeftigt, aufKlick: () => tue(() => api.kiKontenAbgleich(), { erfolg: () => TK.neu.fertig }) }))));
     }
     const kacheln = h("div", { klasse: "kx-kacheln", "data-kx": "kacheln" });

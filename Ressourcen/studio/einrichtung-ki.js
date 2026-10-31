@@ -102,7 +102,7 @@ export function erzeugeKi({ vaultPfad, beiAenderung, kopiere, melde }) {
     const eintragen = baueKnopf({ text: TE.ki.neuKontenEintragen, groesse: "s", aktion: "konten-eintragen", aufKlick: async () => {
       try { await mitLaden(eintragen, () => api.kiKontenAbgleich()); await lade(false); } catch (e) { melde(meldungVon(e)); }
     } });
-    neuEl.replaceChildren(h("p", { klasse: "e-hint", text: TE.ki.neuKonten(namen) }), eintragen);
+    neuEl.replaceChildren(h("p", { klasse: "e-hint", text: TE.ki.neuKonten(namen, liste.some((k) => k.startet === "teils")) }), eintragen);
   }
   function sucht() { wurzel.replaceChildren(h("div", { klasse: "e-abschnitt-kopf" }, h("span", { klasse: "e-shimmer", text: TE.ki.sucht }))); }
   sucht();

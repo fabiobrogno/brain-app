@@ -178,7 +178,8 @@ export const TE = {
     leerTitel: "Noch keine KI auf diesem Mac",
     leerText: `${PRODUKT} funktioniert auch ohne. Installierst du später eines dieser Programme, findet ${PRODUKT} es von selbst und fragt dich.`,
     erneut: "Erneut suchen",
-    neuKonten: (namen) => `Neu gefunden und noch nicht eingetragen: ${namen}. Sie starten gesperrt.`,
+    // teils: mindestens ein Konto bekäme nach dem Eintragen in einem Vault mehr als „gesperrt“ (die Werkstatt rechnet es mit derselben Regel wie der Abgleich: Feld `startet`)
+    neuKonten: (namen, teils = false) => `Neu gefunden und noch nicht eingetragen: ${namen}. Sie starten gesperrt${teils ? `, außer einem schon mit ${PRODUKT} verbundenen Konto: das darf in manchen Vaults hinein („Posteingang“), nämlich dort, wo es das einzige verbundene Konto ist und ${PRODUKT} den Vault angelegt oder geklont hat` : ""}.`,
     neuKontenEintragen: "Eintragen",
     suche: "Suche …",
     nichtsNeues: "Keine neuen Programme gefunden",

@@ -17,6 +17,15 @@ const NOTIZ = "10_notizen/Reise nach Lissabon.md";
 // Der Vault, den die Frage zeigt und beim Erlauben mitschickt (die Werkstatt meldet den echten Pfad, auch hinter Verweisen wie /var → /private/var)
 const echt = () => realpathSync(vault);
 const dialogVertrauen = (page) => page.locator('.dialog[data-dialog="vertrauen"]');
+// Öffnet das Menü der Statusleiste (Zahnrad) und wartet auf den Eintrag. Ein Popover schließt bei jedem fremden Scroll-, Resize- oder Blur-Ereignis; solange die Seite noch nachlädt
+// (Liste, Verlauf, Gesundheit), kann das Menü gleich wieder zugehen. Darum: nur klicken, wenn es nicht offen ist, bis der Eintrag steht (Bedingung, nicht blindes Wiederholen).
+async function oeffneEinstellungenMenue(page, eintrag) {
+  const ziel = page.locator(`[data-menue="${eintrag}"]`);
+  await expect(async () => {
+    if ((await page.locator('.menue.bs-pop.offen').count()) === 0) await page.click('[data-st="einstellungen"]');
+    await expect(ziel).toBeVisible({ timeout: 1500 });
+  }).toPass({ timeout: 20000 });
+}
 const aktionen = (page, name) => page.evaluate((n) => window.__aktionen.filter((a) => a.aktion === n), name);
 
 // stub: nativer Kanal „aktion“ der App (zeichnet alle Aktionen auf)
@@ -91,7 +100,7 @@ test("Nur ansehen: einmal je Vault und Sitzung gefragt, danach über die Statusl
   await page.keyboard.press("Escape");
   await expect(dialogVertrauen(page)).toHaveCount(0);
   // auch die Einstellungen führen zur Frage
-  await page.click('[data-st="einstellungen"]');
+  await oeffneEinstellungenMenue(page, "vertrauen");
   await page.click('[data-menue="vertrauen"]');
   await expect(dialogVertrauen(page)).toBeVisible();
 });
@@ -117,7 +126,7 @@ test("POST scheitert: Fehler im Dialog, Dialog bleibt, keine Aktion an die App",
 test("Rückweg: Einstellungen → „Vertrauen entziehen …“ fragt zurück, entzieht, meldet es der App; danach „Nur ansehen“ ohne neue Frage in dieser Sitzung", async ({ page }) => {
   const stand = await start(page, { vertrauen: vertrauenAntwort(VERTRAUT) });
   await expect(page.locator('[data-st="zweig"]')).toBeVisible();
-  await page.click('[data-st="einstellungen"]');
+  await oeffneEinstellungenMenue(page, "vertrauen-entziehen");
   await expect(page.locator('[data-menue="vertrauen"]')).toHaveCount(0);
   await page.screenshot({ path: shot("einstellungen-vertrauen-entziehen") });
   await page.click('[data-menue="vertrauen-entziehen"]');
@@ -131,7 +140,7 @@ test("Rückweg: Einstellungen → „Vertrauen entziehen …“ fragt zurück, e
   await page.click('[data-aktion="vertrauen-behalten"]');
   await expect(d).toHaveCount(0);
   expect(stand.post).toEqual([]);
-  await page.click('[data-st="einstellungen"]');
+  await oeffneEinstellungenMenue(page, "vertrauen-entziehen");
   await page.click('[data-menue="vertrauen-entziehen"]');
   await page.click('[data-aktion="vertrauen-entziehen"]');
   await expect(d).toHaveCount(0);
@@ -293,7 +302,8 @@ test("k6: auch ein laufendes Sichern (Commit) wird gemeldet", async ({ page }) =
   expect(r.ok).toBe(false);
   expect(r.grund).toBe("Das Sichern läuft noch. Wenn du jetzt schließt, wird es abgebrochen.");
   await expect(page.locator(".toast")).toContainText("Gesichert", { timeout: 8000 });
-  expect(await page.evaluate(() => window.studio.vorSchliessen())).toEqual({ ok: true });
+  // Das Sichern gilt erst als beendet, wenn Git-Stand, Info und Verlauf nachgeladen sind (nach dem Toast, `finally` in der Oberfläche): darauf warten, nicht auf den Toast
+  await expect.poll(() => page.evaluate(() => window.studio.vorSchliessen()), { timeout: 15000 }).toEqual({ ok: true });
 });
 
 // ---------------------------------------------------------------- UI-1: die Frage gehört zu genau einem Vault

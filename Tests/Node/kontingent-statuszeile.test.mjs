@@ -198,8 +198,11 @@ test("Eine Eingabe ohne rate_limits (frische Sitzung) überschreibt NIE gute Wer
   // Steht dort schon „ohne“, wird es aufgefrischt; eine unlesbare Datei wird ersetzt
   const b = aufbau();
   const d2 = join(b.k, `${ID}.json`);
-  zeichneAuf(b.k, ID, {}, Date.now() - 60_000);
-  assert.equal(zeichneAuf(b.k, ID, {}, Date.now()), true);
+  zeichneAuf(b.k, ID, {});
+  // Die 15-Sekunden-Sperre misst gegen die Änderungszeit der Datei (nicht gegen das geschriebene „geschrieben“): ohne Rückdatieren hinge der zweite Aufruf an Zufall
+  // (nur bei einer Änderungszeit „in der Zukunft“ der Dateisystemuhr gegenüber Date.now() schriebe er — unter Last also mal ja, mal nein).
+  utimesSync(d2, new Date(Date.now() - 60_000), new Date(Date.now() - 60_000));
+  assert.equal(zeichneAuf(b.k, ID, {}), true);
   writeFileSync(d2, "{kaputt");
   utimesSync(d2, new Date(Date.now() - 60_000), new Date(Date.now() - 60_000));
   assert.equal(zeichneAuf(b.k, ID, {}), true);
