@@ -115,7 +115,8 @@ export async function fuehreRueckgaengigAus(api, id, vault) {
 // ---------------------------------------------------------------- die Instanz
 // opt: { api, toast, beiAnsehen(ziel, ereignisse), bündelMs (600), bündelMaxMs (3000), schalter (() => Werte, nur Tests),
 //        vaultPfad (() => Pfad des offenen Vaults | null), beiWechseln(vaultPfad) (wechselt den Vault; ohne: der Hinweis nennt nur den Vault) }
-// Ein Hinweis gehört zu dem Vault, der offen war, als das Ereignis kam (`data-vault-pfad` am Hinweis). „Ansehen“ führt nur dorthin, wenn dieser Vault noch offen ist;
+// Ein Hinweis gehört zu dem Vault, der offen war, als das Ereignis kam (`data-vault-pfad` am Hinweis). „Ansehen“ und „Rückgängig“ gelten nur, wenn dieser Vault noch offen ist (Rückgängig schickt ihn
+// außerdem an die Werkstatt, die sonst mit 409 anderer-vault ablehnt);
 // sonst sagt ein Hinweis, zu welchem Vault es gehört, und bietet das Wechseln an. Ohne `vaultPfad` gibt es keine Prüfung (Tests, Vorschau).
 export function erzeugeMitteilungen({ api, toast, beiAnsehen, buendelMs = 600, buendelMaxMs = 3000, schalter = null, vaultPfad = () => null, beiWechseln = null } = {}) {
   const fenster = typeof window !== "undefined" ? window : null;
@@ -135,6 +136,8 @@ export function erzeugeMitteilungen({ api, toast, beiAnsehen, buendelMs = 600, b
   async function liste(o = {}) {
     const r = await api.aktivitaet(o);
     const ereignisse = Array.isArray(r?.ereignisse) ? r.ereignisse : [];
+    // Jedes Ereignis kennt seinen Vault (bei vault=alle liefert ihn die Werkstatt, sonst ist es der Vault dieses Abrufs): Rückgängig schickt ihn mit
+    if (o.vault !== "alle" && typeof r?.vault?.pfad === "string") for (const e of ereignisse) if (e && !e.vaultPfad) e.vaultPfad = r.vault.pfad;
     // Zähler und Zwischenspeicher folgen nur dem ungefilterten Abruf des offenen Vaults (Glocke und Liste)
     if (ohneFilter(o) && typeof r?.ungelesen === "number") {
       S.ereignisse = ereignisse; S.ungelesen = r.ungelesen; S.gesamt = typeof r.gesamt === "number" ? r.gesamt : ereignisse.length;
@@ -167,7 +170,8 @@ export function erzeugeMitteilungen({ api, toast, beiAnsehen, buendelMs = 600, b
   async function rueckgaengig(ids, { vault, still = false } = {}) {
     const liste_ = (Array.isArray(ids) ? ids : [ids]).filter(Boolean);
     const ergebnisse = [];
-    for (const id of liste_) ergebnisse.push({ id, ...(await fuehreRueckgaengigAus(api, id, vault)) });
+    // Die Werkstatt bekommt den Vault des Eintrags und lehnt ab (409 anderer-vault), wenn ein anderer offen ist
+    for (const id of liste_) ergebnisse.push({ id, ...(await fuehreRueckgaengigAus(api, id, vault ?? S.ereignisse.find((x) => x.id === id)?.vaultPfad)) });
     const ok = ergebnisse.filter((x) => x.ok);
     const zurueck = new Set(ok.map((x) => x.id));
     for (const e of S.ereignisse) if (zurueck.has(e.id)) { e.rueckgaengigMoeglich = false; e.zurueckgenommen = new Date().toISOString(); }
@@ -212,19 +216,24 @@ export function erzeugeMitteilungen({ api, toast, beiAnsehen, buendelMs = 600, b
     if (!erlaubt.length || typeof toast !== "function") return;
     const hin = baueHinweis(erlaubt);
     const aktionen = [{ text: TM.ansehen, primaer: true, tun: () => ansehen(hin.ziel, erlaubt, g.vaultPfad, erlaubt[0].vaultName) }];
-    if (hin.rueckgaengigIds.length) aktionen.push({ text: TM.rueckgaengig, tun: () => rueckgaengig(hin.rueckgaengigIds) });
+    if (hin.rueckgaengigIds.length) aktionen.push({ text: TM.rueckgaengig, tun: () => {
+      if (!anderenVaultMelden(g.vaultPfad, erlaubt[0].vaultName)) rueckgaengig(hin.rueckgaengigIds, { vault: g.vaultPfad || undefined });
+    } });
     const t = toast(hin.text, { fett: hin.fett, unter: hin.unter, logo: hin.programm && kiLogoId(hin.programm) ? kiLogo(hin.programm, 18, { dekorativ: true }) : null, aktionen, ms: 7000, fehler: hin.abweisung });
     if (g.vaultPfad) t?.setAttribute?.("data-vault-pfad", g.vaultPfad);
   }
   // „Ansehen“ eines Hinweises: nur im Vault, zu dem er gehört. Ist inzwischen ein anderer offen, führt es nirgends hin (sonst landete der Nutzer in der Aufgaben- oder
   // Notizliste des falschen Vaults); stattdessen nennt ein Hinweis den richtigen Vault und bietet das Wechseln an.
   function ansehen(ziel, ereignisse, vp, vaultName) {
-    if (vp && vp !== offenerVault()) {
-      toast?.(TM.andererVault(vaultName || null), { ms: 9000,
-        ...(typeof beiWechseln === "function" ? { aktionen: [{ text: TM.wechseln, primaer: true, tun: () => beiWechseln(vp) }] } : {}) });
-      return;
-    }
+    if (anderenVaultMelden(vp, vaultName)) return;
     beiAnsehen?.(ziel, ereignisse);
+  }
+  // Gehört der Hinweis zu einem anderen Vault als dem offenen? Dann sagt ein Hinweis es (mit „Wechseln“) und der Aufrufer tut nichts. → true, wenn gemeldet wurde.
+  function anderenVaultMelden(vp, vaultName) {
+    if (!vp || vp === offenerVault()) return false;
+    toast?.(TM.andererVault(vaultName || null), { ms: 9000,
+      ...(typeof beiWechseln === "function" ? { aktionen: [{ text: TM.wechseln, primaer: true, tun: () => beiWechseln(vp) }] } : {}) });
+    return true;
   }
 
   // ---- Live: Ereignisse typ „aktivitaet“ aus dem vorhandenen Strom (die anderen Typen werden übergangen)
@@ -242,7 +251,7 @@ export function erzeugeMitteilungen({ api, toast, beiAnsehen, buendelMs = 600, b
       if (!e.id || !S.ereignisse.some((x) => x.id === e.id)) {
         S.ereignisse = [{
           id: e.id, art: e.art, zeit: e.zeit || new Date().toISOString(), wer: e.wer, text: e.text, programm: e.programm ?? null, konto: e.konto ?? null, vaultName: e.vaultName, pfade: e.pfade,
-          grund: e.grund, gelesen: false, rueckgaengigMoeglich: e.rueckgaengig === true, zurueckgenommen: null,
+          grund: e.grund, gelesen: false, rueckgaengigMoeglich: e.rueckgaengig === true, zurueckgenommen: null, ...(offenerVault() ? { vaultPfad: offenerVault() } : {}),
         }, ...S.ereignisse].slice(0, 200);
         S.ungelesen++; S.gesamt++;
         neu = true;

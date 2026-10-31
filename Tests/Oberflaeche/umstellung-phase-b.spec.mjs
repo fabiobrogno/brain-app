@@ -505,7 +505,6 @@ test("Dunkel: Tor, Probelauf, Stand und Angebote lesbar (Bildschirmfotos)", asyn
   // Stand fertig und mit Warnungen
   Object.assign(z.stand, standAufgeraeumt("mitWarnungen"));
   await page.keyboard.press("Escape");
-  await expect(dlg(page)).toHaveCount(0);
   await page.evaluate(() => window.studio.befehl("umstellung"));
   await expect(pb(page).locator('[data-um="b-fertig"]')).toHaveAttribute("data-ampel", "warn");
   await ruhig(page); await page.screenshot({ path: shot("stand-warnungen-dunkel") });

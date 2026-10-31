@@ -499,6 +499,61 @@ test("Hinweis „Ansehen“ gehört zu seinem Vault: nach einem Vault-Wechsel ke
   expect(r.gewechselt).toEqual(["/Vaults/eins"]);
 });
 
+test("„Rückgängig“ im Hinweis und in der Glocke: schickt den Vault des Eintrags mit; gehört der Hinweis zu einem anderen Vault, geht gar keine Anfrage hinaus", async ({ page }) => {
+  await oeffneStudio(page);
+  const r = await page.evaluate(async () => {
+    const { erzeugeMitteilungen } = await import("/mitteilungen.js");
+    const { api } = await import("/api.js");
+    let offen = "/Vaults/eins";
+    const hinweise = [], anfragen = [], gewechselt = [];
+    const fake = {
+      ...api,
+      aktivitaet: async () => ({ vault: { name: "Eins", pfad: "/Vaults/eins" }, ungelesen: 1, gesamt: 1, ereignisse: [{ id: "a_glocke_aaaaaa", art: "ablage-aufgabe", zeit: new Date().toISOString(), text: "hat etwas abgelegt.", rueckgaengigMoeglich: true, gelesen: false }] }),
+      aktivitaetRueckgaengig: async (id, vault) => { anfragen.push({ id, vault }); return { ok: true, art: "entfernt" }; },
+    };
+    const m = erzeugeMitteilungen({
+      api: fake, buendelMs: 20, buendelMaxMs: 40,
+      toast: (t, o) => { hinweise.push({ t, aktionen: o?.aktionen || [] }); return document.createElement("div"); },
+      vaultPfad: () => offen, beiWechseln: (p) => gewechselt.push(p),
+    });
+    const ereignis = (id) => ({ typ: "aktivitaet", id, art: "ablage-aufgabe", zeit: new Date().toISOString(), wer: "Claude Code", text: "hat eine Aufgabe angelegt.", programm: "claude", vaultName: "Eins", rueckgaengig: true });
+    const warteAuf = async (n) => { for (let i = 0; i < 100 && hinweise.length < n; i++) await new Promise((ok) => setTimeout(ok, 50)); };
+    const knopf = (h, text) => h.aktionen.find((a) => a.text === text);
+    const aus = {};
+    // Hinweis, derselbe Vault ist offen: Rückgängig sendet den Vault
+    m.verarbeiteLive([ereignis("a_hinweis_aaaaa1")]);
+    await warteAuf(1);
+    await knopf(hinweise[0], "Rückgängig").tun();
+    await new Promise((ok) => setTimeout(ok, 100));
+    aus.gleich = anfragen.slice();
+    // Hinweis, danach wechselt der Vault: keine Anfrage, stattdessen der Hinweis mit „Wechseln“
+    m.verarbeiteLive([ereignis("a_hinweis_aaaaa2")]);
+    await warteAuf(3);
+    offen = "/Vaults/zwei";
+    const vorher = anfragen.length;
+    const h = hinweise.filter((x) => knopf(x, "Rückgängig")).at(-1);
+    knopf(h, "Rückgängig").tun();
+    await new Promise((ok) => setTimeout(ok, 100));
+    aus.anders = { neueAnfragen: anfragen.length - vorher, hinweis: hinweise.at(-1).t, knoepfe: hinweise.at(-1).aktionen.map((a) => a.text) };
+    knopf(hinweise.at(-1), "Wechseln").tun();
+    aus.gewechselt = gewechselt;
+    // Glocke: die Liste trägt den Vault des Abrufs an die Einträge; Rückgängig sendet ihn mit
+    offen = "/Vaults/eins";
+    const l = await m.liste();
+    aus.listeVault = l.ereignisse[0].vaultPfad;
+    await m.rueckgaengig(["a_glocke_aaaaaa"], { still: true });
+    aus.glocke = anfragen.at(-1);
+    return aus;
+  });
+  expect(r.gleich).toEqual([{ id: "a_hinweis_aaaaa1", vault: "/Vaults/eins" }]);
+  expect(r.anders.neueAnfragen).toBe(0);
+  expect(r.anders.hinweis).toBe("Das gehört zu Vault „Eins“ – wechseln?");
+  expect(r.anders.knoepfe).toEqual(["Wechseln"]);
+  expect(r.gewechselt).toEqual(["/Vaults/eins"]);
+  expect(r.listeVault).toBe("/Vaults/eins");
+  expect(r.glocke).toEqual({ id: "a_glocke_aaaaaa", vault: "/Vaults/eins" });
+});
+
 test("Hinweis „Ansehen“ ohne Vault-Angabe (Tests, Vorschau) prüft nichts und führt wie bisher hin", async ({ page }) => {
   await oeffneStudio(page);
   const r = await page.evaluate(async () => {

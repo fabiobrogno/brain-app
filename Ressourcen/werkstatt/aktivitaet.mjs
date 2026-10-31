@@ -1,6 +1,6 @@
 // werkstatt/aktivitaet.mjs — Routen des Aktivitätsprotokolls (Paket P8a): Liste, „gelesen“, Rückgängig für KI-Ablagen, „Anmeldung abgelaufen“.
 //   GET  /api/aktivitaet?seit=&art=&limit=&vault=alle&nur=ungelesen  → { vault, ereignisse (neueste zuerst), ungelesen, gesamt }
-//   POST /api/aktivitaet/rueckgaengig { id, vault? }                   → { ok, art: "entfernt" | "schon-weg", pfad, commit, papierkorb }
+//   POST /api/aktivitaet/rueckgaengig { id, vault? }                   → { ok, art: "entfernt" | "schon-weg", pfad, commit, papierkorb }   (vault = Vault des Eintrags; nicht der offene → 409 anderer-vault)
 //   POST /api/aktivitaet/gelesen { ids } | { alle: true } (+ vault?)  → { ok, ungelesen }
 // Das Protokoll selbst schreiben der MCP-Server, die Hooks und der Kern (gemeinsam/aktivitaet.mjs); hier wird gelesen, der Zustand (gelesen, zurückgenommen) geführt und
 // zurückgenommen. Rückgängig ist NUR für Dateien, die Kortex für eine KI abgelegt hat (Aufgabe, Notiz im Posteingang) UND die seitdem unverändert sind (Hash wie bei der Ablage) —
@@ -75,6 +75,15 @@ export function erzeugeAktivitaet({ support, konten = null, vaults = () => [], o
     if (!b || typeof oeffne !== "function") throw new HttpFehler(404, "Diesen Vault kennt Kortex nicht (mehr).");
     try { return oeffne(b.pfad); } catch { throw new HttpFehler(404, "Dieser Vault lässt sich nicht öffnen."); }
   }
+  // Rückgängig und Wiederherstellen wirken NUR im offenen Vault. Nennt die Anfrage einen Vault (den, zu dem der Eintrag gehört), muss es der offene sein:
+  // nach einem Wechsel des Vaults greift ein alter Hinweis sonst ins Leere oder, schlimmer, in den falschen Vault (409 „anderer-vault“, geändert wird nichts).
+  function offenerVault(v, pfad) {
+    if (pfad !== undefined && pfad !== null && pfad !== "") {
+      if (typeof pfad !== "string") throw new HttpFehler(400, "„vault“ ist ein Pfad.");
+      if (!v || falte(echt(pfad)) !== falte(echt(v.wurzel))) throw new HttpFehler(409, "Dieser Eintrag gehört zu einem anderen Vault als dem geöffneten. Wechsle zuerst in diesen Vault — es wurde nichts verändert.", { art: "anderer-vault" });
+    }
+    return v;
+  }
   const finde = (kennung, id) => leseEreignisse(support, kennung).find((e) => e.id === id) || null;
 
   function gelesen(v, eingabe) {
@@ -133,7 +142,7 @@ export function erzeugeAktivitaet({ support, konten = null, vaults = () => [], o
   function rueckgaengig(v, eingabe) {
     return seriell(async () => {
       if (!eingabe || typeof eingabe.id !== "string" || !/^a_[0-9a-z]+_[0-9a-f]{6}$/.test(eingabe.id)) throw new HttpFehler(400, "Die Kennung des Ereignisses fehlt.");
-      const vault = vaultFuer(v, eingabe.vault);
+      const vault = offenerVault(v, eingabe.vault);
       if (!vault) throw new HttpFehler(409, "Es ist noch kein Vault geöffnet.", { keinVault: true, art: "kein-vault" });
       const kennung = kennungVault(vault.wurzel);
       const e = finde(kennung, eingabe.id);
@@ -192,7 +201,7 @@ export function erzeugeAktivitaet({ support, konten = null, vaults = () => [], o
   function wiederherstellen(v, eingabe) {
     return seriell(async () => {
       if (!eingabe || typeof eingabe.id !== "string" || !/^a_[0-9a-z]+_[0-9a-f]{6}$/.test(eingabe.id)) throw new HttpFehler(400, "Die Kennung des Ereignisses fehlt.");
-      const vault = vaultFuer(v, eingabe.vault);
+      const vault = offenerVault(v, eingabe.vault);
       if (!vault) throw new HttpFehler(409, "Es ist noch kein Vault geöffnet.", { keinVault: true, art: "kein-vault" });
       const kennung = kennungVault(vault.wurzel);
       const e = finde(kennung, eingabe.id);
