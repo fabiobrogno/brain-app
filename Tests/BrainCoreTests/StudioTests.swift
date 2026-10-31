@@ -318,6 +318,8 @@ private func url(_ s: String) -> URL { URL(string: s)! }
     #expect(limit("/api/git/remote") == .seconds(150))
     #expect(limit("/api/git/commit") == .seconds(90))
     #expect(limit("/api/git/sync") == .seconds(400))
+    #expect(limit("/api/git/konflikt/loesen") == .seconds(450))
+    #expect(limit("/api/git/konflikt") == .seconds(90))
     // Query, Schrägstrich am Ende und Groß/klein ändern die Zuordnung nicht
     for pfad in ["/api/vaults/klonen?x=1", "/api/vaults/klonen/", "/API/Vaults/Klonen",
                  "/api/vaults/oeffnen?x=1", "/api/vaults/oeffnen/", "/API/Vaults/Oeffnen",

@@ -1,5 +1,5 @@
 // gemeinsam/basis.mjs — Fehlerart mit HTTP-Status und der Pfad-Schutz (Studio-Spec §5). Keine Abhängigkeiten.
-import { realpathSync, lstatSync, readdirSync, accessSync, statSync, existsSync, constants } from "node:fs";
+import { realpathSync, lstatSync, readdirSync, readFileSync, accessSync, statSync, existsSync, constants } from "node:fs";
 import { join, sep, dirname, delimiter, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
@@ -51,6 +51,23 @@ export function vorschauFehler() {
 
 // Vergleichsform für Namen: APFS unterscheidet weder Groß/klein noch NFC/NFD — Sperren und Schreibschutz dürfen es auch nicht.
 export const falte = (s) => String(s).normalize("NFC").toLowerCase();
+
+// Der Posteingang eines Vaults: brain.config.json → ordner.inbox (dieselbe Regel wie kern/pfade.mjs#ordner), sonst 00_inbox. Die Config sind Vault-Daten:
+// nur ein einzelner Ordnername (Buchstaben, Ziffern, _ . -), kein versteckter Ordner und nie der Ordner von Wiki oder Archiv — alles andere fällt auf
+// den Standard zurück. Die Datei darf höchstens 1 MB groß sein und muss eine reguläre Datei sein. Wirft nie.
+export const INBOX_STANDARD = "00_inbox";
+export function inboxOrdnerVon(wurzel) {
+  try {
+    const datei = join(wurzel, "brain.config.json");
+    const st = lstatSync(datei);
+    if (!st.isFile() || st.size > 1024 * 1024) return INBOX_STANDARD;
+    const cfg = JSON.parse(readFileSync(datei, "utf8").replace(/^\uFEFF/, ""));
+    const n = cfg?.ordner?.inbox;
+    if (typeof n !== "string" || n.startsWith(".") || !/^[\p{L}\p{N}_.-]+$/u.test(n)) return INBOX_STANDARD;
+    const andere = [cfg.ordner?.wiki, cfg.wiki?.ordner, cfg.ordner?.archiv, "09_wiki", "90_archiv", "node_modules"].filter((a) => typeof a === "string");
+    return andere.some((a) => falte(a) === falte(n)) ? INBOX_STANDARD : n;
+  } catch { return INBOX_STANDARD; }
+}
 
 // ───────────────────────────── PATH und Programme ─────────────────────────────
 // Ein leerer oder relativer PATH-Eintrag ("", ".", "node_modules/.bin") meint den ARBEITSORDNER des Kindprozesses — und der ist bei

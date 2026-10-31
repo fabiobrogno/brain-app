@@ -46,6 +46,13 @@ export function leseAbgleichStand(wurzel, support) {
   const a = leseMerker(wurzel, support).abgleich;
   return a && typeof a === "object" && ["konflikt", "anmeldung", "neues"].includes(a.stand) ? a.stand : null;
 }
+// Dazu die Notizen im Konflikt (kern/backup.mjs vermerkt sie): { stand, dateien: [Pfad], zeit } oder null.
+export function leseAbgleichDetail(wurzel, support) {
+  const a = leseMerker(wurzel, support).abgleich;
+  if (!a || typeof a !== "object" || !["konflikt", "anmeldung", "neues"].includes(a.stand)) return null;
+  const dateien = Array.isArray(a.dateien) ? a.dateien.filter((p) => typeof p === "string").slice(0, 200) : [];
+  return { stand: a.stand, dateien, zeit: typeof a.zeit === "string" ? a.zeit : null };
+}
 // Nach einem erfolgreichen Abgleich im Studio gilt der Vermerk nicht mehr. Wirft nie.
 export function loescheAbgleichStand(wurzel, { support } = {}) {
   try {

@@ -8,11 +8,11 @@ import { join, basename, relative, sep } from "node:path";
 import { createHash, randomBytes } from "node:crypto";
 import { execFile } from "node:child_process";
 import { pathToFileURL } from "node:url";
-import { HttpFehler, MAX_DATEI, loese, imVault, falte, kindUmgebung, supportOrdner, kernOrdner, BEARBEITBAR, generiertName, wikiGeneriert, gesperrterName } from "./basis.mjs";
+import { HttpFehler, MAX_DATEI, inboxOrdnerVon, loese, imVault, falte, kindUmgebung, supportOrdner, kernOrdner, BEARBEITBAR, generiertName, wikiGeneriert, gesperrterName } from "./basis.mjs";
 import { pruefeText, berlinHeute, leseKopf } from "./pruefung.mjs";
 import * as gitFn from "./git.mjs";
 import * as vertrauenFn from "./vertrauen.mjs";
-import { leseAbgleichStand, loescheAbgleichStand } from "./sicherungsmerker.mjs";
+import { leseAbgleichDetail, loescheAbgleichStand, kennung as vaultKennung } from "./sicherungsmerker.mjs";
 import { erzeugeNotizIndex, titelAus } from "./notizen.mjs";
 import { wertAus } from "./nutzung.mjs";
 import { erzeugePosteingang } from "./posteingang.mjs";
@@ -140,7 +140,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
     const notizPfade = dateien.filter((d) => BEARBEITBAR.test(d.rel)).map((d) => d.rel);
     let teil = null;
     if (notizPfade.length) { teil = notizIndex.teil(notizPfade); if (!teil) return VOLL; }
-    return { voll: false, baum: eintraege, notizen: teil ? teil.zeilen : [], ...(teil ? { typen: teil.typen, ansichten: teil.ansichten } : {}), aufgabenOrdner: await aufgabenFn.ordnerName() };
+    return { voll: false, baum: eintraege, notizen: teil ? teil.zeilen : [], ...(teil ? { typen: teil.typen, ansichten: teil.ansichten } : {}), aufgabenOrdner: await aufgabenFn.ordnerName(), inboxOrdner: inboxOrdnerVon(wurzel) };
   }
 
   // ---------- Lesen / Schreiben ----------
@@ -219,21 +219,8 @@ export function oeffneVault(vaultPfad, opts = {}) {
     return { pfad: legeFreiAn(o ? loese(wurzel, o).rel : "", slug(t, 60), `# ${t}\n`) };
   }
 
-  // Der Posteingang des Vaults: brain.config.json → ordner.inbox (wie kern/pfade.mjs#ordner), sonst 00_inbox. Die Config sind Vault-Daten: nur ein einzelner
-  // Ordnername (Buchstaben, Ziffern, _ . -), kein versteckter Ordner und nie der Ordner von Wiki oder Archiv — alles andere fällt auf den Standard zurück.
-  const INBOX_STANDARD = "00_inbox";
-  function inboxOrdner() {
-    try {
-      const datei = join(wurzel, "brain.config.json");
-      const st = lstatSync(datei);
-      if (!st.isFile() || st.size > 1024 * 1024) return INBOX_STANDARD;
-      const cfg = JSON.parse(readFileSync(datei, "utf8").replace(/^\uFEFF/, ""));
-      const n = cfg?.ordner?.inbox;
-      if (typeof n !== "string" || n.startsWith(".") || !/^[\p{L}\p{N}_.-]+$/u.test(n)) return INBOX_STANDARD;
-      const andere = [cfg.ordner?.wiki, cfg.wiki?.ordner, cfg.ordner?.archiv, "09_wiki", "90_archiv", "node_modules"].filter((a) => typeof a === "string");
-      return andere.some((a) => falte(a) === falte(n)) ? INBOX_STANDARD : n;
-    } catch { return INBOX_STANDARD; }
-  }
+  // Der Posteingang des Vaults (Regel und Begründung: basis.mjs#inboxOrdnerVon).
+  const inboxOrdner = () => inboxOrdnerVon(wurzel);
 
   function merken({ text, titel }) {
     if (typeof text !== "string" || !text.trim()) throw new HttpFehler(400, "Bitte einen Text eingeben.");
@@ -249,7 +236,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
       if (!t) t = koerper.split(/\r?\n/).find((z) => z.trim()).trim().replace(/\s+/g, " ").slice(0, 80);
       inhalt = `# ${t}\n\n${koerper}\n`;
     }
-    const datum = berlinHeute(jetzt());
+    const datum = opts.heute || berlinHeute(jetzt()); // opts.heute: fester Tag (Tests)
     return { pfad: legeFreiAn(inboxOrdner(), `${datum}_${slug(t)}`, inhalt) };
   }
 
@@ -369,8 +356,54 @@ export function oeffneVault(vaultPfad, opts = {}) {
   // Kontext eines Git-Aufrufs: vertraut/sshEigen und, was der Nutzer selbst eingestellt hat (sshGlobal, gpgGlobal) — ohne Vertrauen ersetzen wir
   // nur die Einstellungen des Vaults, nie seine eigenen.
   const ctxVon = (s) => ({ vertraut: s.vertraut, hooks: s.hooks, sshEigen: s.sshEigen, sshGlobal: s.sshGlobal, gpgGlobal: s.gpgGlobal });
-  const mitSicherungsStand = (s) => (s && s.repo ? { ...s, sicherungStand: leseAbgleichStand(wurzel, opts.support) } : s);
+  const mitSicherungsStand = (s) => {
+    if (!s || !s.repo) return s;
+    const d = leseAbgleichDetail(wurzel, opts.support);
+    return { ...s, sicherungStand: d ? d.stand : null, sicherungDateien: d && d.stand === "konflikt" ? d.dateien : [] };
+  };
   const gitCtx = (extra = {}) => { const s = gitSicht(); if (s.gesperrt) throw gesperrtFehler(s); return { ...ctxVon(s), ...extra }; };
+
+  // ---------- Abgleich und Konflikte: gemeinsame Sperre, Kern-Befehl `brain abgleich` ----------
+  // Dieselbe Sperrdatei wie die Hintergrund-Sicherung des Kerns (kern/abgleich-sperre.mjs, <Support>/backup/<Kennung>.sperre): nie zwei Abgleiche zugleich.
+  // Fehlt der Kern (oder die Datei), gibt es keine Sperre — der Abgleich im Studio läuft dann wie bisher.
+  async function abgleichSperre(art) {
+    let m; try { m = await import(pathToFileURL(join(kern, "abgleich-sperre.mjs")).href); } catch { return { ok: true, freigeben() {} }; }
+    return m.nimmSperre(join(opts.support || supportOrdner(), "backup", `${vaultKennung(wurzel)}.sperre`), { art });
+  }
+  const BESETZT_TEXT = "Gerade läuft ein anderer Abgleich (zum Beispiel die Online-Sicherung im Hintergrund). Bitte kurz warten und noch einmal versuchen.";
+  // Ein Befehl des Kerns als Kindprozess (nie im eigenen Prozess: ein Abgleich kann Minuten dauern). → die JSON-Antwort; { ok: false, fehler, status } wird zu HttpFehler.
+  function kernAbgleich(unter, eingabe, frist = 120_000) {
+    const s = gitSicht(); if (s.gesperrt) return Promise.reject(gesperrtFehler(s));
+    if (!existsSync(kitPfad)) return Promise.reject(new HttpFehler(503, "Der Abgleich ist gerade nicht verfügbar (der Kern fehlt)."));
+    return new Promise((ok, nein) => {
+      const k = execFile(process.execPath, [kitPfad, "--vault", wurzel, "abgleich", unter, ...(eingabe ? ["--stdin"] : [])],
+        { cwd: wurzel, timeout: frist, maxBuffer: 64 * 1024 * 1024, env: kindUmgebung({ BRAIN_VAULT: wurzel, BRAIN_APP_SUPPORT: opts.support || supportOrdner() }) }, (err, stdout) => {
+          let j = null; try { j = JSON.parse(String(stdout).trim().split("\n").pop()); } catch { /* keine Antwort */ }
+          if (!j) return nein(new HttpFehler(err && err.killed ? 504 : 500, err && err.killed ? "Der Abgleich hat zu lange gebraucht und wurde abgebrochen." : "Der Abgleich ist fehlgeschlagen."));
+          if (j.ok === false) { const { ok: _o, fehler, status, ...extra } = j; return nein(new HttpFehler(Number.isInteger(status) ? status : 500, fehler || "Der Abgleich ist fehlgeschlagen.", extra)); }
+          ok(j);
+        });
+      k.stdin.on("error", () => {});
+      k.stdin.end(eingabe ? JSON.stringify(eingabe) : "");
+    });
+  }
+
+  async function gitSyncLaufen(a) {
+    const r = await gitFn.sync(wurzel, gitCtx({ limitSync: opts.gitLimitSync, limitGesamt: opts.gitLimitAbgleich, konflikteLoesen: !!(a && a.konflikteLoesen === true),
+      sperre: async () => { const sp = await abgleichSperre("studio-abgleich"); if (!sp.ok) throw new HttpFehler(409, BESETZT_TEXT, { art: "laeuft" }); return sp; } }));
+    loescheAbgleichStand(wurzel, { support: opts.support }); // der Abgleich lief durch: der Vermerk der Hintergrund-Sicherung (Konflikt, Anmeldung, Neues) gilt nicht mehr
+    return r;
+  }
+  // Konflikt abschließen: der Kern hält die Entscheidungen fest und gleicht wie die Sicherung ab. Ist das Ziel für die Hintergrund-Sicherung noch nicht bestätigt,
+  // sendet der Studio-Abgleich (ein ausdrücklicher Klick der Nutzerin) wie bisher.
+  async function konfliktLoesen(a) {
+    const r = await kernAbgleich("loesen", { auswahl: a && a.auswahl, basis: (a && a.basis) || undefined }, 420_000);
+    if (r && r.abgleich && r.abgleich.art === "nicht-bestaetigt") {
+      try { const s = await gitSyncLaufen({}); r.abgleich = { art: s.ergebnis, ok: true, text: "Gesichert." }; }
+      catch (e) { r.abgleich = { art: e && e.status === 409 && e.extra && e.extra.konflikt ? "konflikt" : "fehler", ok: false, text: e && e.message ? e.message : "Das Senden hat nicht geklappt." }; }
+    }
+    return r;
+  }
 
   // ---------- Notiz-Index (Spec v2 §5) ----------
   const notizIndex = erzeugeNotizIndex({ wurzel, jetzt, heute: () => opts.heute || berlinHeute(jetzt()),
@@ -440,8 +473,8 @@ export function oeffneVault(vaultPfad, opts = {}) {
     wurzel, name: basename(wurzel), rueckfragen, kitVersion, kitVorhanden, kit, vertrauen, vertrauenStand: stand, baum, lies, imUnterVault: (rel) => { try { return imUnterVault(loese(wurzel, rel).abs); } catch { return false; } }, schreibe, neu, merken, suche, suchenFuerKi, pruefung, gesundheit, nutzung,
     posteingangVerwerfen: posteingang.verwerfen, posteingangSpaeter: posteingang.spaeter, posteingangUebernehmen: posteingang.uebernehmen,
     aufgaben: aufgabenFn.aufgaben, aufgabeAnlegen: aufgabenFn.anlegen, aufgabeAendern: aufgabenFn.aendern, aufgabenArchivieren: aufgabenFn.archivieren, aufgabenFuerKi: aufgabenFn.fuerKi, aufgabenOrdnerName: aufgabenFn.ordnerName, aufgabePfad: aufgabenFn.findePfad,
-    notizen: async () => ({ ...(await notizIndex.notizen()), aufgabenOrdner: await aufgabenFn.ordnerName() }), notizKontext: notizIndex.kontext, typen: notizIndex.typen, ansichten: notizIndex.ansichten,
-    indexAlles: async () => ({ ...(await notizIndex.alles()), aufgabenOrdner: await aufgabenFn.ordnerName() }), teilIndex,
+    notizen: async () => ({ ...(await notizIndex.notizen()), aufgabenOrdner: await aufgabenFn.ordnerName(), inboxOrdner: inboxOrdnerVon(wurzel) }), notizKontext: notizIndex.kontext, typen: notizIndex.typen, ansichten: notizIndex.ansichten,
+    indexAlles: async () => ({ ...(await notizIndex.alles()), aufgabenOrdner: await aufgabenFn.ordnerName(), inboxOrdner: inboxOrdnerVon(wurzel) }), teilIndex,
     gitLog: async (a) => gitFn.log(wurzel, a || {}, gitCtx()),
     gitRemote: async (url, extra = {}) => gitFn.remoteHinzufuegen(wurzel, url, gitCtx({ limit: opts.gitLimitRemote, ...extra })),
     // sicherungStand: "konflikt" | "anmeldung" | "neues" | null — die Hintergrund-Sicherung des Kerns (kern/backup.mjs) vermerkt, wenn sie nicht senden konnte
@@ -452,18 +485,12 @@ export function oeffneVault(vaultPfad, opts = {}) {
     },
     gitCommit: async (a) => gitFn.commit(wurzel, a || {}, gitCtx({ limit: opts.gitLimitCommit })),
     // konflikteLoesen: bei Konflikten die Zusammenführung offen lassen, damit die Oberfläche pro Datei wählen lässt (sonst wie bisher: abbrechen, 409)
-    gitSync: async (a) => {
-      const r = await gitFn.sync(wurzel, gitCtx({ limitSync: opts.gitLimitSync, limitGesamt: opts.gitLimitAbgleich, konflikteLoesen: !!(a && a.konflikteLoesen === true) }));
-      loescheAbgleichStand(wurzel, { support: opts.support }); // der Abgleich lief durch: der Vermerk der Hintergrund-Sicherung (Konflikt, Anmeldung, Neues) gilt nicht mehr
-      return r;
-    },
-    gitKonflikte: async (pfad) => gitFn.konflikte(wurzel, pfad, gitCtx()),
-    gitKonfliktAbschliessen: async (a) => {
-      const r = await gitFn.konfliktAbschliessen(wurzel, a || {}, gitCtx({ limit: opts.gitLimitCommit }));
-      loescheAbgleichStand(wurzel, { support: opts.support }); // der Konflikt ist gelöst: der Hinweis der Hintergrund-Sicherung gilt nicht mehr
-      return r;
-    },
-    gitKonfliktAbbrechen: async () => gitFn.konfliktAbbrechen(wurzel, gitCtx({ limit: opts.gitLimitCommit })),
+    gitSync: (a) => gitSyncLaufen(a),
+    // Konflikt-Ansicht (Kern): beide Fassungen je Datei · Entscheidungen abschließen (mit Abgleich wie die Sicherung) · „Später“ · „Rückgängig“
+    gitKonfliktAnsicht: async (basis) => kernAbgleich("ansicht", { basis: basis || undefined }),
+    gitKonfliktLoesen: (a) => konfliktLoesen(a),
+    gitKonfliktAbbrechen: async () => kernAbgleich("abbrechen"),
+    gitKonfliktRueckgaengig: async () => kernAbgleich("rueckgaengig"),
     gitNachsehen: async () => mitSicherungsStand(await gitFn.nachsehen(wurzel, gitCtx())),
     gitWiederherstellenVorschau: async (pfad, sha) => gitFn.wiederherstellenVorschau(wurzel, pfad, sha, gitCtx()),
     gitWiederherstellen: async (a) => gitFn.wiederherstellen(wurzel, a || {}, gitCtx({ limit: opts.gitLimitCommit })),

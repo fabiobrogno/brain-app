@@ -141,7 +141,7 @@ test("Routen: GET /api/index = notizen + typen + ansichten aus einem Lauf; POST 
   const [n, t, a] = [await rufe("GET", "/api/notizen"), await rufe("GET", "/api/typen"), await rufe("GET", "/api/ansichten")];
   const i = await rufe("GET", "/api/index");
   assert.equal(i.status, 200);
-  assert.deepEqual(i.j, { notizen: n.j.notizen, typen: t.j, ansichten: a.j.ansichten ? a.j : a.j, aufgabenOrdner: n.j.aufgabenOrdner });
+  assert.deepEqual(i.j, { notizen: n.j.notizen, typen: t.j, ansichten: a.j.ansichten ? a.j : a.j, aufgabenOrdner: n.j.aufgabenOrdner, inboxOrdner: n.j.inboxOrdner });
   assert.equal((await rufe("POST", "/api/index", {})).status, 405);
 
   const bef = "09_wiki/firma/thema_a.md";

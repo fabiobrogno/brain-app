@@ -323,8 +323,11 @@ export function erzeugeHandler(o) {
       case "/api/git/status": nur("GET"); return V().gitStatus();
       case "/api/git/commit": nur("POST"); return V().gitCommit(eingabe());
       case "/api/git/sync": nur("POST"); return V().gitSync(koerper && koerper.length ? eingabe() : {});
-      case "/api/git/konflikt": nur("GET"); return V().gitKonflikte(q.get("pfad") || undefined);
-      case "/api/git/konflikt/loesen": nur("POST"); return V().gitKonfliktAbschliessen(eingabe());
+      case "/api/git/konflikt": // GET: Ansicht des offenen Konflikts · POST { basis }: Ansicht eines gemerkten Stands (nach „Rückgängig“)
+        if (methode === "POST") return V().gitKonfliktAnsicht(eingabe().basis);
+        nur("GET"); return V().gitKonfliktAnsicht();
+      case "/api/git/konflikt/loesen": nur("POST"); return V().gitKonfliktLoesen(eingabe());
+      case "/api/git/konflikt/rueckgaengig": nur("POST"); return V().gitKonfliktRueckgaengig();
       case "/api/git/konflikt/abbrechen": nur("POST"); return V().gitKonfliktAbbrechen();
       case "/api/git/nachsehen": nur("POST"); return V().gitNachsehen();
       case "/api/git/wiederherstellen/vorschau": nur("GET"); return V().gitWiederherstellenVorschau(q.get("pfad"), q.get("sha"));

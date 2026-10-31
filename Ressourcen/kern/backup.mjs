@@ -5,6 +5,7 @@ import { join, isAbsolute } from "node:path";
 import { createHash } from "node:crypto";
 import { ladeConfig, supportOrdner } from "./pfade.mjs";
 import { gitBefehl } from "./werkzeug.mjs";
+import { nimmSperre } from "./abgleich-sperre.mjs";
 const git = (v, ...a) => execFileSync(gitBefehl({ cfg: ladeConfig(v) }), ["-C", v, ...a], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
 
 // Der Sicherungsordner steht NICHT in der brain.config.json des Vaults (Vault-Daten dürfen nicht bestimmen, wohin der Kern schreibt), sondern je
@@ -22,6 +23,8 @@ const backupDatei = (vault, support = supportOrdner()) => {
   return join(support, "backup", `${ids.find((i) => existsSync(join(support, "backup", `${i}.json`))) || ids[0]}.json`);
 };
 export const merkerDateiFuer = (vault, support = supportOrdner()) => backupDatei(vault, support);
+// Die gemeinsame Sperre aller Abgleiche (abgleich-sperre.mjs): immer unter der ersten Kennung, nie davon abhängig, welche Merker-Datei schon da ist
+export const sperrDateiFuer = (vault, support = supportOrdner()) => join(support, "backup", `${kennung(vault)}.sperre`);
 // Absolut, ein Ordner (falls schon vorhanden), kein Verweis. → Fehlertext oder null
 export function pruefeBackupPfad(p) {
   if (typeof p !== "string" || !p || p.includes("\0") || !isAbsolute(p)) return "Der Sicherungsordner muss ein absoluter Pfad sein.";
@@ -128,10 +131,10 @@ function nichtEingearbeitet(vault) {
 // Alles läuft über git-sicher (gitBefehl), also mit allen Härtungen des Kerns; Hooks sind zusätzlich ausdrücklich aus.
 // Ziel ist IMMER origin (das vom Nutzer bestätigte Remote), und zwar mit ausdrücklichem Zweig: geholt wird `+refs/heads/X:refs/remotes/origin/X`,
 // gesendet `HEAD:refs/heads/X`, jeweils an die bestätigte Adresse selbst (nicht über den Remote-Namen: dessen fetch-Einträge würden mitaktualisieren) — weder ein Refspec noch ein Upstream, pushurl oder pushremote aus der Vault-Konfiguration kann das umlenken.
-const ZEIT_NETZ = 90_000, ZEIT_LOKAL = 30_000, OHNE_ZEIT = 0;
-const OHNE_HOOKS = ["-c", "core.hooksPath=/dev/null"];
+export const ZEIT_NETZ = 90_000, ZEIT_LOKAL = 30_000, OHNE_ZEIT = 0;
+export const OHNE_HOOKS = ["-c", "core.hooksPath=/dev/null"];
 
-function gitLauf(vault, args, zeit = ZEIT_LOKAL) {
+export function gitLauf(vault, args, zeit = ZEIT_LOKAL) {
   const r = spawnSync(gitBefehl({ cfg: ladeConfig(vault) }), ["-C", vault, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], windowsHide: true, timeout: zeit });
   const zuLange = r.error && r.error.code === "ETIMEDOUT";
   return { code: r.error ? (zuLange ? 124 : 1) : (r.status ?? 1), out: r.stdout || "", err: `${r.stderr || ""}${zuLange ? " Operation timed out" : ""}` };
@@ -170,27 +173,45 @@ const MELDUNG = {
   fehler: `Online-Sicherung hat gerade nicht geklappt. ${NAECHSTES_MAL}`,
   gesperrt: "Die Online-Sicherung wartet: Dieser Vault ist in Kortex noch nicht als deiner bestätigt (oder seine Git-Einstellungen sind nicht erlaubt). Bestätige ihn im Studio unter Einstellungen.",
   umgeleitet: "Die Online-Sicherung wartet: Die Git-Einstellungen dieses Vaults leiten das Senden woandershin um (pushurl, pushremote oder ein anderes Ziel als das bestätigte). Aus Sicherheitsgründen sende ich so nichts.",
+  laeuft: `Die Online-Sicherung wartet: Gerade läuft ein anderer Abgleich (zum Beispiel im Studio). ${NAECHSTES_MAL}`,
   beschaeftigt: `Die Online-Sicherung wartet: Gerade arbeitet eine Einarbeitung (Sperre .logs/ingest.lock). ${NAECHSTES_MAL}`,
   "kein-zweig": "Die Online-Sicherung wartet: Der Vault steht auf keinem Zweig. Wähle im Studio zuerst einen Zweig.",
   "kein-commit": "Die Online-Sicherung wartet: Es gibt noch nichts Eingearbeitetes zum Sichern.",
 };
 
-// Vermerk im Support-Ordner: abgleich = { stand: "konflikt"|"anmeldung"|"neues", zeit }. Nur eine Änderung des Standes schreibt.
-function merkeStand(vault, stand, support) {
+// Vermerk im Support-Ordner: abgleich = { stand: "konflikt"|"anmeldung"|"neues", zeit, dateien? }. Nur eine Änderung des Standes (oder der Dateiliste
+// bei einem Konflikt) schreibt; zeit bleibt die des ersten Mals. dateien = die Notizen im Konflikt (ohne versteckte Orte): das Studio zeigt damit schon
+// vor dem Öffnen „Konflikt in 2 Notizen“. Der Konfliktstand wird geräumt, sobald ein Abgleich durchläuft (loescheAbgleichStand).
+const sichtbareDateien = (liste) => (Array.isArray(liste) ? liste : []).filter((p) => typeof p === "string" && p && !p.split("/").some((t) => t.startsWith("."))).slice(0, 200);
+export function merkeStand(vault, stand, support, extra = {}) {
   try {
     const d = leseDatei(vault, support);
-    const jetzt = d.abgleich && typeof d.abgleich === "object" ? d.abgleich.stand : null;
-    if (stand === jetzt || (!stand && !d.abgleich)) return;
-    if (stand) d.abgleich = { stand, zeit: new Date().toISOString() }; else delete d.abgleich;
+    const alt = d.abgleich && typeof d.abgleich === "object" ? d.abgleich : null;
+    const dateien = stand === "konflikt" && Array.isArray(extra.dateien) ? sichtbareDateien(extra.dateien) : null;
+    const gleich = alt && alt.stand === stand && (!dateien || JSON.stringify(dateien) === JSON.stringify(alt.dateien || []));
+    if (gleich || (!stand && !alt)) return;
+    if (stand) {
+      d.abgleich = { stand, zeit: alt && alt.stand === stand && typeof alt.zeit === "string" ? alt.zeit : new Date().toISOString() };
+      const behalten = dateien || (alt && alt.stand === stand && Array.isArray(alt.dateien) ? alt.dateien : null);
+      if (behalten && stand === "konflikt") d.abgleich.dateien = behalten;
+    } else delete d.abgleich;
     schreibeDatei(vault, d, support);
   } catch { /* nur Komfort: ohne Vermerk bleibt der Hinweis eben aus */ }
 }
-// → { stand, text, zeit } oder null. Menüleiste (brain status) und Studio zeigen damit den Hinweis.
+// → { stand, text, zeit, dateien } oder null. Menüleiste (brain status) und Studio zeigen damit den Hinweis.
 export function leseAbgleichStand(vault, { support = supportOrdner() } = {}) {
   const a = leseDatei(vault, support).abgleich;
   if (!a || typeof a !== "object" || !STAND_ARTEN.has(a.stand)) return null;
-  return { stand: a.stand, text: STAND_TEXT[a.stand], zeit: typeof a.zeit === "string" ? a.zeit : null };
+  return { stand: a.stand, text: STAND_TEXT[a.stand], zeit: typeof a.zeit === "string" ? a.zeit : null, dateien: sichtbareDateien(a.dateien) };
 }
+// Rohzugriff auf den Merker des Vaults für die Konfliktlösung (abgleich-konflikt.mjs): lesen, ändern, schreiben in einem Zug.
+export function aendereMerker(vault, fn, { support = supportOrdner() } = {}) {
+  const d = leseDatei(vault, support);
+  const neu = fn(d) || d;
+  schreibeDatei(vault, neu, support);
+  return neu;
+}
+export const leseMerkerDatei = (vault, support = supportOrdner()) => leseDatei(vault, support);
 export function loescheAbgleichStand(vault, { support = supportOrdner() } = {}) { merkeStand(vault, null, support); }
 
 const mergeOffen = (vault) => gitLauf(vault, ["rev-parse", "-q", "--verify", "MERGE_HEAD"]).code === 0;
@@ -231,10 +252,16 @@ function upstreamSetzen(vault, lokal, z) {
 
 // Holen, zusammenführen, senden. → { art, ok, text, dateien? } mit art ∈ aktuell | gesendet | geholt | beides (alle ok) | konflikt | ungesichert |
 // abgelehnt | netz | anmeldung | fehler | gesperrt | umgeleitet | beschaeftigt | kein-zweig | kein-commit. Wirft nie. Sendet nur nach einem sauberen Zusammenführen.
-export function abgleichen(vault, { support = supportOrdner() } = {}) {
+export function abgleichen(vault, { support = supportOrdner(), sperre = true } = {}) {
+  if (!sperre) return abgleichenInnen(vault, support);
+  const s = nimmSperre(sperrDateiFuer(vault, support), { art: "sicherung" }); // dieselbe Sperre wie der Abgleich im Studio: nie zwei zugleich
+  if (!s.ok) return { art: "laeuft", ok: false, text: MELDUNG.laeuft };
+  try { return abgleichenInnen(vault, support); } finally { s.freigeben(); }
+}
+function abgleichenInnen(vault, support) {
   const fertig = (art, extra = {}) => {
     if (OK_ARTEN.has(art)) merkeStand(vault, null, support);
-    else if (art === "konflikt" || art === "anmeldung") merkeStand(vault, art, support);
+    else if (art === "konflikt" || art === "anmeldung") merkeStand(vault, art, support, { dateien: extra.dateien });
     else if (art === "ungesichert") merkeStand(vault, "neues", support);
     return { art, ok: OK_ARTEN.has(art), text: MELDUNG[art], ...extra };
   };
@@ -300,6 +327,15 @@ export function abgleichen(vault, { support = supportOrdner() } = {}) {
 // „Neues auf dem Server“ (Stand „neues“). Sendet nie, führt nie mit Merge-Commit zusammen. → { art, ok, text } mit art ∈ aktuell | geholt | neues |
 // nicht-bestaetigt | konflikt | netz | anmeldung | abgelehnt | fehler | gesperrt | umgeleitet | beschaeftigt | kein-zweig | kein-commit. Wirft nie.
 export function holen(vault, { support = supportOrdner() } = {}) {
+  let s = null;
+  try {
+    if (!pushErlaubnis(vault, support).ok) return { art: "nicht-bestaetigt", ok: false, text: PUSH_NICHT_BESTAETIGT };
+    s = nimmSperre(sperrDateiFuer(vault, support), { art: "holen" });
+    if (!s.ok) return { art: "laeuft", ok: false, text: MELDUNG.laeuft };
+    return holenInnen(vault, support);
+  } catch { return { art: "fehler", ok: false, text: MELDUNG.fehler }; } finally { if (s && s.ok) s.freigeben(); }
+}
+function holenInnen(vault, support) {
   try {
     if (!pushErlaubnis(vault, support).ok) return { art: "nicht-bestaetigt", ok: false, text: PUSH_NICHT_BESTAETIGT };
     const ergebnis = (art, ok = OK_ARTEN.has(art)) => ({ art, ok, text: MELDUNG[art] || STAND_TEXT[art] || "" });

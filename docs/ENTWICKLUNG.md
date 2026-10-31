@@ -115,3 +115,16 @@ Tests: `swift test --filter Vorschau` (Pfade, Umgebung, Platzhalter, Ende-zu-End
 „echtes“ HOME), `Tests/Node/vorschau.test.mjs`, `scripts/teste-vorschau.sh` (Skript, Signale, Aufräumen) und
 `scripts/teste-vorschau.sh --app` (echte App; prüft nur lesend, dass im echten Benutzerordner nichts neu oder anders ist).
 Wer weitere Orte einführt (neue Ordner unter `~`, Keychain, LaunchAgents), muss sie hier umlenken oder in der Vorschau abschalten.
+
+## Konflikt beim Abgleich (zwei Geräte)
+Datenfluss: Die Hintergrund-Sicherung des Kerns (`kern/backup.mjs#abgleichen`) holt vor dem Senden, nimmt bei einem Konflikt ihre Zusammenführung zurück und vermerkt ihn im
+Support-Ordner (`<Support>/backup/<Kennung>.json` → `abgleich` mit `stand: "konflikt"` und den betroffenen `dateien`). Das Studio zeigt daraus Banner, Mitteilung und
+„Konflikt in N Notizen“ in der Statusleiste. „Ansehen“ gleicht noch einmal ab und lässt die Zusammenführung offen (`gemeinsam/git.mjs#sync`, `konflikteLoesen`); die Konflikt-Ansicht
+(`studio/konflikt.js`) holt beide Fassungen je Datei über die Werkstatt vom Kern (`brain abgleich ansicht`, `kern/abgleich-konflikt.mjs`, git nur über `git-sicher`, immer ohne Hooks).
+Abschluss (⌘↩): `brain abgleich loesen` hält zuerst überall die eigene Fassung fest (ein Zusammenführungs-Eintrag), danach je Entscheidung (diese · andere · beide mit Kopie
+„<Name> (<Gerät>)“ · zusammengeführter Text) einen eigenen Eintrag im Verlauf, gleicht wie die Sicherung ab (nur an das bestätigte Ziel; sonst sendet der Studio-Abgleich) und räumt den
+Konfliktstand. „Rückgängig“ (`brain abgleich rueckgaengig`) legt die Fassungen von vor den Entscheidungen als neuen Eintrag zurück (nie Reset) und nur, solange an den Dateien nicht weitergearbeitet wurde.
+„Später“ nimmt die offene Zusammenführung zurück (`brain abgleich abbrechen`), damit nie Dateien mit Konfliktmarken liegen bleiben.
+Gerätename: Marke `Kortex-Geraet: <Name>` im Commit, sonst die Standard-Adresse eines Macs (`nutzer@Name.local`), sonst „Anderes Gerät“; der eigene Name steht in `<Support>/geraet.json` oder ist der Computername.
+Gemeinsame Sperre: `kern/abgleich-sperre.mjs` (`<Support>/backup/<Kennung>.sperre` mit PID, Zeit und Art; verwaist, wenn der Prozess fehlt oder sie älter als 15 min ist) für Sicherung, Holen, Studio-Abgleich und Konfliktlösung.
+Tests: `Tests/Kern/test-abgleich-konflikt.mjs` (echte Repos, alle Arten, Sperre auch zwischen Prozessen), `Tests/Node/konflikt-werkstatt.test.mjs`, `Tests/Oberflaeche/konflikt.spec.mjs`.

@@ -10,7 +10,7 @@
 import { watch, statSync, readdirSync, readFileSync, openSync, readSync, closeSync, existsSync } from "node:fs";
 import { createHash, randomBytes } from "node:crypto";
 import { join, sep, basename } from "node:path";
-import { BEARBEITBAR, falte } from "../gemeinsam/basis.mjs";
+import { BEARBEITBAR, falte, inboxOrdnerVon } from "../gemeinsam/basis.mjs";
 
 const wandUhr = () => performance.timeOrigin + performance.now(); // Wanduhr in ms mit Bruchteilen (Dateizeiten haben Nanosekunden)
 const HASH = (buf) => createHash("sha256").update(buf).digest("hex");
@@ -18,7 +18,7 @@ export const MAX_WARTE_S = 30;
 
 // Einordnung eines Pfads (relativ zum Vault, beliebiges Trennzeichen). Rein, ohne Plattenzugriff.
 //   null → ignorieren · { bereich: "git" | "aufgabe" | "posteingang" | "notiz", pfad, text } (text = hat eine Textendung; sonst ist es evtl. ein Ordner)
-export function klassifiziere(roh, { aufgabenOrdner = "05_aufgaben" } = {}) {
+export function klassifiziere(roh, { aufgabenOrdner = "05_aufgaben", inboxOrdner = "00_inbox" } = {}) {
   if (typeof roh !== "string" || !roh) return null;
   const rel = roh.split(sep).join("/").normalize("NFC");
   const teile = rel.split("/").filter(Boolean);
@@ -35,7 +35,7 @@ export function klassifiziere(roh, { aufgabenOrdner = "05_aufgaben" } = {}) {
   if (!text && /\.[A-Za-z0-9]{1,8}$/.test(name)) return null; // Bild, PDF, … (ein Ordner heißt selten „x.pdf“)
   const pfad = teile.join("/");
   if (teile.length > 1 && falte(teile[0]) === falte(aufgabenOrdner)) return { bereich: "aufgabe", pfad, text };
-  if (teile.length > 1 && falte(teile[0]) === "00_inbox") return { bereich: "posteingang", pfad, text };
+  if (teile.length > 1 && falte(teile[0]) === falte(inboxOrdner)) return { bereich: "posteingang", pfad, text };
   return { bereich: "notiz", pfad, text };
 }
 
@@ -246,10 +246,11 @@ export function erzeugeEreignisse(o = {}) {
     if (zuViel) { gedrosselt = true; melde({ typ: "alles", grund: "viele-aenderungen" }); if (pfade.length || wardrin) bekannteAufgaben = new Set(lieAufgabenNamen()); return; }
     gedrosselt = verlauf.length > maxProFenster / 2;
     const ordner = aufgabenOrdner();
+    const inbox = inboxOrdnerVon(wurzel); // bei jedem Flush neu gelesen: eine geänderte brain.config.json braucht keinen Neustart
     const gesehen = new Set(), ergebnisse = [];
     let gitBetroffen = false;
     for (const rel of pfade) {
-      const k = klassifiziere(rel, { aufgabenOrdner: ordner });
+      const k = klassifiziere(rel, { aufgabenOrdner: ordner, inboxOrdner: inbox });
       if (!k || gesehen.has(k.pfad)) continue;
       gesehen.add(k.pfad);
       if (k.bereich === "git") { gitBetroffen = true; continue; }
