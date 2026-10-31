@@ -362,7 +362,7 @@ test("Routen: GET liefert Konten, Vaults und Stufen; POST setzt Name und Abo; PU
   const v1 = neuesVault(), v2 = neuesVault(), fremd = neuesVault();
   await mitHome(home, async () => {
     const rufe = handlerMit({ home, s, vaultOrdner: v1, vaultsListe: [v1, v2] });
-    let r = await rufe("GET", "/api/ki/konten");
+    let r = await rufe("POST", "/api/ki/konten/abgleich");
     assert.equal(r.status, 200, JSON.stringify(r.j));
     assert.equal(r.j.zustand, "ok");
     assert.deepEqual(r.j.stufen, ["gesperrt", "lesen", "posteingang", "erweitert"]);
@@ -405,7 +405,7 @@ test("Ein von Kortex angelegter Vault kommt in die Liste: gesperrt für alle; mi
   const v = neuesVault();
   await mitHome(home, async () => {
     const rufe = handlerMit({ home, s, vaultOrdner: v, vaultsListe: [v] });
-    await rufe("GET", "/api/ki/konten"); // Abgleich = Migration (ein Konto, ohne Verbindung)
+    await rufe("POST", "/api/ki/konten/abgleich"); // Abgleich = Migration (ein Konto, ohne Verbindung)
     writeFileSync(join(profil, "settings.json"), JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: "command", command: "[ -x '/x/bin/kortex' ] && exec '/x/bin/kortex' hook session-start || exit 0" }] }] } })); // jetzt ist es verbunden
     const r = await rufe("POST", "/api/vaults/neu", { art: "leer", name: "Neu" });
     assert.equal(r.status, 200, JSON.stringify(r.j));
@@ -432,7 +432,7 @@ test("Verbinden: der Eintrag trägt --konto <id>; das richtige Konto wird angesp
   const v = neuesVault();
   await mitHome(home, () => mitAttrappen(async (a) => {
     const rufe = handlerMit({ home, s, vaultOrdner: v, vaultsListe: [v] });
-    const konten = (await rufe("GET", "/api/ki/konten")).j.konten;
+    const konten = (await rufe("POST", "/api/ki/konten/abgleich")).j.konten;
     const id = (programm, ordner) => konten.find((k) => k.programm === programm && k.ordner.endsWith(ordner)).id;
     const mcpEintrag = (schluessel) => a.eintraege()[schluessel];
     // Claude, Standardprofil
@@ -527,7 +527,7 @@ test("Probe-Frage: mit der Kontenliste läuft sie als ein Konto mit Lesezugriff;
     const echt = aufruf(erzeugeHandler({ vault: v, vaultOptionen: { support: s }, mcpPfad: pfad("mcp", "brain-mcp.mjs") }));
     let r = await echt("POST", "/api/probe", { frage: "Zebra" });
     assert.equal(r.status, 200, JSON.stringify(r.j)); assert.ok(r.j.treffer.length >= 1);
-    await rufe("GET", "/api/ki/konten");
+    await rufe("POST", "/api/ki/konten/abgleich");
     const id = Object.keys(K.liesKonten(s).daten.konten)[0];
     await echt("PUT", "/api/ki/zugriff", { konto: id, vault: v, stufe: "gesperrt" });
     r = await echt("POST", "/api/probe", { frage: "Zebra" });

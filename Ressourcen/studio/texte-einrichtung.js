@@ -178,6 +178,8 @@ export const TE = {
     leerTitel: "Noch keine KI auf diesem Mac",
     leerText: `${PRODUKT} funktioniert auch ohne. Installierst du später eines dieser Programme, findet ${PRODUKT} es von selbst und fragt dich.`,
     erneut: "Erneut suchen",
+    neuKonten: (namen) => `Neu gefunden und noch nicht eingetragen: ${namen}. Sie starten gesperrt.`,
+    neuKontenEintragen: "Eintragen",
     suche: "Suche …",
     nichtsNeues: "Keine neuen Programme gefunden",
     anleitungOeffnet: "Öffnet die Seite des Programms im Browser",

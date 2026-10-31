@@ -1,6 +1,7 @@
 // werkstatt/konten.mjs — KI-Konten und Vault-Zugriff in der Werkstatt (docs/plaene/ki-konten.md, Paket P1): Konten erkennen und in <support>/ki-konten.json
 // führen, Namen und Stufen setzen, Migration bestehender Verbindungen. Die Regeln selbst (Stufe, Konto bestimmen) stehen in gemeinsam/ki-konten.mjs.
-//   GET  /api/ki/konten   → Stand (gleicht vorher die Liste ab: neu erkannte Konten starten gesperrt)
+//   GET  /api/ki/konten   → Stand, REIN LESEND (nichts wird angelegt oder geändert); neu erkannte Konten stehen nur unter `neu` („neu, noch nicht eingetragen“)
+//   POST /api/ki/konten/abgleich → der ausdrückliche Abgleich: neu erkannte Konten eintragen (sie starten gesperrt), die Liste anlegen oder reparieren, Sperren nachführen
 //   POST /api/ki/konten   { id, name?, abo? }
 //   PUT  /api/ki/zugriff  { konto, vault, stufe, heimat? }
 // Grundsätze:
@@ -339,10 +340,33 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
     try { const v = `${kontenPfad(support)}.vorher`; const st = lstatSync(v); return st.isFile() && st.size <= 4 * 1024 * 1024 && pruefeDaten(JSON.parse(readFileSync(v, "utf8"))); } catch { return false; }
   }
 
-  function stand() {
-    const s = synchronisiere();
+  // Welche erkannten Konten stehen (noch) nicht in der Liste? Dieselbe Zuordnung wie in rechne — aber rein lesend: nichts wird angelegt.
+  // → [{ programm, programmName, name, ordner, standard }]; ohne Liste (daten = null) sind es alle erkannten.
+  function neuErkannt(daten) {
+    const neu = [];
+    let erkannt = [];
+    try { erkannt = erkenne(); } catch { return neu; }
+    for (const e of erkannt) {
+      if (daten) {
+        const f = falte(e.ordner);
+        const gleich = Object.values(daten.konten).filter((k) => k.programm === e.programm && falte(k.ordner) === f);
+        if (gleich.find((k) => k.ordnerKennung === e.ordnerKennung) || gleich.find((k) => k.ordnerKennung === "")) continue;
+        if (gleich.length && !e.ordnerKennung) continue;
+      }
+      neu.push({ programm: e.programm, programmName: programmName(e.programm), name: e.name, ordner: kurz(e.ordner), standard: e.standard === true });
+    }
+    return neu;
+  }
+
+  // Der Stand für die Oberfläche. opt.lesend: rein lesend (GET) — kein Abgleich, nichts wird angelegt oder geändert; neu erkannte Konten stehen nur unter `neu`
+  // („neu, noch nicht eingetragen“) und kommen erst durch den ausdrücklichen Abgleich (abgleich, POST /api/ki/konten/abgleich) oder beim Verbinden in die Liste.
+  // Ohne opt.lesend (Antwort einer schreibenden Route) gleicht er wie bisher vorher ab. opt.s: das Ergebnis eines eben gelaufenen Abgleichs (Hinweis).
+  function stand(opt = {}) {
+    const lesend = opt.lesend === true;
+    const s = lesend ? (opt.s || {}) : synchronisiere();
+    const r = lesend ? liesKonten(support) : null;
     const daten = lade();
-    if (!daten) return { zustand: "defekt", stufen: STUFEN, konten: [], vaults: [], zugriff: {} };
+    if (!daten) return { zustand: lesend && r ? r.zustand : "defekt", stufen: STUFEN, konten: [], vaults: [], zugriff: {}, ...(lesend ? { neu: neuErkannt(null) } : {}) };
     const liste = vaultListe();
     const anmeldungen = anmeldungLesen();
     const konten = Object.entries(daten.konten).map(([id, k]) => {
@@ -363,8 +387,11 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
     const hinweis = s.hinweis || (daten.hinweis && daten.hinweis.art === "defekt-neu" ? "defekt-neu" : null);
     const hinweisGrund = (daten.hinweis && daten.hinweis.grund) || s.hinweisGrund || "defekt";
     return { zustand: "ok", ...(hinweis ? { hinweis, hinweisGrund, ...(daten.hinweis && daten.hinweis.seit ? { hinweisSeit: daten.hinweis.seit } : {}), vorherDa: vorherBrauchbar() } : {}), stufen: STUFEN, konten, vaults: vs, zugriff, ...(pflegeHinweise(daten).length ? { pflegeHinweise: pflegeHinweise(daten) } : {}),
-      ...(istObj(daten.pflegeMigration) && daten.pflegeMigration.plistOffen === true ? { pflegePlist: { offen: true, grund: typeof daten.pflegeMigration.plistGrund === "string" ? daten.pflegeMigration.plistGrund : "fehler" } } : {}) };
+      ...(istObj(daten.pflegeMigration) && daten.pflegeMigration.plistOffen === true ? { pflegePlist: { offen: true, grund: typeof daten.pflegeMigration.plistGrund === "string" ? daten.pflegeMigration.plistGrund : "fehler" } } : {}), ...(lesend ? { neu: neuErkannt(daten) } : {}) };
   }
+  // Der ausdrückliche Abgleich (POST /api/ki/konten/abgleich; die Oberfläche ruft ihn nur auf Klick oder wenn die Liste fehlt oder defekt ist): neu erkannte Konten werden mit der Regel für neue
+  // Konten eingetragen (gesperrt, Ausnahme: das einzige Konto in einem von Kortex angelegten oder geklonten Vault), die Liste wird angelegt oder repariert, Sperren in den Einstellungen nachgeführt.
+  function abgleich() { const s = synchronisiere(); return stand({ lesend: true, s }); }
   // Hinweise der Migration (Konto des Dienstes hatte nicht „erweitert“): nur solange der Vault noch auf „ohne KI“ aus der Migration steht
   const pflegeHinweise = (daten) => {
     const m = daten && istObj(daten.pflegeMigration) ? daten.pflegeMigration : null;
@@ -814,5 +841,5 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
     return { konto: null, liste: true };
   }
 
-  return { synchronisiere, altform: (id) => { const k = lade() && Object.hasOwn(lade().konten, id) ? lade().konten[id] : null; return k && homeErlaubt(home()) ? altformStandard(k, home()) : { mcp: false, hooks: false }; }, stand, setzeName, setzeZugriff, setzeStandard, setzePflege, migrierePflege, migrationVermerkt, vermerkePlist, setzeSchutz, legeKontoAn, entferneKonto, papierkorbOrdner, anmeldung, quittiereHinweis, holeVorher, vaultHinzu, kontoFuerProfil, kontoFuerProgramm, kontoDaten, probeKonto, lade };
+  return { synchronisiere, abgleich, altform: (id) => { const k = lade() && Object.hasOwn(lade().konten, id) ? lade().konten[id] : null; return k && homeErlaubt(home()) ? altformStandard(k, home()) : { mcp: false, hooks: false }; }, stand, setzeName, setzeZugriff, setzeStandard, setzePflege, migrierePflege, migrationVermerkt, vermerkePlist, setzeSchutz, legeKontoAn, entferneKonto, papierkorbOrdner, anmeldung, quittiereHinweis, holeVorher, vaultHinzu, kontoFuerProfil, kontoFuerProgramm, kontoDaten, probeKonto, lade };
 }

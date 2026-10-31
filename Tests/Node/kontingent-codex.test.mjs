@@ -239,7 +239,7 @@ test("Im Testmodus ohne eingesetztes Programm fragt Kortex nie ein echtes Codex:
   mkdirSync(join(home, ".codex"), { recursive: true }); writeFileSync(join(home, ".codex", "config.toml"), "");
   const h = erzeugeHandler({ vault, vaultOptionen: { support }, kontenHome: home });
   const rufe = async (p) => JSON.parse((await h({ methode: "GET", pfad: p, query: null })).body.toString("utf8"));
-  await rufe("/api/ki/konten");
+  await h({ methode: "POST", pfad: "/api/ki/konten/abgleich", query: null, body: Buffer.from("{}") }); // der ausdrückliche Abgleich legt die Konten an
   const s1 = (await rufe("/api/ki/kontingent")).konten.find((x) => x.programm === "codex");
   await h.kontingent.warteAufAbfragen();
   const s2 = (await rufe("/api/ki/kontingent")).konten.find((x) => x.programm === "codex");

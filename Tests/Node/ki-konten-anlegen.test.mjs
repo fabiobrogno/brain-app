@@ -149,7 +149,7 @@ test("Verweis als Wurzel: zeigt <Support>/ki-konten-ordner auf den Benutzerordne
   assert.deepEqual(erkenneProfile(home, s).filter((p) => p.verwaltet), []);
   assert.equal(istVerwalteterOrdner(s, privat, "claude", { fehltOk: true }), false);
   await mitHome(home, async () => {
-    const st = await rufe("GET", "/api/ki/konten");
+    const st = await rufe("POST", "/api/ki/konten/abgleich");
     const k = st.j.konten.find((x) => x.pfad.endsWith(".claude-privat"));
     assert.ok(k, "das Konto aus dem Home ist erkannt");
     assert.equal(k.verwaltet, false);
@@ -193,7 +193,7 @@ test("Entfernen: ein Konto aus dem Home (System-Standard oder ~/.claude-…) ble
   const mcp = tmp("brain-mcpdir-"); schreibe(mcp, "brain-mcp.mjs", "//\n");
   const rufe = aufruf(erzeugeHandler({ vault, vaultOptionen: { support: s }, mcpPfad: join(mcp, "brain-mcp.mjs") }));
   await mitHome(home, async () => {
-    const st = await rufe("GET", "/api/ki/konten");
+    const st = await rufe("POST", "/api/ki/konten/abgleich");
     assert.equal(st.j.konten.length, 2);
     assert.ok(st.j.konten.every((k) => k.verwaltet === false));
     for (const k of st.j.konten) {
@@ -220,7 +220,7 @@ test("Anmeldestand: „abgelaufen“ erst, wenn das Konto früher angemeldet war
     assert.equal(r.j.zustand, "abgelaufen");
     assert.equal((await a.rufe("POST", "/api/ki/anmeldung", { konto: id, zustand: "kaputt" })).status, 400);
     assert.equal((await a.rufe("POST", "/api/ki/anmeldung", { konto: "k_gibtesnicht", zustand: "angemeldet" })).status, 404);
-    const st = await a.rufe("GET", "/api/ki/konten");
+    const st = await a.rufe("POST", "/api/ki/konten/abgleich");
     assert.ok(st.j.konten.find((k) => k.id === id).zuletztAngemeldet);
     assert.deepEqual(Object.keys(JSON.parse(readFileSync(join(a.s, "ki-anmeldung.json"), "utf8")).konten[id]), ["zuletzt"]);
     assert.ok(!readFileSync(join(a.s, "ki-konten.json"), "utf8").includes("zuletzt"));
@@ -236,7 +236,7 @@ test("Stand der Konten trägt die Ampel: Claude mit Sperre ohne Leseverbot ist r
   await mitHome(a.home, async () => {
     const c = (await a.rufe("POST", "/api/ki/konto-neu", { programm: "claude", name: "Ampel" })).j.neuesKonto.id;
     const x = (await a.rufe("POST", "/api/ki/konto-neu", { programm: "codex", name: "Codex Zwei" })).j.neuesKonto.id;
-    const st = await a.rufe("GET", "/api/ki/konten");
+    const st = await a.rufe("POST", "/api/ki/konten/abgleich");
     const kc = st.j.konten.find((k) => k.id === c), kx = st.j.konten.find((k) => k.id === x);
     assert.equal(kc.schutz.ampel.gesperrt, 2);
     assert.equal(kc.schutz.ampel.farbe, "rot");

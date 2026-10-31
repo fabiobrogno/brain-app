@@ -308,7 +308,7 @@ test("Über die Werkstatt: GET /api/ki/kontingent und POST …/statuszeile (nach
   mkdirSync(verwaltet, { recursive: true });
   const h = erzeugeHandler({ vault, vaultOptionen: { support }, kontenHome: home, kontenErkennung: () => [{ programm: "claude", ordner: realpathSync(verwaltet), standard: false, name: "Claude Code · kunde", ordnerKennung: "x1" }] });
   const rufe = async (methode, p, daten) => { const r = await h({ methode, pfad: p, query: null, body: daten === undefined ? undefined : Buffer.from(JSON.stringify(daten)) }); return { ...r, j: JSON.parse(r.body.toString("utf8")) }; };
-  const konten = await rufe("GET", "/api/ki/konten");
+  const konten = await rufe("POST", "/api/ki/konten/abgleich");
   const id = konten.j.konten[0].id;
   let r = await rufe("GET", "/api/ki/kontingent");
   assert.equal(r.status, 200);

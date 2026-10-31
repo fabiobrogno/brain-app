@@ -75,7 +75,7 @@ test("1 Beim Sperren über die Route wird auch ohneKonto gesperrt; ein Assistent
   const rufe = async (m, pf, b) => { const r = await h({ methode: m, pfad: pf, query: null, body: b === undefined ? undefined : Buffer.from(JSON.stringify(b)) }); let j = null; try { j = JSON.parse(r.body.toString("utf8")); } catch { /* */ } return { ...r, j }; };
   const alt = process.env.HOME; process.env.HOME = home;
   try {
-    const id = (await rufe("GET", "/api/ki/konten")).j.konten[0].id;
+    const id = (await rufe("POST", "/api/ki/konten/abgleich")).j.konten[0].id;
     await rufe("PUT", "/api/ki/zugriff", { konto: id, vault: v, stufe: "gesperrt" });
     assert.equal(K.liesKonten(s).daten.vaults[v].ohneKonto, "gesperrt", "mit der Sperre auch ohneKonto");
     assert.equal(K.liesKonten(s).daten.vaults[v].gesperrtNutzer[id], true, "die Sperre ist als vom Nutzer gesetzt vermerkt");

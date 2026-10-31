@@ -125,8 +125,8 @@ export function erzeugeHandler(o) {
   }
   ereignisse.richteAuf(aktuell ? aktuell.wurzel : null);
 
-  // KI-Konten (docs/plaene/ki-konten.md): welche Konten gibt es, was darf jedes in welchem Vault. Die Werkstatt gleicht die Liste beim Start der App ab (werkstatt.mjs)
-  // und bei jedem Aufruf von /api/ki/konten. o.kontenErkennung / o.kontenVerbunden / o.kontenHome: Ersatz für Tests (nie die echten Orte des Rechners lesen).
+  // KI-Konten (docs/plaene/ki-konten.md): welche Konten gibt es, was darf jedes in welchem Vault. Die Werkstatt gleicht die Liste beim Start der App ab (werkstatt.mjs) und auf ausdrücklichen Wunsch (POST /api/ki/konten/abgleich);
+  // GET /api/ki/konten liest nur. o.kontenErkennung / o.kontenVerbunden / o.kontenHome: Ersatz für Tests (nie die echten Orte des Rechners lesen).
   const konten = erzeugeKonten({ support: vaultOpt.support || supportOrdner(), vaults: () => vaultsFn.leseVaults(optV()).vaults,
     ...(o.kontenHome ? { home: () => o.kontenHome } : {}), ...(o.kontenErkennung ? { erkennung: o.kontenErkennung } : {}), ...(o.kontenVerbunden ? { verbunden: o.kontenVerbunden } : {}) });
 
@@ -184,7 +184,7 @@ export function erzeugeHandler(o) {
     } });
   // Pflege je Vault (letzter/nächster Lauf, Dienst, Übernahme des alten Profils der plist): werkstatt/pflege.mjs
   const pflege = erzeugePflege({ support: vaultOpt.support || supportOrdner(), konten, ...(o.kontenHome ? { home: () => o.kontenHome } : {}), vaults: () => vaultsFn.leseVaults(optV()).vaults });
-  // Die Übernahme des festen Claude-Profils aus der alten plist (docs/plaene/ki-konten.md, P3), idempotent und bei jedem Start und jedem Öffnen der KI-Konten erneut versucht, solange die plist die Variable trägt:
+  // Die Übernahme des festen Claude-Profils aus der alten plist (docs/plaene/ki-konten.md, P3), idempotent und bei jedem Start und bei jedem ausdrücklichen Abgleich der KI-Konten erneut versucht, solange die plist die Variable trägt:
   // erst die Pflege-Einstellung der Vaults des Dienstes (pflege.migriere), dann die plist neu schreiben (`dienst an` mit Sicherung *.vor-pflege und Rückfall bei Ladefehler, Kern). Die plist wird nur für einen
   // Vault neu geschrieben, der zum Dienst gehört (ein anderer wird dadurch nie neu eingeschaltet). Misserfolg: `plistOffen` + Grund in der Liste, das Studio zeigt es; die alte plist bleibt wirksam.
   async function plistNeuSchreiben(v) {
@@ -412,8 +412,10 @@ export function erzeugeHandler(o) {
       }
       // KI-Konten (docs/plaene/ki-konten.md): Liste mit Stufen je Vault · Name/Abo setzen · Stufe eines Kontos in einem Vault setzen
       case "/api/ki/konten":
-        if (methode === "GET") { await migrierePflege(v); return konten.stand(); }
+        if (methode === "GET") return konten.stand({ lesend: true }); // rein lesend: nichts anlegen, nichts abgleichen, nichts übernehmen
         nur("POST"); return konten.setzeName(eingabe());
+      // Der ausdrückliche Abgleich (nur auf Klick oder wenn die Liste fehlt/defekt ist): neue Konten eintragen, Liste reparieren, altes Profil der plist übernehmen
+      case "/api/ki/konten/abgleich": nur("POST"); await migrierePflege(v); return konten.abgleich();
       case "/api/ki/kontingent": nur("GET"); return kontingent.stand({ neu: q.get("neu") === "1", vault: v ? v.wurzel : null });
       case "/api/ki/kontingent/statuszeile": nur("POST"); return kontingent.schalteStatuszeile(eingabe());
       case "/api/ki/zugriff": nur("PUT"); return konten.setzeZugriff(eingabe());
@@ -808,7 +810,6 @@ export function erzeugeHandler(o) {
       return fehler(500, "Interner Fehler");
     } finally {
       if (schreibt) ereignisse.endeEigenes(eigen, { kopf: eigenKopf });
-      else if (/^\/api\/ki\/konten\/?$/.test(pfad)) ereignisse.markiereEigen(["@support/ki-konten.json"]); // der Abgleich beim Abruf schreibt die Liste selbst
     }
   }
   // Welche Dateien hat diese schreibende Anfrage (vermutlich) angefasst? Vault-relative Pfade aus Anfrage und Antwort, dazu die Dateien im Benutzerordner.
