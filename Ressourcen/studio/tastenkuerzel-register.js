@@ -27,6 +27,7 @@ export const REGISTER = {
     {"id":"suche-notiz","gruppe":"notiz","name":"In der Notiz suchen","text":"Sucht im Text der offenen Notiz.","standard":"Cmd+F","woerter":["suche","finden","notiz","text"]},
     {"id":"commit","gruppe":"notiz","name":"Änderungen sichern","text":"Legt einen Stand der geänderten Dateien an.","standard":"Shift+Cmd+G","menue":"commit","woerter":["commit","sichern","git","stand"]},
     {"id":"info","gruppe":"ansicht","name":"Eigenschaften ein- und ausblenden","text":"Die Spalte rechts neben der Notiz.","standard":"Alt+Cmd+I","menue":"infospalte","woerter":["eigenschaften","spalte","info","rechts"]},
+    {"id":"seitenleiste","gruppe":"ansicht","name":"Seitenleiste rechts ein- und ausblenden","text":"Dieselbe Spalte wie „Eigenschaften“, der Knopf neben „Frag“ in der Kopfzeile.","standard":"Cmd+\\","woerter":["seitenleiste","eigenschaften","spalte","rechts","info"]},
     {"id":"verlauf","gruppe":"ansicht","name":"Verlauf ein- und ausblenden","text":"Frühere Fassungen der Notiz.","standard":"Shift+Cmd+H","menue":"verlauf","woerter":["verlauf","versionen","fassung","git"]},
     {"id":"hell-dunkel","gruppe":"ansicht","name":"Hell und Dunkel umschalten","text":"Wechselt das Thema.","standard":null,"menue":"hell-dunkel","woerter":["hell","dunkel","thema","dark","light"]},
     {"id":"gehe-posteingang","gruppe":"gehe","name":"Posteingang","text":"Springt zum Bereich in der Seitenleiste.","standard":"Cmd+1","menue":"posteingang","woerter":["posteingang","inbox","bereich"]},
