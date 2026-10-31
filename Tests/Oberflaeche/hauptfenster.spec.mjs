@@ -389,11 +389,13 @@ test("Statusleiste: kein interner Pfad, Claude-Zustand verständlich (Haken oder
   const titel = await page.locator("#vault-wechsler").getAttribute("title");
   expect(titel).toContain("Vault wechseln");
   expect(titel).toContain("vault"); // Ordnername am Ende des Pfads (die Attrappen-Vaults heißen „vault“)
-  const claude = page.locator('[data-st="claude"]');
-  await expect(claude).toContainText("Claude verbinden");
-  expect(await claude.innerText()).not.toContain("✕");
-  await expect(claude.locator("svg")).toHaveCount(2); // Logo und Plus
-  await expect(claude).toHaveAttribute("title", /nicht verbunden/);
+  // KI steht nur einmal in der Leiste (P4): ohne Konto der Knopf „KI verbinden …“ des Konto-Platzes, kein zweiter „Claude verbinden“
+  await expect(page.locator('[data-st="claude"]')).toHaveCount(0);
+  await expect(page.locator("#status button", { hasText: /verbinden/ })).toHaveCount(1);
+  await expect(page.locator('[data-st="kontingent"]')).toContainText("KI verbinden");
+  // nichts doppelt: jede Angabe der Leiste (Text) kommt genau einmal vor
+  const texte = (await page.locator("#status button").allInnerTexts()).map((t) => t.trim()).filter(Boolean);
+  expect(new Set(texte).size).toBe(texte.length);
 });
 
 // ---------- Aufgabenlisten im Editor ----------

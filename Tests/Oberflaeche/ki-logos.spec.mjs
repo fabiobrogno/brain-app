@@ -18,13 +18,8 @@ async function start(page) {
   await page.waitForSelector(".cm-content .cm-line");
 }
 
-test("Statusleiste und Einstellungsmenü zeigen das Claude-Logo mit Namen", async ({ page }) => {
+test("Das Einstellungsmenü zeigt das Claude-Logo mit Namen (die Statusleiste zeigt KI nur einmal, als Konto)", async ({ page }) => {
   await start(page);
-  const st = page.locator('[data-st="claude"]').first();
-  const logo = st.locator('[data-ki-logo="claude"]');
-  await expect(logo).toBeVisible();
-  await expect(logo).toHaveAttribute("title", "Claude Code");
-  await expect(logo.locator("svg")).toHaveCount(1);
   await page.locator('[data-st="einstellungen"]').first().click();
   const eintrag = page.locator('[data-menue="ki"]');
   await expect(eintrag.locator('[data-ki-logo="claude"]')).toBeVisible();

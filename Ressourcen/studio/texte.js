@@ -124,7 +124,7 @@ export const T = {
     nichtHochgeladen: (n) => `${n} nicht hochgeladen`,
     nichtHochgeladenTitel: (n) => `${n === 1 ? "1 gesicherte Fassung ist" : `${n} gesicherte Fassungen sind`} noch nicht auf dem Server — klicke zum Abgleichen`,
     neuesTitel: "Auf dem Server liegt Neues vom anderen Mac — klicke zum Abgleichen",
-    sauber: "Alles gesichert",
+    sauber: "Keine Änderungen",
     inbox: (n) => `Inbox ${n}`,
     rueckfragen: (n) => `Rückfragen ${n}`,
     rueckfragenHinweis: "Offene Rückfragen von Kortex — beantworten im Terminal mit /rueckfragen",
