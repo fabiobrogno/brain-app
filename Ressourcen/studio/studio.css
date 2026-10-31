@@ -63,13 +63,22 @@
   --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
   /* Radien: Orca --radius 0.625rem (10 px) und die Faktoren 0,6 / 0,8 / 1 / 1,4 / 1,8 */
   --r-s: 6px; --r: 8px; --r-l: 10px; --r-xl: 14px; --r-2xl: 18px; --r-pille: 999px;
-  /* Bewegung: 180 ms ease-out-expo (Auf-/Zuklappen, Hover), 120 ms schnell, 760 ms Layout-Wechsel (Orca main.css, OnboardingFlow) */
-  --ease: cubic-bezier(.16, 1, .3, 1);
-  --ease-out: cubic-bezier(.16, 1, .3, 1);
-  --ease-flow: cubic-bezier(.22, 1, .36, 1);
-  --ease-in: cubic-bezier(.7, 0, .84, 0);
-  --d-fast: 120ms; --d: 180ms; --d-layout: 760ms;
-  --t: 150ms;
+  /* ---------- Bewegung: EIN System (Paket P4, „Bewegung mit Bedeutung“) ----------
+     Jede Animation und jeder Übergang im Studio nimmt Dauer und Kurve aus diesen Tokens, nie feste Zahlen (Ausnahme: Dauerläufer wie Drehen/Schimmern, siehe --d-dreh).
+     --d-1 Rückmeldung (Hover, Fokus, Drücken, Schließen von Popovers) · --d-2 Einblenden, Aufklappen, Karten, Listen · --d-3 Flächen (Spalten, Panel, Ansichtswechsel)
+     --d-4 Bühne und Auftritte · --d-5 Szenenwechsel · --d-6 Hervorheben (Leuchten einer neuen Karte).
+     Kurven: --ease-out (ease-out-quart, Standard), --ease-feder (federnd, leichtes Überschwingen: Landen von Karten, Zähler, Absenden), --ease-in (Abgang), --ease-lin (Dauerläufer).
+     „Bewegung reduzieren“ (Systemeinstellung ODER Einstellungen → Darstellung → Bewegung) setzt alle Dauern auf 0 ms (unten); JS liest dieselben Tokens (bewegung.js). */
+  --ease-out: cubic-bezier(.25, 1, .5, 1);
+  --ease: var(--ease-out);
+  --ease-flow: var(--ease-out);
+  --ease-in: cubic-bezier(.5, 0, .75, 0);
+  --ease-lin: linear;
+  --ease-feder: cubic-bezier(.34, 1.45, .64, 1);
+  --d-1: 120ms; --d-2: 200ms; --d-3: 280ms; --d-4: 480ms; --d-5: 760ms; --d-6: 1600ms;
+  --d-dreh: .8s; --d-puls: 1.6s; --d-schimmer: 2s; /* Dauerläufer (Ladeanzeigen): Drehen, Pulsieren, Schimmern */
+  /* Alt-Namen der Dauern (v1-Code, Agent-Module) */
+  --d-fast: var(--d-1); --d: var(--d-2); --d-layout: var(--d-5); --d-panel: var(--d-3); --t: var(--d-1);
   /* Alt-Namen (v1-Code und Agent-Module) */
   --leiste: var(--seite); --leiste-2: var(--seite-2);
   --r-: 8px;
@@ -90,14 +99,14 @@ button { font: inherit; color: inherit; }
 kbd { font: 500 11px var(--schrift); }
 ::selection { background: color-mix(in srgb, var(--akzent) 22%, transparent); }
 .sym { display: block; flex: none; }
-button:focus-visible, [tabindex]:focus-visible, a:focus-visible { outline: 2px solid var(--akzent); outline-offset: 1px; }
+button:focus-visible, [tabindex]:focus-visible, a:focus-visible, summary:focus-visible, [role="button"]:focus-visible, [role="tab"]:focus-visible { outline: 2px solid var(--akzent); outline-offset: 1px; }
 .leise { color: var(--text-3); }
 
 /* ---------- Fenster ----------
    Seitenleiste und rechte Spalte (Eigenschaften ODER „Frag deinen Vault“) laufen über die volle Höhe; die Kopfzeile (Brotkrumen, Suchfeld, Knöpfe) liegt über Liste und Editor.
    Die Spaltenbreiten setzt app.js (--b-seite, --b-liste, --b-info-voll, --b-frage); --b-rechts ist die Breite der rechten Spalte, je nach Zustand (data-info, data-frage). */
 #app {
-  --kopf-h: 44px; --d-panel: 280ms;
+  --kopf-h: 44px;
   --b-seite: 250px; --b-liste: 300px; --b-info: var(--b-info-voll, 300px); --b-frage: 380px;
   --b-liste-eff: var(--b-liste); --b-rechts: var(--b-info);
   display: grid; height: 100vh; overflow: clip; /* das geschlossene Frag-Panel steht rechts außerhalb: nichts davon darf die Seite breiter machen (clip, nicht hidden: kein Scroll-Container, sonst schließen Scroll-Ereignisse die Popover) */
@@ -208,7 +217,7 @@ button:focus-visible, [tabindex]:focus-visible, a:focus-visible { outline: 2px s
 .leer-liste .kurz { display: flex; gap: 16px; justify-content: center; margin-top: 14px; color: var(--text-3); font-size: 11px; }
 .leer-liste .kurz kbd { color: var(--text-2); border: 1px solid var(--linie-stark); border-radius: 4px; padding: 1px 5px; margin-right: 6px; background: var(--seite); }
 .skelett { padding: 14px 16px; border-bottom: 1px solid var(--linie); display: grid; gap: 8px; }
-.skelett i { display: block; height: 10px; border-radius: 5px; background: var(--hover-2); animation: puls 1.4s ease-in-out infinite; }
+.skelett i { display: block; height: 10px; border-radius: 5px; background: var(--hover-2); animation: puls var(--d-puls) ease-in-out infinite; }
 .skelett i:first-child { width: 55%; height: 12px; }
 .skelett i:nth-child(3) { width: 32%; }
 @keyframes puls { 50% { opacity: .45; } }
@@ -366,7 +375,7 @@ button.st { cursor: pointer; } button.st:hover { background: var(--hover); color
 .st .sym { color: var(--text-3); }
 .st .d { width: 7px; height: 7px; border-radius: 50%; background: var(--gruen); flex: none; }
 .st .d.gelb { background: var(--gelb); } .st .d.rot { background: var(--rot); } .st .d.grau { background: var(--grau); }
-.st .d.dreht { animation: dreh 1s linear infinite; background: transparent; border: 1.5px solid var(--akzent); border-top-color: transparent; width: 9px; height: 9px; }
+.st .d.dreht { animation: dreh var(--d-dreh) linear infinite; background: transparent; border: 1.5px solid var(--akzent); border-top-color: transparent; width: 9px; height: 9px; }
 .st.hervor { color: var(--text); font-weight: 500; }
 .st.hervor .sym { color: var(--gelb); }
 .st.warn { color: var(--text); } .st.warn .sym { color: var(--gelb); }
@@ -392,7 +401,6 @@ button.st { cursor: pointer; } button.st:hover { background: var(--hover); color
 .st.sync[data-zustand="offline"] { --z: var(--text-3); color: var(--text-2); background: transparent; border-style: dashed; }
 .st.sync[data-zustand="nie"] { --z: var(--text-3); color: var(--text-2); }
 .st.sync[data-zustand="laeuft"] { --z: var(--akzent); }
-.st.sync[data-zustand="laeuft"] .sync-zustand .sym { animation: dreh 1s linear infinite; }
 .st.sync[data-zustand="konflikt"] .sync-aktion, .st.sync[data-zustand="laeuft"] .sync-aktion { display: none; }
 .st.sync[data-zustand="senden"] .sync-aktion, .st.sync[data-zustand="neues"] .sync-aktion, .st.sync[data-zustand="konflikt"] .sync-zustand { color: var(--text); }
 .st.sync[data-zustand="neues"] .sync-aktion { border-left-color: var(--akzent-rand); }
@@ -468,7 +476,7 @@ button.st { cursor: pointer; } button.st:hover { background: var(--hover); color
 .pal-eintrag .r { font-size: 12px; color: var(--text-3); white-space: nowrap; }
 
 #toast-host { position: fixed; bottom: 44px; right: 16px; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; z-index: 60; pointer-events: none; }
-.toast { background: var(--erhoben); color: var(--text); border: 1px solid var(--linie); padding: 12px 14px; border-radius: var(--r-l); box-shadow: var(--schatten-float); pointer-events: auto; display: flex; gap: 16px; align-items: center; animation: toast-ein 200ms var(--ease-out) both; max-width: 420px; min-width: 240px; font-size: 13px; }
+.toast { background: var(--erhoben); color: var(--text); border: 1px solid var(--linie); padding: 12px 14px; border-radius: var(--r-l); box-shadow: var(--schatten-float); pointer-events: auto; display: flex; gap: 16px; align-items: center; animation: toast-ein var(--d-2) var(--ease-out) both; max-width: 420px; min-width: 240px; font-size: 13px; }
 .toast.fehler { border-color: var(--rot-rand); background: color-mix(in srgb, var(--rot) 8%, var(--erhoben)); }
 .toast a { color: var(--akzent-tinte); font-weight: 500; text-decoration: none; cursor: pointer; }
 .toast a:hover { text-decoration: underline; }
@@ -476,8 +484,15 @@ button.st { cursor: pointer; } button.st:hover { background: var(--hover); color
 @keyframes hoch { from { opacity: 0; transform: translateY(6px) scale(.985); } }
 @keyframes zoom { from { opacity: 0; transform: scale(.96); } }
 @keyframes toast-ein { from { opacity: 0; transform: translateY(8px) scale(.98); } }
-@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
-/* Einstellungen → Darstellung → Bewegung „Reduziert“ (P5): dasselbe wie die Systemeinstellung, aber von Hand gewählt */
+/* ---------- Bewegung reduzieren ----------
+   Systemeinstellung (prefers-reduced-motion) und der Schalter in Einstellungen → Darstellung → Bewegung („Reduziert“, data-bewegung am <html>) wirken gleich:
+   alle Dauer-Tokens 0 ms, Animationen und Übergänge aus (auch feste Werte in Spezialfällen). Inhalte hängen nie an einer Animation: ohne Bewegung steht alles sofort da.
+   Ausnahme „Lebenszeichen“: laufende Ladeanzeigen (Drehen, Windung) bleiben als einzige Dauerläufer, weil sie Zustand zeigen (siehe bewegung.css). */
+@media (prefers-reduced-motion: reduce) {
+  :root { --d-1: 0ms; --d-2: 0ms; --d-3: 0ms; --d-4: 0ms; --d-5: 0ms; --d-6: 0ms; }
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+:root[data-bewegung="reduziert"] { --d-1: 0ms; --d-2: 0ms; --d-3: 0ms; --d-4: 0ms; --d-5: 0ms; --d-6: 0ms; }
 :root[data-bewegung="reduziert"] *, :root[data-bewegung="reduziert"] *::before, :root[data-bewegung="reduziert"] *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 
 /* Eigenschaften: aufklappbare Listen */

@@ -21,9 +21,9 @@
   background: var(--erhoben); color: var(--text);
   border: 1px solid var(--linie); border-radius: var(--r-xl);
   box-shadow: var(--w-schatten);
-  animation: w-karte-ein 300ms var(--ease) both;
+  animation: w-karte-ein var(--d-3) var(--ease) both;
 }
-.w-schritt { animation: w-schritt-ein 200ms var(--ease) both; }
+.w-schritt { animation: w-schritt-ein var(--d-2) var(--ease) both; }
 .w-schritt.mit-ecke { padding-top: 20px; }
 .w-sperre { pointer-events: none; }
 
@@ -99,7 +99,7 @@
 .w-meldung:empty { display: none; }
 .w-arbeit { display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--text-2); text-align: left; }
 .w-arbeit.links { justify-content: flex-start; }
-.w-dreh { flex: none; width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--akzent); border-top-color: transparent; animation: w-dreh 800ms linear infinite; }
+.w-dreh { flex: none; width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--akzent); border-top-color: transparent; animation: w-dreh var(--d-dreh) linear infinite; }
 .w-fehlerbox { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; text-align: left; font-size: 13px; line-height: 1.45; border-radius: var(--r); background: color-mix(in srgb, var(--rot) 8%, transparent); border: 1px solid color-mix(in srgb, var(--rot) 25%, transparent); }
 .w-fehlerbox svg { flex: none; margin-top: 1px; }
 .w-fehlerbox.gross { margin-top: 20px; }
@@ -137,7 +137,7 @@
 
 /* ---------- Pfad-Dialog (Browser-Ausweg) ---------- */
 .w-schleier { position: fixed; inset: 0; z-index: 90; display: flex; justify-content: center; align-items: flex-start; padding: 16vh 16px 16px; background: var(--schleier); animation: w-host-ein var(--t) ease-out both; }
-.w-modal { width: min(460px, 100%); padding: 20px; background: var(--erhoben); color: var(--text); border: 1px solid var(--linie-stark); border-radius: 14px; box-shadow: var(--schatten); display: flex; flex-direction: column; gap: 14px; animation: w-karte-ein 200ms var(--ease) both; font-family: var(--schrift); }
+.w-modal { width: min(460px, 100%); padding: 20px; background: var(--erhoben); color: var(--text); border: 1px solid var(--linie-stark); border-radius: 14px; box-shadow: var(--schatten); display: flex; flex-direction: column; gap: 14px; animation: w-karte-ein var(--d-2) var(--ease) both; font-family: var(--schrift); }
 .w-modal h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -.01em; }
 .w-modal .w-modal-fuss { display: flex; justify-content: flex-end; gap: 8px; margin-top: 2px; }
 .w-modal .feld input[type=text]:not(.bs-input) { padding: 9px 12px; font-size: 14px; border-radius: 10px; background: var(--papier); }

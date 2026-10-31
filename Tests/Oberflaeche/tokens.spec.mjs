@@ -65,9 +65,10 @@ test("Tokens: Radien, Höhenstufen, Bewegung wie im Prototyp (aus Orca abgeleite
     return Object.fromEntries(["--r-s", "--r", "--r-l", "--r-xl", "--r-2xl", "--ease-out", "--ease-flow", "--d-fast", "--d", "--d-layout", "--schatten-klein", "--schatten-float", "--schatten-dialog"].map((n) => [n, lies(n)]));
   });
   expect([t["--r-s"], t["--r"], t["--r-l"], t["--r-xl"], t["--r-2xl"]]).toEqual(["6px", "8px", "10px", "14px", "18px"]);
-  expect(t["--ease-out"]).toBe("cubic-bezier(.16, 1, .3, 1)");
-  expect(t["--ease-flow"]).toBe("cubic-bezier(.22, 1, .36, 1)");
-  expect([t["--d-fast"], t["--d"], t["--d-layout"]]).toEqual(["120ms", "180ms", "760ms"]);
+  // Bewegungssystem P4: drei Hauptdauern 120 / 200 / 280 ms, ease-out-quart; die Alt-Namen zeigen auf dieselben Tokens
+  expect(t["--ease-out"]).toBe("cubic-bezier(.25, 1, .5, 1)");
+  expect(t["--ease-flow"]).toBe("cubic-bezier(.25, 1, .5, 1)");
+  expect([t["--d-fast"], t["--d"], t["--d-layout"]]).toEqual(["120ms", "200ms", "760ms"]);
   // drei Höhenstufen sind gesetzt und unterscheiden sich (xs < floating < Dialog)
   const blur = (s) => Math.max(...[...s.matchAll(/(?:^|\s|,)(\d+)px\s+(\d+)px(?=\s*(?:rgba?|light-dark|,|$))/g)].map((m) => +m[2]));
   expect(blur(t["--schatten-klein"])).toBeLessThan(blur(t["--schatten-float"]));

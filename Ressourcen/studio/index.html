@@ -18,6 +18,7 @@
 <link rel="stylesheet" href="hauptfenster.css">
 <link rel="stylesheet" href="konflikt.css">
 <link rel="stylesheet" href="kontingent.css">
+<link rel="stylesheet" href="bewegung.css">
 </head>
 <body>
 <div id="app" data-info="an" data-modus="liste">
@@ -33,7 +34,7 @@
       <button id="fuss-merken" class="erfassen-feld" type="button"><span data-sym="blitz"></span><span class="erfassen-text" data-t="merken">Schnell erfassen</span><kbd class="erfassen-taste"><span aria-hidden="true">⌥</span> Leer</kbd></button>
       <button id="fuss-neu" class="erfassen-neu" type="button"><span data-sym="stift"></span></button>
     </div>
-    <div id="seite-scroll" class="seite-scroll">
+    <div id="seite-scroll" class="seite-scroll" data-kanten>
       <nav id="bereiche" class="gruppe" aria-label="Bereiche"></nav>
       <section class="abschnitt" id="favoriten-abschnitt" data-abschnitt="favoriten" hidden></section>
       <section class="abschnitt" data-abschnitt="ordner"></section>
@@ -80,7 +81,7 @@
         <button id="suche-zu" class="knopf-icon klein" aria-label="Suche schließen"></button>
       </div>
     </div>
-    <div id="liste-koerper" class="liste-koerper" tabindex="0" role="listbox" aria-label="Notizen"></div>
+    <div id="liste-koerper" class="liste-koerper" data-kanten tabindex="0" role="listbox" aria-label="Notizen"></div>
   </section>
 
   <main id="haupt">
@@ -93,7 +94,7 @@
     <section id="diff-host" class="diff-host" hidden aria-label="Änderung"></section>
   </main>
 
-  <aside id="info" aria-label="Eigenschaften"></aside>
+  <aside id="info" aria-label="Eigenschaften" data-kanten></aside>
   <div id="frage-host"></div>
 
   <footer id="status" class="status" aria-label="Statusleiste"></footer>

@@ -104,7 +104,7 @@
 .kx-schritt.fertig, .kx-schritt.laeuft { color: var(--text); }
 .kx-st { width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--linie-stark); display: grid; place-items: center; flex: none; color: #fff; }
 .kx-schritt.fertig .kx-st { background: var(--gruen); border-color: var(--gruen); }
-.kx-schritt.laeuft .kx-st { border-color: var(--akzent-weich); border-top-color: var(--akzent); animation: ez-dreh 800ms linear infinite; }
+.kx-schritt.laeuft .kx-st { border-color: var(--akzent-weich); border-top-color: var(--akzent); animation: ez-dreh var(--d-dreh) linear infinite; }
 .kx-terminal { margin-top: 14px; padding: 12px 14px; border-radius: var(--r-l); background: #0f0f10; color: #f2f2f2; font-family: var(--mono); font-size: 12px; line-height: 1.55; word-break: break-all; }
 .kx-terminal[hidden] { display: none; }
 .kx-dollar { color: #a89fff; }

@@ -1,5 +1,5 @@
 /* Live-Aktualisierung: neue oder von außen geänderte Karten leuchten kurz auf (sanfter Akzent). */
-.live-neu { animation: live-puls 2.4s var(--ease) 1; }
+.live-neu { animation: live-puls var(--d-6) var(--ease) 1; }
 @keyframes live-puls {
   0% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--akzent) 38%, transparent); background-color: var(--akzent-weich); }
   100% { box-shadow: 0 0 0 0 transparent; background-color: transparent; }

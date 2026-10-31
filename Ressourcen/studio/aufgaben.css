@@ -84,16 +84,16 @@ body.au-zieht-aktiv, body.au-zieht-aktiv * { cursor: grabbing !important; }
 .au-karte.platzhalter > * { visibility: hidden; }
 .au-karte.landet { opacity: 0; transition: none; }
 .au-karte.vorlaeufig { opacity: .6; cursor: progress; }
-.au-schwebt { position: fixed; left: 0; top: 0; z-index: 3; margin: 0; pointer-events: none; scale: 1; rotate: 0deg; will-change: translate, scale, rotate; transition: scale 170ms var(--bs-aus), rotate 170ms var(--bs-aus), box-shadow 170ms ease-out; }
+.au-schwebt { position: fixed; left: 0; top: 0; z-index: 3; margin: 0; pointer-events: none; scale: 1; rotate: 0deg; will-change: translate, scale, rotate; transition: scale var(--d-2) var(--bs-aus), rotate var(--d-2) var(--bs-aus), box-shadow var(--d-2) ease-out; }
 .au-schwebt.angehoben { scale: 1.035; rotate: 1.2deg; box-shadow: 0 0 0 1px var(--akzent-rand), 0 18px 36px light-dark(rgba(30, 20, 10, .22), rgba(0, 0, 0, .6)); }
-.au-schwebt.landet { transition: translate 190ms var(--bs-aus), scale 170ms var(--bs-aus), rotate 170ms var(--bs-aus), box-shadow 170ms ease-out; }
+.au-schwebt.landet { transition: translate var(--d-3) var(--ease-feder), scale var(--d-2) var(--ease-out), rotate var(--d-2) var(--ease-out), box-shadow var(--d-2) ease-out; }
 .au-schwebt .au-mehr { opacity: 0; }
 .au-schwebt.ueberfaellig { border-left: 3px solid var(--rot); padding-left: 10px; }
 .au-karten:has(.platzhalter) .au-spalte-leer { display: none; }
 .au-sk-karte { height: 78px; margin: 0 0 var(--a2); }
 .au-sk-karte.kurz { height: 54px; }
 .au-karte.ueberfaellig { border-left: 3px solid var(--rot); padding-left: 10px; }
-.au-karte.neu { animation: au-neu 1.4s var(--ease); }
+.au-karte.neu { animation: au-neu var(--d-6) var(--ease); }
 @keyframes au-neu { from { box-shadow: 0 0 0 3px color-mix(in srgb, var(--akzent) 35%, transparent); } to { box-shadow: var(--schatten-klein); } }
 .au-karte[data-status="erledigt"] .au-titel { color: var(--text-2); text-decoration: line-through; text-decoration-color: var(--text-3); }
 .au-karte-kopf { display: flex; align-items: flex-start; gap: var(--a2); }
