@@ -92,7 +92,9 @@ final class AppZustand: ObservableObject {
 
     /// „Schnell erfassen“: globales Tastenkürzel und schwebendes Fenster (`ErfassenFenster.swift`). Ein Kürzel belegt die App nur im
     /// normalen Betrieb, nicht in Vorschau und Testläufen. Gespeichert wird über eine kurzlebige Werkstatt (Node und Skript aus dem Paket).
-    private(set) lazy var erfassen = ErfassenSteuerung(pfade: pfade, log: log, kuerzelErlaubt: vorschau == nil && !argumente.fluechtig) { [weak self] in
+    /// Tastenkürzel (P10): Register und eigene Kürzel, globale Kürzel beim System, Menüs. Globale Kürzel nur im normalen Betrieb.
+    private(set) lazy var kuerzel = KuerzelSteuerung(pfade: pfade, log: log, globalErlaubt: vorschau == nil && !argumente.fluechtig)
+    private(set) lazy var erfassen = ErfassenSteuerung(pfade: pfade, log: log, kuerzel: kuerzel) { [weak self] in
         guard let self, let node = self.node, let skript = self.werkstattSkript else { return nil }
         return ErfassenSteuerung.Werkstatt(node: node, skript: skript, umgebung: self.werkstattUmgebung)
     }
@@ -262,7 +264,7 @@ final class AppZustand: ObservableObject {
         Task { startLog.schreibe("git \(await pruefer.pruefe().logText)") }
         pruefeVaultWechsel()
         log.schreibe(vault.map { "vault \($0.path)" } ?? "kein-vault")
-        erfassen.starte()
+        starteKuerzel()
         taktgeber = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(15 * 60))
@@ -548,6 +550,13 @@ final class AppZustand: ObservableObject {
             log.schreibe("aktion einrichtung-oeffnen")
             zeigeAssistent(ab: ab)
             return ok
+        case .kuerzelGeaendert:
+            // Das Studio hat tastenkuerzel.json geschrieben: Menüs und globale Kürzel folgen sofort.
+            log.schreibe("aktion kuerzel-geaendert")
+            kuerzel.neuLesen()
+            return ok
+        case .kuerzelGlobal(let id, let text):
+            return kuerzel.pruefeGlobal(id: id, text: text)
         }
     }
 
@@ -700,11 +709,23 @@ final class AppZustand: ObservableObject {
     /// Vor ⌘Q: das Studio sichert zuerst seine Eingaben (siehe `FensterSteuerung.darfSchliessen`).
     func darfBeenden() async -> Bool { await studio.darfSchliessen() }
 
+    /// Meldet die globalen Kürzel an (Register + eigene Kürzel): „Schnell erfassen“, „Frag deinen Vault“, „Kortex nach vorn holen“. Ein Hinweis (vom System belegt …) steht im Erfassen-Fenster.
+    private func starteKuerzel() {
+        kuerzel.beiErfassenKuerzel = { [weak self] k in self?.erfassen.setzeKuerzel(k) }
+        let hinweise = kuerzel.starte(aktionen: [
+            "schnell-erfassen": { [weak self] in self?.erfassen.umschalten() },
+            "frage-global": { [weak self] in NSApp.activate(ignoringOtherApps: true); self?.sende(.frage) },
+            "kortex-zeigen": { [weak self] in self?.oeffneStudio(); NSApp.activate(ignoringOtherApps: true) },
+        ])
+        if let h = hinweise["schnell-erfassen"] { erfassen.zeigeKuerzelHinweis(h) }
+    }
+
     func beende() {
         wirdBeendet = true
         vorschau?.raeumeDefaultsAuf() // nur die Einstellungen der Vorschau-Kennung; die echte App bleibt unberührt
         taktgeber?.cancel()
         erfassen.beende()
+        kuerzel.beende()
         studio.schliesse()
         uebersicht.schliesse()
         einrichtung.schliesse()

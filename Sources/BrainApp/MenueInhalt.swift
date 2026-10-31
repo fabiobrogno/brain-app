@@ -8,6 +8,8 @@ import BrainCore
 /// Tastenkürzel gelten, solange das Menü offen ist; die Menüs im Studio-Fenster haben eigene (Ablage, Darstellung, Gehe zu).
 struct MenueInhalt: View {
     @ObservedObject var zustand: AppZustand
+    /// Die Tastenkürzel (P10): ändert der Nutzer eines, zeichnet sich das Menü neu.
+    @ObservedObject var kuerzel: KuerzelSteuerung
     let updater: SPUStandardUpdaterController
 
     var body: some View {
@@ -35,7 +37,7 @@ struct MenueInhalt: View {
         if zustand.umstellungAngeboten {
             Button("Vault umstellen …") { zustand.sende(.umstellung) }.help("Dieser Vault stammt aus der Zeit vor Kortex. Kortex probiert die Umstellung zuerst an einer Kopie aus.")
         }
-        Button(StudioBefehl.einstellungenEintrag.titel) { zustand.sende(StudioBefehl.einstellungenEintrag.befehl) }.keyboardShortcut(KeyEquivalent(Character(StudioBefehl.einstellungenEintrag.taste))).disabled(zustand.vault == nil)
+        Button(StudioBefehl.einstellungenEintrag.titel) { zustand.sende(StudioBefehl.einstellungenEintrag.befehl) }.keyboardShortcut(kuerzel.swiftUIKuerzel("einstellungen")).disabled(zustand.vault == nil)
         Button("Kortex einrichten …") { zustand.zeigeAssistent() }.keyboardShortcut("e")
         Button("Status neu prüfen") { Task { await zustand.aktualisiere() } }.keyboardShortcut("r")
         Button("Nach Updates suchen …") { updater.checkForUpdates(nil) }.disabled(zustand.vorschau != nil)

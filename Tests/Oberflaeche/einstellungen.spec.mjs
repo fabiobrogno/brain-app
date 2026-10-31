@@ -9,6 +9,7 @@ import { baueVault } from "./vault.mjs";
 import { starteServer } from "./start.mjs";
 
 let vault, server;
+const BEFEHLE = JSON.parse(readFileSync(new URL("../../Ressourcen/gemeinsam/tastenkuerzel-register.json", import.meta.url), "utf8")).befehle.length; // eine Zeile je Befehl im Bereich „Tastenkürzel“
 const CONFIG = { name: "Kortex", automatik: { tageslauf: "probe", ernteOhneThema: ["Gesundheit", "Gehalt"], ernteNichtIn: ["Tagebuch/", "Finanzen/privat/"] } };
 test.beforeEach(async () => {
   ({ vault } = baueVault());
@@ -110,14 +111,14 @@ for (const dunkel of [false, true]) {
   });
 }
 
-test("Platzhalter: iPhone „bald“, Tastenkürzel nur Anzeige; KI & Konten ist keine Platzhalter-Seite mehr (Programme, Matrix, Schutz, Pflege, Eintragungen)", async ({ page }) => {
+test("Platzhalter: iPhone „bald“, Tastenkürzel zeigen die Belegung des Registers (der Editor: tastenkuerzel.spec.mjs); KI & Konten ist keine Platzhalter-Seite mehr (Programme, Matrix, Schutz, Pflege, Eintragungen)", async ({ page }) => {
   await start(page);
   await oeffne(page, "mobil");
   await expect(page.locator(".e-punkt[data-bereich=mobil] .e-bald")).toHaveText("bald");
   await expect(zeileVon(page, "mobil-bald")).toContainText("Kommt mit der iPhone-App");
   await page.click('.e-punkt[data-bereich="tasten"]');
-  await expect(zeileVon(page, "kz-neu").locator("kbd")).toHaveText(["⌘", "N"]);
-  await expect(zeileVon(page, "kz-merken").locator("kbd")).toHaveText(["⇧", "⌘", "M"]);
+  await expect(zeileVon(page, "kz-neue-notiz").locator("kbd")).toHaveText(["⌘", "N"]);
+  await expect(zeileVon(page, "kz-schnell-merken").locator("kbd")).toHaveText(["⇧", "⌘", "M"]);
   await page.click('.e-punkt[data-bereich="ki"]');
   await expect(page.locator(".e-intro")).toContainText("Hier siehst du, welche Konten angemeldet sind");
   for (const id of ["ki-konten", "ki-zugriff", "ki-schutz", "ki-pflege", "ki-hooks", "ki-git", "ki-dienst", "ki-aktivitaet", "ki-ehrlich"]) await expect(zeileVon(page, id)).toBeAttached();
@@ -320,7 +321,7 @@ test("Suche: Wertung, Markierung, Zählung je Bereich, Sortierung; Klick auf ein
   // ohne Umlaut, Groß/Klein egal
   await page.locator('[data-einst="suche"]').fill("KURZEL");
   await expect(page.locator(".e-punkt[data-bereich=tasten] .treffer")).toBeVisible();
-  await expect(page.locator("[data-zeile]:visible")).toHaveCount(11); // der Bereichsname passt: alle Zeilen des Bereichs
+  await expect(page.locator("[data-zeile]:visible")).toHaveCount(BEFEHLE); // der Bereichsname passt: alle Zeilen des Bereichs (ein Befehl je Zeile, aus dem Register der Tastenkürzel)
   // Klick auf einen Bereich in der Trefferliste scrollt dorthin, die Suche bleibt
   await page.locator('[data-einst="suche"]').fill("e");
   const anzahl = await page.locator(".e-punkt .treffer").count();

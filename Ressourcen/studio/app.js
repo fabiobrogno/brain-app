@@ -17,10 +17,10 @@ import { erzeugeFragePanel } from "./frage.js";
 import { kontingentStand, erzeugeKontoLeiste } from "./kontingent.js";
 import { TF } from "./texte-frage.js";
 import { starteLive, planeAus, kiHinweis, hebeHervor } from "./live.js";
+import * as kz from "./tastenkuerzel.js";
 import { datumKurz, datumLang, datumZeit, istDatumText, bytesText, setzeTypFarbe, typSymbol, typName, wortAnzahl, relativ, pluralisiere, vorschauText, typTextFarbe } from "./format.js";
 
 const $ = (id) => document.getElementById(id);
-const MOD_META = /Mac|iPhone|iPad/.test(navigator.platform || "");
 
 const S = {
   info: null, vaultListe: null,
@@ -80,6 +80,7 @@ function wendeEinstellungenAn(w) {
   if (Number.isInteger(w.schriftgroesse) && w.schriftgroesse >= 13 && w.schriftgroesse <= 19) r.style.setProperty("--editor-schrift", w.schriftgroesse + "px");
   if (w.bewegung === "reduziert") r.dataset.bewegung = "reduziert"; else delete r.dataset.bewegung;
 }
+async function ladeKuerzel() { await kz.lade(); }
 async function ladeAppEinstellungen() { try { const d = await api.einstellungen(); wendeEinstellungenAn(d.werte); } catch { /* ohne: Standard */ } }
 
 // ======================================================= Editor
@@ -1345,6 +1346,7 @@ function beiLiveEreignisse(liste) {
   if (p.info) ladeInfoLeise();
   if (p.git) ladeGit(); else if (p.index) planeGitRefresh(); // Statusleiste: „N geändert“ (gebündelt, nicht bei jeder Datei ein Statusabruf)
   if (p.konten) { ladeKi(); window.dispatchEvent(new CustomEvent("kortex-konten")); }
+  if (p.tastenkuerzel) ladeKuerzel(); // die App oder ein zweites Fenster hat ein Kürzel geändert: gilt sofort (die Seite „Einstellungen“ führt über kz.beiAenderung nach)
   if (p.einstellungen) { ladeAppEinstellungen(); window.dispatchEvent(new CustomEvent("kortex-einstellungen")); } // Änderung von außen (CLI, KI, zweites Fenster): die Seite „Einstellungen“ führt nach
   if (p.menue) liveMenue();
   if (p.index) {
@@ -1701,9 +1703,9 @@ const stufenKlasse = (s) => (/rot|red|fehler/i.test(s || "") ? "rot" : /gelb|war
 function oeffnePalette(vorgabe = "") {
   if (dialogOffen()) return;
   const befehle = [
-    [T.befehle.neu, "⌘N", oeffneNeu], [T.befehle.merken, "⌘⇧M", oeffneMerken], [TAUF.erfassen.befehl, "⌘⇧A", aufgabeErfassen], [T.befehle.commit, "⌘⇧G", oeffneCommit], [T.befehle.sync, "", sync],
-    [TF.befehl, "⌘J", () => frage.oeffne()], [T.befehle.suche, "⌘⇧F", fokusSuche], [T.befehle.inNotiz, "⌘F", () => ed.suchen()], [T.befehle.info, "⌘⌥I", umschalteInfo], [T.befehle.gesundheit, "", oeffneGesundheit], [T.befehle.nutzung, "", oeffneNutzung],
-    [T.liste.verlauf, "", oeffneVerlauf],
+    [T.befehle.neu, kz.anzeige("neue-notiz"), oeffneNeu], [T.befehle.merken, kz.anzeige("schnell-merken"), oeffneMerken], [TAUF.erfassen.befehl, kz.anzeige("aufgabe-erfassen"), aufgabeErfassen], [T.befehle.commit, kz.anzeige("commit"), oeffneCommit], [T.befehle.sync, "", sync],
+    [TF.befehl, kz.anzeige("frage"), () => frage.oeffne()], [T.befehle.suche, kz.anzeige("suche-vault"), fokusSuche], [T.befehle.inNotiz, kz.anzeige("suche-notiz"), () => ed.suchen()], [T.befehle.info, kz.anzeige("info"), umschalteInfo], [T.befehle.gesundheit, "", oeffneGesundheit], [T.befehle.nutzung, "", oeffneNutzung],
+    [T.liste.verlauf, kz.anzeige("verlauf"), oeffneVerlauf],
     ...(inApp() ? [[T.befehle.ordner, "", () => aktion("ordner-zeigen", S.pfad || undefined)], [T.befehle.ansicht, "", oeffneUebersicht]] : []),
     [T.befehle.mcp, "", oeffneKi], [T.befehle.konten, "", oeffneKonten],
   ];
@@ -1834,29 +1836,29 @@ function oeffneKuerzel() {
   const d = dialog({
     titel: K.titel, breit: true,
     rumpf: [h("div", { klasse: "kuerzel" }, ...K.gruppen.map((g) => h("section", null, h("h3", { text: g.name }),
-      h("dl", null, ...g.zeilen.flatMap(([tasten, was]) => [h("dt", null, ...tasten.split(" ").map((x) => h("kbd", { text: x }))), h("dd", { text: was })])))))],
-    knoepfe: [baueKnopf({ text: K.schliessen, variante: "primaer", aufKlick: () => d.schliessen() })],
+      h("dl", null, ...g.zeilen.map(([tasten, was]) => [typeof tasten === "string" ? tasten : kz.anzeigeTeile(tasten.id).join(" "), was]).filter(([tasten]) => tasten).flatMap(([tasten, was]) => [h("dt", null, ...tasten.split(" ").map((x) => h("kbd", { text: x }))), h("dd", { text: was })])))))],
+    knoepfe: [baueKnopf({ text: K.anpassen, aktion: "kuerzel-anpassen", aufKlick: () => { d.schliessen(); setTimeout(() => oeffneEinstellungenSeite({ bereich: "tasten" }), 0); } }),
+      baueKnopf({ text: K.schliessen, variante: "primaer", aufKlick: () => d.schliessen() })],
   });
 }
+// Tastenkürzel (P10): das Register aller Befehle (gemeinsam/tastenkuerzel-register.json) und die eigenen Kürzel stehen in tastenkuerzel.js; hier hängen nur die Aktionen daran.
+// Ein neuer Befehl: ins Register eintragen, hier mit kz.anmelden(id, tun, wenn?) die Aktion nennen (`wenn` → false: das Kürzel gilt jetzt nicht, der Druck bleibt unberührt).
 window.addEventListener("keydown", (e) => {
-  const mod = MOD_META ? e.metaKey : e.ctrlKey;
-  if (!mod || e.isComposing) return;
-  if (einstOffen()) return; // die Seite „Einstellungen“ liegt über dem Studio und hört selbst zu (⌘F sucht dort, nicht in der Notiz)
-  const k = e.key.toLowerCase();
-  const tun = (f) => { e.preventDefault(); e.stopPropagation(); f(); };
-  if (k === "," && !e.shiftKey && !e.altKey && S.info?.vault) tun(() => oeffneEinstellungenSeite());
-  else if (k === "s" && !e.shiftKey) tun(() => { clearTimeout(speicherTimer); speichere(); });
-  else if (k === "n" && !e.shiftKey) tun(() => oeffneNeu());
-  else if (k === "m" && e.shiftKey) tun(oeffneMerken);
-  else if (k === "a" && e.shiftKey && !e.altKey && !dialogOffen()) tun(aufgabeErfassen);
-  else if ((k === "k" || k === "p") && !e.shiftKey && !e.altKey) tun(() => oeffnePalette());
-  else if (k === "j" && !e.shiftKey && !e.altKey && !dialogOffen() && S.info?.vault) tun(() => frage.umschalten());
-  else if (k === "f" && e.shiftKey) tun(fokusSuche);
-  else if (k === "f" && !e.shiftKey && !e.altKey && !dialogOffen() && S.pfad && !e.target.closest?.("input, textarea, select")) tun(() => ed.suchen());
-  else if ((k === "i" || e.code === "KeyI") && e.altKey) tun(umschalteInfo);
-  else if (k === "g" && e.shiftKey) tun(oeffneCommit);
-  else if ((k === "/" || e.code === "Slash") && !e.shiftKey && !e.altKey) tun(oeffneKuerzel);
+  if (e.isComposing || einstOffen()) return; // die Seite „Einstellungen“ liegt über dem Studio und hört selbst zu (⌘F sucht dort, nicht in der Notiz; dort werden auch Kürzel aufgenommen)
+  kz.behandle(e);
 }, true);
+kz.anmelden("einstellungen", () => oeffneEinstellungenSeite(), () => !!S.info?.vault);
+kz.anmelden("speichern", () => { clearTimeout(speicherTimer); speichere(); });
+kz.anmelden("neue-notiz", () => oeffneNeu());
+kz.anmelden("schnell-merken", () => oeffneMerken());
+kz.anmelden("aufgabe-erfassen", () => aufgabeErfassen(), () => !dialogOffen());
+kz.anmelden("palette", () => oeffnePalette());
+kz.anmelden("frage", () => frage.umschalten(), () => !dialogOffen() && !!S.info?.vault);
+kz.anmelden("suche-vault", () => fokusSuche());
+kz.anmelden("suche-notiz", () => ed.suchen(), (e) => !dialogOffen() && !!S.pfad && !e.target.closest?.("input, textarea, select"));
+kz.anmelden("info", () => umschalteInfo());
+kz.anmelden("commit", () => oeffneCommit());
+kz.anmelden("kuerzel-hilfe", () => oeffneKuerzel());
 
 window.addEventListener("beforeunload", () => { if (S.dirty) { clearTimeout(speicherTimer); speichere(); } });
 window.addEventListener("focus", () => { planeGitRefresh(); if (S.info?.vault) { ladeBaum(); ladeInfoLeise().then(() => fragVertrauenEinmal()); } });
@@ -1935,6 +1937,7 @@ const MENUE_BEFEHLE = {
   aufgaben: () => waehleSicht({ art: "bereich", id: "aufgaben" }), "aufgabe-erfassen": () => aufgabeErfassen(),
   posteingang: () => waehleSicht({ art: "bereich", id: "inbox" }), alle: () => waehleSicht({ art: "bereich", id: "alle" }), wissen: () => waehleSicht({ art: "bereich", id: "wissen" }),
   "hell-dunkel": () => setzeTheme(istDunkel() ? "hell" : "dunkel"),
+  frage: () => frage.oeffne(), // globales Kürzel „Frag deinen Vault“ (die App holt das Studio nach vorn und schickt diesen Befehl)
 };
 // Ohne Vault gelten nur der Einstieg (Ordner öffnen) und die Darstellung; alles andere wird still verworfen
 const OHNE_VAULT_ERLAUBT = new Set(["vault-oeffnen", "hell-dunkel"]);
@@ -1944,6 +1947,9 @@ function fuehreBefehlAus(name) {
   if (!f || (!S.info?.vault && !OHNE_VAULT_ERLAUBT.has(name))) return;
   f();
 }
+// Jeder Befehl des Registers mit Menü-Namen (`menue`), der oben keine eigene Aktion bekam, tut im Studio dasselbe wie der Menüeintrag der App (Verlauf, Gehe zu, Vault …):
+// Ein Kürzel aus dem Register trägt so auch dort, wo kein App-Menü mitspielt (Browser, Vorschau), und ein neuer Eintrag im Register braucht keine zweite Stelle.
+for (const b of kz.REGISTER.befehle) if (b.menue && MENUE_BEFEHLE[b.menue] && !kz.angemeldet().includes(b.id)) kz.anmelden(b.id, () => fuehreBefehlAus(b.menue));
 window.studio = { bereit: false, neu: () => oeffneNeu(), merken: oeffneMerken, commit: oeffneCommit, info: umschalteInfo, palette: () => oeffnePalette(), sync, suche: fokusSuche };
 window.studio.befehl = (name) => {
   if (!MENUE_BEFEHLE[name]) return;
@@ -2211,6 +2217,7 @@ async function ladeAlles() {
   $("editor").hidden = true;
   $("app").hidden = false;
   ladeAppEinstellungen();
+  ladeKuerzel();
   try { S.info = await api.info(); }
   catch (e) { $("leer").hidden = false; $("leer").replaceChildren(h("h2", { text: T.fehler.verbindung }), h("p", { text: e.message })); return; }
   if (!S.info.vault) { await zeigeWillkommenFlow(); markiereBereit(); return; } // auch der Einstieg ist „bereit“: Menübefehle (Ordner öffnen) gehen sofort

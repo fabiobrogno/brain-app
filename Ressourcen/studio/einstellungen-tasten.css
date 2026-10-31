@@ -1,0 +1,46 @@
+/* Kortex Studio — Bereich „Tastenkürzel“ der Einstellungen (Paket P10). Nur Tokens aus studio.css (Hell/Dunkel wechseln dort). Gestaltung: freigegebener Prototyp (einstellungen.html#tasten):
+   je Taste eine eigene Kappe, Kürzel-Feld ohne Rand (erst beim Überfahren sichtbar), gelber Konflikt-Streifen unter der Zeile. Ablauf nach Orca (MIT, Lovecast Inc., @9bccd67). */
+
+.kz-leiste { margin-top: 16px; display: flex; flex-direction: column; gap: 10px; }
+.kz-leiste-zeile { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.kz-suche { width: 260px; max-width: 100%; }
+.kz-leiste-zeile > :last-child { margin-left: auto; }
+.kz-leer { margin: 18px 2px 0; font-size: 13px; color: var(--text-3); }
+.suchmodus .kz-leiste { display: none; }
+
+/* ausgeblendet durch den Filter dieses Bereichs (die Suche der Seite benutzt [hidden]) */
+.kz-aus { display: none !important; }
+
+/* Zeile: Steuerung rechts, Meldung unter der ganzen Zeile */
+.ez-kz { flex-wrap: wrap; }
+.ez-kz > .ez-r { max-width: none; }
+.kz-steuerung { display: inline-flex; align-items: center; gap: 6px; }
+.kz-marken { display: inline-flex; align-items: center; gap: 6px; }
+.kz-feld { display: inline-flex; align-items: center; justify-content: flex-end; gap: 3px; min-width: 132px; min-height: 30px; padding: 3px 6px; border-radius: var(--r); border: 1px solid transparent; background: transparent; color: var(--text); font: inherit; cursor: pointer; transition: background var(--d-fast), border-color var(--d-fast), box-shadow var(--d-fast); }
+.kz-feld:hover { background: var(--hover); border-color: var(--linie); }
+.kz-feld:focus-visible { outline: 0; box-shadow: var(--fokus-ring); border-color: var(--akzent-linie); }
+.kz-feld kbd { height: 22px; min-width: 22px; padding: 0 6px; display: inline-grid; place-items: center; border-radius: 6px; border: 1px solid var(--linie-stark); background: var(--seite); box-shadow: 0 1px 0 var(--linie-stark); font: 500 11.5px var(--schrift); color: var(--text); }
+.kz-leise { padding: 0 4px; font-size: 12.5px; color: var(--text-3); white-space: nowrap; }
+.kz-feld[data-zustand="aufnahme"] { background: var(--akzent-weich); border-color: var(--akzent-rand); }
+.kz-feld[data-zustand="aufnahme"] .kz-leise { color: var(--akzent-tinte); }
+.kz-feld[data-zustand="aufnahme"] kbd { border-color: var(--akzent-rand); }
+.kz-feld[data-zustand="aufnahme"]::after { content: ""; width: 1.5px; height: 14px; margin-left: 3px; border-radius: 1px; background: var(--akzent); animation: kz-blink 1.1s steps(2, start) infinite; }
+@keyframes kz-blink { to { visibility: hidden; } }
+.kz-zurueck { color: var(--text-3); }
+.kz-zurueck:hover { color: var(--text); }
+.ez-kz.kz-doppelt .kz-feld kbd { border-color: var(--gelb-rand); }
+
+/* Konflikt und Fehler */
+.kz-meldung { flex: 1 1 100%; order: 3; display: flex; align-items: center; gap: 10px; margin: 2px 0 0; padding: 8px 12px; border-radius: var(--r-l); border: 1px solid var(--gelb-rand); background: var(--gelb-weich); font-size: 12.5px; line-height: 1.45; color: var(--text); }
+.kz-meldung[hidden] { display: none; }
+.kz-meldung[data-art="fehler"] { border-color: var(--rot-rand); background: var(--rot-weich); }
+.kz-meldung-zeichen { display: inline-flex; flex: none; color: var(--gelb); }
+.kz-meldung[data-art="fehler"] .kz-meldung-zeichen { color: var(--rot); }
+.kz-meldung-text { flex: 1; min-width: 0; font-weight: 500; }
+.kz-meldung-akt { display: inline-flex; gap: 6px; flex: none; }
+
+@media (max-width: 760px) {
+  .kz-feld { min-width: 0; }
+  .kz-meldung { flex-wrap: wrap; }
+}
+@media (prefers-reduced-motion: reduce) { .kz-feld[data-zustand="aufnahme"]::after { animation: none; } }

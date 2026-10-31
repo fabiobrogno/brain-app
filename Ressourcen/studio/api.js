@@ -74,6 +74,9 @@ export const api = {
   // ---- Einstellungen (P5): Werte des Vaults (wie `brain einstellungen`) und der App in einer Route. stand = optimistische Sperre: weicht er ab, antwortet die Werkstatt 409 art „konflikt“ → neu lesen.
   einstellungen: () => anfrage("GET", "/api/einstellungen"),
   einstellungenSchreiben: (werte, stand) => anfrage("PUT", "/api/einstellungen", { werte, stand }),
+  // Eigene Tastenkürzel (P10): { stand, ueberschrieben, belegung, datei }; schreiben: werte { id: "Cmd+T" | null }, zurueck ["id"] | "alle"
+  tastenkuerzel: () => anfrage("GET", "/api/tastenkuerzel"),
+  tastenkuerzelSchreiben: (aenderung, stand) => anfrage("PUT", "/api/tastenkuerzel", { ...aenderung, stand }),
   status: () => anfrage("GET", "/api/git/status"),
   commit: (nachricht, dateien) => anfrage("POST", "/api/git/commit", { nachricht, dateien }),
   // konflikteLoesen: bei Konflikten bleibt die Zusammenführung offen (409 { konflikt: true, dateien }) und die Oberfläche lässt pro Datei wählen
