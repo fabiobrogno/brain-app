@@ -212,34 +212,37 @@ test("Anmelden: scheitert das Terminal oder fehlt das Programm, steht der nächs
   await d.locator('[data-aktion="anmelden-abbrechen"]').click();
 });
 
-test("Konto hinzufügen: eigener Ordner in Kortex (nie im Benutzerordner), Name geprüft, startet gesperrt oder mit Lesen, danach geht das Anmelden auf", async ({ page }) => {
+test("Konto hinzufügen: öffnet den Ablauf „KI verbinden“ beim Konto; eigener Ordner in Kortex (nie im Benutzerordner), Name geprüft, startet immer gesperrt, danach geht das Anmelden auf", async ({ page }) => {
   const z = await start(page, VOLL());
   await warteKonten(page);
   await page.click('[data-aktion="konto-hinzu"][data-programm="claude"]');
-  const d = dlg(page, "konto-neu");
-  await expect(d.locator(".dialog-kopf")).toHaveText("Weiteres Claude Code-Konto");
-  await expect(d).toContainText("Er liegt im Ordner von Kortex, nicht in deinem Benutzerordner");
+  const d = dlg(page, "ki-verbinden");
+  await expect(d.locator('[data-kv="konto-neu"]')).toBeVisible();
+  await expect(d.locator('[data-kv="konto-neu"] b').first()).toHaveText("Weiteres Claude Code-Konto");
+  await expect(d).toContainText("Bekommt einen eigenen Ordner im Ordner von Kortex");
   await foto(page, "konto-neu-hell");
   await d.locator('[data-aktion="konto-neu-ok"]').click();
   await expect(d.locator('[data-kx="neu-fehler"]')).toContainText("Gib dem Konto einen Namen");
-  await d.locator("input").first().fill("Kunde Müller");
+  await d.locator('[data-kx="neu-name"]').fill("Kunde Müller");
   await expect(d.locator('[data-kx="neu-ordner"]')).toHaveText("Kortex/ki-konten-ordner/claude-kunde-muller");
-  await d.locator('[data-kx="neu-stufe"] [data-wert="lesen"]').click();
   await d.locator('[data-aktion="konto-neu-ok"]').click();
-  await expect(dlg(page, "anmelden")).toBeVisible();
-  expect(z.log("/api/ki/konto-neu").at(-1).body).toEqual({ programm: "claude", name: "Kunde Müller", stufe: "lesen" });
+  await expect(d.locator('[data-kv="anmelden"]')).toBeVisible(); // das Anmelden beginnt im selben Ablauf
+  expect(z.log("/api/ki/konto-neu").at(-1).body).toEqual({ programm: "claude", name: "Kunde Müller", stufe: "gesperrt" }); // neue Konten starten immer gesperrt
   const k = z.konten.find((x) => x.name === "Kunde Müller");
   expect(z.log("/api/ki/anmelden").at(-1).body.ordner).toBe(k.pfad);
   expect(k.pfad).toContain("/Library/Application Support/Kortex/ki-konten-ordner/");
-  await dlg(page, "anmelden").locator('[data-aktion="anmelden-abbrechen"]').click();
+  await d.locator('[data-aktion="anmelden-abbrechen"]').click();
+  await page.keyboard.press("Escape");
+  await expect(d).toHaveCount(0);
   await expect(konto(page, k.id)).toBeVisible();
-  await expect(zelle(page, k.id, vault)).toHaveAttribute("data-stufe", "lesen");
-  // gleicher Name zweimal: die Werkstatt lehnt ab, der Satz steht im Fenster
+  await expect(zelle(page, k.id, vault)).toHaveAttribute("data-stufe", "gesperrt");
+  // gleicher Name zweimal: die Werkstatt lehnt ab, der Satz steht im Formular
   await page.click('[data-aktion="konto-hinzu"][data-programm="claude"]');
-  await dlg(page, "konto-neu").locator("input").first().fill("kunde müller");
-  await dlg(page, "konto-neu").locator('[data-aktion="konto-neu-ok"]').click();
-  await expect(dlg(page, "konto-neu").locator('[data-kx="neu-fehler"]')).toContainText("Ein Konto mit diesem Namen gibt es schon");
-  await dlg(page, "konto-neu").locator("button", { hasText: "Abbrechen" }).click();
+  await dlg(page, "ki-verbinden").locator('[data-kx="neu-name"]').fill("kunde müller");
+  await dlg(page, "ki-verbinden").locator('[data-aktion="konto-neu-ok"]').click();
+  await expect(dlg(page, "ki-verbinden").locator('[data-kx="neu-fehler"]')).toContainText("Ein Konto mit diesem Namen gibt es schon");
+  await dlg(page, "ki-verbinden").locator('[data-aktion="konto-neu-abbrechen"]').click();
+  await expect(dlg(page, "ki-verbinden").locator('[data-kv="konto-neu"]')).toHaveCount(0);
 });
 
 test("Umbenennen und Entfernen: Name inline, Entfernen nur für eigene Konten und mit Bestätigung in der Seite (Ordner → Papierkorb)", async ({ page }) => {

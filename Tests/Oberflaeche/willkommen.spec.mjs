@@ -98,10 +98,14 @@ async function rahmen(page, o = {}) {
         if (z.mcp === "anders" && !body?.umstellen) return json(409, { fehler: "In Claude gibt es schon einen Server brain.", art: "anders" });
         if (z.mcp === "schon") return json(200, { ok: true, schonVerbunden: true });
         return json(200, { ok: true });
-      case "/api/mcp/selbsttest":
-        if (z.selbsttestVerzoegerung) await warte(z.selbsttestVerzoegerung);
-        if (z.selbsttest === "fehler") return json(502, { fehler: "Der MCP-Server hat nicht geantwortet — die KI würde deinen Vault so nicht finden.", art: "mcp" });
-        return json(200, { ok: true, werkzeuge: ["brain_suchen", "brain_lesen"], treffer: 1 });
+      // Prüfen (ersetzt den Selbsttest): ein rein lesender Aufruf über den Kortex-Server (brain_vaults)
+      case "/api/mcp/pruefen":
+        if (z.pruefenVerzoegerung) await warte(z.pruefenVerzoegerung);
+        if (z.pruefen === "fehler") return json(502, { fehler: "Der MCP-Server hat nicht geantwortet — die KI würde deinen Vault so nicht finden.", art: "mcp" });
+        return json(200, { ok: true, vault: "V", werkzeuge: 7, konto: null });
+      // Konten: ohne Konten läuft der Ablauf „KI verbinden“ ohne Konto-Auswahl durch
+      case "/api/ki/konten": return json(200, { zustand: "ok", konten: [], vaults: [], zugriff: {} });
+      case "/api/ki/anmeldestatus": return json(200, { zustand: "unbekannt" });
       case "/api/kit/hooks":
         if (z.hooks === "fehlt") return json(404, { fehler: "nicht gefunden" });
         return json(200, { ok: true });
@@ -574,6 +578,38 @@ test("Arbeit läuft: Klonen wird für vorSchliessen gemeldet und danach wieder f
   expect(await page.evaluate(async () => (await import("/hilfen.js")).laufendeArbeiten())).toEqual([]);
 });
 
+// „KI verbinden“ als Dialog (ki-verbinden.js, derselbe Ablauf wie in Statusleiste und Palette): Wählen (EINE KI) → Konto (nur Claude Code/Codex) → Stufe → Prüfen → Fertig.
+// Die Tests hier laufen mit der Willkommen-Attrappe: ohne Konten (GET /api/ki/konten liefert eine leere Liste), die Prüfung ist POST /api/mcp/pruefen. Ausführlicher steht der Ablauf in ki-verbinden.spec.mjs.
+async function oeffneKi(page) {
+  await oeffneSeite(page);
+  await page.evaluate(async () => {
+    window.__verbunden = []; window.__zu = 0;
+    const mod = await import("/ki-verbinden.js");
+    mod.oeffneKiVerbinden({ vaultPfad: () => "/Users/test/Brain/Privat", vaultName: () => "Privat", beiVerbunden: (a) => { window.__verbunden.push(a.id); }, beiFertig: () => { window.__zu++; } });
+  });
+  const d = page.locator('[data-dialog="ki-verbinden"]');
+  await deckend(d);
+  await expect(d.locator(".kv-laedt")).toHaveCount(0); // die Suche ist fertig
+  return d;
+}
+// Wählt genau diese eine KI (Karte oben oder Zeile der aufgeklappten Liste); die Auswahl ist eine Einzelwahl
+async function waehleKi(d, id) {
+  const wahl = d.locator('[data-bereich="ziel-wahl"]');
+  if (await wahl.locator(`.ka-karte[data-ziel="${id}"]`).count()) {
+    if ((await wahl.locator(`.ka-karte[data-ziel="${id}"]`).getAttribute("aria-checked")) !== "true") await wahl.locator(`.ka-karte[data-ziel="${id}"]`).click();
+    return;
+  }
+  if ((await wahl.locator(".ka-mehr").getAttribute("aria-expanded")) !== "true") await wahl.locator(".ka-mehr").click();
+  await wahl.locator(`.ka-zeile[data-ziel="${id}"]`).click();
+}
+// Von der Wahl bis „Verbinden“ (Claude Code und Codex haben vorher den Schritt „Konto“, ohne Konten reicht „Weiter“)
+async function bisVerbinden(d, id) {
+  await d.locator('[data-aktion="ki-weiter"]').click();
+  if (["claude", "codex"].includes(id)) await d.locator('[data-aktion="ki-weiter"]').click();
+  await d.locator('[data-aktion="ki-verbinden"]').click();
+}
+const verbunden = (z) => aufgezeichnet(z, "/api/mcp/verbinden").map((a) => a.body);
+
 // Weitere Programme mit Einstellungsdatei: nur erkannte stehen in der Auswahl, ihr Ziel geht unverändert an die Werkstatt
 test("KI verbinden: erkannte weitere Programme erscheinen als Karten (mit Logo) und schicken ihr Ziel; nicht erkannte stehen nur in der Liste", async ({ page }) => {
   const z = await rahmen(page, { vault: "/Users/test/Brain/Privat", programme: [
@@ -588,207 +624,170 @@ test("KI verbinden: erkannte weitere Programme erscheinen als Karten (mit Logo) 
   await expect(wahl.locator('.ka-karte[data-ziel="gemini"]')).toHaveCount(0); // nicht erkannt: nicht oben
   await expect(wahl.locator('.ka-karte[data-ziel="claude-desktop"] [data-ki-logo="claude-desktop"] svg')).toHaveCount(1);
   await waehleKi(d, "zed");
-  const knopf = d.locator('[data-aktion="claude-verbinden"]');
-  await expect(knopf).toHaveText("Mit Zed verbinden");
-  await knopf.click();
-  await expect(d.locator('[data-zeile="verbinden"] .w-ok')).toContainText("Starte Zed neu");
-  expect(z.anfragen.filter((a) => a.pfad === "/api/mcp/verbinden").map((a) => a.body)).toEqual([{ ziel: "zed" }]);
+  await bisVerbinden(d, "zed"); // Zed hat keinen Schritt „Konto“
+  await expect(d.locator('[data-kv="fertig"]')).toContainText("Zed ist verbunden");
+  await expect(d.locator('[data-bereich="probe-ergebnis"]')).toContainText("Starte Zed neu");
+  expect(verbunden(z)).toEqual([{ ziel: "zed", zugriff: "posteingang" }]);
 });
 
-test("KI verbinden: mehrere KIs auf einmal: nacheinander verbunden, ein Selbsttest, ein Satz", async ({ page }) => {
+test("KI verbinden: es ist immer genau EINE KI gewählt; „Weitere KI verbinden“ beginnt von vorn, jede KI bekommt ihren eigenen Aufruf", async ({ page }) => {
   const z = await rahmen(page, { vault: "/Users/test/Brain/Privat" });
   const d = await oeffneKi(page);
-  await waehleKi(d, "claude", "codex");
-  const knopf = d.locator('[data-aktion="claude-verbinden"]');
-  await expect(knopf).toHaveText("Mit 2 KIs verbinden");
-  await expect(d.locator('[data-zeile="verbinden"] .w-aktion-text')).toHaveText("Danach können Claude Code und Codex in deinen Notizen nachschlagen.");
-  await knopf.click();
-  await expect(d.locator('[data-zeile="verbinden"] .w-ok')).toHaveText("Verbunden mit Claude Code und Codex.");
-  await expect(d.locator('[data-bereich="selbsttest"]')).toContainText("Starte Claude Code und Codex neu");
-  expect(aufgezeichnet(z, "/api/mcp/verbinden").map((a) => a.body)).toEqual([{ ziel: "claude" }, { ziel: "codex" }]);
-  expect(aufgezeichnet(z, "/api/mcp/selbsttest")).toHaveLength(1);
-  expect(await page.evaluate(() => window.__verbunden), "Claude war dabei").toBe(1);
-});
-
-test("KI verbinden: bei mehreren steht das Problem je KI darunter, die übrigen sind verbunden", async ({ page }) => {
-  const z = await rahmen(page, { vault: "/Users/test/Brain/Privat" });
-  await page.route("**/api/mcp/verbinden", (r) => {
-    const b = JSON.parse(r.request().postData());
-    if (b.ziel === "codex" && !b.umstellen) return r.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ fehler: "schon da", art: "anders" }) });
-    return r.fulfill({ contentType: "application/json", body: JSON.stringify({ ok: true }) });
-  });
-  const d = await oeffneKi(page);
-  await waehleKi(d, "claude", "codex");
-  await d.locator('[data-aktion="claude-verbinden"]').click();
-  await expect(d.locator('[data-bereich="teil-ok"]')).toHaveText("Schon verbunden: Claude Code.");
-  await expect(d.locator('[data-bereich="umstellen"][data-ziel="codex"]')).toContainText("In Codex gibt es schon einen Eintrag");
-  await expect(d.locator('[data-bereich="selbsttest"]')).toHaveCount(0);
-  await d.locator('[data-aktion="umstellen"]').click();
-  await expect(d.locator('[data-zeile="verbinden"] .w-ok')).toHaveText("Verbunden mit Claude Code und Codex.");
-  void z;
+  const wahl = d.locator('[data-bereich="ziel-wahl"]');
+  await expect(wahl.locator('[data-ziel="claude"]')).toHaveAttribute("aria-checked", "true"); // Claude Code ist vorgewählt
+  await wahl.locator('[data-ziel="codex"]').click();
+  await expect(wahl.locator('[data-ziel="codex"]')).toHaveAttribute("aria-checked", "true");
+  await expect(wahl.locator('[data-ziel="claude"]')).toHaveAttribute("aria-checked", "false"); // Einzelwahl: Codex ersetzt Claude Code
+  await expect(d.locator('[data-aktion="ki-weiter"]')).toHaveText("Weiter");
+  await bisVerbinden(d, "codex");
+  await expect(d.locator('[data-kv="fertig"]')).toContainText("Codex ist verbunden");
+  await expect(d.locator('[data-bereich="probe-ergebnis"]')).toContainText("Starte Codex neu");
+  await expect(d.locator('[data-kv="fertig"]')).not.toContainText("Claude");
+  expect(await page.evaluate(() => window.__verbunden), "beiVerbunden nennt genau die verbundene KI").toEqual(["codex"]);
+  // eine weitere KI: zurück zur Wahl, nichts ist mehr vorgewählt, dann Claude Code
+  await d.locator('[data-aktion="ki-weitere"]').click();
+  await expect(wahl.locator('.ka-karte[aria-checked="true"]')).toHaveCount(0);
+  await expect(d.locator('[data-aktion="ki-weiter"]')).toBeDisabled();
+  await waehleKi(d, "claude");
+  await bisVerbinden(d, "claude");
+  await expect(d.locator('[data-kv="fertig"]')).toContainText("Claude Code ist verbunden");
+  expect(verbunden(z).map((b) => b.ziel)).toEqual(["codex", "claude"]);
+  expect(aufgezeichnet(z, "/api/mcp/pruefen")).toHaveLength(2); // je KI eine Prüfung
+  expect(await page.evaluate(() => window.__verbunden)).toEqual(["codex", "claude"]);
 });
 
 test("KI verbinden: ist nur ein weiteres Programm da (kein Claude, Codex, Cursor), ist genau das vorgewählt", async ({ page }) => {
   const z = await rahmen(page, { vault: "/Users/test/Brain/Privat", agenten: [], programme: [{ id: "claude-desktop", name: "Claude Desktop", gefunden: true, version: "1.4.2", quelle: "app" }] });
   const d = await oeffneKi(page);
-  await expect(d.locator('[data-ziel="claude-desktop"]')).toHaveAttribute("aria-checked", "true");
-  await expect(d.locator('[data-aktion="claude-verbinden"]')).toHaveText("Mit Claude Desktop verbinden");
-  await d.locator('[data-aktion="claude-verbinden"]').click();
-  await expect(d.locator('[data-zeile="verbinden"] .w-ok')).toContainText("Starte Claude Desktop neu");
-  expect(z.anfragen.filter((a) => a.pfad === "/api/mcp/verbinden").map((a) => a.body)).toEqual([{ ziel: "claude-desktop" }]);
+  await expect(d.locator('.ka-karte[data-ziel="claude-desktop"]')).toHaveAttribute("aria-checked", "true");
+  await expect(d.locator('.ka-karte[aria-checked="true"]')).toHaveCount(1);
+  await bisVerbinden(d, "claude-desktop");
+  await expect(d.locator('[data-bereich="probe-ergebnis"]')).toContainText("Starte Claude Desktop neu");
+  expect(verbunden(z).map((b) => b.ziel)).toEqual(["claude-desktop"]);
 });
 
 test("KI verbinden: bei einem fremden Eintrag in Zed fragt der Dialog erst, dann mit „umstellen“", async ({ page }) => {
   const z = await rahmen(page, { vault: "/Users/test/Brain/Privat", mcp: "anders", programme: [{ id: "zed", name: "Zed", gefunden: true, version: null, quelle: "app" }] });
   const d = await oeffneKi(page);
   await waehleKi(d, "zed");
-  await d.locator('[data-aktion="claude-verbinden"]').click();
+  await bisVerbinden(d, "zed");
   await expect(d.locator('[data-bereich="umstellen"]')).toContainText("In Zed gibt es schon einen Eintrag");
+  expect(aufgezeichnet(z, "/api/mcp/pruefen")).toHaveLength(0); // geprüft wird erst nach dem Eintragen
   await d.locator('[data-aktion="umstellen"]').click();
-  await expect(d.locator('[data-zeile="verbinden"] .w-ok')).toContainText("Starte Zed neu");
-  expect(z.anfragen.filter((a) => a.pfad === "/api/mcp/verbinden").map((a) => a.body)).toEqual([{ ziel: "zed" }, { ziel: "zed", umstellen: true }]);
+  await expect(d.locator('[data-bereich="probe-ergebnis"]')).toContainText("Starte Zed neu");
+  expect(verbunden(z)).toEqual([{ ziel: "zed", zugriff: "posteingang" }, { ziel: "zed", umstellen: true, zugriff: "posteingang" }]);
 });
 
-// FBL-70: Auswahl Claude / Codex / Cursor, danach Selbsttest
-async function oeffneKi(page) {
-  await oeffneSeite(page);
-  await page.evaluate(async () => { window.__verbunden = 0; await (await import("/willkommen.js")).oeffneKiDialog({ beiVerbunden: () => { window.__verbunden++; } }); });
-  const d = page.locator("#dialog-host .dialog");
-  await deckend(d);
-  return d;
-}
-// Wählt genau diese KIs: erst ab-, dann anwählen (Karten oben oder Zeilen der aufgeklappten Liste)
-async function waehleKi(d, ...ids) {
-  const wahl = d.locator('[data-bereich="ziel-wahl"]');
-  for (const k of await wahl.locator('[data-ziel][aria-checked="true"], [data-ziel][aria-selected="true"]').all()) {
-    if (!ids.includes(await k.getAttribute("data-ziel"))) await k.click();
-  }
-  for (const id of ids) {
-    if (await wahl.locator(`.ka-karte[data-ziel="${id}"]`).count()) {
-      if ((await wahl.locator(`.ka-karte[data-ziel="${id}"]`).getAttribute("aria-checked")) !== "true") await wahl.locator(`.ka-karte[data-ziel="${id}"]`).click();
-      continue;
-    }
-    if ((await wahl.locator(".ka-mehr").getAttribute("aria-expanded")) !== "true") await wahl.locator(".ka-mehr").click();
-    const z = wahl.locator(`.ka-zeile[data-ziel="${id}"]`);
-    if ((await z.getAttribute("aria-selected")) !== "true") await z.click();
-  }
-}
-test("KI verbinden: Auswahl Claude/Codex/Cursor schickt das gewählte Ziel, danach Selbsttest mit ehrlichem Text", async ({ page }) => {
+test("KI verbinden: Auswahl Codex schickt das gewählte Ziel, danach Prüfen mit ehrlichem Text (kein Konto: Neustart nötig)", async ({ page }) => {
   const z = await rahmen(page, { vault: "/Users/test/Brain/Privat" });
   const d = await oeffneKi(page);
   const wahl = d.locator('[data-bereich="ziel-wahl"]');
   await expect(wahl.locator(".ka-karte .ka-name")).toHaveText(["Claude Code", "Codex"]);
-  await expect(wahl.locator('[data-ziel="claude"]')).toHaveAttribute("aria-checked", "true"); // Claude Code ist vorgewählt
-  await wahl.locator('[data-ziel="codex"]').click();
-  await expect(wahl.locator('[data-ziel="codex"]')).toHaveAttribute("aria-checked", "true");
-  await expect(wahl.locator('[data-ziel="claude"]')).toHaveAttribute("aria-checked", "true"); // Mehrfachauswahl
-  await wahl.locator('[data-ziel="claude"]').click();
-  await expect(wahl.locator('[data-ziel="claude"]')).toHaveAttribute("aria-checked", "false");
-  const knopf = d.locator('[data-aktion="claude-verbinden"]');
-  await expect(knopf).toHaveText("Mit Codex verbinden");
-  await knopf.click();
-  const test = d.locator('[data-bereich="selbsttest"]');
-  await expect(test).toContainText("Verbindung steht");
+  await waehleKi(d, "codex");
+  await bisVerbinden(d, "codex");
+  const test = d.locator('[data-bereich="probe-ergebnis"]');
+  await expect(test).toContainText("Der Kortex-Server antwortet");
   await expect(test).toContainText("Starte Codex neu");
-  await expect(d.locator('[data-zeile="verbinden"] .w-ok')).toContainText("Starte Codex neu");
-  expect(aufgezeichnet(z, "/api/mcp/verbinden").map((a) => a.body)).toEqual([{ ziel: "codex" }]);
-  expect(aufgezeichnet(z, "/api/mcp/selbsttest")).toHaveLength(1);
-  expect(await page.evaluate(() => window.__verbunden), "Status „Claude verbunden“ nur bei Claude").toBe(0);
+  expect(verbunden(z).map((b) => b.ziel)).toEqual(["codex"]);
+  expect(aufgezeichnet(z, "/api/mcp/pruefen")).toHaveLength(1);
+  expect(await page.evaluate(() => window.__verbunden)).toEqual(["codex"]);
 });
 
-test("KI verbinden: Cursor — Selbsttest-Fehler wird benannt; Claude bleibt Standard und löst beiVerbunden aus", async ({ page }) => {
-  const z = await rahmen(page, { vault: "/Users/test/Brain/Privat", selbsttest: "fehler" });
+test("KI verbinden: Cursor — schlägt die Prüfung fehl, wird das benannt, „Nochmal prüfen“ erscheint und beiVerbunden bleibt aus", async ({ page }) => {
+  const z = await rahmen(page, { vault: "/Users/test/Brain/Privat", pruefen: "fehler" });
   const d = await oeffneKi(page);
   await waehleKi(d, "cursor");
-  await d.locator('[data-aktion="claude-verbinden"]').click();
-  await expect(d.locator('[data-bereich="selbsttest"]')).toContainText("Der Selbsttest ist fehlgeschlagen: Der MCP-Server hat nicht geantwortet");
-  expect(aufgezeichnet(z, "/api/mcp/verbinden").map((a) => a.body)).toEqual([{ ziel: "cursor" }]);
+  await bisVerbinden(d, "cursor");
+  await expect(d.locator('[data-kv="fehler"]')).toContainText("Cursor: Der MCP-Server hat nicht geantwortet");
+  await expect(d.locator('[data-aktion="ki-nochmal"]')).toBeVisible();
+  await expect(d.locator('[data-kv="fertig"]')).toHaveCount(0);
+  expect(verbunden(z).map((b) => b.ziel)).toEqual(["cursor"]);
+  expect(await page.evaluate(() => window.__verbunden), "verbunden heißt: Eintrag UND Probe geglückt").toEqual([]);
+  // Prüfung wiederholen, jetzt antwortet der Server
+  z.pruefen = null;
+  await d.locator('[data-aktion="ki-nochmal"]').click();
+  await expect(d.locator('[data-kv="fertig"]')).toContainText("Cursor ist verbunden");
+  expect(await page.evaluate(() => window.__verbunden)).toEqual(["cursor"]);
 });
 
 test("KI verbinden: Cursor mit kaputter Datei → Fehlertext und Eintrag zum Kopieren", async ({ page }) => {
-  await rahmen(page, { vault: "/Users/test/Brain/Privat" });
+  const z = await rahmen(page, { vault: "/Users/test/Brain/Privat" });
   await page.route("**/api/mcp/verbinden", (r) => r.fulfill({ status: 422, contentType: "application/json", body: JSON.stringify({ fehler: "Die Datei ~/.cursor/mcp.json ist kein gültiges JSON in der erwarteten Form.", art: "kaputt", befehl: '{ "mcpServers": {} }' }) }));
   const d = await oeffneKi(page);
   await waehleKi(d, "cursor");
-  await d.locator('[data-aktion="claude-verbinden"]').click();
-  await expect(d.locator('[data-zeile="verbinden"]')).toContainText("kein gültiges JSON");
+  await bisVerbinden(d, "cursor");
+  await expect(d.locator('[data-kv="fehler"]')).toContainText("kein gültiges JSON");
   await expect(d.locator('[data-bereich="befehl"] code')).toHaveText('{ "mcpServers": {} }');
-  await expect(d.locator('[data-bereich="selbsttest"]')).toHaveCount(0);
+  expect(aufgezeichnet(z, "/api/mcp/pruefen")).toHaveLength(0); // ohne Eintrag keine Probe
+  expect(await page.evaluate(() => window.__verbunden)).toEqual([]);
 });
 
-test("KI verbinden: Während des Selbsttests ist die Auswahl gesperrt, das Ergebnis nennt die App, die verbunden wurde", async ({ page }) => {
-  await rahmen(page, { vault: "/Users/test/Brain/Privat", selbsttestVerzoegerung: 900 });
+test("KI verbinden: Während der Prüfung gibt es nur „Abbrechen“; das Ergebnis nennt die KI, die verbunden wurde", async ({ page }) => {
+  await rahmen(page, { vault: "/Users/test/Brain/Privat", pruefenVerzoegerung: 900 });
   const d = await oeffneKi(page);
-  const wahl = d.locator('[data-bereich="ziel-wahl"]');
   await waehleKi(d, "codex");
-  await d.locator('[data-aktion="claude-verbinden"]').click();
-  await expect(d.locator('[data-zeile="verbinden"] .w-arbeit')).toBeVisible();
-  await expect(wahl.locator('.ka-karte[data-ziel="claude"]')).toBeDisabled();
-  await wahl.locator('.ka-karte[data-ziel="claude"]').dispatchEvent("click"); // auch ein erzwungener Klick ändert nichts
-  await expect(wahl.locator('[data-ziel="codex"]')).toHaveAttribute("aria-checked", "true");
-  await expect(wahl.locator('[data-ziel="claude"]')).toHaveAttribute("aria-checked", "false");
-  await expect(d.locator('[data-bereich="selbsttest"]')).toContainText("Starte Codex neu");
-  await expect(d.locator('[data-bereich="selbsttest"]')).not.toContainText("Claude");
-  await expect(wahl.locator('.ka-karte[data-ziel="claude"]')).toBeEnabled(); // danach wieder frei
+  await bisVerbinden(d, "codex");
+  await expect(d.locator('[data-kv="schritte-lauf"]')).toBeVisible();
+  await expect(d.locator('[data-kv="schritte-lauf"] li[data-s="probe"]')).toHaveAttribute("data-zustand", "laeuft");
+  await expect(d.locator('[data-aktion="ki-abbrechen"]')).toBeVisible();
+  for (const a of ["ki-weiter", "ki-verbinden", "ki-zurueck"]) await expect(d.locator(`[data-aktion="${a}"]`)).toHaveCount(0); // die Wahl ist währenddessen weg
+  await expect(d.locator('[data-bereich="probe-ergebnis"]')).toContainText("Starte Codex neu");
+  await expect(d.locator('[data-bereich="probe-ergebnis"]')).not.toContainText("Claude");
+  await expect(d.locator('[data-aktion="ki-fertig"]')).toBeVisible(); // danach frei
 });
 
 test("KI verbinden: Cursor wird auch ohne cursor-agent angeboten, wenn die App oder ~/.cursor da ist (cursorDa)", async ({ page }) => {
   await rahmen(page, { vault: "/Users/test/Brain/Privat", agenten: [], cursorDa: true });
-  let d = await oeffneKi(page);
-  await expect(d.locator('[data-zeile="verbinden"]')).toBeVisible();
+  const d = await oeffneKi(page);
   await expect(d.locator('[data-ziel="cursor"]')).toHaveAttribute("aria-checked", "true");
-  await expect(d.locator('[data-aktion="claude-verbinden"]')).toHaveText("Mit Cursor verbinden");
+  await expect(d.locator('.ka-karte[aria-checked="true"]')).toHaveCount(1);
+  await expect(d.locator('[data-aktion="ki-weiter"]')).toBeEnabled();
 });
 
-test("KI verbinden: ohne jede erkannte KI stehen die beliebten KIs da, nichts ist vorgewählt, Verbinden ist aus", async ({ page }) => {
+test("KI verbinden: ohne jede erkannte KI stehen die beliebten KIs da, nichts ist vorgewählt, Weiter ist aus", async ({ page }) => {
   await rahmen(page, { vault: "/Users/test/Brain/Privat", agenten: [], cursorDa: false });
   const d = await oeffneKi(page);
-  await expect(d.locator(".w-laedt")).toHaveCount(0); // Suche ist fertig
   await expect(d.locator(".ka-titel")).toHaveText("Beliebte KIs");
   await expect(d.locator(".ka-karte[aria-checked='true']")).toHaveCount(0);
-  await expect(d.locator('[data-aktion="claude-verbinden"]')).toBeDisabled();
-  await expect(d.locator('[data-aktion="claude-verbinden"]')).toHaveText("Verbinden");
-  await expect(d.locator('[data-bereich="probe-ergebnis"], [data-zeile="probe"]')).toHaveCount(0);
+  await expect(d.locator('[data-bereich="keine-ki"]')).toBeVisible();
+  await expect(d.locator('[data-aktion="ki-weiter"]')).toBeDisabled();
+  await expect(d.locator('[data-aktion="ki-weiter"]')).toHaveText("Weiter");
+  await expect(d.locator('[data-aktion="ki-verbinden"]')).toHaveCount(0);
+  await expect(d.locator('[data-bereich="probe-ergebnis"], [data-kv="schritte-lauf"]')).toHaveCount(0);
 });
 
 // W4: „verbunden“ erst nach Erfolg
 test("KI-Dialog: beiVerbunden kommt nur nach geglücktem Verbinden, nicht beim Schließen; Umstellen fragt nach", async ({ page }) => {
-  await rahmen(page, { vault: "/Users/test/Brain/Privat", mcp: "anders" });
-  await oeffneSeite(page);
-  await page.evaluate(async () => { window.__zu = 0; window.__verbunden = 0; await (await import("/willkommen.js")).oeffneKiDialog({ beiFertig: () => { window.__zu++; }, beiVerbunden: () => { window.__verbunden++; } }); });
-  const d = page.locator("#dialog-host .dialog");
-  await deckend(d);
-  await d.locator('[data-aktion="claude-verbinden"]').click();
+  const z = await rahmen(page, { vault: "/Users/test/Brain/Privat", mcp: "anders" });
+  const d = await oeffneKi(page);
+  await bisVerbinden(d, "claude");
   const frage = d.locator('[data-bereich="umstellen"]');
-  await expect(frage).toContainText("In Claude gibt es schon einen Eintrag „brain“, der woanders hinzeigt. Auf diesen Vault umstellen?");
+  await expect(frage).toContainText("In Claude Code gibt es schon einen Eintrag „brain“, der woanders hinzeigt. Auf diesen Vault umstellen?");
   await frage.locator('[data-aktion="nicht-umstellen"]').click();
-  await d.locator('[data-aktion="ki-fertig"]').click(); // schließen, ohne verbunden zu sein
+  await expect(d.locator('[data-kv="stufe"]')).toBeVisible(); // „Nicht ändern“ geht zurück zur Stufe, nichts wurde umgestellt
+  await page.keyboard.press("Escape"); // schließen, ohne verbunden zu sein
   await expect(d).toHaveCount(0);
-  expect(await page.evaluate(() => [window.__zu, window.__verbunden])).toEqual([1, 0]);
+  expect(await page.evaluate(() => [window.__zu, window.__verbunden])).toEqual([1, []]);
+  expect(verbunden(z).filter((b) => b.umstellen)).toHaveLength(0);
 });
 
 test("Umstellen: zweiter Aufruf mit umstellen:true, danach Erfolg und beiVerbunden", async ({ page }) => {
   const z = await rahmen(page, { vault: "/Users/test/Brain/Privat", mcp: "anders" });
-  await oeffneSeite(page);
-  await page.evaluate(async () => { window.__verbunden = 0; await (await import("/willkommen.js")).oeffneKiDialog({ beiVerbunden: () => { window.__verbunden++; } }); });
-  const d = page.locator("#dialog-host .dialog");
-  await deckend(d);
-  await d.locator('[data-aktion="claude-verbinden"]').click();
+  const d = await oeffneKi(page);
+  await bisVerbinden(d, "claude");
   await d.locator('[data-aktion="umstellen"]').click();
-  await expect(d.locator('[data-zeile="verbinden"] .w-ok')).toHaveText("Verbunden. Claude kann jetzt auf dein Wissen zugreifen.");
-  expect(aufgezeichnet(z, "/api/mcp/verbinden").map((a) => a.body)).toEqual([{ ziel: "claude" }, { ziel: "claude", umstellen: true }]);
-  expect(await page.evaluate(() => window.__verbunden)).toBe(1);
+  await expect(d.locator('[data-kv="fertig"]')).toContainText("Claude Code ist verbunden");
+  await expect(d.locator('[data-bereich="probe-ergebnis"]')).toContainText("Starte Claude Code neu");
+  expect(verbunden(z)).toEqual([{ ziel: "claude", zugriff: "posteingang" }, { ziel: "claude", umstellen: true, zugriff: "posteingang" }]);
+  expect(await page.evaluate(() => window.__verbunden)).toEqual(["claude"]);
 });
 
 test("{ schonVerbunden: true } gilt als Erfolg", async ({ page }) => {
   await rahmen(page, { vault: "/Users/test/Brain/Privat", mcp: "schon" });
-  await oeffneSeite(page);
-  await page.evaluate(async () => { window.__verbunden = 0; await (await import("/willkommen.js")).oeffneKiDialog({ beiVerbunden: () => { window.__verbunden++; } }); });
-  const d = page.locator("#dialog-host .dialog");
-  await deckend(d);
-  await d.locator('[data-aktion="claude-verbinden"]').click();
-  await expect(d.locator('[data-zeile="verbinden"] .w-ok')).toBeVisible();
-  expect(await page.evaluate(() => window.__verbunden)).toBe(1);
+  const d = await oeffneKi(page);
+  await bisVerbinden(d, "claude");
+  await expect(d.locator('[data-kv="fertig"]')).toContainText("Claude Code ist verbunden");
+  expect(await page.evaluate(() => window.__verbunden)).toEqual(["claude"]);
 });
 
 test("Weg gibt es im Backend noch nicht (404): freundlicher Satz statt roher Meldung", async ({ page }) => {
@@ -802,15 +801,29 @@ test("Weg gibt es im Backend noch nicht (404): freundlicher Satz statt roher Mel
   await expect(page.locator("#willkommen-host .w-fehlerbox")).toHaveText("Das geht in dieser Version noch nicht.");
 });
 
+// KI-Schritt der Willkommen-Karte: derselbe Ablauf (ki-verbinden.js) mit eigenen Knöpfen („Später“ = ki-abbrechen, „Weiter“ = ki-weiter).
+// Bis zum Hauptknopf „Verbinden“: warten, bis die Suche fertig und eine KI vorgewählt ist (sonst würde „Weiter“ ohne Wahl die Karte beenden).
+async function neuerVaultBisKi(page, name = null) {
+  await deckend(weg(page, "leer"));
+  await weg(page, "leer").click();
+  if (name) await page.locator('[data-feld="name"]').fill(name);
+  await knopf(page, "anlegen").click();
+  await deckend(schritt(page, "ki"));
+}
+async function kiVerbindenInKarte(page) {
+  await expect(page.locator('#willkommen-host .ka-karte[data-ki="claude"]')).toHaveAttribute("aria-checked", "true");
+  await knopf(page, "ki-weiter").click(); // Wählen → Konto (ohne Konten nichts zu wählen)
+  await knopf(page, "ki-weiter").click(); // Konto → Stufe
+  await knopf(page, "ki-verbinden").click();
+}
+const kvFertig = (page) => page.locator('#willkommen-host [data-kv="fertig"]');
+
 test("KI-Schritt: erkannte Agenten mit Version, nicht gefundene fehlen", async ({ page }) => {
   await rahmen(page);
   await oeffneSeite(page);
   await zeigeWillkommen(page);
-  await deckend(weg(page, "leer"));
-  await weg(page, "leer").click();
-  await knopf(page, "anlegen").click();
-  await deckend(schritt(page, "ki"));
-  await expect(page.locator("#willkommen-host h2")).toHaveText("Deine KI kann mitlesen");
+  await neuerVaultBisKi(page);
+  await expect(page.locator("#willkommen-host .kv-titel")).toHaveText("KI verbinden");
   await expect(page.locator(".ka-titel").first()).toHaveText("Auf diesem Computer gefunden");
   const karten = page.locator(".ka-karte");
   await expect(karten).toHaveCount(2);
@@ -820,40 +833,40 @@ test("KI-Schritt: erkannte Agenten mit Version, nicht gefundene fehlen", async (
   await expect(karten.nth(1).locator(".ka-status")).toHaveText("Gefunden · codex-cli 0.162.1");
   await deckend(karten.nth(1));
   await expect(page.locator(".ka-karte[data-ki='gemini']")).toHaveCount(0);
-  await expect(knopf(page, "claude-verbinden")).toHaveText("Mit Claude Code verbinden");
-  // ohne Kit kein zweiter Knopf
-  await expect(knopf(page, "hinweise-einschalten")).toHaveCount(0);
+  await expect(karten.nth(0)).toHaveAttribute("aria-checked", "true"); // Claude Code ist vorgewählt
+  await expect(knopf(page, "ki-weiter")).toHaveText("Weiter");
+  await expect(knopf(page, "ki-abbrechen")).toHaveText("Später");
 });
 
-test("KI-Schritt ohne gefundene Agenten: optional, nur Weiter", async ({ page }) => {
+test("KI-Schritt ohne gefundene Agenten: optional, „Weiter“ beendet, kein Verbinden", async ({ page }) => {
   await rahmen(page, { agenten: AGENTEN.map((a) => ({ ...a, version: null, pfad: null })) });
   await oeffneSeite(page);
   await zeigeWillkommen(page);
-  await deckend(weg(page, "leer"));
-  await weg(page, "leer").click();
-  await knopf(page, "anlegen").click();
-  await deckend(schritt(page, "ki"));
-  await expect(page.locator("#willkommen-host h2")).toHaveText("KI verbinden ist optional");
-  await expect(page.locator(".w-untertitel")).toHaveText("Auf diesem Computer wurde keine KI-App gefunden. Du kannst das jederzeit später einrichten.");
+  await neuerVaultBisKi(page);
+  await expect(page.locator("#willkommen-host .kv-titel")).toHaveText("KI verbinden");
+  await expect(page.locator('[data-bereich="keine-ki"]')).toContainText("funktioniert auch ohne");
   await expect(page.locator(".ka-titel")).toHaveText("Beliebte KIs");
-  await expect(knopf(page, "claude-verbinden")).toBeDisabled();
-  await expect(knopf(page, "ki-weiter")).toBeVisible();
+  await expect(page.locator(".ka-karte[aria-checked='true']")).toHaveCount(0);
+  await expect(knopf(page, "ki-verbinden")).toHaveCount(0);
+  await expect(knopf(page, "ki-weiter")).toBeEnabled(); // ohne Wahl heißt der Hauptknopf „Weiter“ und beendet
+  await expect(knopf(page, "ki-weiter")).toHaveText("Weiter");
 });
 
-test("Mit Claude verbinden: Erfolg zeigt Häkchen und Satz", async ({ page }) => {
+test("Mit Claude verbinden: Erfolg zeigt die Fertig-Seite mit dem Ergebnis der Prüfung; „Fertig“ schließt die Karte", async ({ page }) => {
   const z = await rahmen(page);
   await oeffneSeite(page);
   await zeigeWillkommen(page);
-  await deckend(weg(page, "leer"));
-  await weg(page, "leer").click();
-  await knopf(page, "anlegen").click();
-  await deckend(schritt(page, "ki"));
-  await knopf(page, "claude-verbinden").click();
-  const ok = page.locator('[data-zeile="verbinden"] .w-ok');
-  await expect(ok).toHaveText("Verbunden. Claude kann jetzt auf dein Wissen zugreifen.");
-  await deckend(ok);
-  await expect(knopf(page, "claude-verbinden")).toHaveText("Verbunden");
+  await neuerVaultBisKi(page, "Privat");
+  await kiVerbindenInKarte(page);
+  await expect(kvFertig(page)).toContainText("Claude Code ist verbunden");
+  await deckend(kvFertig(page));
+  await expect(page.locator('#willkommen-host [data-bereich="probe-ergebnis"]')).toContainText("Starte Claude Code neu");
   expect(aufgezeichnet(z, "/api/mcp/verbinden")).toHaveLength(1);
+  expect(aufgezeichnet(z, "/api/mcp/pruefen")).toHaveLength(1);
+  expect(await page.evaluate(() => window.__fertig), "fertig erst mit „Fertig“").toBeNull();
+  await knopf(page, "ki-fertig").click();
+  await expect(page.locator("#willkommen-host")).toBeHidden();
+  expect(await page.evaluate(() => window.__fertig)).toEqual({ pfad: "/Users/test/Brain/Privat" });
 });
 
 test("Mit Claude verbinden: 404 mit Befehl zeigt den Befehl und „Befehl kopieren“", async ({ page, context }) => {
@@ -861,103 +874,66 @@ test("Mit Claude verbinden: 404 mit Befehl zeigt den Befehl und „Befehl kopier
   await rahmen(page, { mcp: "befehl" });
   await oeffneSeite(page);
   await zeigeWillkommen(page);
-  await deckend(weg(page, "leer"));
-  await weg(page, "leer").click();
-  await knopf(page, "anlegen").click();
-  await deckend(schritt(page, "ki"));
-  await knopf(page, "claude-verbinden").click();
-  const block = page.locator('[data-bereich="befehl"]');
+  await neuerVaultBisKi(page);
+  await kiVerbindenInKarte(page);
+  const block = page.locator('#willkommen-host [data-bereich="befehl"]');
   await deckend(block);
   await expect(block.locator("code")).toHaveText(BEFEHL);
   await expect(block).toContainText("Führe diesen Befehl im Terminal aus");
   await knopf(page, "befehl-kopieren").click();
-  await expect(block.locator(".mini")).toHaveText(/Befehl kopiert\.|Kopieren war nicht möglich/);
-  await expect(knopf(page, "claude-verbinden")).toBeEnabled();
+  await expect(page.locator("#toast-host")).toContainText(/Befehl kopiert/);
+  await expect(knopf(page, "ki-nochmal")).toBeEnabled(); // danach noch einmal versuchen
 });
 
 test("Mit Claude verbinden: anderer Fehler erscheint in Alltagssprache", async ({ page }) => {
   await rahmen(page, { mcp: "fehler" });
   await oeffneSeite(page);
   await zeigeWillkommen(page);
-  await deckend(weg(page, "leer"));
-  await weg(page, "leer").click();
-  await knopf(page, "anlegen").click();
-  await deckend(schritt(page, "ki"));
-  await knopf(page, "claude-verbinden").click();
-  await expect(page.locator('[data-zeile="verbinden"] .w-fehlerbox')).toHaveText("Die Konfiguration von Claude konnte nicht geschrieben werden.");
+  await neuerVaultBisKi(page);
+  await kiVerbindenInKarte(page);
+  await expect(page.locator('#willkommen-host [data-kv="fehler"]')).toContainText("Die Konfiguration von Claude konnte nicht geschrieben werden.");
+  await expect(kvFertig(page)).toHaveCount(0);
 });
 
-test("Probe: Beispielfrage aus der ersten Notiz, Ergebnis mit bis zu drei Titeln", async ({ page }) => {
-  const z = await rahmen(page);
+test("Prüfen in der Karte: antwortet der Kortex-Server nicht, steht der Fehler da; „Nochmal prüfen“ gelingt danach", async ({ page }) => {
+  const z = await rahmen(page, { pruefen: "fehler" });
   await oeffneSeite(page);
-  await zeigeWillkommen(page);
-  await deckend(weg(page, "leer"));
-  await weg(page, "leer").click();
-  await knopf(page, "anlegen").click();
-  await deckend(schritt(page, "ki"));
-  await expect(page.locator('[data-zeile="probe"] .w-aktion-text')).toContainText("Suche nach „Kaffee“ — so, wie Claude es tun würde.");
-  await knopf(page, "probe").click();
-  const erg = page.locator('[data-bereich="probe-ergebnis"]');
-  await expect(erg.locator(".w-ergebnis-titel")).toHaveText("Claude findet deinen Vault: 4 Treffer");
-  await deckend(erg);
-  await expect(erg.locator("li")).toHaveText(["Kaffee", "Espresso", "Mühle"]);
-  expect(aufgezeichnet(z, "/api/probe")[0].body).toEqual({ frage: "Kaffee" });
-});
-
-test("Probe bei leerem Vault: Hinweis, keine Suche", async ({ page }) => {
-  const z = await rahmen(page, { notizen: [] });
-  await oeffneSeite(page);
-  await zeigeWillkommen(page);
-  await deckend(weg(page, "leer"));
-  await weg(page, "leer").click();
-  await knopf(page, "anlegen").click();
-  await deckend(schritt(page, "ki"));
-  await expect(page.locator('[data-zeile="probe"] .w-aktion-text')).toContainText("Suche nach „Willkommen“");
-  await knopf(page, "probe").click();
-  await expect(page.locator('[data-bereich="probe-ergebnis"]')).toHaveText("Dein Vault ist noch leer — probiere es nach der ersten Notiz.");
-  expect(aufgezeichnet(z, "/api/probe")).toHaveLength(0);
-});
-
-test("Kortex-Hinweise einschalten: der Knopf bleibt aus, solange es /api/kit/hooks nicht gibt (auch mit Kit)", async ({ page }) => {
-  const z = await rahmen(page, { kit: { vorhanden: true, vertraut: true }, hooks: "fehlt" });
-  await oeffneSeite(page);
-  await zeigeWillkommen(page);
-  await deckend(weg(page, "leer"));
-  await weg(page, "leer").click();
-  await knopf(page, "anlegen").click();
-  await deckend(schritt(page, "ki"));
-  await expect(knopf(page, "claude-verbinden")).toBeVisible(); // die übrigen Zeilen sind da
-  await expect(page.locator('[data-zeile="probe"]')).toBeVisible();
-  await expect(knopf(page, "hinweise-einschalten")).toHaveCount(0);
-  await expect(page.locator('[data-zeile="hinweise"]')).toHaveCount(0);
-  await page.waitForTimeout(250);
-  expect(aufgezeichnet(z, "/api/kit/hooks")).toHaveLength(0);
+  await page.evaluate(() => { window.__verbunden = 0; });
+  await page.evaluate(async () => { window.__fertig = null; await (await import("/willkommen.js")).zeigeWillkommen({ modus: "start", beiFertig: (a) => { window.__fertig = a; }, beiVerbunden: () => { window.__verbunden++; } }); });
+  await neuerVaultBisKi(page);
+  await kiVerbindenInKarte(page);
+  await expect(page.locator('#willkommen-host [data-kv="fehler"]')).toContainText("Der MCP-Server hat nicht geantwortet");
+  expect(await page.evaluate(() => window.__verbunden), "beiVerbunden erst nach geglückter Prüfung").toBe(0);
+  z.pruefen = null;
+  await knopf(page, "ki-nochmal").click();
+  await expect(kvFertig(page)).toContainText("Claude Code ist verbunden");
+  expect(await page.evaluate(() => window.__verbunden)).toBe(1);
+  expect(aufgezeichnet(z, "/api/mcp/pruefen")).toHaveLength(2);
 });
 
 test("Weiter und Später schließen die Karte und rufen beiFertig mit dem Pfad", async ({ page }) => {
-  const z = await rahmen(page);
+  // Runde 1: Weiter ohne gefundene KI (ohne Wahl heißt der Hauptknopf „Weiter“ und beendet; mit gefundener KI führt er durch den Ablauf)
+  const z = await rahmen(page, { agenten: [] });
   await oeffneSeite(page);
   await zeigeWillkommen(page);
-  await deckend(weg(page, "leer"));
-  await weg(page, "leer").click();
-  await page.locator('[data-feld="name"]').fill("Privat");
-  await knopf(page, "anlegen").click();
-  await deckend(schritt(page, "ki"));
+  await neuerVaultBisKi(page, "Privat");
+  await expect(page.locator('#willkommen-host [data-bereich="keine-ki"]')).toBeVisible();
   expect(await page.evaluate(() => window.__fertig)).toBeNull();
   await knopf(page, "ki-weiter").click();
   await expect(page.locator("#willkommen-host")).toBeHidden();
   expect(await page.evaluate(() => window.__fertig)).toEqual({ pfad: "/Users/test/Brain/Privat" });
   expect(await page.evaluate(() => document.getElementById("app").inert)).toBe(false);
-  // zweiter Durchlauf mit „Später“
+  // Runde 2: „Später“ mit gefundener KI, nichts wird verbunden
+  z.agenten = undefined;
   await page.evaluate(() => { window.__fertig = null; });
   await zeigeWillkommen(page);
-  await deckend(weg(page, "leer"));
-  await weg(page, "leer").click();
-  await knopf(page, "anlegen").click();
-  await deckend(schritt(page, "ki"));
-  await knopf(page, "ki-spaeter").click();
+  await neuerVaultBisKi(page);
+  await expect(page.locator('#willkommen-host .ka-karte[data-ki="claude"]')).toHaveAttribute("aria-checked", "true");
+  await expect(knopf(page, "ki-abbrechen")).toHaveText("Später");
+  await knopf(page, "ki-abbrechen").click();
   await expect(page.locator("#willkommen-host")).toBeHidden();
   expect((await page.evaluate(() => window.__fertig)).pfad).toContain("/Users/test/Brain/");
+  expect(aufgezeichnet(z, "/api/mcp/verbinden")).toHaveLength(0);
   expect(z.seitenfehler).toEqual([]); // keine ungefangenen Fehler im ganzen Ablauf
 });
 
@@ -1011,21 +987,19 @@ test("oeffneOrdnerFlow ohne Git stellt die Rückfrage; Abbruch im Ordner-Dialog 
   expect(aufgezeichnet(z, "/api/vaults/oeffnen")).toHaveLength(1);
 });
 
-test("oeffneKiDialog zeigt dieselben Inhalte im Dialog und ruft beim Schließen beiFertig", async ({ page }) => {
+test("oeffneKiVerbinden zeigt den Ablauf im Dialog und ruft beim Schließen beiFertig", async ({ page }) => {
   await rahmen(page, { vault: "/Users/test/Brain/Privat", kit: { vorhanden: true, vertraut: true } });
-  await oeffneSeite(page);
-  await page.evaluate(async () => { window.__zu = false; await (await import("/willkommen.js")).oeffneKiDialog({ beiFertig: () => { window.__zu = true; } }); });
-  const d = page.locator("#dialog-host .dialog");
-  await deckend(d);
-  await expect(d.locator(".dialog-kopf")).toHaveText("KI verbinden");
+  const d = await oeffneKi(page);
+  await expect(d).toHaveAttribute("aria-label", "KI verbinden");
+  await expect(d.locator(".kv-kopf .kv-titel")).toHaveText("KI verbinden");
   await expect(d.locator(".ka-karte")).toHaveCount(2);
-  await expect(d.locator('[data-aktion="claude-verbinden"]')).toBeVisible();
-  await expect(d.locator('[data-aktion="hinweise-einschalten"]')).toHaveCount(0); // Route /api/kit/hooks fehlt noch
-  await expect(d.locator('[data-aktion="ki-weiter"]')).toHaveCount(0);
-  await expect(d.locator('[data-aktion="ki-spaeter"]')).toHaveCount(0);
-  await d.locator('[data-aktion="ki-fertig"]').click();
+  await expect(d.locator('[data-aktion="ki-weiter"]')).toBeVisible();
+  await expect(d.locator('[data-aktion="ki-verbinden"]')).toHaveCount(0); // erst nach Konto und Stufe
+  await expect(d.locator('[data-aktion="hinweise-einschalten"]')).toHaveCount(0);
+  await expect(d.locator('[data-aktion="ki-abbrechen"]')).toHaveText("Abbrechen"); // im Dialog „Abbrechen“, in der Karte „Später“
+  await d.locator('[data-aktion="ki-abbrechen"]').click();
   await expect(d).toHaveCount(0);
-  expect(await page.evaluate(() => window.__zu)).toBe(true);
+  expect(await page.evaluate(() => [window.__zu, window.__verbunden])).toEqual([1, []]);
 });
 
 test("Doppelklick auf einen Weg löst im nächsten Schritt nichts aus", async ({ page }) => {
@@ -1123,10 +1097,8 @@ test.describe("Screenshots", () => {
       await deckend(page.locator(".ka-karte").nth(1));
       await page.waitForTimeout(500);
       await page.screenshot({ path: `${BILDER}v2-ki-verbinden-${schema}.png` });
-      await knopf(page, "claude-verbinden").click();
-      await expect(page.locator('[data-zeile="verbinden"] .w-ok')).toBeVisible();
-      await knopf(page, "probe").click();
-      await expect(page.locator('[data-bereich="probe-ergebnis"]')).toBeVisible();
+      await kiVerbindenInKarte(page);
+      await expect(page.locator('#willkommen-host [data-bereich="probe-ergebnis"]')).toBeVisible();
       await page.waitForTimeout(400);
       await page.screenshot({ path: `${BILDER}v2-ki-verbinden-verbunden-${schema}.png` });
     });
@@ -1156,11 +1128,11 @@ test.describe("Screenshots", () => {
       await page.evaluate(() => window.dispatchEvent(new Event("resize")));
       await knopf(page, "git-ohne").click();
       await deckend(schritt(page, "ki"));
-      await knopf(page, "ki-spaeter").click();
+      await knopf(page, "ki-abbrechen").click();
       await expect(page.locator("#willkommen-host")).toBeHidden();
       // KI-Dialog aus der Statusleiste
-      await page.evaluate(async () => { await (await import("/willkommen.js")).oeffneKiDialog({}); });
-      const d = page.locator("#dialog-host .dialog");
+      await page.evaluate(async () => { (await import("/ki-verbinden.js")).oeffneKiVerbinden({ vaultPfad: () => "/Users/test/Brain/Privat", vaultName: () => "Privat" }); });
+      const d = page.locator('[data-dialog="ki-verbinden"]');
       await deckend(d);
       await deckend(d.locator(".ka-karte").nth(1));
       await page.waitForTimeout(350);

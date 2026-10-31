@@ -25,8 +25,31 @@ async function oeffne(page, opt = {}, q = "") {
 async function bereit(page) { await expect(page.locator(sel("start"))).toBeEnabled({ timeout: 6000 }); }
 async function zuVault(page) { await bereit(page); await page.click(sel("start")); await expect(page.locator(".e-weg").first()).toBeVisible(); }
 async function zuSicherung(page) { await zuVault(page); await page.click(sel("weiter")); await expect(page.locator("#e-sync")).toBeVisible(); await expect(page.locator("#e-sync .e-lade")).toHaveCount(0, { timeout: 8000 }); }
-async function zuKi(page) { await zuSicherung(page); await page.click(sel("ohne")); await page.click(sel("weiter")); await expect(page.locator(".e-ki-zeile, .e-leer").first()).toBeVisible({ timeout: 8000 }); }
-async function zuFertig(page) { await zuKi(page); await page.click(sel("weiter")); await expect(page.locator(".e-zusammen")).toBeVisible({ timeout: 8000 }); }
+// Schritt „KI“: der gemeinsame Ablauf aus ki-verbinden.js (Fußleiste gehört dem Assistenten). Bereit, sobald die Karten da sind.
+const ablauf = (page) => page.locator('.kv[data-rahmen="assistent"][data-fuss="host"]');
+async function zuKi(page) { await zuSicherung(page); await page.click(sel("ohne")); await page.click(sel("weiter")); await expect(ablauf(page).locator(".ka-karte").first()).toBeVisible({ timeout: 8000 }); }
+// Einen Schritt im Ablauf weiter (Hauptknopf des Assistenten): Wählen → Konto (nur Claude Code/Codex) → Stufe
+async function zurStufe(page, id) {
+  await ablauf(page).locator(`.ka-karte[data-ki="${id}"]`).click();
+  await page.click(sel("weiter"));
+  if (id === "claude" || id === "codex") { await expect(ablauf(page).locator(".kv-konto").first()).toBeVisible(); await page.click(sel("weiter")); }
+  await expect(ablauf(page).locator('[data-kv="stufe"]')).toBeVisible();
+}
+// Eine KI ganz verbinden, bis „Fertig“ des Ablaufs: opt.konto wählt ein Konto, opt.stufe klickt eine Stufe ausdrücklich an
+async function verbinde(page, id, opt = {}) {
+  const a = ablauf(page);
+  await a.locator(`.ka-karte[data-ki="${id}"]`).click();
+  await page.click(sel("weiter"));
+  if (id === "claude" || id === "codex") {
+    if (opt.konto) await a.locator(`.kv-konto[data-konto="${opt.konto}"]`).click();
+    await page.click(sel("weiter"));
+  }
+  if (opt.stufe) await a.locator(`[data-kv="stufe"] [data-wert="${opt.stufe}"]`).click();
+  await page.click(sel("weiter")); // Verbinden
+  await expect(a.locator('[data-kv="fertig"]')).toBeVisible({ timeout: 10000 });
+}
+// Zusammenfassung des Assistenten (Schritt 4) mit Claude Code, Stufe wie vorbelegt (Posteingang)
+async function zuFertig(page) { await zuKi(page); await verbinde(page, "claude"); await page.click(sel("weiter")); await expect(page.locator(".e-zusammen")).toBeVisible({ timeout: 8000 }); }
 const bild = async (page, name, thema) => { if (BILDER) { await page.waitForTimeout(900); await page.screenshot({ path: join(BILDER, `${name}-${thema === "dark" ? "dunkel" : "hell"}.png`) }); } };
 const anfragen = (z, pfad) => z.anfragen.filter((a) => a.pfad === pfad);
 
@@ -220,44 +243,76 @@ for (const thema of ["light", "dark"]) {
       expect(anfragen(z, "/api/sicherung/verbinden")[0].body).toEqual({ besitzer: "fabiobrogno", name: "kortex" });
     });
 
-    test("KI: erkannte Programme mit Konto und Stufe, Weitere Programme mit Logos, Verbinden mit Zugriff", async ({ page }) => {
+    test("KI: erkannte Programme, EINE KI wählen, Konto, Stufe, Verbinden; danach eine weitere über „Weitere KI verbinden“", async ({ page }) => {
       const z = await oeffne(page);
       await zuKi(page);
-      await expect(page.locator(".ka-kopf")).toContainText("Auf diesem Computer gefunden");
-      await expect(page.locator(".ka-karte")).toHaveCount(3);
-      await expect(page.locator('.ka-karte[data-ki="claude"]')).toHaveAttribute("aria-checked", "true");
-      await expect(page.locator('.ka-karte[data-ki="cursor"]')).toHaveAttribute("aria-checked", "false");
-      await expect(page.locator(".e-ki-zeile")).toHaveCount(1);
-      await expect(page.locator('.e-ki-zeile[data-ki="claude"]')).toContainText("Version 2.1.310 · 2 Konten gefunden");
-      await expect(page.locator(sel("weiter"))).toHaveText(/1 KI verbinden/);
-      // Cursor dazuwählen, Stufe „Lesen“, Claude-Konto „Firma“
-      await page.click('.ka-karte[data-ki="cursor"]');
-      await expect(page.locator(sel("weiter"))).toHaveText(/2 KIs verbinden/);
-      await page.click('.e-ki-zeile[data-ki="cursor"] [data-wert="lesen"]');
-      await page.click('.e-ki-zeile[data-ki="claude"] [data-wert="k_claude_firma"]');
-      await expect(page.locator('.e-ki[data-ki="cursor"] .e-stufe')).toHaveText("Lesen");
-      await expect(page.locator('.e-ki[data-ki="claude"]')).toHaveClass(/an/);
+      const a = ablauf(page);
+      await expect(a.locator(".ka-kopf")).toContainText("Auf diesem Computer gefunden");
+      await expect(a.locator(".ka-karte")).toHaveCount(3);
+      await expect(a.locator('.ka-karte[aria-checked="true"]')).toHaveCount(0); // nichts vorgewählt: der Nutzer wählt selbst
+      await expect(a.locator('.ka-karte[data-ki="claude"]')).toContainText("2.1.310");
+      await expect(page.locator(sel("weiter"))).toHaveText(/Ohne KI weiter/);
+      await expect(page.locator("#ki-zusatz")).toBeHidden(); // „Zusätzlich“ erst nach dem Verbinden
+      // EINE KI: ein zweiter Klick wählt um, es bleibt bei einer
+      await a.locator('.ka-karte[data-ki="cursor"]').click();
+      await a.locator('.ka-karte[data-ki="claude"]').click();
+      await expect(a.locator('.ka-karte[data-ki="claude"]')).toHaveAttribute("aria-checked", "true");
+      await expect(a.locator('.ka-karte[data-ki="cursor"]')).toHaveAttribute("aria-checked", "false");
+      await expect(page.locator(sel("weiter"))).toHaveText(/Weiter/);
       await bild(page, "w3-ki", thema);
+      await page.click(sel("weiter"));
+      // Konto (nur Claude Code und Codex): beide Konten, das Standardkonto ist gewählt
+      await expect(a.locator(".kv-konto")).toHaveCount(2);
+      await expect(a.locator('.kv-konto[data-konto="k_claude_privat"]')).toHaveAttribute("aria-checked", "true");
+      await a.locator('.kv-konto[data-konto="k_claude_firma"]').click();
+      await bild(page, "w3-ki-konto", thema);
+      await page.click(sel("weiter"));
+      // Stufe „Lesen“ ausdrücklich
+      await expect(a.locator('[data-kv="stufe"]')).toBeVisible();
+      await a.locator('[data-kv="stufe"] [data-wert="lesen"]').click();
+      await expect(page.locator(sel("weiter"))).toHaveText(/Verbinden/);
+      await bild(page, "w3-ki-stufe", thema);
+      await page.click(sel("weiter"));
+      await expect(a.locator('[data-kv="fertig"]')).toBeVisible({ timeout: 10000 });
+      await expect(a.locator('[data-bereich="probe-ergebnis"]')).toContainText("Claude Code sieht deinen Vault");
+      await bild(page, "w3-ki-fertig", thema);
+      expect(z.verbunden).toHaveLength(1);
+      expect(z.verbunden[0]).toMatchObject({ ziel: "claude", konto: "k_claude_firma", zugriff: "lesen", zugriffAusdruecklich: true });
+      expect(anfragen(z, "/api/mcp/pruefen")).toHaveLength(1);
+      expect(z.pflege, "Pflege nur bei Erweitert").toBeUndefined();
+      // zweite KI nacheinander: Cursor hat keinen Konto-Schritt
+      await page.click(sel("ki-weitere"));
+      await expect(a.locator('.ka-karte[data-ki="claude"] [data-verbunden="true"]')).toBeVisible(); // Claude Code ist als verbunden markiert
+      await a.locator('.ka-karte[data-ki="cursor"]').click();
+      await page.click(sel("weiter"));
+      await expect(a.locator('[data-kv="stufe"]')).toBeVisible();
+      await expect(a.locator(".kv-konto")).toHaveCount(0);
+      await a.locator('[data-kv="stufe"] [data-wert="lesen"]').click();
+      await page.click(sel("weiter"));
+      await expect(a.locator('[data-kv="fertig"]')).toBeVisible({ timeout: 10000 });
+      expect(z.verbunden).toHaveLength(2);
+      expect(z.verbunden[1]).toMatchObject({ ziel: "cursor", konto: "k_cursor", zugriff: "lesen", zugriffAusdruecklich: true });
+      await page.click(sel("weiter"));
+      await expect(page.locator("#win")).toHaveAttribute("data-step", "4", { timeout: 8000 });
+      await expect(page.locator(".e-zusammen")).toContainText("Claude Code, Cursor");
+      expect(z.seitenfehler).toEqual([]);
+    });
+
+    test("KI: „Weitere KIs“ zeigt die ganze Liste mit Logos; nicht verbindbare sind gesperrt", async ({ page }) => {
+      await oeffne(page);
+      await zuKi(page);
       await page.click(sel("ki-weitere"));
       await expect(page.locator('.ka-zeile[data-ki="gemini"]')).toBeVisible();
       await expect(page.locator('.ka-zeile[data-ki="gemini"] .ki-logo svg')).toBeVisible();
       await expect(page.locator('.ka-zeile[data-ki="windsurf"]')).toHaveAttribute("aria-disabled", "true");
       await bild(page, "w3-ki-weitere", thema);
       await page.click(sel("ki-weitere"));
-      await page.click(sel("weiter"));
-      await expect(page.locator("#win")).toHaveAttribute("data-step", "4", { timeout: 8000 });
-      const v = (z.verbunden || []).map((b) => b);
-      // ausdrücklich ist nur, was du selbst angeklickt hast: Cursor „Lesen“ ja, die Vorbelegung von Claude nicht
-      expect(v).toEqual([
-        { ziel: "claude", konto: "k_claude_firma", zugriff: "posteingang" },
-        { ziel: "cursor", konto: "k_cursor", zugriff: "lesen", zugriffAusdruecklich: true },
-      ]);
     });
 
-    test("KI: Stufe Erweitert setzt die Pflege des Kontos; keine KI gefunden zeigt Anleitungen", async ({ page }) => {
+    test("KI: Stufe Erweitert setzt die Pflege des Kontos (und nur dann)", async ({ page }) => {
       const z = await oeffne(page);
       await zuKi(page);
-      await page.click('.e-ki-zeile[data-ki="claude"] [data-wert="erweitert"]');
+      await verbinde(page, "claude", { stufe: "erweitert" });
       await page.click(sel("weiter"));
       await expect(page.locator("#win")).toHaveAttribute("data-step", "4", { timeout: 8000 });
       expect(z.pflege).toEqual({ vault: "/Users/test/Kortex", konto: "k_claude_privat", stufe: "mittel" });
@@ -265,17 +320,15 @@ for (const thema of ["light", "dark"]) {
     });
 
     test("KI: nichts gefunden — Anleitungen statt Sackgasse, ohne KI weiter", async ({ page }) => {
-      const z = await oeffne(page, { ki: "keine" });
+      await oeffne(page, { ki: "keine" });
       await zuKi(page);
-      await expect(page.locator(".e-pane:not(.raus) .e-ki-hinweis")).toContainText("funktioniert auch ohne");
-      await expect(page.locator(".ka")).toHaveAttribute("data-erkennung", "keine");
-      await expect(page.locator(".ka-kopf")).toContainText("Beliebte KIs");
+      const a = ablauf(page);
+      await expect(a.locator('[data-bereich="keine-ki"]')).toContainText("funktioniert auch ohne");
+      await expect(a.locator(".ka")).toHaveAttribute("data-erkennung", "keine");
+      await expect(a.locator(".ka-kopf")).toContainText("Beliebte KIs");
       await expect(page.locator(sel("weiter"))).toHaveText(/Ohne KI weiter/);
       await expect(page.locator("#k-ki-platz")).toContainText("noch keine");
       await bild(page, "w3b-keine-ki", thema);
-      await page.click(sel("suchen"));
-      await expect(page.locator(sel("suchen"))).toBeEnabled({ timeout: 4000 });
-      expect(anfragen(z, "/api/ki/erkennen").some((a) => true)).toBe(true);
       await page.click(sel("weiter"));
       await expect(page.locator(".e-zusammen")).toContainText("Keine KI verbunden");
       await expect(page.locator(".e-probe")).toContainText("Halte einen Gedanken fest");
@@ -284,19 +337,36 @@ for (const thema of ["light", "dark"]) {
     test("KI: vorhandener Eintrag wird erst nach Rückfrage umgestellt; Fehler zeigt den Befehl zum Kopieren", async ({ page }) => {
       const z = await oeffne(page, { verbindenFehler: { claude: { status: 409, fehler: "anders", art: "anders" }, codex: { status: 502, fehler: "Codex hat den Eintrag abgelehnt.", befehl: "codex mcp add brain -- node x" } } });
       await zuKi(page);
-      await page.click('.ka-karte[data-ki="codex"]');
-      await page.click(sel("weiter"));
-      await expect(page.locator('[data-bereich="umstellen"]')).toContainText("Auf diesen Vault umstellen?");
-      await expect(page.locator('[data-bereich="befehl"] code')).toHaveText("codex mcp add brain -- node x");
+      const a = ablauf(page);
+      // Claude Code: ein anderer Eintrag „brain“ — „Nicht ändern“ lässt alles, wie es ist
+      await zurStufe(page, "claude");
+      await page.click(sel("weiter")); // Verbinden
+      await expect(a.locator('[data-bereich="umstellen"]')).toContainText("Auf diesen Vault umstellen?");
       await expect(page.locator("#win")).toHaveAttribute("data-step", "3");
+      await expect(page.locator(sel("weiter"))).toBeDisabled(); // ohne Antwort geht es nicht weiter
+      expect(z.verbunden ?? []).toEqual([]);
+      await bild(page, "w3c-umstellen", thema);
+      await page.click(sel("nicht-umstellen"));
+      await expect(a.locator('[data-kv="stufe"]')).toBeVisible();
+      expect(anfragen(z, "/api/mcp/pruefen")).toHaveLength(0);
+      // noch einmal, diesmal „Umstellen“
+      await page.click(sel("weiter"));
+      await page.click(sel("umstellen"));
+      await expect(a.locator('[data-kv="fertig"]')).toBeVisible({ timeout: 10000 });
+      expect(z.verbunden.some((b) => b.ziel === "claude" && b.umstellen === true)).toBe(true);
+      // Codex: das Programm lehnt den Eintrag ab — der Befehl steht da, zum Kopieren
+      await page.click(sel("ki-weitere"));
+      await zurStufe(page, "codex");
+      await page.click(sel("weiter")); // Verbinden
+      await expect(a.locator('[data-bereich="befehl"] code')).toHaveText("codex mcp add brain -- node x");
+      await expect(page.locator("#win")).toHaveAttribute("data-step", "3");
+      await expect(page.locator(sel("weiter"))).toHaveText(/Nochmal prüfen/);
       await page.click('[data-bereich="befehl"] [data-aktion="befehl-kopieren"]');
       expect(z.zwischenablage).toBe("codex mcp add brain -- node x");
-      await page.click(sel("umstellen"));
-      await expect(page.locator('.e-ki-zeile[data-ki="claude"]')).toHaveClass(/verbunden/, { timeout: 6000 });
-      expect(z.verbunden.some((b) => b.ziel === "claude" && b.umstellen === true)).toBe(true);
-      await page.click('.ka-karte[data-ki="codex"]'); // Codex abwählen, weiter
-      await page.click(sel("weiter"));
-      await expect(page.locator("#win")).toHaveAttribute("data-step", "4", { timeout: 6000 });
+      await bild(page, "w3d-befehl", thema);
+      await page.click(sel("zurueck")); // der Ablauf geht einen Schritt zurück (zur Stufe), nicht gleich zum vorigen Schritt des Assistenten
+      await expect(a.locator('[data-kv="stufe"]')).toBeVisible();
+      await expect(page.locator("#win")).toHaveAttribute("data-step", "3");
     });
 
     test("Fertig: Zusammenfassung mit Ändern-Knöpfen, Probe-Frage, Studio öffnen meldet das Ende an die App", async ({ page }) => {
@@ -450,33 +520,44 @@ test.describe("Gesperrte Konten, Vertrauen, Zusatz-Eintragungen", () => {
   test("Ein vom Nutzer gesperrtes Konto bleibt gesperrt: keine Stufe, keine ausdrückliche Wahl, Hinweis statt Freigabe", async ({ page }) => {
     const z = await oeffne(page, { zugriff: { k_claude_privat: { [VAULT]: "gesperrt" } }, gesperrteKonten: ["k_claude_privat"] });
     await zuKi(page);
-    await expect(page.locator('.e-ki-zeile[data-ki="claude"] [data-bereich="gesperrt"]')).toContainText("bleibt gesperrt");
-    await expect(page.locator('.e-ki-zeile[data-ki="claude"] [data-wert="gesperrt"]')).toHaveAttribute("aria-checked", "true");
+    const a = ablauf(page);
+    await zurStufe(page, "claude");
+    await expect(a.locator('[data-bereich="gesperrt"]')).toContainText("bleibt es, bis du selbst eine Stufe wählst");
+    await expect(a.locator('[data-kv="stufe"] [data-wert="gesperrt"]')).toHaveAttribute("aria-checked", "true");
+    await page.click(sel("weiter")); // Verbinden
+    await expect(a.locator('[data-kv="fertig"]')).toBeVisible({ timeout: 10000 });
+    await expect(a.locator('[data-kv="fertig"]')).toContainText("bleibt in „Kortex“ gesperrt");
+    expect(z.verbunden).toEqual([{ ziel: "claude", konto: "k_claude_privat" }]); // weder zugriff noch zugriffAusdruecklich
     await page.click(sel("weiter"));
     await expect(page.locator("#win")).toHaveAttribute("data-step", "4", { timeout: 8000 });
-    expect(z.verbunden).toEqual([{ ziel: "claude", konto: "k_claude_privat" }]); // weder zugriff noch zugriffAusdruecklich
     await expect(page.locator(".e-zusammen")).toContainText("Gesperrt");
   });
 
   test("Wählst du bei einem gesperrten Konto selbst eine Stufe, gilt sie ausdrücklich; eine vorhandene Stufe ist vorbelegt und nicht ausdrücklich", async ({ page }) => {
     const z = await oeffne(page, { zugriff: { k_claude_privat: { [VAULT]: "gesperrt" }, k_claude_firma: { [VAULT]: "lesen" } }, gesperrteKonten: ["k_claude_privat"] });
     await zuKi(page);
-    await page.click('.e-ki-zeile[data-ki="claude"] [data-wert="lesen"]');
-    await page.click(sel("weiter"));
-    await expect(page.locator("#win")).toHaveAttribute("data-step", "4", { timeout: 8000 });
+    await verbinde(page, "claude", { stufe: "lesen" });
     expect(z.verbunden).toEqual([{ ziel: "claude", konto: "k_claude_privat", zugriff: "lesen", zugriffAusdruecklich: true }]);
+    await expect(ablauf(page).locator('[data-kv="fertig"]')).toContainText("Darf in „Kortex“: Lesen");
   });
 
   test("Kontowechsel: die Stufe von Konto A gilt nie ausdrücklich für das gesperrte Konto B", async ({ page }) => {
     const z = await oeffne(page, { zugriff: { k_claude_privat: { [VAULT]: "gesperrt" }, k_claude_firma: { [VAULT]: "lesen" } }, gesperrteKonten: ["k_claude_privat"] });
     await zuKi(page);
-    await page.click('.e-ki-zeile[data-ki="claude"] [data-wert="k_claude_firma"]');
-    await page.click('.e-ki-zeile[data-ki="claude"] [data-wert="erweitert"]'); // ausdrücklich, für Firma
-    await page.click('.e-ki-zeile[data-ki="claude"] [data-wert="k_claude_privat"]');
-    await expect(page.locator('.e-ki-zeile[data-ki="claude"] [data-wert="gesperrt"]')).toHaveAttribute("aria-checked", "true");
-    await expect(page.locator('.e-ki-zeile[data-ki="claude"] [data-bereich="gesperrt"]')).toBeVisible();
+    const a = ablauf(page);
+    await a.locator('.ka-karte[data-ki="claude"]').click();
     await page.click(sel("weiter"));
-    await expect(page.locator("#win")).toHaveAttribute("data-step", "4", { timeout: 8000 });
+    await a.locator('.kv-konto[data-konto="k_claude_firma"]').click();
+    await page.click(sel("weiter"));
+    await expect(a.locator('[data-kv="stufe"] [data-wert="lesen"]')).toHaveAttribute("aria-checked", "true"); // Firma: vorbelegt aus dem Stand des Vaults
+    await a.locator('[data-kv="stufe"] [data-wert="erweitert"]').click(); // ausdrücklich, für Firma
+    await page.click(sel("zurueck"));
+    await a.locator('.kv-konto[data-konto="k_claude_privat"]').click();
+    await page.click(sel("weiter"));
+    await expect(a.locator('[data-kv="stufe"] [data-wert="gesperrt"]')).toHaveAttribute("aria-checked", "true");
+    await expect(a.locator('[data-bereich="gesperrt"]')).toBeVisible();
+    await page.click(sel("weiter")); // Verbinden
+    await expect(a.locator('[data-kv="fertig"]')).toBeVisible({ timeout: 10000 });
     expect(z.verbunden).toEqual([{ ziel: "claude", konto: "k_claude_privat" }]);
     expect(z.pflege, "keine Pflege über ein gesperrtes Konto").toBeUndefined();
   });
@@ -484,17 +565,20 @@ test.describe("Gesperrte Konten, Vertrauen, Zusatz-Eintragungen", () => {
   test("Die Stufe wird über den Pfad des Vaults nachgeschlagen (zugriff ist nach Pfad geschlüsselt, schluessel ist ein anderer Wert)", async ({ page }) => {
     const z = await oeffne(page, { zugriff: { k_claude_privat: { [VAULT]: "erweitert", ["kennung-" + VAULT]: "gesperrt" } } });
     await zuKi(page);
-    await expect(page.locator('.e-ki-zeile[data-ki="claude"] [data-wert="erweitert"]')).toHaveAttribute("aria-checked", "true");
-    await expect(page.locator('.e-ki-zeile[data-ki="claude"] [data-wert="gesperrt"]')).toHaveCount(0);
+    await zurStufe(page, "claude");
+    const a = ablauf(page);
+    await expect(a.locator('[data-kv="stufe"] [data-wert="erweitert"]')).toHaveAttribute("aria-checked", "true");
+    await expect(a.locator('[data-kv="stufe"] [data-wert="gesperrt"]')).toHaveCount(0);
     expect(z.verbunden ?? []).toEqual([]);
   });
 
   test("Vorbelegung aus dem Konto: Lesen bleibt Lesen, ohne ausdrückliche Wahl", async ({ page }) => {
     const z = await oeffne(page, { zugriff: { k_claude_privat: { [VAULT]: "lesen" } } });
     await zuKi(page);
-    await expect(page.locator('.e-ki-zeile[data-ki="claude"] [data-wert="lesen"]')).toHaveAttribute("aria-checked", "true");
-    await page.click(sel("weiter"));
-    await expect(page.locator("#win")).toHaveAttribute("data-step", "4", { timeout: 8000 });
+    await zurStufe(page, "claude");
+    await expect(ablauf(page).locator('[data-kv="stufe"] [data-wert="lesen"]')).toHaveAttribute("aria-checked", "true");
+    await page.click(sel("weiter")); // Verbinden
+    await expect(ablauf(page).locator('[data-kv="fertig"]')).toBeVisible({ timeout: 10000 });
     expect(z.verbunden).toEqual([{ ziel: "claude", konto: "k_claude_privat", zugriff: "lesen" }]);
   });
 
@@ -512,9 +596,11 @@ test.describe("Gesperrte Konten, Vertrauen, Zusatz-Eintragungen", () => {
     expect(anfragen(z, "/api/vertrauen").length).toBe(0);
   });
 
-  test("Zusätzlich: Hooks, Prüfung vor dem Speichern, Hintergrunddienst über /api/kern/verdrahten; fremde Prüfung wird nur nach „Ersetzen“ abgelöst", async ({ page }) => {
+  test("Zusätzlich: erscheint erst nach dem Verbinden; Hooks, Prüfung vor dem Speichern, Hintergrunddienst über /api/kern/verdrahten; fremde Prüfung wird nur nach „Ersetzen“ abgelöst", async ({ page }) => {
     const z = await oeffne(page, { gitFremd: true });
     await zuKi(page);
+    await expect(page.locator("#ki-zusatz")).toBeHidden(); // beim Wählen stört es nur
+    await verbinde(page, "claude");
     await expect(page.locator("#ki-zusatz")).toContainText("Zusätzlich, wenn du möchtest");
     await expect(page.locator("#ki-zusatz [data-zusatz]")).toHaveCount(3);
     await page.click('[data-aktion="zusatz-claude"]');
@@ -532,25 +618,21 @@ test.describe("Gesperrte Konten, Vertrauen, Zusatz-Eintragungen", () => {
     await expect.poll(() => z.verdrahtet.at(-1)).toEqual({ was: "dienst", an: false });
   });
 
-  test("Trennen nimmt nur Kortex' Eintrag heraus; „Konfiguration kopieren“ für andere KIs", async ({ page }) => {
+  // Das Trennen gibt es im Assistenten nicht mehr (die frühere Zeile .e-ki-zeile mit „Trennen“ ist weg; getrennt wird in den Einstellungen unter „KI & Konten“).
+  test("„Konfiguration kopieren“ für andere KIs steht schon im ersten Schritt", async ({ page }) => {
     const z = await oeffne(page);
     await zuKi(page);
     await page.click(sel("konfig-kopieren"));
     await expect.poll(() => z.zwischenablage).toContain('"mcpServers"');
-    await page.click(sel("weiter")); // Claude verbinden
-    await expect(page.locator("#win")).toHaveAttribute("data-step", "4", { timeout: 8000 });
-    await page.click(sel("zurueck"));
-    await expect(page.locator('.e-ki-zeile[data-ki="claude"]')).toHaveClass(/verbunden/);
-    await page.click('.e-ki-zeile[data-ki="claude"] [data-aktion="trennen"]');
-    await expect(page.locator('.e-ki-zeile[data-ki="claude"]')).toContainText("Getrennt");
-    expect(z.getrennt).toEqual([{ ziel: "claude", konto: "k_claude_privat" }]);
+    await expect(page.locator(".toast", { hasText: "Konfiguration kopiert" })).toBeVisible();
+    await expect(page.locator("#win")).toHaveAttribute("data-step", "3");
   });
 
   for (const [dienst, text] of [[false, "beim nächsten Sitzungsstart"], [true, "Täglich im Hintergrund"]]) {
     test(`Fertig: die Pflege-Zeile sagt ehrlich, ob der Hintergrunddienst läuft (${dienst ? "Dienst da" : "ohne Dienst"})`, async ({ page }) => {
       const z = await oeffne(page, { dienstFuerVault: dienst });
       await zuKi(page);
-      await page.click('.e-ki-zeile[data-ki="claude"] [data-wert="erweitert"]');
+      await verbinde(page, "claude", { stufe: "erweitert" });
       await page.click(sel("weiter"));
       await expect(page.locator(".e-zusammen")).toContainText(text, { timeout: 8000 });
       expect(z.pflege).toEqual({ vault: VAULT, konto: "k_claude_privat", stufe: "mittel" });

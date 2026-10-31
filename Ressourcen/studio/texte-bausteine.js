@@ -14,6 +14,7 @@ export const TB = {
     sucht: "Wird gesucht …",
     nichtDa: "Nicht installiert",
     gefunden: (version) => (version ? `Gefunden · ${version}` : "Gefunden"),
+    verbunden: "Verbunden",
     gefundenNichtVerbindbar: "Noch nicht verbindbar",
     mehr: (n) => `Weitere KIs anzeigen (${n})`,
     weniger: "Weitere KIs ausblenden",

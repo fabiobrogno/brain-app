@@ -7,7 +7,8 @@
 // Kortex liest dafür keine Anmeldedaten: Claude Code meldet sein Kontingent an die Statuszeile, Codex antwortet dem Programm selbst (Werkstatt: werkstatt/kontingent.mjs).
 // Muster: Orca R/components/status-bar/InlineProviderUsage.tsx, ProviderDetailsMenu.tsx, ClaudeSwitcherMenu.tsx und provider-extra-usage-section.tsx (barColor) @9bccd67 (MIT, Lovecast Inc.):
 // je Anbieter ein Abschnitt mit Balken, „NN %“ und Rücksetzzeit; Klick öffnet ein Menü mit Konto-Wechsel; Balken grau unter 60 %, gelb 60–79 %, rot ab 80 %.
-import { h, leseLokal, speichereLokal } from "./hilfen.js";
+import { h, leseLokal, speichereLokal, dialog, toast } from "./hilfen.js";
+import { knopf as baueKnopf } from "./bausteine.js";
 import { symbol, GROESSE } from "./symbole.js";
 import { kiLogo } from "./ki-logos.js";
 import { oeffnePopover } from "./popover.js";
@@ -290,4 +291,27 @@ export function erzeugeKontoLeiste(z) {
   el.addEventListener("click", () => oeffneMenue());
 
   return { knoten: () => el, aktualisiere: () => stand.holen(), zeichne, menueOffen: () => !!offenMenue, schliesse: () => offenMenue?.zu() };
+}
+
+// ============================================================ Einwilligung zur Statuszeile (eine Quelle für Einstellungen und „KI verbinden“)
+// Einschalten: erst der Klick auf „Kontingent anzeigen …“, dann dieser Dialog. Orte außerhalb von Kortex (System-Standard ~/.claude u. a.) brauchen zusätzlich die Bestätigung hier.
+// kt: das Konto (id, name, ordner|pfad, verwaltet) · eintrag: Eintrag aus GET /api/ki/kontingent · nachher(): nach dem Schließen (z. B. Stand neu holen) · dialogFn: der Dialog (Standard: dialog aus hilfen.js)
+export function kontingentEinwilligung({ api, kt, eintrag, nachher, dialogFn = dialog } = {}) {
+  const verwaltet = eintrag?.verwaltet === true || kt.verwaltet === true;
+  const E = TKO.einwilligung, B = TKO.bestaetigung;
+  const punkte = [E.punkte.keinToken, E.punkte.nurZahlen, E.punkte.kette, E.punkte.rueckweg];
+  const rumpf = [h("ul", { klasse: "kt-liste", "data-kt": "punkte" }, punkte.map((t) => h("li", { text: t })))];
+  if (!verwaltet) rumpf.push(h("div", { klasse: "kk-karte warn", role: "note", "data-kt": "bestaetigung" }, h("b", { klasse: "kk-karte-titel", text: B.titel(kt.name) }), h("p", { text: B.satz(kt.ordner || kt.pfad || "") }),
+    h("ul", { klasse: "kt-liste" }, [B.punkte.sicherung, B.punkte.eintrag, B.punkte.rueckweg].map((t) => h("li", { text: t })))));
+  const ja = baueKnopf({ text: verwaltet ? E.ja : B.ja, variante: "primaer", aktion: "kt-einschalten", aufKlick: async () => {
+    d.schliessen();
+    try {
+      const r = await api.kiStatuszeile({ konto: kt.id, an: true, bestaetigt: !verwaltet });
+      toast(r?.aktion === "repariert" ? E.repariert(kt.name) : r?.aktion === "neu-verknuepft" ? E.neuVerknuepft(kt.name) : r?.aktion === "schon-da" ? E.schonDa(kt.name) : `${E.fertig(kt.name)}${r?.kette ? ` ${E.fertigKette}` : ""}`, { ms: 6000 });
+    } catch (err) { toast(err?.status === 0 ? TKO.fehlerSchalten : (err?.message || TKO.fehlerSchalten), { fehler: true, ms: 9000 }); }
+    try { await nachher?.(); } catch (err) { console.error(err); }
+  } });
+  const d = dialogFn({ titel: E.titel(kt.name), satz: E.satz, rumpf, knoepfe: [baueKnopf({ text: E.abbrechen, aufKlick: () => d.schliessen() }), ja] });
+  d.box.dataset.dialog = "kt-einwilligung";
+  return d;
 }

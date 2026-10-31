@@ -89,4 +89,12 @@
    Ohne Konto ist dieser Eintrag der einzige Knopf; der leere Zustand des Konto-Platzes („KI verbinden …“) ist dann ausgeblendet. */
 #status:has(.kt-leiste[data-konto]:not([hidden])) [data-st="claude"] { display: none; }
 .kt-leiste[data-zustand="leer"] { display: none; }
+/* Solange Programme und Konten noch laden, steht statt „KI verbinden“ ein ruhiger Platzhalter (kein Aufblitzen und Verschwinden, wenn ein Konto da ist) */
+.st[data-st="claude"][data-laedt="true"] { display: none; }
+.st-platzhalter { display: inline-flex; align-items: center; }
+/* eigener Balken (nicht .bs-skelett: das zählt als Ladeskelett der Spalten); erscheint wie das Skelett erst nach 150 ms, auf der Statusleiste (--seite) mit mehr Kontrast als --hover */
+.st-ladebalken { display: block; width: 84px; height: 10px; border-radius: var(--r-pille); background: linear-gradient(90deg, var(--linie) 0%, var(--linie-stark) 50%, var(--linie) 100%); background-size: 200% 100%; opacity: 0;
+  animation: bs-sichtbar 160ms ease-out 150ms forwards, bs-schimmer var(--d-puls) ease-in-out 150ms infinite; }
+@media (prefers-reduced-motion: reduce) { .st-ladebalken { opacity: 1 !important; animation: none !important; } }
+:root[data-bewegung="reduziert"] .st-ladebalken { opacity: 1 !important; animation: none !important; }
 .st { white-space: nowrap; min-width: 0; }

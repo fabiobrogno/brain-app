@@ -1,0 +1,145 @@
+/* „KI verbinden“ (ki-verbinden.js): EIN Ablauf für Dialog, Willkommen-Karte und Einrichtungs-Assistent. Maße und Töne aus den Tokens (studio.css); Gestaltung nach dem Prototyp
+   (app.html#verbinden=1; Orca-Muster „Agent wählen“, von Hand nachgebaut). Hell und dunkel über die Tokens, Bewegung über --d-* (kein eigenes Tempo). */
+
+/* ---------- Dialog ---------- */
+.dialog.kv-box { width: min(640px, calc(100vw - 32px)); max-height: calc(100vh - 48px); display: flex; flex-direction: column; overflow: hidden; }
+.kv { display: flex; flex-direction: column; min-height: 0; min-width: 0; flex: 1 1 auto; }
+.kv[data-rahmen="dialog"] > .kv-rumpf { overflow: auto; }
+.kv-kopf { display: flex; align-items: center; gap: 12px; padding: 22px 24px 0; }
+.kv-titel { margin: 0; font-size: 17px; line-height: 1.3; font-weight: 650; letter-spacing: -.015em; min-width: 0; }
+.kv-schritt { margin-left: auto; flex: none; font-size: 12.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.kv-rumpf { display: flex; flex-direction: column; gap: 14px; padding: 16px 24px 20px; min-height: 0; min-width: 0; }
+.kv[data-rahmen="assistent"] > .kv-rumpf, .kv[data-rahmen="karte"] > .kv-rumpf { padding: 0; }
+.kv[data-rahmen="assistent"] > .kv-kopf, .kv[data-rahmen="karte"] > .kv-kopf { padding: 0 0 12px; }
+.kv-rumpf.kv-rein { animation: kv-rein var(--d-2) ease-out both; }
+@keyframes kv-rein { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.kv-fuss { display: flex; align-items: center; gap: 8px; padding: 6px 24px 18px; }
+.kv-fuss .kv-links:first-child { margin-left: -8px; }
+.kv-fuss .kv-links + .kv-links { margin-right: auto; }
+.kv-fuss .kv-links:first-child:not(:has(+ .kv-links)) { margin-right: auto; }
+.kv-fuss[hidden] { display: none; }
+.kv[data-rahmen="karte"] > .kv-fuss { padding: 14px 0 0; }
+.kv-text { margin: 0; font-size: 13.5px; line-height: 1.5; color: var(--text-2); text-wrap: pretty; }
+.kv-leise { color: var(--text-3); }
+.kv-hinweis { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--text-2); }
+.kv-logo { display: grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: 9px; background: var(--seite); box-shadow: inset 0 0 0 1px var(--linie); }
+.kv-logo.gross { width: 48px; height: 48px; border-radius: 13px; background: var(--erhoben); box-shadow: inset 0 0 0 1px var(--linie-stark), var(--schatten-klein); }
+.kv-logo.marke { background: linear-gradient(160deg, #8f85f7, #5b4ed6 55%, #3a2ea6); color: #fff; box-shadow: none; }
+.kv-laedt { display: flex; align-items: center; gap: 10px; padding: 28px 0; font-size: 13px; color: var(--text-2); }
+.kv-dreh { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--linie-stark); border-top-color: var(--akzent); animation: kv-dreh var(--d-dreh) linear infinite; flex: none; }
+@keyframes kv-dreh { to { transform: rotate(360deg); } }
+.kv-shimmer { background: linear-gradient(90deg, var(--text-2) 0%, var(--text) 50%, var(--text-2) 100%); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; animation: kv-schimmer 2s linear infinite; }
+@keyframes kv-schimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
+
+/* ---------- Meldungen ---------- */
+.kv-meldung { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-radius: var(--r-l); border: 1px solid var(--linie-stark); background: var(--seite); font-size: 12.5px; line-height: 1.5; color: var(--text); -webkit-user-select: text; user-select: text; }
+.kv-meldung > .sym { margin-top: 2px; flex: none; }
+.kv-meldung.ok { background: var(--gruen-weich); border-color: var(--gruen-rand); }
+.kv-meldung.ok > .sym { color: var(--gruen); }
+.kv-meldung.warn { background: var(--gelb-weich); border-color: var(--gelb-rand); align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.kv-meldung.fehler { background: var(--rot-weich); border-color: var(--rot-rand); }
+.kv-meldung.fehler > .sym { color: var(--rot); }
+.kv-meldung.warn > div { flex: 1 1 240px; min-width: 0; }
+.kv-info { display: flex; align-items: flex-start; gap: 8px; padding: 9px 11px; border-radius: var(--r-l); background: var(--seite); border: 1px solid var(--linie); font-size: 12px; line-height: 1.5; color: var(--text-2); }
+.kv-info > .sym { margin-top: 3px; flex: none; }
+
+/* ---------- Konto ---------- */
+.kv-konten { display: flex; flex-direction: column; gap: 8px; }
+.kv-konto { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; column-gap: 12px; padding: 11px 14px; border: 1px solid var(--linie-stark); border-radius: var(--r-l); background: var(--erhoben); font: inherit; text-align: left; cursor: pointer; box-shadow: var(--schatten-klein);
+  transition: border-color var(--d-1) ease-out, background-color var(--d-1) ease-out; }
+.kv-konto:hover { border-color: var(--text-3); }
+.kv-konto:focus-visible { outline: 0; border-color: var(--akzent); box-shadow: var(--fokus-ring); }
+.kv-konto[aria-checked="true"] { border-color: var(--akzent); background: color-mix(in srgb, var(--akzent) 7%, var(--erhoben)); box-shadow: inset 0 0 0 1px var(--akzent), var(--schatten-klein); }
+.kv-radio { width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--linie-stark); display: grid; place-items: center; transition: border-color var(--d-1) ease-out, background-color var(--d-1) ease-out; }
+.kv-konto[aria-checked="true"] .kv-radio { border-color: var(--akzent); background: var(--akzent); box-shadow: inset 0 0 0 4px var(--erhoben); }
+.kv-konto-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.kv-konto-text b { font-size: 13.5px; font-weight: 600; }
+.kv-konto-text .mono { font-size: 12px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kv-marke { flex: none; font-size: 11.5px; line-height: 1; padding: 4px 8px; border-radius: var(--r-pille); background: var(--seite-2); color: var(--text-2); }
+.kv-marke.ok { background: var(--gruen-weich); color: var(--gruen); }
+.kv-marke.warn { background: var(--gelb-weich); color: var(--text); }
+.kv-rumpf > .knopf { align-self: flex-start; }
+.kv-neu-form { display: flex; flex-direction: column; gap: 10px; padding: 14px; border: 1px solid var(--linie-stark); border-radius: var(--r-l); background: var(--seite); }
+.kv-feld { display: flex; flex-direction: column; gap: 5px; }
+.kv-label, .kv-cap { font-size: 11.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-3); }
+.kv-eingabe { width: 100%; }
+.kv-reihe-knoepfe { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.kv-anmelden { display: flex; flex-direction: column; gap: 10px; padding: 14px; border: 1px solid var(--linie-stark); border-radius: var(--r-l); background: var(--seite); }
+.kv-anmelden .kx-schritte, .kv-anmelden .kx-terminal { margin-top: 0; }
+
+/* ---------- Stufe ---------- */
+.kv-reihe { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.kv-reihe > .kv-cap { width: 96px; flex: none; }
+.kv-konto-name { font-size: 13.5px; font-weight: 600; }
+.kv-stufe-text { margin: 0; font-size: 13px; line-height: 1.5; color: var(--text-2); min-height: 2.8em; }
+.kv-vaultliste { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12.5px; color: var(--text-2); }
+.kv-vaultliste li { display: inline-flex; align-items: center; gap: 6px; }
+.kv-vaultliste li b { font-weight: 600; color: var(--text); }
+.kv-andere { display: flex; flex-direction: column; gap: 4px; }
+.kv-andere .mini { padding-left: 110px; }
+
+/* ---------- Prüfen ---------- */
+.kv-schritte { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.kv-schritte li { display: flex; align-items: center; gap: 12px; font-size: 13.5px; color: var(--text-3); }
+.kv-schritte li .mono { margin-left: auto; font-size: 12px; color: var(--text-3); }
+.kv-schritte li.ok, .kv-schritte li.laeuft, .kv-schritte li.warn, .kv-schritte li.fehler { color: var(--text); }
+.kv-st { width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--linie-stark); display: grid; place-items: center; flex: none; color: #fff; }
+.kv-schritte li.ok .kv-st { background: var(--gruen); border-color: var(--gruen); }
+.kv-schritte li.laeuft .kv-st { border-color: var(--akzent-weich); border-top-color: var(--akzent); animation: kv-dreh var(--d-dreh) linear infinite; }
+.kv-schritte li.warn .kv-st { border-color: var(--gelb); color: var(--gelb); }
+.kv-schritte li.fehler .kv-st { background: var(--rot); border-color: var(--rot); }
+.kv-st-z { font-weight: 700; font-size: 11px; line-height: 1; }
+.kv-frage { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border: 1px solid var(--gelb-rand); border-radius: var(--r-l); background: var(--gelb-weich); }
+.kv-befehl { display: flex; flex-direction: column; gap: 8px; }
+.kv-befehl-zeile { display: flex; align-items: center; gap: 8px; }
+.kv-befehl-zeile code { flex: 1 1 auto; min-width: 0; padding: 9px 11px; border-radius: var(--r); background: var(--seite-2); font: 12px var(--mono); overflow-x: auto; white-space: nowrap; -webkit-user-select: text; user-select: text; }
+
+/* ---------- Fertig ---------- */
+.kv-erfolg { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 0 4px; text-align: center; }
+.kv-erfolg b { font-size: 17px; font-weight: 650; letter-spacing: -.015em; }
+.kv-erfolg p { margin: 0; max-width: 46ch; font-size: 13.5px; line-height: 1.5; color: var(--text-2); text-wrap: pretty; }
+.kv-paar { display: flex; align-items: center; gap: 0; margin-bottom: 6px; }
+.kv-linie { width: 44px; height: 0; border-top: 2px dashed var(--akzent-linie); }
+.kv-ergebnis { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: var(--r-pille); background: var(--gruen-weich); border: 1px solid var(--gruen-rand); color: var(--text); font-size: 13px; font-weight: 500; }
+.kv-ergebnis > .sym { color: var(--gruen); }
+.kv-optional { display: flex; flex-direction: column; gap: 8px; }
+.kv-opt { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 11px 14px; border: 1px solid var(--linie-stark); border-radius: var(--r-l); background: var(--erhoben); }
+.kv-opt > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.kv-opt b { font-size: 13px; font-weight: 600; }
+.kv-opt span { font-size: 12.5px; line-height: 1.45; color: var(--text-2); }
+.kv-opt.hinweis { background: var(--seite); border-style: dashed; }
+.kv-rumpf > .kv-weitere { align-self: center; }
+
+/* ---------- Neu gefundene Konten, Konfiguration kopieren ---------- */
+.kv-neu { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.kv-konfig { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding-top: 10px; border-top: 1px solid var(--linie); }
+.kv-konfig > span { min-width: 0; font-size: 12px; line-height: 1.45; color: var(--text-3); }
+.kv-konfig b { font-weight: 600; color: var(--text-2); }
+@media (max-width: 560px) { .kv-reihe > .kv-cap { width: 100%; } .kv-andere .mini { padding-left: 0; } .kv-opt, .kv-konfig { flex-direction: column; align-items: flex-start; } }
+@media (prefers-reduced-motion: reduce) { .kv-rumpf.kv-rein, .kv-dreh, .kv-schritte li.laeuft .kv-st, .kx-schritt.laeuft .kx-st, .kv-shimmer { animation: none; } }
+:root[data-bewegung="reduziert"] .kv-rumpf.kv-rein, :root[data-bewegung="reduziert"] .kv-dreh, :root[data-bewegung="reduziert"] .kv-schritte li.laeuft .kv-st, :root[data-bewegung="reduziert"] .kx-schritt.laeuft .kx-st { animation: none; }
+
+/* ---------- Anmelden im Terminal (auch vom Konto-Menü der Einstellungen benutzt) und kleine gemeinsame Teile ---------- */
+.mini { color: var(--text-2); font-size: 12px; line-height: 1.45; margin: 0; }
+.kk-marke { flex: none; width: 16px; height: 16px; border-radius: var(--r-pille); display: inline-grid; place-items: center; border: 1.5px solid var(--text-3); color: var(--text-3); }
+.kk-marke:empty::after { content: ""; width: 6px; height: 1.5px; background: currentColor; border-radius: 1px; }
+.kk-marke[data-marke="gruen"] { border-color: var(--gruen); background: var(--gruen-weich); color: var(--gruen); }
+.kk-marke[data-marke="rot"] { border-color: var(--rot); background: var(--rot-weich); color: var(--rot); }
+.kk-marke[data-marke="warn"] { border-color: var(--gelb); background: var(--gelb-weich); color: var(--gelb); }
+.kk-karte { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; margin-bottom: 12px; border: 1px solid var(--linie-stark); border-radius: var(--r-xl); background: var(--erhoben); font-size: 12.5px; }
+.kk-karte p { margin: 0; line-height: 1.5; -webkit-user-select: text; user-select: text; }
+.kk-karte.warn { background: var(--gelb-weich); border-color: var(--gelb-rand); }
+.kk-karte.fehler { background: var(--rot-weich); border-color: var(--rot-rand); flex-direction: row; align-items: flex-start; gap: 10px; }
+.kk-karte-kopf { display: flex; align-items: center; gap: 8px; }
+.kk-karte-titel { font-weight: 650; }
+.kk-fehlertext { color: var(--rot); font-size: 12px; flex-basis: 100%; }
+.kx-schritte { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.kx-schritt { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text-2); }
+.kx-schritt.fertig, .kx-schritt.laeuft { color: var(--text); }
+.kx-st { width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--linie-stark); display: grid; place-items: center; flex: none; color: #fff; }
+.kx-schritt.fertig .kx-st { background: var(--gruen); border-color: var(--gruen); }
+.kx-schritt.laeuft .kx-st { border-color: var(--akzent-weich); border-top-color: var(--akzent); animation: kv-dreh var(--d-dreh) linear infinite; }
+.kx-terminal { margin-top: 14px; padding: 12px 14px; border-radius: var(--r-l); background: #0f0f10; color: #f2f2f2; font-family: var(--mono); font-size: 12px; line-height: 1.55; word-break: break-all; }
+.kx-terminal[hidden] { display: none; }
+.kx-dollar { color: #a89fff; }
+.kx-warte { margin-top: 2px; color: #9a9a9e; }

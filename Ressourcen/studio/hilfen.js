@@ -59,6 +59,8 @@ export function dialog({ titel, satz, rumpf, knoepfe = [], breit = false, beiSch
     if (davor && document.contains(davor)) davor.focus?.();
   };
   const taste = (e) => {
+    if (host.lastElementChild !== schleier) return; // liegt ein anderer Dialog darüber, gelten Esc und Enter nur dort
+    if (e.key === "Escape" && e.target.closest?.("[data-esc-eigen]")) return; // ein Feld, das Esc selbst behandelt (schließt nur sein Formular)
     if (e.key === "Escape") { if (popoverOffen()) return; e.preventDefault(); e.stopPropagation(); zu(); } // ein offenes Popover (Auswahl, Datum, Menü) schließt zuerst
     else if (e.key === "Enter" && !e.isComposing && !e.altKey && !e.shiftKey && !popoverOffen()) {
       // Enter = Hauptknopf der Fußleiste. Knöpfe, Links, Auswahlfelder und Listen behalten ihr eigenes Enter; ein mehrzeiliges Feld braucht ⌘/Strg dazu.
