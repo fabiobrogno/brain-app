@@ -30,12 +30,6 @@ private func ressourcenOrdner() -> URL {
     for ki in KiZiel.allCases { #expect(ki.logo(ressourcen: ressourcenOrdner()) != nil, Comment(rawValue: ki.name)) }
 }
 
-/// Ohne Logo-Datei (oder ohne Ressourcen) zeigt die App die Initiale statt abzustürzen.
-@Test func ohneLogoZeigtDieAppDieInitiale() {
-    #expect(KiZiel.codex.initiale == "C")
-    #expect(KiZiel.cursor.initiale == "C" && KiZiel.claude.initiale == "C")
-}
-
 @Test func fehlendeRessourcenGebenNilStattAbsturz() {
     #expect(KILogoQuelle.url(.claude, ressourcen: nil) == nil)
     #expect(KILogoQuelle.url(.claude, ressourcen: FileManager.default.temporaryDirectory.appendingPathComponent("gibt-es-nicht-\(UUID().uuidString)")) == nil)

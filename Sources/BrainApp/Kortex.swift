@@ -13,54 +13,6 @@ enum Kortex {
     /// Akzent als Fläche, Linie oder Schrift. Hell `#5B4ED6`, dunkel `#A89FFF`. Gleiche Farbe wie `KortexFarbe.akzent` (BrainCore; dort auch
     /// vom Fenster „Schnell erfassen“ benutzt, das sich in Tests fotografieren lässt).
     static let akzent = KortexFarbe.akzent
-    /// Beschriftung auf einer Akzent-Fläche (Kontrast ≥ 4,5 : 1 in beiden Erscheinungsbildern).
-    static let akzentText = KortexFarbe.akzentText
-
-    static func nsFarbe(hell: String, dunkel: String) -> NSColor { KortexFarbe.nsFarbe(hell: hell, dunkel: dunkel) }
-}
-
-/// Hauptknopf: Akzent-Fläche mit Beschriftung in `akzentText` (statt `.borderedProminent`, dessen weiße Schrift auf dem hellen
-/// Dunkel-Akzent den Kontrast verfehlen würde). Größe folgt `controlSize`; mit `.keyboardShortcut(.defaultAction)` wie jeder Knopf.
-struct KortexHauptKnopf: ButtonStyle {
-    @Environment(\.isEnabled) private var aktiv
-    @Environment(\.controlSize) private var groesse
-
-    func makeBody(configuration: Configuration) -> some View {
-        let (h, v): (CGFloat, CGFloat) = switch groesse {
-        case .mini, .small: (10, 3)
-        case .large, .extraLarge: (18, 7)
-        default: (14, 4)
-        }
-        configuration.label
-            .font(.body.weight(.semibold))
-            .foregroundStyle(Kortex.akzentText)
-            .padding(.horizontal, h)
-            .padding(.vertical, v)
-            .background(Kortex.akzent.opacity(configuration.isPressed ? 0.78 : 1), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .opacity(aktiv ? 1 : 0.4)
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-    }
-}
-
-/// Textknopf (Link-Optik) in der Akzentfarbe: `.link` des Systems nähme das Systemblau, `.tint` wirkt darauf nicht.
-struct KortexLinkKnopf: ButtonStyle {
-    @Environment(\.isEnabled) private var aktiv
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .foregroundStyle(Kortex.akzent)
-            .opacity(aktiv ? (configuration.isPressed ? 0.7 : 1) : 0.4)
-            .contentShape(Rectangle())
-    }
-}
-
-extension ButtonStyle where Self == KortexLinkKnopf {
-    static var kortexLink: KortexLinkKnopf { KortexLinkKnopf() }
-}
-
-extension ButtonStyle where Self == KortexHauptKnopf {
-    /// Der Hauptknopf eines Dialogs („Weiter“, „Anlegen“, „Verbinden“).
-    static var kortexHaupt: KortexHauptKnopf { KortexHauptKnopf() }
 }
 
 extension View {
