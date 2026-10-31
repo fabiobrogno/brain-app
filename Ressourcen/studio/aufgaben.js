@@ -8,6 +8,7 @@ import { kiLogo, kiKurzname } from "./ki-logos.js";
 import { oeffneMenue } from "./menue.js";
 import { textfeld, leerBlock, filterChip, knopf, oeffneDatumsauswahl, tooltip, skelett } from "./bausteine.js";
 import { wenigBewegung } from "./popover.js";
+import { spiele, lande, huepfe, dauer } from "./bewegung.js";
 import { TA } from "./texte-aufgaben.js";
 
 export const SPALTEN = ["offen", "in-arbeit", "warten", "erledigt"];
@@ -194,7 +195,7 @@ export function baueAufgaben(host, ctx) {
     const { karten, alte } = sichtbarInSpalte(status);
     const zahl = String(karten.length);
     const laedt = !st.geladen; // Skelett statt leerer Spalten: es blendet erst nach 150 ms ein (bausteine.css), schnelle Ladevorgänge flackern nicht
-    const liste = h("div", { klasse: "au-karten", role: "list", "aria-label": TA.spalten[status], "data-spalte-karten": status, "aria-busy": laedt ? "true" : null },
+    const liste = h("div", { klasse: "au-karten", "data-kanten": true, role: "list", "aria-label": TA.spalten[status], "data-spalte-karten": status, "aria-busy": laedt ? "true" : null },
       laedt ? [skelett("au-sk-karte"), skelett("au-sk-karte kurz")] : karten.map((a, i) => karteEl(a, status, i + 1, karten.length)));
     if (!laedt && !karten.length) liste.append(h("div", { klasse: "au-spalte-leer", text: TA.spalteLeer }));
     const archivReif = status === "erledigt" && !laedt ? zuArchivieren().length : 0;
@@ -475,7 +476,7 @@ export function baueAufgaben(host, ctx) {
       if (!wenigBewegung()) for (const k of alle) {
         const a = davor.get(k), b = k.getBoundingClientRect();
         const dx = a.left - b.left, dy = a.top - b.top;
-        if (dx || dy) k.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }], { duration: 170, easing: "cubic-bezier(.16, 1, .3, 1)" });
+        if (dx || dy) spiele(k, [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }], { d: "--d-2", fuellen: "none" });
       }
     }
     const nachbar = (e, richtung) => { for (let n = e[richtung]; n; n = n[richtung]) if (istKarte(n)) return n; return null; };
@@ -523,7 +524,13 @@ export function baueAufgaben(host, ctx) {
     if (st.nachZug) { st.nachZug = false; if (unterwegs > 0) nachladen = true; else lade({ leise: true }); } // Live-Ereignis während des Ziehens: jetzt nachholen (nach der eigenen Änderung)
     if (!bewegt) zeichne(); // Platzhalter zurück, Änderungen von außen nachholen
     const neu = brett.querySelector(`[data-karte-aufgabe][data-pfad="${CSS.escape(z.a.pfad)}"]`);
-    const fertig = () => { z.geist.remove(); if (st.landet === z.a.pfad) st.landet = null; brett.querySelector(`[data-pfad="${CSS.escape(z.a.pfad)}"]`)?.classList.remove("landet"); };
+    // Die Karte ist gelandet: sie ist wieder da (ohne Bewegung sofort), federt kurz und der Zähler der Spalte hüpft. Das Ende hängt an einem Timer, nie an der Animation.
+    const fertig = () => {
+      z.geist.remove(); if (st.landet === z.a.pfad) st.landet = null;
+      const k = brett.querySelector(`[data-pfad="${CSS.escape(z.a.pfad)}"]`);
+      k?.classList.remove("landet");
+      if (k && ziel) { lande(k); huepfe(k.closest(".au-spalte")?.querySelector(".au-spalte-zahl")); }
+    };
     if (!neu || wenigBewegung()) { fertig(); return; }
     // Einrasten: die Karte gleitet in die Lücke, Anheben klingt ab
     const r = neu.getBoundingClientRect();
@@ -533,7 +540,7 @@ export function baueAufgaben(host, ctx) {
     let aus = false;
     const einmal = () => { if (!aus) { aus = true; fertig(); } };
     z.geist.addEventListener("transitionend", (e) => { if (e.propertyName === "translate") einmal(); });
-    setTimeout(einmal, 260);
+    setTimeout(einmal, dauer("--d-3") + 60);
   }
 
   // ---------- Tastatur ----------

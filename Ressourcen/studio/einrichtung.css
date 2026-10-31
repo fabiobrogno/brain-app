@@ -43,7 +43,7 @@ body.e-seite { background: var(--e-schreibtisch); display: grid; place-items: ce
 .e-kopf { display: flex; align-items: center; gap: 12px; }
 .e-stepper { display: flex; align-items: center; gap: 6px; }
 /* Orca: Balken 4px hoch, aktiv 40px in Vordergrundfarbe, erledigt 24px muted/70, offen 24px muted/25, transition-all 300ms */
-.e-stepper button { position: relative; height: 4px; width: 24px; padding: 0; border: 0; border-radius: 99px; background: color-mix(in srgb, var(--text-2) 25%, transparent); transition: width 300ms var(--ease-out), background 300ms; }
+.e-stepper button { position: relative; height: 4px; width: 24px; padding: 0; border: 0; border-radius: 99px; background: color-mix(in srgb, var(--text-2) 25%, transparent); transition: width var(--d-3) var(--ease-out), background var(--d-3); }
 .e-stepper button::before { content: ""; position: absolute; inset: -8px -3px; }
 .e-stepper button.erledigt { background: color-mix(in srgb, var(--text-2) 70%, transparent); }
 .e-stepper button.erledigt:hover { background: var(--text); }
@@ -59,7 +59,7 @@ body.e-seite { background: var(--e-schreibtisch); display: grid; place-items: ce
 .e-pane .e-koerper { margin-top: 24px; display: grid; gap: 16px; }
 /* Schrittwechsel: richtungsabhängig gleiten + weich ausblenden */
 .e-pane.rein { animation: e-pane-rein var(--e-d-schritt) var(--ease-flow) both; }
-.e-pane.raus { animation: e-pane-raus 220ms var(--ease-in) both; pointer-events: none; }
+.e-pane.raus { animation: e-pane-raus var(--d-2) var(--ease-in) both; pointer-events: none; }
 .e-pane.rein > * { animation: e-pane-teil var(--e-d-schritt) var(--ease-flow) both; }
 .e-pane.rein > *:nth-child(2) { animation-delay: 40ms; }
 .e-pane.rein > *:nth-child(3) { animation-delay: 80ms; }
@@ -77,27 +77,27 @@ body.e-seite { background: var(--e-schreibtisch); display: grid; place-items: ce
 .e-buehne { position: relative; min-width: 0; overflow: hidden; background: var(--e-buehne); isolation: isolate; }
 .e-win[data-step="0"] .e-buehne { background: var(--erhoben); }
 .e-raster { position: absolute; inset: -20px; background-image: radial-gradient(var(--e-punkte) 1px, transparent 1.2px); background-size: 18px 18px; -webkit-mask-image: radial-gradient(closest-side at 50% 46%, #000 30%, transparent 100%); mask-image: radial-gradient(closest-side at 50% 46%, #000 30%, transparent 100%); opacity: .9; z-index: -1; }
-.e-glut { position: absolute; left: 50%; top: var(--gy, 44%); width: 520px; height: 520px; transform: translate(-50%, -50%); border-radius: 50%; background: radial-gradient(closest-side, color-mix(in srgb, var(--akzent) 22%, transparent), transparent 70%); z-index: -1; transition: top var(--d-layout) var(--ease-flow), opacity 600ms; pointer-events: none; }
+.e-glut { position: absolute; left: 50%; top: var(--gy, 44%); width: 520px; height: 520px; transform: translate(-50%, -50%); border-radius: 50%; background: radial-gradient(closest-side, color-mix(in srgb, var(--akzent) 22%, transparent), transparent 70%); z-index: -1; transition: top var(--d-layout) var(--ease-flow), opacity var(--d-5); pointer-events: none; }
 .e-win[data-step="0"] .e-glut { --gy: 28%; width: 640px; height: 640px; }
-.e-orbit { position: absolute; left: 50%; top: var(--gy, 44%); width: 300px; height: 300px; border-radius: 50%; border: 1px dashed color-mix(in srgb, var(--text) 10%, transparent); transform: translate(-50%, -50%); animation: e-kreisen 80s linear infinite; transition: top var(--d-layout) var(--ease-flow), width var(--d-layout) var(--ease-flow), height var(--d-layout) var(--ease-flow), opacity 500ms; pointer-events: none; z-index: -1; }
+.e-orbit { position: absolute; left: 50%; top: var(--gy, 44%); width: 300px; height: 300px; border-radius: 50%; border: 1px dashed color-mix(in srgb, var(--text) 10%, transparent); transform: translate(-50%, -50%); animation: e-kreisen 80s linear infinite; transition: top var(--d-layout) var(--ease-flow), width var(--d-layout) var(--ease-flow), height var(--d-layout) var(--ease-flow), opacity var(--d-4); pointer-events: none; z-index: -1; }
 .e-orbit.o2 { width: 460px; height: 460px; animation-duration: 140s; animation-direction: reverse; opacity: .6; }
 .e-win[data-step="0"] .e-orbit { --gy: 28%; width: 220px; height: 220px; }
 .e-win[data-step="0"] .e-orbit.o2 { width: 340px; height: 340px; }
 @keyframes e-kreisen { to { transform: translate(-50%, -50%) rotate(360deg); } }
 
 .e-linien { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; overflow: visible; }
-.e-linien path { fill: none; stroke-linecap: round; transition: stroke 400ms, opacity 400ms; }
+.e-linien path { fill: none; stroke-linecap: round; transition: stroke var(--d-4), opacity var(--d-4); }
 .e-linien .e-basis { stroke: var(--linie-stark); stroke-width: 1.25; stroke-dasharray: 1; stroke-dashoffset: 0; }
-.e-linien .e-basis.neu { animation: e-linie-zeichnen 700ms var(--ease-flow) both; }
+.e-linien .e-basis.neu { animation: e-linie-zeichnen var(--d-5) var(--ease-flow) both; }
 .e-linien .aktiv .e-basis { stroke: var(--akzent-linie); stroke-width: 1.5; }
 .e-linien .e-fluss { stroke: var(--akzent); stroke-width: 2; stroke-dasharray: .015 .05; opacity: 0; }
 .e-linien .aktiv.fliesst .e-fluss { opacity: .9; animation: e-fluss 2.4s linear infinite; }
-.e-linien g { transition: opacity 400ms; }
+.e-linien g { transition: opacity var(--d-4); }
 .e-linien g.aus { opacity: 0; }
 @keyframes e-linie-zeichnen { from { stroke-dashoffset: 1; } }
 @keyframes e-fluss { to { stroke-dashoffset: -.65; } }
 
-.e-knoten { position: absolute; left: calc(var(--x) * 1%); top: calc(var(--y) * 1%); transform: translate(-50%, -50%) scale(var(--s, 1)); transition: left var(--d-layout) var(--ease-flow), top var(--d-layout) var(--ease-flow), opacity 420ms var(--ease-out), transform 520ms var(--ease-flow); z-index: 2; }
+.e-knoten { position: absolute; left: calc(var(--x) * 1%); top: calc(var(--y) * 1%); transform: translate(-50%, -50%) scale(var(--s, 1)); transition: left var(--d-layout) var(--ease-flow), top var(--d-layout) var(--ease-flow), opacity var(--d-4) var(--ease-out), transform var(--d-4) var(--ease-flow); z-index: 2; }
 .e-buehne[data-fokus] .e-knoten.gedimmt:not(.versteckt) { opacity: .4; }
 .e-buehne .e-knoten.versteckt { opacity: 0; --s: .85; pointer-events: none; }
 
@@ -107,17 +107,17 @@ body.e-seite { background: var(--e-schreibtisch); display: grid; place-items: ce
 .e-app-zeichen { position: relative; width: var(--g, 88px); height: var(--g, 88px); border-radius: 24%; display: grid; place-items: center; color: #fff;
   background: radial-gradient(120% 90% at 30% 0%, rgba(201,195,255,.55), transparent 55%), linear-gradient(160deg, #8f85f7 0%, #5b4ed6 52%, #3a2ea6 100%);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.45), inset 0 -10px 24px rgba(11,8,48,.25), 0 18px 40px -8px rgba(58,46,166,.55), 0 0 0 .5px rgba(30,20,90,.35);
-  transition: width var(--d-layout) var(--ease-flow), height var(--d-layout) var(--ease-flow), box-shadow 600ms; }
+  transition: width var(--d-layout) var(--ease-flow), height var(--d-layout) var(--ease-flow), box-shadow var(--d-5); }
 .e-win[data-step="0"] .e-app-zeichen { --g: 112px; }
 .e-app-zeichen .e-marke { width: 62%; height: 62%; filter: drop-shadow(0 2px 3px rgba(11,8,48,.25)); }
-.e-marke.zeichnen path { stroke-dasharray: 1; animation: e-marke-zeichnen 1.8s var(--ease-flow) .25s both; }
+.e-marke.zeichnen path { stroke-dasharray: 1; animation: e-marke-zeichnen var(--d-6) var(--ease-flow) .25s both; }
 @keyframes e-marke-zeichnen { from { stroke-dashoffset: 1; } }
 .e-app-zeichen::after { content: ""; position: absolute; inset: -1px; border-radius: inherit; box-shadow: 0 0 0 0 color-mix(in srgb, var(--akzent) 40%, transparent); }
 .e-buehne[data-step="4"] .e-app-zeichen::after { animation: e-puls 2.4s var(--ease-out) infinite; }
 @keyframes e-puls { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--akzent) 45%, transparent); } 100% { box-shadow: 0 0 0 28px transparent; } }
 .e-win[data-step="0"] .e-app-zeichen { animation: e-schweben 6s ease-in-out 2s infinite; }
 @keyframes e-schweben { 50% { transform: translateY(-5px); } }
-.e-vault-schild { display: grid; justify-items: center; gap: 2px; text-align: center; transition: opacity 400ms; }
+.e-vault-schild { display: grid; justify-items: center; gap: 2px; text-align: center; transition: opacity var(--d-4); }
 .e-vault-schild b { font-size: 14px; font-weight: 600; letter-spacing: -.01em; }
 .e-vault-schild span { font: 11.5px var(--mono); color: var(--text-2); }
 .e-win[data-step="0"] .e-vault-schild { opacity: 0; }
@@ -126,26 +126,26 @@ body.e-seite { background: var(--e-schreibtisch); display: grid; place-items: ce
 .e-chip { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 11px 0 9px; border-radius: 99px; background: var(--erhoben); border: 1px solid var(--linie); box-shadow: var(--schatten-klein); font-size: 12.5px; font-weight: 500; white-space: nowrap; }
 .e-chip .sym { color: var(--text-2); }
 .e-chip .e-n { color: var(--text-3); font-weight: 400; font-variant-numeric: tabular-nums; }
-.e-chip.pop { animation: e-pop 520ms var(--ease-flow) both; }
+.e-chip.pop { animation: e-pop var(--d-4) var(--ease-flow) both; }
 @keyframes e-pop { from { opacity: 0; transform: scale(.85) translateY(4px); } }
 .e-ordner { --x: 80; }
 
 /* GitHub-Knoten */
 .e-gh { --x: 79; --y: 18; display: grid; justify-items: center; gap: 8px; }
-.e-gh-kachel { width: 52px; height: 52px; border-radius: 15px; display: grid; place-items: center; background: var(--erhoben); border: 1px solid var(--linie); box-shadow: var(--schatten-klein); color: var(--text); transition: background 400ms, color 400ms; }
+.e-gh-kachel { width: 52px; height: 52px; border-radius: 15px; display: grid; place-items: center; background: var(--erhoben); border: 1px solid var(--linie); box-shadow: var(--schatten-klein); color: var(--text); transition: background var(--d-4), color var(--d-4); }
 .e-gh-schild { font-size: 11.5px; color: var(--text-2); display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
-.e-gh[data-zustand="wartet"] .e-gh-kachel { animation: e-warten 1.6s ease-in-out infinite; }
+.e-gh[data-zustand="wartet"] .e-gh-kachel { animation: e-warten var(--d-puls) ease-in-out infinite; }
 @keyframes e-warten { 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--akzent) 14%, transparent); } }
 .e-gh[data-zustand="ok"] .e-gh-kachel { background: var(--text); color: var(--papier); border-color: transparent; }
 .e-gh[data-zustand="lokal"] .e-gh-kachel { color: var(--text-2); border-style: dashed; box-shadow: none; background: transparent; }
 
 /* KI-Knoten (links) */
 .e-ki { --x: 20; display: grid; justify-items: center; gap: 6px; }
-.e-ki-kachel { width: 48px; height: 48px; border-radius: 14px; display: grid; place-items: center; background: var(--erhoben); border: 1px solid var(--linie); box-shadow: var(--schatten-klein); transition: transform 400ms var(--ease-flow), box-shadow 400ms, border-color 400ms; }
+.e-ki-kachel { width: 48px; height: 48px; border-radius: 14px; display: grid; place-items: center; background: var(--erhoben); border: 1px solid var(--linie); box-shadow: var(--schatten-klein); transition: transform var(--d-4) var(--ease-flow), box-shadow var(--d-4), border-color var(--d-4); }
 .e-ki-kachel .e-ini { font-size: 18px; font-weight: 600; }
 .e-ki.an .e-ki-kachel { border-color: var(--akzent-linie); box-shadow: 0 0 0 4px var(--akzent-weich), var(--schatten-klein); }
 .e-ki .e-ki-n { font-size: 11.5px; font-weight: 500; }
-.e-ki .e-stufe { height: 18px; font-size: 10.5px; padding: 0 7px; opacity: 0; transform: translateY(-2px); transition: opacity 300ms, transform 300ms var(--ease-out); }
+.e-ki .e-stufe { height: 18px; font-size: 10.5px; padding: 0 7px; opacity: 0; transform: translateY(-2px); transition: opacity var(--d-3), transform var(--d-3) var(--ease-out); }
 .e-ki.an .e-stufe { opacity: 1; transform: none; }
 .e-ki:not(.an) .e-ki-kachel { opacity: .55; }
 
@@ -158,7 +158,7 @@ body.e-seite { background: var(--e-schreibtisch); display: grid; place-items: ce
 .e-buehne[data-fokus] .e-knoten.platzhalter.gedimmt:not(.versteckt) { opacity: .75; }
 
 /* Hero (Schritt 0) */
-.e-hero { position: absolute; left: 50%; top: 44%; width: min(620px, 90%); transform: translateX(-50%); text-align: center; display: grid; justify-items: center; z-index: 3; transition: opacity 360ms var(--ease-out), transform 520ms var(--ease-flow); }
+.e-hero { position: absolute; left: 50%; top: 44%; width: min(620px, 90%); transform: translateX(-50%); text-align: center; display: grid; justify-items: center; z-index: 3; transition: opacity var(--d-3) var(--ease-out), transform var(--d-4) var(--ease-flow); }
 .e-win:not([data-step="0"]) .e-hero { opacity: 0; transform: translateX(-50%) translateY(-14px) scale(.98); pointer-events: none; }
 .e-eyebrow { font-size: 11.5px; font-weight: 500; letter-spacing: .18em; text-transform: uppercase; color: var(--text-2); }
 .e-hero h1 { margin: 12px 0 0; font-size: 44px; line-height: 1.08; font-weight: 600; letter-spacing: -.035em; text-wrap: balance; }
@@ -166,7 +166,7 @@ body.e-seite { background: var(--e-schreibtisch); display: grid; place-items: ce
 .e-hero p { margin: 14px 0 0; max-width: 470px; font-size: 15.5px; line-height: 1.55; color: var(--text-2); text-wrap: pretty; }
 .e-hero-akt { display: flex; gap: 8px; margin-top: 28px; align-items: center; }
 .knopf.e-gross { height: 42px; padding: 0 20px; font-size: 14.5px; border-radius: 10px; }
-.e-hero > * { animation: e-hero-rein 900ms var(--ease-flow) both; }
+.e-hero > * { animation: e-hero-rein var(--d-5) var(--ease-flow) both; }
 .e-hero > :nth-child(1) { animation-delay: .55s; } .e-hero > :nth-child(2) { animation-delay: .65s; } .e-hero > :nth-child(3) { animation-delay: .75s; } .e-hero > :nth-child(4) { animation-delay: .85s; } .e-hero > :nth-child(5) { animation-delay: 1.1s; }
 @keyframes e-hero-rein { from { opacity: 0; transform: translateY(10px); filter: blur(4px); } }
 .e-vorab { margin-top: 26px; min-height: 40px; display: grid; justify-items: center; }
@@ -174,13 +174,13 @@ body.e-seite { background: var(--e-schreibtisch); display: grid; place-items: ce
 .e-hero.git-fehlt .e-vorab { margin-top: 26px; }
 .e-vorab-zeile { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-2); }
 .e-vorab-zeile .sym.ok { color: var(--gruen); }
-.e-warnkarte { width: min(470px, 100%); text-align: left; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; padding: 14px 16px; border-radius: var(--r-l); border: 1px solid var(--gelb-rand); background: color-mix(in srgb, var(--gelb) 6%, var(--erhoben)); animation: e-pop 420ms var(--ease-flow) both; }
+.e-warnkarte { width: min(470px, 100%); text-align: left; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; padding: 14px 16px; border-radius: var(--r-l); border: 1px solid var(--gelb-rand); background: color-mix(in srgb, var(--gelb) 6%, var(--erhoben)); animation: e-pop var(--d-4) var(--ease-flow) both; }
 .e-warnkarte > .sym { color: var(--gelb); margin-top: 2px; }
 .e-warnkarte b { font-size: 13.5px; font-weight: 600; }
 .e-warnkarte p { margin: 0; font-size: 12.5px; color: var(--text-2); line-height: 1.5; max-width: none; }
 .e-warnkarte .e-akt { grid-column: 2; display: flex; align-items: center; gap: 10px; margin-top: 8px; }
 .e-balken { height: 4px; border-radius: 99px; background: var(--seite-2); overflow: hidden; flex: 1; }
-.e-balken i { display: block; height: 100%; width: var(--w, 0%); background: var(--akzent); border-radius: inherit; transition: width 300ms linear; }
+.e-balken i { display: block; height: 100%; width: var(--w, 0%); background: var(--akzent); border-radius: inherit; transition: width var(--d-3) linear; }
 
 /* ---------- Schritt Vault: Wege als Karten (Orca ThemeStep: Vorschau 96px, Auswahl border-foreground/60 + bg-accent + Haken) ---------- */
 .e-wege { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -192,7 +192,7 @@ body.e-seite { background: var(--e-schreibtisch); display: grid; place-items: ce
 .e-weg-text { padding: 0 3px; }
 .e-weg-text b { display: flex; align-items: center; font-size: 13.5px; font-weight: 600; }
 .e-weg-text > span { display: block; margin-top: 1px; font-size: 12px; color: var(--text-2); }
-.e-weg-haken { position: absolute; top: 14px; right: 14px; width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; background: var(--akzent); color: var(--akzent-text); transform: scale(.4); opacity: 0; transition: transform 260ms var(--ease-flow), opacity 200ms; }
+.e-weg-haken { position: absolute; top: 14px; right: 14px; width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; background: var(--akzent); color: var(--akzent-text); transform: scale(.4); opacity: 0; transition: transform var(--d-3) var(--ease-flow), opacity var(--d-2); }
 .e-weg[aria-checked="true"] .e-weg-haken { transform: none; opacity: 1; }
 .e-weg .e-empf { height: 17px; font-size: 10px; padding: 0 6px; margin-left: 4px; vertical-align: 1px; font-weight: 500; }
 /* Mini-Bilder */
@@ -210,15 +210,15 @@ body.e-seite { background: var(--e-schreibtisch); display: grid; place-items: ce
 .e-mb-karten i:nth-child(3)::after { content: ""; position: absolute; right: 7px; top: 7px; width: 7px; height: 7px; border-radius: 50%; background: var(--akzent); }
 .e-weg:hover .e-mb-karten i:nth-child(1) { transform: rotate(-13deg) translate(-17px, 2px); }
 .e-weg:hover .e-mb-karten i:nth-child(2) { transform: rotate(11deg) translate(17px, 1px); }
-.e-mb-karten i { transition: transform 360ms var(--ease-flow); }
+.e-mb-karten i { transition: transform var(--d-3) var(--ease-flow); }
 .e-mb-paar { display: flex; align-items: center; gap: 10px; color: var(--text-2); }
 .e-mb-paar .e-gross { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; background: var(--erhoben); border: 1px solid var(--linie); color: var(--text); box-shadow: var(--schatten-klein); }
 .e-mb-paar .e-pf { display: flex; gap: 3px; }
-.e-mb-paar .e-pf i { width: 3px; height: 3px; border-radius: 50%; background: var(--text-3); animation: e-punkte 1.4s ease-in-out infinite; }
+.e-mb-paar .e-pf i { width: 3px; height: 3px; border-radius: 50%; background: var(--text-3); animation: e-punkte var(--d-puls) ease-in-out infinite; }
 .e-mb-paar .e-pf i:nth-child(2) { animation-delay: .15s; } .e-mb-paar .e-pf i:nth-child(3) { animation-delay: .3s; }
 @keyframes e-punkte { 0%, 100% { opacity: .3; } 50% { opacity: 1; background: var(--akzent); } }
 
-.e-detail { display: grid; gap: 12px; padding: 14px; border-radius: var(--r-xl); border: 1px solid var(--linie); background: light-dark(var(--seite), rgba(255, 255, 255, .02)); animation: e-pop 380ms var(--ease-flow) both; }
+.e-detail { display: grid; gap: 12px; padding: 14px; border-radius: var(--r-xl); border: 1px solid var(--linie); background: light-dark(var(--seite), rgba(255, 255, 255, .02)); animation: e-pop var(--d-3) var(--ease-flow) both; }
 .e-feld-reihe { display: grid; grid-template-columns: 44px 1fr; align-items: center; gap: 12px; }
 .e-feld-reihe .e-label { color: var(--text-2); font-weight: 500; }
 .e-ort { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-2); }
@@ -264,14 +264,14 @@ body.e-seite { background: var(--e-schreibtisch); display: grid; place-items: ce
 
 .e-code-karte { display: grid; justify-items: center; gap: 16px; padding: 22px 18px 18px; border-radius: var(--r-xl); border: 1px solid var(--linie); background: var(--erhoben); box-shadow: var(--schatten-klein); }
 .e-code { display: flex; align-items: center; gap: 6px; }
-.e-code span { width: 38px; height: 50px; display: grid; place-items: center; border-radius: 9px; border: 1px solid var(--linie); background: light-dark(var(--seite), rgba(255, 255, 255, .04)); font: 600 25px/1 var(--mono); letter-spacing: 0; animation: e-zeichen 500ms var(--ease-flow) both; box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--text) 4%, transparent); }
+.e-code span { width: 38px; height: 50px; display: grid; place-items: center; border-radius: 9px; border: 1px solid var(--linie); background: light-dark(var(--seite), rgba(255, 255, 255, .04)); font: 600 25px/1 var(--mono); letter-spacing: 0; animation: e-zeichen var(--d-4) var(--ease-flow) both; box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--text) 4%, transparent); }
 .e-code span.strich { width: 14px; border: 0; background: none; box-shadow: none; color: var(--text-3); font-weight: 400; }
 .e-code.alt span:not(.strich) { color: var(--text-3); text-decoration: line-through; text-decoration-thickness: 1.5px; }
 @keyframes e-zeichen { from { opacity: 0; transform: translateY(8px) rotateX(50deg); } }
 .e-code-akt { display: flex; gap: 8px; }
 .e-code-status { display: flex; align-items: center; gap: 8px; width: 100%; justify-content: center; padding-top: 14px; border-top: 1px solid var(--linie); font-size: 12.5px; }
 .e-code-status .e-zeit { color: var(--text-3); margin-left: 4px; }
-.e-lade { width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid color-mix(in srgb, var(--text) 15%, transparent); border-top-color: var(--akzent); animation: spin .8s linear infinite; flex: none; }
+.e-lade { width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid color-mix(in srgb, var(--text) 15%, transparent); border-top-color: var(--akzent); animation: spin var(--d-dreh) linear infinite; flex: none; }
 .e-mini-schritte { list-style: none; counter-reset: s; margin: 0; padding: 0; display: grid; gap: 8px; }
 .e-mini-schritte li { counter-increment: s; display: flex; gap: 10px; align-items: baseline; font-size: 12.5px; color: var(--text-2); }
 .e-mini-schritte li::before { content: counter(s); width: 18px; height: 18px; flex: none; display: grid; place-items: center; border-radius: 50%; background: var(--seite-2); color: var(--text); font-size: 10.5px; font-weight: 600; transform: translateY(-1px); }
@@ -298,7 +298,7 @@ body.e-seite { background: var(--e-schreibtisch); display: grid; place-items: ce
 .e-ki-status { font-size: 12px; color: var(--text-3); display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 .e-ki-status.ok { color: var(--gruen); }
 /* Auf-/Zuklappen per grid-template-rows (Orca main.css: 180ms cubic-bezier(.16,1,.3,1)) */
-.e-ki-mehr { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 260ms var(--ease-out); }
+.e-ki-mehr { display: grid; grid-template-rows: 0fr; transition: grid-template-rows var(--d-3) var(--ease-out); }
 .e-ki-zeile[data-an="true"] .e-ki-mehr { grid-template-rows: 1fr; }
 .e-ki-mehr > div { overflow: hidden; }
 .e-ki-einst { display: grid; gap: 10px; padding: 2px 12px 12px 56px; }
@@ -315,7 +315,7 @@ body.e-seite { background: var(--e-schreibtisch); display: grid; place-items: ce
 .e-zusammen .e-z .e-t { flex: 1; min-width: 0; }
 .e-zusammen .e-z .e-t b { display: block; font-size: 13px; font-weight: 500; }
 .e-zusammen .e-z .e-t span { display: block; font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.e-zusammen .e-z.rein { animation: e-pop 460ms var(--ease-flow) both; }
+.e-zusammen .e-z.rein { animation: e-pop var(--d-4) var(--ease-flow) both; }
 .e-logos-stapel { display: flex; }
 .e-logos-stapel .e-logo-tile { width: 22px; height: 22px; border-radius: 6px; margin-left: -5px; box-shadow: 0 0 0 2px var(--erhoben); }
 .e-logos-stapel .e-logo-tile:first-child { margin-left: 0; }
@@ -336,8 +336,8 @@ body.e-seite { background: var(--e-schreibtisch); display: grid; place-items: ce
 
 /* Übergang „Studio öffnen“ */
 .e-win.oeffnet { --col: 0px; }
-.e-win.oeffnet .e-spalte, .e-win.oeffnet .e-knoten:not(.e-vault), .e-win.oeffnet .e-linien, .e-win.oeffnet .e-vault-schild { opacity: 0; transition: opacity 300ms; }
-.e-win.oeffnet .e-vault { --y: 50; --s: 9; opacity: 0; transition: transform 900ms var(--ease-in) 250ms, opacity 500ms 600ms, top var(--d-layout) var(--ease-flow); }
+.e-win.oeffnet .e-spalte, .e-win.oeffnet .e-knoten:not(.e-vault), .e-win.oeffnet .e-linien, .e-win.oeffnet .e-vault-schild { opacity: 0; transition: opacity var(--d-3); }
+.e-win.oeffnet .e-vault { --y: 50; --s: 9; opacity: 0; transition: transform var(--d-5) var(--ease-in) 250ms, opacity var(--d-4) 600ms, top var(--d-layout) var(--ease-flow); }
 
 @media (max-height: 760px) { .e-pane h1 { font-size: 25px; } .e-pane .e-koerper { margin-top: 18px; gap: 14px; } .e-weg-bild { height: 54px; } }
 
@@ -353,7 +353,7 @@ body.e-seite { background: var(--e-schreibtisch); display: grid; place-items: ce
 .e-badge.warn { color: var(--e-warn-text); border-color: var(--gelb-rand); background: var(--gelb-weich); }
 .e-shimmer {
   background: linear-gradient(110deg, var(--text-2) 35%, var(--text) 50%, var(--text-2) 65%) 0 0 / 250% 100% no-repeat;
-  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; animation: e-shimmer 2s linear infinite;
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; animation: e-shimmer var(--d-schimmer) linear infinite;
 }
 @keyframes e-shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
 @keyframes e-spin { to { transform: rotate(360deg); } }
@@ -402,7 +402,7 @@ html.e-app .e-ampel { display: none; }
 .e-befehl-zeile { display: flex; align-items: center; gap: 8px; }
 .e-befehl code { flex: 1; min-width: 0; padding: 6px 8px; border-radius: var(--r); background: var(--seite-2); font: 12px var(--mono); white-space: nowrap; overflow-x: auto; -webkit-user-select: text; user-select: text; }
 .e-ki-status.ok { color: var(--gruen); }
-.e-balken.unbestimmt i { width: 40%; animation: e-unbestimmt 1.4s ease-in-out infinite; }
+.e-balken.unbestimmt i { width: 40%; animation: e-unbestimmt var(--d-puls) ease-in-out infinite; }
 @keyframes e-unbestimmt { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
 .e-konto .e-avatar { flex: none; }
 .e-probe-eingabe { flex: 1; min-width: 0; }

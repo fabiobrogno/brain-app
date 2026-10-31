@@ -230,9 +230,10 @@ test("Ohne ein Konto für Frag: „KI verbinden …“ statt eines Kontos", asyn
   await expect(leiste(page)).toHaveAttribute("data-zustand", "leer");
   await expect(leiste(page)).toContainText("KI verbinden …");
   await expect(leiste(page)).toHaveAttribute("title", /Öffne die Einstellungen, um eines zu verbinden/);
-  await leiste(page).click();
-  await expect(menue(page)).toBeVisible();
-  await expect(zeileM(page, "k_aaaa0004")).toHaveAttribute("data-gesperrt", "ja");
+  // P4: ohne Konto gibt es nur EINEN Knopf „KI verbinden“ in der Leiste (der Eintrag der Statusleiste); der leere Konto-Platz ist ausgeblendet
+  await expect(leiste(page)).toBeHidden();
+  await expect(page.locator('#status [data-st="claude"]')).toBeVisible();
+  await expect(page.locator("#status button:visible", { hasText: /verbinden/ })).toHaveCount(1);
 });
 
 test("Nicht abrufbar und veraltet: ehrliche Zustände mit dem nächsten Schritt (Statusleiste und Menü)", async ({ page }) => {

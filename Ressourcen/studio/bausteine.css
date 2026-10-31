@@ -13,10 +13,10 @@
 .bs-nur-lesen { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 /* ---------- Popover: gemeinsame Fläche (Menüs, Listen, Kalender) ---------- */
-.bs-pop, .bs-geist { position: fixed; z-index: 1; pointer-events: auto; opacity: 0; transform: scale(.96) translateY(-4px); transition: opacity 120ms ease-out, transform 180ms var(--bs-aus); }
+.bs-pop, .bs-geist { position: fixed; z-index: 1; pointer-events: auto; opacity: 0; transform: scale(.96) translateY(-4px); transition: opacity var(--d-1) ease-out, transform var(--d-2) var(--bs-aus); }
 .bs-pop[data-seite="oben"], .bs-geist[data-seite="oben"] { transform: scale(.96) translateY(4px); }
 .bs-pop.offen { opacity: 1; transform: none; }
-.bs-pop.zu, .bs-geist.zu { opacity: 0; transition: opacity 100ms ease-out, transform 100ms ease-out; pointer-events: none; }
+.bs-pop.zu, .bs-geist.zu { opacity: 0; transition: opacity var(--d-1) ease-out, transform var(--d-1) ease-out; pointer-events: none; }
 .bs-geist { pointer-events: none; }
 .menue, .menue-geist, .bs-liste, .bs-kal { background: var(--bs-flaeche); border-radius: var(--r-l); box-shadow: var(--bs-schatten); animation: none; overscroll-behavior: contain; }
 .menue, .menue-geist, .bs-liste { padding: 4px; }
@@ -50,7 +50,7 @@
 .bs-wert { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bs-wert.platzhalter { color: var(--text-3); }
 .bs-ikon { display: inline-grid; place-items: center; flex: none; color: var(--text-2); }
-.bs-chevron { display: grid; place-items: center; flex: none; color: var(--text-3); transition: transform var(--d) var(--bs-aus), opacity 120ms ease-out; }
+.bs-chevron { display: grid; place-items: center; flex: none; color: var(--text-3); transition: transform var(--d) var(--bs-aus), opacity var(--d-1) ease-out; }
 [aria-expanded="true"] > .bs-chevron { transform: rotate(180deg); }
 
 /* ---------- Filter-Chip ---------- */
@@ -64,7 +64,7 @@
 .bs-chip-label::after { content: ":"; }
 .bs-chip-wert { font-weight: 550; }
 .bs-chip > .bs-chevron, .bs-chip-knopf > .bs-chevron { position: absolute; right: 9px; top: 50%; margin-top: -6px; pointer-events: none; }
-.bs-chip-x { position: absolute; right: 4px; top: 50%; margin-top: -10px; width: 20px; height: 20px; display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: var(--akzent); cursor: pointer; opacity: 0; pointer-events: none; transform: scale(.7); transition: opacity 120ms ease-out, transform 140ms var(--bs-aus), background-color 100ms; }
+.bs-chip-x { position: absolute; right: 4px; top: 50%; margin-top: -10px; width: 20px; height: 20px; display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: var(--akzent); cursor: pointer; opacity: 0; pointer-events: none; transform: scale(.7); transition: opacity var(--d-1) ease-out, transform var(--d-2) var(--bs-aus), background-color var(--d-1); }
 .bs-chip-x:hover { background: color-mix(in srgb, var(--akzent) 16%, transparent); }
 .bs-chip-x:focus-visible { outline: 0; box-shadow: var(--fokus-ring); }
 .bs-chip[data-aktiv="true"] .bs-chip-knopf { border-color: var(--akzent-rand); background: var(--akzent-weich); color: var(--akzent-tinte); }
@@ -86,7 +86,7 @@
 .bs-input::placeholder { color: var(--text-3); }
 .bs-input:disabled { cursor: not-allowed; opacity: .6; }
 .bs-feld:has(.bs-input:disabled) { opacity: .7; cursor: not-allowed; background: var(--seite); box-shadow: none; }
-.bs-loeschen { flex: none; width: 18px; height: 18px; display: grid; place-items: center; border: 0; border-radius: 50%; background: color-mix(in srgb, var(--text) 14%, transparent); color: var(--erhoben); cursor: pointer; transition: background-color 100ms; }
+.bs-loeschen { flex: none; width: 18px; height: 18px; display: grid; place-items: center; border: 0; border-radius: 50%; background: color-mix(in srgb, var(--text) 14%, transparent); color: var(--erhoben); cursor: pointer; transition: background-color var(--d-1); }
 .bs-loeschen:hover { background: color-mix(in srgb, var(--text) 26%, transparent); }
 .bs-loeschen .sym { width: 9px; height: 9px; }
 .bs-fehler { color: var(--rot); font-size: 12px; line-height: 1.4; }
@@ -116,7 +116,7 @@
 /* Ladezustand: Beschriftung bleibt stehen (Breite unverändert), Spinner liegt darüber */
 .knopf.laedt, .bs-knopf.laedt { cursor: progress; }
 .knopf.laedt > *, .bs-knopf.laedt > * { animation: bs-weg 1ms 140ms forwards; }
-.knopf.laedt::after, .bs-knopf.laedt::after { content: ""; position: absolute; left: 50%; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; border: 2px solid color-mix(in srgb, currentColor 25%, transparent); border-top-color: currentColor; opacity: 0; animation: bs-sichtbar 90ms ease-out 140ms forwards, bs-dreh .7s linear infinite; }
+.knopf.laedt::after, .bs-knopf.laedt::after { content: ""; position: absolute; left: 50%; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; border: 2px solid color-mix(in srgb, currentColor 25%, transparent); border-top-color: currentColor; opacity: 0; animation: bs-sichtbar 90ms ease-out 140ms forwards, bs-dreh var(--d-dreh) linear infinite; }
 .knopf.laedt:not(:has(> *))::after { color: var(--text-2); }
 .knopf.laedt:not(:has(> *)) { color: transparent; }
 @keyframes bs-dreh { to { transform: rotate(360deg); } }
@@ -149,9 +149,9 @@ input[type=checkbox] { border-radius: 5px; }
 input[type=radio] { border-radius: 50%; }
 input[type=checkbox]:hover, input[type=radio]:hover { border-color: var(--text-3); }
 input[type=checkbox]:checked, input[type=radio]:checked { background: var(--akzent); border-color: var(--akzent); }
-input[type=checkbox]::before { content: ""; position: absolute; left: 4px; top: 1px; width: 4px; height: 8px; border: solid var(--akzent-text); border-width: 0 2px 2px 0; transform: rotate(45deg) scale(0); transition: transform 140ms var(--bs-aus); }
+input[type=checkbox]::before { content: ""; position: absolute; left: 4px; top: 1px; width: 4px; height: 8px; border: solid var(--akzent-text); border-width: 0 2px 2px 0; transform: rotate(45deg) scale(0); transition: transform var(--d-2) var(--bs-aus); }
 input[type=checkbox]:checked::before { transform: rotate(45deg) scale(1); }
-input[type=radio]::before { content: ""; position: absolute; inset: 3.5px; border-radius: 50%; background: var(--akzent-text); transform: scale(0); transition: transform 140ms var(--bs-aus); }
+input[type=radio]::before { content: ""; position: absolute; inset: 3.5px; border-radius: 50%; background: var(--akzent-text); transform: scale(0); transition: transform var(--d-2) var(--bs-aus); }
 input[type=radio]:checked::before { transform: scale(1); }
 input[type=checkbox]:focus-visible, input[type=radio]:focus-visible { outline: 0; box-shadow: var(--fokus-ring); }
 input[type=checkbox]:disabled, input[type=radio]:disabled { opacity: .45; cursor: default; }
@@ -167,13 +167,13 @@ input[type=checkbox]:disabled, input[type=radio]:disabled { opacity: .45; cursor
 .bs-kal-schnell .knopf:hover { background: var(--hover-2); }
 .bs-kal-kopf { display: flex; align-items: center; gap: 2px; }
 .bs-kal-titel { flex: 1; font-size: 13px; font-weight: 650; padding-left: 4px; }
-.bs-kal-nav { width: 26px; height: 26px; display: grid; place-items: center; border: 0; border-radius: var(--r-s); background: transparent; color: var(--text-2); cursor: pointer; transition: background-color 100ms; }
+.bs-kal-nav { width: 26px; height: 26px; display: grid; place-items: center; border: 0; border-radius: var(--r-s); background: transparent; color: var(--text-2); cursor: pointer; transition: background-color var(--d-1); }
 .bs-kal-nav:hover { background: var(--hover-2); color: var(--text); }
 .bs-kal-nav:focus-visible { outline: 0; box-shadow: var(--fokus-ring); }
 .bs-kal-raster { display: flex; flex-direction: column; gap: 2px; }
 .bs-kal-zeile { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
 .bs-kal-wt { height: 22px; display: grid; place-items: center; font-size: 11px; font-weight: 600; color: var(--text-3); }
-.bs-tag { height: 30px; display: grid; place-items: center; border: 0; border-radius: 8px; background: transparent; color: var(--text); font: 12.5px/1 var(--schrift); font-variant-numeric: tabular-nums; cursor: pointer; transition: background-color 80ms ease-out; }
+.bs-tag { height: 30px; display: grid; place-items: center; border: 0; border-radius: 8px; background: transparent; color: var(--text); font: 12.5px/1 var(--schrift); font-variant-numeric: tabular-nums; cursor: pointer; transition: background-color var(--d-1) ease-out; }
 .bs-tag:hover { background: var(--hover-2); }
 .bs-tag.draussen { color: var(--text-3); }
 .bs-tag.heute { color: var(--akzent); font-weight: 700; box-shadow: inset 0 0 0 1.5px var(--akzent-rand); }
@@ -182,17 +182,17 @@ input[type=checkbox]:disabled, input[type=radio]:disabled { opacity: .45; cursor
 .bs-kal-fuss { display: flex; justify-content: flex-end; border-top: 1px solid var(--linie); padding-top: 6px; }
 
 /* ---------- Tooltip ---------- */
-.bs-tipp { position: fixed; z-index: 2; max-width: 280px; padding: 5px 9px; border-radius: var(--r-s); background: var(--text); color: var(--papier); font-size: 12px; line-height: 1.35; box-shadow: var(--schatten-float); pointer-events: none; opacity: 0; transform: translateY(2px); transition: opacity 120ms ease-out, transform 140ms ease-out; }
+.bs-tipp { position: fixed; z-index: 2; max-width: 280px; padding: 5px 9px; border-radius: var(--r-s); background: var(--text); color: var(--papier); font-size: 12px; line-height: 1.35; box-shadow: var(--schatten-float); pointer-events: none; opacity: 0; transform: translateY(2px); transition: opacity var(--d-1) ease-out, transform var(--d-2) ease-out; }
 .bs-tipp.offen { opacity: 1; transform: none; }
 
 /* ---------- Skelett: erscheint erst nach 150 ms (kein Flackern bei schnellen Ladevorgängen) ---------- */
 .bs-skelett { border-radius: var(--r); background: linear-gradient(90deg, var(--hover) 0%, var(--hover-2) 50%, var(--hover) 100%); background-size: 200% 100%; opacity: 0;
-  animation: bs-sichtbar 160ms ease-out 150ms forwards, bs-schimmer 1.4s ease-in-out 150ms infinite; }
+  animation: bs-sichtbar 160ms ease-out 150ms forwards, bs-schimmer var(--d-puls) ease-in-out 150ms infinite; }
 @keyframes bs-sichtbar { to { opacity: 1; } }
 @keyframes bs-schimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 
 /* ---------- Dialog, Schleier, Toast: einheitlicher Auftritt ---------- */
-.schleier { animation: ein 140ms ease-out; }
+.schleier { animation: ein var(--d-2) ease-out; }
 .dialog, .palette { border-radius: var(--r-xl); animation: zoom var(--d) var(--bs-aus); overscroll-behavior: contain; }
 .dialog-fuss { padding: 12px 20px 14px; }
 
@@ -208,7 +208,7 @@ input[type=checkbox]:disabled, input[type=radio]:disabled { opacity: .45; cursor
    ein Lichtstreifen wandert in 2 s über den Text. Ohne Bewegung (prefers-reduced-motion) bleibt der Text ruhig in der gedämpften Farbe. */
 .bs-text-schimmer, .st.sync[data-zustand="laeuft"] .sync-zustand > span:last-child {
   background: linear-gradient(110deg, var(--text-2) 35%, var(--text) 50%, var(--text-2) 65%) 0 0 / 250% 100% no-repeat;
-  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; animation: bs-text-schimmer 2s linear infinite;
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; animation: bs-text-schimmer var(--d-schimmer) linear infinite;
 }
 @keyframes bs-text-schimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
 @media (prefers-reduced-motion: reduce) {
@@ -223,15 +223,15 @@ input[type=checkbox]:disabled, input[type=radio]:disabled { opacity: .45; cursor
 .rm-dialog .bs-feld { height: 40px; }
 .dialog .feld .bs-auswahl-knopf, .dialog .feld .bs-feld { width: 100%; }
 .pe-reiter-leiste { display: flex; }
-.liste-suche { transition: border-color 120ms ease-out; }
-.dateiliste label { transition: background-color 100ms ease-out; }
+.liste-suche { transition: border-color var(--d-1) ease-out; }
+.dateiliste label { transition: background-color var(--d-1) ease-out; }
 .liste-suche .bs-feld > .sym { color: var(--text-3); flex: none; }
 
 /* ---------- Feinschliff: Scrollbalken im macOS-Stil, einheitlicher Fokusring, dezentes Hover, weicher Ansichtswechsel ---------- */
 * { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 24%, transparent) transparent; }
 ::-webkit-scrollbar { width: 12px; height: 12px; background: transparent; }
 ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
-::-webkit-scrollbar-thumb { border: 3.5px solid transparent; border-radius: 8px; background: color-mix(in srgb, var(--text) 22%, transparent) content-box; min-height: 36px; transition: background-color 120ms ease-out; }
+::-webkit-scrollbar-thumb { border: 3.5px solid transparent; border-radius: 8px; background: color-mix(in srgb, var(--text) 22%, transparent) content-box; min-height: 36px; transition: background-color var(--d-1) ease-out; }
 ::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--text) 40%, transparent) content-box; }
 ::-webkit-scrollbar-thumb:active { background: color-mix(in srgb, var(--text) 52%, transparent) content-box; }
 .au-karten::-webkit-scrollbar { width: 12px; }
@@ -244,8 +244,8 @@ input[type=checkbox]:disabled, input[type=radio]:disabled { opacity: .45; cursor
 .seite-scroll, .bs-liste, .menue { scroll-padding: 4px; }
 .eintrag:not([aria-current="true"]):hover, .baum .zeile:not([aria-current="true"]):hover, .karte:not([aria-selected="true"]):hover { background: var(--hover); }
 
-.ansicht-wechsel #liste-koerper, .ansicht-wechsel #aufgaben-host > * { animation: ansicht-ein 140ms var(--ease); }
-@keyframes ansicht-ein { from { opacity: 0; transform: translateY(3px); } }
+.ansicht-wechsel #liste-koerper, .ansicht-wechsel #aufgaben-host > * { animation: ansicht-ein var(--d-2) var(--ease); }
+@keyframes ansicht-ein { from { opacity: 0; } }
 
 /* Leere Zustände: Zeichen, Text, Aktion – gleiche Abstände überall */
 .leer-liste .knopf, .au-leer .knopf { margin-top: 12px; }
@@ -258,7 +258,7 @@ input[type=checkbox]:disabled, input[type=radio]:disabled { opacity: .45; cursor
 .ka-karten { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 232px), 1fr)); gap: 10px; }
 .ka-karte { display: grid; grid-template-columns: 40px minmax(0, 1fr) 20px; align-items: center; column-gap: 12px; height: 64px; min-width: 0; padding: 0 14px 0 12px; border: 1px solid var(--bs-rand); border-radius: var(--r-l);
   background: var(--erhoben); color: var(--text); font: inherit; text-align: left; cursor: pointer; box-shadow: var(--schatten-klein);
-  transition: border-color 120ms ease-out, background-color 120ms ease-out, box-shadow 120ms ease-out; }
+  transition: border-color var(--d-1) ease-out, background-color var(--d-1) ease-out, box-shadow var(--d-1) ease-out; }
 .ka-karte:hover { border-color: var(--text-3); }
 .ka-karte:focus-visible { outline: 0; border-color: var(--akzent); box-shadow: var(--fokus-ring); }
 .ka-karte[aria-checked="true"] { border-color: var(--akzent); background: color-mix(in srgb, var(--akzent) 7%, var(--erhoben)); box-shadow: inset 0 0 0 1px var(--akzent), var(--schatten-klein); }
@@ -271,18 +271,18 @@ input[type=checkbox]:disabled, input[type=radio]:disabled { opacity: .45; cursor
 .ka-status > span:last-child, .ka-z-status > span:last-child { overflow: hidden; text-overflow: ellipsis; }
 .ka-punkt { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--gruen); }
 [data-gefunden="true"] > span:last-child { color: var(--text-2); }
-.ka-haken { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--bs-rand); color: transparent; transition: background-color 120ms ease-out, border-color 120ms ease-out, color 120ms ease-out; }
+.ka-haken { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--bs-rand); color: transparent; transition: background-color var(--d-1) ease-out, border-color var(--d-1) ease-out, color var(--d-1) ease-out; }
 .ka-karte:not([aria-disabled="true"]):hover .ka-haken { border-color: var(--text-3); }
 .ka-karte[aria-checked="true"] .ka-haken { background: var(--akzent); border-color: var(--akzent); color: var(--akzent-text); }
 .ka-karte[aria-disabled="true"] .ka-haken { visibility: hidden; }
 
 .ka-mehr { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; height: var(--bs-h-s); margin-left: -6px; padding: 0 8px 0 6px; border: 0; border-radius: var(--r-s); background: transparent; color: var(--text-2); font: 500 12.5px/1 var(--schrift); cursor: pointer;
-  transition: background-color 100ms ease-out, color 100ms ease-out; }
+  transition: background-color var(--d-1) ease-out, color var(--d-1) ease-out; }
 .ka-mehr:hover { background: var(--hover-2); color: var(--text); }
 .ka-mehr:focus-visible { outline: 0; box-shadow: var(--fokus-ring); }
 
 /* Aufklappen: Höhe gleitet über grid-template-rows (kein Springen, kein festes Maß) */
-.ka-aufklapp { display: grid; grid-template-rows: 0fr; margin-top: -4px; transition: grid-template-rows 190ms var(--bs-aus), opacity 140ms ease-out; opacity: 0; }
+.ka-aufklapp { display: grid; grid-template-rows: 0fr; margin-top: -4px; transition: grid-template-rows var(--d-2) var(--bs-aus), opacity var(--d-2) ease-out; opacity: 0; }
 .ka-aufklapp[data-offen="true"] { grid-template-rows: 1fr; opacity: 1; margin-top: 0; }
 .ka-weitere-innen { min-height: 0; overflow: hidden; display: flex; flex-direction: column; border-radius: var(--r-l); }
 .ka-aufklapp[data-offen="true"] .ka-weitere-innen { border: 1px solid var(--bs-rand); background: var(--erhoben); }
@@ -291,10 +291,10 @@ input[type=checkbox]:disabled, input[type=radio]:disabled { opacity: .45; cursor
 .ka-liste { display: flex; flex-direction: column; gap: 1px; max-height: clamp(160px, calc(100vh - 560px), 296px); overflow-y: auto; padding: 4px; outline: 0; scrollbar-width: thin; }
 .ka-liste:empty { display: none; }
 .ka-zeile { display: grid; grid-template-columns: 18px 22px minmax(0, 1fr) auto auto; align-items: center; column-gap: 10px; flex: none; height: 40px; padding: 0 10px; border-radius: var(--r); font-size: 13px; color: var(--text); cursor: pointer;
-  transition: background-color 80ms ease-out; }
+  transition: background-color var(--d-1) ease-out; }
 .ka-zeile:hover { background: var(--hover); }
 .ka-zeile:focus-visible { outline: 0; background: var(--akzent-weich); box-shadow: inset 0 0 0 1px var(--akzent-rand); }
-.ka-box { display: grid; place-items: center; width: 16px; height: 16px; border-radius: 5px; border: 1.5px solid var(--bs-rand); color: transparent; transition: background-color 120ms ease-out, border-color 120ms ease-out, color 120ms ease-out; }
+.ka-box { display: grid; place-items: center; width: 16px; height: 16px; border-radius: 5px; border: 1.5px solid var(--bs-rand); color: transparent; transition: background-color var(--d-1) ease-out, border-color var(--d-1) ease-out, color var(--d-1) ease-out; }
 .ka-box.rund { border-radius: 50%; }
 .ka-zeile[aria-selected="true"] .ka-box { background: var(--akzent); border-color: var(--akzent); color: var(--akzent-text); }
 .ka-zeile[aria-disabled="true"] .ka-box { visibility: hidden; }

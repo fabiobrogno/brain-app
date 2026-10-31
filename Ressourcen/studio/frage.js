@@ -8,6 +8,8 @@ import { symbol } from "./symbole.js";
 import { TF } from "./texte-frage.js";
 import { rendereMarkdown } from "./frage-markdown.js";
 import { auswahl, segment, textbereich, knopf as baueKnopf } from "./bausteine.js";
+import { worteEinblenden } from "./bewegung.js";
+import { windungLaden } from "./windung.js";
 import { kontingentStand, kontingentKompakt, kontoAnsicht, optionSub, FRAGE_KONTO_EREIGNIS } from "./kontingent.js";
 
 const wartePause = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -28,7 +30,7 @@ export function erzeugeFragePanel(z) {
   const leer = h("div", { klasse: "frage-leer", hidden: true, "data-frage": "leer" });
   const formular = h("form", { klasse: "frage-form", hidden: true, "data-frage": "formular", novalidate: true });
   const ausgabe = h("div", { klasse: "frage-ausgabe", "data-frage": "ausgabe" });
-  const rumpf = h("div", { klasse: "frage-rumpf" }, leer, formular, ausgabe);
+  const rumpf = h("div", { klasse: "frage-rumpf", "data-kanten": true }, leer, formular, ausgabe);
   const fuss = h("footer", { klasse: "frage-fuss", "data-frage": "fuss" }, symbol("schild", 12), h("span", { text: `${TF.nichtGespeichert} ${TF.nurLesen}` }));
   const panel = h("aside", { id: "frage", klasse: "frage", role: "complementary", "aria-labelledby": "frage-titel", inert: true, "data-frage": "panel" }, kopf, rumpf, fuss);
   host.replaceChildren(panel);
@@ -131,7 +133,7 @@ export function erzeugeFragePanel(z) {
   formular.addEventListener("submit", (e) => { e.preventDefault(); sende(); });
 
   function zeichneRumpf() {
-    if (laedt && !bereit) { leer.hidden = false; formular.hidden = true; ausgabe.hidden = true; leer.replaceChildren(h("p", { klasse: "leise", text: "Lade …" })); return; }
+    if (laedt && !bereit) { leer.hidden = false; formular.hidden = true; ausgabe.hidden = true; leer.replaceChildren(h("div", { klasse: "laden-block", role: "status", "data-frage": "laedt" }, windungLaden(20), h("span", { text: TF.laedt }))); return; }
     const l = leerZustand();
     leer.hidden = !l; formular.hidden = !!l || !!lauf; ausgabe.hidden = !!l; // mit einer Frage (laufend oder fertig) zeigt das Panel nur Frage, Antwort und Quellen
     if (l) { zeichneLeer(l); return; }
@@ -150,12 +152,13 @@ export function erzeugeFragePanel(z) {
       h("h3", { klasse: "frage-label", text: `${TF.deineFrage} · ${l.kontoName} · ${TF.modelle[l.modell] || l.modell}` }), h("p", { klasse: "frage-gefragt-text", text: l.frage })));
     if (!l.fertig) {
       teile.push(h("div", { klasse: "frage-status", "data-frage": "status" },
-        h("span", { klasse: "frage-punkte", "aria-hidden": "true" }), h("span", { klasse: "frage-status-text", role: "status", text: l.abbrechend ? "Wird abgebrochen …" : l.status || TF.wartet }),
+        h("span", { klasse: "frage-punkte", "aria-hidden": "true" }, windungLaden(16)), h("span", { klasse: "frage-status-text", role: "status", text: l.abbrechend ? "Wird abgebrochen …" : l.status || TF.wartet }),
         baueKnopf({ text: TF.abbrechen, aktion: "frage-abbrechen", groesse: "s", aufKlick: () => abbrechen(), laedt: !!l.abbrechend })));
     }
     if (l.antwort) {
       const a = h("div", { klasse: "frage-antwort", "data-frage": "antwort", "aria-busy": String(!l.fertig) });
       a.append(rendereMarkdown(l.antwort, { verweise: l.verweise, oeffne: (p) => z.oeffneSeite(p) }));
+      l.gezeigt = worteEinblenden(a, l.gezeigt || 0); // nur die Wörter, die seit der letzten Zeichnung dazukamen, blenden weich ein (der Text steht sofort da, nichts wird zurückgehalten)
       teile.push(h("section", { klasse: "frage-block" }, h("h3", { klasse: "frage-label", text: TF.antwort }), a, l.gekuerzt ? h("p", { klasse: "frage-hinweis", text: TF.gekuerzt }) : null));
     }
     const e = l.ergebnis;

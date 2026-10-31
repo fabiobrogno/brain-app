@@ -226,3 +226,84 @@ Die Konfliktansicht (PR #73) hängt sich an Statusleiste und Banner (`#banner-ho
 
 **Prüfung.** `Tests/Oberflaeche/hauptfenster.spec.mjs` (Aufbau, KI-Zeile, Tastatur, Gleiten, reduzierte Bewegung, Palette mit Ausweg, Favoriten, Board, leerer Vault, hell/dunkel mit Kontrast, 1100/1180 px, 1440 px); angepasst nur die Reihenfolge in `aufgaben.spec.mjs`.
 Bilder im Scratchpad (`ui-p3/`), verglichen mit den Prototyp-Bildern `a1`–`a7`.
+
+## 10. Bewegung und Feinschliff (P4)
+
+Stand: 31.10.2026 · Branch `feat/bewegung` · Paket P4 aus `UMSETZUNG.md` (Abschnitt 7, Prinzip „Bewegung mit Bedeutung“ aus Prototyp B). Gestaltungswerte der Kurven und Dauern weiter wie in §6 (Orca, MIT, siehe dort);
+neu ist **ein** Bewegungssystem, das alle Flächen benutzen, und die Bewegungen, die etwas erklären. Dateien: `studio.css` (Tokens), `bewegung.css` (Stile), `bewegung.js` (Helfer, Ruhenetz, Scrollkanten, Tooltips), `windung.js` (Zeichen und Ladeanzeige),
+Anpassungen in `app.js`, `frage.js`, `aufgaben.js`, `einrichtung*.js`, `einrichtung-buehne.js`.
+
+### Ein Bewegungssystem
+
+| Token | Wert | Wofür |
+|---|---|---|
+| `--d-1` | 120 ms | Rückmeldung: Hover, Fokus, Drücken, Schließen von Popovers |
+| `--d-2` | 200 ms | Einblenden, Aufklappen, Karten, Listen, Tooltips |
+| `--d-3` | 280 ms | Flächen: Spalten, Frag-Panel, Ansichtswechsel, Landen einer Karte |
+| `--d-4` / `--d-5` / `--d-6` | 480 / 760 / 1600 ms | Auftritte der Bühne im Assistenten · Szenenwechsel · Hervorheben (Leuchten einer neuen Karte) |
+| `--ease-out` | `cubic-bezier(.25, 1, .5, 1)` (ease-out-quart) | Standard für alles; `--ease` und `--ease-flow` sind Alt-Namen darauf |
+| `--ease-feder` | `linear(…)` (echte Feder, Safari ab 17.2 / Chromium ab 113), sonst `cubic-bezier(.34, 1.45, .64, 1)` | Landen von Karten, Zähler, Flug |
+| `--ease-in` / `--ease-lin` | `cubic-bezier(.5, 0, .75, 0)` / `linear` | Abgang · Dauerläufer |
+| `--d-dreh` / `--d-puls` / `--d-schimmer` | 0,8 s / 1,6 s / 2 s | Dauerläufer (Ladeanzeigen, Skelett, Text-Schimmer) |
+
+Alle festen Zeiten in den Stilen (Animationen und Übergänge in elf CSS-Dateien) sind auf diese Tokens umgestellt; die Alt-Namen `--d-fast`, `--d`, `--d-panel`, `--d-layout`, `--t` zeigen auf sie. JavaScript liest dieselben Tokens
+(`bewegung.js`: `dauer("--d-2")`, `kurve("--ease-feder")`), nie eigene Zahlen.
+
+**Bewegung reduzieren.** Die Systemeinstellung (`prefers-reduced-motion`) und der Schalter in Einstellungen → Darstellung (`data-bewegung="reduziert"`) wirken gleich: alle Dauer-Tokens 0 ms, `animation`/`transition: none !important`, JS-Helfer tun nichts
+(`ruhig()`). Regeln, die bisher nur die Systemeinstellung kannten (Skelett, Knopf im Ladezustand, Text-Schimmer, Popover, Live-Rahmen), gelten jetzt auch für den Schalter (`bewegung.css`, „Spiegel“). Einzige Ausnahme sind drei **Lebenszeichen**:
+die laufenden Ladeanzeigen (Drehkringel im Knopf, `rm-spinner`, die Windung) — die Windung steht dann ruhig da und atmet nur leise.
+
+**Inhalt hängt nie an einer Animation.** WebKit pausiert Animationen und `requestAnimationFrame`, wenn das Fenster nicht sichtbar ist; ein Einblenden mit Deckkraft 0 am Anfang bliebe dann stehen (Fehler aus der Vorschau: Startbild des Assistenten leer, bis man ins Fenster klickte).
+Gegenmaßnahmen: (1) **Ruhenetz** (`ruhenetz()`, in Studio und Assistent): alle 500 ms und bei Sichtbarkeits-/Fokuswechsel prüft es endliche Animationen; kommt eine nicht voran (oder ist das Dokument verborgen), setzt es sie zu Ende — der Endzustand ist immer der normale Stil.
+(2) Nichts wartet auf `animationend`/`transitionend`: Aufräumen und Folgeschritte laufen über Timer (Flug, Zuklappen, Landen). (3) Die rAF-Pfade im Assistenten (`windungFortschritt`, `linienBald`) setzen den Endstand zusätzlich per Timer.
+Getestet mit pausierten Animationen (Init-Skript `animation-play-state: paused`) und einer Gegenprobe ohne Netz (dort bleibt der Hero bei Deckkraft 0).
+
+### Was sich wo bewegt (Bewegung mit Bedeutung)
+
+| Wo | Bewegung | Technik |
+|---|---|---|
+| Schnell erfassen → Posteingang | Die erfasste Notiz fliegt als kleine Marke (Titel) vom Dialog in den Posteingang der Seitenleiste; bei Ankunft hüpft der Zähler (federnd). Steigt der Zähler aus anderem Grund (Live-Ereignis, MCP), hüpft er sofort. | `fliege()`, `huepfe()` (Web-Animation, `transform`/`opacity`); Ankunft per Timer |
+| Frag: Antwort | Wort für Wort: neue Wörter blenden gestaffelt (höchstens 180 ms) ein; der Text steht sofort im DOM, nichts wird zurückgehalten (kein Fake-Tippen). Schon gezeigte Wörter bleiben still. | `worteEinblenden()` auf dem fertig gebauten Markdown-Baum, nur Deckkraft |
+| Board | Karten beim Ziehen: Nachbarn gleiten (FLIP, `--d-2`); beim Loslassen schwebt die Karte federnd in die Lücke (`--ease-feder`), federt kurz nach und der Spaltenzähler hüpft | `aufgaben.js`, `lande()`, `huepfe()` |
+| Listen (Notizliste, Posteingang) | Neue Einträge blenden ein (gestaffelt, höchstens 6), verschwundene klappen in der Höhe zu und blenden aus (stille Hülle ohne `data-karte`, räumt per Timer auf); beim Wechsel der Sicht keine Einzelanimation | `listenUebergang()` in `app.js`, `blendeEin()`, `klappeZu()` |
+| Ansichtswechsel | Notizen ↔ Aufgaben ↔ Posteingang blendet über 200 ms ein, ohne Versatz (nur Deckkraft, kein Layout-Sprung) | `weicherWechsel()`, `ansicht-ein` |
+| Rechte Spalte, Palette, Dialoge, Popover, Toast | wie bisher, jetzt aus den Tokens (280 / 200 / 200 / 180–120 / 200 ms) | CSS |
+| „Frag deinen Vault“ lädt, Abgleich läuft | Die **Windung** (Zeichen des Logos, eine Linie in sechs Bahnen) als Ladeanzeige: feine Spur, ein Lichtstreifen läuft hindurch; statt des Drehkringels | `windungLaden()` (`windung.js`), `.windung-laden` |
+
+### Feinschliff
+
+- **Zustände einheitlich:** Hover, Drücken (`:active`, `--hover-2`; Symbolknöpfe zusätzlich `scale(.94)`) und Fokusring (2 px Akzent) für Knöpfe, Seitenleiste, Listen, Palette, Baum, Statusleiste aus einer Regel; gleiche Übergangsdauer `--d-1`.
+- **Keine Sprünge beim Laden:** erste Ladung zeigt Platzhalter (Liste sechs Karten, Seitenleiste fünf Zeilen) an der Stelle des Inhalts, erst nach 150 ms sichtbar (kein Flackern bei schnellen Ladungen); gemessen CLS beim Start 0,009.
+- **Scrollkanten:** Seitenleiste, Notizliste, Eigenschaften, Frag, Palette, Board-Spalten laufen dort, wo es weiter geht, mit 18 px Verlauf aus (`data-kanten` → `data-kante`, Maske).
+- **Tooltips:** jeder Symbolknopf mit `title` zeigt den eigenen Tooltip (500 ms bei Maus, sofort bei Tastaturfokus) statt des trägen System-Tooltips; das `title` kehrt danach zurück, der zugängliche Name (`aria-label`) bleibt.
+- **Statusleiste ohne Doppelungen:** KI steht nur einmal: ohne Konto der einzige Knopf „KI verbinden“ (der leere Konto-Platz ist ausgeblendet), mit Konto nur Konto und Kontingent (der Eintrag „KI verbinden“ ist per CSS weg); der lokale Stand heißt „Keine Änderungen“ statt zweitem „Alles gesichert" neben dem Abgleich-Stand; Test: jede Angabe der Leiste kommt genau einmal vor.
+- **Leere Zustände** gleichen Aufbau (Symbol in Kachel, Titel, ein Satz, höchstens eine Aktion); kleine Hinweise zentriert.
+- **Kein „null“/„undefined“:** Prüfung des sichtbaren Texts in Liste, Posteingang, Board, Notiz, Frag, Palette (Test).
+- **Schmale Fenster:** einzeilige Texte (Seitenleiste, Kopf, Karten, Statusleiste) kürzen statt umzubrechen; getestet bei 1000 px.
+
+### Leistung
+
+Es bewegen sich nur `transform` und Deckkraft (Ausnahmen: die Höhe der einen zuklappenden Hülle für 200 ms; der Lichtstreifen der Windung ist ein Strich-Versatz an einem winzigen SVG). Lange Listen: Karten in Stücken zu 40 (vorher 120) und `content-visibility: auto`
+mit gemerkter Höhe — nicht Sichtbares wird nicht gezeichnet. Gemessen mit Playwright (Chromium, Headless; `bewegung.spec.mjs`, Test „Bildzeiten“, 5.000 Notizen):
+
+| Messung (150 bzw. 70 Bilder) | Mittel / p95 | Schlechtestes Bild |
+|---|---|---|
+| Scrollen der Notizliste, 5.000 Notizen, 90 px je Bild | 17,5 ms / 16,7 ms | einzelne Ausreißer 33–100 ms (Headless-Rauschen und Nachladen eines Stücks) |
+| Frag öffnen und schließen (280 ms Gleiten) | – / 16,7 ms | 16,8 ms |
+| Palette öffnen und schließen | – / 16,8 ms | 16,8 ms |
+| CLS beim Start / über Start, Posteingang, Board, Alle Notizen, Frag | 0,009 / 0,009 | – |
+
+Grenzen der Messung: Chromium im Headless-Betrieb (60-Hz-Takt, Software-Zeichnen), nicht WKWebView; Intel-Macs sind nicht gemessen. Die Werte sind eine Untergrenze für Regressionen (die Tests verlangen p95 < 34 ms, schlechtestes Bild < 150 ms),
+keine Zusage für ältere Hardware. Der Vergleich ohne `content-visibility` und ohne Scrollkanten-Maske zeigte im Headless-Test keinen Unterschied; beides bleibt, weil es nur Arbeit spart.
+
+### Gefunden und behoben
+
+- **Startbild des Assistenten hing an Animationen** (Fehler aus der Vorschau): `.e-hero > *` und das sich zeichnende Zeichen starten mit Deckkraft 0 bzw. leerem Strich und warten auf die Animation; in einem Fenster, das WebKit nicht sichtbar findet, kam sie nie.
+  Jetzt Ruhenetz plus Timer-Endstände (siehe oben); Test mit pausierten Animationen und Gegenprobe.
+- **Skelett unsichtbar bei „Bewegung reduzieren“ (Einstellung):** die Regel dafür kannte nur die Systemeinstellung; jetzt gespiegelt.
+
+### Prüfung
+
+`Tests/Oberflaeche/bewegung.spec.mjs` (Tokens; reduzierte Bewegung als System- und als App-Einstellung über Liste, Palette, Frag, Board, Posteingang, Erfassen: alle Dauern 0 ms, keine laufende endliche Animation; Ruhenetz im Studio und im Assistenten bei pausierten Animationen samt Gegenprobe; Wort für Wort;
+CLS beim Start und beim langsamen Laden; Flug und Zähler; Liste ein/zu; Board-Landung; Windung bei Abgleich und Frag; kein „null/undefined“ und kein Überlauf/Umbruch bei 1000 px; Tooltips; Bildzeiten mit 5.000 Notizen; Bilder hell/dunkel),
+`frage.spec.mjs` (Wörter blenden beim Streaming ein), angepasst `tokens.spec.mjs` und `ui-runde2.spec.mjs` (neue Dauern). Bilder im Scratchpad (`ui-p4/`).

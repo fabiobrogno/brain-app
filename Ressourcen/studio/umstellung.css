@@ -39,7 +39,7 @@
 .um-marke[data-marke="rot"] { border-color: var(--rot); background: var(--rot-weich); color: var(--rot); }
 .um-marke[data-marke="warn"] { border-color: var(--gelb); background: var(--gelb-weich); color: var(--gelb); }
 .um-marke[data-marke="laeuft"] { border-color: var(--akzent); color: var(--akzent); }
-.um-marke[data-marke="laeuft"] .sym { animation: um-dreh 1.1s linear infinite; }
+.um-marke[data-marke="laeuft"] .sym { animation: um-dreh var(--d-dreh) linear infinite; }
 .um-details { font-size: 12px; }
 .um-details > summary { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text-3); list-style: none; padding: 1px 4px; margin-left: -4px; border-radius: 4px; }
 .um-details > summary::-webkit-details-marker { display: none; }

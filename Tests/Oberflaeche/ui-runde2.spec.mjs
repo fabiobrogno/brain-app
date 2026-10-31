@@ -182,10 +182,10 @@ test("Leere Zustände: freundlicher Text und eine Aktion (Suche ohne Treffer, An
   await expect(page.locator("#liste-koerper [data-karte]").first()).toBeVisible();
 });
 
-test("Ansichtswechsel blendet in höchstens 150 ms ein und beachtet „Bewegung reduzieren“", async ({ page }) => {
+test("Ansichtswechsel blendet in höchstens 200 ms (--d-2) ein und beachtet „Bewegung reduzieren“", async ({ page }) => {
   await start(page, 1400);
   const dauer = await page.evaluate(() => { const a = document.createElement("div"); a.className = "ansicht-wechsel"; a.innerHTML = '<div id="liste-koerper"></div>'; document.body.append(a); const d = getComputedStyle(a.firstChild).animationDuration; a.remove(); return d; });
-  expect(parseFloat(dauer) * (dauer.endsWith("ms") ? 1 : 1000)).toBeLessThanOrEqual(150);
+  expect(parseFloat(dauer) * (dauer.endsWith("ms") ? 1 : 1000)).toBeLessThanOrEqual(200);
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.click('[data-bereich="aufgaben"]');
   await expect(page.locator("#app")).not.toHaveClass(/ansicht-wechsel/);

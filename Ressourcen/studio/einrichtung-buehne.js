@@ -13,17 +13,9 @@ import { kiLogo } from "./ki-logos.js";
 import { markenLogo } from "./marken.js";
 import { TE } from "./texte-einrichtung.js";
 
-// Kortex-Zeichen „Windung“ (Ressourcen/icon-entwuerfe/kortex-3-windung.svg, Zeichenpfad im 1024er-Raster): eine durchgehende Linie in sechs Bahnen.
-export const WINDUNG = "M412 262H618A50 50 0 0 1 618 362H356A50 50 0 0 0 356 462H668A50 50 0 0 1 668 562H356A50 50 0 0 0 356 662H618A50 50 0 0 1 618 762H412";
-const SVG = "http://www.w3.org/2000/svg";
-const svgEl = (name, attrs = {}) => { const e = document.createElementNS(SVG, name); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, String(v)); return e; };
-
-// Das App-Zeichen als SVG (fester Pfad, keine Daten von außen). zeichnen: die Linie zeichnet sich beim Start selbst.
-export function markeSvg(groesse = 24, { zeichnen = false } = {}) {
-  const svg = svgEl("svg", { class: "e-marke" + (zeichnen ? " zeichnen" : ""), viewBox: "230 200 564 624", width: groesse, height: groesse, "aria-hidden": "true" });
-  svg.append(svgEl("path", { pathLength: 1, d: WINDUNG, fill: "none", stroke: "currentColor", "stroke-width": 52, "stroke-linecap": "round", "stroke-linejoin": "round" }));
-  return svg;
-}
+// Kortex-Zeichen „Windung“ und seine Ladeanzeige liegen in windung.js (auch das Studio nutzt sie); hier weitergereicht.
+import { WINDUNG, svgEl, markeSvg } from "./windung.js";
+export { WINDUNG, markeSvg };
 
 // Fortschritt als Windung (Idee aus Prototyp B): die Linie des Zeichens füllt sich Bahn für Bahn, ein Punkt wandert mit. n von 4.
 export function windungFortschritt() {
@@ -56,6 +48,8 @@ export function windungFortschritt() {
         if (k < 1) requestAnimationFrame(frame);
       };
       requestAnimationFrame(frame);
+      // Der Endstand hängt nie an einem Bild: in einem Fenster, das gerade nicht sichtbar ist, pausiert WebKit requestAnimationFrame; ein Timer setzt den Stand trotzdem
+      setTimeout(() => { if (nr === lauf && stand !== ziel) setze(ziel); }, dauer + 120);
     },
   };
 }
@@ -181,6 +175,8 @@ export function erzeugeBuehne(wurzel, { fensterEl }) {
     const start = !linienBis || performance.now() > linienBis;
     linienBis = Math.max(linienBis, performance.now() + ms);
     if (start) requestAnimationFrame(function tick() { zeichneLinien(); if (performance.now() < linienBis) requestAnimationFrame(tick); else linienBis = 0; });
+    // Die Linien stehen am Ende immer richtig, auch wenn kein Bild gezeichnet wurde (Fenster nicht sichtbar): ein Timer zeichnet sie nach
+    setTimeout(zeichneLinien, ms + 60);
   }
   new ResizeObserver(() => linienBald(200)).observe(wurzel);
 
