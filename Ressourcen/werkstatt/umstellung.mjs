@@ -5,7 +5,12 @@
 //   POST /api/umstellung/probelauf   { bestaetigt: true, entscheidungen? }                      → Ampel je Kriterium (Probelauf an einer Kopie; ohne `bestaetigt` nur der Plan)
 //   POST /api/umstellung/phase-a     { bestaetigt: true, entscheidungen?, schritte? }           → Ergebnis je Schritt A0–A9 (ohne `bestaetigt` nur der Plan; verlangt einen grünen Probelauf)
 //   POST /api/umstellung/rueckweg    { bestaetigt: true, alles?: true | schritte: ["A4"] }      → Ergebnis je Schritt (ohne `bestaetigt` nur, was sich zurücknehmen lässt)
-//   GET  /api/umstellung/protokoll   → { ordner, datei, zeilen: [{ zeit, lauf, schritt, ereignis, anzahl?, grund? }], gekuerzt } (P7c; nur lesend, nie Werte, Ablageort mit ~ gekürzt)
+//   POST /api/umstellung/phase-b     { bestaetigt?: true, probelauf?: true, entscheidungen?: { keineAltenMacs, bewusst: ["E24"], nachbarkopie } } (P7d)
+//                                    → ohne `bestaetigt`: Plan samt Freigabe-Tor { plan, tor: { frei, bedingungen: [{ id, titel, erfuellt, art, grund?, text, details? }], offen }, schritte };
+//                                      `probelauf` + `bestaetigt`: Probelauf an einer Kopie (Ampel je Kriterium); `bestaetigt` allein: archivieren, bereinigen, ein Commit (verlangt offenes Tor)
+//   GET  /api/umstellung/aufraeumen  → { angebote: [{ id: verwaist|archiv|sicherungen|bundles, name?, titel, text, anzahl, bytes?, tage?, faellig }] } (P7d; nur lesend)
+//   POST /api/umstellung/aufraeumen  { was, name?, bestaetigt: true }    → legt ein Angebot in den Papierkorb (nie endgültig löschen) bzw. räumt verwaiste Einbindungen auf (Rückweg: rueckweg mit schritte ["V1"])
+//   GET  /api/umstellung/protokoll  → { ordner, datei, zeilen: [{ zeit, lauf, schritt, ereignis, anzahl?, grund? }], gekuerzt } (P7c; nur lesend, nie Werte, Ablageort mit ~ gekürzt)
 //   POST /api/umstellung/kopie-loeschen { bestaetigt: true }  → { geloescht, uebrig } (P7c; löscht nur die liegen gebliebene Probekopie dieses Vaults; ohne bestaetigt: { plan, anzahl })
 // Die Logik lebt im Kern; die Werkstatt ruft den Starter der App (`kortex umstellung … --vault <v> --json`, Muster verdrahtung.mjs) und reicht das Ergebnis durch. Es steht nie ein
 // Wert in einer Antwort (kein Hook-Befehl, kein MCP-Eintrag, kein git-Wert). Geschrieben wird NUR mit `bestaetigt: true` im Body – das setzt die Oberfläche erst nach dem Klick des Nutzers.
@@ -23,7 +28,10 @@ const FRIST_LESEN = 60_000;
 // länger als das Kopieren im Kern (KOPIE_FRIST_MS = 30 min) plus der Rest des Probelaufs
 export const FRIST_SCHREIBEN = 45 * 60_000;
 const BOOL = ["gitSchluessel", "verweiseAufloesen", "remoteEntfernen", "remoteBestaetigen", "hooksErsetzen", "mcpAnders", "dienstAnderer", "nachbarkopie"];
-const SCHRITT = /^A[0-9]$/;
+const SCHRITT = /^(?:[AB][0-9]|V1)$/;
+const FUND_ID = /^E\d{1,2}$/;
+const WAS = ["verwaist", "archiv", "sicherungen", "bundles"];
+const KIT_ARCHIV = /^kit-\d{4}-\d{2}-\d{2}(?:-\d+)?$/;
 
 // Entscheidungen aus dem Body → "a=ja,b=nein,profile=<pfad>+<pfad>" (nur bekannte Schlüssel, nur Profile aus der erkannten Liste)
 export function entscheidungenArgument(e, profile) {
@@ -37,6 +45,19 @@ export function entscheidungenArgument(e, profile) {
     const erlaubt = new Set(profile.map((p) => p.pfad));
     if (e.profile.some((p) => !erlaubt.has(p) || p.includes("+") || p.includes(","))) throw new HttpFehler(409, "Eines der Claude-Profile gibt es nicht mehr. Suche die Profile bitte neu.", { art: "profil-weg" });
     teile.push(`profile=${e.profile.join("+")}`);
+  }
+  return teile.join(",");
+}
+
+// Entscheidungen der Phase B → "keineAltenMacs=ja,bewusst=E15+E24,nachbarkopie=ja"
+export function entscheidungenBArgument(e) {
+  if (e === undefined || e === null) return "";
+  if (typeof e !== "object" || Array.isArray(e)) throw new HttpFehler(400, "„entscheidungen“ muss ein Objekt sein.");
+  const teile = [];
+  for (const k of ["keineAltenMacs", "nachbarkopie"]) if (e[k] !== undefined) { if (typeof e[k] !== "boolean") throw new HttpFehler(400, `„${k}“ muss true oder false sein.`); teile.push(`${k}=${e[k] ? "ja" : "nein"}`); }
+  if (e.bewusst !== undefined) {
+    if (!Array.isArray(e.bewusst) || e.bewusst.length > 20 || e.bewusst.some((x) => typeof x !== "string" || !FUND_ID.test(x))) throw new HttpFehler(400, "„bewusst“ muss eine Liste wie [\"E24\"] sein.");
+    if (e.bewusst.length) teile.push(`bewusst=${e.bewusst.join("+")}`);
   }
   return teile.join(",");
 }
@@ -101,6 +122,30 @@ export function erzeugeUmstellung({ starter, support = null, vertrauen = null })
     return j;
   }
 
+  async function aufraeumen(v) {
+    const { r, j } = await lauf(v, "aufraeumen", [], FRIST_LESEN);
+    if (r.code !== 0 || !j || !Array.isArray(j.angebote)) throw fehlerAus(r, j, "Die Suche nach Aufräumarbeiten");
+    return j;
+  }
+  async function aufraeumenTun(v, b) {
+    if (!b || typeof b !== "object" || Array.isArray(b)) throw new HttpFehler(400, "Der Body muss ein Objekt sein.");
+    if (!WAS.includes(b.was)) throw new HttpFehler(400, "„was“ muss verwaist, archiv, sicherungen oder bundles sein.");
+    if (b.name !== undefined && (typeof b.name !== "string" || !KIT_ARCHIV.test(b.name))) throw new HttpFehler(400, "„name“ ist kein Archiv.");
+    if (b.was === "archiv" && b.name === undefined) throw new HttpFehler(400, "Für das Archiv fehlt der Name.");
+    const extra = ["--was", b.was, ...(b.name ? ["--name", b.name] : []), ...(b.bestaetigt === true ? ["--ja"] : [])];
+    const { r, j } = await lauf(v, "aufraeumen", extra, FRIST_LESEN * 2);
+    if (!j || typeof j !== "object" || (r.code !== 0 && !(r.code === 1 && "ok" in j))) throw fehlerAus(r, j, "Das Aufräumen");
+    return j;
+  }
+  async function phaseB(v, b) {
+    if (!b || typeof b !== "object" || Array.isArray(b)) throw new HttpFehler(400, "Der Body muss ein Objekt sein.");
+    const ent = entscheidungenBArgument(b.entscheidungen);
+    const probelauf = b.probelauf === true, bestaetigt = b.bestaetigt === true;      // nur ein ausdrückliches true schreibt; alles andere liefert den Plan
+    const { r, j } = await lauf(v, "phase-b", [...(probelauf ? ["--probelauf"] : []), ...(ent ? ["--entscheide", ent] : []), ...(bestaetigt ? ["--ja"] : [])], FRIST_SCHREIBEN);
+    if (!j || typeof j !== "object" || (r.code !== 0 && !(r.code === 1 && "ok" in j))) throw fehlerAus(r, j, probelauf ? "Der Probelauf" : "Das Aufräumen");
+    return j;
+  }
+
   function schrittArgs(b, { nurEine = false } = {}) {
     const s = [];
     if (b.schritte !== undefined) {
@@ -131,7 +176,7 @@ export function erzeugeUmstellung({ starter, support = null, vertrauen = null })
   }
 
   return {
-    hinweis, befund, stand, protokoll, kopieLoeschen,
+    hinweis, befund, stand, protokoll, kopieLoeschen, phaseB, aufraeumen, aufraeumenTun,
     probelauf: (v, b) => schreibend(v, "probelauf", "Der Probelauf", b || {}, []),
     phaseA: (v, b) => schreibend(v, "phase-a", "Die Umstellung", b || {}, schrittArgs(b || {}), { vertrauenNachher: true }),
     rueckweg: (v, b) => {

@@ -155,6 +155,19 @@ export function loeseVaultSperre(z) {
   try { rmdirSync(join(z.vault, ".logs")); } catch { /* nicht leer (üblich) oder weg */ }   // einen leeren .logs-Ordner, den wir angelegt haben, nicht hinterlassen
 }
 
+// Eigene Sperre für Phase B und ihren Rückweg (Review P7d): .logs/umstellung-phase-b.lock { pid, zeit }. Die Werkstatt (gemeinsam/umstellung-sperre.mjs) liest sie: Speichern/Abgleichen im
+// Studio melden 409, solange sie da ist. Format und Lesen dort. Am Original nur (die Kopie des Probelaufs braucht sie nicht).
+export function setzePhaseBSperre(z) {
+  if (z.probe) return { ok: true, datei: null };
+  const f = join(z.vault, ".logs", "umstellung-phase-b.lock");
+  try { mkdirSync(join(z.vault, ".logs"), { recursive: true }); writeFileSync(f, JSON.stringify({ pid: process.pid, zeit: jetztIso() }) + "\n"); return { ok: true, datei: f }; } catch { return { ok: false }; }
+}
+export function loesePhaseBSperre(z) {
+  if (z.probe) return;
+  try { rmSync(join(z.vault, ".logs", "umstellung-phase-b.lock"), { force: true }); } catch { /* weg */ }
+  try { rmdirSync(join(z.vault, ".logs")); } catch { /* nicht leer (üblich) oder weg */ }
+}
+
 export function listeSicherungen(z) {
   try { return readdirSync(join(ablageOrdner(z), "sicherungen")).sort(); } catch { return []; }
 }

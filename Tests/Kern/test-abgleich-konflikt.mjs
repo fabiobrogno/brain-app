@@ -458,3 +458,19 @@ test("brain abgleich ansicht|loesen: JSON auf stdout, Fehler als { ok: false, st
   const r = lauf("rueckgaengig");
   assert.equal(r.ok, true);
 });
+
+test("Umstellung (Phase B) läuft: Sicherung, Holen und Konfliktlösung warten, eine verwaiste Umstellungs-Sperre zählt nicht", () => {
+  const { mac, remote, support } = aufbau();
+  mkdirSync(join(mac, ".logs"), { recursive: true });
+  const sperre = join(mac, ".logs", "umstellung-phase-b.lock");
+  writeFileSync(sperre, JSON.stringify({ pid: process.pid, zeit: new Date().toISOString() }));
+  speichern(mac, "10_notizen/neu.md", "# Neu\n", "Mac: neu");
+  const serverKopf = kopfRemote(remote);
+  assert.equal(B.abgleichen(mac, { support }).art, "umstellung");
+  assert.equal(B.holen(mac, { support }).art, "umstellung");
+  assert.throws(() => K.loesen(mac, { support, auswahl: [] }), (e) => e.status === 409 && e.extra.art === "umstellung");
+  assert.equal(kopfRemote(remote), serverKopf);
+  assert.equal(existsSync(B.sperrDateiFuer(mac, support)), false, "die gemeinsame Sperre wurde gar nicht erst genommen");
+  writeFileSync(sperre, JSON.stringify({ pid: 2 ** 22 - 3, zeit: new Date().toISOString() })); // Prozess gibt es nicht
+  assert.equal(B.abgleichen(mac, { support }).art, "gesendet");
+});

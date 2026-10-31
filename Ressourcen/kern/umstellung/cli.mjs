@@ -5,6 +5,9 @@
 //   probelauf [--ja] [--entscheide a=ja,b=nein] [--claude-home <ordner>]… [--json]
 //   phase-a  [--ja] [--schritt A1,A4]… [--entscheide …] [--claude-home …]… [--json]
 //   zurueck  [--ja] (--schritt A4,… | --alles) [--entscheide …] [--claude-home …]… [--json]
+//   phase-b  [--probelauf] [--ja] [--entscheide keineAltenMacs=ja,bewusst=E15+E24] [--claude-home …]… [--json]   Phase B (P7d): ohne --ja Plan und Freigabe-Tor (lesend); --probelauf --ja = Probelauf an
+//            einer Kopie; --ja = alten Werkzeug-Ordner archivieren, Einstellungen bereinigen, ein Commit (nur bei offenem Tor und grünem Probelauf)
+//   aufraeumen [--was verwaist|archiv|sicherungen|bundles] [--name kit-<Datum>] [--ja] [--json]       Angebote nach der Umstellung (nur lesend ohne --was/--ja); Rückweg „verwaist“: zurueck --schritt V1
 //   protokoll [--json]                                                   nur lesend: Ablageort und letzte Zeilen des Protokolls (nie Werte)
 //   kopie-loeschen [--ja] [--json]                                       löscht die liegen gebliebene Probekopie dieses Vaults (ohne --ja nur: was liegt da)
 // Ohne --ja schreibt keiner dieser Befehle etwas: sie zeigen, was sie täten (probelauf: Plan, phase-a: Plan, zurueck: was sich zurücknehmen lässt). Mit --ja läuft der Schritt;
@@ -18,21 +21,24 @@ import { erstelleBefund } from "./befund.mjs";
 import { befundText } from "./bericht.mjs";
 
 const [vault, befehl, ...rest] = process.argv.slice(2);
-const BEFEHLE = ["befund", "stand", "probelauf", "phase-a", "zurueck", "protokoll", "kopie-loeschen"];
+const BEFEHLE = ["befund", "stand", "probelauf", "phase-a", "phase-b", "aufraeumen", "zurueck", "protokoll", "kopie-loeschen"];
 if (!BEFEHLE.includes(befehl)) {
-  console.error("Nutzung: kortex umstellung befund|stand|probelauf|phase-a|zurueck|protokoll|kopie-loeschen [--ja] [--json] …");
+  console.error("Nutzung: kortex umstellung befund|stand|probelauf|phase-a|phase-b|aufraeumen|zurueck|protokoll|kopie-loeschen [--ja] [--json] …");
   process.exit(64);
 }
 if (!vault) { console.error("Kein Vault gefunden. Gib ihn mit --vault <pfad> an, setze BRAIN_VAULT oder wähle in der Kortex-App einen aktiven Vault."); process.exit(2); }
 const claudeHomes = [], schritte = [];
-let json = false, ja = false, alles = false, entscheide = "";
+let json = false, ja = false, alles = false, entscheide = "", probelaufB = false, was = null, name = null;
 for (let i = 0; i < rest.length; i++) {
   if (rest[i] === "--json") json = true;
   else if (rest[i] === "--claude-home" && rest[i + 1]) claudeHomes.push(rest[++i]);
   else if (befehl !== "befund" && rest[i] === "--ja") ja = true;
+  else if (befehl === "phase-b" && rest[i] === "--probelauf") probelaufB = true;
+  else if (befehl === "aufraeumen" && rest[i] === "--was" && rest[i + 1]) was = rest[++i];
+  else if (befehl === "aufraeumen" && rest[i] === "--name" && rest[i + 1]) name = rest[++i];
   else if ((befehl === "phase-a" || befehl === "zurueck") && rest[i] === "--schritt" && rest[i + 1]) schritte.push(...rest[++i].split(",").map((s) => s.trim().toUpperCase()).filter(Boolean));
   else if (befehl === "zurueck" && rest[i] === "--alles") alles = true;
-  else if (["probelauf", "phase-a", "zurueck"].includes(befehl) && rest[i] === "--entscheide" && rest[i + 1] !== undefined) entscheide = rest[++i];
+  else if (["probelauf", "phase-a", "phase-b", "zurueck"].includes(befehl) && rest[i] === "--entscheide" && rest[i + 1] !== undefined) entscheide = rest[++i];
   else { console.error(`Unbekannte Option: ${rest[i]}`); process.exit(64); }
 }
 
@@ -52,7 +58,9 @@ if (befehl === "befund") {
     if (befehl === "stand") {
       const { standPhaseA } = await import("./phase-a.mjs");
       const { standText } = await import("./bericht-schritte.mjs");
-      ausgabe(standPhaseA(z), standText);
+      const { standPhaseB } = await import("./phase-b.mjs");
+      const { angebote } = await import("./aufraeumen.mjs");
+      ausgabe({ ...standPhaseA(z), phaseB: standPhaseB(z), angebote: angebote(z) }, standText);
     } else if (befehl === "protokoll") {
       const { protokollAnsicht } = await import("./kopien.mjs");
       const { protokollText } = await import("./bericht-schritte.mjs");
@@ -72,6 +80,25 @@ if (befehl === "befund") {
       const { phaseAText } = await import("./bericht-schritte.mjs");
       const r = await phaseA(z, { entscheidungen, schritte: schritte.length ? schritte : null, bestaetigt: ja });
       ausgabe(r, phaseAText);
+      process.exitCode = r.ok ? 0 : 1;
+    } else if (befehl === "phase-b") {
+      const { phaseBText, probelaufBText } = await import("./bericht-schritte.mjs");
+      if (probelaufB) {
+        const { probelaufB: probe } = await import("./probelauf-b.mjs");
+        const r = await probe(z, { entscheidungen, bestaetigt: ja });
+        ausgabe(r, probelaufBText);
+        process.exitCode = r.plan || r.ok ? 0 : 1;
+      } else {
+        const { phaseB } = await import("./phase-b.mjs");
+        const r = await phaseB(z, { entscheidungen, bestaetigt: ja });
+        ausgabe(r, phaseBText);
+        process.exitCode = r.ok ? 0 : 1;
+      }
+    } else if (befehl === "aufraeumen") {
+      const { angebote, raeume } = await import("./aufraeumen.mjs");
+      const { aufraeumenText } = await import("./bericht-schritte.mjs");
+      const r = was ? raeume(z, { was, name, bestaetigt: ja }) : { ok: true, angebote: angebote(z) };
+      ausgabe(r, aufraeumenText);
       process.exitCode = r.ok ? 0 : 1;
     } else {
       const { rueckweg } = await import("./rueckweg.mjs");

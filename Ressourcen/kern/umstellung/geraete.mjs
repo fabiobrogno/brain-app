@@ -5,19 +5,20 @@
 // ungespeichert im Vault liegen (ok, aber ohne Commit – der Befund meldet es). Phase B prüft später: alle Geräte haben phaseA, und kernVersion ist gesetzt (Freigabe-Tor).
 // Rückweg: git revert dieses Commits (ohne Commit: Dateien/Config aus der Sicherung, wenn unverändert).
 // Die Geräte-ID steht in <Support>/umstellung/geraet.json (der Befund liest sie dort, um den eigenen Mac von anderen zu unterscheiden).
-import { existsSync, readFileSync, mkdirSync, rmSync, rmdirSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, mkdirSync, rmSync, rmdirSync, writeFileSync, lstatSync } from "node:fs";
 import { join } from "node:path";
 import { hostname } from "node:os";
 import { randomBytes } from "node:crypto";
 import { kernVersion, liesConfigRoh } from "../pfade.mjs";
 import { gitLauf, gitSicherLauf } from "./ziele.mjs";
+import { nimmCommitZurueck, gitBeschaeftigt } from "./git-revert.mjs";
 import { hashDatei, hashText, sichereDatei, sicherungsPfad, schreibeAtomar, stelleHer, modusVon, echtesDateiZiel } from "./protokoll.mjs";
 
 export const id = "A8";
 const MELDUNG = "Kortex: Gerät umgestellt";
 export const titel = "Gerät im Vault vermerken";
 
-function versionKleiner(a, b) {
+export function versionKleiner(a, b) {
   const z = (v) => String(v || "").split(/[.+-]/).map((x) => (/^\d+$/.test(x) ? Number(x) : 0));
   const x = z(a), y = z(b);
   for (let i = 0; i < Math.max(x.length, y.length); i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) < (y[i] || 0); }
@@ -130,9 +131,9 @@ export function zurueck(z, ctx, undo) {
     if (h && h !== undo.headVorher && gitSicherLauf(z, ["rev-parse", "HEAD^"]).stdout.trim() === undo.headVorher && gitSicherLauf(z, ["log", "-1", "--format=%s"]).stdout.trim() === MELDUNG) commit = h;
   }
   if (commit) {
-    const r = gitSicherLauf(z, ["revert", "--no-edit", commit]);
-    if (r.status !== 0) { gitSicherLauf(z, ["revert", "--abort"]); hinweise.push("revert-fehlgeschlagen"); return { status: "nichts", hinweise }; }
-    n++;
+    const r = nimmCommitZurueck(z, commit, undo.committet || []);
+    if (r.hinweise.length) return { status: "nichts", hinweise: r.hinweise };
+    if (r.status === "ok") n++;
   } else if (undo.merkerNachherHash && hashDatei(undo.datei) === undo.merkerNachherHash && undo.merkerVorherHash === null) { rmSync(undo.datei, { force: true }); n++; }
   else if (existsSync(undo.datei) && hashDatei(undo.datei) !== undo.merkerVorherHash) hinweise.push("geraetemerker-geaendert");
   // die Config: war sie Teil des Commits, hat der Revert sie schon hergestellt (ihr Hash ist dann wieder der alte); sonst (Config hatte vorher eigene Änderungen oder kein Commit)
@@ -143,4 +144,55 @@ export function zurueck(z, ctx, undo) {
   else if (c.hashNachher && hashDatei(configDatei) !== c.hashVorher) hinweise.push("config-geaendert");
   leereDirs(z);
   return { status: n ? "ok" : "nichts", hinweise };
+}
+
+// --- Gerätemerker auffrischen (Review: Tor „macs“) ---------------------------------------------------------------------------------------------------------------------------
+// Der Merker trägt die Kortex-Version von Phase A. Damit das Tor von Phase B die Versionen anderer Macs richtig liest, erneuert jeder Sitzungsstart (session-hintergrund.mjs →
+// umstellung/geraet-aktualisieren.mjs) die Version im Merker DIESES Macs, wenn Kortex inzwischen neuer ist. Nur diese eine Datei, nur wenn es sie gibt und sie sauber ist; ein Commit nur
+// dieses Pfads über git-sicher („Kortex: Gerät aktualisiert“). Nicht während einer Umstellung (Sperre) und nie ein Fehler nach außen. → "aktualisiert" | "aktuell" | Grund
+//
+// WICHTIG (Review 2): die laufend erneuerte Version steht NICHT im Gerätemerker von A8/B3 (ein Commit daneben ließe `git revert` von A8 und B3 an einem Konflikt scheitern), sondern in einer
+// EIGENEN Datei je Mac: .kortex/versionen/<Geräte-ID>.json { kortexVersion }. Nur der Auffrischer committet sie; A8 und B3 fassen sie nie an, ihre Reverts auch nicht. Das Tor „macs“ liest
+// die Version von dort und fällt auf das Feld im Gerätemerker zurück (Merker aus der Zeit davor funktionieren weiter).
+export const versionRel = (gid) => `.kortex/versionen/${gid}.json`;
+export function liesGeraeteVersion(vault, gid) {
+  try { const j = JSON.parse(readFileSync(join(vault, versionRel(gid)), "utf8")); return j && typeof j.kortexVersion === "string" ? j.kortexVersion : null; } catch { return null; }
+}
+// Sperren mit derselben Altersregel wie ihre Schreiber: ingest.lock 30 Minuten (setzeVaultSperre), die eigene Sperre von Phase B lebender Prozess und höchstens 90 Minuten (gemeinsam/umstellung-sperre.mjs)
+function sperreAktiv(vault) {
+  try { if (Date.now() - lstatSync(join(vault, ".logs", "ingest.lock")).mtimeMs < 30 * 60_000) return true; } catch { /* keine */ }
+  try {
+    const j = JSON.parse(readFileSync(join(vault, ".logs", "umstellung-phase-b.lock"), "utf8"));
+    const alter = Date.now() - Date.parse(j.zeit);
+    if (alter >= -60_000 && alter <= 90 * 60_000) { try { process.kill(Number(j.pid), 0); return true; } catch (e) { return !!(e && e.code === "EPERM"); } }
+  } catch { /* keine */ }
+  return false;
+}
+export function aktualisiereGeraetemerker(z) {
+  try {
+    if (sperreAktiv(z.vault)) return "gesperrt";
+    if (gitBeschaeftigt(z)) return "git-beschaeftigt";
+    const gid = geraeteId(z, { anlegen: false });
+    if (!gid) return "kein-merker";
+    let m; try { m = JSON.parse(readFileSync(join(z.vault, merkerRel(gid)), "utf8")); } catch { return "kein-merker"; }
+    if (!m || typeof m !== "object" || Array.isArray(m) || typeof m.phaseA !== "string") return "kein-merker";
+    const rel = versionRel(gid), datei = join(z.vault, rel);
+    const bisher = liesGeraeteVersion(z.vault, gid) || (typeof m.kortexVersion === "string" ? m.kortexVersion : null);
+    if (bisher && !versionKleiner(bisher, kernVersion())) return "aktuell";
+    const hatGit = existsSync(join(z.vault, ".git"));
+    if (hatGit) { const s = gitLauf(z, ["status", "--porcelain", "-z", "--", rel]); if (s.status !== 0 || s.stdout.trim() !== "") return "datei-nicht-sauber"; }
+    let vorher = null; try { vorher = readFileSync(datei); } catch { /* neu */ }
+    mkdirSync(join(z.vault, ".kortex", "versionen"), { recursive: true });
+    schreibeAtomar(echtesDateiZiel(datei), JSON.stringify({ kortexVersion: kernVersion() }, null, 2) + "\n", modusVon(datei, 0o644));
+    if (hatGit) {
+      const a = gitSicherLauf(z, ["add", "--", rel]);
+      if (a.status !== 0 || gitSicherLauf(z, ["commit", "-q", "-m", "Kortex: Gerät aktualisiert", "--", rel]).status !== 0) {
+        // gescheitert: Index UND Arbeitsbaum zurück, sonst nähme die nächste Sicherung die Datei mit
+        gitSicherLauf(z, ["reset", "-q", "--", rel]);
+        if (vorher === null) { rmSync(datei, { force: true }); try { rmdirSync(join(z.vault, ".kortex", "versionen")); } catch { /* nicht leer */ } } else schreibeAtomar(echtesDateiZiel(datei), vorher, modusVon(datei, 0o644));
+        return "commit-fehlgeschlagen";
+      }
+    }
+    return "aktualisiert";
+  } catch { return "fehler"; }
 }

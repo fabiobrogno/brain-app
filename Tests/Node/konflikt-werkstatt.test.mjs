@@ -144,3 +144,16 @@ test("Gemeinsame Sperre: solange der Kern-Hintergrund (oder ein anderer Prozess)
   assert.equal(r.ergebnis, "gesendet");
   assert.equal(existsSync(datei), false, "der Studio-Abgleich gibt seine Sperre wieder frei");
 });
+
+test("Umstellung (Phase B) läuft: Abgleich, Lösen, Später und Rückgängig melden 409 „Kortex räumt gerade auf“, die Ansicht bleibt lesbar", async () => {
+  const { a, v } = await konfliktAufbauen();
+  mkdirSync(join(a, ".logs"), { recursive: true });
+  const sperre = join(a, ".logs", "umstellung-phase-b.lock");
+  writeFileSync(sperre, JSON.stringify({ pid: process.pid, zeit: new Date().toISOString() }));
+  for (const f of [() => v.gitSync({}), () => v.gitKonfliktLoesen({ auswahl: [{ pfad: "start.md", wahl: "meine" }] }), () => v.gitKonfliktAbbrechen(), () => v.gitKonfliktRueckgaengig()]) {
+    const e = await wirft(f()); assert.equal(e.status, 409); assert.match(e.message, /räumt gerade/);
+  }
+  assert.equal((await v.gitKonfliktAnsicht()).aktiv, true);
+  writeFileSync(sperre, JSON.stringify({ pid: process.pid, zeit: new Date(Date.now() - 2 * 3600_000).toISOString() })); // zu alt: zählt nicht
+  assert.equal((await v.gitKonfliktLoesen({ auswahl: [{ pfad: "start.md", wahl: "meine" }] })).ok, true);
+});

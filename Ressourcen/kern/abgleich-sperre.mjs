@@ -8,7 +8,7 @@
 // räumt der nächste weg — dabei gewinnt genau einer (rename), nie beide. Freigeben löscht nur die eigene Sperre (Marke), nie eine fremde.
 // Reine Node-Module, keine Abhängigkeiten: die Werkstatt lädt diese Datei aus dem Kern-Ordner (gemeinsam/vault.mjs), der Kern importiert sie direkt.
 import { openSync, writeSync, closeSync, readFileSync, renameSync, rmSync, statSync, linkSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { randomBytes } from "node:crypto";
 
 export const MAX_ALTER_MS = 15 * 60_000;
@@ -71,4 +71,15 @@ export function nimmSperre(datei, { art = "abgleich", pid = process.pid, jetzt =
     } catch { /* ein anderer war schneller */ }
   }
   return { ok: false, von: { pid: null, zeit: null, art: null } };
+}
+
+// Die Sperre der Umstellung (Phase B und ihr Rückweg): <Vault>/.logs/umstellung-phase-b.lock { pid, zeit } (gemeinsam/umstellung-sperre.mjs, Leser: die Werkstatt).
+// Solange sie gilt (Prozess lebt, höchstens 90 Minuten alt), fassen Sicherung, Holen und Konfliktlösung des Kerns den Vault nicht an.
+export function umstellungLaeuft(vault, { jetzt = Date.now() } = {}) {
+  let j;
+  try { j = JSON.parse(readFileSync(join(vault, ".logs", "umstellung-phase-b.lock"), "utf8")); } catch { return false; }
+  if (!j || typeof j !== "object") return false;
+  const alter = jetzt - Date.parse(j.zeit);
+  if (!(alter >= -60_000 && alter <= 90 * 60_000)) return false;
+  return lebt(Number(j.pid));
 }

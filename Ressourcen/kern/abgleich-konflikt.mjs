@@ -18,7 +18,7 @@ import { hostname } from "node:os";
 import { supportOrdner, ordner } from "./pfade.mjs";
 import { gitBefehl } from "./werkzeug.mjs";
 import { gitLauf, OHNE_HOOKS, OHNE_ZEIT, ZEIT_LOKAL, abgleichen, pushErlaubnis, PUSH_NICHT_BESTAETIGT, loescheAbgleichStand, merkeStand, aendereMerker, leseMerkerDatei, sperrDateiFuer } from "./backup.mjs";
-import { nimmSperre } from "./abgleich-sperre.mjs";
+import { nimmSperre, umstellungLaeuft } from "./abgleich-sperre.mjs";
 import { parseAufgabe } from "./aufgaben.mjs";
 
 export const MAX_ANZEIGE = 200_000;          // so viel Text zeigt die Ansicht je Fassung
@@ -258,6 +258,7 @@ function sichereArbeitsstand(vault, pfade) {
 }
 
 function mitSperre(vault, support, art, fn) {
+  if (umstellungLaeuft(vault)) throw new KonfliktFehler(409, "Kortex räumt gerade deinen Vault auf (alter Werkzeug-Ordner). Warte einen Moment, dann geht das wieder.", { art: "umstellung" });
   const s = nimmSperre(sperrDateiFuer(vault, support), { art });
   if (!s.ok) throw new KonfliktFehler(409, "Gerade läuft ein anderer Abgleich. Bitte kurz warten und noch einmal versuchen.", { art: "laeuft" });
   try { return fn(); } finally { s.freigeben(); }

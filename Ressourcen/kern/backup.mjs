@@ -5,7 +5,7 @@ import { join, isAbsolute } from "node:path";
 import { createHash } from "node:crypto";
 import { ladeConfig, supportOrdner } from "./pfade.mjs";
 import { gitBefehl } from "./werkzeug.mjs";
-import { nimmSperre } from "./abgleich-sperre.mjs";
+import { nimmSperre, umstellungLaeuft } from "./abgleich-sperre.mjs";
 const git = (v, ...a) => execFileSync(gitBefehl({ cfg: ladeConfig(v) }), ["-C", v, ...a], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
 
 // Der Sicherungsordner steht NICHT in der brain.config.json des Vaults (Vault-Daten dürfen nicht bestimmen, wohin der Kern schreibt), sondern je
@@ -173,6 +173,7 @@ const MELDUNG = {
   fehler: `Online-Sicherung hat gerade nicht geklappt. ${NAECHSTES_MAL}`,
   gesperrt: "Die Online-Sicherung wartet: Dieser Vault ist in Kortex noch nicht als deiner bestätigt (oder seine Git-Einstellungen sind nicht erlaubt). Bestätige ihn im Studio unter Einstellungen.",
   umgeleitet: "Die Online-Sicherung wartet: Die Git-Einstellungen dieses Vaults leiten das Senden woandershin um (pushurl, pushremote oder ein anderes Ziel als das bestätigte). Aus Sicherheitsgründen sende ich so nichts.",
+  umstellung: `Die Online-Sicherung wartet: Kortex räumt gerade deinen Vault auf (alter Werkzeug-Ordner). ${NAECHSTES_MAL}`,
   laeuft: `Die Online-Sicherung wartet: Gerade läuft ein anderer Abgleich (zum Beispiel im Studio). ${NAECHSTES_MAL}`,
   beschaeftigt: `Die Online-Sicherung wartet: Gerade arbeitet eine Einarbeitung (Sperre .logs/ingest.lock). ${NAECHSTES_MAL}`,
   "kein-zweig": "Die Online-Sicherung wartet: Der Vault steht auf keinem Zweig. Wähle im Studio zuerst einen Zweig.",
@@ -253,6 +254,7 @@ function upstreamSetzen(vault, lokal, z) {
 // Holen, zusammenführen, senden. → { art, ok, text, dateien? } mit art ∈ aktuell | gesendet | geholt | beides (alle ok) | konflikt | ungesichert |
 // abgelehnt | netz | anmeldung | fehler | gesperrt | umgeleitet | beschaeftigt | kein-zweig | kein-commit. Wirft nie. Sendet nur nach einem sauberen Zusammenführen.
 export function abgleichen(vault, { support = supportOrdner(), sperre = true } = {}) {
+  if (umstellungLaeuft(vault)) return { art: "umstellung", ok: false, text: MELDUNG.umstellung };
   if (!sperre) return abgleichenInnen(vault, support);
   const s = nimmSperre(sperrDateiFuer(vault, support), { art: "sicherung" }); // dieselbe Sperre wie der Abgleich im Studio: nie zwei zugleich
   if (!s.ok) return { art: "laeuft", ok: false, text: MELDUNG.laeuft };
@@ -330,6 +332,7 @@ export function holen(vault, { support = supportOrdner() } = {}) {
   let s = null;
   try {
     if (!pushErlaubnis(vault, support).ok) return { art: "nicht-bestaetigt", ok: false, text: PUSH_NICHT_BESTAETIGT };
+    if (umstellungLaeuft(vault)) return { art: "umstellung", ok: false, text: MELDUNG.umstellung };
     s = nimmSperre(sperrDateiFuer(vault, support), { art: "holen" });
     if (!s.ok) return { art: "laeuft", ok: false, text: MELDUNG.laeuft };
     return holenInnen(vault, support);

@@ -54,7 +54,7 @@ export function raeumeAlteProben(z, { tage = 7, jetzt = Date.now() } = {}) {
 
 // → { kopie, art, nachbar } – legt die Probekopie an. Reihenfolge: Klon in Temp → (nur mit ausdrücklicher Zustimmung, Entscheidung `nachbarkopie`: Klon im Nachbarordner des
 // Vaults auf demselben Laufwerk) → volle Kopie in Temp. Vor jedem Versuch wird der freie Platz geprüft (volle Kopie: Größe × 1,2 + Puffer).
-function legeKopieAn(z, wurzel, kopierer, { nachbarkopie = false } = {}) {
+export function legeKopieAn(z, wurzel, kopierer, { nachbarkopie = false } = {}) {
   const ziel = join(wurzel, "vault");
   const groesse = ordnerGroesseGrob(z.vault);
   const versuche = [
@@ -89,7 +89,7 @@ export function sichereKopieGit(kopie) {
   }
 }
 
-function schreibeProbeSupport(z, wurzel, kopie) {
+export function schreibeProbeSupport(z, wurzel, kopie) {
   const support = join(wurzel, "support");
   mkdirSync(support, { recursive: true, mode: 0o700 });
   writeFileSync(join(support, "vaults.json"), JSON.stringify({ vaults: [{ pfad: kopie, name: "Probekopie" }], aktiv: kopie }, null, 2) + "\n", { mode: 0o600 });
