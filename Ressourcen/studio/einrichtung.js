@@ -81,6 +81,7 @@ const S = {
 };
 const ki = erzeugeKi({
   vaultPfad: () => S.vault?.pfad || null,
+  vaultName: () => S.vault?.name || "",
   beiAenderung: () => { renderFuss(); renderBuehne(); },
   kopiere, melde: (text) => toast(text),
 });
@@ -180,10 +181,10 @@ function primaer() {
       if (S.sync === "abgelaufen" || S.sync === "abgelehnt") return { label: S.sync === "abgelaufen" ? TE.sicherung.abgelaufenKnopf : TE.sicherung.abgelehntKnopf, ok: true };
       return { label: TE.weiter, ok: true };
     case 3: {
-      const n = ki.offen().length;
+      // Der Ablauf „KI verbinden“ (ki-verbinden.js) sagt, was auf dem Hauptknopf steht: Weiter · Verbinden · Ohne KI weiter · Nochmal prüfen
       if (!ki.z.geladen) return { label: TE.ki.knopfOhne, ok: false };
-      if (n) return { label: TE.ki.knopf(n), ok: true };
-      return { label: ki.verbundene().length ? TE.weiter : TE.ki.knopfOhne, ok: true };
+      const f = ki.fuss();
+      return { label: f.primaer.text, ok: f.primaer.ok, lade: f.beschaeftigt };
     }
     case 4: return { label: TE.fertig.studio, ok: true };
   }
@@ -603,7 +604,11 @@ function geheZu(n) {
   if (n === 2) ladeSync();
   if (n === 3 && !ki.z.geladen) ki.lade();
 }
-function zurueck() { if (!S.busy && S.step > 0) geheZu(S.step - 1); }
+function zurueck() {
+  if (S.busy) return;
+  if (S.step === 3 && ki.zurueckTun()) return; // im Ablauf „KI verbinden“ geht Zurück erst einen Schritt dort, dann zum Assistenten
+  if (S.step > 0) geheZu(S.step - 1);
+}
 
 async function mitBusy(text, fn) {
   S.busy = text; renderFuss(); renderStepper();
@@ -634,13 +639,9 @@ async function weiter() {
     return geheZu(3);
   }
   if (S.step === 3) {
-    if (ki.offen().length) {
-      S.busy = TE.ki.arbeit(ki.offen().length); renderFuss(); renderBuehne();
-      const alle = await ki.verbinde();
-      await ki.ladePflege();
-      S.busy = null; renderFuss(); renderBuehne();
-      if (!alle) return; // Fehler stehen in den Zeilen, der Nutzer entscheidet
-    }
+    // Der Ablauf geht seine Schritte selbst (Wählen · Konto · Stufe · Prüfen); true = er ist fertig oder „Ohne KI weiter“ gilt
+    if (!ki.primaerTun()) return;
+    await ki.ladePflege();
     return geheZu(4);
   }
   if (S.step === 4) return oeffneStudio();

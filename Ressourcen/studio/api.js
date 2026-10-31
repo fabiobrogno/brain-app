@@ -95,6 +95,8 @@ export const api = {
   kernStand: () => anfrage("GET", "/api/kern/stand"),
   kernVerdrahten: ({ was, an, ersetzen, profile } = {}) => anfrage("POST", "/api/kern/verdrahten", { was, an: !!an, ...(ersetzen ? { ersetzen: true } : {}), ...(profile ? { profile } : {}) }),
   mcpSelbsttest: () => anfrage("POST", "/api/mcp/selbsttest", {}),
+  // „KI verbinden“, Prüfen: ein echter, rein lesender Aufruf über den Kortex-MCP-Server als dieses Konto (kein Modellaufruf) → { ok, vault, werkzeuge, konto }; 409 kein-zugriff, wenn das Konto den Vault nicht sehen darf
+  mcpPruefen: ({ konto } = {}) => anfrage("POST", "/api/mcp/pruefen", konto ? { konto } : {}),
   // ---- v2: Index, Typen, Ansichten, Kontext, Verlauf des Repos
   notizen: () => anfrage("GET", "/api/notizen"),
   notizKontext: (pfad) => anfrage("GET", "/api/notiz/kontext" + q({ pfad })),

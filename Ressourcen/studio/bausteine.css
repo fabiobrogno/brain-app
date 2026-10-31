@@ -271,6 +271,7 @@ input[type=checkbox]:disabled, input[type=radio]:disabled { opacity: .45; cursor
 .ka-status > span:last-child, .ka-z-status > span:last-child { overflow: hidden; text-overflow: ellipsis; }
 .ka-punkt { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--gruen); }
 [data-gefunden="true"] > span:last-child { color: var(--text-2); }
+[data-verbunden="true"] > span:last-child, [data-verbunden="true"] > .sym { color: var(--gruen); font-weight: 500; }
 .ka-haken { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--bs-rand); color: transparent; transition: background-color var(--d-1) ease-out, border-color var(--d-1) ease-out, color var(--d-1) ease-out; }
 .ka-karte:not([aria-disabled="true"]):hover .ka-haken { border-color: var(--text-3); }
 .ka-karte[aria-checked="true"] .ka-haken { background: var(--akzent); border-color: var(--akzent); color: var(--akzent-text); }

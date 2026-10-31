@@ -41,7 +41,7 @@ const S = {
   offen: new Set(), zu: new Set(), favoriten: new Set(),
   pfad: null, hash: null, schutz: false, dirty: false, konflikt: null, speichert: false, nochmal: false, bearbeitbar: true,
   pruef: new Map(), aktuellePruefung: null,
-  git: null, offline: false, gesundheit: null, rueckfragen: null, syncLaeuft: false, syncFehler: null, ki: null, kiVerbunden: false,
+  git: null, offline: false, gesundheit: null, rueckfragen: null, syncLaeuft: false, syncFehler: null, ki: null, kiGeladen: false, kiVerbunden: false,
   zuletzt: [], suche: { aktiv: false, treffer: [], auswahl: 0, frage: "" },
   infoAn: leseLokal("infoAn", true), roh: leseLokal("roh", false), breit: leseLokal("breit", false), theme: leseLokal("theme", "system"),
   ladeNr: 0, bereit: false,
@@ -1274,6 +1274,16 @@ async function stelleWiederHer(pfad, sha, zeit) {
 const stEl = $("status");
 // Kontingent (P7): aktives KI-Konto mit Mini-Balken und Konto-Menü — ein eigener Baustein (kontingent.js); die Statusleiste setzt nur seinen Knoten ein.
 const kontoLeiste = erzeugeKontoLeiste({ stand: kontingentStand(api), vaultPfad: () => S.info?.vault || null, vaultName: () => S.info?.name || "", oeffneKonten: () => oeffneKonten(), oeffneKi: () => oeffneKi() });
+// Platzhalter für den KI-Platz der Statusleiste, solange weder Programme (GET /api/ki/erkennen) noch Konten (GET /api/ki/kontingent) geladen sind
+let kiStatusEl = null;
+const kiPlatzhalter = h("span", { klasse: "st st-platzhalter", "data-st": "ki-laedt", "aria-hidden": "true" }, h("span", { klasse: "bs-skelett" }));
+function setzeKiLaedt() {
+  const stand = kontingentStand(api).state;
+  const laedt = !S.kiGeladen || (!stand.daten && !stand.fehler);
+  if (kiStatusEl) kiStatusEl.dataset.laedt = String(laedt);
+  kiPlatzhalter.hidden = !laedt;
+}
+kontingentStand(api).abonniere(() => setzeKiLaedt());
 const kontingentSlot = h("span", { klasse: "st-slot", "data-st": "platz-kontingent", "data-slot": "kontingent" }, kontoLeiste.knoten()); // display: contents (hauptfenster.css)
 function st(id, kinder, { klick, titel, klasse = "", tag = null } = {}) {
   const el = h(klick ? "button" : "span", { klasse: "st" + (klasse ? " " + klasse : ""), "data-st": id, title: titel || null, type: klick ? "button" : null, aufClick: klick || null }, ...kinder);
@@ -1386,7 +1396,10 @@ function zeichneStatus() {
   // KI steht nur EINMAL in der Leiste (P4): hat der Vault ein Konto, zeigt der Konto-Platz (kontingent.js) Konto und Kontingent und dieser Eintrag ist per CSS (bewegung.css) ausgeblendet;
   // ohne Konto ist er der einzige Knopf „KI verbinden“ (der leere Zustand des Konto-Platzes ist dann ausgeblendet).
   // Verbunden: Haken. Nicht verbunden: „verbinden“ mit Plus (kein ✕, das las sich wie „schließen“); der Klick öffnet in beiden Fällen den Dialog „KI verbinden“
-  k.push(st("claude", [kiLogo("claude", 14, { dekorativ: true }), h("span", { text: verbunden ? T.status.claude : T.status.claudeVerbinden }), symbol(verbunden ? "haken" : "plus", 12)], { klick: oeffneKi, titel: verbunden ? T.status.claudeVerbunden : T.status.claudeNicht, klasse: verbunden ? "gut" : "" }));
+  // Solange der Stand der Konten und der Programme noch nicht da ist, steht hier ein Platzhalter statt „KI verbinden“ (sonst blitzt der Knopf auf und verschwindet, wenn ein Konto da ist)
+  kiStatusEl = st("claude", [kiLogo("claude", 14, { dekorativ: true }), h("span", { text: verbunden ? T.status.claude : T.status.claudeVerbinden }), symbol(verbunden ? "haken" : "plus", 12)], { klick: () => oeffneKi(), titel: verbunden ? T.status.claudeVerbunden : T.status.claudeNicht, klasse: verbunden ? "gut" : "" });
+  k.push(kiStatusEl, kiPlatzhalter);
+  setzeKiLaedt();
   const gs = S.gesundheit;
   if (gs && gs.verfuegbar !== false) {
     const w = Array.isArray(gs.warnungen) ? gs.warnungen.length : Number(gs.warnungen) || 0;
@@ -1422,6 +1435,7 @@ async function ladeGesundheit() {
 }
 async function ladeKi() {
   try { S.ki = await api.kiErkennen(); } catch { S.ki = null; }
+  S.kiGeladen = true;
   zeichneStatus(); kiZeile.zeichne();
 }
 
@@ -1658,10 +1672,17 @@ async function oeffneRemote() {
   try { const m = await import("./remote.js"); m.oeffneRemoteDialog({ beiFertig: () => { ladeGit(); }, beiStandNeu: (stand) => { uebernehmeStand(stand); } }); }
   catch { toast("Das geht in dieser Version noch nicht.", { fehler: true }); }
 }
-async function oeffneKi() {
-  // „verbunden“ gilt erst nach geglücktem Verbinden, nicht schon beim bloßen Schließen des Dialogs
-  try { const m = await import("./willkommen.js"); m.oeffneKiDialog({ beiFertig: () => { ladeKi(); }, beiVerbunden: () => { S.kiVerbunden = true; zeichneStatus(); } }); }
-  catch { try { await api.mcpVerbinden(); S.kiVerbunden = true; toast(T.mcp.ok); zeichneStatus(); } catch (e) { toast(e.daten?.befehl ? `${T.mcp.befehl} ${e.daten.befehl}` : e.message, { fehler: !e.daten?.befehl, ms: 12000 }); } }
+// „KI verbinden“: EIN Ablauf (ki-verbinden.js) für Statusleiste, Befehlspalette, Konto-Menü, Frag-Feld und Einstellungen. start: { programm, konto, schritt, kontoNeu, beiFertig } (Einstellungen).
+// „verbunden“ gilt erst nach geglückter Prüfung, nicht schon beim bloßen Schließen des Dialogs.
+async function oeffneKi(start) {
+  const st = start && typeof start === "object" && !(start instanceof Event) ? start : {};
+  try {
+    const m = await import("./ki-verbinden.js");
+    return m.oeffneKiVerbinden({ vaultPfad: () => S.info?.vault || null, vaultName: () => S.info?.name || "", start: st,
+      beiVerbunden: () => { S.kiVerbunden = true; zeichneStatus(); },
+      beiFertig: (r) => { ladeKi(); try { st.beiFertig?.(r); } catch (e) { console.error(e); } },
+      zeigeEinstellungen: (ziel) => oeffneEinstellungenSeite({ bereich: "ki", ziel }) });
+  } catch { toast(T.umstellung.nichtGeoeffnet, { fehler: true }); }
 }
 // „KI-Konten …“ (Menü, Palette, Statusleiste): die Ansicht ist in die Einstellungen umgezogen (Bereich „KI & Konten“, einstellungen-ki.js); alle alten Wege springen dorthin.
 function oeffneKonten() { return oeffneEinstellungenSeite({ bereich: "ki", ziel: "ki-konten" }); }

@@ -11,21 +11,8 @@
 .ez-voll:has(> .kxh-uebersicht), .ez-voll:has(> .kxh-konten), .ez-voll:has(> .kxh-zugriff), .ez-voll:has(> .kxh-schutz), .ez-voll:has(> .kxh-ehrlich) { background: transparent; }
 
 /* ---------- gemeinsame kleine Teile (aus der früheren Ansicht) ---------- */
-.mini { color: var(--text-2); font-size: 12px; line-height: 1.45; margin: 0; }
-.kk-marke { flex: none; width: 16px; height: 16px; border-radius: var(--r-pille); display: inline-grid; place-items: center; border: 1.5px solid var(--text-3); color: var(--text-3); }
-.kk-marke:empty::after { content: ""; width: 6px; height: 1.5px; background: currentColor; border-radius: 1px; }
-.kk-marke[data-marke="gruen"] { border-color: var(--gruen); background: var(--gruen-weich); color: var(--gruen); }
-.kk-marke[data-marke="rot"] { border-color: var(--rot); background: var(--rot-weich); color: var(--rot); }
-.kk-marke[data-marke="warn"] { border-color: var(--gelb); background: var(--gelb-weich); color: var(--gelb); }
-.kk-karte { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; margin-bottom: 12px; border: 1px solid var(--linie-stark); border-radius: var(--r-xl); background: var(--erhoben); font-size: 12.5px; }
-.kk-karte p { margin: 0; line-height: 1.5; -webkit-user-select: text; user-select: text; }
-.kk-karte.warn { background: var(--gelb-weich); border-color: var(--gelb-rand); }
-.kk-karte.fehler { background: var(--rot-weich); border-color: var(--rot-rand); flex-direction: row; align-items: flex-start; gap: 10px; }
-.kk-karte-kopf { display: flex; align-items: center; gap: 8px; }
-.kk-karte-titel { font-weight: 650; }
 .kk-block-titel { font-weight: 600; font-size: 12.5px; }
 .kk-knoepfe { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
-.kk-fehlertext { color: var(--rot); font-size: 12px; flex-basis: 100%; }
 .kk-wahl { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; line-height: 1.4; }
 .kk-punkte { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; color: var(--text-2); font-size: 12.5px; line-height: 1.45; }
 .kx-leer { margin: 0; padding: 14px 16px; color: var(--text-2); font-size: 12.5px; line-height: 1.5; border-radius: var(--r-xl); border: 1px solid var(--linie); background: var(--erhoben); }
@@ -83,15 +70,6 @@
 .kx-nd { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 6px 0 6px; border: 1px solid var(--linie); border-radius: var(--r-l); font-size: 12.5px; background: var(--seite); }
 
 /* KI verbinden (kiAuswahl) */
-.kx-verbinden { margin-bottom: 12px; animation: e-ein var(--d) var(--ease-out) both; }
-.kx-verb-kopf { display: flex; align-items: flex-start; gap: 12px; padding: 14px 14px 0 16px; }
-.kx-verb-kopf > div { flex: 1; min-width: 0; }
-.kx-verb-kopf b { display: block; font-size: 14px; font-weight: 600; }
-.kx-verb-kopf span { display: block; margin-top: 2px; font-size: 12px; color: var(--text-2); line-height: 1.45; }
-.kx-verb-koerper { padding: 14px 16px 16px; }
-.kx-verb-fuss { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--linie); background: var(--seite); }
-.kx-verb-fehler { margin-top: 10px; padding: 10px 12px; border-radius: var(--r-l); background: var(--rot-weich); border: 1px solid var(--rot-rand); font-size: 12.5px; }
-.kx-verb-fehler p { margin: 0; }
 .kx-befehl-zeile { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; font-size: 12px; color: var(--text-2); }
 .kx-befehl-zeile code { padding: 6px 8px; border-radius: var(--r); background: var(--seite); border: 1px solid var(--linie); font-size: 11.5px; -webkit-user-select: text; user-select: text; word-break: break-all; }
 
@@ -99,16 +77,6 @@
 .kx-feld { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
 .kx-label { font-size: 12.5px; font-weight: 600; }
 .kx-ordner-anzeige { min-height: 34px; display: flex; align-items: center; padding: 0 10px; border: 1px solid var(--linie-stark); border-radius: var(--r); background: var(--seite); font-size: 12.5px; overflow-wrap: anywhere; }
-.kx-schritte { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
-.kx-schritt { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text-2); }
-.kx-schritt.fertig, .kx-schritt.laeuft { color: var(--text); }
-.kx-st { width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--linie-stark); display: grid; place-items: center; flex: none; color: #fff; }
-.kx-schritt.fertig .kx-st { background: var(--gruen); border-color: var(--gruen); }
-.kx-schritt.laeuft .kx-st { border-color: var(--akzent-weich); border-top-color: var(--akzent); animation: ez-dreh var(--d-dreh) linear infinite; }
-.kx-terminal { margin-top: 14px; padding: 12px 14px; border-radius: var(--r-l); background: #0f0f10; color: #f2f2f2; font-family: var(--mono); font-size: 12px; line-height: 1.55; word-break: break-all; }
-.kx-terminal[hidden] { display: none; }
-.kx-dollar { color: #a89fff; }
-.kx-warte { margin-top: 2px; color: #9a9a9e; }
 .kx-block { display: flex; flex-direction: column; gap: 4px; margin-top: 12px; }
 .kx-block p { margin: 0; font-size: 13px; line-height: 1.55; color: var(--text-2); }
 .kx-kasten { margin-top: 12px; padding: 10px 12px; border-radius: var(--r-l); border: 1px solid var(--linie-stark); background: var(--seite); }
@@ -246,8 +214,6 @@
   .kx-kacheln { grid-template-columns: 1fr 1fr; }
   .kx-schutz-kopf { flex-wrap: wrap; }
 }
-@media (prefers-reduced-motion: reduce) { .kx-verbinden, .kx-schritt.laeuft .kx-st { animation: none; } }
-:root[data-bewegung="reduziert"] .kx-verbinden, :root[data-bewegung="reduziert"] .kx-schritt.laeuft .kx-st { animation: none; }
 .kxh-aktivitaet > .kx-leer, .kxh-pflege > .kx-leer, .kxh-zugriff > .kx-leer, .kxh-schutz > .kx-leer { border: 0; background: transparent; border-radius: 0; }
 .kx-genau { margin-top: 2px; }
 .kx-genau > summary { cursor: pointer; font-size: 12px; color: var(--text-2); }

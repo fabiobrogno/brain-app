@@ -10,25 +10,22 @@ import { relativ, datumZeit } from "./format.js";
 import { fuehreRueckgaengigAus, fuehreWiederherstellenAus, zeilenText } from "./mitteilungen.js";
 import { TM } from "./texte-mitteilungen.js";
 import { symbol, GROESSE } from "./symbole.js";
-import { knopf as baueKnopf, segment, umschalter, auswahl, textfeld, hakenFeld, kiAuswahl, leerBlock, skelett, einstellMarke } from "./bausteine.js";
+import { knopf as baueKnopf, segment, umschalter, auswahl, textfeld, hakenFeld, leerBlock, skelett, einstellMarke } from "./bausteine.js";
 import { oeffneMenue } from "./menue.js";
 import { kiLogo, kiLogoId, kiLogoName, kiKatalog } from "./ki-logos.js";
 import { TK } from "./texte-konten.js";
 import { TKE as T } from "./texte-ki-einstellungen.js";
-import { kontingentStand, kontingentBlock, kontoAnsicht } from "./kontingent.js";
+import { kontingentStand, kontingentBlock, kontoAnsicht, kontingentEinwilligung } from "./kontingent.js";
 import { TKO } from "./texte-kontingent.js";
 import { popoverOffen } from "./popover.js";
+import { baueAnmeldung, pruefeKontoAnmeldung, ANMELDBAR } from "./ki-verbinden.js";
 
 export const STUFEN = ["gesperrt", "lesen", "posteingang", "erweitert"];
 const NEUE = ["gesperrt", "lesen", "posteingang"];
-const ANMELDBAR = ["claude", "codex"];
-export const ANMELDE_MS = 10 * 60_000; // Orca: Claude-Anmeldung läuft nach 10 Minuten ab
-const TAKT_MS = 3000;
 
 const stufeName = (s) => TK.stufen[s]?.name || s;
 const gleich = (a, b) => String(a || "").normalize("NFC").toLowerCase() === String(b || "").normalize("NFC").toLowerCase();
 const initiale = (n) => (String(n || "?").trim()[0] || "?").toUpperCase();
-const slug = (n) => String(n).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/ß/g, "ss").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 24) || "konto"; // wie werkstatt/konten.mjs#ordnerKennzeichen
 const programmName = (id) => kiLogoName(id) || id;
 const vaultFarbe = (v) => (/^#[0-9a-fA-F]{6}$/.test(v?.farbe || "") ? v.farbe : null);
 const fehlerSatz = (e) => (e?.status === 0 ? TK.fehlerAllgemein : e?.message || TK.fehlerAllgemein);
@@ -55,7 +52,7 @@ export function erzeugeKi(o) {
   const S = {
     konten: null, kontenRoh: null, kontenFehler: null, programme: null, programmeFehler: null, suchtProgramme: false, anm: new Map(), pflege: {}, pflegeFehler: {}, pflegeEntwurf: {},
     kern: null, kernFehler: null, kernBusy: null, kernFehlerText: {}, kernFrageErsetzen: false, profilWahl: null,
-    frage: null, frageFehler: null, verbindenOffen: false, verbindenWahl: [], umbenenne: null, namensFehler: null, beschaeftigt: false, meldung: null, warnung: null, tot: false,
+    frage: null, frageFehler: null, umbenenne: null, namensFehler: null, beschaeftigt: false, meldung: null, warnung: null, tot: false,
     aktivFilter: "alle", aktListe: null, aktFehler: null, aktAlle: false, aktZurueck: new Set(), wartend: new Set(), uberwacht: new Set(),
   };
   const ktStand = kontingentStand(api); // Kontingent je Konto (P7, kontingent.js): derselbe Stand wie in der Statusleiste
@@ -154,7 +151,6 @@ export function erzeugeKi(o) {
     catch (e) { if (zu()) return; S.programmeFehler = e; }
     S.suchtProgramme = false;
     if (zu()) return;
-    auswahlBaustein?.setzeErkennung(erkennungsKarte());
     zeichne("konten"); zeichne("uebersicht"); zeichneArbeit();
   }
   async function ladeKern() {
@@ -194,12 +190,7 @@ export function erzeugeKi(o) {
   async function pruefeKonto(kt) {
     if (!ANMELDBAR.includes(kt.programm) || kt.vorhanden === false) return;
     S.anm.set(kt.id, { zustand: "prueft" });
-    try {
-      const st = await api.kiAnmeldestatus(kt.programm, kt.standard ? null : kt.pfad);
-      const z = st?.zustand === "angemeldet" || st?.zustand === "nicht-angemeldet" ? st.zustand : "unbekannt";
-      const r = await api.kiAnmeldung(kt.id, z);
-      S.anm.set(kt.id, { zustand: r.zustand, zuletzt: r.zuletzt || null });
-    } catch { S.anm.set(kt.id, { zustand: "unbekannt" }); }
+    S.anm.set(kt.id, await pruefeKontoAnmeldung(api, kt));
     return S.anm.get(kt.id);
   }
   async function pruefeAnmeldungen() {
@@ -252,63 +243,21 @@ export function erzeugeKi(o) {
   };
 
   // ================================================================== Programme und Konten
-  let verbKnopf = null, panel = null;
   const kopfKnoepfe = () => {
     const suchen = baueKnopf({ text: T.programme.neuSuchen, symbol: "sync", variante: "leise", groesse: "s", titel: T.programme.neuSuchenTitel, daten: { "data-aktion": "neu-suchen" }, aufKlick: () => neuSuchen() });
-    const verb = baueKnopf({ text: T.programme.verbinden, symbol: "plus", groesse: "s", daten: { "data-aktion": "ki-verbinden-auf", "aria-expanded": "false" }, aufKlick: () => verbindenUmschalten() });
-    verbKnopf = verb;
+    const verb = baueKnopf({ text: T.programme.verbinden, symbol: "plus", groesse: "s", daten: { "data-aktion": "ki-verbinden-auf" }, aufKlick: () => oeffneVerbinden() });
     return h("span", { klasse: "kx-kopf-knoepfe" }, suchen, verb);
   };
   async function neuSuchen() {
     await Promise.all([ladeProgramme(true), ladeKern(), ladeKonten(), ladeFrage()]);
   }
 
-  // ---- KI verbinden (kiAuswahl)
-  let auswahlBaustein = null;
-  function verbindenUmschalten(an = !S.verbindenOffen) {
-    S.verbindenOffen = an;
-    if (!an) panel = null;
-    verbKnopf?.setAttribute("aria-expanded", String(an));
-    zeichne("konten");
-    if (an) requestAnimationFrame(() => hosts.get("konten")?.querySelector("[data-kx=verbinden]")?.scrollIntoView({ block: "nearest" }));
-  }
-  function erkennungsKarte() {
-    if (!S.programme) return null;
-    return Object.fromEntries(S.programme.programme.map((p) => [p.id, { gefunden: true, version: p.version }]));
-  }
-  function verbindenPanel() {
-    if (panel) return panel;
-    const knopfOk = baueKnopf({ text: T.programme.verbindenKnopf1, variante: "primaer", groesse: "s", disabled: true, daten: { "data-aktion": "ki-verbinden-ok" } });
-    const fehler = h("div", { klasse: "kx-verb-fehler", role: "alert", hidden: true });
-    auswahlBaustein = kiAuswahl({ erkennung: erkennungsKarte(), wert: S.verbindenWahl, mehrfach: true, waehlbar: (e) => e.verbindbar, label: T.programme.verbindenTitel,
-      aufAenderung: (ids) => { S.verbindenWahl = ids; knopfOk.disabled = !ids.length; knopfOk.querySelector(".bs-knopf-text").textContent = ids.length > 1 ? T.programme.verbindenKnopfN(ids.length) : T.programme.verbindenKnopf1; } });
-    knopfOk.disabled = !S.verbindenWahl.length;
-    const abbruch = baueKnopf({ text: T.programme.abbrechen, variante: "leise", groesse: "s", aufKlick: () => verbindenUmschalten(false) });
-    knopfOk.addEventListener("click", async () => {
-      const ids = [...S.verbindenWahl];
-      if (!ids.length) return;
-      auswahlBaustein.sperre(true); fehler.hidden = true; fehler.replaceChildren();
-      let ok = 0; const probleme = [];
-      for (const id of ids) {
-        try { await api.mcpVerbinden({ ziel: id }); ok++; }
-        catch (e) { probleme.push({ id, e }); }
-      }
-      auswahlBaustein.sperre(false);
-      if (ok) { toast(T.programme.verbindenOk(ok)); if (ids.includes("claude") && !probleme.some((x) => x.id === "claude")) kontext.beiVerbunden?.(); }
-      if (probleme.length) {
-        fehler.hidden = false;
-        fehler.replaceChildren(...probleme.map(({ id, e }) => h("div", {}, h("p", { text: T.programme.verbindenFehler(programmName(id), e?.message || TK.fehlerAllgemein) }),
-          e?.daten?.befehl ? h("div", { klasse: "kx-befehl-zeile" }, h("span", { text: T.programme.verbindenBefehl }), h("code", { klasse: "mono", text: e.daten.befehl })) : null)));
-      } else { S.verbindenWahl = []; verbindenUmschalten(false); }
-      await Promise.all([ladeKonten(), ladeProgramme(false)]);
-    });
-    panel = h("div", { klasse: "kx-verbinden ez-karte", "data-kx": "verbinden" },
-      h("div", { klasse: "kx-verb-kopf" }, h("div", {}, h("b", { text: T.programme.verbindenTitel }), h("span", { text: T.programme.verbindenText })),
-        baueKnopf({ symbol: "schliessen", variante: "leise", groesse: "s", label: T.programme.verbindenZu, aufKlick: () => verbindenUmschalten(false) })),
-      h("div", { klasse: "kx-verb-koerper" }, auswahlBaustein.el, fehler), h("div", { klasse: "kx-verb-fuss" }, abbruch, knopfOk));
-    return panel;
-  }
-
+  // ---- KI verbinden: EIN Ablauf (ki-verbinden.js), derselbe wie in der Statusleiste, der Befehlspalette und im Assistenten. Hier nur der Einstieg; danach wird neu gelesen.
+  const oeffneVerbinden = (start = {}) => {
+    const nachher = () => { if (!zu()) Promise.all([ladeKonten(), ladeProgramme(false)]); };
+    if (kontext.oeffneKi) return kontext.oeffneKi({ ...start, beiFertig: nachher });
+    return null;
+  };
   // ---- Kontingent je Konto (P7): zwei Balken mit Prozent und Rücksetzzeit; ohne Werte der Zustand mit dem nächsten Schritt
   const textKnopf = (text, id, kt, aufKlick, extra = {}) => h("button", { klasse: "knopf-text", type: "button", "data-aktion": id, "data-konto": kt.id, text, aufClick: aufKlick, ...extra });
   function kontingentSpalte(kt) {
@@ -327,22 +276,7 @@ export function erzeugeKi(o) {
   }
   // Einschalten: erst der Klick auf „Kontingent anzeigen …“, dann dieser Dialog. Orte außerhalb von Kortex (System-Standard ~/.claude u. a.) brauchen zusätzlich die Bestätigung hier in der Seite.
   function kontingentEinschalten(kt, e) {
-    const verwaltet = e?.verwaltet === true || kt.verwaltet === true;
-    const E = TKO.einwilligung, B = TKO.bestaetigung;
-    const punkte = [E.punkte.keinToken, E.punkte.nurZahlen, E.punkte.kette, E.punkte.rueckweg];
-    const rumpf = [h("ul", { klasse: "kt-liste", "data-kt": "punkte" }, punkte.map((t) => h("li", { text: t })))];
-    if (!verwaltet) rumpf.push(h("div", { klasse: "kk-karte warn", role: "note", "data-kt": "bestaetigung" }, h("b", { klasse: "kk-karte-titel", text: B.titel(kt.name) }), h("p", { text: B.satz(kt.ordner || kt.pfad || "") }),
-      h("ul", { klasse: "kt-liste" }, [B.punkte.sicherung, B.punkte.eintrag, B.punkte.rueckweg].map((t) => h("li", { text: t })))));
-    const ja = baueKnopf({ text: verwaltet ? E.ja : B.ja, variante: "primaer", aktion: "kt-einschalten", aufKlick: async () => {
-      d.schliessen();
-      try {
-        const r = await api.kiStatuszeile({ konto: kt.id, an: true, bestaetigt: !verwaltet });
-        toast(r?.aktion === "repariert" ? E.repariert(kt.name) : r?.aktion === "neu-verknuepft" ? E.neuVerknuepft(kt.name) : r?.aktion === "schon-da" ? E.schonDa(kt.name) : `${E.fertig(kt.name)}${r?.kette ? ` ${E.fertigKette}` : ""}`, { ms: 6000 });
-      } catch (err) { toast(err?.status === 0 ? TKO.fehlerSchalten : (err?.message || TKO.fehlerSchalten), { fehler: true, ms: 9000 }); }
-      await ktStand.holen(); if (!zu()) behalteFokus(() => zeichne("konten"));
-    } });
-    const d = eigenerDialog({ titel: E.titel(kt.name), satz: E.satz, rumpf, knoepfe: [baueKnopf({ text: E.abbrechen, aufKlick: () => d.schliessen() }), ja] });
-    d.box.dataset.dialog = "kt-einwilligung";
+    kontingentEinwilligung({ api, kt, eintrag: e, dialogFn: eigenerDialog, nachher: async () => { await ktStand.holen(); if (!zu()) behalteFokus(() => zeichne("konten")); } });
   }
   function kontingentAusschalten(kt) {
     const ja = baueKnopf({ text: TKO.entfernenJa, variante: "primaer", aktion: "kt-ausschalten", aufKlick: async () => {
@@ -390,10 +324,8 @@ export function erzeugeKi(o) {
     else eintraege.push({ leer: T.entfernen.nichtMoeglich });
     oeffneMenue(ev.currentTarget, eintraege, { rechts: true });
   }
-  async function verbindeKonto(kt) {
-    try { await api.mcpVerbinden({ ziel: kt.programm, konto: kt.id }); toast(T.programme.verbindenOk(1)); if (kt.programm === "claude") kontext.beiVerbunden?.(); await ladeKonten(); }
-    catch (e) { toast(e?.daten?.befehl ? `${T.programme.verbindenBefehl} ${e.daten.befehl}` : (e?.message || TK.fehlerAllgemein), { fehler: !e?.daten?.befehl, ms: 12000 }); }
-  }
+  // „Verbinden“ an einem Konto: derselbe Ablauf, beim Konto (Anmeldung prüfen) vorgewählt
+  const verbindeKonto = (kt) => oeffneVerbinden({ konto: kt.id, schritt: ANMELDBAR.includes(kt.programm) ? "konto" : "stufe" });
 
   function kontoZeile(kt) {
     const z = anmZustand(kt);
@@ -436,12 +368,12 @@ export function erzeugeKi(o) {
       fund ? h("span", { klasse: "kx-pfad" }, h("span", { klasse: "mono", title: fund.pfad || "", text: fund.pfad ? kurz(fund.pfad) : "" }), fund.version ? h("span", { text: ` · ${T.programme.version(fund.version)}` }) : null)
         : h("span", { klasse: "kx-pfad" }, T.programme.nichtGefunden));
     const kopf = h("div", { klasse: "kx-prog-kopf" }, logoKachel(id, 36), kopfText,
-      fund && ANMELDBAR.includes(id) ? baueKnopf({ text: T.programme.kontoHinzu, symbol: "plus", groesse: "s", daten: { "data-aktion": "konto-hinzu", "data-programm": id }, label: T.programme.kontoHinzuFuer(programmName(id)), aufKlick: () => kontoNeuDialog(id) }) : null);
+      fund && ANMELDBAR.includes(id) ? baueKnopf({ text: T.programme.kontoHinzu, symbol: "plus", groesse: "s", daten: { "data-aktion": "konto-hinzu", "data-programm": id }, label: T.programme.kontoHinzuFuer(programmName(id)), aufKlick: () => oeffneVerbinden({ programm: id, schritt: "konto", kontoNeu: true }) }) : null);
     const karte = h("section", { klasse: "kx-prog", "data-programm": id, "data-gefunden": String(!!fund) }, kopf);
     if (liste.length) for (const kt of liste) karte.append(kontoZeile(kt));
     else if (fund) {
       karte.append(h("div", { klasse: "kx-zeile kx-leer-zeile" }, h("span", { klasse: "kx-sub", text: T.programme.ohneKonto }),
-        eintrag?.verbindbar ? baueKnopf({ text: T.programme.verbindenKnopf, groesse: "s", daten: { "data-aktion": "programm-verbinden", "data-programm": id }, aufKlick: async () => { try { await api.mcpVerbinden({ ziel: id }); toast(T.programme.verbindenOk(1)); await Promise.all([ladeKonten(), ladeProgramme(false)]); } catch (e) { toast(e?.daten?.befehl ? `${T.programme.verbindenBefehl} ${e.daten.befehl}` : (e?.message || TK.fehlerAllgemein), { fehler: !e?.daten?.befehl, ms: 12000 }); } } }) : h("span", { klasse: "kx-sub", text: T.programme.nichtVerbindbar })));
+        eintrag?.verbindbar ? baueKnopf({ text: T.programme.verbindenKnopf, groesse: "s", daten: { "data-aktion": "programm-verbinden", "data-programm": id }, aufKlick: () => oeffneVerbinden({ programm: id, schritt: ANMELDBAR.includes(id) ? "konto" : "stufe" }) }) : h("span", { klasse: "kx-sub", text: T.programme.nichtVerbindbar })));
     }
     if (!fund && liste.length) karte.append(h("div", { klasse: "kx-hinweis", "data-kx": "hinweis-nicht-gefunden" }, symbol("info", GROESSE.text), h("span", { text: T.programme.nichtGefundenText })));
     return karte;
@@ -449,7 +381,6 @@ export function erzeugeKi(o) {
 
   zeichner.konten = (el) => {
     const teile = [];
-    if (S.verbindenOffen) teile.push(verbindenPanel());
     if (S.programmeFehler && !S.programme) {
       teile.push(leerBlock({ symbol: "warnung", titel: T.programme.fehler, aktion: { text: T.programme.neuSuchen, tun: () => neuSuchen() }, daten: { "data-kx": "programme-fehler" } }));
       el.replaceChildren(...teile); return;
@@ -489,41 +420,6 @@ export function erzeugeKi(o) {
     else { try { window.open(url, "_blank", "noopener,noreferrer"); } catch { /* ohne Fenster */ } }
   }
 
-  // ---- Konto hinzufügen
-  function kontoNeuDialog(programm) {
-    const pname = programmName(programm);
-    let stufe = "gesperrt";
-    const fehlerEl = h("div", { klasse: "kk-fehlertext", role: "alert", hidden: true, "data-kx": "neu-fehler" });
-    const ordnerEl = h("span", { klasse: "mono", "data-kx": "neu-ordner" });
-    const name = textfeld({ klasse: "kx-eingabe", wert: "", platzhalter: T.neu.namePlatzhalter, label: T.neu.name, maxlaenge: 60, daten: { "data-kx": "neu-name" } });
-    const zeigeOrdner = () => { ordnerEl.textContent = `Kortex/ki-konten-ordner/${programm}-${slug(name.input.value || "konto")}`; };
-    name.input.addEventListener("input", () => { zeigeOrdner(); fehlerEl.hidden = true; });
-    zeigeOrdner();
-    const seg = segment({ optionen: [{ wert: "gesperrt", text: TK.stufen.gesperrt.name }, { wert: "lesen", text: TK.stufen.lesen.name }], wert: stufe, label: T.neu.anfang, daten: { "data-kx": "neu-stufe" }, aufAenderung: (s) => { stufe = s; } });
-    const ok = baueKnopf({ text: T.neu.anlegen, variante: "primaer", aktion: "konto-neu-ok", aufKlick: async () => {
-      const n = name.input.value.replace(/\s+/g, " ").trim();
-      if (!n) { fehlerEl.textContent = T.neu.leer; fehlerEl.hidden = false; name.input.focus(); return; }
-      if (n.length > 40) { fehlerEl.textContent = T.neu.zuLang; fehlerEl.hidden = false; return; }
-      ok.setAttribute("aria-busy", "true");
-      try {
-        const r = await api.kiKontoNeu({ programm, name: n, stufe });
-        uebernimm(r);
-        d.schliessen();
-        toast(T.neu.angelegt(n));
-        behalteFokus(zeichneAlle);
-        const neu = kontoMit(r.neuesKonto?.id);
-        if (neu) { pruefeKonto(neu).then(() => { zeichne("konten"); zeichne("uebersicht"); }); anmeldenDialog(neu); }
-        ladePflege();
-      } catch (e) { ok.removeAttribute("aria-busy"); fehlerEl.textContent = fehlerSatz(e); fehlerEl.hidden = false; }
-    } });
-    const d = eigenerDialog({ titel: T.neu.titel(pname), satz: T.neu.text, rumpf: [
-      h("div", { klasse: "kx-feld" }, h("span", { klasse: "kx-label", text: T.neu.name }), name.el),
-      h("div", { klasse: "kx-feld" }, h("span", { klasse: "kx-label", text: T.neu.ordner }), h("div", { klasse: "kx-ordner-anzeige" }, ordnerEl), h("p", { klasse: "mini", text: T.neu.ordnerText })),
-      h("div", { klasse: "kx-feld" }, h("span", { klasse: "kx-label", text: T.neu.anfang }), seg), fehlerEl,
-    ], knoepfe: [baueKnopf({ text: T.neu.abbrechen, aufKlick: () => d.schliessen() }), ok] });
-    d.box.dataset.dialog = "konto-neu";
-  }
-
   // ---- Konto entfernen
   function entfernenDialog(kt) {
     const ok = baueKnopf({ text: T.entfernen.ja, variante: "gefahr", aktion: "konto-entfernen-ja", aufKlick: async () => {
@@ -538,56 +434,17 @@ export function erzeugeKi(o) {
     d.box.dataset.dialog = "konto-entfernen";
   }
 
-  // ---- Anmelden: das Programm öffnet das Terminal, Kortex fragt nur, ob die Anmeldung da ist
+  // ---- Anmelden: das Programm öffnet das Terminal, Kortex fragt nur, ob die Anmeldung da ist. Der Ablauf selbst (Schritte, Befehl, Abfrage) liegt in ki-verbinden.js (baueAnmeldung):
+  // derselbe wie im Schritt „Konto“ von „KI verbinden“.
   function anmeldenDialog(kt) {
     const name = `${programmName(kt.programm)} · ${kt.name}`;
-    const st = { schritt: 1, fehler: null, ende: false, versuch: 0 };
-    let timer = 0, frist = 0, laeuft = false;
-    const schritte = [T.anmeldung.schritt1, T.anmeldung.schritt2, T.anmeldung.schritt3];
-    const liste = h("ul", { klasse: "kx-schritte", "data-kx": "schritte" });
-    const befehl = h("div", { klasse: "kx-terminal", "data-kx": "befehl", hidden: true });
-    const fehlerEl = h("div", { klasse: "kk-karte fehler", role: "alert", hidden: true, "data-kx": "anmelde-fehler" });
-    const abbruch = baueKnopf({ text: T.anmeldung.abbrechen, aktion: "anmelden-abbrechen", aufKlick: () => d.schliessen() });
-    const jetzt = baueKnopf({ text: T.anmeldung.jetztPruefen, variante: "primaer", aktion: "anmelden-pruefen", aufKlick: () => pruefe(true) });
-    const nochmal = baueKnopf({ text: T.anmeldung.nochmal, variante: "primaer", aktion: "anmelden-nochmal", hidden: true, aufKlick: () => starte() });
-    const zeichneSchritte = () => {
-      liste.replaceChildren(...schritte.map((t, i) => {
-        const nr = i + 1, fertig = st.schritt > nr || st.ende, aktiv = !st.fehler && !st.ende && st.schritt === nr;
-        return h("li", { klasse: `kx-schritt${fertig ? " fertig" : aktiv ? " laeuft" : ""}`, "data-s": String(nr) }, h("span", { klasse: "kx-st", "aria-hidden": "true" }, fertig ? symbol("haken", 12) : null), h("span", { text: nr === 1 && st.schritt === 1 && !st.fehler && !st.ende ? T.anmeldung.schritt1Wartet : t }));
-      }));
-      nochmal.hidden = !st.fehler && !st.zeit; jetzt.hidden = !!st.fehler || !!st.zeit || st.schritt < 2 || st.ende;
-      fehlerEl.hidden = !st.fehler; if (st.fehler) fehlerEl.replaceChildren(marke("rot"), h("p", { text: st.fehler }));
-    };
-    const stoppe = () => { clearTimeout(timer); timer = 0; S.uberwacht.delete(stoppe); };
-    S.uberwacht.add(stoppe);
-    async function pruefe(manuell = false) {
-      if (laeuft || st.ende) return;
-      laeuft = true;
-      if (st.schritt === 2) { st.schritt = 3; zeichneSchritte(); }
-      try {
-        const r = await pruefeKonto(kt);
-        if (r?.zustand === "angemeldet") { st.ende = true; stoppe(); zeichneSchritte(); setTimeout(() => d.schliessen(), 700); toast(T.anmeldung.fertig(name)); zeichne("konten"); zeichne("uebersicht"); return; }
-      } finally { laeuft = false; }
-      if (st.ende) return;
-      st.schritt = 2; zeichneSchritte();
-      if (Date.now() > frist) { st.zeit = true; stoppe(); zeichneSchritte(); fehlerEl.hidden = false; fehlerEl.replaceChildren(marke("warn"), h("p", { text: T.anmeldung.zeit })); return; }
-      if (!manuell || !timer) timer = setTimeout(() => { timer = 0; pruefe(); }, TAKT_MS);
-    }
-    async function starte() {
-      stoppe(); st.fehler = null; st.zeit = false; st.schritt = 1; st.ende = false; zeichneSchritte();
-      try {
-        const r = await api.kiAnmelden(kt.programm, kt.standard ? null : kt.pfad);
-        const zeile = r?.anzeige || r?.befehl;
-        if (zeile) { befehl.hidden = false; befehl.replaceChildren(h("div", {}, h("span", { klasse: "kx-dollar", text: "$ " }), h("span", { text: zeile })), h("div", { klasse: "kx-warte", text: T.anmeldung.wartetAuf })); }
-        st.schritt = 2; frist = Date.now() + ANMELDE_MS; zeichneSchritte();
-        timer = setTimeout(() => { timer = 0; pruefe(); }, TAKT_MS); S.uberwacht.add(stoppe);
-      } catch (e) { st.fehler = e?.message || T.anmeldung.fehlerStart; zeichneSchritte(); }
-    }
-    const d = eigenerDialog({ titel: T.anmeldung.dialogTitel(name), satz: T.anmeldung.dialogText, rumpf: [liste, befehl, h("p", { klasse: "mini", text: T.anmeldung.hinweisBrowser }), fehlerEl],
-      knoepfe: [abbruch, nochmal, jetzt], beiSchliessen: () => stoppe() });
+    const a = baueAnmeldung({ api, kt, pruefe: (k) => pruefeKonto(k).then(() => S.anm.get(k.id)),
+      beiAngemeldet: () => { setTimeout(() => d.schliessen(), 700); toast(T.anmeldung.fertig(name)); zeichne("konten"); zeichne("uebersicht"); }, beiAbbruch: () => d.schliessen() });
+    S.uberwacht.add(a.stoppe);
+    const d = eigenerDialog({ titel: T.anmeldung.dialogTitel(name), satz: T.anmeldung.dialogText, rumpf: [a.liste, a.befehl, a.hinweis, a.fehlerEl],
+      knoepfe: [a.knoepfe.abbruch, a.knoepfe.nochmal, a.knoepfe.jetzt], beiSchliessen: () => { a.stoppe(); S.uberwacht.delete(a.stoppe); } });
     d.box.dataset.dialog = "anmelden";
-    zeichneSchritte();
-    starte();
+    a.start();
   }
 
   // ================================================================== Zugriff (Matrix)
@@ -1024,5 +881,5 @@ export function erzeugeKi(o) {
     for (const d of [...offeneDialoge]) { try { d.schliessen(); } catch { /* egal */ } }
     hosts.clear();
   }
-  return { host, start, ende, kopfKnoepfe, neuSuchen, verbindenUmschalten, zeichne, zeichneAlle, state: S };
+  return { host, start, ende, kopfKnoepfe, neuSuchen, oeffneVerbinden, zeichne, zeichneAlle, state: S };
 }

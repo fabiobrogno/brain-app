@@ -89,4 +89,8 @@
    Ohne Konto ist dieser Eintrag der einzige Knopf; der leere Zustand des Konto-Platzes („KI verbinden …“) ist dann ausgeblendet. */
 #status:has(.kt-leiste[data-konto]:not([hidden])) [data-st="claude"] { display: none; }
 .kt-leiste[data-zustand="leer"] { display: none; }
+/* Solange Programme und Konten noch laden, steht statt „KI verbinden“ ein ruhiger Platzhalter (kein Aufblitzen und Verschwinden, wenn ein Konto da ist) */
+.st[data-st="claude"][data-laedt="true"] { display: none; }
+.st-platzhalter { display: inline-flex; align-items: center; }
+.st-platzhalter .bs-skelett { display: block; width: 84px; height: 10px; border-radius: var(--r-pille); background: linear-gradient(90deg, var(--linie) 0%, var(--linie-stark) 50%, var(--linie) 100%); background-size: 200% 100%; } /* auf der Statusleiste (--seite) braucht es mehr Kontrast als --hover */
 .st { white-space: nowrap; min-width: 0; }

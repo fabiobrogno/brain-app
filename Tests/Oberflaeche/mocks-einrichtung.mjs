@@ -116,6 +116,14 @@ export async function mockeEinrichtung(page, o = {}) {
         if (body.zugriff && body.zugriff !== "gesperrt" && z.gesperrteKonten?.includes(body.konto) && body.zugriffAusdruecklich !== true) return json(200, { ok: true, zugriffGesetzt: false, zugriffGrund: "vom-nutzer-gesperrt" });
         return json(200, { ok: true, zugriffGesetzt: true });
       }
+      // „KI verbinden“ (ki-verbinden.js): Anmeldestand je Konto (z.login), Prüfen über den Kortex-Server (z.pruefenFehler = { status, fehler, art } lässt es scheitern)
+      case "/api/ki/anmeldestatus": return json(200, { zustand: z.login?.[body.ordner ? `ordner:${body.ordner}` : `std:${body.programm}`] || "angemeldet" });
+      case "/api/ki/anmeldung": return json(200, { zustand: body.zustand, zuletzt: null });
+      case "/api/mcp/pruefen": {
+        await warte(z.verzoegerung);
+        if (z.pruefenFehler) return json(z.pruefenFehler.status, { fehler: z.pruefenFehler.fehler, ...(z.pruefenFehler.art ? { art: z.pruefenFehler.art } : {}) });
+        return json(200, { ok: true, vault: z.vault?.name || "Kortex", werkzeuge: 7, konto: body.konto || null });
+      }
       case "/api/ki/pflege":
         if (req.method() === "GET") return json(200, { vault: url.searchParams.get("vault"), dienst: { eingerichtet: !!z.dienstFuerVault, fuerVault: !!z.dienstFuerVault } });
         z.pflege = body; return json(200, { ok: true });

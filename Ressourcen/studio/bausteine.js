@@ -559,15 +559,17 @@ export function einstellRegler({ min, max, schritt = 1, wert, label, einheit = "
 // im Suchfeld filtert Tippen, ↓ springt in die Liste; in der Liste ↑↓ Pos1 Ende bewegen, Leertaste/Enter wählt, Tippen geht zurück ins Suchfeld, Esc leert die Suche.
 const kiNorm = (s) => String(s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[\s_-]+/g, "");
 
-export function kiAuswahl({ erkennung = null, wert = [], mehrfach = true, waehlbar = () => true, aufAenderung, label = TB.ki.label, beliebteAnzahl = 8, daten = {}, klasse = "" } = {}) {
+export function kiAuswahl({ erkennung = null, wert = [], mehrfach = true, waehlbar = () => true, aufAenderung, label = TB.ki.label, beliebteAnzahl = 8, daten = {}, klasse = "", verbunden = [] } = {}) {
   const katalog = kiKatalog();
   const index = new Map(katalog.map((e, i) => [e.id, i]));
-  const S = { erkennung, auswahl: new Set(wert.filter((id) => index.has(id))), q: "", offen: false, obenIds: [], obenGefunden: false, gesperrt: false };
+  const S = { erkennung, auswahl: new Set(wert.filter((id) => index.has(id))), q: "", offen: false, obenIds: [], obenGefunden: false, gesperrt: false, verbunden: new Set(verbunden) };
   const fund = (e) => (S.erkennung ? S.erkennung[e.id] : null);
   const gefunden = (e) => fund(e)?.gefunden === true;
   const frei = (e) => !!waehlbar(e);
   const listeWert = () => katalog.map((e) => e.id).filter((id) => S.auswahl.has(id));
+  const istVerbunden = (e) => S.verbunden.has(e.id);
   const statusText = (e) => {
+    if (istVerbunden(e)) return TB.ki.verbunden; // schon mit Kortex verbunden (nur Anzeige; wählbar bleibt es, etwa um ein Konto oder die Stufe zu ändern)
     if (!S.erkennung) return TB.ki.sucht;
     if (!gefunden(e)) return TB.ki.nichtDa;
     if (!frei(e)) return TB.ki.gefundenNichtVerbindbar;
@@ -605,7 +607,7 @@ export function kiAuswahl({ erkennung = null, wert = [], mehrfach = true, waehlb
       aufClick: () => wechsle(e.id), aufKeydown: (ev) => kartenTaste(ev) },
       h("span", { klasse: "ka-kachel" }, kiLogo(e.id, 26, { dekorativ: true })),
       h("span", { klasse: "ka-text" }, h("span", { klasse: "ka-name", text: e.name }),
-        h("span", { klasse: "ka-status", "data-gefunden": String(gefunden(e)) }, gefunden(e) ? h("span", { klasse: "ka-punkt", "aria-hidden": "true" }) : null, h("span", { klasse: "ka-status-text", text: statusText(e) }))),
+        h("span", { klasse: "ka-status", "data-gefunden": String(gefunden(e)), "data-verbunden": String(istVerbunden(e)) }, istVerbunden(e) ? symbol("kreis-haken", GROESSE.klein) : gefunden(e) ? h("span", { klasse: "ka-punkt", "aria-hidden": "true" }) : null, h("span", { klasse: "ka-status-text", text: statusText(e) }))),
       h("span", { klasse: "ka-haken", "aria-hidden": "true" }, symbol("haken", GROESSE.klein)));
   }
   function zeichneKarten() {
@@ -645,7 +647,7 @@ export function kiAuswahl({ erkennung = null, wert = [], mehrfach = true, waehlb
       h("span", { klasse: "ka-z-logo" }, kiLogo(e.id, 20, { dekorativ: true })),
       h("span", { klasse: "ka-z-name", text: e.name }),
       h("span", { klasse: "ka-art", text: TB.ki.art[e.art] }),
-      h("span", { klasse: "ka-z-status", "data-gefunden": String(gefunden(e)) }, gefunden(e) ? h("span", { klasse: "ka-punkt", "aria-hidden": "true" }) : null, h("span", { text: statusText(e) })));
+      h("span", { klasse: "ka-z-status", "data-gefunden": String(gefunden(e)), "data-verbunden": String(istVerbunden(e)) }, istVerbunden(e) ? symbol("kreis-haken", GROESSE.klein) : gefunden(e) ? h("span", { klasse: "ka-punkt", "aria-hidden": "true" }) : null, h("span", { text: statusText(e) })));
   }
   function zeichneListe() {
     const rest = katalog.filter((e) => !S.obenIds.includes(e.id));
@@ -723,6 +725,7 @@ export function kiAuswahl({ erkennung = null, wert = [], mehrfach = true, waehlb
     wert: listeWert,
     setzeWert(ids) { S.auswahl = new Set((ids || []).filter((id) => index.has(id))); syncAuswahl(); klappAuf(); },
     setzeErkennung(neu) { S.erkennung = neu; zeichneKarten(); zeichneListe(); klappAuf(); },
+    setzeVerbunden(ids) { S.verbunden = new Set(ids || []); zeichneKarten(); zeichneListe(); },
     oeffne, schliesse,
     // Während etwas läuft, das von der Auswahl abhängt: nichts ändern lassen
     sperre(an) { S.gesperrt = !!an; el.toggleAttribute("data-gesperrt", !!an); for (const k of karten.querySelectorAll(".ka-karte")) k.disabled = !!an; },

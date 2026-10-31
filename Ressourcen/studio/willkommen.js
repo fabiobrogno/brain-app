@@ -1,23 +1,20 @@
-// Einstieg ohne Vault: Willkommen-Karte (vier Wege), Name/Ort, Klonen, Versionsverlauf-Rückfrage, KI verbinden.
+// Einstieg ohne Vault: Willkommen-Karte (vier Wege), Name/Ort, Klonen, Versionsverlauf-Rückfrage, KI verbinden (der gemeinsame Ablauf aus ki-verbinden.js).
 // Wird per dynamischem import() geladen und hat beim Import keine Nebenwirkungen.
-import { h, dialog, speichereLokal, leseLokal, arbeitBeginnt } from "./hilfen.js";
-import { textfeld, knopf as baueKnopf, setzeLaedt, kiAuswahl } from "./bausteine.js";
+import { h, speichereLokal, leseLokal, arbeitBeginnt } from "./hilfen.js";
+import { textfeld, knopf as baueKnopf } from "./bausteine.js";
 import * as API from "./api.js";
 import { symbol } from "./symbole.js";
-import { kiLogoName, kiKatalog } from "./ki-logos.js";
+import { erzeugeKiVerbinden } from "./ki-verbinden.js";
 import { markenLogo } from "./marken.js";
 import { TW } from "./texte-willkommen.js";
 
 const api = API.api;
 const STANDARD_ORDNER = "~/Kortex";
 const KI_GESEHEN = "ki-schritt-gesehen";
-// „Kortex-Hinweise einschalten“ (POST /api/kit/hooks): die Werkstatt hat diese Route noch nicht. Der Knopf bleibt aus, bis es sie gibt.
-const HINWEISE_VERFUEGBAR = false;
 
 let zaehler = 0;
 const nid = (p) => `${p}-${++zaehler}`;
 const sicher = (fn) => { try { return Promise.resolve(fn()).catch(() => null); } catch { return Promise.resolve(null); } };
-const kuerze = (t, max = 56) => (String(t).length > max ? `${String(t).slice(0, max - 1).trimEnd()}…` : String(t));
 const kurzPfad = (p) => (p ? String(p).replace(/^\/Users\/[^/]+(?=\/|$)/, "~") : STANDARD_ORDNER);
 const pfadVon = (v) => (typeof v === "string" && v) || (typeof v?.pfad === "string" && v.pfad) || null;
 const pfadAusAntwort = (r) => (typeof r?.pfad === "string" && r.pfad) || (typeof r?.vault?.pfad === "string" && r.vault.pfad) || (typeof r?.vault === "string" && r.vault) || null;
@@ -116,255 +113,6 @@ function pfadDialog(titel) {
     document.body.append(schleier);
     setTimeout(() => eingabe.focus(), 0);
   });
-}
-
-// ---------------------------------------------------------------- KI verbinden (Inhalt, wiederverwendbar)
-// Die Wahl der KI ist der Baustein kiAuswahl (bausteine.js, Katalog: gemeinsam/ki-katalog.json): oben die gefundenen bzw. beliebten KIs als Karten,
-// darunter „Weitere KIs anzeigen“. Gewählt werden können die KIs, bei denen sich Kortex selbst eintragen kann (`verbindbar`); mehrere gleichzeitig.
-const VORWAHL = ["claude", "codex", "cursor"];
-
-// Ergebnis von GET /api/ki/erkennen → { [id]: { gefunden, version } }. Neue Werkstatt: Feld `katalog`; ältere Antworten (und Testattrappen) nur mit agenten/programme/cursorDa.
-export function erkennungAus(ki) {
-  if (!ki) return {};
-  if (Array.isArray(ki.katalog)) return Object.fromEntries(ki.katalog.filter((k) => k && typeof k.id === "string").map((k) => [k.id, { gefunden: k.gefunden === true, version: typeof k.version === "string" ? k.version : null }]));
-  const agenten = Array.isArray(ki.agenten) ? ki.agenten.filter((a) => a && (a.pfad || a.version)) : [];
-  const m = {};
-  const agent = (id) => agenten.find((a) => a.id === id);
-  for (const id of ["claude", "codex", "gemini", "opencode"]) if (agent(id)) m[id] = { gefunden: true, version: agent(id).version || null };
-  if (agent("cursor-agent") || ki.cursorDa === true) m.cursor = { gefunden: true, version: agent("cursor-agent")?.version || null };
-  for (const p of Array.isArray(ki.programme) ? ki.programme : []) if (p && p.gefunden && typeof p.id === "string") m[p.id] = { gefunden: true, version: typeof p.version === "string" ? p.version : null };
-  return m;
-}
-
-async function ladeKiDaten() {
-  const [ki, info, nz] = await Promise.all([sicher(() => api.kiErkennen()), sicher(() => api.info()), sicher(() => api.notizen())]);
-  return { erkannt: !!ki, erkennung: erkennungAus(ki), info, notizen: Array.isArray(nz?.notizen) ? nz.notizen : null };
-}
-
-// Vorgewählt: Claude Code, wenn vorhanden (oder wenn die Erkennung selbst nicht antwortet); sonst die erste gefundene KI, die sich verbinden lässt.
-function vorwahl(d) {
-  if (!d.erkannt) return ["claude"];
-  const da = (id) => d.erkennung[id]?.gefunden === true;
-  if (da("claude")) return ["claude"];
-  const erste = kiKatalog().find((e) => e.verbindbar && da(e.id));
-  return erste ? [erste.id] : [];
-}
-
-const namenListe = (namen) => (namen.length <= 1 ? namen.join("") : `${namen.slice(0, -1).join(", ")} und ${namen[namen.length - 1]}`);
-
-// Ein Bereich mit Live-Region für Ergebnis/Fehler unter einer Aktion.
-function meldeZone() {
-  const knoten = h("div", { klasse: "w-aktion-unten", "aria-live": "polite" });
-  return {
-    knoten,
-    leer: () => knoten.replaceChildren(),
-    arbeit: (text) => knoten.replaceChildren(h("div", { klasse: "w-arbeit links" }, spinner(), h("span", { text }))),
-    fehler: (text) => knoten.replaceChildren(h("div", { klasse: "w-fehlerbox fehlertext", role: "alert" }, symbol("warnung", 14), h("span", { text }))),
-  };
-}
-
-function baueKiInhalt({ kompakt = false, beiVerbunden } = {}) {
-  const titelId = nid("w-t");
-  const titel = h("h2", { klasse: "w-titel", id: titelId, text: TW.ki.titel });
-  const text = h("p", { klasse: "w-untertitel", text: TW.ki.text });
-  const kachel = h("div", { klasse: "w-kachel-gross ton-grau" }, symbol("stecker", 24));
-  const kopf = kompakt ? null : h("header", { klasse: "w-ki-kopf" }, kachel, titel, text);
-  const inhalt = h("div", { klasse: "w-ki-inhalt" },
-    h("div", { klasse: "w-laedt", role: "status" }, spinner(), h("span", { text: TW.ki.sucheLaeuft })));
-  const wurzel = h("div", { klasse: "w-ki" + (kompakt ? " kompakt" : ""), "data-bereich": "ki" }, kopf, inhalt);
-
-  ladeKiDaten().then((d) => {
-    const hatAgenten = Object.values(d.erkennung).some((x) => x.gefunden);
-    if (kopf) {
-      kachel.className = `w-kachel-gross ${hatAgenten ? "ton-gruen" : "ton-grau"}`;
-      kachel.replaceChildren(symbol(hatAgenten ? "kreis-haken" : "stecker", 24));
-      titel.textContent = hatAgenten ? TW.ki.titel : TW.ki.titelOptional;
-      text.textContent = hatAgenten ? TW.ki.text : TW.ki.textOptional;
-    }
-    const teile = [];
-    const claudeDa = d.erkannt ? d.erkennung.claude?.gefunden === true : true;
-    const verbinden = baueVerbinden({ beiVerbunden, erkennung: d.erkennung, vorgewaehlt: vorwahl(d) });
-    teile.push(verbinden.auswahl.el);
-    const zeilen = [verbinden];
-    if (HINWEISE_VERFUEGBAR && claudeDa && d.info?.kit?.vorhanden) zeilen.push(baueHinweise());
-    if (claudeDa || hatAgenten) zeilen.push(baueProbe(d.notizen));
-    teile.push(h("div", { klasse: "w-gruppe", "data-gruppe": "aktionen" }, zeilen.map((x) => x.knoten)));
-    inhalt.replaceChildren(...teile);
-  });
-
-  return { knoten: wurzel, titelId };
-}
-
-// Erfolg: der Beschreibungstext der Zeile wird zur Bestätigung (Häkchen + Satz), Live-Region meldet es.
-function zeigeOk(beschreibung, zone, text) {
-  zone.leer();
-  beschreibung.replaceChildren(h("div", { klasse: "w-ok" }, symbol("kreis-haken", 14), h("span", { text })));
-}
-
-// beiVerbunden: wird erst nach geglücktem Verbinden mit Claude gerufen (200, auch { schonVerbunden: true }), nie beim bloßen Schließen.
-// Danach läuft automatisch der Selbsttest. Er prüft nur unseren Server, nicht ob die fremde App ihn schon geladen hat.
-// Mehrere gewählte KIs werden nacheinander verbunden; was nicht klappt (Rückfrage „umstellen?“, Befehl zum Kopieren, Fehler), steht je KI darunter,
-// die übrigen sind trotzdem verbunden. Ein erneuter Klick ist unschädlich (schon Verbundenes meldet 200).
-function baueVerbinden({ beiVerbunden, erkennung = {}, vorgewaehlt = [] } = {}) {
-  const zone = meldeZone();
-  let sel = [...vorgewaehlt];
-  const name = (id) => kiLogoName(id) || id;
-  const namen = () => sel.map(name);
-  const ok = new Set(), probleme = new Map(); // ok: verbundene ids, probleme: id → Fehler dieses Laufs
-  let gesperrt = false; // während des Selbsttests bleibt die Auswahl stehen, sonst stimmt der App-Name im Ergebnis nicht
-  const knopf = baueKnopf({ variante: "primaer", aktion: "claude-verbinden" });
-  const beschreibung = h("div", { klasse: "w-aktion-text", "aria-live": "polite" });
-  const auswahl = kiAuswahl({ erkennung, wert: sel, mehrfach: true, waehlbar: (e) => e.verbindbar, daten: { "data-bereich": "ziel-wahl" },
-    aufAenderung: (ids) => { if (gesperrt || knopf.getAttribute("aria-busy") === "true") { auswahl.setzeWert(sel); return; } sel = ids; ok.clear(); probleme.clear(); zone.leer(); zeichneKnopf(); } });
-
-  function zeichneKnopf() {
-    knopf.className = "knopf bs-knopf primaer";
-    knopf.disabled = sel.length === 0;
-    const label = sel.length === 0 ? TW.ki.verbindenLeer : sel.length === 1 ? TW.ki.verbindenMit(name(sel[0])) : TW.ki.verbindenMehrere(sel.length);
-    knopf.replaceChildren(document.createTextNode(label));
-    const fehlend = sel.filter((id) => erkennung[id]?.gefunden !== true && Object.keys(erkennung).length > 0);
-    const text = sel.length === 0 ? TW.ki.waehleEine : sel.length === 1 ? TW.ki.verbindenTextFuer(name(sel[0])) : TW.ki.verbindenTextMehrere(namenListe(namen()));
-    beschreibung.replaceChildren(document.createTextNode(text + (fehlend.length ? " " + TW.ki.nichtInstalliert(namenListe(fehlend.map(name))) : "")));
-  }
-
-  async function selbsttest(appName) {
-    gesperrt = true; auswahl.sperre(true);
-    zone.arbeit(TW.ki.selbsttestLaeuft);
-    try {
-      const r = await api.mcpSelbsttest();
-      const n = Array.isArray(r?.werkzeuge) ? r.werkzeuge.length : 0;
-      zone.knoten.replaceChildren(h("div", { klasse: "w-ergebnis", "data-bereich": "selbsttest" }, symbol("kreis-haken", 14),
-        h("span", { text: TW.ki.selbsttestOk(n, appName) })));
-    } catch (e) {
-      zone.knoten.replaceChildren(h("div", { klasse: "w-fehlerbox fehlertext", role: "alert", "data-bereich": "selbsttest" }, symbol("warnung", 14), h("span", { text: TW.ki.selbsttestFehlt(meldungVon(e)) })));
-    } finally { gesperrt = false; auswahl.sperre(false); }
-  }
-  async function erfolg(ids) {
-    setzeLaedt(knopf, false);
-    knopf.className = "knopf bs-knopf fertig";
-    knopf.replaceChildren(symbol("haken", 14), TW.ki.verbundenKnopf);
-    const ns = ids.map(name);
-    beschreibung.replaceChildren(h("div", { klasse: "w-ok" }, symbol("kreis-haken", 14),
-      h("span", { text: ids.length === 1 ? (ids[0] === "claude" ? TW.ki.verbunden : TW.ki.verbundenFuer(ns[0])) : TW.ki.verbundenMehrere(namenListe(ns)) })));
-    if (ids.includes("claude")) { try { beiVerbunden?.(); } catch (e) { console.error(e); } }
-    await selbsttest(namenListe(ns));
-  }
-
-  // Ein Problem je KI: Rückfrage (es gibt schon einen Eintrag „brain“, der woanders hinzeigt: 409 art „anders“), Befehl zum Kopieren oder Fehlertext.
-  function problemBlock(id, e) {
-    const befehl = typeof e?.daten?.befehl === "string" ? e.daten.befehl : null;
-    if (e?.status === 409 && e?.daten?.art === "anders") {
-      const nein = baueKnopf({ text: TW.ki.nichtUmstellen, aktion: "nicht-umstellen" });
-      const ja = baueKnopf({ text: TW.ki.umstellen, variante: "primaer", aktion: "umstellen" });
-      nein.addEventListener("click", () => { probleme.delete(id); zeichneProbleme(); knopf.focus(); });
-      ja.addEventListener("click", () => lauf([id], new Set([id])));
-      const t = id === "codex" ? TW.ki.codexAnders : id === "cursor" ? TW.ki.cursorAnders : id === "claude" ? TW.ki.anders : TW.ki.andersFuer(name(id));
-      setTimeout(() => nein.focus(), 0);
-      return h("div", { klasse: "w-frage", "data-bereich": "umstellen", "data-ziel": id, role: "group" }, h("div", { klasse: "w-aktion-text", text: t }), h("div", { klasse: "w-frage-knoepfe" }, nein, ja));
-    }
-    if (befehl) {
-      const kaputt = e?.daten?.art === "kaputt" ? [h("div", { klasse: "w-fehlerbox fehlertext", role: "alert" }, symbol("warnung", 14), h("span", { text: e.message }))] : [];
-      return h("div", { "data-ziel": id }, ...kaputt, befehlBlock(befehl, id === "cursor" ? TW.ki.cursorKaputt : id !== "claude" && id !== "codex" ? TW.ki.kaputtFuer(name(id)) : undefined));
-    }
-    return h("div", { klasse: "w-fehlerbox fehlertext", role: "alert", "data-ziel": id }, symbol("warnung", 14), h("span", { text: sel.length > 1 ? `${name(id)}: ${meldungVon(e)}` : meldungVon(e) }));
-  }
-  function zeichneProbleme() {
-    if (!probleme.size) { zone.leer(); return; }
-    const teile = [];
-    if (ok.size && sel.length > 1) teile.push(h("div", { klasse: "w-ok", "data-bereich": "teil-ok" }, symbol("kreis-haken", 14), h("span", { text: TW.ki.teilVerbunden(namenListe([...ok].map(name))) })));
-    for (const [id, e] of probleme) teile.push(problemBlock(id, e));
-    zone.knoten.replaceChildren(...teile);
-  }
-
-  // ids der Reihe nach verbinden; `umstellen`: ids, bei denen der vorhandene Eintrag ersetzt werden soll
-  async function lauf(ids, umstellen = new Set()) {
-    setzeLaedt(knopf, true);
-    gesperrt = true; auswahl.sperre(true);
-    zone.arbeit(TW.ki.verbindet);
-    for (const id of ids) {
-      try {
-        await api.mcpVerbinden({ ziel: id, ...(umstellen.has(id) ? { umstellen: true } : {}) });
-        ok.add(id); probleme.delete(id);
-      } catch (e) { ok.delete(id); probleme.set(id, e); }
-    }
-    gesperrt = false; auswahl.sperre(false);
-    setzeLaedt(knopf, false);
-    if (!probleme.size && sel.every((id) => ok.has(id))) { await erfolg(sel.slice()); return; }
-    zeichneProbleme();
-    if (!document.activeElement || document.activeElement === document.body) knopf.focus();
-  }
-  knopf.addEventListener("click", () => { if (!sel.length) return; ok.clear(); probleme.clear(); lauf(sel.slice()); });
-  zeichneKnopf();
-  return { knoten: h("div", { klasse: "w-aktion", "data-zeile": "verbinden" }, beschreibung, knopf, zone.knoten), knopf, auswahl };
-}
-
-function befehlBlock(befehl, hinweis = TW.ki.befehl) {
-  const meld = h("div", { klasse: "mini", "aria-live": "polite" });
-  const kopieren = baueKnopf({ aktion: "befehl-kopieren", kinder: [symbol("kopieren", 14), TW.ki.befehlKopieren] });
-  kopieren.addEventListener("click", async () => {
-    try { await navigator.clipboard.writeText(befehl); meld.textContent = TW.ki.befehlKopiert; }
-    catch { meld.textContent = TW.ki.kopierFehler; }
-  });
-  return h("div", { "data-bereich": "befehl" },
-    h("div", { klasse: "w-aktion-text", text: hinweis }),
-    h("div", { klasse: "w-befehl" }, h("code", { text: befehl, tabindex: "0" }), kopieren),
-    meld);
-}
-
-function baueHinweise() {
-  const zone = meldeZone();
-  const knopf = baueKnopf({ text: TW.ki.hinweise, aktion: "hinweise-einschalten" });
-  const beschreibung = h("div", { klasse: "w-aktion-text", "aria-live": "polite", text: TW.ki.hinweiseText });
-  knopf.addEventListener("click", async () => {
-    setzeLaedt(knopf, true);
-    zone.arbeit(TW.ki.hinweiseLaeuft);
-    try {
-      await api.kitHooks();
-      setzeLaedt(knopf, false);
-      knopf.className = "knopf bs-knopf fertig";
-      knopf.replaceChildren(symbol("haken", 14), TW.ki.hinweiseKnopfOk);
-      zeigeOk(beschreibung, zone, TW.ki.hinweiseOk);
-    } catch (e) {
-      setzeLaedt(knopf, false);
-      zone.fehler(meldungVon(e));
-    }
-  });
-  return { knoten: h("div", { klasse: "w-aktion", "data-zeile": "hinweise" }, beschreibung, knopf, zone.knoten), knopf };
-}
-
-function baueProbe(notizen) {
-  const zone = meldeZone();
-  const frage = (notizen?.find((n) => n?.titel)?.titel) || TW.ki.probeStandard;
-  const knopf = baueKnopf({ text: TW.ki.probeKnopf, aktion: "probe" });
-  knopf.addEventListener("click", async () => {
-    if (notizen && notizen.length === 0) {
-      zone.knoten.replaceChildren(h("div", { klasse: "w-ergebnis leer", "data-bereich": "probe-ergebnis" }, TW.ki.probeLeer));
-      return;
-    }
-    setzeLaedt(knopf, true);
-    zone.arbeit(TW.ki.probeLaeuft);
-    try {
-      const r = await api.probe(frage);
-      const treffer = Array.isArray(r?.treffer) ? r.treffer : [];
-      if (!treffer.length) zone.knoten.replaceChildren(h("div", { klasse: "w-ergebnis leer", "data-bereich": "probe-ergebnis" }, TW.ki.probeKeine));
-      else zone.knoten.replaceChildren(h("div", { klasse: "w-ergebnis", "data-bereich": "probe-ergebnis" },
-        h("div", { klasse: "w-ergebnis-titel" }, symbol("kreis-haken", 14), h("span", { text: TW.ki.probeTitel(treffer.length) })),
-        h("ul", null, treffer.slice(0, 3).map((t) => h("li", null, symbol("notiz", 14), h("span", { text: t.titel || t.pfad || "" }))))));
-    } catch (e) { zone.fehler(meldungVon(e)); }
-    finally { setzeLaedt(knopf, false); }
-  });
-  const text = h("div", { klasse: "w-aktion-text", text: TW.ki.probeText(kuerze(frage)) });
-  return { knoten: h("div", { klasse: "w-aktion", "data-zeile": "probe" }, text, knopf, zone.knoten), knopf };
-}
-
-// beiFertig: beim Schließen des Dialogs (egal wie). beiVerbunden: nur nach geglücktem Verbinden mit Claude.
-export async function oeffneKiDialog({ beiFertig, beiVerbunden } = {}) {
-  await ladeStil();
-  const ki = baueKiInhalt({ kompakt: true, beiVerbunden });
-  const fertig = baueKnopf({ text: TW.ki.fertig, variante: "primaer", aktion: "ki-fertig" });
-  const d = dialog({ titel: TW.ki.dialogTitel, rumpf: ki.knoten, knoepfe: [fertig], breit: true, beiSchliessen: () => { try { beiFertig?.({}); } catch (e) { console.error(e); } } });
-  fertig.addEventListener("click", () => d.schliessen());
-  return d;
 }
 
 // ---------------------------------------------------------------- Karte
@@ -712,15 +460,21 @@ async function starteKarte({ modus = "start", beiFertig, beiAbbruch, beiStandNeu
   }
 
   // ------------------------------------------------------------ Schritt: KI verbinden
+  // Der Ablauf „KI verbinden“ (ki-verbinden.js) ist derselbe wie im Dialog der Statusleiste; hier mit eigenen Knöpfen in der Karte. „Später“ und „Weiter“ enden beide beim Abschluss der Karte.
   function schrittKi() {
-    const ki = baueKiInhalt({ kompakt: false, beiVerbunden });
+    const titelId = nid("w-t");
     const weiter = () => { speichereLokal(KI_GESEHEN, true); abschluss(); };
-    const spaeter = baueKnopf({ text: TW.ki.spaeter, groesse: "l", aktion: "ki-spaeter", aufKlick: weiter });
-    const fertig = baueKnopf({ text: TW.ki.weiter, variante: "primaer", groesse: "l", aktion: "ki-weiter", aufKlick: weiter });
+    let info = null;
+    const fluss = erzeugeKiVerbinden({ rahmen: "karte", fuss: "eigen", vorwahl: true, abbrechenText: TW.ki.spaeter, ohneKiText: TW.ki.weiter,
+      vaultPfad: () => info?.vault || null, vaultName: () => info?.name || "",
+      beiVerbunden: () => { try { beiVerbunden?.(); } catch (e) { console.error(e); } },
+      beiFertig: () => { fluss.zerstoere(); weiter(); } });
+    // der Vault ist erst jetzt offen: die Stufen gelten für ihn, deshalb nach dem Lesen der Werkstatt noch einmal laden
+    sicher(() => api.info()).then((i) => { info = i; if (i?.vault) fluss.lade(); });
     return {
-      name: "ki", titelId: ki.titelId, meldung: null,
-      knoten: h("div", null, ki.knoten, h("div", { klasse: "w-fuss-knoepfe" }, spaeter, fertig)),
-      fokus: () => fertig.focus(),
+      name: "ki", titelId, meldung: null,
+      knoten: h("div", { "aria-labelledby": titelId }, h("span", { id: titelId, klasse: "bs-nur-lesen", text: TW.ki.dialogTitel }), fluss.el),
+      fokus: () => fluss.el.querySelector(".ka-karte, .knopf.primaer")?.focus(),
     };
   }
 
