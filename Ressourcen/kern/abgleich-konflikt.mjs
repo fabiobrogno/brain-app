@@ -349,10 +349,44 @@ function schreibeTmp(vault, tmp, name, sha, spec) { // Blob (oder leer) in eine 
   return f;
 }
 function hashDatei(vault, f) { const r = g(vault, ["hash-object", "--no-filters", "--", f]); return r.code === 0 ? r.out.trim() : null; }
-// Was die Zusammenführung für einen Pfad ohne Konflikt ergibt: { id } (id null = fehlt) oder null (unbekannt → sichern)
-function erwartetId(vault, pfad, kopf, merge, stamm, tmp) {
-  const bl = (sha) => (sha ? blobId(vault, sha, pfad) : null);
-  const h = bl(kopf), m = bl(merge), b = bl(stamm);
+// Pfad → Kennung für eine ganze Version in EINEM Aufruf (`ls-tree -r -t`: Blobs, Untermodul-Commits und — wie `rev-parse <sha>:<pfad>` — auch die Kennung der Verzeichnisse).
+// Ohne Version: leere Karte; scheitert der Aufruf, wird nachgefragt wie früher (je Pfad).
+function baumKarte(vault, sha) {
+  if (!sha) return { sha: null, karte: new Map() };
+  const r = gBytes(vault, ["ls-tree", "-r", "-t", "-z", sha]);
+  if (r.code !== 0) return { sha, karte: null };
+  const karte = new Map();
+  for (const z of r.out.toString("utf8").split("\0")) { const m = /^\d{6} \w+ ([0-9a-f]+)\t([\s\S]+)$/.exec(z); if (m) karte.set(m[2], m[1]); }
+  return { sha, karte };
+}
+const idAus = (vault, k, pfad) => (!k.sha ? null : k.karte ? (k.karte.get(pfad) ?? null) : blobId(vault, k.sha, pfad));
+// Kennungen der Arbeitsdateien in EINEM Aufruf (`hash-object --no-filters --stdin-paths`); Pfade, die die zeilenweise Eingabe nicht tragen, und ein gescheiterter Sammelaufruf: einzeln wie früher.
+function arbeitIds(vault, pfade) {
+  const aus = new Map();
+  const sammel = pfade.filter((p) => !/[\n\r"\\]/.test(p));
+  if (sammel.length) {
+    const r = spawnSync(gitBefehl({}), ["-C", vault, "hash-object", "--no-filters", "--stdin-paths"], { input: sammel.join("\n") + "\n", stdio: ["pipe", "pipe", "pipe"], windowsHide: true, timeout: ZEIT_LOKAL * 4, maxBuffer: 256 * 1024 * 1024, encoding: "utf8" });
+    const zeilen = String(r.stdout || "").split("\n").filter(Boolean);
+    if (!r.error && r.status === 0 && zeilen.length === sammel.length) sammel.forEach((p, i) => aus.set(p, zeilen[i]));
+  }
+  for (const p of pfade) if (!aus.has(p)) aus.set(p, arbeitId(vault, p));
+  return aus;
+}
+// Der Index in EINEM Aufruf: Pfad → { Stufe: Kennung }; null, wenn der Aufruf scheitert (dann einzeln wie früher)
+function indexKarte(vault) {
+  const r = gBytes(vault, ["ls-files", "-s", "-z"]);
+  if (r.code !== 0) return null;
+  const karte = new Map();
+  for (const z of r.out.toString("utf8").split("\0")) {
+    const m = /^\d{6} ([0-9a-f]+) ([0-3])\t([\s\S]+)$/.exec(z); if (!m) continue;
+    const e = karte.get(m[3]) || {}; e[m[2]] = m[1]; karte.set(m[3], e);
+  }
+  return karte;
+}
+// Was die Zusammenführung für einen Pfad ohne Konflikt ergibt: { id } (id null = fehlt) oder null (unbekannt → sichern).
+// `merge-file` läuft nur dort, wo HEAD, MERGE_HEAD und Basis alle verschieden sind.
+function erwartetId(vault, pfad, kopf, merge, stamm, tmp, karten) {
+  const h = idAus(vault, karten.kopf, pfad), m = idAus(vault, karten.merge, pfad), b = idAus(vault, karten.stamm, pfad);
   if (h === m) return { id: h };
   if (h === b) return { id: m };
   if (m === b) return { id: h };
@@ -376,30 +410,48 @@ function konfliktUnberuehrt(vault, pfad, jetzt, hashes, tmp) {
   const r = gMergeDatei(vault, ["-p", "-L", l1[1], "-L", l2 ? l2[1] : "base", "-L", l3[1], ...(l2 ? ["--diff3"] : []), f1, f2, f3]);
   return r.code > 0 && r.code < 127 && Buffer.compare(r.out, readFileSync(join(vault, ...pfad.split("/")))) === 0;
 }
-function sichereArbeitsstand(vault, konfliktPfade, marke) {
+// Was gesichert werden muss, ohne etwas zu schreiben: { arbeit: [{ p, groesse }], vorgemerkt: [{ p, id }] } (Reihenfolge: erst die Konfliktdateien, dann die übrigen in Git-Reihenfolge).
+// Wenige Aufrufe unabhängig von der Dateizahl: je einmal `ls-tree -r -t` für HEAD, MERGE_HEAD und die Basis, `ls-files -s` für den Index, ein `hash-object --stdin-paths` für die
+// Arbeitsdateien; `merge-file` nur dort, wo HEAD, MERGE_HEAD und Basis alle verschieden sind. Das Ergebnis ist je Pfad dasselbe wie die frühere Einzelabfrage — mit EINER Ausnahme:
+// Unbeteiligtes (Index = HEAD = MERGE_HEAD, nur im Arbeitsbaum geändert: eine ungesicherte Notiz, die die Zusammenführung nicht betrifft) fasst weder `merge --abort` noch das
+// Lösen an; es wird nicht bei jedem Später/Lösen erneut kopiert.
+export function ermittleSicherung(vault, konfliktPfade, marke, tmp) {
   const merge = mergeSha(vault), kopf = kopfSha(vault);
   const stamm = merge && kopf ? (g(vault, ["merge-base", kopf, merge]).out.trim() || null) : null;
   const konflikt = new Set(konfliktPfade), namen = new Set(konfliktPfade);
   for (const args of [["diff", "--name-only", "--no-renames", "-z", "HEAD"], ["diff", "--cached", "--name-only", "--no-renames", "-z", "HEAD"]]) {
-    const d = g(vault, args);
-    if (d.code === 0) for (const p of d.out.split("\0")) if (p) namen.add(p);
+    const d = gBytes(vault, args);
+    if (d.code === 0) for (const p of d.out.toString("utf8").split("\0")) if (p) namen.add(p);
   }
   const hashes = marke && marke.hashes && typeof marke.hashes === "object" ? marke.hashes : {};
+  const karten = { kopf: baumKarte(vault, kopf), merge: baumKarte(vault, merge), stamm: baumKarte(vault, stamm) };
+  const index = indexKarte(vault);
+  const idxVon = (p) => { if (!index) return indexId(vault, p); const e = index.get(p); return e ? (e["0"] ?? e["2"] ?? null) : null; };
+  const arbeit = [], vorgemerkt = [], mitDatei = [];
+  for (const p of namen) {
+    const k = konflikt.has(p);
+    const idx = k ? null : idxVon(p);
+    if (!k && idx && idx === idAus(vault, karten.kopf, p) && idx === idAus(vault, karten.merge, p)) continue; // unbeteiligt (s. o.)
+    if (!k && idx) { const erw = erwartetId(vault, p, kopf, merge, stamm, tmp, karten); if (!erw || erw.id !== idx) vorgemerkt.push({ p, id: idx }); }
+    let st = null; try { st = lstatSync(join(vault, ...p.split("/"))); } catch { /* fehlt */ }
+    if (!st || st.isSymbolicLink() || !st.isFile()) continue;
+    mitDatei.push({ p, k, idx, groesse: st.size });
+  }
+  const jetzt = arbeitIds(vault, mitDatei.map((c) => c.p)); // alle Arbeitsdateien in einem Zug
+  for (const c of mitDatei) {
+    const j = jetzt.get(c.p) ?? null;
+    const unberuehrt = c.k ? konfliktUnberuehrt(vault, c.p, j, hashes, tmp) : !!(j && c.idx && j === c.idx);
+    if (!unberuehrt) arbeit.push({ p: c.p, groesse: c.groesse });
+  }
+  return { arbeit, vorgemerkt };
+}
+function sichereArbeitsstand(vault, konfliktPfade, marke) {
   const gp = g(vault, ["rev-parse", "--path-format=absolute", "--git-path", "brain-sicherung"]);
   const wurzel = gp.code === 0 ? gp.out.trim() : join(vault, ".git", "brain-sicherung");
   const tmp = join(dirname(wurzel), `brain-sicherung-tmp-${process.pid}`);
-  const arbeit = [], vorgemerkt = [];
-  try {
-    for (const p of namen) {
-      const idx = konflikt.has(p) ? null : indexId(vault, p);
-      if (!konflikt.has(p) && idx) { const erw = erwartetId(vault, p, kopf, merge, stamm, tmp); if (!erw || erw.id !== idx) vorgemerkt.push({ p, id: idx }); }
-      let st = null; try { st = lstatSync(join(vault, ...p.split("/"))); } catch { /* fehlt */ }
-      if (!st || st.isSymbolicLink() || !st.isFile()) continue;
-      const jetzt = arbeitId(vault, p);
-      const unberuehrt = konflikt.has(p) ? konfliktUnberuehrt(vault, p, jetzt, hashes, tmp) : !!(jetzt && idx && jetzt === idx);
-      if (!unberuehrt) arbeit.push({ p, groesse: st.size });
-    }
-  } finally { try { rmSync(tmp, { recursive: true, force: true }); } catch { /* nur Komfort */ } }
+  let arbeit, vorgemerkt;
+  try { ({ arbeit, vorgemerkt } = ermittleSicherung(vault, konfliktPfade, marke, tmp)); }
+  finally { try { rmSync(tmp, { recursive: true, force: true }); } catch { /* nur Komfort */ } }
   if (!arbeit.length && !vorgemerkt.length) return null;
   try {
     for (const e of readdirSync(wurzel, { withFileTypes: true })) {
@@ -445,6 +497,15 @@ function mitSperre(vault, support, art, fn) {
 }
 
 // ───────────────────────────── Markieren ─────────────────────────────
+// Stand des Servers zum aktuellen Zweig: @{u}, sonst origin/<Zweig>; null, wenn keiner da ist
+function zielSha(vault) {
+  const u = g(vault, ["rev-parse", "-q", "--verify", "@{u}"]);
+  if (u.code === 0 && u.out.trim()) return u.out.trim();
+  const z = g(vault, ["symbolic-ref", "--short", "-q", "HEAD"]);
+  if (z.code !== 0 || !z.out.trim()) return null;
+  const o = g(vault, ["rev-parse", "-q", "--verify", `refs/remotes/origin/${z.out.trim()}`]);
+  return o.code === 0 && o.out.trim() ? o.out.trim() : null;
+}
 // Das Studio hat die Zusammenführung begonnen (git.mjs#sync) und ruft das gleich danach: nur so ist sie „von Kortex“.
 // Nur wenn der Aufrufer sagt, dass vorher KEINE Zusammenführung offen war (vorherAbwesend) UND sein Abgleich sie begonnen hat — sonst wird nie markiert (eine
 // Zusammenführung aus dem Terminal gehört nicht Kortex).
@@ -452,6 +513,9 @@ export function markiere(vault, { support = supportOrdner(), vorherAbwesend = fa
   const merge = mergeSha(vault);
   if (!merge) return { ok: true, offen: false };
   if (vorherAbwesend !== true) return { ok: true, offen: true, markiert: false };
+  // Außerdem muss MERGE_HEAD genau der Stand des Servers sein, den der Abgleich holen wollte (@{u}, sonst origin/<Zweig>): eine Zusammenführung mit etwas anderem hat nicht der Abgleich begonnen
+  const ziel = zielSha(vault);
+  if (!ziel || ziel !== merge) return { ok: true, offen: true, markiert: false };
   const kopf = kopfSha(vault);
   const hashes = {};
   for (const e of indexKonflikte(vault)) { const h = arbeitId(vault, e.pfad); if (h) hashes[e.pfad] = h; }
