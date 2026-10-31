@@ -351,8 +351,15 @@ async function syncOhneSperre(wurzel, opt = {}) {
       geholt = true;
       const markeWeg = mergeMarke(wurzel);
       try {
+        // Das Holen hat gedauert: inzwischen kann jemand anderes (Terminal) eine Zusammenführung begonnen haben. Direkt vor jedem Merge noch einmal prüfen —
+        // eine fremde Zusammenführung fassen wir nie an (und markieren sie nicht als unsere).
+        await keinMergeOffen(G);
         let m = await mitAbbruchSchutz(G, wurzel, () => G(["merge", "--ff-only", "--quiet", "@{u}"], { ...OH, timeout: limitSync }));
-        if (m.code !== 0) m = await mitAbbruchSchutz(G, wurzel, () => G(["merge", "--no-edit", "--quiet", "@{u}"], { ...OH, timeout: limitSync }));
+        if (m.code !== 0) {
+          await keinMergeOffen(G);
+          m = await mitAbbruchSchutz(G, wurzel, () => G(["merge", "--no-edit", "--quiet", "@{u}"], { ...OH, timeout: limitSync }));
+        }
+        if (m.code !== 0) await eigeneZusammenfuehrung(G); // blieb eine Zusammenführung offen, muss es genau unsere sein (MERGE_HEAD = @{u}); sonst 409, ohne etwas anzufassen
         if (m.code !== 0 && opt.konflikteLoesen && (await konfliktDateien(G)).length) {
           // Konflikte NICHT zurücknehmen: Die Oberfläche lässt pro Datei wählen (Kern: abgleich-konflikt.mjs) oder bricht ab.
           // Versteckte Dateien (Punkt-Ordner) kann die Oberfläche nicht zeigen: dort bleibt automatisch die eigene Fassung.
@@ -784,6 +791,25 @@ const KONFLIKT_TEXT = "Beim Abgleich haben beide Seiten dieselbe Stelle geänder
 
 // Läuft gerade eine Zusammenführung (MERGE_HEAD)? Auch eine, die außerhalb der App begonnen wurde.
 async function mergeLaeuft(G) { return (await G(["rev-parse", "-q", "--verify", "MERGE_HEAD"])).code === 0; }
+// Nach einem gescheiterten Merge: Steht eine Zusammenführung offen, die nicht genau das Ziel dieses Abgleichs (@{u}) zusammenführt, gehört sie nicht uns (zwischen Prüfung und Merge
+// im Terminal begonnen): 409 wie bei keinMergeOffen — ohne `gestartet`, ohne `merge --abort`.
+async function eigeneZusammenfuehrung(G) {
+  const mk = await G(["rev-parse", "-q", "--verify", "MERGE_HEAD"]);
+  if (mk.code !== 0) return;
+  const ziel = await G(["rev-parse", "-q", "--verify", "@{u}"]);
+  if (ziel.code === 0 && ziel.stdout.trim() === mk.stdout.trim()) return;
+  await keinMergeOffen(G);
+}
+// Pfad der Datei MERGE_HEAD dieses Vaults — auch bei einem Vault mit `.git`-Datei (Worktree): Git selbst fragen, nie `.git/` annehmen. null: unbekannt.
+export async function mergeKopfPfad(wurzel, ctx = {}) {
+  const G = binde(wurzel, ctx);
+  for (const flags of [["--path-format=absolute"], []]) {
+    const r = await G(["rev-parse", ...flags, "--git-path", "MERGE_HEAD"]);
+    const p = r.code === 0 ? r.stdout.trim() : "";
+    if (p) return p.startsWith("/") ? p : join(wurzel, p);
+  }
+  return null;
+}
 async function keinMergeOffen(G) {
   if (!(await mergeLaeuft(G))) return;
   const offen = (await konfliktListe(G)).filter((e) => !e.versteckt && e.art !== "beide-geloescht").map((e) => e.pfad);
