@@ -6,7 +6,7 @@
 //   Melden:    Ereignis-Ring (letzte 500) mit fortlaufender Nummer; GET /api/ereignisse?seit=<n> wartet (Long-Poll), bis es Neues gibt.
 //   Grenzen:   höchstens `maxJeFlush` Pfade je Meldung, danach ein einziges „alles“; bei Dauerfeuer drosselt die Rate (Ein „alles“ je Sekunde).
 // Typen: aufgabe (angelegt|geaendert|entfernt|archiviert, mit pfad, titel, status, quelle) · notiz (pfad, art) · posteingang · git (neuer-stand|konflikt)
-//        · vertrauen · konten · alles (der Client lädt alles neu).
+//        · vertrauen · konten · einstellungen (brain.config.json des Vaults oder <support>/einstellungen.json) · alles (der Client lädt alles neu).
 import { watch, statSync, readdirSync, readFileSync, openSync, readSync, closeSync, existsSync } from "node:fs";
 import { createHash, randomBytes } from "node:crypto";
 import { join, sep, basename } from "node:path";
@@ -31,6 +31,7 @@ export function klassifiziere(roh, { aufgabenOrdner = "05_aufgaben", inboxOrdner
   if (teile.some((t) => t.startsWith(".") || falte(t) === "node_modules")) return null; // .logs, .brain-tmp-*, .obsidian, .DS_Store …
   const name = teile[teile.length - 1];
   if (/~$|\.(swp|swx|swo|tmp|temp|part|crdownload|bak)$/i.test(name) || /^#.*#$/.test(name)) return null; // Editor-Reste
+  if (teile.length === 1 && name === "brain.config.json") return { bereich: "einstellungen", pfad: name, text: true }; // Einstellungen des Vaults (Seite „Einstellungen“, `brain einstellungen`)
   const text = BEARBEITBAR.test(name);
   if (!text && /\.[A-Za-z0-9]{1,8}$/.test(name)) return null; // Bild, PDF, … (ein Ordner heißt selten „x.pdf“)
   const pfad = teile.join("/");
@@ -102,7 +103,7 @@ export function erzeugeEreignisse(o = {}) {
   const eigen = new Map();    // Schlüssel → { hash, bis }
 
   const supportPfad = (name) => (o.support ? join(o.support, name) : null);
-  const SUPPORT_TYP = { "vertrauen.json": "vertrauen", "ki-konten.json": "konten" };
+  const SUPPORT_TYP = { "vertrauen.json": "vertrauen", "ki-konten.json": "konten", "einstellungen.json": "einstellungen" };
 
   // ---------- Ring und Long-Poll ----------
   function melde(e) {
@@ -248,17 +249,23 @@ export function erzeugeEreignisse(o = {}) {
     const ordner = aufgabenOrdner();
     const inbox = inboxOrdnerVon(wurzel); // bei jedem Flush neu gelesen: eine geänderte brain.config.json braucht keinen Neustart
     const gesehen = new Set(), ergebnisse = [];
-    let gitBetroffen = false;
+    let gitBetroffen = false, einstBetroffen = false;
     for (const rel of pfade) {
       const k = klassifiziere(rel, { aufgabenOrdner: ordner, inboxOrdner: inbox });
       if (!k || gesehen.has(k.pfad)) continue;
       gesehen.add(k.pfad);
       if (k.bereich === "git") { gitBetroffen = true; continue; }
+      if (k.bereich === "einstellungen") { // brain.config.json: eigene Schreibvorgänge (Echo) und Altes aus der Zeit vor dem Start zählen nicht
+        const abs = join(wurzel, k.pfad);
+        if (!(altesEcho(abs) || (istEigen(k.pfad) && eigen.get(k.pfad).hash === hashVon(abs)))) einstBetroffen = true;
+        continue;
+      }
       let e = null;
       try { e = k.bereich === "aufgabe" ? aufgabeEreignis(k) : dateiEreignis(k); } catch { e = null; }
       if (e) ergebnisse.push(e);
     }
     for (const e of ergebnisse) melde(e);
+    if (einstBetroffen) melde({ typ: "einstellungen" });
     if (gitBetroffen) {
       const s = gitStand(wurzel);
       if (s && (!gitLetzter || s.kopf !== gitLetzter.kopf || s.merge !== gitLetzter.merge)) {
@@ -319,7 +326,7 @@ export function erzeugeEreignisse(o = {}) {
         if (d.name.startsWith(".") || falte(d.name) === "node_modules") continue;
         const r = rel ? `${rel}/${d.name}` : d.name;
         if (d.isDirectory()) { m.set(r, "d"); if (tiefe < 3) geh(r, tiefe + 1); }
-        else if (d.isFile() && BEARBEITBAR.test(d.name)) {
+        else if (d.isFile() && (BEARBEITBAR.test(d.name) || (tiefe === 0 && d.name === "brain.config.json"))) {
           if (++n > 4000) return;
           try { const st = statSync(join(wurzel, ...r.split("/"))); m.set(r, `${st.mtimeMs}:${st.size}`); } catch { /* weg */ }
         }

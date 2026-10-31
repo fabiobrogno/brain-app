@@ -340,9 +340,10 @@ test("Menübefehle: alle Swift-Befehle sind belegt, hell-dunkel schaltet das The
   await befehl("vault-wechseln");
   await expect(page.locator(".menue")).toBeVisible();
   await page.keyboard.press("Escape");
-  await befehl("einstellungen"); // Menüleiste „Einstellungen …“: das Zahnrad-Menü der Statusleiste
-  await expect(page.locator('.menue [data-wert="hell"]')).toBeVisible();
+  await befehl("einstellungen"); // Menü „Einstellungen …“ (⌘,): die Seite „Einstellungen“ (P5); das Zahnrad-Menü der Statusleiste bleibt daneben
+  await expect(page.locator("[data-einstellungen]")).toBeVisible();
   await page.keyboard.press("Escape");
+  await expect(page.locator("[data-einstellungen]")).toBeHidden();
   await befehl("verlauf");
   await expect(page.locator("#app")).toHaveAttribute("data-modus", "verlauf");
   await befehl("nicht-vorhanden"); // unbekannte Befehle bleiben still

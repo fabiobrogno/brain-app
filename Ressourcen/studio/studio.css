@@ -241,14 +241,14 @@ button:focus-visible, [tabindex]:focus-visible, a:focus-visible { outline: 2px s
 #editor { flex: 1; min-height: 0; overflow: hidden; }
 #editor .cm-editor { height: 100%; background: var(--papier); color: var(--text); outline: 0; }
 #editor .cm-scroller { overflow: auto; font-family: var(--schrift-text); line-height: 1.5; padding: 0; }
-#editor .cm-content { max-width: var(--lesebreite); margin: 0 auto; padding: 44px 40px 180px; font-size: 15px; line-height: 1.7; caret-color: var(--akzent); -webkit-user-select: text; user-select: text; }
+#editor .cm-content { max-width: var(--lesebreite); margin: 0 auto; padding: 44px 40px 180px; font-size: var(--editor-schrift, 15px); line-height: 1.7; caret-color: var(--akzent); -webkit-user-select: text; user-select: text; }
 #editor .cm-line { padding: 0; }
 #editor .cm-cursor { border-left: 2px solid var(--akzent); }
 #editor .cm-selectionBackground, #editor .cm-editor .cm-selectionBackground { background: var(--akzent-weich) !important; }
 #editor .cm-focused .cm-selectionBackground { background: color-mix(in srgb, var(--akzent) 24%, transparent) !important; }
 #editor .cm-gutters { background: transparent; border: 0; }
 #editor .cm-signale { width: 16px; }
-#editor[data-roh="an"] .cm-content { font-family: var(--mono); font-size: 13.5px; line-height: 1.65; }
+#editor[data-roh="an"] .cm-content { font-family: var(--mono); font-size: calc(var(--editor-schrift, 15px) - 1.5px); line-height: 1.65; }
 .cm-signal { display: block; width: 6px; height: 6px; border-radius: 50%; margin: 13px 0 0 6px; }
 .cm-signal-gelb { background: var(--gelb); } .cm-signal-rot { background: var(--rot); } .cm-signal-gruen { background: var(--gruen); } .cm-signal-grau, .cm-signal-ohne { background: var(--grau); }
 
@@ -491,6 +491,8 @@ button.st { cursor: pointer; } button.st:hover { background: var(--hover); color
 @keyframes zoom { from { opacity: 0; transform: scale(.96); } }
 @keyframes toast-ein { from { opacity: 0; transform: translateY(8px) scale(.98); } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+/* Einstellungen → Darstellung → Bewegung „Reduziert“ (P5): dasselbe wie die Systemeinstellung, aber von Hand gewählt */
+:root[data-bewegung="reduziert"] *, :root[data-bewegung="reduziert"] *::before, :root[data-bewegung="reduziert"] *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 
 /* Eigenschaften: aufklappbare Listen */
 .wert-auf { display: inline-flex; align-items: center; gap: 4px; border: 0; background: transparent; padding: 0; color: var(--text-2); cursor: pointer; font: inherit; }
@@ -537,12 +539,10 @@ button.st { cursor: pointer; } button.st:hover { background: var(--hover); color
 .pe-titel { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pe-pfad { color: var(--text-3); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: none; max-width: 50%; }
 
-/* KI-Logos (ki-logos.js): Claude (Desktop) und Gemini in der Markenfarbe, alle anderen einfarbig in der Textfarbe (Begründung: Ressourcen/logos/HERKUNFT.md); Codex als neutrale Initiale (kein lizenziertes Logo) */
-.ki-logo { display: inline-flex; flex: none; align-items: center; justify-content: center; width: var(--ki-logo-groesse, 16px); height: var(--ki-logo-groesse, 16px); vertical-align: middle; }
-.ki-logo svg { display: block; }
-.ki-logo-claude, .ki-logo-claude-desktop { color: #D97757; }
-.ki-logo-gemini { color: #8E75B2; }
-.ki-logo-cursor, .ki-logo-copilot, .ki-logo-zed, .ki-logo-opencode, .ki-logo-warp { color: var(--text); }
+/* KI-Logos (ki-logos.js, Daten aus dem KI-Katalog): einfarbig in der Textfarbe, mit Markenfarbe nur wo sie auf Hell UND Dunkel mindestens 3:1 hat (inline gesetzt), mehrfarbige Logos und PNGs unverändert; ohne echtes Logo die Initiale in einem Kreis (Begründung: Ressourcen/logos/HERKUNFT.md) */
+.ki-logo { display: inline-flex; flex: none; align-items: center; justify-content: center; width: var(--ki-logo-groesse, 16px); height: var(--ki-logo-groesse, 16px); vertical-align: middle; color: var(--text); }
+.ki-logo svg, .ki-logo img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; }
+.ki-maske { display: block; width: 100%; height: 100%; background: currentColor; -webkit-mask: var(--ki-maske) center / contain no-repeat; mask: var(--ki-maske) center / contain no-repeat; }
 .ki-logo-initiale { border-radius: 50%; background: var(--hover-2); color: var(--text-2); font-weight: 600; font-size: calc(var(--ki-logo-groesse, 16px) * 0.56); line-height: 1; }
 .ki-logo-initiale::before { content: attr(data-initiale); }
 
@@ -560,10 +560,17 @@ button.st:focus-visible, .baum .zeile:focus-visible, .baum .pfeil:focus-visible,
 .sym, .marken-logo svg { shape-rendering: geometricPrecision; }
 
 /* ---------- Responsiv: Statusleiste, Seitenleiste, Listenkopf, Kopfzeile des Editors (nichts ragt über den Rand) ---------- */
-@container status (max-width: 1180px) { .st[data-st="version"], .st[data-st="remote"] > span { display: none; } .st[data-st="remote"] { padding: 0 6px; } }
+/* Geist ist breiter als die Systemschrift (P1-Befund): schon ab 1180 px verlieren Verlauf, KI-Nutzung und Gesundheit ihre Beschriftung (Symbol und Tooltip bleiben), lange Namen werden gekürzt —
+   sonst schob eine lange Vault-Bezeichnung das Zahnrad (Einstellungen) aus dem Fenster. */
+.st[data-st="vault"] > span:last-child { max-width: 22ch; overflow: hidden; text-overflow: ellipsis; }
+.st[data-st="geaendert"] > span:not(.st-zahl) { max-width: 32ch; overflow: hidden; text-overflow: ellipsis; }
+@container status (max-width: 1180px) { .st[data-st="version"], .st[data-st="remote"] > span { display: none; } .st[data-st="remote"] { padding: 0 6px; }
+  .st[data-st="verlauf"] > span, .st[data-st="nutzung"] > span, .st[data-st="gesundheit"] > span:first-of-type:not(:last-child) { display: none; }
+  .st[data-st="vault"] > span:last-child { max-width: 11ch; } .st[data-st="geaendert"] > span:not(.st-zahl) { max-width: 26ch; } }
 @container status (max-width: 960px) {
   .st[data-st="verlauf"] > span, .st[data-st="claude"] > span:not(.ki-logo), .st[data-st="nutzung"] > span, .st[data-st="gesundheit"] > span:first-of-type:not(:last-child) { display: none; }
-  .st[data-st="vault"] > span:last-child { max-width: 90px; overflow: hidden; text-overflow: ellipsis; }
+  .st[data-st="vault"] > span:last-child { max-width: 72px; overflow: hidden; text-overflow: ellipsis; }
+  .st[data-st="geaendert"] > span:not(.st-zahl) { max-width: 11ch; }
   .st.sync .sync-aktion { display: none; }
 }
 @container status (max-width: 780px) {

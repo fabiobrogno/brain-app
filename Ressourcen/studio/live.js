@@ -1,6 +1,6 @@
 // Live-Aktualisierung (Studio-Seite): hält einen Long-Poll auf GET /api/ereignisse offen und reicht Ereignisse der Werkstatt weiter.
 // Die Werkstatt beobachtet den Vault (werkstatt/ereignisse.mjs); hier wird nur zugehört — gezeichnet wird in app.js über die bestehenden Wege.
-import { kiLogoName } from "./ki-logos.js";
+import { kiKurzname } from "./ki-logos.js";
 import { TL } from "./texte-live.js";
 
 const KI_QUELLE = /^ki:/;
@@ -42,9 +42,9 @@ export function starteLive({ api, beiEreignisse, beiAlles, beiBereit, warteS = 2
 }
 
 // Ereignisse → was zu tun ist (rein, damit es sich ohne Oberfläche testen lässt):
-//   { index, aufgaben, git, info, konten, menue, strukturell (Datei angelegt/entfernt/verschoben, Ordner: der Teil-Index reicht nicht), pfade (zum Hervorheben), ki: [{ quelle, titel }] }
+//   { index, aufgaben, git, info, konten, einstellungen, menue, strukturell (Datei angelegt/entfernt/verschoben, Ordner: der Teil-Index reicht nicht), pfade (zum Hervorheben), ki: [{ quelle, titel }] }
 export function planeAus(ereignisse) {
-  const p = { index: false, aufgaben: false, git: false, info: false, konten: false, menue: false, strukturell: false, pfade: [], ki: [] };
+  const p = { index: false, aufgaben: false, git: false, info: false, konten: false, einstellungen: false, menue: false, strukturell: false, pfade: [], ki: [] };
   for (const e of ereignisse) {
     switch (e.typ) {
       case "aufgabe": p.index = p.aufgaben = p.menue = true; if (e.art !== "geaendert") p.strukturell = true; break;
@@ -52,6 +52,7 @@ export function planeAus(ereignisse) {
       case "git": p.git = p.menue = true; break;
       case "vertrauen": p.info = p.git = p.aufgaben = p.menue = true; break;
       case "konten": p.konten = true; break;
+      case "einstellungen": p.einstellungen = true; break; // brain.config.json des Vaults (auch `brain einstellungen` im Terminal) oder einstellungen.json der App
       default: break;
     }
     if (e.pfad && e.art !== "entfernt" && e.art !== "ordner" && !p.pfade.includes(e.pfad)) p.pfade.push(e.pfad);
@@ -65,7 +66,7 @@ export function kiHinweis(ki) {
   if (!ki.length) return null;
   const namen = new Set(ki.map((k) => k.quelle));
   const id = ki[0].quelle.slice(3);
-  const name = namen.size === 1 ? (kiLogoName(id) || id.replace(/^./, (c) => c.toUpperCase())) : null;
+  const name = namen.size === 1 ? (kiKurzname(id) || id.replace(/^./, (c) => c.toUpperCase())) : null;
   return TL.aufgabeAngelegt(name, ki.map((k) => k.titel));
 }
 

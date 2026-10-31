@@ -1,11 +1,12 @@
 // gemeinsam/ki.mjs — Erkennung installierter KI-Programme (v2-Spec §2 „KI verbinden“): wo liegt `claude`, `codex` …, und welche Version?
 // Gleiche Suche wie findeClaude in werkstatt/handler.mjs (PATH + übliche Orte, eine GUI-App hat nur einen knappen PATH).
 // Keine Abhängigkeiten außer basis.mjs. Es wird nur `<programm> --version` gestartet (ohne Shell), nie etwas anderes.
-import { accessSync, constants, statSync, readdirSync, existsSync } from "node:fs";
+import { accessSync, constants, statSync, readdirSync, existsSync, readFileSync } from "node:fs";
 import { join, dirname, delimiter, isAbsolute } from "node:path";
 import { homedir } from "node:os";
 import { spawn } from "node:child_process";
 import { kindUmgebung, vorschauOrdner } from "./basis.mjs";
+import { ladeKatalog } from "./ki-katalog.mjs";
 
 // Feste Reihenfolge und Anzeigenamen; der Programmname ist die id.
 const AGENTEN = [
@@ -129,4 +130,53 @@ export async function erkenneAgenten({ env = process.env, neu = false, limit = 5
   }
   const agenten = await eintrag.ergebnis;
   return { agenten: agenten.map((a) => ({ ...a })), cursorDa: cursorVorhanden(home, appOrdner) }; // Kopie: Aufrufer können den Zwischenspeicher nicht verändern
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// Erkennung aller Programme des Katalogs (gemeinsam/ki-katalog.mjs): Befehl im PATH und/oder Mac-App. Die fünf Agenten oben behalten ihre
+// eigene Liste (`erkenneAgenten`); hier kommen alle anderen Katalog-Einträge dazu, ihre Version (`--version`) wird nur für gefundene gelesen.
+// → [{ id, gefunden, version|null, quelle: "cli"|"app"|null }] in der Reihenfolge des Katalogs. Gleiche Zwischenspeicher-Regeln wie oben.
+const PLIST_VERSION = /<key>CFBundleShortVersionString<\/key>\s*<string>([^<]{1,40})<\/string>/;
+function appVersionLesen(appPfad) {
+  try { const m = PLIST_VERSION.exec(readFileSync(join(appPfad, "Contents", "Info.plist"), "utf8")); return m ? m[1] : null; } catch { return null; }
+}
+
+const katalogCache = new Map();
+
+export async function erkenneKatalog({ env = process.env, neu = false, limit = 5000, home = homedir(), appOrdner = "/Applications" } = {}) {
+  const jetzt = Date.now();
+  const key = schluessel(env) + "|" + home + "|" + appOrdner;
+  let eintrag = katalogCache.get(key);
+  if (neu || !eintrag || jetzt - eintrag.zeit > CACHE_ZEIT) {
+    for (const [k, e] of katalogCache) if (jetzt - e.zeit > CACHE_ZEIT) katalogCache.delete(k);
+    if (katalogCache.size >= 20) katalogCache.delete(katalogCache.keys().next().value);
+    eintrag = { zeit: jetzt, ergebnis: katalogLaufen({ env, limit, home, appOrdner }) };
+    katalogCache.set(key, eintrag);
+  }
+  return (await eintrag.ergebnis).map((e) => ({ ...e }));
+}
+
+async function katalogLaufen({ env, limit, home, appOrdner }) {
+  // `neu` gilt für den Katalog selbst; die fünf Agenten kommen aus ihrem Zwischenspeicher (der Aufrufer hat ihn bei `neu` schon erneuert)
+  const alt = await erkenneAgenten({ env, limit, home, appOrdner });
+  // Vorschau: ein frisch installierter Mac — die Apps dieses Rechners gehören nicht dazu.
+  const appOrte = [...(vorschauOrdner() ? [] : [appOrdner]), join(home, "Applications")];
+  return Promise.all(ladeKatalog().map(async (k) => {
+    for (const app of k.apps) {
+      for (const ort of appOrte) {
+        const pfad = join(ort, app);
+        try { if (existsSync(pfad)) return { id: k.id, gefunden: true, version: appVersionLesen(pfad), quelle: "app" }; } catch { /* weiter */ }
+      }
+    }
+    for (const befehl of k.befehle) {
+      const pfad = findeProgramm(befehl, env);
+      if (!pfad) continue;
+      const bekannt = alt.agenten.find((a) => a.id === befehl && a.pfad);
+      const version = bekannt ? bekannt.version : await versionLesen(pfad, env, limit).catch(() => null);
+      return { id: k.id, gefunden: true, version: version ?? null, quelle: "cli" };
+    }
+    // Cursor ist auch ohne `cursor-agent` verbindbar, wenn die App oder ihr Ordner da ist (wie `cursorDa`)
+    if (k.id === "cursor" && alt.cursorDa) return { id: k.id, gefunden: true, version: null, quelle: "app" };
+    return { id: k.id, gefunden: false, version: null, quelle: null };
+  }));
 }

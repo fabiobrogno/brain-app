@@ -90,6 +90,16 @@ private func url(_ s: String) -> URL { URL(string: s)! }
     #expect(StudioBefehl(rawValue: "unbekannt") == nil)
 }
 
+@Test func einstellungenMenueEintragIstKommaUndOeffnetDieSeiteImStudio() {
+    // ⌘, im Hauptmenü „Kortex“ und in der Menüleiste: derselbe Eintrag, derselbe Befehl — das Studio öffnet damit die Seite „Einstellungen“
+    let e = StudioBefehl.einstellungenEintrag
+    #expect(e.titel == "Einstellungen …")
+    #expect(e.taste == ",")
+    #expect(e.befehl == .einstellungen)
+    #expect(e.befehl.skript == "window.studio?.befehl('einstellungen')")
+    #expect(e.taste.count == 1) // KeyEquivalent(Character(…)) in MenueInhalt braucht genau ein Zeichen
+}
+
 @Test func befehlsNamenKoennenNieAusDemSkriptTextAusbrechen() {
     for b in StudioBefehl.allCases {
         #expect(b.rawValue.range(of: "^[a-z]+(-[a-z]+)*$", options: .regularExpression) != nil, "\(b.rawValue)")

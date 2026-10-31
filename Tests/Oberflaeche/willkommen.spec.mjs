@@ -575,7 +575,7 @@ test("Arbeit läuft: Klonen wird für vorSchliessen gemeldet und danach wieder f
 });
 
 // Weitere Programme mit Einstellungsdatei: nur erkannte stehen in der Auswahl, ihr Ziel geht unverändert an die Werkstatt
-test("KI verbinden: erkannte weitere Programme erscheinen in der Auswahl (mit Logo) und schicken ihr Ziel; nicht erkannte fehlen", async ({ page }) => {
+test("KI verbinden: erkannte weitere Programme erscheinen als Karten (mit Logo) und schicken ihr Ziel; nicht erkannte stehen nur in der Liste", async ({ page }) => {
   const z = await rahmen(page, { vault: "/Users/test/Brain/Privat", programme: [
     { id: "claude-desktop", name: "Claude Desktop", gefunden: true, version: "1.4.2", quelle: "app" },
     { id: "gemini", name: "Gemini CLI", gefunden: false, version: null, quelle: null },
@@ -583,17 +583,49 @@ test("KI verbinden: erkannte weitere Programme erscheinen in der Auswahl (mit Lo
   ] });
   const d = await oeffneKi(page);
   const wahl = d.locator('[data-bereich="ziel-wahl"]');
-  await expect(wahl.locator("[data-ziel]")).toHaveText(["Claude", "Codex", "Cursor", "Claude Desktop", "Zed"]);
-  await expect(wahl.locator('[data-ziel="zed"] [data-ki-logo="zed"] svg path')).toHaveCount(1);
-  await expect(d.locator('[data-liste="agenten"] [data-agent="zed"] [data-ki-logo="zed"]')).toHaveCount(1);
-  await expect(d.locator('[data-liste="agenten"] [data-agent="gemini"]')).toHaveCount(0);
-  await expect(wahl.locator('[data-ziel="claude-desktop"] [data-ki-logo="claude-desktop"] svg path')).toHaveCount(1);
-  await wahl.locator('[data-ziel="zed"]').click();
+  await expect(wahl.locator(".ka-karte .ka-name")).toHaveText(["Claude Code", "Codex", "Claude Desktop", "Zed"]);
+  await expect(wahl.locator('.ka-karte[data-ziel="zed"] [data-ki-logo="zed"] svg')).toHaveCount(1);
+  await expect(wahl.locator('.ka-karte[data-ziel="gemini"]')).toHaveCount(0); // nicht erkannt: nicht oben
+  await expect(wahl.locator('.ka-karte[data-ziel="claude-desktop"] [data-ki-logo="claude-desktop"] svg')).toHaveCount(1);
+  await waehleKi(d, "zed");
   const knopf = d.locator('[data-aktion="claude-verbinden"]');
   await expect(knopf).toHaveText("Mit Zed verbinden");
   await knopf.click();
   await expect(d.locator('[data-zeile="verbinden"] .w-ok')).toContainText("Starte Zed neu");
   expect(z.anfragen.filter((a) => a.pfad === "/api/mcp/verbinden").map((a) => a.body)).toEqual([{ ziel: "zed" }]);
+});
+
+test("KI verbinden: mehrere KIs auf einmal: nacheinander verbunden, ein Selbsttest, ein Satz", async ({ page }) => {
+  const z = await rahmen(page, { vault: "/Users/test/Brain/Privat" });
+  const d = await oeffneKi(page);
+  await waehleKi(d, "claude", "codex");
+  const knopf = d.locator('[data-aktion="claude-verbinden"]');
+  await expect(knopf).toHaveText("Mit 2 KIs verbinden");
+  await expect(d.locator('[data-zeile="verbinden"] .w-aktion-text')).toHaveText("Danach können Claude Code und Codex in deinen Notizen nachschlagen.");
+  await knopf.click();
+  await expect(d.locator('[data-zeile="verbinden"] .w-ok')).toHaveText("Verbunden mit Claude Code und Codex.");
+  await expect(d.locator('[data-bereich="selbsttest"]')).toContainText("Starte Claude Code und Codex neu");
+  expect(aufgezeichnet(z, "/api/mcp/verbinden").map((a) => a.body)).toEqual([{ ziel: "claude" }, { ziel: "codex" }]);
+  expect(aufgezeichnet(z, "/api/mcp/selbsttest")).toHaveLength(1);
+  expect(await page.evaluate(() => window.__verbunden), "Claude war dabei").toBe(1);
+});
+
+test("KI verbinden: bei mehreren steht das Problem je KI darunter, die übrigen sind verbunden", async ({ page }) => {
+  const z = await rahmen(page, { vault: "/Users/test/Brain/Privat" });
+  await page.route("**/api/mcp/verbinden", (r) => {
+    const b = JSON.parse(r.request().postData());
+    if (b.ziel === "codex" && !b.umstellen) return r.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ fehler: "schon da", art: "anders" }) });
+    return r.fulfill({ contentType: "application/json", body: JSON.stringify({ ok: true }) });
+  });
+  const d = await oeffneKi(page);
+  await waehleKi(d, "claude", "codex");
+  await d.locator('[data-aktion="claude-verbinden"]').click();
+  await expect(d.locator('[data-bereich="teil-ok"]')).toHaveText("Schon verbunden: Claude Code.");
+  await expect(d.locator('[data-bereich="umstellen"][data-ziel="codex"]')).toContainText("In Codex gibt es schon einen Eintrag");
+  await expect(d.locator('[data-bereich="selbsttest"]')).toHaveCount(0);
+  await d.locator('[data-aktion="umstellen"]').click();
+  await expect(d.locator('[data-zeile="verbinden"] .w-ok')).toHaveText("Verbunden mit Claude Code und Codex.");
+  void z;
 });
 
 test("KI verbinden: ist nur ein weiteres Programm da (kein Claude, Codex, Cursor), ist genau das vorgewählt", async ({ page }) => {
@@ -609,7 +641,7 @@ test("KI verbinden: ist nur ein weiteres Programm da (kein Claude, Codex, Cursor
 test("KI verbinden: bei einem fremden Eintrag in Zed fragt der Dialog erst, dann mit „umstellen“", async ({ page }) => {
   const z = await rahmen(page, { vault: "/Users/test/Brain/Privat", mcp: "anders", programme: [{ id: "zed", name: "Zed", gefunden: true, version: null, quelle: "app" }] });
   const d = await oeffneKi(page);
-  await d.locator('[data-ziel="zed"]').click();
+  await waehleKi(d, "zed");
   await d.locator('[data-aktion="claude-verbinden"]').click();
   await expect(d.locator('[data-bereich="umstellen"]')).toContainText("In Zed gibt es schon einen Eintrag");
   await d.locator('[data-aktion="umstellen"]').click();
@@ -625,14 +657,32 @@ async function oeffneKi(page) {
   await deckend(d);
   return d;
 }
+// Wählt genau diese KIs: erst ab-, dann anwählen (Karten oben oder Zeilen der aufgeklappten Liste)
+async function waehleKi(d, ...ids) {
+  const wahl = d.locator('[data-bereich="ziel-wahl"]');
+  for (const k of await wahl.locator('[data-ziel][aria-checked="true"], [data-ziel][aria-selected="true"]').all()) {
+    if (!ids.includes(await k.getAttribute("data-ziel"))) await k.click();
+  }
+  for (const id of ids) {
+    if (await wahl.locator(`.ka-karte[data-ziel="${id}"]`).count()) {
+      if ((await wahl.locator(`.ka-karte[data-ziel="${id}"]`).getAttribute("aria-checked")) !== "true") await wahl.locator(`.ka-karte[data-ziel="${id}"]`).click();
+      continue;
+    }
+    if ((await wahl.locator(".ka-mehr").getAttribute("aria-expanded")) !== "true") await wahl.locator(".ka-mehr").click();
+    const z = wahl.locator(`.ka-zeile[data-ziel="${id}"]`);
+    if ((await z.getAttribute("aria-selected")) !== "true") await z.click();
+  }
+}
 test("KI verbinden: Auswahl Claude/Codex/Cursor schickt das gewählte Ziel, danach Selbsttest mit ehrlichem Text", async ({ page }) => {
   const z = await rahmen(page, { vault: "/Users/test/Brain/Privat" });
   const d = await oeffneKi(page);
   const wahl = d.locator('[data-bereich="ziel-wahl"]');
-  await expect(wahl.locator("[data-ziel]")).toHaveText(["Claude", "Codex", "Cursor"]);
-  await expect(wahl.locator('[data-ziel="claude"]')).toHaveAttribute("aria-checked", "true");
+  await expect(wahl.locator(".ka-karte .ka-name")).toHaveText(["Claude Code", "Codex"]);
+  await expect(wahl.locator('[data-ziel="claude"]')).toHaveAttribute("aria-checked", "true"); // Claude Code ist vorgewählt
   await wahl.locator('[data-ziel="codex"]').click();
   await expect(wahl.locator('[data-ziel="codex"]')).toHaveAttribute("aria-checked", "true");
+  await expect(wahl.locator('[data-ziel="claude"]')).toHaveAttribute("aria-checked", "true"); // Mehrfachauswahl
+  await wahl.locator('[data-ziel="claude"]').click();
   await expect(wahl.locator('[data-ziel="claude"]')).toHaveAttribute("aria-checked", "false");
   const knopf = d.locator('[data-aktion="claude-verbinden"]');
   await expect(knopf).toHaveText("Mit Codex verbinden");
@@ -649,7 +699,7 @@ test("KI verbinden: Auswahl Claude/Codex/Cursor schickt das gewählte Ziel, dana
 test("KI verbinden: Cursor — Selbsttest-Fehler wird benannt; Claude bleibt Standard und löst beiVerbunden aus", async ({ page }) => {
   const z = await rahmen(page, { vault: "/Users/test/Brain/Privat", selbsttest: "fehler" });
   const d = await oeffneKi(page);
-  await d.locator('[data-ziel="cursor"]').click();
+  await waehleKi(d, "cursor");
   await d.locator('[data-aktion="claude-verbinden"]').click();
   await expect(d.locator('[data-bereich="selbsttest"]')).toContainText("Der Selbsttest ist fehlgeschlagen: Der MCP-Server hat nicht geantwortet");
   expect(aufgezeichnet(z, "/api/mcp/verbinden").map((a) => a.body)).toEqual([{ ziel: "cursor" }]);
@@ -659,7 +709,7 @@ test("KI verbinden: Cursor mit kaputter Datei → Fehlertext und Eintrag zum Kop
   await rahmen(page, { vault: "/Users/test/Brain/Privat" });
   await page.route("**/api/mcp/verbinden", (r) => r.fulfill({ status: 422, contentType: "application/json", body: JSON.stringify({ fehler: "Die Datei ~/.cursor/mcp.json ist kein gültiges JSON in der erwarteten Form.", art: "kaputt", befehl: '{ "mcpServers": {} }' }) }));
   const d = await oeffneKi(page);
-  await d.locator('[data-ziel="cursor"]').click();
+  await waehleKi(d, "cursor");
   await d.locator('[data-aktion="claude-verbinden"]').click();
   await expect(d.locator('[data-zeile="verbinden"]')).toContainText("kein gültiges JSON");
   await expect(d.locator('[data-bereich="befehl"] code')).toHaveText('{ "mcpServers": {} }');
@@ -670,15 +720,16 @@ test("KI verbinden: Während des Selbsttests ist die Auswahl gesperrt, das Ergeb
   await rahmen(page, { vault: "/Users/test/Brain/Privat", selbsttestVerzoegerung: 900 });
   const d = await oeffneKi(page);
   const wahl = d.locator('[data-bereich="ziel-wahl"]');
-  await wahl.locator('[data-ziel="codex"]').click();
+  await waehleKi(d, "codex");
   await d.locator('[data-aktion="claude-verbinden"]').click();
   await expect(d.locator('[data-zeile="verbinden"] .w-arbeit')).toBeVisible();
-  await expect(wahl.locator('[data-ziel="cursor"]')).toBeDisabled();
-  await wahl.locator('[data-ziel="cursor"]').dispatchEvent("click"); // auch ein erzwungener Klick ändert nichts
+  await expect(wahl.locator('.ka-karte[data-ziel="claude"]')).toBeDisabled();
+  await wahl.locator('.ka-karte[data-ziel="claude"]').dispatchEvent("click"); // auch ein erzwungener Klick ändert nichts
   await expect(wahl.locator('[data-ziel="codex"]')).toHaveAttribute("aria-checked", "true");
+  await expect(wahl.locator('[data-ziel="claude"]')).toHaveAttribute("aria-checked", "false");
   await expect(d.locator('[data-bereich="selbsttest"]')).toContainText("Starte Codex neu");
-  await expect(d.locator('[data-bereich="selbsttest"]')).not.toContainText("Cursor");
-  await expect(wahl.locator('[data-ziel="cursor"]')).toBeEnabled(); // danach wieder frei
+  await expect(d.locator('[data-bereich="selbsttest"]')).not.toContainText("Claude");
+  await expect(wahl.locator('.ka-karte[data-ziel="claude"]')).toBeEnabled(); // danach wieder frei
 });
 
 test("KI verbinden: Cursor wird auch ohne cursor-agent angeboten, wenn die App oder ~/.cursor da ist (cursorDa)", async ({ page }) => {
@@ -689,11 +740,15 @@ test("KI verbinden: Cursor wird auch ohne cursor-agent angeboten, wenn die App o
   await expect(d.locator('[data-aktion="claude-verbinden"]')).toHaveText("Mit Cursor verbinden");
 });
 
-test("KI verbinden: ohne jede erkannte KI und ohne Cursor gibt es keine Verbinden-Zeile", async ({ page }) => {
+test("KI verbinden: ohne jede erkannte KI stehen die beliebten KIs da, nichts ist vorgewählt, Verbinden ist aus", async ({ page }) => {
   await rahmen(page, { vault: "/Users/test/Brain/Privat", agenten: [], cursorDa: false });
   const d = await oeffneKi(page);
   await expect(d.locator(".w-laedt")).toHaveCount(0); // Suche ist fertig
-  await expect(d.locator('[data-zeile="verbinden"]')).toHaveCount(0);
+  await expect(d.locator(".ka-titel")).toHaveText("Beliebte KIs");
+  await expect(d.locator(".ka-karte[aria-checked='true']")).toHaveCount(0);
+  await expect(d.locator('[data-aktion="claude-verbinden"]')).toBeDisabled();
+  await expect(d.locator('[data-aktion="claude-verbinden"]')).toHaveText("Verbinden");
+  await expect(d.locator('[data-bereich="probe-ergebnis"], [data-zeile="probe"]')).toHaveCount(0);
 });
 
 // W4: „verbunden“ erst nach Erfolg
@@ -756,17 +811,16 @@ test("KI-Schritt: erkannte Agenten mit Version, nicht gefundene fehlen", async (
   await knopf(page, "anlegen").click();
   await deckend(schritt(page, "ki"));
   await expect(page.locator("#willkommen-host h2")).toHaveText("Deine KI kann mitlesen");
-  await expect(page.locator(".w-abschnitt").first()).toHaveText("Auf diesem Computer erkannt");
-  const zeilen = page.locator(".w-agent");
-  await expect(zeilen).toHaveCount(2);
-  await expect(zeilen.nth(0).locator(".w-agent-name")).toHaveText("Claude Code");
-  await expect(zeilen.nth(0).locator(".w-agent-version")).toHaveText("Version 2.1.310 (Claude Code)");
-  await expect(zeilen.nth(1).locator(".w-agent-name")).toHaveText("Codex");
-  await expect(zeilen.nth(1).locator(".w-agent-version")).toHaveText("Version codex-cli 0.162.1");
-  await expect(page.locator(".w-pille")).toHaveText(["Installiert", "Installiert"]);
-  await deckend(zeilen.nth(1));
-  await expect(page.locator(".w-agent[data-agent='gemini']")).toHaveCount(0);
-  await expect(knopf(page, "claude-verbinden")).toHaveText("Mit Claude verbinden");
+  await expect(page.locator(".ka-titel").first()).toHaveText("Auf diesem Computer gefunden");
+  const karten = page.locator(".ka-karte");
+  await expect(karten).toHaveCount(2);
+  await expect(karten.nth(0).locator(".ka-name")).toHaveText("Claude Code");
+  await expect(karten.nth(0).locator(".ka-status")).toHaveText("Gefunden · 2.1.310 (Claude Code)");
+  await expect(karten.nth(1).locator(".ka-name")).toHaveText("Codex");
+  await expect(karten.nth(1).locator(".ka-status")).toHaveText("Gefunden · codex-cli 0.162.1");
+  await deckend(karten.nth(1));
+  await expect(page.locator(".ka-karte[data-ki='gemini']")).toHaveCount(0);
+  await expect(knopf(page, "claude-verbinden")).toHaveText("Mit Claude Code verbinden");
   // ohne Kit kein zweiter Knopf
   await expect(knopf(page, "hinweise-einschalten")).toHaveCount(0);
 });
@@ -781,8 +835,8 @@ test("KI-Schritt ohne gefundene Agenten: optional, nur Weiter", async ({ page })
   await deckend(schritt(page, "ki"));
   await expect(page.locator("#willkommen-host h2")).toHaveText("KI verbinden ist optional");
   await expect(page.locator(".w-untertitel")).toHaveText("Auf diesem Computer wurde keine KI-App gefunden. Du kannst das jederzeit später einrichten.");
-  await expect(page.locator(".w-agent")).toHaveCount(0);
-  await expect(knopf(page, "claude-verbinden")).toHaveCount(0);
+  await expect(page.locator(".ka-titel")).toHaveText("Beliebte KIs");
+  await expect(knopf(page, "claude-verbinden")).toBeDisabled();
   await expect(knopf(page, "ki-weiter")).toBeVisible();
 });
 
@@ -964,7 +1018,7 @@ test("oeffneKiDialog zeigt dieselben Inhalte im Dialog und ruft beim Schließen 
   const d = page.locator("#dialog-host .dialog");
   await deckend(d);
   await expect(d.locator(".dialog-kopf")).toHaveText("KI verbinden");
-  await expect(d.locator(".w-agent")).toHaveCount(2);
+  await expect(d.locator(".ka-karte")).toHaveCount(2);
   await expect(d.locator('[data-aktion="claude-verbinden"]')).toBeVisible();
   await expect(d.locator('[data-aktion="hinweise-einschalten"]')).toHaveCount(0); // Route /api/kit/hooks fehlt noch
   await expect(d.locator('[data-aktion="ki-weiter"]')).toHaveCount(0);
@@ -1066,7 +1120,7 @@ test.describe("Screenshots", () => {
       await weg(page, "leer").click();
       await knopf(page, "anlegen").click();
       await deckend(schritt(page, "ki"));
-      await deckend(page.locator(".w-agent").nth(1));
+      await deckend(page.locator(".ka-karte").nth(1));
       await page.waitForTimeout(500);
       await page.screenshot({ path: `${BILDER}v2-ki-verbinden-${schema}.png` });
       await knopf(page, "claude-verbinden").click();
@@ -1108,7 +1162,7 @@ test.describe("Screenshots", () => {
       await page.evaluate(async () => { await (await import("/willkommen.js")).oeffneKiDialog({}); });
       const d = page.locator("#dialog-host .dialog");
       await deckend(d);
-      await deckend(d.locator(".w-agent").nth(1));
+      await deckend(d.locator(".ka-karte").nth(1));
       await page.waitForTimeout(350);
       await page.screenshot({ path: `${BILDER}v2-ki-verbinden-dialog-${schema}.png` });
     });
@@ -1116,31 +1170,32 @@ test.describe("Screenshots", () => {
 });
 
 // ---------------------------------------------------------------- KI-Logos (ki-logos.js)
-// Claude und Cursor zeigen das echte Logo (Ressourcen/logos), Codex nur die Initiale; jedes Logo hat title und Namen für Screenreader.
-test("KI-Logos: erkannte Apps und Auswahl zeigen Logos mit title und Namen", async ({ page }) => {
+// Jede KI des Katalogs zeigt ihr echtes Logo (Ressourcen/logos), ohne echtes Logo die Initiale; jedes Logo hat title und Namen für Screenreader.
+test("KI-Logos: Karten und Liste zeigen Logos mit title und Namen", async ({ page }) => {
   await rahmen(page, { vault: "/Users/test/Brain/Privat" });
   const d = await oeffneKi(page);
-  const liste = d.locator('[data-liste="agenten"]');
-  for (const [id, name] of [["claude", "Claude"], ["codex", "Codex"]]) {
-    const logo = liste.locator(`[data-agent="${id}"] [data-ki-logo="${id}"]`);
-    await expect(logo).toHaveCount(1);
-    await expect(logo).toHaveAttribute("title", name);
-  }
   const wahl = d.locator('[data-bereich="ziel-wahl"]');
-  for (const [id, name] of [["claude", "Claude"], ["codex", "Codex"], ["cursor", "Cursor"]]) {
-    const logo = wahl.locator(`[data-ziel="${id}"] [data-ki-logo="${id}"]`);
+  for (const [id, name] of [["claude", "Claude Code"], ["codex", "Codex"]]) {
+    const logo = wahl.locator(`.ka-karte[data-ziel="${id}"] [data-ki-logo="${id}"]`);
+    await expect(logo).toHaveCount(1);
     await expect(logo).toHaveAttribute("title", name);
     await expect(logo).toBeVisible();
   }
-  // Claude und Cursor sind echte Vektor-Logos, Codex die Initiale ohne Text im DOM
-  await expect(wahl.locator('[data-ki-logo="claude"] svg path')).toHaveCount(1);
-  await expect(wahl.locator('[data-ki-logo="cursor"] svg path')).toHaveCount(1);
-  await expect(wahl.locator('[data-ki-logo="codex"] svg')).toHaveCount(0);
-  await expect(wahl.locator('[data-ki-logo="codex"]')).toHaveText("");
-  expect(await wahl.locator('[data-ki-logo="codex"]').evaluate((e) => getComputedStyle(e, "::before").content)).toBe('"C"');
-  // neben dem sichtbaren Namen nur dekorativ (kein doppeltes Vorlesen), Namen der Knöpfe unverändert
+  await wahl.locator(".ka-mehr").click();
+  for (const [id, name] of [["cursor", "Cursor"], ["aider", "Aider"], ["windsurf", "Windsurf"]]) {
+    const logo = wahl.locator(`.ka-zeile[data-ki="${id}"] [data-ki-logo="${id}"]`);
+    await expect(logo).toHaveAttribute("title", name);
+    await expect(logo).toBeVisible();
+  }
+  // Claude, Cursor und Codex sind echte Logos (Vektor), eine KI ohne eigenes Logo bekommt die Initiale ohne Text im DOM
+  await expect(wahl.locator('[data-ki-logo="claude"] svg')).toHaveCount(1);
+  await expect(wahl.locator('[data-ki-logo="cursor"] svg')).toHaveCount(1);
+  await expect(wahl.locator('[data-ki-logo="codex"] svg')).toHaveCount(1);
+  await expect(wahl.locator('[data-ki-logo="crush"] svg, [data-ki-logo="crush"] img')).toHaveCount(0);
+  await expect(wahl.locator('[data-ki-logo="crush"]')).toHaveText("");
+  expect(await wahl.locator('[data-ki-logo="crush"]').evaluate((e) => getComputedStyle(e, "::before").content)).toBe('"C"');
+  // neben dem sichtbaren Namen nur dekorativ (kein doppeltes Vorlesen)
   await expect(wahl.locator("[data-ki-logo]").first()).toHaveAttribute("aria-hidden", "true");
-  await expect(wahl.locator("[data-ziel]")).toHaveText(["Claude", "Codex", "Cursor"]);
   // Cursor folgt der Textfarbe, Claude behält die Markenfarbe
   const farbe = (sel) => wahl.locator(sel).evaluate((e) => getComputedStyle(e).color);
   expect(await farbe('[data-ki-logo="claude"]')).toBe("rgb(217, 119, 87)");
@@ -1154,10 +1209,10 @@ test("KI-Logos: eigenständiges Logo ist ein Bild mit aria-label, unbekannte KI 
     const m = await import("/ki-logos.js");
     const e = m.kiLogo("claude", 20);
     return { rolle: e.getAttribute("role"), label: e.getAttribute("aria-label"), titel: e.title, hatSvg: !!e.querySelector("svg"),
-      alias: m.kiLogo("cursor-agent", 16)?.dataset.kiLogo, unbekannt: m.kiLogo("windsurf"), markup: m.kiLogoMarkup("codex"),
+      alias: m.kiLogo("cursor-agent", 16)?.dataset.kiLogo, unbekannt: m.kiLogo("gibt-es-nicht"), markup: m.kiLogoMarkup("codex"),
       gemini: m.kiLogo("gemini")?.getAttribute("aria-label"), desktop: m.kiLogoMarkup("claude-desktop") === m.kiLogoMarkup("claude") };
   });
-  expect(r).toEqual({ rolle: "img", label: "Claude", titel: "Claude", hatSvg: true, alias: "cursor", unbekannt: null, markup: null, gemini: "Gemini CLI", desktop: true });
+  expect(r).toEqual({ rolle: "img", label: "Claude Code", titel: "Claude Code", hatSvg: true, alias: "cursor", unbekannt: null, markup: expect.stringContaining("<svg"), gemini: "Gemini CLI", desktop: true });
 });
 
 // Optional: Bilder für die visuelle Kontrolle (KI_LOGO_BILDER=/Ordner/ npx playwright test -g "KI-Logos Bilder")
@@ -1169,7 +1224,7 @@ test.describe("KI-Logos Bilder", () => {
       await page.emulateMedia({ colorScheme: schema === "hell" ? "light" : "dark", reducedMotion: "no-preference" });
       await rahmen(page, { vault: "/Users/test/Brain/Privat" });
       const d = await oeffneKi(page);
-      await expect(d.locator('[data-ki-logo="cursor"]')).toBeVisible();
+      await expect(d.locator('[data-ki-logo="codex"]').first()).toBeVisible();
       await page.waitForTimeout(400);
       mkdirSync(process.env.KI_LOGO_BILDER, { recursive: true });
       await page.screenshot({ path: `${process.env.KI_LOGO_BILDER}ki-verbinden-${schema}.png` });
@@ -1189,6 +1244,19 @@ test.describe("KI-Logos Bilder", () => {
       await page.waitForTimeout(400);
       mkdirSync(process.env.KI_LOGO_BILDER, { recursive: true });
       await page.screenshot({ path: `${process.env.KI_LOGO_BILDER}ki-verbinden-weitere-${schema}.png` });
+    });
+    test(`KI verbinden: Liste aufgeklappt und gefiltert (${schema})`, async ({ page }) => {
+      await page.emulateMedia({ colorScheme: schema === "hell" ? "light" : "dark", reducedMotion: "no-preference" });
+      await rahmen(page, { vault: "/Users/test/Brain/Privat" });
+      const d = await oeffneKi(page);
+      await d.locator(".ka-mehr").click();
+      await expect(d.locator(".ka-zeile").first()).toBeVisible();
+      await page.waitForTimeout(500);
+      mkdirSync(process.env.KI_LOGO_BILDER, { recursive: true });
+      await page.screenshot({ path: `${process.env.KI_LOGO_BILDER}ki-verbinden-liste-${schema}.png` });
+      await page.keyboard.type("co");
+      await page.waitForTimeout(250);
+      await page.screenshot({ path: `${process.env.KI_LOGO_BILDER}ki-verbinden-liste-gefiltert-${schema}.png` });
     });
   }
 });
