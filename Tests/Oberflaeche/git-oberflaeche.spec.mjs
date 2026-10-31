@@ -17,205 +17,6 @@ test.beforeAll(async () => { dateien = await starteDateien(); });
 test.afterAll(() => dateien?.stopp());
 const seite = (page) => oeffneSeite(page, dateien.url);
 
-// ---------------------------------------------------------------- Konfliktdialog
-const LANG = Array.from({ length: 14 }, (_, i) => `Zeile ${i + 1} der langen Notiz`);
-const FASSUNGEN = {
-  "10_notizen/Reise nach Lissabon.md": {
-    meine: { text: "# Reise nach Lissabon\n\nFlug im Mai.\nHotel in der Alfama.\nMietwagen nicht nötig.\n" },
-    andere: { text: "# Reise nach Lissabon\n\nFlug im Juni.\nHotel in der Alfama.\nStraßenbahn 28 fahren.\n" },
-  },
-  "09_wiki/wissen/Kaffee.md": { meine: { text: LANG.join("\n") + "\nMeine letzte Zeile\n" }, andere: { text: LANG.join("\n") + "\nAndere letzte Zeile\n" } },
-  "00_inbox/alt.md": { meine: null, andere: { text: "Ein alter Entwurf, den der andere Mac noch geändert hat.\n" } },
-};
-const KONFLIKTE = [
-  { pfad: "10_notizen/Reise nach Lissabon.md", art: "beide" },
-  { pfad: "09_wiki/wissen/Kaffee.md", art: "beide" },
-  { pfad: "00_inbox/alt.md", art: "meine-geloescht" },
-];
-async function mockeKonflikt(page, { fassungen = FASSUNGEN, loesen, abbrechen, vorschauStatus } = {}) {
-  const gesendet = [];
-  await page.route(/\/api\/git\/konflikt(\?|$)/, (route) => {
-    const pfad = new URL(route.request().url()).searchParams.get("pfad");
-    if (vorschauStatus) return route.fulfill({ status: vorschauStatus, json: { fehler: "Die Datei konnte nicht gelesen werden." } });
-    route.fulfill({ json: { aktiv: true, dateien: KONFLIKTE, datei: pfad ? fassungen[pfad] : null } });
-  });
-  await page.route(/\/api\/git\/konflikt\/loesen$/, (route) => {
-    gesendet.push(route.request().postDataJSON());
-    if (loesen) return route.fulfill(loesen);
-    route.fulfill({ json: { ok: true, zweiteDateien: ["10_notizen/Reise nach Lissabon (Konflikt 2026-10-29).md"] } });
-  });
-  await page.route(/\/api\/git\/konflikt\/abbrechen$/, (route) => { gesendet.push({ abbrechen: true }); route.fulfill(abbrechen || { json: { ok: true } }); });
-  return gesendet;
-}
-async function oeffneKonflikt(page, dateienListe = KONFLIKTE) {
-  await page.evaluate(async (liste) => {
-    const m = await import("/abgleich.js");
-    const { api } = await import("/api.js");
-    window.__dlg = m.oeffneKonfliktDialog({ dateien: liste, api, datum: "2026-10-29",
-      beiFertig: (r) => window.__ereignis.push({ art: "fertig", r }), beiAbgebrochen: () => window.__ereignis.push({ art: "abgebrochen" }) });
-  }, dateienListe);
-}
-const karte = (page, i) => page.locator(".ab-karte").nth(i);
-
-test("Konflikt: je Datei eine Karte, beide Fassungen nebeneinander, Fortschritt „0 von 3 gelöst“", async ({ page }) => {
-  await mockeKonflikt(page); await seite(page); await oeffneKonflikt(page);
-  const dialog = page.locator('[data-dialog="konflikt"]');
-  await sichtbar(dialog);
-  await expect(dialog).toHaveAttribute("aria-modal", "true");
-  await expect(page.locator(".ab-karte")).toHaveCount(3);
-  await expect(page.locator(".ab-fortschritt-text")).toHaveText("0 von 3 gelöst");
-  await expect(page.locator(".ab-balken")).toHaveAttribute("aria-valuenow", "0");
-  await expect(page.locator(".ab-balken")).toHaveAttribute("aria-valuemax", "3");
-  await expect(page.locator('[data-aktion="konflikt-zusammenfuehren"]')).toBeDisabled();
-  await expect(page.locator(".ab-fuss .ab-offen")).toHaveText("Bitte wähle noch 3 Fassungen.");
-  // erste Karte: zwei Kacheln mit Text, links meine, rechts die andere Fassung, auf gleicher Höhe
-  const k = karte(page, 0);
-  await expect(k.locator(".ab-datei-name")).toHaveText("Reise nach Lissabon.md");
-  await expect(k.locator(".ab-datei-ordner")).toHaveText("10_notizen");
-  await expect(k.locator(".ab-kachel")).toHaveCount(2);
-  await expect(k.locator('.ab-kachel[data-seite="meine"] .ab-text')).toContainText("Mietwagen nicht nötig.");
-  await expect(k.locator('.ab-kachel[data-seite="andere"] .ab-text')).toContainText("Straßenbahn 28 fahren.");
-  await expect(k.locator('.ab-kachel[data-seite="meine"] .ab-kachel-name')).toHaveText("Meine Fassung");
-  await expect(k.locator('.ab-kachel[data-seite="andere"] .ab-kachel-name')).toHaveText("Fassung vom anderen Mac");
-  const [l, r] = await Promise.all([k.locator('.ab-kachel[data-seite="meine"]').boundingBox(), k.locator('.ab-kachel[data-seite="andere"]').boundingBox()]);
-  expect(r.x).toBeGreaterThan(l.x + l.width - 1);
-  expect(Math.abs(r.y - l.y)).toBeLessThan(2);
-  // nur abweichende Zeilen sind hervorgehoben
-  await expect(k.locator('.ab-kachel[data-seite="meine"] .ab-z.anders')).toHaveText(["Flug im Mai.", "Mietwagen nicht nötig."]);
-  await expect(k.locator('.ab-kachel[data-seite="andere"] .ab-z.anders')).toHaveText(["Flug im Juni.", "Straßenbahn 28 fahren."]);
-  await expect(k.locator('.ab-kachel[data-seite="meine"] .ab-kachel-meta')).toHaveText("5 Zeilen");
-  // „Beide behalten“ mit Hinweis auf die Zusatzdatei
-  await expect(k.locator(".ab-beide")).toContainText("Beide behalten");
-  await expect(k.locator(".ab-beide")).toContainText("Konflikt 2026-10-29");
-  // gelöscht-Fall: meine Seite zeigt „(gelöscht)“, kein „Beide behalten“
-  const g = karte(page, 2);
-  await expect(g.locator('.ab-kachel[data-seite="meine"] .ab-leer')).toHaveText("(gelöscht)");
-  await expect(g.locator(".ab-beide")).toHaveCount(0);
-  await expect(g).toContainText("Ich habe diese Datei gelöscht");
-});
-
-test("Konflikt: wählen füllt den Fortschritt, Karte wird „Gelöst“, Zusammenführen sendet die Auswahl", async ({ page }) => {
-  const gesendet = await mockeKonflikt(page); await seite(page); await oeffneKonflikt(page);
-  await sichtbar(page.locator('[data-dialog="konflikt"]'));
-  await karte(page, 0).locator('input[data-wahl="meine"]').check();
-  await expect(page.locator(".ab-fortschritt-text")).toHaveText("1 von 3 gelöst");
-  await expect(page.locator(".ab-balken")).toHaveAttribute("aria-valuenow", "1");
-  await expect(karte(page, 0)).toHaveAttribute("data-zustand", "geloest");
-  await expect(karte(page, 0).locator(".ab-marke")).toHaveText("Gelöst");
-  await expect(karte(page, 1).locator(".ab-marke")).toHaveText("Offen");
-  expect(await page.locator(".ab-balken-fuell").evaluate((e) => e.style.width)).toBe("33%");
-  // Klick irgendwo auf die Kachel (hier auf ihren Text) wählt sie
-  await karte(page, 1).locator('.ab-kachel[data-seite="andere"] .ab-text').click();
-  await expect(karte(page, 1).locator('input[data-wahl="andere"]')).toBeChecked();
-  await expect(page.locator(".ab-fortschritt-text")).toHaveText("2 von 3 gelöst");
-  await expect(page.locator('[data-aktion="konflikt-zusammenfuehren"]')).toBeDisabled();
-  await karte(page, 2).locator('input[data-wahl="andere"]').check();
-  await expect(page.locator(".ab-fortschritt-text")).toHaveText("Alles entschieden. Du kannst jetzt zusammenführen.");
-  await expect(page.locator(".ab-fortschritt")).toHaveClass(/fertig/);
-  await expect(page.locator(".ab-fuss .ab-offen")).toHaveText("");
-  // Änderung der Wahl auf „Beide behalten“ bleibt gelöst und zählt nicht doppelt
-  await karte(page, 0).locator('input[data-wahl="beide"]').check();
-  await expect(page.locator(".ab-balken")).toHaveAttribute("aria-valuenow", "3");
-  await page.locator('[data-aktion="konflikt-zusammenfuehren"]').click();
-  await expect(page.locator('[data-dialog="konflikt"]')).toHaveCount(0);
-  expect(gesendet).toEqual([{ auswahl: [
-    { pfad: "10_notizen/Reise nach Lissabon.md", wahl: "beide" },
-    { pfad: "09_wiki/wissen/Kaffee.md", wahl: "andere" },
-    { pfad: "00_inbox/alt.md", wahl: "andere" },
-  ] }]);
-  await expect(page.locator(".toast")).toContainText("Zusammengeführt");
-  const ereignisse = await page.evaluate(() => window.__ereignis);
-  expect(ereignisse.map((e) => e.art)).toEqual(["fertig"]);
-});
-
-test("Konflikt: per Tastatur bedienbar (Pfeiltasten im Radiogruppe, Tab bis Zusammenführen, Escape schließt)", async ({ page }) => {
-  await mockeKonflikt(page); await seite(page); await oeffneKonflikt(page);
-  await sichtbar(page.locator('[data-dialog="konflikt"]'));
-  const erste = karte(page, 0).locator('input[data-wahl="meine"]');
-  await expect(erste).toBeFocused();
-  await page.keyboard.press("ArrowRight");
-  await expect(karte(page, 0).locator('input[data-wahl="andere"]')).toBeChecked();
-  await expect(karte(page, 0).locator('input[data-wahl="andere"]')).toBeFocused();
-  await page.keyboard.press("ArrowDown");
-  await expect(karte(page, 0).locator('input[data-wahl="beide"]')).toBeChecked();
-  await expect(page.locator(".ab-fortschritt-text")).toHaveText("1 von 3 gelöst");
-  // Fokusring sichtbar (Kachel bzw. Beide-Zeile hebt sich ab)
-  expect(await karte(page, 0).locator(".ab-beide").evaluate((e) => getComputedStyle(e).borderTopColor)).not.toBe("rgba(0, 0, 0, 0)");
-  // Gruppen und Beschriftungen für Screenreader
-  await expect(karte(page, 0)).toHaveJSProperty("tagName", "FIELDSET");
-  await expect(karte(page, 0).locator("legend")).toHaveAttribute("title", "10_notizen/Reise nach Lissabon.md");
-  await expect(page.locator('[data-dialog="konflikt"]')).toHaveAttribute("aria-labelledby", "ab-titel");
-  await expect(page.locator(".ab-fortschritt-text")).toHaveAttribute("aria-live", "polite");
-  await page.keyboard.press("Escape");
-  await expect(page.locator('[data-dialog="konflikt"]')).toHaveCount(0);
-});
-
-test("Konflikt: lange Fassungen sind gekürzt und lassen sich ganz zeigen", async ({ page }) => {
-  await mockeKonflikt(page); await seite(page); await oeffneKonflikt(page);
-  const k = karte(page, 1);
-  const umschalter = k.locator('[data-aktion="konflikt-vorschau"]');
-  await expect(umschalter).toBeVisible();
-  await expect(umschalter).toHaveText("Ganze Fassung zeigen");
-  await expect(umschalter).toHaveAttribute("aria-expanded", "false");
-  const kurz = (await k.locator('.ab-kachel[data-seite="meine"] .ab-text').boundingBox()).height;
-  await umschalter.click();
-  await expect(umschalter).toHaveText("Weniger zeigen");
-  await expect(umschalter).toHaveAttribute("aria-expanded", "true");
-  const lang = (await k.locator('.ab-kachel[data-seite="meine"] .ab-text').boundingBox()).height;
-  expect(lang).toBeGreaterThan(kurz + 60);
-  // kurze Dateien brauchen keinen Umschalter
-  await expect(karte(page, 0).locator('[data-aktion="konflikt-vorschau"]')).toBeHidden();
-});
-
-test("Konflikt: Abbrechen ruft die Werkstatt, meldet zurück und schließt", async ({ page }) => {
-  const gesendet = await mockeKonflikt(page); await seite(page); await oeffneKonflikt(page);
-  await sichtbar(page.locator('[data-dialog="konflikt"]'));
-  await expect(page.locator('[data-aktion="konflikt-abbrechen"]')).toHaveAttribute("title", "Alles bleibt wie vor dem Abgleich. Du kannst später erneut abgleichen.");
-  await page.locator('[data-aktion="konflikt-abbrechen"]').click();
-  await expect(page.locator('[data-dialog="konflikt"]')).toHaveCount(0);
-  expect(gesendet).toEqual([{ abbrechen: true }]);
-  await expect(page.locator(".toast")).toContainText("Abgleich abgebrochen");
-  expect((await page.evaluate(() => window.__ereignis)).map((e) => e.art)).toEqual(["abgebrochen"]);
-});
-
-test("Konflikt: Vorschau-Fehler ist freundlich und lässt die Wahl trotzdem zu; Nochmal lädt neu", async ({ page }) => {
-  let modus = "fehler";
-  await page.route(/\/api\/git\/konflikt(\?|$)/, (route) => (modus === "fehler"
-    ? route.fulfill({ status: 500, json: { fehler: "fatal: unable to read blob 4f2a" } })
-    : route.fulfill({ json: { aktiv: true, dateien: [], datei: FASSUNGEN["10_notizen/Reise nach Lissabon.md"] } })));
-  await seite(page); await oeffneKonflikt(page, [KONFLIKTE[0]]);
-  const k = karte(page, 0);
-  await expect(k.locator(".ab-hinweis.fehlertext").first()).toHaveText("Die Vorschau konnte nicht geladen werden.");
-  await expect(page.locator('[data-dialog="konflikt"]')).not.toContainText("fatal");
-  await k.locator('input[data-wahl="meine"]').check();
-  await expect(page.locator(".ab-fortschritt-text")).toHaveText("Alles entschieden. Du kannst jetzt zusammenführen.");
-  modus = "ok";
-  await k.locator("button", { hasText: "Nochmal versuchen" }).first().click();
-  await expect(k.locator('.ab-kachel[data-seite="meine"] .ab-text')).toContainText("Mietwagen nicht nötig.");
-});
-
-test("Konflikt: Fehler beim Zusammenführen zeigt einen ruhigen Satz, der rohe Git-Text ist aufklappbar", async ({ page }) => {
-  await mockeKonflikt(page, { loesen: { status: 500, json: { fehler: "fatal: could not read from remote repository.\nPlease make sure you have the right access rights" } } });
-  await seite(page); await oeffneKonflikt(page, [KONFLIKTE[0]]);
-  await karte(page, 0).locator('input[data-wahl="andere"]').check();
-  await page.locator('[data-aktion="konflikt-zusammenfuehren"]').click();
-  const meldung = page.locator(".rm-meldung.fehlertext");
-  await expect(meldung).toContainText("Das Zusammenführen hat nicht geklappt. Es wurde nichts verloren.");
-  await expect(meldung.locator(".roh-text")).toBeHidden();
-  await meldung.locator("summary").click();
-  await expect(meldung.locator(".roh-text")).toBeVisible();
-  await expect(meldung.locator(".roh-text")).toContainText("could not read from remote repository");
-  await expect(page.locator('[data-dialog="konflikt"]')).toBeVisible(); // Dialog bleibt, neuer Versuch möglich
-  await expect(page.locator('[data-aktion="konflikt-zusammenfuehren"]')).toBeEnabled();
-});
-
-test("Konflikt: ohne offene Datei erklärt der Dialog, dass nur noch abgeschlossen oder abgebrochen werden muss", async ({ page }) => {
-  await mockeKonflikt(page); await seite(page); await oeffneKonflikt(page, []);
-  await expect(page.locator(".rm-titel")).toHaveText("Der Abgleich ist fast fertig");
-  await expect(page.locator(".ab-fortschritt")).toBeHidden();
-  await expect(page.locator('[data-aktion="konflikt-zusammenfuehren"]')).toBeEnabled();
-});
-
 // ---------------------------------------------------------------- Frühere Fassung zurückholen
 const DIFF_ZURUECK = [
   "diff --git a/10_notizen/Reise nach Lissabon.md b/10_notizen/Reise nach Lissabon.md",
@@ -448,18 +249,22 @@ test.describe("Statusleiste: Hauptknopf „Abgleichen“", () => {
     await expect(sync(page)).toContainText("Noch nie abgeglichen");
   });
 
-  test("Konflikt: roter Knopf „Konflikt lösen“ öffnet den Konfliktdialog mit Karten", async ({ page }) => {
-    const stand = { ...BASIS(), konflikt: { dateien: KONFLIKTE.map((k) => k.pfad) } };
-    await page.route(/\/api\/git\/konflikt(\?|$)/, (route) => route.fulfill({ json: { aktiv: true, dateien: KONFLIKTE, datei: FASSUNGEN[new URL(route.request().url()).searchParams.get("pfad")] || null } }));
+  test("Konflikt: roter Knopf „Konflikt in 3 Notizen“ öffnet die Konflikt-Ansicht (Abschnitt „Konflikt-Ansicht“ in konflikt.spec.mjs prüft sie ganz)", async ({ page }) => {
+    const stand = { ...BASIS(), konflikt: { dateien: ["a.md", "b.md", "c.md"].map((pfad) => ({ pfad, art: "beide" })) } };
     await oeffneApp(page, stand);
     await expect(sync(page)).toHaveAttribute("data-zustand", "konflikt");
-    await expect(sync(page)).toContainText("Konflikt lösen");
+    await expect(sync(page)).toContainText("Konflikt in 3 Notizen");
     await expect(sync(page).locator(".sync-aktion")).toBeHidden(); // die Aktion steckt schon im Text
-    await expect(sync(page)).toHaveAttribute("aria-label", "Konflikt lösen");
-    await sync(page).click();
-    await expect(page.locator('[data-dialog="konflikt"]')).toBeVisible();
-    await expect(page.locator(".ab-karte")).toHaveCount(3);
-    await expect(page.locator(".ab-fortschritt-text")).toHaveText("0 von 3 gelöst");
+    await expect(sync(page)).toHaveAttribute("aria-label", "Konflikt in 3 Notizen");
+    await expect(page.locator('[data-banner="abgleich"]')).toContainText("Konflikt in 3 Notizen");
+    // Vermerk der Hintergrund-Sicherung (Kern): dieselbe Anzeige, ohne offene Zusammenführung
+    await page.unroute("**/api/git/status"); await page.unroute("**/api/git/nachsehen");
+    const kern = { ...BASIS(), sicherungStand: "konflikt", sicherungDateien: ["a.md", "05_aufgaben/x.md"] };
+    await page.route("**/api/git/status", (r) => r.fulfill({ json: kern }));
+    await page.route("**/api/git/nachsehen", (r) => r.fulfill({ json: kern }));
+    await page.reload(); await page.waitForSelector('[data-st="sync"]');
+    await expect(sync(page)).toHaveAttribute("data-zustand", "konflikt");
+    await expect(sync(page)).toContainText("Konflikt in 1 Notiz und 1 Aufgabe");
   });
 
   test("Offline: gestrichelter Knopf „Offline“ mit erklärendem Titel, danach wieder normal", async ({ page }) => {
@@ -519,7 +324,6 @@ test.describe("Bilder Git-Oberfläche", () => {
       await page.emulateMedia({ colorScheme: schema === "hell" ? "light" : "dark", reducedMotion: "reduce" });
       await page.route(/\/api\/git\/log(\?|$)/, (r) => r.fulfill({ json: verlaufLog() }));
       await page.route(/\/api\/git\/status$/, (r) => r.fulfill({ json: { ...STATUS_OK, geaendert: [{ pfad: "09_wiki/wissen/Kaffee.md", code: "M" }, { pfad: "00_inbox/neu.md", code: "??" }] } }));
-      await mockeKonflikt(page);
       await page.route(/\/api\/git\/wiederherstellen\/vorschau(\?|$)/, (r) => r.fulfill({ json: { diff: DIFF_ZURUECK, unveraendert: false, ungesichert: false } }));
       await seite(page); await montiereListe(page);
       await expect(page.locator(".vl-tagkopf")).toHaveCount(2);
@@ -533,14 +337,6 @@ test.describe("Bilder Git-Oberfläche", () => {
       await sichtbar(page.locator(".vd-paar").first());
       await page.screenshot({ path: join(BILDER, `git-verlauf-diff-spalten-${schema}.png`) });
       await page.evaluate(() => window.__dv.zerstoere());
-
-      await oeffneKonflikt(page);
-      await sichtbar(page.locator('[data-dialog="konflikt"]'));
-      await expect(karte(page, 2).locator(".ab-text")).toBeVisible();
-      await karte(page, 0).locator('input[data-wahl="andere"]').check();
-      await karte(page, 1).locator('input[data-wahl="meine"]').check();
-      await page.screenshot({ path: join(BILDER, `git-konflikt-${schema}.png`) });
-      await page.keyboard.press("Escape");
 
       await oeffneZurueckholen(page);
       await sichtbar(page.locator('[data-dialog="zurueckholen"] .vd-z.p'));

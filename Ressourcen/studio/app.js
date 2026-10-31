@@ -16,11 +16,13 @@ import { TA as TAUF } from "./texte-aufgaben.js";
 import { erzeugeFragePanel } from "./frage.js";
 import { kontingentStand, erzeugeKontoLeiste } from "./kontingent.js";
 import { TF } from "./texte-frage.js";
+import { TK, konfliktLabel } from "./texte-konflikt.js";
 import { starteLive, planeAus, kiHinweis, hebeHervor } from "./live.js";
 import * as kz from "./tastenkuerzel.js";
 import { datumKurz, datumLang, datumZeit, istDatumText, bytesText, setzeTypFarbe, typSymbol, typName, wortAnzahl, relativ, pluralisiere, vorschauText, typTextFarbe } from "./format.js";
 
 const $ = (id) => document.getElementById(id);
+let konfliktInst = null, konfliktLaedt = false, konfliktBannerZu = false, konfliktGemeldet = "", konfliktMerke = null; // Konflikt-Ansicht (siehe unten)
 
 const S = {
   info: null, vaultListe: null,
@@ -39,6 +41,7 @@ const S = {
   ladeNr: 0, bereit: false,
   umstellung: null,                          // P7c: { altlasten, umgestellt, angefangen } oder null (alter Werkzeug-Ordner im Vault und Stand der Umstellung)
   zeigeZurueckgestellt: false,               // Posteingang: false = offene Notizen, true = die mit „Später“ zurückgestellten
+  inboxOrdner: "00_inbox",                   // Ordnername des Posteingangs (Antwort von /api/notizen, Konfiguration ordner.inbox)
   aufgabenOrdner: "05_aufgaben",             // Ordnername der Aufgaben (Antwort von /api/notizen, Konfiguration ordner.aufgaben)
   aufgabeDatei: false,                       // Aufgaben: true = eine Karte ist als Datei im Editor geöffnet (das Board ist dann verdeckt)
 };
@@ -131,7 +134,7 @@ function wikiZiele() {
 }
 async function legeWikiZielAn(ziel) {
   try {
-    const ordner = ordnerVon(S.pfad || "") || (S.baum.find((e) => e.pfad === "00_inbox") ? "00_inbox" : "");
+    const ordner = ordnerVon(S.pfad || "") || (S.baum.find((e) => e.pfad === inboxName()) ? inboxName() : "");
     const r = await api.neu(ordner, ziel.split("/").pop());
     await ladeBaum();
     oeffne(r.pfad);
@@ -140,6 +143,7 @@ async function legeWikiZielAn(ziel) {
 
 // ======================================================= Datei öffnen / speichern
 async function oeffne(pfad, { zeile, ausListe, ausBoard } = {}) {
+  if (konfliktInst) { if (konfliktInst.laeuft()) return false; await schliesseKonflikt(konfliktInst.istFertig() ? "fertig" : "liste"); }
   if (pfad === S.pfad) { schliesseDiff(); if (zeile) ed.springeZu(zeile); else if (!ausListe) ed.fokus(); return true; }
   if (S.konflikt) { toast(`Löse zuerst den Konflikt in „${ohneEndung(dateiName(S.pfad))}“.`, { fehler: true }); return false; }
   const nr = ++S.ladeNr;
@@ -154,7 +158,7 @@ async function oeffne(pfad, { zeile, ausListe, ausBoard } = {}) {
     clearTimeout(speicherTimer);
     if (!(await sichereVorWechsel()) || nr !== S.ladeNr) return false;
   }
-  S.pfad = d.pfad; S.hash = d.hash; S.schutz = !!d.schreibschutz; S.dirty = false; S.konflikt = null;
+  S.pfad = d.pfad; S.hash = d.hash; S.schutz = !!d.schreibschutz || imKonflikt(d.pfad); S.dirty = false; S.konflikt = null; // Dateien in einer offenen Zusammenführung enthalten Konfliktmarken: nur lesen
   S.bearbeitbar = istBearbeitbar(d.pfad);
   S.aktuellePruefung = null;
   ed.setzeText(d.inhalt, { nurLesen: S.schutz || !S.bearbeitbar });
@@ -274,6 +278,7 @@ function zeigeStand(art, still, text) {
 function zeigeBanner() {
   const host = $("banner-host");
   host.replaceChildren();
+  if (istKonflikt() && !konfliktInst && !konfliktBannerZu) host.append(baueKonfliktBanner());
   if (!S.pfad) return;
   if (S.konflikt) {
     host.append(h("div", { klasse: "banner warn", role: "alert", "data-banner": "konflikt" },
@@ -297,8 +302,9 @@ function setzeFenstertitel() {
 
 // ======================================================= Index (Notizen, Typen, Ansichten)
 // Wie der Werkstatt-Index: _-Ordner im Posteingang sind maschinell, Vorlagen und Agenten-Anweisungen in der Wurzel keine Notizen
-const bereichVonPfad = (p) => (/^90_/.test(p) || (S.aufgabenOrdner && p.toLowerCase().startsWith(S.aufgabenOrdner.toLowerCase() + "/archiv/") && p.split("/").length === 3) ? "archiv" : /^00_inbox\/_/.test(p) ? "maschine" : p.startsWith("01_vorlagen/") ? "vorlage"
-  : /^(claude|agents|gemini)\.md$/i.test(p) ? "system" : p.startsWith("00_inbox/") ? "inbox" : p.startsWith("09_wiki/") ? "wissen" : (S.aufgabenOrdner && p.toLowerCase().startsWith(S.aufgabenOrdner.toLowerCase() + "/") && p.split("/").length === 2) ? "aufgabe" : "notiz");
+const inboxName = () => S.inboxOrdner || "00_inbox";
+const bereichVonPfad = (p) => (/^90_/.test(p) || (S.aufgabenOrdner && p.toLowerCase().startsWith(S.aufgabenOrdner.toLowerCase() + "/archiv/") && p.split("/").length === 3) ? "archiv" : p.toLowerCase().startsWith(inboxName().toLowerCase() + "/_") ? "maschine" : p.startsWith("01_vorlagen/") ? "vorlage"
+  : /^(claude|agents|gemini)\.md$/i.test(p) ? "system" : p.toLowerCase().startsWith(inboxName().toLowerCase() + "/") ? "inbox" : p.startsWith("09_wiki/") ? "wissen" : (S.aufgabenOrdner && p.toLowerCase().startsWith(S.aufgabenOrdner.toLowerCase() + "/") && p.split("/").length === 2) ? "aufgabe" : "notiz");
 const SICHTBAR = new Set(["inbox", "notiz", "wissen"]); // erscheinen in „Alle Notizen“, Typen und Ansichten
 const istNotiz = (n) => SICHTBAR.has(n.bereich) && !n.generiert;
 function notizenAusBaum() {
@@ -339,10 +345,13 @@ async function ladeIndex() {
   try {
     const r = await api.indexAlles();
     if (!Array.isArray(r?.notizen)) throw new Error("kein Index");
-    n = { status: "fulfilled", value: { notizen: r.notizen, aufgabenOrdner: r.aufgabenOrdner } };
+    n = { status: "fulfilled", value: { notizen: r.notizen, aufgabenOrdner: r.aufgabenOrdner, inboxOrdner: r.inboxOrdner, inboxHinweis: r.inboxHinweis } };
     t = { status: "fulfilled", value: r.typen }; a = { status: "fulfilled", value: r.ansichten };
   } catch { [n, t, a] = await Promise.allSettled([api.notizen(), api.typen(), api.ansichten()]); }
   if (n.status === "fulfilled" && typeof n.value?.aufgabenOrdner === "string" && n.value.aufgabenOrdner) S.aufgabenOrdner = n.value.aufgabenOrdner;
+  if (n.status === "fulfilled" && typeof n.value?.inboxOrdner === "string" && n.value.inboxOrdner) S.inboxOrdner = n.value.inboxOrdner;
+  S.inboxHinweis = n.status === "fulfilled" && typeof n.value?.inboxHinweis === "string" ? n.value.inboxHinweis : null;
+  if (S.inboxHinweis && S.inboxHinweisGezeigt !== S.inboxHinweis) { S.inboxHinweisGezeigt = S.inboxHinweis; toast(S.inboxHinweis, { fehler: true, ms: 14000 }); }
   S.notizen = n.status === "fulfilled" && Array.isArray(n.value?.notizen) ? n.value.notizen : notizenAusBaum();
   S.nMap = new Map(S.notizen.map((x) => [x.pfad, x]));
   S.typen = t.status === "fulfilled" && Array.isArray(t.value?.typen) ? t.value.typen : typenAusNotizen();
@@ -408,9 +417,9 @@ function weicherWechsel() {
   a.classList.remove("ansicht-wechsel"); void a.offsetWidth; a.classList.add("ansicht-wechsel");
   setTimeout(() => a.classList.remove("ansicht-wechsel"), 170);
 }
-// Fenster-Modus: liste (Standard) · verlauf · aufgaben (Board füllt den Platz) · aufgaben-datei (Karte als Datei im Editor)
+// Fenster-Modus: liste (Standard) · verlauf · konflikt (Abgleich mit zwei Geräten) · aufgaben (Board füllt den Platz) · aufgaben-datei (Karte als Datei im Editor)
 function setzeModus() {
-  $("app").dataset.modus = S.sicht.art === "verlauf" ? "verlauf" : istAufgabenSicht() ? (S.aufgabeDatei ? "aufgaben-datei" : "aufgaben") : "liste";
+  $("app").dataset.modus = konfliktInst ? "konflikt" : S.sicht.art === "verlauf" ? "verlauf" : istAufgabenSicht() ? (S.aufgabeDatei ? "aufgaben-datei" : "aufgaben") : "liste";
 }
 // Zähler für die Seitenleiste aus dem Notiz-Index: offen = noch nicht erledigt, überfällig = mit Fälligkeit vor heute
 function aufgabenZaehler() {
@@ -429,6 +438,7 @@ function aufgabenZaehler() {
 const ANSICHTEN = ["abgelaufen", "strittig", "ungeprueft", "zuletzt"];
 const gleicheSicht = (a, b) => a.art === b.art && (a.id ?? null) === (b.id ?? null);
 function waehleSicht(sicht, { merken = true } = {}) {
+  if (konfliktInst && !konfliktInst.laeuft()) schliesseKonflikt(konfliktInst.istFertig() ? "fertig" : "liste");
   if (S.sicht.art !== "verlauf" || sicht.art !== "verlauf") { /* weiter */ }
   if (sicht.art !== "verlauf") S.vorVerlauf = null;
   schliesseSuche(false);
@@ -899,7 +909,7 @@ function zeichnePfad() {
   const n = S.nMap.get(S.pfad);
   const bereich = n?.bereich || bereichVonPfad(S.pfad);
   const teile = ordnerVon(S.pfad) ? ordnerVon(S.pfad).split("/") : [];
-  const bereichWurzel = bereich === "aufgabe" ? S.aufgabenOrdner : bereich === "inbox" || bereich === "maschine" ? "00_inbox" : bereich === "wissen" ? "09_wiki" : bereich === "vorlage" ? "01_vorlagen" : null;
+  const bereichWurzel = bereich === "aufgabe" ? S.aufgabenOrdner : bereich === "inbox" || bereich === "maschine" ? inboxName() : bereich === "wissen" ? "09_wiki" : bereich === "vorlage" ? "01_vorlagen" : null;
   const bereichText = bereich === "aufgabe" ? T.bereiche.aufgaben : bereich === "inbox" || bereich === "maschine" ? T.bereiche.inbox : bereich === "wissen" ? T.bereiche.wissen : bereich === "archiv" ? T.bereiche.archiv
     : bereich === "vorlage" ? T.bereiche.vorlagen : "Notizen";
   const zuBereich = () => (bereich === "vorlage" ? waehleSicht({ art: "ordner", id: "01_vorlagen" })
@@ -1188,11 +1198,21 @@ function st(id, kinder, { klick, titel, klasse = "", tag = null } = {}) {
 const punktEl = (farbe) => h("span", { klasse: "d " + (farbe || "") });
 // Hauptknopf „Abgleichen“: genau ein Zustand, in dieser Rangfolge. offline = Server nicht erreichbar (letztes Nachsehen schlug fehl oder das Gerät ist offline).
 const istOffline = () => S.offline || (typeof navigator !== "undefined" && navigator.onLine === false);
+// Notizen im Konflikt: die offene Zusammenführung oder der Vermerk der Hintergrund-Sicherung (Kern). → Pfade
+const konfliktPfade = () => (S.git?.konflikt?.dateien?.length ? S.git.konflikt.dateien.map((d) => (typeof d === "string" ? d : d?.pfad)) : Array.isArray(S.git?.sicherungDateien) ? S.git.sicherungDateien : []).filter((p) => typeof p === "string");
+// Liegt diese Datei in einer offenen Zusammenführung (Konfliktmarken im Text)? Dann bleibt der Editor schreibgeschützt.
+const imKonflikt = (pfad) => !!(S.git && !S.git.gesperrt && (S.git.konflikt?.dateien || []).some((d) => (typeof d === "string" ? d : d?.pfad) === pfad));
+const istKonflikt = () => !!(S.git && !S.git.gesperrt && (S.git.konflikt || S.git.sicherungStand === "konflikt"));
+function konfliktText() {
+  const p = konfliktPfade(), af = (S.aufgabenOrdner || "").toLowerCase();
+  const a = af ? p.filter((x) => x.toLowerCase().startsWith(af + "/")).length : 0;
+  return p.length ? konfliktLabel(p.length - a, a) : T.status.konfliktLoesen;
+}
 function syncZustand(g) {
-  if (g.konflikt) return { z: "konflikt", text: T.status.konfliktLoesen, sym: "warnung", titel: T.status.konfliktTitel };
+  if (g.konflikt) return { z: "konflikt", text: konfliktText(), sym: "warnung", titel: T.status.konfliktTitel };
   if (S.syncLaeuft) return { z: "laeuft", text: T.status.gleicheAb, sym: "sync", titel: T.status.gleicheAbTitel };
   // Die Hintergrund-Sicherung (Kern) konnte nicht senden, weil der Server eine andere Fassung hat: ein Klick gleicht ab und öffnet die Konfliktauswahl
-  if (g.sicherungStand === "konflikt") return { z: "fehler", text: T.status.sicherungKonflikt, sym: "warnung", titel: T.status.sicherungKonfliktTitel };
+  if (g.sicherungStand === "konflikt") return { z: "konflikt", text: konfliktText(), sym: "warnung", titel: g.sicherungHaelt ? TK.haelt.statusTitel(g.sicherungHaelt.tage) : T.status.sicherungKonfliktTitel };
   if (S.syncFehler) return { z: "fehler", text: S.syncFehler === "konflikt" ? T.status.konflikt : T.status.fehler, sym: "warnung", titel: T.status.fehlerTitel };
   if (!g.remote) return { z: "nie", text: T.status.nieGesichert, sym: "wolke", titel: T.status.nieTitel };
   if (istOffline()) return { z: "offline", text: T.status.offline, sym: "wolke-aus", titel: T.status.offlineTitel };
@@ -1275,7 +1295,7 @@ let gitTimer = null, baumTimer = null;
 async function ladeGit() {
   try { S.git = await api.status(); }
   catch (e) { S.git = gitGesperrt(e) ? { repo: true, gesperrt: true, grund: e.daten?.fehler || null } : null; }
-  zeichneStatus();
+  zeichneStatus(); zeigeBanner(); meldeKonflikt();
 }
 function planeGitRefresh() { clearTimeout(gitTimer); gitTimer = setTimeout(ladeGit, 1200); }
 function planeBaumRefresh() { clearTimeout(baumTimer); baumTimer = setTimeout(ladeBaum, 1500); }
@@ -1363,21 +1383,78 @@ function beiLiveAlles() {
   clearTimeout(liveTimer); liveTimer = setTimeout(liveNeuladen, 60);
 }
 
-// Konflikt-Dialog: pro Datei „meine Fassung“, „Fassung vom anderen Mac“ oder „beide behalten“; danach wird zusammengeführt und abgeglichen.
+// ======================================================= Konflikt beim Abgleich (konflikt.js; Daten und Abschluss: Kern, kern/abgleich-konflikt.mjs)
+// Dieselbe Notiz wurde auf zwei Geräten geändert. Banner + Mitteilung + Statusleiste „Konflikt in N Notizen“ führen in die Ansicht. Beim Öffnen bleibt die Zusammenführung
+// offen (Dateien mit Konfliktmarken sind dann kurz im Vault); „Später“ nimmt sie zurück, damit nie halbe Dateien liegen bleiben.
+function baueKonfliktBanner() {
+  const p = konfliktPfade(), af = (S.aufgabenOrdner || "").toLowerCase();
+  const nurKarten = p.length && af && p.every((x) => x.toLowerCase().startsWith(af + "/"));
+  return h("div", { klasse: "banner k-banner", role: "status", "data-banner": "abgleich" }, symbol("sync", 16),
+    h("div", { klasse: "b-text" }, h("b", { text: `${konfliktText()}. ` }), h("span", { text: S.git?.sicherungHaelt ? TK.haelt.banner(S.git.sicherungHaelt.tage) : nurKarten ? TK.banner.wasKarte : TK.banner.was(null) })),
+    baueKnopf({ text: TK.banner.ansehen, variante: "primaer", groesse: "s", aktion: "konflikt-ansehen", aufKlick: () => oeffneKonflikt() }),
+    baueKnopf({ text: TK.banner.spaeter, variante: "leise", groesse: "s", aktion: "konflikt-banner-spaeter", aufKlick: () => { konfliktBannerZu = true; zeigeBanner(); } }));
+}
+// Mitteilung: einmal je neuem Stand (nicht bei jedem Neuzeichnen)
+function meldeKonflikt() {
+  if (!istKonflikt()) { konfliktGemeldet = ""; konfliktBannerZu = false; return; }
+  const schluessel = konfliktPfade().join("|") || "?";
+  if (konfliktInst || konfliktGemeldet === schluessel) return;
+  konfliktGemeldet = schluessel;
+  toast(`${TK.mitteilung.titel} ${konfliktText()}.`, { ms: 10000, aktion: { text: TK.mitteilung.ansehen, tun: () => oeffneKonflikt() } });
+}
+function zeichnePfadKonflikt(label) {
+  const p = $("pfad");
+  p.replaceChildren(h("span", { klasse: "krume", text: TK.pfad }), h("span", { klasse: "krume-trenner", "aria-hidden": "true" }, symbol("chevron-rechts", 12)), h("span", { klasse: "krume", text: label }));
+}
 async function oeffneKonflikt() {
-  if (dialogOffen()) return;
+  if (dialogOffen() || konfliktInst || konfliktLaedt) return;
+  if (istGitGesperrt()) { await zeigeGitGesperrt(); return; }
+  konfliktLaedt = true;
   clearTimeout(speicherTimer);
-  await speichereAlles();
   try {
-    const r = await api.gitKonflikt();
-    if (!r?.aktiv) { await ladeGit(); return; } // sonst auch ohne offene Datei: Zusammenführen abschließen oder abbrechen, nie eine Sackgasse
-    const m = await import("./abgleich.js");
-    m.oeffneKonfliktDialog({ dateien: r.dateien, api, beiStandNeu: nachZeitueberschreitung,
-      beiFertig: async () => { await ladeNachAbgleich().catch(() => {}); await ladeGit(); ladeInfo(); sync(); },
-      beiAbgebrochen: async () => { await ladeNachAbgleich().catch(() => {}); await ladeGit(); ladeInfo(); } });
+    await speichereAlles();
+    if (S.konflikt) { toast(T.status.konfliktErst, { fehler: true }); return; }
+    let r = await api.gitKonflikt();
+    if (!r?.aktiv) { // nichts offen: neu abgleichen und die Zusammenführung offen lassen, wenn der Konflikt noch da ist
+      try { const a = await api.sync(); toast(T.status.abgeglichen[a.ergebnis] || T.status.abgeglichen.aktuell); await ladeNachAbgleich().catch(() => {}); await ladeGit(); return; }
+      catch (e) { if (e.status === 409 && e.daten?.konflikt) r = await api.gitKonflikt(); else throw e; }
+    }
+    if (!r?.aktiv) { await ladeGit(); toast(TK.fehler.keinKonflikt); return; }
+    const m = await import("./konflikt.js");
+    konfliktInst = m.zeigeKonflikt($("konflikt-host"), { api, daten: r, aufgabenOrdner: S.aufgabenOrdner,
+      beiZustand: ({ label }) => zeichnePfadKonflikt(label), beiSchliessen: ({ phase }) => schliesseKonflikt(phase), beiStandNeu: nachZeitueberschreitung,
+      beiFertig: konfliktFertig, beiVeraltet: async () => { await schliesseKonflikt("liste"); oeffneKonflikt(); },
+      beiVerworfen: async () => { await schliesseKonflikt("fertig"); toast(TK.haelt.verworfen, { ms: 9000 }); }, beiZurueck: async () => { await ladeNachAbgleich().catch(() => {}); await ladeGit(); ladeInfo(); } });
+    if (konfliktMerke) { konfliktInst.setzeEntscheidungen(konfliktMerke); konfliktMerke = null; }
+    zeichnePfadKonflikt(konfliktInst.label());
+    for (const t of document.querySelectorAll("#toast-host .toast")) if (t.textContent.startsWith(TK.mitteilung.titel)) t.remove(); // die Mitteilung hat ihren Zweck erfüllt (und verdeckte den Abschluss-Knopf)
+    weicherWechsel(); setzeModus(); zeigeBanner(); zeichneStatus();
   } catch (e) {
     if (gitGesperrt(e)) await zeigeGitGesperrt(); else toast(e.message || T.fehler.allgemein, { fehler: true });
-  }
+  } finally { konfliktLaedt = false; }
+}
+// Ansicht schließen. „Später“ (phase liste): die offene Zusammenführung wird zurückgenommen, die Entscheidungen bleiben im Speicher für das nächste Öffnen.
+async function schliesseKonflikt(phase) {
+  const inst = konfliktInst; if (!inst) return;
+  if (phase === "liste") konfliktMerke = inst.entscheidungen(); else konfliktMerke = null;
+  inst.zerstoere(); konfliktInst = null;
+  weicherWechsel(); setzeModus(); zeichnePfad(); zeigeBanner();
+  try {
+    if (phase === "liste") {
+      const r = await api.gitKonfliktAbbrechen();
+      if (r?.sicherung?.ordner) toast(TK.fertig.gesichert(r.sicherung.ordner), { ms: 12000 }); // von Hand Bearbeitetes liegt vorher gesichert
+    }
+  } catch (e) { toast(e?.message || T.fehler.allgemein, { fehler: true, ms: 14000 }); } // nie still: der Satz sagt auch, wo eine Kopie liegt
+  await ladeNachAbgleich().catch(() => {}); await ladeGit(); ladeInfo();
+  if (S.sicht.art === "verlauf") verlaufInst?.aktualisieren?.();
+}
+async function konfliktFertig({ ergebnis, anzahl, rueckgaengig }) {
+  S.syncFehler = null; konfliktMerke = null; konfliktGemeldet = "";
+  await ladeNachAbgleich().catch(() => {}); await ladeGit(); ladeInfo();
+  if (S.sicht.art === "verlauf") verlaufInst?.aktualisieren?.();
+  const ok = !ergebnis.abgleich || ergebnis.abgleich.ok;
+  toast(ok ? `${TK.fertig.toastTitel}: ${TK.fertig.toastKlein(anzahl)}` : `${TK.fertig.toastTitel}. ${ergebnis.abgleich.text}`, { ms: 9000, aktion: { text: TK.fertig.rueckgaengig, tun: () => rueckgaengig() } });
+  if (ergebnis.versteckteBehalten?.length) toast(TV.abgleich.versteckteBehalten(ergebnis.versteckteBehalten.length), { ms: 9000 });
 }
 
 // Beim Server nachsehen (nur holen, nichts zusammenführen): so steht „Neues vom anderen Mac“ in der Statusleiste, bevor jemand abgleicht.
@@ -1623,7 +1700,7 @@ async function oeffneCommit() {
 function oeffneNeu(vorTitel) {
   if (dialogOffen()) return;
   const ordner = S.baum.filter((e) => e.art === "ordner" && !e.schreibschutz).map((e) => e.pfad);
-  const vorOrdner = S.sicht.art === "ordner" ? S.sicht.id : S.pfad && ordnerVon(S.pfad) ? ordnerVon(S.pfad) : ordner.includes("00_inbox") ? "00_inbox" : ordner[0] || "";
+  const vorOrdner = S.sicht.art === "ordner" ? S.sicht.id : S.pfad && ordnerVon(S.pfad) ? ordnerVon(S.pfad) : ordner.includes(inboxName()) ? inboxName() : ordner[0] || "";
   const sel = auswahl({ optionen: ordner.length ? ordner.map((o) => ({ wert: o, text: o, symbol: "ordner" })) : [{ wert: "", text: "Hauptordner", symbol: "ordner" }], wert: ordner.length ? vorOrdner : "", label: T.neu.ordner, breit: true, daten: { "data-feld": "ordner" } });
   const titelFeld = textfeld({ wert: typeof vorTitel === "string" ? vorTitel : "", platzhalter: T.neu.platzhalter, label: T.neu.name, daten: { "data-feld": "titel" } });
   const titel = titelFeld.input;

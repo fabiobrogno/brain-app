@@ -1,5 +1,5 @@
 // gemeinsam/basis.mjs — Fehlerart mit HTTP-Status und der Pfad-Schutz (Studio-Spec §5). Keine Abhängigkeiten.
-import { realpathSync, lstatSync, readdirSync, accessSync, statSync, existsSync, constants } from "node:fs";
+import { realpathSync, lstatSync, readdirSync, readFileSync, accessSync, statSync, existsSync, constants } from "node:fs";
 import { join, sep, dirname, delimiter, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
@@ -51,6 +51,35 @@ export function vorschauFehler() {
 
 // Vergleichsform für Namen: APFS unterscheidet weder Groß/klein noch NFC/NFD — Sperren und Schreibschutz dürfen es auch nicht.
 export const falte = (s) => String(s).normalize("NFC").toLowerCase();
+
+// Der Posteingang eines Vaults: brain.config.json → ordner.inbox (dieselbe Regel wie kern/pfade.mjs#ordner), sonst 00_inbox. Die Config sind Vault-Daten:
+// nur ein einzelner Ordnername (Buchstaben, Ziffern, _ . -), kein versteckter Ordner und nie der Ordner von Wiki oder Archiv — alles andere fällt auf
+// den Standard zurück. Die Datei darf höchstens 1 MB groß sein und muss eine reguläre Datei sein. Wirft nie.
+export const INBOX_STANDARD = "00_inbox";
+// Wiki und Archiv wie im Kern (kern/pfade.mjs#ordner): ordner.wiki, sonst der alte Schlüssel wiki.ordner, sonst der Standard — jeweils nur ein gültiger Ordnername.
+const ORDNER_NAME = /^[\p{L}\p{N}_.-]+$/u;
+const istOrdnerName = (w) => typeof w === "string" && w !== "." && w !== ".." && ORDNER_NAME.test(w);
+function inboxAuswerten(wurzel) {
+  try {
+    const datei = join(wurzel, "brain.config.json");
+    const st = lstatSync(datei);
+    if (!st.isFile() || st.size > 1024 * 1024) return { name: INBOX_STANDARD, abgelehnt: false };
+    const cfg = JSON.parse(readFileSync(datei, "utf8").replace(/^\uFEFF/, ""));
+    const n = cfg?.ordner?.inbox;
+    if (n === undefined || n === null || n === "") return { name: INBOX_STANDARD, abgelehnt: false };
+    const nimm = (wert, standard) => (istOrdnerName(wert) ? wert : standard);
+    const wiki = nimm(cfg.ordner?.wiki, nimm(cfg.wiki?.ordner, "09_wiki")), archiv = nimm(cfg.ordner?.archiv, "90_archiv");
+    if (!istOrdnerName(n) || n.startsWith(".")) return { name: INBOX_STANDARD, abgelehnt: true, wert: String(n).slice(0, 60), grund: "kein gültiger Ordnername (kein Pfad, nicht versteckt)" };
+    if ([wiki, archiv, "09_wiki", "90_archiv", "node_modules"].some((a) => falte(a) === falte(n))) return { name: INBOX_STANDARD, abgelehnt: true, wert: n, grund: "das ist ein anderer Kortex-Ordner (Wiki oder Archiv)" };
+    return { name: n, abgelehnt: false };
+  } catch { return { name: INBOX_STANDARD, abgelehnt: false }; }
+}
+export const inboxOrdnerVon = (wurzel) => inboxAuswerten(wurzel).name;
+// Ein ungültiger Eintrag fällt nicht still zurück: das Studio sagt es. → Satz oder null
+export function inboxHinweisVon(wurzel) {
+  const a = inboxAuswerten(wurzel);
+  return a.abgelehnt ? `In der Konfiguration (ordner.inbox) steht „${a.wert}“ als Posteingang — das geht nicht: ${a.grund}. Kortex nutzt vorerst „${INBOX_STANDARD}“.` : null;
+}
 
 // ───────────────────────────── PATH und Programme ─────────────────────────────
 // Ein leerer oder relativer PATH-Eintrag ("", ".", "node_modules/.bin") meint den ARBEITSORDNER des Kindprozesses — und der ist bei

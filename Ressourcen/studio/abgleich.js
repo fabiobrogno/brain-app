@@ -1,6 +1,6 @@
-// Dialoge für den Abgleich mit Konflikten und für „Frühere Fassung zurückholen“ (Vorschau per Diff, dann als neue Fassung gesichert).
+// Dialoge für „Frühere Fassung zurückholen“ und „Technische Details“ (Vorschau per Diff, dann als neue Fassung gesichert).
 // Kein innerHTML mit fremden Daten: alles über h() und textContent. Die Entscheidungen gehen an die Werkstatt, die sie prüft und ausführt.
-import { h, dialog, arbeitBeginnt, toast, dateiName, ordnerVon } from "./hilfen.js";
+import { h, dialog, arbeitBeginnt, toast } from "./hilfen.js";
 import { knopf as baueKnopf, setzeLaedt } from "./bausteine.js";
 import { symbol } from "./symbole.js";
 import { api as standardApi, gitGesperrt, ausgangUnklar, zeitText } from "./api.js";
@@ -11,9 +11,6 @@ const T = TV.abgleich, Z = TV.zurueckholen;
 const zeichen = (name, groesse) => { const s = symbol(name, groesse); s.setAttribute("aria-hidden", "true"); return s; };
 const MAX_ZEILEN = 1500;
 const MAX_VORSCHAU_ZEICHEN = 20000;
-const KURZE_ZEILEN = 8; // so viele Zeilen zeigt die zugeklappte Fassung
-// Datum im Namen der Zusatzdatei: Berliner Tag, wie ihn die Werkstatt vergibt
-const heuteBerlin = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Berlin" });
 
 // Meldungszeile im Dialog. Roher Text der Versionsverwaltung wird durch einen ruhigen Satz ersetzt, das Original ist aufklappbar.
 function meldungBox() {
@@ -45,188 +42,7 @@ export function zeigeFehlerDetails({ text, titel = TV.roh.titel } = {}) {
   return d;
 }
 
-// ---------------------------------------------------------------- Abgleich mit Konflikten
-// dateien: [{ pfad, art }] aus 409 { konflikt, dateien } bzw. Status.konflikt.dateien (art: beide | meine-geloescht | andere-geloescht | nur-meine | nur-andere).
-// beiFertig({ zweiteDateien }) nach dem Zusammenführen · beiAbgebrochen() nach „Abgleich abbrechen“ · beiStandNeu(stand) nach unklarem Ausgang.
-export function oeffneKonfliktDialog({ dateien, api = standardApi, datum, beiFertig, beiAbgebrochen, beiStandNeu } = {}) {
-  ladeVerlaufCss();
-  const liste = (dateien || []).map((d) => (typeof d === "string" ? { pfad: d, art: "beide" } : d));
-  const wahl = new Map();
-  let laeuft = false;
-  const meldung = meldungBox();
-  const knopf = baueKnopf({ text: T.zusammenfuehren, variante: "primaer", groesse: "l", aktion: "konflikt-zusammenfuehren" });
-  const spaeter = baueKnopf({ text: T.spaeter, groesse: "l", aktion: "konflikt-spaeter" });
-  const abbrechen = baueKnopf({ text: T.abbrechen, groesse: "l", klasse: "ab-abbrechen", aktion: "konflikt-abbrechen", titel: T.abbrechenHinweis });
-  const hinweis = h("span", { klasse: "ab-offen" });
-  const fortschrittText = h("span", { klasse: "ab-fortschritt-text", "aria-live": "polite" });
-  const fuell = h("span", { klasse: "ab-balken-fuell" });
-  const balken = h("div", { klasse: "ab-balken", role: "progressbar", "aria-label": T.fortschrittLabel, "aria-valuemin": "0", "aria-valuemax": String(liste.length), "aria-valuenow": "0" }, fuell);
-  const fortschritt = h("div", { klasse: "ab-fortschritt", "data-fortschritt": "" }, fortschrittText, balken);
-  if (!liste.length) fortschritt.hidden = true;
-  const kartenEl = new Map();
-
-  const aktualisiere = () => {
-    const gesamt = liste.length;
-    const fertig = liste.filter((d) => wahl.has(d.pfad)).length;
-    const offen = gesamt - fertig;
-    knopf.disabled = !laeuft && offen > 0; setzeLaedt(knopf, laeuft);
-    spaeter.disabled = laeuft; abbrechen.disabled = laeuft;
-    hinweis.textContent = offen ? T.waehle(offen) : "";
-    fortschrittText.textContent = offen || !gesamt ? T.fortschritt(fertig, gesamt) : T.alleGeloest;
-    balken.setAttribute("aria-valuenow", String(fertig));
-    fuell.style.width = gesamt ? `${Math.round((fertig / gesamt) * 100)}%` : "0%";
-    fortschritt.classList.toggle("fertig", gesamt > 0 && !offen);
-    for (const [pfad, el] of kartenEl) {
-      const g = wahl.has(pfad);
-      el.classList.toggle("geloest", g);
-      el.dataset.zustand = g ? "geloest" : "offen";
-      const marke = el.querySelector(".ab-marke");
-      marke.replaceChildren(...(g ? [zeichen("haken", 12), h("span", { text: "Gelöst" })] : [h("span", { text: "Offen" })]));
-    }
-  };
-
-  // Vorschau laden: nacheinander, damit viele Dateien die Werkstatt nicht überrollen
-  let kette = Promise.resolve();
-  const ladeVorschau = (pfad) => {
-    const lauf = () => api.gitKonflikt(pfad).then((r) => ({ ok: true, r })).catch((e) => ({ ok: false, e }));
-    const p = kette.then(lauf);
-    kette = p.then(() => {});
-    return p;
-  };
-
-  const karten = liste.map((d, index) => {
-    const art = ["meine-geloescht", "andere-geloescht", "nur-meine", "nur-andere"].includes(d.art) ? d.art : "beide";
-    // Kacheln: je Seite eine Wahl. text = Beschriftung, titel = Überschrift der Fassung
-    const kacheln = art === "beide"
-      ? [["meine", T.spalteMeine, T.dieseBehalten], ["andere", T.spalteAndere, T.dieseUebernehmen]]
-      : art === "meine-geloescht"
-        ? [["meine", T.spalteMeine, T.meineGeloeschtLassen], ["andere", T.spalteAndere, T.andereBehalten]]
-        : art === "andere-geloescht"
-          ? [["meine", T.spalteMeine, T.meineBehalten], ["andere", T.spalteAndere, T.andereLoeschen]]
-          : art === "nur-meine" ? [["meine", T.spalteMeine, T.behalten], ["andere", T.spalteAndere, T.weglassen]] : [["meine", T.spalteMeine, T.weglassen], ["andere", T.spalteAndere, T.uebernehmen]];
-    const name = `ab-wahl-${index}`;
-    const waehle = (wert) => { wahl.set(d.pfad, wert); aktualisiere(); };
-    const koerper = {};
-    const meta = {};
-    const kachelEls = kacheln.map(([wert, titel, text]) => {
-      const radio = h("input", { type: "radio", name, value: wert, "data-wahl": wert, klasse: "ab-radio", aufChange: () => waehle(wert) });
-      const kopf = h("label", { klasse: "ab-kachel-kopf" }, radio,
-        h("span", { klasse: "ab-kachel-titel" }, h("span", { klasse: "ab-kachel-name", text: titel }), h("span", { klasse: "ab-kachel-wahl", text })));
-      meta[wert] = h("span", { klasse: "ab-kachel-meta" });
-      koerper[wert] = h("div", { klasse: "ab-kachel-koerper" }, h("div", { klasse: "ab-sk-block", "aria-busy": "true" }, h("span", { klasse: "ab-sk" }), h("span", { klasse: "ab-sk k" }), h("span", { klasse: "ab-sk m" })));
-      const kachel = h("div", { klasse: "ab-kachel", "data-seite": wert }, h("div", { klasse: "ab-kachel-oben" }, kopf, meta[wert]), koerper[wert]);
-      // Ein Klick irgendwo auf die Kachel wählt sie (außer beim Markieren von Text)
-      kachel.addEventListener("click", (e) => {
-        if (e.target.closest("label, input")) return;
-        if (String(window.getSelection?.() || "")) return;
-        if (!radio.checked) { radio.checked = true; radio.dispatchEvent(new Event("change", { bubbles: true })); }
-        radio.focus();
-      });
-      return kachel;
-    });
-    const beide = art === "beide"
-      ? (() => {
-        const r = h("input", { type: "radio", name, value: "beide", "data-wahl": "beide", klasse: "ab-radio", aufChange: () => waehle("beide") });
-        return h("label", { klasse: "ab-beide" }, r, h("span", null, h("span", { klasse: "ab-optext", text: T.beide }), h("span", { klasse: "ab-zusatz", text: T.beideHinweis(datum || heuteBerlin()) })));
-      })()
-      : null;
-
-    const umschalter = h("button", { klasse: "ab-link", type: "button", "data-aktion": "konflikt-vorschau", "aria-expanded": "false", hidden: true, text: T.ganze });
-    const raster = h("div", { klasse: "ab-kacheln", role: "presentation" }, kachelEls);
-    umschalter.addEventListener("click", () => {
-      const auf = umschalter.getAttribute("aria-expanded") !== "true";
-      umschalter.setAttribute("aria-expanded", String(auf));
-      umschalter.textContent = auf ? T.weniger : T.ganze;
-      raster.classList.toggle("ganz", auf);
-    });
-
-    const fuelle = (ergebnis) => {
-      if (!ergebnis.ok) {
-        const gesperrt = gitGesperrt(ergebnis.e);
-        for (const wert of Object.keys(koerper)) {
-          const nochmal = h("button", { klasse: "ab-link", type: "button", text: TV.fehler.nochmal });
-          nochmal.addEventListener("click", () => { for (const k of Object.values(koerper)) k.replaceChildren(h("div", { klasse: "ab-sk-block" }, h("span", { klasse: "ab-sk" }), h("span", { klasse: "ab-sk k" }))); ladeVorschau(d.pfad).then(fuelle); });
-          koerper[wert].replaceChildren(h("p", { klasse: "ab-hinweis fehlertext", text: gesperrt ? TV.diff.gesperrt : T.vorschauFehler }), gesperrt ? null : nochmal);
-        }
-        return;
-      }
-      const datei = ergebnis.r?.datei || {};
-      const seiten = { meine: datei.meine, andere: datei.andere };
-      const gleich = seiten.meine?.text != null && seiten.meine.text === seiten.andere?.text;
-      let maxZeilen = 0;
-      for (const wert of Object.keys(koerper)) {
-        const s = seiten[wert], gegen = seiten[wert === "meine" ? "andere" : "meine"];
-        if (s === null || s === undefined) { koerper[wert].replaceChildren(h("p", { klasse: "ab-leer", text: T.geloescht })); meta[wert].textContent = ""; continue; }
-        if (s.text === null || s.text === undefined) { koerper[wert].replaceChildren(h("p", { klasse: "ab-leer", text: T.keinText })); meta[wert].textContent = ""; continue; }
-        const roh = s.text.length > MAX_VORSCHAU_ZEICHEN ? s.text.slice(0, MAX_VORSCHAU_ZEICHEN) : s.text;
-        const zeilen = roh.replace(/\r\n/g, "\n").replace(/\n$/, "").split("\n");
-        const andereZeilen = !gleich && gegen?.text != null ? new Set(gegen.text.replace(/\r\n/g, "\n").split("\n")) : null;
-        maxZeilen = Math.max(maxZeilen, zeilen.length);
-        meta[wert].textContent = T.zeilenZahl(s.text ? s.text.replace(/\r\n/g, "\n").replace(/\n$/, "").split("\n").length : 0);
-        koerper[wert].replaceChildren(
-          h("pre", { klasse: "ab-text" }, zeilen.map((z) => h("span", { klasse: "ab-z" + (andereZeilen && z.trim() && !andereZeilen.has(z) ? " anders" : ""), text: z === "" ? " " : z }))),
-          ...(s.text.length > MAX_VORSCHAU_ZEICHEN ? [h("p", { klasse: "ab-hinweis", text: T.gekuerzt })] : []));
-      }
-      if (gleich) raster.after(h("p", { klasse: "ab-hinweis ab-gleich", text: T.gleich }));
-      umschalter.hidden = maxZeilen <= KURZE_ZEILEN;
-      raster.classList.toggle("lang", maxZeilen > KURZE_ZEILEN);
-    };
-    ladeVorschau(d.pfad).then(fuelle);
-
-    const name2 = dateiName(d.pfad), ordner = ordnerVon(d.pfad);
-    const karte = h("fieldset", { klasse: "ab-karte", "data-datei": d.pfad, "data-zustand": "offen" },
-      h("legend", { klasse: "ab-datei", title: d.pfad }, zeichen("notiz", 14), h("span", { klasse: "ab-datei-name", text: name2 }), ordner ? h("span", { klasse: "ab-datei-ordner", text: ordner }) : null, h("span", { klasse: "ab-marke" })),
-      art !== "beide" ? h("p", { klasse: "ab-hinweis", text: art === "meine-geloescht" ? T.meineGeloescht : art === "andere-geloescht" ? T.andereGeloescht : art === "nur-meine" ? T.nurMeine : T.nurAndere }) : null,
-      raster, umschalter, beide);
-    kartenEl.set(d.pfad, karte);
-    return karte;
-  });
-
-  const box = h("div", { klasse: "dialog rm-dialog ab-dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "ab-titel", "data-dialog": "konflikt" },
-    h("div", { klasse: "rm-kopf" }, h("span", { klasse: "rm-zeichen warn" }, zeichen("warnung", 20)), h("h2", { klasse: "rm-titel", id: "ab-titel", text: liste.length ? T.titel : T.leerTitel })),
-    h("p", { klasse: "rm-text", text: liste.length ? T.erklaerung : T.leerText }),
-    fortschritt,
-    h("div", { klasse: "ab-liste" }, karten),
-    meldung.el,
-    h("div", { klasse: "ab-fuss" }, abbrechen, hinweis, h("span", { klasse: "sp" }), spaeter, knopf));
-  const d = dialog({ eigen: box });
-  aktualisiere();
-
-  const fehlerZeigen = async (err, standard) => {
-    if (gitGesperrt(err)) { meldung.zeige("fehlertext", TV.diff.gesperrt, "warnung"); return; }
-    if (ausgangUnklar(err)) { try { await beiStandNeu?.(err); } catch (x) { console.error(x); } meldung.zeige("hinweis", zeitText(err), "info"); return; }
-    meldung.zeige("fehlertext", klarText(err, standard), "warnung", err?.message);
-  };
-  const beschaeftigt = (an, text) => { laeuft = an; aktualisiere(); if (an) meldung.zeige("hinweis", text, null); };
-
-  knopf.addEventListener("click", async () => {
-    if (laeuft || knopf.disabled) return;
-    beschaeftigt(true, T.arbeitet);
-    const ende = arbeitBeginnt("sync");
-    try {
-      const r = await api.gitKonfliktLoesen(liste.map((x) => ({ pfad: x.pfad, wahl: wahl.get(x.pfad) })));
-      ende(); laeuft = false;
-      d.schliessen();
-      toast(r?.zweiteDateien?.length ? T.fertigZweite(r.zweiteDateien.length) : T.fertig, { ms: 7000 });
-      if (r?.versteckteBehalten?.length) toast(T.versteckteBehalten(r.versteckteBehalten.length), { ms: 9000 });
-      beiFertig?.(r || {});
-    } catch (err) { ende(); beschaeftigt(false); await fehlerZeigen(err, T.fehler); }
-  });
-  abbrechen.addEventListener("click", async () => {
-    if (laeuft) return;
-    beschaeftigt(true, T.arbeitet);
-    const ende = arbeitBeginnt("sync");
-    try {
-      await api.gitKonfliktAbbrechen();
-      ende(); laeuft = false;
-      d.schliessen();
-      toast(T.abgebrochen);
-      beiAbgebrochen?.();
-    } catch (err) { ende(); beschaeftigt(false); await fehlerZeigen(err, T.fehler); }
-  });
-  spaeter.addEventListener("click", () => { if (!laeuft) d.schliessen(); });
-  return d;
-}
+// Die Konflikt-Ansicht (Abgleich mit Konflikten) steht in konflikt.js; Daten und Abschluss liefert der Kern.
 
 // ---------------------------------------------------------------- Frühere Fassung zurückholen
 // Vorschau (Unterschied aktuell → gewählte Fassung), dann Bestätigung; die Werkstatt sichert als NEUEN Commit.

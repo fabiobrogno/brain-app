@@ -7,7 +7,7 @@
 // kommt null zurück und die Oberfläche lädt wie bisher alles.
 import { readdirSync, statSync, realpathSync, readFileSync, openSync, readSync, closeSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { BEARBEITBAR, generiertName, wikiGeneriert, gesperrterName, falte, imVault, HttpFehler, loese } from "./basis.mjs";
+import { BEARBEITBAR, generiertName, wikiGeneriert, gesperrterName, falte, imVault, HttpFehler, loese, inboxOrdnerVon } from "./basis.mjs";
 import { pruefeText, berlinHeute, istDatum, plusTage } from "./pruefung.mjs";
 import { git } from "./git.mjs";
 
@@ -16,7 +16,7 @@ const ANFANG = 64 * 1024;
 const MAX_FELDER = 40, MAX_WERT = 300, MAX_LISTE = 20, VORSCHAU = 200;
 const SIEBEN_TAGE = 7 * 24 * 3600 * 1000;
 const FRIST_GIT = 1500; // so lange wartet eine Anfrage höchstens auf die Git-Karte und den Git-Status (danach: Dateizeiten)
-// Bereiche, die in Ansichten und Typen mitzählen; maschine (00_inbox/_*/), vorlage (01_vorlagen/), system (CLAUDE/AGENTS/GEMINI.md
+// Bereiche, die in Ansichten und Typen mitzählen; maschine (<Posteingang>/_*/, Standard 00_inbox), vorlage (01_vorlagen/), system (CLAUDE/AGENTS/GEMINI.md
 // in der Wurzel) und archiv sind Beiwerk und bleiben außen vor.
 const ZAEHLT_MIT = new Set(["inbox", "notiz", "wissen"]);
 const SYSTEM_DATEIEN = new Set(["claude.md", "agents.md", "gemini.md"]);
@@ -411,7 +411,7 @@ export function erzeugeNotizIndex({ wurzel, jetzt = () => new Date(), heute, git
 
   // Eine Zeile des Index aus einem Roh-Eintrag und dem Kontext des Laufs (ctx) — für den Vollauf und für teil() dieselbe Regel.
   function baueZeile(e, ctx) {
-    const { aufgabenName, hatInbox, rueck, karte, status, zuletztAb } = ctx;
+    const { aufgabenName, inboxName, hatInbox, rueck, karte, status, zuletztAb } = ctx;
     const { c } = e;
     const oben = falte(e.teile[0]);
     const unterhalb = e.teile.slice(1, -1);
@@ -419,13 +419,13 @@ export function erzeugeNotizIndex({ wurzel, jetzt = () => new Date(), heute, git
     let bereich;
     if (c.archiviert || /^90_/.test(oben)) bereich = "archiv";
     else if (oben === falte(aufgabenName) && e.teile.length === 3 && falte(e.teile[1]) === "archiv") bereich = "archiv"; // archivierte Aufgaben (kern/aufgaben.mjs archiviere): weder Board noch Zähler noch „Alle Notizen“
-    else if (oben === "00_inbox" && e.teile.length > 2 && e.teile[1].startsWith("_")) bereich = "maschine"; // _-Ordner direkt im Posteingang: maschinell verwaltet (Rückfragen, Vorschläge, …)
+    else if (oben === inboxName && e.teile.length > 2 && e.teile[1].startsWith("_")) bereich = "maschine"; // _-Ordner direkt im Posteingang: maschinell verwaltet (Rückfragen, Vorschläge, …)
     else if (oben === "01_vorlagen") bereich = "vorlage";
     else if (e.teile.length === 1 && SYSTEM_DATEIEN.has(falte(e.rel))) bereich = "system"; // CLAUDE.md, AGENTS.md, GEMINI.md in der Wurzel (Groß/klein egal)
-    else if (oben === "00_inbox" && !unterhalb.some((s) => s.startsWith("_"))) bereich = "inbox";
+    else if (oben === inboxName && !unterhalb.some((s) => s.startsWith("_"))) bereich = "inbox";
     else if (oben === "09_wiki") bereich = "wissen";
     else if (oben === falte(aufgabenName) && e.teile.length === 2 && !e.teile[1].startsWith("_") && String(c.typ || "").trim().toLowerCase() === "aufgabe") bereich = "aufgabe"; // Aufgaben-Board (kern/aufgaben.mjs): nur direkte Kinder des konfigurierten Ordners
-    else if (!hatInbox && !c.typ && !c.links.length && !rueck.has(e.rel)) bereich = "inbox"; // Vault ohne 00_inbox: lose Notizen ohne Typ und Verknüpfung
+    else if (!hatInbox && !c.typ && !c.links.length && !rueck.has(e.rel)) bereich = "inbox"; // Vault ohne Posteingang-Ordner: lose Notizen ohne Typ und Verknüpfung
     else bereich = "notiz";
 
     // Änderungszeit: sauber in Git (nicht geändert, nicht neu, seit dem Status nicht mehr geschrieben) → Zeit des letzten Commits, sonst Dateizeit.
@@ -523,10 +523,12 @@ export function erzeugeNotizIndex({ wurzel, jetzt = () => new Date(), heute, git
     const [karte, status] = gctx === null ? [null, null] : await Promise.all([mitFrist(ladeGitKarte(gctx)), mitFrist(ladeGitStatus(gctx))]);
     let aufgabenName = "05_aufgaben"; // Aufgaben-Board: Ordnername aus der Konfiguration (kern/pfade.mjs ordner().aufgaben)
     try { if (typeof aufgabenOrdner === "function") aufgabenName = falte((await aufgabenOrdner()) || aufgabenName); } catch { aufgabenName = falte(aufgabenName); }
-    const hatInbox = roh.some((e) => falte(e.teile[0]) === "00_inbox") || existsSync(join(wurzel, "00_inbox"));
+    const inbox = inboxOrdnerVon(wurzel); // Posteingang aus brain.config.json, einmal je Indexlauf gelesen
+    const inboxName = falte(inbox);
+    const hatInbox = roh.some((e) => falte(e.teile[0]) === inboxName) || existsSync(join(wurzel, inbox));
     const zuletztAb = jetztMs - SIEBEN_TAGE;
 
-    const ctx = { aufgabenName, hatInbox, rueck, karte, status, zuletztAb };
+    const ctx = { aufgabenName, inboxName, hatInbox, rueck, karte, status, zuletztAb };
     const zeilen = roh.map((e) => baueZeile(e, ctx));
     zeilen.sort((a, b) => (a.geaendert < b.geaendert ? 1 : a.geaendert > b.geaendert ? -1 : a.pfad < b.pfad ? -1 : 1));
     const ergebnis = { zeilen, rueck, roh, loeseZiel, karte };
