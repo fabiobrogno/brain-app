@@ -338,3 +338,20 @@ test("W2: der Live-Strom meldet nie Altes — auch nicht nach mehr als 300 und 6
   assert.equal(l.filter((x) => x.id === eins.id).length, 1);
   h.beende();
 });
+
+test("k2: läuft ein Abgleich (gemeinsame Sperre) oder wartet ein gemerkter Konfliktstand (konfliktBasis), wird nichts entfernt (409 beschaeftigt)", async () => {
+  const { rufe, ablage, d, support, kennung } = aufbau();
+  const e = ablage("00_inbox/n.md", "# N\n");
+  const sperre = join(support, "backup", `${kennung}.sperre`);
+  mkdirSync(join(support, "backup"), { recursive: true });
+  writeFileSync(sperre, JSON.stringify({ pid: process.pid, zeit: Date.now(), art: "studio-abgleich", marke: "abc" }));
+  let r = await rufe("POST", "/api/aktivitaet/rueckgaengig", { id: e.id });
+  assert.equal(r.status, 409); assert.equal(r.j.art, "beschaeftigt"); assert.ok(existsSync(join(d, "00_inbox/n.md")));
+  rmSync(sperre);
+  const merker = join(support, "backup", `${kennung}.json`);
+  writeFileSync(merker, JSON.stringify({ konfliktBasis: { dateien: ["a.md"], zeit: new Date().toISOString() } }) + "\n");
+  r = await rufe("POST", "/api/aktivitaet/rueckgaengig", { id: e.id });
+  assert.equal(r.status, 409); assert.equal(r.j.art, "beschaeftigt"); assert.ok(existsSync(join(d, "00_inbox/n.md")));
+  rmSync(merker);
+  assert.equal((await rufe("POST", "/api/aktivitaet/rueckgaengig", { id: e.id })).status, 200);
+});

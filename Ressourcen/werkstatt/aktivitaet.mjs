@@ -145,7 +145,7 @@ export function erzeugeAktivitaet({ support, konten = null, vaults = () => [], o
       const inhalt = readFileSync(abs);
       if (sha(inhalt) !== e.rueckgaengig.hash) throw new HttpFehler(409, "Die Notiz wurde seit der Ablage geändert. Kortex entfernt sie nicht — öffne sie und entscheide selbst.", { art: "geaendert" });
       // Läuft gerade etwas, das den Vault umbaut oder abgleicht, ändert Kortex jetzt nichts.
-      if (vault.umstellungLaeuft() || existsSync(join(vault.wurzel, ".git", "MERGE_HEAD")) || vault.gitBeschaeftigt()) {
+      if (vault.umstellungLaeuft() || existsSync(join(vault.wurzel, ".git", "MERGE_HEAD")) || (await vault.abgleichBeschaeftigt())) {
         throw new HttpFehler(409, "Gerade läuft ein Abgleich oder eine Zusammenführung (oder Kortex räumt den Vault auf). Versuche es gleich noch einmal — es wurde nichts entfernt.", { art: "beschaeftigt" });
       }
       // Git: nur eine versionierte, gegenüber HEAD unveränderte Datei darf per Commit entfernt werden (ls-files + diff); alles andere (nicht versioniert, ignoriert, geändert, kein Repo) nicht

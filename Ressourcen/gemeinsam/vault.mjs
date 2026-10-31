@@ -497,7 +497,17 @@ export function oeffneVault(vaultPfad, opts = {}) {
     },
     // extra.ohneHooks: der Commit läuft auch in einem vertrauten Vault ohne Hooks (Rückgängig für KI-Ablagen, P8a)
     // Aktivitätsprotokoll (P8a, Rückgängig): Ordnername des Posteingangs; Git beschäftigt?; ist die Datei versioniert UND unverändert gegenüber HEAD (ls-files + diff, ohne Hooks)?
-    inboxOrdnerName: inboxOrdner, umstellungLaeuft: () => umstellungLaeuft(wurzel), gitBeschaeftigt: () => gitFn.gitBeschaeftigt(wurzel),
+    inboxOrdnerName: inboxOrdner, umstellungLaeuft: () => umstellungLaeuft(wurzel),
+    // Läuft oder wartet gerade ein Abgleich? (Git beschäftigt · die gemeinsame Sperre aller Abgleiche · ein gemerkter Konfliktstand „konfliktBasis“) — dann ändert Kortex nichts am Arbeitsbaum.
+    abgleichBeschaeftigt: async () => {
+      if (gitFn.gitBeschaeftigt(wurzel)) return true;
+      try { const d = leseAbgleichDetail(wurzel, opts.support); if (d && d.haelt) return true; } catch { /* unten */ }
+      try {
+        const m = await import(pathToFileURL(join(kern, "abgleich-sperre.mjs")).href);
+        if (m.sperreStand(join(opts.support || supportOrdner(), "backup", `${vaultKennung(wurzel)}.sperre`)).besetzt) return true;
+      } catch { /* ohne Kern keine Sperre */ }
+      return false;
+    },
     gitVersioniert: async (rel) => {
       const s = gitSicht();
       if (s.gesperrt) return false;
