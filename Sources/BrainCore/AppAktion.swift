@@ -39,6 +39,12 @@ public enum AppAktion: Equatable, Sendable {
     /// „Probe-Mitteilung senden“ (Einstellungen → Mitteilungen, P8a): eine Beispiel-Mitteilung über den Mitteilungsdienst des Systems; die
     /// Antwort sagt, ob sie zugestellt wurde (`{ok:true}`) oder warum nicht (`{ok:false, grund}`). Trägt keine Daten.
     case mitteilungProbe
+    /// Tastenkürzel (P10): `tastenkuerzel.json` hat sich geändert (das Studio hat über die Werkstatt gespeichert): die App liest die Datei neu und stellt die Menüs
+    /// und die globalen Kürzel um. Trägt keine Daten; nur das Studio darf das melden.
+    case kuerzelGeaendert
+    /// Tastenkürzel (P10): Das Studio fragt, ob ein globales Kürzel (Befehle des Registers mit `global`) gilt, und die App meldet es gleich an (`kuerzel` = Schreibweise
+    /// „Ctrl+Alt+Space“, `nil` = abmelden). Antwort `{ok:true}` oder `{ok:false, text}` (vom System belegt, reserviert, Tastatur-Einstellungen …). Gespeichert wird danach über die Werkstatt.
+    case kuerzelGlobal(id: String, kuerzel: String?)
 
     /// Längen- und Zeichenbegrenzung für Texte der Seite (Fenstertitel, Dialog-Hinweis).
     static let maxTitel = 120
@@ -94,6 +100,10 @@ public enum AppAktion: Equatable, Sendable {
             return oberflaeche == .studio ? pruefeEinrichtungOeffnen(wert) : nil
         case "mitteilung-probe":
             return oberflaeche == .studio ? .mitteilungProbe : nil
+        case "kuerzel-geaendert":
+            return oberflaeche == .studio ? .kuerzelGeaendert : nil
+        case "kuerzel-global":
+            return oberflaeche == .studio ? pruefeKuerzelGlobal(wert) : nil
         default:
             return nil
         }
@@ -137,6 +147,16 @@ public enum AppAktion: Equatable, Sendable {
             }
         }
         return .kopieren(s)
+    }
+
+    /// `wert` = Objekt mit `id` (Befehl des Registers: Kleinbuchstaben, Ziffern, Bindestriche) und `kuerzel` (Text bis 40 Zeichen oder `null`); ob die Schreibweise stimmt und
+    /// der Befehl global ist, prüft die App beim Ausführen (sie kennt das Register) und antwortet mit dem Grund.
+    private static func pruefeKuerzelGlobal(_ wert: Any?) -> AppAktion? {
+        guard let d = wert as? [String: Any], let id = d["id"] as? String,
+              id.range(of: "^[a-z0-9]+(-[a-z0-9]+)*$", options: .regularExpression) != nil, id.count <= 40 else { return nil }
+        guard let roh = d["kuerzel"], !(roh is NSNull) else { return .kuerzelGlobal(id: id, kuerzel: nil) }
+        guard let text = roh as? String, text.count <= 40, !text.isEmpty else { return nil }
+        return .kuerzelGlobal(id: id, kuerzel: text)
     }
 
     /// `wert` = Objekt mit `art` = `fertig` oder `spaeter` (Pflicht, nichts anderes).
@@ -245,6 +265,8 @@ public enum StudioBefehl: String, Sendable, CaseIterable {
     case aufgabeErfassen = "aufgabe-erfassen"
     /// Klick auf eine Mitteilung (P8a): öffnet im Studio Einstellungen → KI & Konten → Aktivitätsprotokoll.
     case aktivitaet
+    /// Das globale Kürzel „Frag deinen Vault“ (P10): Studio nach vorn und die Frage öffnen.
+    case frage
 
     public var skript: String { "window.studio?.befehl('\(rawValue)')" }
 

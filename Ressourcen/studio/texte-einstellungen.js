@@ -40,23 +40,10 @@ export const BEREICHE = [
     ],
   },
   {
-    id: "tasten", name: "Tastenkürzel", gruppe: "Kortex", symbol: "tastatur", woerter: ["kürzel", "taste", "tastatur", "shortcut"],
-    intro: "Die wichtigsten Kürzel auf einen Blick. Ein Editor zum Ändern folgt mit einem der nächsten Updates.",
-    abschnitte: [
-      { id: "kuerzel", titel: "Die wichtigsten Kürzel", zeilen: [
-        { id: "kz-neu", sonder: true, taste: ["⌘", "N"], titel: "Neue Notiz", text: "Legt eine leere Notiz an.", woerter: ["notiz", "neu", "anlegen"] },
-        { id: "kz-merken", sonder: true, taste: ["⇧", "⌘", "M"], titel: "Schnell merken", text: "Ein Gedanke in einem Satz, direkt in den Posteingang.", woerter: ["merken", "gedanke", "posteingang", "schnell"] },
-        { id: "kz-aufgabe", sonder: true, taste: ["⇧", "⌘", "A"], titel: "Aufgabe erfassen", text: "Eine Aufgabe in einem Satz anlegen.", woerter: ["aufgabe", "erfassen", "todo", "global"] },
-        { id: "kz-palette", sonder: true, taste: ["⌘", "K"], titel: "Befehlspalette", text: "Befehle und Notizen suchen.", woerter: ["palette", "befehl", "suchen", "springen"] },
-        { id: "kz-frage", sonder: true, taste: ["⌘", "J"], titel: "Frag deinen Vault", text: "Eine Frage stellen, die Kortex aus deinen Notizen beantwortet.", woerter: ["frage", "frag", "antwort", "ki"] },
-        { id: "kz-einstellungen", sonder: true, taste: ["⌘", ","], titel: "Einstellungen", text: "Öffnet diese Seite.", woerter: ["einstellungen", "optionen", "präferenzen"] },
-        { id: "kz-suche", sonder: true, taste: ["⌘", "F"], titel: "Einstellung suchen", text: "Springt hier in das Suchfeld. Esc geht zurück zu Kortex.", woerter: ["suche", "finden", "einstellung"] },
-        { id: "kz-gehe", sonder: true, taste: ["⌘", "1–4"], titel: "Posteingang, Alle Notizen, Wissen, Aufgaben", text: "Springt zum Bereich in der Seitenleiste.", woerter: ["posteingang", "alle", "wissen", "aufgaben", "bereich"] },
-        { id: "kz-vault", sonder: true, taste: ["⌃", "⌘", "V"], titel: "Vault wechseln", text: "Wechselt zu einem anderen Vault.", woerter: ["vault", "wechseln", "ordner"] },
-        { id: "kz-info", sonder: true, taste: ["⌥", "⌘", "I"], titel: "Eigenschaften ein- und ausblenden", text: "Die Spalte rechts neben der Notiz.", woerter: ["eigenschaften", "spalte", "info", "rechts"] },
-        { id: "kz-verlauf", sonder: true, taste: ["⇧", "⌘", "H"], titel: "Verlauf ein- und ausblenden", text: "Frühere Fassungen der Notiz.", woerter: ["verlauf", "versionen", "fassung", "git"] },
-      ] },
-    ],
+    id: "tasten", name: "Tastenkürzel", gruppe: "Kortex", symbol: "tastatur", woerter: ["kürzel", "taste", "tastatur", "shortcut", "belegung", "konflikt"],
+    intro: "Klick auf ein Kürzel und drück die neue Kombination. Esc bricht ab, ⌫ entfernt das Kürzel. Änderungen gelten sofort.",
+    // Die Abschnitte und Zeilen (ein Befehl je Zeile, nach Gruppen) baut einstellungen-tasten.js aus dem Register der Tastenkürzel (gemeinsam/tastenkuerzel-register.json).
+    abschnitte: [],
   },
   {
     id: "mitteilungen", name: "Mitteilungen", gruppe: "Kortex", symbol: "glocke", woerter: ["benachrichtigung", "hinweis", "ton", "banner"],
@@ -357,9 +344,6 @@ export const TE = {
     abbrechen: "Abbrechen",
     erledigt: "Einstellungen zurückgesetzt.",
   },
-  // Tastenkürzel
-  kuerzelBald: "Eigene Kürzel festlegen",
-  kuerzelBaldText: "Ein Editor, in dem du Kürzel änderst und Konflikte siehst, folgt mit einem der nächsten Updates.",
   // iPhone
   mobilBald: "Kommt mit der iPhone-App",
   // Bereiche mit Platzhalter
