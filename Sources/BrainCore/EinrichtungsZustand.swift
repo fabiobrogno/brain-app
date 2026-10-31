@@ -1,186 +1,8 @@
 import Foundation
 
-/// Die Schritte des Assistenten „Kortex einrichten“ in fester Reihenfolge (Nordstern Meilenstein 2, App-Spec §9.1). Der Nutzer sieht
-/// davon nur zwei Bilder: Willkommen (der Vault; git prüft Kortex ohne eigenes Bild) und Fertig. GitHub, Sicherung, KI und Probe sind
-/// Karten auf dem Fertig-Bild (`istHauptschritt`), die Folge selbst bleibt als Zustandsmaschine bestehen. Eine weitere
-/// Stufe kommt hier als neuer Fall an die richtige Stelle in die Liste; Zustandsmaschine, Speicher und Fortschrittsanzeige richten
-/// sich nach `allCases`. „Sicherung“ (FBL-88) steht hinter GitHub: sie braucht die Anmeldung.
-///
-/// Reihenfolge: git steht vor dem Vault, weil „Neues Brain“ und „Von GitHub klonen“ git brauchen (Spec §9.1 nennt den Vault zuerst;
-/// die Reihenfolge ist hier der Code-Realität angepasst — ist git schon da, geht der Schritt ohne Klick vorbei).
-public enum EinrichtungsSchritt: String, CaseIterable, Codable, Sendable {
-    case git, vault, github, sicherung, ki, probe
-
-    public var titel: String {
-        switch self {
-        case .git: return "git"
-        case .vault: return "Vault"
-        case .github: return "GitHub"
-        case .sicherung: return "Sicherung"
-        case .ki: return "KI"
-        case .probe: return "Probe"
-        }
-    }
-
-    /// git und der Vault sind Pflicht; alles andere darf der Nutzer auslassen (kein Konto, keine KI-App, kein Interesse).
-    public var darfUebersprungenWerden: Bool {
-        switch self {
-        case .git, .vault: return false
-        case .github, .sicherung, .ki, .probe: return true
-        }
-    }
-
-    /// Hauptschritte sind das, was der Assistent wirklich verlangt: git (ohne Klick, wenn vorhanden) und ein Vault. Alles andere
-    /// (GitHub, Sicherung, KI, Probe) sind Karten auf dem Abschlussbild: freiwillig, jederzeit nachholbar, nie im Weg.
-    public var istHauptschritt: Bool {
-        switch self {
-        case .git, .vault: return true
-        case .github, .sicherung, .ki, .probe: return false
-        }
-    }
-
-    /// Wird dieser Schritt nach einem Abbruch aus der Wirklichkeit neu festgestellt (git installiert? Vault aktiv? Konto im
-    /// Schlüsselbund?) — oder muss der Assistent sich merken, dass er erledigt ist (KI verbunden, Probe bestanden)?
-    var ausWirklichkeit: Bool {
-        switch self {
-        case .git, .vault, .github, .sicherung: return true // Sicherung: der Vault hat ein Remote (origin)
-        case .ki, .probe: return false
-        }
-    }
-}
-
-public enum SchrittStand: Equatable, Sendable {
-    case offen, erledigt, uebersprungen
-}
-
-/// Reine Zustandsmaschine des Assistenten — keine Prozesse, keine Dateien, keine Zeit. Sie weiß nur, welcher Schritt dran ist,
-/// was erledigt oder übersprungen wurde und welcher Schritt gerade einen Fehler zeigt. Was „erledigt“ heißt, stellt der Ablauf
-/// (`EinrichtungsAblauf`) aus der Wirklichkeit fest und meldet es hierher.
-public struct EinrichtungsZustand: Equatable, Sendable {
-    public private(set) var staende: [EinrichtungsSchritt: SchrittStand]
-    /// Der Schritt, der gerade angezeigt wird; nil = alles erledigt oder übersprungen.
-    public private(set) var aktuell: EinrichtungsSchritt?
-    /// Sichtbarer Fehler je Schritt (Text für den Nutzer). Verschwindet beim nächsten Versuch oder wenn der Schritt erledigt ist.
-    public private(set) var fehler: [EinrichtungsSchritt: String]
-    /// Schritte, die hier nur nicht gezeigt werden, weil sie entfallen (kein git im Ordner, Anmeldung nicht eingerichtet) — anders als
-    /// `uebersprungen` durch den Nutzer werden sie NICHT in `einrichtung.json` gemerkt und beim nächsten Mal neu beurteilt.
-    public private(set) var uebergangen: Set<EinrichtungsSchritt> = []
-
-    /// Frischer Start: alles offen. Mit `gespeichert` (Wiederaufnahme nach Abbruch) gelten die gemerkten Schritte KI und Probe
-    /// als erledigt und die vom Nutzer übersprungenen als übersprungen; git, Vault und GitHub stellt der Ablauf neu fest.
-    public init(gespeichert: EinrichtungsDatei? = nil) {
-        var s = Dictionary(uniqueKeysWithValues: EinrichtungsSchritt.allCases.map { ($0, SchrittStand.offen) })
-        if let g = gespeichert {
-            for schritt in g.schritte(g.erledigt) where !schritt.ausWirklichkeit { s[schritt] = .erledigt }
-            for schritt in g.schritte(g.uebersprungen) where schritt.darfUebersprungenWerden { s[schritt] = .uebersprungen }
-        }
-        staende = s
-        fehler = [:]
-        aktuell = nil
-        aktuell = ersterOffener
-    }
-
-    private var ersterOffener: EinrichtungsSchritt? {
-        EinrichtungsSchritt.allCases.first { staende[$0] == .offen }
-    }
-
-    public var istFertig: Bool { aktuell == nil }
-
-    /// Das Nötige steht: git ist da und ein Vault ist aktiv. Ab hier zeigt die Oberfläche das Abschlussbild mit den Karten; die
-    /// übrigen Schritte der Folge (GitHub, Sicherung, KI, Probe) sind dann nur noch freiwillige Karten.
-    public var grundeingerichtet: Bool {
-        EinrichtungsSchritt.allCases.filter(\.istHauptschritt).allSatisfy { stand($0) == .erledigt }
-    }
-
-    public func stand(_ s: EinrichtungsSchritt) -> SchrittStand { staende[s] ?? .offen }
-
-    /// Erledigte und übersprungene Schritte, für die Fortschrittsanzeige.
-    public var fortschritt: (fertig: Int, gesamt: Int) {
-        (EinrichtungsSchritt.allCases.filter { stand($0) != .offen }.count, EinrichtungsSchritt.allCases.count)
-    }
-
-    /// Der Schritt vor `aktuell` (bei fertig: der letzte), nil beim ersten.
-    public var vorherigerSchritt: EinrichtungsSchritt? {
-        let alle = EinrichtungsSchritt.allCases
-        let ziel = aktuell.flatMap { alle.firstIndex(of: $0) } ?? alle.count
-        return ziel > 0 ? alle[ziel - 1] : nil
-    }
-
-    // MARK: Übergänge
-
-    /// Der Schritt ist erledigt (auch ein späterer, den die Wirklichkeit schon erfüllt) — weiter zum ersten offenen.
-    public mutating func meldeErledigt(_ s: EinrichtungsSchritt) {
-        uebergangen.remove(s)
-        staende[s] = .erledigt
-        fehler[s] = nil
-        aktuell = ersterOffener
-    }
-
-    /// Überspringen: nur Schritte, die der Nutzer auslassen darf. Gibt zurück, ob es geklappt hat.
-    @discardableResult
-    public mutating func ueberspringe(_ s: EinrichtungsSchritt) -> Bool {
-        guard s.darfUebersprungenWerden, stand(s) != .erledigt else { return false }
-        uebergangen.remove(s)
-        staende[s] = .uebersprungen
-        fehler[s] = nil
-        aktuell = ersterOffener
-        return true
-    }
-
-    /// Der Schritt entfällt hier (nicht durch den Nutzer): er zählt für die Anzeige als übersprungen, wird aber nicht gemerkt.
-    @discardableResult
-    public mutating func uebergehe(_ s: EinrichtungsSchritt) -> Bool {
-        guard s.darfUebersprungenWerden, stand(s) != .erledigt else { return false }
-        staende[s] = .uebersprungen
-        uebergangen.insert(s)
-        fehler[s] = nil
-        aktuell = ersterOffener
-        return true
-    }
-
-    /// Der Schritt ist gescheitert: bleibt offen und zeigt `meldung`. Ein leerer Text wird durch einen Standardtext ersetzt —
-    /// ein Fehler ohne Text gibt es nicht.
-    public mutating func meldeFehler(_ s: EinrichtungsSchritt, _ meldung: String) {
-        let text = meldung.trimmingCharacters(in: .whitespacesAndNewlines)
-        fehler[s] = text.isEmpty ? "Das hat nicht geklappt." : text
-    }
-
-    public mutating func loescheFehler(_ s: EinrichtungsSchritt) { fehler[s] = nil }
-
-    /// Zurück zu einem Schritt, der schon dran war (oder gerade dran ist): er wird wieder angezeigt, Spätere bleiben unberührt.
-    /// Vor dem aktuellen Schritt oder nach „fertig“ ist das jeder; auf spätere Schritte kann man nicht springen. Gibt zurück, ob es ging.
-    @discardableResult
-    public mutating func geheZu(_ s: EinrichtungsSchritt) -> Bool {
-        let alle = EinrichtungsSchritt.allCases
-        guard let ziel = alle.firstIndex(of: s) else { return false }
-        let grenze = aktuell.flatMap { alle.firstIndex(of: $0) } ?? alle.count
-        guard ziel <= grenze else { return false }
-        uebergangen.remove(s)
-        staende[s] = .offen
-        fehler[s] = nil
-        aktuell = s
-        return true
-    }
-
-    /// Wiederholung über das Menü: KI und Probe werden noch einmal gezeigt, Überspringen-Entscheidungen gelten nicht mehr.
-    public mutating func setzeZurueck() {
-        for s in EinrichtungsSchritt.allCases { staende[s] = .offen }
-        uebergangen = []
-        fehler = [:]
-        aktuell = ersterOffener
-    }
-
-    // MARK: Gedächtnis
-
-    /// Was die nächste Sitzung braucht, um an der richtigen Stelle weiterzumachen.
-    public func datei(abgeschlossen: Bool, automatischAus: Bool, herkunft: EinrichtungsHerkunft = .start) -> EinrichtungsDatei {
-        let alle = EinrichtungsSchritt.allCases
-        return EinrichtungsDatei(abgeschlossen: abgeschlossen, automatischAus: automatischAus,
-                                 erledigt: alle.filter { stand($0) == .erledigt && !$0.ausWirklichkeit }.map(\.rawValue),
-                                 uebersprungen: alle.filter { stand($0) == .uebersprungen && !uebergangen.contains($0) }.map(\.rawValue),
-                                 herkunft: herkunft)
-    }
-}
+// Gedächtnis des Einrichtungs-Assistenten „Kortex einrichten“ (Web-Seite `brain://studio/einrichtung.html`): nur die Datei
+// `<support>/einrichtung.json` und die Frage, ob der Assistent beim Start von selbst erscheinen soll. Die Schritte selbst führt die Seite;
+// früher stand hier die Zustandsmaschine des SwiftUI-Assistenten (entfallen).
 
 public enum EinrichtungsHerkunft: String, Codable, Sendable {
     /// Beim Start von selbst erschienen (erster Start oder Wiederaufnahme).
@@ -192,11 +14,11 @@ public enum EinrichtungsHerkunft: String, Codable, Sendable {
 /// `<support>/einrichtung.json` — das Gedächtnis des Assistenten. Nur, was sich nicht aus der Wirklichkeit ablesen lässt.
 public struct EinrichtungsDatei: Codable, Equatable, Sendable {
     public var version = 1
-    /// Der Assistent ist einmal bis zum Ende durchgelaufen.
+    /// Der Assistent ist einmal bis zum Ende durchgelaufen („Fertig“).
     public var abgeschlossen = false
     /// Der Nutzer hat „Später“ gewählt: er erscheint nicht mehr von selbst (das Menü bietet ihn weiter an).
     public var automatischAus = false
-    /// Schritte, die sich nicht aus der Wirklichkeit ablesen lassen und erledigt sind (KI verbunden, Probe bestanden).
+    /// Nur noch für ältere Dateien erhalten (Schritte des früheren SwiftUI-Assistenten): wird gelesen und mitgeschrieben, aber nicht mehr ausgewertet.
     public var erledigt: [String] = []
     public var uebersprungen: [String] = []
     /// Woher kam der letzte Lauf? Ein Lauf aus dem Menü wird nie von selbst wieder aufgenommen, wenn es schon einen Vault gibt
@@ -224,9 +46,6 @@ public struct EinrichtungsDatei: Codable, Equatable, Sendable {
         uebersprungen = try c.decodeIfPresent([String].self, forKey: .uebersprungen) ?? []
         herkunft = (try c.decodeIfPresent(String.self, forKey: .herkunft)).flatMap(EinrichtungsHerkunft.init(rawValue:)) ?? .start
     }
-
-    /// Unbekannte Namen (Datei aus einer anderen Version) werden ignoriert, nicht als Fehler gewertet.
-    func schritte(_ namen: [String]) -> [EinrichtungsSchritt] { namen.compactMap(EinrichtungsSchritt.init(rawValue:)) }
 }
 
 /// Liest und schreibt `einrichtung.json`. Eine fehlende oder kaputte Datei heißt „noch nie gelaufen“ — nie ein Absturz.
