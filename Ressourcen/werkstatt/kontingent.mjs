@@ -145,13 +145,13 @@ export function erzeugeKontingent({ support, konten, nodePfad = process.execPath
     for (const d of [join(ordner(), "bin"), join(ordner(), "kette"), sicherungOrdner()]) { try { if (!readdirSync(d).length) rmdirSync(d); } catch { /* nicht leer oder weg */ } }
   }
   // Die frühere Statuszeile zu einer Kennung: aus kette/<id>.json (das Objekt, sonst nur der Befehl), sonst aus der Sicherung der settings.json (wenn der Merker eine Kette vermerkt) — sonst null.
-  function fruehereStatuszeile(id, rec) {
+  function fruehereStatuszeile(id, rec, mitElse = true) {
     try {
       const j = JSON.parse(readFileSync(ketteDatei(id), "utf8"));
       if (istObj(j) && istObj(j.original)) return { sl: j.original };
       if (istObj(j) && typeof j.command === "string" && j.command.trim()) return { sl: { type: "command", command: j.command } };
     } catch { /* keine oder kaputt: die Sicherung versuchen */ }
-    if (rec && rec.kette === true && rec.sicherung) {
+    if (mitElse && rec && rec.kette === true && rec.sicherung) { // ohne else-Zweig im Befehl ist die frühere Statuszeile bewusst herausgenommen (Installer): nicht aus der Sicherung zurückholen
       try { const b = JSON.parse(readFileSync(join(sicherungOrdner(), rec.sicherung), "utf8")); if (istObj(b) && istObj(b.statusLine) && typeof b.statusLine.command === "string") return { sl: b.statusLine }; } catch { /* nicht lesbar */ }
     }
     return { sl: null };
@@ -298,7 +298,7 @@ export function erzeugeKontingent({ support, konten, nodePfad = process.execPath
         // Die Datei wurde seitdem geändert (von dir oder von Claude Code): nur der eigene Eintrag geht heraus, alles andere bleibt; die frühere Statuszeile kommt zurück.
         // „statusLine“ wird NIE gelöscht, solange es eine Kette zu dieser Kennung gibt: dann kommt die frühere Statuszeile zurück (oder Kortex ändert nichts und sagt es).
         const hatKette = hatKetteImBefehl(st.sl.command) || existsSync(ketteDatei(id));
-        const frueher = fruehereStatuszeile(id, rec).sl;
+        const frueher = fruehereStatuszeile(id, rec, hatKetteImBefehl(st.sl.command)).sl;
         if (hatKette && !frueher) throw new HttpFehler(409, KEINE_KETTE, { art: "keine-kette" });
         mitWiederholung(() => {
           const { r } = liesFassung(datei);

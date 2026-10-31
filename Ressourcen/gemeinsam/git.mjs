@@ -8,7 +8,7 @@
 // ctx = { vertraut, sshEigen, sshGlobal, gpgGlobal, frist } kommt von vault.mjs (aus vertrauen.mjs); ohne Angabe gilt „nicht vertraut“.
 import { execFile, execFileSync } from "node:child_process";
 import { realpathSync, readFileSync, writeFileSync, statSync, renameSync, lstatSync, unlinkSync, readdirSync, mkdirSync, copyFileSync, existsSync, rmSync } from "node:fs";
-import { join, dirname, basename, sep } from "node:path";
+import { join, dirname, basename, sep, isAbsolute } from "node:path";
 import { HttpFehler, sauber, loese, kindUmgebung, falte, absoluterGitPfad, absoluterPfad, MAX_DATEI, testmodus } from "./basis.mjs";
 import { berlinHeute } from "./pruefung.mjs";
 import { starte, neueFrist, beendeAlleProzesse } from "./prozess.mjs";
@@ -353,8 +353,17 @@ async function syncOhneSperre(wurzel, opt = {}) {
       geholt = true;
       const markeWeg = mergeMarke(wurzel);
       try {
+        // Das Holen hat gedauert: inzwischen kann jemand anderes (Terminal) eine Zusammenführung begonnen haben. Direkt vor jedem Merge noch einmal prüfen —
+        // eine fremde Zusammenführung fassen wir nie an (und markieren sie nicht als unsere).
+        // Der Stand, den wir zusammenführen wollen, wird einmal festgehalten: nur eine Zusammenführung genau mit ihm gilt später als unsere (ein Holen oder `git pull` im Terminal verschiebt @{u})
+        const ziel0 = (await G(["rev-parse", "-q", "--verify", "@{u}"])).stdout.trim();
+        await keinMergeOffen(G);
         let m = await mitAbbruchSchutz(G, wurzel, () => G(["merge", "--ff-only", "--quiet", "@{u}"], { ...OH, timeout: limitSync }));
-        if (m.code !== 0) m = await mitAbbruchSchutz(G, wurzel, () => G(["merge", "--no-edit", "--quiet", "@{u}"], { ...OH, timeout: limitSync }));
+        if (m.code !== 0) {
+          await keinMergeOffen(G);
+          m = await mitAbbruchSchutz(G, wurzel, () => G(["merge", "--no-edit", "--quiet", "@{u}"], { ...OH, timeout: limitSync }));
+        }
+        const eigen = m.code !== 0 && (await eigeneZusammenfuehrung(G, ziel0)); // blieb eine Zusammenführung offen, muss es genau unsere sein (MERGE_HEAD = ziel0); sonst 409, ohne etwas anzufassen
         if (m.code !== 0 && opt.konflikteLoesen && (await konfliktDateien(G)).length) {
           // Konflikte NICHT zurücknehmen: Die Oberfläche lässt pro Datei wählen (Kern: abgleich-konflikt.mjs) oder bricht ab.
           // Versteckte Dateien (Punkt-Ordner) kann die Oberfläche nicht zeigen: dort bleibt automatisch die eigene Fassung.
@@ -369,12 +378,12 @@ async function syncOhneSperre(wurzel, opt = {}) {
             else await G(["merge", "--abort"], rueckweg);
             throw e;
           }
-          if (offen.length) throw new HttpFehler(409, KONFLIKT_TEXT, { konflikt: true, gestartet: true, dateien: offen.map((e) => e.pfad), versteckteBehalten: versteckteBehalten_ }); // gestartet: DIESER Abgleich hat die Zusammenführung begonnen (nicht keinMergeOffen)
+          if (offen.length) throw new HttpFehler(409, KONFLIKT_TEXT, { konflikt: true, gestartet: true, ziel: ziel0, dateien: offen.map((e) => e.pfad), versteckteBehalten: versteckteBehalten_ }); // gestartet: DIESER Abgleich hat die Zusammenführung begonnen (nicht keinMergeOffen)
           m = { code: 0 }; // alles war automatisch lösbar: Zusammenführung ist abgeschlossen
         }
         if (m.code !== 0) {
           const dateien = await konfliktDateien(G);
-          await G(["merge", "--abort"], rueckweg); // Arbeitsstand wie vorher
+          if (eigen) await G(["merge", "--abort"], rueckweg); // Arbeitsstand wie vorher (nur unsere eigene Zusammenführung, nie eine fremde)
           if (dateien.length) throw new HttpFehler(409, "Beim Zusammenführen gibt es Konflikte. Es wurde nichts verändert — bitte die Stellen mit einer Vertrauensperson oder in Git klären.", { dateien });
           throw new HttpFehler(409, "Ungesicherte Änderungen stehen im Weg. Bitte zuerst committen, dann abgleichen.", { dateien: [], ausgabe: ausgabeVon(m) });
         }
@@ -786,6 +795,26 @@ const KONFLIKT_TEXT = "Beim Abgleich haben beide Seiten dieselbe Stelle geänder
 
 // Läuft gerade eine Zusammenführung (MERGE_HEAD)? Auch eine, die außerhalb der App begonnen wurde.
 async function mergeLaeuft(G) { return (await G(["rev-parse", "-q", "--verify", "MERGE_HEAD"])).code === 0; }
+// Nach einem gescheiterten Merge: Steht eine Zusammenführung offen, die nicht genau das Ziel dieses Abgleichs (@{u}) zusammenführt, gehört sie nicht uns (zwischen Prüfung und Merge
+// im Terminal begonnen): 409 wie bei keinMergeOffen — ohne `gestartet`, ohne `merge --abort`.
+// → true (MERGE_HEAD = ziel, unsere), false (keine Zusammenführung offen) oder wirft 409
+async function eigeneZusammenfuehrung(G, ziel) {
+  const mk = await G(["rev-parse", "-q", "--verify", "MERGE_HEAD"]);
+  if (mk.code !== 0) return false;
+  if (ziel && mk.stdout.trim() === ziel) return true;
+  await keinMergeOffen(G);
+  throw new HttpFehler(409, "Es wartet noch ein Abgleich mit Konflikten. Bitte schließe ihn zuerst ab (oder brich ihn ab).", { konflikt: true, dateien: [] });
+}
+// Pfad der Datei MERGE_HEAD dieses Vaults — auch bei einem Vault mit `.git`-Datei (Worktree): Git selbst fragen, nie `.git/` annehmen. null: unbekannt.
+export async function mergeKopfPfad(wurzel, ctx = {}) {
+  const G = binde(wurzel, ctx);
+  for (const flags of [["--path-format=absolute"], []]) {
+    const r = await G(["rev-parse", ...flags, "--git-path", "MERGE_HEAD"]);
+    const p = r.code === 0 ? r.stdout.trim() : "";
+    if (p) return isAbsolute(p) ? p : join(wurzel, p);
+  }
+  return null;
+}
 async function keinMergeOffen(G) {
   if (!(await mergeLaeuft(G))) return;
   const offen = (await konfliktListe(G)).filter((e) => !e.versteckt && e.art !== "beide-geloescht").map((e) => e.pfad);

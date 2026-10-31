@@ -25,6 +25,14 @@ export const TK = {
     vorherErfolg: "Die frühere Fassung ist wieder da.",
   },
 
+  // Beim Öffnen wird nichts angelegt: neu gefundene Konten stehen hier, bis du sie einträgst
+  neu: {
+    titel: "Neu gefundene Konten – noch nicht eingetragen",
+    text: (namen) => `Kortex hat ${namen} gefunden. Bis du sie einträgst, hat jedes davon keinen Zugriff auf deine Vaults; beim Eintragen starten sie gesperrt.`,
+    eintragen: "Eintragen",
+    fertig: "Die neuen Konten sind eingetragen (gesperrt).",
+  },
+
   // ---- Konten
   konten: {
     titel: "Deine KI-Konten",

@@ -879,3 +879,25 @@ test("Umstellung (Phase B) läuft: Sicherung, Holen und Konfliktlösung warten, 
   writeFileSync(sperre, JSON.stringify({ pid: 2 ** 22 - 3, zeit: new Date().toISOString() })); // Prozess gibt es nicht
   assert.equal(B.abgleichen(mac, { support }).art, "gesendet");
 });
+
+test("Markieren: nur eine Zusammenführung mit dem Stand des Servers (@{u}) wird als Kortex-Zusammenführung markiert; eine mit etwas anderem (Terminal) nie", () => {
+  const { mac, handy, support } = aufbau();
+  speichern(handy, "10_notizen/schlicht.md", "# Schlicht\n\neine Zeile vom Handy\n", "Handy: schlicht", HANDY_MAIL); g(handy, "push", "-q");
+  // ein lokaler Zweig, der mit main kollidiert: im Terminal zusammengeführt, während der Abgleich „vorherAbwesend“ meldet
+  g(mac, "checkout", "-q", "-b", "fremd");
+  speichern(mac, "10_notizen/schlicht.md", "# Schlicht\n\neine Zeile aus dem Terminal\n", "fremd: schlicht");
+  g(mac, "checkout", "-q", "main");
+  speichern(mac, "10_notizen/schlicht.md", "# Schlicht\n\neine Zeile vom Mac\n", "Mac: schlicht");
+  g(mac, "fetch", "-q", "origin");
+  assert.throws(() => g(mac, "merge", "--no-edit", "fremd"));
+  const r = K.markiere(mac, { support, vorherAbwesend: true });
+  assert.deepEqual([r.offen, r.markiert], [true, false], "MERGE_HEAD ist nicht der Stand des Servers: nicht markiert");
+  assert.equal(K.ansicht(mac, { support }).fremd, true);
+  assert.equal(leseMerker(support).konfliktOffen, undefined);
+  g(mac, "merge", "--abort");
+  // dieselbe Lage mit dem Stand des Servers: markiert
+  assert.throws(() => g(mac, "merge", "--no-edit", "origin/main"));
+  const r2 = K.markiere(mac, { support, vorherAbwesend: true });
+  assert.deepEqual([r2.offen, r2.markiert], [true, true]);
+  assert.equal(K.ansicht(mac, { support }).fremd, false);
+});

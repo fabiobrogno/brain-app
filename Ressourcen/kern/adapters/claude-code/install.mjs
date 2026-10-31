@@ -4,6 +4,8 @@
 // die es nach dem Umzug nach adapters/claude-code/ nicht mehr gibt), idempotent, mit Backup.
 // Die Hook-Befehle zeigen auf den Starter der App (`[ -x S ] && exec S hook <name> || exit 0`, siehe pfade.mjs#hookBefehl): fehlt der Starter,
 // endet der Hook still mit Exit 0. Nur der Starter und der Symlink bin/kern stehen in settings.json — nie ein Versionsordner oder ein .app-Pfad.
+// Statuszeile und Kontingent-Kette: Ist die Kette eingetragen (Marke kortex-statuszeile.mjs im Befehl der Statuszeile, siehe werkstatt/kontingent.mjs), trägt der Installer seine Kortex-Statuszeile
+// als FRÜHERE Statuszeile in die Kette ein (<Support>/kontingent/kette/<konto>.json|.sh), aktualisiert sie dort und nimmt sie dort wieder heraus (--entfernen, brain-mods aktiv) — nie doppelt.
 // Nutzung: install.mjs [vault] [--claude-home <ordner>] [--ohne-statusline]
 //          install.mjs --entfernen [--claude-home <ordner>]   (nimmt alle Brain-Hooks, die Statuszeile und die Brain-Befehle wieder heraus; Fremdes bleibt)
 //          install.mjs --stand [--claude-home <ordner>]       (eine JSON-Zeile: was eingetragen ist; schreibt nichts)
@@ -57,6 +59,67 @@ function eigenerBefehl(c) {
   return c.includes(MARKER) && [...HOOK_DATEIEN, "statusline"].some((d) => c.includes(`${MARKER}${d}.mjs`));
 }
 const eigeneStatuszeile = (c) => typeof c === "string" && (hookNameAusBefehl(c) === "statusline" || c.includes(`${MARKER}statusline.mjs`));
+
+// ── Kette der Kontingent-Statuszeile (werkstatt/kontingent.mjs, gemeinsam/kortex-statuszeile.mjs) ──
+// Ist die Kette eingetragen, steht in settings.json statt der Statuszeile ein Befehl, der <Support>/kontingent/bin/kortex-statuszeile.mjs startet (Marke) und die FRÜHERE Statuszeile
+// aus <Support>/kontingent/kette/<konto>.json|.sh weiterreicht. Dieser Installer trägt seine eigene Kortex-Statuszeile dann als frühere Statuszeile IN die Kette ein (bzw. aktualisiert
+// sie dort, bzw. nimmt sie wieder heraus) — nie daneben, nie doppelt. Befehlsformen (kettenBefehl in kontingent.mjs):
+//   ohne frühere Statuszeile:  if [ -x N ] && [ -f S ]; then N S --konto ID; fi
+//   mit früherer Statuszeile:  if [ -x N ] && [ -f S ]; then N S --konto ID; else /bin/sh '<Support>/kontingent/kette/ID.sh'; fi
+const KETTE_MARKE = "kortex-statuszeile.mjs";
+const KETTE_SKRIPT = `/kontingent/bin/${KETTE_MARKE}`;
+const SH_ZWEIG = /; else \/bin\/sh ('(?:[^']|'\\'')*'); fi$/;
+const entquote = (t) => { const m = /^'((?:[^']|'\\'')*)'$/.exec(t); return m ? m[1].replaceAll("'\\''", "'") : null; };
+const istObjekt = (x) => !!x && typeof x === "object" && !Array.isArray(x);
+// → null (keine Kette) | { lesbar: false } (eine Kette in unbekannter Form: nichts anfassen) | { lesbar: true, id, json, sh, mit, orig: null | { command, original } }
+function ketteInfo(statusLine) {
+  const c = istObjekt(statusLine) ? statusLine.command : null;
+  if (typeof c !== "string" || !c.includes(KETTE_SKRIPT)) return null;
+  if (process.platform === "win32") return { lesbar: false };
+  // Genau die Form von kettenBefehl (kontingent.mjs): jede andere Form (anderer else-Zweig, zusätzliche Teile) wird nicht angefasst
+  const Q = "'(?:[^']|'\\\\'')*'";
+  const form = new RegExp(`^if \\[ -x (${Q}) \\] && \\[ -f (${Q}) \\]; then (${Q}) (${Q}) --konto (k_[0-9a-f]{8})(?:; else /bin/sh (${Q}))?; fi$`).exec(c);
+  if (!form || form[1] !== form[3] || form[2] !== form[4]) return { lesbar: false };
+  const id = form[5];
+  const skript = entquote(form[2]);
+  if (!skript || !skript.endsWith(KETTE_SKRIPT)) return { lesbar: false };
+  const ordner = join(skript.slice(0, -"/bin/".length - KETTE_MARKE.length), "kette");
+  const json = join(ordner, `${id}.json`), sh = join(ordner, `${id}.sh`);
+  const mit = SH_ZWEIG.test(c);
+  if (!mit) return { lesbar: true, id, json, sh, mit, orig: null };
+  if (entquote(SH_ZWEIG.exec(c)[1]) !== sh) return { lesbar: false };
+  try {
+    const j = JSON.parse(readFileSync(json, "utf8"));
+    if (!istObjekt(j) || typeof j.command !== "string" || !j.command.trim()) return { lesbar: false };
+    return { lesbar: true, id, json, sh, mit, orig: { command: j.command, original: istObjekt(j.original) ? j.original : { type: "command", command: j.command } } };
+  } catch { return { lesbar: false }; }
+}
+// Dateien der Kette atomar schreiben (0600, Ordner 0700) bzw. entfernen. ops: { vor: Boolean, datei, inhalt | null }; vor = vor settings.json (Eintragen), sonst danach (Herausnehmen)
+function wendeKetteAn(ops, vor) {
+  for (const o of ops.filter((x) => x.vor === vor)) {
+    if (o.inhalt === null) { try { rmSync(o.datei, { force: true }); } catch { /* bleibt */ } continue; }
+    mkdirSync(dirname(o.datei), { recursive: true, mode: 0o700 });
+    const tmp = `${o.datei}.tmp-${process.pid}-${Math.random().toString(16).slice(2, 10)}`;
+    try { writeFileSync(tmp, o.inhalt, { mode: 0o600, flag: "wx" }); chmodSync(tmp, 0o600); renameSync(tmp, o.datei); }
+    catch (e) { try { rmSync(tmp, { force: true }); } catch { /* weg */ } throw e; }
+  }
+}
+// Eigene Statuszeile in die Kette (neu oder aktualisiert): Dateien vormerken, Befehl der Kette auf die Form „mit früherer Statuszeile“ bringen. refreshInterval wie ohne Kette (10 s,
+// nur wenn die Person keinen eigenen Wert hat); die frühere Statuszeile trägt denselben Wert, damit der Rückweg der Kette sie so zurückgibt, wie sie ohne Kette stünde.
+function ketteEintragen(sl, info, befehl, ops) {
+  const refresh = sl.refreshInterval === undefined ? 10 : sl.refreshInterval;
+  const original = { ...(info.orig ? info.orig.original : {}), type: "command", command: befehl, refreshInterval: refresh };
+  ops.push({ vor: true, datei: info.json, inhalt: JSON.stringify({ command: befehl, original }) + "\n" }, { vor: true, datei: info.sh, inhalt: `${befehl}\n` });
+  if (!info.mit) sl.command = sl.command.replace(/; fi$/, `; else /bin/sh ${shellQuote(info.sh)}; fi`);
+  if (sl.refreshInterval === undefined) sl.refreshInterval = refresh;
+}
+// Eigene Statuszeile aus der Kette nehmen: Befehl zurück auf „ohne frühere Statuszeile“, danach Dateien weg
+function ketteHerausnehmen(sl, info, ops) {
+  sl.command = sl.command.replace(SH_ZWEIG, "; fi");
+  const r = info.orig && info.orig.original ? info.orig.original.refreshInterval : undefined;
+  if (r !== undefined && sl.refreshInterval === r) delete sl.refreshInterval;
+  ops.push({ vor: false, datei: info.json, inhalt: null }, { vor: false, datei: info.sh, inhalt: null });
+}
 const zeitstempel = () => new Date().toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15);
 function liesSettings(datei) {
   if (!existsSync(datei)) return {};
@@ -117,9 +180,13 @@ function entfernen(home) {
     console.log(`- Hook ${ev} entfernt${weg > 1 ? ` (${weg} Einträge)` : ""}`);
   }
   if (s.hooks && typeof s.hooks === "object" && Object.keys(s.hooks).length === 0) delete s.hooks;
-  if (eigeneStatuszeile(s.statusLine?.command)) { delete s.statusLine; console.log("- Statuszeile entfernt"); }
+  // Mit Kette (Kontingent): die eigene Statuszeile steht als frühere Statuszeile in der Kette und wird dort herausgenommen — die Kette selbst bleibt
+  const kette = ketteInfo(s.statusLine);
+  const ketteOps = [];
+  if (kette && kette.lesbar && kette.orig && eigeneStatuszeile(kette.orig.command)) { ketteHerausnehmen(s.statusLine, kette, ketteOps); console.log("- Statuszeile aus der Kette entfernt"); }
+  else if (!kette && eigeneStatuszeile(s.statusLine?.command)) { delete s.statusLine; console.log("- Statuszeile entfernt"); }
   if (JSON.stringify(s) !== vorher) {
-    try { schreibeSettings(datei, home, s); } catch { console.error("Die Datei settings.json ließ sich gerade nicht schreiben — es wurde nichts geändert. Bitte versuche es noch einmal."); process.exit(1); }
+    try { schreibeSettings(datei, home, s); wendeKetteAn(ketteOps, false); } catch { console.error("Die Datei settings.json ließ sich gerade nicht schreiben — es wurde nichts geändert. Bitte versuche es noch einmal."); process.exit(1); }
   } else console.log("settings.json unverändert");
   let cmds = 0;
   for (const n of brainCommands(commandsZiel)) { try { rmSync(join(commandsZiel, n), { force: true }); cmds++; } catch { /* bleibt */ } }
@@ -140,7 +207,9 @@ function stand(home) {
     for (const c of treffer) { const m = KONTO_IM_BEFEHL.exec(c); kontoIds.add(m ? m[1] : null); }
   }
   const sl = s.statusLine?.command;
-  const statuszeile = !sl ? null : eigeneStatuszeile(sl) ? "brain" : "fremd";
+  // In der Kette (Kontingent) zählt die frühere Statuszeile: eine eigene → „brain“, eine fremde (oder eine unlesbare Kette) → „fremd“, keine → null
+  const kette = ketteInfo(s.statusLine);
+  const statuszeile = kette ? (!kette.lesbar ? "fremd" : !kette.orig ? null : eigeneStatuszeile(kette.orig.command) ? "brain" : "fremd") : !sl ? null : eigeneStatuszeile(sl) ? "brain" : "fremd";
   // „aktiv“ = alle Hooks in der neuen Form (die ältere Form mit Kern-Pfad zählt als veraltet und wird beim Einrichten ersetzt).
   // konto: die Kennung, die in ALLEN eingetragenen Hook-Befehlen steht (sonst null: keine oder uneinheitlich); mitKonto: alle eingetragenen Hooks tragen eine.
   const eine = kontoIds.size === 1 ? [...kontoIds][0] : null;
@@ -320,7 +389,25 @@ for (const { ev, datei: hookDatei, args: hookArgs = "", cmd, matcher, altFassung
 // Ist das Plugin brain-mods aktiv, zeigt dessen Brain-Band denselben Stand über dem Prompt — die Statusline wäre doppelt.
 // Dann eine eigene (Brain-)Statusline entfernen und keine neu anlegen; fremde Statuslines bleiben unangetastet.
 const brainModsAktiv = Object.entries(s.enabledPlugins || {}).some(([k, v]) => v === true && k.startsWith("brain-mods@"));
-if (brainModsAktiv && !args.includes("--ohne-statusline")) {
+// Ist die Kontingent-Kette eingetragen (Marke kortex-statuszeile.mjs im Befehl), steht unsere Statuszeile als FRÜHERE Statuszeile in der Kette (kette/<konto>.json) statt in settings.json:
+// dort wird sie eingetragen, aktualisiert oder (brain-mods aktiv) herausgenommen — nie doppelt, nie neben der Kette.
+const ketteOps = [];
+const kette = args.includes("--ohne-statusline") ? null : ketteInfo(s.statusLine);
+let ketteNachher = kette && kette.lesbar && kette.orig ? kette.orig.command : null; // die frühere Statuszeile der Kette nach diesem Lauf (für die Vorschau)
+if (kette) {
+  const statusCmd = hookCmd("statusline.mjs");
+  const orig = kette.orig;
+  const eigen = !!orig && (eigeneStatuszeile(orig.command) || (typeof orig.command === "string" && alteStatusMuster.test(orig.command)));
+  if (!kette.lesbar) meld("Statusline vorhanden, nicht geändert");
+  else if (brainModsAktiv) {
+    if (orig && eigeneStatuszeile(orig.command)) { ketteHerausnehmen(s.statusLine, kette, ketteOps); ketteNachher = null; meld("- Statusline aus der Kette entfernt (das Band von brain-mods zeigt den Stand)"); }
+  } else if (!orig) { ketteEintragen(s.statusLine, kette, statusCmd, ketteOps); ketteNachher = statusCmd; meld("+ Statusline (in der Kette)"); }
+  else if (orig.command === statusCmd) {
+    // schon aktuell; fehlt nur der Wert für die Aktualisierung ruhender Terminals, wird er wie ohne Kette ergänzt
+    if (s.statusLine.refreshInterval === undefined || orig.original.refreshInterval === undefined) { ketteEintragen(s.statusLine, kette, statusCmd, ketteOps); meld("~ Statusline aktualisiert sich alle 10 s"); }
+  } else if (eigen) { ketteEintragen(s.statusLine, kette, statusCmd, ketteOps); ketteNachher = statusCmd; meld("~ Statusline aktualisiert (in der Kette)"); }
+  else meld("Statusline vorhanden, nicht geändert"); // eine fremde frühere Statuszeile bleibt, wie sie ist
+} else if (brainModsAktiv && !args.includes("--ohne-statusline")) {
   if (eigeneStatuszeile(s.statusLine?.command)) {
     delete s.statusLine; meld("- Statusline entfernt (das Band von brain-mods zeigt den Stand)");
   }
@@ -337,7 +424,8 @@ if (brainModsAktiv && !args.includes("--ohne-statusline")) {
   }
   if (s.statusLine?.command !== statusCmd) meld("Statusline vorhanden, nicht geändert");
 }
-const geaendert = JSON.stringify(s) !== vorher;
+const settingsGeaendert = JSON.stringify(s) !== vorher;
+const geaendert = settingsGeaendert || ketteOps.length > 0; // auch die Dateien der Kette zählen
 
 if (VORSCHAU) {
   // Zählung der Stellen, die auch nach der Umstellung noch auf den alten Kit-Ordner zeigen (eigene Skripte, Plugins …): nur Zahlen, nie Texte.
@@ -346,7 +434,9 @@ if (VORSCHAU) {
   const sl = s.statusLine?.command;
   console.log(JSON.stringify({
     vorschau: true, geaendert, eintraege: aktionen, restVerweise: zaehle(s),
-    hooks: { soll: soll.length, neueForm }, statuszeile: !sl ? "keine" : sl === hookCmd("statusline.mjs") ? "neu" : eigeneStatuszeile(sl) ? "alt" : "fremd",
+    hooks: { soll: soll.length, neueForm },
+    statuszeile: kette && kette.lesbar ? (!ketteNachher ? "keine" : ketteNachher === hookCmd("statusline.mjs") ? "neu" : eigeneStatuszeile(ketteNachher) ? "alt" : "fremd") // in der Kette zählt die frühere Statuszeile
+      : !sl ? "keine" : sl === hookCmd("statusline.mjs") ? "neu" : eigeneStatuszeile(sl) ? "alt" : "fremd",
   }));
   return;
 }
@@ -395,9 +485,13 @@ if (BEFEHLE_ERLAUBT) console.log(`Commands: ${commandsZiel}`);
 
 // B2: settings.json schreiben. Schlägt das fehl, sind die Commands oben bereits geschrieben — die
 // Meldung sagt das ausdrücklich, statt pauschal "nichts geändert" zu behaupten.
+// Die Kette: eine eingetragene Statuszeile liegt zuerst da (sonst zeigte der Befehl der Kette auf nichts), eine herausgenommene wird erst nach settings.json gelöscht.
 if (geaendert) {
-  try { schreibeSettings(datei, home, s); }
-  catch (e) {
+  try {
+    wendeKetteAn(ketteOps, true);
+    if (settingsGeaendert) schreibeSettings(datei, home, s); else console.log("settings.json unverändert");
+    wendeKetteAn(ketteOps, false);
+  } catch (e) {
     console.error("Die Claude-Commands wurden aktualisiert, aber die Datei settings.json ließ sich gerade nicht schreiben — bitte sag deiner KI, es noch einmal zu versuchen.");
     process.exit(1);
   }
