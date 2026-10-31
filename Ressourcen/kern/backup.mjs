@@ -1,9 +1,10 @@
 // backup.mjs — Sicherung: github (push) | ordner (git bundle, 7 behalten) | keins. Alltagssprache, nie Abbruch im Alltag.
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readdirSync, statSync, lstatSync, rmSync, writeFileSync, readFileSync, mkdirSync, realpathSync, renameSync } from "node:fs";
-import { join, isAbsolute } from "node:path";
+import { join, isAbsolute, basename } from "node:path";
 import { createHash } from "node:crypto";
 import { ladeConfig, supportOrdner } from "./pfade.mjs";
+import { schreibeEreignis } from "./aktivitaet.mjs";
 import { gitBefehl } from "./werkzeug.mjs";
 const git = (v, ...a) => execFileSync(gitBefehl({ cfg: ladeConfig(v) }), ["-C", v, ...a], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
 
@@ -175,6 +176,16 @@ const MELDUNG = {
   "kein-commit": "Die Online-Sicherung wartet: Es gibt noch nichts Eingearbeitetes zum Sichern.",
 };
 
+// Aktivitätsprotokoll (P8a): ein neuer Stand des Abgleichs (Konflikt, Anmeldung nötig, Neues auf dem Server) steht im Protokoll des Vaults. Nur beim WECHSEL des Standes (merkeStand), nie Inhalt.
+const SICHERUNG_EREIGNIS = {
+  konflikt: { art: "sicherung-konflikt", grund: "konflikt", text: "Sicherung: Die Fassungen auf zwei Geräten widersprechen sich. Löse den Konflikt im Studio („Abgleichen“)." },
+  anmeldung: { art: "sicherung-fehler", grund: "anmeldung", text: "Die Online-Sicherung hat nicht geklappt: Die Anmeldung bei GitHub ist abgelaufen. Melde dich in den Einstellungen neu an." },
+  neues: { art: "sicherung-fehler", grund: "neues", text: "Die Online-Sicherung wartet: Auf dem Server liegt Neues. Gleiche im Studio ab." },
+};
+function meldeSicherung(vault, stand, support) {
+  const e = SICHERUNG_EREIGNIS[stand];
+  if (e) schreibeEreignis(support, vault, { ...e, vaultName: basename(vault) }, { drossel: { schluessel: `sich|${stand}`, sekunden: 6 * 3600 } });
+}
 // Vermerk im Support-Ordner: abgleich = { stand: "konflikt"|"anmeldung"|"neues", zeit }. Nur eine Änderung des Standes schreibt.
 function merkeStand(vault, stand, support) {
   try {
@@ -183,6 +194,7 @@ function merkeStand(vault, stand, support) {
     if (stand === jetzt || (!stand && !d.abgleich)) return;
     if (stand) d.abgleich = { stand, zeit: new Date().toISOString() }; else delete d.abgleich;
     schreibeDatei(vault, d, support);
+    if (stand) meldeSicherung(vault, stand, support);
   } catch { /* nur Komfort: ohne Vermerk bleibt der Hinweis eben aus */ }
 }
 // → { stand, text, zeit } oder null. Menüleiste (brain status) und Studio zeigen damit den Hinweis.
@@ -357,11 +369,14 @@ export function sichernErgebnis(vault) {
   if (b.art === "github") {
     if (!pushErlaubnis(vault).ok) return { ok: false, art: "nicht-bestaetigt", text: PUSH_NICHT_BESTAETIGT };
     const r = abgleichen(vault);
+    // Aktivitätsprotokoll (P8a): Konflikt und Anmeldung stehen schon über den Stand des Abgleichs (merkeStand) im Protokoll; hier der Rest (Netz, abgelehnt, Fehler).
+    if (!r.ok && ["netz", "abgelehnt", "fehler"].includes(r.art)) schreibeEreignis(supportOrdner(), vault, { art: "sicherung-fehler", grund: r.art, vaultName: basename(vault), text: r.text }, { drossel: { schluessel: `sich|${r.art}`, sekunden: 6 * 3600 } });
     return { ok: r.ok, art: r.art, text: r.text + (r.ok ? hinweis : "") };
   }
   // Der Ordner kommt aus dem Support-Ordner (nie aus der Vault-Config) und wird vor jedem Gebrauch neu geprüft
   const ziel = leseBackupOrdner(vault);
   if (!ziel) return { ok: false, art: "kein-ordner", text: "Für diesen Vault ist kein gültiger Sicherungsordner eingerichtet (absoluter Ordner, kein Verweis). Sag „richte mir eine Sicherung ein“ oder: brain backup einrichten ordner:<Ordner>." };
+  if (!existsSync(ziel)) schreibeEreignis(supportOrdner(), vault, { art: "sicherung-fehler", grund: "ordner-fehlt", vaultName: basename(vault), text: "Die Sicherung konnte nicht laufen: Der Sicherungsordner ist gerade nicht da (Stick oder Platte nicht angeschlossen?)." }, { drossel: { schluessel: "sich|ordner-fehlt", sekunden: 6 * 3600 } });
   if (!existsSync(ziel)) return { ok: false, art: "ordner-fehlt", text: "Der Sicherungsordner ist gerade nicht da (Stick oder Platte nicht angeschlossen?). Ich sichere beim nächsten Mal." };
   const datei = join(ziel, `brain-${ortstag()}.bundle`);
   git(vault, "bundle", "create", datei, "--all");

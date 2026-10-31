@@ -453,7 +453,8 @@ export function oeffneVault(vaultPfad, opts = {}) {
       if (s.gesperrt) return { repo: true, gesperrt: true, grund: s.grund };
       return mitSicherungsStand(await gitFn.status(wurzel, ctxVon(s)));
     },
-    gitCommit: async (a) => { umstellungSperre(); return gitFn.commit(wurzel, a || {}, gitCtx({ limit: opts.gitLimitCommit })); },
+    // extra.ohneHooks: der Commit läuft auch in einem vertrauten Vault ohne Hooks (Rückgängig für KI-Ablagen, P8a)
+    gitCommit: async (a, extra = {}) => { umstellungSperre(); return gitFn.commit(wurzel, a || {}, gitCtx({ limit: opts.gitLimitCommit, ...(extra && extra.ohneHooks === true ? { hooks: false } : {}) })); },
     // konflikteLoesen: bei Konflikten die Zusammenführung offen lassen, damit die Oberfläche pro Datei wählen lässt (sonst wie bisher: abbrechen, 409)
     gitSync: async (a) => {
       umstellungSperre();

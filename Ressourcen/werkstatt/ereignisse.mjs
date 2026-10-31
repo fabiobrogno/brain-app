@@ -6,11 +6,12 @@
 //   Melden:    Ereignis-Ring (letzte 500) mit fortlaufender Nummer; GET /api/ereignisse?seit=<n> wartet (Long-Poll), bis es Neues gibt.
 //   Grenzen:   höchstens `maxJeFlush` Pfade je Meldung, danach ein einziges „alles“; bei Dauerfeuer drosselt die Rate (Ein „alles“ je Sekunde).
 // Typen: aufgabe (angelegt|geaendert|entfernt|archiviert, mit pfad, titel, status, quelle) · notiz (pfad, art) · posteingang · git (neuer-stand|konflikt)
-//        · vertrauen · konten · einstellungen (brain.config.json des Vaults oder <support>/einstellungen.json) · alles (der Client lädt alles neu).
+//        · aktivitaet (neuer Eintrag im Aktivitätsprotokoll des Vaults, aus <support>/aktivitaet/<Kennung>.jsonl: id, art, zeit, wer, text, rueckgaengig, …; art "zustand" = gelesen/zurückgenommen) · vertrauen · konten · einstellungen (brain.config.json des Vaults oder <support>/einstellungen.json) · alles (der Client lädt alles neu).
 import { watch, statSync, readdirSync, readFileSync, openSync, readSync, closeSync, existsSync } from "node:fs";
 import { createHash, randomBytes } from "node:crypto";
 import { join, sep, basename } from "node:path";
 import { BEARBEITBAR, falte } from "../gemeinsam/basis.mjs";
+import { kennungVault, leseEreignisse, ereignisDatei } from "../gemeinsam/aktivitaet.mjs";
 
 const wandUhr = () => performance.timeOrigin + performance.now(); // Wanduhr in ms mit Bruchteilen (Dateizeiten haben Nanosekunden)
 const HASH = (buf) => createHash("sha256").update(buf).digest("hex");
@@ -88,6 +89,7 @@ export function erzeugeEreignisse(o = {}) {
   const entprellMs = o.entprellMs ?? 150, maxWarteMs = o.maxWarteMs ?? 600, pollMs = o.pollMs ?? (modusWunsch === "poll" ? 400 : 2000);
   const ringMax = o.ring ?? 500, maxJeFlush = o.maxJeFlush ?? 200, maxProFenster = o.maxProFenster ?? 300, fensterMs = o.fensterMs ?? 5000;
   const eigenTtl = o.eigenTtlMs ?? 10_000;
+  const aktPollMs = o.aktivitaetPollMs ?? 1000;   // Aktivitätsprotokoll: wie oft die Dateigröße geprüft wird (0 = nie; nur Tests)
 
   let epoche = randomBytes(6).toString("hex");
   let nr = 0;
@@ -101,6 +103,33 @@ export function erzeugeEreignisse(o = {}) {
   let gedrosselt = false;
   let eigenLaeuft = 0, haltSeit = 0, startZeit = 0;
   const eigen = new Map();    // Schlüssel → { hash, bis }
+  // Aktivitätsprotokoll (P8a): andere Prozesse (MCP-Server, Hooks, Kern) hängen an <support>/aktivitaet/<Kennung>.jsonl an. Alle `aktPollMs` wird nur Größe und Zeit der Datei(en)
+  // angesehen; hat sich etwas geändert, werden die neuen Einträge (Ids, die noch nicht gemeldet wurden) als Ereignis „aktivitaet“ gemeldet.
+  let aktUhr = null, aktSchluessel = "", aktBekannt = new Set();
+  const aktDateien = () => { const d = o.support && wurzel ? ereignisDatei(o.support, kennungVault(wurzel)) : null; return d ? [`${d}.alt`, d] : []; };
+  const aktAnsehen = () => aktDateien().map((d) => { try { const st = statSync(d); return `${st.size}:${st.mtimeMs}`; } catch { return "-"; } }).join("|");
+  function aktStart() {
+    if (!o.support || !wurzel) return;
+    aktSchluessel = aktAnsehen();
+    aktBekannt = new Set(leseEreignisse(o.support, kennungVault(wurzel)).slice(-300).map((e) => e.id));
+    if (aktPollMs > 0 && !aktUhr) { aktUhr = setInterval(pruefeAktivitaet, aktPollMs); aktUhr.unref?.(); }
+  }
+  function pruefeAktivitaet() {
+    if (!aktiv || !wurzel || !o.support) return;
+    const jetzt = aktAnsehen();
+    if (jetzt === aktSchluessel) return;
+    aktSchluessel = jetzt;
+    let neu = [];
+    try { neu = leseEreignisse(o.support, kennungVault(wurzel)).filter((e) => !aktBekannt.has(e.id)); } catch { return; }
+    if (!neu.length) return;
+    for (const e of neu) aktBekannt.add(e.id);
+    if (aktBekannt.size > 600) aktBekannt = new Set([...aktBekannt].slice(-300));
+    for (const e of neu.slice(-20)) {
+      melde({ typ: "aktivitaet", id: e.id, art: e.art, zeit: e.zeit, ...(e.grund ? { grund: e.grund } : {}), konto: e.konto ?? null, programm: e.programm ?? null, ...(e.quelle ? { quelle: e.quelle } : {}),
+        ...(e.wer ? { wer: e.wer } : {}), text: e.text, ...(e.pfade ? { pfade: e.pfade } : {}), rueckgaengig: !!e.rueckgaengig, vaultName: e.vaultName || "" });
+    }
+    if (neu.length > 20) melde({ typ: "aktivitaet", art: "zustand" });
+  }
 
   const supportPfad = (name) => (o.support ? join(o.support, name) : null);
   const SUPPORT_TYP = { "vertrauen.json": "vertrauen", "ki-konten.json": "konten", "einstellungen.json": "einstellungen" };
@@ -359,6 +388,8 @@ export function erzeugeEreignisse(o = {}) {
     watcher = null; supportWatcher = null;
     if (pollUhr) clearInterval(pollUhr);
     pollUhr = null; modus = null;
+    if (aktUhr) clearInterval(aktUhr);
+    aktUhr = null; aktBekannt = new Set();
     clearTimeout(flushUhr); flushUhr = null; zeitErster = 0;
     offen = new Set(); supportOffen = new Set(); ueberlauf = false;
   }
@@ -371,6 +402,7 @@ export function erzeugeEreignisse(o = {}) {
     gitLetzter = gitStand(wurzel);
     if (modusWunsch === "poll") startePoll(); else starteWatch();
     starteSupport();
+    aktStart();
   }
 
   // Der offene Vault hat gewechselt (oder es gibt keinen): neue Epoche, die Clients laden alles neu
@@ -396,7 +428,7 @@ export function erzeugeEreignisse(o = {}) {
 
   return {
     warte, richteAuf, beende, beginneEigenes, endeEigenes, setzeAufgabenOrdner: (n) => { if (typeof n === "string" && n) aufgabenOrdner = () => n; },
-    markiereEigen, markiereEigenenKopf, aktiviere,
+    markiereEigen, markiereEigenenKopf, aktiviere, pruefeAktivitaet,
     melde: (e) => melde(e), // von der Werkstatt selbst (z. B. Vertrauen geändert)
     stand: () => ({ epoche, aktuell: nr, modus, aktiv }),
     // nur für Tests

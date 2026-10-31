@@ -17,9 +17,10 @@
 // CLI: node tageslauf.mjs <vault> [--wenn-faellig] [--dienst] [--probe] [--nur-antworten] [--losgeloest]
 //        [--budget-aufrufe N] [--budget-minuten N]        Exit 0 (auch übersprungen) · 1 Fehler · 64 Aufruf falsch
 import { readFileSync, appendFileSync, mkdirSync, readdirSync, existsSync, realpathSync } from "node:fs";
-import { join } from "node:path";
+import { join, basename } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ordner, vaultPfadOderEnde } from "./pfade.mjs";
+import { ordner, vaultPfadOderEnde, supportOrdner } from "./pfade.mjs";
+import { schreibeEreignis } from "./aktivitaet.mjs";
 import { leseAutomatik, TAGESLAUF_BUDGETS } from "./einstellungen.mjs";
 import { istHeikel } from "./heikel.mjs";
 import { aussageGedeckt, kernsatz, FUNDSTELLE_MUSTER } from "./beleg-ernte.mjs";
@@ -477,6 +478,20 @@ function merkeUebersprungen(vault, grund, jetzt) {
   try { schreibeLetzter(vault, { ...(leseLetzter(vault) || {}), uebersprungen: { zeit: iso(jetzt), grund } }); } catch {}
 }
 
+// Aktivitätsprotokoll (P8a): Ende eines echten Pflege-Laufs (nicht der Probe). Nur Zahlen und der Satz des Kerns (ohne Pfade und Namen) — nie ein Titel oder Inhalt.
+export function meldePflege(vault, { status, erfolgreich, z, grund }) {
+  try {
+    const n = (x) => (Number.isInteger(x) && x > 0 ? x : 0);
+    const teile = [];
+    if (n(z.uebernommen)) teile.push(`${z.uebernommen} ${z.uebernommen === 1 ? "Änderung übernommen" : "Änderungen übernommen"}`);
+    if (n(z.rueckfragen)) teile.push(`${z.rueckfragen} ${z.rueckfragen === 1 ? "Rückfrage wartet" : "Rückfragen warten"}`);
+    const e = erfolgreich
+      ? { art: "pflege", text: `Pflege fertig${teile.length ? `: ${teile.join(", ")}` : ""}.` }
+      : { art: "pflege-fehler", grund: status === "ohne-ki" ? "ohne-ki" : "fehler", text: `Die Pflege lief nicht ganz durch${grund ? `: ${String(grund).replace(/\s+/g, " ").slice(0, 160)}` : ""}.` };
+    schreibeEreignis(supportOrdner(), vault, { ...e, vaultName: basename(vault) }, { drossel: { schluessel: `pflege|${e.art}`, sekunden: 600 } });
+  } catch { /* das Protokoll ist Beiwerk */ }
+}
+
 function abschluss(ctx, { status, nurAntworten, nurPflege = false, probeFlag, werte, zahl }) {
   const vault = ctx.vault;
   let s = { fragen: [], wartend: 0 };
@@ -501,6 +516,7 @@ function abschluss(ctx, { status, nurAntworten, nurPflege = false, probeFlag, we
   if (!(probeFlag && werte.tageslauf === "an")) { try { schreibeLetzter(vault, letzter); } catch {} }
   let bericht = null;
   try { bericht = schreibeBericht(ctx, { status, z, nurAntworten, nurPflege }); } catch {}
+  if (!ctx.probe && !nurAntworten) meldePflege(vault, { status, erfolgreich, z, grund: ctx.grund });
   return { status, grund: ctx.grund || null, modus: ctx.probe ? "probe" : "an", lauf: ctx.lauf, zahlen: z, bericht };
 }
 
