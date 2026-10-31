@@ -205,7 +205,7 @@ export function erzeugeKi(o) {
     // Neu erkannte Konten: beim Lesen wird nichts angelegt, erst der Klick trägt sie ein (POST /api/ki/konten/abgleich)
     if (S.konten && Array.isArray(S.konten.neu) && S.konten.neu.length) {
       const namen = S.konten.neu.map((k) => (k.name ? `„${k.name}“` : k.programmName)).join(", ");
-      teile.push(h("div", { klasse: "kk-karte warn", role: "status", "data-kk": "neue-konten" },
+      teile.push(h("div", { klasse: "kk-karte warn", role: "status", "data-kk": "neu-gefunden" },
         h("div", { klasse: "kk-karte-kopf" }, marke("warn"), h("div", { klasse: "kk-karte-titel", text: TK.neu.titel })),
         h("p", { text: TK.neu.text(namen) }),
         h("div", { klasse: "kk-knoepfe" }, baueKnopf({ text: TK.neu.eintragen, groesse: "s", aktion: "konten-eintragen", disabled: S.beschaeftigt, aufKlick: () => tue(() => api.kiKontenAbgleich(), { erfolg: () => TK.neu.fertig }) }))));

@@ -24,7 +24,7 @@ export function erzeugeKi({ vaultPfad, beiAenderung, kopiere, melde }) {
   const wurzel = h("div", { klasse: "e-ki-wurzel", id: "ki-koerper" });
   const zeilenEl = h("div", { klasse: "e-ki-liste", id: "ki-zeilen" });
   const hinweisEl = h("div", { klasse: "e-ki-hinweis", hidden: true });
-  const neuEl = h("div", { klasse: "e-ki-hinweis", "data-bereich": "neue-konten", hidden: true }); // neu gefundene Konten: beim Öffnen wird nichts angelegt, erst der Klick trägt sie ein
+  const neuEl = h("div", { klasse: "e-ki-neu", "data-bereich": "neue-konten", hidden: true }); // neu gefundene Konten: beim Öffnen wird nichts angelegt, erst der Klick trägt sie ein
   const konfigEl = h("div", { klasse: "e-ki-konfig" });
   const zusatzEl = h("div", { klasse: "e-zusatz", id: "ki-zusatz", hidden: true });
   let auswahl = null, abgleichVersucht = false;
