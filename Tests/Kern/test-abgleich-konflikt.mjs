@@ -691,6 +691,86 @@ test("Namen: unsichtbare Umlenker (Bidi, Breite null) fliegen aus dem Gerätenam
   assert.ok(kopien.some((k) => /\(Fabios iPhone\)\.md$/.test(k)), kopien.join("|"));
 });
 
+// ───────────────────────────── Verwerfen, Übernehmen ─────────────────────────────
+test("Verwerfen: der gemerkte Stand fällt weg, die Sicherung sendet wieder; der Verlauf bleibt, bereits Festgehaltenes bleibt rückgängig-fähig; ohne Stand 409", () => {
+  const a = aufbau();
+  const { mac, handy, support, remote } = a;
+  speichern(handy, "10_notizen/schlicht.md", "# Schlicht\n\nHandy\n", "Handy", HANDY_MAIL);
+  speichern(handy, "10_notizen/zeitplan.md", "# Zeitplan\n\n- 5. Dez: Abnahme\n", "Handy 2", HANDY_MAIL); g(handy, "push", "-q");
+  speichern(mac, "10_notizen/schlicht.md", "# Schlicht\n\nMac\n", "Mac");
+  speichern(mac, "10_notizen/zeitplan.md", "# Zeitplan\n\n- 28. Nov: Abnahme\n", "Mac 2");
+  g(mac, "fetch", "-q", "origin");
+  oeffneMerge(mac, support);
+  assert.throws(() => K.verwerfen(mac, { support }), (e) => e.status === 409 && e.extra.art === "nichts");
+  process.env.BRAIN_KONFLIKT_ABBRUCH_NACH = "1";
+  try { loes(mac, { support, auswahl: auswahlVon({ "10_notizen/schlicht.md": "meine", "10_notizen/zeitplan.md": "andere" }) }); } catch { /* gewollt */ } finally { delete process.env.BRAIN_KONFLIKT_ABBRUCH_NACH; }
+  assert.ok(leseMerker(support).konfliktBasis);
+  assert.equal(B.abgleichen(mac, { support }).art, "konflikt", "die Sicherung wartet");
+  const kopfVorher = kopf(mac), serverVorher = kopfRemote(remote);
+  const r = K.verwerfen(mac, { support });
+  assert.equal(r.ok, true); assert.deepEqual(r.dateien, ["10_notizen/zeitplan.md"]);
+  assert.equal(leseMerker(support).konfliktBasis, undefined);
+  assert.equal(kopf(mac), kopfVorher, "der Verlauf ist unberührt (die Fassung des anderen Geräts steht darin)");
+  assert.equal(K.rueckgaengigStand(mac, { support }).moeglich, true, "die schon festgehaltene Entscheidung bleibt");
+  assert.equal(B.leseAbgleichStand(mac, { support }), null);
+  assert.equal(K.ansicht(mac, { support }).aktiv, false);
+  const s = B.abgleichen(mac, { support });
+  assert.equal(s.ok, true, s.text);
+  assert.notEqual(kopfRemote(remote), serverVorher);
+  assert.equal(kopfRemote(remote), kopf(mac));
+  assert.throws(() => K.verwerfen(mac, { support }), (e) => e.status === 409);
+});
+
+test("Übernehmen: eine Zusammenführung ohne Marke aus dem Studio-Abgleich einer älteren Version (MERGE_HEAD = origin/<Zweig>, Abgleich-Meldung) lässt sich als Kortex-eigene übernehmen — danach geht Lösen", () => {
+  const a = aufbau();
+  speichern(a.handy, "10_notizen/schlicht.md", "# Schlicht\n\nHandy\n", "Handy", HANDY_MAIL); g(a.handy, "push", "-q");
+  speichern(a.mac, "10_notizen/schlicht.md", "# Schlicht\n\nMac\n", "Mac");
+  g(a.mac, "fetch", "-q", "origin");
+  assert.throws(() => g(a.mac, "merge", "--no-edit", "origin/main")); // wie ein älteres Studio: ohne markieren()
+  const an = K.ansicht(a.mac, { support: a.support });
+  assert.equal(an.fremd, true); assert.equal(an.uebernehmbar, true);
+  assert.throws(() => K.abbrechen(a.mac, { support: a.support }), (e) => e.extra.art === "fremd");
+  const r = K.uebernehmen(a.mac, { support: a.support });
+  assert.equal(r.ok, true);
+  const an2 = K.ansicht(a.mac, { support: a.support });
+  assert.equal(an2.fremd, false);
+  assert.equal(K.uebernehmen(a.mac, { support: a.support }).schon, true, "zweimal ist harmlos");
+  const l = loes(a.mac, { support: a.support, auswahl: auswahlVon({ "10_notizen/schlicht.md": "andere" }) });
+  assert.equal(l.ok, true); assert.equal(lies(a.mac, "10_notizen/schlicht.md"), "# Schlicht\n\nHandy\n");
+});
+
+test("Übernehmen nur, wenn wirklich alles dafür spricht: keine Hand-Arbeit in Konfliktdateien, MERGE_HEAD ist der Stand des Servers, Meldung passt", () => {
+  // 1) schon von Hand gelöst (keine Konfliktmarken mehr)
+  let a = aufbau();
+  speichern(a.handy, "10_notizen/schlicht.md", "# Schlicht\n\nHandy\n", "Handy", HANDY_MAIL); g(a.handy, "push", "-q");
+  speichern(a.mac, "10_notizen/schlicht.md", "# Schlicht\n\nMac\n", "Mac");
+  g(a.mac, "fetch", "-q", "origin");
+  assert.throws(() => g(a.mac, "merge", "--no-edit", "origin/main"));
+  schreibe(a.mac, "10_notizen/schlicht.md", "# Schlicht\n\nvon Hand gelöst\n");
+  let an = K.ansicht(a.mac, { support: a.support });
+  assert.equal(an.fremd, true); assert.equal(an.uebernehmbar, false); assert.match(an.uebernahmeGrund, /von Hand bearbeitet/);
+  assert.throws(() => K.uebernehmen(a.mac, { support: a.support }), (e) => e.status === 409 && /nicht sicher/.test(e.message));
+  assert.equal(lies(a.mac, "10_notizen/schlicht.md"), "# Schlicht\n\nvon Hand gelöst\n", "nichts angefasst");
+  // 2) eine Zusammenführung eines anderen Zweigs (nicht der Stand des Servers)
+  a = aufbau();
+  g(a.mac, "checkout", "-q", "-b", "andere");
+  speichern(a.mac, "10_notizen/schlicht.md", "# Schlicht\n\nZweig\n", "Zweig");
+  g(a.mac, "checkout", "-q", "main");
+  speichern(a.mac, "10_notizen/schlicht.md", "# Schlicht\n\nMain\n", "Main");
+  assert.throws(() => g(a.mac, "merge", "--no-edit", "andere"));
+  an = K.ansicht(a.mac, { support: a.support });
+  assert.equal(an.fremd, true); assert.equal(an.uebernehmbar, false); assert.match(an.uebernahmeGrund, /Stand des Servers/);
+  assert.throws(() => K.uebernehmen(a.mac, { support: a.support }), (e) => e.extra.art === "fremd");
+  // 3) Server-Stand, aber eine eigene Meldung (git merge -m)
+  a = aufbau();
+  speichern(a.handy, "10_notizen/schlicht.md", "# Schlicht\n\nHandy\n", "Handy", HANDY_MAIL); g(a.handy, "push", "-q");
+  speichern(a.mac, "10_notizen/schlicht.md", "# Schlicht\n\nMac\n", "Mac");
+  g(a.mac, "fetch", "-q", "origin");
+  assert.throws(() => g(a.mac, "merge", "-m", "Meine eigene Zusammenführung", "origin/main"));
+  an = K.ansicht(a.mac, { support: a.support });
+  assert.equal(an.uebernehmbar, false); assert.match(an.uebernahmeGrund, /Meldung/);
+});
+
 // ───────────────────────────── Kommandozeile (so startet die Werkstatt den Kern) ─────────────────────────────
 test("brain abgleich ansicht|loesen: JSON auf stdout, Fehler als { ok: false, status }", () => {
   const { mac, support } = konfliktAufbau();

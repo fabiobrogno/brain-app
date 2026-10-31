@@ -78,7 +78,7 @@ test.afterEach(() => server?.stopp());
 
 // Werkstatt-Antworten festlegen. opt: { ki: true|false, loesenMs, kiAntwort }
 async function mocke(page, daten, opt = {}) {
-  const gesendet = { loesen: [], abbrechen: 0, rueckgaengig: 0, ki: [] };
+  const gesendet = { loesen: [], abbrechen: 0, rueckgaengig: 0, verwerfen: 0, uebernehmen: 0, ki: [] };
   let aktiv = true;
   await page.route(/\/api\/git\/status$/, (r) => r.fulfill({ json: aktiv ? statusMit(daten) : BASIS_STATUS }));
   await page.route(/\/api\/git\/nachsehen$/, (r) => r.fulfill({ json: aktiv ? statusMit(daten) : BASIS_STATUS }));
@@ -89,6 +89,8 @@ async function mocke(page, daten, opt = {}) {
     aktiv = false;
     r.fulfill({ json: { ok: true, merge: "m", eintraege: [], kopien: [], versteckteBehalten: [], abgleich: opt.abgleich || { art: "gesendet", ok: true, text: "Online gesichert." } } });
   });
+  await page.route(/\/api\/git\/konflikt\/verwerfen$/, (r) => { gesendet.verwerfen++; aktiv = false; r.fulfill({ json: { ok: true, dateien: daten.dateien.map((d) => d.pfad) } }); });
+  await page.route(/\/api\/git\/konflikt\/uebernehmen$/, (r) => { gesendet.uebernehmen++; daten.fremd = false; delete daten.uebernehmbar; r.fulfill({ json: { ok: true, offen: true } }); });
   await page.route(/\/api\/git\/konflikt\/abbrechen$/, (r) => { gesendet.abbrechen++; r.fulfill({ json: { ok: true, offen: true } }); });
   await page.route(/\/api\/git\/konflikt\/rueckgaengig$/, (r) => { gesendet.rueckgaengig++; aktiv = true; r.fulfill({ json: { ok: true, commit: "u", dateien: daten.dateien.map((d) => d.pfad), } }); });
   await page.route(/\/api\/frage\/bereit$/, (r) => r.fulfill({ json: opt.ki === false ? { vertraut: true, claude: true, konten: [], kontenDefekt: false } : { vertraut: true, claude: true, kontenDefekt: false, konten: [{ id: "k1", name: "Standard", erlaubt: true, programm: "claude-code", stufe: "lesen" }] } }));
@@ -453,15 +455,79 @@ test("Umbenennung auf beiden Seiten: ein Eintrag mit beiden Namen statt zwei „
   expect(g.loesen[0].auswahl).toEqual([{ pfad: "10_notizen/Kickoff-mac.md", wahl: "andere" }]);
 });
 
-test("Zusammenführung, die Kortex nicht begonnen hat: nur ansehen — Hinweis, Entscheidungen und Abschluss gesperrt", async ({ page }) => {
-  await start(page, { ...DATEN.standard(), fremd: true }, {});
+test("Zusammenführung, die Kortex nicht begonnen hat: nur ansehen — klarer Hinweis mit kopierbaren Befehlen, Entscheidungen und Abschluss gesperrt", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await start(page, { ...DATEN.standard(), fremd: true, uebernehmbar: false, uebernahmeGrund: "„10_notizen/Zeitplan Q4.md“ wurde schon von Hand bearbeitet." }, {});
   await oeffne(page);
-  await expect(page.locator("[data-fremd]")).toContainText("nicht Kortex begonnen");
+  const f = page.locator("[data-fremd]");
+  await expect(f).toContainText("Diese Zusammenführung wurde nicht von Kortex begonnen. Schließe sie im Terminal ab oder brich sie dort ab.");
+  await expect(f.locator("code").nth(0)).toHaveText("git merge --continue");
+  await expect(f.locator("code").nth(1)).toHaveText("git merge --abort");
+  await f.locator('[data-kopieren="git merge --abort"]').click();
+  await expect(page.locator(".toast").last()).toContainText("Befehl kopiert.");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("git merge --abort");
+  await expect(f).toContainText("wurde schon von Hand bearbeitet");
+  await expect(page.locator('[data-k="uebernehmen-frage"]')).toHaveCount(0);
   await expect(page.locator('[data-aktion="konflikt-abgleichen"]')).toBeDisabled();
   await page.keyboard.press("1");
   await expect(item(page, 0)).toContainText("Offen");
   await page.keyboard.press("Meta+Enter");
   await expect(page.locator("[data-konflikt-sync]")).toHaveCount(0);
+});
+
+test("Eine ältere Zusammenführung von Kortex ohne Marke: „Als Kortex-Zusammenführung übernehmen“ nach Bestätigung im Fenster, danach ist die Ansicht bedienbar", async ({ page }) => {
+  const g = await start(page, { ...DATEN.standard(), fremd: true, uebernehmbar: true }, {});
+  await oeffne(page);
+  await expect(page.locator('[data-aktion="konflikt-abgleichen"]')).toBeDisabled();
+  await page.locator('[data-k="uebernehmen-frage"]').click();
+  await expect(page.locator('[data-frage="uebernehmen"]')).toContainText("sieht nach einem Abgleich von Kortex aus");
+  await page.locator('[data-frage="uebernehmen"] button', { hasText: "Abbrechen" }).click();
+  await expect(page.locator('[data-frage="uebernehmen"]')).toHaveCount(0);
+  expect(g.uebernehmen).toBe(0);
+  await page.locator('[data-k="uebernehmen-frage"]').click();
+  await page.locator('[data-k="uebernehmen-ja"]').click();
+  await expect.poll(() => g.uebernehmen).toBe(1);
+  await expect(page.locator(".toast").last()).toContainText("Übernommen.");
+  await expect(page.locator("[data-fremd]")).toHaveCount(0); // neu geöffnet: nicht mehr nur ansehen
+  await expect(item(page, 0)).toBeVisible();
+  await entscheide(page, "1", "1");
+  await expect(page.locator('[data-aktion="konflikt-abgleichen"]')).toBeEnabled();
+});
+
+test("Gemerkter Stand: „Verwerfen“ mit Bestätigung im Fenster; der Text sagt, dass die andere Fassung im Verlauf bleibt", async ({ page }) => {
+  const g = await start(page, { ...DATEN.standard(), modus: "stand", haelt: true }, {});
+  await oeffne(page);
+  const h = page.locator("[data-haelt]");
+  await expect(h).toContainText("Die Online-Sicherung wartet, bis du über diese Notizen entschieden hast.");
+  await h.locator('[data-k="verwerfen-frage"]').click();
+  const q = page.locator('[data-frage="verwerfen"]');
+  await expect(q).toContainText("Die Entscheidungen, die schon festgehalten sind, bleiben.");
+  await expect(q).toContainText("Die Fassung des anderen Geräts bleibt im Verlauf und lässt sich dort zurückholen.");
+  await expect(q).toContainText("Danach sendet die Online-Sicherung wieder.");
+  expect(g.verwerfen).toBe(0);
+  await q.locator("button", { hasText: "Abbrechen" }).click(); // erst nach der Bestätigung passiert etwas
+  await expect(q).toHaveCount(0);
+  expect(g.verwerfen).toBe(0);
+  await h.locator('[data-k="verwerfen-frage"]').click();
+  await page.locator('[data-k="verwerfen-ja"]').click();
+  await expect.poll(() => g.verwerfen).toBe(1);
+  await expect(page.locator(".toast").last()).toContainText("Verworfen. Die Online-Sicherung läuft wieder");
+  await expect(page.locator("#konflikt")).toHaveCount(0);
+  await expect(page.locator('[data-st="sync"]')).not.toContainText("Konflikt");
+  expect(g.abbrechen).toBe(0); // nichts zurückgenommen: der Stand ist schon festgehalten
+});
+
+test("Ein gemerkter Stand blockiert die Sicherung sichtbar: Banner und Statusleiste sagen es, nach Tagen mit der Dauer", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const daten = DATEN.standard();
+  await mocke(page, daten, {});
+  const stand = { ...statusMit(daten), konflikt: undefined, sicherungStand: "konflikt", sicherungDateien: daten.dateien.map((d) => d.pfad), sicherungHaelt: { seit: vorMin(4 * 1440), tage: 4 } };
+  await page.route(/\/api\/git\/status$/, (r) => r.fulfill({ json: stand }));
+  await page.route(/\/api\/git\/nachsehen$/, (r) => r.fulfill({ json: stand }));
+  await page.goto(server.url);
+  await expect(page.locator('[data-banner="abgleich"]')).toContainText("Die Online-Sicherung wartet auf deine Entscheidung — seit 4 Tagen.");
+  await expect(page.locator('[data-st="sync"]')).toHaveAttribute("title", /sendet nichts, solange diese Entscheidungen offen sind \(seit 4 Tagen\)/);
+  await expect(page.locator('[data-st="sync"]')).toContainText("Konflikt in 2 Notizen");
 });
 
 test("Der Konflikt hat sich geändert (409 „veraltet“): ruhiger Satz, die Ansicht wird neu geladen, nichts wird abgeschlossen", async ({ page }) => {

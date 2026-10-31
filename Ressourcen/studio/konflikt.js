@@ -131,7 +131,37 @@ export function zeigeKonflikt(host, ctx) {
   const wurzel = h("div", { klasse: "konflikt", id: "konflikt", "data-phase": "liste", "data-konflikt": "" });
   host.replaceChildren(wurzel);
 
-  const nurAnsehen = !!daten.fremd; // die offene Zusammenführung hat Kortex nicht begonnen: nur ansehen
+  const nurAnsehen = !!daten.fremd;
+  // ---------- „Nur ansehen“ (Zusammenführung ohne Marke): Hinweis mit kopierbaren Befehlen, ggf. „Als Kortex-Zusammenführung übernehmen“ ----------
+  const kopiere = async (text) => { try { await navigator.clipboard.writeText(text); toast(TK.fremd.kopiert); } catch { toast(TK.fremd.kopierenFehler, { fehler: true }); } };
+  const befehl = (cmd, hinweis) => h("div", { klasse: "k-cmd" }, h("code", { text: cmd }), h("span", { text: hinweis }), baueKnopf({ text: TK.fremd.kopieren, groesse: "s", symbol: "kopieren", daten: { "data-kopieren": cmd }, aufKlick: () => kopiere(cmd) }));
+  function fremdPanel() {
+    const kinder = [h("p", { text: TK.fremd.text }), h("p", { klasse: "k-fremd-schritt", text: TK.fremd.schritte }), befehl(TK.fremd.weiter, TK.fremd.weiterHinweis), befehl(TK.fremd.abbruch, TK.fremd.abbruchHinweis)];
+    if (daten.uebernehmbar) {
+      if (KS.uebernehmenFrage) kinder.push(h("div", { klasse: "k-frage", "data-frage": "uebernehmen" }, h("p", { text: TK.fremd.uebernehmenFrage }),
+        h("div", { klasse: "k-frage-knoepfe" }, baueKnopf({ text: TK.fremd.ja, variante: "primaer", groesse: "s", daten: { "data-k": "uebernehmen-ja" }, aufKlick: () => uebernehmenAusfuehren() }), baueKnopf({ text: TK.fremd.nein, groesse: "s", aufKlick: () => { KS.uebernehmenFrage = false; zeichne(); } }))));
+      else kinder.push(baueKnopf({ text: TK.fremd.uebernehmen, groesse: "s", daten: { "data-k": "uebernehmen-frage" }, aufKlick: () => { KS.uebernehmenFrage = true; zeichne(); } }));
+    } else if (daten.uebernahmeGrund) kinder.push(h("p", { klasse: "k-fremd-grund", text: TK.fremd.uebernehmenGeht(daten.uebernahmeGrund) }));
+    return h("div", { klasse: "k-fremd", "data-fremd": "", role: "status" }, ...kinder);
+  }
+  async function uebernehmenAusfuehren() {
+    if (KS.laeuft) return; KS.laeuft = true;
+    try { await api.gitKonfliktUebernehmen(); KS.laeuft = false; toast(TK.fremd.uebernommen, { ms: 6000 }); await ctx.beiUebernommen?.(); }
+    catch (err) { KS.laeuft = false; KS.uebernehmenFrage = false; toast(err?.message || TK.fehler.loesen, { fehler: true, ms: 9000 }); zeichne(); }
+  }
+  // ---------- Gemerkter Stand (nach „Rückgängig“ oder einem Abbruch): Verwerfen mit Bestätigung im Fenster ----------
+  function haeltPanel() {
+    const kinder = [h("p", { text: TK.haelt.text })];
+    if (KS.verwerfenFrage) kinder.push(h("div", { klasse: "k-frage", "data-frage": "verwerfen" }, h("p", { text: TK.haelt.frage }),
+      h("div", { klasse: "k-frage-knoepfe" }, baueKnopf({ text: TK.haelt.ja, variante: "gefahr", groesse: "s", daten: { "data-k": "verwerfen-ja" }, aufKlick: () => verwerfenAusfuehren() }), baueKnopf({ text: TK.haelt.nein, groesse: "s", aufKlick: () => { KS.verwerfenFrage = false; zeichne(); } }))));
+    else kinder.push(baueKnopf({ text: TK.haelt.verwerfen, groesse: "s", symbol: "papierkorb", daten: { "data-k": "verwerfen-frage" }, aufKlick: () => { KS.verwerfenFrage = true; zeichne(); } }));
+    return h("div", { klasse: "k-haelt", "data-haelt": "" }, ...kinder);
+  }
+  async function verwerfenAusfuehren() {
+    if (KS.laeuft) return; KS.laeuft = true;
+    try { await api.gitKonfliktVerwerfen(); KS.laeuft = false; await ctx.beiVerworfen?.(); }
+    catch (err) { KS.laeuft = false; KS.verwerfenFrage = false; toast(err?.message || TK.fehler.loesen, { fehler: true, ms: 9000 }); zeichne(); }
+  } // die offene Zusammenführung hat Kortex nicht begonnen: nur ansehen
   const bloecke = (it) => (it.segs || []).filter((s) => s.t === "block");
   const alleGeloest = () => items.length > 0 && items.every((i) => i.entscheidung);
   const akt = () => items[KS.sel];
@@ -430,7 +460,7 @@ export function zeigeKonflikt(host, ctx) {
   function liste() {
     const beschr = items.every((i) => i.typ === "geloescht") ? TK.liste.geloescht : items.some((i) => i.typ === "board" || i.typ === "geloescht") ? TK.liste.gemischt : TK.liste.standard;
     return [h("div", { klasse: "k-liste-kopf" }, h("h2", null, TK.liste.titel, h("span", { klasse: "n", text: String(items.length) })), h("p", { text: beschr }),
-      nurAnsehen ? h("p", { klasse: "k-fremd", "data-fremd": "", role: "status", text: TK.fremd.text }) : null),
+      nurAnsehen ? fremdPanel() : null, daten.haelt ? haeltPanel() : null),
       h("div", { klasse: "k-liste-scroll", role: "listbox", "aria-label": TK.liste.beschriftung }, ...items.map((it, i) => {
         const u = it.typ === "umbenannt" ? TK.umbenannt.listeU(nameVon(it.pfad), nameVon(it.pfadAndere)) : it.typ === "geloescht" ? (it.wer === "andere" ? TK.liste.geloeschtAndere(gName) : TK.liste.geloeschtMac(gName)) : it.typ === "board" ? TK.liste.karte
           : TK.liste.unterschiede(DIESER_MAC, it.andere.geraet || G || gKurz, it.segs ? bloecke(it).length : 1);

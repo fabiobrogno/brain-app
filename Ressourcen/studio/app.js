@@ -1208,7 +1208,7 @@ function syncZustand(g) {
   if (g.konflikt) return { z: "konflikt", text: konfliktText(), sym: "warnung", titel: T.status.konfliktTitel };
   if (S.syncLaeuft) return { z: "laeuft", text: T.status.gleicheAb, sym: "sync", titel: T.status.gleicheAbTitel };
   // Die Hintergrund-Sicherung (Kern) konnte nicht senden, weil der Server eine andere Fassung hat: ein Klick gleicht ab und öffnet die Konfliktauswahl
-  if (g.sicherungStand === "konflikt") return { z: "konflikt", text: konfliktText(), sym: "warnung", titel: T.status.sicherungKonfliktTitel };
+  if (g.sicherungStand === "konflikt") return { z: "konflikt", text: konfliktText(), sym: "warnung", titel: g.sicherungHaelt ? TK.haelt.statusTitel(g.sicherungHaelt.tage) : T.status.sicherungKonfliktTitel };
   if (S.syncFehler) return { z: "fehler", text: S.syncFehler === "konflikt" ? T.status.konflikt : T.status.fehler, sym: "warnung", titel: T.status.fehlerTitel };
   if (!g.remote) return { z: "nie", text: T.status.nieGesichert, sym: "wolke", titel: T.status.nieTitel };
   if (istOffline()) return { z: "offline", text: T.status.offline, sym: "wolke-aus", titel: T.status.offlineTitel };
@@ -1383,7 +1383,7 @@ function baueKonfliktBanner() {
   const p = konfliktPfade(), af = (S.aufgabenOrdner || "").toLowerCase();
   const nurKarten = p.length && af && p.every((x) => x.toLowerCase().startsWith(af + "/"));
   return h("div", { klasse: "banner k-banner", role: "status", "data-banner": "abgleich" }, symbol("sync", 16),
-    h("div", { klasse: "b-text" }, h("b", { text: `${konfliktText()}. ` }), h("span", { text: nurKarten ? TK.banner.wasKarte : TK.banner.was(null) })),
+    h("div", { klasse: "b-text" }, h("b", { text: `${konfliktText()}. ` }), h("span", { text: S.git?.sicherungHaelt ? TK.haelt.banner(S.git.sicherungHaelt.tage) : nurKarten ? TK.banner.wasKarte : TK.banner.was(null) })),
     baueKnopf({ text: TK.banner.ansehen, variante: "primaer", groesse: "s", aktion: "konflikt-ansehen", aufKlick: () => oeffneKonflikt() }),
     baueKnopf({ text: TK.banner.spaeter, variante: "leise", groesse: "s", aktion: "konflikt-banner-spaeter", aufKlick: () => { konfliktBannerZu = true; zeigeBanner(); } }));
 }
@@ -1416,7 +1416,9 @@ async function oeffneKonflikt() {
     const m = await import("./konflikt.js");
     konfliktInst = m.zeigeKonflikt($("konflikt-host"), { api, daten: r, aufgabenOrdner: S.aufgabenOrdner,
       beiZustand: ({ label }) => zeichnePfadKonflikt(label), beiSchliessen: ({ phase }) => schliesseKonflikt(phase), beiStandNeu: nachZeitueberschreitung,
-      beiFertig: konfliktFertig, beiVeraltet: async () => { await schliesseKonflikt("liste"); oeffneKonflikt(); }, beiZurueck: async () => { await ladeNachAbgleich().catch(() => {}); await ladeGit(); ladeInfo(); } });
+      beiFertig: konfliktFertig, beiVeraltet: async () => { await schliesseKonflikt("liste"); oeffneKonflikt(); },
+      beiVerworfen: async () => { await schliesseKonflikt("fertig"); toast(TK.haelt.verworfen, { ms: 9000 }); },
+      beiUebernommen: async () => { await schliesseKonflikt("fertig"); oeffneKonflikt(); }, beiZurueck: async () => { await ladeNachAbgleich().catch(() => {}); await ladeGit(); ladeInfo(); } });
     if (konfliktMerke) { konfliktInst.setzeEntscheidungen(konfliktMerke); konfliktMerke = null; }
     zeichnePfadKonflikt(konfliktInst.label());
     for (const t of document.querySelectorAll("#toast-host .toast")) if (t.textContent.startsWith(TK.mitteilung.titel)) t.remove(); // die Mitteilung hat ihren Zweck erfüllt (und verdeckte den Abschluss-Knopf)

@@ -257,7 +257,11 @@ function baueAnsicht(vault, support) {
   const seit = stammSha ? (commitInfo(vault, stammSha) || {}).zeit || null : null;
   const aInfo = commitInfo(vault, l.andere);
   const ans = { aktiv: true, modus: l.modus, meine: l.meine, andere: l.andere, eigen, geraet: aInfo ? geraetAusCommit(aInfo) : null, seit, dateien, versteckt: verborgen };
-  if (l.modus === "offen") { const m = leseMerkerDatei(vault, support).konfliktOffen; ans.fremd = !(m && m.kopf === l.meine && m.merge === l.andere); }
+  if (l.modus === "offen") {
+    const m = leseMerkerDatei(vault, support).konfliktOffen;
+    ans.fremd = !(m && m.kopf === l.meine && m.merge === l.andere);
+    if (ans.fremd) { const u = pruefeUebernahme(vault, l); ans.uebernehmbar = u.ok; if (!u.ok) ans.uebernahmeGrund = u.grund; }
+  }
   else ans.haelt = true;
   if (l.veraltet && l.veraltet.length) ans.veraltet = l.veraltet;
   return { ansicht: ans, l, paare };
@@ -367,6 +371,65 @@ export function markiere(vault, { support = supportOrdner() } = {}) {
   aendereMerker(vault, (m) => { m.konfliktOffen = { kopf, merge, hashes, zeit: new Date().toISOString() }; return m; }, { support });
   return { ok: true, offen: true };
 }
+// Eine Zusammenführung ohne Marke kann trotzdem von Kortex stammen: eine ältere Version hat sie im Studio-Abgleich begonnen (und nie markiert). Das erkennt man an
+//  · MERGE_HEAD = refs/remotes/origin/<Zweig> (der Stand des Servers, den der Abgleich geholt hat) und einer Zusammenführungs-Meldung „… origin/<Zweig> …“ (MERGE_MSG),
+//  · keiner Arbeit der Nutzerin in den Konfliktdateien: eine Datei mit beidseitigen Änderungen enthält noch Konfliktmarken, bei gelöscht/geändert und Umbenennungen
+//    ist sie unverändert die Stufe, die Git hineingeschrieben hat; nichts davon ist (noch) von Hand bearbeitet.
+// → { ok: true } oder { ok: false, grund }. Rein lesend.
+function pruefeUebernahme(vault, l) {
+  if (l.modus !== "offen") return { ok: false, grund: "Es gibt keine offene Zusammenführung." };
+  const zw = g(vault, ["symbolic-ref", "--short", "-q", "HEAD"]);
+  if (zw.code !== 0) return { ok: false, grund: "Der Vault steht auf keinem Zweig." };
+  const lokal = zw.out.trim();
+  const cfg = g(vault, ["config", "--get", `branch.${lokal}.merge`]);
+  const ziel = cfg.code === 0 && /^refs\/heads\/[^\s~^:?*[\\]+$/.test(cfg.out.trim()) ? cfg.out.trim().slice("refs/heads/".length) : lokal;
+  const spitze = g(vault, ["rev-parse", "--verify", "-q", `refs/remotes/origin/${ziel}`]);
+  if (spitze.code !== 0 || spitze.out.trim() !== l.andere) return { ok: false, grund: "Die Zusammenführung holt nicht den Stand des Servers (origin)." };
+  let msg = "";
+  try { const gd = g(vault, ["rev-parse", "--path-format=absolute", "--git-path", "MERGE_MSG"]); msg = readFileSync(gd.out.trim(), "utf8").split("\n")[0]; } catch { /* keine Meldung */ }
+  if (!msg.includes(`origin/${ziel}`) || !/^Merge /.test(msg)) return { ok: false, grund: "Die Meldung der Zusammenführung passt nicht zum Abgleich von Kortex." };
+  if (g(vault, ["ls-files", "-u", "-z"]).out === "") return { ok: false, grund: "Es gibt keine offenen Konflikte mehr." };
+  for (const e of l.dateien) {
+    if (e.art === "beide-geloescht") continue;
+    const jetzt = arbeitId(vault, e.pfad);
+    const stufe = (n) => { const r = g(vault, ["ls-files", "-s", "-z", "--", e.pfad]); for (const z of r.out.split("\0")) { const m = /^\d{6} ([0-9a-f]+) (\d)\t/.exec(z); if (m && Number(m[2]) === n) return m[1]; } return null; };
+    if (e.art === "beide") {
+      const t = jetzt ? (() => { try { return readFileSync(join(vault, ...e.pfad.split("/")), "utf8"); } catch { return ""; } })() : "";
+      if (!/^<{7} /m.test(t) || !/^>{7} /m.test(t)) return { ok: false, grund: `„${e.pfad}“ wurde schon von Hand bearbeitet.` };
+    } else {
+      const erwartet = e.art === "meine-geloescht" || e.art === "nur-andere" ? stufe(3) : stufe(2);
+      if (jetzt !== null && jetzt !== erwartet) return { ok: false, grund: `„${e.pfad}“ wurde schon von Hand bearbeitet.` };
+    }
+  }
+  // nichts Fremdes vorgemerkt: vorgemerkt ist nur, was die Zusammenführung selbst bringt (Stufe 0 gegen HEAD wäre es auch — darum nur prüfen, dass keine Konfliktdatei gelöst vorgemerkt ist)
+  return { ok: true };
+}
+// „Als Kortex-Zusammenführung übernehmen“ (nach Bestätigung in der Oberfläche): setzt die Marke, wenn alles dafür spricht
+export function uebernehmen(vault, { support = supportOrdner() } = {}) {
+  return mitSperre(vault, support, "konflikt", () => {
+    const l = lage(vault, support);
+    if (!l || l.modus !== "offen") throw new KonfliktFehler(409, "Es gibt keine offene Zusammenführung.", { art: "nichts" });
+    const m = leseMerkerDatei(vault, support).konfliktOffen;
+    if (m && m.kopf === l.meine && m.merge === l.andere) return { ok: true, offen: true, schon: true };
+    const u = pruefeUebernahme(vault, l);
+    if (!u.ok) throw new KonfliktFehler(409, `Das lässt sich nicht sicher übernehmen: ${u.grund}`, { art: "fremd" });
+    markiere(vault, { support });
+    return { ok: true, offen: true };
+  });
+}
+// „Verwerfen“: der gemerkte Stand (`konfliktBasis`) fällt weg, damit die Sicherung wieder senden darf. Bereits festgehaltene Entscheidungen bleiben (Verlauf und Rückgängig-Marke
+// unberührt); die Fassung des anderen Geräts steht weiter im Verlauf.
+export function verwerfen(vault, { support = supportOrdner() } = {}) {
+  return mitSperre(vault, support, "konflikt", () => {
+    const b = merkerBasis(vault, support);
+    if (!b) throw new KonfliktFehler(409, "Es wartet kein gemerkter Stand.", { art: "nichts" });
+    const dateien = Array.isArray(b.dateien) ? b.dateien.filter((p) => typeof p === "string").slice(0, 200) : [];
+    aendereMerker(vault, (d) => { delete d.konfliktBasis; return d; }, { support });
+    loescheAbgleichStand(vault, { support });
+    return { ok: true, dateien };
+  });
+}
+
 // Gehört die offene Zusammenführung Kortex? → die Marke oder 409 „fremd“
 function pruefeMarke(vault, support, l) {
   const m = leseMerkerDatei(vault, support).konfliktOffen;

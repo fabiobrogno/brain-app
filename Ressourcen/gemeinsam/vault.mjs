@@ -363,7 +363,9 @@ export function oeffneVault(vaultPfad, opts = {}) {
   const mitSicherungsStand = (s) => {
     if (!s || !s.repo) return s;
     const d = leseAbgleichDetail(wurzel, opts.support);
-    return { ...s, sicherungStand: d ? d.stand : null, sicherungDateien: d && d.stand === "konflikt" ? d.dateien : [] };
+    // sicherungHaelt: ein gemerkter Stand blockiert die Online-Sicherung (seit wann, wie viele Tage) — die Oberfläche sagt es in Statusleiste und Banner
+    const tage = d && d.haelt && d.haeltSeit ? Math.max(0, Math.floor((Date.now() - Date.parse(d.haeltSeit)) / 86_400_000)) : 0;
+    return { ...s, sicherungStand: d ? d.stand : null, sicherungDateien: d && d.stand === "konflikt" ? d.dateien : [], sicherungHaelt: d && d.haelt ? { seit: d.haeltSeit || null, tage } : null };
   };
   const gitCtx = (extra = {}) => { const s = gitSicht(); if (s.gesperrt) throw gesperrtFehler(s); return { ...ctxVon(s), ...extra }; };
 
@@ -499,6 +501,8 @@ export function oeffneVault(vaultPfad, opts = {}) {
     gitKonfliktLoesen: async (a) => kernGesperrt("loesen", { auswahl: a && a.auswahl, gesehen: a && a.gesehen }, 420_000),
     gitKonfliktAbbrechen: async () => kernGesperrt("abbrechen"),
     gitKonfliktRueckgaengig: async () => kernGesperrt("rueckgaengig"),
+    gitKonfliktVerwerfen: async () => kernGesperrt("verwerfen"),
+    gitKonfliktUebernehmen: async () => kernGesperrt("uebernehmen"),
     gitNachsehen: async () => mitSicherungsStand(await gitFn.nachsehen(wurzel, gitCtx())),
     gitWiederherstellenVorschau: async (pfad, sha) => gitFn.wiederherstellenVorschau(wurzel, pfad, sha, gitCtx()),
     gitWiederherstellen: async (a) => { umstellungSperre(); return gitFn.wiederherstellen(wurzel, a || {}, gitCtx({ limit: opts.gitLimitCommit })); },
