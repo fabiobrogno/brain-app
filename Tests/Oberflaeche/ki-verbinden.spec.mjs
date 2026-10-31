@@ -99,7 +99,7 @@ for (const thema of ["light", "dark"]) {
       await expect(dlg(page).locator('[data-kv="fertig"]')).toContainText("Claude Code ist verbunden");
       await expect(dlg(page).locator('[data-bereich="probe-ergebnis"]')).toContainText("Claude Code sieht deinen Vault");
       expect(z.log("/api/mcp/verbinden")).toEqual([{ methode: "POST", pfad: "/api/mcp/verbinden", body: { ziel: "claude", konto: K_PRIVAT.id, zugriff: "lesen" } }]); // vorbelegt, nicht ausdrücklich
-      expect(z.log("/api/mcp/pruefen")).toEqual([{ methode: "POST", pfad: "/api/mcp/pruefen", body: { konto: K_PRIVAT.id } }]);
+      expect(z.log("/api/mcp/pruefen")).toEqual([{ methode: "POST", pfad: "/api/mcp/pruefen", body: { konto: K_PRIVAT.id, programm: "claude" } }]);
       await bild(page, "5-fertig", thema);
       await knopf(page, "ki-fertig").click();
       await expect(dlg(page)).toHaveCount(0);
@@ -398,4 +398,35 @@ test("Einrichtungs-Assistent: derselbe Ablauf im Schritt „KI“ (Fußleiste de
     await expect(page.locator(".e-zusammen")).toContainText("Claude Code");
     expect(z.seitenfehler).toEqual([]);
   } finally { stat.stopp(); }
+});
+
+test("Esc im Feld „Konto hinzufügen“ schließt nur das Formular; über dem Ablauf liegende Dialoge (Kontingent) schließt Esc einzeln", async ({ page }) => {
+  await start(page, { kontingent: { werte: { [K_PRIVAT.id]: { quelle: "statuszeile", verwaltet: false, bestaetigungNoetig: true, status: "nicht-eingerichtet" } } } });
+  await oeffne(page);
+  await weiter(page);
+  await dlg(page).locator('[data-aktion="konto-hinzu"]').click();
+  await dlg(page).locator('[data-kx="neu-name"]').focus();
+  await page.keyboard.press("Escape");
+  await expect(dlg(page).locator('[data-kv="konto-neu"]')).toHaveCount(0);
+  await expect(dlg(page)).toBeVisible(); // der Dialog bleibt
+  await weiter(page);
+  await knopf(page, "ki-verbinden").click();
+  await expect(dlg(page).locator('[data-kv="fertig"]')).toBeVisible({ timeout: 10000 });
+  await dlg(page).locator('[data-aktion="kt-anzeigen"]').click();
+  await expect(page.locator('[data-dialog="kt-einwilligung"]')).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator('[data-dialog="kt-einwilligung"]')).toHaveCount(0);
+  await expect(dlg(page)).toBeVisible(); // nur der obere Dialog ist zu
+});
+
+test("Statusleiste: ein anderes Programm (Gemini CLI) verbunden setzt den Claude-Haken nicht; die Prüfung nennt das Programm", async ({ page }) => {
+  const z = await start(page, { leer: true, konten: [] });
+  await page.locator('#status [data-st="claude"]').click();
+  await wahl(page, "gemini");
+  await weiter(page);
+  await knopf(page, "ki-verbinden").click();
+  await expect(dlg(page).locator('[data-kv="fertig"]')).toBeVisible({ timeout: 10000 });
+  expect(z.log("/api/mcp/pruefen")[0].body).toEqual({ programm: "gemini" });
+  await knopf(page, "ki-fertig").click();
+  await expect(page.locator('#status [data-st="claude"]')).not.toHaveClass(/gut/);
 });

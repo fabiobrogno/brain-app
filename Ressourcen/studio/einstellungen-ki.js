@@ -325,7 +325,7 @@ export function erzeugeKi(o) {
     oeffneMenue(ev.currentTarget, eintraege, { rechts: true });
   }
   // „Verbinden“ an einem Konto: derselbe Ablauf, beim Konto (Anmeldung prüfen) vorgewählt
-  const verbindeKonto = (kt) => oeffneVerbinden({ konto: kt.id, schritt: ANMELDBAR.includes(kt.programm) ? "konto" : "stufe" });
+  const verbindeKonto = (kt) => oeffneVerbinden({ konto: kt.id, programm: kt.programm, schritt: ANMELDBAR.includes(kt.programm) ? "konto" : "stufe" });
 
   function kontoZeile(kt) {
     const z = anmZustand(kt);

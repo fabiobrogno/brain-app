@@ -53,7 +53,7 @@ test("UI-2: die Anfrage zum Einschalten kommt nie an (Zeitüberschreitung): Rüc
   await page.locator('#willkommen-host [data-aktion="git-einschalten"]').click();
   await expect(schritt(page, "ki")).toBeVisible();
   expect(existsSync(join(ordner, ".git"))).toBe(true);
-  await page.locator('#willkommen-host [data-aktion="ki-spaeter"]').click();
+  await page.locator('#willkommen-host [data-aktion="ki-abbrechen"]').click();
   await expect(page.locator("#app")).toBeVisible();
   await expect(page.locator("#vault-name")).toHaveText(basename(ordner));
   expect(await aktionen(page, "vault-gewechselt")).toHaveLength(1);
@@ -70,7 +70,7 @@ test("UI-2: die Werkstatt schaltet ein, die Antwort geht aber verloren: der Eins
   await expect(schritt(page, "ki")).toBeVisible();
   await expect(page.locator("#willkommen-host .w-fehlerbox")).toHaveCount(0);
   expect(existsSync(join(ordner, ".git"))).toBe(true);
-  await page.locator('#willkommen-host [data-aktion="ki-spaeter"]').click();
+  await page.locator('#willkommen-host [data-aktion="ki-abbrechen"]').click();
   await expect(page.locator("#app")).toBeVisible();
   expect(await aktionen(page, "vault-gewechselt")).toHaveLength(1);
 });
@@ -82,7 +82,7 @@ test("UI-2: „Ohne Verlauf weiter“ nach der Zeitüberschreitung startet die A
   await expect(page.locator("#willkommen-host .w-fehlerbox")).toHaveText(GIT_ZEIT);
   await page.locator('#willkommen-host [data-aktion="git-ohne"]').click();
   await expect(schritt(page, "ki")).toBeVisible();
-  await page.locator('#willkommen-host [data-aktion="ki-spaeter"]').click();
+  await page.locator('#willkommen-host [data-aktion="ki-abbrechen"]').click();
   await expect(page.locator("#app")).toBeVisible();
   expect(existsSync(join(ordner, ".git"))).toBe(false);
 });

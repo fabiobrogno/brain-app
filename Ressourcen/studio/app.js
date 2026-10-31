@@ -1679,7 +1679,7 @@ async function oeffneKi(start) {
   try {
     const m = await import("./ki-verbinden.js");
     return m.oeffneKiVerbinden({ vaultPfad: () => S.info?.vault || null, vaultName: () => S.info?.name || "", start: st,
-      beiVerbunden: () => { S.kiVerbunden = true; zeichneStatus(); },
+      beiVerbunden: ({ id } = {}) => { if (id === "claude") { S.kiVerbunden = true; zeichneStatus(); } }, // der Haken in der Statusleiste gilt Claude Code
       beiFertig: (r) => { ladeKi(); try { st.beiFertig?.(r); } catch (e) { console.error(e); } },
       zeigeEinstellungen: (ziel) => oeffneEinstellungenSeite({ bereich: "ki", ziel }) });
   } catch { toast(T.umstellung.nichtGeoeffnet, { fehler: true }); }

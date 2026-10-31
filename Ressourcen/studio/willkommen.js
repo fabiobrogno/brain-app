@@ -467,7 +467,7 @@ async function starteKarte({ modus = "start", beiFertig, beiAbbruch, beiStandNeu
     let info = null;
     const fluss = erzeugeKiVerbinden({ rahmen: "karte", fuss: "eigen", vorwahl: true, abbrechenText: TW.ki.spaeter, ohneKiText: TW.ki.weiter,
       vaultPfad: () => info?.vault || null, vaultName: () => info?.name || "",
-      beiVerbunden: () => { try { beiVerbunden?.(); } catch (e) { console.error(e); } },
+      beiVerbunden: ({ id } = {}) => { if (id === "claude") { try { beiVerbunden?.(); } catch (e) { console.error(e); } } },
       beiFertig: () => { fluss.zerstoere(); weiter(); } });
     // der Vault ist erst jetzt offen: die Stufen gelten für ihn, deshalb nach dem Lesen der Werkstatt noch einmal laden
     sicher(() => api.info()).then((i) => { info = i; if (i?.vault) fluss.lade(); });

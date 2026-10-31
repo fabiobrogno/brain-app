@@ -20,7 +20,7 @@ const aufruf = (h) => async (methode, p, daten) => {
   return { ...r, j };
 };
 
-function szenario() {
+function szenario({ heimatB = false } = {}) {
   const support = tmp("pruefen-support-");
   const offen = realpathSync(tmp("pruefen-offen-")), anderer = realpathSync(tmp("pruefen-anderer-"));
   for (const v of [offen, anderer]) { schreibe(v, "brain.config.json", "{}\n"); schreibe(v, "09_wiki/w/thema.md", "# Thema\n\nDas Zebra frisst Gras.\n"); }
@@ -30,9 +30,9 @@ function szenario() {
   liste(offen);
   K.aendere(support, () => ({ version: 1,
     konten: { k_aaaaaaaa: { programm: "claude", ordner: a, standard: false, name: "Privat", ordnerKennung: K.kennungVon(a) },
-      k_bbbbbbbb: { programm: "claude", ordner: b, standard: false, name: "Firma", ordnerKennung: K.kennungVon(b) } },
+      k_bbbbbbbb: { programm: "claude", ordner: b, standard: false, name: "Firma", ordnerKennung: K.kennungVon(b), ...(heimatB ? { heimat: anderer } : {}) } },
     vaults: { [offen]: { ordnerKennung: K.kennungVon(offen), neueKonten: "gesperrt", ohneKonto: "gesperrt", konten: { k_aaaaaaaa: "lesen", k_bbbbbbbb: "gesperrt" } },
-      [anderer]: { ordnerKennung: K.kennungVon(anderer), neueKonten: "gesperrt", ohneKonto: "gesperrt", konten: { k_aaaaaaaa: "gesperrt", k_bbbbbbbb: "gesperrt" } } } }));
+      [anderer]: { ordnerKennung: K.kennungVon(anderer), neueKonten: "gesperrt", ohneKonto: "gesperrt", konten: { k_aaaaaaaa: "gesperrt", k_bbbbbbbb: heimatB ? "lesen" : "gesperrt" } } } }));
   const rufe = aufruf(erzeugeHandler({ vault: offen, vaultOptionen: { support }, kontenHome: HOME }));
   return { support, offen, anderer, liste, rufe };
 }
@@ -57,10 +57,10 @@ test("Prüfen als gesperrtes Konto: 409 kein-zugriff mit nächstem Schritt, kein
   assert.ok(!r.j.fehler.includes("Anderer"));
 });
 
-test("Prüfen ohne Konto wählt wie die Probe ein Konto, das lesen darf; unbekanntes Konto → 404", async () => {
+test("Prüfen ohne Konto prüft als irgendein lesendes Konto und sagt es nicht als „dieses Konto“; unbekanntes Konto → 404", async () => {
   const s = szenario();
   const r = await s.rufe("POST", "/api/mcp/pruefen", {});
-  assert.equal(r.status, 200); assert.equal(r.j.konto, "k_aaaaaaaa");
+  assert.equal(r.status, 200); assert.equal(r.j.konto, null);
   assert.equal((await s.rufe("POST", "/api/mcp/pruefen", { konto: "k_gibtsnicht" })).status, 404);
 });
 
@@ -92,4 +92,11 @@ createInterface({ input: process.stdin }).on("line", (z) => { const m = JSON.par
   assert.equal(f.status, 502); assert.match(f.j.fehler, /brain_vaults/);
   const weg = aufruf(erzeugeHandler({ vault: s.offen, mcpPfad: join(skripte, "gibtsnicht.mjs"), vaultOptionen: { support: s.support }, kontenHome: HOME }));
   assert.equal((await weg("POST", "/api/mcp/pruefen", {})).status, 404);
+});
+
+test("Prüfen: ein Konto, das den offenen Vault nicht sehen darf, aber einen lesbaren Heimat-Vault hat, besteht NICHT (das „*“ steht dann am anderen Pfad)", async () => {
+  const s = szenario({ heimatB: true });
+  const r = await s.rufe("POST", "/api/mcp/pruefen", { konto: "k_bbbbbbbb" });
+  assert.equal(r.status, 409, JSON.stringify(r.j));
+  assert.equal(r.j.art, "kein-zugriff");
 });

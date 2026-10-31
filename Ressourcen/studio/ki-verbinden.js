@@ -79,7 +79,7 @@ export function baueAnmeldung({ api, kt, pruefe = (k) => pruefeKontoAnmeldung(ap
     if (st.schritt === 2) { st.schritt = 3; zeichne(); }
     try {
       const r = await pruefe(kt);
-      if (r?.zustand === "angemeldet") { st.ende = true; stoppe(); zeichne(); try { beiAngemeldet?.(r); } catch (e) { console.error(e); } return; }
+      if (r?.zustand === "angemeldet") { if (!aktiv) return; st.ende = true; stoppe(); zeichne(); try { beiAngemeldet?.(r); } catch (e) { console.error(e); } return; }
     } finally { laeuft = false; }
     if (st.ende || !aktiv) return;
     st.schritt = 2; zeichne();
@@ -192,7 +192,7 @@ export function erzeugeKiVerbinden(o = {}) {
       const kto = st.konto ? kontoMit(st.konto) : null;
       if (kto) { waehleProgramm(kto.programm); waehleKonto(kto.id); }
       else if (st.programm) waehleProgramm(st.programm);
-      else if (o.vorwahl !== false) { const v = vorwahl(); if (v) waehleProgramm(v); }
+      else if (!st.konto && o.vorwahl !== false) { const v = vorwahl(); if (v) waehleProgramm(v); }
       if (Z.prog && st.schritt) Z.schritt = st.schritt === "konto" && !ANMELDBAR.includes(Z.prog) ? "stufe" : st.schritt;
       if (Z.prog && st.kontoNeu && ANMELDBAR.includes(Z.prog)) { Z.schritt = "konto"; Z.neuOffen = true; }
       if (Z.schritt === "konto") pruefeAnmeldungen();
@@ -237,7 +237,7 @@ export function erzeugeKiVerbinden(o = {}) {
         const hat = !!Z.prog;
         return { links: { text: Z.sucht ? T.waehlen.sucht : T.waehlen.neuSuchen, symbol: "sync", aktion: "ki-neu-suchen", tun: () => neuSuchen(), lade: Z.sucht },
           zu: { text: o.abbrechenText || T.waehlen.abbrechen, aktion: "ki-abbrechen", tun: () => beende() },
-          haupt: { text: hat ? T.waehlen.weiter : (o.ohneKiText || (fussHost ? T.waehlen.ohneKi : T.waehlen.weiter)), ok: hat || fussHost || !!o.ohneKiText, aktion: "ki-weiter", tun: () => hat ? weiter() : beende(), ohneKi: !hat && (fussHost || !!o.ohneKiText) } };
+          haupt: { text: hat ? T.waehlen.weiter : (o.ohneKiText || (fussHost ? (Z.verbunden.length ? T.fertig.weiter : T.waehlen.ohneKi) : T.waehlen.weiter)), ok: hat || fussHost || !!o.ohneKiText, aktion: "ki-weiter", tun: () => hat ? weiter() : beende(), ohneKi: !hat && (fussHost || !!o.ohneKiText) } };
       }
       case "konto": {
         const laeuft = !!Z.anmeldung?.laeuft();
@@ -342,7 +342,7 @@ export function erzeugeKiVerbinden(o = {}) {
     const zu = baueKnopf({ text: TKV.konto.abbrechen, variante: "leise", groesse: "s", aktion: "konto-neu-abbrechen", aufKlick: () => { Z.neuOffen = false; zeichne(); aenderung(); } });
     feld.input.addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); ev.stopPropagation(); ok.click(); } else if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); zu.click(); } });
     setTimeout(() => feld.input.focus(), 0);
-    return h("div", { klasse: "kv-neu-form", "data-kv": "konto-neu" }, h("b", { text: TKV.konto.hinzuTitel(pname) }),
+    return h("div", { klasse: "kv-neu-form", "data-kv": "konto-neu", "data-esc-eigen": "" }, h("b", { text: TKV.konto.hinzuTitel(pname) }),
       h("div", { klasse: "kv-feld" }, h("span", { klasse: "kv-label", text: TKV.konto.name }), feld.el),
       h("div", { klasse: "kv-feld" }, h("span", { klasse: "kv-label", text: TE.ki.konto }), ordnerEl), h("p", { klasse: "mini", text: TKV.konto.ordnerText }), fehlerEl,
       h("div", { klasse: "kv-reihe-knoepfe" }, zu, ok));
@@ -351,9 +351,9 @@ export function erzeugeKiVerbinden(o = {}) {
   function starteAnmeldung() {
     const k = aktuellesKonto(); if (!k || !ANMELDBAR.includes(k.programm)) return;
     stoppeAnmeldung();
-    Z.anmeldung = baueAnmeldung({ api, kt: k,
-      beiAngemeldet: (r) => { Z.anm.set(k.id, r); Z.anmeldung = null; zeichne(); aenderung(); },
-      beiAbbruch: () => { Z.anmeldung = null; Z.anm.set(k.id, { zustand: Z.anm.get(k.id)?.zustand === "abgelaufen" ? "abgelaufen" : "nicht-angemeldet" }); zeichne(); aenderung(); } });
+    const a = Z.anmeldung = baueAnmeldung({ api, kt: k,
+      beiAngemeldet: (r) => { if (Z.anmeldung !== a) return; Z.anm.set(k.id, r); Z.anmeldung = null; zeichne(); aenderung(); },
+      beiAbbruch: () => { if (Z.anmeldung !== a) return; Z.anmeldung = null; Z.anm.set(k.id, { zustand: Z.anm.get(k.id)?.zustand === "abgelaufen" ? "abgelaufen" : "nicht-angemeldet" }); zeichne(); aenderung(); } });
     Z.anmeldung.start(); zeichne(); aenderung();
   }
   function rumpfKonto() {
@@ -476,12 +476,13 @@ export function erzeugeKiVerbinden(o = {}) {
     if (Z.stufe === "erweitert" && Z.konto && !sperreBleibt() && vaultPfad() && r?.zugriffGrund !== "vom-nutzer-gesperrt") {
       // nur wenn für diesen Vault noch kein Konto pflegt (die Pflege eines anderen Kontos überschreibt der Ablauf nie)
       const vp = Z.vaults.find((x) => x.pfad === vaultPfad())?.pflege;
-      if (!vp?.gesetzt) { try { await api.kiPflegeSetzen({ vault: vaultPfad(), konto: Z.konto, stufe: PFLEGE_STUFE }); Z.pflege = { konto: Z.konto, name: k?.name || name(p), imDienst: null }; } catch (e) { melde(meldungVon(e)); } }
+      if (!Z.pflege && !vp?.gesetzt) { try { await api.kiPflegeSetzen({ vault: vaultPfad(), konto: Z.konto, stufe: PFLEGE_STUFE }); if (vp) vp.gesetzt = true; Z.pflege = { konto: Z.konto, name: k?.name || name(p), imDienst: null }; } catch (e) { melde(meldungVon(e)); } }
     }
     // 4 Probe: ein echter, rein lesender Aufruf über den Kortex-Server als dieses Konto
     setze("probe", "laeuft");
     let pr;
-    try { pr = await api.mcpPruefen({ konto: Z.konto || undefined }); }
+    // ohne Konto-Auswahl prüft die Werkstatt als Standardkonto dieses Programms
+    try { pr = await api.mcpPruefen({ konto: Z.konto || undefined, programm: p }); }
     catch (e) {
       l.zeilen.probe = "fehler";
       const keinZugriff = e?.daten?.art === "kein-zugriff";
@@ -489,7 +490,6 @@ export function erzeugeKiVerbinden(o = {}) {
     }
     if (!aktiv()) { Z.busy = false; return; }
     l.zeilen.probe = "ok";
-    Z.busy = false;
     Z.ergebnis = { ok: true, vault: pr?.vault || vaultName(), mitKonto: !!pr?.konto };
     // geglückt: merken, melden, Stand auffrischen, weiter
     const eintrag = { id: p, name: name(p), konto: Z.konto, kontoName: k?.name || null, stufe: sperreBleibt() || r?.zugriffGrund === "vom-nutzer-gesperrt" ? "gesperrt" : Z.stufe, vault: vaultRef() };
@@ -499,8 +499,10 @@ export function erzeugeKiVerbinden(o = {}) {
     try { window.dispatchEvent(new CustomEvent(KONTO_EREIGNIS)); } catch { /* ohne Fenster */ }
     zeichne(); aenderung();
     await warte(700);
-    if (!aktiv()) return;
+    if (!aktiv()) { Z.busy = false; return; }
     await lade(false); // Konten und Zugriffe neu lesen (Fertig-Seite: Leseverbot, Kontingent)
+    if (!aktiv()) { Z.busy = false; return; }
+    Z.busy = false;
     Z.schritt = "fertig"; Z.kontingent = null; zeichne(); aenderung();
     ladeKontingent();
   }

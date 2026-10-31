@@ -593,7 +593,7 @@ function renderBuehne() {
 
 // ---------------------------------------------------------------- Ablauf
 function geheZu(n) {
-  if (n === S.step || S.busy) return;
+  if (n === S.step || S.busy || (S.step === 3 && ki.z.geladen && ki.arbeitet())) return;
   if (S.step === 2 && n !== 2 && S.sync === "code") { stoppeCode(); api.githubAbbrechen().catch(() => {}); S.sync = "start"; }
   S.dir = n > S.step ? 1 : -1;
   S.step = n; S.max = Math.max(S.max, n);

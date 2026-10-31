@@ -72,7 +72,8 @@ export function erzeugeKi({ vaultPfad, vaultName, beiAenderung, kopiere, melde }
   }
   function zeichneZusatz() {
     // erst wenn eine KI verbunden ist (Schritt „Fertig“ des Ablaufs); davor stört es die Wahl
-    if (fluss.schritt() !== "fertig") { zusatzEl.hidden = true; return; }
+    const sch = fluss.schritt();
+    if (!(sch === "fertig" || (sch === "waehlen" && z.verbunden.length))) { zusatzEl.hidden = true; return; }
     ladeZusatz();
     const s = z.zusatz;
     const zeilenListe = [];
@@ -96,6 +97,7 @@ export function erzeugeKi({ vaultPfad, vaultName, beiAenderung, kopiere, melde }
     z, wurzel, fluss,
     lade: (neu) => { zusatzGeladen = false; return fluss.lade(neu); },
     verbundene: () => fluss.verbundene(),
+    arbeitet: () => fluss.istBeschaeftigt() || fluss.laeuftAnmeldung(), // ein Lauf oder eine Anmeldung: der Assistent bleibt in diesem Schritt
     vaultGewechselt() { z.zusatz = null; z.zusatzFehler = {}; z.zusatzFrage = null; zusatzGeladen = false; fluss.vaultGewechselt(); },
     ladePflege,
     // Fußleiste: der Assistent zeigt den Hauptknopf selbst, der Ablauf sagt, was draufsteht und ob er gilt

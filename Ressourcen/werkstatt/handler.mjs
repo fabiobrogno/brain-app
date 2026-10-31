@@ -350,7 +350,14 @@ export function erzeugeHandler(o) {
       case "/api/mcp/selbsttest": nur("POST"); return probeUeberMcp(V(), "Vault", 1, { liste: true, wer: "die KI" });
       // „KI verbinden“, Schritt Prüfen: ein echter, rein lesender Aufruf (brain_vaults) über den Kortex-MCP-Server, als das gewählte Konto. Kein Modellaufruf, keine Token;
       // die Antwort sagt nur, ob dieses Konto den offenen Vault sehen darf.
-      case "/api/mcp/pruefen": { nur("POST"); const e = eingabe(); return probeUeberMcp(V(), "Vault", 1, { status: true, wer: "die KI", konto: typeof e.konto === "string" && e.konto ? e.konto : null }); }
+      case "/api/mcp/pruefen": {
+        nur("POST");
+        const e = eingabe();
+        // Konto: das genannte; sonst das Standardkonto des genannten Programms; sonst keines (dann prüft die Probe als irgendein lesendes Konto und sagt es nicht als „dieses Konto“)
+        let konto = typeof e.konto === "string" && e.konto ? e.konto : null;
+        if (!konto && typeof e.programm === "string" && e.programm) konto = konten.kontoFuerProgramm(e.programm) || null;
+        return probeUeberMcp(V(), "Vault", 1, { status: true, wer: "die KI", konto });
+      }
       case "/api/git/status": nur("GET"); return V().gitStatus();
       case "/api/git/commit": nur("POST"); return V().gitCommit(eingabe());
       case "/api/git/sync": nur("POST"); return V().gitSync(koerper && koerper.length ? eingabe() : {});
@@ -758,10 +765,15 @@ export function erzeugeHandler(o) {
         if (status) {
           const t = r && Array.isArray(r.content) ? r.content.map((c) => (c && typeof c.text === "string" ? c.text : "")).join("\n") : "";
           if (suche.error || !r || r.isError) return ende(new HttpFehler(502, t || "Der MCP-Server konnte den Vault nicht abfragen.", { art: "mcp" }));
-          // brain_vaults markiert den Vault, den dieser Server nutzt, mit „*“; für ein Konto ohne Zugriff fehlt er ganz
-          const m = /^\d+\.\s+\*\s+(.+?) — /m.exec(t);
+          // brain_vaults markiert den Vault, den dieser Server nutzt, mit „*“ (nummeriert: „1. * Name — Pfad“, sonst „*  Name — Pfad (nicht in der Liste der App)“). Hat das Konto den offenen Vault nicht,
+          // folgt der Server seinem Heimat-Vault: dann steht das „*“ an einem anderen Pfad. Deshalb zählt nur eine Markierung am Pfad dieses Vaults.
+          let m = null;
+          for (const zeile of t.split("\n")) {
+            const z = /^(?:\d+\. )?\* {1,2}(.+?) — (.+)$/.exec(zeile);
+            if (z && (z[2] === v.wurzel || z[2].startsWith(`${v.wurzel} (`))) { m = z; break; }
+          }
           if (!m) return ende(new HttpFehler(409, `Dieses Konto darf den Vault nicht sehen — ${wer} würde ihn so nicht finden. Gib ihm unter „KI & Konten“ mindestens die Stufe „Lesen“.`, { art: "kein-zugriff" }));
-          return ende(null, { ok: true, vault: m[1], werkzeuge: werkzeuge.length, konto: pk.konto || null });
+          return ende(null, { ok: true, vault: m[1], werkzeuge: werkzeuge.length, konto: konto ? pk.konto : null });
         }
         const text = r && Array.isArray(r.content) ? r.content.map((c) => (c && typeof c.text === "string" ? c.text : "")).join("\n") : "";
         if (suche.error || !r || r.isError) return ende(new HttpFehler(502, text || "Der MCP-Server konnte die Suche nicht ausführen.", { art: "mcp" }));
