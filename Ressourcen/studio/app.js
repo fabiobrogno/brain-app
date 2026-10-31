@@ -1294,8 +1294,7 @@ function zeichneStatus() {
     if (!g.remote) k.push(st("remote", [symbol("wolke", 14), h("span", { text: T.status.keinRemote })], { klick: oeffneRemote, titel: T.status.remoteTitel, klasse: "warn" }));
     else k.push(st("remote", [symbol("wolke", 14), h("span", { text: g.upstream ? g.upstream.split("/")[0] : "Remote" })], { titel: g.upstream || "Remote" }));
   }
-  // Ort des Vaults und Version der App (leise, wie im Prototyp „~/Kortex“)
-  k.push(st("vault", [symbol("vault", 14), h("span", { text: kurzPfadVon(S.info.vault) || S.info.name || PRODUKT })], { titel: `${S.info.name || PRODUKT} — ${S.info.vault}` }));
+  // Der Ort des Vaults steht nicht in der Leiste (der Name steht oben in der Seitenleiste, der volle Pfad als Hinweis am Vault-Wechsler); hier nur die Version der App
   if (S.info.appVersion) k.push(st("version", [symbol("info", 14), h("span", { text: S.info.appVersion })], { titel: T.status.version(S.info.appVersion) }));
   k.push(h("span", { klasse: "sp" }));
   // ---- SLOT P7 (Kontingent): hier zeigt das Paket „Kontingent“ Konto und Verbrauch (Balken, Prozent, Rest). Das leere Element bleibt unsichtbar (hauptfenster.css);
@@ -1308,7 +1307,8 @@ function zeichneStatus() {
     k.push(...teile);
   }
   const verbunden = S.kiVerbunden || S.ki?.agenten?.some((a) => a.id === "claude" && a.verbunden === true);
-  k.push(st("claude", [kiLogo("claude", 14, { dekorativ: true }), h("span", { text: T.status.claude }), symbol(verbunden ? "haken" : "schliessen", 12)], { klick: oeffneKi, titel: verbunden ? T.status.claudeVerbunden : T.status.claudeNicht, klasse: verbunden ? "gut" : "" }));
+  // Verbunden: Haken. Nicht verbunden: „verbinden“ mit Plus (kein ✕, das las sich wie „schließen“); der Klick öffnet in beiden Fällen den Dialog „KI verbinden“
+  k.push(st("claude", [kiLogo("claude", 14, { dekorativ: true }), h("span", { text: verbunden ? T.status.claude : T.status.claudeVerbinden }), symbol(verbunden ? "haken" : "plus", 12)], { klick: oeffneKi, titel: verbunden ? T.status.claudeVerbunden : T.status.claudeNicht, klasse: verbunden ? "gut" : "" }));
   const gs = S.gesundheit;
   if (gs && gs.verfuegbar !== false) {
     const w = Array.isArray(gs.warnungen) ? gs.warnungen.length : Number(gs.warnungen) || 0;
@@ -1967,6 +1967,7 @@ async function ladeVaults() {
 function vaultKopf() {
   const name = S.info?.name || PRODUKT;
   $("vault-name").textContent = name;
+  $("vault-wechsler").title = S.info?.vault ? `${T.vault.wechseln}: ${name}\n${kurzPfadVon(S.info.vault)}` : T.vault.wechseln; // voller Pfad nur als Hinweis (Tipp: ~ statt /Users/…)
   $("vault-farbe").textContent = (name.trim()[0] || "B").toUpperCase();
 }
 async function wechsleVault(pfad) {

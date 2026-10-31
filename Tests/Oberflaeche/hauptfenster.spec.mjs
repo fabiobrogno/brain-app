@@ -2,7 +2,7 @@
 // Statusleiste (Wörter, Format, Platz für P7), Tastatur (⌘1–4 aus dem Register der Tastenkürzel, ⌘K, ⌘J, ⌘\), Palette mit Ausweg zu Frag, enge Fenster, hell und dunkel, „Bewegung reduzieren“.
 // Bilder: UI_P3_BILDER=/Ordner npx playwright test hauptfenster.spec.mjs
 import { test, expect } from "./basis.mjs";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { baueVault } from "./vault.mjs";
 import { starteServer } from "./start.mjs";
@@ -319,4 +319,107 @@ test("Alt-Leer-Feld und Stift in der Seitenleiste: Schnell erfassen und Neue Not
   await page.keyboard.press("Escape");
   await page.click("#fuss-neu");
   await expect(page.locator('[data-feld="titel"]')).toBeVisible();
+});
+
+// ---------- Sichtbarer Text: nie „null“, „undefined“, „NaN“ oder „[object Object]“ ----------
+const FEHLTEXT = /\b(null|undefined|NaN)\b|\[object Object\]/;
+const unerlaubt = (page) => page.evaluate((re) => {
+  const t = document.body.innerText, r = new RegExp(re, "g"), f = [];
+  for (const m of t.matchAll(r)) f.push(t.slice(Math.max(0, m.index - 40), m.index + 40).replace(/\s+/g, " "));
+  return f;
+}, FEHLTEXT.source);
+const frageBereit = (page) => page.route("**/api/frage/bereit", (r) => r.fulfill({ json: { vault: "vault", vertraut: true, claude: true, kontenDefekt: false, laeuft: false, konten: [{ id: "k_aaaa0001", name: "Arbeit", programm: "claude", erlaubt: true }], grenzen: { frageMax: 2000, frist: 60000 }, modelle: ["klein", "mittel"] } }));
+
+for (const schema of ["light", "dark"]) {
+  test(`Kein „null“/„undefined“ im sichtbaren Text: Hauptfenster, Frag, Palette, Board, Verlauf, Menüs, Einstellungen (${schema})`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme: schema });
+    await frageBereit(page);
+    await start(page, { pfad: "09_wiki/wissen/Kaffee.md" });
+    const pruefe = async (zustand) => expect(await unerlaubt(page), zustand).toEqual([]);
+    await page.waitForTimeout(600);
+    await pruefe("Start mit Wiki-Seite (Eigenschaften, Verlauf, Statusleiste)");
+    await page.keyboard.press("Meta+j"); await gleitet(page);
+    await pruefe("Frag deinen Vault (Formular)");
+    await page.locator('[data-frage="panel"] button').first().focus();
+    await page.keyboard.press("Escape"); await gleitet(page);
+    await page.keyboard.press("Meta+k");
+    await pruefe("Palette"); await page.keyboard.type("zzzqqq"); await pruefe("Palette, nichts gefunden");
+    await page.keyboard.press("Escape");
+    await page.click("#knopf-verlauf"); await page.waitForTimeout(500);
+    await pruefe("Verlauf"); await page.click("#knopf-verlauf");
+    await page.keyboard.press("Meta+4"); await page.waitForTimeout(500);
+    await pruefe("Aufgaben-Board"); await page.keyboard.press("Meta+1");
+    await page.click("#vault-wechsler"); await page.waitForTimeout(300);
+    await pruefe("Vault-Menü"); await page.keyboard.press("Escape");
+    await page.click('[data-st="einstellungen"]'); await page.waitForTimeout(300);
+    await pruefe("Einstellungen-Menü der Statusleiste"); await page.keyboard.press("Escape");
+    for (const b of ["allgemein", "ki", "automatik", "vaults"]) {
+      await page.evaluate((x) => { location.hash = `#einstellungen/${x}`; }, b);
+      await page.waitForSelector("[data-einstellungen]"); await page.waitForTimeout(500);
+      await pruefe(`Einstellungen · ${b}`);
+    }
+  });
+}
+
+test("Kein „null“ im leeren Vault und in der Ansicht ohne Vault", async ({ page }) => {
+  server.stopp();
+  ({ vault } = baueVault({ leer: true }));
+  server = await starteServer(vault);
+  await start(page, { pfad: null });
+  await page.waitForTimeout(500);
+  expect(await unerlaubt(page), "leerer Vault").toEqual([]);
+  server.stopp();
+  server = await starteServer(null);
+  await page.goto(server.url);
+  await page.waitForSelector("#willkommen-host:not([hidden])");
+  await page.waitForTimeout(500);
+  expect(await unerlaubt(page), "ohne Vault").toEqual([]);
+});
+
+test("Statusleiste: kein interner Pfad, Claude-Zustand verständlich (Haken oder „verbinden“ mit Plus, kein ✕); voller Pfad als Hinweis am Vault-Wechsler", async ({ page }) => {
+  await start(page);
+  const leiste = await page.locator("#status").innerText();
+  expect(leiste).not.toMatch(/\/private|\/var\/|\/tmp|\/Users\/|brain-studio-test/);
+  await expect(page.locator('[data-st="vault"]')).toHaveCount(0);
+  const titel = await page.locator("#vault-wechsler").getAttribute("title");
+  expect(titel).toContain("Vault wechseln");
+  expect(titel).toContain("vault"); // Ordnername am Ende des Pfads (die Attrappen-Vaults heißen „vault“)
+  const claude = page.locator('[data-st="claude"]');
+  await expect(claude).toContainText("Claude verbinden");
+  expect(await claude.innerText()).not.toContain("✕");
+  await expect(claude.locator("svg")).toHaveCount(2); // Logo und Plus
+  await expect(claude).toHaveAttribute("title", /nicht verbunden/);
+});
+
+// ---------- Aufgabenlisten im Editor ----------
+test("Aufgabenliste: Kästchen statt „[ ]“ und „[x]“, Klick schreibt in die Datei zurück (ein Zeichen), Rohtext zeigt die Zeichen", async ({ page }) => {
+  const datei = join(vault, "10_notizen/Aufgaben-Liste.md");
+  const text = "# Liste\n\n- [x] Erledigt\n- [ ] Offen eins\n- [ ] Offen zwei mit **fett**\n- Normaler Punkt\n";
+  writeFileSync(datei, text);
+  await start(page, { pfad: "10_notizen/Aufgaben-Liste.md" });
+  const kaesten = page.locator(".cm-content .cm-aufgabe");
+  await expect(kaesten).toHaveCount(3);
+  await expect(page.locator(".cm-content .cm-aufgabe.erledigt")).toHaveCount(1);
+  await expect(kaesten.first()).toHaveAttribute("role", "checkbox");
+  await expect(kaesten.first()).toHaveAttribute("aria-checked", "true");
+  expect(await page.locator(".cm-content").innerText()).not.toMatch(/\[[ x]\]/);
+  expect(await page.locator("#editor input").count()).toBe(0); // kein natives Feld
+  await expect(page.locator(".cm-aufgabe-fertig")).toContainText("Erledigt");
+  await bild(page, "09-aufgabenliste");
+  // Klick auf „Offen eins“: [x]; die Datei hat danach genau dieses eine Zeichen geändert
+  await kaesten.nth(1).click();
+  await expect(page.locator("#speicherstand")).toHaveText("Gespeichert", { timeout: 6000 });
+  expect(readFileSync(datei, "utf8")).toBe(text.replace("- [ ] Offen eins", "- [x] Offen eins"));
+  await expect(page.locator(".cm-content .cm-aufgabe.erledigt")).toHaveCount(2);
+  // wieder zurück, und die erste (erledigte) auf offen
+  await kaesten.nth(1).click();
+  await kaesten.nth(0).click();
+  await expect(page.locator("#speicherstand")).toHaveText("Gespeichert", { timeout: 6000 });
+  expect(readFileSync(datei, "utf8")).toBe(text.replace("- [x] Erledigt", "- [ ] Erledigt"));
+  // der Cursor springt durch den Klick nicht in die Zeile (die Zeichen bleiben versteckt)
+  expect(await page.locator(".cm-content").innerText()).not.toMatch(/\[[ x]\]/);
+  // Rohtext: die Zeichen sind da, keine Kästchen
+  await page.click("#w-roh");
+  await expect(page.locator(".cm-content .cm-aufgabe")).toHaveCount(0);
+  await expect(page.locator(".cm-content")).toContainText("- [ ] Offen eins");
 });

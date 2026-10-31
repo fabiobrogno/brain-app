@@ -132,6 +132,29 @@ class Punkt extends WidgetType {
   toDOM() { const s = document.createElement("span"); s.className = "cm-punkt"; s.textContent = "•"; return s; }
 }
 const verstecken = Decoration.replace({});
+// Aufgabenliste („- [ ] …“ / „- [x] …“): statt der Zeichen steht ein Kästchen (eigener Baustein, kein natives Feld), ein Klick schreibt [ ] bzw. [x] in die Datei zurück.
+// Im Rohtext-Modus bleibt der Text, wie er ist. Die Zeile wird beim Klick über die Position des Kästchens gefunden, nicht über gemerkte Zahlen (die verschieben sich beim Tippen).
+const AUFGABE = /^(.*?(?:[-*+]|\d+[.)])[ \t]+)\[([ xX])\]/;
+class Aufgabe extends WidgetType {
+  constructor(erledigt) { super(); this.erledigt = erledigt; }
+  eq(o) { return o.erledigt === this.erledigt; }
+  toDOM(view) {
+    const s = document.createElement("span");
+    s.className = "cm-aufgabe" + (this.erledigt ? " erledigt" : "");
+    s.setAttribute("role", "checkbox"); s.setAttribute("aria-checked", String(this.erledigt)); s.setAttribute("aria-label", this.erledigt ? T.editor.aufgabeErledigt : T.editor.aufgabeOffen);
+    s.addEventListener("mousedown", (e) => { // mousedown statt click: der Cursor soll nicht in die Zeile springen und sie roh zeigen
+      e.preventDefault();
+      if (e.button !== 0 || view.state.readOnly) return;
+      const zeile = view.state.doc.lineAt(view.posAtDOM(s));
+      const m = AUFGABE.exec(zeile.text);
+      if (!m) return;
+      const pos = zeile.from + m[1].length + 1;
+      view.dispatch({ changes: { from: pos, to: pos + 1, insert: m[2] === " " ? "x" : " " } });
+    });
+    return s;
+  }
+  ignoreEvent() { return true; }
+}
 
 function aktiveZeilen(state) {
   const s = new Set();
@@ -233,7 +256,18 @@ function vorschau(view, ctx) {
         }
         if (name === "QuoteMark") { liste.push(Decoration.mark({ class: "cm-marke" }).range(n.from, n.to)); return; }
         if (name === "HorizontalRule") { klasse(n.from, "cm-trenner"); return; }
+        if (name === "TaskMarker") {
+          if (roh) { liste.push(Decoration.mark({ class: "cm-marke" }).range(n.from, n.to)); return; }
+          const aufgabe = n.node.parent, punkt = aufgabe?.parent?.firstChild;
+          const von = punkt && punkt.name === "ListMark" ? punkt.from : n.from;
+          const bis = doc.sliceString(n.to, n.to + 1) === " " ? n.to + 1 : n.to;
+          const erledigt = /x/i.test(doc.sliceString(n.from, n.to));
+          liste.push(Decoration.replace({ widget: new Aufgabe(erledigt) }).range(von, bis));
+          if (erledigt && aufgabe && aufgabe.to > bis) liste.push(Decoration.mark({ class: "cm-aufgabe-fertig" }).range(bis, aufgabe.to));
+          return;
+        }
         if (name === "ListMark") {
+          if (!roh && n.node.nextSibling?.name === "Task") return; // das Kästchen ersetzt Zeichen und Aufzählungspunkt
           const t = doc.sliceString(n.from, n.to);
           if (/^[-*+]$/.test(t) && !zeileAktiv(n.from)) liste.push(Decoration.replace({ widget: new Punkt() }).range(n.from, n.to));
           else liste.push(Decoration.mark({ class: "cm-listenmarke" }).range(n.from, n.to));

@@ -121,3 +121,11 @@
 .leer-liste .zeichen, .leer .zeichen { color: var(--text-3); }
 .leer .zeichen { color: var(--akzent); }
 @media (prefers-reduced-motion: reduce) { #app.glatt { transition: none; } }
+
+/* ---------- Aufgabenlisten im Editor: Kästchen im Stil der Bausteine (16 px, Rand --eingabe, erledigt = Akzentfläche mit Haken) ---------- */
+.cm-aufgabe { display: inline-block; position: relative; width: 16px; height: 16px; margin-right: 9px; vertical-align: -2px; border: 1px solid var(--eingabe); border-radius: 5px; background: var(--eingabe-grund); box-shadow: var(--schatten-klein); cursor: pointer;
+  transition: background var(--d-fast), border-color var(--d-fast); -webkit-user-select: none; user-select: none; }
+.cm-aufgabe:hover { border-color: var(--text-3); }
+.cm-aufgabe.erledigt { background: var(--akzent); border-color: var(--akzent); }
+.cm-aufgabe.erledigt::before { content: ""; position: absolute; left: 4.5px; top: 1.5px; width: 4px; height: 8px; border: solid var(--akzent-text); border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.cm-aufgabe-fertig { color: var(--text-2); text-decoration: line-through; text-decoration-color: var(--text-3); }
