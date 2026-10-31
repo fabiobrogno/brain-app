@@ -56,8 +56,16 @@
 .kt-mini.ohne-werte .kt-mini-text { color: var(--text-3); }
 .kt-mini[data-stufe="rot"] .kt-mini-text { color: var(--rot); }
 .kt-mini-rest { color: var(--text-3); }
-/* Die Statusleiste hat wenig Platz (Geist ist breit): ab 1180 px entfallen Rücksetzzeit, Name und Balken — Logo und Prozent bleiben. Gleiche Stufen wie studio.css. */
+/* Die Statusleiste hat wenig Platz, und Schriften messen auf jedem Rechner etwas anders: darum verlässt sich die Leiste nicht auf feste Breiten. Die mittleren Teile (Vault-Name, Zweig, „geändert“) dürfen
+   schrumpfen und enden dann mit „…“ (flex-shrink mit Rangfolge, min-width: 0, overflow: hidden); das Zahnrad, das Thema und mein Abschnitt schrumpfen nie. Mein Abschnitt zeigt ab 1180 px nur Logo und Prozent,
+   ab 900 px nur das Logo (der Tooltip nennt die Werte). */
+.status .kt-leiste { flex: none; }
+.status > .st[data-st="vault"], .status > .st[data-st="zweig"], .status > .st[data-st="geaendert"], .status > .st[data-st="remote"] { flex: 0 1 auto; min-width: 0; overflow: hidden; }
+.status > .st[data-st="vault"] { flex-shrink: 4; } .status > .st[data-st="geaendert"] { flex-shrink: 3; } .status > .st[data-st="remote"] { flex-shrink: 2; } .status > .st[data-st="zweig"] { flex-shrink: 1; }
+.status > .st[data-st="vault"] > span, .status > .st[data-st="zweig"] > span, .status > .st[data-st="geaendert"] > span, .status > .st[data-st="remote"] > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.status > .st[data-st="einstellungen"], .status > .st[data-st="theme"] { flex: none; }
 @container status (max-width: 1180px) { .kt-mini-rest, .kt-leiste .kt-name-text, .kt-mini .kt-balken { display: none; } .kt-leiste { gap: 6px; padding: 0 6px; } }
+@container status (max-width: 900px) { .kt-mini-text { display: none; } }
 
 /* ---------- Konto-Menü (öffnet über der Statusleiste) ---------- */
 .kt-menue { display: flex; flex-direction: column; width: min(420px, calc(100vw - 24px)); padding: 6px; background: var(--erhoben); border-radius: var(--r-xl); box-shadow: var(--schatten-menue); font-size: 12.5px; color: var(--text); }

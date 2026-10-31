@@ -215,7 +215,8 @@ export function erzeugeKontoLeiste(z) {
     const ans = kontoAnsicht(e, jetzt);
     el.dataset.zustand = ans.hatWerte ? (ans.voll ? "voll" : "werte") : "ohne";
     el.dataset.konto = k.id;
-    el.title = TKO.leiste.knopfTitel(k.name);
+    const werteText = ans.hatWerte ? [ans.session.vorhanden ? `${TKO.fenster.session} ${ans.session.prozentText}${ans.session.resetText ? `, ${ans.session.resetText}` : ""}` : null, ans.weekly.vorhanden ? `${TKO.fenster.weekly} ${ans.weekly.prozentText}${ans.weekly.resetText ? `, ${ans.weekly.resetText}` : ""}` : null].filter(Boolean).join(" · ") : ans.kurz;
+    el.title = `${TKO.leiste.knopfTitel(k.name)} — ${werteText}`;
     el.setAttribute("aria-label", `${TKO.leiste.knopfTitel(k.name)}${ans.hatWerte ? `. ${ans.session.vorhanden ? `${TKO.fenster.session} ${ans.session.prozentText}` : `${TKO.fenster.weekly} ${ans.weekly.prozentText}`}` : `. ${ans.kurz}`}`);
     el.replaceChildren(kiLogo(k.programm, 14, { dekorativ: true }), h("span", { klasse: "kt-name-text", text: k.name }), miniBalken(e, jetzt));
   }

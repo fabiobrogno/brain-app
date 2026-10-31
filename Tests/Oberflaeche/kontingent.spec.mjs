@@ -68,7 +68,7 @@ test("Statusleiste: aktives Konto mit Logo, Name, Mini-Balken, Prozent und Rück
   await expect(leiste(page).locator(".kt-balken")).toHaveAttribute("data-stufe", "grau");
   await expect(leiste(page).locator(".ki-logo")).toBeVisible();
   await expect(leiste(page)).toHaveAttribute("aria-haspopup", "menu");
-  await expect(leiste(page)).toHaveAttribute("title", /Privat: Kontingent und Konto wechseln/);
+  await expect(leiste(page)).toHaveAttribute("title", /Privat: Kontingent und Konto wechseln — 5 Std 42 %, noch 2 h 14 min · Woche 18 %, bis So 19:00/);
   await foto(page, "statusleiste-hell");
   expect(f).toEqual([]);
 });
@@ -264,18 +264,26 @@ test("Kontingent nicht geladen (Werkstatt-Fehler): die Leiste sagt „nicht abru
   expect(f).toEqual([]);
 });
 
-test("Schmales Fenster: bis 1180 px weichen Rücksetzzeit, Name und Balken — Logo und Prozent bleiben, die Leiste läuft nie über", async ({ page }) => {
-  const ueberlauf = () => page.evaluate(() => { const s = document.getElementById("status"), sr = s.getBoundingClientRect(); return { scroll: s.scrollWidth - s.clientWidth, aus: [...s.querySelectorAll(".st")].filter((e) => e.getBoundingClientRect().right > sr.right + 0.5).map((e) => e.dataset.st) }; });
+test("Schmales Fenster: bis 1180 px nur Logo und Prozent, bis 900 px nur das Logo (Tooltip mit Werten) — die Leiste läuft nie über, auch mit langem Vault-Namen und ±20 px Schriftunterschied", async ({ page }) => {
+  const ueberlauf = () => page.evaluate(() => { const s = document.getElementById("status"), sr = s.getBoundingClientRect(); return { scroll: s.scrollWidth - s.clientWidth, aus: [...s.querySelectorAll(".st")].filter((e) => e.getBoundingClientRect().right > sr.right + 0.5 || e.getBoundingClientRect().left < sr.left - 0.5).map((e) => e.dataset.st) }; });
   await start(page, { breite: 1440 });
   for (const t of [".kt-mini-rest", ".kt-name-text", ".kt-balken"]) await expect(leiste(page).locator(t)).toBeVisible();
-  for (const breite of [1100, 1000, 960, 780, 700]) {
+  // wie in einstellungen.spec: langer Vault-Name, viele Änderungen — und jede Breite um den Rand der Stufen herum
+  await page.evaluate(() => {
+    const set = (sel, t) => { const e = document.querySelector(sel); const s = e && [...e.querySelectorAll("span")].pop(); if (s) s.textContent = t; };
+    set('[data-st="vault"]', "Firmenwissen-Projekt-Alpha");
+    set('[data-st="geaendert"]', "128 geändert, nicht gesichert");
+  });
+  for (const breite of [1100, 1020, 1000, 980, 960, 920, 900, 880, 780, 700]) {
     await page.setViewportSize({ width: breite, height: 800 });
-    await page.waitForTimeout(150);
+    await page.waitForTimeout(120);
     expect(await ueberlauf(), `${breite}px`).toEqual({ scroll: 0, aus: [] });
-    await expect(leiste(page).locator(".kt-mini-text"), `${breite}px`).toBeVisible();
+    await expect(page.locator('[data-st="einstellungen"]'), `${breite}px`).toBeInViewport();
     await expect(leiste(page).locator(".ki-logo"), `${breite}px`).toBeVisible();
     for (const t of [".kt-mini-rest", ".kt-name-text", ".kt-balken"]) await expect(leiste(page).locator(t), `${breite}px ${t}`).toBeHidden();
+    await expect(leiste(page).locator(".kt-mini-text"), `${breite}px`).toBeVisible({ visible: breite > 900 });
   }
+  await expect(leiste(page)).toHaveAttribute("title", /5 Std 42 %/);
   await foto(page, "statusleiste-schmal-hell");
 });
 
