@@ -302,7 +302,7 @@ test.describe("Datumsauswahl", () => {
       await expect(k).toHaveAttribute("data-wert", wert);
       await expect(k).toBeFocused(); // Fokus kehrt zurück
     }
-    expect((await ereignisse(page)).map((e) => e[1])).toEqual([plus(0), plus(1), montag()]);
+    expect((await ereignisse(page)).map((e) => e[1])).toEqual([plus(0), plus(1), ...(montag() === plus(1) ? [] : [montag()])]); // sonntags ist „Nächste Woche“ = morgen: derselbe Wert löst kein weiteres Ereignis aus
   });
 
   test("Kalender: Raster mit 6 Wochen, heute markiert, Tastatur (←→↑↓, Bild↑↓), Enter wählt, Esc schließt", async ({ page }) => {
