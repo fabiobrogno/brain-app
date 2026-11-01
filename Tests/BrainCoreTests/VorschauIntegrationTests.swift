@@ -183,3 +183,40 @@ private func baueRouten(_ modus: VorschauModus, echtesHome: URL, node: URL) -> (
     #expect(await git.starteInstallation() != .dialogAusgeloest, "der Klick „installieren“ löst in der Vorschau keinen Apple-Dialog aus")
     #expect(await git.pruefe() == .fehlt)
 }
+
+/// „Frag deinen Vault“ in der Vorschau, Ende zu Ende mit der echten Werkstatt: Die Frage erreicht den claude-Platzhalter (KORTEX_VORSCHAU kommt an), der gekennzeichnet antwortet und
+/// echte Seiten des neuen Vaults nennt. Davor scheiterte sie mit „Vorschau-Schutz: KORTEX_VORSCHAU fehlt“.
+@Test(.enabled(if: moeglich)) func vorschauFragBekommtEineGekennzeichneteBeispielantwort() async throws {
+    let node = try #require(findeNode())
+    let echt = try baueEchtesHome()
+    let vorher = abdruck(echt)
+    let modus = VorschauModus(ordner: vorschauTempOrdner("kortex-vorschau"), mitKi: true)
+    try modus.vorbereiten()
+    let (dienste, bruecke) = baueRouten(modus, echtesHome: echt, node: node)
+    defer { Task { await bruecke.beende() } }
+
+    _ = try await dienste.legeVaultAn(art: "vorlage", name: nil, ordner: nil)
+    for _ in 0..<3 {
+        let kis = try await dienste.erkenneKIs()
+        if gefunden(kis, "claude") { break }
+    }
+    _ = try await dienste.rufe("POST", "/api/mcp/verbinden", ["ziel": "claude", "zugriff": "lesen"])
+    let bereit = try await dienste.rufe("GET", "/api/frage/bereit")
+    #expect(bereit["claude"] as? Bool == true)
+    let konto = try #require((bereit["konten"] as? [[String: Any]])?.first { $0["erlaubt"] as? Bool == true }?["id"] as? String)
+
+    let start = try await dienste.rufe("POST", "/api/frage/start", ["frage": "Wie funktioniert dein Vault?", "konto": konto])
+    let id = try #require(start["id"] as? String)
+    var stand: [String: Any] = [:]
+    for _ in 0..<150 where stand["fertig"] as? Bool != true {
+        stand = try await dienste.rufe("GET", "/api/frage/stand?id=\(id)&ab=0&text=0&epoche=0")
+        try await Task.sleep(for: .milliseconds(100))
+    }
+    let ergebnis = try #require(stand["ergebnis"] as? [String: Any], "die Frage wurde nicht fertig")
+    #expect(ergebnis["ok"] as? Bool == true, "\(ergebnis)")
+    let text = try #require(ergebnis["text"] as? String)
+    #expect(text.hasPrefix("Vorschau: So würde eine Antwort aussehen"), "\(text)")
+    #expect(text.contains("[[") && text.contains(".md]]"), "die Antwort nennt Seiten des Vaults: \(text)")
+    #expect(!((stand["quellen"] as? [[String: Any]]) ?? []).isEmpty, "die genannten Seiten erscheinen als Quellen")
+    #expect(abdruck(echt) == vorher, "das „echte“ HOME ist unverändert")
+}

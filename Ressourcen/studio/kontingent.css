@@ -46,7 +46,7 @@
 .kt-aktionen .knopf-text { font-size: 12px; padding-left: 0; }
 
 /* ---------- Statusleiste: aktives Konto mit Mini-Balken ---------- */
-.kt-leiste { gap: 7px; }
+.kt-leiste { gap: 7px; padding: 0 7px; }
 .kt-leiste[hidden] { display: none; }
 .kt-leiste .kt-name-text { font-weight: 500; color: var(--text); max-width: 14ch; overflow: hidden; text-overflow: ellipsis; }
 .kt-leiste[data-zustand="leer"] .kt-name-text { font-weight: 400; color: var(--text-2); }

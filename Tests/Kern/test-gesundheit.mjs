@@ -668,3 +668,31 @@ test("brain gesundheit: der Unterbefehl reicht Angaben und Exit-Code durch", () 
   assert.equal(r.status, 0, r.stderr);
   assert.equal(JSON.parse(r.stdout).ampel, "gruen");
 });
+
+// ---------- frischer Vault ----------
+test("frischer Vault: „noch nie gemessen“ und „Suchindex fehlt“ sind in den ersten 7 Tagen keine Warnung — danach schon (sonst steht ein neuer Vault gleich auf Rot)", async () => {
+  const alt = process.env.BRAIN_FRISCH_TAGE;
+  delete process.env.BRAIN_FRISCH_TAGE; // Standard: 7 Tage
+  try {
+    const v = vaultMit();
+    const jetzt = Date.now();
+    const ml = await nur("messlatte", v, { jetzt });
+    assert.deepEqual([ml.stufe, kurzListe(ml), ml.daten.frisch], ["gruen", [], true]);
+    assert.match(ml.text, /Vault ist neu/);
+    const ix = await nur("index", v, { jetzt, haken: { dbPfad: join(v, "fehlt.sqlite") } });
+    assert.deepEqual([ix.stufe, kurzListe(ix), ix.daten.frisch], ["gruen", [], true]);
+    // ganze Gesundheit eines neuen Vaults: Ampel grün, keine Warnung
+    const g = await G.gesundheit(v, { jetzt, haken: { dbPfad: join(v, "fehlt.sqlite"), frageDienst: async () => ({}), istGesperrt: () => false } });
+    assert.equal(g.warnungen, 0, JSON.stringify(g.pruefungen.map((p) => [p.id, p.stufe, p.befunde])));
+    assert.equal(g.ampel, "gruen");
+    // 8 Tage später ist der Vault nicht mehr frisch: dieselben Befunde wie sonst
+    const spaeter = jetzt + 8 * TAG;
+    assert.deepEqual(kurzListe(await nur("messlatte", v, { jetzt: spaeter })), ["Messlatte noch nie gemessen (brain messlatte)"]);
+    const ix2 = await nur("index", v, { jetzt: spaeter, haken: { dbPfad: join(v, "fehlt.sqlite") } });
+    assert.deepEqual([ix2.stufe, kurzListe(ix2)], ["rot", ["Suchindex fehlt (brain refresh)"]]);
+    // der Schonraum lässt sich abschalten (Testhaken und Umgebung)
+    assert.equal((await nur("messlatte", v, { jetzt, haken: { frischTage: 0 } })).stufe, "gelb");
+    process.env.BRAIN_FRISCH_TAGE = "0";
+    assert.equal((await nur("index", v, { jetzt, haken: { dbPfad: join(v, "fehlt.sqlite") } })).stufe, "rot");
+  } finally { process.env.BRAIN_FRISCH_TAGE = alt === undefined ? "0" : alt; }
+});

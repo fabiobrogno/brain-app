@@ -235,6 +235,54 @@ private func lauf(_ v: VorschauModus, _ programm: String, _ args: [String], home
     #expect(r2.code == 97)
 }
 
+// MARK: Frag deinen Vault (claude -p …)
+
+/// Argumente wie `werkstatt/frage.mjs` sie baut: `-p`, stream-json und der MCP-Eintrag mit `"--vault","<pfad>"`.
+private func fragArgumente(vault: String) -> [String] {
+    let konfig = "{\"mcpServers\":{\"brain\":{\"type\":\"stdio\",\"command\":\"node\",\"args\":[\"mcp.mjs\",\"--konto\",\"k\",\"--vault\",\"\(vault)\",\"--nur-lesen\"]}}}"
+    return ["-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--mcp-config", konfig]
+}
+
+private func vorschauVault(_ v: VorschauModus) throws -> URL {
+    let seiten = v.home.appendingPathComponent("vaults/probe/09_wiki/wissen", isDirectory: true)
+    try FileManager.default.createDirectory(at: seiten, withIntermediateDirectories: true)
+    try "# Kaffee\n\nKaffee ist ein Heißgetränk.\n".write(to: seiten.appendingPathComponent("Kaffee.md"), atomically: true, encoding: .utf8)
+    try "# Mühle\n\nEine Mühle mahlt Bohnen.\n".write(to: seiten.appendingPathComponent("Muehle.md"), atomically: true, encoding: .utf8)
+    return v.home.appendingPathComponent("vaults/probe", isDirectory: true)
+}
+
+@Test func claudePlatzhalterBeantwortetFragMitGekennzeichneterBeispielantwort() async throws {
+    let v = vorschau(mitKi: true)
+    try v.vorbereiten()
+    let vault = try vorschauVault(v)
+    let r = try await lauf(v, "claude", fragArgumente(vault: vault.path))
+    #expect(r.code == 0, Comment(rawValue: r.fehler))
+    // jede Zeile ist JSON; am Ende steht ein erfolgreiches Ergebnis mit der Kennzeichnung und zwei echten Seiten des Vaults
+    let zeilen = r.ausgabe.split(separator: "\n").map { try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any] }
+    #expect(!zeilen.isEmpty && zeilen.allSatisfy { $0 != nil })
+    let ergebnis = try #require(zeilen.last.flatMap { $0 })
+    #expect(ergebnis["type"] as? String == "result" && ergebnis["is_error"] as? Bool == false)
+    let text = try #require(ergebnis["result"] as? String)
+    #expect(text.hasPrefix("Vorschau: So würde eine Antwort aussehen"))
+    #expect(text.contains("[[09_wiki/wissen/Kaffee.md]]") && text.contains("[[09_wiki/wissen/Muehle.md]]"))
+    #expect(zeilen.contains { ($0?["type"] as? String) == "stream_event" })
+}
+
+@Test func claudePlatzhalterFragVerweigertFremdenVaultUndFehlendeVariable() async throws {
+    let v = vorschau(mitKi: true)
+    try v.vorbereiten()
+    let fremd = tempOrdner("fremder-vault")
+    try "# Geheim\n".write(to: fremd.appendingPathComponent("geheim.md"), atomically: true, encoding: .utf8)
+    let r = try await lauf(v, "claude", fragArgumente(vault: fremd.path))
+    #expect(r.code == 97)
+    #expect(!r.ausgabe.contains("geheim"), "nichts aus einem Vault außerhalb des Vorschau-Ordners")
+    // ohne KORTEX_VORSCHAU greift der Schutz schon vor dem Frag-Zweig (das war der Fehler, solange die Werkstatt die Variable nicht weitergab)
+    var env = v.kindVorgaben
+    env["KORTEX_VORSCHAU"] = nil
+    let ohne = try await ProzessLauf.starte(v.bin.appendingPathComponent("claude"), fragArgumente(vault: try vorschauVault(v).path), umgebung: env, zeitlimit: .seconds(10))
+    #expect(ohne.code == 97 && ohne.fehler.contains("KORTEX_VORSCHAU fehlt"))
+}
+
 // MARK: git
 
 @Test func ohneGitMeldetFehltUndInstalliertNie() async {

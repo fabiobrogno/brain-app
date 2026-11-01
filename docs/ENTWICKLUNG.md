@@ -95,6 +95,9 @@ Ein Befehl zeigt Kortex so, wie es jemand sieht, der es gerade installiert hat �
 
 - `--ohne-git`: git gilt als nicht installiert; „installieren“ zeigt nur einen Hinweis, `xcode-select --install` läuft nie.
 - `--mit-ki`: Platzhalter für Claude Code, Codex und Cursor im Vorschau-PATH; „KI verbinden“ schreibt nur in die Vorschau.
+  „Frag deinen Vault“ bekommt vom `claude`-Platzhalter eine gekennzeichnete Beispielantwort („Vorschau: So würde eine Antwort aussehen …") mit zwei echten Seiten des Vorschau-Vaults;
+  dafür gibt die Werkstatt `KORTEX_VORSCHAU` (nur diese Variable, nur wenn die Marke `.kortex-vorschau` im Ordner liegt und HOME darin) an den Frag-Prozess weiter. Scheitert die Frage dort trotzdem,
+  steht „In der Vorschau antwortet ein Platzhalter statt Claude Code“ statt eines internen Fehlers da.
 - `--neu-bauen`: Build erzwingen (sonst wird nur gebaut, wenn `build/Kortex.app` fehlt oder der Quelltext neuer ist). Weitere Schalter gehen an die App.
 
 Das Skript legt `$TMPDIR/kortex-vorschau-XXXX` an, startet eine Kopie der App unter eigener Kennung `io.github.fbrogno.brain.vorschau`
@@ -112,7 +115,7 @@ Was umgeleitet ist (`VorschauModus`, Swift; `KORTEX_VORSCHAU`, Node):
 - Fail-closed: ungültiger Ordner, HOME nicht umgelenkt oder echte Bundle-ID → die App beendet sich (Exit 2), die Werkstatt ebenso.
 
 Tests: `swift test --filter Vorschau` (Pfade, Umgebung, Platzhalter, Ende-zu-Ende mit echter Werkstatt und einem zweiten Temp-Ordner als
-„echtes“ HOME), `Tests/Node/vorschau.test.mjs`, `scripts/teste-vorschau.sh` (Skript, Signale, Aufräumen) und
+„echtes“ HOME), `Tests/Node/vorschau.test.mjs`, `Tests/Node/vorschau-frage.test.mjs`, `Tests/Oberflaeche/vorschau-frage.spec.mjs`, `scripts/teste-vorschau.sh` (Skript, Signale, Aufräumen) und
 `scripts/teste-vorschau.sh --app` (echte App; prüft nur lesend, dass im echten Benutzerordner nichts neu oder anders ist).
 Wer weitere Orte einführt (neue Ordner unter `~`, Keychain, LaunchAgents), muss sie hier umlenken oder in der Vorschau abschalten.
 

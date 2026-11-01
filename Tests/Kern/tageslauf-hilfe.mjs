@@ -20,7 +20,8 @@ const ohneGit = () => Object.fromEntries(Object.entries(process.env).filter(([k]
 export function isoliere() {
   const home = tempOrdner("home");
   for (const k of Object.keys(process.env)) if (/^(GIT_|BRAIN_|FAKE_CLAUDE_)/.test(k)) delete process.env[k];
-  Object.assign(process.env, { HOME: home, USERPROFILE: home, BRAIN_TAGESLAUF_CACHE: tempOrdner("caches") });
+  // BRAIN_FRISCH_TAGE=0: Test-Vaults sind Sekunden alt, die Gesundheit soll hier trotzdem „noch nie gemessen“ und „Suchindex fehlt“ melden (der Schonraum für neue Vaults hat eigene Tests)
+  Object.assign(process.env, { HOME: home, USERPROFILE: home, BRAIN_TAGESLAUF_CACHE: tempOrdner("caches"), BRAIN_FRISCH_TAGE: "0" });
   return home;
 }
 export const git = (cwd, ...a) => execFileSync("git", ["-C", cwd, ...a], { encoding: "utf8", env: ohneGit(), stdio: ["ignore", "pipe", "pipe"] }).trim();

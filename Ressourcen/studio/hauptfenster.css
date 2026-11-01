@@ -95,14 +95,22 @@
 .info-kopf h2 { font-size: 13px; font-weight: 650; }
 
 /* ---------- Statusleiste ---------- */
-.status { gap: 2px; }
+.status { gap: 0; }
 .st[data-st="vault"] { color: var(--text-3); font-family: var(--mono); font-size: 11px; }
 .st[data-st="vault"] > .sym { display: none; }
 .st[data-st="woerter"], .st[data-st="format"] { cursor: default; }
 /* Platz für das Kontingent (P7): ein dauerhafter Knoten, der die Konto-Leiste (kontingent.js) trägt; er selbst nimmt keinen Platz ein */
 .st-slot { display: contents; }
-@container status (max-width: 1180px) { .st[data-st="format"] { display: none; } }
-@container status (max-width: 1099px) { .st[data-st="woerter"], .st[data-st="vault"] { display: none; } }
+/* Die Leiste läuft über die ganze Fensterbreite und hat dennoch nur Platz für gut 1400 px Inhalt (Sicherung, Änderungen, Verlauf, Zweig, Remote, Version, Konto mit Kontingent, Wörter, Format,
+   Gesundheit, Nutzung, Thema, Einstellungen). Darum fallen die unwichtigsten Teile GANZ weg, bevor etwas mit „…“ gekürzt wird — nach Rang, von unten: Format, Version, Wörter (bis 1280 px bleibt alles
+   Übrige ungekürzt lesbar); ab 1280 px verlieren dann KI-Nutzung, Verlauf und Gesundheit ihre Beschriftung (Symbol und Tooltip bleiben). Die Grenzen haben ~80 px Luft, weil Schriften auf jedem Rechner
+   etwas anders messen. Das „…“ der mittleren Teile (kontingent.css) bleibt nur noch als letzte Sicherung. Tests: Tests/Oberflaeche/statusleiste.spec.mjs. */
+@container status (max-width: 1519px) { .st[data-st="format"] { display: none; } }
+@container status (max-width: 1399px) { .st[data-st="version"] { display: none; } }
+@container status (max-width: 1349px) { .st[data-st="woerter"] { display: none; } }
+@container status (max-width: 1279px) { .st[data-st="nutzung"] > span { display: none; } }
+@container status (max-width: 1239px) { .st[data-st="verlauf"] > span, .st[data-st="gesundheit"] > span:first-of-type:not(:last-child) { display: none; } }
+@container status (max-width: 1099px) { .st[data-st="vault"] { display: none; } }
 
 /* ---------- Befehlspalette (⌘K): Symbole, Tasten als Chips, Esc im Feld, Fußzeile mit den Tasten (Prototyp a5) ---------- */
 .palette .bs-feld { position: relative; padding-right: 56px; }
