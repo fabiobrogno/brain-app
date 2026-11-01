@@ -8,6 +8,7 @@ import BrainCore
 final class AppZustand: ObservableObject {
     @Published private(set) var anzeige = StatusAnzeige.fuer(nil, fehler: "Wird gestartet …")
     @Published private(set) var status: BrainStatus?
+    @Published private(set) var zufuehrungen: ZufuehrungsStatus?
     @Published private(set) var vault: URL?
     @Published private(set) var brauchtEinrichtung = false
 
@@ -77,6 +78,7 @@ final class AppZustand: ObservableObject {
         let pruefung = VaultAuswahl.pruefe(ordner)
         guard pruefung == .ok else {
             vault = nil
+            zufuehrungen = nil
             status = nil
             anzeige = .problem(VaultAuswahl.meldung(pruefung) ?? "Brain-Ordner nicht gefunden")
             zeigeEinrichtung()
@@ -98,6 +100,7 @@ final class AppZustand: ObservableObject {
         let lauf = statusLauf
         guard VaultAuswahl.pruefe(vault) == .ok else {
             status = nil
+            zufuehrungen = nil
             anzeige = .problem("Brain-Ordner nicht gefunden")
             return
         }
@@ -105,12 +108,14 @@ final class AppZustand: ObservableObject {
             let s = try await BrainBefehl(node: node, vault: vault, umgebung: umgebung).status()
             guard lauf == statusLauf, self.vault == vault else { return }
             status = s
-            anzeige = .fuer(s)
+            zufuehrungen = ZufuehrungsStatus.lade(vault: vault)
+            anzeige = .fuer(s, zufuehrungen: zufuehrungen)
             log.schreibe("status \(s.zustand.rawValue)")
         } catch {
             guard lauf == statusLauf, self.vault == vault else { return }
             status = nil
-            anzeige = .fuer(nil, fehler: "Status gerade nicht abrufbar")
+            zufuehrungen = ZufuehrungsStatus.lade(vault: vault)
+            anzeige = .fuer(nil, fehler: "Status gerade nicht abrufbar", zufuehrungen: zufuehrungen)
             log.schreibe("status-fehler \(error)")
         }
     }

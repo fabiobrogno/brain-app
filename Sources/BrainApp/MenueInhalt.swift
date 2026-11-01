@@ -10,6 +10,9 @@ struct MenueInhalt: View {
         if let z = zustand.status?.zahlen {
             Text("Vorschläge \(z.vorschlaege) · Konflikte \(z.konflikte) · abgelaufen \(z.abgelaufen)")
         }
+        if let probleme = zustand.zufuehrungen?.probleme, !probleme.isEmpty {
+            ForEach(Array(probleme.enumerated()), id: \.offset) { Text("⚠ \($0.element.grund)") }
+        }
         if zustand.status?.quellVault == true {
             Text("Entwickler-Brain — keine Kit-Updates")
         }

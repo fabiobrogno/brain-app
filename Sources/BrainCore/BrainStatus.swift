@@ -41,6 +41,15 @@ public struct StatusAnzeige: Equatable, Sendable {
         StatusAnzeige(symbol: "xmark.octagon", zeichen: "✕", titel: text)
     }
 
+    /// Mit Zuführungs-Wächter: Steht eine Quelle still, wird aus „alles in Ordnung“ ein ⚠ mit Grund.
+    /// Andere Zustände (Hinweis, Problem, unbekannt) bleiben, wie sie sind — die Quellen stehen dann im Menü.
+    public static func fuer(_ status: BrainStatus?, fehler: String? = nil, zufuehrungen: ZufuehrungsStatus?) -> StatusAnzeige {
+        let basis = fuer(status, fehler: fehler)
+        guard status?.zustand == .ok, let probleme = zufuehrungen?.probleme, let erstes = probleme.first else { return basis }
+        let titel = probleme.count == 1 ? erstes.grund : "\(probleme.count) Zuführungen stehen still: \(erstes.grund) …"
+        return StatusAnzeige(symbol: "exclamationmark.triangle", zeichen: "⚠", titel: titel)
+    }
+
     public static func fuer(_ status: BrainStatus?, fehler: String? = nil) -> StatusAnzeige {
         guard let s = status else {
             return StatusAnzeige(symbol: "questionmark.circle", zeichen: "?", titel: fehler ?? "Status unbekannt")
