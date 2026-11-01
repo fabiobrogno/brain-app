@@ -21,7 +21,7 @@ const VARIANTEN = {
 let server;
 test.afterEach(() => { server?.stopp(); server = null; });
 
-async function starte(page, { remote, werte, breite, warnungen = 0 }) {
+async function starte(page, { remote, werte, breite, warnungen = 0, tafeln = true }) {
   let { vault } = baueVault({ mitRemote: remote });
   vault = realpathSync(vault);
   server = await starteServer(vault);
@@ -33,9 +33,11 @@ async function starte(page, { remote, werte, breite, warnungen = 0 }) {
   await page.goto(server.url + "?pfad=" + encodeURIComponent("10_notizen/Reise nach Lissabon.md"));
   await page.waitForSelector("#app:not([hidden])");
   await page.waitForFunction(() => window.__studioBereit === true);
-  await page.click("#knopf-frage");
-  await expect(page.locator('[data-frage="panel"]')).toBeVisible();
-  await page.click("#knopf-info");
+  if (tafeln) { // Frag-Panel, dann Infospalte (wie in der Vorschau); die Leiste läuft über die ganze Fensterbreite und hängt von beiden nicht ab
+    await page.click("#knopf-frage");
+    await expect(page.locator('[data-frage="panel"]')).toBeVisible();
+    await page.click("#knopf-info");
+  }
   await page.waitForTimeout(500);
 }
 
@@ -87,7 +89,7 @@ test("Statusleiste: Warnungen der Gesundheit stehen als Zahl in der Leiste und l
 });
 
 test("Statusleiste 1100 px: nichts ragt über den Rand, das Zahnrad bleibt im Fenster; die Beschriftungen fallen nach Rang weg", async ({ page }) => {
-  await starte(page, { ...VARIANTEN["frische Vorschau (kein Remote, Kontingent nicht eingerichtet)"], breite: 1100 });
+  await starte(page, { ...VARIANTEN["frische Vorschau (kein Remote, Kontingent nicht eingerichtet)"], breite: 1100, tafeln: false });
   expect(await ueberlauf(page)).toEqual({ scroll: 0, doc: 0 });
   await expect(page.locator('.status [data-st="einstellungen"]')).toBeInViewport();
   for (const st of ["sync", "geaendert", "verlauf", "zweig", "remote", "gesundheit", "nutzung"]) expect(await sichtbar(page, st), st).toBe(true);
