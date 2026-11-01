@@ -49,6 +49,21 @@ export function vorschauFehler() {
   return null;
 }
 
+// Gehört `env` zu einer laufenden Vorschau? Nur wenn ALLES stimmt: KORTEX_VORSCHAU ist ein gültiger Ordnerpfad, der Ordner trägt die Marke
+// `.kortex-vorschau` (die scripts/vorschau.sh anlegt) und `home` liegt genau darin (<ordner>/home). → der Vorschau-Ordner oder null.
+// Wer diese Prüfung besteht, darf KORTEX_VORSCHAU an Kindprozesse weitergeben (die Platzhalter der KI-Programme verlangen sie). In der echten App
+// ist die Variable nie gesetzt: dort kommt immer null heraus.
+export function vorschauOrdnerAus(env, home) {
+  const v = env && typeof env.KORTEX_VORSCHAU === "string" ? env.KORTEX_VORSCHAU : null;
+  if (!v || !VORSCHAU_PFAD.test(v) || v.endsWith("/") || v.split("/").includes("..") || typeof home !== "string" || !home) return null;
+  try {
+    if (!existsSync(join(v, ".kortex-vorschau"))) return null;
+    const soll = join(v, "home");
+    if (home !== soll && realpathSync(home) !== realpathSync(soll)) return null;
+  } catch { return null; }
+  return v;
+}
+
 // Vergleichsform für Namen: APFS unterscheidet weder Groß/klein noch NFC/NFD — Sperren und Schreibschutz dürfen es auch nicht.
 export const falte = (s) => String(s).normalize("NFC").toLowerCase();
 

@@ -13,6 +13,7 @@ private let repoWurzel = URL(fileURLWithPath: #filePath).deletingLastPathCompone
 private let betriebsNamen: [String: String] = [
     "BRAIN_VAULT": "setzt die App für Kindprozesse (fuerKind)",
     "BRAIN_APP_SUPPORT": "setzt die App für Kindprozesse (Support-Ordner)",
+    "BRAIN_FRISCH_TAGE": "Schonraum der Gesundheit für neue Vaults in Tagen (Standard 7, 0 = aus); ohne Wirkung auf Schutz oder Ablauf der Dateien",
     "BRAIN_ERNTE": "Marke gegen Selbstaufruf der Ernte; muss im Betrieb durchgereicht werden",
     "BRAIN_NODE": "stabiler Node-Pfad für den Hintergrunddienst",
     "BRAIN_MCP_NODE": "stabiler Node-Pfad für neue MCP-Einträge (setzt die App)",

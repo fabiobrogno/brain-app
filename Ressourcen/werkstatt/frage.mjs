@@ -14,7 +14,7 @@ import { mkdtempSync, rmSync, realpathSync, lstatSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, delimiter, sep } from "node:path";
 import { randomBytes } from "node:crypto";
-import { HttpFehler, bereinigterPfad } from "../gemeinsam/basis.mjs";
+import { HttpFehler, bereinigterPfad, vorschauOrdnerAus } from "../gemeinsam/basis.mjs";
 import { starteStrom } from "../gemeinsam/prozess.mjs";
 import { findeProgramm } from "../gemeinsam/ki.mjs";
 import { stufeFuer, darfMindestens, kontoStufe } from "../gemeinsam/ki-konten.mjs";
@@ -85,6 +85,9 @@ export function baueFrageUmgebung({ basis, home, claudePfad, konto }) {
   if (basis.TMPDIR) e.TMPDIR = basis.TMPDIR;
   if (basis.NODE_EXTRA_CA_CERTS) e.NODE_EXTRA_CA_CERTS = basis.NODE_EXTRA_CA_CERTS; // Firmen-Zertifikate bleiben (wie kindUmgebung)
   if (basis.BRAIN_TESTMODUS === "1") e.BRAIN_TESTMODUS = "1";
+  // Nur in der Vorschau (Marke im Ordner, HOME darin) und nur diese eine Variable: die Platzhalter der KI-Programme verlangen sie, sonst verweigern sie die Arbeit.
+  const vorschau = vorschauOrdnerAus(basis, home);
+  if (vorschau) e.KORTEX_VORSCHAU = vorschau;
   return mitProfil(e, { pfad: konto.ordner, standard: konto.standard === true });
 }
 
@@ -102,6 +105,8 @@ const ABBRUCH_TEXT = {
   zeile: "Die Ausgabe wurde zu groß und die Frage deshalb abgebrochen.",
   ende: "Abgebrochen, weil Kortex beendet wird.",
 };
+// In der Vorschau antwortet ein Platzhalter statt Claude Code: scheitert die Frage dort, ist das kein Fehler der App.
+export const VORSCHAU_FRAGE_TEXT = "In der Vorschau antwortet ein Platzhalter statt Claude Code, darum klappt diese Frage hier nicht. In der installierten App antwortet Claude Code richtig.";
 const SUBTYP_TEXT = {
   error_max_turns: "Die Frage war zu umfangreich – frage genauer. Die KI hat das Limit an Arbeitsschritten erreicht; was sie bis dahin geschrieben hat, steht oben.",
   error_max_budget_usd: "Die Frage war zu umfangreich – frage genauer. Das Kostenlimit für eine einzelne Frage ist erreicht; was die KI bis dahin geschrieben hat, steht oben.",
@@ -278,6 +283,8 @@ export function erzeugeFrage({ support, konten, mcpBasis, basisEnv = process.env
     clearInterval(run.wache);
     try { rmSync(run.temp, { recursive: true, force: true }); } catch { /* bleibt im Temp-Ordner liegen */ }
     run.ergebnis = ergebnisAus(run, ende);
+    // Vorschau: ein gescheiterter Lauf (der Platzhalter kann nicht alles) ist verständlich erklärt, kein interner Fehler. Abbrüche des Nutzers und Grenzen bleiben, wie sie sind.
+    if (!run.ergebnis.ok && !run.ergebnis.abgebrochen && vorschauOrdnerAus(basisEnv, run.home)) run.ergebnis = { ...run.ergebnis, fehler: VORSCHAU_FRAGE_TEXT, vorschau: true };
     if (run.ergebnis.ok && run.ergebnis.text) { run.antwort = run.ergebnis.text; run.epoche++; }
     if (run.ergebnis.ok) { // Verweise der fertigen Antwort als Quellen führen
       for (const t of verweiseVon(run).ziele) quelle(run, t, "genannt");
@@ -332,7 +339,7 @@ export function erzeugeFrage({ support, konten, mcpBasis, basisEnv = process.env
         ...(env.BRAIN_TESTMODUS ? { BRAIN_TESTMODUS: "1" } : {}) };
       const mcpKonfig = { mcpServers: { [MCP_NAME]: { type: "stdio", command: basis[0], args: [...basis.slice(1), "--konto", e.konto, "--vault", v.wurzel, "--nur-lesen"], env: mcpEnv } } };
 
-      const run = { id: randomBytes(16).toString("hex"), v, vault: v.wurzel, konto: e.konto, kontoName: konto.name, modell, temp, start: Date.now(), letzterAbruf: Date.now(), endet: false,
+      const run = { id: randomBytes(16).toString("hex"), v, home: h, vault: v.wurzel, konto: e.konto, kontoName: konto.name, modell, temp, start: Date.now(), letzterAbruf: Date.now(), endet: false,
         ereignisse: [], zaehler: 0, verworfen: 0, antwort: "", epoche: 0, gekuerzt: false, nachrichtId: null, mitWerkzeug: false, deltaGesehen: false, abgelehnt: 0,
         werkzeuge: new Map(), quellen: new Map(), baum: null, resultat: null, fertig: false, ergebnis: null, warter: new Set(), stopp: () => {}, wache: null };
       const lauf = starteStrom(claude, baueClaudeArgs({ modell, mcpKonfig, grenzen: G }), { cwd: temp, env, stdin: frage, frist: G.frist, maxBytes: G.ausgabe, maxZeile: G.zeile, onZeile: (z) => verarbeite(run, z) });

@@ -39,6 +39,7 @@ export const DOPPEL_MS = 3000;                  // gleiche sid+len binnen dieser
 export const VERWAIST_ANTEIL = 0.5;             // mehr verwaiste Vektoren → Warnung
 export const INDEX_VERZUG_MS = 24 * STUNDE;     // Index älter als neueste Wiki-Änderung + das → Warnung
 export const MESSLATTE_MAX_ALTER_TAGE = 7;      // letzter Messlatte-Lauf älter → Warnung
+export const FRISCH_TAGE = 7;                   // so jung ist ein Vault „frisch angelegt“: was er noch nie hatte (Messung, Suchindex), ist dann keine Warnung
 export const STAND_MAX_ALTER_MS = 3 * TAG;      // Stand der Gesundheit älter (bei laufendem Tageslauf) → die Startzeile sagt es
 const SYMBOL = { gruen: "🟢", gelb: "🟡", rot: "🔴" };
 const WORT = { gruen: "grün", gelb: "gelb", rot: "rot" };
@@ -57,6 +58,23 @@ const tageZwischen = (vonTag, bisTag) => Math.round((Date.parse(`${bisTag}T00:00
 const sauber = (t) => (findeSecrets(t).length ? "(Text mit möglichen Zugangsdaten entfernt)" : t);
 const befund = (stufe, text) => ({ stufe, kurz: text });
 const schlimmste = (befunde) => befunde.reduce((s, b) => (RANG[b.stufe] > RANG[s] ? b.stufe : s), "gruen");
+// Ist der Vault frisch angelegt (jünger als FRISCH_TAGE)? Maßstab: Anlegezeit der brain.config.json (sonst des Vault-Ordners). Ein neuer Vault hat noch keine Messung und keinen
+// Suchindex — das ist kein Fehler und darf die Gesundheit nicht gleich beim ersten Öffnen auf Rot oder Gelb stellen. Fehlt jede Angabe, gilt er als nicht frisch (lieber warnen).
+// `BRAIN_FRISCH_TAGE` (Tage, 0 = nie frisch) und der Testhaken `frischTage` überschreiben den Standard.
+export function vaultFrisch(k) {
+  const eingestellt = k.haken?.frischTage ?? process.env.BRAIN_FRISCH_TAGE;
+  const tage = eingestellt === undefined || eingestellt === "" || !Number.isFinite(Number(eingestellt)) ? FRISCH_TAGE : Number(eingestellt);
+  if (tage <= 0) return false;
+  for (const pfad of [join(k.vault, "brain.config.json"), k.vault]) {
+    try {
+      const st = statSync(pfad);
+      const angelegt = st.birthtimeMs > 0 ? st.birthtimeMs : st.mtimeMs;
+      return k.jetzt - angelegt < tage * TAG;
+    } catch { /* nächster Versuch */ }
+  }
+  return false;
+}
+
 // Ergebnis einer Prüfung: text = eine Zeile für den Bericht, befunde = die Warnungen (leer = grün), daten = Zahlen zum Weiterverwenden.
 const ergebnis = (text, befunde = [], daten = {}) => ({ text: kurz(text, 400), befunde, stufe: schlimmste(befunde), daten });
 
@@ -93,6 +111,7 @@ async function pruefeMesslatte(k) {
   const verlauf = leseMesslatte(k.vault);
   const l = verlauf.at(-1);
   if (!l) {
+    if (takt !== "aus" && vaultFrisch(k)) return ergebnis("noch keine Messung — der Vault ist neu, die erste folgt von selbst", [], { ...daten, frisch: true });
     if (takt !== "aus") befunde.push(befund("gelb", "Messlatte noch nie gemessen (brain messlatte)"));
     return ergebnis(takt === "aus" ? "Takt aus, noch keine Messung" : "noch keine Messung vorhanden", befunde, daten);
   }
@@ -236,6 +255,7 @@ async function pruefeIndex(k) {
   const profil = k.cfg.suche?.profil || "leicht";
   if (profil === "minimal") return ergebnis("Suchprofil „minimal“ — es gibt keinen Vektorindex");
   const dbPfad = k.haken.dbPfad || process.env.QMD_DB || join(homedir(), ".cache", "qmd", "index.sqlite");
+  if (!existsSync(dbPfad) && vaultFrisch(k)) return ergebnis("noch kein Suchindex — der Vault ist neu; „brain refresh“ baut ihn", [], { frisch: true });
   if (!existsSync(dbPfad)) return ergebnis(`${dbPfad} fehlt — „brain refresh“ baut ihn neu`, [befund("rot", "Suchindex fehlt (brain refresh)")]);
   const db = await oeffneNurLesend(dbPfad, k.haken);
   let docs, vek, verw, dokMax;
