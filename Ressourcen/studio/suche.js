@@ -64,7 +64,7 @@ export function chipLeiste(facetten, filter, aufWahl) {
 // Text → Eingabe mit gesetztem/entferntem Filter. roh = Wortlaut des bisherigen Filters aus der Antwort (damit genau er verschwindet).
 export function mitFilter(eingabe, bisherige, schluessel, wert) {
   let t = String(eingabe);
-  for (const f of bisherige || []) if (f.schluessel === schluessel && !f.neg && f.roh) t = t.replace(f.roh, " ");
+  for (const f of bisherige || []) if (f.schluessel === schluessel && !f.neg && f.roh) t = t.replace(new RegExp("(^|\\s)" + f.roh.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?=\\s|$)"), "$1 "); // nur das ganze Wort, nicht „xtyp:a“
   t = t.replace(/\s+/g, " ").trim();
   if (wert) t = (t + " " + schluessel + ":" + (/\s/.test(wert) ? `"${wert}"` : wert)).trim();
   return t;

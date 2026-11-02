@@ -19,8 +19,8 @@
 //   Je Wort zählt das Beste aus: genau · Wortanfang (Präfix, Faktor 0,6) · Tippfehler (Damerau-Levenshtein 1–2, Faktor 0,35–0,45; nur wenn es wenige Treffer gibt).
 //   Phrasen "…" werden an den Texten der Kandidaten geprüft. Filter: ordner: typ: tag: status: geaendert:<7d. -wort schließt aus.
 //   Antwort: Treffer mit Auszügen (Zeile, Spalte, Markierungen), Gesamtzahl, Seitenweise (offset/limit), Facetten für die Filterchips.
-import { readdirSync, statSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readdirSync, statSync, readFileSync, realpathSync } from "node:fs";
+import { join, relative, sep } from "node:path";
 import { BEARBEITBAR, generiertName, wikiGeneriert, gesperrterName } from "./basis.mjs";
 import { parseKopf, ohneMarkdown } from "./notizen.mjs";
 
@@ -80,7 +80,7 @@ export function parseFrage(roh) {
     const tokens = tokenisiere(text).filter((t) => t.length <= WORT_MAX);
     if (!tokens.length) continue;
     rest.push(m[0]);
-    if (neg) { for (const t of tokens) if (!ausschluss.includes(t)) ausschluss.push(t); continue; }
+    if (neg) { if (m[3] === undefined || tokens.length === 1) for (const t of tokens) if (!ausschluss.includes(t)) ausschluss.push(t); continue; } // -"a b" (Phrase ausschließen) gibt es nicht: nie jede Notiz mit a ODER b ausschließen
     if (m[3] !== undefined && tokens.length > 1) { phrasen.push(tokens); for (const t of tokens) nimm(t, true, true); }
     else for (const t of tokens) nimm(t, false, false);
   }
@@ -143,7 +143,19 @@ function abstand(a, b, max) {
 
 // ───────────────────────────── Eine Datei auswerten ─────────────────────────────
 const FENCE = /^\s{0,3}(`{3,}|~{3,})/;
-const UEBERSCHRIFT = /^(#{1,6})\s+(.+?)\s*#*\s*$/;
+// Überschrift „## Text ##“ → [zeile, "##", "Text"] oder null. Ohne Regex mit Rückverfolgung: eine Zeile mit tausend Leerzeichen darf die Werkstatt nicht festhalten.
+const UEBERSCHRIFT = { exec(z) {
+  if (z.length > 600 || z.charCodeAt(0) !== 35) return null;
+  let n = 0;
+  while (n < z.length && z.charCodeAt(n) === 35) n++;
+  if (n > 6) return null;
+  const c = z.charCodeAt(n);
+  if (c !== 32 && c !== 9) return null;
+  let t = z.slice(n).trim();
+  while (t.endsWith("#")) t = t.slice(0, -1);
+  t = t.trim();
+  return t ? [z, "#".repeat(n), t] : null;
+} };
 const TAG_MUSTER = /(?:^|[\s(,;])#([\p{L}_][\p{L}\p{N}_\/-]*)/gu;
 const erster = (v) => (Array.isArray(v) ? (v[0] ?? "") : (v ?? ""));
 const alsListe = (...vs) => vs.flatMap((v) => (Array.isArray(v) ? v : typeof v === "string" && v ? v.split(",") : [])).map((s) => String(s).trim().replace(/^#/, "")).filter(Boolean);
@@ -297,7 +309,8 @@ const keyVon = (rel) => rel.normalize("NFC");
 export function erzeugeSuchindex(o) {
   const wurzel = o.wurzel;
   const jetztMs = o.jetzt || (() => Date.now());
-  const totSchwelle = o.totSchwelle ?? 25_000;
+  // Tote Einträge verzerren die Wort-Häufigkeiten (df) leicht; ab einem Viertel der Notizen (mindestens 200) baut ein Hintergrundlauf einen frischen Index.
+  const totGrenze = () => o.totSchwelle ?? Math.max(200, Math.floor(z.nLebend * 0.25));
   let z = new Zustand();
   let gestartet = false, fertig = false, abgebrochen = false;
   let bauStart = 0, bauZeit = 0, anteil = 0, entdeckt = 0, letzterAbgleich = 0, neubau = null;
@@ -404,17 +417,18 @@ export function erzeugeSuchindex(o) {
     if (!gestartet) return;
     if (!fertig || neubau) { nochAbgleich = true; return; }
     letzterAbgleich = jetztMs();
-    if (abgleichOffen) return;
+    if (abgleichOffen) { nochAbgleich = true; return; } // genau ein weiterer folgt, sobald der laufende fertig ist
     abgleichOffen = true;
     const zz = z;
     einreihen(abgleichen(zz, false), () => { abgleichOffen = false; if (z === zz) pruefeTot(); nochmalPruefen(); });
   }
   // Zu viele tote Notizen: frischen Index im Hintergrund bauen und tauschen (Suchen läuft währenddessen auf dem alten weiter)
   function pruefeTot() {
-    if (neubau || !(z.tot >= totSchwelle || (z.tot > 50 && z.tot > z.nLebend) || z.docs.length > ID_MAX * 0.8)) return;
+    if (neubau || !(z.tot >= totGrenze() || z.docs.length > ID_MAX * 0.8)) return;
     const frisch = new Zustand();
     neubau = frisch;
-    einreihen(abgleichen(frisch, true), (fehler) => { if (!fehler) z = frisch; neubau = null; nochmalPruefen(); });
+    // Was sich während des Neubaus ändert, hat der frische Index vielleicht schon (alt) gelesen: nach dem Tausch folgt ein Abgleich
+    einreihen(abgleichen(frisch, true), (fehler) => { const gebaut = neubau === frisch; if (gebaut && !fehler) { z = frisch; nochAbgleich = true; } if (gebaut) neubau = null; nochmalPruefen(); });
   }
 
   // Einzelne Dateien neu lesen (eigene Schreibvorgänge, Live-Ereignisse)
@@ -438,12 +452,19 @@ export function erzeugeSuchindex(o) {
   function aktualisiereDatei(rel, zz = z) {
     const key = keyVon(rel);
     const nr = zz.nachKey.get(key);
-    const echt = nr !== undefined ? zz.docs[nr].rel : rel;
-    if (!pfadOk(echt)) { zz.entferne(key); return; }
-    let st; try { st = statSync(join(wurzel, echt)); if (!st.isFile()) throw 0; } catch { zz.entferne(key); return; }
-    if (st.size > MAX_BYTES) { zz.entferne(key); return; }
+    const bekannt = nr !== undefined ? zz.docs[nr].rel : rel;
+    const weg = () => { zz.entferne(key); if (bekannt !== rel) zz.entferne(keyVon(bekannt)); };
+    if (!pfadOk(rel)) { weg(); return; }
+    // Die Datei muss wirklich hier im Vault liegen: kein Verweis (Symlink) aus dem Vault heraus oder auf eine andere Datei (auch nicht über einen Elternordner).
+    // realpath liefert zugleich die Schreibweise auf der Platte (Groß/klein, APFS): so gibt es eine Datei nie doppelt.
+    let echtAbs, st;
+    try { echtAbs = realpathSync.native(join(wurzel, rel)); st = statSync(echtAbs); if (!st.isFile()) throw 0; } catch { weg(); return; }
+    const echt = relative(wurzel, echtAbs).split(sep).join("/");
+    if (!echt || echt.startsWith("..") || echt.normalize("NFC").toLowerCase() !== rel.normalize("NFC").toLowerCase() || !pfadOk(echt)) { weg(); return; }
+    if (st.size > MAX_BYTES) { weg(); zz.entferne(keyVon(echt)); return; }
+    if (echt !== rel) zz.entferne(key);
     indexiere(zz, echt, st);
-    if (zz === z && !neubau && z.tot >= totSchwelle) pruefeTot();
+    if (zz === z && !neubau && z.tot >= totGrenze()) pruefeTot();
   }
 
   // ----- Suche -----
@@ -454,7 +475,7 @@ export function erzeugeSuchindex(o) {
   }
 
   // Alternativen eines Worts: genau · Wortanfang · Tippfehler
-  function erweitere(token, nurGenau) {
+  function erweitere(token, nurGenau, ohneFuzzy = false) {
     const alts = [];
     const exakt = z.vok.get(token);
     let abgedeckt = 0;
@@ -466,7 +487,7 @@ export function erzeugeSuchindex(o) {
       kand.sort((a, b) => z.df[b] - z.df[a]);
       for (const id of kand.slice(0, MAX_PRAEFIX)) { alts.push({ id, gew: GEW_PRAEFIX }); abgedeckt += z.df[id]; }
     }
-    if (L >= 4 && abgedeckt < FUZZY_SCHWELLE && !/\d/.test(token)) {
+    if (L >= 4 && !ohneFuzzy && abgedeckt < FUZZY_SCHWELLE && !/\d/.test(token)) {
       const d = L <= 6 ? 1 : 2, qm = buchstabenMaske(token), n = z.liste.length;
       const gefunden = [];
       for (let id = 0; id < n; id++) {
@@ -533,7 +554,7 @@ export function erzeugeSuchindex(o) {
 
   function sucheEinmal(opt, zweiter = false) {
     const jetzt = opt.jetzt ?? jetztMs();
-    const limit = Math.min(100, Math.max(1, Number.parseInt(opt.limit, 10) || 30));
+    const limit = Math.min(50, Math.max(1, Number.parseInt(opt.limit, 10) || 30));
     const offset = Math.min(2000, Math.max(0, Number.parseInt(opt.offset, 10) || 0));
     const q = parseFrage(opt.q);
     const ff = baueFilter(q.filter, jetzt);
@@ -556,7 +577,7 @@ export function erzeugeSuchindex(o) {
     let pflicht = 0, plainMaske = 0;
     const termInfo = [];
     q.terme.forEach((t, i) => {
-      const alts = erweitere(t.token, t.pflicht);
+      const alts = erweitere(t.token, t.pflicht, i >= 4); // Tippfehler-Suche (läuft über das ganze Wörterbuch) nur für die ersten vier Wörter
       termInfo.push({ t, alts });
       if (t.pflicht) pflicht |= 1 << i; else { plainMaske |= 1 << i; plain.push(i); }
     });
@@ -652,9 +673,10 @@ export function erzeugeSuchindex(o) {
       const bis = performance.now() + PRUEF_MS; // eine Phrase mit lauter häufigen Wörtern darf die Werkstatt nicht lange festhalten
       for (const d of sortiert) {
         if (auswahl.length >= offset + limit + 1 && geprueft >= 40) { offenBleibt = true; break; }
-        if (geprueft >= PRUEF_MAX || (geprueft >= 20 && performance.now() > bis)) { offenBleibt = true; break; }
+        if (geprueft >= PRUEF_MAX || (geprueft >= 5 && performance.now() > bis)) { offenBleibt = true; break; }
         geprueft++;
         let text; try { text = readFileSync(join(wurzel, docs[d].rel), "utf8"); } catch { continue; }
+        if (text.length > AUSZUG_MAX) text = text.slice(0, AUSZUG_MAX);
         if (phrasenF.every((p) => enthaeltPhrase(text, p))) auswahl.push(d);
       }
       gesamt = auswahl.length; gesamtGenau = !offenBleibt;
@@ -802,6 +824,13 @@ export function erzeugeSuchindex(o) {
     return suche(opt);
   }
 
+  // Der Vault wird gewechselt: laufende Arbeit stoppen und den Speicher freigeben (ein späteres Suchen baut neu auf)
+  function beende() {
+    aufgaben.length = 0; laeuft = null; schmutzig.clear();
+    gestartet = false; fertig = false; abgleichOffen = false; leerenGeplant = false; nochAbgleich = false; neubau = null;
+    z = new Zustand(); anteil = 0; entdeckt = 0;
+  }
+
   function stand() {
     return { gestartet, fertig, anteil, dokumente: z.nLebend, tot: z.tot, woerter: z.liste.length, bloecke: z.nBloecke, bauMs: Math.round(bauZeit), neubau: !!neubau, laeuft: !!laeuft || aufgaben.length > 0, schmutzig: schmutzig.size };
   }
@@ -809,5 +838,5 @@ export function erzeugeSuchindex(o) {
   function ruhe() {
     return new Promise((ok) => { const pruef = () => (!laeuft && !aufgaben.length && !geplant ? ok() : setTimeout(pruef, 2)); pruef(); });
   }
-  return { starte, suche, sucheWarte, aendere, pruefeNeu, stand, ruhe, istFertig: () => fertig };
+  return { starte, suche, sucheWarte, beende, aendere, pruefeNeu, stand, ruhe, istFertig: () => fertig };
 }

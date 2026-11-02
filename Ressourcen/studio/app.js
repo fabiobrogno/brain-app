@@ -900,7 +900,7 @@ function fuehreSucheAus({ mehr = false } = {}) {
   S.suche.laedt = true;
   api.suche(q, { limit: 30, offset, facetten: true, signal: sucheCtl?.signal }).then((r) => {
     if (nr !== sucheNr || !S.suche.aktiv) return;
-    S.suche.laedt = false; S.suche.fehler = null; S.suche.ergebnis = r;
+    S.suche.laedt = false; S.suche.fehler = null; S.suche.ergebnis = r; S.suche.ergebnisFrage = q;
     S.suche.treffer = mehr ? S.suche.treffer.concat(r.treffer || []) : (r.treffer || []);
     if (!mehr) S.suche.auswahl = 0;
     zeichneSuchergebnisse();
@@ -933,10 +933,10 @@ sucheEl.addEventListener("keydown", (e) => {
     e.preventDefault();
     S.suche.auswahl = (S.suche.auswahl + (e.key === "ArrowDown" ? 1 : n - 1)) % n; zeichneSuchergebnisse();
   } else if (e.key === "Enter") {
-    clearTimeout(sucheTimer);
+    const frage = sucheEl.value.trim();
+    if (frage !== S.suche.ergebnisFrage) { if (frage) { S.suche.frage = frage; fuehreSucheAus(); } return; } // noch nicht entprellt/beantwortet: nie einen Treffer einer älteren Frage öffnen
     const t = S.suche.treffer[S.suche.auswahl];
     if (t) oeffneTreffer(t, t.stellen?.[0] || null);
-    else if (S.suche.frage) fuehreSucheAus();
   }
 });
 function zeichneSuchergebnisse() {

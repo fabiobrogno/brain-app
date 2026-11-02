@@ -679,7 +679,7 @@ export function erstelleEditor(eltern, ctx) {
       const spalte = fund && Number.isFinite(fund.spalte) ? Math.max(0, fund.spalte) : 0;
       const pos = Math.min(start + spalte, start + view.state.doc.lineAt(start).length);
       const effekte = [EditorView.scrollIntoView(pos, { y: "center" })];
-      if (fund && (fund.begriffe?.length || fund.laenge > 0)) effekte.push(fundstellenSetzen.of(fundstellen(view.state, fund.begriffe, fund.laenge > 0 ? { von: pos, bis: pos + fund.laenge, laenge: fund.laenge } : null)));
+      effekte.push(fundstellenSetzen.of(fund && (fund.begriffe?.length || fund.laenge > 0) ? fundstellen(view.state, fund.begriffe, fund.laenge > 0 ? { von: pos, bis: pos + fund.laenge, laenge: fund.laenge } : null) : Decoration.none)); // ohne Suche: alte Markierungen weg
       view.dispatch({ selection: { anchor: pos }, effects: effekte });
       view.focus();
     },

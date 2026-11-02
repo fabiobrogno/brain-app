@@ -140,7 +140,7 @@ test("Seiten: offset/limit, Gesamtzahl, mehr", async () => {
   const c = i.suche({ q: "foo", offset: 60, limit: 30 });
   assert.equal(c.treffer.length, 15); assert.equal(c.mehr, false);
   assert.equal(new Set([...pfade(a), ...pfade(b), ...pfade(c)]).size, 75, "keine Doppelten, nichts fehlt");
-  assert.equal(i.suche({ q: "foo", limit: 500 }).treffer.length, 75 > 100 ? 100 : 75);
+  assert.equal(i.suche({ q: "foo", limit: 500 }).treffer.length, 50, "höchstens 50 je Seite");
 });
 
 test("Auszüge: Zeile, Spalte, Markierungen, Fundstellen, Kopfzeilen zuletzt, Fenster um den Treffer", async () => {
