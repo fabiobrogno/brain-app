@@ -7,7 +7,7 @@ import { liesKurzformen } from "../gemeinsam/kurzformen.mjs";
 import { heuteIso } from "../gemeinsam/zeit.mjs";
 
 export const AUFGABEN_WERKZEUGE = [
-  { name: "brain_aufgabe_anlegen", description: "Legt eine Aufgabe im Aufgaben-Board an (nur bestätigte Vaults). Im Titel gelten Kurzformen: morgen, @freitag, bis 12.11., !hoch.",
+  { name: "brain_aufgabe_anlegen", description: "Legt eine Aufgabe an (bestätigte Vaults). Titel liest: morgen, @freitag, !hoch.",
     inputSchema: { type: "object", properties: { titel: { type: "string" }, text: { type: "string" }, prioritaet: { type: "string", description: "niedrig|normal|hoch" }, faellig: { type: "string", description: "JJJJ-MM-TT" } }, required: ["titel"], additionalProperties: false } },
   { name: "brain_aufgaben", description: "Listet Aufgaben kompakt (Standard: nicht erledigte).",
     inputSchema: { type: "object", properties: { status: { type: "string", description: "offen|in-arbeit|warten|erledigt|alle" } }, additionalProperties: false } },
