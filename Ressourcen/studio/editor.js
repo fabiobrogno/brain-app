@@ -2,6 +2,7 @@
 // Der Text bleibt bytegleich: Zeilenende (CRLF) wird erkannt und beim Lesen wieder zusammengesetzt.
 import * as CM from "./vendor/codemirror.bundle.js";
 import { T } from "./texte.js";
+import { falteText, WORT } from "./suchfalte.js";
 
 const { EditorState, EditorSelection, EditorView, Decoration, ViewPlugin, WidgetType, StateField, StateEffect, GutterMarker, MapMode, gutter, keymap } = CM;
 
@@ -311,6 +312,35 @@ function vorschauPlugin(ctx) {
 }
 const neuZeichnen = StateEffect.define();
 
+// ---------- Fundstellen (Sprung aus der Suche) ----------
+// Nach dem Sprung aus „Im Vault suchen“ oder der Palette sind die gesuchten Wörter in der Notiz hinterlegt (höchstens 300), die angesprungene Stelle kräftiger.
+// Die Markierung gehört zu diesem Öffnen: jede Änderung am Text, ein anderer Sprung ohne Suche oder ein neues Dokument löscht sie.
+const fundstellenSetzen = StateEffect.define(); // Wert = Decoration-Menge
+const fundstellenFeld = StateField.define({
+  create: () => Decoration.none,
+  update(d, tr) {
+    for (const e of tr.effects) if (e.is(fundstellenSetzen)) return e.value;
+    return tr.docChanged ? Decoration.none : d;
+  },
+  provide: (f) => EditorView.decorations.from(f),
+});
+const FUND = Decoration.mark({ class: "cm-fundstelle" }), FUND_JETZT = Decoration.mark({ class: "cm-fundstelle cm-fundstelle-jetzt" });
+function fundstellen(state, begriffe, ziel) {
+  const woerter = new Set((begriffe || []).map(String));
+  const bereiche = [];
+  const text = state.doc.toString();
+  if (woerter.size) {
+    for (const m of text.matchAll(WORT)) {
+      if (woerter.has(falteText(m[0]))) { bereiche.push({ von: m.index, bis: m.index + m[0].length }); if (bereiche.length >= 300) break; }
+    }
+  }
+  if (ziel && ziel.laenge > 0) {
+    const i = bereiche.findIndex((b) => b.von <= ziel.von && b.bis >= ziel.bis);
+    if (i >= 0) bereiche[i].jetzt = true; else { bereiche.push({ von: ziel.von, bis: ziel.bis, jetzt: true }); bereiche.sort((a, b) => a.von - b.von); }
+  }
+  return Decoration.set(bereiche.filter((b) => b.bis > b.von && b.bis <= state.doc.length).map((b) => (b.jetzt ? FUND_JETZT : FUND).range(b.von, b.bis)), true);
+}
+
 // ---------- Prüf-Randmarken ----------
 // Die Signale kommen als Zeilennummern des Backends (Stand beim Öffnen). Sie werden sofort in Positionen (Zeilenanfänge) umgerechnet und
 // von jeder Änderung mitgeführt: Wer oberhalb Zeilen einfügt, schiebt Randmarke und Signal-Absatz mit, statt sie auf eine andere Zeile fallen zu lassen.
@@ -575,6 +605,7 @@ export function erstelleEditor(eltern, ctx) {
     zeilenendeEinfuegen,
     zeilenendeEingabe,
     fmFeld,
+    fundstellenFeld,
     signaleFeld,
     signalRand,
     absatzFeld(ctx),
@@ -640,12 +671,19 @@ export function erstelleEditor(eltern, ctx) {
     },
     zeichneNeu() { view.dispatch({ effects: neuZeichnen.of(null) }); },
     // Liegt die Zeile im Datei-Kopf, klappt er auf (der Cursor ist dann darin, siehe fmFeld): ein Treffer dort soll man sehen
-    springeZu(zeile) {
+    // fund: { spalte, laenge, begriffe } aus der Suche — die Stelle wird angesprungen und samt aller Fundstellen der Notiz markiert
+    springeZu(zeile, fund) {
       const zeilen = dateiZeilen(view.state);
-      const pos = zeilen.start(Math.max(1, Math.min(zeilen.anzahl, zeile)));
-      view.dispatch({ selection: { anchor: pos }, effects: EditorView.scrollIntoView(pos, { y: "center" }) });
+      const z = Math.max(1, Math.min(zeilen.anzahl, zeile));
+      const start = zeilen.start(z);
+      const spalte = fund && Number.isFinite(fund.spalte) ? Math.max(0, fund.spalte) : 0;
+      const pos = Math.min(start + spalte, start + view.state.doc.lineAt(start).length);
+      const effekte = [EditorView.scrollIntoView(pos, { y: "center" })];
+      if (fund && (fund.begriffe?.length || fund.laenge > 0)) effekte.push(fundstellenSetzen.of(fundstellen(view.state, fund.begriffe, fund.laenge > 0 ? { von: pos, bis: pos + fund.laenge, laenge: fund.laenge } : null)));
+      view.dispatch({ selection: { anchor: pos }, effects: effekte });
       view.focus();
     },
+    loescheFundstellen() { view.dispatch({ effects: fundstellenSetzen.of(Decoration.none) }); },
     suchen() { view.focus(); CM.openSearchPanel(view); },
     fokus() { view.focus(); },
     // Rohtext: alle Markierungen sichtbar, Datei-Kopf aufgeklappt (der Text selbst bleibt unverändert)

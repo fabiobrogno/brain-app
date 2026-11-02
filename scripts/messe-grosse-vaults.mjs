@@ -3,6 +3,11 @@
 //   node scripts/messe-grosse-vaults.mjs [Anzahl …]      Standard: 5000 20000
 //   --ohne-repo                                              Vault ohne Git-Repository (Standard: mit Repository, wie bei echten Vaults)
 //   --json                                                  Ergebnis als JSON statt Markdown-Tabelle
+//   --ui [--alt <Ordner>]                                  zusätzlich ⌘K je Taste im Browser (Playwright aus Tests/Oberflaeche/node_modules, Chromium aus dem Playwright-Cache);
+//                                                           --alt = Ordner einer älteren Fassung (mit Ressourcen/werkstatt und studio) für den Vorher-Wert
+//   --ohne-volltext                                        die Volltext-Messung (Index der Werkstatt) auslassen
+// Volltext (Suchindex): „vorher“ = bisherige suche() (liest bei jeder Anfrage alle Dateien, blockiert die Werkstatt); „nachher“ = Index im Speicher über /api/suche.
+//   Abnahme bei 20.000 Notizen: Volltext p95 < 100 ms · ⌘K-Anfrage (Inhalt) p95 < 50 ms · ⌘K je Taste im Browser < 50 ms · der Aufbau blockiert nie (Speichern währenddessen < 50 ms).
 // Alles in Temp-Ordnern (synthetischer Vault, eigenes HOME/Support, gesäuberte Git-Umgebung); nichts davon berührt echte Nutzerorte.
 // „Vorher“ = Suche ohne Cache (Tests/Node/minisuche-referenz.mjs) bzw. Studio-Nachladen wie bisher: GET /api/baum + notizen + typen + ansichten.
 // „Nachher“ = Index-Cache bzw. POST /api/teilindex (nur die geänderte Datei). Zeiten in ms (Median), ein Prozess, Betriebssystem-Cache warm.
@@ -11,15 +16,22 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
+import v8 from "node:v8";
+import vm from "node:vm";
+v8.setFlagsFromString("--expose-gc");
+const gc = vm.runInNewContext("gc"); // Speicher des Index ehrlich messen: vorher und nachher aufräumen
+const speicherMB = () => { gc(); const m = process.memoryUsage(); return (m.heapUsed + m.external) / 1e6; };
 
 const hier = dirname(fileURLToPath(import.meta.url));
 const wurzel = join(hier, "..");
 const args = process.argv.slice(2);
-const ohneGit = args.includes("--ohne-repo"), alsJson = args.includes("--json");
+const ohneGit = args.includes("--ohne-repo"), alsJson = args.includes("--json"), mitUi = args.includes("--ui"), ohneVolltext = args.includes("--ohne-volltext");
+const altOrdner = args.includes("--alt") ? args[args.indexOf("--alt") + 1] : null;
 const anzahlen = args.filter((a) => /^\d+$/.test(a)).map(Number);
 if (!anzahlen.length) anzahlen.push(5000, 20000);
 
 // Hermetisch: eigenes HOME und Support-Ordner, keine Git-Konfiguration des Nutzers, kein Vertrauensprüfstand der echten App.
+const echtesHome = process.env.HOME; // nur um den Browser-Cache von Playwright zu finden (--ui); geschrieben wird dort nichts
 const sandkasten = realpathSync(mkdtempSync(join(tmpdir(), "brain-messung-")));
 process.env.HOME = sandkasten; process.env.USERPROFILE = sandkasten;
 process.env.BRAIN_APP_SUPPORT = join(sandkasten, "support");
@@ -33,12 +45,60 @@ const { baueGrossVault } = await import(pathToFileURL(join(wurzel, "Tests", "Nod
 const { minisucheReferenz } = await import(pathToFileURL(join(wurzel, "Tests", "Node", "minisuche-referenz.mjs")).href);
 const { minisuche, leereMinisucheCache, minisucheStand } = await import(pathToFileURL(join(wurzel, "Ressourcen", "kern", "minisuche.mjs")).href);
 const { oeffneVault } = await import(pathToFileURL(join(wurzel, "Ressourcen", "gemeinsam", "vault.mjs")).href);
+const { erzeugeHandler } = await import(pathToFileURL(join(wurzel, "Ressourcen", "werkstatt", "handler.mjs")).href);
 
 const ms = (f) => { const t = process.hrtime.bigint(); const r = f(); return [Number(process.hrtime.bigint() - t) / 1e6, r]; };
 const msA = async (f) => { const t = process.hrtime.bigint(); const r = await f(); return [Number(process.hrtime.bigint() - t) / 1e6, r]; };
 const median = (l) => { const s = [...l].sort((a, b) => a - b); return s[Math.floor(s.length / 2)]; };
+const prozent = (l, p) => { const s = [...l].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(s.length * p))]; };
+const warte = (ms) => new Promise((ok) => setTimeout(ok, ms));
 const runde = (x) => (x >= 100 ? Math.round(x) : Math.round(x * 10) / 10);
 const git = (cwd, ...a) => execFileSync("git", a, { cwd, env: { ...process.env, GIT_AUTHOR_NAME: "Messung", GIT_AUTHOR_EMAIL: "m@example.org", GIT_COMMITTER_NAME: "Messung", GIT_COMMITTER_EMAIL: "m@example.org" }, stdio: "ignore" });
+
+// ⌘K je Taste im Browser (Hauptthread): Palette öffnen, die Frage Buchstabe für Buchstabe eintragen, je Taste die Zeit des Eingabe-Handlers und bis zum nächsten Bild messen.
+// Eigene Werkstatt (entwicklung.mjs) mit eigenem Support-Ordner; der Browser kommt aus dem Playwright-Cache. ordner = Wurzel mit Ressourcen/werkstatt und studio.
+async function messeUi(vault) {
+  const { spawn } = await import("node:child_process");
+  const { createRequire } = await import("node:module");
+  const { existsSync, readdirSync, mkdtempSync: mk } = await import("node:fs");
+  const pw = createRequire(join(wurzel, "Tests", "Oberflaeche", "package.json"))("@playwright/test");
+  const cache = join(echtesHome, "Library/Caches/ms-playwright");
+  let exe;
+  for (const o of existsSync(cache) ? readdirSync(cache).filter((x) => x.startsWith("chromium_headless_shell-")).sort().reverse() : []) for (const a of ["chrome-headless-shell-mac-arm64", "chrome-headless-shell-mac-x64"]) { const p = join(cache, o, a, "chrome-headless-shell"); if (!exe && existsSync(p)) exe = p; }
+  const messe = async (ordner) => {
+    const support = mk(join(tmpdir(), "brain-messung-ui-"));
+    const env = { ...process.env, BRAIN_APP_SUPPORT: support, BRAIN_TESTMODUS: "1", BRAIN_VAULT: "", KORTEX_KERN_PFAD: "" };
+    const kind = spawn(process.execPath, [join(ordner, "Ressourcen/werkstatt/entwicklung.mjs"), vault, "0"], { stdio: ["ignore", "pipe", "pipe"], env });
+    const url = await new Promise((ok, nein) => { let puf = ""; const t = setTimeout(() => nein(new Error("Werkstatt startet nicht: " + puf)), 20000); const lies = (d) => { puf += d; const m = /Bereit: (http:\/\/127\.0\.0\.1:\d+\/)/.exec(puf); if (m) { clearTimeout(t); ok(m[1]); } }; kind.stdout.on("data", lies); kind.stderr.on("data", lies); });
+    const browser = await pw.chromium.launch({ executablePath: exe });
+    try {
+      const page = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
+      await page.addInitScript(() => Object.defineProperty(Navigator.prototype, "platform", { get: () => "MacIntel", configurable: true }));
+      const start = Date.now();
+      await page.goto(url);
+      await page.waitForSelector("[data-karte], [data-leer]", { timeout: 180000 });
+      const bisKarte = Date.now() - start;
+      await page.keyboard.press("Meta+k");
+      await page.waitForSelector(".palette input:focus");
+      const proTaste = [];
+      for (const f of ["a", "ka", "kal", "kalo", "kalor", "lo", "lom", "lomi", "mi", "mist", "oxe", "oxei", "wal", "walk", "walke"]) {
+        proTaste.push(await page.evaluate(async (q) => {
+          const eingabe = document.querySelector(".palette input");
+          const t0 = performance.now();
+          eingabe.value = q; eingabe.dispatchEvent(new Event("input", { bubbles: true }));
+          const handler = performance.now() - t0;
+          await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+          return { handler, bisBild: performance.now() - t0 };
+        }, f));
+        await page.waitForTimeout(250); // die entprellte Inhalts-Anfrage ist danach durch, bevor die nächste Taste kommt
+      }
+      return { bisKarteMs: bisKarte, handlerMedian: median(proTaste.map((x) => x.handler)), handlerMax: Math.max(...proTaste.map((x) => x.handler)), bisBildMedian: median(proTaste.map((x) => x.bisBild)), bisBildMax: Math.max(...proTaste.map((x) => x.bisBild)) };
+    } finally { await browser.close(); kind.kill(); }
+  };
+  const aus = { neu: await messe(wurzel) };
+  if (altOrdner) aus.alt = await messe(altOrdner);
+  return aus;
+}
 
 const ergebnisse = [];
 for (const n of anzahlen) {
@@ -100,6 +160,61 @@ for (const n of anzahlen) {
     antwortKB: Math.round(antwortBytes / 1024), teilKB: Math.round(median(teilBytes) / 1024 * 10) / 10,
     clientVoll: parseMs + clientVoll, clientTeil: 0.1,
   };
+  // ---------- Volltext: bisherige suche() gegen den Index der Werkstatt ----------
+  if (!ohneVolltext) {
+    process.stderr.write("   Volltext (Index) …\n");
+    const speicherVorher = speicherMB();
+    const volltextFragen = Array.from({ length: 6 }, () => `${g.wort()} ${g.wort()}`);
+    const alt = volltextFragen.map((f) => ms(() => v.suche(f))[0]);          // jede Anfrage liest alle Dateien und blockiert die Werkstatt so lange
+    const h = erzeugeHandler({ vault: g.vault, studioDir: join(wurzel, "Ressourcen", "studio"), appVersion: "messung", suchindexVorwaermen: 0 });
+    const rufe = async (methode, p, daten, query) => { const t = process.hrtime.bigint(); const a = await h({ methode, pfad: p, query: query ?? null, body: daten === undefined ? undefined : Buffer.from(JSON.stringify(daten)) }); return [Number(process.hrtime.bigint() - t) / 1e6, a]; };
+    const json = (a) => JSON.parse(a.body.toString("utf8"));
+    // Aufbau: die erste Suche stößt ihn an; währenddessen speichern (PUT) und die Ereignisschleife beobachten
+    let letzter = performance.now(), verzug = 0;
+    const wache = setInterval(() => { const jetzt = performance.now(); verzug = Math.max(verzug, jetzt - letzter - 2); letzter = jetzt; }, 2);
+    const bauStart = performance.now();
+    const erste = rufe("GET", "/api/suche", undefined, `q=${encodeURIComponent(volltextFragen[0])}&limit=30`);
+    const speichern = [];
+    let fertigNach = null;
+    for (let k = 0; fertigNach === null && k < 600; k++) {
+      const datei = g.dateien[(k * 97) % g.dateien.length];
+      const d = json((await rufe("GET", "/api/datei", undefined, `pfad=${encodeURIComponent(datei)}`))[1]);
+      speichern.push((await rufe("PUT", "/api/datei", { pfad: datei, inhalt: d.inhalt + `\nMessung ${k}\n`, basisHash: d.hash }))[0]);
+      await warte(20);
+      if (k % 5 === 4 && json((await rufe("GET", "/api/suche", undefined, "q=zzzqqq&limit=1"))[1]).aufbau.fertig) fertigNach = performance.now() - bauStart;
+    }
+    const [ersteMs, ersteAntwort] = await erste;
+    clearInterval(wache);
+    const ersteJ = json(ersteAntwort);
+    // Warm: Volltext-Anfragen (1–3 Wörter, Wortanfang, Tippfehler, Phrase, Filter) und ⌘K-Anfragen (nur 8 Treffer)
+    const mix = () => [g.wort(), `${g.wort()} ${g.wort()}`, `${g.wort()} ${g.wort()} ${g.wort()}`, g.wort().slice(0, 4), g.wort() + "x", `"${g.wort()} ${g.wort()}"`, `typ:thema ${g.wort()}`, `geaendert:<7d ${g.wort()}`, `ordner:bereich-1 ${g.wort()}`];
+    const volltext = [], palette = [], facettenZeiten = [];
+    for (let k = 0; k < 40; k++) for (const f of mix()) {
+      volltext.push((await rufe("GET", "/api/suche", undefined, `q=${encodeURIComponent(f)}&limit=30`))[0]);
+      palette.push((await rufe("GET", "/api/suche", undefined, `q=${encodeURIComponent(f)}&limit=8`))[0]);
+    }
+    for (let k = 0; k < 30; k++) facettenZeiten.push((await rufe("GET", "/api/suche", undefined, `q=${encodeURIComponent(g.wort())}&limit=30&facetten=1`))[0]);
+    // Nach einer Änderung: gespeichert, sofort gesucht (der Index zieht die eine Datei nach)
+    const nach = [];
+    for (let k = 0; k < 10; k++) {
+      const datei = g.dateien[k * 11 + 1];
+      const d = json((await rufe("GET", "/api/datei", undefined, `pfad=${encodeURIComponent(datei)}`))[1]);
+      await rufe("PUT", "/api/datei", { pfad: datei, inhalt: d.inhalt + `\nNeuwort${k}xyz\n`, basisHash: d.hash });
+      const [t, a] = await rufe("GET", "/api/suche", undefined, `q=Neuwort${k}xyz&limit=5`);
+      if (!json(a).treffer.some((x) => x.pfad === datei)) throw new Error("Der Index kennt die gespeicherte Datei nicht");
+      nach.push(t);
+    }
+    const stand = json((await rufe("GET", "/api/suche", undefined, "q=zzzqqq&limit=1"))[1]).aufbau;
+    r.volltext = {
+      altMedian: median(alt), altMax: Math.max(...alt),
+      bauErsteAntwort: ersteMs, bauFertig: fertigNach, bauVerzugMax: verzug, speichernAnzahl: speichern.length, speichernMedian: median(speichern), speichernP95: prozent(speichern, 0.95), speichernMax: Math.max(...speichern),
+      volltextMedian: median(volltext), volltextP95: prozent(volltext, 0.95), volltextMax: Math.max(...volltext),
+      paletteMedian: median(palette), paletteP95: prozent(palette, 0.95), paletteMax: Math.max(...palette),
+      facettenP95: prozent(facettenZeiten, 0.95), nachAenderung: median(nach), dokumente: stand.dokumente,
+      heapMB: Math.round(speicherMB() - speicherVorher), ersteVorlaeufig: !!ersteJ.aufbau && !ersteJ.aufbau.fertig,
+    };
+    if (mitUi) r.ui = await messeUi(g.vault);
+  }
   ergebnisse.push(r);
   rmSync(g.vault, { recursive: true, force: true });
 }
@@ -124,6 +239,30 @@ else {
     console.log(`| ${r.n} | Teil-Index (/api/teilindex, 1 Datei) | ${f(s.vorher)} | ${f(s.nachherTeil)} |`);
     console.log(`| ${r.n} | Antwortgröße (KB) | ${s.antwortKB} | ${s.teilKB} |`);
     console.log(`| ${r.n} | Client: JSON lesen + Signatur über alle Notizen (Node, ungefähr) | ${f(s.clientVoll)} | ≈ 0 (nur betroffene Zeilen) |`);
+  }
+  if (ergebnisse.some((r) => r.volltext)) {
+    console.log("\n| Dateien | Volltext (Suchindex der Werkstatt) | vorher (suche(), blockiert) | nachher (Index, /api/suche) |\n|---:|---|---:|---:|");
+    for (const r of ergebnisse) {
+      const x = r.volltext; if (!x) continue;
+      console.log(`| ${r.n} | je Anfrage, Median | ${f(x.altMedian)} | ${f(x.volltextMedian)} |`);
+      console.log(`| ${r.n} | je Anfrage, p95 (Ziel < 100) | ${f(x.altMax)} (größte) | ${f(x.volltextP95)} ${x.volltextP95 < 100 ? "✔" : "✘"} |`);
+      console.log(`| ${r.n} | ⌘K-Anfrage (8 Treffer), p95 (Ziel < 50) | – | ${f(x.paletteP95)} ${x.paletteP95 < 50 ? "✔" : "✘"} |`);
+      console.log(`| ${r.n} | mit Filterzahlen (Chips), p95 | – | ${f(x.facettenP95)} |`);
+      console.log(`| ${r.n} | gespeichert, sofort gesucht (Datei ist auffindbar), Median | ${f(x.altMedian)} | ${f(x.nachAenderung)} |`);
+      console.log(`| ${r.n} | Aufbau des Index bis fertig (im Hintergrund) | – | ${x.bauFertig === null ? "länger als die Messung" : f(x.bauFertig) + " ms"} |`);
+      console.log(`| ${r.n} | Speichern WÄHREND des Aufbaus (${x.speichernAnzahl}×): Median / p95 / größte (Ziel < 50) | blockiert ≈ ${f(x.altMedian)} je Suche | ${f(x.speichernMedian)} / ${f(x.speichernP95)} / ${f(x.speichernMax)} ${x.speichernMax < 50 ? "✔" : "✘"} |`);
+      console.log(`| ${r.n} | Verzug der Ereignisschleife während des Aufbaus, größter | ≈ ${f(x.altMedian)} je Suche | ${f(x.bauVerzugMax)} |`);
+      console.log(`| ${r.n} | Speicher des Index (Heap + Puffer nach Aufräumen) | – | ${x.heapMB} MB |`);
+    }
+  }
+  if (ergebnisse.some((r) => r.ui)) {
+    console.log("\n| Dateien | ⌘K je Taste im Browser (Hauptthread) | vorher | nachher |\n|---:|---|---:|---:|");
+    for (const r of ergebnisse) {
+      const u = r.ui; if (!u) continue;
+      console.log(`| ${r.n} | Eingabe-Handler, Median / größte (Ziel < 50) | ${u.alt ? f(u.alt.handlerMedian) + " / " + f(u.alt.handlerMax) : "–"} | ${f(u.neu.handlerMedian)} / ${f(u.neu.handlerMax)} ${u.neu.handlerMax < 50 ? "✔" : "✘"} |`);
+      console.log(`| ${r.n} | bis zum nächsten Bild, Median / größte | ${u.alt ? f(u.alt.bisBildMedian) + " / " + f(u.alt.bisBildMax) : "–"} | ${f(u.neu.bisBildMedian)} / ${f(u.neu.bisBildMax)} |`);
+      console.log(`| ${r.n} | Start bis erste Karte | ${u.alt ? f(u.alt.bisKarteMs) : "–"} | ${f(u.neu.bisKarteMs)} |`);
+    }
   }
   console.log("\nTreffer gleich (Pfade und Punktzahlen, alle Fragen): " + ergebnisse.map((r) => `${r.n}: ${r.suche.gleich ? "ja" : "NEIN"}`).join(", "));
   console.log("Kaltes Laden im Studio (alle Dateien einmal lesen): " + ergebnisse.map((r) => `${r.n}: ${f(r.studio.erstLaden)} ms`).join(", "));

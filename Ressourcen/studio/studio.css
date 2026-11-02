@@ -266,6 +266,8 @@ button:focus-visible, [tabindex]:focus-visible, a:focus-visible, summary:focus-v
 .cm-listenmarke { color: var(--text-3); font-variant-numeric: tabular-nums; }
 .cm-punkt { color: var(--akzent); display: inline-block; width: 1em; font-weight: 700; }
 .cm-link { color: var(--akzent-tinte); }
+.cm-fundstelle { background: var(--gelb-weich); border-radius: 3px; box-shadow: 0 0 0 1px var(--gelb-rand); }
+.cm-fundstelle-jetzt { background: color-mix(in srgb, var(--gelb) 42%, transparent); }
 .cm-wiki { color: var(--wiki, var(--akzent-tinte)); cursor: pointer; border-bottom: 1px solid color-mix(in srgb, var(--wiki, var(--akzent)) 35%, transparent); }
 .cm-wiki:hover { background: color-mix(in srgb, var(--wiki, var(--akzent)) 12%, transparent); border-bottom-color: var(--wiki, var(--akzent)); }
 .cm-wiki-fehlt { color: var(--text-2); border-bottom: 1px dashed var(--text-3); }

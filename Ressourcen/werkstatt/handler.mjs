@@ -117,13 +117,27 @@ export function erzeugeHandler(o) {
   // Live-Aktualisierung (ereignisse.mjs): beobachtet den offenen Vault, sobald die Oberfläche zum ersten Mal nach Ereignissen fragt. o.ereignisse = Einstellungen für Tests.
   const ereignisse = erzeugeEreignisse({ support: vaultOpt.support || supportOrdner(), ...(o.ereignisse || {}) });
   // Eine laufende Frage („Frag deinen Vault“) gehört zum bisherigen Vault: bei jedem Wechsel endet sie (frage.brichAb).
-  const wechsleZu = (pfad) => { frage.brichAb("vault"); aktuell = pfad ? oeffne(pfad) : null; ereignisse.richteAuf(aktuell ? aktuell.wurzel : null); };
+  const wechsleZu = (pfad) => { frage.brichAb("vault"); aktuell = pfad ? oeffne(pfad) : null; ereignisse.richteAuf(aktuell ? aktuell.wurzel : null); waermeAuf(); };
   if (o.vault) aktuell = oeffne(o.vault); // falscher Ordner → HttpFehler wie bisher
   else {
     const p = vaultsFn.aktiverVaultPfad(optV());
     if (p) { try { aktuell = oeffne(p); } catch { aktuell = null; } }
   }
   ereignisse.richteAuf(aktuell ? aktuell.wurzel : null);
+  // Volltext-Index (gemeinsam/suchindex.mjs): hält sich über die Live-Ereignisse aktuell; wärmt sich im echten Betrieb kurz nach dem Start/Vault-Wechsel auf
+  // (in Tests nur mit o.suchindexVorwaermen = Millisekunden), damit schon die erste Suche Treffer findet. Eigene Schreibvorgänge meldet behandle() unten.
+  ereignisse.beiMeldung((e) => {
+    const v = aktuell;
+    if (!v || !v.suchindexAendere) return;
+    if (e.typ === "alles" || e.typ === "git") { v.suchindexPruefeNeu(); return; }
+    if (e.typ === "notiz" || e.typ === "posteingang" || e.typ === "aufgabe") {
+      if (typeof e.pfad !== "string") return;
+      if (e.art === "ordner" || (e.art === "entfernt" && !/\.(md|txt)$/i.test(e.pfad))) v.suchindexPruefeNeu(); else v.suchindexAendere(e.pfad);
+    }
+  });
+  const vorwaermMs = o.suchindexVorwaermen ?? (process.env.BRAIN_TESTMODUS ? 0 : 1500);
+  const waermeAuf = () => { if (vorwaermMs > 0 && aktuell) { const v = aktuell; const t = setTimeout(() => { try { v.sucheVorwaermen(); } catch { /* ohne Index */ } }, vorwaermMs); t.unref?.(); } };
+  waermeAuf();
 
   // KI-Konten (docs/plaene/ki-konten.md): welche Konten gibt es, was darf jedes in welchem Vault. Die Werkstatt gleicht die Liste beim Start der App ab (werkstatt.mjs) und auf ausdrücklichen Wunsch (POST /api/ki/konten/abgleich);
   // GET /api/ki/konten liest nur. o.kontenErkennung / o.kontenVerbunden / o.kontenHome: Ersatz für Tests (nie die echten Orte des Rechners lesen).
@@ -330,7 +344,8 @@ export function erzeugeHandler(o) {
       case "/api/posteingang/verwerfen": nur("POST"); return V().posteingangVerwerfen(eingabe());
       case "/api/posteingang/spaeter": nur("POST"); return V().posteingangSpaeter(eingabe());
       case "/api/posteingang/uebernehmen": nur("POST"); return V().posteingangUebernehmen(eingabe());
-      case "/api/suche": nur("GET"); return V().suche(q.get("q"));
+      // Volltext über den Index: q (Wörter, "Phrase", -ausschluss, ordner: typ: tag: status: geaendert:<7d), limit (Standard 30, höchstens 100), offset, facetten=1 (Zahlen für die Filter)
+      case "/api/suche": nur("GET"); return V().sucheIndex({ q: q.get("q"), limit: q.get("limit"), offset: q.get("offset"), facetten: q.get("facetten") === "1" });
       case "/api/pruefung": nur("GET"); return V().pruefung(q.get("pfad"));
       case "/api/gesundheit": nur("GET"); return V().gesundheit();
       case "/api/rueckfragen": nur("GET"); return V().rueckfragen();
@@ -836,7 +851,10 @@ export function erzeugeHandler(o) {
       if (e instanceof HttpFehler) return fehler(e.status, e.message, e.extra);
       return fehler(500, "Interner Fehler");
     } finally {
-      if (schreibt) ereignisse.endeEigenes(eigen, { kopf: eigenKopf });
+      if (schreibt) {
+        ereignisse.endeEigenes(eigen, { kopf: eigenKopf });
+        try { if (v && v.suchindexAendere) { const rels = eigen.filter((p) => !p.startsWith("@")); if (rels.length) v.suchindexAendere(rels); if (eigenKopf) v.suchindexPruefeNeu(); } } catch { /* der Index holt es beim nächsten Abgleich nach */ }
+      }
     }
   }
   // Welche Dateien hat diese schreibende Anfrage (vermutlich) angefasst? Vault-relative Pfade aus Anfrage und Antwort, dazu die Dateien im Benutzerordner.

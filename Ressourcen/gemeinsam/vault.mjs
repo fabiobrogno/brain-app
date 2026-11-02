@@ -21,6 +21,7 @@ import { wertAus } from "./nutzung.mjs";
 import { erzeugePosteingang } from "./posteingang.mjs";
 import { erzeugeAufgaben } from "./aufgaben-vault.mjs";
 import { SUCHE_STANDARD, SUCHE_MAX, sucheWoerter, suchAuszug, sucheText } from "./ki-antworten.mjs";
+import { erzeugeSuchindex } from "./suchindex.mjs";
 
 export { HttpFehler, pruefeText, heuteIso, supportOrdner };
 export const STUFE_TEXT = { gruen: "grün", gelb: "gelb", rot: "rot", grau: "grau", ohne: "ohne Befund" };
@@ -199,6 +200,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
       if (alt) renameSync(tmp, abs); // atomar ersetzen
       else { try { linkSync(tmp, abs); } catch (e) { if (e.code === "EEXIST") throw new HttpFehler(409, "Diese Datei gibt es schon."); throw e; } unlinkSync(tmp); }
     } catch (e) { try { unlinkSync(tmp); } catch { /* schon weg */ } throw e; }
+    suchindex?.aendere(rel);
     return { hash: HASH(buf), geaendert: statSync(abs).mtime.toISOString() };
   }
 
@@ -208,7 +210,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
     mkdirSync(ordnerAbs, { recursive: true });
     for (let i = 1; i < 1000; i++) {
       const name = `${stamm}${i === 1 ? "" : "-" + i}.md`;
-      try { writeFileSync(join(ordnerAbs, name), inhalt, { flag: "wx" }); return relOrdner ? `${relOrdner}/${name}` : name; }
+      try { writeFileSync(join(ordnerAbs, name), inhalt, { flag: "wx" }); const neuRel = relOrdner ? `${relOrdner}/${name}` : name; suchindex?.aendere(neuRel); return neuRel; }
       catch (e) { if (e.code !== "EEXIST") throw e; }
     }
     throw new HttpFehler(409, "Es gibt schon zu viele Dateien mit diesem Namen.");
@@ -310,6 +312,15 @@ export function oeffneVault(vaultPfad, opts = {}) {
     });
     return { treffer };
   }
+
+  // Volltextsuche der Oberfläche über den Index im Speicher (suchindex.mjs): gewichtet, tolerant, mit Filtern, Markierungen und Seiten.
+  // Der Index baut sich beim ersten Aufruf in Scheiben auf (blockiert nie) und bleibt über aendere()/Abgleich aktuell. Rein lesend.
+  let suchindex = null;
+  const holeSuchindex = () => suchindex || (suchindex = erzeugeSuchindex({ wurzel, unterVault: istUnterVaultOrdner }));
+  function sucheIndex(opt = {}) { return holeSuchindex().sucheWarte(opt, opt.frist); }
+  const suchindexAendere = (pfade) => { if (suchindex) suchindex.aendere(pfade); };
+  const suchindexPruefeNeu = () => { if (suchindex) suchindex.pruefeNeu(); };
+  const sucheVorwaermen = () => holeSuchindex().starte();
 
   function pruefung(rel) {
     const d = lies(rel);
@@ -509,7 +520,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
   }
 
   return {
-    wurzel, name: basename(wurzel), heute: () => opts.heute || heuteIso(jetzt()), rueckfragen, kitVersion, kitVorhanden, kit, vertrauen, vertrauenStand: stand, baum, lies, imUnterVault: (rel) => { try { return imUnterVault(loese(wurzel, rel).abs); } catch { return false; } }, schreibe, neu, wikiAnlegen, wikiLoese: (ziel, von) => notizIndex.loeseWiki(ziel, ordnerVonPfad(von || "")), merken, suche, suchenFuerKi, pruefung, gesundheit, nutzung,
+    wurzel, name: basename(wurzel), heute: () => opts.heute || heuteIso(jetzt()), rueckfragen, kitVersion, kitVorhanden, kit, vertrauen, vertrauenStand: stand, baum, lies, imUnterVault: (rel) => { try { return imUnterVault(loese(wurzel, rel).abs); } catch { return false; } }, schreibe, neu, wikiAnlegen, wikiLoese: (ziel, von) => notizIndex.loeseWiki(ziel, ordnerVonPfad(von || "")), merken, suche, sucheIndex, sucheVorwaermen, suchindexAendere, suchindexPruefeNeu, suchindexStand: () => (suchindex ? suchindex.stand() : null), suchindexRuhe: () => (suchindex ? suchindex.ruhe() : Promise.resolve()), suchenFuerKi, pruefung, gesundheit, nutzung,
     posteingangVerwerfen: posteingang.verwerfen, posteingangSpaeter: posteingang.spaeter, posteingangUebernehmen: posteingang.uebernehmen,
     aufgaben: aufgabenFn.aufgaben, aufgabeAnlegen: aufgabenFn.anlegen, aufgabeAendern: aufgabenFn.aendern, aufgabenArchivieren: aufgabenFn.archivieren, aufgabenFuerKi: aufgabenFn.fuerKi, aufgabenOrdnerName: aufgabenFn.ordnerName, aufgabePfad: aufgabenFn.findePfad,
     notizen: async () => ({ ...(await notizIndex.notizen()), aufgabenOrdner: await aufgabenFn.ordnerName(), inboxOrdner: inboxOrdnerVon(wurzel), ...hinweisFeld() }), notizKontext: notizIndex.kontext, typen: notizIndex.typen, ansichten: notizIndex.ansichten,

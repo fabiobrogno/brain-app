@@ -156,12 +156,20 @@ export function leseLokal(k, fallback) { try { const v = localStorage.getItem("b
 // ---- Unscharfe Suche für die Befehlspalette
 // Kleinschreibung, Umlaute (ä = ae oder a), Akzente weg, Unterstrich/Bindestrich/Schrägstrich/Punkt = Leerzeichen.
 const trenner = (s) => s.replace(/[_\-/.\\]+/g, " ").replace(/\s+/g, " ").trim();
+// Rein und je Notiz-Titel/Pfad mehrfach gebraucht (Palette, je Taste für alle Notizen): Ergebnisse werden gemerkt (höchstens 150.000, danach von vorn).
+const formenMerker = new Map();
 export function suchFormen(s) {
-  const klein = String(s || "").normalize("NFC").toLowerCase();
+  const schluessel = String(s || "");
+  const gemerkt = formenMerker.get(schluessel);
+  if (gemerkt) return gemerkt;
+  const klein = schluessel.normalize("NFC").toLowerCase();
   const ae = klein.replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss");
   const a = klein.replace(/ä/g, "a").replace(/ö/g, "o").replace(/ü/g, "u").replace(/ß/g, "ss");
   const fix = (t) => trenner(t.normalize("NFD").replace(/[̀-ͯ]/g, ""));
-  return [...new Set([fix(ae), fix(a)])];
+  const formen = Object.freeze([...new Set([fix(ae), fix(a)])]);
+  if (formenMerker.size >= 150_000) formenMerker.clear();
+  formenMerker.set(schluessel, formen);
+  return formen;
 }
 // 0 = kein Treffer, 1 = alle Suchwörter beginnen ein Wort, 2 = alle kommen irgendwo vor
 export function sucheGrad(text, frage) {
