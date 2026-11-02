@@ -259,7 +259,7 @@ export function baueAufgaben(host, ctx) {
     const k = liesEingabe();
     const chipsKurz = [];
     const mach = (art, text, wort, klasse) => h("button", { type: "button", klasse: "au-chip au-kurz-chip " + klasse, "data-kurz": art, title: TA.erfassen.zuruecknehmen(wort), "aria-label": TA.erfassen.zuruecknehmen(wort),
-      aufClick: () => { kurzAus[art] = true; zeichneKurz(); eingabe.focus(); } }, h("span", { text }), symbol("schliessen", 10));
+      aufClick: () => { kurzAus[art] = true; zeichneKurz(); eingabe.focus(); } }, h("span", { text }), symbol("schliessen", GROESSE.klein));
     if (k.prioritaet) chipsKurz.push(mach("prio", TA.erfassen.prioChip(TA.prio[k.prioritaet] || k.prioritaet), k.prioritaetWort, "prio " + k.prioritaet));
     if (k.faellig) chipsKurz.push(mach("faellig", TA.erfassen.faelligChip(faelligText(k.faellig)), k.faelligWort, "faellig"));
     kurzVorschau.hidden = !chipsKurz.length;

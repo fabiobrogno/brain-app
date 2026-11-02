@@ -4,7 +4,7 @@ import { T, PRODUKT } from "./texte.js";
 import { api, aktion, aktionMitAntwort, inApp, gitGesperrt, andererVault, nichtVertraut, ausgangUnklar, zeitText as zeitFehlerText, ladeStandNeu } from "./api.js";
 import { erstelleEditor } from "./editor.js";
 import { h, dialog, dialogOffen, schliesseDialoge, toast, vorMinuten, dateiName, ohneEndung, ordnerVon, istBearbeitbar, speichereLokal, leseLokal, leseEntwurf, speichereEntwurf, sucheGrad, suchFormen, ausTabelle, arbeitBeginnt, laufendeArbeiten } from "./hilfen.js";
-import { symbol } from "./symbole.js";
+import { symbol, GROESSE } from "./symbole.js";
 import { textfeld, textbereich, auswahl, hakenFeld, segment, knopf as baueKnopf, leerBlock, setzeLaedt, wenigBewegung } from "./bausteine.js";
 import { liesKurzformen, faelligText } from "./kurzformen.js";
 import { kiLogo } from "./ki-logos.js";
@@ -1922,7 +1922,7 @@ function oeffneMerken() {
     const k = aufgabe ? liesText() : null;
     const chipsKurz = [];
     const mach = (art, label, wort, klasse) => h("button", { type: "button", klasse: "au-chip au-kurz-chip " + klasse, "data-kurz": art, title: TAUF.erfassen.zuruecknehmen(wort), "aria-label": TAUF.erfassen.zuruecknehmen(wort),
-      aufClick: () => { kurzAus[art] = true; zeige(); text.focus(); } }, h("span", { text: label }), symbol("schliessen", 10));
+      aufClick: () => { kurzAus[art] = true; zeige(); text.focus(); } }, h("span", { text: label }), symbol("schliessen", GROESSE.klein));
     if (k?.prioritaet) chipsKurz.push(mach("prio", TAUF.erfassen.prioChip(TAUF.prio[k.prioritaet] || k.prioritaet), k.prioritaetWort, "prio " + k.prioritaet));
     if (k?.faellig) chipsKurz.push(mach("faellig", TAUF.erfassen.faelligChip(faelligText(k.faellig)), k.faelligWort, "faellig"));
     kurzEl.hidden = !aufgabe || !chipsKurz.length;
