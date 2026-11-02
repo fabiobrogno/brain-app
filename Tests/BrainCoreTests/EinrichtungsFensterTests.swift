@@ -133,19 +133,19 @@ import CoreGraphics
 
 // MARK: Fenstergröße und Adresse
 
-@Test func einrichtungsFensterIstFest1120Mal720() {
-    #expect(EinrichtungsFenster.groesse(sichtbar: CGSize(width: 2560, height: 1415)) == CGSize(width: 1120, height: 720))
-    // genau an der Grenze: 1168 − 48 = 1120, 768 − 48 = 720
-    #expect(EinrichtungsFenster.groesse(sichtbar: CGSize(width: 1168, height: 768)) == CGSize(width: 1120, height: 720))
+@Test func einrichtungsFensterIstFest1200Mal780() {
+    #expect(EinrichtungsFenster.groesse(sichtbar: CGSize(width: 2560, height: 1415)) == CGSize(width: 1200, height: 780))
+    // genau an der Grenze: 1248 − 48 = 1200, 828 − 48 = 780
+    #expect(EinrichtungsFenster.groesse(sichtbar: CGSize(width: 1248, height: 828)) == CGSize(width: 1200, height: 780))
 }
 
 @Test func einrichtungsFensterBleibtKleinerAlsDerSichtbareBildschirm() {
-    // 13"-MacBook: sichtbare Fläche etwa 1440 x 875 → Höhe 827 genügt, Breite 1120 passt
-    #expect(EinrichtungsFenster.groesse(sichtbar: CGSize(width: 1440, height: 875)) == CGSize(width: 1120, height: 720))
+    // 13"-MacBook: sichtbare Fläche etwa 1440 x 875 → Höhe 827 genügt, Breite 1200 passt
+    #expect(EinrichtungsFenster.groesse(sichtbar: CGSize(width: 1440, height: 875)) == CGSize(width: 1200, height: 780))
     // kleiner Bildschirm: Rand 48 je Achse, je Achse einzeln
     #expect(EinrichtungsFenster.groesse(sichtbar: CGSize(width: 1024, height: 700)) == CGSize(width: 976, height: 652))
-    #expect(EinrichtungsFenster.groesse(sichtbar: CGSize(width: 1600, height: 700)) == CGSize(width: 1120, height: 652))
-    #expect(EinrichtungsFenster.groesse(sichtbar: CGSize(width: 1000, height: 1200)) == CGSize(width: 952, height: 720))
+    #expect(EinrichtungsFenster.groesse(sichtbar: CGSize(width: 1600, height: 700)) == CGSize(width: 1200, height: 652))
+    #expect(EinrichtungsFenster.groesse(sichtbar: CGSize(width: 1000, height: 1200)) == CGSize(width: 952, height: 780))
 }
 
 @Test func einrichtungsFensterWirdNieKleinerAlsDasMinimum() {

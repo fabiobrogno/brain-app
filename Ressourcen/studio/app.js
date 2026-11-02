@@ -24,6 +24,7 @@ import { TG } from "./texte-glocke.js";
 import { baueKiZeile } from "./ki-zeile.js";
 import { ruhenetz, kantenInstallieren, tippsInstallieren, huepfe, fliege, blendeEin, klappeZu, ruhig, dauer } from "./bewegung.js"; // P4: Bewegung mit Bedeutung
 import { windungLaden } from "./windung.js";
+import { installiereFensterKopf, vorschauPille } from "./fenster.js"; // Titelleiste der App: Kopfzeile greifbar, Plakette „Vorschau“
 import * as kz from "./tastenkuerzel.js";
 import { datumKurz, datumLang, datumZeit, istDatumText, bytesText, setzeTypFarbe, typSymbol, typName, wortAnzahl, relativ, pluralisiere, vorschauText, typTextFarbe } from "./format.js";
 
@@ -85,6 +86,7 @@ $("knopf-frage").addEventListener("click", () => { if (S.info?.vault) frage.umsc
 function wendeThemeAn() {
   const r = document.documentElement;
   if (S.theme === "hell") r.dataset.theme = "light"; else if (S.theme === "dunkel") r.dataset.theme = "dark"; else delete r.dataset.theme;
+  aktion("darstellung", S.theme === "hell" || S.theme === "dunkel" ? S.theme : "system"); // das Fenster der App folgt (Material der Seitenleiste)
 }
 function setzeTheme(t) { S.theme = t; speichereLokal("theme", t); wendeThemeAn(); zeichneStatus(); }
 const istDunkel = () => matchMedia("(prefers-color-scheme: dark)").matches ? S.theme !== "hell" : S.theme === "dunkel";
@@ -2544,5 +2546,9 @@ async function ladeAlles() {
 }
 
 richteGriffeEin();
+installiereFensterKopf(); {
+  const pl = vorschauPille(); if (pl) $("kopf").querySelector(".kopf-rechts")?.prepend(pl);
+  const fest = vorschauPille(true); if (fest) { fest.classList.add("nur-ohne-app"); document.body.append(fest); } // ohne Kopfzeile (Willkommen, noch kein Vault) schwebt sie oben rechts
+}
 ruhenetz(); kantenInstallieren(); tippsInstallieren(); // P4: Netz gegen stehengebliebene Animationen, Scrollkanten, Tooltips für Symbolknöpfe
 ladeAlles();

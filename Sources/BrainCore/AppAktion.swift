@@ -45,6 +45,13 @@ public enum AppAktion: Equatable, Sendable {
     /// Tastenkürzel (P10): Das Studio fragt, ob ein globales Kürzel (Befehle des Registers mit `global`) gilt, und die App meldet es gleich an (`kuerzel` = Schreibweise
     /// „Ctrl+Alt+Space“, `nil` = abmelden). Antwort `{ok:true}` oder `{ok:false, text}` (vom System belegt, reserviert, Tastatur-Einstellungen …). Gespeichert wird danach über die Werkstatt.
     case kuerzelGlobal(id: String, kuerzel: String?)
+    /// Fenster verschieben: Die Seite meldet ein Drücken der Maustaste in einem leeren Bereich der Kopfzeile (`-webkit-app-region` gibt es in WKWebView nicht);
+    /// die App lässt das Fenster mit der noch gedrückten Maustaste ziehen. Trägt keine Daten; nur das Studio darf das melden.
+    case fensterZiehen
+    /// Doppelklick in die Kopfzeile: tut, was der Nutzer in den Systemeinstellungen für die Titelleiste gewählt hat (Zoomen, im Dock ablegen oder nichts).
+    case fensterZoom
+    /// Hell/Dunkel der Seite (`hell`, `dunkel`, `system`): das Fenster folgt, damit das Material hinter der Seitenleiste dazu passt. Nur das Studio.
+    case darstellung(FensterDarstellung)
 
     /// Längen- und Zeichenbegrenzung für Texte der Seite (Fenstertitel, Dialog-Hinweis).
     static let maxTitel = 120
@@ -61,7 +68,7 @@ public enum AppAktion: Equatable, Sendable {
     /// `{aktion:"ordner-waehlen", wert:{titel?, vorschlag?}}`, `{aktion:"vault-gewechselt"}`, `{aktion:"vertrauen-geaendert"}`,
     /// `{aktion:"titel", wert:<Text>}`, `{aktion:"fehler", wert:{text, ort?}}`, `{aktion:"git-pruefen"}`, `{aktion:"git-installieren"}`,
     /// `{aktion:"kopieren", wert:<Text>}`, `{aktion:"einrichtung-ende", wert:{art:"fertig"|"spaeter"}}`,
-    /// `{aktion:"einrichtung-oeffnen", wert?:{ab?:"vault"|"sicherung"|"ki"}}`, `{aktion:"mitteilung-probe"}`.
+    /// `{aktion:"einrichtung-oeffnen", wert?:{ab?:"vault"|"sicherung"|"ki"}}`, `{aktion:"mitteilung-probe"}`, `{aktion:"fenster-ziehen"}`, `{aktion:"fenster-zoom"}`, `{aktion:"darstellung", wert:"hell"|"dunkel"|"system"}`.
     /// Ohne Angabe gilt die strengste Herkunft (Übersicht): die Studio-Aktionen muss man ausdrücklich freischalten.
     public static func pruefe(_ nachricht: Any, vault: URL?, oberflaeche: Oberflaeche = .app) -> AppAktion? {
         guard let d = nachricht as? [String: Any], let name = d["aktion"] as? String else { return nil }
@@ -104,6 +111,13 @@ public enum AppAktion: Equatable, Sendable {
             return oberflaeche == .studio ? .kuerzelGeaendert : nil
         case "kuerzel-global":
             return oberflaeche == .studio ? pruefeKuerzelGlobal(wert) : nil
+        case "fenster-ziehen":
+            return oberflaeche == .studio ? .fensterZiehen : nil
+        case "fenster-zoom":
+            return oberflaeche == .studio ? .fensterZoom : nil
+        case "darstellung":
+            guard oberflaeche == .studio, let w = wert as? String, let d = FensterDarstellung(rawValue: w) else { return nil }
+            return .darstellung(d)
         default:
             return nil
         }

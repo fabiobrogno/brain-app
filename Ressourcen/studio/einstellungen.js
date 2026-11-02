@@ -13,6 +13,7 @@ import {
 import { oeffneMenue, menueOffen } from "./menue.js";
 import { popoverOffen } from "./popover.js";
 import { markenLogo } from "./marken.js";
+import { vorschauPille } from "./fenster.js";
 import { BEREICHE, GRUPPEN, TE, STANDARD_VORSCHLAEGE } from "./texte-einstellungen.js";
 import { suche as sucheIn, zerlege, vorschlaege } from "./einstellungen-suche.js";
 import { erzeugeKi } from "./einstellungen-ki.js";
@@ -511,6 +512,7 @@ function baueGeruest() {
   const nav = h("aside", { klasse: "e-nav" }, zurueck, h("div", { klasse: "e-suche" }, such.el), liste,
     h("div", { klasse: "e-fuss" }, symbol("info", GROESSE.klein), h("span", { text: TE.fuss })));
   const kopf = h("header", { klasse: "e-kopf" }, h("h1", { "data-einst": "titel" }), h("span", { klasse: "wo", "data-einst": "treffer", "aria-live": "polite" }),
+    vorschauPille(),
     h("span", { klasse: "e-stand", "data-stand": "", role: "status" }, h("span", { klasse: "an-speichert" }, h("span", { klasse: "ez-dreh", "aria-hidden": "true" }), TE.speichertGerade), h("span", { klasse: "an-gespeichert" }, symbol("haken", GROESSE.klein), TE.gespeichert)));
   const bereiche = h("div", { klasse: "e-bereiche", "data-einst": "bereiche" });
   const inhalt = h("main", { klasse: "e-inhalt", tabindex: "-1", "data-einst": "inhalt" }, h("div", { klasse: "e-blatt" }, kopf, bereiche));

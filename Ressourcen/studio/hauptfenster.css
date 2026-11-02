@@ -137,3 +137,16 @@
 .cm-aufgabe.erledigt { background: var(--akzent); border-color: var(--akzent); }
 .cm-aufgabe.erledigt::before { content: ""; position: absolute; left: 4.5px; top: 1.5px; width: 4px; height: 8px; border: solid var(--akzent-text); border-width: 0 2px 2px 0; transform: rotate(45deg); }
 .cm-aufgabe-fertig { color: var(--text-2); text-decoration: line-through; text-decoration-color: var(--text-3); }
+
+/* ---------- Fenster ohne Titelleiste (App) ----------
+   Das Fenster hat keine eigene Titelleiste: Der Inhalt läuft darunter, die Ampel sitzt links in der obersten Zeile der Seitenleiste (mittig in --kopf-h).
+   Die App setzt --ampel-platz (Breite der Ampel samt Luft) und --ampel-hoehe (Höhe dieser Zeile) am <html>; im Browser und im Vollbild fehlen sie bzw. sind 0.
+   Die oberste Zeile (Seitenleiste, Kopfzeile, Eigenschaften) ist der Griff zum Verschieben (fenster.js): leere Flächen ziehen das Fenster, Doppelklick zoomt. */
+.seite-kopf { padding-left: max(8px, var(--ampel-platz, 0px)); }
+@container kopf (max-width: 820px) { .vorschau-pille { padding: 0 8px; } .vorschau-pille > span { display: none; } }
+
+/* Glas (App): Die App legt hinter die durchsichtige WebView ein Seitenleisten-Material des Systems (NSVisualEffectView) und setzt data-glas am <html>.
+   Dann ist nur die Seitenleiste durchsichtig; alle anderen Flächen behalten ihren eigenen, deckenden Grund. Ohne data-glas (Browser, ältere WebKit) ändert sich nichts. */
+html[data-glas] body:has(#app:not([hidden])) { background: transparent; }
+html[data-glas] #seite { background: transparent; border-right-color: var(--linie); }
+html[data-glas] .seite-fuss { border-top-color: var(--linie); }
