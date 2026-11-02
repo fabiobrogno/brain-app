@@ -65,6 +65,15 @@ Stable-Tags setzt nur der CEO nach Fabios Freigabe.
 - Kern-Shards: `bash Tests/Kern/run-all.sh --shard I/N`. Die Verteilung nutzt `Tests/Kern/gewichte.txt` (Sekunden je Testdatei, optional nachpflegen); jede Testdatei läuft in genau einem Shard, auch ohne Eintrag.
 - Playwright: `npx playwright test --shard=I/N --workers=2 --fully-parallel` (jeder Test startet seinen eigenen Server).
 
+## Gemeinsame Logik für Studio, Werkstatt, MCP und Swift
+- `Ressourcen/gemeinsam/wikilink.mjs`: EINE Regel, wohin ein `[[Link]]` zeigt (Pfad/Dateiname, Titel, Alias; erst genau, dann tolerant bei Groß/klein, Umlauten, Trennern),
+  dazu Vervollständigung und „Anlegen“ (`POST /api/wiki/anlegen`: findet ein vorhandenes Ziel, sonst Notiz mit dem Ziel als Titel). Der Kern-Lint (`kern/wiki-pfade.mjs`) prüft Wiki-Dateinamen und bleibt davon getrennt.
+- `Ressourcen/gemeinsam/kurzformen.mjs`: Kurzformen („morgen“, „@freitag“, „!hoch“) für Board, „Schnell merken“ (als Aufgabe) und `brain_aufgabe_anlegen`.
+  Das Erfassen-Fenster hat dieselbe Logik in Swift (`Kurzformen.swift`); beide Tests lesen `Tests/Gemeinsam/kurzformen-faelle.json` — eine Regel ändert man dort und in beiden Implementierungen.
+- `Ressourcen/gemeinsam/zeit.mjs`: „heute“ ist überall ein Kalendertag in der **Zeitzone des Macs**; Berlin steht nur in den Tests (`Tests/Node/hilfe.mjs`, `Tests/Oberflaeche/playwright.config.mjs`, `Tests/Kern/run-all.sh` setzen `TZ=Europe/Berlin`).
+  Funktionen nehmen optional `zone` (eingespritzt); Tests zur Zeitzone selbst: `Tests/Node/zeit.test.mjs`.
+- Das Studio lädt nur aus seinem Ordner: `node scripts/erzeuge-gemeinsam-kopien.mjs` schreibt `Ressourcen/studio/{zeit,wikilink,kurzformen}.js` neu (Test: `--pruefen`). Nach jeder Änderung an einer Quelle ausführen.
+
 ## Tags
 Tags werden nie verschoben oder ersetzt. Ist ein Release fehlerhaft, folgt eine neue Version
 (`v0.2.0-beta.2`, `v0.2.1`). Tags werden nur vom CEO gesetzt.

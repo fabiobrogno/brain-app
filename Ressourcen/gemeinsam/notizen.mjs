@@ -8,7 +8,9 @@
 import { readdirSync, statSync, realpathSync, readFileSync, openSync, readSync, closeSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { BEARBEITBAR, generiertName, wikiGeneriert, gesperrterName, falte, imVault, HttpFehler, loese, inboxOrdnerVon } from "./basis.mjs";
-import { pruefeText, berlinHeute, istDatum, plusTage } from "./pruefung.mjs";
+import { pruefeText, istDatum, plusTage } from "./pruefung.mjs";
+import { heuteIso } from "./zeit.mjs";
+import { baueWikiIndex, findeWikiZiel } from "./wikilink.mjs";
 import { git } from "./git.mjs";
 
 const GROSS = 1024 * 1024;        // größere Dateien: nur der Anfang wird gelesen (Titel/Vorschau/Kopf)
@@ -279,12 +281,11 @@ export function typStil(name) {
 }
 
 // ---------- Index ----------
-const gleichRang = (a, b) => { for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] - b[i]; return 0; };
 
 // gitKontext (optional): Funktion, die den Git-Kontext der Anfrage liefert ({ vertraut, sshEigen, sshGlobal, gpgGlobal }) — oder null, wenn Git für diesen
 // Vault gesperrt ist (Vertrauen v2, §8): dann fragt der Index Git gar nicht und nimmt überall die Dateizeiten.
 export function erzeugeNotizIndex({ wurzel, jetzt = () => new Date(), heute, gitKontext, aufgabenOrdner }) {
-  const heuteJetzt = () => (typeof heute === "function" ? heute() : heute) || berlinHeute(jetzt());
+  const heuteJetzt = () => (typeof heute === "function" ? heute() : heute) || heuteIso(jetzt());
   const cache = new Map(); // rel → { k, heute, ...analysiere() }
   let letzter = null;      // Ergebnis des letzten vollständigen index() samt Kontext (Grundlage von teil)
   let stand = 0;           // zählt jede Änderung von `letzter` (ein langsamer index() darf einen neueren Teilstand nicht überschreiben)
@@ -446,7 +447,7 @@ export function erzeugeNotizIndex({ wurzel, jetzt = () => new Date(), heute, git
       if (geaendertMs >= zuletztAb) ansichten.push("zuletzt");
     }
     return { pfad: e.rel, titel: c.titel, vorschau: c.vorschau, typ: c.typ, bereich, geaendert, erstellt, stufe: c.stufe,
-      links: e.ziele, felder: c.felder, generiert: c.generiert, ansichten, _offen: e.offen };
+      links: e.ziele, aliasse: c.aliasse, felder: c.felder, generiert: c.generiert, ansichten, _offen: e.offen }; // aliasse: das Studio löst [[Links]] mit derselben Regel auf (wikilink.mjs)
   }
 
   // ----- Hauptlauf -----
@@ -473,38 +474,10 @@ export function erzeugeNotizIndex({ wurzel, jetzt = () => new Date(), heute, git
     }
     if (cache.size > gesehen.size) for (const key of [...cache.keys()]) if (!gesehen.has(key)) cache.delete(key);
 
-    // Auflösung: Pfad (auch Endstück des Pfads) und Dateiname · Titel · Alias — Groß/klein und Unicode-Form egal
-    const nachEnde = new Map(), nachTitel = new Map(), nachAlias = new Map();
-    const eintrag = (m, schluessel, e) => { const l = m.get(schluessel); if (l) l.push(e); else m.set(schluessel, [e]); };
-    for (const e of roh) {
-      for (let i = 0; i < e.teile.length; i++) eintrag(nachEnde, falte(e.teile.slice(i).join("/")), e);
-      eintrag(nachTitel, falte(e.c.titel), e);
-      for (const a of e.c.aliasse) eintrag(nachAlias, falte(a), e);
-    }
-    const waehle = (kand, ziel, vonDir) => {
-      let best = null, bestRang = null;
-      for (const k of kand) {
-        const rang = [falte(k.ohne) === ziel ? 0 : 1, k.dir === vonDir ? 0 : 1, k.teile.length];
-        if (!best || gleichRang(rang, bestRang) < 0 || (gleichRang(rang, bestRang) === 0 && k.rel < best.rel)) { best = k; bestRang = rang; }
-      }
-      return best;
-    };
-    const loeseZiel = (z0, vonDir) => {
-      let t = z0.trim();
-      if (!t) return null;
-      if (t.startsWith("./") || t.startsWith("../")) { // relativ zum Ordner der Notiz
-        const seg = vonDir ? vonDir.split("/") : [];
-        for (const s of t.split("/")) { if (s === "." || s === "") continue; if (s === "..") { if (!seg.length) return null; seg.pop(); } else seg.push(s); }
-        t = seg.join("/");
-      }
-      t = t.replace(/^\/+/, "");
-      const ohneEnde = t.replace(/\.(md|txt)$/i, "");
-      for (const [m, s] of [[nachEnde, falte(t)], [nachEnde, falte(ohneEnde)], [nachTitel, falte(t)], [nachTitel, falte(ohneEnde)], [nachAlias, falte(t)], [nachAlias, falte(ohneEnde)]]) {
-        const kand = m.get(s);
-        if (kand && kand.length) return waehle(kand, falte(ohneEnde), vonDir);
-      }
-      return null;
-    };
+    // Auflösung: EINE Regel für Werkstatt, Studio und MCP (gemeinsam/wikilink.mjs): Pfad (auch Endstück) und Dateiname · Titel · Alias, genau, dann tolerant
+    // (Groß/klein, Umlaute, Trenner). Die Hülle { rel } bleibt, damit der Rest dieser Datei unverändert mit Pfaden arbeitet.
+    const wikiIx = baueWikiIndex(roh.map((e) => ({ pfad: e.rel, titel: e.c.titel, aliasse: e.c.aliasse })));
+    const loeseZiel = (z0, vonDir) => { const g = findeWikiZiel(wikiIx, z0, vonDir); return g ? { rel: g.pfad } : null; };
 
     const rueck = new Map(); // ziel-rel → Menge der Quell-rel (nur selbst geschriebene Notizen, keine generierten Verzeichnisse)
     for (const e of roh) {
@@ -531,7 +504,7 @@ export function erzeugeNotizIndex({ wurzel, jetzt = () => new Date(), heute, git
     const ctx = { aufgabenName, inboxName, hatInbox, rueck, karte, status, zuletztAb };
     const zeilen = roh.map((e) => baueZeile(e, ctx));
     zeilen.sort((a, b) => (a.geaendert < b.geaendert ? 1 : a.geaendert > b.geaendert ? -1 : a.pfad < b.pfad ? -1 : 1));
-    const ergebnis = { zeilen, rueck, roh, loeseZiel, karte };
+    const ergebnis = { zeilen, rueck, roh, loeseZiel, wikiIx, karte };
     if (stand0 === stand) { // zwischenzeitlich kein Teilstand: dieser Lauf ist der neueste
       stand++;
       letzter = { ...ergebnis, ctx, heute: heuteStr, nachRoh: new Map(roh.map((e, i) => [e.rel, i])), nachZeile: new Map(zeilen.map((z, i) => [z.pfad, i])) };
@@ -644,5 +617,11 @@ export function erzeugeNotizIndex({ wurzel, jetzt = () => new Date(), heute, git
     };
   }
 
-  return { notizen, typen, ansichten, alles, teil, kontext };
+  // Wohin zeigt [[ziel]] von einer Notiz im Ordner vonDir? → Pfad oder null. Immer aus dem frischen Index (Anlegen darf nichts doppelt anlegen).
+  async function loeseWiki(ziel, vonDir = "") {
+    const { wikiIx } = await index();
+    return findeWikiZiel(wikiIx, ziel, vonDir)?.pfad ?? null;
+  }
+
+  return { notizen, typen, ansichten, alles, teil, kontext, loeseWiki };
 }

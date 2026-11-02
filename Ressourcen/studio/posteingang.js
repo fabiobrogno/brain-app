@@ -8,9 +8,10 @@ import { symbol } from "./symbole.js";
 import { oeffneMenue } from "./menue.js";
 import { textfeld, auswahl, segment, knopf as baueKnopf } from "./bausteine.js";
 import { datumKurz } from "./format.js";
+import { heuteIso } from "./zeit.js";
 
 const P = T.posteingang;
-export const heuteText = () => new Date().toLocaleDateString("sv-SE");
+export const heuteText = () => heuteIso();
 // Datum aus dem Kopf der Notiz (`spaeter_bis: JJJJ-MM-TT`) oder null
 export const spaeterBis = (n) => { const w = n?.felder?.spaeter_bis; return typeof w === "string" && /^\d{4}-\d{2}-\d{2}$/.test(w.trim()) ? w.trim() : null; };
 export const istZurueckgestellt = (n) => n.bereich === "inbox" && !n.generiert && !!spaeterBis(n) && spaeterBis(n) > heuteText();

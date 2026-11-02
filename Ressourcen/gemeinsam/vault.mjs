@@ -9,7 +9,9 @@ import { createHash, randomBytes } from "node:crypto";
 import { execFile } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { HttpFehler, MAX_DATEI, inboxOrdnerVon, inboxHinweisVon, loese, imVault, falte, kindUmgebung, supportOrdner, kernOrdner, BEARBEITBAR, generiertName, wikiGeneriert, gesperrterName } from "./basis.mjs";
-import { pruefeText, berlinHeute, leseKopf } from "./pruefung.mjs";
+import { pruefeText, leseKopf } from "./pruefung.mjs";
+import { heuteIso } from "./zeit.mjs";
+import { zielZuNeuerNotiz, ordnerVonPfad } from "./wikilink.mjs";
 import * as gitFn from "./git.mjs";
 import * as vertrauenFn from "./vertrauen.mjs";
 import { leseAbgleichDetail, loescheAbgleichStand, kennung as vaultKennung } from "./sicherungsmerker.mjs";
@@ -20,7 +22,7 @@ import { erzeugePosteingang } from "./posteingang.mjs";
 import { erzeugeAufgaben } from "./aufgaben-vault.mjs";
 import { SUCHE_STANDARD, SUCHE_MAX, sucheWoerter, suchAuszug, sucheText } from "./ki-antworten.mjs";
 
-export { HttpFehler, pruefeText, berlinHeute, supportOrdner };
+export { HttpFehler, pruefeText, heuteIso, supportOrdner };
 export const STUFE_TEXT = { gruen: "grün", gelb: "gelb", rot: "rot", grau: "grau", ohne: "ohne Befund" };
 
 const HASH = (buf) => createHash("sha256").update(buf).digest("hex");
@@ -220,6 +222,26 @@ export function oeffneVault(vaultPfad, opts = {}) {
     return { pfad: legeFreiAn(o ? loese(wurzel, o).rel : "", slug(t, 60), `# ${t}\n`) };
   }
 
+  // „Anlegen“ aus einem offenen [[Link]]: gibt es das Ziel nach der gemeinsamen Regel (wikilink.mjs) schon, kommt dessen Pfad zurück und nichts wird angelegt;
+  // sonst entsteht eine Notiz, deren Titel genau das Ziel ist („# Neue Idee“) — der Link trifft sie danach sofort, auch wenn der Dateiname anders aussieht.
+  // Anfragen laufen nacheinander: zwei Klicks kurz hintereinander legen nichts doppelt an. ordner: Vorgabe, wenn das Ziel keinen Ordner nennt (Standard: Ordner der Notiz `von`).
+  let wikiKette = Promise.resolve();
+  async function wikiAnlegen({ ziel, von, ordner }) {
+    if (typeof ziel !== "string" || !ziel.trim() || ziel.length > 300) throw new HttpFehler(400, "Bitte ein Ziel angeben.");
+    if (von !== undefined && von !== null && typeof von !== "string") throw new HttpFehler(400, "Ungültige Notiz.");
+    if (ordner !== undefined && ordner !== null && typeof ordner !== "string") throw new HttpFehler(400, "Ungültiger Ordner.");
+    const vonDir = ordnerVonPfad(von || "");
+    const lauf = wikiKette.catch(() => {}).then(async () => {
+      const da = await notizIndex.loeseWiki(ziel, vonDir);
+      if (da) return { pfad: da, vorhanden: true };
+      const n = zielZuNeuerNotiz(ziel, vonDir);
+      if (!n) throw new HttpFehler(400, "Dieses Ziel lässt sich nicht anlegen.");
+      return { ...neu({ ordner: n.ordner ?? (ordner || vonDir), titel: n.titel }), vorhanden: false };
+    });
+    wikiKette = lauf;
+    return lauf;
+  }
+
   // Der Posteingang des Vaults (Regel und Begründung: basis.mjs#inboxOrdnerVon).
   const inboxOrdner = () => inboxOrdnerVon(wurzel);
   const hinweisFeld = () => { const t = inboxHinweisVon(wurzel); return t ? { inboxHinweis: t } : {}; }; // nur bei einem ungültigen Eintrag in der Konfiguration
@@ -238,7 +260,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
       if (!t) t = koerper.split(/\r?\n/).find((z) => z.trim()).trim().replace(/\s+/g, " ").slice(0, 80);
       inhalt = `# ${t}\n\n${koerper}\n`;
     }
-    const datum = opts.heute || berlinHeute(jetzt()); // opts.heute: feste Zeit für Tests (wie bei den anderen Aufrufen)
+    const datum = opts.heute || heuteIso(jetzt()); // opts.heute: feste Zeit für Tests (wie bei den anderen Aufrufen)
     return { pfad: legeFreiAn(inboxOrdner(), `${datum}_${slug(t)}`, inhalt) };
   }
 
@@ -291,7 +313,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
 
   function pruefung(rel) {
     const d = lies(rel);
-    return pruefeText(d.pfad, d.inhalt, { heute: opts.heute || berlinHeute(jetzt()) });
+    return pruefeText(d.pfad, d.inhalt, { heute: opts.heute || heuteIso(jetzt()) });
   }
 
   // ---------- Kern und Workspace-Trust (Kern-Umzug P4/P5) ----------
@@ -423,7 +445,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
   const kernGesperrt = (unter, eingabe, frist) => { umstellungSperre(); return gitFn.gitExklusiv(wurzel, () => kernAbgleich(unter, eingabe, frist)); };
 
   // ---------- Notiz-Index (Spec v2 §5) ----------
-  const notizIndex = erzeugeNotizIndex({ wurzel, jetzt, heute: () => opts.heute || berlinHeute(jetzt()),
+  const notizIndex = erzeugeNotizIndex({ wurzel, jetzt, heute: () => opts.heute || heuteIso(jetzt()),
     gitKontext: () => { const s = gitSicht(); return s.gesperrt ? null : ctxVon(s); },
     aufgabenOrdner: () => aufgabenFn.ordnerName() });
 
@@ -436,7 +458,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
 
   // ---------- Posteingang sichten (FBL-68/71): Verwerfen, Später, in eine Wiki-Seite übernehmen — je Aktion ein Commit ----------
   const posteingang = erzeugePosteingang({
-    wurzel, heute: () => opts.heute || berlinHeute(jetzt()), notizen: () => notizIndex.notizen(), lies, schreibe, istGeneriert, slug,
+    wurzel, heute: () => opts.heute || heuteIso(jetzt()), notizen: () => notizIndex.notizen(), lies, schreibe, istGeneriert, slug,
     git: {
       // Gesperrtes Git (Vertrauen v2) → 409, bevor irgendetwas angefasst wird; sonst: gibt es ein Repository?
       vorab: async () => { const s = gitSicht(); if (s.gesperrt) throw gesperrtFehler(s); return gitFn.istRepo(wurzel, ctxVon(s)); },
@@ -487,7 +509,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
   }
 
   return {
-    wurzel, name: basename(wurzel), rueckfragen, kitVersion, kitVorhanden, kit, vertrauen, vertrauenStand: stand, baum, lies, imUnterVault: (rel) => { try { return imUnterVault(loese(wurzel, rel).abs); } catch { return false; } }, schreibe, neu, merken, suche, suchenFuerKi, pruefung, gesundheit, nutzung,
+    wurzel, name: basename(wurzel), heute: () => opts.heute || heuteIso(jetzt()), rueckfragen, kitVersion, kitVorhanden, kit, vertrauen, vertrauenStand: stand, baum, lies, imUnterVault: (rel) => { try { return imUnterVault(loese(wurzel, rel).abs); } catch { return false; } }, schreibe, neu, wikiAnlegen, wikiLoese: (ziel, von) => notizIndex.loeseWiki(ziel, ordnerVonPfad(von || "")), merken, suche, suchenFuerKi, pruefung, gesundheit, nutzung,
     posteingangVerwerfen: posteingang.verwerfen, posteingangSpaeter: posteingang.spaeter, posteingangUebernehmen: posteingang.uebernehmen,
     aufgaben: aufgabenFn.aufgaben, aufgabeAnlegen: aufgabenFn.anlegen, aufgabeAendern: aufgabenFn.aendern, aufgabenArchivieren: aufgabenFn.archivieren, aufgabenFuerKi: aufgabenFn.fuerKi, aufgabenOrdnerName: aufgabenFn.ordnerName, aufgabePfad: aufgabenFn.findePfad,
     notizen: async () => ({ ...(await notizIndex.notizen()), aufgabenOrdner: await aufgabenFn.ordnerName(), inboxOrdner: inboxOrdnerVon(wurzel), ...hinweisFeld() }), notizKontext: notizIndex.kontext, typen: notizIndex.typen, ansichten: notizIndex.ansichten,

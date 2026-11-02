@@ -10,14 +10,14 @@ import { textfeld, leerBlock, filterChip, knopf, oeffneDatumsauswahl, tooltip, s
 import { wenigBewegung } from "./popover.js";
 import { spiele, lande, huepfe, dauer } from "./bewegung.js";
 import { TA } from "./texte-aufgaben.js";
+import { liesKurzformen, faelligText } from "./kurzformen.js";
+import { heuteIso, plusTageIso as plusTage } from "./zeit.js"; // „heute“ und Tagesrechnung: Ortszeit des Macs, wie die Werkstatt (zeit.js = gemeinsam/zeit.mjs)
 
 export const SPALTEN = ["offen", "in-arbeit", "warten", "erledigt"];
 const FILTER_STANDARD = { prio: "alle", quelle: "alle", faellig: "alle" };
 const TAG = 86400000;
 
 // ---------- Datum ----------
-const heuteIso = () => new Date().toLocaleDateString("sv-SE");
-const plusTage = (iso, n) => { const [y, m, d] = iso.split("-").map(Number); return new Date(y, m - 1, d + n).toLocaleDateString("sv-SE"); };
 const datumText = (iso) => { const [y, m, d] = iso.split("-").map(Number); return new Intl.DateTimeFormat("de-DE", { day: "numeric", month: "short" }).format(new Date(y, m - 1, d)); };
 
 // Fälligkeit für die Karte: { text, ueber } oder null. Erledigte zeigen das Datum nur still (nie „überfällig“).
@@ -99,7 +99,10 @@ export function baueAufgaben(host, ctx) {
   const feld = textfeld({ klasse: "au-eingabefeld", symbol: "plus", platzhalter: TA.erfassen.platzhalter, label: TA.erfassen.label, maxlaenge: 200, daten: { "data-aufgabe-eingabe": "" } });
   const eingabe = feld.input;
   const anlegen = knopf({ text: TA.erfassen.knopf, variante: "primaer", typ: "submit", daten: { "data-aufgabe-anlegen": "" } });
-  const form = h("form", { klasse: "au-erfassen", novalidate: "", aufSubmit: (e) => { e.preventDefault(); erfasse(); } }, feld.el, anlegen);
+  // Kurzformen (gemeinsam/kurzformen.mjs, dieselben Regeln wie im Erfassen-Fenster und beim KI-Werkzeug): Chips unter dem Feld zeigen live, was erkannt wird
+  const kurzAus = { prio: false, faellig: false }; // vom Menschen per Chip zurückgenommen
+  const kurzVorschau = h("div", { klasse: "au-kurz", role: "group", "aria-label": TA.erfassen.vorschauLabel, "data-kurzformen": "", hidden: true });
+  const form = h("form", { klasse: "au-erfassen", novalidate: "", aufSubmit: (e) => { e.preventDefault(); erfasse(); } }, feld.el, anlegen, kurzVorschau);
   const zahlEl = h("span", { klasse: "au-zahl", "data-aufgaben-zahl": "" });
   // Filter als Chips („Priorität: Alle ▾“): aktive sind farbig, das ✕ setzt zurück
   const chip = (name, label, optionen) => filterChip({ label, optionen: optionen.map(([wert, text]) => ({ wert, text })), wert: st.filter[name], standard: FILTER_STANDARD[name], daten: { "data-filter": name },
@@ -250,23 +253,39 @@ export function baueAufgaben(host, ctx) {
     if (st.neuPfad) { const neu = st.neuPfad; setTimeout(() => { if (st.neuPfad === neu) st.neuPfad = null; }, 1600); }
   }
 
+  // ---------- Kurzformen ----------
+  const liesEingabe = () => liesKurzformen(eingabe.value, { prioritaet: !kurzAus.prio, faellig: !kurzAus.faellig });
+  function zeichneKurz() {
+    const k = liesEingabe();
+    const chipsKurz = [];
+    const mach = (art, text, wort, klasse) => h("button", { type: "button", klasse: "au-chip au-kurz-chip " + klasse, "data-kurz": art, title: TA.erfassen.zuruecknehmen(wort), "aria-label": TA.erfassen.zuruecknehmen(wort),
+      aufClick: () => { kurzAus[art] = true; zeichneKurz(); eingabe.focus(); } }, h("span", { text }), symbol("schliessen", 10));
+    if (k.prioritaet) chipsKurz.push(mach("prio", TA.erfassen.prioChip(TA.prio[k.prioritaet] || k.prioritaet), k.prioritaetWort, "prio " + k.prioritaet));
+    if (k.faellig) chipsKurz.push(mach("faellig", TA.erfassen.faelligChip(faelligText(k.faellig)), k.faelligWort, "faellig"));
+    kurzVorschau.hidden = !chipsKurz.length;
+    kurzVorschau.replaceChildren(...(chipsKurz.length ? [h("span", { klasse: "au-kurz-label", text: TA.erfassen.erkannt }), ...chipsKurz] : []));
+  }
+  eingabe.addEventListener("input", () => { if (!eingabe.value.trim()) { kurzAus.prio = kurzAus.faellig = false; } zeichneKurz(); });
+
   // ---------- Anlegen ----------
   // Optimistisch: die Karte steht sofort da (blass, „vorläufig“), die Werkstatt bestätigt sie mit dem echten Pfad oder sie verschwindet mit Hinweis wieder.
   let tempNr = 0;
   async function erfasse() {
-    const titel = eingabe.value.trim();
+    const k = liesEingabe();
+    const titel = k.titel.trim();
     if (!titel) { ansage.textContent = TA.erfassen.leer; eingabe.focus(); feld.feld.classList.add("fehlerhaft"); setTimeout(() => feld.feld.classList.remove("fehlerhaft"), 900); return; }
     if (!st.vertraut) { ctx.fragVertrauen(); return; }
     aenderNr++;
     const rangMax = st.liste.filter((x) => x.status === "offen").reduce((m, x) => Math.max(m, Number.isFinite(x.rang) ? x.rang : 0), 0);
-    const temp = { pfad: `__neu-${++tempNr}`, titel, status: "offen", prioritaet: "normal", quelle: "mensch", rang: rangMax + 1000, erstellt: "9999", geaendert: "", vorschau: "", faellig: null, vorlaeufig: true };
+    const temp = { pfad: `__neu-${++tempNr}`, titel, status: "offen", prioritaet: k.prioritaet || "normal", quelle: "mensch", rang: rangMax + 1000, erstellt: "9999", geaendert: "", vorschau: "", faellig: k.faellig || null, vorlaeufig: true };
     st.liste.push(temp);
     st.neuPfad = temp.pfad;
-    eingabe.value = ""; feld.sync();
+    const roh = eingabe.value;
+    eingabe.value = ""; feld.sync(); kurzAus.prio = kurzAus.faellig = false; zeichneKurz();
     zeichne();
     brett.querySelector(`[data-spalte-karten="offen"] [data-pfad="${CSS.escape(temp.pfad)}"]`)?.scrollIntoView({ block: "nearest" });
     try {
-      const r = await reihe(() => api.aufgabeNeu({ titel }));
+      const r = await reihe(() => api.aufgabeNeu({ titel, ...(k.prioritaet ? { prioritaet: k.prioritaet } : {}), ...(k.faellig ? { faellig: k.faellig } : {}) }));
       const i = st.liste.indexOf(temp);
       if (i >= 0) st.liste[i] = r.aufgabe; else st.liste.push(r.aufgabe);
       st.neuPfad = null;
@@ -276,7 +295,7 @@ export function baueAufgaben(host, ctx) {
     } catch (e) {
       st.liste = st.liste.filter((x) => x !== temp);
       st.neuPfad = null;
-      if (!eingabe.value) { eingabe.value = titel; feld.sync(); } // der Text geht nicht verloren
+      if (!eingabe.value) { eingabe.value = roh; feld.sync(); zeichneKurz(); } // der Text geht nicht verloren (samt Kurzformen)
       zeichne();
       behandleFehler(e, TA.fehler.anlegen);
     }

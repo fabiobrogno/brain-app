@@ -511,33 +511,27 @@ function absatzFeld(ctx) {
 }
 
 // ---------- Autovervollständigung für [[ ----------
+// Vorschläge kommen aus der Anwendung (ctx.wikiVorschlaege, wikilink.js): Titel mit Ordner als Detail, Aliasse und Dateinamen, unscharf (Tippfehler,
+// Wortanfänge, Umlaute). Eingefügt wird, was der Link sicher trifft: der Titel, bei mehrdeutigen Titeln „pfad|Titel“. Bedienung: ↑ ↓ wählen, ↵ übernimmt, Esc schließt.
 function wikiQuelle(ctx) {
   return (cc) => {
     const m = cc.matchBefore(/\[\[[^\[\]\n]*$/);
     if (!m) return null;
-    const getippt = m.text.slice(2).toLowerCase();
-    const dateien = ctx.wikiZiele();
-    const treffer = dateien
-      .map((d) => {
-        const n = d.name.toLowerCase(), p = d.pfad.toLowerCase();
-        const rang = !getippt ? 2 : n.startsWith(getippt) ? 0 : n.includes(getippt) ? 1 : p.includes(getippt) ? 3 : 9;
-        return { d, rang };
-      })
-      .filter((x) => x.rang < 9)
-      .sort((a, b) => a.rang - b.rang || a.d.name.localeCompare(b.d.name, "de"))
-      .slice(0, 40);
+    const getippt = m.text.slice(2);
+    if (getippt.includes("#")) return null; // Abschnitte kennt die Vervollständigung nicht
+    const treffer = ctx.wikiVorschlaege(getippt);
     return {
       from: m.from + 2,
       filter: false,
-      options: treffer.map(({ d }) => ({
-        label: d.name,
-        detail: d.ordner,
+      options: treffer.map((v) => ({
+        label: v.alias ? `${v.alias} → ${v.titel}` : v.titel,
+        detail: v.ordner,
         type: "text",
         apply: (view, _c, von, bis) => {
           const nach = view.state.sliceDoc(bis, bis + 2);
           view.dispatch({
-            changes: { from: von, to: bis, insert: d.name + (nach === "]]" ? "" : "]]") },
-            selection: { anchor: von + d.name.length + 2 },
+            changes: { from: von, to: bis, insert: v.text + (nach === "]]" ? "" : "]]") },
+            selection: { anchor: von + v.text.length + 2 },
             userEvent: "input.complete",
           });
         },

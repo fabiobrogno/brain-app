@@ -5,7 +5,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { HttpFehler } from "./basis.mjs";
-import { berlinHeute } from "./pruefung.mjs";
+import { heuteIso } from "./zeit.mjs";
 
 // Inhalt der .gitignore — gilt für die Vorlage, den leeren Vault und „Versionsverlauf einschalten“.
 export const GITIGNORE = [
@@ -35,7 +35,7 @@ const md = (...zeilen) => zeilen.join("\n") + "\n";
 const ISO = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 function datum(heute) {
-  const wert = heute === undefined || heute === null ? berlinHeute() : heute;
+  const wert = heute === undefined || heute === null ? heuteIso() : heute;
   const m = ISO.exec(String(wert));
   if (!m) throw new HttpFehler(500, "Das Datum für die Vorlage ist ungültig.");
   return { iso: wert, tag: `${m[3]}.${m[2]}.${m[1]}`, monat: `${m[1]}-${m[2]}` };

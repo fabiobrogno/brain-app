@@ -251,7 +251,7 @@ export const TE = {
     probeFehler: (m) => m || "Die Suche hat nicht geklappt. Versuche es noch einmal.",
     schnell: "Halte einen Gedanken fest",
     schnellText: "Von überall auf deinem Mac, er landet im Posteingang.",
-    tasten: [["⌘", "K", "Alles finden"], ["⌥", "Leer", "Schnell erfassen"], ["⌘", "J", "Frag deinen Vault"]],
+    tasten: [["palette", "Alles finden"], ["schnell-erfassen", "Schnell erfassen"], ["frage", "Frag deinen Vault"]], // Register-IDs der Tastenkürzel: gezeigt wird das gerade gültige Kürzel
     studio: "Studio öffnen",
     studioBusy: "Studio wird geöffnet …",
   },

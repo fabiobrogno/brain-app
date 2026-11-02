@@ -139,3 +139,78 @@ private func lies(_ text: String, prio: Bool = true, faellig: Bool = true) -> Ku
         #expect(alle.contains(wort), "Hilfetext erwähnt „\(wort)“ nicht")
     }
 }
+
+// MARK: Gemeinsame Fälle mit der JavaScript-Seite
+//
+// Dieselbe Datei liest Tests/Node/kurzformen.test.mjs (Ressourcen/gemeinsam/kurzformen.mjs: Board, „Schnell merken“, KI-Werkzeug). Ändert sich eine Regel,
+// ändert sich der Fall dort — und beide Seiten müssen ihn gleich lesen.
+
+private func gemeinsameFaelle() throws -> [String: Any] {
+    let url = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent()   // Tests/
+        .appendingPathComponent("Gemeinsam/kurzformen-faelle.json")
+    let daten = try Data(contentsOf: url)
+    return try #require(try JSONSerialization.jsonObject(with: daten) as? [String: Any])
+}
+
+/// „JJJJ-MM-TT“ als Zeitpunkt, 14 Uhr im Kalender (wie `erfassenHeute`).
+private func tag(_ iso: String, _ kalender: Calendar) throws -> Date {
+    let t = iso.split(separator: "-").compactMap { Int($0) }
+    #expect(t.count == 3, "\(iso)")
+    return try #require(kalender.date(from: DateComponents(year: t[0], month: t[1], day: t[2], hour: 14)))
+}
+
+/// `NSNull` (JSON null) und fehlend sind verschieden: null heißt „muss leer sein“.
+private func gleich(_ ist: String?, _ soll: Any) -> Bool {
+    if soll is NSNull { return ist == nil }
+    return ist == (soll as? String)
+}
+
+@Test func gemeinsameFaelleWerdenWieInJavaScriptGelesen() throws {
+    let doc = try gemeinsameFaelle()
+    let standard = try #require(doc["heute"] as? String)
+    let faelle = try #require(doc["faelle"] as? [[String: Any]])
+    #expect(faelle.count >= 60)
+    for f in faelle {
+        let name = f["name"] as? String ?? "?"
+        let optionen = f["optionen"] as? [String: Bool] ?? [:]
+        let heute = try tag(f["heute"] as? String ?? standard, erfassenKalender)
+        let e = Kurzformen.lies(f["eingabe"] as? String ?? "", heute: heute, kalender: erfassenKalender,
+                                prioritaet: optionen["prioritaet"] ?? true, faellig: optionen["faellig"] ?? true)
+        let erwartet = try #require(f["erwartet"] as? [String: Any], "\(name)")
+        let ist: [String: String?] = ["titel": e.titel, "text": e.text, "prioritaet": e.prioritaet?.rawValue, "faellig": e.faellig,
+                                      "prioritaetWort": e.prioritaetWort, "faelligWort": e.faelligWort]
+        for (feld, soll) in erwartet {
+            let wert = try #require(ist[feld], "\(name): unbekanntes Feld \(feld)")
+            #expect(gleich(wert, soll), "\(name): \(feld) war \(String(describing: wert)), erwartet \(soll)")
+        }
+    }
+}
+
+@Test func gemeinsameFaelligTexteUndRegelnStimmenMitJavaScriptUeberein() throws {
+    let doc = try gemeinsameFaelle()
+    let heute = try tag(try #require(doc["heute"] as? String), erfassenKalender)
+    let liste = try #require(doc["faelligText"] as? [[String: String]])
+    #expect(!liste.isEmpty)
+    for f in liste {
+        #expect(Kurzformen.faelligText(f["iso"] ?? "", heute: heute, kalender: erfassenKalender) == f["erwartet"], "\(f["iso"] ?? "")")
+    }
+    #expect(doc["regeln"] as? [String] == Kurzformen.regeln, "die Hilfesätze sind auf beiden Seiten dieselben")
+}
+
+/// Derselbe Zeitpunkt ist je nach Zeitzone ein anderer Tag — und „morgen“ damit ein anderes Datum. Die Kurzformen rechnen im Kalender, den man ihnen gibt
+/// (die App gibt den des Macs); JavaScript rechnet mit der Zeitzone des Prozesses bzw. des Browsers — gleiche Regel, gleiche Ergebnisse.
+@Test func gemeinsameZeitzonenFaelleStimmenMitJavaScriptUeberein() throws {
+    let doc = try gemeinsameFaelle()
+    let liste = try #require(doc["zeitpunkte"] as? [[String: String]])
+    #expect(liste.count >= 5)
+    let iso = ISO8601DateFormatter()
+    for f in liste {
+        let name = f["name"] ?? "?"
+        var kalender = Calendar(identifier: .gregorian)
+        kalender.timeZone = try #require(TimeZone(identifier: f["zone"] ?? ""), "\(name)")
+        let zeitpunkt = try #require(iso.date(from: f["zeitpunkt"] ?? ""), "\(name)")
+        #expect(Kurzformen.lies("heute Aufgabe", heute: zeitpunkt, kalender: kalender).faellig == f["heute"], "\(name): heute")
+        #expect(Kurzformen.lies(f["eingabe"] ?? "", heute: zeitpunkt, kalender: kalender).faellig == f["faellig"], "\(name): Fälligkeit")
+    }
+}

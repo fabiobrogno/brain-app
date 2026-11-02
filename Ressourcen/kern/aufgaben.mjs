@@ -33,8 +33,9 @@ export class AufgabeFehler extends Error {
 // ---------------------------------------------------------------------------------------------------------------------
 // Rein: Daten, Text
 
-export const heuteBerlin = (d = new Date()) =>
-  new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Berlin", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+// „heute“ in der Zeitzone des Macs (Ortszeit), wie Studio und Werkstatt (gemeinsam/zeit.mjs); `zone` nur für feste Rechnungen in Tests (CI: Europe/Berlin).
+export const heuteLokal = (d = new Date(), zone) =>
+  new Intl.DateTimeFormat("sv-SE", { ...(zone ? { timeZone: zone } : {}), year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
 export const zeitstempel = (d = new Date()) => d.toISOString().replace(/\.\d{3}Z$/, "Z");
 
 const ISO = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -332,7 +333,7 @@ function nummeriere(rest, i) {
 }
 
 // Zähler für Menüleiste und Seitenleiste: offen = noch nicht erledigt; überfällig = offen und Fälligkeit vor heute.
-export function zaehleAus(liste, heute = heuteBerlin()) {
+export function zaehleAus(liste, heute = heuteLokal()) {
   let offen = 0, ueberfaellig = 0;
   for (const a of liste) {
     if (a.status === "erledigt") continue;
@@ -343,14 +344,14 @@ export function zaehleAus(liste, heute = heuteBerlin()) {
 }
 
 // Kompakte Darstellung (für KI-Antworten): eine Zeile je Aufgabe.
-export function zeile(a, { heute = heuteBerlin() } = {}) {
+export function zeile(a, { heute = heuteLokal() } = {}) {
   const teile = [`[${a.status}]`, a.prioritaet === "normal" ? "" : a.prioritaet, einzeilig(a.pfad, 300), a.titel];
   if (a.faellig) teile.push(`(fällig ${a.faellig}${a.status !== "erledigt" && a.faellig < heute ? ", überfällig" : ""})`);
   return teile.filter(Boolean).join(" ");
 }
 
 export function dateiname(titel, jetzt = new Date()) {
-  return `${heuteBerlin(jetzt)}-${slug(titel, 50)}`;
+  return `${heuteLokal(jetzt)}-${slug(titel, 50)}`;
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

@@ -3,9 +3,11 @@
 // Die Quelle der Aufgabe setzt der Server selbst („ki:<client>“ aus dem Namen des MCP-Clients), die KI kann sie nicht wählen. Die Werkzeuge
 // schreiben nur in einen bestätigten Vault (vault.mjs prüft das Vertrauen); Auflisten kennzeichnet den Inhalt als Daten, keine Anweisungen.
 import { HttpFehler } from "../gemeinsam/basis.mjs";
+import { liesKurzformen } from "../gemeinsam/kurzformen.mjs";
+import { heuteIso } from "../gemeinsam/zeit.mjs";
 
 export const AUFGABEN_WERKZEUGE = [
-  { name: "brain_aufgabe_anlegen", description: "Legt eine Aufgabe im Aufgaben-Board an (nur bestätigte Vaults).",
+  { name: "brain_aufgabe_anlegen", description: "Legt eine Aufgabe im Aufgaben-Board an (nur bestätigte Vaults). Im Titel gelten Kurzformen: morgen, @freitag, bis 12.11., !hoch.",
     inputSchema: { type: "object", properties: { titel: { type: "string" }, text: { type: "string" }, prioritaet: { type: "string", description: "niedrig|normal|hoch" }, faellig: { type: "string", description: "JJJJ-MM-TT" } }, required: ["titel"], additionalProperties: false } },
   { name: "brain_aufgaben", description: "Listet Aufgaben kompakt (Standard: nicht erledigte).",
     inputSchema: { type: "object", properties: { status: { type: "string", description: "offen|in-arbeit|warten|erledigt|alle" } }, additionalProperties: false } },
@@ -40,10 +42,15 @@ export async function rufeAufgabenWerkzeug(v, name, a, sitzung = { klient: "", a
       if ((sitzung.angelegt || 0) >= MAX_ANLAGEN_SITZUNG) throw new HttpFehler(429, `Du hast in dieser Sitzung schon ${MAX_ANLAGEN_SITZUNG} Aufgaben angelegt. Frage die Person, bevor du weitere anlegst.`);
       const offen = (await v.aufgabenFuerKi({})).aufgaben.filter((x) => String(x.quelle).startsWith("ki:")).length;
       if (offen >= MAX_OFFENE_KI) throw new HttpFehler(429, `Es gibt schon ${MAX_OFFENE_KI} offene Aufgaben von KI-Programmen. Bitte zuerst welche erledigen oder löschen.`);
-      const r = await v.aufgabeAnlegen({ titel: str("titel"), quelle: quelleVon(klient),
-        ...(typeof a.text === "string" && a.text.trim() ? { text: a.text } : {}),
-        ...(typeof a.prioritaet === "string" ? { prioritaet: a.prioritaet } : {}),
-        ...(typeof a.faellig === "string" && a.faellig.trim() ? { faellig: a.faellig } : {}) });
+      // Kurzformen im Titel (gemeinsam/kurzformen.mjs, dieselben Regeln wie im Studio und im Erfassen-Fenster): was die KI ausdrücklich als Feld mitgibt, gilt
+      // und wird im Titel nicht gelesen. „heute“ ist ein Tag in der Zeitzone des Macs.
+      const hatPrio = typeof a.prioritaet === "string", hatFaellig = typeof a.faellig === "string" && a.faellig.trim() !== "";
+      const k = liesKurzformen(str("titel"), { heute: typeof v.heute === "function" ? v.heute() : heuteIso(), prioritaet: !hatPrio, faellig: !hatFaellig });
+      const zusatz = typeof a.text === "string" && a.text.trim() ? a.text : (k.text || "");
+      const r = await v.aufgabeAnlegen({ titel: k.titel || str("titel"), quelle: quelleVon(klient),
+        ...(zusatz ? { text: zusatz } : {}),
+        ...(hatPrio ? { prioritaet: a.prioritaet } : k.prioritaet ? { prioritaet: k.prioritaet } : {}),
+        ...(hatFaellig ? { faellig: a.faellig } : k.faellig ? { faellig: k.faellig } : {}) });
       sitzung.angelegt = (sitzung.angelegt || 0) + 1;
       try { hooks.angelegt?.(r.pfad); } catch { /* das Protokoll ist Beiwerk */ }
       return text(`Aufgabe angelegt: ${r.pfad}`);

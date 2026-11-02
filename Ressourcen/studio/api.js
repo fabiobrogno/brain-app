@@ -53,6 +53,7 @@ export const api = {
   datei: (pfad) => anfrage("GET", "/api/datei" + q({ pfad })),
   speichern: (pfad, inhalt, basisHash) => anfrage("PUT", "/api/datei", { pfad, inhalt, basisHash }),
   neu: (ordner, titel) => anfrage("POST", "/api/neu", { ordner, titel }),
+  wikiAnlegen: (ziel, von, ordner) => anfrage("POST", "/api/wiki/anlegen", { ziel, von, ...(ordner ? { ordner } : {}) }),
   merken: (text, titel) => anfrage("POST", "/api/merken", titel ? { text, titel } : { text }),
   // ---- Posteingang sichten: je Aktion ein Git-Commit (Antwort: pfad, ziel, commit = sha oder null ohne Git)
   verwerfen: (pfad) => anfrage("POST", "/api/posteingang/verwerfen", { pfad }),

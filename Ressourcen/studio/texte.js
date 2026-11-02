@@ -50,7 +50,7 @@ export const T = {
     neuTitel: "Titel der neuen Seite", neuBereich: "Bereich im Wiki", uebernehmenOk: "Übernehmen",
     uebernehmenHinweis: "Der Text wird als eigener Abschnitt ans Ende der Seite gehängt. Die Notiz wandert ins Archiv und bleibt im Verlauf; Belege und Stand ergänzt du danach selbst.",
   },
-  seitenleiste: { neu: "Neu", merken: "Schnell merken", erfassen: "Schnell erfassen", erfassenTaste: "⌥ Leer", leerBaum: "Hier liegt noch nichts.", laedt: "Lade …", neuerOrdner: "Neuer Ordner" },
+  seitenleiste: { neu: "Neu", merken: "Schnell merken", erfassen: "Schnell erfassen", leerBaum: "Hier liegt noch nichts.", laedt: "Lade …", neuerOrdner: "Neuer Ordner" },
   vault: {
     wechseln: "Vault wechseln", oeffnen: "Vault öffnen …", neu: "Neuer Vault …", entfernen: "Aus der Liste entfernen",
     aktiv: "Aktiv", liste: "Deine Vaults", keine: "Noch keine weiteren Vaults.",
@@ -191,7 +191,7 @@ export const T = {
     nichtGeoeffnet: "Die Übersicht ließ sich nicht öffnen.",
   },
   speicherFehler: { titel: "Änderungen konnten nicht gespeichert werden", text: "Wechselst du jetzt, geht der ungespeicherte Text verloren.", nochmal: "Nochmal versuchen", kopieren: "Text kopieren", verwerfen: "Verwerfen und wechseln", kopiert: "Text kopiert.", kopierFehler: "Kopieren war nicht möglich." },
-  merken: { entwurf: "Entwurf bleibt erhalten.", titel: "Schnell merken", satz: "Halte einen Gedanken fest. Er landet im Posteingang, sortieren kannst du später.", text: "Was willst du festhalten?", titelFeld: "Titel (optional)", sichern: "In die Inbox", fertig: "In der Inbox abgelegt.", offen: "Öffnen" },
+  merken: { entwurf: "Entwurf bleibt erhalten.", titel: "Schnell merken", satz: "Halte einen Gedanken fest. Er landet im Posteingang, sortieren kannst du später. Als Aufgabe lesen „morgen“, „@freitag“ und „!hoch“ Fälligkeit und Priorität mit.", art: "Was ist es?", artNotiz: "Notiz", artAufgabe: "Aufgabe", text: "Was willst du festhalten?", titelFeld: "Titel (optional)", sichern: "In die Inbox", fertig: "In der Inbox abgelegt.", offen: "Öffnen" },
   palette: { platzhalter: "Notizen suchen, Befehl ausführen oder Frage stellen …", notizen: "Notizen", zuletzt: "Zuletzt geöffnet", befehle: "Befehle", nichts: "Nichts passt.", nichtsGefunden: "Nichts gefunden", anlegen: (t) => `Neue Notiz „${t}“ anlegen`, frageTitel: (t) => `Frag deinen Vault: „${t}“`, frageGruppe: "Ausweg", esc: "esc", waehlen: "wählen", oeffnen: "öffnen", fragen: "Frag deinen Vault" },
   befehle: {
     neu: "Neue Notiz", merken: "Schnell merken", commit: "Änderungen sichern …", sync: "Mit Remote abgleichen",
@@ -199,6 +199,7 @@ export const T = {
     lizenzen: "Lizenzen …", ordner: "Vault im Finder zeigen", ansicht: "Übersicht öffnen", mcp: "KI (Claude) verbinden", konten: "KI-Konten …", umstellen: "Vault umstellen …",
     inNotiz: "In der Notiz suchen", alleEinstellungen: "Einstellungen …", posteingang: "Posteingang öffnen", alleNotizen: "Alle Notizen öffnen", aufgaben: "Aufgaben-Board öffnen",
   },
+  wiki: { fehlt: (ziel) => `„${ziel}“ gibt es noch nicht.`, anlegen: "Anlegen", vorhanden: (n) => `„${n}“ gab es schon. Kortex hat sie geöffnet.` },
   dialog: { schliessen: "Schließen" },
   kuerzel: {
     titel: "Tastenkürzel",

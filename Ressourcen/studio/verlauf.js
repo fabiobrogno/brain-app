@@ -5,6 +5,7 @@ import { knopf as baueKnopf } from "./bausteine.js";
 import { symbol } from "./symbole.js";
 import { TV } from "./texte-verlauf.js";
 import { gitGesperrt } from "./api.js";
+import { heuteIso } from "./zeit.js";
 
 const SEITE = 60;
 const MAX_SEITE = 200; // so viele Commits liefert /api/git/log höchstens je Aufruf
@@ -117,7 +118,7 @@ function avatar(name) {
   if (kuerzel) a.textContent = kuerzel; else a.append(zeichen("person", 14));
   return a;
 }
-const lokalerTag = (d) => d.toLocaleDateString("sv-SE");
+const lokalerTag = (d) => heuteIso(d); // Tag in Ortszeit (zeit.js), wie die Werkstatt ihn rechnet
 function tagesLabel(datum) {
   const jetzt = new Date();
   if (datum === lokalerTag(jetzt)) return TV.heute;
