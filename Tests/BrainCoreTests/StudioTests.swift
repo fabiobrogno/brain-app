@@ -403,6 +403,9 @@ private func url(_ s: String) -> URL { URL(string: s)! }
     // kleiner Bildschirm: das Fenster füllt die sichtbare Fläche (Minimum 1100×700 gilt trotzdem)
     let klein = CGRect(x: 0, y: 0, width: 1280, height: 775)
     #expect(StudioFenster.startrahmen(sichtbar: klein) == klein)
+    // Bildschirm kleiner als das Minimum (1024×677 wie auf dem CI-Läufer): das Fenster behält 1100×700, bündig oben links
+    let winzig = CGRect(x: 0, y: 25, width: 1024, height: 677)
+    #expect(StudioFenster.startrahmen(sichtbar: winzig) == CGRect(x: 0, y: 2, width: 1100, height: 700))
 }
 
 @Test func mittigKuerztAufDieFlaeche() {
@@ -456,6 +459,14 @@ private func url(_ s: String) -> URL { URL(string: s)! }
     // Fenster überspannt die Naht, der größere Teil des Kopfes liegt rechts: es bleibt dort und rutscht ganz hinein
     let r = FensterGeometrie.aufBildschirmHolen(CGRect(x: 1200, y: 100, width: 1400, height: 800), bildschirme: [links, rechts])
     #expect(r == CGRect(x: 1440, y: 100, width: 1400, height: 800))
+}
+
+@Test func geholterRahmenWirdNieKleinerAlsDasMinimum() {
+    let winzig = CGRect(x: 0, y: 25, width: 1024, height: 677)
+    let r = FensterGeometrie.aufBildschirmHolen(CGRect(x: 2000, y: 100, width: 1500, height: 900), bildschirme: [winzig], minimum: StudioFenster.minimum)
+    #expect(r == CGRect(x: 0, y: 2, width: 1100, height: 700), "Bildschirm weg, Hauptbildschirm kleiner als das Minimum: Minimum, oben links bündig")
+    let r2 = FensterGeometrie.aufBildschirmHolen(CGRect(x: 100, y: 50, width: 1100, height: 700), bildschirme: [winzig], minimum: StudioFenster.minimum)
+    #expect(r2.size == StudioFenster.minimum && r2.maxY == winzig.maxY && r2.minX == 0)
 }
 
 @Test func ohneBildschirmeBleibtDerRahmen() {

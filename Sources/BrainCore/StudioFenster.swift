@@ -32,9 +32,13 @@ public enum StudioFenster {
         CGSize(width: max(groesse.width, minimum.width), height: max(groesse.height, minimum.height))
     }
 
-    /// Rahmen beim ersten Start: Startgröße, mittig im sichtbaren Bereich des Bildschirms.
+    /// Rahmen beim ersten Start: Startgröße, mittig im sichtbaren Bereich des Bildschirms. Ist der Bildschirm kleiner als das Fenster-Minimum (1100×700),
+    /// behält das Fenster sein Minimum und sitzt je Achse bündig an der Oberkante bzw. linken Kante (so bleiben Titelleiste und Ampel erreichbar).
     public static func startrahmen(sichtbar: CGRect) -> CGRect {
-        FensterGeometrie.mittig(startgroesse(sichtbar: sichtbar.size), in: sichtbar)
+        let g = startgroesse(sichtbar: sichtbar.size)
+        let x = g.width > sichtbar.width ? sichtbar.minX : (sichtbar.midX - g.width / 2).rounded()
+        let y = g.height > sichtbar.height ? sichtbar.maxY - g.height : (sichtbar.midY - g.height / 2).rounded()
+        return CGRect(x: x, y: y, width: g.width, height: g.height)
     }
 }
 
@@ -55,7 +59,8 @@ public enum FensterGeometrie {
     ///   und ganz hineingeschoben (eine halb abgeschnittene Lage wird nicht „gemerkt“).
     /// - Liegt er auf keinem (der Bildschirm ist weg, die Anordnung hat sich geändert): mittig auf dem Hauptbildschirm, Größe wie gemerkt (gekürzt).
     /// - Ohne Bildschirme (nicht erwartet) bleibt der Rahmen, wie er ist.
-    public static func aufBildschirmHolen(_ rahmen: CGRect, bildschirme: [CGRect]) -> CGRect {
+    /// `minimum`: kleiner als das wird das Fenster dabei nie (auf einem winzigen Bildschirm ragt es dann unten/rechts hinaus, die Oberkante bleibt sichtbar).
+    public static func aufBildschirmHolen(_ rahmen: CGRect, bildschirme: [CGRect], minimum: CGSize = .zero) -> CGRect {
         guard let haupt = bildschirme.first, rahmen.width > 0, rahmen.height > 0 else { return rahmen }
         let kopf = CGRect(x: rahmen.minX, y: rahmen.maxY - greifbar.height, width: rahmen.width, height: greifbar.height)
         var bester: (flaeche: CGFloat, schirm: CGRect)?
@@ -65,10 +70,15 @@ public enum FensterGeometrie {
             let f = i.width * i.height
             if bester == nil || f > bester!.flaeche { bester = (f, s) }
         }
-        guard let ziel = bester?.schirm else { return mittig(rahmen.size, in: haupt) }
-        let g = CGSize(width: min(rahmen.width, ziel.width), height: min(rahmen.height, ziel.height))
-        let x = min(max(rahmen.minX, ziel.minX), ziel.maxX - g.width)
-        let y = min(max(rahmen.minY, ziel.minY), ziel.maxY - g.height)
+        let ziel = bester?.schirm ?? haupt
+        let g = CGSize(width: max(min(rahmen.width, ziel.width), minimum.width), height: max(min(rahmen.height, ziel.height), minimum.height))
+        if bester == nil { // Bildschirm weg: mittig auf dem Hauptbildschirm
+            let x = g.width > ziel.width ? ziel.minX : (ziel.midX - g.width / 2).rounded()
+            let y = g.height > ziel.height ? ziel.maxY - g.height : (ziel.midY - g.height / 2).rounded()
+            return CGRect(origin: CGPoint(x: x, y: y), size: g)
+        }
+        let x = max(ziel.minX, min(rahmen.minX, ziel.maxX - g.width))
+        let y = g.height > ziel.height ? ziel.maxY - g.height : max(ziel.minY, min(rahmen.minY, ziel.maxY - g.height))
         return CGRect(origin: CGPoint(x: x, y: y), size: g)
     }
 }

@@ -324,7 +324,7 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
             } else {
                 var r = w.frame
                 r.size = StudioFenster.mindestens(r.size)
-                rahmen = FensterGeometrie.aufBildschirmHolen(r, bildschirme: NSScreen.screens.map(\.visibleFrame))
+                rahmen = FensterGeometrie.aufBildschirmHolen(r, bildschirme: NSScreen.screens.map(\.visibleFrame), minimum: StudioFenster.minimum)
             }
             if rahmen != w.frame { w.setFrame(rahmen, display: false) }
             if let g = test?.testFenster { w.setContentSize(g) } // `--test-fenster`: Inhaltsgröße in Punkten (mindestens die Mindestgröße)
