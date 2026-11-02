@@ -571,6 +571,16 @@ final class AppZustand: ObservableObject {
             return ok
         case .kuerzelGlobal(let id, let text):
             return kuerzel.pruefeGlobal(id: id, text: text)
+        case .fensterZiehen:
+            // Bewusst ohne Log: kommt bei jedem Greifen der Kopfzeile.
+            von.ziehe()
+            return ok
+        case .fensterZoom:
+            von.doppelklickKopf()
+            return ok
+        case .darstellung(let d):
+            von.setzeDarstellung(d)
+            return ok
         }
     }
 

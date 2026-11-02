@@ -370,15 +370,149 @@ private func url(_ s: String) -> URL { URL(string: s)! }
 
 @Test func studioFensterMasseUndStartgroesse() {
     #expect(StudioFenster.minimum == CGSize(width: 1100, height: 700))
-    #expect(StudioFenster.standard == CGSize(width: 1440, height: 900))
-    // großer Bildschirm: Standard; kleiner: nie größer als sichtbar; winzig: nie unter dem Minimum
-    #expect(StudioFenster.startgroesse(sichtbar: CGSize(width: 2560, height: 1415)) == CGSize(width: 1440, height: 900))
+    #expect(StudioFenster.startMinimum == CGSize(width: 1280, height: 820))
+    #expect(StudioFenster.startMaximum == CGSize(width: 1800, height: 1150))
+    // 85 % der sichtbaren Fläche je Achse (1920×1055 → 1632×897)
+    #expect(StudioFenster.startgroesse(sichtbar: CGSize(width: 1920, height: 1055)) == CGSize(width: 1632, height: 897))
+    // 14"-MacBook (sichtbar 1512×944 → 85 % = 1285×802): Breite über der Untergrenze, Höhe auf 820 angehoben
+    #expect(StudioFenster.startgroesse(sichtbar: CGSize(width: 1512, height: 944)) == CGSize(width: 1285, height: 820))
+    // 13"-MacBook (1440×875): beide Achsen auf der Untergrenze
+    #expect(StudioFenster.startgroesse(sichtbar: CGSize(width: 1440, height: 875)) == CGSize(width: 1280, height: 820))
+    // riesige Bildschirme: nicht größer als 1800×1150
+    #expect(StudioFenster.startgroesse(sichtbar: CGSize(width: 2560, height: 1415)) == CGSize(width: 1800, height: 1150))
+    #expect(StudioFenster.startgroesse(sichtbar: CGSize(width: 5120, height: 2800)) == CGSize(width: 1800, height: 1150))
+    // kleiner als die Untergrenze: die ganze sichtbare Fläche; winzig: nie unter dem Fenster-Minimum
     #expect(StudioFenster.startgroesse(sichtbar: CGSize(width: 1280, height: 775)) == CGSize(width: 1280, height: 775))
+    #expect(StudioFenster.startgroesse(sichtbar: CGSize(width: 1180, height: 760)) == CGSize(width: 1180, height: 760))
     #expect(StudioFenster.startgroesse(sichtbar: CGSize(width: 1000, height: 600)) == CGSize(width: 1100, height: 700))
     // gemerkte Größe aus 0.2.0 (Minimum war 900×600) wird angehoben, größere bleibt
     #expect(StudioFenster.mindestens(CGSize(width: 900, height: 600)) == CGSize(width: 1100, height: 700))
     #expect(StudioFenster.mindestens(CGSize(width: 1600, height: 650)) == CGSize(width: 1600, height: 700))
     #expect(StudioFenster.standardTitel == "Kortex Studio")
+}
+
+// MARK: Lage der Fenster (mittig, wiederherstellen, Bildschirm weg)
+
+@Test func startrahmenIstMittigImSichtbarenBereich() {
+    // Hauptbildschirm mit Menüleiste oben und Dock unten: sichtbarer Bereich 1920×1055 ab y = 25
+    let haupt = CGRect(x: 0, y: 25, width: 1920, height: 1055)
+    #expect(StudioFenster.startrahmen(sichtbar: haupt) == CGRect(x: 144, y: 104, width: 1632, height: 897))
+    // zweiter Bildschirm rechts davon, tiefer angeordnet (Ursprung nicht bei 0)
+    let zweiter = CGRect(x: 1920, y: -400, width: 2560, height: 1440)
+    #expect(StudioFenster.startrahmen(sichtbar: zweiter) == CGRect(x: 2300, y: -255, width: 1800, height: 1150))
+    // kleiner Bildschirm: das Fenster füllt die sichtbare Fläche (Minimum 1100×700 gilt trotzdem)
+    let klein = CGRect(x: 0, y: 0, width: 1280, height: 775)
+    #expect(StudioFenster.startrahmen(sichtbar: klein) == klein)
+}
+
+@Test func mittigKuerztAufDieFlaeche() {
+    let flaeche = CGRect(x: 0, y: 0, width: 1000, height: 600)
+    #expect(FensterGeometrie.mittig(CGSize(width: 400, height: 200), in: flaeche) == CGRect(x: 300, y: 200, width: 400, height: 200))
+    #expect(FensterGeometrie.mittig(CGSize(width: 1600, height: 900), in: flaeche) == flaeche)
+}
+
+@Test func gemerkterRahmenAufVorhandenemBildschirmBleibt() {
+    let haupt = CGRect(x: 0, y: 25, width: 1920, height: 1055)
+    let zweiter = CGRect(x: 1920, y: 0, width: 2560, height: 1440)
+    let rahmen = CGRect(x: 2100, y: 200, width: 1500, height: 900)
+    #expect(FensterGeometrie.aufBildschirmHolen(rahmen, bildschirme: [haupt, zweiter]) == rahmen)
+    #expect(FensterGeometrie.aufBildschirmHolen(CGRect(x: 100, y: 100, width: 1300, height: 800), bildschirme: [haupt, zweiter]) == CGRect(x: 100, y: 100, width: 1300, height: 800))
+}
+
+@Test func verschwundenerBildschirmHoltDasFensterMittigZumHauptbildschirm() {
+    let haupt = CGRect(x: 0, y: 25, width: 1440, height: 875)
+    // das Fenster lag auf einem zweiten Bildschirm rechts, der jetzt fehlt
+    let weg = CGRect(x: 2100, y: 200, width: 1500, height: 900)
+    #expect(FensterGeometrie.aufBildschirmHolen(weg, bildschirme: [haupt]) == CGRect(x: 0, y: 25, width: 1440, height: 875), "größer als die Fläche: gekürzt und mittig")
+    let kleiner = CGRect(x: 3000, y: -500, width: 1200, height: 700)
+    #expect(FensterGeometrie.aufBildschirmHolen(kleiner, bildschirme: [haupt]) == CGRect(x: 120, y: 113, width: 1200, height: 700))
+}
+
+@Test func halbAbgeschnittenerRahmenWirdHineingeschoben() {
+    let haupt = CGRect(x: 0, y: 25, width: 1440, height: 875)
+    // ragt links und unten hinaus
+    #expect(FensterGeometrie.aufBildschirmHolen(CGRect(x: -300, y: -100, width: 1200, height: 800), bildschirme: [haupt]) == CGRect(x: 0, y: 25, width: 1200, height: 800))
+    // ragt rechts hinaus (Kopf sichtbar)
+    #expect(FensterGeometrie.aufBildschirmHolen(CGRect(x: 600, y: 150, width: 1200, height: 700), bildschirme: [haupt]) == CGRect(x: 240, y: 150, width: 1200, height: 700))
+    // ragt mit dem Kopf noch zur Hälfte über die Oberkante: wird nach unten geschoben (Menüleiste verdeckt sonst die Ampel)
+    #expect(FensterGeometrie.aufBildschirmHolen(CGRect(x: 100, y: 230, width: 1200, height: 690), bildschirme: [haupt]) == CGRect(x: 100, y: 210, width: 1200, height: 690))
+    // größer als der Bildschirm: wird verkleinert
+    #expect(FensterGeometrie.aufBildschirmHolen(CGRect(x: 0, y: 25, width: 2000, height: 1200), bildschirme: [haupt]) == haupt)
+}
+
+@Test func kopfNurAmRandSichtbarGiltAlsVerloren() {
+    let haupt = CGRect(x: 0, y: 25, width: 1440, height: 875)
+    // nur 10 pt vom Fenster ragen noch in den Bildschirm (links): nicht greifbar → mittig zurück
+    let fast = CGRect(x: -1190, y: 100, width: 1200, height: 700)
+    #expect(FensterGeometrie.aufBildschirmHolen(fast, bildschirme: [haupt]) == CGRect(x: 120, y: 113, width: 1200, height: 700))
+    // Kopf über der Oberkante (nur der Rumpf ragt in den Bildschirm): ebenfalls zurück
+    let oben = CGRect(x: 100, y: 880, width: 1200, height: 700)
+    #expect(FensterGeometrie.aufBildschirmHolen(oben, bildschirme: [haupt]) == CGRect(x: 120, y: 113, width: 1200, height: 700))
+}
+
+@Test func beiZweiBildschirmenGewinntDerMitDemMeistenKopf() {
+    let links = CGRect(x: 0, y: 0, width: 1440, height: 900)
+    let rechts = CGRect(x: 1440, y: 0, width: 1920, height: 1080)
+    // Fenster überspannt die Naht, der größere Teil des Kopfes liegt rechts: es bleibt dort und rutscht ganz hinein
+    let r = FensterGeometrie.aufBildschirmHolen(CGRect(x: 1200, y: 100, width: 1400, height: 800), bildschirme: [links, rechts])
+    #expect(r == CGRect(x: 1440, y: 100, width: 1400, height: 800))
+}
+
+@Test func ohneBildschirmeBleibtDerRahmen() {
+    let r = CGRect(x: 5, y: 6, width: 700, height: 500)
+    #expect(FensterGeometrie.aufBildschirmHolen(r, bildschirme: []) == r)
+}
+
+// MARK: Titelleiste: Doppelklick und Ampel
+
+@Test func doppelklickAufDieTitelleisteFolgtDerSystemeinstellung() {
+    #expect(TitelleistenDoppelklick.aus(einstellung: "Maximize") == .zoomen)
+    #expect(TitelleistenDoppelklick.aus(einstellung: nil) == .zoomen, "ohne Einstellung gilt der Standard")
+    #expect(TitelleistenDoppelklick.aus(einstellung: "Fill") == .zoomen, "Unbekanntes = Standard")
+    #expect(TitelleistenDoppelklick.aus(einstellung: "Minimize") == .ablegen)
+    #expect(TitelleistenDoppelklick.aus(einstellung: "None") == .nichts)
+}
+
+@Test func ampelSitztMittigInDerKopfzeile() {
+    #expect(FensterAmpel.zeile == 44)
+    // Knopf 14 pt hoch in einem Fenster von 900 pt: Unterkante = 900 − 44 + 15
+    #expect(FensterAmpel.untereKante(knopfHoehe: 14, fensterHoehe: 900) == 871)
+    #expect(FensterAmpel.untereKante(knopfHoehe: 16, fensterHoehe: 900) == 870)
+    // Platz der Seite: Zoom-Knopf endet bei x = 76 → 76 + 14 Luft = 90
+    #expect(FensterAmpel.platz(rechterRandZoom: 76) == 90)
+    #expect(FensterAmpel.platz(rechterRandZoom: 76.2) == 91, "auf ganze Punkte aufgerundet")
+}
+
+@Test func ampelSkriptSetztNurDieDreiWerteAmHtml() {
+    let s = FensterAmpel.skript(platz: 90, hoehe: 44, vorschauText: nil)
+    #expect(s.contains("'--ampel-platz','90px'") && s.contains("'--ampel-hoehe','44px'"))
+    #expect(!s.contains("vorschau") && !s.contains("glas"))
+    #expect(FensterAmpel.skript(platz: 90, hoehe: 44, vorschauText: nil, glas: true).contains("r.dataset.glas='1';"))
+    #expect(FensterAmpel.skript(platz: 0, hoehe: 0, vorschauText: nil).contains("'--ampel-platz','0px'"), "Vollbild: kein Platz")
+    let v = FensterAmpel.skript(platz: 90, hoehe: 44, vorschauText: "Vorschau — nichts wird gespeichert")
+    #expect(v.contains("r.dataset.vorschau='Vorschau — nichts wird gespeichert';"))
+    // Anführungszeichen und Zeilenumbrüche können das Skript nicht aufbrechen
+    let boese = FensterAmpel.skript(platz: 1, hoehe: 1, vorschauText: "a'b\\c\nd")
+    #expect(boese.contains("a\\'b") && !boese.contains("\n"))
+}
+
+@Test func fensterAktionenGeltenNurFuerDasStudio() {
+    #expect(AppAktion.pruefe(["aktion": "fenster-ziehen"], vault: nil, oberflaeche: .studio) == .fensterZiehen)
+    #expect(AppAktion.pruefe(["aktion": "fenster-zoom"], vault: nil, oberflaeche: .studio) == .fensterZoom)
+    #expect(AppAktion.pruefe(["aktion": "fenster-ziehen"], vault: nil, oberflaeche: .app) == nil)
+    #expect(AppAktion.pruefe(["aktion": "fenster-zoom"], vault: nil) == nil, "ohne Angabe gilt die strengste Herkunft")
+    #expect(AppAktion.pruefe(["aktion": "fenster-verschieben"], vault: nil, oberflaeche: .studio) == nil)
+}
+
+@Test func darstellungKenntNurHellDunkelSystemUndNurImStudio() {
+    for (name, erwartet) in [("hell", FensterDarstellung.hell), ("dunkel", .dunkel), ("system", .system)] {
+        #expect(AppAktion.pruefe(["aktion": "darstellung", "wert": name], vault: nil, oberflaeche: .studio) == .darstellung(erwartet), "\(name)")
+        #expect(AppAktion.pruefe(["aktion": "darstellung", "wert": name], vault: nil, oberflaeche: .app) == nil, "\(name) nur Studio")
+    }
+    for ungueltig: Any in ["Hell", "light", "", 1, ["a": 1]] {
+        #expect(AppAktion.pruefe(["aktion": "darstellung", "wert": ungueltig], vault: nil, oberflaeche: .studio) == nil)
+    }
+    #expect(AppAktion.pruefe(["aktion": "darstellung"], vault: nil, oberflaeche: .studio) == nil)
 }
 
 // MARK: Brücken-Argumente

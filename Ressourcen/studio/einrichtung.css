@@ -24,7 +24,7 @@ body.e-seite { background: var(--e-schreibtisch); display: grid; place-items: ce
 /* Fenster (Orca OnboardingFlow: rounded-xl, border, bg-card, Schatten; Breitenwechsel 760ms cubic-bezier(.22,1,.36,1)) */
 .e-win {
   --col: 476px;
-  position: relative; width: min(1120px, calc(100vw - 48px)); height: min(720px, calc(100vh - 48px));
+  position: relative; width: min(1200px, calc(100vw - 48px)); height: min(780px, calc(100vh - 48px));
   display: grid; grid-template-columns: var(--col) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
   border-radius: 14px; background: var(--erhoben); box-shadow: var(--e-fenster-schatten); overflow: hidden;
   transition: grid-template-columns var(--d-layout) var(--ease-flow);

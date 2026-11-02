@@ -12,6 +12,7 @@ import { TE } from "./texte-einrichtung.js";
 import { erzeugeBuehne, markeSvg, windungFortschritt } from "./einrichtung-buehne.js";
 import { erzeugeKi } from "./einrichtung-ki.js";
 import { ruhenetz } from "./bewegung.js";
+import { vorschauPille } from "./fenster.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const win = $("#win"), panes = $("#panes"), stepperEl = $("#stepper"), fussEl = $("#fuss"), buehneEl = $("#buehne");
@@ -819,6 +820,7 @@ document.addEventListener("keydown", (e) => {
 async function start() {
   const param = new URLSearchParams(location.search);
   if (inApp()) document.documentElement.classList.add("e-app");
+  { const pl = vorschauPille(true); if (pl) document.body.append(pl); } // Vorschau: schmale Plakette oben rechts statt eines Streifens
   try { const t = leseLokal("theme", "system"); if (t === "hell") document.documentElement.dataset.theme = "light"; else if (t === "dunkel") document.documentElement.dataset.theme = "dark"; } catch { /* System */ }
   document.title = TE.fenster;
   renderStepper(); renderFuss(); renderBuehne();

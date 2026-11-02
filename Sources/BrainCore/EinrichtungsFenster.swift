@@ -19,17 +19,17 @@ public enum EinrichtungsEinstieg: String, Sendable, CaseIterable {
 public enum EinrichtungsFenster {
     /// Pfad der Seite in der Werkstatt (`Ressourcen/studio/einrichtung.html`).
     public static let pfad = "/einrichtung.html"
-    /// Inhaltsgröße des Fensters (wie CSS `min(1120px, 100vw - 48px)` x 720); der Rand zum sichtbaren Bildschirm je Achse.
-    public static let wunschgroesse = CGSize(width: 1120, height: 720)
+    /// Inhaltsgröße des Fensters (wie CSS `min(1200px, 100vw - 48px)` x 780); der Rand zum sichtbaren Bildschirm je Achse. Groß genug, dass der Schritt
+    /// vom Assistenten ins Studio (mindestens 1280×820) ruhig bleibt.
+    public static let wunschgroesse = CGSize(width: 1200, height: 780)
     public static let bildschirmRand: CGFloat = 48
     /// Kleiner wird das Fenster nie, auch auf einem winzigen Bildschirm nicht.
     public static let minimum = CGSize(width: 560, height: 420)
-    /// Durchsichtiger Zieh-Streifen über der WebView (sie schluckt Klicks in der Titelleiste): Höhe, und ab wo (links bleibt die Ampel
-    /// frei) bis zum rechten Rand.
-    public static let ziehStreifenHoehe: CGFloat = 40
-    public static let ziehStreifenAb: CGFloat = 84
+    /// Durchsichtiger Zieh-Streifen über der WebView (sie schluckt Klicks in der Titelleiste): Höhe (die Zeile der Ampel); links davon bleibt die Ampel
+    /// frei (`FensterAmpel.platz`), er reicht bis zum rechten Rand.
+    public static let ziehStreifenHoehe: CGFloat = FensterAmpel.zeile
 
-    /// Inhaltsgröße für einen sichtbaren Bildschirm der Größe `sichtbar`: 1120 x 720, aber höchstens die sichtbare Fläche minus 48
+    /// Inhaltsgröße für einen sichtbaren Bildschirm der Größe `sichtbar`: 1200 x 780, aber höchstens die sichtbare Fläche minus 48
     /// je Achse, und nie unter `minimum`.
     public static func groesse(sichtbar: CGSize) -> CGSize {
         CGSize(width: max(minimum.width, min(wunschgroesse.width, sichtbar.width - bildschirmRand)),

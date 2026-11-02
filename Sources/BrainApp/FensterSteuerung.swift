@@ -165,6 +165,17 @@ private final class ZiehStreifen: NSView {
     override var isOpaque: Bool { false }
 }
 
+/// Die WebView der Kortex-Fenster. Sie liegt unter der durchsichtigen Titelleiste und nimmt deren Klicks entgegen; ein Klick in die
+/// Kopfzeile eines noch nicht aktiven Fensters soll es, wie bei einer echten Titelleiste, gleich greifen (verschieben) können — darum nimmt sie
+/// dort den ersten Klick an (und nur dort: Knöpfe weiter unten brauchen weiterhin erst die Aktivierung).
+final class KortexWebView: WKWebView {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        guard let event else { return false }
+        let p = convert(event.locationInWindow, from: nil)
+        return (isFlipped ? p.y : bounds.height - p.y) <= FensterAmpel.zeile
+    }
+}
+
 /// Ein Kortex-Fenster (App-Spec §5.2, §7.2; Studio-Spec §9): beim Schließen werden WebView, Kanäle und Brücke beendet.
 /// Die App hat drei davon: Studio (Werkstatt-Brücke), Übersicht (Brücke des gebündelten Kerns) und „Kortex einrichten“ (Seite
 /// `einrichtung.html` der Werkstatt, eigene Brücke ohne Vault; festes Fenster ohne Titel, siehe `Art.einrichtung`).
@@ -178,6 +189,10 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
     var oberflaeche: Oberflaeche { art == .uebersicht ? .app : .studio }
     private var fenster: NSWindow?
     private var webView: WKWebView?
+    /// Nur im Einrichtungsfenster: der unsichtbare Streifen im Kopf, der das Fenster verschiebbar macht.
+    private var ziehStreifen: ZiehStreifen?
+    /// Platz, den die Seite links für die Ampel freihält (nach `positioniereAmpel`).
+    private var ampelPlatz: CGFloat = 0
     private var navigation: Navigation?
     private var bruecke: BrueckenVerbindung?
     private var bereitAufgabe: Task<Void, Never>?
@@ -268,51 +283,59 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
             return await f(aktion, self)
         }
         config.userContentController.addScriptMessageHandler(aktionsKanal, contentWorld: .page, name: "aktion")
-        let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 1200, height: 800), configuration: config)
+        let web = KortexWebView(frame: NSRect(x: 0, y: 0, width: 1200, height: 800), configuration: config)
         let ziel = startURL ?? oberflaeche.startURL
         let navigation = Navigation(oberflaeche: oberflaeche, startURL: ziel)
         navigation.beiGeladen = { [weak self] in self?.warteAufBereit() }
         navigation.beiFehler = { [weak self] grund in self?.log.schreibe("fenster-ladefehler \(self?.name ?? "") \(grund)") }
         web.navigationDelegate = navigation
 
-        // Ohne fullSizeContentView: Die WebView fängt sonst alle Klicks in der Titelleiste ab (Fenster nicht
-        // verschiebbar) und die Ampel-Knöpfe lägen über der Seitenleiste.
-        let maske: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .resizable]
+        // Titelleiste wie bei modernen Mac-Apps: durchsichtig, ohne Titel, der Inhalt läuft darunter (fullSizeContentView), die Ampel sitzt in der
+        // Seitenleiste. Die WebView fängt Klicks in der Titelleiste ab; die Seite meldet darum das Ziehen und den Doppelklick selbst
+        // (Aktionen `fenster-ziehen`/`fenster-zoom`). Die Übersicht (Seite des Kerns) behält die klassische Titelleiste.
         let w: NSWindow
         if art == .einrichtung {
-            w = baueEinrichtungsFenster(web: web, vorschau: vorschau)
+            w = baueEinrichtungsFenster(web: web)
         } else {
+            var maske: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .resizable]
+            if oberflaeche == .studio { maske.insert(.fullSizeContentView) }
             w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800), styleMask: maske, backing: .buffered, defer: false)
             w.isReleasedWhenClosed = false
             w.contentView = web
             w.title = standardTitel
+            if oberflaeche == .studio { glas = richteGlasEin(w, web: web) }
         }
         if art == .einrichtung {
-            // fertig aufgebaut: Größe, Lage und Band stehen in `baueEinrichtungsFenster`
+            // fertig aufgebaut: Größe, Lage und Ampel stehen in `baueEinrichtungsFenster`
         } else if oberflaeche == .studio {
             w.titlebarAppearsTransparent = true
+            w.titleVisibility = .hidden
+            w.collectionBehavior.insert(.fullScreenPrimary)
             w.minSize = StudioFenster.minimum
-            // Erster Start (noch keine gemerkte Position): Standardgröße, mittig. Danach gilt die gemerkte Größe — aber nie
-            // unter dem heutigen Minimum (ältere Versionen erlaubten 900×600). Testlauf: immer wie beim ersten Start, und die
-            // Position der echten App wird weder gelesen noch überschrieben.
+            // Erster Start (noch keine gemerkte Position): 85 % der sichtbaren Fläche, mittig. Danach gilt die gemerkte Größe — aber nie
+            // unter dem heutigen Minimum (ältere Versionen erlaubten 900×600) und immer auf einem vorhandenen Bildschirm (der gemerkte kann
+            // inzwischen abgesteckt sein). Testlauf: immer wie beim ersten Start, und die Position der echten App wird weder gelesen noch überschrieben.
             let ersterStart = fluechtig || UserDefaults.standard.string(forKey: "NSWindow Frame \(StudioFenster.rahmenName)") == nil
             if !fluechtig { w.setFrameAutosaveName(StudioFenster.rahmenName) }
-            var rahmen = w.frame
+            let hauptFlaeche = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? CGRect(origin: .zero, size: CGSize(width: 1728, height: 1080))
+            let rahmen: CGRect
             if ersterStart {
-                let sichtbar = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame.size ?? StudioFenster.standard
-                rahmen.size = StudioFenster.startgroesse(sichtbar: sichtbar)
+                rahmen = StudioFenster.startrahmen(sichtbar: hauptFlaeche)
             } else {
-                rahmen.size = StudioFenster.mindestens(rahmen.size)
+                var r = w.frame
+                r.size = StudioFenster.mindestens(r.size)
+                rahmen = FensterGeometrie.aufBildschirmHolen(r, bildschirme: NSScreen.screens.map(\.visibleFrame))
             }
-            if rahmen.size != w.frame.size { w.setFrame(rahmen, display: false) }
+            if rahmen != w.frame { w.setFrame(rahmen, display: false) }
             if let g = test?.testFenster { w.setContentSize(g) } // `--test-fenster`: Inhaltsgröße in Punkten (mindestens die Mindestgröße)
-            if ersterStart { w.center() }
+            if ersterStart, test?.testFenster != nil { w.setFrame(FensterGeometrie.mittig(w.frame.size, in: hauptFlaeche), display: false) }
         } else {
             if !fluechtig { w.setFrameAutosaveName("BrainFenster") }
             if w.frame.origin == .zero { w.center() }
         }
         w.delegate = self
-        if vorschau, art != .einrichtung { VorschauBand.anbringen(an: w) }
+        if oberflaeche == .studio { richteAmpelEin(w, web: web, vorschau: vorschau) }
+        if vorschau, art == .uebersicht { VorschauBand.anbringen(an: w) }
 
         self.bruecke = bruecke
         self.webView = web
@@ -328,6 +351,113 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
 
     func schliesse() { fenster?.close() }
 
+    // MARK: Titelleiste: Ampel, Ziehen, Doppelklick
+
+    /// Stellt die Titelleiste ein: Ampel mittig in der Kopfzeile (44 pt) mit 16 pt Einzug, dann sagt die App der Seite, wie viel Platz sie links
+    /// braucht (`--ampel-platz`, `--ampel-hoehe`) und ob es die Vorschau ist (`data-vorschau`) — als Skript vor dem Laden jeder Seite.
+    private func richteAmpelEin(_ w: NSWindow, web: WKWebView, vorschau: Bool) {
+        positioniereAmpel(w)
+        ampelVorschau = vorschau ? VorschauBand.text : nil
+        let skript = FensterAmpel.skript(platz: ampelPlatz, hoehe: FensterAmpel.zeile, vorschauText: ampelVorschau, glas: glas)
+        web.configuration.userContentController.addUserScript(WKUserScript(source: skript, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        if let streifen = ziehStreifen {
+            let breite = max(0, w.contentView?.bounds.width ?? 0)
+            streifen.frame = NSRect(x: ampelPlatz, y: streifen.frame.minY, width: max(0, breite - ampelPlatz), height: streifen.frame.height)
+        }
+    }
+    private var ampelVorschau: String?
+    /// Liegt hinter der durchsichtigen WebView ein Seitenleisten-Material des Systems (Glas)? Dann ist die Seitenleiste der Seite durchsichtig.
+    private var glas = false
+
+    /// Legt ein Material des Systems (Seitenleiste) hinter die jetzt durchsichtige WebView des Studios. Gelingt das nicht (WebKit kennt den Schalter nicht),
+    /// bleibt alles wie vorher und die Seite behält ihre deckende Seitenleiste.
+    private func richteGlasEin(_ w: NSWindow, web: WKWebView) -> Bool {
+        guard web.responds(to: NSSelectorFromString("_setDrawsBackground:")) else { return false }
+        web.setValue(false, forKey: "drawsBackground")
+        let inhalt = NSView(frame: NSRect(origin: .zero, size: w.contentLayoutRect.size))
+        inhalt.autoresizesSubviews = true
+        let material = NSVisualEffectView(frame: inhalt.bounds)
+        material.material = .sidebar
+        material.blendingMode = .behindWindow
+        material.state = .active
+        material.autoresizingMask = [.width, .height]
+        web.frame = inhalt.bounds
+        web.autoresizingMask = [.width, .height]
+        inhalt.addSubview(material)
+        inhalt.addSubview(web)
+        w.contentView = inhalt
+        return true
+    }
+
+    /// Aktion `darstellung`: das Fenster folgt dem Hell/Dunkel der Seite (system = wie der Mac).
+    func setzeDarstellung(_ d: FensterDarstellung) {
+        switch d {
+        case .hell: fenster?.appearance = NSAppearance(named: .aqua)
+        case .dunkel: fenster?.appearance = NSAppearance(named: .darkAqua)
+        case .system: fenster?.appearance = nil
+        }
+    }
+
+    /// Setzt die drei Knöpfe der Ampel in die Mitte der Kopfzeile. AppKit richtet sie bei Größenänderungen und nach dem Vollbild wieder
+    /// nach seiner eigenen Titelleiste aus; darum ruft das Fenster dies nach jeder solchen Änderung erneut auf. Im Vollbild gibt es keine Ampel im Fenster.
+    private func positioniereAmpel(_ w: NSWindow) {
+        guard !w.styleMask.contains(.fullScreen),
+              let schliessen = w.standardWindowButton(.closeButton), let ablegen = w.standardWindowButton(.miniaturizeButton),
+              let zoom = w.standardWindowButton(.zoomButton), let leiste = schliessen.superview else { return }
+        let abstand = ablegen.frame.minX - schliessen.frame.minX
+        let hoehe = FensterAmpel.zeile
+        if let behaelter = leiste.superview {
+            behaelter.frame = NSRect(x: 0, y: w.frame.height - hoehe, width: w.frame.width, height: hoehe)
+        }
+        leiste.frame = NSRect(x: 0, y: 0, width: w.frame.width, height: hoehe)
+        for (i, knopf) in [schliessen, ablegen, zoom].enumerated() {
+            knopf.setFrameOrigin(NSPoint(x: FensterAmpel.einzug + CGFloat(i) * abstand, y: ((hoehe - knopf.frame.height) / 2).rounded()))
+        }
+        ampelPlatz = FensterAmpel.platz(rechterRandZoom: zoom.frame.maxX)
+    }
+
+    /// Meldet der Seite den Platz für die Ampel neu (nach Größenänderung, im Vollbild 0).
+    private func meldeAmpel(vollbild: Bool = false) {
+        guard let w = fenster, oberflaeche == .studio else { return }
+        let imVollbild = vollbild || w.styleMask.contains(.fullScreen)
+        if !imVollbild { positioniereAmpel(w) }
+        let skript = FensterAmpel.skript(platz: imVollbild ? 0 : ampelPlatz, hoehe: imVollbild ? 0 : FensterAmpel.zeile, vorschauText: ampelVorschau, glas: glas)
+        webView?.evaluateJavaScript(skript, completionHandler: nil)
+    }
+
+    func windowDidResize(_ notification: Notification) {
+        guard let w = fenster, oberflaeche == .studio else { return }
+        positioniereAmpel(w)
+    }
+    func windowDidEndLiveResize(_ notification: Notification) { meldeAmpel() }
+    func windowWillEnterFullScreen(_ notification: Notification) { meldeAmpel(vollbild: true) }
+    func windowDidExitFullScreen(_ notification: Notification) {
+        meldeAmpel()
+        // AppKit setzt die Titelleiste beim Verlassen des Vollbilds erst nach dieser Meldung zurück.
+        DispatchQueue.main.async { [weak self] in self?.meldeAmpel() }
+    }
+    func windowDidChangeBackingProperties(_ notification: Notification) { meldeAmpel() }
+
+    /// Aktion `fenster-ziehen`: Die Seite hat die Maustaste in einem leeren Teil der Kopfzeile gemeldet; das Fenster folgt der Maus, solange sie gedrückt bleibt.
+    /// Das ursprüngliche Ereignis ist beim Eintreffen der Meldung meist schon weitergelaufen: nimmt die App das Drücken von der aktuellen Mausposition nach.
+    func ziehe() {
+        guard let w = fenster, !w.styleMask.contains(.fullScreen), NSEvent.pressedMouseButtons & 1 == 1 else { return }
+        if let e = NSApp.currentEvent, e.type == .leftMouseDown, e.window === w { w.performDrag(with: e); return }
+        guard let e = NSEvent.mouseEvent(with: .leftMouseDown, location: w.mouseLocationOutsideOfEventStream, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                         windowNumber: w.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1) else { return }
+        w.performDrag(with: e)
+    }
+
+    /// Aktion `fenster-zoom`: Doppelklick in die Kopfzeile tut, was die Systemeinstellung für die Titelleiste sagt.
+    func doppelklickKopf() {
+        guard let w = fenster, !w.styleMask.contains(.fullScreen) else { return }
+        switch TitelleistenDoppelklick.aus(einstellung: UserDefaults.standard.string(forKey: "AppleActionOnDoubleClick")) {
+        case .zoomen: if w.styleMask.contains(.resizable) { w.zoom(nil) }
+        case .ablegen: if w.styleMask.contains(.miniaturizable) { w.miniaturize(nil) }
+        case .nichts: break
+        }
+    }
+
     /// Ein offenes Fenster nach vorn holen (aus dem Dock zurückholen, aktivieren).
     func nachVorn() {
         guard let fenster else { return }
@@ -336,12 +466,13 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
         NSApp.activate()
     }
 
-    /// Das Einrichtungsfenster: feste Größe (1120 x 720, höchstens sichtbare Fläche minus 48 je Achse), mittig, nicht skalierbar, ohne
+    /// Das Einrichtungsfenster: feste Größe (1200 x 780, höchstens sichtbare Fläche minus 48 je Achse), mittig, nicht skalierbar, ohne
     /// sichtbaren Titel; die echte Ampel bleibt (Mini-/Zoom-Knopf aus). Die WebView füllt das ganze Fenster (auch unter der durchsichtigen
-    /// Titelleiste); ein unsichtbarer Streifen darüber macht das Fenster verschiebbar. Eine gemerkte Position gibt es bewusst nicht.
-    private func baueEinrichtungsFenster(web: WKWebView, vorschau: Bool) -> NSWindow {
-        let sichtbar = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame.size ?? CGSize(width: 1440, height: 900)
-        let groesse = EinrichtungsFenster.groesse(sichtbar: sichtbar)
+    /// Titelleiste); ein unsichtbarer Streifen darüber macht das Fenster verschiebbar (ab `richteAmpelEin` rechts neben der Ampel). Eine gemerkte
+    /// Position gibt es bewusst nicht.
+    private func baueEinrichtungsFenster(web: WKWebView) -> NSWindow {
+        let flaeche = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? CGRect(origin: .zero, size: CGSize(width: 1440, height: 900))
+        let groesse = EinrichtungsFenster.groesse(sichtbar: flaeche.size)
         let w = NSWindow(contentRect: NSRect(origin: .zero, size: groesse), styleMask: [.titled, .closable, .fullSizeContentView],
                          backing: .buffered, defer: false)
         w.isReleasedWhenClosed = false
@@ -357,25 +488,14 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
         web.frame = inhalt.bounds
         web.autoresizingMask = [.width, .height]
         inhalt.addSubview(web)
-        let hoehe = EinrichtungsFenster.ziehStreifenHoehe, ab = EinrichtungsFenster.ziehStreifenAb
-        let streifen = ZiehStreifen(frame: NSRect(x: ab, y: groesse.height - hoehe, width: max(0, groesse.width - ab), height: hoehe))
+        let hoehe = EinrichtungsFenster.ziehStreifenHoehe
+        let streifen = ZiehStreifen(frame: NSRect(x: 0, y: groesse.height - hoehe, width: groesse.width, height: hoehe))
         streifen.autoresizingMask = [.width, .minYMargin]
-        inhalt.addSubview(streifen) // über der WebView: fängt die Klicks im Kopf ab
+        inhalt.addSubview(streifen) // über der WebView: fängt die Klicks im Kopf ab (die Ampel liegt darüber und bleibt bedienbar)
+        ziehStreifen = streifen
         w.contentView = inhalt
         w.setContentSize(groesse)
-
-        if vorschau {
-            // Das Band der Vorschau belegt unter der Titelleiste Platz (Zubehör der Titelleiste): die WebView beginnt darunter, das Fenster
-            // wächst um diese Höhe, damit die Seite ihre volle Fläche behält.
-            VorschauBand.anbringen(an: w)
-            inhalt.layoutSubtreeIfNeeded()
-            let oben = inhalt.bounds.height - w.contentLayoutRect.height
-            if oben > 0, oben <= 120 {
-                w.setContentSize(CGSize(width: groesse.width, height: groesse.height + oben))
-                web.frame = NSRect(x: 0, y: 0, width: groesse.width, height: groesse.height)
-            }
-        }
-        w.center()
+        w.setFrame(FensterGeometrie.mittig(w.frame.size, in: flaeche), display: false)
         return w
     }
 
@@ -618,6 +738,7 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
             web.removeFromSuperview()
         }
         webView = nil
+        ziehStreifen = nil
         navigation = nil
         fenster?.delegate = nil
         fenster = nil
