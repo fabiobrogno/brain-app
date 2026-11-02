@@ -1,0 +1,631 @@
+{
+ "hinweis": "Gemeinsame Testfälle der Kurzformen. Gelesen von Tests/Node/kurzformen.test.mjs (Ressourcen/gemeinsam/kurzformen.mjs) UND Tests/BrainCoreTests/ErfassenKurzformenTests.swift (Sources/BrainCore/Erfassen/Kurzformen.swift). Beide Seiten müssen jeden Fall gleich lesen. 'erwartet' nennt nur die geprüften Felder (null = muss leer sein). 'heute' ist ein Kalendertag.",
+ "heute": "2026-10-30",
+ "regeln": [
+  "!hoch · !normal · !niedrig · !! — Priorität (überall in der ersten Zeile)",
+  "@morgen · @freitag · @12.11. · @2026-11-03 — Fälligkeit mit @",
+  "bis morgen · fällig Freitag · bis zum 12.11. — Fälligkeit nach „bis“ oder „fällig“",
+  "morgen … oder … übermorgen — heute, morgen, übermorgen, Wochentag, in 3 Tagen, in 2 Wochen, nächste Woche, 2026-11-03: ohne Zeichen nur ganz vorn oder hinten"
+ ],
+ "faelle": [
+  {
+   "name": "Priorität am Ende",
+   "eingabe": "Steuer machen !hoch",
+   "erwartet": {
+    "titel": "Steuer machen",
+    "prioritaet": "hoch",
+    "prioritaetWort": "!hoch",
+    "faellig": null
+   }
+  },
+  {
+   "name": "Priorität am Anfang",
+   "eingabe": "!niedrig Blumen gießen",
+   "erwartet": {
+    "titel": "Blumen gießen",
+    "prioritaet": "niedrig"
+   }
+  },
+  {
+   "name": "Priorität mitten drin",
+   "eingabe": "Blumen !normal gießen",
+   "erwartet": {
+    "titel": "Blumen gießen",
+    "prioritaet": "normal"
+   }
+  },
+  {
+   "name": "Doppel-Ausrufezeichen",
+   "eingabe": "Zahnarzt anrufen !!",
+   "erwartet": {
+    "titel": "Zahnarzt anrufen",
+    "prioritaet": "hoch"
+   }
+  },
+  {
+   "name": "Groß/klein und Komma",
+   "eingabe": "Zahnarzt !HOCH,",
+   "erwartet": {
+    "titel": "Zahnarzt",
+    "prioritaet": "hoch"
+   }
+  },
+  {
+   "name": "Priorität im Wort bleibt Text",
+   "eingabe": "Das ist wichtig!hoch",
+   "erwartet": {
+    "titel": "Das ist wichtig!hoch",
+    "prioritaet": null
+   }
+  },
+  {
+   "name": "!! nur als eigenes Wort",
+   "eingabe": "Super!!",
+   "erwartet": {
+    "titel": "Super!!",
+    "prioritaet": null
+   }
+  },
+  {
+   "name": "Nur ein Prioritätswort bleibt Titel",
+   "eingabe": "!hoch",
+   "erwartet": {
+    "titel": "!hoch",
+    "prioritaet": null
+   }
+  },
+  {
+   "name": "Priorität ausgeschaltet",
+   "eingabe": "Steuer machen !hoch",
+   "optionen": {
+    "prioritaet": false
+   },
+   "erwartet": {
+    "titel": "Steuer machen !hoch",
+    "prioritaet": null
+   }
+  },
+  {
+   "name": "morgen am Ende",
+   "eingabe": "Steuer machen morgen",
+   "erwartet": {
+    "titel": "Steuer machen",
+    "faellig": "2026-10-31",
+    "faelligWort": "morgen"
+   }
+  },
+  {
+   "name": "morgen am Anfang",
+   "eingabe": "morgen Steuer machen",
+   "erwartet": {
+    "titel": "Steuer machen",
+    "faellig": "2026-10-31"
+   }
+  },
+  {
+   "name": "übermorgen",
+   "eingabe": "Steuer machen übermorgen",
+   "erwartet": {
+    "faellig": "2026-11-01"
+   }
+  },
+  {
+   "name": "uebermorgen",
+   "eingabe": "Steuer machen uebermorgen",
+   "erwartet": {
+    "faellig": "2026-11-01"
+   }
+  },
+  {
+   "name": "heute am Anfang",
+   "eingabe": "heute Müll rausbringen",
+   "erwartet": {
+    "titel": "Müll rausbringen",
+    "faellig": "2026-10-30"
+   }
+  },
+  {
+   "name": "Satzzeichen am Ende stören nicht",
+   "eingabe": "Müll rausbringen Heute.",
+   "erwartet": {
+    "titel": "Müll rausbringen",
+    "faellig": "2026-10-30"
+   }
+  },
+  {
+   "name": "Wochentag: bis Montag",
+   "eingabe": "Bericht bis Montag",
+   "erwartet": {
+    "titel": "Bericht",
+    "faellig": "2026-11-02"
+   }
+  },
+  {
+   "name": "Wochentag am Anfang",
+   "eingabe": "Montag Bericht schreiben",
+   "erwartet": {
+    "faellig": "2026-11-02"
+   }
+  },
+  {
+   "name": "Samstag",
+   "eingabe": "Bericht Samstag",
+   "erwartet": {
+    "faellig": "2026-10-31"
+   }
+  },
+  {
+   "name": "Freitag am Freitag ist der nächste",
+   "eingabe": "Bericht Freitag",
+   "erwartet": {
+    "faellig": "2026-11-06"
+   }
+  },
+  {
+   "name": "Sonntag",
+   "eingabe": "Sonntag Kuchen backen",
+   "erwartet": {
+    "faellig": "2026-11-01"
+   }
+  },
+  {
+   "name": "in 3 Tagen",
+   "eingabe": "in 3 Tagen Zahnarzt",
+   "erwartet": {
+    "titel": "Zahnarzt",
+    "faellig": "2026-11-02",
+    "faelligWort": "in 3 Tagen"
+   }
+  },
+  {
+   "name": "in 2 Wochen",
+   "eingabe": "Zahnarzt anrufen in 2 Wochen",
+   "erwartet": {
+    "titel": "Zahnarzt anrufen",
+    "faellig": "2026-11-13"
+   }
+  },
+  {
+   "name": "in 1 Tag",
+   "eingabe": "Zahnarzt in 1 Tag",
+   "erwartet": {
+    "faellig": "2026-10-31"
+   }
+  },
+  {
+   "name": "nächste Woche ist der nächste Montag",
+   "eingabe": "Bericht nächste Woche",
+   "erwartet": {
+    "titel": "Bericht",
+    "faellig": "2026-11-02"
+   }
+  },
+  {
+   "name": "naechste Woche",
+   "eingabe": "Bericht naechste Woche",
+   "erwartet": {
+    "faelligWort": "naechste Woche",
+    "faellig": "2026-11-02"
+   }
+  },
+  {
+   "name": "Zahlwörter werden nicht gelesen",
+   "eingabe": "Zahnarzt in drei Tagen",
+   "erwartet": {
+    "titel": "Zahnarzt in drei Tagen",
+    "faellig": null
+   }
+  },
+  {
+   "name": "@ mit Datum",
+   "eingabe": "Rechnung @12.11.",
+   "erwartet": {
+    "titel": "Rechnung",
+    "faellig": "2026-11-12"
+   }
+  },
+  {
+   "name": "@morgen mitten im Satz",
+   "eingabe": "Rechnung @morgen bezahlen",
+   "erwartet": {
+    "titel": "Rechnung bezahlen",
+    "faellig": "2026-10-31"
+   }
+  },
+  {
+   "name": "@freitag am Anfang",
+   "eingabe": "@freitag Vertrag senden",
+   "erwartet": {
+    "titel": "Vertrag senden",
+    "faellig": "2026-11-06"
+   }
+  },
+  {
+   "name": "bis zum Datum mit Jahr",
+   "eingabe": "Rechnung bis zum 15.11.2026 zahlen",
+   "erwartet": {
+    "titel": "Rechnung zahlen",
+    "faellig": "2026-11-15"
+   }
+  },
+  {
+   "name": "fällig morgen",
+   "eingabe": "Rechnung fällig morgen zahlen",
+   "erwartet": {
+    "titel": "Rechnung zahlen",
+    "faellig": "2026-10-31"
+   }
+  },
+  {
+   "name": "fällig: Montag",
+   "eingabe": "Rechnung fällig: Montag",
+   "erwartet": {
+    "faellig": "2026-11-02"
+   }
+  },
+  {
+   "name": "zweistelliges Jahr",
+   "eingabe": "Rechnung @3.11.26",
+   "erwartet": {
+    "faellig": "2026-11-03"
+   }
+  },
+  {
+   "name": "bis ISO-Datum",
+   "eingabe": "Rechnung zahlen bis 2026-11-10",
+   "erwartet": {
+    "titel": "Rechnung zahlen",
+    "faellig": "2026-11-10"
+   }
+  },
+  {
+   "name": "Datum ohne Jahr: schon vorbei, nächstes Jahr",
+   "eingabe": "Steuer @1.10.",
+   "erwartet": {
+    "titel": "Steuer",
+    "faellig": "2027-10-01"
+   }
+  },
+  {
+   "name": "Datum ohne Jahr: heute zählt noch",
+   "eingabe": "Steuer @30.10.",
+   "erwartet": {
+    "faellig": "2026-10-30"
+   }
+  },
+  {
+   "name": "31.02. gibt es nicht",
+   "eingabe": "Steuer @31.02.",
+   "erwartet": {
+    "titel": "Steuer @31.02.",
+    "faellig": null
+   }
+  },
+  {
+   "name": "@gestern ist kein Datum",
+   "eingabe": "Steuer @gestern",
+   "erwartet": {
+    "faellig": null
+   }
+  },
+  {
+   "name": "ISO am Anfang",
+   "eingabe": "2026-11-03 Steuer",
+   "erwartet": {
+    "titel": "Steuer",
+    "faellig": "2026-11-03"
+   }
+  },
+  {
+   "name": "ISO am Ende",
+   "eingabe": "Steuer 2026-11-03",
+   "erwartet": {
+    "titel": "Steuer",
+    "faellig": "2026-11-03"
+   }
+  },
+  {
+   "name": "ungültiges ISO",
+   "eingabe": "Steuer 2026-13-45",
+   "erwartet": {
+    "titel": "Steuer 2026-13-45",
+    "faellig": null
+   }
+  },
+  {
+   "name": "Versionsnummer ist kein Datum",
+   "eingabe": "Version 2.3 testen",
+   "erwartet": {
+    "faellig": null
+   }
+  },
+  {
+   "name": "Zahlenpunkt ohne @ ist kein Datum",
+   "eingabe": "Update auf 2.3.",
+   "erwartet": {
+    "faellig": null
+   }
+  },
+  {
+   "name": "Morgen mitten im Satz ist kein Datum",
+   "eingabe": "Der Morgen danach war ruhig",
+   "erwartet": {
+    "faellig": null
+   }
+  },
+  {
+   "name": "Gestern war Montag",
+   "eingabe": "Gestern war Montag im Büro",
+   "erwartet": {
+    "faellig": null
+   }
+  },
+  {
+   "name": "nur morgen bleibt Titel",
+   "eingabe": "morgen",
+   "erwartet": {
+    "titel": "morgen",
+    "faellig": null
+   }
+  },
+  {
+   "name": "nur bis morgen bleibt Titel",
+   "eingabe": "bis morgen",
+   "erwartet": {
+    "titel": "bis morgen",
+    "faellig": null
+   }
+  },
+  {
+   "name": "Priorität und Fälligkeit zusammen",
+   "eingabe": "morgen Steuer machen !niedrig",
+   "erwartet": {
+    "titel": "Steuer machen",
+    "prioritaet": "niedrig",
+    "faellig": "2026-10-31"
+   }
+  },
+  {
+   "name": "Beispiel aus dem Audit",
+   "eingabe": "Steuererklärung abgeben morgen !hoch",
+   "erwartet": {
+    "titel": "Steuererklärung abgeben",
+    "prioritaet": "hoch",
+    "faellig": "2026-10-31"
+   }
+  },
+  {
+   "name": "Fälligkeit ausgeschaltet",
+   "eingabe": "Steuer machen morgen",
+   "optionen": {
+    "faellig": false
+   },
+   "erwartet": {
+    "titel": "Steuer machen morgen",
+    "faellig": null
+   }
+  },
+  {
+   "name": "nur die erste Zeile zählt",
+   "eingabe": "\n\n  Steuer morgen !hoch  \nDetails mit morgen und !hoch\n\nLetzte Zeile\n",
+   "erwartet": {
+    "titel": "Steuer",
+    "prioritaet": "hoch",
+    "faellig": "2026-10-31",
+    "text": "Details mit morgen und !hoch\n\nLetzte Zeile"
+   }
+  },
+  {
+   "name": "CRLF",
+   "eingabe": "Eins\r\nZwei",
+   "erwartet": {
+    "titel": "Eins",
+    "text": "Zwei"
+   }
+  },
+  {
+   "name": "leer",
+   "eingabe": "",
+   "erwartet": {
+    "titel": "",
+    "text": "",
+    "prioritaet": null,
+    "faellig": null
+   }
+  },
+  {
+   "name": "nur Leerraum",
+   "eingabe": "  \n ",
+   "erwartet": {
+    "titel": "",
+    "text": ""
+   }
+  },
+  {
+   "name": "mehrere Leerzeichen werden zusammengezogen",
+   "eingabe": "Steuer    machen   morgen",
+   "erwartet": {
+    "titel": "Steuer machen",
+    "faellig": "2026-10-31"
+   }
+  },
+  {
+   "name": "Tab als Trenner",
+   "eingabe": "Steuer\tmachen\t!hoch",
+   "erwartet": {
+    "titel": "Steuer machen",
+    "prioritaet": "hoch"
+   }
+  },
+  {
+   "name": "Wochentag in Großbuchstaben",
+   "eingabe": "BERICHT MONTAG",
+   "erwartet": {
+    "titel": "BERICHT",
+    "faellig": "2026-11-02"
+   }
+  },
+  {
+   "name": "bis am Datum",
+   "eingabe": "Rechnung bis am 15.11. zahlen",
+   "erwartet": {
+    "titel": "Rechnung zahlen",
+    "faellig": "2026-11-15"
+   }
+  },
+  {
+   "name": "in 0 Tagen ist keine Fälligkeit",
+   "eingabe": "Zahnarzt in 0 Tagen",
+   "erwartet": {
+    "faellig": null
+   }
+  },
+  {
+   "name": "in 1000 Tagen ist keine Fälligkeit",
+   "eingabe": "Zahnarzt in 1000 Tagen",
+   "erwartet": {
+    "faellig": null
+   }
+  },
+  {
+   "name": "nächsten Woche",
+   "eingabe": "Bericht nächsten Woche",
+   "erwartet": {
+    "faellig": "2026-11-02"
+   }
+  },
+  {
+   "name": "Jahreswechsel: in 3 Tagen",
+   "heute": "2026-12-30",
+   "eingabe": "Zahnarzt in 3 Tagen",
+   "erwartet": {
+    "titel": "Zahnarzt",
+    "faellig": "2027-01-02"
+   }
+  },
+  {
+   "name": "Jahreswechsel: Datum ohne Jahr",
+   "heute": "2026-12-30",
+   "eingabe": "Steuer @2.1.",
+   "erwartet": {
+    "faellig": "2027-01-02"
+   }
+  },
+  {
+   "name": "Schaltjahr: morgen",
+   "heute": "2028-02-28",
+   "eingabe": "Steuer morgen",
+   "erwartet": {
+    "faellig": "2028-02-29"
+   }
+  },
+  {
+   "name": "Kein Schaltjahr: morgen",
+   "heute": "2027-02-28",
+   "eingabe": "Steuer morgen",
+   "erwartet": {
+    "faellig": "2027-03-01"
+   }
+  },
+  {
+   "name": "Sonntag: nächste Woche ist morgen",
+   "heute": "2026-11-01",
+   "eingabe": "Bericht nächste Woche",
+   "erwartet": {
+    "faellig": "2026-11-02"
+   }
+  },
+  {
+   "name": "Montag: Montag ist in 7 Tagen",
+   "heute": "2026-11-02",
+   "eingabe": "Bericht Montag",
+   "erwartet": {
+    "faellig": "2026-11-09"
+   }
+  }
+ ],
+ "faelligText": [
+  {
+   "iso": "2026-10-30",
+   "erwartet": "heute"
+  },
+  {
+   "iso": "2026-10-31",
+   "erwartet": "morgen"
+  },
+  {
+   "iso": "2026-11-03",
+   "erwartet": "Di., 03.11."
+  },
+  {
+   "iso": "2027-01-04",
+   "erwartet": "Mo., 04.01.2027"
+  },
+  {
+   "iso": "kaputt",
+   "erwartet": "kaputt"
+  },
+  {
+   "iso": "2026-10-29",
+   "erwartet": "Do., 29.10."
+  }
+ ],
+ "zeitpunkte": [
+  {
+   "name": "23:30 in Berlin ist noch der 30.",
+   "zeitpunkt": "2026-10-30T21:30:00Z",
+   "zone": "Europe/Berlin",
+   "heute": "2026-10-30",
+   "eingabe": "Steuer morgen",
+   "faellig": "2026-10-31"
+  },
+  {
+   "name": "Derselbe Zeitpunkt in Los Angeles: der 30. um 14:30",
+   "zeitpunkt": "2026-10-30T21:30:00Z",
+   "zone": "America/Los_Angeles",
+   "heute": "2026-10-30",
+   "eingabe": "Steuer morgen",
+   "faellig": "2026-10-31"
+  },
+  {
+   "name": "00:30 am 31. in Berlin",
+   "zeitpunkt": "2026-10-30T23:30:00Z",
+   "zone": "Europe/Berlin",
+   "heute": "2026-10-31",
+   "eingabe": "Steuer morgen",
+   "faellig": "2026-11-01"
+  },
+  {
+   "name": "Derselbe Zeitpunkt in UTC: noch der 30.",
+   "zeitpunkt": "2026-10-30T23:30:00Z",
+   "zone": "UTC",
+   "heute": "2026-10-30",
+   "eingabe": "Steuer morgen",
+   "faellig": "2026-10-31"
+  },
+  {
+   "name": "Tokio ist dem Tag voraus",
+   "zeitpunkt": "2026-10-30T23:30:00Z",
+   "zone": "Asia/Tokyo",
+   "heute": "2026-10-31",
+   "eingabe": "Steuer heute",
+   "faellig": "2026-10-31"
+  },
+  {
+   "name": "Ende der Sommerzeit (25.10.2026): 23:30 am 24. ist noch der 24.",
+   "zeitpunkt": "2026-10-24T21:30:00Z",
+   "zone": "Europe/Berlin",
+   "heute": "2026-10-24",
+   "eingabe": "Steuer morgen",
+   "faellig": "2026-10-25"
+  },
+  {
+   "name": "Der Tag nach der Umstellung",
+   "zeitpunkt": "2026-10-25T23:30:00Z",
+   "zone": "Europe/Berlin",
+   "heute": "2026-10-26",
+   "eingabe": "Steuer morgen",
+   "faellig": "2026-10-27"
+  }
+ ]
+}

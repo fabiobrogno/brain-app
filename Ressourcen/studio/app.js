@@ -4,8 +4,9 @@ import { T, PRODUKT } from "./texte.js";
 import { api, aktion, aktionMitAntwort, inApp, gitGesperrt, andererVault, nichtVertraut, ausgangUnklar, zeitText as zeitFehlerText, ladeStandNeu } from "./api.js";
 import { erstelleEditor } from "./editor.js";
 import { h, dialog, dialogOffen, schliesseDialoge, toast, vorMinuten, dateiName, ohneEndung, ordnerVon, istBearbeitbar, speichereLokal, leseLokal, leseEntwurf, speichereEntwurf, sucheGrad, suchFormen, ausTabelle, arbeitBeginnt, laufendeArbeiten } from "./hilfen.js";
-import { symbol } from "./symbole.js";
-import { textfeld, textbereich, auswahl, hakenFeld, knopf as baueKnopf, leerBlock, setzeLaedt, wenigBewegung } from "./bausteine.js";
+import { symbol, GROESSE } from "./symbole.js";
+import { textfeld, textbereich, auswahl, hakenFeld, segment, knopf as baueKnopf, leerBlock, setzeLaedt, wenigBewegung } from "./bausteine.js";
+import { liesKurzformen, faelligText } from "./kurzformen.js";
 import { kiLogo } from "./ki-logos.js";
 import { TV } from "./texte-verlauf.js";
 import { istRohGit } from "./verlauf.js";
@@ -26,6 +27,8 @@ import { ruhenetz, kantenInstallieren, tippsInstallieren, huepfe, fliege, blende
 import { windungLaden } from "./windung.js";
 import { installiereFensterKopf, vorschauPille } from "./fenster.js"; // Titelleiste der App: Kopfzeile greifbar, Plakette „Vorschau“
 import * as kz from "./tastenkuerzel.js";
+import { baueWikiIndex, loeseWikiLink, schlageWikiZieleVor, ordnerVonPfad } from "./wikilink.js";
+import { heuteIso } from "./zeit.js";
 import { datumKurz, datumLang, datumZeit, istDatumText, bytesText, setzeTypFarbe, typSymbol, typName, wortAnzahl, relativ, pluralisiere, vorschauText, typTextFarbe } from "./format.js";
 
 const $ = (id) => document.getElementById(id);
@@ -62,7 +65,17 @@ document.title = PRODUKT;
 $("suche").placeholder = T.suche.platzhalter;
 document.querySelector('[data-t="merken"]').textContent = T.seitenleiste.erfassen;
 document.querySelector('[data-t="kopfSuche"]').textContent = T.kopf.suche;
-$("fuss-merken").title = `${T.seitenleiste.erfassen} (${T.seitenleiste.erfassenTaste})`; $("fuss-merken").setAttribute("aria-label", T.seitenleiste.erfassen);
+// Das Kürzel für „Schnell erfassen“ steht im Register der Tastenkürzel (Standard ⌃⌥ Leertaste) und ist änderbar: der Hinweis liest es von dort und folgt jeder Änderung.
+function zeichneErfassenTaste() {
+  const teile = kz.anzeigeTeile("schnell-erfassen");
+  const kbd = $("fuss-merken").querySelector(".erfassen-taste");
+  const text = teile.length > 1 ? `${teile.slice(0, -1).join("")} ${teile[teile.length - 1]}` : teile.join("");
+  kbd.textContent = text; kbd.hidden = !teile.length;
+  $("fuss-merken").title = teile.length ? `${T.seitenleiste.erfassen} (${teile.join("")})` : T.seitenleiste.erfassen;
+  $("fuss-merken").setAttribute("aria-label", T.seitenleiste.erfassen);
+}
+zeichneErfassenTaste();
+kz.beiAenderung(zeichneErfassenTaste);
 $("fuss-neu").title = `${T.befehle.neu} (⌘N)`; $("fuss-neu").setAttribute("aria-label", T.befehle.neu);
 $("kopf-suche").setAttribute("aria-label", T.kopf.suche); $("kopf-suche").title = `${T.kopf.sucheTitel} (⌘K)`;
 document.querySelectorAll("[data-sym]").forEach((el) => el.replaceWith(symbol(el.dataset.sym, el.dataset.sym === "suche" && el.closest("#kopf-suche") ? 14 : 16)));
@@ -107,8 +120,8 @@ const ed = erstelleEditor($("editor"), {
   roh: () => S.roh,
   wikiAufloesen: (ziel) => loeseWikiAuf(ziel),
   wikiFarbe: (pfad) => { const n = S.nMap.get(pfad); const typ = n?.typ ? (S.typMap.get(n.typ) || { name: n.typ }) : null; return typ ? typTextFarbe(typ) : null; },
-  wikiZiele: () => wikiZiele(),
-  wikiOeffnen: (ziel) => { const d = loeseWikiAuf(ziel); if (d) oeffne(d); else toast(`„${ziel}“ gibt es noch nicht.`, { aktion: { text: "Anlegen", tun: () => legeWikiZielAn(ziel) } }); },
+  wikiVorschlaege: (getippt) => wikiVorschlaege(getippt),
+  wikiOeffnen: (ziel) => { const d = loeseWikiAuf(ziel); if (d) oeffne(d); else toast(T.wiki.fehlt(ziel), { aktion: { text: T.wiki.anlegen, tun: () => legeWikiZielAn(ziel) } }); },
   speichernJetzt: () => { clearTimeout(speicherTimer); speichere(); },
   geaendert: () => {
     if (S.schutz || !S.bearbeitbar) return;
@@ -120,40 +133,31 @@ const ed = erstelleEditor($("editor"), {
   },
 });
 
-// Wikilink-Auflösung: Pfad ohne Endung, sonst Dateiname (ohne Endung), Groß/klein egal
+// Wikilink-Auflösung: dieselbe Regel wie in der Werkstatt (wikilink.js = gemeinsam/wikilink.mjs): Pfad und Dateiname, dann Titel, dann Alias;
+// erst genau, dann tolerant (Groß/klein, Umlaute, Trenner). Titel und Aliasse kommen aus dem Index (S.nMap), Dateien ohne Index-Zeile zählen mit ihrem Dateinamen.
 function dateien() { return S.baum.filter((e) => e.art === "datei" && istBearbeitbar(e.pfad)); }
 let wikiIndex = null;
 function wikiKarte() {
   if (wikiIndex) return wikiIndex;
-  const nachPfad = new Map(), nachName = new Map();
-  for (const d of dateien()) {
-    nachPfad.set(ohneEndung(d.pfad).toLowerCase(), d.pfad);
-    const n = ohneEndung(dateiName(d.pfad)).toLowerCase();
-    if (!nachName.has(n)) nachName.set(n, d.pfad);
-  }
-  return (wikiIndex = { nachPfad, nachName });
+  return (wikiIndex = baueWikiIndex(dateien().map((d) => { const n = S.nMap.get(d.pfad); return { pfad: d.pfad, titel: n?.titel, aliasse: n?.aliasse }; })));
 }
-function loeseWikiAuf(ziel) {
-  const k = wikiKarte();
-  const z = ziel.trim().replace(/\.md$/i, "").toLowerCase();
-  return k.nachPfad.get(z) || k.nachName.get(z) || k.nachName.get(z.split("/").pop()) || null;
-}
-function wikiZiele() {
-  const zaehler = new Map();
-  const liste = dateien();
-  for (const d of liste) { const n = ohneEndung(dateiName(d.pfad)); zaehler.set(n, (zaehler.get(n) || 0) + 1); }
-  return liste.map((d) => {
-    const n = ohneEndung(dateiName(d.pfad));
-    return { name: zaehler.get(n) > 1 ? ohneEndung(d.pfad) : n, pfad: d.pfad, ordner: ordnerVon(d.pfad) };
-  });
-}
+function loeseWikiAuf(ziel, von = S.pfad) { return loeseWikiLink(wikiKarte(), ziel, ordnerVonPfad(von || "")); }
+// Vorschläge für „[[“: Titel (Ordner als Detail), Aliasse, Dateinamen; unscharf; zuletzt Geöffnetes zuerst, wenn noch nichts getippt ist
+function wikiVorschlaege(getippt) { return schlageWikiZieleVor(wikiKarte(), getippt, { vonDir: ordnerVonPfad(S.pfad || ""), bevorzugt: S.zuletzt, max: 40 }); }
+// „Anlegen“ aus einem offenen Link: die Werkstatt prüft mit derselben Regel gegen den frischen Index, ob es das Ziel schon gibt (dann wird nur geöffnet),
+// und legt sonst eine Notiz mit dem Ziel als Titel an. Ein Klick während des Anlegens zählt nicht doppelt.
+const wikiAnlegenLaeuft = new Set();
 async function legeWikiZielAn(ziel) {
+  if (wikiAnlegenLaeuft.has(ziel)) return;
+  wikiAnlegenLaeuft.add(ziel);
   try {
     const ordner = ordnerVon(S.pfad || "") || (S.baum.find((e) => e.pfad === inboxName()) ? inboxName() : "");
-    const r = await api.neu(ordner, ziel.split("/").pop());
+    const r = await api.wikiAnlegen(ziel, S.pfad || "", ordner);
     await ladeBaum();
-    oeffne(r.pfad);
+    await oeffne(r.pfad);
+    if (r.vorhanden) toast(T.wiki.vorhanden(ohneEndung(dateiName(r.pfad))));
   } catch (e) { toast(e.message, { fehler: true }); }
+  finally { wikiAnlegenLaeuft.delete(ziel); }
 }
 
 // ======================================================= Datei öffnen / speichern
@@ -213,7 +217,7 @@ async function speichereEinmal() {
       S.hash = r.hash;
       if (ed.text() === text) { S.dirty = false; zeigeStand("gespeichert"); } else zeigeStand("ungespeichert");
     }
-    planeGitRefresh(); planeBaumRefresh();
+    planeGitRefresh(); planeBaumRefresh(); planeInfoAuffrischen();
   } catch (e) {
     if (e.status === 409 && S.pfad === pfad) { S.konflikt = { aktuellerHash: e.daten?.aktuellerHash || null }; zeigeBanner(); zeigeStand("konflikt"); }
     else {
@@ -335,7 +339,7 @@ function typenAusNotizen() {
 }
 const neuesteZuerst = (a, b) => (Date.parse(b.geaendert) || 0) - (Date.parse(a.geaendert) || 0);
 function leiteAnsichtenAb(apiAnsichten) {
-  const heute = new Date().toLocaleDateString("sv-SE");
+  const heute = heuteIso();
   const basis = S.notizen.filter(istNotiz);
   const abgelaufen = (n) => [n.felder?.pruefen_bis, n.felder?.verfall].some((d) => typeof d === "string" && /^\d{4}-\d{2}-\d{2}/.test(d) && d.slice(0, 10) < heute);
   S.ansichtMitglieder = {
@@ -373,6 +377,7 @@ async function ladeIndex() {
   S.typMap = new Map(S.typen.map((x) => [x.name, x]));
   S.ansichten = a.status === "fulfilled" && Array.isArray(a.value?.ansichten) ? a.value.ansichten : [];
   leiteAnsichtenAb(S.ansichten);
+  wikiIndex = null; // Titel und Aliasse sind neu: die Auflösung der [[Links]] baut sich beim nächsten Gebrauch neu
 }
 async function ladeBaum() {
   try {
@@ -388,7 +393,7 @@ async function ladeBaum() {
 function zeichneNachIndex() {
   const sig = S.notizen.length + ":" + S.notizen.map((n) => `${n.pfad}|${n.geaendert}|${n.titel}|${n.stufe}|${n.typ}|${n.felder?.spaeter_bis || ""}`).join(";") + "#" + S.baum.length;
   const geaendert = sig !== S.sig; S.sig = sig;
-  if (geaendert) { zeichneSeite(); if (S.sicht.art !== "verlauf") zeichneListe({ behalte: true }); zeichnePfad(); }
+  if (geaendert) { zeichneSeite(); if (S.sicht.art !== "verlauf") zeichneListe({ behalte: true }); zeichnePfad(); ed.zeichneNeu(); } // zeichneNeu: [[Links]] im Editor neu prüfen (eine angelegte Notiz macht einen offenen Link zu)
   zeichneStatus(); zeigeLeer();
 }
 // Reihenfolge der Werkstatt-Liste: zuletzt geändert zuerst, bei Gleichstand nach Pfad (werkstatt: gemeinsam/notizen.mjs)
@@ -442,7 +447,7 @@ function setzeModus() {
 }
 // Zähler für die Seitenleiste aus dem Notiz-Index: offen = noch nicht erledigt, überfällig = mit Fälligkeit vor heute
 function aufgabenZaehler() {
-  const heute = new Date().toLocaleDateString("sv-SE");
+  const heute = heuteIso();
   let offen = 0, ueber = 0;
   for (const n of S.notizen) {
     if (n.bereich !== "aufgabe") continue;
@@ -1111,11 +1116,13 @@ function zielKnopf(ziel) {
   const knopf = h("button", { klasse: "ziel", type: "button", "data-ziel": pfad, title: pfad, aufClick: () => oeffne(pfad, { ausListe: true }) }, symbol(typ ? typSymbol(typ.symbol) : "notiz", 14), h("span", { klasse: "t", text: n?.titel || ohneEndung(dateiName(pfad)) }));
   return typ ? setzeTypFarbe(knopf, typ) : knopf;
 }
-function infoGeruest() {
+// leise: der Inhalt wird nur gebaut; inhalt._tausch() setzt ihn an die Stelle des alten (Bildlauf bleibt)
+function infoGeruest(leise = false) {
   const kopf = h("div", { klasse: "info-kopf" }, h("h2", { text: T.eigenschaften.titel }),
     h("button", { klasse: "knopf-icon", type: "button", title: T.eigenschaften.schliessen, "aria-label": T.eigenschaften.schliessen, aufClick: umschalteInfo }, symbol("schliessen", 14)));
   const inhalt = h("div", { klasse: "info-inhalt" });
-  $("info").replaceChildren(kopf, inhalt);
+  if (!leise) $("info").replaceChildren(kopf, inhalt);
+  else inhalt._tausch = () => { const y = $("info").querySelector(".info-inhalt")?.scrollTop || 0; $("info").replaceChildren(kopf, inhalt); inhalt.scrollTop = y; };
   return inhalt;
 }
 async function holeKontext(pfad) {
@@ -1130,9 +1137,11 @@ async function holeKontext(pfad) {
     return { felder, beziehungen, rueckverweise: rueck, info: { woerter: null, bytes: null, geaendert: n?.geaendert || null, erstellt: n?.erstellt || null } };
   }
 }
-async function ladeInfo() {
+// leise: die Spalte bleibt stehen und wird erst ausgetauscht, wenn alles geladen ist (kein Flackern) — so frischt das Speichern sie auf
+async function ladeInfo({ leise = false } = {}) {
   const nr = ++infoNr, pfad = S.pfad;
-  const inhalt = infoGeruest();
+  const inhalt = infoGeruest(leise);
+  const aufgaben = [];
   if (!pfad) { inhalt.append(h("div", { klasse: "info-leer", text: T.eigenschaften.leer })); zeichnePille(null); return; }
   const n = S.nMap.get(pfad);
   const wahrheit = sektion("pruefung", T.eigenschaften.wahrheit, h("div", { klasse: "status-karte" }, h("div", { klasse: "leise", text: T.eigenschaften.zuPruefen })));
@@ -1146,7 +1155,7 @@ async function ladeInfo() {
   inhalt.append(wahrheit, feldSek, bezSek, verwSek, rueckSek, infoSek, verlaufSek);
 
   // Wahrheitsstatus
-  api.pruefung(pfad).then((pr) => {
+  aufgaben.push(api.pruefung(pfad).then((pr) => {
     if (nr !== infoNr) return;
     S.aktuellePruefung = pr;
     S.pruef.set(pfad + "|" + (S.eintraege.get(pfad)?.geaendert ?? ""), pr.stufe);
@@ -1177,10 +1186,10 @@ async function ladeInfo() {
     }
     wahrheit.replaceChildren(h("h3", { text: T.eigenschaften.wahrheit }), karte, ...(zus.length ? [h("div", { klasse: "reihen", style: "margin-top:6px" }, zus)] : []));
     ed.setzeSignale(sig.filter((s) => s.zeile).map((s) => ({ zeile: s.zeile, stufe: signalStufe(s), text: s.text })));
-  }).catch(() => { if (nr === infoNr) { wahrheit.replaceChildren(h("h3", { text: T.eigenschaften.wahrheit }), h("p", { klasse: "leise", text: T.fehler.allgemein })); zeichnePille(null); } });
+  }).catch(() => { if (nr === infoNr) { wahrheit.replaceChildren(h("h3", { text: T.eigenschaften.wahrheit }), h("p", { klasse: "leise", text: T.fehler.allgemein })); zeichnePille(null); } }));
 
   // Typ, Felder, Beziehungen, Rückverweise, Info
-  holeKontext(pfad).then((k) => {
+  aufgaben.push(holeKontext(pfad).then((k) => {
     if (nr !== infoNr) return;
     const felder = k.felder || {};
     const typId = n?.typ || felder.typ || felder.type || null;
@@ -1214,12 +1223,12 @@ async function ladeInfo() {
       reihe(T.eigenschaften.erstellt, h("span", { text: datumKurz(i.erstellt || n?.erstellt) || "–" }), { rechts: true }),
       reihe(T.eigenschaften.woerter, h("span", { text: woerter === null ? "–" : woerter.toLocaleString("de-DE") }), { rechts: true }),
       reihe(T.eigenschaften.groesse, h("span", { text: bytes === null ? "–" : bytesText(bytes) }), { rechts: true })]));
-  });
+  }));
 
   // Verlauf dieser Notiz
   if (istGitGesperrt()) verlaufSek.append(h("p", { klasse: "leise", text: T.info.gitGesperrt }));
   else if (S.info && !S.info.git) verlaufSek.append(h("p", { klasse: "leise", text: T.info.keinGit }));
-  else api.verlauf(pfad, 30).then((r) => {
+  else aufgaben.push(api.verlauf(pfad, 30).then((r) => {
     if (nr !== infoNr) return;
     const liste = r.eintraege || [];
     const offenMit = [];
@@ -1228,7 +1237,15 @@ async function ladeInfo() {
     liste.forEach((x) => offenMit.push(fassung(x, pfad)));
     if (!offenMit.length) verlaufSek.append(h("p", { klasse: "leise", style: "margin:0", text: T.info.keinVerlauf }));
     else verlaufSek.append(...offenMit);
-  }).catch((e) => { if (nr === infoNr) verlaufSek.append(h("p", { klasse: "leise", style: "margin:0", text: gitGesperrt(e) ? T.info.gitGesperrt : e.status === 400 || e.status === 404 ? T.info.keinVerlauf : e.message })); });
+  }).catch((e) => { if (nr === infoNr) verlaufSek.append(h("p", { klasse: "leise", style: "margin:0", text: gitGesperrt(e) ? T.info.gitGesperrt : e.status === 400 || e.status === 404 ? T.info.keinVerlauf : e.message })); }));
+  if (leise) { await Promise.allSettled(aufgaben); if (nr === infoNr && pfad === S.pfad && inhalt._tausch) inhalt._tausch(); }
+}
+// Nach dem Speichern: Wörter, Größe, Verweise, Rückverweise und Verlauf in der Spalte auffrischen (sie zeigten bis dahin den Stand vom Öffnen)
+let infoAuffrischTimer = null;
+function planeInfoAuffrischen() {
+  if (!infoSichtbar()) return;
+  clearTimeout(infoAuffrischTimer);
+  infoAuffrischTimer = setTimeout(() => { if (S.pfad && !S.dirty && !S.speichert && infoSichtbar()) ladeInfo({ leise: true }); }, 400);
 }
 const signalStufe = (s) => s.stufe || (/konflikt|zweifel|pruefbed|prüfbed|rot/i.test(s.art || "") ? "rot" : s.art === "belegt" ? "gruen" : /^(stand|kritisch)$/.test(s.art || "") ? "grau" : "gelb");
 
@@ -1894,11 +1911,39 @@ function oeffneMerken() {
   const text = textFeld.textarea;
   const titelFeld = textfeld({ wert: entwurf.titel || "", platzhalter: T.merken.titelFeld, label: T.merken.titelFeld, daten: { "data-feld": "titel" } });
   const titel = titelFeld.input;
+  // Notiz oder Aufgabe: bei einer Aufgabe gelten die Kurzformen (gemeinsam/kurzformen.mjs) wie im Erfassen-Fenster und im Board: „morgen“, „@freitag“, „!hoch“
+  const artSchalter = segment({ optionen: [{ wert: "notiz", text: T.merken.artNotiz }, { wert: "aufgabe", text: T.merken.artAufgabe }], wert: entwurf.art === "aufgabe" ? "aufgabe" : "notiz", label: T.merken.art, daten: { "data-feld": "art" },
+    aufAenderung: () => zeige() });
+  const kurzEl = h("div", { klasse: "merken-kurz", "data-kurzformen": "", hidden: true });
+  const kurzAus = { prio: false, faellig: false };
+  const liesText = () => liesKurzformen(text.value, { prioritaet: !kurzAus.prio, faellig: !kurzAus.faellig });
+  const alsAufgabe = () => artSchalter.value === "aufgabe";
+  function zeige() {
+    const aufgabe = alsAufgabe();
+    titelFeld.el.hidden = aufgabe;
+    const k = aufgabe ? liesText() : null;
+    const chipsKurz = [];
+    const mach = (art, label, wort, klasse) => h("button", { type: "button", klasse: "au-chip au-kurz-chip " + klasse, "data-kurz": art, title: TAUF.erfassen.zuruecknehmen(wort), "aria-label": TAUF.erfassen.zuruecknehmen(wort),
+      aufClick: () => { kurzAus[art] = true; zeige(); text.focus(); } }, h("span", { text: label }), symbol("schliessen", GROESSE.klein));
+    if (k?.prioritaet) chipsKurz.push(mach("prio", TAUF.erfassen.prioChip(TAUF.prio[k.prioritaet] || k.prioritaet), k.prioritaetWort, "prio " + k.prioritaet));
+    if (k?.faellig) chipsKurz.push(mach("faellig", TAUF.erfassen.faelligChip(faelligText(k.faellig)), k.faelligWort, "faellig"));
+    kurzEl.hidden = !aufgabe || !chipsKurz.length;
+    kurzEl.replaceChildren(...(chipsKurz.length ? [h("span", { klasse: "au-kurz-label", text: TAUF.erfassen.erkannt }), ...chipsKurz] : []));
+    d?.box?.setAttribute("data-art", aufgabe ? "aufgabe" : "notiz");
+  }
   let abgelegt = false;
   const fehlerEl = h("div", { klasse: "fehlertext", hidden: true });
   const tun = async () => {
     if (!text.value.trim()) { text.focus(); return; }
     try {
+      if (alsAufgabe()) {
+        const k = liesText();
+        if (!k.titel.trim()) { text.focus(); return; }
+        const r = await api.aufgabeNeu({ titel: k.titel, ...(k.text ? { text: k.text } : {}), ...(k.prioritaet ? { prioritaet: k.prioritaet } : {}), ...(k.faellig ? { faellig: k.faellig } : {}) });
+        abgelegt = true; d.schliessen(); toast(TAUF.erfassen.angelegt(r.aufgabe?.titel || k.titel), { aktion: { text: T.merken.offen, tun: () => oeffne(r.pfad) } });
+        await ladeBaum(); planeGitRefresh();
+        return;
+      }
       const r = await api.merken(text.value, titel.value.trim() || undefined);
       const von = d.box?.getBoundingClientRect?.(), erster = (titel.value.trim() || text.value.trim().split("\n")[0] || "").slice(0, 40);
       abgelegt = true; d.schliessen(); if (von) fliegeInPosteingang(von, erster); toast(T.merken.fertig, { aktion: { text: T.merken.offen, tun: () => oeffne(r.pfad) } });
@@ -1907,10 +1952,12 @@ function oeffneMerken() {
   };
   const d = dialog({ titel: T.merken.titel, satz: T.merken.satz,
     // Esc/Klick daneben verliert nichts: der Text bleibt als Entwurf, bis er abgelegt wird
-    beiSchliessen: () => { if (abgelegt || !text.value.trim()) { speichereEntwurf("merken", null); } else { speichereEntwurf("merken", { text: text.value, titel: titel.value }); toast(T.merken.entwurf); } },
-    rumpf: [h("div", { klasse: "feld" }, textFeld.el), h("div", { klasse: "feld" }, titelFeld.el), fehlerEl],
+    beiSchliessen: () => { if (abgelegt || !text.value.trim()) { speichereEntwurf("merken", null); } else { speichereEntwurf("merken", { text: text.value, titel: titel.value, art: artSchalter.value }); toast(T.merken.entwurf); } },
+    rumpf: [h("div", { klasse: "feld" }, artSchalter), h("div", { klasse: "feld" }, textFeld.el), kurzEl, h("div", { klasse: "feld" }, titelFeld.el), fehlerEl],
     knoepfe: [baueKnopf({ text: T.commit.abbrechen, aufKlick: () => d.schliessen() }), baueKnopf({ text: T.merken.sichern, variante: "primaer", aktion: "merken", aufKlick: tun })] });
   textFeld.passe();
+  zeige();
+  text.addEventListener("input", () => { if (!text.value.trim()) kurzAus.prio = kurzAus.faellig = false; zeige(); });
   text.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); tun(); } });
 }
 async function oeffneGesundheit() {
@@ -2043,6 +2090,7 @@ function umschalteInfoInnen() {
   else { S.infoAn = true; S.infoErzwungen = !!S.infoEng; }
   speichereLokal("infoAn", S.infoAn);
   begrenzeBreiten();
+  if (infoSichtbar() && S.pfad) ladeInfo({ leise: true }); // beim Einblenden den Stand von jetzt zeigen, nicht den vom Öffnen
 }
 $("app").dataset.info = S.infoAn ? "an" : "aus";
 $("knopf-neu").addEventListener("click", () => oeffneNeu());

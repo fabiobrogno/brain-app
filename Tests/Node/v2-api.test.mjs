@@ -41,7 +41,7 @@ test("Routen: notizen, notiz/kontext, typen, ansichten über den Handler; Method
   assert.equal(r.status, 200);
   assert.deepEqual(r.j.notizen.map((n) => n.pfad).sort(), ["00_inbox/lose.md", "09_wiki/firma/belege/2026-10/b1.md", "09_wiki/firma/entitaet_b.md", "09_wiki/firma/thema_a.md"]);
   const a = r.j.notizen.find((n) => n.pfad === "09_wiki/firma/thema_a.md");
-  assert.deepEqual(Object.keys(a).sort(), ["ansichten", "bereich", "erstellt", "felder", "geaendert", "generiert", "links", "pfad", "stufe", "titel", "typ", "vorschau"]);
+  assert.deepEqual(Object.keys(a).sort(), ["aliasse", "ansichten", "bereich", "erstellt", "felder", "geaendert", "generiert", "links", "pfad", "stufe", "titel", "typ", "vorschau"]);
   assert.equal(a.titel, "Thema A"); assert.equal(a.typ, "thema"); assert.equal(a.bereich, "wissen"); assert.equal(a.stufe, "gruen");
   assert.deepEqual(a.links, ["09_wiki/firma/entitaet_b.md", "09_wiki/firma/belege/2026-10/b1.md"]);
   assert.equal(a.felder.verwandt, "[[entitaet_b]]"); assert.equal(a.generiert, false);

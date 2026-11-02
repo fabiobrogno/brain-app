@@ -38,7 +38,7 @@ export function erzeugeAufgaben(deps) {
     const m = await kernModul();
     let l;
     try { l = m.liste(wurzel); } catch (e) { throw uebersetze(m, e); }
-    return { ordner: m.ordnerName(wurzel), vertraut: deps.vertraut(), abgeschnitten: l.abgeschnitten === true, zaehler: m.zaehleAus(l, m.heuteBerlin(deps.jetzt())), aufgaben: l.map(kurz) };
+    return { ordner: m.ordnerName(wurzel), vertraut: deps.vertraut(), abgeschnitten: l.abgeschnitten === true, zaehler: m.zaehleAus(l, m.heuteLokal(deps.jetzt())), aufgaben: l.map(kurz) };
   }
 
   // neue Aufgabe. e: { titel, text?, prioritaet?, faellig?, status?, bezug?, quelle? }. Die Quelle bestimmt der AUFRUFER im Programm, nie die Eingabe von außen:
@@ -94,7 +94,7 @@ export function erzeugeAufgaben(deps) {
       if (!m.STATUS.includes(status) && status !== "alle") throw new HttpFehler(400, `Der Status ist einer von: ${m.STATUS.join(", ")}, alle.`);
       if (status !== "alle") l = l.filter((a) => a.status === status);
     } else l = l.filter((a) => a.status !== "erledigt");
-    const heute = m.heuteBerlin(deps.jetzt());
+    const heute = m.heuteLokal(deps.jetzt());
     return { aufgaben: l, abgeschnitten, zeilen: l.map((a) => m.zeile(a, { heute })), zaehler: m.zaehleAus(l, heute) };
   }
   async function findePfad(eingabe) {

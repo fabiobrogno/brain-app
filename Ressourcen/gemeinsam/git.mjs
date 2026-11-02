@@ -10,7 +10,7 @@ import { execFile, execFileSync } from "node:child_process";
 import { realpathSync, readFileSync, writeFileSync, statSync, renameSync, lstatSync, unlinkSync, readdirSync, mkdirSync, copyFileSync, existsSync, rmSync } from "node:fs";
 import { join, dirname, basename, sep, isAbsolute } from "node:path";
 import { HttpFehler, sauber, loese, kindUmgebung, falte, absoluterGitPfad, absoluterPfad, MAX_DATEI, testmodus } from "./basis.mjs";
-import { berlinHeute } from "./pruefung.mjs";
+import { heuteIso } from "./zeit.mjs";
 import { starte, neueFrist, beendeAlleProzesse } from "./prozess.mjs";
 import { pruefeGitUrl, uebersetzeGitFehler } from "./gitwerkzeug.mjs"; // (gitwerkzeug importiert git() von hier — Kreis ist harmlos: nur Funktionen, nichts beim Laden)
 
@@ -485,7 +485,8 @@ export function beendeLaufendes(budgetMs = 1500) {
 
 // ── Verlauf des ganzen Repos nach Tagen ──────────────────────────────────────────────────────────────────────────────
 const LOG_STANDARD = 50, LOG_OBERGRENZE = 200, DATEIEN_JE_COMMIT = 300;
-const TAG_NAME = new Intl.DateTimeFormat("de-DE", { timeZone: "Europe/Berlin", weekday: "long", day: "numeric", month: "long", year: "numeric" });
+// Beschriftung der Tage in Ortszeit (wie das Studio); die Zone des Prozesses wird je Aufruf gelesen (kein Zwischenspeicher: Tests setzen TZ)
+const tagName = () => new Intl.DateTimeFormat("de-DE", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 // Kopfzeile je Commit: \x1e leitet sie ein, \x1f trennt die Felder; Freitext (Autor, Nachricht) steht hinten.
 const LOG_FORMAT = "%x1e%H%x1f%h%x1f%P%x1f%cI%x1f%an%x1f%s";
 const ROH_EINTRAG = /^:\d{6} \d{6} [0-9a-f]+ [0-9a-f]+ ([A-Za-z])\d*$/;
@@ -556,7 +557,7 @@ function baueCommit(c) {
     merge, dateien, dateienGesamt: gesamt, versteckt };
 }
 
-// Commits des ganzen Repos nach Berliner Tagen gruppiert, neueste zuerst (Reihenfolge wie `git log`), seitenweise.
+// Commits des ganzen Repos nach Tagen der Ortszeit gruppiert, neueste zuerst (Reihenfolge wie `git log`), seitenweise.
 // vor = sha: geliefert werden die Commits NACH diesem in der Reihenfolge von `git rev-list HEAD` (Position + 1 als --skip, nicht
 // über vor^ — wegen Merges). HEAD wird einmal aufgelöst und für beide Aufrufe benutzt, damit ein Commit zwischendurch nichts verschiebt.
 export async function log(wurzel, { max, vor } = {}, ctx = {}) {
@@ -595,9 +596,9 @@ export async function log(wurzel, { max, vor } = {}, ctx = {}) {
   for (const c of seite) {
     const d = new Date(c.zeit);
     const gueltig = !Number.isNaN(d.getTime());
-    const datum = gueltig ? berlinHeute(d) : "0000-00-00";
+    const datum = gueltig ? heuteIso(d) : "0000-00-00";
     let tag = tage[tage.length - 1];
-    if (!tag || tag.datum !== datum) { tag = { datum, beschriftung: gueltig ? TAG_NAME.format(d) : "Ohne Datum", commits: [] }; tage.push(tag); }
+    if (!tag || tag.datum !== datum) { tag = { datum, beschriftung: gueltig ? tagName().format(d) : "Ohne Datum", commits: [] }; tage.push(tag); }
     tag.commits.push(baueCommit(c));
   }
   return { tage, weitere, naechste: weitere && seite.length ? seite[seite.length - 1].sha : null };
@@ -950,7 +951,7 @@ export async function nachsehen(wurzel, ctx = {}) {
 }
 
 // ── Version zurückholen ──────────────────────────────────────────────────────────────────────────────────────────────
-const DATUM_DE = new Intl.DateTimeFormat("de-DE", { timeZone: "Europe/Berlin", day: "2-digit", month: "2-digit", year: "numeric" });
+const datumDe = () => new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
 
 // Vollständige Versionsnummer eines Commits aus dem Verlauf von HEAD (nie ein Zweig-/Tag-Name, der wie Hex aussieht).
 async function versionVon(G, sha) {
@@ -1022,7 +1023,7 @@ async function wiederherstellenOhneSperre(wurzel, { pfad: rel, sha }, ctx) {
   const hatteHead = jetzt.code === 0;
   if (hatteHead && jetzt.stdout.trim() === dann.stdout.trim()) return { sha: null, unveraendert: true };
   const wann = await G(["log", "-1", "--format=%cI", voll]);
-  const tag = DATUM_DE.format(new Date(wann.stdout.trim()));
+  const tag = datumDe().format(new Date(wann.stdout.trim()));
   const nachricht = `Fassung vom ${tag} wiederhergestellt: ${basename(p)}`;
   const gestartet = Date.now();
   const kopfVorher = await kopfSha(G);

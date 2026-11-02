@@ -1,18 +1,17 @@
-// gemeinsam/sicherung.mjs — Sicherung einer defekten Datei im App-Ordner: <name>.defekt-<JJJJMMTT-HHMMSS> (Berliner Zeit), nie überschreibend;
+// gemeinsam/sicherung.mjs — Sicherung einer defekten Datei im App-Ordner: <name>.defekt-<JJJJMMTT-HHMMSS> (Ortszeit des Macs), nie überschreibend;
 // es bleiben die 5 neuesten. Genutzt für vaults.json (vaults.mjs) und vertrauen.json (vertrauen.mjs, vaults.mjs). Keine Abhängigkeiten.
 // Die Namen steigen immer (die Reihenfolge der Namen ist die der Sicherungen, danach richtet sich das Aufräumen): zweimal in derselben
 // Sekunde → …-2, …-3 (immer eine Nummer über der höchsten vorhandenen), und nie ein Zeitstempel unter dem neuesten vorhandenen
 // (Zeitumstellung im Herbst, zurückgestellte Uhr). Ältere Einzeldateien „<name>.defekt“ werden nicht angefasst.
 import { readdirSync, copyFileSync, rmSync, constants } from "node:fs";
 import { join } from "node:path";
+import { stempel } from "./zeit.mjs";
 
 const MAX_SICHERUNGEN = 5;
-const BERLIN_ZEIT = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Berlin", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
 function zeitstempel(jetzt) {
   let d = jetzt === undefined || jetzt === null ? new Date() : new Date(jetzt);
   if (Number.isNaN(d.getTime())) d = new Date();
-  const t = Object.fromEntries(BERLIN_ZEIT.formatToParts(d).map((p) => [p.type, p.value]));
-  return `${t.year}${t.month}${t.day}-${t.hour}${t.minute}${t.second}`;
+  return stempel(d); // Ortszeit des Macs (zeit.mjs)
 }
 
 // → { sichere(ordner, datei, { jetzt, verschieben }), liste(ordner) } für Dateien mit dem Namen `name` (z. B. "vaults.json").

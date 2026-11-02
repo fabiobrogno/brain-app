@@ -7,6 +7,8 @@
 #                                                     gerade leersten Teil), Dateien ohne Eintrag zählen als kurz.
 # KERN_TEST_KONKURRENZ=<n>: Anzahl paralleler Testdateien in den Unit-Tests (siehe unit.sh).
 set -u; D="$(cd "$(dirname "$0")" && pwd)"; RC=0
+# Zeitzone der Tests: Berlin, eingespritzt. Die App rechnet überall in der Zeitzone des Macs (kein fester Ort im Code); die CI-Runner laufen in UTC.
+export TZ=Europe/Berlin
 if [ "${1:-}" = "--shard" ]; then export KERN_SHARD="${2:?--shard braucht I/N}"; shift 2; fi
 . "$D/stage.sh" "$@"   # Kern-Wurzel (KORTEX_KERN): baut bei Bedarf die Bühne und läuft dort weiter (siehe stage.sh)
 

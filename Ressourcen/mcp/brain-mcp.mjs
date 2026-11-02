@@ -28,7 +28,7 @@ export const WERKZEUGE = [
   { name: "brain_suchen", description: "Durchsucht den Vault (Titel und Inhalt), auch mit einer ganzen Frage; je Treffer Pfad, Titel, Prüf-Stufe, Zeile, Auszug.",
     inputSchema: { type: "object", properties: { frage: { type: "string", description: "Suchbegriffe oder Frage" }, anzahl: { type: "integer", minimum: 1, maximum: 20, description: "Höchstzahl der Treffer (Standard 5)" } }, required: ["frage"], additionalProperties: false } },
   { name: "brain_lesen", description: "Liest eine Seite des Vaults samt Prüf-Signalen und Stand. Lange Seiten kommen als Gliederung und Anfang; den Rest holt man mit abschnitt oder von/bis.",
-    inputSchema: { type: "object", properties: { pfad: { type: "string", description: "Pfad relativ zum Vault, z. B. 09_wiki/firma/amazon/thema_x.md" }, abschnitt: { type: "string", description: "Nur dieser Abschnitt (Nummer oder Überschrift aus der Gliederung)" }, von: { type: "integer", minimum: 1, description: "Erste Zeile" }, bis: { type: "integer", minimum: 1, description: "Letzte Zeile" } }, required: ["pfad"], additionalProperties: false } },
+    inputSchema: { type: "object", properties: { pfad: { type: "string", description: "Pfad relativ zum Vault, z. B. 09_wiki/firma/amazon/thema_x.md (auch Titel oder Alias wie bei [[Links]])" }, abschnitt: { type: "string", description: "Nur dieser Abschnitt (Nummer oder Überschrift aus der Gliederung)" }, von: { type: "integer", minimum: 1, description: "Erste Zeile" }, bis: { type: "integer", minimum: 1, description: "Letzte Zeile" } }, required: ["pfad"], additionalProperties: false } },
   { name: "brain_merken", description: "Legt eine neue Notiz im Posteingang des Vaults ab (Standard 00_inbox/). Schreibt nie ins Wiki; erst /ingest macht daraus Wissen.",
     inputSchema: { type: "object", properties: { text: { type: "string" }, titel: { type: "string" } }, required: ["text"], additionalProperties: false } },
   { name: "brain_gesundheit", description: "Kurzfassung der Vault-Gesundheit (Ampel und Befunde) aus dem Kern von Kortex, falls der Vault ein Kortex-Vault ist (brain.config.json).",
@@ -204,7 +204,13 @@ async function rufe(vArg, name, a, spur = { seiten: [] }, sitzung = standardSitz
       return { ...text(r.text), _meta: { "brain-studio/treffer": r.treffer } };
     }
     case "brain_lesen": {
-      const d = v.lies(arg("pfad"));
+      let d;
+      try { d = v.lies(arg("pfad")); }
+      catch (e) { // kein Pfad: dieselbe Regel wie für [[Links]] in Studio und Werkstatt (Dateiname, Titel, Alias; gemeinsam/wikilink.mjs)
+        const g = e instanceof HttpFehler && (e.status === 404 || e.status === 415) && typeof v.wikiLoese === "function" ? await v.wikiLoese(arg("pfad").replace(/^\s*\[\[|\]\]\s*$/g, ""), "") : null;
+        if (!g) throw e;
+        d = v.lies(g);
+      }
       const p = v.pruefung(d.pfad);
       spur.seiten = [d.pfad];
       let r;

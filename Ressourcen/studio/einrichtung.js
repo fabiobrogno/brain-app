@@ -9,6 +9,7 @@ import { symbol } from "./symbole.js";
 import { kiLogo } from "./ki-logos.js";
 import { markenLogo } from "./marken.js";
 import { TE } from "./texte-einrichtung.js";
+import * as kz from "./tastenkuerzel.js";
 import { erzeugeBuehne, markeSvg, windungFortschritt } from "./einrichtung-buehne.js";
 import { erzeugeKi } from "./einrichtung-ki.js";
 import { ruhenetz } from "./bewegung.js";
@@ -529,13 +530,16 @@ function paneFertig() {
   const zusammen = h("div", { klasse: "e-zusammen" }, zeile(0, "ordner", false, TE.fertig.vault(S.vault?.name || vaultName()), kurzPfad(S.vault?.pfad || ""), true, 1), syncZ, kiZ, pflegeZ);
   return paneHuelle(...paneKopf(TE.fertig.titel, TE.fertig.text), h("div", { klasse: "e-koerper" }, zusammen, probeKnoten(verb), tastenKnoten()));
 }
+// Die Kürzel kommen aus dem Register der Tastenkürzel (kz): eigene Belegungen und das Standardkürzel von „Schnell erfassen“ (⌃⌥ Leertaste) stimmen immer.
+// Ein Befehl ohne Kürzel entfällt.
+const kbdTeile = (id) => kz.anzeigeTeile(id).map((t) => h("kbd", { klasse: "e-kbd", text: t, style: t.length > 1 ? "min-width:44px" : "" }));
 function tastenKnoten() {
-  return h("div", { klasse: "e-tasten" }, TE.fertig.tasten.map(([a, b, t]) => h("span", null, h("kbd", { klasse: "e-kbd", text: a }), h("kbd", { klasse: "e-kbd", text: b, style: b.length > 1 ? "min-width:44px" : "" }), ` ${t}`)));
+  return h("div", { klasse: "e-tasten" }, TE.fertig.tasten.filter(([id]) => kz.anzeigeTeile(id).length).map(([id, t]) => h("span", null, ...kbdTeile(id), ` ${t}`)));
 }
 function probeKnoten(verb) {
   if (!verb.length) {
     return h("div", { klasse: "e-probe" }, h("div", { klasse: "e-schalt-zeile" }, h("div", null, h("b", { text: TE.fertig.schnell }), h("span", { text: TE.fertig.schnellText })),
-      h("span", { style: "display:flex;gap:3px" }, h("kbd", { klasse: "e-kbd", text: "⌥" }), h("kbd", { klasse: "e-kbd", style: "min-width:44px", text: "Leer" }))));
+      h("span", { style: "display:flex;gap:3px" }, ...kbdTeile("schnell-erfassen"))));
   }
   const ki0 = verb.find((p) => p.id === "claude") || verb[0];
   const frage = textfeld({ wert: TE.fertig.probeFrage, label: TE.fertig.probeFrageAria, klasse: "e-probe-eingabe", daten: { "data-feld": "probe" } });
@@ -839,6 +843,7 @@ async function start() {
   }
   window.__einrichtungBereit = true;
 }
+kz.lade(); // eigene Kürzel holen (ohne Werkstatt gelten die Standardkürzel)
 ruhenetz(); // der Assistent zeigt seinen Inhalt auch in einem Fenster, das gerade nicht sichtbar ist (WebKit pausiert dort Animationen)
 start();
 // Für die Tests der Oberfläche: der Zustand ist von außen lesbar (nie Eingaben des Nutzers verändern)

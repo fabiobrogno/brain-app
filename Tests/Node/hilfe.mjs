@@ -8,6 +8,10 @@ import { fileURLToPath } from "node:url";
 export const WURZEL = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "Ressourcen");
 export const pfad = (...t) => join(WURZEL, ...t);
 const aufraeumen = [];
+// Zeitzone der Tests: Berlin, eingespritzt. Die App rechnet überall in der Zeitzone des Macs (gemeinsam/zeit.mjs); die CI-Runner laufen in UTC, und die
+// Erwartungen vieler Tests (Dateinamen mit Datum, Verlauf nach Tagen, Sicherungsnamen) sind in Berliner Zeit geschrieben. Tests zur Zeitzone selbst
+// (zeit.test.mjs) setzen process.env.TZ je Fall neu.
+process.env.TZ = "Europe/Berlin";
 // Tests nie gegen echte Nutzerdaten: eigener Support-Ordner (Vertrauens-Merker), Test-Schalter an.
 process.env.BRAIN_TESTMODUS = "1";
 // Workspace-Trust (P5): die Wegwerf-Vaults der Suite gelten als vertraut (sonst bliebe Git gesperrt). Die Tests der Sperre (vertrauen*.test.mjs) entfernen die Variable.

@@ -320,6 +320,7 @@ export function erzeugeHandler(o) {
         if (methode === "PUT") { const e = eingabe(); return V().schreibe({ pfad: e.pfad, inhalt: e.inhalt, basisHash: e.basisHash }); }
         throw new HttpFehler(405, "Diese Methode ist hier nicht erlaubt.");
       case "/api/neu": nur("POST"); return V().neu(eingabe());
+      case "/api/wiki/anlegen": nur("POST"); return V().wikiAnlegen(eingabe()); // offener [[Link]] → vorhandene Notiz oder neue mit dem Ziel als Titel
       case "/api/merken": nur("POST"); return V().merken(eingabe());
       // Aufgaben (kern/aufgaben.mjs): lesen immer, anlegen und ändern nur in einem vertrauten Vault (409 art „nicht-vertraut“)
       case "/api/aufgaben":

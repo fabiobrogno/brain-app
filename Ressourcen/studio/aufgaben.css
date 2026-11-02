@@ -30,7 +30,16 @@
 .au-ansage { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 .au-erfassen { flex: 1 1 320px; min-width: min(240px, 100%); max-width: 560px; display: flex; align-items: center; gap: var(--a2); }
+.au-erfassen { flex-wrap: wrap; }
 .au-erfassen .bs-feldblock { flex: 1; }
+.au-kurz, .merken-kurz { flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: center; gap: var(--a2); min-height: 20px; }
+.au-kurz[hidden], .merken-kurz[hidden] { display: none; }
+.au-kurz-label { font-size: 11px; color: var(--text-3); }
+.au-kurz-chip { border: 0; cursor: pointer; font-family: inherit; }
+.au-kurz-chip:hover { background: var(--hover-stark, var(--hover)); }
+.au-kurz-chip:focus-visible { outline: 2px solid var(--akzent); outline-offset: 1px; }
+.au-kurz-chip.prio.hoch, .au-kurz-chip.faellig { background: var(--akzent-weich); color: var(--akzent); }
+.au-kurz-chip.prio.hoch { background: var(--rot-weich); color: var(--rot); }
 .au-reset { margin-left: 2px; }
 .au .au-filter-knopf { display: none; }
 .au-filter-knopf.aktiv { border-color: var(--akzent-rand); background: var(--akzent-weich); color: var(--akzent); }

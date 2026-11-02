@@ -21,7 +21,7 @@
 //  4. „aktiv“ gilt nur, wenn es (geschrieben oder aufgelöst) einen der gültigen Einträge meint, und wird zu dessen „pfad“; sonst
 //     null. Gespeichert wird ein „aktiv“ ohne vorhandenen Ordner nie (dann null).
 //  5. Name fehlt oder ist leer → Ordnername. Ungültige Farbe → nächste Palettenfarbe (nur Node).
-// SCHREIBEN: atomar (Temp-Datei + rename). Eine defekte Datei wird vorher nach vaults.json.defekt-<JJJJMMTT-HHMMSS> (Berliner Zeit)
+// SCHREIBEN: atomar (Temp-Datei + rename). Eine defekte Datei wird vorher nach vaults.json.defekt-<JJJJMMTT-HHMMSS> (Ortszeit des Macs)
 // gesichert, nie überschrieben; die 5 neuesten bleiben. Danach trägt leseVaults() `defekt: true`, solange vaults.json noch die Datei
 // ist, die dieser Prozess nach der Sicherung geschrieben hat (Merker im Prozess, an Datei-Identität gebunden: kein weiterer
 // Dateityp, den Swift kennen müsste, kein Rest nach einem Neustart oder einer Reparatur von Hand).
@@ -36,7 +36,7 @@ import { git } from "./git.mjs";
 import { pruefeGitUrl, uebersetzeGitFehler } from "./gitwerkzeug.mjs";
 import { sicherungFuer } from "./sicherung.mjs";
 import { sichereDefektenMerker, nutzerGitEinstellungen, erlaube as vertraue } from "./vertrauen.mjs";
-import { berlinHeute } from "./pruefung.mjs";
+import { heuteIso } from "./zeit.mjs";
 import { legeVorlageAn, GITIGNORE } from "./vorlage.mjs";
 
 export { HttpFehler };
@@ -360,7 +360,7 @@ function ladeListe(o, uebernahmeSpeichern) {
   return { zustand: r.zustand, liste };
 }
 
-// Sicherung einer defekten vaults.json: vaults.json.defekt-<JJJJMMTT-HHMMSS> (Berliner Zeit), nie überschreibend; es bleiben die 5 neuesten.
+// Sicherung einer defekten vaults.json: vaults.json.defekt-<JJJJMMTT-HHMMSS> (Ortszeit des Macs), nie überschreibend; es bleiben die 5 neuesten.
 // Die Namen steigen immer (zweimal in derselben Sekunde → …-2, …-3; nie ein Zeitstempel unter dem neuesten vorhandenen) — Näheres und Code in
 // sicherung.mjs (dieselbe Regel gilt für vertrauen.json). Die ältere Einzeldatei vaults.json.defekt wird nicht angefasst.
 const LISTEN_SICHERUNG = sicherungFuer("vaults.json");
@@ -672,7 +672,7 @@ export async function neuesVault(eingabe, opt = {}) {
     try {
       vergissVertrauen(o, [pfad, lex], "Es wurde nichts angelegt."); // der Ort ist neu oder leer: altes Vertrauen für ihn erbt der neue Vault nie
       if (art === "vorlage") {
-        const dateien = await legeVorlageAn(pfad, { name: vaultName, heute: o.heute || berlinHeute() });
+        const dateien = await legeVorlageAn(pfad, { name: vaultName, heute: o.heute || heuteIso() });
         await starteRepo(pfad, dateien, "Kortex-Vault angelegt", frist);
       } else {
         writeFileSync(join(pfad, ".gitignore"), GITIGNORE, { flag: "wx" });

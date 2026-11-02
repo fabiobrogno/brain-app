@@ -16,8 +16,8 @@ export function leseKopf(text) {
   return { felder: {}, bis: 0 }; // nie geschlossen → kein gültiger Kopf
 }
 
-export const berlinHeute = (d = new Date()) =>
-  new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Berlin", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+import { heuteIso } from "./zeit.mjs"; // „heute“ in der Zeitzone des Macs (zeit.mjs)
+export { heuteIso };
 
 export function istDatum(s) {
   const m = ISO.exec(s || "");
@@ -46,7 +46,7 @@ const FAKTEN_KOPF = /^##\s+Fakten\s*$/i;
 
 // pfad: Vault-relativ ("/"), text: Dateiinhalt, opts.heute: "JJJJ-MM-TT" (für Tests).
 export function pruefeText(pfad, text, opts = {}) {
-  const heute = opts.heute || berlinHeute();
+  const heute = opts.heute || heuteIso();
   const name = pfad.split("/").pop();
   if (!pfad.startsWith("09_wiki/")) {
     return { stufe: "grau", zusammenfassung: "Notiz — wird erst durch /ingest zu Wissen", signale: [] };

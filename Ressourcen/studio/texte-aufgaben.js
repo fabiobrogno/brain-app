@@ -3,7 +3,9 @@ export const TA = {
   titel: "Aufgaben",
   spalten: { offen: "Offen", "in-arbeit": "In Arbeit", warten: "Warten", erledigt: "Erledigt" },
   prio: { hoch: "Hoch", normal: "Normal", niedrig: "Niedrig" },
-  erfassen: { befehl: "Aufgabe erfassen", platzhalter: "Neue Aufgabe … (Enter zum Anlegen)", knopf: "Anlegen", label: "Neue Aufgabe", angelegt: (t) => `Aufgabe „${t}“ angelegt.`, leer: "Bitte einen Titel eingeben." },
+  erfassen: { befehl: "Aufgabe erfassen", platzhalter: "Neue Aufgabe … (Enter zum Anlegen)", knopf: "Anlegen", label: "Neue Aufgabe", angelegt: (t) => `Aufgabe „${t}“ angelegt.`, leer: "Bitte einen Titel eingeben.",
+    // Kurzformen im Titel (gemeinsam/kurzformen.mjs): „morgen“, „!hoch“ … werden erkannt und als Chips gezeigt; ein Klick auf den Chip nimmt die Erkennung zurück
+    erkannt: "Erkannt:", faelligChip: (t) => `Fällig ${t}`, prioChip: (p) => `Priorität ${p}`, zuruecknehmen: (w) => `„${w}“ nicht als Kurzform lesen`, vorschauLabel: "Erkannte Kurzformen" },
   zahl: (offen, ueber) => (offen === 0 ? "Nichts offen" : `${offen} offen${ueber ? ` · ${ueber} überfällig` : ""}`),
   filter: {
     label: "Filter", prio: "Priorität", quelle: "Quelle", faellig: "Fällig",

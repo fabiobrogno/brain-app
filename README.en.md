@@ -17,7 +17,9 @@ keeps your text byte for byte. The app is in German for now.
 - **Studio editor:** Markdown with live preview, `[[wikilinks]]`, autosave, command palette (Cmd-K), a review signal per page, a health overview and a 3D view.
 - **Search and quick capture:** search all pages; drop a thought into the inbox in one step.
 - **Tasks:** a board inside the vault where you and your AI add and move tasks.
-- **Quick capture:** from anywhere with ⌃⌥Space (changeable in the window): a small panel for a task or a note, even when the Studio
+  Shortcuts in the title ("morgen", "@freitag", "bis 12.11.", "!hoch") are read the same way by the board, "Schnell merken" (as a task),
+  the capture panel and the AI tool `brain_aufgabe_anlegen`; chips under the field show what was recognised.
+- **Quick capture:** from anywhere with ⌃⌥Space (changeable in the settings under "Tastenkürzel"; hints in Kortex always show the current one): a small panel for a task or a note, even when the Studio
   is closed. Shortcuts in the text such as "morgen" or "!hoch" set due date and priority; dictation works with Fn twice.
   The hotkey needs no accessibility permission.
 - **git sync and backup:** review and choose changes, commit, history with diff, restore old versions, sync with your own remote or GitHub; conflicts are explained and nothing is silently overwritten.
