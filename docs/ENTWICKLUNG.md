@@ -49,7 +49,7 @@ gepinnt (Version im Kommentar), jeder Job und jeder lange Schritt hat `timeout-m
 
 ## Lizenzen von Dritten
 `THIRD-PARTY-NOTICES.md` (Wurzelordner) nennt alles, was die App mitliefert: Node.js (Version aus `scripts/node-version.txt`), Sparkle (Version aus
-`Package.swift`), CodeMirror, three.js, Geist, Gehirnmodell, Simple Icons. `baue-app.sh` legt die Datei nach `Contents/Resources/` und neben die
+`Package.swift`), CodeMirror, three.js, Geist, Gehirnmodell, Simple Icons, Lucide (Symbole). `baue-app.sh` legt die Datei nach `Contents/Resources/` und neben die
 Oberfläche (`studio/`, dort liest sie Einstellungen → „Lizenzen …“); `Tests/Node/lizenzen.test.mjs` und der Rauchtest prüfen, dass jede Datei unter
 `vendor/` und `logos/` darin steht und die Datei im Paket liegt. **Wer eine Bibliothek, Schrift oder ein Logo hinzufügt oder die Version von Node/Sparkle ändert, ergänzt die Datei im selben PR.**
 
@@ -72,6 +72,7 @@ Stable-Tags setzt nur der CEO nach Fabios Freigabe.
   Das Erfassen-Fenster hat dieselbe Logik in Swift (`Kurzformen.swift`); beide Tests lesen `Tests/Gemeinsam/kurzformen-faelle.json` — eine Regel ändert man dort und in beiden Implementierungen.
 - `Ressourcen/gemeinsam/zeit.mjs`: „heute“ ist überall ein Kalendertag in der **Zeitzone des Macs**; Berlin steht nur in den Tests (`Tests/Node/hilfe.mjs`, `Tests/Oberflaeche/playwright.config.mjs`, `Tests/Kern/run-all.sh` setzen `TZ=Europe/Berlin`).
   Funktionen nehmen optional `zone` (eingespritzt); Tests zur Zeitzone selbst: `Tests/Node/zeit.test.mjs`.
+- Symbole: `Ressourcen/studio/symbole.js` ist ERZEUGT aus Lucide (`lucide-static`, exakt gepinnt in `Werkzeuge/symbole/package.json`; dort `npm ci`). Namen und Zuordnung (Kortex-Name → Lucide-Name) stehen in `scripts/erzeuge-symbole.mjs`; nach jeder Änderung `node scripts/erzeuge-symbole.mjs` (Test: `--pruefen`, `Tests/Node/symbole.test.mjs`). Strich 1,5 px bis 16 px, 1,75 px ab 18 px; `symbol(name, größe, { farbe })` kann einfärben. Neue Lucide-Version: Pin ändern, neu erzeugen, THIRD-PARTY-NOTICES.md anpassen.
 - Das Studio lädt nur aus seinem Ordner: `node scripts/erzeuge-gemeinsam-kopien.mjs` schreibt `Ressourcen/studio/{zeit,wikilink,kurzformen}.js` neu (Test: `--pruefen`). Nach jeder Änderung an einer Quelle ausführen.
 
 ## Tags

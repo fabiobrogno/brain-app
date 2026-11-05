@@ -1,0 +1,7 @@
+{
+  "name": "brain-symbole",
+  "private": true,
+  "type": "module",
+  "description": "Nur zum Erzeugen von Ressourcen/studio/symbole.js (scripts/erzeuge-symbole.mjs); nichts davon liegt im App-Paket.",
+  "devDependencies": { "lucide-static": "1.69.0" }
+}
