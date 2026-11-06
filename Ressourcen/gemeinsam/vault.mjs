@@ -292,7 +292,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
       catch { /* kann die Ablage nicht schreiben, bleibt der Entwurf liegen */ }
       return { entwurf: null, aelter: true };
     }
-    return { entwurf: { text: e.text, zeit: e.zeit, basisHash: e.basisHash }, datei: d ? { inhalt: d.inhalt, hash: d.hash, geaendert: d.geaendert } : null };
+    return { entwurf: { text: e.text, zeit: e.zeit, basisHash: e.basisHash, ...(e.meta ? { meta: e.meta } : {}) }, datei: d ? { inhalt: d.inhalt, hash: d.hash, geaendert: d.geaendert } : null };
   }
 
 
@@ -597,7 +597,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
   const aufgabenFn = erzeugeAufgaben({ wurzel, kern, vertraut: () => { try { return stand().erlaubt === true; } catch { return false; } }, jetzt });
 
   // ---------- Umbenennen, Verschieben, Papierkorb (gemeinsam/dateiaktionen.mjs): mit Link-Pflege, Journal und Rückgängig ----------
-  const dateiAktionen = erzeugeDateiaktionen({ wurzel, support: opts.support || supportOrdner(), name: basename(wurzel), istGeneriert, ueberspringeOrdner: istUnterVaultOrdner, aufgabenOrdner: () => aufgabenFn.ordnerName(), slug, jetzt, haken: opts.dateiHaken || {} });
+  const dateiAktionen = erzeugeDateiaktionen({ wurzel, support: opts.support || supportOrdner(), name: basename(wurzel), istGeneriert, ueberspringeOrdner: istUnterVaultOrdner, aufgabenOrdner: () => aufgabenFn.ordnerName(), vorlagenOrdner: () => vorlagenOrdnerVon(wurzel), slug, jetzt, haken: opts.dateiHaken || {} });
   gitFn.setzeFremdeSperre(wurzel, () => dateiAktionen.sperreAktiv());
   // Läuft gerade ein Abgleich oder eine Umstellung, ändert Kortex nichts am Arbeitsbaum (wie beim Rückgängig der Ablagen)
   const mitRuhe = (fn) => async (a) => {
@@ -648,7 +648,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
 
   return {
     wurzel, name: basename(wurzel), heute: () => opts.heute || heuteIso(jetzt()), rueckfragen, kitVersion, kitVorhanden, kit, vertrauen, vertrauenStand: stand, baum, lies, imUnterVault: (rel) => { try { return imUnterVault(loese(wurzel, rel).abs); } catch { return false; } }, schreibe, zusammenfuehren, ablageListe, ablageLese, ablageLegeAb, entwurfPruefen,
-    entwurfSchreiben: (a) => entwurfFn.schreibeEntwurf(supportOrdnerV(), wurzel, a || {}), entwurfLoeschen: (pfad) => ({ ok: entwurfFn.loescheEntwurf(supportOrdnerV(), wurzel, pfad) }), entwuerfe: () => ({ entwuerfe: entwurfFn.listeEntwuerfe(supportOrdnerV(), wurzel) }),
+    entwurfSchreiben: (a) => entwurfFn.schreibeEntwurf(supportOrdnerV(), wurzel, a || {}), entwurfLoeschen: (pfad) => ({ ok: entwurfFn.loescheEntwurf(supportOrdnerV(), wurzel, pfad) }), entwurfVerschieben: (a) => entwurfFn.verschiebeEntwuerfe(supportOrdnerV(), wurzel, a?.von, a?.nach), entwuerfe: () => ({ entwuerfe: entwurfFn.listeEntwuerfe(supportOrdnerV(), wurzel) }),
     neu, wikiAnlegen, wikiLoese: (ziel, von) => notizIndex.loeseWiki(ziel, ordnerVonPfad(von || "")), merken, suche, sucheIndex, sucheVorwaermen, suchindexBeende, suchindexAendere, suchindexPruefeNeu, suchindexStand: () => (suchindex ? suchindex.stand() : null), suchindexRuhe: () => (suchindex ? suchindex.ruhe() : Promise.resolve()), suchenFuerKi, pruefung, gesundheit, nutzung,
     umbenennen: mitRuhe(dateiAktionen.umbenennen), verschieben: mitRuhe(dateiAktionen.verschieben), loeschen: mitRuhe(dateiAktionen.loeschen),
     papierkorb: dateiAktionen.papierkorbListe, papierkorbWiederherstellen: mitRuhe(dateiAktionen.papierkorbWiederherstellen), papierkorbEndgueltig: dateiAktionen.papierkorbEndgueltig, papierkorbHinweisErledigt: dateiAktionen.papierkorbHinweisErledigt, aktionenOrt: dateiAktionen.aktionenOrt,

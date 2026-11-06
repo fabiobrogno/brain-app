@@ -21,7 +21,7 @@ import { TF } from "./texte-frage.js";
 import { TK, konfliktLabel } from "./texte-konflikt.js";
 import { TN } from "./texte-fremd.js"; // „Nichts geht verloren“: Zusammenführen, Entwurfs-Journal, Hintergrunddienst
 import { baueKonfliktAnsicht, baueVergleich } from "./fremd-ansicht.js";
-import { erzeugeJournal } from "./entwurf.js";
+import { erzeugeJournal, entwurfSchluessel } from "./entwurf.js";
 import { starteLive, planeAus, kiHinweis, hebeHervor } from "./live.js";
 import { erzeugeMitteilungen } from "./mitteilungen.js"; // P8a: Hinweise unten rechts zu Ereignissen des Aktivitätsprotokolls
 import { erzeugeGlocke } from "./glocke.js"; // P8b: Glocke in der Kopfzeile mit Mitteilungsliste
@@ -83,6 +83,20 @@ const da = erzeugeDateiaktionen({
     const vorher = S.schutz;
     S.schutz = true; ed.setzeText(ed.text(), { nurLesen: true });
     return () => { S.schutz = vorher; if (S.pfad) ed.setzeText(ed.text(), { nurLesen: vorher || !S.bearbeitbar }); };
+  },
+  tagesnotizOrdner: () => S.schreibEinst.tagesnotizOrdner,
+  setzeTagesnotizOrdner: async (ordner) => {
+    for (let i = 0; i < 2; i++) { // einmal neu lesen, wenn die Einstellungen zwischendurch geändert wurden (Stand veraltet)
+      const d = await api.einstellungen();
+      try { const r = await api.einstellungenSchreiben({ tagesnotizOrdner: ordner }, d.stand); wendeEinstellungenAn(r.werte); return; }
+      catch (e) { if (!(e.status === 409 && i === 0)) throw e; }
+    }
+  },
+  // Pfadänderungen gehen an Zurück/Vor (schreiben.js) und ziehen offene wie gemerkte Entwürfe mit
+  schreiben: () => schreiben,
+  entwurfVerschoben: (von, nach) => {
+    journal.verschiebe(von, nach);
+    if (S.entwurf && S.entwurf.imJournal != null) { entwurfJournal.schreibe(S.entwurf, ed.text()); entwurfJournal.jetzt(true); } // Pfad und Ordner im Eintrag folgen
   },
   offeneNeuLaden: () => konfliktNeuLaden(), planeGit: () => planeGitRefresh(), bereichVonPfad: (p) => bereichVonPfad(p),
   titelElement: (pfad, ort) => (ort === "titel" ? document.querySelector("#pfad .krume.aktuell") : document.querySelector(`[data-karte][data-pfad="${CSS.escape(pfad)}"] .karte-titel`)),
@@ -165,8 +179,39 @@ async function ladeAppEinstellungen() { try { const d = await api.einstellungen(
 let speicherTimer = null, entwurfSpaet = null;
 const ENTWURF_HOECHSTWARTEN_MS = 20000;
 const neueId = () => (globalThis.crypto?.randomUUID ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`);
-// Schnittstelle für ein Entwurfs-Journal (#93): Entwürfe ohne Pfad ablegen und wieder löschen. Hier ein Platzhalter, der nichts tut; das Journal ersetzt ihn (window.studio.entwurfJournal).
-const entwurfJournal = { schreibe: (_entwurf, _text) => {}, loesche: (_entwurf) => {} };
+// Entwurfs-Journal für neue Notizen OHNE Datei (⌘N, Tagesnotiz, Vorlage): dieselbe Ablage wie das Journal unten, eigener Schlüssel `entwurf:<Kennung>` (meta: Pfad, Ordner, Tag).
+// Höchstens alle 5 s ein Eintrag (nicht je Tastendruck), sofort beim Verlassen des Fensters; gelöscht, sobald die Datei entstanden ist oder der Entwurf verlassen wurde.
+// Nach einem Absturz bietet pruefeEntwuerfeBeimStart ihn wieder an. window.__journalMs: nur Tests.
+const entwurfJournal = (() => {
+  let timer = null, letzter = null, reihe = Promise.resolve();
+  const intervall = () => (Number(window.__journalMs) > 0 ? Number(window.__journalMs) : 5000);
+  const meta = (e) => ({ pfad: e.pfad || null, ordner: e.ordner || null, tag: e.tag || null });
+  const einreihen = (fn) => { reihe = reihe.then(fn, fn); return reihe; };
+  function jetzt(erzwingen = false) {
+    clearTimeout(timer); timer = null;
+    const l = letzter;
+    if (!l || S.entwurf !== l.e || S.pfad) return reihe;
+    const text = l.text;
+    if (!erzwingen && l.e.imJournal === text) return reihe;
+    l.e.imJournal = text;
+    return einreihen(() => api.entwurfSchreiben(entwurfSchluessel(l.e.id), null, text, meta(l.e)).catch(() => { if (l.e.imJournal === text) l.e.imJournal = null; plane(); }));
+  }
+  function plane() { if (!timer) timer = setTimeout(() => jetzt(), intervall()); }
+  return {
+    schreibe(e, text) { if (!e?.id) return; letzter = { e, text }; plane(); },
+    jetzt,
+    // Der Entwurf ist erledigt (Datei entstanden) oder verlassen: Eintrag weg. Ohne Eintrag geschieht nichts.
+    loesche(e) {
+      if (!e?.id) return reihe;
+      if (letzter?.e === e) { clearTimeout(timer); timer = null; letzter = null; }
+      if (e.imJournal == null) return reihe;
+      e.imJournal = null;
+      return einreihen(() => api.entwurfLoeschen(entwurfSchluessel(e.id)).catch(() => {}));
+    },
+    zuruecksetzen() { clearTimeout(timer); timer = null; letzter = null; reihe = Promise.resolve(); },
+    warte: () => reihe,
+  };
+})();
 const ed = erstelleEditor($("editor"), {
   roh: () => S.roh,
   wikiAufloesen: (ziel) => loeseWikiAuf(ziel),
@@ -295,7 +340,7 @@ async function oeffne(pfad, { zeile, spalte, laenge, begriffe, ausListe, ausBoar
     if (!(await sichereVorWechsel()) || nr !== S.ladeNr) return false;
   }
   schreiben.verlasse(); // Cursor und Scrollposition der Notiz merken, die wir verlassen (Zurück/Vor)
-  S.entwurf = null;
+  entwurfJournal.loesche(S.entwurf); S.entwurf = null; // ein verlassener leerer Entwurf hinterlässt auch im Journal nichts
   S.pfad = d.pfad; S.hash = d.hash; S.schutz = !!d.schreibschutz || imKonflikt(d.pfad); S.dirty = false; S.konflikt = null; // Dateien in einer offenen Zusammenführung enthalten Konfliktmarken: nur lesen
   S.basis = d.inhalt; S.fremdOffen = false; S.entwurfAngebot = null;
   S.bearbeitbar = istBearbeitbar(d.pfad);
@@ -331,6 +376,7 @@ async function oeffneEntwurf({ text, cursor = null, pfad = null, ordner = null, 
   clearTimeout(speicherTimer);
   S.pfad = null; S.hash = null; S.schutz = false; S.dirty = false; S.konflikt = null; S.bearbeitbar = true; S.aktuellePruefung = null;
   S.basis = null; S.fremdOffen = false; S.entwurfAngebot = null; // eine neue Notiz baut auf keiner Datei auf (sonst bliebe die Basis der vorigen Notiz stehen)
+  entwurfJournal.loesche(S.entwurf); // ein zweites ⌘N ersetzt den leeren Entwurf davor
   S.entwurf = { id: neueId(), pfad, ordner: ordner ?? inboxName(), start: text, tag }; // id: bei einem Wiederholungsversuch legt die Werkstatt nichts doppelt an
   clearTimeout(entwurfSpaet); entwurfSpaet = null;
   ed.setzeText(text, { nurLesen: false, cursor });
@@ -736,10 +782,32 @@ async function entwurfVerwerfen() {
   journal.loesche(a.pfad);
   S.entwurfAngebot = null; zeigeBanner(); toast(TN.entwurf.verworfen);
 }
+// Entwürfe neuer Notizen ohne Datei (⌘N, Tagesnotiz, Vorlage), die ein Absturz übrig ließ: mit Inhalt wird „Wiederherstellen“ angeboten (legt die Notiz an), leere räumt Kortex weg.
+async function bieteNeueEntwuerfeAn(liste) {
+  for (const e of liste.slice(0, 3)) {
+    if (S.entwurf && entwurfSchluessel(S.entwurf.id) === e.pfad) continue;
+    let r; try { r = await api.entwurf(e.pfad); } catch { continue; }
+    const t = r?.entwurf;
+    if (!t) continue;
+    if (!hatInhalt(t.text)) { api.entwurfLoeschen(e.pfad).catch(() => {}); continue; }
+    toast(TN.entwurf.neueNotiz(uhrzeitVon(e.zeit)), { ms: 15000, aktion: { text: TN.entwurf.wiederherstellen, tun: () => stelleNeuenEntwurfHer(e.pfad, t) } });
+  }
+}
+async function stelleNeuenEntwurfHer(schluessel, t) {
+  const m = t.meta || {};
+  if (!(await oeffneEntwurf({ text: t.text, pfad: m.pfad || null, ordner: m.ordner || null, tag: m.tag || null }))) return;
+  S.entwurf.start = null; // der wiederhergestellte Text gilt als bearbeitet: die Datei entsteht jetzt
+  const r = await festigeEntwurf({ ersatz: true });
+  if (r !== "angelegt") { entwurfJournal.schreibe(S.entwurf, t.text); await entwurfJournal.jetzt(true); } // Anlegen gescheitert: der Text liegt dann unter dem neuen Schlüssel
+  await api.entwurfLoeschen(schluessel).catch(() => {});
+  if (r === "angelegt") toast(TN.entwurf.neueNotizDa);
+}
 // Beim Start: liegen Entwürfe zu ANDEREN Notizen vor (neuer als die Datei), sagt ein Hinweis es; die offene Notiz prüft pruefeEntwurf selbst.
 async function pruefeEntwuerfeBeimStart() {
   if (window.__kortexNachAbsturz) { window.__kortexNachAbsturz = false; toast(TN.entwurf.nachAbsturz, { ms: 6000 }); }
   let l; try { l = await api.entwuerfe(); } catch { return; }
+  await bieteNeueEntwuerfeAn((l?.entwuerfe || []).filter((x) => x.pfad.startsWith("entwurf:")));
+  if (l?.entwuerfe) l = { ...l, entwuerfe: l.entwuerfe.filter((x) => !x.pfad.startsWith("entwurf:")) }; // keine Datei dazu: keine Waisen
   // Entwürfe, deren Notiz verschoben, umbenannt oder gelöscht wurde, hätten nie mehr einen Ort: sie kommen in die Ablage (Einfaches Kriterium: die Datei fehlt im Baum)
   if (S.baum.length) {
     let waisen = 0;
@@ -770,13 +838,13 @@ async function autoSichern(grund) {
   finally { autoLaeuft = false; }
 }
 async function beiFensterWechsel() {
-  journal.schreibeJetzt();
+  journal.schreibeJetzt(); entwurfJournal.jetzt();
   if (S.pfad && S.dirty && !S.konflikt && !S.schutz && S.bearbeitbar) { clearTimeout(speicherTimer); try { await speichere(); } catch { /* der Fehler steht im Speicherstand */ } }
   autoSichern("fenster");
 }
 window.addEventListener("blur", beiFensterWechsel);
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") beiFensterWechsel(); });
-window.addEventListener("pagehide", () => journal.schreibeJetzt());
+window.addEventListener("pagehide", () => { journal.schreibeJetzt(); entwurfJournal.jetzt(); });
 async function pruefeAutoStand() {
   if (!S.git?.repo || S.git.gesperrt) return;
   try {
@@ -1282,6 +1350,7 @@ function posteingangLeiste() {
 // Datei schließen, wenn die Werkstatt sie verschoben hat
 function schliesseDatei() {
   clearTimeout(speicherTimer);
+  entwurfJournal.loesche(S.entwurf);
   S.pfad = null; S.hash = null; S.dirty = false; S.konflikt = null; S.schutz = false; S.aktuellePruefung = null; S.entwurf = null; S.basis = null; S.fremdOffen = false; S.entwurfAngebot = null;
   ed.setzeText("", { nurLesen: false });
   zeigeBanner(); zeichnePfad(); zeichneWerkzeuge(); setzeFenstertitel(); aktualisiereStatusDatei(); ladeInfo(); zeigeLeer();
@@ -3152,7 +3221,7 @@ function zuruecksetzen() {
   clearTimeout(speicherTimer); clearTimeout(gitTimer); clearTimeout(baumTimer); clearTimeout(liveTimer); clearTimeout(menueTimer); clearTimeout(kiTimer); kiSammlung = [];
   liveSammlung = { pfade: [], aufgaben: false, alles: false };
   S.pfad = null; S.hash = null; S.dirty = false; S.konflikt = null; S.schutz = false; S.speichert = false; S.aktuellePruefung = null; S.entwurf = null; S.basis = null; S.fremdOffen = false; S.entwurfAngebot = null; S.dienstWeg = false; S.autoOffen = false; S.vorlagenOrdner = VORLAGENORDNER_STANDARD;
-  journal.zuruecksetzen(); clearTimeout(dienstTimer);
+  journal.zuruecksetzen(); entwurfJournal.zuruecksetzen(); clearTimeout(dienstTimer);
   schreiben.zuruecksetzen(); // Zurück/Vor gehört zum alten Vault
   S.notizen = []; S.nMap = new Map(); S.baum = []; S.eintraege = new Map(); S.git = null; S.gesundheit = null; S.rueckfragen = null; S.syncFehler = null; S.ki = null;
   S.suche = { aktiv: false, treffer: [], auswahl: 0, frage: "" }; S.vorVerlauf = null;

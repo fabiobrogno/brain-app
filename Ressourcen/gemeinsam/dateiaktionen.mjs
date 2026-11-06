@@ -50,7 +50,7 @@ const JOURNAL_MAX = 100, JOURNAL_TAGE = 30, JOURNAL_BYTES = 50 * 1024 * 1024; //
  * haken: nur für Tests ({ rename } ersetzt das Umbenennen beim Papierkorb, z. B. um EXDEV nachzustellen; geraet(pfad) ersetzt stat().dev für den älteren Papierkorb; geraeteId; punkt(name)).
  * deps: { wurzel (echter Pfad), support, name (Vault-Name), istGeneriert(rel, abs), ueberspringeOrdner(abs), aufgabenOrdner(): Promise<string|null>, slug(titel), wer, jetzt() }
  */
-export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert = () => false, ueberspringeOrdner = () => false, aufgabenOrdner = async () => null, slug = (s) => s, wer = "Du", jetzt = () => new Date(), haken = {} }) {
+export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert = () => false, ueberspringeOrdner = () => false, aufgabenOrdner = async () => null, vorlagenOrdner = () => null, slug = (s) => s, wer = "Du", jetzt = () => new Date(), haken = {} }) {
   const kennung = kennungVault(wurzel);
   // Wo liegt was? ALLES im Vault unter .kortex-lokal/: Papierkorb und Journale in .kortex-lokal/papierkorb/vorgaenge/<id>/, Sperre und Marke JE GERÄT in .kortex-lokal/aktionen/<Geräte-Hash>/, Quarantäne in .kortex-lokal/quarantaene/. Alle Prozesse (Werkstatt, MCP-Server, später
   // gestartete) sehen denselben Ort; Umbenennen oder Verschieben des Vault-Ordners nimmt alles mit, eine Kopie des Vaults hat ihre eigene Kopie davon. rename bleibt auf demselben Laufwerk; ein Unterordner,
@@ -262,7 +262,7 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
       if (istGeneriert(l.rel, l.abs)) throw new HttpFehler(403, "Diese Datei wird automatisch erzeugt und ist geschützt.");
       if (st.nlink > 1) throw new HttpFehler(423, "Diese Datei ist mehrfach verknüpft (derselbe Inhalt liegt unter einem zweiten Namen). Kortex fasst sie hier nicht an.");
     } else if (l.segmente.length === 1) {
-      const fest = new Set([inboxOrdnerVon(wurzel), "09_wiki", "90_archiv", "01_vorlagen", (await aufgabenOrdner().catch(() => null)) || "05_aufgaben"].map(falte));
+      const fest = new Set([inboxOrdnerVon(wurzel), "09_wiki", "90_archiv", "01_vorlagen", vorlagenOrdner() || "01_vorlagen", (await aufgabenOrdner().catch(() => null)) || "05_aufgaben"].map(falte));
       if (fest.has(falte(l.segmente[0]))) throw new HttpFehler(403, "Dieser Ordner gehört fest zu Kortex (Posteingang, Aufgaben, Wiki, Archiv, Vorlagen) und lässt sich nicht umbenennen, verschieben oder löschen.");
     }
     return { ...l, st, typ };

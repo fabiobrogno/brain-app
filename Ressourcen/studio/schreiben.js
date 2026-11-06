@@ -311,6 +311,9 @@ export function erzeugeSchreiben(ctx) {
     // andere Teile der App (Umbenennen, Verschieben, Löschen) melden Pfadänderungen so
     umbenannt: (alt, neu) => { verlauf.umbenannt(alt, neu); zeichnePfeile(); },
     ordnerUmbenannt: (alt, neu) => { verlauf.ordnerUmbenannt(alt, neu); zeichnePfeile(); },
-    entfernt: (pfad) => { verlauf.entferne(pfad); zeichnePfeile(); },
+    entfernt: (pfad, ordner = false) => { // bei einem Ordner auch alles darunter
+      for (const p of ordner ? verlauf.zustandJetzt().liste.filter((x) => x.startsWith(pfad + "/")) : []) verlauf.entferne(p);
+      verlauf.entferne(pfad); zeichnePfeile();
+    },
   };
 }
