@@ -5,7 +5,7 @@
 // Vom Vault wird nur .logs/tageslauf/letzter.json gelesen (kein Link, höchstens 256 KB), und nur ein festes Feld-Set wird weitergegeben (Zeiten, Status, Zahlen) — nie Inhalt aus dem Vault.
 import { readFileSync, lstatSync, realpathSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { HttpFehler, testmodus } from "../gemeinsam/basis.mjs";
 import { nurMac } from "../gemeinsam/plattform.mjs";
@@ -34,7 +34,7 @@ export function erzeugePflege({ support, home = () => homedir(), konten, vaults 
   const plistPfad = () => join(home(), "Library", "LaunchAgents", `${LABEL}.plist`);
   // Im Testmodus wird nie das echte LaunchAgents-Verzeichnis des Rechners gelesen: nur ein Home unter dem Temp-Ordner.
   const echtPfad = (p) => { try { return realpathSync.native(p); } catch { return p; } };
-  const homeErlaubt = () => !testmodus() || echtPfad(home()).startsWith(echtPfad(tmpdir()) + "/");
+  const homeErlaubt = () => !testmodus() || echtPfad(home()).startsWith(echtPfad(tmpdir()) + sep);
   const dienstVaults = () => {
     const j = leseJson(join(support, "dienst.json"));
     return j && Array.isArray(j.vaults) ? j.vaults.filter((v) => typeof v === "string" && v) : [];

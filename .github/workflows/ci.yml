@@ -238,6 +238,9 @@ jobs:
       run:
         shell: bash
     steps:
+      # Windows-Runner checken mit core.autocrlf=true aus (CRLF in allen Dateien): erzeugte Kopien und Hashes passten sonst nie. Das Repo hat (noch) keine .gitattributes → Folgeaufgabe.
+      - name: Zeilenenden unverändert auschecken
+        run: git config --global core.autocrlf false
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         if: matrix.bereich != 'kern'
