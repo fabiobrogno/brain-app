@@ -43,6 +43,7 @@ export const TD = {
     leerenTitel: "Papierkorb leeren?", leerenSatz: (n) => `${nz(n, "Eintrag wird", "Einträge werden")} endgültig gelöscht. Das lässt sich nicht rückgängig machen.`, leerenKnopf: "Papierkorb leeren",
     unklarTitel: "Ein Vorgang wurde unterbrochen",
     unklarText: (von, nach) => `Kortex konnte nicht eindeutig zurückfahren, was mit „${von}“${nach ? ` → „${nach}“` : ""} passiert ist. Prüfe beide Orte im Vault; nichts wurde gelöscht. Das Journal liegt unten.`,
+    fremdText: (von) => `Ein anderes Gerät mit demselben Support-Ordner arbeitet gerade an „${von}“ (oder ist dabei abgebrochen). Kortex fasst das nicht an. Prüfe es auf dem anderen Gerät.`,
     unklarErledigt: "Erledigt, Journal ablegen",
     nurImFinder: (ort) => `Liegt auf einem anderen Laufwerk: ${ort} — im Finder öffnen und selbst zurücklegen.`,
     geloescht: (n) => `${nz(n, "Eintrag", "Einträge")} endgültig gelöscht`,

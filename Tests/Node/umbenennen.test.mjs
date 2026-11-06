@@ -18,6 +18,7 @@ function stand(d) {
   const dateien = new Map(), ordner = [];
   const geh = (rel) => {
     for (const n of readdirSync(rel ? join(d, rel) : d).sort()) {
+      if (n.startsWith(".")) continue; // .kortex (Vault-ID, Papierkorb) gehört nicht zum Vergleich
       const r = rel ? `${rel}/${n}` : n;
       const st = lstatSync(join(d, r));
       if (st.isSymbolicLink()) dateien.set(r, "link:" + readlinkSync(join(d, r)));
@@ -34,8 +35,9 @@ function aufbau(dateien = {}) {
   const d = tmp("umb-vault-"), support = tmp("umb-support-");
   schreibe(d, "brain.config.json", "{}\n");
   for (const [p, t] of Object.entries(dateien)) schreibe(d, p, t);
+  mkdirSync(join(d, ".kortex"), { recursive: true }); writeFileSync(join(d, ".kortex", "vault-id"), JSON.stringify({ id: "00112233445566aa", alt: [A.kennungVault(d)] }) + "\n");
   const v = oeffneVault(d, { support, heute: "2026-11-05" });
-  return { d, support, v, kennung: A.kennungVault(d) };
+  return { d, support, v, kennung: "00112233445566aa" };
 }
 const eintraege = (support, kennung) => A.leseEreignisse(support, kennung, { arten: ["datei-aktion"] });
 
@@ -88,7 +90,7 @@ test("Notiz umbenennen (Titel und Dateiname): alle Verweise folgen, Code bleibt,
   assert.equal(lies(d, "20/Notiz.md"), "---\nverwandt: [[Espresso]]\n---\n# Notiz\n\n[[Espresso]] und [[Unbekannt]]\n");
   assert.equal(lies(d, "20/Kein Link.md"), "# Ohne Verweise\nText\n", "Unbeteiligtes bleibt unberührt");
   // genau ein Eintrag, ohne Inhalt
-  const e = eintraege(support, kennung);
+  const e = eintraege(support, A.kennungVault(d));
   assert.equal(e.length, 1);
   assert.equal(e[0].rueckgaengig.art, "vorgang");
   assert.ok(!/Espresso|Kaffee/.test(JSON.stringify({ ...e[0], pfade: undefined })), "kein Titel im Text");
@@ -422,9 +424,9 @@ test("Routen: Ordner, Löschen, Papierkorb-Liste und -Wiederherstellen; falsche 
 test("Eintrag im Protokoll enthält nie Inhalt oder Titel im Text; eine Aktion = ein Eintrag (auch Rückgängig-Bestätigung ist ein eigener, getrennter Eintrag)", async () => {
   const { d, v, support, kennung } = aufbau({ "a/Geheimer Titel.md": "# Geheimer Titel\nInhalt XYZ\n", "b/x.md": "[[Geheimer Titel]]\n" });
   const r = await v.umbenennen({ pfad: "a/Geheimer Titel.md", titel: "Noch geheimer", dateiname: "n.md" });
-  const roh = readFileSync(join(support, "aktivitaet", `${kennung}.jsonl`), "utf8");
+  const roh = readFileSync(join(support, "aktivitaet", `${A.kennungVault(d)}.jsonl`), "utf8");
   assert.ok(!/Inhalt XYZ|Noch geheimer/.test(roh));
-  assert.equal(eintraege(support, kennung).length, 1);
+  assert.equal(eintraege(support, A.kennungVault(d)).length, 1);
   assert.ok(r.aktivitaetId);
 });
 

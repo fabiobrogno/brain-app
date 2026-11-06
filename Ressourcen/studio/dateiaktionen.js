@@ -434,7 +434,7 @@ export function erzeugeDateiaktionen(ctx) {
   function hinweisKarte(x) {
     return h("div", { klasse: "karte korb-karte korb-hinweis", role: "alert", "data-hinweis": x.id },
       h("div", { klasse: "karte-kopf" }, h("div", { klasse: "karte-titel", text: TD.korb.unklarTitel }), h("div", { klasse: "karte-marken" }, symbol("warnung", 14))),
-      h("div", { klasse: "karte-vorschau", text: TD.korb.unklarText(x.von, x.nach) }),
+      h("div", { klasse: "karte-vorschau", text: x.fremd ? TD.korb.fremdText(x.von) : TD.korb.unklarText(x.von, x.nach) }),
       h("div", { klasse: "karte-fuss" }, h("span", { text: x.ort })),
       h("div", { klasse: "korb-aktionen" }, baueKnopf({ text: TD.korb.unklarErledigt, groesse: "s", aktion: "hinweis-erledigt", aufKlick: async () => {
         try { await api.papierkorbHinweisErledigt(x.id); await zeichnePapierkorb(document.getElementById("liste-koerper")); ladeKorbZahl(); } catch (err) { toast(fehlerText(err), { fehler: true }); } } })));

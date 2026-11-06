@@ -17,8 +17,9 @@ function aufbau(dateien = {}, opts = {}) {
   const d = tmp("umr-vault-"), support = tmp("umr-support-");
   schreibe(d, "brain.config.json", "{}\n");
   for (const [p, t] of Object.entries(dateien)) schreibe(d, p, t);
+  mkdirSync(join(d, ".kortex"), { recursive: true }); writeFileSync(join(d, ".kortex", "vault-id"), JSON.stringify({ id: "00112233445566aa", alt: [A.kennungVault(d)] }) + "\n");
   const v = oeffneVault(d, { support, heute: "2026-11-05", ...opts });
-  return { d, support, v, kennung: A.kennungVault(d) };
+  return { d, support, v, kennung: "00112233445566aa" };
 }
 const vorgangsDir = (support, kennung, id) => join(support, "papierkorb", kennung, "vorgaenge", id);
 
@@ -129,7 +130,7 @@ test("git: Abgleich/Commit laufen nicht an, solange eine Dateiaktion die Sperre 
   const d = repo("umr-git-"), support = tmp("umr-git-support-");
   schreibe(d, "brain.config.json", "{}\n"); schreibe(d, "a.md", "# a\n");
   const v = oeffneVault(d, { support });
-  const kennung = A.kennungVault(d);
+  const kennung = A.kennungVault(d); // dieses Vault hat (noch) keine Vault-ID: Schlüssel = Pfad-Hash
   mkdirSync(join(support, "papierkorb", kennung), { recursive: true });
   writeFileSync(join(support, "papierkorb", kennung, ".sperre"), JSON.stringify({ pid: process.pid, token: "t" }) + "\n");
   const e = await fehler(() => G.commit(v.wurzel, { nachricht: "x", dateien: ["a.md"] }, {}));

@@ -32,8 +32,9 @@ function aufbau(dateien = {}, opts = {}) {
   const d = tmp("upk-vault-"), support = tmp("upk-support-");
   schreibe(d, "brain.config.json", "{}\n");
   for (const [p, t] of Object.entries(dateien)) schreibe(d, p, t);
+  mkdirSync(join(d, ".kortex"), { recursive: true }); writeFileSync(join(d, ".kortex", "vault-id"), JSON.stringify({ id: "00112233445566aa", alt: [A.kennungVault(d)] }) + "\n");
   const v = oeffneVault(d, { support, heute: "2026-11-05", ...opts });
-  return { d, support, v, kennung: A.kennungVault(d) };
+  return { d, support, v, kennung: "00112233445566aa" };
 }
 const jDir = (support, kennung, id) => join(support, "papierkorb", kennung, "vorgaenge", id);
 // Kindprozess mit ausdrücklich gebauter Umgebung (nie die des Testlaufs), beendet sich am Punkt mit SIGKILL
@@ -75,7 +76,7 @@ test("Anderes Gerät: Papierkorb liegt im Vault (.kortex/papierkorb); Löschen, 
   const vorher = stand(d);
   const r = await v.loeschen({ typ: "ordner", pfad: "p" });
   assert.ok(existsSync(join(d, ".kortex/papierkorb/vorgaenge", r.vorgang, "inhalt/p/a.md")), "Inhalt im Vault-Papierkorb");
-  assert.ok(!existsSync(join(support, "papierkorb", A.kennungVault(d), "vorgaenge", r.vorgang)));
+  assert.ok(!existsSync(join(support, "papierkorb", "00112233445566aa", "vorgaenge", r.vorgang)));
   assert.ok(!existsSync(join(d, "p")));
   // unsichtbar
   assert.ok(!v.baum().eintraege.some((e) => e.pfad.includes(".kortex")));
@@ -199,7 +200,7 @@ function legeSperre(support, kennung, inhalt, alterMs = 0) {
   if (alterMs) { const t = new Date(Date.now() - alterMs); utimesSync(f, t, t); }
   return f;
 }
-const startVon = (pid) => execFileSync("ps", ["-o", "lstart=", "-p", String(pid)], { encoding: "utf8" }).trim();
+const startVon = (pid) => execFileSync("/bin/ps", ["-o", "lstart=", "-p", String(pid)], { encoding: "utf8", env: { LC_ALL: "C", LANG: "C", TZ: "UTC", PATH: "/bin:/usr/bin" } }).trim();
 
 test("Sperre: lebende PID wird auch nach 20 Minuten nicht gebrochen; tote PID sofort; wiederverwendete PID (andere Startzeit) sofort", async () => {
   const { d, v, support, kennung } = aufbau({ "a/x.md": "# x\n" });
