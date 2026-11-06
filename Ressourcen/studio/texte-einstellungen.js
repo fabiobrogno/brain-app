@@ -3,6 +3,7 @@
 // gruppiert in Abschnitte und Bereiche. `schluessel` + `art` beschreiben einfache Zeilen (Schalter, Segment, Menü, Liste) für einstellungen.js; Zeilen mit eigener
 // Steuerung (Thema, Vaults, GitHub …) haben `sonder: true` und werden dort einzeln gebaut. Muster: Orca src/renderer/src/components/settings/settings-search.ts
 // @9bccd67 (MIT, Lovecast Inc.) — Gliederung in Bereich → Abschnitt → Eintrag mit Titel, Beschreibung und Stichwörtern.
+import { plattformTexte } from "./plattform-texte.js";
 export const GRUPPEN = ["Kortex", "Wissen", "Verbindungen", "Mehr"];
 
 const STUFEN = {
@@ -10,7 +11,7 @@ const STUFEN = {
   hinweise: [["aus", "Aus"], ["niedrig", "Selten"], ["mittel", "Normal"], ["hoch", "Oft"]],
 };
 
-export const BEREICHE = [
+export const BEREICHE = plattformTexte([
   {
     id: "allgemein", name: "Allgemein", gruppe: "Kortex", symbol: "zahnrad", woerter: ["start", "version", "update", "sprache"],
     intro: "Wie Kortex sich im Alltag verhält.",
@@ -255,12 +256,12 @@ export const BEREICHE = [
       ] },
     ],
   },
-];
+]);
 
 // Wörter, die bei einer Suche ohne Treffer angeboten werden, wenn sich aus der Eingabe nichts Näheres ableiten lässt (jedes kommt im Register vor)
 export const STANDARD_VORSCHLAEGE = ["Konto", "Kürzel", "GitHub", "dunkel"];
 
-export const TE = {
+export const TE = plattformTexte({
   seite: "Einstellungen",
   zurueck: "Zurück zu Kortex",
   zurueckTitel: "Zurück zu Kortex (Esc)",
@@ -349,6 +350,7 @@ export const TE = {
   sichZuHolen: (n) => `${n} zu holen`,
   sichBereit: "Bereit, bei GitHub zu sichern",
   sichNurMac: "Nur auf diesem Mac",
+  sichNurMacText: "Dieser Vault liegt nur auf deinem Mac. Mit einer Sicherung bei GitHub liegt zusätzlich eine Kopie im Netz.",
   sichBlockiert: "Sicherung noch nicht möglich",
   sichEinrichten: "Bei GitHub sichern …",
   sichJetzt: "Jetzt abgleichen",
@@ -378,4 +380,4 @@ export const TE = {
   mobilBald: "Kommt mit der iPhone-App",
   // Bereiche mit Platzhalter
   verweis: "Bis dahin wie gewohnt öffnen:",
-};
+});

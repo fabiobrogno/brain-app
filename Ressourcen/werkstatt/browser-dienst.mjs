@@ -33,6 +33,7 @@ export async function starteBrowserDienst({ vault, port: wunsch = 0, support = s
   const handler = erzeugeHandler({ ...(vault ? { vault } : {}), ...handlerOptionen });
   // KI-Konten beim Start abgleichen (wie die App): nicht im Testmodus, dort gäbe es echte Zugriffe auf den Benutzerordner
   if (!testmodus() || process.env.BRAIN_KONTEN_START === "1") { try { handler.konten.synchronisiere(); await handler.migrierePflege(); } catch { /* Stand wird beim Öffnen der KI-Konten gemeldet */ } }
+  try { handler.kontingent.starteWache(); } catch { /* ohne Wache meldet nur das Studio die Schwellen */ } // 80/100 % bei Claude auch ohne sichtbares Studio
   let server;
   const zugang = erzeugeZugang({ port: () => server.address().port });
   let beendet;
@@ -41,6 +42,7 @@ export async function starteBrowserDienst({ vault, port: wunsch = 0, support = s
   function stoppe() {
     if (endeLaeuft) return ende;
     endeLaeuft = true;
+    try { handler.kontingent.stoppeWache(); } catch { /* egal */ }
     try { beendeAlleProzesse(); } catch { /* egal */ }
     try { beendeLaufendes(); } catch { /* beenden wir trotzdem */ }
     try { beendeVorgaenge(); } catch { /* halbes Anlegen/Klonen zurücknehmen */ }

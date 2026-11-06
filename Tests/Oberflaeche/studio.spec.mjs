@@ -252,7 +252,9 @@ test("Palette findet tiefe Seite per Titel, Dateiname und Wortanfang; Enter ohne
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("Enter");
   await expect(page.locator("#pfad .krume.aktuell")).toHaveText("zzzqqq");
-  await expect.poll(() => lese("00_inbox/zzzqqq.md").toString()).toBe("# zzzqqq\n");
+  // Die Seite zeigt den Titel, sobald der Entwurf offen ist; die Datei entsteht erst danach (festigeEntwurf, asynchron). expect.poll gibt einen geworfenen Fehler (ENOENT) nicht weiter
+  // zum nächsten Versuch, also fehlt die Datei hier = noch nicht da.
+  await expect.poll(() => { try { return lese("00_inbox/zzzqqq.md").toString(); } catch (e) { if (e.code === "ENOENT") return null; throw e; } }, { timeout: 8000 }).toBe("# zzzqqq\n");
 });
 
 test("Seitenleiste zeigt Rückfragen n, wenn der Kern sie liefert (ohne Vertrauensfrage)", async ({ page }) => {

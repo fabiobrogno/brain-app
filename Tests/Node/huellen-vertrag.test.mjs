@@ -63,3 +63,17 @@ test("Einrichtung (E2): die Sitzung bestätigt die Seite (immer erlaubt), die Sc
   assert.match(text, /aktion(?:MitAntwort)?\(\s*"einrichtung-sitzung"/);
   assert.match(text, /aktion(?:MitAntwort)?\(\s*"einrichtung-schritt"/);
 });
+
+test("Routen, die die Hülle statt der Werkstatt beantwortet (KiRoute.swift): alle im Vertrag, mit Browser-Verhalten, und in der Werkstatt als Rückfall vorhanden", () => {
+  const swift = readFileSync(join(W, "Sources/BrainCore/KiRoute.swift"), "utf8");
+  const inSwift = [];
+  for (const z of swift.matchAll(/case ((?:"\/api\/[a-z\/-]+",?\s*)+): erwartet = "(GET|POST|PUT)"/g)) for (const p of z[1].matchAll(/"(\/api\/[a-z\/-]+)"/g)) inSwift.push(`${z[2]} ${p[1]}`);
+  assert.ok(inSwift.length >= 4, "Routen in KiRoute.swift gefunden");
+  const imVertrag = (vertrag.routen || []).map((r) => `${r.methode} ${r.pfad}`);
+  assert.deepEqual([...imVertrag].sort(), [...inSwift].sort());
+  const handler = readFileSync(join(W, "Ressourcen/werkstatt/handler.mjs"), "utf8");
+  for (const r of vertrag.routen) {
+    assert.ok(r.zweck && r.antwort && r.browser, `${r.pfad}: Zweck, Antwort und Browser-Verhalten`);
+    assert.ok(handler.includes(`case "${r.pfad}"`), `${r.pfad}: Rückfall in der Werkstatt`);
+  }
+});

@@ -36,7 +36,7 @@ const shellText = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
 
 const NICHT_ABRUFBAR = { cursor: "Cursor", gemini: "Gemini CLI", copilot: "Copilot CLI", opencode: "OpenCode", zed: "Zed", warp: "Warp", "claude-desktop": "Claude Desktop" };
 
-export function erzeugeKontingent({ support, konten, nodePfad = process.execPath, home = () => homedir(), codexProgramm = () => null, jetzt = () => Date.now(), codexLauf = liesCodexKontingent } = {}) {
+export function erzeugeKontingent({ support, konten, nodePfad = process.execPath, home = () => homedir(), codexProgramm = () => null, jetzt = () => Date.now(), codexLauf = liesCodexKontingent, vaultFuer = () => null } = {}) {
   const ordner = () => join(support, "kontingent");
   const kontoDatei = (id) => join(ordner(), `${id}.json`);
   const skriptPfad = () => join(ordner(), "bin", MARKE);
@@ -453,13 +453,13 @@ export function erzeugeKontingent({ support, konten, nodePfad = process.execPath
     try { const j = JSON.parse(readFileSync(mitteilungsDatei(), "utf8")); if (istObj(j) && istObj(j.konten)) return j.konten; } catch { /* keine oder kaputt: von vorn (kein Nachmelden alter Fenster: die Regel kennt nur laufende) */ }
     return {};
   }
-  function meldeSchwellen(liste, vault, vaultName) {
+  function meldeSchwellen(liste, vault, vaultName, bekanntIds = liste.map((e) => e.id)) {
     if (testmodus() && !ordnerErlaubt(support)) return;
     const vorher = liesGemeldet();
     const aktiv = leseApp(support).werte.mitteilungenKontingent !== false;
     const frisch = liste.filter((e) => (e.programm === "claude" || e.programm === "codex") && e.status === "ok").map((e) => ({ id: e.id, programm: e.programm, name: e.name, session: e.session, weekly: e.weekly }));
     const plan = planeSchwellen(vorher, frisch, { jetzt: jetzt(), aktiv });
-    const bekannt = new Set(liste.map((e) => e.id)), geprueft = new Set(frisch.map((e) => e.id));
+    const bekannt = new Set(bekanntIds), geprueft = new Set(frisch.map((e) => e.id));
     const nachher = {};
     for (const [id, w] of Object.entries(vorher)) if (bekannt.has(id) && !geprueft.has(id)) nachher[id] = w; // nicht geprüfte Konten behalten ihren Stand
     Object.assign(nachher, plan.nachher);
@@ -473,7 +473,26 @@ export function erzeugeKontingent({ support, konten, nodePfad = process.execPath
     }
   }
 
+  // Die Claude-Werte sind lokale Dateien der Statuszeile (kein Aufruf beim Anbieter): ihre Schwellen prüft die Werkstatt selbst im Takt, unabhängig davon, ob das Studio sichtbar ist.
+  // „Nur bei sichtbarem Fenster“ gilt allein für Codex (app-server). Codex wird hier nie gefragt; sein gemerkter Stand bleibt unberührt (`bekanntIds`).
+  function pruefeClaudeSchwellen() {
+    const v = vaultFuer();
+    if (!v || !v.wurzel) return;
+    const d = datenVon();
+    const liste = [];
+    for (const [id, roh] of Object.entries(d.konten)) {
+      const k = { id, ...roh };
+      if (k.programm !== "claude") continue;
+      let e; try { e = claudeEintrag(k); } catch { continue; }
+      liste.push({ id, programm: k.programm, name: k.name, ...e });
+    }
+    try { meldeSchwellen(liste, v.wurzel, v.name || null, Object.keys(d.konten)); } catch { /* eine Mitteilung ist nie ein Grund für einen Fehler */ }
+  }
+  let wache = null;
+  const starteWache = ({ takt = 60_000 } = {}) => { if (wache) return; wache = setInterval(pruefeClaudeSchwellen, takt); wache.unref?.(); };
+  const stoppeWache = () => { clearInterval(wache); wache = null; };
+
   // Nur für Tests und das Beenden: wartet, bis alle laufenden Codex-Abfragen fertig sind.
   const warteAufAbfragen = () => kette;
-  return { stand, schalteStatuszeile, warteAufAbfragen, _setzeHaken: setzeHaken };
+  return { stand, schalteStatuszeile, pruefeClaudeSchwellen, starteWache, stoppeWache, warteAufAbfragen, _setzeHaken: setzeHaken };
 }

@@ -135,8 +135,8 @@ export function planeSchwellen(vorher, konten, { jetzt, aktiv = true } = {}) {
       const resetsAt = ZAHL(w.resetsAt) ? w.resetsAt : null;
       if (resetsAt !== null && resetsAt <= jetzt) continue; // dieses Fenster ist schon vorbei (alter Stand einer ruhenden Sitzung): zählt nicht, nichts wird gemerkt
       const abgelaufen = !!gemerkt && ZAHL(gemerkt.resetsAt) && gemerkt.resetsAt <= jetzt;
-      // ohne Rücksetzzeit erkennt man ein neues Fenster nur am Absinken unter die erste Schwelle
-      const selbes = !!gemerkt && !abgelaufen && gleichesFenster(gemerkt.resetsAt ?? null, resetsAt) && !(resetsAt === null && w.usedPercent < SCHWELLEN[0]);
+      // ohne Rücksetzzeit gilt das zuletzt bekannte, noch laufende Fenster (nie erneut 80 % melden); ein neues erkennt man dann nur am Absinken unter die erste Schwelle
+      const selbes = !!gemerkt && !abgelaufen && (resetsAt === null ? w.usedPercent >= SCHWELLEN[0] : gleichesFenster(gemerkt.resetsAt ?? null, resetsAt));
       const gemeldet = new Set(selbes && Array.isArray(gemerkt.gemeldet) ? gemerkt.gemeldet.filter(ZAHL) : []);
       const erreicht = SCHWELLEN.filter((s) => w.usedPercent >= s && !gemeldet.has(s));
       if (erreicht.length) {

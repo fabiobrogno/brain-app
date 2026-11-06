@@ -13,6 +13,7 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync, chmodSync } from "nod
 import { tmpdir } from "node:os";
 import { join, dirname, delimiter, isAbsolute } from "node:path";
 import { registriere, beendetGerade } from "./prozess.mjs";
+import { beendeBaum } from "./plattform.mjs";
 
 // Fristen (Orca-Werte). Claude: 10 min für die ganze Anmeldung (Zeit zum Kopieren in ein Privatfenster). Codex: 3 min bis Adresse und Code da sind, danach 15 min (Gültigkeit des Gerätecodes).
 // `adresse`: so lange wartet Kortex auf die Adresse, bevor es aufgibt und den Weg über das Terminal zeigt (Claude 30 s: die Adresse kommt sofort oder gar nicht; Codex = sein Start).
@@ -37,8 +38,14 @@ export function pruefeAdresse(programm, text) {
 const ANSI = /\u001b\[[0-9;?]*[ -/]*[@-~]|\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)|\u001b[@-Z\\-_]/g;
 export const ohneAnsi = (t) => String(t).replace(ANSI, "");
 const URL_MUSTER = /https:\/\/[^\s"'<>\u001b]+/g;
+// Claude bricht die Adresse in der Ausgabe (Ink, ~80 Spalten) um: ein abgeschnittenes erstes Stück darf nie als Adresse gelten. Darum nimmt Kortex aus der Ausgabe nur eine Adresse,
+// die `state` und `code_challenge` enthält; sonst wartet es auf die Datei des BROWSER-Skripts (vollständig) bzw. zeigt den Weg über das Terminal.
+const CLAUDE_PFLICHT = ["state", "code_challenge"];
 export function findeAdresse(programm, text) {
-  for (const m of ohneAnsi(text).matchAll(URL_MUSTER)) { const u = pruefeAdresse(programm, m[0].replace(/[.,;:)\]]+$/, "")); if (u) return u; }
+  for (const m of ohneAnsi(text).matchAll(URL_MUSTER)) {
+    const u = pruefeAdresse(programm, m[0].replace(/[.,;:)\]]+$/, ""));
+    if (u && (programm !== "claude" || CLAUDE_PFLICHT.every((k) => new URL(u).searchParams.get(k)))) return u;
+  }
   return null;
 }
 // Codex (nach Orcas `parseCodexDeviceAuthPrompt`): die Adresse steht vor „one-time code“, der Code in der Zeile danach; ein Leerzeichen/Zeilenende dahinter beweist, dass er vollständig ist.
@@ -71,17 +78,6 @@ export function anmeldeUmgebung(basis, { programm, ordner = null, browser = null
   if (ordner) e[programm === "claude" ? "CLAUDE_CONFIG_DIR" : "CODEX_HOME"] = ordner;
   if (browser) e.BROWSER = browser;
   return e;
-}
-
-// ───────────── Prozessgruppe beenden (Name und Bedeutung wie `beendeBaum` in gemeinsam/plattform.mjs, W0; sobald W0 gemergt ist, von dort importieren) ─────────────
-export function beendeBaum(kind, signal = "SIGKILL", { plattform = process.platform } = {}) {
-  if (!kind || kind.pid === undefined) return;
-  if (plattform === "win32") {
-    try { const r = spawn("taskkill", ["/PID", String(kind.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true }); r.on("error", () => {}); return; } catch { /* Rückfall */ }
-    try { kind.kill(signal); } catch { /* schon weg */ }
-    return;
-  }
-  try { process.kill(-kind.pid, signal); } catch { try { kind.kill(signal); } catch { /* schon weg */ } }
 }
 
 const shellText = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
@@ -167,6 +163,7 @@ export function starteAnmeldung(o) {
   kind.once("error", () => schliesse("error", "start-fehlgeschlagen", true));
   kind.once("exit", (exitCode) => {
     if (fertig) return;
+    clearInterval(uhr); // sonst meldet der Takt während der Statusprüfung „abgelaufen“, obwohl die Anmeldung gelang
     leseUrlDatei();
     if (exitCode !== 0) { schliesse("error", url ? "programm-fehler" : "keine-adresse", true); return; }
     // Programm sagt „fertig“: ja/nein fragt Kortex das Programm selbst (Exit-Code von `auth status`)

@@ -72,3 +72,21 @@ test("credentialHelper je System", () => {
   assert.equal(P.credentialHelper({ plattform: "linux", vorhanden: () => true }), "libsecret");
   assert.match(P.credentialHelper({ plattform: "linux", vorhanden: () => false }), /^cache/);
 });
+
+test("prozessStart: der eigene Prozess wird nur einmal erfragt, ein fremder höchstens alle 10 s; leer wird nie gemerkt (Windows: jede Abfrage ist ein PowerShell-Start)", () => {
+  let aufrufe = 0, wert = "2026-01-01T00:00:00.0000000Z\r\n", t = 1000;
+  const o = { plattform: "win32", ausfuehren: () => { aufrufe++; return wert; }, speicher: new Map(), jetzt: () => t };
+  for (let i = 0; i < 5; i++) assert.match(P.prozessStart(process.pid, o), /^2026-01-01T/);
+  assert.equal(aufrufe, 1, "eigener Prozess: einmal");
+  for (let i = 0; i < 5; i++) P.prozessStart(4242, o);
+  assert.equal(aufrufe, 2, "fremder Prozess: einmal innerhalb von 10 s");
+  t += 11_000; P.prozessStart(4242, o);
+  assert.equal(aufrufe, 3, "danach wieder fragen (PID kann wiederverwendet sein)");
+  t += 20_000; P.prozessStart(process.pid, o);
+  assert.equal(aufrufe, 3, "der eigene Wert gilt für immer");
+  wert = ""; P.prozessStart(777, o); P.prozessStart(777, o);
+  assert.equal(aufrufe, 5, "unbekannt (leer) wird nicht gemerkt");
+  // mit ersetzter Abfrage und ohne Speicher (Tests) wird nie gemerkt
+  let n = 0; for (let i = 0; i < 3; i++) P.prozessStart(9, { plattform: "linux", ausfuehren: () => { n++; return "x"; } });
+  assert.equal(n, 3);
+});

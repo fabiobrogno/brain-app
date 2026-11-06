@@ -232,7 +232,7 @@ export function erzeugeHandler(o) {
   // Anfrage an Anthropic oder OpenAI. o.kontingentCodex (Pfad oder null) / o.kontingentLauf / o.kontingentZeit = Ersatz für Tests (im Testmodus sonst kein echtes Codex).
   const kontingent = erzeugeKontingent({ support: vaultOpt.support || supportOrdner(), konten, nodePfad,
     ...(o.kontenHome ? { home: () => o.kontenHome } : {}), codexProgramm: o.kontingentCodex !== undefined ? () => o.kontingentCodex : () => (testmodus() ? null : findeProgramm("codex")),
-    ...(o.kontingentLauf ? { codexLauf: o.kontingentLauf } : {}), ...(o.kontingentZeit ? { jetzt: o.kontingentZeit } : {}) });
+    vaultFuer: () => (aktuell ? { wurzel: aktuell.wurzel, name: aktuell.name } : null), ...(o.kontingentLauf ? { codexLauf: o.kontingentLauf } : {}), ...(o.kontingentZeit ? { jetzt: o.kontingentZeit } : {}) });
   // Seite „Einstellungen“ (P5): GET/PUT /api/einstellungen führt die Werte eines Vaults (kern/einstellungen.mjs, wie `brain einstellungen`) und die der App (<support>/einstellungen.json) zusammen.
   const einstellungen = erzeugeEinstellungen({ support: vaultOpt.support || supportOrdner(), kern: () => o.kern || kernOrdner() });
   // Aktivitätsprotokoll (P8a): Liste, „gelesen“, Rückgängig für KI-Ablagen — werkstatt/aktivitaet.mjs. Das Protokoll schreiben MCP-Server, Hooks und Kern.

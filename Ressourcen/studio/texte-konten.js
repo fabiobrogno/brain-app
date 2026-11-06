@@ -1,6 +1,7 @@
 // Texte der Ansicht „KI-Konten“ (KI-Konten und Vault-Zugriff, Paket P2). Deutsch, Du-Form, für Nicht-Techniker: App „Kortex“, Datenordner „Vault“, „KI-Konto“ statt Profil,
 // „Posteingang“. Fachwörter (settings.json, Sandbox) stehen nur dort, wo Kortex genau sagen muss, was es in welcher Datei ändert.
-export const TK = {
+import { plattformTexte } from "./plattform-texte.js";
+export const TK = plattformTexte({
   titel: "KI-Konten",
   menue: "KI-Konten …",
   schliessen: "Fertig",
@@ -227,4 +228,4 @@ export const TK = {
     andere: "Alle anderen Programme: Kortex sperrt nur seine eigenen Wege (Suche, Lesen, Hinweise, Ablegen). Das Programm selbst kann Dateien weiterhin öffnen, wenn du es ihm erlaubst.",
     keine: "Eine echte Trennung zwischen Konten gibt es nur mit eigenen macOS-Benutzern oder einem zweiten Rechner.",
   },
-};
+});

@@ -146,6 +146,9 @@ public enum GitAntwort {
 /// und `einrichtung-ende`, und `extern` öffnet bei offenem Overlay nur GitHub. Die App setzt `offen`, wenn sie das Overlay anfordert (Befehl `einrichtung`), und nimmt es mit dem Ende zurück.
 /// `bestaetigt` setzt die SEITE (Aktion `einrichtung-sitzung`, sobald das Overlay wirklich zu sehen ist) und nimmt sie beim Laden jeder Seite zurück: ein Neuladen des Studios
 /// (Absturz, Entwicklung) lässt die Rechte nie offen stehen, solange kein Overlay mehr da ist.
+/// Ehrlich gesagt: Das ist KEINE Sicherheitsgrenze. Die Seite bestätigt sich selbst; Code, der im Studio läuft (etwa eine eingeschleuste Skriptzeile), könnte `einrichtung-sitzung`
+/// ebenfalls senden, sobald die App einen Lauf angefordert hat. Die Sitzung verhindert Versehen (vergessene Rechte, Neuladen, Aufrufe aus anderen Teilen der Oberfläche) und hält die
+/// wenigen Rechte klein (nur GitHub und die Anmelde-Domänen, nur diese fünf Aktionen). Geschützt wird das Studio sonst durch seine Eigenschaften: lokale Seite, strenge CSP, kein fremder Inhalt.
 public struct EinrichtungsSitzung: Equatable, Sendable {
     public private(set) var offen = false
     /// Die Seite hat gemeldet, dass das Overlay offen ist. Ohne das gelten die Rechte der Einrichtung nicht.
