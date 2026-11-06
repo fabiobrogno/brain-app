@@ -1,7 +1,7 @@
 // Befunde aus dem Review von #95 (Umbenennen, Verschieben, Papierkorb): jeder Test stellt den Fehlerfall nach. Nur Wegwerf-Ordner (tmp).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync, existsSync, writeFileSync, mkdirSync, chmodSync, utimesSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync, writeFileSync, mkdirSync, chmodSync, utimesSync, statSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmp, schreibe, pfad, repo } from "./hilfe.mjs";
 
@@ -20,7 +20,7 @@ function aufbau(dateien = {}, opts = {}) {
   const v = oeffneVault(d, { support, heute: "2026-11-05", ...opts });
   return { d, support, v, kennung: null };
 }
-const vorgangsDir = (d, id) => join(d, ".kortex", "papierkorb", "vorgaenge", id);
+const vorgangsDir = (d, id) => join(d, ".kortex-lokal", "papierkorb", "vorgaenge", id);
 
 // ───────────── W1: NFC/NFD ─────────────
 
@@ -58,7 +58,7 @@ test("W2: Marke .laeuft nach einem Absturz mitten im Vorgang (auch nach der erst
   const r = await v.umbenennen({ pfad: "a/Alt.md", titel: "Neu", dateiname: "Neu.md" });
   const mf = join(vorgangsDir(d, r.vorgang), "manifest.json");
   const m = JSON.parse(readFileSync(mf, "utf8")); m.status = "laeuft"; writeFileSync(mf, JSON.stringify(m));
-  writeFileSync(join(d, ".kortex", "aktionen", ".laeuft"), JSON.stringify({ id: r.vorgang, aktion: "op" }));
+  writeFileSync(join(v.aktionenOrt(), ".laeuft"), JSON.stringify({ id: r.vorgang, aktion: "op" }));
   await v.papierkorb();
   assert.ok(existsSync(join(d, "a/Alt.md"))); assert.equal(lies(d, "b/x.md"), "[[Alt]]\n");
 });
@@ -130,8 +130,8 @@ test("git: Abgleich/Commit laufen nicht an, solange eine Dateiaktion die Sperre 
   schreibe(d, "brain.config.json", "{}\n"); schreibe(d, "a.md", "# a\n");
   const v = oeffneVault(d, { support });
   const kennung = A.kennungVault(d); // dieses Vault hat (noch) keine Vault-ID: Schlüssel = Pfad-Hash
-  mkdirSync(join(d, ".kortex", "aktionen"), { recursive: true });
-  writeFileSync(join(d, ".kortex", "aktionen", ".sperre"), JSON.stringify({ pid: process.pid, token: "t" }) + "\n");
+  mkdirSync(v.aktionenOrt(), { recursive: true });
+  writeFileSync(join(v.aktionenOrt(), ".sperre"), JSON.stringify({ pid: process.pid, token: "t" }) + "\n");
   const e = await fehler(() => G.commit(v.wurzel, { nachricht: "x", dateien: ["a.md"] }, {}));
   assert.equal(e.extra.art, "beschaeftigt");
 });
@@ -167,16 +167,39 @@ test("Ordner verschieben auf einen vorhandenen (auch leeren) Ordner: 409, nichts
   assert.equal(lies(d, "leer/q/a.md"), "# a\n");
 });
 
-test("Unbekanntes oder kaputtes Journal kommt in die Quarantäne statt gelöscht zu werden", async () => {
-  const { d, support, kennung } = aufbau({ "a/x.md": "# x\n" });
+test("Journale ohne lesbares Manifest: fehlt oder unlesbar (Sync, Rechte) bleibt liegen, wird als Hinweis „noch nicht vollständig“ gezeigt und erscheint nach Ankunft wieder; nur kaputtes JSON über 7 Tage kommt in die Quarantäne", async () => {
+  const { d, v, support } = aufbau({ "a/x.md": "# x\n", "a/y.md": "# y\n" });
+  const r = await v.loeschen({ pfad: "a/x.md" });
+  const mf = join(vorgangsDir(d, r.vorgang), "manifest.json");
+  const inhalt = readFileSync(mf, "utf8");
+  // (1) Manifest noch nicht da
+  rmSync(mf);
+  let liste = await oeffneVault(d, { support }).papierkorb();
+  assert.equal(liste.eintraege.length, 0); assert.equal(liste.hinweise.length, 1); assert.equal(liste.hinweise[0].unvollstaendig, true);
+  assert.ok(existsSync(join(vorgangsDir(d, r.vorgang), "inhalt", "x.md")), "nichts verschoben");
+  assert.ok(!existsSync(join(d, ".kortex-lokal", "quarantaene")));
+  writeFileSync(mf, inhalt); // der Sync ist angekommen
+  liste = await oeffneVault(d, { support }).papierkorb();
+  assert.equal(liste.eintraege.length, 1); assert.deepEqual(liste.hinweise, []);
+  // (2) Manifest unlesbar (Rechte)
+  if (!(typeof process.getuid === "function" && process.getuid() === 0)) {
+    chmodSync(mf, 0);
+    try { liste = await oeffneVault(d, { support }).papierkorb(); assert.equal(liste.hinweise.length, 1); assert.equal(liste.hinweise[0].unvollstaendig, true); }
+    finally { chmodSync(mf, 0o600); }
+    assert.equal((await oeffneVault(d, { support }).papierkorb()).eintraege.length, 1);
+  }
+  // (3) kaputtes JSON: jung → Hinweis; älter als 7 Tage → Quarantäne (nie gelöscht)
   const dir = vorgangsDir(d, "v_aaaaaaaaaaaa");
   mkdirSync(join(dir, "inhalt"), { recursive: true }); writeFileSync(join(dir, "inhalt", "wichtig.md"), "# wichtig\n"); writeFileSync(join(dir, "manifest.json"), "{kaputt");
-  const v = oeffneVault(d, { support });
-  await v.papierkorb();
+  liste = await oeffneVault(d, { support }).papierkorb();
+  assert.ok(existsSync(dir), "jung: liegen lassen"); assert.ok(liste.hinweise.some((h) => h.id === "v_aaaaaaaaaaaa"));
+  const alt = new Date(Date.now() - 8 * 86400e3); utimesSync(dir, alt, alt);
+  liste = await oeffneVault(d, { support }).papierkorb();
   assert.ok(!existsSync(dir));
-  const q = join(d, ".kortex", "aktionen", "quarantaene");
+  const q = join(d, ".kortex-lokal", "quarantaene");
   const eintrag = readdirSync(q)[0];
   assert.equal(readFileSync(join(q, eintrag, "inhalt", "wichtig.md"), "utf8"), "# wichtig\n");
+  assert.equal(liste.quarantaene.anzahl, 1);
 });
 
 test("Endgültig löschen entfernt auch die Kopien dieser Datei in den Journalen anderer Vorgänge", async () => {

@@ -18,7 +18,7 @@ function stand(d) {
   const dateien = new Map(), ordner = [];
   const geh = (rel) => {
     for (const n of readdirSync(rel ? join(d, rel) : d).sort()) {
-      if (n.startsWith(".")) continue; // .kortex (Vault-ID, Papierkorb) gehört nicht zum Vergleich
+      if (n.startsWith(".")) continue; // .kortex-lokal (Vault-ID, Papierkorb) gehört nicht zum Vergleich
       const r = rel ? `${rel}/${n}` : n;
       const st = lstatSync(join(d, r));
       if (st.isSymbolicLink()) dateien.set(r, "link:" + readlinkSync(join(d, r)));
@@ -296,11 +296,11 @@ test("Löschen: Notiz im Papierkorb (0700/0600), Verweise bleiben als offene Lin
   const r = await v.loeschen({ pfad: "10/Kaffee.md", token: sicht.token });
   assert.ok(!existsSync(join(d, "10/Kaffee.md")));
   assert.equal(lies(d, "10/Tee.md"), BASIS()["10/Tee.md"], "Verweise bleiben, wie sie sind (offene Links)");
-  const korb = join(d, ".kortex", "papierkorb");
+  const korb = join(d, ".kortex-lokal", "papierkorb");
   const inhalt = join(korb, "vorgaenge", r.vorgang, "inhalt", "Kaffee.md");
   assert.equal(readFileSync(inhalt, "utf8"), BASIS()["10/Kaffee.md"]);
   assert.equal(statSync(inhalt).mode & 0o777, 0o600);
-  for (const o of [join(d, ".kortex"), korb, join(korb, "vorgaenge"), join(korb, "vorgaenge", r.vorgang), join(korb, "vorgaenge", r.vorgang, "inhalt")]) assert.equal(statSync(o).mode & 0o777, 0o700, o);
+  for (const o of [join(d, ".kortex-lokal"), korb, join(korb, "vorgaenge"), join(korb, "vorgaenge", r.vorgang), join(korb, "vorgaenge", r.vorgang, "inhalt")]) assert.equal(statSync(o).mode & 0o777, 0o700, o);
   assert.equal(statSync(join(korb, "vorgaenge", r.vorgang, "manifest.json")).mode & 0o777, 0o600);
   const liste = await v.papierkorb();
   assert.equal(liste.eintraege.length, 1); assert.equal(liste.eintraege[0].titel, "Kaffee"); assert.equal(liste.eintraege[0].alt, false);
@@ -346,7 +346,7 @@ test("Endgültig löschen entfernt den Inhalt auf Klick; danach gibt es kein Rü
   const r1 = await v.loeschen({ pfad: "a/x.md" });
   const r2 = await v.loeschen({ pfad: "a/y.md" });
   const r3 = await v.loeschen({ pfad: "a/z.md" });
-  const korb = join(d, ".kortex", "papierkorb", "vorgaenge");
+  const korb = join(d, ".kortex-lokal", "papierkorb", "vorgaenge");
   assert.equal((await v.papierkorbEndgueltig({ id: r1.vorgang })).geloescht, 1);
   assert.ok(!existsSync(join(korb, r1.vorgang, "inhalt")));
   assert.equal((await fehler(() => v.vorgangZurueck({ id: r1.vorgang }))).status, 404);
@@ -434,12 +434,12 @@ test("Mitten im Lauf abgebrochene Aktion (Journal „laeuft“) wird beim nächs
   const { d, v, support, kennung } = aufbau({ "a/Alt.md": "# Alt\n", "b/x.md": "[[Alt]]\n" });
   const r = await v.umbenennen({ pfad: "a/Alt.md", titel: "Neu", dateiname: "Neu.md" });
   // Absturz nachstellen: Journal auf „laeuft“ und alt, Notizen im Stand „nachher“, Datei noch an alter Stelle
-  const mf = join(d, ".kortex", "papierkorb", "vorgaenge", r.vorgang, "manifest.json");
+  const mf = join(d, ".kortex-lokal", "papierkorb", "vorgaenge", r.vorgang, "manifest.json");
   const m = JSON.parse(readFileSync(mf, "utf8")); m.status = "laeuft"; m.zeit = new Date(Date.now() - 120_000).toISOString(); writeFileSync(mf, JSON.stringify(m));
   const v2 = oeffneVault(d, { support });
   await v2.papierkorb();
   assert.equal(lies(d, "b/x.md"), "[[Alt]]\n", "Verweis zurückgesetzt");
   assert.ok(existsSync(join(d, "a/Alt.md")) && !existsSync(join(d, "a/Neu.md")), "auch der Umzug ist zurückgefahren: die Notiz liegt wieder unter dem alten Namen");
   assert.equal(lies(d, "a/Alt.md"), "# Alt\n");
-  assert.ok(!existsSync(join(d, ".kortex", "papierkorb", "vorgaenge", r.vorgang)));
+  assert.ok(!existsSync(join(d, ".kortex-lokal", "papierkorb", "vorgaenge", r.vorgang)));
 });

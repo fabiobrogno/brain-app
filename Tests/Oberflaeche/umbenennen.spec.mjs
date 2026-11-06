@@ -290,7 +290,7 @@ test("⌘⌫ ohne sichtbar fokussierte Notiz (Fokus im Nichts, Kopfzeile) legt n
 
 test("Unterbrochener Vorgang: erscheint im Papierkorb als Hinweis mit Weg; „Erledigt“ legt das Journal ab; der Zähler in der Seitenleiste zählt ihn mit", async ({ page }) => {
   const id = "v_0123456789ab";
-  const dir = join(vault, ".kortex", "papierkorb", "vorgaenge", id);
+  const dir = join(vault, ".kortex-lokal", "papierkorb", "vorgaenge", id);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "manifest.json"), JSON.stringify({ v: 1, id, art: "umbenennen", typ: "datei", zeit: new Date().toISOString(), status: "unklar", von: "30_ablage/Einzelnes.md", nach: "30_ablage/Neu.md", dateien: [] }));
   await oeffne(page);

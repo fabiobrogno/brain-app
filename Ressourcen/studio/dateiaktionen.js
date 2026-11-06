@@ -412,7 +412,7 @@ export function erzeugeDateiaktionen(ctx) {
   }
 
   // ───────────── Papierkorb ─────────────
-  let korbListe = [];
+  let korbListe = [], groesseKorb = 0;
   async function ladeKorbZahl() {
     try { const r = await api.papierkorb(); korbListe = r.eintraege || []; S.papierkorbAnzahl = korbListe.length + (r.hinweise || []).length; ctx.zeichneBereiche?.(); } catch { /* ältere Werkstatt: kein Papierkorb */ }
   }
@@ -423,7 +423,8 @@ export function erzeugeDateiaktionen(ctx) {
     try { r = await api.papierkorb(); } catch (e) { host.replaceChildren(h("div", { klasse: "leer-liste" }, h("p", { text: e.message }))); return; }
     if (!(S.sicht.art === "bereich" && S.sicht.id === "papierkorb")) return;
     korbListe = r.eintraege || []; S.papierkorbAnzahl = korbListe.length + (r.hinweise || []).length; ctx.zeichneBereiche?.();
-    const hinweise = (r.hinweise || []).map(hinweisKarte);
+    const hinweise = [...(r.hinweise || []).map(hinweisKarte), ...(r.quarantaene?.anzahl ? [quarantaeneKarte(r.quarantaene)] : [])];
+    groesseKorb = r.groesse || 0;
     if (!korbListe.length && hinweise.length) { host.replaceChildren(...hinweise); return; }
     if (!korbListe.length) { host.replaceChildren(leerBlock({ symbol: "papierkorb", titel: TD.korb.leerTitel, text: TD.korb.leerText, daten: { "data-leer": "papierkorb" } })); return; }
     const kopf = h("div", { klasse: "korb-kopf" }, h("span", { klasse: "leise", text: TD.korb.leerText }),
@@ -434,12 +435,13 @@ export function erzeugeDateiaktionen(ctx) {
   // Ein Vorgang, der nach einem Abbruch nicht eindeutig zurückgefahren werden konnte: sichtbar, mit Weg
   function hinweisKarte(x) {
     return h("div", { klasse: "karte korb-karte korb-hinweis", role: "alert", "data-hinweis": x.id },
-      h("div", { klasse: "karte-kopf" }, h("div", { klasse: "karte-titel", text: TD.korb.unklarTitel }), h("div", { klasse: "karte-marken" }, symbol("warnung", 14))),
-      h("div", { klasse: "karte-vorschau", text: x.fremd ? TD.korb.fremdText(x.von) : TD.korb.unklarText(x.von, x.nach) }),
+      h("div", { klasse: "karte-kopf" }, h("div", { klasse: "karte-titel", text: x.unvollstaendig ? TD.korb.unvollstaendigTitel : TD.korb.unklarTitel }), h("div", { klasse: "karte-marken" }, symbol("warnung", 14))),
+      h("div", { klasse: "karte-vorschau", text: x.unvollstaendig ? TD.korb.unvollstaendigText(x.ort) : x.fremd ? TD.korb.fremdText(x.von) : TD.korb.unklarText(x.von, x.nach) }),
       h("div", { klasse: "karte-fuss" }, h("span", { text: x.ort })),
-      h("div", { klasse: "korb-aktionen" }, baueKnopf({ text: TD.korb.unklarErledigt, groesse: "s", aktion: "hinweis-erledigt", aufKlick: async () => {
+      x.unvollstaendig ? null : h("div", { klasse: "korb-aktionen" }, baueKnopf({ text: x.fremd ? TD.korb.ausblenden : TD.korb.unklarErledigt, groesse: "s", aktion: "hinweis-erledigt", aufKlick: async () => {
         try { await api.papierkorbHinweisErledigt(x.id); await zeichnePapierkorb(document.getElementById("liste-koerper")); ladeKorbZahl(); } catch (err) { toast(fehlerText(err), { fehler: true }); } } })));
   }
+  const quarantaeneKarte = (q) => h("div", { klasse: "karte korb-karte korb-hinweis", "data-quarantaene": "" }, h("div", { klasse: "karte-vorschau", text: TD.korb.quarantaene(q.anzahl, q.ort) }));
   function korbKarte(e) {
     const tage = tageSeit(e.zeit);
     const karte = h("div", { klasse: "karte korb-karte", role: "option", "data-korb": e.id, "data-pfad": e.pfad, title: e.pfad },
@@ -490,7 +492,8 @@ export function erzeugeDateiaktionen(ctx) {
   }
   function leeren() {
     const n = korbListe.length;
-    const d = dialog({ titel: TD.korb.leerenTitel, satz: TD.korb.leerenSatz(n), knoepfe: [
+    const mb = groesseKorb > 1048576 ? `${(groesseKorb / 1048576).toFixed(1).replace(".", ",")} MB` : `${Math.max(1, Math.round(groesseKorb / 1024))} KB`;
+    const d = dialog({ titel: TD.korb.leerenTitel, satz: `${TD.korb.leerenSatz(n)} ${TD.korb.leerenGroesse(mb)}`, knoepfe: [
       baueKnopf({ text: TD.vorschau.abbrechen, aufKlick: () => d.schliessen() }),
       baueKnopf({ text: TD.korb.leerenKnopf, variante: "gefahr", aktion: "leeren-bestaetigen", aufKlick: async () => {
         d.schliessen();

@@ -1,8 +1,8 @@
-// Nach Review 3 (#95): Locale-feste Sperre, Wiederherstellen ohne Überschreiben, Marke nach 409, .kortex in git, stabile Vault-ID, Hard-Link-Fenster, Undo/Redo-Erholung, Geräte, Uhrensprung.
+// Nach Review 3 (#95): Locale-feste Sperre, Wiederherstellen ohne Überschreiben, Marke nach 409, .kortex-lokal in git, stabile Vault-ID, Hard-Link-Fenster, Undo/Redo-Erholung, Geräte, Uhrensprung.
 // Nur Wegwerf-Ordner (tmp); Kindprozesse mit ausdrücklich gebauter Umgebung.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { cpSync, readFileSync, readdirSync, existsSync, writeFileSync, mkdirSync, utimesSync, lstatSync, renameSync, statSync, realpathSync } from "node:fs";
+import { cpSync, rmSync, readFileSync, readdirSync, existsSync, writeFileSync, mkdirSync, utimesSync, lstatSync, renameSync, statSync, realpathSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir, hostname } from "node:os";
 import { spawn } from "node:child_process";
@@ -98,17 +98,17 @@ test("Rückgängig mit 409 (Notiz inzwischen geändert) hinterlässt keine Marke
   writeFileSync(join(d, "b/x.md"), "[[Neu]] weitergeschrieben\n");
   const e = await fehler(() => v.vorgangZurueck({ id: r.vorgang }));
   assert.equal(e.extra.art, "geaendert");
-  assert.ok(!existsSync(join(d, ".kortex", "aktionen", ".laeuft")));
+  assert.ok(!existsSync(join(v.aktionenOrt(), ".laeuft")));
   const v2 = oeffneVault(d, { support });
   assert.deepEqual((await v2.papierkorb()).hinweise, []);
   await v2.vorgangZurueck({ id: r.vorgang, teilweise: true });
   assert.ok(existsSync(join(d, "a/Alt.md")));
 });
 
-// ───────────── 4. .kortex bleibt aus git ─────────────
+// ───────────── 4. .kortex-lokal bleibt aus git ─────────────
 
 const gitStatus = (wo) => g(wo, "status", "--porcelain", "--untracked-files=all");
-test(".kortex/.gitignore („*“) deckt Worktree-Vaults, Vaults in Unterordnern eines Repos und später eingerichtetes git", async () => {
+test(".kortex-lokal/.gitignore („*“) deckt Worktree-Vaults, Vaults in Unterordnern eines Repos und später eingerichtetes git", async () => {
   const support = realpathSync(tmp("r3-gsup-"));
   const haken = { geraet: anderesGeraet(support) }; // Papierkorb im Vault
   // (a) Worktree: .git ist eine Datei
@@ -119,22 +119,22 @@ test(".kortex/.gitignore („*“) deckt Worktree-Vaults, Vaults in Unterordnern
   assert.ok(lstatSync(join(wt, ".git")).isFile());
   const v1 = oeffneVault(wt, { support, dateiHaken: haken });
   await v1.loeschen({ pfad: "n.md" });
-  assert.equal(gitStatus(wt).includes(".kortex"), false, gitStatus(wt));
-  assert.equal(lies(wt, ".kortex/.gitignore"), "*\n");
+  assert.equal(gitStatus(wt).includes(".kortex-lokal"), false, gitStatus(wt));
+  assert.equal(lies(wt, ".kortex-lokal/.gitignore"), "*\n");
   // (b) Vault in einem Unterordner eines Repos
   const wurzel = realpathSync(repo("r3-sub-"));
   schreibe(wurzel, "x.txt", "x\n"); g(wurzel, "add", "--", "."); g(wurzel, "commit", "-q", "-m", "x");
   schreibe(wurzel, "vault/brain.config.json", "{}\n"); schreibe(wurzel, "vault/m.md", "# m\n");
   const v2 = oeffneVault(join(wurzel, "vault"), { support, dateiHaken: haken });
   await v2.loeschen({ pfad: "m.md" });
-  assert.equal(gitStatus(wurzel).includes(".kortex"), false, gitStatus(wurzel));
+  assert.equal(gitStatus(wurzel).includes(".kortex-lokal"), false, gitStatus(wurzel));
   // (c) git erst nach dem ersten Löschen eingerichtet
   const d3 = realpathSync(tmp("r3-spaet-"));
   schreibe(d3, "brain.config.json", "{}\n"); schreibe(d3, "k.md", "# k\n");
   const v3 = oeffneVault(d3, { support, dateiHaken: haken });
   await v3.loeschen({ pfad: "k.md" });
   g(d3, "init", "-q", "-b", "main");
-  assert.equal(gitStatus(d3).includes(".kortex"), false, gitStatus(d3));
+  assert.equal(gitStatus(d3).includes(".kortex-lokal"), false, gitStatus(d3));
 });
 
 // ───────────── 5. Papierkorb im Vault: Umbenennen und Kopieren des Vault-Ordners ─────────────
@@ -212,7 +212,7 @@ for (const [eingabe, punkt, aktion] of [
     const liste = await v2.papierkorb();
     assert.deepEqual(liste.hinweise, []);
     assert.deepEqual(stand(d), aktion === "undo" ? vorOp : nachOp);
-    const m = JSON.parse(readFileSync(join(d, ".kortex", "papierkorb", "vorgaenge", r.vorgang, "manifest.json"), "utf8"));
+    const m = JSON.parse(readFileSync(join(d, ".kortex-lokal", "papierkorb", "vorgaenge", r.vorgang, "manifest.json"), "utf8"));
     assert.equal(m.status, aktion === "undo" ? "zurueck" : "fertig");
   });
 }
@@ -222,7 +222,7 @@ for (const [eingabe, punkt, aktion] of [
 test("Reste toter Prozesse werden aufgeräumt: .brain-tmp-<pid>-* nach abgebrochenem Undo, .sperre.<pid>.* in der Support-Ablage; lebende PIDs bleiben", async () => {
   const { d, support, v } = aufbau({ "a/Alt.md": "# Alt\n", "b/x.md": "[[Alt]]\n" });
   const r = await v.umbenennen({ pfad: "a/Alt.md", titel: "Neu", dateiname: "Neu.md" });
-  const korb = join(d, ".kortex", "aktionen");
+  const korb = v.aktionenOrt();
   writeFileSync(join(korb, ".laeuft"), JSON.stringify({ id: r.vorgang, aktion: "undo" }));
   schreibe(d, "b/.brain-tmp-99999999-aa", "x"); schreibe(d, `b/.brain-tmp-${process.pid}-aa`, "x");
   for (const n of [".sperre.99999999.ab12", ".sperre.bruch.99999999.cd34", ".sperre.alt.99999999.ef56", `.sperre.${process.pid}.ab12`]) writeFileSync(join(korb, n), "{}");
@@ -234,24 +234,44 @@ test("Reste toter Prozesse werden aufgeräumt: .brain-tmp-<pid>-* nach abgebroch
 
 // ───────────── 9. Gerät ─────────────
 
-test("Ein Vorgang eines anderen Geräts wird nie erholt, aber als Hinweis gezeigt; die eigene Erholung geht weiter", async () => {
-  const { d, support, v: _ } = aufbau({ "a/Alt.md": "# Alt\n", "b/x.md": "[[Alt]]\n" });
-  const vA = oeffneVault(d, { support, dateiHaken: { geraeteId: "mac-A" } });
+// Zwei Geräte mit einem gesyncten Vault: Hardware-ID entscheidet allein, wenn beide eine haben; der Rechnername nur, wenn einer Seite sie fehlt. Sperre und Marke liegen je Gerät.
+const manifestPfad = (d, id) => join(d, ".kortex-lokal", "papierkorb", "vorgaenge", id, "manifest.json");
+async function vorgangMitMarke(geraetA, geraetManifest) {
+  const { d, support } = aufbau({ "a/Alt.md": "# Alt\n", "b/x.md": "[[Alt]]\n" });
+  const vA = oeffneVault(d, { support, dateiHaken: { geraeteId: geraetA } });
   const r = await vA.umbenennen({ pfad: "a/Alt.md", titel: "Neu", dateiname: "Neu.md" });
-  const korb = join(d, ".kortex", "aktionen");
-  const mf = join(d, ".kortex", "papierkorb", "vorgaenge", r.vorgang, "manifest.json");
-  const m = JSON.parse(readFileSync(mf, "utf8")); assert.deepEqual(m.geraet, ["mac-A"]); m.status = "laeuft"; writeFileSync(mf, JSON.stringify(m));
-  writeFileSync(join(korb, ".laeuft"), JSON.stringify({ id: r.vorgang, aktion: "op" }));
-  const nachOp = stand(d);
-  const vB = oeffneVault(d, { support, dateiHaken: { geraeteId: "mac-B" } });
-  const liste = await vB.papierkorb();
+  const mf = manifestPfad(d, r.vorgang);
+  const m = JSON.parse(readFileSync(mf, "utf8")); m.status = "laeuft"; m.geraet = geraetManifest; writeFileSync(mf, JSON.stringify(m));
+  writeFileSync(join(vA.aktionenOrt(), ".laeuft"), JSON.stringify({ id: r.vorgang, aktion: "op" }));
+  return { d, support, vA, r, nachOp: stand(d) };
+}
+test("Gleicher Hostname, andere Hardware-ID (zwei Macs, ein Sync): der Vorgang des anderen Geräts wird nicht angefasst, nur als Hinweis gezeigt; „Ausblenden“ verschiebt nichts", async () => {
+  const A = { hw: "A-uuid", host: "host:gleich" };
+  const { d, support, r, nachOp } = await vorgangMitMarke(A, { hw: "B-uuid", host: "host:gleich" });
+  const liste = await oeffneVault(d, { support, dateiHaken: { geraeteId: A } }).papierkorb();
   assert.deepEqual(stand(d), nachOp, "fremder Vorgang nicht angefasst");
   assert.equal(liste.hinweise.length, 1); assert.equal(liste.hinweise[0].fremd, true);
-  assert.ok(existsSync(join(korb, ".laeuft")), "die Marke bleibt");
-  // das eigene Gerät erholt ihn
-  const vA2 = oeffneVault(d, { support, dateiHaken: { geraeteId: "mac-A" } });
-  await vA2.papierkorb();
-  assert.equal(lies(d, "b/x.md"), "[[Alt]]\n"); assert.ok(existsSync(join(d, "a/Alt.md")));
+  const vA = oeffneVault(d, { support, dateiHaken: { geraeteId: A } });
+  await vA.papierkorbHinweisErledigt({ id: r.vorgang });
+  assert.ok(existsSync(manifestPfad(d, r.vorgang)), "nichts verschoben");
+  assert.deepEqual((await vA.papierkorb()).hinweise, [], "nur hier ausgeblendet");
+  assert.equal((await oeffneVault(d, { support, dateiHaken: { geraeteId: { hw: "B-uuid", host: "host:gleich" } } }).papierkorb()).eintraege.length, 0);
+});
+test("Eigenes Gerät wird erkannt: gleiche Hardware-ID (anderer Rechnername) oder Rechnername, wenn einer Seite die Hardware-ID fehlt; eigene Journale werden nach einem Neustart erholt", async () => {
+  for (const [ich, journal] of [[{ hw: "A-uuid", host: "host:neu" }, { hw: "A-uuid", host: "host:alt" }], [{ hw: "", host: "host:gleich" }, { hw: "B-uuid", host: "host:gleich" }], [{ hw: "A-uuid", host: "host:gleich" }, { hw: "", host: "host:gleich" }]]) {
+    const { d, support } = await vorgangMitMarke(ich, journal);
+    const liste = await oeffneVault(d, { support, dateiHaken: { geraeteId: ich } }).papierkorb();
+    assert.equal(lies(d, "b/x.md"), "[[Alt]]\n", JSON.stringify([ich, journal])); assert.deepEqual(liste.hinweise, []);
+  }
+});
+test("Sperre je Gerät: die Sperre eines anderen Geräts wird nie gebrochen und nie berücksichtigt", async () => {
+  const { d, support } = aufbau({ "a/x.md": "# x\n" });
+  const vB = oeffneVault(d, { support, dateiHaken: { geraeteId: { hw: "B-uuid", host: "host:b" } } });
+  mkdirSync(vB.aktionenOrt(), { recursive: true });
+  writeFileSync(join(vB.aktionenOrt(), ".sperre"), JSON.stringify({ pid: 99999999, token: "von-b" }) + "\n"); // totes Gerät-B-Prozess-Abbild
+  const vA = oeffneVault(d, { support, dateiHaken: { geraeteId: { hw: "A-uuid", host: "host:a" } } });
+  await vA.umbenennen({ pfad: "a/x.md", dateiname: "y.md" }); // A läuft ungehindert (eigene Sperre)
+  assert.ok(existsSync(join(vB.aktionenOrt(), ".sperre")), "A hat die Sperre von B nicht angefasst, obwohl deren PID hier tot wäre");
 });
 
 // ───────────── Wiederherstellen unter neuem Namen / in anderen Ordner: Absturz zwischen link und unlink ─────────────
@@ -272,13 +292,13 @@ for (const opt of [{ name: "x alt" }, { ziel: "neu" }, {}]) {
 // ───────────── Sperre zwischen später gestarteten Prozessen ─────────────
 
 test("Ein später gestarteter Prozess (anderes LANG/TZ) sieht die Sperre eines laufenden Halters im Vault: kein Rollback, der Halter beendet seinen Vorgang sauber", async () => {
-  const { d, support } = aufbau({ "a/x.md": "# x\n", "ord/n.md": "# n\n[[x]]\n", "l.md": "[[ord/n]]\n" });
+  const { d, support, v } = aufbau({ "a/x.md": "# x\n", "ord/n.md": "# n\n[[x]]\n", "l.md": "[[ord/n]]\n" });
   const pause = join(support, "pause");
   const halter = spawn(process.execPath, [KIND, JSON.stringify({ vault: d, support, methode: "umbenennen", eingabe: { typ: "ordner", pfad: "ord", name: "ord2" }, punkt: "nie", pausePunkt: "nach-schreiben", pauseDatei: pause })],
     { env: kindEnv(support, { LANG: "C", TZ: "UTC" }), stdio: ["ignore", "pipe", "pipe"] });
   const ende = new Promise((ok) => halter.on("exit", (c) => ok(c)));
   const t0 = Date.now(); while (!existsSync(pause) && Date.now() - t0 < 15000) await new Promise((ok) => setTimeout(ok, 20));
-  assert.ok(existsSync(join(d, ".kortex", "aktionen", ".sperre")), "die Sperre liegt im Vault, für jeden Prozess am selben Ort");
+  assert.ok(existsSync(join(v.aktionenOrt(), ".sperre")), "die Sperre liegt im Vault, für jeden Prozess am selben Ort");
   const spaeter = await new Promise((ok) => {
     const k = spawn(process.execPath, [KIND, JSON.stringify({ vault: d, support, methode: "umbenennen", eingabe: { pfad: "a/x.md", dateiname: "z.md" }, punkt: "nie" })], { env: kindEnv(support, { LANG: "de_DE.UTF-8", TZ: "Asia/Tokyo" }), stdio: ["ignore", "pipe", "pipe"] });
     let err = ""; k.stderr.on("data", (x) => { err += x; }); k.on("exit", (c) => ok({ c, err }));
@@ -289,19 +309,4 @@ test("Ein später gestarteter Prozess (anderes LANG/TZ) sieht die Sperre eines l
   assert.equal(await ende, 0);
   assert.ok(existsSync(join(d, "ord2/n.md"))); assert.ok(existsSync(join(d, "a/x.md")));
   assert.deepEqual((await oeffneVault(d, { support }).papierkorb()).hinweise, []);
-});
-
-// ───────────── Geräte-ID: Ersatzwerte ─────────────
-
-test("Geräte-ID: gilt irgendein Wert (Hardware-UUID oder host:<Name>) als „dieses Gerät“, werden eigene Journale nach einem Neustart erholt; ohne Übereinstimmung gelten sie als fremd", async () => {
-  for (const [ids, erwartetEigen] of [[["anderer-hw-uuid", `host:${hostname()}`], true], [["anderer-hw-uuid", "host:ein-anderer-rechner"], false]]) {
-    const { d, support, v } = aufbau({ "a/Alt.md": "# Alt\n", "b/x.md": "[[Alt]]\n" });
-    const r = await v.umbenennen({ pfad: "a/Alt.md", titel: "Neu", dateiname: "Neu.md" });
-    const mf = join(d, ".kortex", "papierkorb", "vorgaenge", r.vorgang, "manifest.json");
-    const m = JSON.parse(readFileSync(mf, "utf8")); m.status = "laeuft"; m.geraet = ids; writeFileSync(mf, JSON.stringify(m));
-    writeFileSync(join(d, ".kortex", "aktionen", ".laeuft"), JSON.stringify({ id: r.vorgang, aktion: "op" }));
-    const liste = await oeffneVault(d, { support }).papierkorb();
-    if (erwartetEigen) { assert.equal(lies(d, "b/x.md"), "[[Alt]]\n"); assert.deepEqual(liste.hinweise, []); }
-    else { assert.equal(lies(d, "b/x.md"), "[[Neu]]\n"); assert.equal(liste.hinweise[0].fremd, true); }
-  }
 });

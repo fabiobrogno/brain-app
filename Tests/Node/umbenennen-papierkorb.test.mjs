@@ -35,7 +35,7 @@ function aufbau(dateien = {}, opts = {}) {
   const v = oeffneVault(d, { support, heute: "2026-11-05", ...opts });
   return { d, support, v, kennung: null };
 }
-const jDir = (d, id) => join(d, ".kortex", "papierkorb", "vorgaenge", id);
+const jDir = (d, id) => join(d, ".kortex-lokal", "papierkorb", "vorgaenge", id);
 // Kindprozess mit ausdrücklich gebauter Umgebung (nie die des Testlaufs), beendet sich am Punkt mit SIGKILL
 function absturz({ d, support, methode, eingabe, punkt }) {
   return new Promise((ok, nein) => {
@@ -58,35 +58,35 @@ test("EXDEV beim rename: Löschen (Datei und Ordner) wird abgelehnt, nichts ver�
     assert.equal(e.status, 409); assert.equal(e.extra.art, "anderes-laufwerk");
   }
   assert.deepEqual(stand(d), vorher);
-  const vz = join(d, ".kortex", "papierkorb", "vorgaenge");
+  const vz = join(d, ".kortex-lokal", "papierkorb", "vorgaenge");
   assert.deepEqual(existsSync(vz) ? readdirSync(vz) : [], []);
-  assert.ok(!existsSync(join(d, ".kortex", "aktionen", ".laeuft")));
+  assert.ok(!existsSync(join(v.aktionenOrt(), ".laeuft")));
 });
 
 // ───────────── Vault auf anderem Gerät: Papierkorb im Vault ─────────────
 
 function anderesGeraet(support) { return (p) => (String(p).startsWith(support) ? 2 : 1); }
 
-test("Der Papierkorb liegt für jeden Vault im Vault (.kortex/papierkorb), nie im Support; Löschen, Wiederherstellen, Wiederholen gehen; .kortex ist für Baum, Index, Notizen, Lesen und git unsichtbar", async () => {
+test("Der Papierkorb liegt für jeden Vault im Vault (.kortex-lokal/papierkorb), nie im Support; Löschen, Wiederherstellen, Wiederholen gehen; .kortex-lokal ist für Baum, Index, Notizen, Lesen und git unsichtbar", async () => {
   const d = repo("upk-git-"), support = tmp("upk-git-support-");
   schreibe(d, "brain.config.json", "{}\n"); schreibe(d, "p/a.md", "# A\n[[B]]\n"); schreibe(d, "p/b.md", "# B\n"); schreibe(d, "l.md", "# L\n[[A]]\n");
   g(d, "add", "--", "."); g(d, "commit", "-q", "-m", "x");
   const v = oeffneVault(d, { support });
   const vorher = stand(d);
   const r = await v.loeschen({ typ: "ordner", pfad: "p" });
-  assert.ok(existsSync(join(d, ".kortex/papierkorb/vorgaenge", r.vorgang, "inhalt/p/a.md")), "Inhalt im Vault-Papierkorb");
+  assert.ok(existsSync(join(d, ".kortex-lokal/papierkorb/vorgaenge", r.vorgang, "inhalt/p/a.md")), "Inhalt im Vault-Papierkorb");
   assert.ok(!existsSync(join(support, "papierkorb")), "im Support entsteht nichts");
   assert.ok(!existsSync(join(d, "p")));
   // unsichtbar
-  assert.ok(!v.baum().eintraege.some((e) => e.pfad.includes(".kortex")));
-  assert.ok(!(await v.notizen()).notizen.some((n) => n.pfad.includes(".kortex")));
-  assert.equal((await fehler(async () => v.lies(".kortex/papierkorb/vorgaenge/" + r.vorgang + "/inhalt/p/a.md"))).status, 403);
-  assert.equal(g(d, "status", "--porcelain").includes(".kortex"), false);
-  assert.match(readFileSync(join(d, ".git/info/exclude"), "utf8"), /^\/\.kortex\/$/m);
+  assert.ok(!v.baum().eintraege.some((e) => e.pfad.includes(".kortex-lokal")));
+  assert.ok(!(await v.notizen()).notizen.some((n) => n.pfad.includes(".kortex-lokal")));
+  assert.equal((await fehler(async () => v.lies(".kortex-lokal/papierkorb/vorgaenge/" + r.vorgang + "/inhalt/p/a.md"))).status, 403);
+  assert.equal(g(d, "status", "--porcelain").includes(".kortex-lokal"), false);
+  assert.match(readFileSync(join(d, ".git/info/exclude"), "utf8"), /^\/\.kortex-lokal\/$/m);
   assert.ok(!existsSync(join(d, ".gitignore")), "die .gitignore des Nutzers wird nie angefasst");
   // getrashte Notizen werden bei der Link-Pflege nie umgeschrieben
   await v.umbenennen({ pfad: "l.md", titel: "L2", dateiname: "L2.md" });
-  assert.equal(lies(d, ".kortex/papierkorb/vorgaenge/" + r.vorgang + "/inhalt/p/a.md"), "# A\n[[B]]\n");
+  assert.equal(lies(d, ".kortex-lokal/papierkorb/vorgaenge/" + r.vorgang + "/inhalt/p/a.md"), "# A\n[[B]]\n");
   // Wiederholen / Wiederherstellen
   await v.vorgangZurueck({ id: r.vorgang });
   assert.equal(lies(d, "p/a.md"), "# A\n[[B]]\n");
@@ -147,7 +147,7 @@ for (const [punkt, methode, eingabe] of [
     const liste = await v.papierkorb();
     assert.deepEqual(stand(d), vorher);
     assert.deepEqual(liste.hinweise, []);
-    assert.ok(!existsSync(join(d, ".kortex", "aktionen", ".laeuft")));
+    assert.ok(!existsSync(join(v.aktionenOrt(), ".laeuft")));
     // und es geht danach ganz normal weiter
     await v.umbenennen({ pfad: "l.md", titel: "L neu", dateiname: "Lneu.md" });
     assert.ok(existsSync(join(d, "Lneu.md")));
@@ -170,7 +170,7 @@ for (const [vorbereitung, punkt, aktion] of [
     // keine Datei geht verloren: jeder Inhalt von vorher liegt im Vault oder im Journal (vorher/nachher/inhalt)
     const vorhandene = new Set(Object.values(stand(d).dateien));
     const walk = (dir) => { if (!existsSync(dir)) return; for (const n of readdirSync(dir)) { const f = join(dir, n); if (lstatSync(f).isDirectory()) walk(f); else vorhandene.add(sha(readFileSync(f))); } };
-    walk(join(d, ".kortex"));
+    walk(join(d, ".kortex-lokal"));
     for (const [p, h] of Object.entries(davor.dateien)) assert.ok(vorhandene.has(h), `verloren: ${p}`);
     if (aktion === "restore") { assert.ok(existsSync(join(d, "ord/n1.md"))); assert.deepEqual(liste.eintraege, []); }
     if (aktion === "redo") { assert.ok(!existsSync(join(d, "ord"))); assert.equal(liste.eintraege.length, 1); }
@@ -184,7 +184,7 @@ test("Unklarer Vorgang erscheint als Hinweis im Papierkorb (mit Weg) und „Erle
   schreibe(d, "a/Alt.md", "# noch eine Alt\n"); // beide da → nicht eindeutig
   const mf = join(jDir(d, r.vorgang), "manifest.json");
   const m = JSON.parse(readFileSync(mf, "utf8")); m.status = "laeuft"; writeFileSync(mf, JSON.stringify(m));
-  writeFileSync(join(d, ".kortex", "aktionen", ".laeuft"), JSON.stringify({ id: r.vorgang, aktion: "op" }));
+  writeFileSync(join(v.aktionenOrt(), ".laeuft"), JSON.stringify({ id: r.vorgang, aktion: "op" }));
   const liste = await v.papierkorb();
   assert.equal(liste.hinweise.length, 1); assert.equal(liste.hinweise[0].id, r.vorgang); assert.ok(liste.hinweise[0].ort.includes(r.vorgang));
   const e = await v.papierkorbHinweisErledigt({ id: r.vorgang });
@@ -204,34 +204,40 @@ test("Erholung räumt .brain-tmp-<pid>-* toter Prozesse auf, nicht die lebender"
 
 // ───────────── Sperre ─────────────
 
-const sperreDatei = (d) => join(d, ".kortex", "aktionen", ".sperre");
-function legeSperre(d, inhalt, alterMs = 0) {
-  mkdirSync(join(d, ".kortex", "aktionen"), { recursive: true });
-  const f = sperreDatei(d);
+const sperreDatei = (v) => join(v.aktionenOrt(), ".sperre");
+function legeSperre(v, inhalt, alterMs = 0) {
+  mkdirSync(v.aktionenOrt(), { recursive: true });
+  const f = sperreDatei(v);
   writeFileSync(f, JSON.stringify(inhalt) + "\n");
   if (alterMs) { const t = new Date(Date.now() - alterMs); utimesSync(f, t, t); }
   return f;
 }
 const startVon = (pid) => execFileSync("/bin/ps", ["-o", "lstart=", "-p", String(pid)], { encoding: "utf8", env: { LC_ALL: "C", LANG: "C", TZ: "UTC", PATH: "/bin:/usr/bin" } }).trim();
 
-test("Sperre: lebende PID wird auch nach 20 Minuten nicht gebrochen; tote PID sofort; wiederverwendete PID (andere Startzeit) sofort", async () => {
-  const { d, v, support, kennung } = aufbau({ "a/x.md": "# x\n" });
-  legeSperre(d, { pid: process.pid, start: startVon(process.pid), token: "t" }, 20 * 60_000);
-  const e = await fehler(() => v.umbenennen({ pfad: "a/x.md", dateiname: "y.md" }));
-  assert.equal(e.extra.art, "beschaeftigt"); assert.ok(existsSync(join(d, "a/x.md")));
+test("Sperre: ein anderer lebender Prozess wird auch nach 20 Minuten nicht gebrochen; tote PID und wiederverwendete PID (andere Startzeit) sofort; eigene PID mit fremdem Token gilt als veraltet", async () => {
+  const { d, v } = aufbau({ "a/x.md": "# x\n" });
+  const fremd = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { env: { PATH: "/usr/bin:/bin" }, stdio: "ignore" });
+  try {
+    legeSperre(v, { pid: fremd.pid, start: startVon(fremd.pid), token: "t" }, 20 * 60_000);
+    const e = await fehler(() => v.umbenennen({ pfad: "a/x.md", dateiname: "y.md" }));
+    assert.equal(e.extra.art, "beschaeftigt"); assert.ok(existsSync(join(d, "a/x.md")));
+    assert.ok(existsSync(sperreDatei(v)), "die Sperre des lebenden Prozesses bleibt");
+  } finally { fremd.kill("SIGKILL"); }
   const t0 = Date.now();
-  legeSperre(d, { pid: 99999999, token: "t" });
+  legeSperre(v, { pid: 99999999, token: "t" });
   await v.umbenennen({ pfad: "a/x.md", dateiname: "y.md" });
   assert.ok(Date.now() - t0 < 2000, "tote PID: sofort, nicht erst nach 60 s");
-  legeSperre(d, { pid: process.pid, start: "Thu Jan  1 00:00:00 1970", token: "t" });
+  legeSperre(v, { pid: process.pid, start: "Thu Jan  1 00:00:00 1970", token: "t" });
   await v.umbenennen({ pfad: "a/y.md", dateiname: "z.md" });
-  assert.ok(existsSync(join(d, "a/z.md")));
-  assert.ok(!existsSync(sperreDatei(d)), "die eigene Sperre ist wieder frei");
+  legeSperre(v, { pid: process.pid, start: startVon(process.pid), token: "nicht-meins" }); // Vault-Kopie oder Umzug im selben Prozess
+  await v.umbenennen({ pfad: "a/z.md", dateiname: "w.md" });
+  assert.ok(existsSync(join(d, "a/w.md")));
+  assert.ok(!existsSync(sperreDatei(v)), "die eigene Sperre ist wieder frei");
 });
 
 test("Sperre: drei Prozesse brechen gleichzeitig dieselbe veraltete Sperre — alle drei Aktionen laufen, nacheinander, ohne dass eine frische Sperre gelöscht wird", async () => {
-  const { d, support, kennung } = aufbau({ "a/1.md": "# 1\n", "a/2.md": "# 2\n", "a/3.md": "# 3\n" });
-  legeSperre(d, { pid: 99999999, token: "alt" });
+  const { d, support, v } = aufbau({ "a/1.md": "# 1\n", "a/2.md": "# 2\n", "a/3.md": "# 3\n" });
+  legeSperre(v, { pid: 99999999, token: "alt" });
   const lauf = (n) => new Promise((ok, nein) => {
     const home = tmp("upk-home-");
     const env = { PATH: "/usr/bin:/bin", HOME: home, TMPDIR: process.env.TMPDIR || "/tmp", BRAIN_APP_SUPPORT: support, BRAIN_TESTMODUS: "1", KORTEX_VAULT_VERTRAUT: "alle", TZ: "Europe/Berlin" };
@@ -241,6 +247,6 @@ test("Sperre: drei Prozesse brechen gleichzeitig dieselbe veraltete Sperre — a
   });
   await Promise.all([lauf(1), lauf(2), lauf(3)]);
   for (const n of [1, 2, 3]) assert.ok(existsSync(join(d, `a/n${n}.md`)), `n${n}`);
-  assert.ok(!existsSync(sperreDatei(d)));
-  assert.ok(!existsSync(sperreDatei(d) + ".bruch"));
+  assert.ok(!existsSync(sperreDatei(v)));
+  assert.ok(!existsSync(sperreDatei(v) + ".bruch"));
 });
