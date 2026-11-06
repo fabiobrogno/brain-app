@@ -153,6 +153,8 @@ Das Studio ist das einzige Hauptfenster, vom ersten Start an (Plan: `docs/plaene
   „Später“/Esc → Rückfrage „Einrichtung überspringen?“ (400 ms Sperre und `e.repeat`-Schutz gegen gehaltene Tasten) legt NICHTS an; ohne Vault zeigt das Studio den leeren Zustand („Neuer Vault“ · „Ordner öffnen“).
 - Start-Hinweise der App (Ordner „Brain“ umbenannt, Laufzeit unvollständig) sind Banner im Studio (`window.studio.hinweis`, `#hinweis-host`), keine Systemdialoge. Systemdialoge (`NSAlert`) bleiben nur für „Kern nicht bereit“ beim Öffnen der Rückfragen und
   „Änderungen nicht gespeichert“ beim Schließen (beide nicht auf dem Weg der Einrichtung).
+- Hüllen-Vertrag: `Ressourcen/studio/huellen-vertrag.json` beschreibt in EINER Datei alles, was das Studio von der Hülle braucht (Aktion, Wert, Antwort, Rechte „nur bei offenem Overlay“, dazu die Befehle `einrichtung` und `hinweis`).
+  Das Studio ruft nur diese Aktionen auf; Swift implementiert sie, eine spätere Electron-Hülle (Windows/Linux) dieselben. Test: `Tests/Node/huellen-vertrag.test.mjs` (Studio-Aufrufe, Swift-Namen und Rechte gegen die Liste).
 - Tests: `Tests/Oberflaeche/ein-fenster.spec.mjs` und `einrichtung.spec.mjs` (Attrappe der App: `mocks-einrichtung.mjs`, `oeffneEinrichtungImStudio`), `Tests/BrainCoreTests/EinrichtungsFensterTests.swift` (Startentscheidung, Rechte, Befehl),
   `scripts/rauchtest.sh` Phase E und `scripts/teste-vorschau.sh --app` (genau ein `fenster-auf studio` im Log, nie `fenster-auf einrichtung`).
 
