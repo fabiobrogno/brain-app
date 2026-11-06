@@ -5,6 +5,19 @@ export const T = {
   produkt: PRODUKT,
   ohneVault: { titel: "Noch kein Vault", text: `Die Einrichtung führt dich in zwei Minuten zu deinem ersten Vault, mit Sicherung und KI, wenn du möchtest.`, einrichten: `${PRODUKT} einrichten …`, anderer: "Anderen Weg wählen" },
   suche: { platzhalter: "Suchen", keine: "Nichts gefunden.", zeile: "Zeile" },
+  // Volltext-Suche (Ansicht „Im Vault suchen“ ⇧⌘F und Abschnitt „Im Inhalt“ der Palette): Zahlen, Filter, Hinweise
+  volltext: {
+    platzhalter: "Im Vault suchen …", tippe: "Tippe, um im ganzen Vault zu suchen.", hilfe: "Tipp: \"genaue Wörter\", -ohne, typ:projekt, tag:kaffee, ordner:wiki, geaendert:<7d",
+    anzahl: (a, g, genau) => (g <= a ? (g === 1 ? "1 Treffer" : `${g} Treffer`) : `${a} von ${genau ? g : "mehr als " + a} Treffern`),
+    mehr: "Mehr laden", laedt: "Suche …", fehler: "Die Suche klappt gerade nicht.", nochmal: "Nochmal versuchen",
+    aufbau: (p) => `Suchindex wird aufgebaut (${p} %) – die Treffer sind noch nicht vollständig.`,
+    locker: (n, v) => `Keine Notiz enthält alle Wörter. Gezeigt: Notizen mit mindestens ${n} von ${v}.`,
+    stellen: (n) => (n === 1 ? "1 Fundstelle" : `${n} Fundstellen`), abschnitt: "in",
+    ungueltig: (w) => `„${w}“ ist kein gültiger Wert.`,
+    chips: { typ: "Typ", ordner: "Ordner", tag: "Tag", status: "Status", geaendert: "Geändert", alle: "Alle", entfernen: (l) => `Filter ${l} entfernen` },
+    zeit: [["", "Beliebig"], ["heute", "Heute"], ["<7d", "7 Tage"], ["<30d", "30 Tage"], ["<1y", "Dieses Jahr"]],
+    palette: { gruppe: "Im Inhalt", zeile: (n) => `Zeile ${n}` },
+  },
   bereiche: { inbox: "Posteingang", aufgaben: "Aufgaben", rueckfragen: "Rückfragen", alle: "Alle Notizen", wissen: "Wissen", archiv: "Archiv", vorlagen: "Vorlagen" },
   abschnitte: { favoriten: "Favoriten", ansichten: "Ansichten", typen: "Typen", ordner: "Ordner", sichten: "Sichten" },
   // Hauptfenster (P3): Kopfzeile, KI-Zeile unten in der Seitenleiste, Zähler der Statusleiste

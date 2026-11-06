@@ -5,6 +5,7 @@ import { api, aktion, aktionMitAntwort, inApp, gitGesperrt, andererVault, nichtV
 import { erstelleEditor } from "./editor.js";
 import { h, dialog, dialogOffen, schliesseDialoge, toast, vorMinuten, dateiName, ohneEndung, ordnerVon, istBearbeitbar, speichereLokal, leseLokal, leseEntwurf, speichereEntwurf, sucheGrad, suchFormen, ausTabelle, arbeitBeginnt, laufendeArbeiten } from "./hilfen.js";
 import { symbol, GROESSE } from "./symbole.js";
+import { markiert, trefferKarte, chipLeiste, mitFilter } from "./suche.js";
 import { textfeld, textbereich, auswahl, hakenFeld, segment, knopf as baueKnopf, leerBlock, setzeLaedt, wenigBewegung } from "./bausteine.js";
 import { liesKurzformen, faelligText } from "./kurzformen.js";
 import { kiLogo } from "./ki-logos.js";
@@ -49,7 +50,7 @@ const S = {
   pfad: null, hash: null, schutz: false, dirty: false, konflikt: null, speichert: false, nochmal: false, bearbeitbar: true,
   pruef: new Map(), aktuellePruefung: null,
   git: null, offline: false, gesundheit: null, rueckfragen: null, syncLaeuft: false, syncFehler: null, ki: null, kiGeladen: false, kiVerbunden: false,
-  zuletzt: [], suche: { aktiv: false, treffer: [], auswahl: 0, frage: "" },
+  zuletzt: [], suche: { aktiv: false, treffer: [], auswahl: 0, frage: "", ergebnis: null },
   infoAn: leseLokal("infoAn", true), roh: leseLokal("roh", false), breit: leseLokal("breit", false), theme: leseLokal("theme", "system"),
   ladeNr: 0, bereit: false,
   umstellung: null,                          // P7c: { altlasten, umgestellt, angefangen } oder null (alter Werkzeug-Ordner im Vault und Stand der Umstellung)
@@ -181,7 +182,32 @@ const schreiben = erzeugeSchreiben({
 
 // Wikilink-Auflösung: dieselbe Regel wie in der Werkstatt (wikilink.js = gemeinsam/wikilink.mjs): Pfad und Dateiname, dann Titel, dann Alias;
 // erst genau, dann tolerant (Groß/klein, Umlaute, Trenner). Titel und Aliasse kommen aus dem Index (S.nMap), Dateien ohne Index-Zeile zählen mit ihrem Dateinamen.
-function dateien() { return S.baum.filter((e) => e.art === "datei" && istBearbeitbar(e.pfad)); }
+// Palette: je Datei ein gemerkter Suchschlüssel (Titel, Name, Pfad in allen Schreibweisen), damit die Vorabprüfung je Taste nur noch Zeichenketten vergleicht.
+// Nach dem Laden des Baums wird er in Leerlauf-Häppchen vorgewärmt (20.000 Notizen kosten sonst bei der ersten Taste ≈ 100 ms).
+const palMerker = new WeakMap();
+function palSchluessel(d) {
+  let k = palMerker.get(d);
+  if (k === undefined) { k = [...suchFormen(d.titel || ""), ...suchFormen(ohneEndung(dateiName(d.pfad))), ...suchFormen(ohneEndung(d.pfad))].join("\n"); palMerker.set(d, k); }
+  return k;
+}
+let palWarmNr = 0;
+function waermePalette() {
+  const nr = ++palWarmNr, liste = dateien();
+  const leerlauf = (f) => (window.requestIdleCallback ? window.requestIdleCallback(f, { timeout: 800 }) : setTimeout(f, 40));
+  let i = 0;
+  const schritt = () => {
+    if (nr !== palWarmNr) return;
+    const t = performance.now();
+    while (i < liste.length && performance.now() - t < 6) palSchluessel(liste[i++]);
+    if (i < liste.length) leerlauf(schritt);
+  };
+  leerlauf(schritt);
+}
+let dateienMerker = { baum: null, liste: [] };
+function dateien() { // je Baum nur einmal gefiltert (die Palette fragt je Taste)
+  if (dateienMerker.baum !== S.baum) dateienMerker = { baum: S.baum, liste: S.baum.filter((e) => e.art === "datei" && istBearbeitbar(e.pfad)) };
+  return dateienMerker.liste;
+}
 let wikiIndex = null;
 function wikiKarte() {
   if (wikiIndex) return wikiIndex;
@@ -208,9 +234,11 @@ async function legeWikiZielAn(ziel) {
 
 // ======================================================= Datei öffnen / speichern
 // verlauf: über Zurück/Vor geöffnet (kein neuer Eintrag, kein Fehler-Hinweis bei einer verschwundenen Notiz), zustand: Cursor und Scrollposition dort, beiFehlt(): die Notiz gibt es nicht mehr
-async function oeffne(pfad, { zeile, ausListe, ausBoard, verlauf: ausVerlauf = false, zustand = null, beiFehlt = null } = {}) {
+// zeile (+ spalte, laenge, begriffe): Sprung an die Fundstelle aus der Suche; die gesuchten Wörter werden im Text markiert (editor.js springeZu)
+async function oeffne(pfad, { zeile, spalte, laenge, begriffe, ausListe, ausBoard, verlauf: ausVerlauf = false, zustand = null, beiFehlt = null } = {}) {
+  const fund = begriffe || laenge ? { spalte, laenge, begriffe } : undefined;
   if (konfliktInst) { if (konfliktInst.laeuft()) return false; await schliesseKonflikt(konfliktInst.istFertig() ? "fertig" : "liste"); }
-  if (pfad === S.pfad) { schliesseDiff(); if (zeile) ed.springeZu(zeile); else if (!ausListe) ed.fokus(); return true; }
+  if (pfad === S.pfad) { schliesseDiff(); if (zeile) ed.springeZu(zeile, fund); else if (!ausListe) ed.fokus(); return true; }
   if (S.konflikt) { toast(`Löse zuerst den Konflikt in „${ohneEndung(dateiName(S.pfad))}“.`, { fehler: true }); return false; }
   const nr = ++S.ladeNr;
   // Erst sichern: gewechselt wird nur, wenn nichts verloren geht (K-1)
@@ -245,7 +273,7 @@ async function oeffne(pfad, { zeile, ausListe, ausBoard, verlauf: ausVerlauf = f
   ladeInfo();
   if (!ausVerlauf) schreiben.betreten(d.pfad); else schreiben.zeichnePfeile();
   if (zustand) { ed.stelleHer(zustand); if (!document.querySelector(".schleier")) ed.fokus(); }
-  else if (zeile) ed.springeZu(zeile);
+  else if (zeile) ed.springeZu(zeile, fund);
   else if (!ausListe && !document.querySelector(".schleier")) ed.fokus();
   lokal.schreib("pfad", d.pfad);
   // Im Aufgaben-Board öffnet jede Datei (Karte, Befehlspalette) den Editor; „Zurück zum Board“ führt wieder hin
@@ -555,6 +583,7 @@ async function ladeBaum() {
     const r = await api.baum();
     S.baum = r.eintraege || [];
     S.eintraege = new Map(S.baum.map((e) => [e.pfad, e]));
+    waermePalette();
     wikiIndex = null;
   } catch (e) { toast(e.message, { fehler: true }); return; }
   await ladeIndex();
@@ -1009,22 +1038,52 @@ $("knopf-sort").addEventListener("click", (e) => {
   oeffneMenue(e.currentTarget, [{ gruppe: T.sortierung.menue }, ...["geaendert", "titel", "erstellt"].map((k) => ({ name: T.sortierung[k], haken: S.sortierung === k, id: k, tun: () => { S.sortierung = k; lokal.schreib("sort", k); zeichneListe(); $("liste-koerper").scrollTop = 0; } }))], { });
 });
 
-// ---- Suche im Vault (Liste)
-let sucheTimer = null, sucheNr = 0;
+// ---- Suche im Vault (Liste): Volltext über den Index der Werkstatt (gemeinsam/suchindex.mjs), mit Markierungen, Fundstellen, Filterchips und Seiten
+const TX = T.volltext;
+let sucheTimer = null, sucheNr = 0, sucheCtl = null, sucheNochmal = null;
 const sucheEl = $("suche");
+sucheEl.placeholder = TX.platzhalter;
+const leereSuche = () => ({ aktiv: false, treffer: [], auswahl: 0, frage: "", ergebnis: null, laedt: false, fehler: null, chipsEl: null, chipsSig: "" });
+function zeichneSucheLeer() {
+  $("liste-koerper").replaceChildren(h("div", { klasse: "hinweis-leer", "data-suche": "hinweis", text: TX.tippe }), h("div", { klasse: "such-hilfe", text: TX.hilfe }));
+}
 function oeffneSuche() {
   if (S.sicht.art === "verlauf") schliesseVerlauf();
   $("liste-suche").hidden = false; S.suche.aktiv = true;
   zeichneListenKopf();
-  if (!S.suche.frage) $("liste-koerper").replaceChildren(h("div", { klasse: "hinweis-leer", text: "Tippe, um im ganzen Vault zu suchen." }));
+  if (!S.suche.frage) zeichneSucheLeer(); else zeichneSuchergebnisse();
   sucheEl.focus(); sucheEl.select();
 }
 function schliesseSuche(neuZeichnen = true) {
-  clearTimeout(sucheTimer); sucheNr++;
+  clearTimeout(sucheTimer); clearTimeout(sucheNochmal); sucheNr++; sucheCtl?.abort(); sucheCtl = null;
   const war = S.suche.aktiv;
-  S.suche = { aktiv: false, treffer: [], auswahl: 0, frage: "" };
+  S.suche = leereSuche();
   sucheEl.value = ""; $("liste-suche").hidden = true;
   if (war && neuZeichnen) zeichneListe();
+}
+// Fragt die Werkstatt: mehr = die nächste Seite anhängen. Eine neuere Frage bricht die ältere ab (AbortController; über den App-Kanal zählt die Nummer).
+function fuehreSucheAus({ mehr = false } = {}) {
+  // „Mehr laden“ gehört zur Frage der angezeigten Ergebnisse: wurde seitdem weitergetippt (neue Suche steht an oder läuft), tut es nichts und stört die neue Suche nicht
+  if (mehr && (!S.suche.ergebnisFrage || S.suche.frage !== S.suche.ergebnisFrage)) return;
+  clearTimeout(sucheTimer); clearTimeout(sucheNochmal);
+  sucheCtl?.abort();
+  sucheCtl = typeof AbortController === "undefined" ? null : new AbortController();
+  const nr = ++sucheNr, q = mehr ? S.suche.ergebnisFrage : S.suche.frage;
+  const offset = mehr ? S.suche.treffer.length : 0;
+  S.suche.laedt = true;
+  api.suche(q, { limit: 30, offset, facetten: true, signal: sucheCtl?.signal }).then((r) => {
+    if (nr !== sucheNr || !S.suche.aktiv) return;
+    S.suche.laedt = false; S.suche.fehler = null; S.suche.ergebnis = r; S.suche.ergebnisFrage = q;
+    S.suche.treffer = mehr ? S.suche.treffer.concat(r.treffer || []) : (r.treffer || []);
+    if (!mehr) S.suche.auswahl = 0;
+    zeichneSuchergebnisse();
+    // Der Index baut sich noch auf (nur beim ersten Suchen in sehr großen Vaults): in Kürze noch einmal fragen
+    if (r.aufbau && !r.aufbau.fertig) sucheNochmal = setTimeout(() => { if (nr === sucheNr && S.suche.aktiv && S.suche.frage === q) fuehreSucheAus(); }, 800);
+  }).catch((e) => {
+    if (e?.name === "AbortError" || nr !== sucheNr || !S.suche.aktiv) return;
+    S.suche.laedt = false; S.suche.fehler = e.message || TX.fehler;
+    zeichneSuchergebnisse();
+  });
 }
 $("knopf-suche").addEventListener("click", () => (S.suche.aktiv ? schliesseSuche() : oeffneSuche()));
 $("suche-zu").addEventListener("click", () => schliesseSuche());
@@ -1032,17 +1091,13 @@ sucheEl.addEventListener("input", () => {
   clearTimeout(sucheTimer);
   const q = sucheEl.value.trim();
   S.suche.frage = q;
-  if (!q) { S.suche.treffer = []; $("liste-koerper").replaceChildren(h("div", { klasse: "hinweis-leer", text: "Tippe, um im ganzen Vault zu suchen." })); return; }
-  sucheTimer = setTimeout(async () => {
-    const nr = ++sucheNr;
-    try {
-      const r = await api.suche(q);
-      if (nr !== sucheNr) return;
-      S.suche.treffer = r.treffer || []; S.suche.auswahl = 0;
-      zeichneSuchergebnisse();
-    } catch (e) { toast(e.message, { fehler: true }); }
-  }, 180);
+  if (!q) { sucheNr++; sucheCtl?.abort(); clearTimeout(sucheNochmal); S.suche.treffer = []; S.suche.ergebnis = null; zeichneSucheLeer(); return; }
+  sucheTimer = setTimeout(fuehreSucheAus, 120);
 });
+function oeffneTreffer(t, stelle) {
+  const st = stelle || null;
+  return oeffne(t.pfad, { zeile: st ? st.zeile : t.zeile, spalte: st ? st.spalte : t.spalte, laenge: st ? st.laenge : t.laenge, begriffe: S.suche.ergebnis?.markieren });
+}
 sucheEl.addEventListener("keydown", (e) => {
   if (e.key === "Escape") { schliesseSuche(); $("liste-koerper").focus({ preventScroll: true }); }
   else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -1051,24 +1106,49 @@ sucheEl.addEventListener("keydown", (e) => {
     e.preventDefault();
     S.suche.auswahl = (S.suche.auswahl + (e.key === "ArrowDown" ? 1 : n - 1)) % n; zeichneSuchergebnisse();
   } else if (e.key === "Enter") {
+    const frage = sucheEl.value.trim();
+    if (frage !== S.suche.ergebnisFrage) { if (frage) { S.suche.frage = frage; fuehreSucheAus(); } return; } // noch nicht entprellt/beantwortet: nie einen Treffer einer älteren Frage öffnen
     const t = S.suche.treffer[S.suche.auswahl];
-    if (t) oeffne(t.pfad, { zeile: t.zeile });
+    if (t) oeffneTreffer(t, t.stellen?.[0] || null);
   }
 });
 function zeichneSuchergebnisse() {
   const host = $("liste-koerper");
   zeichneListenKopf();
   if (!S.suche.frage) return;
-  if (!S.suche.treffer.length) { host.replaceChildren(leerBlock({ symbol: "suche", titel: T.liste.leerSuche.titel, text: T.liste.leerSuche.text, daten: { "data-suche": "leer" },
-    aktion: { text: T.liste.sucheLoeschen, name: "suche-loeschen", variante: "leise", groesse: "s", tun: () => { sucheEl.value = ""; sucheEl.dispatchEvent(new Event("input")); sucheEl.focus(); } } })); return; }
-  host.replaceChildren(...S.suche.treffer.map((t, i) => {
-    const n = S.nMap.get(t.pfad);
-    const typ = n?.typ ? (S.typMap.get(n.typ) || { name: n.typ }) : null;
-    const karte = h("div", { klasse: "karte", role: "option", "data-suche": "treffer", "data-karte": "", "data-pfad": t.pfad, "aria-selected": String(i === S.suche.auswahl), aufClick: () => oeffne(t.pfad, { zeile: t.zeile }) },
-      h("div", { klasse: "karte-kopf" }, h("div", { klasse: "karte-titel", text: t.titel || ohneEndung(dateiName(t.pfad)) }), h("div", { klasse: "karte-marken" }, symbol(typ ? typSymbol(typ.symbol) : "notiz", 14))),
-      t.auszug ? h("div", { klasse: "auszug", text: t.auszug }) : null, h("div", { klasse: "pfadzeile", text: t.pfad }));
-    return typ ? setzeTypFarbe(karte, typ) : karte;
-  }));
+  const r = S.suche.ergebnis;
+  if (!r) { if (S.suche.fehler) host.replaceChildren(h("div", { klasse: "hinweis-leer", "data-suche": "fehler", text: S.suche.fehler })); return; }
+  const teile = [];
+  // Filterchips: nur neu bauen, wenn sich Zahlen oder Filter geändert haben (ein offenes Menü bleibt so offen)
+  const sig = JSON.stringify([r.facetten, (r.filter || []).map((f) => f.roh)]);
+  if (!S.suche.chipsEl || S.suche.chipsSig !== sig) {
+    S.suche.chipsEl = chipLeiste(r.facetten, r.filter, (k, w) => {
+      sucheEl.value = mitFilter(sucheEl.value, S.suche.ergebnis?.filter, k, w);
+      S.suche.frage = sucheEl.value.trim();
+      if (S.suche.frage) fuehreSucheAus(); else { sucheNr++; S.suche.treffer = []; S.suche.ergebnis = null; zeichneSucheLeer(); }
+    });
+    S.suche.chipsSig = sig;
+  }
+  teile.push(S.suche.chipsEl);
+  const n = S.suche.treffer.length;
+  teile.push(h("div", { klasse: "such-kopf", "data-suche": "kopf" }, h("span", { klasse: "such-zahl", "data-suche": "zahl", text: TX.anzahl(n, r.gesamt, r.gesamtGenau !== false) })));
+  if (S.suche.fehler) teile.push(h("div", { klasse: "such-hinweis", text: S.suche.fehler }));
+  if (r.aufbau && !r.aufbau.fertig) teile.push(h("div", { klasse: "such-hinweis", "data-suche": "aufbau", text: TX.aufbau(Math.round((r.aufbau.anteil || 0) * 100)) }));
+  if (r.locker) teile.push(h("div", { klasse: "such-hinweis", "data-suche": "locker", text: TX.locker(r.locker.gefunden, r.locker.von) }));
+  for (const f of r.filter || []) if (f.gueltig === false) teile.push(h("div", { klasse: "such-hinweis", text: TX.ungueltig(f.roh) }));
+  if (!n) {
+    teile.push(leerBlock({ symbol: "suche", titel: T.liste.leerSuche.titel, text: T.liste.leerSuche.text, daten: { "data-suche": "leer" },
+      aktion: { text: T.liste.sucheLoeschen, name: "suche-loeschen", variante: "leise", groesse: "s", tun: () => { sucheEl.value = ""; sucheEl.dispatchEvent(new Event("input")); sucheEl.focus(); } } }));
+    host.replaceChildren(...teile); return;
+  }
+  S.suche.treffer.forEach((t, i) => {
+    const nz = S.nMap.get(t.pfad);
+    const typ = nz?.typ ? (S.typMap.get(nz.typ) || { name: nz.typ }) : null;
+    const karte = trefferKarte(t, { i, ausgewaehlt: i === S.suche.auswahl, typ, symbolFuer: (ty) => symbol(ty ? typSymbol(ty.symbol) : "notiz", 14), oeffne: oeffneTreffer });
+    teile.push(typ ? setzeTypFarbe(karte, typ) : karte);
+  });
+  if (r.mehr) teile.push(h("div", { klasse: "such-mehr" }, baueKnopf({ text: TX.mehr, variante: "sekundaer", groesse: "s", aktion: "such-mehr", aufKlick: () => fuehreSucheAus({ mehr: true }) })));
+  host.replaceChildren(...teile);
   host.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
 }
 function fokusSuche() {
@@ -2175,6 +2255,8 @@ function oeffnePalette(vorgabe = "") {
   const eingabe = eingabeFeld.input;
   const liste = h("div", { klasse: "pal-liste", "data-kanten": true, role: "listbox", id: "pal-liste" });
   let eintraege = [], idx = 0;
+  // Treffer „Im Inhalt“ (Volltext der Werkstatt): kommen asynchron, entprellt, die überholte Anfrage wird abgebrochen
+  let inhalt = [], inhaltBegriffe = [], inhaltFrage = "", inhaltNr = 0, inhaltTimer = 0, inhaltCtl = null;
   const grad = (d, q) => {
     const gleich = (x) => suchFormen(x).some((f) => suchFormen(q).includes(f));
     if (gleich(d.titel || "") || gleich(ohneEndung(dateiName(d.pfad)))) return -1; // genau getroffen
@@ -2184,14 +2266,31 @@ function oeffnePalette(vorgabe = "") {
     if (n) return 2 + n - 1;
     return sucheGrad(ohneEndung(d.pfad), q) ? 4 : 5;
   };
+  // Vorabprüfung je Taste: ein gemerkter Schlüssel je Datei (Titel, Name, Pfad in allen Schreibweisen); nur wer alle Suchwörter irgendwo enthält, kommt in die genaue Wertung
+  const schluesselVon = palSchluessel;
+  const findeNotizen = (qq) => {
+    const woerter = suchFormen(qq).map((f) => f.split(" ").filter(Boolean));
+    const treffer = [];
+    for (const d of dateien()) {
+      const k = schluesselVon(d);
+      if (!woerter.some((ws) => ws.every((w) => k.includes(w)))) continue;
+      const r = grad(d, qq);
+      if (r < 5) treffer.push({ d, r });
+    }
+    return treffer.sort((a, b) => a.r - b.r || a.d.pfad.length - b.d.pfad.length || a.d.pfad.localeCompare(b.d.pfad)).slice(0, 12).map((x) => x.d);
+  };
   const zeichne = () => {
     const q = eingabe.value.trim();
     const nur = q.startsWith(">");
     const qq = nur ? q.slice(1).trim() : q;
-    const notizen = nur ? [] : (qq ? dateien().map((d) => ({ d, r: grad(d, qq) })).filter((x) => x.r < 5).sort((a, b) => a.r - b.r || a.d.pfad.length - b.d.pfad.length || a.d.pfad.localeCompare(b.d.pfad)).slice(0, 12).map((x) => x.d)
-      : S.zuletzt.filter((p) => S.eintraege.has(p)).slice(0, 6).map((p) => S.eintraege.get(p)));
+    const notizen = nur ? [] : (qq ? findeNotizen(qq) : S.zuletzt.filter((p) => S.eintraege.has(p)).slice(0, 6).map((p) => S.eintraege.get(p)));
     const bef = befehle.filter(([t]) => !qq || sucheGrad(t, qq));
-    eintraege = [...notizen.map((d) => ({ typ: "notiz", p: d.pfad, titel: S.nMap.get(d.pfad)?.titel || d.titel })), ...bef.map(([t, k, f]) => ({ typ: "befehl", t, k, f }))];
+    const gezeigt = new Set(notizen.map((d) => d.pfad));
+    // Treffer einer früheren Frage bleiben nur stehen, solange die neue sie fortführt (weitertippen, Zurücknehmen); eine ganz andere Frage leert sie sofort
+    const gilt = inhaltFrage && (qq.startsWith(inhaltFrage) || inhaltFrage.startsWith(qq));
+    const imInhalt = nur || !qq || !gilt ? [] : inhalt.filter((t) => !gezeigt.has(t.pfad)).slice(0, 5);
+    eintraege = [...notizen.map((d) => ({ typ: "notiz", p: d.pfad, titel: S.nMap.get(d.pfad)?.titel || d.titel })), ...bef.map(([t, k, f]) => ({ typ: "befehl", t, k, f })),
+      ...imInhalt.map((t) => ({ typ: "inhalt", p: t.pfad, t, stelle: t.stellen?.[0] || null }))];
     // Ausdrückliche Einträge am Ende: nie still „Neue Notiz“ öffnen; „Frag deinen Vault“ als Ausweg, wenn nichts passt (⌘↩ fragt gleich mit dem getippten Text)
     if (qq && !nur) eintraege.push({ typ: "anlegen", t: T.palette.anlegen(qq), k: "", titel: qq });
     if (qq && !nur && S.info?.vault) eintraege.push({ typ: "frage", t: T.palette.frageTitel(qq), k: "⌘↵", text: qq });
@@ -2202,9 +2301,20 @@ function oeffnePalette(vorgabe = "") {
     let i = 0;
     for (const e of eintraege) {
       if (e.typ === "befehl" && i === notizen.length) teile.push(h("div", { klasse: "pal-gruppe", text: T.palette.befehle }));
+      if (e.typ === "inhalt" && eintraege[i - 1]?.typ !== "inhalt") teile.push(h("div", { klasse: "pal-gruppe", "data-pal-gruppe": "inhalt", text: T.volltext.palette.gruppe }));
       if (e.typ === "anlegen" && (i > 0 || nurAnlegen)) teile.push(h("div", { klasse: "pal-gruppe", text: T.palette.nichtsGefunden && nurAnlegen ? T.palette.nichtsGefunden : "Anlegen" }));
       if (e.typ === "frage" && !nurAnlegen && eintraege[i - 1]?.typ !== "anlegen") teile.push(h("div", { klasse: "pal-gruppe", text: T.palette.frageGruppe }));
       const mein = i;
+      if (e.typ === "inhalt") {
+        const st = e.stelle;
+        teile.push(h("div", { klasse: "pal-eintrag pal-inhalt", role: "option", "aria-selected": String(i === idx), "data-pal": "inhalt", aufMouseenter: () => { idx = mein; markiere(); }, aufClick: () => waehle(mein) },
+          symbol("notiz", 16),
+          h("div", { klasse: "pal-text" },
+            h("div", { klasse: "pal-kopfzeile" }, h("span", { klasse: "n" }, ...markiert(e.t.titel || ohneEndung(dateiName(e.p)), e.t.titelMarken)), h("span", { klasse: "r", text: e.p })),
+            st ? h("div", { klasse: "pal-auszug" }, ...markiert(st.text, st.marken)) : (e.t.auszug ? h("div", { klasse: "pal-auszug", text: e.t.auszug }) : null))));
+        i++;
+        continue;
+      }
       const name = e.typ === "notiz" ? (e.titel || ohneEndung(dateiName(e.p))) : e.t;
       const symName = e.typ === "notiz" ? "notiz" : e.typ === "anlegen" ? "stift" : e.typ === "frage" ? "funke" : (PAL_SYM.get(e.t) || "pfeil");
       const taste = e.typ === "notiz" ? null : e.k ? h("span", { klasse: "r tasten" }, ...Array.from(e.k).map((c) => h("kbd", { text: c }))) : null;
@@ -2217,9 +2327,29 @@ function oeffnePalette(vorgabe = "") {
     liste.replaceChildren(...teile);
   };
   const markiere = () => { [...liste.querySelectorAll(".pal-eintrag")].forEach((el, i) => el.setAttribute("aria-selected", String(i === idx))); liste.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" }); };
-  const waehle = (i) => { const e = eintraege[i]; if (!e) return; d.schliessen(); setTimeout(() => (e.typ === "notiz" ? oeffne(e.p) : e.typ === "anlegen" ? oeffneNeu(e.titel) : e.typ === "frage" ? frage.oeffneMit(e.text) : e.f()), 0); };
+  const waehle = (i) => { const e = eintraege[i]; if (!e) return; d.schliessen(); setTimeout(() => (e.typ === "inhalt" ? oeffne(e.p, { zeile: e.stelle?.zeile ?? e.t.zeile, spalte: e.stelle?.spalte, laenge: e.stelle?.laenge, begriffe: inhaltBegriffe }) : e.typ === "notiz" ? oeffne(e.p) : e.typ === "anlegen" ? oeffneNeu(e.titel) : e.typ === "frage" ? frage.oeffneMit(e.text) : e.f()), 0); };
   const fragen = () => { const q = eingabe.value.trim().replace(/^>\s*/, ""); d.schliessen(); setTimeout(() => (q ? frage.oeffneMit(q) : frage.oeffne()), 0); };
-  eingabe.addEventListener("input", () => { idx = 0; zeichne(); });
+  const planeInhalt = () => {
+    clearTimeout(inhaltTimer);
+    const q = eingabe.value.trim();
+    if (!q || q.startsWith(">") || q.length < 2 || !S.info?.vault) { inhaltNr++; inhaltCtl?.abort(); if (inhalt.length) { inhalt = []; zeichne(); } return; }
+    inhaltTimer = setTimeout(async () => {
+      inhaltCtl?.abort();
+      inhaltCtl = typeof AbortController === "undefined" ? null : new AbortController();
+      const nr = ++inhaltNr;
+      try {
+        const r = await api.suche(q, { limit: 8, signal: inhaltCtl?.signal });
+        if (nr !== inhaltNr || !document.body.contains(liste)) return;
+        inhalt = r.treffer || []; inhaltBegriffe = r.markieren || []; inhaltFrage = q;
+        // die Auswahl bleibt bei dem Eintrag, auf dem sie stand (die Inhalts-Treffer rücken vor „Anlegen“ und „Frag deinen Vault“)
+        const key = (x) => (x ? `${x.typ}:${x.p || x.t || x.text || ""}` : "");
+        const vorher = key(eintraege[idx]);
+        zeichne();
+        if (vorher) { const k = eintraege.findIndex((x) => key(x) === vorher); if (k >= 0 && k !== idx) { idx = k; markiere(); } }
+      } catch (e) { if (e?.name !== "AbortError" && nr === inhaltNr) { inhalt = []; zeichne(); } }
+    }, 110);
+  };
+  eingabe.addEventListener("input", () => { idx = 0; zeichne(); planeInhalt(); });
   eingabe.addEventListener("keydown", (e) => {
     if (e.key === "ArrowDown") { e.preventDefault(); idx = (idx + 1) % Math.max(1, eintraege.length); markiere(); }
     else if (e.key === "ArrowUp") { e.preventDefault(); idx = (idx + eintraege.length - 1) % Math.max(1, eintraege.length); markiere(); }
@@ -2232,9 +2362,10 @@ function oeffnePalette(vorgabe = "") {
     h("span", { klasse: "pal-hinweis" }, h("kbd", { text: "↵" }), T.palette.oeffnen),
     S.info?.vault ? h("span", { klasse: "pal-hinweis" }, h("kbd", { text: "⌘" }), h("kbd", { text: "↵" }), T.palette.fragen) : null,
     h("span", { klasse: "pal-hinweis pal-vault" }, symbol("vault", 12), S.info?.name || PRODUKT));
-  const d = dialog({ eigen: h("div", { klasse: "palette", role: "dialog", "aria-modal": "true" }, eingabeFeld.el, liste, fuss) });
+  const d = dialog({ eigen: h("div", { klasse: "palette", role: "dialog", "aria-modal": "true" }, eingabeFeld.el, liste, fuss), beiSchliessen: () => { inhaltNr++; clearTimeout(inhaltTimer); inhaltCtl?.abort(); } });
   eingabe.focus(); // sofort, nicht erst im nächsten Takt: schnell getippte Zeichen dürfen nicht verloren gehen
   zeichne();
+  if (eingabe.value.trim()) planeInhalt();
 }
 
 // ======================================================= Eigenschaften ein/aus

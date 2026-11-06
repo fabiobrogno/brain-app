@@ -14,7 +14,7 @@ function fehler(meldung, status, daten) {
   return e;
 }
 
-async function anfrage(methode, pfad, daten) {
+async function anfrage(methode, pfad, daten, signal) {
   if (kanal) {
     let r;
     try { r = await kanal.postMessage({ methode, pfad, daten: daten === undefined ? null : daten }); }
@@ -32,8 +32,9 @@ async function anfrage(methode, pfad, daten) {
       headers: daten === undefined ? {} : { "Content-Type": "application/json" },
       body: daten === undefined ? undefined : JSON.stringify(daten),
       cache: "no-store",
+      ...(signal ? { signal } : {}),
     });
-  } catch { throw fehler(T.fehler.verbindung, 0); }
+  } catch (e) { if (e?.name === "AbortError") throw e; throw fehler(T.fehler.verbindung, 0); }
   let wert = null;
   try { wert = await antwort.json(); } catch { wert = null; }
   if (!antwort.ok) throw fehler(wert?.fehler || T.fehler.allgemein, antwort.status, wert);
@@ -67,7 +68,8 @@ export const api = {
   ereignisse: (seit, epoche, warte) => anfrage("GET", "/api/ereignisse" + q({ seit, epoche, warte })),
   // archivieren: { pfad } (eine erledigte Aufgabe) oder { aelterAlsTage } (alle erledigten, die länger nicht geändert wurden); verschoben wird nur, gelöscht nie
   aufgabenArchivieren: (daten) => anfrage("POST", "/api/aufgaben/archivieren", daten),
-  suche: (frage) => anfrage("GET", "/api/suche" + q({ q: frage })),
+  // Volltext über den Index der Werkstatt: { treffer, gesamt, mehr, aufbau, filter, facetten, markieren, … }. signal bricht eine überholte Anfrage ab (nur im Browser; über den App-Kanal zählt die Reihenfolge).
+  suche: (frage, { limit, offset, facetten, signal } = {}) => anfrage("GET", "/api/suche" + q({ q: frage, limit, offset, facetten: facetten ? 1 : undefined }), undefined, signal),
   pruefung: (pfad) => anfrage("GET", "/api/pruefung" + q({ pfad })),
   gesundheit: () => anfrage("GET", "/api/gesundheit"),
   rueckfragen: () => anfrage("GET", "/api/rueckfragen"),

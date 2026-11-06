@@ -68,7 +68,8 @@ test("Handler: info, baum, datei GET/PUT, 409, neu, merken, suche, pruefung", as
   assert.match(r.j.pfad, /^00_inbox\/\d{4}-\d\d-\d\d_merkzettel\.md$/);
   r = await rufe("GET", "/api/suche", undefined, "q=amazon");
   assert.deepEqual(r.j.treffer.map((t) => t.pfad), ["09_wiki/firma/thema_a.md"]);
-  assert.deepEqual(Object.keys(r.j.treffer[0]).sort(), ["auszug", "pfad", "titel", "zeile"]);
+  for (const k of ["auszug", "pfad", "titel", "zeile"]) assert.ok(k in r.j.treffer[0], k); // alte Felder bleiben; dazu Markierungen und Stellen (Suchindex)
+  assert.ok(Array.isArray(r.j.treffer[0].stellen) && typeof r.j.gesamt === "number" && r.j.aufbau);
   r = await rufe("GET", "/api/pruefung", undefined, "pfad=09_wiki/firma/thema_a.md");
   assert.ok(["gruen", "ohne", "gelb", "rot", "grau"].includes(r.j.stufe)); assert.ok(Array.isArray(r.j.signale)); assert.ok(r.j.zusammenfassung);
   r = await rufe("GET", "/api/gesundheit");
