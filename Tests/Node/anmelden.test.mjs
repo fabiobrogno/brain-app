@@ -284,3 +284,17 @@ test("Attrappen brechen ab, wenn ihr Zielordner außerhalb des Temp-Ordners lieg
   }
   assert.ok(!existsSync("/usr/.credentials.json"));
 });
+
+test("ein von E4 angelegtes, noch ausstehendes Konto lässt sich anmelden (Einstellungen: Konto hinzufügen); erst konto-fertig macht es sichtbar", async () => {
+  const t = aufbau({ modus: "ok", verzoegerung: 200 });
+  const neu = await t.rufe("POST", "/api/ki/konto-neu", { programm: "claude", name: "Kunde" });
+  const { id, pfad: ordner } = neu.j.ausstehend;
+  const r = await t.start({ programm: "claude", konto: id });
+  assert.equal(r.status, 200);
+  assert.equal((await t.warteAuf(r.j.id, ["ok", "error"])).phase, "ok");
+  assert.equal(umgebungen(t.p.bin)[0].konto, ordner, "die Anmeldung läuft mit dem endgültigen Pfad");
+  assert.ok(!(await t.konten()).konten.some((k) => k.name === "Kunde"), "noch ausstehend: nirgends sichtbar");
+  assert.equal((await t.rufe("POST", "/api/ki/konto-fertig", { id })).status, 200);
+  assert.ok((await t.konten()).konten.some((k) => k.name === "Kunde"));
+  assert.equal((await t.start({ programm: "claude", konto: "deadbeef" })).status, 404);
+});
