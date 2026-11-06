@@ -132,6 +132,12 @@ export async function mockeEinrichtung(page, o = {}) {
       }
       // „KI verbinden“ (ki-verbinden.js): Anmeldestand je Konto (z.login), Prüfen über den Kortex-Server (z.pruefenFehler = { status, fehler, art } lässt es scheitern)
       case "/api/ki/anmeldestatus": return json(200, { zustand: z.login?.[body.ordner ? `ordner:${body.ordner}` : `std:${body.programm}`] || "angemeldet" });
+      // Anmelden im Fenster (E3, anmeldung.js): z.laufPhase = "wait" (Vorgabe) | "ok" | "timeout" | "error"; Abbrechen setzt "abgebrochen"
+      case "/api/ki/anmeldelauf": case "/api/ki/anmeldelauf/code": case "/api/ki/anmeldelauf/abbrechen": {
+        if (pfad.endsWith("/abbrechen")) z.laufPhase = "abgebrochen";
+        const phase = z.laufPhase || "wait";
+        return json(200, { ok: true, id: "a_test", programm: body?.programm || "codex", phase, url: "https://auth.openai.com/codex/device", code: "ABCD-12345", codeMoeglich: false, verbleibendMs: phase === "wait" ? 890000 : null, grund: phase === "timeout" ? "abgelaufen" : phase === "error" ? "programm-fehler" : null, rueckfall: phase === "error" });
+      }
       case "/api/ki/anmeldung": return json(200, { zustand: body.zustand, zuletzt: null });
       case "/api/mcp/pruefen": {
         await warte(z.verzoegerung);

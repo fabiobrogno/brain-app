@@ -160,6 +160,11 @@ export const api = {
   kiAktiv: (programm, konto) => anfrage("PUT", "/api/ki/aktiv", { programm, konto }),
   // Ordner eines eigenen Kontos in den Papierkorb: in der App legt Swift ihn über den Papierkorb des Finders ab (Zurücklegen geht), im Browser die Werkstatt
   kiOrdnerPapierkorb: ({ id, programm, pfad }) => anfrage("POST", "/api/ki/ordner-papierkorb", { id, programm, ordner: pfad }),
+  // Anmelden im Fenster (E3, werkstatt/anmelden.mjs): Start (Konto-Kennung oder { neu: Name }) → Kennung; Stand abfragen; Code senden; abbrechen. Antworten tragen nur Phase, Adresse, Gerätecode, Restzeit.
+  kiAnmeldeStart: (programm, ziel) => anfrage("POST", "/api/ki/anmeldelauf", { programm, ...(typeof ziel === "string" ? { konto: ziel } : { neu: ziel?.neu }) }),
+  kiAnmeldeStand: (id) => anfrage("GET", "/api/ki/anmeldelauf" + q({ id })),
+  kiAnmeldeCode: (id, code) => anfrage("POST", "/api/ki/anmeldelauf/code", { id, code }),
+  kiAnmeldeAbbruch: (id) => anfrage("POST", "/api/ki/anmeldelauf/abbrechen", { id }),
   kiKontoEntfernen: (id) => anfrage("POST", "/api/ki/konto-entfernen", { id }),
   kitHooks: () => anfrage("POST", "/api/kit/hooks", {}),
   // ---- GitHub-Anmeldung per Gerätecode (nie ein Token in einer Antwort)
