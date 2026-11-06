@@ -39,6 +39,10 @@ export const WERKZEUGE = [
     inputSchema: { type: "object", properties: { pfad: { type: "string" }, max: { type: "integer", minimum: 1, maximum: 100, description: "Standard 20" } }, required: ["pfad"], additionalProperties: false } },
   { name: "brain_kontext", description: "Kontext-Paket zum aktuellen Projekt: bis zu 4 passende Seiten des Vaults (Pfad, Titel, Stand, Prüf-Stufe, ein Satz). Zu Beginn einer Sitzung mit dem Projektnamen aufrufen.",
     inputSchema: { type: "object", properties: { projekt: { type: "string", description: "Repo- oder Ordnername des Projekts" }, cwd: { type: "string", description: "Arbeitsordner (optional); schärft die Zuordnung über `pfade`" } }, required: ["projekt"], additionalProperties: false } },
+  { name: "brain_umbenennen", description: "Benennt eine Notiz um (Titel und/oder Dateiname); Verweise folgen. Nur bestätigte Vaults.",
+    inputSchema: { type: "object", properties: { pfad: { type: "string" }, titel: { type: "string" }, dateiname: { type: "string" } }, required: ["pfad"], additionalProperties: false } },
+  { name: "brain_verschieben", description: "Verschiebt eine Notiz in einen vorhandenen Ordner; Verweise folgen. Nur bestätigte Vaults.",
+    inputSchema: { type: "object", properties: { pfad: { type: "string" }, ziel: { type: "string", description: "Zielordner, leer = oberste Ebene" } }, required: ["pfad", "ziel"], additionalProperties: false } },
   ...AUFGABEN_WERKZEUGE,   // Aufgaben-Board (eigene Datei, damit der konto-bewusste Umbau sie leicht einbinden kann)
 ];
 
@@ -57,7 +61,7 @@ const KONTEN_DEFEKT = "Die Kontenliste von Kortex ist beschädigt. Öffne Kortex
 const NUR_LESEN = "Dieses KI-Konto darf in diesem Vault nur lesen. Notizen anlegen braucht die Stufe „Posteingang“ (Kortex → KI-Konten).";
 // Mindeststufe je Werkzeug, alle übrigen: „lesen“. Die Prüfung läuft zentral in rufe() VOR dem Werkzeug und bei jedem Aufruf; neue schreibende Werkzeuge tragen sich hier ein
 // (Aufgaben anlegen, PR #50: "posteingang") und müssen selbst nichts prüfen. tools/list blendet Werkzeuge aus, die über „lesen“ liegen, wenn die Stufe fehlt.
-export const MINDEST_STUFE = { brain_merken: "posteingang", brain_aufgabe_anlegen: "posteingang", brain_aufgabe_status: "posteingang" };
+export const MINDEST_STUFE = { brain_merken: "posteingang", brain_aufgabe_anlegen: "posteingang", brain_aufgabe_status: "posteingang", brain_umbenennen: "erweitert", brain_verschieben: "erweitert" };
 
 // Zugriff dieses Servers auf Vaults: das Konto (--konto, Umgebung) und die Regeln aus ki-konten.json; alles wird bei jedem Aufruf frisch gelesen (ein Entzug wirkt sofort).
 // → { stufe(vaultPfad), defekt(), heimat() }. nurLesen deckelt jede Stufe auf „lesen“ (Frag-deinen-Vault, Paket P4).
@@ -228,6 +232,21 @@ async function rufe(vArg, name, a, spur = { seiten: [] }, sitzung = standardSitz
       const hash = dateiHash(v, r.pfad);
       aktivitaet(v.wurzel, zugriff, sitzung, { art: "ablage-notiz", text: "hat eine Notiz im Posteingang abgelegt.", pfade: [r.pfad], ...(hash ? { rueckgaengig: { art: "ablage-entfernen", pfad: r.pfad, hash } } : {}) });
       return text(`Gemerkt in ${r.pfad}. Erst /ingest macht daraus Wissen im Wiki.`);
+    }
+    // Umbenennen und Verschieben (gemeinsam/dateiaktionen.mjs, dieselbe Logik wie im Studio): nur in einem bestätigten Vault; ein Eintrag im Protokoll, Rückgängig im Studio
+    case "brain_umbenennen":
+    case "brain_verschieben": {
+      if (!vertraut(v)) return fehlerText("Dieser Vault ist in Kortex noch nicht als deiner bestätigt, darum ändert Kortex hier nichts.");
+      const umb = name === "brain_umbenennen";
+      if (umb && typeof a.titel !== "string" && typeof a.dateiname !== "string") throw new HttpFehler(400, "Bitte „titel“ oder „dateiname“ angeben.");
+      let pfad = arg("pfad");
+      try { pfad = v.lies(pfad).pfad; } catch (e) { const g = e instanceof HttpFehler && (e.status === 404 || e.status === 415) && typeof v.wikiLoese === "function" ? await v.wikiLoese(pfad.replace(/^\s*\[\[|\]\]\s*$/g, ""), "") : null; if (!g) throw e; pfad = g; }
+      const r = umb ? await v.umbenennen({ pfad, ...(typeof a.titel === "string" ? { titel: a.titel } : {}), ...(typeof a.dateiname === "string" ? { dateiname: a.dateiname } : {}), eintrag: false })
+        : await v.verschieben({ pfad, ziel: typeof a.ziel === "string" ? a.ziel : "", eintrag: false });
+      if (r.unveraendert) return text(`Unverändert: ${r.nach}`);
+      aktivitaet(v.wurzel, zugriff, sitzung, { art: "aenderung", text: umb ? "hat eine Notiz umbenannt." : "hat eine Notiz verschoben.", pfade: [r.nach, r.von], rueckgaengig: { art: "vorgang", id: r.vorgang } });
+      spur.seiten = [r.nach];
+      return text(`${umb ? "Umbenannt" : "Verschoben"}: ${r.von} → ${r.nach}${r.verweise ? ` (${r.verweise} Verweis${r.verweise === 1 ? "" : "e"} in ${r.notizen} Notiz${r.notizen === 1 ? "" : "en"} angepasst)` : ""}`);
     }
     case "brain_gesundheit": {
       const g = await v.gesundheit();

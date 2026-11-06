@@ -1,0 +1,783 @@
+// gemeinsam/dateiaktionen.mjs — Notizen und Ordner umbenennen, verschieben und in den Papierkorb legen, mit Link-Pflege und Rückgängig.
+// Genutzt von der Werkstatt (Routen /api/notiz/*, /api/ordner/*, /api/papierkorb/*) und vom MCP-Server (brain_umbenennen, brain_verschieben) — EINE Logik.
+//
+// Ablauf jeder Aktion: planen (nichts wird geschrieben; liefert die Vorschau „N Verweise in M Notizen“ und ein Token über den gelesenen Stand) → ausführen:
+// Zustand sichern (Journal), betroffene Notizen atomar neu schreiben (je Datei Hash-Prüfung, 409 bei fremder Änderung), dann EIN Umbenennen/Verschieben, ein Eintrag im
+// Aktivitätsprotokoll (art „datei-aktion“, rueckgaengig: { art: "vorgang", id }). Scheitert etwas, wird alles zurückgenommen.
+// Das Journal liegt außerhalb des Vaults: <Support>/papierkorb/<Kennung>/vorgaenge/<id>/ (Ordner 0700, Dateien 0600):
+//   manifest.json · vorher/<n> und nachher/<n> (Bytes der umgeschriebenen Notizen) · inhalt/<Name> (beim Löschen: die Datei oder der Ordner selbst — der Papierkorb).
+// Gelöscht wird nie endgültig, außer auf ausdrücklichen Wunsch („Endgültig löschen“) oder nach 30 Tagen.
+import { lstatSync, statSync, readdirSync, readFileSync, writeFileSync, mkdirSync, rmdirSync, renameSync, linkSync, unlinkSync, rmSync, existsSync, chmodSync, cpSync, realpathSync, openSync, closeSync, utimesSync } from "node:fs";
+import { join, dirname, basename } from "node:path";
+import { createHash, randomBytes } from "node:crypto";
+import { HttpFehler, loese, sauber, BEARBEITBAR, MAX_DATEI, gesperrterName, generiertName, wikiGeneriert, falte, imVault, inboxOrdnerVon } from "./basis.mjs";
+import { kennungVault, melde, aendereZustand, leseZustand } from "./aktivitaet.mjs";
+import { planeVerweise, setzeTitel, verlinktVon } from "./linkpflege.mjs";
+import { titelAus } from "./notizen.mjs";
+import { ordnerVonPfad } from "./wikilink.mjs";
+
+const HASH = (buf) => createHash("sha256").update(buf).digest("hex");
+export const PAPIERKORB_TAGE = 30;
+const TAG_MS = 86400e3;
+const MAX_DATEIEN_ORDNER = 100000;
+const MAX_LISTE = 200;
+const ID = /^v_[0-9a-f]{12}$/;
+const SPERRE_FRIST_MS = 60_000;
+
+const ohneEndungName = (n) => n.replace(/\.(md|txt)$/i, "");
+const NFC = (s) => String(s).normalize("NFC");
+
+// Name einer Datei oder eines Ordners prüfen → bereinigter Name (NFC). 400 bei Unsinn.
+export function pruefeName(name, { was = "Name" } = {}) {
+  if (typeof name !== "string") throw new HttpFehler(400, `Bitte einen ${was} angeben.`);
+  const n = NFC(name).replace(/\s+/g, " ").trim();
+  if (!n) throw new HttpFehler(400, `Bitte einen ${was} angeben.`);
+  if (Buffer.byteLength(n) > 250) throw new HttpFehler(400, `Der ${was} ist zu lang.`);
+  if (/[\/\\\0:]/.test(n) || /[\u0000-\u001f\u007f]/.test(n)) throw new HttpFehler(400, `Im ${was} sind Schrägstriche, Doppelpunkte und Steuerzeichen nicht erlaubt.`);
+  if (n === "." || n === ".." || n.startsWith(".")) throw new HttpFehler(400, `Der ${was} darf nicht mit einem Punkt beginnen.`);
+  if (falte(n) === "node_modules") throw new HttpFehler(400, `Dieser ${was} ist nicht erlaubt.`);
+  return n;
+}
+
+const HEX = (n) => randomBytes(n).toString("hex");
+
+/**
+ * haken: nur für Tests ({ rename } ersetzt das erste Umbenennen beim Papierkorb, z. B. um EXDEV nachzustellen).
+ * deps: { wurzel (echter Pfad), support, name (Vault-Name), istGeneriert(rel, abs), ueberspringeOrdner(abs), aufgabenOrdner(): Promise<string|null>, slug(titel), wer, jetzt() }
+ */
+export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert = () => false, ueberspringeOrdner = () => false, aufgabenOrdner = async () => null, slug = (s) => s, wer = "Du", jetzt = () => new Date(), haken = {} }) {
+  const kennung = kennungVault(wurzel);
+  const korb = join(support, "papierkorb", kennung);
+  const vorgaenge = join(korb, "vorgaenge");
+  const vorgangDir = (id) => join(vorgaenge, id);
+
+  // ───────────── Sperre: eine Aktion zugleich (im Prozess und zwischen Prozessen) ─────────────
+  // Die Sperrdatei trägt PID und Zeit und wird während der Aktion aufgefrischt (Heartbeat). Gebrochen wird sie nur, wenn der Halter nicht mehr lebt oder sie sehr alt ist.
+  // Zusätzlich liegt während jeder Aktion eine Marke (.laeuft) mit der Vorgangs-Kennung: bleibt sie nach einem Absturz liegen, wird dieser Vorgang beim nächsten Mal zurückgefahren.
+  let kette = Promise.resolve(), erholt = false;
+  const sperrDatei = join(korb, ".sperre"), markeDatei = join(korb, ".laeuft");
+  const lebt = (pid) => { if (!Number.isInteger(pid) || pid <= 0) return false; try { process.kill(pid, 0); return true; } catch (e) { return e.code === "EPERM"; } };
+  function sperreVeraltet() {
+    try {
+      const alter = Date.now() - statSync(sperrDatei).mtimeMs;
+      if (alter > 15 * 60_000) return true;
+      if (alter <= SPERRE_FRIST_MS) return false;
+      const pid = Number.parseInt(readFileSync(sperrDatei, "utf8"), 10);
+      return !lebt(pid);
+    } catch { return true; }
+  }
+  // Läuft gerade eine Aktion dieses Vaults (auch in einem anderen Prozess)? Für git.mjs: Abgleich und Commit warten dann.
+  function sperreAktiv() { try { statSync(sperrDatei); return !sperreVeraltet(); } catch { return false; } }
+  async function mitSperre(fn) {
+    const lauf = kette.catch(() => {}).then(async () => {
+      mkdirSync(korb, { recursive: true, mode: 0o700 });
+      let gehalten = false;
+      for (let i = 0; i < 60 && !gehalten; i++) {
+        try { closeSync(openSync(sperrDatei, "wx", 0o600)); writeFileSync(sperrDatei, `${process.pid} ${Date.now()}\n`, { mode: 0o600 }); gehalten = true; }
+        catch (e) {
+          if (e.code !== "EEXIST") throw e;
+          if (sperreVeraltet()) { try { unlinkSync(sperrDatei); } catch { /* weg */ } continue; }
+          await new Promise((ok) => setTimeout(ok, 50));
+        }
+      }
+      if (!gehalten) throw new HttpFehler(409, "Gerade läuft eine andere Änderung am Vault. Versuche es gleich noch einmal.", { art: "beschaeftigt" });
+      const herz = setInterval(() => { try { const t = new Date(); utimesSync(sperrDatei, t, t); } catch { /* egal */ } }, 10_000);
+      herz.unref?.();
+      try { erholeAngefangene(); return await fn(); } finally { clearInterval(herz); try { unlinkSync(sperrDatei); } catch { /* weg */ } }
+    });
+    kette = lauf;
+    return lauf;
+  }
+  const setzeMarke = (id) => { try { writeFileSync(markeDatei, JSON.stringify({ id }) + "\n", { mode: 0o600 }); } catch { /* egal */ } };
+  const loescheMarke = () => { try { unlinkSync(markeDatei); } catch { /* weg */ } };
+
+  // ───────────── Dateisystem-Helfer ─────────────
+  const absVon = (rel) => join(wurzel, ...rel.split("/"));
+  function atomarSchreiben(abs, buf, modus = 0o644) {
+    const tmp = join(dirname(abs), `.brain-tmp-${process.pid}-${HEX(4)}`);
+    try { writeFileSync(tmp, buf, { flag: "wx", mode: modus }); renameSync(tmp, abs); }
+    catch (e) { try { unlinkSync(tmp); } catch { /* schon weg */ } throw e; }
+  }
+  const leseHash = (abs) => { try { return HASH(readFileSync(abs)); } catch { return null; } };
+  function sichereKorb() {
+    mkdirSync(vorgaenge, { recursive: true, mode: 0o700 });
+    for (const d of [join(support, "papierkorb"), korb, vorgaenge]) { try { chmodSync(d, 0o700); } catch { /* egal */ } }
+  }
+  const schreibeManifest = (m) => {
+    const datei = join(vorgangDir(m.id), "manifest.json"), tmp = `${datei}.${process.pid}.tmp`;
+    writeFileSync(tmp, JSON.stringify(m) + "\n", { mode: 0o600 });
+    renameSync(tmp, datei);
+  };
+  function leseManifest(id) {
+    if (typeof id !== "string" || !ID.test(id)) return null;
+    try {
+      const m = JSON.parse(readFileSync(join(vorgangDir(id), "manifest.json"), "utf8"));
+      return m && m.v === 1 && m.id === id ? m : null;
+    } catch { return null; }
+  }
+  function chmodRekursiv(p, ordnerModus, dateiModus) {
+    let st; try { st = lstatSync(p); } catch { return; }
+    if (st.isSymbolicLink()) return;
+    if (st.isDirectory()) { try { chmodSync(p, ordnerModus); } catch { /* egal */ } for (const n of readdirSync(p)) chmodRekursiv(join(p, n), ordnerModus, dateiModus); }
+    else { try { chmodSync(p, dateiModus); } catch { /* egal */ } }
+  }
+
+  // ───────────── Notizen des Vaults lesen ─────────────
+  function sammle() {
+    const notizen = [], uebersprungen = new Map();
+    const geh = (relOrdner) => {
+      const abs = relOrdner ? absVon(relOrdner) : wurzel;
+      let liste; try { liste = readdirSync(abs, { withFileTypes: true }); } catch { return; }
+      for (const d of liste) {
+        if (gesperrterName(d.name)) continue;
+        const rel = relOrdner ? `${relOrdner}/${d.name}` : d.name;
+        if (d.isDirectory()) { if (!ueberspringeOrdner(join(abs, d.name))) geh(rel); continue; }
+        if (!BEARBEITBAR.test(d.name)) continue;
+        const a = join(abs, d.name);
+        let st, symbol = false;
+        try {
+          if (d.isSymbolicLink()) { const echt = realpathSync(a); if (!imVault(echt, wurzel)) continue; st = statSync(echt); if (!st.isFile()) continue; symbol = true; }
+          else if (d.isFile()) st = statSync(a); else continue;
+        } catch { continue; }
+        if (st.size > MAX_DATEI) { uebersprungen.set(rel, "zu groß"); continue; }
+        let buf; try { buf = readFileSync(a); } catch { continue; }
+        const text = buf.toString("utf8");
+        if (Buffer.compare(Buffer.from(text, "utf8"), buf) !== 0) { uebersprungen.set(rel, "kein gültiger UTF-8-Text"); continue; }
+        notizen.push({ pfad: rel, abs: a, buf, text, hash: HASH(buf), modus: st.mode & 0o777, symbol, mehrfach: st.nlink > 1 });
+      }
+    };
+    geh("");
+    return { notizen, uebersprungen };
+  }
+
+  // ───────────── Ziel prüfen ─────────────
+  async function pruefeZiel(pfad, erwartet) {
+    if (typeof pfad !== "string") throw new HttpFehler(400, "Der Pfad fehlt.");
+    const l = loese(wurzel, pfad);
+    let st;
+    try { st = lstatSync(l.abs); } catch { throw new HttpFehler(404, "Das gibt es nicht (mehr)."); }
+    if (ueberspringeOrdner(l.abs) || l.segmente.slice(0, -1).some((_, i) => ueberspringeOrdner(join(wurzel, ...l.segmente.slice(0, i + 1))))) throw new HttpFehler(404, "Das gibt es nicht (mehr).");
+    if (st.isSymbolicLink()) throw new HttpFehler(403, "Verweise (Symlinks) fasst Kortex hier nicht an.");
+    const typ = st.isDirectory() ? "ordner" : st.isFile() ? "datei" : null;
+    if (!typ) throw new HttpFehler(400, "Das ist weder Datei noch Ordner.");
+    if (erwartet && typ !== erwartet) throw new HttpFehler(400, erwartet === "datei" ? "Das ist ein Ordner, keine Notiz." : "Das ist eine Datei, kein Ordner.");
+    if (typ === "datei") {
+      if (!BEARBEITBAR.test(l.rel)) throw new HttpFehler(415, "Nur Markdown- und Textdateien lassen sich hier umbenennen, verschieben oder löschen.");
+      if (istGeneriert(l.rel, l.abs)) throw new HttpFehler(403, "Diese Datei wird automatisch erzeugt und ist geschützt.");
+      if (st.nlink > 1) throw new HttpFehler(423, "Diese Datei ist mehrfach verknüpft (derselbe Inhalt liegt unter einem zweiten Namen). Kortex fasst sie hier nicht an.");
+    } else if (l.segmente.length === 1) {
+      const fest = new Set([inboxOrdnerVon(wurzel), "09_wiki", "90_archiv", "01_vorlagen", (await aufgabenOrdner().catch(() => null)) || "05_aufgaben"].map(falte));
+      if (fest.has(falte(l.segmente[0]))) throw new HttpFehler(403, "Dieser Ordner gehört fest zu Kortex (Posteingang, Aufgaben, Wiki, Archiv, Vorlagen) und lässt sich nicht umbenennen, verschieben oder löschen.");
+    }
+    return { ...l, st, typ };
+  }
+  const gleicheDatei = (a, b) => { try { const x = lstatSync(a), y = lstatSync(b); return x.ino === y.ino && x.dev === y.dev; } catch { return false; } };
+
+  // Ziel ohne Umwandlung der Schreibweise des letzten Teils (loese() würde „Kaffee.md“ zu einer vorhandenen „kaffee.md“ umdeuten — beim Umbenennen nur der Groß-/Kleinschreibung falsch)
+  function loeseBlatt(rel) {
+    const segs = sauber(rel);
+    const blatt = segs.pop();
+    const eltern = segs.length ? loese(wurzel, segs.join("/")) : { abs: wurzel, rel: "" };
+    return { abs: join(eltern.abs, blatt), rel: (eltern.rel ? eltern.rel + "/" : "") + blatt, eltern: eltern.rel };
+  }
+  const gibtEs = (abs) => { try { lstatSync(abs); return true; } catch { return false; } };
+
+  // Zielpfad prüfen: Ordner muss es geben und im Vault liegen, der Name darf nicht belegt sein (außer es ist dieselbe Datei in anderer Schreibweise)
+  function pruefeNach(von, nachRel, typ) {
+    const l = loeseBlatt(nachRel);
+    if (typ === "ordner" && falte(l.rel) !== falte(von.rel) && falte(l.rel).startsWith(falte(von.rel) + "/")) throw new HttpFehler(400, "Ein Ordner lässt sich nicht in sich selbst verschieben.");
+    if (l.eltern) {
+      let st; try { st = statSync(absVon(l.eltern)); } catch { throw new HttpFehler(404, "Der Zielordner existiert nicht."); }
+      if (!st.isDirectory()) throw new HttpFehler(404, "Der Zielordner existiert nicht.");
+      // auch jeder Vorfahre: ein Unter-Vault (eigene brain.config.json) gehört einem KI-Konto nicht zum äußeren Vault
+      const teile = l.eltern.split("/");
+      for (let i = 1; i <= teile.length; i++) if (ueberspringeOrdner(absVon(teile.slice(0, i).join("/")))) throw new HttpFehler(404, "Der Zielordner existiert nicht.");
+    }
+    if (typ === "datei") {
+      const blatt = basename(l.rel);
+      if (generiertName(blatt) || wikiGeneriert(l.rel, blatt)) throw new HttpFehler(403, "Dieser Name ist für automatisch erzeugte Dateien reserviert (zum Beispiel index.md oder _…md im Wiki). Bitte einen anderen wählen.", { art: "reserviert" });
+    }
+    let casePur = false;
+    if (gibtEs(l.abs)) {
+      if (gleicheDatei(von.abs, l.abs)) {
+        if (basename(von.abs) === basename(l.abs) && dirname(von.abs) === dirname(l.abs)) return { ...l, unveraendert: true, casePur: false };
+        casePur = true;
+      } else throw new HttpFehler(409, typ === "ordner" ? "Einen Ordner mit diesem Namen gibt es dort schon." : "Eine Datei mit diesem Namen gibt es dort schon.", { art: "belegt" });
+    }
+    return { ...l, casePur };
+  }
+
+  // ───────────── Plan ─────────────
+  // Nach SEGMENTEN, nicht nach Zeichen: „Übungen“ als NFD im Dateisystem und als NFC im Link sind nicht gleich lang — geschnitten wird nach Teilen des Pfads
+  const abbilder = (von, nach, typ) => {
+    const vs = von.split("/").map(falte);
+    return (p) => {
+      const ps = p.split("/");
+      if (ps.length < vs.length || (typ === "datei" && ps.length !== vs.length)) return p;
+      for (let i = 0; i < vs.length; i++) if (falte(ps[i]) !== vs[i]) return p;
+      return [nach, ...ps.slice(vs.length)].join("/");
+    };
+  };
+
+  function schreibbarGrund(n, selbst) {
+    if (n.symbol) return "ist ein Verweis (Symlink)";
+    if (n.mehrfach) return "ist mehrfach verknüpft";
+    if (istGeneriert(n.pfad, n.abs)) return "wird automatisch erzeugt";
+    return null;
+  }
+
+  // art: "umbenennen" | "verschieben" | "loeschen";  typ: "datei" | "ordner"
+  async function plane({ art, typ, pfad, nachRel = null, titel = null, basisHash = null }) {
+    const von = await pruefeZiel(pfad, typ);
+    const { notizen, uebersprungen: uebersp } = sammle();
+    const mapNotiz = new Map(notizen.map((n) => [n.pfad, n]));
+    const selbst = typ === "datei" ? mapNotiz.get(von.rel) : null;
+    if (typ === "datei" && !selbst) throw new HttpFehler(415, "Diese Datei lässt sich nicht lesen.");
+    if (selbst && basisHash !== null && basisHash !== undefined && selbst.hash !== basisHash) throw new HttpFehler(409, "Die Notiz wurde inzwischen geändert (zum Beispiel von einem anderen Programm).", { aktuellerHash: selbst.hash, art: "geaendert" });
+    const plan = { art, typ, von: von.rel, nach: null, vonAbs: von.abs, dateien: [], uebersprungen: [], verlinktVon: [], notizenImOrdner: 0, casePur: false, titelAlt: null, titelNeu: null, hash: selbst ? selbst.hash : null };
+    if (typ === "datei") plan.titelAlt = titelAus(von.rel, selbst.text);
+    if (typ === "ordner") plan.notizenImOrdner = notizen.filter((n) => falte(n.pfad).startsWith(falte(von.rel) + "/")).length;
+
+    if (art === "loeschen") {
+      plan.verlinktVon = verlinktVon({ notizen, ziele: [von.rel], existiert: (p) => existsSync(absVon(p)) }).map((x) => ({ ...x, titel: titelAus(x.pfad, mapNotiz.get(x.pfad).text) }));
+      plan.verweise = plan.verlinktVon.reduce((s, x) => s + x.anzahl, 0);
+      plan.notizen = plan.verlinktVon.length;
+      plan.token = token(plan, notizen, von);
+      return plan;
+    }
+
+    const nach = pruefeNach(von, nachRel, typ);
+    plan.nach = nach.rel; plan.nachAbs = nach.abs; plan.casePur = nach.casePur; plan.keinUmzug = !!nach.unveraendert;
+    const abb = abbilder(von.rel, nach.rel, typ);
+    // Neuer Titel: im Text der Notiz selbst
+    let selbstText = selbst ? selbst.text : null, titelGesetzt = false;
+    const neueTexte = new Map();
+    if (selbst && titel !== null) {
+      const r = setzeTitel(selbst.text, titel);
+      titelGesetzt = r.geaendert;
+      if (r.geaendert && r.text !== selbst.text) { selbstText = r.text; neueTexte.set(selbst.pfad, r.text); plan.titelNeu = titelAus(von.rel, r.text); } else titelGesetzt = false;
+    }
+    plan.titelGesetzt = titelGesetzt;
+    if (nach.unveraendert && !titelGesetzt) { plan.unveraendert = true; plan.verweise = 0; plan.notizen = 0; plan.liste = []; plan.token = token(plan, notizen, von); return plan; }
+    const aenderungen = planeVerweise({ notizen: notizen.filter((n) => !n.fehler), abb, neueTexte, existiert: (p) => existsSync(absVon(p)) });
+    let verweise = 0;
+    const liste = [];
+    for (const [alt, a] of aenderungen) {
+      const n = mapNotiz.get(alt);
+      const grund = schreibbarGrund(n);
+      if (grund) { plan.uebersprungen.push({ pfad: alt, grund }); continue; }
+      let text = a.text;
+      plan.dateien.push({ pfad: alt, vorher: n.buf, hashVorher: n.hash, modus: n.modus, text, anzahl: a.verweise.length });
+      verweise += a.verweise.length;
+      liste.push({ pfad: abb(alt), alterPfad: alt, titel: titelAus(alt, n.text), anzahl: a.verweise.length, zeilen: a.verweise.slice(0, 3).map((z) => ({ zeile: z.zeile, vorher: z.vorher, nachher: z.nachher })) });
+    }
+    // Titel der Notiz selbst (auch wenn sie sonst keine Verweise hat)
+    if (selbst && titelGesetzt) {
+      const d = plan.dateien.find((x) => x.pfad === selbst.pfad);
+      const mitLinks = d ? d.text : selbst.text;
+      const r = setzeTitel(mitLinks, titel);
+      if (d) d.text = r.text; else plan.dateien.push({ pfad: selbst.pfad, vorher: selbst.buf, hashVorher: selbst.hash, modus: selbst.modus, text: r.text, anzahl: 0 });
+    }
+    for (const d of plan.dateien) { d.nachher = Buffer.from(d.text, "utf8"); d.hashNachher = HASH(d.nachher); delete d.text; }
+    for (const [p, grund] of uebersp) plan.uebersprungen.push({ pfad: p, grund });
+    plan.verweise = verweise;
+    plan.notizen = liste.length;
+    plan.liste = liste.sort((a, b) => a.pfad.localeCompare(b.pfad, "de")).slice(0, MAX_LISTE);
+    plan.mehrListe = Math.max(0, liste.length - MAX_LISTE);
+    plan.token = token(plan, notizen, von);
+    return plan;
+  }
+
+  // Fingerabdruck dessen, was der Plan gelesen hat: ändert sich eine der Dateien, stimmt das Token beim Ausführen nicht mehr
+  function token(plan, notizen, von) {
+    const h = createHash("sha256");
+    h.update(`${plan.art}\0${plan.typ}\0${plan.von}\0${plan.nach || ""}\0${plan.hash || ""}\n`);
+    for (const d of (plan.dateien || []).slice().sort((a, b) => (a.pfad < b.pfad ? -1 : 1))) h.update(`${d.pfad}\0${d.hashVorher}\0${HASH(d.nachher || Buffer.alloc(0))}\n`);
+    if (plan.art === "loeschen" && plan.typ === "ordner") {
+      for (const n of notizen.filter((x) => falte(x.pfad).startsWith(falte(von.rel) + "/")).sort((a, b) => (a.pfad < b.pfad ? -1 : 1))) h.update(`${n.pfad}\0${n.hash}\n`);
+    }
+    return h.digest("hex").slice(0, 32);
+  }
+
+  const vorschauVon = (plan) => ({
+    ok: true, art: plan.art, typ: plan.typ, von: plan.von, nach: plan.nach, unveraendert: !!plan.unveraendert, verweise: plan.verweise || 0, notizen: plan.notizen || 0,
+    liste: plan.liste || [], mehr: plan.mehrListe || 0, uebersprungen: plan.uebersprungen.slice(0, MAX_LISTE),
+    verlinktVon: plan.verlinktVon.slice(0, MAX_LISTE), notizenImOrdner: plan.notizenImOrdner, titelAlt: plan.titelAlt, titelNeu: plan.titelNeu,
+    hash: plan.hash, token: plan.token,
+  });
+
+  // ───────────── Ausführen ─────────────
+  function vorgangId() { return `v_${HEX(6)}`; }
+  function ordnerListe(abs) { // alle Einträge eines Ordners: [{ pfad, art, groesse, modus, hash }]
+    const aus = [];
+    const geh = (rel) => {
+      for (const d of readdirSync(rel ? join(abs, rel) : abs, { withFileTypes: true })) {
+        const r = rel ? `${rel}/${d.name}` : d.name;
+        const a = join(abs, r);
+        const st = lstatSync(a);
+        if (aus.length > MAX_DATEIEN_ORDNER) throw new HttpFehler(413, "Dieser Ordner enthält zu viele Dateien für den Papierkorb.");
+        if (st.isDirectory()) { aus.push({ pfad: r, art: "ordner", modus: st.mode & 0o777 }); geh(r); }
+        else if (st.isSymbolicLink()) aus.push({ pfad: r, art: "verweis", modus: 0 });
+        else aus.push({ pfad: r, art: "datei", groesse: st.size, modus: st.mode & 0o777, hash: st.size <= MAX_DATEI ? HASH(readFileSync(a)) : null });
+      }
+    };
+    geh("");
+    return aus;
+  }
+
+  // Verschieben im Dateisystem (nur innerhalb des Vaults und nur ohne zu überschreiben)
+  function verschiebeFs(vonAbs, nachAbs, typ, casePur) {
+    if (casePur) { renameSync(vonAbs, nachAbs); return; }
+    if (typ === "datei") {
+      try { linkSync(vonAbs, nachAbs); }
+      catch (e) {
+        if (e.code === "EEXIST") throw new HttpFehler(409, "Eine Datei mit diesem Namen gibt es dort schon.", { art: "belegt" });
+        if (e.code === "EPERM" || e.code === "ENOTSUP" || e.code === "EXDEV") { if (existsSync(nachAbs)) throw new HttpFehler(409, "Eine Datei mit diesem Namen gibt es dort schon.", { art: "belegt" }); renameSync(vonAbs, nachAbs); return; }
+        throw e;
+      }
+      unlinkSync(vonAbs);
+    } else {
+      // Atomar ohne Ersetzen: das Ziel wird zuerst exklusiv als leerer Ordner angelegt (EEXIST → belegt); rename darf nur diesen leeren Ordner ersetzen
+      try { mkdirSync(nachAbs, { mode: 0o700 }); }
+      catch (e) { if (e.code === "EEXIST") throw new HttpFehler(409, "Einen Ordner mit diesem Namen gibt es dort schon.", { art: "belegt" }); throw e; }
+      try { renameSync(vonAbs, nachAbs); }
+      catch (e) { try { rmdirSync(nachAbs); } catch { /* nicht leer: nicht anfassen */ } throw e; }
+    }
+  }
+  // Über Laufwerksgrenzen (Papierkorb liegt im Support-Ordner): erst kopieren, die Kopie prüfen (Anzahl, Größe, Hashes), erst dann die Quelle entfernen.
+  // Eine geprüfte Kopie wird NIE gelöscht: scheitert das Entfernen der Quelle mittendrin, bleibt die Kopie, und der Fehler (art „teilweise“, behalten) sagt es.
+  const inhaltListe = (abs) => (lstatSync(abs).isDirectory() ? ordnerListe(abs) : [{ pfad: "", art: "datei", groesse: lstatSync(abs).size, hash: HASH(readFileSync(abs)) }]);
+  const gleicheListen = (a, b) => {
+    if (a.length !== b.length) return false;
+    const m = new Map(b.map((e) => [e.pfad, e]));
+    return a.every((e) => { const x = m.get(e.pfad); return x && x.art === e.art && (e.art !== "datei" || (x.groesse === e.groesse && x.hash === e.hash)); });
+  };
+  function verschiebeUeberall(vonAbs, nachAbs) {
+    try { (haken.rename || renameSync)(vonAbs, nachAbs); return; } catch (e) { if (e.code !== "EXDEV") throw e; }
+    const neu = !gibtEs(nachAbs);
+    const verwirfKopie = () => { if (neu) { try { rmSync(nachAbs, { recursive: true, force: true }); } catch { /* egal */ } } }; // nur eine unfertige oder falsche Kopie, die Quelle ist heil
+    const vorher = inhaltListe(vonAbs);
+    try { cpSync(vonAbs, nachAbs, { recursive: true, errorOnExist: true, force: false, preserveTimestamps: true, verbatimSymlinks: true }); }
+    catch (e) { verwirfKopie(); throw e; }
+    if (!gleicheListen(vorher, inhaltListe(nachAbs))) { verwirfKopie(); throw new HttpFehler(500, "Die Kopie stimmt nicht mit dem Original überein. Es wurde nichts verändert."); }
+    try { rmSync(vonAbs, { recursive: true, force: false }); }
+    catch (e) { throw new HttpFehler(500, "Die Quelle ließ sich nicht vollständig entfernen (zum Beispiel wegen eines Schreibschutzes). Eine vollständige Kopie liegt sicher bei Kortex.", { art: "teilweise", behalten: true, ursache: String((e && e.code) || "") }); }
+  }
+
+  const textFuer = (art, typ, plan) => {
+    const was = typ === "ordner" ? "Ordner" : "Notiz";
+    const v = plan.verweise ? ` · ${plan.verweise} ${plan.verweise === 1 ? "Verweis" : "Verweise"} in ${plan.notizen} ${plan.notizen === 1 ? "Notiz" : "Notizen"} angepasst` : "";
+    if (art === "loeschen") return `${was} in den Papierkorb gelegt${plan.verweise ? ` · von ${plan.notizen} ${plan.notizen === 1 ? "Notiz" : "Notizen"} verlinkt` : ""}`;
+    return `${was} ${art === "umbenennen" ? "umbenannt" : "verschoben"}${v}`;
+  };
+
+  // Die eigene Aktion steht im Protokoll, ist aber schon gelesen: sie soll die Glocke nicht als „neu“ anzeigen
+  const alsGelesen = (e) => { try { if (e) aendereZustand(support, kennung, (s) => { if (!s.gelesen.includes(e.id)) s.gelesen.push(e.id); }); } catch { /* das Protokoll ist Beiwerk */ } return e; };
+  function protokolliere(m, plan) {
+    const pfade = plan.art === "loeschen" ? [plan.von] : [plan.nach, plan.von];
+    const e = alsGelesen(melde(wurzel, { art: "datei-aktion", wer, vaultName: name, text: textFuer(plan.art, plan.typ, plan), pfade, rueckgaengig: { art: "vorgang", id: m.id } }, { support }));
+    return e ? e.id : null;
+  }
+
+  async function fuehreAus(plan, eingabe = {}) {
+    if (eingabe.token !== undefined && eingabe.token !== null && eingabe.token !== plan.token) {
+      throw new HttpFehler(409, "Der Vault hat sich seit der Vorschau verändert. Bitte noch einmal ansehen.", { art: "vorschau-veraltet" });
+    }
+    if (plan.unveraendert) return { ok: true, unveraendert: true, art: plan.art, typ: plan.typ, von: plan.von, nach: plan.nach, pfad: plan.nach, verweise: 0, notizen: 0 };
+    sichereKorb();
+    const id = vorgangId(), dir = vorgangDir(id);
+    mkdirSync(join(dir, "vorher"), { recursive: true, mode: 0o700 });
+    mkdirSync(join(dir, "nachher"), { recursive: true, mode: 0o700 });
+    const m = { v: 1, id, art: plan.art, typ: plan.typ, zeit: jetzt().toISOString(), status: "laeuft", von: plan.von, nach: plan.nach, casePur: plan.casePur, titelAlt: plan.titelAlt, titelNeu: plan.titelNeu,
+      verweise: plan.verweise || 0, notizen: plan.notizen || 0, eintrag: null,
+      dateien: plan.dateien.map((d, i) => ({ n: i, pfad: d.pfad, hashVorher: d.hashVorher, hashNachher: d.hashNachher, modus: d.modus })) };
+    try {
+      if (plan.art === "loeschen") return await loescheInKorb(plan, m, eingabe);
+      plan.dateien.forEach((d, i) => { writeFileSync(join(dir, "vorher", String(i)), d.vorher, { mode: 0o600 }); writeFileSync(join(dir, "nachher", String(i)), d.nachher, { mode: 0o600 }); });
+      schreibeManifest(m);
+      setzeMarke(id);
+      const geschrieben = [];
+      try {
+        for (const d of plan.dateien) {
+          const abs = absVon(d.pfad);
+          if (leseHash(abs) !== d.hashVorher) throw new HttpFehler(409, `„${basename(d.pfad)}“ wurde inzwischen geändert (zum Beispiel von einem anderen Programm). Es wurde nichts verändert.`, { art: "geaendert", pfad: d.pfad });
+          atomarSchreiben(abs, d.nachher, d.modus);
+          geschrieben.push(d);
+        }
+        // letzte Prüfung vor dem Umbenennen: gibt es das Ziel noch, ist die Quelle noch da
+        if (!existsSync(plan.vonAbs)) throw new HttpFehler(404, "Das gibt es nicht mehr.");
+        if (!plan.keinUmzug) verschiebeFs(plan.vonAbs, plan.nachAbs, plan.typ, plan.casePur);
+      } catch (e) {
+        for (const d of geschrieben.reverse()) { try { if (leseHash(absVon(d.pfad)) === d.hashNachher) atomarSchreiben(absVon(d.pfad), d.vorher, d.modus); } catch { /* bester Versuch; die Kopie bleibt im Journal */ } }
+        throw e;
+      }
+      m.status = "fertig";
+      schreibeManifest(m);
+      loescheMarke();
+    } catch (e) {
+      if (plan.art !== "loeschen") { loescheMarke(); try { rmSync(dir, { recursive: true, force: true }); } catch { /* egal */ } } // das Löschen räumt selbst auf: dort liegt der Inhalt im Journal
+      throw e;
+    }
+    m.eintrag = eingabe.eintrag === false ? null : protokolliere(m, plan); // eintrag: false = der Aufrufer (MCP-Server) schreibt den Eintrag selbst, mit Konto und Programm
+    if (m.eintrag) { try { schreibeManifest(m); } catch { /* der Eintrag verweist auf die Kennung, nicht umgekehrt */ } }
+    const nachPfad = (p) => (plan.typ === "datei" ? (p === plan.von ? plan.nach : p) : (falte(p).startsWith(falte(plan.von) + "/") ? plan.nach + p.slice(plan.von.length) : p));
+    const geaendert = [...new Set([plan.von, plan.nach, ...plan.dateien.map((d) => nachPfad(d.pfad))])];
+    const neuerHash = plan.typ === "datei" ? leseHash(plan.nachAbs) : null;
+    return { ok: true, art: plan.art, typ: plan.typ, von: plan.von, nach: plan.nach, pfad: plan.nach, ziel: plan.typ === "datei" ? plan.nach : undefined, verweise: plan.verweise || 0, notizen: plan.notizen || 0,
+      dateien: plan.dateien.map((d) => ({ pfad: nachPfad(d.pfad), anzahl: d.anzahl })), geaendert, hash: neuerHash, vorgang: id, aktivitaetId: m.eintrag, titel: plan.titelNeu || null };
+  }
+
+  async function loescheInKorb(plan, m, eingabe = {}) {
+    const dir = vorgangDir(m.id);
+    const inhaltDir = join(dir, "inhalt");
+    const ziel = join(inhaltDir, basename(plan.vonAbs));
+    const aufraeumenKlein = () => { loescheMarke(); try { rmSync(dir, { recursive: true, force: true }); } catch { /* egal */ } };
+    const teilweise = () => { m.status = "teilweise"; try { schreibeManifest(m); } catch { /* egal */ } loescheMarke(); };
+    try {
+      mkdirSync(inhaltDir, { recursive: true, mode: 0o700 });
+      const st = lstatSync(plan.vonAbs);
+      const eintraege = plan.typ === "ordner" ? ordnerListe(plan.vonAbs) : [{ pfad: "", art: "datei", groesse: st.size, modus: st.mode & 0o777, hash: HASH(readFileSync(plan.vonAbs)) }];
+      if (plan.typ === "datei" && eintraege[0].hash !== plan.hash) throw new HttpFehler(409, "Die Notiz wurde inzwischen geändert (zum Beispiel von einem anderen Programm). Es wurde nichts verändert.", { art: "geaendert", aktuellerHash: eintraege[0].hash });
+      m.inhalt = { name: basename(plan.vonAbs), modus: st.mode & 0o777, eintraege };
+      m.titel = plan.titelAlt || null;
+      schreibeManifest(m);
+      setzeMarke(m.id);
+    } catch (e) { aufraeumenKlein(); throw e; }
+    try { verschiebeUeberall(plan.vonAbs, ziel); }
+    catch (e) {
+      if (e.extra?.art === "teilweise") { // die Kopie ist vollständig und bleibt; im Vault ist ein Rest geblieben
+        teilweise();
+        throw new HttpFehler(500, "Der Ordner ließ sich nicht vollständig aus dem Vault entfernen. Eine vollständige Kopie liegt im Papierkorb von Kortex (Ansicht „Papierkorb“); im Vault ist ein Rest geblieben. Nichts ist verloren.", { art: "teilweise", behalten: true, vorgang: m.id });
+      }
+      const quelleDa = gibtEs(plan.vonAbs), korbDa = gibtEs(ziel);
+      if (quelleDa && !korbDa) aufraeumenKlein();                       // nichts bewegt
+      else if (!quelleDa && korbDa) { try { verschiebeUeberall(ziel, plan.vonAbs); aufraeumenKlein(); } catch { teilweise(); } } // zurücklegen; gelingt es nicht, bleibt alles im Papierkorb
+      else teilweise();
+      throw e;
+    }
+    chmodRekursiv(ziel, 0o700, 0o600);
+    m.status = "fertig";
+    schreibeManifest(m);
+    loescheMarke();
+    m.eintrag = eingabe.eintrag === false ? null : protokolliere(m, plan);
+    if (m.eintrag) { try { schreibeManifest(m); } catch { /* egal */ } }
+    return { ok: true, art: "loeschen", typ: plan.typ, von: plan.von, nach: null, pfad: plan.von, verweise: plan.verweise || 0, notizen: plan.notizen || 0, verlinktVon: plan.verlinktVon.slice(0, MAX_LISTE),
+      geaendert: [plan.von], vorgang: m.id, aktivitaetId: m.eintrag };
+  }
+
+  // ───────────── Öffentliche Aktionen ─────────────
+  const gemeinsamEin = (e) => { if (!e || typeof e !== "object") throw new HttpFehler(400, "Die Anfrage ist leer."); return e; };
+  const flag = (e) => (e.vorschau === true);
+
+  function benenne(e, typ) {
+    const ort = ordnerVonPfad(e.pfad || "");
+    const alt = basename(String(e.pfad || ""));
+    // Datei: Titel und/oder Dateiname. Ohne Dateiname bleibt er, außer es gibt keine Quelle für den Titel im Text (dann ist der Titel der Dateiname) oder „dateinameAusTitel“.
+    if (typ === "ordner") return { nachRel: (ort ? ort + "/" : "") + pruefeName(e.name, { was: "Ordnername" }), titel: null };
+    const endung = (/\.(md|txt)$/i.exec(alt) || [""])[0];
+    let titel = null;
+    if (e.titel !== undefined && e.titel !== null) {
+      if (typeof e.titel !== "string" || !e.titel.trim()) throw new HttpFehler(400, "Bitte einen Titel angeben.");
+      if (e.titel.length > 200) throw new HttpFehler(400, "Der Titel ist zu lang.");
+      titel = e.titel.replace(/\s+/g, " ").trim();
+    }
+    let dateiname = null;
+    if (e.dateiname !== undefined && e.dateiname !== null) {
+      let n = pruefeName(e.dateiname, { was: "Dateiname" });
+      const neueEndung = (/\.(md|txt)$/i.exec(n) || [""])[0];
+      if (neueEndung && endung && neueEndung.toLowerCase() !== endung.toLowerCase()) throw new HttpFehler(400, `Die Endung ${endung} bleibt, wie sie ist.`);
+      if (!neueEndung) n += endung || ".md";
+      dateiname = n;
+    }
+    if (titel === null && dateiname === null) throw new HttpFehler(400, "Bitte einen neuen Titel oder Dateinamen angeben.");
+    return { nachRel: (ort ? ort + "/" : "") + (dateiname ?? alt), titel, dateinameAusTitel: e.dateinameAusTitel === true, endung, alt };
+  }
+
+  async function umbenennen(eingabe) {
+    const e = gemeinsamEin(eingabe);
+    const typ = e.typ === "ordner" ? "ordner" : "datei";
+    const b = benenne(e, typ);
+    let nachRel = b.nachRel;
+    let titel = b.titel;
+    if (typ === "datei" && titel !== null && e.dateiname === undefined) {
+      // Titel ohne Quelle im Text → der Dateiname IST der Titel; oder ausdrücklich gewünscht: Dateiname folgt dem Titel
+      const probe = await mitSperre(async () => { const v = await pruefeZiel(e.pfad, "datei"); return setzeTitel(readFileSync(v.abs, "utf8"), titel).geaendert; });
+      if (!probe || b.dateinameAusTitel) {
+        const stamm = ohneEndungName(b.alt);
+        const n = /^[a-z0-9][a-z0-9-]*$/.test(stamm) ? slug(titel, 60) : pruefeName(titel.replace(/[\/\\:\u0000-\u001f]+/g, "-").replace(/^\.+/, ""), { was: "Dateiname" }).slice(0, 120);
+        const ordnerTeil = ordnerVonPfad(e.pfad) ? ordnerVonPfad(e.pfad) + "/" : "";
+        let voll = n + b.endung;
+        if (generiertName(voll) || wikiGeneriert(ordnerTeil + voll, voll) || voll.startsWith("_")) voll = `${n}-notiz${b.endung}`; // ein Titel „Index“ darf nicht index.md werden
+        nachRel = ordnerTeil + voll;
+        if (!probe) titel = titel; // setzeTitel ändert dann nichts; der Titel ergibt sich aus dem Dateinamen
+      }
+    }
+    return mitSperre(async () => {
+      const plan = await plane({ art: "umbenennen", typ, pfad: e.pfad, nachRel, titel: typ === "datei" ? titel : null, basisHash: e.basisHash ?? null });
+      if (flag(e)) return vorschauVon(plan);
+      return fuehreAus(plan, e);
+    });
+  }
+
+  async function verschieben(eingabe) {
+    const e = gemeinsamEin(eingabe);
+    const typ = e.typ === "ordner" ? "ordner" : "datei";
+    if (typeof e.ziel !== "string") throw new HttpFehler(400, "Bitte einen Zielordner angeben.");
+    const ziel = e.ziel.replace(/^\/+|\/+$/g, "");
+    return mitSperre(async () => {
+      const name = basename(String(e.pfad || ""));
+      const nachRel = (ziel ? ziel + "/" : "") + name;
+      const plan = await plane({ art: "verschieben", typ, pfad: e.pfad, nachRel, basisHash: e.basisHash ?? null });
+      if (flag(e)) return vorschauVon(plan);
+      return fuehreAus(plan, e);
+    });
+  }
+
+  async function loeschen(eingabe) {
+    const e = gemeinsamEin(eingabe);
+    const typ = e.typ === "ordner" ? "ordner" : "datei";
+    return mitSperre(async () => {
+      const plan = await plane({ art: "loeschen", typ, pfad: e.pfad, basisHash: e.basisHash ?? null });
+      if (flag(e)) return vorschauVon(plan);
+      return fuehreAus(plan, e);
+    });
+  }
+
+  // ───────────── Rückgängig / Wiederherstellen ─────────────
+  // richtung "zurueck": Zustand von vor der Aktion herstellen · "vor": die Aktion noch einmal ausführen (nach einem Rückgängig)
+  function wechsle(m, richtung, { teilweise = false } = {}) {
+    const zurueck = richtung === "zurueck";
+    if (m.art === "loeschen") return wechsleLoeschen(m, zurueck);
+    const abb = abbilder(m.von, m.nach, m.typ);
+    const aktuell = (p) => (zurueck ? abb(p) : p);           // wo liegt die Datei (alte Koordinaten p) gerade?
+    const quelle = zurueck ? m.nach : m.von, ziel = zurueck ? m.von : m.nach;
+    const quelleAbs = absVon(quelle), zielAbs = absVon(ziel);
+    const gleich = m.von === m.nach; // nur Titel geändert, Datei blieb
+    if (!existsSync(quelleAbs) && !(() => { try { lstatSync(quelleAbs); return true; } catch { return false; } })()) throw new HttpFehler(409, `„${basename(quelle)}“ gibt es nicht mehr an dieser Stelle. Kortex nimmt nichts zurück.`, { art: "fehlt" });
+    let casePur = false;
+    if (!gleich && existsSync(zielAbs)) { if (gleicheDatei(quelleAbs, zielAbs)) casePur = true; else throw new HttpFehler(409, `Am Ursprungsort liegt inzwischen etwas anderes („${basename(ziel)}“). Kortex überschreibt nichts.`, { art: "belegt" }); }
+    // Dateien prüfen
+    const bereit = [], abweichend = [];
+    for (const d of m.dateien) {
+      const abs = absVon(aktuell(d.pfad));
+      const erwartet = zurueck ? d.hashNachher : d.hashVorher;
+      const jetztHash = leseHash(abs);
+      let bytes; try { bytes = readFileSync(join(vorgangDir(m.id), zurueck ? "vorher" : "nachher", String(d.n))); } catch { bytes = null; }
+      if (jetztHash !== erwartet || !bytes) abweichend.push(d); else bereit.push({ d, abs, bytes });
+    }
+    if (abweichend.length && !teilweise) {
+      throw new HttpFehler(409, `Seit der Aktion ${abweichend.length === 1 ? "wurde eine Notiz" : `wurden ${abweichend.length} Notizen`} geändert. Rückgängig würde diese Änderungen überschreiben.`,
+        { art: "geaendert", dateien: abweichend.map((d) => aktuell(d.pfad)).slice(0, MAX_LISTE) });
+    }
+    sichereKorb();
+    const geschrieben = [];
+    try {
+      for (const { d, abs, bytes } of bereit) {
+        if (leseHash(abs) !== (zurueck ? d.hashNachher : d.hashVorher)) throw new HttpFehler(409, `„${basename(abs)}“ wurde inzwischen geändert. Es wurde nichts verändert.`, { art: "geaendert", dateien: [aktuell(d.pfad)] });
+        const alt = readFileSync(abs);
+        atomarSchreiben(abs, bytes, d.modus);
+        geschrieben.push({ abs, alt, modus: d.modus, hash: zurueck ? d.hashVorher : d.hashNachher });
+      }
+      // Titel der Notiz selbst, wenn sie seit der Aktion weiterbearbeitet wurde (Dateiinhalt weicht ab, aber der Titel ist noch der neue)
+      if (abweichend.length && m.typ === "datei" && m.titelAlt && m.titelNeu) {
+        const selbst = abweichend.find((d) => d.pfad === m.von);
+        if (selbst) {
+          const abs = absVon(aktuell(selbst.pfad));
+          const text = readFileSync(abs, "utf8");
+          const gewollt = zurueck ? m.titelAlt : m.titelNeu, jetztTitel = zurueck ? m.titelNeu : m.titelAlt;
+          if (titelAus(m.von, text) === jetztTitel) { const r = setzeTitel(text, gewollt); if (r.geaendert) { const alt = Buffer.from(text, "utf8"); atomarSchreiben(abs, Buffer.from(r.text, "utf8"), selbst.modus); geschrieben.push({ abs, alt, modus: selbst.modus, hash: HASH(Buffer.from(r.text, "utf8")) }); } }
+        }
+      }
+      if (!gleich) verschiebeFs(quelleAbs, zielAbs, m.typ, casePur);
+    } catch (e) {
+      for (const g of geschrieben.reverse()) { try { atomarSchreiben(g.abs, g.alt, g.modus); } catch { /* bester Versuch */ } }
+      throw e;
+    }
+    return { ok: true, typ: m.typ, art: zurueck ? "zurueck" : "wieder", von: quelle, nach: ziel, pfad: ziel, uebersprungen: abweichend.map((d) => aktuell(d.pfad)), geaendert: [...new Set([quelle, ziel, ...m.dateien.map((d) => (zurueck ? d.pfad : abb(d.pfad)))])] };
+  }
+
+  function wechsleLoeschen(m, zurueck, { name: neuerName = null, ziel: neuerOrdner = null } = {}) {
+    const inhaltAbs = join(vorgangDir(m.id), "inhalt", m.inhalt.name);
+    if (zurueck) {
+      const ordner = neuerOrdner !== null ? neuerOrdner.replace(/^\/+|\/+$/g, "") : ordnerVonPfad(m.von);
+      const nachRel = (ordner ? ordner + "/" : "") + (neuerName ? pruefeName(neuerName) : basename(m.von));
+      const l = loeseBlatt(nachRel);
+      if (gibtEs(l.abs)) throw new HttpFehler(409, "An der alten Stelle liegt inzwischen etwas anderes. Kortex überschreibt nichts.", { art: "belegt" });
+      if (!existsSync(inhaltAbs)) throw new HttpFehler(404, "Der Inhalt liegt nicht mehr im Papierkorb.", { art: "keine-kopie" });
+      // Unverändert?
+      if (m.typ === "datei") { const e0 = m.inhalt.eintraege[0]; if (e0.hash && leseHash(inhaltAbs) !== e0.hash) throw new HttpFehler(409, "Die Kopie im Papierkorb ist nicht mehr dieselbe. Kortex stellt sie nicht wieder her.", { art: "kopie-veraendert" }); }
+      mkdirSync(dirname(l.abs), { recursive: true }); // loeseBlatt hat den Vorfahren geprüft: er liegt im Vault
+      verschiebeUeberall(inhaltAbs, l.abs);
+      if (m.typ === "ordner") { for (const e of m.inhalt.eintraege) { try { if (e.art === "ordner") chmodSync(join(l.abs, e.pfad), e.modus || 0o755); else if (e.art === "datei") chmodSync(join(l.abs, e.pfad), e.modus || 0o644); } catch { /* egal */ } } try { chmodSync(l.abs, m.inhalt.modus || 0o755); } catch { /* egal */ } }
+      else { try { chmodSync(l.abs, m.inhalt.modus || 0o644); } catch { /* egal */ } }
+      return { ok: true, typ: m.typ, art: "wiederhergestellt", von: null, nach: l.rel, pfad: l.rel, geaendert: [l.rel] };
+    }
+    // erneut löschen
+    const v = loeseBlatt(m.von);
+    let st; try { st = lstatSync(v.abs); } catch { throw new HttpFehler(409, "Das gibt es an dieser Stelle nicht (mehr).", { art: "fehlt" }); }
+    if (m.typ === "datei") { if (!st.isFile() || leseHash(v.abs) !== m.inhalt.eintraege[0].hash) throw new HttpFehler(409, "Die Notiz wurde inzwischen geändert. Kortex legt sie nicht noch einmal in den Papierkorb.", { art: "geaendert" }); }
+    else {
+      if (!st.isDirectory()) throw new HttpFehler(409, "Das ist kein Ordner mehr.", { art: "geaendert" });
+      // derselbe Inhalt wie beim Löschen? Sonst (zum Beispiel ein neuer Ordner gleichen Namens) bleibt er, wo er ist
+      if (!gleicheListen(ordnerListe(v.abs), m.inhalt.eintraege.map((x) => ({ pfad: x.pfad, art: x.art, groesse: x.groesse, hash: x.hash })))) throw new HttpFehler(409, "In diesem Ordner liegt inzwischen etwas anderes als beim Löschen. Kortex legt ihn nicht noch einmal in den Papierkorb.", { art: "geaendert" });
+    }
+    mkdirSync(join(vorgangDir(m.id), "inhalt"), { recursive: true, mode: 0o700 });
+    verschiebeUeberall(v.abs, inhaltAbs);
+    chmodRekursiv(inhaltAbs, 0o700, 0o600);
+    return { ok: true, typ: m.typ, art: "wieder", von: m.von, nach: null, pfad: m.von, geaendert: [m.von] };
+  }
+
+  const eintragLog = (m, text, pfade) => alsGelesen(melde(wurzel, { art: "rueckgaengig", wer, vaultName: name, text, pfade }, { support }));
+
+  // Für die Routen des Aktivitätsprotokolls (werkstatt/aktivitaet.mjs): Eintrag e mit rueckgaengig.art "vorgang"
+  function vorgangStand(id) {
+    const m = leseManifest(id);
+    if (!m) return null;
+    if (m.status === "endgueltig" || m.status === "laeuft") return null;
+    if (Date.now() - Date.parse(m.zeit) > PAPIERKORB_TAGE * TAG_MS) return null;
+    return m;
+  }
+  function vorgangZurueck(id, eingabe = {}) {
+    return mitSperre(async () => {
+      const m = vorgangStand(id);
+      if (!m) throw new HttpFehler(404, "Dafür gibt es kein Rückgängig mehr (es wird nach 30 Tagen gelöscht).", { art: "keine-kopie" });
+      if (m.status === "zurueck") throw new HttpFehler(409, "Das ist schon rückgängig gemacht.", { art: "schon-zurueck" });
+      const erg = wechsle(m, "zurueck", { teilweise: eingabe.teilweise === true });
+      m.status = "zurueck"; schreibeManifest(m);
+      eintragLog(m, m.art === "loeschen" ? "Rückgängig: Aus dem Papierkorb zurückgelegt." : `Rückgängig: ${m.art === "umbenennen" ? "Umbenennen" : "Verschieben"} zurückgenommen.`, [erg.nach || erg.pfad, erg.von].filter(Boolean)); // [jetziger Ort, voriger Ort]: offene Studios folgen
+      return { ...erg, ok: true, art: m.art === "loeschen" ? "wiederhergestellt" : "zurueck", vorgangArt: m.art };
+    });
+  }
+  function vorgangWieder(id, eingabe = {}) {
+    return mitSperre(async () => {
+      const m = vorgangStand(id);
+      if (!m) throw new HttpFehler(404, "Dafür gibt es kein Wiederherstellen mehr.", { art: "keine-kopie" });
+      if (m.status !== "zurueck") throw new HttpFehler(409, "Das wurde nicht rückgängig gemacht.", { art: "nicht-zurueck" });
+      const erg = wechsle(m, "vor", { teilweise: eingabe.teilweise === true });
+      m.status = "fertig"; if (m.art === "loeschen") m.zeit = jetzt().toISOString(); // die 30 Tage beginnen neu
+      schreibeManifest(m);
+      eintragLog(m, "Wiederhergestellt: Die Aktion gilt wieder.", [erg.nach || erg.pfad, erg.von].filter(Boolean));
+      return { ...erg, ok: true, art: "wieder", vorgangArt: m.art };
+    });
+  }
+  const vorgangMoeglich = (id) => { const m = vorgangStand(id); return m ? { moeglich: m.status === "fertig", zurueckgenommen: m.status === "zurueck", art: m.art } : null; };
+
+  // ───────────── Papierkorb ─────────────
+  function alleManifeste() {
+    let namen = [];
+    try { namen = readdirSync(vorgaenge); } catch { return []; }
+    return namen.map((n) => leseManifest(n)).filter(Boolean);
+  }
+  function papierkorbListe() {
+    return mitSperre(async () => {
+      aufraeumen();
+      const aus = alleManifeste().filter((m) => m.art === "loeschen" && (m.status === "fertig" || m.status === "teilweise") && m.inhalt).map((m) => {
+        const ablauf = Date.parse(m.zeit) + PAPIERKORB_TAGE * TAG_MS;
+        const dateien = m.inhalt.eintraege.filter((e) => e.art === "datei");
+        return { id: m.id, name: m.inhalt.name, titel: m.titel || ohneEndungName(m.inhalt.name), pfad: m.von, ordner: ordnerVonPfad(m.von), typ: m.typ, zeit: m.zeit, laeuftAb: new Date(ablauf).toISOString(),
+          tageUebrig: Math.max(0, Math.ceil((ablauf - Date.now()) / TAG_MS)), teilweise: m.status === "teilweise", anzahl: m.typ === "ordner" ? dateien.length : 1, groesse: dateien.reduce((s, e) => s + (e.groesse || 0), 0) };
+      });
+      aus.sort((a, b) => (a.zeit < b.zeit ? 1 : -1));
+      return { eintraege: aus, tage: PAPIERKORB_TAGE };
+    });
+  }
+  function papierkorbWiederherstellen(eingabe) {
+    const e = gemeinsamEin(eingabe);
+    return mitSperre(async () => {
+      const m = leseManifest(e.id);
+      if (!m || m.art !== "loeschen" || (m.status !== "fertig" && m.status !== "teilweise")) throw new HttpFehler(404, "Das liegt nicht (mehr) im Papierkorb.");
+      const erg = wechsleLoeschen(m, true, { name: typeof e.name === "string" && e.name ? e.name : null, ziel: typeof e.ziel === "string" ? e.ziel : null });
+      m.status = "wiederhergestellt"; schreibeManifest(m); // nicht „zurueck“: ein Wiederholen des Löschens aus dem Protokoll wäre jetzt falsch (der Platz kann neu belegt sein)
+      // der Eintrag im Protokoll gilt als zurückgenommen
+      try { if (m.eintrag) aendereZustand(support, kennung, (s) => { s.zurueck[m.eintrag] = new Date().toISOString(); }); } catch { /* egal */ }
+      eintragLog(m, "Aus dem Papierkorb wiederhergestellt.", [erg.pfad]);
+      return erg;
+    });
+  }
+  function papierkorbEndgueltig(eingabe) {
+    const e = gemeinsamEin(eingabe);
+    const ids = e.alle === true ? null : Array.isArray(e.ids) ? e.ids : typeof e.id === "string" ? [e.id] : null;
+    if (!ids && e.alle !== true) throw new HttpFehler(400, "Bitte angeben, was endgültig gelöscht werden soll.");
+    return mitSperre(async () => {
+      let n = 0;
+      for (const m of alleManifeste()) {
+        if (m.art !== "loeschen" || (m.status !== "fertig" && m.status !== "teilweise")) continue;
+        if (ids && !ids.includes(m.id)) continue;
+        try { rmSync(join(vorgangDir(m.id), "inhalt"), { recursive: true, force: true }); } catch { continue; }
+        m.status = "endgueltig"; schreibeManifest(m); n++;
+        entferneKopien(m);
+      }
+      if (ids && n === 0) throw new HttpFehler(404, "Das liegt nicht (mehr) im Papierkorb.");
+      return { ok: true, geloescht: n };
+    });
+  }
+  // „Endgültig“ heißt auch: Kopien dieser Dateien in den Journalen anderer Vorgänge (vorher/nachher) verschwinden
+  function entferneKopien(geloescht) {
+    const drin = (p) => p === geloescht.von || p.startsWith(geloescht.von + "/");
+    for (const m of alleManifeste()) {
+      if (m.id === geloescht.id || !Array.isArray(m.dateien)) continue;
+      const weg = m.dateien.filter((d) => drin(d.pfad));
+      if (!weg.length) continue;
+      for (const d of weg) for (const art of ["vorher", "nachher"]) { try { rmSync(join(vorgangDir(m.id), art, String(d.n)), { force: true }); } catch { /* egal */ } }
+      m.dateien = m.dateien.filter((d) => !drin(d.pfad));
+      try { schreibeManifest(m); } catch { /* egal */ }
+    }
+  }
+  // Nach 30 Tagen weg — aber nie bei einem Uhrensprung: steht ein Eintrag in der Zukunft, geht die Uhr falsch, und es wird nichts gelöscht; je Lauf höchstens 25.
+  function aufraeumen() {
+    const alle = alleManifeste();
+    const jetztMs = Date.now();
+    if (alle.some((m) => Date.parse(m.zeit) > jetztMs + 10 * 60_000)) return;
+    let n = 0;
+    for (const m of alle) {
+      if (n >= 25) break;
+      if (jetztMs - Date.parse(m.zeit) > PAPIERKORB_TAGE * TAG_MS && m.status !== "laeuft" && m.status !== "unklar") { try { rmSync(vorgangDir(m.id), { recursive: true, force: true }); n++; } catch { /* egal */ } }
+    }
+  }
+
+  // ───────────── Erholung nach einem Absturz ─────────────
+  // Läuft nur unter der Sperre: ein Vorgang mit Status „laeuft“ gehört dann keinem lebenden Lauf mehr. Zurückgefahren wird rückwärts: erst der Umzug, dann die Notizen.
+  // Ist die Lage nicht eindeutig (Quelle und Ziel beide da oder beide weg), bleibt das Journal liegen (Status „unklar“) — nichts wird gelöscht.
+  const nameDa = (rel) => { try { const a = absVon(rel); return readdirSync(dirname(a)).some((n) => n.normalize("NFC") === basename(a).normalize("NFC")); } catch { return false; } };
+  function erhole(m) {
+    const dir = vorgangDir(m.id);
+    const unklar = () => { m.status = "unklar"; try { schreibeManifest(m); } catch { /* egal */ } };
+    try {
+      if (m.art === "loeschen") {
+        const ziel = join(dir, "inhalt", m.inhalt ? m.inhalt.name : "-");
+        const v = loeseBlatt(m.von);
+        const korbDa = existsSync(ziel), quelleDa = gibtEs(v.abs);
+        if (!korbDa) { rmSync(dir, { recursive: true, force: true }); return; }                 // nichts bewegt
+        if (!quelleDa) { verschiebeUeberall(ziel, v.abs); rmSync(dir, { recursive: true, force: true }); return; } // zurücklegen
+        unklar(); return;
+      }
+      if (m.von !== m.nach) {
+        const vonDa = nameDa(m.von), nachDa = nameDa(m.nach);
+        if (nachDa && !vonDa) verschiebeFs(absVon(m.nach), absVon(m.von), m.typ, !!m.casePur);
+        else if (!(vonDa && !nachDa)) { unklar(); return; }
+      }
+      for (const d of m.dateien || []) {
+        try { const abs = absVon(d.pfad); if (leseHash(abs) === d.hashNachher) atomarSchreiben(abs, readFileSync(join(dir, "vorher", String(d.n))), d.modus); } catch { /* bester Versuch */ }
+      }
+      rmSync(dir, { recursive: true, force: true });
+    } catch { unklar(); }
+  }
+  function erholeAngefangene() {
+    let id = null;
+    try { id = JSON.parse(readFileSync(markeDatei, "utf8")).id; } catch { /* keine Marke */ }
+    if (id) { const m = leseManifest(id); if (m && m.status === "laeuft") erhole(m); loescheMarke(); }
+    if (erholt) return;
+    erholt = true;
+    let namen = []; try { namen = readdirSync(vorgaenge); } catch { namen = []; }
+    for (const n of namen) {
+      const m = leseManifest(n);
+      if (!m) { // unbekanntes oder kaputtes Journal: nie löschen, in die Quarantäne
+        try { const q = join(korb, "quarantaene"); mkdirSync(q, { recursive: true, mode: 0o700 }); renameSync(vorgangDir(n), join(q, `${n}-${Date.now()}`)); } catch { /* bleibt liegen */ }
+        continue;
+      }
+      if (m.status === "laeuft") erhole(m);
+    }
+  }
+
+  return { sperreAktiv, umbenennen, verschieben, loeschen, papierkorbListe, papierkorbWiederherstellen, papierkorbEndgueltig, vorgangZurueck, vorgangWieder, vorgangMoeglich, kennung, korb };
+}

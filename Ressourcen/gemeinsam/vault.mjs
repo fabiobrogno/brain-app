@@ -20,6 +20,7 @@ import { erzeugeNotizIndex, titelAus } from "./notizen.mjs";
 import { wertAus } from "./nutzung.mjs";
 import { erzeugePosteingang } from "./posteingang.mjs";
 import { erzeugeAufgaben } from "./aufgaben-vault.mjs";
+import { erzeugeDateiaktionen } from "./dateiaktionen.mjs";
 import { SUCHE_STANDARD, SUCHE_MAX, sucheWoerter, suchAuszug, sucheText } from "./ki-antworten.mjs";
 import { erzeugeSuchindex } from "./suchindex.mjs";
 
@@ -498,6 +499,18 @@ export function oeffneVault(vaultPfad, opts = {}) {
   // ---------- Aufgaben (kern/aufgaben.mjs): je Aufgabe eine Markdown-Datei; geschrieben wird nur in einen vertrauten Vault ----------
   const aufgabenFn = erzeugeAufgaben({ wurzel, kern, vertraut: () => { try { return stand().erlaubt === true; } catch { return false; } }, jetzt });
 
+  // ---------- Umbenennen, Verschieben, Papierkorb (gemeinsam/dateiaktionen.mjs): mit Link-Pflege, Journal und Rückgängig ----------
+  const dateiAktionen = erzeugeDateiaktionen({ wurzel, support: opts.support || supportOrdner(), name: basename(wurzel), istGeneriert, ueberspringeOrdner: istUnterVaultOrdner, aufgabenOrdner: () => aufgabenFn.ordnerName(), slug, jetzt, haken: opts.dateiHaken || {} });
+  gitFn.setzeFremdeSperre(wurzel, () => dateiAktionen.sperreAktiv());
+  // Läuft gerade ein Abgleich oder eine Umstellung, ändert Kortex nichts am Arbeitsbaum (wie beim Rückgängig der Ablagen)
+  const mitRuhe = (fn) => async (a) => {
+    umstellungSperre();
+    // Ein Abgleich dauert meist Sekunden (und läuft nach dem Öffnen oder beim Zurückkehren ins Fenster von selbst): bis zu 8 s warten statt sofort abzulehnen
+    for (let i = 0; i < 80 && gitFn.gitBeschaeftigt(wurzel); i++) await new Promise((ok) => setTimeout(ok, 100));
+    if (gitFn.gitBeschaeftigt(wurzel)) throw new HttpFehler(409, "Kortex gleicht gerade ab. Versuche es in einem Moment noch einmal — es wurde nichts verändert.", { art: "beschaeftigt" });
+    return fn(a);
+  };
+
   // Dieselbe Suche für MCP brain_suchen und die Probe-Frage: strukturiert (treffer) und als Text, wie ihn die KI sieht.
   // Rangfolge wie die CLI-Suche (`brain search`, Profil minimal): BM25 aus dem gebündelten Kern (minisuche.mjs), ODER über die Wörter der
   // Frage statt „jedes Wort muss vorkommen“. Fehlt der Kern (oder wirft er), gilt die UND-Suche der Oberfläche (suche()).
@@ -538,6 +551,9 @@ export function oeffneVault(vaultPfad, opts = {}) {
 
   return {
     wurzel, name: basename(wurzel), heute: () => opts.heute || heuteIso(jetzt()), rueckfragen, kitVersion, kitVorhanden, kit, vertrauen, vertrauenStand: stand, baum, lies, imUnterVault: (rel) => { try { return imUnterVault(loese(wurzel, rel).abs); } catch { return false; } }, schreibe, neu, wikiAnlegen, wikiLoese: (ziel, von) => notizIndex.loeseWiki(ziel, ordnerVonPfad(von || "")), merken, suche, sucheIndex, sucheVorwaermen, suchindexBeende, suchindexAendere, suchindexPruefeNeu, suchindexStand: () => (suchindex ? suchindex.stand() : null), suchindexRuhe: () => (suchindex ? suchindex.ruhe() : Promise.resolve()), suchenFuerKi, pruefung, gesundheit, nutzung,
+    umbenennen: mitRuhe(dateiAktionen.umbenennen), verschieben: mitRuhe(dateiAktionen.verschieben), loeschen: mitRuhe(dateiAktionen.loeschen),
+    papierkorb: dateiAktionen.papierkorbListe, papierkorbWiederherstellen: mitRuhe(dateiAktionen.papierkorbWiederherstellen), papierkorbEndgueltig: dateiAktionen.papierkorbEndgueltig,
+    vorgangZurueck: mitRuhe((a) => dateiAktionen.vorgangZurueck(a.id, a)), vorgangWieder: mitRuhe((a) => dateiAktionen.vorgangWieder(a.id, a)), vorgangMoeglich: dateiAktionen.vorgangMoeglich,
     posteingangVerwerfen: posteingang.verwerfen, posteingangSpaeter: posteingang.spaeter, posteingangUebernehmen: posteingang.uebernehmen,
     aufgaben: aufgabenFn.aufgaben, aufgabeAnlegen: aufgabenFn.anlegen, aufgabeAendern: aufgabenFn.aendern, aufgabenArchivieren: aufgabenFn.archivieren, aufgabenFuerKi: aufgabenFn.fuerKi, aufgabenOrdnerName: aufgabenFn.ordnerName, aufgabePfad: aufgabenFn.findePfad,
     notizen: async () => ({ ...(await notizIndex.notizen()), aufgabenOrdner: await aufgabenFn.ordnerName(), inboxOrdner: inboxOrdnerVon(wurzel), vorlagenOrdner: vorlagenOrdnerVon(wurzel), ...hinweisFeld() }), notizKontext: notizIndex.kontext, typen: notizIndex.typen, ansichten: notizIndex.ansichten,

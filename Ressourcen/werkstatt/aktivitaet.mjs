@@ -58,6 +58,15 @@ export function erzeugeAktivitaet({ support, konten = null, vaults = () => [], o
         const { rueckgaengig, dk, ...rest } = e;
         const k = kontoVon(e.konto);
         const zurueck = zustand.zurueck[e.id] || null;
+        // Umbenennen, Verschieben, Papierkorb (gemeinsam/dateiaktionen.mjs): das Journal sagt, ob Rückgängig noch geht
+        const vorgang = rueckgaengig && rueckgaengig.art === "vorgang" && z.kennung === offenKennung && v ? v.vorgangMoeglich(rueckgaengig.id) : null;
+        if (rueckgaengig && rueckgaengig.art === "vorgang") {
+          alle.push({ ...rest, vaultName: z.name || e.vaultName || "", ...(wahl === "alle" ? { vaultPfad: z.pfad } : {}), gelesen, vorgang: rueckgaengig.id,
+            rueckgaengigMoeglich: !!vorgang && vorgang.moeglich, zurueckgenommen: vorgang && vorgang.zurueckgenommen ? (zurueck || new Date(e.zeit).toISOString()) : null,
+            wiederherstellenMoeglich: !!vorgang && vorgang.zurueckgenommen,
+            kontoName: kontoVon(e.konto) && typeof kontoVon(e.konto).name === "string" ? kontoVon(e.konto).name : null, programmName: programmAnzeige(e.programm || (kontoVon(e.konto) && kontoVon(e.konto).programm) || "") });
+          continue;
+        }
         alle.push({ ...rest, vaultName: z.name || e.vaultName || "", ...(wahl === "alle" ? { vaultPfad: z.pfad } : {}), gelesen,
           rueckgaengigMoeglich: !!rueckgaengig && (e.art === "ablage-aufgabe" || e.art === "ablage-notiz") && !zurueck && z.kennung === offenKennung, zurueckgenommen: zurueck, wiederherstellenMoeglich: !!rueckgaengig && !!zurueck && z.kennung === offenKennung && existsSync(korbDatei(z.kennung, e, rueckgaengig.pfad)),
           kontoName: k && typeof k.name === "string" ? k.name : null, programmName: programmAnzeige(e.programm || (k && k.programm) || "") });
@@ -148,6 +157,12 @@ export function erzeugeAktivitaet({ support, konten = null, vaults = () => [], o
       const e = finde(kennung, eingabe.id);
       if (!e) throw new HttpFehler(404, "Dieses Ereignis gibt es nicht (mehr).");
       if (!e.rueckgaengig) throw new HttpFehler(400, "Das lässt sich nicht rückgängig machen.");
+      if (e.rueckgaengig.art === "vorgang") { // Umbenennen, Verschieben, Papierkorb: das Journal im Support-Ordner kennt den Weg zurück
+        const erg = await vault.vorgangZurueck({ id: e.rueckgaengig.id, teilweise: eingabe.teilweise === true });
+        aendereZustand(support, kennung, (s) => { s.zurueck[e.id] = new Date().toISOString(); });
+        ereignisse?.melde({ typ: "aktivitaet", art: "zustand" });
+        return { ...erg, ok: true };
+      }
       if (leseZustand(support, kennung).zurueck[e.id]) throw new HttpFehler(409, "Das ist schon rückgängig gemacht.", { art: "schon-zurueck" });
       vertrauteVault(vault);
       const { abs, rel } = await pruefeZiel(vault, e, "entfernt");
@@ -207,6 +222,12 @@ export function erzeugeAktivitaet({ support, konten = null, vaults = () => [], o
       const e = finde(kennung, eingabe.id);
       if (!e) throw new HttpFehler(404, "Dieses Ereignis gibt es nicht (mehr).");
       if (!e.rueckgaengig) throw new HttpFehler(400, "Das lässt sich nicht wiederherstellen.");
+      if (e.rueckgaengig.art === "vorgang") {
+        const erg = await vault.vorgangWieder({ id: e.rueckgaengig.id, teilweise: eingabe.teilweise === true });
+        aendereZustand(support, kennung, (s) => { delete s.zurueck[e.id]; s.wieder[e.id] = new Date().toISOString(); });
+        ereignisse?.melde({ typ: "aktivitaet", art: "zustand" });
+        return { ...erg, ok: true };
+      }
       if (!leseZustand(support, kennung).zurueck[e.id]) throw new HttpFehler(409, "Das wurde nicht rückgängig gemacht.", { art: "nicht-zurueck" });
       vertrauteVault(vault);
       const { abs, rel } = await pruefeZiel(vault, e, "wiederherstellen");
