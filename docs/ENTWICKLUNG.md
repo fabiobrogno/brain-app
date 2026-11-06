@@ -159,6 +159,20 @@ Das Studio ist das einzige Hauptfenster, vom ersten Start an (Plan: `docs/plaene
 - Tests: `Tests/Oberflaeche/ein-fenster.spec.mjs` und `einrichtung.spec.mjs` (Attrappe der App: `mocks-einrichtung.mjs`, `oeffneEinrichtungImStudio`), `Tests/BrainCoreTests/EinrichtungsFensterTests.swift` (Startentscheidung, Rechte, Befehl),
   `scripts/rauchtest.sh` Phase E und `scripts/teste-vorschau.sh --app` (genau ein `fenster-auf studio` im Log, nie `fenster-auf einrichtung`).
 
+## Anmelden im Fenster (Paket E3)
+Claude Code und Codex melden sich im Studio an, ohne Terminalfenster. Die Logik liegt in Node (nicht in Swift), damit eine spätere Electron-Hülle sie unverändert nutzt; die Hülle öffnet nur die Adresse (Aktion `extern`).
+- `gemeinsam/anmeldung.mjs`: Kindprozess mit **explizit gebauter Umgebung** (`anmeldeUmgebung`: nur `CLAUDE_CONFIG_DIR` bzw. `CODEX_HOME` des Kontos, alle `XDG_*`, `GIT_*`, `CLAUDE*`, `ANTHROPIC_*`, `CODEX_*`, `OPENAI_*`, `CURSOR_*`, `GEMINI_*`, `NODE_*`, `BRAIN_*`, `KORTEX_*` entfernt; Standardkonto = keine Variable),
+  eigene Prozessgruppe (`beendeBaum`, gleicher Name wie in `gemeinsam/plattform.mjs` aus W0 — nach dem Merge von W0 von dort importieren), Fristen (Claude 10 min gesamt, 30 s bis zur Adresse; Codex 3 min bis Adresse+Code, dann 15 min Gerätecode).
+  Claude: `claude auth login`, `BROWSER` = Kortex-Skript (Temp-Ordner 0700), das nur die Adresse in eine Datei schreibt; stdin bleibt offen für einen eingefügten Code. Codex: `codex login --device-auth`, Adresse und Code nach Orcas Muster.
+  Fertig = Exit 0 **und** `claude auth status` / `codex login status` mit Exit 0 (nur der Exit-Code; die Ausgabe der Programme wird nie gelesen). **Kortex liest nur Adresse (https, feste Hosts) und Gerätecode; nichts anderes wird gespeichert, gesendet oder protokolliert.**
+- `werkstatt/anmelden.mjs` + Routen: `POST /api/ki/anmeldelauf {programm, konto|neu}` → `{id, phase, url, code, codeMoeglich, verbleibendMs, grund, rueckfall}`, `GET /api/ki/anmeldelauf?id=` (Abfrage), `POST …/code {id, code}`, `POST …/abbrechen {id}`.
+  Phasen `start | wait | ok | timeout | error | abgebrochen`. Nur claude/codex, nur bekannte Konten oder ein neuer Name; eine Anmeldung je Konto (409 `laeuft-schon`), höchstens 4 gleichzeitig, 8 Starts je Minute (429). In der App laufen die Routen nur über die Brücke des Studios (kein Netzwerk-Socket).
+- Neues Konto: Ordner `ki-konten-ordner/.neu-<kennung>` (unsichtbar für die Erkennung), erst nach bestätigter Anmeldung wird er per `konten.legeKontoAn(…, { vorbereitet })` zum Konto; Abbruch, Frist, Fehler und Ende der Werkstatt räumen ihn weg, verwaiste (> 2 h) räumt der nächste Start. (Falls E4 denselben Mechanismus einführt: eine Stelle behalten.)
+- Studio: `studio/anmeldung.js` — `starteAnmeldung(programm, konto | { neu: Name }, { host, ordner, beiFertig, beiTerminal, terminal })` → `{ knoten, ergebnis, abbrechen, zerstoere }`. „Im Browser anmelden“, „Link kopieren“, bei Claude „Code einfügen“, bei Codex der Gerätecode, leiser Countdown;
+  der leise Link „Im Terminal anmelden“ (bisheriger Weg) ist immer da und wird bei Fehler/keiner Adresse hervorgehoben. `EinrichtungsOverlay.externErlaubt` lässt bei offener Einrichtung neben GitHub die Anmelde-Domänen zu (`claude.ai`, `claude.com`, `anthropic.com`, `openai.com`, `chatgpt.com`).
+- Tests: `Tests/Node/anmelden.test.mjs` (Platzhalter `claude`/`codex` in `anmelden-hilfe.mjs`, brechen außerhalb von Temp ab; nie ein echtes Programm), `Tests/Oberflaeche/anmeldung.spec.mjs` (hell/dunkel).
+  Nicht mit dem echten Programm geprüft (bewusst keine echten Logins): ob `claude auth login` die Adresse wirklich über `BROWSER` meldet und wie die Ausgabe heutiger Versionen aussieht — bei Abweichung greift der Rückfall (Terminal).
+
 ## Konflikt beim Abgleich (zwei Geräte)
 Datenfluss: Die Hintergrund-Sicherung des Kerns (`kern/backup.mjs#abgleichen`) holt vor dem Senden, nimmt bei einem Konflikt ihre Zusammenführung zurück und vermerkt ihn im
 Support-Ordner (`<Support>/backup/<Kennung>.json` → `abgleich` mit `stand: "konflikt"` und den betroffenen `dateien`). Das Studio zeigt daraus Banner, Mitteilung und

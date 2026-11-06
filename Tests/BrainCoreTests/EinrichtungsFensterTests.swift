@@ -246,6 +246,13 @@ import CoreGraphics
     #expect(!EinrichtungsOverlay.externErlaubt(URL(string: "https://github.com.evil.example/login/device")!))
     #expect(!EinrichtungsOverlay.externErlaubt(URL(string: "https://evil.example/github.com")!))
     #expect(!EinrichtungsOverlay.externErlaubt(URL(string: "file:///etc/passwd")!))
+    // Anmeldeseiten der KI-Programme (E3): nur https, feste Domänen samt Unterdomänen, keine Zugangsdaten/Ports, keine Doppelgänger
+    for gut in ["https://claude.ai/oauth/authorize?code=true", "https://claude.com/cai/oauth/authorize", "https://console.anthropic.com/x", "https://auth.openai.com/codex/device", "https://chatgpt.com/auth"] {
+        #expect(EinrichtungsOverlay.externErlaubt(URL(string: gut)!), "\(gut)")
+    }
+    for schlecht in ["http://claude.ai/x", "https://claude.ai.evil.example/x", "https://evilclaude.ai/x", "https://evil.example/claude.ai", "https://user:pw@claude.ai/x", "https://claude.ai:8443/x", "https://openai.com.evil.example/x"] {
+        #expect(!EinrichtungsOverlay.externErlaubt(URL(string: schlecht)!), "\(schlecht)")
+    }
 }
 
 // MARK: Startentscheidung: erster Start = Studio MIT Overlay, nie ein Assistentenfenster

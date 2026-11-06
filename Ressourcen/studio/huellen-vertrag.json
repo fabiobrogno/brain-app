@@ -3,7 +3,7 @@
   "aktionen": [
     { "name": "ansicht", "wert": null, "antwort": "{ok:true} | {ok:false, grund:\"kein-kit\"|\"kern-nicht-bereit\"}", "zweck": "Übersicht (Kit-Ansicht) öffnen" },
     { "name": "ordner-zeigen", "wert": "relativer Pfad im Vault", "antwort": "{ok:true}", "zweck": "Datei im Dateimanager zeigen" },
-    { "name": "extern", "wert": "https-Adresse", "antwort": "{ok:true} | {ok:false, grund:\"adresse-nicht-erlaubt\"}", "zweck": "Im Standardbrowser öffnen; bei offener Einrichtung nur https://github.com", "einrichtungsRegel": "nur github.com" },
+    { "name": "extern", "wert": "https-Adresse", "antwort": "{ok:true} | {ok:false, grund:\"adresse-nicht-erlaubt\"}", "zweck": "Im Standardbrowser öffnen; bei offener Einrichtung nur https-Adressen von GitHub (Gerätecode) und der Anmeldung bei Claude/Codex (claude.ai, claude.com, anthropic.com, openai.com, chatgpt.com, samt Unterdomänen); das Anmelde-Panel (anmeldung.js) nutzt diese Aktion", "einrichtungsRegel": "GitHub und Anmelde-Domänen (siehe zweck)" },
     { "name": "ordner-waehlen", "wert": "{titel?, vorschlag?}", "antwort": "{pfad, breit?, notizen?, ordner?, mehr?} | null (Abbruch)", "zweck": "Ordnerwahl des Systems, als Sheet am Studiofenster" },
     { "name": "vault-gewechselt", "wert": null, "antwort": "{ok:true}", "zweck": "Die Werkstatt hat den aktiven Vault geändert: Hülle liest ihn neu (Status, Menü); das Studio lädt ihn selbst in der Seite" },
     { "name": "vertrauen-geaendert", "wert": null, "antwort": "{ok:true}", "zweck": "Workspace-Vertrauen geändert: Status neu lesen" },
