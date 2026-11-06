@@ -1,5 +1,7 @@
 // Hilfen für die Node-Tests: Wegwerf-Vaults und Git-Repos in os.tmpdir().
-import { mkdtempSync, mkdirSync, writeFileSync, realpathSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, realpathSync as realpathJs, rmSync } from "node:fs";
+// Windows: Temp-Ordner liegen in Kurzform (RUNNER~1); git und andere Programme melden die lange. Darum dort die langen Namen auflösen (macOS/Linux unverändert).
+const realpathSync = process.platform === "win32" ? realpathJs.native : realpathJs;
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
