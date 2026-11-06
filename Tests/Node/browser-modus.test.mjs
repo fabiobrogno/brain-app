@@ -316,6 +316,11 @@ test("Browser öffnen: Befehl je System, nur eigene Adressen, KORTEX_BROWSER, R�
     assert.deepEqual(browserBefehle(boese, { plattform: "linux", env: {} }), [], boese);
     assert.equal(eigeneAdresse(boese), false);
   }
+  // Startdatei statt Adresse mit Karte: nur absolute Pfade der Form kortex-start-<kennung>.html
+  const datei = POSIX ? "/tmp/support/kortex-start-AbC_1-2.html" : "C:\\support\\kortex-start-AbC_1-2.html";
+  assert.deepEqual(browserBefehle(datei, { plattform: "linux", env: {} })[0], ["xdg-open", [datei]]);
+  for (const boese of ["/tmp/x/passwd", "kortex-start-a.html", "/tmp/kortex-start-a.html.sh", "/tmp/kortex-start-a b.html"]) assert.deepEqual(browserBefehle(boese, { plattform: "linux", env: {} }), [], boese);
+  assert.equal(browserBefehle(url, { plattform: "win32", env: { KORTEX_BROWSER: "C:\\x\\b.cmd" } })[0][0], "rundll32", ".cmd wird nicht als Browser benutzt");
   const aufrufe = [];
   const falsch = (n) => ({ on(ev, f) { if (ev === "error" && n === "weg") queueMicrotask(() => f(Object.assign(new Error("x"), { code: "ENOENT" }))); if (ev === "exit" && n === "ok") queueMicrotask(() => f(0)); }, unref() {} });
   const starteAttrappe = (prog, args, opt) => { aufrufe.push([prog, args, opt.detached, opt.stdio]); return falsch(prog === "xdg-open" ? "weg" : "ok"); };
@@ -343,4 +348,20 @@ test("die Browser-Hülle behandelt jede Aktion des Hüllen-Vertrags, und nur die
 
 test("die Browser-Hülle liegt nicht in der App-Seite: index.html lädt sie nie selbst", () => {
   assert.ok(!readFileSync(join(WURZEL, "studio", "index.html"), "utf8").includes("huelle-browser"), "nur der Browser-Dienst fügt sie ein");
+});
+
+test("Browser öffnen beim Start: die Befehlszeile des Browsers enthält nie die Karte, nur den Pfad der Startdatei (0600), die weiterleitet", { skip: !POSIX }, async () => {
+  const { home, support } = neueUmgebung();
+  const spur = join(home, "argv.json");
+  const opener = join(home, "opener.js");
+  writeFileSync(opener, `#!${process.execPath}\nconst fs=require("fs");fs.writeFileSync(${JSON.stringify(spur)}, JSON.stringify({argv:process.argv.slice(2), inhalt: fs.readFileSync(process.argv[2],"utf8"), modus: fs.statSync(process.argv[2]).mode & 0o777}));\n`, { mode: 0o755 });
+  const d = await dienst({ home, support, oeffnen: true, extra: { KORTEX_BROWSER: opener } });
+  for (let i = 0; i < 100 && !existsSync(spur); i++) await new Promise((ok) => setTimeout(ok, 50));
+  const a = JSON.parse(readFileSync(spur, "utf8"));
+  assert.equal(a.argv.length, 1);
+  assert.match(a.argv[0], /kortex-start-[\w-]+\.html$/);
+  assert.ok(!a.argv[0].includes("?t="));
+  assert.match(a.inhalt, new RegExp(`url=http://127\\.0\\.0\\.1:${d.port}/\\?t=`));
+  assert.equal(a.modus, 0o600);
+  assert.ok(!d.ausgabe().includes("?t="));
 });

@@ -1,7 +1,7 @@
 // werkstatt/browser-sperre.mjs — eine Instanz von „Kortex im Browser“ je Support-Ordner (Paket W1). Die Sperrdatei `browser-dienst.json` liegt im Support-Ordner (plattform.mjs):
 // { pid, start (Startzeit des Prozesses gegen PID-Wiederverwendung), port, geheimnis }. Nur für den Benutzer lesbar (0600; unter Windows gilt das Benutzerprofil).
 // Anlegen mit „wx“ (nur wenn es sie nicht gibt); eine verwaiste Sperre (Prozess weg oder andere Startzeit) wird übernommen.
-import { readFileSync, writeFileSync, renameSync, unlinkSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, renameSync, unlinkSync, mkdirSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { prozessStart } from "../gemeinsam/plattform.mjs";
 
@@ -25,12 +25,14 @@ export function beanspruche(support, { pid = process.pid, startVon = prozessStar
     catch (e) { if (e.code !== "EEXIST") throw e; }
     const andere = leseSperre(support);
     if (andere && andere.pid !== pid && lebt(andere, { startVon })) return { ok: false, andere: { ...andere, lebt: true } };
+    // leer/unlesbar, aber ganz frisch: die andere Instanz schreibt gerade (zwischen „wx“ und Inhalt) — nicht übernehmen
+    if (!andere) { let alter = Infinity; try { alter = Date.now() - statSync(sperrDatei(support)).mtimeMs; } catch { /* weg */ } if (alter < 5000) return { ok: false, andere: { pid: 0, port: 0, lebt: true } }; }
     if (andere && andere.pid === pid) return { ok: true }; // eigene (z. B. nach Neustart im selben Prozess)
     // verwaist oder unlesbar: nur entfernen, wenn sie noch dieselbe ist (kleines Zeitfenster bleibt, Folge wäre ein zweiter Versuch)
     const jetzt = leseSperre(support);
     if (JSON.stringify(jetzt) === JSON.stringify(andere)) { try { unlinkSync(sperrDatei(support)); } catch { /* weg */ } }
   }
-  return { ok: false, andere: leseSperre(support) };
+  const rest = leseSperre(support); return { ok: false, andere: rest ? { ...rest, lebt: lebt(rest, { startVon }) } : null };
 }
 // Port und Geheimnis eintragen (atomar: schreiben, dann umbenennen).
 export function veroeffentliche(support, o) {

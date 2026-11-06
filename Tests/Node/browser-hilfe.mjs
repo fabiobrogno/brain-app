@@ -24,9 +24,9 @@ export function neueUmgebung() {
 }
 
 // Startet start.mjs → { adresse, port, ausgabe(), beendet (Promise → Exitcode), stopp(), kind }
-export async function starte({ home, support, args = [], extra = {}, fristMs = 20000 } = {}) {
+export async function starte({ home, support, args = [], extra = {}, fristMs = 20000, oeffnen = false } = {}) {
   if (!home) ({ home, support } = neueUmgebung());
-  const kind = spawn(process.execPath, [START, "--nicht-oeffnen", ...args], { stdio: ["ignore", "pipe", "pipe"], env: sauberUmgebung({ home, support, extra }), windowsHide: true });
+  const kind = spawn(process.execPath, [START, ...(oeffnen ? [] : ["--nicht-oeffnen"]), ...args], { stdio: ["ignore", "pipe", "pipe"], env: sauberUmgebung({ home, support, extra }), windowsHide: true });
   let puffer = "";
   const beendet = new Promise((ok) => kind.on("exit", (c) => ok(c)));
   kind.stdout.on("data", (d) => { puffer += d; });

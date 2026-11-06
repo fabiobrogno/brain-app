@@ -88,10 +88,12 @@ export function credentialHelper({ plattform = process.platform, vorhanden = exi
 // Nur Adressen der eigenen Werkstatt (http://127.0.0.1:<port>/…) — nie etwas anderes, nie über eine Shell. macOS `open` · Windows `rundll32 url.dll,FileProtocolHandler`
 // (kein `cmd /c start`: dort bräche ein `&` in der Adresse die Zeile) · Linux `xdg-open`, sonst `gio open`. KORTEX_BROWSER=<Programm> wählt einen bestimmten Browser (bekommt die Adresse als einziges Argument).
 export const eigeneAdresse = (url) => /^http:\/\/(127\.0\.0\.1|localhost):\d{1,5}\/[\w\-./?=&%~]*$/.test(String(url));
+// Oder die Startdatei `kortex-start-<kennung>.html` (absoluter Pfad): die Einlass-Karte steht dann nicht in der Befehlszeile (auf Linux für jeden Benutzer lesbar), sondern nur in dieser 0600-Datei.
+export const istStartDatei = (p) => /^(\/|[A-Za-z]:[\\/])/.test(String(p)) && /(^|[\\/])kortex-start-[\w-]+\.html$/.test(String(p)) && !/[\0\r\n]/.test(String(p));
 export function browserBefehle(url, { plattform = process.platform, env = process.env } = {}) {
-  if (!eigeneAdresse(url)) return [];
+  if (!eigeneAdresse(url) && !istStartDatei(url)) return [];
   const eigener = env.KORTEX_BROWSER;
-  const liste = eigener ? [[eigener, [url]]] : [];
+  const liste = eigener && !/\.(cmd|bat)$/i.test(eigener) ? [[eigener, [url]]] : []; // .cmd/.bat startet Node ohne Shell nicht (EINVAL)
   if (istMac(plattform)) liste.push(["open", [url]]);
   else if (istWindows(plattform)) liste.push(["rundll32", ["url.dll,FileProtocolHandler", url]]);
   else liste.push(["xdg-open", [url]], ["gio", ["open", url]]);

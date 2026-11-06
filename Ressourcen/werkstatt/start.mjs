@@ -8,7 +8,9 @@ import { supportOrdner, oeffneImBrowser } from "../gemeinsam/plattform.mjs";
 import { bereinigePfad, vorschauFehler } from "../gemeinsam/basis.mjs";
 import { HttpFehler } from "../gemeinsam/vault.mjs";
 import { beanspruche, leseSperre, lebt, sperrDatei } from "./browser-sperre.mjs";
-import { unlinkSync } from "node:fs";
+import { unlinkSync, writeFileSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { randomBytes } from "node:crypto";
 
 const HILFE = `Kortex im Browser (Vorschau)
   kortex [--vault <Ordner>] [--port <n>] [--nicht-oeffnen]   starten (oder den Browser auf der laufenden Instanz öffnen)
@@ -41,9 +43,18 @@ async function ruf(sperre, pfad) {
 }
 const warte = (ms) => new Promise((ok) => setTimeout(ok, ms));
 
+// Die Karte kommt nie in die Befehlszeile des Browsers (auf Linux für jeden Benutzer lesbar): der Browser öffnet eine Startdatei (0600) im Support-Ordner, die auf /?t=<Karte> weiterleitet.
+function raeumeStartdateien(support) {
+  try { for (const n of readdirSync(support)) if (/^kortex-start-[\w-]+\.html$/.test(n)) { const p = join(support, n); if (Date.now() - statSync(p).mtimeMs > 120_000) unlinkSync(p); } } catch { /* egal */ }
+}
 async function oeffneBrowser(port, geheimnisOderKarte) {
   const karte = typeof geheimnisOderKarte === "function" ? geheimnisOderKarte() : geheimnisOderKarte;
-  const r = await oeffneImBrowser(`http://127.0.0.1:${port}/?t=${karte}`);
+  raeumeStartdateien(support);
+  const datei = join(support, `kortex-start-${randomBytes(9).toString("base64url")}.html`);
+  const ziel = `http://127.0.0.1:${port}/?t=${karte}`;
+  writeFileSync(datei, `<!doctype html><meta charset="utf-8"><meta name="referrer" content="no-referrer"><meta http-equiv="refresh" content="0;url=${ziel}"><title>Kortex</title><p>Kortex öffnet sich …</p>`, { mode: 0o600 });
+  setTimeout(() => { try { unlinkSync(datei); } catch { /* weg */ } }, 60_000).unref();
+  const r = await oeffneImBrowser(datei);
   if (!r.ok) fehler(`Der Browser ließ sich nicht öffnen (${r.text}). Starte Kortex mit KORTEX_BROWSER=<Programm> oder öffne http://127.0.0.1:${port}/ nach einem neuen Start von Hand.`);
   return r.ok;
 }
@@ -82,7 +93,7 @@ for (let versuch = 0; versuch < 60 && !gehalten; versuch++) {
     process.exit(1);
   }
   if (andere?.lebt) { await warte(100); continue; } // die andere startet gerade (noch ohne Port)
-  try { unlinkSync(sperrDatei(support)); } catch { /* weg */ }
+  await warte(50); // verwaist: beanspruche() hat sie schon entfernt, nächster Versuch
 }
 if (!gehalten) { fehler("Die Sperre ließ sich nicht erwerben."); process.exit(1); }
 

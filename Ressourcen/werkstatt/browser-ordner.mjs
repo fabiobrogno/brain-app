@@ -87,7 +87,7 @@ export function leseZuletzt(support) {
 }
 export function merkeZuletzt(support, pfad) {
   const neu = [pfad, ...leseZuletzt(support).filter((p) => p !== pfad)].slice(0, MAX_ZULETZT);
-  try { mkdirSync(support, { recursive: true }); writeFileSync(zuletztDatei(support), JSON.stringify(neu)); } catch { /* nur eine Bequemlichkeit */ }
+  try { mkdirSync(support, { recursive: true }); writeFileSync(zuletztDatei(support), JSON.stringify(neu), { mode: 0o600 }); } catch { /* nur eine Bequemlichkeit */ }
   return neu;
 }
 export function startAuswahl(support, { home = homedir() } = {}) {
@@ -118,6 +118,6 @@ export function schreibeEinrichtung(support, { schritt, ende } = {}) {
   const o = leseEinrichtung(support);
   if (SCHRITTE.indexOf(schritt) > SCHRITTE.indexOf(o.letzterSchritt)) o.letzterSchritt = schritt; // nie rückwärts (indexOf(null) = -1)
   if (["fertig", "spaeter"].includes(ende)) o.ende = ende;
-  try { mkdirSync(support, { recursive: true }); writeFileSync(einrichtungsDatei(support), JSON.stringify(o)); } catch { /* der Stand ist eine Bequemlichkeit */ }
+  try { mkdirSync(support, { recursive: true }); writeFileSync(einrichtungsDatei(support), JSON.stringify(o), { mode: 0o600 }); } catch { /* der Stand ist eine Bequemlichkeit */ }
   return o;
 }
