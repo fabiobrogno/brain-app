@@ -15,6 +15,7 @@ vorab gebautes Bündel (siehe CodeMirror).
 | three.js (3D-Ansicht) | r170 | MIT | `kern/ansicht/vendor/three.bundle.js` |
 | Geist und Geist Mono (Schriften) | Variable | SIL Open Font License 1.1 | `kern/ansicht/vendor/fonts/`, `studio/vendor/fonts/` |
 | Gehirnoberfläche (aus AOMIC-ID1000) | 1.2.1 | CC0 1.0 | `kern/ansicht/vendor/brain-mesh/brain-mesh.js` |
+| Lucide (Symbole der Oberfläche) | 1.69.0 | ISC (einzelne Symbole: MIT, Feather) | `studio/symbole.js` |
 | Simple Icons (Logos der KI-Programme und Dienste) | 16.36.0 | CC0 1.0 | `logos/`, `studio/ki-katalog.js`, `studio/marken.js` |
 | Logos weiterer KI-Programme (Marken der Inhaber, nur zur Kennzeichnung) | abgerufen 30.10.2026 | Marke des Inhabers | `logos/`, `studio/ki-katalog.js` (Quelle je Datei: `logos/HERKUNFT.md`) |
 | Simple Icons (MCP-Logos der 3D-Ansicht) | 16.33.0 | CC0 1.0 | `kern/ansicht/vendor/icons/` |
@@ -385,6 +386,59 @@ zoom.svg.
 (unter anderen Anthropic, OpenAI, Anysphere (Cursor), Google, GitHub/Microsoft, Zed Industries, OpenCode, Warp und die Anbieter der
 MCP-Dienste). Kortex nutzt sie nur, um Programme und Dienste zu kennzeichnen, mit denen es sich verbindet. **Kortex ist mit keinem dieser
 Unternehmen verbunden und wird von ihnen weder empfohlen noch unterstützt.** Das OpenAI-Zeichen (für Codex) stammt von `developers.openai.com`; OpenAI hat keine Freigabe erteilt, Kortex nutzt es nur zur Kennzeichnung und nimmt es auf Wunsch des Inhabers heraus (Begründung: `logos/HERKUNFT.md`).
+
+## Lucide 1.69.0: Symbole der Oberfläche (ISC, einzelne MIT)
+
+Die Symbole der Oberfläche (Seitenleiste, Werkzeugleiste, Einstellungen, Menüs, leere Zustände) stammen aus dem Projekt Lucide
+(https://lucide.dev), Paket `lucide-static` 1.69.0. Ihre Pfade stehen unverändert in `studio/symbole.js`; erzeugt wird die Datei von
+`scripts/erzeuge-symbole.mjs` (das Paket ist nur eine Entwicklungsabhängigkeit und liegt nicht im App-Paket). Die Spirale („Über Kortex“)
+ist ein eigenes Zeichen von Kortex im Raster von Lucide. Lizenztext von Lucide:
+
+```
+ISC License
+
+Copyright (c) 2026 Lucide Icons and Contributors
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+```
+
+Einige Lucide-Symbole gehen auf das Projekt Feather zurück (hier u. a. arrow-down, arrow-left, arrow-right, arrow-up, calendar, check,
+chevron-down, chevron-right, clock, code, external-link, info, link, lock, moon, plus, search, smartphone, trash-2, x). Für diese gilt
+zusätzlich:
+
+```
+The MIT License (MIT)
+
+Copyright (c) 2013-present Cole Bemis
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
 
 ## Orca (Gestaltungsmuster, MIT)
 

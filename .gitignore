@@ -3,3 +3,4 @@ build/
 .swiftpm/
 *.xcodeproj/
 !Ressourcen/kern/ansicht/build/
+node_modules/

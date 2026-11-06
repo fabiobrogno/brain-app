@@ -12,9 +12,9 @@ const STUDIO = fileURLToPath(new URL("../../Ressourcen/studio/", import.meta.url
 const LOGOS = fileURLToPath(new URL("../../Ressourcen/logos/", import.meta.url));
 const BILDER = process.env.UI_ICON_BILDER;
 
-// Statische Prüfung: Symbole werden nur in den festen Größenstufen angefordert (12, 14, 16, 20, 24; 56 nur für das große Kortex-Zeichen).
+// Statische Prüfung: Symbole werden nur in den festen Größenstufen angefordert (12, 14, 16, 18, 20, 24; 56 nur für das große Kortex-Zeichen).
 test("Größenstufen: kein Aufruf von symbol()/zeichen() mit einer anderen Größe", () => {
-  const erlaubt = new Set([12, 14, 16, 20, 24, 56]);
+  const erlaubt = new Set([12, 14, 16, 18, 20, 24, 56]);
   const falsch = [];
   for (const datei of readdirSync(STUDIO).filter((n) => n.endsWith(".js"))) {
     if (datei === "symbole.js") continue;
@@ -37,25 +37,28 @@ async function start(page) {
   await page.waitForSelector(".cm-content .cm-line");
 }
 
-test("symbol(): jedes Symbol hat das 16er-Raster und in jeder Größe 1,5 px Strich, GitHub ist kein Symbol mehr", async ({ page }) => {
+test("symbol(): jedes Symbol hat das 24er-Raster (Lucide) und je Größe die feste Strichstärke: 1,5 px bis 16 px, 1,75 px ab 18 px", async ({ page }) => {
   await start(page);
   const r = await page.evaluate(async () => {
     const m = await import("/symbole.js");
     const fehler = [];
     for (const name of m.symbolNamen) for (const g of Object.values(m.GROESSE)) {
       const s = m.symbol(name, g);
-      const px = Number(s.getAttribute("stroke-width")) * g / 16;
-      if (s.getAttribute("viewBox") !== "0 0 16 16" || Math.abs(px - 1.5) > 0.01 || s.getAttribute("stroke-linecap") !== "round" || !s.innerHTML.trim()) fehler.push(`${name}@${g}`);
+      const px = Number(s.getAttribute("stroke-width")) * g / 24;
+      const soll = g >= 18 ? 1.75 : 1.5;
+      if (s.getAttribute("viewBox") !== "0 0 24 24" || Math.abs(px - soll) > 0.01 || s.getAttribute("stroke-linecap") !== "round" || !s.innerHTML.trim()) fehler.push(`${name}@${g}`);
     }
-    return { fehler, github: m.symbolNamen.includes("github"), groessen: m.GROESSE, anzahl: m.symbolNamen.length };
+    const getoent = m.symbol("haken", 16, { farbe: "rgb(1, 2, 3)" });
+    return { fehler, github: m.symbolNamen.includes("github"), groessen: m.GROESSE, anzahl: m.symbolNamen.length, farbe: getoent.style.color };
   });
   expect(r.fehler).toEqual([]);
   expect(r.github).toBe(false);
-  expect(r.groessen).toEqual({ klein: 12, text: 14, norm: 16, gross: 20, kachel: 24 });
+  expect(r.groessen).toEqual({ klein: 12, text: 14, norm: 16, mittel: 18, gross: 20, kachel: 24 });
   expect(r.anzahl).toBeGreaterThan(60);
+  expect(r.farbe).toBe("rgb(1, 2, 3)"); // Einfärben pro Symbol ist möglich (Grundlage für spätere Farbkacheln); Standard ist die Textfarbe
 });
 
-test("symbol(\"marke\"): die Windung der App (eine durchgehende Linie aus vier Bahnen, keine Knoten), oben/unten spiegelgleich, im 16er Raster", async ({ page }) => {
+test("symbol(\"marke\"): die Windung der App (eine durchgehende Linie aus vier Bahnen, keine Knoten), oben/unten spiegelgleich, im 24er Raster; die Spirale ist ein eigenes Zeichen", async ({ page }) => {
   await start(page);
   const r = await page.evaluate(async () => {
     const m = await import("/symbole.js");
@@ -65,19 +68,29 @@ test("symbol(\"marke\"): die Windung der App (eine durchgehende Linie aus vier B
     const b = pfad.getBBox();
     const d = pfad.getAttribute("d");
     s.remove();
-    return { kreise: s.querySelectorAll("circle").length, pfade: s.querySelectorAll("path").length, d, box: { x: b.x, y: b.y, w: b.width, h: b.height } };
+    const sp = m.symbol("kortex-spirale", 24);
+    document.body.append(sp);
+    const sb = sp.querySelector("path").getBBox();
+    sp.remove();
+    return { kreise: s.querySelectorAll("circle").length, pfade: s.querySelectorAll("path").length, d, box: { x: b.x, y: b.y, w: b.width, h: b.height },
+      spirale: { pfade: sp.querySelectorAll("path").length, x: sb.x, y: sb.y, w: sb.width, h: sb.height } };
   });
   expect(r.kreise).toBe(0); // nicht mehr das Netz aus Knoten
   expect(r.pfade).toBe(1); // ein durchgehender Strang
   expect(r.d.match(/M/g)).toHaveLength(1);
   expect(r.d.match(/a[\d.]+ [\d.]+ 0 [01][01]/gi)).toHaveLength(3); // drei Wendungen: vier Bahnen
-  const rand = 0.75; // halbe Strichstärke im Raster
+  const rand = 1.125; // halbe Strichstärke im Raster
   expect(r.box.x - rand).toBeGreaterThanOrEqual(0);
-  expect(r.box.x + r.box.w + rand).toBeLessThanOrEqual(16);
+  expect(r.box.x + r.box.w + rand).toBeLessThanOrEqual(24);
   expect(r.box.y - rand).toBeGreaterThanOrEqual(0);
-  expect(r.box.y + r.box.h + rand).toBeLessThanOrEqual(16);
-  expect(Math.abs(r.box.x + r.box.w / 2 - 8)).toBeLessThan(0.05); // waagerecht und senkrecht mittig
-  expect(Math.abs(r.box.y + r.box.h / 2 - 8)).toBeLessThan(0.05);
+  expect(r.box.y + r.box.h + rand).toBeLessThanOrEqual(24);
+  expect(Math.abs(r.box.x + r.box.w / 2 - 12)).toBeLessThan(0.05); // waagerecht und senkrecht mittig
+  expect(Math.abs(r.box.y + r.box.h / 2 - 12)).toBeLessThan(0.05);
+  expect(r.spirale.pfade).toBe(1);
+  expect(r.spirale.x).toBeGreaterThanOrEqual(1);
+  expect(r.spirale.x + r.spirale.w).toBeLessThanOrEqual(23);
+  expect(r.spirale.y).toBeGreaterThanOrEqual(1);
+  expect(r.spirale.y + r.spirale.h).toBeLessThanOrEqual(23);
 });
 
 test("Marken-Logo GitHub: Pfad stimmt mit Ressourcen/logos/github.svg überein, Bild mit Namen, unbekannte Marke liefert nichts", async ({ page }) => {

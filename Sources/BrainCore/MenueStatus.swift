@@ -61,7 +61,7 @@ public enum MenueStatus {
                               sicherung: BrainStatus.Sicherung? = nil) -> [MenueZeile] {
         var z: [MenueZeile] = []
         if let name = vaultName, !name.isEmpty {
-            z.append(MenueZeile(symbol: "folder", text: kurz(name), art: .kopf, erklaerung: name.count > hoechstZeichen ? name : "Vault wechseln …", aktion: .vaultWechseln))
+            z.append(MenueZeile(symbol: "books.vertical", text: kurz(name), art: .kopf, erklaerung: name.count > hoechstZeichen ? name : "Vault wechseln …", aktion: .vaultWechseln))
         }
         z.append(zustand(anzeige, kernMeldung: kernMeldung))
         if vaultName != nil, vertrauen == .nurAnsehen {
@@ -70,7 +70,7 @@ public enum MenueStatus {
                                     + "Klicke, um im Studio unter Einstellungen zu bestätigen.", aktion: .vertrauenPruefen))
         }
         if let text = zahlenText(zahlen) {
-            z.append(MenueZeile(symbol: "list.bullet", text: text, art: .normal))
+            z.append(MenueZeile(symbol: "questionmark.bubble", text: text, art: .normal))
         }
         if vaultName != nil, let text = aufgabenText(aufgaben) {
             let ueberfaellig = (aufgaben?.ueberfaellig ?? 0) > 0

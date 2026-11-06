@@ -424,7 +424,7 @@ test("Vaults, Sicherung, Über: Liste mit offenem Vault, Vertrauen, Stand der Si
   await page.click('.e-punkt[data-bereich="ueber"]');
   await expect(page.locator(".ez-ueber h3")).toHaveText("Kortex");
   await expect(page.locator(".ez-ueber [data-feld=version]")).toContainText(/^Version \S+ · macOS 26 oder neuer$/);
-  await expect(page.locator(".ez-lizenz")).toHaveCount(6);
+  await expect(page.locator(".ez-lizenz")).toHaveCount(7);
   await page.click('[data-aktion="lizenzen"]');
   await expect(page.locator(".dialog")).toBeVisible();
 });

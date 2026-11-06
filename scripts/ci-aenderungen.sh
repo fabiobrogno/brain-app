@@ -39,6 +39,7 @@ while IFS= read -r f; do
     Ressourcen/studio/*) node=true; ui=true ;;
     Ressourcen/mcp/*) node=true ;;
     Tests/Node/*|scripts/teste-node.sh) node=true ;;
+    Werkzeuge/symbole/*|scripts/erzeuge-symbole.mjs) node=true; ui=true ;;       # Symbol-Erzeugung: Tests/Node/symbole.test.mjs und Playwright
     Tests/Oberflaeche/*|Werkzeuge/editor-bundle/*) ui=true ;;
     Tests/Aktionskanal/*) ;;                                                     # nur vom Rauchtest (rauchtest.yml) genutzt
     scripts/ci-aenderungen.sh|scripts/teste-ci-aenderungen.sh) alle ;;           # der Filter selbst
