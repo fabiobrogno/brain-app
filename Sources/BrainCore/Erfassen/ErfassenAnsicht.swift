@@ -54,14 +54,14 @@ public struct ErfassenAnsicht: View {
                     }
                 }
             } label: {
-                Label(m.ziel?.name ?? "Vault wählen", systemImage: "folder")
+                Label(m.ziel?.name ?? "Vault wählen", systemImage: "books.vertical")
             }
             .menuStyle(.borderlessButton)
             .tint(Color.secondary)
             .fixedSize()
             .help("In welchen Vault gespeichert wird")
         } else {
-            Label(m.ziel?.name ?? "Kein Vault", systemImage: "folder")
+            Label(m.ziel?.name ?? "Kein Vault", systemImage: "books.vertical")
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .help("Ziel: der aktive Vault")

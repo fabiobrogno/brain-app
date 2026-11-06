@@ -17,7 +17,7 @@ private func z(_ vorschlaege: Int, _ konflikte: Int, _ abgelaufen: Int) -> Brain
 @Test func vaultMitNamenUndZustandStehenOben() {
     let r = zeilen()
     #expect(r.map(\.text) == ["Mein Vault", "Alles in Ordnung"])
-    #expect(r[0].art == .kopf && r[0].symbol == "folder")
+    #expect(r[0].art == .kopf && r[0].symbol == "books.vertical")
     #expect(r[1].art == .normal && r[1].symbol == "checkmark.circle")
 }
 
@@ -77,7 +77,7 @@ private func z(_ vorschlaege: Int, _ konflikte: Int, _ abgelaufen: Int) -> Brain
 
 @Test func reihenfolgeVaultZustandVertrauenZahlenEntwicklerWarnungen() {
     let r = zeilen(vertrauen: .nurAnsehen, zahlen: z(1, 0, 0), entwickler: true, zufuehrung: ["w"])
-    #expect(r.map(\.symbol) == ["folder", "checkmark.circle", "eye", "list.bullet", "hammer", "exclamationmark.triangle"])
+    #expect(r.map(\.symbol) == ["books.vertical", "checkmark.circle", "eye", "questionmark.bubble", "hammer", "exclamationmark.triangle"])
 }
 
 @Test func nurWichtigesFuehrtPerKlickWeiter() {

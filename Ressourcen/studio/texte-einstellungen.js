@@ -26,7 +26,7 @@ export const BEREICHE = [
     ],
   },
   {
-    id: "darstellung", name: "Darstellung", gruppe: "Kortex", symbol: "sonne", woerter: ["aussehen", "hell", "dunkel", "schrift"],
+    id: "darstellung", name: "Darstellung", gruppe: "Kortex", symbol: "darstellung", woerter: ["aussehen", "hell", "dunkel", "schrift"],
     intro: "So sieht Kortex aus. Änderungen siehst du sofort.",
     abschnitte: [
       { id: "thema", titel: "Thema", zeilen: [
@@ -92,7 +92,7 @@ export const BEREICHE = [
     ],
   },
   {
-    id: "ki", name: "KI & Konten", gruppe: "Wissen", symbol: "funke", woerter: ["konto", "claude", "codex", "anmelden", "abo"],
+    id: "ki", name: "KI & Konten", gruppe: "Wissen", symbol: "ki", woerter: ["konto", "claude", "codex", "anmelden", "abo"],
     intro: "Kortex arbeitet mit den KI-Programmen, die du schon hast, und mit deinem eigenen Abo. Hier siehst du, welche Konten angemeldet sind und was jedes Konto in welchem Vault darf.",
     abschnitte: [
       { id: "uebersicht", titel: "", zeilen: [
@@ -128,7 +128,7 @@ export const BEREICHE = [
     ],
   },
   {
-    id: "automatik", name: "Pflege & Automatik", gruppe: "Wissen", symbol: "sanduhr", woerter: ["pflege", "automatisch", "tageslauf", "lernen"],
+    id: "automatik", name: "Pflege & Automatik", gruppe: "Wissen", symbol: "automatik", woerter: ["pflege", "automatisch", "tageslauf", "lernen"],
     intro: "Was Kortex von selbst tut. Jeder Lauf ist abbrechbar und landet im Verlauf; Änderungen an deinen Notizen kommen nie ohne Rückfrage.",
     abschnitte: [
       { id: "lauf", titel: "Täglicher Lauf", zeilen: [
@@ -200,7 +200,7 @@ export const BEREICHE = [
     ],
   },
   {
-    id: "erweitert", name: "Erweitert", gruppe: "Mehr", symbol: "code", woerter: ["experten", "technik", "mcp", "dateien"],
+    id: "erweitert", name: "Erweitert", gruppe: "Mehr", symbol: "erweitert", woerter: ["experten", "technik", "mcp", "dateien"],
     intro: "Für Neugierige. Nichts hier ist für den Alltag nötig.",
     abschnitte: [
       { id: "mcp", titel: "Verbindung zu den KIs (MCP)", zeilen: [
@@ -226,7 +226,7 @@ export const BEREICHE = [
     ],
   },
   {
-    id: "ueber", name: "Über Kortex", gruppe: "Mehr", symbol: "info", woerter: ["version", "lizenz", "herkunft"],
+    id: "ueber", name: "Über Kortex", gruppe: "Mehr", symbol: "kortex-spirale", woerter: ["version", "lizenz", "herkunft"],
     intro: "",
     abschnitte: [
       { id: "app", titel: "", zeilen: [
@@ -235,6 +235,7 @@ export const BEREICHE = [
       { id: "lizenzen", titel: "Lizenzen und Herkunft", text: "Kortex steht auf den Schultern anderer. Danke.", zeilen: [
         { id: "lizenz-geist", sonder: true, badge: "SIL OFL 1.1", titel: "Geist, Geist Mono", text: "Schrift · Vercel", woerter: ["lizenz", "schrift", "font", "vercel", "geist"] },
         { id: "lizenz-icons", sonder: true, badge: "CC0", titel: "Simple Icons", text: "Logos der KI-Programme (nur zur Kennzeichnung)", woerter: ["lizenz", "logos", "marken", "icons"] },
+        { id: "lizenz-lucide", sonder: true, badge: "ISC", titel: "Lucide", text: "Symbole der Oberfläche", woerter: ["lizenz", "symbole", "icons", "lucide"] },
         { id: "lizenz-orca", sonder: true, badge: "MIT", titel: "Orca", text: "Gestaltungswerte und Muster (Lovecast Inc.)", woerter: ["lizenz", "orca", "gestaltung", "muster", "lovecast"] },
         { id: "lizenz-codemirror", sonder: true, badge: "MIT", titel: "CodeMirror", text: "Editor", woerter: ["lizenz", "editor", "codemirror"] },
         { id: "lizenz-node", sonder: true, badge: "MIT", titel: "Node.js", text: "Läuft im Hintergrund von Kortex", woerter: ["lizenz", "node", "javascript"] },

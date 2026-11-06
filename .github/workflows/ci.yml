@@ -104,6 +104,9 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
+      - name: Symbol-Paket (nur Prüfung von symbole.js)
+        run: npm ci --ignore-scripts --no-audit --no-fund
+        working-directory: Werkzeuge/symbole
       - name: Node-Tests
         run: bash scripts/teste-node.sh --test-concurrency=4
 
