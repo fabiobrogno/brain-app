@@ -6,6 +6,7 @@ import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { execFileSync, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { nurMac } from "../plattform.mjs";
 import { TL_DIR, leseLetzter } from "./protokoll.mjs";
 import { leseAutomatik } from "../einstellungen.mjs";
 import { dienstEingerichtet } from "./dienst.mjs";
@@ -25,6 +26,8 @@ export function parsePmset(text) { const t = String(text || ""); return { amNetz
 export function parseIoreg(text) { const m = String(text || "").match(/"HIDIdleTime"\s*=\s*(\d+)/); return m ? Math.floor(Number(m[1]) / 1e9) : null; }
 function lies(befehl, args, testDatei) {
   if (process.env[testDatei]) return readFileSync(process.env[testDatei], "utf8");
+  const m = nurMac(befehl, () => null);
+  if (!m.ok) throw new Error(m.text); // pmset/ioreg gibt es nur am Mac; der Aufrufer fängt das („unbekannt“ → Tageslauf wartet)
   return execFileSync(befehl, args, { encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"], windowsHide: true });
 }
 export const lesePmset = () => lies("/usr/bin/pmset", ["-g", "ps"], "BRAIN_PMSET_DATEI");

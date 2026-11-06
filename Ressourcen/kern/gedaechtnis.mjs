@@ -805,7 +805,9 @@ function sichere(wurzel, eintraege, jetzt, info = {}) {
       mkdirSync(dirname(ziel), { recursive: true });
       cpSync(e.von, ziel, { recursive: true, dereference: false, preserveTimestamps: true });
     }
-    const r = spawnSync("tar", ["-czf", archiv, "-C", staging, "."], { encoding: "utf8", windowsHide: true, timeout: ZEIT.tar });
+    // Windows: GNU tar (z. B. aus Git for Windows) hält „C:\…“ für einen fernen Rechner → --force-local; das tar von Windows (bsdtar) kennt die Option nicht und braucht sie nicht.
+    const gnuAufWindows = process.platform === "win32" && /GNU/.test(String(spawnSync("tar", ["--version"], { encoding: "utf8", windowsHide: true, timeout: 10_000 }).stdout || ""));
+    const r = spawnSync("tar", [...(gnuAufWindows ? ["--force-local"] : []), "-czf", archiv, "-C", staging, "."], { encoding: "utf8", windowsHide: true, timeout: ZEIT.tar });
     if (zeitUeberschritten(r)) throw new Error(`tar: Zeitüberschreitung (${dauerText(ZEIT.tar)}) — abgebrochen`);
     if (r.error || r.status !== 0) throw new Error((r.error && r.error.message) || String(r.stderr || "").trim().split("\n")[0] || `tar Exit ${r.status}`);
   } catch (e) {

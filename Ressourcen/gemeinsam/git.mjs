@@ -89,6 +89,8 @@ const ausgabeVon = (r) => kuerze((String(r.stdout || "") + String(r.stderr || ""
 async function istRepoG(G, wurzel) {
   try {
     const r = await G(["rev-parse", "--show-toplevel"]);
+    // Windows: git meldet „C:/Users/<langer Name>/…“, ein Temp-Pfad kann in der Kurzform (RUNNER~1) vorliegen → beide Seiten mit dem Systemaufruf auflösen
+    if (process.platform === "win32") return r.code === 0 && realpathSync.native(r.stdout.trim()) === realpathSync.native(wurzel);
     return r.code === 0 && realpathSync(r.stdout.trim()) === wurzel;
   } catch (e) { if (e instanceof HttpFehler && e.status === 500) return false; throw e; }
 }

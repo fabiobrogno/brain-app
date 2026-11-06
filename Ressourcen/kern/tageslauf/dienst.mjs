@@ -20,6 +20,7 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { nodePfad, starterPfad, supportOrdner, KernNichtStabilFehler, vaultUndRest, vaultVertraut, NICHT_VERTRAUT_TEXT } from "../pfade.mjs";
 import { findeClaude } from "../ernte.mjs";
+import { istMac } from "../plattform.mjs";
 import { liesKonten, kontenOrte } from "../ki-konten.mjs";
 import { erlaubeVault, widerrufeAlle, dienstErlaubt } from "./dienst-merker.mjs";
 
@@ -72,6 +73,7 @@ ${[starter, "tageslauf", "--wenn-faellig", "--dienst"].map(arg).join("\n")}
 export function launchctl(args) {
   const ersatz = process.env.BRAIN_LAUNCHCTL;
   if (!ersatz && process.env.NODE_TEST_CONTEXT) throw new Error("echtes launchctl in Tests verboten (BRAIN_LAUNCHCTL setzen)");
+  if (!ersatz && !istMac()) return false; // launchctl gibt es nur am Mac: sauberes „nicht geladen“ statt eines Absturzes
   const [cmd, vor] = ersatz ? [process.execPath, [ersatz]] : ["/bin/launchctl", []];
   try { execFileSync(cmd, [...vor, ...args], { stdio: ["ignore", "pipe", "pipe"], timeout: 10000, windowsHide: true }); return true; } catch { return false; }
 }

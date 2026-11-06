@@ -11,7 +11,7 @@
 // Codex: Kortex fragt das Programm selbst (`codex app-server`, `account/rateLimits/read`, gemeinsam/kontingent.mjs). Kein Token wird gelesen, kein Schlüsselbund geöffnet, und Kortex
 // ruft weder Anthropic noch OpenAI an. Wo es nichts gibt (Cursor, Gemini …), steht ehrlich „nicht abrufbar“.
 import { readFileSync, writeFileSync, renameSync, statSync, mkdirSync, chmodSync, rmSync, readdirSync, rmdirSync, realpathSync, existsSync, accessSync, constants } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, sep } from "node:path";
 import { tmpdir, homedir } from "node:os";
 import { randomBytes, createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
@@ -42,7 +42,7 @@ export function erzeugeKontingent({ support, konten, nodePfad = process.execPath
   const sicherungOrdner = () => join(ordner(), "sicherung");
 
   // Im Testmodus schreibt Kortex nie in einen Ordner außerhalb des Temp-Ordners (nie ins echte ~/.claude des Rechners, auf dem die Tests laufen).
-  const ordnerErlaubt = (o) => !testmodus() || echtPfad(o).startsWith(echtPfad(tmpdir()) + "/");
+  const ordnerErlaubt = (o) => !testmodus() || echtPfad(o).startsWith(echtPfad(tmpdir()) + sep);
   const datenVon = () => { try { return konten.lade() || { konten: {} }; } catch { return { konten: {} }; } };
   const kontoVon = (id) => { const d = datenVon(); return typeof id === "string" && Object.hasOwn(d.konten, id) ? { id, ...d.konten[id] } : null; };
 

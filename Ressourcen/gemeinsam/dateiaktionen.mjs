@@ -11,8 +11,8 @@
 import { lstatSync, statSync, readdirSync, readFileSync, writeFileSync, mkdirSync, rmdirSync, renameSync, linkSync, unlinkSync, rmSync, existsSync, chmodSync, cpSync, realpathSync, openSync, closeSync, utimesSync } from "node:fs";
 import { join, dirname, basename } from "node:path";
 import { createHash, randomBytes } from "node:crypto";
-import { execFileSync } from "node:child_process";
 import { hostname } from "node:os";
+import { geraeteKennung, prozessStart } from "./plattform.mjs";
 import { HttpFehler, loese, sauber, BEARBEITBAR, MAX_DATEI, gesperrterName, generiertName, wikiGeneriert, falte, imVault, inboxOrdnerVon } from "./basis.mjs";
 import { kennungVault, melde, aendereZustand, leseZustand } from "./aktivitaet.mjs";
 import { planeVerweise, setzeTitel, verlinktVon } from "./linkpflege.mjs";
@@ -73,8 +73,7 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
     if (haken.geraeteId) return normGeraet(haken.geraeteId);
     if (geraetLauf) return geraetLauf;
     if (!hwGemerkt) {
-      try { const t = execFileSync("/usr/sbin/ioreg", ["-rd1", "-c", "IOPlatformExpertDevice"], { encoding: "utf8", timeout: 3000, env: PS_ENV, stdio: ["ignore", "pipe", "ignore"] }); hwGemerkt = (/"IOPlatformUUID" = "([0-9A-Fa-f-]+)"/.exec(t) || [])[1] || ""; } catch { /* kein macOS */ }
-      if (!hwGemerkt) { try { hwGemerkt = readFileSync("/etc/machine-id", "utf8").trim(); } catch { /* kein Linux */ } }
+      hwGemerkt = geraeteKennung();
     }
     return (geraetLauf = { hw: hwGemerkt, host: `host:${hostname()}` });
   }
@@ -98,13 +97,7 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
   let kette = Promise.resolve(), erholt = false;
   const lebt = (pid) => { if (!Number.isInteger(pid) || pid <= 0) return false; try { process.kill(pid, 0); return true; } catch (e) { return e.code === "EPERM"; } };
   // Startzeit eines Prozesses: Werkstatt und MCP-Server laufen mit verschiedenem LANG/LC_ALL/TZ, die Ausgabe von ps hängt davon ab — darum absoluter Pfad und feste Umgebung (C, UTC)
-  const PS_ENV = { LC_ALL: "C", LANG: "C", TZ: "UTC", PATH: "/bin:/usr/bin" };
-  const startzeit = (pid) => {
-    for (const ps of ["/bin/ps", "/usr/bin/ps"]) {
-      try { return execFileSync(ps, ["-o", "lstart=", "-p", String(pid)], { encoding: "utf8", timeout: 3000, env: PS_ENV, stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { /* nächster Pfad */ }
-    }
-    return "";
-  };
+  const startzeit = (pid) => prozessStart(pid);
   let eigenStart = null;
   const halterLebt = (h) => {
     if (!h || !Number.isInteger(h.pid) || h.pid <= 0 || !lebt(h.pid)) return false;

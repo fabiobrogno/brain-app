@@ -3,6 +3,7 @@
 // Werkstatt (SIGTERM) lässt sich alles Laufende auf einmal abräumen. Keine Abhängigkeiten außer basis.mjs.
 import { spawn } from "node:child_process";
 import { HttpFehler } from "./basis.mjs";
+import { beendeBaum } from "./plattform.mjs";
 
 const laufende = new Set(); // { kind, cwd, start }
 let wirdBeendet = false;
@@ -15,7 +16,7 @@ export function neueFrist(ms) {
 
 export function beendeGruppe(kind) {
   if (!kind || kind.pid === undefined) return;
-  try { process.kill(-kind.pid, "SIGKILL"); } catch { try { kind.kill("SIGKILL"); } catch { /* schon weg */ } }
+  beendeBaum(kind, "SIGKILL");
 }
 
 // Merkt einen von außen gestarteten Prozess (z. B. der MCP-Server der Probe), damit er beim Beenden mit abgeräumt wird.
@@ -105,7 +106,7 @@ export function starteStrom(programm, args, o = {}) {
   let grund = null, gestoppt = false, rest = Buffer.alloc(0), menge = 0, fehl = Buffer.alloc(0);
   const timer = new Set();
   const spaeter = (ms, f) => { const t = setTimeout(f, ms); timer.add(t); return t; };
-  const gruppe = (sig) => { try { process.kill(-kind.pid, sig); } catch { try { kind.kill(sig); } catch { /* schon weg */ } } };
+  const gruppe = (sig) => beendeBaum(kind, sig);
   const stopp = (g = "abgebrochen") => {
     if (grund === null) grund = g;
     if (gestoppt) return;

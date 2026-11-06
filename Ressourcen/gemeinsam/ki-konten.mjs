@@ -17,6 +17,7 @@ import { join, resolve, dirname, basename } from "node:path";
 import { randomBytes } from "node:crypto";
 import { userInfo, tmpdir, homedir } from "node:os";
 import { HttpFehler } from "./basis.mjs";
+import { standardSupport as plattformStandardSupport } from "./plattform.mjs";
 import { sicherungFuer } from "./sicherung.mjs";
 
 // LESEN-BEGINN
@@ -182,7 +183,7 @@ export function stufeFuerBestimmung(daten, vault, ids) {
 const tempWurzel = () => { try { return realpathSync(tmpdir()); } catch { return tmpdir(); } };
 const homeImTemp = () => { try { const h = realpathSync(homedir()); const t = tempWurzel(); return h === t || h.startsWith(`${t}/`); } catch { return false; } };
 const abgeschottet = () => process.env.BRAIN_TESTMODUS === "1" || process.env.KORTEX_KERN_UNSTABIL_ERLAUBT === "1" || (typeof process.env.KORTEX_VORSCHAU === "string" && process.env.KORTEX_VORSCHAU !== "") || homeImTemp();
-export function standardSupport() { try { return join(userInfo().homedir, "Library", "Application Support", "Kortex"); } catch { return null; } }
+export function standardSupport() { return plattformStandardSupport(); }
 export function kontenOrte(support, { standard = undefined, abgeschottet: ab = undefined } = {}) {
   const orte = [];
   if (!(ab === undefined ? abgeschottet() : ab)) { const std = standard === undefined ? standardSupport() : standard; if (std) orte.push(std); }
