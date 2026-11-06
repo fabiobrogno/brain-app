@@ -3,9 +3,10 @@
 // Temp-Ordner liegen oder CLAUDE_CONFIG_DIR, CODEX_HOME, CURSOR_CONFIG_DIR, GEMINI_CLI_HOME auf einen Ort außerhalb zeigen.
 import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { sep } from "node:path";
 
 const TEMP = realpathSync(tmpdir());
-const imTemp = (p) => { try { const r = realpathSync(p); return r === TEMP || r.startsWith(`${TEMP}/`); } catch { return false; } };
+const imTemp = (p) => { try { const r = realpathSync(p); return r === TEMP || r.startsWith(TEMP + sep); } catch { return false; } };
 const KONFIG_ORDNER = ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "CURSOR_CONFIG_DIR", "GEMINI_CLI_HOME"];
 
 export function baueTestUmgebung(extra = {}) {
