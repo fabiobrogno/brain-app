@@ -241,6 +241,8 @@ import CoreGraphics
     let github = URL(string: "https://github.com/login/device")!
     #expect(s.externErlaubt(fremd), "zu: das übrige Studio öffnet seine Links wie bisher")
     _ = s.oeffne(automatisch: false, vaultVorher: nil)
+    #expect(s.externErlaubt(fremd), "angefordert, nicht bestätigt: kein Overlay, kein Zwang auf GitHub")
+    _ = s.bestaetige()
     #expect(s.externErlaubt(github))
     #expect(!s.externErlaubt(fremd))
     #expect(!s.externErlaubt(URL(string: "http://github.com/login/device")!))

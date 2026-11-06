@@ -193,7 +193,7 @@ public struct EinrichtungsSitzung: Equatable, Sendable {
 
     /// Darf `extern` diese Adresse öffnen? Bei offenem Overlay nur GitHub (Gerätecode), sonst gilt die Prüfung des Studios selbst.
     public func externErlaubt(_ url: URL) -> Bool {
-        offen ? EinrichtungsOverlay.externErlaubt(url) : true
+        (offen && bestaetigt) ? EinrichtungsOverlay.externErlaubt(url) : true
     }
 }
 
