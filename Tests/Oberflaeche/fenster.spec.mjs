@@ -198,7 +198,7 @@ test.describe("Assistent", () => {
     expect(p.x + p.width).toBeLessThanOrEqual(1200);
   });
 
-  test("im App-Fenster liegt die Einrichtung als Karte (höchstens 1100×780, 16 px Rand) über dem Studio", async ({ page }) => {
+  test("im App-Fenster liegt die Einrichtung als Karte (höchstens 960×680, 16 px Rand) über dem Studio", async ({ page }) => {
     await page.setViewportSize({ width: 1200, height: 780 });
     await page.addInitScript(() => { window.webkit = { messageHandlers: { aktion: { postMessage: async () => ({ ok: true }) } } }; });
     const z = await mockeEinrichtung(page, {});
@@ -206,9 +206,9 @@ test.describe("Assistent", () => {
     await expect(page.locator("#einrichtung-host.an")).toBeVisible();
     await page.waitForTimeout(500); // die Karte gleitet 400 ms ein
     const w = await page.locator("#win").boundingBox();
-    expect(Math.round(w.width)).toBe(1100);
-    expect(Math.round(w.height)).toBe(748); // 780 − 2 × 16 Rand: kleiner als die Höhe der Wunschkarte
-    expect(Math.round(w.x)).toBe(50);
+    expect(Math.round(w.width)).toBe(960);
+    expect(Math.round(w.height)).toBe(680);
+    expect(Math.round(w.x)).toBe(120); // mittig im Fenster
     await expect(page.locator(".vorschau-pille")).toHaveCount(0);
   });
 });

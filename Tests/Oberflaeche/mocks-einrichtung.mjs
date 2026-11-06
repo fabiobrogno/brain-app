@@ -53,7 +53,10 @@ export async function mockeEinrichtung(page, o = {}) {
         case "ordner-waehlen": return z.ordnerAbbruch ? null : z.ordner;
         case "kopieren": z.zwischenablage = m.wert; return { ok: true };
         case "extern": return { ok: true };
-        case "einrichtung-ende": z.ende = m.wert; return { ok: true };
+        case "einrichtung-ende": z.ende = m.wert; z.sitzung = false; return { ok: true };
+        // wie die App: die Seite bestätigt „Overlay offen“, jede neu geladene Seite meldet „zu“; Prüfung, Zwischenablage, Schritt und Ende gelten nur bei bestätigter Sitzung
+        case "einrichtung-sitzung": z.sitzungen = [...(z.sitzungen || []), m.wert?.offen]; z.sitzung = m.wert?.offen === true; return { ok: true };
+        case "einrichtung-schritt": z.schritte = [...(z.schritte || []), m.wert?.schritt]; return { ok: true };
         // wie die App: sie schickt dem Studio den Befehl `einrichtung` (nie ein zweites Fenster)
         case "einrichtung-oeffnen": z.oeffnenAnfragen = [...(z.oeffnenAnfragen || []), m.wert ?? null]; setTimeout(() => page.evaluate((o) => window.studio.befehl("einrichtung", o), m.wert ?? {}).catch(() => {}), 0); return { ok: true };
         default: return { ok: true };
@@ -90,7 +93,9 @@ export async function mockeEinrichtung(page, o = {}) {
         z.vault = { pfad: body.ordner.replace(/^~/, "/Users/test"), name: body.ordner.split("/").pop() };
         return json(200, { pfad: z.vault.pfad });
       }
-      case "/api/vertrauen": return json(200, { ok: true });
+      case "/api/vertrauen": z.vertrauen = [...(z.vertrauen || []), body]; if (z.vertrauenFehler) return json(409, { fehler: z.vertrauenFehler }); return json(200, { ok: true });
+      case "/api/ki/kontingent/statuszeile": z.statuszeile = [...(z.statuszeile || []), body]; if (z.statuszeileFehler) return json(500, { fehler: "Die Einstellungen von Claude Code ließen sich nicht ändern." }); return json(200, { ok: true, aktion: "eingetragen" });
+      case "/api/ki/kontingent": return json(200, { jetzt: new Date().toISOString(), konten: KONTEN.filter((k) => k.programm === "claude").map((k) => ({ id: k.id, programm: k.programm, name: k.name, standard: k.standard, quelle: "claude", status: z.statuszeile?.some((s) => s.konto === k.id && s.an) ? "ok" : "nicht-eingerichtet" })) });
       case "/api/github/konto": return json(200, z.github.verfuegbar ? { verfuegbar: true, angemeldet: z.github.angemeldet, ...(z.github.login ? { login: z.github.login } : {}) } : { verfuegbar: false, angemeldet: false });
       case "/api/github/anmelden":
         if (req.method() === "POST") {
@@ -107,13 +112,20 @@ export async function mockeEinrichtung(page, o = {}) {
       case "/api/sicherung/bereit": return json(200, z.sicherungBlockiert ? { zustand: "blockiert", text: "Der Vault hat noch keine Version." } : { zustand: z.gesichert ? "gesichert" : "bereit" });
       case "/api/sicherung/verbinden": if (z.verbindenRepoFehler) return json(z.verbindenRepoFehler.status, { fehler: z.verbindenRepoFehler.fehler }); z.gesichert = true; z.verbunden = body; return json(200, { ergebnis: "verbunden" });
       case "/api/ki/erkennen": return json(200, { agenten: AGENTEN[z.ki], cursorDa: z.ki === "drei", programme: z.programme || [] });
-      case "/api/ki/konten": return json(200, { zustand: "ok", konten: KONTEN.filter((k) => z.ki === "keine" ? false : z.ki === "eine" ? k.programm === "claude" : true),
-        vaults: z.vault ? [{ pfad: z.vault.pfad, name: z.vault.name, schluessel: "kennung-" + z.vault.pfad }] : [], zugriff: z.zugriff || {} });
+      case "/api/ki/konten": {
+        // wie die Werkstatt: ein Konto ist „verbunden“, sobald Kortex bei seinem Programm eingetragen ist; die Stufe im Vault steht unter zugriff[konto][vaultPfad]
+        const mcp = (k) => (z.mcp || []).filter((v) => v.konto === k.id || (!v.konto && v.ziel === k.programm && k.standard));
+        const konten = KONTEN.filter((k) => z.ki === "keine" ? false : z.ki === "eine" ? k.programm === "claude" : true).filter((k) => !z.kontenNur || z.kontenNur.includes(k.id))
+          .map((k) => ({ ...k, verbunden: k.verbunden || mcp(k).length > 0 || !!z.schonVerbunden?.includes(k.id) }));
+        const zugriff = JSON.parse(JSON.stringify(z.zugriff || {}));
+        if (z.vault) for (const k of konten) { const letzte = mcp(k).at(-1); if (letzte?.zugriff && !zugriff[k.id]?.[z.vault.pfad]) (zugriff[k.id] ||= {})[z.vault.pfad] = letzte.zugriff; }
+        return json(200, { zustand: "ok", konten, vaults: z.vault ? [{ pfad: z.vault.pfad, name: z.vault.name, schluessel: "kennung-" + z.vault.pfad }] : [], zugriff });
+      }
       case "/api/mcp/verbinden": {
         await warte(z.verzoegerung);
         const f = z.verbindenFehler[body.ziel];
         if (f && !(f.art === "anders" && body.umstellen)) return json(f.status, { fehler: f.fehler, ...(f.art ? { art: f.art } : {}), ...(f.befehl ? { befehl: f.befehl } : {}) });
-        z.verbunden = [...(z.verbunden || []), body];
+        z.verbunden = [...(z.verbunden || []), body]; z.mcp = [...(z.mcp || []), body];
         // der Assistent darf ein vom Nutzer gesperrtes Konto nie still öffnen: ohne ausdrückliche Wahl bleibt es gesperrt (wie werkstatt/konten.mjs)
         if (body.zugriff && body.zugriff !== "gesperrt" && z.gesperrteKonten?.includes(body.konto) && body.zugriffAusdruecklich !== true) return json(200, { ok: true, zugriffGesetzt: false, zugriffGrund: "vom-nutzer-gesperrt" });
         return json(200, { ok: true, zugriffGesetzt: true });

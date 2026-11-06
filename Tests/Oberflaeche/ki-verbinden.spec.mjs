@@ -366,35 +366,20 @@ test("Statusleiste: schlägt das Laden fehl, bleibt es nicht beim Platzhalter", 
   await expect(page.locator('#status [data-st="claude"]:visible, #status .kt-leiste:visible').first()).toBeVisible();
 });
 
-test("Einrichtungs-Assistent: derselbe Ablauf im Schritt „KI“ (Fußleiste des Assistenten), bis zur Zusammenfassung", async ({ page }) => {
+test("Einrichtung: der Schritt „KI“ ist eine Liste mit einem Knopf je Programm; Zugriff aus dem Stand des Vaults vorbelegt", async ({ page }) => {
   const stat = await starteStatisch();
   try {
     const z = await mockeEinrichtung(page, { ki: "drei", vault: { pfad: "/Users/test/Kortex", name: "Kortex" }, zugriff: { k_claude_privat: { "/Users/test/Kortex": "lesen" } } });
     await oeffneEinrichtungImStudio(page, stat.url, z, { ab: "ki" });
-    const ablauf = page.locator('.kv[data-rahmen="assistent"][data-fuss="host"]');
-    await expect(ablauf).toBeVisible({ timeout: 8000 });
-    await expect(page.locator(".e-ki-zeile")).toHaveCount(0); // die früheren Zeilen gibt es nicht mehr
-    await expect(page.locator('[data-aktion="weiter"]')).toContainText("Ohne KI weiter"); // noch nichts gewählt
-    await ablauf.locator('.ka-karte[data-ki="claude"]').click();
-    await expect(page.locator('[data-aktion="weiter"]')).toContainText("Weiter");
-    await page.click('[data-aktion="weiter"]');
-    await expect(ablauf.locator(".kv-konto")).toHaveCount(2);
-    await expect(ablauf.locator(".kv-kopf")).toContainText("2 von 4");
-    await page.click('[data-aktion="weiter"]');
-    await expect(ablauf.locator('[data-kv="stufe"]')).toBeVisible();
-    await expect(ablauf.locator('[data-kv="stufe"] [aria-checked="true"]')).toHaveText("Lesen"); // aus dem Stand des Vaults vorbelegt
-    await expect(page.locator('[data-aktion="weiter"]')).toContainText("Verbinden");
-    await page.click('[data-aktion="zurueck"]'); // Zurück geht erst im Ablauf einen Schritt
-    await expect(ablauf.locator(".kv-konto").first()).toBeVisible();
-    await page.click('[data-aktion="weiter"]');
-    await page.click('[data-aktion="weiter"]'); // Verbinden
-    await expect(ablauf.locator('[data-kv="fertig"]')).toBeVisible({ timeout: 10000 });
-    await expect(ablauf.locator('[data-bereich="probe-ergebnis"]')).toContainText("Claude Code sieht deinen Vault");
+    const liste = page.locator('[data-bereich="ki-liste"]');
+    await expect(liste.locator(".e-kr").first()).toBeVisible({ timeout: 8000 });
+    await expect(page.locator(".kv")).toHaveCount(0); // der Wizard aus ki-verbinden.js ist hier nicht mehr im Einsatz
+    await expect(page.locator('.e-kr[data-ki="claude"] [data-feld="zugriff"]')).toHaveText("Zugriff: Lesen"); // aus dem Stand des Vaults vorbelegt
+    await page.click('[data-aktion="verbinden"][data-ki="claude"]');
+    await expect(page.locator('.e-kr[data-ki="claude"] .e-tick')).toContainText("Verbunden", { timeout: 10000 });
     expect(z.anfragen.filter((a) => a.pfad === "/api/mcp/verbinden")[0].body).toMatchObject({ ziel: "claude", konto: "k_claude_privat", zugriff: "lesen" });
     expect(z.anfragen.filter((a) => a.pfad === "/api/mcp/pruefen")).toHaveLength(1);
     await bild(page, "7-assistent-fertig", "light");
-    await page.click('[data-aktion="weiter"]'); // Weiter zur Zusammenfassung des Assistenten
-    await expect(page.locator(".e-zusammen")).toContainText("Claude Code");
     expect(z.seitenfehler).toEqual([]);
   } finally { stat.stopp(); }
 });

@@ -4,6 +4,21 @@ import Foundation
 // `<support>/einrichtung.json` und die Frage, ob der Assistent beim Start von selbst erscheinen soll. Die Schritte selbst führt die Seite;
 // früher stand hier die Zustandsmaschine des SwiftUI-Assistenten (entfallen).
 
+/// Die drei Schritte des Ablaufs (Overlay im Studio), in dieser Reihenfolge. Die Namen sind der Vertrag mit der Oberfläche (Aktion `einrichtung-schritt`, Befehl `einrichtung`).
+public enum EinrichtungsSchritt: String, Codable, Sendable, CaseIterable, Comparable {
+    case vault
+    case ki
+    case sicherung
+
+    public static func < (a: Self, b: Self) -> Bool { allCases.firstIndex(of: a)! < allCases.firstIndex(of: b)! }
+
+    /// Der Schritt danach (nil nach der Sicherung).
+    public var naechster: EinrichtungsSchritt? {
+        let i = Self.allCases.firstIndex(of: self)! + 1
+        return i < Self.allCases.count ? Self.allCases[i] : nil
+    }
+}
+
 public enum EinrichtungsHerkunft: String, Codable, Sendable {
     /// Beim Start von selbst erschienen (erster Start oder Wiederaufnahme).
     case start
@@ -13,7 +28,15 @@ public enum EinrichtungsHerkunft: String, Codable, Sendable {
 
 /// `<support>/einrichtung.json` — das Gedächtnis des Assistenten. Nur, was sich nicht aus der Wirklichkeit ablesen lässt.
 public struct EinrichtungsDatei: Codable, Equatable, Sendable {
-    public var version = 1
+    /// Aktuelle Fassung der Datei (2: `ablaufVersion` und `letzterSchritt`) und des Ablaufs (2: Vault · KI · Sicherung, kein „Fertig“-Bild).
+    public static let aktuelleVersion = 2
+    public static let aktuelleAblaufVersion = 2
+
+    public var version = EinrichtungsDatei.aktuelleVersion
+    /// Welcher Ablauf hat diese Datei geschrieben? Ändert sich der Ablauf (andere Schritte), rechnet `lade()` alte Stände um, statt sie falsch zu lesen.
+    public var ablaufVersion = EinrichtungsDatei.aktuelleAblaufVersion
+    /// Der zuletzt ERLEDIGTE Schritt (nie rückwärts): das Overlay macht beim nächsten Öffnen mit dem Schritt danach weiter. nil = noch keiner.
+    public var letzterSchritt: EinrichtungsSchritt?
     /// Der Assistent ist einmal bis zum Ende durchgelaufen („Fertig“).
     public var abgeschlossen = false
     /// Der Nutzer hat „Später“ gewählt: er erscheint nicht mehr von selbst (das Menü bietet ihn weiter an).
@@ -26,7 +49,8 @@ public struct EinrichtungsDatei: Codable, Equatable, Sendable {
     public var herkunft = EinrichtungsHerkunft.start
 
     public init(abgeschlossen: Bool = false, automatischAus: Bool = false, erledigt: [String] = [], uebersprungen: [String] = [],
-                herkunft: EinrichtungsHerkunft = .start) {
+                herkunft: EinrichtungsHerkunft = .start, letzterSchritt: EinrichtungsSchritt? = nil) {
+        self.letzterSchritt = letzterSchritt
         self.abgeschlossen = abgeschlossen
         self.automatischAus = automatischAus
         self.erledigt = erledigt
@@ -34,17 +58,35 @@ public struct EinrichtungsDatei: Codable, Equatable, Sendable {
         self.herkunft = herkunft
     }
 
-    private enum CodingKeys: String, CodingKey { case version, abgeschlossen, automatischAus, erledigt, uebersprungen, herkunft }
+    private enum CodingKeys: String, CodingKey { case version, ablaufVersion, letzterSchritt, abgeschlossen, automatischAus, erledigt, uebersprungen, herkunft }
 
     /// Fehlende Felder (Datei aus einer anderen Version) bekommen ihren Standardwert; ein unbekannter Wert bei `herkunft` zählt als `.start`.
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        // Ohne `ablaufVersion` (Dateien vor Fassung 2) galt der alte Ablauf: Willkommen · Vault · Sicherung · KI · Fertig.
+        ablaufVersion = try c.decodeIfPresent(Int.self, forKey: .ablaufVersion) ?? 1
+        // Ein unbekannter Schritt (Datei aus einer neueren Fassung) zählt als „noch keiner“.
+        letzterSchritt = (try c.decodeIfPresent(String.self, forKey: .letzterSchritt)).flatMap(EinrichtungsSchritt.init(rawValue:))
         abgeschlossen = try c.decodeIfPresent(Bool.self, forKey: .abgeschlossen) ?? false
         automatischAus = try c.decodeIfPresent(Bool.self, forKey: .automatischAus) ?? false
         erledigt = try c.decodeIfPresent([String].self, forKey: .erledigt) ?? []
         uebersprungen = try c.decodeIfPresent([String].self, forKey: .uebersprungen) ?? []
         herkunft = (try c.decodeIfPresent(String.self, forKey: .herkunft)).flatMap(EinrichtungsHerkunft.init(rawValue:)) ?? .start
+    }
+
+    /// Rechnet eine Datei des alten Ablaufs (`ablaufVersion` < 2) in den neuen um: `letzterSchritt` ist der am weitesten erledigte der drei Schritte aus `erledigt` und `uebersprungen`
+    /// (alte Namen: `vault`, `ki`, `sicherung`, `github` zählt als Sicherung), sonst nil; `version` und `ablaufVersion` werden 2. `abgeschlossen`, `automatischAus` und
+    /// `herkunft` bleiben, wie sie waren — wer fertig war oder „Später“ gewählt hatte, wird nicht wieder überfallen. Eine Datei mit `ablaufVersion` 2 bleibt unverändert.
+    public func umgerechnet() -> EinrichtungsDatei {
+        guard ablaufVersion < Self.aktuelleAblaufVersion else { return self }
+        var d = self
+        d.version = Self.aktuelleVersion
+        d.ablaufVersion = Self.aktuelleAblaufVersion
+        let alt: [String: EinrichtungsSchritt] = ["vault": .vault, "ki": .ki, "sicherung": .sicherung, "github": .sicherung]
+        let erledigteSchritte = (erledigt + uebersprungen).compactMap { alt[$0] }
+        d.letzterSchritt = ([letzterSchritt].compactMap { $0 } + erledigteSchritte).max()
+        return d
     }
 }
 
@@ -57,7 +99,7 @@ public struct EinrichtungsSpeicher: Sendable {
 
     public func lade() -> EinrichtungsDatei? {
         guard let daten = try? Data(contentsOf: datei) else { return nil }
-        return try? JSONDecoder().decode(EinrichtungsDatei.self, from: daten)
+        return (try? JSONDecoder().decode(EinrichtungsDatei.self, from: daten))?.umgerechnet()
     }
 
     public func speichere(_ d: EinrichtungsDatei) throws {

@@ -9,11 +9,17 @@ import { TE } from "./texte-einrichtung.js";
 const FLUG_MS = 280; // das Zeichen wandert in die Seitenleiste (bei reduzierter Bewegung gar nicht)
 
 /**
- * @param {{ vault: () => (string|null), vorOeffnen: () => Promise<boolean>, ladeNeu: () => Promise<void>, aufgefrischt: () => void }} p
+ * @param {{ vault: () => (string|null), vorOeffnen: () => Promise<boolean>, ladeNeu: () => Promise<void>, aufgefrischt: () => void, vertrauenErledigt?: (pfad: string) => void, beiEnde?: (e: object) => void }} p
  *   vault: aktiver Vault des Studios · vorOeffnen: offene Eingaben sichern (false = nicht öffnen; ein neuer Vault in der Einrichtung dürfte sie sonst in den falschen Ordner schreiben)
  *   · ladeNeu: den (neuen) Vault in der Seite laden (`ladeAlles`) · aufgefrischt: Stand von KI und Sicherung neu lesen, wenn der Vault gleich blieb
+ *   · vertrauenErledigt(pfad): die Frage „Diesem Ordner vertrauen“ war im Vault-Schritt gestellt (egal wie beantwortet): das Studio fragt danach nicht noch einmal
+ *   · beiEnde: nach jedem Ende (Checkliste in der Seitenleiste neu lesen)
  */
-export function erzeugeEinrichtungImStudio({ vault, vorOeffnen, ladeNeu, aufgefrischt }) {
+export function erzeugeEinrichtungImStudio({ vault, vorOeffnen, ladeNeu, aufgefrischt, vertrauenErledigt, beiEnde }) {
+  // Jede neu geladene Seite meldet der Hülle „kein Overlay offen“: ein Neuladen (Absturz, Entwicklung) lässt die Rechte der Einrichtung nie offen stehen. Das passiert vor dem Befehl
+  // `einrichtung`, der erst nach `window.studio.bereit` ausgeführt wird; ein schon angeforderter Lauf bleibt dadurch unberührt (siehe EinrichtungsSitzung.seiteMeldetZu).
+  if (inApp()) aktion("einrichtung-sitzung", { offen: false });
+
   // Das Overlay selbst öffnen. Aufrufer ist der Befehl der App (`window.studio.befehl('einrichtung', { ab, weg })`), nie die Seite von sich aus: die App führt Buch darüber,
   // ob die Einrichtung offen ist (nur dann gelten git, Zwischenablage und Ende), darum geht jeder Weg über `anfordern`.
   async function oeffne({ ab = null, weg = null } = {}) {
@@ -31,12 +37,14 @@ export function erzeugeEinrichtungImStudio({ vault, vorOeffnen, ladeNeu, aufgefr
     oeffne({ ab, weg });
   }
 
-  async function nachEinrichtung({ art, zeichen }) {
+  async function nachEinrichtung({ art, zeichen, vertrauenFuer }) {
+    if (vertrauenFuer) { try { vertrauenErledigt?.(vertrauenFuer); } catch (e) { console.error(e); } }
     let neu = null;
     try { neu = await api.info(); } catch { /* der Stand bleibt, wie er war */ }
     const gewechselt = !!neu && (neu.vault || null) !== (vault() || null);
     if (gewechselt) { aktion("vault-gewechselt"); await ladeNeu(); } else aufgefrischt();
     if (art === "fertig" && vault()) { fliegeInSeitenleiste(zeichen); toast(TE.ende.bereit); }
+    try { beiEnde?.({ art }); } catch (e) { console.error(e); }
   }
 
   // Das Zeichen der Bühne wandert (transform, 280 ms) auf das Zeichen des Vaults in der Seitenleiste; dort bleibt dieses bis zur Ankunft unsichtbar.

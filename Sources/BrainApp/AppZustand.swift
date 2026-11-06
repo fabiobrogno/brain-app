@@ -43,8 +43,8 @@ final class AppZustand: ObservableObject {
     private var rueckfragenFenster: NSWindow?
     private var rueckfragenModell: RueckfragenModell?
     /// Die Einrichtung „Kortex einrichten“ ist ein Overlay IM Studio (kein eigenes Fenster). Die App führt Buch darüber, ob sie offen ist: nur dann gelten die Aktionen
-    /// `git-pruefen`, `git-installieren`, `kopieren` und `einrichtung-ende` (`EinrichtungsSitzung`). Die Seite führt durch die Schritte; Swift liefert git, Ordner-Dialog,
-    /// Browser, Zwischenablage und merkt sich Anfang und Ende.
+    /// `git-pruefen`, `git-installieren`, `kopieren`, `einrichtung-schritt` und `einrichtung-ende` (`EinrichtungsSitzung`: von der App angefordert, von der Seite bestätigt, bei jedem Neuladen
+    /// der Seite zurückgenommen). Die Seite führt durch die Schritte; Swift liefert git, Ordner-Dialog, Browser, Zwischenablage und merkt sich Anfang, Schritte und Ende.
     private var einrichtungSitzung = EinrichtungsSitzung()
     /// Hinweise vom Start (Ordner „Brain“, Laufzeit unvollständig), die als Banner ins Studio gehen, sobald es offen ist.
     private var startHinweise: [(titel: String, text: String)] = []
@@ -576,6 +576,22 @@ final class AppZustand: ObservableObject {
             log.schreibe("aktion einrichtung-oeffnen")
             zeigeAssistent(ab: ab, weg: weg)
             return ok
+        case .einrichtungSitzung(let offen):
+            // Die Seite sagt, ob das Overlay wirklich offen ist; erst das schaltet die Rechte der Einrichtung frei. Jede neu geladene Seite meldet „zu“.
+            if von !== studio { return ["ok": false, "grund": "einrichtung-nicht-offen"] as [String: Any] }
+            if offen {
+                guard einrichtungSitzung.bestaetige() else { return ["ok": false, "grund": "nicht-angefordert"] as [String: Any] }
+                log.schreibe("einrichtung-sitzung bestaetigt")
+            } else if einrichtungSitzung.seiteMeldetZu() {
+                log.schreibe("einrichtung-sitzung seite-zu")
+                einrichtungBeendet(nil) // das Overlay ist weg, ohne Wahl: die Einrichtung macht beim nächsten Start dort weiter
+            }
+            return ok
+        case .einrichtungSchritt(let schritt):
+            log.schreibe("aktion einrichtung-schritt \(schritt.rawValue)")
+            let speicher = EinrichtungsSpeicher(pfade: pfade)
+            try? speicher.speichere(EinrichtungsOverlay.datei(schritt: schritt, vorher: speicher.lade(), herkunft: einrichtungSitzung.herkunft))
+            return ok
         case .mitteilungProbe:
             log.schreibe("aktion mitteilung-probe")
             if let grund = await mitteilungen.probe() { return ["ok": false, "grund": grund] as [String: Any] }
@@ -708,7 +724,7 @@ final class AppZustand: ObservableObject {
         } else {
             log.schreibe("assistent-nach-vorn")
         }
-        let einstieg = ab ?? (weg == nil && vorher != nil ? .sicherung : nil)
+        let einstieg = EinrichtungsOverlay.einstieg(ab: ab, weg: weg, vaultDa: vorher != nil, datei: EinrichtungsSpeicher(pfade: pfade).lade())
         sende(name: StudioBefehl.einrichtung.rawValue, skript: StudioBefehl.einrichtung(ab: einstieg, weg: weg))
     }
 
