@@ -3148,7 +3148,7 @@ function zeigeOhneVault(host) {
   const einrichten = baueKnopf({ text: O.einrichten, variante: "leise", aktion: "einrichtung-oeffnen", aufKlick: () => einrichtung.anfordern() });
   host.hidden = false;
   host.replaceChildren(h("div", { klasse: "w-leer", "data-modus": "ohne-vault" },
-    h("div", { klasse: "w-leer-zeichen" }, symbol("marke", 28)), h("h1", { text: O.titel }), h("p", { text: O.text }),
+    h("div", { klasse: "w-leer-zeichen" }, symbol("marke", 24)), h("h1", { text: O.titel }), h("p", { text: O.text }),
     h("div", { klasse: "w-leer-knoepfe" }, neu, oeffnen), einrichten,
     h("div", { klasse: "w-leer-tipps" }, O.tipps.map(([taste, text]) => h("span", null, h("kbd", { text: taste }), text)))));
   if (!document.body.dataset.einrichtung) setTimeout(() => neu.focus(), 0);
