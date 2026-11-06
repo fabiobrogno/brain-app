@@ -41,7 +41,7 @@
     if (!t || t.length > 400 || /[\r\n]/.test(t)) return Promise.resolve(nicht("text-nicht-erlaubt"));
     var rueckfall = function () {
       try {
-        var a = document.createElement("textarea"); a.value = t; a.setAttribute("readonly", ""); a.style.position = "fixed"; a.style.opacity = "0";
+        var a = document.createElement("input"); a.value = t; a.setAttribute("readonly", ""); a.style.position = "fixed"; a.style.opacity = "0";
         document.body.appendChild(a); a.select(); var ok = document.execCommand("copy"); a.remove();
         return ok ? OK : nicht("kopieren-nicht-moeglich");
       } catch (e) { return nicht("kopieren-nicht-moeglich"); }
