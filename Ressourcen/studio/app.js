@@ -1,7 +1,7 @@
 // Brain Studio v2 — Oberfläche. Vier Spalten: Seitenleiste · Notizliste · Editor · Eigenschaften, Statusleiste.
 // Zustand, Navigation, Editor-Anbindung (verlustfrei), Speichern/Konflikt, Dialoge, Vault-Verwaltung.
 import { T, PRODUKT } from "./texte.js";
-import { api, aktion, aktionMitAntwort, inApp, gitGesperrt, andererVault, nichtVertraut, ausgangUnklar, zeitText as zeitFehlerText, ladeStandNeu } from "./api.js";
+import { api, aktion, aktionMitAntwort, inApp, browserModus, mitHuelle, gitGesperrt, andererVault, nichtVertraut, ausgangUnklar, zeitText as zeitFehlerText, ladeStandNeu } from "./api.js";
 import { erstelleEditor } from "./editor.js";
 import { h, dialog, dialogOffen, schliesseDialoge, toast, vorMinuten, dateiName, ohneEndung, ordnerVon, istBearbeitbar, speichereLokal, leseLokal, leseEntwurf, speichereEntwurf, sucheGrad, suchFormen, ausTabelle, arbeitBeginnt, laufendeArbeiten } from "./hilfen.js";
 import { symbol, GROESSE } from "./symbole.js";
@@ -1197,7 +1197,7 @@ function zeichneSeite() {
   zeichneBereiche(); zeichneFavoriten(); zeichneAnsichten(); zeichneTypen(); zeichneOrdner(); kiZeile.zeichne();
 }
 // Einrichtung wieder öffnen (nur in der App: git, Ordnerdialog und Browser kommen von dort); führt im selben Fenster zu Sicherung und KI
-{ const z = $("einrichtung-zeile"); z.append(symbol("marke", 16), h("span", { klasse: "ki-text", text: T.seitenleiste.einrichtung })); z.hidden = !inApp(); z.addEventListener("click", () => einrichtung.anfordern()); }
+{ const z = $("einrichtung-zeile"); z.append(symbol("marke", 16), h("span", { klasse: "ki-text", text: T.seitenleiste.einrichtung })); z.hidden = !mitHuelle(); z.addEventListener("click", () => einrichtung.anfordern()); }
 // KI-Zeile unten in der Seitenleiste (ki-zeile.js)
 // Erkannte KI-Programme aus S.ki (GET /api/ki/erkennen, nur lesend): der Katalog mit „gefunden“, sonst die Liste der Programme mit Pfad
 const erkannteKIs = () => (S.ki ? (Array.isArray(S.ki.katalog) ? S.ki.katalog.filter((k) => k.gefunden).map((k) => k.id) : (S.ki.agenten || []).filter((a) => a.pfad).map((a) => a.id)) : null);
@@ -2381,7 +2381,7 @@ const einstOffen = () => !!einstModul?.istOffen();
 const kurzPfadVon = (p) => String(p || "").replace(/^\/Users\/[^/]+(?=\/|$)/, "~");
 function einstellungenKontext() {
   return {
-    inApp: inApp(), aktion, kurzPfad: kurzPfadVon,
+    inApp: inApp(), browser: browserModus(), mitHuelle: mitHuelle(), aktion, kurzPfad: kurzPfadVon,
     info: () => S.info, git: () => S.git, version: () => S.info?.appVersion || "",
     theme: { lies: () => S.theme, setze: setzeTheme },
     breit: { lies: () => S.breit, setze: (an) => { if (!!S.breit !== !!an) umschalteBreit(); } },
@@ -2963,7 +2963,7 @@ const einrichtung = erzeugeEinrichtungImStudio({
   // Nach jedem Ende (auch „Später“ mit Vault): die Checkliste gilt ab jetzt auf diesem Gerät und liest ihren Stand neu
   beiEnde: () => { if (S.info?.vault) { einrichtungsListe.aktiviere(); einrichtungsListe.aktualisiere(); } },
 });
-const einrichtungsListe = erzeugeEinrichtungsListe({ host: $("einrichtung-liste"), zeile: $("einrichtung-zeile"), api, aktiv: inApp, vault: () => S.info?.vault || null,
+const einrichtungsListe = erzeugeEinrichtungsListe({ host: $("einrichtung-liste"), zeile: $("einrichtung-zeile"), api, aktiv: mitHuelle, vault: () => S.info?.vault || null,
   anfordern: (o) => einrichtung.anfordern(o), einstellungen: (o) => oeffneEinstellungenSeite(o) });
 window.addEventListener("kortex-konten", () => einrichtungsListe.aktualisiere()); // eine KI wurde (ab-)gemeldet: die Liste liest neu
 
@@ -3015,7 +3015,7 @@ window.studio.vorSchliessen = () => {
   return Promise.race([arbeit, frist]);
 };
 function markiereBereit() {
-  window.studio.bereit = true; window.__studioBereit = true;
+  window.studio.bereit = true; window.__studioBereit = true; window.dispatchEvent(new Event("studio-bereit")); // die Browser-Hülle öffnet danach beim ersten Start die Einrichtung
   pruefeEinstellungenAdresse();
   while (wartendeBefehle.length) { try { fuehreBefehlAus(...wartendeBefehle.shift()); } catch { /* ein Befehl darf die anderen nicht stoppen */ } }
 }
@@ -3216,7 +3216,7 @@ async function zeigeWillkommenFlow() {
   $("app").hidden = true;
   const host = $("willkommen-host");
   // In der App führt die Einrichtung (Overlay im Studio) durch den Anfang; hier steht nur der leere Zustand mit den zwei Wegen. Im Browser bleibt die Karte.
-  if (inApp() && (location.protocol === "brain:" || window.__studioAlsApp === true)) { zeigeOhneVault(host); return; } // nur im echten App-Fenster (brain://), nicht in Tests mit einer Attrappe des Aktionskanals (die setzen window.__studioAlsApp)
+  if (browserModus() || (inApp() && (location.protocol === "brain:" || window.__studioAlsApp === true))) { zeigeOhneVault(host); return; } // nur im echten App-Fenster (brain://), nicht in Tests mit einer Attrappe des Aktionskanals (die setzen window.__studioAlsApp)
   try {
     const m = await import("./willkommen.js");
     m.zeigeWillkommen({ modus: "start", beiFertig: async () => { aktion("vault-gewechselt"); await ladeAlles(); }, beiStandNeu: karteStandNeu, beiVerbunden: () => { S.kiVerbunden = true; } });

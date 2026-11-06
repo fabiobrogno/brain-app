@@ -484,7 +484,7 @@ export function erzeugeKi(o) {
     el.replaceChildren(...teile);
   };
   function oeffneWebsite(url) {
-    if (kontext.inApp) kontext.aktion?.("extern", url);
+    if (kontext.mitHuelle ?? kontext.inApp) kontext.aktion?.("extern", url);
     else { try { window.open(url, "_blank", "noopener,noreferrer"); } catch { /* ohne Fenster */ } }
   }
 

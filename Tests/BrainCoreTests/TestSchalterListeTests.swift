@@ -20,6 +20,7 @@ private let betriebsNamen: [String: String] = [
     "BRAIN_NUTZUNG": "setzt die Werkstatt selbst (Probe zählt nicht als KI-Nutzung); Nutzer darf es zum Abschalten setzen",
     "KORTEX_GITHUB_CLIENT_ID": "kommt aus der Info.plist der App",
     "KORTEX_KERN_PFAD": "stabiler Kern-Pfad, den der Starter setzt",
+    "KORTEX_BROWSER": "„Kortex im Browser“ (Windows/Linux-Vorschau, plattform.mjs): vom Nutzer gewähltes Browser-Programm; nicht Teil der App",
     "BRAIN_PORT": "Entwicklungsserver (entwicklung.mjs), nicht Teil der App",
     "BRAIN_WATCH": "Live-Aktualisierung: „poll“ erzwingt Polling statt fs.watch (Entwicklung/CI); ohne Wirkung auf Schutz oder Ablauf der Dateien",
     "BRAIN_BEFUND_DEBUG": "reine Diagnoseausgabe, ohne Wirkung auf Schutz oder Ablauf",

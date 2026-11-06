@@ -86,7 +86,7 @@ export function oeffneEinrichtung(opt = {}) {
       const nimm = () => {
         const w = feld.input.value.trim();
         if (!w) return feld.fehler(TE.ordnerFallback.leer);
-        if (!/^[/~]/.test(w)) return feld.fehler(TE.ordnerFallback.relativ);
+        if (!/^([/~]|[A-Za-z]:[\\/]|\\\\)/.test(w)) return feld.fehler(TE.ordnerFallback.relativ);
         fertig = true; d.schliessen(); ok(w);
       };
       nein.addEventListener("click", () => d.schliessen());

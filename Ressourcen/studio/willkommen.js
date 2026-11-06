@@ -100,7 +100,7 @@ function pfadDialog(titel) {
     const nimm = () => {
       const w = eingabe.value.trim();
       if (!w) { fehler.textContent = TW.pfad.leer; eingabe.focus(); return; }
-      if (!/^[/~]/.test(w)) { fehler.textContent = TW.pfad.relativ; eingabe.focus(); return; }
+      if (!/^([/~]|[A-Za-z]:[\\/]|\\\\)/.test(w)) { fehler.textContent = TW.pfad.relativ; eingabe.focus(); return; }
       zu(w);
     };
     abbrechen.addEventListener("click", () => zu(null));

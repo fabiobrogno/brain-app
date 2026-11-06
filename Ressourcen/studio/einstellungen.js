@@ -22,6 +22,10 @@ import { TKZ } from "./texte-tasten.js";
 
 export const BLINK_MS = 1600; // Sprungziel leuchtet kurz auf (Orca: 3000 ms; ruhiger)
 
+// Browser-Dienst („Kortex im Browser“): Dock-Symbol und macOS-Mitteilungen gibt es dort nicht (die Hintergrunddienst-Zeile meldet selbst „nicht möglich“). Einmal ausgeführt, schadet es nicht, wenn es wieder läuft.
+const NUR_APP_ABSCHNITTE = new Set(["dock", "macos"]);
+function entferneNurApp() { for (const b of BEREICHE) b.abschnitte = b.abschnitte.filter((a) => !NUR_APP_ABSCHNITTE.has(a.id)); }
+
 // Zustand der einen offenen Seite
 const Z = {
   offen: false, api: null, k: null, host: null, bereich: "allgemein", suche: "", ergebnis: null, daten: null,
@@ -733,9 +737,10 @@ export async function oeffneEinstellungen({ api, kontext, bereich = null, ziel =
   }
   if (!Z.offen) return false;
   Z.kiBraucht = 0;
+  if (Z.k.browser) entferneNurApp(); // Browser-Dienst: was es dort nicht gibt, wird nicht gezeigt
   const bt = BEREICHE.find((b) => b.id === "tasten");
   if (bt && !bt.abschnitte.length) bt.abschnitte = tastenAbschnitte(); // eine Zeile je Befehl aus dem Register (tastenkuerzel-register.js), damit auch die Suche der Seite sie findet
-  Z.tasten = erzeugeTasten({ inApp: Z.k.inApp, beiSpeichern: zeigeStand });
+  Z.tasten = erzeugeTasten({ inApp: Z.k.inApp, browser: !!Z.k.browser, beiSpeichern: zeigeStand });
   Z.ki = erzeugeKi({ api, k: kontext, einstellung: { lies: (k) => wertVon(k), schreibe: (k, v) => aendere(k, v) }, zeigeZiel: (ziel) => navigiere("ki", ziel), beiBraucht: (n) => { if (n === Z.kiBraucht) return; Z.kiBraucht = n; if (Z.host?.querySelector(".e-liste")) renderNav(Z.ergebnis ? Z.ergebnis.bereiche : null); } });
   host.replaceChildren(baueGeruest());
   zeichneInhalt();
