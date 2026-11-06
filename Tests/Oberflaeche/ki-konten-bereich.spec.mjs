@@ -243,6 +243,7 @@ test("Neues Konto: Ordner .neu-<id>, noch nicht in der Liste; Abbruch räumt auf
   await expect(page.locator(".kx-prog").first()).toBeVisible();
   await page.click('[data-aktion="konto-hinzu"][data-programm="claude"]');
   const d = dlg(page, "ki-verbinden");
+  await expect(d.locator('[data-kv="konto-neu"]')).toBeVisible(); // erst wenn das Formular steht
   await d.locator('[data-kx="neu-name"]').fill("Privat");
   await d.locator('[data-aktion="konto-neu-ok"]').click();
   await expect(d.locator('[data-kv="anmelden"][data-neu="ja"]')).toBeVisible();
@@ -257,6 +258,7 @@ test("Neues Konto: Ordner .neu-<id>, noch nicht in der Liste; Abbruch räumt auf
   await expect(page.locator('.kx-konto[data-programm="claude"]')).toHaveCount(0);
   // bestätigte Anmeldung
   await page.click('[data-aktion="konto-hinzu"][data-programm="claude"]');
+  await expect(dlg(page, "ki-verbinden").locator('[data-kv="konto-neu"]')).toBeVisible();
   await dlg(page, "ki-verbinden").locator('[data-kx="neu-name"]').fill("Privat");
   await dlg(page, "ki-verbinden").locator('[data-aktion="konto-neu-ok"]').click();
   await expect(dlg(page, "ki-verbinden").locator('[data-kv="anmelden"]')).toBeVisible();

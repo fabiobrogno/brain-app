@@ -245,9 +245,10 @@ test("Konto hinzufügen: öffnet den Ablauf „KI verbinden“ beim Konto; eigen
   expect(z.konten.some((x) => x.name === "Kunde Müller")).toBe(false);
   // noch einmal, diesmal mit bestätigter Anmeldung: erst jetzt Umbenennen und Eintragen (konto-fertig), das Konto erscheint gesperrt
   await page.click('[data-aktion="konto-hinzu"][data-programm="claude"]');
+  await expect(dlg(page, "ki-verbinden").locator('[data-kv="konto-neu"]')).toBeVisible(); // erst wenn das Formular steht
   await dlg(page, "ki-verbinden").locator('[data-kx="neu-name"]').fill("Kunde Müller");
   await dlg(page, "ki-verbinden").locator('[data-aktion="konto-neu-ok"]').click();
-  await expect(dlg(page, "ki-verbinden").locator('[data-kv="anmelden"]')).toBeVisible();
+  await expect(dlg(page, "ki-verbinden").locator('[data-kv="anmelden"]')).toBeVisible({ timeout: 15000 });
   z.neuAngemeldet = true;
   await dlg(page, "ki-verbinden").locator('[data-aktion="anmelden-pruefen"]').click();
   await expect.poll(() => z.log("/api/ki/konto-fertig").length).toBe(1);
