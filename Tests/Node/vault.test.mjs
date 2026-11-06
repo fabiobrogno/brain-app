@@ -153,6 +153,21 @@ test("Neu: Datei <ordner>/<slug>.md mit Überschrift; Namensgleichheit -2", () =
   assert.equal(status(() => v.neu({ ordner: "a", titel: "  " })), 400);
 });
 
+test("Neu mit Inhalt (Studio: Entwurf wird zur Datei): fertiger Text, Name aus dem Titel, Hash passt, nie überschreiben", async () => {
+  const { createHash } = await import("node:crypto");
+  const { d, v } = vault();
+  const text = "---\ntyp: besprechung\n---\n# Wochenstart ÄÖ\n\n- Punkt\n";
+  const a = v.neu({ ordner: "00_inbox", titel: "Wochenstart ÄÖ", inhalt: text });
+  assert.equal(a.pfad, "00_inbox/wochenstart-aeoe.md");
+  assert.equal(readFileSync(join(d, a.pfad), "utf8"), text);
+  assert.equal(a.hash, createHash("sha256").update(text).digest("hex"));
+  const b = v.neu({ ordner: "00_inbox", titel: "Wochenstart ÄÖ", inhalt: "anders\n" });
+  assert.equal(b.pfad, "00_inbox/wochenstart-aeoe-2.md");
+  assert.equal(readFileSync(join(d, a.pfad), "utf8"), text, "die erste Datei bleibt");
+  assert.equal(v.neu({ ordner: "", titel: "Leer", inhalt: "" }).pfad, "leer.md", "ein leerer Text ist erlaubt");
+  assert.equal(status(() => v.neu({ ordner: "", titel: "X", inhalt: 5 })), 400);
+});
+
 test("Merken: Format wie Inbox, Datum Berliner Zeit, -2/-3, nie überschreiben, nur 00_inbox", () => {
   const d = tmp();
   const v = oeffneVault(d, { jetzt: () => new Date("2026-10-24T22:30:00Z") }); // = 25.10. 00:30 Berlin

@@ -333,8 +333,8 @@ test("Menübefehle: alle Swift-Befehle sind belegt, hell-dunkel schaltet das The
   await expect(page.locator(".palette input")).toBeVisible();
   await page.keyboard.press("Escape");
   await befehl("neu");
-  await expect(page.locator('[data-feld="titel"]')).toBeVisible();
-  await page.keyboard.press("Escape");
+  await expect(page.locator("#pfad .krume.aktuell")).toHaveText("Neue Notiz");
+  await expect(page.locator(".dialog")).toHaveCount(0);
   await befehl("merken");
   await expect(page.locator('[data-feld="text"]')).toBeVisible();
   await page.keyboard.press("Escape");

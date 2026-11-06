@@ -78,6 +78,20 @@ export const BEREICHE = [
     ],
   },
   {
+    id: "schreiben", name: "Schreiben", gruppe: "Wissen", symbol: "stift", woerter: ["tagesnotiz", "tagebuch", "journal", "vorlage", "vorlagen", "template", "datum", "notiz"],
+    intro: "Wie neue Notizen entstehen. ⌘N legt sofort eine leere Seite an, ⇧⌘D öffnet die Tagesnotiz, ⌥⌘N startet eine Notiz aus einer Vorlage.",
+    abschnitte: [
+      { id: "tagesnotiz", titel: "Tagesnotiz", zeilen: [
+        { id: "tag-ordner", schluessel: "tagesnotizOrdner", art: "pfad", titel: "Ordner der Tagesnotizen", text: "Im Vault; der Ordner entsteht beim ersten Mal von selbst.", woerter: ["tagebuch", "ordner", "journal", "tag", "heute"] },
+        { id: "tag-format", schluessel: "tagesnotizFormat", art: "pfad", titel: "Name der Tagesnotiz", text: "Zum Beispiel JJJJ-MM-TT (2026-11-05) oder TT.MM.JJJJ. Weitere Zeichen: MMMM (November), WWWW (Donnerstag), KW (Kalenderwoche). Text in [eckigen Klammern] bleibt, wie er ist.", woerter: ["format", "datum", "name", "tag", "jjjj"] },
+        { id: "tag-vorlage", schluessel: "tagesnotizVorlage", art: "pfad", titel: "Vorlage für die Tagesnotiz", text: "Name einer Notiz im Vorlagenordner. Leer: die Vorlage „Tagesnotiz“, wenn es sie gibt, sonst eine leere Seite.", woerter: ["vorlage", "tagesnotiz", "template"] },
+      ] },
+      { id: "vorlagen", titel: "Vorlagen", zeilen: [
+        { id: "vorlagen-ordner", schluessel: "vorlagenOrdner", art: "pfad", titel: "Ordner der Vorlagen", text: "Jede Notiz in diesem Ordner ist eine Vorlage. Platzhalter: {{titel}}, {{datum}}, {{datum:TT.MM.JJJJ}}, {{zeit}} und {{cursor}}.", woerter: ["vorlage", "ordner", "platzhalter", "titel", "datum", "cursor"] },
+      ] },
+    ],
+  },
+  {
     id: "ki", name: "KI & Konten", gruppe: "Wissen", symbol: "funke", woerter: ["konto", "claude", "codex", "anmelden", "abo"],
     intro: "Kortex arbeitet mit den KI-Programmen, die du schon hast, und mit deinem eigenen Abo. Hier siehst du, welche Konten angemeldet sind und was jedes Konto in welchem Vault darf.",
     abschnitte: [

@@ -212,9 +212,10 @@ test("Leerer Vault: freundlicher Zustand", async ({ page }) => {
   const op = await page.evaluate(() => getComputedStyle(document.getElementById("leer")).opacity);
   expect(op).toBe("1");
   await page.click('[data-aktion="erste"]');
-  await page.fill('[data-feld="titel"]', "Erste Notiz");
-  await page.click('[data-aktion="anlegen"]');
+  await page.keyboard.type("Erste Notiz"); // „Erste Notiz anlegen“ ist ⌘N: eine leere Seite, der Cursor steht in der Titelzeile
   await expect(page.locator(".cm-content")).toContainText("Erste Notiz");
+  await expect(page.locator("#speicherstand")).toHaveText("Gespeichert", { timeout: 8000 });
+  expect(readFileSync(join(leer.vault, "00_inbox/erste-notiz.md"), "utf8")).toBe("# Erste Notiz\n");
 });
 
 test("Palette findet tiefe Seite per Titel, Dateiname und Wortanfang; Enter ohne Treffer legt nichts an", async ({ page }) => {
@@ -240,10 +241,11 @@ test("Palette findet tiefe Seite per Titel, Dateiname und Wortanfang; Enter ohne
   await page.keyboard.press("Enter");
   await expect(page.locator(".palette")).toBeVisible();
   await expect(page.locator('[data-feld="titel"]')).toHaveCount(0);
-  // ausdrücklich gewählt: Dialog mit vorbelegtem Titel
+  // ausdrücklich gewählt: die Notiz mit diesem Titel liegt gleich da und ist offen
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("Enter");
-  await expect(page.locator('[data-feld="titel"]')).toHaveValue("zzzqqq");
+  await expect(page.locator("#pfad .krume.aktuell")).toHaveText("zzzqqq");
+  await expect.poll(() => lese("00_inbox/zzzqqq.md").toString()).toBe("# zzzqqq\n");
 });
 
 test("Seitenleiste zeigt Rückfragen n, wenn der Kern sie liefert (ohne Vertrauensfrage)", async ({ page }) => {

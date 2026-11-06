@@ -52,7 +52,7 @@ export const api = {
   baum: () => anfrage("GET", "/api/baum"),
   datei: (pfad) => anfrage("GET", "/api/datei" + q({ pfad })),
   speichern: (pfad, inhalt, basisHash) => anfrage("PUT", "/api/datei", { pfad, inhalt, basisHash }),
-  neu: (ordner, titel) => anfrage("POST", "/api/neu", { ordner, titel }),
+  neu: (ordner, titel, inhalt) => anfrage("POST", "/api/neu", inhalt === undefined ? { ordner, titel } : { ordner, titel, inhalt }), // inhalt: der fertige Text (neue Notiz aus dem Entwurf); Antwort { pfad, hash }
   wikiAnlegen: (ziel, von, ordner) => anfrage("POST", "/api/wiki/anlegen", { ziel, von, ...(ordner ? { ordner } : {}) }),
   merken: (text, titel) => anfrage("POST", "/api/merken", titel ? { text, titel } : { text }),
   // ---- Posteingang sichten: je Aktion ein Git-Commit (Antwort: pfad, ziel, commit = sha oder null ohne Git)

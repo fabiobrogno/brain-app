@@ -287,7 +287,7 @@ export function hakenFeld({ typ = "checkbox", text, checked = false, name, wert,
 const MONATE = Array.from({ length: 12 }, (_, m) => new Intl.DateTimeFormat("de-DE", { month: "long" }).format(new Date(2026, m, 1)));
 const tagLang = (iso) => new Intl.DateTimeFormat("de-DE", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(vonIso(iso));
 
-function kalenderBox({ wert, beiWahl, schnell, kein, zu }) {
+function kalenderBox({ wert, beiWahl, schnell, kein, zu, markiert = null }) {
   const heute = heuteIso();
   let fokusIso = istIso(wert) ? wert : heute;
   let monat = { j: vonIso(fokusIso).getFullYear(), m: vonIso(fokusIso).getMonth() };
@@ -314,7 +314,7 @@ function kalenderBox({ wert, beiWahl, schnell, kein, zu }) {
       for (let t = 0; t < 7; t++) {
         const iso = plusTage(start, w * 7 + t), d = vonIso(iso);
         const draussen = d.getMonth() !== monat.m;
-        tage.push(h("button", { type: "button", klasse: klassen("bs-tag", draussen && "draussen", iso === heute && "heute"), role: "gridcell", "data-datum": iso, text: String(d.getDate()),
+        tage.push(h("button", { type: "button", klasse: klassen("bs-tag", draussen && "draussen", iso === heute && "heute", markiert?.(iso) && "mit-eintrag"), role: "gridcell", "data-datum": iso, text: String(d.getDate()),
           "aria-label": tagLang(iso), "aria-selected": String(iso === wert), "aria-current": iso === heute ? "date" : null, tabindex: (fokusImMonat ? iso === fokusIso : iso === isoVon(erster)) ? "0" : "-1",
           aufClick: () => wahl(iso) }));
       }
@@ -336,7 +336,7 @@ function kalenderBox({ wert, beiWahl, schnell, kein, zu }) {
   vor.firstChild.style.transform = "rotate(180deg)";
   const nach = pfeil(1, TB.datum.nach, "chevron-rechts");
   const sch = schnell ? h("div", { klasse: "bs-kal-schnell" },
-    [["heute", TB.datum.heute, heute], ["morgen", TB.datum.morgen, plusTage(heute, 1)], ["woche", TB.datum.naechsteWoche, naechsteWocheIso(heute)]]
+    [["heute", TB.datum.heute, heute], ["morgen", TB.datum.morgen, plusTage(heute, 1)], ["woche", TB.datum.naechsteWoche, naechsteWocheIso(heute)]].filter(([k]) => schnell !== "heute" || k === "heute")
       .map(([k, t, iso]) => h("button", { type: "button", klasse: "knopf bs-knopf leise klein", "data-schnell": k, "data-datum-schnell": iso, text: t, aufClick: () => wahl(iso) }))) : null;
   const box = h("div", { klasse: "bs-kal", role: "dialog", "aria-label": TB.datum.waehlen },
     sch, h("div", { klasse: "bs-kal-kopf" }, titelEl, vor, nach), raster,
@@ -346,8 +346,9 @@ function kalenderBox({ wert, beiWahl, schnell, kein, zu }) {
 }
 
 // Nur das Popover (ohne eigenen Knopf), z. B. aus einem Kontextmenü: beiWahl(iso | null).
-export function oeffneDatumsauswahl(anker, { wert = null, beiWahl, beiZu, schnell = true, kein = true, rechts = false } = {}) {
-  const k = kalenderBox({ wert, beiWahl, schnell, kein, zu: (f) => p.zu(f) });
+// schnell: true = Heute/Morgen/Nächste Woche, "heute" = nur Heute, false = keine. markiert(iso) → true: der Tag trägt einen Punkt (z. B. Tage mit Tagesnotiz).
+export function oeffneDatumsauswahl(anker, { wert = null, beiWahl, beiZu, schnell = true, kein = true, rechts = false, markiert = null } = {}) {
+  const k = kalenderBox({ wert, beiWahl, schnell, kein, zu: (f) => p.zu(f), markiert });
   const p = oeffnePopover(anker, k.box, { rechts, tabSchliesst: false, fokusVerlustSchliesst: true, beiZu });
   k.fokus();
   return p;

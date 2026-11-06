@@ -611,7 +611,8 @@ export function erstelleEditor(eltern, ctx) {
     zeilenende: () => ende,
     // Lädt Text als neuen Zustand (eigene Rückgängig-Liste). Zeilenende wird erkannt.
     // behalte: derselbe Text von außen verändert (Live-Aktualisierung) — Auswahl und Scrollposition bleiben, soweit der neue Text sie noch hat
-    setzeText(text, { nurLesen = false, behalte = false } = {}) {
+    // cursor: Zeichenposition im Dokument, an der der Cursor beginnt (neue Notiz aus einer Vorlage: {{cursor}}, sonst hinter dem Datei-Kopf)
+    setzeText(text, { nurLesen = false, behalte = false, cursor = null } = {}) {
       const alt = behalte ? view.state.selection.main : null, scroll = behalte ? view.scrollDOM.scrollTop : 0;
       ende = text.includes("\r\n") ? "\r\n" : (text.includes("\r") && !text.includes("\n") ? "\r" : "\n");
       let state = EditorState.create({ doc: text, extensions: erweiterungen(ende) });
@@ -619,12 +620,39 @@ export function erstelleEditor(eltern, ctx) {
       // CRLF zwei Zeichen, der Cursor säße in einer CRLF-Datei mitten in der ersten Zeile oder, bei einer reinen Kopf-Datei, hinter dem Ende.
       const b = kopfBereich(state.doc);
       if (alt) state = state.update({ selection: { anchor: Math.min(state.doc.length, alt.anchor), head: Math.min(state.doc.length, alt.head) } }).state;
+      else if (cursor !== null && Number.isInteger(cursor)) state = state.update({ selection: { anchor: Math.max(0, Math.min(state.doc.length, cursor)) } }).state;
       else if (b) state = state.update({ selection: { anchor: Math.min(state.doc.length, b.bis + 1) } }).state;
       view.setState(state);
       if (alt) view.scrollDOM.scrollTop = scroll;
       if (ctx.roh?.()) view.dispatch({ effects: fmUmschalten.of(false) });
       // Der neue State kennt den Fokus noch nicht: den Ist-Stand eintragen (sonst bliebe der Absatz am Cursor verbunden)
       view.dispatch({ effects: [schreibschutzFeld.reconfigure(nurLesen ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []), fokusGeaendert.of(view.hasFocus)] });
+    },
+    // Auswahl und Scrollposition merken und wiederherstellen (Zurück/Vor): { anker, kopf, scroll }. Zeichenpositionen im Dokument; zu große werden begrenzt.
+    zustand() {
+      const a = view.state.selection.main, oben = view.scrollDOM.scrollTop - view.documentPadding.top;
+      const b = view.lineBlockAtHeight(Math.max(0, oben));
+      // scroll: Pixel; pos/versatz: die Zeile am oberen Rand und der Abstand darin — die Pixel allein verrutschen, wenn die Zeilenhöhen beim Zeichnen neu gemessen werden
+      return { anker: a.anchor, kopf: a.head, scroll: Math.round(view.scrollDOM.scrollTop), pos: b.from, versatz: Math.round(oben - b.top) };
+    },
+    stelleHer(z) {
+      if (!z) return;
+      const n = view.state.doc.length;
+      const begrenze = (p) => Math.max(0, Math.min(n, Number.isInteger(p) ? p : 0));
+      view.dispatch({ selection: { anchor: begrenze(z.anker), head: begrenze(z.kopf ?? z.anker) } });
+      // Die Höhe des Textes steht erst nach dem Zeichnen fest (Zeilen werden gemessen, Bilder, aufgeklappte Teile): nach jedem Layout noch einmal setzen
+      const setze = () => {
+        if (Number.isInteger(z.pos)) { const b = view.lineBlockAt(begrenze(z.pos)); view.scrollDOM.scrollTop = Math.max(0, b.top + view.documentPadding.top + (z.versatz || 0)); }
+        else view.scrollDOM.scrollTop = Number.isFinite(z.scroll) ? z.scroll : 0;
+      };
+      setze();
+      // ~0,5 s lang nach jedem Zeichnen nachsetzen, bis die Höhen stehen; sobald jemand scrollt, tippt oder klickt, hört das auf
+      let aus = false;
+      const stopp = () => { aus = true; for (const t of ["wheel", "keydown", "pointerdown"]) view.scrollDOM.removeEventListener(t, stopp, true); };
+      for (const t of ["wheel", "keydown", "pointerdown"]) view.scrollDOM.addEventListener(t, stopp, true);
+      const ende = performance.now() + 500;
+      const runde = () => { if (aus) return; setze(); if (performance.now() < ende) requestAnimationFrame(runde); else stopp(); };
+      requestAnimationFrame(runde);
     },
     // Originaltext mit ursprünglichen Zeilenenden
     text() { return view.state.sliceDoc(0, view.state.doc.length, view.state.lineBreak); },

@@ -29,6 +29,9 @@ import { installiereFensterKopf, vorschauPille } from "./fenster.js"; // Titelle
 import * as kz from "./tastenkuerzel.js";
 import { baueWikiIndex, loeseWikiLink, schlageWikiZieleVor, ordnerVonPfad } from "./wikilink.js";
 import { heuteIso } from "./zeit.js";
+import { erzeugeSchreiben } from "./schreiben.js"; // Neue Notiz (sofort), Tagesnotiz, Vorlagen, Zurück/Vor
+import { titelAusText, imOrdner as imVorlagenOrdner, STANDARD as SCHREIB_STANDARD } from "./vorlagen.js";
+import { TS } from "./texte-schreiben.js";
 import { datumKurz, datumLang, datumZeit, istDatumText, bytesText, setzeTypFarbe, typSymbol, typName, wortAnzahl, relativ, pluralisiere, vorschauText, typTextFarbe } from "./format.js";
 
 const $ = (id) => document.getElementById(id);
@@ -53,6 +56,8 @@ const S = {
   zeigeZurueckgestellt: false,               // Posteingang: false = offene Notizen, true = die mit „Später“ zurückgestellten
   inboxOrdner: "00_inbox",                   // Ordnername des Posteingangs (Antwort von /api/notizen, Konfiguration ordner.inbox)
   aufgabenOrdner: "05_aufgaben",             // Ordnername der Aufgaben (Antwort von /api/notizen, Konfiguration ordner.aufgaben)
+  entwurf: null,                             // neue Notiz ohne Datei: { pfad (fester Pfad einer Tagesnotiz oder null), ordner, start (Text beim Öffnen), tag (ISO bei einer Tagesnotiz) }; S.pfad ist dann leer
+  schreibEinst: { ...SCHREIB_STANDARD },     // Tagesnotiz und Vorlagen aus den Einstellungen (vorlagenOrdner, tagesnotizOrdner, tagesnotizFormat, tagesnotizVorlage)
   aufgabeDatei: false,                       // Aufgaben: true = eine Karte ist als Datei im Editor geöffnet (das Board ist dann verdeckt)
 };
 const lokal = {
@@ -110,12 +115,22 @@ function wendeEinstellungenAn(w) {
   const r = document.documentElement;
   if (Number.isInteger(w.schriftgroesse) && w.schriftgroesse >= 13 && w.schriftgroesse <= 19) r.style.setProperty("--editor-schrift", w.schriftgroesse + "px");
   if (w.bewegung === "reduziert") r.dataset.bewegung = "reduziert"; else delete r.dataset.bewegung;
+  // Schreiben: Tagesnotiz und Vorlagen (leer = Standard)
+  const alt = S.schreibEinst;
+  const neu = { ...SCHREIB_STANDARD };
+  for (const k of Object.keys(SCHREIB_STANDARD)) if (typeof w[k] === "string" && (w[k].trim() || k === "tagesnotizVorlage")) neu[k] = w[k].trim();
+  if (Object.keys(neu).some((k) => neu[k] !== alt[k])) {
+    S.schreibEinst = neu;
+    schreiben.vergesseVorlagen?.();
+    schreiben.zeichneTagNavigation?.();
+    if (neu.vorlagenOrdner !== alt.vorlagenOrdner && S.bereit) ladeBaum(); // Notizen im Vorlagenordner zählen nicht als Notizen
+  }
 }
 async function ladeKuerzel() { await kz.lade(); }
 async function ladeAppEinstellungen() { try { const d = await api.einstellungen(); wendeEinstellungenAn(d.werte); } catch { /* ohne: Standard */ } }
 
 // ======================================================= Editor
-let speicherTimer = null;
+let speicherTimer = null, entwurfSpaet = null;
 const ed = erstelleEditor($("editor"), {
   roh: () => S.roh,
   wikiAufloesen: (ziel) => loeseWikiAuf(ziel),
@@ -129,8 +144,33 @@ const ed = erstelleEditor($("editor"), {
     if (S.konflikt) { zeigeStand("konflikt"); return; }
     zeigeStand("ungespeichert");
     clearTimeout(speicherTimer);
+    if (S.entwurf && !S.pfad) {
+      // Neue Notiz: der Dateiname folgt dem Titel — solange man noch in der Titelzeile tippt, etwas länger warten
+      const st = ed.view.state;
+      const aufTitel = /^#[ \t]/.test(st.doc.lineAt(st.selection.main.head).text);
+      const k = $("pfad").querySelector(".krume.aktuell");
+      if (k) k.textContent = titelAusText(ed.text(), { ersatz: false }) || TS.neu.unbenannt;
+      speicherTimer = setTimeout(speichere, aufTitel ? 2500 : 800);
+      clearTimeout(entwurfSpaet); entwurfSpaet = setTimeout(() => { if (S.entwurf && !S.pfad) festigeEntwurf({ ersatz: true }); }, 20000); // nur Text ohne Titel: nach 20 s Ruhe sichern, der Dateiname folgt der ersten Zeile
+      return;
+    }
     speicherTimer = setTimeout(speichere, 800);
   },
+});
+
+// Schreiben im Alltag (schreiben.js): app.js gibt den Zustand und die Bausteine mit, die an ihm hängen
+const schreiben = erzeugeSchreiben({
+  S, ed, api,
+  einstellungen: () => S.schreibEinst,
+  existiert: (p) => S.eintraege.has(p),
+  titelVon: (p) => S.nMap.get(p)?.titel || "",
+  inboxName: () => inboxName(),
+  kuerzel: (id) => kz.anzeige(id),
+  gesperrt: () => dialogOffen() || !S.info?.vault,
+  dialogOffen: () => dialogOffen(),
+  oeffne: (p, o) => oeffne(p, o),
+  oeffneEntwurf: (o) => oeffneEntwurf(o),
+  festigeEntwurf: (o) => festigeEntwurf(o),
 });
 
 // Wikilink-Auflösung: dieselbe Regel wie in der Werkstatt (wikilink.js = gemeinsam/wikilink.mjs): Pfad und Dateiname, dann Titel, dann Alias;
@@ -161,7 +201,8 @@ async function legeWikiZielAn(ziel) {
 }
 
 // ======================================================= Datei öffnen / speichern
-async function oeffne(pfad, { zeile, ausListe, ausBoard } = {}) {
+// verlauf: über Zurück/Vor geöffnet (kein neuer Eintrag, kein Fehler-Hinweis bei einer verschwundenen Notiz), zustand: Cursor und Scrollposition dort, beiFehlt(): die Notiz gibt es nicht mehr
+async function oeffne(pfad, { zeile, ausListe, ausBoard, verlauf: ausVerlauf = false, zustand = null, beiFehlt = null } = {}) {
   if (konfliktInst) { if (konfliktInst.laeuft()) return false; await schliesseKonflikt(konfliktInst.istFertig() ? "fertig" : "liste"); }
   if (pfad === S.pfad) { schliesseDiff(); if (zeile) ed.springeZu(zeile); else if (!ausListe) ed.fokus(); return true; }
   if (S.konflikt) { toast(`Löse zuerst den Konflikt in „${ohneEndung(dateiName(S.pfad))}“.`, { fehler: true }); return false; }
@@ -171,12 +212,19 @@ async function oeffne(pfad, { zeile, ausListe, ausBoard } = {}) {
   if (nr !== S.ladeNr || S.konflikt) return false;
   let d;
   try { d = await api.datei(pfad); }
-  catch (e) { toast(e.status === 403 || e.status === 404 ? T.fehler.laden : e.message, { fehler: true }); return false; }
+  catch (e) {
+    const weg = e.status === 403 || e.status === 404;
+    if (weg) beiFehlt?.();
+    if (!(ausVerlauf && weg)) toast(weg ? T.fehler.laden : e.message, { fehler: true });
+    return false;
+  }
   if (nr !== S.ladeNr) return false;
   if (S.dirty) { // während des Ladens weitergetippt: nicht überschreiben
     clearTimeout(speicherTimer);
     if (!(await sichereVorWechsel()) || nr !== S.ladeNr) return false;
   }
+  schreiben.verlasse(); // Cursor und Scrollposition der Notiz merken, die wir verlassen (Zurück/Vor)
+  S.entwurf = null;
   S.pfad = d.pfad; S.hash = d.hash; S.schutz = !!d.schreibschutz || imKonflikt(d.pfad); S.dirty = false; S.konflikt = null; // Dateien in einer offenen Zusammenführung enthalten Konfliktmarken: nur lesen
   S.bearbeitbar = istBearbeitbar(d.pfad);
   S.aktuellePruefung = null;
@@ -189,7 +237,9 @@ async function oeffne(pfad, { zeile, ausListe, ausBoard } = {}) {
   klappeAuf(d.pfad);
   markiereAuswahl(); zeichnePfad(); zeichneWerkzeuge(); zeichneOrdner(); setzeFenstertitel(); aktualisiereStatusDatei();
   ladeInfo();
-  if (zeile) ed.springeZu(zeile);
+  if (!ausVerlauf) schreiben.betreten(d.pfad); else schreiben.zeichnePfeile();
+  if (zustand) { ed.stelleHer(zustand); if (!document.querySelector(".schleier")) ed.fokus(); }
+  else if (zeile) ed.springeZu(zeile);
   else if (!ausListe && !document.querySelector(".schleier")) ed.fokus();
   lokal.schreib("pfad", d.pfad);
   // Im Aufgaben-Board öffnet jede Datei (Karte, Befehlspalette) den Editor; „Zurück zum Board“ führt wieder hin
@@ -197,9 +247,88 @@ async function oeffne(pfad, { zeile, ausListe, ausBoard } = {}) {
   return true;
 }
 
+// Neue Notiz ohne Datei (⌘N, Tagesnotiz eines Tages ohne Notiz, Vorlage): der Editor zeigt den Text, S.pfad bleibt leer. Die Datei entsteht erst, wenn etwas drinsteht
+// (festigeEntwurf) — eine leer verlassene Notiz hinterlässt nichts. pfad: fester Pfad (Tagesnotiz), sonst folgt der Name dem Titel im Ordner `ordner`.
+async function oeffneEntwurf({ text, cursor = null, pfad = null, ordner = null, tag = null }) {
+  if (konfliktInst) { if (konfliktInst.laeuft()) return false; await schliesseKonflikt(konfliktInst.istFertig() ? "fertig" : "liste"); }
+  if (S.konflikt) { toast(`Löse zuerst den Konflikt in „${ohneEndung(dateiName(S.pfad))}“.`, { fehler: true }); return false; }
+  const nr = ++S.ladeNr;
+  if (!(await sichereVorWechsel())) return false;
+  if (nr !== S.ladeNr || S.konflikt) return false;
+  schreiben.verlasse();
+  clearTimeout(speicherTimer);
+  S.pfad = null; S.hash = null; S.schutz = false; S.dirty = false; S.konflikt = null; S.bearbeitbar = true; S.aktuellePruefung = null;
+  S.entwurf = { pfad, ordner: ordner ?? inboxName(), start: text, tag };
+  ed.setzeText(text, { nurLesen: false, cursor });
+  ed.setzeSignale([]);
+  schliesseDiff();
+  $("leer").hidden = true; $("editor").hidden = false;
+  zeigeBanner(); zeigeStand("", true);
+  markiereAuswahl(); zeichnePfad(); zeichneWerkzeuge(); zeichneOrdner(); setzeFenstertitel(); aktualisiereStatusDatei();
+  ladeInfo();
+  schreiben.entwurfOffen();
+  if (istAufgabenSicht() && !S.aufgabeDatei) { S.aufgabeDatei = true; setzeModus(); }
+  ed.fokus();
+  return true;
+}
+// Aus dem Entwurf eine Datei machen, wenn etwas drinsteht: → "angelegt" | "leer" (nichts zu sichern, kein Titel oder unberührt) | "fehler".
+// sofort: auch ein unberührter Entwurf mit Titel (Tagesnotiz „Heute“, Vorlage mit Titel).
+let festigeLauf = null;
+function festigeEntwurf(o) {
+  if (festigeLauf) return festigeLauf;
+  festigeLauf = festigeInnen(o || {}).finally(() => { festigeLauf = null; });
+  return festigeLauf;
+}
+async function festigeInnen({ sofort = false, ersatz = false }) {
+  const e = S.entwurf;
+  if (!e || S.pfad) return "leer";
+  const text = ed.text();
+  const titel = titelAusText(text, { ersatz: ersatz || sofort }); // beim Tippen wartet eine leere Titelzeile auf ihren Titel; beim Verlassen/Beenden nimmt Kortex die erste Zeile (nichts geht verloren)
+  if (titel === null || (!sofort && text === e.start)) return "leer";
+  S.speichert = true; letzterFehler = null; zeigeStand("speichert");
+  try {
+    let pfad, hash;
+    if (e.pfad) {
+      try { const r = await api.speichern(e.pfad, text, null); pfad = e.pfad; hash = r.hash; }
+      catch (x) {
+        if (x.status !== 409) throw x;
+        // Die Notiz gibt es inzwischen (anderes Gerät, KI): unberührt → einfach öffnen; sonst bleibt der Text im Fenster und der Hinweis sagt es
+        if (text !== e.start) { letzterFehler = TS.neu.gibtEsSchon; zeigeStand("fehler", false, letzterFehler); return "fehler"; }
+        S.entwurf = null; S.dirty = false;
+        await ladeBaum(); await oeffne(e.pfad);
+        return "angelegt";
+      }
+    } else { const r = await api.neu(e.ordner, titel, text); pfad = r.pfad; hash = r.hash; }
+    if (S.entwurf !== e) { planeBaumRefresh(); return "angelegt"; }
+    S.entwurf = null; S.pfad = pfad; S.hash = hash; S.konflikt = null; S.schutz = false;
+    S.dirty = ed.text() !== text;
+    zeigeStand(S.dirty ? "ungespeichert" : "gespeichert");
+    zuletztMerken(pfad); lokal.schreib("pfad", pfad);
+    schreiben.betreten(pfad);
+    klappeAuf(pfad);
+    zeichnePfad(); zeichneWerkzeuge(); setzeFenstertitel(); aktualisiereStatusDatei(); ladeInfo(); planeGitRefresh();
+    await ladeBaum(); // Liste und Seitenleiste kennen die Notiz
+    markiereAuswahl(); zeichneOrdner();
+    if (S.dirty && S.pfad === pfad) { clearTimeout(speicherTimer); speicherTimer = setTimeout(speichere, 400); } // währenddessen weitergetippt
+    return "angelegt";
+  } catch (x) {
+    letzterFehler = x.message && x.message !== T.fehler.allgemein ? x.message : T.fehler.speichern;
+    zeigeStand("fehler", false, letzterFehler);
+    return "fehler";
+  } finally { S.speichert = false; }
+}
+
 // Speichern ist immer EINE laufende Promise; Aufrufer können sie abwarten.
 let laufendesSpeichern = null, letzterFehler = null;
 function speichere() {
+  if (S.entwurf && !S.pfad) {
+    if (laufendesSpeichern) { S.nochmal = true; return laufendesSpeichern; }
+    laufendesSpeichern = festigeEntwurf().finally(() => {
+      laufendesSpeichern = null;
+      if (S.nochmal) { S.nochmal = false; if (S.dirty && !S.konflikt && !letzterFehler) speichere(); }
+    });
+    return laufendesSpeichern;
+  }
   if (!S.pfad || S.schutz || !S.bearbeitbar || S.konflikt || !S.dirty) return laufendesSpeichern || Promise.resolve();
   if (laufendesSpeichern) { S.nochmal = true; return laufendesSpeichern; }
   laufendesSpeichern = speichereEinmal().finally(() => {
@@ -230,6 +359,13 @@ async function speichereEinmal() {
 async function speichereAlles() {
   for (let i = 0; i < 8; i++) {
     while (laufendesSpeichern) await laufendesSpeichern;
+    if (S.entwurf && !S.pfad) { // neue Notiz: mit Inhalt wird sie zur Datei, leer bleibt sie ohne Datei (nichts geht verloren)
+      clearTimeout(speicherTimer);
+      const r = await festigeEntwurf({ ersatz: true });
+      if (r === "fehler") return false;
+      if (r === "leer") return true;
+      continue;
+    }
     if (!S.dirty) return true;
     if (!S.pfad || S.schutz || !S.bearbeitbar || S.konflikt) return false;
     clearTimeout(speicherTimer);
@@ -314,7 +450,7 @@ function zeigeBanner() {
 function setzeFenstertitel() {
   const n = S.pfad ? S.nMap.get(S.pfad) : null;
   const name = S.info?.name || PRODUKT;
-  const titel = n ? `${n.titel || ohneEndung(dateiName(S.pfad))} — ${name}` : name;
+  const titel = n ? `${n.titel || ohneEndung(dateiName(S.pfad))} — ${name}` : S.entwurf && !S.pfad ? `${titelAusText(ed.text(), { ersatz: false }) || TS.neu.unbenannt} — ${name}` : name;
   document.title = titel;
   aktion("titel", titel);
 }
@@ -322,7 +458,7 @@ function setzeFenstertitel() {
 // ======================================================= Index (Notizen, Typen, Ansichten)
 // Wie der Werkstatt-Index: _-Ordner im Posteingang sind maschinell, Vorlagen und Agenten-Anweisungen in der Wurzel keine Notizen
 const inboxName = () => S.inboxOrdner || "00_inbox";
-const bereichVonPfad = (p) => (/^90_/.test(p) || (S.aufgabenOrdner && p.toLowerCase().startsWith(S.aufgabenOrdner.toLowerCase() + "/archiv/") && p.split("/").length === 3) ? "archiv" : p.toLowerCase().startsWith(inboxName().toLowerCase() + "/_") ? "maschine" : p.startsWith("01_vorlagen/") ? "vorlage"
+const bereichVonPfad = (p) => (/^90_/.test(p) || (S.aufgabenOrdner && p.toLowerCase().startsWith(S.aufgabenOrdner.toLowerCase() + "/archiv/") && p.split("/").length === 3) ? "archiv" : p.toLowerCase().startsWith(inboxName().toLowerCase() + "/_") ? "maschine" : (p.startsWith("01_vorlagen/") || imVorlagenOrdner(p, S.schreibEinst.vorlagenOrdner)) ? "vorlage"
   : /^(claude|agents|gemini)\.md$/i.test(p) ? "system" : p.toLowerCase().startsWith(inboxName().toLowerCase() + "/") ? "inbox" : p.startsWith("09_wiki/") ? "wissen" : (S.aufgabenOrdner && p.toLowerCase().startsWith(S.aufgabenOrdner.toLowerCase() + "/") && p.split("/").length === 2) ? "aufgabe" : "notiz");
 const SICHTBAR = new Set(["inbox", "notiz", "wissen"]); // erscheinen in „Alle Notizen“, Typen und Ansichten
 const istNotiz = (n) => SICHTBAR.has(n.bereich) && !n.generiert;
@@ -372,6 +508,7 @@ async function ladeIndex() {
   S.inboxHinweis = n.status === "fulfilled" && typeof n.value?.inboxHinweis === "string" ? n.value.inboxHinweis : null;
   if (S.inboxHinweis && S.inboxHinweisGezeigt !== S.inboxHinweis) { S.inboxHinweisGezeigt = S.inboxHinweis; toast(S.inboxHinweis, { fehler: true, ms: 14000 }); }
   S.notizen = n.status === "fulfilled" && Array.isArray(n.value?.notizen) ? n.value.notizen : notizenAusBaum();
+  for (const x of S.notizen) if (SICHTBAR.has(x.bereich) && imVorlagenOrdner(x.pfad, S.schreibEinst.vorlagenOrdner)) x.bereich = "vorlage"; // Vorlagen sind keine Notizen (wie 01_vorlagen)
   S.nMap = new Map(S.notizen.map((x) => [x.pfad, x]));
   S.typen = t.status === "fulfilled" && Array.isArray(t.value?.typen) ? t.value.typen : typenAusNotizen();
   S.typMap = new Map(S.typen.map((x) => [x.name, x]));
@@ -795,7 +932,7 @@ function posteingangLeiste() {
 // Datei schließen, wenn die Werkstatt sie verschoben hat
 function schliesseDatei() {
   clearTimeout(speicherTimer);
-  S.pfad = null; S.hash = null; S.dirty = false; S.konflikt = null; S.schutz = false; S.aktuellePruefung = null;
+  S.pfad = null; S.hash = null; S.dirty = false; S.konflikt = null; S.schutz = false; S.aktuellePruefung = null; S.entwurf = null;
   ed.setzeText("", { nurLesen: false });
   zeigeBanner(); zeichnePfad(); zeichneWerkzeuge(); setzeFenstertitel(); aktualisiereStatusDatei(); ladeInfo(); zeigeLeer();
   lokal.schreib("pfad", null);
@@ -988,17 +1125,20 @@ async function zeigeDiff(d) {
 function schliesseDiff() { diffInst?.zerstoere?.(); diffInst = null; const host = $("diff-host"); host.hidden = true; host.replaceChildren(); }
 
 // ======================================================= Kopfzeile: Brotkrumen, Werkzeuge, Pille
-function zeichnePfad() {
+function zeichnePfad() { zeichnePfadInnen(); schreiben.zeichneTagNavigation(); }
+function zeichnePfadInnen() {
   const p = $("pfad");
   if (konfliktInst) return; // in der Konflikt-Ansicht schreibt sie selbst die Brotkrume („Abgleich › …“, zeichnePfadKonflikt)
   // Ohne offene Notiz (und im Aufgaben-Board) zeigt die Kopfzeile, wo du bist: der Name der Ansicht
-  if (!S.pfad || (istAufgabenSicht() && !S.aufgabeDatei)) {
+  if ((!S.pfad && !S.entwurf) || (istAufgabenSicht() && !S.aufgabeDatei)) {
     const t = sichtTitel().text;
     p.replaceChildren(...(t && S.info?.vault ? [h("span", { klasse: "krume aktuell", text: t })] : [])); p.removeAttribute("title"); return;
   }
-  const n = S.nMap.get(S.pfad);
-  const bereich = n?.bereich || bereichVonPfad(S.pfad);
-  const teile = ordnerVon(S.pfad) ? ordnerVon(S.pfad).split("/") : [];
+  // Neue Notiz ohne Datei: der Pfad, den sie bekommen wird (fester Pfad einer Tagesnotiz, sonst der Ordner), und der Titel, den man gerade tippt
+  const pf = S.pfad || (S.entwurf.pfad || `${S.entwurf.ordner}/x.md`);
+  const n = S.pfad ? S.nMap.get(S.pfad) : null;
+  const bereich = n?.bereich || bereichVonPfad(pf);
+  const teile = ordnerVon(pf) ? ordnerVon(pf).split("/") : [];
   const bereichWurzel = bereich === "aufgabe" ? S.aufgabenOrdner : bereich === "inbox" || bereich === "maschine" ? inboxName() : bereich === "wissen" ? "09_wiki" : bereich === "vorlage" ? "01_vorlagen" : null;
   const bereichText = bereich === "aufgabe" ? T.bereiche.aufgaben : bereich === "inbox" || bereich === "maschine" ? T.bereiche.inbox : bereich === "wissen" ? T.bereiche.wissen : bereich === "archiv" ? T.bereiche.archiv
     : bereich === "vorlage" ? T.bereiche.vorlagen : "Notizen";
@@ -1012,9 +1152,9 @@ function zeichnePfad() {
     const ziel = acc;
     kinder.push(h("span", { klasse: "sep" }, symbol("chevron-rechts", 12)), h("span", { klasse: "krume link", text: t, title: ziel, aufClick: () => waehleSicht({ art: "ordner", id: ziel }) }));
   });
-  kinder.push(h("span", { klasse: "sep" }, symbol("chevron-rechts", 12)), h("span", { klasse: "krume aktuell", text: n?.titel || ohneEndung(dateiName(S.pfad)) }));
+  kinder.push(h("span", { klasse: "sep" }, symbol("chevron-rechts", 12)), h("span", { klasse: "krume aktuell", text: S.pfad ? (n?.titel || ohneEndung(dateiName(S.pfad))) : (titelAusText(ed.text(), { ersatz: false }) || TS.neu.unbenannt) }));
   p.replaceChildren(...kinder);
-  p.title = S.pfad;
+  p.title = S.pfad || TS.neu.unbenannt;
 }
 function zeichnePille(pr) {
   const el = $("pille");
@@ -1887,23 +2027,8 @@ async function oeffneCommit() {
 }
 
 // ======================================================= Neu / Merken / Gesundheit
-function oeffneNeu(vorTitel) {
-  if (dialogOffen()) return;
-  const ordner = S.baum.filter((e) => e.art === "ordner" && !e.schreibschutz).map((e) => e.pfad);
-  const vorOrdner = S.sicht.art === "ordner" ? S.sicht.id : S.pfad && ordnerVon(S.pfad) ? ordnerVon(S.pfad) : ordner.includes(inboxName()) ? inboxName() : ordner[0] || "";
-  const sel = auswahl({ optionen: ordner.length ? ordner.map((o) => ({ wert: o, text: o, symbol: "ordner" })) : [{ wert: "", text: "Hauptordner", symbol: "ordner" }], wert: ordner.length ? vorOrdner : "", label: T.neu.ordner, breit: true, daten: { "data-feld": "ordner" } });
-  const titelFeld = textfeld({ wert: typeof vorTitel === "string" ? vorTitel : "", platzhalter: T.neu.platzhalter, label: T.neu.name, daten: { "data-feld": "titel" } });
-  const titel = titelFeld.input;
-  const fehlerEl = h("div", { klasse: "fehlertext", hidden: true });
-  const tun = async () => {
-    if (!titel.value.trim()) { titel.focus(); return; }
-    try { const r = await api.neu(sel.value, titel.value.trim()); d.schliessen(); await ladeBaum(); await oeffne(r.pfad); planeGitRefresh(); }
-    catch (e) { fehlerEl.hidden = false; fehlerEl.textContent = e.message; }
-  };
-  const d = dialog({ titel: T.neu.titel, satz: T.neu.satz, rumpf: [h("div", { klasse: "feld" }, h("label", { text: T.neu.name }), titelFeld.el), h("div", { klasse: "feld" }, h("label", { text: T.neu.ordner }), sel), fehlerEl],
-    knoepfe: [baueKnopf({ text: T.commit.abbrechen, aufKlick: () => d.schliessen() }), baueKnopf({ text: T.neu.anlegen, variante: "primaer", aktion: "anlegen", aufKlick: tun })] });
-  titel.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); tun(); } });
-}
+// ⌘N: sofort eine leere Notiz, der Cursor steht in der Titelzeile (schreiben.js). Mit Titel (Palette „Neue Notiz „x“ anlegen“) liegt die Datei gleich da.
+function oeffneNeu(vorTitel) { return schreiben.neueNotiz({ titel: typeof vorTitel === "string" ? vorTitel : "" }); }
 function oeffneMerken() {
   if (dialogOffen()) return;
   const entwurf = leseEntwurf("merken") || {};
@@ -1998,13 +2123,14 @@ async function oeffneNutzung() {
 const stufenKlasse = (s) => (/rot|red|fehler/i.test(s || "") ? "rot" : /gelb|warn|yellow/i.test(s || "") ? "gelb" : /gr[uü]n|ok|green/i.test(s || "") ? "gruen" : "grau");
 
 // ======================================================= Palette
-const PAL_SYM = new Map([[T.befehle.neu, "stift"], [T.befehle.merken, "blitz"], [TAUF.erfassen.befehl, "aufgaben"], [T.befehle.commit, "commit"], [T.befehle.sync, "sync"], [TF.befehl, "funke"], [T.befehle.posteingang, "inbox"],
+const PAL_SYM = new Map([[T.befehle.neu, "stift"], [TS.palette.heute, "kalender"], [TS.palette.vorlage, "vorlage"], [TS.palette.zurueck, "pfeil-links"], [TS.palette.vor, "pfeil"], [T.befehle.merken, "blitz"], [TAUF.erfassen.befehl, "aufgaben"], [T.befehle.commit, "commit"], [T.befehle.sync, "sync"], [TF.befehl, "funke"], [T.befehle.posteingang, "inbox"],
   [T.befehle.alleNotizen, "notiz"], [T.befehle.aufgaben, "aufgaben"], [T.befehle.suche, "suche"], [T.befehle.inNotiz, "suche"], [T.befehle.info, "seitenleiste"], [T.befehle.gesundheit, "herz"], [T.befehle.nutzung, "balken"],
   [T.liste.verlauf, "uhr"], [TG.titel, "glocke"], [T.befehle.mcp, "stecker"], [T.befehle.konten, "person"], [T.befehle.ordner, "ordner"], [T.befehle.ansicht, "ansicht"]]);
 function oeffnePalette(vorgabe = "") {
   if (dialogOffen()) return;
   const befehle = [
-    [T.befehle.neu, kz.anzeige("neue-notiz"), oeffneNeu], [T.befehle.merken, kz.anzeige("schnell-merken"), oeffneMerken], [TAUF.erfassen.befehl, kz.anzeige("aufgabe-erfassen"), aufgabeErfassen], [T.befehle.commit, kz.anzeige("commit"), oeffneCommit], [T.befehle.sync, "", sync],
+    [T.befehle.neu, kz.anzeige("neue-notiz"), oeffneNeu], [TS.palette.heute, kz.anzeige("tagesnotiz"), () => schreiben.heute()], [TS.palette.vorlage, kz.anzeige("notiz-aus-vorlage"), () => schreiben.oeffneVorlagenWahl()],
+    [TS.palette.zurueck, kz.anzeige("zurueck"), () => schreiben.zurueck()], [TS.palette.vor, kz.anzeige("vor"), () => schreiben.vor()], [T.befehle.merken, kz.anzeige("schnell-merken"), oeffneMerken], [TAUF.erfassen.befehl, kz.anzeige("aufgabe-erfassen"), aufgabeErfassen], [T.befehle.commit, kz.anzeige("commit"), oeffneCommit], [T.befehle.sync, "", sync],
     [TF.befehl, kz.anzeige("frage"), () => frage.oeffne()], [T.befehle.suche, kz.anzeige("suche-vault"), fokusSuche], [T.befehle.inNotiz, kz.anzeige("suche-notiz"), () => ed.suchen()], [T.befehle.info, kz.anzeige("info"), umschalteInfo], [T.befehle.gesundheit, "", oeffneGesundheit], [T.befehle.nutzung, "", oeffneNutzung],
     [T.befehle.posteingang, kz.anzeige("gehe-posteingang"), () => waehleSicht({ art: "bereich", id: "inbox" })], [T.befehle.alleNotizen, kz.anzeige("gehe-alle"), () => waehleSicht({ art: "bereich", id: "alle" })], [T.befehle.aufgaben, kz.anzeige("gehe-aufgaben"), () => waehleSicht({ art: "bereich", id: "aufgaben" })],
     [T.liste.verlauf, kz.anzeige("verlauf"), oeffneVerlauf], [TG.titel, kz.anzeige("mitteilungen"), () => glocke.oeffne()],
@@ -2184,7 +2310,11 @@ window.addEventListener("keydown", (e) => {
 }, true);
 kz.anmelden("einstellungen", () => oeffneEinstellungenSeite(), () => !!S.info?.vault);
 kz.anmelden("speichern", () => { clearTimeout(speicherTimer); speichere(); });
-kz.anmelden("neue-notiz", () => oeffneNeu());
+kz.anmelden("neue-notiz", () => oeffneNeu(), () => !!S.info?.vault);
+kz.anmelden("tagesnotiz", () => schreiben.heute(), () => !!S.info?.vault && !dialogOffen());
+kz.anmelden("notiz-aus-vorlage", () => schreiben.oeffneVorlagenWahl(), () => !!S.info?.vault && !dialogOffen());
+kz.anmelden("zurueck", () => schreiben.zurueck(), () => !!S.info?.vault && !dialogOffen());
+kz.anmelden("vor", () => schreiben.vor(), () => !!S.info?.vault && !dialogOffen());
 kz.anmelden("schnell-merken", () => oeffneMerken());
 kz.anmelden("aufgabe-erfassen", () => aufgabeErfassen(), () => !dialogOffen());
 kz.anmelden("palette", () => oeffnePalette());
@@ -2268,7 +2398,7 @@ function bestaetigeEntfernen(v) {
 
 // ======================================================= Menübefehle der App
 const MENUE_BEFEHLE = {
-  neu: () => oeffneNeu(), merken: oeffneMerken, infospalte: umschalteInfo, palette: () => oeffnePalette(), commit: oeffneCommit, sync, suche: fokusSuche,
+  neu: () => oeffneNeu(), heute: () => schreiben.heute(), vorlage: () => schreiben.oeffneVorlagenWahl(), zurueck: () => schreiben.zurueck(), vor: () => schreiben.vor(), merken: oeffneMerken, infospalte: umschalteInfo, palette: () => oeffnePalette(), commit: oeffneCommit, sync, suche: fokusSuche,
   "vault-oeffnen": vaultOeffnen, "vault-wechseln": oeffneVaultMenue, verlauf: oeffneVerlauf,
   umstellung: () => oeffneUmstellung(), // Menüleiste „Vault umstellen …“ (nur wenn der Status Altlasten meldet): dieselbe Ansicht wie in den Einstellungen
   einstellungen: () => oeffneEinstellungenSeite(), // Menü „Einstellungen …“ (⌘,): die Seite „Einstellungen“ (früher das Zahnrad-Menü der Statusleiste, das es weiter gibt)
@@ -2289,7 +2419,7 @@ function fuehreBefehlAus(name) {
 // Jeder Befehl des Registers mit Menü-Namen (`menue`), der oben keine eigene Aktion bekam, tut im Studio dasselbe wie der Menüeintrag der App (Verlauf, Gehe zu, Vault …):
 // Ein Kürzel aus dem Register trägt so auch dort, wo kein App-Menü mitspielt (Browser, Vorschau), und ein neuer Eintrag im Register braucht keine zweite Stelle.
 for (const b of kz.REGISTER.befehle) if (b.menue && MENUE_BEFEHLE[b.menue] && !kz.angemeldet().includes(b.id)) kz.anmelden(b.id, () => fuehreBefehlAus(b.menue));
-window.studio = { bereit: false, neu: () => oeffneNeu(), merken: oeffneMerken, commit: oeffneCommit, info: umschalteInfo, palette: () => oeffnePalette(), sync, suche: fokusSuche };
+window.studio = { bereit: false, schreiben, ed, neu: () => oeffneNeu(), merken: oeffneMerken, commit: oeffneCommit, info: umschalteInfo, palette: () => oeffnePalette(), sync, suche: fokusSuche };
 window.studio.befehl = (name) => {
   if (!MENUE_BEFEHLE[name]) return;
   if (!window.studio.bereit) { wartendeBefehle.push(name); return; }
@@ -2491,7 +2621,7 @@ function zuletztMerken(p) { S.zuletzt = [p, ...S.zuletzt.filter((x) => x !== p)]
 function zeigeLeer() {
   const hatDateien = dateien().length > 0;
   const el = $("leer");
-  if (S.pfad) { el.hidden = true; $("editor").hidden = false; return; }
+  if (S.pfad || S.entwurf) { el.hidden = true; $("editor").hidden = false; return; }
   $("editor").hidden = true; el.hidden = false;
   if (!hatDateien) {
     el.replaceChildren(
@@ -2547,7 +2677,8 @@ let intervalle = false;
 function zuruecksetzen() {
   clearTimeout(speicherTimer); clearTimeout(gitTimer); clearTimeout(baumTimer); clearTimeout(liveTimer); clearTimeout(menueTimer); clearTimeout(kiTimer); kiSammlung = [];
   liveSammlung = { pfade: [], aufgaben: false, alles: false };
-  S.pfad = null; S.hash = null; S.dirty = false; S.konflikt = null; S.schutz = false; S.speichert = false; S.aktuellePruefung = null;
+  S.pfad = null; S.hash = null; S.dirty = false; S.konflikt = null; S.schutz = false; S.speichert = false; S.aktuellePruefung = null; S.entwurf = null;
+  schreiben.zuruecksetzen(); // Zurück/Vor gehört zum alten Vault
   S.notizen = []; S.nMap = new Map(); S.baum = []; S.eintraege = new Map(); S.git = null; S.gesundheit = null; S.rueckfragen = null; S.syncFehler = null; S.ki = null;
   S.suche = { aktiv: false, treffer: [], auswahl: 0, frage: "" }; S.vorVerlauf = null;
   S.sichtListe = []; S.gerendert = 0;
@@ -2594,6 +2725,7 @@ async function ladeAlles() {
 }
 
 richteGriffeEin();
+schreiben.baueNavigation(); schreiben.installiereGesten(); // Zurück/Vor in der Kopfzeile, Maustasten 4/5, Wischgeste
 installiereFensterKopf(); {
   const pl = vorschauPille(); if (pl) $("kopf").querySelector(".kopf-rechts")?.prepend(pl);
   const fest = vorschauPille(true); if (fest) { fest.classList.add("nur-ohne-app"); document.body.append(fest); } // ohne Kopfzeile (Willkommen, noch kein Vault) schwebt sie oben rechts

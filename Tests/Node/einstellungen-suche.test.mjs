@@ -19,7 +19,7 @@ const zeile = (id) => { for (const b of BEREICHE) for (const a of b.abschnitte) 
 
 test("Register: Bereiche in vier Gruppen, eindeutige Zeilen-IDs, jede Zeile mit Titel; Schlüssel einfacher Zeilen kommen nur einmal vor", () => {
   assert.deepEqual(GRUPPEN, ["Kortex", "Wissen", "Verbindungen", "Mehr"]);
-  assert.deepEqual(BEREICHE.map((b) => b.id), ["allgemein", "darstellung", "tasten", "mitteilungen", "vaults", "ki", "automatik", "sicherung", "mobil", "datenschutz", "erweitert", "ueber"]);
+  assert.deepEqual(BEREICHE.map((b) => b.id), ["allgemein", "darstellung", "tasten", "mitteilungen", "vaults", "schreiben", "ki", "automatik", "sicherung", "mobil", "datenschutz", "erweitert", "ueber"]);
   for (const b of BEREICHE) assert.ok(GRUPPEN.includes(b.gruppe), b.id);
   const ids = [], schluessel = [];
   for (const b of BEREICHE) for (const a of b.abschnitte) for (const z of a.zeilen) {

@@ -379,7 +379,8 @@ test("neuesVault vorlage: Gerüst, ein Commit „Kortex-Vault angelegt“, saube
 
   // Dateiliste vollständig
   const erwartet = ["00_inbox/.gitkeep", "09_wiki/_log.md", "09_wiki/_schema.md", "09_wiki/wissen/thema_so-funktioniert-dein-vault.md",
-    "09_wiki/wissen/thema_wissen-belegen.md", "AGENTS.md", "CLAUDE.md", ".gitignore", "brain.config.json"];
+    "09_wiki/wissen/thema_wissen-belegen.md", "AGENTS.md", "CLAUDE.md", ".gitignore", "brain.config.json",
+    "Vorlagen/Besprechung.md", "Vorlagen/Projekt.md", "Vorlagen/Tagesnotiz.md"];
   const liste = verfolgt(ziel);
   for (const p of erwartet) assert.ok(liste.includes(p), p);
   const belege = liste.filter((p) => p.startsWith("09_wiki/wissen/belege/2026-10/"));

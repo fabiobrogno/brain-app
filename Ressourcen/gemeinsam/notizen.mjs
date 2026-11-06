@@ -421,7 +421,7 @@ export function erzeugeNotizIndex({ wurzel, jetzt = () => new Date(), heute, git
     if (c.archiviert || /^90_/.test(oben)) bereich = "archiv";
     else if (oben === falte(aufgabenName) && e.teile.length === 3 && falte(e.teile[1]) === "archiv") bereich = "archiv"; // archivierte Aufgaben (kern/aufgaben.mjs archiviere): weder Board noch Zähler noch „Alle Notizen“
     else if (oben === inboxName && e.teile.length > 2 && e.teile[1].startsWith("_")) bereich = "maschine"; // _-Ordner direkt im Posteingang: maschinell verwaltet (Rückfragen, Vorschläge, …)
-    else if (oben === "01_vorlagen") bereich = "vorlage";
+    else if (oben === "01_vorlagen" || oben === "vorlagen") bereich = "vorlage"; // „Vorlagen/“: Notiz-Vorlagen für „Neue Notiz aus Vorlage“ (gemeinsam/vorlagen.mjs)
     else if (e.teile.length === 1 && SYSTEM_DATEIEN.has(falte(e.rel))) bereich = "system"; // CLAUDE.md, AGENTS.md, GEMINI.md in der Wurzel (Groß/klein egal)
     else if (oben === inboxName && !unterhalb.some((s) => s.startsWith("_"))) bereich = "inbox";
     else if (oben === "09_wiki") bereich = "wissen";

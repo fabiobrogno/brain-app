@@ -15,7 +15,7 @@ test("erzeugte Studio-Kopien passen zu den Quellen (node scripts/erzeuge-gemeins
 });
 
 test("jede Kopie trägt den Hinweis „ERZEUGT“, und die Importe zeigen auf Kopien (.js) statt auf Quellen (.mjs)", () => {
-  assert.deepEqual(MODULE, ["zeit", "wikilink", "kurzformen"]);
+  assert.deepEqual(MODULE, ["zeit", "wikilink", "kurzformen", "vorlagen"]);
   for (const name of MODULE) {
     const kopie = readFileSync(ziel(name), "utf8");
     assert.equal(kopie, baueKopie(name));
@@ -27,6 +27,6 @@ test("jede Kopie trägt den Hinweis „ERZEUGT“, und die Importe zeigen auf Ko
 test("die gemeinsamen Module hängen nur voneinander ab (laufen im Browser, in der Werkstatt und im MCP-Server)", () => {
   for (const name of MODULE) {
     const imports = [...readFileSync(join(WURZEL, "gemeinsam", `${name}.mjs`), "utf8").matchAll(/^import .* from "([^"]+)"/gm)].map((m) => m[1]);
-    for (const i of imports) assert.match(i, /^\.\/(zeit|wikilink|kurzformen)\.mjs$/, `${name} importiert ${i}`);
+    for (const i of imports) assert.match(i, /^\.\/(zeit|wikilink|kurzformen|vorlagen)\.mjs$/, `${name} importiert ${i}`);
   }
 });

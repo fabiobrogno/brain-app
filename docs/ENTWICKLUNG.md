@@ -72,7 +72,19 @@ Stable-Tags setzt nur der CEO nach Fabios Freigabe.
   Das Erfassen-Fenster hat dieselbe Logik in Swift (`Kurzformen.swift`); beide Tests lesen `Tests/Gemeinsam/kurzformen-faelle.json` — eine Regel ändert man dort und in beiden Implementierungen.
 - `Ressourcen/gemeinsam/zeit.mjs`: „heute“ ist überall ein Kalendertag in der **Zeitzone des Macs**; Berlin steht nur in den Tests (`Tests/Node/hilfe.mjs`, `Tests/Oberflaeche/playwright.config.mjs`, `Tests/Kern/run-all.sh` setzen `TZ=Europe/Berlin`).
   Funktionen nehmen optional `zone` (eingespritzt); Tests zur Zeitzone selbst: `Tests/Node/zeit.test.mjs`.
-- Das Studio lädt nur aus seinem Ordner: `node scripts/erzeuge-gemeinsam-kopien.mjs` schreibt `Ressourcen/studio/{zeit,wikilink,kurzformen}.js` neu (Test: `--pruefen`). Nach jeder Änderung an einer Quelle ausführen.
+- `Ressourcen/gemeinsam/vorlagen.mjs`: Vorlagen und Tagesnotiz — Platzhalter (`{{titel}}`, `{{datum}}`, `{{datum:FORMAT}}`, `{{zeit}}`, `{{cursor}}`), Datumsformate (`JJJJ MM TT MMMM WWWW KW HH mm`, Text in `[…]` bleibt),
+  Kopf (Frontmatter) bleibt oben und gültig, Cursor-Position, Titel einer Notiz (`titelAusText`) und der Pfad der Tagesnotiz (`tagesnotizPfad`, Gegenprobe `tagesnotizDatum`). Einstellungen (App-weit, `einstellungen.json`): `vorlagenOrdner` (Vorlagen),
+  `tagesnotizOrdner` (Tagebuch), `tagesnotizFormat` (JJJJ-MM-TT), `tagesnotizVorlage` (leer = „Tagesnotiz“, wenn es sie gibt). Tests: `Tests/Node/vorlagen.test.mjs`, `Tests/Oberflaeche/schreiben.spec.mjs`.
+- Das Studio lädt nur aus seinem Ordner: `node scripts/erzeuge-gemeinsam-kopien.mjs` schreibt `Ressourcen/studio/{zeit,wikilink,kurzformen,vorlagen}.js` neu (Test: `--pruefen`). Nach jeder Änderung an einer Quelle ausführen.
+
+## Schreiben im Alltag (Studio)
+- **Neue Notiz (⌘N)** ist ein Entwurf ohne Datei (`S.entwurf`, `S.pfad` leer): `# ` mit dem Cursor in der Titelzeile. Die Datei entsteht erst, wenn etwas drinsteht (`festigeEntwurf` in `app.js`; `POST /api/neu` mit `inhalt`,
+  Name aus dem Titel im Posteingang, Namensgleichheit `-2`); beim Tippen wartet eine leere Titelzeile auf ihren Titel (2,5 s), beim Verlassen/Beenden nimmt Kortex die erste Zeile, nach 20 s Ruhe wird gesichert. Leer verlassen = keine Datei.
+- **Tagesnotiz** (⇧⌘D, „Heute“): `Tagebuch/JJJJ-MM-TT.md`; „Heute“ legt die Datei gleich an, Tageswechsel (‹ ›, Kalender mit Punkten) öffnet bei fehlender Notiz einen Entwurf auf dem festen Pfad. „Heute“ zählt in der Zeitzone des Macs (`zeit.mjs`).
+- **Vorlagen** (⌥⌘N): Notizen im Vorlagenordner; Wahl mit Suche und Vorschau (`schreiben.js`). Der Ordner zählt wie `01_vorlagen` nicht als Notizen (`bereich: "vorlage"`); nur neue Vaults bekommen drei Beispiele (`gemeinsam/vorlage.mjs`).
+- **Zurück/Vor** (⌘[ ⌘], Maustasten 4/5, Zwei-Finger-Wischen, Knöpfe mit Rechtsklick-Liste): Modell in `studio/seitenverlauf.js` (Cursor + Scroll je Eintrag, tote Einträge fallen lautlos weg). Pfadänderungen melden andere Teile mit
+  `window.studio.schreiben.umbenannt(alt, neu)`, `.ordnerUmbenannt(alt, neu)` und `.entfernt(pfad)`.
+- Neue Menübefehle der App (`StudioBefehl`): `heute`, `vorlage`, `zurueck`, `vor`; Kürzel im Register (`tastenkuerzel-register.json`), Test `schreibenImAlltagHatMenueUndKuerzel`.
 
 ## Tags
 Tags werden nie verschoben oder ersetzt. Ist ein Release fehlerhaft, folgt eine neue Version

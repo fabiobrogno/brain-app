@@ -38,6 +38,13 @@ export function stempel(d = new Date(), zone) {
   return `${t.year}${t.month}${t.day}-${t.hour}${t.minute}${t.second}`;
 }
 
+/** Kalendertag und Uhrzeit des Zeitpunkts d in der Zeitzone des Macs: { iso: "JJJJ-MM-TT", h: "HH", m: "mm", s: "ss" } (Vorlagen, Tagesnotiz). */
+export function ortsZeit(d = new Date(), zone) {
+  const t = Object.fromEntries(formatierer(zoneOderNichts(zone), { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" })
+    .formatToParts(d).map((p) => [p.type, p.value]));
+  return { iso: `${t.year}-${t.month}-${t.day}`, h: t.hour, m: t.minute, s: t.second };
+}
+
 /** ISO-Datum plus n Kalendertage (reine Kalenderrechnung, keine Sommerzeit-Fallen). Ungültiges Datum → null. */
 export function plusTageIso(iso, n) {
   const m = ISO.exec(String(iso ?? ""));

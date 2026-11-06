@@ -214,12 +214,17 @@ export function oeffneVault(vaultPfad, opts = {}) {
     throw new HttpFehler(409, "Es gibt schon zu viele Dateien mit diesem Namen.");
   }
 
-  function neu({ ordner, titel }) {
+  // inhalt (optional): der fertige Text der Notiz (Studio: „Neue Notiz“ legt die Datei erst an, wenn etwas drinsteht); ohne: „# Titel“. Der Dateiname folgt dem Titel.
+  function neu({ ordner, titel, inhalt }) {
     if (typeof titel !== "string" || !titel.trim()) throw new HttpFehler(400, "Bitte einen Titel eingeben.");
     if (ordner !== undefined && ordner !== null && typeof ordner !== "string") throw new HttpFehler(400, "Ungültiger Ordner.");
+    if (inhalt !== undefined && inhalt !== null && typeof inhalt !== "string") throw new HttpFehler(400, "Ungültiger Inhalt.");
+    if (typeof inhalt === "string" && Buffer.byteLength(inhalt) > MAX_DATEI) throw new HttpFehler(413, "Der Text ist zu lang.");
     const o = (ordner || "").replace(/^\/+|\/+$/g, "");
     const t = titel.trim().replace(/\s+/g, " ").slice(0, 200);
-    return { pfad: legeFreiAn(o ? loese(wurzel, o).rel : "", slug(t, 60), `# ${t}\n`) };
+    const text = typeof inhalt === "string" ? inhalt : `# ${t}\n`;
+    const pfad = legeFreiAn(o ? loese(wurzel, o).rel : "", slug(t, 60), text);
+    return typeof inhalt === "string" ? { pfad, hash: HASH(Buffer.from(text, "utf8")) } : { pfad }; // der Hash nur mit eigenem Inhalt (Studio: Entwurf wird zur Datei)
   }
 
   // „Anlegen“ aus einem offenen [[Link]]: gibt es das Ziel nach der gemeinsamen Regel (wikilink.mjs) schon, kommt dessen Pfad zurück und nichts wird angelegt;

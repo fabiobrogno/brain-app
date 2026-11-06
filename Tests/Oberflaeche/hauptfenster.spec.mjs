@@ -317,13 +317,14 @@ test("Breites Fenster 1440: Frag schiebt den Editor beiseite (kein Überlappen),
   expect(e.x + e.width).toBeLessThanOrEqual(p.x + 1);
 });
 
-test("Alt-Leer-Feld und Stift in der Seitenleiste: Schnell erfassen und Neue Notiz öffnen ihre Dialoge", async ({ page }) => {
+test("Alt-Leer-Feld und Stift in der Seitenleiste: Schnell erfassen öffnet den Dialog, Neue Notiz sofort eine leere Seite", async ({ page }) => {
   await start(page);
   await page.click("#fuss-merken");
   await expect(page.locator('[data-dialog="merken"], .dialog').first()).toBeVisible();
   await page.keyboard.press("Escape");
   await page.click("#fuss-neu");
-  await expect(page.locator('[data-feld="titel"]')).toBeVisible();
+  await expect(page.locator(".dialog")).toHaveCount(0);
+  await expect(page.locator("#pfad .krume.aktuell")).toHaveText("Neue Notiz");
 });
 
 // ---------- Sichtbarer Text: nie „null“, „undefined“, „NaN“ oder „[object Object]“ ----------

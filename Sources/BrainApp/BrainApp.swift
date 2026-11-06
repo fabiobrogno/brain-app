@@ -134,6 +134,8 @@ final class AppDelegat: NSObject, NSApplicationDelegate {
         ]))
         haupt.addItem(menue("Ablage", [
             befehl("Neue Notiz", .neu),
+            befehl("Neue Notiz aus Vorlage …", .vorlage),
+            befehl("Heute (Tagesnotiz)", .heute),
             befehl("Schnell merken", .merken),
             befehl("Aufgabe erfassen …", .aufgabeErfassen),
             .separator(),
@@ -162,6 +164,9 @@ final class AppDelegat: NSObject, NSApplicationDelegate {
             befehl("Alle Notizen", .alle),
             befehl("Wissen", .wissen),
             befehl("Aufgaben", .aufgaben),
+            .separator(),
+            befehl("Zurück", .zurueck),
+            befehl("Vor", .vor),
             .separator(),
             befehl("Befehlspalette", .palette),
         ]))

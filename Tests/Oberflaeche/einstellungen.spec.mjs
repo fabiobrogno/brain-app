@@ -23,8 +23,8 @@ const foto = async (page, name) => { await page.waitForTimeout(400); await page.
 const config = () => JSON.parse(readFileSync(join(vault, "brain.config.json"), "utf8"));
 const appDatei = () => { const p = join(server.support, "einstellungen.json"); return existsSync(p) && readFileSync(p, "utf8").trim() ? JSON.parse(readFileSync(p, "utf8")) : {}; };
 const seite = (page) => page.locator("[data-einstellungen]");
-const IDS = ["allgemein", "darstellung", "tasten", "mitteilungen", "vaults", "ki", "automatik", "sicherung", "mobil", "datenschutz", "erweitert", "ueber"];
-const NAMEN = { allgemein: "Allgemein", darstellung: "Darstellung", tasten: "Tastenkürzel", mitteilungen: "Mitteilungen", vaults: "Vaults", ki: "KI & Konten", automatik: "Pflege & Automatik", sicherung: "Sicherung & GitHub", mobil: "iPhone & iPad", datenschutz: "Datenschutz", erweitert: "Erweitert", ueber: "Über Kortex" };
+const IDS = ["allgemein", "darstellung", "tasten", "mitteilungen", "vaults", "schreiben", "ki", "automatik", "sicherung", "mobil", "datenschutz", "erweitert", "ueber"];
+const NAMEN = { allgemein: "Allgemein", darstellung: "Darstellung", tasten: "Tastenkürzel", mitteilungen: "Mitteilungen", vaults: "Vaults", schreiben: "Schreiben", ki: "KI & Konten", automatik: "Pflege & Automatik", sicherung: "Sicherung & GitHub", mobil: "iPhone & iPad", datenschutz: "Datenschutz", erweitert: "Erweitert", ueber: "Über Kortex" };
 
 async function start(page, { hash = "", breite = 1440, hoehe = 900, dunkel = false } = {}) {
   await page.setViewportSize({ width: breite, height: hoehe });
@@ -93,7 +93,7 @@ for (const dunkel of [false, true]) {
     await oeffne(page, "allgemein");
     const gruppen = await page.locator(".e-gruppe").allTextContents();
     expect(gruppen.map((g) => g.toLowerCase())).toEqual(["kortex", "wissen", "verbindungen", "mehr"]);
-    await expect(page.locator(".e-punkt")).toHaveCount(12);
+    await expect(page.locator(".e-punkt")).toHaveCount(13);
     expect(await page.locator(".e-punkt .t").allTextContents()).toEqual(IDS.map((i) => NAMEN[i]));
     for (const id of IDS) {
       await page.click(`.e-punkt[data-bereich="${id}"]`);
@@ -345,7 +345,7 @@ test("Suche ohne Treffer: Hinweis mit Suchwort und Vorschlägen (Klick setzt die
   await expect(leer).toContainText("Notizen findest du mit ⌘K im Hauptfenster");
   await expect(leer.locator("[data-vorschlag]")).toHaveText(["Konto", "Kürzel", "GitHub", "dunkel"]);
   await expect(page.locator("[data-einst=treffer]")).toHaveText("");
-  await expect(page.locator(".e-punkt.aus")).toHaveCount(12);
+  await expect(page.locator(".e-punkt.aus")).toHaveCount(13);
   await foto(page, "suche-leer-dunkel");
   await leer.locator('[data-vorschlag="dunkel"]').click();
   await expect(page.locator('[data-einst="suche"]')).toHaveValue("dunkel");

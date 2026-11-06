@@ -156,7 +156,7 @@ function hinweisText(b) {
   if (hatVaultSchluessel(b) && sp === "keinVault") return TE.keinVaultHinweis;
   if (hatVaultSchluessel(b) && sp === "nurAnsehen") return TE.nurAnsehen;
   if (hatVaultSchluessel(b) && fehler?.vault) return fehler.vault;
-  if (["darstellung", "mitteilungen"].includes(b.id) && fehler?.app) return fehler.app;
+  if (["darstellung", "mitteilungen", "schreiben"].includes(b.id) && fehler?.app) return fehler.app;
   return "";
 }
 function aktualisiereHinweis(id, knoten) {
@@ -225,7 +225,7 @@ function bauListe(z) {
 function bauPfad(z) {
   const k = z.schluessel;
   const standard = Z.daten.schema[k]?.standard || "";
-  const p = einstellPfad({ wert: wertVon(k) ?? standard, platzhalter: standard, label: z.titel, breite: 260,
+  const p = einstellPfad({ wert: wertVon(k) ?? standard, platzhalter: z.platzhalter ?? (standard || "Name der Vorlage"), label: z.titel, breite: 260,
     pruefe: (t) => (t.length > 300 ? TE.eintragLang : /[\u0000-\u001f\u007f]/.test(t) ? TE.eintragZeichen : ""),
     aufSpeichern: (t) => aendere(k, t === "" ? null : t) });
   p.input.dataset.schluessel = k;
