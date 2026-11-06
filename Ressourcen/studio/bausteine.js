@@ -9,6 +9,7 @@
 //   segment({ … }), umschalter({ … }), hakenFeld({ … })       Segment-Schalter, Switch, Checkbox/Radio
 //   datumsauswahl({ … }) / oeffneDatumsauswahl(anker, …)      Kalender-Popover mit Schnellwahl
 //   kiAuswahl({ erkennung, wert, mehrfach, waehlbar, aufAenderung })   Karten der gefundenen KIs + aufklappbare, durchsuchbare Liste aller KIs
+//   einstellSymbole({ optionen, wert, … })                   Kacheln mit Vorschaubild (App-Symbol)
 //   tooltip(el, text), toast(text, …)
 //
 // Alle Fabriken geben ein Element zurück (textfeld/textbereich ein Objekt { el, input|textarea, … }), das mit h(…) eingebaut wird.
@@ -544,6 +545,33 @@ export function einstellRegler({ min, max, schritt = 1, wert, label, einheit = "
   fuelle();
   const el = h("div", { klasse: "ez-regler-block" }, h("span", { klasse: "ez-regler-klein", "aria-hidden": "true", title: textKlein, text: "A" }), feld, h("span", { klasse: "ez-regler-gross", "aria-hidden": "true", title: textGross, text: "A" }), anzeige);
   return { el, input: feld, setze: (w) => { feld.value = String(w); fuelle(); } };
+}
+
+// Symbol-Wahl (App-Symbol im Dock): eine Reihe Kacheln mit dem Bild und dem Namen, genau eine gewählt (Radiogruppe, ←→↑↓ wechseln, Tab erreicht die gewählte Kachel).
+// optionen: [{ wert, text, bild }] (bild = URL des Vorschaubilds, rein dekorativ; der Name steht im Knopf). → { el, setze(wert), wert() }
+export function einstellSymbole({ optionen, wert, label, aufAenderung, daten = {} } = {}) {
+  let aktuell = wert;
+  const kacheln = optionen.map((o) => h("button", { type: "button", klasse: "ez-symbol", role: "radio", "data-symbol": o.wert, "aria-checked": "false", tabindex: "-1" },
+    h("span", { klasse: "ez-symbol-bild", "aria-hidden": "true" }, h("img", { src: o.bild, alt: "", width: "48", height: "48", draggable: "false" })),
+    h("span", { klasse: "ez-symbol-name", text: o.text })));
+  const el = h("div", { klasse: "ez-symbole", role: "radiogroup", "aria-label": label, ...daten }, kacheln);
+  const zeige = () => kacheln.forEach((k) => {
+    const an = k.dataset.symbol === aktuell;
+    k.setAttribute("aria-checked", String(an));
+    k.tabIndex = an || (!optionen.some((o) => o.wert === aktuell) && k === kacheln[0]) ? 0 : -1;
+  });
+  const waehle = (w) => { if (w === aktuell) return; aktuell = w; zeige(); aufAenderung?.(w); };
+  kacheln.forEach((k) => k.addEventListener("click", () => waehle(k.dataset.symbol)));
+  el.addEventListener("keydown", (ev) => {
+    const d = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[ev.key];
+    if (!d) return;
+    ev.preventDefault();
+    const i = Math.max(0, kacheln.findIndex((k) => k.dataset.symbol === aktuell));
+    const n = kacheln[(i + d + kacheln.length) % kacheln.length];
+    waehle(n.dataset.symbol); n.focus();
+  });
+  zeige();
+  return { el, wert: () => aktuell, setze: (w) => { aktuell = w; zeige(); } };
 }
 
 // ======================================================= KI-Auswahl

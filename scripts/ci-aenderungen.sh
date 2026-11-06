@@ -33,7 +33,8 @@ while IFS= read -r f; do
   case "$f" in
     Sources/*|Tests/BrainCoreTests/*|Package.swift|Package.resolved) swift=true ;;
     Ressourcen/Info.plist|Ressourcen/node.entitlements|Ressourcen/AppIcon.icns) swift=true ;;
-    Ressourcen/icon-entwuerfe/*) ;;                                              # Icon-Entwürfe (SVG/PNG): nur Vorlage für scripts/baue-icon.sh, kein Testgegenstand
+    Ressourcen/AppSymbole/*) swift=true; node=true ;;                            # wählbare Dock-Symbole: Swift-Test (Dateien da) und Tests/Node/app-symbole.test.mjs
+    Ressourcen/icon-entwuerfe/*|scripts/erzeuge-app-symbole.mjs) node=true ;;    # Icon-Entwürfe: Vorlage für baue-icon.sh; die erzeugten Varianten prüft Tests/Node/app-symbole.test.mjs
     Ressourcen/kern/*|Tests/Kern/*|scripts/node-version.txt) kern=true ;;       # auch deren .md (Skills, Fixtures) sind Testgegenstand
     Ressourcen/gemeinsam/*|Ressourcen/werkstatt/*) swift=true; node=true; ui=true ;;
     Ressourcen/studio/*) node=true; ui=true ;;

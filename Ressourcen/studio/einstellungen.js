@@ -8,7 +8,7 @@ import { h, dialog, dialogOffen, toast, vorMinuten } from "./hilfen.js";
 import { symbol, GROESSE } from "./symbole.js";
 import {
   knopf as baueKnopf, segment, umschalter, auswahl, textfeld, leerBlock, skelett, wenigBewegung,
-  einstellZeile, einstellAbschnitt, einstellMarke, einstellChips, einstellRegler, einstellPfad,
+  einstellZeile, einstellAbschnitt, einstellMarke, einstellChips, einstellRegler, einstellPfad, einstellSymbole,
 } from "./bausteine.js";
 import { oeffneMenue, menueOffen } from "./menue.js";
 import { popoverOffen } from "./popover.js";
@@ -231,7 +231,15 @@ function bauPfad(z) {
   p.input.dataset.schluessel = k;
   return { steuerung: p.el, reg: { setze: (w) => p.setze(w ?? standard), offen: () => p.offen() || document.activeElement === p.input, sofort: () => p.sofort() } };
 }
-const BAUER = { schalter: bauSchalter, segment: bauSegment, zahl: bauZahl, regler: bauRegler, liste: bauListe, pfad: bauPfad };
+// App-Symbol (Dock): Kacheln mit den fünf Symbolen. Die Wahl geht wie jede App-Einstellung an die Werkstatt (einstellungen.json) und zugleich sofort an die App
+// (Brücke „app-symbol“), die das Dock-Symbol umsetzt; beim Start liest die App den gespeicherten Wert selbst.
+function bauSymbole(z) {
+  const k = z.schluessel;
+  const s = einstellSymbole({ optionen: z.optionen.map(([w, t]) => ({ wert: w, text: t, bild: `app-symbole/${w}.png` })), wert: String(wertVon(k)), label: z.titel, daten: { "data-schluessel": k },
+    aufAenderung: (w) => { aendere(k, w); Z.k?.aktion?.("app-symbol", w); } });
+  return { steuerung: s.el, reg: { setze: (w) => s.setze(String(w)) } };
+}
+const BAUER = { symbole: bauSymbole, schalter: bauSchalter, segment: bauSegment, zahl: bauZahl, regler: bauRegler, liste: bauListe, pfad: bauPfad };
 
 // ---------------------------------------------------------- Sonderzeilen (eigene Steuerung)
 const kbdGruppe = (tasten) => h("span", { klasse: "ez-tasten", "aria-label": tasten.join(" ") }, tasten.map((t) => h("kbd", { text: t })));
@@ -371,6 +379,7 @@ function zuruecksetzenDialog() {
         const r = await Z.api.einstellungenSchreiben(werte, Z.daten.stand);
         Z.daten = { ...Z.daten, ...r }; delete Z.daten.ok;
         Z.k?.wendeAn?.(Z.daten.werte);
+        Z.k?.aktion?.("app-symbol", Z.daten.werte.appSymbol || "standard"); // das Dock-Symbol geht mit zurück
         aktualisiereSteuerungen(true);
         toast(TE.reset.erledigt);
       } catch (e) {
@@ -450,7 +459,7 @@ function bauZeile(b, a, z) {
     const r = BAUER[z.art](z);
     steuerung = r.steuerung; reg = r.reg;
   }
-  const zeile = einstellZeile({ id: z.id, titel, text: z.text, steuerung: voll ? null : steuerung, unten, marke, hoch: z.art === "liste" || z.art === "regler", klasse: voll ? "ez-voll ez-ohne-kopf" : "" });
+  const zeile = einstellZeile({ id: z.id, titel, text: z.text, steuerung: voll ? null : steuerung, unten, marke, hoch: z.art === "liste" || z.art === "regler" || z.art === "symbole", klasse: voll ? "ez-voll ez-ohne-kopf" : "" });
   if (z.id.startsWith("lizenz-")) zeile.classList.add("ez-lizenz");
   if (voll) zeile.append(voll);
   zeile.originalTitel = titel;

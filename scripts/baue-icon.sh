@@ -26,3 +26,5 @@ bild "$GROSS" 512 icon_512x512.png
 bild "$GROSS" 1024 icon_512x512@2x.png
 iconutil -c icns "$SET" -o "$W/Ressourcen/AppIcon.icns"
 echo "Gebaut: Ressourcen/AppIcon.icns"
+# Wählbare Dock-Symbole (Dunkel, Graphit, Papier, Smaragd): gleiche Form, andere Farben; Palette und Erzeugung in scripts/erzeuge-app-symbole.mjs.
+node "$W/scripts/erzeuge-app-symbole.mjs"

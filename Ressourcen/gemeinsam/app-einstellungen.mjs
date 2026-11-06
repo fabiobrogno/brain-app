@@ -17,6 +17,8 @@ export const APP_SCHEMA = {
   // Darstellung (Thema und Lesebreite liegen als Geräte-Wahl im Studio selbst und kommen mit P3 hierher)
   schriftgroesse: { typ: "ganzzahl", min: 13, max: 19, standard: 15 },
   bewegung: { werte: ["system", "reduziert"], standard: "system" },
+  // Dock-Symbol (Swift: AppSymbol; Dateien Ressourcen/AppSymbole): gilt, solange Kortex läuft; „standard“ = AppIcon.icns, die App setzt dann kein eigenes Bild
+  appSymbol: { werte: ["standard", "dunkel", "graphit", "papier", "smaragd"], standard: "standard" },
   // Mitteilungen: gemerkt wird die Wahl jetzt, ausgelöst werden die Mitteilungen mit Paket P8
   mitteilungenNurImHintergrund: { typ: "boolean", standard: true },
   mitteilungenTon: { typ: "boolean", standard: false },

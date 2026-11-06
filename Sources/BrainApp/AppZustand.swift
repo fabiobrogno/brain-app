@@ -224,6 +224,13 @@ final class AppZustand: ObservableObject {
         log.schreibe("uebersicht-geschlossen \(grund)")
     }
 
+    /// Dock-Symbol der laufenden App: `standard` (oder eine fehlende Datei) setzt zurück auf das Symbol des Pakets (`nil`). Schreibt nie ins App-Paket
+    /// (kein `NSWorkspace.setIcon`): sonst bräche die Signatur und damit Sparkle. Ist Kortex beendet, zeigt macOS wieder das Standard-Symbol.
+    func wendeAppSymbolAn(_ symbol: AppSymbol) {
+        NSApp.applicationIconImage = symbol.bild(ressourcen: Bundle.main.resourceURL)
+        log.schreibe("app-symbol \(symbol.rawValue)")
+    }
+
     func starte() async {
         signal(SIGPIPE, SIG_IGN)
         try? pfade.legeAn()
@@ -247,6 +254,7 @@ final class AppZustand: ObservableObject {
             NSApp.appearance = NSAppearance(named: b == .dunkel ? .darkAqua : .aqua)
             log.schreibe("test-erscheinungsbild \(b.rawValue)")
         }
+        wendeAppSymbolAn(AppSymbol.lies(supportOrdner: pfade.basis)) // gewähltes Dock-Symbol (nur zur Laufzeit, nie im Paket)
         do {
             let ergebnis = try await laufzeit()
             node = ergebnis.node
@@ -580,6 +588,9 @@ final class AppZustand: ObservableObject {
             return ok
         case .darstellung(let d):
             von.setzeDarstellung(d)
+            return ok
+        case .appSymbol(let symbol):
+            wendeAppSymbolAn(symbol)
             return ok
         }
     }

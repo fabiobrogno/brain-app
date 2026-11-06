@@ -27,7 +27,9 @@ pruefe "scripts/ci-aenderungen.sh"            ttttt
 pruefe "scripts/erzeuge-symbole.mjs"         ffttt
 pruefe "THIRD-PARTY-NOTICES.md"             fftft
 pruefe "Ressourcen/AppIcon.icns"            tffft
-pruefe "Ressourcen/icon-entwuerfe/x.svg"    fffff
+pruefe "Ressourcen/icon-entwuerfe/x.svg"    fftft
+pruefe "Ressourcen/AppSymbole/papier.icns"  tftft
+pruefe "scripts/erzeuge-app-symbole.mjs"     fftft
 pruefe "Package.swift"                      tffft
 pruefe ".github/workflows/ci.yml"           ttttt
 pruefe "neuer-ordner/datei.txt"             ttttt
