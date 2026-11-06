@@ -17,11 +17,10 @@ function aufbau(dateien = {}, opts = {}) {
   const d = tmp("umr-vault-"), support = tmp("umr-support-");
   schreibe(d, "brain.config.json", "{}\n");
   for (const [p, t] of Object.entries(dateien)) schreibe(d, p, t);
-  mkdirSync(join(d, ".kortex"), { recursive: true }); writeFileSync(join(d, ".kortex", "vault-id"), JSON.stringify({ id: "00112233445566aa", alt: [A.kennungVault(d)] }) + "\n");
   const v = oeffneVault(d, { support, heute: "2026-11-05", ...opts });
-  return { d, support, v, kennung: "00112233445566aa" };
+  return { d, support, v, kennung: null };
 }
-const vorgangsDir = (support, kennung, id) => join(support, "papierkorb", kennung, "vorgaenge", id);
+const vorgangsDir = (d, id) => join(d, ".kortex", "papierkorb", "vorgaenge", id);
 
 // ───────────── W1: NFC/NFD ─────────────
 
@@ -44,22 +43,22 @@ test("W1: Ordner in NFD auf der Platte, NFC im Link: Markdown-Link und Anhang-Li
 test("W2: Absturz nach dem Umzug: Notiz wird zurückbenannt, Verweise zurückgesetzt; ein junger Lauf zählt auch (kein Alter nötig)", async () => {
   const { d, v, support, kennung } = aufbau({ "a/Alt.md": "# Alt\n", "b/x.md": "[[Alt]]\n" });
   const r = await v.umbenennen({ pfad: "a/Alt.md", titel: "Neu", dateiname: "Neu.md" });
-  const mf = join(vorgangsDir(support, kennung, r.vorgang), "manifest.json");
+  const mf = join(vorgangsDir(d, r.vorgang), "manifest.json");
   const m = JSON.parse(readFileSync(mf, "utf8")); m.status = "laeuft"; writeFileSync(mf, JSON.stringify(m)); // Zeit bleibt „gerade eben“
   const v2 = oeffneVault(d, { support });
   await v2.papierkorb();
   assert.ok(existsSync(join(d, "a/Alt.md"))); assert.ok(!existsSync(join(d, "a/Neu.md")));
   assert.equal(lies(d, "a/Alt.md"), "# Alt\n"); assert.equal(lies(d, "b/x.md"), "[[Alt]]\n");
-  assert.ok(!existsSync(vorgangsDir(support, kennung, r.vorgang)));
+  assert.ok(!existsSync(vorgangsDir(d, r.vorgang)));
 });
 
 test("W2: Marke .laeuft nach einem Absturz mitten im Vorgang (auch nach der ersten Prüfung der Sitzung) holt den Vorgang zurück", async () => {
   const { d, v, support, kennung } = aufbau({ "a/Alt.md": "# Alt\n", "b/x.md": "[[Alt]]\n" });
   await v.papierkorb(); // erste Prüfung der Sitzung ist durch
   const r = await v.umbenennen({ pfad: "a/Alt.md", titel: "Neu", dateiname: "Neu.md" });
-  const mf = join(vorgangsDir(support, kennung, r.vorgang), "manifest.json");
+  const mf = join(vorgangsDir(d, r.vorgang), "manifest.json");
   const m = JSON.parse(readFileSync(mf, "utf8")); m.status = "laeuft"; writeFileSync(mf, JSON.stringify(m));
-  writeFileSync(join(support, "papierkorb", kennung, ".laeuft"), JSON.stringify({ id: r.vorgang, aktion: "op" }));
+  writeFileSync(join(d, ".kortex", "aktionen", ".laeuft"), JSON.stringify({ id: r.vorgang, aktion: "op" }));
   await v.papierkorb();
   assert.ok(existsSync(join(d, "a/Alt.md"))); assert.equal(lies(d, "b/x.md"), "[[Alt]]\n");
 });
@@ -68,11 +67,11 @@ test("W2: unklare Lage (Quelle und Ziel liegen beide da): nichts wird gelöscht,
   const { d, v, support, kennung } = aufbau({ "a/Alt.md": "# Alt\n", "b/x.md": "[[Alt]]\n" });
   const r = await v.umbenennen({ pfad: "a/Alt.md", titel: "Neu", dateiname: "Neu.md" });
   schreibe(d, "a/Alt.md", "# noch eine Alt\n"); // beide da
-  const mf = join(vorgangsDir(support, kennung, r.vorgang), "manifest.json");
+  const mf = join(vorgangsDir(d, r.vorgang), "manifest.json");
   const m = JSON.parse(readFileSync(mf, "utf8")); m.status = "laeuft"; writeFileSync(mf, JSON.stringify(m));
   const v2 = oeffneVault(d, { support });
   await v2.papierkorb();
-  assert.ok(existsSync(vorgangsDir(support, kennung, r.vorgang)));
+  assert.ok(existsSync(vorgangsDir(d, r.vorgang)));
   assert.equal(JSON.parse(readFileSync(mf, "utf8")).status, "unklar");
   assert.ok(existsSync(join(d, "a/Neu.md")) && lies(d, "a/Alt.md") === "# noch eine Alt\n");
 });
@@ -97,7 +96,7 @@ test("W3: Wiederholen nach Wiederherstellen aus dem Papierkorb ist gesperrt; nac
   const { d: d3, v: v3, support: s3, kennung: k3 } = aufbau({ "R/a.md": "# a\n" });
   const r3 = await v3.loeschen({ typ: "ordner", pfad: "R" });
   await v3.vorgangZurueck({ id: r3.vorgang });
-  const mf = join(vorgangsDir(s3, k3, r3.vorgang), "manifest.json");
+  const mf = join(vorgangsDir(d3, r3.vorgang), "manifest.json");
   const m = JSON.parse(readFileSync(mf, "utf8")); m.zeit = new Date(Date.now() - 20 * 86400e3).toISOString(); writeFileSync(mf, JSON.stringify(m));
   await v3.vorgangWieder({ id: r3.vorgang });
   assert.ok(!existsSync(join(d3, "R")));
@@ -131,8 +130,8 @@ test("git: Abgleich/Commit laufen nicht an, solange eine Dateiaktion die Sperre 
   schreibe(d, "brain.config.json", "{}\n"); schreibe(d, "a.md", "# a\n");
   const v = oeffneVault(d, { support });
   const kennung = A.kennungVault(d); // dieses Vault hat (noch) keine Vault-ID: Schlüssel = Pfad-Hash
-  mkdirSync(join(support, "papierkorb", kennung), { recursive: true });
-  writeFileSync(join(support, "papierkorb", kennung, ".sperre"), JSON.stringify({ pid: process.pid, token: "t" }) + "\n");
+  mkdirSync(join(d, ".kortex", "aktionen"), { recursive: true });
+  writeFileSync(join(d, ".kortex", "aktionen", ".sperre"), JSON.stringify({ pid: process.pid, token: "t" }) + "\n");
   const e = await fehler(() => G.commit(v.wurzel, { nachricht: "x", dateien: ["a.md"] }, {}));
   assert.equal(e.extra.art, "beschaeftigt");
 });
@@ -170,36 +169,24 @@ test("Ordner verschieben auf einen vorhandenen (auch leeren) Ordner: 409, nichts
 
 test("Unbekanntes oder kaputtes Journal kommt in die Quarantäne statt gelöscht zu werden", async () => {
   const { d, support, kennung } = aufbau({ "a/x.md": "# x\n" });
-  const dir = vorgangsDir(support, kennung, "v_aaaaaaaaaaaa");
+  const dir = vorgangsDir(d, "v_aaaaaaaaaaaa");
   mkdirSync(join(dir, "inhalt"), { recursive: true }); writeFileSync(join(dir, "inhalt", "wichtig.md"), "# wichtig\n"); writeFileSync(join(dir, "manifest.json"), "{kaputt");
   const v = oeffneVault(d, { support });
   await v.papierkorb();
   assert.ok(!existsSync(dir));
-  const q = join(support, "papierkorb", kennung, "quarantaene");
+  const q = join(d, ".kortex", "aktionen", "quarantaene");
   const eintrag = readdirSync(q)[0];
   assert.equal(readFileSync(join(q, eintrag, "inhalt", "wichtig.md"), "utf8"), "# wichtig\n");
-});
-
-test("Uhrensprung: steht ein Eintrag in der Zukunft, wird nichts aufgeräumt; sonst höchstens abgelaufene", async () => {
-  const { d, v, support, kennung } = aufbau({ "a/x.md": "# x\n", "a/y.md": "# y\n", "a/z.md": "# z\n" });
-  const r1 = await v.loeschen({ pfad: "a/x.md" }), r2 = await v.loeschen({ pfad: "a/y.md" });
-  const aendere = (id, tage) => { const mf = join(vorgangsDir(support, kennung, id), "manifest.json"); const m = JSON.parse(readFileSync(mf, "utf8")); m.zeit = new Date(Date.now() + tage * 86400e3).toISOString(); writeFileSync(mf, JSON.stringify(m)); };
-  aendere(r1.vorgang, -40); aendere(r2.vorgang, +3);
-  await oeffneVault(d, { support }).papierkorb();
-  assert.ok(existsSync(vorgangsDir(support, kennung, r1.vorgang)), "wegen der falschen Uhr nichts gelöscht");
-  aendere(r2.vorgang, 0);
-  await oeffneVault(d, { support }).papierkorb();
-  assert.ok(!existsSync(vorgangsDir(support, kennung, r1.vorgang)) && existsSync(vorgangsDir(support, kennung, r2.vorgang)));
 });
 
 test("Endgültig löschen entfernt auch die Kopien dieser Datei in den Journalen anderer Vorgänge", async () => {
   const { d, v, support, kennung } = aufbau({ "a/Alt.md": "# Alt\n", "b/L.md": "# L\n[[Alt]]\n" });
   const r1 = await v.umbenennen({ pfad: "a/Alt.md", titel: "Neu", dateiname: "Neu.md" }); // Journal enthält vorher/nachher von b/L.md
-  assert.ok(existsSync(join(vorgangsDir(support, kennung, r1.vorgang), "vorher", "0")));
+  assert.ok(existsSync(join(vorgangsDir(d, r1.vorgang), "vorher", "0")));
   const r2 = await v.loeschen({ pfad: "b/L.md" });
   await v.papierkorbEndgueltig({ id: r2.vorgang });
-  assert.ok(!existsSync(join(vorgangsDir(support, kennung, r1.vorgang), "vorher", "0")) && !existsSync(join(vorgangsDir(support, kennung, r1.vorgang), "nachher", "0")));
-  assert.deepEqual(JSON.parse(readFileSync(join(vorgangsDir(support, kennung, r1.vorgang), "manifest.json"), "utf8")).dateien.map((x) => x.pfad), ["a/Alt.md"].filter(() => false).concat(JSON.parse(readFileSync(join(vorgangsDir(support, kennung, r1.vorgang), "manifest.json"), "utf8")).dateien.map((x) => x.pfad)));
+  assert.ok(!existsSync(join(vorgangsDir(d, r1.vorgang), "vorher", "0")) && !existsSync(join(vorgangsDir(d, r1.vorgang), "nachher", "0")));
+  assert.deepEqual(JSON.parse(readFileSync(join(vorgangsDir(d, r1.vorgang), "manifest.json"), "utf8")).dateien.map((x) => x.pfad), ["a/Alt.md"].filter(() => false).concat(JSON.parse(readFileSync(join(vorgangsDir(d, r1.vorgang), "manifest.json"), "utf8")).dateien.map((x) => x.pfad)));
 });
 
 test("Protokoll-Liste: Einträge mit Vorgang behalten Konto und Programm (MCP)", async () => {

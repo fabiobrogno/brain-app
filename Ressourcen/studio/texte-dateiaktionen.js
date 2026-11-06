@@ -16,7 +16,7 @@ export const TD = {
     titelNotiz: "Notiz in den Papierkorb legen?", titelOrdner: "Ordner in den Papierkorb legen?",
     verlinkt: (n) => `wird von ${nz(n, "Notiz", "Notizen")} verlinkt`,
     satzVerlinkt: "Diese Verweise bleiben stehen und zeigen danach ins Leere (offene Links). Aus dem Papierkorb lässt sich alles zurückholen.",
-    satzOrdner: (n) => `Der Ordner mit ${nz(n, "Notiz", "Notizen")} und allem darin wandert in den Papierkorb und lässt sich dort 30 Tage lang zurückholen.`,
+    satzOrdner: (n) => `Der Ordner mit ${nz(n, "Notiz", "Notizen")} und allem darin wandert in den Papierkorb und lässt sich dort zurückholen.`,
     knopf: "In den Papierkorb", abbrechen: "Abbrechen",
   },
   toast: {
@@ -32,10 +32,12 @@ export const TD = {
     knopf: "Trotzdem zurücknehmen", abbrechen: "Abbrechen",
   },
   korb: {
-    titel: "Papierkorb", leerTitel: "Der Papierkorb ist leer", leerText: "Gelöschte Notizen und Ordner liegen hier 30 Tage, bevor sie endgültig verschwinden.",
+    titel: "Papierkorb", leerTitel: "Der Papierkorb ist leer", leerText: "Gelöschte Notizen und Ordner liegen hier, bis du sie wiederherstellst oder endgültig löschst. Kortex leert den Papierkorb nie von allein.",
     ordner: (n) => `Ordner · ${nz(n, "Datei", "Dateien")}`, notiz: "Notiz",
     geloeschtVor: (tage) => (tage <= 0 ? "heute gelöscht" : tage === 1 ? "gestern gelöscht" : `vor ${tage} Tagen gelöscht`),
-    tageUebrig: (n) => (n <= 1 ? "wird morgen endgültig gelöscht" : `noch ${n} Tage`),
+    aeltere: (n) => `${nz(n, "Eintrag ist", "Einträge sind")} älter als 30 Tage`, aeltereLeeren: "Leeren …", alt: "älter als 30 Tage",
+    aeltereTitel: "Alte Einträge endgültig löschen?", aeltereSatz: (n) => `${nz(n, "Eintrag, der", "Einträge, die")} älter als 30 Tage ${n === 1 ? "ist" : "sind"}, ${n === 1 ? "wird" : "werden"} endgültig gelöscht. Das lässt sich nicht rückgängig machen.`,
+    aelterKorb: "Älterer Papierkorb",
     wiederherstellen: "Wiederherstellen", endgueltig: "Endgültig löschen", alleLeeren: "Papierkorb leeren",
     wiederhergestellt: (name) => `„${name}“ wiederhergestellt`, belegtTitel: "Dort liegt schon etwas", belegtSatz: "An der alten Stelle gibt es inzwischen eine Datei oder einen Ordner mit diesem Namen. Unter einem anderen Namen wiederherstellen?",
     belegtKnopf: "Mit neuem Namen wiederherstellen", neuerName: "Neuer Name",

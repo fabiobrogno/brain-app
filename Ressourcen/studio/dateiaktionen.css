@@ -80,3 +80,5 @@ html[data-ziehen] .abschnitt[data-abschnitt="ordner"] .abschnitt-kopf { transiti
 
 @media (prefers-reduced-motion: reduce) { .inline-name, .inline-hinweis { animation: none; } .inline-name.wackeln { animation: none; } }
 :root[data-bewegung="reduziert"] .inline-name, :root[data-bewegung="reduziert"] .inline-hinweis { animation: none; }
+
+.korb-alt { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; color: var(--text-2); }

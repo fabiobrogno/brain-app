@@ -427,6 +427,7 @@ export function erzeugeDateiaktionen(ctx) {
     if (!korbListe.length && hinweise.length) { host.replaceChildren(...hinweise); return; }
     if (!korbListe.length) { host.replaceChildren(leerBlock({ symbol: "papierkorb", titel: TD.korb.leerTitel, text: TD.korb.leerText, daten: { "data-leer": "papierkorb" } })); return; }
     const kopf = h("div", { klasse: "korb-kopf" }, h("span", { klasse: "leise", text: TD.korb.leerText }),
+      r.aelter ? h("div", { klasse: "korb-alt", "data-korb-alt": "" }, h("span", { text: TD.korb.aeltere(r.aelter) }), baueKnopf({ text: TD.korb.aeltereLeeren, groesse: "s", variante: "leise", aktion: "alte-leeren", aufKlick: () => alteLeeren(r.aelter) })) : null,
       baueKnopf({ text: TD.korb.alleLeeren, groesse: "s", variante: "leise", aktion: "papierkorb-leeren", aufKlick: () => leeren() }));
     host.replaceChildren(...hinweise, kopf, ...korbListe.map(korbKarte));
   }
@@ -444,7 +445,7 @@ export function erzeugeDateiaktionen(ctx) {
     const karte = h("div", { klasse: "karte korb-karte", role: "option", "data-korb": e.id, "data-pfad": e.pfad, title: e.pfad },
       h("div", { klasse: "karte-kopf" }, h("div", { klasse: "karte-titel", text: e.titel || e.name }), h("div", { klasse: "karte-marken" }, symbol(e.typ === "ordner" ? "ordner" : "notiz", 14))),
       h("div", { klasse: "karte-vorschau", text: e.nurImFinder ? TD.korb.nurImFinder(e.ort) : (e.ordner ? `${e.ordner}` : "") }),
-      h("div", { klasse: "karte-fuss" }, h("span", { text: `${TD.korb.geloeschtVor(tage)} · ${e.typ === "ordner" ? TD.korb.ordner(e.anzahl) : TD.korb.notiz}` }), h("span", { text: TD.korb.tageUebrig(e.tageUebrig) })),
+      h("div", { klasse: "karte-fuss" }, h("span", { text: `${TD.korb.geloeschtVor(tage)} · ${e.typ === "ordner" ? TD.korb.ordner(e.anzahl) : TD.korb.notiz}` }), h("span", { text: e.alt ? TD.korb.alt : (e.aelterKorb ? TD.korb.aelterKorb : "") })),
       h("div", { klasse: "korb-aktionen" },
         baueKnopf({ text: TD.korb.wiederherstellen, groesse: "s", aktion: "wiederherstellen", symbol: "zuruecksetzen", aufKlick: () => wiederherstellen(e) }),
         baueKnopf({ text: TD.korb.endgueltig, groesse: "s", variante: "leise", aktion: "endgueltig", klasse: "korb-gefahr", aufKlick: () => endgueltig(e) })));
@@ -476,6 +477,16 @@ export function erzeugeDateiaktionen(ctx) {
         try { await api.papierkorbEndgueltig({ id: e.id }); await zeichnePapierkorb(document.getElementById("liste-koerper")); } catch (err) { toast(fehlerText(err), { fehler: true }); }
       } })] });
     d.box.querySelector('[data-aktion="endgueltig-bestaetigen"]')?.classList.add("primaer");
+  }
+  // Kein automatisches Leeren: ältere Einträge werden nur auf Klick und nach Rückfrage gelöscht
+  function alteLeeren(n) {
+    const d = dialog({ titel: TD.korb.aeltereTitel, satz: TD.korb.aeltereSatz(n), knoepfe: [
+      baueKnopf({ text: TD.vorschau.abbrechen, aufKlick: () => d.schliessen() }),
+      baueKnopf({ text: TD.korb.leerenKnopf, variante: "gefahr", aktion: "alte-leeren-bestaetigen", aufKlick: async () => {
+        d.schliessen();
+        try { const r = await api.papierkorbEndgueltig({ aelterAlsTage: 30 }); toast(TD.korb.geloescht(r.geloescht)); await zeichnePapierkorb(document.getElementById("liste-koerper")); } catch (err) { toast(fehlerText(err), { fehler: true }); }
+      } })] });
+    d.box.querySelector('[data-aktion="alte-leeren-bestaetigen"]')?.classList.add("primaer");
   }
   function leeren() {
     const n = korbListe.length;

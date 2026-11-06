@@ -35,9 +35,8 @@ function aufbau(dateien = {}) {
   const d = tmp("umb-vault-"), support = tmp("umb-support-");
   schreibe(d, "brain.config.json", "{}\n");
   for (const [p, t] of Object.entries(dateien)) schreibe(d, p, t);
-  mkdirSync(join(d, ".kortex"), { recursive: true }); writeFileSync(join(d, ".kortex", "vault-id"), JSON.stringify({ id: "00112233445566aa", alt: [A.kennungVault(d)] }) + "\n");
   const v = oeffneVault(d, { support, heute: "2026-11-05" });
-  return { d, support, v, kennung: "00112233445566aa" };
+  return { d, support, v, kennung: null };
 }
 const eintraege = (support, kennung) => A.leseEreignisse(support, kennung, { arten: ["datei-aktion"] });
 
@@ -79,7 +78,6 @@ test("Notiz umbenennen (Titel und Dateiname): alle Verweise folgen, Code bleibt,
   assert.equal(sicht.verweise, 10, JSON.stringify(sicht.liste));
   assert.equal(sicht.notizen, 2);
   assert.deepEqual(stand(d), vorher, "die Vorschau schreibt nichts");
-  assert.equal(readdirSync(join(support, "papierkorb"), { recursive: true }).length >= 0, true);
   const r = await v.umbenennen({ pfad: "10/Kaffee.md", titel: "Espresso", dateiname: "Espresso.md", token: sicht.token, basisHash: sicht.hash });
   assert.equal(r.nach, "10/Espresso.md");
   assert.ok(!existsSync(join(d, "10/Kaffee.md")));
@@ -298,14 +296,14 @@ test("Löschen: Notiz im Papierkorb (0700/0600), Verweise bleiben als offene Lin
   const r = await v.loeschen({ pfad: "10/Kaffee.md", token: sicht.token });
   assert.ok(!existsSync(join(d, "10/Kaffee.md")));
   assert.equal(lies(d, "10/Tee.md"), BASIS()["10/Tee.md"], "Verweise bleiben, wie sie sind (offene Links)");
-  const korb = join(support, "papierkorb", kennung);
+  const korb = join(d, ".kortex", "papierkorb");
   const inhalt = join(korb, "vorgaenge", r.vorgang, "inhalt", "Kaffee.md");
   assert.equal(readFileSync(inhalt, "utf8"), BASIS()["10/Kaffee.md"]);
   assert.equal(statSync(inhalt).mode & 0o777, 0o600);
-  for (const o of [korb, join(korb, "vorgaenge"), join(korb, "vorgaenge", r.vorgang), join(korb, "vorgaenge", r.vorgang, "inhalt")]) assert.equal(statSync(o).mode & 0o777, 0o700, o);
+  for (const o of [join(d, ".kortex"), korb, join(korb, "vorgaenge"), join(korb, "vorgaenge", r.vorgang), join(korb, "vorgaenge", r.vorgang, "inhalt")]) assert.equal(statSync(o).mode & 0o777, 0o700, o);
   assert.equal(statSync(join(korb, "vorgaenge", r.vorgang, "manifest.json")).mode & 0o777, 0o600);
   const liste = await v.papierkorb();
-  assert.equal(liste.eintraege.length, 1); assert.equal(liste.eintraege[0].titel, "Kaffee"); assert.equal(liste.eintraege[0].tageUebrig, 30);
+  assert.equal(liste.eintraege.length, 1); assert.equal(liste.eintraege[0].titel, "Kaffee"); assert.equal(liste.eintraege[0].alt, false);
   // Wiederherstellen aus dem Papierkorb
   const w = await v.papierkorbWiederherstellen({ id: r.vorgang });
   assert.equal(w.pfad, "10/Kaffee.md");
@@ -343,21 +341,23 @@ test("Ordner löschen samt Inhalt und wiederherstellen (Bytes, leere Ordner, Mod
   assert.deepEqual(stand(d).ordner, vorher.ordner);
 });
 
-test("Endgültig löschen entfernt den Inhalt; danach gibt es kein Rückgängig; 30 Tage: Aufräumen", async () => {
-  const { d, support, kennung, v } = aufbau({ "a/x.md": "# x\n", "a/y.md": "# y\n" });
+test("Endgültig löschen entfernt den Inhalt auf Klick; danach gibt es kein Rückgängig; nichts wird je automatisch geleert (auch alte Einträge und verstellte Uhr nicht)", async () => {
+  const { d, v } = aufbau({ "a/x.md": "# x\n", "a/y.md": "# y\n", "a/z.md": "# z\n" });
   const r1 = await v.loeschen({ pfad: "a/x.md" });
   const r2 = await v.loeschen({ pfad: "a/y.md" });
-  const korb = join(support, "papierkorb", kennung, "vorgaenge");
+  const r3 = await v.loeschen({ pfad: "a/z.md" });
+  const korb = join(d, ".kortex", "papierkorb", "vorgaenge");
   assert.equal((await v.papierkorbEndgueltig({ id: r1.vorgang })).geloescht, 1);
   assert.ok(!existsSync(join(korb, r1.vorgang, "inhalt")));
   assert.equal((await fehler(() => v.vorgangZurueck({ id: r1.vorgang }))).status, 404);
   assert.equal((await fehler(() => v.papierkorbEndgueltig({ id: "v_000000000000" }))).status, 404);
-  // alt gemacht → beim nächsten Öffnen des Papierkorbs weg (neue Instanz des Vaults = frischer Lauf)
-  const mf = join(korb, r2.vorgang, "manifest.json");
-  const m = JSON.parse(readFileSync(mf, "utf8")); m.zeit = new Date(Date.now() - 31 * 86400e3).toISOString(); writeFileSync(mf, JSON.stringify(m));
-  const v2 = oeffneVault(d, { support });
-  assert.equal((await v2.papierkorb()).eintraege.length, 0);
-  assert.ok(!existsSync(join(korb, r2.vorgang)));
+  // sehr alt (und eine Uhr, die weit vorgeht): bleibt liegen, wird nur angezeigt und erst auf ausdrücklichen Wunsch gelöscht
+  const alt = (id, tage) => { const mf = join(korb, id, "manifest.json"); const m = JSON.parse(readFileSync(mf, "utf8")); m.zeit = new Date(Date.now() - tage * 86400e3).toISOString(); writeFileSync(mf, JSON.stringify(m)); };
+  alt(r2.vorgang, 400); alt(r3.vorgang, -5);
+  for (let i = 0; i < 3; i++) { const liste = await oeffneVault(d, { support: tmp("upk-x-") }).papierkorb(); assert.equal(liste.eintraege.length, 2); assert.equal(liste.aelter, 1); }
+  assert.ok(existsSync(join(korb, r2.vorgang, "inhalt")));
+  assert.equal((await v.papierkorbEndgueltig({ aelterAlsTage: 30 })).geloescht, 1, "nur der alte Eintrag, nur auf Anfrage");
+  assert.ok(existsSync(join(korb, r3.vorgang, "inhalt")));
 });
 
 test("Die Vorgangs-Kennung im Protokoll ist nur ein Hinweis: ungültige oder fremde Kennungen tun nichts", async () => {
@@ -434,12 +434,12 @@ test("Mitten im Lauf abgebrochene Aktion (Journal „laeuft“) wird beim nächs
   const { d, v, support, kennung } = aufbau({ "a/Alt.md": "# Alt\n", "b/x.md": "[[Alt]]\n" });
   const r = await v.umbenennen({ pfad: "a/Alt.md", titel: "Neu", dateiname: "Neu.md" });
   // Absturz nachstellen: Journal auf „laeuft“ und alt, Notizen im Stand „nachher“, Datei noch an alter Stelle
-  const mf = join(support, "papierkorb", kennung, "vorgaenge", r.vorgang, "manifest.json");
+  const mf = join(d, ".kortex", "papierkorb", "vorgaenge", r.vorgang, "manifest.json");
   const m = JSON.parse(readFileSync(mf, "utf8")); m.status = "laeuft"; m.zeit = new Date(Date.now() - 120_000).toISOString(); writeFileSync(mf, JSON.stringify(m));
   const v2 = oeffneVault(d, { support });
   await v2.papierkorb();
   assert.equal(lies(d, "b/x.md"), "[[Alt]]\n", "Verweis zurückgesetzt");
   assert.ok(existsSync(join(d, "a/Alt.md")) && !existsSync(join(d, "a/Neu.md")), "auch der Umzug ist zurückgefahren: die Notiz liegt wieder unter dem alten Namen");
   assert.equal(lies(d, "a/Alt.md"), "# Alt\n");
-  assert.ok(!existsSync(join(support, "papierkorb", kennung, "vorgaenge", r.vorgang)));
+  assert.ok(!existsSync(join(d, ".kortex", "papierkorb", "vorgaenge", r.vorgang)));
 });
