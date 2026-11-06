@@ -222,6 +222,20 @@ export function pflegeFuer(daten, vault) {
   const konto = typeof p.konto === "string" && KONTO_ID.test(p.konto) && Object.hasOwn(daten.konten, p.konto) ? p.konto : null;
   return { gesetzt: true, konto, stufe: p.stufe, ...(genannt && konto === null ? { kontoUnbekannt: true } : {}) };
 }
+// Aktives Konto je Programm (Einstellungen → KI & Konten → Konten): daten.aktiv = { "<programm>": "<kontoId>" }. Es ist die Vorgabe für Frag, für neue Verbindungen und der Vorschlag für das Pflege-Konto.
+// Gilt nur, wenn die Kennung ein Konto GENAU dieses Programms in der Liste ist; sonst (und ohne Eintrag) das einzige Konto des Programms, bei mehreren keines (null). Die Liste wird nie verändert.
+export function aktivesKonto(daten, programm) {
+  if (!istObj(daten) || !istObj(daten.konten) || typeof programm !== "string") return null;
+  const id = istObj(daten.aktiv) ? daten.aktiv[programm] : undefined;
+  if (typeof id === "string" && KONTO_ID.test(id) && Object.hasOwn(daten.konten, id) && istObj(daten.konten[id]) && daten.konten[id].programm === programm) return id;
+  const eigene = Object.entries(daten.konten).filter(([, k]) => istObj(k) && k.programm === programm);
+  return eigene.length === 1 ? eigene[0][0] : null;
+}
+// → Kennung des aktiven Kontos eines Programms aus der Liste im Support-Ordner; null, wenn es keine lesbare Liste oder kein aktives Konto gibt (nie ein Fehler).
+export function liesAktivesKonto(support, programm) {
+  const { zustand, daten } = liesKonten(support);
+  return zustand === "ok" ? aktivesKonto(daten, programm) : null;
+}
 // LESEN-ENDE
 
 // ───────────────────────────── Pflege-Konto (Anzeige und Prüfung der Werkstatt) ─────────────────────────────

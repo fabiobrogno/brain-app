@@ -46,10 +46,9 @@ export function erzeugeFragePanel(z) {
     catch (e) { if (nr !== prueft) return; bereit = null; bereitFehler = e.message || TF.bereitFehler; }
     laedt = false;
     const erlaubte = (bereit?.konten || []).filter((k) => k.erlaubt);
-    // Die Wahl kann auch in den Einstellungen (KI & Konten → Frag deinen Vault) geändert worden sein: die gemerkten Werte gelten zuerst
-    const gemerkt = leseLokal(`frage.konto@${vaultSchluessel()}`, null);
+    // Das aktive Claude-Konto (ki-konten.json, Einstellungen → KI & Konten → Konten) ist die Vorgabe; es gilt ab der nächsten Frage
     modell = leseLokal("frage.modell", modell);
-    konto = erlaubte.find((k) => k.id === gemerkt)?.id || erlaubte.find((k) => k.id === konto)?.id || erlaubte[0]?.id || null;
+    konto = erlaubte.find((k) => k.id === bereit?.aktiv)?.id || erlaubte.find((k) => k.id === konto)?.id || erlaubte[0]?.id || null;
     zeichneRumpf();
     if (offen && !lauf) setTimeout(() => formular.querySelector("textarea")?.focus(), 0);
   }
@@ -109,7 +108,7 @@ export function erzeugeFragePanel(z) {
     // Bedienelemente aus bausteine.js (Auswahl mit Logo, Segment, Textbereich, Knopf), nicht die nativen des Systems
     const jetztKt = kt.jetzt();
     const kontoWahl = auswahl({ optionen: erlaubte.map((x) => ({ wert: x.id, text: x.name, logo: x.programm, sub: optionSub(kt.eintrag(x.id), jetztKt) })), wert: konto, label: TF.konto, breit: true, daten: { "data-frage": "konto", title: TF.kontoHinweis },
-      aufAenderung: (id) => { konto = id; speichereLokal(`frage.konto@${vaultSchluessel()}`, id); window.dispatchEvent(new CustomEvent(FRAGE_KONTO_EREIGNIS, { detail: { vault: vaultSchluessel(), id } })); zeichneFormular(); formular.querySelector("textarea")?.focus(); } });
+      aufAenderung: (id) => { konto = id; if (bereit) bereit.aktiv = id; Promise.resolve(api.kiAktiv?.("claude", id)).then(() => kt.holen(), () => {}); window.dispatchEvent(new CustomEvent(FRAGE_KONTO_EREIGNIS, { detail: { vault: vaultSchluessel(), id } })); zeichneFormular(); formular.querySelector("textarea")?.focus(); } });
     const modellWahl = segment({ optionen: bereit.modelle.map((m) => ({ wert: m, text: TF.modelle[m] || m, daten: { title: TF.modellHinweis[m] || "" } })), wert: modell, label: TF.modell, daten: { "data-frage": "modell" },
       aufAenderung: (m) => { modell = m; speichereLokal("frage.modell", m); } });
     const eingabe = textbereich({ platzhalter: TF.platzhalter, label: TF.titel, minZeilen: 3, maxZeilen: 9, daten: { "data-frage": "eingabe", maxlength: String(bereit.grenzen.frageMax) }, wert: text,

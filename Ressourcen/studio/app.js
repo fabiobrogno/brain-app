@@ -17,6 +17,7 @@ import { baueAktionen, istZurueckgestellt, spaeterBis } from "./posteingang.js";
 import { TA as TAUF } from "./texte-aufgaben.js";
 import { erzeugeFragePanel } from "./frage.js";
 import { kontingentStand, erzeugeKontoLeiste } from "./kontingent.js";
+import { uebernehmeBeimStart } from "./ki-aktiv.js";
 import { TF } from "./texte-frage.js";
 import { TK, konfliktLabel } from "./texte-konflikt.js";
 import { starteLive, planeAus, kiHinweis, hebeHervor } from "./live.js";
@@ -1688,6 +1689,7 @@ function zeichneStatus() {
   // ---- SLOT P7 (Kontingent, Paket „Kontingent“): der Platz [data-st="platz-kontingent"] ist ein einziger, dauerhafter Knoten (kontingentSlot), der den Knoten der Konto-Leiste trägt;
   // die Leiste zeichnet sich selbst neu, die Statusleiste setzt nur diesen Knoten wieder ein (kein Neuzeichnen, der Fokus und ein offenes Konto-Menü bleiben).
   kontingentStand(api).start(); kontoLeiste.zeichne(); // erst mit offenem Vault (idempotent)
+  uebernehmeBeimStart(api, { vault: S.info?.vault || null }); // die frühere Wahl des Frag-Kontos (lokaler Speicher) wandert einmal in ki-konten.json
   k.push(kontingentSlot);
   {
     const datei = zeigeDateiTeile(), w = datei ? T.statusInfo.woerter(wortZahl()) : "";

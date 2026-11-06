@@ -41,7 +41,7 @@ async function start(page, { konten = ALLE, werte = WERTE(), dunkel = false, has
   await mockeV2(page, vault);
   const k = await mockeKonten(page, { vaults: [{ pfad: vault, name: "Mein Vault" }, { pfad: FIRMA, name: "Firma" }], konten, programme: PROGRAMME,
     login: { k_aaaa0001: "angemeldet", k_aaaa0002: "angemeldet", k_aaaa0003: "angemeldet", k_aaaa0006: "angemeldet", k_aaaa0004: "nicht-angemeldet", ...login }, zuletzt: { k_aaaa0004: "2026-10-30T09:00:00.000Z" } });
-  const kt = await mockeKontingent(page, { konten, werte, ...kontingent });
+  const kt = await mockeKontingent(page, { konten, werte, aktiv: () => k.aktiv, ...kontingent }); // das aktive Konto kommt aus derselben Quelle wie in der Werkstatt (ki-konten.json)
   await page.goto(server.url + "?pfad=" + encodeURIComponent(NOTIZ));
   await page.waitForSelector("#app:not([hidden])");
   await page.waitForFunction(() => window.__studioBereit === true);
@@ -51,7 +51,8 @@ async function start(page, { konten = ALLE, werte = WERTE(), dunkel = false, has
 const leiste = (page) => page.locator('[data-st="kontingent"]');
 const menue = (page) => page.locator('[data-kt="menue"]');
 const zeileM = (page, id) => menue(page).locator(`.kt-m-zeile[data-konto="${id}"]`);
-const konto = (page, id) => page.locator(`.kx-konto[data-konto="${id}"]`);
+// Der volle Verbrauch steht im Unterbereich „Kontingent“ (Karte je Konto); in der Kontenliste steht nur der Mini-Balken
+const konto = (page, id) => page.locator(`.kx-kt-karte[data-konto="${id}"]`);
 const spalte = (page, id) => konto(page, id).locator(`[data-kt-konto="${id}"]`);
 const breiteVon = (loc) => loc.evaluate((e) => parseFloat(e.style.width));
 const dlg = (page, name) => page.locator(`.dialog[data-dialog="${name}"]`);
@@ -171,7 +172,7 @@ test("Frag-Feld (hell): Auswahl mit Kontingent je Konto, Balken unter der Auswah
   await foto(page, "frage-hell");
 });
 
-test("Wechsel in der Statusleiste: gilt auch im Frag-Feld und bleibt je Vault gemerkt; die Wahl schreibt keine Rechte", async ({ page }) => {
+test("Wechsel in der Statusleiste: gilt auch im Frag-Feld und bleibt als aktives Konto gemerkt; die Wahl schreibt keine Rechte", async ({ page }) => {
   const { k } = await start(page, { konten: [PRIVAT, ARBEIT, FIRMA_K, CODEX], werte: { k_aaaa0001: Z.claudeOk(42, 18), k_aaaa0002: Z.claudeOk(71, 63), k_aaaa0004: Z.nichtEingerichtet(), k_aaaa0003: Z.codexOk(9, 71) } });
   await page.click("#knopf-frage");
   await expect(page.locator('[data-frage="konto"]')).toContainText("Privat");
@@ -186,8 +187,8 @@ test("Wechsel in der Statusleiste: gilt auch im Frag-Feld und bleibt je Vault ge
   await expect(leiste(page)).toContainText("Arbeit");
   await expect(leiste(page).locator(".kt-mini-text")).toHaveText("71 %");
   await expect(page.locator('[data-frage="konto"]')).toContainText("Arbeit");
-  const gemerkt = await page.evaluate((v) => localStorage.getItem(`brain-studio.frage.konto@${v}`), vault);
-  expect(JSON.parse(gemerkt)).toBe("k_aaaa0002");
+  expect(k.log("/api/ki/aktiv", "PUT").at(-1).body, "die Wahl ist das aktive Konto (ki-konten.json), nicht der lokale Speicher").toEqual({ programm: "claude", konto: "k_aaaa0002" });
+  expect(await page.evaluate(() => Object.keys(localStorage).filter((x) => x.includes("frage.konto")))).toEqual([]);
   expect(k.log("/api/ki/zugriff", "PUT")).toHaveLength(0);
   await page.reload();
   await page.waitForFunction(() => window.__studioBereit === true);
@@ -290,7 +291,7 @@ test("Schmales Fenster: bis 1180 px nur Logo und Prozent, bis 900 px nur das Log
 
 // ---------------------------------------------------------------------- Einstellungen → KI & Konten
 test("Einstellungen: Balken 5 Std / Woche mit Prozent und Rücksetzzeit je Konto; Codex mit „Neu laden“; Cursor ehrlich nicht abrufbar (hell)", async ({ page }) => {
-  await start(page, { hash: "#einstellungen/ki" });
+  await start(page, { hash: "#einstellungen/ki?ziel=ki-kontingent" });
   await expect(konto(page, "k_aaaa0001")).toBeVisible();
   const p = spalte(page, "k_aaaa0001");
   await expect(p.locator('[data-fenster="session"] .kt-prozent')).toHaveText("42 %");
@@ -310,7 +311,7 @@ test("Einstellungen: Balken 5 Std / Woche mit Prozent und Rücksetzzeit je Konto
 });
 
 test("Einstellungen dunkel: Zustände — noch keine Werte, ohne Kontingent, veraltet, geändert, Einstellungen kaputt, Codex nicht gefunden", async ({ page }) => {
-  await start(page, { dunkel: true, hash: "#einstellungen/ki", konten: [PRIVAT, ARBEIT, FIRMA_K, CODEX, CURSOR], werte: {
+  await start(page, { dunkel: true, hash: "#einstellungen/ki?ziel=ki-kontingent", konten: [PRIVAT, ARBEIT, FIRMA_K, CODEX, CURSOR], werte: {
     k_aaaa0001: Z.keineWerte(), k_aaaa0002: Z.ohneKontingent(), k_aaaa0004: Z.defekt(), k_aaaa0003: Z.codexFehler("fehlt"), k_aaaa0005: Z.nichtAbrufbar("Cursor") } });
   await expect(spalte(page, "k_aaaa0001")).toContainText("Die Werte erscheinen, sobald du Claude Code mit diesem Konto benutzt hast");
   await expect(spalte(page, "k_aaaa0002")).toContainText("Claude Code hat für dieses Konto noch kein Kontingent gemeldet");
@@ -324,7 +325,7 @@ test("Einstellungen dunkel: Zustände — noch keine Werte, ohne Kontingent, ver
 
 test("Einstellungen: veraltet, geändert (mit Knopf), Codex wird gefragt, Codex mit abgelaufener Anmeldung — und es gibt keinen Absturz", async ({ page }) => {
   const f = fehlerSammler(page);
-  await start(page, { hash: "#einstellungen/ki", konten: [PRIVAT, ARBEIT, FIRMA_K, CODEX], werte: { k_aaaa0001: Z.claudeVeraltet(63, 20), k_aaaa0002: Z.geaendert(), k_aaaa0004: Z.nichtEingerichtet(), k_aaaa0003: Z.codexLaedt() } });
+  await start(page, { hash: "#einstellungen/ki?ziel=ki-kontingent", konten: [PRIVAT, ARBEIT, FIRMA_K, CODEX], werte: { k_aaaa0001: Z.claudeVeraltet(63, 20), k_aaaa0002: Z.geaendert(), k_aaaa0004: Z.nichtEingerichtet(), k_aaaa0003: Z.codexLaedt() } });
   await expect(spalte(page, "k_aaaa0001").locator('[data-fenster="session"] .kt-prozent')).toHaveText("63 %");
   await expect(spalte(page, "k_aaaa0001")).toContainText("Stand vor 1 Std. Claude Code meldet neue Werte, sobald du es benutzt.");
   await expect(spalte(page, "k_aaaa0002")).toContainText("Statuszeile geändert");
@@ -335,7 +336,7 @@ test("Einstellungen: veraltet, geändert (mit Knopf), Codex wird gefragt, Codex 
 });
 
 test("Einschalten bei einem Konto von Kortex: ein Klick, ein Dialog mit den Zusagen, kein zweites Bestätigen — der Aufruf trägt einwilligung, nicht bestaetigt", async ({ page }) => {
-  const { kt } = await start(page, { hash: "#einstellungen/ki", konten: [PRIVAT, KUNDE], werte: { k_aaaa0001: Z.claudeOk(42, 18), k_aaaa0006: Z.nichtEingerichtet({ verwaltet: true, bestaetigungNoetig: false }) },
+  const { kt } = await start(page, { hash: "#einstellungen/ki?ziel=ki-kontingent", konten: [PRIVAT, KUNDE], werte: { k_aaaa0001: Z.claudeOk(42, 18), k_aaaa0006: Z.nichtEingerichtet({ verwaltet: true, bestaetigungNoetig: false }) },
     login: {} });
   const z = spalte(page, "k_aaaa0006");
   await expect(z.locator('[data-aktion="kt-anzeigen"]')).toBeVisible();
@@ -357,7 +358,7 @@ test("Einschalten bei einem Konto von Kortex: ein Klick, ein Dialog mit den Zusa
 });
 
 test("Einschalten beim System-Standard (~/.claude): Dialog MIT Bestätigung in der Seite (Sicherung, markierter Eintrag, Rückweg) — erst „Ja“ löst den Aufruf mit bestaetigt aus", async ({ page }) => {
-  const { kt } = await start(page, { hash: "#einstellungen/ki", konten: [PRIVAT], werte: { k_aaaa0001: Z.nichtEingerichtet({ fremdeStatuszeile: true }) } });
+  const { kt } = await start(page, { hash: "#einstellungen/ki?ziel=ki-kontingent", konten: [PRIVAT], werte: { k_aaaa0001: Z.nichtEingerichtet({ fremdeStatuszeile: true }) } });
   await spalte(page, "k_aaaa0001").locator('[data-aktion="kt-anzeigen"]').click();
   const d = dlg(page, "kt-einwilligung");
   await expect(d.locator('[data-kt="bestaetigung"]')).toBeVisible();
@@ -378,7 +379,7 @@ test("Einschalten beim System-Standard (~/.claude): Dialog MIT Bestätigung in d
 });
 
 test("Ausschalten: Rückfrage, dann der Rückweg; ein Fehler der Werkstatt steht als Satz mit dem nächsten Schritt da", async ({ page }) => {
-  const { kt } = await start(page, { hash: "#einstellungen/ki", konten: [PRIVAT], werte: { k_aaaa0001: Z.claudeOk(42, 18) } });
+  const { kt } = await start(page, { hash: "#einstellungen/ki?ziel=ki-kontingent", konten: [PRIVAT], werte: { k_aaaa0001: Z.claudeOk(42, 18) } });
   await spalte(page, "k_aaaa0001").locator('[data-aktion="kt-aus"]').click();
   const d = dlg(page, "kt-ausschalten");
   await expect(d).toContainText("Kontingent für „Privat“ nicht mehr anzeigen?");
@@ -397,7 +398,7 @@ test("Ausschalten: Rückfrage, dann der Rückweg; ein Fehler der Werkstatt steht
 });
 
 test("Tastatur: Dialog per Tab erreichbar, Esc bricht ab, nichts wird geschrieben", async ({ page }) => {
-  const { kt } = await start(page, { hash: "#einstellungen/ki", konten: [PRIVAT], werte: { k_aaaa0001: Z.nichtEingerichtet() } });
+  const { kt } = await start(page, { hash: "#einstellungen/ki?ziel=ki-kontingent", konten: [PRIVAT], werte: { k_aaaa0001: Z.nichtEingerichtet() } });
   await spalte(page, "k_aaaa0001").locator('[data-aktion="kt-anzeigen"]').focus();
   await page.keyboard.press("Enter");
   await expect(dlg(page, "kt-einwilligung")).toBeVisible();
@@ -407,7 +408,7 @@ test("Tastatur: Dialog per Tab erreichbar, Esc bricht ab, nichts wird geschriebe
 });
 
 test("Neu verknüpfen und Reparieren: Zustand mit Knopf, der Aufruf läuft nach dem Dialog, der Hinweis nennt, was geschah (nicht „eingetragen“)", async ({ page }) => {
-  const { kt } = await start(page, { hash: "#einstellungen/ki", konten: [PRIVAT, ARBEIT], werte: { k_aaaa0001: Z.neuVerknuepfen(), k_aaaa0002: Z.reparieren() } });
+  const { kt } = await start(page, { hash: "#einstellungen/ki?ziel=ki-kontingent", konten: [PRIVAT, ARBEIT], werte: { k_aaaa0001: Z.neuVerknuepfen(), k_aaaa0002: Z.reparieren() } });
   await expect(spalte(page, "k_aaaa0001")).toContainText("Statuszeile gehört zu einer früheren Kennung");
   await expect(spalte(page, "k_aaaa0001")).toContainText("deine eigene Statuszeile geht dabei nicht verloren");
   await expect(spalte(page, "k_aaaa0001").locator('[data-aktion="kt-anzeigen"]')).toHaveText("Neu verknüpfen …");
@@ -425,7 +426,7 @@ test("Neu verknüpfen und Reparieren: Zustand mit Knopf, der Aufruf läuft nach 
 });
 
 test("Ausschalten, wenn die Statuszeile schon weg war: der Hinweis sagt „war schon aus“ statt „Einstellungen wie vorher“", async ({ page }) => {
-  const { kt } = await start(page, { hash: "#einstellungen/ki", konten: [PRIVAT], werte: { k_aaaa0001: Z.claudeOk(42, 18) } });
+  const { kt } = await start(page, { hash: "#einstellungen/ki?ziel=ki-kontingent", konten: [PRIVAT], werte: { k_aaaa0001: Z.claudeOk(42, 18) } });
   kt.aktion = "schon-weg";
   await spalte(page, "k_aaaa0001").locator('[data-aktion="kt-aus"]').click();
   await dlg(page, "kt-ausschalten").locator('[data-aktion="kt-ausschalten"]').click();

@@ -28,10 +28,10 @@ export const ZUSTAND = {
 };
 
 // opt.konten: [{ id, programm, name, standard, verwaltet? }] · opt.werte: { <konto>: Zustand } · opt.jetzt · opt.fehler: GET schlägt fehl (Text)
-export async function mockeKontingent(page, { konten, werte = {}, jetzt = JETZT, fehler = null, schalterFehler = null, aktion = null } = {}) {
-  const z = { konten, werte: { ...werte }, jetzt, anfragen: [], fehler, schalterFehler, aktion };
+export async function mockeKontingent(page, { konten, werte = {}, jetzt = JETZT, fehler = null, schalterFehler = null, aktion = null, aktiv = null } = {}) {
+  const z = { konten, werte: { ...werte }, jetzt, anfragen: [], fehler, schalterFehler, aktion, aktiv };
   // stufe: die Stufe des Kontos im offenen Vault (wie die Werkstatt sie aus der Liste der Konten liest); ohne Angabe: verbundene Konten „posteingang“, übrige „gesperrt“ (wie mockeKonten)
-  const liste = () => z.konten.map((k) => ({ id: k.id, programm: k.programm, name: k.name, standard: k.standard === true, stufe: k.stufe || (k.verbunden ? "posteingang" : "gesperrt"), ...(z.werte[k.id] || ZUSTAND.nichtAbrufbar()), ...(k.verwaltet ? { verwaltet: true, bestaetigungNoetig: false } : {}) }));
+  const liste = () => z.konten.map((k) => ({ id: k.id, programm: k.programm, name: k.name, standard: k.standard === true, ...(z.aktiv && z.aktiv()?.[k.programm] === k.id ? { aktiv: true } : {}), stufe: k.stufe || (k.verbunden ? "posteingang" : "gesperrt"), ...(z.werte[k.id] || ZUSTAND.nichtAbrufbar()), ...(k.verwaltet ? { verwaltet: true, bestaetigungNoetig: false } : {}) }));
   const stand = () => ({ jetzt: new Date(z.jetzt).toISOString(), takt: { abfrageMs: 900_000, neuFruehestensMs: 300_000, veraltetMs: 1_800_000 }, konten: liste() });
   await page.route(/\/api\/ki\/kontingent(\?.*)?$/, (route) => {
     z.anfragen.push({ methode: route.request().method(), pfad: "/api/ki/kontingent", body: { neu: new URL(route.request().url()).searchParams.get("neu") } });

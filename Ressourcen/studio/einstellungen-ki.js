@@ -15,7 +15,8 @@ import { oeffneMenue } from "./menue.js";
 import { kiLogo, kiLogoId, kiLogoName, kiKatalog } from "./ki-logos.js";
 import { TK } from "./texte-konten.js";
 import { TKE as T } from "./texte-ki-einstellungen.js";
-import { kontingentStand, kontingentBlock, kontoAnsicht, kontingentEinwilligung } from "./kontingent.js";
+import { kontingentStand, kontingentBlock, kontoAnsicht, kontingentEinwilligung, miniBalken, FRAGE_KONTO_EREIGNIS } from "./kontingent.js";
+import { uebernehmeLokaleWahl } from "./ki-aktiv.js";
 import { TKO } from "./texte-kontingent.js";
 import { popoverOffen } from "./popover.js";
 import { baueAnmeldung, pruefeKontoAnmeldung, ANMELDBAR } from "./ki-verbinden.js";
@@ -53,6 +54,7 @@ export function erzeugeKi(o) {
     konten: null, kontenRoh: null, kontenFehler: null, programme: null, programmeFehler: null, suchtProgramme: false, anm: new Map(), pflege: {}, pflegeFehler: {}, pflegeEntwurf: {},
     kern: null, kernFehler: null, kernBusy: null, kernFehlerText: {}, kernFrageErsetzen: false, profilWahl: null,
     frage: null, frageFehler: null, umbenenne: null, namensFehler: null, beschaeftigt: false, meldung: null, warnung: null, tot: false,
+    ident: new Map(), // Kontokennung → { email, plan }: nur im Speicher, nur solange „Kontonamen vom Programm zeigen“ an ist, nie auf die Platte
     aktivFilter: "alle", aktListe: null, aktFehler: null, aktAlle: false, aktZurueck: new Set(), wartend: new Set(), uberwacht: new Set(),
   };
   const ktStand = kontingentStand(api); // Kontingent je Konto (P7, kontingent.js): derselbe Stand wie in der Statusleiste
@@ -143,7 +145,7 @@ export function erzeugeKi(o) {
     if (neu && S.kontenRoh === roh && !S.kontenFehler) return;
     if (neu) { S.konten = neu; S.kontenRoh = roh; }
     behalteFokus(zeichneAlle);
-    if (S.konten) { pruefeAnmeldungen(); ladePflege(); }
+    if (S.konten) { pruefeAnmeldungen(); ladePflege(); uebernehmeLokaleWahl(api, S.konten, { vault: offenerVaultPfad() }); } // übernimmt die frühere Wahl für Frag einmal in ki-konten.json
   }
   async function ladeProgramme(neu = false) {
     S.suchtProgramme = true; S.programmeFehler = null; zeichne("konten"); zeichne("uebersicht");
@@ -187,11 +189,20 @@ export function erzeugeKi(o) {
     zeichne("pflege");
   }
   // Anmeldestand je Claude-/Codex-Konto: das Programm selbst fragen (App), das Ergebnis der Werkstatt melden (sie merkt sich, ob das Konto früher angemeldet war)
+  const identAn = () => o.einstellung?.lies?.("kiKontonamen") !== false; // Schalter „Kontonamen vom Programm zeigen“ (Standard an)
   async function pruefeKonto(kt) {
     if (!ANMELDBAR.includes(kt.programm) || kt.vorhanden === false) return;
     S.anm.set(kt.id, { zustand: "prueft" });
-    S.anm.set(kt.id, await pruefeKontoAnmeldung(api, kt));
+    const r = await pruefeKontoAnmeldung(api, kt, { identitaet: identAn() });
+    const { identitaet, ...rest } = r || {};
+    S.anm.set(kt.id, rest);
+    if (identitaet && identAn() && (identitaet.email || identitaet.plan)) S.ident.set(kt.id, identitaet); else S.ident.delete(kt.id);
     return S.anm.get(kt.id);
+  }
+  // Der Schalter wurde umgelegt: aus = Kortex vergisst die Namen sofort und fragt nicht mehr danach; an = Kortex fragt die Programme noch einmal
+  function beiEinstellung(schluessel) {
+    if (schluessel !== "kiKontonamen" || zu()) return;
+    if (identAn()) pruefeAnmeldungen(); else { S.ident.clear(); zeichne("konten"); }
   }
   async function pruefeAnmeldungen() {
     const liste = konten().filter((x) => ANMELDBAR.includes(x.programm) && x.vorhanden !== false);
@@ -259,6 +270,7 @@ export function erzeugeKi(o) {
     return null;
   };
   // ---- Kontingent je Konto (P7): zwei Balken mit Prozent und Rücksetzzeit; ohne Werte der Zustand mit dem nächsten Schritt
+  const zeichneKt = () => { zeichne("konten"); zeichne("kontingent"); };
   const textKnopf = (text, id, kt, aufKlick, extra = {}) => h("button", { klasse: "knopf-text", type: "button", "data-aktion": id, "data-konto": kt.id, text, aufClick: aufKlick, ...extra });
   function kontingentSpalte(kt) {
     const e = ktStand.eintrag(kt.id);
@@ -276,29 +288,57 @@ export function erzeugeKi(o) {
   }
   // Einschalten: erst der Klick auf „Kontingent anzeigen …“, dann dieser Dialog. Orte außerhalb von Kortex (System-Standard ~/.claude u. a.) brauchen zusätzlich die Bestätigung hier in der Seite.
   function kontingentEinschalten(kt, e) {
-    kontingentEinwilligung({ api, kt, eintrag: e, dialogFn: eigenerDialog, nachher: async () => { await ktStand.holen(); if (!zu()) behalteFokus(() => zeichne("konten")); } });
+    kontingentEinwilligung({ api, kt, eintrag: e, dialogFn: eigenerDialog, nachher: async () => { await ktStand.holen(); if (!zu()) behalteFokus(zeichneKt); } });
   }
   function kontingentAusschalten(kt) {
     const ja = baueKnopf({ text: TKO.entfernenJa, variante: "primaer", aktion: "kt-ausschalten", aufKlick: async () => {
       d.schliessen();
       try { const r = await api.kiStatuszeile({ konto: kt.id, an: false }); toast(r?.aktion === "schon-weg" ? TKO.schonWeg(kt.name) : TKO.entfernt(kt.name, r?.exakt !== false), { ms: 6000 }); }
       catch (err) { toast(err?.status === 0 ? TKO.fehlerSchalten : (err?.message || TKO.fehlerSchalten), { fehler: true, ms: 9000 }); }
-      await ktStand.holen(); if (!zu()) behalteFokus(() => zeichne("konten"));
+      await ktStand.holen(); if (!zu()) behalteFokus(zeichneKt);
     } });
     const d = eigenerDialog({ titel: TKO.entfernenTitel(kt.name), rumpf: [h("p", { klasse: "dialog-satz", text: TKO.entfernenText })], knoepfe: [baueKnopf({ text: TKO.einwilligung.abbrechen, aufKlick: () => d.schliessen() }), ja] });
     d.box.dataset.dialog = "kt-ausschalten";
   }
+  // Unterbereich „Kontingent“: je Konto der volle Verbrauch mit Rücksetzzeit und den Schaltern (anzeigen, ausschalten, neu laden); in der Kontenliste steht davon nur der Mini-Balken
+  zeichner.kontingent = (el) => {
+    if (!S.konten) { el.replaceChildren(skelett("ez-skelett", 90)); return; }
+    const zeilen = konten().map((kt) => ({ kt, sp: kontingentSpalte(kt) })).filter((x) => x.sp);
+    if (!zeilen.length) { el.replaceChildren(h("p", { klasse: "kx-leer", "data-kx": "kontingent-leer", text: T.kontingent.leer })); return; }
+    el.replaceChildren(h("div", { klasse: "kx-kt-liste", "data-kx": "kontingent-liste" }, zeilen.map(({ kt, sp }) =>
+      h("div", { klasse: "kx-kt-karte", "data-konto": kt.id, "data-programm": kt.programm },
+        h("div", { klasse: "kx-kt-kopf" }, logoKachel(kt.programm, 28), h("div", { klasse: "kx-kt-name" }, h("b", { text: kt.name }), h("span", { klasse: "kx-sub", text: programmName(kt.programm) })), istAktiv(kt) ? h("span", { klasse: "ez-marke ez-marke-akzent", text: T.konten.aktiv }) : null), sp))));
+  };
   // Ein neuer Stand (alle 60 s, bei Änderungen, nach dem Einschalten): nur neu zeichnen, solange kein Menü offen ist
-  const beiKontingent = () => { if (!zu() && !popoverOffen()) behalteFokus(() => zeichne("konten")); };
+  const beiKontingent = () => { if (!zu() && !popoverOffen()) behalteFokus(zeichneKt); };
 
-  // ---- Konto-Zeile
-  function statusMarke(kt) {
-    const z = anmZustand(kt);
-    if (z === null) return kt.verbunden ? einstellMarke(TK.konten.verbunden, "ok") : einstellMarke(TK.konten.nichtVerbunden);
-    return { prueft: einstellMarke(T.anmeldung.prueft), angemeldet: einstellMarke(T.anmeldung.angemeldet, "ok"), abgelaufen: einstellMarke(T.anmeldung.abgelaufen, "warn"), "nicht-angemeldet": einstellMarke(T.anmeldung.nicht, "warn"), unbekannt: einstellMarke(T.anmeldung.unbekannt) }[z];
+  // ---- Konto-Zeile (Konten): Name (umbenennbar), darunter Identität, Abzeichen Aktiv · Anmelden nötig · Abgelaufen, Mini-Balken des Kontingents, Menü
+  const istAktiv = (kt) => ANMELDBAR.includes(kt.programm) && S.konten?.aktiv?.[kt.programm] === kt.id;
+  const anzahlVon = (programm) => konten().filter((x) => x.programm === programm && x.vorhanden !== false).length;
+  const planText = (p) => (p ? p.charAt(0).toUpperCase() + p.slice(1) : "");
+  function abzeichen(kt) {
+    const z = anmZustand(kt), b = [];
+    if (istAktiv(kt)) b.push(h("span", { klasse: "ez-marke ez-marke-akzent", "data-kk": "abzeichen-aktiv", text: T.konten.aktiv }));
+    if (z === "abgelaufen") b.push(einstellMarke(T.konten.abgelaufen, "warn"));
+    else if (z === "nicht-angemeldet") b.push(einstellMarke(T.konten.anmeldenNoetig, "warn"));
+    else if (z === "prueft") b.push(einstellMarke(T.anmeldung.prueft));
+    else if (z === "unbekannt") b.push(einstellMarke(T.anmeldung.unbekannt));
+    else if (z === null) b.push(kt.verbunden ? einstellMarke(TK.konten.verbunden, "ok") : einstellMarke(TK.konten.nichtVerbunden));
+    return b;
   }
   const punktKlasse = (kt) => { const z = anmZustand(kt); return z === "angemeldet" ? "" : z === "abgelaufen" || z === "nicht-angemeldet" ? "warn" : z === null ? (kt.verbunden ? "" : "aus") : "aus"; };
   const ordnerText = (kt) => (kt.verwaltet ? `Kortex · ${String(kt.pfad || "").split("/").pop()}` : kt.ordner);
+  // Identität: nur was das Programm selbst gesagt hat und nur bei eingeschaltetem Schalter; sonst nichts (keine Platzhalter, kein Raten)
+  function identitaetZeile(kt) {
+    if (!identAn()) return [];
+    const i = S.ident.get(kt.id);
+    if (!i || (!i.email && !i.plan)) return [];
+    const zeilen = [h("span", { klasse: "kx-sub kx-ident", "data-kk": "identitaet", text: [i.email, i.plan ? planText(i.plan) : null].filter(Boolean).join(" · ") })];
+    const liste = konten();
+    const frueher = i.email ? liste.find((x) => x.id !== kt.id && x.programm === kt.programm && liste.indexOf(x) < liste.indexOf(kt) && S.ident.get(x.id)?.email === i.email) : null;
+    if (frueher) zeilen.push(h("span", { klasse: "kx-sub kx-ident-doppelt", "data-kk": "identitaet-doppelt", text: T.konten.gleichesKonto(frueher.name) }));
+    return zeilen;
+  }
 
   function namensFeld(kt) {
     const tf = textfeld({ klasse: "kk-eingabe", wert: kt.name, maxlaenge: 60, label: TK.konten.nameFeld, groesse: "s", daten: { "data-kk": "name-feld", "aria-invalid": S.namensFehler ? "true" : null } });
@@ -315,12 +355,23 @@ export function erzeugeKi(o) {
     S.namensFehler = null; S.umbenenne = null;
     await tue(() => api.kiKontoName(kt.id, name), { erfolg: () => TK.konten.benannt });
   }
+  function beginneUmbenennen(kt) {
+    S.umbenenne = kt.id; S.namensFehler = null; zeichne("konten");
+    const f = hosts.get("konten")?.querySelector('[data-kk="name-feld"]'); f?.focus(); f?.select();
+  }
+  // Das aktive Konto eines Programms (ki-konten.json): Vorgabe für Frag, für neue Verbindungen und Vorschlag fürs Pflege-Konto. Gilt ab der nächsten Frage.
+  async function setzeAktiv(kt) {
+    if (!kt || S.beschaeftigt) return;
+    const a = await tue(() => api.kiAktiv(kt.programm, kt.id), { erfolg: () => T.konten.aktivErfolg(kt.name) });
+    if (a) { try { window.dispatchEvent(new CustomEvent(FRAGE_KONTO_EREIGNIS, { detail: { vault: offenerVaultPfad(), id: kt.id } })); } catch { /* egal */ } }
+  }
   function kontoMenue(ev, kt) {
     const eintraege = [];
-    if (ANMELDBAR.includes(kt.programm)) eintraege.push({ name: T.anmeldung.neuAnmelden, symbol: "stift", id: "konto-neu-anmelden", tun: () => anmeldenDialog(kt) });
+    if (ANMELDBAR.includes(kt.programm)) eintraege.push({ name: T.anmeldung.neuAnmelden, symbol: "stecker", id: "konto-neu-anmelden", tun: () => anmeldenDialog(kt) });
+    eintraege.push({ name: TK.konten.umbenennen, symbol: "stift", id: "konto-umbenennen", tun: () => beginneUmbenennen(kt) });
     if (!kt.verbunden && kt.vorhanden !== false) eintraege.push({ name: T.programme.verbindenKnopf, symbol: "stecker", id: "konto-verbinden", tun: () => verbindeKonto(kt) });
-    if (eintraege.length) eintraege.push({ trenner: true });
-    if (kt.verwaltet) eintraege.push({ name: T.entfernen.menue, symbol: "papierkorb", id: "konto-entfernen", gefahr: true, tun: () => entfernenDialog(kt) });
+    eintraege.push({ trenner: true });
+    if (kt.verwaltet) eintraege.push({ name: T.entfernen.menue, symbol: "papierkorb", id: "konto-entfernen", gefahr: true, tun: () => entfernen(kt) });
     else eintraege.push({ leer: T.entfernen.nichtMoeglich });
     oeffneMenue(ev.currentTarget, eintraege, { rechts: true });
   }
@@ -330,18 +381,21 @@ export function erzeugeKi(o) {
   function kontoZeile(kt) {
     const z = anmZustand(kt);
     const braucht = z === "abgelaufen" || z === "nicht-angemeldet";
-    const li = h("div", { klasse: "kx-konto", "data-konto": kt.id, "data-programm": kt.programm, "data-anmeldung": z || "", "data-kx-fokus": `konto-${kt.id}` });
+    const li = h("div", { klasse: "kx-konto", "data-konto": kt.id, "data-programm": kt.programm, "data-anmeldung": z || "", "data-aktiv": istAktiv(kt) ? "ja" : "nein", "data-kx-fokus": `konto-${kt.id}` });
     const av = h("span", { klasse: "kx-av", "aria-hidden": "true" }, initiale(kt.name), h("i", { klasse: `kx-punkt ${punktKlasse(kt)}` }));
     const name = S.umbenenne === kt.id ? namensFeld(kt)
-      : h("div", { klasse: "kx-n" }, h("b", {}, h("span", { "data-kk": "name", text: kt.name }), statusMarke(kt)),
+      : h("div", { klasse: "kx-n" }, h("b", {}, h("span", { "data-kk": "name", text: kt.name }), ...abzeichen(kt)),
+        ...identitaetZeile(kt),
         h("span", { klasse: "kx-sub", "data-kk": "meta", title: kt.pfad || kt.ordner }, h("span", { klasse: "mono", text: ordnerText(kt) }), h("span", { text: ` · ${kt.verbunden ? TK.konten.verbunden : TK.konten.nichtVerbunden}` }), kt.vorhanden === false ? h("span", { text: ` · ${TK.konten.nichtGefunden}` }) : null));
+    // Mini-Balken: Verbrauch aus dem vorhandenen Kontingent-Stand; ohne Anmeldung „Kein Kontingent“, ohne Werte der Hinweis aus dem Stand
+    const e = ktStand.eintrag(kt.id);
+    const mini = ANMELDBAR.includes(kt.programm) ? h("div", { klasse: "kx-mini", "data-kx": "konto-kontingent" }, braucht ? h("span", { klasse: "kt-mini ohne-werte" }, h("span", { klasse: "kt-mini-text", text: T.konten.keinKontingent })) : e ? miniBalken(e, ktStand.jetzt()) : null) : null;
     const rechts = h("div", { klasse: "kx-akt" },
-      braucht ? baueKnopf({ text: T.anmeldung.anmelden, variante: "primaer", groesse: "s", daten: { "data-aktion": "konto-anmelden", "data-konto": kt.id }, aufKlick: () => anmeldenDialog(kt) }) : null,
-      S.umbenenne === kt.id ? null : h("button", { klasse: "knopf-text kx-umbenennen", type: "button", "data-aktion": "konto-umbenennen", "aria-label": TK.konten.umbenennenFuer(kt.name), disabled: S.beschaeftigt, text: TK.konten.umbenennen,
-        aufClick: () => { S.umbenenne = kt.id; S.namensFehler = null; zeichne("konten"); const f = hosts.get("konten")?.querySelector('[data-kk="name-feld"]'); f?.focus(); f?.select(); } }),
+      braucht ? baueKnopf({ text: T.anmeldung.anmelden, variante: "primaer", groesse: "s", daten: { "data-aktion": "konto-anmelden", "data-konto": kt.id }, aufKlick: () => anmeldenDialog(kt) })
+        : !istAktiv(kt) && ANMELDBAR.includes(kt.programm) && anzahlVon(kt.programm) > 1 && kt.vorhanden !== false
+          ? baueKnopf({ text: T.konten.aktivSetzen, groesse: "s", label: T.konten.aktivSetzenFuer(kt.name), disabled: S.beschaeftigt, daten: { "data-aktion": "konto-aktiv", "data-konto": kt.id }, aufKlick: () => setzeAktiv(kt) }) : null,
       baueKnopf({ symbol: "punkte", variante: "leise", groesse: "s", label: `Mehr: ${kt.name}`, daten: { "data-aktion": "konto-mehr" }, aufKlick: (ev) => kontoMenue(ev, kt) }));
-    const ktSpalte = kontingentSpalte(kt);
-    li.append(h("div", { klasse: `kx-zeile${ktSpalte ? (ktSpalte.dataset.layout === "text" ? " kt-unten" : " kt-mit") : ""}` }, av, name, ktSpalte, rechts));
+    li.append(h("div", { klasse: `kx-zeile${mini && mini.childNodes.length ? " kx-mit-mini" : ""}` }, av, name, mini && mini.childNodes.length ? mini : null, rechts));
     // Hinweiszeilen: abgelaufene Anmeldung (mit der Folge für die Pflege), Altform ohne Kontokennung
     if (z === "abgelaufen") {
       const pv = vaults().filter((v) => v.pflege?.gesetzt && v.pflege.konto === kt.id && v.pflege.stufe !== "aus").map((v) => `„${v.name}“`);
@@ -371,6 +425,7 @@ export function erzeugeKi(o) {
       fund && ANMELDBAR.includes(id) ? baueKnopf({ text: T.programme.kontoHinzu, symbol: "plus", groesse: "s", daten: { "data-aktion": "konto-hinzu", "data-programm": id }, label: T.programme.kontoHinzuFuer(programmName(id)), aufKlick: () => oeffneVerbinden({ programm: id, schritt: "konto", kontoNeu: true }) }) : null);
     const karte = h("section", { klasse: "kx-prog", "data-programm": id, "data-gefunden": String(!!fund) }, kopf);
     if (liste.length) for (const kt of liste) karte.append(kontoZeile(kt));
+    if (ANMELDBAR.includes(id) && liste.length > 1) karte.append(h("p", { klasse: "kx-aktiv-note", "data-kx": "aktiv-hinweis", text: T.konten.aktivNote }));
     else if (fund) {
       karte.append(h("div", { klasse: "kx-zeile kx-leer-zeile" }, h("span", { klasse: "kx-sub", text: T.programme.ohneKonto }),
         eintrag?.verbindbar ? baueKnopf({ text: T.programme.verbindenKnopf, groesse: "s", daten: { "data-aktion": "programm-verbinden", "data-programm": id }, aufKlick: () => oeffneVerbinden({ programm: id, schritt: ANMELDBAR.includes(id) ? "konto" : "stufe" }) }) : h("span", { klasse: "kx-sub", text: T.programme.nichtVerbindbar })));
@@ -420,17 +475,33 @@ export function erzeugeKi(o) {
     else { try { window.open(url, "_blank", "noopener,noreferrer"); } catch { /* ohne Fenster */ } }
   }
 
-  // ---- Konto entfernen
+  // ---- Konto entfernen: Rückfrage mit „Nicht mehr fragen“. Das Häkchen wirkt NUR, wenn du „In den Papierkorb legen“ bestätigst und es klappt; Abbrechen merkt sich nichts.
+  // Danach (und ohne Rückfrage) sagt der Hinweis, wo man die Rückfrage wieder einschaltet.
+  const fragtVorEntfernen = () => o.einstellung?.lies?.("kiKontoEntfernenFragen") !== false;
+  async function entferneKonto(kt) {
+    // Erst der Ordner in den Papierkorb (App: Swift über den Finder-Papierkorb, sonst die Werkstatt), danach das Konto aus der Liste
+    const a = await tue(async () => { await api.kiOrdnerPapierkorb(kt); return api.kiKontoEntfernen(kt.id); });
+    S.anm.delete(kt.id); S.ident.delete(kt.id);
+    zeichne("konten"); zeichne("uebersicht");
+    ladePflege();
+    return !!a;
+  }
+  const toastEntfernt = (kt, mitRueckweg) => toast(T.entfernen.erledigt(kt.name), { ms: mitRueckweg ? 9000 : 4200, ...(mitRueckweg ? { aktion: { text: T.entfernen.einstellung, tun: () => o.zeigeZiel?.("ki-entfernen-fragen") } } : {}) });
+  async function entfernen(kt) {
+    if (S.beschaeftigt) return;
+    if (!fragtVorEntfernen()) { if (await entferneKonto(kt)) toastEntfernt(kt, true); return; }
+    entfernenDialog(kt);
+  }
   function entfernenDialog(kt) {
+    const haken = hakenFeld({ checked: false, text: T.entfernen.nichtMehrFragen, klasse: "kk-wahl", daten: { "data-kx": "nicht-mehr-fragen" } });
     const ok = baueKnopf({ text: T.entfernen.ja, variante: "gefahr", aktion: "konto-entfernen-ja", aufKlick: async () => {
+      const nichtMehr = haken.input.checked;
       d.schliessen();
-      // Erst der Ordner in den Papierkorb (App: Swift über den Finder-Papierkorb, sonst die Werkstatt), danach das Konto aus der Liste
-      await tue(async () => { await api.kiOrdnerPapierkorb(kt); return api.kiKontoEntfernen(kt.id); }, { erfolg: () => T.entfernen.erledigt(kt.name) });
-      S.anm.delete(kt.id);
-      zeichne("konten"); zeichne("uebersicht");
-      ladePflege();
+      if (!(await entferneKonto(kt))) return;
+      if (nichtMehr) o.einstellung?.schreibe?.("kiKontoEntfernenFragen", false); // erst jetzt, nach dem Bestätigen und nur bei Erfolg
+      toastEntfernt(kt, nichtMehr);
     } });
-    const d = eigenerDialog({ titel: T.entfernen.titel(kt.name), rumpf: [h("p", { klasse: "dialog-satz", text: T.entfernen.text }), h("p", { klasse: "dialog-satz", text: T.entfernen.text2 })], knoepfe: [baueKnopf({ text: T.entfernen.abbrechen, aufKlick: () => d.schliessen() }), ok] });
+    const d = eigenerDialog({ titel: T.entfernen.titel(kt.name), rumpf: [h("p", { klasse: "dialog-satz", text: T.entfernen.text }), h("p", { klasse: "dialog-satz", text: T.entfernen.text2 }), haken], knoepfe: [baueKnopf({ text: T.entfernen.abbrechen, aufKlick: () => d.schliessen() }), ok] });
     d.box.dataset.dialog = "konto-entfernen";
   }
 
@@ -606,10 +677,10 @@ export function erzeugeKi(o) {
     if (!S.frage && !S.frageFehler) { el.replaceChildren(skelett("ez-skelett", 32)); return; }
     const grund = fragLeer();
     if (grund) { el.replaceChildren(h("span", { klasse: "ez-leise", "data-kx": "frage-leer", title: grund, text: S.frageFehler ? T.frage.kein : !S.frage.vertraut ? T.frage.nichtVertraut : !fragKonten().length ? T.frage.keinKonto : T.frage.keinVault })); return; }
-    const gemerkt = leseLokal(`frage.konto@${fragVault()}`, null);
-    const wahl = fragKonten().find((x) => x.id === gemerkt)?.id || fragKonten()[0].id;
+    const aktiv = S.konten?.aktiv?.claude || S.frage?.aktiv || null; // das aktive Claude-Konto (ki-konten.json) ist die Vorgabe; es gilt ab der nächsten Frage
+    const wahl = fragKonten().find((x) => x.id === aktiv)?.id || fragKonten()[0].id;
     el.replaceChildren(auswahl({ optionen: fragKonten().map((x) => ({ wert: x.id, text: x.name, logo: x.programm })), wert: wahl, label: T.frage.konto, daten: { "data-kx": "frage-konto-wahl" },
-      aufAenderung: (id) => { speichereLokal(`frage.konto@${fragVault()}`, id); toast(T.stufeGesetzt(T.frage.konto, fragKonten().find((x) => x.id === id)?.name || "")); } }));
+      aufAenderung: (id) => setzeAktiv(kontoMit(id)) }));
   };
   zeichner["frage-modell"] = (el) => {
     const modelle = S.frage?.modelle?.length ? S.frage.modelle : ["klein", "mittel"];
@@ -659,6 +730,12 @@ export function erzeugeKi(o) {
       else sub.append(h("span", { "data-kk": "pflege-letzter", "data-status": l.status, klasse: l.erfolgreich ? "" : "kx-warn", text: T.pflege.status.lauf(zeitText(l.zeit), TK.pflege.status[l.status] || TK.pflege.status.unbekannt, TK.pflege.zahlen(l.aufrufe, l.tokEin, l.tokAus)) }),
         l.grund && !l.erfolgreich ? h("span", { klasse: "kx-warn", "data-kk": "pflege-grund", text: ` — ${l.grund}` }) : null);
       if (st.schalter === "aus") sub.append(h("span", { klasse: "kx-warn", text: ` ${T.pflege.status.aus}` }));
+    }
+    // Vorschlag: noch keine Wahl für diesen Vault, aber das aktive Claude-Konto darf pflegen (Stufe „Erweitert“) — Kortex schlägt es vor, du übernimmst es mit einem Klick
+    const aktivKt = !p.gesetzt && !entwurf ? kontoMit(S.konten?.aktiv?.claude) : null;
+    if (aktivKt && eignung.some((x) => x.id === aktivKt.id)) {
+      sub.append(h("span", { klasse: "kx-vorschlag", "data-kk": "pflege-vorschlag" }, h("span", { text: T.pflege.vorschlag(aktivKt.name) }),
+        h("button", { type: "button", klasse: "knopf-text", "data-aktion": "pflege-vorschlag-nehmen", disabled: S.beschaeftigt || null, text: T.pflege.vorschlagNehmen, aufClick: () => setzePflege(v, aktivKt.id, "mittel") })));
     }
     const offen = gleich(v.pfad, offenerVaultPfad()) || gleich(v.schluessel, offenerVaultPfad());
     const jetzt = baueKnopf({ text: TK.pflege.jetzt, variante: "leise", groesse: "s", daten: { "data-kk": "pflege-jetzt" }, aktion: "pflege-jetzt", disabled: !offen || !st || st.schalter === "aus" || S.beschaeftigt, titel: !offen ? TK.pflege.jetztNurOffener : st?.schalter === "probe" ? TK.pflege.jetztProbe : undefined, aufKlick: () => pflegeJetzt() });
@@ -881,5 +958,5 @@ export function erzeugeKi(o) {
     for (const d of [...offeneDialoge]) { try { d.schliessen(); } catch { /* egal */ } }
     hosts.clear();
   }
-  return { host, start, ende, kopfKnoepfe, neuSuchen, oeffneVerbinden, zeichne, zeichneAlle, state: S };
+  return { host, start, ende, kopfKnoepfe, neuSuchen, oeffneVerbinden, zeichne, zeichneAlle, beiEinstellung, state: S };
 }

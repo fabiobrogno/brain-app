@@ -258,12 +258,16 @@ test("Konto hinzufügen: eigener Ordner, startet gesperrt, wird gewählt, Anmeld
   await dlg(page).locator('[data-kx="neu-name"]').fill("Kunde");
   await expect(dlg(page).locator('[data-kx="neu-ordner"]')).toContainText("claude-kunde");
   await dlg(page).locator('[data-aktion="konto-neu-ok"]').click();
-  await expect(dlg(page).locator(".kv-konto")).toHaveCount(3);
-  await expect(dlg(page).locator('.kv-konto[aria-checked="true"] b')).toHaveText("Kunde");
   expect(z.kz.log("/api/ki/konto-neu")[0].body).toEqual({ programm: "claude", name: "Kunde", stufe: "gesperrt" });
   await expect(dlg(page).locator('[data-kv="anmelden"]')).toBeVisible();
+  await expect(dlg(page).locator(".kv-konto"), "das Konto steht erst nach bestätigter Anmeldung in der Liste (bis dahin nur der Ordner .neu-<id>)").toHaveCount(2);
   expect(z.kz.log("/api/ki/anmelden")).toHaveLength(1);
-  await dlg(page).locator('[data-aktion="anmelden-abbrechen"]').click();
+  expect(z.kz.log("/api/ki/anmelden")[0].body.ordner).toMatch(/\/\.neu-\d{8}$/);
+  z.kz.neuAngemeldet = true;
+  await dlg(page).locator('[data-aktion="anmelden-pruefen"]').click();
+  await expect(dlg(page).locator(".kv-konto")).toHaveCount(3);
+  await expect(dlg(page).locator('.kv-konto[aria-checked="true"] b')).toHaveText("Kunde");
+  expect(z.kz.log("/api/ki/konto-fertig")).toHaveLength(1);
   await weiter(page);
   await expect(stufeWert(page)).toHaveText("Gesperrt"); // das neue Konto bleibt gesperrt, bis du wählst
 });

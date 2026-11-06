@@ -29,10 +29,11 @@ export const KONTEN = [
 
 // opt.vaults = [{ pfad, name }] · opt.konten · opt.zugriff (Standard: verbundene posteingang, übrige gesperrt) · opt.hinweis ("defekt-neu") · opt.vorherDa
 // opt.fehlerClaude: Text → PUT /api/ki/zugriff meldet, dass die Einstellungen von Claude Code nicht geändert werden konnten
-export async function mockeKonten(page, { vaults, konten = KONTEN, zugriff = null, hinweis = null, hinweisGrund = "defekt", vorherDa = false, fehlerClaude = null, leer = false, altform = {}, warnungen = [], pflege = {}, neuKonten = [], letzter = null, schalter = "an", naechster = { art: "sitzungsstart" }, pflegeHinweise = [], pflegePlist = null, programme = PROGRAMME, programmeFehler = false, login = {}, zuletzt = {}, kern = KERN(), kernFehler = null, pruefungAnders = false, frage = null, anmeldenFehler = null } = {}) {
+export async function mockeKonten(page, { vaults, konten = KONTEN, zugriff = null, hinweis = null, hinweisGrund = "defekt", vorherDa = false, fehlerClaude = null, leer = false, altform = {}, warnungen = [], pflege = {}, neuKonten = [], letzter = null, schalter = "an", naechster = { art: "sitzungsstart" }, pflegeHinweise = [], pflegePlist = null, programme = PROGRAMME, programmeFehler = false, login = {}, zuletzt = {}, kern = KERN(), kernFehler = null, pruefungAnders = false, frage = null, anmeldenFehler = null, aktiv = {}, identitaet = {} } = {}) {
   const z = {
     konten: leer ? [] : konten.map((k) => ({ ...k })), vaults: vaults.map((v) => ({ neueKonten: "gesperrt", ...v })), hinweis, hinweisGrund, vorherDa, anfragen: [], altform: { ...altform }, warnungen, sperren: {}, streng: {}, fehlerClaude, wartet: null, pflege: { ...pflege }, letzter, schalter, naechster, pflegeHinweise: [...pflegeHinweise], pflegePlist,
     programme: programme.map((p) => ({ ...p })), programmeFehler, login: { ...login }, zuletzt: { ...zuletzt }, kern, kernFehler, pruefungAnders, anmeldenFehler, neu: 0, neuKonten: neuKonten.map((k) => ({ ...k })), zustand: "ok", heilt: true,
+    aktiv: { ...aktiv }, identitaet: { ...identitaet }, ausstehend: {}, neuAngemeldet: false, // aktives Konto je Programm (wie ki-konten.json) · was das Programm über ein Konto sagt (nur auf Wunsch) · Konten, die gerade angemeldet werden
   };
   z.zugriff = zugriff || Object.fromEntries(z.konten.map((k) => [k.id, Object.fromEntries(z.vaults.map((v) => [v.pfad, k.verbunden ? "posteingang" : "gesperrt"]))]));
   const schutzMit = (k) => {
@@ -42,6 +43,16 @@ export async function mockeKonten(page, { vaults, konten = KONTEN, zugriff = nul
       vaults: Object.fromEntries(gesperrt.map((v) => [v.pfad, z.sperren[`${k.id}|${v.pfad}`] ? "aktiv" : "aus"])) };
     return { ...roh, ampel: schutzAmpel({ programm: "claude", gesperrt: gesperrt.length, schutz: roh }) };
   };
+  // Aktives Konto je Programm: gesetzt und gültig, sonst das einzige Konto des Programms, sonst keines (wie aktivesKonto in gemeinsam/ki-konten.mjs)
+  const aktivStand = () => {
+    const r = {};
+    for (const prog of new Set(z.konten.map((k) => k.programm))) {
+      const e = z.konten.filter((k) => k.programm === prog);
+      const id = z.aktiv[prog] && e.some((k) => k.id === z.aktiv[prog]) ? z.aktiv[prog] : e.length === 1 ? e[0].id : null;
+      if (id) r[prog] = id;
+    }
+    return r;
+  };
   const stand = () => ({
     zustand: z.zustand, ...(z.hinweis ? { hinweis: z.hinweis, hinweisGrund: z.hinweisGrund, hinweisSeit: "2026-10-30T10:00:00.000Z", vorherDa: z.vorherDa } : {}), stufen: STUFEN,
     konten: z.konten.map((k) => ({
@@ -49,7 +60,7 @@ export async function mockeKonten(page, { vaults, konten = KONTEN, zugriff = nul
       schutz: schutzMit(k),
     })),
     vaults: z.vaults.map((v) => ({ pfad: v.pfad, name: v.name, neueKonten: v.neueKonten, ohneKonto: "gesperrt", schluessel: v.pfad, pflege: pflegeStand(v.pfad) })),
-    zugriff: z.zugriff, ...(z.pflegeHinweise.length ? { pflegeHinweise: z.pflegeHinweise } : {}), ...(z.pflegePlist ? { pflegePlist: z.pflegePlist } : {}),
+    zugriff: z.zugriff, aktiv: aktivStand(), ...(z.pflegeHinweise.length ? { pflegeHinweise: z.pflegeHinweise } : {}), ...(z.pflegePlist ? { pflegePlist: z.pflegePlist } : {}),
     neu: z.neuKonten.map((k) => ({ programm: k.programm, programmName: k.programmName, name: k.name, ordner: k.ordner, standard: k.standard === true, ...(k.startet ? { startet: k.startet } : {}) })), // GET liest nur: Neues steht hier, nicht in `konten`
   });
   // POST /api/ki/konten/abgleich: der ausdrückliche Abgleich trägt die neu erkannten Konten ein (gesperrt)
@@ -148,8 +159,11 @@ export async function mockeKonten(page, { vaults, konten = KONTEN, zugriff = nul
   const kontoZu = (programm, ordner) => z.konten.find((k) => k.programm === programm && (ordner ? k.pfad === ordner : k.standard));
   await page.route("**/api/ki/anmeldestatus", (route) => {
     const b = body(route); z.anfragen.push({ methode: "POST", pfad: "/api/ki/anmeldestatus", body: b });
+    const neu = Object.values(z.ausstehend).find((x) => x.programm === b.programm && x.pfad === b.ordner);
+    if (neu) return route.fulfill({ json: { zustand: z.neuAngemeldet ? "angemeldet" : "nicht-angemeldet" } });
     const k = kontoZu(b.programm, b.ordner);
-    return route.fulfill({ json: { zustand: k && z.login[k.id] ? z.login[k.id] : "unbekannt" } });
+    const zustand = k && z.login[k.id] ? z.login[k.id] : "unbekannt";
+    return route.fulfill({ json: { zustand, ...(b.identitaet === true && zustand === "angemeldet" && k && z.identitaet[k.id] ? { identitaet: z.identitaet[k.id] } : {}) } });
   });
   await page.route("**/api/ki/anmeldung", (route) => {
     const b = body(route); z.anfragen.push({ methode: "POST", pfad: "/api/ki/anmeldung", body: b });
@@ -161,16 +175,42 @@ export async function mockeKonten(page, { vaults, konten = KONTEN, zugriff = nul
     if (z.anmeldenFehler) return fehler(route, 409, z.anmeldenFehler);
     return route.fulfill({ json: { ok: true, anzeige: b.programm === "claude" ? `${b.ordner ? `CLAUDE_CONFIG_DIR=${b.ordner.replace("/Users/test", "~")} ` : ""}claude auth login` : `${b.ordner ? `CODEX_HOME=${b.ordner.replace("/Users/test", "~")} ` : ""}codex login` } });
   });
+  // Ein neues Konto in drei Schritten (werkstatt/konten.mjs): konto-neu legt nur den Ordner .neu-<id> an (Antwort `ausstehend`), konto-fertig trägt es nach bestätigter Anmeldung ein, konto-abbruch räumt auf
   await page.route("**/api/ki/konto-neu", (route) => {
     const b = body(route); z.anfragen.push({ methode: "POST", pfad: "/api/ki/konto-neu", body: b });
     if (!["claude", "codex"].includes(b.programm) || typeof b.name !== "string" || !b.name.trim()) return fehler(route, 400, "Der Name braucht 1 bis 40 Zeichen.");
     if (z.konten.some((k) => k.programm === b.programm && k.name.toLowerCase() === b.name.toLowerCase())) return fehler(route, 409, "Ein Konto mit diesem Namen gibt es schon. Wähle einen anderen Namen.");
-    const id = `k_neu${String(++z.neu).padStart(4, "0")}`;
-    const ordner = `/Users/test/Library/Application Support/Kortex/ki-konten-ordner/${b.programm}-${b.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
-    z.konten.push({ id, programm: b.programm, programmName: b.programm === "claude" ? "Claude Code" : "Codex", name: b.name, standard: false, ordner: ordner.replace("/Users/test", "~"), pfad: ordner, verwaltet: true, vorhanden: true, verbunden: false });
-    z.zugriff[id] = Object.fromEntries(z.vaults.map((v) => [v.pfad, b.stufe === "lesen" ? "lesen" : "gesperrt"]));
-    z.login[id] = "nicht-angemeldet";
-    return route.fulfill({ json: { ...stand(), neuesKonto: { id, programm: b.programm, pfad: ordner } } });
+    const id = String(++z.neu).padStart(8, "0").replace(/[89]/g, "7");
+    const pfad = `/Users/test/Library/Application Support/Kortex/ki-konten-ordner/.neu-${id}`;
+    z.ausstehend[id] = { id, programm: b.programm, name: b.name, stufe: b.stufe === "lesen" ? "lesen" : "gesperrt", pfad };
+    return route.fulfill({ json: { ...stand(), ausstehend: { id, programm: b.programm, name: b.name, pfad, standard: false } } });
+  });
+  await page.route("**/api/ki/konto-fertig", (route) => {
+    const b = body(route); z.anfragen.push({ methode: "POST", pfad: "/api/ki/konto-fertig", body: b });
+    const a = z.ausstehend[b.id];
+    if (!a) return fehler(route, 404, "Dieses neue Konto gibt es nicht mehr (die Zeit zum Anmelden war um oder du hast abgebrochen). Lege es noch einmal an.", { art: "abgelaufen" });
+    delete z.ausstehend[b.id];
+    const id = `k_neu${b.id.slice(-4)}`;
+    const ordner = `/Users/test/Library/Application Support/Kortex/ki-konten-ordner/${a.programm}-${a.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+    const vorher = aktivStand()[a.programm];
+    z.konten.push({ id, programm: a.programm, programmName: a.programm === "claude" ? "Claude Code" : "Codex", name: a.name, standard: false, ordner: ordner.replace("/Users/test", "~"), pfad: ordner, verwaltet: true, vorhanden: true, verbunden: false });
+    z.zugriff[id] = Object.fromEntries(z.vaults.map((v) => [v.pfad, a.stufe === "lesen" ? "lesen" : "gesperrt"]));
+    z.login[id] = "angemeldet"; z.zuletzt[id] = "2026-10-30T09:00:00.000Z";
+    z.aktiv[a.programm] = vorher || id;
+    return route.fulfill({ json: { ...stand(), neuesKonto: { id, programm: a.programm, pfad: ordner } } });
+  });
+  await page.route("**/api/ki/konto-abbruch", (route) => {
+    const b = body(route); z.anfragen.push({ methode: "POST", pfad: "/api/ki/konto-abbruch", body: b });
+    delete z.ausstehend[b.id];
+    return route.fulfill({ json: { ok: true, ...stand() } });
+  });
+  await page.route("**/api/ki/aktiv", (route) => {
+    const b = body(route); z.anfragen.push({ methode: route.request().method(), pfad: "/api/ki/aktiv", body: b });
+    const k = z.konten.find((x) => x.id === b.konto);
+    if (!k) return fehler(route, 404, "Dieses KI-Konto gibt es nicht (mehr).");
+    if (k.programm !== b.programm) return fehler(route, 400, "Das Konto gehört nicht zu diesem Programm.");
+    z.aktiv[b.programm] = b.konto;
+    return route.fulfill({ json: stand() });
   });
   await page.route("**/api/ki/ordner-papierkorb", (route) => {
     const b = body(route); z.anfragen.push({ methode: "POST", pfad: "/api/ki/ordner-papierkorb", body: b });
@@ -187,6 +227,7 @@ export async function mockeKonten(page, { vaults, konten = KONTEN, zugriff = nul
     if (!k.verwaltet) return fehler(route, 409, "Dieses Konto hat Kortex nicht angelegt. Kortex entfernt nur eigene Konten; dessen Ordner bleibt, wo er ist.", { art: "nicht-verwaltet" });
     if (!k.imPapierkorb) return fehler(route, 409, "Der Ordner dieses Kontos liegt noch im Ordner von Kortex.", { art: "ordner-da" });
     z.konten = z.konten.filter((x) => x.id !== b.id); delete z.zugriff[b.id]; delete z.login[b.id];
+    for (const [prog, id] of Object.entries(z.aktiv)) if (id === b.id) delete z.aktiv[prog];
     return route.fulfill({ json: { ...stand(), entfernt: { id: b.id, papierkorb: true } } });
   });
   await page.route("**/api/kern/stand", (route) => {
@@ -205,7 +246,8 @@ export async function mockeKonten(page, { vaults, konten = KONTEN, zugriff = nul
   });
   await page.route("**/api/frage/bereit", (route) => {
     const konten = z.konten.filter((k) => k.programm === "claude").map((k) => ({ id: k.id, name: k.name, programm: k.programm, erlaubt: Object.values(z.zugriff[k.id] || {}).some((s) => s !== "gesperrt") }));
-    return route.fulfill({ json: frage || { vertraut: true, claude: true, kontenDefekt: false, konten, modelle: ["klein", "mittel"], grenzen: { frageMax: 2000, frist: 120000 } } });
+    const aktivId = aktivStand().claude, aktivFrag = konten.some((x) => x.id === aktivId && x.erlaubt) ? aktivId : null;
+    return route.fulfill({ json: frage || { vertraut: true, claude: true, kontenDefekt: false, konten, aktiv: aktivFrag, modelle: ["klein", "mittel"], grenzen: { frageMax: 2000, frist: 120000 } } });
   });
   z.stand = stand;
   z.log = (pfad, methode) => z.anfragen.filter((a) => a.pfad === pfad && (!methode || a.methode === methode));

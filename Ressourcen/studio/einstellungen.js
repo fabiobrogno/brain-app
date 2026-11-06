@@ -28,6 +28,7 @@ const Z = {
   steuer: new Map(),        // Schlüssel → { setze(wert), offen(), sofort(), el }
   bereichKnoten: new Map(), // Bereichs-ID → <section>
   zeilen: new Map(),        // Zeilen-ID → Element
+  unter: {}, // Bereichs-ID → gewählter Unterbereich (KI & Konten: konten · zugriff · kontingent · pflege)
   wartend: {}, ki: null, tasten: null, kiBraucht: 0, laeuft: null, davor: null, zielTimer: 0, gespTimer: 0, dynamisch: new Map(), stilGeladen: null, taste: null, nachladenLaeuft: false, ladeNr: 0,
 };
 export const istOffen = () => Z.offen;
@@ -89,6 +90,7 @@ function aendere(schluessel, wert) {
   Z.daten.werte[schluessel] = wert === null ? Z.daten.schema[schluessel]?.standard : wert; // null = zurück auf den Standard
   Z.wartend[schluessel] = wert;
   if (quelleVon(schluessel) === "app") Z.k?.wendeAn?.(Z.daten.werte);
+  if (/^ki[A-Z]/.test(schluessel)) Z.ki?.beiEinstellung?.(schluessel);
   speichere();
 }
 async function speichere() {
@@ -405,6 +407,7 @@ const SONDER = {
   "ki-konten": () => ({ voll: Z.ki.host("konten") }),
   "ki-zugriff": () => ({ voll: Z.ki.host("zugriff") }),
   "ki-schutz": () => ({ voll: Z.ki.host("schutz") }),
+  "ki-kontingent": () => ({ voll: Z.ki.host("kontingent") }),
   "ki-frage-konto": () => ({ steuerung: Z.ki.host("frage-konto") }),
   "ki-frage-modell": () => ({ steuerung: Z.ki.host("frage-modell") }),
   "ki-pflege": () => ({ voll: Z.ki.host("pflege") }),
@@ -488,14 +491,51 @@ function bauBereich(b) {
     const zeilen = a.zeilen.map((z) => bauZeile(b, a, z));
     const abschnitt = einstellAbschnitt({ id: `${b.id}-${a.id}`, titel, text: a.text, rechts: bauAbschnittRechts(b, a), zeilen });
     abschnitt.dataset.abschnittOrig = a.id;
+    if (b.unterbereiche && a.unter) {
+      abschnitt.dataset.unter = a.unter;
+      // In der Suche stehen Treffer aller Unterbereiche untereinander: ein Knopf führt in den richtigen (verlässt die Suche, öffnet den Unterbereich, zeigt die Zeile)
+      const name = b.unterbereiche.find(([id]) => id === a.unter)?.[1] || a.unter;
+      const zeigen = h("button", { type: "button", klasse: "e-zeigen", "data-aktion": "zeige-im-bereich", "data-unter": a.unter, title: TE.imUnterbereichTitel(name), text: TE.imUnterbereich(name),
+        aufClick: () => navigiere(b.id, a.zeilen.find((z) => !z.experiment)?.id || a.zeilen[0]?.id || null, a.unter) });
+      let kopf = abschnitt.querySelector(".ez-abschnitt-kopf");
+      if (!kopf) { kopf = h("div", { klasse: "ez-abschnitt-kopf" }); abschnitt.prepend(kopf); }
+      kopf.append(zeigen);
+    }
     sec.append(abschnitt);
   }
+  if (b.unterbereiche) {
+    const seg = segment({ optionen: b.unterbereiche.map(([id, name]) => ({ wert: id, text: name, daten: { "data-unter-wahl": id } })), wert: Z.unter[b.id] || b.unterbereiche[0][0], label: TE.unterbereiche, groesse: "m", daten: { "data-einst": "unterbereiche" },
+      aufAenderung: (u) => waehleUnter(b.id, u) });
+    const leiste = h("div", { klasse: "e-unter", "data-einst": "unter-leiste" }, seg);
+    (sec.querySelector(".e-intro") || sec.querySelector(".e-bereich-titel"))?.after(leiste);
+  }
   Z.bereichKnoten.set(b.id, sec);
+  wendeUnterAn(b, sec);
   aktualisiereHinweis(b.id, sec);
   if (b.id === "tasten") Z.tasten.zeichneAlle();
   return sec;
 }
 const holeBereich = (b) => Z.bereichKnoten.get(b.id) || bauBereich(b);
+
+// Unterbereiche (KI & Konten): ohne Suche zeigt der Bereich nur die Abschnitte des gewählten Unterbereichs; in der Suche stehen alle Treffer untereinander
+const unterVon = (b) => (b?.unterbereiche && (Z.unter[b.id] || b.unterbereiche[0][0])) || null;
+function wendeUnterAn(b, sec) {
+  if (!b?.unterbereiche || !sec) return;
+  const aktuell = unterVon(b), suche = !!Z.suche.trim();
+  sec.querySelector("[data-einst=unter-leiste]")?.toggleAttribute("hidden", suche);
+  if (suche) return;
+  for (const a of sec.querySelectorAll(".ez-abschnitt[data-unter]")) a.hidden = a.dataset.unter !== aktuell;
+  const seg = sec.querySelector("[data-einst=unterbereiche]");
+  if (seg && seg.value !== aktuell) seg.value = aktuell;
+}
+// Der Unterbereich, in dem eine Zeile steht (Sprungziele aus Toasts, Karten und der Suche)
+const unterDerZeile = (b, zeileId) => b?.unterbereiche?.length ? (b.abschnitte.find((a) => a.zeilen.some((z) => z.id === zeileId))?.unter || null) : null;
+function waehleUnter(bereich, unter) {
+  const b = BEREICHE.find((x) => x.id === bereich);
+  if (!b?.unterbereiche?.some(([id]) => id === unter)) return;
+  Z.unter[bereich] = unter;
+  wendeUnterAn(b, Z.bereichKnoten.get(bereich));
+}
 
 // ============================================================ Gerüst, Seitenleiste, Suche
 function baueGeruest() {
@@ -573,6 +613,7 @@ function zeichneInhalt({ scrollNachOben = true } = {}) {
     const b = BEREICHE.find((x) => x.id === Z.bereich) || BEREICHE[0];
     for (const z of Z.zeilen.values()) setzeMarkierung(z, null);
     for (const sec of Z.bereichKnoten.values()) { sec.hidden = false; for (const e of sec.querySelectorAll("[data-zeile], .ez-abschnitt")) e.hidden = false; }
+    for (const [id, sec] of Z.bereichKnoten) wendeUnterAn(BEREICHE.find((x) => x.id === id), sec);
     wurzel.replaceChildren(holeBereich(b));
     aktualisiereHinweis(b.id, Z.bereichKnoten.get(b.id));
     kopfTitel.textContent = b.name; kopfWo.textContent = "";
@@ -606,6 +647,7 @@ function zeichneInhalt({ scrollNachOben = true } = {}) {
           a.hidden = n === 0;
         }
         sec.querySelector("[data-hinweis]")?.toggleAttribute("hidden", true);
+        sec.querySelector("[data-einst=unter-leiste]")?.toggleAttribute("hidden", true);
         knoten.push(sec);
       }
       wurzel.replaceChildren(...knoten);
@@ -629,9 +671,12 @@ function waehleBereich(id) {
   zeichneInhalt();
 }
 // Von einer Zeile zu einer anderen (Datenschutz → Vaults): Suche leeren, Bereich wählen, Zeile aufleuchten lassen
-function navigiere(bereich, ziel) {
+function navigiere(bereich, ziel, unter = null) {
   if (Z.suche) { Z.suchfeld.input.value = ""; Z.suchfeld.feld.classList.remove("hat-text"); Z.suche = ""; }
   Z.bereich = bereich;
+  const bz = BEREICHE.find((x) => x.id === bereich);
+  const u = unter || (ziel ? unterDerZeile(bz, ziel) : null);
+  if (u && bz?.unterbereiche?.some(([id]) => id === u)) Z.unter[bereich] = u;
   schreibeHash(bereich, ziel);
   zeichneInhalt({ scrollNachOben: !ziel });
   if (ziel) springeZu(ziel);
@@ -667,6 +712,7 @@ export async function oeffneEinstellungen({ api, kontext, bereich = null, ziel =
   Z.api = api; Z.k = kontext; Z.offen = true; Z.davor = document.activeElement;
   Z.steuer.clear(); Z.bereichKnoten.clear(); Z.zeilen.clear(); Z.dynamisch.clear(); Z.wartend = {}; Z.suche = "";
   Z.bereich = bereich && BEREICHE.some((b) => b.id === bereich) ? bereich : (Z.bereich || "allgemein");
+  { const u = ziel ? unterDerZeile(BEREICHE.find((x) => x.id === Z.bereich), ziel) : null; if (u) Z.unter[Z.bereich] = u; } // ein Sprungziel öffnet den Unterbereich, in dem die Zeile steht
   await ladeStil();
   let host = document.getElementById("einstellungen-host");
   if (!host) { host = h("div", { id: "einstellungen-host" }); document.body.append(host); }
@@ -689,7 +735,7 @@ export async function oeffneEinstellungen({ api, kontext, bereich = null, ziel =
   const bt = BEREICHE.find((b) => b.id === "tasten");
   if (bt && !bt.abschnitte.length) bt.abschnitte = tastenAbschnitte(); // eine Zeile je Befehl aus dem Register (tastenkuerzel-register.js), damit auch die Suche der Seite sie findet
   Z.tasten = erzeugeTasten({ inApp: Z.k.inApp, beiSpeichern: zeigeStand });
-  Z.ki = erzeugeKi({ api, k: kontext, beiBraucht: (n) => { if (n === Z.kiBraucht) return; Z.kiBraucht = n; if (Z.host?.querySelector(".e-liste")) renderNav(Z.ergebnis ? Z.ergebnis.bereiche : null); } });
+  Z.ki = erzeugeKi({ api, k: kontext, einstellung: { lies: (k) => wertVon(k), schreibe: (k, v) => aendere(k, v) }, zeigeZiel: (ziel) => navigiere("ki", ziel), beiBraucht: (n) => { if (n === Z.kiBraucht) return; Z.kiBraucht = n; if (Z.host?.querySelector(".e-liste")) renderNav(Z.ergebnis ? Z.ergebnis.bereiche : null); } });
   host.replaceChildren(baueGeruest());
   zeichneInhalt();
   Z.ki.start();

@@ -19,7 +19,7 @@ import { HttpFehler, testmodus, kindUmgebung } from "../gemeinsam/basis.mjs";
 import { liesSettings, echtesZiel } from "../gemeinsam/claude-sperre.mjs";
 import { istVerwalteterOrdner, mitCodexHome } from "./profile.mjs";
 import { TAKT_MS, MIN_NEU_MS, VERALTET_MS, fehlerPause, liesCodexKontingent, codexUmgebung } from "../gemeinsam/kontingent.mjs";
-import { stufeFuer } from "../gemeinsam/ki-konten.mjs";
+import { stufeFuer, aktivesKonto } from "../gemeinsam/ki-konten.mjs";
 
 export const MARKE = "kortex-statuszeile.mjs";
 const QUELLE = fileURLToPath(new URL("../gemeinsam/kortex-statuszeile.mjs", import.meta.url));
@@ -417,7 +417,7 @@ export function erzeugeKontingent({ support, konten, nodePfad = process.execPath
       const k = { id, ...roh };
       let stufe = "gesperrt";
       if (vault) { try { stufe = stufeFuer(d, vault, id); } catch { /* unbekannt = gesperrt */ } }
-      const kopf = { id, programm: k.programm, name: k.name, standard: k.standard === true, ...(vault ? { stufe } : {}) };
+      const kopf = { id, programm: k.programm, name: k.name, standard: k.standard === true, ...(aktivesKonto(d, k.programm) === id ? { aktiv: true } : {}), ...(vault ? { stufe } : {}) };
       let e;
       try {
         if (k.programm === "claude") e = claudeEintrag(k);
