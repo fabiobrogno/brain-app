@@ -149,26 +149,26 @@ test("Wörter einblenden: nur neue Wörter werden verpackt, der Text bleibt unve
   expect(r.verzug[2]).toBeLessThanOrEqual(180); // gestaffelt, aber insgesamt kurz: nichts wird zurückgehalten
 });
 
-test("Assistent: Inhalt steht auch bei pausierten Animationen da (Fenster nicht sichtbar), Hero und Zeichen werden nie von einer Animation versteckt", async ({ page }) => {
+test("Assistent: Inhalt steht auch bei pausierten Animationen da (Fenster nicht sichtbar), Kopf, Zeichen und Schritte werden nie von einer Animation versteckt", async ({ page }) => {
   const statisch = await starteStatisch();
   try {
     await page.addInitScript(pausiere);
     const z = await mockeEinrichtung(page, {});
     await oeffneEinrichtungImStudio(page, statisch.url, z);
-    // Ohne Netz bliebe der Hero bei Deckkraft 0 (Animation pausiert am Anfang). Mit Netz ist er nach spätestens ~2 s da.
-    await expect.poll(() => page.evaluate(() => [...document.querySelectorAll(".e-hero > *")].map((e) => getComputedStyle(e).opacity).join(",")), { timeout: 5000 }).toMatch(/^(1,)*1$/);
-    await expect(page.locator(".e-hero h1")).toBeVisible();
-    await expect(page.locator('[data-aktion="start"]')).toBeEnabled({ timeout: 6000 });
+    // Der Kopf über Schritt 1 ist nie versteckt; der Hauptknopf gilt, sobald git geprüft ist
+    await expect.poll(() => page.evaluate(() => [...document.querySelectorAll("#thd > *")].map((e) => getComputedStyle(e).opacity).join(",")), { timeout: 5000 }).toMatch(/^(1,)*1$/);
+    await expect(page.locator("#thd h1")).toBeVisible();
+    await expect(page.locator('[data-aktion="weiter"]')).toBeEnabled({ timeout: 6000 });
     // das Zeichen (Linie zeichnet sich) ist ganz da: Strichmuster ohne Versatz
     await expect.poll(() => page.evaluate(() => getComputedStyle(document.querySelector("#app-zeichen .e-marke path")).strokeDashoffset), { timeout: 5000 }).toMatch(/^0(px)?$/);
     await bild(page, "ruhenetz-assistent-pausiert");
-    await page.click('[data-aktion="start"]');
-    await expect(page.locator(".e-weg").first()).toBeVisible();
-    await expect.poll(() => page.evaluate(() => getComputedStyle(document.querySelector(".e-pane.rein, .e-pane")).opacity), { timeout: 5000 }).toBe("1");
+    await page.click('[data-aktion="weiter"]'); // Vault anlegen: der nächste Schritt gleitet ein
+    await expect(page.locator('[data-bereich="ki"] .e-kr').first()).toBeVisible({ timeout: 8000 });
+    await expect.poll(() => page.evaluate(() => getComputedStyle(document.querySelector(".e-pane:not(.raus)")).opacity), { timeout: 5000 }).toBe("1");
   } finally { statisch.stopp(); }
 });
 
-test("Assistent: ohne Netz wäre der Hero unsichtbar (Gegenprobe: die Animationen sind wirklich pausiert und stehen am Anfang)", async ({ page }) => {
+test("Assistent: ohne Netz wäre der nächste Schritt unsichtbar (Gegenprobe: die Animationen sind wirklich pausiert und stehen am Anfang)", async ({ page }) => {
   const statisch = await starteStatisch();
   try {
     await page.addInitScript(pausiere);
@@ -176,8 +176,10 @@ test("Assistent: ohne Netz wäre der Hero unsichtbar (Gegenprobe: die Animatione
     await page.addInitScript(() => { Document.prototype.getAnimations = undefined; });
     const z = await mockeEinrichtung(page, {});
     await oeffneEinrichtungImStudio(page, statisch.url, z);
-    await page.waitForTimeout(1800);
-    const op = await page.evaluate(() => getComputedStyle(document.querySelector(".e-hero > :nth-child(2)")).opacity);
+    await expect(page.locator('[data-aktion="weiter"]')).toBeEnabled({ timeout: 6000 });
+    await page.click('[data-aktion="weiter"]');
+    await page.waitForSelector(".e-pane.rein");
+    const op = await page.evaluate(() => getComputedStyle(document.querySelector(".e-pane.rein")).opacity);
     expect(parseFloat(op)).toBeLessThan(0.5);
   } finally { statisch.stopp(); }
 });

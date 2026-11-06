@@ -33,6 +33,7 @@ import { windungLaden } from "./windung.js";
 import { erzeugeDateiaktionen } from "./dateiaktionen.js"; // Umbenennen, Verschieben, Papierkorb
 import { installiereFensterKopf, vorschauPille } from "./fenster.js"; // Titelleiste der App: Kopfzeile greifbar, Plakette „Vorschau“
 import { erzeugeEinrichtungImStudio } from "./einrichtung-studio.js"; // Einrichtung als Overlay im Studio (nie ein zweites Fenster), Hinweise der App beim Start
+import { erzeugeEinrichtungsListe } from "./einrichtung-liste.js"; // Checkliste „Einrichtung n/4“ in der Seitenleiste
 import * as kz from "./tastenkuerzel.js";
 import { baueWikiIndex, loeseWikiLink, schlageWikiZieleVor, ordnerVonPfad } from "./wikilink.js";
 import { heuteIso } from "./zeit.js";
@@ -1194,7 +1195,7 @@ function zeichneSeite() {
   zeichneBereiche(); zeichneFavoriten(); zeichneAnsichten(); zeichneTypen(); zeichneOrdner(); kiZeile.zeichne();
 }
 // Einrichtung wieder öffnen (nur in der App: git, Ordnerdialog und Browser kommen von dort); führt im selben Fenster zu Sicherung und KI
-{ const z = $("einrichtung-zeile"); z.append(symbol("marke", 16), h("span", { klasse: "ki-text", text: T.seitenleiste.einrichtung })); z.hidden = !inApp(); z.addEventListener("click", () => einrichtung.anfordern({ ab: "sicherung" })); }
+{ const z = $("einrichtung-zeile"); z.append(symbol("marke", 16), h("span", { klasse: "ki-text", text: T.seitenleiste.einrichtung })); z.hidden = !inApp(); z.addEventListener("click", () => einrichtung.anfordern()); }
 // KI-Zeile unten in der Seitenleiste (ki-zeile.js)
 // Erkannte KI-Programme aus S.ki (GET /api/ki/erkennen, nur lesend): der Katalog mit „gefunden“, sonst die Liste der Programme mit Pfad
 const erkannteKIs = () => (S.ki ? (Array.isArray(S.ki.katalog) ? S.ki.katalog.filter((k) => k.gefunden).map((k) => k.id) : (S.ki.agenten || []).filter((a) => a.pfad).map((a) => a.id)) : null);
@@ -2875,7 +2876,7 @@ kz.anmelden("kuerzel-hilfe", () => oeffneKuerzel());
 kz.anmelden("mitteilungen", () => glocke.umschalten(), () => !!S.info?.vault && !dialogOffen());
 
 window.addEventListener("beforeunload", () => { if (S.dirty) { clearTimeout(speicherTimer); speichere(); } });
-window.addEventListener("focus", () => { planeGitRefresh(); if (S.info?.vault) { ladeBaum(); ladeInfoLeise().then(() => fragVertrauenEinmal()); } });
+window.addEventListener("focus", () => { planeGitRefresh(); if (S.info?.vault) { ladeBaum(); ladeInfoLeise().then(() => fragVertrauenEinmal()); einrichtungsListe?.aktualisiere(); } });
 
 // ======================================================= Vaults
 async function ladeVaults() {
@@ -2949,7 +2950,14 @@ const einrichtung = erzeugeEinrichtungImStudio({
   vorOeffnen: async () => !S.info?.vault || (await sichereVorWechsel()),
   ladeNeu: () => ladeAlles(),
   aufgefrischt: () => { if (S.info?.vault) { ladeKi(); ladeGit(); ladeInfoLeise(); } }, // der Vault blieb gleich: KI und Sicherung können sich geändert haben
+  // Die Frage „Diesem Ordner vertrauen“ war im Vault-Schritt gestellt: das Studio fragt für diesen Vault nicht noch einmal (Nein heißt „Nur ansehen“, später änderbar)
+  vertrauenErledigt: (pfad) => vertrauenGefragt.add(pfad),
+  // Nach jedem Ende (auch „Später“ mit Vault): die Checkliste gilt ab jetzt auf diesem Gerät und liest ihren Stand neu
+  beiEnde: () => { if (S.info?.vault) { einrichtungsListe.aktiviere(); einrichtungsListe.aktualisiere(); } },
 });
+const einrichtungsListe = erzeugeEinrichtungsListe({ host: $("einrichtung-liste"), zeile: $("einrichtung-zeile"), api, aktiv: inApp, vault: () => S.info?.vault || null,
+  anfordern: (o) => einrichtung.anfordern(o), einstellungen: (o) => oeffneEinstellungenSeite(o) });
+window.addEventListener("kortex-konten", () => einrichtungsListe.aktualisiere()); // eine KI wurde (ab-)gemeldet: die Liste liest neu
 
 // ======================================================= Menübefehle der App
 const MENUE_BEFEHLE = {
@@ -3285,6 +3293,7 @@ async function ladeAlles() {
   zeigeLeer();
   markiereBereit();
   pruefeEntwuerfeBeimStart();
+  einrichtungsListe.aktualisiere();
 }
 
 richteGriffeEin();

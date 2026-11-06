@@ -322,6 +322,9 @@ App startet ─► Studio-Fenster (leer, Hintergrund ruhig) ─► Overlay „Ko
 | E7 | Rückfragen und Hinweise ins Studio, Ein-Instanz-Prüfung, Tipps-Regel; Kartenstapel, Erlaubnis-Karte, 5-s-Sperre, „Nicht mehr fragen“, Dichte-Leiter und Rechtsklick-Menü der Statusleiste (4.6) | M | mittel | Swift + Playwright (enge Fenster 900/1000/1180 px, Mitteilungs-Planer-Tests) | Kartenstapel und Statusleiste in E0 |
 | — | **Ein Opus-Review** über E1–E5 (frischer Kontext, ganzer Diff), dann nachbessern | — | — | — | — |
 
+Stand: E1 (ein Fenster) und E2 (Ablauf neu: Vault · KI · Sicherung, Auto-Überspringen, Fortsetzen mit `einrichtung.json` Fassung 2, Vertrauen im Vault-Schritt, Checkliste, Sitzung von der Seite bestätigt) sind umgesetzt; Beschreibung in `docs/ENTWICKLUNG.md` („Ein Fenster“).
+Abweichung von 4.2: Die Umrechnung von `einrichtung.json` liegt in Swift (`EinrichtungsDatei.umgerechnet()`), weil die Datei der Hülle gehört; geprüft in `EinrichtungsZustandTests`. Der Haken für E3 ist `studio/einrichtung-anmeldung.js`.
+
 Reihenfolge: E0 → (Freigabe) → E1 → E2 → E3 → E4 → E5 → Review → E6/E7. E1 und E2 gehören eng zusammen (gleiche Dateien); E3 hängt an E1 (KiRoute im Overlay), E4 und E5 sind danach
 unabhängig voneinander.
 

@@ -191,20 +191,27 @@ import CoreGraphics
     #expect(EinrichtungsOverlay.nurAusEinrichtung(.gitInstallieren))
     #expect(EinrichtungsOverlay.nurAusEinrichtung(.kopieren("WDJB-MJHT")))
     #expect(EinrichtungsOverlay.nurAusEinrichtung(.einrichtungEnde(.fertig)))
+    #expect(EinrichtungsOverlay.nurAusEinrichtung(.einrichtungSchritt(.ki)))
+    #expect(!EinrichtungsOverlay.nurAusEinrichtung(.einrichtungSitzung(offen: true)), "die Meldung der Seite selbst geht immer, sonst ließe sich nie bestätigen")
     #expect(!EinrichtungsOverlay.nurAusEinrichtung(.vaultGewechselt))
     #expect(!EinrichtungsOverlay.nurAusEinrichtung(.ordnerWaehlen(titel: nil, vorschlag: nil)))
     #expect(!EinrichtungsOverlay.nurAusEinrichtung(.einrichtungOeffnen(ab: nil)), "das Öffnen selbst geht immer (Karte, Menü)")
 }
 
 @Test func dieRechteDerAktionenFolgenDemOffenenOverlayNichtEinemFenster() {
-    let eigen: [AppAktion] = [.gitPruefen, .gitInstallieren, .kopieren("ABCD-1234"), .einrichtungEnde(.fertig), .einrichtungEnde(.spaeter)]
-    let frei: [AppAktion] = [.vaultGewechselt, .statusAuffrischen, .ordnerWaehlen(titel: nil, vorschlag: nil), .einrichtungOeffnen(ab: nil), .mitteilungProbe]
+    let eigen: [AppAktion] = [.gitPruefen, .gitInstallieren, .kopieren("ABCD-1234"), .einrichtungEnde(.fertig), .einrichtungEnde(.spaeter), .einrichtungSchritt(.vault)]
+    let frei: [AppAktion] = [.vaultGewechselt, .statusAuffrischen, .ordnerWaehlen(titel: nil, vorschlag: nil), .einrichtungOeffnen(ab: nil), .mitteilungProbe, .einrichtungSitzung(offen: true), .einrichtungSitzung(offen: false)]
     var s = EinrichtungsSitzung()
     #expect(!s.offen)
     for a in eigen { #expect(!s.erlaubt(a), "zu: \(a)") }
     for a in frei { #expect(s.erlaubt(a), "zu: \(a)") }
     let neu = s.oeffne(automatisch: true, vaultVorher: nil)
     #expect(neu)
+    // angefordert, aber die Seite hat das Overlay noch nicht bestätigt: die Rechte der Einrichtung gelten noch nicht
+    for a in eigen { #expect(!s.erlaubt(a), "angefordert, nicht bestätigt: \(a)") }
+    for a in frei { #expect(s.erlaubt(a), "angefordert: \(a)") }
+    let bestaetigt = s.bestaetige()
+    #expect(bestaetigt)
     for a in eigen + frei { #expect(s.erlaubt(a), "offen: \(a)") }
     // zweites Öffnen: kein neuer Lauf, Herkunft und Vault bleiben
     let nochmal = s.oeffne(automatisch: false, vaultVorher: URL(fileURLWithPath: "/x"))
@@ -234,6 +241,8 @@ import CoreGraphics
     let github = URL(string: "https://github.com/login/device")!
     #expect(s.externErlaubt(fremd), "zu: das übrige Studio öffnet seine Links wie bisher")
     _ = s.oeffne(automatisch: false, vaultVorher: nil)
+    #expect(s.externErlaubt(fremd), "angefordert, nicht bestätigt: kein Overlay, kein Zwang auf GitHub")
+    _ = s.bestaetige()
     #expect(s.externErlaubt(github))
     #expect(!s.externErlaubt(fremd))
     #expect(!s.externErlaubt(URL(string: "http://github.com/login/device")!))
@@ -388,4 +397,95 @@ private func baueOrdner() throws -> URL {
     let c = try #require(cloud["breit"] as? [String: Any])
     #expect(c["name"] as? String == "Cloud-Speicher" && c["vorschlag"] == nil, "vorschlag nur, wenn es einen gibt")
     #expect(cloud["notizen"] == nil && cloud["ordner"] == nil)
+}
+
+// MARK: Sitzung: die Seite bestätigt, ein Neuladen nimmt die Rechte zurück
+
+@Test func ohneAnforderungBestaetigtDieSeiteNichts() {
+    var s = EinrichtungsSitzung()
+    let b = s.bestaetige()
+    #expect(!b, "nie angefordert: nichts wird freigegeben")
+    #expect(!s.erlaubt(.gitPruefen))
+    let z = s.seiteMeldetZu()
+    #expect(!z)
+}
+
+@Test func neuladenDerSeiteNimmtDieRechteZurueckUndBeendetDenBestaetigtenLauf() {
+    var s = EinrichtungsSitzung()
+    _ = s.oeffne(automatisch: false, vaultVorher: nil)
+    let b = s.bestaetige()
+    #expect(b && s.erlaubt(.kopieren("X")))
+    // die Seite wird neu geladen und meldet beim Start „zu“: die Rechte sind weg, und der Lauf gilt als beendet (die App ruft dann `beende()`)
+    let zu = s.seiteMeldetZu()
+    #expect(zu, "war bestätigt: der Lauf endet")
+    #expect(!s.erlaubt(.kopieren("X")) && !s.erlaubt(.einrichtungEnde(.fertig)))
+    let lauf = s.beende()
+    #expect(lauf != nil)
+    #expect(!s.offen && !s.bestaetigt)
+}
+
+@Test func einBootMeldetZuVorDemBefehlLaesstDenAngefordertenLaufOffen() {
+    // erster Start: die App fordert an, die Seite lädt noch und meldet beim Booten „zu“ — das ist nicht das Ende des Laufs
+    var s = EinrichtungsSitzung()
+    _ = s.oeffne(automatisch: true, vaultVorher: nil)
+    let zu = s.seiteMeldetZu()
+    #expect(!zu)
+    #expect(s.offen)
+    let b = s.bestaetige()
+    #expect(b, "danach öffnet die Seite das Overlay und bestätigt")
+    #expect(s.erlaubt(.gitPruefen))
+}
+
+@Test func einNeuerLaufMussNeuBestaetigtWerden() {
+    var s = EinrichtungsSitzung()
+    _ = s.oeffne(automatisch: false, vaultVorher: nil)
+    _ = s.bestaetige()
+    _ = s.beende()
+    _ = s.oeffne(automatisch: false, vaultVorher: nil)
+    #expect(!s.erlaubt(.gitPruefen), "ein neuer Lauf beginnt unbestätigt")
+}
+
+@Test func sitzungUndSchrittKommenNurVomStudioMitFestenWerten() {
+    func pruefe(_ name: String, _ wert: Any?, _ o: Oberflaeche = .studio) -> AppAktion? {
+        var n: [String: Any] = ["aktion": name]
+        if let wert { n["wert"] = wert }
+        return AppAktion.pruefe(n, vault: nil, oberflaeche: o)
+    }
+    #expect(pruefe("einrichtung-sitzung", ["offen": true]) == .einrichtungSitzung(offen: true))
+    #expect(pruefe("einrichtung-sitzung", ["offen": false]) == .einrichtungSitzung(offen: false))
+    #expect(pruefe("einrichtung-sitzung", ["offen": "ja"]) == nil)
+    #expect(pruefe("einrichtung-sitzung", nil) == nil)
+    #expect(pruefe("einrichtung-sitzung", ["offen": true], .app) == nil, "nur das Studio")
+    for s in EinrichtungsSchritt.allCases { #expect(pruefe("einrichtung-schritt", ["schritt": s.rawValue]) == .einrichtungSchritt(s)) }
+    #expect(pruefe("einrichtung-schritt", ["schritt": "fertig"]) == nil)
+    #expect(pruefe("einrichtung-schritt", ["schritt": "Vault"]) == nil)
+    #expect(pruefe("einrichtung-schritt", "vault") == nil)
+    #expect(pruefe("einrichtung-schritt", nil) == nil)
+    #expect(pruefe("einrichtung-schritt", ["schritt": "ki"], .app) == nil, "nur das Studio")
+}
+
+// MARK: Fortsetzen: letzterSchritt und Einstieg
+
+@Test func einSchrittRuecktNurVorwaertsUndMerktDieHerkunft() {
+    var d = EinrichtungsOverlay.datei(schritt: .vault, vorher: nil, herkunft: .start)
+    #expect(d.letzterSchritt == .vault && d.herkunft == .start && d.ablaufVersion == 2)
+    d = EinrichtungsOverlay.datei(schritt: .sicherung, vorher: d, herkunft: .start)
+    #expect(d.letzterSchritt == .sicherung)
+    d = EinrichtungsOverlay.datei(schritt: .ki, vorher: d, herkunft: .menue)
+    #expect(d.letzterSchritt == .sicherung, "nie zurück")
+    #expect(d.herkunft == .menue)
+}
+
+@Test func derEinstiegFolgtDemLetztenSchrittUndDemVerlangten() {
+    func e(_ ab: EinrichtungsEinstieg? = nil, _ weg: EinrichtungsWeg? = nil, vault: Bool, _ letzter: EinrichtungsSchritt? = nil, datei: Bool = true) -> EinrichtungsEinstieg? {
+        EinrichtungsOverlay.einstieg(ab: ab, weg: weg, vaultDa: vault, datei: datei ? EinrichtungsDatei(letzterSchritt: letzter) : nil)
+    }
+    #expect(e(vault: false) == nil, "ohne Vault beginnt die Seite beim Vault")
+    #expect(e(nil, .oeffnen, vault: false, datei: false) == nil)
+    #expect(e(.sicherung, vault: false) == .sicherung, "ein verlangter Einstieg gilt immer")
+    #expect(e(nil, .neu, vault: true) == nil, "mit Weg beginnt die Seite beim Vault")
+    #expect(e(vault: true, datei: false) == .ki, "Vault da, kein Stand: bei der KI")
+    #expect(e(vault: true, .vault) == .ki)
+    #expect(e(vault: true, .ki) == .sicherung)
+    #expect(e(vault: true, .sicherung) == .ki, "alles erledigt: das Menü beginnt wieder bei der KI")
 }

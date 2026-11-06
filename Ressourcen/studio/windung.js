@@ -1,6 +1,6 @@
 // Das Kortex-Zeichen „Windung“ (Ressourcen/icon-entwuerfe/kortex-3-windung.svg, Zeichenpfad im 1024er-Raster): eine durchgehende Linie in sechs Bahnen.
-// Hier liegt nur das Zeichen und seine Ladeanzeige, damit das Studio (Frag, Abgleich) es nutzen kann, ohne den ganzen Assistenten zu laden;
-// einrichtung-buehne.js führt es weiter (markeSvg, windungFortschritt, WINDUNG).
+// Hier liegt nur das Zeichen und seine Ladeanzeige, damit das Studio (Frag, Abgleich) es nutzen kann, ohne die ganze Einrichtung zu laden;
+// die Einrichtung (einrichtung.js) nutzt markeSvg für das Zeichen im Kopf.
 export const WINDUNG = "M412 262H618A50 50 0 0 1 618 362H356A50 50 0 0 0 356 462H668A50 50 0 0 1 668 562H356A50 50 0 0 0 356 662H618A50 50 0 0 1 618 762H412";
 const SVG = "http://www.w3.org/2000/svg";
 export const svgEl = (name, attrs = {}) => { const e = document.createElementNS(SVG, name); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, String(v)); return e; };

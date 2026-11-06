@@ -34,14 +34,32 @@ test("Vertrag und Swift nennen dieselben Aktionen", () => {
 test("„nur bei offener Einrichtung“ stimmt mit Swift überein", () => {
   const swift = readFileSync(join(W, "Sources/BrainCore/EinrichtungsOverlay.swift"), "utf8");
   const zeile = /case \.gitPruefen[^\n]*return true/.exec(swift)?.[0] || "";
-  const swiftNamen = { gitPruefen: "git-pruefen", gitInstallieren: "git-installieren", kopieren: "kopieren", einrichtungEnde: "einrichtung-ende" };
+  const swiftNamen = { gitPruefen: "git-pruefen", gitInstallieren: "git-installieren", kopieren: "kopieren", einrichtungEnde: "einrichtung-ende", einrichtungSchritt: "einrichtung-schritt" };
   const ausSwift = Object.entries(swiftNamen).filter(([k]) => zeile.includes("." + k)).map(([, v]) => v).sort();
   const ausVertrag = vertrag.aktionen.filter((a) => a.nurBeiOffenerEinrichtung).map((a) => a.name).sort();
   assert.deepEqual(ausVertrag, ausSwift);
-  assert.equal(ausSwift.length, 4);
+  assert.equal(ausSwift.length, 5);
 });
 
 test("Befehle der Hülle an das Studio sind im Studio vorhanden", () => {
   const app = readFileSync(join(W, "Ressourcen/studio/app.js"), "utf8");
   for (const b of vertrag.huellenBefehle) assert.ok(b.name === "hinweis" ? app.includes("window.studio.hinweis") : app.includes(`${b.name}: (arg)`), b.name);
+});
+
+test("Einrichtung (E2): die Sitzung bestätigt die Seite (immer erlaubt), die Schritte nennen dieselben Namen wie Swift", () => {
+  const sitzung = vertrag.aktionen.find((a) => a.name === "einrichtung-sitzung");
+  assert.ok(sitzung, "einrichtung-sitzung steht im Vertrag");
+  assert.ok(!sitzung.nurBeiOffenerEinrichtung, "die Meldung selbst muss vor der Bestätigung gehen");
+  const schritt = vertrag.aktionen.find((a) => a.name === "einrichtung-schritt");
+  assert.equal(schritt?.nurBeiOffenerEinrichtung, true);
+  const swift = readFileSync(join(W, "Sources/BrainCore/EinrichtungsZustand.swift"), "utf8");
+  const faelle = /enum EinrichtungsSchritt[^{]*\{([\s\S]*?)\n\}/.exec(swift)?.[1] ?? "";
+  const inSwift = [...faelle.matchAll(/^\s*case (\w+)\s*$/gm)].map((m) => m[1]);
+  assert.deepEqual(inSwift, ["vault", "ki", "sicherung"]);
+  for (const n of inSwift) assert.ok(schritt.wert.includes(`"${n}"`), `Vertrag nennt den Schritt ${n}`);
+  // Das Studio ruft beide auf (Sitzung beim Öffnen/Schließen/Laden, Schritt nach jedem erledigten Schritt)
+  const dir = join(W, "Ressourcen/studio");
+  const text = readdirSync(dir).filter((n) => n.endsWith(".js")).map((n) => readFileSync(join(dir, n), "utf8")).join("\n");
+  assert.match(text, /aktion(?:MitAntwort)?\(\s*"einrichtung-sitzung"/);
+  assert.match(text, /aktion(?:MitAntwort)?\(\s*"einrichtung-schritt"/);
 });
