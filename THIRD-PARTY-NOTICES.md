@@ -490,6 +490,11 @@ Website https://orca.dev), Stand Commit `cf5b462fba8462678256b25d05cec2adb8dca41
   → `gemeinsam/kortex-statuszeile.mjs`, `gemeinsam/kontingent.mjs`, `studio/kontingent.js` (alles in JavaScript neu geschrieben, nichts kopiert). Nicht übernommen ist Orcas Weg über den
   OAuth-Token aus dem Schlüsselbund: Kortex liest keine Zugangsdaten anderer Programme und fragt Anthropic und OpenAI nie selbst an.
 
+- die Konten-Karten in den Einstellungen (Karte je Programm, Konto-Zeile mit Abzeichen „aktiv“ und „Anmeldung nötig“, ein aktives Konto je Programm, erst anmelden und dann veröffentlichen) nach
+  `src/renderer/src/components/settings/AccountsPane.tsx` (Stand @239e17f)
+  → `studio/einstellungen-ki.js`, `studio/ki-verbinden.js`, `studio/ki-aktiv.js`, `werkstatt/konten.mjs` (alles in JavaScript neu geschrieben, nichts kopiert). Nicht übernommen ist das Lesen von E-Mail und Tarif
+  aus der Konfigurationsdatei von Claude Code: Kortex fragt dafür das Programm selbst (`claude auth status`) und liest keine Datei mit Anmeldedaten.
+
 Orca ist MIT-lizenziert. Lizenztext (Copyright-Zeile wie in der Datei `LICENSE` von Orca):
 
 ```

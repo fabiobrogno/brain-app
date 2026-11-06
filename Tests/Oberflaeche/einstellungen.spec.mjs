@@ -300,12 +300,13 @@ test("Suche: Wertung, Markierung, Zählung je Bereich, Sortierung; Klick auf ein
   await oeffne(page, "allgemein");
   await page.locator('[data-einst="suche"]').fill("kontingent");
   await expect(page.locator("[data-einst=titel]")).toHaveText("Suche");
-  await expect(page.locator("[data-einst=treffer]")).toHaveText("1 Treffer für „kontingent“");
-  await expect(page.locator("mark")).toHaveText(["Kontingent"]);
+  await expect(page.locator("[data-einst=treffer]")).toHaveText("2 Treffer für „kontingent“"); // die Mitteilung und der Unterbereich „Kontingent“ von KI & Konten
+  await expect(page.locator("mark").first()).toHaveText("Kontingent");
   await expect(page.locator(".e-punkt[data-bereich=mitteilungen] .treffer")).toHaveText("1");
   await expect(page.locator(".e-punkt[data-bereich=allgemein]")).toHaveClass(/aus/);
   await expect(page.locator(".e-punkt[aria-current=true]")).toHaveCount(0);
-  await expect(page.locator("[data-zeile]:visible")).toHaveCount(1);
+  await expect(page.locator(".e-punkt[data-bereich=ki] .treffer")).toHaveText("1");
+  await expect(page.locator("[data-zeile]:visible")).toHaveCount(2);
   await foto(page, "suche-hell");
   // mehrere Bereiche, Sortierung nach Wertung (Titel vor Beschreibung)
   await page.locator('[data-einst="suche"]').fill("schrift");

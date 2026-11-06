@@ -80,6 +80,44 @@ public enum KiKontoOrdner {
     static func variable(_ programm: String) -> String { programm == "claude" ? "CLAUDE_CONFIG_DIR" : "CODEX_HOME" }
 }
 
+/// Was das Programm selbst über das angemeldete Konto sagt (E-Mail, Tarif). Nur zur Anzeige: Kortex speichert es nie und liest es nur, wenn die Oberfläche es verlangt
+/// (Schalter „Kontonamen vom Programm zeigen“). Jeder Wert ist streng geprüft; im Zweifel fehlt er.
+public struct KiIdentitaet: Equatable, Sendable {
+    public let email: String?
+    public let plan: String?
+    public init(email: String?, plan: String?) { self.email = email; self.plan = plan }
+    var leer: Bool { email == nil && plan == nil }
+
+    static func email(_ roh: Any?) -> String? {
+        guard let s = (roh as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), s.count <= 120 else { return nil }
+        return s.range(of: "^[A-Za-z0-9._%+'-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$", options: .regularExpression) != nil ? s : nil
+    }
+    static func plan(_ roh: Any?) -> String? {
+        guard let s = (roh as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), s.count <= 24 else { return nil }
+        return s.range(of: "^[A-Za-z0-9][A-Za-z0-9 _-]*$", options: .regularExpression) != nil ? s : nil
+    }
+
+    /// Claude: JSON auf stdout; gelesen werden NUR `email` und `subscriptionType` (andere Felder, auch Tokens, bleiben unbeachtet).
+    /// Codex: Text; nur eine E-Mail-Adresse in einer Zeile mit „logged in“. Das echte Format beider Programme ist nicht dokumentiert: was nicht passt, bleibt leer.
+    static func lies(programm: String, ausgabe: Data) -> KiIdentitaet? {
+        var email: String?, plan: String?
+        if programm == "claude" {
+            guard let obj = (try? JSONSerialization.jsonObject(with: ausgabe)) as? [String: Any] else { return nil }
+            email = Self.email(obj["email"]); plan = Self.plan(obj["subscriptionType"])
+        } else {
+            let text = String(decoding: ausgabe.prefix(4096), as: UTF8.self)
+            for zeile in text.split(whereSeparator: \.isNewline) where zeile.lowercased().contains("logged in") {
+                for wort in zeile.split(whereSeparator: { $0 == " " || $0 == "(" || $0 == ")" || $0 == "," }) {
+                    if let m = Self.email(String(wort)) { email = m; break }
+                }
+                if email != nil { break }
+            }
+        }
+        let r = KiIdentitaet(email: email, plan: plan)
+        return r.leer ? nil : r
+    }
+}
+
 public struct KiAnmeldung: Equatable, Sendable {
     public static let angemeldet = "angemeldet"
     public static let nichtAngemeldet = "nicht-angemeldet"
@@ -88,12 +126,20 @@ public struct KiAnmeldung: Equatable, Sendable {
     /// "angemeldet" | "nicht-angemeldet" | "unbekannt"
     public let zustand: String
     public let grund: String?
+    /// nur bei „angemeldet“ und nur, wenn danach gefragt wurde und das Programm etwas Brauchbares sagt
+    public let identitaet: KiIdentitaet?
 
-    public init(zustand: String, grund: String? = nil) { self.zustand = zustand; self.grund = grund }
+    public init(zustand: String, grund: String? = nil, identitaet: KiIdentitaet? = nil) { self.zustand = zustand; self.grund = grund; self.identitaet = identitaet }
 
     func jsonObjekt() -> [String: Any] {
         var o: [String: Any] = ["zustand": zustand]
         if let grund { o["grund"] = grund }
+        if let identitaet {
+            var i: [String: Any] = [:]
+            if let e = identitaet.email { i["email"] = e }
+            if let p = identitaet.plan { i["plan"] = p }
+            o["identitaet"] = i
+        }
         return o
     }
 }
@@ -106,7 +152,7 @@ public enum KiKonto {
     /// `pfadEintraege`: PATH des Kindes (Standard: der PATH der Basisumgebung); der Ordner des Programms steht immer vorn.
     public static func anmeldeStatus(programm: String, ordner: KiKontoOrdner.Auswahl, fund: KiFund,
                                      basisUmgebung: [String: String] = ProcessInfo.processInfo.environment,
-                                     pfadEintraege: [String] = [], zeitlimit: Duration = .seconds(10)) async -> KiAnmeldung {
+                                     pfadEintraege: [String] = [], zeitlimit: Duration = .seconds(10), mitIdentitaet: Bool = false) async -> KiAnmeldung {
         guard KiKontoOrdner.programme.contains(programm) else {
             return KiAnmeldung(zustand: KiAnmeldung.unbekannt, grund: "Dieses Programm kann Kortex nicht abfragen.")
         }
@@ -126,20 +172,20 @@ public enum KiKonto {
         case .startfehler:
             return KiAnmeldung(zustand: KiAnmeldung.unbekannt, grund: "\(anzeigename(programm)) ließ sich nicht starten. Klicke auf „Neu suchen“.")
         case .beendet(let code, let daten):
-            return auswerten(programm: programm, code: code, ausgabe: daten)
+            return auswerten(programm: programm, code: code, ausgabe: daten, mitIdentitaet: mitIdentitaet)
         }
     }
 
-    /// Wertet Exit-Code und Ausgabe aus. Aus der Ausgabe wird nichts weitergegeben (keine E-Mail, kein Konto) — bei Claude wird NUR
-    /// das Feld `loggedIn` gelesen, bei Codex nur geprüft, ob „not logged in“ vorkommt.
-    static func auswerten(programm: String, code: Int32, ausgabe: Data) -> KiAnmeldung {
+    /// Wertet Exit-Code und Ausgabe aus. Ohne `mitIdentitaet` wird aus der Ausgabe nichts weitergegeben — bei Claude wird NUR das Feld `loggedIn` gelesen, bei Codex nur geprüft,
+    /// ob „not logged in“ vorkommt. Mit `mitIdentitaet` (Schalter „Kontonamen vom Programm zeigen“) kommen zusätzlich E-Mail und Tarif dazu (`KiIdentitaet.lies`), sonst nichts.
+    static func auswerten(programm: String, code: Int32, ausgabe: Data, mitIdentitaet: Bool = false) -> KiAnmeldung {
         if code == 0 {
             if programm == "claude",
                let obj = try? JSONSerialization.jsonObject(with: ausgabe) as? [String: Any],
                let eingeloggt = obj["loggedIn"] as? Bool, !eingeloggt {
                 return KiAnmeldung(zustand: KiAnmeldung.nichtAngemeldet)
             }
-            return KiAnmeldung(zustand: KiAnmeldung.angemeldet)
+            return KiAnmeldung(zustand: KiAnmeldung.angemeldet, identitaet: mitIdentitaet ? KiIdentitaet.lies(programm: programm, ausgabe: ausgabe) : nil)
         }
         if programm == "claude" { return KiAnmeldung(zustand: KiAnmeldung.nichtAngemeldet) }
         if String(decoding: ausgabe, as: UTF8.self).lowercased().contains("not logged in") {

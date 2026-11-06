@@ -4,7 +4,7 @@ import Foundation
 /// laufen in der App (Swift), nie in der Werkstatt — `behandle` liefert `nil` für alles andere, das geht dann an die Werkstatt.
 ///
 /// - `GET /api/ki/programme` (`?neu=1` = neu suchen): `{"ok":true,"programme":[…],"gesucht":"…","ausShell":bool}`
-/// - `POST /api/ki/anmeldestatus` `{programm, ordner|null}`: `{"zustand":"angemeldet|nicht-angemeldet|unbekannt","grund"?:…}`
+/// - `POST /api/ki/anmeldestatus` `{programm, ordner|null, identitaet?:true}`: `{"zustand":"angemeldet|nicht-angemeldet|unbekannt","grund"?:…,"identitaet"?:{"email"?,"plan"?}}` (Identität nur auf Wunsch, nur aus der Ausgabe des Programms, nie gespeichert)
 /// - `POST /api/ki/anmelden` `{programm, ordner|null}`: `{"ok":true,"anzeige":"CLAUDE_CONFIG_DIR=~/… claude auth login"}`
 /// - `POST /api/ki/ordner-papierkorb` `{programm, ordner}`: legt den Ordner eines von Kortex angelegten Kontos über `trashItem` in den Papierkorb (der Finder kann ihn „Zurücklegen“): `{"ok":true}`
 /// Fehler: 4xx/5xx mit `{"fehler":"<deutscher Satz mit nächstem Schritt>"}`.
@@ -78,7 +78,7 @@ public struct KiRoute: Sendable {
 
     // MARK: Anfrage lesen
 
-    private struct Auftrag { let programm: String; let ordner: KiKontoOrdner.Auswahl }
+    private struct Auftrag { let programm: String; let ordner: KiKontoOrdner.Auswahl; var identitaet = false }
     private struct Abweisung: Error { let antwort: BrueckenAntwort }
 
     private func lese(_ body: Data?) -> Result<Auftrag, Abweisung> {
@@ -100,7 +100,7 @@ public struct KiRoute: Sendable {
         guard let ordner = KiKontoOrdner.pruefe(programm: programm, ordner: ordnerText, home: home, support: support) else {
             return .failure(Abweisung(antwort: Self.fehler(400, "Dieser Konto-Ordner ist nicht erlaubt oder existiert nicht. Wähle einen Ordner aus der Liste oder lege ein Konto neu an.")))
         }
-        return .success(Auftrag(programm: programm, ordner: ordner))
+        return .success(Auftrag(programm: programm, ordner: ordner, identitaet: (obj["identitaet"] as? Bool) == true))
     }
 
     /// Der gefundene Eintrag des Programms; wurde noch nie gesucht, sucht `programme()` zuerst.
@@ -120,7 +120,7 @@ public struct KiRoute: Sendable {
         guard let fund = await fund(auftrag.programm) else { return Self.nichtGefunden(auftrag.programm) }
         let pfad = await erkennung.loginPfad().eintraege
         let status = await KiKonto.anmeldeStatus(programm: auftrag.programm, ordner: auftrag.ordner, fund: fund,
-                                                 basisUmgebung: basisUmgebung, pfadEintraege: pfad, zeitlimit: statusZeitlimit)
+                                                 basisUmgebung: basisUmgebung, pfadEintraege: pfad, zeitlimit: statusZeitlimit, mitIdentitaet: auftrag.identitaet)
         return Self.json(200, status.jsonObjekt())
     }
 

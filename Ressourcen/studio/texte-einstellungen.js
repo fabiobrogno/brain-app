@@ -94,36 +94,45 @@ export const BEREICHE = [
   },
   {
     id: "ki", name: "KI & Konten", gruppe: "Wissen", symbol: "ki", woerter: ["konto", "claude", "codex", "anmelden", "abo"],
+    // Unterbereiche (Segment oben im Bereich): jeder Abschnitt gehört zu genau einem (`unter`); die Suche findet Zeilen in allen, ein Sprung (?ziel=) öffnet den richtigen.
+    unterbereiche: [["konten", "Konten"], ["zugriff", "Zugriff"], ["kontingent", "Kontingent"], ["pflege", "Pflege & Frag"]],
     intro: "Kortex arbeitet mit den KI-Programmen, die du schon hast, und mit deinem eigenen Abo. Hier siehst du, welche Konten angemeldet sind und was jedes Konto in welchem Vault darf.",
     abschnitte: [
-      { id: "uebersicht", titel: "", zeilen: [
+      { id: "uebersicht", unter: "konten", titel: "", zeilen: [
         { id: "ki-uebersicht", sonder: true, titel: "Übersicht der KI-Konten", text: "Wie viele Konten angemeldet sind, wie viele deine Anmeldung brauchen und wie viele Sperren gelten.", woerter: ["übersicht", "angemeldet", "anmeldung", "zahlen", "konten", "sperren"] },
       ] },
-      { id: "konten", titel: "Programme und Konten", text: "Kortex sucht im Pfad deiner Login-Shell, in /opt/homebrew/bin, /usr/local/bin und /Applications. Ein Konto ist eine eigene Anmeldung mit eigenem Einstellungsordner.", zeilen: [
-        { id: "ki-konten", sonder: true, titel: "Programme und Konten", text: "Gefundene KI-Programme mit Pfad und Version, ihre Konten, Anmelden, Umbenennen, Entfernen und ein weiteres Konto hinzufügen.", woerter: ["konto", "programm", "anmelden", "abmelden", "neu suchen", "hinzufügen", "entfernen", "umbenennen", "claude", "codex", "cursor", "gemini", "version", "pfad", "verbinden", "mcp", "eintragen", "schnittstelle", "ordner"] },
+      { id: "konten", unter: "konten", titel: "Programme und Konten", text: "Kortex sucht im Pfad deiner Login-Shell, in /opt/homebrew/bin, /usr/local/bin und /Applications. Ein Konto ist eine eigene Anmeldung mit eigenem Einstellungsordner.", zeilen: [
+        { id: "ki-konten", sonder: true, titel: "Programme und Konten", text: "Gefundene KI-Programme mit Pfad und Version, ihre Konten, Anmelden, Umbenennen, Entfernen und ein weiteres Konto hinzufügen.", woerter: ["konto", "programm", "anmelden", "abmelden", "neu suchen", "hinzufügen", "entfernen", "umbenennen", "claude", "codex", "cursor", "gemini", "version", "pfad", "verbinden", "mcp", "eintragen", "schnittstelle", "ordner", "aktiv", "aktives konto", "aktiv setzen", "abgelaufen", "anmelden nötig"] },
       ] },
-      { id: "zugriff", titel: "Wer darf welchen Vault sehen?", text: "Jede Zelle ist die Stufe eines Kontos in einem Vault. Sperren fragt vorher nach.", zeilen: [
+      { id: "verhalten", unter: "konten", titel: "Verhalten", zeilen: [
+        { id: "ki-kontonamen", schluessel: "kiKontonamen", art: "schalter", titel: "Kontonamen vom Programm zeigen", text: "E-Mail und Tarif eines Kontos zeigt Kortex nur, wenn das Programm sie selbst nennt. Kortex liest dafür keine Dateien mit Anmeldedaten und speichert nichts davon.", woerter: ["email", "e-mail", "tarif", "plan", "identität", "name", "konto", "anzeigen", "privat"] },
+        { id: "ki-entfernen-fragen", schluessel: "kiKontoEntfernenFragen", art: "schalter", titel: "Vor dem Entfernen eines Kontos fragen", text: "Aus: „Entfernen“ legt den Ordner des Kontos sofort in den Papierkorb. Die Rückfrage hat dafür ein Häkchen „Nicht mehr fragen“.", woerter: ["entfernen", "löschen", "rückfrage", "nicht mehr fragen", "konto", "papierkorb"] },
+      ] },
+      { id: "zugriff", unter: "zugriff", titel: "Wer darf welchen Vault sehen?", text: "Jede Zelle ist die Stufe eines Kontos in einem Vault. Sperren fragt vorher nach.", zeilen: [
         { id: "ki-zugriff", sonder: true, titel: "Zugriff je Konto und Vault", text: "Gesperrt, Lesen, Posteingang oder Erweitert, je KI-Konto und Vault. Dazu die Stufe für neu gefundene Konten.", woerter: ["zugriff", "stufe", "gesperrt", "lesen", "posteingang", "erweitert", "matrix", "berechtigung", "neue konten", "sperren"] },
       ] },
-      { id: "schutz", titel: "Wie fest ist die Sperre?", text: "Drei Stufen, ehrlich benannt. Nur Claude Code kennt Stufe 2 und 3; bei anderen Programmen sperrt Kortex seine eigenen Wege.", zeilen: [
+      { id: "schutz", unter: "zugriff", titel: "Wie fest ist die Sperre?", text: "Drei Stufen, ehrlich benannt. Nur Claude Code kennt Stufe 2 und 3; bei anderen Programmen sperrt Kortex seine eigenen Wege.", zeilen: [
         { id: "ki-schutz", sonder: true, titel: "Schutz-Ampel je Claude-Konto", text: "Kortex-Wege, Leseverbot in Claude Code und Strenger Schutz (Sandbox): was die Sperre wirklich hält.", woerter: ["schutz", "ampel", "leseverbot", "sandbox", "streng", "strenger schutz", "sperre", "shell", "claude"] },
       ] },
-      { id: "frage", titel: "Frag deinen Vault", zeilen: [
+      { id: "kontingent", unter: "kontingent", titel: "Kontingent je Konto", text: "Wie viel vom 5-Stunden- und vom Wochen-Fenster verbraucht ist. Kortex fragt dafür keinen Anbieter selbst ab, die Werte kommen aus dem Programm.", zeilen: [
+        { id: "ki-kontingent", sonder: true, titel: "Kontingent je Konto", text: "Verbrauch je Konto mit Rücksetzzeit, Kontingent anzeigen oder ausschalten und bei Codex neu laden.", woerter: ["kontingent", "verbrauch", "limit", "fenster", "5 stunden", "woche", "prozent", "statuszeile", "anzeigen", "codex", "claude", "nutzung"] },
+      ] },
+      { id: "frage", unter: "pflege", titel: "Frag deinen Vault", zeilen: [
         { id: "ki-frage-konto", sonder: true, titel: "Antwortet mit", text: "Wenn du in „Frag“ nichts anderes wählst. Nur Konten, die den offenen Vault lesen dürfen.", woerter: ["frage", "frag", "standard", "konto", "antwort"] },
         { id: "ki-frage-modell", sonder: true, titel: "Gründlichkeit", text: "Schnell nutzt das kleine Modell und antwortet rasch. Gründlich nimmt ein größeres Modell.", woerter: ["frage", "modell", "schnell", "gründlich", "haiku", "sonnet"] },
       ] },
-      { id: "pflege", titel: "Pflege je Vault", text: "Einmal am Tag räumt Kortex im Hintergrund auf. Wählbar sind nur Konten mit Stufe „Erweitert“.", zeilen: [
+      { id: "pflege", unter: "pflege", titel: "Pflege je Vault", text: "Einmal am Tag räumt Kortex im Hintergrund auf. Wählbar sind nur Konten mit Stufe „Erweitert“.", zeilen: [
         { id: "ki-pflege", sonder: true, titel: "Pflege-Konto und wie viel KI", text: "Welches Konto die tägliche Pflege eines Vaults übernimmt und wie viel KI dabei mitarbeitet. Jetzt pflegen.", woerter: ["pflege", "konto", "klein", "mittel", "ohne ki", "jetzt pflegen", "tageslauf", "haiku", "sonnet"] },
       ] },
-      { id: "arbeit", titel: "Kortex bei der Arbeit", text: "Zusätzliche Eintragungen, jede nur auf deinen Klick und mit Rückweg. Die Texte sagen genau, was wo eingetragen wird.", zeilen: [
+      { id: "arbeit", unter: "pflege", titel: "Kortex bei der Arbeit", text: "Zusätzliche Eintragungen, jede nur auf deinen Klick und mit Rückweg. Die Texte sagen genau, was wo eingetragen wird.", zeilen: [
         { id: "ki-hooks", sonder: true, titel: "Claude Code: Kortex beim Arbeiten dabeihaben", text: "Trägt in die gewählten Claude-Profile kleine Helfer ein: passende Notizen beim Fragen, Schutz vor versehentlichen Änderungen am Wiki, Arbeitsstand, Statuszeile und Kortex-Befehle. Ausschalten nimmt genau das wieder heraus.", woerter: ["hooks", "claude", "profil", "statuszeile", "befehle", "settings", "eintragen"] },
         { id: "ki-git", sonder: true, titel: "Vor jedem Speichern nach Passwörtern und Schlüsseln suchen", text: "Beim Speichern einer Version prüft Kortex, ob Passwörter oder Schlüssel in den Notizen stehen, und hält das Speichern dann an. Gilt nur in diesem Vault.", woerter: ["passwort", "schlüssel", "prüfung", "speichern", "git", "commit", "hook", "secrets", "geheimnisse"] },
         { id: "ki-dienst", sonder: true, titel: "Kortex darf diesen Vault im Hintergrund aufräumen", text: "Richtet einen Dienst auf deinem Mac ein, der einmal am Tag genau diesen Vault pflegt. Ausschalten löscht ihn wieder.", woerter: ["hintergrund", "dienst", "launchagent", "tageslauf", "aufräumen", "automatik", "netzteil"] },
       ] },
-      { id: "aktivitaet", titel: "Was deine KIs zuletzt getan haben", text: "Nur über Kortex. Bleibt auf diesem Mac.", zeilen: [
+      { id: "aktivitaet", unter: "pflege", titel: "Was deine KIs zuletzt getan haben", text: "Nur über Kortex. Bleibt auf diesem Mac.", zeilen: [
         { id: "ki-aktivitaet", sonder: true, titel: "Aktivität der KIs", text: "Was eine KI über Kortex abgelegt oder geändert hat, wo sie abgewiesen wurde und was die Pflege getan hat. Eine Ablage lässt sich hier zurücknehmen.", woerter: ["aktivität", "protokoll", "abweisung", "zugriff", "verlauf", "pflege", "mitteilungen", "rückgängig", "abgelegt", "abgewiesen"] },
       ] },
-      { id: "ehrlich", titel: "Was Kortex schützt – und was nicht", zeilen: [
+      { id: "ehrlich", unter: "zugriff", titel: "Was Kortex schützt – und was nicht", zeilen: [
         { id: "ki-ehrlich", sonder: true, titel: "Was Kortex schützt – und was nicht", text: "Kortex-Wege, Claude Code, andere Programme und echte Trennung ehrlich benannt.", woerter: ["schutz", "ehrlich", "grenzen", "trennung", "sicherheit", "macos-benutzer", "selbstauskunft"] },
       ] },
     ],
@@ -351,6 +360,9 @@ export const TE = {
   // Datenschutz
   zuDenVaults: "Bei den Vaults festlegen",
   zuKonten: "Bei KI & Konten ansehen",
+  unterbereiche: "Bereich von KI & Konten",
+  imUnterbereich: (name) => `In „${name}“ öffnen`,
+  imUnterbereichTitel: (name) => `Zeigt diese Einstellungen im Bereich „${name}“`,
   // Erweitert
   imFinderZeigen: "Im Finder zeigen",
   reset: {

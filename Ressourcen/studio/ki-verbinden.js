@@ -37,12 +37,15 @@ const marke = (art) => h("span", { klasse: "kk-marke", "data-marke": art, "aria-
 
 // Der Anmeldestand eines Kontos: das Programm selbst fragen (App: Swift, `claude auth status` bzw. `codex login status`), das Ergebnis der Werkstatt melden (sie merkt sich, ob das Konto
 // früher angemeldet war → „abgelaufen“). Kortex liest nie Anmeldedaten. → { zustand: angemeldet | abgelaufen | nicht-angemeldet | unbekannt, zuletzt }
-export async function pruefeKontoAnmeldung(api, kt) {
+// identitaet: true bittet das Programm zusätzlich um E-Mail und Tarif (nur Anzeige): sie kommen NUR hier zurück, nie an die Werkstatt und nie auf die Platte.
+export async function pruefeKontoAnmeldung(api, kt, { identitaet = false } = {}) {
   try {
-    const st = await api.kiAnmeldestatus(kt.programm, kt.standard ? null : kt.pfad);
+    const st = await api.kiAnmeldestatus(kt.programm, kt.standard ? null : kt.pfad, identitaet);
     const z = st?.zustand === "angemeldet" || st?.zustand === "nicht-angemeldet" ? st.zustand : "unbekannt";
     const r = await api.kiAnmeldung(kt.id, z);
-    return { zustand: r.zustand, zuletzt: r.zuletzt || null };
+    const i = st?.identitaet && typeof st.identitaet === "object" ? st.identitaet : null;
+    const ident = z === "angemeldet" && i ? { ...(typeof i.email === "string" && i.email ? { email: i.email } : {}), ...(typeof i.plan === "string" && i.plan ? { plan: i.plan } : {}) } : null;
+    return { zustand: r.zustand, zuletzt: r.zuletzt || null, ...(ident && Object.keys(ident).length ? { identitaet: ident } : {}) };
   } catch { return { zustand: "unbekannt" }; }
 }
 
@@ -121,9 +124,10 @@ export function erzeugeKiVerbinden(o = {}) {
   const vaultName = () => o.vaultName?.() || "";
   const vaultRef = () => (vaultName() ? `„${vaultName()}“` : TKV.stufe.vaultFallback); // „Mein Vault“ oder, ohne Namen, „deinem Vault“
   const Z = {
-    geladen: false, ladeFehler: null, erkennung: {}, erkannt: false, konten: [], zugriff: {}, vaults: [], neuKonten: [], abgleichVersucht: false,
+    geladen: false, ladeFehler: null, erkennung: {}, erkannt: false, konten: [], zugriff: {}, aktiv: {}, vaults: [], neuKonten: [], abgleichVersucht: false,
     schritt: "waehlen", prog: null, konto: null, stufe: "posteingang", stufeGewaehlt: false, vorbelegt: null,
     anm: new Map(), anmeldung: null, neuOffen: false, neuEl: null, sucht: false,
+    neu: null, neuFehler: null, // ein Konto, das gerade angemeldet wird: { id, kt, name }; es ist noch ausstehend und unsichtbar, erst die bestätigte Anmeldung gibt es frei
     lauf: null, ergebnis: null, verbunden: [], pflege: null, tot: false, kontingent: null, lade: 0, busy: false, angefangen: false,
     ki: {}, // je Programm: { konto, stufe, verbunden } — für den Assistenten (Fertig-Seite, Bühne)
   };
@@ -160,7 +164,7 @@ export function erzeugeKiVerbinden(o = {}) {
   function waehleProgramm(id) {
     Z.prog = id;
     const konten = kontenVon(id);
-    Z.konto = (konten.find((k) => k.standard) || konten[0])?.id ?? null;
+    Z.konto = (konten.find((k) => k.id === Z.aktiv?.[id]) || konten.find((k) => k.standard) || konten[0])?.id ?? null; // vorgewählt: das aktive Konto des Programms (Einstellungen → Konten)
     belegeStufe();
   }
   function waehleKonto(id) { Z.konto = id; belegeStufe(); }
@@ -179,6 +183,7 @@ export function erzeugeKiVerbinden(o = {}) {
     if (kv && kv.zustand !== "ok" && !Z.abgleichVersucht) { Z.abgleichVersucht = true; try { kv = await api.kiKontenAbgleich(); } catch { /* der Ablauf geht ohne Liste weiter */ } if (Z.tot || nr !== Z.lade) return; }
     Z.konten = Array.isArray(kv?.konten) ? kv.konten : [];
     Z.zugriff = kv?.zugriff && typeof kv.zugriff === "object" ? kv.zugriff : {};
+    Z.aktiv = kv?.aktiv && typeof kv.aktiv === "object" ? kv.aktiv : {};
     Z.vaults = Array.isArray(kv?.vaults) ? kv.vaults : [];
     Z.neuKonten = Array.isArray(kv?.neu) ? kv.neu : [];
     Z.erkennung = erkennungAus(e);
@@ -332,11 +337,11 @@ export function erzeugeKiVerbinden(o = {}) {
       if (n.length > 40) { fehlerEl.textContent = TKV.konto.zuLang; fehlerEl.hidden = false; return; }
       ok.setAttribute("aria-busy", "true");
       try {
-        const r = await api.kiKontoNeu({ programm: Z.prog, name: n, stufe: "gesperrt" }); // ein neues Konto startet gesperrt: die Stufe wählst du im nächsten Schritt
+        // Schritt 1: der Ordner unter seinem endgültigen Namen, das Konto ist ausstehend (unsichtbar) (ein neues Konto startet gesperrt: die Stufe wählst du im nächsten Schritt)
+        const r = await api.kiKontoNeu({ programm: Z.prog, name: n, stufe: "gesperrt" });
         Z.neuOffen = false;
-        await lade(false);
-        const neu = r?.neuesKonto?.id && kontoMit(r.neuesKonto.id);
-        if (neu) { waehleKonto(neu.id); Z.anm.set(neu.id, { zustand: "nicht-angemeldet" }); zeichne(); melde(TKV.konto.angelegt(n)); starteAnmeldung(); }
+        const a = r?.ausstehend;
+        if (a?.id) { Z.neu = { id: a.id, name: n, kt: { id: a.id, programm: a.programm, name: n, pfad: a.pfad, standard: false } }; Z.neuFehler = null; zeichne(); starteAnmeldung(); }
       } catch (e) { ok.removeAttribute("aria-busy"); fehlerEl.textContent = e?.message || TK.fehlerAllgemein; fehlerEl.hidden = false; }
     } });
     const zu = baueKnopf({ text: TKV.konto.abbrechen, variante: "leise", groesse: "s", aktion: "konto-neu-abbrechen", aufKlick: () => { Z.neuOffen = false; zeichne(); aenderung(); } });
@@ -347,13 +352,44 @@ export function erzeugeKiVerbinden(o = {}) {
       h("div", { klasse: "kv-feld" }, h("span", { klasse: "kv-label", text: TE.ki.konto }), ordnerEl), h("p", { klasse: "mini", text: TKV.konto.ordnerText }), fehlerEl,
       h("div", { klasse: "kv-reihe-knoepfe" }, zu, ok));
   }
-  function stoppeAnmeldung() { Z.anmeldung?.stoppe(); Z.anmeldung = null; }
+  // Ein noch nicht bestätigtes neues Konto verwerfen: Abbruch, Zurück, Fenster zu — die Werkstatt entfernt das ausstehende Konto samt Ordner
+  function verwirfNeu() { const n = Z.neu; Z.neu = null; if (n) Promise.resolve(api.kiKontoAbbruch?.(n.id)).catch(() => {}); }
+  function stoppeAnmeldung() { Z.anmeldung?.stoppe(); Z.anmeldung = null; verwirfNeu(); }
+  // Der Anmeldestand eines noch nicht eingetragenen Kontos: nur das Programm fragen (die Werkstatt kennt das Konto noch nicht)
+  const pruefeNeuKonto = async (k) => {
+    try { const st = await api.kiAnmeldestatus(k.programm, k.pfad); return { zustand: st?.zustand === "angemeldet" ? "angemeldet" : "nicht-angemeldet" }; } catch { return { zustand: "unbekannt" }; }
+  };
+  // Schritt 2: die Anmeldung ist bestätigt → die Werkstatt gibt das Konto frei (der Pfad bleibt). Das Anmelden selbst (heute Terminal, mit E3 im Fenster) ist austauschbar: nur baueAnmeldung ändert sich.
+  async function schliesseNeuAb(n) {
+    try {
+      const f = await api.kiKontoFertig(n.id);
+      if (Z.neu !== n) return;
+      Z.neu = null; Z.neuFehler = null;
+      await lade(false);
+      const neu = f?.neuesKonto?.id && kontoMit(f.neuesKonto.id);
+      if (neu) { waehleKonto(neu.id); Z.anm.set(neu.id, { zustand: "angemeldet" }); pruefeKontoAnmeldung(api, neu).then((r) => { if (!Z.tot) { Z.anm.set(neu.id, r); zeichne(); } }); }
+      melde(TKV.konto.angelegt(n.name));
+    } catch (e) {
+      if (Z.neu === n) { verwirfNeu(); Z.neuFehler = e?.message || TK.fehlerAllgemein; }
+    }
+    zeichne(); aenderung();
+  }
   function starteAnmeldung() {
-    const k = aktuellesKonto(); if (!k || !ANMELDBAR.includes(k.programm)) return;
-    stoppeAnmeldung();
-    const a = Z.anmeldung = baueAnmeldung({ api, kt: k,
-      beiAngemeldet: (r) => { if (Z.anmeldung !== a) return; Z.anm.set(k.id, r); Z.anmeldung = null; zeichne(); aenderung(); },
-      beiAbbruch: () => { if (Z.anmeldung !== a) return; Z.anmeldung = null; Z.anm.set(k.id, { zustand: Z.anm.get(k.id)?.zustand === "abgelaufen" ? "abgelaufen" : "nicht-angemeldet" }); zeichne(); aenderung(); } });
+    const neu = Z.neu, k = neu ? neu.kt : aktuellesKonto(); if (!k || !ANMELDBAR.includes(k.programm)) return;
+    Z.anmeldung?.stoppe(); Z.anmeldung = null;
+    const a = Z.anmeldung = baueAnmeldung({ api, kt: k, ...(neu ? { pruefe: pruefeNeuKonto } : {}),
+      beiAngemeldet: (r) => {
+        if (Z.anmeldung !== a) return;
+        Z.anmeldung = null;
+        if (neu) { schliesseNeuAb(neu); return; }
+        Z.anm.set(k.id, r); zeichne(); aenderung();
+      },
+      beiAbbruch: () => {
+        if (Z.anmeldung !== a) return;
+        Z.anmeldung = null;
+        if (neu) { verwirfNeu(); zeichne(); aenderung(); return; }
+        Z.anm.set(k.id, { zustand: Z.anm.get(k.id)?.zustand === "abgelaufen" ? "abgelaufen" : "nicht-angemeldet" }); zeichne(); aenderung();
+      } });
     Z.anmeldung.start(); zeichne(); aenderung();
   }
   function rumpfKonto() {
@@ -365,7 +401,12 @@ export function erzeugeKiVerbinden(o = {}) {
     else teile.push(Z.neuEl ||= neuFormular()); // einmal gebaut: ein Neuzeichnen (Anmeldestand kommt) darf den getippten Namen nicht wegnehmen
     if (!Z.neuOffen) Z.neuEl = null;
     const z = anmZustand(k);
-    if (k && !Z.neuOffen) {
+    if (Z.neuFehler) teile.push(h("div", { klasse: "kv-meldung fehler", role: "alert", "data-kv": "neu-fehler" }, symbol("warnung", 14), h("span", { text: Z.neuFehler })));
+    if (Z.neu && Z.anmeldung && !Z.neuOffen) {
+      const a = Z.anmeldung;
+      teile.push(h("div", { klasse: "kv-anmelden", "data-kv": "anmelden", "data-lauf": "an", "data-neu": "ja" }, h("p", { klasse: "kv-text", text: TKE.anmeldung.dialogText }), a.liste, a.befehl, a.hinweis, a.fehlerEl,
+        h("div", { klasse: "kv-reihe-knoepfe" }, a.knoepfe.abbruch, a.knoepfe.nochmal, a.knoepfe.jetzt)));
+    } else if (k && !Z.neuOffen) {
       if (Z.anmeldung) {
         const a = Z.anmeldung;
         teile.push(h("div", { klasse: "kv-anmelden", "data-kv": "anmelden", "data-lauf": "an" }, h("p", { klasse: "kv-text", text: TKE.anmeldung.dialogText }), a.liste, a.befehl, a.hinweis, a.fehlerEl,

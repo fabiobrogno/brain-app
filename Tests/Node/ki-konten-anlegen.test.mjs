@@ -25,6 +25,12 @@ async function mitHome(home, fn) {
   const alt = process.env.HOME; process.env.HOME = home;
   try { return await fn(); } finally { process.env.HOME = alt; }
 }
+// Ein Konto anlegen heißt jetzt: Ordner .neu-<id> (konto-neu), nach bestätigter Anmeldung umbenennen und eintragen (konto-fertig). Fehler von konto-neu kommen unverändert zurück.
+const legeAn = async (rufe, daten) => {
+  const r = await rufe("POST", "/api/ki/konto-neu", daten);
+  if (r.status !== 200) return r;
+  return rufe("POST", "/api/ki/konto-fertig", { id: r.j.ausstehend.id });
+};
 function aufbau({ vaults = 2 } = {}) {
   const home = tmp("brain-home-"), s = tmp("brain-support-");
   const vs = Array.from({ length: vaults }, neuesVault);
@@ -60,7 +66,7 @@ test("Schutz-Ampel: Stufe 1 gilt immer, Stufe 2 und 3 nur bei Claude Code, Farbe
 test("Konto hinzufügen: eigener Ordner unter dem Support-Ordner (Modus 0700), nichts im Home, startet gesperrt, erscheint mit verwaltet:true", async () => {
   const a = aufbau();
   await mitHome(a.home, async () => {
-    const r = await a.rufe("POST", "/api/ki/konto-neu", { programm: "claude", name: "Kunde Müller" });
+    const r = await legeAn(a.rufe, { programm: "claude", name: "Kunde Müller" });
     assert.equal(r.status, 200, JSON.stringify(r.j));
     const k = r.j.konten.find((x) => x.id === r.j.neuesKonto.id);
     assert.equal(k.verwaltet, true); assert.equal(k.standard, false); assert.equal(k.name, "Kunde Müller");
@@ -78,15 +84,15 @@ test("Konto hinzufügen: eigener Ordner unter dem Support-Ordner (Modus 0700), n
 test("Konto hinzufügen: Anfangsstufe „Lesen“, Namen und Programme werden geprüft, gleicher Name zweimal geht nicht, gleiche Kennung bekommt eine Zahl", async () => {
   const a = aufbau();
   await mitHome(a.home, async () => {
-    const r = await a.rufe("POST", "/api/ki/konto-neu", { programm: "codex", name: "Privat", stufe: "lesen" });
+    const r = await legeAn(a.rufe, { programm: "codex", name: "Privat", stufe: "lesen" });
     assert.equal(r.status, 200);
     for (const v of a.vs) assert.equal(r.j.zugriff[r.j.neuesKonto.id][v], "lesen");
-    assert.equal((await a.rufe("POST", "/api/ki/konto-neu", { programm: "codex", name: "privat" })).status, 409);
-    assert.equal((await a.rufe("POST", "/api/ki/konto-neu", { programm: "cursor", name: "X" })).status, 400);
-    assert.equal((await a.rufe("POST", "/api/ki/konto-neu", { programm: "claude", name: "  " })).status, 400);
-    assert.equal((await a.rufe("POST", "/api/ki/konto-neu", { programm: "claude", name: "A", stufe: "erweitert" })).status, 400);
-    const x = await a.rufe("POST", "/api/ki/konto-neu", { programm: "claude", name: "Firma!" });
-    const y = await a.rufe("POST", "/api/ki/konto-neu", { programm: "claude", name: "Firma?" });
+    assert.equal((await legeAn(a.rufe, { programm: "codex", name: "privat" })).status, 409);
+    assert.equal((await legeAn(a.rufe, { programm: "cursor", name: "X" })).status, 400);
+    assert.equal((await legeAn(a.rufe, { programm: "claude", name: "  " })).status, 400);
+    assert.equal((await legeAn(a.rufe, { programm: "claude", name: "A", stufe: "erweitert" })).status, 400);
+    const x = await legeAn(a.rufe, { programm: "claude", name: "Firma!" });
+    const y = await legeAn(a.rufe, { programm: "claude", name: "Firma?" });
     assert.equal(x.status, 200); assert.equal(y.status, 200);
     assert.ok(x.j.neuesKonto.pfad.endsWith("claude-firma") && y.j.neuesKonto.pfad.endsWith("claude-firma-2"));
   });
@@ -115,7 +121,7 @@ test("Erkennung findet die eigenen Ordner wieder (Neustart), Profile und Konten,
 test("Entfernen: nur ein von Kortex angelegtes Konto, sein Ordner kommt in den Papierkorb, Eintrag und Pflege-Wahl verschwinden", async () => {
   const a = aufbau();
   await mitHome(a.home, async () => {
-    const r = await a.rufe("POST", "/api/ki/konto-neu", { programm: "claude", name: "Weg" });
+    const r = await legeAn(a.rufe, { programm: "claude", name: "Weg" });
     const id = r.j.neuesKonto.id, ordner = r.j.neuesKonto.pfad;
     writeFileSync(join(ordner, "settings.json"), "{}");
     await a.rufe("PUT", "/api/ki/zugriff", { konto: id, vault: a.vs[0], stufe: "erweitert" });
@@ -157,7 +163,7 @@ test("Verweis als Wurzel: zeigt <Support>/ki-konten-ordner auf den Benutzerordne
       const r = await rufe("POST", weg, { id: k.id });
       assert.equal(r.status, 409, weg); assert.equal(r.j.art, "nicht-verwaltet", weg);
     }
-    const neu = await rufe("POST", "/api/ki/konto-neu", { programm: "claude", name: "Neu" });
+    const neu = await legeAn(rufe, { programm: "claude", name: "Neu" });
     assert.equal(neu.status, 409); assert.equal(neu.j.art, "wurzel-link");
     assert.ok(existsSync(join(privat, "settings.json")), "nichts wurde angefasst");
     assert.equal(existsSync(join(home, ".Trash")), false);
@@ -209,7 +215,7 @@ test("Entfernen: ein Konto aus dem Home (System-Standard oder ~/.claude-…) ble
 test("Anmeldestand: „abgelaufen“ erst, wenn das Konto früher angemeldet war; der Vermerk steht in einer eigenen Datei, nie in ki-konten.json; nichts davon enthält Zugangsdaten", async () => {
   const a = aufbau();
   await mitHome(a.home, async () => {
-    const id = (await a.rufe("POST", "/api/ki/konto-neu", { programm: "claude", name: "Anm" })).j.neuesKonto.id;
+    const id = (await legeAn(a.rufe, { programm: "claude", name: "Anm" })).j.neuesKonto.id;
     let r = await a.rufe("POST", "/api/ki/anmeldung", { konto: id, zustand: "nicht-angemeldet" });
     assert.equal(r.j.zustand, "nicht-angemeldet"); assert.equal(r.j.zuletzt, null);
     r = await a.rufe("POST", "/api/ki/anmeldung", { konto: id, zustand: "unbekannt" });
@@ -234,8 +240,8 @@ test("Anmeldestand: „abgelaufen“ erst, wenn das Konto früher angemeldet war
 test("Stand der Konten trägt die Ampel: Claude mit Sperre ohne Leseverbot ist rot, andere Programme zeigen nur die Kortex-Wege", async () => {
   const a = aufbau();
   await mitHome(a.home, async () => {
-    const c = (await a.rufe("POST", "/api/ki/konto-neu", { programm: "claude", name: "Ampel" })).j.neuesKonto.id;
-    const x = (await a.rufe("POST", "/api/ki/konto-neu", { programm: "codex", name: "Codex Zwei" })).j.neuesKonto.id;
+    const c = (await legeAn(a.rufe, { programm: "claude", name: "Ampel" })).j.neuesKonto.id;
+    const x = (await legeAn(a.rufe, { programm: "codex", name: "Codex Zwei" })).j.neuesKonto.id;
     const st = await a.rufe("POST", "/api/ki/konten/abgleich");
     const kc = st.j.konten.find((k) => k.id === c), kx = st.j.konten.find((k) => k.id === x);
     assert.equal(kc.schutz.ampel.gesperrt, 2);

@@ -17,7 +17,7 @@ import { randomBytes } from "node:crypto";
 import { HttpFehler, bereinigterPfad, vorschauOrdnerAus } from "../gemeinsam/basis.mjs";
 import { starteStrom } from "../gemeinsam/prozess.mjs";
 import { findeProgramm } from "../gemeinsam/ki.mjs";
-import { stufeFuer, darfMindestens, kontoStufe } from "../gemeinsam/ki-konten.mjs";
+import { stufeFuer, darfMindestens, kontoStufe, aktivesKonto } from "../gemeinsam/ki-konten.mjs";
 import { mitProfil } from "./profile.mjs";
 
 export const MCP_NAME = "brain";
@@ -142,7 +142,10 @@ export function erzeugeFrage({ support, konten, mcpBasis, basisEnv = process.env
       }
     }
     const laufend = aktiv && !aktiv.fertig && !aktiv.endet && aktiv.vault === v.wurzel;
-    return { vault: v.name, vertraut: vertraut(v), claude: !!claudePfad(), kontenDefekt: !daten, konten: liste, laeuft: !!laufend,
+    // Das aktive Claude-Konto (ki-konten.json) ist die Vorgabe für Frag; es kommt nur vor, wenn es in diesem Vault lesen darf (sonst gibt es keinen Hinweis auf ein gesperrtes Konto).
+    const aktivId = daten ? aktivesKonto(daten, "claude") : null;
+    const aktivFrag = aktivId && liste.some((x) => x.id === aktivId && x.erlaubt) ? aktivId : null;
+    return { vault: v.name, vertraut: vertraut(v), claude: !!claudePfad(), kontenDefekt: !daten, konten: liste, aktiv: aktivFrag, laeuft: !!laufend,
       grenzen: { frageMax: G.frageMax, frist: G.frist }, modelle: Object.keys(MODELLE) };
   }
 
