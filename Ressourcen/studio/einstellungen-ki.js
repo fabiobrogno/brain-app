@@ -20,6 +20,7 @@ import { uebernehmeLokaleWahl } from "./ki-aktiv.js";
 import { TKO } from "./texte-kontingent.js";
 import { popoverOffen } from "./popover.js";
 import { baueAnmeldung, pruefeKontoAnmeldung, ANMELDBAR } from "./ki-verbinden.js";
+import { baueAnmeldungImFenster } from "./anmeldung-fenster.js";
 
 export const STUFEN = ["gesperrt", "lesen", "posteingang", "erweitert"];
 const NEUE = ["gesperrt", "lesen", "posteingang"];
@@ -509,10 +510,10 @@ export function erzeugeKi(o) {
   // derselbe wie im Schritt „Konto“ von „KI verbinden“.
   function anmeldenDialog(kt) {
     const name = `${programmName(kt.programm)} · ${kt.name}`;
-    const a = baueAnmeldung({ api, kt, pruefe: (k) => pruefeKonto(k).then(() => S.anm.get(k.id)),
+    const a = baueAnmeldungImFenster({ baueAlt: baueAnmeldung, api, kt, pruefe: (k) => pruefeKonto(k).then(() => S.anm.get(k.id)),
       beiAngemeldet: () => { setTimeout(() => d.schliessen(), 700); toast(T.anmeldung.fertig(name)); zeichne("konten"); zeichne("uebersicht"); }, beiAbbruch: () => d.schliessen() });
     S.uberwacht.add(a.stoppe);
-    const d = eigenerDialog({ titel: T.anmeldung.dialogTitel(name), satz: T.anmeldung.dialogText, rumpf: [a.liste, a.befehl, a.hinweis, a.fehlerEl],
+    const d = eigenerDialog({ titel: T.anmeldung.dialogTitel(name), satz: T.anmeldung.dialogText, rumpf: [a.panelEl, a.liste, a.befehl, a.hinweis, a.fehlerEl],
       knoepfe: [a.knoepfe.abbruch, a.knoepfe.nochmal, a.knoepfe.jetzt], beiSchliessen: () => { a.stoppe(); S.uberwacht.delete(a.stoppe); } });
     d.box.dataset.dialog = "anmelden";
     a.start();

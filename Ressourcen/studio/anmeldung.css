@@ -29,3 +29,5 @@
 .an-meldung.fehler > svg { color: var(--rot); }
 @media (prefers-reduced-motion: reduce) { .an-inhalt, .an-dreh { animation: none !important; } .an-dreh { border-top-color: var(--akzent); } }
 .an-inhalt > .knopf { align-self: flex-start; }
+.an-aus { display: none !important; }
+.an-wirt[hidden] { display: none; }

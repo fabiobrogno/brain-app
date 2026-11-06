@@ -40,7 +40,7 @@ export function erzeugeAnmelden({ konten, findeProgramm = (p) => sucheProgramm(p
     let schluessel, ordner = null, neu = null, kontoId = null, name = null;
     if (hatKonto) {
       if (typeof e.konto !== "string") throw new HttpFehler(400, "Die Konto-Kennung fehlt.");
-      const k = konten.kontoDaten(e.konto);
+      const k = konten.kontoDaten(e.konto) || (typeof konten.ausstehendDaten === "function" ? konten.ausstehendDaten(e.konto) : null); // auch ein noch ausstehendes neues Konto (E4)
       if (!k || k.programm !== e.programm) throw new HttpFehler(404, "Dieses KI-Konto gibt es nicht (mehr). Suche die Konten bitte neu.", { art: "konto" });
       kontoId = e.konto; schluessel = `k:${kontoId}`;
       ordner = k.standard === true ? null : k.ordner;

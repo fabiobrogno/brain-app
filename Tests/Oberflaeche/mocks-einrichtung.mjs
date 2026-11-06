@@ -135,7 +135,8 @@ export async function mockeEinrichtung(page, o = {}) {
       // Anmelden im Fenster (E3, anmeldung.js): z.laufPhase = "wait" (Vorgabe) | "ok" | "timeout" | "error"; Abbrechen setzt "abgebrochen"
       case "/api/ki/anmeldelauf": case "/api/ki/anmeldelauf/code": case "/api/ki/anmeldelauf/abbrechen": {
         if (pfad.endsWith("/abbrechen")) z.laufPhase = "abgebrochen";
-        const phase = z.laufPhase || "wait";
+        if (!z.laufPhase) return json(409, { fehler: "nicht gefunden", art: "nicht-gefunden", rueckfall: true }); // Vorgabe: die Werkstatt kann es im Fenster nicht → bisheriger Weg (Terminal)
+        const phase = z.laufPhase;
         return json(200, { ok: true, id: "a_test", programm: body?.programm || "codex", phase, url: "https://auth.openai.com/codex/device", code: "ABCD-12345", codeMoeglich: false, verbleibendMs: phase === "wait" ? 890000 : null, grund: phase === "timeout" ? "abgelaufen" : phase === "error" ? "programm-fehler" : null, rueckfall: phase === "error" });
       }
       case "/api/ki/anmeldung": return json(200, { zustand: body.zustand, zuletzt: null });

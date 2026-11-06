@@ -8,6 +8,7 @@
 // gehört dem Assistenten), die Willkommen-Karte (fuss: "eigen", rahmen: "karte") und die Einstellungen (Dialog, mit vorgewähltem Programm/Konto). Auch das Anmelden im Terminal
 // (baueAnmeldung) liegt hier und wird von den Einstellungen (Konto-Menü „Neu anmelden …“) mitbenutzt.
 // Gestaltung nach dem Prototyp (app.html#verbinden=1): Orca-Muster „Agent wählen“ (AgentStep.tsx @9bccd67, MIT, Lovecast Inc.), von Hand nachgebaut; kein Quelltext von Orca.
+import { baueAnmeldungImFenster } from "./anmeldung-fenster.js";
 import { h, dialog, dialogEinmalig, toast } from "./hilfen.js";
 import { api as standardApi } from "./api.js";
 import { symbol } from "./symbole.js";
@@ -377,7 +378,7 @@ export function erzeugeKiVerbinden(o = {}) {
   function starteAnmeldung() {
     const neu = Z.neu, k = neu ? neu.kt : aktuellesKonto(); if (!k || !ANMELDBAR.includes(k.programm)) return;
     Z.anmeldung?.stoppe(); Z.anmeldung = null;
-    const a = Z.anmeldung = baueAnmeldung({ api, kt: k, ...(neu ? { pruefe: pruefeNeuKonto } : {}),
+    const a = Z.anmeldung = baueAnmeldungImFenster({ baueAlt: baueAnmeldung, api, kt: k, ...(neu ? { pruefe: pruefeNeuKonto } : {}),
       beiAngemeldet: (r) => {
         if (Z.anmeldung !== a) return;
         Z.anmeldung = null;
@@ -404,12 +405,12 @@ export function erzeugeKiVerbinden(o = {}) {
     if (Z.neuFehler) teile.push(h("div", { klasse: "kv-meldung fehler", role: "alert", "data-kv": "neu-fehler" }, symbol("warnung", 14), h("span", { text: Z.neuFehler })));
     if (Z.neu && Z.anmeldung && !Z.neuOffen) {
       const a = Z.anmeldung;
-      teile.push(h("div", { klasse: "kv-anmelden", "data-kv": "anmelden", "data-lauf": "an", "data-neu": "ja" }, h("p", { klasse: "kv-text", text: TKE.anmeldung.dialogText }), a.liste, a.befehl, a.hinweis, a.fehlerEl,
+      teile.push(h("div", { klasse: "kv-anmelden", "data-kv": "anmelden", "data-lauf": "an", "data-neu": "ja" }, h("p", { klasse: "kv-text", text: TKE.anmeldung.dialogText }), a.panelEl, a.liste, a.befehl, a.hinweis, a.fehlerEl,
         h("div", { klasse: "kv-reihe-knoepfe" }, a.knoepfe.abbruch, a.knoepfe.nochmal, a.knoepfe.jetzt)));
     } else if (k && !Z.neuOffen) {
       if (Z.anmeldung) {
         const a = Z.anmeldung;
-        teile.push(h("div", { klasse: "kv-anmelden", "data-kv": "anmelden", "data-lauf": "an" }, h("p", { klasse: "kv-text", text: TKE.anmeldung.dialogText }), a.liste, a.befehl, a.hinweis, a.fehlerEl,
+        teile.push(h("div", { klasse: "kv-anmelden", "data-kv": "anmelden", "data-lauf": "an" }, h("p", { klasse: "kv-text", text: TKE.anmeldung.dialogText }), a.panelEl, a.liste, a.befehl, a.hinweis, a.fehlerEl,
           h("div", { klasse: "kv-reihe-knoepfe" }, a.knoepfe.abbruch, a.knoepfe.nochmal, a.knoepfe.jetzt)));
       } else if (z === "angemeldet") {
         teile.push(h("div", { klasse: "kv-meldung ok", role: "status", "data-kv": "angemeldet" }, symbol("kreis-haken", 14), h("span", { text: TKV.konto.angemeldetOk(k.name) })));

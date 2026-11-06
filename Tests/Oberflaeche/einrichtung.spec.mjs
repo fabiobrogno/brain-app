@@ -404,6 +404,7 @@ test.describe("KI-Schritt: eine Zeile je Programm, ein Knopf „Verbinden“", (
 
   test("Nicht angemeldet: die Anmeldung läuft im Fenster (Panel aus anmeldung.js), danach verbindet die Zeile von selbst", async ({ page }) => {
     const z = await oeffne(page, { login: { "std:codex": "nicht-angemeldet" } });
+    z.laufPhase = "wait";
     await zuKi(page);
     await verbinden(page, "codex");
     const panel = zeile(page, "codex").locator('[data-bereich="anmeldung"]');
@@ -420,6 +421,7 @@ test.describe("KI-Schritt: eine Zeile je Programm, ein Knopf „Verbinden“", (
 
   test("Rückfall „Im Terminal anmelden“: der bisherige Weg (Terminal, Abfrage im Hintergrund) übernimmt, danach verbindet die Zeile von selbst", async ({ page }) => {
     const z = await oeffne(page, { login: { "std:codex": "nicht-angemeldet" } });
+    z.laufPhase = "wait";
     await page.route("**/api/ki/anmelden", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ anzeige: "codex login" }) }));
     await zuKi(page);
     await verbinden(page, "codex");
@@ -432,6 +434,7 @@ test.describe("KI-Schritt: eine Zeile je Programm, ein Knopf „Verbinden“", (
 
   test("Läuft die Frist der Anmeldung ab, ruft sie beiAbbruch auf: die Zeile geht zurück auf „Verbinden“", async ({ page }) => {
     const z = await oeffne(page, { login: { "std:codex": "nicht-angemeldet" } });
+    z.laufPhase = "wait";
     await zuKi(page);
     await verbinden(page, "codex");
     await expect(zeile(page, "codex").locator('[data-bereich="anmeldung"]')).toBeVisible({ timeout: 6000 });
@@ -442,6 +445,7 @@ test.describe("KI-Schritt: eine Zeile je Programm, ein Knopf „Verbinden“", (
 
   test("Anmeldung abbrechen: die Zeile geht zurück auf „Verbinden“, nichts wird eingetragen", async ({ page }) => {
     const z = await oeffne(page, { login: { "std:codex": "nicht-angemeldet" } });
+    z.laufPhase = "wait";
     await zuKi(page);
     await verbinden(page, "codex");
     await expect(zeile(page, "codex").locator('[data-bereich="anmeldung"]')).toBeVisible({ timeout: 6000 });
