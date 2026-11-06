@@ -51,6 +51,7 @@ function beende() {
   beendet = true;
   // Alle Kindprozesse (auch eine laufende Frage an `claude`, samt MCP-Server) mit SIGKILL an ihre Gruppen, SYNCHRON vor dem Exit: sonst liefen sie als Waisen weiter
   // (Stdin zu, /api/stopp und Signale enden hier, die Eskalations-Timer der Frage sterben mit dem Prozess).
+  try { handler.anmelden.beendeAlle(); } catch { /* laufende Anmeldungen enden samt Ordner des neuen Kontos */ }
   try { beendeAlleProzesse(); } catch { /* beenden wir trotzdem */ }
   try { handler.ereignisse.beende(); } catch { /* wartende Ereignis-Abrufe sofort beantworten: sie halten sonst das Ende bis zu 30 s auf */ }
   process.stdout.write("", () => process.exit(0)); // Callback erst, wenn alles Vorherige geschrieben ist

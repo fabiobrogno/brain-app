@@ -495,6 +495,11 @@ Website https://orca.dev), Stand Commit `cf5b462fba8462678256b25d05cec2adb8dca41
   → `studio/einstellungen-ki.js`, `studio/ki-verbinden.js`, `studio/ki-aktiv.js`, `werkstatt/konten.mjs` (alles in JavaScript neu geschrieben, nichts kopiert). Nicht übernommen ist das Lesen von E-Mail und Tarif
   aus der Konfigurationsdatei von Claude Code: Kortex fragt dafür das Programm selbst (`claude auth status`) und liest keine Datei mit Anmeldedaten.
 
+- das Muster „Anmelden im Fenster“ (Claude: `BROWSER` zeigt auf ein kleines Skript, das nur die Adresse meldet, stdin bleibt für einen eingefügten Code offen, Frist 10 Minuten; Codex: Gerätecode und Adresse aus
+  der Ausgabe von `codex login --device-auth`, Muster `[A-Z0-9]{4,}(-[A-Z0-9]{4,})+`, Fristen 3 und 15 Minuten) nach `src/main/claude-accounts/claude-login-session.ts`,
+  `src/main/codex-accounts/codex-device-auth-prompt.ts` (Stand @239e17f; in Node neu geschrieben, nichts kopiert) → `gemeinsam/anmeldung.mjs`, `werkstatt/anmelden.mjs`, `studio/anmeldung.js`.
+  Kortex liest daraus nur die Adresse und den Gerätecode, nie Token oder Anmeldedateien.
+
 Orca ist MIT-lizenziert. Lizenztext (Copyright-Zeile wie in der Datei `LICENSE` von Orca):
 
 ```

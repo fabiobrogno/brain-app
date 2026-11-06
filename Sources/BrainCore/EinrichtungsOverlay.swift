@@ -82,11 +82,18 @@ public enum EinrichtungsOverlay {
         }
     }
 
-    /// Bei offenem Overlay öffnet `extern` nur GitHub (die Adresse des Gerätecodes kommt aus der Werkstatt, nie ungeprüft): https und Host `github.com`.
+    /// Bei offenem Overlay öffnet `extern` nur die Adressen der Anmeldung: GitHub (Gerätecode) und die Anmeldeseiten von Claude (claude.ai, claude.com, anthropic.com)
+    /// und Codex (openai.com, chatgpt.com) samt Unterdomänen — alles https, ohne Zugangsdaten und Port. Die Adresse kommt aus der Werkstatt
+    /// (`gemeinsam/anmeldung.mjs` prüft dieselben Hosts), nie ungeprüft.
     public static func externErlaubt(_ url: URL) -> Bool {
         guard url.scheme?.lowercased() == "https", let host = url.host?.lowercased() else { return false }
-        return host == "github.com" || host == "www.github.com"
+        if url.user != nil || url.password != nil || url.port != nil { return false }
+        if host == "github.com" || host == "www.github.com" { return true }
+        return anmeldeDomaenen.contains { host == $0 || host.hasSuffix("." + $0) }
     }
+
+    /// Domänen der Anmeldung bei KI-Programmen (E3, Anmelden im Fenster); Gegenstück: `HOSTS` in `Ressourcen/gemeinsam/anmeldung.mjs`.
+    static let anmeldeDomaenen = ["claude.ai", "claude.com", "anthropic.com", "openai.com", "chatgpt.com"]
 }
 
 /// Antwortformen der Aktionen `git-pruefen` und `git-installieren` (Wörterbücher für die Seite).

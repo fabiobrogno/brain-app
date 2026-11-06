@@ -21,6 +21,7 @@ import { erzeugeUmstellung } from "./umstellung.mjs";
 import { erzeugeEreignisse } from "./ereignisse.mjs";
 import { profilZuPfad, mitProfil, mitCodexHome } from "./profile.mjs";
 import { erzeugeKonten } from "./konten.mjs";
+import { erzeugeAnmelden } from "./anmelden.mjs";
 import { erzeugeFrage } from "./frage.mjs";
 import { erzeugeKontingent } from "./kontingent.mjs";
 import { erzeugeEinstellungen } from "./einstellungen.mjs";
@@ -147,6 +148,9 @@ export function erzeugeHandler(o) {
   // GET /api/ki/konten liest nur. o.kontenErkennung / o.kontenVerbunden / o.kontenHome: Ersatz für Tests (nie die echten Orte des Rechners lesen).
   const konten = erzeugeKonten({ support: vaultOpt.support || supportOrdner(), vaults: () => vaultsFn.leseVaults(optV()).vaults,
     ...(o.kontenHome ? { home: () => o.kontenHome } : {}), ...(o.kontenErkennung ? { erkennung: o.kontenErkennung } : {}), ...(o.kontenVerbunden ? { verbunden: o.kontenVerbunden } : {}) });
+
+  // Anmelden im Fenster (Paket E3, werkstatt/anmelden.mjs): Kindprozess ohne Terminal; die Antworten tragen nur Phase, Adresse, Gerätecode und Restzeit. o.anmelden = Ersatz/Einstellungen für Tests.
+  const anmelden = o.anmelden || erzeugeAnmelden({ konten, ...(o.anmeldeOptionen || {}) });
 
   // Der Eintrag bei Claude Code nennt keinen Vault: der MCP-Server folgt dem aktiven Vault aus vaults.json (Spec v2 §8).
   // Der Kern-Pfad bleibt wie er ist (kein realpath: der Symlink bin/kern ist der stabile Teil), der Paket-Pfad ist der aufgelöste (Rückfall).
@@ -459,6 +463,9 @@ export function erzeugeHandler(o) {
       }
       case "/api/ki/anmeldestatus": nur("POST"); return { zustand: "unbekannt", grund: "nur-app" };
       case "/api/ki/anmelden": nur("POST"); throw new HttpFehler(409, "Das Anmelden öffnet das Terminal und geht nur in der Kortex-App. Öffne Kortex als App und klicke dann auf „Anmelden …“.", { art: "nur-app" });
+      case "/api/ki/anmeldelauf": if (methode === "GET") return anmelden.status(q.get("id")); nur("POST"); return anmelden.start(eingabe());
+      case "/api/ki/anmeldelauf/code": { nur("POST"); const e = eingabe(); return anmelden.code(e.id, e.code); }
+      case "/api/ki/anmeldelauf/abbrechen": nur("POST"); return anmelden.abbrechen(eingabe().id);
       case "/api/ki/konto-neu": nur("POST"); return konten.legeKontoAn(eingabe());
       case "/api/ki/konto-fertig": nur("POST"); return konten.kontoFertig(eingabe());
       case "/api/ki/konto-abbruch": nur("POST"); return konten.kontoAbbruch(eingabe());
@@ -908,6 +915,7 @@ export function erzeugeHandler(o) {
     return [...k];
   }
   behandle.aktuellerVaultPfad = () => (aktuell ? aktuell.wurzel : null);
+  behandle.anmelden = anmelden; // werkstatt.mjs beendet laufende Anmeldungen beim Ende
   behandle.konten = konten; // werkstatt.mjs gleicht die Liste beim Start ab
   behandle.kontingent = kontingent;
   behandle.migrierePflege = () => migrierePflege(aktuell, { start: true }); // und übernimmt danach einmal das alte Profil der plist in die Pflege-Einstellung
