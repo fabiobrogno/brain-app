@@ -174,3 +174,15 @@
 .w-github-inhalt .w-ok { align-items: center; padding: 10px 12px; border-radius: var(--r); background: var(--gruen-weich); border: 1px solid var(--gruen-rand); font-weight: 500; }
 .w-github-inhalt .knopf { align-self: flex-start; }
 .w-github-inhalt .w-arbeit.links { padding: 2px 0; }
+
+/* ---------- Leerer Zustand ohne Vault (App): zwei Wege, drei Tastenhinweise; Maße nach Orca Landing (Prototyp „Kortex Einrichtung“) ---------- */
+.w-leer { margin: auto; max-width: 560px; display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; animation: w-karte-ein var(--d-4) var(--ease) both; }
+.w-leer-zeichen { width: 56px; height: 56px; border-radius: 16px; display: grid; place-items: center; margin-bottom: 10px; background: var(--erhoben); color: var(--text-2);
+  box-shadow: inset 0 0 0 1px var(--linie-stark), 0 1px 2px rgba(0, 0, 0, .05); }
+.w-leer h1 { margin: 0; font-size: 20px; font-weight: 620; letter-spacing: -.015em; }
+.w-leer p { margin: 0 0 14px; max-width: 38ch; color: var(--text-2); font-size: 13.5px; line-height: 1.5; text-wrap: pretty; }
+.w-leer-knoepfe { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.w-leer > .knopf.leise { margin-top: 6px; }
+.w-leer-tipps { display: flex; gap: 8px 22px; flex-wrap: wrap; justify-content: center; margin-top: 26px; color: var(--text-3); font-size: 12px; }
+.w-leer-tipps span { display: inline-flex; align-items: center; gap: 7px; }
+.w-leer-tipps kbd { font: 500 10.5px/1 var(--schrift); padding: 2px 5px; border: 1px solid var(--linie-stark); border-bottom-width: 2px; border-radius: 4px; background: var(--seite); color: var(--text-2); }

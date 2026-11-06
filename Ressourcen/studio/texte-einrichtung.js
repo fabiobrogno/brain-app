@@ -6,7 +6,7 @@ export const TE = {
   fenster: `${PRODUKT} einrichten`,
   schritte: ["Willkommen", "Vault", "Sicherung", "KI", "Fertig"],
   schrittAria: (n, name) => `Schritt ${n}: ${name}`,
-  stand: (name, n) => `${name} · ${n} von 4`,
+  stand: (n, m) => ` · ${n} von ${m}`,
   fortschrittAria: "Fortschritt",
 
   // ---------- Fußleiste
@@ -256,18 +256,18 @@ export const TE = {
     studioBusy: "Studio wird geöffnet …",
   },
 
-  // ---------- Später-Dialog
+  // ---------- Überspringen (Esc oder „Später“): kleine Rückfrage; nichts wird angelegt
   spaeterDialog: {
-    titel: "Den Rest später einrichten?",
-    mitVault: "Dein Vault ist schon da.",
-    ohneVault: `${PRODUKT} legt dann einen Vault mit Grundordnern und einer kurzen Anleitung unter ~/${PRODUKT} an.`,
-    stand: "Der Stand deines Vaults ließ sich nicht lesen. Es wurde nichts angelegt.",
-    rest: `Sicherung und KI findest du jederzeit unter ${PRODUKT} → Einrichten …`,
+    titel: "Einrichtung überspringen?",
+    satz: "Du findest sie in der Seitenleiste.",
     weiter: "Weiter einrichten",
-    ja: "Später einrichten",
-    toast: `Einrichtung später fortsetzen: ${PRODUKT} → Einrichten …`,
-    vaultFehler: "Der leere Vault ließ sich nicht anlegen. Du kannst es im Studio noch einmal versuchen.",
+    ja: "Überspringen",
+    toast: `Die Einrichtung findest du in der Seitenleiste und unter ${PRODUKT} → Einrichten …`,
   },
+
+  // ---------- Ende im Studio und Hinweise der App beim Start
+  ende: { bereit: "Dein Vault ist bereit" },
+  hinweis: { ok: "OK" },
 
   // ---------- Allgemein
   weiterTastenHinweis: "⌘ ↩",

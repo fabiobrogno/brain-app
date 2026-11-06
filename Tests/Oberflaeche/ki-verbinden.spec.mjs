@@ -10,7 +10,7 @@ import { baueVault } from "./vault.mjs";
 import { starteServer } from "./start.mjs";
 import { mockeV2 } from "./mocks.mjs";
 import { mockeVerbinden } from "./mocks-verbinden.mjs";
-import { starteStatisch, mockeEinrichtung } from "./mocks-einrichtung.mjs";
+import { starteStatisch, mockeEinrichtung, oeffneEinrichtungImStudio } from "./mocks-einrichtung.mjs";
 
 const BILDER = process.env.UI_P9_BILDER;
 if (BILDER) mkdirSync(BILDER, { recursive: true });
@@ -370,8 +370,7 @@ test("Einrichtungs-Assistent: derselbe Ablauf im Schritt „KI“ (Fußleiste de
   const stat = await starteStatisch();
   try {
     const z = await mockeEinrichtung(page, { ki: "drei", vault: { pfad: "/Users/test/Kortex", name: "Kortex" }, zugriff: { k_claude_privat: { "/Users/test/Kortex": "lesen" } } });
-    await page.goto(`${stat.url}einrichtung.html?ab=ki`);
-    await page.waitForFunction(() => window.__einrichtungBereit === true);
+    await oeffneEinrichtungImStudio(page, stat.url, z, { ab: "ki" });
     const ablauf = page.locator('.kv[data-rahmen="assistent"][data-fuss="host"]');
     await expect(ablauf).toBeVisible({ timeout: 8000 });
     await expect(page.locator(".e-ki-zeile")).toHaveCount(0); // die früheren Zeilen gibt es nicht mehr

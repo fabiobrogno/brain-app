@@ -18,6 +18,7 @@
 # solche, die älter als ein Tag sind, die Marke .kortex-vorschau tragen und zu keinem laufenden Prozess gehören (.pid). Alles andere bleibt.
 #
 # Test-Hilfen: KORTEX_VORSCHAU_PROGRAMM=<ausführbare Datei> startet diese statt der App (ohne Build, Kopie und Aufräumen im System).
+# KORTEX_VORSCHAU_LOG_KOPIE=<Datei> kopiert das App-Protokoll der Vorschau vor dem Aufräumen dorthin.
 set -euo pipefail
 
 W="$(cd "$(dirname "$0")/.." && pwd)"
@@ -94,6 +95,8 @@ beende_app() {
 # shellcheck disable=SC2329 # über trap aufgerufen
 aufraeumen() {
   beende_app
+  # Test-Hilfe: das Protokoll der App vor dem Löschen sichern (scripts/teste-vorschau.sh --app prüft daran „genau ein Studiofenster“)
+  if [ -n "${KORTEX_VORSCHAU_LOG_KOPIE:-}" ] && [ -f "$ORDNER/support/logs/app.log" ]; then cp "$ORDNER/support/logs/app.log" "$KORTEX_VORSCHAU_LOG_KOPIE" 2>/dev/null || true; fi
   if ordner_sicher "$ORDNER"; then rm -rf "$ORDNER"; fi
   if [ -z "$PROGRAMM_VORGABE" ]; then
     # Spuren, die macOS selbst unter der Vorschau-Kennung anlegt (nur diese Kennung, nie die der echten App)

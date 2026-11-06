@@ -204,8 +204,13 @@ if [ "${1:-}" = "--app" ]; then
     echo "== Einstellungen der echten App"; defaults read io.github.fbrogno.brain 2>&1 | shasum
   }
   vorher_echt="$(echt_stand)"
-  bash "$SKRIPT" --mit-ki --test-beenden-nach 8 2>"$ARBEIT/app.err"
+  KORTEX_VORSCHAU_LOG_KOPIE="$ARBEIT/app.log" bash "$SKRIPT" --mit-ki --test-beenden-nach 8 2>"$ARBEIT/app.err"
   pruefe "App-Lauf endet mit 0" "$?" "0"
+  # Ein Fenster vom ersten Start an: das Studio, darin die Einrichtung als Overlay; nie ein Assistentenfenster
+  pruefe "genau ein Fenster ging auf" "$(grep -c " fenster-auf " "$ARBEIT/app.log")" "1"
+  pruefe "das eine Fenster ist das Studio" "$(grep -c " fenster-auf studio " "$ARBEIT/app.log")" "1"
+  pruefe "kein Assistentenfenster" "$(grep -c "fenster-auf einrichtung" "$ARBEIT/app.log")" "0"
+  pruefe "die Einrichtung ist im Studio erschienen" "$(grep -c "assistent-offen automatisch=true" "$ARBEIT/app.log")" "1"
   pruefe "Vorschau-Ordner gelöscht" "$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'kortex-vorschau-*' -newer "$STUB" 2>/dev/null | head -1)" ""
   for spur in "$HOME/Library/Preferences/io.github.fbrogno.brain.vorschau.plist" "$HOME/Library/Saved Application State/io.github.fbrogno.brain.vorschau.savedState" \
               "$HOME/Library/WebKit/io.github.fbrogno.brain.vorschau" "$HOME/Library/Caches/io.github.fbrogno.brain.vorschau"; do

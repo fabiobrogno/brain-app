@@ -1,4 +1,4 @@
-// Attrappen für den Einrichtungs-Assistenten (einrichtung.html): ein statischer Server für die Dateien der Oberfläche, alle /api/-Aufrufe gemockt, und
+// Attrappen für die Einrichtung (Overlay im Studio, index.html): ein statischer Server für die Dateien der Oberfläche, alle /api/-Aufrufe gemockt, und
 // optional eine Attrappe der App (window.webkit.messageHandlers.aktion) mit den Aktionen git-pruefen, git-installieren, ordner-waehlen, extern, kopieren, einrichtung-ende.
 // Nichts davon berührt echte Nutzerorte: es gibt weder Dateien noch Prozesse.
 import { readFileSync, existsSync, statSync } from "node:fs";
@@ -54,6 +54,8 @@ export async function mockeEinrichtung(page, o = {}) {
         case "kopieren": z.zwischenablage = m.wert; return { ok: true };
         case "extern": return { ok: true };
         case "einrichtung-ende": z.ende = m.wert; return { ok: true };
+        // wie die App: sie schickt dem Studio den Befehl `einrichtung` (nie ein zweites Fenster)
+        case "einrichtung-oeffnen": z.oeffnenAnfragen = [...(z.oeffnenAnfragen || []), m.wert ?? null]; setTimeout(() => page.evaluate((o) => window.studio.befehl("einrichtung", o), m.wert ?? {}).catch(() => {}), 0); return { ok: true };
         default: return { ok: true };
       }
     });
@@ -144,4 +146,19 @@ export async function mockeEinrichtung(page, o = {}) {
     }
   });
   return z;
+}
+
+// Öffnet die Einrichtung so wie die App: das Studio (index.html) lädt zuerst — auf einem frischen Mac ohne Vault —, danach schickt die App den Befehl `einrichtung`
+// (`ab`/`weg` wie in `StudioBefehl.einrichtung(ab:weg:)`). Ein vorhandener Vault (`z.vault`) ist erst da, wenn die Einrichtung läuft (Menü ⌘E bei offenem Studio).
+// `window.__studioAlsApp`: der leere Zustand erscheint wie im App-Fenster (sonst gälte die Karte des Browsers).
+export async function oeffneEinrichtungImStudio(page, basis, z, { ab, weg, vorBefehl } = {}) {
+  const gehalten = z?.vault ?? null;
+  if (z) z.vault = null;
+  await page.addInitScript(() => { window.__studioAlsApp = true; });
+  await page.goto(basis);
+  await page.waitForFunction(() => window.__studioBereit === true);
+  if (z) z.vault = gehalten;
+  vorBefehl?.();
+  await page.evaluate((o) => window.studio.befehl("einrichtung", o), { ...(ab ? { ab } : {}), ...(weg ? { weg } : {}) });
+  await page.waitForFunction(() => window.__einrichtungBereit === true);
 }

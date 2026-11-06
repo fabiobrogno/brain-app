@@ -123,12 +123,12 @@ final class Navigation: NSObject, WKNavigationDelegate {
     /// Der WebContent-Prozess wurde beendet (Absturz, Speicherdruck): die Seite neu laden lassen (`WebAbsturzBehandlung`).
     var beiProzessEnde: (() -> Void)?
     private let oberflaeche: Oberflaeche
-    /// Wohin die Fehlerseite zurückführt (Standard: Startseite der Oberfläche; das Einrichtungsfenster: seine eigene Adresse).
+    /// Wohin die Fehlerseite zurückführt: die Startseite der Oberfläche.
     private let startURL: URL
 
-    init(oberflaeche: Oberflaeche, startURL: URL? = nil) {
+    init(oberflaeche: Oberflaeche) {
         self.oberflaeche = oberflaeche
-        self.startURL = startURL ?? oberflaeche.startURL
+        self.startURL = oberflaeche.startURL
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor aktion: WKNavigationAction) async -> WKNavigationActionPolicy {
@@ -171,13 +171,6 @@ private final class WebLaderWK: WebLader {
     func zeigeFehlerseite(startURL: URL) { web?.loadSimulatedRequest(URLRequest(url: startURL), responseHTML: SchemaAntwort.fehlerSeiteHTML) }
 }
 
-/// Fläche im Kopf des Einrichtungsfensters, die das Fenster verschiebbar macht: Die WebView schluckt Klicks in der (durchsichtigen)
-/// Titelleiste, darum liegt dieser unsichtbare Streifen über ihr und fängt sie ab. Die Seite hält dort bewusst nichts Klickbares.
-private final class ZiehStreifen: NSView {
-    override var mouseDownCanMoveWindow: Bool { true }
-    override var isOpaque: Bool { false }
-}
-
 /// Die WebView der Kortex-Fenster. Sie liegt unter der durchsichtigen Titelleiste und nimmt deren Klicks entgegen; ein Klick in die
 /// Kopfzeile eines noch nicht aktiven Fensters soll es, wie bei einer echten Titelleiste, gleich greifen (verschieben) können — darum nimmt sie
 /// dort den ersten Klick an (und nur dort: Knöpfe weiter unten brauchen weiterhin erst die Aktivierung).
@@ -190,20 +183,18 @@ final class KortexWebView: WKWebView {
 }
 
 /// Ein Kortex-Fenster (App-Spec §5.2, §7.2; Studio-Spec §9): beim Schließen werden WebView, Kanäle und Brücke beendet.
-/// Die App hat drei davon: Studio (Werkstatt-Brücke), Übersicht (Brücke des gebündelten Kerns) und „Kortex einrichten“ (Seite
-/// `einrichtung.html` der Werkstatt, eigene Brücke ohne Vault; festes Fenster ohne Titel, siehe `Art.einrichtung`).
+/// Die App hat zwei davon: Studio (Werkstatt-Brücke; die Einrichtung „Kortex einrichten“ ist ein Overlay darin, kein eigenes Fenster) und
+/// Übersicht (Brücke des gebündelten Kerns).
 @MainActor
 final class FensterSteuerung: NSObject, NSWindowDelegate {
-    enum Art { case studio, uebersicht, einrichtung }
+    enum Art { case studio, uebersicht }
 
     private let log: AppLog
     let art: Art
-    /// Der Host im brain://-Schema: Studio und Einrichtung teilen sich die Oberfläche `studio` (Werkstatt-Brücke).
+    /// Der Host im brain://-Schema: das Studio hat `studio` (Werkstatt-Brücke), die Übersicht `app` (Kern-Brücke).
     var oberflaeche: Oberflaeche { art == .uebersicht ? .app : .studio }
     private var fenster: NSWindow?
     private var webView: WKWebView?
-    /// Nur im Einrichtungsfenster: der unsichtbare Streifen im Kopf, der das Fenster verschiebbar macht.
-    private var ziehStreifen: ZiehStreifen?
     /// Platz, den die Seite links für die Ampel freihält (nach `positioniereAmpel`).
     private var ampelPlatz: CGFloat = 0
     private var navigation: Navigation?
@@ -229,7 +220,7 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
     var beiGeschlossen: (() -> Void)?
     /// Führt eine geprüfte Aktion der Oberfläche aus (Übersicht öffnen, Finder, Browser, Vault-Wechsel …) und liefert die
     /// Antwort an die Seite (nil → `null`).
-    /// Das Fenster, das die Aktion geschickt hat, kommt mit (Ordner-Dialog als Sheet am richtigen Fenster; `einrichtung-ende` nur von dort).
+    /// Das Fenster, das die Aktion geschickt hat, kommt mit (Ordner-Dialog als Sheet am richtigen Fenster).
     var beiAktion: ((AppAktion, FensterSteuerung) async -> Any?)?
     /// Der aktive Vault für die Pfadprüfung der Aktionen (nil = keiner gewählt).
     var aktuellerVault: (() -> URL?)?
@@ -237,7 +228,7 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
     private var ordnerDialog: (panel: NSOpenPanel, antwort: PanelAntwort)?
     /// Menübefehle, die noch auf die Oberfläche warten — in der Reihenfolge, in der sie kamen, jeder mit seiner Frist — und der
     /// eine Lauf, der sie abarbeitet.
-    private var wartendeBefehle: [(befehl: StudioBefehl, frist: ContinuousClock.Instant)] = []
+    private var wartendeBefehle: [(name: String, skript: String, frist: ContinuousClock.Instant)] = []
     private var befehlsAufgabe: Task<Void, Never>?
     /// So lange wartet ein Menübefehl auf eine noch nicht bereite Oberfläche (Fenster eben erst geöffnet, Seite lädt, Vault wird
     /// geöffnet); danach steht er als `befehl-verworfen` im Log.
@@ -252,14 +243,12 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
         switch art {
         case .studio: return "studio"
         case .uebersicht: return "uebersicht"
-        case .einrichtung: return "einrichtung"
         }
     }
     private var standardTitel: String {
         switch art {
         case .studio: return StudioFenster.standardTitel
         case .uebersicht: return "Übersicht"
-        case .einrichtung: return "Kortex einrichten"
         }
     }
 
@@ -269,9 +258,8 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
     /// `test`: Testschalter des Studios (Größe, Bild, Skript) — nur für das Studio, die Übersicht ignoriert sie.
     /// `fluechtig`: irgendein Testschalter ist aktiv (`StartArgumente.fluechtig`) — gilt für beide Fenster: flüchtiger Web-Speicher,
     /// keine gemerkte Fensterposition. `vorStart`: Prüfung vor jedem Start der Brücke (Kern-Brücke: ist der Kern noch bereit?).
-    /// `startURL`: nur fürs Einrichtungsfenster (Seite `einrichtung.html`, ggf. mit `?ab=`); sonst die Startseite der Oberfläche.
     func oeffne(node: URL, vault: URL?, skript: URL? = nil, kern: URL? = nil, umgebung: [String: String], arbeitsordner: URL? = nil,
-                test: StartArgumente? = nil, fluechtig: Bool = false, vorschau: Bool = false, startURL: URL? = nil,
+                test: StartArgumente? = nil, fluechtig: Bool = false, vorschau: Bool = false,
                 vorStart: (@Sendable () async -> Bool)? = nil, ki: KiRoute? = nil) {
         if let fenster {
             if fenster.isMiniaturized { fenster.deminiaturize(nil) }
@@ -299,8 +287,8 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
         }
         config.userContentController.addScriptMessageHandler(aktionsKanal, contentWorld: .page, name: "aktion")
         let web = KortexWebView(frame: NSRect(x: 0, y: 0, width: 1200, height: 800), configuration: config)
-        let ziel = startURL ?? oberflaeche.startURL
-        let navigation = Navigation(oberflaeche: oberflaeche, startURL: ziel)
+        let ziel = oberflaeche.startURL
+        let navigation = Navigation(oberflaeche: oberflaeche)
         navigation.beiGeladen = { [weak self] in self?.warteAufBereit() }
         navigation.beiFehler = { [weak self] grund in self?.log.schreibe("fenster-ladefehler \(self?.name ?? "") \(grund)") }
         web.navigationDelegate = navigation
@@ -315,20 +303,14 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
         // Seitenleiste. Die WebView fängt Klicks in der Titelleiste ab; die Seite meldet darum das Ziehen und den Doppelklick selbst
         // (Aktionen `fenster-ziehen`/`fenster-zoom`). Die Übersicht (Seite des Kerns) behält die klassische Titelleiste.
         let w: NSWindow
-        if art == .einrichtung {
-            w = baueEinrichtungsFenster(web: web)
-        } else {
-            var maske: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .resizable]
-            if oberflaeche == .studio { maske.insert(.fullSizeContentView) }
-            w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800), styleMask: maske, backing: .buffered, defer: false)
-            w.isReleasedWhenClosed = false
-            w.contentView = web
-            w.title = standardTitel
-            if oberflaeche == .studio { glas = richteGlasEin(w, web: web) }
-        }
-        if art == .einrichtung {
-            // fertig aufgebaut: Größe, Lage und Ampel stehen in `baueEinrichtungsFenster`
-        } else if oberflaeche == .studio {
+        var maske: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .resizable]
+        if oberflaeche == .studio { maske.insert(.fullSizeContentView) }
+        w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800), styleMask: maske, backing: .buffered, defer: false)
+        w.isReleasedWhenClosed = false
+        w.contentView = web
+        w.title = standardTitel
+        if oberflaeche == .studio { glas = richteGlasEin(w, web: web) }
+        if oberflaeche == .studio {
             w.titlebarAppearsTransparent = true
             w.titleVisibility = .hidden
             w.collectionBehavior.insert(.fullScreenPrimary)
@@ -381,10 +363,6 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
         ampelVorschau = vorschau ? VorschauBand.text : nil
         let skript = FensterAmpel.skript(platz: ampelPlatz, hoehe: FensterAmpel.zeile, vorschauText: ampelVorschau, glas: glas)
         web.configuration.userContentController.addUserScript(WKUserScript(source: skript, injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        if let streifen = ziehStreifen {
-            let breite = max(0, w.contentView?.bounds.width ?? 0)
-            streifen.frame = NSRect(x: ampelPlatz, y: streifen.frame.minY, width: max(0, breite - ampelPlatz), height: streifen.frame.height)
-        }
     }
     private var ampelVorschau: String?
     /// Liegt hinter der durchsichtigen WebView ein Seitenleisten-Material des Systems (Glas)? Dann ist die Seitenleiste der Seite durchsichtig.
@@ -487,39 +465,6 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
         NSApp.activate()
     }
 
-    /// Das Einrichtungsfenster: feste Größe (1200 x 780, höchstens sichtbare Fläche minus 48 je Achse), mittig, nicht skalierbar, ohne
-    /// sichtbaren Titel; die echte Ampel bleibt (Mini-/Zoom-Knopf aus). Die WebView füllt das ganze Fenster (auch unter der durchsichtigen
-    /// Titelleiste); ein unsichtbarer Streifen darüber macht das Fenster verschiebbar (ab `richteAmpelEin` rechts neben der Ampel). Eine gemerkte
-    /// Position gibt es bewusst nicht.
-    private func baueEinrichtungsFenster(web: WKWebView) -> NSWindow {
-        let flaeche = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? CGRect(origin: .zero, size: CGSize(width: 1440, height: 900))
-        let groesse = EinrichtungsFenster.groesse(sichtbar: flaeche.size)
-        let w = NSWindow(contentRect: NSRect(origin: .zero, size: groesse), styleMask: [.titled, .closable, .fullSizeContentView],
-                         backing: .buffered, defer: false)
-        w.isReleasedWhenClosed = false
-        w.title = standardTitel
-        w.titleVisibility = .hidden
-        w.titlebarAppearsTransparent = true
-        w.backgroundColor = .windowBackgroundColor
-        w.standardWindowButton(.miniaturizeButton)?.isEnabled = false
-        w.standardWindowButton(.zoomButton)?.isEnabled = false
-
-        let inhalt = NSView(frame: NSRect(origin: .zero, size: groesse))
-        inhalt.autoresizesSubviews = true
-        web.frame = inhalt.bounds
-        web.autoresizingMask = [.width, .height]
-        inhalt.addSubview(web)
-        let hoehe = EinrichtungsFenster.ziehStreifenHoehe
-        let streifen = ZiehStreifen(frame: NSRect(x: 0, y: groesse.height - hoehe, width: groesse.width, height: hoehe))
-        streifen.autoresizingMask = [.width, .minYMargin]
-        inhalt.addSubview(streifen) // über der WebView: fängt die Klicks im Kopf ab (die Ampel liegt darüber und bleibt bedienbar)
-        ziehStreifen = streifen
-        w.contentView = inhalt
-        w.setContentSize(groesse)
-        w.setFrame(FensterGeometrie.mittig(w.frame.size, in: flaeche), display: false)
-        return w
-    }
-
     /// Höchstens `AppAktion.maxFehlerJeFenster` Meldungen `fehler` je Fensterleben kommen durch; die erste darüber steht als
     /// `js-fehler gedrosselt` im Protokoll, der Rest wird verworfen. Die Seite kann sonst mit `postMessage` in einer Schleife das
     /// Protokoll wegrotieren und die Diagnosezeilen verdrängen (Review SW-7).
@@ -577,10 +522,14 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
     /// ist die Oberfläche noch nicht geladen: der Befehl wartet (höchstens `befehlsFrist`, 30 s), bis `window.studio.bereit === true`.
     /// Mehrere Befehle in kurzer Folge laufen in der Reihenfolge ihres Eintreffens; was die Frist überschreitet oder beim
     /// Schließen des Fensters noch wartet, steht als `befehl-verworfen` im Log.
-    func sende(_ befehl: StudioBefehl) {
+    func sende(_ befehl: StudioBefehl) { sende(name: befehl.rawValue, skript: befehl.skript) }
+
+    /// Wie `sende(_:)`, mit eigenem Skript für Befehle mit Angaben (`StudioBefehl.einrichtung(ab:weg:)`, Hinweise der App beim Start). `name` steht im Log.
+    /// Das Skript baut die App selbst aus festen Werten oder über JSON (`StudioHinweis`), nie aus Text der Seite.
+    func sende(name: String, skript: String) {
         guard webView != nil else { return }
         fenster?.makeKeyAndOrderFront(nil)
-        wartendeBefehle.append((befehl, ContinuousClock.now + Self.befehlsFrist))
+        wartendeBefehle.append((name, skript, ContinuousClock.now + Self.befehlsFrist))
         guard befehlsAufgabe == nil else { return } // der laufende Lauf nimmt den neuen Befehl der Reihe nach mit
         befehlsAufgabe = Task { @MainActor [weak self] in await self?.arbeiteBefehleAb() }
     }
@@ -592,14 +541,14 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
             guard let web = webView else { return }
             if ContinuousClock.now >= naechster.frist {
                 wartendeBefehle.removeFirst()
-                log.schreibe("befehl-verworfen \(naechster.befehl.rawValue) oberflaeche-nicht-bereit")
+                log.schreibe("befehl-verworfen \(naechster.name) oberflaeche-nicht-bereit")
                 continue
             }
             let bereit = try? await web.evaluateJavaScript("window.studio?.bereit === true")
             guard !Task.isCancelled else { return }
             if (bereit as? NSNumber)?.boolValue == true {
                 wartendeBefehle.removeFirst()
-                _ = try? await web.evaluateJavaScript(naechster.befehl.skript)
+                _ = try? await web.evaluateJavaScript(naechster.skript)
             } else {
                 try? await Task.sleep(for: .milliseconds(100))
             }
@@ -706,11 +655,9 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
         // app.js), soll das Bild trotzdem entstehen — es zeigt dann, was der Nutzer sähe.
         if let web = webView { starteTestlauf(web) }
         bereitAufgabe?.cancel()
-        // Einrichtung: die Seite hat kein `window.studio`; fertig geladen genügt.
         let pruefung: String
         switch art {
         case .studio: pruefung = "window.studio && document.readyState === 'complete' ? 1 : null"
-        case .einrichtung: pruefung = "document.readyState === 'complete' ? 1 : null"
         case .uebersicht: pruefung = "window.__brain && window.__brain.ladezeit ? Math.round(window.__brain.ladezeit) : null"
         }
         bereitAufgabe = Task { @MainActor [weak self] in
@@ -744,7 +691,7 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
         // Menübefehle, die noch auf die Oberfläche warteten, sind mit dem Fenster hinfällig — nicht still verschwinden lassen.
         befehlsAufgabe?.cancel()
         befehlsAufgabe = nil
-        for b in wartendeBefehle { log.schreibe("befehl-verworfen \(b.befehl.rawValue) fenster-zu") }
+        for b in wartendeBefehle { log.schreibe("befehl-verworfen \(b.name) fenster-zu") }
         wartendeBefehle.removeAll()
         // Ein offener Ordner-Dialog endet mit dem Fenster; die wartende Seite bekommt „abgebrochen“.
         if let d = ordnerDialog {
@@ -759,7 +706,6 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
             web.removeFromSuperview()
         }
         webView = nil
-        ziehStreifen = nil
         navigation = nil
         absturzBehandlung = nil
         webLader = nil

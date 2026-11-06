@@ -5,7 +5,7 @@ import { test, expect } from "./basis.mjs";
 import { baueVault } from "./vault.mjs";
 import { starteServer } from "./start.mjs";
 import { mockeV2 } from "./mocks.mjs";
-import { starteStatisch, mockeEinrichtung } from "./mocks-einrichtung.mjs";
+import { starteStatisch, mockeEinrichtung, oeffneEinrichtungImStudio } from "./mocks-einrichtung.mjs";
 
 const NOTIZ = "10_notizen/Reise nach Lissabon.md";
 const VORSCHAU = "Vorschau — nichts wird gespeichert";
@@ -188,9 +188,8 @@ test.describe("Assistent", () => {
       const setze = () => { document.documentElement.dataset.vorschau = text; };
       if (document.documentElement) setze(); else new MutationObserver((_, o) => { if (document.documentElement) { o.disconnect(); setze(); } }).observe(document, { childList: true });
     }, VORSCHAU);
-    await mockeEinrichtung(page, {});
-    await page.goto(`${statisch.url}einrichtung.html`);
-    await page.waitForFunction(() => window.__einrichtungBereit === true);
+    const z = await mockeEinrichtung(page, {});
+    await oeffneEinrichtungImStudio(page, statisch.url, z);
     const pille = page.locator(".vorschau-pille.fest");
     await expect(pille).toBeVisible();
     const p = await pille.boundingBox();
@@ -199,15 +198,17 @@ test.describe("Assistent", () => {
     expect(p.x + p.width).toBeLessThanOrEqual(1200);
   });
 
-  test("im App-Fenster füllt der Assistent das ganze Fenster (1200×780)", async ({ page }) => {
+  test("im App-Fenster liegt die Einrichtung als Karte (höchstens 1100×780, 16 px Rand) über dem Studio", async ({ page }) => {
     await page.setViewportSize({ width: 1200, height: 780 });
     await page.addInitScript(() => { window.webkit = { messageHandlers: { aktion: { postMessage: async () => ({ ok: true }) } } }; });
-    await mockeEinrichtung(page, {});
-    await page.goto(`${statisch.url}einrichtung.html`);
-    await page.waitForFunction(() => window.__einrichtungBereit === true);
+    const z = await mockeEinrichtung(page, {});
+    await oeffneEinrichtungImStudio(page, statisch.url, z);
+    await expect(page.locator("#einrichtung-host.an")).toBeVisible();
+    await page.waitForTimeout(500); // die Karte gleitet 400 ms ein
     const w = await page.locator("#win").boundingBox();
-    expect(Math.round(w.width)).toBe(1200);
-    expect(Math.round(w.height)).toBe(780);
+    expect(Math.round(w.width)).toBe(1100);
+    expect(Math.round(w.height)).toBe(748); // 780 − 2 × 16 Rand: kleiner als die Höhe der Wunschkarte
+    expect(Math.round(w.x)).toBe(50);
     await expect(page.locator(".vorschau-pille")).toHaveCount(0);
   });
 });

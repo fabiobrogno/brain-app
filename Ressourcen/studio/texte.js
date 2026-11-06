@@ -3,7 +3,9 @@ export const PRODUKT = "Kortex";
 
 export const T = {
   produkt: PRODUKT,
-  ohneVault: { titel: "Noch kein Vault", text: `Die Einrichtung führt dich in zwei Minuten zu deinem ersten Vault, mit Sicherung und KI, wenn du möchtest.`, einrichten: `${PRODUKT} einrichten …`, anderer: "Anderen Weg wählen" },
+  // Leerer Zustand ohne Vault (auch nach „Einrichtung überspringen“): zwei Wege und drei Tastenhinweise; die Einrichtung selbst bleibt als leiser Link erreichbar
+  ohneVault: { titel: "Noch kein Vault", text: "Lege einen neuen Vault an oder öffne einen Ordner mit deinen Notizen.", neu: "Neuer Vault", oeffnen: "Ordner öffnen", einrichten: `${PRODUKT} einrichten …`,
+    tipps: [["⇧⌘O", "Ordner als Vault öffnen"], ["⌘E", `${PRODUKT} einrichten`], ["⌃⌘V", "Vault wechseln"]] },
   suche: { platzhalter: "Suchen", keine: "Nichts gefunden.", zeile: "Zeile" },
   // Volltext-Suche (Ansicht „Im Vault suchen“ ⇧⌘F und Abschnitt „Im Inhalt“ der Palette): Zahlen, Filter, Hinweise
   volltext: {
@@ -63,7 +65,7 @@ export const T = {
     neuTitel: "Titel der neuen Seite", neuBereich: "Bereich im Wiki", uebernehmenOk: "Übernehmen",
     uebernehmenHinweis: "Der Text wird als eigener Abschnitt ans Ende der Seite gehängt. Die Notiz wandert ins Archiv und bleibt im Verlauf; Belege und Stand ergänzt du danach selbst.",
   },
-  seitenleiste: { neu: "Neu", merken: "Schnell merken", erfassen: "Schnell erfassen", leerBaum: "Hier liegt noch nichts.", laedt: "Lade …", neuerOrdner: "Neuer Ordner" },
+  seitenleiste: { neu: "Neu", merken: "Schnell merken", erfassen: "Schnell erfassen", leerBaum: "Hier liegt noch nichts.", laedt: "Lade …", neuerOrdner: "Neuer Ordner", einrichtung: `${PRODUKT} einrichten …` },
   vault: {
     wechseln: "Vault wechseln", oeffnen: "Vault öffnen …", neu: "Neuer Vault …", entfernen: "Aus der Liste entfernen",
     aktiv: "Aktiv", liste: "Deine Vaults", keine: "Noch keine weiteren Vaults.",

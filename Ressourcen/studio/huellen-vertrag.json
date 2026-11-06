@@ -1,0 +1,30 @@
+{
+  "_": "Hüllen-Vertrag: ALLES, was das Studio (Oberfläche, inkl. Einrichtungs-Overlay) von der Hülle um sich braucht. Das Studio ruft nur diese Aktionen auf (api.js: aktion / aktionMitAntwort), nie Swift-Details. Swift (AppAktion + AppZustand.fuehreAus) implementiert sie, eine spätere Electron-Hülle implementiert dieselben Namen mit denselben Werten und Antworten. nurBeiOffenerEinrichtung: gilt nur, solange das Overlay offen ist (EinrichtungsSitzung); sonst Antwort {ok:false, grund:\"einrichtung-nicht-offen\"}. Dazu kommen die Befehle der Hülle an das Studio (hueller-befehle). Test: Tests/Node/huellen-vertrag.test.mjs.",
+  "aktionen": [
+    { "name": "ansicht", "wert": null, "antwort": "{ok:true} | {ok:false, grund:\"kein-kit\"|\"kern-nicht-bereit\"}", "zweck": "Übersicht (Kit-Ansicht) öffnen" },
+    { "name": "ordner-zeigen", "wert": "relativer Pfad im Vault", "antwort": "{ok:true}", "zweck": "Datei im Dateimanager zeigen" },
+    { "name": "extern", "wert": "https-Adresse", "antwort": "{ok:true} | {ok:false, grund:\"adresse-nicht-erlaubt\"}", "zweck": "Im Standardbrowser öffnen; bei offener Einrichtung nur https://github.com", "einrichtungsRegel": "nur github.com" },
+    { "name": "ordner-waehlen", "wert": "{titel?, vorschlag?}", "antwort": "{pfad, breit?, notizen?, ordner?, mehr?} | null (Abbruch)", "zweck": "Ordnerwahl des Systems, als Sheet am Studiofenster" },
+    { "name": "vault-gewechselt", "wert": null, "antwort": "{ok:true}", "zweck": "Die Werkstatt hat den aktiven Vault geändert: Hülle liest ihn neu (Status, Menü); das Studio lädt ihn selbst in der Seite" },
+    { "name": "vertrauen-geaendert", "wert": null, "antwort": "{ok:true}", "zweck": "Workspace-Vertrauen geändert: Status neu lesen" },
+    { "name": "status-auffrischen", "wert": null, "antwort": "{ok:true}", "zweck": "Im Vault hat sich etwas geändert (Zähler der Menüleiste)" },
+    { "name": "titel", "wert": "Text", "antwort": "{ok:true}", "zweck": "Fenstertitel" },
+    { "name": "fehler", "wert": "{text, ort?}", "antwort": "{ok:true} | {ok:false, grund:\"gedrosselt\"}", "zweck": "JavaScript-Fehler ins App-Protokoll" },
+    { "name": "git-pruefen", "wert": null, "antwort": "{stand:\"vorhanden\"|\"fehlt\"|\"installiert\"|\"defekt\"|\"nicht-pruefbar\", version?, meldung?}", "zweck": "Ist git da? (löst nie einen Dialog aus)", "nurBeiOffenerEinrichtung": true },
+    { "name": "git-installieren", "wert": null, "antwort": "{ok, stand, meldung?}", "zweck": "Installation der Befehlszeilenwerkzeuge anstoßen (macOS); andere Plattformen: Hinweis", "nurBeiOffenerEinrichtung": true },
+    { "name": "kopieren", "wert": "einzeiliger Text, höchstens 400 Zeichen", "antwort": "{ok:true}", "zweck": "In die Zwischenablage (Gerätecode, Befehl)", "nurBeiOffenerEinrichtung": true },
+    { "name": "einrichtung-ende", "wert": "{art:\"fertig\"|\"spaeter\"}", "antwort": "{ok:true}", "zweck": "Einrichtung beendet: Hülle merkt sich den Stand; das Overlay schließt die Seite selbst", "nurBeiOffenerEinrichtung": true },
+    { "name": "einrichtung-oeffnen", "wert": "{ab?:\"vault\"|\"sicherung\"|\"ki\", weg?:\"neu\"|\"beispiel\"|\"oeffnen\"|\"klonen\"}", "antwort": "{ok:true}", "zweck": "Hülle öffnet das Overlay im selben Fenster (Befehl `einrichtung` zurück an das Studio)" },
+    { "name": "mitteilung-probe", "wert": null, "antwort": "{ok:true} | {ok:false, grund}", "zweck": "Probe-Mitteilung des Systems" },
+    { "name": "kuerzel-geaendert", "wert": null, "antwort": "{ok:true}", "zweck": "tastenkuerzel.json geändert: Menüs und globale Kürzel neu belegen" },
+    { "name": "kuerzel-global", "wert": "{id, kuerzel}", "antwort": "Prüfergebnis des globalen Kürzels", "zweck": "Globales Kürzel anmelden/prüfen" },
+    { "name": "fenster-ziehen", "wert": null, "antwort": "{ok:true}", "zweck": "Kopfzeile greifen (Fenster folgt der Maus)" },
+    { "name": "fenster-zoom", "wert": null, "antwort": "{ok:true}", "zweck": "Doppelklick auf die Kopfzeile" },
+    { "name": "darstellung", "wert": "\"hell\"|\"dunkel\"|\"system\"", "antwort": "{ok:true}", "zweck": "Fenster folgt dem Hell/Dunkel der Seite" },
+    { "name": "app-symbol", "wert": "\"standard\"|\"dunkel\"|\"graphit\"|\"papier\"|\"smaragd\"", "antwort": "{ok:true}", "zweck": "App-Symbol wählen" }
+  ],
+  "huellenBefehle": [
+    { "name": "einrichtung", "wert": "{ab?, weg?}", "zweck": "window.studio.befehl('einrichtung', …): Overlay öffnen (Menü ⌘E, Karte, erster Start)" },
+    { "name": "hinweis", "wert": "{titel, text}", "zweck": "window.studio.hinweis(…): Start-Hinweis als Banner statt Systemdialog" }
+  ]
+}

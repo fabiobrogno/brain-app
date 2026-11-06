@@ -42,18 +42,12 @@ final class AppZustand: ObservableObject {
     private var brainNode = ""
     private var rueckfragenFenster: NSWindow?
     private var rueckfragenModell: RueckfragenModell?
-    /// Assistent „Kortex einrichten“: ein Fenster mit der Web-Seite `brain://studio/einrichtung.html` und seiner eigenen
-    /// Werkstatt-Verbindung (ohne Vault, liest vaults.json). Die Seite führt durch die Schritte; Swift liefert nur git, Ordner-Dialog,
-    /// Browser, Zwischenablage und das Fenster selbst.
-    private let einrichtung: FensterSteuerung
-    /// Woher der laufende Lauf kam (beim Schließen in `einrichtung.json` gemerkt).
-    private var einrichtungHerkunft = EinrichtungsHerkunft.start
-    /// Der Vault beim Öffnen des Assistenten: Hat er sich beim Schließen geändert, muss das Studio ihn kennen lernen.
-    private var einrichtungVaultVorher: URL?
-    /// Hat der Assistent beim Start das Studio verdrängt? Dann öffnet es sich, wenn er zugeht.
-    private var einrichtungVerdraengtStudio = false
-    /// Wie der Assistent beendet wurde (`einrichtung-ende`); nil = Fenster einfach zu.
-    private var einrichtungEndeArt: EinrichtungsEnde?
+    /// Die Einrichtung „Kortex einrichten“ ist ein Overlay IM Studio (kein eigenes Fenster). Die App führt Buch darüber, ob sie offen ist: nur dann gelten die Aktionen
+    /// `git-pruefen`, `git-installieren`, `kopieren` und `einrichtung-ende` (`EinrichtungsSitzung`). Die Seite führt durch die Schritte; Swift liefert git, Ordner-Dialog,
+    /// Browser, Zwischenablage und merkt sich Anfang und Ende.
+    private var einrichtungSitzung = EinrichtungsSitzung()
+    /// Hinweise vom Start (Ordner „Brain“, Laufzeit unvollständig), die als Banner ins Studio gehen, sobald es offen ist.
+    private var startHinweise: [(titel: String, text: String)] = []
     /// Die App wird beendet: dann öffnet nichts mehr nach dem Schließen der Fenster.
     private var wirdBeendet = false
     /// Ein einziger Prüfer für git (er merkt sich, dass der Installationsdialog gerade ausgelöst wurde). In der Vorschau mit Platzhaltern.
@@ -155,7 +149,6 @@ final class AppZustand: ObservableObject {
         log = l
         studio = FensterSteuerung(log: l, art: .studio)
         uebersicht = FensterSteuerung(log: l, art: .uebersicht)
-        einrichtung = FensterSteuerung(log: l, art: .einrichtung)
         vaultVorgabe = argumente.vault
     }
 
@@ -235,18 +228,19 @@ final class AppZustand: ObservableObject {
         signal(SIGPIPE, SIG_IGN)
         try? pfade.legeAn()
         // Nach Aktionen im Fenster (Vorschlag übernehmen, Konflikt entscheiden) den Menüstatus auffrischen.
-        for f in [studio, uebersicht, einrichtung] {
+        for f in [studio, uebersicht] {
             f.beiGeschlossen = { [weak self] in Task { await self?.aktualisiere() } }
             f.beiAktion = { [weak self] aktion, von in await self?.fuehreAus(aktion, von: von) }
             f.aktuellerVault = { [weak self] in self?.vaultFrisch() }
         }
-        einrichtung.beiGeschlossen = { [weak self] in self?.einrichtungGeschlossen() }
+        // Mit dem Studio ist auch das Overlay weg: ohne Wahl beendet (die Einrichtung macht beim nächsten Start dort weiter)
+        studio.beiGeschlossen = { [weak self] in self?.einrichtungBeendet(nil); Task { await self?.aktualisiere() } }
         log.schreibe("start")
         if vorschau == nil && !argumente.fluechtig { mitteilungen.starte() } // früh: ein Klick auf eine Mitteilung startet die App
         log.schreibe(supportMigration.protokollZeile)
         if let alt = supportAltBasis,
            let text = SupportMigration.anzuzeigenderHinweis(supportMigration, alt: alt, neu: pfade.basis, merker: pfade.ordnerHinweisMerker) {
-            zeigeHinweis(titel: "Kortex: Hinweis zum Ordner „Brain“", text: text)
+            meldeStartHinweis(titel: "Kortex: Hinweis zum Ordner „Brain“", text: text)
         }
         // Testschalter (Selbstfoto): abgelehnte Werte ins Log, Erscheinungsbild gilt gleich für die ganze App.
         for hinweis in argumente.hinweise { log.schreibe(hinweis) }
@@ -263,7 +257,7 @@ final class AppZustand: ObservableObject {
             if let m = kernBereitschaft.meldung { log.schreibe("kern-nicht-bereit \(m)") }
             for meldung in ergebnis.meldungen { log.schreibe("laufzeit-fehler \(meldung)") }
             if !ergebnis.meldungen.isEmpty {
-                zeigeHinweis(titel: "Kortex: Laufzeit unvollständig", text: ergebnis.meldungen.joined(separator: "\n\n"))
+                meldeStartHinweis(titel: "Kortex: Laufzeit unvollständig", text: ergebnis.meldungen.joined(separator: "\n\n"))
             }
             laufzeitStand = .bereit
         } catch {
@@ -289,16 +283,17 @@ final class AppZustand: ObservableObject {
                 await self?.aktualisiere()
             }
         }
-        // Das Studio öffnet immer — auch ohne Vault (dann zeigt es „Willkommen“); der Status wird danach gelesen. Nur beim ersten
-        // Start auf einem Mac ohne Vault (oder nach einem abgebrochenen Assistenten) kommt zuerst der Assistent „Kortex einrichten“
-        // und das Studio nach ihm. Testläufe (Rauchtest, Selbstfoto, `--vault`) zeigen ihn nie.
-        if argumente.assistentDarfErscheinen, EinrichtungsSpeicher(pfade: pfade).sollErscheinen(hatVault: vault != nil) {
-            zeigeAssistent(automatisch: true)
-        } else {
-            oeffneStudio()
+        // Das Studio öffnet immer — auch ohne Vault (dann zeigt es den leeren Zustand); der Status wird danach gelesen. Nur beim ersten
+        // Start auf einem Mac ohne Vault (oder nach einer abgebrochenen Einrichtung) kommt im selben Studio das Overlay „Kortex einrichten“
+        // dazu. Testläufe (Rauchtest, Selbstfoto, `--vault`) zeigen es nie.
+        switch EinrichtungsStart.entscheide(darfErscheinen: argumente.assistentDarfErscheinen,
+                                            sollErscheinen: EinrichtungsSpeicher(pfade: pfade).sollErscheinen(hatVault: vault != nil)) {
+        case .studioMitEinrichtung: zeigeAssistent(automatisch: true) // dasselbe Studio, das Overlay kommt als Befehl dazu: nie ein zweites Fenster
+        case .studio: oeffneStudio()
         }
+        zeigeStartHinweise()
         if argumente.fensterOeffnen { Task { await oeffneFenster() } }
-        if let s = argumente.schliessenNach { Task { try? await Task.sleep(for: s); studio.schliesse(); uebersicht.schliesse(); einrichtung.schliesse() } }
+        if let s = argumente.schliessenNach { Task { try? await Task.sleep(for: s); studio.schliesse(); uebersicht.schliesse() } }
         if let s = argumente.beendenNach {
             // Per Timer statt Task: Bei offenem Studio wartet `terminate` in einer eigenen Schleife auf die Antwort der
             // Oberfläche (`applicationShouldTerminate` → terminateLater). Aus einem Task heraus (Block der Haupt-Warteschlange)
@@ -329,7 +324,22 @@ final class AppZustand: ObservableObject {
         return try await Task.detached { try laufzeit.installiere() }.value
     }
 
-    /// Sichtbarer Hinweis (Fehler dürfen nie still bleiben). Als eigener Task, damit der Start nicht am Fenster hängt.
+    /// Hinweis vom Start auf dem Weg der Einrichtung: ein Banner im Studio (auch vor der Einrichtung sichtbar), kein Systemdialog. Das Studio gibt es beim Aufruf noch nicht:
+    /// der Hinweis wartet in `startHinweise`, `zeigeStartHinweise` schickt ihn, sobald das Studio auf ist. Testläufe: nur ins Log.
+    private func meldeStartHinweis(titel: String, text: String) {
+        log.schreibe("hinweis \(titel)")
+        guard !argumente.fluechtig else { return }
+        startHinweise.append((titel, text))
+    }
+
+    private func zeigeStartHinweise() {
+        let liste = startHinweise
+        startHinweise = []
+        for h in liste { studio.sende(name: "hinweis", skript: StudioHinweis.skript(titel: h.titel, text: h.text)) }
+    }
+
+    /// Sichtbarer Hinweis (Fehler dürfen nie still bleiben) als Systemdialog — für alles, was nicht auf dem Weg der Einrichtung liegt (Kern nicht bereit beim Öffnen der Rückfragen).
+    /// Als eigener Task, damit der Aufrufer nicht am Fenster hängt.
     private func zeigeHinweis(titel: String, text: String) {
         log.schreibe("hinweis \(titel)")
         guard !argumente.fluechtig else { return } // Testläufe: nur ins Log, kein Modalfenster
@@ -480,20 +490,24 @@ final class AppZustand: ObservableObject {
     }
 
     /// Menübefehl (⌘N, ⌘⇧M, Vault …, Gehe zu …) an die Studio-Oberfläche; öffnet das Studio, wenn es zu ist.
-    func sende(_ befehl: StudioBefehl) {
+    func sende(_ befehl: StudioBefehl) { sende(name: befehl.rawValue, skript: befehl.skript) }
+
+    /// Wie `sende(_:)` für Befehle mit Angaben (`StudioBefehl.einrichtung(ab:weg:)`); `name` steht im Log.
+    func sende(name: String, skript: String) {
         if !studio.istOffen { oeffneStudio() }
         // Noch nicht offen (die Laufzeit wird vorbereitet): der Befehl hat keinen Empfänger — nicht still verschwinden lassen.
-        guard studio.istOffen else { log.schreibe("befehl-verworfen \(befehl.rawValue) studio-nicht-offen"); return }
-        studio.sende(befehl)
+        guard studio.istOffen else { log.schreibe("befehl-verworfen \(name) studio-nicht-offen"); return }
+        studio.sende(name: name, skript: skript)
     }
 
     /// Geprüfte Aktion aus dem Nachrichtenkanal `aktion` (Prüfung in `AppAktion`); der Rückgabewert geht als Antwort an die Seite.
-    /// `von`: das Fenster, das die Aktion geschickt hat (Ordner-Dialog als Sheet an genau diesem Fenster; `einrichtung-ende` nur von dort).
+    /// `von`: das Fenster, das die Aktion geschickt hat (Ordner-Dialog als Sheet an genau diesem Fenster).
     private func fuehreAus(_ aktion: AppAktion, von: FensterSteuerung) async -> Any? {
         let ok: [String: Any] = ["ok": true]
-        // git, Zwischenablage und „Ende“ gehören dem Einrichtungsfenster; aus dem Studio sind sie nicht vorgesehen. Und dort öffnet `extern` nur GitHub.
-        if EinrichtungsFenster.nurAusEinrichtung(aktion), von !== einrichtung { return ["ok": false, "grund": "kein-einrichtungsfenster"] as [String: Any] }
-        if case .extern(let url) = aktion, von === einrichtung, !EinrichtungsFenster.externErlaubt(url) {
+        // git, Zwischenablage und „Ende“ gelten nur, solange das Einrichtungs-Overlay im Studio offen ist (nicht mehr „aus dem Einrichtungsfenster“: es gibt keins);
+        // aus dem übrigen Studio sind sie nicht vorgesehen. Und solange es offen ist, öffnet `extern` nur GitHub.
+        if EinrichtungsOverlay.nurAusEinrichtung(aktion), von !== studio || !einrichtungSitzung.erlaubt(aktion) { return ["ok": false, "grund": "einrichtung-nicht-offen"] as [String: Any] }
+        if case .extern(let url) = aktion, !einrichtungSitzung.externErlaubt(url) {
             log.schreibe("aktion extern abgelehnt einrichtung")
             return ["ok": false, "grund": "adresse-nicht-erlaubt"] as [String: Any]
         }
@@ -555,18 +569,12 @@ final class AppZustand: ObservableObject {
             NSPasteboard.general.setString(text, forType: .string)
             return ok
         case .einrichtungEnde(let ende):
-            guard von === einrichtung, einrichtung.istOffen else { return ["ok": false, "grund": "kein-einrichtungsfenster"] as [String: Any] }
             log.schreibe("aktion einrichtung-ende \(ende.rawValue)")
-            einrichtungEndeArt = ende
-            // Die Antwort geht zuerst an die Seite; erst danach schließt das Fenster (das Schließen erledigt `einrichtungGeschlossen`).
-            Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .milliseconds(150))
-                self?.einrichtung.schliesse()
-            }
+            einrichtungBeendet(ende) // das Overlay schließt die Seite selbst und lädt den Vault in der Seite; hier bleibt nur das Gedächtnis und der Stand des Vaults
             return ok
-        case .einrichtungOeffnen(let ab):
+        case .einrichtungOeffnen(let ab, let weg):
             log.schreibe("aktion einrichtung-oeffnen")
-            zeigeAssistent(ab: ab)
+            zeigeAssistent(ab: ab, weg: weg)
             return ok
         case .mitteilungProbe:
             log.schreibe("aktion mitteilung-probe")
@@ -678,67 +686,45 @@ final class AppZustand: ObservableObject {
         NSApp.activate()
     }
 
-    // MARK: Assistent „Kortex einrichten“
+    // MARK: Einrichtung „Kortex einrichten“ (Overlay im Studio)
 
-    /// Zeigt den Assistenten (beim ersten Start von selbst, sonst über das Menü oder die Aktion `einrichtung-oeffnen`): ein Fenster mit
-    /// der Web-Seite `brain://studio/einrichtung.html` und einer eigenen Werkstatt-Verbindung ohne Vault. Sie führt dieselben Routen
-    /// aus wie das Studio und liest/schreibt dieselbe `vaults.json`. Ein offenes Fenster kommt nur nach vorn. Gibt es schon einen
-    /// aktiven Vault und ist kein Einstieg verlangt, öffnet die Seite ab der Sicherung (`?ab=sicherung`).
-    func zeigeAssistent(automatisch: Bool = false, ab: EinrichtungsEinstieg? = nil) {
-        if einrichtung.istOffen {
-            einrichtung.nachVorn()
-            return
-        }
-        guard let node, let skript = werkstattSkript else {
-            // Ohne Laufzeit gibt es nichts, womit der Assistent arbeiten könnte.
+    /// Öffnet die Einrichtung (beim ersten Start von selbst, sonst über das Menü ⌘E, die Karte ohne Vault, die Seitenleiste oder die Aktion `einrichtung-oeffnen`): das Studio kommt
+    /// nach vorn (und öffnet, wenn es zu ist), und die Seite bekommt den Befehl `einrichtung` — nie ein zweites Fenster. Sie führt dieselben Routen aus wie das übrige Studio.
+    /// Ein schon offenes Overlay bekommt den Befehl noch einmal und kommt dadurch nur nach vorn. Gibt es schon einen aktiven Vault und ist kein Einstieg verlangt, beginnt die Seite
+    /// bei der Sicherung (`ab: .sicherung`).
+    func zeigeAssistent(automatisch: Bool = false, ab: EinrichtungsEinstieg? = nil, weg: EinrichtungsWeg? = nil) {
+        guard node != nil, werkstattSkript != nil else {
+            // Ohne Laufzeit gibt es nichts, womit die Einrichtung arbeiten könnte.
             log.schreibe("assistent-nicht-moeglich laufzeit-fehlt")
             zeigeEinrichtung()
             return
         }
-        einrichtungHerkunft = automatisch ? .start : .menue
-        einrichtungVaultVorher = vaultFrisch()
-        einrichtungVerdraengtStudio = automatisch
-        einrichtungEndeArt = nil
-        // Das Gedächtnis des Assistenten steht ab dem Öffnen da: wird er mittendrin beendet, macht er beim nächsten Start dort weiter.
-        let gedaechtnis = EinrichtungsSpeicher(pfade: pfade)
-        try? gedaechtnis.speichere(EinrichtungsFenster.datei(nach: nil, vorher: gedaechtnis.lade(), herkunft: einrichtungHerkunft))
-        let url = EinrichtungsFenster.url(ab: ab ?? (einrichtungVaultVorher != nil ? .sicherung : nil))
-        log.schreibe("assistent-offen automatisch=\(automatisch)")
-        einrichtung.oeffne(node: node, vault: nil, skript: skript, umgebung: werkstattUmgebung, arbeitsordner: pfade.basis,
-                           fluechtig: argumente.fluechtig, vorschau: vorschau != nil, startURL: url)
+        let vorher = vaultFrisch()
+        if einrichtungSitzung.oeffne(automatisch: automatisch, vaultVorher: vorher) {
+            // Das Gedächtnis steht ab dem Öffnen da: wird die Einrichtung mittendrin beendet, macht sie beim nächsten Start dort weiter.
+            let gedaechtnis = EinrichtungsSpeicher(pfade: pfade)
+            try? gedaechtnis.speichere(EinrichtungsOverlay.datei(nach: nil, vorher: gedaechtnis.lade(), herkunft: einrichtungSitzung.herkunft))
+            log.schreibe("assistent-offen automatisch=\(automatisch)")
+        } else {
+            log.schreibe("assistent-nach-vorn")
+        }
+        let einstieg = ab ?? (weg == nil && vorher != nil ? .sicherung : nil)
+        sende(name: StudioBefehl.einrichtung.rawValue, skript: StudioBefehl.einrichtung(ab: einstieg, weg: weg))
     }
 
-    /// Der Assistent ist zu (`einrichtung-ende`, rotes X oder ⌘W): Stand in `einrichtung.json` merken (nur „Später“ schaltet das
-    /// automatische Erscheinen ab; ein einfach geschlossenes Fenster macht beim nächsten Start weiter) und das Studio muss den neuen
-    /// Vault kennen — es hat seine Werkstatt mit dem alten Stand gestartet, also neu öffnen, wenn sich der Vault geändert hat.
-    private func einrichtungGeschlossen() {
-        let ende = einrichtungEndeArt
-        einrichtungEndeArt = nil
-        let verdraengt = einrichtungVerdraengtStudio
-        einrichtungVerdraengtStudio = false
-        let vaultVorher = einrichtungVaultVorher
-        einrichtungVaultVorher = nil
+    /// Die Einrichtung ist zu (`einrichtung-ende`, oder das Studio wurde geschlossen: `ende` nil): Stand in `einrichtung.json` merken (nur „Später“ schaltet das automatische
+    /// Erscheinen ab; ohne Wahl macht sie beim nächsten Start weiter) und die App muss den neuen Vault kennen. Das Studio selbst lädt den Vault in der Seite (kein Schließen und Öffnen des Fensters).
+    private func einrichtungBeendet(_ ende: EinrichtungsEnde?) {
+        guard let lauf = einrichtungSitzung.beende() else { return }
         let speicher = EinrichtungsSpeicher(pfade: pfade)
         do {
-            try speicher.speichere(EinrichtungsFenster.datei(nach: ende, vorher: speicher.lade(), herkunft: einrichtungHerkunft, vaultAktiv: vaultFrisch() != nil))
+            try speicher.speichere(EinrichtungsOverlay.datei(nach: ende, vorher: speicher.lade(), herkunft: lauf.herkunft, vaultAktiv: vaultFrisch() != nil))
         } catch {
             log.schreibe("einrichtung speichern-fehlgeschlagen \(error.localizedDescription)")
         }
         log.schreibe("assistent-zu ende=\(ende?.rawValue ?? "keins")")
-        Task { await aktualisiere() }
         guard !wirdBeendet else { return }
-        let geaendert = !Self.gleich(vaultVorher, vaultFrisch())
-        if geaendert { vaultGewechselt() }
-        Task {
-            if geaendert, studio.istOffen {
-                // Ungespeicherte Eingaben im Studio zuerst sichern lassen (wie bei ⌘Q); sagt der Nutzer „nein“, bleibt es offen.
-                guard await studio.darfSchliessen() else { return }
-                studio.schliesse()
-                oeffneStudio()
-            } else if !studio.istOffen, ende != nil || verdraengt {
-                oeffneStudio()
-            }
-        }
+        if !Self.gleich(lauf.vaultVorher, vaultFrisch()) { vaultGewechselt() } else { Task { await aktualisiere() } }
     }
 
     /// Vor ⌘Q: das Studio sichert zuerst seine Eingaben (siehe `FensterSteuerung.darfSchliessen`).
@@ -764,7 +750,6 @@ final class AppZustand: ObservableObject {
         kuerzel.beende()
         studio.schliesse()
         uebersicht.schliesse()
-        einrichtung.schliesse()
         rueckfragenFenster?.close()
     }
 }

@@ -126,8 +126,8 @@ Ein Befehl zeigt Kortex so, wie es jemand sieht, der es gerade installiert hat �
 
 Das Skript legt `$TMPDIR/kortex-vorschau-XXXX` an, startet eine Kopie der App unter eigener Kennung `io.github.fbrogno.brain.vorschau`
 (eigene Einstellungen, eigener Web-Speicher, Sparkle aus) mit `--vorschau <Ordner>` und löscht Ordner und Spuren der Kennung nach dem Ende
-(Beenden, Strg-C, Schließen des Terminals). Der Assistent „Kortex einrichten“ erscheint wie bei einem frischen Nutzer; ein Band
-„Vorschau — nichts wird gespeichert“ steht in jedem Fenster, im Menü und im Titel des Assistenten.
+(Beenden, Strg-C, Schließen des Terminals). Die Einrichtung „Kortex einrichten“ erscheint wie bei einem frischen Nutzer, als Overlay im Studio (siehe „Ein Fenster“);
+ein Band „Vorschau — nichts wird gespeichert“ steht in jedem Fenster und im Menü.
 
 Was umgeleitet ist (`VorschauModus`, Swift; `KORTEX_VORSCHAU`, Node):
 - Application Support → `<Ordner>/support`. HOME, `CFFIXED_USER_HOME`, `XDG_*`, `TMPDIR`, `CODEX_HOME` aller Kindprozesse → `<Ordner>/home` bzw. `tmp`.
@@ -142,6 +142,22 @@ Tests: `swift test --filter Vorschau` (Pfade, Umgebung, Platzhalter, Ende-zu-End
 „echtes“ HOME), `Tests/Node/vorschau.test.mjs`, `Tests/Node/vorschau-frage.test.mjs`, `Tests/Oberflaeche/vorschau-frage.spec.mjs`, `scripts/teste-vorschau.sh` (Skript, Signale, Aufräumen) und
 `scripts/teste-vorschau.sh --app` (echte App; prüft nur lesend, dass im echten Benutzerordner nichts neu oder anders ist).
 Wer weitere Orte einführt (neue Ordner unter `~`, Keychain, LaunchAgents), muss sie hier umlenken oder in der Vorschau abschalten.
+
+## Ein Fenster: die Einrichtung ist ein Overlay im Studio
+Das Studio ist das einzige Hauptfenster, vom ersten Start an (Plan: `docs/plaene/einrichtung-und-konten-wie-orca.md`, Paket E1). „Kortex einrichten“ ist kein eigenes `NSWindow` mehr, sondern `#einrichtung-host` im Studio
+(`studio/einrichtung.js`, Anbindung in `studio/einrichtung-studio.js`): Der Rest des Studios ist dahinter `inert` und abgedunkelt, ein Zieh-Streifen (32 px) greift das Fenster.
+- Öffnen: Menü „Kortex einrichten …“ (⌘E), Karte „Noch kein Vault“, Seitenleiste und Aktion `einrichtung-oeffnen` gehen alle über `AppZustand.zeigeAssistent`; die App holt das Studio nach vorn (öffnet es, wenn es zu ist) und schickt den
+  Befehl `StudioBefehl.einrichtung(ab:weg:)` (`window.studio.befehl('einrichtung', {ab, weg})`, beide Werte aus festen Listen). Beim ersten Start entscheidet `EinrichtungsStart.entscheide` (nie ein Assistentenfenster).
+- Rechte: `git-pruefen`, `git-installieren`, `kopieren` und `einrichtung-ende` gelten nur, solange das Overlay offen ist (`EinrichtungsSitzung`, nicht mehr „aus dem Einrichtungsfenster“); `extern` öffnet dann nur GitHub.
+  Die Sitzung endet mit `einrichtung-ende` oder wenn das Studio zugeht (ohne Wahl: die Einrichtung macht beim nächsten Start weiter).
+- Ende: Das Overlay geht zu, das Studio lädt den Vault in der Seite (`ladeAlles`; offene Eingaben werden vor dem Öffnen gesichert), das Zeichen wandert in die Seitenleiste (280 ms, bei reduzierter Bewegung sofort), Hinweis „Dein Vault ist bereit“.
+  „Später“/Esc → Rückfrage „Einrichtung überspringen?“ (400 ms Sperre und `e.repeat`-Schutz gegen gehaltene Tasten) legt NICHTS an; ohne Vault zeigt das Studio den leeren Zustand („Neuer Vault“ · „Ordner öffnen“).
+- Start-Hinweise der App (Ordner „Brain“ umbenannt, Laufzeit unvollständig) sind Banner im Studio (`window.studio.hinweis`, `#hinweis-host`), keine Systemdialoge. Systemdialoge (`NSAlert`) bleiben nur für „Kern nicht bereit“ beim Öffnen der Rückfragen und
+  „Änderungen nicht gespeichert“ beim Schließen (beide nicht auf dem Weg der Einrichtung).
+- Hüllen-Vertrag: `Ressourcen/studio/huellen-vertrag.json` beschreibt in EINER Datei alles, was das Studio von der Hülle braucht (Aktion, Wert, Antwort, Rechte „nur bei offenem Overlay“, dazu die Befehle `einrichtung` und `hinweis`).
+  Das Studio ruft nur diese Aktionen auf; Swift implementiert sie, eine spätere Electron-Hülle (Windows/Linux) dieselben. Test: `Tests/Node/huellen-vertrag.test.mjs` (Studio-Aufrufe, Swift-Namen und Rechte gegen die Liste).
+- Tests: `Tests/Oberflaeche/ein-fenster.spec.mjs` und `einrichtung.spec.mjs` (Attrappe der App: `mocks-einrichtung.mjs`, `oeffneEinrichtungImStudio`), `Tests/BrainCoreTests/EinrichtungsFensterTests.swift` (Startentscheidung, Rechte, Befehl),
+  `scripts/rauchtest.sh` Phase E und `scripts/teste-vorschau.sh --app` (genau ein `fenster-auf studio` im Log, nie `fenster-auf einrichtung`).
 
 ## Konflikt beim Abgleich (zwei Geräte)
 Datenfluss: Die Hintergrund-Sicherung des Kerns (`kern/backup.mjs#abgleichen`) holt vor dem Senden, nimmt bei einem Konflikt ihre Zusammenführung zurück und vermerkt ihn im

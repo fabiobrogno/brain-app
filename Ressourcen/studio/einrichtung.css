@@ -1,40 +1,50 @@
-/* Kortex Einrichtungs-Assistent (einrichtung.html / einrichtung.js): ein Fenster, links die Schritte, rechts die Bühne, die den Kortex Schritt für Schritt aufbaut.
+/* Kortex Einrichtung (einrichtung.js): ein Overlay im Studio (`#einrichtung-host`, Studio dahinter `inert` und abgedunkelt), links die Schritte, rechts die Bühne, die den Kortex Schritt für Schritt aufbaut.
    Nur Tokens aus studio.css (Design-System v2, Paket P1) und die Bausteine aus bausteine.css; eigene Klassen mit Präfix e-.
    Herkunft der Gestaltungswerte und Muster (Einrichtung: Balken-Stepper, Fußleiste mit Tastenchip, „Erkannt zuerst“, Auswahlkarten mit Haken, Layout-Wechsel 760 ms,
    Auf-/Zuklappen 180 ms, Text-Schimmer): Orca (https://github.com/stablyai/orca, MIT, Copyright (c) 2026 Lovecast Inc., gelesen am Commit 9bccd67):
    src/renderer/src/components/onboarding/{OnboardingFlow,OnboardingFooter,AgentStep,ThemeStep}.tsx, assets/main.css, assets/text-shimmer.css (dort aus shadcn/ui, MIT)
    — von Hand nachgebaut, kein Quelltext kopiert. Eigen: die Bühne (Konstellation um das App-Zeichen), die selbstzeichnende Windung, der Gerätecode in Kacheln.
-   Siehe THIRD-PARTY-NOTICES.md und docs/plaene/design-wizards.md. Bewegung: prefers-reduced-motion schaltet alles bis auf Farbwechsel ab (Ende der Datei). */
+   Overlay (Abdunkelung mit 3 px Unschärfe, Karte 16 px Radius, Zieh-Streifen 32 px, Pillen, Fußleiste) nach Orca @239e17f (src/renderer/src/components/{AppRootSurfaces,onboarding/OnboardingFlow}.tsx), von Hand nachgebaut.
+   Siehe THIRD-PARTY-NOTICES.md und docs/plaene/design-wizards.md, docs/plaene/einrichtung-und-konten-wie-orca.md. Bewegung: prefers-reduced-motion schaltet alles bis auf Farbwechsel ab (Ende der Datei). */
 :root {
   --e-buehne: light-dark(#f6f6f7, #0f0f10);
   --e-ring: color-mix(in srgb, var(--akzent) 38%, transparent);
   --e-warn-text: light-dark(color-mix(in srgb, #ca8a04 70%, #0a0a0a), #eab308);
   --e-punkte: light-dark(rgba(0, 0, 0, .075), rgba(255, 255, 255, .06));
-  --e-fenster-schatten: 0 0 0 .5px light-dark(rgba(0, 0, 0, .22), rgba(255, 255, 255, .14)), 0 34px 90px light-dark(rgba(20, 16, 60, .28), rgba(0, 0, 0, .7)), 0 10px 28px light-dark(rgba(0, 0, 0, .10), rgba(0, 0, 0, .4));
   --e-tisch-1: light-dark(#efedff, #1b1838);
   --e-tisch-2: light-dark(#e3e6f3, #121426);
   --e-tisch-3: light-dark(#e9e9ee, #050507);
-  --e-schreibtisch: radial-gradient(1200px 700px at 18% 10%, var(--e-tisch-1) 0%, transparent 60%), radial-gradient(900px 700px at 90% 100%, var(--e-tisch-2) 0%, transparent 60%), var(--e-tisch-3);
+  --e-abdunkeln: light-dark(rgba(8, 8, 14, .42), rgba(0, 0, 0, .56));
+  --e-karte-schatten: 0 30px 90px -16px light-dark(rgba(20, 16, 60, .45), rgba(0, 0, 0, .75)), 0 0 0 1px var(--linie-stark);
   --e-d-schritt: 460ms;
 }
 
 /* ================= Einrichtungs-Assistent ================= */
-body.e-seite { background: var(--e-schreibtisch); display: grid; place-items: center; height: 100vh; }
+#einrichtung-host { position: fixed; inset: 0; z-index: 80; display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); place-items: center; padding: 16px; overflow: clip;
+  background: var(--e-abdunkeln); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); opacity: 0; transition: opacity var(--d-3) ease; }
+#einrichtung-host[hidden] { display: none; }
+#einrichtung-host.an { opacity: 1; }
+/* Zieh-Streifen: in der obersten Zeile greift das Fenster (fenster.js meldet es der App); die Ampel liegt links darüber */
+.e-zieh { position: absolute; left: 0; right: 0; top: 0; height: max(32px, var(--ampel-hoehe, 0px)); }
+/* Dialoge, Menüs und Hinweise liegen vor dem Overlay (sonst wären sie dahinter unsichtbar) */
+body[data-einrichtung] #dialog-host { z-index: 90; }
+body[data-einrichtung] #menue-host { z-index: 91; }
+body[data-einrichtung] #toast-host { z-index: 92; }
+body[data-einrichtung] #dialog-host .schleier { align-items: center; padding-top: 0; }
+body[data-einrichtung] #dialog-host .dialog { width: min(400px, calc(100vw - 32px)); }
+body[data-einrichtung] #dialog-host .dialog-rumpf:empty { display: none; }
+body[data-einrichtung] #dialog-host .dialog > .dialog-satz { padding-bottom: 18px; }
 
 /* Fenster (Orca OnboardingFlow: rounded-xl, border, bg-card, Schatten; Breitenwechsel 760ms cubic-bezier(.22,1,.36,1)) */
 .e-win {
   --col: 476px;
-  position: relative; width: min(1200px, calc(100vw - 48px)); height: min(780px, calc(100vh - 48px));
+  position: relative; width: min(1100px, 100%); height: min(780px, 100%);
   display: grid; grid-template-columns: var(--col) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
-  border-radius: 14px; background: var(--erhoben); box-shadow: var(--e-fenster-schatten); overflow: hidden;
-  transition: grid-template-columns var(--d-layout) var(--ease-flow);
+  border-radius: 16px; background: var(--erhoben); box-shadow: var(--e-karte-schatten); overflow: hidden;
+  transform: translateY(8px) scale(.985); transition: grid-template-columns var(--d-layout) var(--ease-flow), transform var(--d-4) var(--ease-flow);
 }
+#einrichtung-host.an .e-win { transform: none; }
 .e-win[data-step="0"] { --col: 0px; }
-.e-ampel { position: absolute; top: 16px; left: 16px; display: flex; gap: 8px; z-index: 30; }
-.e-ampel i { width: 12px; height: 12px; border-radius: 50%; background: #ff5f57; box-shadow: inset 0 0 0 .5px rgba(0,0,0,.2); }
-.e-ampel i:nth-child(2) { background: #febc2e; }
-.e-ampel i:nth-child(3) { background: #28c840; }
-.e-win:not(:focus-within) .e-ampel i { filter: none; }
 
 /* ---------- linke Spalte ---------- */
 .e-spalte { min-width: 0; overflow: hidden; border-right: 1px solid var(--linie); background: var(--erhoben); }
@@ -334,11 +344,6 @@ body.e-seite { background: var(--e-schreibtisch); display: grid; place-items: ce
 .e-taste .e-k { display: flex; gap: 3px; }
 .e-taste span { font-size: 12px; color: var(--text-2); }
 
-/* Übergang „Studio öffnen“ */
-.e-win.oeffnet { --col: 0px; }
-.e-win.oeffnet .e-spalte, .e-win.oeffnet .e-knoten:not(.e-vault), .e-win.oeffnet .e-linien, .e-win.oeffnet .e-vault-schild { opacity: 0; transition: opacity var(--d-3); }
-.e-win.oeffnet .e-vault { --y: 50; --s: 9; opacity: 0; transition: transform var(--d-5) var(--ease-in) 250ms, opacity var(--d-4) 600ms, top var(--d-layout) var(--ease-flow); }
-
 @media (max-height: 760px) { .e-pane h1 { font-size: 25px; } .e-pane .e-koerper { margin-top: 18px; gap: 14px; } .e-weg-bild { height: 54px; } }
 
 /* ---------- gemeinsame Kleinteile (im Prototyp in basis.css) ---------- */
@@ -370,11 +375,6 @@ body.e-seite { background: var(--e-schreibtisch); display: grid; place-items: ce
 .knopf.e-aus { visibility: hidden; }
 .e-schalter-bild { margin-top: 2px; }
 .e-seite-text { -webkit-user-select: text; user-select: text; }
-
-/* ---------- im App-Fenster: das Fenster ist die Karte (kein Schreibtisch, keine Ecken, kein Schatten) ---------- */
-html.e-app body.e-seite { display: block; background: var(--erhoben); }
-html.e-app .e-win { width: 100vw; height: 100vh; border-radius: 0; box-shadow: none; }
-html.e-app .e-ampel { display: none; }
 
 /* ---------- reduzierte Bewegung: nichts gleitet, nichts kreist, nichts schimmert; Farbwechsel bleiben ---------- */
 @media (prefers-reduced-motion: reduce) {
@@ -411,15 +411,10 @@ html.e-app .e-ampel { display: none; }
 .e-zusammen .e-z .knopf { flex: none; }
 .e-doch { margin-top: 6px; }
 .e-erneut { margin-top: 6px; }
-.e-win #toast-host { position: absolute; right: 16px; bottom: 16px; z-index: 80; }
 .e-windung-punkt { stroke-width: 30; }
 .e-stepper .e-windung { margin: -10px 0; }
 .e-spalte-innen > .e-stepper { width: 100%; }
 .e-gh .marken-logo { color: inherit; }
-.e-win #dialog-host .schleier { align-items: center; padding-top: 0; z-index: 90; }
-.e-win .dialog { width: min(400px, calc(100% - 32px)); }
-.e-win .dialog-rumpf:empty { display: none; }
-.e-win .dialog > .dialog-satz { padding-bottom: 18px; }
 .e-ki-hinweis { display: grid; justify-items: start; gap: 8px; }
 .e-ki-hinweis[hidden] { display: none; }
 .e-ki-neu { display: grid; justify-items: start; gap: 8px; }
@@ -428,3 +423,13 @@ html.e-app .e-ampel { display: none; }
 .e-zusatz[hidden] { display: none; }
 .e-zusatz-zeile > div, .e-konfig-zeile > div { display: grid; gap: 4px; }
 .e-ki-konfig { margin-top: 2px; }
+
+/* ---------- Ende im Studio: das Zeichen der Bühne wandert in die Seitenleiste (280 ms); Hinweise der App beim Start ---------- */
+.e-flug { position: fixed; z-index: 95; margin: 0; pointer-events: none; transform-origin: 0 0; transition-property: transform; transition-timing-function: var(--ease-out); animation: none !important; }
+#hinweis-host { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); z-index: 93; display: flex; flex-direction: column; gap: 8px; width: min(560px, calc(100vw - 32px)); pointer-events: none; }
+.start-hinweis { pointer-events: auto; display: flex; align-items: flex-start; gap: 12px; padding: 12px 12px 12px 14px; border: 1px solid var(--gelb-rand); border-radius: var(--r-l);
+  background: color-mix(in srgb, var(--gelb) 12%, var(--erhoben)); box-shadow: var(--schatten-float); font-size: 13px; animation: toast-ein var(--d-2) var(--ease-out) both; }
+.start-hinweis > .sym { flex: none; margin-top: 2px; color: var(--gelb); }
+.start-hinweis-text { flex: 1; min-width: 0; }
+.start-hinweis-text p { margin: 2px 0 0; color: var(--text-2); white-space: pre-line; overflow-wrap: anywhere; }
+.start-hinweis > .knopf { flex: none; }
