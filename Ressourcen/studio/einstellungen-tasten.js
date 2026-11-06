@@ -194,7 +194,7 @@ export function erzeugeTasten(o = {}) {
     const feld = h("button", { type: "button", klasse: "kz-feld", "data-kuerzel": id, "aria-describedby": null, aufClick: () => starteAufnahme(id) });
     const zurueck = baueKnopf({ symbol: "zuruecksetzen", variante: "leise", groesse: "s", label: T.zurueck(b.name), titel: T.zurueckTitel, hidden: true, klasse: "kz-zurueck", daten: { "data-aktion": "kz-zurueck" }, aufKlick: () => uebernehme(id, STANDARD) });
     const doppelt = einstellMarke(T.doppelt, "warn"); doppelt.hidden = true; doppelt.dataset.marke = "doppelt";
-    const global = b.global ? einstellMarke(T.global) : null;
+    const global = b.global && o.inApp ? einstellMarke(T.global) : null; // „Überall“ gibt es nur in der App (kein Systemkürzel im Browser)
     if (global) { global.title = T.globalTitel; global.dataset.marke = "global"; }
     const meldung = h("div", { klasse: "kz-meldung", hidden: true, "data-meldung": id });
     S.zeilen.set(id, { feld, zurueck, doppelt, meldung, zeile: null });

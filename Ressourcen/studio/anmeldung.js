@@ -12,7 +12,7 @@
 // Die Oberfläche sieht nur Adresse und Gerätecode, nie Token oder Dateien des Logins.
 import { h } from "./hilfen.js";
 import { knopf, textfeld } from "./bausteine.js";
-import { api, aktion, inApp } from "./api.js";
+import { api, aktion, mitHuelle } from "./api.js";
 import { symbol } from "./symbole.js";
 import { markenLogo } from "./marken.js";
 import { TA } from "./texte-anmeldung.js";
@@ -35,10 +35,10 @@ export function starteAnmeldung(programm, konto, opt = {}) {
   // ---- Hilfen
   async function kopiere(text, merk) {
     let ok = false;
-    try { await navigator.clipboard.writeText(text); ok = true; } catch { ok = text.length <= 400 && !!(inApp() && aktion("kopieren", text)); }
+    try { await navigator.clipboard.writeText(text); ok = true; } catch { ok = text.length <= 400 && !!(mitHuelle() && aktion("kopieren", text)); }
     merk.textContent = ok ? merk.dataset.ok : TA.kopierFehler;
   }
-  const oeffne = (url) => { if (!(inApp() && aktion("extern", url))) window.open(url, "_blank", "noopener"); };
+  const oeffne = (url) => { if (!(mitHuelle() && aktion("extern", url))) window.open(url, "_blank", "noopener"); };
   const terminalLink = (betont = false) => knopf({ text: TA.terminal, variante: betont ? "sekundaer" : "leise", groesse: "s", klasse: "an-terminal", aufKlick: terminalWeg, daten: { "data-test": "an-terminal" } });
   const formatRest = (ms) => { const s = Math.max(0, Math.ceil(ms / 1000)); return TA.rest(Math.floor(s / 60), s % 60); };
   const zeigeRest = () => { if (restEl && endeMs !== null) restEl.textContent = formatRest(endeMs - Date.now()); };

@@ -232,14 +232,28 @@ export const api = {
 // Fehler „Vault noch nicht als deiner bestätigt“ (Workspace-Trust): die Werkstatt antwortet 409 mit art „nicht-vertraut“; dort hat die Umstellung nichts verändert.
 export const nichtVertraut = (e) => e?.status === 409 && e?.daten?.art === "nicht-vertraut";
 
-// Aktion an die App (kein Datenweg); im Browser still ohne Wirkung.
+// Hülle: die App (WebKit-Kanal, Swift) oder die Browser-Hülle (huelle-browser.js, nur im Browser-Dienst „Kortex im Browser“, window.kortexHuelle). Beide setzen denselben Vertrag um (huellen-vertrag.json).
+const browserHuelle = () => window.kortexHuelle || null;
+// Aktion an die Hülle (kein Datenweg); im Browser ohne Hülle (Entwicklung) still ohne Wirkung. Rückgabe: wurde sie angenommen?
 export function aktion(name, wert) {
+  const bh = browserHuelle();
+  if (bh) {
+    try { const r = bh.aktion(name, wert); return !(r && typeof r.then !== "function" && r.ok === false); }
+    catch { return false; }
+  }
   try { window.webkit?.messageHandlers?.aktion?.postMessage(wert === undefined ? { aktion: name } : { aktion: name, wert }); return true; }
   catch { return false; }
 }
+// Die native App (macOS, WebKit-Kanal): nur dort gibt es Finder, Dock, globale Kürzel, Übersicht, Hintergrunddienst.
 export const inApp = () => !!window.webkit?.messageHandlers?.aktion;
-// Aktion mit Antwort der App (z. B. "ordner-waehlen" → {pfad}|null). Im Browser: undefined.
+// Der Browser-Dienst (Vorschau für Windows/Linux): Hülle ohne diese nativen Dinge.
+export const browserModus = () => !inApp() && !!browserHuelle();
+// Eine Hülle ist da (App oder Browser): Einrichtung, Zwischenablage, Anmelden im Fenster laufen über den Vertrag.
+export const mitHuelle = () => inApp() || !!browserHuelle();
+// Aktion mit Antwort der Hülle (z. B. "ordner-waehlen" → {pfad}|null). Im Browser ohne Hülle: undefined.
 export async function aktionMitAntwort(name, wert) {
+  const bh = browserHuelle();
+  if (bh) { try { return await bh.aktion(name, wert); } catch { return undefined; } }
   const hnd = window.webkit?.messageHandlers?.aktion;
   if (!hnd) return undefined;
   try { return await hnd.postMessage(wert === undefined ? { aktion: name } : { aktion: name, wert }); }

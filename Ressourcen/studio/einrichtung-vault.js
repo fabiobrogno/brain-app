@@ -13,7 +13,7 @@ export const WEGE = ["neu", "oeffnen", "klonen", "beispiel"];
 export const STANDARD_ORT = "~/Kortex";
 
 export const kurzPfad = (p) => (p ? String(p).replace(/^\/Users\/[^/]+(?=\/|$)/, "~") : "");
-export const letzter = (p) => String(p || "").replace(/\/+$/, "").split("/").pop() || "";
+export const letzter = (p) => String(p || "").replace(/[\\/]+$/, "").split(/[\\/]/).pop() || ""; // auch Windows-Pfade
 export const meldungVon = (e) => {
   if (ausgangUnklar(e)) return typeof e?.message === "string" && e.status === 504 ? e.message : TE.verbindungWeg;
   if ([404, 405, 501].includes(e?.status) && (!e?.message || /^(nicht gefunden|das hat nicht geklappt)\.?$/i.test(String(e.message).trim()))) return TE.nichtDa;
@@ -94,7 +94,7 @@ export function erzeugeVault({ api = standardApi, waehleOrdner, beiAenderung = (
         teile.push(ordnerZeile());
         if (V.ordner.breit) {
           const dort = h("button", { type: "button", klasse: "e-leise-link", "data-aktion": "dort-anlegen", text: TE.vault.dortAnlegen });
-          dort.addEventListener("click", () => { V.ort = `${V.ordner.pfad.replace(/\/+$/, "")}/Kortex`; V.ordner = null; V.weg = "neu"; zeichne(); aenderung(); });
+          dort.addEventListener("click", () => { V.ort = `${V.ordner.pfad.replace(/[\\/]+$/, "")}${V.ordner.pfad.includes("\\") ? "\\" : "/"}Kortex`; V.ordner = null; V.weg = "neu"; zeichne(); aenderung(); });
           teile.push(h("div", { klasse: "e-meldung schlecht", "data-bereich": "zu-breit" }, symbol("info", 14), h("span", null, `${TE.vault.zuBreit()} `, dort)));
         } else {
           const schalter = umschalter({ an: V.verlauf, label: TE.vault.verlauf, aufAenderung: (w) => { V.verlauf = w; aenderung(); }, daten: { "data-aktion": "verlauf" } });

@@ -60,6 +60,14 @@ zu den Xcode-Kommandozeilentools: `xcode-select --install`).
 
 Stabile Versionen sind signiert, von Apple notarisiert und aktualisieren sich über Sparkle selbst („Nach Updates suchen …“ im Menü).
 
+### Kortex im Browser (Vorschau für Windows/Linux)
+
+Für Windows und Linux gibt es noch keine App. Als Vorschau läuft Kortex als lokaler Dienst, und du nutzt das Studio in deinem normalen Browser (Notizen, Suche, Einstellungen, Einrichtung, KI verbinden). Es braucht [Node.js](https://nodejs.org) 22 oder neuer und Git.
+
+- Linux/macOS: `./kortex.sh` · Windows: `kortex.cmd` (oder `node Ressourcen/werkstatt/start.mjs`). Der Browser öffnet sich von selbst; beenden mit Strg+C oder `kortex --beenden`.
+- Der Dienst hört nur auf `127.0.0.1` (zufälliger freier Port) und lässt nur den Link hinein, den Kortex selbst im Browser öffnet. Ein zweiter Start öffnet nur einen neuen Tab auf der laufenden Instanz.
+- Nicht dabei: Schnell-Erfassen-Fenster und globales Kürzel, Dock-/App-Symbol, Finder, Hintergrunddienst, System-Mitteilungen (nur Browser-Mitteilungen auf Klick).
+
 ## Datenschutz
 
 - **Alles bleibt auf deinem Mac.** Deine Notizen liegen in deinem Vault-Ordner. Kortex hat keinen Server, keine Telemetrie, keine

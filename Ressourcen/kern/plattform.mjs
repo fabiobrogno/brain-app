@@ -4,7 +4,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir, hostname, userInfo } from "node:os";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawnSync, spawn } from "node:child_process";
 
 export const istMac = (plattform = process.platform) => plattform === "darwin";
 export const istWindows = (plattform = process.platform) => plattform === "win32";
@@ -82,4 +82,36 @@ export function credentialHelper({ plattform = process.platform, vorhanden = exi
   if (istWindows(plattform)) return "manager";
   const libsecret = ["/usr/lib/git-core/git-credential-libsecret", "/usr/libexec/git-core/git-credential-libsecret", "/usr/share/doc/git/contrib/credential/libsecret/git-credential-libsecret"];
   return libsecret.some((p) => vorhanden(p)) ? "libsecret" : "cache --timeout=3600";
+}
+
+// ───────────── Standardbrowser öffnen ─────────────
+// Nur Adressen der eigenen Werkstatt (http://127.0.0.1:<port>/…) — nie etwas anderes, nie über eine Shell. macOS `open` · Windows `rundll32 url.dll,FileProtocolHandler`
+// (kein `cmd /c start`: dort bräche ein `&` in der Adresse die Zeile) · Linux `xdg-open`, sonst `gio open`. KORTEX_BROWSER=<Programm> wählt einen bestimmten Browser (bekommt die Adresse als einziges Argument).
+export const eigeneAdresse = (url) => /^http:\/\/(127\.0\.0\.1|localhost):\d{1,5}\/[\w\-./?=&%~]*$/.test(String(url));
+export function browserBefehle(url, { plattform = process.platform, env = process.env } = {}) {
+  if (!eigeneAdresse(url)) return [];
+  const eigener = env.KORTEX_BROWSER;
+  const liste = eigener ? [[eigener, [url]]] : [];
+  if (istMac(plattform)) liste.push(["open", [url]]);
+  else if (istWindows(plattform)) liste.push(["rundll32", ["url.dll,FileProtocolHandler", url]]);
+  else liste.push(["xdg-open", [url]], ["gio", ["open", url]]);
+  return liste;
+}
+// Öffnet `url` im Standardbrowser → { ok:true } | { ok:false, text }. `starte` ist einspritzbar (Tests); es liefert ein Prozessobjekt mit on("error"/"exit").
+export async function oeffneImBrowser(url, { plattform = process.platform, env = process.env, starte = spawn, frist = 4000 } = {}) {
+  const befehle = browserBefehle(url, { plattform, env });
+  if (!befehle.length) return { ok: false, text: "Adresse nicht erlaubt" };
+  let letzter = "kein Programm zum Öffnen gefunden";
+  for (const [programm, argumente] of befehle) {
+    const r = await new Promise((fertig) => {
+      let kind;
+      try { kind = starte(programm, argumente, { detached: true, stdio: "ignore", windowsHide: true }); } catch (e) { return fertig({ ok: false, text: String(e?.message || e) }); }
+      const uhr = setTimeout(() => { try { kind.unref?.(); } catch { /* egal */ } fertig({ ok: true }); }, frist); // läuft weiter (Browser bleibt offen): als gestartet werten
+      kind.on("error", (e) => { clearTimeout(uhr); fertig({ ok: false, text: e.code === "ENOENT" ? `${programm} nicht gefunden` : String(e.message) }); });
+      kind.on("exit", (code) => { clearTimeout(uhr); try { kind.unref?.(); } catch { /* egal */ } fertig(code === 0 || code === null ? { ok: true } : { ok: false, text: `${programm} endete mit ${code}` }); });
+    });
+    if (r.ok) return r;
+    letzter = r.text;
+  }
+  return { ok: false, text: letzter };
 }

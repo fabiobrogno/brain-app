@@ -1,6 +1,6 @@
 // Die Einrichtung als Teil des Studios: öffnen (Overlay `#einrichtung-host`, nie ein zweites Fenster), das Ende (der Vault wird IN DER SEITE geladen, das Zeichen
 // schrumpft in die Seitenleiste) und die Hinweise der App beim Start (Banner statt eines Systemdialogs). app.js bindet das an Menübefehle und Knöpfe.
-import { api, aktion, inApp } from "./api.js";
+import { api, aktion, mitHuelle } from "./api.js";
 import { h, toast } from "./hilfen.js";
 import { knopf as baueKnopf, wenigBewegung } from "./bausteine.js";
 import { symbol } from "./symbole.js";
@@ -18,7 +18,7 @@ const FLUG_MS = 280; // das Zeichen wandert in die Seitenleiste (bei reduzierter
 export function erzeugeEinrichtungImStudio({ vault, vorOeffnen, ladeNeu, aufgefrischt, vertrauenErledigt, beiEnde }) {
   // Jede neu geladene Seite meldet der Hülle „kein Overlay offen“: ein Neuladen (Absturz, Entwicklung) lässt die Rechte der Einrichtung nie offen stehen. Das passiert vor dem Befehl
   // `einrichtung`, der erst nach `window.studio.bereit` ausgeführt wird; ein schon angeforderter Lauf bleibt dadurch unberührt (siehe EinrichtungsSitzung.seiteMeldetZu).
-  if (inApp()) aktion("einrichtung-sitzung", { offen: false });
+  if (mitHuelle()) aktion("einrichtung-sitzung", { offen: false });
 
   // Das Overlay selbst öffnen. Aufrufer ist der Befehl der App (`window.studio.befehl('einrichtung', { ab, weg })`), nie die Seite von sich aus: die App führt Buch darüber,
   // ob die Einrichtung offen ist (nur dann gelten git, Zwischenablage und Ende), darum geht jeder Weg über `anfordern`.
@@ -33,7 +33,7 @@ export function erzeugeEinrichtungImStudio({ vault, vorOeffnen, ladeNeu, aufgefr
   // Knopf, Karte und Seitenleiste bitten die App darum (sie öffnet das Overlay im selben Fenster); im Browser ohne App öffnet die Seite es selbst.
   function anfordern({ ab, weg } = {}) {
     const wert = { ...(ab ? { ab } : {}), ...(weg ? { weg } : {}) };
-    if (inApp() && aktion("einrichtung-oeffnen", Object.keys(wert).length ? wert : undefined)) return;
+    if (mitHuelle() && aktion("einrichtung-oeffnen", Object.keys(wert).length ? wert : undefined)) return;
     oeffne({ ab, weg });
   }
 

@@ -4,7 +4,7 @@
 // Das Token sieht die Oberfläche nie: die Werkstatt liefert nur Zustand, Code und Kontoname.
 import { h } from "./hilfen.js";
 import { knopf as baueKnopf } from "./bausteine.js";
-import { api, aktion, inApp } from "./api.js";
+import { api, aktion, mitHuelle } from "./api.js";
 import { symbol } from "./symbole.js";
 import { markenLogo } from "./marken.js";
 import { TW } from "./texte-willkommen.js";
@@ -37,7 +37,7 @@ export function baueGitHubKarte({ beiAngemeldet } = {}) {
     const knopf = baueKnopf({ text: T.kopierenOeffnen, variante: "primaer", aktion: "github-kopieren-oeffnen" });
     knopf.addEventListener("click", async () => {
       try { await navigator.clipboard.writeText(z.code); meld.textContent = T.kopiert; } catch { meld.textContent = T.kopierFehler; }
-      if (!(inApp() && aktion("extern", z.url))) window.open(z.url, "_blank", "noopener");
+      if (!(mitHuelle() && aktion("extern", z.url))) window.open(z.url, "_blank", "noopener");
     });
     setze(h("div", { klasse: "w-aktion-text", text: T.anleitung }),
       h("div", { klasse: "w-github-code", "aria-label": T.codeLabel, "data-code": "", text: z.code }),
