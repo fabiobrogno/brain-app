@@ -8,6 +8,7 @@ import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { HttpFehler, testmodus } from "../gemeinsam/basis.mjs";
+import { nurMac } from "../gemeinsam/plattform.mjs";
 
 export const LABEL = "de.brain.tageslauf";
 const MAX_LESEN = 256 * 1024;
@@ -24,7 +25,7 @@ const leseJson = (datei) => {
 // Eine nicht-XML-plist (binär, von macOS umgeschrieben) mit plutil als XML lesen. Nur auf dem Mac; sonst/bei Fehler null. (Ersatz für Tests: erzeugePflege({ plutil }).)
 const plutilStandard = (datei) => {
   const prog = "/usr/bin/plutil";
-  if (process.platform !== "darwin" || !existsSync(prog)) return null;
+  if (!nurMac("plutil", () => 1).ok || !existsSync(prog)) return null;
   try { return execFileSync(prog, ["-convert", "xml1", "-o", "-", datei], { encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"], windowsHide: true }); } catch { return null; }
 };
 const ISTXML = /^\s*(<\?xml|<!DOCTYPE|<plist)/;

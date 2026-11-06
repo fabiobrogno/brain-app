@@ -4,6 +4,7 @@
 // (Info.plist `KortexGitHubClientID` → Umgebung `KORTEX_GITHUB_CLIENT_ID`); fehlt sie, ist die Anmeldung „nicht verfügbar“.
 import { HttpFehler, kindUmgebung, absoluterGitPfad, testmodus, vorschauOrdner } from "./basis.mjs";
 import { starte } from "./prozess.mjs";
+import { credentialHelper } from "./plattform.mjs";
 
 const SCOPE = "repo"; // Klonen und Pushen privater Repos
 const NETZ_FRIST = 15_000;
@@ -23,7 +24,7 @@ export function erzeugeGitHub(opt = {}) {
   const apiBasis = (frei && opt.apiBasis ? opt.apiBasis : "https://api.github.com").replace(/\/$/, "");
   // Vorschau: das Token kommt in eine Datei im Vorschau-Ordner (Helper „store“), nie in den Schlüsselbund des echten Nutzers.
   const vorschau = vorschauOrdner();
-  const helper = vorschau ? `store --file=${vorschau}/home/.git-credentials` : frei && opt.helper ? opt.helper : "osxkeychain";
+  const helper = vorschau ? `store --file=${vorschau}/home/.git-credentials` : frei && opt.helper ? opt.helper : credentialHelper();
   const holen = opt.fetch || globalThis.fetch;
   const warte = opt.warte || standardWarte;
   const jetzt = opt.jetzt || Date.now;

@@ -7,6 +7,7 @@ import { homedir } from "node:os";
 import { spawn } from "node:child_process";
 import { kindUmgebung, vorschauOrdner } from "./basis.mjs";
 import { ladeKatalog } from "./ki-katalog.mjs";
+import { beendeBaum } from "./plattform.mjs";
 
 // Feste Reihenfolge und Anzeigenamen; der Programmname ist die id.
 const AGENTEN = [
@@ -72,7 +73,7 @@ function versionLesen(pfad, env, limit) {
   return new Promise((fertig) => {
     let erledigt = false, uhr = null, kind = null, aus = "", fehl = "";
     const gruppeBeenden = () => {
-      try { process.kill(-kind.pid, "SIGKILL"); } catch { try { kind.kill("SIGKILL"); } catch { /* schon weg */ } }
+      beendeBaum(kind, "SIGKILL");
     };
     const ende = (v) => { if (erledigt) return; erledigt = true; clearTimeout(uhr); fertig(v); };
     const schluss = (v) => { if (v === null) gruppeBeenden(); ende(v); };

@@ -10,6 +10,7 @@
 import { readdirSync, lstatSync, existsSync, renameSync, mkdirSync } from "node:fs";
 import { join, basename } from "node:path";
 import { spawnSync } from "node:child_process";
+import { nurMac } from "../plattform.mjs";
 import { UmstellungsFehler, schrittKontext, undoListe } from "./schrittliste.mjs";
 import { liesZustand, schreibeZustand, protokolliere, ablageOrdner, setzeSperre, loeseSperre, oeffneAblage, sicherungsOrdner, stempel, jetztIso } from "./protokoll.mjs";
 import { baumGroesse, lexists } from "./baum.mjs";
@@ -63,7 +64,7 @@ export function angebote(z, { jetzt = Date.now() } = {}) {
 export function inPapierkorb(z, pfad) {
   if (typeof z.papierkorb === "function") return z.papierkorb(pfad);
   const test = z.env && (z.env.KORTEX_KERN_UNSTABIL_ERLAUBT === "1" || z.env.BRAIN_TESTMODUS === "1");
-  if (!test && z.plattform === "darwin" && existsSync("/usr/bin/osascript")) {
+  if (!test && nurMac("Finder-Papierkorb", () => 1, { plattform: z.plattform }).ok && existsSync("/usr/bin/osascript")) {
     const r = spawnSync("/usr/bin/osascript", ["-e", "on run argv", "-e", 'tell application "Finder" to delete (POSIX file (item 1 of argv) as alias)', "-e", "end run", pfad], { encoding: "utf8", timeout: 30_000, windowsHide: true });
     if (r.status === 0 && !lexists(pfad)) return "finder";
   }

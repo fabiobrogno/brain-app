@@ -24,6 +24,7 @@ import { readFileSync, writeFileSync, mkdirSync, renameSync, existsSync, readdir
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
+import { nurMac } from "../plattform.mjs";
 import { spawn } from "node:child_process";
 import { vaultPfadOderEnde, ladeConfig, ordner } from "../pfade.mjs";
 import { leseAutomatik } from "../einstellungen.mjs";
@@ -96,7 +97,7 @@ async function pruefeMesslatte(k) {
     const t0 = Date.now();
     // macOS: während der Messung nicht einschlafen (sonst Fantasie-Latenzen); -w räumt auf, falls wir vorher sterben
     let wach = null;
-    if (process.platform === "darwin" && !k.haken.messlatte) {
+    if (nurMac("caffeinate", () => 1).ok && !k.haken.messlatte) {
       try { wach = spawn("/usr/bin/caffeinate", ["-i", "-s", "-w", String(process.pid)], { stdio: "ignore", detached: true, windowsHide: true }); wach.on("error", () => {}); wach.unref(); } catch {}
     }
     // Nachts ist der Suchdienst meist beendet: erst warm werden lassen, sonst misst die Messlatte den Kaltstart

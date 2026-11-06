@@ -13,6 +13,7 @@ import { registriereVault, registrierteVaults } from "./vault-schutz.mjs";
 import { vertrauensStand, alleVertraut } from "./vertrauen.mjs";
 import { kontoStufe, darfMindestens, kontenOrte, liesKonten, bestimmeKonto } from "./ki-konten.mjs";
 import { schreibeEreignis } from "./aktivitaet.mjs";
+import { supportBasis } from "./plattform.mjs";
 
 export const KERN = dirname(fileURLToPath(import.meta.url));
 
@@ -30,11 +31,7 @@ export const ALT_KIT_ORDNER = ".tools";
 // ---------------------------------------------------------------------------------------------------------------------
 // App-Daten (Support-Ordner) und Vaultliste
 
-const plattformBasis = (home, env, plattform) => {
-  if (plattform === "darwin") return join(home, "Library", "Application Support");
-  if (plattform === "win32") return env.APPDATA || join(home, "AppData", "Roaming");
-  return env.XDG_DATA_HOME || join(home, ".local", "share");
-};
+const plattformBasis = (home, env, plattform) => supportBasis({ home, env, plattform });
 // Support-Ordner der App in Suchreihenfolge: BRAIN_APP_SUPPORT (nur absolut; Tests/Rauchtests) allein, sonst …/Kortex und als Rückfall
 // …/Brain (alter Name bis zum Umzug, Paket P3). Es wird nie verschoben, nur gelesen.
 export function supportOrte({ home = homedir(), env = process.env, plattform = process.platform } = {}) {
