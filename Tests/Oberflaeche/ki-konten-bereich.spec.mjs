@@ -250,7 +250,7 @@ test("Neues Konto: ausstehend und unsichtbar, Ordner schon unter dem endgültige
   const pfadVorher = Object.values(z.ausstehend)[0].pfad;
   expect(pfadVorher).toMatch(/\/ki-konten-ordner\/claude-privat$/);
   expect(z.konten.filter((k) => k.programm === "claude")).toHaveLength(0);
-  expect(z.log("/api/ki/anmelden").at(-1).body.ordner).toBe(pfadVorher);
+  await expect.poll(() => z.log("/api/ki/anmelden").at(-1)?.body.ordner).toBe(pfadVorher); // erst fragt der Dialog die Werkstatt (Anmelden im Fenster), dann gilt der Terminalweg
   // Fenster zu = Abbruch
   await page.keyboard.press("Escape");
   await expect(d).toHaveCount(0);

@@ -233,7 +233,7 @@ test("Konto hinzufügen: öffnet den Ablauf „KI verbinden“ beim Konto; eigen
   // der Ordner trägt gleich seinen endgültigen Namen, das Konto steht noch NICHT in der Liste (ausstehend, unsichtbar)
   const neu = Object.values(z.ausstehend)[0];
   expect(neu.pfad).toMatch(/\/ki-konten-ordner\/claude-kunde-m/);
-  expect(z.log("/api/ki/anmelden").at(-1).body.ordner).toBe(neu.pfad);
+  await expect.poll(() => z.log("/api/ki/anmelden").at(-1)?.body.ordner).toBe(neu.pfad);
   expect(z.konten.some((x) => x.name === "Kunde Müller")).toBe(false);
   await expect(page.locator('.kx-konto[data-konto^="k_neu"]')).toHaveCount(0);
   // Abbrechen räumt auf: Abbruch an die Werkstatt, nichts in der Liste
