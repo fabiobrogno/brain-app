@@ -21,37 +21,6 @@ function aufbau(dateien = {}, opts = {}) {
   return { d, support, v, kennung: A.kennungVault(d) };
 }
 const vorgangsDir = (support, kennung, id) => join(support, "papierkorb", kennung, "vorgaenge", id);
-const exdev = () => { const e = new Error("EXDEV"); e.code = "EXDEV"; throw e; };
-const nichtRoot = typeof process.getuid === "function" && process.getuid() === 0 ? { skip: "als root lassen sich Schreibschutz-Fehler nicht nachstellen" } : {};
-
-// ───────────── K1: Löschen über Laufwerksgrenzen ─────────────
-
-test("K1: EXDEV + nicht löschbare Datei: die vollständige Kopie bleibt im Papierkorb, Fehler sagt es, Wiederherstellen unter neuem Namen bringt alle 7 Dateien", nichtRoot, async () => {
-  const dateien = { "p/a.md": "# a\n", "p/b.md": "# b\n", "p/c.md": "# c\n", "p/gesperrt/d.md": "# d\n", "p/gesperrt/e.md": "# e\n", "p/bild.png": "PNG", "p/tief/f.md": "# f\n" };
-  const { d, v, support, kennung } = aufbau(dateien, { dateiHaken: { rename: exdev } });
-  chmodSync(join(d, "p/gesperrt"), 0o555); // Dateien darin lassen sich nicht entfernen
-  try {
-    const e = await fehler(() => v.loeschen({ typ: "ordner", pfad: "p" }));
-    assert.equal(e.extra.art, "teilweise"); assert.match(e.message, /Papierkorb/);
-    const liste = (await v.papierkorb()).eintraege;
-    assert.equal(liste.length, 1); assert.equal(liste[0].teilweise, true); assert.equal(liste[0].anzahl, 7);
-    const korbKopie = join(vorgangsDir(support, kennung, liste[0].id), "inhalt", "p");
-    for (const p of Object.keys(dateien)) assert.ok(existsSync(join(korbKopie, p.slice(2))), `Kopie vollständig: ${p}`);
-    chmodSync(join(d, "p/gesperrt"), 0o755);
-    // der Rest im Vault ist da; unter anderem Namen zurückholen
-    const r = await v.papierkorbWiederherstellen({ id: liste[0].id, name: "p-zurueck" });
-    assert.equal(r.pfad, "p-zurueck");
-    for (const [p, t] of Object.entries(dateien)) assert.equal(lies(d, "p-zurueck/" + p.slice(2)), t);
-  } finally { try { chmodSync(join(d, "p/gesperrt"), 0o755); } catch { /* weg */ } }
-});
-
-test("K1: EXDEV ohne Hindernis: kopiert, geprüft, dann Quelle entfernt — und wiederherstellen geht wieder über die Kopie", async () => {
-  const { d, v } = aufbau({ "p/a.md": "# a\n", "p/u/b.md": "# b\n" }, { dateiHaken: { rename: exdev } });
-  const r = await v.loeschen({ typ: "ordner", pfad: "p" });
-  assert.ok(!existsSync(join(d, "p")));
-  await v.papierkorbWiederherstellen({ id: r.vorgang });
-  assert.equal(lies(d, "p/u/b.md"), "# b\n");
-});
 
 // ───────────── W1: NFC/NFD ─────────────
 
@@ -89,7 +58,7 @@ test("W2: Marke .laeuft nach einem Absturz mitten im Vorgang (auch nach der erst
   const r = await v.umbenennen({ pfad: "a/Alt.md", titel: "Neu", dateiname: "Neu.md" });
   const mf = join(vorgangsDir(support, kennung, r.vorgang), "manifest.json");
   const m = JSON.parse(readFileSync(mf, "utf8")); m.status = "laeuft"; writeFileSync(mf, JSON.stringify(m));
-  writeFileSync(join(support, "papierkorb", kennung, ".laeuft"), JSON.stringify({ id: r.vorgang }));
+  writeFileSync(join(support, "papierkorb", kennung, ".laeuft"), JSON.stringify({ id: r.vorgang, aktion: "op" }));
   await v.papierkorb();
   assert.ok(existsSync(join(d, "a/Alt.md"))); assert.equal(lies(d, "b/x.md"), "[[Alt]]\n");
 });
@@ -105,20 +74,6 @@ test("W2: unklare Lage (Quelle und Ziel liegen beide da): nichts wird gelöscht,
   assert.ok(existsSync(vorgangsDir(support, kennung, r.vorgang)));
   assert.equal(JSON.parse(readFileSync(mf, "utf8")).status, "unklar");
   assert.ok(existsSync(join(d, "a/Neu.md")) && lies(d, "a/Alt.md") === "# noch eine Alt\n");
-});
-
-test("W2: Sperre: ein lebender Halter wird nach 60 s nicht verdrängt (PID-Prüfung), ein toter schon", async () => {
-  const { d, v, support, kennung } = aufbau({ "a/x.md": "# x\n" });
-  const sperre = join(support, "papierkorb", kennung, ".sperre");
-  mkdirSync(join(support, "papierkorb", kennung), { recursive: true });
-  const alt = new Date(Date.now() - 120_000);
-  writeFileSync(sperre, `${process.pid} ${Date.now()}\n`); utimesSync(sperre, alt, alt);
-  const e = await fehler(() => v.umbenennen({ pfad: "a/x.md", titel: "y", dateiname: "y.md" }));
-  assert.equal(e.extra.art, "beschaeftigt");
-  assert.ok(existsSync(join(d, "a/x.md")));
-  writeFileSync(sperre, `99999999 ${Date.now()}\n`); utimesSync(sperre, alt, alt);
-  await v.umbenennen({ pfad: "a/x.md", titel: "y", dateiname: "y.md" });
-  assert.ok(existsSync(join(d, "a/y.md")));
 });
 
 // ───────────── W3: Wiederholen eines Ordner-Löschens ─────────────
@@ -176,7 +131,7 @@ test("git: Abgleich/Commit laufen nicht an, solange eine Dateiaktion die Sperre 
   const v = oeffneVault(d, { support });
   const kennung = A.kennungVault(d);
   mkdirSync(join(support, "papierkorb", kennung), { recursive: true });
-  writeFileSync(join(support, "papierkorb", kennung, ".sperre"), `${process.pid} ${Date.now()}\n`);
+  writeFileSync(join(support, "papierkorb", kennung, ".sperre"), JSON.stringify({ pid: process.pid, token: "t" }) + "\n");
   const e = await fehler(() => G.commit(v.wurzel, { nachricht: "x", dateien: ["a.md"] }, {}));
   assert.equal(e.extra.art, "beschaeftigt");
 });

@@ -287,3 +287,19 @@ test("⌘⌫ ohne sichtbar fokussierte Notiz (Fokus im Nichts, Kopfzeile) legt n
   expect(existsSync(join(vault, "30_ablage/Einzelnes.md"))).toBe(true);
   await expect(page.locator("#toast-host .toast")).toHaveCount(0);
 });
+
+test("Unterbrochener Vorgang: erscheint im Papierkorb als Hinweis mit Weg; „Erledigt“ legt das Journal ab; der Zähler in der Seitenleiste zählt ihn mit", async ({ page }) => {
+  const { kennungVault } = await import("../../Ressourcen/gemeinsam/aktivitaet.mjs");
+  const id = "v_0123456789ab";
+  const dir = join(server.support, "papierkorb", kennungVault(vault), "vorgaenge", id);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "manifest.json"), JSON.stringify({ v: 1, id, art: "umbenennen", typ: "datei", zeit: new Date().toISOString(), status: "unklar", von: "30_ablage/Einzelnes.md", nach: "30_ablage/Neu.md", dateien: [] }));
+  await oeffne(page);
+  await expect(page.locator(".eintrag[data-bereich=\"papierkorb\"] .zahl")).toHaveText("1");
+  await page.locator(".eintrag[data-bereich=\"papierkorb\"]").click();
+  await expect(page.locator("[data-hinweis]")).toContainText("unterbrochen");
+  await expect(page.locator("[data-hinweis]")).toContainText("30_ablage/Einzelnes.md");
+  await page.locator("[data-hinweis] [data-aktion=\"hinweis-erledigt\"]").click();
+  await expect(page.locator("[data-hinweis]")).toHaveCount(0);
+  expect(existsSync(dir)).toBe(false);
+});

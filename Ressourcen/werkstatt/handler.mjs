@@ -346,6 +346,7 @@ export function erzeugeHandler(o) {
       case "/api/papierkorb": nur("GET"); return V().papierkorb();
       case "/api/papierkorb/wiederherstellen": nur("POST"); return V().papierkorbWiederherstellen(eingabe());
       case "/api/papierkorb/endgueltig": nur("POST"); return V().papierkorbEndgueltig(eingabe());
+      case "/api/papierkorb/hinweis-erledigt": nur("POST"); return V().papierkorbHinweisErledigt(eingabe());
       // Aufgaben (kern/aufgaben.mjs): lesen immer, anlegen und ändern nur in einem vertrauten Vault (409 art „nicht-vertraut“)
       case "/api/aufgaben":
         if (methode === "GET") return V().aufgaben();

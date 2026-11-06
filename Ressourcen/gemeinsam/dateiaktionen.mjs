@@ -10,6 +10,7 @@
 import { lstatSync, statSync, readdirSync, readFileSync, writeFileSync, mkdirSync, rmdirSync, renameSync, linkSync, unlinkSync, rmSync, existsSync, chmodSync, cpSync, realpathSync, openSync, closeSync, utimesSync } from "node:fs";
 import { join, dirname, basename } from "node:path";
 import { createHash, randomBytes } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { HttpFehler, loese, sauber, BEARBEITBAR, MAX_DATEI, gesperrterName, generiertName, wikiGeneriert, falte, imVault, inboxOrdnerVon } from "./basis.mjs";
 import { kennungVault, melde, aendereZustand, leseZustand } from "./aktivitaet.mjs";
 import { planeVerweise, setzeTitel, verlinktVon } from "./linkpflege.mjs";
@@ -42,53 +43,96 @@ export function pruefeName(name, { was = "Name" } = {}) {
 const HEX = (n) => randomBytes(n).toString("hex");
 
 /**
- * haken: nur für Tests ({ rename } ersetzt das erste Umbenennen beim Papierkorb, z. B. um EXDEV nachzustellen).
+ * haken: nur für Tests ({ rename } ersetzt das Umbenennen beim Papierkorb, z. B. um EXDEV nachzustellen; geraet(pfad) ersetzt stat().dev).
  * deps: { wurzel (echter Pfad), support, name (Vault-Name), istGeneriert(rel, abs), ueberspringeOrdner(abs), aufgabenOrdner(): Promise<string|null>, slug(titel), wer, jetzt() }
  */
 export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert = () => false, ueberspringeOrdner = () => false, aufgabenOrdner = async () => null, slug = (s) => s, wer = "Du", jetzt = () => new Date(), haken = {} }) {
   const kennung = kennungVault(wurzel);
-  const korb = join(support, "papierkorb", kennung);
-  const vorgaenge = join(korb, "vorgaenge");
-  const vorgangDir = (id) => join(vorgaenge, id);
+  // Wo liegt der Papierkorb? Kopiert wird NIE über Laufwerksgrenzen, alles ist rename: liegen Vault und Support auf demselben Gerät, bleibt der Papierkorb unter <Support>/papierkorb/<Kennung>/,
+  // sonst im Vault unter .kortex/papierkorb/ (Punkt-Ordner: Baum, Suche, Notizen, MCP, Watcher und Link-Pflege sehen ihn nie; bei git-Vaults steht er in .git/info/exclude).
+  // Sperre, Marke und Quarantäne liegen immer im Support. Ältere Journale am anderen Ort bleiben sichtbar (alteVerz).
+  const supKorb = join(support, "papierkorb", kennung), vaultKorb = join(wurzel, ".kortex", "papierkorb");
+  const geraet = (pfad) => (haken.geraet ? haken.geraet(pfad) : statSync(pfad).dev);
+  const punkt = (n) => { if (haken.punkt) haken.punkt(n); }; // nur für Tests: hier darf ein Kindprozess sich beenden (SIGKILL)
+  let korb = supKorb, vorgaenge = join(supKorb, "vorgaenge"), alteVerz = [];
+  function waehleKorb() {
+    let gleich = true;
+    try { mkdirSync(support, { recursive: true }); gleich = geraet(support) === geraet(wurzel); } catch { gleich = true; }
+    korb = gleich ? supKorb : vaultKorb;
+    vorgaenge = join(korb, "vorgaenge");
+    const anderes = join(gleich ? vaultKorb : supKorb, "vorgaenge");
+    alteVerz = existsSync(anderes) ? [anderes] : [];
+  }
+  waehleKorb();
+  const vorgangDir = (id) => { for (const v of [vorgaenge, ...alteVerz]) if (existsSync(join(v, id))) return join(v, id); return join(vorgaenge, id); };
 
   // ───────────── Sperre: eine Aktion zugleich (im Prozess und zwischen Prozessen) ─────────────
-  // Die Sperrdatei trägt PID und Zeit und wird während der Aktion aufgefrischt (Heartbeat). Gebrochen wird sie nur, wenn der Halter nicht mehr lebt oder sie sehr alt ist.
-  // Zusätzlich liegt während jeder Aktion eine Marke (.laeuft) mit der Vorgangs-Kennung: bleibt sie nach einem Absturz liegen, wird dieser Vorgang beim nächsten Mal zurückgefahren.
+  // Die Sperrdatei (<Support>/papierkorb/<Kennung>/.sperre) trägt { pid, start, token }; sie entsteht fertig beschrieben per link() (atomar). Gebrochen wird sie NUR, wenn der Halter nicht mehr
+  // lebt — sofort erkannt, nie nach einer Zeitgrenze. Gegen PID-Wiederverwendung gilt zusätzlich die Startzeit des Prozesses (ps -o lstart=). Das Brechen geschieht unter einer eigenen kurzen
+  // Bruch-Sperre (.sperre.bruch), damit sich mehrere Brecher nie gegenseitig eine frische Sperre löschen. Zusätzlich liegt während jeder Aktion eine Marke (.laeuft): bleibt sie nach einem
+  // Absturz liegen, wird dieser Vorgang beim nächsten Mal zurückgefahren.
   let kette = Promise.resolve(), erholt = false;
-  const sperrDatei = join(korb, ".sperre"), markeDatei = join(korb, ".laeuft");
+  const sperrDatei = join(supKorb, ".sperre"), bruchDatei = join(supKorb, ".sperre.bruch"), markeDatei = join(supKorb, ".laeuft");
   const lebt = (pid) => { if (!Number.isInteger(pid) || pid <= 0) return false; try { process.kill(pid, 0); return true; } catch (e) { return e.code === "EPERM"; } };
-  function sperreVeraltet() {
-    try {
-      const alter = Date.now() - statSync(sperrDatei).mtimeMs;
-      if (alter > 15 * 60_000) return true;
-      if (alter <= SPERRE_FRIST_MS) return false;
-      const pid = Number.parseInt(readFileSync(sperrDatei, "utf8"), 10);
-      return !lebt(pid);
-    } catch { return true; }
+  const startzeit = (pid) => { try { return execFileSync("ps", ["-o", "lstart=", "-p", String(pid)], { encoding: "utf8", timeout: 3000, stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { return ""; } };
+  let eigenStart = null;
+  const halterLebt = (h) => {
+    if (!h || !Number.isInteger(h.pid) || h.pid <= 0 || !lebt(h.pid)) return false;
+    if (h.start) { const jetzt = startzeit(h.pid); if (jetzt && jetzt !== h.start) return false; } // dieselbe PID, aber ein anderer Prozess
+    return true;
+  };
+  const liesSperre = (datei) => { try { return JSON.parse(readFileSync(datei, "utf8")); } catch { return null; } };
+  // Datei exklusiv anlegen, mit vollständigem Inhalt (link ist atomar; ohne link-Unterstützung wx). → Inhalt oder null (gibt es schon)
+  function nimmDatei(datei) {
+    if (eigenStart === null) eigenStart = startzeit(process.pid);
+    const inhalt = { pid: process.pid, start: eigenStart, token: HEX(8) };
+    const tmp = `${datei}.${process.pid}.${HEX(4)}`;
+    writeFileSync(tmp, JSON.stringify(inhalt) + "\n", { mode: 0o600 });
+    try { linkSync(tmp, datei); return inhalt; }
+    catch (e) {
+      if (e.code === "EEXIST") return null;
+      if (e.code === "EPERM" || e.code === "ENOTSUP" || e.code === "EXDEV") {
+        try { writeFileSync(datei, JSON.stringify(inhalt) + "\n", { flag: "wx", mode: 0o600 }); return inhalt; } catch (e2) { if (e2.code === "EEXIST") return null; throw e2; }
+      }
+      throw e;
+    } finally { try { unlinkSync(tmp); } catch { /* weg */ } }
+  }
+  const raeume = (datei) => { const u = `${datei}.alt.${process.pid}.${HEX(4)}`; try { renameSync(datei, u); unlinkSync(u); } catch { /* schon weg */ } };
+  function sperreVeraltet(datei) {
+    const h = liesSperre(datei);
+    if (h) return !halterLebt(h);
+    try { return Date.now() - statSync(datei).mtimeMs > 10_000; } catch { return false; } // unlesbar (halb geschrieben): erst nach 10 s
+  }
+  // Eine veraltete Sperre brechen: nur unter der Bruch-Sperre, und nur, wenn es noch dieselbe Sperre ist, die als veraltet erkannt wurde. → true: es wurde etwas bewegt (erneut versuchen)
+  function brichSperre() {
+    const stand = liesSperre(sperrDatei);
+    if (!sperreVeraltet(sperrDatei)) return false;
+    const b = nimmDatei(bruchDatei);
+    if (!b) { if (sperreVeraltet(bruchDatei)) raeume(bruchDatei); return true; }
+    try { if (JSON.stringify(liesSperre(sperrDatei)) === JSON.stringify(stand)) raeume(sperrDatei); }
+    finally { const mein = liesSperre(bruchDatei); if (mein && mein.token === b.token) { try { unlinkSync(bruchDatei); } catch { /* weg */ } } }
+    return true;
   }
   // Läuft gerade eine Aktion dieses Vaults (auch in einem anderen Prozess)? Für git.mjs: Abgleich und Commit warten dann.
-  function sperreAktiv() { try { statSync(sperrDatei); return !sperreVeraltet(); } catch { return false; } }
+  function sperreAktiv() { try { statSync(sperrDatei); return !sperreVeraltet(sperrDatei); } catch { return false; } }
   async function mitSperre(fn) {
     const lauf = kette.catch(() => {}).then(async () => {
-      mkdirSync(korb, { recursive: true, mode: 0o700 });
-      let gehalten = false;
-      for (let i = 0; i < 60 && !gehalten; i++) {
-        try { closeSync(openSync(sperrDatei, "wx", 0o600)); writeFileSync(sperrDatei, `${process.pid} ${Date.now()}\n`, { mode: 0o600 }); gehalten = true; }
-        catch (e) {
-          if (e.code !== "EEXIST") throw e;
-          if (sperreVeraltet()) { try { unlinkSync(sperrDatei); } catch { /* weg */ } continue; }
-          await new Promise((ok) => setTimeout(ok, 50));
-        }
+      mkdirSync(supKorb, { recursive: true, mode: 0o700 });
+      let meine = null;
+      for (let i = 0; i < 60 && !meine; i++) {
+        meine = nimmDatei(sperrDatei);
+        if (meine) break;
+        if (brichSperre()) continue;
+        await new Promise((ok) => setTimeout(ok, 50));
       }
-      if (!gehalten) throw new HttpFehler(409, "Gerade läuft eine andere Änderung am Vault. Versuche es gleich noch einmal.", { art: "beschaeftigt" });
-      const herz = setInterval(() => { try { const t = new Date(); utimesSync(sperrDatei, t, t); } catch { /* egal */ } }, 10_000);
-      herz.unref?.();
-      try { erholeAngefangene(); return await fn(); } finally { clearInterval(herz); try { unlinkSync(sperrDatei); } catch { /* weg */ } }
+      if (!meine) throw new HttpFehler(409, "Gerade läuft eine andere Änderung am Vault. Versuche es gleich noch einmal.", { art: "beschaeftigt" });
+      try { waehleKorb(); erholeAngefangene(); return await fn(); }
+      finally { const jetzt = liesSperre(sperrDatei); if (jetzt && jetzt.token === meine.token) { try { unlinkSync(sperrDatei); } catch { /* weg */ } } }
     });
     kette = lauf;
     return lauf;
   }
-  const setzeMarke = (id) => { try { writeFileSync(markeDatei, JSON.stringify({ id }) + "\n", { mode: 0o600 }); } catch { /* egal */ } };
+  const setzeMarke = (id, aktion = "op") => { try { writeFileSync(markeDatei, JSON.stringify({ id, aktion }) + "\n", { mode: 0o600 }); } catch { /* egal */ } };
   const loescheMarke = () => { try { unlinkSync(markeDatei); } catch { /* weg */ } };
 
   // ───────────── Dateisystem-Helfer ─────────────
@@ -101,7 +145,17 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
   const leseHash = (abs) => { try { return HASH(readFileSync(abs)); } catch { return null; } };
   function sichereKorb() {
     mkdirSync(vorgaenge, { recursive: true, mode: 0o700 });
-    for (const d of [join(support, "papierkorb"), korb, vorgaenge]) { try { chmodSync(d, 0o700); } catch { /* egal */ } }
+    for (const d of korb === vaultKorb ? [join(wurzel, ".kortex"), korb, vorgaenge] : [join(support, "papierkorb"), korb, vorgaenge]) { try { chmodSync(d, 0o700); } catch { /* egal */ } }
+    if (korb === vaultKorb) { // nie die .gitignore des Nutzers anfassen: .git/info/exclude
+      try {
+        const info = join(wurzel, ".git", "info"), ex = join(info, "exclude");
+        if (lstatSync(join(wurzel, ".git")).isDirectory()) {
+          mkdirSync(info, { recursive: true });
+          let t = ""; try { t = readFileSync(ex, "utf8"); } catch { /* neu */ }
+          if (!t.split("\n").some((z) => z.trim() === "/.kortex/")) writeFileSync(ex, `${t}${t && !t.endsWith("\n") ? "\n" : ""}/.kortex/\n`);
+        }
+      } catch { /* ohne Git oder nicht schreibbar */ }
+    }
   }
   const schreibeManifest = (m) => {
     const datei = join(vorgangDir(m.id), "manifest.json"), tmp = `${datei}.${process.pid}.tmp`;
@@ -340,28 +394,25 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
       // Atomar ohne Ersetzen: das Ziel wird zuerst exklusiv als leerer Ordner angelegt (EEXIST → belegt); rename darf nur diesen leeren Ordner ersetzen
       try { mkdirSync(nachAbs, { mode: 0o700 }); }
       catch (e) { if (e.code === "EEXIST") throw new HttpFehler(409, "Einen Ordner mit diesem Namen gibt es dort schon.", { art: "belegt" }); throw e; }
+      punkt("nach-mkdir");
       try { renameSync(vonAbs, nachAbs); }
       catch (e) { try { rmdirSync(nachAbs); } catch { /* nicht leer: nicht anfassen */ } throw e; }
     }
   }
-  // Über Laufwerksgrenzen (Papierkorb liegt im Support-Ordner): erst kopieren, die Kopie prüfen (Anzahl, Größe, Hashes), erst dann die Quelle entfernen.
-  // Eine geprüfte Kopie wird NIE gelöscht: scheitert das Entfernen der Quelle mittendrin, bleibt die Kopie, und der Fehler (art „teilweise“, behalten) sagt es.
+  // Inhalt eines Ordners oder einer Datei als Liste (Pfad, Größe, Hash): für „derselbe Inhalt?“ beim Wiederholen
   const inhaltListe = (abs) => (lstatSync(abs).isDirectory() ? ordnerListe(abs) : [{ pfad: "", art: "datei", groesse: lstatSync(abs).size, hash: HASH(readFileSync(abs)) }]);
   const gleicheListen = (a, b) => {
     if (a.length !== b.length) return false;
     const m = new Map(b.map((e) => [e.pfad, e]));
     return a.every((e) => { const x = m.get(e.pfad); return x && x.art === e.art && (e.art !== "datei" || (x.groesse === e.groesse && x.hash === e.hash)); });
   };
-  function verschiebeUeberall(vonAbs, nachAbs) {
-    try { (haken.rename || renameSync)(vonAbs, nachAbs); return; } catch (e) { if (e.code !== "EXDEV") throw e; }
-    const neu = !gibtEs(nachAbs);
-    const verwirfKopie = () => { if (neu) { try { rmSync(nachAbs, { recursive: true, force: true }); } catch { /* egal */ } } }; // nur eine unfertige oder falsche Kopie, die Quelle ist heil
-    const vorher = inhaltListe(vonAbs);
-    try { cpSync(vonAbs, nachAbs, { recursive: true, errorOnExist: true, force: false, preserveTimestamps: true, verbatimSymlinks: true }); }
-    catch (e) { verwirfKopie(); throw e; }
-    if (!gleicheListen(vorher, inhaltListe(nachAbs))) { verwirfKopie(); throw new HttpFehler(500, "Die Kopie stimmt nicht mit dem Original überein. Es wurde nichts verändert."); }
-    try { rmSync(vonAbs, { recursive: true, force: false }); }
-    catch (e) { throw new HttpFehler(500, "Die Quelle ließ sich nicht vollständig entfernen (zum Beispiel wegen eines Schreibschutzes). Eine vollständige Kopie liegt sicher bei Kortex.", { art: "teilweise", behalten: true, ursache: String((e && e.code) || "") }); }
+  // Papierkorb, Wiederherstellen, Wiederholen: nur rename auf demselben Laufwerk. Liefert rename EXDEV (Bind-Mount, Ordner aus einem anderen Volume im Vault), wird abgelehnt — nichts ist angefasst.
+  function verschiebeLokal(vonAbs, nachAbs) {
+    try { (haken.rename || renameSync)(vonAbs, nachAbs); }
+    catch (e) {
+      if (e.code === "EXDEV") throw new HttpFehler(409, "Das lässt sich nicht in den Papierkorb legen oder zurückholen, weil Quelle und Ziel auf verschiedenen Laufwerken liegen. Kortex kopiert dabei nie; es wurde nichts verändert.", { art: "anderes-laufwerk" });
+      throw e;
+    }
   }
 
   const textFuer = (art, typ, plan) => {
@@ -404,9 +455,11 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
           atomarSchreiben(abs, d.nachher, d.modus);
           geschrieben.push(d);
         }
+        punkt("nach-schreiben");
         // letzte Prüfung vor dem Umbenennen: gibt es das Ziel noch, ist die Quelle noch da
         if (!existsSync(plan.vonAbs)) throw new HttpFehler(404, "Das gibt es nicht mehr.");
         if (!plan.keinUmzug) verschiebeFs(plan.vonAbs, plan.nachAbs, plan.typ, plan.casePur);
+        punkt("nach-umzug");
       } catch (e) {
         for (const d of geschrieben.reverse()) { try { if (leseHash(absVon(d.pfad)) === d.hashNachher) atomarSchreiben(absVon(d.pfad), d.vorher, d.modus); } catch { /* bester Versuch; die Kopie bleibt im Journal */ } }
         throw e;
@@ -432,7 +485,6 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
     const inhaltDir = join(dir, "inhalt");
     const ziel = join(inhaltDir, basename(plan.vonAbs));
     const aufraeumenKlein = () => { loescheMarke(); try { rmSync(dir, { recursive: true, force: true }); } catch { /* egal */ } };
-    const teilweise = () => { m.status = "teilweise"; try { schreibeManifest(m); } catch { /* egal */ } loescheMarke(); };
     try {
       mkdirSync(inhaltDir, { recursive: true, mode: 0o700 });
       const st = lstatSync(plan.vonAbs);
@@ -443,18 +495,10 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
       schreibeManifest(m);
       setzeMarke(m.id);
     } catch (e) { aufraeumenKlein(); throw e; }
-    try { verschiebeUeberall(plan.vonAbs, ziel); }
-    catch (e) {
-      if (e.extra?.art === "teilweise") { // die Kopie ist vollständig und bleibt; im Vault ist ein Rest geblieben
-        teilweise();
-        throw new HttpFehler(500, "Der Ordner ließ sich nicht vollständig aus dem Vault entfernen. Eine vollständige Kopie liegt im Papierkorb von Kortex (Ansicht „Papierkorb“); im Vault ist ein Rest geblieben. Nichts ist verloren.", { art: "teilweise", behalten: true, vorgang: m.id });
-      }
-      const quelleDa = gibtEs(plan.vonAbs), korbDa = gibtEs(ziel);
-      if (quelleDa && !korbDa) aufraeumenKlein();                       // nichts bewegt
-      else if (!quelleDa && korbDa) { try { verschiebeUeberall(ziel, plan.vonAbs); aufraeumenKlein(); } catch { teilweise(); } } // zurücklegen; gelingt es nicht, bleibt alles im Papierkorb
-      else teilweise();
-      throw e;
-    }
+    punkt("loeschen-vorher");
+    try { verschiebeLokal(plan.vonAbs, ziel); }
+    catch (e) { aufraeumenKlein(); throw e; } // rename ist atomar: es wurde nichts bewegt
+    punkt("loeschen-nachher");
     chmodRekursiv(ziel, 0o700, 0o600);
     m.status = "fertig";
     schreibeManifest(m);
@@ -588,7 +632,9 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
           if (titelAus(m.von, text) === jetztTitel) { const r = setzeTitel(text, gewollt); if (r.geaendert) { const alt = Buffer.from(text, "utf8"); atomarSchreiben(abs, Buffer.from(r.text, "utf8"), selbst.modus); geschrieben.push({ abs, alt, modus: selbst.modus, hash: HASH(Buffer.from(r.text, "utf8")) }); } }
         }
       }
+      punkt(zurueck ? "undo-nach-schreiben" : "redo-nach-schreiben");
       if (!gleich) verschiebeFs(quelleAbs, zielAbs, m.typ, casePur);
+      punkt(zurueck ? "undo-nach-umzug" : "redo-nach-umzug");
     } catch (e) {
       for (const g of geschrieben.reverse()) { try { atomarSchreiben(g.abs, g.alt, g.modus); } catch { /* bester Versuch */ } }
       throw e;
@@ -607,7 +653,11 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
       // Unverändert?
       if (m.typ === "datei") { const e0 = m.inhalt.eintraege[0]; if (e0.hash && leseHash(inhaltAbs) !== e0.hash) throw new HttpFehler(409, "Die Kopie im Papierkorb ist nicht mehr dieselbe. Kortex stellt sie nicht wieder her.", { art: "kopie-veraendert" }); }
       mkdirSync(dirname(l.abs), { recursive: true }); // loeseBlatt hat den Vorfahren geprüft: er liegt im Vault
-      verschiebeUeberall(inhaltAbs, l.abs);
+      try { verschiebeLokal(inhaltAbs, l.abs); punkt("restore-nach-umzug"); }
+      catch (e) {
+        if (e.extra?.art === "anderes-laufwerk") throw new HttpFehler(409, `Das liegt auf einem anderen Laufwerk als dein Vault: ${inhaltAbs}. Kortex kopiert nie und löscht nichts — öffne den Ordner im Finder und lege es selbst zurück.`, { art: "anderes-laufwerk", ort: inhaltAbs });
+        throw e;
+      }
       if (m.typ === "ordner") { for (const e of m.inhalt.eintraege) { try { if (e.art === "ordner") chmodSync(join(l.abs, e.pfad), e.modus || 0o755); else if (e.art === "datei") chmodSync(join(l.abs, e.pfad), e.modus || 0o644); } catch { /* egal */ } } try { chmodSync(l.abs, m.inhalt.modus || 0o755); } catch { /* egal */ } }
       else { try { chmodSync(l.abs, m.inhalt.modus || 0o644); } catch { /* egal */ } }
       return { ok: true, typ: m.typ, art: "wiederhergestellt", von: null, nach: l.rel, pfad: l.rel, geaendert: [l.rel] };
@@ -622,7 +672,8 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
       if (!gleicheListen(ordnerListe(v.abs), m.inhalt.eintraege.map((x) => ({ pfad: x.pfad, art: x.art, groesse: x.groesse, hash: x.hash })))) throw new HttpFehler(409, "In diesem Ordner liegt inzwischen etwas anderes als beim Löschen. Kortex legt ihn nicht noch einmal in den Papierkorb.", { art: "geaendert" });
     }
     mkdirSync(join(vorgangDir(m.id), "inhalt"), { recursive: true, mode: 0o700 });
-    verschiebeUeberall(v.abs, inhaltAbs);
+    verschiebeLokal(v.abs, inhaltAbs);
+    punkt("redo-nach-umzug");
     chmodRekursiv(inhaltAbs, 0o700, 0o600);
     return { ok: true, typ: m.typ, art: "wieder", von: m.von, nach: null, pfad: m.von, geaendert: [m.von] };
   }
@@ -642,8 +693,10 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
       const m = vorgangStand(id);
       if (!m) throw new HttpFehler(404, "Dafür gibt es kein Rückgängig mehr (es wird nach 30 Tagen gelöscht).", { art: "keine-kopie" });
       if (m.status === "zurueck") throw new HttpFehler(409, "Das ist schon rückgängig gemacht.", { art: "schon-zurueck" });
+      setzeMarke(id, "undo");
       const erg = wechsle(m, "zurueck", { teilweise: eingabe.teilweise === true });
       m.status = "zurueck"; schreibeManifest(m);
+      loescheMarke();
       eintragLog(m, m.art === "loeschen" ? "Rückgängig: Aus dem Papierkorb zurückgelegt." : `Rückgängig: ${m.art === "umbenennen" ? "Umbenennen" : "Verschieben"} zurückgenommen.`, [erg.nach || erg.pfad, erg.von].filter(Boolean)); // [jetziger Ort, voriger Ort]: offene Studios folgen
       return { ...erg, ok: true, art: m.art === "loeschen" ? "wiederhergestellt" : "zurueck", vorgangArt: m.art };
     });
@@ -653,9 +706,11 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
       const m = vorgangStand(id);
       if (!m) throw new HttpFehler(404, "Dafür gibt es kein Wiederherstellen mehr.", { art: "keine-kopie" });
       if (m.status !== "zurueck") throw new HttpFehler(409, "Das wurde nicht rückgängig gemacht.", { art: "nicht-zurueck" });
+      setzeMarke(id, "redo");
       const erg = wechsle(m, "vor", { teilweise: eingabe.teilweise === true });
       m.status = "fertig"; if (m.art === "loeschen") m.zeit = jetzt().toISOString(); // die 30 Tage beginnen neu
       schreibeManifest(m);
+      loescheMarke();
       eintragLog(m, "Wiederhergestellt: Die Aktion gilt wieder.", [erg.nach || erg.pfad, erg.von].filter(Boolean));
       return { ...erg, ok: true, art: "wieder", vorgangArt: m.art };
     });
@@ -664,30 +719,54 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
 
   // ───────────── Papierkorb ─────────────
   function alleManifeste() {
-    let namen = [];
-    try { namen = readdirSync(vorgaenge); } catch { return []; }
-    return namen.map((n) => leseManifest(n)).filter(Boolean);
+    const aus = [];
+    for (const v of [vorgaenge, ...alteVerz]) {
+      let namen = [];
+      try { namen = readdirSync(v); } catch { continue; }
+      for (const n of namen) { const m = leseManifest(n); if (m) aus.push(m); }
+    }
+    return aus;
   }
+  // Liegt dieser Eintrag auf einem anderen Laufwerk als der Vault? Dann geht Wiederherstellen nur im Finder.
+  const andersesLaufwerk = (m) => { try { return geraet(vorgangDir(m.id)) !== geraet(wurzel); } catch { return false; } };
   function papierkorbListe() {
     return mitSperre(async () => {
       aufraeumen();
-      const aus = alleManifeste().filter((m) => m.art === "loeschen" && (m.status === "fertig" || m.status === "teilweise") && m.inhalt).map((m) => {
+      const alle = alleManifeste();
+      const aus = alle.filter((m) => m.art === "loeschen" && m.status === "fertig" && m.inhalt).map((m) => {
         const ablauf = Date.parse(m.zeit) + PAPIERKORB_TAGE * TAG_MS;
         const dateien = m.inhalt.eintraege.filter((e) => e.art === "datei");
+        const fremd = andersesLaufwerk(m);
         return { id: m.id, name: m.inhalt.name, titel: m.titel || ohneEndungName(m.inhalt.name), pfad: m.von, ordner: ordnerVonPfad(m.von), typ: m.typ, zeit: m.zeit, laeuftAb: new Date(ablauf).toISOString(),
-          tageUebrig: Math.max(0, Math.ceil((ablauf - Date.now()) / TAG_MS)), teilweise: m.status === "teilweise", anzahl: m.typ === "ordner" ? dateien.length : 1, groesse: dateien.reduce((s, e) => s + (e.groesse || 0), 0) };
+          tageUebrig: Math.max(0, Math.ceil((ablauf - Date.now()) / TAG_MS)), anzahl: m.typ === "ordner" ? dateien.length : 1, groesse: dateien.reduce((s, e) => s + (e.groesse || 0), 0),
+          ...(fremd ? { nurImFinder: true, ort: join(vorgangDir(m.id), "inhalt", m.inhalt.name) } : {}) };
       });
       aus.sort((a, b) => (a.zeit < b.zeit ? 1 : -1));
-      return { eintraege: aus, tage: PAPIERKORB_TAGE };
+      // Vorgänge, die nicht sauber zurückgefahren werden konnten: sichtbar mit Handlungsweg, nie still liegen lassen
+      const hinweise = alle.filter((m) => m.status === "unklar").map((m) => ({ id: m.id, art: m.art, typ: m.typ, von: m.von, nach: m.nach || null, zeit: m.zeit, ort: vorgangDir(m.id) }));
+      return { eintraege: aus, hinweise, tage: PAPIERKORB_TAGE };
+    });
+  }
+  // „Erledigt“ für einen unklaren Vorgang: das Journal wandert in die Quarantäne (nie löschen)
+  function papierkorbHinweisErledigt(eingabe) {
+    const e = gemeinsamEin(eingabe);
+    return mitSperre(async () => {
+      const m = leseManifest(e.id);
+      if (!m || m.status !== "unklar") throw new HttpFehler(404, "Diesen Hinweis gibt es nicht (mehr).");
+      const q = join(supKorb, "quarantaene"); mkdirSync(q, { recursive: true, mode: 0o700 });
+      let ziel = join(q, `${m.id}-${Date.now()}`);
+      try { renameSync(vorgangDir(m.id), ziel); } catch (err) { if (err.code === "EXDEV") { ziel = join(dirname(vorgangDir(m.id)), "..", "quarantaene", `${m.id}-${Date.now()}`); mkdirSync(dirname(ziel), { recursive: true }); renameSync(vorgangDir(m.id), ziel); } else throw err; }
+      return { ok: true, ort: ziel };
     });
   }
   function papierkorbWiederherstellen(eingabe) {
     const e = gemeinsamEin(eingabe);
     return mitSperre(async () => {
       const m = leseManifest(e.id);
-      if (!m || m.art !== "loeschen" || (m.status !== "fertig" && m.status !== "teilweise")) throw new HttpFehler(404, "Das liegt nicht (mehr) im Papierkorb.");
+      if (!m || m.art !== "loeschen" || m.status !== "fertig") throw new HttpFehler(404, "Das liegt nicht (mehr) im Papierkorb.");
+      setzeMarke(m.id, "restore");
       const erg = wechsleLoeschen(m, true, { name: typeof e.name === "string" && e.name ? e.name : null, ziel: typeof e.ziel === "string" ? e.ziel : null });
-      m.status = "wiederhergestellt"; schreibeManifest(m); // nicht „zurueck“: ein Wiederholen des Löschens aus dem Protokoll wäre jetzt falsch (der Platz kann neu belegt sein)
+      m.status = "wiederhergestellt"; schreibeManifest(m); loescheMarke(); // nicht „zurueck“: ein Wiederholen des Löschens aus dem Protokoll wäre jetzt falsch (der Platz kann neu belegt sein)
       // der Eintrag im Protokoll gilt als zurückgenommen
       try { if (m.eintrag) aendereZustand(support, kennung, (s) => { s.zurueck[m.eintrag] = new Date().toISOString(); }); } catch { /* egal */ }
       eintragLog(m, "Aus dem Papierkorb wiederhergestellt.", [erg.pfad]);
@@ -701,7 +780,7 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
     return mitSperre(async () => {
       let n = 0;
       for (const m of alleManifeste()) {
-        if (m.art !== "loeschen" || (m.status !== "fertig" && m.status !== "teilweise")) continue;
+        if (m.art !== "loeschen" || m.status !== "fertig") continue;
         if (ids && !ids.includes(m.id)) continue;
         try { rmSync(join(vorgangDir(m.id), "inhalt"), { recursive: true, force: true }); } catch { continue; }
         m.status = "endgueltig"; schreibeManifest(m); n++;
@@ -724,6 +803,7 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
     }
   }
   // Nach 30 Tagen weg — aber nie bei einem Uhrensprung: steht ein Eintrag in der Zukunft, geht die Uhr falsch, und es wird nichts gelöscht; je Lauf höchstens 25.
+  // Nur „fertig“ und „endgueltig“ werden nach 30 Tagen entfernt: zurueck, laeuft, unklar und die Quarantäne bleiben.
   function aufraeumen() {
     const alle = alleManifeste();
     const jetztMs = Date.now();
@@ -731,14 +811,20 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
     let n = 0;
     for (const m of alle) {
       if (n >= 25) break;
-      if (jetztMs - Date.parse(m.zeit) > PAPIERKORB_TAGE * TAG_MS && m.status !== "laeuft" && m.status !== "unklar") { try { rmSync(vorgangDir(m.id), { recursive: true, force: true }); n++; } catch { /* egal */ } }
+      if (jetztMs - Date.parse(m.zeit) > PAPIERKORB_TAGE * TAG_MS && (m.status === "fertig" || m.status === "endgueltig")) { try { rmSync(vorgangDir(m.id), { recursive: true, force: true }); n++; } catch { /* egal */ } }
     }
   }
 
   // ───────────── Erholung nach einem Absturz ─────────────
-  // Läuft nur unter der Sperre: ein Vorgang mit Status „laeuft“ gehört dann keinem lebenden Lauf mehr. Zurückgefahren wird rückwärts: erst der Umzug, dann die Notizen.
-  // Ist die Lage nicht eindeutig (Quelle und Ziel beide da oder beide weg), bleibt das Journal liegen (Status „unklar“) — nichts wird gelöscht.
+  // Läuft nur unter der Sperre: ein Vorgang mit Status „laeuft“ (oder eine Marke) gehört dann keinem lebenden Lauf mehr. Alles Verschieben ist ein einzelnes rename (atomar); zurückgefahren wird
+  // rückwärts: erst der Umzug, dann die Notizen. Ist die Lage nicht eindeutig, bleibt das Journal liegen (Status „unklar“) und erscheint im Papierkorb mit Hinweis — nichts wird gelöscht.
   const nameDa = (rel) => { try { const a = absVon(rel); return readdirSync(dirname(a)).some((n) => n.normalize("NFC") === basename(a).normalize("NFC")); } catch { return false; } };
+  const leererOrdner = (abs) => { try { return lstatSync(abs).isDirectory() && readdirSync(abs).length === 0; } catch { return false; } };
+  // Reste von atomarSchreiben abgestürzter Prozesse: .brain-tmp-<pid>-* toter PIDs
+  function raeumeTmp(dirAbs) {
+    let namen = []; try { namen = readdirSync(dirAbs); } catch { return; }
+    for (const n of namen) { const mm = /^\.brain-tmp-(\d+)-/.exec(n); if (mm && !lebt(Number(mm[1]))) { try { unlinkSync(join(dirAbs, n)); } catch { /* egal */ } } }
+  }
   function erhole(m) {
     const dir = vorgangDir(m.id);
     const unklar = () => { m.status = "unklar"; try { schreibeManifest(m); } catch { /* egal */ } };
@@ -748,11 +834,14 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
         const v = loeseBlatt(m.von);
         const korbDa = existsSync(ziel), quelleDa = gibtEs(v.abs);
         if (!korbDa) { rmSync(dir, { recursive: true, force: true }); return; }                 // nichts bewegt
-        if (!quelleDa) { verschiebeUeberall(ziel, v.abs); rmSync(dir, { recursive: true, force: true }); return; } // zurücklegen
+        if (!quelleDa) { verschiebeLokal(ziel, v.abs); rmSync(dir, { recursive: true, force: true }); return; } // zurücklegen
         unklar(); return;
       }
+      for (const d of m.dateien || []) raeumeTmp(dirname(absVon(d.pfad)));
       if (m.von !== m.nach) {
-        const vonDa = nameDa(m.von), nachDa = nameDa(m.nach);
+        let vonDa = nameDa(m.von), nachDa = nameDa(m.nach);
+        // Fenster zwischen mkdir(Ziel) und rename bei Ordnern: das Ziel ist leer und die Quelle noch da = der Umzug ist nicht passiert
+        if (m.typ === "ordner" && vonDa && nachDa && leererOrdner(absVon(m.nach))) { try { rmdirSync(absVon(m.nach)); nachDa = false; } catch { /* nicht leer */ } }
         if (nachDa && !vonDa) verschiebeFs(absVon(m.nach), absVon(m.von), m.typ, !!m.casePur);
         else if (!(vonDa && !nachDa)) { unklar(); return; }
       }
@@ -762,10 +851,31 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
       rmSync(dir, { recursive: true, force: true });
     } catch { unklar(); }
   }
+  // Marke eines abgebrochenen Rückgängig/Wiederholen/Wiederherstellen
+  function erholeAktion(m, aktion) {
+    const dir = vorgangDir(m.id);
+    if (m.art === "loeschen" && m.inhalt) {
+      const trashDa = existsSync(join(dir, "inhalt", m.inhalt.name));
+      if (aktion === "restore" && !trashDa) { m.status = "wiederhergestellt"; schreibeManifest(m); }
+      else if (aktion === "undo" && !trashDa) { m.status = "zurueck"; schreibeManifest(m); }
+      else if (aktion === "redo" && trashDa) { m.status = "fertig"; m.zeit = jetzt().toISOString(); schreibeManifest(m); }
+      return;
+    }
+    // Umbenennen/Verschieben: unverändert gegenüber dem Stand VOR der Aktion = nichts zu tun, sonst sichtbar „unklar“
+    const abb = abbilder(m.von, m.nach, m.typ);
+    const zurueck = aktion === "undo";
+    const unberuehrt = (m.dateien || []).every((d) => leseHash(absVon(zurueck ? abb(d.pfad) : d.pfad)) === (zurueck ? d.hashNachher : d.hashVorher))
+      && (m.von === m.nach || (zurueck ? nameDa(m.nach) && !nameDa(m.von) : nameDa(m.von) && !nameDa(m.nach)));
+    if (!unberuehrt) { m.status = "unklar"; try { schreibeManifest(m); } catch { /* egal */ } }
+  }
   function erholeAngefangene() {
-    let id = null;
-    try { id = JSON.parse(readFileSync(markeDatei, "utf8")).id; } catch { /* keine Marke */ }
-    if (id) { const m = leseManifest(id); if (m && m.status === "laeuft") erhole(m); loescheMarke(); }
+    let marke = null;
+    try { marke = JSON.parse(readFileSync(markeDatei, "utf8")); } catch { /* keine Marke */ }
+    if (marke && marke.id) {
+      const m = leseManifest(marke.id);
+      if (m) { if (marke.aktion === "op") { if (m.status === "laeuft") erhole(m); } else erholeAktion(m, marke.aktion); }
+      loescheMarke();
+    }
     if (erholt) return;
     erholt = true;
     let namen = []; try { namen = readdirSync(vorgaenge); } catch { namen = []; }
@@ -779,5 +889,5 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
     }
   }
 
-  return { sperreAktiv, umbenennen, verschieben, loeschen, papierkorbListe, papierkorbWiederherstellen, papierkorbEndgueltig, vorgangZurueck, vorgangWieder, vorgangMoeglich, kennung, korb };
+  return { sperreAktiv, papierkorbHinweisErledigt, umbenennen, verschieben, loeschen, papierkorbListe, papierkorbWiederherstellen, papierkorbEndgueltig, vorgangZurueck, vorgangWieder, vorgangMoeglich, kennung, korb };
 }

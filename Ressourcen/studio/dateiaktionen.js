@@ -414,7 +414,7 @@ export function erzeugeDateiaktionen(ctx) {
   // ───────────── Papierkorb ─────────────
   let korbListe = [];
   async function ladeKorbZahl() {
-    try { const r = await api.papierkorb(); korbListe = r.eintraege || []; S.papierkorbAnzahl = korbListe.length; ctx.zeichneBereiche?.(); } catch { /* ältere Werkstatt: kein Papierkorb */ }
+    try { const r = await api.papierkorb(); korbListe = r.eintraege || []; S.papierkorbAnzahl = korbListe.length + (r.hinweise || []).length; ctx.zeichneBereiche?.(); } catch { /* ältere Werkstatt: kein Papierkorb */ }
   }
   const tageSeit = (iso) => Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / 86400e3));
   async function zeichnePapierkorb(host) {
@@ -422,17 +422,28 @@ export function erzeugeDateiaktionen(ctx) {
     let r;
     try { r = await api.papierkorb(); } catch (e) { host.replaceChildren(h("div", { klasse: "leer-liste" }, h("p", { text: e.message }))); return; }
     if (!(S.sicht.art === "bereich" && S.sicht.id === "papierkorb")) return;
-    korbListe = r.eintraege || []; S.papierkorbAnzahl = korbListe.length; ctx.zeichneBereiche?.();
+    korbListe = r.eintraege || []; S.papierkorbAnzahl = korbListe.length + (r.hinweise || []).length; ctx.zeichneBereiche?.();
+    const hinweise = (r.hinweise || []).map(hinweisKarte);
+    if (!korbListe.length && hinweise.length) { host.replaceChildren(...hinweise); return; }
     if (!korbListe.length) { host.replaceChildren(leerBlock({ symbol: "papierkorb", titel: TD.korb.leerTitel, text: TD.korb.leerText, daten: { "data-leer": "papierkorb" } })); return; }
     const kopf = h("div", { klasse: "korb-kopf" }, h("span", { klasse: "leise", text: TD.korb.leerText }),
       baueKnopf({ text: TD.korb.alleLeeren, groesse: "s", variante: "leise", aktion: "papierkorb-leeren", aufKlick: () => leeren() }));
-    host.replaceChildren(kopf, ...korbListe.map(korbKarte));
+    host.replaceChildren(...hinweise, kopf, ...korbListe.map(korbKarte));
+  }
+  // Ein Vorgang, der nach einem Abbruch nicht eindeutig zurückgefahren werden konnte: sichtbar, mit Weg
+  function hinweisKarte(x) {
+    return h("div", { klasse: "karte korb-karte korb-hinweis", role: "alert", "data-hinweis": x.id },
+      h("div", { klasse: "karte-kopf" }, h("div", { klasse: "karte-titel", text: TD.korb.unklarTitel }), h("div", { klasse: "karte-marken" }, symbol("warnung", 14))),
+      h("div", { klasse: "karte-vorschau", text: TD.korb.unklarText(x.von, x.nach) }),
+      h("div", { klasse: "karte-fuss" }, h("span", { text: x.ort })),
+      h("div", { klasse: "korb-aktionen" }, baueKnopf({ text: TD.korb.unklarErledigt, groesse: "s", aktion: "hinweis-erledigt", aufKlick: async () => {
+        try { await api.papierkorbHinweisErledigt(x.id); await zeichnePapierkorb(document.getElementById("liste-koerper")); ladeKorbZahl(); } catch (err) { toast(fehlerText(err), { fehler: true }); } } })));
   }
   function korbKarte(e) {
     const tage = tageSeit(e.zeit);
     const karte = h("div", { klasse: "karte korb-karte", role: "option", "data-korb": e.id, "data-pfad": e.pfad, title: e.pfad },
       h("div", { klasse: "karte-kopf" }, h("div", { klasse: "karte-titel", text: e.titel || e.name }), h("div", { klasse: "karte-marken" }, symbol(e.typ === "ordner" ? "ordner" : "notiz", 14))),
-      h("div", { klasse: "karte-vorschau", text: e.ordner ? `${e.ordner}` : "" }),
+      h("div", { klasse: "karte-vorschau", text: e.nurImFinder ? TD.korb.nurImFinder(e.ort) : (e.ordner ? `${e.ordner}` : "") }),
       h("div", { klasse: "karte-fuss" }, h("span", { text: `${TD.korb.geloeschtVor(tage)} · ${e.typ === "ordner" ? TD.korb.ordner(e.anzahl) : TD.korb.notiz}` }), h("span", { text: TD.korb.tageUebrig(e.tageUebrig) })),
       h("div", { klasse: "korb-aktionen" },
         baueKnopf({ text: TD.korb.wiederherstellen, groesse: "s", aktion: "wiederherstellen", symbol: "zuruecksetzen", aufKlick: () => wiederherstellen(e) }),

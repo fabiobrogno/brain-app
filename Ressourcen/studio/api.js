@@ -182,6 +182,7 @@ export const api = {
   papierkorb: () => anfrage("GET", "/api/papierkorb"),
   papierkorbWiederherstellen: (id, name) => anfrage("POST", "/api/papierkorb/wiederherstellen", { id, ...(name ? { name } : {}) }),
   papierkorbEndgueltig: (daten) => anfrage("POST", "/api/papierkorb/endgueltig", daten),
+  papierkorbHinweisErledigt: (id) => anfrage("POST", "/api/papierkorb/hinweis-erledigt", { id }),
   aktivitaetGelesen: ({ ids, alle, vault } = {}) => anfrage("POST", "/api/aktivitaet/gelesen", { ...(alle ? { alle: true } : { ids: ids || [] }), ...(vault ? { vault } : {}) }),
   // ---- Umstellung eines Vaults aus der Kit-Zeit (P7). Geschrieben wird nur mit bestaetigt: true — das setzt die Oberfläche erst nach dem Klick des Nutzers.
   umstellungHinweis: () => anfrage("GET", "/api/umstellung/hinweis"),
