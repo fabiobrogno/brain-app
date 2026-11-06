@@ -1,8 +1,9 @@
 // werkstatt/anmelden.mjs — die Routen „Anmelden im Fenster“ (Paket E3): start → Kennung, Stand abfragen, Code senden, abbrechen.
 // Die Arbeit macht gemeinsam/anmeldung.mjs (Kindprozess, Umgebung, Fristen); hier sitzen Regeln, Konten und Aufräumen:
 //  - nur bekannte Programme (claude, codex) und nur bekannte Konten (Kennung aus der Liste) oder ein NEUES Konto mit Namen;
-//  - ein NEUES Konto bekommt zuerst den unsichtbaren Ordner `.neu-<kennung>`; erst nach bestätigter Anmeldung wird er zum Konto (konten.legeKontoAn mit `vorbereitet`),
-//    Abbruch, Frist und Fehler räumen ihn weg;
+//  - ein NEUES Konto legt `konten.legeKontoAn` (E4: POST /api/ki/konto-neu) gleich unter seinem ENDGÜLTIGEN Namen an, als „ausstehend“. Die Anmeldung läuft immer mit genau diesem Pfad
+//    (Claude Code legt sie vermutlich unter einem vom Pfad abhängigen Namen im Schlüsselbund ab — nie umbenennen). Erst die bestätigte Anmeldung ruft `konten.kontoFertig` (POST /api/ki/konto-fertig),
+//    Abbruch, Frist und Fehler rufen `konten.kontoAbbruch` (räumt Ordner und Eintrag weg);
 //  - höchstens eine laufende Anmeldung je Konto, höchstens 4 gleichzeitig, höchstens 8 Starts je Minute;
 //  - Antworten enthalten nur feste Felder (Phase, Adresse, Gerätecode, Restzeit, Grund, Konto); nie Ausgabe des Programms, nie Pfade.
 import { statSync } from "node:fs";
@@ -53,15 +54,17 @@ export function erzeugeAnmelden({ konten, findeProgramm = (p) => sucheProgramm(p
     if (!pfad) throw new HttpFehler(409, e.programm === "claude" ? "Claude Code wurde nicht gefunden." : "Codex wurde nicht gefunden.", { art: "nicht-gefunden", rueckfall: true });
 
     if (hatNeu) {
-      try { konten.raeumeVerwaiste([...laeufe.values()].filter((l) => l.neu && !l.beendet).map((l) => l.neu.pfad)); } catch { /* Beiwerk */ }
-      neu = konten.reserviereNeuesKonto({ programm: e.programm, name }); // prüft Name, Doppelte, Ort; legt `.neu-…` an
-      ordner = neu.pfad; name = neu.name;
+      if (typeof konten.kontoFertig !== "function" || typeof konten.kontoAbbruch !== "function") throw new HttpFehler(503, "Ein neues Konto lässt sich in dieser Version noch nicht im Fenster anmelden.", { art: "nicht-verfuegbar", rueckfall: true });
+      const r = konten.legeKontoAn({ programm: e.programm, name }); // prüft Name, Doppelte, Ort; legt den Ordner unter dem endgültigen Namen an, Konto „ausstehend“
+      const info = r && (r.ausstehend || r.neuesKonto);
+      if (!info || typeof info.id !== "string" || typeof info.pfad !== "string") throw new HttpFehler(500, "Das neue Konto ließ sich nicht vorbereiten.");
+      neu = { id: info.id, pfad: info.pfad }; ordner = neu.pfad; name = String(name).trim();
     }
     let sitzung;
     try {
       sitzung = starter({ programm: e.programm, programmPfad: pfad, ordner, basisUmgebung: basisUmgebung(), protokoll: (x) => log(x), ...optionen });
     } catch (err) {
-      if (neu) konten.raeumeNeuesKonto(neu.pfad);
+      if (neu) { try { konten.kontoAbbruch({ id: neu.id }); } catch { /* Beiwerk */ } }
       throw new HttpFehler(503, "Die Anmeldung ließ sich nicht starten.", { art: "start", rueckfall: true });
     }
     starts.push(jetztMs);
@@ -80,8 +83,8 @@ export function erzeugeAnmelden({ konten, findeProgramm = (p) => sucheProgramm(p
     try {
       if (phase === "ok") {
         if (lauf.neu) {
-          const r = konten.legeKontoAn({ programm: lauf.programm, name: lauf.name }, { vorbereitet: lauf.neu.pfad });
-          konto = { id: r.neuesKonto.id, programm: lauf.programm, name: lauf.name };
+          konten.kontoFertig({ id: lauf.neu.id });
+          konto = { id: lauf.neu.id, programm: lauf.programm, name: lauf.name };
           lauf.neu = null;
         } else if (lauf.konto) {
           try { konten.anmeldung({ konto: lauf.konto, zustand: "angemeldet" }); } catch { /* der Vermerk ist Beiwerk */ }
@@ -91,7 +94,7 @@ export function erzeugeAnmelden({ konten, findeProgramm = (p) => sucheProgramm(p
     } catch (err) {
       phase = "error"; grund = "konto-nicht-angelegt"; rueckfall = false; konto = null;
     }
-    if (lauf.neu) { konten.raeumeNeuesKonto(lauf.neu.pfad); lauf.neu = null; } // Abbruch, Frist, Fehler: nichts bleibt liegen
+    if (lauf.neu) { try { konten.kontoAbbruch({ id: lauf.neu.id }); } catch { /* Beiwerk */ } lauf.neu = null; } // Abbruch, Frist, Fehler: nichts bleibt liegen
     lauf.ergebnis = { phase, grund: grund || null, rueckfall: !!rueckfall, konto };
     lauf.beendet = jetzt();
     if (aktiv.get(lauf.schluessel) === id) aktiv.delete(lauf.schluessel);

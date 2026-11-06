@@ -2,7 +2,7 @@
 // NUR Platzhalter für `claude` und `codex` (anmelden-hilfe.mjs) in Temp-Ordnern; nie ein echtes Programm, nie ein echtes Konto, nie der Schlüsselbund.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { writeFileSync, mkdirSync, existsSync, readdirSync, readFileSync, utimesSync, realpathSync } from "node:fs";
+import { writeFileSync, existsSync, readdirSync, readFileSync, rmSync, realpathSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { tmp, schreibe, pfad } from "./hilfe.mjs";
@@ -13,6 +13,7 @@ process.env.HOME = tmp("brain-home-");
 
 const { erzeugeHandler } = await import(pfad("werkstatt", "handler.mjs"));
 const A = await import(pfad("gemeinsam", "anmeldung.mjs"));
+const { erzeugeKonten } = await import(pfad("werkstatt", "konten.mjs"));
 
 const neuesVault = () => { const d = tmp("brain-vault-"); schreibe(d, "brain.config.json", "{}\n"); schreibe(d, "00_inbox/n.md", "# N\n"); return realpathSync(d); };
 const warte = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -32,8 +33,17 @@ function aufbau(szenario = {}, optionen = {}) {
     ANTHROPIC_API_KEY: "sk-ant-api-aus-der-werkstatt", OPENAI_API_KEY: "sk-aus-der-werkstatt", CLAUDE_CODE_OAUTH_TOKEN: "oauth-aus-der-werkstatt", CURSOR_CONFIG_DIR: leck,
     BRAIN_TESTMODUS: "1", KORTEX_VORSCHAU: "1", NODE_OPTIONS: "--no-warnings" };
   const protokoll = [];
+  // Konten nach der Schnittstelle von E4 (konto-neu → Ordner unter dem ENDGÜLTIGEN Namen, ausstehend; konto-fertig; Abbruch räumt weg). Bis E4 auf main ist, bildet diese Hülle sie über die echten Konten nach.
+  const echt = erzeugeKonten({ support: s, vaults: () => [{ pfad: v, name: "V" }] });
+  const ausstehend = new Set(), aufrufe = [];
+  const huelle = {
+    kontoDaten: echt.kontoDaten, anmeldung: echt.anmeldung,
+    legeKontoAn: (e) => { const r = echt.legeKontoAn(e); ausstehend.add(r.neuesKonto.id); aufrufe.push(["neu", r.neuesKonto.id]); return { ausstehend: r.neuesKonto }; },
+    kontoFertig: ({ id }) => { ausstehend.delete(id); aufrufe.push(["fertig", id]); return {}; },
+    kontoAbbruch: ({ id }) => { ausstehend.delete(id); aufrufe.push(["abbruch", id]); const k = echt.kontoDaten(id); if (k) { rmSync(k.ordner, { recursive: true, force: true }); echt.entferneKonto({ id }); } return { ok: true }; },
+  };
   const h = erzeugeHandler({ vault: v, vaultOptionen: { support: s }, mcpPfad: join(mcp, "brain-mcp.mjs"),
-    anmeldeOptionen: { findeProgramm: (n) => join(p.bin, n), basisUmgebung: () => basis, protokoll: (e) => protokoll.push(e), optionen: { takt: 30, fristen: { adresse: 2500, status: 4000 }, ...optionen } } });
+    anmeldeOptionen: { konten: huelle, findeProgramm: (n) => join(p.bin, n), basisUmgebung: () => basis, protokoll: (e) => protokoll.push(e), optionen: { takt: 30, fristen: { adresse: 2500, status: 4000 }, ...optionen } } });
   const antworten = [];
   const rufe = async (methode, pf, daten) => {
     const [weg, abfrage] = pf.split("?");
@@ -45,9 +55,10 @@ function aufbau(szenario = {}, optionen = {}) {
   const status = async (id) => (await rufe("GET", `/api/ki/anmeldelauf?id=${id}`)).j;
   const start = (daten) => rufe("POST", "/api/ki/anmeldelauf", daten);
   const warteAuf = (id, phasen) => bis(async () => { const z = await status(id); return phasen.includes(z.phase) ? z : null; });
-  const staging = () => { try { return readdirSync(join(s, "ki-konten-ordner")).filter((n) => n.startsWith(".neu-")); } catch { return []; } };
+  const staging = () => [...ausstehend]; // noch nicht bestätigte neue Konten
+  const wurzel = () => join(s, "ki-konten-ordner");
   const konten = async () => (await rufe("GET", "/api/ki/konten")).j;
-  const t = { p, s, h, leck, rufe, status, start, warteAuf, staging, konten, antworten, protokoll };
+  const t = { p, s, h, leck, aufrufe, wurzel, rufe, status, start, warteAuf, staging, konten, antworten, protokoll };
   alle.push(t);
   return t;
 }
@@ -58,17 +69,16 @@ test("Claude: neues Konto — Adresse über das BROWSER-Skript, Umgebung sauber,
   const t = aufbau({ modus: "ok", warteAufCode: true });
   const r = await t.start({ programm: "claude", neu: "Firma" });
   assert.equal(r.status, 200); assert.match(r.j.id, /^a_/);
-  assert.equal(t.staging().length, 1, "der Ordner des neuen Kontos liegt unsichtbar bereit");
+  assert.equal(t.staging().length, 1, "das neue Konto ist angelegt, aber noch nicht bestätigt");
   const wait = await t.warteAuf(r.j.id, ["wait"]);
   assert.match(wait.url, /^https:\/\/claude\.ai\/oauth\/authorize\?/);
   assert.equal(wait.codeMoeglich, true); assert.equal(wait.code, null);
   assert.ok(wait.verbleibendMs > 0 && wait.verbleibendMs <= 600_000);
-  const vorher = await t.konten();
-  assert.ok(!Object.values(vorher.konten).some((k) => k.name === "Firma"), "vor der Anmeldung gibt es das Konto noch nicht");
+  assert.ok(!t.aufrufe.some((a) => a[0] === "fertig"), "vor der Anmeldung wird nichts bestätigt");
   // Umgebung des Kindes
   const [env] = umgebungen(t.p.bin);
-  const neuOrdner = join(t.s, "ki-konten-ordner", t.staging()[0]);
-  assert.equal(env.konto, neuOrdner, "CLAUDE_CONFIG_DIR zeigt auf den neuen Ordner (und nur darauf)");
+  const endgueltig = join(t.wurzel(), "claude-firma");
+  assert.equal(env.konto, endgueltig, "CLAUDE_CONFIG_DIR zeigt gleich auf den ENDGÜLTIGEN Pfad (und nur darauf)");
   for (const n of env.namen) assert.ok(n === "CLAUDE_CONFIG_DIR" || !/^(XDG_|GIT_|ANTHROPIC_|OPENAI_|CODEX_|CURSOR_|GEMINI_|CLAUDE|BRAIN_|KORTEX_|NODE_)/i.test(n), `Fremdvariable im Kind: ${n}`);
   assert.ok(!env.namen.includes("CODEX_HOME")); assert.ok(env.namen.includes("HOME") && env.namen.includes("PATH"));
   assert.match(env.browser, /kortex-anmelden-[^/]+\/kortex-browser$/, "BROWSER = das Kortex-Skript, nicht das aus der Werkstatt-Umgebung");
@@ -81,10 +91,10 @@ test("Claude: neues Konto — Adresse über das BROWSER-Skript, Umgebung sauber,
   assert.equal(ok.phase, "ok"); assert.equal(ok.konto.name, "Firma"); assert.equal(ok.konto.programm, "claude");
   assert.equal(readFileSync(join(t.p.bin, "code-erhalten.txt"), "utf8"), "abcd1234#zustand", "der Code kam am Programm an");
   assert.deepEqual(t.staging(), []);
-  const nach = await t.konten();
-  const k = Object.values(nach.konten).find((x) => x.name === "Firma");
-  assert.ok(k, "das Konto ist jetzt in der Liste");
-  assert.ok(existsSync(join(t.s, "ki-konten-ordner", "claude-firma", "angemeldet")), "der Ordner wurde umbenannt, nicht neu angelegt");
+  assert.deepEqual(t.aufrufe.map((a) => a[0]), ["neu", "fertig"], "genau eine Bestätigung nach der Anmeldung");
+  assert.equal(ok.konto.id, t.aufrufe[0][1]);
+  assert.ok(existsSync(join(endgueltig, "angemeldet")), "die Anmeldung liegt im endgültigen Ordner");
+  assert.ok(readdirSync(t.wurzel()).every((n) => !n.startsWith(".neu-")), "nie ein Ordner, der umbenannt wird");
 });
 
 test("Claude: eine Version, die die Adresse nur ausgibt (ohne BROWSER), geht auch — Adresse nur aus festen Hosts", async () => {
@@ -102,10 +112,10 @@ test("Codex: Gerätecode und Adresse nach dem Muster aus Orca, CODEX_HOME zeigt 
   assert.equal(w.url, "https://auth.openai.com/codex/device"); assert.equal(w.code, "ABCD-12345"); assert.equal(w.codeMoeglich, false);
   assert.ok(w.verbleibendMs > 800_000 && w.verbleibendMs <= 900_000, "15 Minuten für den Gerätecode");
   const [env] = umgebungen(t.p.bin);
-  assert.equal(env.konto, join(t.s, "ki-konten-ordner", t.staging()[0]));
+  assert.equal(env.konto, join(t.wurzel(), "codex-privat-codex"));
   assert.ok(!env.namen.includes("CLAUDE_CONFIG_DIR") && !env.namen.includes("BROWSER") && !env.namen.some((n) => /^(XDG_|GIT_|ANTHROPIC_|OPENAI_)/.test(n)));
   assert.equal((await t.warteAuf(r.j.id, ["ok", "error"])).phase, "ok");
-  assert.ok(existsSync(join(t.s, "ki-konten-ordner", "codex-privat-codex")));
+  assert.ok(existsSync(join(t.wurzel(), "codex-privat-codex", "angemeldet")));
   assert.deepEqual(readFileSync(join(t.p.bin, "aufrufe.jsonl"), "utf8").trim().split("\n").map((z) => JSON.parse(z).args), ["login --device-auth", "login status"]);
 });
 
@@ -126,7 +136,7 @@ test("nichts außer Adresse und Code wird gelesen: Token aus Ausgabe und Anmelde
   }
 });
 
-test("Abbrechen beendet die ganze Prozessgruppe und räumt den Ordner des neuen Kontos weg; kein Konto entsteht", async () => {
+test("Abbrechen beendet die ganze Prozessgruppe und räumt den Ordner und Eintrag des neuen Kontos weg; kein Konto entsteht", async () => {
   const t = aufbau({ modus: "hang" });
   const r = await t.start({ programm: "claude", neu: "Abbruch" });
   await t.warteAuf(r.j.id, ["wait"]);
@@ -136,6 +146,8 @@ test("Abbrechen beendet die ganze Prozessgruppe und räumt den Ordner des neuen 
   assert.equal(a.j.phase, "abgebrochen"); assert.equal(a.j.verbleibendMs, null);
   await bis(() => !lebt(haupt) && !lebt(kind));
   assert.deepEqual(t.staging(), []);
+  assert.ok(t.aufrufe.some((a) => a[0] === "abbruch") && !t.aufrufe.some((a) => a[0] === "fertig"));
+  assert.ok(!existsSync(join(t.wurzel(), "claude-abbruch")), "Ordner weg");
   assert.ok(!Object.values((await t.konten()).konten).some((k) => k.name === "Abbruch"));
   assert.equal((await t.rufe("POST", "/api/ki/anmeldelauf/abbrechen", { id: r.j.id })).j.phase, "abgebrochen", "zweites Abbrechen ist harmlos");
   // danach darf dasselbe Konto wieder starten
@@ -236,17 +248,6 @@ test("fehlendes Programm: 409 mit Rückfall, nichts angelegt; Code nur während 
   const k = await t.start({ programm: "claude", neu: "VorDerAdresse" });
   assert.ok([200, 409].includes((await t.rufe("POST", "/api/ki/anmeldelauf/code", { id: k.j.id, code: "abcdefgh" })).status));
   for (const id of [c.j.id, k.j.id]) await t.rufe("POST", "/api/ki/anmeldelauf/abbrechen", { id });
-});
-
-test("verwaiste `.neu-…`-Ordner (App während der Anmeldung beendet) räumt der nächste Start weg; Fremdes bleibt", async () => {
-  const t = aufbau({ modus: "hang" });
-  const wurzel = join(t.s, "ki-konten-ordner"); mkdirSync(wurzel, { recursive: true });
-  const alt = join(wurzel, ".neu-0123456789abcdef"), jung = join(wurzel, ".neu-fedcba9876543210"), fremd = join(wurzel, ".neu-nicht-von-kortex");
-  for (const d of [alt, jung, fremd]) { mkdirSync(d); writeFileSync(join(d, "x"), "x"); }
-  const lang = new Date(Date.now() - 3 * 3600_000); utimesSync(alt, lang, lang); utimesSync(fremd, lang, lang);
-  const r = await t.start({ programm: "claude", neu: "Aufraeumen" });
-  assert.ok(!existsSync(alt), "alt und von Kortex: weg"); assert.ok(existsSync(jung), "jung: bleibt"); assert.ok(existsSync(fremd), "fremder Name: bleibt");
-  await t.rufe("POST", "/api/ki/anmeldelauf/abbrechen", { id: r.j.id });
 });
 
 test("beendeAlle (Werkstatt endet): Prozesse und Ordner weg", async () => {
