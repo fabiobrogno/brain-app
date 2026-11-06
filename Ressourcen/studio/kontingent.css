@@ -64,8 +64,48 @@
 .status > .st[data-st="vault"] { flex-shrink: 4; } .status > .st[data-st="geaendert"] { flex-shrink: 3; } .status > .st[data-st="remote"] { flex-shrink: 2; } .status > .st[data-st="zweig"] { flex-shrink: 1; }
 .status > .st[data-st="vault"] > span, .status > .st[data-st="zweig"] > span, .status > .st[data-st="geaendert"] > span, .status > .st[data-st="remote"] > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .status > .st[data-st="einstellungen"], .status > .st[data-st="theme"] { flex: none; }
-@container status (max-width: 1180px) { .kt-mini-rest, .kt-leiste .kt-name-text, .kt-mini .kt-balken { display: none; } .kt-leiste { gap: 6px; padding: 0 6px; } }
-@container status (max-width: 900px) { .kt-mini-text { display: none; } }
+/* Die Dichte des Kontingent-Eintrags wählt kontingent.js nach der gemessenen Breite (fünf Stufen, kontingent-regeln.js#waehleDichte), nicht nach festen Haltepunkten.
+   Die unsichtbaren Messkopien (.kt-probe) stehen neben dem Knopf und haben dieselben Maße wie er. */
+.kt-leiste { gap: 8px; position: relative; }
+.kt-eintraege { display: inline-flex; align-items: center; gap: 14px; min-width: 0; }
+.kt-eintrag { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.kt-eintrag .kt-balken { width: 44px; height: 4px; }
+.kt-eintrag .kt-pct, .kt-eintrag .kt-seg { color: var(--text); }
+.kt-eintrag[data-stufe="rot"] .kt-pct, .kt-eintrag[data-stufe="rot"] .kt-seg { color: var(--rot); }
+.kt-eintrag .kt-woche { color: var(--text-3); }
+.kt-eintrag[data-ruhig="ja"] { opacity: .62; }                       /* ruhig veraltet: grau, ohne Zeichen */
+.kt-eintrag[data-ruhig="ja"][data-warn="ja"] { opacity: 1; }
+.kt-mehr { color: var(--text-3); font-variant-numeric: tabular-nums; }
+.kt-warn { display: inline-flex; color: var(--gelb); }
+.kt-leer-text { color: var(--text-3); }
+.kt-leiste[data-zustand="ohne"] { color: var(--text-3); }
+.kt-leiste[data-dichte="symbol"][data-ton="dringend"] > svg { color: var(--rot); }
+.kt-probe { position: absolute; left: 0; top: 0; width: 0; height: 0; overflow: hidden; visibility: hidden; pointer-events: none; display: flex; flex-direction: column; }
+.kt-probe > .kt-leiste { width: max-content; flex: none; position: static; }
+
+/* ---------- Popover „Kontingent“ ---------- */
+.kt-pop { padding: 0; width: min(400px, calc(100vw - 24px)); }
+.kt-pop-oben { padding: 6px 6px 4px; }
+.kt-pop .kt-m-liste { max-height: min(56vh, 400px); padding: 0 4px 4px; gap: 10px; }
+.kt-gruppe { display: flex; flex-direction: column; gap: 8px; }
+.kt-g-kopf { display: flex; align-items: center; gap: 7px; padding: 2px 6px 0; font-size: 11.5px; font-weight: 600; letter-spacing: .02em; color: var(--text-2); }
+.kt-konto { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-radius: var(--r-l); }
+.kt-konto[data-aktiv="ja"] { background: var(--hover); }
+.kt-k-kopf { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.kt-k-name { font-weight: 500; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kt-stand { margin: 0; font-size: 11.5px; line-height: 1.4; color: var(--text-3); }
+.kt-pop .kt-leise { padding: 4px 10px 8px; }
+.kt-pop-fuss { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 12px; border-top: 1px solid var(--linie); background: var(--seite); border-radius: 0 0 var(--r-xl) var(--r-xl); }
+.kt-verwalten { border: 0; background: transparent; padding: 4px 6px; border-radius: var(--r-s); color: var(--akzent-tinte); font: inherit; font-weight: 500; cursor: pointer; }
+.kt-verwalten:hover { background: var(--hover); }
+.kt-verwalten:focus-visible { outline: 0; box-shadow: var(--fokus-ring); }
+.kt-dreht { display: inline-flex; animation: dreh var(--d-dreh) linear infinite; }
+@media (prefers-reduced-motion: reduce) { .kt-dreht { animation: none; } }
+:root[data-bewegung="reduziert"] .kt-dreht { animation: none; }
+.kt-rechts { min-width: 210px; }
+
+/* ---------- Einstellungen: Anzeige und Mitteilungen (Unterbereich „Kontingent“) ---------- */
+.kx-kt-optionen { margin-bottom: 14px; }
 
 /* ---------- Konto-Menü (öffnet über der Statusleiste) ---------- */
 .kt-menue { display: flex; flex-direction: column; width: min(420px, calc(100vw - 24px)); padding: 6px; background: var(--erhoben); border-radius: var(--r-xl); box-shadow: var(--schatten-menue); font-size: 12.5px; color: var(--text); }

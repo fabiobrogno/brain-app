@@ -80,6 +80,7 @@ export const TKO = {
     },
     ja: "Ja, in diesem Konto eintragen",
   },
+  fehlerSpeichern: "Die Einstellung ließ sich nicht speichern. Versuche es noch einmal.",
   fehlerSchalten: "Kortex konnte die Einstellungen von Claude Code nicht ändern. Es wurde nichts verändert. Versuche es noch einmal oder prüfe, ob die Datei settings.json beschreibbar ist.",
   schonWeg: (name) => `Kontingent für „${name}“ war schon aus: Die Statuszeile von Kortex stand nicht mehr in den Einstellungen. Kortex hat nichts geändert und nur seine Reste aufgeräumt.`,
   entfernt: (name, exakt) => (exakt ? `Kontingent für „${name}“ ist aus. Deine Einstellungen sind wieder genau wie vorher.` : `Kontingent für „${name}“ ist aus. Weil du die Einstellungen inzwischen geändert hast, hat Kortex nur seinen eigenen Eintrag entfernt.`),
@@ -102,6 +103,64 @@ export const TKO = {
     keineKonten: "Noch kein KI-Konto gefunden. Klicke auf „KI verbinden …“.",
     ladeFehler: "Das Kontingent konnte nicht geladen werden. Öffne die Einstellungen und versuche es dort noch einmal.",
   },
+  // ---- Kontingent wie Orca (Paket E5): Popover, ruhig veraltet, Statusleiste, Rechtsklick-Menü, Wahl verbraucht/übrig
+  // Ehrlicher Leertext: Claude Code meldet sein Kontingent erst, wenn es läuft (Codex entsprechend). Kein Wert wird erfunden.
+  leer: {
+    claude: "Erscheint, sobald Claude Code das nächste Mal läuft",
+    codex: "Erscheint, sobald Codex das nächste Mal läuft",
+    allgemein: "Erscheint, sobald dein KI-Programm das nächste Mal läuft",
+  },
+  ruhig: {
+    stand: (min) => (min < 1 ? "Stand gerade eben" : min < 60 ? `Stand vor ${min} Min` : min < 1440 ? `Stand vor ${Math.floor(min / 60)} Std` : `Stand vor ${Math.floor(min / 1440)} Tg`),
+    // das Warnzeichen: nur nach einem gescheiterten Abruf UND einem Wert, der älter als 30 Minuten ist
+    abrufFehler: (stand) => `Abruf fehlgeschlagen. ${stand}.`,
+    warnTitel: "Der letzte Abruf ist fehlgeschlagen und der Wert ist älter als 30 Minuten.",
+    pausiert: "Kortex fragt nicht mehr von selbst. „Auffrischen“ versucht es erneut.",
+    wartet: (zeit) => `Der Anbieter bittet um eine Pause. Kortex fragt frühestens um ${zeit} Uhr wieder.`,
+  },
+  anzeige: {
+    verbraucht: "verbraucht", uebrig: "übrig",
+    optionen: [{ wert: "verbraucht", text: "Verbraucht" }, { wert: "uebrig", text: "Übrig" }],
+    label: "Anzeige des Kontingents",
+  },
+  // Kopf und Fuß des Popovers
+  pop: {
+    titel: "Kontingent",
+    auffrischen: "Auffrischen",
+    auffrischenTitel: "Kortex fragt noch einmal nach. Das geht frühestens 5 Minuten nach der letzten Abfrage.",
+    auffrischenSpaeter: (zeit) => `Frühestens um ${zeit} Uhr wieder möglich. Kortex fragt höchstens alle 5 Minuten nach.`,
+    aktualisiert: "wird aktualisiert …",
+    verwalten: "Konten verwalten …",
+    keine: "Noch kein KI-Konto mit Kontingent gefunden. Verbinde Claude Code oder Codex unter „Konten verwalten …“.",
+    aktiv: "Aktiv",
+    programme: { claude: "Claude Code", codex: "Codex" },
+  },
+  // Statusleiste: ein Eintrag je Konto, die Dichte folgt der Breite
+  segment: {
+    titel: "Kontingent",
+    leerVoll: "Kontingent · folgt beim nächsten Lauf",
+    leerKurz: "Kontingent",
+    mehr: (n) => `+${n}`,
+    mehrTitel: (n, namen) => `${n === 1 ? "1 weiteres Konto" : `${n} weitere Konten`}: ${namen}`,
+    aria: (teile) => `Kontingent: ${teile}`,
+    fensterKurz: { session: "5 Std", weekly: "Woche" },
+  },
+  // Rechtsklick auf die Statusleiste
+  menue: {
+    gruppe: "In der Statusleiste zeigen",
+    kontingent: "Kontingent je Konto",
+    woerter: "Wörter",
+    format: "Format",
+  },
+  // Einstellungen → KI & Konten → Kontingent
+  optionen: {
+    titel: "Anzeige und Mitteilungen",
+    text: "Gilt für die Statusleiste, das Kontingent-Fenster und diese Seite.",
+    statusleiste: { titel: "Kontingent in der Statusleiste", text: "Ein Eintrag je Konto unten in der Fensterleiste. Bei wenig Platz wird er kürzer." },
+    anzeige: { titel: "Anzeige", text: "Zeigt, wie viel verbraucht ist, oder wie viel noch übrig ist. Die Farbe richtet sich immer nach dem Verbrauch." },
+    mitteilung: { titel: "Mitteilung bei 80 % und 100 %", text: "Höchstens einmal je Fenster und Konto, und nur, wenn Kortex nicht vorne ist." },
+  },
+
   // ---- Frag-Feld
   frag: {
     voll: (name, wieder) => `${name} ist voll, ${wieder}. Wähle ein anderes Konto oder warte bis dahin.`,

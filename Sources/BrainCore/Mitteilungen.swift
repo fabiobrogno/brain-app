@@ -127,7 +127,7 @@ public struct MitteilungsEinstellungen: Equatable, Sendable {
     public var abgewiesen = true
     public var rueckfragen = true
     public var sicherung = true
-    /// Für später (Kontingent-Warnungen); heute ohne Wirkung.
+    /// Kontingent-Warnungen bei 80 % und 100 % eines Fensters (Art `kontingent`; die Werkstatt entscheidet, wann, höchstens einmal je Fenster und Konto).
     public var kontingent = true
     public var pflege = false
 
@@ -143,6 +143,7 @@ public struct MitteilungsEinstellungen: Equatable, Sendable {
         "sicherung-konflikt": "mitteilungenSicherung", "sicherung-fehler": "mitteilungenSicherung",
         "pflege-fehler": "mitteilungenRueckfragen", "anmeldung-abgelaufen": "mitteilungenRueckfragen",
         "pflege": "mitteilungenPflege",
+        "kontingent": "mitteilungenKontingent",
     ]
 
     /// Wert eines Schalters nach seinem Namen in `einstellungen.json`.
@@ -398,6 +399,8 @@ public final class MitteilungsPlaner {
         public var maxProMinute = 4
         /// Dieselbe Abweisung (gleicher Handelnder, Vault und Grund) höchstens so oft als Mitteilung.
         public var abweisungsPause: TimeInterval = 600
+        /// Derselbe Schlüssel (Art-Familie, Handelnder, Vault) erzeugt höchstens alle so viele Sekunden eine Mitteilung (Orca: notification-burst-cooldown, 5 s).
+        public var burstSperre: TimeInterval = 5
         /// Namen der KI-Programme, die als Handelnder in Titel und Text stehen dürfen (Katalog der App). Alles andere wird zu „Eine KI“ bzw. „Kortex“:
         /// das Protokoll liegt im Support-Ordner, und ein Programm, das es beschreiben kann, soll keine Freitexte in Mitteilungen des Systems bekommen.
         public var bekannteProgramme: Set<String> = ["Claude Code", "Codex"]
@@ -417,6 +420,7 @@ public final class MitteilungsPlaner {
     private var gruppen: [Gruppe] = []
     private var zustellzeiten: [Date] = []
     private var letzteAbweisung: [String: Date] = [:]
+    private var letzteZustellung: [String: Date] = [:]
     private var ueberzaehlig = 0
     private var zaehler = 0
 
@@ -431,7 +435,12 @@ public final class MitteilungsPlaner {
 
     /// Art-Familie für die Gruppierung. Abweisungen unterscheiden den Grund (gleicher Grund = gleiche Meldung).
     static func familie(_ e: AktivitaetsEreignis) -> String {
-        e.art == "abweisung" ? "abweisung-\(e.grund ?? "")" : e.art
+        switch e.art {
+        case "abweisung": return "abweisung-\(e.grund ?? "")"
+        // Kontingent: je Konto und Fenster/Schwelle eine eigene Gruppe (5h-80, 5h-100, woche-80 …), damit 80 % und 100 % nie in einer Mitteilung verschwinden
+        case "kontingent": return "kontingent-\(e.konto ?? "")-\(e.grund ?? "")"
+        default: return e.art
+        }
     }
 
     /// Neue Ereignisse aufnehmen. Verworfen wird sofort: `rueckgaengig`, Arten ohne Schalter, ausgeschaltete Arten, Ereignisse vor dem Start.
@@ -453,6 +462,7 @@ public final class MitteilungsPlaner {
     public func faelligeMitteilungen(einstellungen: MitteilungsEinstellungen, istVorne: Bool) -> [Mitteilung] {
         let jetzt = self.jetzt()
         zustellzeiten.removeAll { jetzt.timeIntervalSince($0) >= 60 }
+        letzteZustellung = letzteZustellung.filter { jetzt.timeIntervalSince($0.value) < 60 }
         let unterdrueckt = einstellungen.nurImHintergrund && istVorne
         var aus: [Mitteilung] = []
 
@@ -476,9 +486,12 @@ public final class MitteilungsPlaner {
             if unterdrueckt { continue }
             let abweisungsSchluessel = erstes.art == "abweisung" ? [erstes.wer ?? "", erstes.vault ?? "", erstes.grund ?? ""].joined(separator: "|") : nil
             if let s = abweisungsSchluessel, let zuletzt = letzteAbweisung[s], jetzt.timeIntervalSince(zuletzt) < regeln.abweisungsPause { continue }
+            // 5 s Sperre je Schlüssel: dieselbe Gruppe meldet sich nie zweimal im Abstand von Sekunden (ein doppelt geschriebenes Ereignis, ein Neustart des Lesers)
+            if let z = letzteZustellung[g.schluessel], jetzt.timeIntervalSince(z) < regeln.burstSperre { continue }
             if zustellzeiten.count >= regeln.maxProMinute { ueberzaehlig += 1; continue }
             aus.append(mitteilung(ereignisse, ton: einstellungen.ton, jetzt: jetzt))
             zustellzeiten.append(jetzt)
+            letzteZustellung[g.schluessel] = jetzt
             if let s = abweisungsSchluessel { letzteAbweisung[s] = jetzt }
         }
         return aus
@@ -521,6 +534,15 @@ public final class MitteilungsPlaner {
         case "sicherung-konflikt": return "Sicherung: Die Fassungen auf zwei Geräten widersprechen sich. Löse den Konflikt im Studio."
         case "sicherung-fehler": return "Die Online-Sicherung hat nicht geklappt."
         case "anmeldung-abgelaufen": return "muss sich neu anmelden."
+        // grund: "5h-80" · "5h-100" · "woche-80" · "woche-100" (feste Werte; alles andere → allgemeiner Satz)
+        case "kontingent":
+            switch grund {
+            case "5h-80": return "hat 80 % des 5-Stunden-Kontingents verbraucht."
+            case "5h-100": return "hat das 5-Stunden-Kontingent aufgebraucht."
+            case "woche-80": return "hat 80 % des Wochen-Kontingents verbraucht."
+            case "woche-100": return "hat das Wochen-Kontingent aufgebraucht."
+            default: return "hat fast das ganze Kontingent verbraucht."
+            }
         default: return "Es gibt Neues in Kortex."
         }
     }
@@ -534,7 +556,7 @@ public final class MitteilungsPlaner {
         let anzahl = erstes.art == "abweisung" ? ereignisse.count : gesamt
         let text = Self.satz(art: erstes.art, grund: erstes.grund, anzahl: anzahl, handelnderBekannt: wer != nil)
         // Ohne bekannten Handelnden ist der Satz ein Systemsatz („Die Sicherung …“); bei Handelnden-Sätzen steht „Eine KI“ davor.
-        let nurGerechnet = ["ablage-aufgabe", "ablage-notiz", "abweisung", "aenderung", "anmeldung-abgelaufen"].contains(erstes.art)
+        let nurGerechnet = ["ablage-aufgabe", "ablage-notiz", "abweisung", "aenderung", "anmeldung-abgelaufen", "kontingent"].contains(erstes.art)
         let anzeige = wer == nil && nurGerechnet ? "\(handelnder) \(text)" : text
         let ziel = MitteilungsZiel.fuer(art: erstes.art)
         return Mitteilung(kennung: neueKennung(jetzt), gruppe: "kortex-\(erstes.vault ?? "alle")-\(Self.familie(erstes))",

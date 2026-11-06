@@ -16,7 +16,7 @@ import { oeffneMenue, schliesseMenue } from "./menue.js";
 import { baueAktionen, istZurueckgestellt, spaeterBis } from "./posteingang.js";
 import { TA as TAUF } from "./texte-aufgaben.js";
 import { erzeugeFragePanel } from "./frage.js";
-import { kontingentStand, erzeugeKontoLeiste } from "./kontingent.js";
+import { kontingentStand, erzeugeKontoLeiste, kontingentOptionen } from "./kontingent.js";
 import { uebernehmeBeimStart } from "./ki-aktiv.js";
 import { TF } from "./texte-frage.js";
 import { TK, konfliktLabel } from "./texte-konflikt.js";
@@ -165,6 +165,8 @@ function wendeEinstellungenAn(w) {
   const r = document.documentElement;
   if (Number.isInteger(w.schriftgroesse) && w.schriftgroesse >= 13 && w.schriftgroesse <= 19) r.style.setProperty("--editor-schrift", w.schriftgroesse + "px");
   if (w.bewegung === "reduziert") r.dataset.bewegung = "reduziert"; else delete r.dataset.bewegung;
+  // Statusleiste und Kontingent (Rechtsklick auf die Leiste, Popover, Einstellungen): eine Quelle, alle Anzeigen hören mit (kontingent.js#kontingentOptionen)
+  kontingentOptionen.setze(w);
   // Schreiben: Tagesnotiz und Vorlagen (leer = Standard)
   const alt = S.schreibEinst;
   const neu = { ...SCHREIB_STANDARD };
@@ -1932,7 +1934,7 @@ function setzeKiLaedt() {
   kiPlatzhalter.hidden = !laedt;
 }
 kontingentStand(api).abonniere(() => setzeKiLaedt());
-const kontingentSlot = h("span", { klasse: "st-slot", "data-st": "platz-kontingent", "data-slot": "kontingent" }, kontoLeiste.knoten()); // display: contents (hauptfenster.css)
+const kontingentSlot = h("span", { klasse: "st-slot", "data-st": "platz-kontingent", "data-slot": "kontingent" }, kontoLeiste.knoten(), kontoLeiste.messKnoten()); // display: contents (hauptfenster.css)
 function st(id, kinder, { klick, titel, klasse = "", tag = null } = {}) {
   const el = h(klick ? "button" : "span", { klasse: "st" + (klasse ? " " + klasse : ""), "data-st": id, title: titel || null, type: klick ? "button" : null, aufClick: klick || null }, ...kinder);
   return el;
@@ -1991,10 +1993,12 @@ function aktualisiereStatusDatei() {
   const teile = stEl.querySelectorAll("[data-datei]");
   if (!teile.length) return;
   const zeigen = zeigeDateiTeile();
-  teile.forEach((e) => { e.hidden = !zeigen; });
+  // Rechtsklick auf die Statusleiste: Wörter und Format lassen sich einzeln ausblenden (App-Einstellungen statusWoerter / statusFormat); der Trenner folgt, wenn beide weg sind
+  const woerterAn = kontingentOptionen.werte.statusWoerter !== false, formatAn = kontingentOptionen.werte.statusFormat !== false;
+  teile.forEach((e) => { const st = e.dataset.st; e.hidden = !zeigen || (st === "woerter" && !woerterAn) || (st === "format" && !formatAn) || (!st && !woerterAn && !formatAn); });
   if (!zeigen) return;
   const w = stEl.querySelector('[data-st="woerter"]'), f = stEl.querySelector('[data-st="format"]');
-  const wt = T.statusInfo.woerter(wortZahl());
+  const wt = woerterAn ? T.statusInfo.woerter(wortZahl()) : "";
   if (w) { const sp = w.querySelector("span"); if (sp && sp.textContent !== wt) sp.textContent = wt; w.title = wt; }
   if (f) { f.querySelector("span").textContent = formatName(S.pfad); f.title = S.pfad; }
 }
@@ -2063,9 +2067,13 @@ function zeichneStatus() {
   // Fokus merken: das Neuzeichnen (alle 30 s, nach jedem Git-Stand) darf den Tastaturfokus nicht verlieren
   const fokusId = stEl.contains(document.activeElement) ? document.activeElement.closest?.("[data-st]")?.dataset.st : null;
   stEl.replaceChildren(...k);
+  aktualisiereStatusDatei(); // Wörter und Format nach den Einstellungen der Leiste
+  kontoLeiste.messe(); // die Dichte des Kontingent-Eintrags richtet sich nach dem Platz, den die übrigen Teile lassen
   if (fokusId) { const neu = stEl.querySelector(`[data-st="${CSS.escape(fokusId)}"]`); if (neu && neu.tagName === "BUTTON") neu.focus({ preventScroll: true }); }
 }
 setInterval(() => { if (S.git) zeichneStatus(); }, 30000);
+stEl.addEventListener("contextmenu", (ev) => kontoLeiste.rechtsklick(ev)); // Teile der Statusleiste ein- und ausblenden (kontingent.js)
+kontingentOptionen.abonniere(() => { if (S.info?.vault) { aktualisiereStatusDatei(); kontoLeiste.messe(); } }); // Wörter/Format sofort ein- und ausblenden
 window.addEventListener("online", () => { S.offline = false; if (S.git) { zeichneStatus(); nachsehen(true); } });
 window.addEventListener("offline", () => { if (S.git) zeichneStatus(); });
 

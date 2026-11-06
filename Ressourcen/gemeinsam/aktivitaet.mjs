@@ -18,7 +18,7 @@ import { ladeKatalog } from "./ki-katalog.mjs";
 // LOG-BEGINN
 export const AKTIVITAET_ORDNER = "aktivitaet";
 // Ereignisarten. „abweisung“ hat einen Grund (grund): gesperrt (Konto im Vault gesperrt) · stufe (Stufe zu niedrig für das Werkzeug) · leseverbot (Leseverbot/Strenger Schutz).
-export const ARTEN = ["ablage-aufgabe", "ablage-notiz", "aenderung", "abweisung", "pflege", "pflege-fehler", "sicherung-konflikt", "sicherung-fehler", "anmeldung-abgelaufen", "rueckgaengig", "datei-aktion"];
+export const ARTEN = ["ablage-aufgabe", "ablage-notiz", "aenderung", "abweisung", "pflege", "pflege-fehler", "sicherung-konflikt", "sicherung-fehler", "anmeldung-abgelaufen", "rueckgaengig", "datei-aktion", "kontingent"];
 export const MAX_BYTES = 256 * 1024;      // je Datei; mit der Vorfassung höchstens etwa das Doppelte
 export const MAX_TEXT = 240;
 const MAX_PFADE = 10;
@@ -212,6 +212,7 @@ export const ART_SCHALTER = {
   "sicherung-konflikt": "mitteilungenSicherung", "sicherung-fehler": "mitteilungenSicherung",
   "pflege-fehler": "mitteilungenRueckfragen", "anmeldung-abgelaufen": "mitteilungenRueckfragen",
   pflege: "mitteilungenPflege",
+  kontingent: "mitteilungenKontingent", // 80 % und 100 % eines Fensters (werkstatt/kontingent.mjs), höchstens einmal je Fenster und Konto
   rueckgaengig: null, // die Bestätigung eines Klicks: nie eine Mitteilung
   "datei-aktion": null, // eigene Aktion in Kortex (Umbenennen, Verschieben, Papierkorb): nie eine Mitteilung
 };

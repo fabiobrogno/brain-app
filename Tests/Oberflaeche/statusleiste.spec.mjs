@@ -57,13 +57,16 @@ for (const [name, v] of Object.entries(VARIANTEN)) {
       await starte(page, { ...v, breite });
       expect(await abgeschnitten(page), `${breite} px`).toEqual([]);
       expect(await ueberlauf(page)).toEqual({ scroll: 0, doc: 0 });
-      for (const st of ["sync", "geaendert", "verlauf", "zweig", "remote", "kontingent", "gesundheit", "nutzung", "theme", "einstellungen"]) expect(await sichtbar(page, st), `${st} bei ${breite} px`).toBe(true);
+      // Kontingent (E5): ein Konto, das erst eingerichtet werden muss, verspricht keine Werte — dann fehlt das Segment, und der Knopf „KI“ ist der einzige Weg zu Claude Code
+      const mitWerten = v.werte.status === "ok";
+      for (const st of ["sync", "geaendert", "verlauf", "zweig", "remote", "gesundheit", "nutzung", "theme", "einstellungen"]) expect(await sichtbar(page, st), `${st} bei ${breite} px`).toBe(true);
+      expect(await sichtbar(page, "kontingent"), `kontingent bei ${breite} px`).toBe(mitWerten);
+      expect(await sichtbar(page, "claude"), `KI-Knopf bei ${breite} px`).toBe(!mitWerten);
       const l = page.locator(".status");
       await expect(l.locator('[data-st="geaendert"]')).toContainText("Keine Änderungen");
       await expect(l.locator('[data-st="zweig"]')).toContainText("main");
       await expect(l.locator('[data-st="remote"]')).toContainText(v.remote ? "origin" : "Kein Remote");
-      await expect(l.locator('[data-st="kontingent"]')).toContainText("Claude Code");
-      if (!v.remote) await expect(l.locator('[data-st="kontingent"]')).toContainText("Kontingent nicht eingerichtet");
+      if (mitWerten) await expect(l.locator('[data-st="kontingent"]')).toContainText("Claude Code");
       await expect(l.locator('[data-st="gesundheit"]')).toContainText("Gesundheit");
       await expect(l.locator('[data-st="einstellungen"]')).toBeInViewport();
       // Rangfolge: bei 1280 fehlen Format, Version, Wörter ganz; bei 1440 steht noch Version und Wörter da

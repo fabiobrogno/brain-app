@@ -7,14 +7,12 @@
 // src/main/codex-cli/codex-read-only-app-server-args.ts, src/main/rate-limits/service/service-types.ts @9bccd67 (MIT, Lovecast Inc.).
 import { spawn } from "node:child_process";
 import { registriere, beendeGruppe, beendetGerade } from "./prozess.mjs";
+import { leseRetryAfter } from "./kontingent-regeln.mjs";
 
 export const FENSTER_5H = 300;       // Orca: CODEX_SESSION_WINDOW_MINUTES
 export const FENSTER_WOCHE = 10080;  // Orca: CODEX_WEEKLY_WINDOW_MINUTES
-export const TAKT_MS = 15 * 60_000;       // Orca: DEFAULT_POLL_MS — alle 15 Minuten
-export const MIN_NEU_MS = 5 * 60_000;     // Orca: MIN_REFETCH_MS — frühestens 5 Minuten nach der letzten Abfrage
-export const VERALTET_MS = 30 * 60_000;   // Orca: STALE_THRESHOLD_MS — nach 30 Minuten „veraltet“
-export const FEHLER_PAUSE_MIN_MS = 30_000;        // Orca: ACTIVE_FAILURE_REFETCH_MS — bei Fehlern 30 s …
-export const FEHLER_PAUSE_MAX_MS = 15 * 60_000;   // … bis höchstens 15 Minuten
+// Takt, Fehlerpause und Retry-After sind reine Regeln (kontingent-regeln.mjs, Paket E5) und hier nur wieder ausgegeben, damit die Aufrufer bei diesem Modul bleiben können.
+export { TAKT_MS, MIN_NEU_MS, VERALTET_MS, FEHLER_PAUSE_MIN_MS, FEHLER_PAUSE_MAX_MS, MAX_FEHLER_FOLGE, fehlerPause, leseRetryAfter } from "./kontingent-regeln.mjs";
 export const INIT_FRIST_MS = 30_000, RPC_FRIST_MS = 10_000;       // Orca: RPC_INIT_TIMEOUT_MS / RPC_TIMEOUT_MS
 // Orca: CODEX_SHORT_LIVED_PROBE_APP_SERVER_ARGS — nur lesen, nie eine Rückfrage, keine Plugins für den kurzen Lauf
 export const CODEX_ARGS = ["-c", "approval_policy=never", "-c", "features.plugins=false", "-s", "read-only", "-a", "never", "app-server"];
@@ -22,8 +20,6 @@ export const CODEX_ARGS = ["-c", "approval_policy=never", "-c", "features.plugin
 // Balkenfarben (Orca R/components/status-bar/provider-extra-usage-section.tsx, barColor): unter 60 grau · 60–79 gelb · ab 80 rot
 export const stufe = (prozent) => (prozent >= 80 ? "rot" : prozent >= 60 ? "gelb" : "grau");
 
-// Wartezeit nach dem n-ten Fehlschlag in Folge: 30 s, 60 s, 2 min … höchstens 15 min
-export const fehlerPause = (anzahl) => Math.min(FEHLER_PAUSE_MAX_MS, FEHLER_PAUSE_MIN_MS * 2 ** Math.max(0, anzahl - 1));
 
 // ---------- Codex: Fenster erkennen (Orca codex-rate-limit-window-classification.ts / -mapper.ts) ----------
 const ZAHL = (x) => typeof x === "number" && Number.isFinite(x);
@@ -110,7 +106,11 @@ export function liesCodexKontingent({ programm, env, cwd, initFrist = INIT_FRIST
           frist(rpcFrist);
           try { meldung("initialized"); rlId = sendeRl(); } catch { return ende({ ok: false, art: "beendet" }); }
         } else if (rlId !== null && m.id === rlId) {
-          if (m.error) return ende({ ok: false, art: ANMELDUNG.test(String(m.error.message || "")) || ANMELDUNG.test(fehlText) ? "anmeldung" : "rpc" });
+          if (m.error) {
+            // Retry-After (Sekunden oder Datum), wenn das Programm eine Wartezeit nennt: sie bindet bis zu 24 Stunden (kontingent-regeln.mjs#leseRetryAfter)
+            const retryNachMs = leseRetryAfter(m.error.data && typeof m.error.data === "object" ? (m.error.data.retryAfter ?? m.error.data.retry_after ?? String(m.error.message || "")) : String(m.error.message || ""));
+            return ende({ ok: false, art: ANMELDUNG.test(String(m.error.message || "")) || ANMELDUNG.test(fehlText) ? "anmeldung" : "rpc", ...(retryNachMs ? { retryNachMs } : {}) });
+          }
           const w = m.result && typeof m.result === "object" ? m.result.rateLimits : null;
           const k = klassifiziereCodex(w);
           return ende(k.session || k.weekly ? { ok: true, ...k } : { ok: false, art: "form" });
