@@ -10,6 +10,7 @@ import { baueVault } from "./vault.mjs";
 import { starteServer } from "./start.mjs";
 import { mockeV2 } from "./mocks.mjs";
 import { mockeVerbinden } from "./mocks-verbinden.mjs";
+import { ZUSTAND } from "./mocks-kontingent.mjs";
 import { starteStatisch, mockeEinrichtung, oeffneEinrichtungImStudio } from "./mocks-einrichtung.mjs";
 
 const BILDER = process.env.UI_P9_BILDER;
@@ -352,7 +353,7 @@ test("Statusleiste: wÃ¤hrend Programme und Konten laden steht ein Platzhalter, â
     const lauf = () => { pruefe(); requestAnimationFrame(lauf); };
     requestAnimationFrame(lauf);
   });
-  await start(page, { kontingentVerzoegerung: 2500, erkennenVerzoegerung: 600 });
+  await start(page, { kontingentVerzoegerung: 2500, erkennenVerzoegerung: 600, kontingent: { werte: { [K_PRIVAT.id]: ZUSTAND.claudeOk(42, 18) } } }); // mit Werten: das Segment erscheint (ein noch nicht eingerichtetes Konto zeigt es nicht, E5)
   await expect(page.locator('#status [data-st="ki-laedt"]')).toBeVisible();
   await expect(page.locator('#status [data-st="claude"]')).toBeHidden();
   await bild(page, "6-statusleiste-laedt", "light");
