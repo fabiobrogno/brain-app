@@ -150,8 +150,10 @@ export function erzeugeEreignisse(o = {}) {
   const SUPPORT_TYP = { "vertrauen.json": "vertrauen", "ki-konten.json": "konten", "einstellungen.json": "einstellungen", "tastenkuerzel.json": "tastenkuerzel" };
 
   // ---------- Ring und Long-Poll ----------
+  const hoerer = []; // beiMeldung(f): f(ereignis) für jedes gemeldete Ereignis (z. B. der Suchindex); Fehler darin stören die Meldung nie
   function melde(e) {
     const ereignis = { n: ++nr, zeit: Date.now(), ...e };
+    for (const f of hoerer) { try { f(ereignis); } catch { /* der Hörer ist nicht Sache der Meldung */ } }
     ring.push(ereignis);
     if (ring.length > ringMax) ring.splice(0, ring.length - ringMax);
     verlauf.push(ereignis.zeit);
@@ -444,7 +446,7 @@ export function erzeugeEreignisse(o = {}) {
 
   return {
     warte, richteAuf, beende, beginneEigenes, endeEigenes, setzeAufgabenOrdner: (n) => { if (typeof n === "string" && n) aufgabenOrdner = () => n; },
-    markiereEigen, markiereEigenenKopf, aktiviere, pruefeAktivitaet,
+    markiereEigen, markiereEigenenKopf, aktiviere, pruefeAktivitaet, beiMeldung: (f) => { if (typeof f === "function") hoerer.push(f); },
     melde: (e) => melde(e), // von der Werkstatt selbst (z. B. Vertrauen geändert)
     stand: () => ({ epoche, aktuell: nr, modus, aktiv }),
     // nur für Tests
