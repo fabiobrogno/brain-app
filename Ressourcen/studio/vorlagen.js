@@ -13,7 +13,9 @@
 // Unbekannte Platzhalter bleiben unverändert stehen.
 import { ortsZeit, plusTageIso, wochentagIso } from "./zeit.js";
 
-export const STANDARD = Object.freeze({ vorlagenOrdner: "Vorlagen", tagesnotizOrdner: "Tagebuch", tagesnotizFormat: "JJJJ-MM-TT", tagesnotizVorlage: "" });
+export const STANDARD = Object.freeze({ tagesnotizOrdner: "Tagebuch", tagesnotizFormat: "JJJJ-MM-TT", tagesnotizVorlage: "" });
+/** Vorlagenordner, wenn der Vault keinen einstellt (gleich wie basis.mjs#VORLAGEN_STANDARD; der Vault bestimmt ihn, ordner.vorlagen in brain.config.json). */
+export const VORLAGENORDNER_STANDARD = "01_vorlagen";
 
 const MONATE = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
 const MONATE_KURZ = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
@@ -93,24 +95,59 @@ export function kopfGrenzen(text) {
   return { kopfEnde, restStart: kopfEnde + (rest ? rest[0].length : 0) };
 }
 
-// Ein Titel als Wert im Kopf: so, dass der Kopf gültig bleibt (Doppelpunkt, #, Anführungszeichen …)
-function yamlWert(s, davor) {
-  if (davor === '"') return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-  if (davor === "'") return s.replace(/'/g, "''");
-  if (s === "" || /^[\s\-?:,[\]{}#&*!|>'"%@`]/.test(s) || /[:#]\s|\s#|:$|\s$/.test(s) || /^(true|false|null|yes|no|on|off|~|[-+]?\d[\d_.,:eE+-]*)$/i.test(s)) return JSON.stringify(s);
-  return s;
+// ---- Titel im Kopf (Frontmatter): der Wert muss gültiges YAML bleiben, wo immer der Platzhalter steht
+const ZEILENUMBRUCH = /[\u0085\u2028\u2029]/g;
+const maskiere = (j) => j.replace(ZEILENUMBRUCH, (c) => (c === "\u0085" ? "\\x85" : c === "\u2028" ? "\\L" : "\\P")); // YAML kennt U+0085/2028/2029 als Zeilenumbruch
+const jsonText = (s) => maskiere(JSON.stringify(s));
+// Muss der Text als Ganzes in Anführungszeichen? (Sonderzeichen, Doppelpunkt, #, Zahlen jeder Schreibweise, Schlüsselwörter, leer)
+const braucheAnfuehrung = (s) => s === "" || /^[\s\-?:,[\]{}#&*!|>'"%@`]/.test(s) || /[:#]\s|\s#|:$|\s$/.test(s) || /[\u0085\u2028\u2029]/.test(s) || /^[-+.]?\d/.test(s)
+  || /^(true|false|null|yes|no|on|off|y|n|~|[-+]?\.(inf|nan))$/i.test(s);
+// Titel als eigener Wert (allein oder als Eintrag einer Liste)
+const yamlWert = (s) => (braucheAnfuehrung(s) ? jsonText(s) : s);
+// Titel mitten in einem Text in Anführungszeichen: nur maskieren
+const yamlInnen = (s, q) => (q === '"' ? maskiere(s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')) : s.replace(/'/g, "''").replace(ZEILENUMBRUCH, " "));
+// Steht die Stelle `bis` in einem Text in "…" oder '…'? (Anführungszeichen zählen nur am Wortanfang: „Don't“ öffnet nichts)
+function quoteBei(str, bis) {
+  let q = null;
+  for (let i = 0; i < bis; i++) {
+    const c = str[i];
+    if (q === '"') { if (c === "\\") i++; else if (c === '"') q = null; }
+    else if (q === "'") { if (c === "'") { if (str[i + 1] === "'") i++; else q = null; } }
+    else if ((c === '"' || c === "'") && (i === 0 || /[\s[{,:]/.test(str[i - 1]))) q = c;
+  }
+  return q;
 }
+const datumsText = (n, format, tage) => formatiereDatum(format !== undefined && format !== "" ? format : n === "datum" ? "JJJJ-MM-TT" : "HH:mm", tage);
 
-function ersetzePlatzhalter(s, { titel, tage, inKopf }) {
-  return s.replace(PLATZHALTER, (alles, name, format, versatz) => {
+function ersetzeImRumpf(s, { titel, tage }) {
+  return s.replace(PLATZHALTER, (alles, name, format) => {
     const n = name.toLowerCase();
-    if (n === "titel") {
-      if (format !== undefined) return alles; // {{titel:x}} gibt es nicht
-      return inKopf ? yamlWert(titel, s[versatz - 1]) : titel;
-    }
-    return formatiereDatum(format !== undefined && format !== "" ? format : n === "datum" ? "JJJJ-MM-TT" : "HH:mm", tage);
+    if (n === "titel") return format !== undefined ? alles : titel; // {{titel:x}} gibt es nicht
+    return datumsText(n, format, tage);
   });
 }
+
+// Eine Zeile des Kopfes. Der Wert bestimmt, wie der Titel eingesetzt wird: in Anführungszeichen maskiert, als eigener Wert nötigenfalls gequotet,
+// mitten in einem ungequoteten Text wird der GANZE Wert gequotet, wenn der Titel etwas Störendes enthält.
+function kopfZeile(zeile, { titel, tage }) {
+  if (!zeile.includes("{{")) return zeile;
+  const km = /^(\s*(?:-\s+)*(?:[^\s:#"'[\]{}-][^:]*:|"[^"]*":|'[^']*':)\s+|\s*(?:-\s+)+)(.*)$/.exec(zeile);
+  const vorn = km ? km[1] : "", wert = km ? km[2] : zeile;
+  const allein = /^\s*\{\{[^{}]*\}\}\s*$/.test(wert), fluss = /^\s*[[{]/.test(wert);
+  let hatTitel = false;
+  let aus = wert.replace(PLATZHALTER, (alles, name, format, versatz) => {
+    const n = name.toLowerCase();
+    if (n !== "titel") return datumsText(n, format, tage);
+    if (format !== undefined) return alles;
+    hatTitel = true;
+    const q = quoteBei(wert, versatz);
+    if (q) return yamlInnen(titel, q);
+    return allein || fluss ? yamlWert(titel) : titel;
+  });
+  if (hatTitel && !allein && !fluss && quoteBei(wert, wert.length) === null && !/^\s*["']/.test(wert) && braucheAnfuehrung(aus.trim())) aus = jsonText(aus);
+  return vorn + aus;
+}
+const ersetzeImKopf = (s, o) => s.split("\n").map((z) => kopfZeile(z, o)).join("\n");
 
 /**
  * Füllt eine Vorlage. → { text, cursor } mit cursor = Offset im fertigen Text oder null (kein {{cursor}}).
@@ -123,8 +160,8 @@ export function renderVorlage(text, { titel = "", jetzt = new Date(), zone, iso 
   const einzeilig = String(titel ?? "").replace(/[\r\n\u2028\u2029]+/g, " ").split(MARKE).join("").trim();
   const quelle = String(text ?? "").replace(/\r\n?/g, "\n").split(MARKE).join("").replace(CURSOR, MARKE);
   const g = kopfGrenzen(quelle);
-  const kopf = g ? ersetzePlatzhalter(quelle.slice(0, g.restStart), { titel: einzeilig, tage, inKopf: true }) : "";
-  const rumpf = ersetzePlatzhalter(g ? quelle.slice(g.restStart) : quelle, { titel: einzeilig, tage, inKopf: false });
+  const kopf = g ? ersetzeImKopf(quelle.slice(0, g.restStart), { titel: einzeilig, tage }) : "";
+  const rumpf = ersetzeImRumpf(g ? quelle.slice(g.restStart) : quelle, { titel: einzeilig, tage });
   const fertig = kopf + rumpf;
   const i = fertig.indexOf(MARKE);
   return { text: fertig.split(MARKE).join(""), cursor: i < 0 ? null : i };
@@ -181,16 +218,23 @@ export function titelAusText(text, { ersatz = true } = {}) {
   const rumpf = t.slice(g ? g.restStart : 0);
   let ersteZeile = null, code = false;
   for (const zeile of rumpf.split("\n")) {
-    if (/^(```|~~~)/.test(zeile)) code = !code;
+    const zaun = /^\s*(```|~~~)/.test(zeile);
+    if (zaun) code = !code;
     if (!ersatz && !code && /^#[ \t]*$/.test(zeile)) return null; // eine leere Titelzeile wartet auf ihren Titel: ohne Ersatz kein Titel
     const h1 = !code && /^#[ \t]+(.*\S.*)$/.exec(zeile);
     if (h1) return h1[1].replace(/[ \t]+#+[ \t]*$/, "").trim().slice(0, 200) || null;
-    if (ersteZeile === null && zeile.trim() && !/^#{1,6}[ \t]*$/.test(zeile)) ersteZeile = zeile;
+    if (ersteZeile === null && !zaun) { const rein = saeubereZeile(zeile); if (rein) ersteZeile = rein; } // erste Zeile, die nach dem Säubern etwas sagt
   }
-  if (ersteZeile === null) return null;
-  const rein = ersteZeile.replace(/^\s*(#{1,6}\s+|[-*+]\s+(\[[ xX]\]\s+)?|>\s*|\d+[.)]\s+)/, "").replace(/[*_`~]/g, "").trim();
-  return rein.slice(0, 80) || null;
+  return ersteZeile === null ? null : ersteZeile.slice(0, 80);
 }
+// Markdown-Zeichen am Anfang weg; Trenner („***“, „---“), leere Listenpunkte, Zitat- und Nummernreste bleiben leer
+function saeubereZeile(zeile) {
+  if (/^\s*([-*_=])(\s*\1){2,}\s*$/.test(zeile)) return "";
+  return zeile.replace(/^\s*(#{1,6}(\s+|$)|[-*+]\s+(\[[ xX]\]\s+)?|>\s*|\d+[.)]\s+)/, "").replace(/[*_`~]/g, "").trim();
+}
+export const ERSATZTITEL = "Unbenannt";
+/** Steht etwas im Text, das verloren gehen könnte? Nur leere Titelzeilen („# “) und Leerraum zählen als leer. */
+export const hatInhalt = (text) => String(text ?? "").replace(/^#{1,6}[ \t]*$/gm, "").trim() !== "";
 
 // ---------------------------------------------------------------------------------------------------------------- Tagesnotiz
 // Einstellungen säubern: Ordner und Format kommen aus der Seite „Einstellungen“ und sind nur Text. Nichts darf aus dem Vault hinausführen.

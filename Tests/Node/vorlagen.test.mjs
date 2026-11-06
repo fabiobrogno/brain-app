@@ -189,7 +189,7 @@ test("Neuer Vault bringt drei Beispiel-Vorlagen mit (Besprechung, Projekt, Tages
   const { vorlageDateien, VORLAGEN_ORDNER } = await import(pfad("gemeinsam", "vorlage.mjs"));
   const dateien = vorlageDateien({ name: "Test", heute: "2026-11-05" });
   const vorlagen = dateien.filter((d) => d.pfad.startsWith(VORLAGEN_ORDNER + "/"));
-  assert.equal(VORLAGEN_ORDNER, V.STANDARD.vorlagenOrdner, "der Ordner der Beispiele ist der Standard-Vorlagenordner");
+  assert.equal(VORLAGEN_ORDNER, "Vorlagen");
   assert.deepEqual(vorlagen.map((d) => d.pfad).sort(), ["Vorlagen/Besprechung.md", "Vorlagen/Projekt.md", "Vorlagen/Tagesnotiz.md"]);
   for (const v of vorlagen) {
     const r = V.baueNotizText({ vorlage: v.inhalt, titel: "Beispiel: Titel", jetzt: JETZT, zone: BERLIN });
@@ -203,4 +203,42 @@ test("Neuer Vault bringt drei Beispiel-Vorlagen mit (Besprechung, Projekt, Tages
   const tag = vorlagen.find((d) => d.pfad.endsWith("Tagesnotiz.md"));
   const r = V.baueNotizText({ vorlage: tag.inhalt, titel: V.tagesTitel("2026-11-02"), jetzt: JETZT, zone: BERLIN, iso: "2026-11-02" });
   assert.match(r.text, /^---\ndatum: 2026-11-02\n---\n# Montag, 2\. November 2026\n/);
+});
+
+// ---- Review K1: nichts darf beim Titel-Suchen verloren gehen
+test("K1: der Titel kommt aus der ersten Zeile, die nach dem Säubern nicht leer ist (Code, Listenreste, Trenner, Zitat, Nummern)", () => {
+  const faelle = [
+    ["# \n```\ncode\n```\n", "code"],
+    ["# \n- [ ] \nText\n", "Text"],
+    ["# \n***\nText\n", "Text"],
+    ["# \n---\nText\n", "Text"],
+    ["# \n> \nText\n", "Text"],
+    ["# \n1. \nText\n", "Text"],
+    ["# \n\n   \n* \n**\n__\nSpäter\n", "Später"],
+  ];
+  for (const [text, soll] of faelle) assert.equal(V.titelAusText(text), soll, JSON.stringify(text));
+  assert.equal(V.titelAusText("---\na: 1\n---\n"), null, "nur Kopf: kein Titel — das Studio nimmt dann den Ersatztitel");
+});
+
+test("K1: hatInhalt — nur leere Titelzeilen und Leerraum zählen als leer", () => {
+  assert.equal(V.hatInhalt("# \n"), false);
+  assert.equal(V.hatInhalt("#\n\n  \n"), false);
+  assert.equal(V.hatInhalt("# \n---\n"), true);
+  assert.equal(V.hatInhalt("---\na: 1\n---\n# \n"), true, "Text nur im Kopf ist Inhalt");
+  assert.equal(V.hatInhalt("# x"), true);
+  assert.equal(V.ERSATZTITEL, "Unbenannt");
+});
+
+// ---- Review klein: YAML-Kontext
+test("YAML: Titel in Anführungszeichen mitten im Wert, gemischte Werte, Zahlen-/Sonderformen und Zeilenumbruch-Zeichen bleiben gültig", () => {
+  const lies = (kopfZeile, titel) => V.renderVorlage(`---\n${kopfZeile}\n---\n`, { titel, jetzt: JETZT, zone: BERLIN }).text.split("\n")[1];
+  assert.equal(lies('title: "Meeting: {{titel}}"', 'Plan "B"'), 'title: "Meeting: Plan \\"B\\""');
+  assert.equal(lies('title: "Meeting: {{titel}}"', "a: b"), 'title: "Meeting: a: b"');
+  assert.equal(lies("title: 'Sitzung {{titel}}'", "Don't"), "title: 'Sitzung Don''t'");
+  assert.equal(lies("title: Meeting: {{titel}}", "x"), 'title: "Meeting: x"', "gemischter Wert ohne Anführungszeichen: der ganze Wert wird gequotet");
+  assert.equal(lies("title: Sitzung {{titel}}", "a: b"), 'title: "Sitzung a: b"');
+  assert.equal(lies("title: Sitzung {{titel}}", "einfach"), "title: Sitzung einfach", "wo nichts stört, bleibt es unquotiert");
+  for (const zahl of ["0x1F", ".5", "0o17", "1e3", "-.5", "+12", ".inf", "0b101"]) assert.equal(lies("t: {{titel}}", zahl), `t: "${zahl}"`, zahl);
+  assert.equal(lies("t: {{titel}}", "a\u0085b"), 't: "a\\x85b"', "U+0085 ist in YAML ein Zeilenumbruch");
+  assert.equal(lies("t: {{titel}}", "[x]"), 't: "[x]"');
 });

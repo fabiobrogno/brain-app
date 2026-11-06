@@ -30,7 +30,7 @@ import * as kz from "./tastenkuerzel.js";
 import { baueWikiIndex, loeseWikiLink, schlageWikiZieleVor, ordnerVonPfad } from "./wikilink.js";
 import { heuteIso } from "./zeit.js";
 import { erzeugeSchreiben } from "./schreiben.js"; // Neue Notiz (sofort), Tagesnotiz, Vorlagen, Zurück/Vor
-import { titelAusText, imOrdner as imVorlagenOrdner, STANDARD as SCHREIB_STANDARD } from "./vorlagen.js";
+import { titelAusText, hatInhalt, ERSATZTITEL, kopfGrenzen, imOrdner as imVorlagenOrdner, STANDARD as SCHREIB_STANDARD, VORLAGENORDNER_STANDARD } from "./vorlagen.js";
 import { TS } from "./texte-schreiben.js";
 import { datumKurz, datumLang, datumZeit, istDatumText, bytesText, setzeTypFarbe, typSymbol, typName, wortAnzahl, relativ, pluralisiere, vorschauText, typTextFarbe } from "./format.js";
 
@@ -57,7 +57,8 @@ const S = {
   inboxOrdner: "00_inbox",                   // Ordnername des Posteingangs (Antwort von /api/notizen, Konfiguration ordner.inbox)
   aufgabenOrdner: "05_aufgaben",             // Ordnername der Aufgaben (Antwort von /api/notizen, Konfiguration ordner.aufgaben)
   entwurf: null,                             // neue Notiz ohne Datei: { pfad (fester Pfad einer Tagesnotiz oder null), ordner, start (Text beim Öffnen), tag (ISO bei einer Tagesnotiz) }; S.pfad ist dann leer
-  schreibEinst: { ...SCHREIB_STANDARD },     // Tagesnotiz und Vorlagen aus den Einstellungen (vorlagenOrdner, tagesnotizOrdner, tagesnotizFormat, tagesnotizVorlage)
+  schreibEinst: { ...SCHREIB_STANDARD },     // Tagesnotiz aus den Einstellungen (tagesnotizOrdner, tagesnotizFormat, tagesnotizVorlage)
+  vorlagenOrdner: VORLAGENORDNER_STANDARD,   // Vorlagenordner des Vaults (Antwort von /api/notizen, brain.config.json: ordner.vorlagen)
   aufgabeDatei: false,                       // Aufgaben: true = eine Karte ist als Datei im Editor geöffnet (das Board ist dann verdeckt)
 };
 const lokal = {
@@ -123,7 +124,6 @@ function wendeEinstellungenAn(w) {
     S.schreibEinst = neu;
     schreiben.vergesseVorlagen?.();
     schreiben.zeichneTagNavigation?.();
-    if (neu.vorlagenOrdner !== alt.vorlagenOrdner && S.bereit) ladeBaum(); // Notizen im Vorlagenordner zählen nicht als Notizen
   }
 }
 async function ladeKuerzel() { await kz.lade(); }
@@ -131,6 +131,10 @@ async function ladeAppEinstellungen() { try { const d = await api.einstellungen(
 
 // ======================================================= Editor
 let speicherTimer = null, entwurfSpaet = null;
+const ENTWURF_HOECHSTWARTEN_MS = 20000;
+const neueId = () => (globalThis.crypto?.randomUUID ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`);
+// Schnittstelle für ein Entwurfs-Journal (#93): Entwürfe ohne Pfad ablegen und wieder löschen. Hier ein Platzhalter, der nichts tut; das Journal ersetzt ihn (window.studio.entwurfJournal).
+const entwurfJournal = { schreibe: (_entwurf, _text) => {}, loesche: (_entwurf) => {} };
 const ed = erstelleEditor($("editor"), {
   roh: () => S.roh,
   wikiAufloesen: (ziel) => loeseWikiAuf(ziel),
@@ -151,7 +155,9 @@ const ed = erstelleEditor($("editor"), {
       const k = $("pfad").querySelector(".krume.aktuell");
       if (k) k.textContent = titelAusText(ed.text(), { ersatz: false }) || TS.neu.unbenannt;
       speicherTimer = setTimeout(speichere, aufTitel ? 2500 : 800);
-      clearTimeout(entwurfSpaet); entwurfSpaet = setTimeout(() => { if (S.entwurf && !S.pfad) festigeEntwurf({ ersatz: true }); }, 20000); // nur Text ohne Titel: nach 20 s Ruhe sichern, der Dateiname folgt der ersten Zeile
+      // Nur Text ohne Titel: spätestens 20 s nach dem ERSTEN Tastendruck sichern (kein Debounce: Dauertippen schiebt es nicht hinaus), der Dateiname folgt der ersten Zeile
+      entwurfJournal.schreibe(S.entwurf, ed.text());
+      if (!entwurfSpaet) entwurfSpaet = setTimeout(() => { entwurfSpaet = null; if (S.entwurf && !S.pfad) festigeEntwurf({ ersatz: true }); }, window.studio?.entwurfHoechstWartenMs ?? ENTWURF_HOECHSTWARTEN_MS);
       return;
     }
     speicherTimer = setTimeout(speichere, 800);
@@ -161,7 +167,7 @@ const ed = erstelleEditor($("editor"), {
 // Schreiben im Alltag (schreiben.js): app.js gibt den Zustand und die Bausteine mit, die an ihm hängen
 const schreiben = erzeugeSchreiben({
   S, ed, api,
-  einstellungen: () => S.schreibEinst,
+  einstellungen: () => ({ ...S.schreibEinst, vorlagenOrdner: S.vorlagenOrdner }),
   existiert: (p) => S.eintraege.has(p),
   titelVon: (p) => S.nMap.get(p)?.titel || "",
   inboxName: () => inboxName(),
@@ -258,7 +264,8 @@ async function oeffneEntwurf({ text, cursor = null, pfad = null, ordner = null, 
   schreiben.verlasse();
   clearTimeout(speicherTimer);
   S.pfad = null; S.hash = null; S.schutz = false; S.dirty = false; S.konflikt = null; S.bearbeitbar = true; S.aktuellePruefung = null;
-  S.entwurf = { pfad, ordner: ordner ?? inboxName(), start: text, tag };
+  S.entwurf = { id: neueId(), pfad, ordner: ordner ?? inboxName(), start: text, tag }; // id: bei einem Wiederholungsversuch legt die Werkstatt nichts doppelt an
+  clearTimeout(entwurfSpaet); entwurfSpaet = null;
   ed.setzeText(text, { nurLesen: false, cursor });
   ed.setzeSignale([]);
   schliesseDiff();
@@ -271,6 +278,20 @@ async function oeffneEntwurf({ text, cursor = null, pfad = null, ordner = null, 
   ed.fokus();
   return true;
 }
+// Text eines Entwurfs ans Ende der vorhandenen Notiz hängen (ohne dessen Kopf), mit Hash geprüft; → true | false
+async function haengeAn(pfad, text) {
+  const g = kopfGrenzen(text.replace(/\r\n?/g, "\n"));
+  const rumpf = (g ? text.replace(/\r\n?/g, "\n").slice(g.restStart) : text).trim();
+  for (let i = 0; i < 4; i++) {
+    try {
+      const d = await api.datei(pfad);
+      if (rumpf && d.inhalt.includes(rumpf)) return true; // steht schon drin (ein Versuch kam doch an)
+      await api.speichern(pfad, d.inhalt.replace(/\s+$/, "") + "\n\n" + rumpf + "\n", d.hash);
+      return true;
+    } catch (x) { if (x.status !== 409) return false; }
+  }
+  return false;
+}
 // Aus dem Entwurf eine Datei machen, wenn etwas drinsteht: → "angelegt" | "leer" (nichts zu sichern, kein Titel oder unberührt) | "fehler".
 // sofort: auch ein unberührter Entwurf mit Titel (Tagesnotiz „Heute“, Vorlage mit Titel).
 let festigeLauf = null;
@@ -279,12 +300,15 @@ function festigeEntwurf(o) {
   festigeLauf = festigeInnen(o || {}).finally(() => { festigeLauf = null; });
   return festigeLauf;
 }
-async function festigeInnen({ sofort = false, ersatz = false }) {
+async function festigeInnen({ sofort = false, ersatz = false, verlassen = false }) {
   const e = S.entwurf;
   if (!e || S.pfad) return "leer";
   const text = ed.text();
-  const titel = titelAusText(text, { ersatz: ersatz || sofort }); // beim Tippen wartet eine leere Titelzeile auf ihren Titel; beim Verlassen/Beenden nimmt Kortex die erste Zeile (nichts geht verloren)
-  if (titel === null || (!sofort && text === e.start)) return "leer";
+  const bearbeitet = text !== e.start;
+  let titel = titelAusText(text, { ersatz: ersatz || sofort }); // beim Tippen wartet eine leere Titelzeile auf ihren Titel; beim Verlassen/Beenden nimmt Kortex die erste Zeile
+  // Nichts geht verloren: Beim Verlassen/Beenden gibt ein veränderter Text mit Inhalt NIE „leer“ zurück — ohne brauchbare Zeile heißt die Notiz „Unbenannt“
+  if (titel === null && (ersatz || sofort) && bearbeitet && hatInhalt(text)) titel = ERSATZTITEL;
+  if (titel === null || (!sofort && !bearbeitet)) return "leer";
   S.speichert = true; letzterFehler = null; zeigeStand("speichert");
   try {
     let pfad, hash;
@@ -292,15 +316,18 @@ async function festigeInnen({ sofort = false, ersatz = false }) {
       try { const r = await api.speichern(e.pfad, text, null); pfad = e.pfad; hash = r.hash; }
       catch (x) {
         if (x.status !== 409) throw x;
-        // Die Notiz gibt es inzwischen (anderes Gerät, KI): unberührt → einfach öffnen; sonst bleibt der Text im Fenster und der Hinweis sagt es
-        if (text !== e.start) { letzterFehler = TS.neu.gibtEsSchon; zeigeStand("fehler", false, letzterFehler); return "fehler"; }
+        // Die Notiz gibt es inzwischen (anderes Gerät, KI): unberührt → einfach öffnen; sonst kommt der Text ans Ende der vorhandenen Notiz (hashgeprüft, nie verworfen)
+        if (bearbeitet && !(await haengeAn(e.pfad, text))) { letzterFehler = TS.neu.gibtEsSchon; zeigeStand("fehler", false, letzterFehler); return "fehler"; }
         S.entwurf = null; S.dirty = false;
-        await ladeBaum(); await oeffne(e.pfad);
+        await ladeBaum();
+        if (!verlassen) await oeffne(e.pfad); // beim Verlassen öffnet der Aufrufer sein eigenes Ziel
+        if (bearbeitet) toast(TS.neu.angehaengt(titel), { ms: 6000 });
         return "angelegt";
       }
-    } else { const r = await api.neu(e.ordner, titel, text); pfad = r.pfad; hash = r.hash; }
+    } else { const r = await api.neu(e.ordner, titel, text, e.id); pfad = r.pfad; hash = r.hash; }
     if (S.entwurf !== e) { planeBaumRefresh(); return "angelegt"; }
     S.entwurf = null; S.pfad = pfad; S.hash = hash; S.konflikt = null; S.schutz = false;
+    clearTimeout(entwurfSpaet); entwurfSpaet = null; entwurfJournal.loesche(e);
     S.dirty = ed.text() !== text;
     zeigeStand(S.dirty ? "ungespeichert" : "gespeichert");
     zuletztMerken(pfad); lokal.schreib("pfad", pfad);
@@ -361,7 +388,7 @@ async function speichereAlles() {
     while (laufendesSpeichern) await laufendesSpeichern;
     if (S.entwurf && !S.pfad) { // neue Notiz: mit Inhalt wird sie zur Datei, leer bleibt sie ohne Datei (nichts geht verloren)
       clearTimeout(speicherTimer);
-      const r = await festigeEntwurf({ ersatz: true });
+      const r = await festigeEntwurf({ ersatz: true, verlassen: true });
       if (r === "fehler") return false;
       if (r === "leer") return true;
       continue;
@@ -384,7 +411,13 @@ async function sichereVorWechsel() {
       return false;
     }
     const wahl = await fragSpeicherFehler();
-    if (wahl === "verwerfen") { clearTimeout(speicherTimer); S.dirty = false; return true; }
+    if (wahl === "verwerfen") {
+      if (S.entwurf && !S.pfad && hatInhalt(ed.text())) { // auch „Verwerfen“ lässt einen Entwurf nicht ohne Ablage verschwinden: Zwischenablage und lokale Kopie
+        speichereLokal("entwurf-verworfen", { zeit: new Date().toISOString(), text: ed.text() });
+        try { await navigator.clipboard.writeText(ed.text()); toast(TS.neu.verworfenAbgelegt); } catch { /* die lokale Kopie bleibt */ }
+      }
+      clearTimeout(speicherTimer); S.dirty = false; return true;
+    }
     if (wahl !== "nochmal") return false;
   }
 }
@@ -458,7 +491,7 @@ function setzeFenstertitel() {
 // ======================================================= Index (Notizen, Typen, Ansichten)
 // Wie der Werkstatt-Index: _-Ordner im Posteingang sind maschinell, Vorlagen und Agenten-Anweisungen in der Wurzel keine Notizen
 const inboxName = () => S.inboxOrdner || "00_inbox";
-const bereichVonPfad = (p) => (/^90_/.test(p) || (S.aufgabenOrdner && p.toLowerCase().startsWith(S.aufgabenOrdner.toLowerCase() + "/archiv/") && p.split("/").length === 3) ? "archiv" : p.toLowerCase().startsWith(inboxName().toLowerCase() + "/_") ? "maschine" : (p.startsWith("01_vorlagen/") || imVorlagenOrdner(p, S.schreibEinst.vorlagenOrdner)) ? "vorlage"
+const bereichVonPfad = (p) => (/^90_/.test(p) || (S.aufgabenOrdner && p.toLowerCase().startsWith(S.aufgabenOrdner.toLowerCase() + "/archiv/") && p.split("/").length === 3) ? "archiv" : p.toLowerCase().startsWith(inboxName().toLowerCase() + "/_") ? "maschine" : imVorlagenOrdner(p, S.vorlagenOrdner) ? "vorlage"
   : /^(claude|agents|gemini)\.md$/i.test(p) ? "system" : p.toLowerCase().startsWith(inboxName().toLowerCase() + "/") ? "inbox" : p.startsWith("09_wiki/") ? "wissen" : (S.aufgabenOrdner && p.toLowerCase().startsWith(S.aufgabenOrdner.toLowerCase() + "/") && p.split("/").length === 2) ? "aufgabe" : "notiz");
 const SICHTBAR = new Set(["inbox", "notiz", "wissen"]); // erscheinen in „Alle Notizen“, Typen und Ansichten
 const istNotiz = (n) => SICHTBAR.has(n.bereich) && !n.generiert;
@@ -500,15 +533,16 @@ async function ladeIndex() {
   try {
     const r = await api.indexAlles();
     if (!Array.isArray(r?.notizen)) throw new Error("kein Index");
-    n = { status: "fulfilled", value: { notizen: r.notizen, aufgabenOrdner: r.aufgabenOrdner, inboxOrdner: r.inboxOrdner, inboxHinweis: r.inboxHinweis } };
+    n = { status: "fulfilled", value: { notizen: r.notizen, aufgabenOrdner: r.aufgabenOrdner, inboxOrdner: r.inboxOrdner, vorlagenOrdner: r.vorlagenOrdner, inboxHinweis: r.inboxHinweis } };
     t = { status: "fulfilled", value: r.typen }; a = { status: "fulfilled", value: r.ansichten };
   } catch { [n, t, a] = await Promise.allSettled([api.notizen(), api.typen(), api.ansichten()]); }
   if (n.status === "fulfilled" && typeof n.value?.aufgabenOrdner === "string" && n.value.aufgabenOrdner) S.aufgabenOrdner = n.value.aufgabenOrdner;
   if (n.status === "fulfilled" && typeof n.value?.inboxOrdner === "string" && n.value.inboxOrdner) S.inboxOrdner = n.value.inboxOrdner;
+  if (n.status === "fulfilled" && typeof n.value?.vorlagenOrdner === "string" && n.value.vorlagenOrdner) S.vorlagenOrdner = n.value.vorlagenOrdner;
   S.inboxHinweis = n.status === "fulfilled" && typeof n.value?.inboxHinweis === "string" ? n.value.inboxHinweis : null;
   if (S.inboxHinweis && S.inboxHinweisGezeigt !== S.inboxHinweis) { S.inboxHinweisGezeigt = S.inboxHinweis; toast(S.inboxHinweis, { fehler: true, ms: 14000 }); }
   S.notizen = n.status === "fulfilled" && Array.isArray(n.value?.notizen) ? n.value.notizen : notizenAusBaum();
-  for (const x of S.notizen) if (SICHTBAR.has(x.bereich) && imVorlagenOrdner(x.pfad, S.schreibEinst.vorlagenOrdner)) x.bereich = "vorlage"; // Vorlagen sind keine Notizen (wie 01_vorlagen)
+  for (const x of S.notizen) if (SICHTBAR.has(x.bereich) && imVorlagenOrdner(x.pfad, S.vorlagenOrdner)) x.bereich = "vorlage"; // Vorlagen sind keine Notizen
   S.nMap = new Map(S.notizen.map((x) => [x.pfad, x]));
   S.typen = t.status === "fulfilled" && Array.isArray(t.value?.typen) ? t.value.typen : typenAusNotizen();
   S.typMap = new Map(S.typen.map((x) => [x.name, x]));
@@ -2419,7 +2453,7 @@ function fuehreBefehlAus(name) {
 // Jeder Befehl des Registers mit Menü-Namen (`menue`), der oben keine eigene Aktion bekam, tut im Studio dasselbe wie der Menüeintrag der App (Verlauf, Gehe zu, Vault …):
 // Ein Kürzel aus dem Register trägt so auch dort, wo kein App-Menü mitspielt (Browser, Vorschau), und ein neuer Eintrag im Register braucht keine zweite Stelle.
 for (const b of kz.REGISTER.befehle) if (b.menue && MENUE_BEFEHLE[b.menue] && !kz.angemeldet().includes(b.id)) kz.anmelden(b.id, () => fuehreBefehlAus(b.menue));
-window.studio = { bereit: false, schreiben, ed, neu: () => oeffneNeu(), merken: oeffneMerken, commit: oeffneCommit, info: umschalteInfo, palette: () => oeffnePalette(), sync, suche: fokusSuche };
+window.studio = { bereit: false, schreiben, ed, entwurfJournal, entwurfHoechstWartenMs: null /* Tests */, neu: () => oeffneNeu(), merken: oeffneMerken, commit: oeffneCommit, info: umschalteInfo, palette: () => oeffnePalette(), sync, suche: fokusSuche };
 window.studio.befehl = (name) => {
   if (!MENUE_BEFEHLE[name]) return;
   if (!window.studio.bereit) { wartendeBefehle.push(name); return; }
@@ -2677,7 +2711,7 @@ let intervalle = false;
 function zuruecksetzen() {
   clearTimeout(speicherTimer); clearTimeout(gitTimer); clearTimeout(baumTimer); clearTimeout(liveTimer); clearTimeout(menueTimer); clearTimeout(kiTimer); kiSammlung = [];
   liveSammlung = { pfade: [], aufgaben: false, alles: false };
-  S.pfad = null; S.hash = null; S.dirty = false; S.konflikt = null; S.schutz = false; S.speichert = false; S.aktuellePruefung = null; S.entwurf = null;
+  S.pfad = null; S.hash = null; S.dirty = false; S.konflikt = null; S.schutz = false; S.speichert = false; S.aktuellePruefung = null; S.entwurf = null; S.vorlagenOrdner = VORLAGENORDNER_STANDARD;
   schreiben.zuruecksetzen(); // Zurück/Vor gehört zum alten Vault
   S.notizen = []; S.nMap = new Map(); S.baum = []; S.eintraege = new Map(); S.git = null; S.gesundheit = null; S.rueckfragen = null; S.syncFehler = null; S.ki = null;
   S.suche = { aktiv: false, treffer: [], auswahl: 0, frage: "" }; S.vorVerlauf = null;

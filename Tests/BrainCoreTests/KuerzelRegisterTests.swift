@@ -38,8 +38,8 @@ private func pfade() -> AppPfade { AppPfade(basis: tempOrdner("Support")) }
         ("neue-notiz", .neu, "Cmd+N", "n", [.command]),
         ("tagesnotiz", .heute, "Shift+Cmd+D", "d", [.command, .shift]),
         ("notiz-aus-vorlage", .vorlage, "Alt+Cmd+N", "n", [.command, .option]),
-        ("zurueck", .zurueck, "Cmd+[", "[", [.command]),
-        ("vor", .vor, "Cmd+]", "]", [.command]),
+        ("zurueck", .zurueck, "Alt+Cmd+Left", "\u{F702}", [.command, .option]),
+        ("vor", .vor, "Alt+Cmd+Right", "\u{F703}", [.command, .option]),
     ]
     for e in soll {
         let b = try #require(r.befehl(e.id))

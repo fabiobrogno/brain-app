@@ -1,6 +1,6 @@
 // Texte für „Schreiben im Alltag“: neue Notiz, Tagesnotiz, Vorlagen, Zurück und Vor. Deutsch, Du-Form; App „Kortex“, Datenordner „Vault“.
 export const TS = {
-  neu: { name: "Neue Notiz", unbenannt: "Neue Notiz", gibtEsSchon: "Diese Notiz gibt es inzwischen schon. Kopiere deinen Text, bevor du weitermachst." },
+  neu: { name: "Neue Notiz", unbenannt: "Neue Notiz", gibtEsSchon: "Diese Notiz gibt es inzwischen schon und ließ sich nicht ergänzen. Kopiere deinen Text, bevor du weitermachst.", angehaengt: (t) => `„${t}“ gab es inzwischen schon. Dein Text steht am Ende der Notiz.`, verworfenAbgelegt: "Der verworfene Text liegt in der Zwischenablage." },
   tag: {
     heute: "Heute", befehl: "Heute (Tagesnotiz)", titel: "Tagesnotiz", vorher: "Vorheriger Tag", nachher: "Nächster Tag", kalender: "Kalender", zuHeute: "Zu heute springen",
     angelegt: (titel) => `Tagesnotiz „${titel}“ angelegt.`, fehler: "Die Tagesnotiz ließ sich nicht öffnen.", vorlageFehlt: (name) => `Die Vorlage „${name}“ für die Tagesnotiz gibt es nicht. Kortex nimmt eine leere Seite.`,
@@ -9,7 +9,7 @@ export const TS = {
   vorlage: {
     befehl: "Neue Notiz aus Vorlage …", titel: "Neue Notiz aus Vorlage", suche: "Vorlage suchen …", titelFeld: "Titel (optional)", titelPlatzhalter: "Wie soll die Notiz heißen?", anlegen: "Notiz anlegen", abbrechen: "Abbrechen",
     gruppe: "Vorlagen", nichtsPasst: "Keine Vorlage passt.", vorschau: "Vorschau", waehle: "Wähle links eine Vorlage.", laedt: "Lädt …", ladeFehler: "Die Vorlage ließ sich nicht lesen.",
-    keine: "Noch keine Vorlagen", keineText: (ordner) => `Lege im Ordner „${ordner}“ Notizen an. Jede Notiz darin ist eine Vorlage, mit Platzhaltern wie {{titel}}, {{datum}}, {{zeit}} und {{cursor}}.`,
+    keine: "Noch keine Vorlagen", keineText: (ordner) => `Lege im Ordner „${ordner}“ Notizen an. Jede Notiz darin ist eine Vorlage, mit Platzhaltern wie {{titel}}, {{datum}}, {{zeit}} und {{cursor}}. Einen anderen Ordner stellst du im Vault ein (brain.config.json, ordner.vorlagen).`,
     ordnerOeffnen: "Ordner zeigen", beispiele: "Beispiele anlegen", beispieleFertig: "Drei Beispiel-Vorlagen angelegt.", leerHinweis: "Platzhalter",
     hinweisPlatzhalter: "{{titel}} · {{datum}} · {{datum:TT.MM.JJJJ}} · {{zeit}} · {{cursor}}", hinweisWaehlen: "wählen", hinweisAnlegen: "anlegen", hinweisTitel: "Titel",
   },

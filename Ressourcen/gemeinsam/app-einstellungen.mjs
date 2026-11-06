@@ -26,9 +26,8 @@ export const APP_SCHEMA = {
   mitteilungenSicherung: { typ: "boolean", standard: true },
   mitteilungenKontingent: { typ: "boolean", standard: true },
   mitteilungenPflege: { typ: "boolean", standard: false },
-  // Schreiben: Tagesnotiz und Vorlagen (gemeinsam/vorlagen.mjs). Ordner relativ zum Vault, Format mit JJJJ MM TT … (siehe dort); leer/null = Standard.
+  // Schreiben: Tagesnotiz (gemeinsam/vorlagen.mjs). Ordner relativ zum Vault, Format mit JJJJ MM TT … (siehe dort); leer/null = Standard. Der Vorlagenordner ist Sache des Vaults (brain.config.json: ordner.vorlagen).
   // Die Vorlage der Tagesnotiz ist der Name (oder Pfad) einer Notiz im Vorlagenordner; leer = keine Vorlage.
-  vorlagenOrdner: { typ: "pfad", standard: "Vorlagen" },
   tagesnotizOrdner: { typ: "pfad", standard: "Tagebuch" },
   tagesnotizFormat: { typ: "pfad", standard: "JJJJ-MM-TT" },
   tagesnotizVorlage: { typ: "pfad", standard: "" },

@@ -22,7 +22,7 @@ function schreibeDateien(dateien) {
 }
 test.beforeEach(async ({ page }) => {
   ({ vault } = baueVault());
-  schreibeDateien({ "10_notizen/lang.md": LANG, "brain.config.json": JSON.stringify({ name: "Kortex", automatik: {} }) + "\n" });
+  schreibeDateien({ "10_notizen/lang.md": LANG, "brain.config.json": JSON.stringify({ name: "Kortex", ordner: { vorlagen: "Vorlagen" }, automatik: {} }) + "\n" });
   // Die Werkstatt bekommt eine ausdrücklich gebaute Umgebung: HOME im Temp-Ordner, nichts von den Orten des Rechners (CLAUDE_CONFIG_DIR, CODEX_HOME, XDG_*, GIT_CONFIG_* …)
   const home = realpathSync(mkdtempSync(join(tmpdir(), "kortex-schreiben-home-")));
   server = await starteServer(vault, { umgebung: { PATH: process.env.PATH, HOME: home, TMPDIR: home, TZ: "Europe/Berlin", LANG: "de_DE.UTF-8", GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: join(home, ".gitconfig") } });
@@ -230,10 +230,10 @@ test("Palette: Heute, Neue Notiz, Zurück und Vor stehen mit ihren Kürzeln drin
   await expect(page.locator("#pfad .krume.aktuell")).toHaveText("Donnerstag, 5. November 2026");
   await page.keyboard.press("Meta+k");
   await page.keyboard.type("Zurück");
-  await expect(pal("Zurück").locator("kbd")).toHaveText(["⌘", "["]);
+  await expect(pal("Zurück").locator("kbd")).toHaveText(["⌥", "⌘", "←"]);
 });
 
-test("Zurück/Vor: ⌘[ und ⌘] stellen Cursor und Scrollposition je Notiz wieder her; Knöpfe, Liste per Rechtsklick, Maustasten 4/5", async ({ page }) => {
+test("Zurück/Vor: ⌥⌘← und ⌥⌘→ stellen Cursor und Scrollposition je Notiz wieder her; Knöpfe, Liste per Rechtsklick, Maustasten 4/5", async ({ page }) => {
   await start(page, "10_notizen/lang.md");
   const scroller = page.locator(".cm-scroller");
   // Ausgangslage: Cursor in Zeile 40, dann tief gescrollt
@@ -267,23 +267,26 @@ test("Zurück/Vor: ⌘[ und ⌘] stellen Cursor und Scrollposition je Notiz wied
   await page.keyboard.press("Meta+k"); await page.keyboard.type("Kaffee"); await page.keyboard.press("Enter");
   await expect(page.locator("#pfad .krume.aktuell")).toHaveText("Kaffee");
   // zurück, zurück: wieder bei lang.md, Cursor und Scroll wie vorher
-  await page.keyboard.press("Meta+[");
+  await page.keyboard.press("Meta+Alt+ArrowLeft");
   await expect(page.locator("#pfad .krume.aktuell")).toHaveText("Reise nach Lissabon");
   const reiseEnde = await page.evaluate(() => { const v = window.studio.ed.view; return v.state.selection.main.head === v.state.doc.length; });
   expect(reiseEnde).toBe(true);
-  await page.keyboard.press("Meta+[");
+  await page.keyboard.press("Meta+Alt+ArrowLeft");
   await expect(page.locator("#pfad .krume.aktuell")).toHaveText("Langer Text");
   await expect.poll(async () => gleich(await zustand(), merk)).toBe(true);
   await expect(nav("zurueck")).toHaveAttribute("aria-disabled", "true");
   await expect(nav("vor")).toHaveAttribute("aria-disabled", "false");
-  // Vor per ⌘], dann Knopf, dann Maustaste 4 (zurück) und 5 (vor)
-  await page.keyboard.press("Meta+]");
+  // Vor per ⌥⌘→, dann Knopf, dann Maustaste 4 (zurück) und 5 (vor)
+  await page.keyboard.press("Meta+Alt+ArrowRight");
   await expect(page.locator("#pfad .krume.aktuell")).toHaveText("Reise nach Lissabon");
   await nav("vor").click();
   await expect(page.locator("#pfad .krume.aktuell")).toHaveText("Kaffee");
   await page.evaluate(() => window.dispatchEvent(new MouseEvent("mouseup", { button: 3, bubbles: true, cancelable: true })));
   await expect(page.locator("#pfad .krume.aktuell")).toHaveText("Reise nach Lissabon");
   await page.evaluate(() => window.dispatchEvent(new MouseEvent("mouseup", { button: 4, bubbles: true, cancelable: true })));
+  await expect(page.locator("#pfad .krume.aktuell")).toHaveText("Kaffee");
+  // Deutsche Tastatur: ⌘Ü (code BracketLeft) und ⌘+ (BracketRight) lösen NICHTS aus (⌘[ und ⌘] sind nicht belegt)
+  await page.evaluate(() => { for (const [key, code] of [["ü", "BracketLeft"], ["+", "BracketRight"], ["[", "BracketLeft"]]) window.dispatchEvent(new KeyboardEvent("keydown", { key, code, metaKey: true, bubbles: true, cancelable: true })); });
   await expect(page.locator("#pfad .krume.aktuell")).toHaveText("Kaffee");
   // Rechtsklick auf Zurück: Liste der Einträge, Klick springt dorthin
   await nav("zurueck").click({ button: "right" });
@@ -306,10 +309,10 @@ test("Zurück/Vor: eine verschwundene Notiz fällt lautlos weg; Umbenennen folgt
   // Kaffee verschwindet von der Platte; die Liste weiß es nach dem Neuladen des Baums
   rmSync(join(vault, "09_wiki/wissen/Kaffee.md"));
   await expect(page.locator('#liste-koerper [data-pfad="09_wiki/wissen/Kaffee.md"]')).toHaveCount(0, { timeout: 15000 });
-  await page.keyboard.press("Meta+[");
+  await page.keyboard.press("Meta+Alt+ArrowLeft");
   await expect(page.locator("#pfad .krume.aktuell")).toHaveText("Reise nach Lissabon");
   await expect(page.locator(".toast")).toHaveCount(0);
-  await page.keyboard.press("Meta+]");
+  await page.keyboard.press("Meta+Alt+ArrowRight");
   await expect(page.locator("#pfad .krume.aktuell")).toHaveText("Espresso");
   // Wischgeste: zwei Finger nach rechts (deltaX negativ) = zurück; senkrechtes Scrollen löst nichts aus
   const mitte = await page.locator(".cm-scroller").boundingBox();
@@ -319,7 +322,7 @@ test("Zurück/Vor: eine verschwundene Notiz fällt lautlos weg; Umbenennen folgt
   for (let i = 0; i < 6; i++) await page.mouse.wheel(-60, 2);
   await expect(page.locator("#pfad .krume.aktuell")).toHaveText("Reise nach Lissabon");
   await expect(page.locator("#nav-vor")).toHaveAttribute("aria-disabled", "false");
-  await page.keyboard.press("Meta+]");
+  await page.keyboard.press("Meta+Alt+ArrowRight");
   await expect(page.locator("#pfad .krume.aktuell")).toHaveText("Espresso");
   // Umbenennen: die Meldung führt den Eintrag mit
   await page.evaluate(() => window.studio.schreiben.umbenannt("10_notizen/Reise nach Lissabon.md", "10_notizen/Reise nach Porto.md"));
@@ -328,11 +331,11 @@ test("Zurück/Vor: eine verschwundene Notiz fällt lautlos weg; Umbenennen folgt
   expect(stand.liste).not.toContain("10_notizen/Reise nach Lissabon.md");
 });
 
-test("Zurück/Vor: aus einer neuen Notiz führt ⌘[ zur vorigen; ohne Vault geschieht nichts", async ({ page }) => {
+test("Zurück/Vor: aus einer neuen Notiz führt ⌥⌘← zur vorigen; ohne Vault geschieht nichts", async ({ page }) => {
   await start(page, "10_notizen/Reise nach Lissabon.md");
   await page.keyboard.press("Meta+n");
   await expect(zeilen(page).first()).toHaveText("# ");
-  await page.keyboard.press("Meta+[");
+  await page.keyboard.press("Meta+Alt+ArrowLeft");
   await expect(page.locator("#pfad .krume.aktuell")).toHaveText("Reise nach Lissabon");
   await expect(page.locator("#nav-vor")).toHaveAttribute("aria-disabled", "true");
 });
@@ -348,4 +351,85 @@ test("Einstellungen: Seite „Schreiben“ mit Ordner, Format und Vorlage; Werte
   await feld.fill("Journal");
   await expect.poll(() => page.evaluate(async () => (await (await fetch("/api/einstellungen")).json()).werte.tagesnotizOrdner), { timeout: 8000 }).toBe("Journal");
   await bildVon(page, "einstellungen");
+});
+
+// ---- Review: nichts geht verloren
+const setzeText = (page, text) => page.evaluate((t) => { const v = window.studio.ed.view; v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: t } }); }, text);
+const inboxDateien = () => readdirSync(join(vault, "00_inbox"));
+
+test("K1: ein Entwurf ohne Titel, dessen erste Zeilen sich nach dem Säubern leeren, geht beim Wechsel nicht verloren (Code, Listenrest, Trenner, Zitat, Nummer, nur Kopf)", async ({ page }) => {
+  await start(page);
+  const faelle = [
+    ["# \n```\ncode\n```\n", "code.md"],
+    ["# \n- [ ] \nText A\n", "text-a.md"],
+    ["# \n***\nText B\n", "text-b.md"],
+    ["# \n> \nText C\n", "text-c.md"],
+    ["# \n1. \nText D\n", "text-d.md"],
+    ["---\na: 1\n---\n# \n", "unbenannt.md"],
+  ];
+  for (const [text, datei] of faelle) {
+    await page.keyboard.press("Meta+n");
+    await expect(page.locator("#pfad .krume.aktuell")).toHaveText("Neue Notiz");
+    await setzeText(page, text);
+    await page.locator("#liste-koerper [data-karte]").first().click(); // Wechsel zu einer anderen Notiz
+    await expect.poll(() => inboxDateien().includes(datei), { message: datei }).toBe(true);
+    expect(readFileSync(join(vault, "00_inbox", datei), "utf8")).toBe(text);
+  }
+});
+
+test("K1: derselbe Fall beim Beenden (vorSchliessen): der Text wird gesichert, nicht verworfen", async ({ page }) => {
+  await start(page);
+  await page.keyboard.press("Meta+n");
+  await setzeText(page, "# \n```\nnur Code\n```\n");
+  const r = await page.evaluate(() => window.studio.vorSchliessen());
+  expect(r.ok).toBe(true);
+  expect(readFileSync(join(vault, "00_inbox", "nur-code.md"), "utf8")).toBe("# \n```\nnur Code\n```\n");
+  // ein wirklich leerer Entwurf bleibt ohne Datei
+  const vorher = inboxDateien().length;
+  await page.keyboard.press("Meta+n");
+  expect((await page.evaluate(() => window.studio.vorSchliessen())).ok).toBe(true);
+  expect(inboxDateien().length).toBe(vorher);
+});
+
+test("W1: Dauertippen ohne Titel schiebt das Sichern nicht endlos hinaus (Höchstwartezeit ab dem ersten Tastendruck)", async ({ page }) => {
+  await start(page);
+  await page.evaluate(() => { window.studio.entwurfHoechstWartenMs = 1500; });
+  await page.keyboard.press("Meta+n");
+  await page.evaluate(() => { const v = window.studio.ed.view; v.dispatch({ selection: { anchor: v.state.doc.length } }); v.dispatch({ changes: { from: v.state.doc.length, insert: "\n" } }); });
+  // alle 300 ms ein Zeichen: ein Debounce käme nie zum Zug
+  const vorher = inboxDateien().length;
+  for (let i = 0; i < 14; i++) { await page.keyboard.type("x"); await page.waitForTimeout(300); if (inboxDateien().length > vorher) break; }
+  expect(inboxDateien().length).toBe(vorher + 1);
+  await expect(page.locator("#pfad .krume.aktuell")).not.toHaveText("Neue Notiz");
+});
+
+test("W2: entsteht die Datei eines Tag-Entwurfs inzwischen anderswo, kommt der Text ans Ende der vorhandenen Notiz — kein Dialog, nichts verworfen", async ({ page }) => {
+  await start(page);
+  await page.keyboard.press("Meta+Shift+d");
+  await expect.poll(() => da("Tagebuch/2026-11-05.md")).toBe(true);
+  await page.locator('#tag-nav [data-tag="zurueck"]').click();
+  await expect(page.locator("#pfad .krume.aktuell")).toHaveText("Mittwoch, 4. November 2026");
+  writeFileSync(join(vault, "Tagebuch/2026-11-04.md"), "# Mittwoch, 4. November 2026\n\nVom anderen Gerät.\n"); // der Abgleich bringt sie dazwischen
+  await page.keyboard.press("Meta+ArrowDown");
+  await page.keyboard.type("Mein eigener Text");
+  await page.locator('#tag-nav [data-tag="heute"]').click();
+  await expect(page.locator("#pfad .krume.aktuell")).toHaveText("Donnerstag, 5. November 2026");
+  await expect(page.locator(".dialog")).toHaveCount(0);
+  const text = lese("Tagebuch/2026-11-04.md");
+  expect(text).toContain("Vom anderen Gerät.");
+  expect(text).toContain("Mein eigener Text");
+  expect(text.indexOf("Vom anderen")).toBeLessThan(text.indexOf("Mein eigener"));
+});
+
+test("W2: Verwerfen im Speicherfehler-Dialog lässt einen Entwurf nicht ohne Ablage verschwinden (Zwischenablage und lokale Kopie)", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await start(page);
+  await page.keyboard.press("Meta+n");
+  await setzeText(page, "# Wichtig\nNicht verlieren\n");
+  await page.route("**/api/neu", (r) => r.fulfill({ status: 500, json: { fehler: "kaputt" } }));
+  await page.locator("#liste-koerper [data-karte]").first().click();
+  await page.locator('[data-dialog="speicherfehler"] [data-aktion="verwerfen"]').click();
+  await expect(page.locator(".dialog")).toHaveCount(0);
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("# Wichtig\nNicht verlieren\n");
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("brain-studio.entwurf-verworfen")).text)).toBe("# Wichtig\nNicht verlieren\n");
 });

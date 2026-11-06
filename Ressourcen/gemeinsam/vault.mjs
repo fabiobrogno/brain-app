@@ -8,7 +8,7 @@ import { join, basename, relative, sep, isAbsolute } from "node:path";
 import { createHash, randomBytes } from "node:crypto";
 import { execFile } from "node:child_process";
 import { pathToFileURL } from "node:url";
-import { HttpFehler, MAX_DATEI, inboxOrdnerVon, inboxHinweisVon, loese, imVault, falte, kindUmgebung, supportOrdner, kernOrdner, BEARBEITBAR, generiertName, wikiGeneriert, gesperrterName } from "./basis.mjs";
+import { HttpFehler, MAX_DATEI, inboxOrdnerVon, vorlagenOrdnerVon, inboxHinweisVon, loese, imVault, falte, kindUmgebung, supportOrdner, kernOrdner, BEARBEITBAR, generiertName, wikiGeneriert, gesperrterName } from "./basis.mjs";
 import { pruefeText, leseKopf } from "./pruefung.mjs";
 import { heuteIso } from "./zeit.mjs";
 import { zielZuNeuerNotiz, ordnerVonPfad } from "./wikilink.mjs";
@@ -143,7 +143,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
     const notizPfade = dateien.filter((d) => BEARBEITBAR.test(d.rel)).map((d) => d.rel);
     let teil = null;
     if (notizPfade.length) { teil = notizIndex.teil(notizPfade); if (!teil) return VOLL; }
-    return { voll: false, baum: eintraege, notizen: teil ? teil.zeilen : [], ...(teil ? { typen: teil.typen, ansichten: teil.ansichten } : {}), aufgabenOrdner: await aufgabenFn.ordnerName(), inboxOrdner: inboxOrdnerVon(wurzel), ...hinweisFeld() };
+    return { voll: false, baum: eintraege, notizen: teil ? teil.zeilen : [], ...(teil ? { typen: teil.typen, ansichten: teil.ansichten } : {}), aufgabenOrdner: await aufgabenFn.ordnerName(), inboxOrdner: inboxOrdnerVon(wurzel), vorlagenOrdner: vorlagenOrdnerVon(wurzel), ...hinweisFeld() };
   }
 
   // ---------- Lesen / Schreiben ----------
@@ -202,29 +202,40 @@ export function oeffneVault(vaultPfad, opts = {}) {
     return { hash: HASH(buf), geaendert: statSync(abs).mtime.toISOString() };
   }
 
-  // Freien Dateinamen reservieren (exklusiv anlegen): name.md, name-2.md, name-3.md …
+  // Freien Dateinamen reservieren: name.md, name-2.md, name-3.md … Der Inhalt liegt vorher fertig in einer Temp-Datei und wird mit einem Hartlink an den Namen gesetzt
+  // (wie in schreibe): der Name zeigt nie eine halb geschriebene Datei, und ein belegter Name wird nie überschrieben (EEXIST → nächster Name).
   function legeFreiAn(relOrdner, stamm, inhalt) {
     const ordnerAbs = relOrdner ? loese(wurzel, relOrdner).abs : wurzel;
     mkdirSync(ordnerAbs, { recursive: true });
-    for (let i = 1; i < 1000; i++) {
-      const name = `${stamm}${i === 1 ? "" : "-" + i}.md`;
-      try { writeFileSync(join(ordnerAbs, name), inhalt, { flag: "wx" }); return relOrdner ? `${relOrdner}/${name}` : name; }
-      catch (e) { if (e.code !== "EEXIST") throw e; }
-    }
+    const tmp = tmpName(join(ordnerAbs, "x"));
+    try {
+      writeFileSync(tmp, inhalt, { flag: "wx", mode: 0o644 });
+      for (let i = 1; i < 1000; i++) {
+        const name = `${stamm}${i === 1 ? "" : "-" + i}.md`;
+        try { linkSync(tmp, join(ordnerAbs, name)); return relOrdner ? `${relOrdner}/${name}` : name; }
+        catch (e) { if (e.code !== "EEXIST") throw e; }
+      }
+    } finally { try { unlinkSync(tmp); } catch { /* schon weg */ } }
     throw new HttpFehler(409, "Es gibt schon zu viele Dateien mit diesem Namen.");
   }
 
   // inhalt (optional): der fertige Text der Notiz (Studio: „Neue Notiz“ legt die Datei erst an, wenn etwas drinsteht); ohne: „# Titel“. Der Dateiname folgt dem Titel.
-  function neu({ ordner, titel, inhalt }) {
+  // id (optional): Entwurfs-ID des Studios. Kommt die Antwort nicht an und das Studio versucht es noch einmal, liefert dieselbe ID dieselbe Antwort — nichts wird doppelt angelegt.
+  const angelegt = new Map(); // id → Antwort (die letzten 200)
+  function neu({ ordner, titel, inhalt, id }) {
     if (typeof titel !== "string" || !titel.trim()) throw new HttpFehler(400, "Bitte einen Titel eingeben.");
     if (ordner !== undefined && ordner !== null && typeof ordner !== "string") throw new HttpFehler(400, "Ungültiger Ordner.");
     if (inhalt !== undefined && inhalt !== null && typeof inhalt !== "string") throw new HttpFehler(400, "Ungültiger Inhalt.");
+    if (id !== undefined && id !== null && (typeof id !== "string" || !id || id.length > 100)) throw new HttpFehler(400, "Ungültige Kennung.");
     if (typeof inhalt === "string" && Buffer.byteLength(inhalt) > MAX_DATEI) throw new HttpFehler(413, "Der Text ist zu lang.");
+    if (typeof id === "string" && angelegt.has(id)) return angelegt.get(id);
     const o = (ordner || "").replace(/^\/+|\/+$/g, "");
     const t = titel.trim().replace(/\s+/g, " ").slice(0, 200);
     const text = typeof inhalt === "string" ? inhalt : `# ${t}\n`;
     const pfad = legeFreiAn(o ? loese(wurzel, o).rel : "", slug(t, 60), text);
-    return typeof inhalt === "string" ? { pfad, hash: HASH(Buffer.from(text, "utf8")) } : { pfad }; // der Hash nur mit eigenem Inhalt (Studio: Entwurf wird zur Datei)
+    const antwort = typeof inhalt === "string" ? { pfad, hash: HASH(Buffer.from(text, "utf8")) } : { pfad }; // der Hash nur mit eigenem Inhalt (Studio: Entwurf wird zur Datei)
+    if (typeof id === "string") { angelegt.set(id, antwort); if (angelegt.size > 200) angelegt.delete(angelegt.keys().next().value); }
+    return antwort;
   }
 
   // „Anlegen“ aus einem offenen [[Link]]: gibt es das Ziel nach der gemeinsamen Regel (wikilink.mjs) schon, kommt dessen Pfad zurück und nichts wird angelegt;
@@ -517,8 +528,8 @@ export function oeffneVault(vaultPfad, opts = {}) {
     wurzel, name: basename(wurzel), heute: () => opts.heute || heuteIso(jetzt()), rueckfragen, kitVersion, kitVorhanden, kit, vertrauen, vertrauenStand: stand, baum, lies, imUnterVault: (rel) => { try { return imUnterVault(loese(wurzel, rel).abs); } catch { return false; } }, schreibe, neu, wikiAnlegen, wikiLoese: (ziel, von) => notizIndex.loeseWiki(ziel, ordnerVonPfad(von || "")), merken, suche, suchenFuerKi, pruefung, gesundheit, nutzung,
     posteingangVerwerfen: posteingang.verwerfen, posteingangSpaeter: posteingang.spaeter, posteingangUebernehmen: posteingang.uebernehmen,
     aufgaben: aufgabenFn.aufgaben, aufgabeAnlegen: aufgabenFn.anlegen, aufgabeAendern: aufgabenFn.aendern, aufgabenArchivieren: aufgabenFn.archivieren, aufgabenFuerKi: aufgabenFn.fuerKi, aufgabenOrdnerName: aufgabenFn.ordnerName, aufgabePfad: aufgabenFn.findePfad,
-    notizen: async () => ({ ...(await notizIndex.notizen()), aufgabenOrdner: await aufgabenFn.ordnerName(), inboxOrdner: inboxOrdnerVon(wurzel), ...hinweisFeld() }), notizKontext: notizIndex.kontext, typen: notizIndex.typen, ansichten: notizIndex.ansichten,
-    indexAlles: async () => ({ ...(await notizIndex.alles()), aufgabenOrdner: await aufgabenFn.ordnerName(), inboxOrdner: inboxOrdnerVon(wurzel), ...hinweisFeld() }), teilIndex,
+    notizen: async () => ({ ...(await notizIndex.notizen()), aufgabenOrdner: await aufgabenFn.ordnerName(), inboxOrdner: inboxOrdnerVon(wurzel), vorlagenOrdner: vorlagenOrdnerVon(wurzel), ...hinweisFeld() }), notizKontext: notizIndex.kontext, typen: notizIndex.typen, ansichten: notizIndex.ansichten,
+    indexAlles: async () => ({ ...(await notizIndex.alles()), aufgabenOrdner: await aufgabenFn.ordnerName(), inboxOrdner: inboxOrdnerVon(wurzel), vorlagenOrdner: vorlagenOrdnerVon(wurzel), ...hinweisFeld() }), teilIndex,
     gitLog: async (a) => gitFn.log(wurzel, a || {}, gitCtx()),
     gitRemote: async (url, extra = {}) => gitFn.remoteHinzufuegen(wurzel, url, gitCtx({ limit: opts.gitLimitRemote, ...extra })),
     // sicherungStand: "konflikt" | "anmeldung" | "neues" | null — die Hintergrund-Sicherung des Kerns (kern/backup.mjs) vermerkt, wenn sie nicht senden konnte

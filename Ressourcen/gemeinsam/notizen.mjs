@@ -7,7 +7,7 @@
 // kommt null zurück und die Oberfläche lädt wie bisher alles.
 import { readdirSync, statSync, realpathSync, readFileSync, openSync, readSync, closeSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { BEARBEITBAR, generiertName, wikiGeneriert, gesperrterName, falte, imVault, HttpFehler, loese, inboxOrdnerVon } from "./basis.mjs";
+import { BEARBEITBAR, generiertName, wikiGeneriert, gesperrterName, falte, imVault, HttpFehler, loese, inboxOrdnerVon, vorlagenOrdnerVon } from "./basis.mjs";
 import { pruefeText, istDatum, plusTage } from "./pruefung.mjs";
 import { heuteIso } from "./zeit.mjs";
 import { baueWikiIndex, findeWikiZiel } from "./wikilink.mjs";
@@ -412,7 +412,7 @@ export function erzeugeNotizIndex({ wurzel, jetzt = () => new Date(), heute, git
 
   // Eine Zeile des Index aus einem Roh-Eintrag und dem Kontext des Laufs (ctx) — für den Vollauf und für teil() dieselbe Regel.
   function baueZeile(e, ctx) {
-    const { aufgabenName, inboxName, hatInbox, rueck, karte, status, zuletztAb } = ctx;
+    const { aufgabenName, inboxName, vorlagenName, hatInbox, rueck, karte, status, zuletztAb } = ctx;
     const { c } = e;
     const oben = falte(e.teile[0]);
     const unterhalb = e.teile.slice(1, -1);
@@ -421,7 +421,7 @@ export function erzeugeNotizIndex({ wurzel, jetzt = () => new Date(), heute, git
     if (c.archiviert || /^90_/.test(oben)) bereich = "archiv";
     else if (oben === falte(aufgabenName) && e.teile.length === 3 && falte(e.teile[1]) === "archiv") bereich = "archiv"; // archivierte Aufgaben (kern/aufgaben.mjs archiviere): weder Board noch Zähler noch „Alle Notizen“
     else if (oben === inboxName && e.teile.length > 2 && e.teile[1].startsWith("_")) bereich = "maschine"; // _-Ordner direkt im Posteingang: maschinell verwaltet (Rückfragen, Vorschläge, …)
-    else if (oben === "01_vorlagen" || oben === "vorlagen") bereich = "vorlage"; // „Vorlagen/“: Notiz-Vorlagen für „Neue Notiz aus Vorlage“ (gemeinsam/vorlagen.mjs)
+    else if (oben === vorlagenName) bereich = "vorlage"; // Vorlagenordner des Vaults (basis.mjs#vorlagenOrdnerVon, Standard 01_vorlagen)
     else if (e.teile.length === 1 && SYSTEM_DATEIEN.has(falte(e.rel))) bereich = "system"; // CLAUDE.md, AGENTS.md, GEMINI.md in der Wurzel (Groß/klein egal)
     else if (oben === inboxName && !unterhalb.some((s) => s.startsWith("_"))) bereich = "inbox";
     else if (oben === "09_wiki") bereich = "wissen";
@@ -498,10 +498,11 @@ export function erzeugeNotizIndex({ wurzel, jetzt = () => new Date(), heute, git
     try { if (typeof aufgabenOrdner === "function") aufgabenName = falte((await aufgabenOrdner()) || aufgabenName); } catch { aufgabenName = falte(aufgabenName); }
     const inbox = inboxOrdnerVon(wurzel); // Posteingang aus brain.config.json, einmal je Indexlauf gelesen
     const inboxName = falte(inbox);
+    const vorlagenName = falte(vorlagenOrdnerVon(wurzel));
     const hatInbox = roh.some((e) => falte(e.teile[0]) === inboxName) || existsSync(join(wurzel, inbox));
     const zuletztAb = jetztMs - SIEBEN_TAGE;
 
-    const ctx = { aufgabenName, inboxName, hatInbox, rueck, karte, status, zuletztAb };
+    const ctx = { aufgabenName, inboxName, vorlagenName, hatInbox, rueck, karte, status, zuletztAb };
     const zeilen = roh.map((e) => baueZeile(e, ctx));
     zeilen.sort((a, b) => (a.geaendert < b.geaendert ? 1 : a.geaendert > b.geaendert ? -1 : a.pfad < b.pfad ? -1 : 1));
     const ergebnis = { zeilen, rueck, roh, loeseZiel, wikiIx, karte };

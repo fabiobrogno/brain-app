@@ -83,7 +83,7 @@ Stable-Tags setzt nur der CEO nach Fabios Freigabe.
   Name aus dem Titel im Posteingang, Namensgleichheit `-2`); beim Tippen wartet eine leere Titelzeile auf ihren Titel (2,5 s), beim Verlassen/Beenden nimmt Kortex die erste Zeile, nach 20 s Ruhe wird gesichert. Leer verlassen = keine Datei.
 - **Tagesnotiz** (⇧⌘D, „Heute“): `Tagebuch/JJJJ-MM-TT.md`; „Heute“ legt die Datei gleich an, Tageswechsel (‹ ›, Kalender mit Punkten) öffnet bei fehlender Notiz einen Entwurf auf dem festen Pfad. „Heute“ zählt in der Zeitzone des Macs (`zeit.mjs`).
 - **Vorlagen** (⌥⌘N): Notizen im Vorlagenordner; Wahl mit Suche und Vorschau (`schreiben.js`). Der Ordner zählt wie `01_vorlagen` nicht als Notizen (`bereich: "vorlage"`); nur neue Vaults bekommen drei Beispiele (`gemeinsam/vorlage.mjs`).
-- **Zurück/Vor** (⌘[ ⌘], Maustasten 4/5, Zwei-Finger-Wischen, Knöpfe mit Rechtsklick-Liste): Modell in `studio/seitenverlauf.js` (Cursor + Scroll je Eintrag, tote Einträge fallen lautlos weg). Pfadänderungen melden andere Teile mit
+- **Zurück/Vor** (⌥⌘← ⌥⌘→; ⌘[ und ⌘] sind absichtlich frei: im Editor gehören sie zum Einrücken, auf der deutschen Tastatur liegen sie auf ⌘Ü/⌘+; Maustasten 4/5, Zwei-Finger-Wischen, Knöpfe mit Rechtsklick-Liste): Modell in `studio/seitenverlauf.js` (Cursor + Scroll je Eintrag, tote Einträge fallen lautlos weg). Pfadänderungen melden andere Teile mit
   `window.studio.schreiben.umbenannt(alt, neu)`, `.ordnerUmbenannt(alt, neu)` und `.entfernt(pfad)`.
 - Neue Menübefehle der App (`StudioBefehl`): `heute`, `vorlage`, `zurueck`, `vor`; Kürzel im Register (`tastenkuerzel-register.json`), Test `schreibenImAlltagHatMenueUndKuerzel`.
 

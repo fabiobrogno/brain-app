@@ -296,3 +296,19 @@ test("Ereignis „tastenkuerzel“: Änderung der Datei von außen (die App schr
     } finally { h.beende(); }
   }
 });
+
+test("Review: Zurück/Vor liegen auf ⌥⌘← und ⌥⌘→ (⌘[ und ⌘] gehören im Editor zum Einrücken und liegen auf der deutschen Tastatur auf ⌘Ü/⌘+) und werden über den Ort der Taste erkannt", () => {
+  const b = L.wirksam(R, {});
+  assert.equal(b.zurueck, "Alt+Cmd+Left");
+  assert.equal(b.vor, "Alt+Cmd+Right");
+  assert.ok(!Object.values(b).includes("Cmd+[") && !Object.values(b).includes("Cmd+]"), "⌘[ und ⌘] sind nicht belegt");
+  const suche = L.nachschlagen(R, {});
+  const ereignis = (o) => ({ metaKey: true, altKey: false, shiftKey: false, ctrlKey: false, ...o });
+  const id = (e) => suche.get(L.ereignisText(e, { mac: true }));
+  assert.equal(id(ereignis({ altKey: true, key: "ArrowLeft", code: "ArrowLeft" })), "zurueck");
+  assert.equal(id(ereignis({ altKey: true, key: "ArrowRight", code: "ArrowRight" })), "vor");
+  // deutsche Tastatur: die Taste neben „P“ liefert ü/Ü (code BracketLeft), die neben „Ä“ +/* (code BracketRight)
+  assert.equal(id(ereignis({ key: "ü", code: "BracketLeft" })), undefined, "⌘Ü löst nichts aus");
+  assert.equal(id(ereignis({ key: "+", code: "BracketRight" })), undefined, "⌘+ löst nichts aus");
+  assert.equal(id(ereignis({ key: "[", code: "BracketLeft" })), undefined, "auch auf der US-Tastatur nicht mehr: dort gehört ⌘[ dem Editor");
+});

@@ -27,7 +27,7 @@ export const GITIGNORE = [
 // enthält sonst nur Daten — kein `.tools`, keinen Kern-Code (der liegt im App-Paket, Kern-Umzug P4). Die Ordnernamen entsprechen den
 // Standardwerten des Kerns und dem Gerüst unten (00_inbox, 09_wiki, 90_archiv).
 export const BRAIN_CONFIG = JSON.stringify({
-  ordner: { inbox: "00_inbox", wiki: "09_wiki", archiv: "90_archiv", aufgaben: "05_aufgaben" },
+  ordner: { inbox: "00_inbox", wiki: "09_wiki", archiv: "90_archiv", aufgaben: "05_aufgaben", vorlagen: "Vorlagen" },
   sprache: "de",
 }, null, 2) + "\n";
 

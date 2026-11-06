@@ -11,6 +11,7 @@ import { erzeugeSeitenverlauf } from "./seitenverlauf.js";
 import { TS } from "./texte-schreiben.js";
 import { T } from "./texte.js";
 
+const MAX_VORSCHAU_ZEILEN = 200;
 const TAG_KURZ = new Intl.DateTimeFormat("de-DE", { weekday: "short", day: "numeric", month: "short" });
 const tagKurz = (iso) => { const [j, m, t] = iso.split("-").map(Number); return TAG_KURZ.format(new Date(j, m - 1, t)); };
 
@@ -59,7 +60,9 @@ export function erzeugeSchreiben(ctx) {
   // Vorschau: der Text der Vorlage so, wie die Notiz würde — Kopf gedämpft, Überschriften kräftig, Cursor als kleiner Strich
   function vorschauEl(text, cursor) {
     const g = V.kopfGrenzen(text);
-    const zeilen = text.replace(/\n$/, "").split("\n");
+    const alle = text.replace(/\n$/, "").split("\n");
+    const zeilen = alle.slice(0, MAX_VORSCHAU_ZEILEN); // eine riesige Vorlage zeichnet nur ihren Anfang
+    if (alle.length > zeilen.length) zeilen.push("…");
     const el = h("div", { klasse: "vw-text", "data-vorschau": "text" });
     let off = 0, inKopf = !!g;
     zeilen.forEach((z, i) => {
@@ -130,7 +133,8 @@ export function erzeugeSchreiben(ctx) {
     }
     const anlegenKnopf = baueKnopf({ text: TS.vorlage.anlegen, variante: "primaer", aktion: "vorlage-anlegen", aufKlick: los });
     suche.addEventListener("input", () => { idx = 0; zeichneListe(); });
-    titel.addEventListener("input", () => zeichneVorschau());
+    let vorschauTimer = 0;
+    titel.addEventListener("input", () => { clearTimeout(vorschauTimer); vorschauTimer = setTimeout(zeichneVorschau, 90); }); // beim Tippen nicht bei jedem Zeichen neu zeichnen
     const pfeile = (e) => {
       if (e.key === "ArrowDown") { e.preventDefault(); idx = (idx + 1) % Math.max(1, sichtbar.length); markiere(); zeichneVorschau(); }
       else if (e.key === "ArrowUp") { e.preventDefault(); idx = (idx + sichtbar.length - 1) % Math.max(1, sichtbar.length); markiere(); zeichneVorschau(); }
@@ -296,8 +300,8 @@ export function erzeugeSchreiben(ctx) {
       if (Math.abs(e.deltaX) < 2 * Math.abs(e.deltaY) || kannWaagerecht(e.target)) { summe = 0; return; }
       if (jetzt - letzte > 220) summe = 0;
       letzte = jetzt; summe += e.deltaX;
-      if (Math.abs(summe) > 180) { const r = summe < 0 ? -1 : 1; summe = 0; gesperrtBis = jetzt + 900; e.preventDefault(); geheZu(r); }
-    }, { passive: false });
+      if (Math.abs(summe) > 180) { const r = summe < 0 ? -1 : 1; summe = 0; gesperrtBis = jetzt + 900; geheZu(r); }
+    }, { passive: true }); // nur mitlesen, nie eingreifen: das Scrollen bleibt unberührt
   }
 
   return {
