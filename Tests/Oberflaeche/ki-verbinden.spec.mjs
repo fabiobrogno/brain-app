@@ -356,7 +356,7 @@ test("Statusleiste: w√§hrend Programme und Konten laden steht ein Platzhalter, ‚
   await expect(page.locator('#status [data-st="ki-laedt"]')).toBeVisible();
   await expect(page.locator('#status [data-st="claude"]')).toBeHidden();
   await bild(page, "6-statusleiste-laedt", "light");
-  await expect(page.locator("#status .kt-leiste[data-konto]")).toBeVisible({ timeout: 10000 });
+  await expect(page.locator("#status .kt-leiste[data-konten]")).toBeVisible({ timeout: 10000 });
   await expect(page.locator('#status [data-st="ki-laedt"]')).toBeHidden();
   await bild(page, "6b-statusleiste-geladen", "light");
   await page.waitForTimeout(400);
