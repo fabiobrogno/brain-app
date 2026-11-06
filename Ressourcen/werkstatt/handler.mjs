@@ -344,7 +344,7 @@ export function erzeugeHandler(o) {
       case "/api/posteingang/verwerfen": nur("POST"); return V().posteingangVerwerfen(eingabe());
       case "/api/posteingang/spaeter": nur("POST"); return V().posteingangSpaeter(eingabe());
       case "/api/posteingang/uebernehmen": nur("POST"); return V().posteingangUebernehmen(eingabe());
-      // Volltext über den Index: q (Wörter, "Phrase", -ausschluss, ordner: typ: tag: status: geaendert:<7d), limit (Standard 30, höchstens 100), offset, facetten=1 (Zahlen für die Filter)
+      // Volltext über den Index: q (Wörter, "Phrase", -ausschluss, ordner: typ: tag: status: geaendert:<7d), limit (Standard 30, höchstens 50), offset, facetten=1 (Zahlen für die Filter)
       case "/api/suche": nur("GET"); return V().sucheIndex({ q: q.get("q"), limit: q.get("limit"), offset: q.get("offset"), facetten: q.get("facetten") === "1" });
       case "/api/pruefung": nur("GET"); return V().pruefung(q.get("pfad"));
       case "/api/gesundheit": nur("GET"); return V().gesundheit();

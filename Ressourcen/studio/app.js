@@ -892,10 +892,12 @@ function schliesseSuche(neuZeichnen = true) {
 }
 // Fragt die Werkstatt: mehr = die nächste Seite anhängen. Eine neuere Frage bricht die ältere ab (AbortController; über den App-Kanal zählt die Nummer).
 function fuehreSucheAus({ mehr = false } = {}) {
+  // „Mehr laden“ gehört zur Frage der angezeigten Ergebnisse: wurde seitdem weitergetippt (neue Suche steht an oder läuft), tut es nichts und stört die neue Suche nicht
+  if (mehr && (!S.suche.ergebnisFrage || S.suche.frage !== S.suche.ergebnisFrage)) return;
   clearTimeout(sucheTimer); clearTimeout(sucheNochmal);
   sucheCtl?.abort();
   sucheCtl = typeof AbortController === "undefined" ? null : new AbortController();
-  const nr = ++sucheNr, q = S.suche.frage;
+  const nr = ++sucheNr, q = mehr ? S.suche.ergebnisFrage : S.suche.frage;
   const offset = mehr ? S.suche.treffer.length : 0;
   S.suche.laedt = true;
   api.suche(q, { limit: 30, offset, facetten: true, signal: sucheCtl?.signal }).then((r) => {

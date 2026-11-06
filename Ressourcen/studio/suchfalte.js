@@ -18,4 +18,4 @@ export function falteText(s) {
   s = s.toLowerCase();
   return NUR_ASCII.test(s) ? s : ohneAscii(s);
 }
-export const WORT = /[\p{L}\p{N}]+/gu;
+export const WORT = /[\p{L}\p{M}\p{N}]+/gu; // wie TOKEN im Suchindex: ein NFD-Akzent (eigenes Zeichen) gehört zum Wort

@@ -16,10 +16,10 @@
 //
 // Suche
 //   Gewichtetes BM25 (Wort-Häufigkeit über alle Felder), UND über alle Wörter (findet nichts alle, gilt ODER nach BM25 — je mehr Wörter, desto höher —, markiert als `locker`).
-//   Je Wort zählt das Beste aus: genau · Wortanfang (Präfix, Faktor 0,6) · Tippfehler (Damerau-Levenshtein 1–2, Faktor 0,35–0,45; nur wenn es wenige Treffer gibt).
+//   Je Wort zählt das Beste aus: genau · Wortanfang (Präfix, Faktor 0,6) · Tippfehler (Damerau-Levenshtein 1–2, Faktor 0,35–0,45; nur wenn es wenige Treffer gibt) · Teilwort (Begriff ≥ 4 Zeichen mitten/am Ende eines Worts: „erklärung“ in „Steuererklärung“; CJK immer; Faktor 0,25).
 //   Phrasen "…" werden an den Texten der Kandidaten geprüft. Filter: ordner: typ: tag: status: geaendert:<7d. -wort schließt aus.
 //   Antwort: Treffer mit Auszügen (Zeile, Spalte, Markierungen), Gesamtzahl, Seitenweise (offset/limit), Facetten für die Filterchips.
-import { readdirSync, statSync, readFileSync, realpathSync } from "node:fs";
+import { readdirSync, statSync, readFileSync, realpathSync, openSync, readSync, closeSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { BEARBEITBAR, generiertName, wikiGeneriert, gesperrterName } from "./basis.mjs";
 import { parseKopf, ohneMarkdown } from "./notizen.mjs";
@@ -35,11 +35,17 @@ const GEW_PRAEFIX = 0.6, GEW_FUZZY = [0, 0.45, 0.35];
 const WORT_MAX = 40;
 const FUZZY_SCHWELLE = 3;                // Tippfehler-Suche nur, wenn genau + Wortanfang weniger Notizen treffen
 const MAX_TERME = 12, MAX_PRAEFIX = 40, MAX_FUZZY = 20, PRUEF_MAX = 400, PRUEF_MS = 80, BONUS_N = 300;
-const AUSZUG_MAX = 400_000;              // ein Auszug wird höchstens aus dem ersten Teil sehr langer Dateien gesucht
+const AUSZUG_BYTES = 64 * 1024;          // ein Auszug wird höchstens aus den ersten 64 KB einer Datei gesucht (nie die ganze Datei lesen)
+const PHRASE_BYTES = 192 * 1024;         // die Phrasenprüfung liest etwas mehr, bricht aber mit der Zeit ab
+const AUSZUG_MS = 60;                    // Zeitbudget für alle Auszüge einer Antwort; danach nur noch die erste Zeile je Treffer
+const OFFSET_MAX = 2000;                 // tiefer blättert die Suche nicht (dann mehr = false)
+const GEW_TEIL = 0.25, MAX_TEIL = 40;    // Teilwort-Suche (Teil eines längeren Worts: „erklärung“ in „Steuererklärung“)
+const CJK = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uf900-\ufaff]/;
+const VERZ_STUECK = 100;                 // beim Ordnerlauf alle so viele Dateien an die Scheibe zurückgeben
 const BLOCK_BITS = 14, BLOCK_INTS = 8;   // 16.384 Blöcke je Seite
 
 // ───────────────────────────── Wörter ─────────────────────────────
-const TOKEN = /[\p{L}\p{N}]+/gu;
+const TOKEN = /[\p{L}\p{M}\p{N}]+/gu; // \p{M}: Akzent als eigenes Zeichen (NFD „Mu\u0308ller“) gehört zum Wort
 const NUR_ASCII = /^[\x00-\x7f]*$/;
 const SONDER = { "ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss", "æ": "ae", "œ": "oe", "ø": "o", "đ": "d", "ł": "l", "ı": "i" };
 const faltZeichen = new Map();
@@ -225,6 +231,21 @@ export function analysiere(rel, textRoh) {
   };
 }
 
+// Liest höchstens die ersten `max` Bytes einer Datei als Text (nie eine ganze Riesendatei); ein abgeschnittenes letztes Zeichen fällt weg. Fehler → null
+const LESEPUFFER = Buffer.allocUnsafe(PHRASE_BYTES); // ein Puffer für alle Lesevorgänge (synchron, nie gleichzeitig benutzt)
+function liesAnfang(abs, max) {
+  let fd;
+  try {
+    fd = openSync(abs, "r");
+    const buf = LESEPUFFER;
+    let n = 0;
+    while (n < max) { const r = readSync(fd, buf, n, max - n, n); if (r <= 0) break; n += r; }
+    let t = buf.toString("utf8", 0, n);
+    if (n === max && t.endsWith("\ufffd")) t = t.slice(0, -1);
+    return t;
+  } catch { return null; } finally { if (fd !== undefined) try { closeSync(fd); } catch { /* egal */ } }
+}
+
 // ───────────────────────────── Zustand: Wörterbuch, Einträge, Notizen ─────────────────────────────
 function waechst(a, n, Typ) { if (n <= a.length) return a; const neu = new Typ(Math.max(n, a.length * 2, 64)); neu.set(a); return neu; }
 
@@ -281,6 +302,13 @@ class Zustand {
       b = seite[basis + 7];
     }
   }
+  // Anzahl lebender Notizen mit dem Wort (df zählt tote Einträge mit; ohne Tote ist es dasselbe)
+  dfLebend(id) {
+    if (this.tot === 0) return this.df[id];
+    let n = 0;
+    this.fuerEintraege(id, (e) => { if (this.lebt[e >>> 8]) n++; });
+    return n;
+  }
   fuegeEin(key, rel, st, a) {
     const alt = this.nachKey.get(key);
     if (alt !== undefined) this.entferne(key);
@@ -309,6 +337,7 @@ const keyVon = (rel) => rel.normalize("NFC");
 export function erzeugeSuchindex(o) {
   const wurzel = o.wurzel;
   const jetztMs = o.jetzt || (() => Date.now());
+  const maxDok = o.maxDokumente ?? MAX_DOKUMENTE;
   // Tote Einträge verzerren die Wort-Häufigkeiten (df) leicht; ab einem Viertel der Notizen (mindestens 200) baut ein Hintergrundlauf einen frischen Index.
   const totGrenze = () => o.totSchwelle ?? Math.max(200, Math.floor(z.nLebend * 0.25));
   let z = new Zustand();
@@ -355,7 +384,9 @@ export function erzeugeSuchindex(o) {
       const relOrdner = stapel.pop();
       let liste;
       try { liste = readdirSync(relOrdner ? join(wurzel, relOrdner) : wurzel, { withFileTypes: true }); } catch { if (!relOrdner) wurzelOk = false; continue; }
+      let seit = 0;
       for (const d of liste) {
+        if (++seit % VERZ_STUECK === 0) { entdeckt = aus.length; yield; } // auch ein flacher Ordner mit 20.000 Notizen hält die Schleife nie lange fest
         if (gesperrterName(d.name)) continue;
         const rel = relOrdner ? `${relOrdner}/${d.name}` : d.name;
         if (d.isDirectory()) { if (!istUnter(rel)) stapel.push(rel); }
@@ -374,7 +405,7 @@ export function erzeugeSuchindex(o) {
   function indexiere(zz, rel, st) {
     let text;
     try { text = readFileSync(join(wurzel, rel), "utf8"); } catch { zz.entferne(keyVon(rel)); return false; }
-    if (zz.nLebend >= MAX_DOKUMENTE) { zz.aufgegeben = true; return false; }
+    if (zz.nLebend >= maxDok && !zz.nachKey.has(keyVon(rel))) { zz.aufgegeben = true; return false; } // bekannte Notizen dürfen sich weiter ändern
     return zz.fuegeEin(keyVon(rel), rel, st, analysiere(rel, text));
   }
 
@@ -399,7 +430,7 @@ export function erzeugeSuchindex(o) {
     for (const [key, nr] of [...zz.nachKey]) { // Verschwundenes: nur, wenn es die Datei wirklich nicht mehr gibt (eine neue könnte nach dem Lauf entstanden sein)
       if (gesehen.has(key)) continue;
       const d = zz.docs[nr];
-      let weg = false; try { statSync(join(wurzel, d.rel)); } catch { weg = true; }
+      let weg = false; try { const st = statSync(join(wurzel, d.rel)); if (!st.isFile() || st.size > MAX_BYTES) weg = true; } catch { weg = true; } // auch: über 1 MB gewachsen
       if (weg) zz.entferne(key);
       yield;
     }
@@ -479,13 +510,27 @@ export function erzeugeSuchindex(o) {
     const alts = [];
     const exakt = z.vok.get(token);
     let abgedeckt = 0;
-    if (exakt !== undefined && z.df[exakt] > 0) { alts.push({ id: exakt, gew: 1 }); abgedeckt += z.df[exakt]; }
+    if (exakt !== undefined) { const n = z.dfLebend(exakt); if (n > 0) { alts.push({ id: exakt, gew: 1 }); abgedeckt += n; } }
     if (nurGenau) return alts;
     const L = token.length;
     if (L >= 3) {
       const kand = (z.praefix.get(token.slice(0, 2)) || []).filter((id) => id !== exakt && z.df[id] > 0 && z.liste[id].startsWith(token));
       kand.sort((a, b) => z.df[b] - z.df[a]);
-      for (const id of kand.slice(0, MAX_PRAEFIX)) { alts.push({ id, gew: GEW_PRAEFIX }); abgedeckt += z.df[id]; }
+      for (const id of kand.slice(0, MAX_PRAEFIX)) { const n = z.dfLebend(id); if (n > 0) { alts.push({ id, gew: GEW_PRAEFIX }); abgedeckt += n; } }
+    }
+    // Teilwörter: wenige Treffer → Wörter, die den Begriff in der Mitte oder am Ende enthalten („erklaerung“ in „steuererklaerung“, „name“ in „username“).
+    // CJK hat keine Wortgrenzen (eine Zeichenfolge ist EIN Wort): dort immer, auch bei kurzen Begriffen.
+    const cjk = CJK.test(token);
+    if (!ohneFuzzy && (cjk ? L >= 1 : L >= 4) && (cjk || abgedeckt < FUZZY_SCHWELLE)) {
+      const schon = new Set(alts.map((a) => a.id));
+      const gefunden = [];
+      for (let id = 0, n = z.liste.length; id < n; id++) {
+        if (z.df[id] === 0 || schon.has(id)) continue;
+        const w = z.liste[id];
+        if (w.length > L && w.includes(token)) gefunden.push(id);
+      }
+      gefunden.sort((a, b) => z.df[b] - z.df[a]);
+      for (const id of gefunden.slice(0, MAX_TEIL)) { const n = z.dfLebend(id); if (n > 0) { alts.push({ id, gew: GEW_TEIL }); abgedeckt += n; } }
     }
     if (L >= 4 && !ohneFuzzy && abgedeckt < FUZZY_SCHWELLE && !/\d/.test(token)) {
       const d = L <= 6 ? 1 : 2, qm = buchstabenMaske(token), n = z.liste.length;
@@ -546,7 +591,10 @@ export function erzeugeSuchindex(o) {
     starte();
     leere(50);
     if (letzterAbgleich + ABGLEICH_MS < jetztMs() && fertig) pruefeNeu();
-    let erg = sucheEinmal(opt);
+    // Veraltete Treffer (extern geändert/gelöscht) werden beim Antworten erkannt und aus dem Index genommen; dann wird neu gerechnet, bis die Seite stimmt (höchstens 3 Runden,
+    // die letzte lässt Veraltetes einfach weg und zählt es von `gesamt` ab).
+    let erg;
+    for (let runde = 0; runde < 3; runde++) { erg = sucheEinmal(opt); if (!erg.veraltet) break; }
     if (erg.veraltet) erg = sucheEinmal(opt, true);
     erg.dauerMs = Math.round((performance.now() - t0) * 10) / 10;
     return erg;
@@ -555,13 +603,14 @@ export function erzeugeSuchindex(o) {
   function sucheEinmal(opt, zweiter = false) {
     const jetzt = opt.jetzt ?? jetztMs();
     const limit = Math.min(50, Math.max(1, Number.parseInt(opt.limit, 10) || 30));
-    const offset = Math.min(2000, Math.max(0, Number.parseInt(opt.offset, 10) || 0));
+    const offsetRoh = Math.max(0, Number.parseInt(opt.offset, 10) || 0);
+    const offset = Math.min(OFFSET_MAX, offsetRoh);
     const q = parseFrage(opt.q);
     const ff = baueFilter(q.filter, jetzt);
     const aufbau = { fertig, anteil: Math.round(anteil * 1000) / 1000, dokumente: z.nLebend, entdeckt, ...(z.aufgegeben ? { abgeschnitten: true } : {}) };
     const antwort = (extra) => ({ treffer: [], gesamt: 0, gesamtGenau: true, offset, limit, mehr: false, aufbau, frage: q.rest, filter: q.filter.map((f) => ({ schluessel: f.schluessel, wert: f.wert, roh: f.roh, neg: f.neg, gueltig: !ff.ungueltig.includes(f) })), begriffe: [], markieren: [], facetten: null, locker: null, ...extra });
     const filterAktiv = ff.liste.length > 0;
-    if (!q.terme.length && !filterAktiv) return antwort({});
+    if ((!q.terme.length && !filterAktiv) || offsetRoh > OFFSET_MAX) return antwort({}); // tiefer als OFFSET_MAX: leer, mehr = false (nie dieselbe Seite wiederholen)
 
     const docs = z.docs, N = Math.max(1, z.nLebend), avg = z.summe / N || 1;
     sichern(docs.length + 1);
@@ -593,7 +642,7 @@ export function erzeugeSuchindex(o) {
     const lokal = [];
     termInfo.forEach(({ alts }, i) => {
       for (const a of alts) {
-        const df = z.df[a.id], idf = Math.log(1 + (Math.max(N, df) - df + 0.5) / (df + 0.5)) * a.gew;
+        const df = z.dfLebend(a.id), idf = Math.log(1 + (Math.max(N, df) - df + 0.5) / (df + 0.5)) * a.gew;
         z.fuerEintraege(a.id, (e) => {
           const d = e >>> 8;
           if (!z.lebt[d]) return;
@@ -673,31 +722,35 @@ export function erzeugeSuchindex(o) {
       const bis = performance.now() + PRUEF_MS; // eine Phrase mit lauter häufigen Wörtern darf die Werkstatt nicht lange festhalten
       for (const d of sortiert) {
         if (auswahl.length >= offset + limit + 1 && geprueft >= 40) { offenBleibt = true; break; }
-        if (geprueft >= PRUEF_MAX || (geprueft >= 5 && performance.now() > bis)) { offenBleibt = true; break; }
+        if (geprueft >= PRUEF_MAX || (geprueft >= 2 && performance.now() > bis)) { offenBleibt = true; break; }
         geprueft++;
-        let text; try { text = readFileSync(join(wurzel, docs[d].rel), "utf8"); } catch { continue; }
-        if (text.length > AUSZUG_MAX) text = text.slice(0, AUSZUG_MAX);
+        const text = liesAnfang(join(wurzel, docs[d].rel), PHRASE_BYTES);
+        if (text === null) continue;
         if (phrasenF.every((p) => enthaeltPhrase(text, p))) auswahl.push(d);
       }
       gesamt = auswahl.length; gesamtGenau = !offenBleibt;
     }
 
-    const seite = auswahl.slice(offset, offset + limit);
-    const spec = { markiere, phrasen: phrasenF, termAnzahl: termInfo.length };
-    let veraltet = false;
+    const spec = { markiere, phrasen: phrasenF, termAnzahl: termInfo.length, bis: performance.now() + AUSZUG_MS };
+    let veraltet = false, uebersprungen = 0;
     const treffer = [];
-    for (const d of seite) {
-      const doc = docs[d];
+    // Frische prüfen: ab offset der Reihe nach, bis die Seite voll ist. Veraltetes wandert aus dem Index (und die Rechnung beginnt von vorn); in der letzten Runde wird es nur übersprungen.
+    let gelesen = 0, pos = offset;
+    for (; pos < auswahl.length && treffer.length < limit && gelesen < 400; pos++, gelesen++) {
+      const d = auswahl[pos], doc = docs[d];
       let st; try { st = statSync(join(wurzel, doc.rel)); } catch { st = null; }
       if (!st || !st.isFile() || st.mtimeMs !== doc.mtimeMs || st.size !== doc.groesse) {
-        if (!zweiter) { veraltet = true; aktualisiereDatei(doc.rel); continue; }
+        if (!zweiter) { veraltet = true; aktualisiereDatei(doc.rel); } else uebersprungen++;
+        continue;
       }
       treffer.push(baueTreffer(doc, ohneText ? 0 : punkte[d], spec, ohneText));
     }
     if (veraltet) return { veraltet: true };
+    gesamt -= uebersprungen;
+    const bis = pos; // bis hier ist die Liste durchgesehen (Übersprungenes zählt zur Seite, damit die nächste Seite dort weitermacht)
 
     return antwort({
-      treffer, gesamt, gesamtGenau, mehr: offset + seite.length < gesamt || (!gesamtGenau && seite.length === limit), locker,
+      treffer, gesamt, gesamtGenau, mehr: bis <= OFFSET_MAX && (bis < auswahl.length || (!gesamtGenau && treffer.length === limit)), locker,
       begriffe, markieren: [...markiere.keys()].slice(0, 120),
       facetten: facetten ? fertigeFacetten(facetten) : null,
     });
@@ -774,15 +827,17 @@ export function erzeugeSuchindex(o) {
   function baueTreffer(doc, score, spec, ohneText) {
     const t = { pfad: doc.rel, titel: doc.titel, titelMarken: [], typ: doc.typ || "", geaendert: new Date(doc.mtimeMs).toISOString(), score: Math.round(score * 100) / 100, auszug: "", zeile: 1, spalte: 0, laenge: 0, stellen: [], anzahl: 0 };
     if (spec.markiere.size) t.titelMarken = markenIn(doc.titel, spec.markiere, []).map((m) => [m.s, m.e]);
-    let text; try { text = readFileSync(join(wurzel, doc.rel), "utf8"); } catch { return t; }
-    if (text.length > AUSZUG_MAX) text = text.slice(0, AUSZUG_MAX);
+    const text = liesAnfang(join(wurzel, doc.rel), AUSZUG_BYTES);
+    if (text === null) return t;
     const zeilen = text.split("\n");
+    const eilig = () => performance.now() > spec.bis; // Zeitbudget der Antwort verbraucht: nur noch die erste Zeile zeigen
     const kandidaten = [];
     let abschnitt = "", kopfEnde = 0;
     if (text.startsWith("---")) { for (let i = 1; i < Math.min(zeilen.length, 400); i++) if (/^(---|\.\.\.)\s*$/.test(zeilen[i])) { kopfEnde = i + 1; break; } }
     let anzahl = 0, ersteInhalt = -1;
-    if (spec.markiere.size && !ohneText) {
+    if (spec.markiere.size && !ohneText && !eilig()) {
       for (let i = 0; i < zeilen.length; i++) {
+        if ((i & 63) === 63 && eilig()) break;
         let z = zeilen[i];
         if (z.endsWith("\r")) z = z.slice(0, -1);
         const uebers = z.charCodeAt(0) === 35 ? UEBERSCHRIFT.exec(z) : null;

@@ -157,3 +157,43 @@ test("Hell und dunkel: Markierung bleibt lesbar", async ({ page }) => {
     await page.keyboard.press("Escape");
   }
 });
+
+test("Suche: „Mehr laden“ während neu getippt wird, tut nichts und stört die neue Suche nicht (keine gemischte Liste)", async ({ page }) => {
+  const anfragen = [];
+  page.on("request", (r) => { if (r.url().includes("/api/suche")) anfragen.push(new URL(r.url()).searchParams); });
+  await start(page);
+  await oeffneSuche(page);
+  await page.keyboard.type("Seitentest");
+  await expect(page.locator('[data-suche="treffer"]')).toHaveCount(30);
+  await expect(page.locator('[data-aktion="such-mehr"]')).toHaveCount(1);
+  // im selben Augenblick: weitergetippt (Entprellung läuft noch) und „Mehr laden“ geklickt
+  await page.evaluate(() => {
+    const f = document.querySelector("#suche");
+    f.value = "Seitentest -alpha"; f.dispatchEvent(new Event("input", { bubbles: true }));
+    document.querySelector('[data-aktion="such-mehr"]').click();
+  });
+  await expect(page.locator('[data-suche="zahl"]')).toHaveText("30 von 45 Treffern");
+  await expect(page.locator('[data-suche="treffer"]')).toHaveCount(30);
+  const pfade = await page.locator('[data-suche="treffer"]').evaluateAll((l) => l.map((e) => e.getAttribute("data-pfad")));
+  expect(new Set(pfade).size).toBe(30);
+  expect(pfade).not.toContain("20_seiten/projekt-alpha.md");
+  expect(anfragen.filter((p) => p.get("offset") && p.get("offset") !== "0")).toEqual([]); // nie eine Folgeseite der alten oder neuen Frage
+});
+
+test("Suche: NFD-Schreibweise („Müller“ mit getrenntem Trema) wird ganz markiert; Markup aus Notizen erscheint als Text, nie als Element", async ({ page }) => {
+  const nfd = "Müller";
+  writeFileSync(join(vault, "20_seiten", "mueller.md"), `# Firma ${nfd}\n\nBrief an ${nfd} zum Thema markupwort: <img src=x onerror="window.__xss=1"> und <b>fett</b>.\n`);
+  await start(page);
+  await oeffneSuche(page);
+  await page.keyboard.type("markupwort");
+  const karte = page.locator('[data-suche="treffer"][data-pfad="20_seiten/mueller.md"]');
+  await expect(karte).toBeVisible();
+  await expect(karte.locator("img, b, script")).toHaveCount(0);
+  await expect(karte).toContainText('<img src=x onerror="window.__xss=1">');
+  await expect(karte).toContainText("<b>fett</b>");
+  expect(await page.evaluate(() => window.__xss)).toBeUndefined();
+  await suchfeld(page).fill("müller");
+  await expect(karte.locator("mark.treffer").first()).toHaveText(nfd); // erst die Antwort auf die neue Frage
+  const marken = await karte.locator("mark.treffer").allTextContents();
+  for (const m of marken) expect(m).toBe(nfd);
+});
