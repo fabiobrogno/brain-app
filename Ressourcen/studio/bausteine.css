@@ -315,3 +315,14 @@ input[type=checkbox]:disabled, input[type=radio]:disabled { opacity: .45; cursor
   .ka-z-status { min-width: 0; }
 }
 @media (prefers-reduced-motion: reduce) { .ka-aufklapp { transition: none; } }
+
+/* ---------- Symbol-Wahl (App-Symbol): Kacheln mit Vorschaubild und Name, wie die Themenkarten, aber kompakt ---------- */
+.ez-symbole { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.ez-symbol { position: relative; display: grid; justify-items: center; gap: 5px; width: 64px; padding: 8px 4px 7px; border-radius: var(--r-l); border: 1px solid transparent; background: transparent; color: var(--text-2); font: inherit; cursor: pointer; transition: background-color var(--d-fast) ease-out, border-color var(--d), box-shadow var(--d), color var(--d-fast); }
+.ez-symbol:hover { background: var(--hover); color: var(--text); }
+.ez-symbol[aria-checked="true"] { border-color: var(--akzent-linie); background: var(--akzent-weich); color: var(--text); box-shadow: 0 0 0 2px var(--akzent-weich); }
+.ez-symbol:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
+.ez-symbol-bild { display: block; width: 48px; height: 48px; }
+.ez-symbol-bild img { display: block; width: 48px; height: 48px; user-select: none; -webkit-user-drag: none; }
+.ez-symbol-name { font-size: 12px; line-height: 16px; font-weight: 500; }
+@media (max-width: 720px) { .ez-symbole { justify-content: flex-start; } }

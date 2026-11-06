@@ -32,6 +32,10 @@ export const BEREICHE = [
       { id: "thema", titel: "Thema", zeilen: [
         { id: "thema", sonder: true, titel: "Thema", text: "Hell, dunkel oder wie dein Mac.", woerter: ["hell", "dunkel", "system", "macos", "modus", "aussehen", "dark", "light"] },
       ] },
+      { id: "dock", titel: "Dock", zeilen: [
+        { id: "app-symbol", schluessel: "appSymbol", art: "symbole", titel: "App-Symbol", text: "Gilt, solange Kortex läuft. Ist Kortex beendet und im Dock angeheftet, zeigt macOS das Standard-Symbol.",
+          optionen: [["standard", "Standard"], ["dunkel", "Dunkel"], ["graphit", "Graphit"], ["papier", "Papier"], ["smaragd", "Smaragd"]], woerter: ["symbol", "icon", "dock", "logo", "farbe", "violett", "dunkel", "graphit", "papier", "smaragd", "grün"] },
+      ] },
       { id: "feinheiten", titel: "Feinheiten", zeilen: [
         { id: "schriftgroesse", schluessel: "schriftgroesse", art: "regler", titel: "Schriftgröße im Editor", text: "Gilt für Notizen, nicht für Menüs und Listen.", woerter: ["schrift", "größe", "text", "font", "lesbar", "zoom"] },
         { id: "bewegung", schluessel: "bewegung", art: "segment", optionen: [["system", "Wie macOS"], ["reduziert", "Reduziert"]], titel: "Bewegung", text: "„Reduziert“ ersetzt Übergänge durch sofortiges Ein- und Ausblenden. „Wie macOS“ folgt deiner Systemeinstellung.", woerter: ["animation", "bewegung", "reduzieren", "ruhig", "übergang"] },

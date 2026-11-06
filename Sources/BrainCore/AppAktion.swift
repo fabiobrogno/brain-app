@@ -52,6 +52,8 @@ public enum AppAktion: Equatable, Sendable {
     case fensterZoom
     /// Hell/Dunkel der Seite (`hell`, `dunkel`, `system`): das Fenster folgt, damit das Material hinter der Seitenleiste dazu passt. Nur das Studio.
     case darstellung(FensterDarstellung)
+    /// Dock-Symbol (Einstellungen → Darstellung → „App-Symbol“): die App setzt `NSApp.applicationIconImage` sofort um (`standard` = Symbol des Pakets). Nur das Studio.
+    case appSymbol(AppSymbol)
 
     /// Längen- und Zeichenbegrenzung für Texte der Seite (Fenstertitel, Dialog-Hinweis).
     static let maxTitel = 120
@@ -68,7 +70,7 @@ public enum AppAktion: Equatable, Sendable {
     /// `{aktion:"ordner-waehlen", wert:{titel?, vorschlag?}}`, `{aktion:"vault-gewechselt"}`, `{aktion:"vertrauen-geaendert"}`,
     /// `{aktion:"titel", wert:<Text>}`, `{aktion:"fehler", wert:{text, ort?}}`, `{aktion:"git-pruefen"}`, `{aktion:"git-installieren"}`,
     /// `{aktion:"kopieren", wert:<Text>}`, `{aktion:"einrichtung-ende", wert:{art:"fertig"|"spaeter"}}`,
-    /// `{aktion:"einrichtung-oeffnen", wert?:{ab?:"vault"|"sicherung"|"ki"}}`, `{aktion:"mitteilung-probe"}`, `{aktion:"fenster-ziehen"}`, `{aktion:"fenster-zoom"}`, `{aktion:"darstellung", wert:"hell"|"dunkel"|"system"}`.
+    /// `{aktion:"einrichtung-oeffnen", wert?:{ab?:"vault"|"sicherung"|"ki"}}`, `{aktion:"mitteilung-probe"}`, `{aktion:"fenster-ziehen"}`, `{aktion:"fenster-zoom"}`, `{aktion:"darstellung", wert:"hell"|"dunkel"|"system"}`, `{aktion:"app-symbol", wert:"standard"|"dunkel"|"graphit"|"papier"|"smaragd"}`.
     /// Ohne Angabe gilt die strengste Herkunft (Übersicht): die Studio-Aktionen muss man ausdrücklich freischalten.
     public static func pruefe(_ nachricht: Any, vault: URL?, oberflaeche: Oberflaeche = .app) -> AppAktion? {
         guard let d = nachricht as? [String: Any], let name = d["aktion"] as? String else { return nil }
@@ -118,6 +120,9 @@ public enum AppAktion: Equatable, Sendable {
         case "darstellung":
             guard oberflaeche == .studio, let w = wert as? String, let d = FensterDarstellung(rawValue: w) else { return nil }
             return .darstellung(d)
+        case "app-symbol":
+            guard oberflaeche == .studio, let symbol = AppSymbol(wert: wert) else { return nil }
+            return .appSymbol(symbol)
         default:
             return nil
         }
