@@ -10,12 +10,12 @@ import { relativ, datumZeit } from "./format.js";
 import { fuehreRueckgaengigAus, fuehreWiederherstellenAus, zeilenText } from "./mitteilungen.js";
 import { TM } from "./texte-mitteilungen.js";
 import { symbol, GROESSE } from "./symbole.js";
-import { knopf as baueKnopf, segment, umschalter, auswahl, textfeld, hakenFeld, leerBlock, skelett, einstellMarke } from "./bausteine.js";
+import { knopf as baueKnopf, segment, umschalter, auswahl, textfeld, hakenFeld, leerBlock, skelett, einstellMarke, einstellKarte, einstellZeile } from "./bausteine.js";
 import { oeffneMenue } from "./menue.js";
 import { kiLogo, kiLogoId, kiLogoName, kiKatalog } from "./ki-logos.js";
 import { TK } from "./texte-konten.js";
 import { TKE as T } from "./texte-ki-einstellungen.js";
-import { kontingentStand, kontingentBlock, kontoAnsicht, kontingentEinwilligung, miniBalken, FRAGE_KONTO_EREIGNIS } from "./kontingent.js";
+import { kontingentStand, kontingentBlock, kontoAnsicht, kontingentEinwilligung, miniBalken, FRAGE_KONTO_EREIGNIS, kontingentOptionen, schreibeAppEinstellung } from "./kontingent.js";
 import { uebernehmeLokaleWahl } from "./ki-aktiv.js";
 import { TKO } from "./texte-kontingent.js";
 import { popoverOffen } from "./popover.js";
@@ -301,11 +301,23 @@ export function erzeugeKi(o) {
     d.box.dataset.dialog = "kt-ausschalten";
   }
   // Unterbereich „Kontingent“: je Konto der volle Verbrauch mit Rücksetzzeit und den Schaltern (anzeigen, ausschalten, neu laden); in der Kontenliste steht davon nur der Mini-Balken
+  // Oben die Schalter (Statusleiste, verbraucht/übrig, Mitteilung bei 80 und 100 %), darunter dieselben Werte wie im Popover der Statusleiste
+  function ktOptionen() {
+    const O = TKO.optionen, w = kontingentOptionen.werte;
+    const schreibe = (neu) => { schreibeAppEinstellung(api, neu); };
+    return h("div", { klasse: "kx-kt-optionen", "data-kx": "kontingent-optionen" }, einstellKarte(
+      einstellZeile({ titel: O.statusleiste.titel, text: O.statusleiste.text,
+        steuerung: umschalter({ an: w.kiKontingentStatusleiste !== false, label: O.statusleiste.titel, daten: { "data-kx": "kt-statusleiste" }, aufAenderung: (v) => schreibe({ kiKontingentStatusleiste: v }) }) }),
+      einstellZeile({ titel: O.anzeige.titel, text: O.anzeige.text,
+        steuerung: segment({ optionen: TKO.anzeige.optionen, wert: kontingentOptionen.modus(), label: TKO.anzeige.label, groesse: "s", daten: { "data-kx": "kt-anzeige" }, aufAenderung: (v) => schreibe({ kiKontingentAnzeige: v }) }) }),
+      einstellZeile({ titel: O.mitteilung.titel, text: O.mitteilung.text,
+        steuerung: umschalter({ an: w.mitteilungenKontingent !== false, label: O.mitteilung.titel, daten: { "data-kx": "kt-mitteilung" }, aufAenderung: (v) => schreibe({ mitteilungenKontingent: v }) }) })));
+  }
   zeichner.kontingent = (el) => {
     if (!S.konten) { el.replaceChildren(skelett("ez-skelett", 90)); return; }
     const zeilen = konten().map((kt) => ({ kt, sp: kontingentSpalte(kt) })).filter((x) => x.sp);
-    if (!zeilen.length) { el.replaceChildren(h("p", { klasse: "kx-leer", "data-kx": "kontingent-leer", text: T.kontingent.leer })); return; }
-    el.replaceChildren(h("div", { klasse: "kx-kt-liste", "data-kx": "kontingent-liste" }, zeilen.map(({ kt, sp }) =>
+    if (!zeilen.length) { el.replaceChildren(ktOptionen(), h("p", { klasse: "kx-leer", "data-kx": "kontingent-leer", text: T.kontingent.leer })); return; }
+    el.replaceChildren(ktOptionen(), h("div", { klasse: "kx-kt-liste", "data-kx": "kontingent-liste" }, zeilen.map(({ kt, sp }) =>
       h("div", { klasse: "kx-kt-karte", "data-konto": kt.id, "data-programm": kt.programm },
         h("div", { klasse: "kx-kt-kopf" }, logoKachel(kt.programm, 28), h("div", { klasse: "kx-kt-name" }, h("b", { text: kt.name }), h("span", { klasse: "kx-sub", text: programmName(kt.programm) })), istAktiv(kt) ? h("span", { klasse: "ez-marke ez-marke-akzent", text: T.konten.aktiv }) : null), sp))));
   };
@@ -942,18 +954,19 @@ export function erzeugeKi(o) {
   let aktTimer = null;
   const beiAktivitaet = () => { clearTimeout(aktTimer); aktTimer = setTimeout(() => { if (!zu()) ladeAktivitaet(); }, 250); };
   window.addEventListener("kortex-aktivitaet", beiAktivitaet);
-  let gestartet = false, ktAb = null;
+  let gestartet = false, ktAb = null, optAb = null;
   function start() {
     if (gestartet) return;
     gestartet = true;
     ladeKonten(); ladeProgramme(false); ladeKern(); ladeFrage(); ladeAktivitaet();
     ktAb = ktStand.abonniere(beiKontingent); ktStand.start();
+    optAb = kontingentOptionen.abonniere(beiKontingent); // Anzeige verbraucht/übrig oder ein Schalter (auch aus der Statusleiste) wurde geändert
   }
   function ende() {
     S.tot = true;
     window.removeEventListener("kortex-konten", beiKonten);
     window.removeEventListener("kortex-aktivitaet", beiAktivitaet); clearTimeout(aktTimer);
-    ktAb?.();
+    ktAb?.(); optAb?.();
     for (const f of [...S.uberwacht]) { try { f(); } catch { /* egal */ } }
     for (const d of [...offeneDialoge]) { try { d.schliessen(); } catch { /* egal */ } }
     hosts.clear();

@@ -49,80 +49,12 @@ async function start(page, { konten = ALLE, werte = WERTE(), dunkel = false, has
   return { k, kt };
 }
 const leiste = (page) => page.locator('[data-st="kontingent"]');
-const menue = (page) => page.locator('[data-kt="menue"]');
-const zeileM = (page, id) => menue(page).locator(`.kt-m-zeile[data-konto="${id}"]`);
 // Der volle Verbrauch steht im Unterbereich „Kontingent“ (Karte je Konto); in der Kontenliste steht nur der Mini-Balken
 const konto = (page, id) => page.locator(`.kx-kt-karte[data-konto="${id}"]`);
 const spalte = (page, id) => konto(page, id).locator(`[data-kt-konto="${id}"]`);
 const breiteVon = (loc) => loc.evaluate((e) => parseFloat(e.style.width));
 const dlg = (page, name) => page.locator(`.dialog[data-dialog="${name}"]`);
 const fehlerSammler = (page) => { const f = []; page.on("pageerror", (e) => f.push(e.message)); return f; };
-
-test("Statusleiste: aktives Konto mit Logo, Name, Mini-Balken, Prozent und Rücksetzzeit (hell)", async ({ page }) => {
-  const f = fehlerSammler(page);
-  await start(page);
-  await expect(leiste(page)).toBeVisible();
-  await expect(leiste(page)).toContainText("Privat");
-  await expect(leiste(page).locator(".kt-mini-text")).toHaveText("42 %");
-  await expect(leiste(page).locator(".kt-mini-rest")).toHaveText("noch 2 h 14 min");
-  expect(await breiteVon(leiste(page).locator(".kt-balken i"))).toBe(42);
-  await expect(leiste(page).locator(".kt-balken")).toHaveAttribute("data-stufe", "grau");
-  await expect(leiste(page).locator(".ki-logo")).toBeVisible();
-  await expect(leiste(page)).toHaveAttribute("aria-haspopup", "menu");
-  await expect(leiste(page)).toHaveAttribute("title", /Privat: Kontingent und Konto wechseln — 5 Std 42 %, noch 2 h 14 min · Woche 18 %, bis So 19:00/);
-  await foto(page, "statusleiste-hell");
-  expect(f).toEqual([]);
-});
-
-test("Konto-Menü: alle Konten mit Balken 5 Std und Woche, Stand, gesperrte ausgegraut mit Grund, Aktionen unten — hell", async ({ page }) => {
-  await start(page);
-  await leiste(page).click();
-  await expect(menue(page)).toBeVisible();
-  await expect(leiste(page)).toHaveAttribute("aria-expanded", "true");
-  await expect(menue(page).locator(".kt-m-titel b")).toHaveText("KI im Vault „vault“");
-  await expect(menue(page).locator(".kt-m-stand")).toHaveText("Stand vor 1 Min");
-  // Privat (aktiv): beide Balken
-  const p = zeileM(page, "k_aaaa0001");
-  await expect(p).toHaveAttribute("data-aktiv", "ja");
-  await expect(p).toHaveAttribute("aria-checked", "true");
-  await expect(p.locator('[data-fenster="session"] .kt-prozent')).toHaveText("42 %");
-  await expect(p.locator('[data-fenster="session"] .kt-rest')).toHaveText("noch 2 h 14 min");
-  await expect(p.locator('[data-fenster="weekly"] .kt-prozent')).toHaveText("18 %");
-  await expect(p.locator('[data-fenster="weekly"] .kt-rest')).toHaveText("bis So 19:00");
-  // Codex: eigene Werte, nicht wählbar für Frag
-  const c = zeileM(page, "k_aaaa0003");
-  await expect(c.locator('[data-fenster="session"] .kt-prozent')).toHaveText("9 %");
-  await expect(c.locator('[data-fenster="weekly"] .kt-prozent')).toHaveText("71 %");
-  await expect(c.locator('[data-fenster="weekly"] .kt-balken')).toHaveAttribute("data-stufe", "gelb");
-  await expect(c).toHaveAttribute("data-wahl", "nein");
-  // Cursor: ehrlich „nicht abrufbar“
-  await expect(zeileM(page, "k_aaaa0005")).toContainText("Kontingent gibt Cursor nicht heraus.");
-  // Firma: in diesem Vault gesperrt → ausgegraut mit Grund
-  const g = zeileM(page, "k_aaaa0004");
-  await expect(g).toHaveAttribute("data-gesperrt", "ja");
-  await expect(g).toContainText("Gesperrt");
-  await expect(g).toContainText("In diesem Vault gesperrt.");
-  await expect(menue(page).locator('[data-aktion="kt-ki-verbinden"]')).toContainText("KI verbinden …");
-  await expect(menue(page).locator('[data-aktion="kt-konten"]')).toContainText("Konten und Rechte …");
-  await expect(menue(page).locator(".kt-m-fuss")).toContainText("Kontingent laut Anbieter. Kortex fragt höchstens alle 5 Minuten nach.");
-  await foto(page, "menue-hell");
-});
-
-test("Konto-Menü dunkel: 92 % ist rot, 71 % gelb, 9 % grau", async ({ page }) => {
-  await start(page, { dunkel: true, werte: { ...WERTE(), k_aaaa0001: Z.claudeOk(92, 18) } });
-  await expect(leiste(page).locator(".kt-balken")).toHaveAttribute("data-stufe", "rot");
-  await expect(leiste(page).locator(".kt-mini")).toHaveAttribute("data-stufe", "rot");
-  await leiste(page).click();
-  await expect(zeileM(page, "k_aaaa0001").locator('[data-fenster="session"] .kt-balken')).toHaveAttribute("data-stufe", "rot");
-  await expect(zeileM(page, "k_aaaa0003").locator('[data-fenster="weekly"] .kt-balken')).toHaveAttribute("data-stufe", "gelb");
-  await expect(zeileM(page, "k_aaaa0003").locator('[data-fenster="session"] .kt-balken')).toHaveAttribute("data-stufe", "grau");
-  const farbe = (loc) => loc.evaluate((e) => getComputedStyle(e.querySelector("i")).backgroundColor);
-  const rot = await farbe(zeileM(page, "k_aaaa0001").locator('[data-fenster="session"] .kt-balken'));
-  const gelb = await farbe(zeileM(page, "k_aaaa0003").locator('[data-fenster="weekly"] .kt-balken'));
-  const grau = await farbe(zeileM(page, "k_aaaa0003").locator('[data-fenster="session"] .kt-balken'));
-  expect(new Set([rot, gelb, grau]).size).toBe(3);
-  await foto(page, "menue-rot-dunkel");
-});
 
 test("Farbschwellen wie Orca: unter 60 grau, 60–79 gelb, ab 80 rot (59, 60, 79, 80, 100)", async ({ page }) => {
   await start(page);
@@ -134,16 +66,8 @@ test("Farbschwellen wie Orca: unter 60 grau, 60–79 gelb, ab 80 rot (59, 60, 79
   }
 });
 
-test("Voll: 100 % heißt „voll“ mit Rücksetzzeit — Statusleiste, Menü und Frag-Feld (dunkel)", async ({ page }) => {
+test("Voll: 100 % heißt „voll“ mit Rücksetzzeit im Frag-Feld (dunkel); die Leiste und das Popover zeigen es in kontingent-leiste.spec.mjs", async ({ page }) => {
   await start(page, { dunkel: true, konten: [PRIVAT, ARBEIT, CODEX], werte: { k_aaaa0001: Z.claudeOk(100, 18), k_aaaa0002: Z.claudeOk(12, 20), k_aaaa0003: Z.codexOk(9, 71) } });
-  await expect(leiste(page).locator(".kt-mini-text")).toHaveText("voll");
-  await expect(leiste(page).locator(".kt-mini-rest")).toHaveText("wieder ab 15:14");
-  await expect(leiste(page)).toHaveAttribute("data-zustand", "voll");
-  await leiste(page).click();
-  await expect(zeileM(page, "k_aaaa0001").locator('[data-fenster="session"] .kt-prozent')).toHaveText("voll");
-  await expect(zeileM(page, "k_aaaa0001").locator('[data-fenster="session"] .kt-rest')).toHaveText("wieder ab 15:14");
-  await foto(page, "menue-voll-dunkel");
-  await page.keyboard.press("Escape");
   // Frag-Feld: Auswahl nennt „voll“, darunter ein Satz mit der Rücksetzzeit und dem Rat, ein anderes Konto zu wählen
   await page.click("#knopf-frage");
   const hinweis = page.locator('[data-frage="kontingent"] [data-kt="voll"]');
@@ -156,9 +80,6 @@ test("Voll: 100 % heißt „voll“ mit Rücksetzzeit — Statusleiste, Menü un
   await page.click('.bs-opt[data-wert="k_aaaa0002"]');
   await expect(page.locator('[data-frage="kontingent"] [data-kt="voll"]')).toHaveCount(0);
   await expect(page.locator('[data-frage="kontingent"] [data-fenster="session"] .kt-prozent')).toHaveText("12 %");
-  // die Statusleiste folgt der Wahl im Frag-Feld
-  await expect(leiste(page)).toContainText("Arbeit");
-  await expect(leiste(page).locator(".kt-mini-text")).toHaveText("12 %");
 });
 
 test("Frag-Feld (hell): Auswahl mit Kontingent je Konto, Balken unter der Auswahl", async ({ page }) => {
@@ -170,123 +91,6 @@ test("Frag-Feld (hell): Auswahl mit Kontingent je Konto, Balken unter der Auswah
   await page.click('[data-frage="konto"]');
   await expect(page.locator('.bs-opt[data-wert="k_aaaa0002"] .bs-opt-sub')).toHaveText("71 % · 5 Std");
   await foto(page, "frage-hell");
-});
-
-test("Wechsel in der Statusleiste: gilt auch im Frag-Feld und bleibt als aktives Konto gemerkt; die Wahl schreibt keine Rechte", async ({ page }) => {
-  const { k } = await start(page, { konten: [PRIVAT, ARBEIT, FIRMA_K, CODEX], werte: { k_aaaa0001: Z.claudeOk(42, 18), k_aaaa0002: Z.claudeOk(71, 63), k_aaaa0004: Z.nichtEingerichtet(), k_aaaa0003: Z.codexOk(9, 71) } });
-  await page.click("#knopf-frage");
-  await expect(page.locator('[data-frage="konto"]')).toContainText("Privat");
-  await leiste(page).click();
-  // gesperrte und nicht für Frag geeignete Konten wählen nichts
-  await zeileM(page, "k_aaaa0004").click({ force: true });
-  await zeileM(page, "k_aaaa0003").click({ force: true });
-  await expect(menue(page)).toBeVisible();
-  await expect(leiste(page)).toContainText("Privat");
-  await zeileM(page, "k_aaaa0002").click();
-  await expect(menue(page)).toHaveCount(0);
-  await expect(leiste(page)).toContainText("Arbeit");
-  await expect(leiste(page).locator(".kt-mini-text")).toHaveText("71 %");
-  await expect(page.locator('[data-frage="konto"]')).toContainText("Arbeit");
-  expect(k.log("/api/ki/aktiv", "PUT").at(-1).body, "die Wahl ist das aktive Konto (ki-konten.json), nicht der lokale Speicher").toEqual({ programm: "claude", konto: "k_aaaa0002" });
-  expect(await page.evaluate(() => Object.keys(localStorage).filter((x) => x.includes("frage.konto")))).toEqual([]);
-  expect(k.log("/api/ki/zugriff", "PUT")).toHaveLength(0);
-  await page.reload();
-  await page.waitForFunction(() => window.__studioBereit === true);
-  await expect(leiste(page)).toContainText("Arbeit");
-});
-
-test("„Konten und Rechte …“ öffnet die Einstellungen (KI & Konten), Esc schließt das Menü und gibt den Fokus zurück", async ({ page }) => {
-  await start(page);
-  await leiste(page).focus();
-  await page.keyboard.press("Enter");
-  await expect(menue(page)).toBeVisible();
-  await page.keyboard.press("ArrowDown");
-  await page.keyboard.press("Escape");
-  await expect(menue(page)).toHaveCount(0);
-  await expect(leiste(page)).toBeFocused();
-  await leiste(page).click();
-  await menue(page).locator('[data-aktion="kt-konten"]').click();
-  await expect(page.locator("[data-einstellungen]")).toBeVisible();
-  await expect.poll(() => page.evaluate(() => location.hash)).toMatch(/^#einstellungen\/ki/);
-});
-
-test("Neu laden im Menü: frühestens 5 Minuten nach der letzten Abfrage — gesperrt mit Uhrzeit, dann erlaubt und fragt mit neu=1", async ({ page }) => {
-  const { kt } = await start(page, { werte: { ...WERTE() } });
-  await leiste(page).click();
-  const neu = menue(page).locator('[data-aktion="kt-neu"]');
-  await expect(neu).toBeDisabled();
-  await expect(neu).toHaveAttribute("title", /Frühestens um 13:01 Uhr wieder möglich\. Kortex fragt höchstens alle 5 Minuten nach\./);
-  await page.keyboard.press("Escape");
-  kt.werte.k_aaaa0003 = Z.codexAlt(9, 71);
-  await page.reload();
-  await page.waitForFunction(() => window.__studioBereit === true);
-  await leiste(page).click();
-  await expect(menue(page).locator('[data-aktion="kt-neu"]')).toBeEnabled();
-  await menue(page).locator('[data-aktion="kt-neu"]').click();
-  await expect.poll(() => kt.anfragen.some((a) => a.body?.neu === "1")).toBe(true);
-});
-
-test("Ohne ein Konto für Frag: „KI verbinden …“ statt eines Kontos", async ({ page }) => {
-  await start(page, { konten: [FIRMA_K, CODEX], werte: { k_aaaa0004: Z.nichtEingerichtet(), k_aaaa0003: Z.codexOk(9, 71) } });
-  await expect(leiste(page)).toHaveAttribute("data-zustand", "leer");
-  await expect(leiste(page)).toContainText("KI verbinden …");
-  await expect(leiste(page)).toHaveAttribute("title", /Öffne die Einstellungen, um eines zu verbinden/);
-  // P4: ohne Konto gibt es nur EINEN Knopf „KI verbinden“ in der Leiste (der Eintrag der Statusleiste); der leere Konto-Platz ist ausgeblendet
-  await expect(leiste(page)).toBeHidden();
-  await expect(page.locator('#status [data-st="claude"]')).toBeVisible();
-  await expect(page.locator("#status button:visible", { hasText: /verbinden/ })).toHaveCount(1);
-});
-
-test("Nicht abrufbar und veraltet: ehrliche Zustände mit dem nächsten Schritt (Statusleiste und Menü)", async ({ page }) => {
-  await start(page, { konten: [PRIVAT, ARBEIT, CODEX, CURSOR], werte: { k_aaaa0001: Z.keineWerte(), k_aaaa0002: Z.claudeVeraltet(63, 20), k_aaaa0003: Z.codexFehler("anmeldung"), k_aaaa0005: Z.nichtAbrufbar("Cursor") } });
-  await expect(leiste(page).locator(".kt-mini")).toHaveClass(/ohne-werte/);
-  await expect(leiste(page)).toContainText("Noch keine Werte");
-  await leiste(page).click();
-  await expect(zeileM(page, "k_aaaa0001")).toContainText("Die Werte erscheinen, sobald du Claude Code mit diesem Konto benutzt hast");
-  const v = zeileM(page, "k_aaaa0002");
-  await expect(v.locator('[data-fenster="session"] .kt-prozent')).toHaveText("63 %");
-  await expect(v).toContainText("Stand vor 1 Std. Claude Code meldet neue Werte, sobald du es benutzt.");
-  await expect(zeileM(page, "k_aaaa0003")).toContainText("Die Anmeldung ist abgelaufen. Melde das Konto in den Einstellungen unter „KI & Konten“ neu an.");
-  await foto(page, "menue-zustaende-hell");
-});
-
-test("Kontingent nicht geladen (Werkstatt-Fehler): die Leiste sagt „nicht abrufbar“, das Menü nennt den nächsten Schritt und bleibt bedienbar", async ({ page }) => {
-  const f = fehlerSammler(page);
-  const { kt } = await start(page, { kontingent: { fehler: "Das Kontingent liegt gerade nicht vor." } });
-  await expect(leiste(page)).toBeVisible();
-  await expect(leiste(page)).toContainText("Kontingent nicht abrufbar");
-  await expect(leiste(page)).toHaveAttribute("title", /Öffne die Einstellungen und versuche es dort noch einmal/);
-  await leiste(page).click();
-  await expect(menue(page)).toBeVisible();
-  await expect(menue(page).locator('[data-kt="fehler"]')).toContainText("Das Kontingent konnte nicht geladen werden.");
-  await expect(menue(page).locator('[data-aktion="kt-konten"]')).toBeVisible();
-  kt.fehler = null;
-  await menue(page).locator('[data-aktion="kt-neu"]').click();
-  await expect(leiste(page)).toContainText("Privat");
-  expect(f).toEqual([]);
-});
-
-test("Schmales Fenster: bis 1180 px nur Logo und Prozent, bis 900 px nur das Logo (Tooltip mit Werten) — die Leiste läuft nie über, auch mit langem Vault-Namen und ±20 px Schriftunterschied", async ({ page }) => {
-  const ueberlauf = () => page.evaluate(() => { const s = document.getElementById("status"), sr = s.getBoundingClientRect(); return { scroll: s.scrollWidth - s.clientWidth, aus: [...s.querySelectorAll(".st")].filter((e) => e.getBoundingClientRect().right > sr.right + 0.5 || e.getBoundingClientRect().left < sr.left - 0.5).map((e) => e.dataset.st) }; });
-  await start(page, { breite: 1440 });
-  for (const t of [".kt-mini-rest", ".kt-name-text", ".kt-balken"]) await expect(leiste(page).locator(t)).toBeVisible();
-  // wie in einstellungen.spec: langer Vault-Name, viele Änderungen — und jede Breite um den Rand der Stufen herum
-  await page.evaluate(() => {
-    const set = (sel, t) => { const e = document.querySelector(sel); const s = e && [...e.querySelectorAll("span")].pop(); if (s) s.textContent = t; };
-    set('[data-st="vault"]', "Firmenwissen-Projekt-Alpha");
-    set('[data-st="geaendert"]', "128 geändert, nicht gesichert");
-  });
-  for (const breite of [1100, 1020, 1000, 980, 960, 920, 900, 880, 780, 700]) {
-    await page.setViewportSize({ width: breite, height: 800 });
-    await page.waitForTimeout(120);
-    expect(await ueberlauf(), `${breite}px`).toEqual({ scroll: 0, aus: [] });
-    await expect(page.locator('[data-st="einstellungen"]'), `${breite}px`).toBeInViewport();
-    await expect(leiste(page).locator(".ki-logo"), `${breite}px`).toBeVisible();
-    for (const t of [".kt-mini-rest", ".kt-name-text", ".kt-balken"]) await expect(leiste(page).locator(t), `${breite}px ${t}`).toBeHidden();
-    await expect(leiste(page).locator(".kt-mini-text"), `${breite}px`).toBeVisible({ visible: breite > 900 });
-  }
-  await expect(leiste(page)).toHaveAttribute("title", /5 Std 42 %/);
-  await foto(page, "statusleiste-schmal-hell");
 });
 
 // ---------------------------------------------------------------------- Einstellungen → KI & Konten
@@ -313,7 +117,7 @@ test("Einstellungen: Balken 5 Std / Woche mit Prozent und Rücksetzzeit je Konto
 test("Einstellungen dunkel: Zustände — noch keine Werte, ohne Kontingent, veraltet, geändert, Einstellungen kaputt, Codex nicht gefunden", async ({ page }) => {
   await start(page, { dunkel: true, hash: "#einstellungen/ki?ziel=ki-kontingent", konten: [PRIVAT, ARBEIT, FIRMA_K, CODEX, CURSOR], werte: {
     k_aaaa0001: Z.keineWerte(), k_aaaa0002: Z.ohneKontingent(), k_aaaa0004: Z.defekt(), k_aaaa0003: Z.codexFehler("fehlt"), k_aaaa0005: Z.nichtAbrufbar("Cursor") } });
-  await expect(spalte(page, "k_aaaa0001")).toContainText("Die Werte erscheinen, sobald du Claude Code mit diesem Konto benutzt hast");
+  await expect(spalte(page, "k_aaaa0001")).toContainText("Erscheint, sobald Claude Code das nächste Mal läuft");
   await expect(spalte(page, "k_aaaa0002")).toContainText("Claude Code hat für dieses Konto noch kein Kontingent gemeldet");
   await expect(spalte(page, "k_aaaa0002")).toContainText("Bei einer neuen Sitzung ist das normal: Stelle in Claude Code eine Frage, dann erscheinen die Werte.");
   await expect(spalte(page, "k_aaaa0002")).toContainText("API-Schlüssel statt deines Abos, oder Claude Code ist älter als Version 2.1.80");
@@ -327,7 +131,7 @@ test("Einstellungen: veraltet, geändert (mit Knopf), Codex wird gefragt, Codex 
   const f = fehlerSammler(page);
   await start(page, { hash: "#einstellungen/ki?ziel=ki-kontingent", konten: [PRIVAT, ARBEIT, FIRMA_K, CODEX], werte: { k_aaaa0001: Z.claudeVeraltet(63, 20), k_aaaa0002: Z.geaendert(), k_aaaa0004: Z.nichtEingerichtet(), k_aaaa0003: Z.codexLaedt() } });
   await expect(spalte(page, "k_aaaa0001").locator('[data-fenster="session"] .kt-prozent')).toHaveText("63 %");
-  await expect(spalte(page, "k_aaaa0001")).toContainText("Stand vor 1 Std. Claude Code meldet neue Werte, sobald du es benutzt.");
+  await expect(spalte(page, "k_aaaa0001")).toContainText("Stand vor 1 Std");
   await expect(spalte(page, "k_aaaa0002")).toContainText("Statuszeile geändert");
   await expect(spalte(page, "k_aaaa0002").locator('[data-aktion="kt-anzeigen"]')).toBeVisible();
   await expect(spalte(page, "k_aaaa0003")).toContainText("Kortex fragt Codex nach dem Kontingent");
@@ -353,7 +157,7 @@ test("Einschalten bei einem Konto von Kortex: ein Klick, ein Dialog mit den Zusa
   await d.locator('[data-aktion="kt-einschalten"]').click();
   await expect.poll(() => kt.log("POST").length).toBe(1);
   expect(kt.log("POST")[0].body).toEqual({ konto: "k_aaaa0006", an: true, einwilligung: true });
-  await expect(spalte(page, "k_aaaa0006")).toContainText("Die Werte erscheinen, sobald du Claude Code mit diesem Konto benutzt hast");
+  await expect(spalte(page, "k_aaaa0006")).toContainText("Erscheint, sobald Claude Code das nächste Mal läuft");
   await expect(spalte(page, "k_aaaa0006").locator('[data-aktion="kt-aus"]')).toBeVisible();
 });
 

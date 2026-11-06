@@ -48,6 +48,27 @@ export function leseStatuszeile(eingabe) {
   return session || weekly ? { session, weekly } : null;
 }
 
+// ───────────── Monotone Regel (Orca claude-usage-window.ts: isStaleClaudeUsageWindow @239e17f, MIT, Lovecast Inc.) ─────────────
+// Im selben 5-Stunden- bzw. Wochenfenster steigt der Verbrauch nur. Ein kleinerer Wert oder eine ältere Rücksetzzeit ist der alte Stand einer ruhenden Sitzung und zählt nicht.
+// Rücksetzzeiten innerhalb von 60 s gelten als dasselbe Fenster (Statuszeile und Abfrage runden verschieden). Ein schon abgelaufenes früheres Fenster schützt nichts mehr.
+export const GLEICHES_FENSTER_MS = 60_000;
+const gleicheRuecksetzung = (a, b) => (a === null || b === null ? a === b : Math.abs(a - b) <= GLEICHES_FENSTER_MS);
+// vorher: das bisher gemerkte Fenster ({ usedPercent, resetsAt (ms | null) } | null) · neu: das eingehende · jetzt: ms → true, wenn `neu` der veraltete Stand ist und verworfen wird
+export function istVeraltetesFenster(vorher, neu, jetzt) {
+  if (!vorher || !neu || vorher.resetsAt === null || vorher.resetsAt === undefined || neu.resetsAt === null || neu.resetsAt === undefined) return false;
+  if (vorher.resetsAt <= jetzt) return false;
+  if (neu.resetsAt < vorher.resetsAt - GLEICHES_FENSTER_MS) return true;
+  return gleicheRuecksetzung(neu.resetsAt, vorher.resetsAt) && neu.usedPercent < vorher.usedPercent;
+}
+// Übernimmt je Fenster den eingehenden Wert, außer er ist veraltet (dann bleibt das bisherige). → { session, weekly, verworfen (Anzahl der verworfenen Fenster) }
+export function uebernimmMonoton(vorher, neu, jetzt) {
+  const aus = { session: neu.session ?? null, weekly: neu.weekly ?? null, verworfen: 0 };
+  for (const art of ["session", "weekly"]) {
+    if (neu[art] && istVeraltetesFenster(vorher && vorher[art], neu[art], jetzt)) { aus[art] = vorher[art]; aus.verworfen++; }
+  }
+  return aus;
+}
+
 function schreibeAtomar(ziel, text) {
   const ordner = dirname(ziel);
   mkdirSync(ordner, { recursive: true, mode: 0o700 });
@@ -72,7 +93,20 @@ export function zeichneAuf(kontingentOrdner, konto, eingabe, jetzt = Date.now())
     try { alt = JSON.parse(readFileSync(ziel, "utf8")); } catch { /* keine oder kaputt */ }
     if (alt && typeof alt === "object" && alt.ohne !== true && (alt.session || alt.weekly)) return false;
   }
-  const stand = k ? { v: FORMAT, geschrieben: new Date(jetzt).toISOString(), session: k.session, weekly: k.weekly } : { v: FORMAT, geschrieben: new Date(jetzt).toISOString(), ohne: true };
+  let session = k ? k.session : null, weekly = k ? k.weekly : null;
+  if (k) {
+    // Monotone Regel: der Stand einer ruhenden Sitzung (kleinerer Wert im selben Fenster, ältere Rücksetzzeit) überschreibt nie einen höheren. Sind ALLE gemeldeten Fenster veraltet, wird nichts geschrieben
+    // (auch „geschrieben“ bleibt: eine ruhende Sitzung macht den Stand nicht frischer).
+    let alt = null;
+    try { alt = JSON.parse(readFileSync(ziel, "utf8")); } catch { /* keine oder kaputt */ }
+    if (alt && typeof alt === "object" && alt.ohne !== true) {
+      const m = uebernimmMonoton(alt, { session, weekly }, jetzt);
+      const gemeldet = (session ? 1 : 0) + (weekly ? 1 : 0);
+      if (m.verworfen > 0 && m.verworfen >= gemeldet) return false;
+      session = m.session; weekly = m.weekly;
+    }
+  }
+  const stand = k ? { v: FORMAT, geschrieben: new Date(jetzt).toISOString(), session, weekly } : { v: FORMAT, geschrieben: new Date(jetzt).toISOString(), ohne: true };
   schreibeAtomar(ziel, JSON.stringify(stand) + "\n");
   return true;
 }

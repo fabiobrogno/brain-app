@@ -477,7 +477,7 @@ export function erzeugeHandler(o) {
         nur("POST"); return konten.setzeName(eingabe());
       // Der ausdrückliche Abgleich (nur auf Klick oder wenn die Liste fehlt/defekt ist): neue Konten eintragen, Liste reparieren, altes Profil der plist übernehmen
       case "/api/ki/konten/abgleich": nur("POST"); await migrierePflege(v); return konten.abgleich();
-      case "/api/ki/kontingent": nur("GET"); return kontingent.stand({ neu: q.get("neu") === "1", vault: v ? v.wurzel : null });
+      case "/api/ki/kontingent": nur("GET"); return kontingent.stand({ neu: q.get("neu") === "1", aktiviert: q.get("aktiviert") === "1", vault: v ? v.wurzel : null, vaultName: v ? v.name : null });
       case "/api/ki/kontingent/statuszeile": nur("POST"); return kontingent.schalteStatuszeile(eingabe());
       case "/api/ki/zugriff": nur("PUT"); return konten.setzeZugriff(eingabe());
       // Frag deinen Vault (P4): Start → Long-Poll auf den Stand → Abbruch. Nichts wird gespeichert.

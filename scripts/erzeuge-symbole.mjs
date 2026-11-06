@@ -36,7 +36,7 @@ export const ABBILDUNG = {
   zahnrad: "settings", mond: "moon", zweig: "git-branch", wolke: "cloud", sync: "refresh-cw", commit: "git-commit-horizontal",
   claude: "asterisk", herz: "heart", schild: "shield-check", link: "link", extern: "external-link", gliederung: "list",
   breite: "move-horizontal", code: "code", eigenschaften: "panel-right", seitenleiste: "panel-left",
-  blitz: "zap", warnung: "triangle-alert", info: "info", sanduhr: "hourglass", balken: "chart-no-axes-column", uhr: "clock",
+  blitz: "zap", warnung: "triangle-alert", info: "info", sanduhr: "hourglass", balken: "chart-no-axes-column", tacho: "gauge", uhr: "clock",
   rakete: "rocket", zitat: "quote", wuerfel: "box", person: "user", waage: "scale", thema: "tag", kopieren: "copy",
   "pfeil-links": "arrow-left", stecker: "plug", vorlage: "layout-template", klonen: "git-fork", laptop: "laptop", schloss: "lock",
   gehirn: "brain", punkt: { eigen: "punkt" }, ansicht: "eye", telefon: "smartphone", papierkorb: "trash-2", aufgaben: "list-checks",

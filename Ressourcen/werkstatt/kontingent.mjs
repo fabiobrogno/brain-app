@@ -18,7 +18,11 @@ import { fileURLToPath } from "node:url";
 import { HttpFehler, testmodus, kindUmgebung } from "../gemeinsam/basis.mjs";
 import { liesSettings, echtesZiel } from "../gemeinsam/claude-sperre.mjs";
 import { istVerwalteterOrdner, mitCodexHome } from "./profile.mjs";
-import { TAKT_MS, MIN_NEU_MS, VERALTET_MS, fehlerPause, liesCodexKontingent, codexUmgebung } from "../gemeinsam/kontingent.mjs";
+import { TAKT_MS, MIN_NEU_MS, VERALTET_MS, MAX_FEHLER_FOLGE, fehlerPause, liesCodexKontingent, codexUmgebung } from "../gemeinsam/kontingent.mjs";
+import { planeAbfrage, planeSchwellen } from "../gemeinsam/kontingent-regeln.mjs";
+import { uebernimmMonoton } from "../gemeinsam/kortex-statuszeile.mjs";
+import { melde, werText } from "../gemeinsam/aktivitaet.mjs";
+import { leseApp } from "../gemeinsam/app-einstellungen.mjs";
 import { stufeFuer, aktivesKonto } from "../gemeinsam/ki-konten.mjs";
 
 export const MARKE = "kortex-statuszeile.mjs";
@@ -347,7 +351,7 @@ export function erzeugeKontingent({ support, konten, nodePfad = process.execPath
   let kette = Promise.resolve();
   function arbeitsordner() { const d = join(ordner(), "arbeit"); privatMkdir(d); return d; }
   function frageCodex(k) {
-    const c = cache.get(k.id) || { session: null, weekly: null, erfolgAm: 0, versuchtAm: 0, fehler: 0, fehlerArt: null, laeuft: false };
+    const c = cache.get(k.id) || { session: null, weekly: null, erfolgAm: 0, versuchtAm: 0, fehler: 0, fehlerArt: null, laeuft: false, retryBis: 0 };
     c.laeuft = true; c.versuchtAm = jetzt(); cache.set(k.id, c);
     kette = kette.then(async () => {
       const prog = codexProgramm();
@@ -360,17 +364,23 @@ export function erzeugeKontingent({ support, konten, nodePfad = process.execPath
         } catch { erg = { ok: false, art: "start" }; }
       }
       c.laeuft = false;
-      if (erg.ok) { c.session = erg.session; c.weekly = erg.weekly; c.erfolgAm = jetzt(); c.fehler = 0; c.fehlerArt = null; }
-      else if (erg.art !== "ende") { c.fehler++; c.fehlerArt = erg.art; }
+      if (erg.ok) {
+        // Monotone Regel (kortex-statuszeile.mjs): im selben Fenster steigt der Verbrauch nur; ein niedrigerer Wert oder eine ältere Rücksetzzeit ist veraltet und wird verworfen
+        const m = uebernimmMonoton(c, erg, jetzt());
+        c.session = m.session; c.weekly = m.weekly; c.erfolgAm = jetzt(); c.fehler = 0; c.fehlerArt = null; c.retryBis = 0;
+      } else if (erg.art !== "ende") {
+        c.fehler++; c.fehlerArt = erg.art;
+        // Retry-After des Programms bindet (höchstens 24 Stunden), auch beim Auffrischen von Hand
+        if (Number.isFinite(erg.retryNachMs) && erg.retryNachMs > 0) c.retryBis = jetzt() + Math.min(erg.retryNachMs, 24 * 3_600_000);
+      }
     }).catch(() => { c.laeuft = false; });
     return c;
   }
-  const codexFaellig = (c, neu) => {
+  // Abfragen nur, wenn die Regel es sagt (kontingent-regeln.mjs#planeAbfrage). Diese Route wird nur vom sichtbaren Studio aufgerufen (die Seite fragt nicht nach, solange das Fenster verdeckt ist):
+  // darum gilt `sichtbar` hier immer; „aktiviert“ meldet die Seite beim Sichtbarwerden.
+  const codexFaellig = (c, neu, aktiviert = false) => {
     if (!c) return true;
-    if (c.laeuft) return false;
-    const seit = jetzt() - c.versuchtAm;
-    if (neu) return seit >= MIN_NEU_MS;
-    return seit >= (c.fehler ? fehlerPause(c.fehler) : TAKT_MS);
+    return planeAbfrage({ jetzt: jetzt(), sichtbar: true, aktiviert, neu, laeuft: c.laeuft, letzterVersuch: c.versuchtAm, fehlerFolge: c.fehler, retryBis: c.retryBis || 0 }).abfragen;
   };
 
   // ───────────── Stand ─────────────
@@ -394,13 +404,16 @@ export function erzeugeKontingent({ support, konten, nodePfad = process.execPath
     const alt = jetzt() - w.geschrieben > VERALTET_MS;
     return { ...eingetragen, status: alt ? "veraltet" : "ok", session: w.session, weekly: w.weekly, aktualisiert: iso(w.geschrieben) };
   }
-  function codexEintrag(k, neu) {
+  function codexEintrag(k, neu, aktiviert = false) {
     const basis = { quelle: "codex" };
     if (testmodus() && !ordnerErlaubt(k.ordner)) return { ...basis, status: "fehler", fehlerArt: "start" }; // nie ein echtes CODEX_HOME des Rechners, auf dem die Tests laufen
     let c = cache.get(k.id);
-    if (codexFaellig(c, neu)) c = frageCodex(k);
+    if (codexFaellig(c, neu, aktiviert)) c = frageCodex(k);
     if (c.laeuft && !c.erfolgAm) return { ...basis, status: "laedt", abgefragt: iso(c.versuchtAm) };
-    const gemeinsam = { abgefragt: iso(c.versuchtAm), naechste: iso(c.versuchtAm + (c.fehler ? fehlerPause(c.fehler) : TAKT_MS)), neuAb: iso(c.versuchtAm + MIN_NEU_MS) };
+    const pausiert = c.fehler >= MAX_FEHLER_FOLGE; // nach 8 Fehlern in Folge fragt Kortex nicht mehr von selbst; „Auffrischen“ probiert es wieder
+    const wartet = (c.retryBis || 0) > jetzt();
+    const gemeinsam = { abgefragt: iso(c.versuchtAm), naechste: pausiert ? null : iso(Math.max(c.versuchtAm + (c.fehler ? fehlerPause(c.fehler) : TAKT_MS), wartet ? c.retryBis : 0)), neuAb: iso(Math.max(c.versuchtAm + MIN_NEU_MS, wartet ? c.retryBis : 0)),
+      ...(pausiert ? { pausiert: true } : {}), ...(wartet ? { wartetBis: iso(c.retryBis) } : {}) };
     if (c.erfolgAm) {
       const alt = jetzt() - c.erfolgAm > VERALTET_MS;
       return { ...basis, ...gemeinsam, status: c.fehlerArt ? "fehler-mit-wert" : alt ? "veraltet" : "ok", session: c.session, weekly: c.weekly, aktualisiert: iso(c.erfolgAm), ...(c.fehlerArt ? { fehlerArt: c.fehlerArt, ...(alt ? { veraltet: true } : {}) } : {}), ...(c.laeuft ? { laedt: true } : {}) };
@@ -410,7 +423,8 @@ export function erzeugeKontingent({ support, konten, nodePfad = process.execPath
 
   // → { jetzt, takt, konten: [{ id, programm, name, standard, quelle, status, session, weekly, aktualisiert, … }] }. „neu“: die Abfrage bei Codex früher erlauben (frühestens 5 Min nach der letzten).
   // `vault`: der offene Vault — dann trägt jedes Konto seine Stufe darin (`stufe`; gelesen aus der Liste der Konten, ohne sie abzugleichen), damit die Statusleiste gesperrte Konten ausgrauen kann.
-  function stand({ neu = false, vault = null } = {}) {
+  // „aktiviert“: das Studio-Fenster ist gerade sichtbar geworden (frischt auf, wenn der Stand älter als 5 Minuten ist). `vaultName`: nur für den Text der Mitteilung.
+  function stand({ neu = false, aktiviert = false, vault = null, vaultName = null } = {}) {
     const d = datenVon();
     const liste = [];
     for (const [id, roh] of Object.entries(d.konten)) {
@@ -421,12 +435,42 @@ export function erzeugeKontingent({ support, konten, nodePfad = process.execPath
       let e;
       try {
         if (k.programm === "claude") e = claudeEintrag(k);
-        else if (k.programm === "codex") e = codexEintrag(k, neu);
+        else if (k.programm === "codex") e = codexEintrag(k, neu, aktiviert);
         else e = { quelle: null, status: "nicht-abrufbar", ...(NICHT_ABRUFBAR[k.programm] ? { programmName: NICHT_ABRUFBAR[k.programm] } : {}) };
       } catch { e = { quelle: null, status: "nicht-abrufbar" }; }
       liste.push({ ...kopf, ...e });
     }
+    if (vault) { try { meldeSchwellen(liste, vault, vaultName); } catch { /* eine Mitteilung ist nie ein Grund, den Stand nicht zu liefern */ } }
     return { jetzt: iso(jetzt()), takt: { abfrageMs: TAKT_MS, neuFruehestensMs: MIN_NEU_MS, veraltetMs: VERALTET_MS }, konten: liste };
+  }
+
+  // ───────────── Mitteilung bei 80 % und 100 % ─────────────
+  // Entscheidet Node (kontingent-regeln.mjs#planeSchwellen), der Mitteilungsplaner der App stellt zu: je Fenster und Konto höchstens einmal je Schwelle. Der Stand „was wurde schon gemeldet“ liegt in
+  // <Support>/kontingent/mitteilungen.json; geschrieben wird ZUERST er, dann das Ereignis (ein Fehler dazwischen darf nie zu Wiederholungen führen). Ist der Schalter aus, wird trotzdem gemerkt:
+  // Einschalten meldet nichts Altes nach. Nur frische Werte (status ok) zählen; ein Konto ohne Zahlen ändert nichts am Gemerkten. Die Mitteilung selbst unterdrückt die App, solange Kortex vorne ist.
+  const mitteilungsDatei = () => join(ordner(), "mitteilungen.json");
+  function liesGemeldet() {
+    try { const j = JSON.parse(readFileSync(mitteilungsDatei(), "utf8")); if (istObj(j) && istObj(j.konten)) return j.konten; } catch { /* keine oder kaputt: von vorn (kein Nachmelden alter Fenster: die Regel kennt nur laufende) */ }
+    return {};
+  }
+  function meldeSchwellen(liste, vault, vaultName) {
+    if (testmodus() && !ordnerErlaubt(support)) return;
+    const vorher = liesGemeldet();
+    const aktiv = leseApp(support).werte.mitteilungenKontingent !== false;
+    const frisch = liste.filter((e) => (e.programm === "claude" || e.programm === "codex") && e.status === "ok").map((e) => ({ id: e.id, programm: e.programm, name: e.name, session: e.session, weekly: e.weekly }));
+    const plan = planeSchwellen(vorher, frisch, { jetzt: jetzt(), aktiv });
+    const bekannt = new Set(liste.map((e) => e.id)), geprueft = new Set(frisch.map((e) => e.id));
+    const nachher = {};
+    for (const [id, w] of Object.entries(vorher)) if (bekannt.has(id) && !geprueft.has(id)) nachher[id] = w; // nicht geprüfte Konten behalten ihren Stand
+    Object.assign(nachher, plan.nachher);
+    if (JSON.stringify(nachher) !== JSON.stringify(vorher)) schreibeAtomar(mitteilungsDatei(), JSON.stringify({ v: 1, konten: nachher }) + "\n");
+    for (const ev of plan.ereignisse) {
+      const grund = `${ev.fenster === "session" ? "5h" : "woche"}-${ev.schwelle}`;
+      const fenster = ev.fenster === "session" ? "5-Stunden" : "Wochen";
+      melde(vault, { art: "kontingent", konto: ev.konto, programm: ev.programm, wer: werText({ programm: ev.programm, kontoName: ev.name }), grund, ...(vaultName ? { vaultName } : {}),
+        text: ev.schwelle >= 100 ? `hat das ${fenster}-Kontingent aufgebraucht.` : `hat ${ev.schwelle} % des ${fenster}-Kontingents verbraucht.`, zeit: new Date(jetzt()).toISOString() },
+      { support, drossel: { schluessel: `kontingent-${ev.konto}-${grund}`, sekunden: 5 } });
+    }
   }
 
   // Nur für Tests und das Beenden: wartet, bis alle laufenden Codex-Abfragen fertig sind.

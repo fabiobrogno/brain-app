@@ -30,6 +30,12 @@ export const APP_SCHEMA = {
   mitteilungenPflege: { typ: "boolean", standard: false },
   // KI & Konten: E-Mail und Tarif eines Kontos zeigt Kortex nur, wenn das Programm sie selbst nennt (`claude auth status`); gespeichert wird davon nie etwas. Aus = Kortex fragt sie gar nicht erst ab.
   kiKontonamen: { typ: "boolean", standard: true },
+  // Kontingent (Paket E5): Eintrag je Konto in der Statusleiste an/aus, Anzeige „verbraucht“ oder „übrig“ (Balken und Prozent; die Farbe folgt immer dem Verbrauch). Wörter und Format der Statusleiste lassen sich einzeln ausblenden
+  // (Rechtsklick auf die Leiste). Die Mitteilung bei 80 % und 100 % ist `mitteilungenKontingent` (oben).
+  kiKontingentStatusleiste: { typ: "boolean", standard: true },
+  kiKontingentAnzeige: { werte: ["verbraucht", "uebrig"], standard: "verbraucht" },
+  statusWoerter: { typ: "boolean", standard: true },
+  statusFormat: { typ: "boolean", standard: true },
   // „Entfernen“ eines Kortex-Kontos fragt vorher nach; „Nicht mehr fragen“ in der Rückfrage stellt das aus (nur beim Bestätigen), hier kommt man zurück.
   kiKontoEntfernenFragen: { typ: "boolean", standard: true },
   // Schreiben: Tagesnotiz (gemeinsam/vorlagen.mjs). Ordner relativ zum Vault, Format mit JJJJ MM TT … (siehe dort); leer/null = Standard. Der Vorlagenordner ist Sache des Vaults (brain.config.json: ordner.vorlagen).

@@ -10,7 +10,7 @@ import { createHash, randomBytes } from "node:crypto";
 // LOG-BEGINN
 export const AKTIVITAET_ORDNER = "aktivitaet";
 // Ereignisarten. „abweisung“ hat einen Grund (grund): gesperrt (Konto im Vault gesperrt) · stufe (Stufe zu niedrig für das Werkzeug) · leseverbot (Leseverbot/Strenger Schutz).
-export const ARTEN = ["ablage-aufgabe", "ablage-notiz", "aenderung", "abweisung", "pflege", "pflege-fehler", "sicherung-konflikt", "sicherung-fehler", "anmeldung-abgelaufen", "rueckgaengig", "datei-aktion"];
+export const ARTEN = ["ablage-aufgabe", "ablage-notiz", "aenderung", "abweisung", "pflege", "pflege-fehler", "sicherung-konflikt", "sicherung-fehler", "anmeldung-abgelaufen", "rueckgaengig", "datei-aktion", "kontingent"];
 export const MAX_BYTES = 256 * 1024;      // je Datei; mit der Vorfassung höchstens etwa das Doppelte
 export const MAX_TEXT = 240;
 const MAX_PFADE = 10;

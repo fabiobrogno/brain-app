@@ -19,7 +19,7 @@ vorab gebautes Bündel (siehe CodeMirror).
 | Simple Icons (Logos der KI-Programme und Dienste) | 16.36.0 | CC0 1.0 | `logos/`, `studio/ki-katalog.js`, `studio/marken.js` |
 | Logos weiterer KI-Programme (Marken der Inhaber, nur zur Kennzeichnung) | abgerufen 30.10.2026 | Marke des Inhabers | `logos/`, `studio/ki-katalog.js` (Quelle je Datei: `logos/HERKUNFT.md`) |
 | Simple Icons (MCP-Logos der 3D-Ansicht) | 16.33.0 | CC0 1.0 | `kern/ansicht/vendor/icons/` |
-| Orca (Gestaltungsmuster und -werte: Dialoge, Einrichtung, leere Zustände, Design-System v2; Liste der KI-Programme) | Commits cf5b462, 9bccd67, 239e17f | MIT | `studio/studio.css`, `studio/bausteine.css`, `studio/dialoge.css`, `studio/aufgaben.css`, `studio/hilfen.js`, `studio/willkommen.js`, `studio/willkommen.css` (leerer Zustand), `studio/einrichtung.css`, `studio/einrichtung.js`, `studio/einrichtung-studio.js`, `studio/einrichtung-vault.js`, `studio/einrichtung-ki.js`, `studio/einrichtung-sicherung.js`, `studio/einrichtung-liste.js` (Gestaltung: Pillen, Auswahlkarten, Fußleiste, Checkliste), `gemeinsam/ki-katalog.json` (Programmliste), `gemeinsam/kontingent.mjs`, `gemeinsam/kortex-statuszeile.mjs`, `studio/kontingent.js`, `studio/kontingent.css` (Kontingent: Lesen der Fenster, Farbschwellen, Takt, Abfrage von Codex) |
+| Orca (Gestaltungsmuster und -werte: Dialoge, Einrichtung, leere Zustände, Design-System v2; Liste der KI-Programme) | Commits cf5b462, 9bccd67, 239e17f | MIT | `studio/studio.css`, `studio/bausteine.css`, `studio/dialoge.css`, `studio/aufgaben.css`, `studio/hilfen.js`, `studio/willkommen.js`, `studio/willkommen.css` (leerer Zustand), `studio/einrichtung.css`, `studio/einrichtung.js`, `studio/einrichtung-studio.js`, `studio/einrichtung-vault.js`, `studio/einrichtung-ki.js`, `studio/einrichtung-sicherung.js`, `studio/einrichtung-liste.js` (Gestaltung: Pillen, Auswahlkarten, Fußleiste, Checkliste), `gemeinsam/ki-katalog.json` (Programmliste), `gemeinsam/kontingent.mjs`, `gemeinsam/kortex-statuszeile.mjs`, `gemeinsam/kontingent-regeln.mjs`, `studio/kontingent-regeln.js`, `studio/kontingent.js`, `studio/kontingent.css` (Kontingent: Lesen der Fenster, monotone Regel, Farbschwellen, Takt, Dichte-Leiter, ruhig veraltet, Abfrage von Codex) |
 
 Die Pfade sind relativ zu `Kortex.app/Contents/Resources`, außer Sparkle (relativ zu `Kortex.app/Contents`).
 
@@ -489,6 +489,15 @@ Website https://orca.dev), Stand Commit `cf5b462fba8462678256b25d05cec2adb8dca41
   `src/renderer/src/components/status-bar/provider-extra-usage-section.tsx` (Stand @9bccd67)
   → `gemeinsam/kortex-statuszeile.mjs`, `gemeinsam/kontingent.mjs`, `studio/kontingent.js` (alles in JavaScript neu geschrieben, nichts kopiert). Nicht übernommen ist Orcas Weg über den
   OAuth-Token aus dem Schlüsselbund: Kortex liest keine Zugangsdaten anderer Programme und fragt Anthropic und OpenAI nie selbst an.
+
+- das Kontingent „wie Orca“ (Paket E5): die monotone Regel (im selben 5-Stunden- oder Wochenfenster steigt der Verbrauch nur, Rücksetzzeiten innerhalb von 60 Sekunden sind dasselbe Fenster, der Stand einer
+  ruhenden Sitzung wird verworfen) nach `src/main/rate-limits/claude-usage-window.ts`; der Takt der Abfragen (nur bei sichtbarem Fenster, Aktivieren frischt nach 5 Minuten auf, `Retry-After` bis 24 Stunden,
+  höchstens 8 Fehler in Folge, dann Pause) nach `src/main/rate-limits/service/service-types.ts` und `service-polling.ts`; die Dichte-Leiter der Statusleiste in fünf Stufen, gemessen an der verfügbaren Breite
+  (voll, kompakt, nur das knappste Fenster, „+N“, nur Symbol) nach `src/renderer/src/components/status-bar/status-bar-density.ts`; das ruhige Veralten (Warnzeichen erst bei einem Fehler UND einem Wert, der
+  älter als 30 Minuten ist) und die Wahl „verbraucht/übrig“ nach `StatusBarProviderSegment.tsx` und `src/shared/usage-percentage-display.ts`; die Sperre von 5 Sekunden je Schlüssel für Mitteilungen nach
+  `src/main/notifications/notification-delivery-service.ts` und `src/shared/notification-burst-cooldown.ts` (Stand @239e17f)
+  → `gemeinsam/kontingent-regeln.mjs` (Studio-Kopie `studio/kontingent-regeln.js`), `gemeinsam/kortex-statuszeile.mjs`, `werkstatt/kontingent.mjs`, `studio/kontingent.js`, `Sources/BrainCore/Mitteilungen.swift`
+  (alles neu geschrieben, nichts kopiert). Orca schickt keine Mitteilung beim Annähern an ein Limit; die Mitteilungen bei 80 % und 100 % (höchstens einmal je Fenster und Konto) sind Kortex' eigene Zutat.
 
 - die Konten-Karten in den Einstellungen (Karte je Programm, Konto-Zeile mit Abzeichen „aktiv“ und „Anmeldung nötig“, ein aktives Konto je Programm, erst anmelden und dann veröffentlichen) nach
   `src/renderer/src/components/settings/AccountsPane.tsx` (Stand @239e17f)

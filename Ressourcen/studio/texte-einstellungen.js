@@ -58,7 +58,7 @@ export const BEREICHE = [
         { id: "m-abgewiesen", schluessel: "mitteilungenAbgewiesen", art: "schalter", titel: "Eine KI wurde abgewiesen", text: "Wenn ein Konto einen gesperrten Vault lesen wollte. Empfohlen.", woerter: ["gesperrt", "zugriff", "verweigert", "sicherheit", "abweisung"] },
         { id: "m-rueckfragen", schluessel: "mitteilungenRueckfragen", art: "schalter", titel: "Rückfragen warten", text: "Die Pflege braucht deine Entscheidung.", woerter: ["rückfrage", "pflege", "entscheidung"] },
         { id: "m-sicherung", schluessel: "mitteilungenSicherung", art: "schalter", titel: "Sicherung hat nicht geklappt", text: "Zum Beispiel ohne Netz oder bei abgelaufener GitHub-Anmeldung.", woerter: ["github", "fehler", "sicherung", "sync", "netz"] },
-        { id: "m-kontingent", schluessel: "mitteilungenKontingent", art: "schalter", titel: "KI-Kontingent fast aufgebraucht", text: "Ab 80 % im 5-Stunden-Fenster eines Kontos.", woerter: ["kontingent", "limit", "nutzung", "usage", "abo"] },
+        { id: "m-kontingent", schluessel: "mitteilungenKontingent", art: "schalter", titel: "KI-Kontingent fast aufgebraucht", text: "Bei 80 % und bei 100 % eines Fensters (5 Stunden oder Woche), höchstens einmal je Fenster und Konto.", woerter: ["kontingent", "limit", "nutzung", "usage", "abo"] },
         { id: "m-pflege", schluessel: "mitteilungenPflege", art: "schalter", titel: "Pflege ist fertig", text: "Normalerweise unnötig; das Ergebnis steht morgens unter Mitteilungen.", woerter: ["pflege", "fertig", "tageslauf"] },
       ] },
       { id: "macos", titel: "macOS-Mitteilungen", zeilen: [
@@ -115,7 +115,7 @@ export const BEREICHE = [
         { id: "ki-schutz", sonder: true, titel: "Schutz-Ampel je Claude-Konto", text: "Kortex-Wege, Leseverbot in Claude Code und Strenger Schutz (Sandbox): was die Sperre wirklich hält.", woerter: ["schutz", "ampel", "leseverbot", "sandbox", "streng", "strenger schutz", "sperre", "shell", "claude"] },
       ] },
       { id: "kontingent", unter: "kontingent", titel: "Kontingent je Konto", text: "Wie viel vom 5-Stunden- und vom Wochen-Fenster verbraucht ist. Kortex fragt dafür keinen Anbieter selbst ab, die Werte kommen aus dem Programm.", zeilen: [
-        { id: "ki-kontingent", sonder: true, titel: "Kontingent je Konto", text: "Verbrauch je Konto mit Rücksetzzeit, Kontingent anzeigen oder ausschalten und bei Codex neu laden.", woerter: ["kontingent", "verbrauch", "limit", "fenster", "5 stunden", "woche", "prozent", "statuszeile", "anzeigen", "codex", "claude", "nutzung"] },
+        { id: "ki-kontingent", sonder: true, titel: "Kontingent je Konto", text: "Verbrauch je Konto mit Rücksetzzeit, Anzeige verbraucht oder übrig, Statusleiste, Mitteilung bei 80 und 100 %, Kontingent anzeigen oder ausschalten und bei Codex neu laden.", woerter: ["kontingent", "verbrauch", "verbraucht", "übrig", "limit", "fenster", "5 stunden", "woche", "prozent", "statuszeile", "statusleiste", "mitteilung", "80", "100", "anzeigen", "codex", "claude", "nutzung"] },
       ] },
       { id: "frage", unter: "pflege", titel: "Frag deinen Vault", zeilen: [
         { id: "ki-frage-konto", sonder: true, titel: "Antwortet mit", text: "Wenn du in „Frag“ nichts anderes wählst. Nur Konten, die den offenen Vault lesen dürfen.", woerter: ["frage", "frag", "standard", "konto", "antwort"] },

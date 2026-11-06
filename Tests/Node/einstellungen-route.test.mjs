@@ -267,3 +267,30 @@ test("Ereignis „einstellungen“: CLI-Änderung an brain.config.json und Ände
     } finally { h.beende(); }
   }
 });
+
+test("Kontingent und Statusleiste (Paket E5): die vier App-Schlüssel haben Standard, Prüfung und Schreibweg — auch in einem Vault ohne brain.config.json (Stand „0“)", async () => {
+  const { rufe } = aufbau();
+  const g = (await rufe("GET", "/api/einstellungen")).j;
+  assert.deepEqual([g.werte.kiKontingentStatusleiste, g.werte.kiKontingentAnzeige, g.werte.statusWoerter, g.werte.statusFormat, g.werte.mitteilungenKontingent], [true, "verbraucht", true, true, true]);
+  assert.deepEqual(g.schema.kiKontingentAnzeige.werte, ["verbraucht", "uebrig"]);
+  for (const k of ["kiKontingentStatusleiste", "kiKontingentAnzeige", "statusWoerter", "statusFormat"]) assert.equal(g.schema[k].quelle, "app", k);
+  // ungültig: Typ und Wert
+  for (const werte of [{ kiKontingentAnzeige: "halb" }, { kiKontingentStatusleiste: "ja" }, { statusWoerter: 1 }]) {
+    const r = await rufe("PUT", "/api/einstellungen", { werte, stand: g.stand });
+    assert.equal(r.status, 400, JSON.stringify(werte));
+  }
+  const r = await rufe("PUT", "/api/einstellungen", { werte: { kiKontingentAnzeige: "uebrig", statusWoerter: false, mitteilungenKontingent: false }, stand: g.stand });
+  assert.equal(r.status, 200, JSON.stringify(r.j));
+  assert.deepEqual([r.j.werte.kiKontingentAnzeige, r.j.werte.statusWoerter, r.j.werte.statusFormat], ["uebrig", false, true]);
+  // ein Vault ohne brain.config.json hat den Stand „0“ (kern/pfade.mjs#liesConfigRoh): App-Werte lassen sich trotzdem schreiben
+  const ohne = tmp("brain-einst-ohne-"), support = tmp("brain-support-");
+  schreibe(ohne, "a.md", "# A\n");
+  const rufe2 = aufruf(erzeugeHandler({ vault: ohne, vaultOptionen: { support } }));
+  const g2 = (await rufe2("GET", "/api/einstellungen")).j;
+  assert.match(g2.stand, /^0\.[0-9a-f]{64}$/);
+  const r2 = await rufe2("PUT", "/api/einstellungen", { werte: { statusFormat: false }, stand: g2.stand });
+  assert.equal(r2.status, 200, JSON.stringify(r2.j));
+  assert.equal(r2.j.werte.statusFormat, false);
+  assert.equal(JSON.parse(readFileSync(join(support, "einstellungen.json"), "utf8")).statusFormat, false);
+  assert.equal(existsSync(join(ohne, "brain.config.json")), false, "ein reiner App-Wert legt keine Config im Vault an");
+});

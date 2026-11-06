@@ -12,7 +12,8 @@ import { pathToFileURL } from "node:url";
 import { HttpFehler } from "../gemeinsam/basis.mjs";
 import { APP_SCHEMA, DATEI as APP_DATEI, leseApp, pruefeApp, schreibeApp } from "../gemeinsam/app-einstellungen.mjs";
 
-const STAND_MUSTER = /^(?:[0-9a-f]{64}|-)\.[0-9a-f]{64}$/;
+// Vault-Teil: SHA-256 der Config, „-“ (kein Vault) oder „0“ (der Vault hat noch keine brain.config.json: kern/pfade.mjs#liesConfigRoh) — App-Einstellungen lassen sich auch dort schreiben
+const STAND_MUSTER = /^(?:[0-9a-f]{64}|-|0)\.[0-9a-f]{64}$/;
 
 // deps: { support, kern: () => Ordner des Kerns }
 export function erzeugeEinstellungen({ support, kern }) {

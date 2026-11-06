@@ -8,7 +8,7 @@ import { TM } from "./texte-mitteilungen.js";
 import { kiLogo, kiLogoId } from "./ki-logos.js";
 
 // Arten des Protokolls (Parität mit gemeinsam/aktivitaet.mjs: Tests/Node/aktivitaet-paritaet.test.mjs)
-export const ARTEN = ["ablage-aufgabe", "ablage-notiz", "aenderung", "abweisung", "pflege", "pflege-fehler", "sicherung-konflikt", "sicherung-fehler", "anmeldung-abgelaufen", "rueckgaengig", "datei-aktion"];
+export const ARTEN = ["ablage-aufgabe", "ablage-notiz", "aenderung", "abweisung", "pflege", "pflege-fehler", "sicherung-konflikt", "sicherung-fehler", "anmeldung-abgelaufen", "rueckgaengig", "datei-aktion", "kontingent"];
 // Schalter der Mitteilungen je Art (Einstellungen → Mitteilungen, einstellungen.json). Gespiegelt aus gemeinsam/aktivitaet.mjs (ART_SCHALTER) und Sources/BrainCore/Mitteilungen.swift.
 export const ART_SCHALTER = {
   "ablage-aufgabe": "mitteilungenAbgelegt", "ablage-notiz": "mitteilungenAbgelegt", aenderung: "mitteilungenAbgelegt",
@@ -16,11 +16,12 @@ export const ART_SCHALTER = {
   "sicherung-konflikt": "mitteilungenSicherung", "sicherung-fehler": "mitteilungenSicherung",
   "pflege-fehler": "mitteilungenRueckfragen", "anmeldung-abgelaufen": "mitteilungenRueckfragen",
   pflege: "mitteilungenPflege",
+  kontingent: "mitteilungenKontingent", // 80 % und 100 % eines Fensters (werkstatt/kontingent.mjs), höchstens einmal je Fenster und Konto
   rueckgaengig: null, // die Bestätigung eines Klicks: nie eine Mitteilung
   "datei-aktion": null, // eigene Aktion in Kortex (Umbenennen, Verschieben, Papierkorb): nie eine Mitteilung
 };
 // Standard der Schalter, solange nichts gespeichert ist
-export const SCHALTER_STANDARD = { mitteilungenAbgelegt: true, mitteilungenAbgewiesen: true, mitteilungenSicherung: true, mitteilungenRueckfragen: true, mitteilungenPflege: false };
+export const SCHALTER_STANDARD = { mitteilungenAbgelegt: true, mitteilungenAbgewiesen: true, mitteilungenSicherung: true, mitteilungenRueckfragen: true, mitteilungenKontingent: true, mitteilungenPflege: false };
 const ABLAGEN = new Set(["ablage-aufgabe", "ablage-notiz", "aenderung"]);
 
 // Darf zu dieser Art ein Hinweis erscheinen? werte = Werte aus GET /api/einstellungen (unbekannt/fehlend → Standard); unbekannte Arten nie.

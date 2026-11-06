@@ -22,6 +22,9 @@ export const ZUSTAND = {
   defekt: () => ({ quelle: "statuszeile", verwaltet: false, bestaetigungNoetig: true, status: "einstellungen-defekt" }),
   codexOk: (s, w) => ({ quelle: "codex", status: "ok", session: s === null ? null : sitzung(s, std(4) + min(2)), weekly: w === null ? null : woche(w, std(43)), aktualisiert: new Date(JETZT - min(4)).toISOString(), abgefragt: new Date(JETZT - min(4)).toISOString(), neuAb: new Date(JETZT + min(1)).toISOString() }),
   codexAlt: (s, w) => ({ quelle: "codex", status: "ok", session: sitzung(s), weekly: woche(w), aktualisiert: new Date(JETZT - min(8)).toISOString(), abgefragt: new Date(JETZT - min(8)).toISOString(), neuAb: new Date(JETZT - min(3)).toISOString() }),
+  // Letzter Abruf gescheitert, aber ein Wert aus früherer Zeit ist da (vor `alterMin` Minuten): Warnzeichen erst über 30 Minuten
+  codexFehlerMitWert: (s, w, alterMin, art = "zeit") => ({ quelle: "codex", status: "fehler-mit-wert", fehlerArt: art, session: sitzung(s, std(4)), weekly: woche(w, std(43)), aktualisiert: new Date(JETZT - min(alterMin)).toISOString(), abgefragt: new Date(JETZT - min(1)).toISOString(), neuAb: new Date(JETZT + min(4)).toISOString() }),
+  claudeAlter: (s, w, alterMin) => ({ quelle: "statuszeile", verwaltet: false, bestaetigungNoetig: true, eingetragen: true, kette: false, status: alterMin > 30 ? "veraltet" : "ok", session: sitzung(s, std(1)), weekly: woche(w), aktualisiert: new Date(JETZT - min(alterMin)).toISOString() }),
   codexFehler: (art) => ({ quelle: "codex", status: "fehler", fehlerArt: art, abgefragt: new Date(JETZT - min(1)).toISOString(), neuAb: new Date(JETZT + min(4)).toISOString() }),
   codexLaedt: () => ({ quelle: "codex", status: "laedt", abgefragt: new Date(JETZT).toISOString() }),
   nichtAbrufbar: (programmName) => ({ quelle: null, status: "nicht-abrufbar", programmName }),
@@ -34,7 +37,7 @@ export async function mockeKontingent(page, { konten, werte = {}, jetzt = JETZT,
   const liste = () => z.konten.map((k) => ({ id: k.id, programm: k.programm, name: k.name, standard: k.standard === true, ...(z.aktiv && z.aktiv()?.[k.programm] === k.id ? { aktiv: true } : {}), stufe: k.stufe || (k.verbunden ? "posteingang" : "gesperrt"), ...(z.werte[k.id] || ZUSTAND.nichtAbrufbar()), ...(k.verwaltet ? { verwaltet: true, bestaetigungNoetig: false } : {}) }));
   const stand = () => ({ jetzt: new Date(z.jetzt).toISOString(), takt: { abfrageMs: 900_000, neuFruehestensMs: 300_000, veraltetMs: 1_800_000 }, konten: liste() });
   await page.route(/\/api\/ki\/kontingent(\?.*)?$/, (route) => {
-    z.anfragen.push({ methode: route.request().method(), pfad: "/api/ki/kontingent", body: { neu: new URL(route.request().url()).searchParams.get("neu") } });
+    z.anfragen.push({ methode: route.request().method(), pfad: "/api/ki/kontingent", body: { neu: new URL(route.request().url()).searchParams.get("neu"), aktiviert: new URL(route.request().url()).searchParams.get("aktiviert") } });
     if (z.fehler) return route.fulfill({ status: 500, json: { fehler: z.fehler } });
     return route.fulfill({ json: stand() });
   });

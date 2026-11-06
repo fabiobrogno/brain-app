@@ -60,12 +60,12 @@ private let alleAn: MitteilungsEinstellungen = {
         ("abweisung", "mitteilungenAbgewiesen"),
         ("sicherung-konflikt", "mitteilungenSicherung"), ("sicherung-fehler", "mitteilungenSicherung"),
         ("pflege-fehler", "mitteilungenRueckfragen"), ("anmeldung-abgelaufen", "mitteilungenRueckfragen"),
-        ("pflege", "mitteilungenPflege"),
+        ("pflege", "mitteilungenPflege"), ("kontingent", "mitteilungenKontingent"),
     ]
     #expect(MitteilungsEinstellungen.artSchalter == Dictionary(uniqueKeysWithValues: tabelle))
     for (art, schalter) in tabelle {
         var an = MitteilungsEinstellungen()
-        an.abgelegt = true; an.abgewiesen = true; an.sicherung = true; an.rueckfragen = true; an.pflege = true
+        an.abgelegt = true; an.abgewiesen = true; an.sicherung = true; an.rueckfragen = true; an.pflege = true; an.kontingent = true
         #expect(an.erlaubt(art: art), "\(art) an")
         // Nur der eigene Schalter entscheidet: aus → keine Mitteilung; alle anderen aus → mit eigenem Schalter an trotzdem erlaubt
         var aus = an
@@ -74,6 +74,7 @@ private let alleAn: MitteilungsEinstellungen = {
         case "mitteilungenAbgewiesen": aus.abgewiesen = false
         case "mitteilungenSicherung": aus.sicherung = false
         case "mitteilungenRueckfragen": aus.rueckfragen = false
+        case "mitteilungenKontingent": aus.kontingent = false
         default: aus.pflege = false
         }
         #expect(!aus.erlaubt(art: art), "\(art) aus")
@@ -344,6 +345,56 @@ private let alleAn: MitteilungsEinstellungen = {
     p.aufnehmen([ereignis("ablage-aufgabe")], einstellungen: mitTon)
     uhr.vor(5)
     #expect(p.faelligeMitteilungen(einstellungen: mitTon, istVorne: false).first?.ton == true)
+}
+
+// Kontingent (Paket E5): feste Sätze je Fenster und Schwelle, 80 % und 100 % bleiben getrennte Mitteilungen, nur mit eigenem Schalter, nie bei vorne stehendem Kortex.
+@Test func kontingentMitteilungenHabenFesteSaetzeUndEigeneGruppen() {
+    let uhr = Uhr(); let p = planer(uhr)
+    func k(_ grund: String, konto: String = "k_aaaa0001") -> AktivitaetsEreignis {
+        zaehlerId += 1
+        return AktivitaetsEreignis(id: "a_test_\(zaehlerId)", zeit: t0.addingTimeInterval(1), art: "kontingent", vault: "aaaaaaaaaaaaaaaa", vaultName: "Kortex", konto: konto,
+                                   programm: "claude", wer: "Claude Code · Privat", grund: grund, text: "egal, nie übernommen")
+    }
+    p.aufnehmen([k("5h-80"), k("5h-100"), k("woche-80"), k("woche-100"), k("5h-80", konto: "k_aaaa0002")], einstellungen: alleAn)
+    uhr.vor(5)
+    let m = p.faelligeMitteilungen(einstellungen: alleAn, istVorne: false)
+    #expect(m.count == 4, "höchstens 4 je Minute; der Rest wird später gesammelt")
+    #expect(m.map(\.text) == ["hat 80 % des 5-Stunden-Kontingents verbraucht.", "hat das 5-Stunden-Kontingent aufgebraucht.", "hat 80 % des Wochen-Kontingents verbraucht.", "hat das Wochen-Kontingent aufgebraucht."])
+    #expect(m.allSatisfy { $0.titel == "Claude Code · Privat" && $0.ziel == .aktivitaet })
+    // Schalter aus → nichts
+    var aus = alleAn; aus.kontingent = false
+    let p2 = planer(uhr)
+    p2.aufnehmen([k("5h-80")], einstellungen: aus)
+    uhr.vor(5)
+    #expect(p2.faelligeMitteilungen(einstellungen: aus, istVorne: false).isEmpty)
+    // Kortex vorne (nur im Hintergrund): keine Systemmitteilung
+    var hinten = alleAn; hinten.nurImHintergrund = true
+    let p3 = planer(uhr)
+    p3.aufnehmen([k("5h-100")], einstellungen: hinten)
+    uhr.vor(5)
+    #expect(p3.faelligeMitteilungen(einstellungen: hinten, istVorne: true).isEmpty)
+}
+
+@Test func gleicherSchluesselHatFuenfSekundenSperre() {
+    let uhr = Uhr(); let p = planer(uhr)
+    p.aufnehmen([ereignis("aenderung", text: "hat etwas geändert.")], einstellungen: alleAn)
+    uhr.vor(5)
+    #expect(p.faelligeMitteilungen(einstellungen: alleAn, istVorne: false).count == 1)
+    // dieselbe Gruppe, ein zweites Ereignis: wird zwar aufgenommen, aber das Sammelfenster (5 s) und die Sperre (5 s) lassen keine zweite Mitteilung im Abstand von Sekunden zu
+    p.aufnehmen([ereignis("aenderung", text: "hat etwas geändert.", nach: uhr.jetzt.timeIntervalSince(t0))], einstellungen: alleAn)
+    uhr.vor(4)
+    #expect(p.faelligeMitteilungen(einstellungen: alleAn, istVorne: false).isEmpty)
+    var kurz = MitteilungsPlaner.Regeln(); kurz.sammelfenster = 1; kurz.burstSperre = 5
+    let q = planer(uhr, regeln: kurz)
+    q.aufnehmen([ereignis("aenderung", nach: uhr.jetzt.timeIntervalSince(t0))], einstellungen: alleAn)
+    uhr.vor(1)
+    #expect(q.faelligeMitteilungen(einstellungen: alleAn, istVorne: false).count == 1)
+    q.aufnehmen([ereignis("aenderung", nach: uhr.jetzt.timeIntervalSince(t0))], einstellungen: alleAn)
+    uhr.vor(2)
+    #expect(q.faelligeMitteilungen(einstellungen: alleAn, istVorne: false).isEmpty, "nach 2 s ist derselbe Schlüssel noch gesperrt")
+    q.aufnehmen([ereignis("aenderung", nach: uhr.jetzt.timeIntervalSince(t0))], einstellungen: alleAn)
+    uhr.vor(6)
+    #expect(q.faelligeMitteilungen(einstellungen: alleAn, istVorne: false).count == 1, "nach der Sperre kommt wieder eine")
 }
 
 @Test func drosselungSammeltDenRestEinmal() {

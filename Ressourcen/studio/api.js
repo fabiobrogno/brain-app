@@ -182,7 +182,7 @@ export const api = {
   kiKonten: () => anfrage("GET", "/api/ki/konten"), // rein lesend; neu erkannte Konten stehen unter `neu`
   kiKontenAbgleich: () => anfrage("POST", "/api/ki/konten/abgleich", {}), // der ausdrückliche Abgleich: Liste anlegen/reparieren, neue Konten eintragen (gesperrt)
   // Kontingent (P7): Stand lesen (neu = frühere Abfrage bei Codex, frühestens 5 Min nach der letzten) · die Statuszeile von Kortex bei Claude Code ein-/ausschalten (nur nach dem Klick; `bestaetigt` für Orte außerhalb von Kortex)
-  kiKontingent: (neu) => anfrage("GET", "/api/ki/kontingent" + (neu ? "?neu=1" : "")),
+  kiKontingent: (neu, aktiviert) => anfrage("GET", "/api/ki/kontingent" + (neu ? "?neu=1" : aktiviert ? "?aktiviert=1" : "")),
   kiStatuszeile: ({ konto, an, bestaetigt }) => anfrage("POST", "/api/ki/kontingent/statuszeile", { konto, an, einwilligung: true, ...(bestaetigt ? { bestaetigt: true } : {}) }),
   kiKontoName: (id, name) => anfrage("POST", "/api/ki/konten", { id, name }),
   kiZugriff: ({ konto, vault, stufe, claudeSperre }) => anfrage("PUT", "/api/ki/zugriff", { konto, vault, stufe, ...(typeof claudeSperre === "boolean" ? { claudeSperre } : {}) }),
