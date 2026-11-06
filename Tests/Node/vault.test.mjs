@@ -153,6 +153,39 @@ test("Neu: Datei <ordner>/<slug>.md mit Überschrift; Namensgleichheit -2", () =
   assert.equal(status(() => v.neu({ ordner: "a", titel: "  " })), 400);
 });
 
+test("Neu mit Inhalt (Studio: Entwurf wird zur Datei): fertiger Text, Name aus dem Titel, Hash passt, nie überschreiben", async () => {
+  const { createHash } = await import("node:crypto");
+  const { d, v } = vault();
+  const text = "---\ntyp: besprechung\n---\n# Wochenstart ÄÖ\n\n- Punkt\n";
+  const a = v.neu({ ordner: "00_inbox", titel: "Wochenstart ÄÖ", inhalt: text });
+  assert.equal(a.pfad, "00_inbox/wochenstart-aeoe.md");
+  assert.equal(readFileSync(join(d, a.pfad), "utf8"), text);
+  assert.equal(a.hash, createHash("sha256").update(text).digest("hex"));
+  const b = v.neu({ ordner: "00_inbox", titel: "Wochenstart ÄÖ", inhalt: "anders\n" });
+  assert.equal(b.pfad, "00_inbox/wochenstart-aeoe-2.md");
+  assert.equal(readFileSync(join(d, a.pfad), "utf8"), text, "die erste Datei bleibt");
+  assert.equal(v.neu({ ordner: "", titel: "Leer", inhalt: "" }).pfad, "leer.md", "ein leerer Text ist erlaubt");
+  assert.equal(status(() => v.neu({ ordner: "", titel: "X", inhalt: 5 })), 400);
+});
+
+test("Review: Wiederholungsversuch mit derselben Entwurfs-ID legt nichts doppelt an; ohne ID wie bisher -2; die Datei erscheint nie halb geschrieben", async () => {
+  const { readdirSync } = await import("node:fs");
+  const { d, v } = vault();
+  const a = v.neu({ ordner: "00_inbox", titel: "Idempotent", inhalt: "# Idempotent\nText\n", id: "entwurf-1" });
+  const b = v.neu({ ordner: "00_inbox", titel: "Idempotent", inhalt: "# Idempotent\nText\n", id: "entwurf-1" });
+  assert.deepEqual(b, a, "dieselbe ID: dieselbe Antwort");
+  assert.equal(readdirSync(join(d, "00_inbox")).filter((n) => n.startsWith("idempotent")).length, 1);
+  const c = v.neu({ ordner: "00_inbox", titel: "Idempotent", inhalt: "# Idempotent\n", id: "entwurf-2" });
+  assert.equal(c.pfad, "00_inbox/idempotent-2.md", "andere ID: neue Datei");
+  assert.equal(status(() => v.neu({ ordner: "", titel: "X", id: 5 })), 400);
+  assert.equal(status(() => v.neu({ ordner: "", titel: "X", id: "x".repeat(200) })), 400);
+  // Der Name wird mit einem Hartlink aus einer fertigen Temp-Datei gesetzt (wie schreibe): keine Reste, der Inhalt ist sofort vollständig
+  assert.deepEqual(readdirSync(join(d, "00_inbox")).filter((n) => n.startsWith(".brain-tmp")), []);
+  const gross = "x".repeat(300000);
+  const e = v.neu({ ordner: "", titel: "Gross", inhalt: gross });
+  assert.equal(readFileSync(join(d, e.pfad), "utf8").length, 300000);
+});
+
 test("Merken: Format wie Inbox, Datum Berliner Zeit, -2/-3, nie überschreiben, nur 00_inbox", () => {
   const d = tmp();
   const v = oeffneVault(d, { jetzt: () => new Date("2026-10-24T22:30:00Z") }); // = 25.10. 00:30 Berlin

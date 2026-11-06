@@ -161,7 +161,7 @@ test("Konflikt: „⌘K gehört schon zu „Befehlspalette“.“ mit Abbrechen 
   await page.keyboard.press("Escape");
   await expect(seite(page)).toBeHidden();
   await page.keyboard.press("Meta+k");
-  await expect(page.locator('.dialog [data-feld="titel"]')).toBeVisible();
+  await expect(page.locator("#pfad .krume.aktuell")).toHaveText("Neue Notiz");
   await expect(page.locator(".palette")).toHaveCount(0);
 });
 
@@ -201,13 +201,11 @@ test("Live wirksam ohne Neustart: das neue Kürzel löst den Befehl aus, das alt
   await page.keyboard.press("Escape");
   await expect(seite(page)).toBeHidden();
   await page.keyboard.press("Meta+n");
-  await expect(page.locator(".dialog")).toHaveCount(0); // das alte gilt nicht mehr
+  await expect(page.locator("#pfad .krume.aktuell")).not.toHaveText("Neue Notiz"); // das alte gilt nicht mehr
   await page.keyboard.press("Meta+Shift+j");
-  await expect(page.locator('.dialog [data-feld="titel"]')).toBeVisible(); // das neue öffnet „Neue Notiz“
-  await page.keyboard.press("Escape");
-  await expect(page.locator(".dialog")).toHaveCount(0);
+  await expect(page.locator("#pfad .krume.aktuell")).toHaveText("Neue Notiz"); // das neue öffnet „Neue Notiz“
   await page.keyboard.press("Meta+k");
-  const eintrag = page.locator('.pal-eintrag[data-pal="befehl"]', { hasText: "Neue Notiz" });
+  const eintrag = page.locator('.pal-eintrag[data-pal="befehl"]', { has: page.locator(".n", { hasText: /^Neue Notiz$/ }) });
   await expect(eintrag.locator(".r")).toHaveText("⇧⌘J");
   await page.keyboard.press("Escape");
   // die Übersicht ⌘/ zeigt es ebenfalls
@@ -219,7 +217,7 @@ test("Live wirksam ohne Neustart: das neue Kürzel löst den Befehl aus, das alt
   await page.reload();
   await page.waitForFunction(() => window.__studioBereit === true);
   await page.keyboard.press("Meta+Shift+j");
-  await expect(page.locator('.dialog [data-feld="titel"]')).toBeVisible();
+  await expect(page.locator("#pfad .krume.aktuell")).toHaveText("Neue Notiz");
 });
 
 test("Zurücksetzen: je Zeile und „Alle zurücksetzen“ (mit Rückfrage)", async ({ page }) => {

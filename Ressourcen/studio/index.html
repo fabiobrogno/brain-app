@@ -21,6 +21,7 @@
 <link rel="stylesheet" href="ki-verbinden.css">
 <link rel="stylesheet" href="glocke.css">
 <link rel="stylesheet" href="bewegung.css">
+<link rel="stylesheet" href="schreiben.css">
 <link rel="stylesheet" href="suche.css">
 </head>
 <body>
@@ -52,6 +53,7 @@
 
   <header id="kopf" class="kopf" aria-label="Kopfzeile">
     <div class="kopf-links">
+      <div id="nav-pfeile" class="nav-pfeile" role="group" aria-label="Zurück und Vor"></div>
       <button id="au-zurueck" class="knopf-text au-zurueck" type="button" data-aktion="aufgaben-zurueck"></button>
       <div id="pfad" class="pfad" aria-label="Pfad der Notiz"></div>
     </div>
@@ -89,6 +91,7 @@
   </section>
 
   <main id="haupt">
+    <div id="tag-nav" class="tag-nav" role="group" aria-label="Tagesnotiz" hidden></div>
     <div id="umstellung-host"></div>
     <div id="banner-host"></div>
     <div id="aufgaben-host"></div>

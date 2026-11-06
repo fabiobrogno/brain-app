@@ -281,6 +281,8 @@ public enum StudioBefehl: String, Sendable, CaseIterable {
     case aktivitaet
     /// Das globale Kürzel „Frag deinen Vault“ (P10): Studio nach vorn und die Frage öffnen.
     case frage
+    /// Schreiben im Alltag: Tagesnotiz („Heute“), neue Notiz aus einer Vorlage, Zurück und Vor durch die zuletzt geöffneten Notizen (Menü Ablage und Gehe zu).
+    case heute, vorlage, zurueck, vor
 
     public var skript: String { "window.studio?.befehl('\(rawValue)')" }
 

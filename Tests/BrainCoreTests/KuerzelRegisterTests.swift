@@ -31,6 +31,28 @@ private func pfade() -> AppPfade { AppPfade(basis: tempOrdner("Support")) }
     #expect(r.befehle.filter(\.global).map(\.id) == ["schnell-erfassen", "frage-global", "kortex-zeigen"])
 }
 
+@Test func schreibenImAlltagHatMenueUndKuerzel() throws {
+    // Tagesnotiz, Notiz aus Vorlage, Zurück und Vor: Register (Studio, Menüs) und StudioBefehl (Menüeintrag → window.studio.befehl) müssen dieselben Namen und Kürzel meinen
+    let r = try register()
+    let soll: [(id: String, menue: StudioBefehl, kuerzel: String, zeichen: String, umschalter: Tastenkuerzel.Umschalter)] = [
+        ("neue-notiz", .neu, "Cmd+N", "n", [.command]),
+        ("tagesnotiz", .heute, "Shift+Cmd+D", "d", [.command, .shift]),
+        ("notiz-aus-vorlage", .vorlage, "Alt+Cmd+N", "n", [.command, .option]),
+        ("zurueck", .zurueck, "Alt+Cmd+Left", "\u{F702}", [.command, .option]),
+        ("vor", .vor, "Alt+Cmd+Right", "\u{F703}", [.command, .option]),
+    ]
+    for e in soll {
+        let b = try #require(r.befehl(e.id))
+        #expect(b.menue == e.menue.rawValue, "\(e.id): Menüname")
+        #expect(r.befehl(menue: e.menue.rawValue)?.id == e.id)
+        #expect(b.standard == e.kuerzel, "\(e.id): Standardkürzel")
+        let k = try #require(Tastenkuerzel(kanonisch: e.kuerzel))
+        #expect(k.menueZeichen == e.zeichen, "\(e.id): Taste im Menü")
+        #expect(k.umschalter == e.umschalter, "\(e.id): Umschalter im Menü")
+        #expect(e.menue.skript == "window.studio?.befehl('\(e.menue.rawValue)')")
+    }
+}
+
 @Test func dieTastenDesRegistersSindGenauDieTastenDerApp() throws {
     // Studio und App benennen die Tasten gleich: sonst gälte ein im Studio aufgenommenes Kürzel in den Menüs nicht
     let r = try register()

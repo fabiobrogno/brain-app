@@ -83,6 +83,7 @@ private func url(_ s: String) -> URL { URL(string: s)! }
     #expect(StudioBefehl.allCases.map(\.rawValue) == [
         "neu", "merken", "vault-oeffnen", "vault-wechseln", "infospalte", "verlauf", "hell-dunkel",
         "posteingang", "alle", "wissen", "palette", "sync", "einstellungen", "umstellung", "aufgaben", "aufgabe-erfassen", "aktivitaet", "frage",
+        "heute", "vorlage", "zurueck", "vor",
     ])
     #expect(StudioBefehl.aufgabeErfassen.skript == "window.studio?.befehl('aufgabe-erfassen')")
     #expect(StudioBefehl.umstellung.skript == "window.studio?.befehl('umstellung')")

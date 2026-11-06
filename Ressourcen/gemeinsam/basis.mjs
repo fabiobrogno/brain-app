@@ -90,6 +90,27 @@ function inboxAuswerten(wurzel) {
   } catch { return { name: INBOX_STANDARD, abgelehnt: false }; }
 }
 export const inboxOrdnerVon = (wurzel) => inboxAuswerten(wurzel).name;
+
+// Der Vorlagenordner eines Vaults (Notizen darin sind Vorlagen für „Neue Notiz aus Vorlage“, keine Notizen): brain.config.json → ordner.vorlagen, sonst 01_vorlagen wie bisher.
+// Er ist eine Eigenschaft des Vaults: ein vorhandener Ordner „Vorlagen“ in einem alten Vault bleibt Notizen, solange der Vault ihn nicht so einstellt; ein neuer Beispiel-Vault
+// stellt ihn ein. Gleiche Regeln wie der Posteingang (ein Ordnername, nicht versteckt) und nie der Ordner von Posteingang, Aufgaben, Wiki oder Archiv. Wirft nie.
+export const VORLAGEN_STANDARD = "01_vorlagen";
+export function vorlagenAuswerten(wurzel) {
+  try {
+    const datei = join(wurzel, "brain.config.json");
+    const st = lstatSync(datei);
+    if (!st.isFile() || st.size > 1024 * 1024) return { name: VORLAGEN_STANDARD, abgelehnt: false };
+    const cfg = JSON.parse(readFileSync(datei, "utf8").replace(/^\uFEFF/, ""));
+    const n = cfg?.ordner?.vorlagen;
+    if (n === undefined || n === null || n === "") return { name: VORLAGEN_STANDARD, abgelehnt: false };
+    if (!istOrdnerName(n) || n.startsWith(".")) return { name: VORLAGEN_STANDARD, abgelehnt: true, wert: String(n).slice(0, 60), grund: "kein gültiger Ordnername (kein Pfad, nicht versteckt)" };
+    const nimm = (wert, standard) => (istOrdnerName(wert) ? wert : standard);
+    const belegt = [inboxOrdnerVon(wurzel), nimm(cfg.ordner?.aufgaben, "05_aufgaben"), nimm(cfg.ordner?.wiki, nimm(cfg.wiki?.ordner, "09_wiki")), nimm(cfg.ordner?.archiv, "90_archiv"), "09_wiki", "90_archiv", "node_modules"];
+    if (belegt.some((a) => falte(a) === falte(n))) return { name: VORLAGEN_STANDARD, abgelehnt: true, wert: n, grund: "das ist ein anderer Kortex-Ordner (Posteingang, Aufgaben, Wiki oder Archiv)" };
+    return { name: n, abgelehnt: false };
+  } catch { return { name: VORLAGEN_STANDARD, abgelehnt: false }; }
+}
+export const vorlagenOrdnerVon = (wurzel) => vorlagenAuswerten(wurzel).name;
 // Ein ungültiger Eintrag fällt nicht still zurück: das Studio sagt es. → Satz oder null
 export function inboxHinweisVon(wurzel) {
   const a = inboxAuswerten(wurzel);

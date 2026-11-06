@@ -26,6 +26,11 @@ export const APP_SCHEMA = {
   mitteilungenSicherung: { typ: "boolean", standard: true },
   mitteilungenKontingent: { typ: "boolean", standard: true },
   mitteilungenPflege: { typ: "boolean", standard: false },
+  // Schreiben: Tagesnotiz (gemeinsam/vorlagen.mjs). Ordner relativ zum Vault, Format mit JJJJ MM TT … (siehe dort); leer/null = Standard. Der Vorlagenordner ist Sache des Vaults (brain.config.json: ordner.vorlagen).
+  // Die Vorlage der Tagesnotiz ist der Name (oder Pfad) einer Notiz im Vorlagenordner; leer = keine Vorlage.
+  tagesnotizOrdner: { typ: "pfad", standard: "Tagebuch" },
+  tagesnotizFormat: { typ: "pfad", standard: "JJJJ-MM-TT" },
+  tagesnotizVorlage: { typ: "pfad", standard: "" },
 };
 export const APP_STANDARD = Object.fromEntries(Object.entries(APP_SCHEMA).map(([k, s]) => [k, s.standard]));
 
@@ -36,6 +41,7 @@ export function istGueltig(schema, wert) {
   if (schema.werte) return schema.werte.includes(wert);
   if (schema.typ === "boolean") return typeof wert === "boolean";
   if (schema.typ === "ganzzahl") return Number.isInteger(wert) && wert >= schema.min && wert <= schema.max;
+  if (schema.typ === "pfad") return typeof wert === "string" && wert.trim().length >= 1 && wert.length <= 300 && !/[\u0000-\u001f\u007f]/.test(wert);
   return false;
 }
 

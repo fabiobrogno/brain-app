@@ -176,6 +176,10 @@ input[type=checkbox]:disabled, input[type=radio]:disabled { opacity: .45; cursor
 .bs-tag { height: 30px; display: grid; place-items: center; border: 0; border-radius: 8px; background: transparent; color: var(--text); font: 12.5px/1 var(--schrift); font-variant-numeric: tabular-nums; cursor: pointer; transition: background-color var(--d-1) ease-out; }
 .bs-tag:hover { background: var(--hover-2); }
 .bs-tag.draussen { color: var(--text-3); }
+.bs-tag { position: relative; }
+.bs-tag.mit-eintrag::after { content: ""; position: absolute; left: 50%; bottom: 3px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--akzent); opacity: .85; }
+.bs-tag.mit-eintrag.draussen::after { opacity: .45; }
+.bs-tag[aria-selected="true"].mit-eintrag::after { background: var(--akzent-text); opacity: .9; }
 .bs-tag.heute { color: var(--akzent); font-weight: 700; box-shadow: inset 0 0 0 1.5px var(--akzent-rand); }
 .bs-tag[aria-selected="true"] { background: var(--akzent); color: var(--akzent-text); font-weight: 650; box-shadow: none; }
 .bs-tag:focus-visible { outline: 0; box-shadow: var(--fokus-ring); }

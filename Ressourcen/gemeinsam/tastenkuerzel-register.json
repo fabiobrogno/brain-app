@@ -24,6 +24,8 @@
     { "id": "palette", "gruppe": "kortex", "name": "Befehlspalette", "text": "Notizen, Befehle und Einstellungen finden.", "standard": "Cmd+K", "menue": "palette", "woerter": ["palette", "befehl", "suchen", "springen"] },
     { "id": "frage", "gruppe": "kortex", "name": "Frag deinen Vault", "text": "Eine Frage stellen, die Kortex aus deinen Notizen beantwortet.", "standard": "Cmd+J", "woerter": ["frage", "frag", "antwort", "ki"] },
     { "id": "neue-notiz", "gruppe": "kortex", "name": "Neue Notiz", "text": "Legt eine leere Notiz an.", "standard": "Cmd+N", "menue": "neu", "woerter": ["notiz", "neu", "anlegen"] },
+    { "id": "tagesnotiz", "gruppe": "kortex", "name": "Heute (Tagesnotiz)", "text": "Öffnet die Notiz für heute und legt sie bei Bedarf an.", "standard": "Shift+Cmd+D", "menue": "heute", "woerter": ["heute", "tagesnotiz", "tagebuch", "journal", "tag", "kalender"] },
+    { "id": "notiz-aus-vorlage", "gruppe": "kortex", "name": "Neue Notiz aus Vorlage", "text": "Wählt eine Vorlage aus dem Vorlagenordner und legt daraus eine neue Notiz an.", "standard": "Alt+Cmd+N", "menue": "vorlage", "woerter": ["vorlage", "template", "notiz", "neu", "besprechung", "projekt"] },
     { "id": "schnell-merken", "gruppe": "kortex", "name": "Schnell merken", "text": "Ein Gedanke in einem Satz, direkt in den Posteingang.", "standard": "Shift+Cmd+M", "menue": "merken", "woerter": ["merken", "gedanke", "posteingang", "schnell"] },
     { "id": "aufgabe-erfassen", "gruppe": "kortex", "name": "Aufgabe erfassen", "text": "Eine Aufgabe in einem Satz anlegen.", "standard": "Shift+Cmd+A", "menue": "aufgabe-erfassen", "woerter": ["aufgabe", "erfassen", "todo"] },
     { "id": "mitteilungen", "gruppe": "kortex", "name": "Mitteilungen", "text": "Öffnet die Liste dessen, was deine KIs in deinem Vault getan haben (die Glocke in der Kopfzeile).", "standard": "Shift+Cmd+B", "woerter": ["mitteilungen", "glocke", "benachrichtigung", "aktivität", "ungelesen", "abweisung"] },
@@ -40,6 +42,8 @@
     { "id": "verlauf", "gruppe": "ansicht", "name": "Verlauf ein- und ausblenden", "text": "Frühere Fassungen der Notiz.", "standard": "Shift+Cmd+H", "menue": "verlauf", "woerter": ["verlauf", "versionen", "fassung", "git"] },
     { "id": "hell-dunkel", "gruppe": "ansicht", "name": "Hell und Dunkel umschalten", "text": "Wechselt das Thema.", "standard": null, "menue": "hell-dunkel", "woerter": ["hell", "dunkel", "thema", "dark", "light"] },
 
+    { "id": "zurueck", "gruppe": "gehe", "name": "Zurück", "text": "Zur zuvor geöffneten Notiz, mit Cursor und Scrollposition.", "standard": "Alt+Cmd+Left", "menue": "zurueck", "woerter": ["zurück", "vorher", "verlauf", "history", "navigation"] },
+    { "id": "vor", "gruppe": "gehe", "name": "Vor", "text": "Wieder vor zur Notiz, von der du zurückgegangen bist.", "standard": "Alt+Cmd+Right", "menue": "vor", "woerter": ["vor", "weiter", "verlauf", "history", "navigation"] },
     { "id": "gehe-posteingang", "gruppe": "gehe", "name": "Posteingang", "text": "Springt zum Bereich in der Seitenleiste.", "standard": "Cmd+1", "menue": "posteingang", "woerter": ["posteingang", "inbox", "bereich"] },
     { "id": "gehe-alle", "gruppe": "gehe", "name": "Alle Notizen", "text": "Springt zum Bereich in der Seitenleiste.", "standard": "Cmd+2", "menue": "alle", "woerter": ["alle", "notizen", "bereich"] },
     { "id": "gehe-wissen", "gruppe": "gehe", "name": "Wissen", "text": "Springt zum Bereich in der Seitenleiste.", "standard": "Cmd+3", "menue": "wissen", "woerter": ["wissen", "wiki", "bereich"] },

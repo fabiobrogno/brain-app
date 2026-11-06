@@ -225,24 +225,13 @@ test("Ein einfacher Klick ohne Ziehen öffnet weiterhin die Datei", async ({ pag
   await expect(page.locator(".cm-content")).toBeVisible();
 });
 
-test("Dialoge mit Bausteinen: Neue Notiz (Ordner-Auswahl, Textfeld) und Schnell merken (Textbereich), Fokus und Tastatur", async ({ page }) => {
+test("Neue Notiz (⌘N, ohne Dialog, Cursor in der Titelzeile) und Schnell merken (Dialog mit Textbereich), Fokus und Tastatur", async ({ page }) => {
   await page.goto(server.url);
   await page.waitForSelector("[data-karte], [data-leer]");
   await page.keyboard.press("Meta+n");
-  const dlg = page.locator(".dialog");
-  await expect(dlg).toBeVisible();
-  const titel = dlg.getByRole("textbox");
-  await expect(titel).toBeFocused();
-  const ordner = dlg.getByRole("combobox", { name: /Ordner/ });
-  await ordner.focus();
-  await page.keyboard.press("ArrowDown");
-  await expect(page.locator(".bs-liste")).toBeVisible();
-  await page.keyboard.press("Escape"); // schließt nur die Liste, nicht den Dialog
-  await expect(page.locator(".bs-liste")).toHaveCount(0);
-  await expect(dlg).toBeVisible();
-  await expect(ordner).toBeFocused();
-  await page.keyboard.press("Escape");
-  await expect(dlg).toHaveCount(0);
+  await expect(page.locator(".dialog")).toHaveCount(0);
+  await expect(page.locator("#pfad .krume.aktuell")).toHaveText("Neue Notiz");
+  await expect(page.locator("#editor .cm-editor")).toHaveClass(/cm-focused/);
   await page.keyboard.press("Meta+Shift+m");
   const text = page.locator('[data-feld="text"]');
   await expect(text).toBeFocused();
@@ -289,14 +278,6 @@ for (const schema of ["hell", "dunkel"]) {
     await s("board-datum");
     await page.keyboard.press("Escape");
     // Dialoge
-    await page.keyboard.press("Meta+n");
-    await page.waitForTimeout(300);
-    await s("dialog-neu");
-    await page.locator(".dialog").getByRole("combobox").click();
-    await page.waitForTimeout(250);
-    await s("dialog-neu-auswahl");
-    await page.keyboard.press("Escape");
-    await page.keyboard.press("Escape");
     await page.keyboard.press("Meta+Shift+m");
     await page.locator('[data-feld="text"]').fill("Eine flüchtige Idee,\nüber mehrere Zeilen,\nfür später.");
     await page.waitForTimeout(250);

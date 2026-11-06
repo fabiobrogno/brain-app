@@ -27,7 +27,7 @@ export const GITIGNORE = [
 // enthält sonst nur Daten — kein `.tools`, keinen Kern-Code (der liegt im App-Paket, Kern-Umzug P4). Die Ordnernamen entsprechen den
 // Standardwerten des Kerns und dem Gerüst unten (00_inbox, 09_wiki, 90_archiv).
 export const BRAIN_CONFIG = JSON.stringify({
-  ordner: { inbox: "00_inbox", wiki: "09_wiki", archiv: "90_archiv", aufgaben: "05_aufgaben" },
+  ordner: { inbox: "00_inbox", wiki: "09_wiki", archiv: "90_archiv", aufgaben: "05_aufgaben", vorlagen: "Vorlagen" },
   sprache: "de",
 }, null, 2) + "\n";
 
@@ -205,7 +205,8 @@ const SEITEN = [
     weiter: [
       "## Probier es aus",
       "",
-      "- Lege in `00_inbox/` eine Notiz an, zum Beispiel mit „Schnell merken“.",
+      "- Lege in `00_inbox/` eine Notiz an, zum Beispiel mit „Schnell merken“ oder mit ⌘N.",
+      "- Öffne mit ⇧⌘D die Notiz für heute oder starte mit ⌥⌘N eine Notiz aus einer Vorlage (die Vorlagen liegen im Ordner `Vorlagen/`).",
       "- Frag deine KI nach etwas aus dem Wiki und achte darauf, ob sie die Prüf-Signale nennt.",
       "- Lösche diese Beispielseiten, sobald du eigenes Wissen eingearbeitet hast.",
     ],
@@ -269,6 +270,33 @@ function belegText(f, seite) {
   );
 }
 
+// Notiz-Vorlagen für „Neue Notiz aus Vorlage“ und die Tagesnotiz (Platzhalter: gemeinsam/vorlagen.mjs). Nur für NEUE Vaults — ein vorhandener Vault bekommt nie welche dazu.
+export const VORLAGEN_ORDNER = "Vorlagen";
+const NOTIZ_VORLAGEN = [
+  { datei: "Besprechung", inhalt: md(
+    "---", "typ: besprechung", "datum: {{datum}}", "---",
+    "# {{titel}}", "",
+    "{{datum:TT.MM.JJJJ}}, {{zeit}} Uhr · Teilnehmende: ", "",
+    "## Agenda", "", "- {{cursor}}", "",
+    "## Notizen", "",
+    "## Entscheidungen", "",
+    "## Aufgaben", "", "- [ ] ") },
+  { datei: "Projekt", inhalt: md(
+    "---", "typ: projekt", "status: aktiv", "gestartet: {{datum}}", "---",
+    "# {{titel}}", "",
+    "## Ziel", "", "{{cursor}}", "",
+    "## Nächste Schritte", "", "- [ ] ", "",
+    "## Notizen", "",
+    "## Verknüpfungen", "", "- ") },
+  { datei: "Tagesnotiz", inhalt: md(
+    "---", "datum: {{datum}}", "---",
+    "# {{datum:WWWW, T. MMMM JJJJ}}", "",
+    "## Fokus heute", "", "- {{cursor}}", "",
+    "## Aufgaben", "", "- [ ] ", "",
+    "## Notizen", "",
+    "## Rückblick", "") },
+];
+
 // → [{ pfad, inhalt }] — Pfade relativ zum Vault, mit „/“. Reihenfolge: Verwaltung, Wiki, Regeln.
 export function vorlageDateien({ name, heute } = {}) {
   const d = datum(heute);
@@ -282,6 +310,7 @@ export function vorlageDateien({ name, heute } = {}) {
     dateien.push({ pfad: `09_wiki/${WIKI_BEREICH}/${s.datei}.md`, inhalt: seitenText(s, d) });
     for (const f of s.fakten) dateien.push({ pfad: `09_wiki/${WIKI_BEREICH}/belege/${d.monat}/${f.id}.md`, inhalt: belegText(f, s) });
   }
+  for (const v of NOTIZ_VORLAGEN) dateien.push({ pfad: `${VORLAGEN_ORDNER}/${v.datei}.md`, inhalt: v.inhalt });
   dateien.push(
     { pfad: "AGENTS.md", inhalt: agents(titel) },
     { pfad: "CLAUDE.md", inhalt: "@AGENTS.md\n" },
