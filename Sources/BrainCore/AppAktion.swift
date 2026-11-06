@@ -4,7 +4,7 @@ import Foundation
 /// hier ist die einzige Stelle, die Werte der Seite in etwas Ausführbares verwandelt: nur bekannte Aktionen, Pfade nur im Vault,
 /// nur https. `ordner-waehlen`, `vault-gewechselt`, `vertrauen-geaendert`, `status-auffrischen`, `titel`, `fehler` und die Aktionen des
 /// Einrichtungs-Assistenten (`git-pruefen`, `git-installieren`, `kopieren`, `einrichtung-ende`, `einrichtung-oeffnen`) gelten nur für
-/// das Studio (Host `studio`, auch das Fenster „Kortex einrichten“) — die Übersicht (Seite des Kerns) darf nur `ansicht`, `ordner-zeigen`
+/// das Studio (Host `studio`; die Einrichtung ist ein Overlay darin) — die Übersicht (Seite des Kerns) darf nur `ansicht`, `ordner-zeigen`
 /// und `extern`.
 public enum AppAktion: Equatable, Sendable {
     case ansicht
@@ -32,10 +32,11 @@ public enum AppAktion: Equatable, Sendable {
     case gitInstallieren
     /// Text in die Zwischenablage (Gerätecode, Konfigurationsbefehl): einzeilig, druckbar, 1…`maxKopieren` Zeichen.
     case kopieren(String)
-    /// Der Assistent ist am Ende („Fertig“ oder „Später“); nur wirksam, wenn das Einrichtungsfenster offen ist und die Aktion von dort kommt.
+    /// Die Einrichtung ist am Ende („Fertig“ oder „Später“); nur wirksam, solange das Overlay offen ist (`EinrichtungsSitzung`).
     case einrichtungEnde(EinrichtungsEnde)
-    /// Das Einrichtungsfenster öffnen (wie das Menü „Kortex einrichten …“), optional ab einer Stelle.
-    case einrichtungOeffnen(ab: EinrichtungsEinstieg?)
+    /// Das Einrichtungs-Overlay im Studio öffnen (wie das Menü „Kortex einrichten …“; nie ein zweites Fenster), optional ab einer Stelle (`ab`, mit vorhandenem Vault) oder
+    /// mit gewähltem Weg (`weg`, aus dem leeren Zustand).
+    case einrichtungOeffnen(ab: EinrichtungsEinstieg?, weg: EinrichtungsWeg? = nil)
     /// „Probe-Mitteilung senden“ (Einstellungen → Mitteilungen, P8a): eine Beispiel-Mitteilung über den Mitteilungsdienst des Systems; die
     /// Antwort sagt, ob sie zugestellt wurde (`{ok:true}`) oder warum nicht (`{ok:false, grund}`). Trägt keine Daten.
     case mitteilungProbe
@@ -70,7 +71,7 @@ public enum AppAktion: Equatable, Sendable {
     /// `{aktion:"ordner-waehlen", wert:{titel?, vorschlag?}}`, `{aktion:"vault-gewechselt"}`, `{aktion:"vertrauen-geaendert"}`,
     /// `{aktion:"titel", wert:<Text>}`, `{aktion:"fehler", wert:{text, ort?}}`, `{aktion:"git-pruefen"}`, `{aktion:"git-installieren"}`,
     /// `{aktion:"kopieren", wert:<Text>}`, `{aktion:"einrichtung-ende", wert:{art:"fertig"|"spaeter"}}`,
-    /// `{aktion:"einrichtung-oeffnen", wert?:{ab?:"vault"|"sicherung"|"ki"}}`, `{aktion:"mitteilung-probe"}`, `{aktion:"fenster-ziehen"}`, `{aktion:"fenster-zoom"}`, `{aktion:"darstellung", wert:"hell"|"dunkel"|"system"}`, `{aktion:"app-symbol", wert:"standard"|"dunkel"|"graphit"|"papier"|"smaragd"}`.
+    /// `{aktion:"einrichtung-oeffnen", wert?:{ab?:"vault"|"sicherung"|"ki", weg?:"neu"|"beispiel"|"oeffnen"|"klonen"}}`, `{aktion:"mitteilung-probe"}`, `{aktion:"fenster-ziehen"}`, `{aktion:"fenster-zoom"}`, `{aktion:"darstellung", wert:"hell"|"dunkel"|"system"}`, `{aktion:"app-symbol", wert:"standard"|"dunkel"|"graphit"|"papier"|"smaragd"}`.
     /// Ohne Angabe gilt die strengste Herkunft (Übersicht): die Studio-Aktionen muss man ausdrücklich freischalten.
     public static func pruefe(_ nachricht: Any, vault: URL?, oberflaeche: Oberflaeche = .app) -> AppAktion? {
         guard let d = nachricht as? [String: Any], let name = d["aktion"] as? String else { return nil }
@@ -184,13 +185,21 @@ public enum AppAktion: Equatable, Sendable {
         return .einrichtungEnde(ende)
     }
 
-    /// `wert` fehlt/null/leeres Objekt → ohne Einstieg; `ab` muss, wenn es da ist, einer der drei Einstiege sein, sonst wird abgelehnt.
+    /// `wert` fehlt/null/leeres Objekt → ohne Einstieg und Weg; `ab` und `weg` müssen, wenn sie da sind (nicht null), aus den festen Listen stammen, sonst wird abgelehnt.
     private static func pruefeEinrichtungOeffnen(_ wert: Any?) -> AppAktion? {
         guard let wert, !(wert is NSNull) else { return .einrichtungOeffnen(ab: nil) }
         guard let d = wert as? [String: Any] else { return nil }
-        guard let roh = d["ab"], !(roh is NSNull) else { return .einrichtungOeffnen(ab: nil) }
-        guard let name = roh as? String, let ab = EinrichtungsEinstieg(rawValue: name) else { return nil }
-        return .einrichtungOeffnen(ab: ab)
+        var ab: EinrichtungsEinstieg?
+        if let roh = d["ab"], !(roh is NSNull) {
+            guard let name = roh as? String, let e = EinrichtungsEinstieg(rawValue: name) else { return nil }
+            ab = e
+        }
+        var weg: EinrichtungsWeg?
+        if let roh = d["weg"], !(roh is NSNull) {
+            guard let name = roh as? String, let w = EinrichtungsWeg(rawValue: name) else { return nil }
+            weg = w
+        }
+        return .einrichtungOeffnen(ab: ab, weg: weg)
     }
 
     /// Ort einer Meldung für die Logzeile `js-fehler <ort> <text>`: der erste Teil bis zu einem Leerzeichen, `?` oder `#`.
@@ -288,8 +297,19 @@ public enum StudioBefehl: String, Sendable, CaseIterable {
     case frage
     /// Schreiben im Alltag: Tagesnotiz („Heute“), neue Notiz aus einer Vorlage, Zurück und Vor durch die zuletzt geöffneten Notizen (Menü Ablage und Gehe zu).
     case heute, vorlage, zurueck, vor
+    /// „Kortex einrichten …“ (Menü ⌘E, Karte ohne Vault, erster Start): öffnet im Studio das Einrichtungs-Overlay. Mit Einstieg und Weg über `einrichtung(ab:weg:)`.
+    case einrichtung
 
     public var skript: String { "window.studio?.befehl('\(rawValue)')" }
+
+    /// Der Befehl `einrichtung` mit Einstieg und Weg: `window.studio?.befehl('einrichtung', {"ab":"sicherung","weg":"neu"})`. Beide Werte stammen aus festen Listen
+    /// (`EinrichtungsEinstieg`, `EinrichtungsWeg`: nur Kleinbuchstaben), können also nie aus dem JavaScript-Text ausbrechen.
+    public static func einrichtung(ab: EinrichtungsEinstieg?, weg: EinrichtungsWeg? = nil) -> String {
+        var teile: [String] = []
+        if let ab { teile.append("\"ab\":\"\(ab.rawValue)\"") }
+        if let weg { teile.append("\"weg\":\"\(weg.rawValue)\"") }
+        return teile.isEmpty ? einrichtung.skript : "window.studio?.befehl('\(einrichtung.rawValue)', {\(teile.joined(separator: ","))})"
+    }
 
     /// Der Eintrag „Einstellungen …“ im Hauptmenü „Kortex“ und in der Menüleiste: Titel, Taste (⌘ plus diese Taste) und Befehl stehen hier an einer Stelle,
     /// damit beide Menüs und der Test dasselbe meinen.

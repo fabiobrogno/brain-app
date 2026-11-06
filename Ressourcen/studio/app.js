@@ -31,6 +31,7 @@ import { ruhenetz, kantenInstallieren, tippsInstallieren, huepfe, fliege, blende
 import { windungLaden } from "./windung.js";
 import { erzeugeDateiaktionen } from "./dateiaktionen.js"; // Umbenennen, Verschieben, Papierkorb
 import { installiereFensterKopf, vorschauPille } from "./fenster.js"; // Titelleiste der App: Kopfzeile greifbar, Plakette „Vorschau“
+import { erzeugeEinrichtungImStudio } from "./einrichtung-studio.js"; // Einrichtung als Overlay im Studio (nie ein zweites Fenster), Hinweise der App beim Start
 import * as kz from "./tastenkuerzel.js";
 import { baueWikiIndex, loeseWikiLink, schlageWikiZieleVor, ordnerVonPfad } from "./wikilink.js";
 import { heuteIso } from "./zeit.js";
@@ -1123,6 +1124,8 @@ function klappeAuf(pfad) {
 function zeichneSeite() {
   zeichneBereiche(); zeichneFavoriten(); zeichneAnsichten(); zeichneTypen(); zeichneOrdner(); kiZeile.zeichne();
 }
+// Einrichtung wieder öffnen (nur in der App: git, Ordnerdialog und Browser kommen von dort); führt im selben Fenster zu Sicherung und KI
+{ const z = $("einrichtung-zeile"); z.append(symbol("marke", 16), h("span", { klasse: "ki-text", text: T.seitenleiste.einrichtung })); z.hidden = !inApp(); z.addEventListener("click", () => einrichtung.anfordern({ ab: "sicherung" })); }
 // KI-Zeile unten in der Seitenleiste (ki-zeile.js)
 // Erkannte KI-Programme aus S.ki (GET /api/ki/erkennen, nur lesend): der Katalog mit „gefunden“, sonst die Liste der Programme mit Pfad
 const erkannteKIs = () => (S.ki ? (Array.isArray(S.ki.katalog) ? S.ki.katalog.filter((k) => k.gefunden).map((k) => k.id) : (S.ki.agenten || []).filter((a) => a.pfad).map((a) => a.id)) : null);
@@ -2778,7 +2781,7 @@ function oeffneKuerzel() {
 // Tastenkürzel (P10): das Register aller Befehle (gemeinsam/tastenkuerzel-register.json) und die eigenen Kürzel stehen in tastenkuerzel.js; hier hängen nur die Aktionen daran.
 // Ein neuer Befehl: ins Register eintragen, hier mit kz.anmelden(id, tun, wenn?) die Aktion nennen (`wenn` → false: das Kürzel gilt jetzt nicht, der Druck bleibt unberührt).
 window.addEventListener("keydown", (e) => {
-  if (e.isComposing || einstOffen()) return; // die Seite „Einstellungen“ liegt über dem Studio und hört selbst zu (⌘F sucht dort, nicht in der Notiz; dort werden auch Kürzel aufgenommen)
+  if (e.isComposing || einstOffen() || document.body.dataset.einrichtung === "offen") return; // die Einrichtung (Overlay) hat die Tastatur für sich; die Seite „Einstellungen“ liegt über dem Studio und hört selbst zu (⌘F sucht dort, nicht in der Notiz; dort werden auch Kürzel aufgenommen)
   kz.behandle(e);
 }, true);
 kz.anmelden("einstellungen", () => oeffneEinstellungenSeite(), () => !!S.info?.vault);
@@ -2869,6 +2872,14 @@ function bestaetigeEntfernen(v) {
     } })] });
 }
 
+// ======================================================= Einrichtung (Overlay im Studio)
+const einrichtung = erzeugeEinrichtungImStudio({
+  vault: () => S.info?.vault || null,
+  vorOeffnen: async () => !S.info?.vault || (await sichereVorWechsel()),
+  ladeNeu: () => ladeAlles(),
+  aufgefrischt: () => { if (S.info?.vault) { ladeKi(); ladeGit(); ladeInfoLeise(); } }, // der Vault blieb gleich: KI und Sicherung können sich geändert haben
+});
+
 // ======================================================= Menübefehle der App
 const MENUE_BEFEHLE = {
   neu: () => oeffneNeu(), heute: () => schreiben.heute(), vorlage: () => schreiben.oeffneVorlagenWahl(), zurueck: () => schreiben.zurueck(), vor: () => schreiben.vor(), merken: oeffneMerken, infospalte: umschalteInfo, palette: () => oeffnePalette(), commit: oeffneCommit, sync, suche: fokusSuche,
@@ -2880,24 +2891,27 @@ const MENUE_BEFEHLE = {
   posteingang: () => waehleSicht({ art: "bereich", id: "inbox" }), alle: () => waehleSicht({ art: "bereich", id: "alle" }), wissen: () => waehleSicht({ art: "bereich", id: "wissen" }),
   "hell-dunkel": () => setzeTheme(istDunkel() ? "hell" : "dunkel"),
   frage: () => frage.oeffne(), // globales Kürzel „Frag deinen Vault“ (die App holt das Studio nach vorn und schickt diesen Befehl)
+  einrichtung: (arg) => einrichtung.oeffne({ ab: arg?.ab, weg: arg?.weg }), // Menü „Kortex einrichten …“ (⌘E), Karte, erster Start: das Overlay im Studio, nie ein zweites Fenster
 };
-// Ohne Vault gelten nur der Einstieg (Ordner öffnen) und die Darstellung; alles andere wird still verworfen
-const OHNE_VAULT_ERLAUBT = new Set(["vault-oeffnen", "hell-dunkel"]);
+// Ohne Vault gelten nur der Einstieg (Ordner öffnen, Einrichtung) und die Darstellung; alles andere wird still verworfen
+const OHNE_VAULT_ERLAUBT = new Set(["vault-oeffnen", "hell-dunkel", "einrichtung"]);
 const wartendeBefehle = [];
-function fuehreBefehlAus(name) {
+function fuehreBefehlAus(name, arg) {
   const f = MENUE_BEFEHLE[name];
   if (!f || (!S.info?.vault && !OHNE_VAULT_ERLAUBT.has(name))) return;
-  f();
+  f(arg);
 }
 // Jeder Befehl des Registers mit Menü-Namen (`menue`), der oben keine eigene Aktion bekam, tut im Studio dasselbe wie der Menüeintrag der App (Verlauf, Gehe zu, Vault …):
 // Ein Kürzel aus dem Register trägt so auch dort, wo kein App-Menü mitspielt (Browser, Vorschau), und ein neuer Eintrag im Register braucht keine zweite Stelle.
 for (const b of kz.REGISTER.befehle) if (b.menue && MENUE_BEFEHLE[b.menue] && !kz.angemeldet().includes(b.id)) kz.anmelden(b.id, () => fuehreBefehlAus(b.menue));
 window.studio = { bereit: false, schreiben, ed, entwurfJournal, entwurfHoechstWartenMs: null /* Tests */, neu: () => oeffneNeu(), merken: oeffneMerken, commit: oeffneCommit, info: umschalteInfo, palette: () => oeffnePalette(), sync, suche: fokusSuche };
-window.studio.befehl = (name) => {
+// `arg`: nur der Befehl `einrichtung` nimmt eines ({ ab, weg }, von der App aus festen Listen gebaut)
+window.studio.befehl = (name, arg) => {
   if (!MENUE_BEFEHLE[name]) return;
-  if (!window.studio.bereit) { wartendeBefehle.push(name); return; }
-  fuehreBefehlAus(name);
+  if (!window.studio.bereit) { wartendeBefehle.push([name, arg]); return; }
+  fuehreBefehlAus(name, arg);
 };
+window.studio.hinweis = (h) => einrichtung.zeigeHinweis(h); // Hinweise der App beim Start (Banner statt Systemdialog)
 // Vor Schließen/Beenden der App: sichert alles und meldet, ob nichts verloren geht (max. 5 s).
 window.studio.vorSchliessen = () => {
   const arbeit = (async () => {
@@ -2916,7 +2930,7 @@ window.studio.vorSchliessen = () => {
 function markiereBereit() {
   window.studio.bereit = true; window.__studioBereit = true;
   pruefeEinstellungenAdresse();
-  while (wartendeBefehle.length) { try { fuehreBefehlAus(wartendeBefehle.shift()); } catch { /* ein Befehl darf die anderen nicht stoppen */ } }
+  while (wartendeBefehle.length) { try { fuehreBefehlAus(...wartendeBefehle.shift()); } catch { /* ein Befehl darf die anderen nicht stoppen */ } }
 }
 
 // ======================================================= Vertrauen (Workspace-Trust, P5)
@@ -3114,8 +3128,8 @@ function zeigeLeer() {
 async function zeigeWillkommenFlow() {
   $("app").hidden = true;
   const host = $("willkommen-host");
-  // In der App führt der Einrichtungs-Assistent (eigenes Fenster) durch den Anfang; hier steht nur der Weg dorthin. Im Browser bleibt die Karte.
-  if (inApp() && location.protocol === "brain:") { zeigeOhneVault(host); return; } // nur im echten App-Fenster (brain://), nicht in Tests mit einer Attrappe des Aktionskanals
+  // In der App führt die Einrichtung (Overlay im Studio) durch den Anfang; hier steht nur der leere Zustand mit den zwei Wegen. Im Browser bleibt die Karte.
+  if (inApp() && (location.protocol === "brain:" || window.__studioAlsApp === true)) { zeigeOhneVault(host); return; } // nur im echten App-Fenster (brain://), nicht in Tests mit einer Attrappe des Aktionskanals (die setzen window.__studioAlsApp)
   try {
     const m = await import("./willkommen.js");
     m.zeigeWillkommen({ modus: "start", beiFertig: async () => { aktion("vault-gewechselt"); await ladeAlles(); }, beiStandNeu: karteStandNeu, beiVerbunden: () => { S.kiVerbunden = true; } });
@@ -3125,18 +3139,19 @@ async function zeigeWillkommenFlow() {
   }
 }
 
-// Kein Vault (App): ein ruhiger Leerzustand mit dem Weg zum Assistenten; „Anderen Weg wählen“ zeigt die Karte mit den vier Wegen.
+// Kein Vault (App; auch nach „Einrichtung überspringen“ — das legt nichts an): ein ruhiger leerer Zustand. „Neuer Vault“ und „Ordner öffnen“ führen im Overlay zum Ziel,
+// „Kortex einrichten …“ öffnet die ganze Einrichtung. Alles im selben Fenster.
 function zeigeOhneVault(host) {
-  const einrichten = baueKnopf({ text: T.ohneVault.einrichten, variante: "primaer", groesse: "l", aktion: "einrichtung-oeffnen", aufKlick: () => aktion("einrichtung-oeffnen") });
-  const andere = baueKnopf({ text: T.ohneVault.anderer, groesse: "l", aktion: "andere-wege", aufKlick: async () => {
-    try { const m = await import("./willkommen.js"); m.zeigeWillkommen({ modus: "start", beiFertig: async () => { aktion("vault-gewechselt"); await ladeAlles(); }, beiStandNeu: karteStandNeu, beiVerbunden: () => { S.kiVerbunden = true; } }); }
-    catch { /* der Leerzustand bleibt */ }
-  } });
+  const O = T.ohneVault;
+  const neu = baueKnopf({ text: O.neu, variante: "primaer", groesse: "l", aktion: "leer-neuer-vault", aufKlick: () => einrichtung.anfordern({ weg: "neu" }) });
+  const oeffnen = baueKnopf({ text: O.oeffnen, groesse: "l", aktion: "leer-ordner-oeffnen", aufKlick: () => einrichtung.anfordern({ weg: "oeffnen" }) });
+  const einrichten = baueKnopf({ text: O.einrichten, variante: "leise", aktion: "einrichtung-oeffnen", aufKlick: () => einrichtung.anfordern() });
   host.hidden = false;
-  host.replaceChildren(h("div", { klasse: "w-karte", "data-modus": "ohne-vault" },
-    h("header", { klasse: "w-kopf" }, h("div", { klasse: "w-logo" }, symbol("marke", 56)), h("h1", { klasse: "w-titel", text: T.ohneVault.titel }), h("p", { klasse: "w-untertitel", text: T.ohneVault.text })),
-    h("div", { klasse: "w-fuss-knoepfe" }, andere, einrichten)));
-  setTimeout(() => einrichten.focus(), 0);
+  host.replaceChildren(h("div", { klasse: "w-leer", "data-modus": "ohne-vault" },
+    h("div", { klasse: "w-leer-zeichen" }, symbol("marke", 28)), h("h1", { text: O.titel }), h("p", { text: O.text }),
+    h("div", { klasse: "w-leer-knoepfe" }, neu, oeffnen), einrichten,
+    h("div", { klasse: "w-leer-tipps" }, O.tipps.map(([taste, text]) => h("span", null, h("kbd", { text: taste }), text)))));
+  if (!document.body.dataset.einrichtung) setTimeout(() => neu.focus(), 0);
 }
 
 // Beim ersten Laden stehen Platzhalter an den Stellen des späteren Inhalts (Liste, Seitenleiste): nichts springt, wenn die Daten da sind. Sie blenden erst nach 150 ms ein (bausteine.css).

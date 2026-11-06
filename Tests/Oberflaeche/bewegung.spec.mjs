@@ -7,7 +7,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { baueVault, git } from "./vault.mjs";
 import { starteServer } from "./start.mjs";
-import { starteStatisch, mockeEinrichtung } from "./mocks-einrichtung.mjs";
+import { starteStatisch, mockeEinrichtung, oeffneEinrichtungImStudio } from "./mocks-einrichtung.mjs";
 
 const BILDER = process.env.KORTEX_BILDER;
 const bild = async (page, name) => { if (!BILDER) return; mkdirSync(BILDER, { recursive: true }); await page.waitForTimeout(500); await page.screenshot({ path: join(BILDER, `${name}.png`) }); };
@@ -153,9 +153,8 @@ test("Assistent: Inhalt steht auch bei pausierten Animationen da (Fenster nicht 
   const statisch = await starteStatisch();
   try {
     await page.addInitScript(pausiere);
-    await mockeEinrichtung(page, {});
-    await page.goto(`${statisch.url}einrichtung.html`);
-    await page.waitForFunction(() => window.__einrichtungBereit === true);
+    const z = await mockeEinrichtung(page, {});
+    await oeffneEinrichtungImStudio(page, statisch.url, z);
     // Ohne Netz bliebe der Hero bei Deckkraft 0 (Animation pausiert am Anfang). Mit Netz ist er nach spätestens ~2 s da.
     await expect.poll(() => page.evaluate(() => [...document.querySelectorAll(".e-hero > *")].map((e) => getComputedStyle(e).opacity).join(",")), { timeout: 5000 }).toMatch(/^(1,)*1$/);
     await expect(page.locator(".e-hero h1")).toBeVisible();
@@ -175,9 +174,8 @@ test("Assistent: ohne Netz wäre der Hero unsichtbar (Gegenprobe: die Animatione
     await page.addInitScript(pausiere);
     // Gegenprobe: das Netz greift nur über getAnimations; ohne diese Funktion tut es nichts
     await page.addInitScript(() => { Document.prototype.getAnimations = undefined; });
-    await mockeEinrichtung(page, {});
-    await page.goto(`${statisch.url}einrichtung.html`);
-    await page.waitForFunction(() => window.__einrichtungBereit === true);
+    const z = await mockeEinrichtung(page, {});
+    await oeffneEinrichtungImStudio(page, statisch.url, z);
     await page.waitForTimeout(1800);
     const op = await page.evaluate(() => getComputedStyle(document.querySelector(".e-hero > :nth-child(2)")).opacity);
     expect(parseFloat(op)).toBeLessThan(0.5);

@@ -3,7 +3,7 @@ import Foundation
 import CoreGraphics
 @testable import BrainCore
 
-// MARK: Prüfung der Aktionen des Einrichtungs-Assistenten
+// MARK: Prüfung der Aktionen der Einrichtung (Overlay im Studio)
 
 @Test func gitAktionenGeltenNurFuerDasStudio() {
     for name in ["git-pruefen", "git-installieren"] {
@@ -67,7 +67,7 @@ import CoreGraphics
     #expect(pruefe(["art": "fertig"], .app) == nil, "nur das Studio")
 }
 
-@Test func einrichtungOeffnenKenntNurDieDreiEinstiege() {
+@Test func einrichtungOeffnenKenntNurDieDreiEinstiegeUndDieVierWege() {
     func pruefe(_ wert: Any?, _ o: Oberflaeche = .studio) -> AppAktion? {
         var n: [String: Any] = ["aktion": "einrichtung-oeffnen"]
         if let wert { n["wert"] = wert }
@@ -87,6 +87,13 @@ import CoreGraphics
     #expect(pruefe("vault") == nil, "kein Objekt")
     #expect(pruefe(["ab": "vault"], .app) == nil, "nur das Studio")
     #expect(pruefe(nil, .app) == nil)
+    // Weg: aus dem leeren Zustand („Neuer Vault“, „Ordner öffnen“)
+    for w in EinrichtungsWeg.allCases { #expect(pruefe(["weg": w.rawValue]) == .einrichtungOeffnen(ab: nil, weg: w)) }
+    #expect(pruefe(["weg": NSNull()]) == .einrichtungOeffnen(ab: nil))
+    #expect(pruefe(["ab": "ki", "weg": "neu"]) == .einrichtungOeffnen(ab: .ki, weg: .neu))
+    #expect(pruefe(["weg": "Neu"]) == nil)
+    #expect(pruefe(["weg": "x'); alert(1); ('"]) == nil, "nichts aus der Liste kommt nie in den Befehl")
+    #expect(pruefe(["weg": 1]) == nil)
 }
 
 // MARK: Antwortform von git-pruefen und git-installieren
@@ -131,110 +138,167 @@ import CoreGraphics
     #expect(schief["meldung"] as? String == "Der Installationsdialog von Apple ließ sich nicht öffnen: Code 1")
 }
 
-// MARK: Fenstergröße und Adresse
-
-@Test func einrichtungsFensterIstFest1200Mal780() {
-    #expect(EinrichtungsFenster.groesse(sichtbar: CGSize(width: 2560, height: 1415)) == CGSize(width: 1200, height: 780))
-    // genau an der Grenze: 1248 − 48 = 1200, 828 − 48 = 780
-    #expect(EinrichtungsFenster.groesse(sichtbar: CGSize(width: 1248, height: 828)) == CGSize(width: 1200, height: 780))
-}
-
-@Test func einrichtungsFensterBleibtKleinerAlsDerSichtbareBildschirm() {
-    // 13"-MacBook: sichtbare Fläche etwa 1440 x 875 → Höhe 827 genügt, Breite 1200 passt
-    #expect(EinrichtungsFenster.groesse(sichtbar: CGSize(width: 1440, height: 875)) == CGSize(width: 1200, height: 780))
-    // kleiner Bildschirm: Rand 48 je Achse, je Achse einzeln
-    #expect(EinrichtungsFenster.groesse(sichtbar: CGSize(width: 1024, height: 700)) == CGSize(width: 976, height: 652))
-    #expect(EinrichtungsFenster.groesse(sichtbar: CGSize(width: 1600, height: 700)) == CGSize(width: 1200, height: 652))
-    #expect(EinrichtungsFenster.groesse(sichtbar: CGSize(width: 1000, height: 1200)) == CGSize(width: 952, height: 780))
-}
-
-@Test func einrichtungsFensterWirdNieKleinerAlsDasMinimum() {
-    #expect(EinrichtungsFenster.groesse(sichtbar: CGSize(width: 300, height: 200)) == EinrichtungsFenster.minimum)
-    #expect(EinrichtungsFenster.groesse(sichtbar: .zero) == EinrichtungsFenster.minimum)
-    #expect(EinrichtungsFenster.minimum.width < EinrichtungsFenster.wunschgroesse.width && EinrichtungsFenster.minimum.height < EinrichtungsFenster.wunschgroesse.height)
-}
-
-@Test func einrichtungsAdresseLiegtAufDemHostStudio() {
-    let ohne = EinrichtungsFenster.url()
-    #expect(ohne.absoluteString == "brain://studio/einrichtung.html", "ohne Einstieg keine Query")
-    #expect(Oberflaeche.fuer(host: ohne.host) == .studio)
-    for ab in EinrichtungsEinstieg.allCases {
-        let u = EinrichtungsFenster.url(ab: ab)
-        #expect(u.absoluteString == "brain://studio/einrichtung.html?ab=\(ab.rawValue)")
-        #expect(SchemaAntwort.pfad(von: u) == "/einrichtung.html?ab=\(ab.rawValue)", "die Query geht an die Werkstatt")
-        #expect(EinrichtungsFenster.istSeite(u))
-        #expect(SchemaAntwort.istHauptdokument(u), "bei einem Ladefehler gibt es die Fehlerseite statt eines leeren Fensters")
-        #expect(NavigationsRegel.entscheide(u, hauptrahmen: true, vomNutzer: false, oberflaeche: .studio) == .erlauben)
-        #expect(NavigationsRegel.entscheide(u, hauptrahmen: true, vomNutzer: false, oberflaeche: .app) == .abbrechen)
-    }
-    #expect(!SchemaAntwort.istHauptdokument(URL(string: "brain://studio/studio.css")!))
-    #expect(!SchemaAntwort.istHauptdokument(URL(string: "brain://app/einrichtung.html")!), "nur auf dem Host studio")
-}
-
 // MARK: Stand von einrichtung.json nach dem Ende
 
 @Test func fertigSchliesstDenAssistentenAbUndSchaltetAutomatikAus() {
     let vorher = EinrichtungsDatei(abgeschlossen: false, automatischAus: true, erledigt: ["ki"], uebersprungen: ["github"], herkunft: .menue)
-    let d = EinrichtungsFenster.datei(nach: .fertig, vorher: vorher, herkunft: .start)
+    let d = EinrichtungsOverlay.datei(nach: .fertig, vorher: vorher, herkunft: .start)
     #expect(d.abgeschlossen && !d.automatischAus)
     #expect(d.herkunft == .start)
     #expect(d.erledigt == ["ki"] && d.uebersprungen == ["github"], "alte Felder bleiben erhalten")
-    #expect(EinrichtungsFenster.datei(nach: .fertig, vorher: nil, herkunft: .menue).abgeschlossen)
+    #expect(EinrichtungsOverlay.datei(nach: .fertig, vorher: nil, herkunft: .menue).abgeschlossen)
 }
 
 @Test func spaeterSetztAutomatischAusUndLaesstAbgeschlossenStehen() {
-    let neu = EinrichtungsFenster.datei(nach: .spaeter, vorher: nil, herkunft: .start)
+    let neu = EinrichtungsOverlay.datei(nach: .spaeter, vorher: nil, herkunft: .start)
     #expect(neu.automatischAus && !neu.abgeschlossen)
-    let fertigGewesen = EinrichtungsFenster.datei(nach: .spaeter, vorher: EinrichtungsDatei(abgeschlossen: true), herkunft: .menue)
+    let fertigGewesen = EinrichtungsOverlay.datei(nach: .spaeter, vorher: EinrichtungsDatei(abgeschlossen: true), herkunft: .menue)
     #expect(fertigGewesen.automatischAus && fertigGewesen.abgeschlossen, "abgeschlossen bleibt, wie es war")
     #expect(fertigGewesen.herkunft == .menue)
 }
 
 @Test func fensterZuOhneWahlMerktNurDieHerkunftUndMachtBeimNaechstenStartWeiter() throws {
-    let d = EinrichtungsFenster.datei(nach: nil, vorher: nil, herkunft: .start)
+    let d = EinrichtungsOverlay.datei(nach: nil, vorher: nil, herkunft: .start)
     #expect(!d.abgeschlossen && !d.automatischAus && d.herkunft == .start)
     let s = EinrichtungsSpeicher(pfade: AppPfade(basis: tempOrdner()))
     try s.speichere(d)
     #expect(s.sollErscheinen(hatVault: false) && s.sollErscheinen(hatVault: true), "kein „Später“: er macht weiter")
     // aus dem Menü geöffnet und geschlossen: mit Vault nicht bei jedem Start
-    try s.speichere(EinrichtungsFenster.datei(nach: nil, vorher: s.lade(), herkunft: .menue))
+    try s.speichere(EinrichtungsOverlay.datei(nach: nil, vorher: s.lade(), herkunft: .menue))
     #expect(!s.sollErscheinen(hatVault: true))
     // „Später“ und „Fertig“ lassen ihn nicht mehr von selbst erscheinen
-    try s.speichere(EinrichtungsFenster.datei(nach: .spaeter, vorher: s.lade(), herkunft: .start))
+    try s.speichere(EinrichtungsOverlay.datei(nach: .spaeter, vorher: s.lade(), herkunft: .start))
     #expect(!s.sollErscheinen(hatVault: false))
     let f = EinrichtungsSpeicher(pfade: AppPfade(basis: tempOrdner()))
-    try f.speichere(EinrichtungsFenster.datei(nach: .fertig, vorher: f.lade(), herkunft: .start))
+    try f.speichere(EinrichtungsOverlay.datei(nach: .fertig, vorher: f.lade(), herkunft: .start))
     #expect(!f.sollErscheinen(hatVault: false))
 }
 
 @Test func fensterZuOhneWahlMitAktivemVaultGiltAlsEingerichtet() throws {
-    let d = EinrichtungsFenster.datei(nach: nil, vorher: nil, herkunft: .start, vaultAktiv: true)
+    let d = EinrichtungsOverlay.datei(nach: nil, vorher: nil, herkunft: .start, vaultAktiv: true)
     #expect(d.abgeschlossen && !d.automatischAus, "Vault da = eingerichtet; Sicherung und KI sind freiwillig")
-    let ohne = EinrichtungsFenster.datei(nach: nil, vorher: nil, herkunft: .start, vaultAktiv: false)
+    let ohne = EinrichtungsOverlay.datei(nach: nil, vorher: nil, herkunft: .start, vaultAktiv: false)
     #expect(!ohne.abgeschlossen)
     let s = EinrichtungsSpeicher(pfade: AppPfade(basis: tempOrdner()))
     try s.speichere(d)
     #expect(!s.sollErscheinen(hatVault: true) && !s.sollErscheinen(hatVault: false))
     // „Später“ nach einem schon fertigen Lauf lässt abgeschlossen stehen
-    #expect(EinrichtungsFenster.datei(nach: .spaeter, vorher: d, herkunft: .menue, vaultAktiv: true).abgeschlossen)
+    #expect(EinrichtungsOverlay.datei(nach: .spaeter, vorher: d, herkunft: .menue, vaultAktiv: true).abgeschlossen)
 }
 
-@Test func gitZwischenablageUndEndeGeltenNurAusDemEinrichtungsfenster() {
-    #expect(EinrichtungsFenster.nurAusEinrichtung(.gitPruefen))
-    #expect(EinrichtungsFenster.nurAusEinrichtung(.gitInstallieren))
-    #expect(EinrichtungsFenster.nurAusEinrichtung(.kopieren("WDJB-MJHT")))
-    #expect(EinrichtungsFenster.nurAusEinrichtung(.einrichtungEnde(.fertig)))
-    #expect(!EinrichtungsFenster.nurAusEinrichtung(.vaultGewechselt))
-    #expect(!EinrichtungsFenster.nurAusEinrichtung(.ordnerWaehlen(titel: nil, vorschlag: nil)))
+@Test func gitZwischenablageUndEndeGehoerenZurEinrichtung() {
+    #expect(EinrichtungsOverlay.nurAusEinrichtung(.gitPruefen))
+    #expect(EinrichtungsOverlay.nurAusEinrichtung(.gitInstallieren))
+    #expect(EinrichtungsOverlay.nurAusEinrichtung(.kopieren("WDJB-MJHT")))
+    #expect(EinrichtungsOverlay.nurAusEinrichtung(.einrichtungEnde(.fertig)))
+    #expect(!EinrichtungsOverlay.nurAusEinrichtung(.vaultGewechselt))
+    #expect(!EinrichtungsOverlay.nurAusEinrichtung(.ordnerWaehlen(titel: nil, vorschlag: nil)))
+    #expect(!EinrichtungsOverlay.nurAusEinrichtung(.einrichtungOeffnen(ab: nil)), "das Öffnen selbst geht immer (Karte, Menü)")
+}
+
+@Test func dieRechteDerAktionenFolgenDemOffenenOverlayNichtEinemFenster() {
+    let eigen: [AppAktion] = [.gitPruefen, .gitInstallieren, .kopieren("ABCD-1234"), .einrichtungEnde(.fertig), .einrichtungEnde(.spaeter)]
+    let frei: [AppAktion] = [.vaultGewechselt, .statusAuffrischen, .ordnerWaehlen(titel: nil, vorschlag: nil), .einrichtungOeffnen(ab: nil), .mitteilungProbe]
+    var s = EinrichtungsSitzung()
+    #expect(!s.offen)
+    for a in eigen { #expect(!s.erlaubt(a), "zu: \(a)") }
+    for a in frei { #expect(s.erlaubt(a), "zu: \(a)") }
+    let neu = s.oeffne(automatisch: true, vaultVorher: nil)
+    #expect(neu)
+    for a in eigen + frei { #expect(s.erlaubt(a), "offen: \(a)") }
+    // zweites Öffnen: kein neuer Lauf, Herkunft und Vault bleiben
+    let nochmal = s.oeffne(automatisch: false, vaultVorher: URL(fileURLWithPath: "/x"))
+    #expect(!nochmal)
+    #expect(s.herkunft == .start && s.vaultVorher == nil)
+    let lauf = s.beende()
+    #expect(lauf?.herkunft == .start && lauf?.vaultVorher == nil)
+    #expect(!s.offen)
+    for a in eigen { #expect(!s.erlaubt(a), "nach dem Ende: \(a)") }
+    let nochEins = s.beende()
+    #expect(nochEins == nil, "ein zweites Ende tut nichts")
+}
+
+@Test func einrichtungAusDemMenueMerktHerkunftUndVaultVorher() {
+    var s = EinrichtungsSitzung()
+    let vault = URL(fileURLWithPath: "/Users/x/Kortex")
+    let offen = s.oeffne(automatisch: false, vaultVorher: vault)
+    #expect(offen)
+    let lauf = s.beende()
+    #expect(lauf?.herkunft == .menue && lauf?.vaultVorher == vault)
+    #expect(s.vaultVorher == nil)
+}
+
+@Test func externOeffnetBeiOffenemOverlayNurGitHubUeberHttps() {
+    var s = EinrichtungsSitzung()
+    let fremd = URL(string: "https://example.org/docs")!
+    let github = URL(string: "https://github.com/login/device")!
+    #expect(s.externErlaubt(fremd), "zu: das übrige Studio öffnet seine Links wie bisher")
+    _ = s.oeffne(automatisch: false, vaultVorher: nil)
+    #expect(s.externErlaubt(github))
+    #expect(!s.externErlaubt(fremd))
+    #expect(!s.externErlaubt(URL(string: "http://github.com/login/device")!))
 }
 
 @Test func ausDemEinrichtungsfensterOeffnetExternNurGitHubUeberHttps() {
-    #expect(EinrichtungsFenster.externErlaubt(URL(string: "https://github.com/login/device")!))
-    #expect(EinrichtungsFenster.externErlaubt(URL(string: "https://www.github.com/login/device")!))
-    #expect(!EinrichtungsFenster.externErlaubt(URL(string: "http://github.com/login/device")!))
-    #expect(!EinrichtungsFenster.externErlaubt(URL(string: "https://github.com.evil.example/login/device")!))
-    #expect(!EinrichtungsFenster.externErlaubt(URL(string: "https://evil.example/github.com")!))
-    #expect(!EinrichtungsFenster.externErlaubt(URL(string: "file:///etc/passwd")!))
+    #expect(EinrichtungsOverlay.externErlaubt(URL(string: "https://github.com/login/device")!))
+    #expect(EinrichtungsOverlay.externErlaubt(URL(string: "https://www.github.com/login/device")!))
+    #expect(!EinrichtungsOverlay.externErlaubt(URL(string: "http://github.com/login/device")!))
+    #expect(!EinrichtungsOverlay.externErlaubt(URL(string: "https://github.com.evil.example/login/device")!))
+    #expect(!EinrichtungsOverlay.externErlaubt(URL(string: "https://evil.example/github.com")!))
+    #expect(!EinrichtungsOverlay.externErlaubt(URL(string: "file:///etc/passwd")!))
+}
+
+// MARK: Startentscheidung: erster Start = Studio MIT Overlay, nie ein Assistentenfenster
+
+@Test func ersterStartOeffnetDasStudioMitEinrichtung() throws {
+    let speicher = EinrichtungsSpeicher(pfade: AppPfade(basis: tempOrdner()))
+    // frischer Mac: keine Datei, kein Vault, normaler Start
+    #expect(EinrichtungsStart.entscheide(darfErscheinen: true, sollErscheinen: speicher.sollErscheinen(hatVault: false)) == .studioMitEinrichtung)
+    // Testläufe und `--vault` zeigen sie nie, auch nicht auf einem frischen Mac
+    #expect(EinrichtungsStart.entscheide(darfErscheinen: false, sollErscheinen: speicher.sollErscheinen(hatVault: false)) == .studio)
+    // wer die App schon nutzt (Vault da, nie gelaufen): nur das Studio
+    #expect(EinrichtungsStart.entscheide(darfErscheinen: true, sollErscheinen: speicher.sollErscheinen(hatVault: true)) == .studio)
+}
+
+@Test func nachSpaeterUndFertigBleibtDasStudioAllein() throws {
+    let s = EinrichtungsSpeicher(pfade: AppPfade(basis: tempOrdner()))
+    try s.speichere(EinrichtungsOverlay.datei(nach: .spaeter, vorher: nil, herkunft: .start))
+    #expect(EinrichtungsStart.entscheide(darfErscheinen: true, sollErscheinen: s.sollErscheinen(hatVault: false)) == .studio)
+    let f = EinrichtungsSpeicher(pfade: AppPfade(basis: tempOrdner()))
+    try f.speichere(EinrichtungsOverlay.datei(nach: .fertig, vorher: nil, herkunft: .start))
+    #expect(EinrichtungsStart.entscheide(darfErscheinen: true, sollErscheinen: f.sollErscheinen(hatVault: true)) == .studio)
+}
+
+@Test func mittendrinBeendeteEinrichtungMachtBeimNaechstenStartImStudioWeiter() throws {
+    let s = EinrichtungsSpeicher(pfade: AppPfade(basis: tempOrdner()))
+    // geöffnet (Datei steht ab dem Öffnen da), Studio geschlossen ohne Wahl und ohne Vault
+    try s.speichere(EinrichtungsOverlay.datei(nach: nil, vorher: s.lade(), herkunft: .start))
+    try s.speichere(EinrichtungsOverlay.datei(nach: nil, vorher: s.lade(), herkunft: .start, vaultAktiv: false))
+    #expect(EinrichtungsStart.entscheide(darfErscheinen: true, sollErscheinen: s.sollErscheinen(hatVault: false)) == .studioMitEinrichtung)
+}
+
+// MARK: Befehl der Menüs an das Studio
+
+@Test func derBefehlEinrichtungTraegtEinstiegUndWegNurAusFestenListen() {
+    #expect(StudioBefehl.einrichtung.rawValue == "einrichtung")
+    #expect(StudioBefehl.einrichtung.skript == "window.studio?.befehl('einrichtung')")
+    #expect(StudioBefehl.einrichtung(ab: nil, weg: nil) == "window.studio?.befehl('einrichtung')")
+    #expect(StudioBefehl.einrichtung(ab: .sicherung) == "window.studio?.befehl('einrichtung', {\"ab\":\"sicherung\"})")
+    #expect(StudioBefehl.einrichtung(ab: nil, weg: .neu) == "window.studio?.befehl('einrichtung', {\"weg\":\"neu\"})")
+    #expect(StudioBefehl.einrichtung(ab: .ki, weg: .oeffnen) == "window.studio?.befehl('einrichtung', {\"ab\":\"ki\",\"weg\":\"oeffnen\"})")
+    for ab in EinrichtungsEinstieg.allCases { #expect(StudioBefehl.einrichtung(ab: ab).range(of: "^[^;]*$", options: .regularExpression) != nil) }
+}
+
+@Test func startHinweisKommtAlsJsonNieAlsEingebauterText() {
+    let s = StudioHinweis.skript(titel: "Ordner „Brain“", text: "Pfad: /Users/x/it's \"quoted\"\n</script>')); alert(1);//")
+    #expect(s.hasPrefix("window.studio?.hinweis({"))
+    #expect(s.hasSuffix("})"))
+    // der Text steckt als JSON-Zeichenkette darin: Anführungszeichen und Zeilenumbruch sind maskiert
+    #expect(s.contains("\\\"quoted\\\"") && s.contains("\\n"))
+    let teile = s.dropFirst("window.studio?.hinweis(".count).dropLast()
+    let obj = try? JSONSerialization.jsonObject(with: Data(teile.utf8)) as? [String: String]
+    #expect(obj?["titel"] == "Ordner „Brain“")
+    #expect(obj?["text"]?.hasSuffix("alert(1);//") == true)
 }
 
 // MARK: Ordner-Wahl: Zählung und Antwort

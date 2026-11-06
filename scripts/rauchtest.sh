@@ -8,9 +8,9 @@
 #     zu → Brücken beendet; App beenden → keine Node-Prozesse der App übrig.
 #  B) OHNE --vault mit leerem Support-Ordner: das Studio öffnet trotzdem ('Willkommen'), die Werkstatt läuft ohne
 #     Vault-Argument, es erscheint kein Einrichtungsdialog.
-#  E) Frischer Start (--test-frischer-start, nur mit Wegwerf-Support-Ordner): der Assistent „Kortex einrichten“ erscheint von selbst
-#     (Log 'assistent-offen'), das Studio wartet auf ihn, der Assistent legt von sich aus keinen Vault an und merkt sich seinen
-#     Stand in einrichtung.json.
+#  E) Frischer Start (--test-frischer-start, nur mit Wegwerf-Support-Ordner): GENAU EIN Fenster, das Studio; darin erscheint die Einrichtung
+#     „Kortex einrichten“ von selbst als Overlay (Log 'assistent-offen', nie 'fenster-auf einrichtung'), sie legt von sich aus keinen Vault an
+#     und merkt sich ihren Stand in einrichtung.json.
 #  C) OHNE --vault, aber mit vaults.json im Support-Ordner: die App liest den aktiven Vault daraus (Status) und startet die Werkstatt
 #     trotzdem ohne Vault-Argument (die Werkstatt liest vaults.json selbst); beendet wird bei offenem Studio.
 #  D) Marken-Vault: ein altes Kit (<vault>/.tools/brain.mjs, ansicht/bruecke.mjs), Git-Hooks, core.fsmonitor und eine
@@ -144,7 +144,7 @@ phase_b() {
   echo "OK B: ohne --vault, leerer Support-Ordner (Studio öffnet, Werkstatt ohne Vault-Argument)"
 }
 
-# ---------- E) frischer Start: der Assistent „Kortex einrichten“ erscheint von selbst, das Studio erst nach ihm ----------
+# ---------- E) frischer Start: ein Studio-Fenster, darin erscheint die Einrichtung „Kortex einrichten“ von selbst als Overlay ----------
 phase_e() {
   BASIS_E="$(mktemp -d)"
   export BRAIN_APP_SUPPORT="$BASIS_E/support"
@@ -152,15 +152,19 @@ phase_e() {
   # --test-frischer-start gilt nur mit BRAIN_APP_SUPPORT auf einen eigenen Ordner (hier der Wegwerf-Ordner), nie gegen den echten.
   "$APP/Contents/MacOS/BrainApp" --test-frischer-start --test-beenden-nach 20 &
   PID=$!
-  warte "assistent-offen automatisch=true" 80 || fehl "E: der Assistent erscheint beim frischen Start nicht"
+  warte "assistent-offen automatisch=true" 80 || fehl "E: die Einrichtung erscheint beim frischen Start nicht"
   warte "kein-vault" 20 || fehl "E: App meldet nicht 'kein-vault' im Log"
-  [ -z "$(ls "$BRAIN_APP_SUPPORT/vaults.json" 2>/dev/null)" ] || fehl "E: der Assistent hat von selbst einen Vault angelegt"
-  sleep 2
-  if grep -q "fenster-auf studio" "$LOG"; then fehl "E: das Studio öffnete schon, obwohl der Assistent offen ist"; fi
+  warte "fenster-bereit studio" 120 || fehl "E: das Studio (mit dem Overlay darin) wurde nicht bereit"
+  [ -z "$(ls "$BRAIN_APP_SUPPORT/vaults.json" 2>/dev/null)" ] || fehl "E: die Einrichtung hat von selbst einen Vault angelegt"
+  # genau ein Fenster: das Studio. Kein Assistentenfenster, kein verworfener Befehl (das Overlay kam beim Studio an).
+  [ "$(grep -c " fenster-auf " "$LOG")" = 1 ] || fehl "E: es ist nicht genau ein Fenster aufgegangen: $(grep " fenster-auf " "$LOG" | tr '\n' ';')"
+  grep -q " fenster-auf studio " "$LOG" || fehl "E: das eine Fenster ist nicht das Studio"
+  if grep -q "fenster-auf einrichtung" "$LOG"; then fehl "E: ein Assistentenfenster ist aufgegangen"; fi
+  if grep -q "befehl-verworfen" "$LOG"; then fehl "E: ein Befehl an das Studio wurde verworfen"; fi
   warte "git (vorhanden|fehlt|installiert-gerade|defekt|nicht-pruefbar)" 80 || fehl "E: der git-Stand steht nicht im Log"
   [ -f "$BRAIN_APP_SUPPORT/einrichtung.json" ] || { sleep 2; [ -f "$BRAIN_APP_SUPPORT/einrichtung.json" ] || fehl "E: einrichtung.json (Gedächtnis des Assistenten) wurde nicht geschrieben"; }
   nichts_uebrig "$BASIS_E"
-  echo "OK E: frischer Start (Assistent erscheint, Studio wartet, Gedächtnis geschrieben)"
+  echo "OK E: frischer Start (ein Studio-Fenster, Overlay erscheint darin, Gedächtnis geschrieben)"
 }
 
 # ---------- C) ohne --vault, vaults.json im Support-Ordner ----------

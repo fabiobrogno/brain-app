@@ -20,6 +20,7 @@
 <link rel="stylesheet" href="fremd.css">
 <link rel="stylesheet" href="kontingent.css">
 <link rel="stylesheet" href="ki-verbinden.css">
+<link rel="stylesheet" href="einrichtung.css">
 <link rel="stylesheet" href="glocke.css">
 <link rel="stylesheet" href="bewegung.css">
 <link rel="stylesheet" href="schreiben.css">
@@ -49,6 +50,7 @@
       <section class="abschnitt" data-abschnitt="typen"></section>
     </div>
     <footer class="seite-fuss">
+      <button id="einrichtung-zeile" class="ki-zeile" type="button" hidden></button>
       <button id="ki-zeile" class="ki-zeile" type="button" aria-haspopup="false" hidden></button>
     </footer>
   </aside>
@@ -114,10 +116,12 @@
   <div class="griff" data-griff="info" role="separator" aria-orientation="vertical" aria-label="Breite der Eigenschaften" tabindex="0"></div>
 </div>
 <div id="willkommen-host" hidden></div>
+<div id="einrichtung-host" hidden></div>
 <div id="einstellungen-host" hidden></div>
 <div id="dialog-host"></div>
 <div id="menue-host"></div>
 <div id="toast-host" aria-live="polite"></div>
+<div id="hinweis-host" aria-live="polite"></div>
 <script type="module" src="app.js"></script>
 </body>
 </html>

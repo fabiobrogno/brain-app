@@ -1,4 +1,4 @@
-// Einrichtungs-Assistent (einrichtung.html): alle Schritte und Zustände, hell und dunkel, Tastatur, reduzierte Bewegung.
+// Einrichtung (Overlay im Studio): alle Schritte und Zustände, hell und dunkel, Tastatur, reduzierte Bewegung.
 // Alle /api/-Aufrufe und die Aktionen der App (git prüfen, Ordner wählen, Browser, Zwischenablage, Ende) sind gemockt (mocks-einrichtung.mjs).
 // Eine zusätzliche Probe läuft gegen die echte Werkstatt ohne Vault mit einem Wegwerf-HOME.
 import { test, expect } from "./basis.mjs";
@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { starteStatisch, mockeEinrichtung } from "./mocks-einrichtung.mjs";
+import { starteStatisch, mockeEinrichtung, oeffneEinrichtungImStudio } from "./mocks-einrichtung.mjs";
 import { starteServer } from "./start.mjs";
 
 const BILDER = process.env.UI_EINRICHTUNG_BILDER; // optional: Bilder für die Augenkontrolle
@@ -14,12 +14,12 @@ let server;
 test.beforeAll(async () => { server = await starteStatisch(); if (BILDER) mkdirSync(BILDER, { recursive: true }); });
 test.afterAll(() => server?.stopp());
 
-const URL_ = (q = "") => `${server.url}einrichtung.html${q}`;
 const sel = (a) => `[data-aktion="${a}"]`;
+// q: "?ab=sicherung" wie früher die Adresse der Seite; jetzt der Befehl der App an das Studio
 async function oeffne(page, opt = {}, q = "") {
   const z = await mockeEinrichtung(page, opt);
-  await page.goto(URL_(q));
-  await page.waitForFunction(() => window.__einrichtungBereit === true);
+  const ab = new URLSearchParams(q).get("ab") || undefined;
+  await oeffneEinrichtungImStudio(page, server.url, z, { ab });
   return z;
 }
 async function bereit(page) { await expect(page.locator(sel("start"))).toBeEnabled({ timeout: 6000 }); }
@@ -382,21 +382,32 @@ for (const thema of ["light", "dark"]) {
       await bild(page, "w4-fertig", thema);
       await page.click(sel("weiter")); // Studio öffnen
       await expect.poll(() => z.ende, { timeout: 5000 }).toEqual({ art: "fertig" });
+      await expect(page.locator("#einrichtung-host")).toBeHidden({ timeout: 4000 }); // das Overlay geht zu, das Fenster bleibt (kein Neuladen: derselbe window.studio)
+      await expect(page.locator("body")).not.toHaveAttribute("data-einrichtung", "offen");
+      await expect(page.locator("#app")).not.toHaveAttribute("inert", "");
     });
 
-    test("Später (Esc): Rückfrage, Weiter einrichten schließt sie; Später legt einen Vault mit Grundordnern an und meldet das Ende", async ({ page }) => {
+    test("Überspringen (Esc): Rückfrage, Weiter einrichten schließt sie; Überspringen meldet das Ende und legt NICHTS an", async ({ page }) => {
       const z = await oeffne(page);
       await zuVault(page);
       await page.keyboard.press("Escape");
-      await expect(page.locator(".dialog")).toContainText("Den Rest später einrichten?");
-      await expect(page.locator(".dialog")).toContainText("Vault mit Grundordnern");
-      await bild(page, "w5-spaeter", thema);
+      await expect(page.locator(".dialog")).toContainText("Einrichtung überspringen?");
+      await expect(page.locator(".dialog")).toContainText("Du findest sie in der Seitenleiste.");
+      await bild(page, "w5-ueberspringen", thema);
+      await page.waitForTimeout(450); // die Sperre gegen gehaltenes Esc (400 ms) ist vorbei
       await page.keyboard.press("Escape");
       await expect(page.locator(".dialog")).toHaveCount(0);
       await page.keyboard.press("Escape");
+      await expect(page.locator(sel("spaeter-nein"))).toBeFocused(); // Vorgabe ist das Weitermachen
       await page.click(sel("spaeter-ja"));
       await expect.poll(() => z.ende, { timeout: 5000 }).toEqual({ art: "spaeter" });
-      expect(anfragen(z, "/api/vaults/neu")[0].body).toEqual({ art: "vorlage", name: "Kortex", ordner: "~/Kortex" });
+      expect(anfragen(z, "/api/vaults/neu").length, "kein stilles ~/Kortex mehr").toBe(0);
+      await expect(page.locator("#einrichtung-host")).toBeHidden({ timeout: 4000 });
+      // danach der leere Zustand: zwei Wege und drei Tastenhinweise
+      await expect(page.locator(".w-leer h1")).toHaveText("Noch kein Vault");
+      await expect(page.locator(".w-leer-knoepfe .knopf")).toHaveText(["Neuer Vault", "Ordner öffnen"]);
+      await expect(page.locator(".w-leer-tipps span")).toHaveCount(3);
+      await bild(page, "w6-leerer-zustand", thema);
     });
   });
 }
@@ -499,7 +510,7 @@ test.describe("Echte Werkstatt ohne Vault (Wegwerf-HOME)", () => {
     const s = await starteServer(null, { umgebung, support });
     try {
       await page.addInitScript(() => { window.webkit = { messageHandlers: { aktion: { postMessage: async (m) => (m.aktion === "git-pruefen" ? { stand: "vorhanden" } : { ok: true }) } } }; });
-      await page.goto(`${s.url}einrichtung.html`);
+      await oeffneEinrichtungImStudio(page, s.url, null);
       await expect(page.locator(sel("start"))).toBeEnabled({ timeout: 8000 });
       await page.click(sel("start"));
       await page.fill('[data-feld="name"]', "Probe");
@@ -649,8 +660,9 @@ test.describe("Gesperrte Konten, Vertrauen, Zusatz-Eintragungen", () => {
     expect(z.aktionen.some((a) => a.aktion === "extern")).toBe(false);
   });
 
-  test("Später ohne lesbaren Stand (?ab=) legt nichts an und ändert den aktiven Vault nicht", async ({ page }) => {
-    const z = await oeffne(page, { infoFehler: true }, "?ab=sicherung");
+  test("Überspringen ohne lesbaren Stand (ab=) legt nichts an und ändert den aktiven Vault nicht", async ({ page }) => {
+    const z = await mockeEinrichtung(page, {});
+    await oeffneEinrichtungImStudio(page, server.url, z, { ab: "sicherung", vorBefehl: () => { z.infoFehler = true; } }); // der Stand ist erst unlesbar, wenn die Einrichtung läuft
     await bereit(page);
     await page.click(sel("schon")); // Willkommen bleibt bedienbar
     await page.keyboard.press("Escape");
@@ -660,12 +672,12 @@ test.describe("Gesperrte Konten, Vertrauen, Zusatz-Eintragungen", () => {
     expect(anfragen(z, "/api/vaults/neu").length).toBe(0);
   });
 
-  test("Später legt keinen Vault an, wenn inzwischen einer aktiv ist; sonst einen mit Grundordnern", async ({ page }) => {
+  test("Überspringen legt auch dann nichts an, wenn inzwischen ein anderer Vault aktiv ist", async ({ page }) => {
     const z = await oeffne(page);
     await zuVault(page);
     z.vault = { pfad: "/Users/test/Anderer", name: "Anderer" }; // anderswo wurde ein Vault geöffnet
     await page.keyboard.press("Escape");
-    await expect(page.locator(".dialog")).toContainText("Grundordnern");
+    await expect(page.locator(".dialog")).toContainText("Du findest sie in der Seitenleiste.");
     await page.click(sel("spaeter-ja"));
     await expect.poll(() => z.ende, { timeout: 5000 }).toEqual({ art: "spaeter" });
     expect(anfragen(z, "/api/vaults/neu").length).toBe(0);
