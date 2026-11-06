@@ -1,7 +1,7 @@
 // Anmelde-Panel „Im Browser anmelden“ (Paket E3, Plan docs/plaene/einrichtung-und-konten-wie-orca.md 4.4): die Anmeldung bei Claude Code oder Codex im Fenster, ohne Terminal.
 // Eigenständiger Baustein für den Einrichtungs-Ablauf (E2) und die Konten-Einstellungen (E4):
 //
-//   const a = starteAnmeldung("claude", { neu: "Firma" } | "<konto-kennung>", { host?, ordner?, beiFertig?, beiTerminal?, terminal? });
+//   const a = starteAnmeldung("claude", { neu: "Firma" } | "<konto-kennung>", { host?, ordner?, beiFertig?, beiTerminal?, beiZeitablauf?, terminal? });
 //   a.knoten      Element (wird in `host` gehängt, wenn gegeben)
 //   a.ergebnis    Promise<{ phase: "ok"|"abgebrochen"|"terminal", konto?, ausstehend? }>  (terminal + neues Konto: `ausstehend: {id, pfad}` — der Aufrufer bestätigt es mit konto-fertig, sobald das Programm angemeldet ist)   — immer aufgelöst, nie abgelehnt
 //   a.abbrechen() bricht ab (Werkstatt beendet das Programm und räumt das neue Konto weg), a.zerstoere() = abbrechen + Panel entfernen
@@ -92,6 +92,7 @@ export function starteAnmeldung(programm, konto, opt = {}) {
       setze("abgebrochen", h("div", { klasse: "an-text", text: TA.abgebrochen }));
       beende({ phase: "abgebrochen" });
     } else {
+      if (z.phase === "timeout") { try { opt.beiZeitablauf?.(); } catch (e) { console.error(e); } }
       const schl = TA.fehlerVonGrund[z.grund];
       const text = z.phase === "timeout" ? TA.abgelaufen : TA[schl] || TA.allgemein;
       setze(z.phase === "timeout" ? "timeout" : "fehler", meldung(text),
