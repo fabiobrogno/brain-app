@@ -53,10 +53,31 @@ public enum EinrichtungsOverlay {
         return d
     }
 
-    /// Diese Aktionen der Seite gelten nur, solange das Overlay offen ist (`EinrichtungsSitzung.offen`): git prüfen/installieren, Zwischenablage, Ende (das übrige Studio braucht sie nicht).
+    /// `einrichtung.json` nach einem erledigten Schritt (Aktion `einrichtung-schritt`): `letzterSchritt` rückt nur vor, nie zurück; die Herkunft des Laufs bleibt eingetragen.
+    public static func datei(schritt: EinrichtungsSchritt, vorher: EinrichtungsDatei?, herkunft: EinrichtungsHerkunft) -> EinrichtungsDatei {
+        var d = vorher ?? EinrichtungsDatei()
+        d.herkunft = herkunft
+        if let alt = d.letzterSchritt, alt >= schritt { return d }
+        d.letzterSchritt = schritt
+        return d
+    }
+
+    /// Wo die Einrichtung einsteigt, wenn die App sie öffnet: ein verlangter Einstieg gilt immer; mit gewähltem Weg (aus dem leeren Zustand) beginnt die Seite beim Vault;
+    /// ohne aktiven Vault ebenso. Mit Vault macht sie nach dem zuletzt erledigten Schritt weiter (`letzterSchritt`), ohne Stand bei der KI; nach der Sicherung (alles erledigt) wieder bei der KI.
+    /// Die Seite überspringt von dort aus, was schon erfüllt ist (KI für diesen Vault verbunden, Sicherung vorhanden).
+    public static func einstieg(ab: EinrichtungsEinstieg?, weg: EinrichtungsWeg?, vaultDa: Bool, datei: EinrichtungsDatei?) -> EinrichtungsEinstieg? {
+        if let ab { return ab }
+        if weg != nil || !vaultDa { return nil }
+        switch datei?.letzterSchritt?.naechster {
+        case .sicherung?: return .sicherung
+        default: return .ki
+        }
+    }
+
+    /// Diese Aktionen der Seite gelten nur, solange das Overlay offen UND von der Seite bestätigt ist (`EinrichtungsSitzung.bestaetigt`): git prüfen/installieren, Zwischenablage, Schritt, Ende (das übrige Studio braucht sie nicht).
     public static func nurAusEinrichtung(_ aktion: AppAktion) -> Bool {
         switch aktion {
-        case .gitPruefen, .gitInstallieren, .kopieren, .einrichtungEnde: return true
+        case .gitPruefen, .gitInstallieren, .kopieren, .einrichtungEnde, .einrichtungSchritt: return true
         default: return false
         }
     }
@@ -114,10 +135,14 @@ public enum GitAntwort {
 }
 
 /// Buch über die laufende Einrichtung (ein Wert in `AppZustand`): ist das Overlay offen, woher kam der Lauf, welcher Vault war vorher aktiv, wie endete es.
-/// Die Rechte der Aktionen hängen daran, nicht mehr an einem Fenster: nur bei offenem Overlay gelten `git-pruefen`, `git-installieren`, `kopieren` und `einrichtung-ende`,
-/// und `extern` öffnet dann nur GitHub. Die App setzt `offen`, wenn sie das Overlay anfordert (Befehl `einrichtung`), und nimmt es mit dem Ende zurück.
+/// Die Rechte der Aktionen hängen daran, nicht mehr an einem Fenster: nur bei offenem UND bestätigtem Overlay gelten `git-pruefen`, `git-installieren`, `kopieren`, `einrichtung-schritt`
+/// und `einrichtung-ende`, und `extern` öffnet bei offenem Overlay nur GitHub. Die App setzt `offen`, wenn sie das Overlay anfordert (Befehl `einrichtung`), und nimmt es mit dem Ende zurück.
+/// `bestaetigt` setzt die SEITE (Aktion `einrichtung-sitzung`, sobald das Overlay wirklich zu sehen ist) und nimmt sie beim Laden jeder Seite zurück: ein Neuladen des Studios
+/// (Absturz, Entwicklung) lässt die Rechte nie offen stehen, solange kein Overlay mehr da ist.
 public struct EinrichtungsSitzung: Equatable, Sendable {
     public private(set) var offen = false
+    /// Die Seite hat gemeldet, dass das Overlay offen ist. Ohne das gelten die Rechte der Einrichtung nicht.
+    public private(set) var bestaetigt = false
     public private(set) var herkunft = EinrichtungsHerkunft.start
     public private(set) var vaultVorher: URL?
 
@@ -128,15 +153,34 @@ public struct EinrichtungsSitzung: Equatable, Sendable {
     public mutating func oeffne(automatisch: Bool, vaultVorher: URL?) -> Bool {
         guard !offen else { return false }
         offen = true
+        bestaetigt = false
         herkunft = automatisch ? .start : .menue
         self.vaultVorher = vaultVorher
         return true
+    }
+
+    /// Die Seite meldet „Overlay offen“ (`einrichtung-sitzung {offen:true}`). Gilt nur für einen Lauf, den die App angefordert hat; sonst false (nichts wird freigegeben).
+    @discardableResult
+    public mutating func bestaetige() -> Bool {
+        guard offen else { return false }
+        bestaetigt = true
+        return true
+    }
+
+    /// Die Seite meldet „Overlay zu“ oder wurde neu geladen (`einrichtung-sitzung {offen:false}`; jede Seite meldet es beim Start). War das Overlay bestätigt, ist es jetzt weg:
+    /// true = der Lauf ist damit zu Ende und die App muss ihn beenden (ohne Wahl: die Einrichtung macht beim nächsten Start weiter). War es nur angefordert (die Seite lädt gerade
+    /// und der Befehl ist noch unterwegs), bleibt der Lauf offen und false kommt zurück.
+    public mutating func seiteMeldetZu() -> Bool {
+        let war = bestaetigt
+        bestaetigt = false
+        return war
     }
 
     /// Beendet den Lauf (`einrichtung-ende`, Studio zu, App beendet). nil = es lief keiner.
     public mutating func beende() -> (herkunft: EinrichtungsHerkunft, vaultVorher: URL?)? {
         guard offen else { return nil }
         offen = false
+        bestaetigt = false
         let r = (herkunft, vaultVorher)
         vaultVorher = nil
         return r
@@ -144,12 +188,12 @@ public struct EinrichtungsSitzung: Equatable, Sendable {
 
     /// Darf diese Aktion jetzt ausgeführt werden? Aktionen, die nur zur Einrichtung gehören, nur bei offenem Overlay; alles andere immer (die Prüfung der Werte liegt in `AppAktion`).
     public func erlaubt(_ aktion: AppAktion) -> Bool {
-        EinrichtungsOverlay.nurAusEinrichtung(aktion) ? offen : true
+        EinrichtungsOverlay.nurAusEinrichtung(aktion) ? (offen && bestaetigt) : true
     }
 
     /// Darf `extern` diese Adresse öffnen? Bei offenem Overlay nur GitHub (Gerätecode), sonst gilt die Prüfung des Studios selbst.
     public func externErlaubt(_ url: URL) -> Bool {
-        offen ? EinrichtungsOverlay.externErlaubt(url) : true
+        (offen && bestaetigt) ? EinrichtungsOverlay.externErlaubt(url) : true
     }
 }
 

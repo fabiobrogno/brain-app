@@ -53,7 +53,7 @@ export async function pruefeKontoAnmeldung(api, kt, { identitaet = false } = {})
 // Anmelden im Terminal: Schritte, Befehl, Abfrage alle TAKT_MS bis angemeldet oder 10 Minuten um. Eine Quelle für den Ablauf „KI verbinden“ und die Einstellungen.
 //   o: { api, kt (Konto), pruefe(kt) → { zustand }, beiAngemeldet(), beiEnde() (Abbruch/Zeit) }
 //   → { liste, befehl, fehlerEl, hinweis, knoepfe: { abbruch, nochmal, jetzt }, start(), stoppe(), laeuft() }  — wer es einsetzt, legt die Knoten ab
-export function baueAnmeldung({ api, kt, pruefe = (k) => pruefeKontoAnmeldung(api, k), beiAngemeldet, beiAbbruch, abbruchText = TKE.anmeldung.abbrechen } = {}) {
+export function baueAnmeldung({ api, kt, pruefe = (k) => pruefeKontoAnmeldung(api, k), beiAngemeldet, beiAbbruch, beiZeit, abbruchText = TKE.anmeldung.abbrechen } = {}) {
   const st = { schritt: 1, fehler: null, ende: false, zeit: false };
   let timer = 0, frist = 0, laeuft = false, aktiv = false;
   const schritte = [TKE.anmeldung.schritt1, TKE.anmeldung.schritt2, TKE.anmeldung.schritt3];
@@ -86,7 +86,7 @@ export function baueAnmeldung({ api, kt, pruefe = (k) => pruefeKontoAnmeldung(ap
     } finally { laeuft = false; }
     if (st.ende || !aktiv) return;
     st.schritt = 2; zeichne();
-    if (Date.now() > frist) { st.zeit = true; stoppe(); zeichne(); return; }
+    if (Date.now() > frist) { st.zeit = true; stoppe(); zeichne(); try { beiZeit?.(); } catch (e) { console.error(e); } return; }
     if (!manuell || !timer) timer = setTimeout(() => { timer = 0; abfrage(); }, TAKT_MS);
   }
   async function start() {

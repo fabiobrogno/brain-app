@@ -34,6 +34,11 @@ public enum AppAktion: Equatable, Sendable {
     case kopieren(String)
     /// Die Einrichtung ist am Ende („Fertig“ oder „Später“); nur wirksam, solange das Overlay offen ist (`EinrichtungsSitzung`).
     case einrichtungEnde(EinrichtungsEnde)
+    /// Die Seite meldet, ob das Einrichtungs-Overlay offen ist (`einrichtung-sitzung`, Wert `{offen: Bool}`): erst diese Meldung schaltet die Rechte der Einrichtung frei, und jede neu geladene
+    /// Seite meldet `false` — so bleibt nach einem Neuladen nichts offen. Immer erlaubt (sonst ließe sich die Sitzung nie bestätigen).
+    case einrichtungSitzung(offen: Bool)
+    /// Ein Schritt der Einrichtung ist erledigt (`einrichtung-schritt`, Wert `{schritt}`): die App merkt ihn in `einrichtung.json` (`letzterSchritt`), damit die Einrichtung dort weitermacht.
+    case einrichtungSchritt(EinrichtungsSchritt)
     /// Das Einrichtungs-Overlay im Studio öffnen (wie das Menü „Kortex einrichten …“; nie ein zweites Fenster), optional ab einer Stelle (`ab`, mit vorhandenem Vault) oder
     /// mit gewähltem Weg (`weg`, aus dem leeren Zustand).
     case einrichtungOeffnen(ab: EinrichtungsEinstieg?, weg: EinrichtungsWeg? = nil)
@@ -108,6 +113,12 @@ public enum AppAktion: Equatable, Sendable {
             return oberflaeche == .studio ? pruefeEinrichtungEnde(wert) : nil
         case "einrichtung-oeffnen":
             return oberflaeche == .studio ? pruefeEinrichtungOeffnen(wert) : nil
+        case "einrichtung-sitzung":
+            guard oberflaeche == .studio, let d = wert as? [String: Any], let offen = d["offen"] as? Bool else { return nil }
+            return .einrichtungSitzung(offen: offen)
+        case "einrichtung-schritt":
+            guard oberflaeche == .studio, let d = wert as? [String: Any], let name = d["schritt"] as? String, let schritt = EinrichtungsSchritt(rawValue: name) else { return nil }
+            return .einrichtungSchritt(schritt)
         case "mitteilung-probe":
             return oberflaeche == .studio ? .mitteilungProbe : nil
         case "kuerzel-geaendert":
