@@ -19,6 +19,9 @@ import { erzeugeFragePanel } from "./frage.js";
 import { kontingentStand, erzeugeKontoLeiste } from "./kontingent.js";
 import { TF } from "./texte-frage.js";
 import { TK, konfliktLabel } from "./texte-konflikt.js";
+import { TN } from "./texte-fremd.js"; // „Nichts geht verloren“: Zusammenführen, Entwurfs-Journal, Hintergrunddienst
+import { baueKonfliktAnsicht, baueVergleich } from "./fremd-ansicht.js";
+import { erzeugeJournal } from "./entwurf.js";
 import { starteLive, planeAus, kiHinweis, hebeHervor } from "./live.js";
 import { erzeugeMitteilungen } from "./mitteilungen.js"; // P8a: Hinweise unten rechts zu Ereignissen des Aktivitätsprotokolls
 import { erzeugeGlocke } from "./glocke.js"; // P8b: Glocke in der Kopfzeile mit Mitteilungsliste
@@ -49,6 +52,7 @@ const S = {
   sichtListe: [], gerendert: 0,
   offen: new Set(), zu: new Set(), favoriten: new Set(),
   pfad: null, hash: null, schutz: false, dirty: false, konflikt: null, speichert: false, nochmal: false, bearbeitbar: true,
+  basis: null, fremdOffen: false, entwurfAngebot: null, dienstWeg: false, autoOffen: false, // basis = Text der Datei, auf dem der Editor aufbaut (Grundlage der Zusammenführung)
   pruef: new Map(), aktuellePruefung: null,
   git: null, offline: false, gesundheit: null, rueckfragen: null, syncLaeuft: false, syncFehler: null, ki: null, kiGeladen: false, kiVerbunden: false,
   zuletzt: [], suche: { aktiv: false, treffer: [], auswahl: 0, frage: "", ergebnis: null },
@@ -91,6 +95,11 @@ const da = erzeugeDateiaktionen({
 });
 
 document.title = PRODUKT;
+// Nach einem Absturz des Fenster-Prozesses lädt die App die Seite mit ?nachAbsturz=1 neu (WebProzessSchutz.swift): einmal melden, die Marke wieder aus der Adresse nehmen.
+try {
+  const p = new URLSearchParams(location.search);
+  if (p.get("nachAbsturz") === "1") { window.__kortexNachAbsturz = true; p.delete("nachAbsturz"); const rest = p.toString(); history.replaceState(null, "", location.pathname + (rest ? "?" + rest : "")); }
+} catch { /* die Adresse bleibt, wie sie ist */ }
 $("suche").placeholder = T.suche.platzhalter;
 document.querySelector('[data-t="merken"]').textContent = T.seitenleiste.erfassen;
 document.querySelector('[data-t="kopfSuche"]').textContent = T.kopf.suche;
@@ -167,7 +176,8 @@ const ed = erstelleEditor($("editor"), {
   speichernJetzt: () => { clearTimeout(speicherTimer); speichere(); },
   geaendert: () => {
     if (S.schutz || !S.bearbeitbar) return;
-    S.dirty = true; planeWoerter();
+    if (S.entwurfAngebot) entwurfBeiTippenAblegen(); // vor dem ersten Journal-Eintrag des neuen Textes
+    S.dirty = true; planeWoerter(); journal.plane();
     if (S.konflikt) { zeigeStand("konflikt"); return; }
     zeigeStand("ungespeichert");
     clearTimeout(speicherTimer);
@@ -186,6 +196,11 @@ const ed = erstelleEditor($("editor"), {
     speicherTimer = setTimeout(speichere, 800);
   },
 });
+// Entwurfs-Journal: ungespeicherter Text überlebt einen Absturz (entwurf.js, gemeinsam/entwurf.mjs). window.__journalMs: nur Tests.
+const journal = erzeugeJournal({ api, intervallMs: Number(window.__journalMs) > 0 ? Number(window.__journalMs) : 5000,
+  vault: () => S.info?.vault || "",
+  // Solange ein älterer Entwurf zur Wiederherstellung angeboten wird, schreibt das Journal nichts: es würde ihn mit dem neuen Text überschreiben, bevor er in der Ablage liegt
+  lies: () => (S.pfad && !S.schutz && S.bearbeitbar && !(S.entwurfAngebot && S.entwurfAngebot.pfad === S.pfad) ? { pfad: S.pfad, text: ed.text(), basisHash: S.hash, dirty: S.dirty } : null) });
 
 // Schreiben im Alltag (schreiben.js): app.js gibt den Zustand und die Bausteine mit, die an ihm hängen
 const schreiben = erzeugeSchreiben({
@@ -282,6 +297,7 @@ async function oeffne(pfad, { zeile, spalte, laenge, begriffe, ausListe, ausBoar
   schreiben.verlasse(); // Cursor und Scrollposition der Notiz merken, die wir verlassen (Zurück/Vor)
   S.entwurf = null;
   S.pfad = d.pfad; S.hash = d.hash; S.schutz = !!d.schreibschutz || imKonflikt(d.pfad); S.dirty = false; S.konflikt = null; // Dateien in einer offenen Zusammenführung enthalten Konfliktmarken: nur lesen
+  S.basis = d.inhalt; S.fremdOffen = false; S.entwurfAngebot = null;
   S.bearbeitbar = istBearbeitbar(d.pfad);
   S.aktuellePruefung = null;
   ed.setzeText(d.inhalt, { nurLesen: S.schutz || !S.bearbeitbar });
@@ -292,7 +308,7 @@ async function oeffne(pfad, { zeile, spalte, laenge, begriffe, ausListe, ausBoar
   zuletztMerken(d.pfad);
   klappeAuf(d.pfad);
   markiereAuswahl(); zeichnePfad(); zeichneWerkzeuge(); zeichneOrdner(); setzeFenstertitel(); aktualisiereStatusDatei();
-  ladeInfo();
+  ladeInfo(); pruefeEntwurf(d.pfad);
   if (!ausVerlauf) schreiben.betreten(d.pfad); else schreiben.zeichnePfeile();
   if (zustand) { ed.stelleHer(zustand); if (!document.querySelector(".schleier")) ed.fokus(); }
   else if (zeile) ed.springeZu(zeile, fund);
@@ -314,6 +330,7 @@ async function oeffneEntwurf({ text, cursor = null, pfad = null, ordner = null, 
   schreiben.verlasse();
   clearTimeout(speicherTimer);
   S.pfad = null; S.hash = null; S.schutz = false; S.dirty = false; S.konflikt = null; S.bearbeitbar = true; S.aktuellePruefung = null;
+  S.basis = null; S.fremdOffen = false; S.entwurfAngebot = null; // eine neue Notiz baut auf keiner Datei auf (sonst bliebe die Basis der vorigen Notiz stehen)
   S.entwurf = { id: neueId(), pfad, ordner: ordner ?? inboxName(), start: text, tag }; // id: bei einem Wiederholungsversuch legt die Werkstatt nichts doppelt an
   clearTimeout(entwurfSpaet); entwurfSpaet = null;
   ed.setzeText(text, { nurLesen: false, cursor });
@@ -377,6 +394,7 @@ async function festigeInnen({ sofort = false, ersatz = false, verlassen = false 
     } else { const r = await api.neu(e.ordner, titel, text, e.id); pfad = r.pfad; hash = r.hash; }
     if (S.entwurf !== e) { planeBaumRefresh(); return "angelegt"; }
     S.entwurf = null; S.pfad = pfad; S.hash = hash; S.konflikt = null; S.schutz = false;
+    S.basis = text; S.fremdOffen = false; S.entwurfAngebot = null; // die Datei enthält jetzt genau `text`: darauf bauen die weiteren Eingaben auf
     clearTimeout(entwurfSpaet); entwurfSpaet = null; entwurfJournal.loesche(e);
     S.dirty = ed.text() !== text;
     zeigeStand(S.dirty ? "ungespeichert" : "gespeichert");
@@ -418,20 +436,144 @@ async function speichereEinmal() {
   const pfad = S.pfad, text = ed.text();
   S.speichert = true; letzterFehler = null; zeigeStand("speichert");
   try {
+    // Die Platte hat sich verändert (oder eine Zusammenführung steht aus): erst zusammenführen, nie blind schreiben
+    if (S.fremdOffen) { await loeseFremdaenderung(pfad, text); return; }
     const r = await api.speichern(pfad, text, S.hash);
     if (S.pfad === pfad) {
-      S.hash = r.hash;
-      if (ed.text() === text) { S.dirty = false; zeigeStand("gespeichert"); } else zeigeStand("ungespeichert");
+      S.hash = r.hash; S.basis = text; S.autoOffen = true;
+      if (ed.text() === text) { S.dirty = false; zeigeStand("gespeichert"); journal.nachSpeichern(pfad); } else zeigeStand("ungespeichert");
+      dienstWieder();
     }
     planeGitRefresh(); planeBaumRefresh(); planeInfoAuffrischen();
   } catch (e) {
-    if (e.status === 409 && S.pfad === pfad) { S.konflikt = { aktuellerHash: e.daten?.aktuellerHash || null }; zeigeBanner(); zeigeStand("konflikt"); }
+    if (e.status === 409 && e.daten?.aktuellerHash && S.pfad === pfad) await loeseFremdaenderung(pfad, text);
+    else if (e.status === 0 && S.pfad === pfad) dienstWeg();
     else {
       letzterFehler = e.message && e.message !== T.fehler.allgemein ? e.message : T.fehler.speichern;
       zeigeStand("fehler", false, letzterFehler);
     }
   } finally { S.speichert = false; }
 }
+
+// ---- Hintergrunddienst (Werkstatt) weg: die App startet ihn bei der nächsten Anfrage neu (BrueckenVerbindung). Das Studio sagt es, hält den Text im Journal und speichert in wachsenden
+// Abständen erneut — so ist die erste Anfrage nach dem Absturz auch der automatische Neustart.
+let dienstTimer = null, dienstVersuche = 0;
+function dienstWeg() {
+  letzterFehler = TN.dienst.stand;
+  zeigeStand("fehler", false, TN.dienst.stand);
+  if (!S.dienstWeg) { S.dienstWeg = true; toast(TN.dienst.meldung, { fehler: true, ms: 9000 }); }
+  journal.plane(); journal.schreibeJetzt(true);
+  if (dienstVersuche === 12) toast(TN.dienst.aufgegeben, { fehler: true, ms: 12000 });
+  const pause = [1500, 3000, 6000, 12000][Math.min(dienstVersuche, 3)] * (dienstVersuche > 12 ? 2 : 1);
+  dienstVersuche++;
+  clearTimeout(dienstTimer);
+  dienstTimer = setTimeout(() => { if (S.pfad && S.dirty) speichere(); else dienstWieder(); }, pause);
+}
+function dienstWieder() {
+  if (!S.dienstWeg) return;
+  S.dienstWeg = false; dienstVersuche = 0; clearTimeout(dienstTimer);
+  toast(TN.dienst.wieder);
+}
+
+// ---- Änderung von außen bei offener Notiz (KI, Abgleich, anderes Programm): Drei-Wege-Zusammenführung statt Überschreiben.
+// Basis = Text, auf dem der Editor aufbaut (S.basis) · meine Fassung = Editor · Platte = was jetzt in der Datei steht. Die Werkstatt rechnet (gemeinsam/merge3.mjs) und legt die
+// fremde Fassung VOR jedem Überschreiben in die Ablage. Treffen sich die Änderungen nicht, steht danach ein Toast mit „Rückgängig“; sonst entscheidest du pro Stelle.
+async function loeseFremdaenderung(pfad, text, nochmal = true) {
+  let r;
+  try { r = await api.zusammenfuehren({ pfad, basis: S.basis ?? "", meine: text, basisHash: S.hash }); }
+  catch (e) {
+    if (S.pfad !== pfad) return;
+    if (e.status === 0) { dienstWeg(); return; }
+    // 409 zwischen Lesen und Schreiben (ein anderes Programm war schneller): einmal automatisch mit dem neuen Stand noch einmal rechnen
+    if (e.status === 409 && nochmal) { await loeseFremdaenderung(pfad, text, false); return; }
+    letzterFehler = e.message && e.message !== T.fehler.allgemein ? e.message : T.fehler.speichern;
+    zeigeStand("fehler", false, letzterFehler);
+    return;
+  }
+  if (S.pfad !== pfad) return;
+  wendeFremdErgebnisAn(r, text);
+}
+function wendeFremdErgebnisAn(r, gesendet) {
+  S.fremdOffen = false;
+  const pfad = S.pfad, nochGleich = ed.text() === gesendet;
+  if (r.art === "konflikt") {
+    if (!nochGleich) { S.fremdOffen = true; clearTimeout(speicherTimer); speicherTimer = setTimeout(speichere, 800); return; } // während der Rechnung weitergetippt: mit dem neuen Text noch einmal
+    zeigeFremdKonflikt(r, gesendet); return;
+  }
+  S.hash = r.hash; S.autoOffen = true;
+  if (r.art === "gespeichert") {
+    S.basis = gesendet;
+    if (nochGleich) { S.dirty = false; zeigeStand("gespeichert"); journal.nachSpeichern(pfad); } else zeigeStand("ungespeichert");
+    planeGitRefresh(); planeBaumRefresh(); return;
+  }
+  // eingearbeitet · uebernommen: die Datei hat jetzt r.text
+  const quelle = r.quelle || TN.quelleUnbekannt;
+  if (!nochGleich) { // weitergetippt: diese Eingaben bauen auf `gesendet` auf → beim nächsten Speichern noch einmal zusammenführen
+    S.basis = gesendet; S.fremdOffen = true; S.dirty = true; zeigeStand("ungespeichert");
+    clearTimeout(speicherTimer); speicherTimer = setTimeout(speichere, 800);
+    return;
+  }
+  S.basis = r.text;
+  ed.setzeText(r.text, { behalte: true });
+  S.dirty = false; zeigeStand("gespeichert"); journal.nachSpeichern(pfad);
+  toast(r.art === "uebernommen" ? TN.uebernommen(quelle) : TN.eingearbeitet(quelle), { ms: 9000, aktion: { text: TN.rueckgaengig, tun: () => einarbeitenRueckgaengig(pfad, gesendet, r, quelle) } });
+  planeGitRefresh(); planeBaumRefresh(); ladeInfo();
+}
+// „Rückgängig“: im Editor steht wieder DEINE Fassung. Die Datei hat noch den zusammengeführten Stand; deine Fassung ersetzt ihn beim Speichern. Die fremde Fassung liegt in der Ablage.
+async function einarbeitenRueckgaengig(pfad, meineFassung, r, quelle) {
+  if (S.pfad !== pfad || S.konflikt) return;
+  // Seit dem Einarbeiten weitergetippt? Dann ginge das Neue mit „Rückgängig“ verloren: es kommt vorher in die Ablage.
+  const neuerer = ed.text() !== r.text;
+  if (neuerer) {
+    try { await api.ablageAblegen(pfad, ed.text(), "meine-verworfen"); } catch (e) { toast(e.message, { fehler: true }); return; }
+    if (S.pfad !== pfad || S.konflikt) return;
+  }
+  ed.setzeText(meineFassung, { behalte: true });
+  S.hash = r.hash; S.basis = r.text; S.dirty = true; zeigeStand("ungespeichert"); journal.plane();
+  clearTimeout(speicherTimer); speicherTimer = setTimeout(speichere, 800);
+  toast(neuerer ? TN.rueckgaengigNeuererText : TN.rueckgaengigErledigt(quelle));
+}
+// Überschneidung: die kompakte Ansicht über dem Editor (fremd-ansicht.js). Der Editor ist gesperrt, bis entschieden ist; deine Eingaben bleiben darin stehen.
+function zeigeFremdKonflikt(r, gesendet) {
+  const pfad = S.pfad, quelle = r.quelle || TN.quelleUnbekannt;
+  const ansicht = baueKonfliktAnsicht({ teile: r.teile, quelle, beiFertig: (auswahl) => loeseKonfliktMitWahl(auswahl), beiSpaeter: () => schliesseFremdKonflikt() });
+  S.konflikt = { aktuellerHash: r.aktuellerHash, gesendet, quelle, ansicht, pfad };
+  ed.setzeText(gesendet, { nurLesen: true, behalte: true });
+  journal.plane(); journal.schreibeJetzt(true); // frische Zeit: nach einem Absturz ist der Entwurf neuer als die fremd geänderte Datei und wird angeboten
+  zeigeBanner(); zeigeStand("konflikt");
+  ansicht.fokus();
+}
+function schliesseFremdKonflikt() {
+  const k = S.konflikt;
+  if (!k) return;
+  S.konflikt = null;
+  if (S.pfad === k.pfad) { ed.setzeText(ed.text(), { nurLesen: S.schutz || !S.bearbeitbar, behalte: true }); S.fremdOffen = true; S.dirty = true; zeigeStand("ungespeichert"); }
+  zeigeBanner();
+}
+async function loeseKonfliktMitWahl(auswahl) {
+  const k = S.konflikt;
+  if (!k) return;
+  let r;
+  try { r = await api.zusammenfuehren({ pfad: k.pfad, basis: S.basis ?? "", meine: k.gesendet, basisHash: S.hash, auswahl, gesehenHash: k.aktuellerHash }); }
+  catch (e) {
+    if (e.status === 409 && e.daten?.art === "erneut") { // inzwischen noch einmal geändert: Stand neu berechnen
+      S.konflikt = null; ed.setzeText(k.gesendet, { nurLesen: false, behalte: true }); zeigeBanner(); toast(TN.konflikt.erneut);
+      await loeseFremdaenderung(k.pfad, k.gesendet); return;
+    }
+    if (e.status === 0) { dienstWeg(); return; }
+    toast(e.message, { fehler: true });
+    return;
+  }
+  if (S.pfad !== k.pfad) return;
+  const text = typeof r.text === "string" ? r.text : k.gesendet;
+  S.konflikt = null; S.fremdOffen = false;
+  ed.setzeText(text, { nurLesen: S.schutz || !S.bearbeitbar, behalte: true });
+  S.hash = r.hash; S.basis = text; S.dirty = false; S.autoOffen = true;
+  zeigeBanner(); zeigeStand("gespeichert"); journal.nachSpeichern(k.pfad);
+  toast(TN.konflikt.gespeichert(k.quelle));
+  planeGitRefresh(); planeBaumRefresh(); ladeInfo();
+}
+
 // Wartet laufendes Speichern ab und speichert, bis nichts mehr offen ist. true = alles gesichert.
 async function speichereAlles() {
   for (let i = 0; i < 8; i++) {
@@ -490,18 +632,18 @@ function fragSpeicherFehler() {
   });
 }
 
+// Die Datei wurde von der Werkstatt verändert (Posteingang übernehmen u. ä.): neu laden. Eigene ungespeicherte Eingaben liegen vorher in der Ablage.
 async function konfliktNeuLaden() {
   const pfad = S.pfad;
   try {
     const d = await api.datei(pfad);
-    S.hash = d.hash; S.konflikt = null; S.dirty = false;
+    // Lässt sich der eigene Text nicht ablegen, wird nichts verworfen (und das Journal nicht gelöscht)
+    if (S.dirty && ed.text() !== d.inhalt) { try { await api.ablageAblegen(pfad, ed.text(), "meine-verworfen"); } catch (e) { toast(e.message, { fehler: true }); return; } }
+    S.hash = d.hash; S.basis = d.inhalt; S.konflikt = null; S.fremdOffen = false; S.dirty = false;
     ed.setzeText(d.inhalt, { nurLesen: !!d.schreibschutz });
+    journal.loesche(pfad);
     zeigeBanner(); zeigeStand("gespeichert"); ladeInfo();
   } catch (e) { toast(e.message, { fehler: true }); }
-}
-function konfliktBehalten() {
-  if (S.konflikt?.aktuellerHash) S.hash = S.konflikt.aktuellerHash;
-  S.konflikt = null; S.dirty = true; zeigeBanner(); speichere();
 }
 
 function zeigeStand(art, still, text) {
@@ -518,16 +660,131 @@ function zeigeBanner() {
   host.replaceChildren();
   if (istKonflikt() && !konfliktInst && !konfliktBannerZu) host.append(baueKonfliktBanner());
   if (!S.pfad) return;
-  if (S.konflikt) {
-    host.append(h("div", { klasse: "banner warn", role: "alert", "data-banner": "konflikt" },
-      h("div", { klasse: "b-text" }, h("div", { klasse: "b-titel", text: T.konflikt.titel }), h("div", { klasse: "b-sub", text: T.konflikt.text })),
-      baueKnopf({ text: T.konflikt.neuLaden, aufKlick: konfliktNeuLaden, aktion: "neu-laden" }),
-      baueKnopf({ text: T.konflikt.behalten, variante: "primaer", aufKlick: konfliktBehalten, aktion: "behalten" })));
+  if (S.konflikt?.ansicht) {
+    host.append(S.konflikt.ansicht.el);
   } else if (S.schutz) {
     host.append(h("div", { klasse: "banner schutz", "data-banner": "schutz" }, symbol("schild", 14), h("span", { text: T.editor.schreibschutz })));
   } else if (!S.bearbeitbar) {
     host.append(h("div", { klasse: "banner schutz" }, h("span", { text: T.editor.nichtBearbeitbar })));
   }
+  if (S.entwurfAngebot && S.entwurfAngebot.pfad === S.pfad && !S.konflikt) host.append((S.entwurfAngebot.el ||= baueEntwurfBanner()));
+}
+
+// ---- Entwurfs-Journal: Wiederherstellen nach einem Absturz (gemeinsam/entwurf.mjs). Der Server liefert nur einen Entwurf, der NEUER ist als die Datei und anders als ihr Inhalt.
+const uhrzeitVon = (iso) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? "" : `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
+async function pruefeEntwurf(pfad) {
+  let r; try { r = await api.entwurf(pfad); } catch { return; }
+  if (S.pfad !== pfad || !r?.entwurf) return;
+  S.entwurfAngebot = { pfad, entwurf: r.entwurf, datei: r.datei || null, el: null };
+  // Hat der Nutzer schon getippt, bevor die Antwort kam, wird der Entwurf nicht still verworfen, sondern abgelegt (und gesagt)
+  if (S.dirty) { await entwurfBeiTippenAblegen(); return; }
+  zeigeBanner();
+}
+// Der Nutzer tippt, obwohl ein älterer Entwurf angeboten wird: der Entwurf geht in die Ablage (bevor das Journal ihn mit dem neuen Text überschreibt), das Angebot endet.
+async function entwurfBeiTippenAblegen() {
+  const a = S.entwurfAngebot;
+  if (!a || a.ablegend) return;
+  a.ablegend = true;
+  try { await api.ablageAblegen(a.pfad, a.entwurf.text, "entwurf-verworfen"); }
+  catch (e) { a.ablegend = false; toast(e.message, { fehler: true }); return; }
+  if (S.entwurfAngebot === a) { S.entwurfAngebot = null; if (S.pfad === a.pfad) zeigeBanner(); }
+  if (S.dirty) journal.plane(); // jetzt darf das Journal den neuen Text sichern
+  toast(TN.entwurf.abgelegt(uhrzeitVon(a.entwurf.zeit)));
+}
+function baueEntwurfBanner() {
+  const a = S.entwurfAngebot;
+  let vergleich = null;
+  const wurzel = h("div", { klasse: "banner warn fr-entwurf", role: "alert", "data-banner": "entwurf" });
+  const zeile = h("div", { klasse: "fr-entwurf-zeile" },
+    h("div", { klasse: "b-text" }, h("div", { klasse: "b-titel", text: TN.entwurf.titel(uhrzeitVon(a.entwurf.zeit)) }), h("div", { klasse: "b-sub", text: TN.entwurf.text })));
+  const vergl = baueKnopf({ text: TN.entwurf.vergleichen, aktion: "entwurf-vergleichen", aufKlick: () => {
+    if (vergleich) { vergleich.remove(); vergleich = null; vergl.querySelector(".bs-knopf-text").textContent = TN.entwurf.vergleichen; return; }
+    vergleich = h("div", { klasse: "fr-entwurf-vergleich" }, baueVergleich(a.datei?.inhalt ?? S.basis ?? "", a.entwurf.text, { linksTitel: TN.entwurf.vergleichKopf.datei, rechtsTitel: TN.entwurf.vergleichKopf.entwurf }));
+    wurzel.append(vergleich); vergl.querySelector(".bs-knopf-text").textContent = TN.entwurf.verbergen;
+  } });
+  zeile.append(vergl, baueKnopf({ text: TN.entwurf.verwerfen, aktion: "entwurf-verwerfen", aufKlick: entwurfVerwerfen }),
+    baueKnopf({ text: TN.entwurf.wiederherstellen, variante: "primaer", aktion: "entwurf-wiederherstellen", aufKlick: entwurfWiederherstellen }));
+  wurzel.append(zeile);
+  return wurzel;
+}
+async function entwurfWiederherstellen() {
+  const a = S.entwurfAngebot;
+  if (!a || S.pfad !== a.pfad) return;
+  // Baut der Entwurf auf einer anderen Fassung auf als der, die jetzt in der Datei steht, wurde die Datei inzwischen von außen geändert: ihre Fassung kommt vorher in die Ablage
+  if (a.entwurf.basisHash && a.datei && a.entwurf.basisHash !== a.datei.hash) {
+    try { await api.ablageAblegen(a.pfad, a.datei.inhalt, "fremd-ueberschrieben"); } catch (e) { toast(e.message, { fehler: true }); return; }
+  }
+  // Hat der Nutzer seit dem Öffnen schon etwas anderes getippt, geht es nicht verloren: es kommt vorher in die Ablage
+  const jetzt = ed.text();
+  if (jetzt !== a.entwurf.text && jetzt !== S.basis) {
+    try { await api.ablageAblegen(a.pfad, jetzt, "meine-verworfen"); } catch (e) { toast(e.message, { fehler: true }); return; }
+    toast(TN.entwurf.deinTextAbgelegt);
+  }
+  if (S.entwurfAngebot !== a || S.pfad !== a.pfad) return;
+  S.entwurfAngebot = null;
+  ed.setzeText(a.entwurf.text);
+  S.dirty = true; zeigeBanner(); zeigeStand("ungespeichert");
+  journal.schreibeJetzt(); // der Text bleibt im Journal, bis er gespeichert ist
+  clearTimeout(speicherTimer); speicherTimer = setTimeout(speichere, 400);
+  toast(TN.entwurf.wiederhergestellt);
+  ed.fokus();
+}
+async function entwurfVerwerfen() {
+  const a = S.entwurfAngebot;
+  if (!a) return;
+  try { await api.ablageAblegen(a.pfad, a.entwurf.text, "entwurf-verworfen"); } catch (e) { toast(e.message, { fehler: true }); return; }
+  journal.loesche(a.pfad);
+  S.entwurfAngebot = null; zeigeBanner(); toast(TN.entwurf.verworfen);
+}
+// Beim Start: liegen Entwürfe zu ANDEREN Notizen vor (neuer als die Datei), sagt ein Hinweis es; die offene Notiz prüft pruefeEntwurf selbst.
+async function pruefeEntwuerfeBeimStart() {
+  if (window.__kortexNachAbsturz) { window.__kortexNachAbsturz = false; toast(TN.entwurf.nachAbsturz, { ms: 6000 }); }
+  let l; try { l = await api.entwuerfe(); } catch { return; }
+  // Entwürfe, deren Notiz verschoben, umbenannt oder gelöscht wurde, hätten nie mehr einen Ort: sie kommen in die Ablage (Einfaches Kriterium: die Datei fehlt im Baum)
+  if (S.baum.length) {
+    let waisen = 0;
+    for (const e of (l?.entwuerfe || []).filter((x) => x.pfad !== S.pfad && !S.eintraege.get(x.pfad))) {
+      try {
+        const r = await api.entwurf(e.pfad);
+        if (r?.entwurf) { await api.ablageAblegen(e.pfad, r.entwurf.text, "entwurf-verworfen"); }
+        await api.entwurfLoeschen(e.pfad); waisen++;
+      } catch { /* beim nächsten Start noch einmal */ }
+    }
+    if (waisen) toast(TN.entwurf.waise(waisen), { ms: 10000 });
+  }
+  const kandidaten = (l?.entwuerfe || []).filter((e) => e.pfad !== S.pfad && S.eintraege.get(e.pfad) && Date.parse(S.eintraege.get(e.pfad).geaendert) < Date.parse(e.zeit)).slice(0, 3);
+  for (const e of kandidaten) {
+    let r; try { r = await api.entwurf(e.pfad); } catch { continue; }
+    if (!r?.entwurf) continue;
+    const titel = S.nMap.get(e.pfad)?.titel || ohneEndung(dateiName(e.pfad));
+    toast(TN.entwurf.inAnderer(uhrzeitVon(e.zeit), titel), { ms: 15000, aktion: { text: TN.entwurf.ansehen, tun: () => oeffne(e.pfad) } });
+  }
+}
+// ---- Fenster gewechselt / ausgeblendet: Entwurf sofort ins Journal, offenen Text speichern, danach legt die Werkstatt (bei Einstellung „Fassungen automatisch anlegen“) eine Fassung an.
+let autoLaeuft = false, autoAngehaltenGemeldet = "";
+async function autoSichern(grund) {
+  if (!S.autoOffen || autoLaeuft || !S.info?.vault) return;
+  autoLaeuft = true; S.autoOffen = false;
+  try { const r = await api.autoSichern(grund); if (r?.art === "gesichert") { planeGitRefresh(); } else if (r?.art === "besetzt") S.autoOffen = true; }
+  catch { S.autoOffen = true; }
+  finally { autoLaeuft = false; }
+}
+async function beiFensterWechsel() {
+  journal.schreibeJetzt();
+  if (S.pfad && S.dirty && !S.konflikt && !S.schutz && S.bearbeitbar) { clearTimeout(speicherTimer); try { await speichere(); } catch { /* der Fehler steht im Speicherstand */ } }
+  autoSichern("fenster");
+}
+window.addEventListener("blur", beiFensterWechsel);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") beiFensterWechsel(); });
+window.addEventListener("pagehide", () => journal.schreibeJetzt());
+async function pruefeAutoStand() {
+  if (!S.git?.repo || S.git.gesperrt) return;
+  try {
+    const a = await api.autoStand();
+    const seit = a?.angehalten?.seit || "";
+    if (seit && seit !== autoAngehaltenGemeldet) toast(a.angehalten.grund === "pruefung" ? TN.auto.angehalten : a.angehalten.grund === "hook-fehler" ? TN.auto.hookFehler : TN.auto.fehler, { fehler: true, ms: 14000 });
+    autoAngehaltenGemeldet = seit;
+  } catch { /* ohne Werkstatt gibt es nichts zu melden */ }
 }
 
 function setzeFenstertitel() {
@@ -1025,7 +1282,7 @@ function posteingangLeiste() {
 // Datei schließen, wenn die Werkstatt sie verschoben hat
 function schliesseDatei() {
   clearTimeout(speicherTimer);
-  S.pfad = null; S.hash = null; S.dirty = false; S.konflikt = null; S.schutz = false; S.aktuellePruefung = null; S.entwurf = null;
+  S.pfad = null; S.hash = null; S.dirty = false; S.konflikt = null; S.schutz = false; S.aktuellePruefung = null; S.entwurf = null; S.basis = null; S.fremdOffen = false; S.entwurfAngebot = null;
   ed.setzeText("", { nurLesen: false });
   zeigeBanner(); zeichnePfad(); zeichneWerkzeuge(); setzeFenstertitel(); aktualisiereStatusDatei(); ladeInfo(); zeigeLeer();
   lokal.schreib("pfad", null);
@@ -1435,8 +1692,9 @@ async function ladeInfo({ leise = false } = {}) {
   const rueckSek = sektion("rueck", T.eigenschaften.rueck);
   const infoSek = sektion("info", T.eigenschaften.info);
   const verlaufSek = sektion("verlauf", T.eigenschaften.verlauf);
-  bezSek.hidden = verwSek.hidden = rueckSek.hidden = true;
-  inhalt.append(wahrheit, feldSek, bezSek, verwSek, rueckSek, infoSek, verlaufSek);
+  const ablageSek = sektion("ablage", null);
+  bezSek.hidden = verwSek.hidden = rueckSek.hidden = ablageSek.hidden = true;
+  inhalt.append(wahrheit, feldSek, bezSek, verwSek, rueckSek, infoSek, verlaufSek, ablageSek);
 
   // Wahrheitsstatus
   aufgaben.push(api.pruefung(pfad).then((pr) => {
@@ -1508,6 +1766,19 @@ async function ladeInfo({ leise = false } = {}) {
       reihe(T.eigenschaften.woerter, h("span", { text: woerter === null ? "–" : woerter.toLocaleString("de-DE") }), { rechts: true }),
       reihe(T.eigenschaften.groesse, h("span", { text: bytes === null ? "–" : bytesText(bytes) }), { rechts: true })]));
   }));
+
+  // Gesicherte Fassungen: was Kortex vor einem Überschreiben oder Verwerfen zur Seite gelegt hat (Fassungs-Ablage)
+  api.ablage(pfad).then((r) => {
+    if (nr !== infoNr) return;
+    const liste = (r.fassungen || []).slice(0, 8);
+    ablageSek.hidden = !liste.length;
+    if (!liste.length) return;
+    ablageSek.replaceChildren(h("h3", { text: TN.ablage.titel }), ...liste.map((f) => h("div", { klasse: "fassung ablage-eintrag", "data-ablage": f.id },
+      h("div", { klasse: "ablage-text" }, h("b", { text: ausTabelle(TN.ablage.grund, f.grund) || f.grund || "" }), h("span", { klasse: "leise", text: `${datumZeit(f.zeit) || ""}${f.quelle && f.grund?.startsWith("fremd") ? " · " + TN.ablage.von(f.quelle) : ""}` })),
+      baueKnopf({ text: TN.ablage.wiederherstellen, groesse: "s", aktion: "ablage-holen", aufKlick: async () => {
+        try { const x = await api.ablageFassung(f.id); if (S.pfad === pfad && !S.schutz && !S.konflikt) { ed.ersetzeAlles(x.inhalt); toast(TN.ablage.geholt); } } catch (e) { toast(e.message, { fehler: true }); }
+      } }))));
+  }).catch(() => {});
 
   // Verlauf dieser Notiz
   if (istGitGesperrt()) verlaufSek.append(h("p", { klasse: "leise", text: T.info.gitGesperrt }));
@@ -1727,7 +1998,7 @@ let gitTimer = null, baumTimer = null;
 async function ladeGit() {
   try { S.git = await api.status(); }
   catch (e) { S.git = gitGesperrt(e) ? { repo: true, gesperrt: true, grund: e.daten?.fehler || null } : null; }
-  zeichneStatus(); zeigeBanner(); meldeKonflikt();
+  zeichneStatus(); zeigeBanner(); meldeKonflikt(); pruefeAutoStand();
 }
 function planeGitRefresh() { clearTimeout(gitTimer); gitTimer = setTimeout(ladeGit, 1200); }
 function planeBaumRefresh() { clearTimeout(baumTimer); baumTimer = setTimeout(ladeBaum, 1500); }
@@ -1749,14 +2020,20 @@ async function ladeNachAbgleich() {
 }
 // Die offene Datei mit dem Datenträger abgleichen (nach Abgleich, Zusammenführen und bei Live-Ereignissen): unverändert → still nachladen
 // (Auswahl und Scrollposition bleiben), sonst die bestehende Konfliktlogik (basisHash) — ungespeicherte Eingaben gehen nie verloren.
-async function abgleichOffeneDatei() {
+async function abgleichOffeneDatei(tiefe = 0) {
   const pfad = S.pfad;
   if (!pfad) return;
   const d = await api.datei(pfad).catch(() => null);
   // erst NACH dem Laden prüfen: inzwischen getippt oder Datei gewechselt?
   if (d && S.pfad === pfad && d.hash !== S.hash) {
-    if (S.dirty || S.speichert || laufendesSpeichern) { if (!S.konflikt) { S.konflikt = { aktuellerHash: d.hash }; zeigeBanner(); zeigeStand("konflikt"); } }
-    else { S.hash = d.hash; ed.setzeText(d.inhalt, { nurLesen: !!d.schreibschutz, behalte: true }); zeigeStand(d.schreibschutz ? "schutz" : "gespeichert", true); ladeInfo(); }
+    if (S.konflikt) return; // die Ansicht zum Entscheiden ist schon offen; sie rechnet bei Bedarf neu
+    if (S.speichert || laufendesSpeichern) { // das laufende Speichern entscheidet (Erfolg oder Zusammenführung); danach noch einmal nachsehen
+      if (tiefe < 2) { await laufendesSpeichern?.catch?.(() => {}); return abgleichOffeneDatei(tiefe + 1); }
+      return;
+    }
+    if (S.dirty) { // eigene Eingaben im Spiel: nie überschreiben — zusammenführen (Basis · meine Fassung · Platte)
+      S.fremdOffen = true; clearTimeout(speicherTimer); journal.schreibeJetzt(true); speichere();
+    } else { S.hash = d.hash; S.basis = d.inhalt; ed.setzeText(d.inhalt, { nurLesen: !!d.schreibschutz, behalte: true }); zeigeStand(d.schreibschutz ? "schutz" : "gespeichert", true); ladeInfo(); }
   }
 }
 
@@ -2627,6 +2904,7 @@ window.studio.vorSchliessen = () => {
     clearTimeout(speicherTimer);
     try { await einstModul?.flushe?.(); } catch { /* die Seite hat nichts Offenes */ } // Eingaben der Seite „Einstellungen“ (Textfelder warten 700 ms) gehen nicht verloren
     if (!(await speichereAlles())) return { ok: false, grund: S.konflikt ? "konflikt" : letzterFehler || T.fehler.speichern };
+    await Promise.race([autoSichern("beenden"), new Promise((r) => setTimeout(r, 3000))]); // beim Schließen/Beenden: offene Änderungen als Fassung sichern (höchstens 3 s, danach geht das Schließen weiter)
     // Läuft noch ein Abgleich, Sichern, Klonen, Öffnen, Anlegen oder Remote-Verbinden, geht es wie bei ungespeicherten Eingaben: die App fragt nach
     const laeuft = laufendeArbeiten()[0];
     if (laeuft) return { ok: false, grund: ausTabelle(T.laeuft, laeuft) || T.laeuft.sonst };
@@ -2873,7 +3151,8 @@ let intervalle = false;
 function zuruecksetzen() {
   clearTimeout(speicherTimer); clearTimeout(gitTimer); clearTimeout(baumTimer); clearTimeout(liveTimer); clearTimeout(menueTimer); clearTimeout(kiTimer); kiSammlung = [];
   liveSammlung = { pfade: [], aufgaben: false, alles: false };
-  S.pfad = null; S.hash = null; S.dirty = false; S.konflikt = null; S.schutz = false; S.speichert = false; S.aktuellePruefung = null; S.entwurf = null; S.vorlagenOrdner = VORLAGENORDNER_STANDARD;
+  S.pfad = null; S.hash = null; S.dirty = false; S.konflikt = null; S.schutz = false; S.speichert = false; S.aktuellePruefung = null; S.entwurf = null; S.basis = null; S.fremdOffen = false; S.entwurfAngebot = null; S.dienstWeg = false; S.autoOffen = false; S.vorlagenOrdner = VORLAGENORDNER_STANDARD;
+  journal.zuruecksetzen(); clearTimeout(dienstTimer);
   schreiben.zuruecksetzen(); // Zurück/Vor gehört zum alten Vault
   S.notizen = []; S.nMap = new Map(); S.baum = []; S.eintraege = new Map(); S.git = null; S.gesundheit = null; S.rueckfragen = null; S.syncFehler = null; S.ki = null;
   S.suche = { aktiv: false, treffer: [], auswahl: 0, frage: "" }; S.vorVerlauf = null;
@@ -2919,6 +3198,7 @@ async function ladeAlles() {
   if (wunsch && S.eintraege.has(wunsch)) await oeffne(wunsch, { ausListe: true });
   zeigeLeer();
   markiereBereit();
+  pruefeEntwuerfeBeimStart();
 }
 
 richteGriffeEin();

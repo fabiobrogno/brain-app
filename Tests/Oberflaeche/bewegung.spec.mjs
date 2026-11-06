@@ -317,7 +317,7 @@ test("Windung als Ladeanzeige: Abgleich und Frag zeigen das Zeichen statt eines 
   await expect(sync).toBeVisible();
   await expect(sync.locator("svg.windung-laden")).toHaveCount(1);
   await expect(sync).toContainText("Gleiche ab");
-  expect(await sync.locator(".wl-lauf").evaluate((e) => e.getAnimations().length)).toBe(1);
+  await expect.poll(() => sync.locator(".wl-lauf").evaluate((e) => e.getAnimations().length), { timeout: 3000, intervals: [30] }).toBe(1); // die Animation startet erst im nächsten Frame (CI-Flake)
   await bild(page, "windung-sync");
   frei();
   await expect(page.locator('button[data-st="sync"][data-zustand="laeuft"]')).toHaveCount(0, { timeout: 8000 });

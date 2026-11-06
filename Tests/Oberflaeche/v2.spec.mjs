@@ -436,7 +436,7 @@ test("W6: Vault wechseln im Konfliktzustand bricht nicht still ab, sondern sagt 
   await page.locator(".cm-content").click();
   await page.keyboard.press("Meta+ArrowDown");
   await page.keyboard.type("meine Eingabe");
-  await expect(page.locator('[data-banner="konflikt"]')).toBeVisible({ timeout: 5000 });
+  await expect(page.locator('[data-banner="fremd-konflikt"]')).toBeVisible({ timeout: 5000 });
   await page.click("#vault-wechsler");
   await page.locator('.menue [data-menue="vault"]').nth(1).click();
   const toast = page.locator(".toast.fehler");

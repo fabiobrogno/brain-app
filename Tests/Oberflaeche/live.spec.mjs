@@ -241,7 +241,7 @@ test("Offene Datei, lokal unverändert: externe Änderung wird still nachgeladen
   await expect(page.locator('[data-banner="konflikt"]')).toHaveCount(0);
 });
 
-test("Offene Datei mit ungespeicherter Eingabe: externe Änderung zeigt den Konflikt-Hinweis, getippter Text bleibt erhalten (kein Datenverlust)", async ({ page }) => {
+test("Offene Datei mit ungespeicherter Eingabe: externe Änderung führt zur Wahl, getippter Text bleibt erhalten (kein Datenverlust)", async ({ page }) => {
   await oeffneStudio(page);
   const pfad = "10_notizen/Reise nach Lissabon.md";
   await page.click(`#liste-koerper [data-karte][data-pfad="${pfad}"]`);
@@ -252,13 +252,14 @@ test("Offene Datei mit ungespeicherter Eingabe: externe Änderung zeigt den Konf
   await page.keyboard.press("Meta+End");
   await page.keyboard.type(" MEINE-EINGABE");
   writeFileSync(join(vault, pfad), "# Reise nach Lissabon\n\nVon außen komplett ersetzt.\n");
-  const banner = page.locator('[data-banner="konflikt"]');
-  await expect(banner).toBeVisible({ timeout: 5000 });
+  const ansicht = page.locator('[data-banner="fremd-konflikt"]');
+  await expect(ansicht).toBeVisible({ timeout: 5000 });
   await expect(page.locator(".cm-content")).toContainText("MEINE-EINGABE");
   await expect(page.locator(".cm-content")).not.toContainText("komplett ersetzt");
-  // bestehende Konfliktlogik: „Neu laden“ übernimmt die Fassung von außen
-  await page.click('[data-aktion="neu-laden"]');
-  await expect(banner).toHaveCount(0);
+  // „Andere“: die Fassung von außen übernehmen (meine Eingabe liegt danach in der Ablage)
+  await page.click('.fr-block [data-aktion="fremd-andere"]');
+  await page.click('[data-aktion="fremd-speichern"]');
+  await expect(ansicht).toHaveCount(0);
   await expect(page.locator(".cm-content")).toContainText("komplett ersetzt");
 });
 

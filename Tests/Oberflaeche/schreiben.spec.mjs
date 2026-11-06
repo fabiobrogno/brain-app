@@ -433,3 +433,20 @@ test("W2: Verwerfen im Speicherfehler-Dialog lässt einen Entwurf nicht ohne Abl
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("# Wichtig\nNicht verlieren\n");
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem("brain-studio.entwurf-verworfen")).text)).toBe("# Wichtig\nNicht verlieren\n");
 });
+
+test("Nach Review 2: eine frisch angelegte Notiz hat die richtige Basis — schreibt ein anderes Programm hinein, bevor sie gespeichert ist, gehen getippte Zeilen nicht verloren", async ({ page }) => {
+  await start(page, "10_notizen/Reise nach Lissabon.md");
+  await page.keyboard.press("Meta+n");
+  await expect(zeilen(page).first()).toHaveText("# ");
+  await page.keyboard.type("Basis-Test");
+  await expect(page.locator("#speicherstand")).toHaveText("Gespeichert", { timeout: 8000 });
+  const datei = "00_inbox/basis-test.md";
+  expect(lese(datei)).toBe("# Basis-Test\n");
+  // Speichern sperren, damit die nächste Eingabe sicher ungespeichert bleibt; dann schreibt ein anderes Programm oben in die Datei
+  await page.route("**/api/datei", (route) => (route.request().method() !== "PUT" ? route.fallback() : route.fulfill({ status: 500, contentType: "application/json", body: '{"fehler":"offline"}' })));
+  await page.keyboard.press("Enter"); await page.keyboard.type("MEINE ZEILE");
+  writeFileSync(join(vault, datei), "KI-OBEN\n# Basis-Test\n");
+  await expect.poll(() => lese(datei), { timeout: 8000 }).toContain("MEINE ZEILE");
+  expect(lese(datei)).toContain("KI-OBEN");
+  await expect(page.locator('[data-banner="fremd-konflikt"]')).toHaveCount(0);
+});

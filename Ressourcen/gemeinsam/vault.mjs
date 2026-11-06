@@ -23,6 +23,10 @@ import { erzeugeAufgaben } from "./aufgaben-vault.mjs";
 import { erzeugeDateiaktionen } from "./dateiaktionen.mjs";
 import { SUCHE_STANDARD, SUCHE_MAX, sucheWoerter, suchAuszug, sucheText } from "./ki-antworten.mjs";
 import { erzeugeSuchindex } from "./suchindex.mjs";
+import * as merge3 from "./merge3.mjs";
+import * as ablageFn from "./ablage.mjs";
+import * as entwurfFn from "./entwurf.mjs";
+import { leseEreignisse, kennungVault, programmAnzeige } from "./aktivitaet.mjs";
 
 export { HttpFehler, pruefeText, heuteIso, supportOrdner };
 export const STUFE_TEXT = { gruen: "grün", gelb: "gelb", rot: "rot", grau: "grau", ohne: "ohne Befund" };
@@ -198,12 +202,99 @@ export function oeffneVault(vaultPfad, opts = {}) {
     const tmp = tmpName(abs);
     try {
       writeFileSync(tmp, buf, { flag: "wx", mode: alt ? statSync(abs).mode & 0o777 : 0o644 });
+      // Direkt vor dem Ersetzen noch einmal prüfen: zwischen dem ersten Lesen und hier kann ein anderes Programm geschrieben haben (das Schreiben der Temp-Datei dauert bei großen Dateien Millisekunden)
+      if (alt) { let jetzt = null; try { jetzt = readFileSync(abs); } catch { /* weg: unten */ } if (!jetzt) throw new HttpFehler(404, "Diese Datei gibt es nicht mehr."); if (HASH(jetzt) !== HASH(alt)) throw new HttpFehler(409, "Die Datei wurde inzwischen geändert (zum Beispiel von einem anderen Programm).", { aktuellerHash: HASH(jetzt) }); }
       if (alt) renameSync(tmp, abs); // atomar ersetzen
       else { try { linkSync(tmp, abs); } catch (e) { if (e.code === "EEXIST") throw new HttpFehler(409, "Diese Datei gibt es schon."); throw e; } unlinkSync(tmp); }
     } catch (e) { try { unlinkSync(tmp); } catch { /* schon weg */ } throw e; }
     suchindex?.aendere(rel);
     return { hash: HASH(buf), geaendert: statSync(abs).mtime.toISOString() };
   }
+
+  // ---------- Fremdänderung bei offener Notiz: Drei-Wege-Zusammenführung, Ablage, Entwurfs-Journal ----------
+  const supportOrdnerV = () => opts.support || supportOrdner();
+  // Wer hat die Datei zuletzt geändert? Das Aktivitätsprotokoll kennt KI-Ablagen und Änderungen der letzten Minuten → "Claude Code", sonst null.
+  function quelleFuer(rel) {
+    try {
+      const seit = new Date(Date.now() - 30 * 60_000).toISOString();
+      const e = leseEreignisse(supportOrdnerV(), kennungVault(wurzel), { seit }).filter((x) => Array.isArray(x.pfade) && x.pfade.includes(rel) && x.programm).pop();
+      return e ? programmAnzeige(e.programm) : null;
+    } catch { return null; }
+  }
+  // a = { pfad, basis (Text beim Öffnen bzw. letzten Speichern), meine (Text im Editor), basisHash (Hash der Datei, auf der der Editor aufbaut) }
+  //   ohne auswahl: hat die Platte sich nicht geändert → speichern · lässt sich alles zusammenführen → zusammengeführt geschrieben (die fremde Fassung liegt vorher in der Ablage) ·
+  //                 sonst { art: "konflikt", teile, aktuellerHash } ohne etwas zu schreiben
+  //   mit auswahl (je Konfliktblock "meine" | "andere" | "beide" | { text }) und gesehenHash (der aktuellerHash, den die Oberfläche gezeigt hat): die Wahl anwenden und schreiben;
+  //                 hat die Platte sich inzwischen noch einmal geändert → 409 art "erneut" und es wird nichts geschrieben.
+  // Vor jedem Überschreiben liegt die fremde Fassung in der Ablage (und, wenn meine Fassung nicht ganz übernommen wird, auch meine). Schlägt das Ablegen fehl, wird nichts geschrieben.
+  function zusammenfuehren(a) {
+    if (!a || typeof a !== "object") throw new HttpFehler(400, "Die Anfrage ist kein Objekt.");
+    const { pfad, basis, meine, basisHash, auswahl, gesehenHash } = a;
+    if (typeof pfad !== "string" || typeof meine !== "string" || typeof basisHash !== "string") throw new HttpFehler(400, "pfad, meine und basisHash fehlen.");
+    const aktuell = lies(pfad);
+    if (aktuell.schreibschutz) throw new HttpFehler(403, "Diese Datei wird automatisch erzeugt und ist schreibgeschützt.");
+    // Hat die Platte sich gegenüber dem Stand des Editors nicht verändert (gleicher Text wie die Basis), gibt es nichts zusammenzuführen: einfach speichern.
+    // Gilt der Text, nicht der Hash: ein Programm, das dieselben Bytes neu schreibt, ist keine Änderung.
+    if (typeof basis === "string" ? aktuell.inhalt === basis : aktuell.hash === basisHash) { const r = schreibe({ pfad, inhalt: meine, basisHash: aktuell.hash }); return { art: "gespeichert", hash: r.hash, geaendert: r.geaendert }; }
+    if (typeof basis !== "string") throw new HttpFehler(400, "basis fehlt (der Text, auf dem die Eingaben aufbauen).");
+    const quelle = quelleFuer(aktuell.pfad);
+    const erg = merge3.zusammenfuehren(basis, meine, aktuell.inhalt);
+    let wahl = [];
+    if (auswahl !== undefined) {
+      if (gesehenHash !== aktuell.hash) throw new HttpFehler(409, "Die Datei wurde inzwischen noch einmal geändert. Kortex zeigt dir den neuen Stand.", { art: "erneut", aktuellerHash: aktuell.hash });
+      if (!Array.isArray(auswahl) || auswahl.length !== erg.konflikte || !auswahl.every(merge3.istWahl)) throw new HttpFehler(400, "Die Wahl passt nicht zu den Konfliktblöcken.");
+      wahl = auswahl;
+    } else if (!erg.sauber) {
+      return { art: "konflikt", aktuellerHash: aktuell.hash, teile: erg.teile, konflikte: erg.konflikte, quelle };
+    }
+    const text = merge3.baue(erg.teile, wahl);
+    const art = auswahl !== undefined ? "zusammengefuehrt" : (text === aktuell.inhalt ? "uebernommen" : "eingearbeitet");
+    const ablegeMeine = (grund) => ablageFn.legeAb(supportOrdnerV(), wurzel, { pfad: aktuell.pfad, inhalt: meine, grund, quelle: "meine Fassung" });
+    if (text === aktuell.inhalt) return { art, text, hash: aktuell.hash, quelle, ...(meine !== text ? { meineFassung: ablegeMeine(auswahl !== undefined ? "meine-verworfen" : "meine-vor-einarbeiten").id } : {}) };
+    // Ablage VOR dem Schreiben: die fremde Fassung (und meine, wenn sie nicht vollständig im Ergebnis steckt)
+    const fremd = ablageFn.legeAb(supportOrdnerV(), wurzel, { pfad: aktuell.pfad, inhalt: aktuell.inhalt, grund: auswahl !== undefined ? "fremd-zusammengefuehrt" : "fremd-eingearbeitet", quelle });
+    const eigene = meine !== text ? ablegeMeine(auswahl !== undefined ? "meine-vor-zusammenfuehren" : "meine-vor-einarbeiten") : null; // auch beim automatischen Einarbeiten: meine Fassung liegt danach in der Ablage
+    const r = schreibe({ pfad, inhalt: text, basisHash: aktuell.hash });
+    return { art, text, hash: r.hash, geaendert: r.geaendert, quelle, fremdFassung: fremd.id, ...(eigene ? { meineFassung: eigene.id } : {}) };
+  }
+  // Eine Fremddatei, die noch geschrieben wird (Größe oder Änderungszeit ändern sich), nicht halb zusammenführen: erst warten, bis sie `ruheMs` still ist (höchstens `hoechstMs`).
+  async function warteBisStabil(pfad, { ruheMs = 300, hoechstMs = 3000, schritt = 60 } = {}) {
+    let abs; try { abs = loese(wurzel, pfad).abs; } catch { return true; }
+    const stand = () => { try { const st = statSync(abs); return `${st.mtimeMs}:${st.size}`; } catch { return "weg"; } };
+    const ende = Date.now() + hoechstMs;
+    let letzter = stand(), seit = Date.now();
+    try { seit = Math.min(seit, statSync(abs).mtimeMs); } catch { /* weg */ } // eine längst unveränderte Datei ist sofort stabil
+    for (;;) {
+      if (Date.now() - seit >= ruheMs) return true;
+      if (Date.now() >= ende) return false;
+      await new Promise((ok) => setTimeout(ok, schritt));
+      const jetzt = stand();
+      if (jetzt !== letzter) { letzter = jetzt; seit = Date.now(); }
+    }
+  }
+  const ablageListe = (pfad) => ({ fassungen: ablageFn.liste(supportOrdnerV(), wurzel, pfad ? loese(wurzel, pfad).rel : null) });
+  const ablageLese = (id) => ablageFn.lese(supportOrdnerV(), wurzel, id);
+  const ablageLegeAb = (a) => { // eine Fassung, die der Nutzer selbst verwirft („Neu laden“, „Verwerfen“): erst ablegen, dann darf das Studio sie weglassen
+    if (!a || typeof a.pfad !== "string" || typeof a.inhalt !== "string") throw new HttpFehler(400, "pfad und inhalt fehlen.");
+    const grund = ["meine-verworfen", "entwurf-verworfen", "fremd-ueberschrieben"].includes(a.grund) ? a.grund : "meine-verworfen";
+    const r = ablageFn.legeAb(supportOrdnerV(), wurzel, { pfad: loese(wurzel, a.pfad).rel, inhalt: a.inhalt, grund, quelle: grund === "fremd-ueberschrieben" ? "andere Fassung" : "meine Fassung" });
+    return { id: r.id, zeit: r.zeit };
+  };
+  // Entwurf: nur zurückgeben, wenn er NEUER ist als die Datei und anders als ihr Inhalt; ist er gleich, ist er überflüssig und wird entfernt.
+  function entwurfPruefen(pfad) {
+    const e = entwurfFn.leseEntwurf(supportOrdnerV(), wurzel, pfad);
+    if (!e) return { entwurf: null };
+    let d = null; try { d = lies(pfad); } catch { /* Datei gibt es (noch) nicht */ }
+    if (d && d.inhalt === e.text) { entwurfFn.loescheEntwurf(supportOrdnerV(), wurzel, pfad); return { entwurf: null }; }
+    if (d && Date.parse(d.geaendert) > Date.parse(e.zeit)) {
+      // Die Datei ist neuer als der Entwurf (jemand hat inzwischen gespeichert): der Entwurf wird nicht mehr angeboten, geht aber nicht verloren — er liegt dann in der Ablage.
+      try { ablageFn.legeAb(supportOrdnerV(), wurzel, { pfad: d.pfad, inhalt: e.text, grund: "entwurf-verworfen", quelle: "Entwurf" }); entwurfFn.loescheEntwurf(supportOrdnerV(), wurzel, pfad); }
+      catch { /* kann die Ablage nicht schreiben, bleibt der Entwurf liegen */ }
+      return { entwurf: null, aelter: true };
+    }
+    return { entwurf: { text: e.text, zeit: e.zeit, basisHash: e.basisHash }, datei: d ? { inhalt: d.inhalt, hash: d.hash, geaendert: d.geaendert } : null };
+  }
+
 
   // Freien Dateinamen reservieren: name.md, name-2.md, name-3.md … Der Inhalt liegt vorher fertig in einer Temp-Datei und wird mit einem Hartlink an den Namen gesetzt
   // (wie in schreibe): der Name zeigt nie eine halb geschriebene Datei, und ein belegter Name wird nie überschrieben (EEXIST → nächster Name).
@@ -427,6 +518,12 @@ export function oeffneVault(vaultPfad, opts = {}) {
     let m; try { m = await import(pathToFileURL(join(kern, "abgleich-sperre.mjs")).href); } catch { return { ok: true, freigeben() {} }; }
     return m.nimmSperre(join(opts.support || supportOrdner(), "backup", `${vaultKennung(wurzel)}.sperre`), { art });
   }
+  // Etwas unter der gemeinsamen Sperre ausführen (automatische Fassung): ist sie gehalten, 409 art „laeuft“. Die Sperre wird immer freigegeben.
+  async function mitAbgleichSperre(art, fn) {
+    const sp = await abgleichSperre(art);
+    if (!sp.ok) throw new HttpFehler(409, BESETZT_TEXT, { art: "laeuft" });
+    try { return await fn(); } finally { sp.freigeben(); }
+  }
   const BESETZT_TEXT = "Gerade läuft ein anderer Abgleich (zum Beispiel die Online-Sicherung im Hintergrund). Bitte kurz warten und noch einmal versuchen.";
   // Ein Befehl des Kerns als Kindprozess (nie im eigenen Prozess: ein Abgleich kann Minuten dauern). → die JSON-Antwort; { ok: false, fehler, status } wird zu HttpFehler.
   function kernAbgleich(unter, eingabe, frist = 120_000) {
@@ -550,7 +647,9 @@ export function oeffneVault(vaultPfad, opts = {}) {
   }
 
   return {
-    wurzel, name: basename(wurzel), heute: () => opts.heute || heuteIso(jetzt()), rueckfragen, kitVersion, kitVorhanden, kit, vertrauen, vertrauenStand: stand, baum, lies, imUnterVault: (rel) => { try { return imUnterVault(loese(wurzel, rel).abs); } catch { return false; } }, schreibe, neu, wikiAnlegen, wikiLoese: (ziel, von) => notizIndex.loeseWiki(ziel, ordnerVonPfad(von || "")), merken, suche, sucheIndex, sucheVorwaermen, suchindexBeende, suchindexAendere, suchindexPruefeNeu, suchindexStand: () => (suchindex ? suchindex.stand() : null), suchindexRuhe: () => (suchindex ? suchindex.ruhe() : Promise.resolve()), suchenFuerKi, pruefung, gesundheit, nutzung,
+    wurzel, name: basename(wurzel), heute: () => opts.heute || heuteIso(jetzt()), rueckfragen, kitVersion, kitVorhanden, kit, vertrauen, vertrauenStand: stand, baum, lies, imUnterVault: (rel) => { try { return imUnterVault(loese(wurzel, rel).abs); } catch { return false; } }, schreibe, zusammenfuehren, ablageListe, ablageLese, ablageLegeAb, entwurfPruefen,
+    entwurfSchreiben: (a) => entwurfFn.schreibeEntwurf(supportOrdnerV(), wurzel, a || {}), entwurfLoeschen: (pfad) => ({ ok: entwurfFn.loescheEntwurf(supportOrdnerV(), wurzel, pfad) }), entwuerfe: () => ({ entwuerfe: entwurfFn.listeEntwuerfe(supportOrdnerV(), wurzel) }),
+    neu, wikiAnlegen, wikiLoese: (ziel, von) => notizIndex.loeseWiki(ziel, ordnerVonPfad(von || "")), merken, suche, sucheIndex, sucheVorwaermen, suchindexBeende, suchindexAendere, suchindexPruefeNeu, suchindexStand: () => (suchindex ? suchindex.stand() : null), suchindexRuhe: () => (suchindex ? suchindex.ruhe() : Promise.resolve()), suchenFuerKi, pruefung, gesundheit, nutzung,
     umbenennen: mitRuhe(dateiAktionen.umbenennen), verschieben: mitRuhe(dateiAktionen.verschieben), loeschen: mitRuhe(dateiAktionen.loeschen),
     papierkorb: dateiAktionen.papierkorbListe, papierkorbWiederherstellen: mitRuhe(dateiAktionen.papierkorbWiederherstellen), papierkorbEndgueltig: dateiAktionen.papierkorbEndgueltig, papierkorbHinweisErledigt: dateiAktionen.papierkorbHinweisErledigt, aktionenOrt: dateiAktionen.aktionenOrt,
     vorgangZurueck: mitRuhe((a) => dateiAktionen.vorgangZurueck(a.id, a)), vorgangWieder: mitRuhe((a) => dateiAktionen.vorgangWieder(a.id, a)), vorgangMoeglich: dateiAktionen.vorgangMoeglich,
@@ -568,7 +667,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
     },
     // extra.ohneHooks: der Commit läuft auch in einem vertrauten Vault ohne Hooks (Rückgängig für KI-Ablagen, P8a)
     // Aktivitätsprotokoll (P8a, Rückgängig): Ordnername des Posteingangs; Git beschäftigt?; ist die Datei versioniert UND unverändert gegenüber HEAD (ls-files + diff, ohne Hooks)?
-    inboxOrdnerName: inboxOrdner, umstellungLaeuft: () => umstellungLaeuft(wurzel),
+    mitAbgleichSperre, warteBisStabil, inboxOrdnerName: inboxOrdner, umstellungLaeuft: () => umstellungLaeuft(wurzel),
     // Läuft oder wartet gerade ein Abgleich? (Git beschäftigt · die gemeinsame Sperre aller Abgleiche · ein gemerkter Konfliktstand „konfliktBasis“) — dann ändert Kortex nichts am Arbeitsbaum.
     abgleichBeschaeftigt: async () => {
       if (gitFn.gitBeschaeftigt(wurzel)) return true;
