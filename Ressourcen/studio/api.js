@@ -148,10 +148,16 @@ export const api = {
   kiErkennen: (neu) => anfrage("GET", "/api/ki/erkennen" + (neu ? "?neu=1" : "")),
   // ---- KI & Konten in den Einstellungen (P6). Programme, Anmeldestand und Anmelden beantwortet in der App Swift selbst (Login-Shell-PATH, Terminal); im Browser antwortet die Werkstatt mit einem Rückfall.
   kiProgramme: (neu) => anfrage("GET", "/api/ki/programme" + (neu ? "?neu=1" : "")),
-  kiAnmeldestatus: (programm, ordner) => anfrage("POST", "/api/ki/anmeldestatus", { programm, ordner: ordner || null }),
+  // identitaet: true bittet das Programm zusätzlich um E-Mail und Tarif (nur Anzeige, nie gespeichert; Schalter „Kontonamen vom Programm zeigen“)
+  kiAnmeldestatus: (programm, ordner, identitaet) => anfrage("POST", "/api/ki/anmeldestatus", { programm, ordner: ordner || null, ...(identitaet ? { identitaet: true } : {}) }),
   kiAnmelden: (programm, ordner) => anfrage("POST", "/api/ki/anmelden", { programm, ordner: ordner || null }),
   kiAnmeldung: (konto, zustand) => anfrage("POST", "/api/ki/anmeldung", { konto, zustand }),
+  // Ein neues Konto in drei Schritten: kiKontoNeu legt den Ordner unter seinem endgültigen Namen an und das Konto als ausstehend, unsichtbar (Antwort: `ausstehend`), kiKontoFertig nimmt nach bestätigter Anmeldung nur die Marke weg (nichts wird umbenannt, Antwort: `neuesKonto`), kiKontoAbbruch räumt auf.
   kiKontoNeu: ({ programm, name, stufe }) => anfrage("POST", "/api/ki/konto-neu", { programm, name, ...(stufe ? { stufe } : {}) }),
+  kiKontoFertig: (id) => anfrage("POST", "/api/ki/konto-fertig", { id }),
+  kiKontoAbbruch: (id) => anfrage("POST", "/api/ki/konto-abbruch", { id }),
+  // das aktive Konto eines Programms (ki-konten.json): Vorgabe für Frag und neue Verbindungen
+  kiAktiv: (programm, konto) => anfrage("PUT", "/api/ki/aktiv", { programm, konto }),
   // Ordner eines eigenen Kontos in den Papierkorb: in der App legt Swift ihn über den Papierkorb des Finders ab (Zurücklegen geht), im Browser die Werkstatt
   kiOrdnerPapierkorb: ({ id, programm, pfad }) => anfrage("POST", "/api/ki/ordner-papierkorb", { id, programm, ordner: pfad }),
   kiKontoEntfernen: (id) => anfrage("POST", "/api/ki/konto-entfernen", { id }),

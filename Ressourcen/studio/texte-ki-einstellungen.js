@@ -98,6 +98,23 @@ export const TKE = {
     ja: "In den Papierkorb legen",
     abbrechen: "Abbrechen",
     erledigt: (n) => `Konto „${n}“ entfernt. Der Ordner liegt im Papierkorb.`,
+    nichtMehrFragen: "Nicht mehr fragen",
+    einstellung: "Einstellung ansehen",
+  },
+  // ---- Konten (Abzeichen, aktives Konto, Kontingent)
+  konten: {
+    aktiv: "Aktiv",
+    abgelaufen: "Abgelaufen",
+    anmeldenNoetig: "Anmelden nötig",
+    aktivSetzen: "Aktiv setzen",
+    aktivSetzenFuer: (n) => `${n} zum aktiven Konto machen`,
+    aktivErfolg: (n) => `${n} ist jetzt das aktive Konto. Gilt ab der nächsten Frage.`,
+    aktivNote: "Das aktive Konto ist die Vorgabe für „Frag deinen Vault“ und für neue Verbindungen und der Vorschlag für die Pflege. Gilt ab der nächsten Frage.",
+    keinKontingent: "Kein Kontingent",
+    gleichesKonto: (n) => `Gleiches Konto wie „${n}“`,
+  },
+  kontingent: {
+    leer: "Sobald ein Konto verbunden ist und das Programm Werte liefert, steht hier sein Verbrauch.",
   },
   // ---- Zugriff (Matrix)
   zugriff: {
@@ -175,6 +192,8 @@ export const TKE = {
   },
   // ---- Pflege
   pflege: {
+    vorschlag: (n) => `Vorschlag: das aktive Konto „${n}“`,
+    vorschlagNehmen: "Übernehmen",
     text: "Einmal am Tag räumt Kortex im Hintergrund auf. Wählbar sind nur Konten mit Stufe „Erweitert“.",
     keinKonto: "Kein Konto mit „Erweitert“",
     konto: (v) => `Pflege-Konto für ${v}`,

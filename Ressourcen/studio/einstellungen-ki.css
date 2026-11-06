@@ -3,6 +3,37 @@
    Muster: Orca (MIT, Copyright (c) 2026 Lovecast Inc., Commit 9bccd67): AgentDetectionCatalog.tsx (Programmliste mit Pfad und Version). Werte von Hand nachgebaut. */
 
 .kx-host { min-width: 0; }
+
+/* ---------- Unterbereiche (Segment oben), Konten-Zeile mit Mini-Balken, aktives Konto, Kontingent je Konto (Paket E4) ---------- */
+.e-unter { margin: 2px 0 18px; display: flex; }
+.e-unter .bs-segment { max-width: 100%; }
+.e-zeigen { margin-left: auto; display: none; align-items: center; border: 0; background: transparent; font: inherit; font-size: 12px; color: var(--akzent-tinte); cursor: pointer; padding: 3px 8px; border-radius: 6px; white-space: nowrap; flex: none; }
+.suchmodus .e-zeigen { display: inline-flex; }
+.e-zeigen:hover { background: var(--hover-2); }
+.e-zeigen:focus-visible { outline: 2px solid var(--akzent); outline-offset: 1px; }
+.kx-zeile.kx-mit-mini { grid-template-columns: 28px minmax(0, 1fr) 218px auto; }
+.kx-mini { min-width: 0; font-size: 12px; white-space: nowrap; }
+.kx-mini .kt-mini-text, .kx-mini .kt-mini-rest { white-space: nowrap; }
+.kx-mini .kt-mini { width: 100%; }
+.kx-mini .kt-mini .kt-balken { flex: 1; width: auto; min-width: 36px; }
+@media (max-width: 860px) {
+  .kx-zeile.kx-mit-mini { grid-template-columns: 28px minmax(0, 1fr); }
+  .kx-zeile.kx-mit-mini > .kx-mini { grid-column: 2; max-width: 240px; }
+  .kx-zeile.kx-mit-mini > .kx-akt { grid-column: 2; justify-content: flex-start; }
+}
+.kx-ident { color: var(--text); }
+.kx-ident-doppelt { color: var(--gelb); }
+.kx-aktiv-note { margin: 0; padding: 9px 14px 11px; border-top: 1px solid var(--linie); font-size: 11.5px; line-height: 1.45; color: var(--text-2); }
+.kx-konto[data-aktiv="ja"] .kx-av { box-shadow: 0 0 0 2px var(--akzent-rand); }
+.kx-vorschlag { display: inline-flex; align-items: center; gap: 8px; margin-left: 10px; font-size: 12px; color: var(--text-2); }
+.kx-vorschlag .knopf-text { font-size: 12px; }
+.kx-kt-liste { display: flex; flex-direction: column; gap: 10px; }
+.kx-kt-karte { display: flex; flex-direction: column; gap: 12px; padding: 12px 14px; border-radius: var(--r-xl); border: 1px solid var(--linie); background: var(--erhoben); box-shadow: var(--schatten-klein); }
+.kx-kt-kopf { display: flex; align-items: center; gap: 10px; }
+.kx-kt-name { flex: 1; min-width: 0; }
+.kx-kt-name b { display: block; font-size: 13.5px; font-weight: 600; }
+.ez-abschnitt[data-abschnitt="ki-kontingent"] > .ez-karte { border: 0; background: transparent; box-shadow: none; overflow: visible; }
+.ez-voll:has(> .kxh-kontingent) { background: transparent; }
 /* Kacheln, Programmkarten und Matrix tragen ihren Rahmen selbst: die Karte des Abschnitts bleibt ohne Rand */
 .ez-abschnitt[data-abschnitt="ki-uebersicht"] > .ez-karte, .ez-abschnitt[data-abschnitt="ki-konten"] > .ez-karte { border: 0; background: transparent; box-shadow: none; overflow: visible; }
 .ez-abschnitt[data-abschnitt="ki-zugriff"] > .ez-karte { overflow: visible; }

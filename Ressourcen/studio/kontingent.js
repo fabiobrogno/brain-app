@@ -7,7 +7,7 @@
 // Kortex liest dafür keine Anmeldedaten: Claude Code meldet sein Kontingent an die Statuszeile, Codex antwortet dem Programm selbst (Werkstatt: werkstatt/kontingent.mjs).
 // Muster: Orca R/components/status-bar/InlineProviderUsage.tsx, ProviderDetailsMenu.tsx, ClaudeSwitcherMenu.tsx und provider-extra-usage-section.tsx (barColor) @9bccd67 (MIT, Lovecast Inc.):
 // je Anbieter ein Abschnitt mit Balken, „NN %“ und Rücksetzzeit; Klick öffnet ein Menü mit Konto-Wechsel; Balken grau unter 60 %, gelb 60–79 %, rot ab 80 %.
-import { h, leseLokal, speichereLokal, dialog, toast } from "./hilfen.js";
+import { h, dialog, toast } from "./hilfen.js";
 import { knopf as baueKnopf } from "./bausteine.js";
 import { symbol, GROESSE } from "./symbole.js";
 import { kiLogo } from "./ki-logos.js";
@@ -150,7 +150,7 @@ export function erzeugeKontingentStand({ api, abfrageMs = 60_000, laedtMs = 3000
   }
   const sichtbar = () => { if (S.laeuft && document.visibilityState === "visible") holen(); };
   return {
-    state: S, jetzt, holen, neuLaden: async () => { if (S.holt) await S.holt; return holen(true); }, // läuft gerade eine Abfrage, kommt die frühere danach (sonst ginge der Klick verloren)
+    api, state: S, jetzt, holen, neuLaden: async () => { if (S.holt) await S.holt; return holen(true); }, // läuft gerade eine Abfrage, kommt die frühere danach (sonst ginge der Klick verloren)
     start() { if (S.laeuft) return; S.laeuft = true; document.addEventListener("visibilitychange", sichtbar); holen(); },
     stopp() { S.laeuft = false; clearTimeout(S.timer); document.removeEventListener("visibilitychange", sichtbar); },
     eintrag: (id) => (S.daten?.konten || []).find((k) => k.id === id) || null,
@@ -170,7 +170,6 @@ export const _zuruecksetzen = () => { geteilt?.stopp(); geteilt = null; }; // nu
 
 // ============================================================ Statusleiste und Konto-Menü
 export const FRAGE_KONTO_EREIGNIS = "kortex-frage-konto";
-const frageSchluessel = (vault) => `frage.konto@${vault || ""}`;
 
 // z: { stand (kontingentStand), vaultPfad(): string|null, vaultName(): string, oeffneKonten(): void, oeffneKi(): void }
 // Alles kommt aus GET /api/ki/kontingent (Konten, Stufe im offenen Vault, Werte): die Leiste fragt nichts anderes ab und gleicht nichts ab.
@@ -184,13 +183,15 @@ export function erzeugeKontoLeiste(z) {
   const darfFrag = (k) => k.programm === "claude" && (k.stufe || "gesperrt") !== "gesperrt";
   function aktivesKonto() {
     const frei = konten().filter(darfFrag);
-    const gemerkt = leseLokal(frageSchluessel(vault()), null);
-    return frei.find((k) => k.id === gemerkt) || frei[0] || null;
+    // das aktive Claude-Konto (ki-konten.json, Feld `aktiv` je Konto); darf es diesen Vault nicht lesen, gilt das erste erlaubte
+    return frei.find((k) => k.aktiv === true) || frei[0] || null;
   }
+  // Ein Konto als aktiv wählen (gilt ab der nächsten Frage): sofort in der Anzeige, dann in ki-konten.json
   function waehle(k) {
-    speichereLokal(frageSchluessel(vault()), k.id);
+    for (const x of konten()) if (x.programm === k.programm) x.aktiv = x.id === k.id;
     window.dispatchEvent(new CustomEvent(FRAGE_KONTO_EREIGNIS, { detail: { vault: vault(), id: k.id } }));
     zeichne();
+    Promise.resolve(stand.api?.kiAktiv?.(k.programm, k.id)).then(() => stand.holen(), () => stand.holen());
   }
 
   // ---- Statusleistenknopf
@@ -222,7 +223,12 @@ export function erzeugeKontoLeiste(z) {
     el.replaceChildren(kiLogo(k.programm, 14, { dekorativ: true }), h("span", { klasse: "kt-name-text", text: k.name }), miniBalken(e, jetzt));
   }
   stand.abonniere(() => { zeichne(); if (offenMenue) offenMenue.neu(); });
-  window.addEventListener(FRAGE_KONTO_EREIGNIS, () => zeichne());
+  // Das aktive Konto wurde gewechselt (hier, im Frag-Feld oder in den Einstellungen): sofort anzeigen, der nächste Stand der Werkstatt bestätigt es
+  window.addEventListener(FRAGE_KONTO_EREIGNIS, (ev) => {
+    const k = konten().find((x) => x.id === ev.detail?.id);
+    if (k) for (const x of konten()) if (x.programm === k.programm) x.aktiv = x.id === k.id;
+    zeichne();
+  });
   window.addEventListener("kortex-konten", () => stand.holen());
 
   // ---- Menü

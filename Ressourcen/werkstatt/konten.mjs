@@ -22,12 +22,12 @@
 //   POST /api/ki/pflege   { vault, konto|null, stufe: klein|mittel|aus }  — vaults[v].pflege = { konto, stufe }; nur ein Claude-Code-Konto mit der Stufe „erweitert“ für diesen Vault
 //   Migration (einmal): ein festes CLAUDE_CONFIG_DIR in der alten plist des Dienstes wird das Pflege-Konto der Vaults in dienst.json (hat das Konto erweitert: Stufe mittel, sonst ohne KI + Hinweis)
 //  · Was Kortex in settings.json eingetragen hat, steht in ki-konten.json unter `eingetragen` (je Konto), der Wunsch „Strenger Schutz“ unter `schutz`. Der Rückweg entfernt nur das.
-import { readFileSync, realpathSync, lstatSync, mkdirSync, renameSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, realpathSync, lstatSync, mkdirSync, renameSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import { join, dirname, sep } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { HttpFehler, testmodus } from "../gemeinsam/basis.mjs";
 import * as vertrauenFn from "../gemeinsam/vertrauen.mjs";
-import { STUFEN, ABOS, kontenPfad, pruefeDaten, stelleVorherWiederHer, sichereSpur, liesKonten, aendere, repariere, leerDaten, neueId, pruefeName, vaultEintrag, stufeFuer, kennungVon, echterOrt, stufeNr, darfMindestens, PFLEGE_STUFEN, pflegeFuer, pflegeWirksam } from "../gemeinsam/ki-konten.mjs";
+import { STUFEN, ABOS, kontenPfad, pruefeDaten, stelleVorherWiederHer, sichereSpur, liesKonten, aendere, repariere, leerDaten, neueId, pruefeName, KONTO_ID, vaultEintrag, stufeFuer, kennungVon, echterOrt, stufeNr, darfMindestens, PFLEGE_STUFEN, pflegeFuer, pflegeWirksam, aktivesKonto } from "../gemeinsam/ki-konten.mjs";
 import { vaultRegeln, sandboxPfade, einstellungsRegeln, sandboxGeheim, sandboxSchreibschutz, eineSicherung, tragRegelnEin, nimmRegelnHeraus, liesRegelStand, gleicheSandboxAb, liesSandboxStand } from "../gemeinsam/claude-sperre.mjs";
 import { erkenneKonten } from "./konten-erkennung.mjs";
 import { verwaltetWurzel, verwaltetWurzelZustand, istVerwalteterOrdner } from "./profile.mjs";
@@ -161,6 +161,7 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
 
   // Gleicht die Liste mit dem Rechner ab (Konten, Vaults). → { zustand, hinweis? } Der erste Start (Datei fehlt) ist die Migration.
   function synchronisiere() {
+    try { raeumeNeu(); } catch { /* Aufräumen ist Beiwerk */ }
     let hinweis = null, streng = false, grund = null;
     let r = liesKonten(support);
     if (r.zustand === "defekt" || r.zustand === "geloescht") {
@@ -176,7 +177,14 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
     return { zustand: liesKonten(support).zustand, ...(hinweis ? { hinweis, hinweisGrund: grund } : {}) };
   }
 
-  const lade = () => { const r = liesKonten(support); return r.zustand === "ok" ? r.daten : null; };
+  // Alle Konten der Liste, auch ausstehende (nur zum Anlegen, Bestätigen und Aufräumen)
+  const ladeAlle = () => { const r = liesKonten(support); return r.zustand === "ok" ? r.daten : null; };
+  // Die Konten, die es gibt: ausstehende (Anmeldung läuft noch) erscheinen nirgends — nicht in der Liste, der Matrix, bei Frag, Pflege, Kontingent oder Verbindungen
+  const lade = () => {
+    const d = ladeAlle();
+    if (!d || !Object.values(d.konten).some((k) => istObj(k) && istObj(k.ausstehend))) return d;
+    return { ...d, konten: Object.fromEntries(Object.entries(d.konten).filter(([, k]) => !(istObj(k) && istObj(k.ausstehend)))) };
+  };
   const ladeOderSynchronisiere = () => { let d = lade(); if (!d) { synchronisiere(); d = lade(); } if (!d) throw new HttpFehler(500, "Die Liste der KI-Konten ist nicht verfügbar."); return d; };
 
   const kurz = (p) => { const h = home(); return p === h ? "~" : p.startsWith(`${h}/`) ? `~${p.slice(h.length)}` : p; };
@@ -386,7 +394,7 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
     const s = lesend ? (opt.s || {}) : synchronisiere();
     const r = lesend ? liesKonten(support) : null;
     const daten = lade();
-    if (!daten) return { zustand: lesend && r ? r.zustand : "defekt", stufen: STUFEN, konten: [], vaults: [], zugriff: {}, ...(lesend ? { neu: neuErkannt(null, r ? r.zustand : "defekt") } : {}) };
+    if (!daten) return { zustand: lesend && r ? r.zustand : "defekt", stufen: STUFEN, konten: [], vaults: [], zugriff: {}, aktiv: {}, ...(lesend ? { neu: neuErkannt(null, r ? r.zustand : "defekt") } : {}) };
     const liste = vaultListe();
     const anmeldungen = anmeldungLesen();
     const konten = Object.entries(daten.konten).map(([id, k]) => {
@@ -404,10 +412,12 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
       const pflege = p.gesetzt ? { gesetzt: true, konto: p.konto, stufe: p.stufe, wirksam: w.modus, bewusst: w.bewusst, ...(w.problem ? { problem: w.problem } : {}) } : { gesetzt: false, wirksam: "alt" };
       return { pfad: v.pfad, name: v.name, neueKonten: e ? e.neueKonten || "gesperrt" : "gesperrt", ohneKonto: e ? e.ohneKonto || "gesperrt" : "gesperrt", pflege, ...(t && t.schluessel ? { schluessel: t.schluessel } : {}), ...(t && t.ausgetauscht ? { ausgetauscht: true } : {}) };
     });
+    const aktiv = {};
+    for (const prog of new Set(Object.values(daten.konten).map((k) => k.programm))) { const id = aktivesKonto(daten, prog); if (id) aktiv[prog] = id; }
     const hinweis = s.hinweis || (daten.hinweis && daten.hinweis.art === "defekt-neu" ? "defekt-neu" : null);
     const hinweisGrund = (daten.hinweis && daten.hinweis.grund) || s.hinweisGrund || "defekt";
-    return { zustand: "ok", ...(hinweis ? { hinweis, hinweisGrund, ...(daten.hinweis && daten.hinweis.seit ? { hinweisSeit: daten.hinweis.seit } : {}), vorherDa: vorherBrauchbar() } : {}), stufen: STUFEN, konten, vaults: vs, zugriff, ...(pflegeHinweise(daten).length ? { pflegeHinweise: pflegeHinweise(daten) } : {}),
-      ...(istObj(daten.pflegeMigration) && daten.pflegeMigration.plistOffen === true ? { pflegePlist: { offen: true, grund: typeof daten.pflegeMigration.plistGrund === "string" ? daten.pflegeMigration.plistGrund : "fehler" } } : {}), ...(lesend ? { neu: neuErkannt(daten) } : {}) };
+    return { zustand: "ok", ...(hinweis ? { hinweis, hinweisGrund, ...(daten.hinweis && daten.hinweis.seit ? { hinweisSeit: daten.hinweis.seit } : {}), vorherDa: vorherBrauchbar() } : {}), stufen: STUFEN, konten, vaults: vs, zugriff, aktiv, ...(pflegeHinweise(daten).length ? { pflegeHinweise: pflegeHinweise(daten) } : {}),
+      ...(istObj(daten.pflegeMigration) && daten.pflegeMigration.plistOffen === true ? { pflegePlist: { offen: true, grund: typeof daten.pflegeMigration.plistGrund === "string" ? daten.pflegeMigration.plistGrund : "fehler" } } : {}), ...(lesend ? { neu: neuErkannt(ladeAlle()) } : {}) }; // mit ALLEN Konten gerechnet: ein ausstehendes (Ordner da, Anmeldung läuft) ist nicht „neu erkannt“
   }
   // Der ausdrückliche Abgleich (POST /api/ki/konten/abgleich; die Oberfläche ruft ihn nur auf Klick oder wenn die Liste fehlt oder defekt ist): neu erkannte Konten werden mit der Regel für neue
   // Konten eingetragen (gesperrt, Ausnahme: das einzige Konto in einem von Kortex angelegten oder geklonten Vault), die Liste wird angelegt oder repariert, Sperren in den Einstellungen nachgeführt.
@@ -425,7 +435,7 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
     if (e.abo !== undefined && !ABOS.includes(e.abo)) throw new HttpFehler(400, `Das Abo muss eines von ${ABOS.join(", ")} sein.`);
     ladeOderSynchronisiere();
     aendere(support, (alt) => {
-      if (!alt || !Object.hasOwn(alt.konten, e.id)) throw new HttpFehler(404, "Dieses KI-Konto gibt es nicht (mehr).");
+      if (!alt || !Object.hasOwn(alt.konten, e.id) || istObj(alt.konten[e.id].ausstehend)) throw new HttpFehler(404, "Dieses KI-Konto gibt es nicht (mehr).");
       if (name !== undefined) alt.konten[e.id].name = name;
       if (e.abo !== undefined) alt.konten[e.id].abo = e.abo;
       return alt;
@@ -678,6 +688,45 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
   const istVerwaltet = (k) => istVerwalteterOrdner(support, k.ordner, k.programm, { fehltOk: true }); // lstat der Wurzel und des Ordners, Name und Ort ohne Auflösen (profile.mjs)
   const supportErlaubt = () => !testmodus() || echtPfad(support).startsWith(echtPfad(tmpdir()) + sep);
 
+  // ── Ein neues Konto entsteht in drei Schritten, ohne dass je ein Ordner umbenannt wird (Claude Code legt seine Anmeldung vermutlich unter einem Namen ab, der am Pfad des Ordners hängt):
+  //   1. POST /api/ki/konto-neu     legt den Ordner gleich unter seinem ENDGÜLTIGEN Namen an (<Support>/ki-konten-ordner/<programm>-<name>) und trägt das Konto mit `ausstehend: { seit, stufe }` in ki-konten.json ein.
+  //                                 Ein ausstehendes Konto erscheint nirgends (lade() blendet es aus): keine Liste, keine Matrix, kein Frag, keine Pflege, kein Kontingent, keine Hooks oder MCP-Einträge; es ist in jedem Vault gesperrt.
+  //   2. POST /api/ki/konto-fertig  erst nach bestätigter Anmeldung (die Oberfläche hat das Programm selbst gefragt): nimmt nur die Marke `ausstehend` weg. Der Pfad bleibt, wie er war.
+  //   3. POST /api/ki/konto-abbruch entfernt das ausstehende Konto samt Ordner (Abbruch, Fenster zu). Zeitablauf (30 min), Abgleich und Start der Werkstatt tun das für liegengebliebene.
+  // Gelöscht wird nur, was Kortex selbst angelegt hat: das Konto trägt die Marke `ausstehend`, der Ordner liegt direkt in der echten Wurzel ki-konten-ordner, heißt <programm>-… und ist weder Verweis noch Datei.
+  // Die Anmeldung selbst (heute Terminal, mit E3 im Fenster) berührt nur den Ordner: diese drei Routen bleiben dabei gleich.
+  const NEU_MS = 30 * 60_000;
+  const ausstehendJetzt = new Map(); // Kennung → Timer: nur was DIESER Prozess angelegt hat und noch erwartet; alles andere Ausstehende ist liegengeblieben
+  const loescheAusstehendenOrdner = (k) => {
+    if (!istObj(k.ausstehend) || k.standard === true || !ANLEGBAR.includes(k.programm) || !istVerwaltet(k) || !supportErlaubt()) return false;
+    let st; try { st = lstatSync(k.ordner); } catch { return true; }
+    if (!st.isDirectory() || st.isSymbolicLink()) return false;
+    try { rmSync(k.ordner, { recursive: true, force: true }); return true; } catch { return false; }
+  };
+  // Nimmt ein ausstehendes Konto aus der Liste und legt seinen Ordner weg. → true, wenn nichts mehr da ist
+  function verwirfAusstehend(id) {
+    clearTimeout(ausstehendJetzt.get(id)); ausstehendJetzt.delete(id);
+    const d = ladeAlle();
+    const k = d && Object.hasOwn(d.konten, id) ? d.konten[id] : null;
+    if (!k || !istObj(k.ausstehend)) return false; // ein fertiges Konto wird hier nie angefasst
+    const weg = loescheAusstehendenOrdner(k);
+    aendere(support, (alt) => { if (alt && Object.hasOwn(alt.konten, id) && istObj(alt.konten[id].ausstehend)) streicheKonto(alt, id); return alt; });
+    return weg;
+  }
+  // Räumt auf: abgelaufene und liegengebliebene (kein laufender Versuch dieses Prozesses) ausstehende Konten. → Zahl der entfernten
+  function raeumeNeu() {
+    const d = ladeAlle();
+    if (!d) return 0;
+    let n = 0;
+    for (const [id, k] of Object.entries(d.konten)) {
+      if (!istObj(k.ausstehend)) continue;
+      if (ausstehendJetzt.has(id) && Date.now() - (Number(k.ausstehend.seit) || 0) <= NEU_MS) continue;
+      if (verwirfAusstehend(id)) n++;
+    }
+    return n;
+  }
+  const kontoKennung = (id) => { if (typeof id !== "string" || !KONTO_ID.test(id)) throw new HttpFehler(400, "Die Kennung des neuen Kontos fehlt oder ist ungültig."); return id; };
+
   function legeKontoAn(e) {
     if (!ANLEGBAR.includes(e.programm)) throw new HttpFehler(400, "Ein weiteres Konto gibt es nur für Claude Code und Codex.");
     const name = pruefeName(e.name);
@@ -686,7 +735,8 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
     if (!supportErlaubt()) throw new HttpFehler(409, "Im Testmodus legt Kortex Konto-Ordner nur unter dem Temp-Ordner an.", { art: "testmodus" });
     if (verwaltetWurzelZustand(support) === "link") throw new HttpFehler(409, "Der Ordner für die Konten von Kortex ist ein Verweis oder kein Ordner. Kortex legt darin nichts an. Entferne den Verweis „ki-konten-ordner“ im Ordner von Kortex und versuche es noch einmal.", { art: "wurzel-link" });
     ladeOderSynchronisiere();
-    if (Object.values(lade().konten).some((k) => k.programm === e.programm && falte(k.name) === falte(name))) throw new HttpFehler(409, "Ein Konto mit diesem Namen gibt es schon. Wähle einen anderen Namen.", { art: "name-doppelt" });
+    try { raeumeNeu(); } catch { /* Aufräumen ist Beiwerk */ }
+    if (Object.values(ladeAlle().konten).some((k) => k.programm === e.programm && falte(k.name) === falte(name))) throw new HttpFehler(409, "Ein Konto mit diesem Namen gibt es schon (oder es wird gerade angemeldet). Wähle einen anderen Namen.", { art: "name-doppelt" });
     const wurzel = wurzelVerwaltet();
     const basis = `${e.programm}-${ordnerKennzeichen(name)}`;
     let ordner = join(wurzel, basis);
@@ -696,15 +746,66 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
     const roh = echterOrt(ordner);
     const erkannt = [{ programm: e.programm, ordner: roh, standard: false, name, ordnerKennung: kennungVon(roh) }];
     let id = null;
+    try {
+      aendere(support, (alt) => {
+        const daten = rechne(alt, { erkannt, vaults: vaultListe(), migration: false, streng: false });
+        id = Object.entries(daten.konten).find(([, k]) => k.programm === e.programm && falte(k.ordner) === falte(roh))?.[0] || null;
+        if (!id) throw new HttpFehler(500, "Das neue Konto ließ sich nicht eintragen.");
+        daten.konten[id].name = name;
+        daten.konten[id].ausstehend = { seit: Date.now(), stufe };
+        return daten;
+      });
+    } catch (err) { try { rmSync(ordner, { recursive: true, force: true }); } catch { /* bleibt liegen: der nächste Abgleich meldet es als neu erkanntes Konto */ } throw err; }
+    const timer = setTimeout(() => { try { if (ausstehendJetzt.has(id)) verwirfAusstehend(id); } catch { /* der nächste Abgleich räumt auf */ } }, NEU_MS);
+    if (typeof timer.unref === "function") timer.unref();
+    ausstehendJetzt.set(id, timer);
+    // pfad: der Ordner, mit dem die Anmeldung läuft (CLAUDE_CONFIG_DIR / CODEX_HOME) — und der er für immer bleibt
+    return { ...stand({ lesend: true }), ausstehend: { id, programm: e.programm, name, pfad: roh, standard: false } };
+  }
+
+  // Die Anmeldung ist bestätigt: nur die Marke fällt weg. Nichts wird umbenannt, der Pfad vor und nach diesem Aufruf ist derselbe.
+  function kontoFertig(e) {
+    const id = kontoKennung(e.id);
+    try { raeumeNeu(); } catch { /* Beiwerk */ }
+    const d = ladeAlle();
+    const k = d && Object.hasOwn(d.konten, id) ? d.konten[id] : null;
+    if (!k || !istObj(k.ausstehend) || !ausstehendJetzt.has(id)) throw new HttpFehler(404, "Dieses neue Konto gibt es nicht mehr (die Zeit zum Anmelden war um oder du hast abgebrochen). Lege es noch einmal an.", { art: "abgelaufen" });
+    let st; try { st = lstatSync(k.ordner); } catch { st = null; }
+    if (!st || !st.isDirectory() || st.isSymbolicLink()) { verwirfAusstehend(id); throw new HttpFehler(409, "Der Ordner des neuen Kontos fehlt. Lege es noch einmal an.", { art: "ordner-weg" }); }
+    if (Object.entries(d.konten).some(([i, x]) => i !== id && x.programm === k.programm && falte(x.name) === falte(k.name) && !istObj(x.ausstehend))) throw new HttpFehler(409, "Ein Konto mit diesem Namen gibt es inzwischen schon. Wähle beim nächsten Mal einen anderen Namen.", { art: "name-doppelt" });
     aendere(support, (alt) => {
-      const daten = rechne(alt, { erkannt, vaults: vaultListe(), migration: false, streng: false });
-      id = Object.entries(daten.konten).find(([, k]) => k.programm === e.programm && falte(k.ordner) === falte(roh))?.[0] || null;
-      if (!id) throw new HttpFehler(500, "Das neue Konto ließ sich nicht eintragen.");
-      daten.konten[id].name = name;
-      if (stufe === "lesen") for (const v of Object.values(daten.vaults)) { if (!istObj(v.konten)) v.konten = {}; v.konten[id] = "lesen"; }
-      return daten;
+      if (!alt || !Object.hasOwn(alt.konten, id) || !istObj(alt.konten[id].ausstehend)) throw new HttpFehler(404, "Dieses neue Konto gibt es nicht mehr.", { art: "abgelaufen" });
+      const vorher = aktivesKonto(alt, k.programm); // vor dem Freigeben: auch „das einzige Konto“ zählt als aktiv und soll es bleiben
+      const stufe = alt.konten[id].ausstehend.stufe;
+      delete alt.konten[id].ausstehend;
+      if (stufe === "lesen") for (const v of Object.values(alt.vaults)) { if (!istObj(v.konten)) v.konten = {}; v.konten[id] = "lesen"; }
+      if (!istObj(alt.aktiv)) alt.aktiv = {};
+      alt.aktiv[k.programm] = vorher && vorher !== id ? vorher : id; // das erste Konto eines Programms ist aktiv; ein weiteres ändert daran nichts
+      return alt;
     });
-    return { ...stand(), neuesKonto: { id, programm: e.programm, pfad: roh } };
+    clearTimeout(ausstehendJetzt.get(id)); ausstehendJetzt.delete(id);
+    return { ...stand(), neuesKonto: { id, programm: k.programm, pfad: k.ordner } };
+  }
+
+  // Abbruch (Anmelden abgebrochen, Fenster zu): Konto und Ordner verschwinden. Unbekannte Kennung oder ein schon fertiges Konto: nichts zu tun.
+  function kontoAbbruch(e) {
+    const id = kontoKennung(e.id);
+    const ok = verwirfAusstehend(id);
+    return { ok, ...stand({ lesend: true }) };
+  }
+
+  // Das aktive Konto eines Programms (Vorgabe für Frag und neue Verbindungen, Vorschlag fürs Pflege-Konto). Es gilt ab der nächsten Frage; laufende Fragen behalten ihr Konto.
+  function setzeAktiv(e) {
+    if (typeof e.programm !== "string" || typeof e.konto !== "string") throw new HttpFehler(400, "Programm und Konto müssen angegeben werden.");
+    ladeOderSynchronisiere();
+    speichere((d) => {
+      const k = Object.hasOwn(d.konten, e.konto) ? d.konten[e.konto] : null;
+      if (!k || istObj(k.ausstehend)) throw new HttpFehler(404, "Dieses KI-Konto gibt es nicht (mehr).");
+      if (k.programm !== e.programm) throw new HttpFehler(400, "Das Konto gehört nicht zu diesem Programm.");
+      if (!istObj(d.aktiv)) d.aktiv = {};
+      d.aktiv[e.programm] = e.konto;
+    });
+    return stand({ lesend: true });
   }
 
   // Papierkorb des Nutzers — nur der Rückfall für Browser und Entwicklung (Testmodus: nur im Home unter Temp). In der App legt Swift den Ordner über FileManager.trashItem in den Papierkorb
@@ -737,18 +838,21 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
   }
 
   // Entfernt das Konto aus der Liste. Der Ordner liegt dann schon im Papierkorb (Swift bzw. papierkorbOrdner): liegt er noch da, geht es nicht (kein stilles Löschen eines Ordners ohne Papierkorb).
+  // Streicht ein Konto aus allen Teilen der Liste (Konto, Stufen, Pflege, Schutz, aktives Konto)
+  function streicheKonto(d, id) {
+    delete d.konten[id];
+    for (const v of Object.values(d.vaults)) {
+      if (istObj(v.konten)) delete v.konten[id];
+      if (istObj(v.gesperrtNutzer)) { delete v.gesperrtNutzer[id]; if (!Object.keys(v.gesperrtNutzer).length) delete v.gesperrtNutzer; }
+      if (istObj(v.pflege) && v.pflege.konto === id) v.pflege = { konto: null, stufe: "aus" };
+    }
+    for (const feld of ["schutz", "eingetragen"]) if (istObj(d[feld])) { delete d[feld][id]; if (!Object.keys(d[feld]).length) delete d[feld]; }
+    if (istObj(d.aktiv)) { for (const [prog, kid] of Object.entries(d.aktiv)) if (kid === id) delete d.aktiv[prog]; if (!Object.keys(d.aktiv).length) delete d.aktiv; }
+  }
   function entferneKonto(e) {
     const k = eigenesKonto(e);
     if (existsSync(k.ordner)) throw new HttpFehler(409, "Der Ordner dieses Kontos liegt noch im Ordner von Kortex. Lege ihn zuerst in den Papierkorb („Konto entfernen …“ tut das und entfernt dann das Konto).", { art: "ordner-da" });
-    speichere((d) => {
-      delete d.konten[e.id];
-      for (const v of Object.values(d.vaults)) {
-        if (istObj(v.konten)) delete v.konten[e.id];
-        if (istObj(v.gesperrtNutzer)) { delete v.gesperrtNutzer[e.id]; if (!Object.keys(v.gesperrtNutzer).length) delete v.gesperrtNutzer; }
-        if (istObj(v.pflege) && v.pflege.konto === e.id) v.pflege = { konto: null, stufe: "aus" };
-      }
-      for (const feld of ["schutz", "eingetragen"]) if (istObj(d[feld])) { delete d[feld][e.id]; if (!Object.keys(d[feld]).length) delete d[feld]; }
-    });
+    speichere((d) => streicheKonto(d, e.id));
     anmeldungSchreiben((a) => { delete a.konten[e.id]; });
     return { ...stand(), entfernt: { id: e.id } };
   }
@@ -861,5 +965,5 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
     return { konto: null, liste: true };
   }
 
-  return { synchronisiere, abgleich, altform: (id) => { const k = lade() && Object.hasOwn(lade().konten, id) ? lade().konten[id] : null; return k && homeErlaubt(home()) ? altformStandard(k, home()) : { mcp: false, hooks: false }; }, stand, setzeName, setzeZugriff, setzeStandard, setzePflege, migrierePflege, migrationVermerkt, vermerkePlist, setzeSchutz, legeKontoAn, entferneKonto, papierkorbOrdner, anmeldung, quittiereHinweis, holeVorher, vaultHinzu, kontoFuerProfil, kontoFuerProgramm, kontoDaten, probeKonto, lade };
+  return { synchronisiere, abgleich, altform: (id) => { const k = lade() && Object.hasOwn(lade().konten, id) ? lade().konten[id] : null; return k && homeErlaubt(home()) ? altformStandard(k, home()) : { mcp: false, hooks: false }; }, stand, setzeName, setzeAktiv, kontoFertig, kontoAbbruch, raeumeNeu, setzeZugriff, setzeStandard, setzePflege, migrierePflege, migrationVermerkt, vermerkePlist, setzeSchutz, legeKontoAn, entferneKonto, papierkorbOrdner, anmeldung, quittiereHinweis, holeVorher, vaultHinzu, kontoFuerProfil, kontoFuerProgramm, kontoDaten, probeKonto, lade };
 }

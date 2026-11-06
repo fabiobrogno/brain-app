@@ -40,12 +40,14 @@ async function start(page, opt = {}, { hash = "#einstellungen/ki", breite = 1440
   if (hash) { await page.evaluate((hh) => { location.hash = hh; }, hash); await expect(seite(page)).toBeVisible({ timeout: 20000 }); } // die Seite lädt ihr Modul erst jetzt nach: unter Last dauert das länger als die 5 s einer gewöhnlichen Prüfung
   return z;
 }
+// Unterbereich von „KI & Konten“ wählen (Segment oben): konten · zugriff · kontingent · pflege
+const unter = async (page, name) => { await page.locator(`[data-unter-wahl="${name}"]`).click(); await expect(page.locator(`[data-unter-wahl="${name}"]`)).toHaveAttribute("aria-checked", "true"); };
 const karte = (page, id) => page.locator(`.kx-prog[data-programm="${id}"]`);
 const konto = (page, id) => page.locator(`.kx-konto[data-konto="${id}"]`);
 const zelle = (page, k, v) => page.locator(`[data-kk="matrix-zelle"][data-konto="${k}"][data-vault="${v}"]`);
 // Ein Menü schließt, sobald die Seite darunter scrollt: erst ruhig in die Mitte rollen, dann klicken
 const oeffneMenueAn = async (loc) => { await loc.evaluate((e) => e.scrollIntoView({ block: "center", behavior: "instant" })); await loc.page().waitForTimeout(150); await loc.click(); };
-const warteKonten = async (page) => { await expect(page.locator(".kx-prog").first()).toBeVisible(); await expect(page.locator('.kx-konto[data-anmeldung="prueft"]')).toHaveCount(0); };
+const warteKonten = async (page) => { await expect(page.locator(".kx-prog").first()).toBeAttached(); await expect(page.locator('.kx-konto[data-anmeldung="prueft"]')).toHaveCount(0); };
 
 test("Programme: Karte je Programm mit Logo, Pfad und Version; Konten mit Anmeldestand; Kacheln zählen", async ({ page }) => {
   await start(page, VOLL());
@@ -60,9 +62,9 @@ test("Programme: Karte je Programm mit Logo, Pfad und Version; Konten mit Anmeld
   await expect(karte(page, "cursor").locator(".kx-pfad")).toContainText("/Applications/Cursor.app");
   await expect(karte(page, "cursor").locator(".kx-art")).toHaveText("Editor mit KI");
   await expect(konto(page, "k_aaaa0001")).toHaveAttribute("data-anmeldung", "angemeldet");
-  await expect(konto(page, "k_aaaa0001").locator(".ez-marke-ok")).toHaveText("Angemeldet");
+  await expect(konto(page, "k_aaaa0001").locator(".ez-marke"), "angemeldet und nicht aktiv: kein Abzeichen").toHaveCount(0);
   await expect(konto(page, "k_aaaa0004")).toHaveAttribute("data-anmeldung", "abgelaufen");
-  await expect(konto(page, "k_aaaa0004").locator(".ez-marke-warn")).toHaveText("Anmeldung abgelaufen");
+  await expect(konto(page, "k_aaaa0004").locator(".ez-marke-warn")).toHaveText("Abgelaufen");
   await expect(konto(page, "k_aaaa0004").locator('[data-kx="hinweis-abgelaufen"]')).toContainText("abgelaufen");
   await expect(konto(page, "k_aaaa0004").locator('[data-aktion="konto-anmelden"]')).toBeVisible();
   await expect(konto(page, "k_aaaa0001").locator('[data-aktion="konto-anmelden"]')).toHaveCount(0);
@@ -161,7 +163,7 @@ test("Fehler bei der Suche: Satz mit dem nächsten Schritt statt einer leeren Se
 test("Anmeldestand: nicht angemeldet, Anmeldung nicht prüfbar; Hinweise nennen den nächsten Schritt", async ({ page }) => {
   await start(page, { ...VOLL(), login: { k_aaaa0001: "nicht-angemeldet", k_aaaa0004: "unbekannt", k_aaaa0003: "angemeldet" }, zuletzt: {} });
   await warteKonten(page);
-  await expect(konto(page, "k_aaaa0001").locator(".ez-marke")).toHaveText("Nicht angemeldet");
+  await expect(konto(page, "k_aaaa0001").locator(".ez-marke")).toHaveText("Anmelden nötig");
   await expect(konto(page, "k_aaaa0001").locator('[data-kx="hinweis-nicht"]')).toContainText("Klicke auf „Anmelden …“");
   await expect(konto(page, "k_aaaa0001").locator('[data-aktion="konto-anmelden"]')).toHaveText("Anmelden …");
   await expect(konto(page, "k_aaaa0004").locator(".ez-marke")).toHaveText("Anmeldung nicht geprüft");
@@ -228,14 +230,36 @@ test("Konto hinzufügen: öffnet den Ablauf „KI verbinden“ beim Konto; eigen
   await d.locator('[data-aktion="konto-neu-ok"]').click();
   await expect(d.locator('[data-kv="anmelden"]')).toBeVisible(); // das Anmelden beginnt im selben Ablauf
   expect(z.log("/api/ki/konto-neu").at(-1).body).toEqual({ programm: "claude", name: "Kunde Müller", stufe: "gesperrt" }); // neue Konten starten immer gesperrt
-  const k = z.konten.find((x) => x.name === "Kunde Müller");
-  expect(z.log("/api/ki/anmelden").at(-1).body.ordner).toBe(k.pfad);
-  expect(k.pfad).toContain("/Library/Application Support/Kortex/ki-konten-ordner/");
+  // der Ordner trägt gleich seinen endgültigen Namen, das Konto steht noch NICHT in der Liste (ausstehend, unsichtbar)
+  const neu = Object.values(z.ausstehend)[0];
+  expect(neu.pfad).toMatch(/\/ki-konten-ordner\/claude-kunde-m/);
+  expect(z.log("/api/ki/anmelden").at(-1).body.ordner).toBe(neu.pfad);
+  expect(z.konten.some((x) => x.name === "Kunde Müller")).toBe(false);
+  await expect(page.locator('.kx-konto[data-konto^="k_neu"]')).toHaveCount(0);
+  // Abbrechen räumt auf: Abbruch an die Werkstatt, nichts in der Liste
   await d.locator('[data-aktion="anmelden-abbrechen"]').click();
+  expect(z.log("/api/ki/konto-abbruch").at(-1).body).toEqual({ id: neu.id });
+  expect(z.ausstehend).toEqual({});
   await page.keyboard.press("Escape");
   await expect(d).toHaveCount(0);
+  expect(z.konten.some((x) => x.name === "Kunde Müller")).toBe(false);
+  // noch einmal, diesmal mit bestätigter Anmeldung: erst jetzt Umbenennen und Eintragen (konto-fertig), das Konto erscheint gesperrt
+  await page.click('[data-aktion="konto-hinzu"][data-programm="claude"]');
+  await expect(dlg(page, "ki-verbinden").locator('[data-kv="konto-neu"]')).toBeVisible(); // erst wenn das Formular steht
+  await dlg(page, "ki-verbinden").locator('[data-kx="neu-name"]').fill("Kunde Müller");
+  await dlg(page, "ki-verbinden").locator('[data-aktion="konto-neu-ok"]').click();
+  await expect(dlg(page, "ki-verbinden").locator('[data-kv="anmelden"]')).toBeVisible({ timeout: 15000 });
+  z.neuAngemeldet = true;
+  await dlg(page, "ki-verbinden").locator('[data-aktion="anmelden-pruefen"]').click();
+  await expect.poll(() => z.log("/api/ki/konto-fertig").length).toBe(1);
+  const k = z.konten.find((x) => x.name === "Kunde Müller");
+  expect(k.pfad, "der Pfad ist vor und nach der Anmeldung derselbe").toBe(neu.pfad);
+  await page.keyboard.press("Escape");
+  await expect(dlg(page, "ki-verbinden")).toHaveCount(0);
   await expect(konto(page, k.id)).toBeVisible();
+  await unter(page, "zugriff");
   await expect(zelle(page, k.id, vault)).toHaveAttribute("data-stufe", "gesperrt");
+  await unter(page, "konten");
   // gleicher Name zweimal: die Werkstatt lehnt ab, der Satz steht im Formular
   await page.click('[data-aktion="konto-hinzu"][data-programm="claude"]');
   await expect(dlg(page, "ki-verbinden").locator('[data-kv="konto-neu"]')).toBeVisible(); // erst wenn das Formular steht: ein späteres Neuzeichnen verschluckte sonst den Namen
@@ -249,7 +273,8 @@ test("Konto hinzufügen: öffnet den Ablauf „KI verbinden“ beim Konto; eigen
 test("Umbenennen und Entfernen: Name inline, Entfernen nur für eigene Konten und mit Bestätigung in der Seite (Ordner → Papierkorb)", async ({ page }) => {
   const z = await start(page, VOLL());
   await warteKonten(page);
-  await konto(page, "k_aaaa0004").locator('[data-aktion="konto-umbenennen"]').click();
+  await oeffneMenueAn(konto(page, "k_aaaa0004").locator('[data-aktion="konto-mehr"]'));
+  await menueEintrag(page, "konto-umbenennen").click();
   await konto(page, "k_aaaa0004").locator('[data-kk="name-feld"]').fill("Firma Süd");
   await konto(page, "k_aaaa0004").locator('[data-aktion="konto-name-speichern"]').click();
   expect(z.log("/api/ki/konten", "POST").at(-1).body).toEqual({ id: "k_aaaa0004", name: "Firma Süd" });
@@ -285,6 +310,7 @@ test("Umbenennen und Entfernen: Name inline, Entfernen nur für eigene Konten un
 test("Matrix: Stufe je Konto und Vault über das Menü; Lesen und Posteingang sofort, Sperren fragt nach (Claude Code: Leseverbot zusätzlich, andere Programme: ehrlicher Satz)", async ({ page }) => {
   const z = await start(page, VOLL());
   await warteKonten(page);
+  await unter(page, "zugriff");
   await expect(page.locator('[data-kk="matrix"] thead th[data-vault]')).toHaveCount(2);
   await expect(zelle(page, "k_aaaa0001", vault)).toHaveAttribute("data-stufe", "posteingang");
   await expect(zelle(page, "k_aaaa0004", vault)).toHaveAttribute("data-stufe", "gesperrt");
@@ -332,6 +358,7 @@ test("Matrix: Stufe je Konto und Vault über das Menü; Lesen und Posteingang so
 test("Wie fest ist die Sperre?: drei Stufen je Claude-Konto, die Ampel folgt dem, was wirklich gesetzt ist; Strenger Schutz mit Bestätigung; andere Programme ehrlich", async ({ page }) => {
   const z = await start(page, VOLL());
   await warteKonten(page);
+  await unter(page, "zugriff");
   const k = page.locator('[data-kk="streng-karte"][data-konto="k_aaaa0004"]');
   await expect(k.locator('[data-kx="stufen"] [data-stufe-nr]')).toHaveCount(3);
   await expect(k.locator('[data-kx="ampel"]')).toHaveAttribute("data-farbe", "rot");
@@ -374,6 +401,7 @@ test("Wie fest ist die Sperre?: drei Stufen je Claude-Konto, die Ampel folgt dem
 test("Frag-Standard: Konto und Gründlichkeit werden gemerkt (wie im Frag-Fenster), nur Konten, die den Vault lesen dürfen", async ({ page }) => {
   await start(page, VOLL());
   await warteKonten(page);
+  await unter(page, "pflege");
   const wahl = page.locator('[data-kx="frage-konto-wahl"]');
   await expect(wahl).toBeVisible();
   await page.locator('[data-kx="frage-modell-wahl"] [data-wert="mittel"]').click();
@@ -388,6 +416,7 @@ test("Frag-Standard: ohne Konto mit Lesezugriff steht der Grund da, kein leeres 
   const zugriff = Object.fromEntries(VOLL().konten.map((k) => [k.id, { [vault]: "gesperrt", [FIRMA]: "gesperrt" }]));
   await start(page, { ...VOLL(), zugriff });
   await warteKonten(page);
+  await unter(page, "pflege");
   await expect(page.locator('[data-kx="frage-leer"]')).toHaveText("Kein Konto darf diesen Vault lesen");
 });
 
@@ -395,6 +424,7 @@ test("Pflege je Vault: Konto (nur mit „Erweitert“) und wie viel KI je Vault,
   const zugriff = { k_aaaa0001: { [vault]: "erweitert", [FIRMA]: "posteingang" }, k_aaaa0004: { [vault]: "gesperrt", [FIRMA]: "gesperrt" }, k_aaaa0003: { [vault]: "posteingang", [FIRMA]: "gesperrt" }, k_aaaa0005: { [vault]: "lesen", [FIRMA]: "lesen" } };
   const z = await start(page, { ...VOLL(), zugriff, letzter: { zeit: "2026-10-31T02:12:00.000Z", status: "ok", erfolgreich: true, aufrufe: 18, tokEin: 100, tokAus: 50, modus: "echt" }, schalter: "an" });
   await warteKonten(page);
+  await unter(page, "pflege");
   const zeileM = page.locator(`.kx-pflege-zeile[data-vault="${vault}"]`), zeileF = page.locator(`.kx-pflege-zeile[data-vault="${FIRMA}"]`);
   await expect(zeileM.locator('[data-kk="pflege-letzter"]')).toContainText("fertig");
   await expect(zeileF.locator('[data-kk="pflege-kein-konto"]')).toHaveText("Kein Konto mit „Erweitert“");
@@ -416,6 +446,7 @@ test("Pflege je Vault: Konto (nur mit „Erweitert“) und wie viel KI je Vault,
 test("Kortex bei der Arbeit: Hooks, Prüfung vor dem Speichern und Hintergrunddienst laufen über /api/kern/verdrahten (wie im Assistenten), mit Profilwahl und Rückfrage beim Ersetzen", async ({ page }) => {
   const z = await start(page, { ...VOLL(), pruefungAnders: true });
   await warteKonten(page);
+  await unter(page, "pflege");
   const hooks = page.locator('[data-kx="arbeit-claude"]'), pruefung = page.locator('[data-kx="arbeit-git"]'), dienst = page.locator('[data-kx="arbeit-dienst"]');
   await expect(page.locator('[data-zeile="ki-hooks"]')).toContainText("Trägt in die gewählten Claude-Profile");
   await expect(hooks).toHaveAttribute("aria-checked", "true");
@@ -451,24 +482,28 @@ test("Kortex bei der Arbeit: Hooks, Prüfung vor dem Speichern und Hintergrunddi
 test("Kortex bei der Arbeit: nicht möglich → der Grund steht da (kein Starter; kein Versionsverlauf; Dienst nur auf dem Mac)", async ({ page }) => {
   const kern = KERN(); kern.starter.vorhanden = false;
   await start(page, { ...VOLL(), kern });
+  await unter(page, "pflege");
   await expect(page.locator('[data-kx="arbeit-kein-starter"]').first()).toContainText("Der Starter von Kortex fehlt noch");
 });
 
 test("Kortex bei der Arbeit: ohne Versionsverlauf und ohne Dienst nennt jede Zeile ihren Grund", async ({ page }) => {
   const kern = KERN(); kern.git = { moeglich: false }; kern.dienst = { verfuegbar: false };
   await start(page, { ...VOLL(), kern });
+  await unter(page, "pflege");
   await expect(page.locator('[data-kx="arbeit-git-nein"]')).toContainText("noch keinen Versionsverlauf");
   await expect(page.locator('[data-kx="arbeit-dienst-nein"]')).toContainText("nur auf dem Mac");
 });
 
 test("Kortex bei der Arbeit: lässt sich der Stand nicht lesen, steht ein Satz mit dem nächsten Schritt da", async ({ page }) => {
   await start(page, { ...VOLL(), kernFehler: "kaputt" });
+  await unter(page, "pflege");
   await expect(page.locator('[data-kx="arbeit-nicht-lesbar"]').first()).toContainText("Klicke auf „Neu suchen“");
 });
 
 test("Aktivität: das Protokoll der Werkstatt (P8a) — Einträge, Filter „Abweisungen“, leerer Zustand; mehr in aktivitaet.spec.mjs", async ({ page }) => {
   await start(page, VOLL());
   await warteKonten(page);
+  await unter(page, "pflege");
   await expect(page.locator('[data-kx="aktivitaet-leer"]')).toContainText("Noch nichts zu zeigen");
   await expect(page.locator('[data-kx="aktivitaet-bald"]')).toHaveCount(0);
   const eintraege = [
@@ -490,6 +525,7 @@ test("Hinweis „Liste war beschädigt“ und Ehrlichkeit: die Karte „Was Kort
   await page.click('[data-aktion="konten-hinweis-verstanden"]');
   await expect(page.locator('[data-kk="defekt"]')).toHaveCount(0);
   expect(z.log("/api/ki/hinweis")).toHaveLength(1);
+  await unter(page, "zugriff");
   const e = page.locator('[data-kk="ehrlich-karte"]');
   await expect(e).toContainText("Claude Code:");
   await expect(e).toContainText("Andere Programme:");
@@ -554,6 +590,7 @@ const ZUGRIFF_PFLEGE = () => ({ k_aaaa0001: { [vault]: "erweitert", [FIRMA]: "er
 test("Pflege: mehrere Konten mit „Erweitert“ — eine Stufe vor dem Konto wartet und sagt, was fehlt; mit gewähltem Konto wird beides gespeichert", async ({ page }) => {
   const z = await start(page, { ...VOLL(), zugriff: ZUGRIFF_PFLEGE() });
   await warteKonten(page);
+  await unter(page, "pflege");
   const zeile = page.locator(`.kx-pflege-zeile[data-vault="${vault}"]`);
   await zeile.locator('[data-stufe-wahl="klein"]').click();
   await expect(zeile.locator('[data-kk="pflege-waehle-zuerst"]')).toContainText("Wähle zuerst ein Konto");
@@ -567,6 +604,7 @@ test("Pflege: mehrere Konten mit „Erweitert“ — eine Stufe vor dem Konto wa
 test("Pflege: „fertig, ohne KI (so eingestellt)“ zählt als Erfolg; ein Lauf mit Warnung zeigt seinen Grund; ausgeschaltet gibt es kein „Jetzt pflegen“", async ({ page }) => {
   await start(page, { ...VOLL(), zugriff: ZUGRIFF_PFLEGE(), letzter: { zeit: "2026-10-31T02:12:00.000Z", status: "ok-ohne-ki", erfolgreich: true, aufrufe: 0, tokEin: 0, tokAus: 0, modus: "echt" }, pflege: { [vault]: { konto: "k_aaaa0001", stufe: "aus" } } });
   await warteKonten(page);
+  await unter(page, "pflege");
   const zeile = page.locator(`.kx-pflege-zeile[data-vault="${vault}"]`);
   await expect(zeile.locator('[data-kk="pflege-letzter"]')).toContainText("fertig, ohne KI (so eingestellt)");
   await expect(zeile.locator('[data-kk="pflege-grund"]')).toHaveCount(0);
@@ -576,6 +614,7 @@ test("Pflege: Hinweis aus der Migration und Problem der Einstellung nennen den W
   const zugriff = ZUGRIFF_PFLEGE(); zugriff.k_aaaa0001[vault] = "lesen";
   await start(page, { ...VOLL(), zugriff, pflege: { [vault]: { konto: "k_aaaa0001", stufe: "mittel" } }, pflegeHinweise: [{ vault, grund: "stufe", konto: "k_aaaa0001" }], pflegePlist: { offen: true, grund: "nicht-im-dienst" } });
   await warteKonten(page);
+  await unter(page, "pflege");
   await expect(page.locator('[data-kk="pflege-migration"]')).toContainText("steht die Pflege jetzt auf „Ohne KI“");
   await expect(page.locator('[data-kk="pflege-plist"]')).toContainText("Der geöffnete Vault gehört nicht zu den Vaults, für die der Dienst eingeschaltet ist");
   for (const verboten of ["plist", "launchctl", "LaunchAgent"]) await expect(page.locator('[data-kk="pflege-plist"]')).not.toContainText(verboten);
