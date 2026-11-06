@@ -11,7 +11,7 @@ import { lockerFormen } from "./wikilink.js";
 import { TD } from "./texte-dateiaktionen.js";
 
 const MIME = "application/x-kortex-eintrag";
-const FESTE_ORDNER = (S) => new Set([S.inboxOrdner || "00_inbox", S.aufgabenOrdner || "05_aufgaben", "09_wiki", "90_archiv", "01_vorlagen"].map((x) => String(x).toLowerCase()));
+const FESTE_ORDNER = (S) => new Set([S.inboxOrdner || "00_inbox", S.aufgabenOrdner || "05_aufgaben", "09_wiki", "90_archiv", "01_vorlagen", S.vorlagenOrdner || "01_vorlagen"].map((x) => String(x).toLowerCase()));
 const ungueltigerName = (n) => /[\/\\:\u0000-\u001f]/.test(n) || n.startsWith(".");
 const naechster = (liste, i, d) => (liste.length ? (i + d + liste.length) % liste.length : 0);
 
@@ -101,14 +101,47 @@ export function erzeugeDateiaktionen(ctx) {
     });
   }
 
+  // Ein Pfad (Notiz oder Ordner) hat sich geändert: Zurück/Vor folgt, ein offener Entwurf ohne Datei (fester Pfad der Tagesnotiz, Ordner) auch, und die Werkstatt zieht gemerkte
+  // Entwürfe mit. typ: "datei" | "ordner" | null (unbekannt, z. B. aus einem Live-Ereignis: gilt für beides)
+  function pfadGeaendert(typ, von, nach) {
+    if (!von || !nach || von === nach) return;
+    const sch = ctx.schreiben?.();
+    if (typ !== "ordner") sch?.umbenannt(von, nach);
+    if (typ !== "datei") sch?.ordnerUmbenannt(von, nach);
+    const e = S.entwurf, abb = abbilder("ordner", von, nach);
+    if (e) { if (e.pfad) e.pfad = abb(e.pfad); if (e.ordner) e.ordner = abb(e.ordner); }
+    ctx.entwurfVerschoben?.(von, nach);
+  }
+
+  // Ordner der Tagesnotizen (App-Einstellung): Umbenennen/Verschieben des Ordners (oder eines Elternordners) fragt einmal nach und zieht die Einstellung mit, damit „Heute“
+  // nicht still einen neuen Ordner am alten Ort anlegt. Notizen darin lassen sich wie alle anderen umbenennen.
+  const tagOrdner = () => String(ctx.tagesnotizOrdner?.() || "").replace(/^\/+|\/+$/g, "");
+  const beruehrtTagOrdner = (spec) => spec.typ === "ordner" && !!tagOrdner() && !!unterPfad(tagOrdner(), spec.pfad);
+  function bestaetigeTagOrdner(art) {
+    return new Promise((fertig) => {
+      let ja = false;
+      const d = dialog({ titel: TD.tagOrdner.titel, satz: art === "loeschen" ? TD.tagOrdner.loeschen : TD.tagOrdner.umbenennen, knoepfe: [
+        baueKnopf({ text: TD.tagOrdner.abbrechen, aktion: "abbrechen", aufKlick: () => d.schliessen() }),
+        baueKnopf({ text: TD.tagOrdner.weiter, variante: "primaer", aktion: "tag-ordner-weiter", aufKlick: () => { ja = true; d.schliessen(); } })], beiSchliessen: () => fertig(ja) });
+      d.box.setAttribute("data-dialog", "tag-ordner");
+    });
+  }
+  async function folgeTagOrdner(typ, von, nach) {
+    const alt = tagOrdner();
+    if (typ !== "ordner" || !alt || !von || !nach || von === nach || !unterPfad(alt, von)) return;
+    try { await ctx.setzeTagesnotizOrdner([nach, ...unterPfad(alt, von)].join("/")); }
+    catch { toast(TD.tagOrdner.einstellungFehler, { fehler: true, ms: 10000 }); }
+  }
+
   // ───────────── Der Ablauf einer Aktion ─────────────
   // spec: { art: "umbenennen"|"verschieben"|"loeschen", typ: "datei"|"ordner", pfad, daten: {titel|dateiname|name|ziel…}, nach (neuer Pfad, nur zum Anzeigen), titel (neuer Titel) }
   async function fuehre(spec) {
-    if (laeuft) return false;
+    if (laeuft || !spec.pfad) return false; // ein Entwurf ohne Datei (S.pfad leer) hat nichts umzubenennen
     laeuft = true;
     let frei = () => {};
     try {
       if (!(await ctx.sichereVorWechsel())) return false;
+      if (beruehrtTagOrdner(spec) && !(await bestaetigeTagOrdner(spec.art))) return false;
       frei = ctx.sperre();
       const anzeigeName = notiz(spec.pfad)?.titel || dateiName(spec.pfad);
       let vorschau;
@@ -140,6 +173,8 @@ export function erzeugeDateiaktionen(ctx) {
 
   async function nachErfolg(spec, erg) {
     const text = spec.art === "umbenennen" ? TD.toast.umbenannt : spec.art === "verschieben" ? TD.toast.verschoben : TD.toast.papierkorb;
+    if (spec.art === "loeschen") ctx.schreiben?.().entfernt(spec.pfad, spec.typ === "ordner");
+    else { pfadGeaendert(spec.typ, erg.von, erg.nach); await folgeTagOrdner(spec.typ, erg.von, erg.nach); }
     await ctx.ladeBaum();
     ladeKorbZahl();
     if (S.pfad && spec.art !== "loeschen") {
@@ -167,6 +202,8 @@ export function erzeugeDateiaktionen(ctx) {
       toast(fehlerText(e), { fehler: true });
       return;
     }
+    pfadGeaendert(r.typ === "ordner" ? "ordner" : r.typ === "datei" ? "datei" : null, r.von, r.nach);
+    await folgeTagOrdner(r.typ, r.von, r.nach);
     // Wo liegt die offene Notiz jetzt?
     if (S.pfad && r.von && r.nach && r.von !== r.nach) {
       const abb = abbilder(r.typ === "ordner" ? "ordner" : "datei", r.von, r.nach);
@@ -531,8 +568,10 @@ export function erzeugeDateiaktionen(ctx) {
   // Live-Ereignis „aktivitaet“ der Art datei-aktion/rueckgaengig mit zwei Pfaden [jetzt, vorher]: liegt die offene Notiz (oder ihr Ordner) dort, folgt sie.
   function folgeVerschiebung(liste) {
     for (const e of liste || []) {
-      if (e.typ !== "aktivitaet" || !["datei-aktion", "rueckgaengig"].includes(e.art) || !Array.isArray(e.pfade) || e.pfade.length !== 2 || !S.pfad) continue;
+      if (e.typ !== "aktivitaet" || !["datei-aktion", "rueckgaengig"].includes(e.art) || !Array.isArray(e.pfade) || e.pfade.length !== 2) continue;
       const [jetzt, vorher] = e.pfade;
+      pfadGeaendert(null, vorher, jetzt); // auch ohne offene Notiz: Zurück/Vor und Entwürfe folgen
+      if (!S.pfad) continue;
       const rest = unterPfad(S.pfad, vorher);
       if (!rest) continue;
       S.pfad = [jetzt, ...rest].join("/");

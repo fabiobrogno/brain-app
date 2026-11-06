@@ -62,8 +62,9 @@ export const api = {
   ablageAblegen: (pfad, inhalt, grund) => anfrage("POST", "/api/ablage/ablegen", { pfad, inhalt, ...(grund ? { grund } : {}) }),
   // Entwurfs-Journal (Absturzschutz): ungespeicherter Text je Notiz. entwurf liefert nur einen Entwurf, der neuer ist als die Datei und anders als ihr Inhalt.
   entwurf: (pfad) => anfrage("GET", "/api/entwurf" + q({ pfad })),
-  entwurfSchreiben: (pfad, basisHash, text) => anfrage("PUT", "/api/entwurf", { pfad, basisHash, text }),
+  entwurfSchreiben: (pfad, basisHash, text, meta) => anfrage("PUT", "/api/entwurf", { pfad, basisHash, text, ...(meta ? { meta } : {}) }),
   entwurfLoeschen: (pfad) => anfrage("POST", "/api/entwurf/loeschen", { pfad }),
+  entwurfVerschieben: (von, nach) => anfrage("POST", "/api/entwurf/verschieben", { von, nach }),
   entwuerfe: () => anfrage("GET", "/api/entwuerfe"),
   // Automatische lokale Fassungen: Stand · jetzt sichern (grund: "fenster" | "beenden")
   autoStand: () => anfrage("GET", "/api/auto/stand"),

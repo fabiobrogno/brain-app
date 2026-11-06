@@ -5,6 +5,9 @@
 // Schreiben oder Löschen an den falschen Vault (die Werkstatt kennt immer nur den gerade geöffneten).
 //
 // ctx: { api, lies: () => { pfad, text, basisHash, dirty } | null, vault: () => string (Kennung des geöffneten Vaults), intervallMs }
+// Schlüssel (Pfad im Journal) für den Entwurf einer neuen Notiz ohne Datei; gemeinsam/entwurf.mjs kennt ihn als Präfix `entwurf:`
+export const entwurfSchluessel = (id) => `entwurf:${id}`;
+
 export function erzeugeJournal({ api, lies, vault = () => "", intervallMs = 5000 }) {
   let timer = null;
   let generation = 0;              // zählt Vault-Wechsel: Aufträge aus einer früheren Generation laufen nicht mehr
@@ -45,8 +48,16 @@ export function erzeugeJournal({ api, lies, vault = () => "", intervallMs = 5000
     geschrieben.delete(schluessel(vault(), pfad));
     return reihe(() => api.entwurfLoeschen(pfad).catch(() => {}));
   }
+  // Eine Notiz (oder ein Ordner) wurde umbenannt/verschoben: die Werkstatt zieht die Entwürfe mit, hier folgen die gemerkten Schlüssel (sonst bliebe nach dem Speichern ein Entwurf am neuen Pfad liegen)
+  function verschiebe(von, nach) {
+    const v = vault(), pre = schluessel(v, von);
+    for (const [k, t] of [...geschrieben]) {
+      if (k === pre || k.startsWith(pre + "/")) { geschrieben.delete(k); geschrieben.set(schluessel(v, nach) + k.slice(pre.length), t); }
+    }
+    return reihe(() => api.entwurfVerschieben(von, nach).catch(() => {}));
+  }
   const stopp = () => { clearTimeout(timer); timer = null; };
   // Vault-Wechsel: nichts aus dem alten Vault darf mehr in den neuen schreiben oder dort löschen
   function zuruecksetzen() { stopp(); generation++; geschrieben.clear(); laeuft = Promise.resolve(); }
-  return { plane, schreibeJetzt, nachSpeichern, loesche, stopp, zuruecksetzen, warte: () => laeuft };
+  return { plane, schreibeJetzt, nachSpeichern, loesche, verschiebe, stopp, zuruecksetzen, warte: () => laeuft };
 }

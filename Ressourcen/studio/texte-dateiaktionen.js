@@ -55,4 +55,12 @@ export const TD = {
   },
   seitenleiste: { papierkorb: "Papierkorb", ordnerKopf: "Ordner" },
   schutz: { festerOrdner: "Dieser Ordner gehört fest zu Kortex." },
+  // Der Ordner der Tagesnotizen (Einstellungen → Schreiben) darf umbenannt werden; die Einstellung folgt, vorher fragt Kortex einmal nach
+  tagOrdner: {
+    titel: "Ordner der Tagesnotizen",
+    umbenennen: "Das ist der Ordner deiner Tagesnotizen. Nach dem Umbenennen oder Verschieben legt „Heute“ die Tagesnotiz im neuen Ort an: Kortex passt die Einstellung dafür an.",
+    loeschen: "Das ist der Ordner deiner Tagesnotizen. Ohne ihn legt „Heute“ beim nächsten Mal einen neuen, leeren Ordner an. Im Papierkorb lässt er sich zurückholen.",
+    weiter: "Trotzdem fortfahren", abbrechen: "Abbrechen",
+    einstellungFehler: "Die Einstellung „Ordner der Tagesnotizen“ konnte nicht angepasst werden. Stelle sie unter Einstellungen → Schreiben selbst ein.",
+  },
 };

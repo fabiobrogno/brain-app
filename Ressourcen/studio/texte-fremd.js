@@ -46,6 +46,8 @@ export const TN = {
     verworfen: "Entwurf verworfen. Er liegt noch unter „Gesicherte Fassungen“.",
     vergleichKopf: { datei: "Auf der Platte", entwurf: "Ungespeicherter Text" },
     gleich: "Kein Unterschied zur gespeicherten Fassung.",
+    neueNotizDa: "Die Notiz ist wieder da.",
+    neueNotiz: (zeit) => `Ungespeicherte neue Notiz von ${zeit} gefunden`,
     inAnderer: (zeit, titel) => `Ungespeicherter Text von ${zeit} in „${titel}“ gefunden`,
     ansehen: "Ansehen",
     nachAbsturz: "Das Fenster ist abgestürzt und wurde neu geladen.",

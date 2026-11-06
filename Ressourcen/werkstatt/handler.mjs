@@ -349,6 +349,7 @@ export function erzeugeHandler(o) {
         if (methode === "PUT") return V().entwurfSchreiben(eingabe());
         throw new HttpFehler(405, "Diese Methode ist hier nicht erlaubt.");
       case "/api/entwurf/loeschen": nur("POST"); return V().entwurfLoeschen(eingabe().pfad);
+      case "/api/entwurf/verschieben": nur("POST"); return V().entwurfVerschieben(eingabe());
       case "/api/entwuerfe": nur("GET"); return V().entwuerfe();
       // Automatische lokale Fassungen: Stand und „jetzt sichern“ (Fenster gewechselt/geschlossen, App beendet)
       case "/api/auto/stand": nur("GET"); return auto.stand(V());
