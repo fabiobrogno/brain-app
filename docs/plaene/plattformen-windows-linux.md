@@ -355,13 +355,13 @@ Messjob `plattform-probe` in `.github/workflows/ci.yml` (Windows und Linux; Bere
 
 Neu: `gemeinsam/plattform.mjs` (Kopie `kern/plattform.mjs`, Test `Tests/Node/plattform.test.mjs`), Dateisystem-Tests (`Tests/Node/plattform-dateisystem.test.mjs`), `nurMac()` für launchctl, pmset/ioreg, caffeinate, osascript, plutil. Windows-Reparaturen: `tar --force-local` bei GNU tar, `.exe`-Suche in `absoluterPfad`, Pfadvergleiche mit `sep`/`realpath.native`.
 
-### Messwerte (letzter vollständiger Lauf; Windows-Node-Zahl ist der Stand davor, siehe PR)
+### Messwerte (letzter vollständiger Lauf)
 
 | Bereich | Linux | Windows |
 |---|---|---|
-| Node-Tests | 1185 grün, 0 rot | 769 grün, 337 rot (vorher 605 / 487) |
+| Node-Tests | 1185 grün, 0 rot | 796 grün, 310 rot (erster Lauf: 0 / alles, Importfehler) |
 | Kern-Unit-Tests | 2791 grün, 0 rot | 2351 grün, 399 rot (vorher 2274 / 476) |
-| Playwright (Chromium) | 885 grün, 0 rot, 15 übersprungen | 825 grün, 60 rot, 15 übersprungen |
+| Playwright (Chromium) | 885 grün, 0 rot, 15 übersprungen | 854 grün, 50 rot, 15 übersprungen |
 
 ### Offene Fälle: Ursache → Folgeaufgabe
 
@@ -374,8 +374,8 @@ Neu: `gemeinsam/plattform.mjs` (Kopie `kern/plattform.mjs`, Test `Tests/Node/pla
 | Kern: `import()` mit Laufwerkspfad (4) | Kern-Läufer ohne `windows-importe.mjs` | `--import` auch in `Tests/Kern/unit.sh` (nur Windows) |
 | Node: Attrappen für `claude`/`codex`/`git` sind `#!/bin/sh`-Skripte (≈150) | Windows startet sie nicht | Attrappen als Node-Skripte mit `.cmd`-Starter |
 | Node: Vorschau-Ordner `Die Adresse enthält ungültige Zeichen` (≈13) | `vorschauOrdner` erlaubt nur `/…`-Pfade | Regex auf Laufwerkspfade erweitern |
-| Node: `HOME`/Temp-Prüfung (54, mit letztem Commit behoben, Messung steht aus) | Kurznamen `RUNNER~1` | siehe `windows-importe.mjs` |
-| UI: Einstellungen, Schreiben, Frage, Glocke, Umbenennen, KI & Konten (60) | vermutlich `⌘`-Kürzel (Tests drücken Meta), Attrappen-Skripte, Pfadtrenner | Kürzel je System in den Specs; Attrappen wie oben |
+| Node: `HOME`/Temp-Prüfung (54, behoben mit `windows-importe.mjs`) | Kurznamen `RUNNER~1` | beim nächsten Lauf prüfen; Rest der 310 roten Node-Tests sind überwiegend die Attrappen-Skripte |
+| UI: Einstellungen, Schreiben, Frage, Glocke, Umbenennen, KI & Konten (50) | vermutlich `⌘`-Kürzel (Tests drücken Meta), Attrappen-Skripte, Pfadtrenner | Kürzel je System in den Specs; Attrappen wie oben |
 | Repo: keine `.gitattributes` | Windows-Checkout mit `core.autocrlf=true` macht CRLF (erzeugte Kopien/Hashes brechen); der Messjob stellt es per Workflow-Schritt ab | `* text=auto eol=lf` bzw. `-text` im Repo; für neue Vaults `.gitattributes` `* -text` (V8, Test liegt vor) |
 | macOS-only ohne Ersatz | launchctl (Dienst), pmset/ioreg (Zeitplan), caffeinate, osascript (Papierkorb), plutil, Keychain (`osxkeychain`) | Windows: Aufgabenplanung/`powercfg`/PowerShell-Papierkorb/Credential Manager; Linux: systemd/`gio trash`/libsecret |
 | `lsof`/`pgrep` (G4, G5), `supportOrte`-Regexe (A3), 200× `split("/")` auf echten Pfaden (V4) | nicht angefasst | je Stelle in eigenem Paket |
