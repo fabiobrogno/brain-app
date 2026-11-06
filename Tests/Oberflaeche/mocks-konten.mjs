@@ -175,6 +175,19 @@ export async function mockeKonten(page, { vaults, konten = KONTEN, zugriff = nul
     if (z.anmeldenFehler) return fehler(route, 409, z.anmeldenFehler);
     return route.fulfill({ json: { ok: true, anzeige: b.programm === "claude" ? `${b.ordner ? `CLAUDE_CONFIG_DIR=${b.ordner.replace("/Users/test", "~")} ` : ""}claude auth login` : `${b.ordner ? `CODEX_HOME=${b.ordner.replace("/Users/test", "~")} ` : ""}codex login` } });
   });
+  // Anmelden im Fenster (E3, werkstatt/anmelden.mjs): ohne z.lauf antwortet die Attrappe wie eine Werkstatt, die das Programm nicht findet (409 nicht-gefunden) — dann gilt der bisherige Weg über das Terminal.
+  // Mit z.lauf = { phase, url?, code?, codeMoeglich?, grund? } läuft die Anmeldung im Fenster; z.laeufe sammelt Start/Abbruch/Code.
+  z.laeufe = [];
+  await page.route(/\/api\/ki\/anmeldelauf(\/code|\/abbrechen)?(\?.*)?$/, (route) => {
+    const u = new URL(route.request().url()), m = route.request().method();
+    const b = m === "POST" ? body(route) : null;
+    z.laeufe.push({ methode: m, pfad: u.pathname, body: b });
+    z.anfragen.push({ methode: m, pfad: u.pathname, body: b });
+    if (!z.lauf) return fehler(route, 409, "Claude Code wurde nicht gefunden.", { art: "nicht-gefunden", rueckfall: true });
+    if (u.pathname.endsWith("/abbrechen")) z.lauf = { ...z.lauf, phase: "abgebrochen" };
+    const l = z.lauf;
+    return route.fulfill({ json: { ok: true, id: "a_test", programm: b?.programm || "claude", phase: "wait", url: "https://claude.ai/oauth/authorize?code=true&state=zustand", code: null, codeMoeglich: true, verbleibendMs: 590000, grund: null, rueckfall: false, ...l } });
+  });
   // Ein neues Konto in drei Schritten (werkstatt/konten.mjs): konto-neu legt den Ordner unter dem endgültigen Namen an und das Konto als ausstehend (unsichtbar; Antwort `ausstehend`), konto-fertig nimmt nach bestätigter Anmeldung nur die Marke weg (nichts wird umbenannt), konto-abbruch räumt auf
   await page.route("**/api/ki/konto-neu", (route) => {
     const b = body(route); z.anfragen.push({ methode: "POST", pfad: "/api/ki/konto-neu", body: b });

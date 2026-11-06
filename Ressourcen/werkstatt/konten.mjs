@@ -954,6 +954,8 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
   }
   const programmVon = (id) => { const d = lade(); return d && Object.hasOwn(d.konten, id) ? d.konten[id] : null; };
   const kontoDaten = (id) => programmVon(id);
+  // Ein noch ausstehendes neues Konto (E4: nirgends sichtbar), das DIESER Prozess gerade anlegt: nur für die Anmeldung im Fenster (werkstatt/anmelden.mjs)
+  const ausstehendDaten = (id) => { try { const d = ladeAlle(); const k = d && typeof id === "string" && Object.hasOwn(d.konten, id) ? d.konten[id] : null; return k && istObj(k.ausstehend) && ausstehendJetzt.has(id) ? k : null; } catch { return null; } };
 
   // Für die Probe-Frage der App: ein Konto, das den Vault lesen darf (claude zuerst). null, wenn es die Liste noch nicht gibt (bisheriges Verhalten);
   // gibt es die Liste, aber kein Konto mit Zugriff, ist das ein Fehler für den Aufrufer (nichts gefunden zu haben wäre sonst irreführend).
@@ -965,5 +967,5 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
     return { konto: null, liste: true };
   }
 
-  return { synchronisiere, abgleich, altform: (id) => { const k = lade() && Object.hasOwn(lade().konten, id) ? lade().konten[id] : null; return k && homeErlaubt(home()) ? altformStandard(k, home()) : { mcp: false, hooks: false }; }, stand, setzeName, setzeAktiv, kontoFertig, kontoAbbruch, raeumeNeu, setzeZugriff, setzeStandard, setzePflege, migrierePflege, migrationVermerkt, vermerkePlist, setzeSchutz, legeKontoAn, entferneKonto, papierkorbOrdner, anmeldung, quittiereHinweis, holeVorher, vaultHinzu, kontoFuerProfil, kontoFuerProgramm, kontoDaten, probeKonto, lade };
+  return { synchronisiere, abgleich, altform: (id) => { const k = lade() && Object.hasOwn(lade().konten, id) ? lade().konten[id] : null; return k && homeErlaubt(home()) ? altformStandard(k, home()) : { mcp: false, hooks: false }; }, stand, setzeName, setzeAktiv, kontoFertig, kontoAbbruch, raeumeNeu, setzeZugriff, setzeStandard, setzePflege, migrierePflege, migrationVermerkt, vermerkePlist, setzeSchutz, legeKontoAn, entferneKonto, papierkorbOrdner, anmeldung, quittiereHinweis, holeVorher, vaultHinzu, kontoFuerProfil, kontoFuerProgramm, kontoDaten, ausstehendDaten, probeKonto, lade };
 }

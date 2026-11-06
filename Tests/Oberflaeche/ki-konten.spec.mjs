@@ -192,7 +192,7 @@ test("Anmelden: öffnet im Programm selbst (Befehl im Fenster), fragt nur nach d
   await oeffneMenueAn(konto(page, "k_aaaa0001").locator('[data-aktion="konto-mehr"]'));
   await menueEintrag(page, "konto-neu-anmelden").click();
   await expect(dlg(page, "anmelden")).toBeVisible();
-  expect(z.log("/api/ki/anmelden").at(-1).body).toEqual({ programm: "claude", ordner: null });
+  await expect.poll(() => z.log("/api/ki/anmelden").at(-1).body).toEqual({ programm: "claude", ordner: null }); // erst fragt der Dialog die Werkstatt (Anmelden im Fenster), dann gilt der Terminalweg
   const vorher = z.log("/api/ki/anmeldestatus").length;
   await dlg(page, "anmelden").locator('[data-aktion="anmelden-abbrechen"]').click();
   await expect(dlg(page, "anmelden")).toBeHidden();
@@ -233,7 +233,7 @@ test("Konto hinzufügen: öffnet den Ablauf „KI verbinden“ beim Konto; eigen
   // der Ordner trägt gleich seinen endgültigen Namen, das Konto steht noch NICHT in der Liste (ausstehend, unsichtbar)
   const neu = Object.values(z.ausstehend)[0];
   expect(neu.pfad).toMatch(/\/ki-konten-ordner\/claude-kunde-m/);
-  expect(z.log("/api/ki/anmelden").at(-1).body.ordner).toBe(neu.pfad);
+  await expect.poll(() => z.log("/api/ki/anmelden").at(-1)?.body.ordner).toBe(neu.pfad);
   expect(z.konten.some((x) => x.name === "Kunde Müller")).toBe(false);
   await expect(page.locator('.kx-konto[data-konto^="k_neu"]')).toHaveCount(0);
   // Abbrechen räumt auf: Abbruch an die Werkstatt, nichts in der Liste

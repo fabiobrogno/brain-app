@@ -1,7 +1,7 @@
 // Anmelde-Panel „Im Browser anmelden“ (Paket E3, Plan docs/plaene/einrichtung-und-konten-wie-orca.md 4.4): die Anmeldung bei Claude Code oder Codex im Fenster, ohne Terminal.
 // Eigenständiger Baustein für den Einrichtungs-Ablauf (E2) und die Konten-Einstellungen (E4):
 //
-//   const a = starteAnmeldung("claude", { neu: "Firma" } | "<konto-kennung>", { host?, ordner?, beiFertig?, beiTerminal?, beiZeitablauf?, terminal? });
+//   const a = starteAnmeldung("claude", { neu: "Firma" } | "<konto-kennung>", { host?, ordner?, beiFertig?, beiTerminal?, beiZeitablauf?, beiRueckfall?, terminal? });
 //   a.knoten      Element (wird in `host` gehängt, wenn gegeben)
 //   a.ergebnis    Promise<{ phase: "ok"|"abgebrochen"|"terminal", konto?, ausstehend? }>  (terminal + neues Konto: `ausstehend: {id, pfad}` — der Aufrufer bestätigt es mit konto-fertig, sobald das Programm angemeldet ist)   — immer aufgelöst, nie abgelehnt
 //   a.abbrechen() bricht ab (Werkstatt beendet das Programm und räumt das neue Konto weg), a.zerstoere() = abbrechen + Panel entfernen
@@ -112,6 +112,7 @@ export function starteAnmeldung(programm, konto, opt = {}) {
     } catch (e) {
       if (!lebt) return;
       const art = e?.daten?.art;
+      if (opt.beiRueckfall && art !== "laeuft-schon" && art !== "zu-oft" && art !== "zu-viele") { opt.beiRueckfall(); return; } // der Aufrufer hat einen eigenen Weg (Terminal): gleich dorthin
       if (art === "laeuft-schon" && e.daten.id) { id = e.daten.id; planeAbfrage(); return; } // dieselbe Anmeldung weiterführen (z. B. Panel neu geöffnet)
       const text = art === "nicht-gefunden" ? TA.nichtGefunden : art === "zu-oft" || art === "zu-viele" ? TA.zuOft : e?.message || TA.allgemein;
       setze("fehler", meldung(text), h("div", { klasse: "an-fuss" }, knopf({ text: TA.nochmal, aufKlick: neuStart, daten: { "data-test": "an-nochmal" } }), terminalLink(true)));
