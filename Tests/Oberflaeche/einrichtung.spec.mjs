@@ -402,41 +402,52 @@ test.describe("KI-Schritt: eine Zeile je Programm, ein Knopf „Verbinden“", (
     await expect(zeile(page, "cursor").locator(".e-tick")).toHaveCount(0);
   });
 
-  test("Nicht angemeldet: die Anmeldung läuft über den Haken `starteAnmeldung` (heute die bestehende), danach verbindet die Zeile von selbst", async ({ page }) => {
+  test("Nicht angemeldet: die Anmeldung läuft im Fenster (Panel aus anmeldung.js), danach verbindet die Zeile von selbst", async ({ page }) => {
+    const z = await oeffne(page, { login: { "std:codex": "nicht-angemeldet" } });
+    await zuKi(page);
+    await verbinden(page, "codex");
+    const panel = zeile(page, "codex").locator('[data-bereich="anmeldung"]');
+    await expect(panel).toBeVisible({ timeout: 6000 });
+    await expect(panel.locator('[data-test="an-browser"]')).toHaveText("Im Browser anmelden");
+    await expect(panel.locator(".an-code")).toHaveText("ABCD-12345");
+    expect(anfragen(z, "/api/mcp/verbinden")).toHaveLength(0); // erst nach der Anmeldung
+    // während die Anmeldung läuft, bleibt die Einrichtung in diesem Schritt
+    await expect(page.locator(sel("zurueck"))).toBeDisabled();
+    z.laufPhase = "ok"; // die Abfrage der Werkstatt meldet „angemeldet“: die Zeile verbindet von selbst
+    await expect(zeile(page, "codex").locator(".e-tick")).toBeVisible({ timeout: 12000 });
+    expect(anfragen(z, "/api/mcp/verbinden")[0].body.ziel).toBe("codex");
+  });
+
+  test("Rückfall „Im Terminal anmelden“: der bisherige Weg (Terminal, Abfrage im Hintergrund) übernimmt, danach verbindet die Zeile von selbst", async ({ page }) => {
     const z = await oeffne(page, { login: { "std:codex": "nicht-angemeldet" } });
     await page.route("**/api/ki/anmelden", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ anzeige: "codex login" }) }));
     await zuKi(page);
     await verbinden(page, "codex");
-    await expect(zeile(page, "codex").locator('[data-bereich="anmeldung"]')).toBeVisible({ timeout: 6000 });
-    await expect(zeile(page, "codex").locator('[data-kx="befehl"]')).toContainText("codex login");
-    expect(anfragen(z, "/api/mcp/verbinden")).toHaveLength(0); // erst nach der Anmeldung
-    // während die Anmeldung läuft, bleibt die Einrichtung in diesem Schritt
-    await expect(page.locator(sel("zurueck"))).toBeDisabled();
-    z.login["std:codex"] = "angemeldet"; // die Abfrage im Hintergrund (alle 3 s) merkt es und die Zeile verbindet von selbst
+    await zeile(page, "codex").locator('[data-test="an-terminal"]').click();
+    await expect(zeile(page, "codex").locator('[data-kx="befehl"]')).toContainText("codex login", { timeout: 6000 });
+    z.login["std:codex"] = "angemeldet";
     await expect(zeile(page, "codex").locator(".e-tick")).toBeVisible({ timeout: 12000 });
     expect(anfragen(z, "/api/mcp/verbinden")[0].body.ziel).toBe("codex");
   });
 
   test("Läuft die Frist der Anmeldung ab, ruft sie beiAbbruch auf: die Zeile geht zurück auf „Verbinden“", async ({ page }) => {
-    await page.clock.install();
-    await oeffne(page, { login: { "std:codex": "nicht-angemeldet" } });
-    await page.route("**/api/ki/anmelden", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ anzeige: "codex login" }) }));
+    const z = await oeffne(page, { login: { "std:codex": "nicht-angemeldet" } });
     await zuKi(page);
     await verbinden(page, "codex");
     await expect(zeile(page, "codex").locator('[data-bereich="anmeldung"]')).toBeVisible({ timeout: 6000 });
-    await page.clock.fastForward("11:00");
-    await expect(zeile(page, "codex").locator(sel("verbinden"))).toBeVisible({ timeout: 6000 });
+    z.laufPhase = "timeout";
+    await expect(zeile(page, "codex").locator(sel("verbinden"))).toBeVisible({ timeout: 8000 });
     await expect(zeile(page, "codex").locator('[data-bereich="anmeldung"]')).toHaveCount(0);
   });
 
   test("Anmeldung abbrechen: die Zeile geht zurück auf „Verbinden“, nichts wird eingetragen", async ({ page }) => {
     const z = await oeffne(page, { login: { "std:codex": "nicht-angemeldet" } });
-    await page.route("**/api/ki/anmelden", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ anzeige: "codex login" }) }));
     await zuKi(page);
     await verbinden(page, "codex");
     await expect(zeile(page, "codex").locator('[data-bereich="anmeldung"]')).toBeVisible({ timeout: 6000 });
-    await page.click(sel("anmelden-abbrechen"));
+    await zeile(page, "codex").locator('[data-test="an-abbrechen"]').click();
     await expect(zeile(page, "codex").locator(sel("verbinden"))).toBeVisible();
+    expect(anfragen(z, "/api/ki/anmeldelauf/abbrechen")).toHaveLength(1);
     expect(anfragen(z, "/api/mcp/verbinden")).toHaveLength(0);
   });
 });

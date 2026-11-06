@@ -23,7 +23,7 @@ export function starteAnmeldung(programm, konto, opt = {}) {
   const neuName = konto && typeof konto === "object" && typeof konto.neu === "string" ? konto.neu : null;
   const kontoId = typeof konto === "string" ? konto : null;
   const inhalt = h("div", { klasse: "an-inhalt", "aria-live": "polite" });
-  const knoten = h("section", { klasse: "an", "data-bereich": "anmeldung", "data-programm": programm, "data-phase": "start" },
+  const knoten = h("section", { klasse: "an", "data-bereich": "anmeldung-panel", "data-programm": programm, "data-phase": "start" },
     h("h3", { klasse: "an-titel" }, markenLogo(programm === "codex" ? "codex" : "claude", 16, { dekorativ: true }), h("span", { text: TA.titel(programm) })), inhalt);
   let aufgeloest = null, id = null, uhr = null, tick = null, lebt = true, fertig = false, endeMs = null, restEl = null, stand = null, terminalOffen = false;
   const ergebnis = new Promise((r) => { aufgeloest = r; });
