@@ -26,6 +26,7 @@ import { erzeugeKontingent } from "./kontingent.mjs";
 import { erzeugeEinstellungen } from "./einstellungen.mjs";
 import { erzeugeAktivitaet } from "./aktivitaet.mjs";
 import { erzeugeTastenkuerzel } from "./tastenkuerzel.mjs";
+import { erzeugeAutoFassungen } from "./auto-fassungen.mjs";
 import { STUFEN, pflegeFuer, stufeFuer, darfMindestens } from "../gemeinsam/ki-konten.mjs";
 import { erzeugePflege } from "./pflege.mjs";
 import { merkeRemoteBestaetigt } from "../gemeinsam/sicherungsmerker.mjs";
@@ -117,7 +118,10 @@ export function erzeugeHandler(o) {
   // Live-Aktualisierung (ereignisse.mjs): beobachtet den offenen Vault, sobald die Oberfläche zum ersten Mal nach Ereignissen fragt. o.ereignisse = Einstellungen für Tests.
   const ereignisse = erzeugeEreignisse({ support: vaultOpt.support || supportOrdner(), ...(o.ereignisse || {}) });
   // Eine laufende Frage („Frag deinen Vault“) gehört zum bisherigen Vault: bei jedem Wechsel endet sie (frage.brichAb).
-  const wechsleZu = (pfad) => { frage.brichAb("vault"); try { aktuell?.suchindexBeende?.(); } catch { /* egal */ } aktuell = pfad ? oeffne(pfad) : null; ereignisse.richteAuf(aktuell ? aktuell.wurzel : null); waermeAuf(); };
+  // Automatische lokale Fassungen (auto-fassungen.mjs): nach dem Speichern im Studio und 2 Minuten Ruhe ein Commit „Automatisch gesichert: N Notizen“. Nur lokal. o.auto / KORTEX_AUTO_LEERLAUF_MS (nur Testmodus): kürzere Zeiten für Tests.
+  const autoMs = testmodus() && Number(process.env.KORTEX_AUTO_LEERLAUF_MS) > 0 ? Number(process.env.KORTEX_AUTO_LEERLAUF_MS) : undefined;
+  const auto = erzeugeAutoFassungen({ support: vaultOpt.support || supportOrdner(), ...(autoMs ? { leerlaufMs: autoMs, wiederholMs: autoMs } : {}), ...(o.auto || {}) });
+  const wechsleZu = (pfad) => { frage.brichAb("vault"); try { aktuell?.suchindexBeende?.(); } catch { /* egal */ } const alt = aktuell; aktuell = pfad ? oeffne(pfad) : null; ereignisse.richteAuf(aktuell ? aktuell.wurzel : null); waermeAuf(); if (alt && (!aktuell || alt.wurzel !== aktuell.wurzel)) auto.beiWechsel(alt).catch(() => {}); };
   if (o.vault) aktuell = oeffne(o.vault); // falscher Ordner → HttpFehler wie bisher
   else {
     const p = vaultsFn.aktiverVaultPfad(optV());
@@ -331,8 +335,24 @@ export function erzeugeHandler(o) {
       case "/api/baum": nur("GET"); return V().baum();
       case "/api/datei":
         if (methode === "GET") return V().lies(q.get("pfad"));
-        if (methode === "PUT") { const e = eingabe(); return V().schreibe({ pfad: e.pfad, inhalt: e.inhalt, basisHash: e.basisHash }); }
+        if (methode === "PUT") { const e = eingabe(); const r = V().schreibe({ pfad: e.pfad, inhalt: e.inhalt, basisHash: e.basisHash }); auto.vermerke(V(), [e.pfad]); return r; }
         throw new HttpFehler(405, "Diese Methode ist hier nicht erlaubt.");
+      // Fremdänderung bei offener Notiz: Drei-Wege-Zusammenführung (Basis · meine Fassung · Platte), mit Ablage der überschriebenen Fassung (vault.zusammenfuehren)
+      case "/api/datei/zusammenfuehren": { nur("POST"); const a = eingabe(); if (a && typeof a.pfad === "string") await V().warteBisStabil(a.pfad); const r = V().zusammenfuehren(a); if (r.hash && r.art !== "uebernommen") auto.vermerke(V(), [a.pfad]); return r; }
+      // Fassungs-Ablage: was Kortex vor einem Überschreiben oder Verwerfen zur Seite gelegt hat
+      case "/api/ablage": nur("GET"); return V().ablageListe(q.get("pfad") || null);
+      case "/api/ablage/fassung": nur("GET"); return V().ablageLese(q.get("id"));
+      case "/api/ablage/ablegen": nur("POST"); return V().ablageLegeAb(eingabe());
+      // Entwurfs-Journal (Absturzschutz): ungespeicherter Text. Löschen per POST (die Brücke der App kennt nur GET/POST/PUT/PATCH).
+      case "/api/entwurf":
+        if (methode === "GET") return V().entwurfPruefen(q.get("pfad"));
+        if (methode === "PUT") return V().entwurfSchreiben(eingabe());
+        throw new HttpFehler(405, "Diese Methode ist hier nicht erlaubt.");
+      case "/api/entwurf/loeschen": nur("POST"); return V().entwurfLoeschen(eingabe().pfad);
+      case "/api/entwuerfe": nur("GET"); return V().entwuerfe();
+      // Automatische lokale Fassungen: Stand und „jetzt sichern“ (Fenster gewechselt/geschlossen, App beendet)
+      case "/api/auto/stand": nur("GET"); return auto.stand(V());
+      case "/api/auto/sichern": { nur("POST"); const e = koerper && koerper.length ? eingabe() : {}; return auto.sichere(V(), ["fenster", "beenden"].includes(e.grund) ? e.grund : "fenster"); }
       case "/api/neu": nur("POST"); return V().neu(eingabe());
       case "/api/wiki/anlegen": nur("POST"); return V().wikiAnlegen(eingabe()); // offener [[Link]] → vorhandene Notiz oder neue mit dem Ziel als Titel
       case "/api/merken": nur("POST"); return V().merken(eingabe());

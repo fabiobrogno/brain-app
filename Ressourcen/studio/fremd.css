@@ -1,0 +1,43 @@
+/* „Nichts geht verloren“: Änderung von außen bei offener Notiz (Zusammenführen), ungespeicherter Entwurf, gesicherte Fassungen.
+   Die Ansicht sitzt kompakt im Banner-Bereich über dem Editor; Zeilen, Kästchen und Wort-Markierungen kommen aus konflikt.css (.zl, .kbox, mark.w). */
+.fr-konflikt { display: flex; flex-direction: column; gap: 10px; max-height: 56vh; overflow-y: auto; padding: 12px 24px 0; border-bottom: 1px solid var(--linie); background: color-mix(in srgb, var(--gelb) 10%, var(--papier)); scrollbar-width: thin; }
+.fr-kopf .b-titel { font-weight: 600; }
+.fr-kopf .b-sub { color: var(--text-2); margin-top: 2px; max-width: 760px; }
+.fr-alle { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-2); }
+.fr-bloecke { display: grid; gap: 10px; }
+.fr-block { border: 1px solid var(--linie); border-radius: 10px; background: var(--erhoben); box-shadow: var(--schatten-klein); overflow: clip; }
+.fr-block[data-gewaehlt]:not([data-gewaehlt=""]) { border-color: var(--akzent); }
+.fr-block-kopf { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--linie); font-size: 12.5px; background: var(--seite); }
+.fr-gewaehlt { color: var(--akzent-tinte); font-size: 12px; }
+.fr-zwei { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.fr-titel { padding: 6px 12px; font-size: 11.5px; letter-spacing: .02em; color: var(--text-3); border-bottom: 1px solid var(--linie); }
+.fr-titel.l, .fr-spalte.l { border-right: 1px solid var(--linie); }
+.fr-spalte { min-width: 0; padding: 6px 12px; font-size: 13.5px; line-height: 1.55; overflow-wrap: anywhere; color: color-mix(in srgb, var(--text) 88%, var(--papier)); user-select: text; -webkit-user-select: text; }
+.fr-spalte.l { background: var(--k-an); box-shadow: inset 2px 0 0 var(--k-leiste); }
+.fr-spalte.r { background: color-mix(in srgb, var(--gelb) 9%, transparent); box-shadow: inset 2px 0 0 color-mix(in srgb, var(--gelb) 60%, transparent); }
+.fr-z.fr-luecke { min-height: 1em; }
+.fr-nichts { color: var(--text-3); font-style: italic; }
+.fr-kontext { padding: 4px 12px; font-size: 12.5px; line-height: 1.5; color: var(--text-3); white-space: pre-wrap; overflow-wrap: anywhere; border-bottom: 1px dashed var(--linie); }
+.fr-gleich { padding: 3px 12px; text-align: center; font-size: 11.5px; color: var(--text-3); background: var(--seite); border-block: 1px solid var(--linie); }
+.fr-akt { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px; border-top: 1px solid var(--linie); }
+.fr-akt .bs-knopf[aria-pressed="true"] { background: var(--akzent-weich); border-color: var(--akzent); color: var(--akzent-tinte); }
+.fr-eigen { display: grid; gap: 8px; padding: 10px 12px 12px; border-top: 1px solid var(--linie); background: var(--seite); }
+.fr-eigen[hidden] { display: none; }
+.fr-eigen-titel { font-size: 12.5px; font-weight: 600; }
+.fr-eigen-akt { display: flex; justify-content: flex-end; gap: 6px; }
+.fr-fuss { position: sticky; bottom: 0; display: flex; align-items: center; gap: 10px; padding: 10px 0 12px; border-top: 1px solid var(--linie); background: color-mix(in srgb, var(--gelb) 10%, var(--papier)); }
+.fr-fuss-abstand { flex: 1; }
+.fr-status { font-size: 12.5px; color: var(--text-2); }
+.fr-hinweis { margin: 0; font-size: 12px; }
+/* Entwurf wiederherstellen */
+.fr-entwurf { flex-direction: column; align-items: stretch; gap: 10px; }
+.fr-entwurf-zeile { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.fr-entwurf-zeile .b-text { flex: 1 1 260px; }
+.fr-entwurf-vergleich { max-height: 40vh; overflow-y: auto; border: 1px solid var(--linie); border-radius: 10px; background: var(--erhoben); scrollbar-width: thin; }
+.fr-vergleich .fr-stelle { border-top: 1px solid var(--linie); }
+/* Der Banner-Bereich wächst mit dem Inhalt (nie über den Editor gelegt) und scrollt, wenn der Vergleich lang ist */
+#banner-host:has(.fr-konflikt, .fr-entwurf) { flex: none; max-height: 66vh; overflow-y: auto; scrollbar-width: thin; }
+/* Gesicherte Fassungen (Info-Spalte) */
+.ablage-eintrag { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; }
+.ablage-text { display: grid; min-width: 0; font-size: 12.5px; }
+.ablage-text b { font-weight: 500; }

@@ -186,6 +186,7 @@ export function commit(wurzel, a, ctx = {}) {
   return exklusiv(wurzel, () => commitOhneSperre(wurzel, a || {}, kontext(ctx, ctx.frist || neueFrist(ctx.limit > 0 ? ctx.limit : LIMIT_COMMIT))));
 }
 
+const GIT_STOERUNG = /index\.lock|unable to create .*\.lock|cannot lock ref|author identity unknown|unable to auto-detect|empty ident name|please tell me who you are|gpg failed|failed to write commit object|error: gpg|no space left|unable to write|bad config/i;
 async function commitOhneSperre(wurzel, { nachricht, dateien }, ctx) {
   const G = binde(wurzel, ctx);
   await brauchtRepo(G, wurzel);
@@ -207,7 +208,7 @@ async function commitOhneSperre(wurzel, { nachricht, dateien }, ctx) {
     const a = await G(["add", "--", ...pfade]);
     if (a.code !== 0) {
       await indexZurueck(G, sicherung);
-      throw new HttpFehler(422, "Die Dateien konnten nicht vorgemerkt werden.", { ausgabe: ausgabeVon(a) });
+      throw new HttpFehler(422, "Die Dateien konnten nicht vorgemerkt werden.", { ausgabe: ausgabeVon(a), art: "git" });
     }
     // --only + Pfade: committet genau diese Dateien, auch wenn sonst etwas vorgemerkt wäre
     c = await G(["commit", "-m", nachricht, "--only", "--", ...pfade]);
@@ -224,7 +225,9 @@ async function commitOhneSperre(wurzel, { nachricht, dateien }, ctx) {
   }
   if (c.code !== 0) {
     await indexZurueck(G, sicherung); // Vormerkung exakt wie vorher (auch teilweise Vorgemerktes bleibt)
-    throw new HttpFehler(422, "Der Commit wurde abgelehnt. Die Meldung steht unten.", { ausgabe: ausgabeVon(c) });
+    // art "hook": die Prüfung (Hook) hat den Commit abgelehnt; art "git": Git selbst ging es schlecht (index.lock, keine Identität, GPG …) — keine Prüfung, vergeht oft von allein.
+    const ausgabe = ausgabeVon(c);
+    throw new HttpFehler(422, "Der Commit wurde abgelehnt. Die Meldung steht unten.", { ausgabe, art: GIT_STOERUNG.test(ausgabe) ? "git" : "hook" });
   }
   const h = await G(["rev-parse", "HEAD"]);
   return { sha: h.stdout.trim() };

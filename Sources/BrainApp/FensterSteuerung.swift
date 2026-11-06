@@ -120,6 +120,8 @@ final class AktionsKanal: NSObject, WKScriptMessageHandlerWithReply {
 final class Navigation: NSObject, WKNavigationDelegate {
     var beiGeladen: (() -> Void)?
     var beiFehler: ((String) -> Void)?
+    /// Der WebContent-Prozess wurde beendet (Absturz, Speicherdruck): die Seite neu laden lassen (`WebAbsturzBehandlung`).
+    var beiProzessEnde: (() -> Void)?
     private let oberflaeche: Oberflaeche
     /// Wohin die Fehlerseite zurückführt (Standard: Startseite der Oberfläche; das Einrichtungsfenster: seine eigene Adresse).
     private let startURL: URL
@@ -140,6 +142,9 @@ final class Navigation: NSObject, WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { beiGeladen?() }
 
+    /// Ohne diese Methode bliebe das Fenster nach einem Absturz des WebContent-Prozesses weiß, und nicht gespeicherter Text wäre nur noch im Entwurfs-Journal.
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { beiProzessEnde?() }
+
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: any Error) {
         meldeFehler(webView, error)
     }
@@ -156,6 +161,14 @@ final class Navigation: NSObject, WKNavigationDelegate {
         beiFehler?("\(e.domain) \(e.code)")
         webView.loadSimulatedRequest(URLRequest(url: startURL), responseHTML: SchemaAntwort.fehlerSeiteHTML)
     }
+}
+
+/// Die WebView als `WebLader` für die Behandlung eines Absturzes (im Test eine Attrappe).
+@MainActor
+private final class WebLaderWK: WebLader {
+    weak var web: WKWebView?
+    func lade(_ url: URL) { web?.load(URLRequest(url: url)) }
+    func zeigeFehlerseite(startURL: URL) { web?.loadSimulatedRequest(URLRequest(url: startURL), responseHTML: SchemaAntwort.fehlerSeiteHTML) }
 }
 
 /// Fläche im Kopf des Einrichtungsfensters, die das Fenster verschiebbar macht: Die WebView schluckt Klicks in der (durchsichtigen)
@@ -195,6 +208,8 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
     private var ampelPlatz: CGFloat = 0
     private var navigation: Navigation?
     private var bruecke: BrueckenVerbindung?
+    private var webLader: WebLaderWK?
+    private var absturzBehandlung: WebAbsturzBehandlung?
     private var bereitAufgabe: Task<Void, Never>?
     /// Testschalter fürs Studio (`--test-bild` & Co., nur wenn die App damit gestartet wurde) und der Lauf dazu.
     private var test: StartArgumente?
@@ -289,6 +304,12 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
         navigation.beiGeladen = { [weak self] in self?.warteAufBereit() }
         navigation.beiFehler = { [weak self] grund in self?.log.schreibe("fenster-ladefehler \(self?.name ?? "") \(grund)") }
         web.navigationDelegate = navigation
+        // Stürzt der WebContent-Prozess ab, lädt die App die Oberfläche neu (höchstens 3-mal in 60 s); das Studio bietet danach den Entwurf aus dem Journal an
+        let lader = WebLaderWK()
+        lader.web = web
+        webLader = lader
+        absturzBehandlung = WebAbsturzBehandlung(startURL: ziel, lader: lader, schreibe: { [weak self] zeile in self?.log.schreibe("\(zeile) \(self?.name ?? "")") })
+        navigation.beiProzessEnde = { [weak self] in self?.absturzBehandlung?.prozessBeendet() }
 
         // Titelleiste wie bei modernen Mac-Apps: durchsichtig, ohne Titel, der Inhalt läuft darunter (fullSizeContentView), die Ampel sitzt in der
         // Seitenleiste. Die WebView fängt Klicks in der Titelleiste ab; die Seite meldet darum das Ziehen und den Doppelklick selbst
@@ -740,6 +761,8 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
         webView = nil
         ziehStreifen = nil
         navigation = nil
+        absturzBehandlung = nil
+        webLader = nil
         fenster?.delegate = nil
         fenster = nil
         schliessenFreigegeben = false

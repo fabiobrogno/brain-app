@@ -173,6 +173,7 @@ function regelSteuerung(schluessel, zeile, s) { Z.steuer.set(schluessel, { ...s,
 function bauSchalter(z) {
   const k = z.schluessel;
   const s = umschalter({ an: !!wertVon(k), label: z.titel, daten: { "data-schluessel": k }, aufAenderung: (v) => aendere(k, v) });
+  if (z.bald) { s.disabled = true; s.setAttribute("aria-disabled", "true"); s.title = TE.bald; } // vorbereitet, ohne Wirkung: der Schalter lässt sich noch nicht umlegen
   return { steuerung: s, reg: { setze: (w) => { s.an = !!w; } } };
 }
 function bauSegment(z) {
@@ -437,7 +438,7 @@ function ueberKarte() {
 function zeileText(id, text) { const e = Z.zeilen.get(id); if (e?.textEl) { e.textEl.textContent = text; e.originalText = text; } }
 
 function bauZeile(b, a, z) {
-  let steuerung = null, reg = null, voll = null, unten = null, marke = z.experiment ? einstellMarke(TE.experiment) : null, titel = z.titel;
+  let steuerung = null, reg = null, voll = null, unten = null, marke = z.experiment ? einstellMarke(TE.experiment) : z.bald ? einstellMarke(TE.bald, "akzent") : null, titel = z.titel;
   if (z.sonder) {
     if (z.kuerzelId) { const r = Z.tasten.zeile(z); steuerung = r.steuerung; marke = r.marke; } // Tastenkürzel (P10): einstellungen-tasten.js
     else if (z.taste) steuerung = kbdGruppe(z.taste);

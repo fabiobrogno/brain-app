@@ -29,6 +29,10 @@ erhält deinen Text Byte für Byte.
 - **Abgleich und Sicherung mit git:** Änderungen ansehen und auswählen, sichern, Verlauf mit Vergleich, alte Fassungen
   wiederherstellen. Abgleich mit deinem eigenen git-Remote oder GitHub; Konflikte werden erklärt, nichts wird still überschrieben.
   Auf Wunsch sichert der Assistent den Vault in ein privates GitHub-Repository.
+- **Nichts geht verloren:** Ändert ein anderes Programm (zum Beispiel deine KI) eine Notiz, die du gerade bearbeitest, führt Kortex
+  beide Fassungen zusammen; überschneiden sie sich, wählst du je Stelle. Bevor Kortex etwas ersetzt, liegt die andere Fassung unter
+  „Gesicherte Fassungen“. Ungespeicherter Text überlebt einen Absturz (Entwurfs-Journal im Support-Ordner, nur für dich lesbar), und
+  nach dem Speichern legt Kortex von selbst eine Fassung an (nur lokal; Einstellungen → Sicherung & GitHub → „Fassungen automatisch anlegen“).
 - **KI verbinden:** Kortex erkennt deine KI-Programme und trägt seinen lokalen MCP-Server dort ein: Claude Code, Claude Desktop,
   Codex, Cursor, Gemini CLI, GitHub Copilot (CLI), Zed, OpenCode und Warp. Die KI liest dein Wissen mit Quellen und legt
   Merkzettel im Posteingang ab; ins Wiki schreibt sie nie direkt. Wer sie zusätzlich dürfen soll, entscheidest du.
@@ -60,6 +64,8 @@ Stabile Versionen sind signiert, von Apple notarisiert und aktualisieren sich ü
 
 - **Alles bleibt auf deinem Mac.** Deine Notizen liegen in deinem Vault-Ordner. Kortex hat keinen Server, keine Telemetrie, keine
   Analyse und lädt keine Berichte hoch.
+- **Automatische Fassungen** entstehen nur auf deinem Mac (ein Commit im Vault) und laden nichts hoch. Das Hochladen löst du weiter selbst aus;
+  ein Schalter „Automatisch abgleichen“ ist vorbereitet, steht aber auf „bald“ und ist aus. Er würde Netzverkehr ohne Klick bedeuten und hielte an, sobald die Prüfung vor dem Sichern ein Geheimnis findet.
 - **Netzverbindungen** gibt es nur, wenn du sie auslöst oder in diesen Fällen: der **git-Abgleich** mit deinem Remote (dorthin
   gehen deine Notizen und nirgendwo sonst hin), die **GitHub-Anmeldung** und das Anlegen oder Klonen von Repositories, und die
   **Update-Abfrage** (Kortex lädt die Datei `appcast.xml` von GitHub; dabei sieht GitHub deine IP-Adresse, Kortex schickt kein Systemprofil).

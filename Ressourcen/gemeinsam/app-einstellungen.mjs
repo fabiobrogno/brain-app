@@ -31,6 +31,10 @@ export const APP_SCHEMA = {
   tagesnotizOrdner: { typ: "pfad", standard: "Tagebuch" },
   tagesnotizFormat: { typ: "pfad", standard: "JJJJ-MM-TT" },
   tagesnotizVorlage: { typ: "pfad", standard: "" },
+  // Sicherung: Fassungen automatisch anlegen = nach dem Speichern im Studio legt Kortex lokal eine Version an (nur Notizen; die Hintergrund-Sicherung lädt sie danach hoch, wenn GitHub eingerichtet ist).
+  // Automatisch abgleichen = vorbereitet, Standard aus und noch ohne Wirkung („kommt bald“): gemerkt wird die Wahl, ausgelöst wird nichts.
+  fassungenAutomatisch: { typ: "boolean", standard: true },
+  abgleichAutomatisch: { typ: "boolean", standard: false },
 };
 export const APP_STANDARD = Object.fromEntries(Object.entries(APP_SCHEMA).map(([k, s]) => [k, s.standard]));
 

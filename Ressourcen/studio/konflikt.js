@@ -51,7 +51,7 @@ export function zeilenAbschnitte(a, b) {
   zu();
   return segs;
 }
-function parseZeile(s) {
+export function parseZeile(s) {
   let m;
   if ((m = s.match(/^(#{1,6}) (.*)$/))) return { k: m[1].length <= 2 ? "h" : "p", t: m[2] };
   if ((m = s.match(/^\s*[-*] \[( |x|X)\] (.*)$/))) return { k: "todo", done: m[1] !== " ", t: m[2] };
@@ -86,7 +86,7 @@ function markiert(text, set) {
   }
   return aus;
 }
-function zeileEl(p, set, boxD) {
+export function zeileEl(p, set, boxD) {
   const t = markiert(p.t, set);
   if (p.k === "h") return h("span", { klasse: "zl h" }, ...t);
   if (p.k === "todo") return h("span", { klasse: "zl li" }, h("span", { klasse: "kbox" + (p.done ? " an" : "") + (boxD ? " d" : "") }, p.done ? zeichen("haken", 12) : null), h("span", { klasse: p.done ? "erl" : "" }, ...t));
@@ -94,7 +94,7 @@ function zeileEl(p, set, boxD) {
   return h("span", { klasse: "zl" }, ...t);
 }
 // Nebeneinander stellen: Zeilen derselben Position, die sich ähneln, werden Wort für Wort verglichen
-function zeilenPaare(s) {
+export function zeilenPaare(s) {
   const rows = [], m = Math.max(s.mac.length, s.anderes.length);
   for (let i = 0; i < m; i++) {
     const a = s.mac[i], b = s.anderes[i];

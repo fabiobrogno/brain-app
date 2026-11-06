@@ -1,5 +1,5 @@
 import { test, expect } from "./basis.mjs";
-import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync, realpathSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync, realpathSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { baueVault, git } from "./vault.mjs";
@@ -44,29 +44,36 @@ test("CRLF und Emoji bleiben erhalten; Laden ohne Änderung schreibt nichts", as
   expect(lese("10_notizen/crlf.md").toString("utf8").endsWith("😀\r\nx")).toBe(true);
 });
 
-test("Konflikt bei geänderter Datei: Hinweis, Neu laden", async ({ page }) => {
+test("Konflikt bei geänderter Datei: die Wahl erscheint, „Andere“ übernimmt die fremde Fassung — meine liegt danach in der Ablage", async ({ page }) => {
   await oeffne(page, "10_notizen/Reise nach Lissabon.md");
   writeFileSync(join(vault, "10_notizen/Reise nach Lissabon.md"), "# Von außen geändert\n");
   await ans_ende(page);
   await page.keyboard.type("meine Eingabe");
-  const banner = page.locator('[data-banner="konflikt"]');
-  await expect(banner).toBeVisible({ timeout: 5000 });
-  await expect(banner).toContainText("außerhalb geändert");
-  await page.click('[data-aktion="neu-laden"]');
-  await expect(banner).toHaveCount(0);
+  const ansicht = page.locator('[data-banner="fremd-konflikt"]');
+  await expect(ansicht).toBeVisible({ timeout: 5000 });
+  await expect(ansicht).toContainText("dieselbe Stelle geändert");
+  await page.click('.fr-block [data-aktion="fremd-andere"]');
+  await page.click('[data-aktion="fremd-speichern"]');
+  await expect(ansicht).toHaveCount(0);
   await expect(page.locator(".cm-content")).toContainText("Von außen geändert");
+  expect(lese("10_notizen/Reise nach Lissabon.md").toString()).toBe("# Von außen geändert\n");
 });
 
-test("Konflikt: Meine Fassung behalten überschreibt", async ({ page }) => {
+test("Konflikt: „Meine“ überschreibt die fremde Fassung NICHT still — sie liegt vorher unverändert in der Ablage (K2)", async ({ page }) => {
   await oeffne(page, "10_notizen/Reise nach Lissabon.md");
   writeFileSync(join(vault, "10_notizen/Reise nach Lissabon.md"), "# Fremd\n");
   await ans_ende(page);
   await page.keyboard.type("MEINS");
-  await expect(page.locator('[data-banner="konflikt"]')).toBeVisible({ timeout: 5000 });
-  await page.click('[data-aktion="behalten"]');
+  await expect(page.locator('[data-banner="fremd-konflikt"]')).toBeVisible({ timeout: 5000 });
+  await page.click('.fr-block [data-aktion="fremd-meine"]');
+  await page.click('[data-aktion="fremd-speichern"]');
   await expect(page.locator("#speicherstand")).toHaveText("Gespeichert", { timeout: 5000 });
   expect(lese("10_notizen/Reise nach Lissabon.md").toString()).toContain("MEINS");
   expect(lese("10_notizen/Reise nach Lissabon.md").toString()).not.toContain("Fremd");
+  // die fremde Fassung ist nicht weg: Byte für Byte in der Ablage von Kortex
+  const ablage = join(server.support, "fassungen");
+  const texte = readdirSync(ablage).flatMap((k) => readdirSync(join(ablage, k)).filter((n) => n.endsWith(".txt")).map((n) => readFileSync(join(ablage, k, n), "utf8")));
+  expect(texte).toContain("# Fremd\n");
 });
 
 test("Commit-Dialog committet nur abgehakte Dateien", async ({ page }) => {
@@ -375,7 +382,7 @@ test("W-1: vorSchliessen sichert Ausstehendes sofort und meldet ok / Fehlergrund
   expect(f.grund).toContain("kaputt");
 });
 
-test("Sync-Neuladen überschreibt Getipptes nicht: Konflikt-Hinweis", async ({ page }) => {
+test("Sync-Neuladen überschreibt Getipptes nicht: Wahl zum Zusammenführen", async ({ page }) => {
   await oeffne(page, DATEI_A);
   await page.waitForSelector('[data-st="sync"]');
   writeFileSync(join(vault, DATEI_A), "# Von außen\n"); // Datei ändert sich während des Abgleichs
@@ -387,7 +394,7 @@ test("Sync-Neuladen überschreibt Getipptes nicht: Konflikt-Hinweis", async ({ p
   await ans_ende(page);
   await page.keyboard.type("TIPP WÄHREND SYNC"); // wird dirty, bevor Sync fertig ist
   await page.route("**/api/datei", (route) => route.request().method() === "PUT" ? route.fulfill({ status: 500, contentType: "application/json", body: '{"fehler":"offline"}' }) : route.fallback());
-  await expect(page.locator('[data-banner="konflikt"]')).toBeVisible({ timeout: 8000 });
+  await expect(page.locator('[data-banner="fremd-konflikt"]')).toBeVisible({ timeout: 8000 });
   await expect(page.locator(".cm-content")).toContainText("TIPP WÄHREND SYNC");
 });
 

@@ -53,6 +53,21 @@ export const api = {
   baum: () => anfrage("GET", "/api/baum"),
   datei: (pfad) => anfrage("GET", "/api/datei" + q({ pfad })),
   speichern: (pfad, inhalt, basisHash) => anfrage("PUT", "/api/datei", { pfad, inhalt, basisHash }),
+  // Fremdänderung bei offener Notiz: Drei-Wege-Zusammenführung. basis = Text, auf dem die Eingaben aufbauen; meine = Text im Editor; ohne auswahl: zusammenführen oder die Konfliktblöcke liefern;
+  // mit auswahl (je Block "meine" | "andere" | "beide" | { text }) und gesehenHash: die Wahl anwenden. Die überschriebene Fassung liegt vorher in der Ablage.
+  zusammenfuehren: ({ pfad, basis, meine, basisHash, auswahl, gesehenHash }) => anfrage("POST", "/api/datei/zusammenfuehren", { pfad, basis, meine, basisHash, ...(auswahl ? { auswahl, gesehenHash } : {}) }),
+  // Fassungs-Ablage: Fassungen, die Kortex vor dem Überschreiben/Verwerfen zur Seite gelegt hat
+  ablage: (pfad) => anfrage("GET", "/api/ablage" + q({ pfad })),
+  ablageFassung: (id) => anfrage("GET", "/api/ablage/fassung" + q({ id })),
+  ablageAblegen: (pfad, inhalt, grund) => anfrage("POST", "/api/ablage/ablegen", { pfad, inhalt, ...(grund ? { grund } : {}) }),
+  // Entwurfs-Journal (Absturzschutz): ungespeicherter Text je Notiz. entwurf liefert nur einen Entwurf, der neuer ist als die Datei und anders als ihr Inhalt.
+  entwurf: (pfad) => anfrage("GET", "/api/entwurf" + q({ pfad })),
+  entwurfSchreiben: (pfad, basisHash, text) => anfrage("PUT", "/api/entwurf", { pfad, basisHash, text }),
+  entwurfLoeschen: (pfad) => anfrage("POST", "/api/entwurf/loeschen", { pfad }),
+  entwuerfe: () => anfrage("GET", "/api/entwuerfe"),
+  // Automatische lokale Fassungen: Stand · jetzt sichern (grund: "fenster" | "beenden")
+  autoStand: () => anfrage("GET", "/api/auto/stand"),
+  autoSichern: (grund) => anfrage("POST", "/api/auto/sichern", { grund }),
   neu: (ordner, titel, inhalt, id) => anfrage("POST", "/api/neu", { ordner, titel, ...(inhalt === undefined ? {} : { inhalt }), ...(id ? { id } : {}) }), // id: Entwurfs-ID (ein Wiederholungsversuch legt nichts doppelt an) // inhalt: der fertige Text (neue Notiz aus dem Entwurf); Antwort { pfad, hash }
   wikiAnlegen: (ziel, von, ordner) => anfrage("POST", "/api/wiki/anlegen", { ziel, von, ...(ordner ? { ordner } : {}) }),
   merken: (text, titel) => anfrage("POST", "/api/merken", titel ? { text, titel } : { text }),
