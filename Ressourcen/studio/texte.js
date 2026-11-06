@@ -18,7 +18,7 @@ export const T = {
     zeit: [["", "Beliebig"], ["heute", "Heute"], ["<7d", "7 Tage"], ["<30d", "30 Tage"], ["<1y", "Dieses Jahr"]],
     palette: { gruppe: "Im Inhalt", zeile: (n) => `Zeile ${n}` },
   },
-  bereiche: { inbox: "Posteingang", aufgaben: "Aufgaben", rueckfragen: "Rückfragen", alle: "Alle Notizen", wissen: "Wissen", archiv: "Archiv", vorlagen: "Vorlagen" },
+  bereiche: { inbox: "Posteingang", aufgaben: "Aufgaben", rueckfragen: "Rückfragen", alle: "Alle Notizen", wissen: "Wissen", archiv: "Archiv", vorlagen: "Vorlagen", papierkorb: "Papierkorb" },
   abschnitte: { favoriten: "Favoriten", ansichten: "Ansichten", typen: "Typen", ordner: "Ordner", sichten: "Sichten" },
   // Hauptfenster (P3): Kopfzeile, KI-Zeile unten in der Seitenleiste, Zähler der Statusleiste
   kopf: { suche: "Suchen oder Befehl …", sucheTitel: "Suchen oder Befehl ausführen", verlauf: "Verlauf" },

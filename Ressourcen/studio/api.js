@@ -175,8 +175,14 @@ export const api = {
   kiVorher: () => anfrage("POST", "/api/ki/vorher", { bestaetigt: true }),
   // ---- Aktivitätsprotokoll (P8a): { art (Liste oder „abweisungen“), seit (ISO), nur: "ungelesen", vault: "alle" | Pfad, limit }; Rückgängig löscht nur unveränderte Ablagen von Kortex; gelesen: { ids } | { alle: true }
   aktivitaet: ({ art, seit, nur, vault, limit } = {}) => anfrage("GET", "/api/aktivitaet" + q({ seit, art: Array.isArray(art) ? art.join(",") : art, limit, vault, nur })),
-  aktivitaetRueckgaengig: (id, vault) => anfrage("POST", "/api/aktivitaet/rueckgaengig", { id, ...(vault ? { vault } : {}) }),
-  aktivitaetWiederherstellen: (id, vault) => anfrage("POST", "/api/aktivitaet/wiederherstellen", { id, ...(vault ? { vault } : {}) }),
+  aktivitaetRueckgaengig: (id, vault, teilweise) => anfrage("POST", "/api/aktivitaet/rueckgaengig", { id, ...(vault ? { vault } : {}), ...(teilweise ? { teilweise: true } : {}) }),
+  aktivitaetWiederherstellen: (id, vault, teilweise) => anfrage("POST", "/api/aktivitaet/wiederherstellen", { id, ...(vault ? { vault } : {}), ...(teilweise ? { teilweise: true } : {}) }),
+  // ---- Umbenennen, Verschieben, Papierkorb (gemeinsam/dateiaktionen.mjs). vorschau: true → nur „N Verweise in M Notizen“ und ein Token; token + basisHash prüfen den gesehenen Stand (409)
+  dateiAktion: (typ, art, daten) => anfrage("POST", `/api/${typ === "ordner" ? "ordner" : "notiz"}/${art}`, daten),
+  papierkorb: () => anfrage("GET", "/api/papierkorb"),
+  papierkorbWiederherstellen: (id, name) => anfrage("POST", "/api/papierkorb/wiederherstellen", { id, ...(name ? { name } : {}) }),
+  papierkorbEndgueltig: (daten) => anfrage("POST", "/api/papierkorb/endgueltig", daten),
+  papierkorbHinweisErledigt: (id) => anfrage("POST", "/api/papierkorb/hinweis-erledigt", { id }),
   aktivitaetGelesen: ({ ids, alle, vault } = {}) => anfrage("POST", "/api/aktivitaet/gelesen", { ...(alle ? { alle: true } : { ids: ids || [] }), ...(vault ? { vault } : {}) }),
   // ---- Umstellung eines Vaults aus der Kit-Zeit (P7). Geschrieben wird nur mit bestaetigt: true — das setzt die Oberfläche erst nach dem Klick des Nutzers.
   umstellungHinweis: () => anfrage("GET", "/api/umstellung/hinweis"),

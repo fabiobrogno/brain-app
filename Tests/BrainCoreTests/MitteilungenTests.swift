@@ -111,7 +111,7 @@ private let alleAn: MitteilungsEinstellungen = {
     }
     #expect(!node.isEmpty)
     #expect(node == MitteilungsEinstellungen.artSchalter)
-    #expect(ohne == ["rueckgaengig"])
+    #expect(ohne == ["rueckgaengig", "datei-aktion"])
 }
 
 @Test func einstellungenLesen() throws {

@@ -336,6 +336,17 @@ export function erzeugeHandler(o) {
       case "/api/neu": nur("POST"); return V().neu(eingabe());
       case "/api/wiki/anlegen": nur("POST"); return V().wikiAnlegen(eingabe()); // offener [[Link]] → vorhandene Notiz oder neue mit dem Ziel als Titel
       case "/api/merken": nur("POST"); return V().merken(eingabe());
+      // Umbenennen, Verschieben, Papierkorb (gemeinsam/dateiaktionen.mjs): mit { vorschau: true } nur die Vorschau („N Verweise in M Notizen“) samt Token; token + basisHash prüfen den gesehenen Stand (409)
+      case "/api/notiz/umbenennen": nur("POST"); return V().umbenennen({ ...eingabe(), typ: "datei" });
+      case "/api/notiz/verschieben": nur("POST"); return V().verschieben({ ...eingabe(), typ: "datei" });
+      case "/api/notiz/loeschen": nur("POST"); return V().loeschen({ ...eingabe(), typ: "datei" });
+      case "/api/ordner/umbenennen": nur("POST"); return V().umbenennen({ ...eingabe(), typ: "ordner" });
+      case "/api/ordner/verschieben": nur("POST"); return V().verschieben({ ...eingabe(), typ: "ordner" });
+      case "/api/ordner/loeschen": nur("POST"); return V().loeschen({ ...eingabe(), typ: "ordner" });
+      case "/api/papierkorb": nur("GET"); return V().papierkorb();
+      case "/api/papierkorb/wiederherstellen": nur("POST"); return V().papierkorbWiederherstellen(eingabe());
+      case "/api/papierkorb/endgueltig": nur("POST"); return V().papierkorbEndgueltig(eingabe());
+      case "/api/papierkorb/hinweis-erledigt": nur("POST"); return V().papierkorbHinweisErledigt(eingabe());
       // Aufgaben (kern/aufgaben.mjs): lesen immer, anlegen und ändern nur in einem vertrauten Vault (409 art „nicht-vertraut“)
       case "/api/aufgaben":
         if (methode === "GET") return V().aufgaben();

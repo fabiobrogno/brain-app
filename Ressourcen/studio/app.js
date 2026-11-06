@@ -26,6 +26,7 @@ import { TG } from "./texte-glocke.js";
 import { baueKiZeile } from "./ki-zeile.js";
 import { ruhenetz, kantenInstallieren, tippsInstallieren, huepfe, fliege, blendeEin, klappeZu, ruhig, dauer } from "./bewegung.js"; // P4: Bewegung mit Bedeutung
 import { windungLaden } from "./windung.js";
+import { erzeugeDateiaktionen } from "./dateiaktionen.js"; // Umbenennen, Verschieben, Papierkorb
 import { installiereFensterKopf, vorschauPille } from "./fenster.js"; // Titelleiste der App: Kopfzeile greifbar, Plakette „Vorschau“
 import * as kz from "./tastenkuerzel.js";
 import { baueWikiIndex, loeseWikiLink, schlageWikiZieleVor, ordnerVonPfad } from "./wikilink.js";
@@ -67,6 +68,27 @@ const lokal = {
   lies: (n, f) => leseLokal(lokal.k(n), f),
   schreib: (n, v) => speichereLokal(lokal.k(n), v),
 };
+
+// Umbenennen, Verschieben, Papierkorb (dateiaktionen.js): Kontextmenü, Umbenennen an Ort und Stelle, Ziehen und Ablegen, F2 und ⌘⌫, Ansicht „Papierkorb“
+const da = erzeugeDateiaktionen({
+  S, ladeBaum: () => ladeBaum(), oeffne: (p) => oeffne(p), waehleSicht: (s) => waehleSicht(s), schliesseDatei: () => schliesseDatei(), sichereVorWechsel: () => sichereVorWechsel(),
+  // Die offene Notiz bleibt während einer Aktion schreibgeschützt (der Pfad kann sich dabei ändern, darum kein posteingangCtx.sperre)
+  sperre: () => {
+    if (!S.pfad || S.konflikt) return () => {};
+    clearTimeout(speicherTimer);
+    const vorher = S.schutz;
+    S.schutz = true; ed.setzeText(ed.text(), { nurLesen: true });
+    return () => { S.schutz = vorher; if (S.pfad) ed.setzeText(ed.text(), { nurLesen: vorher || !S.bearbeitbar }); };
+  },
+  offeneNeuLaden: () => konfliktNeuLaden(), planeGit: () => planeGitRefresh(), bereichVonPfad: (p) => bereichVonPfad(p),
+  titelElement: (pfad, ort) => (ort === "titel" ? document.querySelector("#pfad .krume.aktuell") : document.querySelector(`[data-karte][data-pfad="${CSS.escape(pfad)}"] .karte-titel`)),
+  zeichneBereiche: () => zeichneBereiche(), istAufgabenBoard: () => istAufgabenSicht() && !S.aufgabeDatei, fokusZurueck: () => { if (S.pfad) ed.fokus(); },
+  nachAenderung: ({ speichern = false } = {}) => {
+    wikiIndex = null; zeichneSeite(); if (S.sicht.art !== "verlauf") zeichneListe({ behalte: true });
+    zeichnePfad(); setzeFenstertitel(); markiereAuswahl(); aktualisiereStatusDatei();
+    if (speichern) { lokal.schreib("pfad", S.pfad); lokal.schreib("zuletzt", S.zuletzt); lokal.schreib("favoriten", [...S.favoriten]); lokal.schreib("offen", [...S.offen]); lokal.schreib("sicht", S.sicht); }
+  },
+});
 
 document.title = PRODUKT;
 $("suche").placeholder = T.suche.platzhalter;
@@ -627,7 +649,7 @@ async function ladeTeil(pfade) {
 
 // ======================================================= Sicht (Seitenleiste → Liste)
 const BEREICHE = [
-  ["inbox", "inbox"], ["aufgaben", "aufgaben"], ["rueckfragen", "info"], ["alle", "notiz"], ["wissen", "buch"], ["archiv", "archiv"],
+  ["inbox", "inbox"], ["aufgaben", "aufgaben"], ["rueckfragen", "info"], ["alle", "notiz"], ["wissen", "buch"], ["archiv", "archiv"], ["papierkorb", "papierkorb"],
 ];
 const istAufgabenSicht = () => S.sicht.art === "bereich" && S.sicht.id === "aufgaben";
 // Weicher Ansichtswechsel (Notizen ↔ Aufgaben ↔ Posteingang): kurzes Einblenden (140 ms), ohne Bewegung bei „Bewegung reduzieren“
@@ -735,7 +757,7 @@ function eintragEl({ id, data, symbolName, name, zahl, aktiv, typ, zahlKlasse, t
   return typ ? setzeTypFarbe(el, typ) : el;
 }
 // Oben in der Seitenleiste (Prototyp): Posteingang, Alle Notizen, Aufgaben (⌘1 ⌘2 ⌘3), bei offenen Rückfragen „Rückfragen“, dann „Frag deinen Vault“. Wissen und Archiv stehen unter „Sichten“.
-const BEREICHE_OBEN = ["inbox", "alle", "aufgaben", "rueckfragen"], BEREICHE_SICHTEN = ["wissen", "archiv"];
+const BEREICHE_OBEN = ["inbox", "alle", "aufgaben", "rueckfragen"], BEREICHE_SICHTEN = ["wissen", "archiv", "papierkorb"];
 function zeichneBereiche() {
   const z = zaehler();
   const rf = S.rueckfragen && S.rueckfragen.verfuegbar !== false && Number.isFinite(S.rueckfragen.offen) ? S.rueckfragen.offen : null;
@@ -743,7 +765,7 @@ function zeichneBereiche() {
   const zeile = (id) => {
     const sym = BEREICHE.find((b) => b[0] === id)[1];
     const klasse = (id === "rueckfragen" && rf) || (id === "aufgaben" && az.ueber) ? "warn" : id === "inbox" && z.inbox ? "akzent" : "";
-    return eintragEl({ data: { "data-bereich": id }, symbolName: sym, name: T.bereiche[id], zahl: id === "rueckfragen" ? rf : id === "aufgaben" ? az.offen : z[id],
+    return eintragEl({ data: { "data-bereich": id }, symbolName: sym, name: T.bereiche[id], zahl: id === "rueckfragen" ? rf : id === "aufgaben" ? az.offen : id === "papierkorb" ? (S.papierkorbAnzahl || null) : z[id],
       zahlKlasse: klasse, titel: id === "aufgaben" && az.ueber ? TAUF.zahl(az.offen, az.ueber) : null,
       aktiv: S.sicht.art === "bereich" && S.sicht.id === id, tun: () => waehleSicht({ art: "bereich", id }) });
   };
@@ -820,17 +842,21 @@ function zeichneOrdner() {
       const arch = archiv || (t === 0 && /^90_/.test(c.name));
       const offen = S.offen.has(c.pfad), hatKinder = c.kinder.length > 0;
       zeilen.push(h("div", { klasse: "zeile" + (arch ? " archiv" : ""), role: "treeitem", "aria-expanded": hatKinder ? String(offen) : null, "aria-current": S.sicht.art === "ordner" && S.sicht.id === c.pfad ? "true" : "false",
-        style: `--tiefe:${t}`, "data-pfad": c.pfad, title: c.pfad, aufClick: () => waehleSicht({ art: "ordner", id: c.pfad }) },
+        style: `--tiefe:${t}`, "data-pfad": c.pfad, title: c.pfad, tabindex: "0", aufClick: () => waehleSicht({ art: "ordner", id: c.pfad }), aufContextmenu: (e) => da.ordnerMenue(e, c.pfad) },
         h("span", { klasse: "pfeil" + (offen ? " offen" : "") + (hatKinder ? "" : " leer"), role: "button", "aria-label": offen ? "Zuklappen" : "Aufklappen",
           aufClick: (ev) => { ev.stopPropagation(); offen ? S.offen.delete(c.pfad) : S.offen.add(c.pfad); lokal.schreib("offen", [...S.offen]); zeichneOrdner(); } }, symbol("chevron-rechts", 12)),
         (() => { const s = symbol(offen && hatKinder ? "ordner-offen" : "ordner", 16); s.classList.add("ordner-sym"); return s; })(),
         h("span", { klasse: "name", text: c.name }), h("span", { klasse: "dim", text: String(anzahl.get(c.pfad) || 0) })));
+      const zeileEl = zeilen[zeilen.length - 1];
+      da.ziehbar(zeileEl, "ordner", c.pfad); da.ablegeZiel(zeileEl, c.pfad);
       if (offen) tief(c, t + 1, arch);
     }
   };
   tief(wurzel, 0, false);
   const baum = h("div", { id: "baum", klasse: "baum", role: "tree" }, zeilen.length ? zeilen : h("div", { klasse: "hinweis-leer", text: T.seitenleiste.leerBaum }));
   abschnitt("ordner", T.abschnitte.ordner, baum);
+  da.ablegeZiel(document.querySelector('[data-abschnitt="ordner"] .abschnitt-kopf'), ""); // auf die Überschrift ziehen = oberste Ebene des Vaults
+  queueMicrotask(() => da.nachZeichnen());
 }
 function klappeAuf(pfad) {
   let o = ordnerVon(pfad), geaendert = false;
@@ -851,9 +877,10 @@ function zeichneListenKopf() {
   const t = sichtTitel();
   $("liste-titel").replaceChildren(...(t.symbol ? [symbol(t.symbol, 16)] : []), h("span", { text: t.text }));
   const verlauf = S.sicht.art === "verlauf";
-  $("knopf-sort").hidden = verlauf || S.suche.aktiv;
-  $("knopf-suche").hidden = verlauf;
-  $("knopf-neu").hidden = verlauf;
+  const korb = S.sicht.art === "bereich" && S.sicht.id === "papierkorb";
+  $("knopf-sort").hidden = verlauf || S.suche.aktiv || korb;
+  $("knopf-suche").hidden = verlauf || korb;
+  $("knopf-neu").hidden = verlauf || korb;
   const sk = $("knopf-sort");
   sk.replaceChildren(symbol("sortierung", 14), h("span", { klasse: "sort-text", text: T.sortierung[S.sortierung] }));
   sk.title = `${T.sortierung.menue}: ${T.sortierung[S.sortierung]}`;
@@ -875,7 +902,7 @@ function baueKarte(n) {
   const stufe = n.stufe && n.stufe !== "grau" ? n.stufe : null;
   const karte = h("div", { klasse: "karte" + (n.generiert ? " schutz" : "") + (n.bereich === "archiv" ? " archiv" : ""), role: "option", "data-karte": "", "data-pfad": n.pfad, title: n.pfad,
     "aria-selected": String(S.pfad === n.pfad),
-    aufClick: () => oeffneAusListe(n.pfad) },
+    aufClick: () => oeffneAusListe(n.pfad), aufContextmenu: (e) => da.kartenMenue(e, n.pfad) },
     h("div", { klasse: "karte-kopf" },
       h("div", { klasse: "karte-titel", text: n.titel || T.liste.ohneTitel }),
       h("div", { klasse: "karte-marken" },
@@ -885,6 +912,7 @@ function baueKarte(n) {
     h("div", { klasse: "karte-fuss" }, h("span", { text: datumKurz(n.geaendert) }),
       istZurueckgestellt(n) ? h("span", { klasse: "pe-marke", "data-spaeter": spaeterBis(n), text: T.posteingang.bis(datumKurz(spaeterBis(n))) }) : n.erstellt ? h("span", { text: `${T.liste.erstellt} ${datumKurz(n.erstellt)}` }) : null),
     n.bereich === "inbox" && !n.generiert && S.sicht.art === "bereich" && S.sicht.id === "inbox" ? baueAktionen(n, posteingangCtx) : null);
+  if (!n.generiert) da.ziehbar(karte, "datei", n.pfad);
   return typ ? setzeTypFarbe(karte, typ) : karte;
 }
 const CHUNK = 40; // klein genug, dass das Nachladen beim Scrollen kein Bild über 25 ms kostet (5.000 Notizen: gemessen in bewegung.spec.mjs)
@@ -924,12 +952,14 @@ let verlaufInst = null;
 function zeichneListe({ behalte = false } = {}) {
   setzeModus();
   zeichneListenKopf();
+  queueMicrotask(() => da.nachZeichnen()); // eine Umbenennung an Ort und Stelle übersteht das Neuzeichnen
   const host = $("liste-koerper");
   const scroll = behalte ? host.scrollTop : 0;
   if (S.sicht.art === "verlauf") { listeSchluessel = null; zeichneVerlauf(); return; }
   verlaufInst?.zerstoere?.(); verlaufInst = null;
   if (S.suche.aktiv) { listeSchluessel = null; zeichneSuchergebnisse(); return; }
   if (S.sicht.art === "bereich" && S.sicht.id === "rueckfragen") { listeSchluessel = null; zeichneRueckfragenKarte(); return; }
+  if (S.sicht.art === "bereich" && S.sicht.id === "papierkorb") { listeSchluessel = null; S.sichtListe = []; da.zeichnePapierkorb(host); return; }
   if (istAufgabenSicht()) { listeSchluessel = null; S.sichtListe = []; zeichneAufgaben(); return; }
   S.sichtListe = sortiere(sichtNotizen());
   S.gerendert = 0;
@@ -1266,7 +1296,7 @@ function zeichnePfadInnen() {
     const ziel = acc;
     kinder.push(h("span", { klasse: "sep" }, symbol("chevron-rechts", 12)), h("span", { klasse: "krume link", text: t, title: ziel, aufClick: () => waehleSicht({ art: "ordner", id: ziel }) }));
   });
-  kinder.push(h("span", { klasse: "sep" }, symbol("chevron-rechts", 12)), h("span", { klasse: "krume aktuell", text: S.pfad ? (n?.titel || ohneEndung(dateiName(S.pfad))) : (titelAusText(ed.text(), { ersatz: false }) || TS.neu.unbenannt) }));
+  kinder.push(h("span", { klasse: "sep" }, symbol("chevron-rechts", 12)), h("span", { klasse: "krume aktuell", text: S.pfad ? (n?.titel || ohneEndung(dateiName(S.pfad))) : (titelAusText(ed.text(), { ersatz: false }) || TS.neu.unbenannt), ...(S.pfad ? { aufContextmenu: (e) => da.titelMenue(e), aufDblclick: () => da.umbenennenNotiz(S.pfad, "titel") } : {}) }));
   p.replaceChildren(...kinder);
   p.title = S.pfad || TS.neu.unbenannt;
 }
@@ -1793,6 +1823,7 @@ async function ansehenAktivitaet(ziel, ereignisse = []) {
 const mitteilungen = erzeugeMitteilungen({ api, toast, beiAnsehen: ansehenAktivitaet, vaultPfad: () => S.info?.vault || null, beiWechseln: (pfad) => wechsleVault(pfad) });
 const glocke = erzeugeGlocke({ mitteilungen, api, beiAnsehen: ansehenAktivitaet, beiEinstellungen: (ziel) => oeffneEinstellungenSeite(ziel) }); // P8b: Zähler und Liste (⌘⇧B, Register „mitteilungen“)
 function beiLiveEreignisse(liste) {
+  da.folgeVerschiebung(liste); // Umbenennen/Verschieben/Rückgängig aus einem anderen Fenster, der Glocke oder von einer KI: die offene Notiz folgt
   mitteilungen.verarbeiteLive(liste); // Ereignisse typ „aktivitaet“ (Protokoll der KIs): Hinweis, Zähler; alle anderen übergeht es
   const p = planeAus(liste);
   kiHinweisPlanen(p.ki);
@@ -2877,6 +2908,7 @@ async function ladeAlles() {
   await ladeBaum();
   if (S.sicht.art === "ordner" && !S.eintraege.has(S.sicht.id)) S.sicht = { art: "bereich", id: "alle" };
   if (S.sicht.art === "typ" && !S.typMap.has(S.sicht.id)) S.sicht = { art: "bereich", id: "alle" };
+  S.papierkorbAnzahl = 0; da.ladeKorbZahl();
   zeichneSeite(); zeichneListe();
   fragVertrauenEinmal();
   ladeUmstellungHinweis();

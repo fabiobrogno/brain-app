@@ -10,7 +10,7 @@ import { createHash, randomBytes } from "node:crypto";
 // LOG-BEGINN
 export const AKTIVITAET_ORDNER = "aktivitaet";
 // Ereignisarten. „abweisung“ hat einen Grund (grund): gesperrt (Konto im Vault gesperrt) · stufe (Stufe zu niedrig für das Werkzeug) · leseverbot (Leseverbot/Strenger Schutz).
-export const ARTEN = ["ablage-aufgabe", "ablage-notiz", "aenderung", "abweisung", "pflege", "pflege-fehler", "sicherung-konflikt", "sicherung-fehler", "anmeldung-abgelaufen", "rueckgaengig"];
+export const ARTEN = ["ablage-aufgabe", "ablage-notiz", "aenderung", "abweisung", "pflege", "pflege-fehler", "sicherung-konflikt", "sicherung-fehler", "anmeldung-abgelaufen", "rueckgaengig", "datei-aktion"];
 export const MAX_BYTES = 256 * 1024;      // je Datei; mit der Vorfassung höchstens etwa das Doppelte
 export const MAX_TEXT = 240;
 const MAX_PFADE = 10;
@@ -62,6 +62,8 @@ export function bereinige(e, { kennung = null } = {}) {
   const rg = e.rueckgaengig;
   // Rückgängig nur für genau die Datei, die der Eintrag als ersten Pfad nennt (die Oberfläche zeigt sie an): so weiß der Nutzer, was entfernt würde
   if (rg && typeof rg === "object" && rg.art === "ablage-entfernen" && relPfad(rg.pfad) && pfade[0] === relPfad(rg.pfad) && typeof rg.hash === "string" && /^[0-9a-f]{64}$/.test(rg.hash)) r.rueckgaengig = { art: "ablage-entfernen", pfad: relPfad(rg.pfad), hash: rg.hash };
+  // Umbenennen, Verschieben, Papierkorb (gemeinsam/dateiaktionen.mjs): Rückgängig über das Journal im Support-Ordner, nur mit der Kennung des Vorgangs
+  if ((e.art === "datei-aktion" || e.art === "aenderung") && rg && typeof rg === "object" && rg.art === "vorgang" && typeof rg.id === "string" && /^v_[0-9a-f]{12}$/.test(rg.id)) r.rueckgaengig = { art: "vorgang", id: rg.id };
   if (typeof e.dk === "string" && e.dk) r.dk = einzeilig(e.dk, 120);
   return r;
 }

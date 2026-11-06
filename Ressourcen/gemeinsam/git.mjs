@@ -168,10 +168,14 @@ export async function status(wurzel, ctx = {}) {
 
 // Je Vault nur ein Abgleich/Commit gleichzeitig (Sperre im Prozess). Wird synchron beim Aufruf genommen.
 const laufend = new Set();
+// Fremde Sperren (Umbenennen/Verschieben, gemeinsam/dateiaktionen.mjs, auch aus einem anderen Prozess): solange eine gilt, laufen Abgleich und Commit nicht an
+const fremdeSperren = new Map();
+export const setzeFremdeSperre = (wurzel, fn) => { fremdeSperren.set(wurzel, fn); };
 // Läuft gerade ein Abgleich/Commit in diesem Vault? (für Vorab-Prüfungen, z. B. Rückgängig im Aktivitätsprotokoll)
 export const gitBeschaeftigt = (wurzel) => laufend.has(wurzel);
 async function exklusiv(wurzel, fn) {
   if (laufend.has(wurzel)) throw new HttpFehler(409, "Abgleich läuft schon. Bitte kurz warten.");
+  { let fremd = false; try { fremd = !!fremdeSperren.get(wurzel)?.(); } catch { fremd = false; } if (fremd) throw new HttpFehler(409, "Kortex ändert gerade Dateien (Umbenennen oder Verschieben). Bitte kurz warten.", { art: "beschaeftigt" }); }
   laufend.add(wurzel);
   try { return await fn(); } finally { laufend.delete(wurzel); }
 }
