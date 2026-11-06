@@ -192,6 +192,38 @@ for (const thema of ["light", "dark"]) {
       await expect(page.locator(".toast", { hasText: "Vault „wissen“ ist bereit" })).toBeVisible();
     });
 
+    test("Von GitHub holen: schon angemeldet und trotzdem 403 — keine Schleife, klare Meldung mit „Andere Adresse“ und „Abbrechen“", async ({ page }) => {
+      const z = await oeffne(page, { klonFehler: { status: 403, fehler: "Zugriff verweigert." }, github: { verfuegbar: true, angemeldet: true, login: "fabiobrogno" } });
+      await bereit(page);
+      await page.click('[data-weg="klonen"]');
+      await page.fill('[data-feld="url"]', "fremder/geheim");
+      await page.click(sel("weiter"));
+      await expect(page.locator('[data-bereich="klon-fehler"]')).toContainText("keinen Zugriff", { timeout: 6000 });
+      await expect(page.locator(sel("klon-anmelden"))).toHaveCount(0);
+      expect(anfragen(z, "/api/vaults/klonen")).toHaveLength(1);
+      await page.click(sel("klon-andere"));
+      await expect(page.locator('[data-feld="url"]')).toHaveValue("");
+      await page.fill('[data-feld="url"]', "fremder/geheim");
+      await page.click(sel("weiter"));
+      await expect(page.locator(sel("klon-abbrechen"))).toBeVisible({ timeout: 6000 });
+      await page.click(sel("klon-abbrechen"));
+      await expect(page.locator('[data-weg="neu"]')).toHaveAttribute("aria-checked", "true");
+      expect(anfragen(z, "/api/github/anmelden")).toHaveLength(0);
+    });
+
+    test("Von GitHub holen, Anmeldung nicht eingerichtet: „Weiter“ ist gesperrt, Zurück führt zur Vault-Wahl", async ({ page }) => {
+      await oeffne(page, { klonFehler: { status: 403, fehler: "Zugriff verweigert." }, github: { verfuegbar: false, angemeldet: false } });
+      await bereit(page);
+      await page.click('[data-weg="klonen"]');
+      await page.fill('[data-feld="url"]', "name/vault");
+      await page.click(sel("weiter"));
+      await page.click(sel("klon-anmelden"));
+      await expect(page.locator("#e-sync")).toContainText("nicht eingerichtet", { timeout: 6000 });
+      await expect(page.locator(sel("weiter"))).toBeDisabled();
+      await page.click(sel("zurueck"));
+      await expect(page.locator("#win")).toHaveAttribute("data-step", "vault");
+    });
+
     test("Von GitHub holen: Fehler bleiben im Schritt und sagen, was los ist", async ({ page }) => {
       await oeffne(page, { klonFehler: { status: 404, fehler: "Repository nicht gefunden." } });
       await bereit(page);
@@ -220,7 +252,7 @@ test.describe("KI-Schritt: eine Zeile je Programm, ein Knopf „Verbinden“", (
   for (const thema of ["light", "dark"]) {
     test.describe(`Darstellung ${thema}`, () => {
       test.use({ colorScheme: thema });
-      test("gefundene Programme als Liste; Konto-Auswahl nur bei mehr als einem Konto; Zugriff „Posteingang“ mit „Ändern“; Kontingent an", async ({ page }) => {
+      test("gefundene Programme als Liste; Konto-Auswahl nur bei mehr als einem Konto; Zugriff „Posteingang“ mit „Ändern“; Kontingent bei fremdem Konto aus", async ({ page }) => {
         await oeffne(page);
         await zuKi(page);
         await expect(page.locator("#thd h1")).toHaveText("KI-Programme verbinden");
@@ -237,18 +269,22 @@ test.describe("KI-Schritt: eine Zeile je Programm, ein Knopf „Verbinden“", (
         const kt = ki(page).locator('[data-bereich="kontingent"]');
         await expect(kt).toContainText("Kontingent in Kortex anzeigen");
         await expect(kt).toContainText("liest daraus nur Prozentwerte");
-        await expect(kt.locator(sel("kontingent"))).toHaveAttribute("aria-checked", "true");
+        // das Standardkonto (~/.claude) gehört nicht Kortex: aus, und der Satz sagt, was beim Einschalten geschieht
+        await expect(kt.locator(sel("kontingent"))).toHaveAttribute("aria-checked", "false");
+        await expect(kt.locator('[data-feld="kontingent-text"]')).toContainText("deine eigene Datei");
         await bild(page, "e2-2-ki", thema);
       });
 
-      test("Verbinden: Eintragen und stille Prüfung enden als Haken in der Zeile; das Kontingent von Claude Code wird (an) eingerichtet", async ({ page }) => {
-        const z = await oeffne(page);
+      test("Verbinden: Eintragen und stille Prüfung enden als Haken in der Zeile; bei einem von Kortex verwalteten Konto ist das Kontingent vorgabegemäß an und wird eingerichtet", async ({ page }) => {
+        const z = await oeffne(page, { verwaltet: ["k_claude_privat"] });
         await zuKi(page);
+        await expect(page.locator(`[data-bereich="kontingent"] ${sel("kontingent")}`)).toHaveAttribute("aria-checked", "true");
+        await expect(page.locator('[data-feld="kontingent-text"]')).not.toContainText("eigene Datei");
         await verbinden(page, "claude");
         await expect(zeile(page, "claude").locator(".e-tick")).toContainText("Verbunden", { timeout: 8000 });
         expect(anfragen(z, "/api/mcp/verbinden")[0].body).toEqual({ ziel: "claude", konto: "k_claude_privat", zugriff: "posteingang" }); // die Vorgabe gilt nicht als ausdrückliche Wahl (kein zugriffAusdruecklich)
         expect(anfragen(z, "/api/mcp/pruefen")[0].body).toEqual({ konto: "k_claude_privat", programm: "claude" });
-        await expect.poll(() => z.statuszeile).toEqual([{ konto: "k_claude_privat", an: true, einwilligung: true, bestaetigt: true }]);
+        await expect.poll(() => z.statuszeile).toEqual([{ konto: "k_claude_privat", an: true, einwilligung: true }]); // verwaltet: ohne die Bestätigung für fremde Orte
         await expect(zeile(page, "claude").locator('[data-feld="zugriff"]')).toHaveText("Zugriff: Posteingang");
         await expect(zeile(page, "codex").locator(sel("verbinden"))).toBeVisible(); // die anderen Zeilen bleiben, wie sie sind
         await bild(page, "e2-2b-ki-verbunden", thema);
@@ -256,24 +292,33 @@ test.describe("KI-Schritt: eine Zeile je Programm, ein Knopf „Verbinden“", (
     });
   }
 
-  test("Kontingent aus: nichts wird in die Einstellungen von Claude Code eingetragen; später einschalten trägt nach", async ({ page }) => {
+  test("Fremdes Konto: Kontingent aus, nichts wird in die Einstellungen von Claude Code eingetragen; ausdrücklich einschalten trägt nach", async ({ page }) => {
     const z = await oeffne(page);
     await zuKi(page);
-    await page.click(`[data-bereich="kontingent"] ${sel("kontingent")}`);
     await expect(page.locator(`[data-bereich="kontingent"] ${sel("kontingent")}`)).toHaveAttribute("aria-checked", "false");
     await verbinden(page, "claude");
     await expect(zeile(page, "claude").locator(".e-tick")).toBeVisible({ timeout: 8000 });
     expect(z.statuszeile).toBeUndefined();
     await page.click(`[data-bereich="kontingent"] ${sel("kontingent")}`);
     await expect.poll(() => z.statuszeile?.length).toBe(1);
+    expect(z.statuszeile[0]).toEqual({ konto: "k_claude_privat", an: true, einwilligung: true, bestaetigt: true }); // fremder Ort: nur nach der ausdrücklichen Wahl, mit Bestätigung
   });
 
   test("Kontingent: scheitert das Eintragen, steht ein Hinweis da und die KI bleibt verbunden", async ({ page }) => {
-    await oeffne(page, { statuszeileFehler: true });
+    await oeffne(page, { statuszeileFehler: true, verwaltet: ["k_claude_privat"] });
     await zuKi(page);
     await verbinden(page, "claude");
     await expect(zeile(page, "claude").locator(".e-tick")).toBeVisible({ timeout: 8000 });
     await expect(page.locator(".toast", { hasText: "Das Kontingent ließ sich nicht einrichten" })).toBeVisible();
+  });
+
+  test("Aktives Konto aus ki-konten.json ist in der Zeile vorgewählt", async ({ page }) => {
+    const z = await oeffne(page, { aktiv: { claude: "k_claude_firma" } });
+    await zuKi(page);
+    await expect(zeile(page, "claude").locator(sel("konto-waehlen"))).toContainText("Konto: Firma");
+    await verbinden(page, "claude");
+    await expect(zeile(page, "claude").locator(".e-tick")).toBeVisible({ timeout: 8000 });
+    expect(anfragen(z, "/api/mcp/verbinden")[0].body.konto).toBe("k_claude_firma");
   });
 
   test("Konto wählen: die Auswahl in der Zeile bestimmt das Konto beim Verbinden", async ({ page }) => {
@@ -370,6 +415,18 @@ test.describe("KI-Schritt: eine Zeile je Programm, ein Knopf „Verbinden“", (
     z.login["std:codex"] = "angemeldet"; // die Abfrage im Hintergrund (alle 3 s) merkt es und die Zeile verbindet von selbst
     await expect(zeile(page, "codex").locator(".e-tick")).toBeVisible({ timeout: 12000 });
     expect(anfragen(z, "/api/mcp/verbinden")[0].body.ziel).toBe("codex");
+  });
+
+  test("Läuft die Frist der Anmeldung ab, ruft sie beiAbbruch auf: die Zeile geht zurück auf „Verbinden“", async ({ page }) => {
+    await page.clock.install();
+    await oeffne(page, { login: { "std:codex": "nicht-angemeldet" } });
+    await page.route("**/api/ki/anmelden", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ anzeige: "codex login" }) }));
+    await zuKi(page);
+    await verbinden(page, "codex");
+    await expect(zeile(page, "codex").locator('[data-bereich="anmeldung"]')).toBeVisible({ timeout: 6000 });
+    await page.clock.fastForward("11:00");
+    await expect(zeile(page, "codex").locator(sel("verbinden"))).toBeVisible({ timeout: 6000 });
+    await expect(zeile(page, "codex").locator('[data-bereich="anmeldung"]')).toHaveCount(0);
   });
 
   test("Anmeldung abbrechen: die Zeile geht zurück auf „Verbinden“, nichts wird eingetragen", async ({ page }) => {
@@ -742,7 +799,7 @@ test.describe("Bewegung reduzieren", () => {
 // ---------------------------------------------------------------- Checkliste in der Seitenleiste
 test.describe("Checkliste „Einrichtung n/4“ nach der Einrichtung", () => {
   async function fertig(page, opt = {}) {
-    const z = await oeffne(page, opt);
+    const z = await oeffne(page, { verwaltet: ["k_claude_privat"], ...opt });
     await zuKi(page);
     await verbinden(page, "claude");
     await expect(zeile(page, "claude").locator(".e-tick")).toBeVisible({ timeout: 8000 });

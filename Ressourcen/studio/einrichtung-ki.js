@@ -22,7 +22,7 @@ const meldungVon = (e) => (typeof e?.message === "string" && e.message.trim()) |
 const versionVon = (v) => { const m = /\d+(?:\.\d+)+/.exec(String(v || "")); return m ? m[0] : null; };
 
 export function erzeugeKi({ api = standardApi, vaultPfad, vaultName, beiAenderung = () => {}, kopiere, melde = () => {} } = {}) {
-  const Z = { geladen: false, sucht: false, erkennung: {}, erkannt: false, konten: [], zugriff: {}, zeilen: new Map(), kontingent: true, kontingentGesetzt: null, tot: false, lade: 0, abgleichVersucht: false, sicherungEntfaellt: false };
+  const Z = { geladen: false, sucht: false, erkennung: {}, erkannt: false, konten: [], zugriff: {}, zeilen: new Map(), kontingentWahl: null /* null = Vorgabe */, kontingentGesetzt: null, aktiv: {}, tot: false, lade: 0, abgleichVersucht: false, sicherungEntfaellt: false };
   const wurzel = h("div", { klasse: "e-ki-wurzel", id: "ki-koerper", "data-bereich": "ki" });
   const aenderung = () => { try { beiAenderung(); } catch (e) { console.error(e); } };
 
@@ -49,7 +49,7 @@ export function erzeugeKi({ api = standardApi, vaultPfad, vaultName, beiAenderun
   function beleg(z) {
     if (["verbindet", "prueft", "anmeldung"].includes(z.zustand)) return;
     const konten = kontenVon(z.id);
-    if (!z.konto || !kontoMit(z.konto)) z.konto = (konten.find((k) => k.standard) || konten[0])?.id ?? null;
+    if (!z.konto || !kontoMit(z.konto)) z.konto = (konten.find((k) => k.id === Z.aktiv?.[z.id]) || konten.find((k) => k.standard) || konten[0])?.id ?? null;
     const aktuell = stufeAktuell(z.konto);
     if (!z.ausdruecklich) z.stufe = aktuell || "posteingang";
     const k = kontoMit(z.konto);
@@ -71,6 +71,7 @@ export function erzeugeKi({ api = standardApi, vaultPfad, vaultName, beiAenderun
     if (kv && kv.zustand !== "ok" && !Z.abgleichVersucht) { Z.abgleichVersucht = true; try { kv = await api.kiKontenAbgleich(); } catch { /* ohne Liste weiter */ } if (Z.tot || nr !== Z.lade) return; }
     Z.konten = Array.isArray(kv?.konten) ? kv.konten : [];
     Z.zugriff = kv?.zugriff && typeof kv.zugriff === "object" ? kv.zugriff : {};
+    Z.aktiv = kv?.aktiv && typeof kv.aktiv === "object" ? kv.aktiv : {}; // das aktive Konto je Programm (Einstellungen → Konten)
     Z.erkennung = erkennungAus(e);
     Z.erkannt = !!e;
     Z.geladen = true; Z.sucht = false;
@@ -128,7 +129,7 @@ export function erzeugeKi({ api = standardApi, vaultPfad, vaultName, beiAenderun
     z.zustand = "ok";
     try { window.dispatchEvent(new CustomEvent(KONTO_EREIGNIS)); } catch { /* ohne Fenster */ }
     zeichne(); aenderung();
-    if (id === "claude" && k && Z.kontingent) await schalteKontingent(k, true);
+    if (id === "claude" && k && kontingentAn()) await schalteKontingent(k, true);
     await lade(false); // Konten und Zugriffe neu lesen (der Stand in der Zeile kommt aus der Wirklichkeit)
     z.eigenerLauf = false;
   }
@@ -138,8 +139,12 @@ export function erzeugeKi({ api = standardApi, vaultPfad, vaultName, beiAenderun
     catch (e) { melde(TE.ki.kontingentFehler); console.error(e); }
   }
   const claudeKonto = () => { const z = Z.zeilen.get("claude"); return z?.zustand === "ok" ? kontoMit(z.konto) : null; };
+  // Vorgabe: AN nur, wenn Kortex das Claude-Konto verwaltet; ein fremdes Konto (System-~/.claude) ändert Kortex nie ungefragt
+  const claudeAuswahl = () => { const z = Z.zeilen.get("claude"); return z ? kontoMit(z.konto) : null; };
+  const kontingentVerwaltet = () => claudeAuswahl()?.verwaltet === true;
+  const kontingentAn = () => (Z.kontingentWahl === null ? kontingentVerwaltet() : Z.kontingentWahl);
   async function kontingentSchalter(an) {
-    Z.kontingent = an;
+    Z.kontingentWahl = an;
     const k = claudeKonto();
     if (an && k && Z.kontingentGesetzt !== k.id) await schalteKontingent(k, true);
     else if (!an && Z.kontingentGesetzt) { const alt = kontoMit(Z.kontingentGesetzt); if (alt) await schalteKontingent(alt, false); }
@@ -218,8 +223,8 @@ export function erzeugeKi({ api = standardApi, vaultPfad, vaultName, beiAenderun
       } else {
         teile.push(h("div", { klasse: "e-krows", "data-bereich": "ki-liste" }, liste.map((p) => zeilenKnoten(p))));
         if (gefunden("claude")) {
-          const sw = umschalter({ an: Z.kontingent, label: TE.ki.kontingent, daten: { "data-aktion": "kontingent" }, aufAenderung: (w) => { kontingentSchalter(w); } });
-          teile.push(h("div", { klasse: "e-qrow", "data-bereich": "kontingent" }, symbol("balken", 20), h("div", { klasse: "e-tx" }, h("b", { text: TE.ki.kontingent }), h("p", { text: TE.ki.kontingentText })), sw));
+          const sw = umschalter({ an: kontingentAn(), label: TE.ki.kontingent, daten: { "data-aktion": "kontingent" }, aufAenderung: (w) => { kontingentSchalter(w); } });
+          teile.push(h("div", { klasse: "e-qrow", "data-bereich": "kontingent" }, symbol("balken", 20), h("div", { klasse: "e-tx" }, h("b", { text: TE.ki.kontingent }), h("p", { "data-feld": "kontingent-text", text: kontingentVerwaltet() ? TE.ki.kontingentText : TE.ki.kontingentTextFremd })), sw));
         }
       }
       if (Z.sicherungEntfaellt) teile.push(h("div", { klasse: "e-qhint", "data-bereich": "sicherung-entfaellt" }, symbol("wolke-hoch", 14), h("span", { text: TE.ki.sicherungEntfaellt })));
@@ -234,7 +239,7 @@ export function erzeugeKi({ api = standardApi, vaultPfad, vaultName, beiAenderun
     /** Läuft gerade etwas (Prüfen, Verbinden, Anmelden)? Dann bleibt der Ablauf in diesem Schritt. */
     arbeitet: () => [...Z.zeilen.values()].some((z) => ["verbindet", "prueft", "anmeldung"].includes(z.zustand)),
     verbundene: () => programme().filter((p) => Z.zeilen.get(p.id)?.zustand === "ok").map((p) => p.id),
-    kontingentAn: () => Z.kontingent,
+    kontingentAn,
     vaultGewechselt() { for (const z of Z.zeilen.values()) z.anmeldung?.stoppe(); Z.zeilen.clear(); Z.geladen = false; Z.kontingentGesetzt = null; zeichne(); },
     zerstoere() { Z.tot = true; for (const z of Z.zeilen.values()) z.anmeldung?.stoppe(); },
   };

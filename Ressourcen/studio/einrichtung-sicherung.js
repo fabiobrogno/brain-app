@@ -233,7 +233,7 @@ export function erzeugeSicherung({ api = standardApi, vaultName, beiAenderung = 
     if (Q.sync === "code") return { label: TE.sicherung.warteKnopf, ok: false, lade: true };
     if (Q.sync === "abgelaufen") return { label: TE.sicherung.abgelaufenKnopf, ok: true };
     if (Q.sync === "abgelehnt") return { label: TE.sicherung.abgelehntKnopf, ok: true };
-    if (Q.nurLogin) return Q.sync === "start" ? { label: TE.sicherung.anmelden, ok: true } : { label: TE.weiter, ok: true };
+    if (Q.nurLogin) return Q.sync === "start" ? { label: TE.sicherung.anmelden, ok: true } : Q.sync === "nichtVerfuegbar" ? { label: TE.weiter, ok: false } : { label: TE.weiter, ok: true }; // nicht verfügbar: nichts zu tun, „Zurück“ führt zur Vault-Wahl
     if (Q.sync === "start" && Q.wahl === "github") return { label: TE.sicherung.anmelden, ok: true };
     return { label: TE.weiter, ok: true, abschluss: true };
   }

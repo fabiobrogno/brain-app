@@ -116,10 +116,10 @@ export async function mockeEinrichtung(page, o = {}) {
         // wie die Werkstatt: ein Konto ist „verbunden“, sobald Kortex bei seinem Programm eingetragen ist; die Stufe im Vault steht unter zugriff[konto][vaultPfad]
         const mcp = (k) => (z.mcp || []).filter((v) => v.konto === k.id || (!v.konto && v.ziel === k.programm && k.standard));
         const konten = KONTEN.filter((k) => z.ki === "keine" ? false : z.ki === "eine" ? k.programm === "claude" : true).filter((k) => !z.kontenNur || z.kontenNur.includes(k.id))
-          .map((k) => ({ ...k, verbunden: k.verbunden || mcp(k).length > 0 || !!z.schonVerbunden?.includes(k.id) }));
+          .map((k) => ({ ...k, verwaltet: !!z.verwaltet?.includes(k.id), verbunden: k.verbunden || mcp(k).length > 0 || !!z.schonVerbunden?.includes(k.id) }));
         const zugriff = JSON.parse(JSON.stringify(z.zugriff || {}));
         if (z.vault) for (const k of konten) { const letzte = mcp(k).at(-1); if (letzte?.zugriff && !zugriff[k.id]?.[z.vault.pfad]) (zugriff[k.id] ||= {})[z.vault.pfad] = letzte.zugriff; }
-        return json(200, { zustand: "ok", konten, vaults: z.vault ? [{ pfad: z.vault.pfad, name: z.vault.name, schluessel: "kennung-" + z.vault.pfad }] : [], zugriff });
+        return json(200, { zustand: "ok", konten, aktiv: z.aktiv || {}, vaults: z.vault ? [{ pfad: z.vault.pfad, name: z.vault.name, schluessel: "kennung-" + z.vault.pfad }] : [], zugriff });
       }
       case "/api/mcp/verbinden": {
         await warte(z.verzoegerung);

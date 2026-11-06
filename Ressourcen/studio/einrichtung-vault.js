@@ -109,7 +109,8 @@ export function erzeugeVault({ api = standardApi, waehleOrdner, beiAenderung = (
       const fehlerOrt = h("div", { id: "klon-fehler-ort" });
       const zeigeFehler = () => {
         fehlerOrt.replaceChildren(...(V.klonFehler ? [h("div", { klasse: "e-meldung schlecht", role: "alert", "data-bereich": "klon-fehler" }, symbol("warnung", 14), h("span", { text: V.klonFehler.text })),
-          ...(V.klonFehler.anmelden ? [baueKnopf({ text: TE.vault.klonAnmelden, groesse: "s", symbol: "schloss", aktion: "klon-anmelden", aufKlick: () => V.beiKlonAnmelden?.() })] : [])] : []));
+          ...(V.klonFehler.anmelden ? [baueKnopf({ text: TE.vault.klonAnmelden, groesse: "s", symbol: "schloss", aktion: "klon-anmelden", aufKlick: () => V.beiKlonAnmelden?.() })] : []),
+          ...(V.klonFehler.andere ? [h("div", { klasse: "e-ki-frage-knoepfe" }, baueKnopf({ text: TE.vault.klonAbbrechen, groesse: "s", aktion: "klon-abbrechen", aufKlick: () => { V.klonFehler = null; V.url = ""; waehleWeg("neu"); } }), baueKnopf({ text: TE.vault.klonAndere, variante: "primaer", groesse: "s", aktion: "klon-andere", aufKlick: () => { V.klonFehler = null; V.url = ""; zeichne(); aenderung(); wurzel.querySelector('[data-feld="url"]')?.focus(); } }))] : [])] : []));
       };
       V.zeigeKlonFehler = zeigeFehler;
       feld.input.setAttribute("aria-invalid", String(ungueltig)); if (ungueltig) feld.el.classList.add("e-schlecht");
@@ -208,7 +209,11 @@ export function erzeugeVault({ api = standardApi, waehleOrdner, beiAenderung = (
       V.klonFehler = null;
       return { ok: true, vault, weg: art, vertrauen };
     } catch (e) {
-      if (art === "klonen" && [403, 404].includes(e?.status)) V.klonFehler = { text: TE.vault.klonAnmeldung, anmelden: true };
+      if (art === "klonen" && [403, 404].includes(e?.status)) {
+        // Nur wer noch nicht bei GitHub angemeldet ist, bekommt die Anmeldung angeboten. Wer es schon ist, bekommt keine Schleife: klare Meldung, andere Adresse oder abbrechen.
+        let angemeldet = false; try { angemeldet = (await api.githubKonto())?.angemeldet === true; } catch { /* unbekannt: die Anmeldung anbieten */ }
+        V.klonFehler = angemeldet ? { text: TE.vault.klonKeinZugriff, andere: true } : { text: TE.vault.klonAnmeldung, anmelden: true };
+      }
       else if (art === "klonen") V.klonFehler = { text: meldungVon(e) };
       else { V.klonFehler = null; toast(meldungVon(e), { fehler: true }); }
       if (art === "klonen") zeichne();

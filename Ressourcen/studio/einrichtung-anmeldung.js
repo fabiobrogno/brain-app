@@ -16,7 +16,8 @@ import { baueAnmeldung } from "./ki-verbinden.js";
 export function starteAnmeldung(programm, konto, { api, wurzel, beiAngemeldet, beiAbbruch } = {}) {
   const a = baueAnmeldung({ api, kt: konto,
     beiAngemeldet: (r) => { wurzel?.replaceChildren(); beiAngemeldet?.(r); },
-    beiAbbruch: () => { wurzel?.replaceChildren(); beiAbbruch?.(); } });
+    beiAbbruch: () => { wurzel?.replaceChildren(); beiAbbruch?.(); },
+    beiZeit: () => { wurzel?.replaceChildren(); beiAbbruch?.(); } }); // die Frist (10 Minuten) ist um: wie ein Abbruch
   const karte = h("div", { klasse: "e-anm", "data-bereich": "anmeldung", "data-programm": programm }, a.liste, a.befehl, a.fehlerEl, a.hinweis,
     h("div", { klasse: "e-anm-knoepfe" }, a.knoepfe.abbruch, a.knoepfe.nochmal, a.knoepfe.jetzt));
   wurzel?.replaceChildren(karte);
