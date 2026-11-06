@@ -5,8 +5,9 @@ import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 import { tmp } from "./hilfe.mjs";
 
-const TEMP = realpathSync(tmpdir());
-const imTemp = (p) => { try { const r = realpathSync(p); return r === TEMP || r.startsWith(TEMP + sep); } catch { return false; } };
+const echt = process.platform === "win32" ? realpathSync.native : realpathSync; // Windows: lange statt Kurznamen (RUNNER~1), wie in hilfe.mjs
+const TEMP = echt(tmpdir());
+const imTemp = (p) => { try { const r = echt(p); return r === TEMP || r.startsWith(TEMP + sep); } catch { return false; } };
 const KONFIG_ORDNER = ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "CURSOR_CONFIG_DIR", "GEMINI_CLI_HOME"];
 
 // Baut die Umgebung für einen Kindprozess AUSDRÜCKLICH (nie ...process.env). Wirft, wenn HOME oder BRAIN_APP_SUPPORT fehlen oder nicht im Temp-Ordner liegen
