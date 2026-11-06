@@ -46,7 +46,7 @@ async function oeffne(page, { ablauf, thema = "light", startFehler = null, codeA
   await page.route(/\/api\/ki\/(anmelden|konto-neu|konten)$/, async (r) => {
     const m = r.request().method();
     if (m === "POST" && r.request().url().endsWith("/anmelden")) { ruf.terminal.push(JSON.parse(r.request().postData())); return r.fulfill({ contentType: "application/json", body: JSON.stringify({ ok: true, anzeige: "claude auth login" }) }); }
-    if (m === "POST") { ruf.neuesKonto.push(JSON.parse(r.request().postData())); return r.fulfill({ contentType: "application/json", body: JSON.stringify({ neuesKonto: { id: "k_neu", programm: "claude", pfad: "/tmp/kortex/ki-konten-ordner/claude-firma" } }) }); }
+    if (m === "POST") { ruf.neuesKonto.push(JSON.parse(r.request().postData())); return r.fulfill({ contentType: "application/json", body: JSON.stringify({ ausstehend: { id: "k_neu", programm: "claude", pfad: "/tmp/kortex/ki-konten-ordner/claude-firma" } }) }); }
     return r.fulfill({ contentType: "application/json", body: JSON.stringify({ konten: [{ id: "k_alt", programm: "claude", standard: false, pfad: "/tmp/kortex/ki-konten-ordner/claude-alt", ordner: "~/x" }] }) });
   });
   await page.goto(dateien.url + "__anmeldung.html");
@@ -127,7 +127,7 @@ for (const thema of ["light", "dark"]) {
       await expect(page.locator(".an-meldung.ok")).toContainText("Das Terminal ist offen");
       expect(ruf.neuesKonto).toEqual([{ programm: "claude", name: "Firma" }]);
       expect(ruf.terminal).toEqual([{ programm: "claude", ordner: "/tmp/kortex/ki-konten-ordner/claude-firma" }]);
-      await expect.poll(() => page.evaluate(() => window.__erg)).toEqual({ phase: "terminal" });
+      await expect.poll(() => page.evaluate(() => window.__erg)).toEqual({ phase: "terminal", ausstehend: { id: "k_neu", pfad: "/tmp/kortex/ki-konten-ordner/claude-firma" } });
     });
 
     test("Frist abgelaufen: Meldung „Die Zeit ist abgelaufen“; bestehendes Konto: Terminal-Weg mit dem Ordner des Kontos", async ({ page }) => {

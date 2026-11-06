@@ -3,7 +3,7 @@
 //
 //   const a = starteAnmeldung("claude", { neu: "Firma" } | "<konto-kennung>", { host?, ordner?, beiFertig?, beiTerminal?, terminal? });
 //   a.knoten      Element (wird in `host` gehängt, wenn gegeben)
-//   a.ergebnis    Promise<{ phase: "ok"|"abgebrochen"|"terminal"|"fehler"|"timeout", konto? }>   — immer aufgelöst, nie abgelehnt
+//   a.ergebnis    Promise<{ phase: "ok"|"abgebrochen"|"terminal", konto?, ausstehend? }>  (terminal + neues Konto: `ausstehend: {id, pfad}` — der Aufrufer bestätigt es mit konto-fertig, sobald das Programm angemeldet ist)   — immer aufgelöst, nie abgelehnt
 //   a.abbrechen() bricht ab (Werkstatt beendet das Programm und räumt das neue Konto weg), a.zerstoere() = abbrechen + Panel entfernen
 //
 // Ablauf: Die Werkstatt startet das Programm (werkstatt/anmelden.mjs); das Panel fragt alle 1,2 s nach dem Stand. Hat die Werkstatt Adresse (und bei Codex den Gerätecode),
@@ -149,17 +149,18 @@ export function starteAnmeldung(programm, konto, opt = {}) {
     terminalOffen = true;
     const alt = id; id = null; halt();
     if (alt) { try { await api.kiAnmeldeAbbruch(alt); } catch { /* egal */ } }
+    let neu = null;
     try {
       if (typeof opt.terminal === "function") await opt.terminal({ programm, konto });
       else {
         let ordner = opt.ordner ?? null;
-        if (neuName) ordner = (await api.kiKontoNeu({ programm, name: neuName })).neuesKonto.pfad;
+        if (neuName) { const r = await api.kiKontoNeu({ programm, name: neuName }); neu = r.ausstehend || r.neuesKonto; ordner = neu.pfad; } // E4: das Konto bleibt „ausstehend“, bis die Aufrufer es mit konto-fertig bestätigen
         else if (kontoId && opt.ordner === undefined) { const k = ((await api.kiKonten()).konten || []).find((x) => x.id === kontoId); ordner = k && !k.standard ? k.pfad : null; }
         await api.kiAnmelden(programm, ordner);
       }
       setze("terminal", meldung(TA.terminalOffen, "ok"));
       try { opt.beiTerminal?.(); } catch (e) { console.error(e); }
-      beende({ phase: "terminal" });
+      beende({ phase: "terminal", ...(neu ? { ausstehend: { id: neu.id, pfad: neu.pfad } } : {}) });
     } catch (e) {
       terminalOffen = false;
       setze("fehler", meldung(e?.message || TA.terminalFehler), h("div", { klasse: "an-fuss" }, knopf({ text: TA.nochmal, aufKlick: neuStart }), terminalLink(true)));
