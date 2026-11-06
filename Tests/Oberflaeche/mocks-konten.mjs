@@ -175,13 +175,13 @@ export async function mockeKonten(page, { vaults, konten = KONTEN, zugriff = nul
     if (z.anmeldenFehler) return fehler(route, 409, z.anmeldenFehler);
     return route.fulfill({ json: { ok: true, anzeige: b.programm === "claude" ? `${b.ordner ? `CLAUDE_CONFIG_DIR=${b.ordner.replace("/Users/test", "~")} ` : ""}claude auth login` : `${b.ordner ? `CODEX_HOME=${b.ordner.replace("/Users/test", "~")} ` : ""}codex login` } });
   });
-  // Ein neues Konto in drei Schritten (werkstatt/konten.mjs): konto-neu legt nur den Ordner .neu-<id> an (Antwort `ausstehend`), konto-fertig trägt es nach bestätigter Anmeldung ein, konto-abbruch räumt auf
+  // Ein neues Konto in drei Schritten (werkstatt/konten.mjs): konto-neu legt den Ordner unter dem endgültigen Namen an und das Konto als ausstehend (unsichtbar; Antwort `ausstehend`), konto-fertig nimmt nach bestätigter Anmeldung nur die Marke weg (nichts wird umbenannt), konto-abbruch räumt auf
   await page.route("**/api/ki/konto-neu", (route) => {
     const b = body(route); z.anfragen.push({ methode: "POST", pfad: "/api/ki/konto-neu", body: b });
     if (!["claude", "codex"].includes(b.programm) || typeof b.name !== "string" || !b.name.trim()) return fehler(route, 400, "Der Name braucht 1 bis 40 Zeichen.");
     if (z.konten.some((k) => k.programm === b.programm && k.name.toLowerCase() === b.name.toLowerCase())) return fehler(route, 409, "Ein Konto mit diesem Namen gibt es schon. Wähle einen anderen Namen.");
-    const id = String(++z.neu).padStart(8, "0").replace(/[89]/g, "7");
-    const pfad = `/Users/test/Library/Application Support/Kortex/ki-konten-ordner/.neu-${id}`;
+    const id = `k_neu${String(++z.neu).padStart(4, "0")}`;
+    const pfad = `/Users/test/Library/Application Support/Kortex/ki-konten-ordner/${b.programm}-${b.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
     z.ausstehend[id] = { id, programm: b.programm, name: b.name, stufe: b.stufe === "lesen" ? "lesen" : "gesperrt", pfad };
     return route.fulfill({ json: { ...stand(), ausstehend: { id, programm: b.programm, name: b.name, pfad, standard: false } } });
   });
@@ -190,8 +190,7 @@ export async function mockeKonten(page, { vaults, konten = KONTEN, zugriff = nul
     const a = z.ausstehend[b.id];
     if (!a) return fehler(route, 404, "Dieses neue Konto gibt es nicht mehr (die Zeit zum Anmelden war um oder du hast abgebrochen). Lege es noch einmal an.", { art: "abgelaufen" });
     delete z.ausstehend[b.id];
-    const id = `k_neu${b.id.slice(-4)}`;
-    const ordner = `/Users/test/Library/Application Support/Kortex/ki-konten-ordner/${a.programm}-${a.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+    const id = b.id, ordner = a.pfad; // derselbe Pfad wie vor dem Bestätigen
     const vorher = aktivStand()[a.programm];
     z.konten.push({ id, programm: a.programm, programmName: a.programm === "claude" ? "Claude Code" : "Codex", name: a.name, standard: false, ordner: ordner.replace("/Users/test", "~"), pfad: ordner, verwaltet: true, vorhanden: true, verbunden: false });
     z.zugriff[id] = Object.fromEntries(z.vaults.map((v) => [v.pfad, a.stufe === "lesen" ? "lesen" : "gesperrt"]));

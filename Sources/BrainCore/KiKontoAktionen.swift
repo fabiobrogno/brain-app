@@ -39,9 +39,7 @@ public enum KiKontoOrdner {
             guard name.hasPrefix(punkt + "-"), name.count > punkt.count + 1 else { return nil }
         } else if supportOrdner.contains(eltern) {
             let vorn = programm + "-"
-            // `.neu-<8 Hex>`: der Ordner eines Kontos, das gerade angemeldet wird (die Werkstatt legt ihn an, bestätigt die Anmeldung und benennt ihn dann um)
-            let neu = name.range(of: "^\\.neu-[0-9a-f]{8}$", options: .regularExpression) != nil
-            guard neu || (name.hasPrefix(vorn) && name.count > vorn.count) else { return nil }
+            guard name.hasPrefix(vorn), name.count > vorn.count else { return nil }
             guard istOrdnerOhneLink(eltern) else { return nil }
         } else {
             return nil
@@ -53,8 +51,7 @@ public enum KiKontoOrdner {
     /// Wie `pruefe`, aber nur ein von Kortex angelegter Ordner (`<support>/ki-konten-ordner/<programm>-…`): so weit geht das Entfernen. `~/.claude*`, `~/.codex*`
     /// und das Standardkonto gehören nie dazu.
     public static func pruefeVerwaltet(programm: String, ordner: String?, home: URL, support: URL) -> URL? {
-        guard case .ordner(let url)? = pruefe(programm: programm, ordner: ordner, home: home, support: support),
-              url.lastPathComponent.hasPrefix(programm + "-") else { return nil }
+        guard case .ordner(let url)? = pruefe(programm: programm, ordner: ordner, home: home, support: support) else { return nil }
         let eltern = bereinigt(url.deletingLastPathComponent().path)
         let wurzeln = [bereinigt(support.path), bereinigt(support.resolvingSymlinksInPath().path)].map { $0 + "/" + supportUnterordner }
         return wurzeln.contains(eltern) ? url : nil

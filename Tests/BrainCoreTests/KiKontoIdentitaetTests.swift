@@ -2,32 +2,13 @@ import Testing
 import Foundation
 @testable import BrainCore
 
-// Paket E4 (Konten): Identität nur aus der Ausgabe des Programms und nur auf Wunsch; Ordner `.neu-<id>` für ein Konto, das gerade angemeldet wird.
+// Paket E4 (Konten): Identität nur aus der Ausgabe des Programms und nur auf Wunsch.
 // Alles in Temp-Ordnern mit Attrappen; nie ein echtes claude/codex, nie ~/.claude* oder der Schlüsselbund.
 
 private func fundMit(_ koerper: String, programm: String = "claude", in w: KiTestWelt) -> KiFund {
     let bin = w.ordner("identbin")
     let datei = kiAttrappe(koerper, name: programm, in: bin)
     return KiFund(id: programm, name: programm, art: "terminal", pfad: datei.path, version: nil, quelle: "cli", befehl: programm)
-}
-
-@Test func kontoOrdnerErlaubtDenNeuOrdnerNurZumAnmeldenNichtZumEntfernen() throws {
-    let w = KiTestWelt()
-    let fm = FileManager.default
-    let konten = w.support.appendingPathComponent("ki-konten-ordner", isDirectory: true)
-    let neu = konten.appendingPathComponent(".neu-0a1b2c3d", isDirectory: true)
-    try fm.createDirectory(at: neu, withIntermediateDirectories: true)
-    #expect(KiKontoOrdner.pruefe(programm: "claude", ordner: neu.path, home: w.home, support: w.support) == .ordner(neu))
-    #expect(KiKontoOrdner.pruefe(programm: "codex", ordner: neu.path, home: w.home, support: w.support) == .ordner(neu))
-    #expect(KiKontoOrdner.pruefeVerwaltet(programm: "claude", ordner: neu.path, home: w.home, support: w.support) == nil)
-    // nur genau acht kleine Hex-Zeichen
-    for name in [".neu-xyz", ".neu-0a1b2c3", ".neu-0a1b2c3d4", ".neu-0A1B2C3D", ".neu-"] {
-        try fm.createDirectory(at: konten.appendingPathComponent(name), withIntermediateDirectories: true)
-        #expect(KiKontoOrdner.pruefe(programm: "claude", ordner: konten.path + "/" + name, home: w.home, support: w.support) == nil, "\(name)")
-    }
-    // im Home gibt es das nicht
-    try fm.createDirectory(at: w.home.appendingPathComponent(".neu-0a1b2c3d"), withIntermediateDirectories: true)
-    #expect(KiKontoOrdner.pruefe(programm: "claude", ordner: w.home.path + "/.neu-0a1b2c3d", home: w.home, support: w.support) == nil)
 }
 
 @Test func anmeldeStatusLiestIdentitaetNurAufWunschUndNurBrauchbares() async {

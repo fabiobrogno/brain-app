@@ -1,6 +1,6 @@
 // „KI & Konten“, Paket E4 („Konten“): Unterbereiche Konten · Zugriff · Kontingent · Pflege & Frag, Suche und Sprung in den richtigen Unterbereich, Konten-Zeilen mit Abzeichen (Aktiv · Anmelden nötig ·
 // Abgelaufen), Mini-Balken und Identität (nur vom Programm, nur bei eingeschaltetem Schalter), ein aktives Konto je Programm (ki-konten.json, einmalige Übernahme aus dem lokalen Speicher),
-// Umbenennen, Entfernen mit „Nicht mehr fragen“ und der Weg des neuen Kontos (.neu-Ordner → bestätigte Anmeldung). Hell und dunkel als Bild.
+// Umbenennen, Entfernen mit „Nicht mehr fragen“ und der Weg des neuen Kontos (ausstehend → bestätigte Anmeldung, ohne Umbenennen). Hell und dunkel als Bild.
 // Die Routen /api/ki/* sind Attrappen (mocks-konten.mjs); der Rest läuft gegen die echte Werkstatt. UI_SHOTS=<Ordner>: Bilder dort ablegen.
 import { test, expect } from "./basis.mjs";
 import { join } from "node:path";
@@ -236,7 +236,7 @@ test("Entfernen: „Nicht mehr fragen“ wirkt nur beim Bestätigen; danach kein
   await expect.poll(einstellung).toBe(true);
 });
 
-test("Neues Konto: Ordner .neu-<id>, noch nicht in der Liste; Abbruch räumt auf; erst die bestätigte Anmeldung trägt es ein (aktiv, wenn es das erste ist)", async ({ page }) => {
+test("Neues Konto: ausstehend und unsichtbar, Ordner schon unter dem endgültigen Namen; Abbruch räumt auf; erst die bestätigte Anmeldung trägt es ein (aktiv, wenn es das erste ist)", async ({ page }) => {
   const opt = ZWEI();
   opt.konten = opt.konten.filter((k) => k.programm !== "claude");
   const z = await start(page, opt);
@@ -247,9 +247,10 @@ test("Neues Konto: Ordner .neu-<id>, noch nicht in der Liste; Abbruch räumt auf
   await d.locator('[data-kx="neu-name"]').fill("Privat");
   await d.locator('[data-aktion="konto-neu-ok"]').click();
   await expect(d.locator('[data-kv="anmelden"][data-neu="ja"]')).toBeVisible();
-  expect(Object.values(z.ausstehend)[0].pfad).toMatch(/\/\.neu-\d{8}$/);
+  const pfadVorher = Object.values(z.ausstehend)[0].pfad;
+  expect(pfadVorher).toMatch(/\/ki-konten-ordner\/claude-privat$/);
   expect(z.konten.filter((k) => k.programm === "claude")).toHaveLength(0);
-  expect(z.log("/api/ki/anmelden").at(-1).body.ordner).toMatch(/\/\.neu-\d{8}$/);
+  expect(z.log("/api/ki/anmelden").at(-1).body.ordner).toBe(pfadVorher);
   // Fenster zu = Abbruch
   await page.keyboard.press("Escape");
   await expect(d).toHaveCount(0);
@@ -269,6 +270,7 @@ test("Neues Konto: Ordner .neu-<id>, noch nicht in der Liste; Abbruch räumt auf
   await page.keyboard.press("Escape");
   await expect(dlg(page, "ki-verbinden")).toHaveCount(0);
   const neu = z.konten.find((k) => k.name === "Privat");
+  expect(neu.pfad, "der Pfad ist nach dem Bestätigen derselbe").toBe(pfadVorher);
   await expect(konto(page, neu.id).locator('[data-kk="abzeichen-aktiv"]')).toBeVisible();
   expect(z.aktiv.claude).toBe(neu.id);
 });

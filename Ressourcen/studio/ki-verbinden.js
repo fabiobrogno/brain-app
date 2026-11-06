@@ -127,7 +127,7 @@ export function erzeugeKiVerbinden(o = {}) {
     geladen: false, ladeFehler: null, erkennung: {}, erkannt: false, konten: [], zugriff: {}, aktiv: {}, vaults: [], neuKonten: [], abgleichVersucht: false,
     schritt: "waehlen", prog: null, konto: null, stufe: "posteingang", stufeGewaehlt: false, vorbelegt: null,
     anm: new Map(), anmeldung: null, neuOffen: false, neuEl: null, sucht: false,
-    neu: null, neuFehler: null, // ein Konto, das gerade angemeldet wird: { id, kt, name }; es steht noch NICHT in der Liste (Ordner .neu-<id>), erst die bestätigte Anmeldung trägt es ein
+    neu: null, neuFehler: null, // ein Konto, das gerade angemeldet wird: { id, kt, name }; es ist noch ausstehend und unsichtbar, erst die bestätigte Anmeldung gibt es frei
     lauf: null, ergebnis: null, verbunden: [], pflege: null, tot: false, kontingent: null, lade: 0, busy: false, angefangen: false,
     ki: {}, // je Programm: { konto, stufe, verbunden } — für den Assistenten (Fertig-Seite, Bühne)
   };
@@ -337,7 +337,7 @@ export function erzeugeKiVerbinden(o = {}) {
       if (n.length > 40) { fehlerEl.textContent = TKV.konto.zuLang; fehlerEl.hidden = false; return; }
       ok.setAttribute("aria-busy", "true");
       try {
-        // Schritt 1: nur der Ordner .neu-<id>, noch kein Konto in der Liste (ein neues Konto startet gesperrt: die Stufe wählst du im nächsten Schritt)
+        // Schritt 1: der Ordner unter seinem endgültigen Namen, das Konto ist ausstehend (unsichtbar) (ein neues Konto startet gesperrt: die Stufe wählst du im nächsten Schritt)
         const r = await api.kiKontoNeu({ programm: Z.prog, name: n, stufe: "gesperrt" });
         Z.neuOffen = false;
         const a = r?.ausstehend;
@@ -352,14 +352,14 @@ export function erzeugeKiVerbinden(o = {}) {
       h("div", { klasse: "kv-feld" }, h("span", { klasse: "kv-label", text: TE.ki.konto }), ordnerEl), h("p", { klasse: "mini", text: TKV.konto.ordnerText }), fehlerEl,
       h("div", { klasse: "kv-reihe-knoepfe" }, zu, ok));
   }
-  // Ein noch nicht bestätigtes neues Konto verwerfen: Abbruch, Zurück, Fenster zu — die Werkstatt räumt den Ordner .neu-<id> weg
+  // Ein noch nicht bestätigtes neues Konto verwerfen: Abbruch, Zurück, Fenster zu — die Werkstatt entfernt das ausstehende Konto samt Ordner
   function verwirfNeu() { const n = Z.neu; Z.neu = null; if (n) Promise.resolve(api.kiKontoAbbruch?.(n.id)).catch(() => {}); }
   function stoppeAnmeldung() { Z.anmeldung?.stoppe(); Z.anmeldung = null; verwirfNeu(); }
   // Der Anmeldestand eines noch nicht eingetragenen Kontos: nur das Programm fragen (die Werkstatt kennt das Konto noch nicht)
   const pruefeNeuKonto = async (k) => {
     try { const st = await api.kiAnmeldestatus(k.programm, k.pfad); return { zustand: st?.zustand === "angemeldet" ? "angemeldet" : "nicht-angemeldet" }; } catch { return { zustand: "unbekannt" }; }
   };
-  // Schritt 2: die Anmeldung ist bestätigt → die Werkstatt benennt den Ordner um und trägt das Konto ein. Das Anmelden selbst (heute Terminal, mit E3 im Fenster) ist austauschbar: nur baueAnmeldung ändert sich.
+  // Schritt 2: die Anmeldung ist bestätigt → die Werkstatt gibt das Konto frei (der Pfad bleibt). Das Anmelden selbst (heute Terminal, mit E3 im Fenster) ist austauschbar: nur baueAnmeldung ändert sich.
   async function schliesseNeuAb(n) {
     try {
       const f = await api.kiKontoFertig(n.id);

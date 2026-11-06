@@ -136,7 +136,7 @@ export const api = {
   kiAnmeldestatus: (programm, ordner, identitaet) => anfrage("POST", "/api/ki/anmeldestatus", { programm, ordner: ordner || null, ...(identitaet ? { identitaet: true } : {}) }),
   kiAnmelden: (programm, ordner) => anfrage("POST", "/api/ki/anmelden", { programm, ordner: ordner || null }),
   kiAnmeldung: (konto, zustand) => anfrage("POST", "/api/ki/anmeldung", { konto, zustand }),
-  // Ein neues Konto in drei Schritten: kiKontoNeu legt nur den Ordner .neu-<id> an (Antwort: `ausstehend`), kiKontoFertig trägt es nach bestätigter Anmeldung ein (umbenannt, in der Liste, Antwort: `neuesKonto`), kiKontoAbbruch räumt auf.
+  // Ein neues Konto in drei Schritten: kiKontoNeu legt den Ordner unter seinem endgültigen Namen an und das Konto als ausstehend, unsichtbar (Antwort: `ausstehend`), kiKontoFertig nimmt nach bestätigter Anmeldung nur die Marke weg (nichts wird umbenannt, Antwort: `neuesKonto`), kiKontoAbbruch räumt auf.
   kiKontoNeu: ({ programm, name, stufe }) => anfrage("POST", "/api/ki/konto-neu", { programm, name, ...(stufe ? { stufe } : {}) }),
   kiKontoFertig: (id) => anfrage("POST", "/api/ki/konto-fertig", { id }),
   kiKontoAbbruch: (id) => anfrage("POST", "/api/ki/konto-abbruch", { id }),

@@ -1,5 +1,5 @@
-// Paket E4 „Konten“: das aktive Konto je Programm (ki-konten.json, Kern und Werkstatt lesen es gleich), GET /api/ki/konten ohne Nebenwirkung und der Ordner .neu-<kennung> für ein Konto, das gerade
-// angemeldet wird (anlegen → bestätigen → umbenennen und eintragen · Abbruch und Zeitablauf räumen auf). Nur Wegwerf-Orte unter dem Temp-Ordner; HOME gilt nur für den Handler im selben Prozess.
+// Paket E4 „Konten“: das aktive Konto je Programm (ki-konten.json, Kern und Werkstatt lesen es gleich), GET /api/ki/konten ohne Nebenwirkung und das ausstehende Konto, dessen Anmeldung
+// noch läuft (anlegen unter dem endgültigen Namen → bestätigen, ohne je umzubenennen · Abbruch und Zeitablauf räumen auf). Nur Wegwerf-Orte unter dem Temp-Ordner; HOME gilt nur für den Handler im selben Prozess.
 // Kein echtes Programm wird gestartet, kein Schlüsselbund gelesen.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -41,7 +41,10 @@ const legeAn = async (a, daten) => {
   const f = await a.rufe("POST", "/api/ki/konto-fertig", { id: r.j.ausstehend.id });
   return { neu: r, fertig: f, id: f.j?.neuesKonto?.id };
 };
-const neuOrdner = (a) => (existsSync(a.wurzel) ? readdirSync(a.wurzel).filter((n) => n.startsWith(".neu-")) : []);
+// Ausstehende Konten laut ki-konten.json (die Oberfläche sieht sie nie)
+const ausstehende = (a) => Object.entries(G.liesKonten(a.s).daten?.konten || {}).filter(([, k]) => k.ausstehend).map(([id, k]) => ({ id, ordner: k.ordner }));
+// Ein zweiter Handler auf demselben Support-Ordner: wie ein neu gestarteter Prozess, der die laufenden Versuche des ersten nicht kennt
+const zweiter = (a) => { const mcp = tmp("brain-mcpdir-"); schreibe(mcp, "brain-mcp.mjs", "//\n"); const h = erzeugeHandler({ vault: a.vs[0], vaultOptionen: { support: a.s }, mcpPfad: join(mcp, "brain-mcp.mjs") }); return { ...a, h, rufe: aufruf(h) }; };
 // Fingerabdruck eines Ordnerbaums: Pfad, Art, Größe, Änderungszeit und Inhalt
 function abbild(wurzel) {
   const m = {};
@@ -135,27 +138,30 @@ test("Aktives Konto: das erste Konto eines Programms ist aktiv, ein weiteres än
   });
 });
 
-test("GET /api/ki/konten ist rein lesend: keine Datei ändert sich, es entsteht keine, ein liegengebliebener .neu-Ordner bleibt bis zum ausdrücklichen Abgleich", async () => {
+test("GET /api/ki/konten ist rein lesend: keine Datei ändert sich, es entsteht keine, ein liegengebliebenes ausstehendes Konto bleibt bis zum ausdrücklichen Abgleich", async () => {
   const a = aufbau();
   await mitHome(a.home, async () => {
-    // Liste anlegen (Abgleich), ein Konto, dazu ein liegengebliebener Ordner und ein erkennbares Konto außerhalb der Liste
+    // Liste anlegen (Abgleich), ein Konto, dazu ein liegengebliebenes ausstehendes Konto (ein früherer Prozess) und ein erkennbares Konto außerhalb der Liste
     await a.rufe("POST", "/api/ki/konten/abgleich", {});
     const k = await legeAn(a, { programm: "claude", name: "Privat" });
     assert.equal(k.fertig.status, 200);
-    mkdirSync(join(a.wurzel, ".neu-0a1b2c3d"), { recursive: true, mode: 0o700 });
+    const liegt = await a.rufe("POST", "/api/ki/konto-neu", { programm: "claude", name: "Liegt" });
+    assert.equal(liegt.status, 200);
+    const alt = zweiter(a); // „neuer Prozess“: er kennt den Versuch nicht mehr
     mkdirSync(join(a.home, ".claude-draussen"), { recursive: true });
     writeFileSync(join(a.home, ".claude-draussen", "settings.json"), "{}\n");
     const vorher = [abbild(a.s), abbild(a.home)];
     for (let i = 0; i < 3; i++) {
-      const g = await a.rufe("GET", "/api/ki/konten");
+      const g = await alt.rufe("GET", "/api/ki/konten");
       assert.equal(g.status, 200);
       assert.ok(Array.isArray(g.j.neu), "Neues steht nur als Hinweis unter `neu`");
-      assert.equal(g.j.konten.length, 1, "es wurde nichts eingetragen");
+      assert.equal(g.j.konten.length, 1, "nichts wurde eingetragen, das ausstehende Konto ist unsichtbar");
+      assert.deepEqual(g.j.neu.map((x) => x.ordner).filter((o) => /liegt/.test(o)), [], "ein ausstehendes Konto gilt nicht als „neu erkannt“");
       assert.ok(g.j.neu.some((x) => /draussen/.test(x.ordner)), "das Konto außerhalb der Liste wird gemeldet, aber nicht eingetragen");
     }
-    await a.rufe("GET", "/api/ki/kontingent");
+    await alt.rufe("GET", "/api/ki/kontingent");
     assert.deepEqual([abbild(a.s), abbild(a.home)], vorher, "weder im Support-Ordner noch im Home hat sich etwas verändert");
-    assert.ok(existsSync(join(a.wurzel, ".neu-0a1b2c3d")), "der liegengebliebene Ordner wird beim Lesen nicht angefasst");
+    assert.equal(ausstehende(a).length, 1, "das liegengebliebene Konto wird beim Lesen nicht angefasst");
 
     // fehlende Liste: GET legt sie nicht an
     const b = aufbau();
@@ -167,98 +173,108 @@ test("GET /api/ki/konten ist rein lesend: keine Datei ändert sich, es entsteht 
     });
 
     // erst der ausdrückliche Abgleich räumt auf und trägt ein
-    const ab = await a.rufe("POST", "/api/ki/konten/abgleich", {});
+    const ab = await alt.rufe("POST", "/api/ki/konten/abgleich", {});
     assert.equal(ab.status, 200);
-    assert.equal(existsSync(join(a.wurzel, ".neu-0a1b2c3d")), false, "der Abgleich räumt den verwaisten .neu-Ordner weg");
+    assert.equal(ausstehende(a).length, 0, "der Abgleich räumt das liegengebliebene ausstehende Konto weg");
+    assert.equal(existsSync(liegt.j.ausstehend.pfad), false, "samt Ordner");
     assert.ok(ab.j.konten.some((x) => /draussen/.test(x.ordner)), "und trägt das neu erkannte Konto ein (gesperrt)");
   });
 });
 
-test(".neu-Ordner: anlegen (Modus 0700, nicht in der Liste, nirgends sichtbar) → bestätigen (umbenannt, eingetragen, aktiv, gesperrt) · Abbruch räumt auf", async () => {
+test("Neues Konto: der Ordner trägt gleich seinen endgültigen Namen, das ausstehende Konto ist unsichtbar, nach dem Bestätigen ist der Pfad derselbe · Abbruch räumt auf", async () => {
   const a = aufbau();
   await mitHome(a.home, async () => {
     const r = await a.rufe("POST", "/api/ki/konto-neu", { programm: "claude", name: "Kunde Müller" });
     assert.equal(r.status, 200, JSON.stringify(r.j));
-    const kennung = r.j.ausstehend.id;
-    assert.match(kennung, /^[0-9a-f]{8}$/);
-    const ordner = join(a.wurzel, `.neu-${kennung}`);
-    assert.equal(r.j.ausstehend.pfad, realpathSync(ordner));
-    assert.ok(existsSync(ordner)); assert.equal(statSync(ordner).mode & 0o777, 0o700);
+    const id = r.j.ausstehend.id;
+    assert.match(id, /^k_[0-9a-f]{8}$/);
+    const pfadVorher = r.j.ausstehend.pfad;
+    assert.equal(pfadVorher, join(realpathSync(a.s), "ki-konten-ordner", "claude-kunde-muller"), "gleich der endgültige Name");
+    assert.ok(existsSync(pfadVorher)); assert.equal(statSync(pfadVorher).mode & 0o777, 0o700);
     assert.equal(r.j.neuesKonto, undefined, "noch kein Konto");
-    assert.equal(r.j.konten.length, 0, "die Liste kennt es noch nicht");
+    assert.equal(r.j.konten.length, 0, "unsichtbar");
     assert.deepEqual(readdirSync(a.home), [], "im Home wird nichts angelegt");
-    // die Anmeldung schreibt in den Ordner; GET meldet ihn nicht als Konto
-    writeFileSync(join(ordner, "settings.json"), "{}");
+    // in der Datei steht es mit der Marke; Kern und Werkstatt sehen es nirgends als Konto
+    const roh = JSON.parse(readFileSync(join(a.s, "ki-konten.json"), "utf8"));
+    assert.equal(roh.konten[id].ausstehend.stufe, "gesperrt"); assert.equal(roh.konten[id].ordner, pfadVorher);
+    assert.equal(KERN.liesAktivesKonto(a.s, "claude"), null, "ein ausstehendes Konto ist nie aktiv, auch nicht als einziges"); assert.equal(G.liesAktivesKonto(a.s, "claude"), null);
+    // die Anmeldung schreibt in den Ordner; nichts davon macht daraus ein Konto
+    writeFileSync(join(pfadVorher, "settings.json"), "{}");
     const g = await a.rufe("GET", "/api/ki/konten");
-    assert.equal(g.j.konten.length, 0); assert.deepEqual(g.j.neu, []);
+    assert.equal(g.j.konten.length, 0); assert.deepEqual(g.j.neu, []); assert.deepEqual(g.j.aktiv, {}); assert.deepEqual(g.j.zugriff, {});
+    assert.equal((await a.rufe("GET", "/api/ki/kontingent")).j.konten.length, 0, "auch kein Kontingent");
+    assert.equal((await a.rufe("PUT", "/api/ki/aktiv", { programm: "claude", konto: id })).status, 404);
+    assert.equal((await a.rufe("POST", "/api/ki/konten", { id, name: "Anders" })).status, 404);
+    assert.equal((await a.rufe("POST", "/api/ki/konten/abgleich", {})).j.konten.length, 0, "ein Abgleich während der Anmeldung lässt es stehen");
+    assert.ok(existsSync(pfadVorher));
 
-    // bestätigen
-    const f = await a.rufe("POST", "/api/ki/konto-fertig", { id: kennung });
+    // bestätigen: nur die Marke fällt weg
+    const f = await a.rufe("POST", "/api/ki/konto-fertig", { id });
     assert.equal(f.status, 200, JSON.stringify(f.j));
-    const k = f.j.konten.find((x) => x.id === f.j.neuesKonto.id);
-    assert.equal(k.name, "Kunde Müller"); assert.equal(k.verwaltet, true);
-    assert.equal(k.pfad, join(realpathSync(a.s), "ki-konten-ordner", "claude-kunde-muller"));
-    assert.equal(existsSync(ordner), false, "der .neu-Ordner ist umbenannt");
-    assert.ok(existsSync(join(k.pfad, "settings.json")), "mit dem Inhalt der Anmeldung");
-    for (const v of a.vs) assert.equal(f.j.zugriff[k.id][v], "gesperrt");
-    assert.equal(f.j.aktiv.claude, k.id);
-    assert.deepEqual(neuOrdner(a), []);
-    // ein zweites Bestätigen geht nicht
-    assert.equal((await a.rufe("POST", "/api/ki/konto-fertig", { id: kennung })).status, 404);
+    assert.equal(f.j.neuesKonto.id, id); assert.equal(f.j.neuesKonto.pfad, pfadVorher, "der Pfad ist vor und nach dem Bestätigen derselbe");
+    const k = f.j.konten.find((x) => x.id === id);
+    assert.equal(k.pfad, pfadVorher); assert.equal(k.name, "Kunde Müller"); assert.equal(k.verwaltet, true);
+    assert.ok(existsSync(join(pfadVorher, "settings.json")), "der Ordner ist unberührt");
+    assert.deepEqual(readdirSync(a.wurzel), ["claude-kunde-muller"], "es wurde nichts umbenannt oder neu angelegt");
+    for (const v of a.vs) assert.equal(f.j.zugriff[id][v], "gesperrt");
+    assert.equal(f.j.aktiv.claude, id);
+    assert.equal(JSON.parse(readFileSync(join(a.s, "ki-konten.json"), "utf8")).konten[id].ausstehend, undefined);
+    assert.equal((await a.rufe("POST", "/api/ki/konto-fertig", { id })).status, 404, "ein zweites Bestätigen geht nicht");
+    assert.equal((await a.rufe("POST", "/api/ki/konto-abbruch", { id })).j.ok, false, "und ein Abbruch nimmt ein fertiges Konto nie weg");
+    assert.ok(existsSync(pfadVorher)); assert.equal((await a.rufe("GET", "/api/ki/konten")).j.konten.length, 1);
 
-    // Abbruch: Ordner weg, nichts in der Liste
+    // Abbruch: Konto und Ordner weg
     const r2 = await a.rufe("POST", "/api/ki/konto-neu", { programm: "codex", name: "Weg" });
-    const k2 = r2.j.ausstehend.id;
-    writeFileSync(join(a.wurzel, `.neu-${k2}`, "auth.json"), "{}");
-    assert.deepEqual(neuOrdner(a), [`.neu-${k2}`]);
-    const ab = await a.rufe("POST", "/api/ki/konto-abbruch", { id: k2 });
+    const id2 = r2.j.ausstehend.id;
+    writeFileSync(join(r2.j.ausstehend.pfad, "auth.json"), "{}");
+    assert.equal(ausstehende(a).length, 1);
+    const ab = await a.rufe("POST", "/api/ki/konto-abbruch", { id: id2 });
     assert.equal(ab.status, 200); assert.equal(ab.j.ok, true);
-    assert.deepEqual(neuOrdner(a), []);
+    assert.equal(ausstehende(a).length, 0); assert.equal(existsSync(r2.j.ausstehend.pfad), false);
     assert.equal(ab.j.konten.length, 1);
-    assert.equal((await a.rufe("POST", "/api/ki/konto-abbruch", { id: k2 })).status, 200, "ein zweiter Abbruch schadet nicht");
-    assert.equal((await a.rufe("POST", "/api/ki/konto-fertig", { id: k2 })).status, 404);
-    assert.equal((await a.rufe("POST", "/api/ki/konto-abbruch", { id: "../../x" })).status, 400, "nur acht Hex-Zeichen");
+    assert.equal((await a.rufe("POST", "/api/ki/konto-abbruch", { id: id2 })).status, 200, "ein zweiter Abbruch schadet nicht");
+    assert.equal((await a.rufe("POST", "/api/ki/konto-fertig", { id: id2 })).status, 404);
+    assert.equal((await a.rufe("POST", "/api/ki/konto-abbruch", { id: "../../x" })).status, 400, "nur eine Konto-Kennung");
     assert.equal((await a.rufe("POST", "/api/ki/konto-fertig", {})).status, 400);
   });
 });
 
-test(".neu-Ordner: Zeitablauf, Neustart und Verweise — verwaiste Ordner räumt der Abgleich weg, nie ein Verweis oder fremder Name; gleicher Name zweimal geht nicht", async () => {
+test("Ausstehende Konten: Zeitablauf und liegengebliebene räumt der Abgleich weg; gelöscht wird nur ein echter Ordner, den Kortex angelegt hat (nie Verweise, fremde Orte, Dateien)", async () => {
   const a = aufbau();
   await mitHome(a.home, async () => {
     const r = await a.rufe("POST", "/api/ki/konto-neu", { programm: "claude", name: "Langsam" });
-    const kennung = r.j.ausstehend.id;
+    const id = r.j.ausstehend.id;
     // gleicher Name, solange das erste noch läuft
     const doppelt = await a.rufe("POST", "/api/ki/konto-neu", { programm: "claude", name: "langsam" });
     assert.equal(doppelt.status, 409); assert.equal(doppelt.j.art, "name-doppelt");
-    assert.deepEqual(neuOrdner(a), [`.neu-${kennung}`], "der abgewiesene Versuch hat nichts angelegt");
-    // vor Ablauf bleibt der Eintrag
-    a.h.konten.raeumeNeu();
-    assert.deepEqual(neuOrdner(a), [`.neu-${kennung}`]);
-    // nach 31 Minuten räumt der nächste Abgleich (oder jeder neue Versuch) auf, und das Bestätigen geht nicht mehr
+    assert.equal(ausstehende(a).length, 1, "der abgewiesene Versuch hat nichts angelegt");
+    assert.equal(a.h.konten.raeumeNeu(), 0, "vor Ablauf bleibt der Eintrag");
+    // nach 31 Minuten räumt der nächste Abgleich auf, und das Bestätigen geht nicht mehr
     const echt = Date.now;
     Date.now = () => echt() + 31 * 60_000;
     try { await a.rufe("POST", "/api/ki/konten/abgleich", {}); } finally { Date.now = echt; }
-    assert.deepEqual(neuOrdner(a), [], "abgelaufen: der Ordner ist weg");
-    const f = await a.rufe("POST", "/api/ki/konto-fertig", { id: kennung });
+    assert.equal(ausstehende(a).length, 0); assert.equal(existsSync(r.j.ausstehend.pfad), false, "abgelaufen: Konto und Ordner sind weg");
+    const f = await a.rufe("POST", "/api/ki/konto-fertig", { id });
     assert.equal(f.status, 404); assert.equal(f.j.art, "abgelaufen");
-    assert.equal((await a.rufe("GET", "/api/ki/konten")).j.konten.length, 0);
 
-    // Neustart (die Werkstatt kennt den Eintrag nicht mehr): verwaiste Ordner gehen beim nächsten Abgleich weg; Verweise, Dateien und fremde Namen bleiben unberührt
+    // Sicherheit: eingetragene Marken auf Orte, die Kortex nicht angelegt hat — der Eintrag fällt weg, der Ort bleibt unberührt
     mkdirSync(a.wurzel, { recursive: true, mode: 0o700 });
-    mkdirSync(join(a.wurzel, ".neu-deadbeef"), { mode: 0o700 });
-    writeFileSync(join(a.wurzel, ".neu-deadbeef", "x"), "x");
     const fremd = tmp("brain-fremd-"); writeFileSync(join(fremd, "wichtig.txt"), "bleibt");
-    symlinkSync(fremd, join(a.wurzel, ".neu-cafebabe"));
-    writeFileSync(join(a.wurzel, ".neu-00000000"), "datei");
-    mkdirSync(join(a.wurzel, ".neu-xyz"), { mode: 0o700 });
-    mkdirSync(join(a.wurzel, ".neu-DEADBEE1"), { mode: 0o700 });
-    mkdirSync(join(a.wurzel, "claude-eigen"), { mode: 0o700 });
+    symlinkSync(fremd, join(a.wurzel, "claude-verweis"));
+    writeFileSync(join(a.wurzel, "claude-datei"), "datei");
+    mkdirSync(join(a.wurzel, "claude-eigen"), { mode: 0o700 }); // ein echter Ordner OHNE Marke: bleibt
+    const aussen = tmp("brain-aussen-"); writeFileSync(join(aussen, "x.txt"), "bleibt");
+    const mark = (programm, ordner, name) => ({ programm, ordner, standard: false, name, ordnerKennung: "", seit: new Date().toISOString(), ausstehend: { seit: 1, stufe: "gesperrt" } });
+    G.aendere(a.s, (alt) => { Object.assign(alt.konten, { k_00000001: mark("claude", join(a.wurzel, "claude-verweis"), "V"), k_00000002: mark("claude", join(a.wurzel, "claude-datei"), "D"), k_00000003: mark("claude", aussen, "A"), k_00000004: mark("claude", join(a.home, ".claude"), "S") }); return alt; });
+    mkdirSync(join(a.home, ".claude"), { recursive: true }); writeFileSync(join(a.home, ".claude", "settings.json"), "{}");
     await a.rufe("POST", "/api/ki/konten/abgleich", {});
-    assert.equal(existsSync(join(a.wurzel, ".neu-deadbeef")), false, "das verwaiste .neu-<id> ist weg");
-    assert.ok(lstatSync(join(a.wurzel, ".neu-cafebabe")).isSymbolicLink(), "ein Verweis bleibt");
+    assert.deepEqual(Object.keys(G.liesKonten(a.s).daten.konten).filter((i) => /^k_0000000/.test(i)), [], "die Einträge sind aus der Liste");
+    assert.ok(lstatSync(join(a.wurzel, "claude-verweis")).isSymbolicLink(), "ein Verweis bleibt");
     assert.equal(readFileSync(join(fremd, "wichtig.txt"), "utf8"), "bleibt", "und sein Ziel wird nie angefasst");
-    assert.ok(existsSync(join(a.wurzel, ".neu-00000000")) && existsSync(join(a.wurzel, ".neu-xyz")) && existsSync(join(a.wurzel, ".neu-DEADBEE1")), "nur genau acht kleine Hex-Zeichen");
-    assert.ok(existsSync(join(a.wurzel, "claude-eigen")), "ein Konto-Ordner ohne .neu- bleibt");
+    assert.ok(existsSync(join(a.wurzel, "claude-datei")), "eine Datei bleibt");
+    assert.equal(readFileSync(join(aussen, "x.txt"), "utf8"), "bleibt", "ein Ort außerhalb der Wurzel bleibt");
+    assert.ok(existsSync(join(a.home, ".claude", "settings.json")), "das Standardkonto im Home bleibt");
+    assert.ok(existsSync(join(a.wurzel, "claude-eigen")), "ein Ordner ohne Marke bleibt");
   });
 });
 
@@ -282,19 +298,18 @@ test("Übernahme der früheren Wahl (localStorage → ki-konten.json): offener V
   assert.deepEqual(planeUebernahme(), { setze: [], loesche: [] });
 });
 
-test(".neu-Ordner: scheitert das Eintragen (Name inzwischen vergeben), bleibt der Ordner unter .neu und das Konto fehlt; nichts Halbes", async () => {
+test("Neues Konto: scheitert das Bestätigen (Name inzwischen vergeben), bleibt das Konto ausstehend und der Ordner stehen; der Abbruch räumt es dann weg", async () => {
   const a = aufbau();
   await mitHome(a.home, async () => {
     const r1 = await a.rufe("POST", "/api/ki/konto-neu", { programm: "claude", name: "Doppelt" });
-    // dasselbe Konto taucht zwischendurch über einen anderen Weg in der Liste auf (z. B. von Hand angelegt und umbenannt)
     const eins = await legeAn(a, { programm: "claude", name: "Anders" });
     assert.equal(eins.fertig.status, 200);
-    await a.rufe("POST", "/api/ki/konten", { id: eins.id, name: "Doppelt" });
+    await a.rufe("POST", "/api/ki/konten", { id: eins.id, name: "Doppelt" }); // der Name wird zwischendurch anderswo vergeben
     const f = await a.rufe("POST", "/api/ki/konto-fertig", { id: r1.j.ausstehend.id });
     assert.equal(f.status, 409); assert.equal(f.j.art, "name-doppelt");
-    assert.deepEqual(neuOrdner(a), [`.neu-${r1.j.ausstehend.id}`], "der Ordner bleibt, die Anmeldung geht nicht verloren");
+    assert.equal(ausstehende(a).length, 1, "die Anmeldung geht nicht verloren");
     assert.equal((await a.rufe("GET", "/api/ki/konten")).j.konten.length, 1);
     const ab = await a.rufe("POST", "/api/ki/konto-abbruch", { id: r1.j.ausstehend.id });
-    assert.equal(ab.status, 200); assert.deepEqual(neuOrdner(a), []);
+    assert.equal(ab.status, 200); assert.equal(ausstehende(a).length, 0);
   });
 });

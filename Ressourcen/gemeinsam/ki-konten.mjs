@@ -227,8 +227,10 @@ export function pflegeFuer(daten, vault) {
 export function aktivesKonto(daten, programm) {
   if (!istObj(daten) || !istObj(daten.konten) || typeof programm !== "string") return null;
   const id = istObj(daten.aktiv) ? daten.aktiv[programm] : undefined;
-  if (typeof id === "string" && KONTO_ID.test(id) && Object.hasOwn(daten.konten, id) && istObj(daten.konten[id]) && daten.konten[id].programm === programm) return id;
-  const eigene = Object.entries(daten.konten).filter(([, k]) => istObj(k) && k.programm === programm);
+  // ein Konto, dessen Anmeldung noch läuft (`ausstehend`), gibt es für niemanden: es ist nie aktiv und zählt auch nicht als „das einzige Konto“
+  const da = (k) => istObj(k) && !istObj(k.ausstehend);
+  if (typeof id === "string" && KONTO_ID.test(id) && Object.hasOwn(daten.konten, id) && da(daten.konten[id]) && daten.konten[id].programm === programm) return id;
+  const eigene = Object.entries(daten.konten).filter(([, k]) => da(k) && k.programm === programm);
   return eigene.length === 1 ? eigene[0][0] : null;
 }
 // → Kennung des aktiven Kontos eines Programms aus der Liste im Support-Ordner; null, wenn es keine lesbare Liste oder kein aktives Konto gibt (nie ein Fehler).

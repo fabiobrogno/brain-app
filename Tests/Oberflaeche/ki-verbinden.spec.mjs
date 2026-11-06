@@ -260,9 +260,9 @@ test("Konto hinzufügen: eigener Ordner, startet gesperrt, wird gewählt, Anmeld
   await dlg(page).locator('[data-aktion="konto-neu-ok"]').click();
   expect(z.kz.log("/api/ki/konto-neu")[0].body).toEqual({ programm: "claude", name: "Kunde", stufe: "gesperrt" });
   await expect(dlg(page).locator('[data-kv="anmelden"]')).toBeVisible();
-  await expect(dlg(page).locator(".kv-konto"), "das Konto steht erst nach bestätigter Anmeldung in der Liste (bis dahin nur der Ordner .neu-<id>)").toHaveCount(2);
+  await expect(dlg(page).locator(".kv-konto"), "das Konto steht erst nach bestätigter Anmeldung in der Liste (bis dahin ausstehend und unsichtbar)").toHaveCount(2);
   expect(z.kz.log("/api/ki/anmelden")).toHaveLength(1);
-  expect(z.kz.log("/api/ki/anmelden")[0].body.ordner).toMatch(/\/\.neu-\d{8}$/);
+  expect(z.kz.log("/api/ki/anmelden")[0].body.ordner).toMatch(/\/ki-konten-ordner\/claude-kunde$/); // gleich der endgültige Ordner
   z.kz.neuAngemeldet = true;
   await dlg(page).locator('[data-aktion="anmelden-pruefen"]').click();
   await expect(dlg(page).locator(".kv-konto")).toHaveCount(3);

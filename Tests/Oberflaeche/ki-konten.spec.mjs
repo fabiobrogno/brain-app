@@ -230,9 +230,9 @@ test("Konto hinzufügen: öffnet den Ablauf „KI verbinden“ beim Konto; eigen
   await d.locator('[data-aktion="konto-neu-ok"]').click();
   await expect(d.locator('[data-kv="anmelden"]')).toBeVisible(); // das Anmelden beginnt im selben Ablauf
   expect(z.log("/api/ki/konto-neu").at(-1).body).toEqual({ programm: "claude", name: "Kunde Müller", stufe: "gesperrt" }); // neue Konten starten immer gesperrt
-  // der Ordner heißt .neu-<id>, das Konto steht noch NICHT in der Liste
+  // der Ordner trägt gleich seinen endgültigen Namen, das Konto steht noch NICHT in der Liste (ausstehend, unsichtbar)
   const neu = Object.values(z.ausstehend)[0];
-  expect(neu.pfad).toMatch(/\/ki-konten-ordner\/\.neu-[0-9]{8}$/);
+  expect(neu.pfad).toMatch(/\/ki-konten-ordner\/claude-kunde-m/);
   expect(z.log("/api/ki/anmelden").at(-1).body.ordner).toBe(neu.pfad);
   expect(z.konten.some((x) => x.name === "Kunde Müller")).toBe(false);
   await expect(page.locator('.kx-konto[data-konto^="k_neu"]')).toHaveCount(0);
@@ -253,7 +253,7 @@ test("Konto hinzufügen: öffnet den Ablauf „KI verbinden“ beim Konto; eigen
   await dlg(page, "ki-verbinden").locator('[data-aktion="anmelden-pruefen"]').click();
   await expect.poll(() => z.log("/api/ki/konto-fertig").length).toBe(1);
   const k = z.konten.find((x) => x.name === "Kunde Müller");
-  expect(k.pfad).toContain("/Library/Application Support/Kortex/ki-konten-ordner/claude-kunde-m");
+  expect(k.pfad, "der Pfad ist vor und nach der Anmeldung derselbe").toBe(neu.pfad);
   await page.keyboard.press("Escape");
   await expect(dlg(page, "ki-verbinden")).toHaveCount(0);
   await expect(konto(page, k.id)).toBeVisible();
