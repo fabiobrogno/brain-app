@@ -30,7 +30,7 @@ function platzhalterSkript() {
 
 let server, vo;
 async function aufbauen({ skript = platzhalterSkript() } = {}) {
-  vo = realpathSync.native(mkdtempSync(join(tmpdir(), "kortex-vorschau-ui-")));
+  vo = realpathSync(mkdtempSync(join(tmpdir(), "kortex-vorschau-ui-")));
   writeFileSync(join(vo, ".kortex-vorschau"), "");
   for (const d of ["home", "support", "bin", "tmp"]) mkdirSync(join(vo, d));
   const home = join(vo, "home"), support = join(vo, "support"), bin = join(vo, "bin");
@@ -48,7 +48,7 @@ async function aufbauen({ skript = platzhalterSkript() } = {}) {
   git(vault, "add", "--", ...Object.keys(seiten));
   git(vault, "commit", "-q", "-m", "Brain angelegt");
   const profil = join(home, ".claude"); mkdirSync(profil); writeFileSync(join(profil, "settings.json"), "{}");
-  const ordner = realpathSync.native(profil), v = realpathSync.native(vault);
+  const ordner = realpathSync(profil), v = realpathSync(vault);
   K.aendere(support, () => ({ version: 1,
     konten: { k_aaaaaaaa: { programm: "claude", ordner, standard: true, name: "Claude Code", ordnerKennung: K.kennungVon(ordner), abo: "max" } },
     vaults: { [v]: { ordnerKennung: K.kennungVon(v), neueKonten: "gesperrt", ohneKonto: "gesperrt", konten: { k_aaaaaaaa: "lesen" } } } }));

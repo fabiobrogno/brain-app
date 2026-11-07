@@ -11,7 +11,7 @@ const wurzel = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 export const START = join(wurzel, "Ressourcen/werkstatt/start.mjs");
 
 export async function starteBrowserDienst({ vault = null, path = process.env.PATH, extra = {} } = {}) {
-  const home = realpathSync.native(mkdtempSync(join(tmpdir(), "kortex-browser-ui-")));
+  const home = realpathSync(mkdtempSync(join(tmpdir(), "kortex-browser-ui-")));
   const support = join(home, "support");
   mkdirSync(support, { recursive: true });
   const env = { PATH: path, HOME: home, USERPROFILE: home, APPDATA: join(home, "AppData", "Roaming"), LOCALAPPDATA: join(home, "AppData", "Local"), BRAIN_APP_SUPPORT: support, BRAIN_TESTMODUS: "1", KORTEX_VAULT_VERTRAUT: "alle", TZ: "Europe/Berlin", ...extra };

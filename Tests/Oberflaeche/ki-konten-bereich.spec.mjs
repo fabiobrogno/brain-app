@@ -13,7 +13,7 @@ import { mockeKontingent, ZUSTAND } from "./mocks-kontingent.mjs";
 import { BEREICHE } from "../../Ressourcen/studio/texte-einstellungen.js";
 
 let vault, server;
-test.beforeEach(async () => { ({ vault } = baueVault()); vault = realpathSync.native(vault); writeFileSync(join(vault, "brain.config.json"), JSON.stringify({ name: "Kortex", automatik: {} }, null, 2) + "\n"); server = await starteServer(vault); }); // die App-Einstellungen schreiben mit dem Stand beider Speicher: ohne Konfiguration im Vault gibt es keinen gültigen Stand
+test.beforeEach(async () => { ({ vault } = baueVault()); vault = realpathSync(vault); writeFileSync(join(vault, "brain.config.json"), JSON.stringify({ name: "Kortex", automatik: {} }, null, 2) + "\n"); server = await starteServer(vault); }); // die App-Einstellungen schreiben mit dem Stand beider Speicher: ohne Konfiguration im Vault gibt es keinen gültigen Stand
 test.afterEach(() => server?.stopp());
 
 const shot = (name) => join(process.env.UI_SHOTS || "screenshots", `ki-e4-${name}.png`);

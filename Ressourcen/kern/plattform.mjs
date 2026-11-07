@@ -1,7 +1,7 @@
 // gemeinsam/plattform.mjs — die EINE Stelle für Unterschiede zwischen macOS, Windows und Linux (Plan docs/plaene/plattformen-windows-linux.md, Paket W0).
 // Neue Betriebssystem-Befehle im Node-Code gehören hierher, nicht verstreut in andere Dateien. Alles ist über `plattform`/`env`/`home` einspritzbar (Tests).
 // Eine Kopie liegt wortgleich in kern/plattform.mjs (der Kern importiert nichts aus gemeinsam/); Tests/Node/plattform.test.mjs vergleicht beide.
-import { readFileSync, existsSync, realpathSync } from "node:fs";
+import { readFileSync, existsSync, realpathSync, openSync, ftruncateSync, writeSync, closeSync } from "node:fs";
 import { join } from "node:path";
 import { homedir, hostname, userInfo } from "node:os";
 import { execFile, execFileSync, spawnSync, spawn } from "node:child_process";
@@ -30,6 +30,13 @@ export const NICHT_VERFUEGBAR = "nicht verfügbar auf diesem System";
 export function nurMac(was, fn, { plattform = process.platform } = {}) {
   if (!istMac(plattform)) return { ok: false, nichtVerfuegbar: true, text: `${was}: ${NICHT_VERFUEGBAR}` };
   return { ok: true, wert: fn() };
+}
+
+// Überschreibt eine BESTEHENDE Datei, ohne sie neu anzulegen. Windows: Git markiert die Zeigerdatei `.git` einer Arbeitskopie als versteckt, und writeFileSync (Öffnen mit „neu anlegen“) scheitert dort
+// auf versteckten Dateien mit EPERM — öffnen zum Lesen und Schreiben und kürzen geht überall.
+export function schreibeAufBestehendes(pfad, text) {
+  const fd = openSync(pfad, "r+");
+  try { ftruncateSync(fd, 0); writeSync(fd, text, 0); } finally { closeSync(fd); }
 }
 
 // ───────────── Prozesse ─────────────

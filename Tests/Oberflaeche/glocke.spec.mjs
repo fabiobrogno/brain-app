@@ -15,7 +15,7 @@ const WURZEL = join(fileURLToPath(new URL(".", import.meta.url)), "..", "..");
 const protokoll = await import(pathToFileURL(join(WURZEL, "Ressourcen/gemeinsam/aktivitaet.mjs")).href);
 
 let vault, server;
-test.beforeEach(async () => { ({ vault } = baueVault()); vault = realpathSync.native(vault); server = await starteServer(vault); });
+test.beforeEach(async () => { ({ vault } = baueVault()); vault = realpathSync(vault); server = await starteServer(vault); });
 test.afterEach(() => { server?.stopp(); server = null; });
 
 const shot = (name) => join(process.env.UI_SHOTS || "screenshots", `glocke-${name}.png`);

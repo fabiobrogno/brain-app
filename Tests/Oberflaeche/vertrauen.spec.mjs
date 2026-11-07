@@ -16,7 +16,7 @@ test.afterEach(() => server?.stopp());
 const shot = (name) => join(process.env.UI_SHOTS || "screenshots", `vertrauen-${name}.png`);
 const NOTIZ = "10_notizen/Reise nach Lissabon.md";
 // Der Vault, den die Frage zeigt und beim Erlauben mitschickt (die Werkstatt meldet den echten Pfad, auch hinter Verweisen wie /var → /private/var)
-const echt = () => realpathSync.native(vault);
+const echt = () => realpathSync(vault);
 const dialogVertrauen = (page) => page.locator('.dialog[data-dialog="vertrauen"]');
 // Öffnet das Menü der Statusleiste (Zahnrad) und wartet auf den Eintrag. Ein Popover schließt bei jedem fremden Scroll-, Resize- oder Blur-Ereignis; solange die Seite noch nachlädt
 // (Liste, Verlauf, Gesundheit), kann das Menü gleich wieder zugehen. Darum: nur klicken, wenn es nicht offen ist, bis der Eintrag steht (Bedingung, nicht blindes Wiederholen).

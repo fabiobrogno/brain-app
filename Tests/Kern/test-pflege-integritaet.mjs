@@ -12,6 +12,7 @@ import { KERN } from "../pfade.mjs";
 import { isoliere, git, JETZT } from "./tageslauf-hilfe.mjs";
 import { hook } from "./verlauf-fixture.mjs";
 import { fakeSonnet, neuerPflegeVault, pflegeCtx, seite } from "./pflege-hilfe.mjs";
+import { schreibeAufBestehendes } from "../plattform.mjs"; // Windows: `.git` der Arbeitskopie ist versteckt (writeFileSync scheitert dort mit EPERM)
 const I = await import("../tageslauf/inbox-schritt.mjs");
 const P = await import("../tageslauf/pflege-kopie.mjs");
 const G = await import("../tageslauf/integritaet.mjs");
@@ -82,7 +83,7 @@ const MUTATIONEN = [
   ["neue Datei im Arbeitsbaum", "Arbeitsbaum/heimlich.txt", ({ v }) => schreibe(join(v, "heimlich.txt"), einmalig("x"))],
   ["HEAD des Vaults", "HEAD", ({ v }) => { schreibe(join(v, "n.txt"), einmalig("x")); git(v, "add", "--", "n.txt"); git(v, "commit", "-qm", "x"); }],
   ["Werkzeug-Code der Kopie", "Arbeitskopie/.tools/neu.mjs", ({ kopie }) => schreibe(join(kopie.pfad, ".tools", "neu.mjs"), einmalig("//"))],
-  ["Worktree-Zeiger der Kopie", "Arbeitskopie/.git", ({ kopie }) => { try { chmodSync(join(kopie.pfad, ".git"), 0o666); } catch { /* Windows: Schreibschutz-Attribut */ } writeFileSync(join(kopie.pfad, ".git"), einmalig("gitdir: /woanders")); }],
+  ["Worktree-Zeiger der Kopie", "Arbeitskopie/.git", ({ kopie }) => schreibeAufBestehendes(join(kopie.pfad, ".git"), einmalig("gitdir: /woanders"))],
   ["Claude-Settings der Kopie", "Arbeitskopie/.claude/settings.json", ({ kopie }) => schreibe(join(kopie.pfad, ".claude", "settings.json"), einmalig("{}"))],
   ["MCP-Datei der Kopie", "Arbeitskopie/.mcp.json", ({ kopie }) => schreibe(join(kopie.pfad, ".mcp.json"), einmalig("{}"))],
   ["Rückfrage-Datei (Freigabe)", "00_inbox/_rueckfragen/rf-x.md", ({ v }) => schreibe(join(v, "00_inbox", "_rueckfragen", "rf-x.md"), einmalig("antwort: uebernehmen"))],

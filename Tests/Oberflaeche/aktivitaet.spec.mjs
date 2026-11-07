@@ -21,7 +21,7 @@ const protokoll = await import(pathToFileURL(join(WURZEL, "Ressourcen/gemeinsam/
 const studio = (datei) => import(pathToFileURL(join(WURZEL, "Ressourcen/studio", datei)).href);
 
 let vault, server;
-test.beforeEach(async () => { ({ vault } = baueVault()); vault = realpathSync.native(vault); server = await starteServer(vault); });
+test.beforeEach(async () => { ({ vault } = baueVault()); vault = realpathSync(vault); server = await starteServer(vault); });
 test.afterEach(() => server?.stopp());
 
 const shot = (name) => join(process.env.UI_SHOTS || "screenshots", `akt-${name}.png`);

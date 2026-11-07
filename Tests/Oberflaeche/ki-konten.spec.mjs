@@ -11,7 +11,7 @@ import { mockeV2 } from "./mocks.mjs";
 import { mockeKonten, KONTEN, PROGRAMME, KERN } from "./mocks-konten.mjs";
 
 let vault, server;
-test.beforeEach(async () => { ({ vault } = baueVault()); vault = realpathSync.native(vault); server = await starteServer(vault); });
+test.beforeEach(async () => { ({ vault } = baueVault()); vault = realpathSync(vault); server = await starteServer(vault); });
 test.afterEach(() => server?.stopp());
 
 const shot = (name) => join(process.env.UI_SHOTS || "screenshots", `ki-${name}.png`);

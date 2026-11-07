@@ -18,7 +18,7 @@ test.beforeEach(async ({ page }) => {
     "Vorlagen/Besprechung.md": "# {{titel}}\n",
     "Tagebuch/2026-11-01.md": "# Sonntag, 1. November 2026\n",
   });
-  const home = realpathSync.native(mkdtempSync(join(tmpdir(), "kortex-sint-home-")));
+  const home = realpathSync(mkdtempSync(join(tmpdir(), "kortex-sint-home-")));
   server = await starteServer(vault, { umgebung: { PATH: process.env.PATH, HOME: home, TMPDIR: home, TZ: "Europe/Berlin", LANG: "de_DE.UTF-8", GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: join(home, ".gitconfig") } });
   await page.clock.setFixedTime(JETZT);
   await page.addInitScript(() => { window.__journalMs = 300; }); // Entwurfs-Journal im Test alle 0,3 s statt alle 5 s

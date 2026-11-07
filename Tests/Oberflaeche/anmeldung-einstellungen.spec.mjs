@@ -8,7 +8,7 @@ import { mockeV2 } from "./mocks.mjs";
 import { mockeKonten, KONTEN, PROGRAMME } from "./mocks-konten.mjs";
 
 let vault, server;
-test.beforeEach(async () => { ({ vault } = baueVault()); vault = realpathSync.native(vault); server = await starteServer(vault); });
+test.beforeEach(async () => { ({ vault } = baueVault()); vault = realpathSync(vault); server = await starteServer(vault); });
 test.afterEach(() => server?.stopp());
 const NOTIZ = "10_notizen/Reise nach Lissabon.md";
 const FIRMA = { id: "k_aaaa0004", programm: "claude", programmName: "Claude Code", name: "Firma", standard: false, ordner: "~/.claude-firma", pfad: "/Users/test/.claude-firma", vorhanden: true, verbunden: false };
