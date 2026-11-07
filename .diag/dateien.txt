@@ -1,2 +1,1 @@
-kern-verdrahtung.test.mjs
 ki-konten.test.mjs
