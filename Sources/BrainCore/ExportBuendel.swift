@@ -20,7 +20,7 @@ public struct ExportBuendel: Equatable, Sendable {
     public static let maxDateien = 2000
     public static let maxBytes = 96 * 1024 * 1024
     public static let maxPfad = 240
-    public static let maxTiefe = 8
+    public static let maxTiefe = 16
 
     /// `wert` = { name, haupt, ordner?, dateien: [{ pfad, text } | { pfad, base64 }] } oder nil.
     public static func pruefe(_ wert: Any?) -> ExportBuendel? {

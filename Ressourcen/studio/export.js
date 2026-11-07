@@ -112,10 +112,11 @@ export function erzeugeExport(ctx) {
   // ───────────── Kopieren ─────────────
   async function kopiereText(text) {
     try { await navigator.clipboard.writeText(text); return true; } catch { /* Rückfall unten */ }
-    const t = h("textarea", { style: "position:fixed;left:-9999px;top:0", "aria-hidden": "true" });
-    t.value = text; document.body.append(t); t.select();
+    const el = h("div", { style: "position:fixed;left:-9999px;top:0;white-space:pre", "aria-hidden": "true", text });
+    document.body.append(el);
+    const sel = getSelection(); const rg = document.createRange(); rg.selectNodeContents(el); sel.removeAllRanges(); sel.addRange(rg);
     let ok = false; try { ok = document.execCommand("copy"); } catch { ok = false; }
-    t.remove();
+    sel.removeAllRanges(); el.remove();
     return ok;
   }
   async function liesMarkdown(pfad) {

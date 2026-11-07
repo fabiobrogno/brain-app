@@ -80,6 +80,7 @@ test("Vervollständigung: # im Text bietet Tags an, Enter übernimmt; in Übersc
   await expect(liste.locator("li")).toContainText(["projekt", "projekt/atlas", "projekt/zeitplan"]);
   await bild(page, "03-tag-vervollstaendigung");
   await page.keyboard.press("ArrowDown");
+  await expect(liste.locator('li[aria-selected="true"]')).toContainText("projekt/atlas");
   await page.keyboard.press("Enter");
   await expect(page.locator(".cm-content .cm-line").last()).toHaveText("Neu #projekt/atlas");
   // Überschrift: kein Menü

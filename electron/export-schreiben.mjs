@@ -5,7 +5,7 @@ import { mkdirSync, writeFileSync, renameSync, lstatSync, realpathSync, existsSy
 import { join, dirname, basename } from "node:path";
 import { randomBytes } from "node:crypto";
 
-export const MAX_DATEIEN = 2000, MAX_BYTES = 96 * 1024 * 1024, MAX_PFAD = 240, MAX_TIEFE = 8, MAX_HTML = 80 * 1024 * 1024, MAX_TEIL_TEXT = 8 * 1024 * 1024;
+export const MAX_DATEIEN = 2000, MAX_BYTES = 96 * 1024 * 1024, MAX_PFAD = 240, MAX_TIEFE = 16, MAX_HTML = 80 * 1024 * 1024, MAX_TEIL_TEXT = 8 * 1024 * 1024;
 const STEUER = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
 
 export function sicherePfad(p) {

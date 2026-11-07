@@ -16,7 +16,7 @@ const ok = [{ pfad: "Atlas.md", text: "# Atlas\n![](bilder/a1b2c3d4-karte.png)\n
 test("pruefeBuendel: gültiges Bündel, Pfade, Namen, Größen, Duplikate", () => {
   const b = X.pruefeBuendel(buendel(ok));
   assert.equal(b.name, "Atlas.md"); assert.equal(b.dateien.length, 2); assert.equal(b.dateien[1].daten.length, 8); assert.equal(b.ordner, false);
-  for (const schlecht of ["../x.md", "/etc/passwd", "a/../b.md", "a//b.md", ".versteckt/x.md", "a\\b.md", "C:x.md", "a/./b", "", "x\0y.md", "a/‮b.md", "a/b/c/d/e/f/g/h/i.md"]) {
+  for (const schlecht of ["../x.md", "/etc/passwd", "a/../b.md", "a//b.md", ".versteckt/x.md", "a\\b.md", "C:x.md", "a/./b", "", "x\0y.md", "a/‮b.md", "a/b/c/d/e/f/g/h/i/j/k/l/m/n/o/p/q.md"]) {
     assert.equal(X.pruefeBuendel(buendel([ok[0], { pfad: schlecht, text: "böse" }])), null, JSON.stringify(schlecht));
   }
   assert.equal(X.pruefeBuendel(buendel(ok, { haupt: "fehlt.md" })), null, "Hauptdatei muss im Bündel stehen");

@@ -18,7 +18,7 @@ function aufbau() {
   mkdirSync(join(d, "n/bilder"), { recursive: true });
   writeFileSync(join(d, "n/bilder/a.png"), PNG);
   writeFileSync(join(d, "n/bilder/gross name.png"), Buffer.concat([PNG, Buffer.from("x")]));
-  symlinkSync(join(aussen, "geheim.png"), join(d, "n/bilder/link.png"));
+  try { symlinkSync(join(aussen, "geheim.png"), join(d, "n/bilder/link.png")); } catch { /* Windows ohne Symlink-Recht: das Bild fehlt dann, der Export lässt den Verweis unberührt */ }
   schreibe(d, "n/eins.md", "---\ntitle: Eins\ntags: [t]\n---\n# Eins\n\nText ![Bild A](bilder/a.png) und ![[gross name.png|200]] und ![x](../../geheim.png) ![y](bilder/link.png) ![z](https://evil.example/p.png) ![w](bilder/fehlt.png)\n\n```\n![code](bilder/a.png)\n```\n");
   schreibe(d, "n/zwei.md", "Ohne Überschrift #tag\n\n![nochmal](bilder/a.png)\n");
   schreibe(d, "n/unter/drei.md", "# Drei\n\n![hoch](../bilder/a.png)\n");
