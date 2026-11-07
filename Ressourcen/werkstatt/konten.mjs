@@ -26,6 +26,8 @@ import { readFileSync, realpathSync, lstatSync, mkdirSync, renameSync, writeFile
 import { join, dirname, sep } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { HttpFehler, testmodus } from "../gemeinsam/basis.mjs";
+import { prozessStart } from "../gemeinsam/plattform.mjs";
+import { lebt } from "./browser-sperre.mjs";
 import * as vertrauenFn from "../gemeinsam/vertrauen.mjs";
 import { STUFEN, ABOS, kontenPfad, pruefeDaten, stelleVorherWiederHer, sichereSpur, liesKonten, aendere, repariere, leerDaten, neueId, pruefeName, KONTO_ID, vaultEintrag, stufeFuer, kennungVon, echterOrt, stufeNr, darfMindestens, PFLEGE_STUFEN, pflegeFuer, pflegeWirksam, aktivesKonto } from "../gemeinsam/ki-konten.mjs";
 import { vaultRegeln, sandboxPfade, einstellungsRegeln, sandboxGeheim, sandboxSchreibschutz, eineSicherung, tragRegelnEin, nimmRegelnHeraus, liesRegelStand, gleicheSandboxAb, liesSandboxStand } from "../gemeinsam/claude-sperre.mjs";
@@ -713,14 +715,16 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
     aendere(support, (alt) => { if (alt && Object.hasOwn(alt.konten, id) && istObj(alt.konten[id].ausstehend)) streicheKonto(alt, id); return alt; });
     return weg;
   }
-  // Räumt auf: abgelaufene und liegengebliebene (kein laufender Versuch dieses Prozesses) ausstehende Konten. → Zahl der entfernten
+  // Die Anmeldung eines ausstehenden Kontos gehört einer anderen, noch lebenden Werkstatt (pid + Startzeit im Eintrag): nie wegräumen, solange sie lebt und die 30 Minuten nicht um sind.
+  const fremdeAnmeldungLebt = (a) => Number.isInteger(a.pid) && a.pid !== process.pid && lebt({ pid: a.pid, start: a.start });
+  // Räumt auf: abgelaufene und liegengebliebene (weder ein laufender Versuch dieses Prozesses noch einer lebenden anderen Werkstatt) ausstehende Konten. → Zahl der entfernten
   function raeumeNeu() {
     const d = ladeAlle();
     if (!d) return 0;
     let n = 0;
     for (const [id, k] of Object.entries(d.konten)) {
       if (!istObj(k.ausstehend)) continue;
-      if (ausstehendJetzt.has(id) && Date.now() - (Number(k.ausstehend.seit) || 0) <= NEU_MS) continue;
+      if ((ausstehendJetzt.has(id) || fremdeAnmeldungLebt(k.ausstehend)) && Date.now() - (Number(k.ausstehend.seit) || 0) <= NEU_MS) continue;
       if (verwirfAusstehend(id)) n++;
     }
     return n;
@@ -752,7 +756,7 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
         id = Object.entries(daten.konten).find(([, k]) => k.programm === e.programm && falte(k.ordner) === falte(roh))?.[0] || null;
         if (!id) throw new HttpFehler(500, "Das neue Konto ließ sich nicht eintragen.");
         daten.konten[id].name = name;
-        daten.konten[id].ausstehend = { seit: Date.now(), stufe };
+        daten.konten[id].ausstehend = { seit: Date.now(), stufe, pid: process.pid, start: prozessStart(process.pid) || "" };
         return daten;
       });
     } catch (err) { try { rmSync(ordner, { recursive: true, force: true }); } catch { /* bleibt liegen: der nächste Abgleich meldet es als neu erkanntes Konto */ } throw err; }

@@ -353,7 +353,7 @@ function sicherungVault(host) {
       return zeile({ text: TE.sichGesichert, zustand: "gesichert" }, `${g.upstream}${spaet}`, stand, knopfS({ text: TE.sichJetzt, daten: { "data-aktion": "sync" }, aufKlick: () => { Z.k.sync(); } }));
     }
     if (g.remote) return zeile({ text: TE.sichBereit, zustand: "bereit" }, "Der Vault ist mit einem Server verbunden, aber es wurde noch nichts gesendet.", null, knopfS({ text: TE.sichJetzt, daten: { "data-aktion": "sync" }, aufKlick: () => { Z.k.sync(); } }));
-    return zeile({ text: TE.sichNurMac, zustand: "nur-mac" }, "Dieser Vault liegt nur auf deinem Mac. Mit einer Sicherung bei GitHub liegt zusätzlich eine Kopie im Netz.", null,
+    return zeile({ text: TE.sichNurMac, zustand: "nur-mac" }, TE.sichNurMacText, null,
       knopfS({ text: TE.sichEinrichten, variante: "primaer", daten: { "data-aktion": "sicherung-einrichten" }, aufKlick: () => Z.k.oeffneRemote() }));
   };
   host.replaceChildren(skelett("ez-skelett", 52));

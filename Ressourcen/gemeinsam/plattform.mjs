@@ -45,10 +45,24 @@ export function beendeBaum(kind, signal = "SIGKILL", { plattform = process.platf
 // Startzeit eines Prozesses (gegen PID-Wiederverwendung bei Sperren). Werkstatt und MCP-Server laufen mit verschiedenem LANG/LC_ALL/TZ, die Ausgabe von ps hängt davon ab —
 // darum absoluter Pfad und feste Umgebung (C, UTC). Windows: PowerShell (ISO-Zeit in UTC). Leer = unbekannt.
 export const PS_ENV = { LC_ALL: "C", LANG: "C", TZ: "UTC", PATH: "/bin:/usr/bin" };
-export function prozessStart(pid, { plattform = process.platform, ausfuehren = execFileSync } = {}) {
+// Unter Windows kostet jede Abfrage einen PowerShell-Start (oft 1–3 s; auf den CI-Runnern mehr). Darum merkt sich Kortex Treffer: die Startzeit des EIGENEN Prozesses ändert sich nie (für immer),
+// die eines fremden gilt 10 s (die Sperre des Browser-Dienstes fragt beim Warten auf einen startenden Dienst wiederholt dieselbe PID). Leer (= unbekannt) wird nie gemerkt.
+// Der Speicher gilt nur für das echte System (`ausfuehren` nicht ersetzt) oder wenn ihn der Aufrufer (Tests) mitgibt.
+const FREMD_MS = 10_000;
+const START_SPEICHER = new Map();
+export function prozessStart(pid, { plattform = process.platform, ausfuehren = execFileSync, speicher = ausfuehren === execFileSync ? START_SPEICHER : null, jetzt = Date.now } = {}) {
+  const schluessel = `${plattform}:${Number(pid)}`;
+  const gemerkt = speicher?.get(schluessel);
+  if (gemerkt && gemerkt.bis > jetzt()) return gemerkt.wert;
+  const wert = frageProzessStart(pid, plattform, ausfuehren);
+  if (speicher && wert) speicher.set(schluessel, { wert, bis: Number(pid) === process.pid ? Infinity : jetzt() + FREMD_MS });
+  return wert;
+}
+function frageProzessStart(pid, plattform, ausfuehren) {
   if (istWindows(plattform)) {
     try {
-      return String(ausfuehren("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", `(Get-Process -Id ${Number(pid)} -ErrorAction Stop).StartTime.ToUniversalTime().ToString('o')`],
+      // .NET direkt statt `Get-Process` (lädt kein Cmdlet-Modul, spart beim Start)
+      return String(ausfuehren("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", `([System.Diagnostics.Process]::GetProcessById(${Number(pid)})).StartTime.ToUniversalTime().ToString('o')`],
         { encoding: "utf8", timeout: 10_000, stdio: ["ignore", "pipe", "ignore"], windowsHide: true })).trim();
     } catch { return ""; }
   }

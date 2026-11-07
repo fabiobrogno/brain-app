@@ -2,8 +2,9 @@
 // Regeln: jeder Fehlertext nennt den nächsten Schritt; nichts wird als erledigt gemeldet, bevor es geschehen ist. Die Namen der Stufen und der Anmeldung stehen weiter in
 // texte-einrichtung.js (TE.ki.stufen), texte-konten.js (TK) und texte-ki-einstellungen.js (TKE.anmeldung): eine Quelle, nicht zwei.
 import { PRODUKT } from "./texte.js";
+import { plattformTexte } from "./plattform-texte.js";
 
-export const TKV = {
+export const TKV = plattformTexte({
   titel: "KI verbinden",
   dialogAria: "KI verbinden",
   schritt: (n, von) => `${n} von ${von}`,
@@ -137,4 +138,4 @@ export const TKV = {
   assistent: {
     verbundenListe: "Verbunden",
   },
-};
+});

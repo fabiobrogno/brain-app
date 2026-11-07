@@ -4,9 +4,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 import { pfad } from "./hilfe.mjs";
 
-const laden = (name) => import("data:text/javascript;base64," + Buffer.from(readFileSync(pfad("studio", name))).toString("base64"));
+// Dateiadresse statt data:-Adresse: texte-einstellungen.js importiert plattform-texte.js (relativ)
+const laden = (name) => import(pathToFileURL(pfad("studio", name)).href);
 const S = await laden("einstellungen-suche.js");
 const { BEREICHE, GRUPPEN, STANDARD_VORSCHLAEGE } = await laden("texte-einstellungen.js");
 

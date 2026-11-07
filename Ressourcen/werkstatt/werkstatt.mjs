@@ -34,6 +34,7 @@ catch (e) { process.stderr.write(`${e instanceof HttpFehler ? e.message : e}\n`)
 // (gesperrt bei beschädigter Liste, sonst das bisherige Verhalten). Nicht im Testmodus: die Suiten starten die Werkstatt mit dem echten Benutzerordner.
 if (process.env.BRAIN_TESTMODUS !== "1" || process.env.BRAIN_KONTEN_START === "1") { try { handler.konten.synchronisiere(); await handler.migrierePflege(); } catch { /* stand wird beim Öffnen der KI-Konten gemeldet */ } }
 
+try { handler.kontingent.starteWache(); } catch { /* ohne Wache meldet nur das Studio die Schwellen */ } // 80/100 % bei Claude auch ohne sichtbares Studio
 const MAX_ZEILE = 2 * MAX_KOERPER + 4096; // base64 (×4/3) + JSON-Hülle; größere Zeilen sind nie gültig
 const aktiverPfad = handler.aktuellerVaultPfad();
 const vaultId = aktiverPfad ? createHash("sha256").update(realpathSync(aktiverPfad)).digest("hex").slice(0, 16) : null;
@@ -51,6 +52,7 @@ function beende() {
   beendet = true;
   // Alle Kindprozesse (auch eine laufende Frage an `claude`, samt MCP-Server) mit SIGKILL an ihre Gruppen, SYNCHRON vor dem Exit: sonst liefen sie als Waisen weiter
   // (Stdin zu, /api/stopp und Signale enden hier, die Eskalations-Timer der Frage sterben mit dem Prozess).
+  try { handler.kontingent.stoppeWache(); } catch { /* egal */ }
   try { handler.anmelden.beendeAlle(); } catch { /* laufende Anmeldungen enden samt Ordner des neuen Kontos */ }
   try { beendeAlleProzesse(); } catch { /* beenden wir trotzdem */ }
   try { handler.ereignisse.beende(); } catch { /* wartende Ereignis-Abrufe sofort beantworten: sie halten sonst das Ende bis zu 30 s auf */ }

@@ -318,6 +318,42 @@ test("Mitteilung: bei 80 % und 100 % je EIN Ereignis im Aktivitätsprotokoll des
   assert.equal(leseEreignisse(a.support, kennungVault(ohne)).length, 0);
 });
 
+test("Mitteilung: die Wache prüft die lokalen Claude-Werte selbst (ohne stand() des Studios), meldet einmal je Schwelle und lässt den Stand von Codex unberührt", () => {
+  const offen = {};
+  const a = aufbau({ vaultFuer: () => offen.vault });
+  offen.vault = { wurzel: a.vault, name: "Wache" };
+  assert.ok(a.kt.schalteStatuszeile({ konto: "k_aaaa0001", an: true, einwilligung: true }).ok);
+  const lies = () => leseEreignisse(a.support, kennungVault(a.vault)).filter((e) => e.art === "kontingent");
+  const datei = join(a.support, "kontingent", "mitteilungen.json");
+  mkdirSync(join(a.support, "kontingent"), { recursive: true });
+  writeFileSync(datei, JSON.stringify({ v: 1, konten: { k_aaaa0003: { session: { resetsAt: a.zeit() + 3 * STD, gemeldet: [80] } } } }) + "\n");
+  const ende = a.zeit() + 2 * STD;
+  schreibeWerte(a, fen(50, ende));
+  a.kt.pruefeClaudeSchwellen();
+  assert.equal(lies().length, 0);
+  schreibeWerte(a, fen(85, ende));
+  a.kt.pruefeClaudeSchwellen(); a.kt.pruefeClaudeSchwellen();
+  assert.deepEqual(lies().map((e) => [e.grund, e.vaultName]), [["5h-80", "Wache"]], "ohne stand(): gemeldet, nur einmal");
+  assert.deepEqual(JSON.parse(readFileSync(datei, "utf8")).konten.k_aaaa0003.session.gemeldet, [80], "der gemerkte Stand von Codex bleibt");
+  // ohne offenen Vault: nichts
+  const b = aufbau({ vaultFuer: () => null });
+  b.kt.schalteStatuszeile({ konto: "k_aaaa0001", an: true, einwilligung: true });
+  schreibeWerte(b, fen(95, b.zeit() + 2 * STD));
+  b.kt.pruefeClaudeSchwellen();
+  assert.equal(existsSync(join(b.support, "kontingent", "mitteilungen.json")), false);
+});
+
+test("Schwellen: fehlt die Rücksetzzeit, gilt das zuletzt bekannte Fenster (80 % wird nicht erneut gemeldet); ein neues Fenster erkennt das Absinken", () => {
+  const ende = T0 + 2 * STD;
+  const r = R.planeSchwellen({}, [konto(fen(85, ende))], { jetzt: T0 });
+  assert.equal(r.ereignisse.length, 1);
+  const ohne = R.planeSchwellen(r.nachher, [konto(fen(86, null))], { jetzt: T0 + MIN });
+  assert.deepEqual(ohne.ereignisse, [], "dasselbe Fenster, nur ohne Zeitangabe");
+  assert.equal(ohne.nachher.k_aaaa0001.session.resetsAt, ende, "die bekannte Rücksetzzeit bleibt");
+  const wieder = R.planeSchwellen(ohne.nachher, [konto(fen(10, null))], { jetzt: T0 + 2 * MIN });
+  assert.equal(R.planeSchwellen(wieder.nachher, [konto(fen(90, null))], { jetzt: T0 + 3 * MIN }).ereignisse.length, 1, "nach dem Absinken ein neues Fenster");
+});
+
 test("Mitteilung: ausgeschalteter Schalter (mitteilungenKontingent) schreibt kein Ereignis", async () => {
   const a = aufbau();
   writeFileSync(join(a.support, "einstellungen.json"), JSON.stringify({ mitteilungenKontingent: false }) + "\n");

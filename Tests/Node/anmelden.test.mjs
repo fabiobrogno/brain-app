@@ -263,8 +263,8 @@ test("anmeldeUmgebung: nur das gewählte Konto-Verzeichnis, Standardkonto ohne V
 });
 
 test("Adresse und Code: feste Hosts, nur https, Gerätecode nur nach der Marke und nur vollständig", () => {
-  assert.equal(A.findeAdresse("claude", "Besuche https://claude.ai/oauth/authorize?x=1&y=2."), "https://claude.ai/oauth/authorize?x=1&y=2");
-  assert.equal(A.findeAdresse("claude", "\u001b[32mhttps://claude.com/cai/oauth/authorize?code=true\u001b[0m"), "https://claude.com/cai/oauth/authorize?code=true");
+  assert.equal(A.findeAdresse("claude", "Besuche https://claude.ai/oauth/authorize?code_challenge=c1&state=s1."), "https://claude.ai/oauth/authorize?code_challenge=c1&state=s1");
+  assert.equal(A.findeAdresse("claude", "\u001b[32mhttps://claude.com/cai/oauth/authorize?code_challenge=c1&state=s1\u001b[0m"), "https://claude.com/cai/oauth/authorize?code_challenge=c1&state=s1");
   for (const schlecht of ["http://claude.ai/x", "https://claude.ai.evil.example/x", "https://evil.example/claude.ai", "https://user:pw@claude.ai/x", "https://claude.ai:8443/x", "file:///etc/passwd", "https://auth.openai.com/x"]) assert.equal(A.findeAdresse("claude", schlecht), null, schlecht);
   assert.equal(A.findeAdresse("codex", "https://auth.openai.com/codex/device"), "https://auth.openai.com/codex/device");
   assert.equal(A.findeAdresse("codex", "https://claude.ai/x"), null);
@@ -274,6 +274,31 @@ test("Adresse und Code: feste Hosts, nur https, Gerätecode nur nach der Marke u
   assert.equal(A.findeGeraetecode("ABCD-12345 ohne Marke\n"), null);
   assert.equal(A.findeGeraetecode("Enter this one-time code\n   abcd-12345\n"), null, "nur Großbuchstaben/Ziffern");
   assert.ok(A.CODE_ERLAUBT.test("abcd1234#zustand") && !A.CODE_ERLAUBT.test("a b") && !A.CODE_ERLAUBT.test("ab") && !A.CODE_ERLAUBT.test("x".repeat(601)));
+});
+
+test("Claude: eine umbrochene (abgeschnittene) Adresse aus der Ausgabe gilt nie; erst die ganze Adresse mit state und code_challenge", () => {
+  const voll = "https://claude.ai/oauth/authorize?code=true&client_id=testkennung&response_type=code&code_challenge=abcdefghijklmnopqrstuvwxyz0123456789&code_challenge_method=S256&state=zustand123";
+  const umbrochen = "Browser didn't open? Use the url below to sign in\n" + voll.match(/.{1,80}/g).map((z) => `\u001b[2m${z}\u001b[0m`).join("\n") + "\n";
+  assert.equal(A.findeAdresse("claude", umbrochen.split("\n").slice(0, 2).join("\n")), null, "nur das erste Stück: keine Adresse");
+  assert.equal(A.findeAdresse("claude", "https://claude.ai/oauth/authorize?code_challenge=c1\nstate=s1"), null);
+  assert.equal(A.findeAdresse("claude", voll), voll);
+});
+
+test("Claude: wird die Adresse bei 80 Spalten umbrochen, nimmt Kortex die ganze aus der BROWSER-Datei, nicht das erste Stück", async () => {
+  const t = aufbau({ modus: "umbrochen", verzoegerung: 600 });
+  const r = await t.start({ programm: "claude", neu: "Umbruch" });
+  const w = await t.warteAuf(r.j.id, ["wait"]);
+  assert.match(w.url, /code_challenge=pruefwert\w+&code_challenge_method=S256&state=zustand123$/);
+  assert.equal((await t.warteAuf(r.j.id, ["ok", "error"])).phase, "ok");
+});
+
+test("Claude: eine gelungene Anmeldung wird nie als „abgelaufen“ gemeldet, auch wenn die Frist während der Statusprüfung abläuft", async () => {
+  const p = platzhalter({ modus: "ok", verzoegerung: 900, statusVerzoegerung: 1800 });
+  const s = tmp("brain-anmelde-konto-");
+  const l = A.starteAnmeldung({ programm: "claude", programmPfad: join(p.bin, "claude"), ordner: s, basisUmgebung: { PATH: `${p.bin}:/usr/bin:/bin`, HOME: process.env.HOME },
+    fristen: { gesamt: 1500, adresse: 2500, status: 5000 }, takt: 30 });
+  const z = await l.ende;
+  assert.equal(z.phase, "ok", `Phase ${z.phase} (${z.grund})`);
 });
 
 test("Attrappen brechen ab, wenn ihr Zielordner außerhalb des Temp-Ordners liegt", () => {

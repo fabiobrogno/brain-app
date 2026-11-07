@@ -2,8 +2,9 @@
 // Regeln (wie im Prototyp und in Orcas UX-Regeln): jeder Fehlertext sagt, was als Nächstes zu tun ist; kein Text behauptet etwas, bevor es geschehen ist.
 // Drei Schritte (Paket E2): Vault · KI · Sicherung. Der Kopf über Schritt 1 ist das Willkommen (kein eigener Schritt, kein „Fertig“-Bild).
 import { PRODUKT } from "./texte.js";
+import { plattformTexte } from "./plattform-texte.js";
 
-export const TE = {
+export const TE = plattformTexte({
   fenster: `${PRODUKT} einrichten`,
   schritte: { vault: "Vault", ki: "KI", sicherung: "Sicherung" },
   schrittAria: (n, m, name) => `Schritt ${n} von ${m}: ${name}`,
@@ -227,4 +228,4 @@ export const TE = {
   nichtDa: "Das geht in dieser Version noch nicht.",
   ordnerFallback: { titel: "Pfad zum Ordner", feld: "Ordnerpfad", platzhalter: "/Users/dein-name/Notizen", ok: "Übernehmen", leer: "Gib den Pfad des Ordners ein.", relativ: "Der Pfad muss mit / oder ~ beginnen." },
   abbrechen: "Abbrechen",
-};
+});

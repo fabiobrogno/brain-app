@@ -278,6 +278,42 @@ test("Ausstehende Konten: Zeitablauf und liegengebliebene räumt der Abgleich we
   });
 });
 
+test("Ausstehendes Konto gehört seiner Werkstatt (pid + Startzeit): eine zweite Werkstatt räumt es nicht weg, solange jene lebt und die 30 Minuten nicht um sind", async () => {
+  const { spawn } = await import("node:child_process");
+  const { prozessStart } = await import(pfad("gemeinsam", "plattform.mjs"));
+  const a = aufbau();
+  // „die andere Werkstatt“: ein echter, lebender fremder Prozess
+  const fremd = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { stdio: "ignore" });
+  try {
+    await mitHome(a.home, async () => {
+      const r = await a.rufe("POST", "/api/ki/konto-neu", { programm: "claude", name: "Fremd" });
+      assert.equal(r.status, 200);
+      const eintrag = () => G.liesKonten(a.s).daten.konten[r.j.ausstehend.id].ausstehend;
+      assert.equal(eintrag().pid, process.pid, "der Eintrag nennt den Besitzer");
+      assert.ok(eintrag().start, "samt Startzeit des Prozesses");
+      const gehoertFremd = () => G.aendere(a.s, (alt) => { Object.assign(alt.konten[r.j.ausstehend.id].ausstehend, { pid: fremd.pid, start: prozessStart(fremd.pid) }); return alt; });
+      gehoertFremd();
+      const b = zweiter(a);
+      assert.equal(b.h.konten.raeumeNeu(), 0, "die Anmeldung einer lebenden anderen Werkstatt bleibt");
+      assert.equal(ausstehende(a).length, 1); assert.ok(existsSync(r.j.ausstehend.pfad));
+      // PID wiederverwendet (andere Startzeit): der Besitzer ist nicht mehr der, der angelegt hat
+      G.aendere(a.s, (alt) => { alt.konten[r.j.ausstehend.id].ausstehend.start = "Mon Jan  1 00:00:00 2001"; return alt; });
+      assert.equal(zweiter(a).h.konten.raeumeNeu(), 1, "andere Startzeit = anderer Prozess: weg");
+      assert.equal(ausstehende(a).length, 0);
+      // lebt der Besitzer, ist aber die Frist um, räumt die zweite Werkstatt trotzdem auf
+      const r2 = await a.rufe("POST", "/api/ki/konto-neu", { programm: "claude", name: "Fremd2" });
+      G.aendere(a.s, (alt) => { Object.assign(alt.konten[r2.j.ausstehend.id].ausstehend, { pid: fremd.pid, start: prozessStart(fremd.pid), seit: Date.now() - 31 * 60_000 }); return alt; });
+      assert.equal(zweiter(a).h.konten.raeumeNeu(), 1, "30 Minuten um");
+      // Besitzer tot: weg
+      const r3 = await a.rufe("POST", "/api/ki/konto-neu", { programm: "claude", name: "Fremd3" });
+      G.aendere(a.s, (alt) => { Object.assign(alt.konten[r3.j.ausstehend.id].ausstehend, { pid: fremd.pid, start: prozessStart(fremd.pid) }); return alt; });
+      assert.equal(zweiter(a).h.konten.raeumeNeu(), 0);
+      fremd.kill("SIGKILL"); await new Promise((ok) => fremd.once("exit", ok));
+      assert.equal(zweiter(a).h.konten.raeumeNeu(), 1, "Besitzer beendet: weg");
+    });
+  } finally { try { fremd.kill("SIGKILL"); } catch { /* weg */ } }
+});
+
 test("Übernahme der früheren Wahl (localStorage → ki-konten.json): offener Vault zuerst, nur wo noch kein aktives Konto gilt, unbekannte Konten und Müll werden nur gelöscht", async () => {
   const { planeUebernahme } = await import(pfad("studio", "ki-aktiv.js"));
   const konten = [{ id: "k_a", programm: "claude" }, { id: "k_b", programm: "claude" }, { id: "k_c", programm: "codex" }];

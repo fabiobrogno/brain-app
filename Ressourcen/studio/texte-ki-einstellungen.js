@@ -1,7 +1,8 @@
 // Texte des Bereichs „KI & Konten“ in den Einstellungen (Paket P6). Deutsch, Du-Form, für Nicht-Techniker. Jeder Fehlertext nennt den nächsten Schritt (Muster Orca:
 // docs/STYLEGUIDE.md „UX rules“, usage-error-copy.ts @9bccd67, MIT, Lovecast Inc.); ein Zustand, der sich nicht ermitteln lässt, wird so benannt, nicht verschwiegen.
 // Die Texte der Stufen, der Sperre, des Strengen Schutzes und der Pflege stehen weiter in texte-konten.js (TK): eine Quelle, nicht zwei.
-export const TKE = {
+import { plattformTexte } from "./plattform-texte.js";
+export const TKE = plattformTexte({
   // ---- Übersicht
   kacheln: {
     angemeldet: (n, von) => ({ zahl: `${n} von ${von}`, text: von === 1 ? "Konto angemeldet" : "Konten angemeldet" }),
@@ -255,4 +256,4 @@ export const TKE = {
   nochmal: "Nochmal versuchen",
   stufeGesetzt: (konto, stufe) => `${konto}: ${stufe}.`,
   umbenennenErfolg: "Name gespeichert.",
-};
+});
