@@ -29,17 +29,32 @@ export const BEREICHE = [
     id: "darstellung", name: "Darstellung", gruppe: "Kortex", symbol: "darstellung", woerter: ["aussehen", "hell", "dunkel", "schrift"],
     intro: "So sieht Kortex aus. Änderungen siehst du sofort.",
     abschnitte: [
-      { id: "thema", titel: "Thema", zeilen: [
-        { id: "thema", sonder: true, titel: "Thema", text: "Hell, dunkel oder wie dein Mac.", woerter: ["hell", "dunkel", "system", "macos", "modus", "aussehen", "dark", "light"] },
+      { id: "aussehen", titel: "Aussehen", zeilen: [
+        { id: "vorschau", sonder: true, titel: "Vorschau", text: "", woerter: ["vorschau", "beispiel"] },
+        { id: "thema", schluessel: "erscheinung", art: "erscheinung", titel: "Erscheinungsbild", text: "Hell, dunkel oder wie dein Mac.", woerter: ["hell", "dunkel", "system", "macos", "modus", "aussehen", "dark", "light", "thema"] },
+        { id: "schema-hell", schluessel: "schemaHell", art: "schemata", modus: "hell", titel: "Farbschema für Hell", text: "Standard ist die Kortex-Farbwelt. Papier ist wärmer, Kontrast hoch hilft bei hellem Licht oder Sehschwäche.", woerter: ["farbschema", "papier", "kontrast", "hell", "palette", "farben", "standard"] },
+        { id: "schema-dunkel", schluessel: "schemaDunkel", art: "schemata", modus: "dunkel", titel: "Farbschema für Dunkel", text: "Graphit ist ein weiches Grau, Mitternacht ein tiefes Blau. Kontrast hoch ist reines Schwarz mit kräftigen Linien.", woerter: ["farbschema", "graphit", "mitternacht", "kontrast", "dunkel", "palette", "farben", "schwarz"] },
+        { id: "akzent", schluessel: "akzent", art: "akzent", titel: "Akzentfarbe", text: "Für Auswahl, Schalter, Links und die aktive Markierung in der Seitenleiste.", woerter: ["akzent", "farbe", "farben", "highlight", "blau", "rot", "grün", "indigo", "tint"] },
+      ] },
+      { id: "text", titel: "Text und Editor", zeilen: [
+        { id: "schrift", schluessel: "editorSchrift", art: "schriftWahl", titel: "Editor-Schrift", text: "Gilt für Notizen, nicht für Menüs und Listen.", woerter: ["schrift", "font", "geist", "new york", "serif", "mono", "sf mono", "editor"] },
+        { id: "schriftgroesse", schluessel: "schriftgroesse", art: "groesse", titel: "Schriftgröße im Editor", text: "Gilt für Notizen, nicht für Menüs und Listen.", woerter: ["schrift", "größe", "text", "font", "lesbar", "zoom"] },
+        { id: "zeilenbreite", schluessel: "zeilenbreite", art: "zeilenbreite", titel: "Zeilenbreite", text: "Wie breit eine Zeile im Editor wird. „Voll“ nutzt die ganze Breite des Fensters statt einer schmalen Lesespalte.", woerter: ["breit", "lesespalte", "textspalte", "editor", "fenster", "schmal", "spalte", "zeile"] },
+        { id: "codeschrift", schluessel: "codeSchrift", art: "codeWahl", titel: "Code-Schrift", text: "Für Codeblöcke und Code im Text.", woerter: ["code", "mono", "monospace", "geist mono", "menlo", "sf mono", "schrift"] },
+      ] },
+      { id: "oberflaeche", titel: "Oberfläche", zeilen: [
+        { id: "dichte", schluessel: "dichte", art: "dichte", titel: "Dichte", text: "Abstand von Listen, Zeilen und Absätzen. Kompakt zeigt mehr auf einmal, luftig beruhigt.", woerter: ["dichte", "abstand", "kompakt", "luftig", "zeilenhöhe", "padding"] },
+        { id: "ui-groesse", schluessel: "oberflaeche", art: "oberflaeche", titel: "Größe der Oberfläche", text: "Skaliert Seitenleiste, Menüs und Einstellungen. Die Editor-Schrift stellst du extra ein.", woerter: ["größe", "zoom", "skalierung", "oberfläche", "groß", "klein", "ui"] },
+        { id: "durchscheinend", schluessel: "seitenleisteDurchscheinend", art: "schalter", nurGlas: true, titel: "Durchscheinende Seitenleiste", text: "Die Seitenleiste lässt den Schreibtisch dahinter weich durchscheinen, wie bei Finder und Notizen.", woerter: ["transparenz", "durchscheinend", "blur", "unschärfe", "vibrancy", "glas", "seitenleiste", "hintergrund"] },
+        { id: "symbole", schluessel: "symbole", art: "symbole2", titel: "Symbole", text: "Einfarbige Symbole wie in Linear oder farbige Kacheln wie in den Systemeinstellungen.", woerter: ["symbole", "icons", "farbig", "einfarbig", "kacheln", "monochrom"] },
+        { id: "bewegung", schluessel: "bewegung", art: "segment", optionen: [["system", "Wie macOS"], ["reduziert", "Reduziert"]], titel: "Bewegung", text: "„Reduziert“ ersetzt Übergänge durch sofortiges Ein- und Ausblenden. „Wie macOS“ folgt deiner Systemeinstellung.", woerter: ["animation", "bewegung", "reduzieren", "ruhig", "übergang"] },
       ] },
       { id: "dock", titel: "Dock", zeilen: [
         { id: "app-symbol", schluessel: "appSymbol", art: "symbole", titel: "App-Symbol", text: "Gilt, solange Kortex läuft. Ist Kortex beendet und im Dock angeheftet, zeigt macOS das Standard-Symbol.",
           optionen: [["standard", "Standard"], ["dunkel", "Dunkel"], ["graphit", "Graphit"], ["papier", "Papier"], ["smaragd", "Smaragd"]], woerter: ["symbol", "icon", "dock", "logo", "farbe", "violett", "dunkel", "graphit", "papier", "smaragd", "grün"] },
       ] },
-      { id: "feinheiten", titel: "Feinheiten", zeilen: [
-        { id: "schriftgroesse", schluessel: "schriftgroesse", art: "regler", titel: "Schriftgröße im Editor", text: "Gilt für Notizen, nicht für Menüs und Listen.", woerter: ["schrift", "größe", "text", "font", "lesbar", "zoom"] },
-        { id: "bewegung", schluessel: "bewegung", art: "segment", optionen: [["system", "Wie macOS"], ["reduziert", "Reduziert"]], titel: "Bewegung", text: "„Reduziert“ ersetzt Übergänge durch sofortiges Ein- und Ausblenden. „Wie macOS“ folgt deiner Systemeinstellung.", woerter: ["animation", "bewegung", "reduzieren", "ruhig", "übergang"] },
-        { id: "breit", sonder: true, titel: "Breite Textspalte", text: "Notizen nutzen die ganze Breite des Fensters statt einer schmalen Lesespalte.", woerter: ["breit", "lesespalte", "editor", "fenster", "schmal"] },
+      { id: "zuruecksetzen", titel: "Zurücksetzen", zeilen: [
+        { id: "darst-reset", sonder: true, titel: "Darstellung zurücksetzen", text: "Stellt Aussehen, Schrift und Abstände auf den Anfang. Deine Notizen bleiben.", woerter: ["zurücksetzen", "standard", "reset", "anfang"] },
       ] },
     ],
   },

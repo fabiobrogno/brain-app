@@ -60,6 +60,8 @@ public enum AppAktion: Equatable, Sendable {
     case darstellung(FensterDarstellung)
     /// Dock-Symbol (Einstellungen → Darstellung → „App-Symbol“): die App setzt `NSApp.applicationIconImage` sofort um (`standard` = Symbol des Pakets). Nur das Studio.
     case appSymbol(AppSymbol)
+    /// Durchscheinende Seitenleiste (Einstellungen → Darstellung): die App schaltet `data-glas` der Seite sofort um. Antwort `{ok:true, wirkt}` bzw. `{ok:false, grund:"nicht-verfuegbar"}` (kein Glas möglich). Nur das Studio.
+    case fensterDurchscheinend(Bool)
 
     /// Längen- und Zeichenbegrenzung für Texte der Seite (Fenstertitel, Dialog-Hinweis).
     static let maxTitel = 120
@@ -76,7 +78,7 @@ public enum AppAktion: Equatable, Sendable {
     /// `{aktion:"ordner-waehlen", wert:{titel?, vorschlag?}}`, `{aktion:"vault-gewechselt"}`, `{aktion:"vertrauen-geaendert"}`,
     /// `{aktion:"titel", wert:<Text>}`, `{aktion:"fehler", wert:{text, ort?}}`, `{aktion:"git-pruefen"}`, `{aktion:"git-installieren"}`,
     /// `{aktion:"kopieren", wert:<Text>}`, `{aktion:"einrichtung-ende", wert:{art:"fertig"|"spaeter"}}`,
-    /// `{aktion:"einrichtung-oeffnen", wert?:{ab?:"vault"|"sicherung"|"ki", weg?:"neu"|"beispiel"|"oeffnen"|"klonen"}}`, `{aktion:"mitteilung-probe"}`, `{aktion:"fenster-ziehen"}`, `{aktion:"fenster-zoom"}`, `{aktion:"darstellung", wert:"hell"|"dunkel"|"system"}`, `{aktion:"app-symbol", wert:"standard"|"dunkel"|"graphit"|"papier"|"smaragd"}`.
+    /// `{aktion:"einrichtung-oeffnen", wert?:{ab?:"vault"|"sicherung"|"ki", weg?:"neu"|"beispiel"|"oeffnen"|"klonen"}}`, `{aktion:"mitteilung-probe"}`, `{aktion:"fenster-ziehen"}`, `{aktion:"fenster-zoom"}`, `{aktion:"darstellung", wert:"hell"|"dunkel"|"system"}`, `{aktion:"app-symbol", wert:"standard"|"dunkel"|"graphit"|"papier"|"smaragd"}`, `{aktion:"fenster-durchscheinend", wert:true|false}`.
     /// Ohne Angabe gilt die strengste Herkunft (Übersicht): die Studio-Aktionen muss man ausdrücklich freischalten.
     public static func pruefe(_ nachricht: Any, vault: URL?, oberflaeche: Oberflaeche = .app) -> AppAktion? {
         guard let d = nachricht as? [String: Any], let name = d["aktion"] as? String else { return nil }
@@ -135,9 +137,18 @@ public enum AppAktion: Equatable, Sendable {
         case "app-symbol":
             guard oberflaeche == .studio, let symbol = AppSymbol(wert: wert) else { return nil }
             return .appSymbol(symbol)
+        case "fenster-durchscheinend":
+            guard oberflaeche == .studio, let an = strengBool(wert) else { return nil }
+            return .fensterDurchscheinend(an)
         default:
             return nil
         }
+    }
+
+    /// Nur ein echter JSON-Boolean (kein NSNumber 0/1, kein Text).
+    private static func strengBool(_ wert: Any?) -> Bool? {
+        guard let n = wert as? NSNumber, CFGetTypeID(n) == CFBooleanGetTypeID() else { return nil }
+        return n.boolValue
     }
 
     /// `wert` fehlt/null → Standard; sonst ein Objekt. Unbrauchbare Einzelwerte (kein Text, kein absoluter Pfad) werden

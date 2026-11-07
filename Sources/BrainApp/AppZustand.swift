@@ -232,6 +232,7 @@ final class AppZustand: ObservableObject {
             f.beiGeschlossen = { [weak self] in Task { await self?.aktualisiere() } }
             f.beiAktion = { [weak self] aktion, von in await self?.fuehreAus(aktion, von: von) }
             f.aktuellerVault = { [weak self] in self?.vaultFrisch() }
+            f.glasStart = { [weak self] in self.map { SeitenleisteGlas.lies(supportOrdner: $0.pfade.basis) } ?? true }
         }
         // Mit dem Studio ist auch das Overlay weg: ohne Wahl beendet (die Einrichtung macht beim nächsten Start dort weiter)
         studio.beiGeschlossen = { [weak self] in self?.einrichtungBeendet(nil); Task { await self?.aktualisiere() } }
@@ -616,6 +617,9 @@ final class AppZustand: ObservableObject {
         case .appSymbol(let symbol):
             wendeAppSymbolAn(symbol)
             return ok
+        case .fensterDurchscheinend(let an):
+            guard let wirkt = von.setzeGlas(an) else { return ["ok": false, "grund": "nicht-verfuegbar"] as [String: Any] }
+            return ["ok": true, "wirkt": wirkt] as [String: Any]
         }
     }
 

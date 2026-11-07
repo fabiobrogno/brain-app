@@ -36,7 +36,7 @@ test("GET: Standardwerte beider Speicher, Schema mit Quelle, Stand aus zwei Teil
   assert.equal(r.j.schema.tageslauf.quelle, "vault");
   assert.deepEqual(r.j.schema.tageslauf.werte, ["aus", "probe", "an"]);
   assert.equal(r.j.schema.schriftgroesse.quelle, "app");
-  assert.equal(r.j.schema.schriftgroesse.max, 19);
+  assert.equal(r.j.schema.schriftgroesse.max, 22);
   assert.equal(r.j.vault.pfad, d);
   assert.deepEqual(r.j.dateien, { vault: "brain.config.json", app: "einstellungen.json" });
   assert.equal(r.j.fehler, undefined);
@@ -103,7 +103,7 @@ test("Validierung: unbekannt, falscher Typ, außerhalb des Bereichs, fehlender S
     { werte: { gesundheit: "ja" } },
     { werte: { einschwingen: 1.5 } },
     { werte: { einschwingen: 100000 } },
-    { werte: { schriftgroesse: 12 } },
+    { werte: { schriftgroesse: 11 } },
     { werte: { schriftgroesse: "15" } },
     { werte: { bewegung: "voll" } },
     { werte: { ernteNichtIn: "nicht-liste" } },

@@ -5,6 +5,7 @@ import { api, aktion, aktionMitAntwort, inApp, browserModus, mitHuelle, gitGespe
 import { erstelleEditor } from "./editor.js";
 import { h, dialog, dialogOffen, schliesseDialoge, toast, vorMinuten, dateiName, ohneEndung, ordnerVon, istBearbeitbar, speichereLokal, leseLokal, leseEntwurf, speichereEntwurf, sucheGrad, suchFormen, ausTabelle, arbeitBeginnt, laufendeArbeiten } from "./hilfen.js";
 import { symbol, GROESSE } from "./symbole.js";
+import { STANDARD as DARST_STANDARD, DARSTELLUNGS_SCHLUESSEL, wendeDarstellungAn, leseCache as leseDarstellungCache, schreibeCache as schreibeDarstellungCache, migriereAlteWahl } from "./darstellung.js"; // Farbschema, Akzent, Dichte, Schrift, Größe, Zeilenbreite, Symbole
 import { markiert, trefferKarte, chipLeiste, mitFilter } from "./suche.js";
 import { textfeld, textbereich, auswahl, hakenFeld, segment, knopf as baueKnopf, leerBlock, setzeLaedt, wenigBewegung } from "./bausteine.js";
 import { liesKurzformen, faelligText } from "./kurzformen.js";
@@ -59,7 +60,7 @@ const S = {
   pruef: new Map(), aktuellePruefung: null,
   git: null, offline: false, gesundheit: null, rueckfragen: null, syncLaeuft: false, syncFehler: null, ki: null, kiGeladen: false, kiVerbunden: false,
   zuletzt: [], suche: { aktiv: false, treffer: [], auswahl: 0, frage: "", ergebnis: null },
-  infoAn: leseLokal("infoAn", true), roh: leseLokal("roh", false), breit: leseLokal("breit", false), theme: leseLokal("theme", "system"),
+  infoAn: leseLokal("infoAn", true), roh: leseLokal("roh", false), breit: false, theme: "system", modus: "hell", darst: null,
   ladeNr: 0, bereit: false,
   umstellung: null,                          // P7c: { altlasten, umgestellt, angefangen } oder null (alter Werkzeug-Ordner im Vault und Stand der Umstellung)
   zeigeZurueckgestellt: false,               // Posteingang: false = offene Notizen, true = die mit „Später“ zurückgestellten
@@ -151,20 +152,51 @@ const frage = erzeugeFragePanel({ vaultPfad: () => S.info?.vault || null, oeffne
 $("knopf-frage").addEventListener("click", () => { if (S.info?.vault) frage.umschalten(); });
 
 // ======================================================= Erscheinungsbild
-function wendeThemeAn() {
-  const r = document.documentElement;
-  if (S.theme === "hell") r.dataset.theme = "light"; else if (S.theme === "dunkel") r.dataset.theme = "dark"; else delete r.dataset.theme;
-  aktion("darstellung", S.theme === "hell" || S.theme === "dunkel" ? S.theme : "system"); // das Fenster der App folgt (Material der Seitenleiste)
+// Alles zum Aussehen kommt aus den App-Einstellungen (einstellungen.json, Schlüssel in darstellung.js) und gilt sofort. S.darst = die geltenden Werte; der Browserspeicher hält nur den letzten Stand
+// für eine richtige erste Zeichnung. S.theme (system|hell|dunkel) und S.breit (breit|voll) sind davon abgeleitet, S.modus ist das aufgelöste Hell/Dunkel.
+S.darst = { ...DARST_STANDARD, ...(leseDarstellungCache() || {}) };
+const hellDunkelSystem = typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: dark)") : null;
+const letzte = { fenster: null, glas: null };
+// Größe der Oberfläche (zoom am body): px-Längen skalieren in jeder Engine mit dem Zoom, Prozentwerte nicht überall gleich — darum füllt der body das Fenster mit festen Maßen
+function passeFlaeche() {
+  const z = parseFloat(document.documentElement.style.getPropertyValue("--ui-zoom")) || 1, st = document.documentElement.style;
+  if (z === 1) { st.removeProperty("--ui-breite"); st.removeProperty("--ui-hoehe"); return; }
+  st.setProperty("--ui-breite", `${window.innerWidth / z}px`); st.setProperty("--ui-hoehe", `${window.innerHeight / z}px`);
 }
-function setzeTheme(t) { S.theme = t; speichereLokal("theme", t); wendeThemeAn(); zeichneStatus(); }
-const istDunkel = () => matchMedia("(prefers-color-scheme: dark)").matches ? S.theme !== "hell" : S.theme === "dunkel";
-wendeThemeAn();
+window.addEventListener("resize", passeFlaeche);
+function wendeDarstellung() {
+  const p = wendeDarstellungAn(S.darst, { mac: !/Win|Linux/i.test(navigator.platform || "") });
+  const davor = { theme: S.theme, breit: S.breit, modus: S.modus };
+  S.modus = p.modus;
+  S.theme = S.darst.erscheinung === "hell" ? "hell" : S.darst.erscheinung === "dunkel" ? "dunkel" : "system";
+  S.breit = S.darst.zeilenbreite === "breit" || S.darst.zeilenbreite === "voll";
+  if (letzte.fenster !== S.theme) { letzte.fenster = S.theme; aktion("darstellung", S.theme); } // das Fenster der App folgt (Material der Seitenleiste)
+  if (letzte.glas !== !!S.darst.seitenleisteDurchscheinend) { if (letzte.glas !== null) aktion("fenster-durchscheinend", !!S.darst.seitenleisteDurchscheinend); letzte.glas = !!S.darst.seitenleisteDurchscheinend; }
+  if (window.__studioBereit && (davor.theme !== S.theme || davor.modus !== S.modus)) zeichneStatus();
+  if (window.__studioBereit && davor.breit !== S.breit) zeichneWerkzeuge();
+  passeFlaeche();
+  schreibeDarstellungCache(S.darst);
+}
+// Ändert Werte der Darstellung von der Statusleiste, Palette oder Werkzeugleiste aus: erst sichtbar, dann (mit frischem Stand) in einstellungen.json
+// Solange eigene Schreibvorgänge laufen, überschreibt ein verspätet eintreffender Stand der Datei die frischere Wahl nicht (schnelles Umschalten).
+let darstSchreibt = 0;
+async function schreibeDarstellung(patch) {
+  S.darst = { ...S.darst, ...patch };
+  wendeDarstellung();
+  darstSchreibt++;
+  try { const d = await api.einstellungen(); await api.einstellungenSchreiben(patch, d.stand); } catch { /* der nächste Start liest den Stand der Datei */ }
+  finally { darstSchreibt--; }
+}
+const setzeTheme = (t) => schreibeDarstellung({ erscheinung: t });
+const istDunkel = () => S.modus === "dunkel";
+hellDunkelSystem?.addEventListener?.("change", () => { if (S.darst.erscheinung === "system") wendeDarstellung(); });
+wendeDarstellung();
 // Einstellungen der App (Seite „Einstellungen“, P5): Schriftgröße im Editor und Bewegung kommen aus GET /api/einstellungen (<support>/einstellungen.json) und gelten sofort.
 function wendeEinstellungenAn(w) {
   if (!w) return;
   const r = document.documentElement;
-  if (Number.isInteger(w.schriftgroesse) && w.schriftgroesse >= 13 && w.schriftgroesse <= 19) r.style.setProperty("--editor-schrift", w.schriftgroesse + "px");
-  if (w.bewegung === "reduziert") r.dataset.bewegung = "reduziert"; else delete r.dataset.bewegung;
+  const neuD = Object.fromEntries(DARSTELLUNGS_SCHLUESSEL.filter((k) => w[k] !== undefined).map((k) => [k, w[k]]));
+  if (!darstSchreibt && DARSTELLUNGS_SCHLUESSEL.some((k) => neuD[k] !== undefined && neuD[k] !== S.darst[k])) { S.darst = { ...S.darst, ...neuD }; wendeDarstellung(); }
   // Statusleiste und Kontingent (Rechtsklick auf die Leiste, Popover, Einstellungen): eine Quelle, alle Anzeigen hören mit (kontingent.js#kontingentOptionen)
   kontingentOptionen.setze(w);
   // Schreiben: Tagesnotiz und Vorlagen (leer = Standard)
@@ -178,7 +210,19 @@ function wendeEinstellungenAn(w) {
   }
 }
 async function ladeKuerzel() { await kz.lade(); }
-async function ladeAppEinstellungen() { try { const d = await api.einstellungen(); wendeEinstellungenAn(d.werte); } catch { /* ohne: Standard */ } }
+async function ladeAppEinstellungen() {
+  try {
+    const d = await api.einstellungen();
+    wendeEinstellungenAn(d.werte);
+    // Einmalig: Thema und Lesebreite lagen früher nur im Browserspeicher; sie wandern in die Einstellungen (nur, was dort noch auf dem Standard steht)
+    const alt = { theme: leseLokal("theme", undefined), breit: leseLokal("breit", undefined) };
+    if (alt.theme !== undefined || alt.breit !== undefined) {
+      const patch = migriereAlteWahl(alt, d.werte);
+      try { if (Object.keys(patch).length) { await api.einstellungenSchreiben(patch, d.stand); S.darst = { ...S.darst, ...patch }; wendeDarstellung(); } } catch { /* beim nächsten Start noch einmal */ }
+      try { localStorage.removeItem("brain-studio.theme"); localStorage.removeItem("brain-studio.breit"); } catch { /* ohne Speicher */ }
+    }
+  } catch { /* ohne: Standard */ }
+}
 
 // ======================================================= Editor
 let speicherTimer = null, entwurfSpaet = null;
@@ -1656,7 +1700,6 @@ function zeichneWerkzeuge() {
   }
   $("knopf-info").setAttribute("aria-pressed", String($("app").dataset.info === "an"));
   $("werkzeuge").replaceChildren(...k);
-  $("haupt").dataset.breite = S.breit ? "breit" : "normal";
   $("editor").dataset.roh = S.roh ? "an" : "aus";
 }
 function umschalteFavorit() {
@@ -1667,7 +1710,7 @@ function umschalteFavorit() {
   if (S.sicht.art === "favoriten") zeichneListe({ behalte: true });
 }
 function umschalteRoh() { S.roh = !S.roh; speichereLokal("roh", S.roh); ed.setzeRoh(); zeichneWerkzeuge(); }
-function umschalteBreit() { S.breit = !S.breit; speichereLokal("breit", S.breit); zeichneWerkzeuge(); }
+function umschalteBreit() { schreibeDarstellung({ zeilenbreite: S.breit ? "normal" : "breit" }); }
 function ueberschriften() {
   const text = ed.text().split(/\r?\n|\r/);
   const r = [];
@@ -2383,8 +2426,6 @@ function einstellungenKontext() {
   return {
     inApp: inApp(), browser: browserModus(), mitHuelle: mitHuelle(), aktion, kurzPfad: kurzPfadVon,
     info: () => S.info, git: () => S.git, version: () => S.info?.appVersion || "",
-    theme: { lies: () => S.theme, setze: setzeTheme },
-    breit: { lies: () => S.breit, setze: (an) => { if (!!S.breit !== !!an) umschalteBreit(); } },
     wendeAn: wendeEinstellungenAn,
     oeffneKi, oeffneKonten, oeffneRemote, oeffneLizenzen, sync, beiVerbunden: () => { S.kiVerbunden = true; zeichneStatus(); },
     vaultOeffnen: () => { vaultOeffnen(); }, vaultWechseln: (pfad) => wechsleVault(pfad), vaultEntfernen: (v) => bestaetigeEntfernen(v),

@@ -118,14 +118,18 @@ public enum FensterAmpel {
     }
 
     /// Das Skript, mit dem die App der Seite sagt, wie viel Platz die Ampel braucht (0 im Vollbild: dort gibt es keine Ampel im Fenster) und ob dies die Vorschau ist
-    /// (`vorschauText` = Text der Plakette, nil = keine) und ob hinter der durchsichtigen Seite ein Material des Systems liegt (`glas`, Seitenleiste durchsichtig). Die Seite liest nur die CSS-Variablen `--ampel-platz`/`--ampel-hoehe` und `data-vorschau` und `data-glas` am `<html>`.
-    public static func skript(platz: CGFloat, hoehe: CGFloat, vorschauText: String?, glas: Bool = false) -> String {
+    /// (`vorschauText` = Text der Plakette, nil = keine) und ob hinter der durchsichtigen Seite ein Material des Systems liegt (`glasMoeglich`) und ob sie gerade an ist (`glas` = gewünscht; `data-glas` wird nur bei beidem gesetzt, sonst entfernt). Die Seite liest nur die CSS-Variablen `--ampel-platz`/`--ampel-hoehe` und `data-vorschau`, `data-glas-moeglich`, `data-glas` am `<html>`.
+    public static func skript(platz: CGFloat, hoehe: CGFloat, vorschauText: String?, glas: Bool = false, glasMoeglich: Bool = false) -> String {
         var koerper = "r.style.setProperty('--ampel-platz','\(Int(platz))px');r.style.setProperty('--ampel-hoehe','\(Int(hoehe))px');"
         if let t = vorschauText {
             let sicher = t.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "'", with: "\\'").replacingOccurrences(of: "\n", with: " ")
             koerper += "r.dataset.vorschau='\(sicher)';"
         }
-        if glas { koerper += "r.dataset.glas='1';" }
+        // `glasMoeglich`: die Hülle kann Glas (Material hinter der Seite) → die Seite zeigt die Einstellung. `data-glas` nur, wenn möglich UND gewünscht.
+        if glasMoeglich {
+            koerper += "r.dataset.glasMoeglich='1';"
+            koerper += glas ? "r.dataset.glas='1';" : "delete r.dataset.glas;"
+        }
         // Ist das Dokumentelement beim Start noch nicht da, wartet das Skript darauf (statt still nichts zu tun).
         return "(function(){function s(){var r=document.documentElement;\(koerper)}if(document.documentElement){s();}else{new MutationObserver(function(_,o){if(document.documentElement){o.disconnect();s();}}).observe(document,{childList:true});}})();"
     }

@@ -172,7 +172,7 @@ mark.w { background: var(--k-wort); color: inherit; border-radius: 3px; padding:
 .k-blk-akt .knopf[aria-pressed="true"] { background: var(--akzent-weich); color: var(--akzent-tinte); }
 .k-eigen { margin: 0 10px 10px; }
 .k-frei { margin: 0; }
-.k-erg { position: sticky; top: 0; border: 1px solid var(--linie); border-radius: var(--r-xl); background: var(--seite); overflow: hidden; max-height: calc(100vh - 330px); display: flex; flex-direction: column; }
+.k-erg { position: sticky; top: 0; border: 1px solid var(--linie); border-radius: var(--r-xl); background: var(--seite); overflow: hidden; max-height: calc(var(--vh) - 330px); display: flex; flex-direction: column; }
 .k-erg-kopf { display: flex; align-items: center; gap: 6px; padding: 10px 14px 8px; }
 .k-erg-kopf .cap { flex: 1; font-size: 10.5px; color: var(--text-3); letter-spacing: .05em; text-transform: uppercase; }
 .k-erg-kopf .tnum { font-size: 11.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }

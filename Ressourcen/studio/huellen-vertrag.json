@@ -23,7 +23,8 @@
     { "name": "fenster-ziehen", "wert": null, "antwort": "{ok:true}", "zweck": "Kopfzeile greifen (Fenster folgt der Maus)", "browser": "{ok:true}, nichts zu tun" },
     { "name": "fenster-zoom", "wert": null, "antwort": "{ok:true}", "zweck": "Doppelklick auf die Kopfzeile", "browser": "{ok:true}, nichts zu tun" },
     { "name": "darstellung", "wert": "\"hell\"|\"dunkel\"|\"system\"", "antwort": "{ok:true}", "zweck": "Fenster folgt dem Hell/Dunkel der Seite", "browser": "{ok:true}, die Seite folgt selbst" },
-    { "name": "app-symbol", "wert": "\"standard\"|\"dunkel\"|\"graphit\"|\"papier\"|\"smaragd\"", "antwort": "{ok:true}", "zweck": "App-Symbol wählen", "browser": "{ok:false, grund:\"browser-vorschau\"}: kein Dock; die Einstellung wird ausgeblendet" }
+    { "name": "app-symbol", "wert": "\"standard\"|\"dunkel\"|\"graphit\"|\"papier\"|\"smaragd\"", "antwort": "{ok:true}", "zweck": "App-Symbol wählen", "browser": "{ok:false, grund:\"browser-vorschau\"}: kein Dock; die Einstellung wird ausgeblendet" },
+    { "name": "fenster-durchscheinend", "wert": "boolean", "antwort": "{ok:true, wirkt:boolean} | {ok:false, grund:\"nicht-verfuegbar\"}", "zweck": "durchscheinende Seitenleiste ein/aus (data-glas)", "browser": "{ok:false, grund:\"browser-vorschau\"}: kein Fenstermaterial; die Einstellung wird ausgeblendet" }
   ],
   "huellenBefehle": [
     { "name": "einrichtung", "wert": "{ab?, weg?}", "zweck": "window.studio.befehl('einrichtung', …): Overlay öffnen (Menü ⌘E, Karte, erster Start)" },

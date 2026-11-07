@@ -1,6 +1,6 @@
 /* „Vault umstellen“ (P7c): Dialog mit Befund in vier Gruppen, Probelauf, Umstellen, Rückweg, Protokoll. Nur Tokens aus studio.css (hell/dunkel über light-dark()). */
 .schleier:has(> .um-dialog) { padding-top: 5vh; }
-.um-dialog { width: min(780px, calc(100vw - 32px)); max-height: min(88vh, 920px); }
+.um-dialog { width: min(780px, calc(var(--vw) - 32px)); max-height: min(88vh, 920px); }
 .um-kopf { padding: 18px 24px 6px; flex: none; }
 .um-titel { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -.01em; }
 .um-intro { margin: 6px 0 0; color: var(--text-2); font-size: 13px; line-height: 1.5; -webkit-user-select: text; user-select: text; }

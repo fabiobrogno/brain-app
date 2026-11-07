@@ -70,5 +70,5 @@
 .frage-art { color: var(--text-3); }
 .frage-art.gefunden { opacity: .8; }
 .frage-verbrauch { margin: 0; font-size: 12px; color: var(--text-2); }
-@media (max-width: 520px) { .frage { width: 100vw; } }
+@media (max-width: 520px) { .frage { width: var(--vw); } }
 @media (prefers-reduced-motion: reduce) { .frage { transition: none; } }

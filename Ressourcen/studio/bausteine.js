@@ -10,6 +10,7 @@
 //   datumsauswahl({ … }) / oeffneDatumsauswahl(anker, …)      Kalender-Popover mit Schnellwahl
 //   kiAuswahl({ erkennung, wert, mehrfach, waehlbar, aufAenderung })   Karten der gefundenen KIs + aufklappbare, durchsuchbare Liste aller KIs
 //   einstellSymbole({ optionen, wert, … })                   Kacheln mit Vorschaubild (App-Symbol)
+//   schieber({ min, max, schritt, wert, label, striche, … })  Regler aus div role=slider (Maus, Touch, Tasten ←→ ↑↓ Pos1 Ende), Teilstriche bei kleinen Stufenzahlen
 //   tooltip(el, text), toast(text, …)
 //
 // Alle Fabriken geben ein Element zurück (textfeld/textbereich ein Objekt { el, input|textarea, … }), das mit h(…) eingebaut wird.
@@ -545,6 +546,40 @@ export function einstellRegler({ min, max, schritt = 1, wert, label, einheit = "
   fuelle();
   const el = h("div", { klasse: "ez-regler-block" }, h("span", { klasse: "ez-regler-klein", "aria-hidden": "true", title: textKlein, text: "A" }), feld, h("span", { klasse: "ez-regler-gross", "aria-hidden": "true", title: textGross, text: "A" }), anzeige);
   return { el, input: feld, setze: (w) => { feld.value = String(w); fuelle(); } };
+}
+
+// Schieber (Regler ohne natives <input type=range>): Spur, Füllung, Teilstriche, Knauf; Ziehen und Tasten. aufEingabe bei jeder Bewegung, aufAenderung beim Loslassen und bei jedem Tastendruck.
+// → { el, setze(wert), wert() } — el ist die Rolle `slider` (fokussierbar, aria-valuenow).
+export function schieber({ min, max, schritt = 1, wert, label, striche = false, aufEingabe, aufAenderung, text = (v) => String(v), daten = {} } = {}) {
+  let aktuell = wert;
+  const el = h("div", { klasse: "bs-schieber", role: "slider", tabindex: "0", "aria-label": label, "aria-valuemin": String(min), "aria-valuemax": String(max), ...daten });
+  const fuell = h("i", { klasse: "bs-sch-fuell" }), knauf = h("i", { klasse: "bs-sch-knauf" });
+  el.append(h("i", { klasse: "bs-sch-spur" }), fuell);
+  const n = Math.round((max - min) / schritt);
+  if (striche && n <= 12) for (let i = 0; i <= n; i++) el.append(h("i", { klasse: "bs-sch-strich", style: `left: calc(9px + (100% - 18px) * ${i / n})` }));
+  el.append(knauf);
+  const klemme = (v) => Math.min(max, Math.max(min, v));
+  const zeige = () => { const pos = `calc(9px + (100% - 18px) * ${(aktuell - min) / (max - min)})`; fuell.style.width = pos; knauf.style.left = pos; el.setAttribute("aria-valuenow", String(aktuell)); el.setAttribute("aria-valuetext", text(aktuell)); };
+  const vonX = (x) => {
+    const r = el.getBoundingClientRect(), k = r.width / el.offsetWidth || 1;
+    const p = Math.min(1, Math.max(0, (x - r.left - 9 * k) / (r.width - 18 * k)));
+    return klemme(Math.round((min + p * (max - min)) / schritt) * schritt);
+  };
+  const setzeWert = (v, art) => { if (v === aktuell) return; aktuell = v; zeige(); if (art) aufEingabe?.(v); };
+  let zieht = false, davor = aktuell;
+  el.addEventListener("pointerdown", (ev) => { zieht = true; davor = aktuell; el.setPointerCapture?.(ev.pointerId); el.focus(); setzeWert(vonX(ev.clientX), true); });
+  el.addEventListener("pointermove", (ev) => { if (zieht) setzeWert(vonX(ev.clientX), true); });
+  const los = () => { if (!zieht) return; zieht = false; if (aktuell !== davor) aufAenderung?.(aktuell); };
+  el.addEventListener("pointerup", los); el.addEventListener("pointercancel", los);
+  el.addEventListener("keydown", (ev) => {
+    let v = aktuell;
+    if (ev.key === "ArrowRight" || ev.key === "ArrowUp") v += schritt; else if (ev.key === "ArrowLeft" || ev.key === "ArrowDown") v -= schritt;
+    else if (ev.key === "Home") v = min; else if (ev.key === "End") v = max; else return;
+    ev.preventDefault(); v = klemme(v);
+    if (v !== aktuell) { setzeWert(v, true); aufAenderung?.(v); }
+  });
+  zeige();
+  return { el, setze: (v) => { aktuell = v; zeige(); }, wert: () => aktuell };
 }
 
 // Symbol-Wahl (App-Symbol im Dock): eine Reihe Kacheln mit dem Bild und dem Namen, genau eine gewählt (Radiogruppe, ←→↑↓ wechseln, Tab erreicht die gewählte Kachel).

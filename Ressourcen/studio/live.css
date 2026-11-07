@@ -10,7 +10,7 @@
 }
 
 /* ---------- Hinweis mit Aktionen (Mitteilungen, P8): Logo · Titel mit grauer Unterzeile · „Ansehen“ und „Rückgängig“ ---------- */
-.toast.reich { gap: 12px; max-width: min(520px, calc(100vw - 32px)); padding: 10px 12px; }
+.toast.reich { gap: 12px; max-width: min(520px, calc(var(--vw) - 32px)); padding: 10px 12px; }
 .toast-logo { flex: none; width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; background: var(--seite); border: 1px solid var(--linie); color: var(--text); }
 .toast-text { flex: 1; min-width: 0; line-height: 1.35; }
 .toast-titel { font-size: 13px; color: var(--text); overflow-wrap: anywhere; }

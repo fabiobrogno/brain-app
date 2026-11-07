@@ -1,0 +1,102 @@
+/* Darstellung (Paket „Darstellung“): Karten mit Mini-Fenstern, Farbkreise, Vorschau, Regler-Beschriftung, farbige Kacheln, Dichte. Maße und Verhalten wie im freigegebenen Prototyp (kortex-design.html).
+   Farben nur aus Tokens (schemata.css); die Mini-Fenster tragen ihr eigenes data-pal. */
+
+/* ---------- Karten (Erscheinungsbild, Farbschema) ---------- */
+.ez.ez-spalte { flex-direction: column; align-items: stretch; gap: 12px; }
+.ez-spalte > .ez-l { flex: none; }
+.ez-voll > .dz-pv { margin: 14px 16px; }
+.dz-karten { display: grid; gap: 12px; }
+.dz-karten.dz-drei { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.dz-karte { position: relative; display: block; text-align: left; border-radius: 11px; padding: 6px 6px 8px; border: 1px solid var(--linie); background: var(--papier); color: var(--text); cursor: pointer; transition: border-color var(--d-2), box-shadow var(--d-2); font: inherit; }
+.dz-karte:hover { border-color: var(--linie-stark); }
+.dz-karte[aria-checked="true"] { border-color: var(--akzent); box-shadow: 0 0 0 3px var(--akzent-weich); }
+.dz-karte:focus-visible, .dz-farbe:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
+.dz-bild { display: block; }
+.dz-name { display: flex; align-items: center; gap: 6px; padding: 7px 3px 0; font-weight: 500; font-size: 12.5px; }
+.dz-haken { margin-left: auto; width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--eingabe); display: grid; place-items: center; color: var(--akzent-text); transition: background-color var(--d-2), border-color var(--d-2); }
+.dz-haken svg { opacity: 0; transition: opacity var(--d-1); }
+.dz-karte[aria-checked="true"] .dz-haken { background: var(--akzent); border-color: var(--akzent); }
+.dz-karte[aria-checked="true"] .dz-haken svg { opacity: 1; }
+.dz-mini { position: relative; display: flex; aspect-ratio: 16 / 10; border-radius: 7px; overflow: hidden; background: var(--papier); color: var(--text); box-shadow: inset 0 0 0 1px var(--linie-stark); font-size: 0; }
+.dz-sb { width: 30%; background: var(--seite); border-right: 1px solid var(--linie); padding: 9% 6% 0; display: flex; flex-direction: column; gap: 6%; }
+.dz-sb b { display: block; height: 7%; min-height: 3px; border-radius: 3px; background: var(--text-3); opacity: .5; }
+.dz-sb b.a { background: var(--akzent); opacity: 1; }
+.dz-sb b:nth-child(3) { width: 70%; }
+.dz-ed { flex: 1; padding: 9% 8%; display: flex; flex-direction: column; gap: 7%; }
+.dz-ed u { display: block; height: 6%; min-height: 3px; border-radius: 3px; background: var(--text-3); opacity: .45; text-decoration: none; }
+.dz-ed u.t { height: 10%; width: 55%; background: var(--text); opacity: .85; }
+.dz-ed u.s { width: 70%; }
+.dz-ed u.l { width: 38%; background: var(--akzent); opacity: 1; }
+.dz-mini.dz-halb { position: absolute; inset: 0; clip-path: polygon(0 0, 100% 0, 0 100%); }
+.dz-mini.dz-sys { background: none; box-shadow: none; }
+.dz-voll { position: absolute; inset: 0; display: flex; background: var(--papier); }
+.dz-mini.dz-sys::after { content: ""; position: absolute; inset: 0; border-radius: 7px; box-shadow: inset 0 0 0 1px var(--linie-stark); pointer-events: none; }
+
+/* ---------- Akzentfarben ---------- */
+.dz-farben { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.dz-farbe { position: relative; width: 28px; height: 28px; border-radius: 50%; border: 0; padding: 0; background: var(--c, var(--akzent)); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .14); display: grid; place-items: center; color: var(--ct, #fff); cursor: pointer; transition: transform var(--d-2) var(--ease-feder); }
+.dz-farbe:hover { transform: scale(1.1); }
+.dz-farbe::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid var(--c); opacity: 0; transform: scale(.85); transition: opacity var(--d-2), transform var(--d-2) var(--ease-feder); }
+.dz-farbe[aria-checked="true"]::after { opacity: 1; transform: none; }
+.dz-farbe svg { opacity: 0; transform: scale(.5); transition: opacity var(--d-1), transform var(--d-2); }
+.dz-farbe[aria-checked="true"] svg { opacity: 1; transform: none; }
+.dz-lab { font-size: 11.5px; color: var(--text-3); }
+.dz-farben .dz-lab { margin-left: 4px; }
+.dz-regler { display: inline-flex; align-items: center; gap: 10px; }
+.dz-wert { min-width: 42px; text-align: right; font-variant-numeric: tabular-nums; color: var(--text-2); font-size: 12.5px; }
+.dz-menue { display: inline-flex; }
+.dz-kachel { --ts: 14px; width: var(--ts); height: var(--ts); border-radius: 4px; display: inline-grid; place-items: center; flex: none; margin-right: 6px; background: linear-gradient(180deg, color-mix(in srgb, var(--tint) 88%, #fff), var(--tint)); color: #fff; box-shadow: inset 0 0 0 .5px rgba(0, 0, 0, .18); }
+
+/* ---------- Vorschau ---------- */
+.dz-pv { position: relative; border-radius: 12px; overflow: hidden; height: 176px; border: 1px solid var(--linie); padding: 14px 14px 0;
+  background: radial-gradient(70% 120% at 0% 0%, #7d8dff, transparent 60%), radial-gradient(60% 90% at 100% 100%, #ff9bd2, transparent 60%), linear-gradient(135deg, #cdd8ff, #ece6f3); }
+.dz-pv[data-mode="dark"] { background: radial-gradient(70% 120% at 0% 0%, #4a3fb5, transparent 60%), radial-gradient(60% 90% at 100% 100%, #8a2f73, transparent 60%), linear-gradient(135deg, #17163a, #0d0d18); }
+.dz-pv-w { display: grid; grid-template-columns: 34% 1fr; height: 100%; border-radius: 9px 9px 0 0; overflow: hidden; background: var(--papier); color: var(--text); box-shadow: 0 14px 40px -8px rgba(0, 0, 0, .4), 0 0 0 .5px rgba(0, 0, 0, .3); }
+.dz-pv-s { background: var(--seite); padding: 9px 8px; display: flex; flex-direction: column; gap: 3px; border-right: 1px solid var(--linie); }
+.dz-pv-w[data-glas="an"] .dz-pv-s { background: color-mix(in srgb, var(--seite) 56%, transparent); -webkit-backdrop-filter: blur(20px) saturate(1.8); backdrop-filter: blur(20px) saturate(1.8); }
+.dz-pv-ampel { height: 20px; display: flex; align-items: center; gap: 5px; padding-left: 2px; }
+.dz-pv-ampel i { width: 8px; height: 8px; border-radius: 50%; box-shadow: inset 0 0 0 .5px rgba(0, 0, 0, .2); }
+.dz-pv-ampel i:nth-child(1) { background: #ff5f57; } .dz-pv-ampel i:nth-child(2) { background: #febc2e; } .dz-pv-ampel i:nth-child(3) { background: #28c840; }
+.dz-pv-i { position: relative; display: flex; align-items: center; gap: 7px; height: calc(var(--zeile, 28px) * .78); padding: 0 7px; border-radius: 5px; font-size: 10.5px; color: var(--text-2); transition: height var(--d-2); }
+.dz-pv-i.a { background: var(--auswahl); color: var(--text); }
+.dz-pv-i.a::before { content: ""; position: absolute; left: -8px; top: 50%; margin-top: -6px; width: 2.5px; height: 12px; border-radius: 0 2px 2px 0; background: var(--akzent); }
+.dz-pv-gl { display: grid; place-items: center; }
+.dz-pv-w[data-symbole="farbig"] .dz-pv-gl { width: 15px; height: 15px; border-radius: 4px; background: linear-gradient(180deg, color-mix(in srgb, var(--tint) 88%, #fff), var(--tint)); color: #fff; }
+.dz-pv-e { padding: 12px 16px; overflow: hidden; font-family: var(--schrift-text); font-size: calc(var(--editor-schrift) * .74); line-height: var(--ed-zeilenabstand); min-width: 0; }
+.dz-pv-e h4 { margin: 0 0 3px; font-size: 1.25em; line-height: 1.2; letter-spacing: -.01em; }
+.dz-pv-e p { margin: 0; max-width: var(--pv-breite, 330px); transition: max-width var(--d-3) var(--ease-out); }
+.dz-pv-e code { font-family: var(--mono); font-size: .85em; background: var(--code); border: 1px solid var(--linie); padding: 0 4px; border-radius: 4px; }
+.dz-pv-e a { color: var(--akzent); border-bottom: 1px solid var(--akzent-rand); }
+
+/* ---------- Dichte: Zeilen der Einstellungen und der Seitenleiste folgen --innen / --zeile ---------- */
+.ez.ez { padding-block: var(--innen); }
+.e-punkt { height: calc(var(--zeile) + 2px); }
+
+/* ---------- Farbige Kacheln (Symbole: farbig): Seite „Einstellungen“ und Seitenleiste ---------- */
+html[data-symbole="farbig"] :is(.e-punkt, #bereiche .eintrag, .abschnitt[data-abschnitt="sichten"] .eintrag) > .sym {
+  box-sizing: content-box; padding: 3px; border-radius: 6px; color: #fff;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--tint, var(--text-3)) 88%, #fff), var(--tint, var(--text-3)));
+  box-shadow: inset 0 0 0 .5px rgba(0, 0, 0, .18), 0 1px 1px rgba(0, 0, 0, .12);
+}
+html[data-symbole="farbig"] .e-punkt[aria-current="true"] > .sym, html[data-symbole="farbig"] :is(#bereiche, .abschnitt[data-abschnitt="sichten"]) .eintrag > .sym { color: #fff; }
+.e-punkt[data-bereich="allgemein"] { --tint: #8e8e93; }
+.e-punkt[data-bereich="darstellung"] { --tint: #0a84ff; }
+.e-punkt[data-bereich="tasten"] { --tint: #6e6e73; }
+.e-punkt[data-bereich="mitteilungen"] { --tint: #ff453a; }
+.e-punkt[data-bereich="vaults"] { --tint: #5e5ce6; }
+.e-punkt[data-bereich="schreiben"] { --tint: #5e8bff; }
+.e-punkt[data-bereich="ki"] { --tint: #bf5af2; }
+.e-punkt[data-bereich="automatik"] { --tint: #30b350; }
+.e-punkt[data-bereich="sicherung"] { --tint: #2fa8e0; }
+.e-punkt[data-bereich="mobil"] { --tint: #ff9f0a; }
+.e-punkt[data-bereich="datenschutz"] { --tint: #0a9d8f; }
+.e-punkt[data-bereich="erweitert"] { --tint: #8e8e93; }
+.e-punkt[data-bereich="ueber"] { --tint: #6e6e73; }
+.eintrag[data-bereich="inbox"] { --tint: #0a84ff; }
+.eintrag[data-bereich="alle"] { --tint: #8e8e93; }
+.eintrag[data-bereich="aufgaben"] { --tint: #30b350; }
+.eintrag[data-bereich="rueckfragen"] { --tint: #ff9f0a; }
+.eintrag[data-bereich="wissen"] { --tint: #5e8bff; }
+.eintrag[data-bereich="archiv"] { --tint: #8e8e93; }
+.eintrag[data-bereich="papierkorb"] { --tint: #8e8e93; }
+.eintrag[data-aktion="frage-oeffnen"] { --tint: #bf5af2; }

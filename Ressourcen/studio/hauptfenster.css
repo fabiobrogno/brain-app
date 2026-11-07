@@ -90,7 +90,7 @@
 #app[data-info="aus"] #info { transition: visibility 0s linear var(--d-panel); }
 #app[data-frage="an"][data-frage-modus="schiebt"] #info { visibility: hidden; transition: visibility 0s linear var(--d-panel); }
 #frage-host { grid-area: info; position: relative; z-index: 30; pointer-events: none; min-width: 0; }
-#frage-host .frage { position: absolute; top: 0; right: 0; bottom: 0; left: auto; width: var(--b-frage); max-width: 100vw; }
+#frage-host .frage { position: absolute; top: 0; right: 0; bottom: 0; left: auto; width: var(--b-frage); max-width: var(--vw); }
 .info-kopf { padding-left: 16px; }
 .info-kopf h2 { font-size: 13px; font-weight: 650; }
 

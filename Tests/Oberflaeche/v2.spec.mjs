@@ -198,7 +198,7 @@ test("Werkzeuge im Editorkopf: Favorit (mit Seitenleisten-Abschnitt), Rohtext, B
   await expect(page.locator(".cm-content")).not.toContainText("# Kaffee");
   // Breite
   await page.click("#w-breit");
-  await expect(page.locator("#haupt")).toHaveAttribute("data-breite", "breit");
+  await expect(page.locator("html")).toHaveAttribute("data-breite", "breit");
   // Gliederung
   await page.click("#w-gliederung");
   await expect(page.locator(".menue [data-menue]")).toHaveText(["Kaffee", "Fakten"]);
@@ -299,8 +299,10 @@ test("Statusleiste: alle Elemente und Hell/Dunkel-Umschalter", async ({ page }) 
   await page.emulateMedia({ colorScheme: "light" });
   const farbe = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
   expect(await farbe()).toBe("rgb(255, 255, 255)");
+  const put = page.waitForResponse((r) => r.url().includes("/api/einstellungen") && r.request().method() === "PUT");
   await page.click('[data-st="theme"]');
   expect(await farbe()).toBe("rgb(10, 10, 10)");
+  await put; // gemerkt wird in einstellungen.json
   await page.reload();
   await page.waitForSelector("[data-karte]");
   expect(await farbe()).toBe("rgb(10, 10, 10)"); // gemerkt
