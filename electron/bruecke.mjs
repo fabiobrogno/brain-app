@@ -1,5 +1,5 @@
 // electron/bruecke.mjs — Brücke zwischen Studiofenster und Werkstatt: dasselbe Zeilenprotokoll wie in der Swift-App (Ressourcen/werkstatt/werkstatt.mjs, Kopfzeile),
-// die Werkstatt läuft als KINDPROZESS (Begründung im PR: eigene Node-Laufzeit für `process.execPath`-Kinder, ein hängender Handler friert die Oberfläche nicht ein, derselbe Code wie am Mac,
+// die Werkstatt läuft als KINDPROZESS (Begründung im PR: ein hängender Handler friert die Oberfläche nicht ein, derselbe Code wie am Mac,
 // kein Port und kein Token — es gibt keinen Netzwerkweg zur Werkstatt). Die Verbindung hier hält nur: starten, Anfragen mit Nummer und Frist, Antworten zuordnen, Neustart nach Absturz, sauber beenden.
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
@@ -9,7 +9,7 @@ import { join, delimiter, isAbsolute } from "node:path";
 // Sperrliste wie in Swift (NodeUmgebung); Abgleich im Test Tests/Node/electron-huelle.test.mjs
 const SPERRE = JSON.parse(readFileSync(new URL("./test-schalter.json", import.meta.url), "utf8"));
 
-// Absolutes `node` aus dem PATH (nur absolute Einträge) oder null: darauf zeigen MCP-Einträge und Statuszeile (BRAIN_MCP_NODE). Ohne eines schreibt die Werkstatt beides nicht (werkstatt.mjs, ohneNode).
+// Absolutes `node` aus dem PATH (nur absolute Einträge) oder null. NUR für die Entwicklung (`npm start`): die installierte App bringt ihr eigenes Node mit (laufzeit.mjs) und sucht nie im PATH.
 export function findeNode(pfadText, { plattform = process.platform } = {}) {
   const ausfuehrbar = (p) => { try { accessSync(p, constants.X_OK); return statSync(p).isFile(); } catch { return false; } };
   for (const d of String(pfadText || "").split(plattform === "win32" ? ";" : delimiter).filter((e) => e && isAbsolute(e))) {
@@ -25,23 +25,28 @@ export function findeNode(pfadText, { plattform = process.platform } = {}) {
 const GRUND = ["PATH", "HOME", "USER", "USERNAME", "LOGNAME", "SHELL", "LANG", "TZ", "TMPDIR", "TEMP", "TMP", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "PROGRAMDATA", "PROGRAMFILES", "PROGRAMFILES(X86)",
   "SYSTEMROOT", "SystemRoot", "SYSTEMDRIVE", "windir", "ComSpec", "PATHEXT", "HOMEDRIVE", "HOMEPATH", "COMPUTERNAME", "OS", "PROCESSOR_ARCHITECTURE"];
 const XDG = ["XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME"];
-export function baueKindUmgebung(env = process.env, { gepackt = false, node = null } = {}) {
+// node: stabiler Pfad des Node (BRAIN_MCP_NODE, für MCP-Einträge und Statuszeile), kern: stabiler Kern-Pfad (KORTEX_KERN_PFAD), githubClientId: öffentliche OAuth-Client-ID aus Ressourcen/Info.plist
+// (info-plist.mjs; dieselbe Quelle wie die Mac-App, sie setzt sie ebenfalls als KORTEX_GITHUB_CLIENT_ID). Im Paket gilt die aus der Info.plist; in der Entwicklung darf eine gesetzte Variable sie überstimmen.
+// vorschau: der geprüfte Ordner der Vorschau (scripts/vorschau-electron.sh); KORTEX_VORSCHAU geht sonst im Paket nie weiter.
+export function baueKindUmgebung(env = process.env, { gepackt = false, node = null, kern = null, githubClientId = null, vorschau = null } = {}) {
   const aus = {};
   const nimm = (k) => { if (env[k] !== undefined) aus[k] = env[k]; };
   GRUND.forEach(nimm);
   for (const k of Object.keys(env)) if (/^(LC_|BRAIN_|KORTEX_)/.test(k)) nimm(k);
   if (env.BRAIN_TESTMODUS !== "1") XDG.forEach(nimm);
-  delete aus.BRAIN_VAULT; delete aus.BRAIN_MCP_NODE;
+  delete aus.BRAIN_VAULT; delete aus.BRAIN_MCP_NODE; delete aus.KORTEX_KERN_PFAD;
   if (gepackt) for (const k of [SPERRE.testmodus, ...SPERRE.gesperrt, ...SPERRE.testSchalter]) delete aus[k];
   if (node) aus.BRAIN_MCP_NODE = node;
-  aus.ELECTRON_RUN_AS_NODE = "1"; // die Electron-Datei läuft als Node (kein Fenster); Kinder, die `process.execPath` starten, setzen es selbst (gemeinsam/basis.mjs alsNode)
+  if (kern) aus.KORTEX_KERN_PFAD = kern;
+  if (vorschau) aus.KORTEX_VORSCHAU = vorschau; // nur ein geprüfter Vorschau-Ordner (gemeinsam/basis.mjs vorschauOrdnerAus): die Werkstatt hält sich dann selbst daran (Zugangsdaten nur im Ordner, nie im Schlüsselbund)
+  if (githubClientId && (gepackt || !aus.KORTEX_GITHUB_CLIENT_ID)) aus.KORTEX_GITHUB_CLIENT_ID = githubClientId;
   return aus;
 }
 
 const MAX_NEUSTARTS = 3, FENSTER_MS = 60_000;
 
 /**
- * Startet die Werkstatt. `programm` = Programm, das Node-Skripte ausführt (Electron mit ELECTRON_RUN_AS_NODE, oder ein Node), `skript` = werkstatt.mjs.
+ * Startet die Werkstatt. `programm` = ein echtes Node (das mitgelieferte, in der Entwicklung das aus dem PATH), `skript` = werkstatt.mjs.
  * fristMs: so lange darf eine Anfrage dauern (Status 504 bei der Hülle; die Werkstatt hat für lange Läufe eigene Fristen), hartMs: nach dem Schließen von stdin bis zum Beenden des Prozesses.
  * → { bereit: Promise<{version, vaultId}>, anfrage({methode, pfad, query, body}) → Promise<{status, headers, body}>, beende(): Promise<void>, lebt(): boolean }
  * Endet die Werkstatt vor dem ersten `bereit`, wird `bereit` abgelehnt (mit Exit-Code und letzter Fehlerausgabe), es gibt keinen Neustart.

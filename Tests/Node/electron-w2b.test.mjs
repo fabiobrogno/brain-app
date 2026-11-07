@@ -178,7 +178,7 @@ test("Tray: Menü wie die Menüleiste der Mac-App, Zähler neuer Mitteilungen un
   const z = tray.trayZustand({ info: { vault: "/v", name: "Mein Vault", vertrauen: { erlaubt: true } }, aktivitaet: { ungelesen: 3 }, rueckfragen: { verfuegbar: true, offen: 2 } }, "Ctrl+Alt+Space");
   const v = tray.baueTrayVorlage(z, aktion);
   const labels = v.map((x) => x.label).filter(Boolean);
-  assert.deepEqual(labels, ["Mein Vault", "3 neue Mitteilungen", "2 Rückfragen offen", "Studio öffnen", "Schnell erfassen …", "Jetzt abgleichen", "Vault wechseln …", "Ordner als Vault öffnen …", "Ordner im Dateimanager zeigen", "Einstellungen …", "Kortex einrichten …", "Beenden"]);
+  assert.deepEqual(labels, ["Mein Vault", "3 neue Mitteilungen", "2 Rückfragen offen", "Studio öffnen", "Schnell erfassen …", "Jetzt abgleichen", "Vault wechseln …", "Ordner als Vault öffnen …", "Ordner im Dateimanager zeigen", "Einstellungen …", "Kortex einrichten …", "Nach Updates suchen …", "Beenden"]);
   assert.equal(tray.trayTitel(z), "Kortex — 3 neue Mitteilungen");
   assert.equal(v.find((x) => x.id === "tray-erfassen").accelerator, "Ctrl+Alt+Space");
   v.find((x) => x.id === "tray-mitteilungen").click(); v.find((x) => x.id === "tray-beenden").click(); v.find((x) => x.id === "tray-abgleichen").click();

@@ -12,7 +12,7 @@ const STRUKTUR = [
     ["Neue Notiz", "neu"], ["Neue Notiz aus Vorlage …", "vorlage"], ["Heute (Tagesnotiz)", "heute"], ["Schnell merken", "merken"], ["Aufgabe erfassen …", "aufgabe-erfassen"],
     ["Schnell erfassen …", { fest: "erfassen", kuerzelId: "schnell-erfassen" }], "-",
     ["Vault öffnen …", "vault-oeffnen"], ["Vault wechseln …", "vault-wechseln"], "-",
-    ["Einstellungen …", "einstellungen"], ["Kortex einrichten …", { fest: "einrichten", grund: "Kortex einrichten" }], "-",
+    ["Einstellungen …", "einstellungen"], ["Kortex einrichten …", { fest: "einrichten", grund: "Kortex einrichten" }], ["Nach Updates suchen …", { fest: "updates" }], "-",
     ["Fenster schließen", { fest: "schliessen", grund: "Fenster schließen" }], ["Beenden", { fest: "beenden", grund: "Kortex beenden" }],
   ]],
   ["Darstellung", [
@@ -32,10 +32,10 @@ const STRUKTUR = [
 export const MENUE_BEFEHLE = STRUKTUR.flatMap(([, eintraege]) => eintraege.filter((e) => e !== "-" && typeof e[1] === "string").map((e) => e[1]));
 
 /**
- * → Vorlage für Menu.buildFromTemplate. abh: { register, logik, belegung ({id: text|null}), plattform?, entwickler?, aktion({befehl}|{fest}) }
+ * → Vorlage für Menu.buildFromTemplate. abh: { register, logik, belegung ({id: text|null}), plattform?, entwickler?, updates? (gibt es Updates in dieser Ausführung), aktion({befehl}|{fest}) }
  * Ids der Einträge: `befehl-<name>` bzw. `fest-<name>` (Tests und Aktualisierung finden sie so).
  */
-export function baueMenueVorlage({ register, logik, belegung, plattform = process.platform, entwickler = false, aktion }) {
+export function baueMenueVorlage({ register, logik, belegung, plattform = process.platform, entwickler = false, updates = true, aktion }) {
   const gewinner = logik.nachschlagen(register, ueberschriebenAus(register, belegung));
   const ctx = { register, logik, belegung, gewinner, plattform };
   const zeigeNur = plattform !== "darwin" ? { registerAccelerator: false } : {};
@@ -51,7 +51,9 @@ export function baueMenueVorlage({ register, logik, belegung, plattform = proces
     let acc = null;
     if (was.kuerzelId) acc = menueAccelerator(was.kuerzelId, ctx);
     else if (was.grund && reserviert(was.grund)) acc = acceleratorVon(reserviert(was.grund), { register, logik, plattform });
-    return { id: `fest-${was.fest}`, label: text, ...(acc ? { accelerator: acc, ...(was.kuerzelId ? zeigeNur : {}) } : {}), click: () => aktion({ fest: was.fest }) };
+    // „Nach Updates suchen …“ wie in der Mac-App (Sparkle): in der Entwicklung und in der Vorschau ausgegraut
+    const aus = was.fest === "updates" && !updates ? { enabled: false } : {};
+    return { id: `fest-${was.fest}`, label: text, ...(acc ? { accelerator: acc, ...(was.kuerzelId ? zeigeNur : {}) } : {}), ...aus, click: () => aktion({ fest: was.fest }) };
   }
 
   const menues = STRUKTUR.map(([titel, eintraege]) => ({

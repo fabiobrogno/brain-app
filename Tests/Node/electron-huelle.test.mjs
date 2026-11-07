@@ -64,9 +64,12 @@ test("Umgebung der Werkstatt: ausdrücklich gebaut — nie CLAUDE_CONFIG_DIR, CO
   const quelle = { PATH: "/usr/bin", HOME: "/h", LANG: "de_DE.UTF-8", LC_ALL: "C", BRAIN_APP_SUPPORT: "/s", KORTEX_X: "1", XDG_CONFIG_HOME: "/x", XDG_DATA_HOME: "/d", BRAIN_VAULT: "/v", BRAIN_MCP_NODE: "/fremd/node",
     CLAUDE_CONFIG_DIR: "/c", CODEX_HOME: "/o", GIT_CONFIG_GLOBAL: "/g", GIT_CONFIG_COUNT: "1", GITHUB_TOKEN: "t", ANTHROPIC_API_KEY: "k", OPENAI_API_KEY: "k", NODE_OPTIONS: "--x", ELECTRON_FOO: "1", DISPLAY: ":0" };
   const normal = baueKindUmgebung(quelle);
-  assert.deepEqual(Object.keys(normal).sort(), ["BRAIN_APP_SUPPORT", "ELECTRON_RUN_AS_NODE", "HOME", "KORTEX_X", "LANG", "LC_ALL", "PATH", "XDG_CONFIG_HOME", "XDG_DATA_HOME"]);
-  assert.equal(normal.ELECTRON_RUN_AS_NODE, "1");
+  assert.deepEqual(Object.keys(normal).sort(), ["BRAIN_APP_SUPPORT", "HOME", "KORTEX_X", "LANG", "LC_ALL", "PATH", "XDG_CONFIG_HOME", "XDG_DATA_HOME"]);
+  assert.equal("ELECTRON_RUN_AS_NODE" in baueKindUmgebung({ ...quelle, ELECTRON_RUN_AS_NODE: "1" }), false, "die Werkstatt läuft mit einem echten Node, nie als Electron");
   assert.equal(baueKindUmgebung(quelle, { node: "/usr/bin/node" }).BRAIN_MCP_NODE, "/usr/bin/node");
+  const mitKern = baueKindUmgebung({ ...quelle, KORTEX_KERN_PFAD: "/fremd/kern" }, { kern: "/s/bin/kern" });
+  assert.equal(mitKern.KORTEX_KERN_PFAD, "/s/bin/kern");
+  assert.equal("KORTEX_KERN_PFAD" in baueKindUmgebung({ ...quelle, KORTEX_KERN_PFAD: "/fremd/kern" }), false, "ein mitgebrachter Kern-Pfad geht nie durch");
   const test = baueKindUmgebung({ ...quelle, BRAIN_TESTMODUS: "1" });
   assert.equal(Object.keys(test).filter((k) => k.startsWith("XDG_")).length, 0);
   for (const k of ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_COUNT", "GITHUB_TOKEN", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "NODE_OPTIONS", "ELECTRON_FOO", "BRAIN_VAULT", "BRAIN_MCP_NODE"]) assert.equal(k in normal, false, k);
@@ -80,7 +83,9 @@ test("Umgebung im Paket: Testschalter und Vorschau fallen weg wie in Swift (Node
   assert.equal(liste.testmodus, /static let testmodusName = "([A-Z_]+)"/.exec(swift)[1]);
   assert.ok(aus("gesperrt").includes("KORTEX_VORSCHAU"));
   const quelle = { PATH: "/usr/bin", BRAIN_TESTMODUS: "1", KORTEX_VORSCHAU: "/v", BRAIN_CLAUDE: "/x", KORTEX_VAULT_VERTRAUT: "alle", BRAIN_GITHUB_API: "http://x", BRAIN_ERNTE: "1", KORTEX_GITHUB_CLIENT_ID: "id" };
-  assert.deepEqual(Object.keys(baueKindUmgebung(quelle, { gepackt: true })).sort(), ["BRAIN_ERNTE", "ELECTRON_RUN_AS_NODE", "KORTEX_GITHUB_CLIENT_ID", "PATH"]);
+  assert.deepEqual(Object.keys(baueKindUmgebung(quelle, { gepackt: true })).sort(), ["BRAIN_ERNTE", "KORTEX_GITHUB_CLIENT_ID", "PATH"]);
+  assert.equal(baueKindUmgebung(quelle, { gepackt: true, githubClientId: "aus-der-plist" }).KORTEX_GITHUB_CLIENT_ID, "aus-der-plist", "im Paket gilt die ID aus der Info.plist");
+  assert.equal(baueKindUmgebung(quelle, { githubClientId: "aus-der-plist" }).KORTEX_GITHUB_CLIENT_ID, "id", "in der Entwicklung darf eine gesetzte Variable überstimmen");
   assert.ok("BRAIN_TESTMODUS" in baueKindUmgebung(quelle), "in der Entwicklung bleiben die Schalter");
 });
 
@@ -95,14 +100,17 @@ test("node im PATH: nur absolute Einträge, ausführbare Datei", (t) => {
   assert.equal(findeNode("relativ:."), null);
 });
 
-test("alsNode (gemeinsam/basis.mjs): ELECTRON_RUN_AS_NODE nur bei den eigenen process.execPath-Aufrufen und nur, wenn der Prozess selbst Electron ist; kindUmgebung gibt es nie weiter", () => {
-  const lauf = (mitElectron) => JSON.parse(execFileSync(process.execPath, ["--input-type=module", "-e",
-    `${mitElectron ? "Object.defineProperty(process.versions, 'electron', { value: '45.0.0', configurable: true });" : ""}
-     const b = await import(${JSON.stringify(pathToFileURL(join(W, "Ressourcen/gemeinsam/basis.mjs")).href)});
-     console.log(JSON.stringify({ als: b.alsNode({ A: "1" }), kind: b.kindUmgebung({}).ELECTRON_RUN_AS_NODE ?? null }));`],
+test("kein ELECTRON_RUN_AS_NODE mehr: alsNode gibt es nicht, die Werkstatt kennt kein ohneNode, kindUmgebung gibt ELECTRON_* nie weiter", () => {
+  const lauf = () => JSON.parse(execFileSync(process.execPath, ["--input-type=module", "-e",
+    `const b = await import(${JSON.stringify(pathToFileURL(join(W, "Ressourcen/gemeinsam/basis.mjs")).href)});
+     console.log(JSON.stringify({ als: typeof b.alsNode, kind: b.kindUmgebung({}).ELECTRON_RUN_AS_NODE ?? null }));`],
     { env: { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, ELECTRON_RUN_AS_NODE: "1" }, encoding: "utf8" }));
-  assert.deepEqual(lauf(true), { als: { A: "1", ELECTRON_RUN_AS_NODE: "1" }, kind: null });
-  assert.deepEqual(lauf(false), { als: { A: "1" }, kind: null });
+  assert.deepEqual(lauf(), { als: "undefined", kind: null });
+  for (const datei of ["Ressourcen/werkstatt/werkstatt.mjs", "Ressourcen/werkstatt/handler.mjs", "Ressourcen/gemeinsam/vault.mjs", "electron/bruecke.mjs", "electron/haupt.mjs"]) {
+    const text = readFileSync(join(W, datei), "utf8");
+    assert.equal(/ohneNode|alsNode/.test(text), false, `${datei}: kein ohneNode/alsNode mehr`);
+    assert.equal(/ELECTRON_RUN_AS_NODE\s*=/.test(text) || /ELECTRON_RUN_AS_NODE:\s*"1"/.test(text), false, `${datei}: setzt ELECTRON_RUN_AS_NODE nicht`);
+  }
 });
 
 test("einrichtung-oeffnen: Einstieg wie EinrichtungsOverlay.einstieg (Swift)", () => {
@@ -144,7 +152,6 @@ test("Brücke: die echte Werkstatt als Kind — bereit, Anfrage und Antwort, Stu
   writeFileSync(join(vault, "n.md"), "# N\n");
   const env = { ...baueKindUmgebung({ PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, HOME: home, USERPROFILE: home, APPDATA: join(home, "AppData", "Roaming"), LOCALAPPDATA: join(home, "AppData", "Local"),
     BRAIN_APP_SUPPORT: join(home, "support"), BRAIN_TESTMODUS: "1", KORTEX_VAULT_VERTRAUT: "alle" }) };
-  delete env.ELECTRON_RUN_AS_NODE; // hier läuft ein echtes Node
   const b = starteBruecke({ programm: process.execPath, skript: join(W, "Ressourcen/werkstatt/werkstatt.mjs"), vault, env });
   try {
     const bereit = await b.bereit;
@@ -172,7 +179,6 @@ test("Brücke: stirbt die Werkstatt vor dem ersten „bereit“ (Vault fehlt), w
   const home = temp();
   mkdirSync(join(home, "support"));
   const env = baueKindUmgebung({ PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, HOME: home, USERPROFILE: home, APPDATA: join(home, "AppData", "Roaming"), LOCALAPPDATA: join(home, "AppData", "Local"), BRAIN_APP_SUPPORT: join(home, "support"), BRAIN_TESTMODUS: "1" });
-  delete env.ELECTRON_RUN_AS_NODE;
   const zeilen = [];
   const b = starteBruecke({ programm: process.execPath, skript: join(W, "Ressourcen/werkstatt/werkstatt.mjs"), vault: join(home, "gibt-es-nicht"), env, protokoll: (z) => zeilen.push(z) });
   await assert.rejects(b.bereit, /endete vor dem Start \(2\)/);

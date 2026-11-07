@@ -209,22 +209,13 @@ test("Schließen sichert: Text tippen, sofort schließen — die Datei ist gespe
   lauf.app = null;
 });
 
-test("Ohne node im PATH schreibt Kortex weder MCP-Eintrag noch Statuszeile (klarer Grund), nichts in ~/.claude", async () => {
-  const leer = mkdtempSync(join(tmpdir(), "kortex-ohne-node-"));
-  lauf = await starteApp({ extra: { PATH: leer } });
-  const { fenster, home } = lauf;
-  const rufe = (pfad, body) => fenster.evaluate(([p, b]) => fetch(p, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) }).then(async (r) => [r.status, await r.json()]), [pfad, body]);
-  const [s1, j1] = await rufe("/api/ki/kontingent/statuszeile", { konto: "k_00000000", an: true, einwilligung: true });
-  expect(s1).toBe(409);
-  expect(j1).toMatchObject({ art: "kein-node" });
-  expect(j1.fehler).toContain("Node.js");
-  const [s2, j2] = await rufe("/api/mcp/verbinden", { ziel: "claude" });
-  expect(s2).toBe(404);
-  expect(j2.fehler).toContain("Node.js");
-  const info = await fenster.evaluate(() => fetch("/api/info").then((r) => r.json()));
-  expect(info.mcpBefehl).toBeNull();
-  expect(existsSync(join(home, ".claude"))).toBe(false);
-  expect(existsSync(join(home, ".claude.json"))).toBe(false);
+test("Entwicklung: die Werkstatt läuft mit dem node aus dem PATH und ihr MCP-Eintrag nennt es (kein Electron als Node)", async () => {
+  lauf = await starteApp();
+  const { app, fenster } = lauf;
+  const lz = await app.evaluate(() => globalThis.__kortex.laufzeit);
+  expect(lz.programm).toBe(lz.node);
+  expect(lz.node).not.toBe(await app.evaluate(() => process.execPath));
+  expect((await fenster.evaluate(() => fetch("/api/info").then((r) => r.json()))).mcpBefehl).toContain(lz.node);
 });
 
 test("Fenster-Foto der eigenen App", async ({}, testInfo) => {

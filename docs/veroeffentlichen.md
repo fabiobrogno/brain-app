@@ -116,3 +116,29 @@ App-interne Prüfung stimmt.
 - Bundle-ID und Repo-Name endgültig, Markenrecht für „Kortex“ geprüft (beides nur du).
 - Test am frischen Mac (Git-Voraussetzung, Assistent, Gatekeeper, Update).
 - Homebrew-Cask (FBL-80) und Website sind optional und folgen der ersten echten DMG-Adresse.
+
+## 10. Windows und Linux (Electron-Pakete, Paket W2c) — nur beschrieben, nichts davon ist ausgeführt
+
+Stand: Die CI baut bei jedem Lauf, der `electron/` oder `Ressourcen/` ändert, Windows (NSIS) und Linux (AppImage, deb; arm64 als Messung) als **Artefakte** (Job `paket`, 14 Tage) und testet sie. Es gibt **kein** Release, **keinen** Tag und **keinen** Workflow, der veröffentlicht; das entscheidest du. Der Mac-Weg (Abschnitte 1–9) bleibt unberührt.
+
+**Was die Pakete sind:** Windows `Kortex-Setup-<Version>-x64.exe` (ein Klick, pro Benutzer, ohne Admin, `%LOCALAPPDATA%\Programs\Kortex`, AppUserModelID `io.github.fbrogno.brain` wie die Bundle-ID), Linux `Kortex-<Version>-x86_64.AppImage` und `Kortex-<Version>-amd64.deb` (dazu `-arm64`). Alle bringen ihr eigenes Node mit (Version und Prüfsumme wie die Mac-App), Updates holt `electron-updater` aus GitHub-Releases. Kein MSIX, kein Flatpak, kein Snap (Entscheidung 3 im Plan).
+
+**Beta-Kanal wie am Mac:** Ein Tag `v0.3.0-beta.N` ist ein GitHub-**Prerelease**. Eine installierte Beta-Version (`-beta.N`) sucht Updates unter Prereleases, eine stabile nur unter stabilen Releases; nie ein Downgrade. Wie bei Sparkle gilt: bis zum Umzug auf das Firmenkonto gibt es nur Betas und kein Update-Versprechen. Der Updater liest `latest.yml` (Windows) bzw. `latest-linux.yml` (Linux, arm64: `latest-linux-arm64.yml`) **aus demselben Release** wie die Pakete.
+
+**Windows ist unsigniert (Betas):** Beim Start zeigt SmartScreen „Der Computer wurde durch Windows geschützt“. Anleitung für Tester: „Weitere Informationen“ → „Trotzdem ausführen“ (wie „Trotzdem öffnen“ am Mac). Auch Updates erzeugen den Hinweis nicht erneut, solange der Installer derselbe Herausgeber-Name (keiner) bleibt, können ihn aber auslösen. Die Signatur (SignPath Foundation oder Azure Trusted Signing, Plan §6 Entscheidung 3) ist nicht eingerichtet; sobald sie da ist, kommt sie als Schritt in den Paketbau, nie als Pflicht für Betas.
+
+**Linux-Hinweise für Tester:** AppImage: ausführbar machen (`chmod +x`), starten; braucht FUSE 2 (sonst `--appimage-extract-and-run`). Auf Ubuntu 24.04 und neuer sperrt AppArmor die Sandbox des AppImage (Fehler „The SUID sandbox helper binary was found, but is not configured correctly“): dort das **deb** nehmen (`sudo apt install ./Kortex-….deb`, der Installer setzt den Sandbox-Helfer) oder AppImage mit `--no-sandbox` (weniger sicher). Updates des deb laufen über die Paketverwaltung (`electron-updater` fragt dann nach dem Administratorkennwort), das AppImage ersetzt sich selbst.
+
+**Beim ersten echten Release zu tun (alles von dir, Reihenfolge):**
+
+| # | Schritt | Wer |
+|---|---|---|
+| 1 | Entscheiden: Bundle-ID/AppUserModelID `io.github.fbrogno.brain` bleibt, und Repo-Name `fabiobrogno/brain-app` steht (beides steckt in `app-update.yml` jedes Pakets; nach dem ersten Release mit Updates nicht änderbar, ohne Neuinstallation). Beim Umzug auf das Firmenkonto: Pakete mit neuer `GITHUB_REPOSITORY` bauen, alte Betas bekommen dann kein Update mehr | Fabio |
+| 2 | Version in `Ressourcen/Info.plist` setzen (`CFBundleShortVersionString`): daraus nimmt der Paketbau die Version. Ein Tag `vX.Y.Z[-beta.N]` muss dazu passen | Fabio/Claude |
+| 3 | Pakete des grünen CI-Laufs auf `main` herunterladen (Artefakte `pakete-ubuntu-latest`, `pakete-windows-latest`) **oder** lokal bauen (`docs/ENTWICKLUNG.md`); am frischen Windows-Rechner und an einer Linux-Maschine (deb und AppImage) probieren: Installieren, Assistent, Vault, KI verbinden, MCP-Eintrag prüfen, „Nach Updates suchen …“ | Fabio |
+| 4 | Ein GitHub-**Release** (Prerelease für Betas) mit Tag anlegen und **alle** Dateien eines Laufs hochladen: Windows `Kortex-Setup-….exe`, `latest.yml`; Linux `….AppImage`, `….deb`, `latest-linux.yml` (arm64: `latest-linux-arm64.yml`). Ohne die `latest*.yml` im Release findet kein Updater etwas. Nur Dateien eines Laufs mischen, nie Windows von einem und Linux von einem anderen Stand | Fabio |
+| 5 | Update-Weg prüfen: eine Version installieren, die nächste (Beta.2) veröffentlichen, in der installierten App „Nach Updates suchen …“. Auf Windows (NSIS ersetzt sich selbst) und Linux-AppImage; für das deb Aktualisierung über die Paketverwaltung | Fabio |
+| 6 | Optional später: Antrag auf Windows-Signatur (SignPath Foundation, kostenlos für Open Source, Wartezeit) und Eintrag der Zugangsdaten als Secrets; ein Windows-Signaturschritt wäre dann in `electron/paket/konfig.mjs` zu ergänzen | Fabio |
+
+Was **nicht** automatisch passiert: Kein Workflow lädt in ein Release hoch, kein Tag löst einen Bau aus, die Mac-Kette (`release-pruefung.yml`) ignoriert die Electron-Pakete. Wer die Veröffentlichung später automatisieren will, ergänzt einen Workflow nach dem Muster von `release-pruefung.yml` (Tag → Bau auf drei Runnern → Prerelease-Entwurf) und prüft vorher Schritt 5 von Hand.
+

@@ -10,6 +10,8 @@ name: CI
 #  - swift         macOS (knapp, daher nur 1 Job): Build + Tests + Kern-Manifest + Vorschau.
 #  - plattform-probe  Windows und Linux (Paket W0): Linux ist Tor (in ci-ok), Windows nur Messung (blockiert nichts).
 #  - electron-probe  Electron-Hülle (Paket W2a): Linux ist Tor (in ci-ok), Windows nur Messung (blockiert nichts).
+#  - paket         Installierbare Pakete der Electron-Hülle (Paket W2c): baut, installiert und startet sie (Rauchtest), lädt sie als ARTEFAKT hoch (nie als Release).
+#                  Läuft nur bei Änderungen an electron/ oder Ressourcen/. Linux ist Tor (in ci-ok), Windows nur Messung.
 #  - ci-ok         EIN Status für alles: grün, wenn jeder nötige Job grün war oder bewusst übersprungen wurde.
 #  - dev-artefakt  nur auf main: Kortex.app als Artefakt.
 # Es gibt absichtlich KEIN paths-ignore: Ein Lauf, der nur Doku ändert, ist in Sekunden grün (aenderungen + ci-ok), und der
@@ -37,6 +39,7 @@ jobs:
       node: ${{ steps.filter.outputs.node }}
       ui: ${{ steps.filter.outputs.ui }}
       vorab: ${{ steps.filter.outputs.vorab }}
+      paket: ${{ steps.filter.outputs.paket }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -382,11 +385,177 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
+  # Pakete der Electron-Hülle (Paket W2c, electron/paket, docs/plaene/plattformen-windows-linux.md §11): electron-builder baut NSIS (Windows) bzw. AppImage + deb (Linux) mit dem
+  # mitgelieferten Node; hochgeladen wird NUR als Artefakt dieses Laufs (kein Release, kein Tag). Rauchtest je System: das gebaute Paket wird installiert bzw. entpackt und gestartet
+  # (electron/test/paket.spec.mjs: die Werkstatt läuft mit dem mitgelieferten Node, MCP-Eintrag auf stabilen Pfaden), danach wieder deinstalliert.
+  # Linux ist ein TOR (der Job steht in `needs` von ci-ok), Windows ist MESSUNG: dort laufen Bau, Installation und Test mit continue-on-error, das Ergebnis steht in der Zusammenfassung.
+  paket:
+    needs: aenderungen
+    if: needs.aenderungen.outputs.paket == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    name: paket (${{ matrix.os }})
+    defaults:
+      run:
+        shell: bash
+    env:
+      MESSUNG: ${{ matrix.os == 'windows-latest' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: electron/package-lock.json
+      - name: Abhängigkeiten
+        continue-on-error: ${{ matrix.os == 'windows-latest' }}
+        run: npm ci --no-audit --no-fund
+        working-directory: electron
+      - name: Paket bauen (Node mit Prüfsumme, Ressourcen, electron-builder; nichts wird veröffentlicht)
+        id: bau
+        continue-on-error: ${{ matrix.os == 'windows-latest' }}
+        working-directory: electron
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then npm run paket -- linux; else npm run paket -- win; fi
+          ls -la build/pakete
+      - name: Linux arm64 bauen (nur Bau, Messung)
+        if: runner.os == 'Linux'
+        continue-on-error: true
+        working-directory: electron
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          npm run paket -- linux --arch arm64 --ausgabe pakete-arm64
+          ls -la build/pakete-arm64
+          file build/node/linux-arm64/node
+      - name: Pakete als Artefakt hochladen
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: pakete-${{ matrix.os }}
+          path: |
+            electron/build/pakete/*.AppImage
+            electron/build/pakete/*.deb
+            electron/build/pakete/*.exe
+            electron/build/pakete/latest*.yml
+            electron/build/pakete-arm64/*.AppImage
+            electron/build/pakete-arm64/*.deb
+            electron/build/pakete-arm64/latest*.yml
+          retention-days: 14
+          if-no-files-found: warn
+      - name: Größen
+        if: always()
+        run: |
+          {
+            echo "### Pakete (${{ matrix.os }}): Bau ${{ steps.bau.outcome }}"
+            echo '```'
+            ls -la electron/build/pakete electron/build/pakete-arm64 2>/dev/null | grep -E "AppImage|\.deb|\.exe|latest" || true
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+      # ───── Linux: AppImage (entpackt und als echtes AppImage mit anderem Pfad) und deb (wirklich installiert, mit SUID-Sandbox) ─────
+      - name: Rauchtest AppImage (entpackte Kopie und AppImage selbst — zwei verschiedene Pfade)
+        if: runner.os == 'Linux'
+        working-directory: electron
+        env:
+          KORTEX_TEST_OHNE_SANDBOX: '1'
+          KORTEX_BILDER: ${{ runner.temp }}/bilder
+        run: |
+          set -euo pipefail
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+          A="$(ls "$PWD"/build/pakete/*.AppImage)"
+          chmod +x "$A"
+          mkdir -p "$RUNNER_TEMP/a1" && (cd "$RUNNER_TEMP/a1" && "$A" --appimage-extract >/dev/null)
+          export KORTEX_PAKET_PROGRAMM="$RUNNER_TEMP/a1/squashfs-root/kortex"
+          export KORTEX_PAKET_PROGRAMM2="$A"
+          export APPIMAGE_EXTRACT_AND_RUN=1
+          xvfb-run -a --server-args="-screen 0 1440x900x24" npx playwright test test/paket.spec.mjs test/vorschau.spec.mjs 2>&1 | tee "$RUNNER_TEMP/paket-appimage.log"
+          exit "${PIPESTATUS[0]}"
+      - name: Rauchtest deb (installieren, starten, deinstallieren)
+        if: runner.os == 'Linux'
+        working-directory: electron
+        run: |
+          set -euo pipefail
+          D="$(ls "$PWD"/build/pakete/*.deb)"
+          NAME="$(dpkg-deb -f "$D" Package)"
+          sudo apt-get install -y "$D"
+          test -x /opt/Kortex/kortex
+          test "$(stat -c '%a' /opt/Kortex/chrome-sandbox)" = "4755"
+          export KORTEX_PAKET_PROGRAMM=/opt/Kortex/kortex
+          unset KORTEX_TEST_OHNE_SANDBOX
+          # auch ohne gelockerte User-Namensräume: die deb-Installation bringt den SUID-Helfer mit
+          xvfb-run -a --server-args="-screen 0 1440x900x24" npx playwright test test/paket.spec.mjs 2>&1 | tee "$RUNNER_TEMP/paket-deb.log"
+          R="${PIPESTATUS[0]}"
+          sudo apt-get remove -y "$NAME"
+          if [ -e /opt/Kortex ]; then echo "::error::/opt/Kortex ist nach der Deinstallation noch da"; ls -la /opt/Kortex; R=1; fi
+          exit "$R"
+      # ───── Windows: NSIS still pro Benutzer installieren, starten, still deinstallieren ─────
+      - name: Rauchtest Windows (installieren, starten, deinstallieren)
+        id: win
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        working-directory: electron
+        shell: pwsh
+        env:
+          KORTEX_BILDER: ${{ runner.temp }}/bilder
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $setup = (Get-ChildItem build/pakete/Kortex-Setup-*.exe | Select-Object -First 1).FullName
+          Write-Host "Installer: $setup ($([math]::Round((Get-Item $setup).Length / 1MB)) MB)"
+          $ziel = Join-Path $env:LOCALAPPDATA 'Programs\Kortex'
+          Start-Process -FilePath $setup -ArgumentList '/S' -Wait
+          Get-Process -Name kortex, Kortex -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          if (-not (Test-Path $ziel)) { throw "Nicht installiert unter $ziel (pro Benutzer, ohne Admin)" }
+          Get-ChildItem $ziel | Select-Object -First 20 Name | Format-Table | Out-String | Write-Host
+          $exe = (Get-ChildItem $ziel -Filter *.exe | Where-Object { $_.Name -notmatch 'Uninstall' } | Select-Object -First 1).FullName
+          Write-Host "Programm: $exe"
+          $env:KORTEX_PAKET_PROGRAMM = $exe
+          $fehler = $null
+          npx playwright test test/paket.spec.mjs 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP/paket-windows.log"
+          if ($LASTEXITCODE -ne 0) { $fehler = "Rauchtest rot ($LASTEXITCODE)" }
+          Get-Process -Name kortex, Kortex -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          $uninst = Join-Path $ziel 'Uninstall Kortex.exe'
+          if (-not (Test-Path $uninst)) { throw "Deinstallationsprogramm fehlt: $uninst" }
+          Start-Process -FilePath $uninst -ArgumentList "/S _?=$ziel" -Wait
+          if (Test-Path (Join-Path $ziel 'resources')) { throw 'Nach der Deinstallation liegen noch Programmdateien da' }
+          if ($fehler) { throw $fehler }
+      - name: Bericht
+        if: always()
+        run: |
+          {
+            echo "### Rauchtest (${{ matrix.os }})"
+            for l in paket-appimage paket-deb paket-windows; do
+              f="$RUNNER_TEMP/$l.log"
+              [ -f "$f" ] || continue
+              echo "**$l**"
+              echo '```'
+              grep -E "^\s+(✓|✘|-|[0-9]+ (passed|failed|skipped))|passed|failed|Error:|Kinder:" "$f" | head -n 30 || true
+              echo '```'
+            done
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Logs hochladen
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: paket-bericht-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/paket-*.log
+            electron/test-results
+          retention-days: 14
+          if-no-files-found: ignore
+
   # EIN Status für den ganzen Lauf. Grün, wenn jeder Job erfolgreich war oder übersprungen wurde (weil sein Bereich unverändert
   # ist); rot bei Fehlschlag oder Abbruch. Läuft immer (if: always()), auch wenn davor etwas rot ist.
   ci-ok:
     if: always()
-    needs: [aenderungen, vorpruefung, kern-test, node-test, ui-test, swift, plattform-probe, electron-probe]
+    needs: [aenderungen, vorpruefung, kern-test, node-test, ui-test, swift, plattform-probe, electron-probe, paket]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
