@@ -221,11 +221,12 @@ process.exitCode = r.status ?? 1;\n`);
 test("Quoting: Argumente mit Leerzeichen, %, ^, &, |, <, >, \", Rückstrichen und Umlauten kommen unverändert am echten git an", () => {
   const s = neuerVault();
   const schein = scheinGit(s.basis, s.marke);
-  const argumente = ["a b", "50%", "%PATH%", "%TMP%\\x", "^&|<>", "a&b", 'say "hi"', "back\\", "zwei\\\\", 'q\\"', "tab\there", "ü ä", "(x)", "!x!", "--", "x=y z"];
+  const argumente = ["a b", "50%", "%PATH%", "%TMP%\\x", "^&|<>", "a&b", 'say "hi"', "back\\", "zwei\\\\", 'q\\"', "tab\there", "ü ä", "(x)", "!x!", "--", "x=y z", ""];
   for (const variante of VARIANTEN) {
     s.weg();
     const r = lauf(variante, ["-C", s.v, "status", "--porcelain", "--", ...argumente], { env: umgebung({ BRAIN_GIT_PROGRAMM: schein }) });
-    assert.equal(r.status, 0, `${variante.name}: ${r.stderr}`);
+    // das leere Argument ist für git ein ungültiger Pfadausdruck (Exit 128): hier zählt, dass es als leeres Argument ankommt
+    assert.equal(r.status, 128, `${variante.name}: ${r.stderr}`);
     const aufrufe = s.marken().map((z) => JSON.parse(z));
     const ende = aufrufe.find((a) => a.includes("status") && a.includes("--porcelain") && a.includes("--") && a.length > argumente.length);
     assert.ok(ende, `${variante.name}: kein status-Aufruf in ${JSON.stringify(aufrufe).slice(0, 400)}`);
@@ -270,4 +271,33 @@ test("gitBefehl (plattform win32 auf jedem System): Name und Ort — Starter im 
   const p = gitBefehl({ plattform: "win32", home: heim, ohneVault: true });
   assert.match(roh(p), /\/git-sicher\/[^/]+\/git-sicher\.exe$|\/git-sicher\/nicht-verfuegbar\/git-sicher\.exe$/);
   assert.ok(roh(p).startsWith(roh(join(supportOrdner({ home: heim, plattform: "win32" }), "git-sicher"))), p);
+});
+
+// Git for Windows könnte "core.hooksPath=/dev/null" als <aktuelles Laufwerk>:\dev\null\<hook> auflösen (Befund des Reviews zu PR #117). Ein Hook dort darf nie laufen.
+// (Die Werkstatt prüft Tests/Node/hooks-pfad-windows.test.mjs.)
+test("Windows: ein Hook unter <Laufwerk>:\\dev\\null\\ läuft nie (Kern über Starter und über node)", { skip: WIN ? false : "nur Windows" }, () => {
+  const s = neuerVault();
+  const laufwerke = [...new Set([process.env.SystemDrive || "C:", s.v.slice(0, 2)].map((d) => d.toUpperCase()))];
+  const angelegt = [];
+  try {
+    for (const d of laufwerke) {
+      const wurzel = `${d}\\dev`;
+      if (existsSync(wurzel)) continue; // nie etwas Vorhandenes anfassen
+      mkdirSync(`${wurzel}\\null`, { recursive: true }); angelegt.push(wurzel);
+      writeFileSync(`${wurzel}\\null\\pre-commit`, `#!/bin/sh\n${s.befehl(`hook-${d[0]}`)}\n`);
+    }
+    assert.ok(angelegt.length > 0, "kein Laufwerk, auf dem sich ein Hook-Ordner anlegen ließ");
+    writeFileSync(join(s.v, "k.md"), "k\n"); g(s.v, "add", "--", "k.md");
+    g(s.v, "-c", `core.hooksPath=${roh(angelegt[0])}/null`, "commit", "-q", "-m", "kontrolle");
+    assert.ok(s.marken().length > 0, "Kontrolle: der Hook läuft nicht einmal, wenn er ausdrücklich gesetzt ist");
+    for (const variante of VARIANTEN) {
+      s.weg();
+      writeFileSync(join(s.v, `${variante.name}.md`), "x\n"); g(s.v, "add", "--", `${variante.name}.md`);
+      const r = lauf(variante, ["-C", s.v, "commit", "-q", "-m", variante.name]);
+      assert.equal(r.status, 0, r.stderr);
+      assert.deepEqual(s.marken(), [], `${variante.name}: ein Hook unter ${angelegt.join(", ")}\\null lief`);
+    }
+  } finally {
+    for (const w of angelegt) rmSync(w, { recursive: true, force: true });
+  }
 });
