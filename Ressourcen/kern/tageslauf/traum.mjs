@@ -25,6 +25,7 @@
 //      Arbeitsstil) werden nur bei „Übernehmen“ als Notiz nach 00_inbox/ geschrieben — nie ins Gedächtnis.
 // Einstellungen: traum aus|probe|an (Standard aus), traumProjekteMax (5), traumOhneThema (+ ernteOhneThema), gedaechtnisWurzel, gedaechtnisKonten (einstellungen.mjs).
 // CLI: node tageslauf/traum.mjs [vault] [--probe] [--projekt <schlüssel>]   (brain traum …; ohne traum=an immer Probe, Rückfragen nur bei traum=an)
+import { keineHooks } from "../plattform.mjs";
 import { readFileSync, writeFileSync, mkdirSync, rmSync, renameSync, readdirSync, lstatSync, mkdtempSync, realpathSync, unlinkSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
@@ -183,7 +184,7 @@ function gitVergleich(ctx, basis, ergebnis, prefix) {
   mkdirSync(cacheOrdner(), { recursive: true });
   const repo = mkdtempSync(join(cacheOrdner(), "traum-git-"));
   try {
-    const g = (...a) => git(ctx.vault, repo, ["-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", "-c", "core.autocrlf=false", ...a]);
+    const g = (...a) => git(ctx.vault, repo, ["-c", "commit.gpgsign=false", "-c", `core.hooksPath=${keineHooks()}`, "-c", "core.autocrlf=false", ...a]);
     g("init", "-q");
     for (const [n, t] of basis) writeFileSync(join(repo, n), t);
     if (basis.size) g("add", "--", ...basis.keys());
@@ -551,7 +552,7 @@ export function wendeTraumAntwortAn(ctx, r) {
         // Das Ergebnis muss GENAU dem geprüften Stand entsprechen (Blob-Prüfsumme je Datei) — sonst zurück, nichts committet.
         for (const n of exakt) { if (sha(readFileSync(join(dir, n), "utf8")) !== v.meta.inhalt?.[n]) throw new Error("abweichend"); }
         if (lose.length) pruefeGebundene({ k, dir, cfg, v, dateien, lose, aktuell });
-        git(ctx.vault, cfg.wurzel, ["-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", "commit", "-q", "--only", "-m",
+        git(ctx.vault, cfg.wurzel, ["-c", "commit.gpgsign=false", "-c", `core.hooksPath=${keineHooks()}`, "commit", "-q", "--only", "-m",
           `traum(${ctx.lauf}): Gedächtnis ${k} gepflegt [${r.id}]`, "--", ...pfade]);
         commit = git(ctx.vault, cfg.wurzel, ["rev-parse", "HEAD"]);
       } catch (x) {

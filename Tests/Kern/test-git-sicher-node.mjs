@@ -21,16 +21,19 @@ const roh = (p) => String(p).split("\\").join("/");
 const { starterFuer } = await import(pathToFileURL(join(KERN, "windows-start.mjs")).href);
 const { gitBefehl } = await import(pathToFileURL(join(KERN, "werkzeug.mjs")).href);
 const { supportOrdner } = await import(pathToFileURL(join(KERN, "pfade.mjs")).href);
+const { tageslaufCache } = await import(pathToFileURL(join(KERN, "plattform.mjs")).href);
+const { raeumeAuf } = await import(pathToFileURL(join(KERN, "windows-start.mjs")).href);
 
 const basis0 = realpathSync(mkdtempSync(join(tmpdir(), "gs-node-")));
 const heim = join(basis0, "heim"); mkdirSync(heim);
+const tmp = join(heim, "tmp"); mkdirSync(tmp); // Windows: TEMP/TMP der Kindprozesse (dort liegt der Tageslauf-Cache)
 const support = join(basis0, "support"); mkdirSync(support);
 
 function umgebung(extra = {}) {
   const e = { ...process.env };
   for (const k of Object.keys(e)) if (/^(GIT_|XDG_|CLAUDE_CONFIG_DIR$|CODEX_HOME$|BRAIN_|KORTEX_)/i.test(k)) delete e[k];
   return { ...e, GIT_CONFIG_NOSYSTEM: "1", GIT_AUTHOR_NAME: "T", GIT_AUTHOR_EMAIL: "t@example.org", GIT_COMMITTER_NAME: "T", GIT_COMMITTER_EMAIL: "t@example.org",
-    HOME: heim, USERPROFILE: heim, BRAIN_APP_SUPPORT: support, KORTEX_KERN_UNSTABIL_ERLAUBT: "1", ...extra };
+    HOME: heim, USERPROFILE: heim, ...(WIN ? { TEMP: tmp, TMP: tmp } : {}), BRAIN_APP_SUPPORT: support, KORTEX_KERN_UNSTABIL_ERLAUBT: "1", ...extra };
 }
 const ENV = umgebung();
 const g = (cwd, ...a) => execFileSync("git", a, { cwd, env: ENV, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
@@ -195,6 +198,21 @@ for (const variante of VARIANTEN) {
     assert.deepEqual(s.marken(), [], "BRAIN_GIT_PROGRAMM galt ohne Testumgebung");
   });
 
+  t("Arbeitskopien des Tageslaufs am echten Cache-Ort (ohne BRAIN_TAGESLAUF_CACHE: Mac ~/Library/Caches, Linux ~/.cache, Windows Temp) laufen — Linux nie unter /tmp", (sicher) => {
+    const s = neuerVault();
+    const cache = tageslaufCache({ home: heim, env: ENV, tmp });
+    mkdirSync(cache, { recursive: true });
+    const kopie = join(cache, "lauf-" + s.basis.slice(-6).replace(/\W/g, ""));
+    g(s.v, "worktree", "add", "-q", "-b", "tageslauf/y", kopie, "main");
+    const ohneHaken = umgebung(); delete ohneHaken.BRAIN_TAGESLAUF_CACHE;
+    assert.equal(sicher(["-C", kopie, "status", "--porcelain"], { env: ohneHaken }).status, 0, `Arbeitsbaum unter ${cache}`);
+    if (!WIN && process.platform !== "darwin") {
+      const unterTmp = join(s.basis, "tmp-lauf"); // ein verknüpfter Arbeitsbaum unter /tmp-artigem Ort ist keine Tageslauf-Kopie
+      g(s.v, "worktree", "add", "-q", "-b", "tageslauf/z", unterTmp, "main");
+      assert.equal(sicher(["-C", unterTmp, "status", "--porcelain"], { env: ohneHaken }).status, 126);
+    }
+  });
+
   t("Arbeitskopien des Tageslaufs (verknüpfte Arbeitsbäume unter dem Test-Cache) laufen; anderswo nicht", (sicher) => {
     const s = neuerVault();
     const cache = join(s.basis, "cache"); mkdirSync(cache);
@@ -271,6 +289,46 @@ test("gitBefehl (plattform win32 auf jedem System): Name und Ort — Starter im 
   const p = gitBefehl({ plattform: "win32", home: heim, ohneVault: true });
   assert.match(roh(p), /\/git-sicher\/[^/]+\/git-sicher\.exe$|\/git-sicher\/nicht-verfuegbar\/git-sicher\.exe$/);
   assert.ok(roh(p).startsWith(roh(join(supportOrdner({ home: heim, plattform: "win32" }), "git-sicher"))), p);
+});
+
+test("tageslaufCache: Mac ~/Library/Caches, Windows <Temp>, Linux $XDG_CACHE_HOME bzw. ~/.cache — nie /tmp unter Linux", () => {
+  assert.equal(roh(tageslaufCache({ plattform: "darwin", home: "/h" })), "/h/Library/Caches/brain-tageslauf");
+  assert.equal(roh(tageslaufCache({ plattform: "linux", home: "/h", env: {} })), "/h/.cache/brain-tageslauf");
+  assert.equal(roh(tageslaufCache({ plattform: "linux", home: "/h", env: { XDG_CACHE_HOME: "/x/cache" } })), "/x/cache/brain-tageslauf");
+  assert.equal(roh(tageslaufCache({ plattform: "linux", home: "/h", env: { XDG_CACHE_HOME: "relativ" } })), "/h/.cache/brain-tageslauf", "relatives XDG_CACHE_HOME zählt nicht");
+  assert.equal(roh(tageslaufCache({ plattform: "win32", home: "C:\\h", tmp: "C:\\h\\AppData\\Local\\Temp" })).replace(/\\/g, "/"), "C:/h/AppData/Local/Temp/brain-tageslauf");
+});
+
+test("Starter-Ordner: Ordner früherer Konfigurationen und frühere Starter werden nach einem Tag aufgeräumt, junge, die aktuelle und fremde Namen bleiben", async () => {
+  const { utimesSync } = await import("node:fs");
+  const b = join(basis0, "aufraeumen"); mkdirSync(b);
+  const alt = Date.now() / 1000 - 3 * 24 * 3600;
+  const anlegen = (n, zeit) => { mkdirSync(join(b, n)); if (zeit) utimesSync(join(b, n), zeit, zeit); };
+  anlegen("git-sicher-aaaaaaaaaaaaaaaa", alt); anlegen("git-sicher-bbbbbbbbbbbbbbbb", alt); anlegen("git-sicher-cccccccccccccccc"); anlegen("git-gesperrt-aaaaaaaaaaaaaaaa", alt); anlegen("sonstiges", alt);
+  raeumeAuf(b, { test: (n) => n.startsWith("git-sicher-") && /^[0-9a-f]{16}$/.test(n.slice(11)) }, "git-sicher-bbbbbbbbbbbbbbbb");
+  assert.equal(existsSync(join(b, "git-sicher-aaaaaaaaaaaaaaaa")), false, "alt und nicht aktuell: weg");
+  for (const n of ["git-sicher-bbbbbbbbbbbbbbbb", "git-sicher-cccccccccccccccc", "git-gesperrt-aaaaaaaaaaaaaaaa", "sonstiges"]) assert.ok(existsSync(join(b, n)), n);
+});
+
+test("Windows: wird der Starter beendet, endet der ganze Baum (Job-Objekt KILL_ON_JOB_CLOSE): kein weiterlaufendes Kind nach der Zeitüberschreitung", { skip: WIN ? false : "nur Windows" }, async () => {
+  const basis = join(basis0, "job"); mkdirSync(basis);
+  const pidDatei = join(basis, "kind.pid");
+  const skript = join(basis, "eltern.mjs");
+  writeFileSync(skript, `import { spawn } from "node:child_process"; import { writeFileSync } from "node:fs";
+const k = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+writeFileSync(${JSON.stringify(pidDatei)}, String(k.pid));
+setInterval(() => {}, 1000);\n`);
+  const exe = starterFuer("job-test", { support: join(basis, "support"), skript });
+  const r = spawnSync(exe, [], { timeout: 4000, windowsHide: true }); // Node beendet den Starter nach 4 s
+  assert.ok(r.error || r.signal || r.status !== 0, "der Starter wurde beendet");
+  assert.ok(existsSync(pidDatei), "das Kind lief");
+  const pid = Number(readFileSync(pidDatei, "utf8"));
+  const lebt = () => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  const frist = Date.now() + 8000;
+  while (lebt() && Date.now() < frist) await new Promise((ok) => setTimeout(ok, 200));
+  const weiter = lebt();
+  if (weiter) { try { process.kill(pid); } catch { /* weg */ } }
+  assert.equal(weiter, false, `das Kind (${pid}) lebt nach dem Ende des Starters weiter`);
 });
 
 // Git for Windows könnte "core.hooksPath=/dev/null" als <aktuelles Laufwerk>:\dev\null\<hook> auflösen (Befund des Reviews zu PR #117). Ein Hook dort darf nie laufen.

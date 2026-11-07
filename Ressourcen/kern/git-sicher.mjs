@@ -20,7 +20,7 @@ import { existsSync, lstatSync, readdirSync, realpathSync, statSync, accessSync,
 import { join, dirname, isAbsolute, resolve, delimiter } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { supportBasis } from "./plattform.mjs";
+import { sucheWindowsGit, tageslaufCache, keineHooks } from "./plattform.mjs";
 import { pruefe } from "./git-sicher-pruefung.mjs";
 
 const WIN = process.platform === "win32";
@@ -40,12 +40,7 @@ const testmodus = (env) => env.KORTEX_KERN_UNSTABIL_ERLAUBT === "1" || env.BRAIN
 export function findeGit(env = process.env) {
   if (testmodus(env) && env.BRAIN_GIT_PROGRAMM) return isAbsolute(env.BRAIN_GIT_PROGRAMM) && ausfuehrbar(env.BRAIN_GIT_PROGRAMM) ? env.BRAIN_GIT_PROGRAMM : null;
   if (!WIN) return ["/opt/homebrew/bin/git", "/usr/local/bin/git", "/usr/bin/git"].find(ausfuehrbar) ?? null;
-  const home = homedir();
-  const support = env.BRAIN_APP_SUPPORT && isAbsolute(env.BRAIN_APP_SUPPORT) ? env.BRAIN_APP_SUPPORT : join(supportBasis({ home, env, plattform: "win32" }), "Kortex");
-  const kandidaten = [join(support, "git", "cmd", "git.exe"), join(home, ".brain-kit", "git", "cmd", "git.exe")];
-  for (const d of String(env.PATH || env.Path || "").split(delimiter)) if (d && isAbsolute(d)) kandidaten.push(join(d, "git.exe"));
-  for (const v of [env.ProgramFiles, env["ProgramFiles(x86)"], "C:\\Program Files", "C:\\Program Files (x86)"]) if (v) kandidaten.push(join(v, "Git", "cmd", "git.exe"));
-  return kandidaten.find(ausfuehrbar) ?? null;
+  return sucheWindowsGit(ausfuehrbar, { env }); // dieselbe Liste wie die Werkstatt (plattform.mjs)
 }
 
 // Unterbefehl und -C-Ordner aus den Optionen vor dem Unterbefehl
@@ -134,7 +129,7 @@ export function sicher(argv, env = process.env) {
       const hier = echt(dir);
       if (!top || !common || !gitdir || !hier) return verweigere("Arbeitsbaum oder Git-Verzeichnis sind nicht lesbar.");
       if (!unter(hier, top)) return verweigere(`der Arbeitsbaum (${roh(top)}) liegt nicht über dem Ordner (${roh(hier)}).`);
-      const cache = echt(process.platform === "darwin" ? join(homedir(), "Library", "Caches", "brain-tageslauf") : join(tmpdir(), "brain-tageslauf"));
+      const cache = echt(tageslaufCache({ env }));
       const cache2 = TEST && env.BRAIN_TAGESLAUF_CACHE ? echt(env.BRAIN_TAGESLAUF_CACHE) : "";
       const kopie = [cache, cache2].some((c) => c && unter(top, c));
       if (!kopie) {
@@ -164,7 +159,7 @@ export function sicher(argv, env = process.env) {
   }
 
   // Hooks nur aus dem Hook-Ordner dieses Kerns (oder, nur im Test, aus den ausdrücklich erlaubten Ordnern)
-  let HOOKS = "/dev/null";
+  let HOOKS = keineHooks({ env });
   if (hp && isAbsolute(hp)) {
     const real = echt(hp);
     if (real && kerndir && falte(real) === falte(join(kerndir, "git-hooks"))) HOOKS = real;

@@ -7,7 +7,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, rmSync, readFileSync, writeFileSync, unlinkSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir, tmpdir } from "node:os";
-import { langerPfad } from "../plattform.mjs";
+import { langerPfad, tageslaufCache } from "../plattform.mjs";
 import { gitBefehl } from "../werkzeug.mjs";
 import { ladeConfig } from "../pfade.mjs";
 import { wendeAuftragAn } from "./schreiben.mjs";
@@ -18,7 +18,7 @@ const ohneGit = () => Object.fromEntries(Object.entries(process.env).filter(([k]
 
 export function cacheOrdner({ home = homedir(), plattform = process.platform } = {}) {
   if (process.env.BRAIN_TAGESLAUF_CACHE) return langerPfad(process.env.BRAIN_TAGESLAUF_CACHE);
-  return langerPfad(plattform === "darwin" ? join(home, "Library", "Caches", "brain-tageslauf") : join(tmpdir(), "brain-tageslauf")); // Windows: Langform (Kurznamen wie RUNNER~1 melden Programme anders)
+  return langerPfad(tageslaufCache({ plattform, home })); // Windows: Langform (Kurznamen wie RUNNER~1 melden Programme anders)
 }
 export function git(vault, cwd, args) {
   return execFileSync(gitBefehl({ cfg: ladeConfig(vault) }), ["-C", cwd, ...args], {

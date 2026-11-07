@@ -3,7 +3,7 @@ import { realpathSync, lstatSync, readdirSync, readFileSync, accessSync, statSyn
 import { join, sep, dirname, delimiter, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
-import { supportOrdner as plattformSupportOrdner } from "./plattform.mjs";
+import { supportOrdner as plattformSupportOrdner, sucheWindowsGit } from "./plattform.mjs";
 
 // Fehler, die bis zur Oberfläche durchgereicht werden: Status + Alltagsmeldung (+ Zusatzfelder wie aktuellerHash).
 export class HttpFehler extends Error {
@@ -155,7 +155,8 @@ export function absoluterPfad(name) {
   return treffer;
 }
 // Git wird nur über diesen einmal aufgelösten absoluten Pfad gestartet (nie der nackte Name: der würde nach dem Wechsel in den Vault gesucht).
-export const absoluterGitPfad = () => absoluterPfad("git");
+// Windows: dieselbe Fundort-Liste wie im Kern (plattform.mjs#windowsGitKandidaten: MinGit der App, absoluter PATH, Program Files).
+export const absoluterGitPfad = () => (process.platform === "win32" ? sucheWindowsGit(ausfuehrbar) : absoluterPfad("git"));
 
 // Umgebung für Kindprozesse (git, Kit, claude): nichts, womit sich fremder Code einschleusen ließe (NODE_OPTIONS,
 // NODE_PATH, ELECTRON_RUN_AS_NODE, DYLD_*/LD_*) und kein leerer oder relativer PATH-Eintrag.

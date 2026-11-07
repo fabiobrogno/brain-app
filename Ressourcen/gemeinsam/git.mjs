@@ -6,6 +6,7 @@
 // Commits in den Arbeitsbaum und läuft deshalb immer ohne Hooks (siehe sync). Zeitlimits: je Aufruf und als Gesamtfrist je Route
 // (ctx.frist) — bei Ablauf wird die ganze Prozessgruppe beendet.
 // ctx = { vertraut, sshEigen, sshGlobal, gpgGlobal, frist } kommt von vault.mjs (aus vertrauen.mjs); ohne Angabe gilt „nicht vertraut“.
+import { keineHooks } from "./plattform.mjs";
 import { execFileSync } from "node:child_process";
 import { realpathSync, readFileSync, writeFileSync, statSync, renameSync, lstatSync, unlinkSync, readdirSync, mkdirSync, copyFileSync, existsSync, rmSync } from "node:fs";
 import { join, dirname, basename, sep, isAbsolute } from "node:path";
@@ -29,7 +30,7 @@ const REPO_GEBUNDEN = ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT
 const GRUND = ["-c", "core.quotepath=false", "-c", "safe.bareRepository=explicit", "-c", "core.fsmonitor=false", "-c", "protocol.ext.allow=never",
   "-c", "submodule.recurse=false", "-c", "fetch.recurseSubmodules=false", "-c", "push.recurseSubmodules=no",
   "-c", "diff.ignoreSubmodules=all", "-c", "status.submoduleSummary=false"];
-const OHNE_HOOKS = ["-c", "core.hooksPath=/dev/null"];
+const OHNE_HOOKS = ["-c", `core.hooksPath=${keineHooks()}`];
 const OHNE_SUBMODULE = ["--ignore-submodules=all"];
 // Ohne Vertrauen darf die Vault-Konfiguration nichts signieren lassen (Git riefe gpg/ssh-keygen aus der Vault-Konfiguration heraus): der
 // Wert kommt vom Nutzer (System/global), sonst „false“. gpg = { commit, tag, push } aus vertrauen.mjs (nur gesetzte Werte).

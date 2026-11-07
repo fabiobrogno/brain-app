@@ -8,6 +8,7 @@
 // Datenschutz: Schlüssel*namen* ja, Werte nie. Werte werden nur intern gelesen, um zu klassifizieren (lokale Adresse? alter Hook-Ordner?), und verlassen
 // dieses Modul nicht. Unterabschnitte von Schlüsseln können Adressen mit Zugangsdaten enthalten (url.<adresse>.insteadOf): ausgegeben wird nur die Form
 // `abschnitt.*.variable`.
+import { keineHooks } from "../plattform.mjs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { join, resolve, isAbsolute, sep } from "node:path";
@@ -35,7 +36,7 @@ export const gitPfadFest = (env = process.env) => (process.platform === "win32" 
 const saubereUmgebung = (home) => ({
   PATH: gitPfadFest(), ...(process.platform === "win32" ? { USERPROFILE: home, SYSTEMROOT: process.env.SYSTEMROOT || "", TEMP: process.env.TEMP || "", TMP: process.env.TMP || "" } : {}), HOME: home, LC_ALL: "C", GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0", GIT_NO_LAZY_FETCH: "1", GIT_CONFIG_NOSYSTEM: "1",
 });
-const HAERTUNG = ["-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-c", "protocol.ext.allow=never", "-c", "submodule.recurse=false",
+const HAERTUNG = ["-c", "core.fsmonitor=false", "-c", `core.hooksPath=${keineHooks()}`, "-c", "protocol.ext.allow=never", "-c", "submodule.recurse=false",
   "-c", "diff.ignoreSubmodules=all", "-c", "status.submoduleSummary=false", "--no-optional-locks"];
 
 // → Ausgabe als Text oder null (Fehler, Zeit, kein git). Nur für lesende Unterbefehle benutzen.
