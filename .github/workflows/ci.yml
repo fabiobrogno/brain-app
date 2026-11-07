@@ -493,8 +493,10 @@ jobs:
           stat -c 'chrome-sandbox: %a %U' /opt/Kortex/chrome-sandbox
           export KORTEX_PAKET_PROGRAMM=/opt/Kortex/kortex
           unset KORTEX_TEST_OHNE_SANDBOX
+          set +e
           xvfb-run -a --server-args="-screen 0 1440x900x24" npx playwright test test/paket.spec.mjs 2>&1 | tee "$RUNNER_TEMP/paket-deb.log"
           R="${PIPESTATUS[0]}"
+          set -e
           sudo apt-get remove -y "$NAME"
           if [ -e /opt/Kortex ]; then echo "::error::/opt/Kortex ist nach der Deinstallation noch da"; ls -la /opt/Kortex; R=1; fi
           exit "$R"
@@ -503,6 +505,7 @@ jobs:
         id: win
         if: runner.os == 'Windows'
         continue-on-error: true
+        timeout-minutes: 20
         working-directory: electron
         shell: pwsh
         env:

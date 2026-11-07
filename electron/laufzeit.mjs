@@ -24,6 +24,14 @@ export function sha256Datei(pfad) {
   return h.digest("hex");
 }
 
+// Windows: frisch geschriebene Dateien hält oft kurz ein Virenscanner fest (EPERM/EBUSY) — umbenennen mit kurzen Wiederholungen
+const warteBlockierend = (ms) => { const bis = Date.now() + ms; while (Date.now() < bis) { /* kurz warten */ } };
+const benenneUm = (von, nach) => {
+  for (let i = 0; ; i++) {
+    try { return renameSync(von, nach); }
+    catch (e) { if (process.platform !== "win32" || i >= 8 || !/^(EPERM|EACCES|EBUSY)$/.test(e?.code)) throw e; warteBlockierend(100 * (i + 1)); }
+  }
+};
 const groesse = (p) => { try { return statSync(p).size; } catch { return -1; } };
 const gleicheDatei = (a, b) => {
   try {
@@ -43,7 +51,7 @@ export function setzeDateiLink(stabil, ziel) {
   try { linkSync(ziel, tmp); } catch { copyFileSync(ziel, tmp); chmodSync(tmp, 0o755); }
   try { renameSync(tmp, stabil); }
   catch {
-    const alt = `${stabil}.alt-${process.pid}`;
+    const alt = `${stabil}.alt-${process.pid}-${Date.now()}`;
     renameSync(stabil, alt); // Windows: eine laufende Datei lässt sich umbenennen, nicht überschreiben
     renameSync(tmp, stabil);
     wegDamit(alt);
@@ -55,6 +63,7 @@ export function setzeDateiLink(stabil, ziel) {
 export function setzeOrdnerLink(stabil, ziel, { plattform = process.platform } = {}) {
   let vorher = null;
   try { vorher = basename(readlinkSync(stabil)); } catch { /* neu */ }
+  try { if (readlinkSync(stabil) === ziel) return vorher; } catch { /* neu */ } // schon richtig: nichts anfassen (unter Windows gäbe es sonst ein Fenster ohne Verweis)
   const tmp = `${stabil}.neu-${process.pid}`;
   wegDamit(tmp);
   symlinkSync(ziel, tmp, plattform === "win32" ? "junction" : "dir");
@@ -82,12 +91,12 @@ export function installiereNode({ quelle, support, plattform = process.platform 
     const tmp = `${datei}.neu-${process.pid}`;
     copyFileSync(q, tmp);
     chmodSync(tmp, 0o755);
-    renameSync(tmp, datei);
+    benenneUm(tmp, datei);
     writeFileSync(marke, `${m.sha256}\n`);
   }
   const bin = join(support, "bin");
   mkdirSync(bin, { recursive: true });
-  aufraeumen(bin, /\.(alt|neu)-\d+$/);
+  aufraeumen(bin, /\.(alt|neu)-\d+(-\d+)?$/);
   const stabil = join(bin, exe);
   setzeDateiLink(stabil, datei);
   try { for (const n of readdirSync(join(support, "node"))) if (n !== m.version) wegDamit(join(support, "node", n)); } catch { /* nichts zu räumen */ }
@@ -109,7 +118,7 @@ export function installiereKern({ quelle, support, plattform = process.platform 
     cpSync(quelle, tmp, { recursive: true });
     writeFileSync(join(tmp, ".fertig"), `${stempel}\n`);
     wegDamit(dir);
-    renameSync(tmp, dir);
+    benenneUm(tmp, dir);
   }
   const bin = join(support, "bin");
   mkdirSync(bin, { recursive: true });

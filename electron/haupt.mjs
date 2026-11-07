@@ -367,7 +367,7 @@ function oeffneFenster() {
       frage: () => f.webContents.executeJavaScript(SCHLIESSEN_SKRIPT),
       rueckfrage: async (grund) => (await dialog.showMessageBox(f, { type: "warning", message: "Änderungen nicht gespeichert", detail: grund, buttons: ["Trotzdem schließen", "Abbrechen"], defaultId: 1, cancelId: 1 })).response === 0,
       protokoll,
-    }).then((ok) => { schliessenLaeuft = false; if (!ok) beendet = false; /* Beenden abgebrochen */ if (ok && !f.isDestroyed()) { schliessenFrei = true; f.close(); } });
+    }).then((ok) => { schliessenLaeuft = false; if (!ok) { beendet = false; updateNeustart = false; } /* Beenden abgebrochen */ if (ok && !f.isDestroyed()) { schliessenFrei = true; f.close(); } });
   });
   const dieses = fenster;
   fenster.on("closed", () => { if (fenster === dieses) fenster = null; if (!bleibtImTray()) app.quit(); });
@@ -502,7 +502,7 @@ app.on("before-quit", (e) => {
     // Update installieren: erst jetzt, wenn Fenster, Werkstatt und Verknüpfungen weg sind (der neue Start soll nicht an der Einzelinstanz-Sperre scheitern)
     if (updateNeustart && app.isPackaged && autoUpdater) {
       app.releaseSingleInstanceLock();
-      try { autoUpdater.quitAndInstall(true, true); return; } catch (e) { protokoll(`update installieren: ${e?.message || e}`); }
+      try { autoUpdater.once("error", () => app.exit(0)); setTimeout(() => app.exit(0), 15_000); autoUpdater.quitAndInstall(true, true); return; } catch (e) { protokoll(`update installieren: ${e?.message || e}`); }
     }
     app.exit(0);
   });
