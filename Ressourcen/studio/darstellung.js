@@ -47,7 +47,7 @@ export const CODE_SCHRIFTEN = {
 
 export const STANDARD = {
   erscheinung: "system", schemaHell: "standard", schemaDunkel: "standard", akzent: "indigo", dichte: 2, editorSchrift: "geist", schriftgroesse: 16, oberflaeche: 100,
-  zeilenbreite: "normal", codeSchrift: "geist", symbole: "einfarbig", seitenleisteDurchscheinend: true, bewegung: "system",
+  zeilenbreite: "normal", codeSchrift: "geist", formatLeiste: true, symbole: "einfarbig", seitenleisteDurchscheinend: true, bewegung: "system",
 };
 // Die Schlüssel, die „Darstellung zurücksetzen“ auf den Anfang stellt (Notizen, Vault-Einstellungen und das Dock-Symbol bleiben)
 export const DARSTELLUNGS_SCHLUESSEL = Object.keys(STANDARD);
