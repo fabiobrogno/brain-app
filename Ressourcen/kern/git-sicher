@@ -25,7 +25,7 @@
 #     kein Arbeitsbaum feststellbar, ein Arbeitsbaum, der kein Elternordner des Ordners ist, ein gemeinsames Git-Verzeichnis außerhalb des
 #     Arbeitsbaums (`.git` als Datei mit gitdir: nach draußen) oder objects/info/alternates (fremde Objekte). core.worktree/core.bare
 #     stehen nicht auf der Erlaubnisliste. Ausgenommen sind die Arbeitskopien des Tageslaufs unter
-#     <Home>/Library/Caches/brain-tageslauf (verknüpfte Arbeitsbäume des Vaults, vom Kern selbst angelegt);
+#     <Home>/Library/Caches/brain-tageslauf bzw. (Linux) $XDG_CACHE_HOME oder <Home>/.cache/brain-tageslauf (verknüpfte Arbeitsbäume des Vaults, vom Kern selbst angelegt);
 #  5. werden geerbte GIT_DIR/GIT_WORK_TREE (außer im Hook, erkennbar an GIT_INDEX_FILE, und nur wenn GIT_DIR unter dem -C-Ordner liegt) und GIT_CONFIG_PARAMETERS/GIT_CONFIG_COUNT/
 #     GIT_CONFIG_KEY_*/GIT_CONFIG_VALUE_* geleert; es gelten GIT_TERMINAL_PROMPT=0, GIT_EDITOR=: , kein Pager, GIT_NO_LAZY_FETCH=1 und IMMER ein
 #     ssh ohne Rückfrage (GIT_SSH_COMMAND; die globale Einstellung des Nutzers bleibt bei Netzbefehlen erhalten).
@@ -124,11 +124,14 @@ if [ "$pruefen" = 1 ]; then
     hier=$(cd "$dir" 2>/dev/null && pwd -P)
     [ -n "$top" ] && [ -n "$common" ] && [ -n "$gitdir" ] && [ -n "$hier" ] || verweigere "Arbeitsbaum oder Git-Verzeichnis sind nicht lesbar."
     case "$hier/" in "$top"/*) ;; *) verweigere "der Arbeitsbaum ($top) liegt nicht über dem Ordner ($hier)." ;; esac
-    cache=
+    # Arbeitskopien des Tageslaufs: macOS ~/Library/Caches/brain-tageslauf, Linux $XDG_CACHE_HOME bzw. ~/.cache/brain-tageslauf (plattform.mjs#tageslaufCache; nie /tmp: dort legt jeder Nutzer an)
+    cache=; cache3=
     if [ -n "$HOME" ]; then cache=$(cd "$HOME/Library/Caches/brain-tageslauf" 2>/dev/null && pwd -P); fi
+    case "$XDG_CACHE_HOME" in /*) xdg="$XDG_CACHE_HOME" ;; *) xdg="${HOME:+$HOME/.cache}" ;; esac
+    if [ -n "$xdg" ]; then cache3=$(cd "$xdg/brain-tageslauf" 2>/dev/null && pwd -P); fi
     if [ "$TEST" = 1 ] && [ -n "$BRAIN_TAGESLAUF_CACHE" ]; then cache2=$(cd "$BRAIN_TAGESLAUF_CACHE" 2>/dev/null && pwd -P); else cache2=; fi
     kopie=0
-    for c in "$cache" "$cache2"; do
+    for c in "$cache" "$cache2" "$cache3"; do
       if [ -n "$c" ]; then case "$top/" in "$c"/*) kopie=1 ;; esac; fi
     done
     if [ "$kopie" = 0 ]; then

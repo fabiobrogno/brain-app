@@ -1,4 +1,5 @@
 // backup.mjs — Sicherung: github (push) | ordner (git bundle, 7 behalten) | keins. Alltagssprache, nie Abbruch im Alltag.
+import { keineHooks } from "./plattform.mjs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readdirSync, statSync, lstatSync, rmSync, writeFileSync, readFileSync, mkdirSync, realpathSync, renameSync } from "node:fs";
 import { join, isAbsolute, basename } from "node:path";
@@ -133,7 +134,7 @@ function nichtEingearbeitet(vault) {
 // Ziel ist IMMER origin (das vom Nutzer bestätigte Remote), und zwar mit ausdrücklichem Zweig: geholt wird `+refs/heads/X:refs/remotes/origin/X`,
 // gesendet `HEAD:refs/heads/X`, jeweils an die bestätigte Adresse selbst (nicht über den Remote-Namen: dessen fetch-Einträge würden mitaktualisieren) — weder ein Refspec noch ein Upstream, pushurl oder pushremote aus der Vault-Konfiguration kann das umlenken.
 export const ZEIT_NETZ = 90_000, ZEIT_LOKAL = 30_000, OHNE_ZEIT = 0;
-export const OHNE_HOOKS = ["-c", "core.hooksPath=/dev/null"];
+export const OHNE_HOOKS = ["-c", `core.hooksPath=${keineHooks()}`];
 
 export function gitLauf(vault, args, zeit = ZEIT_LOKAL) {
   const r = spawnSync(gitBefehl({ cfg: ladeConfig(vault) }), ["-C", vault, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], windowsHide: true, timeout: zeit });

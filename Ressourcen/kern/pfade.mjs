@@ -13,7 +13,7 @@ import { registriereVault, registrierteVaults } from "./vault-schutz.mjs";
 import { vertrauensStand, alleVertraut } from "./vertrauen.mjs";
 import { kontoStufe, darfMindestens, kontenOrte, liesKonten, bestimmeKonto } from "./ki-konten.mjs";
 import { schreibeEreignis } from "./aktivitaet.mjs";
-import { supportBasis, claudePfadform, langerPfad } from "./plattform.mjs";
+import { supportBasis, claudePfadform, langerPfad, tageslaufCache } from "./plattform.mjs";
 
 export const KERN = dirname(fileURLToPath(import.meta.url));
 
@@ -204,7 +204,7 @@ export function vaultVertraut(vault, opt = {}) {
 // Wo der Tageslauf die verknüpften Arbeitsbäume eines Vaults anlegt (tageslauf/arbeitskopie.mjs; dieselbe Ausnahme kennt git-sicher). Der Testhaken
 // BRAIN_TAGESLAUF_CACHE gilt nur in der Testumgebung.
 export function tageslaufArbeitsbaumWurzeln(env = process.env) {
-  const w = [process.platform === "darwin" ? join(homedir(), "Library", "Caches", "brain-tageslauf") : join(tmpdir(), "brain-tageslauf")];
+  const w = [tageslaufCache({ env })];
   if ((env.KORTEX_KERN_UNSTABIL_ERLAUBT === "1" || env.BRAIN_TESTMODUS === "1") && env.BRAIN_TAGESLAUF_CACHE && isAbsolute(env.BRAIN_TAGESLAUF_CACHE)) w.push(env.BRAIN_TAGESLAUF_CACHE);
   return w;
 }

@@ -25,6 +25,7 @@
 // gesichert, nie überschrieben; die 5 neuesten bleiben. Danach trägt leseVaults() `defekt: true`, solange vaults.json noch die Datei
 // ist, die dieser Prozess nach der Sicherung geschrieben hat (Merker im Prozess, an Datei-Identität gebunden: kein weiterer
 // Dateityp, den Swift kennen müsste, kein Rest nach einem Neustart oder einer Reparatur von Hand).
+import { keineHooks } from "./plattform.mjs";
 import {
   realpathSync, statSync, lstatSync, readdirSync, readFileSync, writeFileSync, mkdirSync, renameSync, rmSync, rmdirSync,
 } from "node:fs";
@@ -618,7 +619,7 @@ async function sorgeFuerIdentitaetMit(frist, wurzel) {
 }
 
 // Eigene Commits beim Anlegen laufen ohne Hooks und ohne Signierzwang aus der Git-Einstellung des Nutzers.
-const COMMIT = ["-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", "commit", "-q"];
+const COMMIT = ["-c", `core.hooksPath=${keineHooks()}`, "-c", "commit.gpgsign=false", "commit", "-q"];
 const imBloecken = (liste, n = 400) => { const b = []; for (let i = 0; i < liste.length; i += n) b.push(liste.slice(i, i + n)); return b; };
 
 async function starteRepo(pfad, dateien, nachricht, frist) {

@@ -14,6 +14,7 @@
 //   plattform      Plattform des Hintergrunddienstes (macOS = "darwin"; nur die Testumgebung darf sie vorgeben) – sonst ist A6 „nicht anwendbar“ und rotes Kriterium 6 entfällt
 //   schreibeClaude / schreibeMcp / launchctl   false im Probelauf: Claude-Einstellungen, MCP-Einträge und der Hintergrunddienst werden nicht verändert
 //   env            Basis der Umgebung für Kindprozesse (PATH und Testhaken, nie Zugangsdaten)
+import { keineHooks } from "../plattform.mjs";
 import { realpathSync, lstatSync, readdirSync, mkdirSync, rmSync, existsSync, statfsSync, accessSync, constants } from "node:fs";
 import { join, resolve, dirname, isAbsolute, delimiter } from "node:path";
 import { homedir } from "node:os";
@@ -98,7 +99,7 @@ export function kernSkript(z, rel, args, { extraEnv = {}, timeout = 120_000, cwd
 // --- git ------------------------------------------------------------------------------------------------------------------------
 // Der Kern startet git sonst nur über git-sicher, das genau die Vaults sperrt, die hier umgestellt werden. Darum: das echte git von festen Orten (wie der Befund),
 // gehärtet (kein fsmonitor, keine Hooks, kein ext::), nur für Unterbefehle, die keinen Treiber aus dem Vault starten (config, bundle, ls-files, rev-parse, status, remote …).
-export const HAERTUNG = ["-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-c", "protocol.ext.allow=never", "-c", "submodule.recurse=false",
+export const HAERTUNG = ["-c", "core.fsmonitor=false", "-c", `core.hooksPath=${keineHooks()}`, "-c", "protocol.ext.allow=never", "-c", "submodule.recurse=false",
   "-c", "diff.ignoreSubmodules=all", "-c", "status.submoduleSummary=false", "--no-optional-locks"];
 export function gitLauf(z, args, { ordner = z.vault, timeout = 120_000, ohneOrdner = false } = {}) {
   const git = echtesGit(z.env);

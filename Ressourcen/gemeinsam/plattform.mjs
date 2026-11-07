@@ -2,12 +2,41 @@
 // Neue Betriebssystem-Befehle im Node-Code gehören hierher, nicht verstreut in andere Dateien. Alles ist über `plattform`/`env`/`home` einspritzbar (Tests).
 // Eine Kopie liegt wortgleich in kern/plattform.mjs (der Kern importiert nichts aus gemeinsam/); Tests/Node/plattform.test.mjs vergleicht beide.
 import { readFileSync, existsSync, realpathSync, openSync, ftruncateSync, writeSync, closeSync } from "node:fs";
-import { join } from "node:path";
-import { homedir, hostname, userInfo } from "node:os";
+import { join, isAbsolute } from "node:path";
+import { homedir, hostname, userInfo, tmpdir } from "node:os";
 import { execFile, execFileSync, spawnSync, spawn } from "node:child_process";
 
 export const istMac = (plattform = process.platform) => plattform === "darwin";
 export const istWindows = (plattform = process.platform) => plattform === "win32";
+
+// ───────────── git: Fundorte und Tageslauf-Cache ─────────────
+// Windows: wo git.exe gesucht wird, in der Reihenfolge des Vorrangs: MinGit der App (<Support>/git, Rückfall ~/.brain-kit), ein git.exe in einem ABSOLUTEN PATH-Ordner (ein leerer oder
+// relativer Eintrag meint den Arbeitsordner, womöglich einen fremden Vault), Program Files. Werkstatt (basis.mjs#absoluterGitPfad) und Kern (git-sicher.mjs) suchen mit genau dieser Liste.
+export function windowsGitKandidaten({ env = process.env, home = homedir() } = {}) {
+  const k = [join(supportOrdner({ env, home, plattform: "win32" }), "git", "cmd", "git.exe"), join(home, ".brain-kit", "git", "cmd", "git.exe")];
+  for (const d of String(env.PATH || env.Path || "").split(";")) if (d && isAbsolute(d)) k.push(join(d, "git.exe"));
+  for (const v of [env.ProgramFiles, env["ProgramFiles(x86)"]]) if (v) k.push(join(v, "Git", "cmd", "git.exe"));
+  return k;
+}
+// → Pfad des ersten Kandidaten, den `istDatei` bestätigt, sonst null
+export const sucheWindowsGit = (istDatei, opt) => windowsGitKandidaten(opt).find(istDatei) ?? null;
+
+// Wo der Tageslauf die verknüpften Arbeitsbäume eines Vaults anlegt (kern/tageslauf/arbeitskopie.mjs, pfade.mjs, git-sicher.mjs und das Shell-Skript git-sicher folgen dieser Regel):
+// macOS ~/Library/Caches, Windows <Temp> (je Benutzer), Linux $XDG_CACHE_HOME bzw. ~/.cache — nie /tmp (dort legt jeder Nutzer an: Austauschrisiko).
+export const tageslaufCache = ({ plattform = process.platform, home = homedir(), env = process.env, tmp = tmpdir() } = {}) => {
+  if (plattform === "darwin") return join(home, "Library", "Caches", "brain-tageslauf");
+  if (plattform === "win32") return join(tmp, "brain-tageslauf");
+  return join(env.XDG_CACHE_HOME && isAbsolute(env.XDG_CACHE_HOME) ? env.XDG_CACHE_HOME : join(home, ".cache"), "brain-tageslauf");
+};
+
+// Hook-Ordner für „keine Hooks“ (`-c core.hooksPath=<hier>`). macOS/Linux: /dev/null (kein Ordner: git findet dort nie einen Hook). Windows: Git for Windows löst "/dev/null/pre-commit" als
+// <aktuelles Laufwerk>:\dev\null\pre-commit auf — ein dort angelegter Hook würde gefunden (Befund des Reviews zu PR #117, Test: Tests/Node/hooks-pfad-windows.test.mjs). Darum dort ein
+// Pfad im Support-Ordner (nie im Vault; Vorwärts-Schrägstriche, wie git sie liest), der NIE angelegt wird: ohne Ordner findet git keinen Hook, und beim Laden der Module entsteht nichts
+// (die Werkstatt prüft vor dem Anlegen von Dateien, z. B. der Vorschau-Schutz).
+export function keineHooks({ plattform = process.platform, env = process.env, home = homedir() } = {}) {
+  if (plattform !== "win32") return "/dev/null";
+  return join(supportOrdner({ env, home, plattform }), "leere-hooks").split("\\").join("/");
+}
 
 // ───────────── Support-Ordner ─────────────
 // Basis der App-Daten: macOS ~/Library/Application Support · Windows %APPDATA% · Linux $XDG_DATA_HOME bzw. ~/.local/share (dieselbe Regel wie kern/pfade.mjs).
