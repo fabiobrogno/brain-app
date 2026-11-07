@@ -167,7 +167,7 @@ test("Prüfung vor dem Speichern: core.hooksPath auf bin/kern/git-hooks; fremder
   assert.equal(g(e.v, "config", "--local", "core.hooksPath").trim(), "/opt/anderes/hooks", "„aus“ lässt Fremdes stehen");
   r = await e.rufe("POST", "/api/kern/verdrahten", { was: "git", an: true, ersetzen: true });
   assert.equal(r.status, 200);
-  assert.equal(g(e.v, "config", "--local", "core.hooksPath").trim(), `${e.kern}/git-hooks`);
+  assert.equal(g(e.v, "config", "--local", "core.hooksPath").trim(), `${e.kern}/git-hooks`.split("\\").join("/"));
 });
 
 test("Ohne Versionsverlauf gibt es keine Prüfung vor dem Speichern", async () => {
@@ -314,7 +314,7 @@ test("Mehrere Profile: Stand je Profil; Eintragen und Entfernen nur in den gewä
     for (const p of [h.standard, h.privat, h.firma]) assert.equal(r.j.stand.claude.profile[p].aktiv, true, p);
     for (const p of [h.standard, h.privat, h.firma]) {
       const text = readFileSync(join(p, "settings.json"), "utf8");
-      assert.ok(alleBefehle(JSON.parse(text)).some((c) => c.startsWith(`[ -x ${q(e.starter)} ] && exec ${q(e.starter)} hook `)), p);
+      assert.ok(alleBefehle(JSON.parse(text)).some((c) => (process.platform === "win32" ? c.includes("/adapters/claude-code/") : c.startsWith(`[ -x ${q(e.starter)} ] && exec ${q(e.starter)} hook `))), p); // Windows: node + Hook-Datei statt Starter
       assert.ok(!text.includes(e.version) && !text.includes("/kern/9.9.9"));
     }
     assert.ok(existsSync(join(h.privat, "commands")), "die Befehle liegen im Profilordner");

@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { pfad } from "./hilfe.mjs";
 import { altvault, baumStand, GEHEIM } from "../Kern/fixture-altvault.mjs";
 import { legeProgramm, programmPfad } from "./attrappe.mjs";
+const NUR_UNIX_W = (grund) => (process.platform === "win32" ? `nur macOS/Linux: ${grund}` : false); // Windows: Test übersprungen, mit Grund (Plan plattformen-windows-linux.md §8)
 
 const MERKEN = ["HOME", "USERPROFILE", "KORTEX_KERN_UNSTABIL_ERLAUBT", "KORTEX_KERN_TEMP_WURZELN", "KORTEX_KERN_PFAD", "BRAIN_LAUNCHCTL", "BRAIN_CLAUDE", "KORTEX_CODEX_PROGRAMM", "GIT_CONFIG_GLOBAL", "BRAIN_APP_SUPPORT", "KORTEX_VAULT_VERTRAUT",
   "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "FAKE_LAUNCHCTL_LOG", "FAKE_MCP_LOG", "CLAUDE_CONFIG_DIR", "KORTEX_DIENST_PLATTFORM"];
@@ -58,7 +59,7 @@ async function nachPhaseA(f) {
   schreibeZustand(z, zu);
 }
 
-test("Routen: Plan samt Tor ohne Bestätigung schreibt nichts; ungültige Eingaben → 400; Phase B vor Phase A → Tor zu (409)", async () => {
+test("Routen: Plan samt Tor ohne Bestätigung schreibt nichts; ungültige Eingaben → 400; Phase B vor Phase A → Tor zu (409)", { skip: NUR_UNIX_W("Umstellung vom alten Kit: das gab es unter Windows nie (W2: Bedarf klären)") }, async () => {
   const f = mitFixture(ALT);
   try {
     const vorher = baumStand(f.a.home, f.a.vault);
@@ -102,7 +103,7 @@ test("Routen: Plan samt Tor ohne Bestätigung schreibt nichts; ungültige Eingab
   } finally { f.weg(); }
 });
 
-test("Routen: Tor Schritt für Schritt → Probelauf → Aufräumen → Stand → Rückweg; keine Werte in den Antworten", async () => {
+test("Routen: Tor Schritt für Schritt → Probelauf → Aufräumen → Stand → Rückweg; keine Werte in den Antworten", { skip: NUR_UNIX_W("Umstellung vom alten Kit: das gab es unter Windows nie (W2: Bedarf klären)") }, async () => {
   const f = mitFixture(ALT);
   try {
     await nachPhaseA(f);

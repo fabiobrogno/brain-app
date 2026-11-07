@@ -1,6 +1,6 @@
 // test-umstellung-konto.mjs — Paket P2 (docs/plaene/ki-konten.md): die Umstellung schreibt Hook-Befehle und MCP-Einträge mit `--konto <id>`, die Kennung kommt aus der Liste der
 // KI-Konten (<Support>/ki-konten.json) je Profil/Programm. Ohne Liste bleibt es die Altform. Nur Temp-HOME/-Support; claude und codex nur als Attrappe (fake-mcp-lib).
-import { test } from "node:test";
+import { testUmstellung as test } from "./nur-unix.mjs"; // Windows: Umstellung vom alten Kit gab es nie (nur-unix.mjs)
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, mkdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";

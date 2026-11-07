@@ -11,10 +11,9 @@ import { sicheresZiel } from "../vault-schutz.mjs";
 const lnS = (ziel, link) => verweisSym(ziel, link);
 const lnH = (ziel, link) => verweisHart(ziel, link);
 import { haengeAn } from "../logs.mjs";
-import { symlinkSync as winSym, linkSync as winHart } from "node:fs";
-// macOS/Linux: `ln` im Kindprozess (die Schutzschicht des Kerns patcht fs im Testprozess); Windows: Node (ln aus Git Bash kopiert nur)
-const verweisSym = (ziel, link) => (process.platform === "win32" ? winSym(ziel, link) : execFileSync("ln", ["-s", ziel, link]));
-const verweisHart = (ziel, link) => (process.platform === "win32" ? winHart(ziel, link) : execFileSync("ln", [ziel, link]));
+// Verweise in einem Kindprozess (die Schutzschicht des Kerns patcht fs im Testprozess): macOS/Linux `ln`, Windows ein kleines Node-Skript (ln aus Git Bash kopiert nur)
+const verweisSym = (ziel, link) => (process.platform === "win32" ? execFileSync(process.execPath, ["-e", "require('node:fs').symlinkSync(process.argv[1], process.argv[2])", ziel, link]) : execFileSync("ln", ["-s", ziel, link]));
+const verweisHart = (ziel, link) => (process.platform === "win32" ? execFileSync(process.execPath, ["-e", "require('node:fs').linkSync(process.argv[1], process.argv[2])", ziel, link]) : execFileSync("ln", [ziel, link]));
 
 function aufbau() {
   const basis = mkdtempSync(join(tmpdir(), "vault-schutz-"));

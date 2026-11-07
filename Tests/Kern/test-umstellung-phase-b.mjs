@@ -2,7 +2,7 @@
 // Geprüft wird: das Freigabe-Tor (jede Bedingung einzeln rot, dann offen) · Probelauf an der Kopie (Original unberührt, Rückweg an der Kopie) · Phase B am Original: Archiv vollständig
 // (Hash-Liste, auch Unversioniertes), ein Commit nur der genannten Pfade, Config bereinigt · Rückweg stellt den Vault Byte für Byte her (git revert + Archiv zurück) · Volume-Grenze
 // (EXDEV simuliert: kopieren, vergleichen, dann entfernen) · Abbruch mittendrin · nichts ohne --ja. Nur Temp-HOME/-Support/-gitconfig; launchctl, claude und codex nur als Attrappe.
-import { test } from "node:test";
+import { testUmstellung as test } from "./nur-unix.mjs"; // Windows: Umstellung vom alten Kit gab es nie (nur-unix.mjs)
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, writeFileSync, readdirSync, lstatSync, symlinkSync, chmodSync, mkdirSync } from "node:fs";
 import { join } from "node:path";

@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { tmp, pfad } from "./hilfe.mjs";
 import { altvault, baumStand, GEHEIM } from "../Kern/fixture-altvault.mjs";
 import { legeProgramm, programmPfad } from "./attrappe.mjs";
+const NUR_UNIX_W = (grund) => (process.platform === "win32" ? `nur macOS/Linux: ${grund}` : false); // Windows: Test übersprungen, mit Grund (Plan plattformen-windows-linux.md §8)
 
 process.env.KORTEX_KERN_UNSTABIL_ERLAUBT = "1";
 const echtesHome = process.env.HOME, echtesProfil = process.env.USERPROFILE;
@@ -29,7 +30,7 @@ function mitFixture(faelle) {
   return { a, rufe, starter, weg: () => { process.env.HOME = echtesHome; if (process.platform === "win32") process.env.USERPROFILE = echtesProfil; a.weg(); } };
 }
 
-test("GET /api/umstellung/befund: Kit-Vault → Befund mit Funden, ohne Werte, nichts verändert", async () => {
+test("GET /api/umstellung/befund: Kit-Vault → Befund mit Funden, ohne Werte, nichts verändert", { skip: NUR_UNIX_W("Umstellung vom alten Kit: das gab es unter Windows nie (W2: Bedarf klären)") }, async () => {
   const f = mitFixture(["kit-versioniert", "hooks-alt-sh", "zwei-profile", "credential-helper", "mcp-claude-alt", "plist-alt-dieser", "restverweis-skript"]);
   try {
     const vorher = baumStand(f.a.basis);

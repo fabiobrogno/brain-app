@@ -17,8 +17,8 @@ const INGEST_SPERRE_MIN = 30;
 const ohneGit = () => Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_")));
 
 export function cacheOrdner({ home = homedir(), plattform = process.platform } = {}) {
-  if (process.env.BRAIN_TAGESLAUF_CACHE) return process.env.BRAIN_TAGESLAUF_CACHE;
-  return plattform === "darwin" ? join(home, "Library", "Caches", "brain-tageslauf") : join(tmpdir(), "brain-tageslauf");
+  if (process.env.BRAIN_TAGESLAUF_CACHE) return langerPfad(process.env.BRAIN_TAGESLAUF_CACHE);
+  return langerPfad(plattform === "darwin" ? join(home, "Library", "Caches", "brain-tageslauf") : join(tmpdir(), "brain-tageslauf")); // Windows: Langform (Kurznamen wie RUNNER~1 melden Programme anders)
 }
 export function git(vault, cwd, args) {
   return execFileSync(gitBefehl({ cfg: ladeConfig(vault) }), ["-C", cwd, ...args], {

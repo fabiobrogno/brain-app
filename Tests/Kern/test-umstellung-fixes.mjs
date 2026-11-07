@@ -4,7 +4,7 @@
 //  3. install.mjs --vorschau rechnet nur im Speicher.
 //  4. Pflege/KI fassen .kortex (Gerätemerker) nie an.
 // Nur Temp-HOME und Wegwerf-Ordner.
-import { test } from "node:test";
+import { testUmstellung as test } from "./nur-unix.mjs"; // Windows: Umstellung vom alten Kit gab es nie (nur-unix.mjs)
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, writeFileSync, mkdirSync, symlinkSync, realpathSync } from "node:fs";
 import { join } from "node:path";
