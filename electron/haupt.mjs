@@ -6,8 +6,8 @@
 // durchscheinende Seitenleiste (glas.mjs).
 // Paket W2c: installierbare Pakete (electron-builder, electron/paket/), eigenes Node im Paket (laufzeit.mjs legt es und den Kern stabil in den Support-Ordner), Updates (updater.mjs), GitHub-Anmeldung
 // (Client-ID aus Ressourcen/Info.plist). Nicht im Paket: Signatur unter Windows (Betas unsigniert), Veröffentlichen (docs/plaene/plattformen-windows-linux.md, docs/veroeffentlichen.md).
-import { app, BrowserWindow, Menu, Notification, Tray, clipboard, dialog, globalShortcut, ipcMain, nativeImage, nativeTheme, protocol, session, shell } from "electron";
-import { appendFileSync, existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
+import { app, BrowserWindow, Menu, Notification, Tray, clipboard, dialog, globalShortcut, ipcMain, nativeImage, nativeTheme, powerMonitor, protocol, session, shell } from "electron";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir, release } from "node:os";
 import { dirname, join, isAbsolute } from "node:path";
@@ -33,6 +33,9 @@ const HIER = dirname(fileURLToPath(import.meta.url));
 // Ressourcen des Repos (Studio, Werkstatt, gemeinsam): im Repo ../Ressourcen, im Paket <resources>/Ressourcen (electron/paket/ressourcen.mjs)
 const RESSOURCEN = app.isPackaged ? join(process.resourcesPath, "Ressourcen") : join(HIER, "..", "Ressourcen");
 const laden = (rel) => import(pathToFileURL(join(RESSOURCEN, rel)).href);
+// Im Paket gibt es kein Debuggen von außen: --inspect und --remote-debugging-* beenden die App (die Fuses der Release-Variante schalten es zusätzlich ab; nur die Test-Variante für Playwright lässt es zu)
+const PAKET_FUSES = (() => { try { return JSON.parse(readFileSync(join(RESSOURCEN, "paket.json"), "utf8")).fuses; } catch { return "release"; } })();
+if (app.isPackaged && PAKET_FUSES !== "test" && process.argv.some((a) => /^--(inspect|remote-debugging-|remote-allow-origins)/.test(a))) process.exit(1);
 const { supportOrdner, beendeBaum } = await laden("gemeinsam/plattform.mjs");
 const { pruefeOrdner, gitInstallHinweis, leseEinrichtung, schreibeEinrichtung } = await laden("werkstatt/browser-ordner.mjs");
 const { absoluterGitPfad, kindUmgebung, vorschauOrdnerAus } = await laden("gemeinsam/basis.mjs");
@@ -44,7 +47,8 @@ const { ART_SCHALTER, leseEreignisse, protokollKennungen, ereignisDatei } = awai
 const { ladeKatalog } = await laden("gemeinsam/ki-katalog.mjs");
 const { liesKurzformen } = await laden("gemeinsam/kurzformen.mjs");
 
-const ENTWICKLER = !app.isPackaged || process.env.KORTEX_ENTWICKLER === "1";
+// Entwicklerwerkzeuge nur beim Entwickeln: im Paket öffnet auch KORTEX_ENTWICKLER keine (die Seite hat die Hülle im Griff, DevTools wären eine zweite Tür)
+const ENTWICKLER = !app.isPackaged;
 // Testlauf (BRAIN_TESTMODUS) und Vorschau: wie in der Mac-App meldet die Hülle dann kein globales Kürzel an (es gehört der echten App); die Tests schalten es mit KORTEX_TEST_GLOBALE_KUERZEL=1 ausdrücklich ein
 const TESTMODUS = process.env.BRAIN_TESTMODUS === "1";
 const GLOBALE_KUERZEL = !process.env.KORTEX_VORSCHAU && (!TESTMODUS || process.env.KORTEX_TEST_GLOBALE_KUERZEL === "1");
@@ -287,6 +291,15 @@ function starteMitteilungen() {
 // Nur im Testlauf: Zugriff für die Playwright-Tests (Tray-Menü, gezeigte Mitteilungen, Erfassen-Fenster, Kürzel); die Seite sieht das nie, es gibt keinen Weg dorthin
 if (TESTMODUS) globalThis.__kortex = { kuerzel, erfassen, mitteilungen: MELDUNGEN, tray: () => (tray ? { vorlage: trayVorlage, tooltip: trayTooltip } : null), aktualisiereTray, glas: GLAS, symbol: () => aktuellesSymbol, hinweis: () => kuerzelHinweis };
 
+// Herunterfahren/Abmelden: derselbe Weg wie Beenden (die Seite sichert, die Werkstatt endet), nur mit kurzer Frist und ohne Rückfrage — das System wartet nicht auf einen Dialog
+function sitzungEnde() {
+  if (endeLaeuft) { app.quit(); return; }
+  const f = fenster;
+  if (!f || f.isDestroyed()) { app.quit(); return; }
+  darfSchliessen({ frage: () => f.webContents.executeJavaScript(SCHLIESSEN_SKRIPT), rueckfrage: async () => true, protokoll, fristMs: 2000 }).then(() => { schliessenFrei = true; app.quit(); });
+}
+if (TESTMODUS) globalThis.__kortex.sitzungEnde = () => sitzungEnde();
+
 function raeumeAuf() { try { kuerzel.beende(); globalShortcut.unregisterAll(); } catch { /* egal */ } try { tray?.destroy(); } catch { /* egal */ } tray = null; }
 
 // Nur die eigene Seite im Hauptfenster darf Aktionen schicken (nie ein Unterrahmen, nie eine andere Adresse)
@@ -356,6 +369,7 @@ function oeffneFenster() {
   schliessenFrei = false; // ein neues Fenster (nach dem Schließen in den Tray) sichert wieder vor dem Schließen
   wc.on("dom-ready", zeigeGlasAnSeite);
   fenster.once("ready-to-show", () => fenster?.show());
+  fenster.on("session-end", () => { protokoll("session-end"); sitzungEnde(); }); // Windows: Herunterfahren oder Abmelden
   // Schließen sichert zuerst (wie Swift darfSchliessen): einmal anhalten, die Seite fragen, bei „nicht gespeichert“ den Nutzer; erst danach schließen
   fenster.on("close", (e) => {
     if (schliessenFrei) return;
@@ -474,16 +488,25 @@ else {
       env: baueKindUmgebung(process.env, { gepackt: app.isPackaged, node: laufzeit.node, kern: laufzeit.kern, githubClientId: githubClientId(join(RESSOURCEN, "Info.plist")), vorschau: vorschauOrdnerAus(process.env, homedir()) }),
       protokoll,
       beendeBaum,
+      // Nach drei Abstürzen in 60 s: sichtbare Meldung mit Neustart statt nur 502 in der Oberfläche
+      beiZuvieleAbstuerzen: () => {
+        protokoll("werkstatt stürzt immer wieder ab");
+        if (TESTMODUS) { globalThis.__kortex.abstuerze = (globalThis.__kortex.abstuerze || 0) + 1; return; }
+        dialog.showMessageBox({ type: "error", title: "Kortex", message: "Die Werkstatt von Kortex stürzt immer wieder ab.", detail: "Kortex kann so nicht weiterarbeiten. Deine Notizen sind unverändert. Starte Kortex neu; hilft das nicht, schau in das Protokoll (Support-Ordner, electron/huelle.log).", buttons: ["Neu starten", "Beenden"], defaultId: 0, cancelId: 1 })
+          .then(({ response }) => { if (response === 0) app.relaunch(); app.exit(response === 0 ? 0 : 1); });
+      },
     });
     // Stirbt die Werkstatt vor dem ersten „bereit“ (kaputter Vault, fehlende Dateien), kommt hier der Grund; die App beendet sich (die Einzelinstanz-Sperre geht mit)
     try { await bruecke.bereit; }
     catch (e) { protokoll(`werkstatt: ${e?.message || e}`); dialog.showErrorBox("Kortex", `Die Werkstatt von Kortex ließ sich nicht starten.\n\n${String(e?.message || e).slice(0, 600)}`); app.exit(1); return; }
+    protokoll("werkstatt bereit");
     oeffneFenster();
     gestartet = true;
     // Globale Kürzel, Tray, Mitteilungen: erst jetzt (die Werkstatt läuft). Ein Kürzel, das nicht geht, steht als Hinweis im Erfassen-Fenster.
     kuerzelAnwenden();
     starteTray();
     starteMitteilungen();
+    if (process.platform !== "win32") powerMonitor.on("shutdown", (e) => { e.preventDefault(); protokoll("shutdown"); sitzungEnde(); }); // Linux/macOS (Windows: session-end am Fenster)
     if (!TESTMODUS) updateAuto = updater.starteAutomatisch(); // stille Prüfung nach 30 s, dann täglich (nur installiert, nie in der Vorschau)
   });
 }

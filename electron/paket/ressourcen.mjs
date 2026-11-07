@@ -22,7 +22,7 @@ export function stempelVon(ordner) {
   return h.digest("hex");
 }
 
-export function stageRessourcen({ wurzel, ziel, version }) {
+export function stageRessourcen({ wurzel, ziel, version, fuses = "release" }) {
   const quelle = join(wurzel, "Ressourcen");
   if (!existsSync(join(quelle, "werkstatt", "werkstatt.mjs"))) throw new Error("Ressourcen/werkstatt/werkstatt.mjs fehlt");
   rmSync(ziel, { recursive: true, force: true });
@@ -38,6 +38,8 @@ export function stageRessourcen({ wurzel, ziel, version }) {
   copyFileSync(join(wurzel, "THIRD-PARTY-NOTICES.md"), join(ziel, "THIRD-PARTY-NOTICES.md"));
   copyFileSync(join(wurzel, "THIRD-PARTY-NOTICES.md"), join(ziel, "studio", "THIRD-PARTY-NOTICES.md"));
   copyFileSync(join(wurzel, "LICENSE"), join(ziel, "LICENSE"));
+  // Welche Fuse-Variante das Paket ist: die Hülle beendet sich im Paket bei --inspect/--remote-debugging-port, außer in der Test-Variante
+  writeFileSync(join(ziel, "paket.json"), `${JSON.stringify({ fuses })}\n`);
   const kern = join(ziel, "kern");
   if (!existsSync(join(kern, "brain.mjs"))) throw new Error("Ressourcen/kern/brain.mjs fehlt");
   rmSync(join(kern, "mcp"), { recursive: true, force: true });

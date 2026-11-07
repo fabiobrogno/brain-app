@@ -60,19 +60,37 @@ test("Texte: einzeilig und gekürzt, kopieren streng, Ort ohne Query", () => {
   assert.equal(fehlerOrt("   "), null);
 });
 
-test("Umgebung der Werkstatt: ausdrücklich gebaut — nie CLAUDE_CONFIG_DIR, CODEX_HOME, GIT_CONFIG_*, Tokens, BRAIN_VAULT; im Testmodus kein XDG_*", () => {
-  const quelle = { PATH: "/usr/bin", HOME: "/h", LANG: "de_DE.UTF-8", LC_ALL: "C", BRAIN_APP_SUPPORT: "/s", KORTEX_X: "1", XDG_CONFIG_HOME: "/x", XDG_DATA_HOME: "/d", BRAIN_VAULT: "/v", BRAIN_MCP_NODE: "/fremd/node",
-    CLAUDE_CONFIG_DIR: "/c", CODEX_HOME: "/o", GIT_CONFIG_GLOBAL: "/g", GIT_CONFIG_COUNT: "1", GITHUB_TOKEN: "t", ANTHROPIC_API_KEY: "k", OPENAI_API_KEY: "k", NODE_OPTIONS: "--x", ELECTRON_FOO: "1", DISPLAY: ":0" };
-  const normal = baueKindUmgebung(quelle);
-  assert.deepEqual(Object.keys(normal).sort(), ["BRAIN_APP_SUPPORT", "HOME", "KORTEX_X", "LANG", "LC_ALL", "PATH", "XDG_CONFIG_HOME", "XDG_DATA_HOME"]);
-  assert.equal("ELECTRON_RUN_AS_NODE" in baueKindUmgebung({ ...quelle, ELECTRON_RUN_AS_NODE: "1" }), false, "die Werkstatt läuft mit einem echten Node, nie als Electron");
-  assert.equal(baueKindUmgebung(quelle, { node: "/usr/bin/node" }).BRAIN_MCP_NODE, "/usr/bin/node");
-  const mitKern = baueKindUmgebung({ ...quelle, KORTEX_KERN_PFAD: "/fremd/kern" }, { kern: "/s/bin/kern" });
-  assert.equal(mitKern.KORTEX_KERN_PFAD, "/s/bin/kern");
-  assert.equal("KORTEX_KERN_PFAD" in baueKindUmgebung({ ...quelle, KORTEX_KERN_PFAD: "/fremd/kern" }), false, "ein mitgebrachter Kern-Pfad geht nie durch");
-  const test = baueKindUmgebung({ ...quelle, BRAIN_TESTMODUS: "1" });
-  assert.equal(Object.keys(test).filter((k) => k.startsWith("XDG_")).length, 0);
-  for (const k of ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_COUNT", "GITHUB_TOKEN", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "NODE_OPTIONS", "ELECTRON_FOO", "BRAIN_VAULT", "BRAIN_MCP_NODE"]) assert.equal(k in normal, false, k);
+test("Umgebung der Werkstatt wie in Swift: alles erben, Gesperrtes streichen — Proxy, CA, SSH-Agent, Sitzung und Windows-Systemvariablen kommen an", () => {
+  const erben = { PATH: "/usr/bin", HOME: "/h", LANG: "de_DE.UTF-8", LC_ALL: "C", BRAIN_APP_SUPPORT: "/s", KORTEX_X: "1", XDG_CONFIG_HOME: "/x", XDG_RUNTIME_DIR: "/run/user/1", DISPLAY: ":0", WAYLAND_DISPLAY: "wayland-0",
+    DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1/bus", SSH_AUTH_SOCK: "/tmp/ssh/agent", NODE_EXTRA_CA_CERTS: "/ca.pem", HTTP_PROXY: "http://p:1", https_proxy: "http://p:2", NO_PROXY: "localhost", no_proxy: "x",
+    USERPROFILE: "C:\\u", APPDATA: "C:\\a", LOCALAPPDATA: "C:\\l", SystemRoot: "C:\\Windows", ComSpec: "cmd.exe", PATHEXT: ".EXE", TEMP: "C:\\t", TMP: "C:\\t", ProgramData: "C:\\pd", "ProgramFiles(x86)": "C:\\pf",
+    CLAUDE_CONFIG_DIR: "/c", CODEX_HOME: "/o", GITHUB_TOKEN: "t" };
+  const nein = { BRAIN_VAULT: "/v", BRAIN_MCP_NODE: "/fremd/node", KORTEX_KERN_PFAD: "/fremd/kern", NODE_OPTIONS: "--x", NODE_PATH: "/n", ELECTRON_RUN_AS_NODE: "1", ELECTRON_FOO: "1", NODE_TLS_REJECT_UNAUTHORIZED: "0", NODE_DEBUG: "x",
+    KORTEX_VORSCHAU: "/v", GIT_CONFIG_GLOBAL: "/g", GIT_CONFIG_COUNT: "1", GIT_ASKPASS: "/a", DYLD_INSERT_LIBRARIES: "/d", LD_PRELOAD: "/l", node_options: "--y" };
+  for (const gepackt of [false, true]) {
+    const aus = baueKindUmgebung({ ...erben, ...nein }, { gepackt });
+    assert.deepEqual(aus, erben, `gepackt=${gepackt}: genau das Geerbte, nichts Gesperrtes`);
+  }
+  assert.equal(baueKindUmgebung({ ...erben, ELECTRON_RUN_AS_NODE: "1" }).ELECTRON_RUN_AS_NODE, undefined, "die Werkstatt läuft mit einem echten Node, nie als Electron");
+  assert.equal(baueKindUmgebung(erben, { node: "/usr/bin/node" }).BRAIN_MCP_NODE, "/usr/bin/node");
+  assert.equal(baueKindUmgebung({ ...erben, KORTEX_KERN_PFAD: "/fremd/kern" }, { kern: "/s/bin/kern" }).KORTEX_KERN_PFAD, "/s/bin/kern");
+  assert.equal(baueKindUmgebung(erben, { vorschau: "/tmp/kortex-vorschau-x" }).KORTEX_VORSCHAU, "/tmp/kortex-vorschau-x", "nur ein geprüfter Vorschau-Ordner geht durch");
+});
+
+test("Umgebung: die echte Werkstatt bekommt Proxy, CA und SSH_AUTH_SOCK, aber keine Testschalter (im Paket)", async () => {
+  const home = temp(), vault = join(home, "vault");
+  mkdirSync(join(home, "support")); mkdirSync(vault);
+  const skript = join(home, "zeige-umgebung.mjs");
+  // Attrappe der Werkstatt: meldet „bereit“ und schreibt ihre Umgebung in eine Datei
+  writeFileSync(skript, `import { writeFileSync } from "node:fs"; writeFileSync(${JSON.stringify(join(home, "env.json"))}, JSON.stringify(process.env)); console.log(JSON.stringify({ bereit: true, version: "t", vaultId: null })); process.stdin.resume();`);
+  const quelle = { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, HOME: home, USERPROFILE: home, HTTPS_PROXY: "http://proxy:3128", NODE_EXTRA_CA_CERTS: "/ca.pem", SSH_AUTH_SOCK: "/tmp/agent", BRAIN_TESTMODUS: "1", KORTEX_VAULT_VERTRAUT: "alle", GIT_CONFIG_GLOBAL: "/g" };
+  const b = starteBruecke({ programm: process.execPath, skript, vault, env: baueKindUmgebung(quelle, { gepackt: true }) });
+  try { await b.bereit; } finally { await b.beende(); }
+  const env = JSON.parse(readFileSync(join(home, "env.json"), "utf8"));
+  assert.equal(env.HTTPS_PROXY, "http://proxy:3128");
+  assert.equal(env.NODE_EXTRA_CA_CERTS, "/ca.pem");
+  assert.equal(env.SSH_AUTH_SOCK, "/tmp/agent");
+  for (const k of ["BRAIN_TESTMODUS", "KORTEX_VAULT_VERTRAUT", "GIT_CONFIG_GLOBAL"]) assert.equal(k in env, false, k);
 });
 
 test("Umgebung im Paket: Testschalter und Vorschau fallen weg wie in Swift (NodeUmgebung); die Liste ist dieselbe wie im Swift-Quelltext", () => {

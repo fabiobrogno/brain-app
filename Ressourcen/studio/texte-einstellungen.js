@@ -267,6 +267,8 @@ export const BEREICHE = plattformTexte([
         { id: "lizenz-orca", sonder: true, badge: "MIT", titel: "Orca", text: "Gestaltungswerte und Muster (Lovecast Inc.)", woerter: ["lizenz", "orca", "gestaltung", "muster", "lovecast"] },
         { id: "lizenz-codemirror", sonder: true, badge: "MIT", titel: "CodeMirror", text: "Editor", woerter: ["lizenz", "editor", "codemirror"] },
         { id: "lizenz-node", sonder: true, badge: "MIT", titel: "Node.js", text: "Läuft im Hintergrund von Kortex", woerter: ["lizenz", "node", "javascript"] },
+        { id: "lizenz-electron", sonder: true, badge: "MIT", titel: "Electron", text: "Hülle der App unter Windows und Linux", woerter: ["lizenz", "electron", "chromium", "windows", "linux"] },
+        { id: "lizenz-electron-updater", sonder: true, badge: "MIT", titel: "electron-updater", text: "Aktualisierungen der App unter Windows und Linux", woerter: ["lizenz", "update", "electron", "windows", "linux"] },
         { id: "lizenz-sparkle", sonder: true, badge: "MIT", titel: "Sparkle", text: "Aktualisierungen der App", woerter: ["lizenz", "sparkle", "update"] },
       ] },
     ],

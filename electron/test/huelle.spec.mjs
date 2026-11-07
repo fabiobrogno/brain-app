@@ -209,6 +209,23 @@ test("Schließen sichert: Text tippen, sofort schließen — die Datei ist gespe
   lauf.app = null;
 });
 
+test("Herunterfahren/Abmelden (session-end, shutdown) läuft über denselben Sichern-und-Beenden-Weg: Text tippen, Sitzungsende melden — die Datei ist gespeichert, die App endet", async () => {
+  lauf = await starteApp();
+  const { app, fenster, vault } = lauf;
+  await fenster.evaluate(() => window.studio.befehl("neu"));
+  await expect(fenster.locator("#editor .cm-editor")).toHaveClass(/cm-focused/);
+  await fenster.keyboard.type("Vor dem Herunterfahren");
+  await fenster.keyboard.press("Enter");
+  await fenster.keyboard.type("noch nicht gespeichert");
+  const ende = app.waitForEvent("close");
+  await app.evaluate(() => { globalThis.__kortex.sitzungEnde(); });
+  await ende;
+  const datei = readdirSync(join(vault, "00_inbox")).find((n) => n.startsWith("vor-dem-herunterfahren"));
+  expect(datei).toBeTruthy();
+  expect(readFileSync(join(vault, "00_inbox", datei), "utf8")).toBe("# Vor dem Herunterfahren\nnoch nicht gespeichert\n");
+  lauf.app = null;
+});
+
 test("Entwicklung: die Werkstatt läuft mit dem node aus dem PATH und ihr MCP-Eintrag nennt es (kein Electron als Node)", async () => {
   lauf = await starteApp();
   const { app, fenster } = lauf;
