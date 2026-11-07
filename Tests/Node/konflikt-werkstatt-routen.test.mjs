@@ -1,4 +1,4 @@
-// Konflikt-Ansicht über die Werkstatt, Teil 3: Routen (Rückgängig, neu entscheiden) und die gemeinsame Sperre. Hilfen: konflikt-werkstatt-hilfe.mjs.
+// Konflikt-Ansicht über die Werkstatt, Teil 3: Routen (Rückgängig, neu entscheiden), gemeinsame Sperre, gemerkter Stand. Hilfen: konflikt-werkstatt-hilfe.mjs.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
@@ -60,3 +60,28 @@ test("Gemeinsame Sperre: solange der Kern-Hintergrund (oder ein anderer Prozess)
   assert.equal(existsSync(datei), false, "der Studio-Abgleich gibt seine Sperre wieder frei");
 });
 
+test("Gemerkter Stand: Status meldet seit wann die Sicherung wartet (Tage); Verwerfen räumt ihn, der Verlauf bleibt; zweimal ist 409", async () => {
+  const { a, v } = await konfliktAufbauen();
+  const h = erzeugeHandler({ vault: a });
+  const rufe = async (methode, p) => { const r = await h({ methode, pfad: p, query: null }); return { status: r.status, j: JSON.parse(r.body.toString("utf8")) }; };
+  await loesen(v, [{ pfad: "start.md", wahl: "andere" }]);
+  assert.equal((await v.gitStatus()).sicherungHaelt, null, "nichts gemerkt, nichts blockiert");
+  await v.gitKonfliktRueckgaengig();
+  let s = await v.gitStatus();
+  assert.equal(s.sicherungStand, "konflikt"); assert.equal(s.sicherungHaelt.tage, 0);
+  // fünf Tage alt: die Oberfläche kann es deutlich sagen
+  const support = process.env.BRAIN_APP_SUPPORT, dir = join(support, "backup");
+  const datei = join(dir, `${kennung(a)}.json`);
+  const m = JSON.parse(readFileSync(datei, "utf8")); m.konfliktBasis.zeit = new Date(Date.now() - 5 * 86_400_000).toISOString(); writeFileSync(datei, JSON.stringify(m));
+  s = await v.gitStatus();
+  assert.equal(s.sicherungHaelt.tage, 5);
+  assert.equal((await rufe("GET", "/api/git/konflikt/verwerfen")).status, 405);
+  const kopfVorher = g(a, "rev-parse", "HEAD").trim();
+  const r = await rufe("POST", "/api/git/konflikt/verwerfen");
+  assert.equal(r.status, 200); assert.equal(r.j.ok, true);
+  s = await v.gitStatus();
+  assert.equal(s.sicherungHaelt, null); assert.equal(s.sicherungStand, null);
+  assert.equal(g(a, "rev-parse", "HEAD").trim(), kopfVorher, "der Verlauf ist unberührt");
+  assert.equal((await rufe("POST", "/api/git/konflikt/verwerfen")).status, 409);
+  assert.equal((await v.gitKonfliktAnsicht()).aktiv, false);
+});

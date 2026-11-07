@@ -1,6 +1,6 @@
 // Gemeinsame Hilfen der konflikt-werkstatt-*.test.mjs: Umgebung (HOME, Support-Ordner), Wegwerf-Repos mit Bare-Remote, Konflikt aufbauen.
 // Früher war das EINE Testdatei. Unter Windows (ein Node-Start je git-Aufruf) brauchte sie rund 230 s und riss mehrfach das Limit von 240 s je Datei.
-// node:test führt die Fälle einer Datei nacheinander aus, Dateien dagegen parallel: darum sind die Fälle auf vier Dateien verteilt.
+// node:test führt die Fälle einer Datei nacheinander aus, Dateien dagegen parallel: darum sind die Fälle auf vier Dateien verteilt (je unter ~80 s dort, gemessen aus dem Log von Lauf 42374136550 mit der git-Schranke).
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";

@@ -1,4 +1,4 @@
-// Konflikt-Ansicht über die Werkstatt, Teil 4: Umstellung, fehlendes Ziel, fremde Zusammenführung. Hilfen: konflikt-werkstatt-hilfe.mjs.
+// Konflikt-Ansicht über die Werkstatt, Teil 4: Umstellung, fehlendes Ziel, fremde Zusammenführung, Kern-Befehle unter der Sperre. Hilfen: konflikt-werkstatt-hilfe.mjs.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
@@ -46,5 +46,30 @@ test("K-neu-1: eine schon offene Zusammenführung aus dem Terminal (mit Handarbe
   assert.equal((await wirft(v.gitKonfliktAbbrechen())).extra.art, "fremd");
   assert.ok(existsSync(join(a, ".git", "MERGE_HEAD")));
   assert.equal(lies(a, "start.md"), "# Start\nim Terminal von Hand gelöst\n");
+});
+
+test("Kern-Befehle laufen unter der Sperre im Prozess und warten kurz (statt gleich 409): ein Abgleich und ein Kern-Befehl kollidieren nicht auf dem Index", async () => {
+  const gitFn = await import(pfad("gemeinsam", "git.mjs"));
+  const wurzel = tmp("brain-sperre-");
+  const zeiten = [];
+  const arbeit = (name, ms) => gitFn.gitExklusiv(wurzel, async () => { zeiten.push(`${name}+`); await new Promise((ok) => setTimeout(ok, ms)); zeiten.push(`${name}-`); return name; });
+  const t0 = Date.now();
+  const [x, y] = await Promise.allSettled([arbeit("a", 300), arbeit("b", 10)]);
+  assert.equal(x.status, "fulfilled"); assert.equal(y.status, "fulfilled", "der zweite wartet, statt abgelehnt zu werden");
+  assert.deepEqual(zeiten, ["a+", "a-", "b+", "b-"], "nie gleichzeitig");
+  assert.ok(Date.now() - t0 >= 290);
+  // länger als die Wartezeit: dann 409
+  const lang = gitFn.gitExklusiv(wurzel, () => new Promise((ok) => setTimeout(ok, 700)));
+  await new Promise((ok) => setTimeout(ok, 20));
+  const kurz = await wirft(gitFn.gitExklusiv(wurzel, async () => 1, 100));
+  assert.equal(kurz.status, 409); assert.match(kurz.message, /Abgleich läuft schon/);
+  await lang;
+  // über die Werkstatt: Später neben einem laufenden Studio-Abgleich bricht nicht mit einer Kollision ab
+  const { v } = await konfliktAufbauen();
+  await v.gitKonfliktAbbrechen();
+  const [s, r] = await Promise.allSettled([v.gitSync({}), v.gitKonfliktRueckgaengig()]);
+  assert.ok(r.status === "fulfilled" || r.reason.status === 409, String(r.reason && r.reason.message));
+  if (r.status === "rejected") assert.doesNotMatch(r.reason.message, /index\.lock/);
+  void s;
 });
 
