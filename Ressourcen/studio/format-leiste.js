@@ -15,8 +15,8 @@ const GRUPPEN = [
     ["fett", TX.fett, () => "B", "fl-fett", "fett"],
     ["kursiv", TX.kursiv, () => "I", "fl-kursiv", "kursiv"],
     ["durchgestrichen", TX.durchgestrichen, () => "S", "fl-durch", "durch"],
-    ["code", TX.code, () => symbol("code", 15), "", "code"],
-    ["link", TX.link, () => symbol("link", 15), "", "link"],
+    ["code", TX.code, () => symbol("code", 14), "", "code"],
+    ["link", TX.link, () => symbol("link", 14), "", "link"],
   ],
   [
     ["ueberschrift1", TX.ueberschrift(1), () => "H1", "fl-text", ["ueberschrift", 1]],
@@ -26,7 +26,7 @@ const GRUPPEN = [
   [
     ["listePunkt", TX.listePunkt, () => "•", "fl-text", ["liste", "punkt"]],
     ["listeNummer", TX.listeNummer, () => "1.", "fl-text", ["liste", "nummer"]],
-    ["listeAufgabe", TX.listeAufgabe, () => symbol("aufgaben", 15), "", ["liste", "aufgabe"]],
+    ["listeAufgabe", TX.listeAufgabe, () => symbol("aufgaben", 14), "", ["liste", "aufgabe"]],
   ],
 ];
 
