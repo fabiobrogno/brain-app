@@ -10,6 +10,7 @@ import { statSync } from "node:fs";
 import { HttpFehler, falte } from "../gemeinsam/basis.mjs";
 import { findeProgramm as sucheProgramm } from "../gemeinsam/ki.mjs";
 import { starteAnmeldung, PROGRAMME } from "../gemeinsam/anmeldung.mjs";
+import { istWindows } from "../gemeinsam/plattform.mjs";
 
 const NAECHSTE_MIN = 8, GLEICHZEITIG = 4, NACHLAUF_MS = 5 * 60_000;
 
@@ -20,7 +21,7 @@ export function erzeugeAnmelden({ konten, findeProgramm = (p) => sucheProgramm(p
   const neueId = () => `a_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36).slice(-4)}`;
   const log = (e) => { try { protokoll?.(e); } catch { /* Beiwerk */ } };
 
-  const ordnerOk = (pfad) => { try { const st = statSync(pfad); return st.isDirectory() && (typeof process.getuid !== "function" || st.uid === process.getuid()) && (st.mode & 0o002) === 0; } catch { return false; } };
+  const ordnerOk = (pfad) => { try { const st = statSync(pfad); return st.isDirectory() && (typeof process.getuid !== "function" || st.uid === process.getuid()) && (istWindows() || (st.mode & 0o002) === 0); } catch { return false; } };
 
   function raeume() { // beendete Läufe nach der Nachlaufzeit vergessen
     for (const [id, l] of laeufe) if (l.beendet && jetzt() - l.beendet > NACHLAUF_MS) laeufe.delete(id);

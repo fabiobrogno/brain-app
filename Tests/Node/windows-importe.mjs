@@ -20,7 +20,13 @@ syncBuiltinESMExports();
 
 registerHooks({
   resolve(spezifizierer, kontext, weiter) {
-    if (/^[A-Za-z]:[\\/]/.test(spezifizierer)) spezifizierer = pathToFileURL(spezifizierer).href;
+    if (/^[A-Za-z]:[\\/]/.test(spezifizierer)) {
+      // `…\datei.js?browser`: der Abfrageteil gehört nicht zum Pfad (pathToFileURL würde das ? mitkodieren)
+      const q = spezifizierer.indexOf("?");
+      const url = pathToFileURL(q < 0 ? spezifizierer : spezifizierer.slice(0, q));
+      if (q >= 0) url.search = spezifizierer.slice(q);
+      spezifizierer = url.href;
+    }
     return weiter(spezifizierer, kontext);
   },
 });

@@ -18,6 +18,7 @@ import { git, legeArbeitskopieAn, uebernehmen } from "./arbeitskopie.mjs";
 import { leseFeld, setzeFeld, fuegeLogEin, logZeit } from "./schreiben.mjs";
 import { pruefeDiff } from "./diffpruefung.mjs";
 import { fingerabdruck, freigabeStand, abweichungen, meldeVerletzung, befunde as integritaetsBefunde } from "./integritaet.mjs";
+import { schreibeAufBestehendes } from "../plattform.mjs";
 
 export const BETREFF_PFLEGE = /^pflege\(([^)]+)\): .* \[([a-z0-9-]{1,80})\]$/;
 export const ID_MUSTER = /^[a-z0-9-]{1,80}$/;
@@ -155,7 +156,7 @@ export async function einheit(ctx, kopie, { id, art, titel, arbeit, pruef = {} }
   // Zuerst die Integrität — auch bei gescheiterter Arbeit. Der Fingerabdruck wird VOR dem Zurücksetzen des Zeigers genommen, sonst wäre
   // ein umgebogener Zeiger schon geheilt; danach den Zeiger zurück, bevor irgendein git-Befehl in der Kopie läuft (sonst träfe er den echten Vault).
   const verletzt = abweichungen(integVorher, integritaetsStand(ctx, kopie));
-  if (zeigerVorher !== null && lies() !== zeigerVorher) { try { writeFileSync(zeiger, zeigerVorher); } catch {} }
+  if (zeigerVorher !== null && lies() !== zeigerVorher) { try { schreibeAufBestehendes(zeiger, zeigerVorher); } catch {} }
   if (verletzt.length) {
     meldeVerletzung(ctx, { einheit: eid, pfade: verletzt });
     return verwerfen("integritaet-verletzt", integritaetsBefunde(verletzt));
@@ -165,7 +166,7 @@ export async function einheit(ctx, kopie, { id, art, titel, arbeit, pruef = {} }
     return verwerfen("vault-veraendert", [{ pfad: "-", regel: "vault-veraendert", meldung: "Im Vault hat sich währenddessen etwas geändert — nichts übernommen, Pflege für heute beendet." }]);
   }
   if (zeigerVorher !== null && lies() !== zeigerVorher) {
-    try { writeFileSync(zeiger, zeigerVorher); } catch {}
+    try { schreibeAufBestehendes(zeiger, zeigerVorher); } catch {}
     ctx.pflegeStopp = true;
     return verwerfen("vault-veraendert", [{ pfad: ".git", regel: "vault-veraendert", meldung: "Die Arbeitskopie wurde umgebogen — nichts übernommen, Pflege für heute beendet." }]);
   }

@@ -7,6 +7,8 @@ import { readFileSync, writeFileSync, mkdirSync, symlinkSync, statSync, readdirS
 import { join } from "node:path";
 import { tmp, schreibe, pfad } from "./hilfe.mjs";
 import { nurUnix, modus } from "./attrappe.mjs";
+import { claudePfadform } from "../../Ressourcen/gemeinsam/plattform.mjs";
+const rp = (p) => claudePfadform(p).slice(1); // Pfad in Regeln von Claude Code: `//` + Pfad ohne führenden Schrägstrich (Windows: C:\x → /c/x)
 
 for (const k of ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "CURSOR_CONFIG_DIR", "GEMINI_CLI_HOME", "XDG_CONFIG_HOME", "GIT_CONFIG_GLOBAL"]) delete process.env[k];
 process.env.HOME = tmp("brain-home-"); if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME || ""; 
@@ -47,7 +49,7 @@ function aufbau({ konten = [["a", HOOKS], ["b", {}]], vaults = 2 } = {}) {
 const istEinst = (r) => /\.mcp\.json|\.claude\/settings|settings\.json|\.claude\.json|vaults\.json|ki-konten\.json|brain-support-/.test(r);
 const ohneEinst = (liste) => (liste || []).filter((r) => !istEinst(r));
 const nurEinst = (liste) => (liste || []).filter(istEinst);
-const kontoVon = (j, p) => j.konten.find((k) => k.ordner.endsWith(p.split("/").pop()));
+const kontoVon = (j, p) => j.konten.find((k) => k.ordner.endsWith(p.split(/[\\/]/).pop()));
 
 // ───────────────────────────── Regeln: Pfadformen ─────────────────────────────
 test("Regel: absoluter Pfad mit //, gitignore- und Regelzeichen werden maskiert, Leerzeichen und Umlaute bleiben, beide Pfadformen bei Symlinks", { skip: nurUnix("Symlinks brauchen unter Windows besondere Rechte") }, () => {
@@ -59,8 +61,8 @@ test("Regel: absoluter Pfad mit //, gitignore- und Regelzeichen werden maskiert,
   const echt = tmp("brain-echt-"), verweis = join(tmp("brain-verweis-"), "link");
   symlinkSync(echt, verweis);
   const regeln = S.vaultRegeln(verweis, echt);
-  assert.deepEqual(regeln, [`Read(//${verweis.slice(1)}/**)`, `Edit(//${verweis.slice(1)}/**)`, `Read(//${echt.slice(1)}/**)`, `Edit(//${echt.slice(1)}/**)`]);
-  assert.deepEqual(S.vaultRegeln(echt, echt), [`Read(//${echt.slice(1)}/**)`, `Edit(//${echt.slice(1)}/**)`], "gleiche Form nur einmal");
+  assert.deepEqual(regeln, [`Read(//${rp(verweis)}/**)`, `Edit(//${rp(verweis)}/**)`, `Read(//${rp(echt)}/**)`, `Edit(//${rp(echt)}/**)`]);
+  assert.deepEqual(S.vaultRegeln(echt, echt), [`Read(//${rp(echt)}/**)`, `Edit(//${rp(echt)}/**)`], "gleiche Form nur einmal");
   assert.throws(() => S.vaultRegeln("/Users/x/a\nb"), /Steuerzeichen/);
   // NFC und NFD: beide Schreibweisen, wenn sie sich unterscheiden (macOS speichert Umlaute zerlegt)
   const nfd = S.vaultRegeln("/Users/x/Bücher".normalize("NFD"));
@@ -104,13 +106,13 @@ test("Sperren mit claudeSperre schreibt Read- und Edit-Verbot in die settings.js
     r = await rufe("PUT", "/api/ki/zugriff", { konto: b.id, vault: v1, stufe: "gesperrt", claudeSperre: true });
     assert.equal(r.status, 200, JSON.stringify(r.j));
     assert.equal(r.j.claude.aktion, "eingetragen");
-    const soll = [`Read(//${v1.slice(1)}/**)`, `Edit(//${v1.slice(1)}/**)`];
+    const soll = [`Read(//${rp(v1)}/**)`, `Edit(//${rp(v1)}/**)`];
     assert.deepEqual(r.j.claude.regeln, soll);
     const sb = settings(pb);
     assert.deepEqual(ohneEinst(sb.permissions.deny), ["Read(//etc/**)", "Bash(rm:*)", ...soll], "Fremdes bleibt, die eigenen kommen dazu");
     // dazu die Einstellungsregeln: Support-Ordner, Einstellungsdateien des Profils, Projektdateien (die KI darf ihre Kennung und die Sperren nicht umschreiben)
     const einst = nurEinst(sb.permissions.deny);
-    for (const erwartet of [`Edit(//${s.slice(1)}/**)`, `Read(//${s.slice(1)}/vaults.json)`, `Read(//${s.slice(1)}/ki-konten.json*)`, `Edit(//${pb.slice(1)}/settings.json)`, `Read(//${pb.slice(1)}/settings.json*)`, `Edit(//${pb.slice(1)}/.claude.json)`, "Edit(**/.mcp.json)", "Edit(**/.claude/settings.json)", "Edit(**/.claude/settings.local.json)"]) assert.ok(einst.includes(erwartet), erwartet);
+    for (const erwartet of [`Edit(//${rp(s)}/**)`, `Read(//${rp(s)}/vaults.json)`, `Read(//${rp(s)}/ki-konten.json*)`, `Edit(//${rp(pb)}/settings.json)`, `Read(//${rp(pb)}/settings.json*)`, `Edit(//${rp(pb)}/.claude.json)`, "Edit(**/.mcp.json)", "Edit(**/.claude/settings.json)", "Edit(**/.claude/settings.local.json)"]) assert.ok(einst.includes(erwartet), erwartet);
     assert.deepEqual(sb.permissions.allow, ["Bash(ls:*)"]);
     assert.equal(sb.permissions.defaultMode, "default"); assert.equal(sb.model, "opus"); assert.deepEqual(sb.env, { X: "1" });
     assert.equal(baks(pb).length, 1, "eine Sicherung vor dem Schreiben");
@@ -161,7 +163,7 @@ test("Sperren mit claudeSperre schreibt Read- und Edit-Verbot in die settings.js
 
 test("Eine Regel, die der Nutzer schon selbst hat, gehört ihm: Kortex vermerkt sie nicht und entfernt sie nie", async () => {
   const { home, profile: [pa], vs: [v1], rufe, s } = aufbau({ konten: [["a", {}]], vaults: 1 });
-  const lese = `Read(//${v1.slice(1)}/**)`, edit = `Edit(//${v1.slice(1)}/**)`;
+  const lese = `Read(//${rp(v1)}/**)`, edit = `Edit(//${rp(v1)}/**)`;
   writeFileSync(join(pa, "settings.json"), JSON.stringify({ permissions: { deny: [lese] } }));
   await mitHome(home, async () => {
     const a = kontoVon((await rufe("POST", "/api/ki/konten/abgleich")).j, pa);

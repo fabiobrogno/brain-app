@@ -13,7 +13,7 @@ import { registriereVault, registrierteVaults } from "./vault-schutz.mjs";
 import { vertrauensStand, alleVertraut } from "./vertrauen.mjs";
 import { kontoStufe, darfMindestens, kontenOrte, liesKonten, bestimmeKonto } from "./ki-konten.mjs";
 import { schreibeEreignis } from "./aktivitaet.mjs";
-import { supportBasis } from "./plattform.mjs";
+import { supportBasis, claudePfadform, langerPfad } from "./plattform.mjs";
 
 export const KERN = dirname(fileURLToPath(import.meta.url));
 
@@ -97,7 +97,7 @@ const hatPraefix = (p, basis) => { const a = teile(p), b = teile(basis); return 
 const istGleich = (p, basis) => teile(p).length === teile(basis).length && hatPraefix(p, basis);
 const istUnter = (p, basis) => teile(p).length > teile(basis).length && hatPraefix(p, basis);
 const SYSTEM_PRAEFIXE = ["/System", "/bin", "/sbin", "/usr", "/etc", "/private/etc", "/dev", "/Library", "/Applications", "/cores", "/opt", "/private/var/db", "/var/db"];
-const echterPfadOderSelbst = (p) => { try { return realpathSync(p); } catch { return p; } };
+const echterPfadOderSelbst = (p) => { try { return langerPfad(realpathSync(p)); } catch { return p; } }; // Windows: auch Kurznamen (RUNNER~1) in die Langform
 
 // Wahr, wenn die Ortsregeln den Pfad erlauben (Spiegel von pruefeRegeln in gemeinsam/vaults.mjs).
 function ortErlaubt(p, home, support) {
@@ -225,7 +225,7 @@ function leseverbotAktiv(profil, vault) {
     const deny = JSON.parse(readFileSync(join(profil, "settings.json"), "utf8"))?.permissions?.deny;
     if (!Array.isArray(deny)) return false;
     let echt = vault; try { echt = realpathSync(vault); } catch { /* wie angegeben */ }
-    return [vault, echt].some((p) => deny.includes(`Read(//${String(p).replace(/[\\*?[\]]/g, "\\$&").replace(/^\/+/, "").replace(/\/+$/, "")}/**)`));
+    return [vault, echt].some((p) => deny.includes(`Read(//${claudePfadform(p).replace(/[\\*?[\]]/g, "\\$&").replace(/^\/+/, "").replace(/\/+$/, "")}/**)`));
   } catch { return false; }
 }
 const STUFEN_TEXT = { gesperrt: "Gesperrt", lesen: "Lesen", posteingang: "Posteingang", erweitert: "Erweitert" };
@@ -552,7 +552,10 @@ export function hookBefehl(starter, name, args = "") {
 // Gehört dieser Befehl zu einem Kortex-Hook (neue Form, jeder Starter-Ort)? → Hook-Name oder null.
 export function hookNameAusBefehl(befehl) {
   const m = typeof befehl === "string" ? /kortex' hook ([a-z][a-z0-9-]*)(?: |$)/.exec(befehl) : null;
-  return m ? m[1] : null;
+  if (m) return m[1];
+  // Windows: kein Starter, der Befehl ruft node mit der Hook-Datei im Kern auf (install.mjs#hookCmd): `"<node>" "<kern>/adapters/claude-code/<name>.mjs"[ …]`
+  const w = process.platform === "win32" && typeof befehl === "string" ? /\/adapters\/claude-code\/([a-z][a-z0-9-]*)\.mjs["']?(?: |$)/.exec(String(befehl).split("\\").join("/")) : null;
+  return w ? w[1] : null;
 }
 // Absolute, gequotete Programmpfade für gerenderte Befehle (AGENTS.md, Skills, Hook-Befehle): ein frisch
 // eingerichteter Rechner hat das private Node/git oft NICHT im PATH — darum nie nackt "node"/"git".

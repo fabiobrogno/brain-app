@@ -1,6 +1,6 @@
 // test-umstellung-geraet-version.mjs — Paket P7d, Review 2: die laufend erneuerte Kortex-Version steht in einer EIGENEN Datei je Mac (.kortex/versionen/<ID>.json), nicht im Gerätemerker von A8/B3.
 // Sonst ließe ein späterer Commit „Gerät aktualisiert“ neben der Zeile von B3 den Revert von B3 (und A8) an einem Konflikt scheitern. Echtes git, nur Temp.
-import { test } from "node:test";
+import { testUmstellung as test } from "./nur-unix.mjs"; // Windows: Umstellung vom alten Kit gab es nie (nur-unix.mjs)
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync, utimesSync } from "node:fs";
 import { join } from "node:path";

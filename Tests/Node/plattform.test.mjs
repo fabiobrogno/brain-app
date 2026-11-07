@@ -90,3 +90,23 @@ test("prozessStart: der eigene Prozess wird nur einmal erfragt, ein fremder höc
   let n = 0; for (let i = 0; i < 3; i++) P.prozessStart(9, { plattform: "linux", ausfuehren: () => { n++; return "x"; } });
   assert.equal(n, 3);
 });
+
+test("claudePfadform: Laufwerkspfade in der POSIX-Form von Claude Code (C:\\Users\\x -> /c/Users/x), alles andere bleibt; eigeneGruppe nur ohne Windows", () => {
+  assert.equal(P.claudePfadform("C:\\Users\\Ada\\Vault"), "/c/Users/Ada/Vault");
+  assert.equal(P.claudePfadform("d:/Daten/V"), "/d/Daten/V");
+  assert.equal(P.claudePfadform("/Users/ada/Vault"), "/Users/ada/Vault");
+  assert.equal(P.eigeneGruppe("win32"), false); assert.equal(P.eigeneGruppe("darwin"), true); assert.equal(P.eigeneGruppe("linux"), true);
+});
+
+test("schreibeAufBestehendes: überschreibt und kürzt eine vorhandene Datei, legt keine neue an", async () => {
+  const { mkdtempSync, writeFileSync, readFileSync, existsSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const d = mkdtempSync(join(tmpdir(), "brain-sb-"));
+  const p = join(d, "zeiger");
+  writeFileSync(p, "lang lang lang lang\n");
+  P.schreibeAufBestehendes(p, "kurz\n");
+  assert.equal(readFileSync(p, "utf8"), "kurz\n");
+  assert.throws(() => P.schreibeAufBestehendes(join(d, "gibt-es-nicht"), "x"), /ENOENT/);
+  assert.equal(existsSync(join(d, "gibt-es-nicht")), false);
+});

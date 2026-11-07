@@ -8,6 +8,9 @@ import { tmpdir } from "node:os";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { hookBefehl, hookNameAusBefehl, starterPfad, KERN } from "../pfade.mjs";
+// Verweise in einem Kindprozess (die Schutzschicht des Kerns patcht fs im Testprozess): macOS/Linux `ln`, Windows ein kleines Node-Skript (ln aus Git Bash kopiert nur)
+const verweisSym = (ziel, link) => (process.platform === "win32" ? execFileSync(process.execPath, ["-e", "require('node:fs').symlinkSync(process.argv[1], process.argv[2])", ziel, link]) : execFileSync("ln", ["-s", ziel, link]));
+const verweisHart = (ziel, link) => (process.platform === "win32" ? execFileSync(process.execPath, ["-e", "require('node:fs').linkSync(process.argv[1], process.argv[2])", ziel, link]) : execFileSync("ln", [ziel, link]));
 
 const POSIX = process.platform !== "win32";
 const inst = fileURLToPath(new URL("../adapters/claude-code/install.mjs", import.meta.url));
@@ -67,7 +70,7 @@ test("Installer ohne Testschalter und ohne Starter: Exit 3 mit klarer Meldung, n
   // Stabiler Kern-Pfad vorhanden (nachgebaut), aber kein Starter daneben.
   const support = mkdtempSync(join(tmpdir(), "verdr-sup "));
   mkdirSync(join(support, "bin"));
-  execFileSync("ln", ["-s", KERN, join(support, "bin", "kern")]);
+  verweisSym(KERN, join(support, "bin", "kern"));
   const r = lauf([inst, v, "--claude-home", h], { KORTEX_KERN_UNSTABIL_ERLAUBT: "", BRAIN_TESTMODUS: "1", KORTEX_KERN_TEMP_WURZELN: "", KORTEX_KERN_PFAD: join(support, "bin", "kern") }); // BRAIN_TESTMODUS: der Wegwerf-Vault gilt als vertraut (P5)
   assert.equal(r.status, 3);
   assert.match(r.stderr, /Kern-Pfad|Starter/);
@@ -186,7 +189,7 @@ test("install-git-hooks ohne stabilen Kern-Pfad: Exit 3, nichts eingetragen", ()
 test("starterPfad: neben bin/kern (nie im Versionsordner); KORTEX_STARTER_PFAD wirkt nur mit dem Testschalter", { skip: !POSIX }, () => {
   const support = mkdtempSync(join(tmpdir(), "verdr-sp "));
   mkdirSync(join(support, "bin"));
-  execFileSync("ln", ["-s", KERN, join(support, "bin", "kern")]);
+  verweisSym(KERN, join(support, "bin", "kern"));
   const stabil = { KORTEX_KERN_PFAD: join(support, "bin", "kern") };
   // tempWurzeln: [] — der Support-Ordner liegt in diesem Test selbst unter Temp.
   assert.equal(starterPfad({ env: stabil, tempWurzeln: [] }), join(support, "bin", "kortex"));

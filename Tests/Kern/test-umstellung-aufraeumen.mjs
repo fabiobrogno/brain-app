@@ -1,7 +1,7 @@
 // test-umstellung-aufraeumen.mjs — Paket P7d: verwaiste git-Einbindungen (Befund E29, Aufräumen mit Rückweg) und die Angebote nach 30 Tagen (Archiv, Sicherungskopien, Bundles).
 // Nichts wird von selbst gelöscht: Aufräumen nur auf Klick (bestaetigt), „Papierkorb“ ist hier ein Ordner im Temp-HOME (z.papierkorb). Zum Schluss: die CLI `umstellung phase-b|aufraeumen`
 // als Kindprozess mit ausdrücklich gebauter Umgebung (baueTestUmgebung).
-import { test } from "node:test";
+import { testUmstellung as test } from "./nur-unix.mjs"; // Windows: Umstellung vom alten Kit gab es nie (nur-unix.mjs)
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, renameSync, utimesSync } from "node:fs";
 import { join } from "node:path";

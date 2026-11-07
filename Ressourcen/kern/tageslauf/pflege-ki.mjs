@@ -33,6 +33,7 @@ import { kindUmgebung, rufeHaiku, leseClaudeAntwort } from "../ernte.mjs";
 import { kiBefehl, pflegeVon, KI_STUFE } from "./ki.mjs";
 import { istFremdeAnmeldung } from "../pflege-konto.mjs";
 import { KERN, ALT_KIT_ORDNER } from "../pfade.mjs";
+import { langerPfad } from "../plattform.mjs";
 import { sperreAusgeschlossenes } from "./pflege-sperre.mjs";
 
 export const SONNET_WERKZEUGE = "Read,Edit,Write,Glob,Grep,Bash";
@@ -54,7 +55,7 @@ const HOME_NUR_SCHREIBEN = [".claude*/**", ".claude.json*", ".zshrc", ".zshenv",
   "Library/LaunchAgents/**", "Library/Application Support/Kortex/**", "Library/Application Support/Brain/**", ".brain-kit/**"];
 
 const fwd = (p) => String(p).split("\\").join("/");
-const echt = (p) => { try { return realpathSync(p); } catch { return resolve(p); } };
+const echt = (p) => { try { return langerPfad(realpathSync(p)); } catch { return resolve(p); } }; // Windows: Langform, wie sie der Kindprozess als cwd sieht
 // Absolute Regelform: `//pfad` ab Dateisystemwurzel. Windows: C:\x → //c/x (Doku: Pfade werden vor dem Abgleich POSIX-normalisiert);
 // gitignore-Zeichen im Pfad (* ? [ ]) werden maskiert, damit die Regel nur den wörtlichen Pfad trifft.
 function regelPfad(p) {

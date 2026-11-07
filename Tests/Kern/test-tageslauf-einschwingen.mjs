@@ -466,7 +466,7 @@ test("N später erhöht: die Phase läuft ab dem Stand weiter; auf ≤ R gesenkt
   assert.equal(E.einschwingStand(v).aktiv, false);
 });
 
-test("Absturz nach dem Merge und Einschwingphase: die nicht mehr angelegten Stichproben kommen beim nächsten Lauf nach (nichts geht verloren, nichts doppelt)", () => mitEigenemCache(async () => {
+test("Absturz nach dem Merge und Einschwingphase: die nicht mehr angelegten Stichproben kommen beim nächsten Lauf nach (nichts geht verloren, nichts doppelt)", { skip: process.platform === "win32" && "nur macOS/Linux: SIGKILL auf einen Kindprozess endet unter Windows mit Exit 1 und ohne Signal (Folgeaufgabe W2: Absturz-Test mit taskkill)" }, () => mitEigenemCache(async () => {
   const v = aufbau({ automatik: { tageslauf: "an" } });   // Standard: Einschwingphase an
   fakeKi(REGELN);
   hartAbbrechen(v);

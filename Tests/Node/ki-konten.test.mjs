@@ -434,7 +434,7 @@ test("Verbinden: der Eintrag trägt --konto <id>; das richtige Konto wird angesp
   await mitHome(home, () => mitAttrappen(async (a) => {
     const rufe = handlerMit({ home, s, vaultOrdner: v, vaultsListe: [v] });
     const konten = (await rufe("POST", "/api/ki/konten/abgleich")).j.konten;
-    const id = (programm, ordner) => konten.find((k) => k.programm === programm && k.ordner.endsWith(ordner.replaceAll("/", sep))).id;
+    const id = (programm, ordner) => { /* die Anzeige nennt den Ordner immer mit „/“ (konten.mjs#kurz) */ const k = konten.find((x) => x.programm === programm && x.ordner.endsWith(ordner)); if (!k) throw new Error(`kein Konto ${programm} ${ordner}: ${JSON.stringify(konten.map((x) => [x.programm, x.ordner]))}`); return k.id; };
     const mcpEintrag = (schluessel) => a.eintraege()[schluessel];
     // Claude, Standardprofil
     let r = await rufe("POST", "/api/mcp/verbinden", { ziel: "claude", konto: id("claude", "/.claude") , zugriff: "posteingang" });

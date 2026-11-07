@@ -511,7 +511,7 @@ test("Sicherung: <wurzel>-sicherungen/<zeit>.tgz mit den echten memory-Ordnern u
   assert.equal(r.sicherung, join(w.sicherungen, "20261022-081530.tgz"));
   assert.ok(existsSync(r.sicherung));
   const frisch = mkdtempSync(join(tmpdir(), "g-entpackt-"));
-  const t = spawnSync("tar", ["-xzf", r.sicherung, "-C", frisch], { encoding: "utf8" });
+  const t = spawnSync("tar", [...(process.platform === "win32" ? ["--force-local"] : []), "-xzf", r.sicherung, "-C", frisch], { encoding: "utf8" });
   assert.equal(t.status, 0, t.stderr);
   assert.equal(lies(join(frisch, "konten", "claude", P1, "memory", "a.md")), "A von Konto 1\n");
   assert.equal(lies(join(frisch, "konten", "claude-zwei", P1, "memory", "a.md")), "A von Konto 2\n");
@@ -1031,7 +1031,7 @@ test("aufgelöste Konflikt-Kopie (vom Traum: status: aufgeloest): der nächste A
   assert.equal(liesW(w, P1, "same.md"), "von eins\n", "das Original bleibt unberührt");
   for (const konto of ["claude", "claude-zwei"]) assert.deepEqual(Object.keys(manifest(w, konto, P1)).sort(), ["MEMORY.md", "same.md"], `Manifest ${konto}`);
   assert.ok(r.sicherung, "es gab eine Sicherung vor dem Löschen");
-  assert.match(spawnSync("tar", ["-tzf", r.sicherung], { encoding: "utf8" }).stdout, /same\.konflikt-claude-zwei\.md/, "die Kopie steckt noch in der Sicherung");
+  assert.match(spawnSync("tar", [...(process.platform === "win32" ? ["--force-local"] : []), "-tzf", r.sicherung], { encoding: "utf8" }).stdout, /same\.konflikt-claude-zwei\.md/, "die Kopie steckt noch in der Sicherung");
   assert.equal(abgleich(w).nichtsZuTun, true, "danach ist alles ruhig");
 });
 

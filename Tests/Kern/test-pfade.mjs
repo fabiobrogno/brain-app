@@ -7,6 +7,9 @@ import { tmpdir, homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { vaultPfad, pruefeVault, vaultUndRest, shellQuote, stabilerKern, kernStabil, KernNichtStabilFehler, nimmVaultArg, KeinVaultFehler, KERN, ALT_KIT_ORDNER, kernVersion, kernAnzeige, supportOrte, supportOrdner, kitOrte, aktiverVaultAusListe, evalFragenDatei, holdoutDatei, ordner, renderVorlage, nodeBefehl, nodePfad, gitAnzeige, ladeConfig, configFehler, liesConfigRoh, entferneBom } from "../pfade.mjs";
 import { createHash } from "node:crypto";
+// Verweise in einem Kindprozess (die Schutzschicht des Kerns patcht fs im Testprozess): macOS/Linux `ln`, Windows ein kleines Node-Skript (ln aus Git Bash kopiert nur)
+const verweisSym = (ziel, link) => (process.platform === "win32" ? execFileSync(process.execPath, ["-e", "require('node:fs').symlinkSync(process.argv[1], process.argv[2])", ziel, link]) : execFileSync("ln", ["-s", ziel, link]));
+const verweisHart = (ziel, link) => (process.platform === "win32" ? execFileSync(process.execPath, ["-e", "require('node:fs').linkSync(process.argv[1], process.argv[2])", ziel, link]) : execFileSync("ln", [ziel, link]));
 
 // Ein gültiger Vault: existierender Ordner mit brain.config.json
 const gueltig = (v = neu()) => { writeFileSync(join(v, "brain.config.json"), "{}"); return v; };
@@ -120,9 +123,9 @@ test("vaults.json: eine defekte Kortex-Datei fällt nicht auf die Liste in …/B
 
 test("Support-Ordner: BRAIN_APP_SUPPORT (nur absolut) allein, sonst Kortex vor dem alten Brain; Kit-Orte mit Rückfall ~/.brain-kit", () => {
   assert.deepEqual(supportOrte({ env: { BRAIN_APP_SUPPORT: "/t/s" }, home: "/h" }), ["/t/s"]);
-  assert.deepEqual(supportOrte({ env: { BRAIN_APP_SUPPORT: "relativ" }, home: "/h", plattform: "darwin" }), ["/h/Library/Application Support/Kortex", "/h/Library/Application Support/Brain"]);
-  assert.equal(supportOrdner({ env: {}, home: "/h", plattform: "darwin" }), "/h/Library/Application Support/Kortex");
-  assert.deepEqual(kitOrte({ env: {}, home: "/h", plattform: "darwin" }), ["/h/Library/Application Support/Kortex", "/h/.brain-kit"]);
+  assert.deepEqual(supportOrte({ env: { BRAIN_APP_SUPPORT: "relativ" }, home: "/h", plattform: "darwin" }), [join("/h", "Library", "Application Support", "Kortex"), join("/h", "Library", "Application Support", "Brain")]);
+  assert.equal(supportOrdner({ env: {}, home: "/h", plattform: "darwin" }), join("/h", "Library", "Application Support", "Kortex"));
+  assert.deepEqual(kitOrte({ env: {}, home: "/h", plattform: "darwin" }), [join("/h", "Library", "Application Support", "Kortex"), join("/h", ".brain-kit")]);
 });
 test("--vault wird aus der Kommandozeile genommen (nimmVaultArg), auch hinter anderen Argumenten; bei „--“ ist Schluss; ein Wert mit „-“ ist ungültig", () => {
   const a = ["node", "s", "search", "--vault", "/v", "frage"];
@@ -288,12 +291,12 @@ test("pruefeVault: Schreibziele, die per Verweis aus dem Vault hinauszeigen, mac
   assert.equal(pruefeVault(v), resolve(v));
   for (const [rel, ziel] of [[".logs", aussen], ["AGENTS.md", join(aussen, "gibt-es-nicht")], ["graph.json", join(aussen, "g.json")], ["09_wiki", aussen]]) {
     rmSync(join(v, rel), { recursive: true, force: true });
-    execFileSync("ln", ["-s", ziel, join(v, rel)]); // nach pruefeVault sind die fs-Verweisfunktionen selbst geschützt
+    verweisSym(ziel, join(v, rel)); // nach pruefeVault sind die fs-Verweisfunktionen selbst geschützt
     assert.throws(() => pruefeVault(v), /zeigt aus dem Ordner hinaus/, rel);
     rmSync(join(v, rel), { force: true });
   }
   // ein Verweis innerhalb des Vaults ist in Ordnung
-  mkdirSync(join(v, "echt")); execFileSync("ln", ["-s", join(v, "echt"), join(v, ".logs")]);
+  mkdirSync(join(v, "echt")); verweisSym(join(v, "echt"), join(v, ".logs"));
   assert.equal(pruefeVault(v), resolve(v));
 });
 test("Review-Fund 7 (BOM in brain.config.json): ladeConfig/configFehler tolerieren ein UTF-8-BOM", () => {

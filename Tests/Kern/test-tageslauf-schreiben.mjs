@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { isoliere, neuerTestVault, git, committe, seitenText, legeVorschlagAn, schnappschuss, JETZT } from "./tageslauf-hilfe.mjs";
 import { tempOrdner } from "./verlauf-fixture.mjs";
 import { heute } from "../tageslauf/protokoll.mjs";
+import { langerPfad } from "../plattform.mjs"; // Windows: die Arbeitskopie liegt unter der Langform des Cache-Ordners
 const S = await import("../tageslauf/schreiben.mjs");
 const W = await import("../tageslauf/arbeitskopie.mjs");
 isoliere();
@@ -75,7 +76,7 @@ test("fuegeLogEin: neuer Eintrag über dem neuesten, Formatvorlage bleibt oben; 
 test("Arbeitskopie: Commit je Auftrag mit Beleg, rev+1, _log, quellen; ff-Merge; danach Arbeitskopie und Branch weg", () => {
   const v = vaultMitSeite();
   const kopie = W.legeArbeitskopieAn(v, "L1");
-  assert.ok(kopie.pfad.startsWith(process.env.BRAIN_TAGESLAUF_CACHE));
+  assert.ok(kopie.pfad.startsWith(langerPfad(process.env.BRAIN_TAGESLAUF_CACHE)));
   const r1 = W.commitAuftrag(v, kopie, auftrag("a1"), opt("L1"));
   const r2 = W.commitAuftrag(v, kopie, auftrag("a2", { v: vor("a2", { text: "Backups laufen jetzt stündlich." }) }), opt("L1"));
   assert.ok(r1.ok && r2.ok, JSON.stringify([r1, r2]));

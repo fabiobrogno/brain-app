@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, statSync, symlinkSync, rmSync, realpathSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 import { baueTestUmgebung } from "./konto-hilfe.mjs";
 
@@ -106,7 +106,7 @@ test("Ernte, Lektionen und W7 starten erst ab „posteingang“; bei lesen und g
 
 test("Gedächtnis-Teilen: gestartet wird nur ab „posteingang“", () => {
   const skript = join(FAKE, "teilen.mjs");
-  writeFileSync(skript, `import { starteAbgleichFuerSitzung } from ${JSON.stringify(join(HIER, "..", "gedaechtnis.mjs"))};
+  writeFileSync(skript, `import { starteAbgleichFuerSitzung } from ${JSON.stringify(pathToFileURL(join(HIER, "..", "gedaechtnis.mjs")).href)};
 const ruf = [];
 const r = starteAbgleichFuerSitzung({ vault: process.env.BRAIN_VAULT, eingabe: { transcript_path: ${JSON.stringify(join(HOME, ".claude", "projects", "-Users-test-meinprojekt", "s.jsonl"))} }, werte: { gedaechtnisTeilen: "an" }, starte: (x) => ruf.push(x.projekt) });
 console.log(JSON.stringify({ r, ruf }));

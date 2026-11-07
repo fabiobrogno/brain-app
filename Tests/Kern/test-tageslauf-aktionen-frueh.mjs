@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { isoliere, neuerTestVault, fakeKi, git, JETZT, FAKE_BEFEHL } from "./tageslauf-hilfe.mjs";
 import { SEITE, REGELN, aufbau, lauf } from "./lauf-hilfe.mjs";
 import { mitEigenemCache, hartAbbrechen, alteSperre } from "./abbruch-hilfe.mjs";
+const NUR_UNIX_W = (grund) => (process.platform === "win32" ? `nur macOS/Linux: ${grund}` : false); // Windows: Test übersprungen, mit Grund (Plan plattformen-windows-linux.md §8)
 const P = await import("../tageslauf/protokoll.mjs");
 const R = await import("../rueckfragen.mjs");
 const Zr = await import("../tageslauf/zurueck.mjs");
@@ -85,7 +86,7 @@ test("normaler Lauf: jede Aktion steht genau einmal in aktionen.jsonl; verschobe
 });
 
 // ------------------------------------------------------------------------------------------------ harter Abbruch
-test("Lauf nach dem Merge hart abgebrochen (SIGKILL beim Verschieben): die Übernahmen stehen im Protokoll, `brain zurueck <lauf>` nimmt sie zurück", () => mitEigenemCache(async () => {
+test("Lauf nach dem Merge hart abgebrochen (SIGKILL beim Verschieben): die Übernahmen stehen im Protokoll, `brain zurueck <lauf>` nimmt sie zurück", { skip: NUR_UNIX_W("SIGKILL auf einen Kindprozess: unter Windows endet er mit Exit 1 und ohne Signal (Folgeaufgabe W2: Absturz-Test mit taskkill)") }, () => mitEigenemCache(async () => {
   const v = aufbau({ automatik: { tageslauf: "an", einschwingen: 0 } });
   fakeKi(REGELN);
   hartAbbrechen(v);

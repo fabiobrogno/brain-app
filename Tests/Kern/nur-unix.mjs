@@ -10,3 +10,10 @@ export function testNurUnix(name, optionen, fn) {
   if (typeof optionen === "function") { fn = optionen; optionen = {}; }
   return echt(name, { ...(optionen || {}), skip: optionen?.skip ?? nurUnix("Shell-Skript/Unix-Werkzeug (Windows: W2)") }, fn);
 }
+
+// Die Umstellung vom alten Kit (Kit-Ordner .tools im Vault, Hooks mit node-start.sh, LaunchAgent, Attrappen als sh-Skripte) betrifft Rechner, die vor Kortex ein Kit hatten: das gab es unter
+// Windows nie. Die Tests der Umstellung laufen dort nicht (Folgeaufgabe W2: entscheiden, ob eine Windows-Fassung der Umstellung überhaupt gebraucht wird).
+export function testUmstellung(name, optionen, fn) {
+  if (typeof optionen === "function") { fn = optionen; optionen = {}; }
+  return echt(name, { ...(optionen || {}), skip: optionen?.skip ?? nurUnix("Umstellung vom alten Kit: das gab es unter Windows nie (W2: Bedarf klären)") }, fn);
+}

@@ -351,31 +351,49 @@ Warum zuerst: Alle Wege brauchen genau diese Arbeit, sie kostet wenige Tage, und
 
 ## 8. W0 Ergebnis (PR „W0 Plattform-Probe“) und Windows-grün-Paket
 
-Messjob `plattform-probe` in `.github/workflows/ci.yml` (Windows und Linux; Bereiche node, kern, ui in 4 Teilen). Die **Linux-Probe ist Pflichtbestandteil von `ci-ok`** (Job in `needs`, alles muss grün sein). Die **Windows-Probe bleibt nicht blockierend** (`continue-on-error` nur für `windows-latest`), bis sie grün ist; dann fällt die Ausnahme weg. Zahlen stehen in der Lauf-Zusammenfassung (`scripts/plattform-probe-bericht.sh`) und im Artefakt `plattform-probe-<os>-<bereich>`; bei roten UI-Tests liegt `plattform-probe-fehlerkontext-windows-latest-ui-*` bei.
+Messjob `plattform-probe` in `.github/workflows/ci.yml` (Windows und Linux; Bereiche node, kern, ui in 4 Teilen). Die **Linux-Probe ist Pflichtbestandteil von `ci-ok`** (Job in `needs`, alles muss grün sein). Die **Windows-Probe ist für die Node-Tests blockierend**; Kern und Oberfläche bleiben dort Messung (`continue-on-error` nur für `windows-latest`), bis sie grün sind; dann fällt die Ausnahme weg. Zahlen stehen in der Lauf-Zusammenfassung (`scripts/plattform-probe-bericht.sh`) und im Artefakt `plattform-probe-<os>-<bereich>`; bei roten UI-Tests liegt `plattform-probe-fehlerkontext-windows-latest-ui-*` bei.
 
 Neu: `gemeinsam/plattform.mjs` (Kopie `kern/plattform.mjs`), `.gitattributes` (`eol=lf`), Import-Haken für Laufwerkspfade (`Tests/*/windows-importe.mjs`), tragbare Test-Attrappen (`Tests/Node/attrappe.mjs`, unter Windows ein einmalig mit csc gebauter `.exe`-Starter), Perl-Prüfskript nach Node (`Ressourcen/kern/git-sicher-pruefung.mjs`, Gleichwertigkeitstest), `nurUnix`/`nurMac` für echte Plattform-Unterschiede.
 
-### Messwerte (Lauf auf Kopf e02e997, PR #112)
+### Messwerte (Paket `fix/windows-rest`, PR #114; Lauf auf Kopf 1b4ac9b)
 
-| Bereich | Linux | Windows vorher (main) | Windows jetzt |
+| Bereich | Linux | Windows vorher (PR #112, Kopf e02e997) | Windows jetzt |
 |---|---|---|---|
-| Node-Tests | 1276 Tests, 0 rot | 310 rot | 1217 Tests, 83 rot |
-| Kern-Unit-Tests | 2794 Tests, 0 rot | 399 rot | 2794 Tests, 338 rot |
-| Playwright (Chromium) | 954 grün, 0 rot | 54 rot | 35 rot (19 / 7 / 7 / 2 je Teil) |
+| Node-Tests | 0 rot | 83 rot (1217 Tests) | **0 rot** (1296 Tests, 103 übersprungen) — **blockierend** |
+| Kern-Unit-Tests | 0 rot | 338 rot (2794 Tests) | 24 rot (2794 Tests, 304 übersprungen) |
+| Playwright (Chromium) | 0 rot | 35 rot (19 / 7 / 7 / 2 je Teil) | 25 rot (3 / 8 / 7 / 7 je Teil) |
 
-### Offene Fälle: Ursache → Folgeaufgabe (alles W2)
+Die Node-Tests der Windows-Probe sind ab jetzt ein **Tor** (`ci.yml`: kein `continue-on-error` mehr am Schritt „Node-Tests“); Kern und Oberfläche bleiben dort Messung. Das Zeitlimit je Testdatei beträgt unter Windows 240 s statt 60 s (`scripts/teste-node.sh`): gemessen brauchen `v2-git`, `konflikt-werkstatt` und `nichts-geht-verloren` allein 70–80 s (viele hundert Aufrufe von git; merge3-Fuzz gegen `git merge-file`), ein Prozessstart ist dort ein Vielfaches langsamer.
+
+### Behobene Gruppen: Ursache → Fix → Beleg
+
+| Gruppe | Ursache | Fix | Beleg |
+|---|---|---|---|
+| Programme liefern keine Ausgabe (≈25 Node-Tests: anmelden, v2-ki, MCP verbinden, Fake-claude/codex) | `spawn(…, { detached: true })` mit Ein-/Ausgabekanälen: unter Windows heißt das „ohne Konsole“, ein Kind (Starter, Skript) liefert dann nichts | `plattform.mjs#eigeneGruppe()`: `detached` nur mit Prozessgruppe (macOS/Linux); Windows beendet per `taskkill /T` | `plattform.test.mjs`, Probe auf dem Runner (`detached:false` Ausgabe da, `true` leer) |
+| MCP-Altpfade, Kennungen mit Laufwerk | Regexe auf `/`-Pfade (`ALTER_MCP_PFAD`, `ALTER_KIT_MCP`, …) | Trenner `[\\/]`, optionales `C:` | `v2-mcp-altpfad`, `v2-mcp-kern` |
+| Kontingent-Statuszeile und Hook-Stand (kontingent-eintragung, kern-verdrahtung, ki-konten) | `istUnsere` und Ketten-Erkennung suchten `/kontingent/bin/`; `hookNameAusBefehl` kannte unter Windows nur die Starter-Form | Trennerunabhängige Erkennung (`kontingent.mjs`, `install.mjs`); `hookNameAusBefehl` erkennt die Windows-Form `node <Kern>/adapters/claude-code/<name>.mjs` | `kontingent-eintragung`, `kern-verdrahtung` |
+| Regelpfade (Leseverbot `Read(//…)`) | Windows-Pfad `C:\x` ergab `//C:\\x` | `plattform.mjs#claudePfadform`: POSIX-Form `/c/x` (wie schon `pflege-ki.mjs`) | `plattform.test.mjs`, `ki-konten-sperre` |
+| Kodex-/Claude-PATH, `kurz()`-Anzeige | PATH mit festem `:`; Anzeige `~/…` prüfte nur `/` | `path.delimiter`; Anzeige immer mit `/` | `kontingent-codex`, `ki-konten` |
+| „Sync Zeitlimit“ 409 statt 504 | `gitLaeuft()` fragte `lsof` (fehlt unter Windows) und meldete vorsichtshalber „läuft noch“ | `plattform.mjs#gitLaeuftIn`: Windows über die Prozessliste (Befehlszeile nennt den Vault) | `haertung` (Probe: Ursache war die Sperrprüfung, nicht das Zeitlimit) |
+| Klon-Vertrauen, Anlegen/Klonen räumt Elternordner nicht auf | `besitzerAusAdresse` kannte nur `/`-Adressen; `mkdirSync(recursive)` liefert unter Windows eine andere Pfadform als der Vergleich | Laufwerksadressen im Testmodus; `bereiteZiel` bestimmt den obersten neuen Ordner selbst | `v2-vaults`, `vertrauen` |
+| Umstellung: lsof/pgrep (`befund.mjs`) | Unix-Werkzeuge | `plattform.mjs#prozesseMitBefehlszeile` (PowerShell/CIM) | `umstellung-befund` (Windows: Fälle dort nur Unix, s. u.) |
+| Kern: Arbeitskopie (`git worktree`, Tageslauf, Pflege, Traum) | (1) Kurzname `RUNNER~1` vs. Langform: `BRAIN_VAULT` und `cwd` des Kindes stimmten nicht überein (Schutzgeländer des Sonnet-Aufrufs, Exit 4); (2) Zeigerdatei `.git` der Kopie ist unter Windows **versteckt**, `writeFileSync` darauf scheitert mit EPERM — der Rückweg eines umgebogenen Zeigers lief ins Leere | `plattform.mjs#langerPfad` (Cache, Kopie, `echt()`); `schreibeAufBestehendes` (Öffnen mit `r+`, kein Neuanlegen) | `test-pflege-*`, `test-traum*` |
+| Testumgebung | `ln -s` aus Git Bash kopiert nur; Importe von `C:\…` im Kindprozess; `?query` im Importhaken; Git-Konfiguration mit `\` (Escape); `autocrlf`; Modus-Prüfungen (`0o666`) | Kindprozess mit Node (`symlinkSync`), `pathToFileURL`, Haken trennt `?query`, Schrägstriche, `core.autocrlf=false` in den Test-Vaults, `modus()` | je Test |
+
+### Offene Fälle: Ursache → Folgeaufgabe (W2)
 
 | Gruppe | Ursache | Folgeaufgabe |
 |---|---|---|
-| Umstellung A4 (Kern, Node) | Claude-Hooks brauchen POSIX-Shell-Befehle; unter Windows anderer Aufrufweg | W2: Hook-Befehle je System erzeugen |
-| UI ohne Diagnose (35, Artefakte `…-ui-*`) | Ursache je Spec noch nicht ermittelt | W2: Fehlerkontext sichten, nach Ursache gruppieren |
-| Härtung „Sync Zeitlimit“ | Windows liefert 409 statt 504 | W2: Ablauf prüfen, Erwartung oder Code angleichen |
-| `kontingent-regeln` (Vault kurzer/langer Name) | Kurznamen (`RUNNER~1`) vs. lange Pfade | W2: Pfade vor Vergleich per `realpath.native` |
-| `browser-dienst`, v2-git (60-s-Zeitlimits) | langsamer Start/Prozessbaum unter Windows | W2: Ursache messen, Zeitlimits oder Start anpassen |
-| `git worktree` (Tageslauf, Pflege, Traum) | Pfad mit Umlaut und Zweigname `tageslauf/…` | W2: Aufruf und Quoting prüfen |
-| ≈200× `split("/")` auf echten Pfaden (V4) | Pfade mit `\` | W2: je Stelle `path`-Funktionen |
-| `lsof`/`pgrep` (G4, G5) | Unix-Werkzeuge | W2: Windows-Ersatz (`tasklist`/PowerShell) |
-| `supportOrte`-Regexe (A3) | Unix-Pfadform | W2: Regex auf Laufwerkspfade |
+| Umstellung vom alten Kit (Kern: die Dateien `test-umstellung-*`, Node: 8 Routen-Tests — übersprungen) | Die Umstellung betrifft Rechner, die vor Kortex ein Kit hatten (`.tools`, `node-start.sh`, LaunchAgent, Attrappen als sh-Skripte): unter Windows gab es das nie. Bewusst `nurUnix` mit Begründung (`Tests/Kern/nur-unix.mjs#testUmstellung`) | W2: klären, ob es überhaupt eine Windows-Fassung braucht; sonst Tests nur macOS/Linux lassen |
+| Hook-Befehle je System (A4) | Unter Windows ruft der Befehl `node <Kern>/adapters/claude-code/<name>.mjs` direkt auf (kein Starter `bin/kortex`, kein `[ -x … ] \|\| exit 0`). Funktioniert und ist getestet (`kern-verdrahtung`), aber ohne den Schutz „fehlt der Starter, tut der Hook still nichts“ | W2: Starter für Windows (kleines `.cmd`/`.exe`) und dieselbe Form wie macOS/Linux |
+| Vertrauensschranke vor dem Programmstart (`git-sicher`/`git-gesperrt`, Shell-Skripte) | Unter Windows startet `werkzeug.mjs#gitBefehl` git direkt: ein nicht vertrauter Vault wird dort nicht am Git-Start gehindert (Tests `test-vertrauen`, 4 Stück, nur Unix). **Sicherheitslücke bis W2** | W2: dieselbe Schranke in Node (vor jedem `git`-Start), dann die Tests wieder einschalten |
+| BROWSER-Skript beim Anmelden | Kortex setzt unter Windows keinen `BROWSER`; bricht Claude die Adresse bei 80 Spalten um, bleibt nur das erste Stück (`anmelden.test.mjs`, 1 Test nur Unix) | W2: `BROWSER` als `.cmd` |
+| Prozess-Ende ohne Signal | `SIGKILL` auf ein Kind endet unter Windows mit Exit 1 ohne Signal (Absturz-Tests `aktionen-frueh`, `einschwingen`) | W2: Absturz-Test mit `taskkill` |
+| Unix-Socket im Temp-Ordner | `listen EACCES` auf `…\suchdienst.sock` (`test-gesundheit`) | W2: Named Pipe |
+| Kern-Tests mit POSIX-Fixtures | `/heim/jo`, `/abs/pfad`, `/h/x`, Wurzel `/` lösen unter Windows auf das aktuelle Laufwerk auf (`beleg-ernte`, `gedaechtnis-konto`, `traum-regeln`, `dienst-profil`) | W2: Fixtures mit Laufwerk |
+| Kern: Ingest-Sperre und Rücknahme (`tageslauf-*`, `pflege-ki`, `pflege-zurueck-nichts`, `traum-*`) | Lebend-Prüfung fremder Prozesse über `ps`/Startzeit (`prozessStart` startet PowerShell, langsam); Ursache je Test noch nicht einzeln ermittelt | W2: je Test sichten (Restliste steht im Lauf-Artefakt `plattform-probe-windows-latest-kern`) |
+| Kern: `ansicht-bruecke`, `abgleich-konflikt` (Sperre unter Last) | Brücke als Kindprozess über stdin/stdout, Sperre mit 8 Prozessen | W2: einzeln untersuchen |
+| UI-Specs (25 rot) | `ki-konten.spec` (5), `glocke.spec` (2), `posteingang.spec` (4), `studio`/`schreiben`/`umbenennen`/`vorschau-frage`/`browser-modus`/… (je 1–2). Die Pfadform der Oberflächentests ist uneinheitlich (Kurzname vs. Langform in Test und Werkstatt); `frage.spec` (9 Tests) ist damit behoben (`realpathSync.native`), bei anderen Specs hat dieselbe Änderung andere Tests rot gemacht und wurde dort zurückgenommen | W2: Pfadform in `starteServer` und den Specs vereinheitlichen, dann Rest je Spec |
 | macOS-only ohne Ersatz | launchctl, pmset/ioreg, caffeinate, osascript, plutil, Keychain | W2: Aufgabenplanung, `powercfg`, PowerShell-Papierkorb, Credential Manager; Linux: systemd, `gio trash`, libsecret |
 | Bewusst nicht gemacht | ⌘→`mod()` (UI-Tests setzen `MacIntel`, Studio bildet Cmd auf Ctrl ab) | keine |
 | Linux-Support-Ordner | Regel aus `kern/pfade.mjs` (`XDG_DATA_HOME`/`~/.local/share`) | Entscheidung, falls `~/.config` gewünscht |

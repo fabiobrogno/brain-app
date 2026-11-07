@@ -189,7 +189,7 @@ export function erzeugeKonten({ support, home = () => homedir(), vaults = () => 
   };
   const ladeOderSynchronisiere = () => { let d = lade(); if (!d) { synchronisiere(); d = lade(); } if (!d) throw new HttpFehler(500, "Die Liste der KI-Konten ist nicht verfügbar."); return d; };
 
-  const kurz = (p) => { const h = home(); return p === h ? "~" : p.startsWith(`${h}/`) ? `~${p.slice(h.length)}` : p; };
+  const kurz = (p) => { const h = home(); return p === h ? "~" : p.startsWith(`${h}/`) || p.startsWith(`${h}${sep}`) ? `~${p.slice(h.length).split(sep).join("/")}` : p; }; // Anzeige immer mit „/“
 
   // ───────────── Sperre in Claude Code (nur Konten, die die Werkstatt kennt; nur das Programm „claude“) ─────────────
   // Im Testmodus schreibt Kortex nie in einen Ordner außerhalb des Temp-Ordners (nie ins echte ~/.claude des Rechners, auf dem die Tests laufen).

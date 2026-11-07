@@ -9,6 +9,7 @@ import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { isoliere, neuerTestVault, legeVorschlagAn, fakeKi, FAKE_BEFEHL, JETZT, KIT } from "./tageslauf-hilfe.mjs";
 import { tempVault, tempOrdner, hook } from "./verlauf-fixture.mjs";
+const NUR_UNIX_W = (grund) => (process.platform === "win32" ? `nur macOS/Linux: ${grund}` : false); // Windows: Test übersprungen, mit Grund (Plan plattformen-windows-linux.md §8)
 const G = await import("../tageslauf/gesundheit.mjs");
 const P = await import("../tageslauf/protokoll.mjs");
 const { tageslauf } = await import("../tageslauf.mjs");
@@ -380,7 +381,7 @@ test("dienst: nicht erreichbar — nie gestartet und sauber beendet (ende-Zeile)
   assert.equal(kurzListe(await nur("dienst", v, { haken })).length, 1, "die LETZTE Zeile entscheidet");
 });
 
-test("dienst: echter Unix-Socket — ein kleiner Fake-Dienst antwortet, dienst-client.mjs wird wirklich benutzt", async (t) => {
+test("dienst: echter Unix-Socket — ein kleiner Fake-Dienst antwortet, dienst-client.mjs wird wirklich benutzt", { skip: NUR_UNIX_W("Unix-Socket im Temp-Ordner: unter Windows EACCES (Folgeaufgabe W2: Named Pipe)") }, async (t) => {
   const net = await import("node:net");
   const { mkdtempSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");

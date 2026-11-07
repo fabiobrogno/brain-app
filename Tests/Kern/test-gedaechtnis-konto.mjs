@@ -50,7 +50,7 @@ function welt({ liste = "ok", stufen = { a: "erweitert", b: "gesperrt", std: "ge
 const memory = (k, p) => join(k, "projects", p, "memory");
 const schreibe = (k, p, rel, inhalt) => { const f = join(memory(k, p), rel); mkdirSync(dirname(f), { recursive: true }); writeFileSync(f, inhalt); return f; };
 const lies = (f) => readFileSync(f, "utf8");
-const baum = (d, rel = "") => (existsSync(join(d, rel)) ? readdirSync(join(d, rel), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? [`${join(rel, e.name)}/`, ...baum(d, join(rel, e.name))] : [join(rel, e.name)])).sort() : []);
+const baum = (d, rel = "") => (existsSync(join(d, rel)) ? readdirSync(join(d, rel), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? [`${join(rel, e.name)}/`, ...baum(d, join(rel, e.name))] : [join(rel, e.name)])).map((x) => x.split("\\").join("/")).sort() : []);
 // Abbild mit Inhalt: unveränderte Konten müssen nach dem Lauf Byte für Byte so aussehen wie vorher
 const abbild = (d, ausser = []) => baum(d).filter((r) => !ausser.some((p) => r.startsWith(`projects/${p}/`) || r === `projects/${p}/`)).map((r) => (r.endsWith("/") ? r : `${r}=${lies(join(d, r))}`)).join("\n");
 const kp = (w, extra = {}) => ({ support: w.support, home: w.home, schluesselVon: vaultSchluessel, ...extra });

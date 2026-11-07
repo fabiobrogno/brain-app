@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as A from "../aufgaben.mjs";
 import { ordner } from "../pfade.mjs";
+const NUR_UNIX_W = (grund) => (process.platform === "win32" ? `nur macOS/Linux: ${grund}` : false); // Windows: Test übersprungen, mit Grund (Plan plattformen-windows-linux.md §8)
 
 const vault = (cfg = {}) => { const v = mkdtempSync(join(tmpdir(), "aufgaben h ")); writeFileSync(join(v, "brain.config.json"), JSON.stringify(cfg)); return v; };
 const T0 = new Date("2026-10-30T10:00:00Z");
@@ -72,7 +73,7 @@ test("3 Menge: liste meldet abgeschnitten, legeAn weigert sich darüber, Köpfe 
   assert.deepEqual([lg.status, lg.rang, lg.bezug.length], ["warten", 3, 20]);
 });
 
-test("5 und 9: Dateinamen mit Zeilenumbruch/Steuer-/Bidi-Zeichen werden übersprungen; Titel ohne C1- und Bidi-Zeichen", () => {
+test("5 und 9: Dateinamen mit Zeilenumbruch/Steuer-/Bidi-Zeichen werden übersprungen; Titel ohne C1- und Bidi-Zeichen", { skip: NUR_UNIX_W("Dateinamen mit Zeilenumbruch und „/“ gibt es unter Windows nicht") }, () => {
   const v = vault(); A.legeAn(v, { titel: "Normal" }, { jetzt: T0 });
   const o = join(v, "05_aufgaben"), inhalt = "---\ntyp: aufgabe\ntitel: Fremd\n---\n";
   for (const n of ["2026-10-30-a\nb.md", "2026-10-30-c‮d.md", "2026-10-30-e\u0085f.md", "2026-10-30-g⁦h.md"]) writeFileSync(join(o, n), inhalt);

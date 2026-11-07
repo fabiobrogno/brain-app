@@ -7,7 +7,7 @@ import { join, basename, dirname, delimiter } from "node:path";
 import { userInfo } from "node:os";
 import { execFileSync } from "node:child_process";
 import { tmp, schreibe, repo, g, pfad } from "./hilfe.mjs";
-import { legeProgramm, nurUnix, WIN } from "./attrappe.mjs";
+import { legeProgramm, nurUnix, WIN, modus } from "./attrappe.mjs";
 const fw = (p) => p.split("\\").join("/"); // Windows: Git/sh und Adressen mit Slashes
 const echtesGit = () => (WIN // Windows: `where git`, erster Treffer git.exe
   ? execFileSync("where", ["git"], { encoding: "utf8" }).split(/\r?\n/).map((z) => z.trim()).find((z) => /git\.exe$/i.test(z))
@@ -467,7 +467,7 @@ test("Vorlage: Inhalte passen zu den Vorgaben, ohne private Bezüge, Name wird b
 test("neuesVault vorlage: auch wenn eine globale Ignore-Datei CLAUDE.md und AGENTS.md ausschließt, sind sie im ersten Commit", async () => {
   const konfig = join(tmp("brain-gkonf-"), "gitconfig"), ignorieren = join(tmp("brain-gign-"), "ignore");
   writeFileSync(ignorieren, "CLAUDE.md\nAGENTS.md\n.gitkeep\n");
-  writeFileSync(konfig, `[core]\n\texcludesFile = ${ignorieren}\n`);
+  writeFileSync(konfig, `[core]\n\texcludesFile = ${ignorieren.split("\\").join("/")}\n`); // gitconfig: Backslash ist dort ein Escape-Zeichen
   process.env.GIT_CONFIG_GLOBAL = konfig;
   let ziel;
   try {
@@ -752,7 +752,7 @@ test("klone: Ziel nicht leer → 409, nichts verändert", async () => {
 
 test("klone: gibt es das Repository nicht, verschwindet das Ziel wieder (neu: samt Elternordnern; vorher leer: bleibt leer)", async () => {
   const basis = tmp("brain-kl4-");
-  const gibtsNicht = join(basis, "kein-repo.git");
+  const gibtsNicht = fw(join(basis, "kein-repo.git")); // Adresse mit Schrägstrichen (Backslash ist in Adressen nicht erlaubt)
   let e = await wirftAsync(klone({ url: gibtsNicht, ordner: join(basis, "x", "y", "Ziel") }, OPT));
   assert.equal(e.status, 404); assert.match(e.message, /gibt es nicht/); assert.match(e.extra.ausgabe, /fatal/);
   assert.deepEqual(readdirSync(basis), []);
@@ -822,7 +822,7 @@ test("klone: eine alte Freigabe für den Zielpfad wird vergessen (echter und ges
   const r = await klone({ url: bare, ordner: join(link, "Ziel") }, { ...OPT, githubLogin: loginVon(bare) });
   assert.equal(r.vault.pfad, echt);
   assert.deepEqual(restOhne(echt, "geklont"), { [andere]: bleibt }, "nur die alten Einträge des Zielpfads fallen weg; der Klon ist neu vertraut");
-  assert.equal(statSync(VERTRAUEN_JSON()).mode & 0o777, 0o600);
+  assert.equal(modus(VERTRAUEN_JSON(), 0o600), 0o600);
   assert.deepEqual(readdirSync(SUPPORT()).filter((n) => n.includes(".tmp")), [], "keine Reste");
 });
 

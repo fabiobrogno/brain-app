@@ -13,7 +13,7 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync, chmodSync } from "nod
 import { tmpdir } from "node:os";
 import { join, dirname, delimiter, isAbsolute } from "node:path";
 import { registriere, beendetGerade } from "./prozess.mjs";
-import { beendeBaum } from "./plattform.mjs";
+import { beendeBaum, eigeneGruppe } from "./plattform.mjs";
 
 // Fristen (Orca-Werte). Claude: 10 min für die ganze Anmeldung (Zeit zum Kopieren in ein Privatfenster). Codex: 3 min bis Adresse und Code da sind, danach 15 min (Gültigkeit des Gerätecodes).
 // `adresse`: so lange wartet Kortex auf die Adresse, bevor es aufgibt und den Weg über das Terminal zeigt (Claude 30 s: die Adresse kommt sofort oder gar nicht; Codex = sein Start).
@@ -153,7 +153,7 @@ export function starteAnmeldung(o) {
 
   const env = anmeldeUmgebung(basisUmgebung, { programm, ordner, browser, pfadZusatz: [dirname(programmPfad)] });
   try {
-    kind = spawn(programmPfad, ARGUMENTE[programm].login, { env, detached: true, windowsHide: true, stdio: [programm === "claude" ? "pipe" : "ignore", "pipe", "pipe"] });
+    kind = spawn(programmPfad, ARGUMENTE[programm].login, { env, detached: eigeneGruppe(), windowsHide: true, stdio: [programm === "claude" ? "pipe" : "ignore", "pipe", "pipe"] });
   } catch { raeumeTemp(); fertig = true; phase = "error"; grund = "start-fehlgeschlagen"; rueckfall = true; log("ende", { phase, grund }); aufgeloest(zustand()); return { zustand, sendeCode: () => ({ ok: false }), abbrechen: () => zustand(), ende }; }
   registriere(kind);
   log("start");
@@ -204,7 +204,7 @@ export function pruefeStatus({ programm, programmPfad, env, frist = FRISTEN.stat
   return new Promise((ok) => {
     let kind, fertig = false, t;
     const ende = (v) => { if (fertig) return; fertig = true; clearTimeout(t); ok(v); };
-    try { kind = spawn(programmPfad, ARGUMENTE[programm].status, { env, detached: true, windowsHide: true, stdio: "ignore" }); } catch { return ende(false); }
+    try { kind = spawn(programmPfad, ARGUMENTE[programm].status, { env, detached: eigeneGruppe(), windowsHide: true, stdio: "ignore" }); } catch { return ende(false); }
     registriere(kind);
     t = setTimeout(() => { beendeBaum(kind); ende(false); }, frist);
     kind.once("error", () => ende(false));

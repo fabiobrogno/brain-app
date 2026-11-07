@@ -2,7 +2,7 @@
 // Mac A (Fixture-Vault, Phase A durch) und Mac B (zweiter Klon über ein gemeinsames nacktes Repository, Kit-Stand mit Stummel-Hooks, ohne Gerätemerker). Lokale Remotes gibt es nur in der
 // Testumgebung. Geprüft wird: Phase B auf A wird ohne Bestätigung verweigert und mit Bestätigung durchgeführt · ein Mac mit Merker, aber ohne Phase A sperrt das Tor · nach dem Abgleich fehlt
 // .tools auf B und der Befund auf B meldet „auf anderem Mac umgestellt“ · der Revert auf A bringt .tools auf B zurück.
-import { test } from "node:test";
+import { testUmstellung as test } from "./nur-unix.mjs"; // Windows: Umstellung vom alten Kit gab es nie (nur-unix.mjs)
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";

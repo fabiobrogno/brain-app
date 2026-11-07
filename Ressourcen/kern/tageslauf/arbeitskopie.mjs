@@ -7,6 +7,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, rmSync, readFileSync, writeFileSync, unlinkSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir, tmpdir } from "node:os";
+import { langerPfad } from "../plattform.mjs";
 import { gitBefehl } from "../werkzeug.mjs";
 import { ladeConfig } from "../pfade.mjs";
 import { wendeAuftragAn } from "./schreiben.mjs";
@@ -16,8 +17,8 @@ const INGEST_SPERRE_MIN = 30;
 const ohneGit = () => Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_")));
 
 export function cacheOrdner({ home = homedir(), plattform = process.platform } = {}) {
-  if (process.env.BRAIN_TAGESLAUF_CACHE) return process.env.BRAIN_TAGESLAUF_CACHE;
-  return plattform === "darwin" ? join(home, "Library", "Caches", "brain-tageslauf") : join(tmpdir(), "brain-tageslauf");
+  if (process.env.BRAIN_TAGESLAUF_CACHE) return langerPfad(process.env.BRAIN_TAGESLAUF_CACHE);
+  return langerPfad(plattform === "darwin" ? join(home, "Library", "Caches", "brain-tageslauf") : join(tmpdir(), "brain-tageslauf")); // Windows: Langform (Kurznamen wie RUNNER~1 melden Programme anders)
 }
 export function git(vault, cwd, args) {
   return execFileSync(gitBefehl({ cfg: ladeConfig(vault) }), ["-C", cwd, ...args], {
@@ -27,8 +28,9 @@ export function git(vault, cwd, args) {
 }
 
 export function legeArbeitskopieAn(vault, lauf, opt = {}) {
-  const basis = cacheOrdner(opt);
-  mkdirSync(basis, { recursive: true });
+  const basis0 = cacheOrdner(opt);
+  mkdirSync(basis0, { recursive: true });
+  const basis = langerPfad(basis0); // Windows: Langform, wie sie git und der Kindprozess (cwd) melden
   const kopie = { pfad: join(basis, lauf), branch: `tageslauf/${lauf}` };
   git(vault, vault, ["worktree", "add", "-q", "-b", kopie.branch, kopie.pfad, "main"]);
   return kopie;

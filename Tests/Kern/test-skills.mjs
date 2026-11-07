@@ -49,7 +49,8 @@ test("Kern-/Vault-Pfad mit Leerzeichen: jede Zeile mit brain.mjs hat Kern- und V
     for (const zeile of readFileSync(join(z, datei), "utf8").split("\n")) {
       if (!/[/]brain\.mjs/.test(zeile)) continue;
       const gesamt = (zeile.match(/[/]brain\.mjs/g) || []).length;
-      const gequotet = (zeile.match(/'[^'\n]*[/]brain\.mjs' --vault '(?:[^'\n]|'\\'')*'/g) || []).length;
+      const Q = process.platform === "win32" ? '"' : "'"; // Windows: doppelte Anführungszeichen (shellQuote)
+      const gequotet = (zeile.match(new RegExp(`${Q}[^${Q}\\n]*[/]brain\\.mjs${Q} --vault ${Q}(?:[^${Q}\\n]|${Q}\\\\${Q}${Q})*${Q}`, "g")) || []).length;
       assert.equal(gequotet, gesamt, `${datei}: ungequotetes brain.mjs bzw. --vault — ${zeile}`);
     }
   }

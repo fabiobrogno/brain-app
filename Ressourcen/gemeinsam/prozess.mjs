@@ -3,7 +3,7 @@
 // Werkstatt (SIGTERM) lässt sich alles Laufende auf einmal abräumen. Keine Abhängigkeiten außer basis.mjs.
 import { spawn } from "node:child_process";
 import { HttpFehler } from "./basis.mjs";
-import { beendeBaum } from "./plattform.mjs";
+import { beendeBaum, eigeneGruppe } from "./plattform.mjs";
 
 const laufende = new Set(); // { kind, cwd, start }
 let wirdBeendet = false;
@@ -53,7 +53,7 @@ export function starte(programm, args, o = {}) {
     const gestartet = Date.now();
     if (limit <= 0) return ablehnen(new HttpFehler(504, zuLange, { gestartet }));
     let kind;
-    try { kind = spawn(programm, args, { cwd, env, detached: true, stdio: [stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"], windowsHide: true }); }
+    try { kind = spawn(programm, args, { cwd, env, detached: eigeneGruppe(), stdio: [stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"], windowsHide: true }); }
     catch (e) { return ablehnen(new HttpFehler(500, e && e.code === "ENOENT" ? fehlt : `${programm} ließ sich nicht starten.`)); }
     const eintrag = registriere(kind, cwd);
     if (stdin !== undefined) { kind.stdin.on("error", () => { /* Programm schon fertig */ }); kind.stdin.end(stdin); kind.once("exit", () => kind.stdin.destroy()); } // z. B. `git credential`: Zugangsdaten nie als Argument
@@ -99,7 +99,7 @@ export function starteStrom(programm, args, o = {}) {
   const nichts = (g) => ({ kind: null, stopp: () => {}, fertig: Promise.resolve({ code: null, signal: null, grund: g, stderr: "", gestartet }) });
   if (wirdBeendet) return nichts("start");
   let kind;
-  try { kind = spawn(programm, args, { cwd, env, detached: true, stdio: [stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"], windowsHide: true }); }
+  try { kind = spawn(programm, args, { cwd, env, detached: eigeneGruppe(), stdio: [stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"], windowsHide: true }); }
   catch { return nichts("start"); }
   const eintrag = registriere(kind, cwd);
   if (stdin !== undefined) { kind.stdin.on("error", () => { /* Programm schon fertig */ }); kind.stdin.end(stdin); kind.once("exit", () => kind.stdin.destroy()); }

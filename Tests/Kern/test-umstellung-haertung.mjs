@@ -1,7 +1,7 @@
 // test-umstellung-haertung.mjs — Paket P7b, Nachbesserung nach dem Review: Fehlerpfade und „Absturz vor hashNachher“.
 // Die Attrappen für claude, codex und launchctl bilden Argument-Parsing und Fehlercodes der echten Programme nach (Tests/Kern/fake-mcp-lib.mjs, fake-launchctl.mjs); darum fallen
 // falsche Aufrufe (z. B. `mcp add -e K=V brain`) hier auf. Nur Temp-HOME, Temp-Support, eigene globale git-Konfiguration.
-import { test } from "node:test";
+import { testUmstellung as test } from "./nur-unix.mjs"; // Windows: Umstellung vom alten Kit gab es nie (nur-unix.mjs)
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync, symlinkSync, lstatSync, utimesSync, readdirSync, unlinkSync, realpathSync } from "node:fs";
 import { join, dirname } from "node:path";

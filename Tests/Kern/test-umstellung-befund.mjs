@@ -4,7 +4,7 @@
 //  · in Befund (JSON) und Klartext steht nie ein Wert (die Marke GEHEIM-xyz steckt in jedem Wert, der Zugangsdaten sein könnte),
 //  · der Befund hat NICHTS verändert (Stand des ganzen Temp-Baums vorher/nachher gleich).
 // Nie ein echtes HOME, nie ein echter Support-Ordner, kein launchctl, kein claude/codex.
-import { test } from "node:test";
+import { testUmstellung as test } from "./nur-unix.mjs"; // Windows: Umstellung vom alten Kit gab es nie (nur-unix.mjs)
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { join } from "node:path";

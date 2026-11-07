@@ -2,7 +2,7 @@
 // Geprüft wird: alle Kriterien grün an einem Kit-Vault mit vielen Altlasten; das Original bleibt Byte für Byte unberührt (Kriterium 9, hier zusätzlich als Baumvergleich);
 // ohne --ja nur ein Plan; der Merker gilt nur für denselben Stand; rote Fälle; Rückfall des Kopierers; nichts verlässt die Kopie (kein launchctl, kein Netz).
 // Nur Temp-HOME, Temp-Support, eigene globale git-Konfiguration; launchctl/claude/codex nur als Attrappe.
-import { test } from "node:test";
+import { testUmstellung as test } from "./nur-unix.mjs"; // Windows: Umstellung vom alten Kit gab es nie (nur-unix.mjs)
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";

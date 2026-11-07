@@ -458,7 +458,7 @@ test("Remote: Zweigname verschieden — Server-Hauptzweig master: gleicher Stand
 
 test("Remote: Server nicht erreichbar → Fehler mit Alltagsmeldung (404), nichts eingetragen", async () => {
   const a = repo();
-  const e = await wirft(remoteHinzufuegen(a, join(tmp(), "gibt-es-nicht.git")));
+  const e = await wirft(remoteHinzufuegen(a, join(tmp(), "gibt-es-nicht.git").split("\\").join("/")));
   assert.equal(e.status, 404); assert.match(e.message, /gibt es nicht/);
   assert.equal(typeof e.extra.ausgabe, "string"); assert.ok(e.extra.ausgabe.length < 4100);
   assert.doesNotMatch(e.message, /fatal|git-upload-pack/);

@@ -1,6 +1,6 @@
 // test-umstellung-phase-b-grenzen.mjs — Paket P7d: Phase B unter Druck. Laufwerksgrenze (EXDEV simuliert), Platzmangel, abweichende Kopie, Abbruch mittendrin und Weitermachen, ein
 // scheiternder Commit, Config mit ungesicherten Änderungen, der alte Ordner als Verweis. Immer: das Original bleibt heil, der Rückweg stellt den Vault Byte für Byte her.
-import { test } from "node:test";
+import { testUmstellung as test } from "./nur-unix.mjs"; // Windows: Umstellung vom alten Kit gab es nie (nur-unix.mjs)
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, writeFileSync, readdirSync, lstatSync, symlinkSync, chmodSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";

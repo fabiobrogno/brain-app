@@ -119,7 +119,7 @@ test("Rückweg BYTEGLEICH: eine vorhandene settings.json mit eigenwilliger Forma
   assert.ok(readFileSync(ziel).equals(original), "byteweise wie vorher");
   assert.equal(modus(ziel, 0o640), 0o640);
   assert.deepEqual(readdirSync(a.standard), ["settings.json"], "im Profil-Ordner bleibt nichts zurück (keine .bak-, keine Temp-Dateien)");
-  assert.equal(existsSync(join(a.k, "sicherung", r.sicherung.split("/").pop())), false);
+  assert.equal(existsSync(join(a.k, "sicherung", r.sicherung.split(/[\\/]/).pop())), false);
   assert.equal(existsSync(join(a.k, "bin", MARKE)), false);
 });
 

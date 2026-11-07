@@ -40,7 +40,7 @@ export function traumAufbau({ dateien = DATEIEN, verlaeufe = [{ id: "11111111-aa
   for (const [n, t] of Object.entries(dateien)) writeFileSync(join(dir, n), t);
   if (!ohneWurzelGit) {
     git(wurzel, "init", "-q", "-b", "main");
-    git(wurzel, "config", "user.name", "Test"); git(wurzel, "config", "user.email", "test@example.com"); git(wurzel, "config", "commit.gpgsign", "false");
+    git(wurzel, "config", "user.name", "Test"); git(wurzel, "config", "user.email", "test@example.com"); git(wurzel, "config", "commit.gpgsign", "false"); git(wurzel, "config", "core.autocrlf", "false");
     git(wurzel, "add", "--", ...Object.keys(dateien).map((n) => `${key}/${n}`));
     git(wurzel, "commit", "-qm", "start");
   }

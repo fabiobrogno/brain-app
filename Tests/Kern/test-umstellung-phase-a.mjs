@@ -2,7 +2,7 @@
 // Geprüft wird: der ganze Durchlauf an einem Kit-Vault mit vielen Altlasten · Idempotenz · Rückweg „alles“ stellt den Stand Byte für Byte her · je Schritt Hin- und Rückweg ·
 // ein Rückweg überschreibt nichts, was inzwischen geändert wurde · Abbruch nach/in jedem Schritt → Rückweg vollständig, Weitermachen geht · ein Fehler nimmt nur seinen Schritt zurück ·
 // die Entscheidungen des Nutzers · nichts ohne --ja und ohne grünen Probelauf. Nur Temp-HOME/-Support/-gitconfig; launchctl, claude und codex nur als Attrappe.
-import { test } from "node:test";
+import { testUmstellung as test } from "./nur-unix.mjs"; // Windows: Umstellung vom alten Kit gab es nie (nur-unix.mjs)
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, writeFileSync, readdirSync, mkdirSync, symlinkSync, lstatSync } from "node:fs";
 import { join } from "node:path";

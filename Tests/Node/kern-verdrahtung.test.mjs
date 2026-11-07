@@ -7,7 +7,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync, cpSync, 
 import { spawnSync } from "node:child_process";
 import { join, delimiter } from "node:path";
 import { tmp, schreibe, pfad, repo, g } from "./hilfe.mjs";
-import { legeProgramm, programmPfad } from "./attrappe.mjs";
+import { legeProgramm, programmPfad, nurUnix } from "./attrappe.mjs";
 
 const HOME = tmp("kortex-home-");
 process.env.HOME = HOME; if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME || "";  // os.homedir() liest $HOME — auch in den Kindprozessen
@@ -88,10 +88,13 @@ test("Claude Code: Hooks und Statuszeile über den Starter, nur bin/kortex und b
   assert.deepEqual(s.hooks.Stop, [fremd], "fremder Hook unverändert");
   const befehle = alleBefehle(s);
   assert.ok(befehle.includes("fremd.sh"));
-  const eigene = befehle.filter((c) => c.includes("hook "));
+  // macOS/Linux: der Starter-Befehl (`[ -x … ] && exec … hook <name> || exit 0`); Windows hat keinen Starter, dort ruft der Befehl node mit der Hook-Datei im Kern auf (install.mjs#hookCmd)
+  const WIN = process.platform === "win32";
+  const eigene = befehle.filter((c) => c.includes(WIN ? "/adapters/claude-code/" : "hook "));
   assert.equal(eigene.length, 9, eigene.join("\n"));
   for (const c of [...eigene, s.statusLine.command]) {
-    assert.ok(c.startsWith(`[ -x ${q(e.starter)} ] && exec ${q(e.starter)} hook `) && c.endsWith(" || exit 0"), c);
+    if (WIN) assert.match(c, /^"[^"]+" "[^"]+\/adapters\/claude-code\/[a-z-]+\.mjs"/, c);
+    else assert.ok(c.startsWith(`[ -x ${q(e.starter)} ] && exec ${q(e.starter)} hook `) && c.endsWith(" || exit 0"), c);
   }
   ohneVersionOderApp(JSON.stringify(s), e);
   assert.ok(!JSON.stringify(s).includes(e.v), "kein fester Vault in den Hooks");
@@ -108,7 +111,7 @@ test("Claude Code: Hooks und Statuszeile über den Starter, nur bin/kortex und b
   assert.deepEqual(readdirSync(join(HOME, ".claude", "commands")).filter((n) => n.endsWith(".md")), [], "die Brain-Befehle sind mit weg");
 });
 
-test("Alt-Einträge (<vault>/.tools, früherer Kern-Pfad, Versionsordner, node-start.sh) werden beim Einrichten ersetzt, nicht verdoppelt", async () => {
+test("Alt-Einträge (<vault>/.tools, früherer Kern-Pfad, Versionsordner, node-start.sh) werden beim Einrichten ersetzt, nicht verdoppelt", { skip: nurUnix("diese Altformen (Kit, node-start.sh, /bin/sh) gab es unter Windows nie; Windows-Hook-Befehle: Test oben") }, async () => {
   const e = einrichtung();
   mkdirSync(join(HOME, ".claude"), { recursive: true });
   const alt = (c) => ({ hooks: [{ type: "command", command: c }] });
@@ -144,7 +147,7 @@ test("Prüfung vor dem Speichern: core.hooksPath auf bin/kern/git-hooks; fremder
   assert.equal(r.status, 200, JSON.stringify(r.j));
   assert.equal(r.j.stand.git.aktiv, true);
   const pfadWert = g(e.v, "config", "--local", "core.hooksPath").trim();
-  assert.equal(pfadWert, `${e.kern}/git-hooks`);
+  assert.equal(pfadWert, `${e.kern}/git-hooks`.split("\\").join("/")); // Git schreibt Schrägstriche
   ohneVersionOderApp(pfadWert, e);
 
   r = await e.rufe("POST", "/api/kern/verdrahten", { was: "git", an: false });
@@ -164,7 +167,7 @@ test("Prüfung vor dem Speichern: core.hooksPath auf bin/kern/git-hooks; fremder
   assert.equal(g(e.v, "config", "--local", "core.hooksPath").trim(), "/opt/anderes/hooks", "„aus“ lässt Fremdes stehen");
   r = await e.rufe("POST", "/api/kern/verdrahten", { was: "git", an: true, ersetzen: true });
   assert.equal(r.status, 200);
-  assert.equal(g(e.v, "config", "--local", "core.hooksPath").trim(), `${e.kern}/git-hooks`);
+  assert.equal(g(e.v, "config", "--local", "core.hooksPath").trim(), `${e.kern}/git-hooks`.split("\\").join("/"));
 });
 
 test("Ohne Versionsverlauf gibt es keine Prüfung vor dem Speichern", async () => {
@@ -311,7 +314,7 @@ test("Mehrere Profile: Stand je Profil; Eintragen und Entfernen nur in den gewä
     for (const p of [h.standard, h.privat, h.firma]) assert.equal(r.j.stand.claude.profile[p].aktiv, true, p);
     for (const p of [h.standard, h.privat, h.firma]) {
       const text = readFileSync(join(p, "settings.json"), "utf8");
-      assert.ok(alleBefehle(JSON.parse(text)).some((c) => c.startsWith(`[ -x ${q(e.starter)} ] && exec ${q(e.starter)} hook `)), p);
+      assert.ok(alleBefehle(JSON.parse(text)).some((c) => (process.platform === "win32" ? c.includes("/adapters/claude-code/") : c.startsWith(`[ -x ${q(e.starter)} ] && exec ${q(e.starter)} hook `))), p); // Windows: node + Hook-Datei statt Starter
       assert.ok(!text.includes(e.version) && !text.includes("/kern/9.9.9"));
     }
     assert.ok(existsSync(join(h.privat, "commands")), "die Befehle liegen im Profilordner");

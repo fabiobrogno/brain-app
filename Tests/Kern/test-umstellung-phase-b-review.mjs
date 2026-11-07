@@ -2,7 +2,7 @@
 // K1 Abbruch in B1/B2 + „Weitermachen“ (Rückweg-Angaben nie verwaisen) · W1 laufendes cherry-pick/revert des Nutzers wird nie angefasst · W2 Rückweg idempotent · W3 nichts wird beim Zurückholen
 // überschrieben · W4 verwaiste Einbindungen (nicht eingehängtes Laufwerk, bekannte Vaults, Länge, Pfad der Datei) · B0 neue Sicherung zuerst · Prozessprüfung fail-closed · Tor „macs“ (dieser Mac,
 // Auffrischen des Merkers) · Fingerabdruck mit HEAD/Index · versionierter Verweis · Platz beim Zurückkopieren · Sperre während Phase B.
-import { test } from "node:test";
+import { testUmstellung as test } from "./nur-unix.mjs"; // Windows: Umstellung vom alten Kit gab es nie (nur-unix.mjs)
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, writeFileSync, readdirSync, lstatSync, symlinkSync, mkdirSync, mkdtempSync, rmSync, renameSync, chmodSync } from "node:fs";
 import { join } from "node:path";

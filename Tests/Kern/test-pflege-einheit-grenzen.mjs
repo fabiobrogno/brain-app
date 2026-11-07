@@ -2,9 +2,10 @@
 // Fehler der Arbeit ohne Stacktrace, ID/rev, Rebase und lokale Änderung beim Übernehmen, Hilfsfunktionen.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 import { isoliere, git, neuerTestVault, seitenText, JETZT } from "./tageslauf-hilfe.mjs";
+import { schreibeAufBestehendes } from "../plattform.mjs"; // Windows: `.git` der Arbeitskopie ist versteckt (writeFileSync scheitert dort mit EPERM)
 const P = await import("../tageslauf/pflege-kopie.mjs");
 const { verwerfeArbeitskopie } = await import("../tageslauf/arbeitskopie.mjs");
 const { neuerLauf } = await import("../tageslauf/protokoll.mjs");
@@ -28,7 +29,7 @@ test("Arbeit biegt den Zeiger der Arbeitskopie (.git) um → Integrität verletz
   const original = readFileSync(zeiger, "utf8");
   const vorher = git(v, "rev-parse", "HEAD");
   const e = await P.einheit(ctx, kopie, { id: "inbox-z1", art: "inbox", titel: "z1", arbeit: async (p) => {
-    haengeAn(p, SEITE, "x\n"); writeFileSync(join(p, ".git"), `gitdir: ${join(v, ".git")}\n`); return { ok: true }; } });
+    haengeAn(p, SEITE, "x\n"); schreibeAufBestehendes(join(p, ".git"), `gitdir: ${join(v, ".git")}\n`); return { ok: true }; } });
   assert.equal(e.grund, "integritaet-verletzt", JSON.stringify(e));
   assert.ok(e.befunde.some((b) => b.meldung === "Integrität verletzt: Arbeitskopie/.git"), JSON.stringify(e.befunde));
   assert.equal(ctx.pflegeStopp, true);

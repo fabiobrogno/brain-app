@@ -30,7 +30,7 @@ test("einrichten speichert den Ordner im Support-Ordner, nicht in der Vault-Conf
   const z = join(basis, "stick"); mkdirSync(z);
   const r = brain("backup", "einrichten", `ordner:${z}`);
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, new RegExp(`Sicherung eingerichtet: Ordner ${z}`));
+  assert.match(r.stdout, new RegExp(`Sicherung eingerichtet: Ordner ${z.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
   const cfg = JSON.parse(readFileSync(join(v, "brain.config.json"), "utf8"));
   assert.deepEqual(cfg.backup, { art: "ordner" }, "kein Pfad in der Vault-Config");
   const dateien = readdirSync(join(support, "backup"));

@@ -142,6 +142,7 @@ test("Aufruf: genau die dokumentierten Optionen, Frage über stdin, cwd leer und
   assert.ok(a.cwd.startsWith(s.temp) && !a.cwd.startsWith(s.vault));
   // Umgebung: nichts außer der ausdrücklichen Liste (die Testumgebung selbst hat viel mehr: npm_*, NODE_*, evtl. ANTHROPIC_API_KEY …)
   const ERLAUBT = new Set(["PATH", "HOME", "LANG", "TMPDIR", "NODE_EXTRA_CA_CERTS", "CLAUDE_CONFIG_DIR", "BRAIN_ERNTE", "BRAIN_TESTMODUS", "CLAUDE_CODE_DISABLE_CLAUDE_MDS", "CLAUDE_CODE_DISABLE_AUTO_MEMORY", "__CF_USER_TEXT_ENCODING"]); // letzteres fügt macOS jedem Kindprozess selbst hinzu
+  if (process.platform === "win32") for (const k of ["HOMEDRIVE", "HOMEPATH", "LOGONSERVER", "SYSTEMDRIVE", "SYSTEMROOT", "TEMP", "TMP", "USERDOMAIN", "USERNAME", "USERPROFILE", "WINDIR"]) ERLAUBT.add(k); // Grundausstattung, ohne die Windows-Programme nicht starten
   assert.deepEqual(a.envSchluessel.filter((k) => !ERLAUBT.has(k)), [], "keine fremde Variable in der Umgebung");
   assert.equal(a.claudeConfigDir, s.a);
 });

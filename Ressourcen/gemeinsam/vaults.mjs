@@ -539,8 +539,12 @@ function bereiteZiel(pfad) {
     return { pfad, vorherDa: true, erstAngelegt: null };
   };
   if (gibtEs(pfad)) return vorhanden();
-  const erst = mkdirSync(pfad, { recursive: true }); // der oberste Ordner, den dieser Aufruf wirklich angelegt hat
-  return erst ? { pfad, vorherDa: false, erstAngelegt: erst } : vorhanden(); // undefined: jemand war schneller
+  // der oberste Ordner, den dieser Aufruf anlegt: selbst bestimmt (in der Schreibweise von `pfad`; die Rückgabe von mkdirSync nennt unter Windows
+  // womöglich eine andere Form desselben Ordners, und der Vergleich beim Aufräumen schlüge fehl)
+  let erstNeu = pfad;
+  for (let p = dirname(pfad); p !== dirname(p) && !gibtEs(p); p = dirname(p)) erstNeu = p;
+  const erst = mkdirSync(pfad, { recursive: true });
+  return erst ? { pfad, vorherDa: false, erstAngelegt: erstNeu } : vorhanden(); // undefined: jemand war schneller
 }
 
 // Nimmt zurück, was dieser Aufruf angelegt hat: das Ziel samt Inhalt; hat der Aufruf auch Elternordner angelegt, danach nur noch LEERE
@@ -645,7 +649,7 @@ export function besitzerAusAdresse(adresse) {
     || /^ssh:\/\/(?:[A-Za-z0-9._-]+@)?github\.com(?::\d{1,5})?\/([A-Za-z0-9-]{1,39})\/[^/]+$/i.exec(a)
     || /^(?:[A-Za-z0-9._-]+@)?github\.com:([A-Za-z0-9-]{1,39})\/[^/]+$/i.exec(a);
   if (m) return m[1].toLowerCase();
-  if (testmodus() && a.startsWith("/")) return basename(dirname(a)).toLowerCase();
+  if (testmodus() && /^(\/|[A-Za-z]:\/)/.test(a)) return basename(dirname(a)).toLowerCase(); // Windows: Laufwerkspfad mit „/“
   return null;
 }
 // Ein Klon gilt nur dann als „von dir“ (vertraut), wenn das Repository dem in Kortex angemeldeten GitHub-Konto gehört. Ein fremdes Repository (auch eine Organisation —
