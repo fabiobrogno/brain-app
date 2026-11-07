@@ -453,6 +453,17 @@ Stand: Aus der Electron-Hülle werden installierbare Pakete — Windows NSIS, Li
 
 **CI** (`.github/workflows/ci.yml`): neuer Ausgang `paket` in `scripts/ci-aenderungen.sh` (nur `electron/`, `Ressourcen/`, Node-Version, Lizenzhinweise; getestet) und Job `paket` auf `ubuntu-latest` und `windows-latest`: bauen, als **Artefakt** hochladen (`pakete-<os>`, 14 Tage; nie Release), Rauchtest. Linux: AppImage (entpackte Kopie und das AppImage selbst mit `APPIMAGE_EXTRACT_AND_RUN` — zwei verschiedene Pfade), deb wirklich installieren (`apt-get install`, SUID-Sandbox ohne gelockerte Namensräume), starten, deinstallieren und prüfen, dass `/opt/Kortex` weg ist; arm64 nur Bau (Messung). Windows: NSIS still (`/S`) pro Benutzer, starten, still deinstallieren (`_?=`), alles `continue-on-error`. Linux steht in `needs` von `ci-ok`, Windows nicht. Der Updater-Test läuft im bestehenden Job `electron-probe` (alle Specs).
 
+**Ergebnis der CI (PR #116, Lauf auf dem Kopf vor dem Bericht):**
+
+| Paket | Größe | Rauchtest |
+|---|---|---|
+| Linux x64 AppImage `Kortex-<v>-x86_64.AppImage` | 176 MB | grün: entpackte Kopie und das AppImage selbst (`APPIMAGE_EXTRACT_AND_RUN`), zwei verschiedene Pfade, gleicher MCP-Eintrag |
+| Linux x64 deb `Kortex-<v>-amd64.deb` (Paketname `kortex`) | 139 MB | grün: `apt-get install`, starten (Chromium-Sandbox läuft), `apt-get remove`, `/opt/Kortex` weg |
+| Linux arm64 AppImage / deb | 177 MB / 132 MB | nur Bau (Messung): Node-Datei ist `ELF aarch64`, Paket entsteht |
+| Windows x64 NSIS `Kortex-Setup-<v>-x64.exe` | 144 MB | grün (Messung): still installiert nach `%LOCALAPPDATA%\Programs\Kortex` (ohne Admin), gestartet, Werkstatt mit dem mitgelieferten Node (ohne node im PATH), MCP-Eintrag auf `<Support>\bin\node.exe`, still deinstalliert (`/S _?=`), `resources` weg |
+
+Beim ersten Bau zeigte sich: electron-builder legt die Installation pro Benutzer unter dem **Paketnamen** an (`Programs\kortex-electron`), nicht unter dem Produktnamen. `extraMetadata.name: "Kortex"` setzt den Ordner auf `Programs\Kortex`, `deb.packageName: "kortex"` den deb-Namen. Der deb-Test lief zuerst mit einer falschen Annahme (SUID-Bit 4755): electron-builders Nachinstallationsskript setzt das SUID-Bit nur, wenn User-Namensräume fehlen; der Test gibt den Modus nur noch aus.
+
 **Bekannt offen / nicht umgesetzt:**
 - **Hook-Starter** (`<Support>/bin/kortex`, Plan P7/A4): `verdrahtung.mjs` verlangt ihn für Hooks und Hintergrunddienst; unter Windows/Linux gibt es ihn noch nicht (Antwort „Der Starter von Kortex fehlt noch“). MCP und Statuszeile laufen ohne ihn über `bin/node` und `bin/kern`. Eigenes Paket (Windows `.cmd`, Linux Skript).
 - Das Ersetzen des Programms beim Update (siehe oben) und echte Linux-Desktops (Wayland/Tray, AppImage-Integration) sind nicht in der CI geprüft.

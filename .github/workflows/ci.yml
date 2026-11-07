@@ -428,6 +428,7 @@ jobs:
       - name: Linux arm64 bauen (nur Bau, Messung)
         if: runner.os == 'Linux'
         continue-on-error: true
+        timeout-minutes: 15
         working-directory: electron
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
@@ -532,6 +533,7 @@ jobs:
           Start-Process -FilePath $uninst -ArgumentList "/S _?=$ziel" -Wait
           if (Test-Path (Join-Path $ziel 'resources')) { throw 'Nach der Deinstallation liegen noch Programmdateien da' }
           if ($fehler) { throw $fehler }
+          'WINDOWS-RAUCHTEST OK: installiert, gestartet, Werkstatt mit mitgeliefertem Node, deinstalliert' | Tee-Object -FilePath "$env:RUNNER_TEMP/paket-windows.log" -Append
       - name: Bericht
         if: always()
         run: |
@@ -542,7 +544,7 @@ jobs:
               [ -f "$f" ] || continue
               echo "**$l**"
               echo '```'
-              grep -E "^\s+(✓|✘|-|[0-9]+ (passed|failed|skipped))|passed|failed|Error:|Kinder:" "$f" | head -n 30 || true
+              grep -E "^\s+(✓|✘|ok|-|[0-9]+ (passed|failed|skipped))|passed|failed|Error:|Kinder:|WINDOWS-RAUCHTEST" "$f" | head -n 30 || true
               echo '```'
             done
           } | tee -a "$GITHUB_STEP_SUMMARY"
