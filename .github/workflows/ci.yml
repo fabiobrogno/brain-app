@@ -8,7 +8,7 @@ name: CI
 #  - ui-test       Playwright in 6 Shards mit je 2 Workern, nur Chromium (Headless-Shell), Browser-Cache.
 #  - node-test     Node-Tests (Tests/Node).
 #  - swift         macOS (knapp, daher nur 1 Job): Build + Tests + Kern-Manifest + Vorschau.
-#  - plattform-probe  Windows und Linux (Paket W0): Linux ist Tor (in ci-ok), Windows nur Messung (blockiert nichts).
+#  - plattform-probe  Windows und Linux (Paket W0): Linux ist Tor (in ci-ok), Windows: Node-Tests sind Tor, Kern und Oberfläche nur Messung.
 #  - ci-ok         EIN Status für alles: grün, wenn jeder nötige Job grün war oder bewusst übersprungen wurde.
 #  - dev-artefakt  nur auf main: Kortex.app als Artefakt.
 # Es gibt absichtlich KEIN paths-ignore: Ein Lauf, der nur Doku ändert, ist in Sekunden grün (aenderungen + ci-ok), und der
@@ -219,7 +219,7 @@ jobs:
 
   # Plattform-Probe (Paket W0, docs/plaene/plattformen-windows-linux.md): dieselben Node-, Kern- und Oberflächentests auf Windows und Linux.
   # Linux ist ein TOR (der Job steht in `needs` von ci-ok, die Schritte laufen dort ohne continue-on-error). Windows ist MESSUNG: dort läuft jeder Schritt
-  # mit continue-on-error, der Job bleibt grün; Zahlen und rote Tests stehen in der Zusammenfassung des Laufs (Schritt „Bericht“) und als Artefakt.
+  # mit continue-on-error (ausgenommen die Node-Tests: Tor), der Job bleibt grün; Zahlen und rote Tests stehen in der Zusammenfassung des Laufs (Schritt „Bericht“) und als Artefakt.
   # Sobald Windows durchgehend grün ist, entfällt die Bedingung `matrix.os == 'windows-latest'` an den drei Schritten.
   plattform-probe:
     needs: aenderungen
@@ -252,7 +252,7 @@ jobs:
       - name: Node-Tests
         id: lauf-node
         if: matrix.bereich == 'node'
-        continue-on-error: ${{ matrix.os == 'windows-latest' }}
+        # Die Node-Tests sind auch unter Windows ein TOR (0 rot, Paket fix/windows-rest); Kern und Oberfläche bleiben dort Messung.
         run: |
           (cd Werkzeuge/symbole && npm ci --ignore-scripts --no-audit --no-fund) || true
           bash scripts/teste-node.sh --test-concurrency=4 2>&1 | tee "$RUNNER_TEMP/lauf.log"
