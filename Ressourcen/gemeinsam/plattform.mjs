@@ -21,6 +21,9 @@ export const supportOrdner = (o = {}) => (o.env || process.env).BRAIN_APP_SUPPOR
 // Standardort laut Benutzereintrag des Systems (nicht aus HOME) → Pfad oder null.
 export const standardSupport = (o = {}) => { try { return join(supportBasis({ ...o, home: o.home || userInfo().homedir }), "Kortex"); } catch { return null; } };
 
+// Pfad in Regeln von Claude Code (permissions.deny: `Read(//<pfad>/**)`): dort gilt auch unter Windows die POSIX-Form, `C:\\Users\\x` heißt `/c/Users/x`. Andere Pfade bleiben wie sie sind.
+export const claudePfadform = (p) => { const m = /^([A-Za-z]):[\\/](.*)$/.exec(String(p)); return m ? `/${m[1].toLowerCase()}/${m[2].replace(/\\/g, "/")}` : String(p); };
+
 // ───────────── macOS-only ─────────────
 export const NICHT_VERFUEGBAR = "nicht verfügbar auf diesem System";
 // Führt `fn` nur am Mac aus. Sonst ein sauberes Ergebnis statt eines Absturzes: { ok:false, nichtVerfuegbar:true, text:"<was>: nicht verfügbar auf diesem System" }.

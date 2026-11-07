@@ -90,3 +90,10 @@ test("prozessStart: der eigene Prozess wird nur einmal erfragt, ein fremder höc
   let n = 0; for (let i = 0; i < 3; i++) P.prozessStart(9, { plattform: "linux", ausfuehren: () => { n++; return "x"; } });
   assert.equal(n, 3);
 });
+
+test("claudePfadform: Laufwerkspfade in der POSIX-Form von Claude Code (C:\\Users\\x -> /c/Users/x), alles andere bleibt; eigeneGruppe nur ohne Windows", () => {
+  assert.equal(P.claudePfadform("C:\\Users\\Ada\\Vault"), "/c/Users/Ada/Vault");
+  assert.equal(P.claudePfadform("d:/Daten/V"), "/d/Daten/V");
+  assert.equal(P.claudePfadform("/Users/ada/Vault"), "/Users/ada/Vault");
+  assert.equal(P.eigeneGruppe("win32"), false); assert.equal(P.eigeneGruppe("darwin"), true); assert.equal(P.eigeneGruppe("linux"), true);
+});

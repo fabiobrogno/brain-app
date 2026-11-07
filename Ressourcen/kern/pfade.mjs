@@ -13,7 +13,7 @@ import { registriereVault, registrierteVaults } from "./vault-schutz.mjs";
 import { vertrauensStand, alleVertraut } from "./vertrauen.mjs";
 import { kontoStufe, darfMindestens, kontenOrte, liesKonten, bestimmeKonto } from "./ki-konten.mjs";
 import { schreibeEreignis } from "./aktivitaet.mjs";
-import { supportBasis } from "./plattform.mjs";
+import { supportBasis, claudePfadform } from "./plattform.mjs";
 
 export const KERN = dirname(fileURLToPath(import.meta.url));
 
@@ -225,7 +225,7 @@ function leseverbotAktiv(profil, vault) {
     const deny = JSON.parse(readFileSync(join(profil, "settings.json"), "utf8"))?.permissions?.deny;
     if (!Array.isArray(deny)) return false;
     let echt = vault; try { echt = realpathSync(vault); } catch { /* wie angegeben */ }
-    return [vault, echt].some((p) => deny.includes(`Read(//${String(p).replace(/[\\*?[\]]/g, "\\$&").replace(/^\/+/, "").replace(/\/+$/, "")}/**)`));
+    return [vault, echt].some((p) => deny.includes(`Read(//${claudePfadform(p).replace(/[\\*?[\]]/g, "\\$&").replace(/^\/+/, "").replace(/\/+$/, "")}/**)`));
   } catch { return false; }
 }
 const STUFEN_TEXT = { gesperrt: "Gesperrt", lesen: "Lesen", posteingang: "Posteingang", erweitert: "Erweitert" };

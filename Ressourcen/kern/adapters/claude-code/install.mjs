@@ -67,23 +67,22 @@ const eigeneStatuszeile = (c) => typeof c === "string" && (hookNameAusBefehl(c) 
 //   ohne frühere Statuszeile:  if [ -x N ] && [ -f S ]; then N S --konto ID; fi
 //   mit früherer Statuszeile:  if [ -x N ] && [ -f S ]; then N S --konto ID; else /bin/sh '<Support>/kontingent/kette/ID.sh'; fi
 const KETTE_MARKE = "kortex-statuszeile.mjs";
-const KETTE_SKRIPT = `/kontingent/bin/${KETTE_MARKE}`;
+const KETTE_SKRIPT = /[\\/]kontingent[\\/]bin[\\/]kortex-statuszeile\.mjs/; // Windows: Pfade mit „\“
 const SH_ZWEIG = /; else \/bin\/sh ('(?:[^']|'\\'')*'); fi$/;
 const entquote = (t) => { const m = /^'((?:[^']|'\\'')*)'$/.exec(t); return m ? m[1].replaceAll("'\\''", "'") : null; };
 const istObjekt = (x) => !!x && typeof x === "object" && !Array.isArray(x);
 // → null (keine Kette) | { lesbar: false } (eine Kette in unbekannter Form: nichts anfassen) | { lesbar: true, id, json, sh, mit, orig: null | { command, original } }
 function ketteInfo(statusLine) {
   const c = istObjekt(statusLine) ? statusLine.command : null;
-  if (typeof c !== "string" || !c.includes(KETTE_SKRIPT)) return null;
-  if (process.platform === "win32") return { lesbar: false };
+  if (typeof c !== "string" || !KETTE_SKRIPT.test(c)) return null;
   // Genau die Form von kettenBefehl (kontingent.mjs): jede andere Form (anderer else-Zweig, zusätzliche Teile) wird nicht angefasst
   const Q = "'(?:[^']|'\\\\'')*'";
   const form = new RegExp(`^if \\[ -x (${Q}) \\] && \\[ -f (${Q}) \\]; then (${Q}) (${Q}) --konto (k_[0-9a-f]{8})(?:; else /bin/sh (${Q}))?; fi$`).exec(c);
   if (!form || form[1] !== form[3] || form[2] !== form[4]) return { lesbar: false };
   const id = form[5];
   const skript = entquote(form[2]);
-  if (!skript || !skript.endsWith(KETTE_SKRIPT)) return { lesbar: false };
-  const ordner = join(skript.slice(0, -"/bin/".length - KETTE_MARKE.length), "kette");
+  if (!skript || !new RegExp(`${KETTE_SKRIPT.source}$`).test(skript)) return { lesbar: false };
+  const ordner = join(dirname(dirname(skript)), "kette");
   const json = join(ordner, `${id}.json`), sh = join(ordner, `${id}.sh`);
   const mit = SH_ZWEIG.test(c);
   if (!mit) return { lesbar: true, id, json, sh, mit, orig: null };

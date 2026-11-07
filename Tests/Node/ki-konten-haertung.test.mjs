@@ -10,6 +10,8 @@ import { join } from "node:path";
 import { tmp, schreibe, pfad } from "./hilfe.mjs";
 import { nurUnix } from "./attrappe.mjs";
 import { baueTestUmgebung } from "./ki-konten-hilfe.mjs";
+import { claudePfadform } from "../../Ressourcen/gemeinsam/plattform.mjs";
+const rp = (p) => claudePfadform(p).slice(1); // Pfad in Regeln von Claude Code: `//` + Pfad ohne führenden Schrägstrich (Windows: C:\x → /c/x)
 
 for (const k of ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "CURSOR_CONFIG_DIR", "GEMINI_CLI_HOME", "XDG_CONFIG_HOME", "GIT_CONFIG_GLOBAL"]) delete process.env[k];
 process.env.HOME = tmp("brain-home-"); if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME || ""; 
@@ -155,9 +157,9 @@ test("4 --konto B + CLAUDE_CONFIG_DIR=A ist blockiert (P1); --konto B unter Clau
   assert.ok(leak(await suche(s, ["--konto", "k_bbbbbbbb", "--vault", s.zu], { CLAUDE_CONFIG_DIR: s.b })), "P2: Kennung UND Umgebung gefälscht — nicht erkennbar; darum schützen die Einstellungsregeln und der Strenge Schutz die Dateien, in denen das steht");
   // die Einstellungsregeln: genau die Dateien, in denen Kennung und Umgebung stehen
   const r = S.einstellungsRegeln({ support: s.support, profil: s.b, home: s.home, standard: false });
-  for (const erwartet of [`Edit(//${s.support.slice(1)}/**)`, `Edit(//${s.b.slice(1)}/settings.json)`, `Edit(//${s.b.slice(1)}/.claude.json)`, "Edit(**/.mcp.json)", "Edit(**/.claude/settings.json)", "Edit(**/.claude/settings.local.json)"]) assert.ok(r.includes(erwartet), erwartet);
+  for (const erwartet of [`Edit(//${rp(s.support)}/**)`, `Edit(//${rp(s.b)}/settings.json)`, `Edit(//${rp(s.b)}/.claude.json)`, "Edit(**/.mcp.json)", "Edit(**/.claude/settings.json)", "Edit(**/.claude/settings.local.json)"]) assert.ok(r.includes(erwartet), erwartet);
   const rs = S.einstellungsRegeln({ support: s.support, profil: s.std, home: s.home, standard: true });
-  assert.ok(rs.includes(`Edit(//${s.home.slice(1)}/.claude.json)`), "das Standardprofil legt seine MCP-Einträge in ~/.claude.json ab");
+  assert.ok(rs.includes(`Edit(//${rp(s.home)}/.claude.json)`), "das Standardprofil legt seine MCP-Einträge in ~/.claude.json ab");
 });
 
 // ───────────── 5: verschachtelte Vaults ─────────────
@@ -239,8 +241,8 @@ test("8 Strenger Schutz: ein neuer gesperrter Vault kommt sofort in denyRead/den
   liste = [{ pfad: neu, name: "V1" }, { pfad: v2, name: "V2" }];
   kn.synchronisiere();
   const regeln = doc().permissions.deny;
-  assert.ok(regeln.includes(`Read(//${realpathSync(neu).slice(1)}/**)`), "Leseverbot für den neuen Ort");
-  assert.ok(!regeln.includes(`Read(//${v1.slice(1)}/**)`), "und nicht mehr für den alten");
+  assert.ok(regeln.includes(`Read(//${rp(realpathSync(neu))}/**)`), "Leseverbot für den neuen Ort");
+  assert.ok(!regeln.includes(`Read(//${rp(v1)}/**)`), "und nicht mehr für den alten");
   assert.ok(doc().sandbox.filesystem.denyRead.includes(realpathSync(neu)) && !doc().sandbox.filesystem.denyRead.includes(v1));
 });
 

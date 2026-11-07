@@ -752,7 +752,7 @@ test("klone: Ziel nicht leer → 409, nichts verändert", async () => {
 
 test("klone: gibt es das Repository nicht, verschwindet das Ziel wieder (neu: samt Elternordnern; vorher leer: bleibt leer)", async () => {
   const basis = tmp("brain-kl4-");
-  const gibtsNicht = join(basis, "kein-repo.git");
+  const gibtsNicht = fw(join(basis, "kein-repo.git")); // Adresse mit Schrägstrichen (Backslash ist in Adressen nicht erlaubt)
   let e = await wirftAsync(klone({ url: gibtsNicht, ordner: join(basis, "x", "y", "Ziel") }, OPT));
   assert.equal(e.status, 404); assert.match(e.message, /gibt es nicht/); assert.match(e.extra.ausgabe, /fatal/);
   assert.deepEqual(readdirSync(basis), []);

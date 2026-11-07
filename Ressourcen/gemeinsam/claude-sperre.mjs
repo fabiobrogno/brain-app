@@ -13,6 +13,7 @@ import { readFileSync, writeFileSync, copyFileSync, mkdirSync, renameSync, chmod
 import { join, dirname, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 import { HttpFehler } from "./basis.mjs";
+import { claudePfadform } from "./plattform.mjs";
 
 const istObj = (x) => !!x && typeof x === "object" && !Array.isArray(x);
 const MAX_GROESSE = 4 * 1024 * 1024;
@@ -24,7 +25,7 @@ export const SANDBOX_LISTEN = ["denyRead", "denyWrite"];
 // Absolute Regelform: `//pfad` (ein einfaches `/pfad` bedeutet in Benutzer-Einstellungen „relativ zum Einstellungsordner“). Zeichen mit Bedeutung in gitignore-Mustern werden maskiert, damit die Regel
 // nur den wörtlichen Pfad trifft: \ * ? [ ]. Klammern ( ) bleiben unmaskiert: die Doku maskiert sie nicht, und ein `\(` würde die Regel auf den falschen Namen richten.
 export function regelPfad(p) {
-  const s = String(p).replace(/[\\*?[\]]/g, "\\$&");
+  const s = claudePfadform(p).replace(/[\\*?[\]]/g, "\\$&");
   return `//${s.replace(/^\/+/, "").replace(/\/+$/, "")}`;
 }
 const echt = (p) => { try { return realpathSync.native(p); } catch { return resolve(p); } };

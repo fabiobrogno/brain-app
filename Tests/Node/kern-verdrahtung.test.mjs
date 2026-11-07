@@ -144,7 +144,7 @@ test("Prüfung vor dem Speichern: core.hooksPath auf bin/kern/git-hooks; fremder
   assert.equal(r.status, 200, JSON.stringify(r.j));
   assert.equal(r.j.stand.git.aktiv, true);
   const pfadWert = g(e.v, "config", "--local", "core.hooksPath").trim();
-  assert.equal(pfadWert, `${e.kern}/git-hooks`);
+  assert.equal(pfadWert, `${e.kern}/git-hooks`.split("\\").join("/")); // Git schreibt Schrägstriche
   ohneVersionOderApp(pfadWert, e);
 
   r = await e.rufe("POST", "/api/kern/verdrahten", { was: "git", an: false });

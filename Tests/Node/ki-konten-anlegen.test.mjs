@@ -73,7 +73,7 @@ test("Konto hinzufügen: eigener Ordner unter dem Support-Ordner (Modus 0700), n
     assert.equal(k.verwaltet, true); assert.equal(k.standard, false); assert.equal(k.name, "Kunde Müller");
     assert.equal(k.pfad, join(realpathSync(a.s), "ki-konten-ordner", "claude-kunde-muller"));
     assert.ok(existsSync(k.pfad)); assert.equal(modus(k.pfad, 0o700), 0o700);
-    assert.deepEqual(readdirSync(a.home), [], "im Home wird nichts angelegt");
+    assert.deepEqual(readdirSync(a.home), [], `im Home wird nichts angelegt: ${JSON.stringify(readdirSync(a.home, { recursive: true }))}`);
     for (const v of a.vs) assert.equal(r.j.zugriff[k.id][v], "gesperrt");
     // der Ordner kann mit der Stufe wie jedes andere Konto gesetzt werden
     const z = await a.rufe("PUT", "/api/ki/zugriff", { konto: k.id, vault: a.vs[0], stufe: "posteingang" });

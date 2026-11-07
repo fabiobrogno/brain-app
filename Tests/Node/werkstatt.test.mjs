@@ -164,7 +164,7 @@ test("MCP verbinden: Fake-claude im PATH wird mit dem richtigen Befehl aufgerufe
     process.env.PATH = bin;
     const r = await h("POST", "/api/mcp/verbinden", { ziel: "claude" });
     assert.equal(r.status, 200); assert.equal(r.j.ok, true); assert.match(r.j.ausgabe, /Added/);
-    assert.deepEqual(readFileSync(log, "utf8").trim().split("\n"), ["mcp get brain", `mcp add -s user brain -- ${sh(process.execPath)} ${sh(mcpReal)}`]);
+    assert.deepEqual(readFileSync(log, "utf8").trim().split("\n"), ["mcp get brain", `mcp add -s user brain -- ${process.execPath} ${mcpReal}`]); // argv ohne Anführungszeichen
 
     process.env.PATH = tmp("brain-leer-"); // kein claude
     const n = await h("POST", "/api/mcp/verbinden", { ziel: "claude" });

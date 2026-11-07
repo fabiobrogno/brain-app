@@ -11,7 +11,7 @@
 // Codex: Kortex fragt das Programm selbst (`codex app-server`, `account/rateLimits/read`, gemeinsam/kontingent.mjs). Kein Token wird gelesen, kein Schlüsselbund geöffnet, und Kortex
 // ruft weder Anthropic noch OpenAI an. Wo es nichts gibt (Cursor, Gemini …), steht ehrlich „nicht abrufbar“.
 import { readFileSync, writeFileSync, renameSync, statSync, mkdirSync, chmodSync, rmSync, readdirSync, rmdirSync, realpathSync, existsSync, accessSync, constants } from "node:fs";
-import { join, dirname, sep } from "node:path";
+import { join, dirname, sep, delimiter } from "node:path";
 import { tmpdir, homedir } from "node:os";
 import { randomBytes, createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
@@ -69,7 +69,7 @@ export function erzeugeKontingent({ support, konten, nodePfad = process.execPath
 
   // ───────────── Statuszeile in settings.json ─────────────
   const settingsDatei = (k) => join(k.ordner, "settings.json");
-  const istUnsere = (sl) => istObj(sl) && typeof sl.command === "string" && sl.command.includes(`/kontingent/bin/${MARKE}`);
+  const istUnsere = (sl) => istObj(sl) && typeof sl.command === "string" && /[\\/]kontingent[\\/]bin[\\/]/.test(sl.command) && sl.command.includes(MARKE); // Windows: Pfade mit „\“
   // Die Konto-Kennung, die im eingetragenen Befehl steht (`--konto k_…`). Kette, Merker und Sicherung gehören zu DIESER Kennung — auch wenn die Liste der Konten inzwischen eine andere vergeben hat
   // (Liste neu angelegt): dann gilt „neu verknüpfen“, nie „weg damit“.
   const idImBefehl = (cmd) => { const m = /--konto (k_[0-9a-f]{8})(?![0-9a-f])/.exec(String(cmd)); return m ? m[1] : null; };
@@ -359,7 +359,7 @@ export function erzeugeKontingent({ support, konten, nodePfad = process.execPath
       if (!prog) erg = { ok: false, art: "fehlt" };
       else {
         try {
-          const env = mitCodexHome(codexUmgebung(kindUmgebung({ CI: "1", PATH: `${dirname(prog)}:${kindUmgebung().PATH || "/usr/bin:/bin"}` })), k);
+          const env = mitCodexHome(codexUmgebung(kindUmgebung({ CI: "1", PATH: `${dirname(prog)}${delimiter}${kindUmgebung().PATH || "/usr/bin:/bin"}` })), k);
           erg = await codexLauf({ programm: prog, env, cwd: arbeitsordner() });
         } catch { erg = { ok: false, art: "start" }; }
       }
