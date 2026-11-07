@@ -73,7 +73,7 @@ export function git(cwd, args, { timeout = LIMIT, buffer = false, vertraut = fal
 // des Nutzers unverändert. Der Wert ist ein einfacher Helper-Name (kein Pfad, kein Befehl).
 export function githubHelperArgs(helper) {
   if (!helper) return [];
-  const erlaubt = /^[a-z][a-z0-9_-]{0,40}$/i.test(helper) || (testmodus() && /^\/[\w./-]{1,300}$/.test(helper)); // ein Pfad nur im Test (Schein-Helper)
+  const erlaubt = /^[a-z][a-z0-9_-]{0,40}$/i.test(helper) || (testmodus() && /^(?:[A-Za-z]:)?\/[\w./-]{1,300}$/.test(helper)); // ein Pfad nur im Test (Schein-Helper)
   if (!erlaubt) throw new HttpFehler(500, "Ungültiger Credential-Helper.");
   return ["-c", "credential.https://github.com.helper=", "-c", `credential.https://github.com.helper=${helper}`];
 }

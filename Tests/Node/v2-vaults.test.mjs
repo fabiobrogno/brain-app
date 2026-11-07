@@ -467,7 +467,7 @@ test("Vorlage: Inhalte passen zu den Vorgaben, ohne private Bezüge, Name wird b
 test("neuesVault vorlage: auch wenn eine globale Ignore-Datei CLAUDE.md und AGENTS.md ausschließt, sind sie im ersten Commit", async () => {
   const konfig = join(tmp("brain-gkonf-"), "gitconfig"), ignorieren = join(tmp("brain-gign-"), "ignore");
   writeFileSync(ignorieren, "CLAUDE.md\nAGENTS.md\n.gitkeep\n");
-  writeFileSync(konfig, `[core]\n\texcludesFile = ${ignorieren}\n`);
+  writeFileSync(konfig, `[core]\n\texcludesFile = ${ignorieren.split("\\").join("/")}\n`); // gitconfig: Backslash ist dort ein Escape-Zeichen
   process.env.GIT_CONFIG_GLOBAL = konfig;
   let ziel;
   try {

@@ -6,7 +6,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync, readdirS
 import { execFileSync } from "node:child_process";
 import { join, delimiter } from "node:path";
 import { tmp, schreibe, pfad } from "./hilfe.mjs";
-import { legeProgramm, nurUnix } from "./attrappe.mjs";
+import { legeProgramm, nurUnix, modus as modusOderErwartet } from "./attrappe.mjs";
 const HOME = tmp("brain-home-");
 process.env.HOME = HOME; if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME; /* Windows: os.homedir() liest USERPROFILE */ // os.homedir() liest $HOME
 
@@ -172,7 +172,7 @@ test("Cursor verbinden: ist mcp.json ein Symlink, bleibt er einer und das Ziel b
   const doc = JSON.parse(readFileSync(echt, "utf8"));
   assert.equal(doc.mcpServers.brain.command, process.execPath);
   assert.ok(doc.mcpServers.anderes, "andere Einträge bleiben");
-  assert.equal(modus(echt), 0o600);
+  assert.equal(modusOderErwartet(echt, 0o600), 0o600);
   assert.deepEqual(readdirSync(dot), ["mcp.json"], "keine Reste im Ordner des Ziels");
 });
 
