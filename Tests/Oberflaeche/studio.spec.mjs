@@ -473,7 +473,7 @@ test("Vertrauen: Frage „Kommt dieser Vault von dir?“, Vertrauen lädt Git un
   const vorher = stand.gesundheit;
   await page.click('[data-aktion="vertrauen-erlauben"]');
   await expect(frage).toHaveCount(0);
-  expect(stand.post).toEqual([{ erlauben: true, vault: realpathSync(vault) }]); // der gezeigte Vault geht mit
+  expect(stand.post).toEqual([{ erlauben: true, vault: realpathSync.native(vault) }]); // der gezeigte Vault geht mit
   await expect(page.locator('[data-st="gesundheit"]')).toBeVisible();
   await expect(page.locator('[data-bereich="rueckfragen"] .zahl')).toHaveText("2");
   expect(stand.gesundheit).toBeGreaterThan(vorher);

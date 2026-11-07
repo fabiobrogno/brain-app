@@ -24,7 +24,7 @@ test.beforeEach(async ({ page }) => {
   ({ vault } = baueVault());
   schreibeDateien({ "10_notizen/lang.md": LANG, "brain.config.json": JSON.stringify({ name: "Kortex", ordner: { vorlagen: "Vorlagen" }, automatik: {} }) + "\n" });
   // Die Werkstatt bekommt eine ausdrücklich gebaute Umgebung: HOME im Temp-Ordner, nichts von den Orten des Rechners (CLAUDE_CONFIG_DIR, CODEX_HOME, XDG_*, GIT_CONFIG_* …)
-  const home = realpathSync(mkdtempSync(join(tmpdir(), "kortex-schreiben-home-")));
+  const home = realpathSync.native(mkdtempSync(join(tmpdir(), "kortex-schreiben-home-")));
   server = await starteServer(vault, { umgebung: { PATH: process.env.PATH, HOME: home, TMPDIR: home, TZ: "Europe/Berlin", LANG: "de_DE.UTF-8", GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: join(home, ".gitconfig") } });
   await page.clock.setFixedTime(JETZT);
 });

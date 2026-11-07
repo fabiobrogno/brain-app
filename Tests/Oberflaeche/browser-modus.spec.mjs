@@ -63,7 +63,7 @@ test("Browser-Modus: Hülle da, Studio erkennt ihn, Finder/Übersicht fehlen, No
 
 test("Einrichtung (E1/E2): erster Start ohne Vault öffnet sie von selbst; Ordner öffnen mit der Ordnerwahl der Browser-Hülle (Pfad, Unterordner, zuletzt benutzt)", async ({ page }) => {
   const fehler = fehlerSammeln(page);
-  const ordner = realpathSync(mkdtempSync(join(tmpdir(), "kortex-browser-notizen-")));
+  const ordner = realpathSync.native(mkdtempSync(join(tmpdir(), "kortex-browser-notizen-")));
   mkdirSync(join(ordner, "Unter"), { recursive: true });
   writeFileSync(join(ordner, "A.md"), "# A\n"); writeFileSync(join(ordner, "Unter", "B.md"), "# B\n");
   await oeffne(page, { mitVault: false });
@@ -186,8 +186,8 @@ test("Suche im Browser-Modus findet Notizen des Vaults", async ({ page }) => {
 
 // Platzhalter für `claude` und `codex`: täuschen nur eine Anmeldung vor (Adresse/Code ausgeben, warten). Nie ein echtes Programm, nie ein echtes Konto; brechen ab, wenn ihr Konto-Ordner außerhalb von Temp liegt.
 function platzhalterOrdner() {
-  const bin = realpathSync(mkdtempSync(join(tmpdir(), "kortex-browser-platzhalter-")));
-  const temp = realpathSync(tmpdir());
+  const bin = realpathSync.native(mkdtempSync(join(tmpdir(), "kortex-browser-platzhalter-")));
+  const temp = realpathSync.native(tmpdir());
   const skript = (programm) => `#!${process.execPath}
 const fs = require("node:fs"), path = require("node:path");
 const VAR = ${JSON.stringify(programm === "claude" ? "CLAUDE_CONFIG_DIR" : "CODEX_HOME")}, TEMP = ${JSON.stringify(temp)};

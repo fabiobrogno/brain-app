@@ -23,7 +23,7 @@ test.afterEach(() => { server?.stopp(); server = null; });
 
 async function starte(page, { remote, werte, breite, warnungen = 0, tafeln = true }) {
   let { vault } = baueVault({ mitRemote: remote });
-  vault = realpathSync(vault);
+  vault = realpathSync.native(vault);
   server = await starteServer(vault);
   await page.setViewportSize({ width: breite, height: 900 });
   await mockeV2(page, vault);

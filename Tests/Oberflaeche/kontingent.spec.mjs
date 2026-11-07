@@ -14,7 +14,7 @@ import { mockeKontingent, ZUSTAND as Z, JETZT } from "./mocks-kontingent.mjs";
 test.use({ timezoneId: "Europe/Berlin", locale: "de-DE" });
 
 let vault, server;
-test.beforeEach(async () => { ({ vault } = baueVault()); vault = realpathSync(vault); server = await starteServer(vault); });
+test.beforeEach(async () => { ({ vault } = baueVault()); vault = realpathSync.native(vault); server = await starteServer(vault); });
 test.afterEach(() => server?.stopp());
 
 const runde = process.env.UI_RUNDE ? `r${process.env.UI_RUNDE}-` : "";

@@ -21,11 +21,11 @@ let vault, server, bin, home;
 // stufen: je Konto die Stufe im Vault; mitClaude: false → kein `claude` im Suchpfad; vertraut: false → Vault von außen geöffnet
 async function aufbauen({ stufen = { a: "lesen", b: "lesen", g: "gesperrt", c: "lesen" }, mitClaude = true, vertraut = true } = {}) {
   ({ vault } = baueVault());
-  vault = realpathSync(vault);
-  const wurzel = realpathSync(mkdtempSync(join(tmpdir(), "brain-ui-frage-")));
+  vault = realpathSync.native(vault);
+  const wurzel = realpathSync.native(mkdtempSync(join(tmpdir(), "brain-ui-frage-")));
   home = join(wurzel, "home"); bin = join(wurzel, "bin"); const support = join(wurzel, "support");
   for (const d of [home, bin, support]) mkdirSync(d);
-  const profil = (n) => { const p = join(home, n); mkdirSync(p); writeFileSync(join(p, "settings.json"), "{}"); return realpathSync(p); };
+  const profil = (n) => { const p = join(home, n); mkdirSync(p); writeFileSync(join(p, "settings.json"), "{}"); return realpathSync.native(p); };
   const a = profil(".claude-arbeit"), b = profil(".claude-privat"), g = profil(".claude-geheim"), c = profil(".codex");
   const ein = (id, programm, ordner, name, extra = {}) => [id, { programm, ordner, standard: false, name, ordnerKennung: K.kennungVon(ordner), ...extra }];
   K.aendere(support, () => ({ version: 1,

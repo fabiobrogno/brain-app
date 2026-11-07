@@ -16,7 +16,7 @@ import { starteStatisch, mockeEinrichtung, oeffneEinrichtungImStudio } from "./m
 const BILDER = process.env.UI_P9_BILDER;
 if (BILDER) mkdirSync(BILDER, { recursive: true });
 let vault, server;
-test.beforeEach(async () => { ({ vault } = baueVault()); vault = realpathSync(vault); server = await starteServer(vault); });
+test.beforeEach(async () => { ({ vault } = baueVault()); vault = realpathSync.native(vault); server = await starteServer(vault); });
 test.afterEach(() => { server?.stopp(); server = null; });
 
 const NOTIZ = "10_notizen/Reise nach Lissabon.md";
