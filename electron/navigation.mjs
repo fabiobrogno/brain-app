@@ -18,14 +18,16 @@ const istGithub = (host) => /^(www\.)?github\.com$/i.test(host);
 
 /**
  * Darf diese Adresse im Standardbrowser geöffnet werden? → { ok:true, url } | { ok:false, grund:"adresse-nicht-erlaubt" }
- * `nurHttps` (Aktion `extern`): nur https; sonst (Links in der Seite) auch http. Bei offener Einrichtung nur GitHub (Gerätecode) und die Anmelde-Domänen.
+ * `nurHttps` (Aktion `extern`): nur https; sonst (Links in der Seite) auch http. Bei offener Einrichtung immer nur https, nur GitHub (Gerätecode) und die Anmelde-Domänen. Nie Zugangsdaten oder Port in der Adresse.
  */
 export function externPruefen(adresse, { nurHttps = true, einrichtungOffen = false } = {}) {
   const nein = { ok: false, grund: "adresse-nicht-erlaubt" };
   const u = lies(adresse);
   if (!u || !u.hostname) return nein;
-  if (u.protocol !== "https:" && !(!nurHttps && u.protocol === "http:")) return nein;
-  if (u.username || u.password) return nein;
+  // Bei offener Einrichtung nur https (wie EinrichtungsOverlay.externErlaubt); sonst http nur für Links der Seite
+  const httpOk = !nurHttps && !einrichtungOffen;
+  if (u.protocol !== "https:" && !(httpOk && u.protocol === "http:")) return nein;
+  if (u.username || u.password || u.port) return nein; // kein Port außer dem Standard (URL macht :443 / :80 zu „“)
   const host = u.hostname.toLowerCase();
   if (einrichtungOffen && !(istGithub(host) || hostIn(host, ANMELDE_DOMAENEN))) return nein;
   return { ok: true, url: u.href };

@@ -319,7 +319,7 @@ jobs:
   # in der Zusammenfassung des Laufs. Sobald Windows durchgehend grün ist, entfällt die Bedingung `matrix.os == 'windows-latest'`.
   electron-probe:
     needs: aenderungen
-    if: needs.aenderungen.outputs.vorab == 'true'
+    if: needs.aenderungen.outputs.node == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
@@ -338,6 +338,7 @@ jobs:
           cache: npm
           cache-dependency-path: electron/package-lock.json
       - name: Abhängigkeiten (Electron lädt seine Programmdatei beim Installieren)
+        continue-on-error: ${{ matrix.os == 'windows-latest' }}
         run: npm ci --no-audit --no-fund
         working-directory: electron
       # Chromium-Sandbox unter Linux: der SUID-Helfer gehört root, und Ubuntu 24.04 sperrt unprivilegierte User-Namensräume. So läuft die App MIT Sandbox (kein --no-sandbox).

@@ -165,13 +165,13 @@ export function kindUmgebung(zusatz = {}) {
   for (const k of Object.keys(e)) {
     if ((k.startsWith("NODE_") && k !== "NODE_EXTRA_CA_CERTS") || k.startsWith("ELECTRON_") || k.startsWith("DYLD_") || k.startsWith("LD_")) delete e[k];
   }
-  // Läuft die Werkstatt als Node der Electron-Hülle (ELECTRON_RUN_AS_NODE, electron/bruecke.mjs), ist `process.execPath` die Electron-Datei: Kinder, die sie als Node starten
-  // (Kern-Skripte, MCP-Server), brauchen genau diese eine Variable, sonst öffnete sich ein zweites Fenster. Außerhalb von Electron (process.versions.electron fehlt) nie.
-  if (process.versions.electron && process.env.ELECTRON_RUN_AS_NODE === "1") e.ELECTRON_RUN_AS_NODE = "1";
   const aus = { ...e, ...zusatz };
   if (typeof aus.PATH === "string") { const p = bereinigterPfad(aus.PATH); if (p) aus.PATH = p; else delete aus.PATH; }
   return aus;
 }
+// Für Kinder, die `process.execPath` als Node starten: läuft die Werkstatt als Node der Electron-Hülle (ELECTRON_RUN_AS_NODE, electron/bruecke.mjs), ist execPath die
+// Electron-Datei und braucht genau diese Variable (sonst öffnete sich ein zweites Fenster). Außerhalb von Electron (process.versions.electron fehlt) ändert sich nichts.
+export const alsNode = (env) => (process.versions.electron ? { ...env, ELECTRON_RUN_AS_NODE: "1" } : env);
 export const testmodus = () => process.env.BRAIN_TESTMODUS === "1";
 
 // Namensregeln, die Baum, Suche, Notiz-Index und Schreibschutz gemeinsam nutzen (Vergleich ohne Groß/klein, NFC).

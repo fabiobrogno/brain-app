@@ -148,7 +148,7 @@ test("Vertrag: ordner-waehlen liefert {pfad, notizen, ordner}, Abbruch liefert n
   expect(await aktion(fenster, "ordner-waehlen", "kein objekt")).toEqual({ ok: false, grund: "ungueltig" });
 });
 
-test("Navigation: fremde Adressen laden nie im Fenster, Links gehen nur als http(s) in den Standardbrowser, Netz ist gesperrt", async () => {
+test("Navigation: fremde Adressen laden nie im Fenster, Links gehen nur als http(s) in den Standardbrowser, Netz ist gesperrt (CSP und onBeforeRequest)", async () => {
   lauf = await starteApp();
   const { app, fenster } = lauf;
   await spioniere(app);
@@ -161,21 +161,68 @@ test("Navigation: fremde Adressen laden nie im Fenster, Links gehen nur als http
   await fenster.evaluate(() => new Promise((ok) => setTimeout(ok, 500)));
   expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1);
   expect((await aufrufe(app)).map((a) => a[1]).sort()).toEqual(["http://example.net/", "https://example.org/a"]);
-  // Netzzugriff der Seite ist gesperrt (nur kortex://)
+  // Netzzugriff der Studio-Seite ist gesperrt (CSP connect-src 'self')
   const netz = await fenster.evaluate(() => fetch("https://example.com/", { mode: "no-cors" }).then(() => "offen", () => "gesperrt"));
   expect(netz).toBe("gesperrt");
+  // onBeforeRequest allein: eine Seite OHNE CSP (data:) in derselben Sitzung kommt ebenfalls nicht ins Netz (ohne die Sperre ginge die Anfrage hinaus)
+  const ohneCsp = await app.evaluate(async ({ BrowserWindow }) => {
+    const w = new BrowserWindow({ show: false });
+    try { await w.loadURL("data:text/html,<p>x"); return await w.webContents.executeJavaScript(`fetch("https://example.com/", { mode: "no-cors" }).then(() => "offen", () => "gesperrt")`); }
+    finally { w.destroy(); }
+  });
+  expect(ohneCsp).toBe("gesperrt");
   // schreibende Anfrage ohne JSON wird abgewiesen
   const status = await fenster.evaluate(() => fetch("/api/info", { method: "POST", headers: { "Content-Type": "text/plain" }, body: "x" }).then(async (r) => [r.status, await r.text()]));
   expect(status[0]).toBe(415);
+  // zu großer Körper: 413 (Grenze der Werkstatt, 8 MB), nie eine Anfrage ohne Antwort
+  const gross = await fenster.evaluate(() => fetch("/api/datei", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pfad: "x.md", inhalt: "x".repeat(9 * 1024 * 1024) }) }).then((r) => r.status));
+  expect(gross).toBe(413);
 });
 
 test("Erster Start ohne Vault: die Hülle öffnet die Einrichtung selbst", async () => {
   lauf = await starteApp({ mitVault: false });
   const { fenster } = lauf;
   await expect(fenster.locator("#einrichtung-host .e-win")).toHaveCount(1, { timeout: 20_000 });
-  // die Rechte der Einrichtung sind nach der Bestätigung der Seite offen (kopieren geht), vorher nicht
+  // die Seite hat die Sitzung bestätigt: die Rechte der Einrichtung sind offen (kopieren geht) …
+  await expect.poll(() => aktion(fenster, "kopieren", "x")).toEqual({ ok: true });
+  // … und nach „zu“ wieder gesperrt
   expect(await aktion(fenster, "einrichtung-sitzung", { offen: false })).toEqual({ ok: true });
   expect(await aktion(fenster, "kopieren", "x")).toEqual({ ok: false, grund: "einrichtung-nicht-offen" });
+});
+
+test("Schließen sichert: Text tippen, sofort schließen — die Datei ist gespeichert", async () => {
+  lauf = await starteApp();
+  const { app, fenster, vault } = lauf;
+  await fenster.evaluate(() => window.studio.befehl("neu"));
+  await expect(fenster.locator("#editor .cm-editor")).toHaveClass(/cm-focused/);
+  await fenster.keyboard.type("Schnell zu");
+  await fenster.keyboard.press("Enter");
+  await fenster.keyboard.type("sofort geschlossen");
+  const ende = app.waitForEvent("close");
+  await app.evaluate(({ BrowserWindow }) => { BrowserWindow.getAllWindows()[0].close(); });
+  await ende;
+  const datei = readdirSync(join(vault, "00_inbox")).find((n) => n.startsWith("schnell-zu"));
+  expect(datei).toBeTruthy();
+  expect(readFileSync(join(vault, "00_inbox", datei), "utf8")).toBe("# Schnell zu\nsofort geschlossen\n");
+  lauf.app = null;
+});
+
+test("Ohne node im PATH schreibt Kortex weder MCP-Eintrag noch Statuszeile (klarer Grund), nichts in ~/.claude", async () => {
+  const leer = mkdtempSync(join(tmpdir(), "kortex-ohne-node-"));
+  lauf = await starteApp({ extra: { PATH: leer } });
+  const { fenster, home } = lauf;
+  const rufe = (pfad, body) => fenster.evaluate(([p, b]) => fetch(p, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) }).then(async (r) => [r.status, await r.json()]), [pfad, body]);
+  const [s1, j1] = await rufe("/api/ki/kontingent/statuszeile", { konto: "k_00000000", an: true, einwilligung: true });
+  expect(s1).toBe(409);
+  expect(j1).toMatchObject({ art: "kein-node" });
+  expect(j1.fehler).toContain("Node.js");
+  const [s2, j2] = await rufe("/api/mcp/verbinden", { ziel: "claude" });
+  expect(s2).toBe(404);
+  expect(j2.fehler).toContain("Node.js");
+  const info = await fenster.evaluate(() => fetch("/api/info").then((r) => r.json()));
+  expect(info.mcpBefehl).toBeNull();
+  expect(existsSync(join(home, ".claude"))).toBe(false);
+  expect(existsSync(join(home, ".claude.json"))).toBe(false);
 });
 
 test("Fenster-Foto der eigenen App", async ({}, testInfo) => {

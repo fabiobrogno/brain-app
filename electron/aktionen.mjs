@@ -22,6 +22,14 @@ export const MAX_TITEL = 120, MAX_HINWEIS = 200, MAX_FEHLERTEXT = 300, MAX_FEHLE
 // damit `aktion("extern", …)` wie in der App gleich meldet, ob die Aktion angenommen wurde).
 export const ASYNCHRON = ["ordner-waehlen", "ordner-zeigen", "git-pruefen", "git-installieren", "mitteilung-probe"];
 
+// Wo die Einrichtung einsteigt (wie EinrichtungsOverlay.einstieg in Swift): ein verlangter Einstieg gilt immer; mit gewähltem Weg oder ohne Vault beginnt die Seite beim Vault (kein `ab`);
+// sonst macht sie nach dem zuletzt erledigten Schritt weiter: nach „ki“ bei der Sicherung, sonst (auch nach „sicherung“ = alles erledigt) bei der KI.
+export function einstieg({ ab, weg, vaultDa, letzterSchritt }) {
+  if (ab) return ab;
+  if (weg || !vaultDa) return null;
+  return letzterSchritt === "ki" ? "sicherung" : "ki";
+}
+
 // Text für Fenster und Dialoge: Steuer- und Zeilentrennzeichen werden zu Leerzeichen, Formatzeichen (u. a. Rechts-nach-links-Umschalter) entfallen, Ränder weg, auf `max` Zeichen gekürzt. Leer → null.
 export function einzeilig(text, max) {
   const s = String(text).replace(/[\p{Cc}\p{Zl}\p{Zp}]/gu, " ").replace(/\p{Cf}/gu, "").trim();
@@ -150,7 +158,10 @@ export function erzeugeAktionen(abh) {
       if ((ab !== null && !EINSTIEGE.includes(ab)) || (weg !== null && !WEGE.includes(weg))) return UNGUELTIG();
       einrichtungAngefordert = true;
       abh.protokoll("aktion einrichtung-oeffnen");
-      abh.befehlAnStudio("einrichtung", { ...(ab ? { ab } : {}), ...(weg ? { weg } : {}) });
+      Promise.resolve(abh.vaultPfad()).catch(() => null).then((vault) => {
+        const von = einstieg({ ab, weg, vaultDa: !!vault, letzterSchritt: abh.einrichtung.lese(abh.support)?.letzterSchritt ?? null });
+        abh.befehlAnStudio("einrichtung", { ...(von ? { ab: von } : {}), ...(weg ? { weg } : {}) });
+      });
       return OK;
     },
     "mitteilung-probe": async () => abh.mitteilung({ titel: "Kortex", text: "So sehen Mitteilungen von Kortex aus." }) ? OK : nein("nicht-verfuegbar"),

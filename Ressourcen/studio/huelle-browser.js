@@ -80,8 +80,12 @@
     "einrichtung-schritt": function (w) { return json("POST", "/_kortex/einrichtung", { schritt: w && w.schritt }).then(function () { return OK; }, function () { return OK; }); },
     "einrichtung-oeffnen": function (w) {
       einrichtungAngefordert = true;
-      var befehl = function () { try { window.studio.befehl("einrichtung", w || {}); } catch (e) { /* Studio noch nicht da */ } };
-      Promise.resolve().then(befehl);
+      var arg = w || {};
+      var befehl = function () { try { window.studio.befehl("einrichtung", arg); } catch (e) { /* Studio noch nicht da */ } };
+      // Einstieg wie EinrichtungsOverlay.einstieg (App): mit Vault und ohne `ab`/`weg` macht die Einrichtung nach dem letzten erledigten Schritt weiter (nach „ki“ bei der Sicherung, sonst bei der KI)
+      Promise.all([json("GET", "/api/info"), json("GET", "/_kortex/einrichtung")]).then(function (r) {
+        if (!arg.ab && !arg.weg && r[0] && r[0].vault) arg = Object.assign({}, arg, { ab: r[1] && r[1].letzterSchritt === "ki" ? "sicherung" : "ki" });
+      }, function () { /* ohne Stand bleibt es beim Aufruf der Seite */ }).then(befehl);
       return OK;
     },
     "mitteilung-probe": mitteilung,
