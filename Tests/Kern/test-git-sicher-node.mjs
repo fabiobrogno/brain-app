@@ -8,7 +8,7 @@
 // Umgebung der Kindprozesse: nur explizit gebaut (kein CLAUDE_CONFIG_DIR, CODEX_HOME, XDG_*, GIT_*; HOME/USERPROFILE im Temp-Ordner).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, mkdirSync, existsSync, chmodSync, readFileSync, rmSync, symlinkSync, realpathSync } from "node:fs";
+import { cpSync, mkdtempSync, writeFileSync, mkdirSync, existsSync, chmodSync, readFileSync, rmSync, symlinkSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -40,9 +40,9 @@ if (!WIN) VARIANTEN.push({ name: "sh", cmd: join(KERN, "git-sicher"), pre: [] })
 if (WIN) VARIANTEN.push({ name: "exe", cmd: starterFuer("git-sicher", { support }), pre: [] });
 
 // Ein Vault (Name mit Leerzeichen, &, %, ^ — die Zeichen, die eine .cmd umdeuten würde) mit einem Commit; eine Marke, die jedes Vault-Programm schreibt.
-function neuerVault() {
+function neuerVault(ordnerName = "Vault & 50% ^x (1)") {
   const basis = realpathSync(mkdtempSync(join(tmpdir(), "gs-")));
-  const v = join(basis, "Vault & 50% ^x (1)");
+  const v = join(basis, ordnerName);
   mkdirSync(v);
   g(v, "init", "-q", "-b", "main");
   writeFileSync(join(v, "a.md"), "a\n");
@@ -247,10 +247,11 @@ test("stdin, stdout, stderr und Exit-Code gehen unverändert durch (hash-object 
 });
 
 test("Windows: gitBefehl liefert den Starter (git-sicher.exe), ohne Vertrauen git-gesperrt.exe: Exit 126, kein git, --version harmlos", { skip: WIN ? false : "nur Windows" }, () => {
-  const s = neuerVault();
+  const s = neuerVault("Vault"); // schlichter Name: hier zählt der Starter, nicht die Pfadregeln für Vault-Namen
+  cpSync(join(KERN, "tests", "fixture"), s.v, { recursive: true }); // ein richtiger Vault (brain.config.json, Ordner), sonst findet vaultPfad ihn nicht
   const env = umgebung({ BRAIN_VAULT: s.v });
-  const lesen = (code) => spawnSync(NODE, ["--input-type=module", "-e",
-    `import { vaultPfad } from ${JSON.stringify(pathToFileURL(join(KERN, "pfade.mjs")).href)}; import { gitBefehl } from ${JSON.stringify(pathToFileURL(join(KERN, "werkzeug.mjs")).href)}; ${code}`], { encoding: "utf8", env }).stdout;
+  const lesen = (code) => { const r = spawnSync(NODE, ["--input-type=module", "-e",
+    `import { vaultPfad } from ${JSON.stringify(pathToFileURL(join(KERN, "pfade.mjs")).href)}; import { gitBefehl } from ${JSON.stringify(pathToFileURL(join(KERN, "werkzeug.mjs")).href)}; ${code}`], { encoding: "utf8", env }); assert.ok(r.stdout, `keine Ausgabe: ${r.stderr}`); return r.stdout; };
   const sicher = lesen(`process.stdout.write(gitBefehl({ ohneVault: true }));`);
   assert.match(sicher, /git-sicher\.exe$/); assert.ok(existsSync(sicher) && existsSync(`${sicher}.ini`));
   assert.ok(roh(sicher).toLowerCase().startsWith(roh(support).toLowerCase()), "der Starter liegt im Support-Ordner");
