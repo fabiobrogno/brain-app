@@ -1,7 +1,7 @@
 // Brain Studio v2 — Oberfläche. Vier Spalten: Seitenleiste · Notizliste · Editor · Eigenschaften, Statusleiste.
 // Zustand, Navigation, Editor-Anbindung (verlustfrei), Speichern/Konflikt, Dialoge, Vault-Verwaltung.
 import { T, PRODUKT } from "./texte.js";
-import { api, aktion, aktionMitAntwort, inApp, browserModus, mitHuelle, kannOrdnerZeigen, gitGesperrt, andererVault, nichtVertraut, ausgangUnklar, zeitText as zeitFehlerText, ladeStandNeu } from "./api.js";
+import { api, aktion, aktionMitAntwort, inApp, imElectron, kannGlobaleKuerzel, browserModus, mitHuelle, kannOrdnerZeigen, gitGesperrt, andererVault, nichtVertraut, ausgangUnklar, zeitText as zeitFehlerText, ladeStandNeu } from "./api.js";
 import { erstelleEditor } from "./editor.js";
 import { h, dialog, dialogOffen, schliesseDialoge, toast, vorMinuten, dateiName, ohneEndung, ordnerVon, istBearbeitbar, speichereLokal, leseLokal, leseEntwurf, speichereEntwurf, sucheGrad, suchFormen, ausTabelle, arbeitBeginnt, laufendeArbeiten } from "./hilfen.js";
 import { symbol, GROESSE } from "./symbole.js";
@@ -2427,7 +2427,7 @@ const einstOffen = () => !!einstModul?.istOffen();
 const kurzPfadVon = (p) => String(p || "").replace(/^\/Users\/[^/]+(?=\/|$)/, "~");
 function einstellungenKontext() {
   return {
-    inApp: inApp(), ordnerZeigen: kannOrdnerZeigen(), browser: browserModus(), mitHuelle: mitHuelle(), aktion, kurzPfad: kurzPfadVon,
+    inApp: inApp(), ordnerZeigen: kannOrdnerZeigen(), electron: imElectron(), globale: kannGlobaleKuerzel(), browser: browserModus(), mitHuelle: mitHuelle(), aktion, kurzPfad: kurzPfadVon,
     info: () => S.info, git: () => S.git, version: () => S.info?.appVersion || "",
     wendeAn: wendeEinstellungenAn,
     oeffneKi, oeffneKonten, oeffneRemote, oeffneLizenzen, sync, beiVerbunden: () => { S.kiVerbunden = true; zeichneStatus(); },

@@ -1,0 +1,32 @@
+/* Schnell erfassen (Electron-Hülle, Paket W2b): kleines, rahmenloses Fenster im Stil von Kortex. Farben kommen aus schemata.css (dieselben Namen wie das Studio). */
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--papier); color: var(--text); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-font-smoothing: antialiased; user-select: none; }
+#fenster { height: 100%; display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid var(--linie-stark); border-radius: 12px; background: var(--papier); overflow: hidden; -webkit-app-region: drag; }
+#fenster button, #fenster textarea { -webkit-app-region: no-drag; }
+.kopf { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.segment { display: inline-flex; padding: 2px; border-radius: 8px; background: var(--seite-2); }
+.segment button { border: 0; background: transparent; color: var(--text-2); font: inherit; padding: 3px 14px; border-radius: 6px; cursor: pointer; }
+.segment button[aria-checked="true"] { background: var(--segment-aktiv); color: var(--text); box-shadow: var(--schatten-klein); }
+.vault { color: var(--text-2); max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.eingabe { height: 96px; padding: 8px 10px; border: 1px solid var(--linie); border-radius: 10px; background: var(--eingabe-grund); }
+textarea { display: block; width: 100%; height: 100%; resize: none; border: 0; outline: 0; padding: 0; background: transparent; color: var(--text); font-size: 16px; line-height: 1.4; font-family: inherit; user-select: text; }
+textarea::placeholder { color: var(--text-3); }
+.eingabe:focus-within { border-color: var(--akzent-rand); box-shadow: 0 0 0 3px var(--akzent-weich); }
+.zeile { display: flex; align-items: center; gap: 8px; height: 26px; }
+.hinweis { color: var(--text-2); }
+.chip-huelle { display: inline-flex; align-items: center; gap: 2px; padding: 0 4px 0 0; border-radius: 999px; background: var(--seite-2); }
+.chip-huelle:has(.chip[data-aktiv="1"]) { background: var(--akzent-weich); }
+.chip { border: 0; background: transparent; color: var(--text-2); font: inherit; padding: 2px 10px; border-radius: 999px; cursor: pointer; }
+.chip[data-aktiv="1"] { color: var(--akzent-tinte); }
+.chip-aus { border: 0; background: transparent; color: var(--text-3); cursor: pointer; font: inherit; padding: 0 4px; }
+.meldung { min-height: 34px; color: var(--text-2); }
+.meldung[data-art="fehler"] { color: var(--gelb); }
+.meldung[data-art="ok"] { color: var(--akzent-tinte); }
+.fuss { margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.kuerzel { color: var(--text-3); font-size: 12px; }
+.haupt { border: 0; border-radius: 8px; padding: 5px 14px; font: inherit; font-weight: 600; cursor: pointer; background: var(--akzent); color: var(--akzent-text); }
+.haupt:hover:not(:disabled) { background: var(--akzent-hover); }
+.haupt:disabled { opacity: .4; cursor: default; }
+button:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
+[hidden] { display: none !important; }
+@media (prefers-reduced-motion: no-preference) { #fenster { animation: ein .16s ease-out; } @keyframes ein { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } } }
