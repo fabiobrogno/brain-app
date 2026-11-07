@@ -21,6 +21,8 @@ pruefe "Ressourcen/mcp/brain-mcp.mjs"       fftft
 pruefe "Sources/BrainCore/Laufzeit.swift"   tffft
 pruefe "Tests/BrainCoreTests/A.swift"       tffft
 pruefe "Tests/Node/v2-api.test.mjs"         fftft
+pruefe "electron/haupt.mjs"                 fftft
+pruefe "electron/package-lock.json"         fftft
 pruefe "Tests/Oberflaeche/v2.spec.mjs"      ffftt
 pruefe "scripts/baue-app.sh"                tffft
 pruefe "scripts/ci-aenderungen.sh"            ttttt

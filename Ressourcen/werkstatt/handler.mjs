@@ -156,7 +156,12 @@ export function erzeugeHandler(o) {
   // Der Eintrag bei Claude Code nennt keinen Vault: der MCP-Server folgt dem aktiven Vault aus vaults.json (Spec v2 §8).
   // Der Kern-Pfad bleibt wie er ist (kein realpath: der Symlink bin/kern ist der stabile Teil), der Paket-Pfad ist der aufgelöste (Rückfall).
   // Mit `konto` trägt der Eintrag `--konto <id>`: der Server weiß dann, für welches KI-Konto er läuft (Stufen je Vault).
+  // Ohne eigenes Node (Electron-Hülle, bis W2c ein Node mitbringt und kein absolutes `node` im PATH liegt) schreibt Kortex weder MCP-Einträge noch die Statuszeile:
+  // sie würden die Electron-Datei als „node“ nennen (o.ohneNode, werkstatt.mjs).
+  const KEIN_NODE = "Dafür braucht Kortex ein installiertes Node.js, das diese Version noch nicht mitbringt. Installiere Node.js (nodejs.org) und starte Kortex neu.";
+  const MCP_FEHLT = o.ohneNode ? KEIN_NODE : "Der MCP-Server wurde nicht gefunden.";
   const mcpArgs = (konto = null) => {
+    if (o.ohneNode) return null;
     let basis = null;
     if (kernMcp) { try { statSync(kernMcp); basis = [nodePfad, kernMcp]; } catch { /* nicht im Kern: Rückfall auf das App-Paket */ } }
     if (!basis) { try { statSync(mcpPfad); } catch { return null; } basis = [nodePfad, realpathSync(mcpPfad)]; }
@@ -486,7 +491,7 @@ export function erzeugeHandler(o) {
       // Der ausdrückliche Abgleich (nur auf Klick oder wenn die Liste fehlt/defekt ist): neue Konten eintragen, Liste reparieren, altes Profil der plist übernehmen
       case "/api/ki/konten/abgleich": nur("POST"); await migrierePflege(v); return konten.abgleich();
       case "/api/ki/kontingent": nur("GET"); return kontingent.stand({ neu: q.get("neu") === "1", aktiviert: q.get("aktiviert") === "1", vault: v ? v.wurzel : null, vaultName: v ? v.name : null });
-      case "/api/ki/kontingent/statuszeile": nur("POST"); return kontingent.schalteStatuszeile(eingabe());
+      case "/api/ki/kontingent/statuszeile": nur("POST"); if (o.ohneNode && eingabe().an === true) throw new HttpFehler(409, KEIN_NODE, { art: "kein-node" }); return kontingent.schalteStatuszeile(eingabe());
       case "/api/ki/zugriff": nur("PUT"); return konten.setzeZugriff(eingabe());
       // Frag deinen Vault (P4): Start → Long-Poll auf den Stand → Abbruch. Nichts wird gespeichert.
       case "/api/frage/bereit": nur("GET"); return frage.bereit(V());
@@ -663,7 +668,7 @@ export function erzeugeHandler(o) {
   async function trenneClaude(e) {
     const konto = kontoFuer(e, "claude");
     const a = mcpArgs(konto);
-    if (!a) throw new HttpFehler(404, "Der MCP-Server wurde nicht gefunden.");
+    if (!a) throw new HttpFehler(404, MCP_FEHLT);
     const claude = findeClaude();
     if (!claude) throw new HttpFehler(404, "Claude Code wurde nicht gefunden.");
     const frist = neueFrist(fristen.mcpVerbinden);
@@ -687,7 +692,7 @@ export function erzeugeHandler(o) {
   async function trenneCodex(e = {}) {
     const konto = kontoFuer(e, "codex");
     const a = mcpArgs(konto);
-    if (!a) throw new HttpFehler(404, "Der MCP-Server wurde nicht gefunden.");
+    if (!a) throw new HttpFehler(404, MCP_FEHLT);
     const codex = findeProgramm("codex");
     if (!codex) throw new HttpFehler(404, "Codex wurde nicht gefunden.");
     const frist = neueFrist(fristen.mcpVerbinden);
@@ -718,7 +723,7 @@ export function erzeugeHandler(o) {
     const ad = ziel ? ADAPTER[ziel] : ADAPTER.cursor;
     let kid = null; if (o.kontenAus !== true) { try { kid = konten.kontoFuerProgramm(ziel || "cursor"); } catch { /* ohne Kennung */ } }
     const text = ad.konfiguration(adapterCtx(kid));
-    if (!text) throw new HttpFehler(404, "Der MCP-Server wurde nicht gefunden.");
+    if (!text) throw new HttpFehler(404, MCP_FEHLT);
     return { json: text, ...(ziel ? { ort: ad.anzeige } : {}) };
   }
 
@@ -726,7 +731,7 @@ export function erzeugeHandler(o) {
   async function verbindeCodex(e) {
     const konto = kontoFuer(e, "codex", { anlegen: true });
     const a = mcpArgs(konto), befehl = codexBefehl(konto);
-    if (!a) throw new HttpFehler(404, "Der MCP-Server wurde nicht gefunden.", { befehl: null });
+    if (!a) throw new HttpFehler(404, MCP_FEHLT, { befehl: null });
     const codex = findeProgramm("codex");
     if (!codex) throw new HttpFehler(404, "Codex wurde nicht gefunden. Kopiere den Befehl und führe ihn im Terminal aus.", { befehl });
     const frist = neueFrist(fristen.mcpVerbinden);
@@ -761,7 +766,7 @@ export function erzeugeHandler(o) {
   async function verbindeClaude(e) {
     const konto = kontoFuer(e, "claude", { anlegen: true });
     const a = mcpArgs(konto), befehl = mcpBefehl(konto);
-    if (!a) throw new HttpFehler(404, "Der MCP-Server wurde nicht gefunden.", { befehl: null });
+    if (!a) throw new HttpFehler(404, MCP_FEHLT, { befehl: null });
     const claude = findeClaude();
     if (!claude) throw new HttpFehler(404, "Claude Code wurde nicht gefunden. Kopiere den Befehl und führe ihn im Terminal aus.", { befehl });
     const frist = neueFrist(fristen.mcpVerbinden);
@@ -797,7 +802,7 @@ export function erzeugeHandler(o) {
   // Gesamtfrist 10 s; danach (oder nach der Antwort) wird die Prozessgruppe beendet.
   async function probeUeberMcp(v, frage, anzahl, { liste = false, wer = "Claude", status = false, konto = null } = {}) {
     const a = mcpArgs();
-    if (!a) throw new HttpFehler(404, "Der MCP-Server wurde nicht gefunden.");
+    if (!a) throw new HttpFehler(404, MCP_FEHLT);
     let aktivPfad = null; try { aktivPfad = vaultsFn.aktiverVaultPfad(optV()); } catch { /* keine Liste */ }
     if (!aktivPfad || echterPfad(aktivPfad) !== v.wurzel) {
       throw new HttpFehler(409, `Dieser Vault ist in Kortex Studio nicht als aktiver Vault eingetragen — ${wer} würde ihn so nicht finden. Wähle ihn zuerst aus.`, { art: "nicht-aktiv" });

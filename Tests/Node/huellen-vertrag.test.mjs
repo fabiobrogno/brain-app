@@ -4,7 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const W = join(fileURLToPath(new URL(".", import.meta.url)), "..", "..");
 const vertrag = JSON.parse(readFileSync(join(W, "Ressourcen/studio/huellen-vertrag.json"), "utf8"));
@@ -76,4 +76,39 @@ test("Routen, die die Hülle statt der Werkstatt beantwortet (KiRoute.swift): al
     assert.ok(r.zweck && r.antwort && r.browser, `${r.pfad}: Zweck, Antwort und Browser-Verhalten`);
     assert.ok(handler.includes(`case "${r.pfad}"`), `${r.pfad}: Rückfall in der Werkstatt`);
   }
+});
+
+// ───────────── Electron-Hülle (Paket W2a, electron/) ─────────────
+test("Electron-Hülle: kennt jede Aktion des Vertrags (und nur diese), mit Beschreibung im Feld `electron`", async () => {
+  const { erzeugeAktionen } = await import(pathToFileURL(join(W, "electron/aktionen.mjs")).href);
+  const stumm = () => {};
+  const h = erzeugeAktionen({ support: "/x", vaultPfad: async () => null, openExternal: stumm, showItemInFolder: stumm, schreibeZwischenablage: stumm, waehleOrdner: async () => null, mitteilung: () => true,
+    darstellung: stumm, fensterTitel: stumm, fensterZoom: stumm, befehlAnStudio: stumm, protokoll: stumm, einrichtung: { lese: () => ({}), schreibe: stumm }, ordner: { pruefeOrdner: () => ({ ok: false }) }, git: { pruefen: () => ({}), hinweis: () => "" } });
+  assert.deepEqual([...h.namen].sort(), [...namen].sort());
+  for (const a of vertrag.aktionen) assert.ok(typeof a.electron === "string" && a.electron.length > 10, `${a.name}: Feld electron`);
+  // jede Aktion antwortet (nie unbekannt), auch mit leerem Wert: nie ein Fehler
+  for (const n of namen) { const r = await h.aktion(n, undefined); assert.notEqual(r?.grund, "unbekannt", n); assert.notEqual(r?.grund, "fehler", n); }
+  assert.deepEqual(await h.aktion("gibt-es-nicht"), { ok: false, grund: "unbekannt" });
+});
+
+test("Electron-Hülle: „nur bei offener Einrichtung“ ist dieselbe Liste wie im Vertrag und in der Browser-Hülle", async () => {
+  const { NUR_EINRICHTUNG, ASYNCHRON } = await import(pathToFileURL(join(W, "electron/aktionen.mjs")).href);
+  const ausVertrag = vertrag.aktionen.filter((a) => a.nurBeiOffenerEinrichtung).map((a) => a.name).sort();
+  assert.deepEqual([...NUR_EINRICHTUNG].sort(), ausVertrag);
+  const browser = readFileSync(join(W, "Ressourcen/studio/huelle-browser.js"), "utf8");
+  const liste = /var NUR_EINRICHTUNG = \[([^\]]*)\]/.exec(browser)?.[1] ?? "";
+  assert.deepEqual([...liste.matchAll(/"([a-z-]+)"/g)].map((m) => m[1]).sort(), ausVertrag);
+  for (const n of ASYNCHRON) assert.ok(namen.includes(n), `asynchron: ${n} steht im Vertrag`);
+});
+
+test("Electron-Hülle: Routen der Hülle haben im Vertrag ein Electron-Verhalten (Rückfall der Werkstatt)", () => {
+  for (const r of vertrag.routen) assert.ok(typeof r.electron === "string" && r.electron.length > 10, `${r.pfad}: Feld electron`);
+});
+
+test("Electron-Hülle: Preload gibt der Seite genau window.kortexHuelle (Sandbox-fähig, ohne eigene Werte-Liste), Fenster mit Isolation und Sandbox", () => {
+  const preload = readFileSync(join(W, "electron/preload.cjs"), "utf8");
+  assert.equal([...preload.matchAll(/exposeInMainWorld\(\s*"([^"]+)"/g)].map((m) => m[1]).join(), "kortexHuelle");
+  assert.doesNotMatch(preload, /require\((?!"electron")/, "im Sandbox-Preload nur electron laden");
+  const haupt = readFileSync(join(W, "electron/haupt.mjs"), "utf8");
+  for (const [schluessel, soll] of [["contextIsolation", "true"], ["nodeIntegration", "false"], ["sandbox", "true"], ["webSecurity", "true"]]) assert.match(haupt, new RegExp(`${schluessel}: ${soll}`), schluessel);
 });

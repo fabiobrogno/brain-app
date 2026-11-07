@@ -248,6 +248,10 @@ export function aktion(name, wert) {
 export const inApp = () => !!window.webkit?.messageHandlers?.aktion;
 // Der Browser-Dienst (Vorschau für Windows/Linux): Hülle ohne diese nativen Dinge.
 export const browserModus = () => !inApp() && !!browserHuelle();
+// Die Electron-Hülle (Windows/Linux, Paket W2a, electron/): wie der Browser ohne Dock, Übersicht und globale Kürzel (browserModus bleibt wahr), kann aber den Dateimanager zeigen.
+export const imElectron = () => !inApp() && browserHuelle()?.art === "electron";
+// „Im Dateimanager zeigen“ (Aktion ordner-zeigen) gibt es in der App und in der Electron-Hülle, nicht im Browser.
+export const kannOrdnerZeigen = () => inApp() || imElectron();
 // Eine Hülle ist da (App oder Browser): Einrichtung, Zwischenablage, Anmelden im Fenster laufen über den Vertrag.
 export const mitHuelle = () => inApp() || !!browserHuelle();
 // Aktion mit Antwort der Hülle (z. B. "ordner-waehlen" → {pfad}|null). Im Browser ohne Hülle: undefined.

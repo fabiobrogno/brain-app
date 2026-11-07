@@ -8,7 +8,7 @@ import { join, basename, relative, sep, isAbsolute } from "node:path";
 import { createHash, randomBytes } from "node:crypto";
 import { execFile } from "node:child_process";
 import { pathToFileURL } from "node:url";
-import { HttpFehler, MAX_DATEI, inboxOrdnerVon, vorlagenOrdnerVon, inboxHinweisVon, loese, imVault, falte, kindUmgebung, supportOrdner, kernOrdner, BEARBEITBAR, generiertName, wikiGeneriert, gesperrterName } from "./basis.mjs";
+import { HttpFehler, MAX_DATEI, inboxOrdnerVon, vorlagenOrdnerVon, inboxHinweisVon, loese, imVault, falte, kindUmgebung, alsNode, supportOrdner, kernOrdner, BEARBEITBAR, generiertName, wikiGeneriert, gesperrterName } from "./basis.mjs";
 import { pruefeText, leseKopf } from "./pruefung.mjs";
 import { heuteIso } from "./zeit.mjs";
 import { zielZuNeuerNotiz, ordnerVonPfad } from "./wikilink.mjs";
@@ -462,7 +462,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
     return new Promise((ok) => {
       // --vault UND BRAIN_VAULT = dieser Vault: eine vom Start geerbte Variable (anderer Vault nach einem Wechsel in der Oberfläche) ließe
       // den Kern sonst auf dem Startvault arbeiten.
-      execFile(process.execPath, [kitPfad, "--vault", wurzel, "gesundheit", "--json"], { cwd: wurzel, timeout: 20_000, maxBuffer: 8 * 1024 * 1024, env: kindUmgebung({ NO_COLOR: "1", BRAIN_VAULT: wurzel }) },
+      execFile(process.execPath, [kitPfad, "--vault", wurzel, "gesundheit", "--json"], { cwd: wurzel, timeout: 20_000, maxBuffer: 8 * 1024 * 1024, env: alsNode(kindUmgebung({ NO_COLOR: "1", BRAIN_VAULT: wurzel })) },
         (err, stdout) => {
           let wert = { verfuegbar: false };
           try { const j = JSON.parse(String(stdout)); if (j && typeof j === "object") wert = j; } catch { /* Kit fehlt/defekt/Zeitlimit */ }
@@ -483,7 +483,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
     if (rfCache && Date.now() - rfCache.t < 120_000) return rfCache.wert;
     const wert = await new Promise((ok) => {
       execFile(process.execPath, ["--input-type=module", "-e", RF_SKRIPT, pathToFileURL(rueckfragenPfad).href, wurzel],
-        { cwd: wurzel, timeout: 20_000, maxBuffer: 1024 * 1024, env: kindUmgebung({ BRAIN_VAULT: wurzel }) }, (err, stdout) => {
+        { cwd: wurzel, timeout: 20_000, maxBuffer: 1024 * 1024, env: alsNode(kindUmgebung({ BRAIN_VAULT: wurzel })) }, (err, stdout) => {
           try { const j = JSON.parse(String(stdout)); if (j && Number.isFinite(j.f) && Number.isFinite(j.w)) return ok({ verfuegbar: true, offen: j.f + j.w }); } catch { /* keine Zahl statt einer falschen */ }
           ok({ verfuegbar: false });
         });
@@ -531,7 +531,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
     if (!existsSync(kitPfad)) return Promise.reject(new HttpFehler(503, "Der Abgleich ist gerade nicht verfügbar (der Kern fehlt)."));
     return new Promise((ok, nein) => {
       const k = execFile(process.execPath, [kitPfad, "--vault", wurzel, "abgleich", unter, ...(eingabe ? ["--stdin"] : [])],
-        { cwd: wurzel, timeout: frist, maxBuffer: 64 * 1024 * 1024, env: kindUmgebung({ BRAIN_VAULT: wurzel, BRAIN_APP_SUPPORT: opts.support || supportOrdner() }) }, (err, stdout) => {
+        { cwd: wurzel, timeout: frist, maxBuffer: 64 * 1024 * 1024, env: alsNode(kindUmgebung({ BRAIN_VAULT: wurzel, BRAIN_APP_SUPPORT: opts.support || supportOrdner() })) }, (err, stdout) => {
           let j = null; try { j = JSON.parse(String(stdout).trim().split("\n").pop()); } catch { /* keine Antwort */ }
           if (!j) return nein(new HttpFehler(err && err.killed ? 504 : 500, err && err.killed ? "Der Abgleich hat zu lange gebraucht und wurde abgebrochen." : "Der Abgleich ist fehlgeschlagen."));
           if (j.ok === false) { const { ok: _o, fehler, status, ...extra } = j; return nein(new HttpFehler(Number.isInteger(status) ? status : 500, fehler || "Der Abgleich ist fehlgeschlagen.", extra)); }
