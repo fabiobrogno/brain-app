@@ -79,8 +79,11 @@ test("Vervollständigung: # im Text bietet Tags an, Enter übernimmt; in Übersc
   await expect(liste).toBeVisible();
   await expect(liste.locator("li")).toContainText(["projekt", "projekt/atlas", "projekt/zeitplan"]);
   await bild(page, "03-tag-vervollstaendigung");
-  await page.keyboard.press("ArrowDown");
-  await expect(liste.locator('li[aria-selected="true"]')).toContainText("projekt/atlas");
+  // CodeMirror nimmt Pfeile erst kurz nach dem Öffnen der Liste an: so lange wiederholen, bis die Auswahl sitzt
+  await expect(async () => {
+    await page.keyboard.press("ArrowDown");
+    await expect(liste.locator('li[aria-selected="true"]')).toContainText("projekt/atlas", { timeout: 400 });
+  }).toPass({ timeout: 8000 });
   await page.keyboard.press("Enter");
   await expect(page.locator(".cm-content .cm-line").last()).toHaveText("Neu #projekt/atlas");
   // Überschrift: kein Menü
