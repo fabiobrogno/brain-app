@@ -734,13 +734,13 @@ export async function oeffneEinstellungen({ api, kontext, bereich = null, ziel =
   }
   if (!Z.offen) return false;
   Z.kiBraucht = 0;
-  if (Z.k.browser) entferneNurApp(); // Browser-Dienst: was es dort nicht gibt, wird nicht gezeigt
+  if (Z.k.browser && !Z.k.electron) entferneNurApp(); // Browser-Dienst: was es dort nicht gibt, wird nicht gezeigt (die Electron-Hülle kann App-Symbol und Systemmitteilungen)
   entferneOhneGlas();
   Z.dz = erzeugeDarstellung({ wert: (k) => wertVon(k), aendere, mac: !/Win|Linux/i.test(navigator.platform || ""),
     vorschau: (k, n) => { const werte = { ...Z.daten.werte, [k]: n }; Z.k?.wendeAn?.(werte); Z.dz.meldeLive(werte); } });
   const bt = BEREICHE.find((b) => b.id === "tasten");
   if (bt && !bt.abschnitte.length) bt.abschnitte = tastenAbschnitte(); // eine Zeile je Befehl aus dem Register (tastenkuerzel-register.js), damit auch die Suche der Seite sie findet
-  Z.tasten = erzeugeTasten({ inApp: Z.k.inApp, browser: !!Z.k.browser, beiSpeichern: zeigeStand });
+  Z.tasten = erzeugeTasten({ inApp: Z.k.inApp, browser: !!Z.k.browser, globale: !!Z.k.globale, beiSpeichern: zeigeStand });
   Z.ki = erzeugeKi({ api, k: kontext, einstellung: { lies: (k) => wertVon(k), schreibe: (k, v) => aendere(k, v) }, zeigeZiel: (ziel) => navigiere("ki", ziel), beiBraucht: (n) => { if (n === Z.kiBraucht) return; Z.kiBraucht = n; if (Z.host?.querySelector(".e-liste")) renderNav(Z.ergebnis ? Z.ergebnis.bereiche : null); } });
   host.replaceChildren(baueGeruest());
   zeichneInhalt();

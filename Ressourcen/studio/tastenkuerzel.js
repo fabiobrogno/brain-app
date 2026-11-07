@@ -5,7 +5,7 @@
 // Die reine Logik (Schreibweise, Konflikte, reservierte Kürzel) steht in tastenkuerzel-logik.js und wird auch in Node getestet.
 import { REGISTER } from "./tastenkuerzel-register.js";
 import * as L from "./tastenkuerzel-logik.js";
-import { api, aktion, aktionMitAntwort, inApp } from "./api.js";
+import { api, aktion, aktionMitAntwort, kannGlobaleKuerzel } from "./api.js";
 
 export { REGISTER, L as logik };
 export const istMac = () => /Mac|iPhone|iPad/.test(navigator.platform || "");
@@ -56,7 +56,7 @@ export async function schreibe(aenderung) {
     if (Z.stand === null) await lade(); // noch nie gelesen: erst den Stand holen
     const r = await api.tastenkuerzelSchreiben(aenderung, Z.stand);
     uebernimm(r);
-    if (inApp()) aktion("kuerzel-geaendert"); // die App liest die Datei neu: Menüs und globale Kürzel folgen sofort
+    if (kannGlobaleKuerzel()) aktion("kuerzel-geaendert"); // die App (und die Electron-Hülle) liest die Datei neu: Menüs und globale Kürzel folgen sofort
     return r;
   } catch (e) {
     Z.ueber = vorher; berechne(); melde();
@@ -66,7 +66,7 @@ export async function schreibe(aenderung) {
 }
 // Globales Kürzel: erst fragt die App, ob macOS es hergibt (belegt, reserviert, Systemkürzel). → { ok: true } | { ok: false, text } ; ohne App (Browser) gibt es nichts zu melden
 export async function pruefeGlobal(id, kuerzel) {
-  if (!inApp() || !befehl(id)?.global) return { ok: true };
+  if (!kannGlobaleKuerzel() || !befehl(id)?.global) return { ok: true };
   const r = await aktionMitAntwort("kuerzel-global", { id, kuerzel });
   if (r && typeof r === "object" && r.ok === false) return { ok: false, text: String(r.text || "Dieses Kürzel lässt sich nicht anmelden.") };
   return { ok: true };

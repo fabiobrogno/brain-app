@@ -250,6 +250,8 @@ export const inApp = () => !!window.webkit?.messageHandlers?.aktion;
 export const browserModus = () => !inApp() && !!browserHuelle();
 // Die Electron-Hülle (Windows/Linux, Paket W2a, electron/): wie der Browser ohne Dock, Übersicht und globale Kürzel (browserModus bleibt wahr), kann aber den Dateimanager zeigen.
 export const imElectron = () => !inApp() && browserHuelle()?.art === "electron";
+// Globale Kürzel (Aktionen kuerzel-global, kuerzel-geaendert) gibt es in der App und in der Electron-Hülle (globalShortcut), nicht im Browser.
+export const kannGlobaleKuerzel = () => inApp() || imElectron();
 // „Im Dateimanager zeigen“ (Aktion ordner-zeigen) gibt es in der App und in der Electron-Hülle, nicht im Browser.
 export const kannOrdnerZeigen = () => inApp() || imElectron();
 // Eine Hülle ist da (App oder Browser): Einrichtung, Zwischenablage, Anmelden im Fenster laufen über den Vertrag.

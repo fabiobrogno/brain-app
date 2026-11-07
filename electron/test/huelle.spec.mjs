@@ -72,9 +72,11 @@ test("Vertrag: einfache Aktionen antworten wie in der App (ansicht, titel, fehle
   expect(await aktion(fenster, "status-auffrischen")).toEqual({ ok: true });
   expect(await aktion(fenster, "fenster-ziehen")).toEqual({ ok: true });
   expect(await aktion(fenster, "kuerzel-geaendert")).toEqual({ ok: true });
-  expect(await aktion(fenster, "kuerzel-global", { id: "erfassen", kuerzel: "Ctrl+Alt+Space" })).toEqual({ ok: false, grund: "nicht-verfuegbar" });
-  expect(await aktion(fenster, "app-symbol", "dunkel")).toEqual({ ok: false, grund: "nicht-verfuegbar" });
-  expect(await aktion(fenster, "fenster-durchscheinend", true)).toEqual({ ok: false, grund: "nicht-verfuegbar" });
+  // Testlauf: kein globales Kürzel beim System (wie die Mac-App); Antworten wie Swift
+  expect(await aktion(fenster, "kuerzel-global", { id: "schnell-erfassen", kuerzel: "Ctrl+Alt+Space" })).toEqual({ ok: true });
+  expect(await aktion(fenster, "kuerzel-global", { id: "neue-notiz", kuerzel: "Ctrl+Alt+Space" })).toEqual({ ok: false, text: "Dieses Kürzel gibt es nicht." });
+  expect(await aktion(fenster, "app-symbol", "dunkel")).toEqual({ ok: true });
+  expect(await aktion(fenster, "fenster-durchscheinend", true)).toEqual(await app.evaluate(() => globalThis.__kortex.glas) ? { ok: true, wirkt: true } : { ok: false, grund: "nicht-verfuegbar" });
   expect(await aktion(fenster, "darstellung", "dunkel")).toEqual({ ok: true });
   expect(await app.evaluate(({ nativeTheme }) => nativeTheme.themeSource)).toBe("dark");
   expect(await aktion(fenster, "darstellung", "system")).toEqual({ ok: true });
