@@ -1,7 +1,7 @@
 // Brain Studio v2 — Oberfläche. Vier Spalten: Seitenleiste · Notizliste · Editor · Eigenschaften, Statusleiste.
 // Zustand, Navigation, Editor-Anbindung (verlustfrei), Speichern/Konflikt, Dialoge, Vault-Verwaltung.
 import { T, PRODUKT } from "./texte.js";
-import { api, aktion, aktionMitAntwort, inApp, browserModus, mitHuelle, gitGesperrt, andererVault, nichtVertraut, ausgangUnklar, zeitText as zeitFehlerText, ladeStandNeu } from "./api.js";
+import { api, aktion, aktionMitAntwort, inApp, browserModus, mitHuelle, kannOrdnerZeigen, gitGesperrt, andererVault, nichtVertraut, ausgangUnklar, zeitText as zeitFehlerText, ladeStandNeu } from "./api.js";
 import { erstelleEditor } from "./editor.js";
 import { h, dialog, dialogOffen, schliesseDialoge, toast, vorMinuten, dateiName, ohneEndung, ordnerVon, istBearbeitbar, speichereLokal, leseLokal, leseEntwurf, speichereEntwurf, sucheGrad, suchFormen, ausTabelle, arbeitBeginnt, laufendeArbeiten } from "./hilfen.js";
 import { symbol, GROESSE } from "./symbole.js";
@@ -41,6 +41,9 @@ import { heuteIso } from "./zeit.js";
 import { erzeugeSchreiben } from "./schreiben.js"; // Neue Notiz (sofort), Tagesnotiz, Vorlagen, Zurück/Vor
 import { titelAusText, hatInhalt, ERSATZTITEL, kopfGrenzen, imOrdner as imVorlagenOrdner, STANDARD as SCHREIB_STANDARD, VORLAGENORDNER_STANDARD } from "./vorlagen.js";
 import { TS } from "./texte-schreiben.js";
+import { neutralerText } from "./plattform-texte.js";
+// „Vault im Finder zeigen“ heißt außerhalb der Mac-App „… im Dateimanager zeigen“
+const ordnerBefehlName = () => (inApp() ? T.befehle.ordner : neutralerText(T.befehle.ordner));
 import { datumKurz, datumLang, datumZeit, istDatumText, bytesText, setzeTypFarbe, typSymbol, typName, wortAnzahl, relativ, pluralisiere, vorschauText, typTextFarbe } from "./format.js";
 
 const $ = (id) => document.getElementById(id);
@@ -2424,7 +2427,7 @@ const einstOffen = () => !!einstModul?.istOffen();
 const kurzPfadVon = (p) => String(p || "").replace(/^\/Users\/[^/]+(?=\/|$)/, "~");
 function einstellungenKontext() {
   return {
-    inApp: inApp(), browser: browserModus(), mitHuelle: mitHuelle(), aktion, kurzPfad: kurzPfadVon,
+    inApp: inApp(), ordnerZeigen: kannOrdnerZeigen(), browser: browserModus(), mitHuelle: mitHuelle(), aktion, kurzPfad: kurzPfadVon,
     info: () => S.info, git: () => S.git, version: () => S.info?.appVersion || "",
     wendeAn: wendeEinstellungenAn,
     oeffneKi, oeffneKonten, oeffneRemote, oeffneLizenzen, sync, beiVerbunden: () => { S.kiVerbunden = true; zeichneStatus(); },
@@ -2460,7 +2463,8 @@ function oeffneEinstellungen(anker) {
       ? { name: T.vertrauen.entziehenMenue, symbol: "schild", id: "vertrauen-entziehen", tun: oeffneVertrauenEntziehen }
       : { name: T.vertrauen.vertrauenMenue, symbol: "schild", id: "vertrauen", tun: oeffneVertrauen }] : []),
     ...(S.umstellung ? [{ name: S.umstellung.umgestellt ? T.umstellung.fertig : T.umstellung.menue, symbol: "sync", id: "umstellen", tun: oeffneUmstellung }] : []),
-    ...(inApp() ? [{ name: T.befehle.ordner, symbol: "ordner", id: "finder", tun: () => aktion("ordner-zeigen", S.pfad || undefined) }, { name: T.befehle.ansicht, symbol: "ansicht", id: "uebersicht", tun: oeffneUebersicht }] : []),
+    ...(kannOrdnerZeigen() ? [{ name: ordnerBefehlName(), symbol: "ordner", id: "finder", tun: () => aktion("ordner-zeigen", S.pfad || undefined) }] : []),
+    ...(inApp() ? [{ name: T.befehle.ansicht, symbol: "ansicht", id: "uebersicht", tun: oeffneUebersicht }] : []),
     { trenner: true },
     { name: T.befehle.lizenzen, symbol: "buch", id: "lizenzen", tun: oeffneLizenzen },
     { name: `${PRODUKT} ${S.info?.appVersion || ""}`.trim(), symbol: "info", id: "version", tun: () => {} },
@@ -2680,7 +2684,8 @@ function oeffnePalette(vorgabe = "") {
     [TF.befehl, kz.anzeige("frage"), () => frage.oeffne()], [T.befehle.suche, kz.anzeige("suche-vault"), fokusSuche], [T.befehle.inNotiz, kz.anzeige("suche-notiz"), () => ed.suchen()], [T.befehle.info, kz.anzeige("info"), umschalteInfo], [T.befehle.gesundheit, "", oeffneGesundheit], [T.befehle.nutzung, "", oeffneNutzung],
     [T.befehle.posteingang, kz.anzeige("gehe-posteingang"), () => waehleSicht({ art: "bereich", id: "inbox" })], [T.befehle.alleNotizen, kz.anzeige("gehe-alle"), () => waehleSicht({ art: "bereich", id: "alle" })], [T.befehle.aufgaben, kz.anzeige("gehe-aufgaben"), () => waehleSicht({ art: "bereich", id: "aufgaben" })],
     [T.liste.verlauf, kz.anzeige("verlauf"), oeffneVerlauf], [TG.titel, kz.anzeige("mitteilungen"), () => glocke.oeffne()],
-    ...(inApp() ? [[T.befehle.ordner, "", () => aktion("ordner-zeigen", S.pfad || undefined)], [T.befehle.ansicht, "", oeffneUebersicht]] : []),
+    ...(kannOrdnerZeigen() ? [[ordnerBefehlName(), "", () => aktion("ordner-zeigen", S.pfad || undefined)]] : []),
+    ...(inApp() ? [[T.befehle.ansicht, "", oeffneUebersicht]] : []),
     [T.befehle.mcp, "", oeffneKi], [T.befehle.konten, "", oeffneKonten],
   ];
   const eingabeFeld = textfeld({ wert: vorgabe, platzhalter: T.palette.platzhalter, label: T.palette.platzhalter, klasse: "pal-feld", daten: { role: "combobox", "aria-expanded": "true", "aria-controls": "pal-liste" } });

@@ -9,6 +9,7 @@ name: CI
 #  - node-test     Node-Tests (Tests/Node).
 #  - swift         macOS (knapp, daher nur 1 Job): Build + Tests + Kern-Manifest + Vorschau.
 #  - plattform-probe  Windows und Linux (Paket W0): Linux ist Tor (in ci-ok), Windows nur Messung (blockiert nichts).
+#  - electron-probe  Electron-Hülle (Paket W2a): Linux ist Tor (in ci-ok), Windows nur Messung (blockiert nichts).
 #  - ci-ok         EIN Status für alles: grün, wenn jeder nötige Job grün war oder bewusst übersprungen wurde.
 #  - dev-artefakt  nur auf main: Kortex.app als Artefakt.
 # Es gibt absichtlich KEIN paths-ignore: Ein Lauf, der nur Doku ändert, ist in Sekunden grün (aenderungen + ci-ok), und der
@@ -313,11 +314,79 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+  # Electron-Hülle (Paket W2a, electron/, docs/plaene/plattformen-windows-linux.md): die ECHTE App (Playwright `_electron`) mit Test-Vault, Temp-HOME und eigenem Support-Ordner.
+  # Linux (xvfb) ist ein TOR (der Job steht in `needs` von ci-ok), Windows ist MESSUNG: der Test-Schritt läuft dort mit continue-on-error, der Job bleibt grün, das Ergebnis steht
+  # in der Zusammenfassung des Laufs. Sobald Windows durchgehend grün ist, entfällt die Bedingung `matrix.os == 'windows-latest'`.
+  electron-probe:
+    needs: aenderungen
+    if: needs.aenderungen.outputs.node == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    name: electron-probe (${{ matrix.os }})
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: electron/package-lock.json
+      - name: Abhängigkeiten (Electron lädt seine Programmdatei beim Installieren)
+        continue-on-error: ${{ matrix.os == 'windows-latest' }}
+        run: npm ci --no-audit --no-fund
+        working-directory: electron
+      # Chromium-Sandbox unter Linux: der SUID-Helfer gehört root, und Ubuntu 24.04 sperrt unprivilegierte User-Namensräume. So läuft die App MIT Sandbox (kein --no-sandbox).
+      - name: Sandbox-Helfer einrichten (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo chown root electron/node_modules/electron/dist/chrome-sandbox
+          sudo chmod 4755 electron/node_modules/electron/dist/chrome-sandbox
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+      - name: Electron-Test
+        id: lauf
+        continue-on-error: ${{ matrix.os == 'windows-latest' }}
+        working-directory: electron
+        env:
+          KORTEX_BILDER: ${{ runner.temp }}/bilder
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a --server-args="-screen 0 1440x900x24" npx playwright test 2>&1 | tee "$RUNNER_TEMP/electron.log"
+          else
+            npx playwright test 2>&1 | tee "$RUNNER_TEMP/electron.log"
+          fi
+          exit "${PIPESTATUS[0]}"
+      - name: Bericht
+        if: always()
+        run: |
+          {
+            echo "### electron-probe (${{ matrix.os }}): ${{ steps.lauf.outcome }}"
+            echo '```'
+            grep -E "^\s+(✓|✘|-|[0-9]+ (passed|failed|skipped))|passed|failed|Error:" "$RUNNER_TEMP/electron.log" | head -n 60 || true
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Fenster-Foto und Bericht hochladen
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: electron-probe-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/bilder
+            ${{ runner.temp }}/electron.log
+            electron/test-results
+          retention-days: 14
+          if-no-files-found: ignore
+
   # EIN Status für den ganzen Lauf. Grün, wenn jeder Job erfolgreich war oder übersprungen wurde (weil sein Bereich unverändert
   # ist); rot bei Fehlschlag oder Abbruch. Läuft immer (if: always()), auch wenn davor etwas rot ist.
   ci-ok:
     if: always()
-    needs: [aenderungen, vorpruefung, kern-test, node-test, ui-test, swift, plattform-probe]
+    needs: [aenderungen, vorpruefung, kern-test, node-test, ui-test, swift, plattform-probe, electron-probe]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

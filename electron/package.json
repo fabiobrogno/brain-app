@@ -1,0 +1,17 @@
+{
+  "name": "kortex-electron",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Kortex-Hülle für Windows und Linux (Paket W2a): lädt das Studio und setzt den Hüllen-Vertrag um",
+  "type": "module",
+  "main": "haupt.mjs",
+  "scripts": {
+    "postinstall": "node node_modules/electron/install.js",
+    "start": "electron .",
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "electron": "45.0.0"
+  }
+}

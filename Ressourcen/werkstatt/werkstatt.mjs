@@ -27,7 +27,9 @@ const vault = process.argv[2] || process.env.BRAIN_VAULT || undefined; // das Ar
 // BRAIN_MCP_NODE) statt des aufgelösten `process.execPath` (…/node/<version>/bin/node): der übersteht Umbenennen, Node-Updates und App-Updates.
 const mcpNode = process.env.BRAIN_MCP_NODE && isAbsolute(process.env.BRAIN_MCP_NODE) ? process.env.BRAIN_MCP_NODE : undefined;
 let handler;
-try { handler = erzeugeHandler({ ...(vault ? { vault } : {}), ...(mcpNode ? { nodePfad: mcpNode } : {}) }); }
+// Als Node der Electron-Hülle (process.versions.electron) ist `process.execPath` die Electron-Datei: ohne ein absolutes `node` (BRAIN_MCP_NODE, setzt die Hülle) gibt es keine MCP-Einträge und keine Statuszeile.
+const ohneNode = !!process.versions.electron && !mcpNode;
+try { handler = erzeugeHandler({ ...(vault ? { vault } : {}), ...(mcpNode ? { nodePfad: mcpNode } : {}), ...(ohneNode ? { ohneNode: true } : {}) }); }
 catch (e) { process.stderr.write(`${e instanceof HttpFehler ? e.message : e}\n`); process.exit(2); }
 
 // KI-Konten: die Liste beim Start abgleichen (erster Start nach dem Update = Migration der bestehenden Verbindungen). Fehler bleiben still: bis dahin gilt, was gilt
