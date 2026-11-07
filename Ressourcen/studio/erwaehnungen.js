@@ -32,7 +32,8 @@ export function erzeugeErwaehnungen(ctx) {
   };
   const sektion = (id, titel) => h("div", { klasse: "info-sektion", "data-sektion": id }, h("h3", { text: titel }));
   const fuelle = (el, titel, ...kinder) => el.replaceChildren(h("h3", { text: titel }), ...kinder);
-  const kannSchreiben = () => !!S.pfad && !S.schutz && S.bearbeitbar !== false && !S.konflikt;
+  const abgleichOffen = () => !!S.git?.konflikt; // bei einem offenen Abgleich (Konflikt) setzt Kortex keine Links
+  const kannSchreiben = () => !!S.pfad && !S.schutz && S.bearbeitbar !== false && !S.konflikt && !abgleichOffen();
 
   // ───────────── Vorschau „Alle verlinken“ ─────────────
   function vorschauListe(liste, mehr) {
@@ -99,7 +100,7 @@ export function erzeugeErwaehnungen(ctx) {
       for (let versuch = 0; versuch < 2; versuch++) {
         const v = await api.verlinke({ ziel: zielPfad, alle: true, vorschau: true });
         if (!v.verweise) { toast(TE.vorschau.nichts); await nachAenderung(); return; }
-        if (!(await bestaetige({ titel: TE.vorschau.titelEin(zielTitel), satz: TE.vorschau.satzEin(v.verweise, v.notizen), liste: v.liste || [], mehr: v.mehr, uebersprungen: v.uebersprungen?.length }))) return;
+        if (!(await bestaetige({ titel: TE.vorschau.titelEin(zielTitel), satz: TE.vorschau.satzEin(v.verweise, v.notizen) + (v.abgeschnitten ? ` ${TE.vorschau.abgeschnitten(v.geprueft, v.kandidaten)}` : ""), liste: v.liste || [], mehr: v.mehr, uebersprungen: v.uebersprungen?.length }))) return;
         let r;
         try { r = await api.verlinke({ ziel: zielPfad, alle: true, token: v.token }); }
         catch (e) { if (e.status === 409 && e.daten?.art === "vorschau-veraltet" && versuch === 0) { toast(TE.vorschau.veraltet); continue; } throw e; }
@@ -139,14 +140,14 @@ export function erzeugeErwaehnungen(ctx) {
     if (r.mehrdeutig) { fuelle(host, TE.ein.titel, h("p", { klasse: "leise erw-leer", text: TE.ein.mehrdeutig })); return; }
     const weiter = r.offen > 0 || !r.vollstaendig;
     if (r.notizen.length) {
-      const alle = baueKnopf({ text: TE.ein.alleVerlinken, groesse: "s", aktion: "erw-alle", aufKlick: (ev) => verlinkeAlle(pfad, r.titel, ev.currentTarget) });
+      const alle = abgleichOffen() ? null : baueKnopf({ text: TE.ein.alleVerlinken, groesse: "s", aktion: "erw-alle", aufKlick: (ev) => verlinkeAlle(pfad, r.titel, ev.currentTarget) });
       kinder.push(h("div", { klasse: "erw-kopf" }, h("span", { klasse: "erw-summe", "data-erw-summe": "", text: TE.ein.zusammen(r.anzahlStellen, r.anzahlNotizen) }), alle));
       const wurzel = h("div", { klasse: "erw-liste" });
       const zeichneListe = (alleNotizen) => {
         const zeig = alleNotizen ? r.notizen : r.notizen.slice(0, NOTIZEN_ZUERST);
         wurzel.replaceChildren(...[...zeig.map((n) => notizBlock(n, {
-          aus: false, zeigeVerlinken: true,
-          beiVerlinken: (s, knopf) => verlinkeStellen(pfad, r.titel, [{ pfad: n.pfad, start: s.start, treffer: s.treffer, vor: s.vor, nach: s.nach }], knopf),
+          aus: false, zeigeVerlinken: !abgleichOffen(),
+          beiVerlinken: (s, knopf) => verlinkeStellen(pfad, r.titel, [{ pfad: n.pfad, start: s.start, treffer: s.treffer, vor: s.vor, nach: s.nach, hash: n.hash }], knopf),
           beiOeffnen: async (s) => { if (!(await ctx.oeffne(n.pfad))) { /* oeffne meldet selbst */ } if (S.pfad === n.pfad && s) ed.springeZu(s.zeile, { spalte: s.spalte, laenge: s.ende - s.start }); },
         })), !alleNotizen && r.notizen.length > NOTIZEN_ZUERST ? h("button", { type: "button", klasse: "wert-mehr erw-mehr", text: TE.ein.weitereNotizen(r.notizen.length - NOTIZEN_ZUERST), aufClick: () => zeichneListe(true) }) : null].filter(Boolean));
       };

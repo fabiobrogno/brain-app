@@ -33,6 +33,7 @@ export const TE = {
     titelAus: "Alle Erwähnungen in dieser Notiz verlinken?",
     satzEin: (stellen, notizen) => `${nz(stellen, "Stelle wird", "Stellen werden")} in ${nz(notizen, "Notiz", "Notizen")} zu einem Link. Der Text im Satz bleibt, wie er ist. „Rückgängig“ nimmt alles zusammen zurück.`,
     satzAus: (stellen) => `${nz(stellen, "Stelle wird", "Stellen werden")} in dieser Notiz zu einem Link. Mit ⌘Z lässt sich das zurücknehmen.`,
+    abgeschnitten: (geprueft, alle) => `Geprüft wurden die zuletzt geänderten ${geprueft} von ${alle} möglichen Notizen; der Rest bleibt, wie er ist.`,
     mehr: (n) => `… und ${nz(n, "weitere Notiz", "weitere Notizen")}`,
     uebersprungen: (n) => `${nz(n, "Stelle wird", "Stellen werden")} nicht verlinkt (zum Beispiel weil sie sich inzwischen geändert hat oder in einer Tabellenzeile steht).`,
     knopf: "Alle verlinken", abbrechen: "Abbrechen",

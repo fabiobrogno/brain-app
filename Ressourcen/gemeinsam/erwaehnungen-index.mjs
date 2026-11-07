@@ -11,10 +11,13 @@
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
-import { MODI, namenEinerNotiz, baueAbgleicher, findeNamen, sperrBereiche, stellenAus, linkFuer, findeWieder } from "./erwaehnungen.mjs";
+import { MODI, MAX_TREFFER, namenEinerNotiz, baueAbgleicher, findeNamen, stellenAus, linkFuer, findeWieder, setzeLinks, zeilenStarts } from "./erwaehnungen.mjs";
+import { HttpFehler } from "./basis.mjs";
 import { baueWikiIndex, linkText, ordnerVonPfad } from "./wikilink.mjs";
 
-const MAX_BYTES = 1024 * 1024;
+export const MAX_TEXT = 256 * 1024;      // größere Notizen werden nicht nach Erwähnungen durchsucht (ein Durchlauf bliebe nicht im Zeitbudget)
+const MAX_BYTES = MAX_TEXT;
+const MAX_ALLE_DATEIEN = 200, MAX_ALLE_BYTES = 20 * 1024 * 1024; // „Alle verlinken“: so viel auf einmal (Journal!)
 const MAX_KANDIDATEN = 1500;
 const MAX_STELLEN_JE_NOTIZ = 8;
 const MAX_NOTIZEN_ANZEIGE = 60;
@@ -164,7 +167,7 @@ export function erzeugeErwaehnungen({ wurzel, index, darfZiel = () => true, darf
     if (!eintrag || !eintrag.namen.length) return antwort({ vollstaendig: ix.istFertig(), namen: [] });
     const namen = eintrag.namen.filter(eindeutig);
     if (!namen.length) return antwort({ vollstaendig: ix.istFertig() && satz.fertig, mehrdeutig: true });
-    const gruppen = (n) => n.seq.ae.map((w, i) => [...new Set([w, n.seq.a[i]])]);
+    const gruppen = (n) => n.seq.ae.map((w) => [w]);
     const sammel = new Map();
     for (const n of namen) for (const k of ix.kandidaten(gruppen(n))) if (!sammel.has(k.rel)) sammel.set(k.rel, k);
     let kand = [...sammel.values()].filter((k) => k.rel !== pfad && darfQuelle(k.rel)).sort((a, b) => b.mtimeMs - a.mtimeMs);
@@ -183,10 +186,10 @@ export function erzeugeErwaehnungen({ wurzel, index, darfZiel = () => true, darf
         const g = liesText(k.rel);
         if (!g) { merke(key, { hash: null, stellen: [] }); continue; }
         const treffer = findeNamen(g.text, abgleicher, { nurId: pfad });
-        c = { hash: HASH(g.buf), stellen: treffer.length ? stellenAus(g.text, treffer) : [] };
+        c = { hash: HASH(g.buf), anzahl: treffer.length, stellen: treffer.length ? stellenAus(g.text, treffer) : [] };
         merke(key, c);
       }
-      if (c.stellen.length) { stellenGesamt += c.stellen.length; notizen.push({ pfad: k.rel, titel: titelVon(k.rel), hash: c.hash, anzahl: c.stellen.length, stellen: c.stellen.slice(0, MAX_STELLEN_JE_NOTIZ) }); }
+      if (c.stellen.length) { stellenGesamt += c.anzahl ?? c.stellen.length; notizen.push({ pfad: k.rel, titel: titelVon(k.rel), hash: c.hash, anzahl: c.anzahl ?? c.stellen.length, stellen: c.stellen.slice(0, MAX_STELLEN_JE_NOTIZ) }); }
     }
     return antwort({ namen: namen.map((n) => n.text), notizen: notizen.slice(0, MAX_NOTIZEN_ANZEIGE), anzahlNotizen: notizen.length, anzahlStellen: stellenGesamt, offen, abgeschnitten,
       vollstaendig: offen === 0 && !abgeschnitten && ix.istFertig() && satz.fertig });
@@ -197,20 +200,26 @@ export function erzeugeErwaehnungen({ wurzel, index, darfZiel = () => true, darf
     const ix = await bereit(warteMs);
     waerme();
     satz.sync(ix, 6);
-    const treffer = findeNamen(text, satz.abgleicher()).filter((t) => t.id !== null && t.id !== pfad && satz.nach.get(t.id));
+    if (text.length > MAX_TEXT) throw new HttpFehler(413, "Diese Notiz ist zu groß, um nach Erwähnungen zu suchen.", { art: "zu-gross" });
+    const alle = findeNamen(text, satz.abgleicher()).filter((t) => t.id !== null && t.id !== pfad && satz.nach.get(t.id));
+    const treffer = alle.slice(0, MAX_TREFFER);
     const je = new Map();
     const st = stellenAus(text, treffer);
     treffer.forEach((t, i) => { let l = je.get(t.id); if (!l) je.set(t.id, (l = [])); l.push({ ...st[i], ziel: t.id }); });
     const notizen = [...je].map(([rel, stellen]) => ({ pfad: rel, titel: titelVon(rel), anzahl: stellen.length, stellen: stellen.slice(0, MAX_STELLEN_JE_NOTIZ) }));
-    return { pfad, notizen: notizen.slice(0, MAX_NOTIZEN_ANZEIGE), anzahlNotizen: notizen.length, anzahlStellen: treffer.length, vollstaendig: ix.istFertig() && satz.fertig, aufbau: { index: ix.istFertig(), namen: satz.fertig } };
+    return { pfad, notizen: notizen.slice(0, MAX_NOTIZEN_ANZEIGE), anzahlNotizen: notizen.length, anzahlStellen: alle.length, vollstaendig: ix.istFertig() && satz.fertig, aufbau: { index: ix.istFertig(), namen: satz.fertig } };
   }
 
   // ───────── Verlinken: aus gezeigten Stellen werden neue Texte ─────────
-  // ziel: Pfad der erwähnten Notiz · auswahl: [{ pfad, start, treffer, vor, nach }] | "alle" · lies(rel) → { text, buf, hash, ... } aus dateiaktionen (mit Schreibschutz-Prüfung)
+  // ziel: Pfad der erwähnten Notiz · auswahl: [{ pfad, start, treffer, vor, nach, hash }] | "alle" · lies(rel) → { text, buf, hash, ... } aus dateiaktionen (mit Schreibschutz-Prüfung)
   // → { dateien: [{ pfad, text, anzahl, zeilen: [{ zeile, vorher, nachher }] }], uebersprungen: [{ pfad, grund }] }
+  // Einzelne Stelle: hat die Notiz noch den Hash der Anzeige, gilt genau diese Stelle; sonst wird sie nur wiedergefunden, wenn ihre Umgebung davor und danach eindeutig ist.
+  // „Alle“: nur Notizen, die auch die Liste zeigen würde (≤ 256 KB); höchstens 200 Notizen und 20 MB auf einmal, sonst 413 („in Teilen verlinken“).
+  const KONFLIKT_MARKEN = /^<{7}( |$)[\s\S]*^>{7}( |$)/m;
   async function planeVerlinken(ziel, auswahl, lies) {
-    await bereit(1500);
-    for (let i = 0; i < 400 && !satz.sync(index(), 25); i++) await wartePause(1);
+    const ix = await bereit(1500);
+    if (!ix.istFertig()) throw new HttpFehler(409, "Der Suchindex baut noch auf. Bitte gleich noch einmal versuchen.", { art: "index-baut" });
+    for (let i = 0; i < 400 && !satz.sync(ix, 15); i++) await wartePause(1);
     const eintrag = satz.nach.get(ziel);
     if (!eintrag || !eintrag.namen.length) return { dateien: [], uebersprungen: [{ pfad: ziel, grund: "hat keinen Namen, der sich verlinken lässt" }] };
     const eigene = eintrag.namen.filter(eindeutig);
@@ -218,59 +227,61 @@ export function erzeugeErwaehnungen({ wurzel, index, darfZiel = () => true, darf
     const { abgleicher } = abgleicherFuer(ziel, eigene);
     const wikiIx = baueWikiIndex([...satz.nach.values()].map((e) => ({ pfad: e.rel, titel: e.titel, aliasse: e.aliasse })));
     const dateien = [], uebersprungen = [];
-    let nachPfad;
+    let nachPfad, gesamtKandidaten = 0;
     if (auswahl === "alle") {
-      const ix = index();
       const sammel = new Map();
-      for (const n of eigene) for (const k of ix.kandidaten(n.seq.ae.map((w, i) => [...new Set([w, n.seq.a[i]])]))) if (!sammel.has(k.rel)) sammel.set(k.rel, k);
-      nachPfad = [...sammel.values()].filter((k) => k.rel !== ziel && darfQuelle(k.rel)).sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, MAX_KANDIDATEN).map((k) => ({ pfad: k.rel, stellen: null }));
+      for (const n of eigene) for (const k of ix.kandidaten(n.seq.ae.map((w) => [w]))) if (!sammel.has(k.rel)) sammel.set(k.rel, k);
+      const alle = [...sammel.values()].filter((k) => k.rel !== ziel && darfQuelle(k.rel)).sort((a, b) => b.mtimeMs - a.mtimeMs);
+      gesamtKandidaten = alle.length;
+      nachPfad = alle.slice(0, MAX_KANDIDATEN).map((k) => ({ pfad: k.rel, stellen: null }));
     } else {
       const je = new Map();
       for (const a of auswahl) { if (!a || typeof a.pfad !== "string" || a.pfad === ziel) continue; (je.get(a.pfad) || je.set(a.pfad, []).get(a.pfad)).push(a); }
       nachPfad = [...je].map(([p, s]) => ({ pfad: p, stellen: s }));
     }
+    let bytes = 0, takt = performance.now();
     for (const { pfad, stellen } of nachPfad) {
+      if (performance.now() - takt > 20) { await new Promise((ok) => setImmediate(ok)); takt = performance.now(); } // die Werkstatt bleibt ansprechbar
       if (!darfQuelle(pfad)) { uebersprungen.push({ pfad, grund: "wird von Kortex verwaltet" }); continue; }
       let n;
       try { n = lies(pfad); } catch (e) { uebersprungen.push({ pfad, grund: e && e.message ? e.message : "lässt sich nicht lesen" }); continue; }
       if (!n) { uebersprungen.push({ pfad, grund: "lässt sich nicht lesen" }); continue; }
+      if (n.buf.length > MAX_TEXT) { if (stellen !== null) uebersprungen.push({ pfad, grund: "ist zu groß" }); continue; }
+      if (KONFLIKT_MARKEN.test(n.text)) { uebersprungen.push({ pfad, grund: "enthält Konfliktmarken eines offenen Abgleichs" }); continue; }
       const aktuelle = findeNamen(n.text, abgleicher, { nurId: ziel });
       let gewaehlt;
-      if (stellen === null) gewaehlt = aktuelle;
+      if (stellen === null) { if (aktuelle.length > MAX_TREFFER) { uebersprungen.push({ pfad, grund: "hat zu viele Stellen" }); continue; } gewaehlt = aktuelle; }
       else {
         gewaehlt = [];
-        for (const s of stellen) { const f = findeWieder(n.text, aktuelle, s); if (f && !gewaehlt.includes(f)) gewaehlt.push(f); else if (!f) uebersprungen.push({ pfad, grund: "Die Stelle hat sich inzwischen geändert.", treffer: s.treffer }); }
+        for (const s of stellen) {
+          const f = typeof s.hash === "string" && s.hash === n.hash ? aktuelle.find((a) => a.start === s.start && a.treffer === s.treffer) : findeWieder(n.text, aktuelle, s);
+          if (f && !gewaehlt.includes(f)) gewaehlt.push(f); else if (!f) uebersprungen.push({ pfad, grund: "Die Stelle hat sich inzwischen geändert.", treffer: s.treffer });
+        }
       }
       if (!gewaehlt.length) continue;
-      const vonDir = ordnerVonPfad(pfad);
-      const ziele = linkText(wikiIx, ziel, vonDir);
-      const sets = [];
-      for (const g of gewaehlt) {
-        const stelle = { start: g.start, ende: g.ende, treffer: g.treffer };
-        const link = linkFuer(n.text, stelle, ziele);
-        if (link === null) { uebersprungen.push({ pfad, grund: "steht in einer Tabellenzeile und braucht dort einen Anzeigetext", treffer: g.treffer }); continue; }
-        sets.push({ ...stelle, link });
-      }
-      if (!sets.length) continue;
-      let text = n.text;
-      for (const x of sets.sort((a, b) => b.start - a.start)) text = text.slice(0, x.start) + x.link + text.slice(x.ende);
-      const anz = stellenAus(n.text, gewaehlt.filter((g) => sets.some((s) => s.start === g.start)).map((g) => ({ ...g, name: g.name })));
-      const zeilen = anz.slice().sort((a, b) => a.start - b.start).slice(0, 3).map((a) => {
-        const s = sets.find((x) => x.start === a.start);
-        const vorher = a.auszug;
-        const nachher = vorher.slice(0, a.markierung[0]) + s.link + vorher.slice(a.markierung[1]);
-        return { zeile: a.zeile, vorher, nachher };
-      });
-      dateien.push({ pfad, text, anzahl: sets.length, zeilen, titel: titelVon(pfad) });
+      const ziele = linkText(wikiIx, ziel, ordnerVonPfad(pfad));
+      const sets = gewaehlt.map((g) => ({ start: g.start, ende: g.ende, treffer: g.treffer, link: linkFuer(n.text, g, ziele) }));
+      bytes += n.buf.length;
+      dateien.push({ pfad, text: setzeLinks(n.text, sets), anzahl: sets.length, zeilen: vorschauZeilen(n.text, gewaehlt, sets), titel: titelVon(pfad) });
+      if (auswahl === "alle" && (dateien.length > MAX_ALLE_DATEIEN || bytes > MAX_ALLE_BYTES)) throw new HttpFehler(413, `Das sind zu viele Notizen auf einmal (höchstens ${MAX_ALLE_DATEIEN} Notizen und 20 MB). Bitte in Teilen verlinken: einzelne Stellen oder Notizen nacheinander.`, { art: "zu-viele" });
     }
-    return { dateien, uebersprungen, ziel, zielTitel: eintrag.titel };
+    return { dateien, uebersprungen, ziel, zielTitel: eintrag.titel, ...(auswahl === "alle" && gesamtKandidaten > MAX_KANDIDATEN ? { abgeschnitten: true, kandidaten: gesamtKandidaten, geprueft: MAX_KANDIDATEN } : {}) };
+  }
+  // die ersten drei Stellen einer Notiz als Vorher/Nachher-Zeilen
+  function vorschauZeilen(text, gewaehlt, sets) {
+    return stellenAus(text, gewaehlt.slice(0, 3)).map((a) => {
+      const s = sets.find((x) => x.start === a.start);
+      return { zeile: a.zeile, vorher: a.auszug, nachher: a.auszug.slice(0, a.markierung[0]) + s.link + a.auszug.slice(a.markierung[1]) };
+    });
   }
 
   // ───────── Verlinken im offenen Text: nichts wird geschrieben; der Editor setzt die Änderungen selbst (und speichert über den sicheren Weg) ─────────
   // stellen: [{ ziel, start, treffer, vor, nach }] | "alle" → { aenderungen: [{ start, ende, link, ziel, zeile, vorher, nachher }], uebersprungen: n } (Positionen im übergebenen Text)
   async function linksFuerText(pfad, text, stellen) {
-    await bereit(1500);
-    for (let i = 0; i < 400 && !satz.sync(index(), 25); i++) await wartePause(1);
+    const ix = await bereit(1500);
+    if (!ix.istFertig()) throw new HttpFehler(409, "Der Suchindex baut noch auf. Bitte gleich noch einmal versuchen.", { art: "index-baut" });
+    if (text.length > MAX_TEXT) throw new HttpFehler(413, "Diese Notiz ist zu groß, um nach Erwähnungen zu suchen.", { art: "zu-gross" });
+    for (let i = 0; i < 400 && !satz.sync(ix, 15); i++) await wartePause(1);
     const treffer = findeNamen(text, satz.abgleicher()).filter((t) => t.id !== null && t.id !== pfad && satz.nach.get(t.id));
     const wikiIx = baueWikiIndex([...satz.nach.values()].map((e) => ({ pfad: e.rel, titel: e.titel, aliasse: e.aliasse })));
     const vonDir = ordnerVonPfad(pfad);
@@ -282,10 +293,12 @@ export function erzeugeErwaehnungen({ wurzel, index, darfZiel = () => true, darf
       if (f && !gewaehlt.includes(f)) gewaehlt.push(f); else if (!f) uebersprungen++;
     }
     const aenderungen = [];
+    if (gewaehlt.length > MAX_TREFFER) { uebersprungen += gewaehlt.length - MAX_TREFFER; gewaehlt.length = MAX_TREFFER; }
+    const starts = zeilenStarts(text);
     for (const g of gewaehlt) {
       const link = linkFuer(text, { start: g.start, ende: g.ende, treffer: g.treffer }, linkText(wikiIx, g.id, vonDir));
       if (link === null) { uebersprungen++; continue; }
-      const [st] = stellenAus(text, [g]);
+      const [st] = stellenAus(text, [g], starts);
       aenderungen.push({ start: g.start, ende: g.ende, link, ziel: g.id, zeile: st.zeile, vorher: st.auszug, nachher: st.auszug.slice(0, st.markierung[0]) + link + st.auszug.slice(st.markierung[1]) });
     }
     aenderungen.sort((a, b) => a.start - b.start);

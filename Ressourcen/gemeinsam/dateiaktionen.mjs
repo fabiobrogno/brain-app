@@ -507,14 +507,20 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
         if (!plan.keinUmzug) verschiebeFs(plan.vonAbs, plan.nachAbs, plan.typ, plan.casePur);
         punkt("nach-umzug");
       } catch (e) {
-        for (const d of geschrieben.reverse()) { try { if (leseHash(absVon(d.pfad)) === d.hashNachher) atomarSchreiben(absVon(d.pfad), d.vorher, d.modus); } catch { /* bester Versuch; die Kopie bleibt im Journal */ } }
+        // Zurückrollen: nur, was noch genau so ist, wie Kortex es geschrieben hat. Was sich inzwischen geändert hat (oder nicht zurückging), bleibt stehen und wird genannt; das Journal bleibt dann liegen.
+        const offen = [];
+        for (const d of geschrieben.reverse()) { try { if (leseHash(absVon(d.pfad)) === d.hashNachher) atomarSchreiben(absVon(d.pfad), d.vorher, d.modus); else offen.push(d.pfad); } catch { offen.push(d.pfad); } }
+        if (offen.length) {
+          m.status = "unklar"; try { schreibeManifest(m); } catch { /* egal */ }
+          throw new HttpFehler(409, `Beim Schreiben ging etwas schief. ${offen.length === 1 ? "Eine Notiz war schon angepasst und" : `${offen.length} Notizen waren schon angepasst und`} ließ${offen.length === 1 ? "" : "en"} sich nicht zurücknehmen (zum Beispiel weil sie inzwischen geändert wurde): ${offen.slice(0, 3).join(", ")}. Die Kopien von vorher hat Kortex aufgehoben (Papierkorb, Hinweise).`, { art: "teilweise", dateien: offen.slice(0, MAX_LISTE), behalten: true });
+        }
         throw e;
       }
       m.status = "fertig";
       schreibeManifest(m);
       loescheMarke();
     } catch (e) {
-      if (plan.art !== "loeschen") { loescheMarke(); try { rmSync(dir, { recursive: true, force: true }); } catch { /* egal */ } } // das Löschen räumt selbst auf: dort liegt der Inhalt im Journal
+      if (plan.art !== "loeschen") { loescheMarke(); if (!(e && e.extra && e.extra.behalten)) { try { rmSync(dir, { recursive: true, force: true }); } catch { /* egal */ } } } // das Löschen räumt selbst auf: dort liegt der Inhalt im Journal
       throw e;
     }
     try { begrenzeJournale(m.id); } catch { /* Beiwerk */ }
@@ -863,13 +869,12 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
   // Nie ein laufender oder „unklar“-Vorgang, nie der neueste. Echte Papierkorb-Einträge werden nie automatisch gelöscht.
   const istRueckgaengigJournal = (m) => m.art !== "loeschen" && (m.status === "fertig" || m.status === "zurueck") && !imAltenKorb(m);
   function begrenzeJournale(ausser = null) {
-    const kand = alleManifeste().filter(istRueckgaengigJournal).sort((a, b) => (a.zeit < b.zeit ? 1 : -1));
+    const kand = alleManifeste().filter(istRueckgaengigJournal).filter((m) => m.id !== ausser).sort((a, b) => (a.zeit < b.zeit ? 1 : -1)); // die laufende Aktion bleibt immer und zählt nicht gegen die anderen
     const jetztMs = Date.now();
     let bytes = 0;
     kand.forEach((m, i) => {
       bytes += m.groesse || 0;
-      if (i === 0 || m.id === ausser) return;
-      if (i >= JOURNAL_MAX || jetztMs - Date.parse(m.zeit) > JOURNAL_TAGE * TAG_MS || bytes > JOURNAL_BYTES) { try { rmSync(vorgangDir(m.id), { recursive: true, force: true }); } catch { /* egal */ } }
+      if (i >= JOURNAL_MAX - 1 || jetztMs - Date.parse(m.zeit) > JOURNAL_TAGE * TAG_MS || bytes > JOURNAL_BYTES) { try { rmSync(vorgangDir(m.id), { recursive: true, force: true }); } catch { /* egal */ } }
     });
   }
   const ID_NAME = /^v_[0-9a-f]{12}$/;

@@ -3,7 +3,7 @@
 //
 // Die Regeln
 //   · Wortgrenzen: ein Name zählt nur als ganze Wortfolge. „Kaffee“ steht nicht in „Kaffeemaschine“ und nicht in „Kaffee_alt“; „Kaffee-Maschine“ zählt (Bindestrich = Wortgrenze).
-//   · Groß/klein, Unicode-Form (NFC/NFD) und Umlaute sind egal: „muehle“, „Mühle“, „MUEHLE“ und „Muhle“ treffen alle die Notiz „Mühle“ (wie die Link-Auflösung in wikilink.mjs).
+//   · Groß/klein, Unicode-Form (NFC/NFD) und Umlaute sind egal: „muehle“, „Mühle“ und „MUEHLE“ treffen die Notiz „Mühle“; ein bloßes „Muhle“ nicht.
 //     Zwischen den Wörtern eines Namens gelten Leerzeichen, Tabs, „-“ und „_“ gleich; ein Zeilenumbruch bricht den Treffer ab.
 //   · Nie gezählt wird: der Datei-Kopf (Front Matter), Code (Zäune, eingerückte Blöcke, Inline-Code), HTML-Kommentare und -Tags, Überschriften (ein Link würde den Titel ändern),
 //     Formeln, vorhandene Links ([[…]], [Text](…), ![Bild](…), [Text][ref], Definitionen), Adressen (https:, www., E-Mail), #Tags und @Namen.
@@ -21,7 +21,7 @@ const MAX_TOKEN = 60;
 const SONDER_AE = { "ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss", "æ": "ae", "œ": "oe", "ø": "o", "đ": "d", "ł": "l", "ı": "i" };
 const SONDER_A = { "ß": "ss", "æ": "ae", "œ": "oe", "ø": "o", "đ": "d", "ł": "l", "ı": "i" };
 const RE_SONDER = /[äöüßæœøđłı]/g;
-export const MODI = ["ae", "a"];
+export const MODI = ["ae"]; // Umlaute nur als ae/oe/ue („Mühle“ = „Muehle“); ein bloßes „u“ gilt nicht („zahlen“ ≠ „Zählen“)
 
 /** Ein Wort falten: klein, Umlaute (modus "ae": ä→ae; modus "a": ä→a), Akzente weg. */
 export function falteWort(w, modus = "ae") {
@@ -96,6 +96,8 @@ function codeBereiche(zeile) { // Inline-Code: gleich lange Backtick-Reihen öff
 
 const INLINE = [
   /!?\[\[[^\[\]\n]*\]\]/g,                                     // [[Link]], ![[Einbettung]]
+  /\[[^\[\]\n]*\]/g,                                              // jeder Text in eckigen Klammern: [Kaffee] (Referenz-Kurzform), [x] …
+  /[\p{L}\p{N}_.\/-]+\.(?:md|txt)\b/gu,                           // Dateinamen: Kaffee.md
   /!?\[[^\[\]\n]*\]\((?:[^()\n]|\([^()\n]*\))*\)/g,            // [Text](Adresse), ![Bild](Adresse)
   /!?\[[^\[\]\n]+\]\[[^\[\]\n]*\]/g,                           // [Text][ref]
   /\[\^[^\]\n]+\]/g,                                           // Fußnote
@@ -138,6 +140,8 @@ export function sperrBereiche(text) {
     davorLeer = false; davorCode = false;
   }
   for (const k of text.matchAll(/<!--[\s\S]*?(?:-->|$)/g)) iv.push([k.index, k.index + k[0].length]);
+  for (const k of text.matchAll(/%%[\s\S]*?(?:%%|$)/g)) iv.push([k.index, k.index + k[0].length]);                       // Obsidian-Kommentar
+  for (const k of text.matchAll(/<(pre|script|style|code|details|table)\b[\s\S]*?(?:<\/\1>|$)/gi)) iv.push([k.index, k.index + k[0].length]); // HTML-Blöcke
   for (const k of text.matchAll(/\$\$[\s\S]*?(?:\$\$|$)/g)) iv.push([k.index, k.index + k[0].length]);
   // Inline-Code (auch über Zeilen eines Absatzes) und die Muster je Zeile
   for (let i = 0; i < zeilen.length;) {
@@ -146,7 +150,9 @@ export function sperrBereiche(text) {
     while (j + 1 < zeilen.length && art[j + 1] === "text") j++;
     const starts = []; let acc = 0; const teile = [];
     for (let k = i; k <= j; k++) { starts.push(acc); teile.push(zeilen[k].text); acc += zeilen[k].text.length + 1; }
-    const wo = (idx) => { let k = starts.length - 1; while (k > 0 && starts[k] > idx) k--; return zeilen[i + k].pos + (idx - starts[k]); };
+    const wo = (idx) => { let lo = 0, hi = starts.length - 1; while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (starts[mid] > idx) hi = mid - 1; else lo = mid; } return zeilen[i + lo].pos + (idx - starts[lo]); };
+    // Tabelle: hat der Absatz eine Trennzeile (|---|---| oder ---|---), ist jede Zeile mit | gesperrt (ein Link mit | würde die Zellen zerreißen)
+    if (teile.some((t) => /^[\s|:-]+$/.test(t) && t.includes("-") && t.includes("|"))) for (let k = i; k <= j; k++) if (zeilen[k].text.includes("|")) iv.push([zeilen[k].pos, zeilen[k].pos + zeilen[k].text.length]);
     for (const [a, b] of codeBereiche(teile.join("\n"))) iv.push([wo(a), wo(b - 1) + 1]);
     for (let k = i; k <= j; k++) {
       const z = zeilen[k];
@@ -203,11 +209,17 @@ export function baueAbgleicher(namen) {
   return { modi };
 }
 
-/** Zeilennummer (1-basiert) und Spalte (0-basiert) einer Textposition. */
-export function zeileSpalte(text, pos) {
-  let zeile = 1, letzter = -1;
-  for (let i = text.indexOf("\n"); i >= 0 && i < pos; i = text.indexOf("\n", i + 1)) { zeile++; letzter = i; }
-  return { zeile, spalte: pos - (letzter + 1) };
+/** Positionen der Zeilenanfänge (sortiert) — einmal je Text, danach binäre Suche. */
+export function zeilenStarts(text) {
+  const st = [0];
+  for (let i = text.indexOf("\n"); i >= 0; i = text.indexOf("\n", i + 1)) st.push(i + 1);
+  return st;
+}
+/** Zeilennummer (1-basiert) und Spalte (0-basiert) einer Textposition; `starts` aus zeilenStarts() (sonst wird es berechnet). */
+export function zeileSpalte(text, pos, starts = zeilenStarts(text)) {
+  let lo = 0, hi = starts.length - 1;
+  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (starts[mid] > pos) hi = mid - 1; else lo = mid; }
+  return { zeile: lo + 1, spalte: pos - starts[lo] };
 }
 
 const WORTZEICHEN = /[\p{L}\p{M}\p{N}_]/u;
@@ -274,40 +286,38 @@ export function kontextVon(text, start, ende, breite = 160) {
 }
 
 /** Stelle(n) einer Notiz zum Anzeigen: { start, ende, zeile, spalte, treffer, ... }. */
-export function stellenAus(text, treffer) {
-  return treffer.map((t) => {
-    const zs = zeileSpalte(text, t.start);
+export const MAX_TREFFER = 500; // so viele Stellen je Text werden aufbereitet (Auszüge, Zeilen); der Rest wird nur gezählt
+export function stellenAus(text, treffer, starts = zeilenStarts(text)) {
+  return treffer.slice(0, MAX_TREFFER).map((t) => {
+    const zs = zeileSpalte(text, t.start, starts);
     const k = kontextVon(text, t.start, t.ende);
     return { start: t.start, ende: t.ende, zeile: zs.zeile, spalte: zs.spalte, treffer: t.treffer, name: t.name.text, art: t.name.art, auszug: k.zeile, markierung: k.markierung, vor: k.vor, nach: k.nach };
   });
 }
 
 // ───────────────────────────── Verlinken ─────────────────────────────
-const ZEILE_TABELLE = /^\s*\|/;
 /**
  * Der Linktext für eine Stelle: `[[Ziel]]`, wenn der Text genau dem Linkziel entspricht, sonst `[[Ziel|Text]]` (der Text im Satz bleibt, wie er ist).
  * `ziel`: was in die Klammern gehört (Titel oder Pfad|Titel, siehe wikilink.mjs#linkText). → null, wenn die Stelle sich so nicht verlinken lässt
- * (Anzeigetext mit | in einer Tabellenzeile).
+ * (nie: Tabellenzeilen sind schon beim Finden gesperrt).
  */
 export function linkFuer(text, stelle, ziel) {
   const [adresse, anzeige] = ziel.split("|");
   const t = stelle.treffer;
   const gleich = !anzeige ? adresse.normalize("NFC") === t.normalize("NFC") : false;
   if (gleich) return `[[${adresse}]]`;
-  const zs = text.lastIndexOf("\n", stelle.start - 1) + 1;
-  let ze = text.indexOf("\n", stelle.ende); if (ze < 0) ze = text.length;
-  if (ZEILE_TABELLE.test(text.slice(zs, ze))) return null;
   return `[[${adresse}|${t}]]`;
 }
 
 /**
- * Setzt Links in den Text. stellen: [{ start, ende, link }] (nicht überlappend). → neuer Text. Alles andere bleibt Byte für Byte.
+ * Setzt Links in den Text. stellen: [{ start, ende, link }] (nicht überlappend). → neuer Text in EINEM Durchgang. Alles andere bleibt Byte für Byte.
  */
 export function setzeLinks(text, stellen) {
-  const s = stellen.slice().sort((a, b) => b.start - a.start);
-  let aus = text;
-  for (const x of s) aus = aus.slice(0, x.start) + x.link + aus.slice(x.ende);
-  return aus;
+  const teile = [];
+  let pos = 0;
+  for (const x of stellen.slice().sort((a, b) => a.start - b.start)) { teile.push(text.slice(pos, x.start), x.link); pos = x.ende; }
+  teile.push(text.slice(pos));
+  return teile.join("");
 }
 
 /**
@@ -319,6 +329,7 @@ export function findeWieder(text, aktuelle, alt) {
   const umgebung = (a) => { const k = kontextVon(text, a.start, a.ende); return k.vor === alt.vor && k.nach === alt.nach; };
   const genau = aktuelle.find((a) => a.start === alt.start && passt(a) && umgebung(a));
   if (genau) return genau;
+  if (!alt.vor || !alt.nach) return null; // ohne Umgebung davor UND danach wird nichts „irgendwo“ wiedergefunden
   const gleich = aktuelle.filter((a) => passt(a) && umgebung(a));
   return gleich.length === 1 ? gleich[0] : null;
 }

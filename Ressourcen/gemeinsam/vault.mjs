@@ -439,7 +439,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
   const verwaltet = (rel) => {
     verwaltetKonfig ??= { inbox: falte(inboxOrdnerVon(wurzel)), vorlagen: falte(vorlagenOrdnerVon(wurzel)) };
     const t = rel.split("/"), erste = falte(t[0]);
-    return /^90_/.test(erste) || erste === verwaltetKonfig.vorlagen || (erste === verwaltetKonfig.inbox && t.length > 2 && t[1].startsWith("_")) || (t.length === 1 && /^(claude|agents|gemini)\.md$/i.test(rel));
+    return /^90_/.test(erste) || erste === verwaltetKonfig.vorlagen || (erste === verwaltetKonfig.inbox && t.length > 2 && t[1].startsWith("_")) || /(^|\/)((claude|agents|gemini)\.md|\.cursorrules|copilot-instructions\.md)$/i.test(rel);
   };
   const darfQuelle = (rel) => !verwaltet(rel);
   const darfZiel = (rel) => !verwaltet(rel) && falte(rel.split("/")[0]) !== (verwaltetKonfig?.inbox ?? falte(inboxOrdnerVon(wurzel))) && !rel.split("/").pop().startsWith("_");
@@ -448,13 +448,13 @@ export function oeffneVault(vaultPfad, opts = {}) {
   const erwaehnungen = (p, opt) => holeErwaehnungen().erwaehnungen(erwPfad(p), opt);
   async function erwaehntVon(p, text) {
     if (typeof text !== "string") throw new HttpFehler(400, "Der Text fehlt.");
-    if (text.length > 2 * MAX_DATEI) throw new HttpFehler(413, "Der Text ist zu groß.");
+    if (text.length > 1024 * 1024) throw new HttpFehler(413, "Der Text ist zu groß.");
     return holeErwaehnungen().erwaehntVon(erwPfad(p), text);
   }
   // a: { pfad, text, stellen: [{ ziel, start, treffer, vor, nach }] | alle: true } — Links für den offenen (auch ungespeicherten) Text; geschrieben wird nichts
   async function erwaehnungenLinks(a) {
     if (!a || typeof a !== "object" || typeof a.text !== "string") throw new HttpFehler(400, "Der Text fehlt.");
-    if (a.text.length > 2 * MAX_DATEI) throw new HttpFehler(413, "Der Text ist zu groß.");
+    if (a.text.length > 1024 * 1024) throw new HttpFehler(413, "Der Text ist zu groß.");
     const pfad = erwPfad(a.pfad);
     let stellen = "alle";
     if (a.alle !== true) {
@@ -476,9 +476,10 @@ export function oeffneVault(vaultPfad, opts = {}) {
       if (!Array.isArray(a.stellen) || !a.stellen.length || a.stellen.length > 500) throw new HttpFehler(400, "Bitte die Stellen angeben (höchstens 500).");
       auswahl = a.stellen.map((s) => {
         if (!s || typeof s.pfad !== "string" || !Number.isInteger(s.start) || s.start < 0 || typeof s.treffer !== "string" || s.treffer.length > 200) throw new HttpFehler(400, "Eine Stelle ist unvollständig.");
-        return { pfad: erwPfad(s.pfad), start: s.start, treffer: s.treffer, vor: typeof s.vor === "string" ? s.vor.slice(0, 40) : "", nach: typeof s.nach === "string" ? s.nach.slice(0, 40) : "" };
+        return { pfad: erwPfad(s.pfad), start: s.start, treffer: s.treffer, vor: typeof s.vor === "string" ? s.vor.slice(0, 40) : "", nach: typeof s.nach === "string" ? s.nach.slice(0, 40) : "", ...(typeof s.hash === "string" && /^[0-9a-f]{64}$/.test(s.hash) ? { hash: s.hash } : {}) };
       });
     }
+    if (await selbst.abgleichBeschaeftigt()) throw new HttpFehler(409, "Gerade läuft ein Abgleich oder eine Zusammenführung. Kortex verlinkt nichts, bis sie abgeschlossen ist.", { art: "beschaeftigt" });
     const r = await dateiAktionen.verlinke({ vorschau: a.vorschau === true, ...(typeof a.token === "string" ? { token: a.token } : {}) }, (lies) => holeErwaehnungen().planeVerlinken(ziel, auswahl, lies));
     if (r.geaendert && r.geaendert.length && suchindex) suchindex.aendere(r.geaendert);
     return r;
@@ -722,6 +723,11 @@ export function oeffneVault(vaultPfad, opts = {}) {
     return { ok: true, gelesenBis: setzeMarke(supportOrdnerV(), kennungVault(wurzel), t) };
   }
 
+  // Rückgängig und Wiederholen fassen Dateien an: nicht während eines offenen Abgleichs (MERGE_HEAD, gemerkter Konfliktstand, Sperre)
+  const nichtImAbgleich = async (fn) => {
+    if (await selbst.abgleichBeschaeftigt()) throw new HttpFehler(409, "Gerade läuft ein Abgleich oder eine Zusammenführung. Versuche es danach noch einmal — es wurde nichts verändert.", { art: "beschaeftigt" });
+    return fn();
+  };
   let selbst = null;
   return selbst = {
     wurzel, name: basename(wurzel), heute: () => opts.heute || heuteIso(jetzt()), rueckfragen, kitVersion, kitVorhanden, kit, vertrauen, vertrauenStand: stand, baum, lies, imUnterVault: (rel) => { try { return imUnterVault(loese(wurzel, rel).abs); } catch { return false; } }, schreibe, zusammenfuehren, ablageListe, ablageLese, ablageLegeAb, entwurfPruefen,
@@ -729,7 +735,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
     neu, wikiAnlegen, wikiLoese: (ziel, von) => notizIndex.loeseWiki(ziel, ordnerVonPfad(von || "")), merken, suche, sucheIndex, sucheVorwaermen, suchindexBeende, suchindexAendere, suchindexPruefeNeu, suchindexStand: () => (suchindex ? suchindex.stand() : null), suchindexRuhe: () => (suchindex ? suchindex.ruhe() : Promise.resolve()), suchenFuerKi, pruefung, gesundheit, nutzung,
     erwaehnungen, erwaehntVon, erwaehnungenLinks, verlinke: mitRuhe(verlinke), neuigkeiten, neuigkeitenGelesen, umbenennen: mitRuhe(dateiAktionen.umbenennen), verschieben: mitRuhe(dateiAktionen.verschieben), loeschen: mitRuhe(dateiAktionen.loeschen),
     papierkorb: dateiAktionen.papierkorbListe, papierkorbWiederherstellen: mitRuhe(dateiAktionen.papierkorbWiederherstellen), papierkorbEndgueltig: dateiAktionen.papierkorbEndgueltig, papierkorbHinweisErledigt: dateiAktionen.papierkorbHinweisErledigt, aktionenOrt: dateiAktionen.aktionenOrt,
-    vorgangZurueck: mitRuhe((a) => dateiAktionen.vorgangZurueck(a.id, a)), vorgangWieder: mitRuhe((a) => dateiAktionen.vorgangWieder(a.id, a)), vorgangMoeglich: dateiAktionen.vorgangMoeglich,
+    vorgangZurueck: mitRuhe((a) => nichtImAbgleich(() => dateiAktionen.vorgangZurueck(a.id, a))), vorgangWieder: mitRuhe((a) => nichtImAbgleich(() => dateiAktionen.vorgangWieder(a.id, a))), vorgangMoeglich: dateiAktionen.vorgangMoeglich,
     posteingangVerwerfen: posteingang.verwerfen, posteingangSpaeter: posteingang.spaeter, posteingangUebernehmen: posteingang.uebernehmen,
     aufgaben: aufgabenFn.aufgaben, aufgabeAnlegen: aufgabenFn.anlegen, aufgabeAendern: aufgabenFn.aendern, aufgabenArchivieren: aufgabenFn.archivieren, aufgabenFuerKi: aufgabenFn.fuerKi, aufgabenOrdnerName: aufgabenFn.ordnerName, aufgabePfad: aufgabenFn.findePfad,
     notizen: async () => ({ ...(await notizIndex.notizen()), aufgabenOrdner: await aufgabenFn.ordnerName(), inboxOrdner: inboxOrdnerVon(wurzel), vorlagenOrdner: vorlagenOrdnerVon(wurzel), ...hinweisFeld() }), notizKontext: notizIndex.kontext, typen: notizIndex.typen, ansichten: notizIndex.ansichten,

@@ -26,10 +26,12 @@ test("Wortgrenzen: ganze Wörter, Bindestrich zählt als Grenze, Unterstrich und
 });
 
 test("Groß/klein, Umlaute und Unicode-Form sind egal", () => {
-  for (const t of ["mühle", "MÜHLE", "Muehle", "MUEHLE", "Muhle", "Mühle", "Mühle"]) assert.equal(finde(`Bei der ${t} vorbei`, "Mühle").length, 1, t);
+  for (const t of ["mühle", "MÜHLE", "Muehle", "MUEHLE", "Mühle", "Mühle"]) assert.equal(finde(`Bei der ${t} vorbei`, "Mühle").length, 1, t);
   assert.deepEqual(finde("Die STRASSE und die Straße", "Straße"), ["STRASSE", "Straße"]);
   assert.deepEqual(finde("Café und cafe", "Café"), ["Café", "cafe"]);
   assert.deepEqual(finde("Das Mühlenrad", "Mühle"), [], "Mühlenrad ist ein anderes Wort");
+  assert.deepEqual(finde("Wir zahlen, nicht zählen", "Zählen"), ["zählen"], "ein bloßes „zahlen“ ist ein anderes Wort als „Zählen“");
+  assert.deepEqual(finde("Muhle und Mühle", "Mühle"), ["Mühle"], "kein Falten von ü zu u");
 });
 
 test("Mehrwort-Namen: Leerzeichen, Tabs, Bindestrich und Unterstrich gelten gleich, ein Zeilenumbruch bricht ab", () => {
@@ -84,17 +86,35 @@ test("Ein längerer Name einer anderen Notiz gewinnt; ein Name zweier Notizen is
   assert.deepEqual(E.findeNamen("Eine Mühle", b).map((x) => x.id), [null]);
 });
 
-test("Links setzen: [[Titel]] bei gleichem Text, sonst [[Titel|Text]]; in Tabellenzeilen nur ohne Anzeigetext; alles andere bleibt Byte für Byte", () => {
-  const text = "﻿Zeile eins\r\nIch mag kaffee und Kaffee.\r\n| a | Kaffee |\r\n| b | kaffee |\r\nEnde";
+test("Links setzen: [[Titel]] bei gleichem Text, sonst [[Titel|Text]]; alles andere bleibt Byte für Byte", () => {
+  const text = "\ufeffZeile eins\r\nIch mag kaffee und Kaffee.\r\nEnde";
   const ab = E.baueAbgleicher([{ id: "z", name: E.bereiteName("Kaffee") }]);
   const tr = E.findeNamen(text, ab, { nurId: "z" });
-  assert.equal(tr.length, 4);
+  assert.equal(tr.length, 2);
   const stellen = tr.map((t) => ({ start: t.start, ende: t.ende, treffer: t.treffer, link: E.linkFuer(text, t, "Kaffee") }));
-  assert.deepEqual(stellen.map((s) => s.link), ["[[Kaffee|kaffee]]", "[[Kaffee]]", "[[Kaffee]]", null]);
-  const neu = E.setzeLinks(text, stellen.filter((s) => s.link));
-  assert.equal(neu, "﻿Zeile eins\r\nIch mag [[Kaffee|kaffee]] und [[Kaffee]].\r\n| a | [[Kaffee]] |\r\n| b | kaffee |\r\nEnde");
+  assert.deepEqual(stellen.map((s) => s.link), ["[[Kaffee|kaffee]]", "[[Kaffee]]"]);
+  assert.equal(E.setzeLinks(text, stellen), "\ufeffZeile eins\r\nIch mag [[Kaffee|kaffee]] und [[Kaffee]].\r\nEnde");
   assert.equal(E.linkFuer(text, tr[0], "wissen/kaffee|Kaffee"), "[[wissen/kaffee|kaffee]]");
   assert.equal(E.linkFuer(text, tr[1], "wissen/kaffee|Kaffee"), "[[wissen/kaffee|Kaffee]]");
+});
+
+test("Tabellen: in Zeilen einer Tabelle (mit oder ohne führendes |) wird nie verlinkt; ohne Trennzeile ist es keine Tabelle", () => {
+  const ab = E.baueAbgleicher([{ id: "z", name: E.bereiteName("Kaffee") }]);
+  const n = (t) => E.findeNamen(t, ab, { nurId: "z" }).length;
+  assert.equal(n("Kaffee | 3\n--- | ---\nKaffee | 4\n\nKaffee im Text."), 1, "nur der Satz außerhalb der Tabelle");
+  assert.equal(n("| Name | Preis |\n|:--|--:|\n| Kaffee | 3 |\n\nKaffee danach."), 1);
+  assert.equal(n("Coffee | Kaffee\nund Kaffee"), 2, "ohne Trennzeile ist es keine Tabelle");
+  const t = "Kaffee | 3\n--- | ---\nKaffee | 4\n";
+  const [, lauf] = [0, E.findeNamen(t, ab, { nurId: "z" })];
+  assert.equal(lauf.length, 0);
+});
+
+test("Ausgeschlossen: [Kaffee], Kaffee.md, %%…%%, <pre>, HTML-Blöcke", () => {
+  const ab = E.baueAbgleicher([{ id: "z", name: E.bereiteName("Kaffee") }]);
+  const n = (t) => E.findeNamen(t, ab, { nurId: "z" }).length;
+  assert.equal(n("Siehe [Kaffee] und Kaffee.md und %%Kaffee%% hier."), 0);
+  assert.equal(n("<pre>\nKaffee\n</pre>\n\nKaffee echt."), 1);
+  assert.equal(n("<details>\nKaffee\n</details>"), 0);
 });
 
 test("Stelle wiederfinden: nach Änderungen davor, bei Änderung an der Stelle nicht", () => {
@@ -262,10 +282,10 @@ test("Linkziel: Titel genügt, wenn er eindeutig ist; führt der Titel woandersh
 
 test("Links für den offenen Text: auch ungespeichert, mit Wiederfinden nach Änderungen, Tabellenzeilen und Vorschauzeilen; schreibt nichts", async () => {
   const { d, v } = aufbau({ "wissen/kaffee.md": "# Kaffee\n", "wissen/tee.md": "# Tee\n", "x/a.md": "# A\n\nAlt.\n" });
-  const text = "# A\n\nKaffee und Tee am Morgen.\n\n| a | b |\n| Kaffee | tee |\n";
+  const text = "# A\n\nKaffee und Tee am Morgen.\n\n| a | b |\n|---|---|\n| Kaffee | tee |\n\nUnd Kaffee.\n";
   const alle = await v.erwaehnungenLinks({ pfad: "x/a.md", text, alle: true });
-  assert.deepEqual(alle.aenderungen.map((a) => [a.link, a.zeile]), [["[[Kaffee]]", 3], ["[[Tee]]", 3], ["[[Kaffee]]", 6]], "die Tabellenzelle „tee“ bräuchte einen Anzeigetext mit | und fehlt");
-  assert.equal(alle.uebersprungen, 1);
+  assert.deepEqual(alle.aenderungen.map((a) => [a.link, a.zeile]), [["[[Kaffee]]", 3], ["[[Tee]]", 3], ["[[Kaffee]]", 9]], "die Tabelle bleibt unberührt");
+  assert.equal(alle.uebersprungen, 0);
   assert.equal(alle.aenderungen[0].nachher, "[[Kaffee]] und Tee am Morgen.");
   // einzelne Stelle, Text inzwischen weitergetippt (Stelle verschoben)
   const r0 = await v.erwaehntVon("x/a.md", text);
