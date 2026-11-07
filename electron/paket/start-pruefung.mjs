@@ -25,7 +25,7 @@ function beende(kind) { // nur der eigene Prozess
 }
 
 const home = realpathSync(mkdtempSync(join(tmpdir(), "kortex-start-")));
-let fehler = null;
+let home2 = null, fehler = null;
 try {
   // 1. Debug-Anschluss: die App beendet sich (Exit ≠ 0), ohne ein Fenster zu zeigen
   const dbg = spawnSync(programm, [...extra, "--remote-debugging-port=0"], { env: umgebung(home), encoding: "utf8", timeout: 30_000, windowsHide: true });
@@ -38,9 +38,10 @@ try {
   if (existsSync(join(home, "als-node.txt"))) throw new Error("ELECTRON_RUN_AS_NODE hat die App in ein Node verwandelt (Fuse RunAsNode ist nicht aus)");
   console.log("ok: ELECTRON_RUN_AS_NODE wirkt nicht");
   // 3. normaler Start: das Protokoll meldet „werkstatt bereit“
-  rmSync(join(home, "support"), { recursive: true, force: true });
-  const app = spawn(programm, extra, { env: umgebung(home), stdio: "ignore", windowsHide: true });
-  const log = join(home, "support", "electron", "huelle.log");
+  await warte(2000); // die Kinder der abgebrochenen Probe schreiben noch: frisches HOME statt aufräumen
+  home2 = realpathSync(mkdtempSync(join(tmpdir(), "kortex-start-")));
+  const app = spawn(programm, extra, { env: umgebung(home2), stdio: "ignore", windowsHide: true });
+  const log = join(home2, "support", "electron", "huelle.log");
   const bis = Date.now() + 90_000;
   let text = "";
   while (Date.now() < bis) {
@@ -54,5 +55,5 @@ try {
   if (!/werkstatt bereit/.test(text)) throw new Error(`Das Protokoll meldet nie „werkstatt bereit“ (App ${lief ? "lief" : `endete mit ${app.exitCode}`}). Protokoll:\n${text.slice(-1500)}`);
   console.log("ok: Release-App startet ohne Playwright, Werkstatt bereit");
 } catch (e) { fehler = e; }
-finally { await warte(500); try { rmSync(home, { recursive: true, force: true, maxRetries: 5 }); } catch { /* Temp räumt das System */ } }
+finally { await warte(500); for (const h of [home, home2]) if (h) try { rmSync(h, { recursive: true, force: true, maxRetries: 5 }); } catch { /* Temp räumt das System */ } }
 if (fehler) { console.error(fehler.message); process.exit(1); }
