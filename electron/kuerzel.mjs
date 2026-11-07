@@ -18,6 +18,7 @@ export const TEXT = Object.freeze({
 export function acceleratorVon(text, { register, logik, plattform = process.platform }) {
   const k = logik.zerlege(text, register);
   if (!k) return null;
+  if (plattform !== "darwin" && k.Ctrl && k.Cmd) return null; // Strg und ⌘ fallen dort zusammen: zwei Texte, ein Accelerator
   const teile = [];
   if (plattform === "darwin") { if (k.Ctrl) teile.push("Control"); if (k.Alt) teile.push("Alt"); if (k.Shift) teile.push("Shift"); if (k.Cmd) teile.push("Command"); }
   else { if (k.Ctrl || k.Cmd) teile.push("Ctrl"); if (k.Alt) teile.push("Alt"); if (k.Shift) teile.push("Shift"); }

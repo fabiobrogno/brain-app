@@ -2,7 +2,7 @@
 // Die Kürzel stehen NICHT hier: jeder Eintrag, der einen Studio-Befehl auslöst, nennt nur dessen Menü-Namen (`menue` im Register, StudioBefehl.rawValue); das Kürzel kommt aus dem Register
 // plus eigener Belegung (tastenkuerzel.json), unter Windows/Linux mit Strg statt ⌘. Die festen Einträge (Beenden, Kortex einrichten …, Studio) nehmen ihr Kürzel aus den `reserviert`-Einträgen
 // des Registers (Cmd+Q, Cmd+E, Alt+Cmd+1 …). Reine Logik OHNE `import "electron"`: `aktion` bekommt { befehl } | { fest } beim Klick.
-// Die Kürzel gelten im Studio selbst (Tastendruck in der Seite); das Menü zeigt sie nur an (registerAccelerator: false), damit ein Druck nie doppelt wirkt und ein Befehl ohne offenen Vault
+// Die Kürzel der Studio-Befehle gelten im Studio selbst (Tastendruck in der Seite); das Menü zeigt sie nur an (registerAccelerator: false), damit ein Druck nie doppelt wirkt; die festen Einträge (Beenden, Schließen, Einrichten, Studio, Erfassen) kennt das Studio nicht: dort meldet das Menü das Kürzel selbst an und ein Befehl ohne offenen Vault
 // nicht am Studio vorbei ausgelöst wird. Am Mac (nur für die Entwicklung) gilt der Accelerator wie bei jedem Programm.
 import { acceleratorVon, menueAccelerator } from "./kuerzel.mjs";
 
@@ -51,7 +51,7 @@ export function baueMenueVorlage({ register, logik, belegung, plattform = proces
     let acc = null;
     if (was.kuerzelId) acc = menueAccelerator(was.kuerzelId, ctx);
     else if (was.grund && reserviert(was.grund)) acc = acceleratorVon(reserviert(was.grund), { register, logik, plattform });
-    return { id: `fest-${was.fest}`, label: text, ...(acc ? { accelerator: acc, ...zeigeNur } : {}), click: () => aktion({ fest: was.fest }) };
+    return { id: `fest-${was.fest}`, label: text, ...(acc ? { accelerator: acc, ...(was.kuerzelId ? zeigeNur : {}) } : {}), click: () => aktion({ fest: was.fest }) };
   }
 
   const menues = STRUKTUR.map(([titel, eintraege]) => ({

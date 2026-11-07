@@ -76,7 +76,7 @@ const optionen = liesArgumente(process.argv.slice(1));
 
 protocol.registerSchemesAsPrivileged([{ scheme: SCHEMA, privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 
-let fenster = null, bruecke = null, endeLaeuft = false, schliessenFrei = false, schliessenLaeuft = false, beendet = false;
+let fenster = null, bruecke = null, endeLaeuft = false, schliessenFrei = false, schliessenLaeuft = false, beendet = false, gestartet = false;
 const abstuerze = [];
 
 // ───────────── Aktionen des Hüllen-Vertrags ─────────────
@@ -174,7 +174,7 @@ const zeigeGlasAnSeite = () => { const skript = glasSkript({ moeglich: GLAS, an:
 function wendeGlasAn(an) { // → null (kein Fenstermaterial möglich) | wirkt
   if (!GLAS) return null;
   glasWunsch = an;
-  if (fenster && !fenster.isDestroyed()) { fenster.setBackgroundMaterial?.(an ? "mica" : "none"); zeigeGlasAnSeite(); }
+  if (fenster && !fenster.isDestroyed()) { fenster.setBackgroundMaterial?.(an ? "mica" : "none"); fenster.setBackgroundColor?.(an ? "#00000000" : nativeTheme.shouldUseDarkColors ? "#16181c" : "#ffffff"); zeigeGlasAnSeite(); }
   return an;
 }
 
@@ -244,10 +244,12 @@ function starteTray() {
 const bleibtImTray = () => !beendet && !!tray && IN_TRAY_SCHLIESSEN;
 
 // ── Mitteilungen des Systems aus dem Aktivitätsprotokoll (Takt 2 s wie MitteilungsDienst in Swift); Klick bringt das Studio nach vorn und öffnet das Ziel
+const gehalten = new Set(); // gezeigte Mitteilungen, bis sie geschlossen oder angeklickt sind
 const MELDUNGEN = []; // Testlauf: die gezeigten Mitteilungen (Objekt, Text, Ziel), zum Prüfen; sonst leer
 function zeigeMitteilung(m) {
   const n = new Notification({ title: m.titel, ...(m.untertitel ? { subtitle: m.untertitel } : {}), body: m.text, silent: !m.ton });
-  n.on("click", () => { mitStudio(() => befehlAnStudio(m.ziel)).catch(() => {}); });
+  gehalten.add(n); n.on("close", () => gehalten.delete(n)); // Electron räumt sonst das Objekt samt Klick-Handler weg
+  n.on("click", () => { gehalten.delete(n); mitStudio(() => befehlAnStudio(m.ziel)).catch(() => {}); });
   if (TESTMODUS) { MELDUNGEN.push({ titel: m.titel, untertitel: m.untertitel, text: m.text, ziel: m.ziel, art: m.art ?? null, objekt: n }); if (MELDUNGEN.length > 50) MELDUNGEN.shift(); }
   else n.show();
 }
@@ -358,9 +360,10 @@ function oeffneFenster() {
       frage: () => f.webContents.executeJavaScript(SCHLIESSEN_SKRIPT),
       rueckfrage: async (grund) => (await dialog.showMessageBox(f, { type: "warning", message: "Änderungen nicht gespeichert", detail: grund, buttons: ["Trotzdem schließen", "Abbrechen"], defaultId: 1, cancelId: 1 })).response === 0,
       protokoll,
-    }).then((ok) => { schliessenLaeuft = false; if (ok && !f.isDestroyed()) { schliessenFrei = true; f.close(); } });
+    }).then((ok) => { schliessenLaeuft = false; if (!ok) beendet = false; /* Beenden abgebrochen */ if (ok && !f.isDestroyed()) { schliessenFrei = true; f.close(); } });
   });
-  fenster.on("closed", () => { fenster = null; if (!bleibtImTray()) app.quit(); });
+  const dieses = fenster;
+  fenster.on("closed", () => { if (fenster === dieses) fenster = null; if (!bleibtImTray()) app.quit(); });
   wc.on("did-start-navigation", (e) => { if (e.isMainFrame && !e.isSameDocument) aktionen.seiteNeu(); });
   // Absturz des Web-Prozesses: neu laden (?nachAbsturz=1), höchstens 3× in 60 s (wie WebProzessSchutz.swift)
   wc.on("render-process-gone", (_e, d) => {
@@ -402,7 +405,7 @@ function imBrowserOeffnen(url) {
 // ───────────── Start und Ende ─────────────
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
-  app.on("second-instance", () => zeigeStudio());
+  app.on("second-instance", () => { if (gestartet) zeigeStudio(); }); // während des Hochfahrens kein zweites Fenster
   app.whenReady().then(async () => {
     if (process.platform === "win32") app.setAppUserModelId("io.github.fbrogno.brain"); // wie die Bundle-ID am Mac; der Installer (W2c) setzt dieselbe
     const ses = session.defaultSession;
@@ -426,6 +429,7 @@ else {
     try { await bruecke.bereit; }
     catch (e) { protokoll(`werkstatt: ${e?.message || e}`); dialog.showErrorBox("Kortex", `Die Werkstatt von Kortex ließ sich nicht starten.\n\n${String(e?.message || e).slice(0, 600)}`); app.exit(1); return; }
     oeffneFenster();
+    gestartet = true;
     // Globale Kürzel, Tray, Mitteilungen: erst jetzt (die Werkstatt läuft). Ein Kürzel, das nicht geht, steht als Hinweis im Erfassen-Fenster.
     kuerzelAnwenden();
     starteTray();

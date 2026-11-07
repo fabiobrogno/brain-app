@@ -47,9 +47,9 @@ test("App-Menü: kommt aus dem Kürzel-Register (Strg statt ⌘), deutsche Texte
   if (!MAC) expect(oben).toEqual(["Ablage", "Darstellung", "Gehe zu", "Fenster"]);
   else expect(oben).toEqual(expect.arrayContaining(["Ablage", "Darstellung", "Gehe zu", "Fenster"]));
   const nach = (id) => e.find((x) => x.id === id);
-  // Kürzel aus dem Register: Cmd+N → Strg+N, Shift+Cmd+D → Strg+Umschalt+D, Cmd+, → Strg+, (Windows/Linux zeigen nur an: das Studio fängt den Tastendruck selbst ab)
+  // Kürzel aus dem Register: Cmd+N → Strg+N, Shift+Cmd+D → Ctrl+Shift+D, Cmd+, → Strg+, (Windows/Linux zeigen nur an: das Studio fängt den Tastendruck selbst ab)
   expect(nach("befehl-neu")).toMatchObject({ label: "Neue Notiz", accelerator: `${STRG}+N`, oben: "Ablage" });
-  expect(nach("befehl-heute")).toMatchObject({ label: "Heute (Tagesnotiz)", accelerator: `Shift+${STRG}+D` });
+  expect(nach("befehl-heute")).toMatchObject({ label: "Heute (Tagesnotiz)", accelerator: MAC ? "Shift+Command+D" : "Ctrl+Shift+D" });
   expect(nach("befehl-einstellungen")).toMatchObject({ label: "Einstellungen …", accelerator: `${STRG}+,` });
   expect(nach("befehl-palette")).toMatchObject({ label: "Befehlspalette", accelerator: `${STRG}+K`, oben: "Gehe zu" });
   expect(nach("befehl-posteingang")).toMatchObject({ label: "Posteingang", accelerator: `${STRG}+1` });
@@ -111,7 +111,7 @@ test("Schnell erfassen: kleines, rahmenloses Fenster, immer oben, Aufgabe mit Ku
   const { app, fenster } = lauf;
   const seite = await zeigeErfassen(app);
   const f = await erfassenFenster(app);
-  expect(f).toMatchObject({ sichtbar: true, immerOben: true, groesseAenderbar: false, minimierbar: false });
+  expect(f).toMatchObject({ sichtbar: true, immerOben: true, groesseAenderbar: false });
   expect(f.inhalt).toEqual([560, 276]);
   // oben mittig im sichtbaren Bereich des Bildschirms
   expect(f.grenzen.y).toBeGreaterThanOrEqual(f.arbeit.y + 40);

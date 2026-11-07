@@ -2,13 +2,14 @@
 // (erkannt aus dem Text mit denselben Kurzformen wie die Werkstatt; ein Klick auf den Chip wählt von Hand, das × lässt die erkannte Kurzform als Text), ↩ speichert, ⇧↩ neue Zeile, Esc schließt.
 // Gespeichert wird im Hauptprozess (window.kortexErfassen); die Seite sieht nur diese Schnittstelle.
 import { liesKurzformen, faelligText } from "/s/kurzformen.js";
+import { heuteIso } from "/s/zeit.js";
 
 const H = window.kortexErfassen;
 const $ = (id) => document.getElementById(id);
 const feld = $("text"), meldung = $("meldung"), speichern = $("speichern");
 const S = { art: "aufgabe", prio: null, faellig: "auto", erkennePrio: true, erkenneFaellig: true, hinweis: null, laeuft: false, zustand: "bereit" };
 const PRIOS = [null, "niedrig", "normal", "hoch"];
-const heute = () => new Date().toISOString().slice(0, 10);
+const heute = () => heuteIso(); // der Kalendertag vor Ort (wie die Werkstatt), nicht UTC
 const iso = (tage) => { const d = new Date(); d.setDate(d.getDate() + tage); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 const FAELLIG = ["auto", iso(0), iso(1), "woche", "keine"];
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);

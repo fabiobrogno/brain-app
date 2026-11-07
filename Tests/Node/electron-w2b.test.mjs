@@ -29,7 +29,8 @@ test("Accelerator: Windows/Linux Strg statt ⌘ (Cmd und Ctrl werden beide zu St
   assert.equal(acceleratorVon("Cmd+K", opt("win32")), "Ctrl+K");
   assert.equal(acceleratorVon("Shift+Cmd+D", opt("linux")), "Ctrl+Shift+D".replace("Ctrl+Shift", "Ctrl+Shift"));
   assert.equal(acceleratorVon("Ctrl+Alt+Space", opt("win32")), "Ctrl+Alt+Space");
-  assert.equal(acceleratorVon("Ctrl+Cmd+V", opt("win32")), "Ctrl+V", "⌃ und ⌘ fallen unter Windows/Linux zusammen");
+  assert.equal(acceleratorVon("Ctrl+Cmd+V", opt("win32")), null, "⌃ und ⌘ fallen unter Windows/Linux zusammen (wäre Strg+V): kein Accelerator");
+  assert.equal(acceleratorVon("Ctrl+Cmd+V", opt("darwin")), "Control+Command+V");
   assert.equal(acceleratorVon("Alt+Cmd+Left", opt("linux")), "Ctrl+Alt+Left");
   assert.equal(acceleratorVon("Cmd+,", opt("win32")), "Ctrl+,");
   assert.equal(acceleratorVon("Shift+Cmd+D", opt("darwin")), "Shift+Command+D");
@@ -137,6 +138,8 @@ test("Menü: Kürzel kommen aus Register und eigener Belegung — Strg statt ⌘
   assert.equal(nach("befehl-neu").registerAccelerator, false, "Windows/Linux: nur anzeigen, das Studio fängt den Tastendruck selbst ab");
   // feste Einträge: Kürzel aus den „reservierten“ des Registers
   assert.equal(nach("fest-beenden").accelerator, "Ctrl+Q");
+  assert.equal(nach("fest-beenden").registerAccelerator, undefined, "feste Einträge meldet das Menü selbst an (das Studio kennt sie nicht)");
+  assert.equal(nach("befehl-vault-wechseln").accelerator, undefined, "Ctrl+Cmd+V würde unter Windows/Linux zu Strg+V (Einsetzen)");
   assert.equal(nach("fest-schliessen").accelerator, "Ctrl+W");
   assert.equal(nach("fest-einrichten").accelerator, "Ctrl+E");
   assert.equal(nach("fest-studio").accelerator, "Ctrl+Alt+1");

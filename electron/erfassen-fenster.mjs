@@ -51,6 +51,8 @@ export function erzeugeErfassenFenster(abh) {
     win.setAlwaysOnTop(true, "floating");
     if (process.platform !== "darwin") win.removeMenu();
     geladen = false;
+    win.webContents.on("will-navigate", (e) => e.preventDefault()); // die Seite bleibt, wo sie ist (nie auf das Studio)
+    win.webContents.on("will-redirect", (e) => e.preventDefault());
     win.webContents.once("did-finish-load", () => { geladen = true; });
     win.on("blur", () => { if (blurSchliesst && win?.isVisible() && Date.now() - zeigtSeit > 250) schliessen(); });
     win.on("closed", () => { win = null; geladen = false; });
