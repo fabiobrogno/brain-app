@@ -27,21 +27,22 @@ export function baueUmgebung(home, extra = {}) {
 
 // → { app, fenster, home, support, vault, stopp }
 // vorher(support): schreibt Dateien in den Support-Ordner des Tests, bevor die App startet (z. B. tastenkuerzel.json, einstellungen.json)
-export async function starteApp({ vault = undefined, mitVault = true, extra = {}, warteAufStudio = true, vorher = null } = {}) {
-  const home = realpathSync(mkdtempSync(join(tmpdir(), "kortex-electron-")));
+// programm: eine gebaute oder installierte App statt haupt.mjs (Test des Pakets, paket.spec.mjs); home: ein vorhandenes Temp-HOME weiterverwenden (zweiter Start, der Aufrufer räumt auf)
+export async function starteApp({ vault = undefined, mitVault = true, extra = {}, warteAufStudio = true, vorher = null, programm = null, home: vorhandenesHome = null } = {}) {
+  const home = vorhandenesHome || realpathSync(mkdtempSync(join(tmpdir(), "kortex-electron-")));
   mkdirSync(join(home, "support"), { recursive: true });
   if (vorher) vorher(join(home, "support"));
   let vaultDir = vault;
   if (mitVault && !vaultDir) vaultDir = baueVault().vault;
-  const args = [HAUPT, ...(mitVault ? ["--vault", vaultDir] : [])];
+  const args = [...(programm ? [] : [HAUPT]), ...(mitVault ? ["--vault", vaultDir] : [])];
   // Auf Linux-Runnern ohne eingerichteten Chromium-Sandbox-Helfer (SUID) startet Electron nur mit --no-sandbox: nur dort, nur mit ausdrücklichem Schalter (CI richtet sonst den Helfer ein)
   if (process.env.KORTEX_TEST_OHNE_SANDBOX === "1") args.unshift("--no-sandbox");
-  const app = await electron.launch({ args, env: baueUmgebung(home, extra), timeout: 60_000 });
+  const app = await electron.launch({ ...(programm ? { executablePath: programm } : {}), args, env: baueUmgebung(home, extra), timeout: 90_000 });
   const fenster = await app.firstWindow();
   if (warteAufStudio) await fenster.waitForFunction(() => window.__studioBereit === true, null, { timeout: 45_000 });
   const stopp = async () => {
     try { await app.close(); } catch { /* schon weg */ }
-    try { rmSync(home, { recursive: true, force: true, maxRetries: 3 }); } catch { /* Temp räumt das System */ }
+    if (!vorhandenesHome) try { rmSync(home, { recursive: true, force: true, maxRetries: 3 }); } catch { /* Temp räumt das System */ }
   };
   return { app, fenster, home, support: join(home, "support"), vault: vaultDir, stopp };
 }

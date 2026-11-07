@@ -3,16 +3,22 @@
 // Das Studio lädt über das eigene Schema `kortex://studio/` (protocol.handle → Brücke): kein Port, kein Token, kein Netzwerkweg zur Werkstatt. Die Seite sieht nur
 // `window.kortexHuelle` (preload.cjs); die Aktionen des Hüllen-Vertrags setzt aktionen.mjs um, geprüft wird im Hauptprozess.
 // Paket W2b: App-Menü (menue.mjs), Tray (tray.mjs), Schnell-Erfassen-Fenster (erfassen-fenster.mjs) mit globalem Kürzel (kuerzel.mjs), Mitteilungen (mitteilungen.mjs), App-Symbol (symbole.mjs),
-// durchscheinende Seitenleiste (glas.mjs). Nicht in diesem Paket: Installer, Updater, eigenes Node, Signatur (W2c, docs/plaene/plattformen-windows-linux.md).
+// durchscheinende Seitenleiste (glas.mjs).
+// Paket W2c: installierbare Pakete (electron-builder, electron/paket/), eigenes Node im Paket (laufzeit.mjs legt es und den Kern stabil in den Support-Ordner), Updates (updater.mjs), GitHub-Anmeldung
+// (Client-ID aus Ressourcen/Info.plist). Nicht im Paket: Signatur unter Windows (Betas unsigniert), Veröffentlichen (docs/plaene/plattformen-windows-linux.md, docs/veroeffentlichen.md).
 import { app, BrowserWindow, Menu, Notification, Tray, clipboard, dialog, globalShortcut, ipcMain, nativeImage, nativeTheme, protocol, session, shell } from "electron";
-import { appendFileSync, existsSync, mkdirSync, statSync } from "node:fs";
-import { release } from "node:os";
+import { appendFileSync, existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { homedir, release } from "node:os";
 import { dirname, join, isAbsolute } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { erzeugeAktionen, ASYNCHRON } from "./aktionen.mjs";
 import { darfSchliessen, SKRIPT as SCHLIESSEN_SKRIPT } from "./schliessen.mjs";
 import { pruefeGitAsync } from "./git.mjs";
 import { starteBruecke, baueKindUmgebung, findeNode } from "./bruecke.mjs";
+import { installiereLaufzeit } from "./laufzeit.mjs";
+import { githubClientId } from "./info-plist.mjs";
+import { erzeugeUpdater, konfiguriere, updatesMoeglich } from "./updater.mjs";
 import { SCHEMA, HOST, START_URL, istEigeneAdresse, externPruefen } from "./navigation.mjs";
 import { erzeugeGlobaleKuerzel, anzeigeText, acceleratorVon } from "./kuerzel.mjs";
 import { baueMenueVorlage } from "./menue.mjs";
@@ -24,12 +30,12 @@ import { leseAppSymbol, symbolPfade } from "./symbole.mjs";
 import { glasMoeglich, leseGlasWunsch, glasSkript } from "./glas.mjs";
 
 const HIER = dirname(fileURLToPath(import.meta.url));
-// Ressourcen des Repos (Studio, Werkstatt, gemeinsam): im Repo ../Ressourcen, im Paket (W2c) <resources>/Ressourcen
+// Ressourcen des Repos (Studio, Werkstatt, gemeinsam): im Repo ../Ressourcen, im Paket <resources>/Ressourcen (electron/paket/ressourcen.mjs)
 const RESSOURCEN = app.isPackaged ? join(process.resourcesPath, "Ressourcen") : join(HIER, "..", "Ressourcen");
 const laden = (rel) => import(pathToFileURL(join(RESSOURCEN, rel)).href);
 const { supportOrdner, beendeBaum } = await laden("gemeinsam/plattform.mjs");
 const { pruefeOrdner, gitInstallHinweis, leseEinrichtung, schreibeEinrichtung } = await laden("werkstatt/browser-ordner.mjs");
-const { absoluterGitPfad, kindUmgebung } = await laden("gemeinsam/basis.mjs");
+const { absoluterGitPfad, kindUmgebung, vorschauOrdnerAus } = await laden("gemeinsam/basis.mjs");
 const { MAX_KOERPER } = await laden("werkstatt/handler.mjs"); // dieselbe Grenze wie die Werkstatt (nicht doppelt festgeschrieben)
 // W2b: Register und Logik der Tastenkürzel, Aktivitätsprotokoll, Kurzformen — dieselben Dateien wie Studio und Werkstatt, nichts doppelt
 const { ladeRegister, leseDatei: leseKuerzelDatei } = await laden("werkstatt/tastenkuerzel.mjs");
@@ -145,11 +151,12 @@ function menueAktion(a) {
     case "einrichten": mitStudio(() => aktionen.aktion("einrichtung-oeffnen", {})).catch(() => {}); break;
     case "schliessen": if (fenster && !fenster.isDestroyed()) fenster.close(); break;
     case "beenden": app.quit(); break;
+    case "updates": updater.pruefe({ manuell: true }).catch(() => {}); break;
     case "studio": zeigeStudio(); break;
     case "ordner-zeigen": vaultPfad().then((v) => { if (v) shell.showItemInFolder(v); }); break;
   }
 }
-const setzeMenue = () => Menu.setApplicationMenu(Menu.buildFromTemplate(baueMenueVorlage({ register, logik: kuerzelLogik, belegung: belegung(), entwickler: ENTWICKLER, aktion: menueAktion })));
+const setzeMenue = () => Menu.setApplicationMenu(Menu.buildFromTemplate(baueMenueVorlage({ register, logik: kuerzelLogik, belegung: belegung(), entwickler: ENTWICKLER, updates: UPDATES.moeglich, aktion: menueAktion })));
 
 // ── App-Symbol (Fenster, Tray, Erfassen-Fenster); gewählt in den Einstellungen, beim Start gelesen
 let aktuellesSymbol = leseAppSymbol(support);
@@ -222,7 +229,7 @@ async function aktualisiereTray() {
 function zeichneTray() {
   if (!tray) return;
   const text = belegung()["schnell-erfassen"];
-  const z = trayZustand(trayDaten, text ? acceleratorVon(text, { register, logik: kuerzelLogik }) : null);
+  const z = { ...trayZustand(trayDaten, text ? acceleratorVon(text, { register, logik: kuerzelLogik }) : null), updates: UPDATES.moeglich };
   trayVorlage = baueTrayVorlage(z, menueAktion);
   trayTooltip = trayTitel(z);
   tray.setContextMenu(Menu.buildFromTemplate(trayVorlage));
@@ -360,7 +367,7 @@ function oeffneFenster() {
       frage: () => f.webContents.executeJavaScript(SCHLIESSEN_SKRIPT),
       rueckfrage: async (grund) => (await dialog.showMessageBox(f, { type: "warning", message: "Änderungen nicht gespeichert", detail: grund, buttons: ["Trotzdem schließen", "Abbrechen"], defaultId: 1, cancelId: 1 })).response === 0,
       protokoll,
-    }).then((ok) => { schliessenLaeuft = false; if (!ok) beendet = false; /* Beenden abgebrochen */ if (ok && !f.isDestroyed()) { schliessenFrei = true; f.close(); } });
+    }).then((ok) => { schliessenLaeuft = false; if (!ok) { beendet = false; updateNeustart = false; } /* Beenden abgebrochen */ if (ok && !f.isDestroyed()) { schliessenFrei = true; f.close(); } });
   });
   const dieses = fenster;
   fenster.on("closed", () => { if (fenster === dieses) fenster = null; if (!bleibtImTray()) app.quit(); });
@@ -402,12 +409,52 @@ function imBrowserOeffnen(url) {
   else protokoll("link abgelehnt");
 }
 
+// ───────────── Laufzeit: das Node der Werkstatt (W2c) ─────────────
+// Installierte App: das mitgelieferte Node (resources/node), Kopie samt Kern im Support-Ordner mit stabilen Pfaden (laufzeit.mjs: bin/node für MCP-Einträge und Statuszeile, bin/kern für den MCP-Server).
+// Entwicklung (`npm start`): ein absolutes node aus dem PATH; ohne eines startet die Hülle nicht und sagt es (es gibt keinen Notbehelf mit Electron als Node).
+function bestimmeLaufzeit() {
+  if (app.isPackaged) {
+    const l = installiereLaufzeit({ ressourcen: process.resourcesPath, support });
+    protokoll(`laufzeit node ${l.version} kern ${l.kern ? "ja" : "nein"}`);
+    return { programm: l.nodeDatei, node: l.node, kern: l.kern };
+  }
+  const node = findeNode(process.env.PATH);
+  if (!node) throw new Error("Es gibt kein Node.js im PATH. Zum Entwickeln wird eines gebraucht (die installierte App bringt ihr eigenes mit).");
+  return { programm: node, node, kern: null };
+}
+
+// ───────────── Updates (W2c) ─────────────
+// Nie in der Entwicklung, nie in der Vorschau. Nur im Testlauf der UNVERPACKTEN App ersetzt ein lokaler Dateiserver GitHub (Test des Ablaufs ohne echtes Release); die installierte App hat keinen Schalter
+// für die Quelle. Im Testlauf (BRAIN_TESTMODUS) fragt der Updater nicht das Netz und zeigt keine Fenster: die Meldungen landen in `__kortex.update`, die Antworten setzt der Test.
+const TEST_FEED = !app.isPackaged && TESTMODUS && /^http:\/\/127\.0\.0\.1:\d+(\/|$)/.test(process.env.KORTEX_TEST_UPDATE_URL || "") ? process.env.KORTEX_TEST_UPDATE_URL : null;
+const UPDATES = updatesMoeglich({ gepackt: app.isPackaged, vorschau: !!process.env.KORTEX_VORSCHAU, testFeed: !!TEST_FEED });
+const autoUpdater = UPDATES.moeglich ? createRequire(import.meta.url)("electron-updater").autoUpdater : null;
+if (autoUpdater) {
+  konfiguriere(autoUpdater, { version: app.getVersion(), protokoll });
+  if (TEST_FEED) { // wie `app-update.yml` im Paket, nur für den Testlauf der unverpackten App
+    const konfig = join(datenOrdner, "test-app-update.yml");
+    writeFileSync(konfig, `provider: generic\nurl: ${TEST_FEED}\nupdaterCacheDirName: kortex-test-updater\n`);
+    autoUpdater.forceDevUpdateConfig = true;
+    autoUpdater.updateConfigPath = konfig;
+  }
+}
+const UPDATE_MELDUNGEN = [];
+let updateAntworten = [], updateNeustart = false, updateAuto = () => {};
+async function updateMeldung({ titel, text, knoepfe }) {
+  if (TESTMODUS) { UPDATE_MELDUNGEN.push({ titel, text, knoepfe: knoepfe ?? null }); return updateAntworten.length ? updateAntworten.shift() : (knoepfe ? knoepfe.length - 1 : 0); }
+  const r = await dialog.showMessageBox(...(fenster && !fenster.isDestroyed() ? [fenster] : []), { type: "info", title: "Kortex", message: titel, detail: text, buttons: knoepfe ?? ["OK"], defaultId: 0, cancelId: (knoepfe?.length ?? 1) - 1 });
+  return r.response;
+}
+// Neu starten = Beenden auf dem sicheren Weg (Fenster sichert, Werkstatt endet); den Installer startet erst `before-quit` ganz am Ende
+const updater = erzeugeUpdater({ autoUpdater, version: app.getVersion(), aktiv: UPDATES, meldung: updateMeldung, neustart: async () => { updateNeustart = true; app.quit(); }, protokoll });
+if (TESTMODUS) globalThis.__kortex = { ...globalThis.__kortex, update: { meldungen: UPDATE_MELDUNGEN, antworten: (a) => { updateAntworten = a; }, neustart: () => updateNeustart, pruefe: (o) => updater.pruefe(o), moeglich: UPDATES.moeglich } };
+
 // ───────────── Start und Ende ─────────────
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
   app.on("second-instance", () => { if (gestartet) zeigeStudio(); }); // während des Hochfahrens kein zweites Fenster
   app.whenReady().then(async () => {
-    if (process.platform === "win32") app.setAppUserModelId("io.github.fbrogno.brain"); // wie die Bundle-ID am Mac; der Installer (W2c) setzt dieselbe
+    if (process.platform === "win32") app.setAppUserModelId("io.github.fbrogno.brain"); // wie die Bundle-ID am Mac; der Installer (electron/paket/konfig.mjs: appId) setzt dieselbe
     const ses = session.defaultSession;
     ses.setPermissionRequestHandler((wc, erlaubnis, antwort) => antwort(erlaubnis === "clipboard-sanitized-write" && istEigeneAdresse(wc.getURL())));
     ses.setPermissionCheckHandler((wc, erlaubnis) => erlaubnis === "clipboard-sanitized-write" && !!wc && istEigeneAdresse(wc.getURL()));
@@ -416,12 +463,15 @@ else {
     ses.protocol.handle(SCHEMA, (request) => beantworte(request));
     setzeMenue();
 
+    let laufzeit;
+    try { laufzeit = bestimmeLaufzeit(); }
+    catch (e) { protokoll(`laufzeit: ${e?.message || e}`); dialog.showErrorBox("Kortex", `Kortex konnte seine Laufzeit nicht bereitstellen.\n\n${String(e?.message || e).slice(0, 600)}`); app.exit(1); return; }
+    if (TESTMODUS) globalThis.__kortex.laufzeit = { ...laufzeit };
     bruecke = starteBruecke({
-      programm: process.execPath,
+      programm: laufzeit.programm,
       skript: join(RESSOURCEN, "werkstatt", "werkstatt.mjs"),
       vault: optionen.vault,
-      // absolutes node aus dem PATH für MCP-Einträge und Statuszeile; ohne eines schreibt die Werkstatt beides nicht (bis W2c ein eigenes Node mitbringt)
-      env: baueKindUmgebung(process.env, { gepackt: app.isPackaged, node: findeNode(process.env.PATH) }),
+      env: baueKindUmgebung(process.env, { gepackt: app.isPackaged, node: laufzeit.node, kern: laufzeit.kern, githubClientId: githubClientId(join(RESSOURCEN, "Info.plist")), vorschau: vorschauOrdnerAus(process.env, homedir()) }),
       protokoll,
       beendeBaum,
     });
@@ -434,6 +484,7 @@ else {
     kuerzelAnwenden();
     starteTray();
     starteMitteilungen();
+    if (!TESTMODUS) updateAuto = updater.starteAutomatisch(); // stille Prüfung nach 30 s, dann täglich (nur installiert, nie in der Vorschau)
   });
 }
 app.on("window-all-closed", () => { if (!bleibtImTray()) app.quit(); });
@@ -446,5 +497,13 @@ app.on("before-quit", (e) => {
   endeLaeuft = true;
   e.preventDefault();
   raeumeAuf(); // globale Kürzel freigeben, Tray entfernen (app.exit löst will-quit nicht aus)
-  bruecke.beende().finally(() => app.exit(0));
+  updateAuto();
+  bruecke.beende().finally(() => {
+    // Update installieren: erst jetzt, wenn Fenster, Werkstatt und Verknüpfungen weg sind (der neue Start soll nicht an der Einzelinstanz-Sperre scheitern)
+    if (updateNeustart && app.isPackaged && autoUpdater) {
+      app.releaseSingleInstanceLock();
+      try { autoUpdater.once("error", () => app.exit(0)); setTimeout(() => app.exit(0), 15_000); autoUpdater.quitAndInstall(true, true); return; } catch (e) { protokoll(`update installieren: ${e?.message || e}`); }
+    }
+    app.exit(0);
+  });
 });

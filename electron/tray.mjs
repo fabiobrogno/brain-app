@@ -18,7 +18,7 @@ const kurz = (t, max = 56) => { const e = String(t).replace(/\s+/g, " "); return
 export const trayTitel = (z) => (z.ungelesen > 0 ? `Kortex — ${mitteilungenText(z.ungelesen)}` : "Kortex");
 
 /**
- * z: { vaultName: string|null, nurAnsehen: boolean, rueckfragen: number|null, ungelesen: number, erfassenKuerzel?: Accelerator|null, vaultDa: boolean }
+ * z: { vaultName: string|null, nurAnsehen: boolean, rueckfragen: number|null, ungelesen: number, erfassenKuerzel?: Accelerator|null, vaultDa: boolean, updates?: boolean (gibt es Updates in dieser Ausführung) }
  * aktion: ({ befehl } | { fest }) → void (Klick). → Vorlage für Menu.buildFromTemplate.
  */
 export function baueTrayVorlage(z, aktion) {
@@ -45,6 +45,7 @@ export function baueTrayVorlage(z, aktion) {
     sep,
     befehl("tray-einstellungen", "Einstellungen …", "einstellungen", { enabled: !!z.vaultDa }),
     fest("tray-einrichten", "Kortex einrichten …", "einrichten"),
+    fest("tray-updates", "Nach Updates suchen …", "updates", { enabled: z.updates !== false }),
     sep,
     fest("tray-beenden", "Beenden", "beenden"),
   ];

@@ -18,7 +18,7 @@ export const BEREICHE = plattformTexte([
     abschnitte: [
       { id: "aktualisierungen", titel: "Aktualisierungen", zeilen: [
         { id: "update-hinweis", schluessel: "updateHinweis", art: "schalter", titel: "Auf neue Versionen hinweisen", text: "Gibt es eine neue Version von Kortex, sagt dir deine KI einmal Bescheid.", woerter: ["update", "aktualisierung", "version", "neu", "hinweis"] },
-        { id: "version-info", sonder: true, titel: "Version", text: "Neue Versionen findest du im Menü „Kortex“ unter „Nach Updates suchen …“.", woerter: ["version", "update", "build", "prüfen"] },
+        { id: "version-info", sonder: true, titel: "Version", text: "Neue Versionen findest du im Menü unter „Nach Updates suchen …“ (Mac: Menü „Kortex“, Windows und Linux: Menü „Ablage“).", woerter: ["version", "update", "build", "prüfen"] },
       ] },
       { id: "sitzung", titel: "Übersicht und Sitzungen", zeilen: [
         { id: "live-aufleuchten", schluessel: "liveAufleuchten", art: "schalter", titel: "Live-Aufleuchten", text: "Liest die KI eine Seite, leuchtet sie in der Übersicht kurz auf.", woerter: ["übersicht", "live", "aufleuchten", "ki", "lesen"] },
