@@ -13,7 +13,7 @@ import { registriereVault, registrierteVaults } from "./vault-schutz.mjs";
 import { vertrauensStand, alleVertraut } from "./vertrauen.mjs";
 import { kontoStufe, darfMindestens, kontenOrte, liesKonten, bestimmeKonto } from "./ki-konten.mjs";
 import { schreibeEreignis } from "./aktivitaet.mjs";
-import { supportBasis, claudePfadform } from "./plattform.mjs";
+import { supportBasis, claudePfadform, langerPfad } from "./plattform.mjs";
 
 export const KERN = dirname(fileURLToPath(import.meta.url));
 
@@ -97,7 +97,7 @@ const hatPraefix = (p, basis) => { const a = teile(p), b = teile(basis); return 
 const istGleich = (p, basis) => teile(p).length === teile(basis).length && hatPraefix(p, basis);
 const istUnter = (p, basis) => teile(p).length > teile(basis).length && hatPraefix(p, basis);
 const SYSTEM_PRAEFIXE = ["/System", "/bin", "/sbin", "/usr", "/etc", "/private/etc", "/dev", "/Library", "/Applications", "/cores", "/opt", "/private/var/db", "/var/db"];
-const echterPfadOderSelbst = (p) => { try { return realpathSync(p); } catch { return p; } };
+const echterPfadOderSelbst = (p) => { try { return langerPfad(realpathSync(p)); } catch { return p; } }; // Windows: auch Kurznamen (RUNNER~1) in die Langform
 
 // Wahr, wenn die Ortsregeln den Pfad erlauben (Spiegel von pruefeRegeln in gemeinsam/vaults.mjs).
 function ortErlaubt(p, home, support) {

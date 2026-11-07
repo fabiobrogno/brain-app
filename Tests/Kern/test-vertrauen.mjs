@@ -3,6 +3,7 @@
 // Schein-git und ein Schein-claude schreiben eine Marke, falls sie je laufen. Kontrollen im vertrauten Vault beweisen, dass sie sonst liefen.
 // Die Suite setzt KORTEX_VAULT_VERTRAUT=alle; jeder Kindprozess hier entfernt es, damit die echte Prüfung (Merker im Support-Ordner) gilt.
 import { test } from "node:test";
+import { nurUnix } from "./nur-unix.mjs";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, mkdirSync, existsSync, chmodSync, cpSync, readFileSync, rmSync, readdirSync, realpathSync, symlinkSync, renameSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -75,7 +76,7 @@ test("Merker: Pfad über Verweis, andere Groß/klein- und Unicode-Schreibweise f
   s.vertraue();
   const link = join(s.basis, "Verweis"); symlinkSync(s.v, link);
   assert.equal(V.vertrauensStand(link, { support: s.support }).vertraut, true, "über Verweis");
-  assert.equal(V.vertrauensStand(s.v.replace("/Vault", "/VAULT"), { support: s.support }).vertraut, process.platform === "darwin", "Groß/klein (nur auf dem case-insensitiven APFS derselbe Ordner)");
+  assert.equal(V.vertrauensStand(s.v.replace("/Vault", "/VAULT"), { support: s.support }).vertraut, (process.platform === "darwin" || process.platform === "win32"), "Groß/klein (nur auf dem case-insensitiven APFS derselbe Ordner)");
 });
 
 test("alter Merker (Stand vor P5: seit/ordner/code) gilt im Kern nie — auch nicht für Vaults aus der Vaultliste; erst die Migration der Werkstatt schreibt ihn um", () => {
@@ -96,7 +97,7 @@ test("Testschalter KORTEX_VAULT_VERTRAUT=alle gilt nur zusammen mit einem Testfl
   assert.equal(V.alleVertraut({ BRAIN_TESTMODUS: "1" }), false);
 });
 
-test("Kontrolle: im vertrauten Vault laufen git, Pflege-KI-Suche und Hook — die Marke entsteht", () => {
+test("Kontrolle: im vertrauten Vault laufen git, Pflege-KI-Suche und Hook — die Marke entsteht", { skip: nurUnix("Vertrauensschranke vor dem Programmstart (git-sicher/git-gesperrt, Shell-Skripte): Windows startet git direkt — Folgeaufgabe W2: dieselbe Schranke in Node") }, () => {
   const s = neu(); s.vertraue("angelegt");
   const st = brain(s, ["status", "--json"]);
   assert.equal(st.status, 0, st.stderr);
@@ -169,7 +170,7 @@ test("wiki-guard: ohne Vertrauen lässt er alles durch (Exit 0), mit Vertrauen b
   assert.equal(hook(s, "wiki-guard", ein).status, 2, "mit Vertrauen: blockiert");
 });
 
-test("git-Hook pre-commit (Commit-Prüfung) hat ohne Vertrauen keine Wirkung und startet kein git; mit Vertrauen läuft sie", () => {
+test("git-Hook pre-commit (Commit-Prüfung) hat ohne Vertrauen keine Wirkung und startet kein git; mit Vertrauen läuft sie", { skip: nurUnix("Vertrauensschranke vor dem Programmstart (git-sicher/git-gesperrt, Shell-Skripte): Windows startet git direkt — Folgeaufgabe W2: dieselbe Schranke in Node") }, () => {
   const s = neu();
   writeFileSync(join(s.v, "n.md"), "n\n");
   execFileSync("git", ["-C", s.v, "add", "--", "n.md"], { env: umgebung() });
@@ -191,7 +192,7 @@ test("KI-Pflege: findeClaude liefert ohne Vertrauen nichts (auch nicht über BRA
   assert.match(frage(), /claude-schein/);
 });
 
-test("gitBefehl: ohne geprüften Vault oder ohne Vertrauen → git-gesperrt (Exit 126, startet nichts); mit Vertrauen → git-sicher; ohneVault → git-sicher", () => {
+test("gitBefehl: ohne geprüften Vault oder ohne Vertrauen → git-gesperrt (Exit 126, startet nichts); mit Vertrauen → git-sicher; ohneVault → git-sicher", { skip: nurUnix("Vertrauensschranke vor dem Programmstart (git-sicher/git-gesperrt, Shell-Skripte): Windows startet git direkt — Folgeaufgabe W2: dieselbe Schranke in Node") }, () => {
   const s = neu();
   const wahl = (code) => spawnSync(NODE, ["--input-type=module", "-e",
     `import { vaultPfad } from ${JSON.stringify(pathToFileURL(join(KERN, "pfade.mjs")).href)}; import { gitBefehl } from ${JSON.stringify(pathToFileURL(join(KERN, "werkzeug.mjs")).href)};
@@ -269,7 +270,7 @@ test("Session-Start- und Hinweis-Hooks speisen ohne Vertrauen nichts ein (keine 
   assert.equal(existsSync(join(s.v, "AGENTS.md")), false);
 });
 
-test("Arbeitsbäume des Tageslaufs (git worktree unter dem Cache) erben das Vertrauen ihres Vaults — sonst liefe die Commit-Prüfung der Pflege-Commits nicht; Fälschungen erben nichts", () => {
+test("Arbeitsbäume des Tageslaufs (git worktree unter dem Cache) erben das Vertrauen ihres Vaults — sonst liefe die Commit-Prüfung der Pflege-Commits nicht; Fälschungen erben nichts", { skip: nurUnix("Vertrauensschranke vor dem Programmstart (git-sicher/git-gesperrt, Shell-Skripte): Windows startet git direkt — Folgeaufgabe W2: dieselbe Schranke in Node") }, () => {
   const s = neu();
   const cache = join(s.basis, "cache"); mkdirSync(cache);
   const wt = join(cache, "lauf-1");

@@ -51,20 +51,21 @@ test("musterZuRegex: *, **, ?, ~/ und Sonderzeichen", () => {
 
 test("regelnFuer: spezifischste zuerst, Zugangsdaten nie, gezeigte nicht noch einmal, Budget in ganzen Regeln", () => {
   const v = vaultMitLektionen();
-  const datei = "/h/source/brain-app/Sources/App.swift";
-  const r = regelnFuer(v, datei, { home: "/h" });
+  const H = process.platform === "win32" ? "C:/h" : "/h"; // Windows: ein Home mit Laufwerk, sonst löst resolve() „/h“ auf das aktuelle Laufwerk auf
+  const datei = `${H}/source/brain-app/Sources/App.swift`;
+  const r = regelnFuer(v, datei, { home: H });
   assert.match(r.text, /^Kortex-Regeln für diese Datei \(wörtlich aus 09_wiki\/_lektionen\.md\):\n- \*\*Brain-App\*\*.*\n- \*\*Swift bauen\*\*/);
   assert.doesNotMatch(r.text, /abcdefgh12345678|Ohne Muster|Kit-Tests/);
   assert.equal(r.ids.length, 2);
   assert.ok(r.text.length <= REGEL_BUDGET);
-  const knapp = regelnFuer(v, datei, { home: "/h", max: 200 });
+  const knapp = regelnFuer(v, datei, { home: H, max: 200 });
   assert.ok(knapp.text.length <= 200, String(knapp.text.length));
   assert.match(knapp.text, /Brain-App/);
   assert.doesNotMatch(knapp.text, /Swift bauen|\(gekürzt\)/);
   assert.match(knapp.text, /\(1 weitere passende Regel in 09_wiki\/_lektionen\.md\)$/);
-  const ohneErste = regelnFuer(v, datei, { home: "/h", gezeigt: new Set([`regel:${r.ids[0]}`]) });
+  const ohneErste = regelnFuer(v, datei, { home: H, gezeigt: new Set([`regel:${r.ids[0]}`]) });
   assert.deepEqual(ohneErste.ids, [r.ids[1]]);
-  assert.deepEqual(regelnFuer(v, "/h/notiz.txt", { home: "/h" }), { text: "", ids: [] });
+  assert.deepEqual(regelnFuer(v, `${H}/notiz.txt`, { home: H }), { text: "", ids: [] });
 });
 
 test("regeln-lesen: nur JSON additionalContext, je Sitzung einmal, andere Sitzung bekommt die Regeln wieder", () => {

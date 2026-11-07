@@ -49,7 +49,7 @@ function aufbau({ konten = [["a", HOOKS], ["b", {}]], vaults = 2 } = {}) {
 const istEinst = (r) => /\.mcp\.json|\.claude\/settings|settings\.json|\.claude\.json|vaults\.json|ki-konten\.json|brain-support-/.test(r);
 const ohneEinst = (liste) => (liste || []).filter((r) => !istEinst(r));
 const nurEinst = (liste) => (liste || []).filter(istEinst);
-const kontoVon = (j, p) => j.konten.find((k) => k.ordner.endsWith(p.split("/").pop()));
+const kontoVon = (j, p) => j.konten.find((k) => k.ordner.endsWith(p.split(/[\\/]/).pop()));
 
 // ───────────────────────────── Regeln: Pfadformen ─────────────────────────────
 test("Regel: absoluter Pfad mit //, gitignore- und Regelzeichen werden maskiert, Leerzeichen und Umlaute bleiben, beide Pfadformen bei Symlinks", { skip: nurUnix("Symlinks brauchen unter Windows besondere Rechte") }, () => {

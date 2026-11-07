@@ -188,7 +188,7 @@ test("5 Symlink im erlaubten Vault auf einen gesperrten Vault und Pfade außerha
   try {
     assert.ok(!leak(await m.rufe("brain_suchen", { frage: "Geheimprojekt" })), "P6 Suche");
     assert.ok(!leak(await m.rufe("brain_lesen", { pfad: "09_wiki/link/09_wiki/w/thema.md" })), "P6 Lesen");
-    for (const pf of [join(s.zu, "09_wiki/w/thema.md"), `../${s.zu.split("/").pop()}/09_wiki/w/thema.md`]) assert.ok(!leak(await m.rufe("brain_lesen", { pfad: pf })), `P7 ${pf}`);
+    for (const pf of [join(s.zu, "09_wiki/w/thema.md"), `../${s.zu.split(/[\\/]/).pop()}/09_wiki/w/thema.md`]) assert.ok(!leak(await m.rufe("brain_lesen", { pfad: pf })), `P7 ${pf}`);
   } finally { await m.ende(); }
 });
 

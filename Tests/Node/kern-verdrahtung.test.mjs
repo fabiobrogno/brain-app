@@ -7,7 +7,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync, cpSync, 
 import { spawnSync } from "node:child_process";
 import { join, delimiter } from "node:path";
 import { tmp, schreibe, pfad, repo, g } from "./hilfe.mjs";
-import { legeProgramm, programmPfad } from "./attrappe.mjs";
+import { legeProgramm, programmPfad, nurUnix } from "./attrappe.mjs";
 
 const HOME = tmp("kortex-home-");
 process.env.HOME = HOME; if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME || "";  // os.homedir() liest $HOME — auch in den Kindprozessen
@@ -88,10 +88,13 @@ test("Claude Code: Hooks und Statuszeile über den Starter, nur bin/kortex und b
   assert.deepEqual(s.hooks.Stop, [fremd], "fremder Hook unverändert");
   const befehle = alleBefehle(s);
   assert.ok(befehle.includes("fremd.sh"));
-  const eigene = befehle.filter((c) => c.includes("hook "));
+  // macOS/Linux: der Starter-Befehl (`[ -x … ] && exec … hook <name> || exit 0`); Windows hat keinen Starter, dort ruft der Befehl node mit der Hook-Datei im Kern auf (install.mjs#hookCmd)
+  const WIN = process.platform === "win32";
+  const eigene = befehle.filter((c) => c.includes(WIN ? "/adapters/claude-code/" : "hook "));
   assert.equal(eigene.length, 9, eigene.join("\n"));
   for (const c of [...eigene, s.statusLine.command]) {
-    assert.ok(c.startsWith(`[ -x ${q(e.starter)} ] && exec ${q(e.starter)} hook `) && c.endsWith(" || exit 0"), c);
+    if (WIN) assert.match(c, /^"[^"]+" "[^"]+\/adapters\/claude-code\/[a-z-]+\.mjs"/, c);
+    else assert.ok(c.startsWith(`[ -x ${q(e.starter)} ] && exec ${q(e.starter)} hook `) && c.endsWith(" || exit 0"), c);
   }
   ohneVersionOderApp(JSON.stringify(s), e);
   assert.ok(!JSON.stringify(s).includes(e.v), "kein fester Vault in den Hooks");
@@ -108,7 +111,7 @@ test("Claude Code: Hooks und Statuszeile über den Starter, nur bin/kortex und b
   assert.deepEqual(readdirSync(join(HOME, ".claude", "commands")).filter((n) => n.endsWith(".md")), [], "die Brain-Befehle sind mit weg");
 });
 
-test("Alt-Einträge (<vault>/.tools, früherer Kern-Pfad, Versionsordner, node-start.sh) werden beim Einrichten ersetzt, nicht verdoppelt", async () => {
+test("Alt-Einträge (<vault>/.tools, früherer Kern-Pfad, Versionsordner, node-start.sh) werden beim Einrichten ersetzt, nicht verdoppelt", { skip: nurUnix("diese Altformen (Kit, node-start.sh, /bin/sh) gab es unter Windows nie; Windows-Hook-Befehle: Test oben") }, async () => {
   const e = einrichtung();
   mkdirSync(join(HOME, ".claude"), { recursive: true });
   const alt = (c) => ({ hooks: [{ type: "command", command: c }] });

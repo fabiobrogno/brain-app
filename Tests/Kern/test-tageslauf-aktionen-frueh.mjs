@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { isoliere, neuerTestVault, fakeKi, git, JETZT, FAKE_BEFEHL } from "./tageslauf-hilfe.mjs";
 import { SEITE, REGELN, aufbau, lauf } from "./lauf-hilfe.mjs";
 import { mitEigenemCache, hartAbbrechen, alteSperre } from "./abbruch-hilfe.mjs";
+const NUR_UNIX_W = (grund) => (process.platform === "win32" ? `nur macOS/Linux: ${grund}` : false); // Windows: Test übersprungen, mit Grund (Plan plattformen-windows-linux.md §8)
 const P = await import("../tageslauf/protokoll.mjs");
 const R = await import("../rueckfragen.mjs");
 const Zr = await import("../tageslauf/zurueck.mjs");
@@ -102,7 +103,7 @@ test("Lauf nach dem Merge hart abgebrochen (SIGKILL beim Verschieben): die Über
   assert.doesNotMatch(readFileSync(join(v, SEITE), "utf8"), /belege\/2026-10\/(g1|n1)/);
 }));
 
-test("Wochen-Stichprobe fragt Übernahmen desselben Laufs nicht ab (wie bisher: frühestens beim nächsten Lauf), obwohl sie jetzt früh im Protokoll stehen", async () => {
+test("Wochen-Stichprobe fragt Übernahmen desselben Laufs nicht ab (wie bisher: frühestens beim nächsten Lauf), obwohl sie jetzt früh im Protokoll stehen", { skip: NUR_UNIX_W("SIGKILL auf einen Kindprozess: unter Windows endet er mit Exit 1 und ohne Signal (Folgeaufgabe W2: Absturz-Test mit taskkill)") }, async () => {
   const v = aufbau({ automatik: { tageslauf: "an", einschwingen: 0 } });
   fakeKi(REGELN);
   const r = await lauf(v);

@@ -9,6 +9,7 @@ import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { isoliere, neuerTestVault, legeVorschlagAn, fakeKi, FAKE_BEFEHL, JETZT, KIT } from "./tageslauf-hilfe.mjs";
 import { tempVault, tempOrdner, hook } from "./verlauf-fixture.mjs";
+const NUR_UNIX_W = (grund) => (process.platform === "win32" ? `nur macOS/Linux: ${grund}` : false); // Windows: Test übersprungen, mit Grund (Plan plattformen-windows-linux.md §8)
 const G = await import("../tageslauf/gesundheit.mjs");
 const P = await import("../tageslauf/protokoll.mjs");
 const { tageslauf } = await import("../tageslauf.mjs");
@@ -413,7 +414,7 @@ function rueckstandVault(schwellen, { fakten = 3, lektionen = 2, inbox = 2, konf
   return v;
 }
 
-test("rueckstand: Zahlen wie beim Sitzungsstart (Vorschläge ohne Lektionen, Inbox ohne Systemordner) — ab der Schwelle gelb, darunter grün", async () => {
+test("rueckstand: Zahlen wie beim Sitzungsstart (Vorschläge ohne Lektionen, Inbox ohne Systemordner) — ab der Schwelle gelb, darunter grün", { skip: NUR_UNIX_W("Unix-Socket im Temp-Ordner: unter Windows EACCES (Folgeaufgabe W2: Named Pipe)") }, async () => {
   const v = rueckstandVault({ gesundheitVorschlaege: 3, gesundheitLektionen: 2, gesundheitInbox: 2, gesundheitKonflikte: 1 });
   let p = await nur("rueckstand", v);
   assert.deepEqual([p.daten.vorschlaege, p.daten.lektionen, p.daten.inbox, p.daten.konflikte], [3, 2, 2, 1]);

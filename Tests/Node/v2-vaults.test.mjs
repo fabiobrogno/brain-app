@@ -7,7 +7,7 @@ import { join, basename, dirname, delimiter } from "node:path";
 import { userInfo } from "node:os";
 import { execFileSync } from "node:child_process";
 import { tmp, schreibe, repo, g, pfad } from "./hilfe.mjs";
-import { legeProgramm, nurUnix, WIN } from "./attrappe.mjs";
+import { legeProgramm, nurUnix, WIN, modus } from "./attrappe.mjs";
 const fw = (p) => p.split("\\").join("/"); // Windows: Git/sh und Adressen mit Slashes
 const echtesGit = () => (WIN // Windows: `where git`, erster Treffer git.exe
   ? execFileSync("where", ["git"], { encoding: "utf8" }).split(/\r?\n/).map((z) => z.trim()).find((z) => /git\.exe$/i.test(z))
@@ -822,7 +822,7 @@ test("klone: eine alte Freigabe für den Zielpfad wird vergessen (echter und ges
   const r = await klone({ url: bare, ordner: join(link, "Ziel") }, { ...OPT, githubLogin: loginVon(bare) });
   assert.equal(r.vault.pfad, echt);
   assert.deepEqual(restOhne(echt, "geklont"), { [andere]: bleibt }, "nur die alten Einträge des Zielpfads fallen weg; der Klon ist neu vertraut");
-  assert.equal(statSync(VERTRAUEN_JSON()).mode & 0o777, 0o600);
+  assert.equal(modus(VERTRAUEN_JSON(), 0o600), 0o600);
   assert.deepEqual(readdirSync(SUPPORT()).filter((n) => n.includes(".tmp")), [], "keine Reste");
 });
 

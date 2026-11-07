@@ -7,7 +7,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync, execFileSync } from "node:child_process";
-import { symlinkSync as verweisSym, linkSync as verweisHart } from "node:fs"; // Verweise mit Node statt `ln` (Windows: ln aus Git Bash kopiert nur)
+import { symlinkSync as winSym, linkSync as winHart } from "node:fs";
+// macOS/Linux: `ln` im Kindprozess (die Schutzschicht des Kerns patcht fs im Testprozess); Windows: Node (ln aus Git Bash kopiert nur)
+const verweisSym = (ziel, link) => (process.platform === "win32" ? winSym(ziel, link) : execFileSync("ln", ["-s", ziel, link]));
+const verweisHart = (ziel, link) => (process.platform === "win32" ? winHart(ziel, link) : execFileSync("ln", [ziel, link]));
 
 const KERN = fileURLToPath(new URL("..", import.meta.url));
 const SICHER = join(KERN, "git-sicher");
