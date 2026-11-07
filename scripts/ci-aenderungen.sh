@@ -6,7 +6,8 @@
 #   scripts/ci-aenderungen.sh --stdin       Dateiliste (eine je Zeile) von stdin, z. B. zum Ausprobieren:
 #                                           printf 'docs/x.md\n' | bash scripts/ci-aenderungen.sh --stdin
 #   scripts/ci-aenderungen.sh --alle        alles ausführen (kein Vergleichsstand bekannt)
-# Ausgabe (stdout, GITHUB_OUTPUT-Format): swift=…  kern=…  node=…  ui=…  vorab=…  (true/false)
+# Ausgabe (stdout, GITHUB_OUTPUT-Format): swift=…  kern=…  node=…  ui=…  vorab=…  paket=…  (true/false)
+#   paket = die Electron-Pakete (Job „paket“, W2c) müssen neu gebaut werden: Änderungen an electron/ oder Ressourcen/ (dazu Node-Version und Lizenzhinweise, die ins Paket gehen)
 #
 # Grundsatz „im Zweifel prüfen“: Eine Datei, die hier nicht ausdrücklich einem Bereich oder der Ignorierliste zugeordnet ist
 # (neue Ordner, .github/**, Package.*, …), schaltet ALLE Bereiche ein. Nur Doku und Lizenz schalten nichts ein.
@@ -16,8 +17,8 @@
 #   Kern ist in sich geschlossen (importiert nichts aus gemeinsam/werkstatt/studio)
 set -u
 
-swift=false; kern=false; node=false; ui=false
-alle() { swift=true; kern=true; node=true; ui=true; }
+swift=false; kern=false; node=false; ui=false; paket=false
+alle() { swift=true; kern=true; node=true; ui=true; paket=true; }
 
 dateien() {
   case "${1:-}" in
@@ -30,6 +31,7 @@ dateien() {
 
 while IFS= read -r f; do
   [ -n "$f" ] || continue
+  case "$f" in electron/*|Ressourcen/*|scripts/node-version.txt|THIRD-PARTY-NOTICES.md) paket=true ;; esac
   case "$f" in
     Sources/*|Tests/BrainCoreTests/*|Package.swift|Package.resolved) swift=true ;;
     Ressourcen/Info.plist|Ressourcen/node.entitlements|Ressourcen/AppIcon.icns) swift=true ;;
@@ -45,6 +47,7 @@ while IFS= read -r f; do
     Tests/Oberflaeche/*|Werkzeuge/editor-bundle/*) ui=true ;;
     Tests/Aktionskanal/*) ;;                                                     # nur vom Rauchtest (rauchtest.yml) genutzt
     scripts/ci-aenderungen.sh|scripts/teste-ci-aenderungen.sh) alle ;;           # der Filter selbst
+    scripts/vorschau-electron.sh) node=true ;;                                    # Vorschau der Electron-Hülle: Tests/Node/electron-w2c.test.mjs
     scripts/*) swift=true ;;                                                     # Bau-/Prüfskripte laufen im macOS-Job (Kern-Manifest, Vorschau)
     THIRD-PARTY-NOTICES.md) node=true ;;                                         # Lizenzhinweise: Tests/Node/lizenzen.test.mjs prüft sie gegen vendor/ und die Versionen
     docs/*|*.md|LICENSE) ;;                                                      # Doku: nichts
@@ -61,3 +64,4 @@ echo "kern=$kern"
 echo "node=$node"
 echo "ui=$ui"
 echo "vorab=$vorab"
+echo "paket=$paket"
