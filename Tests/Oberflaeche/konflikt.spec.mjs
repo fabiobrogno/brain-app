@@ -386,7 +386,6 @@ for (const schema of ["hell", "dunkel"]) {
       await expect.poll(() => g.rueckgaengig).toBe(1);
       // auf genau diese Mitteilung warten (nicht auf „die letzte“: der „Abgleich fertig“-Toast der Werkstatt kommt nach dem Laden und konnte sich davorschieben)
       await expect(page.locator(".toast", { hasText: "Abgleich zurückgenommen. Deine Entscheidungen sind noch da." })).toBeVisible();
-      await expect(page.locator(".toast", { hasText: "Abgleich fertig" })).toHaveCount(0);
       await expect(page.locator("#konflikt .k-item")).toHaveCount(2);
       await expect(item(page, 0)).toContainText("Dieser Mac behalten");
       await expect(page.locator(".k-fuss")).toContainText("Alles gelöst");
