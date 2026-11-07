@@ -10,7 +10,20 @@ export const APP_ID = "io.github.fbrogno.brain"; // wie CFBundleIdentifier in Re
  * version: Paketversion (aus Ressourcen/Info.plist), owner/repo: Quelle der Updates (GitHub), genericUrl: nur für den Update-Test (lokaler Dateiserver statt GitHub),
  * ressourcen: Ordner aus stage-Schritt (paket/ressourcen.mjs), ausgabe: Ausgabeordner.
  */
-export function baueKonfig({ version, owner = "fabiobrogno", repo = "brain-app", genericUrl = null, ressourcen, ausgabe }) {
+// Fuses (Schalter in der Electron-Programmdatei, die niemand nachträglich umlegt): „release“ = was ausgeliefert wird; „test“ = nur Inspect offen, damit Playwright die App starten kann (CI, nie ausgeliefert).
+export function fusesFuer(variante) {
+  if (variante !== "release" && variante !== "test") throw new Error(`Unbekannte Fuse-Variante: ${variante}`);
+  return {
+    runAsNode: false, // die App lässt sich nie als Node missbrauchen (ELECTRON_RUN_AS_NODE) — die Werkstatt hat ihr eigenes Node
+    enableNodeOptionsEnvironmentVariable: false, // NODE_OPTIONS wirkt nicht
+    enableNodeCliInspectArguments: variante === "test", // --inspect/--remote-debugging: nur die Test-Variante (Playwright)
+    enableEmbeddedAsarIntegrityValidation: true, // app.asar wird beim Start gegen die eingebettete Prüfsumme geprüft (Windows/macOS; Linux kennt es nicht)
+    onlyLoadAppFromAsar: true, // nur app.asar, nie ein danebengelegter Ordner `app/`
+    grantFileProtocolExtraPrivileges: false, // file:// bekommt keine Sonderrechte (die Seite lädt über kortex://)
+  };
+}
+
+export function baueKonfig({ version, owner = "fabiobrogno", repo = "brain-app", genericUrl = null, ressourcen, ausgabe, fuses = "release" }) {
   return {
     appId: APP_ID,
     productName: "Kortex",
@@ -21,6 +34,7 @@ export function baueKonfig({ version, owner = "fabiobrogno", repo = "brain-app",
     extraMetadata: { name: "Kortex", version, desktopName: "kortex.desktop" },
     directories: { output: ausgabe },
     asar: true,
+    electronFuses: fusesFuer(fuses),
     // nur der Code der Hülle; Tests, Konfiguration der Tests und Paketbau bleiben draußen (devDependencies kommen ohnehin nie mit)
     files: ["*.mjs", "*.cjs", "test-schalter.json", "erfassen/**/*", "symbole/**/*", "!playwright.config.mjs"],
     extraResources: [

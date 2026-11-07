@@ -59,6 +59,9 @@ export function setzeDateiLink(stabil, ziel) {
   return true;
 }
 
+// Windows kann einen Verweis nicht durch Umbenennen ersetzen (MoveFileEx überschreibt nur Dateien, nie ein Verzeichnis oder eine Junction: EPERM); eine Junction lässt sich auch nicht umbiegen. Dort gibt es darum
+// beim ECHTEN Wechsel (nur bei neuem Kern, also nach einem App-Update) eine Lücke von zwei Aufrufen (löschen, umbenennen). Sie bleibt klein, weil der neue Verweis vorher unter eigenem Namen fertig ist, und im
+// Normalfall (gleicher Kern wie beim letzten Start) wird gar nichts angefasst. Linux/macOS: atomar, keine Lücke.
 /** Legt `stabil` als Verweis auf den Ordner `ziel` (Linux/macOS Symlink, Windows Junction) und schaltet ihn atomar um. → vorheriges Ziel (Ordnername) oder null. */
 export function setzeOrdnerLink(stabil, ziel, { plattform = process.platform } = {}) {
   let vorher = null;

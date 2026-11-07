@@ -19,23 +19,25 @@ export function findeNode(pfadText, { plattform = process.platform } = {}) {
   return null;
 }
 
-// Umgebung des Kindprozesses: ausdrücklich gebaut, nie ein Durchreichen von process.env. Pfad- und Systemvariablen, die Programme (git, claude, codex) zum Starten brauchen,
-// dazu BRAIN_*/KORTEX_*. Nie CLAUDE_CONFIG_DIR, CODEX_HOME, GIT_CONFIG_*, Tokens; nie BRAIN_VAULT (der Vault kommt als Argument) und BRAIN_MCP_NODE (kommt von `node`). Im Paket (`gepackt`) zusätzlich
-// die Testschalter und KORTEX_VORSCHAU wie in Swift. XDG_* nur außerhalb des Testmodus (dort wird alles ins Temp-HOME gelenkt).
-const GRUND = ["PATH", "HOME", "USER", "USERNAME", "LOGNAME", "SHELL", "LANG", "TZ", "TMPDIR", "TEMP", "TMP", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "PROGRAMDATA", "PROGRAMFILES", "PROGRAMFILES(X86)",
-  "SYSTEMROOT", "SystemRoot", "SYSTEMDRIVE", "windir", "ComSpec", "PATHEXT", "HOMEDRIVE", "HOMEPATH", "COMPUTERNAME", "OS", "PROCESSOR_ARCHITECTURE"];
-const XDG = ["XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME"];
+// Umgebung des Kindprozesses — das Modell der Swift-App (Sources/BrainCore/NodeUmgebung.swift): alles erben, Gesperrtes streichen. So kommen Proxy (HTTP(S)_PROXY/NO_PROXY, auch klein),
+// NODE_EXTRA_CA_CERTS, SSH_AUTH_SOCK, DBUS_SESSION_BUS_ADDRESS, XDG_RUNTIME_DIR, DISPLAY/WAYLAND_DISPLAY und unter Windows alles, was Versionsverwaltung, ssh und der Credential Manager brauchen (USERPROFILE,
+// APPDATA, LOCALAPPDATA, SystemRoot, ComSpec, PATHEXT, TEMP/TMP, ProgramData, ProgramFiles*), in der Werkstatt an, ohne dass eine Liste je etwas vergisst.
+// Gestrichen wie in Swift: Node-Optionen/-Pfade (fremder Code), ELECTRON_*, TLS-Abschaltung, KORTEX_VORSCHAU (kommt nur geprüft von der Hülle), DYLD_*/LD_*, alle Variablen der Versionsverwaltung (Präfix G-I-T-Unterstrich).
+// Im Paket (`gepackt`) zusätzlich die Testschalter aus test-schalter.json (der Release-Build von Swift tut dasselbe). CLAUDE_CONFIG_DIR, CODEX_HOME und Tokens erbt die Werkstatt wie in Swift (die Mac-App streicht sie nicht).
+// Nie: BRAIN_VAULT (der Vault kommt als Argument), BRAIN_MCP_NODE und KORTEX_KERN_PFAD (kommen von `node`/`kern`).
+const GESPERRT = new Set(["NODE_OPTIONS", "NODE_PATH", "ELECTRON_RUN_AS_NODE", "NODE_TLS_REJECT_UNAUTHORIZED", "NODE_PENDING_DEPRECATION", "NODE_REPL_EXTERNAL_MODULE", "NODE_ICU_DATA", "NODE_V8_COVERAGE", "NODE_DEBUG", "KORTEX_VORSCHAU"]);
+const GESPERRTE_PRAEFIXE = ["DYLD_", "LD_", "GI" + "T_", "ELECTRON_"];
 // node: stabiler Pfad des Node (BRAIN_MCP_NODE, für MCP-Einträge und Statuszeile), kern: stabiler Kern-Pfad (KORTEX_KERN_PFAD), githubClientId: öffentliche OAuth-Client-ID aus Ressourcen/Info.plist
 // (info-plist.mjs; dieselbe Quelle wie die Mac-App, sie setzt sie ebenfalls als KORTEX_GITHUB_CLIENT_ID). Im Paket gilt die aus der Info.plist; in der Entwicklung darf eine gesetzte Variable sie überstimmen.
 // vorschau: der geprüfte Ordner der Vorschau (scripts/vorschau-electron.sh); KORTEX_VORSCHAU geht sonst im Paket nie weiter.
 export function baueKindUmgebung(env = process.env, { gepackt = false, node = null, kern = null, githubClientId = null, vorschau = null } = {}) {
   const aus = {};
-  const nimm = (k) => { if (env[k] !== undefined) aus[k] = env[k]; };
-  GRUND.forEach(nimm);
-  for (const k of Object.keys(env)) if (/^(LC_|BRAIN_|KORTEX_)/.test(k)) nimm(k);
-  if (env.BRAIN_TESTMODUS !== "1") XDG.forEach(nimm);
-  delete aus.BRAIN_VAULT; delete aus.BRAIN_MCP_NODE; delete aus.KORTEX_KERN_PFAD;
-  if (gepackt) for (const k of [SPERRE.testmodus, ...SPERRE.gesperrt, ...SPERRE.testSchalter]) delete aus[k];
+  const sperre = new Set([...GESPERRT, "BRAIN_VAULT", "BRAIN_MCP_NODE", "KORTEX_KERN_PFAD", ...(gepackt ? [SPERRE.testmodus, ...SPERRE.gesperrt, ...SPERRE.testSchalter] : [])]);
+  for (const k of Object.keys(env)) {
+    const K = k.toUpperCase(); // Windows kennt keine Groß-/Kleinschreibung bei Variablen
+    if (env[k] === undefined || sperre.has(K) || GESPERRTE_PRAEFIXE.some((p) => K.startsWith(p))) continue;
+    aus[k] = env[k];
+  }
   if (node) aus.BRAIN_MCP_NODE = node;
   if (kern) aus.KORTEX_KERN_PFAD = kern;
   if (vorschau) aus.KORTEX_VORSCHAU = vorschau; // nur ein geprüfter Vorschau-Ordner (gemeinsam/basis.mjs vorschauOrdnerAus): die Werkstatt hält sich dann selbst daran (Zugangsdaten nur im Ordner, nie im Schlüsselbund)
@@ -51,7 +53,7 @@ const MAX_NEUSTARTS = 3, FENSTER_MS = 60_000;
  * → { bereit: Promise<{version, vaultId}>, anfrage({methode, pfad, query, body}) → Promise<{status, headers, body}>, beende(): Promise<void>, lebt(): boolean }
  * Endet die Werkstatt vor dem ersten `bereit`, wird `bereit` abgelehnt (mit Exit-Code und letzter Fehlerausgabe), es gibt keinen Neustart.
  */
-export function starteBruecke({ programm, skript, vault, env, protokoll = () => {}, timeoutMs = 20_000, fristMs = 300_000, hartMs = 3000, beendeBaum = (k) => { try { k.kill(); } catch { /* weg */ } } }) {
+export function starteBruecke({ programm, skript, vault, env, protokoll = () => {}, timeoutMs = 20_000, fristMs = 300_000, hartMs = 3000, beiZuvieleAbstuerzen = () => {}, beendeBaum = (k) => { try { k.kill(); } catch { /* weg */ } } }) {
   let kind = null, naechsteId = 1, beendet = false, endeGemeldet;
   const offen = new Map(); // id → { ok, nein }
   const neustarts = [];
@@ -86,7 +88,7 @@ export function starteBruecke({ programm, skript, vault, env, protokoll = () => 
       if (!istBereit) { bereitNein(new Error(`Die Werkstatt endete vor dem Start (${code ?? signal})${fehlerAusgabe.trim() ? `: ${fehlerAusgabe.trim()}` : ""}`)); return; }
       const jetzt = Date.now();
       while (neustarts.length && jetzt - neustarts[0] > FENSTER_MS) neustarts.shift();
-      if (neustarts.length >= MAX_NEUSTARTS) { bereit = Promise.reject(new Error("Die Werkstatt stürzt immer wieder ab")); bereit.catch(() => {}); return; }
+      if (neustarts.length >= MAX_NEUSTARTS) { bereit = Promise.reject(new Error("Die Werkstatt stürzt immer wieder ab")); bereit.catch(() => {}); try { beiZuvieleAbstuerzen(); } catch { /* die Meldung ist eine Bequemlichkeit */ } return; }
       neustarts.push(jetzt);
       bereit = new Promise((ok, nein) => { bereitOk = ok; bereitNein = nein; });
       bereit.catch(() => {}); // wird bei der nächsten Anfrage gemeldet

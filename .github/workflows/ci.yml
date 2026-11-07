@@ -11,7 +11,7 @@ name: CI
 #  - plattform-probe  Windows und Linux (Paket W0): Linux ist Tor (in ci-ok), Windows: Node-Tests sind Tor, Kern und Oberfläche nur Messung.
 #  - electron-probe  Electron-Hülle (Paket W2a): Linux ist Tor (in ci-ok), Windows nur Messung (blockiert nichts).
 #  - paket         Installierbare Pakete der Electron-Hülle (Paket W2c): baut, installiert und startet sie (Rauchtest), lädt sie als ARTEFAKT hoch (nie als Release).
-#                  Läuft nur bei Änderungen an electron/ oder Ressourcen/. Linux ist Tor (in ci-ok), Windows nur Messung.
+#                  Läuft nur bei Änderungen an electron/ oder Ressourcen/. Linux und Windows sind Tor (in ci-ok).
 #  - ci-ok         EIN Status für alles: grün, wenn jeder nötige Job grün war oder bewusst übersprungen wurde.
 #  - dev-artefakt  nur auf main: Kortex.app als Artefakt.
 # Es gibt absichtlich KEIN paths-ignore: Ein Lauf, der nur Doku ändert, ist in Sekunden grün (aenderungen + ci-ok), und der
@@ -388,7 +388,8 @@ jobs:
   # Pakete der Electron-Hülle (Paket W2c, electron/paket, docs/plaene/plattformen-windows-linux.md §11): electron-builder baut NSIS (Windows) bzw. AppImage + deb (Linux) mit dem
   # mitgelieferten Node; hochgeladen wird NUR als Artefakt dieses Laufs (kein Release, kein Tag). Rauchtest je System: das gebaute Paket wird installiert bzw. entpackt und gestartet
   # (electron/test/paket.spec.mjs: die Werkstatt läuft mit dem mitgelieferten Node, MCP-Eintrag auf stabilen Pfaden), danach wieder deinstalliert.
-  # Linux ist ein TOR (der Job steht in `needs` von ci-ok), Windows ist MESSUNG: dort laufen Bau, Installation und Test mit continue-on-error, das Ergebnis steht in der Zusammenfassung.
+  # Linux UND Windows sind TOR (der Job steht in `needs` von ci-ok; ein roter Windows-Schritt macht ci-ok rot). Nur der arm64-Bau ist Messung. Gebaut werden zwei Varianten: Release (Artefakt, Fuses der
+  # Auslieferung, geprüft mit @electron/fuses und einem Start ohne Playwright) und Test (nur Inspect offen für Playwright; nie hochgeladen).
   paket:
     needs: aenderungen
     if: needs.aenderungen.outputs.paket == 'true'
@@ -402,8 +403,6 @@ jobs:
     defaults:
       run:
         shell: bash
-    env:
-      MESSUNG: ${{ matrix.os == 'windows-latest' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -412,19 +411,33 @@ jobs:
           cache: npm
           cache-dependency-path: electron/package-lock.json
       - name: Abhängigkeiten
-        continue-on-error: ${{ matrix.os == 'windows-latest' }}
         run: npm ci --no-audit --no-fund
         working-directory: electron
       - name: Paket bauen (Node mit Prüfsumme, Ressourcen, electron-builder; nichts wird veröffentlicht)
         id: bau
-        continue-on-error: ${{ matrix.os == 'windows-latest' }}
         working-directory: electron
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          if [ "$RUNNER_OS" = "Linux" ]; then npm run paket -- linux; else npm run paket -- win; fi
-          ls -la build/pakete
+          # Release-Variante (wird ausgeliefert, Artefakt) und Test-Variante (nur Inspect offen, für Playwright; nie hochgeladen)
+          if [ "$RUNNER_OS" = "Linux" ]; then S=linux; else S=win; fi
+          npm run paket -- "$S"
+          npm run paket -- "$S" --fuses test --ausgabe pakete-test
+          ls -la build/pakete build/pakete-test
+      - name: Fuses der Release-Variante prüfen und ohne Playwright starten
+        working-directory: electron
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then APP="$PWD/build/pakete/linux-unpacked/kortex"; else APP="$PWD/build/pakete/win-unpacked/kortex.exe"; fi
+          node paket/pruefe-fuses.mjs "$APP" release
+          # die Test-Variante muss sich unterscheiden (nur Inspect), sonst prüft der Test nichts
+          if [ "$RUNNER_OS" = "Linux" ]; then node paket/pruefe-fuses.mjs "$PWD/build/pakete-test/linux-unpacked/kortex" test; else node paket/pruefe-fuses.mjs "$PWD/build/pakete-test/win-unpacked/kortex.exe" test; fi
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+            xvfb-run -a --server-args="-screen 0 1440x900x24" node paket/start-pruefung.mjs "$APP" --no-sandbox
+          else
+            node paket/start-pruefung.mjs "$APP"
+          fi
       - name: Linux arm64 bauen (nur Bau, Messung)
         if: runner.os == 'Linux'
         continue-on-error: true
@@ -471,7 +484,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
-          A="$(ls "$PWD"/build/pakete/*.AppImage)"
+          A="$(ls "$PWD"/build/pakete-test/*.AppImage)"
           chmod +x "$A"
           mkdir -p "$RUNNER_TEMP/a1" && (cd "$RUNNER_TEMP/a1" && "$A" --appimage-extract >/dev/null)
           export KORTEX_PAKET_PROGRAMM="$RUNNER_TEMP/a1/squashfs-root/kortex"
@@ -484,7 +497,7 @@ jobs:
         working-directory: electron
         run: |
           set -euo pipefail
-          D="$(ls "$PWD"/build/pakete/*.deb)"
+          D="$(ls "$PWD"/build/pakete-test/*.deb)"
           NAME="$(dpkg-deb -f "$D" Package)"
           # Ubuntu-Auslieferungszustand: unprivilegierte User-Namensräume gesperrt — die Installation muss den Sandbox-Helfer selbst einrichten (SUID, wenn es nicht anders geht)
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=1 || true
@@ -504,7 +517,6 @@ jobs:
       - name: Rauchtest Windows (installieren, starten, deinstallieren)
         id: win
         if: runner.os == 'Windows'
-        continue-on-error: true
         timeout-minutes: 20
         working-directory: electron
         shell: pwsh
@@ -512,7 +524,7 @@ jobs:
           KORTEX_BILDER: ${{ runner.temp }}/bilder
         run: |
           $ErrorActionPreference = 'Stop'
-          $setup = (Get-ChildItem build/pakete/Kortex-Setup-*.exe | Select-Object -First 1).FullName
+          $setup = (Get-ChildItem build/pakete-test/Kortex-Setup-*.exe | Select-Object -First 1).FullName
           Write-Host "Installer: $setup ($([math]::Round((Get-Item $setup).Length / 1MB)) MB)"
           $ziel = Join-Path $env:LOCALAPPDATA 'Programs\Kortex'
           Start-Process -FilePath $setup -ArgumentList '/S' -Wait
