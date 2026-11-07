@@ -1,3 +1,1 @@
-konflikt-werkstatt.test.mjs
-nichts-geht-verloren.test.mjs
 v2-git.test.mjs

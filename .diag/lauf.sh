@@ -11,6 +11,7 @@ if [ -f .diag/nurkern.txt ]; then :; elif [ -n "$DATEIEN" ]; then
     node --test --import ./Tests/Node/windows-importe.mjs $d > "$RUNNER_TEMP/lauf-$(basename $d).log" 2>&1
     echo "DATEI $d: $(( $(date +%s) - s )) s, $(grep -E '^# (pass|fail)' "$RUNNER_TEMP/lauf-$(basename $d).log" | tr '\n' ' ')"
     if [ -f .diag/dauer.txt ]; then node .diag/dauer.mjs "$RUNNER_TEMP/lauf-$(basename $d).log" 2500 | head -14; fi
+    if [ -f .diag/voll.txt ]; then node .diag/voll.mjs "$RUNNER_TEMP/lauf-$(basename $d).log" 24 300; fi
   done
 else
   bash scripts/teste-node.sh --test-concurrency=4 > "$RUNNER_TEMP/lauf.log" 2>&1
