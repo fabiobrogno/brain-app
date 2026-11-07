@@ -19,5 +19,5 @@ if [ -s .diag/kern.txt ]; then
   export KERN_TEST_KONKURRENZ=4 GIT_AUTHOR_NAME=Test GIT_AUTHOR_EMAIL=t@example.org GIT_COMMITTER_NAME=Test GIT_COMMITTER_EMAIL=t@example.org
   bash Tests/Kern/unit.sh $KD > "$RUNNER_TEMP/kern.log" 2>&1
   grep -E "^ℹ (tests|pass|fail)" "$RUNNER_TEMP/kern.log" || tail -n 12 "$RUNNER_TEMP/kern.log" | cut -c1-220
-  node .diag/kernfehler.mjs "$RUNNER_TEMP/kern.log" "${KERN_ZEILEN:-9}"
+  grep -E "^# (tests|pass|fail)" "$RUNNER_TEMP/kern.log"; node .diag/fehler.mjs "$RUNNER_TEMP/kern.log" "${KERN_ZEILEN:-300}"
 fi

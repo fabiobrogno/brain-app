@@ -10,7 +10,7 @@ for (let i = 0; i < t.length; i++) {
   let f = "", e = "";
   for (let k = i + 1; k < Math.min(i + 40, t.length); k++) {
     if (/^(# Subtest|not ok|ok )/.test(t[k])) break;
-    const mm = /Tests\\\\Node\\\\([^:]+):(\d+)/.exec(t[k]);
+    const mm = /([\w-]+\.mjs):(\d+)/.exec(t[k]);
     if (/location:/.test(t[k]) && mm) f = mm[1] + ":" + mm[2];
     if (t[k].startsWith("  error:")) {
       if (/\|-\s*$/.test(t[k])) e = t.slice(k + 1, k + 14).filter((x) => !/^\s*(code|name|expected|actual|operator):/.test(x) && x.trim()).map((x) => x.trim()).join(" / ");
