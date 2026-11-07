@@ -63,7 +63,7 @@ test("App-Menü: kommt aus dem Kürzel-Register (Strg statt ⌘), deutsche Texte
   // Eigenes Kürzel: tastenkuerzel.json ändern, `kuerzel-geaendert` → das Menü zeigt es sofort (nichts doppelt festgeschrieben)
   schreibeJson(lauf.support, "tastenkuerzel.json", { schema: 1, kuerzel: { "neue-notiz": "Shift+Cmd+Y" } });
   expect(await aktion(fenster, "kuerzel-geaendert")).toEqual({ ok: true });
-  expect((await menueEintraege(app)).find((x) => x.id === "befehl-neu").accelerator).toBe(`Shift+${STRG}+Y`);
+  expect((await menueEintraege(app)).find((x) => x.id === "befehl-neu").accelerator).toBe(MAC ? "Shift+Command+Y" : "Ctrl+Shift+Y");
 });
 
 test("Tray: Menü wie am Mac (Vault, Zähler neuer Mitteilungen, Studio, Erfassen, Beenden); ohne Tray-Unterstützung läuft die App sauber", async () => {
