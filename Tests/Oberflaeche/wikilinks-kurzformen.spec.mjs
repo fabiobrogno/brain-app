@@ -271,12 +271,12 @@ for (const [zone, heute, morgen, ueberfaellig] of [["Europe/Berlin", "2026-10-31
       await page.locator("[data-aufgabe-eingabe]").fill("Steuer morgen");
       await page.keyboard.press("Enter");
       await expect.poll(aufgabenDateien).toHaveLength(2);
-      const neu = aufgabenDateien().map((n) => "05_aufgaben/" + n).find((n) => feld(n, "titel").includes("Steuer"));
+      const neu = await expect.poll(() => aufgabenDateien().map((n) => "05_aufgaben/" + n).find((n) => (feld(n, "titel") ?? "").includes("Steuer"))).toBeTruthy().then(() => aufgabenDateien().map((n) => "05_aufgaben/" + n).find((n) => (feld(n, "titel") ?? "").includes("Steuer")));
       expect(feld(neu, "faellig")).toBe(morgen);
       await page.locator("[data-aufgabe-eingabe]").fill("Heute Müll rausbringen");
       await page.keyboard.press("Enter");
       await expect.poll(aufgabenDateien).toHaveLength(3);
-      const m = aufgabenDateien().map((n) => "05_aufgaben/" + n).find((n) => feld(n, "titel").includes("Müll"));
+      const m = await expect.poll(() => aufgabenDateien().map((n) => "05_aufgaben/" + n).find((n) => (feld(n, "titel") ?? "").includes("Müll"))).toBeTruthy().then(() => aufgabenDateien().map((n) => "05_aufgaben/" + n).find((n) => (feld(n, "titel") ?? "").includes("Müll")));
       expect(feld(m, "faellig")).toBe(heute);
     });
   });

@@ -349,34 +349,33 @@ Warum zuerst: Alle Wege brauchen genau diese Arbeit, sie kostet wenige Tage, und
 
 ---
 
-## 8. W0 Ergebnis (PR „W0 Plattform-Probe“)
+## 8. W0 Ergebnis (PR „W0 Plattform-Probe“) und Windows-grün-Paket
 
-Messjob `plattform-probe` in `.github/workflows/ci.yml` (Windows und Linux; Bereiche node, kern, ui in 4 Teilen). **Nicht in `ci-ok`**, Schritte mit `continue-on-error`; Zahlen stehen in der Lauf-Zusammenfassung (`scripts/plattform-probe-bericht.sh`) und im Artefakt `plattform-probe-<os>-<bereich>`. Lokale Prüfung am Mac: die Suiten sind grün bis auf Fälle, die auch auf `origin/main` unter dieser Umgebung (ssh, `~`-Kürzung bei HOME im Temp-Ordner) rot sind.
+Messjob `plattform-probe` in `.github/workflows/ci.yml` (Windows und Linux; Bereiche node, kern, ui in 4 Teilen). Die **Linux-Probe ist Pflichtbestandteil von `ci-ok`** (Job in `needs`, alles muss grün sein). Die **Windows-Probe bleibt nicht blockierend** (`continue-on-error` nur für `windows-latest`), bis sie grün ist; dann fällt die Ausnahme weg. Zahlen stehen in der Lauf-Zusammenfassung (`scripts/plattform-probe-bericht.sh`) und im Artefakt `plattform-probe-<os>-<bereich>`; bei roten UI-Tests liegt `plattform-probe-fehlerkontext-windows-latest-ui-*` bei.
 
-Neu: `gemeinsam/plattform.mjs` (Kopie `kern/plattform.mjs`, Test `Tests/Node/plattform.test.mjs`), Dateisystem-Tests (`Tests/Node/plattform-dateisystem.test.mjs`), `nurMac()` für launchctl, pmset/ioreg, caffeinate, osascript, plutil. Windows-Reparaturen: `tar --force-local` bei GNU tar, `.exe`-Suche in `absoluterPfad`, Pfadvergleiche mit `sep`/`realpath.native`.
+Neu: `gemeinsam/plattform.mjs` (Kopie `kern/plattform.mjs`), `.gitattributes` (`eol=lf`), Import-Haken für Laufwerkspfade (`Tests/*/windows-importe.mjs`), tragbare Test-Attrappen (`Tests/Node/attrappe.mjs`, unter Windows ein einmalig mit csc gebauter `.exe`-Starter), Perl-Prüfskript nach Node (`Ressourcen/kern/git-sicher-pruefung.mjs`, Gleichwertigkeitstest), `nurUnix`/`nurMac` für echte Plattform-Unterschiede.
 
-### Messwerte (letzter vollständiger Lauf)
+### Messwerte (Lauf auf Kopf e02e997, PR #112)
 
-| Bereich | Linux | Windows |
+| Bereich | Linux | Windows vorher (main) | Windows jetzt |
+|---|---|---|---|
+| Node-Tests | 1276 Tests, 0 rot | 310 rot | 1217 Tests, 83 rot |
+| Kern-Unit-Tests | 2794 Tests, 0 rot | 399 rot | 2794 Tests, 338 rot |
+| Playwright (Chromium) | 954 grün, 0 rot | 54 rot | 35 rot (19 / 7 / 7 / 2 je Teil) |
+
+### Offene Fälle: Ursache → Folgeaufgabe (alles W2)
+
+| Gruppe | Ursache | Folgeaufgabe |
 |---|---|---|
-| Node-Tests | 1185 grün, 0 rot | 796 grün, 310 rot (erster Lauf: 0 / alles, Importfehler) |
-| Kern-Unit-Tests | 2791 grün, 0 rot | 2351 grün, 399 rot (vorher 2274 / 476) |
-| Playwright (Chromium) | 885 grün, 0 rot, 15 übersprungen | 854 grün, 50 rot, 15 übersprungen |
-
-### Offene Fälle: Ursache → Folgeaufgabe
-
-| Gruppe (ungefähr) | Ursache | Folgeaufgabe |
-|---|---|---|
-| Kern: Umstellung A0 `bundle-fehlgeschlagen` (≈55 Tests) | Sicherung per `git bundle`/Pfade mit Laufwerksbuchstaben, Umlaut-Ordner | Pfad-/Bundle-Aufruf unter Windows prüfen (Kern, `umstellung/`) |
-| Kern: `git worktree add` im Tageslauf (≈40) | Pfad mit Umlaut („Brän“) und Zweigname `tageslauf/--pflege` unter Windows | Aufruf und Quoting prüfen |
-| Kern + Node: Perl-Prüfskript (`git-pruefung-unmoeglich`, ≈40) | `/usr/bin/perl` fehlt (G3) | Prüfskript nach Node verlegen |
-| Kern: `TestAbbruch` nicht ausgelöst (≈24) | Absturz-Einspritzung per SIGKILL/Prozessgruppe, unter Windows anders | Testhaken auf `beendeBaum` abbilden |
-| Kern: `import()` mit Laufwerkspfad (4) | Kern-Läufer ohne `windows-importe.mjs` | `--import` auch in `Tests/Kern/unit.sh` (nur Windows) |
-| Node: Attrappen für `claude`/`codex`/`git` sind `#!/bin/sh`-Skripte (≈150) | Windows startet sie nicht | Attrappen als Node-Skripte mit `.cmd`-Starter |
-| Node: Vorschau-Ordner `Die Adresse enthält ungültige Zeichen` (≈13) | `vorschauOrdner` erlaubt nur `/…`-Pfade | Regex auf Laufwerkspfade erweitern |
-| Node: `HOME`/Temp-Prüfung (54, behoben mit `windows-importe.mjs`) | Kurznamen `RUNNER~1` | beim nächsten Lauf prüfen; Rest der 310 roten Node-Tests sind überwiegend die Attrappen-Skripte |
-| UI: Einstellungen, Schreiben, Frage, Glocke, Umbenennen, KI & Konten (50) | vermutlich `⌘`-Kürzel (Tests drücken Meta), Attrappen-Skripte, Pfadtrenner | Kürzel je System in den Specs; Attrappen wie oben |
-| Repo: keine `.gitattributes` | Windows-Checkout mit `core.autocrlf=true` macht CRLF (erzeugte Kopien/Hashes brechen); der Messjob stellt es per Workflow-Schritt ab | `* text=auto eol=lf` bzw. `-text` im Repo; für neue Vaults `.gitattributes` `* -text` (V8, Test liegt vor) |
-| macOS-only ohne Ersatz | launchctl (Dienst), pmset/ioreg (Zeitplan), caffeinate, osascript (Papierkorb), plutil, Keychain (`osxkeychain`) | Windows: Aufgabenplanung/`powercfg`/PowerShell-Papierkorb/Credential Manager; Linux: systemd/`gio trash`/libsecret |
-| `lsof`/`pgrep` (G4, G5), `supportOrte`-Regexe (A3), 200× `split("/")` auf echten Pfaden (V4) | nicht angefasst | je Stelle in eigenem Paket |
-| Linux-Support-Ordner | Regel aus `kern/pfade.mjs` (`XDG_DATA_HOME`/`~/.local/share`) übernommen, nicht `~/.config` | Entscheidung, falls `~/.config` gewünscht |
+| Umstellung A4 (Kern, Node) | Claude-Hooks brauchen POSIX-Shell-Befehle; unter Windows anderer Aufrufweg | W2: Hook-Befehle je System erzeugen |
+| UI ohne Diagnose (35, Artefakte `…-ui-*`) | Ursache je Spec noch nicht ermittelt | W2: Fehlerkontext sichten, nach Ursache gruppieren |
+| Härtung „Sync Zeitlimit“ | Windows liefert 409 statt 504 | W2: Ablauf prüfen, Erwartung oder Code angleichen |
+| `kontingent-regeln` (Vault kurzer/langer Name) | Kurznamen (`RUNNER~1`) vs. lange Pfade | W2: Pfade vor Vergleich per `realpath.native` |
+| `browser-dienst`, v2-git (60-s-Zeitlimits) | langsamer Start/Prozessbaum unter Windows | W2: Ursache messen, Zeitlimits oder Start anpassen |
+| `git worktree` (Tageslauf, Pflege, Traum) | Pfad mit Umlaut und Zweigname `tageslauf/…` | W2: Aufruf und Quoting prüfen |
+| ≈200× `split("/")` auf echten Pfaden (V4) | Pfade mit `\` | W2: je Stelle `path`-Funktionen |
+| `lsof`/`pgrep` (G4, G5) | Unix-Werkzeuge | W2: Windows-Ersatz (`tasklist`/PowerShell) |
+| `supportOrte`-Regexe (A3) | Unix-Pfadform | W2: Regex auf Laufwerkspfade |
+| macOS-only ohne Ersatz | launchctl, pmset/ioreg, caffeinate, osascript, plutil, Keychain | W2: Aufgabenplanung, `powercfg`, PowerShell-Papierkorb, Credential Manager; Linux: systemd, `gio trash`, libsecret |
+| Bewusst nicht gemacht | ⌘→`mod()` (UI-Tests setzen `MacIntel`, Studio bildet Cmd auf Ctrl ab) | keine |
+| Linux-Support-Ordner | Regel aus `kern/pfade.mjs` (`XDG_DATA_HOME`/`~/.local/share`) | Entscheidung, falls `~/.config` gewünscht |

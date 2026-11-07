@@ -6,9 +6,10 @@ import { writeFileSync, chmodSync, mkdirSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmp, pfad } from "./hilfe.mjs";
 import { altvault, baumStand, GEHEIM } from "../Kern/fixture-altvault.mjs";
+import { legeProgramm, programmPfad } from "./attrappe.mjs";
 
 process.env.KORTEX_KERN_UNSTABIL_ERLAUBT = "1";
-const echtesHome = process.env.HOME;
+const echtesHome = process.env.HOME, echtesProfil = process.env.USERPROFILE;
 const { erzeugeHandler } = await import(pfad("werkstatt", "handler.mjs"));
 const { erkenneProfile: profileWerkstatt } = await import(pfad("werkstatt", "profile.mjs"));
 const { erkenneProfile: profileKern } = await import(pfad("kern", "umstellung", "profile.mjs"));
@@ -21,12 +22,11 @@ const aufruf = (h) => async (methode, p) => {
 };
 function mitFixture(faelle) {
   const a = altvault({ faelle });
-  const starter = join(a.basis, "starter.sh");
-  writeFileSync(starter, `#!/bin/sh\nexec ${q(process.execPath)} ${q(pfad("kern", "brain.mjs"))} "$@"\n`);
-  chmodSync(starter, 0o755);
+  const starter = programmPfad(legeProgramm(join(a.basis, "starter.sh"), `#!/bin/sh\nexec ${q(process.execPath)} ${q(pfad("kern", "brain.mjs"))} "$@"\n`));
+  if (process.platform === "win32") process.env.USERPROFILE = a.home;
   process.env.HOME = a.home;   // os.homedir() liest $HOME – auch in den Kindprozessen
   const rufe = aufruf(erzeugeHandler({ vault: a.vault, vaultOptionen: { support: a.support }, starter }));
-  return { a, rufe, starter, weg: () => { process.env.HOME = echtesHome; a.weg(); } };
+  return { a, rufe, starter, weg: () => { process.env.HOME = echtesHome; if (process.platform === "win32") process.env.USERPROFILE = echtesProfil; a.weg(); } };
 }
 
 test("GET /api/umstellung/befund: Kit-Vault → Befund mit Funden, ohne Werte, nichts verändert", async () => {

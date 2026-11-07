@@ -154,7 +154,8 @@ function beendeBaum(wurzel) {
 function rufeKette(befehl, roh) {
   return new Promise((fertig) => {
     let kind;
-    try { kind = spawn("/bin/sh", ["-c", befehl], { stdio: ["pipe", "pipe", "pipe"], env: process.env }); }
+    try { kind = spawn(process.platform === "win32" ? "sh" : "/bin/sh", ["-c", befehl], // Windows: sh aus dem PATH von Claude Code
+       { stdio: ["pipe", "pipe", "pipe"], env: process.env }); }
     catch { return fertig(0); }
     const aus = [], fehl = [];
     let menge = 0, ende = false;

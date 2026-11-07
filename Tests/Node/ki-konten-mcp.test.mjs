@@ -8,6 +8,7 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { join } from "node:path";
 import { tmp, schreibe, pfad } from "./hilfe.mjs";
+import { nurUnix } from "./attrappe.mjs";
 import { baueTestUmgebung } from "./ki-konten-hilfe.mjs";
 
 const K = await import(pfad("gemeinsam", "ki-konten.mjs"));
@@ -61,7 +62,7 @@ test("brain_vaults zeigt nur Vaults, die das Konto sehen darf — ein gesperrter
   const s = szenario();
   const m = starteMcp(s, ["--konto", "k_aaaaaaaa"]);
   const t = (await m.rufe("brain_vaults")).text;
-  assert.match(t, new RegExp(`1\\. \\* Offen — ${s.offen}`));
+  assert.match(t, new RegExp(`1\\. \\* Offen — ${s.offen.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
   assert.equal(t.split("\n").filter((z) => /^\d+\./.test(z.trim())).length, 1, t);
   rein(s, t);
   // der gesperrte Vault ist in der App der aktive: der Server nutzt ihn trotzdem nicht
@@ -223,7 +224,7 @@ test("Beschädigte Liste: der Server liefert nichts (auch nicht brain_vaults) un
   await alt.ende();
 });
 
-test("Ein Symlink an der Liste und ein Ordner dort sind wie eine beschädigte Datei: nichts wird geliefert", async () => {
+test("Ein Symlink an der Liste und ein Ordner dort sind wie eine beschädigte Datei: nichts wird geliefert", { skip: nurUnix("Symlinks brauchen unter Windows besondere Rechte") }, async () => {
   const s = szenario();
   const datei = K.kontenPfad(s.support);
   const kopie = join(tmp(), "kopie.json");

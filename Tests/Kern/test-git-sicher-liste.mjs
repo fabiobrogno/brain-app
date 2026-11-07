@@ -2,7 +2,7 @@
 // (den git-sicher benutzt) bleibt unverändert. Immer nur Namen, nie Werte. Nur Wegwerf-Repos in Temp.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, realpathSync, rmSync, mkdirSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync, mkdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,9 +10,14 @@ import { execFileSync, spawnSync } from "node:child_process";
 
 const KERN = fileURLToPath(new URL("..", import.meta.url));
 const PL = join(KERN, "git-sicher-pruefung.pl");
-const GIT = ["/opt/homebrew/bin/git", "/usr/local/bin/git", "/usr/bin/git"].find((p) => { try { execFileSync(p, ["--version"], { stdio: "ignore" }); return true; } catch { return false; } });
+const MJS = join(KERN, "git-sicher-pruefung.mjs");
+const WIN = process.platform === "win32";
+// Beide Fassungen (Perl und Node) laufen an JEDEM Fall und müssen dasselbe liefern (Ausgabe und Exit); unter Windows gibt es nur die Node-Fassung.
+const PERL = !WIN && existsSync("/usr/bin/perl") ? "/usr/bin/perl" : null;
+const IMPLS = [...(PERL ? [[PERL, PL]] : []), [process.execPath, MJS]];
+const GIT = WIN ? "git" : ["/opt/homebrew/bin/git", "/usr/local/bin/git", "/usr/bin/git"].find((p) => { try { execFileSync(p, ["--version"], { stdio: "ignore" }); return true; } catch { return false; } });
 const GEHEIM = "GEHEIM-xyz";
-const ENV = { PATH: "/usr/bin:/bin", HOME: tmpdir(), LC_ALL: "C", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };   // Produktion: keine Testschalter
+const ENV = { PATH: WIN ? process.env.PATH : "/usr/bin:/bin", ...(WIN ? { SYSTEMROOT: process.env.SYSTEMROOT, TEMP: process.env.TEMP, USERPROFILE: tmpdir() } : {}), HOME: tmpdir(), LC_ALL: "C", GIT_CONFIG_GLOBAL: WIN ? "NUL" : "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };   // Produktion: keine Testschalter
 const ENV_TEST = { ...ENV, KORTEX_KERN_UNSTABIL_ERLAUBT: "1" };
 
 function repo() {
@@ -21,7 +26,12 @@ function repo() {
   const g = (...a) => execFileSync(GIT, ["-C", d, ...a], { env: ENV, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   return { d, g, weg: () => rmSync(d, { recursive: true, force: true }) };
 }
-const lauf = (d, extra = [], env = ENV) => spawnSync("/usr/bin/perl", [PL, GIT, d, ...extra], { encoding: "utf8", env });
+const roh = (args, env = ENV) => {
+  const rs = IMPLS.map(([prog, skript]) => spawnSync(prog, [skript, ...args], { encoding: "utf8", env }));
+  for (const r of rs.slice(1)) { assert.equal(r.status, rs[0].status, "Perl und Node: derselbe Exit"); assert.equal(r.stdout, rs[0].stdout, "Perl und Node: dieselbe Ausgabe"); }
+  return rs[0];
+};
+const lauf = (d, extra = [], env = ENV) => roh([GIT, d, ...extra], env);
 const namen = (r) => r.stdout.split("\n").filter((z) => z.startsWith("REFUSE\t")).map((z) => z.slice(7));
 
 test("--alle: sauberer Vault → OK, Exit 0 (wie der Normalmodus)", () => {
@@ -49,7 +59,7 @@ test("--alle nennt alle verbotenen Schlüssel, der Normalmodus nur den ersten", 
     assert.equal(namen(normal).length, 1, "ohne --alle bleibt es beim ersten");
     assert.ok(namen(alle).includes(namen(normal)[0]));
     assert.equal(lauf(r.d, ["--alle", "--alle"]).stdout, alle.stdout);
-    assert.equal(spawnSync("/usr/bin/perl", [PL, "--alle", GIT, r.d], { encoding: "utf8", env: ENV }).stdout, alle.stdout, "--alle gilt an jeder Stelle");
+    assert.equal(roh(["--alle", GIT, r.d]).stdout, alle.stdout, "--alle gilt an jeder Stelle");
   } finally { r.weg(); }
 });
 
@@ -113,6 +123,31 @@ test("--alle: kein Repository / unlesbare Konfiguration → Meldung in Klammern,
 });
 
 test("Falscher Aufruf: ohne git und Ordner Exit 2", () => {
-  assert.equal(spawnSync("/usr/bin/perl", [PL, "--alle"], { env: ENV }).status, 2);
-  assert.equal(spawnSync("/usr/bin/perl", [PL], { env: ENV }).status, 2);
+  assert.equal(roh(["--alle"]).status, 2);
+  assert.equal(roh([]).status, 2);
+});
+
+// Wertematrix: Perl und Node entscheiden an denselben Schlüssel/Wert-Paaren gleich (lauf() prüft die Gleichheit; hier zusätzlich die erwartete Entscheidung).
+test("Wertematrix: erlaubte und verbotene Werte, Perl und Node entscheiden gleich", () => {
+  const faelle = [
+    ["core.filemode", "true", true], ["core.filemode", "2", false], ["core.bare", "true", false], ["core.bare", "false", true], ["core.autocrlf", "input", true], ["core.autocrlf", "maybe", false],
+    ["core.eol", "LF", true], ["core.eol", "cr", false], ["core.quotepath", "off", true], ["core.hooksPath", "/x/hooks", true], ["core.longpaths", "yes", true],
+    ["user.name", "Max Muster", true], ["user.name", "a;b", false], ["user.email", "m@x.org", true], ["user.email", "a|b", false],
+    ["pull.rebase", "merges", true], ["pull.ff", "only", true], ["push.default", "simple", true], ["push.default", "weird", false],
+    ["init.defaultBranch", "main", true], ["init.defaultBranch", "-x", false], ["gc.auto", "6700", true], ["gc.auto", "viel", false], ["gc.pruneExpire", "2.weeks.ago", true],
+    ["remote.o.url", "https://example.org/v.git", true], ["remote.o.url", "ssh://git@example.org/v.git", true], ["remote.o.url", "git@example.org:v.git", true], ["remote.o.url", "-oProxy=x", false],
+    ["remote.o.url", "/lokal/ziel.git", false], ["remote.o.fetch", "+refs/heads/*:refs/remotes/o/*", true], ["remote.o.fetch", "-x", false], ["remote.o.proxy", "http://p", false],
+    ["branch.main.remote", "origin", true], ["branch.main.merge", "refs/heads/main", true], ["branch.main.merge", "-x", false], ["branch.main.rebase", "interactive", true],
+    ["branch.main.description", "Beschreibung", true], ["http.sslVerify", "false", false], ["credential.helper", "store", false], ["alias.x", "!sh", false], ["core.fsmonitor", "x", false],
+    ["commit.gpgsign", "false", true], ["push.gpgsign", "if-asked", true],
+  ];
+  const r = repo();
+  try {
+    for (const [k, v, erlaubt] of faelle) {
+      r.g("config", "--local", k, v);
+      const l = lauf(r.d);
+      assert.equal(l.status === 0, erlaubt, `${k}=${v} → ${l.stdout}`);
+      r.g("config", "--local", "--unset-all", k);
+    }
+  } finally { r.weg(); }
 });

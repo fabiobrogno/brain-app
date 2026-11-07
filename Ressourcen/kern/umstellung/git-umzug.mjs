@@ -37,7 +37,10 @@ export function istCaseInsensitiv(pfad) {
   } catch { return false; }
 }
 
+// Windows: git erwartet in gitdir:-Mustern und include-Pfaden Schrägstriche (C:/…); NTFS unterscheidet nicht nach Groß/klein. macOS/Linux unverändert.
+export const vorwaerts = (p) => (process.platform === "win32" ? String(p).split("\\").join("/") : p);
 export function einbindungsBlock({ vaultEcht, datei, k, caseInsensitiv }) {
+  if (process.platform === "win32") { vaultEcht = vorwaerts(vaultEcht); datei = vorwaerts(datei); caseInsensitiv = true; }
   const schluessel = caseInsensitiv ? "gitdir/i" : "gitdir";
   const eintrag = (muster) => `[includeIf ${inAnfuehrung(`${schluessel}:${musterMaskiert(muster)}`)}]\n\tpath = ${inAnfuehrung(datei)}`;
   return [markeAnfang(k), eintrag(`${vaultEcht}/.git`), eintrag(`${vaultEcht}/.git/worktrees/`), markeEnde(k)].join("\n") + "\n";
@@ -181,7 +184,7 @@ export function wende(z, ctx) {
     // Wirkt die Einbindung? Die Einträge müssen aus der Datei je Vault kommen, solange die lokalen noch da sind.
     const o = gitLauf(z, ["config", "--show-origin", "--list", "-z"]);
     // mit -z steht vor jedem Eintrag ein eigenes NUL-getrenntes Stück „file:<Datei>“
-    const ausDatei = o.stdout.split("\0").filter((e) => e === `file:${datei}`).length;
+    const ausDatei = o.stdout.split("\0").filter((e) => vorwaerts(e) === vorwaerts(`file:${datei}`)).length;
     if (o.status !== 0 || ausDatei < l.verschieb.length) throw new Error("einbindung-wirkt-nicht");
     for (const key of new Set(l.verschieb.map((k) => k.schluessel))) gitFehler(gitLauf(z, ["config", "--local", "--unset-all", key]), "lokal-entfernen");
   }

@@ -37,6 +37,7 @@ export function protokolliere(wurzel, eintrag) {
     try { lstatSync(ordner); } catch { mkdirSync(ordner, { recursive: true }); }
     if (!nurOrdner(ordner)) return; // Symlink oder Datei statt Ordner: nichts schreiben
     try { writeFileSync(join(ordner, ".gitignore"), "*\n", { flag: "wx" }); } catch { /* gibt es schon */ }
+    if (process.platform === "win32") { try { if (lstatSync(datei).isSymbolicLink()) return; } catch { /* gibt es noch nicht */ } } // Windows kennt kein O_NOFOLLOW
     const fd = openSync(datei, constants.O_APPEND | constants.O_CREAT | constants.O_WRONLY | (constants.O_NOFOLLOW || 0), 0o644);
     let groesse;
     try {

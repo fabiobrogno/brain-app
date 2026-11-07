@@ -5,11 +5,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync, cpSync, symlinkSync, readdirSync, realpathSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { join } from "node:path";
+import { join, delimiter } from "node:path";
 import { tmp, schreibe, pfad, repo, g } from "./hilfe.mjs";
+import { legeProgramm, programmPfad } from "./attrappe.mjs";
 
 const HOME = tmp("kortex-home-");
-process.env.HOME = HOME; // os.homedir() liest $HOME — auch in den Kindprozessen
+process.env.HOME = HOME; if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME || "";  // os.homedir() liest $HOME — auch in den Kindprozessen
 // Der Wegwerf-Support-Ordner liegt unter Temp: Testschalter, damit er als stabiler Kern-Pfad gilt (ohne diese beiden wäre er „unbeständig“).
 process.env.KORTEX_KERN_UNSTABIL_ERLAUBT = "1";
 process.env.KORTEX_KERN_TEMP_WURZELN = "";
@@ -26,10 +27,9 @@ function baueSupport({ mitStarter = true } = {}) {
   symlinkSync("../kern/9.9.9", join(support, "bin", "kern"));
   const starter = join(support, "bin", "kortex");
   if (mitStarter) {
-    writeFileSync(starter, `#!/bin/sh\nKORTEX_KERN_PFAD=${q(join(support, "bin", "kern"))}\nexport KORTEX_KERN_PFAD\nexec ${q(process.execPath)} ${q(join(support, "bin", "kern", "brain.mjs"))} "$@"\n`);
-    chmodSync(starter, 0o755);
+    legeProgramm(starter, `#!/bin/sh\nKORTEX_KERN_PFAD=${q(join(support, "bin", "kern"))}\nexport KORTEX_KERN_PFAD\nexec ${q(process.execPath)} ${q(join(support, "bin", "kern", "brain.mjs"))} "$@"\n`);
   }
-  return { support, starter, kern: join(support, "bin", "kern"), version };
+  return { support, starter: programmPfad(starter), kern: join(support, "bin", "kern"), version };
 }
 function vault({ mitGit = false } = {}) {
   const d = mitGit ? repo("kortex-vault-") : tmp("kortex-vault-");
@@ -269,8 +269,8 @@ function mehrProfilHome() {
   symlinkSync(join(heim, "echt-ordner"), join(heim, ".claude-link"));  // Symlinks werden nicht verfolgt
   schreibe(heim, ".claude-datei", "ich bin eine Datei");
   const alt = process.env.HOME;
-  process.env.HOME = heim;
-  return { ...p, fertig: () => { process.env.HOME = alt; } };
+  process.env.HOME = heim; if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME || ""; 
+  return { ...p, fertig: () => { process.env.HOME = alt; if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME || "";  } };
 }
 
 test("Profile werden gefunden: ~/.claude und ~/.claude-* mit settings.json, .claude.json oder projects/ — nicht leere Ordner, Symlinks, Dateien oder ähnliche Namen", () => {
@@ -341,8 +341,7 @@ test("Mehrere Profile: Stand je Profil; Eintragen und Entfernen nur in den gewä
 // claude-Attrappe, die bei jedem Aufruf die Umgebungsvariable CLAUDE_CONFIG_DIR festhält.
 function fakeClaudeMitProfil() {
   const bin = tmp("kortex-claudebin-"), log = join(bin, "aufrufe.log");
-  writeFileSync(join(bin, "claude"), `#!/bin/sh\necho "dir=\${CLAUDE_CONFIG_DIR:-STANDARD} $*" >> '${log}'\ncase "$1 $2" in\n  "mcp get") echo "No MCP server found" >&2; exit 1;;\n  "mcp add") echo ok; exit 0;;\nesac\nexit 3\n`);
-  chmodSync(join(bin, "claude"), 0o755);
+  legeProgramm(join(bin, "claude"), `#!/bin/sh\necho "dir=\${CLAUDE_CONFIG_DIR:-STANDARD} $*" >> '${log}'\ncase "$1 $2" in\n  "mcp get") echo "No MCP server found" >&2; exit 1;;\n  "mcp add") echo ok; exit 0;;\nesac\nexit 3\n`);
   return { bin, aufrufe: () => (existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : []) };
 }
 
@@ -351,7 +350,7 @@ test("KI verbinden mit Claude je Profil: das Standardprofil ohne CLAUDE_CONFIG_D
   const c = fakeClaudeMitProfil();
   const mcpDir = tmp("kortex-mcp-"); schreibe(mcpDir, "brain-mcp.mjs", "// fake\n");
   const altPfad = process.env.PATH, altEnv = process.env.CLAUDE_CONFIG_DIR, altExtra = process.env.BRAIN_CLAUDE_EXTRA;
-  process.env.PATH = `${c.bin}:${altPfad}`; process.env.BRAIN_CLAUDE_EXTRA = "";
+  process.env.PATH = [c.bin, altPfad].join(delimiter); process.env.BRAIN_CLAUDE_EXTRA = "";
   process.env.CLAUDE_CONFIG_DIR = "/geerbt/aus/der/shell";   // so eine Variable darf das Standardprofil nie beeinflussen
   try {
     const rufe = aufruf(erzeugeHandler({ kontenAus: true, vault: vault(), mcpPfad: join(mcpDir, "brain-mcp.mjs"), vaultOptionen: { support: tmp("kortex-s-") } }));

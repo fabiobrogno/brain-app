@@ -4,12 +4,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { writeFileSync, existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { join } from "node:path";
+import { join, delimiter } from "node:path";
 import { tmp, schreibe, pfad } from "./hilfe.mjs";
 import { platzhalter, GEHEIM, GEHEIM_DATEI } from "./anmelden-hilfe.mjs";
+import { pfadMit, programmPfad, nurUnix, WIN } from "./attrappe.mjs";
 
 for (const k of ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "CURSOR_CONFIG_DIR", "GEMINI_CLI_HOME", "XDG_CONFIG_HOME", "GIT_CONFIG_GLOBAL"]) delete process.env[k];
-process.env.HOME = tmp("brain-home-");
+process.env.HOME = tmp("brain-home-"); if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME || ""; 
 
 const { erzeugeHandler } = await import(pfad("werkstatt", "handler.mjs"));
 const A = await import(pfad("gemeinsam", "anmeldung.mjs"));
@@ -27,13 +28,13 @@ function aufbau(szenario = {}, optionen = {}) {
   const s = tmp("brain-support-"), v = neuesVault(), leck = tmp("brain-leck-");
   writeFileSync(join(s, "vaults.json"), JSON.stringify({ vaults: [{ name: "V", pfad: v, farbe: "#5B8DEF" }], aktiv: v }));
   const mcp = tmp("brain-mcpdir-"); schreibe(mcp, "brain-mcp.mjs", "//\n");
-  const basis = { PATH: `${p.bin}:/usr/bin:/bin`, HOME: process.env.HOME, TERM: "xterm", LANG: "de_DE.UTF-8", BROWSER: "/bin/false",
+  const basis = { PATH: pfadMit(p.bin), HOME: process.env.HOME, TERM: "xterm", LANG: "de_DE.UTF-8", BROWSER: "/bin/false",
     CLAUDE_CONFIG_DIR: leck, CODEX_HOME: leck, XDG_CONFIG_HOME: leck, XDG_DATA_HOME: leck, GIT_CONFIG_GLOBAL: join(leck, "gitconfig"), GIT_CONFIG_COUNT: "1",
     ANTHROPIC_API_KEY: "sk-ant-api-aus-der-werkstatt", OPENAI_API_KEY: "sk-aus-der-werkstatt", CLAUDE_CODE_OAUTH_TOKEN: "oauth-aus-der-werkstatt", CURSOR_CONFIG_DIR: leck,
     BRAIN_TESTMODUS: "1", KORTEX_VORSCHAU: "1", NODE_OPTIONS: "--no-warnings" };
   const protokoll = [];
   const h = erzeugeHandler({ vault: v, vaultOptionen: { support: s }, mcpPfad: join(mcp, "brain-mcp.mjs"),
-    anmeldeOptionen: { findeProgramm: (n) => join(p.bin, n), basisUmgebung: () => basis, protokoll: (e) => protokoll.push(e), optionen: { takt: 30, fristen: { adresse: 2500, status: 4000 }, ...optionen } } });
+    anmeldeOptionen: { findeProgramm: (n) => programmPfad(join(p.bin, n)), basisUmgebung: () => basis, protokoll: (e) => protokoll.push(e), optionen: { takt: 30, fristen: { adresse: 2500, status: 4000 }, ...optionen } } });
   const antworten = [];
   const rufe = async (methode, pf, daten) => {
     const [weg, abfrage] = pf.split("?");
@@ -72,7 +73,7 @@ test("Claude: neues Konto — Adresse über das BROWSER-Skript, Umgebung sauber,
   assert.equal(env.konto, endgueltig, "CLAUDE_CONFIG_DIR zeigt gleich auf den ENDGÜLTIGEN Pfad (und nur darauf)");
   for (const n of env.namen) assert.ok(n === "CLAUDE_CONFIG_DIR" || !/^(XDG_|GIT_|ANTHROPIC_|OPENAI_|CODEX_|CURSOR_|GEMINI_|CLAUDE|BRAIN_|KORTEX_|NODE_)/i.test(n), `Fremdvariable im Kind: ${n}`);
   assert.ok(!env.namen.includes("CODEX_HOME")); assert.ok(env.namen.includes("HOME") && env.namen.includes("PATH"));
-  assert.match(env.browser, /kortex-anmelden-[^/]+\/kortex-browser$/, "BROWSER = das Kortex-Skript, nicht das aus der Werkstatt-Umgebung");
+  if (!WIN) assert.match(env.browser, /kortex-anmelden-[^/]+\/kortex-browser$/, "BROWSER = das Kortex-Skript, nicht das aus der Werkstatt-Umgebung");
   // Code einfügen
   const schlecht = await t.rufe("POST", "/api/ki/anmeldelauf/code", { id: r.j.id, code: "mit Leerzeichen und\nZeile" });
   assert.equal(schlecht.status, 400);
@@ -126,7 +127,7 @@ test("nichts außer Adresse und Code wird gelesen: Token aus Ausgabe und Anmelde
   }
 });
 
-test("Abbrechen beendet die ganze Prozessgruppe und räumt den Ordner und Eintrag des neuen Kontos weg; kein Konto entsteht", async () => {
+test("Abbrechen beendet die ganze Prozessgruppe und räumt den Ordner und Eintrag des neuen Kontos weg; kein Konto entsteht", { skip: nurUnix("Prozessgruppe (Kindprozess des Programms) wird unter Windows nicht mit beendet") }, async () => {
   const t = aufbau({ modus: "hang" });
   const r = await t.start({ programm: "claude", neu: "Abbruch" });
   await t.warteAuf(r.j.id, ["wait"]);
@@ -144,7 +145,7 @@ test("Abbrechen beendet die ganze Prozessgruppe und räumt den Ordner und Eintra
   assert.equal(neu.status, 200); await t.rufe("POST", "/api/ki/anmeldelauf/abbrechen", { id: neu.j.id });
 });
 
-test("Frist abgelaufen: Phase timeout, Prozessgruppe weg, Ordner weg", async () => {
+test("Frist abgelaufen: Phase timeout, Prozessgruppe weg, Ordner weg", { skip: nurUnix("Prozessgruppe (Kindprozess des Programms) wird unter Windows nicht mit beendet") }, async () => {
   const t = aufbau({ modus: "hang" }, { fristen: { adresse: 2500, gesamt: 500, status: 2000 } });
   const r = await t.start({ programm: "claude", neu: "Spaet" });
   const z = await t.warteAuf(r.j.id, ["timeout"]);
@@ -240,7 +241,7 @@ test("fehlendes Programm: 409 mit Rückfall, nichts angelegt; Code nur während 
   for (const id of [c.j.id, k.j.id]) await t.rufe("POST", "/api/ki/anmeldelauf/abbrechen", { id });
 });
 
-test("beendeAlle (Werkstatt endet): Prozesse und Ordner weg", async () => {
+test("beendeAlle (Werkstatt endet): Prozesse und Ordner weg", { skip: nurUnix("Prozessgruppe (Kindprozess des Programms) wird unter Windows nicht mit beendet") }, async () => {
   const t = aufbau({ modus: "hang" });
   const r = await t.start({ programm: "codex", neu: "Ende" });
   await t.warteAuf(r.j.id, ["wait"]);
@@ -252,10 +253,10 @@ test("beendeAlle (Werkstatt endet): Prozesse und Ordner weg", async () => {
 
 // ───────────── Bausteine ohne Werkstatt ─────────────
 test("anmeldeUmgebung: nur das gewählte Konto-Verzeichnis, Standardkonto ohne Variable, Fremdes weg, PATH nur absolut", () => {
-  const basis = { PATH: "/usr/bin:relativ:/bin", HOME: "/h", CLAUDE_CONFIG_DIR: "/x", CODEX_HOME: "/y", XDG_CONFIG_HOME: "/z", XDG_RUNTIME_DIR: "/r", GIT_CONFIG_GLOBAL: "/g", GIT_CONFIG_SYSTEM: "/s", ANTHROPIC_AUTH_TOKEN: "t", BROWSER: "evil", NODE_OPTIONS: "--x", NODE_EXTRA_CA_CERTS: "/ca", DYLD_INSERT_LIBRARIES: "/d", TERM: "xterm" };
+  const basis = { PATH: ["/usr/bin", "relativ", "/bin"].join(delimiter), HOME: "/h", CLAUDE_CONFIG_DIR: "/x", CODEX_HOME: "/y", XDG_CONFIG_HOME: "/z", XDG_RUNTIME_DIR: "/r", GIT_CONFIG_GLOBAL: "/g", GIT_CONFIG_SYSTEM: "/s", ANTHROPIC_AUTH_TOKEN: "t", BROWSER: "evil", NODE_OPTIONS: "--x", NODE_EXTRA_CA_CERTS: "/ca", DYLD_INSERT_LIBRARIES: "/d", TERM: "xterm" };
   const c = A.anmeldeUmgebung(basis, { programm: "claude", ordner: "/neu/ordner", browser: "/shim", pfadZusatz: ["/opt/bin"] });
   assert.deepEqual(Object.keys(c).sort(), ["BROWSER", "CLAUDE_CONFIG_DIR", "HOME", "NODE_EXTRA_CA_CERTS", "PATH", "TERM"]);
-  assert.equal(c.CLAUDE_CONFIG_DIR, "/neu/ordner"); assert.equal(c.BROWSER, "/shim"); assert.equal(c.PATH, "/opt/bin:/usr/bin:/bin");
+  assert.equal(c.CLAUDE_CONFIG_DIR, "/neu/ordner"); assert.equal(c.BROWSER, "/shim"); assert.equal(c.PATH, ["/opt/bin", "/usr/bin", "/bin"].join(delimiter));
   const x = A.anmeldeUmgebung(basis, { programm: "codex", ordner: "/c" });
   assert.equal(x.CODEX_HOME, "/c"); assert.ok(!("CLAUDE_CONFIG_DIR" in x) && !("BROWSER" in x));
   const s = A.anmeldeUmgebung(basis, { programm: "claude", ordner: null });
@@ -295,7 +296,7 @@ test("Claude: wird die Adresse bei 80 Spalten umbrochen, nimmt Kortex die ganze 
 test("Claude: eine gelungene Anmeldung wird nie als „abgelaufen“ gemeldet, auch wenn die Frist während der Statusprüfung abläuft", async () => {
   const p = platzhalter({ modus: "ok", verzoegerung: 900, statusVerzoegerung: 1800 });
   const s = tmp("brain-anmelde-konto-");
-  const l = A.starteAnmeldung({ programm: "claude", programmPfad: join(p.bin, "claude"), ordner: s, basisUmgebung: { PATH: `${p.bin}:/usr/bin:/bin`, HOME: process.env.HOME },
+  const l = A.starteAnmeldung({ programm: "claude", programmPfad: programmPfad(join(p.bin, "claude")), ordner: s, basisUmgebung: { PATH: pfadMit(p.bin), HOME: process.env.HOME },
     fristen: { gesamt: 1500, adresse: 2500, status: 5000 }, takt: 30 });
   const z = await l.ende;
   assert.equal(z.phase, "ok", `Phase ${z.phase} (${z.grund})`);
@@ -304,7 +305,7 @@ test("Claude: eine gelungene Anmeldung wird nie als „abgelaufen“ gemeldet, a
 test("Attrappen brechen ab, wenn ihr Zielordner außerhalb des Temp-Ordners liegt", () => {
   const p = platzhalter();
   for (const [prog, v] of [["claude", "CLAUDE_CONFIG_DIR"], ["codex", "CODEX_HOME"]]) {
-    const r = spawnSync(join(p.bin, prog), prog === "claude" ? ["auth", "status"] : ["login", "status"], { env: { PATH: "/usr/bin:/bin", [v]: "/usr" }, encoding: "utf8" });
+    const r = spawnSync(programmPfad(join(p.bin, prog)), prog === "claude" ? ["auth", "status"] : ["login", "status"], { env: { PATH: pfadMit(), [v]: "/usr", ...(WIN ? { SystemRoot: process.env.SystemRoot } : {}) }, encoding: "utf8" });
     assert.equal(r.status, 99, `${prog}: Exit 99 außerhalb von Temp`);
   }
   assert.ok(!existsSync("/usr/.credentials.json"));

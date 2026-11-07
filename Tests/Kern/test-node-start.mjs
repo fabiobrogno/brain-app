@@ -1,5 +1,5 @@
 // .tools/tests/test-node-start.mjs — B3 Task 5: node-start.sh findet Node ohne festen Pfad (PATH, BRAIN_NODE), meldet sonst verständlich.
-import { test } from "node:test";
+import { testNurUnix as test } from "./nur-unix.mjs";   // git-sicher ist ein Shell-Skript: unter Windows übersprungen
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { join, dirname } from "node:path";

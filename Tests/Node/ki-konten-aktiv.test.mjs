@@ -7,9 +7,10 @@ import { writeFileSync, mkdirSync, statSync, readdirSync, existsSync, realpathSy
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { tmp, schreibe, pfad } from "./hilfe.mjs";
+import { nurUnix, modus } from "./attrappe.mjs";
 
 for (const k of ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "CURSOR_CONFIG_DIR", "GEMINI_CLI_HOME", "XDG_CONFIG_HOME", "GIT_CONFIG_GLOBAL"]) delete process.env[k];
-process.env.HOME = tmp("brain-home-");
+process.env.HOME = tmp("brain-home-"); if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME || ""; 
 
 const { erzeugeHandler } = await import(pfad("werkstatt", "handler.mjs"));
 const G = await import(pfad("gemeinsam", "ki-konten.mjs"));
@@ -23,8 +24,8 @@ const aufruf = (h) => async (methode, p, daten) => {
   return { ...r, j };
 };
 async function mitHome(home, fn) {
-  const alt = process.env.HOME; process.env.HOME = home;
-  try { return await fn(); } finally { process.env.HOME = alt; }
+  const alt = process.env.HOME; process.env.HOME = home; if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME || ""; 
+  try { return await fn(); } finally { process.env.HOME = alt; if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME || "";  }
 }
 function aufbau() {
   const home = tmp("brain-home-"), s = tmp("brain-support-");
@@ -190,7 +191,7 @@ test("Neues Konto: der Ordner trägt gleich seinen endgültigen Namen, das ausst
     assert.match(id, /^k_[0-9a-f]{8}$/);
     const pfadVorher = r.j.ausstehend.pfad;
     assert.equal(pfadVorher, join(realpathSync(a.s), "ki-konten-ordner", "claude-kunde-muller"), "gleich der endgültige Name");
-    assert.ok(existsSync(pfadVorher)); assert.equal(statSync(pfadVorher).mode & 0o777, 0o700);
+    assert.ok(existsSync(pfadVorher)); assert.equal(modus(pfadVorher, 0o700), 0o700);
     assert.equal(r.j.neuesKonto, undefined, "noch kein Konto");
     assert.equal(r.j.konten.length, 0, "unsichtbar");
     assert.deepEqual(readdirSync(a.home), [], "im Home wird nichts angelegt");
@@ -239,7 +240,7 @@ test("Neues Konto: der Ordner trägt gleich seinen endgültigen Namen, das ausst
   });
 });
 
-test("Ausstehende Konten: Zeitablauf und liegengebliebene räumt der Abgleich weg; gelöscht wird nur ein echter Ordner, den Kortex angelegt hat (nie Verweise, fremde Orte, Dateien)", async () => {
+test("Ausstehende Konten: Zeitablauf und liegengebliebene räumt der Abgleich weg; gelöscht wird nur ein echter Ordner, den Kortex angelegt hat (nie Verweise, fremde Orte, Dateien)", { skip: nurUnix("Symlinks brauchen unter Windows besondere Rechte") }, async () => {
   const a = aufbau();
   await mitHome(a.home, async () => {
     const r = await a.rufe("POST", "/api/ki/konto-neu", { programm: "claude", name: "Langsam" });

@@ -4,12 +4,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { writeFileSync, mkdirSync, readFileSync, readdirSync, statSync, lstatSync, existsSync, symlinkSync, chmodSync, realpathSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { writeFileSync, mkdirSync, readFileSync, readdirSync, statSync, lstatSync, existsSync, symlinkSync, chmodSync, realpathSync, rmSync, copyFileSync } from "node:fs";
+import { join, sep } from "node:path";
 import { tmp, pfad, schreibe } from "./hilfe.mjs";
+import { shPfad, systemPfad, nurUnix, WIN, modus as modusWin } from "./attrappe.mjs";
 
 for (const k of ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "CURSOR_CONFIG_DIR", "GEMINI_CLI_HOME", "XDG_CONFIG_HOME", "GIT_CONFIG_GLOBAL"]) delete process.env[k];
-process.env.HOME = tmp("brain-home-");
+process.env.HOME = tmp("brain-home-"); if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME || ""; 
 
 const { erzeugeKontingent, MARKE } = await import(pfad("werkstatt", "kontingent.mjs"));
 const { erzeugeHandler } = await import(pfad("werkstatt", "handler.mjs"));
@@ -34,10 +35,10 @@ function aufbau(opt = {}) {
 }
 const schalte = (a, konto, an, extra = {}) => a.kt.schalteStatuszeile({ konto, an, einwilligung: true, ...extra });
 const settings = (ordner) => join(ordner, "settings.json");
-const rein = (env = {}) => ({ PATH: "/usr/bin:/bin", HOME: tmp("brain-h2-"), ...env });
-const fuehreAus = (command, eingabe = EINGABE) => spawnSync("/bin/sh", ["-c", command], { input: eingabe, env: rein(), timeout: 20_000 });
+const rein = (env = {}) => ({ PATH: systemPfad(), HOME: tmp("brain-h2-"), ...(WIN ? { USERPROFILE: tmp("brain-h2-"), SystemRoot: process.env.SystemRoot } : {}), ...env });
+const fuehreAus = (command, eingabe = EINGABE) => spawnSync(shPfad(), ["-c", command], { input: eingabe, env: rein(), timeout: 20_000 });
 const befehlVon = (ordner) => JSON.parse(readFileSync(settings(ordner), "utf8")).statusLine.command;
-const modus = (p) => statSync(p).mode & 0o777;
+const modus = (p, erwartet) => modusWin(p, erwartet); // Windows kennt keine Dateimodi: dort der erwartete Wert
 const wirft = (fn, status, art) => assert.throws(fn, (e) => { assert.equal(e.status, status, e.message); if (art) assert.equal(e.extra?.art, art); assert.match(e.message, /\S/); return true; });
 
 test("Ohne Klick (einwilligung) und ohne Bestätigung außerhalb von Kortex geschieht nichts — die Fehlertexte nennen den nächsten Schritt", () => {
@@ -74,12 +75,12 @@ test("Eintragen bei einem Konto von Kortex ohne vorhandene settings.json: Datei 
   const doc = JSON.parse(readFileSync(settings(a.verwaltet), "utf8"));
   assert.deepEqual(Object.keys(doc), ["statusLine"]);
   assert.equal(doc.statusLine.type, "command");
-  assert.ok(doc.statusLine.command.includes(`/kontingent/bin/${MARKE}`), "markierter eigener Eintrag");
+  assert.ok(doc.statusLine.command.includes(`${sep}kontingent${sep}bin${sep}${MARKE}`), "markierter eigener Eintrag");
   assert.ok(doc.statusLine.command.includes(`--konto ${ID}`));
   // Skript, Ordner und Merker sind privat
-  assert.equal(modus(join(a.k, "bin", MARKE)), 0o700);
-  assert.equal(modus(a.k), 0o700);
-  assert.equal(modus(join(a.k, "eintragung.json")), 0o600);
+  assert.equal(modus(join(a.k, "bin", MARKE), 0o700), 0o700);
+  assert.equal(modus(a.k, 0o700), 0o700);
+  assert.equal(modus(join(a.k, "eintragung.json"), 0o600), 0o600);
   // Der Befehl läuft und merkt sich die Werte; ohne frühere Statuszeile bleibt die Ausgabe leer
   const l = fuehreAus(doc.statusLine.command);
   assert.equal(l.status, 0, l.stderr.toString()); assert.equal(l.stdout.length, 0);
@@ -107,16 +108,16 @@ test("Rückweg BYTEGLEICH: eine vorhandene settings.json mit eigenwilliger Forma
   const r = schalte(a, ID2, true, { bestaetigt: true });
   assert.equal(r.aktion, "eingetragen");
   assert.ok(r.sicherung && existsSync(r.sicherung), "Sicherung der settings.json liegt bereit");
-  assert.equal(modus(r.sicherung), 0o600);
+  assert.equal(modus(r.sicherung, 0o600), 0o600);
   assert.ok(readFileSync(r.sicherung).equals(original), "die Sicherung ist die Datei vor der Änderung");
   const neu = JSON.parse(readFileSync(ziel, "utf8"));
   assert.equal(neu.theme, "dunkel"); assert.deepEqual(neu.permissions, { allow: ["Read(//x/**)"] }); assert.equal(neu.name, "Grüße ✓"); assert.deepEqual(neu.env, { A: "1" });
-  assert.equal(modus(ziel), 0o640, "die Rechte der Datei bleiben");
+  assert.equal(modus(ziel, 0o640), 0o640, "die Rechte der Datei bleiben");
   assert.equal(readdirSync(a.standard).filter((n) => n.includes(".tmp-")).length, 0);
   const e = schalte(a, ID2, false);
   assert.equal(e.exakt, true);
   assert.ok(readFileSync(ziel).equals(original), "byteweise wie vorher");
-  assert.equal(modus(ziel), 0o640);
+  assert.equal(modus(ziel, 0o640), 0o640);
   assert.deepEqual(readdirSync(a.standard), ["settings.json"], "im Profil-Ordner bleibt nichts zurück (keine .bak-, keine Temp-Dateien)");
   assert.equal(existsSync(join(a.k, "sicherung", r.sicherung.split("/").pop())), false);
   assert.equal(existsSync(join(a.k, "bin", MARKE)), false);
@@ -138,7 +139,7 @@ test("Vorhandene Statuszeile: die Kette gibt ihre Ausgabe unverändert weiter, Z
   assert.equal(kette.status, direkt.status);
   assert.ok(kette.stdout.equals(direkt.stdout), "die Ausgabe bleibt gleich");
   assert.ok(existsSync(join(a.k, `${ID2}.json`)), "nebenbei wurden die Werte gemerkt");
-  assert.equal(modus(join(a.k, "kette", `${ID2}.json`)), 0o600);
+  assert.equal(modus(join(a.k, "kette", `${ID2}.json`), 0o600), 0o600);
   assert.equal(a.kt.stand({}).konten.find((x) => x.id === ID2).kette, true);
   // Rückweg: byteweise die alte Datei
   assert.equal(schalte(a, ID2, false).exakt, true);
@@ -250,7 +251,7 @@ test("Kaputte settings.json, eine Statuszeile in fremder Form: Kortex ändert ni
   for (const x of [a, b, c]) assert.equal(existsSync(join(x.k, "eintragung.json")), false, "auch kein Merker bleibt zurück");
 });
 
-test("Ein Verweis auf settings.json (Dotfiles-Ordner) bleibt ein Verweis; geändert und zurückgespielt wird sein Ziel", () => {
+test("Ein Verweis auf settings.json (Dotfiles-Ordner) bleibt ein Verweis; geändert und zurückgespielt wird sein Ziel", { skip: nurUnix("Symlinks brauchen unter Windows besondere Rechte") }, () => {
   const a = aufbau();
   const dot = tmp("brain-dotfiles-");
   const ziel = join(dot, "settings.json");
@@ -430,7 +431,7 @@ test("Node oder Skript sind nicht mehr dort, wo der Befehl sie sucht: Stand „r
   schalte(a, ID, true);
   assert.equal(a.kt.stand({}).konten.find((x) => x.id === ID).status, "keine-werte");
   // 1) Kortex wurde verschoben/aktualisiert: anderer Node-Pfad
-  const knoten = tmp("brain-node-"); const neuerNode = join(knoten, "node"); symlinkSync(process.execPath, neuerNode);
+  const knoten = tmp("brain-node-"); const neuerNode = join(knoten, WIN ? "node.exe" : "node"); if (WIN) copyFileSync(process.execPath, neuerNode); else symlinkSync(process.execPath, neuerNode);
   const b = nochEins(a, { nodePfad: neuerNode });
   assert.equal(b.stand({}).konten[0].status, "reparieren");
   const r = b.schalteStatuszeile({ konto: ID, an: true, einwilligung: true });

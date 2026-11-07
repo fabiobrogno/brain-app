@@ -3,10 +3,11 @@
 // sowie Home und CODEX_HOME im Temp-Ordner. Kein Token, kein Schlüsselbund, kein Netz.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { writeFileSync, mkdirSync, readFileSync, chmodSync, existsSync, realpathSync } from "node:fs";
-import { join } from "node:path";
+import { writeFileSync, mkdirSync, readFileSync, existsSync, realpathSync } from "node:fs";
+import { join, delimiter } from "node:path";
 import { tmpdir } from "node:os";
 import { tmp, pfad } from "./hilfe.mjs";
+import { legeProgramm, programmPfad, systemPfad, nurUnix, WIN } from "./attrappe.mjs";
 
 for (const k of ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "CURSOR_CONFIG_DIR", "GEMINI_CLI_HOME", "XDG_CONFIG_HOME", "GIT_CONFIG_GLOBAL"]) delete process.env[k];
 
@@ -14,12 +15,12 @@ const { liesCodexKontingent, klassifiziereCodex, CODEX_ARGS, stufe, fehlerPause,
 const { erzeugeKontingent } = await import(pfad("werkstatt", "kontingent.mjs"));
 const { laufendePids } = await import(pfad("gemeinsam", "prozess.mjs"));
 
-const TEMP = realpathSync(tmpdir());
+const TEMP = WIN ? realpathSync.native(tmpdir()) : realpathSync(tmpdir()); // Windows: lange statt Kurznamen (RUNNER~1)
 // Die Attrappe: Modus aus der Umgebungsvariable FAKE_MODUS (die der Test ausdrücklich setzt), Aufrufe und Prozess-Kennung im Ordner FAKE_ORDNER
 const FAKE = (ex) => `#!${process.execPath}
 const fs = require("node:fs"); const path = require("node:path");
 const ordner = process.env.FAKE_ORDNER;
-const imTemp = (p) => typeof p === "string" && fs.realpathSync(p).startsWith(${JSON.stringify(TEMP)} + "/");
+const imTemp = (p) => typeof p === "string" && fs.realpathSync${WIN ? ".native" : ""}(p).startsWith(${JSON.stringify(TEMP)} + path.sep);
 if (process.env.BRAIN_TESTMODUS !== "1" || !imTemp(process.env.HOME) || (process.env.CODEX_HOME && !imTemp(process.env.CODEX_HOME))) { console.error("Attrappe nur im Testmodus mit Temp-Ordnern"); process.exit(9); }
 const args = process.argv.slice(2);
 fs.appendFileSync(path.join(ordner, "aufrufe.jsonl"), JSON.stringify({ args, codexHome: process.env.CODEX_HOME || null, pid: process.pid, cwd: process.cwd() }) + "\\n");
@@ -54,13 +55,13 @@ const OK_FENSTER = `{ primary: { usedPercent: 9, windowDurationMins: 300, resets
 function attrappe(ex = OK_FENSTER) {
   const bin = tmp("brain-fake-codex-");
   const codex = join(bin, "codex");
-  writeFileSync(codex, FAKE(ex)); chmodSync(codex, 0o755);
+  legeProgramm(codex, FAKE(ex));
   const home = tmp("brain-home-"), codexHome = tmp("brain-codexhome-");
-  const env = (modus = "ok", extra = {}) => ({ PATH: "/usr/bin:/bin", HOME: home, CODEX_HOME: codexHome, BRAIN_TESTMODUS: "1", FAKE_ORDNER: bin, FAKE_MODUS: modus, ...extra });
+  const env = (modus = "ok", extra = {}) => ({ PATH: systemPfad(), HOME: home, ...(WIN ? { USERPROFILE: home, SystemRoot: process.env.SystemRoot } : {}), CODEX_HOME: codexHome, BRAIN_TESTMODUS: "1", FAKE_ORDNER: bin, FAKE_MODUS: modus, ...extra });
   const aufrufe = () => (existsSync(join(bin, "aufrufe.jsonl")) ? readFileSync(join(bin, "aufrufe.jsonl"), "utf8").trim().split("\n").map((z) => JSON.parse(z)) : []);
   const rpc = () => (existsSync(join(bin, "rpc.jsonl")) ? readFileSync(join(bin, "rpc.jsonl"), "utf8").trim().split("\n").map((z) => JSON.parse(z)) : []);
   const tot = () => { try { process.kill(Number(readFileSync(join(bin, "pid"), "utf8")), 0); return false; } catch (e) { return e.code === "ESRCH"; } };
-  return { bin, codex, home, codexHome, env, aufrufe, rpc, tot, cwd: tmp("brain-cwd-") };
+  return { bin, codex: programmPfad(codex), home, codexHome, env, aufrufe, rpc, tot, cwd: tmp("brain-cwd-") };
 }
 const warte = (ms) => new Promise((ok) => setTimeout(ok, ms));
 async function bisTot(a) { for (let i = 0; i < 50 && !a.tot(); i++) await warte(50); return a.tot(); }
@@ -116,7 +117,7 @@ const gruppeLebt = (pid) => { try { process.kill(-pid, 0); return true; } catch 
 async function bisWeg(pid, ms = 10_000) { const bis = Date.now() + ms; while (Date.now() < bis && (lebt(pid) || gruppeLebt(pid))) await warte(20); return !lebt(pid) && !gruppeLebt(pid); }
 const neuePids = (vorher) => laufendePids().filter((p) => !vorher.includes(p));
 
-test("Abbrechen (z. B. beim Beenden der Werkstatt) beendet das Programm sofort", async () => {
+test("Abbrechen (z. B. beim Beenden der Werkstatt) beendet das Programm sofort", { skip: nurUnix("Prozessgruppen (kill -pid) gibt es unter Windows nicht") }, async () => {
   const a = attrappe();
   const ab = new AbortController();
   const vorher = laufendePids();
@@ -132,7 +133,7 @@ test("Abbrechen (z. B. beim Beenden der Werkstatt) beendet das Programm sofort",
   assert.equal(await bisTot(a), true);
 });
 
-test("Abbrechen, bevor das Programm hochgefahren ist (gleich nach dem Start, unter Last dauert der Start Sekunden): die ganze Gruppe wird beendet, nichts bleibt zurück", async () => {
+test("Abbrechen, bevor das Programm hochgefahren ist (gleich nach dem Start, unter Last dauert der Start Sekunden): die ganze Gruppe wird beendet, nichts bleibt zurück", { skip: nurUnix("Prozessgruppen (kill -pid) gibt es unter Windows nicht") }, async () => {
   for (let i = 0; i < 12; i++) {
     const a = attrappe();
     const ab = new AbortController();
@@ -320,7 +321,7 @@ test("Das Codex-Programm bekommt keine Schlüssel, Tokens und Konto-Ordner ander
     const kt = erzeugeKontingent({ support, konten: { lade: () => daten }, home: () => home, codexProgramm: () => "/x/codex", codexLauf: async (o) => { gesehen.push(o.env); return { ok: false, art: "zeit" }; } });
     kt.stand({}); await kt.warteAufAbfragen();
     assert.equal(gesehen.length, 2);
-    for (const env of gesehen) { assert.equal(env.OPENAI_API_KEY, undefined); assert.equal(env.ANTHROPIC_API_KEY, undefined); assert.ok(env.PATH.startsWith("/x:")); assert.equal(env.CI, "1"); }
+    for (const env of gesehen) { assert.equal(env.OPENAI_API_KEY, undefined); assert.equal(env.ANTHROPIC_API_KEY, undefined); assert.ok(env.PATH.startsWith("/x" + delimiter)); assert.equal(env.CI, "1"); }
     assert.equal(gesehen[0].CODEX_HOME, undefined, "das Standardkonto: kein CODEX_HOME aus der Umgebung des Prozesses");
     assert.equal(gesehen[1].CODEX_HOME, zweit);
   } finally { for (const [k, w] of [["OPENAI_API_KEY", alt.o], ["ANTHROPIC_API_KEY", alt.a], ["CODEX_HOME", alt.c]]) { if (w === undefined) delete process.env[k]; else process.env[k] = w; } }

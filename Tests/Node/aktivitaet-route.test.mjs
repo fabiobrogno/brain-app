@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { writeFileSync, readFileSync, existsSync, readdirSync, mkdirSync, chmodSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { join, basename, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { tmp, schreibe, repo, g, pfad, echt } from "./hilfe.mjs";
 
@@ -38,7 +38,7 @@ function aufbau({ git = false, ereignisse = {} } = {}) {
 
 test("GET /api/aktivitaet: neueste zuerst, ungelesen, Filter art (Alias abweisungen), seit, limit, Fehler bei falschen Angaben", async () => {
   const { rufe, ev, d } = aufbau();
-  assert.deepEqual((await rufe("GET", "/api/aktivitaet")).j, { vault: { name: d.split("/").pop(), pfad: d, kennung: A.kennungVault(d) }, ereignisse: [], ungelesen: 0, gesamt: 0 });
+  assert.deepEqual((await rufe("GET", "/api/aktivitaet")).j, { vault: { name: basename(d), pfad: d, kennung: A.kennungVault(d) }, ereignisse: [], ungelesen: 0, gesamt: 0 });
   const z = (s) => new Date(Date.UTC(2026, 9, 31, 8, 0, s)).toISOString();
   ev({ art: "ablage-aufgabe", wer: "Claude Code", text: "hat eine Aufgabe angelegt.", zeit: z(1), pfade: ["05_aufgaben/a.md"], rueckgaengig: { art: "ablage-entfernen", pfad: "05_aufgaben/a.md", hash: "a".repeat(64) } });
   ev({ art: "abweisung", grund: "gesperrt", wer: "Codex", text: "wollte lesen.", zeit: z(2), programm: "codex" });
@@ -48,7 +48,7 @@ test("GET /api/aktivitaet: neueste zuerst, ungelesen, Filter art (Alias abweisun
   assert.equal(r.ungelesen, 3); assert.equal(r.gesamt, 3);
   const [pflege, abw, abl] = r.ereignisse;
   assert.equal(abl.rueckgaengigMoeglich, true); assert.equal(abl.rueckgaengig, undefined, "der Hash verlässt die Werkstatt nie"); assert.equal(abl.dk, undefined);
-  assert.equal(abw.rueckgaengigMoeglich, false); assert.equal(abw.programmName, "Codex"); assert.equal(abw.gelesen, false); assert.equal(abw.vaultName, d.split("/").pop());
+  assert.equal(abw.rueckgaengigMoeglich, false); assert.equal(abw.programmName, "Codex"); assert.equal(abw.gelesen, false); assert.equal(abw.vaultName, basename(d));
   assert.equal(pflege.zurueckgenommen, null);
   assert.deepEqual((await rufe("GET", "/api/aktivitaet?art=abweisungen")).j.ereignisse.map((e) => e.art), ["abweisung"]);
   assert.deepEqual((await rufe("GET", "/api/aktivitaet?art=pflege,ablage-aufgabe")).j.ereignisse.map((e) => e.art), ["pflege", "ablage-aufgabe"]);
@@ -443,7 +443,7 @@ test("k2: eine offene Zusammenführung wird über Git selbst erkannt (auch in ei
   const e = A.schreibeEreignis(support, wt, { art: "ablage-notiz", text: "x", pfade: ["00_inbox/n.md"], rueckgaengig: { art: "ablage-entfernen", pfad: "00_inbox/n.md", hash: sha(inhalt) } });
   const gitDir = g(wt, "rev-parse", "--git-dir").trim();
   assert.ok(gitDir.includes("worktrees"), "verknüpfter Arbeitsbaum: der Git-Ordner liegt anderswo");
-  writeFileSync(join(gitDir.startsWith("/") ? gitDir : join(wt, gitDir), "MERGE_HEAD"), "0".repeat(40) + "\n");
+  writeFileSync(join(resolve(wt, gitDir), "MERGE_HEAD"), "0".repeat(40) + "\n");
   const r = await rufe("POST", "/api/aktivitaet/rueckgaengig", { id: e.id });
   assert.equal(r.status, 409); assert.equal(r.j.art, "beschaeftigt");
   assert.ok(existsSync(join(wt, "00_inbox/n.md")));

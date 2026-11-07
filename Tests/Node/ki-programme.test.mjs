@@ -5,16 +5,18 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync, readdirSync, realpathSync, statSync, symlinkSync, lstatSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
+import { join, dirname, sep, delimiter } from "node:path";
 import { tmp, schreibe, pfad } from "./hilfe.mjs";
+import { legeProgramm, pfadMit, nurUnix, modus, WIN } from "./attrappe.mjs";
 
 // Umgebung säubern: weder CLAUDE_CONFIG_DIR noch CODEX_HOME, XDG_*, GIT_CONFIG_* oder COPILOT_HOME dürfen auf echte Orte zeigen.
 for (const k of Object.keys(process.env)) if (/^(CLAUDE_CONFIG_DIR|CODEX_HOME|COPILOT_HOME|GEMINI_.*|XDG_.*|GIT_CONFIG.*)$/.test(k)) delete process.env[k];
 const ECHTES_HOME = process.env.HOME;
 const HOME0 = tmp("brain-home-");
-process.env.HOME = HOME0;
-const TEMP = realpathSync(tmpdir());
-const imTemp = (p) => realpathSync(p).startsWith(TEMP + "/");
+process.env.HOME = HOME0; if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME || ""; 
+const echtPfad = WIN ? realpathSync.native : realpathSync; // Windows: lange statt Kurznamen (RUNNER~1)
+const TEMP = echtPfad(tmpdir());
+const imTemp = (p) => echtPfad(p).startsWith(TEMP + sep);
 assert.ok(imTemp(HOME0), "HOME muss im Temp-Ordner liegen");
 
 const { erzeugeHandler } = await import(pfad("werkstatt", "handler.mjs"));
@@ -36,8 +38,8 @@ const handler = () => handlerMit();
 // Ein frisches HOME je Test (homedir() liest $HOME bei jedem Aufruf).
 async function mitHome(fn) {
   const home = tmp("brain-home-");
-  process.env.HOME = home;
-  try { return await fn(home); } finally { process.env.HOME = HOME0; }
+  process.env.HOME = home; if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME || ""; 
+  try { return await fn(home); } finally { process.env.HOME = HOME0; if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME || "";  }
 }
 
 const NODE = process.execPath;
@@ -77,7 +79,7 @@ for (const [id, F] of Object.entries(FORMEN)) {
     let r = await rufe("POST", "/api/mcp/verbinden", { ziel: id });
     assert.equal(r.status, 200, JSON.stringify(r.j)); assert.equal(r.j.ok, true); assert.equal(r.j.sicherung, undefined, "nichts zu sichern");
     assert.deepEqual(lies(home), { [F.schluessel]: { brain: F.unserer(real) } });
-    assert.equal(statSync(dateiIn(home)).mode & 0o777, 0o600);
+    assert.equal(modus(dateiIn(home), 0o600), 0o600);
     r = await rufe("POST", "/api/mcp/verbinden", { ziel: id });
     assert.deepEqual(r.j, { ok: true, schonVerbunden: true });
     assert.deepEqual(sicherungen(home), [], "ohne Änderung keine Sicherung");
@@ -126,7 +128,7 @@ for (const [id, F] of Object.entries(FORMEN)) {
     }
   }));
 
-  test(`${id}: Rechte bleiben; ein Symlink bleibt ein Symlink und das echte Ziel bekommt den Eintrag; keine Reste`, async () => mitHome(async (home) => {
+  test(`${id}: Rechte bleiben; ein Symlink bleibt ein Symlink und das echte Ziel bekommt den Eintrag; keine Reste`, { skip: nurUnix("Symlinks und chmod 0640 gelten unter Windows nicht gleich") }, async () => mitHome(async (home) => {
     const rufe = handler();
     mkdirSync(dirname(dateiIn(home)), { recursive: true });
     const dot = tmp("brain-dotfiles-"), echt = join(dot, "einstellungen.json");
@@ -138,8 +140,8 @@ for (const [id, F] of Object.entries(FORMEN)) {
     assert.equal(realpathSync(dateiIn(home)), realpathSync(echt));
     assert.ok(JSON.parse(readFileSync(echt, "utf8"))[F.schluessel].anderes, "andere Einträge bleiben");
     assert.ok(JSON.parse(readFileSync(echt, "utf8"))[F.schluessel].brain);
-    assert.equal(statSync(echt).mode & 0o777, 0o640);
-    assert.equal(statSync(r.j.sicherung).mode & 0o777, 0o640, "Sicherung mit den Rechten des Originals");
+    assert.equal(modus(echt, 0o640), 0o640);
+    assert.equal(modus(r.j.sicherung, 0o640), 0o640, "Sicherung mit den Rechten des Originals");
     assert.deepEqual(readdirSync(dot), ["einstellungen.json"], "keine Reste im Ordner des Ziels");
     const t = await rufe("POST", "/api/mcp/trennen", { ziel: id });
     assert.equal(t.status, 200);
@@ -268,12 +270,12 @@ test("Erkennung: App im Programme-Ordner (mit Version aus Info.plist) oder Befeh
   const plist = (v) => `<?xml version="1.0"?><plist><dict><key>CFBundleShortVersionString</key><string>${v}</string></dict></plist>`;
   schreibe(apps, "Claude.app/Contents/Info.plist", plist("1.4.2"));
   schreibe(join(home, "Applications"), "Zed.app/Contents/Info.plist", plist("0.230.1")); // auch ~/Applications zählt
-  schreibe(bin, "gemini", "#!/bin/sh\nexit 0\n"); chmodSync(join(bin, "gemini"), 0o755);
-  schreibe(bin, "opencode", "#!/bin/sh\nexit 0\n"); chmodSync(join(bin, "opencode"), 0o755);
+  legeProgramm(join(bin, "gemini"), "#!/bin/sh\nexit 0\n");
+  legeProgramm(join(bin, "opencode"), "#!/bin/sh\nexit 0\n");
   mkdirSync(join(home, ".warp"), { recursive: true }); // Warp: nur der Ordner, keine App
   mkdirSync(join(home, ".copilot"), { recursive: true });
   const env = { PATH: bin, BRAIN_TESTMODUS: "1", BRAIN_CLAUDE_EXTRA: "" };
-  const liste = erkenneProgramme({ env, home, appOrdner: apps, agenten: [{ id: "gemini", pfad: join(bin, "gemini"), version: "0.9.1" }] });
+  const liste = erkenneProgramme({ env, home, appOrdner: apps, agenten: [{ id: "gemini", pfad: join(bin, WIN ? "gemini.exe" : "gemini"), version: "0.9.1" }] });
   const nach = Object.fromEntries(liste.map((x) => [x.id, x]));
   assert.deepEqual(Object.keys(nach), ["claude-desktop", "gemini", "copilot", "zed", "opencode", "warp"], "feste Reihenfolge, ohne Cursor");
   assert.deepEqual(nach["claude-desktop"], { id: "claude-desktop", name: "Claude Desktop", gefunden: true, version: "1.4.2", quelle: "app" });
@@ -287,19 +289,18 @@ test("Erkennung: App im Programme-Ordner (mit Version aus Info.plist) oder Befeh
 test("Route /api/ki/erkennen: meldet `programme` zusätzlich; die Version des Befehls kommt aus einer Attrappe, die nur --version annimmt und außerhalb von Temp abbricht", async () => mitHome(async (home) => {
   const bin = tmp("brain-bin-");
   // Attrappe mit echtem Argument-Parsing: nur `--version`; alles andere (insbesondere `mcp add …`) ist ein Fehler; HOME muss im Temp-Ordner liegen.
-  schreibe(bin, "gemini", `#!${NODE}
+  legeProgramm(join(bin, "gemini"), `#!${NODE}
 const a = process.argv.slice(2);
 const fs = require("node:fs");
-const temp = fs.realpathSync(${JSON.stringify(TEMP)});
-const home = process.env.HOME ? fs.realpathSync(process.env.HOME) : "";
-if (!home.startsWith(temp + "/")) { console.error("HOME liegt nicht im Temp-Ordner"); process.exit(99); }
+const temp = fs.realpathSync${WIN ? ".native" : ""}(${JSON.stringify(TEMP)});
+const home = process.env.HOME ? fs.realpathSync${WIN ? ".native" : ""}(process.env.HOME) : "";
+if (!home.startsWith(temp + require("node:path").sep)) { console.error("HOME liegt nicht im Temp-Ordner"); process.exit(99); }
 for (const k of Object.keys(process.env)) if (/^(CLAUDE_CONFIG_DIR|CODEX_HOME|COPILOT_HOME|XDG_.*|GIT_CONFIG.*)$/.test(k)) { console.error("Umgebung nicht gesäubert: " + k); process.exit(98); }
 if (a.length === 1 && a[0] === "--version") { console.log("gemini 0.12.3"); process.exit(0); }
 console.error("unbekannte Argumente: " + a.join(" ")); process.exit(64);\n`);
-  chmodSync(join(bin, "gemini"), 0o755);
   const rufe = handler();
   const alt = { P: process.env.PATH, E: process.env.BRAIN_CLAUDE_EXTRA };
-  process.env.PATH = `${bin}:/usr/bin:/bin`; process.env.BRAIN_CLAUDE_EXTRA = "";
+  process.env.PATH = pfadMit(bin); process.env.BRAIN_CLAUDE_EXTRA = "";
   try {
     const r = await rufe("GET", "/api/ki/erkennen?neu=1");
     assert.equal(r.status, 200);
@@ -311,7 +312,7 @@ console.error("unbekannte Argumente: " + a.join(" ")); process.exit(64);\n`);
 }));
 
 // ── Schutz vor Beschädigung (Befunde des Reviews) ──
-test("Ungültiges UTF-8, schreibgeschützte Datei und toter Symlink: Kortex ändert nichts (422), die Datei bleibt Byte für Byte gleich", async () => mitHome(async (home) => {
+test("Ungültiges UTF-8, schreibgeschützte Datei und toter Symlink: Kortex ändert nichts (422), die Datei bleibt Byte für Byte gleich", { skip: nurUnix("Symlinks und Schreibschutz per chmod 0444 gelten unter Windows nicht gleich") }, async () => mitHome(async (home) => {
   const rufe = handler();
   const datei = join(home, FORMEN.zed.datei);
   mkdirSync(dirname(datei), { recursive: true });
@@ -327,7 +328,7 @@ test("Ungültiges UTF-8, schreibgeschützte Datei und toter Symlink: Kortex änd
   writeFileSync(datei, '{"context_servers": {}}'); chmodSync(datei, 0o444);
   const s = await rufe("POST", "/api/mcp/verbinden", { ziel: "zed" });
   assert.equal(s.status, 422); assert.match(s.j.fehler, /schreibgeschützt/);
-  assert.equal(readFileSync(datei, "utf8"), '{"context_servers": {}}'); assert.equal(statSync(datei).mode & 0o777, 0o444);
+  assert.equal(readFileSync(datei, "utf8"), '{"context_servers": {}}'); assert.equal(modus(datei, 0o444), 0o444);
   chmodSync(datei, 0o644); rmSync(datei);
   // toter Symlink bleibt ein Symlink, nichts wird angelegt
   const dot = tmp("brain-dotfiles-");

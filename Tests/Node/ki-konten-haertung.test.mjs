@@ -8,10 +8,11 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { join } from "node:path";
 import { tmp, schreibe, pfad } from "./hilfe.mjs";
+import { nurUnix } from "./attrappe.mjs";
 import { baueTestUmgebung } from "./ki-konten-hilfe.mjs";
 
 for (const k of ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "CURSOR_CONFIG_DIR", "GEMINI_CLI_HOME", "XDG_CONFIG_HOME", "GIT_CONFIG_GLOBAL"]) delete process.env[k];
-process.env.HOME = tmp("brain-home-");
+process.env.HOME = tmp("brain-home-"); if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME || ""; 
 
 const K = await import(pfad("gemeinsam", "ki-konten.mjs"));
 const S = await import(pfad("gemeinsam", "claude-sperre.mjs"));
@@ -73,7 +74,7 @@ test("1 Beim Sperren über die Route wird auch ohneKonto gesperrt; ein Assistent
   const mcpDir = tmp("brain-mcpdir-"); schreibe(mcpDir, "brain-mcp.mjs", "//\n");
   const h = erzeugeHandler({ vault: v, vaultOptionen: { support: s }, mcpPfad: join(mcpDir, "brain-mcp.mjs") });
   const rufe = async (m, pf, b) => { const r = await h({ methode: m, pfad: pf, query: null, body: b === undefined ? undefined : Buffer.from(JSON.stringify(b)) }); let j = null; try { j = JSON.parse(r.body.toString("utf8")); } catch { /* */ } return { ...r, j }; };
-  const alt = process.env.HOME; process.env.HOME = home;
+  const alt = process.env.HOME; process.env.HOME = home; if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME || ""; 
   try {
     const id = (await rufe("POST", "/api/ki/konten/abgleich")).j.konten[0].id;
     await rufe("PUT", "/api/ki/zugriff", { konto: id, vault: v, stufe: "gesperrt" });
@@ -92,7 +93,7 @@ test("1 Beim Sperren über die Route wird auch ohneKonto gesperrt; ein Assistent
     K.aendere(s, (d) => { d.vaults[v].konten[id] = "gesperrt"; return d; });
     r = konten.setzeZugriff({ konto: id, vault: v, stufe: "posteingang", quelle: "assistent" });
     assert.equal(K.stufeFuer(K.liesKonten(s).daten, v, id), "posteingang");
-  } finally { process.env.HOME = alt; }
+  } finally { process.env.HOME = alt; if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME || "";  }
 });
 
 // ───────────── 2 (HOCH): ein umgelenkter Support-Ordner öffnet nichts ─────────────
@@ -147,7 +148,7 @@ test("3 Gelöschte ki-konten.json: fail-closed, Hinweis mit Grund „geloescht�
 });
 
 // ───────────── 4: die Kennung ist eine Selbstauskunft ─────────────
-test("4 --konto B + CLAUDE_CONFIG_DIR=A ist blockiert (P1); --konto B unter Claude Code ohne CLAUDE_CONFIG_DIR vergleicht mit dem Standardprofil; die reine Fälschung --konto B + Umgebung B bleibt eine dokumentierte Grenze (P2)", async () => {
+test("4 --konto B + CLAUDE_CONFIG_DIR=A ist blockiert (P1); --konto B unter Claude Code ohne CLAUDE_CONFIG_DIR vergleicht mit dem Standardprofil; die reine Fälschung --konto B + Umgebung B bleibt eine dokumentierte Grenze (P2)", { skip: nurUnix("Regelpfade der Form //<Pfad> sind POSIX-Pfade; die Windows-Form für Claude-Code-Regeln ist offen") }, async () => {
   const s = szenario();
   assert.ok(!leak(await suche(s, ["--konto", "k_bbbbbbbb", "--vault", s.zu], { CLAUDE_CONFIG_DIR: s.a })), "P1: Widerspruch → das strengere Recht");
   assert.ok(!leak(await suche(s, ["--konto", "k_bbbbbbbb", "--vault", s.zu], { CLAUDECODE: "1" })), "unter Claude Code ohne CLAUDE_CONFIG_DIR läuft das Standardprofil (gesperrt) — B allein genügt nicht");
@@ -178,7 +179,7 @@ test("5 Ein Vault in einem Vault: Suche, Lesen, Verlauf, Kontext, Vault-Liste un
   assert.ok(dateien.some((f) => f.startsWith("09_wiki/")) && !dateien.some((f) => f.startsWith("privat/")), JSON.stringify(dateien));
 });
 
-test("5 Symlink im erlaubten Vault auf einen gesperrten Vault und Pfade außerhalb: kein Inhalt (Proben P6, P7)", async () => {
+test("5 Symlink im erlaubten Vault auf einen gesperrten Vault und Pfade außerhalb: kein Inhalt (Proben P6, P7)", { skip: nurUnix("Symlinks brauchen unter Windows besondere Rechte") }, async () => {
   const s = szenario();
   symlinkSync(s.zu, join(s.offen, "09_wiki", "link"));
   const m = mcp(s, ["--konto", "k_aaaaaaaa"], { CLAUDE_CONFIG_DIR: s.a });
@@ -199,7 +200,7 @@ test("5 Warnung beim Öffnen eines verschachtelten Vaults (äußerer und innerer
   const mcpDir = tmp("brain-mcpdir-"); schreibe(mcpDir, "brain-mcp.mjs", "//\n");
   const h = erzeugeHandler({ vault: fremd, vaultOptionen: { support: s }, mcpPfad: join(mcpDir, "brain-mcp.mjs") });
   const rufe = async (m, pf, b) => { const r = await h({ methode: m, pfad: pf, query: null, body: Buffer.from(JSON.stringify(b)) }); return { ...r, j: JSON.parse(r.body.toString("utf8")) }; };
-  const alt = process.env.HOME; process.env.HOME = home;
+  const alt = process.env.HOME; process.env.HOME = home; if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME || ""; 
   try {
     // der äußere Vault enthält einen Ordner, der selbst ein Vault ist (nie angemeldet)
     let r = await rufe("POST", "/api/vaults/oeffnen", { pfad: aussen });
@@ -208,11 +209,11 @@ test("5 Warnung beim Öffnen eines verschachtelten Vaults (äußerer und innerer
     // ein Vault ohne Verschachtelung bekommt keine Warnung
     r = await rufe("POST", "/api/vaults/oeffnen", { pfad: fremd });
     assert.equal(r.j.warnung, undefined);
-  } finally { process.env.HOME = alt; }
+  } finally { process.env.HOME = alt; if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME || "";  }
 });
 
 // ───────────── 8: Nachführen bei neuen oder verschobenen Vaults, Warnungen ─────────────
-test("8 Strenger Schutz: ein neuer gesperrter Vault kommt sofort in denyRead/denyWrite; ein verschobener Vault ersetzt die alten Pfade; Warnungen für allowRead, excludedCommands und settings.local.json", async () => {
+test("8 Strenger Schutz: ein neuer gesperrter Vault kommt sofort in denyRead/denyWrite; ein verschobener Vault ersetzt die alten Pfade; Warnungen für allowRead, excludedCommands und settings.local.json", { skip: nurUnix("Regelpfade der Form //<Pfad> sind POSIX-Pfade; die Windows-Form für Claude-Code-Regeln ist offen") }, async () => {
   const home = tmp("brain-home-"), s = tmp("brain-support-");
   const p = join(home, ".claude-a"); mkdirSync(p, { recursive: true }); writeFileSync(join(p, "settings.json"), JSON.stringify({ sandbox: { filesystem: { allowRead: ["/x"] }, excludedCommands: ["git"] } }));
   writeFileSync(join(p, "settings.local.json"), JSON.stringify({ sandbox: { enabled: false } }));

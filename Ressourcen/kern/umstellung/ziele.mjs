@@ -20,7 +20,7 @@ import { homedir } from "node:os";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { supportOrdner, stabilerKern, starterPfad, KERN } from "../pfade.mjs";
-import { echtesGit } from "./git-lage.mjs";
+import { echtesGit, gitPfadFest } from "./git-lage.mjs";
 import { erkenneProfile, profileAusPfaden } from "./profile.mjs";
 
 export const echt = (p) => { try { return realpathSync(p); } catch { return resolve(p); } };
@@ -37,7 +37,9 @@ export const kennung = (vault) => kennungen(vault)[0];
 // Nur diese Variablen erbt ein Kindprozess (kein GIT_*, kein BRAIN_VAULT, keine Zugangsdaten); Testhaken nur, wenn sie gesetzt sind.
 const ERBEN = ["PATH", "LANG", "LC_ALL", "TMPDIR", "TERM", "NODE_TEST_CONTEXT", "KORTEX_KERN_UNSTABIL_ERLAUBT", "KORTEX_KERN_TEMP_WURZELN", "KORTEX_STARTER_PFAD",
   "KORTEX_VAULT_VERTRAUT", "BRAIN_TESTMODUS", "BRAIN_LAUNCHCTL", "BRAIN_CLAUDE", "KORTEX_CODEX_PROGRAMM", "BRAIN_GIT_PROGRAMM", "BRAIN_GIT_HOOKS_ERLAUBT", "BRAIN_TAGESLAUF_CACHE",
-  "BRAIN_EINMAL", "QMD_BIN", "FAKE_MCP_LOG", "FAKE_MCP_FAIL", "FAKE_LAUNCHCTL_LOG", "FAKE_LAUNCHCTL_FAIL", "FAKE_LAUNCHCTL_VORGELADEN", "KORTEX_DIENST_PLATTFORM"];
+  "BRAIN_EINMAL", "QMD_BIN", "FAKE_MCP_LOG", "FAKE_MCP_FAIL", "FAKE_LAUNCHCTL_LOG", "FAKE_LAUNCHCTL_FAIL", "FAKE_LAUNCHCTL_VORGELADEN", "KORTEX_DIENST_PLATTFORM",
+  // Windows: git.exe und node.exe brauchen diese Variablen (Sockets, Temp-Ordner, Unterprozesse); macOS/Linux unverändert
+  ...(process.platform === "win32" ? ["SYSTEMROOT", "SYSTEMDRIVE", "TEMP", "TMP", "COMSPEC", "PATHEXT", "APPDATA", "LOCALAPPDATA"] : [])];
 const TESTIDENTITAET = ["GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"];
 export function basisUmgebung(env = process.env) {
   const aus = {};
@@ -101,12 +103,14 @@ export const HAERTUNG = ["-c", "core.fsmonitor=false", "-c", "core.hooksPath=/de
 export function gitLauf(z, args, { ordner = z.vault, timeout = 120_000, ohneOrdner = false } = {}) {
   const git = echtesGit(z.env);
   if (!git) return { status: 127, stdout: "", stderr: "git fehlt" };
-  const env = { ...kindUmgebung(z), PATH: "/usr/bin:/bin:/usr/sbin:/sbin", LC_ALL: "C", GIT_TERMINAL_PROMPT: "0", GIT_CONFIG_NOSYSTEM: "1", GIT_NO_LAZY_FETCH: "1" };
+  const env = { ...kindUmgebung(z), PATH: gitPfadFest(z.env), LC_ALL: "C", GIT_TERMINAL_PROMPT: "0", GIT_CONFIG_NOSYSTEM: "1", GIT_NO_LAZY_FETCH: "1" };
   const r = spawnSync(git, [...(ohneOrdner ? [] : ["-C", ordner]), ...HAERTUNG, ...args], { encoding: "utf8", env, timeout, maxBuffer: 64 * 1024 * 1024, windowsHide: true });
   return { status: r.status === null ? 1 : r.status, stdout: String(r.stdout || ""), stderr: String(r.stderr || "") };
 }
 // git über git-sicher (mit Erlaubnisliste und gehärtetem Aufruf) – für den Test-Commit und den Gerätemerker.
 export function gitSicherLauf(z, args, { ordner = z.vault, timeout = 180_000 } = {}) {
+  // Windows: git-sicher ist ein Shell-Skript (macOS/Linux); dort läuft dasselbe gehärtete git (HAERTUNG) wie bei gitLauf
+  if (process.platform === "win32") return gitLauf(z, args, { ordner, timeout });
   const r = spawnSync("/bin/sh", [join(KERN, "git-sicher"), "-C", ordner, ...args], { encoding: "utf8", env: kindUmgebung(z), timeout, maxBuffer: 64 * 1024 * 1024, windowsHide: true });
   return { status: r.status === null ? 1 : r.status, stdout: String(r.stdout || ""), stderr: String(r.stderr || "") };
 }

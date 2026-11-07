@@ -8,7 +8,8 @@ import { createHash } from "node:crypto";
 import { tmp, schreibe, repo, g, pfad, echt } from "./hilfe.mjs";
 
 // Hermetisch: kein echtes Home (Standardordner ~/Brain, Git-Konfiguration).
-process.env.HOME = tmp("brain-home-");
+process.env.HOME = tmp("brain-home-"); if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME; /* Windows: os.homedir() liest USERPROFILE */
+const esc = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); // Pfade mit Backslashes in Regex
 const SUPPORT = process.env.BRAIN_APP_SUPPORT;
 
 const { erzeugeHandler } = await import(pfad("werkstatt", "handler.mjs"));
@@ -202,7 +203,7 @@ test("MCP ohne Vault-Argument folgt dem aktiven Vault aus vaults.json und kennt 
   schreibeListe([{ name: "Eins", pfad: realpathSync(a), farbe: "#5B8DEF" }, { name: "Zwei", pfad: realpathSync(b), farbe: "#E5734F" }], realpathSync(a));
   assert.match(await s.text("brain_suchen", { frage: "thema" }), /thema_a\.md/);
   let t = await s.text("brain_vaults");
-  assert.match(t, new RegExp(`1\\. \\* Eins — ${realpathSync(a)}`)); assert.match(t, new RegExp(`2\\.   Zwei — ${realpathSync(b)}$`));
+  assert.match(t, new RegExp(`1\\. \\* Eins — ${esc(realpathSync(a))}`)); assert.match(t, new RegExp(`2\\.   Zwei — ${esc(realpathSync(b))}$`));
   // Wechsel in der App → derselbe Server liest jetzt B
   schreibeListe([{ name: "Eins", pfad: realpathSync(a), farbe: "#5B8DEF" }, { name: "Zwei", pfad: realpathSync(b), farbe: "#E5734F" }], realpathSync(b));
   assert.match(await s.text("brain_suchen", { frage: "schwalbe" }), /thema_b\.md/);
@@ -218,7 +219,7 @@ test("MCP mit Vault-Argument bleibt gebunden; brain_vaults markiert ihn, auch we
   const s = starteMcp([a]);
   assert.match(await s.text("brain_suchen", { frage: "thema" }), /thema_a\.md/);
   const t = await s.text("brain_vaults");
-  assert.match(t, new RegExp(`1\\.   Zwei — ${realpathSync(b)} \\(in der App aktiv\\)`)); assert.match(t, new RegExp(`\\*  .* — ${realpathSync(a)} \\(nicht in der Liste der App\\)`));
+  assert.match(t, new RegExp(`1\\.   Zwei — ${esc(realpathSync(b))} \\(in der App aktiv\\)`)); assert.match(t, new RegExp(`\\*  .* — ${esc(realpathSync(a))} \\(nicht in der Liste der App\\)`));
   s.p.stdin.end(); assert.equal(await s.ende, 0);
 });
 

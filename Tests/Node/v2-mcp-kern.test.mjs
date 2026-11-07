@@ -5,10 +5,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync, symlinkSync, realpathSync } from "node:fs";
-import { join } from "node:path";
+import { join, delimiter } from "node:path";
 import { tmp, schreibe, pfad } from "./hilfe.mjs";
+import { legeProgramm } from "./attrappe.mjs";
 const HOME = tmp("brain-home-");
-process.env.HOME = HOME; // os.homedir() liest $HOME
+process.env.HOME = HOME; if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME; /* Windows: os.homedir() liest USERPROFILE */ // os.homedir() liest $HOME
 
 const { erzeugeHandler } = await import(pfad("werkstatt", "handler.mjs"));
 const { kernOrdner, kernVorhanden } = await import(pfad("gemeinsam", "basis.mjs"));
@@ -17,6 +18,8 @@ const aufruf = (h) => async (methode, p, daten) => {
   let j = null; try { j = JSON.parse(r.body.toString("utf8")); } catch { /* statisch */ }
   return { ...r, j };
 };
+const fw = (p) => p.split("\\").join("/"); // Windows: sh versteht Pfade mit Slashes
+const KERN_MCP = join("/", "bin", "kern", "mcp", "brain-mcp.mjs"); // Windows: Backslashes
 const STABIL = "/Users/x/Library/Application Support/Kortex/bin/node";
 const ALT_NODE = "/Users/x/Library/Application Support/Kortex/node/v24.0.0/bin/node";
 const vault = () => { const d = tmp(); schreibe(d, "00_inbox/n.md", "# Notiz\n"); return d; };
@@ -40,34 +43,33 @@ const handlerFuer = (k, extra = {}) => {
 
 async function mitPfad(bin, fn) {
   const alt = { PATH: process.env.PATH, EXTRA: process.env.BRAIN_CLAUDE_EXTRA };
-  process.env.PATH = `${bin}:${alt.PATH}`; process.env.BRAIN_CLAUDE_EXTRA = "";
+  process.env.PATH = `${bin}${delimiter}${alt.PATH}`; process.env.BRAIN_CLAUDE_EXTRA = "";
   try { return await fn(); } finally { process.env.PATH = alt.PATH; if (alt.EXTRA === undefined) delete process.env.BRAIN_CLAUDE_EXTRA; else process.env.BRAIN_CLAUDE_EXTRA = alt.EXTRA; }
 }
 function fakeClaude() {
   const bin = tmp("brain-bin-"), zustand = join(bin, "zustand.txt"), log = join(bin, "aufrufe.log");
-  writeFileSync(join(bin, "claude"), `#!/bin/sh
-echo "$*" >> '${log}'
+  legeProgramm(join(bin, "claude"), `#!/bin/sh
+echo "$*" >> '${fw(log)}'
 case "$1 $2" in
   "mcp get")
-    if [ -f '${zustand}' ]; then
+    if [ -f '${fw(zustand)}' ]; then
       echo "brain:"; echo "  Type: stdio"
-      echo "  Command: $(sed -n 1p '${zustand}')"; echo "  Args: $(sed -n 2p '${zustand}')"; echo "  Environment:"; echo "    API_KEY=geheim-123"
+      echo "  Command: $(sed -n 1p '${fw(zustand)}')"; echo "  Args: $(sed -n 2p '${fw(zustand)}')"; echo "  Environment:"; echo "    API_KEY=geheim-123"
       exit 0
     fi
     echo "No MCP server found with name: brain" >&2; exit 1;;
-  "mcp remove") rm -f '${zustand}'; exit 0;;
+  "mcp remove") rm -f '${fw(zustand)}'; exit 0;;
   "mcp add")
-    shift 6; printf '%s\\n' "$1" > '${zustand}'; shift; printf '%s\\n' "$*" >> '${zustand}'
+    shift 6; printf '%s\\n' "$1" > '${fw(zustand)}'; shift; printf '%s\\n' "$*" >> '${fw(zustand)}'
     echo "Added stdio MCP server brain to user config"; exit 0;;
 esac
 exit 3
 `);
-  chmodSync(join(bin, "claude"), 0o755);
   return { bin, zustand, aufrufe: () => (existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : []) };
 }
 function fakeCodex() {
   const bin = tmp("brain-codexbin-"), zustand = join(bin, "zustand.json"), log = join(bin, "aufrufe.txt");
-  writeFileSync(join(bin, "codex"), `#!${process.execPath}
+  legeProgramm(join(bin, "codex"), `#!${process.execPath}
 const fs = require("node:fs"); const a = process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(log)}, a.join(" ") + "\\n");
 const hat = fs.existsSync(${JSON.stringify(zustand)});
@@ -75,7 +77,6 @@ if (a[0] === "mcp" && a[1] === "get") { if (!hat) { console.error("No MCP server
 if (a[0] === "mcp" && a[1] === "remove") { fs.rmSync(${JSON.stringify(zustand)}, { force: true }); process.exit(0); }
 if (a[0] === "mcp" && a[1] === "add") { const i = a.indexOf("--"); fs.writeFileSync(${JSON.stringify(zustand)}, JSON.stringify({ name: "brain", transport: { type: "stdio", command: a[i + 1], args: a.slice(i + 2) } })); process.exit(0); }
 process.exit(3);\n`);
-  chmodSync(join(bin, "codex"), 0o755);
   return { bin, zustand, aufrufe: () => (existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : []) };
 }
 
@@ -100,9 +101,9 @@ test("Neue Einträge nennen den stabilen Kern-Pfad (Link, nicht aufgelöst) und 
   const info = (await handlerFuer(k)("GET", "/api/info")).j;
   const server = join(k.kern, "mcp/brain-mcp.mjs");
   assert.ok(info.mcpBefehle.claude.endsWith(` ${server}`) || info.mcpBefehle.claude.endsWith(`'${server}'`), info.mcpBefehle.claude);
-  assert.ok(info.mcpBefehle.claude.includes("/bin/kern/mcp/brain-mcp.mjs"));
-  assert.ok(!info.mcpBefehle.claude.includes("/kern/1.0.0/"), "nicht der aufgelöste Versionsordner");
-  assert.ok(info.mcpBefehle.codex.includes("/bin/kern/mcp/brain-mcp.mjs"));
+  assert.ok(info.mcpBefehle.claude.includes(KERN_MCP));
+  assert.ok(!info.mcpBefehle.claude.includes(join("/", "kern", "1.0.0") + (process.platform === "win32" ? "\\" : "/")), "nicht der aufgelöste Versionsordner");
+  assert.ok(info.mcpBefehle.codex.includes(KERN_MCP));
   assert.ok(info.mcpBefehle.claude.includes(STABIL.replace(/ /g, " ")), "der stabile Node");
   assert.ok(!JSON.stringify(info).includes(".tools"));
 });

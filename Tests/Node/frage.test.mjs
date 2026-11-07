@@ -6,10 +6,11 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { writeFileSync, mkdirSync, realpathSync, readFileSync, existsSync, readdirSync, statSync, chmodSync, rmSync } from "node:fs";
-import { join, relative, basename } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, relative, basename, delimiter } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { tmp, schreibe, pfad, echt } from "./hilfe.mjs";
 import { baueTestUmgebung } from "./ki-konten-hilfe.mjs";
+import { legeProgramm, pfadMit, nurUnix } from "./attrappe.mjs";
 
 const K = await import(pfad("gemeinsam", "ki-konten.mjs"));
 const { erzeugeHandler } = await import(pfad("werkstatt", "handler.mjs"));
@@ -47,10 +48,9 @@ function szenario({ grenzen = {}, mitClaude = true, stufeA = "lesen", tempImVaul
   setze({ a: stufeA });
   // `claude` als Mini-Skript, das die Attrappe lädt; Szenario, Protokoll und PIDs liegen im bin-Ordner
   if (mitClaude) {
-    writeFileSync(join(bin, "claude"), `#!${process.execPath}\nglobalThis.FAKE_ORDNER = ${JSON.stringify(bin)};\nimport(${JSON.stringify("file://" + FAKE)}).catch((e) => { console.error(String(e && e.stack || e)); process.exit(70); });\n`);
-    chmodSync(join(bin, "claude"), 0o755);
+    legeProgramm(join(bin, "claude"), `#!${process.execPath}\nglobalThis.FAKE_ORDNER = ${JSON.stringify(bin)};\nimport(${JSON.stringify(pathToFileURL(FAKE).href)}).catch((e) => { console.error(String(e && e.stack || e)); process.exit(70); });\n`);
   }
-  const env = baueTestUmgebung({ HOME: home, BRAIN_APP_SUPPORT: support, PATH: `${bin}:/usr/bin:/bin`, BRAIN_CLAUDE_EXTRA: "" });
+  const env = baueTestUmgebung({ HOME: home, BRAIN_APP_SUPPORT: support, PATH: pfadMit(bin), BRAIN_CLAUDE_EXTRA: "" });
   const h = erzeugeHandler({ vault, vaultOptionen: { support }, kontenHome: home, kontenErkennung: () => [], frageEnv: env, frageGrenzen: grenzen, frageTemp: tempImVault ? (mkdirSync(join(vault, "tmp-in")), join(vault, "tmp-in")) : temp });
   const api = async (methode, p, daten) => {
     const q = p.indexOf("?");
@@ -154,9 +154,9 @@ test("Umgebung: Standard-Konto ohne CLAUDE_CONFIG_DIR; ein geerbtes CLAUDE_CONFI
   assert.equal(a.claudeConfigDir, null);
   assert.ok(!a.envSchluessel.includes("CLAUDE_CONFIG_DIR"));
   // reine Funktion: ein geerbtes CLAUDE_CONFIG_DIR (fremdes Konto) verschwindet; ein fremder Schlüssel kommt nicht durch
-  const e = baueFrageUmgebung({ basis: { PATH: "/usr/bin:relativ:", CLAUDE_CONFIG_DIR: "/fremd", ANTHROPIC_API_KEY: "geheim", GITHUB_TOKEN: "geheim", BRAIN_VAULT: "/x", LANG: "de_DE.UTF-8" }, home: s.home, claudePfad: join(s.bin, "claude"), konto: { ordner: s.std, standard: true } });
+  const e = baueFrageUmgebung({ basis: { PATH: ["/usr/bin", "relativ", ""].join(delimiter), CLAUDE_CONFIG_DIR: "/fremd", ANTHROPIC_API_KEY: "geheim", GITHUB_TOKEN: "geheim", BRAIN_VAULT: "/x", LANG: "de_DE.UTF-8" }, home: s.home, claudePfad: join(s.bin, "claude"), konto: { ordner: s.std, standard: true } });
   assert.deepEqual(Object.keys(e).sort(), ["BRAIN_ERNTE", "CLAUDE_CODE_DISABLE_AUTO_MEMORY", "CLAUDE_CODE_DISABLE_CLAUDE_MDS", "HOME", "LANG", "PATH"]);
-  assert.equal(e.PATH, `${s.bin}:/usr/bin:/usr/bin:/bin`, "ein relativer PATH-Eintrag fällt weg");
+  assert.equal(e.PATH, [s.bin, "/usr/bin", "/usr/bin", "/bin"].join(delimiter), "ein relativer PATH-Eintrag fällt weg");
   assert.equal(e.HOME, s.home); assert.equal(e.LANG, "de_DE.UTF-8"); assert.equal(e.BRAIN_ERNTE, "1");
   assert.ok(!JSON.stringify(e).includes("geheim"));
 });
@@ -185,7 +185,7 @@ test("Long-Poll: ohne Neues wartet der Stand, mit ab bekommt man nur Neues; frem
   assert.equal((await s.api("GET", `/api/frage/stand?id=${id}`)).status, 404);
 });
 
-test("Abbruch: SIGINT beendet die Prozessgruppe samt MCP-Server, keine Waisen", async () => {
+test("Abbruch: SIGINT beendet die Prozessgruppe samt MCP-Server, keine Waisen", { skip: nurUnix("SIGINT und Prozessgruppen gibt es unter Windows nicht") }, async () => {
   const s = szenario();
   s.szen({ warteMs: 60000 });
   const st = await s.api("POST", "/api/frage/start", { frage: "Kaffee?", konto: "k_aaaaaaaa" });
@@ -206,7 +206,7 @@ test("Abbruch: SIGINT beendet die Prozessgruppe samt MCP-Server, keine Waisen", 
   assert.equal((await s.frage("Kaffee?")).ergebnis.ok, true);
 });
 
-test("Abbruch eskaliert: ignoriert die Attrappe SIGINT, folgt nach 2 s SIGTERM; ignoriert sie auch das, nach 5 s SIGKILL", async () => {
+test("Abbruch eskaliert: ignoriert die Attrappe SIGINT, folgt nach 2 s SIGTERM; ignoriert sie auch das, nach 5 s SIGKILL", { skip: nurUnix("SIGINT/SIGTERM-Eskalation gibt es unter Windows nicht") }, async () => {
   const s = szenario();
   s.szen({ warteMs: 60000, ignoriereSigint: true });
   let st = await s.api("POST", "/api/frage/start", { frage: "Kaffee?", konto: "k_aaaaaaaa" });
@@ -439,7 +439,7 @@ test("Nach dem Abbruch ist sofort eine neue Frage möglich (Vault-Wechsel), auch
 
 // Die Werkstatt endet (App beendet, stdin zu, /api/stopp, SIGTERM): `claude` samt MCP-Server darf nicht als Waise weiterlaufen — auch wenn er SIGINT und SIGTERM ignoriert.
 for (const weg of ["stopp", "stdin", "sigterm"]) {
-  test(`Werkstatt-Ende (${weg}) beendet eine laufende Frage samt Prozessgruppe, auch wenn claude SIGINT und SIGTERM ignoriert`, async () => {
+  test(`Werkstatt-Ende (${weg}) beendet eine laufende Frage samt Prozessgruppe, auch wenn claude SIGINT und SIGTERM ignoriert`, { skip: nurUnix("Prozessgruppen und Signale gibt es unter Windows nicht") }, async () => {
     const s = szenario();
     const vertrauen = await import(pfad("gemeinsam", "vertrauen.mjs"));
     vertrauen.erlaube(s.vault, { support: s.support, quelle: "angelegt" });

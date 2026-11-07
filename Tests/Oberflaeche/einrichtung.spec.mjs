@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { starteStatisch, mockeEinrichtung, oeffneEinrichtungImStudio } from "./mocks-einrichtung.mjs";
 import { starteServer } from "./start.mjs";
+import { pfadMit } from "../Node/attrappe.mjs";
 
 const BILDER = process.env.UI_EINRICHTUNG_BILDER; // optional: Bilder für die Augenkontrolle
 let server;
@@ -901,7 +902,7 @@ test.describe("Echte Werkstatt ohne Vault (Wegwerf-HOME)", () => {
     const support = mkdtempSync(join(tmpdir(), "kortex-einrichtung-support-"));
     // Die Suche nach KI-Programmen sieht nur einen leeren PATH-Ordner: nie ein echtes claude oder codex dieses Rechners
     const leer = mkdtempSync(join(tmpdir(), "kortex-einrichtung-bin-"));
-    const umgebung = { PATH: `${leer}:/usr/bin:/bin`, HOME: home, LANG: "de_DE.UTF-8", TMPDIR: tmpdir() };
+    const umgebung = { PATH: pfadMit(leer), HOME: home, LANG: "de_DE.UTF-8", TMPDIR: tmpdir() };
     const s = await starteServer(null, { umgebung, support });
     try {
       await page.addInitScript(() => { window.webkit = { messageHandlers: { aktion: { postMessage: async (m) => (m.aktion === "git-pruefen" ? { stand: "vorhanden" } : { ok: true }) } } }; });

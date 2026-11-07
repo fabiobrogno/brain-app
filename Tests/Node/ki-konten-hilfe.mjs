@@ -1,9 +1,10 @@
 // Hilfen für die Tests der KI-Konten (docs/plaene/ki-konten.md): eine Kindprozess-Umgebung, die nie etwas vom Rechner erbt, und Attrappen für `claude` und
 // `codex` mit strengem Argument-Parsing (node:util#parseArgs, strict: eine unbekannte Option beendet sie mit Exit 1, wie die echten Programme).
-import { realpathSync, writeFileSync, chmodSync, mkdirSync, readFileSync, existsSync, readdirSync } from "node:fs";
+import { realpathSync, mkdirSync, readFileSync, existsSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 import { tmp } from "./hilfe.mjs";
+import { legeProgramm, systemPfad, WIN } from "./attrappe.mjs";
 
 const echt = process.platform === "win32" ? realpathSync.native : realpathSync; // Windows: lange statt Kurznamen (RUNNER~1), wie in hilfe.mjs
 const TEMP = echt(tmpdir());
@@ -13,7 +14,10 @@ const KONFIG_ORDNER = ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "CURSOR_CONFIG_DIR", "
 // Baut die Umgebung für einen Kindprozess AUSDRÜCKLICH (nie ...process.env). Wirft, wenn HOME oder BRAIN_APP_SUPPORT fehlen oder nicht im Temp-Ordner liegen
 // oder wenn einer der Konfig-Ordner (CLAUDE_CONFIG_DIR, CODEX_HOME, CURSOR_CONFIG_DIR, GEMINI_CLI_HOME) auf einen Ort außerhalb des Temp-Ordners zeigt.
 export function baueTestUmgebung(extra = {}) {
-  const e = { PATH: "/usr/bin:/bin", BRAIN_TESTMODUS: "1", ...extra };
+  const e = { PATH: systemPfad(), BRAIN_TESTMODUS: "1", ...extra };
+  // Windows: Programme brauchen die Systemvariablen, und os.homedir() liest USERPROFILE statt HOME
+  if (WIN) for (const k of ["SystemRoot", "SYSTEMROOT", "SystemDrive", "TEMP", "TMP", "ComSpec", "PATHEXT"]) if (process.env[k] !== undefined && e[k] === undefined) e[k] = process.env[k];
+  if (WIN && typeof e.HOME === "string" && e.USERPROFILE === undefined) e.USERPROFILE = e.HOME;
   for (const k of ["HOME", "BRAIN_APP_SUPPORT"]) {
     if (typeof e[k] !== "string" || !imTemp(e[k])) throw new Error(`baueTestUmgebung: ${k} muss ein Ordner unter dem Temp-Ordner sein (war: ${e[k]})`);
   }
@@ -86,8 +90,8 @@ if (positionals[1] === "add") {
 }
 process.exit(1);
 `;
-  writeFileSync(join(bin, "claude"), claude); chmodSync(join(bin, "claude"), 0o755);
-  writeFileSync(join(bin, "codex"), codex); chmodSync(join(bin, "codex"), 0o755);
+  legeProgramm(join(bin, "claude"), claude);
+  legeProgramm(join(bin, "codex"), codex);
   const aufrufe = () => (existsSync(join(bin, "aufrufe.jsonl")) ? readFileSync(join(bin, "aufrufe.jsonl"), "utf8").trim().split("\n").map((z) => JSON.parse(z)) : []);
   const eintraege = () => Object.fromEntries(readdirSync(zustand).map((n) => {
     const m = /^(claude|codex)-([0-9a-f]+)\.json$/.exec(n);

@@ -4,10 +4,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, lstatSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { join } from "node:path";
+import { join, delimiter } from "node:path";
 import { tmp, schreibe, pfad } from "./hilfe.mjs";
+import { legeProgramm, nurUnix } from "./attrappe.mjs";
 const HOME = tmp("brain-home-");
-process.env.HOME = HOME; // os.homedir() liest $HOME
+process.env.HOME = HOME; if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME; /* Windows: os.homedir() liest USERPROFILE */ // os.homedir() liest $HOME
 
 const { erzeugeHandler } = await import(pfad("werkstatt", "handler.mjs"));
 const aufruf = (h) => async (methode, p, daten) => {
@@ -16,12 +17,13 @@ const aufruf = (h) => async (methode, p, daten) => {
   return { ...r, j };
 };
 const vault = () => { const d = tmp(); schreibe(d, "00_inbox/n.md", "# Notiz\n\nDas Zebra frisst Gras.\n"); return d; };
+const arg = (p) => (process.platform === "win32" ? `'${p}'` : p); // Windows-Pfade (Backslashes, Laufwerk) stehen im Befehl in Anführungszeichen
 const mcpDatei = () => { const m = tmp("brain-mcpdir-"); schreibe(m, "brain-mcp.mjs", "// fake\n"); return join(m, "brain-mcp.mjs"); };
 
 // Gefälschtes codex (Node-Skript): Zustand = JSON-Datei mit dem Eintrag „brain“, jeder Aufruf eine Zeile im Log.
 function fakeCodex({ ablehnen = false } = {}) {
   const bin = tmp("brain-codexbin-"), zustand = join(bin, "zustand.json"), log = join(bin, "aufrufe.txt");
-  writeFileSync(join(bin, "codex"), `#!${process.execPath}
+  legeProgramm(join(bin, "codex"), `#!${process.execPath}
 const fs = require("node:fs"); const a = process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(log)}, a.join(" ") + "\\n");
 const hat = fs.existsSync(${JSON.stringify(zustand)});
@@ -32,12 +34,11 @@ if (a[0] === "mcp" && a[1] === "add") {
   const i = a.indexOf("--"); fs.writeFileSync(${JSON.stringify(zustand)}, JSON.stringify({ name: "brain", transport: { type: "stdio", command: a[i + 1], args: a.slice(i + 2) } })); console.log("Added global MCP server 'brain'."); process.exit(0);
 }
 process.exit(3);\n`);
-  chmodSync(join(bin, "codex"), 0o755);
   return { bin, zustand, aufrufe: () => (existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : []) };
 }
 async function mitPfad(bin, fn) {
   const alt = process.env.PATH;
-  process.env.PATH = `${bin}:${alt}`;
+  process.env.PATH = `${bin}${delimiter}${alt}`;
   try { return await fn(); } finally { process.env.PATH = alt; }
 }
 
@@ -47,7 +48,7 @@ test("Codex verbinden: neu → eintragen; gleich → schonVerbunden; fremd → 4
   const rufe = aufruf(erzeugeHandler({ kontenAus: true, vault: vault(), mcpPfad: mcp, vaultOptionen: { support: tmp("brain-support-") } }));
   await mitPfad(c.bin, async () => {
     const info = (await rufe("GET", "/api/info")).j;
-    assert.equal(info.mcpBefehle.codex, `codex mcp add brain -- ${process.execPath} ${real}`);
+    assert.equal(info.mcpBefehle.codex, `codex mcp add brain -- ${arg(process.execPath)} ${arg(real)}`);
     let r = await rufe("POST", "/api/mcp/verbinden", { ziel: "codex" });
     assert.equal(r.status, 200); assert.equal(r.j.ok, true);
     assert.deepEqual(c.aufrufe(), ["mcp get brain --json", `mcp add brain -- ${process.execPath} ${real}`]);
@@ -143,7 +144,7 @@ const modus = (p) => statSync(p).mode & 0o777;
 const handlerCursor = () => aufruf(erzeugeHandler({ kontenAus: true, vault: vault(), mcpPfad: mcpDatei(), vaultOptionen: { support: tmp("brain-support-") } }));
 const FREMD = JSON.stringify({ mcpServers: { anderes: { command: "foo", env: { TOKEN: "geheim-1" } } } });
 
-test("Cursor verbinden: Rechte der vorhandenen Datei bleiben (0600 bleibt 0600), neue Datei bekommt 0600, Sicherung hat die Rechte des Originals", async () => {
+test("Cursor verbinden: Rechte der vorhandenen Datei bleiben (0600 bleibt 0600), neue Datei bekommt 0600, Sicherung hat die Rechte des Originals", { skip: nurUnix("Dateirechte 0600/0640 gibt es unter Windows nicht") }, async () => {
   const rufe = handlerCursor();
   cursorLeeren();
   assert.equal((await rufe("POST", "/api/mcp/verbinden", { ziel: "cursor" })).status, 200);
@@ -310,7 +311,7 @@ test("Codex trennen: eigener Eintrag → remove; fremder → 409 ohne remove; ke
 test("Claude trennen (Platzhalter-claude): eigener Eintrag → remove -s user; fremder bleibt; kein Eintrag → nichts zu tun", async () => {
   const mcp = mcpDatei();
   const bin = tmp("brain-claudebin-"), zustand = join(bin, "zustand.txt"), log = join(bin, "aufrufe.txt");
-  writeFileSync(join(bin, "claude"), `#!${process.execPath}
+  legeProgramm(join(bin, "claude"), `#!${process.execPath}
 const fs = require("node:fs"); const a = process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(log)}, a.join(" ") + "\\n");
 const hat = fs.existsSync(${JSON.stringify(zustand)});
@@ -318,7 +319,6 @@ if (a[0] === "mcp" && a[1] === "get") { if (!hat) { console.error("No MCP server
 if (a[0] === "mcp" && a[1] === "remove") { fs.rmSync(${JSON.stringify(zustand)}, { force: true }); process.exit(0); }
 if (a[0] === "mcp" && a[1] === "add") { const i = a.indexOf("--"); fs.writeFileSync(${JSON.stringify(zustand)}, "  Command: " + a[i + 1] + "\\n  Args: " + a.slice(i + 2).join(" ") + "\\n"); process.exit(0); }
 process.exit(3);\n`);
-  chmodSync(join(bin, "claude"), 0o755);
   const aufrufe = () => (existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : []);
   const rufe = aufruf(erzeugeHandler({ kontenAus: true, vault: vault(), mcpPfad: mcp, vaultOptionen: { support: tmp("brain-support-") } }));
   await mitPfad(bin, async () => {

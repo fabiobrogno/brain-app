@@ -6,8 +6,9 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { gitBefehl } from "../werkzeug.mjs";
 import { KERN } from "../pfade.mjs";
+import { nurUnix } from "./nur-unix.mjs";
 
-test("gitBefehl: macOS/Linux → git-sicher im Kern (absolut, ausführbar), nie der nackte Name", () => {
+test("gitBefehl: macOS/Linux → git-sicher im Kern (absolut, ausführbar), nie der nackte Name", { skip: nurUnix("Ausführbarkeits-Bit gibt es unter Windows nicht") }, () => {
   const home = mkdtempSync(join(tmpdir(), "wz-"));
   const p = gitBefehl({ plattform: "darwin", home });
   assert.equal(p, join(KERN, "git-sicher"));

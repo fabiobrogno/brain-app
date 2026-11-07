@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join, delimiter } from "node:path";
 import { baueVault } from "./vault.mjs";
 import { starteBrowserDienst } from "./browser-start.mjs";
+import { legeProgramm } from "../Node/attrappe.mjs";
 
 const WINDOWS = process.platform === "win32";
 const VERTRAG = JSON.parse(readFileSync(new URL("../../Ressourcen/studio/huellen-vertrag.json", import.meta.url), "utf8"));
@@ -199,7 +200,7 @@ ${programm === "claude"
     : 'console.log("1. Open this link in your browser and sign in to your account\\n   https://auth.openai.com/codex/device\\n\\n2. Enter this one-time code (expires in 15 minutes)\\n   ABCD-12345\\n");'}
 setTimeout(() => {}, 120000);
 `;
-  for (const p of ["claude", "codex"]) { writeFileSync(join(bin, p), skript(p)); chmodSync(join(bin, p), 0o755); }
+  for (const p of ["claude", "codex"]) legeProgramm(join(bin, p), skript(p));
   return bin;
 }
 

@@ -1,0 +1,26 @@
+# Zeilenenden im Repo (Plattform-Paket „Windows grün“): überall LF, auch im Windows-Checkout (core.autocrlf spielt keine Rolle).
+# Erzeugte Kopien (Ressourcen/studio/*.js, kern/plattform.mjs), Hashes im Kern-Manifest, Testdaten und Shell-Skripte brechen sonst mit CRLF.
+* text=auto eol=lf
+*.md text eol=lf
+*.mjs text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.sh text eol=lf
+*.swift text eol=lf
+*.yml text eol=lf
+# Windows-Starter brauchen CRLF
+*.cmd text eol=crlf
+*.bat text eol=crlf
+# Binärdateien: nie umschreiben
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.icns binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.zip binary
+*.bundle binary

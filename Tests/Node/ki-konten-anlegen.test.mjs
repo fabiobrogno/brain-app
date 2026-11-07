@@ -6,9 +6,10 @@ import assert from "node:assert/strict";
 import { writeFileSync, mkdirSync, statSync, readdirSync, existsSync, realpathSync, readFileSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmp, schreibe, pfad } from "./hilfe.mjs";
+import { nurUnix, modus } from "./attrappe.mjs";
 
 for (const k of ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "CURSOR_CONFIG_DIR", "GEMINI_CLI_HOME", "XDG_CONFIG_HOME", "GIT_CONFIG_GLOBAL"]) delete process.env[k];
-process.env.HOME = tmp("brain-home-");
+process.env.HOME = tmp("brain-home-"); if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME || ""; 
 
 const { erzeugeHandler } = await import(pfad("werkstatt", "handler.mjs"));
 const { schutzAmpel } = await import(pfad("werkstatt", "schutz-ampel.mjs"));
@@ -22,8 +23,8 @@ const aufruf = (h) => async (methode, p, daten) => {
   return { ...r, j };
 };
 async function mitHome(home, fn) {
-  const alt = process.env.HOME; process.env.HOME = home;
-  try { return await fn(); } finally { process.env.HOME = alt; }
+  const alt = process.env.HOME; process.env.HOME = home; if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME || ""; 
+  try { return await fn(); } finally { process.env.HOME = alt; if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME || "";  }
 }
 // Ein Konto anlegen heißt jetzt: Ordner .neu-<id> (konto-neu), nach bestätigter Anmeldung umbenennen und eintragen (konto-fertig). Fehler von konto-neu kommen unverändert zurück.
 const legeAn = async (rufe, daten) => {
@@ -71,7 +72,7 @@ test("Konto hinzufügen: eigener Ordner unter dem Support-Ordner (Modus 0700), n
     const k = r.j.konten.find((x) => x.id === r.j.neuesKonto.id);
     assert.equal(k.verwaltet, true); assert.equal(k.standard, false); assert.equal(k.name, "Kunde Müller");
     assert.equal(k.pfad, join(realpathSync(a.s), "ki-konten-ordner", "claude-kunde-muller"));
-    assert.ok(existsSync(k.pfad)); assert.equal(statSync(k.pfad).mode & 0o777, 0o700);
+    assert.ok(existsSync(k.pfad)); assert.equal(modus(k.pfad, 0o700), 0o700);
     assert.deepEqual(readdirSync(a.home), [], "im Home wird nichts angelegt");
     for (const v of a.vs) assert.equal(r.j.zugriff[k.id][v], "gesperrt");
     // der Ordner kann mit der Stufe wie jedes andere Konto gesetzt werden
@@ -98,7 +99,7 @@ test("Konto hinzufügen: Anfangsstufe „Lesen“, Namen und Programme werden ge
   });
 });
 
-test("Erkennung findet die eigenen Ordner wieder (Neustart), Profile und Konten, und nur Ordner, keine Verweise", async () => {
+test("Erkennung findet die eigenen Ordner wieder (Neustart), Profile und Konten, und nur Ordner, keine Verweise", { skip: nurUnix("Symlinks brauchen unter Windows besondere Rechte") }, async () => {
   const a = aufbau();
   const w = verwaltetWurzel(a.s);
   mkdirSync(join(w, "claude-eins"), { recursive: true });
@@ -143,7 +144,7 @@ test("Entfernen: nur ein von Kortex angelegtes Konto, sein Ordner kommt in den P
   });
 });
 
-test("Verweis als Wurzel: zeigt <Support>/ki-konten-ordner auf den Benutzerordner, gilt NICHTS darin als eigenes Konto — kein Entfernen, kein Papierkorb, kein Anlegen, keine Erkennung", async () => {
+test("Verweis als Wurzel: zeigt <Support>/ki-konten-ordner auf den Benutzerordner, gilt NICHTS darin als eigenes Konto — kein Entfernen, kein Papierkorb, kein Anlegen, keine Erkennung", { skip: nurUnix("Symlinks brauchen unter Windows besondere Rechte") }, async () => {
   const home = tmp("brain-home-"), s = tmp("brain-support-");
   const privat = join(home, ".claude-privat"); mkdirSync(privat); writeFileSync(join(privat, "settings.json"), "{}");
   symlinkSync(home, join(s, "ki-konten-ordner"));                      // die Wurzel ist ein Verweis auf das Home
@@ -171,7 +172,7 @@ test("Verweis als Wurzel: zeigt <Support>/ki-konten-ordner auf den Benutzerordne
   });
 });
 
-test("Verweis auf einen Konto-Ordner: ein Eintrag in der Wurzel, der auf ~/.claude-… zeigt, ist nie eigen; falscher Name, falsches Programm und tiefere Ordner auch nicht", () => {
+test("Verweis auf einen Konto-Ordner: ein Eintrag in der Wurzel, der auf ~/.claude-… zeigt, ist nie eigen; falscher Name, falsches Programm und tiefere Ordner auch nicht", { skip: nurUnix("Symlinks brauchen unter Windows besondere Rechte") }, () => {
   const home = tmp("brain-home-"), s = tmp("brain-support-");
   const privat = join(home, ".claude-privat"); mkdirSync(privat);
   const w = verwaltetWurzel(s); mkdirSync(w);

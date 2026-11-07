@@ -8,6 +8,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmp, schreibe, pfad } from "./hilfe.mjs";
 import { baueTestUmgebung } from "./ki-konten-hilfe.mjs";
+import { nurUnix } from "./attrappe.mjs";
 
 const K = await import(pfad("gemeinsam", "ki-konten.mjs"));
 const { erzeugeHandler } = await import(pfad("werkstatt", "handler.mjs"));
@@ -74,7 +75,7 @@ async function fragen(p, env, text = "Was ist Kaffee?") {
   assert.fail("Frage wird nicht fertig");
 }
 
-test("Vorschau: der Platzhalter antwortet auf Frag mit gekennzeichneter Beispielantwort und nennt echte Seiten des Vorschau-Vaults", async () => {
+test("Vorschau: der Platzhalter antwortet auf Frag mit gekennzeichneter Beispielantwort und nennt echte Seiten des Vorschau-Vaults", { skip: nurUnix("Vorschau (scripts/vorschau.sh) ist ein macOS-Entwicklungswerkzeug; KORTEX_VORSCHAU erlaubt nur /…-Pfade und der Platzhalter ist ein sh-Skript") }, async () => {
   const p = vorschau();
   const r = await fragen(p, werkstattEnv(p));
   assert.equal(r.ergebnis.ok, true, JSON.stringify(r.ergebnis));
@@ -87,7 +88,7 @@ test("Vorschau: der Platzhalter antwortet auf Frag mit gekennzeichneter Beispiel
   rmSync(p.vo, { recursive: true, force: true });
 });
 
-test("Vorschau: ohne die Variable verweigert der Platzhalter die Arbeit (Release-Verhalten: nichts wird weitergegeben)", async () => {
+test("Vorschau: ohne die Variable verweigert der Platzhalter die Arbeit (Release-Verhalten: nichts wird weitergegeben)", { skip: nurUnix("Vorschau (scripts/vorschau.sh) ist ein macOS-Entwicklungswerkzeug; KORTEX_VORSCHAU erlaubt nur /…-Pfade und der Platzhalter ist ein sh-Skript") }, async () => {
   const p = vorschau();
   // Die Werkstatt hat KORTEX_VORSCHAU nicht (wie in der echten App): Es wird nichts weitergegeben, der Platzhalter bricht ab. Hier ist es keine Vorschau, also bleibt der echte Fehlertext.
   const ohne = werkstattEnv(p); delete ohne.KORTEX_VORSCHAU;
@@ -98,7 +99,7 @@ test("Vorschau: ohne die Variable verweigert der Platzhalter die Arbeit (Release
   rmSync(p.vo, { recursive: true, force: true });
 });
 
-test("Vorschau: scheitert die Frage trotzdem (der Platzhalter kann nicht alles), steht ein freundlicher Text statt eines internen Fehlers da", async () => {
+test("Vorschau: scheitert die Frage trotzdem (der Platzhalter kann nicht alles), steht ein freundlicher Text statt eines internen Fehlers da", { skip: nurUnix("Vorschau (scripts/vorschau.sh) ist ein macOS-Entwicklungswerkzeug; KORTEX_VORSCHAU erlaubt nur /…-Pfade und der Platzhalter ist ein sh-Skript") }, async () => {
   const p = vorschau({ skript: "#!/bin/sh\necho 'interner Fehler 123' >&2\nexit 3\n" });
   const r = await fragen(p, werkstattEnv(p));
   assert.equal(r.ergebnis.ok, false);
@@ -108,7 +109,7 @@ test("Vorschau: scheitert die Frage trotzdem (der Platzhalter kann nicht alles),
   rmSync(p.vo, { recursive: true, force: true });
 });
 
-test("baueFrageUmgebung: KORTEX_VORSCHAU geht nur in einer echten Vorschau durch (gültiger Pfad, Marke, HOME darin) — und nur diese Variable", () => {
+test("baueFrageUmgebung: KORTEX_VORSCHAU geht nur in einer echten Vorschau durch (gültiger Pfad, Marke, HOME darin) — und nur diese Variable", { skip: nurUnix("Vorschau (scripts/vorschau.sh) ist ein macOS-Entwicklungswerkzeug; KORTEX_VORSCHAU erlaubt nur /…-Pfade und der Platzhalter ist ein sh-Skript") }, () => {
   const p = vorschau();
   const konto = { ordner: join(p.home, ".claude"), standard: true };
   const bau = (basis, home) => baueFrageUmgebung({ basis, home, claudePfad: join(p.bin, "claude"), konto });

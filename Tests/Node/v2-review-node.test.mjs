@@ -16,7 +16,11 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, chmodSync, 
 import { join, dirname } from "node:path";
 import { createInterface } from "node:readline";
 import { tmp, schreibe, repo, g, pfad, kernAttrappe, brainVault, echt } from "./hilfe.mjs";
-process.env.HOME = tmp("brain-home-");          // os.homedir() liest $HOME: keine echte ~/.gitconfig
+import { delimiter } from "node:path";
+import { legeProgramm, nurUnix, systemPfad, WIN } from "./attrappe.mjs";
+const D = delimiter, SYS = systemPfad();
+const fw = (p) => p.split("\\").join("/"); // Windows: Git ruft Programme der Konfiguration/Hooks über sh auf — Pfade mit Slashes
+process.env.HOME = tmp("brain-home-"); if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME; /* Windows: os.homedir() liest USERPROFILE */          // os.homedir() liest $HOME: keine echte ~/.gitconfig
 process.env.GIT_CONFIG_NOSYSTEM = "1";          // und keine System-Konfiguration
 for (const w of ["AUTHOR", "COMMITTER"]) { process.env[`GIT_${w}_NAME`] = "Test"; process.env[`GIT_${w}_EMAIL`] = "test@example.org"; }   // der CI-Runner hat keine Git-Identität
 for (const k of ["GIT_CONFIG_GLOBAL", "XDG_CONFIG_HOME", "GIT_SSH_COMMAND", "BRAIN_VAULT"]) delete process.env[k];
@@ -38,20 +42,23 @@ const aufruf = (h) => async (methode, p, daten, query) => {
   let j = null; try { j = JSON.parse(r.body.toString("utf8")); } catch { /* statisch */ }
   return { ...r, j };
 };
-const skript = (inhalt) => { const p = join(tmp("brain-skript-"), "s.sh"); writeFileSync(p, `#!/bin/sh\n${inhalt}\n`); chmodSync(p, 0o755); return p; };
+const skript = (inhalt) => { const p = join(tmp("brain-skript-"), "s.sh"); writeFileSync(p, `#!/bin/sh\n${inhalt}\n`); chmodSync(p, 0o755); return fw(p); };
 const konfig = (d, text) => appendFileSync(join(d, ".git", "config"), text); // roh angehängt: so kommt eine fremde .git/config an
 const mitSupport = (d, support = neuerSupport(), extra = {}) => oeffneVault(d, { support, ...extra });
-const bareRepo = () => { const b = tmp("brain-bare-"); g(b, "init", "-q", "--bare", "-b", "main"); return b; };
+const bareRepo = () => { const b = fw(tmp("brain-bare-")); g(b, "init", "-q", "--bare", "-b", "main"); return b; };
 const warteBis = async (f, ms = 3000) => { const ende = Date.now() + ms; while (Date.now() < ende) { if (f()) return true; await new Promise((r) => setTimeout(r, 25)); } return f(); };
 const lebt = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
-const mitPfadVorn = async (dir, fn) => { const alt = process.env.PATH; process.env.PATH = `${dir}:${alt}`; try { return await fn(); } finally { process.env.PATH = alt; } };
-const echtesGit = execFileSync("which", ["git"], { encoding: "utf8" }).trim();
+const mitPfadVorn = async (dir, fn) => { const alt = process.env.PATH; process.env.PATH = `${dir}${D}${alt}`; try { return await fn(); } finally { process.env.PATH = alt; } };
+const echtesGit = WIN // Windows: `where git`, erster Treffer git.exe
+  ? execFileSync("where", ["git"], { encoding: "utf8" }).split(/\r?\n/).map((z) => z.trim()).find((z) => /git\.exe$/i.test(z))
+  : execFileSync("which", ["git"], { encoding: "utf8" }).trim();
+const echtesGitSh = fw(echtesGit); // für sh-Skripte
 const cli = (args, env = {}) => spawnSync(process.execPath, [pfad("werkstatt", "vertrauen-pruefen.mjs"), ...args], { encoding: "utf8", env: { ...process.env, ...env } });
-const marke = (name) => join(tmp("brain-marke-"), name); // Pfad einer Markerdatei: sie entsteht nur, wenn das Programm läuft
+const marke = (name) => fw(join(tmp("brain-marke-"), name)); // Pfad einer Markerdatei: sie entsteht nur, wenn das Programm läuft
 
 test("vertrauen-node/K1: mit Vertrauen gilt die Signier-Konfiguration; ohne Vertrauen ist Git gesperrt, und die internen Git-Aufrufe (Anlegen, Klonen) signieren nie aus der Vault-Konfiguration", () => echt(async () => {
-  const bin = tmp("brain-bin-"), lief = join(bin, "KEYGEN-LIEF"); // Attrappe für ssh-keygen: Git ruft sie auf, sobald es SSH-signiert
-  writeFileSync(join(bin, "ssh-keygen"), `#!/bin/sh\necho "$*" >> '${lief}'\nexit 1\n`); chmodSync(join(bin, "ssh-keygen"), 0o755);
+  const bin = tmp("brain-bin-"), lief = fw(join(bin, "KEYGEN-LIEF")); // Attrappe für ssh-keygen: Git ruft sie auf, sobald es SSH-signiert
+  legeProgramm(join(bin, "ssh-keygen"), `#!/bin/sh\necho "$*" >> '${lief}'\nexit 1\n`);
   const SCHLUESSEL = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICbsyW1AtEgE8Zq5Ntk3sCgb1jtbWoP2DzzGxBnfT2bM";
   const signieren = `[commit]\n\tgpgSign = true\n[tag]\n\tgpgSign = true\n[gpg]\n\tformat = ssh\n[user]\n\tsigningKey = ${SCHLUESSEL}\n`;
   const alt = process.env.GIT_CONFIG_GLOBAL;
@@ -94,7 +101,7 @@ test("vertrauen-node/K1: mit Vertrauen gilt die Signier-Konfiguration; ohne Vert
 function kitMitServer() {
   const bare = bareRepo();
   const autor = repo(); g(autor, "remote", "add", "origin", bare);
-  const marken = tmp("brain-marke-");
+  const marken = fw(tmp("brain-marke-"));
   const hook = (rel, inhalt) => { schreibe(autor, rel, `#!/bin/sh\n${inhalt}\n`); chmodSync(join(autor, rel), 0o755); };
   schreibe(autor, ".tools/brain.mjs", KIT);
   hook(".tools/git-hooks/pre-push", `echo x >> '${join(marken, "PRE-PUSH")}'`);
@@ -234,7 +241,7 @@ test("luecken/VK-1: der Abgleich holt nie im Submodul — remote.origin.uploadpa
 
 test("luecken/VK-1: jeder Git-Aufruf trägt die Submodul-Härtung — status/diff ignorieren Submodule, fetch holt nicht in ihnen, nichts rekursiert", async () => {
   const bin = tmp("brain-fakegit-"), log = join(bin, "aufrufe.log");
-  writeFileSync(join(bin, "git"), `#!/bin/sh\necho "$*" >> '${log}'\nexec '${echtesGit}' "$@"\n`); chmodSync(join(bin, "git"), 0o755);
+  legeProgramm(join(bin, "git"), `#!/bin/sh\necho "$*" >> '${fw(log)}'\nexec '${echtesGitSh}' "$@"\n`);
   const bare = bareRepo();
   const d = repo(); g(d, "remote", "add", "origin", bare); g(d, "push", "-q", "-u", "origin", "main");
   const v = mitSupport(d);
@@ -260,15 +267,16 @@ test("luecken/VK-1: jeder Git-Aufruf trägt die Submodul-Härtung — status/dif
 // Ein Vault mit eigenem `git` (Skript, das eine Marke setzt und dann das echte Git ausführt) an den Stellen, die ein relativer oder leerer PATH-Eintrag trifft.
 function vaultMitEigenemGit(m) {
   const d = repo();
-  const fake = `#!/bin/sh\ntouch '${m}'\nexec '${echtesGit}' "$@"\n`;
-  schreibe(d, "node_modules/.bin/git", fake); chmodSync(join(d, "node_modules/.bin/git"), 0o755);
-  schreibe(d, "git", fake); chmodSync(join(d, "git"), 0o755);
+  const fake = `#!/bin/sh\ntouch '${m}'\nexec '${echtesGitSh}' "$@"\n`;
+  mkdirSync(join(d, "node_modules/.bin"), { recursive: true });
+  legeProgramm(join(d, "node_modules/.bin/git"), fake);
+  legeProgramm(join(d, "git"), fake);
   return d;
 }
 const gitOrdner = dirname(echtesGit);
 
 test("luecken/VK-2: der MCP-Server führt kein `git` aus dem Vault aus — relativer PATH-Eintrag (node_modules/.bin) und leerer Eintrag, schon bei der Vertrauensprüfung", async () => {
-  for (const [fall, pfadWert] of [["relativ", `node_modules/.bin:${gitOrdner}:/usr/bin:/bin`], ["leer", `/opt/gibts-nicht::${gitOrdner}:/usr/bin:/bin`], ["Punkt", `.:${gitOrdner}`]]) {
+  for (const [fall, pfadWert] of [["relativ", `node_modules/.bin${D}${gitOrdner}${D}${SYS}`], ["leer", `/opt/gibts-nicht${D}${D}${gitOrdner}${D}${SYS}`], ["Punkt", `.${D}${gitOrdner}`]]) {
     const m = marke("VAULT-GIT-LIEF");
     const d = vaultMitEigenemGit(m);
     const env = { ...process.env, BRAIN_APP_SUPPORT: neuerSupport(), PATH: pfadWert }; delete env.BRAIN_VAULT;
@@ -290,13 +298,13 @@ test("luecken/VK-2: in der Werkstatt startet Git nur über einen absoluten Pfad 
   const d = vaultMitEigenemGit(m);
   const alt = process.env.PATH;
   try {
-    process.env.PATH = `node_modules/.bin::.:${gitOrdner}`;
+    process.env.PATH = `node_modules/.bin${D}${D}.${D}${gitOrdner}`;
     assert.equal(absoluterGitPfad(), echtesGit, "gefunden wird nur über absolute Einträge");
     assert.equal((await git(d, ["rev-parse", "--show-toplevel"])).code, 0);
     assert.equal(existsSync(m), false, "das git aus dem Vault lief nie");
     assert.equal(kindUmgebung().PATH, gitOrdner, "Kindprozesse bekommen keinen leeren oder relativen Eintrag");
-    assert.equal(kindUmgebung({ PATH: "x:/usr/bin" }).PATH, "/usr/bin", "auch ein PATH aus dem Zusatz wird bereinigt");
-    process.env.PATH = "node_modules/.bin:.";   // nur relative Einträge: kein absolutes git
+    assert.equal(kindUmgebung({ PATH: `x${D}/usr/bin` }).PATH, "/usr/bin", "auch ein PATH aus dem Zusatz wird bereinigt");
+    process.env.PATH = `node_modules/.bin${D}.`;   // nur relative Einträge: kein absolutes git
     assert.equal(absoluterGitPfad(), null);
     const e = await wirft(git(d, ["status"]));
     assert.equal(e.status, 500); assert.match(e.message, /Git ist auf diesem Mac nicht installiert/);
@@ -304,11 +312,11 @@ test("luecken/VK-2: in der Werkstatt startet Git nur über einen absoluten Pfad 
     assert.equal("PATH" in kindUmgebung(), false, "bleibt nichts übrig, fällt PATH ganz weg (nie ein leerer Eintrag)");
   } finally { process.env.PATH = alt; }
   // bereinigterPfad / bereinigePfad (die Einstiegspunkte rufen es beim Start)
-  assert.equal(bereinigterPfad("/usr/bin::/bin:node_modules/.bin:./x:.:/opt/y:"), "/usr/bin:/bin:/opt/y");
-  assert.equal(bereinigterPfad("rel:andere"), ""); assert.equal(bereinigterPfad(""), ""); assert.equal(bereinigterPfad(undefined), "");
+  assert.equal(bereinigterPfad(["/usr/bin", "", "/bin", "node_modules/.bin", "./x", ".", "/opt/y", ""].join(D)), ["/usr/bin", "/bin", "/opt/y"].join(D));
+  assert.equal(bereinigterPfad(`rel${D}andere`), ""); assert.equal(bereinigterPfad(""), ""); assert.equal(bereinigterPfad(undefined), "");
   try {
-    process.env.PATH = "node_modules/.bin::/usr/bin:."; bereinigePfad(); assert.equal(process.env.PATH, "/usr/bin");
-    process.env.PATH = "rel:."; bereinigePfad(); assert.equal("PATH" in process.env, false, "ein leerer PATH-Text wäre selbst ein leerer Eintrag");
+    process.env.PATH = ["node_modules/.bin", "", "/usr/bin", "."].join(D); bereinigePfad(); assert.equal(process.env.PATH, "/usr/bin");
+    process.env.PATH = `rel${D}.`; bereinigePfad(); assert.equal("PATH" in process.env, false, "ein leerer PATH-Text wäre selbst ein leerer Eintrag");
   } finally { process.env.PATH = alt; }
 });
 
@@ -350,9 +358,8 @@ async function sigtermWaehrend({ route, eingabe, hangBei, vorher = () => {} }) {
   const haengt = hangBei === "clone"
     ? 'for a in "$@"; do last="$a"; done; mkdir -p "$last"; echo halb > "$last/halb.txt"; echo $$ > "$D/pid"; exec sleep 30'
     : 'echo $$ > "$D/pid"; exec sleep 30';
-  writeFileSync(join(FAKE, "git"), `#!/bin/sh\nD="$(dirname "$0")"\ncase " $* " in *" ${hangBei} "*) ${haengt} ;; esac\nexec "${echtesGit}" "$@"\n`);
-  chmodSync(join(FAKE, "git"), 0o755);
-  const env = { ...process.env, HOME, BRAIN_APP_SUPPORT: SUP, GIT_CONFIG_NOSYSTEM: "1", PATH: `${FAKE}:${process.env.PATH}` };
+  legeProgramm(join(FAKE, "git"), `#!/bin/sh\nD="$(dirname "$0")"\ncase " $* " in *" ${hangBei} "*) ${haengt} ;; esac\nexec "${echtesGitSh}" "$@"\n`);
+  const env = { ...process.env, HOME, BRAIN_APP_SUPPORT: SUP, GIT_CONFIG_NOSYSTEM: "1", PATH: `${FAKE}${D}${process.env.PATH}` };
   for (const k of ["GIT_SSH_COMMAND", "GIT_CONFIG_GLOBAL", "XDG_CONFIG_HOME", "BRAIN_VAULT"]) delete env[k];
   const p = spawn(process.execPath, [pfad("werkstatt", "werkstatt.mjs")], { env, cwd: T, stdio: ["pipe", "pipe", "pipe"] });
   try {
@@ -373,14 +380,14 @@ async function sigtermWaehrend({ route, eingabe, hangBei, vorher = () => {} }) {
   }
 }
 
-test("vaults/V2: SIGTERM mitten im „Versionsverlauf einschalten“ — .git und die angelegte .gitignore verschwinden, Dateien des Nutzers bleiben, kein Eintrag", async () => {
+test("vaults/V2: SIGTERM mitten im „Versionsverlauf einschalten“ — .git und die angelegte .gitignore verschwinden, Dateien des Nutzers bleiben, kein Eintrag", { skip: nurUnix("SIGTERM an die Werkstatt beendet unter Windows hart (kein Signal-Handler, keine Rücknahme)") }, async () => {
   const r = await sigtermWaehrend({ route: "/api/vaults/oeffnen", hangBei: "add",
     vorher: (home) => schreibe(home, "Notizen/a.md", "# a\n"), eingabe: (home) => ({ pfad: join(home, "Notizen"), gitEinschalten: true }) });
   assert.deepEqual(readdirSync(join(r.home, "Notizen")).sort(), ["a.md"], "wie vorher: weder .git noch .gitignore");
   assert.equal(existsSync(join(r.support, "vaults.json")), false, "kein Eintrag in der Liste");
 });
 
-test("vaults/V2: SIGTERM mitten im Anlegen (neu, Vorlage und leer) — das halbe Vault verschwindet samt dem neu angelegten Ordner", async () => {
+test("vaults/V2: SIGTERM mitten im Anlegen (neu, Vorlage und leer) — das halbe Vault verschwindet samt dem neu angelegten Ordner", { skip: nurUnix("SIGTERM an die Werkstatt beendet unter Windows hart (kein Signal-Handler, keine Rücknahme)") }, async () => {
   for (const art of ["vorlage", "leer"]) {
     const r = await sigtermWaehrend({ route: "/api/vaults/neu", hangBei: "add", eingabe: (home) => ({ art, ordner: join(home, "Neu", "Brain") }) });
     assert.equal(existsSync(join(r.home, "Neu")), false, `${art}: kein halbes Vault, auch kein leerer Elternordner`);
@@ -388,7 +395,7 @@ test("vaults/V2: SIGTERM mitten im Anlegen (neu, Vorlage und leer) — das halbe
   }
 });
 
-test("vaults/V2: SIGTERM mitten im Klonen — das halb fertige Ziel verschwindet samt den für diesen Klon angelegten Elternordnern", async () => {
+test("vaults/V2: SIGTERM mitten im Klonen — das halb fertige Ziel verschwindet samt den für diesen Klon angelegten Elternordnern", { skip: nurUnix("SIGTERM an die Werkstatt beendet unter Windows hart (kein Signal-Handler, keine Rücknahme)") }, async () => {
   const r = await sigtermWaehrend({ route: "/api/vaults/klonen", hangBei: "clone", eingabe: (home) => ({ url: "/irgendein/pfad", ordner: join(home, "Projekte", "Klon") }) });
   assert.equal(existsSync(join(r.home, "Projekte")), false, "nichts Halbes liegt herum (früher: das halbe Ziel, danach landete der nächste Versuch in „Klon 2“)");
   assert.equal(existsSync(join(r.support, "vaults.json")), false);
@@ -407,14 +414,13 @@ test("vaults/V2: beendeVorgaenge nimmt nur zurück, was noch läuft — ein fert
 test("vaults/V3: scheitert das Klonen, verschwindet nur das Ziel — ein Elternordner, in dem inzwischen etwas anderes liegt (zweites Vault, Notiz), bleibt samt Inhalt", async () => {
   const bin = tmp("brain-fakegit-");
   // Der Klon „scheitert“, nachdem im neu angelegten Elternordner ein zweites Vault und eine Notiz des Nutzers entstanden sind
-  writeFileSync(join(bin, "git"), `#!/bin/sh
+  legeProgramm(join(bin, "git"), `#!/bin/sh
 case " $* " in *" clone "*)
   for a in "$@"; do last="$a"; done; P="$(dirname "$last")"
   echo "# Notiz" > "$P/einkauf.md"; mkdir -p "$P/Tagebuch"; echo "# heute" > "$P/Tagebuch/heute.md"
   echo "fatal: repository 'x' does not exist" >&2; exit 128 ;;
 esac
-exec '${echtesGit}' "$@"\n`);
-  chmodSync(join(bin, "git"), 0o755);
+exec '${echtesGitSh}' "$@"\n`);
   const basis = tmp("brain-v3-");
   const eltern = join(basis, "neu", "Projekte");
   await mitPfadVorn(bin, async () => {
@@ -425,10 +431,9 @@ exec '${echtesGit}' "$@"\n`);
   assert.equal(readFileSync(join(eltern, "Tagebuch", "heute.md"), "utf8"), "# heute\n", "das zweite Vault bleibt");
   // Ebenso beim Anlegen: git init „scheitert“, nachdem im neu angelegten Elternordner eine Notiz entstanden ist
   const bin2 = tmp("brain-fakegit-");
-  writeFileSync(join(bin2, "git"), `#!/bin/sh
+  legeProgramm(join(bin2, "git"), `#!/bin/sh
 case " $* " in *" init "*) P="$(dirname "$PWD")"; echo "# Notiz" > "$P/einkauf.md"; echo "fatal: init" >&2; exit 128 ;; esac
-exec '${echtesGit}' "$@"\n`);
-  chmodSync(join(bin2, "git"), 0o755);
+exec '${echtesGitSh}' "$@"\n`);
   const basis2 = tmp("brain-v3-neu-");
   await mitPfadVorn(bin2, async () => { await wirft(Vaults.neuesVault({ art: "leer", ordner: join(basis2, "neu", "Brain") }, { support: neuerSupport() })); });
   assert.equal(existsSync(join(basis2, "neu", "Brain")), false, "das angelegte Vault ist weg");

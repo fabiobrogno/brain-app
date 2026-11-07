@@ -33,6 +33,10 @@ const FAKTOR = 1.2;
 // Standard-Kopierer: macOS klont (cp -c), sonst/zur Not normal kopieren. `art`: "klon" | "voll". Verweise werden nie verfolgt (cp -R kopiert sie als Verweise).
 export function kopiereVault(quelle, ziel, { art = "klon", plattform = process.platform } = {}) {
   const flags = art === "klon" && plattform === "darwin" ? "-cR" : "-R";
+  if (plattform === "win32") {   // kein /bin/cp: Node kopiert den Baum selbst (Verweise bleiben Verweise)
+    try { cpSync(quelle, ziel, { recursive: true, verbatimSymlinks: true }); } catch (e) { try { rmSync(ziel, { recursive: true, force: true }); } catch { /* weg */ } const f = new Error(String(e.message).split("\n")[0]); f.code = e.code === "EXDEV" ? "EXDEV" : "EIO"; throw f; }
+    return { art: "voll" };
+  }
   const r = spawnSync("/bin/cp", [flags, quelle, ziel], { encoding: "utf8", timeout: KOPIE_FRIST_MS, windowsHide: true });
   if (r.status !== 0) { try { rmSync(ziel, { recursive: true, force: true }); } catch { /* weg */ } const e = new Error(String(r.stderr || "cp fehlgeschlagen").split("\n")[0]); e.code = /cross-device|different/i.test(r.stderr || "") ? "EXDEV" : /not supported|ENOTSUP/i.test(r.stderr || "") ? "ENOTSUP" : "EIO"; throw e; }
   return { art: flags === "-cR" ? "klon" : "voll" };

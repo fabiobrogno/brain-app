@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, existsSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 import { tmp, schreibe, repo, g, pfad } from "./hilfe.mjs";
-process.env.HOME = tmp("brain-home-");
+process.env.HOME = tmp("brain-home-"); if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME; /* Windows: os.homedir() liest USERPROFILE */
 process.env.GIT_CONFIG_NOSYSTEM = "1";
 for (const k of ["GIT_CONFIG_GLOBAL", "XDG_CONFIG_HOME", "CLAUDE_CONFIG_DIR", "CODEX_HOME", "CURSOR_CONFIG_DIR", "GEMINI_CLI_HOME"]) delete process.env[k];
 
@@ -42,7 +42,7 @@ test("Beginnt jemand beim Holen eine Zusammenführung: der Abgleich lässt sie i
   const skript = join(tmp("brain-skript-"), "uploadpack.sh");
   writeFileSync(skript, `#!/bin/sh\nunset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE\ngit -C '${a}' -c user.name=T -c user.email=t@example.org merge --no-edit fremd >/dev/null 2>&1\nexec git upload-pack "$@"\n`);
   chmodSync(skript, 0o755);
-  g(a, "config", "remote.origin.uploadpack", skript);
+  g(a, "config", "remote.origin.uploadpack", skript.split("\\").join("/")); // Windows: Git ruft es über sh auf, Backslashes würden dort verschluckt
   const v = oeffneVault(a);
   const e = await wirft(v.gitSync({ konflikteLoesen: true }));
   g(a, "config", "--unset", "remote.origin.uploadpack"); // der Kern (git-sicher) lehnt einen Vault mit solcher Konfiguration ab

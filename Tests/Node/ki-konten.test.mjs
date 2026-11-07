@@ -5,13 +5,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, mkdirSync, symlinkSync, statSync, readdirSync, existsSync, rmSync, renameSync, realpathSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { join } from "node:path";
+import { join, sep, dirname } from "node:path";
 import { tmp, schreibe, pfad } from "./hilfe.mjs";
+import { nurUnix, modus as modusWin, pfadMit } from "./attrappe.mjs";
 import { baueTestUmgebung, attrappen } from "./ki-konten-hilfe.mjs";
 
 for (const k of ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "CURSOR_CONFIG_DIR", "GEMINI_CLI_HOME", "XDG_CONFIG_HOME", "GIT_CONFIG_GLOBAL"]) delete process.env[k];
 const HOME0 = tmp("brain-home-");
-process.env.HOME = HOME0;
+process.env.HOME = HOME0; if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME || ""; 
 
 const K = await import(pfad("gemeinsam", "ki-konten.mjs"));
 const { erzeugeKonten } = await import(pfad("werkstatt", "konten.mjs"));
@@ -33,23 +34,23 @@ const aufruf = (h) => async (methode, p, daten) => {
   let j = null; try { j = JSON.parse(r.body.toString("utf8")); } catch { /* statisch */ }
   return { ...r, j };
 };
-const modus = (p) => statSync(p).mode & 0o777;
+const modus = (p, erwartet) => modusWin(p, erwartet); // Windows kennt keine Dateimodi: dort der erwartete Wert
 
 // ───────────────────────────── Datei ─────────────────────────────
 test("Datei: Modus 0600, atomar (keine Temp- oder Sperrreste), die vorige Fassung bleibt als .vorher", () => {
   const s = sup();
   K.aendere(s, () => ({ ...K.leerDaten(), konten: { k_00000001: { programm: "claude", ordner: "/x", ordnerKennung: "" } } }));
   const datei = K.kontenPfad(s);
-  assert.equal(modus(datei), 0o600);
+  assert.equal(modus(datei, 0o600), 0o600);
   K.aendere(s, (alt) => { alt.konten.k_00000001.name = "zwei"; return alt; });
   assert.equal(JSON.parse(readFileSync(`${datei}.vorher`, "utf8")).konten.k_00000001.name, undefined, ".vorher = die Fassung vor dem letzten Schreiben");
-  assert.equal(modus(`${datei}.vorher`), 0o600);
+  assert.equal(modus(`${datei}.vorher`, 0o600), 0o600);
   assert.deepEqual(readdirSync(s).filter((n) => /\.tmp$|\.lock$/.test(n)), []);
   const r = K.aendere(s, (alt) => alt); // keine Änderung → nichts geschrieben
   assert.equal(r.geaendert, false);
 });
 
-test("Datei fehlt → Übergang (bisheriges Verhalten); defekt, falsche Version, ein Link oder ein Ordner → gesperrt (fail-closed)", () => {
+test("Datei fehlt → Übergang (bisheriges Verhalten); defekt, falsche Version, ein Link oder ein Ordner → gesperrt (fail-closed)", { skip: nurUnix("Symlinks brauchen unter Windows besondere Rechte") }, () => {
   const v = neuesVault(), s = sup(), datei = K.kontenPfad(s);
   assert.equal(K.liesKonten(s).zustand, "fehlt");
   assert.equal(stufe(s, v), "posteingang", "vor dem ersten Start der neuen App gilt das bisherige Verhalten");
@@ -112,7 +113,7 @@ test("Stufen je Konto und Vault; unbekanntes Konto und unbekannter Vault sind ge
   assert.equal(stufe(e.s, neuesVault(), {}, { arg: "k_00000001" }), "gesperrt", "ein Vault, den die Liste nicht kennt");
 });
 
-test("bestimmeKonto: Argument · Umgebung · Widerspruch → das strengere Recht · ~/.claude ausdrücklich = Standard · unbekannter Ordner = gesperrt", () => {
+test("bestimmeKonto: Argument · Umgebung · Widerspruch → das strengere Recht · ~/.claude ausdrücklich = Standard · unbekannter Ordner = gesperrt", { skip: nurUnix("Symlinks brauchen unter Windows besondere Rechte") }, () => {
   const e = einrichtung();
   // nur Umgebung (Altform): CLAUDE_CONFIG_DIR bestimmt das Konto
   assert.equal(stufe(e.s, e.v1, { CLAUDE_CONFIG_DIR: e.privat }), "posteingang");
@@ -154,7 +155,7 @@ test("Ordnerkennung: ein umbenannter Vault trifft seine Regeln weiter, ein ausge
 });
 
 // ───────────────────────────── Erkennung ─────────────────────────────
-test("Erkennung: Claude-Profile, Codex-Ordner (nur mit config.toml/auth.json), übrige Programme über die vorhandene Erkennung; Symlinks nie; keine Dateiinhalte", () => {
+test("Erkennung: Claude-Profile, Codex-Ordner (nur mit config.toml/auth.json), übrige Programme über die vorhandene Erkennung; Symlinks nie; keine Dateiinhalte", { skip: nurUnix("Symlinks brauchen unter Windows besondere Rechte") }, () => {
   const home = neueHome();
   claudeProfil(home); claudeProfil(home, "privat");
   symlinkSync(join(home, ".claude-privat"), join(home, ".claude-verweis"));
@@ -165,14 +166,14 @@ test("Erkennung: Claude-Profile, Codex-Ordner (nur mit config.toml/auth.json), �
   const liste = erkenneKonten({ home, programme: ["cursor"] });
   const text = JSON.stringify(liste);
   assert.ok(!text.includes("GEHEIM"), "Inhalte werden nie gelesen");
-  assert.deepEqual(liste.map((k) => `${k.programm}:${k.standard ? "standard" : k.ordner.split("/").pop()}`).sort(),
+  assert.deepEqual(liste.map((k) => `${k.programm}:${k.standard ? "standard" : k.ordner.split(/[\\/]/).pop()}`).sort(),
     ["claude:.claude-privat", "claude:standard", "codex:.codex-arbeit", "codex:standard", "cursor:standard"].sort());
   assert.ok(liste.every((k) => typeof k.name === "string" && k.name.length <= 40));
   assert.deepEqual(liste.find((k) => k.programm === "cursor").ordner, realpathSync(join(home, ".cursor")));
 });
 
 // ───────────────────────────── Konten führen: Migration, neue Konten, Ausnahme ─────────────────────────────
-const erzeuge = (home, s, vaultListe, extra = {}) => erzeugeKonten({ support: s, home: () => home, vaults: () => vaultListe.map((p) => ({ pfad: p, name: p.split("/").pop() })),
+const erzeuge = (home, s, vaultListe, extra = {}) => erzeugeKonten({ support: s, home: () => home, vaults: () => vaultListe.map((p) => ({ pfad: p, name: p.split(/[\\/]/).pop() })),
   erkennung: () => erkenneKonten({ home, programme: [] }), quelleVon: () => "bestaetigt", ...extra });
 
 test("Migration: Konten mit bestehender Verbindung behalten ihre heutigen Rechte (posteingang für alle Vaults, auch alte Einträge ohne Konto), alle anderen starten gesperrt", () => {
@@ -352,8 +353,8 @@ function handlerMit({ home, s, vaultOrdner, vaultsListe, extra = {} }) {
   return aufruf(erzeugeHandler({ vault: vaultOrdner, vaultOptionen: { support: s }, mcpPfad: (() => { const m = tmp("brain-mcpdir-"); schreibe(m, "brain-mcp.mjs", "//\n"); return join(m, "brain-mcp.mjs"); })(), ...extra }));
 }
 async function mitHome(home, fn) {
-  const alt = process.env.HOME; process.env.HOME = home;
-  try { return await fn(); } finally { process.env.HOME = alt; }
+  const alt = process.env.HOME; process.env.HOME = home; if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME || ""; 
+  try { return await fn(); } finally { process.env.HOME = alt; if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME || "";  }
 }
 
 test("Routen: GET liefert Konten, Vaults und Stufen; POST setzt Name und Abo; PUT setzt die Stufe — nur für bekannte Konten und Vaults, mit Prüfung der Eingaben", async () => {
@@ -395,7 +396,7 @@ test("Routen: GET liefert Konten, Vaults und Stufen; POST setzt Name und Abo; PU
     assert.equal((await rufe("PUT", "/api/ki/zugriff", { konto: b.id, vault: "/etc", stufe: "lesen" })).status, 404);
     assert.equal((await rufe("GET", "/api/ki/zugriff")).status, 405);
     assert.equal((await rufe("DELETE", "/api/ki/konten")).status, 405);
-    assert.equal(modus(K.kontenPfad(s)), 0o600);
+    assert.equal(modus(K.kontenPfad(s), 0o600), 0o600);
   });
 });
 
@@ -421,7 +422,7 @@ test("Ein von Kortex angelegter Vault kommt in die Liste: gesperrt für alle; mi
 async function mitAttrappen(fn) {
   const a = attrappen();
   const alt = { PATH: process.env.PATH, E: process.env.BRAIN_CLAUDE_EXTRA };
-  process.env.PATH = `${a.bin}:/usr/bin:/bin`; process.env.BRAIN_CLAUDE_EXTRA = "";
+  process.env.PATH = pfadMit(a.bin); process.env.BRAIN_CLAUDE_EXTRA = "";
   try { return await fn(a); } finally { process.env.PATH = alt.PATH; if (alt.E === undefined) delete process.env.BRAIN_CLAUDE_EXTRA; else process.env.BRAIN_CLAUDE_EXTRA = alt.E; }
 }
 
@@ -433,7 +434,7 @@ test("Verbinden: der Eintrag trägt --konto <id>; das richtige Konto wird angesp
   await mitHome(home, () => mitAttrappen(async (a) => {
     const rufe = handlerMit({ home, s, vaultOrdner: v, vaultsListe: [v] });
     const konten = (await rufe("POST", "/api/ki/konten/abgleich")).j.konten;
-    const id = (programm, ordner) => konten.find((k) => k.programm === programm && k.ordner.endsWith(ordner)).id;
+    const id = (programm, ordner) => konten.find((k) => k.programm === programm && k.ordner.endsWith(ordner.replaceAll("/", sep))).id;
     const mcpEintrag = (schluessel) => a.eintraege()[schluessel];
     // Claude, Standardprofil
     let r = await rufe("POST", "/api/mcp/verbinden", { ziel: "claude", konto: id("claude", "/.claude") , zugriff: "posteingang" });
@@ -539,7 +540,7 @@ test("Probe-Frage: mit der Kontenliste läuft sie als ein Konto mit Lesezugriff;
 
 // ───────────────────────────── Installer: --konto in den Hook-Befehlen ─────────────────────────────
 function installiere(args, { home, support }) {
-  const env = baueTestUmgebung({ HOME: home, BRAIN_APP_SUPPORT: support, KORTEX_KERN_UNSTABIL_ERLAUBT: "1", KORTEX_STARTER_PFAD: join(support, "bin", "kortex"), KORTEX_VAULT_VERTRAUT: "alle", PATH: `${process.execPath.replace(/\/node$/, "")}:/usr/bin:/bin` });
+  const env = baueTestUmgebung({ HOME: home, BRAIN_APP_SUPPORT: support, KORTEX_KERN_UNSTABIL_ERLAUBT: "1", KORTEX_STARTER_PFAD: join(support, "bin", "kortex"), KORTEX_VAULT_VERTRAUT: "alle", PATH: pfadMit(dirname(process.execPath)) });
   const r = spawnSync(process.execPath, [pfad("kern", "adapters", "claude-code", "install.mjs"), ...args], { env, encoding: "utf8" });
   return { code: r.status, aus: r.stdout, fehler: r.stderr };
 }
@@ -601,7 +602,7 @@ test("Installer: ein gesperrtes Konto bekommt keine Kortex-Befehle für den Vaul
 
 test("brain claude-hooks reicht --konto an den Installer weiter (pfade.mjs nimmt es aus process.argv)", () => {
   const home = neueHome(), support = sup(), h = tmp("ch-"), v = neuesVault();
-  const env = baueTestUmgebung({ HOME: home, BRAIN_APP_SUPPORT: support, KORTEX_KERN_UNSTABIL_ERLAUBT: "1", KORTEX_STARTER_PFAD: join(support, "bin", "kortex"), KORTEX_VAULT_VERTRAUT: "alle", PATH: `${process.execPath.replace(/\/node$/, "")}:/usr/bin:/bin` });
+  const env = baueTestUmgebung({ HOME: home, BRAIN_APP_SUPPORT: support, KORTEX_KERN_UNSTABIL_ERLAUBT: "1", KORTEX_STARTER_PFAD: join(support, "bin", "kortex"), KORTEX_VAULT_VERTRAUT: "alle", PATH: pfadMit(dirname(process.execPath)) });
   const r = spawnSync(process.execPath, [pfad("kern", "brain.mjs"), "claude-hooks", "--vault", v, "--claude-home", h, "--konto", "k_aaaaaaaa"], { env, encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
   assert.ok(befehle(hooksVon(h)).every((c) => c.includes("--konto k_aaaaaaaa")));

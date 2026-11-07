@@ -2,20 +2,21 @@
 // argv[2] = JSON { vault, support, methode, eingabe, punkt }. Weigert sich, außerhalb des Temp-Ordners zu arbeiten.
 import { realpathSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
+import { join, dirname, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const a = JSON.parse(process.argv[2]);
-const TEMP = realpathSync(tmpdir());
+const rp = realpathSync.native; // Windows: lange statt RUNNER~1-Kurznamen, wie die Pfade des Tests
+const TEMP = rp(tmpdir());
 for (const p of [a.vault, a.support]) {
-  if (!realpathSync(p).startsWith(TEMP + "/")) { console.error("Kind: Pfad außerhalb des Temp-Ordners: " + p); process.exit(9); }
+  if (!rp(p).startsWith(TEMP + sep)) { console.error("Kind: Pfad außerhalb des Temp-Ordners: " + p); process.exit(9); }
 }
 const wurzel = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "Ressourcen");
 const { oeffneVault } = await import(pathToFileURL(join(wurzel, "gemeinsam", "vault.mjs")).href);
 // pausePunkt: an diesem Punkt eine Datei anlegen und warten, bis <Datei>.weiter existiert (der Halter einer Sperre bleibt dann lebend stehen)
 const warte = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 const haken = { punkt: (n) => {
-  if (n === a.punkt) process.kill(process.pid, "SIGKILL");
+  if (n === a.punkt) { if (process.platform === "win32") process.reallyExit(137); /* kein SIGKILL unter Windows: abrupt beenden, ohne Aufräumen */ process.kill(process.pid, "SIGKILL"); }
   if (a.pausePunkt && n === a.pausePunkt) { writeFileSync(a.pauseDatei, ""); const t0 = Date.now(); while (!existsSync(a.pauseDatei + ".weiter") && Date.now() - t0 < 20000) warte(20); }
 } };
 const v = oeffneVault(a.vault, { support: a.support, dateiHaken: haken });

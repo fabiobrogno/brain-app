@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { tmp, pfad } from "./hilfe.mjs";
 
 for (const k of ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "CURSOR_CONFIG_DIR", "GEMINI_CLI_HOME", "XDG_CONFIG_HOME", "GIT_CONFIG_GLOBAL"]) delete process.env[k];
-process.env.HOME = tmp("brain-home-");
+process.env.HOME = tmp("brain-home-"); if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME || ""; 
 
 const { erzeugeKontingent } = await import(pfad("werkstatt", "kontingent.mjs"));
 const { hookBefehl, hookNameAusBefehl } = await import(pfad("kern", "pfade.mjs"));

@@ -6,7 +6,7 @@ import { writeFileSync, mkdirSync, realpathSync, readFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { createHash } from "node:crypto";
-import { join } from "node:path";
+import { join, basename } from "node:path";
 import { tmp, schreibe, pfad } from "./hilfe.mjs";
 import { baueTestUmgebung } from "./ki-konten-hilfe.mjs";
 
@@ -69,7 +69,7 @@ test("Ablagen: eine Notiz und eine Aufgabe der KI stehen mit Konto, Programm, Pf
   assert.deepEqual(en.pfade, [notiz]); assert.deepEqual(en.rueckgaengig, { art: "ablage-entfernen", pfad: notiz, hash: sha(s.offen, notiz) });
   assert.deepEqual(ea.pfade, [aufgabe]); assert.equal(ea.rueckgaengig.hash.length, 64);
   assert.equal(ec.rueckgaengig, undefined, "eine Statusänderung ist keine Ablage und lässt sich nicht so zurücknehmen"); assert.deepEqual(ec.pfade, [aufgabe]);
-  assert.equal(ea.vaultName, s.offen.split("/").pop());
+  assert.equal(ea.vaultName, basename(s.offen));
   const roh = readFileSync(A.ereignisDatei(s.support, A.kennungVault(s.offen)), "utf8");
   assert.ok(!roh.includes("Geheimtitel") || /[0-9]-nordlicht-geheimtitel/.test(roh), "kein Titel und kein Text im Protokoll (höchstens der Dateiname, der daraus entstand)");
   assert.ok(!roh.includes("steht hier im Text") && !roh.includes('"text":"Nordlicht'), roh);

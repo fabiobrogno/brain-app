@@ -2,7 +2,7 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, appendFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 // BRAIN_WURZEL: alternative Wurzel mit Ressourcen/werkstatt (z. B. fester Backend-Stand), sonst dieses Repo
 const wurzel = process.env.BRAIN_WURZEL || join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -22,11 +22,21 @@ export async function starteServer(vault, { vertraut = true, kern = "", umgebung
   const support = vorgabe || mkdtempSync(join(tmpdir(), "brain-ui-support-"));
   if (vault && vertraut) await erteileVertrauen(vault, support);
   return new Promise((ok, nein) => {
-    const p = spawn(process.execPath, [join(wurzel, "Ressourcen/werkstatt/entwicklung.mjs"), vault || "-", "0"],
-      { stdio: ["ignore", "pipe", "pipe"], env: { ...(umgebung || process.env), BRAIN_APP_SUPPORT: support, BRAIN_TESTMODUS: "1", BRAIN_VAULT: "", KORTEX_KERN_PFAD: kern } }); // BRAIN_VAULT leer: ohne Vault-Argument nie der Vault aus der Umgebung des Entwicklers
+    const env = { ...(umgebung || process.env), BRAIN_APP_SUPPORT: support, BRAIN_TESTMODUS: "1", BRAIN_VAULT: "", KORTEX_KERN_PFAD: kern }; // BRAIN_VAULT leer: ohne Vault-Argument nie der Vault aus der Umgebung des Entwicklers
+    if (umgebung && process.platform === "win32") {
+      // Windows: node liest das Home aus USERPROFILE (nicht HOME), und node.exe/git.exe brauchen die Systemvariablen; eine ausdrücklich gebaute Umgebung bekommt beides (macOS/Linux unverändert)
+      if (env.HOME && !env.USERPROFILE) env.USERPROFILE = env.HOME;
+      for (const k of ["SystemRoot", "SYSTEMROOT", "SystemDrive", "windir", "ComSpec", "PATHEXT", "TEMP", "TMP"]) if (env[k] === undefined && process.env[k] !== undefined) env[k] = process.env[k];
+    }
+    const p = spawn(process.execPath, [join(wurzel, "Ressourcen/werkstatt/entwicklung.mjs"), vault || "-", "0"], { stdio: ["ignore", "pipe", "pipe"], env });
     let puffer = "";
     const frist = setTimeout(() => nein(new Error("Server startet nicht: " + puffer)), 10000);
-    const lies = (d) => { puffer += d; const m = /Bereit: (http:\/\/127\.0\.0\.1:\d+\/)/.exec(puffer); if (m) { clearTimeout(frist); ok({ url: m[1], support, stopp: () => p.kill() }); } };
+    let adresse = "";
+    const lies = (d) => {
+      // Plattform-Probe: KORTEX_SERVERLOG=<Datei> hält die Ausgabe der Werkstatt je Server fest (Ursachen roter Windows-Tests), sonst nichts
+      if (process.env.KORTEX_SERVERLOG) { try { appendFileSync(process.env.KORTEX_SERVERLOG, String(d).split("\n").filter(Boolean).map((z) => `[${adresse || "start"}] ${z}\n`).join("")); } catch { /* egal */ } }
+      puffer += d; const m = /Bereit: (http:\/\/127\.0\.0\.1:\d+\/)/.exec(puffer); if (m) { adresse = m[1]; clearTimeout(frist); ok({ url: m[1], support, stopp: () => p.kill() }); }
+    };
     p.stdout.on("data", lies); p.stderr.on("data", lies);
     p.on("exit", (c) => nein(new Error("Server beendet: " + c + " " + puffer)));
   });

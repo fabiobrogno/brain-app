@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { tmp, schreibe, pfad } from "./hilfe.mjs";
 
 for (const k of ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "CURSOR_CONFIG_DIR", "GEMINI_CLI_HOME", "XDG_CONFIG_HOME", "GIT_CONFIG_GLOBAL"]) delete process.env[k];
-process.env.HOME = tmp("brain-home-");
+process.env.HOME = tmp("brain-home-"); if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME || ""; 
 
 const K = await import(pfad("gemeinsam", "ki-konten.mjs"));
 const { erzeugeHandler } = await import(pfad("werkstatt", "handler.mjs"));
@@ -80,7 +80,7 @@ test("GET ändert ki-konten.json nie (Hash vorher/nachher); ein neu erkanntes Ko
     r = await rufe("GET", "/api/ki/konten");
     assert.equal(r.j.zustand, "ok");
     assert.equal(r.j.konten.length, 1, "das neue Konto steht noch nicht in der Liste");
-    assert.deepEqual(r.j.neu.map((k) => k.ordner.replace(/^.*\//, "")), [".claude-b"], "… sondern wird nur als neu gemeldet");
+    assert.deepEqual(r.j.neu.map((k) => k.ordner.replace(/^.*[\\/]/, "")), [".claude-b"], "… sondern wird nur als neu gemeldet");
     assert.equal(r.j.vaults.find((v) => v.pfad === v2).neueKonten, "gesperrt", "ein Vault, der noch nicht in der Liste steht, gilt als gesperrt — ohne einen Eintrag zu schreiben");
   }
   assert.equal(listenHash(support), h0, "ki-konten.json unverändert");

@@ -3,8 +3,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, existsSync, statSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, basename } from "node:path";
 import { tmp, pfad } from "./hilfe.mjs";
+import { modus } from "./attrappe.mjs";
 
 const A = await import(pfad("gemeinsam", "aktivitaet.mjs"));
 const neu = () => { const support = tmp("akt-support-"), vault = tmp("akt-vault-"); return { support, vault, kennung: A.kennungVault(vault) }; };
@@ -17,7 +18,7 @@ test("Ein Ereignis wird als eine JSON-Zeile geschrieben und wieder gelesen (Zeit
   assert.ok(e && /^a_[0-9a-z]+_[0-9a-f]{6}$/.test(e.id));
   const datei = A.ereignisDatei(support, kennung);
   assert.equal(readFileSync(datei, "utf8").trim().split("\n").length, 1);
-  assert.equal((statSync(datei).mode & 0o777), 0o600, "nur für den Nutzer lesbar");
+  assert.equal(modus(datei, 0o600), 0o600, "nur für den Nutzer lesbar");
   const [l] = A.leseEreignisse(support, kennung);
   assert.equal(l.v, 1); assert.equal(l.art, "ablage-aufgabe"); assert.equal(l.vault, kennung); assert.equal(l.konto, "k_0123abcd"); assert.equal(l.programm, "claude");
   assert.equal(l.wer, "Claude Code · Privat"); assert.equal(l.vaultName, "Kortex"); assert.deepEqual(l.pfade, ["05_aufgaben/2026-10-31-x.md"]);
@@ -28,7 +29,7 @@ test("Ein Ereignis wird als eine JSON-Zeile geschrieben und wieder gelesen (Zeit
 test("Die Kennung ist der Hash des echten Pfads: stabil, 16 Hex, je Vault verschieden", () => {
   const a = neu(), b = neu();
   assert.match(a.kennung, /^[0-9a-f]{16}$/); assert.equal(A.kennungVault(a.vault), a.kennung); assert.notEqual(a.kennung, b.kennung);
-  assert.equal(A.kennungVault(a.vault), A.kennungVault(join(a.vault, "..", a.vault.split("/").pop())), "auch über einen anderen Weg zum selben Ordner");
+  assert.equal(A.kennungVault(a.vault), A.kennungVault(join(a.vault, "..", basename(a.vault))), "auch über einen anderen Weg zum selben Ordner");
 });
 
 test("Begrenzung: unbekannte Art wird verworfen; Text, Pfade, Konto und Schlüsselformen werden bereinigt — nie ein Geheimnis im Protokoll", () => {

@@ -6,7 +6,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync, unlinkSync, symlinkSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmp, schreibe, repo, g, pfad } from "./hilfe.mjs";
-process.env.HOME = tmp("brain-home-");          // os.homedir() liest $HOME: git liest keine echte ~/.gitconfig
+process.env.HOME = tmp("brain-home-"); if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME; /* Windows: os.homedir() liest USERPROFILE */          // os.homedir() liest $HOME: git liest keine echte ~/.gitconfig
 process.env.GIT_CONFIG_NOSYSTEM = "1";          // und keine System-Konfiguration
 
 const { HttpFehler } = await import(pfad("gemeinsam", "basis.mjs"));
@@ -82,11 +82,13 @@ test("Verlauf: Zähler plus/geaendert/geloescht, Zeilen, Umbenennung (von), Stat
 
 test("Verlauf: Leerzeichen, Umlaute, Tab, „->“ und Zeilenumbruch im Dateinamen, Binärdatei, Umbenennung mit Sonderzeichen", async () => {
   const d = neuesRepo();
-  const namen = ["mit Leerzeichen.md", "Übung äöü.md", "ta\tb.md", "a -> b.md", "zeile\numbruch.md"];
+  const WIN = process.platform === "win32"; // Tab, Zeilenumbruch und „>“ sind in Windows-Dateinamen verboten
+  const neuerName = WIN ? "ü neu x.md" : "ü neu -> x.md";
+  const namen = WIN ? ["mit Leerzeichen.md", "Übung äöü.md"] : ["mit Leerzeichen.md", "Übung äöü.md", "ta\tb.md", "a -> b.md", "zeile\numbruch.md"];
   const dateien = Object.fromEntries(namen.map((n) => [n, `${n.length}\n`]));
   dateien["binär.dat"] = Buffer.from([0, 1, 2, 255, 0, 98, 105, 110]);
   commitAm(d, "2026-10-19T10:00:00Z", "Namen", dateien);
-  gd(d, null, "mv", "Übung äöü.md", "ü neu -> x.md");
+  gd(d, null, "mv", "Übung äöü.md", neuerName);
   commitAm(d, "2026-10-19T11:00:00Z", "Umbenannt");
   const r = await log(d);
   const n = nachricht(r, "Namen");
@@ -94,10 +96,10 @@ test("Verlauf: Leerzeichen, Umlaute, Tab, „->“ und Zeilenumbruch im Dateinam
   assert.ok(n.dateien.every((x) => x.status === "A"));
   const bin = n.dateien.find((x) => nfc(x.pfad) === nfc("binär.dat"));
   assert.deepEqual([bin.plus, bin.minus], [0, 0], "Binärdatei: 0/0");
-  assert.equal(n.zeilenPlus, 5, "nur die fünf Textdateien (je eine Zeile)");
+  assert.equal(n.zeilenPlus, namen.length, "nur die Textdateien (je eine Zeile)");
   const u = nachricht(r, "Umbenannt");
   assert.equal(u.dateien.length, 1);
-  assert.deepEqual([u.dateien[0].status, nfc(u.dateien[0].von), nfc(u.dateien[0].pfad)], ["R", nfc("Übung äöü.md"), nfc("ü neu -> x.md")]);
+  assert.deepEqual([u.dateien[0].status, nfc(u.dateien[0].von), nfc(u.dateien[0].pfad)], ["R", nfc("Übung äöü.md"), nfc(neuerName)]);
   assert.deepEqual([u.plus, u.geaendert, u.geloescht], [0, 1, 0]);
 });
 
@@ -277,7 +279,7 @@ test("Verlauf: mehr als 300 Dateien je Commit werden gekappt, Zähler und dateie
 
 // ───────────────────────────── Remote hinzufügen ─────────────────────────────
 
-const bareRepo = (zweig = "main") => { const b = tmp("brain-v2bare-"); g(b, "init", "-q", "--bare", "-b", zweig); return b; };
+const bareRepo = (zweig = "main") => { const b = tmp("brain-v2bare-").split("\\").join("/"); /* Windows: Adresse mit Slashes */ g(b, "init", "-q", "--bare", "-b", zweig); return b; };
 const remotesVon = (d) => g(d, "remote").trim();
 const tempRefs = (d) => g(d, "for-each-ref", "refs/brain-studio").trim();
 const kopf = (d) => g(d, "rev-parse", "HEAD").trim();
@@ -468,7 +470,7 @@ test("Remote: Zeitüberschreitung (hängender Server) → 504 mit Alltagsmeldung
   writeFileSync(hang, "#!/bin/sh\nexec 2>/dev/null\nexec /bin/sleep 10\n"); chmodSync(hang, 0o755);
   const a = repo();
   const alt = process.env.GIT_SSH_COMMAND;
-  process.env.GIT_SSH_COMMAND = hang;
+  process.env.GIT_SSH_COMMAND = hang.split("\\").join("/"); // Windows: Git ruft es über sh auf
   try {
     const t0 = Date.now();
     const e = await wirft(remoteHinzufuegen(a, "ssh://git@example.invalid/team/x.git", { limit: 500 }));
@@ -511,7 +513,7 @@ test("Remote: Wettlauf — bekommt der Server zwischen Prüfung und Senden Neues
   schreibe(k, "dazwischen.md", "# b\n"); g(k, "add", "--", "dazwischen.md"); g(k, "commit", "-q", "-m", "dazwischen");
   const dazwischen = kopf(k);
   const haken = join(a, ".git", "hooks", "pre-push");
-  writeFileSync(haken, `#!/bin/sh\nunset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE\ngit -C "${k}" push -q origin HEAD:main >/dev/null 2>&1\nexit 0\n`);
+  writeFileSync(haken, `#!/bin/sh\nunset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE\ngit -C "${k.split("\\").join("/")}" push -q origin HEAD:main >/dev/null 2>&1\nexit 0\n`);
   chmodSync(haken, 0o755);
   const e = await wirft(remoteHinzufuegen(a, bare, { vertraut: true })); // der pre-push-Haken läuft nur mit Vertrauen (Vertrauen v2, §8)
   assert.equal(e.status, 409);

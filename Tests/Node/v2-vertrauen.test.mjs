@@ -6,9 +6,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, chmodSync, symlinkSync, statSync, appendFileSync, utimesSync } from "node:fs";
-import { join } from "node:path";
+import { join, delimiter } from "node:path";
 import { tmp, schreibe, repo, g, pfad, kernAttrappe, echt } from "./hilfe.mjs";
-process.env.HOME = tmp("brain-home-");          // os.homedir() liest $HOME: keine echte ~/.gitconfig
+import { legeProgramm, nurUnix } from "./attrappe.mjs";
+const fw = (p) => p.split("\\").join("/"); // Windows: Git ruft Programme der Konfiguration über sh auf — Pfade mit Slashes
+process.env.HOME = tmp("brain-home-"); if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME; /* Windows: os.homedir() liest USERPROFILE */          // os.homedir() liest $HOME: keine echte ~/.gitconfig
 process.env.GIT_CONFIG_NOSYSTEM = "1";          // und keine System-Konfiguration
 
 const { HttpFehler } = await import(pfad("gemeinsam", "basis.mjs"));
@@ -30,7 +32,7 @@ const aufruf = (h) => async (methode, p, daten, query) => {
 // ───────────────────────────── Git ohne Vertrauen ─────────────────────────────
 
 const { git, gitUmgebung } = await import(pfad("gemeinsam", "git.mjs"));
-const skript = (inhalt) => { const p = join(tmp("brain-skript-"), "s.sh"); writeFileSync(p, `#!/bin/sh\n${inhalt}\n`); chmodSync(p, 0o755); return p; };
+const skript = (inhalt) => { const p = join(tmp("brain-skript-"), "s.sh"); writeFileSync(p, `#!/bin/sh\n${inhalt}\n`); chmodSync(p, 0o755); return fw(p); };
 const konfig = (d, text) => appendFileSync(join(d, ".git", "config"), text); // roh angehängt: so kommt eine fremde .git/config an
 const mitSupport = (d, support = neuerSupport(), extra = {}) => oeffneVault(d, { support, ...extra });
 const filterKonfig = (marke) => `[filter "probe"]\n\tclean = "sh -c 'touch ${marke}; cat'"\n`; // ohne Anführungszeichen risse „;“ den Wert als Kommentar ab
@@ -70,7 +72,7 @@ test("Härtung: gitUmgebung — GIT_EDITOR und GIT_SEQUENCE_EDITOR sind „:“;
 
 test("Härtung: ext::-Transport ist bei jedem Aufruf aus (protocol.ext.allow=never), auch wenn die Vault-Konfiguration ihn erlaubt", async () => {
   const d = repo();
-  const marke = join(tmp("brain-marke-"), "EXT");
+  const marke = fw(join(tmp("brain-marke-"), "EXT"));
   konfig(d, "[protocol \"ext\"]\n\tallow = always\n");
   const r = await git(d, ["ls-remote", `ext::sh -c "touch ${marke}" x`]);
   assert.notEqual(r.code, 0); assert.equal(existsSync(marke), false);
@@ -78,7 +80,7 @@ test("Härtung: ext::-Transport ist bei jedem Aufruf aus (protocol.ext.allow=nev
 
 test("Hooks: in einem vertrauten Vault laufen nur .git/hooks und die Hooks des Kerns; ein Hook-Ordner im Arbeitsbaum (core.hooksPath=.tools/git-hooks) läuft nie — auch nicht, wenn ein Abgleich ihn austauscht; ohne Vertrauen ist Git ganz gesperrt", () => echt(async () => {
   const d = repo();
-  const marke = join(tmp("brain-marke-"), "HOOK");
+  const marke = fw(join(tmp("brain-marke-"), "HOOK"));
   const hook = (rel, name) => { schreibe(d, rel, `#!/bin/sh\necho ${name} >> '${marke}'\nexit 0\n`); chmodSync(join(d, rel), 0o755); };
   hook(".git/hooks/pre-commit", "x"); hook(".tools/git-hooks/pre-commit", "y");
   const kern = kernAttrappe({ "git-hooks/pre-commit": `#!/bin/sh\necho kern >> '${marke}'\nexit 0\n` });
@@ -115,7 +117,7 @@ test("Hooks: in einem vertrauten Vault laufen nur .git/hooks und die Hooks des K
 }));
 
 test("Programm-Einstellung, die in den Arbeitsbaum zeigt (filter.clean, merge.driver … mit Pfad im Vault): Git bleibt gesperrt, auch im vertrauten Vault; eine Einstellung mit Programm aus dem PATH nicht", () => echt(async () => {
-  const marke = join(tmp("brain-marke-"), "FILTER");
+  const marke = fw(join(tmp("brain-marke-"), "FILTER"));
   const d = repo();
   schreibe(d, ".tools/clean.sh", `#!/bin/sh\ntouch '${marke}'\ncat\n`); chmodSync(join(d, ".tools/clean.sh"), 0o755);
   schreibe(d, ".gitattributes", "*.md filter=probe\n");
@@ -135,7 +137,7 @@ test("Programm-Einstellung, die in den Arbeitsbaum zeigt (filter.clean, merge.dr
 
 test("Git gesperrt: ohne Vertrauen → status 200 { repo, gesperrt, grund }, übrige Routen 409 { gitGesperrt }, nichts läuft (auch der Filter aus .git/config nicht); nach dem Vertrauen normal", () => echt(async () => {
   const d = repo();
-  const marke = join(tmp("brain-marke-"), "FILTER");
+  const marke = fw(join(tmp("brain-marke-"), "FILTER"));
   schreibe(d, ".gitattributes", "*.md filter=probe\n"); g(d, "add", "--", ".gitattributes"); g(d, "commit", "-q", "-m", "Attribute");
   konfig(d, filterKonfig(marke));
   schreibe(d, "a.md", "# a\n");
@@ -169,7 +171,7 @@ test("Git gesperrt: ohne Vertrauen → status 200 { repo, gesperrt, grund }, üb
 // mit eigenem Schlüssel) und die des Vaults; unser BatchMode-Befehl ersetzt nur, wo keine gesetzt ist (Befunde V1/B2, Review Studio v2).
 test("SSH: ohne Vertrauen startet kein ssh; mit Vertrauen gilt die globale core.sshCommand des Nutzers und die aus dem Vault", () => echt(async () => {
   const marken = tmp("brain-marke-");
-  const markeGlobal = join(marken, "GLOBAL-SSH"), markeLokal = join(marken, "LOKAL-SSH");
+  const markeGlobal = fw(join(marken, "GLOBAL-SSH")), markeLokal = fw(join(marken, "LOKAL-SSH"));
   const sshGlobal = skript(`echo lief >> '${markeGlobal}'\nexit 1`), sshLokal = skript(`echo lief >> '${markeLokal}'\nexit 1`);
   const globalDatei = join(tmp("brain-gcfg-"), "gitconfig");
   writeFileSync(globalDatei, `[core]\n\tsshCommand = ${sshGlobal}\n[user]\n\tname = T\n\temail = t@example.org\n`);
@@ -217,7 +219,7 @@ test("Notiz-Index: ohne Vertrauen nur Dateizeiten und kein Git-Aufruf, nach dem 
   schreibe(d, "a.md", "# A\n");
   g(d, "add", "--", "a.md");
   execFileSync("git", ["commit", "-q", "-m", "alt"], { cwd: d, env: { ...process.env, GIT_AUTHOR_DATE: "2020-01-01T10:00:00Z", GIT_COMMITTER_DATE: "2020-01-01T10:00:00Z" } });
-  const marke = join(tmp("brain-marke-"), "FILTER");
+  const marke = fw(join(tmp("brain-marke-"), "FILTER"));
   konfig(d, filterKonfig(marke));
   const v = mitSupport(d);
   let n = (await v.notizen()).notizen.find((x) => x.pfad === "a.md");
@@ -231,7 +233,7 @@ test("Notiz-Index: ohne Vertrauen nur Dateizeiten und kein Git-Aufruf, nach dem 
 test("MCP: brain_verlauf in einem nicht vertrauten Vault → Hinweis statt Verlauf, ohne Git-Start", () => echt(async () => {
   const { bearbeite } = await import(pfad("mcp", "brain-mcp.mjs"));
   const d = repo();
-  const marke = join(tmp("brain-marke-"), "FILTER");
+  const marke = fw(join(tmp("brain-marke-"), "FILTER"));
   konfig(d, filterKonfig(marke));
   const v = mitSupport(d);
   const a = await bearbeite(v, { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "brain_verlauf", arguments: { pfad: "start.md" } } });
@@ -251,8 +253,8 @@ const { realpathSync } = await import("node:fs");
 // Attrappe für `claude` (NIE das echte `claude mcp add/remove`): Zustand in einer Datei (Zeile 1 Befehl, Zeile 2 Argumente), jeder Aufruf im Log.
 // `mcp get` gibt im Format von Claude Code aus — samt einem „Geheimnis“ im Environment, das nie in einer Antwort stehen darf.
 function fakeClaude({ haengt = false } = {}) {
-  const bin = tmp("brain-bin-"), zustand = join(bin, "zustand.txt"), log = join(bin, "aufrufe.log"), pids = join(bin, "pids.txt");
-  writeFileSync(join(bin, "claude"), `#!/bin/sh
+  const bin = tmp("brain-bin-"), zustand = fw(join(bin, "zustand.txt")), log = fw(join(bin, "aufrufe.log")), pids = fw(join(bin, "pids.txt"));
+  legeProgramm(join(bin, "claude"), `#!/bin/sh
 echo "$*" >> '${log}'
 case "$1 $2" in
   "mcp get")
@@ -271,13 +273,12 @@ case "$1 $2" in
 esac
 exit 3
 `);
-  chmodSync(join(bin, "claude"), 0o755);
   const aufrufe = () => (existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : []);
   return { bin, zustand, log, pids, aufrufe };
 }
 async function mitClaude(bin, fn) {
   const alt = { PATH: process.env.PATH, EXTRA: process.env.BRAIN_CLAUDE_EXTRA };
-  process.env.PATH = `${bin}:${alt.PATH}`; process.env.BRAIN_CLAUDE_EXTRA = "";
+  process.env.PATH = `${bin}${delimiter}${alt.PATH}`; process.env.BRAIN_CLAUDE_EXTRA = "";
   try { return await fn(); } finally { process.env.PATH = alt.PATH; if (alt.EXTRA === undefined) delete process.env.BRAIN_CLAUDE_EXTRA; else process.env.BRAIN_CLAUDE_EXTRA = alt.EXTRA; }
 }
 const lebt = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
@@ -317,7 +318,7 @@ test("MCP verbinden: nicht vorhanden → eintragen; gleicher Befehl → schonVer
   });
 });
 
-test("MCP verbinden: Gesamtfrist — hängendes claude wird samt Prozessgruppe beendet, 504 mit Alltagsmeldung, nichts verändert", async () => {
+test("MCP verbinden: Gesamtfrist — hängendes claude wird samt Prozessgruppe beendet, 504 mit Alltagsmeldung, nichts verändert", { skip: nurUnix("Prozessgruppen und PIDs aus sh-Skripten (MSYS-PID, kein SIGTERM) gibt es unter Windows nicht") }, async () => {
   const d = kitVault();
   const mcp = tmp("brain-mcpdir-"); schreibe(mcp, "brain-mcp.mjs", "// fake\n");
   const c = fakeClaude({ haengt: true });
@@ -447,9 +448,9 @@ const haengtSkript = (pidDatei, vorspann = "") => skript(`${vorspann}echo $$ >> 
 const pidsVon = (datei) => readFileSync(datei, "utf8").trim().split("\n").filter(Boolean).map(Number);
 const bareRepo = () => { const b = tmp("brain-bare-"); g(b, "init", "-q", "--bare", "-b", "main"); return b; };
 
-test("Frist git/commit: hängender Hook → Prozessgruppe beendet, Index wie vorher, keine Sperrdatei, 504 mit Alltagsmeldung; danach geht es wieder", async () => {
+test("Frist git/commit: hängender Hook → Prozessgruppe beendet, Index wie vorher, keine Sperrdatei, 504 mit Alltagsmeldung; danach geht es wieder", { skip: nurUnix("Prozessgruppen und PIDs aus sh-Skripten (MSYS-PID, kein SIGTERM) gibt es unter Windows nicht") }, async () => {
   const d = repo();
-  const pids = join(tmp("brain-pid-"), "pids.txt");
+  const pids = fw(join(tmp("brain-pid-"), "pids.txt"));
   const hook = join(d, ".git/hooks/pre-commit");
   writeFileSync(hook, `#!/bin/sh\necho $$ >> '${pids}'\nsleep 30 &\necho $! >> '${pids}'\nwait\n`); chmodSync(hook, 0o755);
   schreibe(d, "a.md", "# a\n"); schreibe(d, "b.md", "# b\n");
@@ -471,9 +472,9 @@ test("Frist git/commit: hängender Hook → Prozessgruppe beendet, Index wie vor
   assert.match(ok.sha, /^[0-9a-f]{40}$/);
 });
 
-test("Frist git/remote ist eine GESAMTfrist: langsamer Server-Haken (Prozessgruppe wird beendet), origin wird zurückgenommen, 504", async () => {
+test("Frist git/remote ist eine GESAMTfrist: langsamer Server-Haken (Prozessgruppe wird beendet), origin wird zurückgenommen, 504", { skip: nurUnix("Prozessgruppen und PIDs aus sh-Skripten (MSYS-PID, kein SIGTERM) gibt es unter Windows nicht") }, async () => {
   const bare = bareRepo();
-  const pids = join(tmp("brain-pid-"), "pids.txt");
+  const pids = fw(join(tmp("brain-pid-"), "pids.txt"));
   const h = join(bare, "hooks", "pre-receive");
   writeFileSync(h, `#!/bin/sh\necho $$ >> '${pids}'\nsleep 30 &\necho $! >> '${pids}'\nwait\n`); chmodSync(h, 0o755);
   const a = repo();
@@ -489,11 +490,11 @@ test("Frist git/remote ist eine GESAMTfrist: langsamer Server-Haken (Prozessgrup
 });
 const gitRemoteDirekt = async (a, bare, limit) => (await import(pfad("gemeinsam", "git.mjs"))).remoteHinzufuegen(a, bare, { limit });
 
-test("Frist Abgleich: Gesamtfrist (limitGesamt) beendet auch einen hängenden Push samt Gruppe; 504", async () => {
+test("Frist Abgleich: Gesamtfrist (limitGesamt) beendet auch einen hängenden Push samt Gruppe; 504", { skip: nurUnix("Prozessgruppen und PIDs aus sh-Skripten (MSYS-PID, kein SIGTERM) gibt es unter Windows nicht") }, async () => {
   const bare = bareRepo();
   const a = repo(); g(a, "remote", "add", "origin", bare);
   g(a, "push", "-q", "-u", "origin", "main");
-  const pids = join(tmp("brain-pid-"), "pids.txt");
+  const pids = fw(join(tmp("brain-pid-"), "pids.txt"));
   const h = join(bare, "hooks", "pre-receive");
   writeFileSync(h, `#!/bin/sh\necho $$ >> '${pids}'\nsleep 30 &\necho $! >> '${pids}'\nwait\n`); chmodSync(h, 0o755);
   schreibe(a, "neu.md", "# neu\n"); g(a, "add", "--", "neu.md"); g(a, "commit", "-q", "-m", "lokal");
@@ -511,7 +512,7 @@ test("Frist Abgleich: Gesamtfrist (limitGesamt) beendet auch einen hängenden Pu
 function haengenderMerge() {
   const bare = bareRepo();
   const a = repo(); g(a, "remote", "add", "origin", bare);
-  const treiber = join(tmp("brain-treiber-"), "langsam.sh"), pids = join(tmp("brain-pid-"), "pids.txt");
+  const treiber = fw(join(tmp("brain-treiber-"), "langsam.sh")), pids = fw(join(tmp("brain-pid-"), "pids.txt"));
   writeFileSync(treiber, `#!/bin/sh\necho $$ >> '${pids}'\nsleep 30 &\necho $! >> '${pids}'\nwait\nexit 1\n`); chmodSync(treiber, 0o755);
   schreibe(a, ".gitattributes", "*.md merge=langsam\n");
   g(a, "config", "merge.langsam.driver", `${treiber} %O %A %B`);
@@ -531,7 +532,7 @@ const nichtsHalbes = async ({ a, pids, kopf }) => {
   assert.equal(g(a, "status", "--porcelain").trim(), "", "nichts Halbes im Vault (auch keine .merge_file_*-Hilfsdateien)");
 };
 
-test("Frist Abgleich: hängender Merge-Treiber → Frist je Git-Aufruf, 504 mit Alltagsmeldung, Merge zurückgenommen, keine Hilfsdateien", async () => {
+test("Frist Abgleich: hängender Merge-Treiber → Frist je Git-Aufruf, 504 mit Alltagsmeldung, Merge zurückgenommen, keine Hilfsdateien", { skip: nurUnix("Prozessgruppen und PIDs aus sh-Skripten (MSYS-PID, kein SIGTERM) gibt es unter Windows nicht") }, async () => {
   const s = haengenderMerge();
   const v = mitSupport(s.a, neuerSupport(), { gitLimitSync: 4000 });
   v.vertrauen(true); // merge.*.driver sperrt Git, solange dem Vault nicht vertraut ist
@@ -543,7 +544,7 @@ test("Frist Abgleich: hängender Merge-Treiber → Frist je Git-Aufruf, 504 mit 
   await nichtsHalbes(s);
 });
 
-test("SIGTERM der Werkstatt mitten im Abgleich-Merge: Git-Prozesse beendet, Merge zurückgenommen (kein MERGE_HEAD, keine Sperre, keine Hilfsdateien), Ende ohne Verzögerung", async () => {
+test("SIGTERM der Werkstatt mitten im Abgleich-Merge: Git-Prozesse beendet, Merge zurückgenommen (kein MERGE_HEAD, keine Sperre, keine Hilfsdateien), Ende ohne Verzögerung", { skip: nurUnix("Prozessgruppen und PIDs aus sh-Skripten (MSYS-PID, kein SIGTERM) gibt es unter Windows nicht") }, async () => {
   const s = haengenderMerge();
   const support = neuerSupport();
   oeffneVault(s.a, { support }).vertrauen(true); // merge.*.driver sperrt Git, solange dem Vault nicht vertraut ist

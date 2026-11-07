@@ -65,6 +65,7 @@ export function repo(praefix = "brain-git-") {
   const d = tmp(praefix);
   g(d, "init", "-q", "-b", "main");
   g(d, "config", "user.name", "T"); g(d, "config", "user.email", "t@example.org");
+  g(d, "config", "core.autocrlf", "false");   // Windows: git for Windows setzt sonst global autocrlf=true (CRLF in Erwartungen)
   schreibe(d, "start.md", "# Start\n");
   g(d, "add", "--", "start.md"); g(d, "commit", "-q", "-m", "Start");
   return d;

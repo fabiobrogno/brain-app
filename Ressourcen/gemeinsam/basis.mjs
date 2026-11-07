@@ -146,7 +146,8 @@ export function absoluterPfad(name) {
   let treffer = null;
   for (const d of new Set(bereinigterPfad(pfad).split(delimiter).filter(Boolean))) {
     // Windows: ausführbare Dateien heißen git.exe, node.exe …; der nackte Name existiert dort nicht
-    const p = [join(d, name), ...(process.platform === "win32" ? [join(d, `${name}.exe`)] : [])].find(ausfuehrbar);
+    // Windows: .exe zuerst; ein Skript gleichen Namens ohne Endung (sh-Skript) läuft dort nicht und zählt nicht
+    const p = (process.platform === "win32" ? [join(d, `${name}.exe`)] : [join(d, name)]).find(ausfuehrbar);
     if (p) { treffer = p; break; }
   }
   if (programmCache.size > 50) programmCache.clear();

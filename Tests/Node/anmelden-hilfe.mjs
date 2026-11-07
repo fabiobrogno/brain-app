@@ -5,10 +5,11 @@
 //          "keine-adresse" (gibt nichts Brauchbares aus, wartet ewig) · "ohne-konto" (Exit 0, aber nicht angemeldet) · "nur-ausgabe" (Claude: Adresse nur auf stdout, ohne BROWSER) · "umbrochen" (Claude: Adresse auf stdout bei 80 Spalten umbrochen, danach BROWSER mit der ganzen Adresse)
 //   warteAufCode: true → Claude wartet auf eine Zeile an stdin (merkt sie sich NUR in `<bin>/code-erhalten.txt`, der Test prüft damit, dass sie ankam)
 // Aufgezeichnet wird in `<bin>/aufrufe.jsonl` (Argumente), `<bin>/umgebung-<pid>.json` (alle Umgebungsnamen und die Konto-Variablen) und `<bin>/pids.json` (Haupt- und Kindprozess).
-import { writeFileSync, chmodSync, realpathSync } from "node:fs";
+import { writeFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { tmp } from "./hilfe.mjs";
+import { legeProgramm } from "./attrappe.mjs";
 
 export const GEHEIM = "sk-ant-oat01-GEHEIMER-TESTSCHLUESSEL-0123456789";
 export const GEHEIM_DATEI = "GEHEIMER-INHALT-DER-ANMELDEDATEI-9876";
@@ -16,7 +17,7 @@ export const GEHEIM_DATEI = "GEHEIMER-INHALT-DER-ANMELDEDATEI-9876";
 const SKRIPT = (bin, temp) => `#!${process.execPath}
 const fs = require("node:fs"); const path = require("node:path"); const cp = require("node:child_process");
 const BIN = ${JSON.stringify(bin)}, TEMP = ${JSON.stringify(temp)}, GEHEIM = ${JSON.stringify(GEHEIM)}, GEHEIM_DATEI = ${JSON.stringify(GEHEIM_DATEI)};
-const PROGRAMM = path.basename(process.argv[1]);
+const PROGRAMM = path.basename(process.argv[1]).replace(/\.(?:cjs|exe)$/, ""); // Windows: Skript heißt claude.cjs
 const VAR = PROGRAMM === "claude" ? "CLAUDE_CONFIG_DIR" : "CODEX_HOME";
 const sz = JSON.parse(fs.readFileSync(path.join(BIN, "szenario.json"), "utf8"));
 const args = process.argv.slice(2).join(" ");
@@ -51,6 +52,7 @@ const URL_CLAUDE = "https://claude.ai/oauth/authorize?code=true&client_id=testke
       if (process.env.BROWSER) { try { cp.execFileSync(process.env.BROWSER, [URL_CLAUDE], { stdio: "ignore" }); } catch {} }
     }
     else if (process.env.BROWSER) { try { cp.execFileSync(process.env.BROWSER, [URL_CLAUDE], { stdio: "ignore" }); } catch {} }
+    else console.log("If the browser didn't open, visit: " + URL_CLAUDE); // ohne BROWSER (Windows: Kortex setzt dort kein BROWSER-Skript) gibt Claude die Adresse aus
   } else {
     console.log("Welcome to Codex\\n\\nFollow these steps to sign in with ChatGPT using device code authorization:\\n\\n1. Open this link in your browser and sign in to your account\\n   https://auth.openai.com/codex/device\\n\\n2. Enter this one-time code (expires in 15 minutes)\\n   ABCD-12345\\n\\nDevice codes are a common phishing target. Never share this code.\\n");
     console.error("access_token=" + GEHEIM); console.log("refresh_token: " + GEHEIM);
@@ -72,6 +74,6 @@ export function platzhalter(szenario = {}) {
   const temp = realpathSync(tmpdir());
   const setze = (neu) => writeFileSync(join(bin, "szenario.json"), JSON.stringify({ modus: "ok", ...neu }));
   setze(szenario);
-  for (const name of ["claude", "codex"]) { writeFileSync(join(bin, name), SKRIPT(bin, temp)); chmodSync(join(bin, name), 0o755); }
+  for (const name of ["claude", "codex"]) legeProgramm(join(bin, name), SKRIPT(bin, temp));
   return { bin, setze };
 }

@@ -4,11 +4,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, chmodSync, statSync, readdirSync, realpathSync, renameSync, cpSync, symlinkSync } from "node:fs";
-import { join, dirname, basename } from "node:path";
+import { join, dirname, basename, sep, delimiter } from "node:path";
 import { tmp, schreibe, repo, g, pfad, echt as echtHilfe } from "./hilfe.mjs";
+import { legeProgramm, programmPfad, modus } from "./attrappe.mjs";
+const fw = (p) => p.split("\\").join("/"); // Windows: Adressen und sh-Pfade mit Slashes
 
 const HOME = tmp("brain-home-");
-process.env.HOME = HOME;
+process.env.HOME = HOME; if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME; /* Windows: os.homedir() liest USERPROFILE */
 delete process.env.GIT_CONFIG_GLOBAL; delete process.env.XDG_CONFIG_HOME;
 process.env.GIT_CONFIG_NOSYSTEM = "1";
 
@@ -65,7 +67,7 @@ test("erlaube: schreibt { seit, ordner, quelle } mit Modus 0600 atomar, erhält 
   assert.deepEqual(Object.keys(m).sort(), [realpathSync(a), realpathSync(b)].sort());
   assert.deepEqual(Object.keys(m[realpathSync(a)]).sort(), ["ordner", "quelle", "seit"]);
   assert.equal(m[realpathSync(a)].ordner, V.ordnerKennung(a)); assert.equal(m[realpathSync(a)].quelle, "bestaetigt"); assert.equal(m[realpathSync(b)].quelle, "angelegt");
-  assert.equal(statSync(join(s, "vertrauen.json")).mode & 0o777, 0o600);
+  assert.equal(modus(join(s, "vertrauen.json"), 0o600), 0o600);
   assert.deepEqual(readdirSync(s).filter((n) => n.endsWith(".tmp")), [], "keine halben Dateien");
   assert.equal(V.widerrufe(a, { support: s }).erlaubt, false);
   assert.deepEqual(Object.keys(merker(s)), [realpathSync(b)], "der andere Vault bleibt vertraut");
@@ -80,7 +82,7 @@ test("Ordner am selben Pfad gelöscht und neu angelegt (auch mit gleichem Inhalt
   V.erlaube(d, { support: s });
   const link = join(tmp("brain-verweis-"), "verweis"); symlinkSync(d, link);
   assert.equal(V.pruefeVertrauen(link, { support: s }).erlaubt, true, "über einen Verweis");
-  assert.equal(V.pruefeVertrauen(d.replace("/brain-vault-", "/BRAIN-VAULT-"), { support: s }).erlaubt, process.platform === "darwin", "Groß/klein (nur auf dem case-insensitiven APFS derselbe Ordner)");
+  assert.equal(V.pruefeVertrauen(d.replace(`${sep}brain-vault-`, `${sep}BRAIN-VAULT-`), { support: s }).erlaubt, process.platform === "darwin" || process.platform === "win32", "Groß/klein (nur auf dem case-insensitiven APFS/NTFS derselbe Ordner)");
   rmSync(link);
   const alt = d + ".alt"; renameSync(d, alt); cpSync(alt, d, { recursive: true });
   assert.equal(V.pruefeVertrauen(d, { support: s }).erlaubt, false, "neuer Ordner, gleicher Pfad");
@@ -161,7 +163,7 @@ test("Migration: alte Einträge { seit, ordner, code } für Vaults aus der Liste
   assert.equal(V.pruefeVertrauen(ersetzt, { support: s }).erlaubt, false, "Ordner ersetzt: wieder die Frage");
   assert.equal(V.pruefeVertrauen(veraendert, { support: s }).erlaubt, false, "Code seit der Zustimmung verändert: wieder die Frage");
   assert.equal(V.migriereAltesVertrauen({ support: s, vaultPfade: [inListe] }), 0, "zweimal ist dasselbe wie einmal");
-  assert.equal(statSync(join(s, "vertrauen.json")).mode & 0o777, 0o600);
+  assert.equal(modus(join(s, "vertrauen.json"), 0o600), 0o600);
   assert.equal(V.migriereAltesVertrauen({ support: support(), vaultPfade: [inListe] }), 0, "ohne Merker nichts zu tun");
 }));
 
@@ -187,7 +189,7 @@ test("Migration beim Start der Werkstatt: ein Vault aus vaults.json mit altem Me
 
 const OPT = { heute: "2026-10-24" };
 const bareMitInhalt = () => {
-  const bare = tmp("brain-bare-");
+  const bare = fw(tmp("brain-bare-"));
   g(bare, "init", "-q", "--bare", "-b", "main");
   const w = repo("brain-quelle-");
   schreibe(w, "brain.config.json", "{}\n"); g(w, "add", "--", "brain.config.json"); g(w, "commit", "-q", "-m", "Konfig");
@@ -333,10 +335,10 @@ test("MCP: brain_kontext liefert ohne Vertrauen keine Vault-Inhalte (nur den Hin
 test("Marken-Test: ohne Vertrauen startet die Werkstatt kein git (kein Schein-git im PATH läuft) — Lesen, Suchen, Ansehen gehen; mit Vertrauen schon", echt(async () => {
   const bin = tmp("brain-bin-"), marke = join(tmp("brain-marke-"), "GIT");
   const echtGit = execFileSyncPfad("git");
-  writeFileSync(join(bin, "git"), `#!/bin/sh\necho "$*" >> '${marke}'\nexec '${echtGit}' "$@"\n`); chmodSync(join(bin, "git"), 0o755);
+  legeProgramm(join(bin, "git"), `#!/bin/sh\necho "$*" >> '${fw(marke)}'\nexec '${fw(echtGit)}' "$@"\n`);
   const s = support(), d = repo(); // der Aufbau läuft mit dem echten git; erst danach kommt das Schein-git in den PATH
   schreibe(d, "brain.config.json", "{}\n"); schreibe(d, "b.md", "# B\nKaffee\n");
-  const alt = process.env.PATH; process.env.PATH = `${bin}:${alt}`;
+  const alt = process.env.PATH; process.env.PATH = `${bin}${delimiter}${alt}`;
   try {
     const rufe = aufruf(erzeugeHandler({ vault: d, vaultOptionen: { support: s } }));
     const lesen = [["GET", "/api/info"], ["GET", "/api/baum"], ["GET", "/api/datei", undefined, "pfad=b.md"], ["GET", "/api/suche", undefined, "q=Kaffee"], ["GET", "/api/notizen"], ["GET", "/api/gesundheit"],
@@ -362,7 +364,7 @@ test("Marken-Test: ohne Vertrauen startet die Werkstatt kein git (kein Schein-gi
 
 test("Werkstatt-Verdrahtung: Prüfung vor dem Speichern (hooks-install) und Hintergrunddienst lassen sich ohne Vertrauen nicht einschalten (409 nicht-vertraut)", echt(async () => {
   const s = support(), d = repo(); schreibe(d, "brain.config.json", "{}\n");
-  const starter = join(tmp("brain-starter-"), "kortex"); writeFileSync(starter, "#!/bin/sh\necho gestartet >> \"$0.log\"\nexit 0\n"); chmodSync(starter, 0o755);
+  const starter = programmPfad(legeProgramm(join(tmp("brain-starter-"), "kortex"), "#!/bin/sh\necho gestartet >> \"$0.log\"\nexit 0\n"));
   const rufe = aufruf(erzeugeHandler({ vault: d, vaultOptionen: { support: s }, starter }));
   for (const was of ["git", "dienst"]) {
     const r = await rufe("POST", "/api/kern/verdrahten", { was, an: true });
@@ -376,6 +378,6 @@ test("Werkstatt-Verdrahtung: Prüfung vor dem Speichern (hooks-install) und Hint
 }));
 
 function execFileSyncPfad(name) {
-  for (const dir of (process.env.PATH || "").split(":")) { const p = join(dir, name); try { if (statSync(p).isFile()) return p; } catch { /* weiter */ } }
+  for (const dir of (process.env.PATH || "").split(delimiter)) { const p = join(dir, process.platform === "win32" ? `${name}.exe` : name); try { if (statSync(p).isFile()) return p; } catch { /* weiter */ } }
   return name;
 }

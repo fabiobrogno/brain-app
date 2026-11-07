@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync, existsSync, symlinkSync, linkSync, chmodSy
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { tmp, schreibe, repo, g, pfad, kernAttrappe, brainVault, echt } from "./hilfe.mjs";
+import { legeProgramm, programmPfad, nurUnix } from "./attrappe.mjs";
 
 const { oeffneVault, HttpFehler } = await import(pfad("gemeinsam", "vault.mjs"));
 const { erzeugeHandler, findeClaude } = await import(pfad("werkstatt", "handler.mjs"));
@@ -14,7 +15,7 @@ const wirftSync = (f) => { try { f(); } catch (e) { assert.ok(e instanceof HttpF
 const committet = (d) => g(d, "show", "--name-only", "--format=", "HEAD").trim().split("\n").sort();
 
 // ---------- 1. W-2: Pfade sind Dateinamen, keine Muster ----------
-test("Commit: Pfade sind wörtlich (notiz[1].md, *.md, :(glob)) — nie mehr Dateien als gewählt", async () => {
+test("Commit: Pfade sind wörtlich (notiz[1].md, *.md, :(glob)) — nie mehr Dateien als gewählt", { skip: nurUnix("Dateinamen mit * und : gibt es unter Windows nicht") }, async () => {
   const d = repo();
   for (const n of ["notiz[1].md", "notiz1.md", "*.md", "a.md", ":(glob)x.md", "x.md"]) schreibe(d, n, `# ${n}\n`);
   const v = oeffneVault(d);
@@ -272,10 +273,10 @@ test("Kindprozesse bekommen keine NODE_*/ELECTRON_*-Umgebung; Test-Schalter nur 
   const e = kindUmgebung({ X: "1" });
   assert.equal(e.X, "1"); assert.equal(e.PATH, process.env.PATH);
 
-  const bin = tmp("brain-bin-"); schreibe(bin, "claude", "#!/bin/sh\n"); chmodSync(join(bin, "claude"), 0o755);
-  assert.notEqual(findeClaude({ PATH: "", BRAIN_CLAUDE_EXTRA: bin }), join(bin, "claude"), "ohne Testmodus ignoriert");
-  assert.equal(findeClaude({ PATH: "", BRAIN_CLAUDE_EXTRA: bin, BRAIN_TESTMODUS: "1" }), join(bin, "claude"));
-  assert.notEqual(findeClaude({ PATH: "", BRAIN_CLAUDE_EXTRA: bin, BRAIN_TESTMODUS: "0" }), join(bin, "claude"));
+  const bin = tmp("brain-bin-"); legeProgramm(join(bin, "claude"), "#!/bin/sh\n"); const claude = programmPfad(join(bin, "claude"));
+  assert.notEqual(findeClaude({ PATH: "", BRAIN_CLAUDE_EXTRA: bin }), claude, "ohne Testmodus ignoriert");
+  assert.equal(findeClaude({ PATH: "", BRAIN_CLAUDE_EXTRA: bin, BRAIN_TESTMODUS: "1" }), claude);
+  assert.notEqual(findeClaude({ PATH: "", BRAIN_CLAUDE_EXTRA: bin, BRAIN_TESTMODUS: "0" }), claude);
 });
 
 test("Git-Kindprozesse: wörtliche Pathspecs gesetzt, NODE_OPTIONS nicht durchgereicht (Hook sieht es)", async () => {

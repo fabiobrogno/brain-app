@@ -6,7 +6,7 @@ import { writeFileSync, readFileSync, rmSync, chmodSync, existsSync } from "node
 import { join } from "node:path";
 import { tmp, pfad } from "./hilfe.mjs";
 
-process.env.HOME = tmp("brain-home-"); // keine echte ~/.gitconfig
+process.env.HOME = tmp("brain-home-"); if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME; /* Windows: os.homedir() liest USERPROFILE */ // keine echte ~/.gitconfig
 process.env.GIT_CONFIG_NOSYSTEM = "1";
 const TOKEN = "gho_GEHEIMESTOKEN9876543210zyxwvuTSRQ";
 
@@ -16,7 +16,7 @@ const { erzeugeHandler } = await import(pfad("werkstatt", "handler.mjs"));
 const BUND = tmp("brain-bund-");
 const BUNDDATEI = join(BUND, "schluesselbund.txt");
 process.env.FAKE_BUND = BUNDDATEI;
-const HELPER = join(BUND, "git-credential-fake");
+const HELPER = join(BUND, "git-credential-fake").split("\\").join("/"); // Windows: Git ruft den Helper über sh auf, Backslashes gingen dort verloren
 // Der Helper wertet die Eingabe von `credential fill` aus: nur protocol=https + host=github.com bekommt das Konto, und jede Anfrage
 // wird mitgeschrieben (FAKE_EINGABE) — so ist belegt, WAS Kortex dem Schlüsselbund schickt (und dass dabei kein Passwort mitgeht).
 const EINGABE = join(BUND, "eingaben.txt");

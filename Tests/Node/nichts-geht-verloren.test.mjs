@@ -7,6 +7,7 @@ import { readFileSync, writeFileSync, existsSync, statSync, readdirSync, chmodSy
 import { join } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 import { tmp, schreibe, repo, g, pfad, echt } from "./hilfe.mjs";
+import { modus } from "./attrappe.mjs";
 
 const { zusammenfuehren: drei, baue, istWahl } = await import(pfad("gemeinsam", "merge3.mjs"));
 const { oeffneVault, HttpFehler } = await import(pfad("gemeinsam", "vault.mjs"));
@@ -239,8 +240,8 @@ test("Entwurf: Datei 0600 im Support-Ordner mit Pfad, Basis-Hash, Zeit und Text;
   const ordner = join(support, "entwuerfe", kennung(d));
   const dateien = readdirSync(ordner);
   assert.equal(dateien.length, 1); assert.match(dateien[0], /^[0-9a-f]{32}\.json$/);
-  assert.equal(statSync(join(ordner, dateien[0])).mode & 0o777, 0o600);
-  assert.equal(statSync(ordner).mode & 0o777, 0o700);
+  assert.equal(modus(join(ordner, dateien[0]), 0o600), 0o600);
+  assert.equal(modus(ordner, 0o700), 0o700);
   const e = entwurf.leseEntwurf(support, d, "10_notizen/a.md");
   assert.deepEqual([e.pfad, e.basisHash, e.text, e.zeit], ["10_notizen/a.md", hash, "# ungespeichert\n", r.zeit]);
   assert.equal(entwurf.listeEntwuerfe(support, d).length, 1);
@@ -283,7 +284,7 @@ test("Ablage: 0600, gleiche Fassung nicht doppelt, Kennung wird geprüft", () =>
   const b = ablage.legeAb(support, d, { pfad: "a.md", inhalt: "eins\n", grund: "fremd-eingearbeitet", quelle: "Claude Code" });
   assert.equal(a.id, b.id); assert.equal(b.neu, false);
   const ordner = join(support, "fassungen", kennung(d));
-  for (const n of readdirSync(ordner)) assert.equal(statSync(join(ordner, n)).mode & 0o777, 0o600, n);
+  for (const n of readdirSync(ordner)) assert.equal(modus(join(ordner, n), 0o600), 0o600, n);
   assert.equal(ablage.lese(support, d, a.id).quelle, "Claude Code");
   for (const id of ["../x", "f_abc", "", null, "f_aaaaaa_zzzzzzzz"]) assert.equal(wirft(() => ablage.lese(support, d, id)).status, 404, String(id));
 });

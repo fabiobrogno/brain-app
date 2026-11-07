@@ -59,7 +59,8 @@ const istOrdner = (p) => { try { return statSync(p).isDirectory(); } catch { ret
 const kuerze = (s, n = 4000) => { const t = String(s || "").trim(); return t.length > n ? t.slice(0, n) + "\n… (gekürzt)" : t; };
 
 // Pfadvergleiche segmentweise und ohne Groß/klein und Unicode-Form (APFS): so kann kein Abschneiden von Strings schiefgehen.
-const teile = (p) => String(p).split("/").filter(Boolean).map(falte);
+const TRENNER = process.platform === "win32" ? /[\\/]/ : "/"; // Windows: Pfade mit „\“ und „/“
+const teile = (p) => String(p).split(TRENNER).filter(Boolean).map(falte);
 const istGleich = (p, basis) => { const a = teile(p), b = teile(basis); return a.length === b.length && b.every((s, i) => s === a[i]); };
 const hatPraefix = (p, basis) => { const a = teile(p), b = teile(basis); return a.length >= b.length && b.every((s, i) => s === a[i]); };
 const istUnter = (p, basis) => teile(p).length > teile(basis).length && hatPraefix(p, basis);
@@ -127,7 +128,7 @@ function pruefeRegeln(p, home, support) {
   const verbot = (m) => { throw new HttpFehler(403, m); };
   const system = "Dieser Ordner gehört dem System und kann kein Vault sein. Wähle einen Ordner in deinem Benutzerordner, zum Beispiel unter „Dokumente“.";
   const segs = teile(p);
-  if (!segs.length || (segs.length === 1 && (segs[0] === "users" || segs[0] === "volumes"))) verbot(system);
+  if (!segs.length || (segs.length === 1 && (segs[0] === "users" || segs[0] === "volumes" || (process.platform === "win32" && /^[a-z]:$/.test(segs[0]))))) verbot(system);
   if (istGleich(p, home)) verbot("Dein Benutzerordner selbst ist als Vault zu groß. Lege dafür einen eigenen Ordner an, zum Beispiel „Kortex“.");
   // auch die Vorfahren der Systemordner (/private, /private/var, /var): ein Vault dort würde das System enthalten
   for (const s of SYSTEM_PRAEFIXE) if (istUnterOderGleich(p, s) || istUnterOderGleich(s, p)) verbot(system);
@@ -140,7 +141,7 @@ function pruefeRegeln(p, home, support) {
   if (segs.includes("node_modules")) verbot("In einem „node_modules“-Ordner kann kein Vault liegen.");
   if (segs.some((s) => s.endsWith(".app"))) verbot("In einem Programm (.app) kann kein Vault liegen.");
   if (istUnter(p, home)) {
-    const rest = p.split("/").filter(Boolean).slice(teile(home).length);
+    const rest = p.split(TRENNER).filter(Boolean).slice(teile(home).length);
     if (rest.some((s) => s.startsWith("."))) verbot("Versteckte Ordner (mit einem Punkt am Anfang) sind kein guter Ort für einen Vault. Wähle einen sichtbaren Ordner.");
   }
 }

@@ -6,9 +6,10 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, mkdirSync, symlinkSync, statSync, readdirSync, existsSync, realpathSync, chmodSync, lstatSync } from "node:fs";
 import { join } from "node:path";
 import { tmp, schreibe, pfad } from "./hilfe.mjs";
+import { nurUnix, modus } from "./attrappe.mjs";
 
 for (const k of ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "CURSOR_CONFIG_DIR", "GEMINI_CLI_HOME", "XDG_CONFIG_HOME", "GIT_CONFIG_GLOBAL"]) delete process.env[k];
-process.env.HOME = tmp("brain-home-");
+process.env.HOME = tmp("brain-home-"); if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME || ""; 
 
 const K = await import(pfad("gemeinsam", "ki-konten.mjs"));
 const S = await import(pfad("gemeinsam", "claude-sperre.mjs"));
@@ -30,8 +31,8 @@ const aufruf = (h) => async (methode, p, daten) => {
   return { ...r, j };
 };
 async function mitHome(home, fn) {
-  const alt = process.env.HOME; process.env.HOME = home;
-  try { return await fn(); } finally { process.env.HOME = alt; }
+  const alt = process.env.HOME; process.env.HOME = home; if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME || ""; 
+  try { return await fn(); } finally { process.env.HOME = alt; if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME || "";  }
 }
 function aufbau({ konten = [["a", HOOKS], ["b", {}]], vaults = 2 } = {}) {
   const home = tmp("brain-home-"), s = tmp("brain-support-");
@@ -49,7 +50,7 @@ const nurEinst = (liste) => (liste || []).filter(istEinst);
 const kontoVon = (j, p) => j.konten.find((k) => k.ordner.endsWith(p.split("/").pop()));
 
 // ───────────────────────────── Regeln: Pfadformen ─────────────────────────────
-test("Regel: absoluter Pfad mit //, gitignore- und Regelzeichen werden maskiert, Leerzeichen und Umlaute bleiben, beide Pfadformen bei Symlinks", () => {
+test("Regel: absoluter Pfad mit //, gitignore- und Regelzeichen werden maskiert, Leerzeichen und Umlaute bleiben, beide Pfadformen bei Symlinks", { skip: nurUnix("Symlinks brauchen unter Windows besondere Rechte") }, () => {
   assert.equal(S.regelPfad("/Users/x/Vault"), "//Users/x/Vault");
   assert.equal(S.regelPfad("/Users/x/Mein [Vault] (a)*?"), "//Users/x/Mein \\[Vault\\] (a)\\*\\?", "Klammern bleiben unmaskiert (die Doku maskiert sie nicht)");
   assert.equal(S.regelPfad("/Users/x/a\\b"), "//Users/x/a\\\\b");
@@ -120,7 +121,7 @@ test("Sperren mit claudeSperre schreibt Read- und Edit-Verbot in die settings.js
     const d = K.liesKonten(s).daten;
     assert.deepEqual(d.eingetragen[b.id].claudeDeny[v1], soll);
     assert.deepEqual(d.eingetragen[b.id].claudeDeny["@einstellungen"], einst, "auch die Einstellungsregeln sind als von Kortex vermerkt");
-    assert.equal((statSync(K.kontenPfad(s)).mode & 0o777), 0o600);
+    assert.equal(modus(K.kontenPfad(s), 0o600), 0o600);
     // Zustand in der Anzeige
     r = await rufe("POST", "/api/ki/konten/abgleich");
     assert.equal(kontoVon(r.j, pb).schutz.vaults[v1], "aktiv");
@@ -172,7 +173,7 @@ test("Eine Regel, die der Nutzer schon selbst hat, gehört ihm: Kortex vermerkt 
   });
 });
 
-test("settings.json als Symlink (Dotfiles): das Ziel wird geändert, der Link bleibt, Rechte bleiben; Sicherung neben dem Pfad", async () => {
+test("settings.json als Symlink (Dotfiles): das Ziel wird geändert, der Link bleibt, Rechte bleiben; Sicherung neben dem Pfad", { skip: nurUnix("Symlinks brauchen unter Windows besondere Rechte") }, async () => {
   const { home, profile: [pa], vs: [v1], rufe } = aufbau({ konten: [["a", {}]], vaults: 1 });
   const ziel = join(tmp("brain-dotfiles-"), "settings-echt.json");
   writeFileSync(ziel, JSON.stringify({ model: "x" }, null, 2) + "\n"); chmodSync(ziel, 0o640);
@@ -186,7 +187,7 @@ test("settings.json als Symlink (Dotfiles): das Ziel wird geändert, der Link bl
     assert.ok(lstatSync(link).isSymbolicLink(), "der Link bleibt ein Link");
     assert.equal(JSON.parse(readFileSync(ziel, "utf8")).model, "x");
     assert.equal(ohneEinst(JSON.parse(readFileSync(ziel, "utf8")).permissions.deny).length, 2);
-    assert.equal(statSync(ziel).mode & 0o777, 0o640, "die Rechte der bisherigen Datei bleiben");
+    assert.equal(modus(ziel, 0o640), 0o640, "die Rechte der bisherigen Datei bleiben");
     assert.equal(baks(pa).length, 1);
     await rufe("PUT", "/api/ki/zugriff", { konto: a.id, vault: v1, stufe: "lesen" });
     assert.ok(lstatSync(link).isSymbolicLink());
