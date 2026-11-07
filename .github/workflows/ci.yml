@@ -8,7 +8,7 @@ name: CI
 #  - ui-test       Playwright in 6 Shards mit je 2 Workern, nur Chromium (Headless-Shell), Browser-Cache.
 #  - node-test     Node-Tests (Tests/Node).
 #  - swift         macOS (knapp, daher nur 1 Job): Build + Tests + Kern-Manifest + Vorschau.
-#  - plattform-probe  Windows und Linux (Paket W0): Linux ist Tor (in ci-ok), Windows: Node-Tests sind Tor, Kern und Oberfläche nur Messung.
+#  - plattform-probe  Windows und Linux (Paket W0): Linux ist Tor (in ci-ok), Windows: Node-Tests und die Vertrauensschranke vor git (Kern-Tests test-git-sicher-node, test-vertrauen, test-werkzeug) sind Tor, der übrige Kern und die Oberfläche nur Messung.
 #  - electron-probe  Electron-Hülle (Paket W2a): Linux ist Tor (in ci-ok), Windows nur Messung (blockiert nichts).
 #  - ci-ok         EIN Status für alles: grün, wenn jeder nötige Job grün war oder bewusst übersprungen wurde.
 #  - dev-artefakt  nur auf main: Kortex.app als Artefakt.
@@ -220,7 +220,7 @@ jobs:
 
   # Plattform-Probe (Paket W0, docs/plaene/plattformen-windows-linux.md): dieselben Node-, Kern- und Oberflächentests auf Windows und Linux.
   # Linux ist ein TOR (der Job steht in `needs` von ci-ok, die Schritte laufen dort ohne continue-on-error). Windows ist MESSUNG: dort läuft jeder Schritt
-  # mit continue-on-error (ausgenommen die Node-Tests: Tor), der Job bleibt grün; Zahlen und rote Tests stehen in der Zusammenfassung des Laufs (Schritt „Bericht“) und als Artefakt.
+  # mit continue-on-error (ausgenommen die Node-Tests und die Vertrauensschranke vor git: Tor), der Job bleibt grün; Zahlen und rote Tests stehen in der Zusammenfassung des Laufs (Schritt „Bericht“) und als Artefakt.
   # Sobald Windows durchgehend grün ist, entfällt die Bedingung `matrix.os == 'windows-latest'` an den drei Schritten.
   plattform-probe:
     needs: aenderungen
@@ -257,6 +257,13 @@ jobs:
         run: |
           (cd Werkzeuge/symbole && npm ci --ignore-scripts --no-audit --no-fund) || true
           bash scripts/teste-node.sh --test-concurrency=4 2>&1 | tee "$RUNNER_TEMP/lauf.log"
+          exit "${PIPESTATUS[0]}"
+      # Vertrauensschranke vor git (Paket fix/sicherheitsschranke-windows): ein nicht vertrauter Vault startet nie ein Programm aus seiner Repo-Konfiguration. Auch unter Windows ein
+      # TOR (kein continue-on-error): dort läuft die Schranke als git-sicher.mjs hinter einem .exe-Starter (Kern/windows-start.*). Die Dateien laufen danach noch einmal im Kern-Lauf (Messung).
+      - name: Vertrauensschranke (Tor)
+        if: matrix.bereich == 'kern'
+        run: |
+          bash Tests/Kern/unit.sh Tests/Kern/test-git-sicher-node.mjs Tests/Kern/test-vertrauen.mjs Tests/Kern/test-werkzeug.mjs 2>&1 | tee "$RUNNER_TEMP/lauf-vertrauen.log"
           exit "${PIPESTATUS[0]}"
       - name: Kern-Unit-Tests
         id: lauf-kern
@@ -299,7 +306,9 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: plattform-probe-${{ matrix.os }}-${{ matrix.bereich }}
-          path: ${{ runner.temp }}/lauf.log
+          path: |
+            ${{ runner.temp }}/lauf.log
+            ${{ runner.temp }}/lauf-vertrauen.log
           retention-days: 14
           if-no-files-found: ignore
       # Ursachen roter Oberflächentests: Seitenabbild beim Fehler (error-context.md) und Ausgabe der Werkstatt (nur Windows, klein)

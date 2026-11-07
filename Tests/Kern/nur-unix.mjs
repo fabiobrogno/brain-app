@@ -1,5 +1,6 @@
 // Tests/Kern/nur-unix.mjs — Tests, die ein Unix-Werkzeug voraussetzen (Shell-Skript git-sicher, /bin/sh, POSIX-Signale), unter Windows sauber überspringen
-// (Plattform-Paket „Windows grün“). Windows startet git direkt (werkzeug.mjs#gitBefehl), dort gibt es kein git-sicher; Entsprechungen sind Folgeaufgabe W2.
+// (Plattform-Paket „Windows grün“). Die Vertrauensschranke selbst läuft auch unter Windows (git-sicher.mjs hinter einem .exe-Starter, test-git-sicher-node.mjs, test-vertrauen.mjs);
+// nur das Shell-Skript git-sicher und die Tests, die es unmittelbar aufrufen (test-git-sicher.mjs), bleiben Unix.
 // Benutzung: `import { testNurUnix as test } from "./nur-unix.mjs"` (ganze Datei) oder `test(name, { skip: nurUnix("Grund") }, fn)` (einzelner Test).
 import { test as echt } from "node:test";
 

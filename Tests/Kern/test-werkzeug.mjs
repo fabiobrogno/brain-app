@@ -1,4 +1,4 @@
-// test-werkzeug.mjs — gitBefehl(): git-sicher (macOS/Linux), MinGit-Ort oder "git" (win32); werkzeuge.git aus der Config zählt nie.
+// test-werkzeug.mjs — gitBefehl(): git-sicher (macOS/Linux), der .exe-Starter dafür (win32); werkzeuge.git aus der Config zählt nie.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, statSync } from "node:fs";
@@ -15,20 +15,18 @@ test("gitBefehl: macOS/Linux → git-sicher im Kern (absolut, ausführbar), nie 
   assert.ok(statSync(p).mode & 0o111, "git-sicher muss ausführbar sein");
 });
 
-test("gitBefehl: win32 ohne MinGit → 'git', mit MinGit → dessen absoluter Pfad", () => {
+test("gitBefehl: win32 → der Starter git-sicher.exe im Support-Ordner (nie 'git', nie MinGit direkt: die Schranke liegt davor); der echte git wird von git-sicher.mjs gesucht", () => {
   const home = mkdtempSync(join(tmpdir(), "wz-"));
-  assert.equal(gitBefehl({ plattform: "win32", home }), "git");
-  const mingit = join(home, ".brain-kit", "git", "cmd");
-  mkdirSync(mingit, { recursive: true });
-  writeFileSync(join(mingit, "git.exe"), "");
-  assert.equal(gitBefehl({ plattform: "win32", home }), join(mingit, "git.exe"));
+  const p = gitBefehl({ plattform: "win32", home, ohneVault: true });
+  assert.match(p.split("\\").join("/"), /\/git-sicher\/[^/]+\/git-sicher\.exe$/);
+  assert.notEqual(p, "git");
 });
 
 test("gitBefehl: werkzeuge.git aus der Vault-Config wird NIE benutzt (auch cfg-Argumente nicht)", () => {
   const home = mkdtempSync(join(tmpdir(), "wz-"));
   const cfg = { werkzeuge: { git: "/ein/anderer/git" } };
   assert.equal(gitBefehl({ cfg, plattform: "darwin", home }), join(KERN, "git-sicher"));
-  assert.equal(gitBefehl({ cfg, plattform: "win32", home }), "git");
+  assert.match(gitBefehl({ cfg, plattform: "win32", home, ohneVault: true }).split("\\").join("/"), /\/git-sicher\.exe$/);
   assert.equal(gitBefehl({ cfg: null, plattform: "darwin", home }), join(KERN, "git-sicher"));
   assert.equal(gitBefehl(), gitBefehl({ cfg: {} })); // Default-Parameter funktionieren ohne Argument
 });

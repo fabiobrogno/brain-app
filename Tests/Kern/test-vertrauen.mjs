@@ -3,11 +3,10 @@
 // Schein-git und ein Schein-claude schreiben eine Marke, falls sie je laufen. Kontrollen im vertrauten Vault beweisen, dass sie sonst liefen.
 // Die Suite setzt KORTEX_VAULT_VERTRAUT=alle; jeder Kindprozess hier entfernt es, damit die echte Prüfung (Merker im Support-Ordner) gilt.
 import { test } from "node:test";
-import { nurUnix } from "./nur-unix.mjs";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, mkdirSync, existsSync, chmodSync, cpSync, readFileSync, rmSync, readdirSync, realpathSync, symlinkSync, renameSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, delimiter } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync, execFileSync } from "node:child_process";
 
@@ -15,12 +14,38 @@ const KERN = fileURLToPath(new URL("..", import.meta.url));
 const FIXTURE = join(KERN, "tests", "fixture");
 const NODE = process.execPath;
 const V = await import(pathToFileURL(join(KERN, "vertrauen.mjs")).href);
+const { starterFuer } = await import(pathToFileURL(join(KERN, "windows-start.mjs")).href);
+const WIN = process.platform === "win32";
 
 function umgebung(extra = {}) {
   const e = { ...process.env, GIT_CONFIG_NOSYSTEM: "1" };
-  for (const k of Object.keys(e)) if (k.startsWith("GIT_") && k !== "GIT_CONFIG_NOSYSTEM") delete e[k];
+  for (const k of Object.keys(e)) if ((k.startsWith("GIT_") && k !== "GIT_CONFIG_NOSYSTEM") || k.startsWith("XDG_") || k === "CLAUDE_CONFIG_DIR" || k === "CODEX_HOME") delete e[k];
   delete e.KORTEX_VAULT_VERTRAUT; delete e.BRAIN_TESTMODUS; delete e.BRAIN_VAULT; delete e.BRAIN_GIT_PROGRAMM;
   return { ...e, ...extra };
+}
+
+// Das echte git: erstes git(.exe) im PATH (nur für den Aufbau der Schein-Programme; der Kern findet seins selbst).
+function findeGit() {
+  for (const d of String(process.env.PATH || "").split(delimiter)) {
+    const p = join(d, WIN ? "git.exe" : "git");
+    if (d && existsSync(p)) return p;
+  }
+  throw new Error("git nicht gefunden");
+}
+// Schein-git: schreibt "git <Argumente>" in die Marke und reicht an das echte git weiter. macOS/Linux: Shell-Skript. Windows: ein Starter (.exe, wie ihn der Kern selbst benutzt)
+// auf ein Node-Skript (windows-start.mjs) — Windows startet aus Node nur .exe, eine .cmd gälte nicht.
+function baueScheinGit(basis, marke, echtGit) {
+  if (!WIN) {
+    const p = join(basis, "git-schein");
+    writeFileSync(p, `#!/bin/sh\necho "git $*" >> '${marke}'\nexec '${echtGit}' "$@"\n`); chmodSync(p, 0o755);
+    return p;
+  }
+  const skript = join(basis, "git-schein.mjs");
+  writeFileSync(skript, `import { appendFileSync } from "node:fs"; import { spawnSync } from "node:child_process";
+appendFileSync(${JSON.stringify(marke)}, "git " + process.argv.slice(2).join(" ") + "\\n");
+const r = spawnSync(${JSON.stringify(echtGit)}, process.argv.slice(2), { stdio: "inherit", windowsHide: true });
+process.exitCode = r.status ?? 1;\n`);
+  return starterFuer("git-schein", { support: join(basis, "schein-support"), skript });
 }
 
 // Ein Vault mit Git-Verlauf, ein leerer Support-Ordner, ein Schein-git (schreibt eine Marke, leitet dann an das echte git weiter) und ein Schein-claude.
@@ -32,11 +57,11 @@ function neu() {
   const git = (...a) => execFileSync("git", ["-C", v, "-c", "user.name=T", "-c", "user.email=t@example.org", ...a], { encoding: "utf8", env: umgebung() });
   git("init", "-q", "-b", "main"); git("add", "--", "."); git("commit", "-q", "-m", "Start");
   const marke = join(basis, "MARKE.txt");
-  const echtGit = execFileSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).trim();
-  const scheinGit = join(basis, "git-schein"), scheinClaude = join(basis, "claude-schein.mjs");
-  writeFileSync(scheinGit, `#!/bin/sh\necho "git $*" >> '${marke}'\nexec '${echtGit}' "$@"\n`); chmodSync(scheinGit, 0o755);
+  const echtGit = findeGit();
+  const scheinClaude = join(basis, "claude-schein.mjs");
+  const scheinGit = baueScheinGit(basis, marke, echtGit);
   writeFileSync(scheinClaude, `import { appendFileSync } from "node:fs"; appendFileSync(${JSON.stringify(marke)}, "claude\\n"); console.log("{}");\n`);
-  const env = (extra = {}) => umgebung({ BRAIN_APP_SUPPORT: support, BRAIN_VAULT: v, BRAIN_GIT_PROGRAMM: scheinGit, BRAIN_CLAUDE: scheinClaude, KORTEX_KERN_UNSTABIL_ERLAUBT: "1", HOME: join(basis, "heim"), ...extra });
+  const env = (extra = {}) => umgebung({ BRAIN_APP_SUPPORT: support, BRAIN_VAULT: v, BRAIN_GIT_PROGRAMM: scheinGit, BRAIN_CLAUDE: scheinClaude, KORTEX_KERN_UNSTABIL_ERLAUBT: "1", HOME: join(basis, "heim"), USERPROFILE: join(basis, "heim"), ...extra });
   mkdirSync(join(basis, "heim"));
   return {
     basis, v, support, marke, env,
@@ -97,7 +122,7 @@ test("Testschalter KORTEX_VAULT_VERTRAUT=alle gilt nur zusammen mit einem Testfl
   assert.equal(V.alleVertraut({ BRAIN_TESTMODUS: "1" }), false);
 });
 
-test("Kontrolle: im vertrauten Vault laufen git, Pflege-KI-Suche und Hook — die Marke entsteht", { skip: nurUnix("Vertrauensschranke vor dem Programmstart (git-sicher/git-gesperrt, Shell-Skripte): Windows startet git direkt — Folgeaufgabe W2: dieselbe Schranke in Node") }, () => {
+test("Kontrolle: im vertrauten Vault laufen git, Pflege-KI-Suche und Hook — die Marke entsteht", () => {
   const s = neu(); s.vertraue("angelegt");
   const st = brain(s, ["status", "--json"]);
   assert.equal(st.status, 0, st.stderr);
@@ -170,7 +195,7 @@ test("wiki-guard: ohne Vertrauen lässt er alles durch (Exit 0), mit Vertrauen b
   assert.equal(hook(s, "wiki-guard", ein).status, 2, "mit Vertrauen: blockiert");
 });
 
-test("git-Hook pre-commit (Commit-Prüfung) hat ohne Vertrauen keine Wirkung und startet kein git; mit Vertrauen läuft sie", { skip: nurUnix("Vertrauensschranke vor dem Programmstart (git-sicher/git-gesperrt, Shell-Skripte): Windows startet git direkt — Folgeaufgabe W2: dieselbe Schranke in Node") }, () => {
+test("git-Hook pre-commit (Commit-Prüfung) hat ohne Vertrauen keine Wirkung und startet kein git; mit Vertrauen läuft sie", () => {
   const s = neu();
   writeFileSync(join(s.v, "n.md"), "n\n");
   execFileSync("git", ["-C", s.v, "add", "--", "n.md"], { env: umgebung() });
@@ -192,19 +217,22 @@ test("KI-Pflege: findeClaude liefert ohne Vertrauen nichts (auch nicht über BRA
   assert.match(frage(), /claude-schein/);
 });
 
-test("gitBefehl: ohne geprüften Vault oder ohne Vertrauen → git-gesperrt (Exit 126, startet nichts); mit Vertrauen → git-sicher; ohneVault → git-sicher", { skip: nurUnix("Vertrauensschranke vor dem Programmstart (git-sicher/git-gesperrt, Shell-Skripte): Windows startet git direkt — Folgeaufgabe W2: dieselbe Schranke in Node") }, () => {
+test("gitBefehl: ohne geprüften Vault oder ohne Vertrauen → git-gesperrt (Exit 126, startet nichts); mit Vertrauen → git-sicher; ohneVault → git-sicher", () => {
   const s = neu();
   const wahl = (code) => spawnSync(NODE, ["--input-type=module", "-e",
     `import { vaultPfad } from ${JSON.stringify(pathToFileURL(join(KERN, "pfade.mjs")).href)}; import { gitBefehl } from ${JSON.stringify(pathToFileURL(join(KERN, "werkzeug.mjs")).href)};
      ${code}`], { encoding: "utf8", env: s.env() }).stdout;
-  assert.equal(wahl(`process.stdout.write(gitBefehl());`), join(KERN, "git-gesperrt"), "kein Vault geprüft: gesperrt");
-  assert.equal(wahl(`vaultPfad(["", ""]); process.stdout.write(gitBefehl());`), join(KERN, "git-gesperrt"), "Vault nicht vertraut");
-  assert.equal(wahl(`process.stdout.write(gitBefehl({ ohneVault: true }));`), join(KERN, "git-sicher"));
+  // macOS/Linux: das Shell-Skript im Kern; Windows: der .exe-Starter im Support-Ordner (git-sicher.mjs / git-gesperrt.mjs dahinter)
+  const ist = (ausgabe, name, was) => (WIN ? assert.match(ausgabe, new RegExp(`[\\\\/]${name}\\.exe$`), was) : assert.equal(ausgabe, join(KERN, name), was));
+  ist(wahl(`process.stdout.write(gitBefehl());`), "git-gesperrt", "kein Vault geprüft: gesperrt");
+  ist(wahl(`vaultPfad(["", ""]); process.stdout.write(gitBefehl());`), "git-gesperrt", "Vault nicht vertraut");
+  ist(wahl(`process.stdout.write(gitBefehl({ ohneVault: true }));`), "git-sicher", "ohneVault");
+  const gesperrt = WIN ? wahl(`vaultPfad(["", ""]); process.stdout.write(gitBefehl());`) : join(KERN, "git-gesperrt");
   s.vertraue();
-  assert.equal(wahl(`vaultPfad(["", ""]); process.stdout.write(gitBefehl());`), join(KERN, "git-sicher"));
-  const g = spawnSync(join(KERN, "git-gesperrt"), ["-C", s.v, "status"], { encoding: "utf8" });
+  ist(wahl(`vaultPfad(["", ""]); process.stdout.write(gitBefehl());`), "git-sicher", "vertraut");
+  const g = spawnSync(gesperrt, ["-C", s.v, "status"], { encoding: "utf8", env: s.env() });
   assert.equal(g.status, 126); assert.match(g.stderr, /noch nicht als deiner bestätigt/);
-  assert.equal(spawnSync(join(KERN, "git-gesperrt"), ["--version"], { encoding: "utf8" }).status, 0);
+  assert.equal(spawnSync(gesperrt, ["--version"], { encoding: "utf8", env: s.env() }).status, 0);
 });
 
 test("Vertrauen entziehen (Eintrag löschen): der Kern sperrt sofort wieder — git, Hooks, Befehle", () => {
@@ -270,7 +298,7 @@ test("Session-Start- und Hinweis-Hooks speisen ohne Vertrauen nichts ein (keine 
   assert.equal(existsSync(join(s.v, "AGENTS.md")), false);
 });
 
-test("Arbeitsbäume des Tageslaufs (git worktree unter dem Cache) erben das Vertrauen ihres Vaults — sonst liefe die Commit-Prüfung der Pflege-Commits nicht; Fälschungen erben nichts", { skip: nurUnix("Vertrauensschranke vor dem Programmstart (git-sicher/git-gesperrt, Shell-Skripte): Windows startet git direkt — Folgeaufgabe W2: dieselbe Schranke in Node") }, () => {
+test("Arbeitsbäume des Tageslaufs (git worktree unter dem Cache) erben das Vertrauen ihres Vaults — sonst liefe die Commit-Prüfung der Pflege-Commits nicht; Fälschungen erben nichts", () => {
   const s = neu();
   const cache = join(s.basis, "cache"); mkdirSync(cache);
   const wt = join(cache, "lauf-1");
