@@ -2,9 +2,11 @@
 // Aufbau: Die Werkstatt (Ressourcen/werkstatt/werkstatt.mjs, dieselbe Datei wie in der Swift-App) läuft als KINDPROZESS und spricht das Zeilenprotokoll (bruecke.mjs).
 // Das Studio lädt über das eigene Schema `kortex://studio/` (protocol.handle → Brücke): kein Port, kein Token, kein Netzwerkweg zur Werkstatt. Die Seite sieht nur
 // `window.kortexHuelle` (preload.cjs); die Aktionen des Hüllen-Vertrags setzt aktionen.mjs um, geprüft wird im Hauptprozess.
-// Nicht in diesem Paket: Tray, Erfassen-Fenster, globale Kürzel, Installer, Updater (W2b/W2c, docs/plaene/plattformen-windows-linux.md).
-import { app, BrowserWindow, Menu, Notification, clipboard, dialog, ipcMain, nativeTheme, protocol, session, shell } from "electron";
+// Paket W2b: App-Menü (menue.mjs), Tray (tray.mjs), Schnell-Erfassen-Fenster (erfassen-fenster.mjs) mit globalem Kürzel (kuerzel.mjs), Mitteilungen (mitteilungen.mjs), App-Symbol (symbole.mjs),
+// durchscheinende Seitenleiste (glas.mjs). Nicht in diesem Paket: Installer, Updater, eigenes Node, Signatur (W2c, docs/plaene/plattformen-windows-linux.md).
+import { app, BrowserWindow, Menu, Notification, Tray, clipboard, dialog, globalShortcut, ipcMain, nativeImage, nativeTheme, protocol, session, shell } from "electron";
 import { appendFileSync, existsSync, mkdirSync, statSync } from "node:fs";
+import { release } from "node:os";
 import { dirname, join, isAbsolute } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { erzeugeAktionen, ASYNCHRON } from "./aktionen.mjs";
@@ -12,6 +14,14 @@ import { darfSchliessen, SKRIPT as SCHLIESSEN_SKRIPT } from "./schliessen.mjs";
 import { pruefeGitAsync } from "./git.mjs";
 import { starteBruecke, baueKindUmgebung, findeNode } from "./bruecke.mjs";
 import { SCHEMA, HOST, START_URL, istEigeneAdresse, externPruefen } from "./navigation.mjs";
+import { erzeugeGlobaleKuerzel, anzeigeText, acceleratorVon } from "./kuerzel.mjs";
+import { baueMenueVorlage } from "./menue.mjs";
+import { baueTrayVorlage, trayZustand, trayTitel } from "./tray.mjs";
+import { leseEinstellungen as leseMitteilungsEinstellungen, erzeugePlaner, erzeugeLeser, probeMitteilung } from "./mitteilungen.mjs";
+import { erzeugeErfassenFenster, antwortErfassen, ERFASSEN_HOST } from "./erfassen-fenster.mjs";
+import { hinweisFuerVault, pruefeEingabe, baueAnfrage, antwortAus, leseArt, merkeArt } from "./erfassen.mjs";
+import { leseAppSymbol, symbolPfade } from "./symbole.mjs";
+import { glasMoeglich, leseGlasWunsch, glasSkript } from "./glas.mjs";
 
 const HIER = dirname(fileURLToPath(import.meta.url));
 // Ressourcen des Repos (Studio, Werkstatt, gemeinsam): im Repo ../Ressourcen, im Paket (W2c) <resources>/Ressourcen
@@ -21,8 +31,19 @@ const { supportOrdner, beendeBaum } = await laden("gemeinsam/plattform.mjs");
 const { pruefeOrdner, gitInstallHinweis, leseEinrichtung, schreibeEinrichtung } = await laden("werkstatt/browser-ordner.mjs");
 const { absoluterGitPfad, kindUmgebung } = await laden("gemeinsam/basis.mjs");
 const { MAX_KOERPER } = await laden("werkstatt/handler.mjs"); // dieselbe Grenze wie die Werkstatt (nicht doppelt festgeschrieben)
+// W2b: Register und Logik der Tastenkürzel, Aktivitätsprotokoll, Kurzformen — dieselben Dateien wie Studio und Werkstatt, nichts doppelt
+const { ladeRegister, leseDatei: leseKuerzelDatei } = await laden("werkstatt/tastenkuerzel.mjs");
+const kuerzelLogik = await laden("gemeinsam/tastenkuerzel-logik.mjs");
+const { ART_SCHALTER, leseEreignisse, protokollKennungen, ereignisDatei } = await laden("gemeinsam/aktivitaet.mjs");
+const { ladeKatalog } = await laden("gemeinsam/ki-katalog.mjs");
+const { liesKurzformen } = await laden("gemeinsam/kurzformen.mjs");
 
 const ENTWICKLER = !app.isPackaged || process.env.KORTEX_ENTWICKLER === "1";
+// Testlauf (BRAIN_TESTMODUS) und Vorschau: wie in der Mac-App meldet die Hülle dann kein globales Kürzel an (es gehört der echten App); die Tests schalten es mit KORTEX_TEST_GLOBALE_KUERZEL=1 ausdrücklich ein
+const TESTMODUS = process.env.BRAIN_TESTMODUS === "1";
+const GLOBALE_KUERZEL = !process.env.KORTEX_VORSCHAU && (!TESTMODUS || process.env.KORTEX_TEST_GLOBALE_KUERZEL === "1");
+// Schließen des Hauptfensters: unter Windows läuft Kortex im Infobereich weiter (Tray, globales Kürzel, Mitteilungen), sonst beendet es die App (Linux: ob ein Tray sichtbar ist, weiß die App nicht)
+const IN_TRAY_SCHLIESSEN = process.env.KORTEX_SCHLIESSEN_IN_TRAY === "1" || (process.platform === "win32" && process.env.KORTEX_SCHLIESSEN_IN_TRAY !== "0");
 const JSON_KOPF = { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" };
 const SCHREIBEND = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const ERLAUBT = new Set(["GET", "HEAD", ...SCHREIBEND]);
@@ -55,7 +76,7 @@ const optionen = liesArgumente(process.argv.slice(1));
 
 protocol.registerSchemesAsPrivileged([{ scheme: SCHEMA, privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 
-let fenster = null, bruecke = null, endeLaeuft = false, schliessenFrei = false, schliessenLaeuft = false;
+let fenster = null, bruecke = null, endeLaeuft = false, schliessenFrei = false, schliessenLaeuft = false, beendet = false, gestartet = false;
 const abstuerze = [];
 
 // ───────────── Aktionen des Hüllen-Vertrags ─────────────
@@ -81,7 +102,11 @@ const aktionen = erzeugeAktionen({
     });
     return r.canceled || !r.filePaths?.length ? null : r.filePaths[0];
   },
-  mitteilung: ({ titel, text }) => { if (!Notification.isSupported()) return false; new Notification({ title: titel, body: text }).show(); return true; },
+  mitteilung: () => zeigeProbeMitteilung(),
+  statusAuffrischen: () => statusAuffrischen(),
+  kuerzel: { pruefeGlobal: (id, text) => kuerzel.pruefeGlobal(id, text), neuLesen: () => kuerzelNeuLesen() },
+  appSymbol: (name) => wendeAppSymbolAn(name),
+  fensterGlas: (an) => wendeGlasAn(an),
   darstellung: (quelle) => { nativeTheme.themeSource = quelle; },
   fensterTitel: (text) => { fenster?.setTitle(text || "Kortex"); },
   fensterZoom: () => { if (!fenster) return; if (fenster.isMaximized()) fenster.unmaximize(); else fenster.maximize(); },
@@ -91,6 +116,171 @@ const aktionen = erzeugeAktionen({
   ordner: { pruefeOrdner },
   git: { pruefen: () => pruefeGitAsync({ gitPfad: absoluterGitPfad, umgebung: kindUmgebung }), hinweis: () => gitInstallHinweis() },
 });
+
+// ───────────── W2b: Kürzel, Erfassen-Fenster, Menü, Tray, Mitteilungen, Symbol, Glas ─────────────
+const register = ladeRegister();
+const belegung = () => kuerzelLogik.wirksam(register, leseKuerzelDatei(support, register).ueberschrieben); // Register + eigene Kürzel (tastenkuerzel.json), wie die Werkstatt
+const kuerzel = erzeugeGlobaleKuerzel({ register, logik: kuerzelLogik, globalShortcut, aktiv: GLOBALE_KUERZEL, wayland: process.platform === "linux" && process.env.XDG_SESSION_TYPE === "wayland", protokoll });
+let kuerzelHinweis = null; // Hinweis zum Kürzel „Schnell erfassen“ (belegt …): steht im Erfassen-Fenster, bis der Nutzer ein anderes wählt
+
+const leseJson = async (pfad, query) => { try { const r = await bruecke.anfrage({ methode: "GET", pfad, query }); return r.status === 200 ? JSON.parse(r.body.toString("utf8")) : null; } catch { return null; } };
+const BEREIT_SKRIPT = `new Promise((ok) => { if (window.__studioBereit) return ok(true); addEventListener("studio-bereit", () => ok(true), { once: true }); setTimeout(() => ok(false), 20000); })`;
+async function studioBereit({ warteAufLaden = true } = {}) { // aus did-finish-load heraus mit warteAufLaden: false (dort steht isLoading noch auf true)
+  if (!fenster || fenster.isDestroyed()) return false;
+  const wc = fenster.webContents;
+  if (warteAufLaden && wc.isLoading()) await new Promise((ok) => wc.once("did-finish-load", ok));
+  return wc.executeJavaScript(BEREIT_SKRIPT);
+}
+function zeigeStudio() {
+  if (fenster && !fenster.isDestroyed()) { if (fenster.isMinimized()) fenster.restore(); fenster.show(); fenster.focus(); }
+  else oeffneFenster();
+}
+const mitStudio = async (fn) => { zeigeStudio(); if (await studioBereit()) fn(); };
+
+// Klick im Menü oder im Tray: { befehl: Menü-Name des Studio-Befehls } | { fest: eigene Aktion der Hülle }
+function menueAktion(a) {
+  if (a.befehl) { mitStudio(() => befehlAnStudio(a.befehl)).catch(() => {}); return; }
+  switch (a.fest) {
+    case "erfassen": erfassen.umschalten(); break;
+    case "einrichten": mitStudio(() => aktionen.aktion("einrichtung-oeffnen", {})).catch(() => {}); break;
+    case "schliessen": if (fenster && !fenster.isDestroyed()) fenster.close(); break;
+    case "beenden": app.quit(); break;
+    case "studio": zeigeStudio(); break;
+    case "ordner-zeigen": vaultPfad().then((v) => { if (v) shell.showItemInFolder(v); }); break;
+  }
+}
+const setzeMenue = () => Menu.setApplicationMenu(Menu.buildFromTemplate(baueMenueVorlage({ register, logik: kuerzelLogik, belegung: belegung(), entwickler: ENTWICKLER, aktion: menueAktion })));
+
+// ── App-Symbol (Fenster, Tray, Erfassen-Fenster); gewählt in den Einstellungen, beim Start gelesen
+let aktuellesSymbol = leseAppSymbol(support);
+const bildVon = (name, art) => { const p = symbolPfade(name); if (!p) return null; const b = nativeImage.createFromPath(p[art]); return b.isEmpty() ? null : b; };
+const trayBild = () => { const b = bildVon(aktuellesSymbol, "tray"); return b ? b.resize({ width: process.platform === "win32" ? 16 : 22, quality: "best" }) : null; };
+function wendeAppSymbolAn(name) {
+  const b = bildVon(name, "fenster");
+  if (!b) return false;
+  aktuellesSymbol = name;
+  if (fenster && !fenster.isDestroyed()) fenster.setIcon(b); // Windows: das Taskleisten-Symbol zur Laufzeit nur über das Fenster
+  erfassen.setzeBild(b);
+  if (process.platform === "darwin") app.dock?.setIcon(b);
+  const t = trayBild(); if (tray && t) tray.setImage(t);
+  protokoll(`aktion app-symbol ${name}`);
+  return true;
+}
+
+// ── Durchscheinende Seitenleiste: nur Windows 11 22H2+ (Mica); sonst nicht möglich (Testschalter nur im Testlauf)
+const GLAS = (TESTMODUS && process.env.KORTEX_TEST_GLAS_MOEGLICH === "1") || glasMoeglich({ release: release() });
+let glasWunsch = leseGlasWunsch(support);
+const zeigeGlasAnSeite = () => { const skript = glasSkript({ moeglich: GLAS, an: glasWunsch }); if (skript && fenster && !fenster.isDestroyed()) fenster.webContents.executeJavaScript(skript).catch(() => {}); };
+function wendeGlasAn(an) { // → null (kein Fenstermaterial möglich) | wirkt
+  if (!GLAS) return null;
+  glasWunsch = an;
+  if (fenster && !fenster.isDestroyed()) { fenster.setBackgroundMaterial?.(an ? "mica" : "none"); fenster.setBackgroundColor?.(an ? "#00000000" : nativeTheme.shouldUseDarkColors ? "#16181c" : "#ffffff"); zeigeGlasAnSeite(); }
+  return an;
+}
+
+// ── Schnell-Erfassen-Fenster und globale Kürzel (Befehle des Registers mit global: true)
+async function erfassenInfo() {
+  const info = await leseJson("/api/info");
+  const name = typeof info?.vault === "string" ? info.name : null;
+  return { art: leseArt(support), vault: name, hinweis: hinweisFuerVault({ name, erlaubt: info?.vertrauen?.erlaubt === true }) ?? kuerzelHinweis, kuerzel: anzeigeText(belegung()["schnell-erfassen"], { register, logik: kuerzelLogik }) };
+}
+async function erfassenSpeichere(eingabe) {
+  const p = pruefeEingabe(eingabe);
+  if (!p.ok) return { ok: false, text: p.text };
+  const info = await leseJson("/api/info");
+  const name = typeof info?.vault === "string" ? info.name : null;
+  const hinweis = hinweisFuerVault({ name, erlaubt: info?.vertrauen?.erlaubt === true });
+  if (hinweis) return { ok: false, text: hinweis };
+  const a = baueAnfrage(p.wert, { liesKurzformen });
+  if (a.fehler) return { ok: false, text: a.fehler };
+  let r;
+  try { r = await bruecke.anfrage({ methode: "POST", pfad: a.pfad, body: Buffer.from(JSON.stringify(a.koerper)) }); }
+  catch { return { ok: false, text: "Kortex ist noch nicht bereit. Warte einen Moment und versuche es noch einmal." }; }
+  let json = null; try { json = JSON.parse(r.body.toString("utf8")); } catch { /* keine JSON-Antwort */ }
+  const antwort = antwortAus({ status: r.status, json }, name);
+  if (antwort.ok) { merkeArt(support, p.wert.art); statusAuffrischen(); }
+  protokoll(`erfassen ${antwort.ok ? "gespeichert" : "abgelehnt"} ${p.wert.art}`); // nie der Text
+  return antwort;
+}
+const erfassen = erzeugeErfassenFenster({ preload: join(HIER, "erfassen-preload.cjs"), url: `${SCHEMA}://${ERFASSEN_HOST}/`, bild: () => bildVon(aktuellesSymbol, "fenster"), entwickler: ENTWICKLER, testmodus: TESTMODUS, protokoll, info: erfassenInfo, speichere: erfassenSpeichere });
+kuerzel.setzeAktion("schnell-erfassen", () => erfassen.umschalten());
+kuerzel.setzeAktion("frage-global", () => { mitStudio(() => befehlAnStudio("frage")).catch(() => {}); });
+kuerzel.setzeAktion("kortex-zeigen", () => zeigeStudio());
+function kuerzelAnwenden() { const h = kuerzel.wendeAn(belegung()); kuerzelHinweis = h["schnell-erfassen"] ?? null; setzeMenue(); zeichneTray(); erfassen.erneuern(); return h; }
+function kuerzelNeuLesen() { protokoll("aktion kuerzel-geaendert"); kuerzelAnwenden(); }
+
+// ── Tray (Windows Infobereich, Linux AppIndicator): Menü wie die Menüleiste der Mac-App; ohne Tray-Unterstützung läuft die App ohne
+let tray = null, trayDaten = { info: null, aktivitaet: null, rueckfragen: null }, trayVorlage = [], trayTooltip = "", trayAuffrischer = null, rueckfragenStand = 0;
+async function aktualisiereTray() {
+  if (!tray) return;
+  const [info, aktivitaet] = await Promise.all([leseJson("/api/info"), leseJson("/api/aktivitaet", "nur=ungelesen&limit=1")]);
+  trayDaten = { ...trayDaten, info, aktivitaet };
+  zeichneTray();
+  // Rückfragen kennt die Werkstatt nur mit Kit und liest sie in einem eigenen Prozess (gebündelt, höchstens alle 2 min): nie auf sie warten
+  if (info?.vault && Date.now() - rueckfragenStand > 120_000) { rueckfragenStand = Date.now(); leseJson("/api/rueckfragen").then((r) => { trayDaten = { ...trayDaten, rueckfragen: r }; zeichneTray(); }); }
+}
+function zeichneTray() {
+  if (!tray) return;
+  const text = belegung()["schnell-erfassen"];
+  const z = trayZustand(trayDaten, text ? acceleratorVon(text, { register, logik: kuerzelLogik }) : null);
+  trayVorlage = baueTrayVorlage(z, menueAktion);
+  trayTooltip = trayTitel(z);
+  tray.setContextMenu(Menu.buildFromTemplate(trayVorlage));
+  tray.setToolTip(trayTooltip);
+}
+// `status-auffrischen`, Vault- und Vertrauenswechsel: Tray liest den Stand neu, gebündelt (ein Lauf je Sekunde)
+function statusAuffrischen() { if (!tray || trayAuffrischer) return; trayAuffrischer = setTimeout(() => { trayAuffrischer = null; aktualisiereTray(); }, 1000); }
+function starteTray() {
+  try {
+    const bild = trayBild();
+    if (!bild) throw new Error("kein Symbol");
+    tray = new Tray(bild);
+    if (process.platform === "win32") tray.on("click", () => zeigeStudio()); // Linux (AppIndicator) kennt keinen Klick, dort gibt es nur das Menü
+    zeichneTray();
+    aktualisiereTray();
+    setInterval(() => aktualisiereTray(), 60_000).unref();
+  } catch (e) { tray = null; protokoll(`tray aus: ${e?.message || e}`); } // z. B. Linux ohne Tray-Unterstützung: die App läuft sauber ohne
+}
+const bleibtImTray = () => !beendet && !!tray && IN_TRAY_SCHLIESSEN;
+
+// ── Mitteilungen des Systems aus dem Aktivitätsprotokoll (Takt 2 s wie MitteilungsDienst in Swift); Klick bringt das Studio nach vorn und öffnet das Ziel
+const gehalten = new Set(); // gezeigte Mitteilungen, bis sie geschlossen oder angeklickt sind
+const MELDUNGEN = []; // Testlauf: die gezeigten Mitteilungen (Objekt, Text, Ziel), zum Prüfen; sonst leer
+function zeigeMitteilung(m) {
+  const n = new Notification({ title: m.titel, ...(m.untertitel ? { subtitle: m.untertitel } : {}), body: m.text, silent: !m.ton });
+  gehalten.add(n); n.on("close", () => gehalten.delete(n)); // Electron räumt sonst das Objekt samt Klick-Handler weg
+  n.on("click", () => { gehalten.delete(n); mitStudio(() => befehlAnStudio(m.ziel)).catch(() => {}); });
+  if (TESTMODUS) { MELDUNGEN.push({ titel: m.titel, untertitel: m.untertitel, text: m.text, ziel: m.ziel, art: m.art ?? null, objekt: n }); if (MELDUNGEN.length > 50) MELDUNGEN.shift(); }
+  else n.show();
+}
+function zeigeProbeMitteilung() {
+  if (!Notification.isSupported() && !TESTMODUS) return false;
+  zeigeMitteilung(probeMitteilung({ ton: leseMitteilungsEinstellungen(support).mitteilungenTon, kennung: `kortex-probe-${Date.now()}` }));
+  return Notification.isSupported();
+}
+const kortexVorne = () => !!fenster && !fenster.isDestroyed() && fenster.isVisible() && !fenster.isMinimized() && fenster.isFocused();
+function starteMitteilungen() {
+  if (!Notification.isSupported() && !TESTMODUS) { protokoll("mitteilungen-aus nicht-unterstuetzt"); return; }
+  const leser = erzeugeLeser({ support, leseEreignisse, protokollKennungen,
+    dateiStand: (k) => { try { const st = statSync(ereignisDatei(support, k)); return `${st.size}:${st.mtimeMs}`; } catch { return null; } } });
+  let bekannte = []; try { bekannte = ladeKatalog().map((e) => e.name); } catch { bekannte = ["Claude Code", "Codex"]; }
+  const regeln = TESTMODUS && process.env.KORTEX_TEST_SAMMELFENSTER ? { sammelfenster: Number(process.env.KORTEX_TEST_SAMMELFENSTER) } : {};
+  const planer = erzeugePlaner({ artSchalter: ART_SCHALTER, bekannteProgramme: bekannte, regeln });
+  const takt = () => {
+    const e = leseMitteilungsEinstellungen(support);
+    planer.aufnehmen(leser.neueEreignisse(), e);
+    const faellig = planer.faellige(e, kortexVorne());
+    for (const m of faellig) zeigeMitteilung(m);
+    if (faellig.length) { protokoll(`mitteilungen zugestellt=${faellig.length}`); statusAuffrischen(); } // nie Text oder Namen ins Protokoll
+  };
+  setInterval(takt, 2000).unref();
+  protokoll("mitteilungen-an");
+}
+
+// Nur im Testlauf: Zugriff für die Playwright-Tests (Tray-Menü, gezeigte Mitteilungen, Erfassen-Fenster, Kürzel); die Seite sieht das nie, es gibt keinen Weg dorthin
+if (TESTMODUS) globalThis.__kortex = { kuerzel, erfassen, mitteilungen: MELDUNGEN, tray: () => (tray ? { vorlage: trayVorlage, tooltip: trayTooltip } : null), aktualisiereTray, glas: GLAS, symbol: () => aktuellesSymbol, hinweis: () => kuerzelHinweis };
+
+function raeumeAuf() { try { kuerzel.beende(); globalShortcut.unregisterAll(); } catch { /* egal */ } try { tray?.destroy(); } catch { /* egal */ } tray = null; }
 
 // Nur die eigene Seite im Hauptfenster darf Aktionen schicken (nie ein Unterrahmen, nie eine andere Adresse)
 const vonStudio = (e) => !!fenster && e.sender === fenster.webContents && !!e.senderFrame && e.senderFrame === e.sender.mainFrame && istEigeneAdresse(e.senderFrame.url);
@@ -111,6 +301,7 @@ ipcMain.handle("kortex:aktion", async (e, name, wert) => {
 const antwortJson = (status, o) => new Response(JSON.stringify(o), { status, headers: JSON_KOPF });
 async function beantworte(request) {
   const u = new URL(request.url);
+  if (u.hostname === ERFASSEN_HOST) return antwortErfassen(request, { ordner: join(HIER, "erfassen"), studio: join(RESSOURCEN, "studio") }); // die Seite „Schnell erfassen“ (nur ihre festen Dateien)
   if (u.hostname !== HOST) return antwortJson(404, { fehler: "nicht gefunden" });
   const methode = request.method;
   if (!ERLAUBT.has(methode)) return antwortJson(405, { fehler: "Methode nicht erlaubt" });
@@ -143,8 +334,11 @@ function zeigeFehlerSeite(text) {
 
 function oeffneFenster() {
   fenster = new BrowserWindow({
-    width: 1280, height: 860, minWidth: 720, minHeight: 480, show: false, title: "Kortex", autoHideMenuBar: true,
-    backgroundColor: nativeTheme.shouldUseDarkColors ? "#16181c" : "#ffffff",
+    width: 1280, height: 860, minWidth: 720, minHeight: 480, show: false, title: "Kortex",
+    ...(bildVon(aktuellesSymbol, "fenster") ? { icon: bildVon(aktuellesSymbol, "fenster") } : {}),
+    // Fenstermaterial (Windows 11): die Seite ist dann an der Seitenleiste durchsichtig (data-glas), sonst deckend
+    ...(GLAS && process.platform === "win32" ? { backgroundMaterial: glasWunsch ? "mica" : "none" } : {}),
+    backgroundColor: GLAS && glasWunsch ? "#00000000" : nativeTheme.shouldUseDarkColors ? "#16181c" : "#ffffff",
     webPreferences: {
       preload: join(HIER, "preload.cjs"),
       contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true,
@@ -152,6 +346,8 @@ function oeffneFenster() {
     },
   });
   const wc = fenster.webContents;
+  schliessenFrei = false; // ein neues Fenster (nach dem Schließen in den Tray) sichert wieder vor dem Schließen
+  wc.on("dom-ready", zeigeGlasAnSeite);
   fenster.once("ready-to-show", () => fenster?.show());
   // Schließen sichert zuerst (wie Swift darfSchliessen): einmal anhalten, die Seite fragen, bei „nicht gespeichert“ den Nutzer; erst danach schließen
   fenster.on("close", (e) => {
@@ -164,9 +360,10 @@ function oeffneFenster() {
       frage: () => f.webContents.executeJavaScript(SCHLIESSEN_SKRIPT),
       rueckfrage: async (grund) => (await dialog.showMessageBox(f, { type: "warning", message: "Änderungen nicht gespeichert", detail: grund, buttons: ["Trotzdem schließen", "Abbrechen"], defaultId: 1, cancelId: 1 })).response === 0,
       protokoll,
-    }).then((ok) => { schliessenLaeuft = false; if (ok && !f.isDestroyed()) { schliessenFrei = true; f.close(); } });
+    }).then((ok) => { schliessenLaeuft = false; if (!ok) beendet = false; /* Beenden abgebrochen */ if (ok && !f.isDestroyed()) { schliessenFrei = true; f.close(); } });
   });
-  fenster.on("closed", () => { fenster = null; });
+  const dieses = fenster;
+  fenster.on("closed", () => { if (fenster === dieses) fenster = null; if (!bleibtImTray()) app.quit(); });
   wc.on("did-start-navigation", (e) => { if (e.isMainFrame && !e.isSameDocument) aktionen.seiteNeu(); });
   // Absturz des Web-Prozesses: neu laden (?nachAbsturz=1), höchstens 3× in 60 s (wie WebProzessSchutz.swift)
   wc.on("render-process-gone", (_e, d) => {
@@ -184,17 +381,9 @@ function oeffneFenster() {
 
 // Erster Start: ohne Vault und ohne beendete Einrichtung öffnet die Hülle die Einrichtung selbst (am Mac tut das die App; der Browser macht es in huelle-browser.js genauso)
 async function ersterStart() {
-  const bereit = await fenster.webContents.executeJavaScript(
-    `new Promise((ok) => { if (window.__studioBereit) return ok(true); addEventListener("studio-bereit", () => ok(true), { once: true }); setTimeout(() => ok(false), 20000); })`);
+  const bereit = await studioBereit({ warteAufLaden: false });
   if (!bereit) return;
   if ((await vaultPfad()) === null && !leseEinrichtung(support).ende) aktionen.aktion("einrichtung-oeffnen", {});
-}
-
-// Menü: Win/Linux nur „Ansicht“ (Zoom, Vollbild; ohne Bearbeiten-Menü: Strg+C/V/Z gehören dem Editor), Mac für die Entwicklung mit den Standardeinträgen. Richtige Menüs und Kürzel: W2b.
-function baueMenue() {
-  const ansicht = { label: "Ansicht", submenu: [{ role: "zoomIn" }, { role: "zoomOut" }, { role: "resetZoom" }, { type: "separator" }, { role: "togglefullscreen" }, ...(ENTWICKLER ? [{ type: "separator" }, { role: "toggleDevTools" }] : [])] };
-  if (process.platform === "darwin") return Menu.buildFromTemplate([{ role: "appMenu" }, { role: "editMenu" }, ansicht, { role: "windowMenu" }]);
-  return Menu.buildFromTemplate([ansicht]);
 }
 
 // ───────────── Sicherheit je Fenster-Inhalt ─────────────
@@ -216,7 +405,7 @@ function imBrowserOeffnen(url) {
 // ───────────── Start und Ende ─────────────
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
-  app.on("second-instance", () => { if (fenster) { if (fenster.isMinimized()) fenster.restore(); fenster.focus(); } });
+  app.on("second-instance", () => { if (gestartet) zeigeStudio(); }); // während des Hochfahrens kein zweites Fenster
   app.whenReady().then(async () => {
     if (process.platform === "win32") app.setAppUserModelId("io.github.fbrogno.brain"); // wie die Bundle-ID am Mac; der Installer (W2c) setzt dieselbe
     const ses = session.defaultSession;
@@ -225,7 +414,7 @@ else {
     // Die Seite lädt nichts aus dem Netz: nur das eigene Schema (und Daten-/Blob-Adressen, DevTools); alles andere bricht schon hier ab (zusätzlich zur CSP der Werkstatt)
     ses.webRequest.onBeforeRequest((d, antwort) => antwort({ cancel: !/^(kortex|data|blob|devtools):/i.test(d.url) }));
     ses.protocol.handle(SCHEMA, (request) => beantworte(request));
-    Menu.setApplicationMenu(baueMenue());
+    setzeMenue();
 
     bruecke = starteBruecke({
       programm: process.execPath,
@@ -240,15 +429,22 @@ else {
     try { await bruecke.bereit; }
     catch (e) { protokoll(`werkstatt: ${e?.message || e}`); dialog.showErrorBox("Kortex", `Die Werkstatt von Kortex ließ sich nicht starten.\n\n${String(e?.message || e).slice(0, 600)}`); app.exit(1); return; }
     oeffneFenster();
+    gestartet = true;
+    // Globale Kürzel, Tray, Mitteilungen: erst jetzt (die Werkstatt läuft). Ein Kürzel, das nicht geht, steht als Hinweis im Erfassen-Fenster.
+    kuerzelAnwenden();
+    starteTray();
+    starteMitteilungen();
   });
 }
-app.on("window-all-closed", () => app.quit());
+app.on("window-all-closed", () => { if (!bleibtImTray()) app.quit(); });
 // Ende: erst die Werkstatt sauber beenden (sie schreibt alle Antworten, nimmt halbe Vorgänge zurück und beendet ihre Kinder), dann die App
 app.on("before-quit", (e) => {
+  beendet = true; // ab jetzt bleibt die App nicht mehr im Tray, wenn das Fenster zu geht
   if (endeLaeuft || !bruecke) return;
   // Beenden geht über denselben Weg wie Schließen: erst das Fenster (sichert und fragt), dann kommt das Ende hierher zurück
   if (fenster && !schliessenFrei) { e.preventDefault(); fenster.close(); return; }
   endeLaeuft = true;
   e.preventDefault();
+  raeumeAuf(); // globale Kürzel freigeben, Tray entfernen (app.exit löst will-quit nicht aus)
   bruecke.beende().finally(() => app.exit(0));
 });

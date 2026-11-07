@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Schnell erfassen</title>
+<link rel="stylesheet" href="/s/schemata.css">
+<link rel="stylesheet" href="/erfassen.css">
+</head>
+<body>
+<main id="fenster" role="dialog" aria-label="Schnell erfassen">
+  <div class="kopf">
+    <div class="segment" role="radiogroup" aria-label="Art">
+      <button type="button" role="radio" data-art="aufgabe" title="Aufgabe: kommt aufs Board.">Aufgabe</button>
+      <button type="button" role="radio" data-art="notiz" title="Notiz: landet im Posteingang.">Notiz</button>
+    </div>
+    <span id="vault" class="vault" title="Ziel: der aktive Vault"></span>
+  </div>
+  <div class="eingabe"><textarea id="text" spellcheck="true" aria-label="Was willst du erfassen?" rows="3"></textarea></div>
+  <div class="zeile" id="aufgabenzeile">
+    <span class="chip-huelle"><button type="button" class="chip" id="prio" title="Priorität: klicken zum Wechseln"></button><button type="button" class="chip-aus" id="prio-aus" hidden aria-label="Als Text lassen">×</button></span>
+    <span class="chip-huelle"><button type="button" class="chip" id="faellig" title="Fälligkeit: klicken zum Wechseln"></button><button type="button" class="chip-aus" id="faellig-aus" hidden aria-label="Als Text lassen">×</button></span>
+  </div>
+  <div class="zeile hinweis" id="notizzeile" hidden>Kommt in den Posteingang. Erst /ingest macht daraus Wissen.</div>
+  <div id="meldung" class="meldung" role="status" aria-live="polite"></div>
+  <div class="fuss">
+    <span id="kuerzel" class="kuerzel" title="Tastenkürzel zum Öffnen dieses Fensters (Einstellungen → Tastenkürzel)"></span>
+    <button type="button" id="speichern" class="haupt">Speichern <span aria-hidden="true">↩</span></button>
+  </div>
+</main>
+<script type="module" src="/erfassen.js"></script>
+</body>
+</html>

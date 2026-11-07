@@ -20,7 +20,7 @@ export const tastenAbschnitte = () => L.abschnitteAusRegister(R);
 const kbds = (teile) => teile.map((t) => h("kbd", { text: t }));
 const norm = (t) => String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
-// o: { inApp, beiSpeichern(art: "speichert" | "gespeichert" | ""), beiAenderung() }
+// o: { inApp, browser, globale, beiSpeichern(art: "speichert" | "gespeichert" | ""), beiAenderung() }
 export function erzeugeTasten(o = {}) {
   const S = { zeilen: new Map(), meldungen: new Map(), aufnahme: null, filter: "alle", suche: "", tot: false, leiste: null, leer: null, alleKnopf: null, aufnahmeAb: null };
 
@@ -194,7 +194,7 @@ export function erzeugeTasten(o = {}) {
     const feld = h("button", { type: "button", klasse: "kz-feld", "data-kuerzel": id, "aria-describedby": null, aufClick: () => starteAufnahme(id) });
     const zurueck = baueKnopf({ symbol: "zuruecksetzen", variante: "leise", groesse: "s", label: T.zurueck(b.name), titel: T.zurueckTitel, hidden: true, klasse: "kz-zurueck", daten: { "data-aktion": "kz-zurueck" }, aufKlick: () => uebernehme(id, STANDARD) });
     const doppelt = einstellMarke(T.doppelt, "warn"); doppelt.hidden = true; doppelt.dataset.marke = "doppelt";
-    const global = b.global && !o.browser ? einstellMarke(T.global) : null; // „Überall“ gibt es nur in der App (kein Systemkürzel im Browser)
+    const global = b.global && (!o.browser || o.globale) ? einstellMarke(T.global) : null; // „Überall“ gibt es nur in der App und der Electron-Hülle (kein Systemkürzel im Browser)
     if (global) { global.title = T.globalTitel; global.dataset.marke = "global"; }
     const meldung = h("div", { klasse: "kz-meldung", hidden: true, "data-meldung": id });
     S.zeilen.set(id, { feld, zurueck, doppelt, meldung, zeile: null });

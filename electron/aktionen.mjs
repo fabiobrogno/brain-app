@@ -70,7 +70,8 @@ export function ortImVault(relativ, vault, { plattform = process.platform } = {}
 
 /**
  * abh: { support, vaultPfad(): Promise<string|null>, openExternal(url), showItemInFolder(pfad), schreibeZwischenablage(text), waehleOrdner({titel, vorschlag}): Promise<string|null>,
- *        mitteilung({titel, text}): boolean, darstellung(themeSource), fensterTitel(text|null), fensterZoom(), befehlAnStudio(name, wert), protokoll(zeile),
+ *        mitteilung({probe: true}): boolean, darstellung(themeSource), fensterTitel(text|null), fensterZoom(), befehlAnStudio(name, wert), protokoll(zeile),
+ *        W2b (alle optional): statusAuffrischen(), kuerzel: { pruefeGlobal(id, text|null), neuLesen() }, appSymbol(name) → boolean, fensterGlas(an) → null | wirkt:boolean,
  *        einrichtung: { lese(support), schreibe(support, o) }, ordner: { pruefeOrdner(pfad) }, git: { pruefen(), hinweis() }, plattform? }
  * → { namen, aktion(name, wert) → Antwort | Promise<Antwort>, seiteNeu(), zustand() }
  */
@@ -108,9 +109,10 @@ export function erzeugeAktionen(abh) {
       const { ok: _ok, ...antwort } = r; // wie OrdnerWahlAntwort in Swift: { pfad, breit?, notizen, ordner, mehr? }
       return antwort;
     },
-    "vault-gewechselt": () => OK,
-    "vertrauen-geaendert": () => OK,
-    "status-auffrischen": () => OK,
+    // Vault, Vertrauen oder Zähler haben sich geändert: Menü und Tray lesen den Stand neu (gebündelt, wie StatusAuffrischung in Swift)
+    "vault-gewechselt": () => { abh.statusAuffrischen?.(); return OK; },
+    "vertrauen-geaendert": () => { abh.statusAuffrischen?.(); return OK; },
+    "status-auffrischen": () => { abh.statusAuffrischen?.(); return OK; },
     "titel": (w) => {
       if (w !== undefined && w !== null && typeof w !== "string") return UNGUELTIG();
       abh.fensterTitel(typeof w === "string" ? einzeilig(w, MAX_TITEL) : null);
@@ -164,12 +166,12 @@ export function erzeugeAktionen(abh) {
       });
       return OK;
     },
-    "mitteilung-probe": async () => abh.mitteilung({ titel: "Kortex", text: "So sehen Mitteilungen von Kortex aus." }) ? OK : nein("nicht-verfuegbar"),
-    "kuerzel-geaendert": () => OK, // globale Kürzel und Menüs: Paket W2b
+    "mitteilung-probe": async () => abh.mitteilung({ probe: true }) ? OK : nein("nicht-verfuegbar"),
+    "kuerzel-geaendert": () => { abh.kuerzel?.neuLesen(); return OK; }, // tastenkuerzel.json hat sich geändert: Menüs und globale Kürzel neu belegen
     "kuerzel-global": (w) => {
       if (!w || typeof w.id !== "string" || !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(w.id) || w.id.length > 40) return UNGUELTIG();
       if (w.kuerzel !== null && w.kuerzel !== undefined && (typeof w.kuerzel !== "string" || !w.kuerzel || w.kuerzel.length > 40)) return UNGUELTIG();
-      return nein("nicht-verfuegbar"); // noch kein globales Kürzel: Paket W2b
+      return abh.kuerzel ? abh.kuerzel.pruefeGlobal(w.id, w.kuerzel ?? null) : nein("nicht-verfuegbar"); // { ok:true } | { ok:false, text } wie KuerzelSteuerung.pruefeGlobal (Swift)
     },
     "fenster-ziehen": () => OK, // nativer Fensterrahmen: das System zieht selbst
     "fenster-zoom": () => { abh.fensterZoom(); return OK; },
@@ -178,8 +180,12 @@ export function erzeugeAktionen(abh) {
       abh.darstellung(DARSTELLUNGEN[w]);
       return OK;
     },
-    "app-symbol": (w) => (typeof w === "string" && APP_SYMBOLE.includes(w) ? nein("nicht-verfuegbar") : UNGUELTIG()), // Symbole liegen nur als .icns vor: Paket W2c
-    "fenster-durchscheinend": (w) => (typeof w === "boolean" ? nein("nicht-verfuegbar") : UNGUELTIG()),
+    "app-symbol": (w) => (typeof w === "string" && APP_SYMBOLE.includes(w) ? (abh.appSymbol?.(w) ? OK : nein("nicht-verfuegbar")) : UNGUELTIG()),
+    "fenster-durchscheinend": (w) => {
+      if (typeof w !== "boolean") return UNGUELTIG();
+      const wirkt = abh.fensterGlas ? abh.fensterGlas(w) : null; // null = kein Fenstermaterial möglich
+      return wirkt === null || wirkt === undefined ? nein("nicht-verfuegbar") : { ok: true, wirkt };
+    },
   }));
 
   function aktion(name, wert) {

@@ -17,6 +17,7 @@ export function baueUmgebung(home, extra = {}) {
   const env = {
     PATH: process.env.PATH, HOME: home, USERPROFILE: home, APPDATA: join(home, "AppData", "Roaming"), LOCALAPPDATA: join(home, "AppData", "Local"),
     BRAIN_APP_SUPPORT: support, BRAIN_TESTMODUS: "1", KORTEX_VAULT_VERTRAUT: "alle", TZ: "Europe/Berlin",
+    KORTEX_SCHLIESSEN_IN_TRAY: "0", // Schließen beendet die App (unter Windows sonst: weiter im Tray); der Tray-Test schaltet es ein
     GIT_AUTHOR_NAME: "Test", GIT_AUTHOR_EMAIL: "t@example.org", GIT_COMMITTER_NAME: "Test", GIT_COMMITTER_EMAIL: "t@example.org",
     ...extra,
   };
@@ -25,9 +26,11 @@ export function baueUmgebung(home, extra = {}) {
 }
 
 // → { app, fenster, home, support, vault, stopp }
-export async function starteApp({ vault = undefined, mitVault = true, extra = {}, warteAufStudio = true } = {}) {
+// vorher(support): schreibt Dateien in den Support-Ordner des Tests, bevor die App startet (z. B. tastenkuerzel.json, einstellungen.json)
+export async function starteApp({ vault = undefined, mitVault = true, extra = {}, warteAufStudio = true, vorher = null } = {}) {
   const home = realpathSync(mkdtempSync(join(tmpdir(), "kortex-electron-")));
   mkdirSync(join(home, "support"), { recursive: true });
+  if (vorher) vorher(join(home, "support"));
   let vaultDir = vault;
   if (mitVault && !vaultDir) vaultDir = baueVault().vault;
   const args = [HAUPT, ...(mitVault ? ["--vault", vaultDir] : [])];
