@@ -6,10 +6,11 @@
 // Commits in den Arbeitsbaum und läuft deshalb immer ohne Hooks (siehe sync). Zeitlimits: je Aufruf und als Gesamtfrist je Route
 // (ctx.frist) — bei Ablauf wird die ganze Prozessgruppe beendet.
 // ctx = { vertraut, sshEigen, sshGlobal, gpgGlobal, frist } kommt von vault.mjs (aus vertrauen.mjs); ohne Angabe gilt „nicht vertraut“.
-import { execFile, execFileSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { realpathSync, readFileSync, writeFileSync, statSync, renameSync, lstatSync, unlinkSync, readdirSync, mkdirSync, copyFileSync, existsSync, rmSync } from "node:fs";
 import { join, dirname, basename, sep, isAbsolute } from "node:path";
 import { HttpFehler, sauber, loese, kindUmgebung, falte, absoluterGitPfad, absoluterPfad, MAX_DATEI, testmodus } from "./basis.mjs";
+import { gitLaeuftIn } from "./plattform.mjs";
 import { heuteIso } from "./zeit.mjs";
 import { starte, neueFrist, beendeAlleProzesse } from "./prozess.mjs";
 import { pruefeGitUrl, uebersetzeGitFehler } from "./gitwerkzeug.mjs"; // (gitwerkzeug importiert git() von hier — Kreis ist harmlos: nur Funktionen, nichts beim Laden)
@@ -294,15 +295,7 @@ export function sync(wurzel, opt = {}) {
 // Läuft git in die Zeitüberschreitung (SIGKILL), kann Git eine halbe Zusammenführung und index.lock hinterlassen.
 // Die Sperrdatei wird nur entfernt, wenn sie nach dem Start unseres Aufrufs entstand und kein git-Prozess mehr läuft.
 // Läuft in genau diesem Vault noch ein git-Prozess? (lsof: Arbeitsordner aller git-Prozesse; lsof fehlt → „ja“, also vorsichtig)
-function gitLaeuft(wurzel) {
-  return new Promise((ok) => {
-    execFile(absoluterPfad("lsof") || "/usr/sbin/lsof", ["-a", "-d", "cwd", "-c", "git", "-Fn"], { env: kindUmgebung(), maxBuffer: 4 * 1024 * 1024 }, (err, out) => {
-      if (err && err.code === "ENOENT") return ok(true);
-      const orte = String(out || "").split("\n").filter((z) => z.startsWith("n")).map((z) => z.slice(1));
-      ok(orte.some((o) => o === wurzel || o.startsWith(wurzel + "/")));
-    });
-  });
-}
+const gitLaeuft = (wurzel) => gitLaeuftIn(wurzel, { lsof: absoluterPfad("lsof"), env: kindUmgebung() }); // plattform.mjs: lsof bzw. der Windows-Ersatz
 async function sperreAufraeumen(wurzel, gestartet) {
   const lock = join(wurzel, ".git", "index.lock");
   let lockZeit = null;

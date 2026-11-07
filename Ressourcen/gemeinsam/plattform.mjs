@@ -1,10 +1,10 @@
 // gemeinsam/plattform.mjs — die EINE Stelle für Unterschiede zwischen macOS, Windows und Linux (Plan docs/plaene/plattformen-windows-linux.md, Paket W0).
 // Neue Betriebssystem-Befehle im Node-Code gehören hierher, nicht verstreut in andere Dateien. Alles ist über `plattform`/`env`/`home` einspritzbar (Tests).
 // Eine Kopie liegt wortgleich in kern/plattform.mjs (der Kern importiert nichts aus gemeinsam/); Tests/Node/plattform.test.mjs vergleicht beide.
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { homedir, hostname, userInfo } from "node:os";
-import { execFileSync, spawnSync, spawn } from "node:child_process";
+import { execFile, execFileSync, spawnSync, spawn } from "node:child_process";
 
 export const istMac = (plattform = process.platform) => plattform === "darwin";
 export const istWindows = (plattform = process.platform) => plattform === "win32";
@@ -33,6 +33,10 @@ export function nurMac(was, fn, { plattform = process.platform } = {}) {
 }
 
 // ───────────── Prozesse ─────────────
+// Langform eines Pfads. Windows legt Temp-Ordner in Kurzform an (C:\Users\RUNNER~1\…), Programme melden die lange: wer Pfade später mit deren Angaben vergleicht, nimmt vorher diese Form.
+// macOS/Linux: der Pfad bleibt, wie er ist.
+export const langerPfad = (p, { plattform = process.platform, aufloesen = realpathSync.native } = {}) => { if (!istWindows(plattform)) return p; try { return aufloesen(p); } catch { return p; } };
+
 // `detached` für Kinder MIT Ein-/Ausgabekanälen: macOS/Linux eigene Prozessgruppe (beendeBaum trifft sie); Windows nie — `detached` heißt dort „ohne Konsole", und ein Kind
 // mit Kanälen liefert dann keine Ausgabe (Starter, Skripte); beendet wird dort per taskkill /T.
 export const eigeneGruppe = (plattform = process.platform) => !istWindows(plattform);
@@ -46,6 +50,42 @@ export function beendeBaum(kind, signal = "SIGKILL", { plattform = process.platf
     return;
   }
   try { process.kill(-kind.pid, signal); } catch { try { kind.kill(signal); } catch { /* schon weg */ } }
+}
+
+// Windows: alle Prozesse mit Name und Befehlszeile → [{ pid, name, befehl }] oder null (PowerShell nicht verfügbar / zu langsam). Es gibt dort weder pgrep noch lsof; ein Arbeitsordner
+// fremder Prozesse ist nicht abfragbar, nur die Befehlszeile. Auf macOS/Linux nicht gebraucht (dort pgrep/lsof) → null.
+export function prozessListe({ plattform = process.platform, ausfuehren = execFileSync } = {}) {
+  if (!istWindows(plattform)) return null;
+  try {
+    const aus = String(ausfuehren("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "Get-CimInstance Win32_Process | ForEach-Object { '{0}|{1}|{2}' -f $_.ProcessId, $_.Name, $_.CommandLine }"],
+      { encoding: "utf8", timeout: 30_000, stdio: ["ignore", "pipe", "ignore"], windowsHide: true, maxBuffer: 32 * 1024 * 1024 }));
+    return aus.split(/\r?\n/).map((z) => /^(\d+)\|([^|]*)\|(.*)$/.exec(z)).filter(Boolean).map((m) => ({ pid: Number(m[1]), name: m[2], befehl: m[3] }));
+  } catch { return null; }
+}
+const vorwaerts = (s) => String(s).split("\\").join("/").toLowerCase();
+// PIDs der Prozesse, deren Befehlszeile einen der Texte (Pfade, mit „\“ oder „/“) enthält; null = nicht prüfbar. Nur Windows (sonst null).
+export function prozesseMitBefehlszeile(texte, o = {}) {
+  const liste = prozessListe(o);
+  if (!liste) return null;
+  const t = texte.map(vorwaerts);
+  return liste.filter((p) => t.some((x) => vorwaerts(p.befehl).includes(x))).map((p) => p.pid);
+}
+// Läuft ein git-Prozess in diesem Vault? macOS/Linux: lsof (Arbeitsordner aller git-Prozesse; `lsof` = Pfad des Programms oder null → „ja“, also vorsichtig).
+// Windows: git.exe-Prozesse, deren Befehlszeile den Vault nennt (`git -C <Vault> …`); ein Prozess, der nur dort GESTARTET wurde, ist nicht zu sehen. PowerShell fehlt → „ja“.
+export function gitLaeuftIn(wurzel, { plattform = process.platform, lsof = null, env = process.env, lauf = execFile, ausfuehren = execFileSync } = {}) {
+  return new Promise((ok) => {
+    if (istWindows(plattform)) {
+      const liste = prozessListe({ plattform, ausfuehren });
+      if (!liste) return ok(true);
+      const w = vorwaerts(wurzel);
+      return ok(liste.some((p) => /^git(\.exe)?$/i.test(p.name) && vorwaerts(p.befehl).includes(w)));
+    }
+    lauf(lsof || "/usr/sbin/lsof", ["-a", "-d", "cwd", "-c", "git", "-Fn"], { env, maxBuffer: 4 * 1024 * 1024 }, (err, out) => {
+      if (err && err.code === "ENOENT") return ok(true);
+      const orte = String(out || "").split("\n").filter((z) => z.startsWith("n")).map((z) => z.slice(1));
+      ok(orte.some((o) => o === wurzel || o.startsWith(wurzel + "/")));
+    });
+  });
 }
 
 // Startzeit eines Prozesses (gegen PID-Wiederverwendung bei Sperren). Werkstatt und MCP-Server laufen mit verschiedenem LANG/LC_ALL/TZ, die Ausgabe von ps hängt davon ab —

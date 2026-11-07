@@ -71,7 +71,7 @@ export function neuerTestVault({ seiten = {}, automatik = { tageslauf: "an" }, h
   writeFileSync(join(v, ".hooks", "pre-commit"), HOOKS[hook], { mode: 0o755 });
   git(v, "init", "-q", "-b", "main");
   git(v, "config", "user.name", "Test"); git(v, "config", "user.email", "test@example.com");
-  git(v, "config", "commit.gpgsign", "false");
+  git(v, "config", "commit.gpgsign", "false"); git(v, "config", "core.autocrlf", "false"); // Windows: Git würde sonst beim Auschecken CRLF schreiben
   git(v, "add", "--", ".gitignore", "brain.config.json", ".hooks/pre-commit", "09_wiki");
   gitAm(v, ALTE_ZEIT, "commit", "-qm", "start");
   // Erst NACH dem Start-Commit aktivieren: der grüne Hook enthält das Wort VERBOTEN selbst und würde sich sonst blockieren.

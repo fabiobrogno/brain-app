@@ -7,6 +7,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, rmSync, readFileSync, writeFileSync, unlinkSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir, tmpdir } from "node:os";
+import { langerPfad } from "../plattform.mjs";
 import { gitBefehl } from "../werkzeug.mjs";
 import { ladeConfig } from "../pfade.mjs";
 import { wendeAuftragAn } from "./schreiben.mjs";
@@ -27,8 +28,9 @@ export function git(vault, cwd, args) {
 }
 
 export function legeArbeitskopieAn(vault, lauf, opt = {}) {
-  const basis = cacheOrdner(opt);
-  mkdirSync(basis, { recursive: true });
+  const basis0 = cacheOrdner(opt);
+  mkdirSync(basis0, { recursive: true });
+  const basis = langerPfad(basis0); // Windows: Langform, wie sie git und der Kindprozess (cwd) melden
   const kopie = { pfad: join(basis, lauf), branch: `tageslauf/${lauf}` };
   git(vault, vault, ["worktree", "add", "-q", "-b", kopie.branch, kopie.pfad, "main"]);
   return kopie;

@@ -14,6 +14,7 @@ import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync, statSyn
 import { join, resolve, sep } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
+import { prozesseMitBefehlszeile } from "../plattform.mjs";
 import { ALT_KIT_ORDNER, kernVersion, liesConfigRoh, istOrdnerName, pruefeVault, supportOrdner } from "../pfade.mjs";
 import { pruefeBackupPfad, merkerDateiFuer } from "../backup.mjs";
 import { echtesGit, gitLesen, lokaleKonfiguration, werte, pruefungAlle, ordneSchluesselEin, zaehleFormen, formSchluessel, adressArt, lokaleRemotes, hooksPfadArt, gitVerzeichnis } from "./git-lage.mjs";
@@ -84,6 +85,13 @@ function laufendeProzesse(vault, env = process.env) {
   const orte = [...new Set([resolve(vault), echt(vault)])].map((v) => `${maskiere(v)}/${maskiere(ALT_KIT_ORDNER)}/`);
   const pids = new Set();
   const nimm = (aus) => { for (const z of String(aus).split("\n")) if (/^\d+$/.test(z.trim()) && Number(z) !== process.pid && Number(z) !== process.ppid) pids.add(Number(z)); };
+  // Windows: kein pgrep/lsof; die Befehlszeilen aller Prozesse (PowerShell). Nur Prozesse, die den alten Ordner in der Befehlszeile nennen — die Grenze steht im Text des Tors wie bei fehlendem lsof.
+  if (process.platform === "win32" && !(test && env.KORTEX_PGREP)) {
+    const treffer = prozesseMitBefehlszeile([...new Set([resolve(vault), echt(vault)])].map((v) => join(v, ALT_KIT_ORDNER) + "/"));
+    if (treffer === null) return null;
+    for (const p of treffer) if (p !== process.pid && p !== process.ppid) pids.add(p);
+    return pids.size;
+  }
   try { nimm(execFileSync(pgrep, ["-f", "--", orte.join("|")], { encoding: "utf8", timeout: 10_000, windowsHide: true, stdio: ["ignore", "pipe", "ignore"] })); }
   catch (e) { if (!(e && e.status === 1 && !e.killed && !e.signal)) return null; }       // Exit 1 = keine Treffer; alles andere (fehlt, Fehler, Frist) = unklar
   const lsof = lsofListe.find((p) => existsSync(p));
