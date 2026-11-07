@@ -103,7 +103,7 @@ test("Vertrag: ordner-zeigen nur im Vault, extern nur https, kopieren streng, Sy
   expect(await aktion(fenster, "extern", "https://github.com/login/device")).toEqual({ ok: true });
   for (const schlecht of ["http://example.com", "file:///etc/passwd", "javascript:alert(1)", "https://", "kortex://studio/", "https://u:p@example.com/"]) expect(await aktion(fenster, "extern", schlecht), schlecht).toEqual({ ok: false, grund: "adresse-nicht-erlaubt" });
   const a = await aufrufe(app);
-  expect(a).toEqual([["showItemInFolder", join(realpathSync(vault), "10_notizen", "Reise nach Lissabon.md")], ["openExternal", "https://github.com/login/device"]]);
+  expect(a).toEqual([["showItemInFolder", join(realpathSync.native(vault),"10_notizen", "Reise nach Lissabon.md")], ["openExternal", "https://github.com/login/device"]]);
   // kopieren gilt nur bei offener Einrichtung (nicht angefordert → gesperrt, auch git)
   expect(await aktion(fenster, "kopieren", "ABCD-1234")).toEqual({ ok: false, grund: "einrichtung-nicht-offen" });
   expect(await aktion(fenster, "git-pruefen")).toEqual({ ok: false, grund: "einrichtung-nicht-offen" });
