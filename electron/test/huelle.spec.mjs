@@ -150,6 +150,39 @@ test("Vertrag: ordner-waehlen liefert {pfad, notizen, ordner}, Abbruch liefert n
   expect(await aktion(fenster, "ordner-waehlen", "kein objekt")).toEqual({ ok: false, grund: "ungueltig" });
 });
 
+test("Export: export-pdf macht mit printToPDF ein echtes mehrseitiges PDF (Speichern-Dialog eingespritzt, kein Netz), export-speichern schreibt das Bündel, Abbruch schreibt nichts", async () => {
+  lauf = await starteApp();
+  const { app, fenster } = lauf;
+  const ziel = realpathSync(mkdtempSync(join(tmpdir(), "kortex-export-")));
+  await app.evaluate(({ dialog }) => { globalThis.__speichern = []; globalThis.__ziel = null; dialog.showSaveDialog = async (...a) => { globalThis.__speichern.push(a.at(-1)); return globalThis.__ziel ? { canceled: false, filePath: globalThis.__ziel } : { canceled: true }; }; });
+  const waehle = (pfad) => app.evaluate((_e, p) => { globalThis.__ziel = p; }, pfad);
+  const absaetze = Array.from({ length: 160 }, (_, i) => `<p>Absatz ${i + 1}: Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor.</p>`).join("");
+  // das HTML versucht ein Bild aus dem Netz zu laden: es darf nirgends hingehen (die Sitzung bricht alles außer der Temp-Datei ab)
+  const html = `<!doctype html><html><head><meta charset="utf-8"><style>@page{margin:18mm 16mm}body{font:12pt sans-serif}</style></head><body><h1>Atlas</h1><img src="http://127.0.0.1:9/nie.png">${absaetze}</body></html>`;
+  await waehle(join(ziel, "Atlas.pdf"));
+  expect(await aktion(fenster, "export-pdf", { name: "Atlas", html })).toEqual({ ok: true, name: "Atlas.pdf" });
+  const pdf = readFileSync(join(ziel, "Atlas.pdf"));
+  expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
+  expect(pdf.length).toBeGreaterThan(2000);
+  expect((pdf.toString("latin1").match(/\/Type\s*\/Page(?![s\w])/g) || []).length).toBeGreaterThanOrEqual(2);
+  const optionen = await app.evaluate(() => globalThis.__speichern[0]);
+  expect(optionen).toMatchObject({ defaultPath: "Atlas.pdf", filters: [{ name: "PDF", extensions: ["pdf"] }] });
+  // Bündel: Markdown mit Bild daneben
+  await waehle(join(ziel, "Reise.md"));
+  const png = Buffer.from("89504e470d0a1a0a", "hex").toString("base64");
+  expect(await aktion(fenster, "export-speichern", { name: "Atlas.md", haupt: "Atlas.md", dateien: [{ pfad: "Atlas.md", text: "# Atlas\n![](bilder/a1b2c3d4-k.png)\n" }, { pfad: "bilder/a1b2c3d4-k.png", base64: png }] })).toEqual({ ok: true, name: "Reise.md" });
+  expect(readFileSync(join(ziel, "Reise.md"), "utf8")).toContain("# Atlas");
+  expect(readFileSync(join(ziel, "bilder/a1b2c3d4-k.png")).length).toBe(8);
+  // Abbruch und ungültige Werte: nichts wird geschrieben
+  await waehle(null);
+  expect(await aktion(fenster, "export-speichern", { name: "X.md", haupt: "X.md", dateien: [{ pfad: "X.md", text: "x" }] })).toEqual({ ok: false, grund: "abgebrochen" });
+  expect(await aktion(fenster, "export-pdf", { name: "X", html: "<p>x</p>" })).toEqual({ ok: false, grund: "abgebrochen" });
+  await waehle(join(ziel, "Boese.md"));
+  expect(await aktion(fenster, "export-speichern", { name: "B.md", haupt: "B.md", dateien: [{ pfad: "B.md", text: "x" }, { pfad: "../draussen.md", text: "böse" }] })).toEqual({ ok: false, grund: "ungueltig" });
+  expect(existsSync(join(ziel, "Boese.md")) || existsSync(join(ziel, "..", "draussen.md"))).toBe(false);
+  expect(await aktion(fenster, "teilen", { name: "A", text: "t" })).toEqual({ ok: false, grund: "nicht-verfuegbar" });
+});
+
 test("Navigation: fremde Adressen laden nie im Fenster, Links gehen nur als http(s) in den Standardbrowser, Netz ist gesperrt (CSP und onBeforeRequest)", async () => {
   lauf = await starteApp();
   const { app, fenster } = lauf;

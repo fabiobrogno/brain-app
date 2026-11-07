@@ -18,6 +18,7 @@ import { kennungVault, melde, aendereZustand, leseZustand } from "./aktivitaet.m
 import { planeVerweise, setzeTitel, verlinktVon } from "./linkpflege.mjs";
 import { titelAus } from "./notizen.mjs";
 import { ordnerVonPfad } from "./wikilink.mjs";
+import { benenneTagUm, pruefeTagName, findeTags, schluesselVon } from "./tags.mjs";
 
 const HASH = (buf) => createHash("sha256").update(buf).digest("hex");
 export const PAPIERKORB_TAGE = 30;
@@ -461,6 +462,7 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
   const textFuer = (art, typ, plan) => {
     const was = typ === "ordner" ? "Ordner" : "Notiz";
     const v = plan.verweise ? ` · ${plan.verweise} ${plan.verweise === 1 ? "Verweis" : "Verweise"} in ${plan.notizen} ${plan.notizen === 1 ? "Notiz" : "Notizen"} angepasst` : "";
+    if (art === "tag-umbenennen") return `Tag #${plan.tagAlt} in #${plan.tagNeu} umbenannt · ${plan.verweise} ${plan.verweise === 1 ? "Stelle" : "Stellen"} in ${plan.notizen} ${plan.notizen === 1 ? "Notiz" : "Notizen"}`;
     if (art === "loeschen") return `${was} in den Papierkorb gelegt${plan.verweise ? ` · von ${plan.notizen} ${plan.notizen === 1 ? "Notiz" : "Notizen"} verlinkt` : ""}`;
     return `${was} ${art === "umbenennen" ? "umbenannt" : "verschoben"}${v}`;
   };
@@ -629,6 +631,50 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
       const plan = await plane({ art: "loeschen", typ, pfad: e.pfad, basisHash: e.basisHash ?? null });
       if (flag(e)) return vorschauVon(plan);
       return fuehreAus(plan, e);
+    });
+  }
+
+
+  // ───────────── Tag im ganzen Vault umbenennen (ein Vorgang, ein Eintrag im Verlauf, Rückgängig wie beim Umbenennen) ─────────────
+  // Der Vorgang ist ein „Umbenennen ohne Umzug“: von = nach = erste geänderte Notiz, dateien = alle umgeschriebenen Notizen. Alt und Neu stehen im Manifest.
+  async function planeTag({ alt, neu }) {
+    const a = pruefeTagName(alt), n = pruefeTagName(neu);
+    if (!a) throw new HttpFehler(400, "Bitte den bisherigen Tag angeben.");
+    if (!n) throw new HttpFehler(400, "Der neue Tag darf Buchstaben, Ziffern, _ , - und / (für Unterthemen) enthalten und nicht nur aus Ziffern bestehen.");
+    const { notizen, uebersprungen: uebersp } = sammle();
+    const plan = { art: "tag-umbenennen", typ: "datei", tagAlt: a, tagNeu: n, von: null, nach: null, dateien: [], uebersprungen: [], verlinktVon: [], notizenImOrdner: 0, casePur: false, titelAlt: null, titelNeu: null, hash: null, keinUmzug: true };
+    const liste = [];
+    let stellen = 0, vorhanden = false;
+    const neuK = schluesselVon(n);
+    for (const nz of notizen) {
+      if (istGeneriert(nz.pfad, nz.abs)) continue;
+      if (findeTags(nz.text).some((s) => { const k = schluesselVon(s.tag); return k === neuK || k.startsWith(neuK + "/"); })) vorhanden = true;
+      const r = benenneTagUm(nz.text, a, n);
+      if (!r.anzahl || r.text === nz.text) continue;
+      const grund = schreibbarGrund(nz);
+      if (grund) { plan.uebersprungen.push({ pfad: nz.pfad, grund }); continue; }
+      plan.dateien.push({ pfad: nz.pfad, vorher: nz.buf, hashVorher: nz.hash, modus: nz.modus, nachher: Buffer.from(r.text, "utf8"), anzahl: r.anzahl });
+      stellen += r.anzahl;
+      liste.push({ pfad: nz.pfad, titel: titelAus(nz.pfad, nz.text), anzahl: r.anzahl });
+    }
+    for (const d of plan.dateien) d.hashNachher = HASH(d.nachher);
+    for (const [p, grund] of uebersp) plan.uebersprungen.push({ pfad: p, grund });
+    liste.sort((x, y) => x.pfad.localeCompare(y.pfad, "de"));
+    plan.verweise = stellen; plan.notizen = liste.length; plan.liste = liste.slice(0, MAX_LISTE); plan.mehrListe = Math.max(0, liste.length - MAX_LISTE);
+    plan.zusammen = vorhanden && schluesselVon(a) !== neuK;
+    plan.unveraendert = !plan.dateien.length;
+    if (plan.dateien.length) { plan.von = plan.nach = plan.dateien[0].pfad; plan.vonAbs = plan.nachAbs = absVon(plan.von); }
+    plan.token = token(plan, notizen, { rel: plan.von });
+    return plan;
+  }
+  async function tagUmbenennen(eingabe) {
+    const e = gemeinsamEin(eingabe);
+    return mitSperre(async () => {
+      const plan = await planeTag({ alt: e.alt, neu: e.neu });
+      if (flag(e)) return { ok: true, art: plan.art, alt: plan.tagAlt, neu: plan.tagNeu, unveraendert: plan.unveraendert, zusammen: plan.zusammen, verweise: plan.verweise, notizen: plan.notizen, liste: plan.liste, mehr: plan.mehrListe, uebersprungen: plan.uebersprungen.slice(0, MAX_LISTE), token: plan.token };
+      if (plan.unveraendert) return { ok: true, unveraendert: true, art: plan.art, alt: plan.tagAlt, neu: plan.tagNeu, verweise: 0, notizen: 0, geaendert: [] };
+      const r = await fuehreAus(plan, e);
+      return { ...r, alt: plan.tagAlt, neu: plan.tagNeu };
     });
   }
 
@@ -1041,5 +1087,5 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
     }
   }
 
-  return { sperreAktiv, aktionenOrt: () => { setzeAktionen(); return aktionen; }, papierkorbHinweisErledigt, umbenennen, verschieben, loeschen, papierkorbListe, papierkorbWiederherstellen, papierkorbEndgueltig, vorgangZurueck, vorgangWieder, vorgangMoeglich, kennung, korb };
+  return { sperreAktiv, aktionenOrt: () => { setzeAktionen(); return aktionen; }, papierkorbHinweisErledigt, umbenennen, verschieben, loeschen, tagUmbenennen, papierkorbListe, papierkorbWiederherstellen, papierkorbEndgueltig, vorgangZurueck, vorgangWieder, vorgangMoeglich, kennung, korb };
 }

@@ -28,6 +28,7 @@ import { erzeugeErfassenFenster, antwortErfassen, ERFASSEN_HOST } from "./erfass
 import { hinweisFuerVault, pruefeEingabe, baueAnfrage, antwortAus, leseArt, merkeArt } from "./erfassen.mjs";
 import { leseAppSymbol, symbolPfade } from "./symbole.mjs";
 import { glasMoeglich, leseGlasWunsch, glasSkript } from "./glas.mjs";
+import { htmlZuPdf } from "./pdf.mjs"; // Export als PDF (Aktion export-pdf)
 
 const HIER = dirname(fileURLToPath(import.meta.url));
 // Ressourcen des Repos (Studio, Werkstatt, gemeinsam): im Repo ../Ressourcen, im Paket <resources>/Ressourcen (electron/paket/ressourcen.mjs)
@@ -112,6 +113,16 @@ const aktionen = erzeugeAktionen({
     });
     return r.canceled || !r.filePaths?.length ? null : r.filePaths[0];
   },
+  // Export: Speichern-Dialog am Hauptfenster (Aktionen export-speichern, export-pdf) und PDF aus dem HTML der Werkstatt (pdf.mjs)
+  waehleSpeichern: async ({ name, endung }) => {
+    const r = await dialog.showSaveDialog(...(fenster ? [fenster] : []), {
+      defaultPath: name,
+      properties: ["createDirectory", "showOverwriteConfirmation"],
+      ...(endung ? { filters: [{ name: endung.toUpperCase(), extensions: [endung] }] } : {}),
+    });
+    return r.canceled || !r.filePath ? null : r.filePath;
+  },
+  pdfRendern: (html) => htmlZuPdf(html),
   mitteilung: () => zeigeProbeMitteilung(),
   statusAuffrischen: () => statusAuffrischen(),
   kuerzel: { pruefeGlobal: (id, text) => kuerzel.pruefeGlobal(id, text), neuLesen: () => kuerzelNeuLesen() },

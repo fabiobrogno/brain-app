@@ -23,6 +23,8 @@ import { erzeugeAufgaben } from "./aufgaben-vault.mjs";
 import { erzeugeDateiaktionen } from "./dateiaktionen.mjs";
 import { SUCHE_STANDARD, SUCHE_MAX, sucheWoerter, suchAuszug, sucheText } from "./ki-antworten.mjs";
 import { erzeugeSuchindex } from "./suchindex.mjs";
+import { erzeugeTagIndex } from "./tags.mjs";
+import { erzeugeExport } from "./export.mjs";
 import * as merge3 from "./merge3.mjs";
 import * as ablageFn from "./ablage.mjs";
 import * as entwurfFn from "./entwurf.mjs";
@@ -608,6 +610,11 @@ export function oeffneVault(vaultPfad, opts = {}) {
     return fn(a);
   };
 
+  // Tags (gemeinsam/tags.mjs): Zähler für Seitenleiste, Vervollständigung und MCP; liest nur geänderte Notizen neu
+  const tagIndex = erzeugeTagIndex({ wurzel, gesperrt: gesperrterName, generiert: istGeneriert, ueberspringeOrdner: istUnterVaultOrdner });
+  // Export (gemeinsam/export.mjs): Markdown, HTML und Druck-HTML aus Notizen des Vaults; liest nur, schreibt nie in den Vault
+  const exportFn = erzeugeExport({ wurzel, lies, istGeneriert, ueberspringeOrdner: istUnterVaultOrdner, tagIndex });
+
   // Dieselbe Suche für MCP brain_suchen und die Probe-Frage: strukturiert (treffer) und als Text, wie ihn die KI sieht.
   // Rangfolge wie die CLI-Suche (`brain search`, Profil minimal): BM25 aus dem gebündelten Kern (minisuche.mjs), ODER über die Wörter der
   // Frage statt „jedes Wort muss vorkommen“. Fehlt der Kern (oder wirft er), gilt die UND-Suche der Oberfläche (suche()).
@@ -650,6 +657,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
     wurzel, name: basename(wurzel), heute: () => opts.heute || heuteIso(jetzt()), rueckfragen, kitVersion, kitVorhanden, kit, vertrauen, vertrauenStand: stand, baum, lies, imUnterVault: (rel) => { try { return imUnterVault(loese(wurzel, rel).abs); } catch { return false; } }, schreibe, zusammenfuehren, ablageListe, ablageLese, ablageLegeAb, entwurfPruefen,
     entwurfSchreiben: (a) => entwurfFn.schreibeEntwurf(supportOrdnerV(), wurzel, a || {}), entwurfLoeschen: (pfad) => ({ ok: entwurfFn.loescheEntwurf(supportOrdnerV(), wurzel, pfad) }), entwurfVerschieben: (a) => entwurfFn.verschiebeEntwuerfe(supportOrdnerV(), wurzel, a?.von, a?.nach), entwuerfe: () => ({ entwuerfe: entwurfFn.listeEntwuerfe(supportOrdnerV(), wurzel) }),
     neu, wikiAnlegen, wikiLoese: (ziel, von) => notizIndex.loeseWiki(ziel, ordnerVonPfad(von || "")), merken, suche, sucheIndex, sucheVorwaermen, suchindexBeende, suchindexAendere, suchindexPruefeNeu, suchindexStand: () => (suchindex ? suchindex.stand() : null), suchindexRuhe: () => (suchindex ? suchindex.ruhe() : Promise.resolve()), suchenFuerKi, pruefung, gesundheit, nutzung,
+    tags: (o) => tagIndex.liste(o), tagNotizen: (tag, o) => tagIndex.notizen(tag, o), tagUmbenennen: mitRuhe(async (a) => { const r = await dateiAktionen.tagUmbenennen(a); tagIndex.eintraege({ frisch: true }); return r; }), exportiere: exportFn.exportiere,
     umbenennen: mitRuhe(dateiAktionen.umbenennen), verschieben: mitRuhe(dateiAktionen.verschieben), loeschen: mitRuhe(dateiAktionen.loeschen),
     papierkorb: dateiAktionen.papierkorbListe, papierkorbWiederherstellen: mitRuhe(dateiAktionen.papierkorbWiederherstellen), papierkorbEndgueltig: dateiAktionen.papierkorbEndgueltig, papierkorbHinweisErledigt: dateiAktionen.papierkorbHinweisErledigt, aktionenOrt: dateiAktionen.aktionenOrt,
     vorgangZurueck: mitRuhe((a) => dateiAktionen.vorgangZurueck(a.id, a)), vorgangWieder: mitRuhe((a) => dateiAktionen.vorgangWieder(a.id, a)), vorgangMoeglich: dateiAktionen.vorgangMoeglich,

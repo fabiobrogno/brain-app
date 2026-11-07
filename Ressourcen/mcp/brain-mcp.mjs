@@ -25,20 +25,22 @@ import { AUFGABEN_WERKZEUGE, istAufgabenWerkzeug, rufeAufgabenWerkzeug, quelleVo
 
 const VERSIONEN = ["2025-06-18", "2025-03-26", "2024-11-05"];
 export const WERKZEUGE = [
-  { name: "brain_suchen", description: "Durchsucht den Vault (Titel und Inhalt), auch mit einer ganzen Frage; je Treffer Pfad, Titel, Prüf-Stufe, Zeile, Auszug.",
+  { name: "brain_suchen", description: "Durchsucht den Vault (Titel, Inhalt), auch per Frage; je Treffer Pfad, Titel, Stufe, Zeile, Auszug.",
     inputSchema: { type: "object", properties: { frage: { type: "string", description: "Suchbegriffe oder Frage" }, anzahl: { type: "integer", minimum: 1, maximum: 20, description: "Höchstzahl der Treffer (Standard 5)" } }, required: ["frage"], additionalProperties: false } },
-  { name: "brain_lesen", description: "Liest eine Seite des Vaults samt Prüf-Signalen und Stand. Lange Seiten kommen als Gliederung und Anfang; den Rest holt man mit abschnitt oder von/bis.",
-    inputSchema: { type: "object", properties: { pfad: { type: "string", description: "Pfad relativ zum Vault, z. B. 09_wiki/firma/amazon/thema_x.md (auch Titel oder Alias wie bei [[Links]])" }, abschnitt: { type: "string", description: "Nur dieser Abschnitt (Nummer oder Überschrift aus der Gliederung)" }, von: { type: "integer", minimum: 1, description: "Erste Zeile" }, bis: { type: "integer", minimum: 1, description: "Letzte Zeile" } }, required: ["pfad"], additionalProperties: false } },
-  { name: "brain_merken", description: "Legt eine neue Notiz im Posteingang des Vaults ab (Standard 00_inbox/). Schreibt nie ins Wiki; erst /ingest macht daraus Wissen.",
+  { name: "brain_lesen", description: "Liest eine Seite samt Prüf-Signalen und Stand. Lange Seiten: Gliederung und Anfang, den Rest per abschnitt oder von/bis.",
+    inputSchema: { type: "object", properties: { pfad: { type: "string", description: "Pfad relativ zum Vault (auch Titel oder Alias wie bei [[Links]])" }, abschnitt: { type: "string", description: "Nur dieser Abschnitt (Nummer oder Überschrift aus der Gliederung)" }, von: { type: "integer", minimum: 1, description: "Erste Zeile" }, bis: { type: "integer", minimum: 1, description: "Letzte Zeile" } }, required: ["pfad"], additionalProperties: false } },
+  { name: "brain_merken", description: "Legt eine Notiz im Posteingang ab (00_inbox/). Schreibt nie ins Wiki; erst /ingest macht Wissen daraus.",
     inputSchema: { type: "object", properties: { text: { type: "string" }, titel: { type: "string" } }, required: ["text"], additionalProperties: false } },
-  { name: "brain_gesundheit", description: "Kurzfassung der Vault-Gesundheit (Ampel und Befunde) aus dem Kern von Kortex, falls der Vault ein Kortex-Vault ist (brain.config.json).",
+  { name: "brain_gesundheit", description: "Kurzfassung der Vault-Gesundheit (Ampel und Befunde), falls der Vault ein Kortex-Vault ist.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false } },
-  { name: "brain_vaults", description: "Listet die in Kortex eingerichteten Vaults und nennt den, den dieser Server gerade nutzt.",
+  { name: "brain_vaults", description: "Listet die eingerichteten Vaults und nennt den genutzten.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false } },
   { name: "brain_verlauf", description: "Git-Verlauf einer Datei (neueste zuerst).",
     inputSchema: { type: "object", properties: { pfad: { type: "string" }, max: { type: "integer", minimum: 1, maximum: 100, description: "Standard 20" } }, required: ["pfad"], additionalProperties: false } },
-  { name: "brain_kontext", description: "Kontext-Paket zum aktuellen Projekt: bis zu 4 passende Seiten des Vaults (Pfad, Titel, Stand, Prüf-Stufe, ein Satz). Zu Beginn einer Sitzung mit dem Projektnamen aufrufen.",
+  { name: "brain_kontext", description: "Kontext-Paket zum Projekt: bis zu 4 passende Seiten (Pfad, Titel, Stand, Stufe, ein Satz). Zu Beginn einer Sitzung aufrufen.",
     inputSchema: { type: "object", properties: { projekt: { type: "string", description: "Repo- oder Ordnername des Projekts" }, cwd: { type: "string", description: "Arbeitsordner (optional); schärft die Zuordnung über `pfade`" } }, required: ["projekt"], additionalProperties: false } },
+  { name: "brain_tags", description: "Tags des Vaults mit Zahl der Notizen; mit tag: die Notizen dazu.",
+    inputSchema: { type: "object", properties: { tag: { type: "string", description: "z. B. projekt/atlas" } }, additionalProperties: false } },
   { name: "brain_umbenennen", description: "Benennt eine Notiz um (Titel und/oder Dateiname); Verweise folgen. Nur bestätigte Vaults.",
     inputSchema: { type: "object", properties: { pfad: { type: "string" }, titel: { type: "string" }, dateiname: { type: "string" } }, required: ["pfad"], additionalProperties: false } },
   { name: "brain_verschieben", description: "Verschiebt eine Notiz in einen vorhandenen Ordner; Verweise folgen. Nur bestätigte Vaults.",
@@ -247,6 +249,21 @@ async function rufe(vArg, name, a, spur = { seiten: [] }, sitzung = standardSitz
       aktivitaet(v.wurzel, zugriff, sitzung, { art: "aenderung", text: umb ? "hat eine Notiz umbenannt." : "hat eine Notiz verschoben.", pfade: [r.nach, r.von], rueckgaengig: { art: "vorgang", id: r.vorgang } });
       spur.seiten = [r.nach];
       return text(`${umb ? "Umbenannt" : "Verschoben"}: ${r.von} → ${r.nach}${r.verweise ? ` (${r.verweise} Verweis${r.verweise === 1 ? "" : "e"} in ${r.notizen} Notiz${r.notizen === 1 ? "" : "en"} angepasst)` : ""}`);
+    }
+    // Tags (gemeinsam/tags.mjs): nur lesen; zählt nur, was die Suche auch sehen darf (keine Unter-Vaults, nichts Generiertes, keine Punkt-Ordner)
+    case "brain_tags": {
+      const tag = typeof a.tag === "string" ? a.tag.trim().replace(/^#/, "") : "";
+      const kopf = vertraut(v) ? "" : `${DATEN_HINWEIS}\n\n`;
+      if (!tag) {
+        const { tags, notizen } = v.tags();
+        if (!tags.length) return text(`${kopf}Keine Tags im Vault.`);
+        const top = tags.slice().sort((x, y) => y.anzahl - x.anzahl || (x.name < y.name ? -1 : 1)).slice(0, 80);
+        return text(`${kopf}${tags.length} Tags in ${notizen} Notizen${top.length < tags.length ? ` (die häufigsten ${top.length})` : ""}:\n${top.map((t) => `#${t.name} ${t.anzahl}`).join("\n")}`);
+      }
+      const liste = v.tagNotizen(tag).map((e) => e.pfad).sort();
+      spur.seiten = liste.slice(0, 30);
+      if (!liste.length) return text(`${kopf}Keine Notiz mit dem Tag #${tag}.`);
+      return text(`${kopf}#${tag}: ${liste.length} Notiz${liste.length === 1 ? "" : "en"}${liste.length > 30 ? " (die ersten 30)" : ""}\n${liste.slice(0, 30).join("\n")}`);
     }
     case "brain_gesundheit": {
       const g = await v.gesundheit();

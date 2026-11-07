@@ -41,7 +41,7 @@ test("Kontextmenü einer Notizkarte: Umbenennen an Ort und Stelle, Vorschau mit 
   await oeffne(page);
   const vorher = { plan: lies("20_projekte/Plan.md"), kuchen: lies("20_projekte/Rezepte/Kuchen.md") };
   await rechtsklick(page, karte(page, "20_projekte/Zutaten.md"));
-  await expect(page.locator(".menue.offen .m-eintrag")).toHaveText([/Öffnen/, /Umbenennen\s*F2/, /Verschieben …/, /In den Papierkorb\s*⌘⌫/]);
+  await expect(page.locator(".menue.offen .m-eintrag")).toHaveText([/Öffnen/, /Exportieren …/, /Als Markdown kopieren/, /Formatiert kopieren/, /Umbenennen\s*F2/, /Verschieben …/, /In den Papierkorb\s*⌘⌫/]);
   await menueEintrag(page, "umbenennen").click();
   const feld = page.locator(".inline-name");
   await expect(feld).toBeFocused();
@@ -103,7 +103,7 @@ test("F2 benennt die offene Notiz im Titel um: Editor und Tab-Titel folgen, Date
 test("Doppelklick auf den Titel und das Menü des Titels: Umbenennen, Verschieben, Papierkorb", async ({ page }) => {
   await oeffne(page, "30_ablage/Einzelnes.md");
   await rechtsklick(page, page.locator("#pfad .krume.aktuell"));
-  await expect(page.locator(".menue.offen .m-eintrag")).toHaveText([/Umbenennen/, /Verschieben/, /In den Papierkorb/]);
+  await expect(page.locator(".menue.offen .m-eintrag")).toHaveText([/Exportieren …/, /Als Markdown kopieren/, /Formatiert kopieren/, /Umbenennen/, /Verschieben/, /In den Papierkorb/]);
   await page.keyboard.press("Escape");
   await page.locator("#pfad .krume.aktuell").dblclick();
   await expect(page.locator("#pfad .inline-name")).toBeFocused();
@@ -266,7 +266,7 @@ test("Geschützte Dinge bieten keine Aktionen an: generierte Dateien und feste O
   await oeffne(page);
   await expect(zeile(page, "09_wiki")).toBeVisible();
   await rechtsklick(page, zeile(page, "09_wiki"));
-  await expect(page.locator(".menue.offen .m-eintrag")).toHaveText([/Öffnen/]);
+  await expect(page.locator(".menue.offen .m-eintrag")).toHaveText([/Öffnen/, /Exportieren …/]); // Exportieren liest nur und gilt auch hier
   await expect(page.locator(".menue.offen .m-leer")).toContainText("gehört fest zu Kortex");
 });
 

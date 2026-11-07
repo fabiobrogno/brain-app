@@ -5,6 +5,7 @@
 import { realpathSync, existsSync } from "node:fs";
 import { join, dirname, basename, sep, isAbsolute } from "node:path";
 import { externPruefen } from "./navigation.mjs";
+import { pruefeBuendel, pruefePdf, schreibeBuendel, schreibeAtomar } from "./export-schreiben.mjs";
 
 const OK = Object.freeze({ ok: true });
 const nein = (grund) => ({ ok: false, grund });
@@ -20,7 +21,7 @@ const APP_SYMBOLE = ["standard", "dunkel", "graphit", "papier", "smaragd"];
 export const MAX_TITEL = 120, MAX_HINWEIS = 200, MAX_FEHLERTEXT = 300, MAX_FEHLERORT = 120, MAX_KOPIEREN = 400, MAX_FEHLER_JE_FENSTER = 20;
 // Aktionen, die auf Dialoge, Dateisystem oder Prozesse warten: die Seite bekommt ein Versprechen. Alle anderen antworten sofort (das Preload nimmt dafür den synchronen Weg,
 // damit `aktion("extern", …)` wie in der App gleich meldet, ob die Aktion angenommen wurde).
-export const ASYNCHRON = ["ordner-waehlen", "ordner-zeigen", "git-pruefen", "git-installieren", "mitteilung-probe"];
+export const ASYNCHRON = ["ordner-waehlen", "ordner-zeigen", "git-pruefen", "git-installieren", "mitteilung-probe", "export-speichern", "export-pdf"];
 
 // Wo die Einrichtung einsteigt (wie EinrichtungsOverlay.einstieg in Swift): ein verlangter Einstieg gilt immer; mit gewähltem Weg oder ohne Vault beginnt die Seite beim Vault (kein `ab`);
 // sonst macht sie nach dem zuletzt erledigten Schritt weiter: nach „ki“ bei der Sicherung, sonst (auch nach „sicherung“ = alles erledigt) bei der KI.
@@ -72,6 +73,7 @@ export function ortImVault(relativ, vault, { plattform = process.platform } = {}
  * abh: { support, vaultPfad(): Promise<string|null>, openExternal(url), showItemInFolder(pfad), schreibeZwischenablage(text), waehleOrdner({titel, vorschlag}): Promise<string|null>,
  *        mitteilung({probe: true}): boolean, darstellung(themeSource), fensterTitel(text|null), fensterZoom(), befehlAnStudio(name, wert), protokoll(zeile),
  *        W2b (alle optional): statusAuffrischen(), kuerzel: { pruefeGlobal(id, text|null), neuLesen() }, appSymbol(name) → boolean, fensterGlas(an) → null | wirkt:boolean,
+ *        waehleSpeichern({name, ordner, endung?}): Promise<string|null>, pdfRendern(html): Promise<Buffer|null>, schreibeBuendel? (Ersatz für Tests),
  *        einrichtung: { lese(support), schreibe(support, o) }, ordner: { pruefeOrdner(pfad) }, git: { pruefen(), hinweis() }, plattform? }
  * → { namen, aktion(name, wert) → Antwort | Promise<Antwort>, seiteNeu(), zustand() }
  */
@@ -181,6 +183,28 @@ export function erzeugeAktionen(abh) {
       return OK;
     },
     "app-symbol": (w) => (typeof w === "string" && APP_SYMBOLE.includes(w) ? (abh.appSymbol?.(w) ? OK : nein("nicht-verfuegbar")) : UNGUELTIG()),
+    // Export (electron/export-schreiben.mjs): erst der Speichern-Dialog, dann wird geschrieben bzw. das PDF erzeugt. Namen und Inhalte gehören nicht ins Protokoll.
+    "export-speichern": async (w) => {
+      const b = pruefeBuendel(w);
+      if (!b) return UNGUELTIG();
+      abh.protokoll("aktion export-speichern");
+      const ziel = await abh.waehleSpeichern({ name: b.name, ordner: b.ordner });
+      if (!ziel) return nein("abgebrochen");
+      try { return { ok: true, name: (abh.schreibeBuendel || schreibeBuendel)(b, ziel) }; }
+      catch (e) { abh.protokoll(`export-speichern fehler ${e?.grund || "schreiben"}`); return nein("fehler"); }
+    },
+    "export-pdf": async (w) => {
+      const p = pruefePdf(w);
+      if (!p) return UNGUELTIG();
+      abh.protokoll("aktion export-pdf");
+      const ziel = await abh.waehleSpeichern({ name: p.name, ordner: false, endung: "pdf" });
+      if (!ziel) return nein("abgebrochen");
+      const daten = await abh.pdfRendern(p.html);
+      if (!daten || !daten.length) { abh.protokoll("export-pdf fehler erzeugen"); return nein("fehler"); }
+      try { schreibeAtomar(ziel, daten); } catch { abh.protokoll("export-pdf fehler schreiben"); return nein("fehler"); }
+      return { ok: true, name: basename(ziel) };
+    },
+    "teilen": () => nein("nicht-verfuegbar"), // das Teilen-Menü des Systems gibt es nur in der Mac-App
     "fenster-durchscheinend": (w) => {
       if (typeof w !== "boolean") return UNGUELTIG();
       const wirkt = abh.fensterGlas ? abh.fensterGlas(w) : null; // null = kein Fenstermaterial möglich

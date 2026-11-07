@@ -194,6 +194,8 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
     /// Der Host im brain://-Schema: das Studio hat `studio` (Werkstatt-Brücke), die Übersicht `app` (Kern-Brücke).
     var oberflaeche: Oberflaeche { art == .uebersicht ? .app : .studio }
     private var fenster: NSWindow?
+    /// Das Fenster für Dialoge der App (Speichern, Teilen); nur zum Anheften von Sheets und Menüs.
+    var fensterFuerDialoge: NSWindow? { fenster }
     private var webView: WKWebView?
     /// Platz, den die Seite links für die Ampel freihält (nach `positioniereAmpel`).
     private var ampelPlatz: CGFloat = 0

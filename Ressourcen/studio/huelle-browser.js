@@ -96,6 +96,9 @@
     "darstellung": function () { return OK; },
     "app-symbol": function () { return nicht(); },
     "fenster-durchscheinend": function () { return nicht(); },
+    "export-speichern": function () { return nicht(); }, // das Studio lädt selbst herunter (export.js)
+    "export-pdf": function () { return nicht(); },       // das Studio öffnet die Druckansicht des Browsers
+    "teilen": function () { return nicht(); },
   };
 
   window.kortexHuelle = {
