@@ -5,7 +5,7 @@
 // die der Sitzungsstart zuerst und laut zeigt. Szenarien (a)–(e) mit fake-sonnet, Temp-Vault und Temp-HOME.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, rmSync, utimesSync } from "node:fs";
+import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, rmSync, utimesSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { KERN } from "../pfade.mjs";
@@ -82,7 +82,7 @@ const MUTATIONEN = [
   ["neue Datei im Arbeitsbaum", "Arbeitsbaum/heimlich.txt", ({ v }) => schreibe(join(v, "heimlich.txt"), einmalig("x"))],
   ["HEAD des Vaults", "HEAD", ({ v }) => { schreibe(join(v, "n.txt"), einmalig("x")); git(v, "add", "--", "n.txt"); git(v, "commit", "-qm", "x"); }],
   ["Werkzeug-Code der Kopie", "Arbeitskopie/.tools/neu.mjs", ({ kopie }) => schreibe(join(kopie.pfad, ".tools", "neu.mjs"), einmalig("//"))],
-  ["Worktree-Zeiger der Kopie", "Arbeitskopie/.git", ({ kopie }) => writeFileSync(join(kopie.pfad, ".git"), einmalig("gitdir: /woanders"))],
+  ["Worktree-Zeiger der Kopie", "Arbeitskopie/.git", ({ kopie }) => { try { chmodSync(join(kopie.pfad, ".git"), 0o666); } catch { /* Windows: Schreibschutz-Attribut */ } writeFileSync(join(kopie.pfad, ".git"), einmalig("gitdir: /woanders")); }],
   ["Claude-Settings der Kopie", "Arbeitskopie/.claude/settings.json", ({ kopie }) => schreibe(join(kopie.pfad, ".claude", "settings.json"), einmalig("{}"))],
   ["MCP-Datei der Kopie", "Arbeitskopie/.mcp.json", ({ kopie }) => schreibe(join(kopie.pfad, ".mcp.json"), einmalig("{}"))],
   ["Rückfrage-Datei (Freigabe)", "00_inbox/_rueckfragen/rf-x.md", ({ v }) => schreibe(join(v, "00_inbox", "_rueckfragen", "rf-x.md"), einmalig("antwort: uebernehmen"))],

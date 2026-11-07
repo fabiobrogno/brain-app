@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync, execFileSync } from "node:child_process";
+import { symlinkSync as verweisSym, linkSync as verweisHart } from "node:fs"; // Verweise mit Node statt `ln` (Windows: ln aus Git Bash kopiert nur)
 
 const KERN = fileURLToPath(new URL("..", import.meta.url));
 const SICHER = join(KERN, "git-sicher");
@@ -19,7 +20,7 @@ delete ENV.BRAIN_GIT_HOOKS_ERLAUBT; delete ENV.BRAIN_GIT_PROGRAMM;
 const PROD = { ...ENV }; delete PROD.KORTEX_KERN_UNSTABIL_ERLAUBT; delete PROD.BRAIN_TESTMODUS;
 const g = (cwd, ...a) => execFileSync(GIT, a, { cwd, env: ENV, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 const sicher = (env, v, ...a) => spawnSync(SICHER, ["-C", v, ...a], { env, encoding: "utf8" });
-const ln = (ziel, link) => execFileSync("ln", ["-s", ziel, link]);
+const ln = (ziel, link) => verweisSym(ziel, link);
 
 function neuerVault() {
   const basis = mkdtempSync(join(tmpdir(), "git-sicher-innen-"));

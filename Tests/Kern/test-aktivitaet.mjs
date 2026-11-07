@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { baueTestUmgebung } from "./konto-hilfe.mjs";
+import { claudePfadform } from "../plattform.mjs";
 
 process.env.BRAIN_TESTMODUS = "1";
 const HIER = dirname(fileURLToPath(import.meta.url));
@@ -73,7 +74,7 @@ test("werkzeug-protokoll: Read einer Datei im gesperrten Vault → ehrlicher Hin
   assert.ok(!/abgewiesen/.test(e[0].text), "ohne Leseverbot hat das Lesen wirklich stattgefunden: nie „abgewiesen“");
   // Leseverbot: die Regel steht in den Einstellungen des Profils (gemeinsam/claude-sperre.mjs: Read(//<vault>/**))
   const s2 = szenario("gesperrt");
-  writeFileSync(join(PROFIL_A, "settings.json"), JSON.stringify({ permissions: { deny: [`Read(//${s2.vault.replace(/^\/+/, "")}/**)`] } }));
+  writeFileSync(join(PROFIL_A, "settings.json"), JSON.stringify({ permissions: { deny: [`Read(//${claudePfadform(s2.vault).replace(/^\/+/, "")}/**)`] } }));
   const r2 = hook("werkzeug-protokoll", s2, { session_id: "s2", tool_name: "Read", tool_input: { file_path: join(s2.vault, "09_wiki", "seite.md") }, tool_use_id: "x2", cwd: s2.vault });
   assert.equal(r2.code, 0);
   e = s2.ereignisse();

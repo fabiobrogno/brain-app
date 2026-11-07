@@ -552,7 +552,10 @@ export function hookBefehl(starter, name, args = "") {
 // Gehört dieser Befehl zu einem Kortex-Hook (neue Form, jeder Starter-Ort)? → Hook-Name oder null.
 export function hookNameAusBefehl(befehl) {
   const m = typeof befehl === "string" ? /kortex' hook ([a-z][a-z0-9-]*)(?: |$)/.exec(befehl) : null;
-  return m ? m[1] : null;
+  if (m) return m[1];
+  // Windows: kein Starter, der Befehl ruft node mit der Hook-Datei im Kern auf (install.mjs#hookCmd): `"<node>" "<kern>/adapters/claude-code/<name>.mjs"[ …]`
+  const w = process.platform === "win32" && typeof befehl === "string" ? /\/adapters\/claude-code\/([a-z][a-z0-9-]*)\.mjs["']?(?: |$)/.exec(String(befehl).split("\\").join("/")) : null;
+  return w ? w[1] : null;
 }
 // Absolute, gequotete Programmpfade für gerenderte Befehle (AGENTS.md, Skills, Hook-Befehle): ein frisch
 // eingerichteter Rechner hat das private Node/git oft NICHT im PATH — darum nie nackt "node"/"git".

@@ -11,9 +11,10 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
 import { pruefeVault } from "../pfade.mjs";
+import { symlinkSync as verweisSym, linkSync as verweisHart } from "node:fs"; // Verweise mit Node statt `ln` (Windows: ln aus Git Bash kopiert nur)
 
-const lnS = (ziel, link) => execFileSync("ln", ["-s", ziel, link]);
-const lnH = (ziel, link) => execFileSync("ln", [ziel, link]);
+const lnS = (ziel, link) => verweisSym(ziel, link);
+const lnH = (ziel, link) => verweisHart(ziel, link);
 function aufbau() {
   const basis = mkdtempSync(join(tmpdir(), "vault-schutz2-"));
   const v = join(basis, "Vault");
