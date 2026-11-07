@@ -39,6 +39,7 @@ while IFS= read -r f; do
     Ressourcen/gemeinsam/*|Ressourcen/werkstatt/*) swift=true; node=true; ui=true ;;
     Ressourcen/studio/*) node=true; ui=true ;;
     Ressourcen/mcp/*) node=true ;;
+    electron/*) node=true ;;                                                     # Electron-Hülle (W2a): Vertragstest und electron-test in Tests/Node; der Job electron-probe läuft, sobald vorab gesetzt ist
     Tests/Node/*|scripts/teste-node.sh) node=true ;;
     Werkzeuge/symbole/*|scripts/erzeuge-symbole.mjs) node=true; ui=true ;;       # Symbol-Erzeugung: Tests/Node/symbole.test.mjs und Playwright
     Tests/Oberflaeche/*|Werkzeuge/editor-bundle/*) ui=true ;;

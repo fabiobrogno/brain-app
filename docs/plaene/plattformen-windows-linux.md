@@ -379,3 +379,30 @@ Neu: `gemeinsam/plattform.mjs` (Kopie `kern/plattform.mjs`), `.gitattributes` (`
 | macOS-only ohne Ersatz | launchctl, pmset/ioreg, caffeinate, osascript, plutil, Keychain | W2: Aufgabenplanung, `powercfg`, PowerShell-Papierkorb, Credential Manager; Linux: systemd, `gio trash`, libsecret |
 | Bewusst nicht gemacht | ⌘→`mod()` (UI-Tests setzen `MacIntel`, Studio bildet Cmd auf Ctrl ab) | keine |
 | Linux-Support-Ordner | Regel aus `kern/pfade.mjs` (`XDG_DATA_HOME`/`~/.local/share`) | Entscheidung, falls `~/.config` gewünscht |
+
+---
+
+## 9. W2a Ergebnis (PR „W2a Electron-Grundgerüst“)
+
+Stand: lauffähige Electron-Hülle für Windows und Linux in `electron/`, ohne Installer, Updater, Tray und Erfassen-Fenster. Die Swift-App am Mac ist unverändert (`Sources/` nicht angefasst).
+
+**Aufbau**
+- `electron/haupt.mjs` (Hauptprozess), `preload.cjs` (die eine Schnittstelle `window.kortexHuelle`), `aktionen.mjs` (alle 24 Aktionen des Vertrags, reine Logik ohne `import "electron"`), `navigation.mjs` (erlaubte Adressen), `bruecke.mjs` (Werkstatt als Kindprozess, gleiches Zeilenprotokoll wie in der Swift-App).
+- Die **Werkstatt läuft als Kindprozess** (dieselbe `werkstatt.mjs` wie am Mac), nicht im Hauptprozess: Sie startet an vielen Stellen `process.execPath` als Node (Kern-Skripte, MCP, `vault.mjs`) — im Hauptprozess wäre das die Electron-Datei, also ein zweites Fenster; ein hängender Handler (git, lange Läufe) friert so die Oberfläche nicht ein; Absturz und Neustart sind getrennt (höchstens 3× in 60 s); ein Weg wie am Mac. Das Kind läuft als `ELECTRON_RUN_AS_NODE`; `gemeinsam/basis.mjs#kindUmgebung` reicht genau diese Variable an Kinder weiter, aber nur, wenn der Prozess selbst Electron ist.
+- Das Studio lädt über **`kortex://studio/`** (`protocol.handle` → Brücke): **kein Port, kein Token, kein Netzwerkweg** zur Werkstatt (anders als der Browser-Dienst W1). `api.js` braucht dafür keine Änderung (fetch auf dieselbe Herkunft).
+- **Sicherheit:** `contextIsolation`, kein `nodeIntegration`, `sandbox`, `webSecurity`, `webviewTag` aus; Preload lädt nur `electron`; Aktionen kommen nur vom Hauptrahmen der eigenen Seite (`senderFrame`); Navigation und `window.open` nie zu fremden Adressen (nur http/https gehen über `shell.openExternal` in den Browser, bei offener Einrichtung nur GitHub und Anmelde-Domänen); Netzzugriff der Seite gesperrt (`onBeforeRequest`: nur `kortex:`, `data:`, `blob:`); Berechtigungen bis auf „Zwischenablage schreiben“ verweigert; schreibende Anfragen nur als JSON (Chromium reicht den Origin nicht an `protocol.handle` weiter: gemessen, darum nur geprüft, wenn er da ist); Einzelinstanz-Sperre; alle Daten der Hülle unter `<Support>/electron`; Umgebung des Kindes ausdrücklich gebaut (nie `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, Git-Konfiguration, Tokens).
+- **Vertrag:** Feld `electron` bei jeder Aktion und jeder Route in `huellen-vertrag.json`; `Tests/Node/huellen-vertrag.test.mjs` prüft, dass die Hülle jede Aktion kennt, dieselbe Liste „nur bei offener Einrichtung“ hat und für jede Aktion beschrieben ist. Echte Umsetzung: Ordner zeigen (`showItemInFolder`), extern (`openExternal`), Ordner wählen (`showOpenDialog`, Antwort wie am Mac), Zwischenablage, Mitteilungs-Probe (`Notification`), Titel, Darstellung (`nativeTheme`), Fenster-Zoom, Einrichtung samt erstem Start. Noch nicht (`{ok:false, grund:"nicht-verfuegbar"}`): globale Kürzel, App-Symbol, durchscheinende Seitenleiste; `ansicht` bleibt `kein-kit`.
+- **Studio:** `api.js` kennt `imElectron()` und `kannOrdnerZeigen()`; die Oberfläche behandelt Electron wie den Browser-Modus (kein Dock, keine Übersicht, keine globalen Kürzel), zeigt aber „Im Dateimanager zeigen“.
+- **Tests:** `Tests/Node/electron-huelle.test.mjs` (Werteprüfung, Navigation, Umgebung, Brücke gegen die echte Werkstatt; läuft überall mit), `electron/test/huelle.spec.mjs` (die echte App über Playwright `_electron`, Temp-HOME, eigener Support-Ordner: Start, Sandbox/Isolation, Notiz anlegen und speichern, Aktionen, Navigation, erster Start, Fenster-Foto). CI: Job `electron-probe` (Linux unter xvfb ist Tor in `ci-ok`, Windows Messung).
+
+**Für W2b (Tray, Erfassen, Kürzel, Mitteilungen)**
+- Tray-Symbol je System, App-Menü mit den Kürzeln aus `tastenkuerzel-register.json` (heute nur „Ansicht“), Schließen = in den Tray (heute: Beenden).
+- Erfassen-Fenster (kleine Web-Seite im Studio-Stil, `alwaysOnTop`, Fokus zurück), globales Kürzel (`globalShortcut`; Wayland nur über das Portal oder ein vom Nutzer angelegtes Kürzel), damit `kuerzel-global` und `kuerzel-geaendert` echt werden.
+- Mitteilungen aus dem Studio heraus (Planer `Mitteilungen.swift` nach JS, Klick → Befehl), `status-auffrischen` für Zähler im Tray, `vault-gewechselt`/`vertrauen-geaendert` für Menü und Tray.
+- Eigene Titelleiste und `fenster-ziehen` (nur wenn der Rahmen entfällt), `fenster-durchscheinend` (Windows: Mica), App-Symbol als `.ico`/`.png`.
+
+**Für W2c (Paket und Updates)**
+- electron-builder: NSIS (Windows), AppImage und deb (Linux); `Ressourcen/` als `extraResources` (`haupt.mjs` erwartet sie unter `<resources>/Ressourcen`), AppUserModelID im Installer.
+- Ein **eigenes Node** im Paket statt Electron-als-Node (Kern-Skripte, MCP-Einträge zeigen dann auf ein stabiles `node`; `BRAIN_MCP_NODE` gibt es schon), dazu Hook-Starter je System (A4).
+- electron-updater (GitHub-Releases, `autoDownload = false`), Signatur (Windows: SignPath, Linux unsigniert), Release-Kette auf drei Runnern, Vorschau-Modus (`KORTEX_VORSCHAU`) für Electron.
+- Chromium-Sandbox unter Linux im Paket: SUID-Helfer oder User-Namensräume; die CI richtet den Helfer ein (`chrome-sandbox` root, 4755) und lockert auf Ubuntu 24.04 `apparmor_restrict_unprivileged_userns`.

@@ -269,7 +269,7 @@ function vaultZeilen(host) {
       const mehr = baueKnopf({ symbol: "punkte", variante: "leise", groesse: "s", label: `${TE.vaultMehr}: ${v.name}`, daten: { "data-aktion": "vault-mehr" }, aufKlick: (ev) => {
         oeffneMenue(ev.currentTarget, [
           ...(v.aktiv ? [] : [{ name: TE.vaultWechseln, symbol: "ordner-offen", id: "vault-wechseln", tun: () => Z.k.vaultWechseln(v.pfad) }]),
-          ...(v.aktiv && Z.k.inApp ? [{ name: TE.imFinder, symbol: "ordner", id: "vault-finder", tun: () => Z.k.zeigeVault() }] : []),
+          ...(v.aktiv && (Z.k.inApp || Z.k.ordnerZeigen) ? [{ name: TE.imFinder, symbol: "ordner", id: "vault-finder", tun: () => Z.k.zeigeVault() }] : []),
           { trenner: true },
           { name: TE.vaultAusKortex, symbol: "papierkorb", id: "vault-entfernen", gefahr: true, tun: () => Z.k.vaultEntfernen(v) },
         ], { rechts: true });
@@ -280,7 +280,7 @@ function vaultZeilen(host) {
           h("b", {}, h("span", { text: v.name }), v.aktiv ? einstellMarke(TE.vaultOffen, "akzent") : null, !v.vorhanden ? einstellMarke(TE.vaultFehlt, "warn") : null),
           h("div", { klasse: "ez-vault-meta" }, h("span", { klasse: "mono", title: v.pfad, text: Z.k.kurzPfad(v.pfad) }), h("span", { text: v.git ? TE.vaultGit : TE.vaultKeinGit }))),
         h("div", { klasse: "ez-vault-akt" },
-          v.aktiv && v.vorhanden && Z.k.inApp ? knopfS({ text: TE.imFinder, variante: "leise", aufKlick: () => Z.k.zeigeVault(), daten: { "data-aktion": "vault-finder" } }) : null,
+          v.aktiv && v.vorhanden && (Z.k.inApp || Z.k.ordnerZeigen) ? knopfS({ text: TE.imFinder, variante: "leise", aufKlick: () => Z.k.zeigeVault(), daten: { "data-aktion": "vault-finder" } }) : null,
           mehr));
     }));
   };
@@ -434,7 +434,7 @@ const SONDER = {
   "ds-themen": () => ({ steuerung: knopfS({ text: TE.zuDenVaults, daten: { "data-aktion": "zu-vaults" }, aufKlick: () => navigiere("vaults", "ernte-ohne-thema") }) }),
   "ds-zugriff": () => ({ steuerung: knopfS({ text: TE.zuKonten, daten: { "data-aktion": "zu-ki" }, aufKlick: () => navigiere("ki", "ki-zugriff") }) }),
   "mcp-verbinden": () => ({ steuerung: knopfS({ text: TE.kiVerbinden, daten: { "data-aktion": "mcp-verbinden" }, aufKlick: () => Z.k.oeffneKi() }) }),
-  "datei-vault": () => ({ steuerung: Z.k.inApp && Z.daten?.vault ? knopfS({ text: TE.imFinderZeigen, variante: "leise", daten: { "data-aktion": "datei-vault" }, aufKlick: () => Z.k.aktion("ordner-zeigen", "brain.config.json") }) : null }),
+  "datei-vault": () => ({ steuerung: (Z.k.inApp || Z.k.ordnerZeigen) && Z.daten?.vault ? knopfS({ text: TE.imFinderZeigen, variante: "leise", daten: { "data-aktion": "datei-vault" }, aufKlick: () => Z.k.aktion("ordner-zeigen", "brain.config.json") }) : null }),
   "datei-app": () => ({ steuerung: einstellMarke("einstellungen.json") }),
   zuruecksetzen: () => ({ steuerung: knopfS({ text: TE.reset.knopf, variante: "gefahr", daten: { "data-aktion": "zuruecksetzen" }, aufKlick: zuruecksetzenDialog }) }),
   "ueber-app": () => ({ voll: ueberKarte() }),
