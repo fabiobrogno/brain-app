@@ -16,8 +16,11 @@ const { erzeugeHandler } = await import(pfad("werkstatt", "handler.mjs"));
 const A = await import(pfad("gemeinsam", "anmeldung.mjs"));
 
 const neuesVault = () => { const d = tmp("brain-vault-"); schreibe(d, "brain.config.json", "{}\n"); schreibe(d, "00_inbox/n.md", "# N\n"); return realpathSync(d); };
+// Fristen, die in einem Test NICHT ablaufen sollen, sind so groß, dass auch ein überlasteter Rechner (Prozessstart in Sekunden) sie nicht reißt.
+// Nur die Fristen, die ein Test absichtlich ablaufen lässt, sind kurz; ihre Reihenfolge zu den Verzögerungen der Platzhalter hat reichlich Abstand.
+const FRIST_GROSS = 60_000;
 const warte = (ms) => new Promise((r) => setTimeout(r, ms));
-async function bis(fn, ms = 6000) { const ende = Date.now() + ms; for (;;) { const v = await fn(); if (v) return v; if (Date.now() > ende) throw new Error("Zeit überschritten"); await warte(20); } }
+async function bis(fn, ms = 30_000) { const ende = Date.now() + ms; for (;;) { const v = await fn(); if (v) return v; if (Date.now() > ende) throw new Error("Zeit überschritten"); await warte(20); } }
 
 // Auch nach einem fehlgeschlagenen Test endet alles Laufende (sonst hielten die Platzhalter den Testprozess offen).
 const alle = [];
@@ -34,7 +37,7 @@ function aufbau(szenario = {}, optionen = {}) {
     BRAIN_TESTMODUS: "1", KORTEX_VORSCHAU: "1", NODE_OPTIONS: "--no-warnings" };
   const protokoll = [];
   const h = erzeugeHandler({ vault: v, vaultOptionen: { support: s }, mcpPfad: join(mcp, "brain-mcp.mjs"),
-    anmeldeOptionen: { findeProgramm: (n) => programmPfad(join(p.bin, n)), basisUmgebung: () => basis, protokoll: (e) => protokoll.push(e), optionen: { takt: 30, fristen: { adresse: 2500, status: 4000 }, ...optionen } } });
+    anmeldeOptionen: { findeProgramm: (n) => programmPfad(join(p.bin, n)), basisUmgebung: () => basis, protokoll: (e) => protokoll.push(e), optionen: { takt: 30, fristen: { adresse: FRIST_GROSS, status: FRIST_GROSS }, ...optionen } } });
   const antworten = [];
   const rufe = async (methode, pf, daten) => {
     const [weg, abfrage] = pf.split("?");
@@ -146,7 +149,7 @@ test("Abbrechen beendet die ganze Prozessgruppe und räumt den Ordner und Eintra
 });
 
 test("Frist abgelaufen: Phase timeout, Prozessgruppe weg, Ordner weg", { skip: nurUnix("Prozessgruppe (Kindprozess des Programms) wird unter Windows nicht mit beendet") }, async () => {
-  const t = aufbau({ modus: "hang" }, { fristen: { adresse: 2500, gesamt: 500, status: 2000 } });
+  const t = aufbau({ modus: "hang" }, { fristen: { adresse: FRIST_GROSS, gesamt: 500, status: FRIST_GROSS } });
   const r = await t.start({ programm: "claude", neu: "Spaet" });
   const z = await t.warteAuf(r.j.id, ["timeout"]);
   assert.equal(z.grund, "abgelaufen"); assert.equal(z.rueckfall, false);
@@ -154,14 +157,14 @@ test("Frist abgelaufen: Phase timeout, Prozessgruppe weg, Ordner weg", { skip: n
   await bis(() => !lebt(haupt) && !lebt(kind));
   assert.deepEqual(t.staging(), []);
   // Codex: Gerätecode-Frist
-  const c = aufbau({ modus: "hang" }, { fristen: { geraet: 400, status: 2000 } });
+  const c = aufbau({ modus: "hang" }, { fristen: { geraet: 400, status: FRIST_GROSS } });
   const r2 = await c.start({ programm: "codex", neu: "CodexSpaet" });
   assert.equal((await c.warteAuf(r2.j.id, ["timeout"])).phase, "timeout");
   assert.deepEqual(c.staging(), []);
 });
 
 test("keine Adresse innerhalb der Frist: Fehler mit Rückfall „Im Terminal anmelden“, nie ein Hängen; Programm beendet", async () => {
-  const t = aufbau({ modus: "keine-adresse" }, { fristen: { adresse: 400, status: 2000 } });
+  const t = aufbau({ modus: "keine-adresse" }, { fristen: { adresse: 400, status: FRIST_GROSS } });
   const r = await t.start({ programm: "claude", neu: "Stumm" });
   const z = await t.warteAuf(r.j.id, ["error"]);
   assert.equal(z.grund, "keine-adresse"); assert.equal(z.rueckfall, true); assert.equal(z.url, null);
@@ -294,10 +297,10 @@ test("Claude: wird die Adresse bei 80 Spalten umbrochen, nimmt Kortex die ganze 
 });
 
 test("Claude: eine gelungene Anmeldung wird nie als „abgelaufen“ gemeldet, auch wenn die Frist während der Statusprüfung abläuft", async () => {
-  const p = platzhalter({ modus: "ok", verzoegerung: 900, statusVerzoegerung: 1800 });
+  const p = platzhalter({ modus: "ok", verzoegerung: 300, statusVerzoegerung: 5000 });
   const s = tmp("brain-anmelde-konto-");
   const l = A.starteAnmeldung({ programm: "claude", programmPfad: programmPfad(join(p.bin, "claude")), ordner: s, basisUmgebung: { PATH: pfadMit(p.bin), HOME: process.env.HOME },
-    fristen: { gesamt: 1500, adresse: 2500, status: 5000 }, takt: 30 });
+    fristen: { gesamt: 4000, adresse: FRIST_GROSS, status: FRIST_GROSS }, takt: 30 });
   const z = await l.ende;
   assert.equal(z.phase, "ok", `Phase ${z.phase} (${z.grund})`);
 });
