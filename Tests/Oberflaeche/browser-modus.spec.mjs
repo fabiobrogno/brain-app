@@ -194,7 +194,7 @@ if (ziel !== undefined && !(echt === TEMP || echt.startsWith(TEMP + path.sep))) 
 const args = process.argv.slice(2).join(" ");
 if (args === "auth status" || args === "login status") process.exit(1);
 ${programm === "claude"
-    ? 'console.log("Opening browser to sign in…"); console.log("If the browser didn\'t open, visit: https://claude.ai/oauth/authorize?code=true&client_id=testkennung&response_type=code&state=zustand123");'
+    ? 'console.log("Opening browser to sign in…"); console.log("If the browser didn\'t open, visit: https://claude.ai/oauth/authorize?code=true&client_id=testkennung&response_type=code&code_challenge=pruefwert0123456789&code_challenge_method=S256&state=zustand123");'
     : 'console.log("1. Open this link in your browser and sign in to your account\\n   https://auth.openai.com/codex/device\\n\\n2. Enter this one-time code (expires in 15 minutes)\\n   ABCD-12345\\n");'}
 setTimeout(() => {}, 120000);
 `;
