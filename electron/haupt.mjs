@@ -7,7 +7,7 @@
 // Paket W2c: installierbare Pakete (electron-builder, electron/paket/), eigenes Node im Paket (laufzeit.mjs legt es und den Kern stabil in den Support-Ordner), Updates (updater.mjs), GitHub-Anmeldung
 // (Client-ID aus Ressourcen/Info.plist). Nicht im Paket: Signatur unter Windows (Betas unsigniert), Veröffentlichen (docs/plaene/plattformen-windows-linux.md, docs/veroeffentlichen.md).
 import { app, BrowserWindow, Menu, Notification, Tray, clipboard, dialog, globalShortcut, ipcMain, nativeImage, nativeTheme, protocol, session, shell } from "electron";
-import { appendFileSync, existsSync, mkdirSync, statSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir, release } from "node:os";
 import { dirname, join, isAbsolute } from "node:path";
@@ -431,7 +431,12 @@ const UPDATES = updatesMoeglich({ gepackt: app.isPackaged, vorschau: !!process.e
 const autoUpdater = UPDATES.moeglich ? createRequire(import.meta.url)("electron-updater").autoUpdater : null;
 if (autoUpdater) {
   konfiguriere(autoUpdater, { version: app.getVersion(), protokoll });
-  if (TEST_FEED) { autoUpdater.forceDevUpdateConfig = true; autoUpdater.setFeedURL({ provider: "generic", url: TEST_FEED }); }
+  if (TEST_FEED) { // wie `app-update.yml` im Paket, nur für den Testlauf der unverpackten App
+    const konfig = join(datenOrdner, "test-app-update.yml");
+    writeFileSync(konfig, `provider: generic\nurl: ${TEST_FEED}\nupdaterCacheDirName: kortex-test-updater\n`);
+    autoUpdater.forceDevUpdateConfig = true;
+    autoUpdater.updateConfigPath = konfig;
+  }
 }
 const UPDATE_MELDUNGEN = [];
 let updateAntworten = [], updateNeustart = false, updateAuto = () => {};

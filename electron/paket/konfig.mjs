@@ -17,7 +17,8 @@ export function baueKonfig({ version, owner = "fabiobrogno", repo = "brain-app",
     executableName: "kortex",
     copyright: "Kortex",
     artifactName: "Kortex-${version}-${os}-${arch}.${ext}",
-    extraMetadata: { version, desktopName: "kortex.desktop" },
+    // name: electron-builder nimmt für den Installationsordner pro Benutzer (NSIS: %LOCALAPPDATA%\Programs\<name>) den Paketnamen, nicht den Produktnamen
+    extraMetadata: { name: "Kortex", version, desktopName: "kortex.desktop" },
     directories: { output: ausgabe },
     asar: true,
     // nur der Code der Hülle; Tests, Konfiguration der Tests und Paketbau bleiben draußen (devDependencies kommen ohnehin nie mit)
@@ -54,7 +55,7 @@ export function baueKonfig({ version, owner = "fabiobrogno", repo = "brain-app",
       desktop: { entry: { Name: "Kortex", Comment: "Notizen, Aufgaben und Wissen", Keywords: "Notizen;Wissen;Vault;" } },
     },
     appImage: { artifactName: "Kortex-${version}-${arch}.${ext}" },
-    deb: { artifactName: "Kortex-${version}-${arch}.${ext}", depends: ["libgtk-3-0", "libnotify4", "libnss3", "libxss1", "libxtst6", "xdg-utils", "libatspi2.0-0", "libuuid1", "libsecret-1-0"] },
+    deb: { packageName: "kortex", artifactName: "Kortex-${version}-${arch}.${ext}", depends: ["libgtk-3-0", "libnotify4", "libnss3", "libxss1", "libxtst6", "xdg-utils", "libatspi2.0-0", "libuuid1", "libsecret-1-0"] },
     // Beim Bau nie signieren, nie veröffentlichen
     forceCodeSigning: false,
   };
