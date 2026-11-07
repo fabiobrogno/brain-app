@@ -86,7 +86,7 @@ test("normaler Lauf: jede Aktion steht genau einmal in aktionen.jsonl; verschobe
 });
 
 // ------------------------------------------------------------------------------------------------ harter Abbruch
-test("Lauf nach dem Merge hart abgebrochen (SIGKILL beim Verschieben): die Übernahmen stehen im Protokoll, `brain zurueck <lauf>` nimmt sie zurück", () => mitEigenemCache(async () => {
+test("Lauf nach dem Merge hart abgebrochen (SIGKILL beim Verschieben): die Übernahmen stehen im Protokoll, `brain zurueck <lauf>` nimmt sie zurück", { skip: NUR_UNIX_W("SIGKILL auf einen Kindprozess: unter Windows endet er mit Exit 1 und ohne Signal (Folgeaufgabe W2: Absturz-Test mit taskkill)") }, () => mitEigenemCache(async () => {
   const v = aufbau({ automatik: { tageslauf: "an", einschwingen: 0 } });
   fakeKi(REGELN);
   hartAbbrechen(v);
@@ -103,7 +103,7 @@ test("Lauf nach dem Merge hart abgebrochen (SIGKILL beim Verschieben): die Über
   assert.doesNotMatch(readFileSync(join(v, SEITE), "utf8"), /belege\/2026-10\/(g1|n1)/);
 }));
 
-test("Wochen-Stichprobe fragt Übernahmen desselben Laufs nicht ab (wie bisher: frühestens beim nächsten Lauf), obwohl sie jetzt früh im Protokoll stehen", { skip: NUR_UNIX_W("SIGKILL auf einen Kindprozess: unter Windows endet er mit Exit 1 und ohne Signal (Folgeaufgabe W2: Absturz-Test mit taskkill)") }, async () => {
+test("Wochen-Stichprobe fragt Übernahmen desselben Laufs nicht ab (wie bisher: frühestens beim nächsten Lauf), obwohl sie jetzt früh im Protokoll stehen", async () => {
   const v = aufbau({ automatik: { tageslauf: "an", einschwingen: 0 } });
   fakeKi(REGELN);
   const r = await lauf(v);

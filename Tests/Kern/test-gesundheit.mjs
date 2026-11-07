@@ -381,7 +381,7 @@ test("dienst: nicht erreichbar — nie gestartet und sauber beendet (ende-Zeile)
   assert.equal(kurzListe(await nur("dienst", v, { haken })).length, 1, "die LETZTE Zeile entscheidet");
 });
 
-test("dienst: echter Unix-Socket — ein kleiner Fake-Dienst antwortet, dienst-client.mjs wird wirklich benutzt", async (t) => {
+test("dienst: echter Unix-Socket — ein kleiner Fake-Dienst antwortet, dienst-client.mjs wird wirklich benutzt", { skip: NUR_UNIX_W("Unix-Socket im Temp-Ordner: unter Windows EACCES (Folgeaufgabe W2: Named Pipe)") }, async (t) => {
   const net = await import("node:net");
   const { mkdtempSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
@@ -414,7 +414,7 @@ function rueckstandVault(schwellen, { fakten = 3, lektionen = 2, inbox = 2, konf
   return v;
 }
 
-test("rueckstand: Zahlen wie beim Sitzungsstart (Vorschläge ohne Lektionen, Inbox ohne Systemordner) — ab der Schwelle gelb, darunter grün", { skip: NUR_UNIX_W("Unix-Socket im Temp-Ordner: unter Windows EACCES (Folgeaufgabe W2: Named Pipe)") }, async () => {
+test("rueckstand: Zahlen wie beim Sitzungsstart (Vorschläge ohne Lektionen, Inbox ohne Systemordner) — ab der Schwelle gelb, darunter grün", async () => {
   const v = rueckstandVault({ gesundheitVorschlaege: 3, gesundheitLektionen: 2, gesundheitInbox: 2, gesundheitKonflikte: 1 });
   let p = await nur("rueckstand", v);
   assert.deepEqual([p.daten.vorschlaege, p.daten.lektionen, p.daten.inbox, p.daten.konflikte], [3, 2, 2, 1]);
