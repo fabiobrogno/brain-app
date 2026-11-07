@@ -50,7 +50,7 @@ export function findeProgramm(name, env = process.env) {
   const orte = [...(env.PATH || "").split(delimiter).filter(Boolean), ...zusatzOrte(env)];
   for (const d of new Set(orte)) {
     if (!isAbsolute(d)) continue;
-    const p = join(d, name);
+    const p = join(d, process.platform === "win32" ? `${name}.exe` : name); // Windows: claude.exe, codex.exe (native Programme)
     try { accessSync(p, constants.X_OK); if (statSync(p).isFile()) return p; } catch { /* weiter */ }
   }
   return null;

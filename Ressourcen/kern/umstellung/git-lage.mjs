@@ -19,12 +19,21 @@ const TESTMODUS = (env) => env.KORTEX_KERN_UNSTABIL_ERLAUBT === "1" || env.BRAIN
 // Feste Orte wie in git-sicher; BRAIN_GIT_PROGRAMM nur in der Testumgebung.
 export function echtesGit(env = process.env) {
   if (TESTMODUS(env) && typeof env.BRAIN_GIT_PROGRAMM === "string" && isAbsolute(env.BRAIN_GIT_PROGRAMM) && existsSync(env.BRAIN_GIT_PROGRAMM)) return env.BRAIN_GIT_PROGRAMM;
+  if (process.platform === "win32") return windowsGit(env);
   for (const g of ["/opt/homebrew/bin/git", "/usr/local/bin/git", "/usr/bin/git"]) if (existsSync(g)) return g;
   return null;
 }
+// Windows: git.exe in einem absoluten PATH-Ordner (Git for Windows, MinGit im Kit) oder am üblichen Ort; nie ein relativer Eintrag.
+function windowsGit(env) {
+  const dirs = [...String(env.PATH || env.Path || "").split(";"), "C:\\Program Files\\Git\\cmd", "C:\\Program Files (x86)\\Git\\cmd"];
+  for (const d of dirs) { if (!d || !isAbsolute(d)) continue; const p = join(d, "git.exe"); if (existsSync(p)) return p; }
+  return null;
+}
+// PATH für Kindprozesse von git: macOS/Linux fest (nichts aus dem Nutzer-PATH), Windows der geerbte (git.exe und seine Hilfsprogramme brauchen System32 und den Git-Ordner).
+export const gitPfadFest = (env = process.env) => (process.platform === "win32" ? String(env.PATH || env.Path || "") : "/usr/bin:/bin:/usr/sbin:/sbin");
 
 const saubereUmgebung = (home) => ({
-  PATH: "/usr/bin:/bin:/usr/sbin:/sbin", HOME: home, LC_ALL: "C", GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0", GIT_NO_LAZY_FETCH: "1", GIT_CONFIG_NOSYSTEM: "1",
+  PATH: gitPfadFest(), ...(process.platform === "win32" ? { USERPROFILE: home, SYSTEMROOT: process.env.SYSTEMROOT || "", TEMP: process.env.TEMP || "", TMP: process.env.TMP || "" } : {}), HOME: home, LC_ALL: "C", GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0", GIT_NO_LAZY_FETCH: "1", GIT_CONFIG_NOSYSTEM: "1",
 });
 const HAERTUNG = ["-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-c", "protocol.ext.allow=never", "-c", "submodule.recurse=false",
   "-c", "diff.ignoreSubmodules=all", "-c", "status.submoduleSummary=false", "--no-optional-locks"];
@@ -52,10 +61,12 @@ export const alsPrueflistenName = (s) => s.replace(/[^\x20-\x7e]/g, "?").slice(0
 
 // Die Prüfung der Erlaubnisliste im Modus --alle → { ok, namen: [Schlüsselnamen], nichtPruefbar }. Die Umgebung ist die der Produktion (keine Testschalter),
 // damit auch lokale Remote-Adressen als verboten gelten.
+// macOS/Linux: das Perl-Skript (wie git-sicher); Windows und überall dort, wo es kein Perl gibt: dieselbe Prüfung in Node (git-sicher-pruefung.mjs, Test vergleicht beide).
 export function pruefungAlle(git, vault, { home = homedir(), perl = "/usr/bin/perl" } = {}) {
-  const skript = join(KERN, "git-sicher-pruefung.pl");
-  if (!git || !existsSync(perl) || !existsSync(skript)) return { ok: false, namen: [], nichtPruefbar: true };
-  const r = spawnSync(perl, [skript, git, vault, "--alle"], { encoding: "utf8", env: saubereUmgebung(home), timeout: 30_000, windowsHide: true, stdio: ["ignore", "pipe", "ignore"] });
+  const mitPerl = process.platform !== "win32" && existsSync(perl) && existsSync(join(KERN, "git-sicher-pruefung.pl"));
+  const skript = join(KERN, mitPerl ? "git-sicher-pruefung.pl" : "git-sicher-pruefung.mjs");
+  if (!git || !existsSync(skript)) return { ok: false, namen: [], nichtPruefbar: true };
+  const r = spawnSync(mitPerl ? perl : process.execPath, [skript, git, vault, "--alle"], { encoding: "utf8", env: saubereUmgebung(home), timeout: 30_000, windowsHide: true, stdio: ["ignore", "pipe", "ignore"] });
   if (r.error || r.status === null) return { ok: false, namen: [], nichtPruefbar: true };
   const namen = String(r.stdout || "").split("\n").filter((z) => z.startsWith("REFUSE\t")).map((z) => z.slice(7));
   if (r.status === 0) return { ok: true, namen: [], nichtPruefbar: false };

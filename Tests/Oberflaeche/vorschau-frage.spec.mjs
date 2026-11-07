@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { git } from "./vault.mjs";
 import { starteServer } from "./start.mjs";
+import { legeProgramm, pfadMit } from "../Node/attrappe.mjs";
 
 const WURZEL = fileURLToPath(new URL("../../", import.meta.url));
 const K = await import(pathToFileURL(join(WURZEL, "Ressourcen/gemeinsam/ki-konten.mjs")).href);
@@ -51,9 +52,8 @@ async function aufbauen({ skript = platzhalterSkript() } = {}) {
   K.aendere(support, () => ({ version: 1,
     konten: { k_aaaaaaaa: { programm: "claude", ordner, standard: true, name: "Claude Code", ordnerKennung: K.kennungVon(ordner), abo: "max" } },
     vaults: { [v]: { ordnerKennung: K.kennungVon(v), neueKonten: "gesperrt", ohneKonto: "gesperrt", konten: { k_aaaaaaaa: "lesen" } } } }));
-  writeFileSync(join(bin, "claude"), skript);
-  chmodSync(join(bin, "claude"), 0o755);
-  server = await starteServer(v, { support, umgebung: { PATH: `${bin}:/usr/bin:/bin`, HOME: home, KORTEX_VORSCHAU: vo, TMPDIR: join(vo, "tmp") + "/", LANG: "de_DE.UTF-8", BRAIN_CLAUDE_EXTRA: "" } });
+  legeProgramm(join(bin, "claude"), skript);
+  server = await starteServer(v, { support, umgebung: { PATH: pfadMit(bin), HOME: home, KORTEX_VORSCHAU: vo, TMPDIR: join(vo, "tmp") + "/", LANG: "de_DE.UTF-8", BRAIN_CLAUDE_EXTRA: "" } });
 }
 test.afterEach(() => { server?.stopp(); server = null; });
 

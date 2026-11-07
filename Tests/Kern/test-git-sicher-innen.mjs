@@ -1,6 +1,6 @@
 // test-git-sicher-innen.mjs — Review 3 zu git-sicher: Verweise IN .git, lokale Remote-Adressen, `config`, gc.*, Personenfelder, GIT_DIR.
 // Fixtures nur in Wegwerf-Ordnern; Marken-Dateien beweisen, dass nichts läuft bzw. nichts draußen geschrieben wird.
-import { test } from "node:test";
+import { testNurUnix as test } from "./nur-unix.mjs";   // git-sicher ist ein Shell-Skript: unter Windows übersprungen
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, mkdirSync, existsSync, readFileSync, appendFileSync, cpSync, renameSync, rmSync, symlinkSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";

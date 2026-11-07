@@ -10,4 +10,7 @@ S="$(node -p 'require("node:url").pathToFileURL(process.argv[1]).href' "$D/setup
 [ "$#" -gt 0 ] || set -- "$D"/test-*.mjs
 # KERN_TEST_KONKURRENZ=<n>: so viele Testdateien gleichzeitig (Standard von node: Kerne − 1). Die Tests warten viel auf
 # Kindprozesse (Versionsverwaltung, node); die CI-Runner haben 4 Kerne, dort lohnt etwas mehr als der Standard.
-exec node --test ${KERN_TEST_KONKURRENZ:+--test-concurrency="$KERN_TEST_KONKURRENZ"} --import "$S" "$@"
+# Windows (Git Bash, Plattform-Probe): Laufwerkspfade in import() und Kurznamen (RUNNER~1) brauchen einen Haken (windows-importe.mjs). macOS/Linux unverändert.
+W=
+if [ "${OS:-}" = "Windows_NT" ]; then W="$(node -p 'require("node:url").pathToFileURL(process.argv[1]).href' "$D/windows-importe.mjs")" || exit 1; fi
+exec node --test ${KERN_TEST_KONKURRENZ:+--test-concurrency="$KERN_TEST_KONKURRENZ"} ${W:+--import "$W"} --import "$S" "$@"

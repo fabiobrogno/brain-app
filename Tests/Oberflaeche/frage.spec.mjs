@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { baueVault } from "./vault.mjs";
 import { starteServer } from "./start.mjs";
+import { legeProgramm, pfadMit } from "../Node/attrappe.mjs";
 
 const WURZEL = fileURLToPath(new URL("../../", import.meta.url));
 const K = await import(pathToFileURL(join(WURZEL, "Ressourcen/gemeinsam/ki-konten.mjs")).href);
@@ -31,10 +32,9 @@ async function aufbauen({ stufen = { a: "lesen", b: "lesen", g: "gesperrt", c: "
     konten: Object.fromEntries([ein("k_aaaaaaaa", "claude", a, "Arbeit", { abo: "max" }), ein("k_bbbbbbbb", "claude", b, "Privat", { abo: "api" }), ein("k_cccccccc", "codex", c, "Codex-Konto"), ein("k_dddddddd", "claude", g, "Geheimkonto")]),
     vaults: { [vault]: { ordnerKennung: K.kennungVon(vault), neueKonten: "gesperrt", ohneKonto: "gesperrt", konten: { k_aaaaaaaa: stufen.a, k_bbbbbbbb: stufen.b, k_cccccccc: stufen.c, k_dddddddd: stufen.g } } } }));
   if (mitClaude) {
-    writeFileSync(join(bin, "claude"), `#!${process.execPath}\nglobalThis.FAKE_ORDNER = ${JSON.stringify(bin)};\nimport(${JSON.stringify(pathToFileURL(FAKE).href)}).catch((e) => { console.error(String(e && e.stack || e)); process.exit(70); });\n`);
-    chmodSync(join(bin, "claude"), 0o755);
+    legeProgramm(join(bin, "claude"), `#!${process.execPath}\nglobalThis.FAKE_ORDNER = ${JSON.stringify(bin)};\nimport(${JSON.stringify(pathToFileURL(FAKE).href)}).catch((e) => { console.error(String(e && e.stack || e)); process.exit(70); });\n`);
   }
-  server = await starteServer(vault, { vertraut, support, umgebung: { PATH: `${bin}:/usr/bin:/bin`, HOME: home, LANG: "de_DE.UTF-8", BRAIN_CLAUDE_EXTRA: "" } });
+  server = await starteServer(vault, { vertraut, support, umgebung: { PATH: pfadMit(bin), HOME: home, LANG: "de_DE.UTF-8", BRAIN_CLAUDE_EXTRA: "" } });
   return { wurzel };
 }
 const szenario = (o) => writeFileSync(join(bin, "szenario.json"), JSON.stringify(o));

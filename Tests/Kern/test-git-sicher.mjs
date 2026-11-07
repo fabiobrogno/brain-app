@@ -3,7 +3,7 @@
 // noch über die .git/config (core.fsmonitor, core.hooksPath/.git/hooks, Filter-, Diff-, Merge-Treiber, credential.helper, …).
 // Jedes Programm im Vault schreibt eine Marke, falls es je läuft; die Marke darf nie entstehen. Kontrollen beweisen vorher, dass die
 // Wege ohne die Härtung wirklich Marken schreiben würden (sonst bewiese „keine Marke“ nichts).
-import { test } from "node:test";
+import { testNurUnix as test } from "./nur-unix.mjs";   // git-sicher ist ein Shell-Skript: unter Windows übersprungen
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, appendFileSync, mkdirSync, existsSync, chmodSync, cpSync, readFileSync, rmSync, readdirSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
