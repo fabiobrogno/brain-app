@@ -11,6 +11,7 @@ Deutsch, Imperativ oder Substantivstil, die Aufgabe steht in Klammern.
 
 ## Pull Requests
 - PR ist Pflicht. Der CI-Status `ci-ok` muss grün sein (er fasst alle Jobs zusammen); ein Review gibt frei.
+- Die Linux-Plattform-Probe (`plattform-probe`, ubuntu-latest) ist Pflichtbestandteil von `ci-ok`. Die Windows-Probe läuft mit, blockiert aber nicht (`continue-on-error`), bis sie grün ist; danach wird sie ebenfalls Pflicht.
 - Gemergt wird nur durch die zuständige Person (CEO), nicht durch die Autorin oder den Autor.
 - Reine Doku-Änderungen (`docs/**`, `*.md`) laufen durch die CI, überspringen aber alle Prüfjobs: `ci-ok` ist nach wenigen Sekunden grün.
 
