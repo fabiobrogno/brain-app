@@ -249,7 +249,7 @@ test("Quoting: Argumente mit Leerzeichen, %, ^, &, |, <, >, \", Rückstrichen un
     const ende = aufrufe.find((a) => a.includes("status") && a.includes("--porcelain") && a.includes("--") && a.length > argumente.length);
     assert.ok(ende, `${variante.name}: kein status-Aufruf in ${JSON.stringify(aufrufe).slice(0, 400)}`);
     assert.deepEqual(ende.slice(-argumente.length), argumente, `${variante.name}: Argumente verändert`);
-    assert.ok(ende.includes("core.hooksPath=/dev/null"), `${variante.name}: Härtung fehlt`);
+    assert.ok(ende.some((a) => /^core\.hooksPath=./.test(a)) && ende.includes("core.fsmonitor=false"), `${variante.name}: Härtung fehlt`);
     assert.ok(aufrufe.some((a) => a.includes(s.v)), `${variante.name}: -C mit Sonderzeichen im Pfad kam nicht an`);
   }
 });

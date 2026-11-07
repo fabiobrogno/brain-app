@@ -21,7 +21,7 @@ test("Windows: ein Hook unter <Laufwerk>:\\dev\\null\\ läuft nie (Werkstatt, oh
   const env = { ...process.env, GIT_CONFIG_NOSYSTEM: "1", HOME: basis, USERPROFILE: basis };
   for (const k of Object.keys(env)) if (/^(GIT_(?!CONFIG_NOSYSTEM)|XDG_|CLAUDE_CONFIG_DIR$|CODEX_HOME$)/i.test(k)) delete env[k];
   const g = (...a) => execFileSync("git", ["-C", v, "-c", "user.name=T", "-c", "user.email=t@example.org", ...a], { env, stdio: "ignore", windowsHide: true });
-  g("init", "-q", "-b", "main");
+  g("init", "-q", "-b", "main"); g("config", "user.name", "T"); g("config", "user.email", "t@example.org"); // lokal: die Werkstatt prüft die Konfiguration nicht, sie braucht nur eine Identität
   const laufwerke = [...new Set([`${process.env.SystemDrive || "C:"}`, v.slice(0, 2)].map((d) => d.toUpperCase()))];
   const angelegt = [];
   try {

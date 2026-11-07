@@ -296,7 +296,7 @@ test("luecken/VK-2: der MCP-Server führt kein `git` aus dem Vault aus — relat
 test("luecken/VK-2: in der Werkstatt startet Git nur über einen absoluten Pfad — PATH mit relativen Einträgen, ohne absolutes git: Fehler statt des Vault-Programms; kindUmgebung bereinigt PATH", async () => {
   const m = marke("VAULT-GIT-LIEF");
   const d = vaultMitEigenemGit(m);
-  const alt = process.env.PATH;
+  const alt = process.env.PATH, pf = process.env.ProgramFiles, pf86 = process.env["ProgramFiles(x86)"];
   try {
     process.env.PATH = `node_modules/.bin${D}${D}.${D}${gitOrdner}`;
     assert.equal(absoluterGitPfad(), echtesGit, "gefunden wird nur über absolute Einträge");
@@ -304,13 +304,18 @@ test("luecken/VK-2: in der Werkstatt startet Git nur über einen absoluten Pfad 
     assert.equal(existsSync(m), false, "das git aus dem Vault lief nie");
     assert.equal(kindUmgebung().PATH, gitOrdner, "Kindprozesse bekommen keinen leeren oder relativen Eintrag");
     assert.equal(kindUmgebung({ PATH: `x${D}/usr/bin` }).PATH, "/usr/bin", "auch ein PATH aus dem Zusatz wird bereinigt");
-    process.env.PATH = `node_modules/.bin${D}.`;   // nur relative Einträge: kein absolutes git
+    process.env.PATH = `node_modules/.bin${D}.`;   // nur relative Einträge: kein absolutes git (Windows: auch nicht in Program Files, dem letzten Fundort)
+    delete process.env.ProgramFiles; delete process.env["ProgramFiles(x86)"];
     assert.equal(absoluterGitPfad(), null);
     const e = await wirft(git(d, ["status"]));
     assert.equal(e.status, 500); assert.match(e.message, /Git ist auf diesem Mac nicht installiert/);
     assert.equal(existsSync(m), false, "auch ohne absolutes git läuft das Programm aus dem Vault nicht");
     assert.equal("PATH" in kindUmgebung(), false, "bleibt nichts übrig, fällt PATH ganz weg (nie ein leerer Eintrag)");
-  } finally { process.env.PATH = alt; }
+  } finally {
+    process.env.PATH = alt;
+    if (pf !== undefined) process.env.ProgramFiles = pf;
+    if (pf86 !== undefined) process.env["ProgramFiles(x86)"] = pf86;
+  }
   // bereinigterPfad / bereinigePfad (die Einstiegspunkte rufen es beim Start)
   assert.equal(bereinigterPfad(["/usr/bin", "", "/bin", "node_modules/.bin", "./x", ".", "/opt/y", ""].join(D)), ["/usr/bin", "/bin", "/opt/y"].join(D));
   assert.equal(bereinigterPfad(`rel${D}andere`), ""); assert.equal(bereinigterPfad(""), ""); assert.equal(bereinigterPfad(undefined), "");

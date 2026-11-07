@@ -65,7 +65,11 @@ function momentaufnahme(d, rel = "") {
   }
   return aus;
 }
-const ohneGit = async (fn) => { const alt = process.env.PATH; process.env.PATH = "/nonexistent"; try { return await fn(); } finally { process.env.PATH = alt; } };
+const ohneGit = async (fn) => {
+  const alt = process.env.PATH, pf = process.env.ProgramFiles, pf86 = process.env["ProgramFiles(x86)"]; // Windows sucht Git zuletzt in Program Files (plattform.mjs#windowsGitKandidaten)
+  process.env.PATH = "/nonexistent"; delete process.env.ProgramFiles; delete process.env["ProgramFiles(x86)"];
+  try { return await fn(); } finally { process.env.PATH = alt; if (pf !== undefined) process.env.ProgramFiles = pf; if (pf86 !== undefined) process.env["ProgramFiles(x86)"] = pf86; }
+};
 // Attrappe für `git clone` (alles andere geht an das echte Git): zum Prüfen von Abbruch und Zeitlimit.
 function attrappe(klonSkript) {
   const dir = tmp("brain-fakegit-");

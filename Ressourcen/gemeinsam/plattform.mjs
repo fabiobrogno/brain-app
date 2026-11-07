@@ -1,7 +1,7 @@
 // gemeinsam/plattform.mjs — die EINE Stelle für Unterschiede zwischen macOS, Windows und Linux (Plan docs/plaene/plattformen-windows-linux.md, Paket W0).
 // Neue Betriebssystem-Befehle im Node-Code gehören hierher, nicht verstreut in andere Dateien. Alles ist über `plattform`/`env`/`home` einspritzbar (Tests).
 // Eine Kopie liegt wortgleich in kern/plattform.mjs (der Kern importiert nichts aus gemeinsam/); Tests/Node/plattform.test.mjs vergleicht beide.
-import { readFileSync, existsSync, realpathSync, mkdirSync, openSync, ftruncateSync, writeSync, closeSync } from "node:fs";
+import { readFileSync, existsSync, realpathSync, openSync, ftruncateSync, writeSync, closeSync } from "node:fs";
 import { join, isAbsolute } from "node:path";
 import { homedir, hostname, userInfo, tmpdir } from "node:os";
 import { execFile, execFileSync, spawnSync, spawn } from "node:child_process";
@@ -15,7 +15,7 @@ export const istWindows = (plattform = process.platform) => plattform === "win32
 export function windowsGitKandidaten({ env = process.env, home = homedir() } = {}) {
   const k = [join(supportOrdner({ env, home, plattform: "win32" }), "git", "cmd", "git.exe"), join(home, ".brain-kit", "git", "cmd", "git.exe")];
   for (const d of String(env.PATH || env.Path || "").split(";")) if (d && isAbsolute(d)) k.push(join(d, "git.exe"));
-  for (const v of [env.ProgramFiles, env["ProgramFiles(x86)"], "C:\\Program Files", "C:\\Program Files (x86)"]) if (v) k.push(join(v, "Git", "cmd", "git.exe"));
+  for (const v of [env.ProgramFiles, env["ProgramFiles(x86)"]]) if (v) k.push(join(v, "Git", "cmd", "git.exe"));
   return k;
 }
 // → Pfad des ersten Kandidaten, den `istDatei` bestätigt, sonst null
@@ -30,16 +30,12 @@ export const tageslaufCache = ({ plattform = process.platform, home = homedir(),
 };
 
 // Hook-Ordner für „keine Hooks“ (`-c core.hooksPath=<hier>`). macOS/Linux: /dev/null (kein Ordner: git findet dort nie einen Hook). Windows: Git for Windows löst "/dev/null/pre-commit" als
-// <aktuelles Laufwerk>:\\dev\\null\\pre-commit auf — ein dort angelegter Hook würde gefunden (Befund des Reviews zu PR #117, Test: Tests/Node/hooks-pfad-windows.test.mjs). Darum dort ein
-// leerer Ordner im Support-Ordner (nie im Vault; Vorwärts-Schrägstriche, wie git sie liest). Ließe er sich nicht anlegen, bleibt es bei /dev/null.
-const leereHooks = new Map();
+// <aktuelles Laufwerk>:\dev\null\pre-commit auf — ein dort angelegter Hook würde gefunden (Befund des Reviews zu PR #117, Test: Tests/Node/hooks-pfad-windows.test.mjs). Darum dort ein
+// Pfad im Support-Ordner (nie im Vault; Vorwärts-Schrägstriche, wie git sie liest), der NIE angelegt wird: ohne Ordner findet git keinen Hook, und beim Laden der Module entsteht nichts
+// (die Werkstatt prüft vor dem Anlegen von Dateien, z. B. der Vorschau-Schutz).
 export function keineHooks({ plattform = process.platform, env = process.env, home = homedir() } = {}) {
   if (plattform !== "win32") return "/dev/null";
-  const ordner = join(supportOrdner({ env, home, plattform }), "leere-hooks");
-  if (!leereHooks.has(ordner)) {
-    try { mkdirSync(ordner, { recursive: true }); leereHooks.set(ordner, ordner.split("\\").join("/")); } catch { leereHooks.set(ordner, "/dev/null"); }
-  }
-  return leereHooks.get(ordner);
+  return join(supportOrdner({ env, home, plattform }), "leere-hooks").split("\\").join("/");
 }
 
 // ───────────── Support-Ordner ─────────────
