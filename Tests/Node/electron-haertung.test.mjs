@@ -5,7 +5,6 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const W = join(fileURLToPath(new URL(".", import.meta.url)), "..", "..");
@@ -14,6 +13,7 @@ const temp = () => realpathSync(mkdtempSync(join(tmpdir(), "kortex-haertung-test
 const { fusesFuer, baueKonfig } = await laden("electron/paket/konfig.mjs");
 const { stageRessourcen } = await laden("electron/paket/ressourcen.mjs");
 const { starteBruecke } = await laden("electron/bruecke.mjs");
+const { liesArgumente } = await laden("electron/paket/argumente.mjs");
 
 test("Fuses: Release schaltet RunAsNode, NODE_OPTIONS, Inspect und file://-Sonderrechte ab und prüft/lädt nur das asar; die Test-Variante lässt allein Inspect offen", () => {
   const r = fusesFuer("release"), t = fusesFuer("test");
@@ -26,9 +26,11 @@ test("Fuses: Release schaltet RunAsNode, NODE_OPTIONS, Inspect und file://-Sonde
 });
 
 test("Paketbau: --generic-url nur mit 127.0.0.1, --fuses nur release|test; paket.json nennt die Variante; im Paket keine DevTools und keine Debug-Anschlüsse", () => {
-  const lauf = (...a) => spawnSync(process.execPath, [join(W, "electron/paket/baue.mjs"), "linux", ...a], { encoding: "utf8", cwd: W });
-  for (const url of ["http://fremd.example/x", "https://127.0.0.1:1", "http://127.0.0.1.fremd.example:1", "http://localhost:1"]) assert.match(lauf("--generic-url", url).stderr, /--generic-url/, url);
-  assert.match(lauf("--fuses", "egal").stderr, /--fuses/);
+  const fehler = (...a) => { try { liesArgumente(["linux", ...a]); return ""; } catch (e) { return e.message; } };
+  for (const url of ["http://fremd.example/x", "https://127.0.0.1:1", "http://127.0.0.1.fremd.example:1", "http://localhost:1"]) assert.match(fehler("--generic-url", url), /--generic-url/, url);
+  assert.equal(fehler("--generic-url", "http://127.0.0.1:8765"), "");
+  assert.match(fehler("--fuses", "egal"), /--fuses/);
+  assert.equal(liesArgumente(["linux"]).fuses, "release", "Vorgabe: Release");
   const d = temp();
   stageRessourcen({ wurzel: W, ziel: join(d, "a"), version: "1.0.0" });
   stageRessourcen({ wurzel: W, ziel: join(d, "b"), version: "1.0.0", fuses: "test" });
