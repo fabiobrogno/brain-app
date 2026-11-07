@@ -348,13 +348,13 @@ test("Globale Kürzel: die App prüft zuerst (kuerzel-global), meldet „von mac
   await put;
   await expect(tasten(page, "schnell-erfassen")).toHaveText(["⌃", "⌘", "J"]);
   expect(gespeichert()).toEqual({ "schnell-erfassen": "Ctrl+Cmd+J" });
-  expect((await page.evaluate(() => window.__aktionen.map((a) => a.aktion)))).toEqual(["kuerzel-global", "kuerzel-geaendert"]);
+  await expect.poll(() => page.evaluate(() => window.__aktionen.map((a) => a.aktion))).toEqual(["kuerzel-global", "kuerzel-geaendert"]);
   // 3) ein Studio-Kürzel meldet nur „geändert“ (kein globales Kürzel zu prüfen)
   await page.evaluate(() => { window.__aktionen.length = 0; });
   const put2 = wartePut(page);
   await nimmAuf(page, "neue-notiz", "Meta+Shift+j");
   await put2;
-  expect((await page.evaluate(() => window.__aktionen.map((a) => a.aktion)))).toEqual(["kuerzel-geaendert"]);
+  await expect.poll(() => page.evaluate(() => window.__aktionen.map((a) => a.aktion))).toEqual(["kuerzel-geaendert"]);
   // 4) zurücksetzen eines globalen Kürzels fragt die App nach dem Standard
   await page.evaluate(() => { window.__aktionen.length = 0; });
   const put3 = wartePut(page);
