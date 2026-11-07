@@ -6,6 +6,7 @@
   "type": "module",
   "main": "haupt.mjs",
   "scripts": {
+    "postinstall": "node node_modules/electron/install.js",
     "start": "electron .",
     "test": "playwright test"
   },
