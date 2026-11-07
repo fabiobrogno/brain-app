@@ -10,6 +10,8 @@ vorab gebautes Bündel (siehe CodeMirror).
 | Bestandteil | Version | Lizenz | Ort im Paket |
 |---|---|---|---|
 | Node.js (gebündelte Laufzeit) | v24.22.0 | MIT (mit eigenen Lizenzen der enthaltenen Bibliotheken) | `node-runtime/bin/node`, `node-runtime/LICENSE` |
+| Electron (Hülle der Pakete für Windows und Linux) | 45.0.0 | MIT (Chromium und enthaltene Bibliotheken: eigene Lizenzen) | `LICENSE.electron.txt`, `LICENSES.chromium.html` neben dem Programm |
+| electron-updater (Updates der Pakete für Windows und Linux) | 6.8.11 | MIT (Abhängigkeiten: MIT, ISC, BlueOak-1.0.0, Python-2.0) | `resources/app.asar`, Lizenztexte unter `node_modules/<Paket>/` darin |
 | Sparkle (Update-Framework) | 2.10.0 | MIT (mit eigenen Lizenzen einzelner Quelldateien) | `Frameworks/Sparkle.framework` |
 | CodeMirror 6 und Lezer (Editor) | siehe unten | MIT | `studio/vendor/codemirror.bundle.js` |
 | three.js (3D-Ansicht) | r170 | MIT | `kern/ansicht/vendor/three.bundle.js` |
@@ -22,6 +24,7 @@ vorab gebautes Bündel (siehe CodeMirror).
 | Orca (Gestaltungsmuster und -werte: Dialoge, Einrichtung, leere Zustände, Design-System v2; Liste der KI-Programme) | Commits cf5b462, 9bccd67, 239e17f | MIT | `studio/studio.css`, `studio/bausteine.css`, `studio/dialoge.css`, `studio/aufgaben.css`, `studio/hilfen.js`, `studio/willkommen.js`, `studio/willkommen.css` (leerer Zustand), `studio/einrichtung.css`, `studio/einrichtung.js`, `studio/einrichtung-studio.js`, `studio/einrichtung-vault.js`, `studio/einrichtung-ki.js`, `studio/einrichtung-sicherung.js`, `studio/einrichtung-liste.js` (Gestaltung: Pillen, Auswahlkarten, Fußleiste, Checkliste), `gemeinsam/ki-katalog.json` (Programmliste), `gemeinsam/kontingent.mjs`, `gemeinsam/kortex-statuszeile.mjs`, `gemeinsam/kontingent-regeln.mjs`, `studio/kontingent-regeln.js`, `studio/kontingent.js`, `studio/kontingent.css` (Kontingent: Lesen der Fenster, monotone Regel, Farbschwellen, Takt, Dichte-Leiter, ruhig veraltet, Abfrage von Codex) |
 
 Die Pfade sind relativ zu `Kortex.app/Contents/Resources`, außer Sparkle (relativ zu `Kortex.app/Contents`).
+Die Pakete für Windows und Linux enthalten Electron (mit Chromium) und `electron-updater` statt Sparkle; dort liegt `node/` (das Node samt `LICENSE`) neben `Ressourcen/` im Ordner `resources`.
 
 ## Node.js v24.22.0
 
@@ -538,6 +541,46 @@ SOFTWARE.
 Name, Marke und Logo von Orca sind nicht übernommen; Kortex ist mit Orca nicht verbunden. Die Muster aus dem Projekt Tolaria
 (https://github.com/refactoringhq/tolaria, AGPL-3.0) sind nur als Prinzipien in `docs/plaene/design-wizards.md` beschrieben, es wurde nichts
 daraus übernommen.
+
+## Electron 45.0.0 und electron-updater 6.8.11 (Pakete für Windows und Linux)
+
+Die Pakete für Windows und Linux laufen auf Electron (https://www.electronjs.org, Quelltext: Version 45.0.0 auf der Seite des Projekts). Electron liegt unverändert
+im Paket; die Lizenz von Electron (`LICENSE.electron.txt`) und die Lizenzen von Chromium und seinen Bibliotheken (`LICENSES.chromium.html`) liegen neben dem Programm.
+Für die Updates enthält `resources/app.asar` das Paket `electron-updater` (https://www.electron.build) und seine Abhängigkeiten; deren Lizenztexte liegen im
+`app.asar` unter `node_modules/<Paket>/`.
+
+```
+The MIT License (MIT) — Electron
+
+Copyright (c) Electron contributors
+Copyright (c) 2013-2020 GitHub Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+```
+
+```
+The MIT License (MIT) — electron-updater
+
+Copyright (c) 2015 Loopline Systems
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+```
 
 ## Nicht mitgeliefert
 

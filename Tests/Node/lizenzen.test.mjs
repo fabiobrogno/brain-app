@@ -40,6 +40,16 @@ test("Node.js und Sparkle stehen mit der Version, die gebaut wird", () => {
   assert.match(NOTICES, /bsdiff/, "Sparkle-Lizenztext (mit den Lizenzen der Quelldateien) fehlt");
 });
 
+test("Electron und electron-updater stehen mit der Version, die gebaut wird (Pakete für Windows und Linux), mit MIT-Text, und in der Oberfläche", () => {
+  const pk = JSON.parse(lies("electron", "package.json"));
+  assert.ok(NOTICES.includes(`| Electron (Hülle der Pakete für Windows und Linux) | ${pk.devDependencies.electron} |`), `Electron ${pk.devDependencies.electron} fehlt in THIRD-PARTY-NOTICES.md`);
+  assert.ok(NOTICES.includes(`electron-updater (Updates der Pakete für Windows und Linux) | ${pk.dependencies["electron-updater"]} |`), `electron-updater ${pk.dependencies["electron-updater"]} fehlt in THIRD-PARTY-NOTICES.md`);
+  assert.match(NOTICES, /Copyright \(c\) Electron contributors/);
+  assert.match(NOTICES, /Copyright \(c\) 2015 Loopline Systems/);
+  const texte = lies("Ressourcen", "studio", "texte-einstellungen.js");
+  for (const id of ["lizenz-electron", "lizenz-electron-updater"]) assert.ok(texte.includes(`id: "${id}"`), id);
+});
+
 test("Lizenztexte stehen im Wortlaut: MIT (three.js), SIL OFL 1.1 (Geist), Sparkle, CC0 und Markenhinweis", () => {
   for (const muster of [/The MIT License/, /SIL OPEN FONT LICENSE Version 1\.1/, /Andy Matuschak/, /CC0 1\.0/, /mit keinem dieser\s+Unternehmen verbunden/]) {
     assert.match(NOTICES, muster, `Hinweise ohne ${muster}`);
