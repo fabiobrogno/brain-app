@@ -384,7 +384,8 @@ for (const schema of ["hell", "dunkel"]) {
       await bild(page, "k20-erfolg-toast", schema);
       await page.locator('[data-aktion="konflikt-rueckgaengig"]').click();
       await expect.poll(() => g.rueckgaengig).toBe(1);
-      await expect(page.locator(".toast").last()).toContainText("Abgleich zurückgenommen. Deine Entscheidungen sind noch da.");
+      // auf genau diese Mitteilung warten (nicht auf „die letzte“: der „Abgleich fertig“-Toast der Werkstatt kommt nach dem Laden und konnte sich davorschieben)
+      await expect(page.locator(".toast", { hasText: "Abgleich zurückgenommen. Deine Entscheidungen sind noch da." })).toBeVisible();
       await expect(page.locator("#konflikt .k-item")).toHaveCount(2);
       await expect(item(page, 0)).toContainText("Dieser Mac behalten");
       await expect(page.locator(".k-fuss")).toContainText("Alles gelöst");

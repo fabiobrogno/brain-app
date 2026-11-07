@@ -2318,10 +2318,11 @@ async function schliesseKonflikt(phase) {
   await ladeNachAbgleich().catch(() => {}); await ladeGit(); ladeInfo();
   if (S.sicht.art === "verlauf") verlaufInst?.aktualisieren?.();
 }
-async function konfliktFertig({ ergebnis, anzahl, rueckgaengig }) {
+async function konfliktFertig({ ergebnis, anzahl, rueckgaengig, zurueckgenommen }) {
   S.syncFehler = null; konfliktMerke = null; konfliktGemeldet = "";
   await ladeNachAbgleich().catch(() => {}); await ladeGit(); ladeInfo();
   if (S.sicht.art === "verlauf") verlaufInst?.aktualisieren?.();
+  if (zurueckgenommen?.()) return; // schon wieder zurückgenommen (Knopf in der Ansicht, während hier noch geladen wurde): kein „Abgleich fertig“ mit totem Rückgängig nach „Abgleich zurückgenommen“
   const ok = !ergebnis.abgleich || ergebnis.abgleich.ok;
   toast(ok ? `${TK.fertig.toastTitel}: ${TK.fertig.toastKlein(anzahl)}` : `${TK.fertig.toastTitel}. ${ergebnis.abgleich.text}`, { ms: 9000, aktion: { text: TK.fertig.rueckgaengig, tun: () => rueckgaengig() } });
   if (ergebnis.versteckteBehalten?.length) toast(TV.abgleich.versteckteBehalten(ergebnis.versteckteBehalten.length), { ms: 9000 });
