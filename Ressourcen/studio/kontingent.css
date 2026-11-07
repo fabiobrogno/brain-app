@@ -84,7 +84,7 @@
 .kt-probe > .kt-leiste { width: max-content; flex: none; position: static; }
 
 /* ---------- Popover „Kontingent“ ---------- */
-.kt-pop { padding: 0; width: min(400px, calc(100vw - 24px)); }
+.kt-pop { padding: 0; width: min(400px, calc(var(--vw) - 24px)); }
 .kt-pop-oben { padding: 6px 6px 4px; }
 .kt-pop .kt-m-liste { max-height: min(56vh, 400px); padding: 0 4px 4px; gap: 10px; }
 .kt-gruppe { display: flex; flex-direction: column; gap: 8px; }
@@ -108,7 +108,7 @@
 .kx-kt-optionen { margin-bottom: 14px; }
 
 /* ---------- Konto-Menü (öffnet über der Statusleiste) ---------- */
-.kt-menue { display: flex; flex-direction: column; width: min(420px, calc(100vw - 24px)); padding: 6px; background: var(--erhoben); border-radius: var(--r-xl); box-shadow: var(--schatten-menue); font-size: 12.5px; color: var(--text); }
+.kt-menue { display: flex; flex-direction: column; width: min(420px, calc(var(--vw) - 24px)); padding: 6px; background: var(--erhoben); border-radius: var(--r-xl); box-shadow: var(--schatten-menue); font-size: 12.5px; color: var(--text); }
 .kt-m-titel { display: flex; align-items: center; gap: 10px; padding: 6px 8px 8px; }
 .kt-m-titel b { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kt-m-stand { color: var(--text-3); font-size: 11.5px; white-space: nowrap; }

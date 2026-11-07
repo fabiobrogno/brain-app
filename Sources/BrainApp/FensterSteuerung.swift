@@ -309,7 +309,10 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
         w.isReleasedWhenClosed = false
         w.contentView = web
         w.title = standardTitel
-        if oberflaeche == .studio { glas = richteGlasEin(w, web: web) }
+        if oberflaeche == .studio {
+            glasGewuenscht = glasStart?() ?? true
+            glasMoeglich = richteGlasEin(w, web: web)
+        }
         if oberflaeche == .studio {
             w.titlebarAppearsTransparent = true
             w.titleVisibility = .hidden
@@ -361,12 +364,26 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
     private func richteAmpelEin(_ w: NSWindow, web: WKWebView, vorschau: Bool) {
         positioniereAmpel(w)
         ampelVorschau = vorschau ? VorschauBand.text : nil
-        let skript = FensterAmpel.skript(platz: ampelPlatz, hoehe: FensterAmpel.zeile, vorschauText: ampelVorschau, glas: glas)
+        let skript = FensterAmpel.skript(platz: ampelPlatz, hoehe: FensterAmpel.zeile, vorschauText: ampelVorschau, glas: glasGewuenscht, glasMoeglich: glasMoeglich)
         web.configuration.userContentController.addUserScript(WKUserScript(source: skript, injectionTime: .atDocumentStart, forMainFrameOnly: true))
     }
     private var ampelVorschau: String?
     /// Liegt hinter der durchsichtigen WebView ein Seitenleisten-Material des Systems (Glas)? Dann ist die Seitenleiste der Seite durchsichtig.
-    private var glas = false
+    private var glasMoeglich = false
+    /// Was die Einstellung „Seitenleiste durchscheinend“ will (Standard an); wirksam nur mit `glasMoeglich`.
+    private var glasGewuenscht = true
+    /// Liefert beim Fensterbau den gespeicherten Wunsch (nil → an).
+    var glasStart: (() -> Bool)?
+
+    /// Aktion `fenster-durchscheinend`: merkt den Wunsch und setzt/entfernt `data-glas` der Seite sofort. Das Material bleibt liegen; ohne `data-glas` deckt die Seite es ab.
+    /// Liefert `wirkt` (möglich UND an) oder nil, wenn die Hülle kein Glas kann.
+    func setzeGlas(_ an: Bool) -> Bool? {
+        glasGewuenscht = an
+        guard glasMoeglich else { return nil }
+        let aendern = an ? "r.dataset.glas='1';" : "delete r.dataset.glas;"
+        webView?.evaluateJavaScript("(function(){var r=document.documentElement;if(r){\(aendern)}})();", completionHandler: nil)
+        return an
+    }
 
     /// Legt ein Material des Systems (Seitenleiste) hinter die jetzt durchsichtige WebView des Studios. Gelingt das nicht (WebKit kennt den Schalter nicht),
     /// bleibt alles wie vorher und die Seite behält ihre deckende Seitenleiste.
@@ -420,7 +437,7 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
         guard let w = fenster, oberflaeche == .studio else { return }
         let imVollbild = vollbild || w.styleMask.contains(.fullScreen)
         if !imVollbild { positioniereAmpel(w) }
-        let skript = FensterAmpel.skript(platz: imVollbild ? 0 : ampelPlatz, hoehe: imVollbild ? 0 : FensterAmpel.zeile, vorschauText: ampelVorschau, glas: glas)
+        let skript = FensterAmpel.skript(platz: imVollbild ? 0 : ampelPlatz, hoehe: imVollbild ? 0 : FensterAmpel.zeile, vorschauText: ampelVorschau, glas: glasGewuenscht, glasMoeglich: glasMoeglich)
         webView?.evaluateJavaScript(skript, completionHandler: nil)
     }
 

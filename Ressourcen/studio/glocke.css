@@ -13,7 +13,7 @@
 @media (prefers-reduced-motion: reduce) { .glocke-zahl.hupf { animation: none; } }
 
 /* ---------- Panel ---------- */
-.glocke { width: 400px; max-width: calc(100vw - 16px); max-height: min(640px, calc(100vh - 72px)); display: flex; flex-direction: column; overflow: hidden; z-index: 90; outline: 0;
+.glocke { width: 400px; max-width: calc(var(--vw) - 16px); max-height: min(640px, calc(var(--vh) - 72px)); display: flex; flex-direction: column; overflow: hidden; z-index: 90; outline: 0;
   background: var(--erhoben); border-radius: var(--r-xl); box-shadow: var(--schatten-menue); color: var(--text); font-size: 13px; }
 .glocke.bs-pop { overflow: hidden; } /* der Popover-Motor darf nur die Höhe begrenzen; gescrollt wird die Liste */
 .gl-kopf { flex: none; display: flex; align-items: center; gap: 6px; height: 46px; padding: 0 8px 0 16px; border-bottom: 1px solid var(--linie); }

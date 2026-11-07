@@ -132,7 +132,7 @@
 .vd-gekuerzt { margin: 0 0 12px; padding: 8px 12px; border-radius: var(--r); background: color-mix(in srgb, var(--gelb) 12%, transparent); color: var(--text-2); font-size: 12.5px; }
 
 /* ------------------------------------------------------------------ Remote-Dialog */
-.rm-dialog { position: relative; display: block; width: min(520px, calc(100vw - 32px)); max-height: none; padding: 24px 24px 20px; border-radius: var(--r-l); }
+.rm-dialog { position: relative; display: block; width: min(520px, calc(var(--vw) - 32px)); max-height: none; padding: 24px 24px 20px; border-radius: var(--r-l); }
 .rm-zu { position: absolute; top: 14px; right: 14px; }
 .rm-kopf { display: flex; align-items: center; gap: 12px; margin: 0 28px 10px 0; }
 .rm-zeichen { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; background: var(--akzent-weich); color: var(--akzent); }
@@ -217,7 +217,7 @@
 .vd-z.m .vd-w { background: color-mix(in srgb, var(--rot) 32%, transparent); }
 
 /* ------------------------------------------------------------------ Abgleich mit Konflikten */
-.ab-dialog { display: flex; flex-direction: column; width: min(900px, calc(100vw - 32px)); max-height: calc(100vh - 14vh - 24px); padding: 0; overflow: hidden; }
+.ab-dialog { display: flex; flex-direction: column; width: min(900px, calc(var(--vw) - 32px)); max-height: calc(var(--vh) - 14vh - 24px); padding: 0; overflow: hidden; }
 .ab-dialog > .rm-kopf { margin: 0; padding: 22px 28px 0; }
 .ab-dialog > .rm-text { margin: 8px 0 0; padding: 0 28px; max-width: 70ch; }
 .ab-dialog .ab-liste { padding: 16px 28px 4px; }
@@ -286,7 +286,7 @@
 @media (max-width: 720px) { .ab-kacheln { grid-template-columns: minmax(0, 1fr); } }
 
 /* ------------------------------------------------------------------ Fassung zurückholen */
-.zh-dialog { display: block; width: min(720px, calc(100vw - 32px)); max-height: calc(100vh - 14vh - 24px); padding: 24px 28px 20px; overflow-y: auto; }
+.zh-dialog { display: block; width: min(720px, calc(var(--vw) - 32px)); max-height: calc(var(--vh) - 14vh - 24px); padding: 24px 28px 20px; overflow-y: auto; }
 .zh-dialog > .rm-kopf { padding: 0; margin-bottom: 10px; }
 .zh-dialog > .rm-text { padding: 0; margin-bottom: 14px; }
 .zh-dialog .rm-meldung { margin: 10px 0 0; }

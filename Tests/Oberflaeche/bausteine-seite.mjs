@@ -1,7 +1,7 @@
 // Schaufenster aller Bausteine (Ressourcen/studio/bausteine.js) auf einer eigenen Testseite — ohne App und ohne Werkstatt.
 // Der Dateiserver aus modul-seite.mjs liefert Ressourcen/studio; die Seite hängt unter /__bausteine.html.
 export const BAUSTEIN_SEITE = `<!doctype html><html lang="de"><head><meta charset="utf-8">
-<link rel="stylesheet" href="/studio.css"><link rel="stylesheet" href="/bausteine.css">
+<link rel="stylesheet" href="/schemata.css"><link rel="stylesheet" href="/studio.css"><link rel="stylesheet" href="/bausteine.css">
 <style>
  body { overflow: auto; }
  #bs { padding: 28px 32px 40px; display: grid; gap: 22px; max-width: 880px; background: var(--papier); }

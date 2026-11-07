@@ -24,7 +24,7 @@ export function starteDateien() {
   });
 }
 
-export const SEITE = `<!doctype html><html lang="de"><head><meta charset="utf-8"><link rel="stylesheet" href="/studio.css">
+export const SEITE = `<!doctype html><html lang="de"><head><meta charset="utf-8"><link rel="stylesheet" href="/schemata.css"><link rel="stylesheet" href="/studio.css">
 <style>
  #t-rahmen { position: fixed; inset: 0; display: grid; grid-template-columns: 252px 340px minmax(0, 1fr); background: var(--papier); }
  #t-seite { background: var(--seite); border-right: 1px solid var(--linie); }

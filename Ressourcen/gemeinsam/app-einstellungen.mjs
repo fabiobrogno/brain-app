@@ -14,8 +14,20 @@ export const DATEI = "einstellungen.json";
 
 // Gleiche Form wie das Schema des Kerns (werte | typ + Grenzen), damit die Oberfläche beide gleich behandelt.
 export const APP_SCHEMA = {
-  // Darstellung (Thema und Lesebreite liegen als Geräte-Wahl im Studio selbst und kommen mit P3 hierher)
-  schriftgroesse: { typ: "ganzzahl", min: 13, max: 19, standard: 15 },
+  // Darstellung (Paket „Darstellung“): alle Werte gelten sofort im ganzen Studio (studio/darstellung.js wendet sie an). Listen der Werte: studio/darstellung.js (Tests prüfen, dass beide übereinstimmen).
+  erscheinung: { werte: ["system", "hell", "dunkel"], standard: "system" },
+  schemaHell: { werte: ["standard", "papier", "kontrast"], standard: "standard" },
+  schemaDunkel: { werte: ["standard", "graphit", "mitternacht", "kontrast"], standard: "standard" },
+  akzent: { werte: ["indigo", "blau", "violett", "rosa", "rot", "orange", "bernstein", "gruen", "graphit"], standard: "indigo" },
+  dichte: { typ: "ganzzahl", min: 0, max: 4, standard: 2 },
+  editorSchrift: { werte: ["geist", "serif", "mono"], standard: "geist" },
+  schriftgroesse: { typ: "ganzzahl", min: 12, max: 22, standard: 16 },
+  oberflaeche: { werte: [90, 100, 110, 125], standard: 100 },
+  zeilenbreite: { werte: ["schmal", "normal", "breit", "voll"], standard: "normal" },
+  codeSchrift: { werte: ["geist", "system", "menlo"], standard: "geist" },
+  symbole: { werte: ["einfarbig", "farbig"], standard: "einfarbig" },
+  // Seitenleiste durchscheinend (Fenstermaterial der Hülle; ohne Hülle-Fähigkeit blendet die Oberfläche die Zeile aus, der Wert bleibt gemerkt)
+  seitenleisteDurchscheinend: { typ: "boolean", standard: true },
   bewegung: { werte: ["system", "reduziert"], standard: "system" },
   // Dock-Symbol (Swift: AppSymbol; Dateien Ressourcen/AppSymbole): gilt, solange Kortex läuft; „standard“ = AppIcon.icns, die App setzt dann kein eigenes Bild
   appSymbol: { werte: ["standard", "dunkel", "graphit", "papier", "smaragd"], standard: "standard" },
@@ -48,6 +60,20 @@ export const APP_SCHEMA = {
   fassungenAutomatisch: { typ: "boolean", standard: true },
   abgleichAutomatisch: { typ: "boolean", standard: false },
 };
+// Ältere oder gleichwertige Schreibweisen werden beim Lesen übernommen (nie beim Schreiben erzeugt): `breit: true` und `thema` aus der Zeit, als Lesebreite und Thema nur im Browserspeicher
+// lagen (das Studio schreibt sie beim ersten Start hierher), und die Namen „ny“/„sf“ der Editor-Schrift aus dem Entwurf.
+export function migriere(j) {
+  const m = { ...j };
+  if (m.zeilenbreite === undefined && m.breit === true) m.zeilenbreite = "breit";
+  if (m.erscheinung === undefined && ["hell", "dunkel", "system"].includes(m.thema)) m.erscheinung = m.thema;
+  if (m.editorSchrift === "ny") m.editorSchrift = "serif";
+  if (m.editorSchrift === "sf") m.editorSchrift = "mono";
+  if (m.codeSchrift === "sf") m.codeSchrift = "system";
+  if (m.symbole === "color") m.symbole = "farbig";
+  if (m.symbole === "mono") m.symbole = "einfarbig";
+  delete m.breit; delete m.thema;
+  return m;
+}
 export const APP_STANDARD = Object.fromEntries(Object.entries(APP_SCHEMA).map(([k, s]) => [k, s.standard]));
 
 const standVon = (text) => createHash("sha256").update(Buffer.from(text, "utf8")).digest("hex");
@@ -73,6 +99,7 @@ export function leseApp(support) {
   try { j = JSON.parse(text); } catch { j = undefined; }
   if (!j || typeof j !== "object" || Array.isArray(j)) return { werte: { ...APP_STANDARD }, gespeichert: {}, stand, fehler: "Die Datei mit den Einstellungen der App ist beschädigt. Kortex nutzt die Standardwerte, bis sie repariert oder gelöscht ist.", text };
   const gespeichert = {};
+  j = migriere(j);
   for (const [k, schema] of Object.entries(APP_SCHEMA)) if (k in j && istGueltig(schema, j[k])) gespeichert[k] = j[k];
   return { werte: { ...APP_STANDARD, ...gespeichert }, gespeichert, stand, fehler: null, text };
 }

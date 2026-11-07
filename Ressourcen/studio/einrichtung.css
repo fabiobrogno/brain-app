@@ -25,7 +25,7 @@ body[data-einrichtung] #dialog-host { z-index: 90; }
 body[data-einrichtung] #menue-host { z-index: 91; }
 body[data-einrichtung] #toast-host { z-index: 92; }
 body[data-einrichtung] #dialog-host .schleier { align-items: center; padding-top: 0; }
-body[data-einrichtung] #dialog-host .dialog { width: min(400px, calc(100vw - 32px)); }
+body[data-einrichtung] #dialog-host .dialog { width: min(400px, calc(var(--vw) - 32px)); }
 body[data-einrichtung] #dialog-host .dialog-rumpf:empty { display: none; }
 body[data-einrichtung] #dialog-host .dialog > .dialog-satz { padding-bottom: 18px; }
 
@@ -239,7 +239,7 @@ body[data-einrichtung] #dialog-host .dialog > .dialog-satz { padding-bottom: 18p
 
 /* ---------- Ende im Studio: das Zeichen wandert in die Seitenleiste (280 ms); Hinweise der App beim Start ---------- */
 .e-flug { position: fixed; z-index: 95; margin: 0; pointer-events: none; transform-origin: 0 0; transition-property: transform; transition-timing-function: var(--ease-out); animation: none !important; }
-#hinweis-host { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); z-index: 93; display: flex; flex-direction: column; gap: 8px; width: min(560px, calc(100vw - 32px)); pointer-events: none; }
+#hinweis-host { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); z-index: 93; display: flex; flex-direction: column; gap: 8px; width: min(560px, calc(var(--vw) - 32px)); pointer-events: none; }
 .start-hinweis { pointer-events: auto; display: flex; align-items: flex-start; gap: 12px; padding: 12px 12px 12px 14px; border: 1px solid var(--gelb-rand); border-radius: var(--r-l);
   background: color-mix(in srgb, var(--gelb) 12%, var(--erhoben)); box-shadow: var(--schatten-float); font-size: 13px; animation: toast-ein var(--d-2) var(--ease-out) both; }
 .start-hinweis > .sym { flex: none; margin-top: 2px; color: var(--gelb); }

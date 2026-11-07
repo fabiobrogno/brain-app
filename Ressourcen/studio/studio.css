@@ -1,5 +1,5 @@
 /* Brain Studio — Design-System v2 („Orca-Niveau“, Paket P1). Ruhig, präzise, 4-pt-Raster. Eine Akzentfarbe (Kortex-Lila), Prüf-Farben nur als kleine Punkte.
-   Hell und Dunkel über light-dark(); Umschalten per <html data-theme="light|dark"> (ohne Attribut: System).
+   Farbschemata in schemata.css (<html data-pal>), gesetzt von darstellung.js.
    Herkunft der Gestaltungswerte (Graustufen hell/dunkel, Rand 7 %/13 % im Dunkeln, Radius-Skala aus 0.625rem, Höhenstufen xs/floating/Dialog,
    Auswahl-Rezept, Typo-Skala 14/13/12/11, Bewegungskurven und -dauern): Orca (https://github.com/stablyai/orca, MIT, Copyright (c) 2026 Lovecast Inc.,
    gelesen am Commit 9bccd67), src/renderer/src/assets/main.css und docs/STYLEGUIDE.md — von Hand nachgebaut, kein Quelltext kopiert.
@@ -7,45 +7,10 @@
 @font-face { font-family: "Geist"; src: url("vendor/fonts/Geist-Variable.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: block; }
 @font-face { font-family: "Geist Mono"; src: url("vendor/fonts/GeistMono-Variable.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: block; }
 :root {
-  color-scheme: light dark;
-  /* Flächen (Orca :root / .dark): Canvas, Seitenleiste, Card, Muted, Hover, Active */
-  --papier: light-dark(#ffffff, #0a0a0a);        /* Editor */
-  --liste: light-dark(#ffffff, #0a0a0a);         /* Notizliste */
-  --seite: light-dark(#fafafa, #121212);         /* Seitenleiste, Statusleiste, Eigenschaften */
-  --seite-2: light-dark(#f5f5f5, #222222);       /* muted */
-  --erhoben: light-dark(#ffffff, #171717);       /* Karten, Dialoge, Menüs */
-  --hover: light-dark(#f4f4f5, #1f1f1f);
-  --hover-2: light-dark(#ececed, #2a2a2a);       /* gedrückt / aktiv */
-  --segment-aktiv: light-dark(#ffffff, #333333); /* gewählter Teil eines Segments */
-  /* Auswahl in Listen, Baum, Palette, Menüs (Orca .jump-palette-item[data-selected]): Vordergrund eingemischt + innerer Ring, keine Farbfläche */
-  --auswahl: light-dark(color-mix(in srgb, #0a0a0a 7%, #ffffff), #2c2c2c);
-  --auswahl-ring: inset 0 0 0 1px light-dark(rgba(10, 10, 10, .14), rgba(255, 255, 255, .12));
-  --text: light-dark(#0a0a0a, #fafafa);
-  --text-2: light-dark(#737373, #a1a1a1);        /* ≥ 4,5:1 auf Papier, Seite und Karte */
-  --text-3: light-dark(#8c8c8c, #787878);        /* Tertiär (Platzhalter, Zeitangaben): ≥ 3:1 auf Papier, Seite, Karte und Hover (Test: tokens.spec.mjs) */
-  --linie: light-dark(#e5e5e5, rgba(255, 255, 255, .07));
-  --linie-stark: light-dark(#d6d6d6, rgba(255, 255, 255, .13));
-  --eingabe: light-dark(#e5e5e5, rgba(255, 255, 255, .13));   /* Rand von Feldern und Knöpfen (Orca --input) */
-  --eingabe-grund: light-dark(#ffffff, rgba(255, 255, 255, .04));
-  --akzent: light-dark(#5b4ed6, #a89fff);
-  --akzent-hover: light-dark(#5044cb, #b7afff);
-  --akzent-text: light-dark(#ffffff, #14112e);   /* Text auf Akzentfläche */
-  --akzent-tinte: light-dark(#4c3fc6, #bcb5ff);  /* Akzent als Text auf weicher Akzentfläche */
-  --akzent-weich: color-mix(in srgb, var(--akzent) 9%, transparent);
-  --gruen: light-dark(#3a9a68, #5dbb88);
-  --gelb: light-dark(#cf9626, #e0b04e);
-  --rot: light-dark(#cc5144, #ec7b6d);
-  --grau: light-dark(#aaa59b, #6f6d68);
-  --diff-plus: light-dark(rgba(58, 154, 104, .13), rgba(93, 187, 136, .16));
-  --diff-minus: light-dark(rgba(204, 81, 68, .12), rgba(236, 123, 109, .16));
+  /* Flächen, Texte, Linien, Akzent und Zustandsfarben: schemata.css (Farbschemata, <html data-pal>) und darstellung.js (Akzent) */
   /* Drei Höhenstufen: Haarlinie (Rand), xs (Karten, Felder), floating (Menüs, Toasts), Dialog/Palette */
-  --schatten-klein: 0 1px 2px light-dark(rgba(0, 0, 0, .05), rgba(0, 0, 0, .4));
-  --schatten-float: 0 10px 24px light-dark(rgba(0, 0, 0, .12), rgba(0, 0, 0, .45));
-  --schatten-dialog: 0 20px 60px light-dark(rgba(0, 0, 0, .22), rgba(0, 0, 0, .55)), inset 0 1px 0 light-dark(rgba(255, 255, 255, .08), rgba(255, 255, 255, .06));
   --schatten: var(--schatten-dialog);
   --schatten-menue: 0 0 0 1px var(--linie-stark), var(--schatten-float);
-  --schleier: light-dark(rgba(10, 10, 12, .28), rgba(0, 0, 0, .5));
-  --dialog-rand: light-dark(rgba(0, 0, 0, .14), rgba(255, 255, 255, .12));
   /* Zustandsfarben als weiche Flächen und Ränder (Verlauf, Abgleich, Konflikte) */
   --gruen-weich: color-mix(in srgb, var(--gruen) 14%, transparent);
   --gelb-weich: color-mix(in srgb, var(--gelb) 16%, transparent);
@@ -53,13 +18,12 @@
   --gruen-rand: color-mix(in srgb, var(--gruen) 38%, transparent);
   --gelb-rand: color-mix(in srgb, var(--gelb) 42%, transparent);
   --rot-rand: color-mix(in srgb, var(--rot) 42%, transparent);
-  --akzent-rand: color-mix(in srgb, var(--akzent) 40%, transparent);
   --akzent-linie: color-mix(in srgb, var(--akzent) 55%, transparent);   /* Rand eines fokussierten Feldes */
   --fokus-ring: 0 0 0 3px color-mix(in srgb, var(--akzent) 38%, transparent);
   /* Abstände (4-pt-Raster) */
   --a1: 4px; --a2: 8px; --a3: 12px; --a4: 16px; --a5: 20px; --a6: 24px;
   --schrift: "Geist", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
-  --schrift-text: var(--schrift);
+  --schrift-text: var(--schrift); --ed-zeilenabstand: 1.68; --zeile: 28px; --innen: 11px; --lesebreite-wahl: 820px; --ui-zoom: 1; --vw: calc(100vw / var(--ui-zoom)); --vh: calc(100vh / var(--ui-zoom));
   --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
   /* Radien: Orca --radius 0.625rem (10 px) und die Faktoren 0,6 / 0,8 / 1 / 1,4 / 1,8 */
   --r-s: 6px; --r: 8px; --r-l: 10px; --r-xl: 14px; --r-2xl: 18px; --r-pille: 999px;
@@ -83,12 +47,11 @@
   --leiste: var(--seite); --leiste-2: var(--seite-2);
   --r-: 8px;
 }
-:root[data-theme="light"] { color-scheme: light; }
-:root[data-theme="dark"] { color-scheme: dark; }
 
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
 body {
+  zoom: var(--ui-zoom); width: var(--ui-breite, 100%); height: var(--ui-hoehe, 100%); /* bei Größe ≠ 100 %: feste Maße (app.js#passeFlaeche), unabhängig davon, wie die Engine Prozentwerte unter zoom auflöst */
   background: var(--papier); color: var(--text);
   font: 14px/1.45 var(--schrift); letter-spacing: .01em; -webkit-font-smoothing: antialiased; overflow: hidden;
   -webkit-user-select: none; user-select: none; cursor: default;
@@ -109,7 +72,7 @@ button:focus-visible, [tabindex]:focus-visible, a:focus-visible, summary:focus-v
   --kopf-h: 44px;
   --b-seite: 250px; --b-liste: 300px; --b-info: var(--b-info-voll, 300px); --b-frage: 380px;
   --b-liste-eff: var(--b-liste); --b-rechts: var(--b-info);
-  display: grid; height: 100vh; overflow: clip; /* das geschlossene Frag-Panel steht rechts außerhalb: nichts davon darf die Seite breiter machen (clip, nicht hidden: kein Scroll-Container, sonst schließen Scroll-Ereignisse die Popover) */
+  display: grid; height: 100%; overflow: clip; /* das geschlossene Frag-Panel steht rechts außerhalb: nichts davon darf die Seite breiter machen (clip, nicht hidden: kein Scroll-Container, sonst schließen Scroll-Ereignisse die Popover) */
   grid-template-columns: var(--b-seite) var(--b-liste-eff) minmax(0, 1fr) var(--b-rechts);
   grid-template-rows: var(--kopf-h) minmax(0, 1fr) 28px;
   grid-template-areas: "seite kopf kopf info" "seite liste haupt info" "status status status status";
@@ -148,7 +111,7 @@ button:focus-visible, [tabindex]:focus-visible, a:focus-visible, summary:focus-v
 .seite-scroll::-webkit-scrollbar, .liste-koerper::-webkit-scrollbar, #info::-webkit-scrollbar { width: 12px; }
 .seite-scroll::-webkit-scrollbar-thumb, .liste-koerper::-webkit-scrollbar-thumb, #info::-webkit-scrollbar-thumb { background: var(--linie-stark); border-radius: 6px; border: 3.5px solid transparent; background-clip: content-box; }
 .gruppe { display: flex; flex-direction: column; gap: 1px; padding-bottom: 8px; }
-.eintrag { display: flex; align-items: center; gap: 9px; height: 30px; padding: 0 8px; width: 100%; border: 0; background: transparent; border-radius: var(--r); cursor: pointer; text-align: left; color: var(--text); font-size: 13px; font-weight: 500; transition: background var(--d-fast), color var(--d-fast); min-width: 0; }
+.eintrag { display: flex; align-items: center; gap: 9px; height: calc(var(--zeile) + 2px); padding: 0 8px; width: 100%; border: 0; background: transparent; border-radius: var(--r); cursor: pointer; text-align: left; color: var(--text); font-size: 13px; font-weight: 500; transition: background var(--d-fast), color var(--d-fast); min-width: 0; }
 .eintrag:hover { background: var(--hover); }
 .eintrag > .sym { color: var(--typ-text, var(--text-2)); }
 .eintrag .name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -167,7 +130,7 @@ button:focus-visible, [tabindex]:focus-visible, a:focus-visible, summary:focus-v
 .abschnitt-kopf .knopf-icon { opacity: 0; width: 22px; height: 22px; }
 .abschnitt:hover .abschnitt-kopf .knopf-icon, .abschnitt-kopf .knopf-icon:focus-visible { opacity: 1; }
 .abschnitt-inhalt { display: flex; flex-direction: column; gap: 1px; }
-.baum .zeile { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px 0 calc(4px + var(--tiefe, 0) * 16px); border-radius: var(--r); cursor: pointer; white-space: nowrap; font-size: 13px; font-weight: 500; transition: background var(--d-fast); }
+.baum .zeile { display: flex; align-items: center; gap: 6px; height: var(--zeile); padding: 0 8px 0 calc(4px + var(--tiefe, 0) * 16px); border-radius: var(--r); cursor: pointer; white-space: nowrap; font-size: 13px; font-weight: 500; transition: background var(--d-fast); }
 .baum .zeile:hover { background: var(--hover); }
 .baum .zeile[aria-current="true"] { background: var(--auswahl); box-shadow: var(--auswahl-ring); }
 .baum .zeile.archiv:not([aria-current="true"]) { opacity: .55; }
@@ -223,8 +186,7 @@ button:focus-visible, [tabindex]:focus-visible, a:focus-visible, summary:focus-v
 @keyframes puls { 50% { opacity: .45; } }
 
 /* ---------- Haupt: Kopf, Editor ---------- */
-#haupt { grid-area: haupt; display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; background: var(--papier); --lesebreite: 820px; }
-#haupt[data-breite="breit"] { --lesebreite: 1080px; }
+#haupt { grid-area: haupt; display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; background: var(--papier); --lesebreite: var(--lesebreite-wahl); }
 .werkzeuge { display: flex; align-items: center; gap: 2px; }
 .speicherstand { color: var(--text-3); font-size: 12px; min-width: 0; text-align: right; white-space: nowrap; }
 .speicherstand:empty { display: none; }
@@ -236,7 +198,7 @@ button:focus-visible, [tabindex]:focus-visible, a:focus-visible, summary:focus-v
 #editor { flex: 1; min-height: 0; overflow: hidden; }
 #editor .cm-editor { height: 100%; background: var(--papier); color: var(--text); outline: 0; }
 #editor .cm-scroller { overflow: auto; font-family: var(--schrift-text); line-height: 1.5; padding: 0; }
-#editor .cm-content { max-width: var(--lesebreite); margin: 0 auto; padding: 44px 40px 180px; font-size: var(--editor-schrift, 15px); line-height: 1.7; caret-color: var(--akzent); -webkit-user-select: text; user-select: text; }
+#editor .cm-content { max-width: var(--lesebreite); margin: 0 auto; padding: 44px 40px 180px; font-size: var(--editor-schrift, 16px); line-height: var(--ed-zeilenabstand); caret-color: var(--akzent); -webkit-user-select: text; user-select: text; }
 #editor .cm-line { padding: 0; }
 #editor .cm-cursor { border-left: 2px solid var(--akzent); }
 #editor .cm-selectionBackground, #editor .cm-editor .cm-selectionBackground { background: var(--akzent-weich) !important; }
@@ -257,7 +219,7 @@ button:focus-visible, [tabindex]:focus-visible, a:focus-visible, summary:focus-v
 .cm-h4, .cm-h5, .cm-h6 { font-size: 1em; color: var(--text-2); text-transform: none; padding-top: 8px !important; }
 .cm-fett { font-weight: 650; } .cm-kursiv { font-style: italic; } .cm-durch { text-decoration: line-through; color: var(--text-2); }
 .cm-marke { color: var(--text-3); font-family: var(--schrift); font-weight: 400; font-style: normal; }
-.cm-code { font-family: var(--mono); font-size: .86em; background: var(--seite); padding: 1px 5px; border-radius: 4px; border: 1px solid var(--linie); }
+.cm-code { font-family: var(--mono); font-size: .86em; background: var(--code); padding: 1px 5px; border-radius: 4px; border: 1px solid var(--linie); }
 .cm-codeblock { font-family: var(--mono); font-size: 13.5px; line-height: 1.6; background: var(--seite); padding: 0 16px !important; }
 .cm-codeblock-anfang { border-radius: 8px 8px 0 0; padding-top: 8px !important; }
 .cm-codeblock-ende { border-radius: 0 0 8px 8px; padding-bottom: 8px !important; }
@@ -437,8 +399,8 @@ button.st { cursor: pointer; } button.st:hover { background: var(--hover); color
 /* ---------- Dialoge ---------- */
 #dialog-host { position: fixed; inset: 0; z-index: 50; pointer-events: none; }
 .schleier { position: absolute; inset: 0; background: var(--schleier); display: flex; justify-content: center; align-items: flex-start; padding-top: 14vh; pointer-events: auto; animation: ein var(--t) ease-out; }
-.dialog { width: min(520px, calc(100vw - 32px)); background: var(--erhoben); border: 1px solid var(--dialog-rand); border-radius: var(--r-xl); box-shadow: var(--schatten-dialog); display: flex; flex-direction: column; max-height: 72vh; animation: zoom var(--d) var(--ease-out); }
-.dialog.breit { width: min(600px, calc(100vw - 32px)); }
+.dialog { width: min(520px, calc(var(--vw) - 32px)); background: var(--erhoben); border: 1px solid var(--dialog-rand); border-radius: var(--r-xl); box-shadow: var(--schatten-dialog); display: flex; flex-direction: column; max-height: 72vh; animation: zoom var(--d) var(--ease-out); }
+.dialog.breit { width: min(600px, calc(var(--vw) - 32px)); }
 .dialog-kopf { padding: 16px 20px 8px; font-size: 15px; font-weight: 650; letter-spacing: -.01em; }
 .dialog-rumpf { padding: 8px 20px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; min-height: 0; }
 .dialog-fuss { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--linie); }
@@ -468,7 +430,7 @@ button.st { cursor: pointer; } button.st:hover { background: var(--hover); color
 .gesundheit-pruefung ul { margin: 4px 0 0 15px; padding-left: 16px; color: var(--text-2); }
 
 /* Palette */
-.palette { width: min(640px, calc(100vw - 32px)); background: color-mix(in srgb, var(--erhoben) 96%, transparent); -webkit-backdrop-filter: blur(20px) saturate(1.4); backdrop-filter: blur(20px) saturate(1.4); border: 1px solid var(--dialog-rand); border-radius: var(--r-xl); box-shadow: var(--schatten-dialog); overflow: hidden; animation: zoom var(--d) var(--ease-out); }
+.palette { width: min(640px, calc(var(--vw) - 32px)); background: color-mix(in srgb, var(--erhoben) 96%, transparent); -webkit-backdrop-filter: blur(20px) saturate(1.4); backdrop-filter: blur(20px) saturate(1.4); border: 1px solid var(--dialog-rand); border-radius: var(--r-xl); box-shadow: var(--schatten-dialog); overflow: hidden; animation: zoom var(--d) var(--ease-out); }
 .palette .bs-feld { height: 52px; padding: 0 16px; border: 0; border-bottom: 1px solid var(--linie); border-radius: 0; background: transparent; box-shadow: none; }
 .palette .bs-feld:hover, .palette .bs-feld:focus-within { border-color: var(--linie); box-shadow: none; }
 .palette .bs-input { font-size: 15.5px; }

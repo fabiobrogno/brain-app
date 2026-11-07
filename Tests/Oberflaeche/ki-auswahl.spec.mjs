@@ -10,7 +10,7 @@ test.beforeAll(async () => { dateien = await starteDateien(); });
 test.afterAll(() => dateien?.stopp());
 
 const SEITE = `<!doctype html><html lang="de"><head><meta charset="utf-8">
-<link rel="stylesheet" href="/studio.css"><link rel="stylesheet" href="/bausteine.css">
+<link rel="stylesheet" href="/schemata.css"><link rel="stylesheet" href="/studio.css"><link rel="stylesheet" href="/bausteine.css">
 <style>body{overflow:auto} #w{padding:24px;background:var(--papier);width:560px} #w.schmal{width:340px}</style></head><body>
 <div id="w"></div>
 <script type="module">

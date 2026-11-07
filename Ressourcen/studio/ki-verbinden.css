@@ -2,7 +2,7 @@
    (app.html#verbinden=1; Orca-Muster „Agent wählen“, von Hand nachgebaut). Hell und dunkel über die Tokens, Bewegung über --d-* (kein eigenes Tempo). */
 
 /* ---------- Dialog ---------- */
-.dialog.kv-box { width: min(640px, calc(100vw - 32px)); max-height: calc(100vh - 48px); display: flex; flex-direction: column; overflow: hidden; }
+.dialog.kv-box { width: min(640px, calc(var(--vw) - 32px)); max-height: calc(var(--vh) - 48px); display: flex; flex-direction: column; overflow: hidden; }
 .kv { display: flex; flex-direction: column; min-height: 0; min-width: 0; flex: 1 1 auto; }
 .kv[data-rahmen="dialog"] > .kv-rumpf { overflow: auto; }
 .kv-kopf { display: flex; align-items: center; gap: 12px; padding: 22px 24px 0; }

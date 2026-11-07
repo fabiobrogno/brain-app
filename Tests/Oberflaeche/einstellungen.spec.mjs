@@ -216,12 +216,12 @@ test("Textfeld (Pfad): 700 ms nach der letzten Eingabe gespeichert, beim Verlass
 test("Darstellung: Thema, Schriftgröße (Regler) und Bewegung gelten sofort und bleiben (App-Datei einstellungen.json)", async ({ page }) => {
   await start(page);
   await oeffne(page, "darstellung");
-  await page.click('[data-thema="dunkel"]');
+  await page.click('[data-schluessel="erscheinung"] [data-wert="dunkel"]');
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  await expect(page.locator('[data-thema="dunkel"]')).toHaveAttribute("aria-checked", "true");
-  await page.click('[data-thema="hell"]');
+  await expect(page.locator('[data-schluessel="erscheinung"] [data-wert="dunkel"]')).toHaveAttribute("aria-checked", "true");
+  await page.click('[data-schluessel="erscheinung"] [data-wert="hell"]');
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  await page.click('[data-thema="system"]');
+  await page.click('[data-schluessel="erscheinung"] [data-wert="system"]');
   await expect(page.locator("html")).not.toHaveAttribute("data-theme", /.*/);
   // Schriftgröße: Pfeiltasten am Regler
   const regler = page.locator('[data-schluessel="schriftgroesse"]');
@@ -230,27 +230,27 @@ test("Darstellung: Thema, Schriftgröße (Regler) und Bewegung gelten sofort und
   await page.keyboard.press("ArrowRight");
   await page.keyboard.press("ArrowRight");
   await put;
-  await expect.poll(() => appDatei().schriftgroesse).toBe(17);
-  expect(await page.evaluate(() => document.documentElement.style.getPropertyValue("--editor-schrift"))).toBe("17px");
-  await expect(zeileVon(page, "schriftgroesse").locator(".ez-regler-wert")).toHaveText("17 px");
+  await expect.poll(() => appDatei().schriftgroesse).toBe(18);
+  expect(await page.evaluate(() => document.documentElement.style.getPropertyValue("--editor-schrift"))).toBe("18px");
+  await expect(zeileVon(page, "schriftgroesse").locator(".dz-wert")).toHaveText("18 pt");
   // Bewegung „Reduziert“
   const put2 = wartePut(page);
   await page.click('[data-schluessel="bewegung"] [data-wert="reduziert"]');
   await put2;
   await expect(page.locator("html")).toHaveAttribute("data-bewegung", "reduziert");
-  expect(appDatei()).toEqual({ schriftgroesse: 17, bewegung: "reduziert" });
+  expect(appDatei()).toEqual({ erscheinung: "system", schriftgroesse: 18, bewegung: "reduziert" });
   expect(config().automatik.schriftgroesse).toBeUndefined(); // App-Werte stehen nie im Vault
-  // nach dem Neuladen gilt es wieder (Editor mit 17 px)
+  // nach dem Neuladen gilt es wieder (Editor mit 18 px)
   await page.reload();
   await page.waitForFunction(() => window.__studioBereit === true);
   await expect(page.locator("html")).toHaveAttribute("data-bewegung", "reduziert");
   await page.goto(server.url + "?pfad=" + encodeURIComponent("10_notizen/Reise nach Lissabon.md"));
   await page.waitForSelector(".cm-content .cm-line");
-  expect(await page.evaluate(() => getComputedStyle(document.querySelector(".cm-content")).fontSize)).toBe("17px");
-  // Breite Textspalte (Geräte-Wahl des Studios)
+  expect(await page.evaluate(() => getComputedStyle(document.querySelector(".cm-content")).fontSize)).toBe("18px");
+  // Zeilenbreite (gilt für das ganze Studio, steht in einstellungen.json)
   await oeffne(page, "darstellung");
-  await page.click('[data-einst="breit"]');
-  await expect(page.locator("#haupt")).toHaveAttribute("data-breite", "breit");
+  await page.click('[data-schluessel="zeilenbreite"] [data-wert="breit"]');
+  await expect(page.locator("html")).toHaveAttribute("data-breite", "breit");
 });
 
 test("Konflikt: antwortet die Werkstatt 409 (jemand hat inzwischen geändert), lädt die Seite neu, zeigt die neuen Werte und sagt es", async ({ page }) => {
@@ -317,7 +317,7 @@ test("Suche: Wertung, Markierung, Zählung je Bereich, Sortierung; Klick auf ein
   await expect(page.locator('.e-bereich[data-bereich="darstellung"] mark').first()).toHaveText("Schrift");
   // Bereichsname getroffen: der ganze Bereich
   await page.locator('[data-einst="suche"]').fill("Darstellung");
-  await expect(page.locator('.e-bereich[data-bereich="darstellung"] [data-zeile]:visible')).toHaveCount(5);
+  await expect(page.locator('.e-bereich[data-bereich="darstellung"] [data-zeile]:visible')).toHaveCount(15);
   expect(await page.locator(".e-bereich:visible").first().getAttribute("data-bereich")).toBe("darstellung");
   // ohne Umlaut, Groß/Klein egal
   await page.locator('[data-einst="suche"]').fill("KURZEL");

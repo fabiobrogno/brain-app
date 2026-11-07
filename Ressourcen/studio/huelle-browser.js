@@ -91,6 +91,7 @@
     "fenster-zoom": function () { return OK; },
     "darstellung": function () { return OK; },
     "app-symbol": function () { return nicht(); },
+    "fenster-durchscheinend": function () { return nicht(); },
   };
 
   window.kortexHuelle = {

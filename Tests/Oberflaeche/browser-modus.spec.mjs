@@ -166,7 +166,8 @@ test("Einstellungen im Browser-Modus: Seite öffnet, Dock-Symbol und macOS-Mitte
   await expect(page.locator('section[data-bereich="tasten"]')).toBeVisible();
   await expect(page.locator('[data-marke="global"]')).toHaveCount(0);
   await page.evaluate(() => { location.hash = "#einstellungen/darstellung"; });
-  await page.click('[data-thema="dunkel"]');
+  await expect(page.locator('[data-zeile="durchscheinend"]')).toHaveCount(0); // kein Fenstermaterial im Browser: die Zeile fehlt
+  await page.click('[data-schluessel="erscheinung"] [data-wert="dunkel"]');
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await page.reload(); // der Cookie trägt das Neuladen, das Thema bleibt
   await expect.poll(() => page.evaluate(() => document.documentElement.getAttribute("data-theme"))).toBe("dark");

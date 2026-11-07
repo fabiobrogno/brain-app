@@ -12,7 +12,7 @@ test.afterAll(() => dateien?.stopp());
 const BILDER = process.env.KORTEX_BILDER;
 if (BILDER) mkdirSync(BILDER, { recursive: true });
 
-const SEITE = `<!doctype html><html lang="de"><head><meta charset="utf-8"><link rel="stylesheet" href="/studio.css"><link rel="stylesheet" href="/bausteine.css"><link rel="stylesheet" href="/anmeldung.css">
+const SEITE = `<!doctype html><html lang="de"><head><meta charset="utf-8"><link rel="stylesheet" href="/schemata.css"><link rel="stylesheet" href="/studio.css"><link rel="stylesheet" href="/bausteine.css"><link rel="stylesheet" href="/anmeldung.css">
 <style>body { background: var(--papier); } #host { width: 420px; margin: 24px; padding: 18px; background: var(--erhoben); border: 1px solid var(--linie); border-radius: 14px; }</style></head>
 <body><div id="host"></div><div id="dialog-host"></div><div id="menue-host"></div><div id="toast-host"></div>
 <script type="module">

@@ -108,7 +108,7 @@ test.describe("Filter-Chips", () => {
     await liste(page).getByRole("option", { name: "Hoch" }).click();
     await expect(chip).toHaveAttribute("data-aktiv", "true");
     await expect(knopf).toHaveAccessibleName("Priorität: Hoch");
-    await expect(knopf).toHaveCSS("color", "rgb(76, 63, 198)"); // Akzent-Tinte (hell, #4C3FC6) auf weicher Akzentfläche, nach dem Übergang
+    await expect(knopf).toHaveCSS("color", /^color\(srgb 0\.28\d* 0\.24\d* 0\.66\d*\)$/); // Akzent-Tinte (hell: 78 % Akzent #5B4ED6 + 22 % Text) auf weicher Akzentfläche, nach dem Übergang
     expect(await ereignisse(page)).toEqual([["prio", "hoch"]]);
     await chip.getByRole("button", { name: "Priorität zurücksetzen" }).click();
     await expect(chip).toHaveAttribute("data-aktiv", "false");

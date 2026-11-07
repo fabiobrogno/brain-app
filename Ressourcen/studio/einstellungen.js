@@ -17,6 +17,9 @@ import { vorschauPille } from "./fenster.js";
 import { BEREICHE, GRUPPEN, TE, STANDARD_VORSCHLAEGE } from "./texte-einstellungen.js";
 import { suche as sucheIn, zerlege, vorschlaege } from "./einstellungen-suche.js";
 import { erzeugeKi } from "./einstellungen-ki.js";
+import { erzeugeDarstellung } from "./einstellungen-darstellung.js";
+import { DARSTELLUNGS_SCHLUESSEL } from "./darstellung.js";
+import { TD } from "./texte-darstellung.js";
 import { erzeugeTasten, tastenAbschnitte } from "./einstellungen-tasten.js";
 import { TKZ } from "./texte-tasten.js";
 
@@ -24,6 +27,8 @@ export const BLINK_MS = 1600; // Sprungziel leuchtet kurz auf (Orca: 3000 ms; ru
 
 // Browser-Dienst („Kortex im Browser“): Dock-Symbol und macOS-Mitteilungen gibt es dort nicht (die Hintergrunddienst-Zeile meldet selbst „nicht möglich“). Einmal ausgeführt, schadet es nicht, wenn es wieder läuft.
 const NUR_APP_ABSCHNITTE = new Set(["dock", "macos"]);
+// Die Zeile „Durchscheinende Seitenleiste“ gibt es nur, wenn die Hülle das Fenstermaterial kann (die Swift-Hülle setzt `data-glas-moeglich` am <html>; Browser und Hüllen ohne Material: ausgeblendet)
+function entferneOhneGlas() { if (document.documentElement.dataset.glasMoeglich) return; for (const b of BEREICHE) for (const a of b.abschnitte) a.zeilen = a.zeilen.filter((z) => !z.nurGlas); }
 function entferneNurApp() { for (const b of BEREICHE) b.abschnitte = b.abschnitte.filter((a) => !NUR_APP_ABSCHNITTE.has(a.id)); }
 
 // Zustand der einen offenen Seite
@@ -94,6 +99,7 @@ function aendere(schluessel, wert) {
   Z.daten.werte[schluessel] = wert === null ? Z.daten.schema[schluessel]?.standard : wert; // null = zurück auf den Standard
   Z.wartend[schluessel] = wert;
   if (quelleVon(schluessel) === "app") Z.k?.wendeAn?.(Z.daten.werte);
+  Z.dz?.meldeLive(Z.daten.werte);
   if (/^ki[A-Z]/.test(schluessel)) Z.ki?.beiEinstellung?.(schluessel);
   speichere();
 }
@@ -151,6 +157,7 @@ function aktualisiereSteuerungen(auchOffene = false) {
     if (s.zeile) s.zeile.querySelector(".ez-r")?.toggleAttribute("inert", gesperrtFuer(k));
   }
   for (const [id, knoten] of Z.bereichKnoten) aktualisiereHinweis(id, knoten);
+  Z.dz?.meldeLive(Z.daten?.werte);
   for (const f of Z.dynamisch.values()) { try { f(); } catch { /* eine Zeile darf die anderen nicht stoppen */ } }
 }
 
@@ -246,38 +253,14 @@ function bauSymbole(z) {
     aufAenderung: (w) => { aendere(k, w); Z.k?.aktion?.("app-symbol", w); } });
   return { steuerung: s.el, reg: { setze: (w) => s.setze(String(w)) } };
 }
+// Arten der Darstellungs-Zeilen (einstellungen-darstellung.js); „symbole“ ist die Wahl des App-Symbols, die Symbolart der Oberfläche heißt hier symbole2
+const DZ_ART = { erscheinung: "erscheinung", schemata: "schemata", akzent: "akzent", schriftWahl: "schriftWahl", codeWahl: "codeWahl", groesse: "groesse", dichte: "dichte", oberflaeche: "oberflaeche", zeilenbreite: "zeilenbreite", symbole2: "symbole" };
 const BAUER = { symbole: bauSymbole, schalter: bauSchalter, segment: bauSegment, zahl: bauZahl, regler: bauRegler, liste: bauListe, pfad: bauPfad };
 
 // ---------------------------------------------------------- Sonderzeilen (eigene Steuerung)
 const kbdGruppe = (tasten) => h("span", { klasse: "ez-tasten", "aria-label": tasten.join(" ") }, tasten.map((t) => h("kbd", { text: t })));
 const pillText = (text, ton) => einstellMarke(text, ton);
 const knopfS = (o) => baueKnopf({ groesse: "s", ...o });
-
-function themaKarten() {
-  const lies = () => Z.k.theme.lies();
-  const kachel = (wert, name, art) => {
-    const b = h("button", { type: "button", klasse: "ez-thema", role: "radio", "aria-checked": String(lies() === wert), "data-thema": wert },
-      h("span", { klasse: `ez-thema-bild ${art}`, "aria-hidden": "true" },
-        h("span", { klasse: "s" }, h("i", { klasse: "a" }), h("i"), h("i"), h("i", { style: "width:70%" })),
-        h("span", { klasse: "m" }, h("i", { style: "width:60%;height:7px" }), h("i"), h("i", { style: "width:80%" }), h("i", { style: "width:50%" }))),
-      h("b", { text: name }), h("span", { klasse: "haken", "aria-hidden": "true" }, symbol("haken", GROESSE.klein)));
-    b.addEventListener("click", () => { Z.k.theme.setze(wert); zeige(); });
-    return b;
-  };
-  const kacheln = [kachel("system", TE.thema.system, "sys"), kachel("hell", TE.thema.hell, "hell"), kachel("dunkel", TE.thema.dunkel, "dunkel")];
-  const el = h("div", { klasse: "ez-themen", role: "radiogroup", "aria-label": "Thema" }, kacheln);
-  const zeige = () => kacheln.forEach((b) => b.setAttribute("aria-checked", String(lies() === b.dataset.thema)));
-  el.addEventListener("keydown", (ev) => {
-    const d = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[ev.key];
-    if (!d) return;
-    ev.preventDefault();
-    const i = kacheln.findIndex((b) => b.getAttribute("aria-checked") === "true");
-    const n = kacheln[(i + d + kacheln.length) % kacheln.length];
-    n.click(); n.focus();
-  });
-  Z.dynamisch.set("thema", zeige);
-  return el;
-}
 
 function vaultZeilen(host) {
   const farbeVon = (v) => (/^#[0-9a-fA-F]{6}$/.test(v.farbe || "") ? v.farbe : "var(--akzent)");
@@ -374,6 +357,20 @@ function vertrauenZeile(host) {
   return zeige;
 }
 
+// „Darstellung zurücksetzen“: nur die Werte der Darstellung gehen auf den Standard (alles andere, auch das Dock-Symbol, bleibt); keine Rückfrage, die Wirkung ist sofort sichtbar
+async function darstellungZuruecksetzen() {
+  const werte = Object.fromEntries(DARSTELLUNGS_SCHLUESSEL.map((k) => [k, null]));
+  try {
+    const r = await Z.api.einstellungenSchreiben(werte, Z.daten.stand);
+    Z.daten = { ...Z.daten, ...r }; delete Z.daten.ok;
+    Z.k?.wendeAn?.(Z.daten.werte);
+    aktualisiereSteuerungen(true);
+    toast(TD.zurueckgesetzt);
+  } catch (e) {
+    try { await lade(); aktualisiereSteuerungen(true); } catch { /* egal */ }
+    toast(e?.status === 409 && e?.daten?.art === "konflikt" ? TE.konflikt : (e?.message || TE.fehlerSpeichern), { fehler: true, ms: 6000 });
+  }
+}
 function zuruecksetzenDialog() {
   const sp = vaultSperre();
   const d = dialog({ titel: TE.reset.titel, satz: sp ? TE.reset.textNurApp : TE.reset.text, knoepfe: [
@@ -399,12 +396,8 @@ function zuruecksetzenDialog() {
 // Zeilen mit eigener Steuerung: id → ({ z, zeile }) → Steuerung (Knoten) oder { steuerung, unten, voll }
 const SONDER = {
   "version-info": () => ({ steuerung: null, titel: `Kortex ${Z.k.version() || TE.versionDev}` }),
-  thema: () => ({ voll: themaKarten() }),
-  breit: () => {
-    const s = umschalter({ an: !!Z.k.breit.lies(), label: TE.seite, daten: { "data-einst": "breit" }, aufAenderung: (v) => Z.k.breit.setze(v) });
-    Z.dynamisch.set("breit", () => { s.an = !!Z.k.breit.lies(); });
-    return { steuerung: s };
-  },
+  vorschau: () => { const v = Z.dz.vorschauKarte(); v.zeige(Z.daten?.werte || {}); return { voll: v.voll }; },
+  "darst-reset": () => ({ steuerung: knopfS({ text: TD.zuruecksetzen, symbol: "zuruecksetzen", daten: { "data-aktion": "darst-reset" }, aufKlick: darstellungZuruecksetzen }) }),
   "vaults-liste": () => { const host = h("div", { klasse: "ez-vaults", "data-vaults": "liste" }); Z.dynamisch.set("vaults", vaultZeilen(host)); return { voll: host }; },
   vertrauen: () => { const host = h("div", { klasse: "ez-inline" }); Z.dynamisch.set("vertrauen", vertrauenZeile(host)); return { steuerung: host }; },
   // KI & Konten (Paket P6): einstellungen-ki.js baut die Inhalte, hier hängen sie als Zeilen im Register (Suche, Sprungziele)
@@ -454,7 +447,7 @@ function ueberKarte() {
 function zeileText(id, text) { const e = Z.zeilen.get(id); if (e?.textEl) { e.textEl.textContent = text; e.originalText = text; } }
 
 function bauZeile(b, a, z) {
-  let steuerung = null, reg = null, voll = null, unten = null, marke = z.experiment ? einstellMarke(TE.experiment) : z.bald ? einstellMarke(TE.bald, "akzent") : null, titel = z.titel;
+  let steuerung = null, reg = null, voll = null, spalte = null, unten = null, marke = z.experiment ? einstellMarke(TE.experiment) : z.bald ? einstellMarke(TE.bald, "akzent") : null, titel = z.titel;
   if (z.sonder) {
     if (z.kuerzelId) { const r = Z.tasten.zeile(z); steuerung = r.steuerung; marke = r.marke; } // Tastenkürzel (P10): einstellungen-tasten.js
     else if (z.taste) steuerung = kbdGruppe(z.taste);
@@ -466,10 +459,14 @@ function bauZeile(b, a, z) {
   } else if (BAUER[z.art]) {
     const r = BAUER[z.art](z);
     steuerung = r.steuerung; reg = r.reg;
+  } else if (Z.dz?.bauer[DZ_ART[z.art]]) {
+    const r = Z.dz.bauer[DZ_ART[z.art]](z);
+    steuerung = r.steuerung || null; reg = r.reg; spalte = r.voll || null;
   }
-  const zeile = einstellZeile({ id: z.id, titel, text: z.text, steuerung: voll ? null : steuerung, unten, marke, hoch: z.art === "liste" || z.art === "regler" || z.art === "symbole", klasse: voll ? "ez-voll ez-ohne-kopf" : "" });
+  const zeile = einstellZeile({ id: z.id, titel, text: z.text, steuerung: voll ? null : steuerung, unten, marke, hoch: z.art === "liste" || z.art === "regler" || z.art === "symbole", klasse: voll ? "ez-voll ez-ohne-kopf" : spalte ? "ez-spalte" : "" });
   if (z.id.startsWith("lizenz-")) zeile.classList.add("ez-lizenz");
   if (voll) zeile.append(voll);
+  if (spalte) zeile.append(spalte);
   zeile.originalTitel = titel;
   if (titel !== z.titel) zeile.titelEl.textContent = titel;
   if (reg) regelSteuerung(z.schluessel, zeile, reg);
@@ -738,6 +735,9 @@ export async function oeffneEinstellungen({ api, kontext, bereich = null, ziel =
   if (!Z.offen) return false;
   Z.kiBraucht = 0;
   if (Z.k.browser) entferneNurApp(); // Browser-Dienst: was es dort nicht gibt, wird nicht gezeigt
+  entferneOhneGlas();
+  Z.dz = erzeugeDarstellung({ wert: (k) => wertVon(k), aendere, mac: !/Win|Linux/i.test(navigator.platform || ""),
+    vorschau: (k, n) => { const werte = { ...Z.daten.werte, [k]: n }; Z.k?.wendeAn?.(werte); Z.dz.meldeLive(werte); } });
   const bt = BEREICHE.find((b) => b.id === "tasten");
   if (bt && !bt.abschnitte.length) bt.abschnitte = tastenAbschnitte(); // eine Zeile je Befehl aus dem Register (tastenkuerzel-register.js), damit auch die Suche der Seite sie findet
   Z.tasten = erzeugeTasten({ inApp: Z.k.inApp, browser: !!Z.k.browser, beiSpeichern: zeigeStand });
