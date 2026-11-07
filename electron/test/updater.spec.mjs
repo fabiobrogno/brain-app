@@ -36,6 +36,9 @@ async function feed({ version, inhalt = Buffer.from("kein echtes Paket — nur z
   return { url: `http://127.0.0.1:${server.address().port}`, abrufe, schliesse: async () => { await new Promise((ok) => server.close(ok)); rmSync(ordner, { recursive: true, force: true }); } };
 }
 
+// Linux: electron-updater lädt nur, wenn es sich als AppImage versteht (APPIMAGE = die alte Datei, für den Differenz-Download; hier eine nicht vorhandene → voller Download)
+const umgebung = (url) => ({ KORTEX_TEST_UPDATE_URL: url, ...(WIN ? {} : { APPIMAGE: join(tmpdir(), "Kortex-nicht-vorhanden.AppImage") }) });
+
 let lauf, f;
 test.afterEach(async () => { await lauf?.stopp(); lauf = null; await f?.schliesse(); f = null; });
 
@@ -46,12 +49,13 @@ const pruefe = (app, o) => app.evaluate((x, opt) => globalThis.__kortex.update.p
 test("Update gefunden: Frage „Laden“, Download mit Prüfsumme, Frage „Neu starten“; Später lässt die Datei liegen, ein zweites Suchen fragt gleich nach dem Neustart, der Neustart beendet die App", async () => {
   NUR_LINUX_WINDOWS();
   f = await feed({ version: "99.0.0" });
-  lauf = await starteApp({ extra: { KORTEX_TEST_UPDATE_URL: f.url } });
+  lauf = await starteApp({ extra: umgebung(f.url) });
   const { app } = lauf;
   expect(await app.evaluate(() => globalThis.__kortex.update.moeglich)).toBe(true);
   // 1. Suchen: Laden = ja, Neu starten = später
   await setzeAntworten(app, [0, 1]);
-  expect(await pruefe(app, { manuell: true })).toMatchObject({ ok: true, neu: true, geladen: true, neustart: false });
+  const r1 = await pruefe(app, { manuell: true });
+  expect(r1, JSON.stringify(r1)).toMatchObject({ ok: true, neu: true, geladen: true, neustart: false });
   const m = await meldungen(app);
   expect(m.map((x) => x.titel)).toEqual(["Neue Version verfügbar", "Update bereit"]);
   expect(m[0].text).toContain("99.0.0");
@@ -74,7 +78,7 @@ test("Update gefunden: Frage „Laden“, Download mit Prüfsumme, Frage „Neu 
 test("Kein Update: Version gleich oder älter → „Kortex ist aktuell“, nichts wird geladen", async () => {
   NUR_LINUX_WINDOWS();
   f = await feed({ version: "0.0.0" });
-  lauf = await starteApp({ extra: { KORTEX_TEST_UPDATE_URL: f.url } });
+  lauf = await starteApp({ extra: umgebung(f.url) });
   const { app } = lauf;
   expect(await pruefe(app, { manuell: true })).toMatchObject({ ok: true, neu: false });
   expect((await meldungen(app)).map((x) => x.titel)).toEqual(["Kortex ist aktuell"]);
@@ -84,10 +88,12 @@ test("Kein Update: Version gleich oder älter → „Kortex ist aktuell“, nich
 test("Falsche Prüfsumme: der Download wird verworfen, die Fehlermeldung kommt, nichts wird installiert", async () => {
   NUR_LINUX_WINDOWS();
   f = await feed({ version: "99.0.0", pruefsumme: sha512(Buffer.from("anderer Inhalt")) });
-  lauf = await starteApp({ extra: { KORTEX_TEST_UPDATE_URL: f.url } });
+  lauf = await starteApp({ extra: umgebung(f.url) });
   const { app } = lauf;
   await setzeAntworten(app, [0]);
-  expect(await pruefe(app, { manuell: true })).toMatchObject({ ok: false, grund: "fehler" });
+  const r = await pruefe(app, { manuell: true });
+  expect(r).toMatchObject({ ok: false, grund: "fehler" });
+  expect(r.meldung, "es muss an der Prüfsumme scheitern, nicht an etwas anderem").toMatch(/sha512/i);
   const m = await meldungen(app);
   expect(m.map((x) => x.titel)).toEqual(["Neue Version verfügbar", "Updates"]);
   expect(m[1].text).toMatch(/fehlgeschlagen/);
@@ -99,7 +105,7 @@ test("Feed nicht erreichbar: stille Prüfung meldet nichts, manuelle Suche sagt 
   f = await feed({ version: "99.0.0" });
   const url = f.url;
   await f.schliesse(); f = null; // Server weg
-  lauf = await starteApp({ extra: { KORTEX_TEST_UPDATE_URL: url } });
+  lauf = await starteApp({ extra: umgebung(url) });
   const { app } = lauf;
   expect(await pruefe(app, { manuell: false })).toMatchObject({ ok: false, grund: "fehler" });
   expect(await meldungen(app)).toEqual([]);

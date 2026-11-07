@@ -485,12 +485,13 @@ jobs:
           set -euo pipefail
           D="$(ls "$PWD"/build/pakete/*.deb)"
           NAME="$(dpkg-deb -f "$D" Package)"
+          # Ubuntu-Auslieferungszustand: unprivilegierte User-Namensräume gesperrt — die Installation muss den Sandbox-Helfer selbst einrichten (SUID, wenn es nicht anders geht)
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=1 || true
           sudo apt-get install -y "$D"
           test -x /opt/Kortex/kortex
-          test "$(stat -c '%a' /opt/Kortex/chrome-sandbox)" = "4755"
+          stat -c 'chrome-sandbox: %a %U' /opt/Kortex/chrome-sandbox
           export KORTEX_PAKET_PROGRAMM=/opt/Kortex/kortex
           unset KORTEX_TEST_OHNE_SANDBOX
-          # auch ohne gelockerte User-Namensräume: die deb-Installation bringt den SUID-Helfer mit
           xvfb-run -a --server-args="-screen 0 1440x900x24" npx playwright test test/paket.spec.mjs 2>&1 | tee "$RUNNER_TEMP/paket-deb.log"
           R="${PIPESTATUS[0]}"
           sudo apt-get remove -y "$NAME"
@@ -512,7 +513,12 @@ jobs:
           $ziel = Join-Path $env:LOCALAPPDATA 'Programs\Kortex'
           Start-Process -FilePath $setup -ArgumentList '/S' -Wait
           Get-Process -Name kortex, Kortex -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-          if (-not (Test-Path $ziel)) { throw "Nicht installiert unter $ziel (pro Benutzer, ohne Admin)" }
+          if (-not (Test-Path $ziel)) {
+            Write-Host "Inhalt von $env:LOCALAPPDATA\Programs und der Uninstall-Einträge:"
+            Get-ChildItem (Join-Path $env:LOCALAPPDATA 'Programs') -ErrorAction SilentlyContinue | Format-Table Name | Out-String | Write-Host
+            Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' -ErrorAction SilentlyContinue | ForEach-Object { Get-ItemProperty $_.PSPath } | Where-Object { $_.DisplayName -match 'Kortex|kortex' } | Format-List DisplayName, InstallLocation | Out-String | Write-Host
+            throw "Nicht installiert unter $ziel (pro Benutzer, ohne Admin)"
+          }
           Get-ChildItem $ziel | Select-Object -First 20 Name | Format-Table | Out-String | Write-Host
           $exe = (Get-ChildItem $ziel -Filter *.exe | Where-Object { $_.Name -notmatch 'Uninstall' } | Select-Object -First 1).FullName
           Write-Host "Programm: $exe"
