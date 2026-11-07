@@ -30,6 +30,9 @@ export function nurMac(was, fn, { plattform = process.platform } = {}) {
 }
 
 // ───────────── Prozesse ─────────────
+// `detached` für Kinder MIT Ein-/Ausgabekanälen: macOS/Linux eigene Prozessgruppe (beendeBaum trifft sie); Windows nie — `detached` heißt dort „ohne Konsole", und ein Kind
+// mit Kanälen liefert dann keine Ausgabe (Starter, Skripte); beendet wird dort per taskkill /T.
+export const eigeneGruppe = (plattform = process.platform) => !istWindows(plattform);
 // Beendet einen EIGENEN Kindprozess samt Nachkommen. macOS/Linux: Prozessgruppe (Kind wurde mit detached gestartet), Rückfall nur das Kind.
 // Windows: `taskkill /T /F` auf genau diese PID (kein Namens- oder Fremdbezug), Rückfall kind.kill().
 export function beendeBaum(kind, signal = "SIGKILL", { plattform = process.platform, lauf = spawnSync } = {}) {

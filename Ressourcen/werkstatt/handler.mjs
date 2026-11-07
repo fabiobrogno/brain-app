@@ -32,6 +32,7 @@ import { STUFEN, pflegeFuer, stufeFuer, darfMindestens } from "../gemeinsam/ki-k
 import { erzeugePflege } from "./pflege.mjs";
 import { merkeRemoteBestaetigt } from "../gemeinsam/sicherungsmerker.mjs";
 import { ADAPTER, erkenneProgramme } from "./ki-programme/index.mjs";
+import { eigeneGruppe } from "../gemeinsam/plattform.mjs";
 
 const HIER = dirname(fileURLToPath(import.meta.url));
 export const MAX_KOERPER = 8 * 1024 * 1024;
@@ -567,10 +568,10 @@ export function erzeugeHandler(o) {
   //    vaults.json): sein Code läuft nicht mehr, der Eintrag wird auf den Kern umgestellt (Befehl: ein absoluter `node`). Liegt der Pfad
   //    unter einem unbekannten Ordner, ist es ein fremder Eintrag (Rückfrage).
   const ALTER_APP_NODE = /\/Application Support\/(?:Brain|Kortex)\/node\/[^/]+\/bin\/node$/;
-  const ALTER_MCP_PFAD = /^\/.*\/mcp\/brain-mcp\.mjs$/;
-  const ALTER_KIT_MCP = /^\/.*\/\.tools\/(?:.*\/)?[^/]*mcp[^/]*\.mjs$/;
+  const ALTER_MCP_PFAD = /^(?:[A-Za-z]:)?[\\/].*[\\/]mcp[\\/]brain-mcp\.mjs$/;
+  const ALTER_KIT_MCP = /^(?:[A-Za-z]:)?[\\/].*[\\/]\.tools[\\/](?:.*[\\/])?[^\\/]*mcp[^\\/]*\.mjs$/;
   const imBekanntenVault = (p) => {
-    const m = /^(.*)\/\.tools\//.exec(p);
+    const m = /^(.*)[\\/]\.tools[\\/]/.exec(p);
     if (!m) return false;
     let liste;
     try { liste = vaultsFn.leseVaults(optV()).vaults; } catch { return false; }
@@ -584,8 +585,8 @@ export function erzeugeHandler(o) {
       return typeof cmd === "string" && ALTER_APP_NODE.test(cmd) ? "alt" : "anders";
     }
     if (typeof cmd === "string" && typeof altArgs === "string") {
-      if (ALTER_MCP_PFAD.test(altArgs) && !/\/\.tools\//.test(altArgs) && (cmd === a[0] || ALTER_APP_NODE.test(cmd))) return "alt";
-      if (ALTER_KIT_MCP.test(altArgs) && /^\/(?:.*\/)?node$/.test(cmd) && imBekanntenVault(altArgs)) return "alt";
+      if (ALTER_MCP_PFAD.test(altArgs) && !/[\\/]\.tools[\\/]/.test(altArgs) && (cmd === a[0] || ALTER_APP_NODE.test(cmd))) return "alt";
+      if (ALTER_KIT_MCP.test(altArgs) && /^(?:[A-Za-z]:)?[\\/](?:.*[\\/])?node(?:\.exe)?$/.test(cmd) && imBekanntenVault(altArgs)) return "alt";
     }
     return "anders";
   };
@@ -844,7 +845,7 @@ export function erzeugeHandler(o) {
         beendeGruppe(kind);
         if (fehler) nein(fehler); else ok(wert);
       };
-      try { kind = spawn(a[0], [a[1], ...(pk.konto ? ["--konto", pk.konto] : [])], { cwd: homedir(), env, detached: true, stdio: ["pipe", "pipe", "ignore"], windowsHide: true }); }
+      try { kind = spawn(a[0], [a[1], ...(pk.konto ? ["--konto", pk.konto] : [])], { cwd: homedir(), env, detached: eigeneGruppe(), stdio: ["pipe", "pipe", "ignore"], windowsHide: true }); }
       catch { return nein(new HttpFehler(502, "Der MCP-Server ließ sich nicht starten.", { art: "mcp" })); }
       registriere(kind, null);
       const nichtAntwort = () => ende(new HttpFehler(502, `Der MCP-Server hat nicht geantwortet — ${wer} würde deinen Vault so nicht finden.`, { art: "mcp" }));

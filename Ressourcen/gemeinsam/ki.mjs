@@ -7,7 +7,7 @@ import { homedir } from "node:os";
 import { spawn } from "node:child_process";
 import { kindUmgebung, vorschauOrdner } from "./basis.mjs";
 import { ladeKatalog } from "./ki-katalog.mjs";
-import { beendeBaum } from "./plattform.mjs";
+import { beendeBaum, eigeneGruppe } from "./plattform.mjs";
 
 // Feste Reihenfolge und Anzeigenamen; der Programmname ist die id.
 const AGENTEN = [
@@ -80,7 +80,7 @@ function versionLesen(pfad, env, limit) {
     try {
       // Der Ordner des Programms kommt in den PATH: Node-Skripte (`#!/usr/bin/env node`) finden so das danebenliegende node auch mit knappem GUI-PATH.
       const umgebung = kindUmgebung({ PATH: [dirname(pfad), env.PATH || ""].filter(Boolean).join(delimiter), NO_COLOR: "1", CI: "1" });
-      kind = spawn(pfad, ["--version"], { env: umgebung, detached: true, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+      kind = spawn(pfad, ["--version"], { env: umgebung, detached: eigeneGruppe(), stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
       kind.stdout.setEncoding("utf8"); kind.stderr.setEncoding("utf8");
       kind.stdout.on("data", (d) => { if (aus.length < 65536) aus += d; });
       kind.stderr.on("data", (d) => { if (fehl.length < 65536) fehl += d; });

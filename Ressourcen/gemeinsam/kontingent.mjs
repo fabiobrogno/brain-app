@@ -8,6 +8,7 @@
 import { spawn } from "node:child_process";
 import { registriere, beendeGruppe, beendetGerade } from "./prozess.mjs";
 import { leseRetryAfter } from "./kontingent-regeln.mjs";
+import { eigeneGruppe } from "./plattform.mjs";
 
 export const FENSTER_5H = 300;       // Orca: CODEX_SESSION_WINDOW_MINUTES
 export const FENSTER_WOCHE = 10080;  // Orca: CODEX_WEEKLY_WINDOW_MINUTES
@@ -67,7 +68,7 @@ export function liesCodexKontingent({ programm, env, cwd, initFrist = INIT_FRIST
     // Abbruch VOR dem Start: gar nicht erst starten (sonst entstünde ein Prozess, der sofort wieder beendet werden müsste)
     if (beendetGerade() || (signal && signal.aborted)) return aufloesen({ ok: false, art: "ende" });
     let kind;
-    try { kind = spawn(programm, CODEX_ARGS, { cwd, env, detached: true, stdio: ["pipe", "pipe", "pipe"], windowsHide: true }); }
+    try { kind = spawn(programm, CODEX_ARGS, { cwd, env, detached: eigeneGruppe(), stdio: ["pipe", "pipe", "pipe"], windowsHide: true }); }
     catch (e) { return aufloesen({ ok: false, art: e && e.code === "ENOENT" ? "fehlt" : "start" }); }
     registriere(kind, cwd);
     let fertig = false, uhr = null, puffer = "", fehlText = "", nr = 0, initId = null, rlId = null;
