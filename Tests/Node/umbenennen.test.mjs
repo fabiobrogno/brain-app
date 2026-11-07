@@ -5,6 +5,7 @@ import { readlinkSync, readFileSync, readdirSync, lstatSync, existsSync, writeFi
 import { join, dirname } from "node:path";
 import { createHash } from "node:crypto";
 import { tmp, schreibe, pfad } from "./hilfe.mjs";
+import { modus } from "./attrappe.mjs";
 
 const { oeffneVault, HttpFehler } = await import(pfad("gemeinsam", "vault.mjs"));
 const L = await import(pfad("gemeinsam", "linkpflege.mjs"));
@@ -299,16 +300,16 @@ test("Löschen: Notiz im Papierkorb (0700/0600), Verweise bleiben als offene Lin
   const korb = join(d, ".kortex-lokal", "papierkorb");
   const inhalt = join(korb, "vorgaenge", r.vorgang, "inhalt", "Kaffee.md");
   assert.equal(readFileSync(inhalt, "utf8"), BASIS()["10/Kaffee.md"]);
-  assert.equal(statSync(inhalt).mode & 0o777, 0o600);
-  for (const o of [join(d, ".kortex-lokal"), korb, join(korb, "vorgaenge"), join(korb, "vorgaenge", r.vorgang), join(korb, "vorgaenge", r.vorgang, "inhalt")]) assert.equal(statSync(o).mode & 0o777, 0o700, o);
-  assert.equal(statSync(join(korb, "vorgaenge", r.vorgang, "manifest.json")).mode & 0o777, 0o600);
+  assert.equal(modus(inhalt, 0o600), 0o600);
+  for (const o of [join(d, ".kortex-lokal"), korb, join(korb, "vorgaenge"), join(korb, "vorgaenge", r.vorgang), join(korb, "vorgaenge", r.vorgang, "inhalt")]) assert.equal(modus(o, 0o700), 0o700, o);
+  assert.equal(modus(join(korb, "vorgaenge", r.vorgang, "manifest.json"), 0o600), 0o600);
   const liste = await v.papierkorb();
   assert.equal(liste.eintraege.length, 1); assert.equal(liste.eintraege[0].titel, "Kaffee"); assert.equal(liste.eintraege[0].alt, false);
   // Wiederherstellen aus dem Papierkorb
   const w = await v.papierkorbWiederherstellen({ id: r.vorgang });
   assert.equal(w.pfad, "10/Kaffee.md");
   assert.deepEqual([...stand(d).dateien], [...vorher.dateien]);
-  assert.equal(statSync(join(d, "10/Kaffee.md")).mode & 0o777, 0o644, "ursprünglicher Modus");
+  assert.equal(modus(join(d, "10/Kaffee.md"), 0o644), 0o644, "ursprünglicher Modus");
   assert.equal((await v.papierkorb()).eintraege.length, 0);
 });
 

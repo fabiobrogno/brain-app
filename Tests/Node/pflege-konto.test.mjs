@@ -6,10 +6,11 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, mkdirSync, statSync, realpathSync, chmodSync, existsSync, symlinkSync, cpSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmp, schreibe, pfad } from "./hilfe.mjs";
+import { legeProgramm, programmPfad, modus } from "./attrappe.mjs";
 
 for (const k of ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "CURSOR_CONFIG_DIR", "GEMINI_CLI_HOME", "XDG_CONFIG_HOME", "GIT_CONFIG_GLOBAL"]) delete process.env[k];
 const HOME0 = tmp("brain-home-");
-process.env.HOME = HOME0;
+process.env.HOME = HOME0; if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME || ""; 
 
 const G = await import(pfad("gemeinsam", "ki-konten.mjs"));
 const KERN = await import(pfad("kern", "ki-konten.mjs"));
@@ -82,7 +83,7 @@ test("POST /api/ki/pflege: setzt Konto und Stufe atomar (Modus 0600), nur für V
   let r = await rufe("POST", "/api/ki/pflege", { vault: a.v1, konto: "k_0000000a", stufe: "klein" });
   assert.equal(r.status, 200, JSON.stringify(r.j));
   assert.deepEqual(pflegeVon(a.s, a.v1), { gesetzt: true, konto: "k_0000000a", stufe: "klein" });
-  assert.equal(statSync(G.kontenPfad(a.s)).mode & 0o777, 0o600);
+  assert.equal(modus(G.kontenPfad(a.s), 0o600), 0o600);
   const v1 = r.j.vaults.find((v) => v.pfad === a.v1), v2 = r.j.vaults.find((v) => v.pfad === a.v2);
   assert.deepEqual(v1.pflege, { gesetzt: true, konto: "k_0000000a", stufe: "klein", wirksam: "konto", bewusst: false });
   assert.deepEqual(v2.pflege, { gesetzt: false, wirksam: "alt" }, "der andere Vault bleibt unberührt");
@@ -210,9 +211,9 @@ test("POST /api/ki/pflege/jetzt: startet den Tageslauf des offenen Vaults über 
   const a = aufbau();
   const bin = tmp("brain-starter-"); const log = join(bin, "aufrufe.log");
   const starter = join(bin, "kortex");
-  const bauen = (ausgabe) => { writeFileSync(starter, `#!/bin/sh\necho "$@" >> '${log}'\necho '${ausgabe}'\n`); chmodSync(starter, 0o755); };
+  const bauen = (ausgabe) => { legeProgramm(starter, `#!/bin/sh\necho "$@" >> '${log}'\necho '${ausgabe}'\n`); };
   bauen("Tageslauf läuft im Hintergrund.");
-  const rufe = handler(a, { starter });
+  const rufe = handler(a, { starter: programmPfad(starter) });
   let r = await rufe("POST", "/api/ki/pflege/jetzt", {});
   assert.equal(r.status, 200, JSON.stringify(r.j)); assert.equal(r.j.gestartet, true);
   assert.equal(readFileSync(log, "utf8").trim(), `tageslauf --losgeloest --vault ${a.v1}`);
@@ -221,7 +222,7 @@ test("POST /api/ki/pflege/jetzt: startet den Tageslauf des offenen Vaults über 
   assert.equal(r.status, 409); assert.equal(r.j.art, "laeuft-schon");
   assert.equal(readFileSync(log, "utf8").trim().split("\n").length, 1, "der Starter lief nur einmal");
   bauen("Tageslauf nicht gestartet: läuft schon.");
-  r = await handler(a, { starter })("POST", "/api/ki/pflege/jetzt", {});
+  r = await handler(a, { starter: programmPfad(starter) })("POST", "/api/ki/pflege/jetzt", {});
   assert.equal(r.status, 409); assert.equal(r.j.art, "nicht-gestartet"); assert.match(r.j.fehler, /läuft schon/);
   assert.equal((await rufe("GET", "/api/ki/pflege/jetzt")).status, 405);
   const ohne = handler(a, { starter: join(bin, "gibt-es-nicht") });
@@ -336,21 +337,21 @@ test("plist lesen: eine binäre plist wird mit plutil als XML gelesen; ohne plut
 test("POST /api/ki/pflege/jetzt: Schalter „aus“ → 409 ohne Start; läuft schon (Sperre des Kerns mit lebendem Prozess) → 409 ohne Start; eine verwaiste oder alte Sperre zählt nicht; Probe wird gemeldet", async () => {
   const a = aufbau();
   const bin = tmp("brain-starter-"); const log = join(bin, "aufrufe.log"); const starter = join(bin, "kortex");
-  writeFileSync(starter, `#!/bin/sh\necho "$@" >> '${log}'\necho 'Tageslauf läuft im Hintergrund.'\n`); chmodSync(starter, 0o755);
+  legeProgramm(starter, `#!/bin/sh\necho "$@" >> '${log}'\necho 'Tageslauf läuft im Hintergrund.'\n`);
   const cfg = (s) => writeFileSync(join(a.v1, "brain.config.json"), JSON.stringify({ automatik: { tageslauf: s } }));
   const lock = (pid, start) => schreibe(a.v1, ".logs/tageslauf/lauf.lock", JSON.stringify({ pid, start }));
   cfg("aus");
-  let r = await handler(a, { starter })("POST", "/api/ki/pflege/jetzt", {});
+  let r = await handler(a, { starter: programmPfad(starter) })("POST", "/api/ki/pflege/jetzt", {});
   assert.equal(r.status, 409); assert.equal(r.j.art, "schalter-aus"); assert.match(r.j.fehler, /ausgeschaltet/);
   cfg("an");
   lock(process.pid, new Date().toISOString());
-  r = await handler(a, { starter })("POST", "/api/ki/pflege/jetzt", {});
+  r = await handler(a, { starter: programmPfad(starter) })("POST", "/api/ki/pflege/jetzt", {});
   assert.equal(r.status, 409); assert.equal(r.j.art, "laeuft-schon");
   lock(process.pid, new Date(Date.now() - 3 * 3600e3).toISOString());          // zu alt: gilt nicht (wie nimmSperre)
   lock(2 ** 22 + 12345, new Date().toISOString());                              // Prozess gibt es nicht
   assert.ok(!existsSync(log), "bis hier wurde nichts gestartet");
   cfg("probe");
-  r = await handler(a, { starter })("POST", "/api/ki/pflege/jetzt", {});
+  r = await handler(a, { starter: programmPfad(starter) })("POST", "/api/ki/pflege/jetzt", {});
   assert.equal(r.status, 200, JSON.stringify(r.j)); assert.deepEqual([r.j.gestartet, r.j.probe], [true, true]);
   assert.equal(readFileSync(log, "utf8").trim().split("\n").length, 1);
   // der Stand meldet „läuft“ für die Anzeige
@@ -385,7 +386,7 @@ test("Migration mit echtem `dienst an` (Attrappe statt launchctl): Einstellung �
   const launchd = (scheitern) => { const d = tmp("kortex-launchctl-"); const z = join(d, "zaehler"); const s = join(d, "launchctl.mjs");
     writeFileSync(s, `import { readFileSync, writeFileSync, existsSync } from "node:fs"; if (process.argv[2] === "bootstrap") { const n = existsSync(${JSON.stringify(z)}) ? Number(readFileSync(${JSON.stringify(z)}, "utf8")) : 0; writeFileSync(${JSON.stringify(z)}, String(n + 1)); if (n < ${scheitern}) process.exit(1); } process.exit(0);\n`); return s; };
   const alt = { HOME: process.env.HOME, K1: process.env.KORTEX_KERN_UNSTABIL_ERLAUBT, K2: process.env.KORTEX_KERN_TEMP_WURZELN, L: process.env.BRAIN_LAUNCHCTL };
-  process.env.HOME = a.home; process.env.KORTEX_KERN_UNSTABIL_ERLAUBT = "1"; process.env.KORTEX_KERN_TEMP_WURZELN = "";
+  process.env.HOME = a.home; if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME || "";  process.env.KORTEX_KERN_UNSTABIL_ERLAUBT = "1"; process.env.KORTEX_KERN_TEMP_WURZELN = "";
   try {
     writeFileSync(join(a.s, "dienst.json"), JSON.stringify({ vaults: [a.v1] }));
     const plist = schreibePlist(a.home, plistText(a.P.A));

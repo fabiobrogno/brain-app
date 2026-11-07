@@ -8,6 +8,7 @@ import { readFileSync, statSync, writeFileSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { tmp, g, repo, pfad } from "./hilfe.mjs";
+import { WIN, nurUnix } from "./attrappe.mjs";
 
 const { HAERTUNG } = await import(pfad("gemeinsam", "git.mjs"));
 // Schlüssel der lokalen Git-Konfiguration, die Git ein Programm starten lassen (credential.<url>.helper, core.askpass/gitProxy/alternateRefsCommand, gpg.*.program,
@@ -19,7 +20,7 @@ const SICHER = pfad("kern", "git-sicher");
 const text = readFileSync(SICHER, "utf8");
 
 test("git-sicher ist ausführbar und nennt jede -c-Einstellung der Werkstatt (außer der reinen Ausgabeform core.quotepath)", () => {
-  assert.ok(statSync(SICHER).mode & 0o111, "git-sicher muss ausführbar sein (sonst kann der Kern kein git starten)");
+  assert.ok(WIN || statSync(SICHER).mode & 0o111, "git-sicher muss ausführbar sein (sonst kann der Kern kein git starten)");
   const paare = (liste) => { const o = []; for (let i = 0; i < liste.length; i += 2) { assert.equal(liste[i], "-c"); o.push(liste[i + 1]); } return o; };
   const alle = [...paare(HAERTUNG.GRUND), ...paare(HAERTUNG.OHNE_HOOKS), ...paare(HAERTUNG.OHNE_SIGNIEREN(null))].filter((p) => !p.startsWith("core.quotepath="));
   assert.ok(alle.length >= 10);
@@ -34,7 +35,7 @@ test("git-sicher ist ausführbar und nennt jede -c-Einstellung der Werkstatt (au
 const BEISPIELE = ["credential.helper", "credential.https://example.org.helper", "core.askpass", "core.gitproxy", "core.alternaterefscommand", "gpg.program", "gpg.x509.program",
   "gpg.ssh.defaultKeyCommand", "gpg.ssh.program", "merge.x.driver", "filter.x.clean", "filter.x.smudge", "filter.x.process", "remote.o.uploadpack", "remote.o.receivepack", "remote.o.vcs"];
 
-test("jedes Muster der Liste ist durch mindestens ein Beispiel abgedeckt, und git-sicher verweigert alle Beispiele", () => {
+test("jedes Muster der Liste ist durch mindestens ein Beispiel abgedeckt, und git-sicher verweigert alle Beispiele", { skip: nurUnix("git-sicher ist ein POSIX-Shell-Skript, das Node nicht direkt starten kann") }, () => {
   for (const re of GEFAEHRLICH_MUSTER) assert.ok(BEISPIELE.some((k) => re.test(k.toLowerCase())), `kein Beispiel für ${re}`);
   for (const k of BEISPIELE) {
     const d = repo();

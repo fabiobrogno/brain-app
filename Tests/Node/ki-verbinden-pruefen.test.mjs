@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { tmp, schreibe, pfad } from "./hilfe.mjs";
 
 const HOME = tmp("pruefen-home-");
-process.env.HOME = HOME;
+process.env.HOME = HOME; if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME || ""; 
 for (const k of ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "XDG_CONFIG_HOME", "CURSOR_CONFIG_DIR", "GEMINI_CLI_HOME"]) delete process.env[k];
 
 const { erzeugeHandler } = await import(pfad("werkstatt", "handler.mjs"));

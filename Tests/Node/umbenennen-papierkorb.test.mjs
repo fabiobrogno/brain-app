@@ -6,10 +6,14 @@ import { join, dirname } from "node:path";
 import { spawn, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { tmpdir } from "node:os";
 import { tmp, schreibe, pfad, repo, g } from "./hilfe.mjs";
+import { systemPfad } from "./attrappe.mjs";
+import { heim, istAbsturz } from "./umgebung-win.mjs";
 
 const { oeffneVault, HttpFehler } = await import(pfad("gemeinsam", "vault.mjs"));
 const A = await import(pfad("gemeinsam", "aktivitaet.mjs"));
+const { prozessStart } = await import(pfad("gemeinsam", "plattform.mjs"));
 const KIND = join(dirname(fileURLToPath(import.meta.url)), "umbenennen-kind.mjs");
 const sha = (b) => createHash("sha256").update(b).digest("hex");
 
@@ -40,10 +44,10 @@ const jDir = (d, id) => join(d, ".kortex-lokal", "papierkorb", "vorgaenge", id);
 function absturz({ d, support, methode, eingabe, punkt }) {
   return new Promise((ok, nein) => {
     const home = tmp("upk-home-");
-    const env = { PATH: "/usr/bin:/bin", HOME: home, TMPDIR: process.env.TMPDIR || "/tmp", BRAIN_APP_SUPPORT: support, BRAIN_TESTMODUS: "1", KORTEX_VAULT_VERTRAUT: "alle", TZ: "Europe/Berlin" };
+    const env = { PATH: systemPfad(), ...heim(home), TMPDIR: process.env.TMPDIR || tmpdir(), BRAIN_APP_SUPPORT: support, BRAIN_TESTMODUS: "1", KORTEX_VAULT_VERTRAUT: "alle", TZ: "Europe/Berlin" };
     const k = spawn(process.execPath, [KIND, JSON.stringify({ vault: d, support, methode, eingabe, punkt })], { env, stdio: ["ignore", "pipe", "pipe"] });
     let err = ""; k.stderr.on("data", (x) => { err += x; });
-    k.on("exit", (code, signal) => (signal === "SIGKILL" ? ok() : nein(new Error(`Kind endete nicht per SIGKILL: ${code} ${signal} ${err}`))));
+    k.on("exit", (code, signal) => (istAbsturz(code, signal) ? ok() : nein(new Error(`Kind endete nicht per SIGKILL: ${code} ${signal} ${err}`))));
   });
 }
 
@@ -212,11 +216,11 @@ function legeSperre(v, inhalt, alterMs = 0) {
   if (alterMs) { const t = new Date(Date.now() - alterMs); utimesSync(f, t, t); }
   return f;
 }
-const startVon = (pid) => execFileSync("/bin/ps", ["-o", "lstart=", "-p", String(pid)], { encoding: "utf8", env: { LC_ALL: "C", LANG: "C", TZ: "UTC", PATH: "/bin:/usr/bin" } }).trim();
+const startVon = (pid) => process.platform === "win32" ? prozessStart(pid) : execFileSync("/bin/ps", ["-o", "lstart=", "-p", String(pid)], { encoding: "utf8", env: { LC_ALL: "C", LANG: "C", TZ: "UTC", PATH: "/bin:/usr/bin" } }).trim();
 
 test("Sperre: ein anderer lebender Prozess wird auch nach 20 Minuten nicht gebrochen; tote PID und wiederverwendete PID (andere Startzeit) sofort; eigene PID mit fremdem Token gilt als veraltet", async () => {
   const { d, v } = aufbau({ "a/x.md": "# x\n" });
-  const fremd = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { env: { PATH: "/usr/bin:/bin" }, stdio: "ignore" });
+  const fremd = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { env: { PATH: systemPfad(), ...heim(tmp("upk-home-")) }, stdio: "ignore" });
   try {
     legeSperre(v, { pid: fremd.pid, start: startVon(fremd.pid), token: "t" }, 20 * 60_000);
     const e = await fehler(() => v.umbenennen({ pfad: "a/x.md", dateiname: "y.md" }));
@@ -240,7 +244,7 @@ test("Sperre: drei Prozesse brechen gleichzeitig dieselbe veraltete Sperre — a
   legeSperre(v, { pid: 99999999, token: "alt" });
   const lauf = (n) => new Promise((ok, nein) => {
     const home = tmp("upk-home-");
-    const env = { PATH: "/usr/bin:/bin", HOME: home, TMPDIR: process.env.TMPDIR || "/tmp", BRAIN_APP_SUPPORT: support, BRAIN_TESTMODUS: "1", KORTEX_VAULT_VERTRAUT: "alle", TZ: "Europe/Berlin" };
+    const env = { PATH: systemPfad(), ...heim(home), TMPDIR: process.env.TMPDIR || tmpdir(), BRAIN_APP_SUPPORT: support, BRAIN_TESTMODUS: "1", KORTEX_VAULT_VERTRAUT: "alle", TZ: "Europe/Berlin" };
     const k = spawn(process.execPath, [KIND, JSON.stringify({ vault: d, support, methode: "umbenennen", eingabe: { pfad: `a/${n}.md`, dateiname: `n${n}.md` }, punkt: "nie" })], { env, stdio: ["ignore", "pipe", "pipe"] });
     let err = ""; k.stderr.on("data", (x) => { err += x; });
     k.on("exit", (code) => (code === 0 ? ok() : nein(new Error(`Kind ${n}: ${code} ${err}`))));

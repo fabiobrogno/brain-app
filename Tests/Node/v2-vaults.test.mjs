@@ -3,14 +3,19 @@
 import test, { beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, existsSync, readdirSync, symlinkSync, mkdirSync, rmSync, chmodSync, lstatSync, statSync, realpathSync } from "node:fs";
-import { join, basename, dirname } from "node:path";
+import { join, basename, dirname, delimiter } from "node:path";
 import { userInfo } from "node:os";
 import { execFileSync } from "node:child_process";
 import { tmp, schreibe, repo, g, pfad } from "./hilfe.mjs";
+import { legeProgramm, nurUnix, WIN } from "./attrappe.mjs";
+const fw = (p) => p.split("\\").join("/"); // Windows: Git/sh und Adressen mit Slashes
+const echtesGit = () => (WIN // Windows: `where git`, erster Treffer git.exe
+  ? execFileSync("where", ["git"], { encoding: "utf8" }).split(/\r?\n/).map((z) => z.trim()).find((z) => /git\.exe$/i.test(z))
+  : execFileSync("which", ["git"], { encoding: "utf8" }).trim());
 
 // GANZ OBEN, vor dem Laden der Module: Node liest $HOME bei jedem os.homedir()-Aufruf, Git ebenso.
 const HOME = tmp("brain-home-");
-process.env.HOME = HOME;
+process.env.HOME = HOME; if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME; /* Windows: os.homedir() liest USERPROFILE */
 delete process.env.XDG_CONFIG_HOME;
 delete process.env.GIT_CONFIG_GLOBAL;
 process.env.GIT_CONFIG_NOSYSTEM = "1";
@@ -64,14 +69,13 @@ const ohneGit = async (fn) => { const alt = process.env.PATH; process.env.PATH =
 // Attrappe für `git clone` (alles andere geht an das echte Git): zum Prüfen von Abbruch und Zeitlimit.
 function attrappe(klonSkript) {
   const dir = tmp("brain-fakegit-");
-  const echtes = execFileSync("which", ["git"], { encoding: "utf8" }).trim();
-  writeFileSync(join(dir, "git"), `#!/bin/sh\ncase " $* " in *" clone "*) ${klonSkript} ;; esac\nexec "${echtes}" "$@"\n`);
-  chmodSync(join(dir, "git"), 0o755);
+  const echtes = fw(echtesGit());
+  legeProgramm(join(dir, "git"), `#!/bin/sh\ncase " $* " in *" clone "*) ${klonSkript} ;; esac\nexec "${echtes}" "$@"\n`);
   return dir;
 }
-const mitPfad = async (dir, fn) => { const alt = process.env.PATH; process.env.PATH = `${dir}:${alt}`; try { return await fn(); } finally { process.env.PATH = alt; } };
+const mitPfad = async (dir, fn) => { const alt = process.env.PATH; process.env.PATH = `${dir}${delimiter}${alt}`; try { return await fn(); } finally { process.env.PATH = alt; } };
 function bareMitInhalt() {
-  const bare = tmp("brain-bare-");
+  const bare = fw(tmp("brain-bare-"));
   g(bare, "init", "-q", "--bare", "-b", "main");
   const w = repo();
   schreibe(w, "wissen.md", "# Wissen\n");
@@ -83,11 +87,10 @@ function bareMitInhalt() {
 // `vorher` läuft vor jedem Aufruf (z. B. "sleep 0.5"); $D ist der Ordner der Attrappe; jeder Aufruf steht in aufrufe().
 function attrappeMit(zweige, { vorher = "" } = {}) {
   const dir = tmp("brain-fakegit2-");
-  const echtes = execFileSync("which", ["git"], { encoding: "utf8" }).trim();
+  const echtes = fw(echtesGit());
   const protokoll = join(dir, "aufrufe.log");
   const faelle = Object.entries(zweige).map(([unterbefehl, skript]) => `*" ${unterbefehl} "*) ${skript} ;;`).join("\n");
-  writeFileSync(join(dir, "git"), `#!/bin/sh\nD="$(dirname "$0")"\necho "$*" >> "$D/aufrufe.log"\n${vorher}\ncase " $* " in\n${faelle}\nesac\nexec "${echtes}" "$@"\n`);
-  chmodSync(join(dir, "git"), 0o755);
+  legeProgramm(join(dir, "git"), `#!/bin/sh\nD="$(dirname "$0")"\necho "$*" >> "$D/aufrufe.log"\n${vorher}\ncase " $* " in\n${faelle}\nesac\nexec "${echtes}" "$@"\n`);
   return { dir, aufrufe: () => (existsSync(protokoll) ? readFileSync(protokoll, "utf8").split("\n").filter(Boolean) : []), pid: () => (existsSync(join(dir, "pid")) ? readFileSync(join(dir, "pid"), "utf8").trim() : "") };
 }
 const HAENGT = 'echo $$ > "$D/pid"; exec sleep 30'; // hängender Git-Aufruf; $$ ist (nach exec) die PID des hängenden Prozesses
@@ -199,7 +202,7 @@ test("registriere: idempotent über den echten Pfad, Name nur auf Wunsch, macht 
   assert.equal(leseVaults().vaults.length, 1);
 });
 
-test("registriere: noch nicht vorhandener Ordner geht (es wird nichts angelegt), Datei und verbotene Orte nicht", () => {
+test("registriere: noch nicht vorhandener Ordner geht (es wird nichts angelegt), Datei und verbotene Orte nicht", { skip: nurUnix("W2: Vault-Pfadregeln für Windows (die Regeln selbst — /System, /Volumes, Library, iCloud — sind macOS-Entscheidungen)") }, () => {
   const ziel = join(tmp(), "kommt", "noch");
   assert.equal(registriere(ziel).eintrag.pfad, ziel);
   assert.equal(existsSync(ziel), false);
@@ -264,7 +267,7 @@ test("Wahl und Entfernen finden den Vault auch über ~, Symlink und andere Schre
 
 // ---------------------------------------------------------------- Pfadregeln
 
-test("Pfadregeln: verbotene Orte → 403", () => {
+test("Pfadregeln: verbotene Orte → 403", { skip: nurUnix("W2: Vault-Pfadregeln für Windows (die Regeln selbst — /System, /Volumes, Library, iCloud — sind macOS-Entscheidungen)") }, () => {
   const t = tmp("brain-p-");
   const verboten = [
     "/", "/Users", HOME, "~", "~/", "/Volumes", "/System", "/System/Library/Foo", "/system/library", "/USERS", "/bin", "/sbin", "/usr/local/foo",
@@ -277,7 +280,7 @@ test("Pfadregeln: verbotene Orte → 403", () => {
   for (const p of verboten) assert.equal(wirft(() => pruefeVaultPfad(p, { vaults: [] })).status, 403, p);
 });
 
-test("Pfadregeln: erlaubt sind tmpdir, Ordner unter /Volumes, iCloud/Dropbox in Library, versteckte Ordner außerhalb von Home", () => {
+test("Pfadregeln: erlaubt sind tmpdir, Ordner unter /Volumes, iCloud/Dropbox in Library, versteckte Ordner außerhalb von Home", { skip: nurUnix("W2: Vault-Pfadregeln für Windows (die Regeln selbst — /System, /Volumes, Library, iCloud — sind macOS-Entscheidungen)") }, () => {
   const t = tmp("brain-p2-");
   const ok = [
     t, join(t, "neu", "tief"), join(HOME, "Brain"), join(HOME, "Dokumente", "Notizen"),
@@ -287,7 +290,7 @@ test("Pfadregeln: erlaubt sind tmpdir, Ordner unter /Volumes, iCloud/Dropbox in 
   for (const p of ok) assert.equal(pruefeVaultPfad(p, { vaults: [] }), p, p);
 });
 
-test("Pfadregeln: Symlinks werden aufgelöst — ein Verweis nach /etc oder ~/.ssh ist verboten", () => {
+test("Pfadregeln: Symlinks werden aufgelöst — ein Verweis nach /etc oder ~/.ssh ist verboten", { skip: nurUnix("W2: Vault-Pfadregeln für Windows (die Regeln selbst — /System, /Volumes, Library, iCloud — sind macOS-Entscheidungen)") }, () => {
   const t = tmp("brain-p3-");
   symlinkSync("/etc", join(t, "etc-link"));
   assert.equal(wirft(() => pruefeVaultPfad(join(t, "etc-link"), { vaults: [] })).status, 403);
@@ -349,9 +352,9 @@ test("Pfadregeln: opt.home und opt.support gelten bei jedem Aufruf frisch", () =
   try { assert.equal(wirft(() => pruefeVaultPfad(join(neu, "v"), { vaults: [] })).status, 403, "Umgebungsvariable wird nicht zwischengespeichert"); }
   finally { process.env.BRAIN_APP_SUPPORT = alt; }
   const altHome = process.env.HOME, neuHome = tmp("brain-home5-");
-  process.env.HOME = neuHome;
+  process.env.HOME = neuHome; if (process.platform === "win32") process.env.USERPROFILE = neuHome;
   try { assert.equal(wirft(() => pruefeVaultPfad(neuHome, { vaults: [] })).status, 403, "$HOME wird bei jedem Aufruf gelesen"); }
-  finally { process.env.HOME = altHome; }
+  finally { process.env.HOME = altHome; if (process.platform === "win32") process.env.USERPROFILE = altHome; }
 });
 
 test("standardOrdner: <home>/Kortex, bei Kollision Kortex 2, Kortex 3", () => {
@@ -361,8 +364,8 @@ test("standardOrdner: <home>/Kortex, bei Kollision Kortex 2, Kortex 3", () => {
   assert.equal(standardOrdner({ home }), join(home, "Kortex 2"));
   schreibe(home, "Kortex 2", "ich bin eine Datei");
   assert.equal(standardOrdner({ home }), join(home, "Kortex 3"));
-  assert.match(standardOrdner(), /\/Kortex( \d+)?$/);
-  assert.equal(standardOrdner().startsWith(HOME + "/"), true, "Standard-Home ist $HOME");
+  assert.match(standardOrdner(), /[\\/]Kortex( \d+)?$/);
+  assert.equal(standardOrdner().startsWith(HOME + (WIN ? "\\" : "/")), true, "Standard-Home ist $HOME");
 });
 
 // ---------------------------------------------------------------- Neu anlegen
@@ -491,7 +494,7 @@ test("neuesVault leer: nur .gitignore, Commit „Vault angelegt“, Name aus dem
   assert.equal(g(ziel, "config", "--local", "user.email").trim(), `${userInfo().username}@localhost`);
 });
 
-test("neuesVault: Eingaben werden geprüft, bevor etwas angelegt wird", async () => {
+test("neuesVault: Eingaben werden geprüft, bevor etwas angelegt wird", { skip: nurUnix("W2: Vault-Pfadregeln für Windows (die Regeln selbst — /System, /Volumes, Library, iCloud — sind macOS-Entscheidungen)") }, async () => {
   const basis = tmp("brain-ein-");
   const ziel = join(basis, "V");
   const faelle = [
@@ -668,7 +671,7 @@ test("oeffneOrdner: schon registrierter Ordner → nur aktiv gesetzt, Name/Farbe
   assert.deepEqual(r.vault, { name: "Beta", pfad: b, farbe: PALETTE[1], git: false });
 });
 
-test("oeffneOrdner: Fehlerfälle (fehlt 404, Datei 400, verboten 403, ohne Pfad 400, innerhalb eines Vaults 409)", async () => {
+test("oeffneOrdner: Fehlerfälle (fehlt 404, Datei 400, verboten 403, ohne Pfad 400, innerhalb eines Vaults 409)", { skip: nurUnix("W2: Vault-Pfadregeln für Windows (die Regeln selbst — /System, /Volumes, Library, iCloud — sind macOS-Entscheidungen)") }, async () => {
   const t = tmp("brain-offen2-");
   assert.equal((await wirftAsync(oeffneOrdner({ pfad: join(t, "gibt-es-nicht") }, OPT))).status, 404);
   schreibe(t, "datei.md", "x");
@@ -731,7 +734,7 @@ test("klone: unzulässige Adressen → 400, es wird nichts angelegt", async () =
   const bare = bareMitInhalt();
   assert.equal((await wirftAsync(klone({ url: bare, ordner: ziel, name: "x".repeat(81) }, OPT))).status, 400, "Name wird vor dem Klonen geprüft");
   assert.equal((await wirftAsync(klone({ url: bare, ordner: "relativ" }, OPT))).status, 400);
-  assert.equal((await wirftAsync(klone({ url: bare, ordner: "/System/Brain" }, OPT))).status, 403);
+  if (!WIN) assert.equal((await wirftAsync(klone({ url: bare, ordner: "/System/Brain" }, OPT))).status, 403); // macOS-Systemordner
   assert.deepEqual(readdirSync(basis), []);
 });
 
@@ -964,7 +967,7 @@ test("Liste speichern: ein aktiv ohne vorhandenen Ordner wird nie gespeichert; g
 
 // ---------------------------------------------------------------- Gesamtfristen (Spec §8: je Git-Aufruf nur das Restbudget)
 
-test("neuesVault: hängt Git, endet der Vorgang nach der Gesamtfrist (504), der Kindprozess ist beendet, neue Ordner sind weg, nichts eingetragen, aktiver Vault bleibt", async () => {
+test("neuesVault: hängt Git, endet der Vorgang nach der Gesamtfrist (504), der Kindprozess ist beendet, neue Ordner sind weg, nichts eingetragen, aktiver Vault bleibt", { skip: nurUnix("hängendes git: PID aus sh-Skript (MSYS-PID) und Prozessgruppen-Ende lassen sich unter Windows nicht prüfen") }, async () => {
   const basis = tmp("brain-frist1-");
   const a = tmp(); registriere(a); waehleAktiv(a);
   const f = attrappeMit({ init: HAENGT });
@@ -989,7 +992,7 @@ test("Gesamtfrist gilt für alle Git-Aufrufe zusammen, nicht je Aufruf; ein vorh
   assert.deepEqual(leseVaults(), LEER);
 });
 
-test("oeffneOrdner mit Git-Einschalten: läuft die Frist ab, wird nur Eigenes zurückgenommen (.git, neue .gitignore) — Dateien des Nutzers bleiben, kein Eintrag", async () => {
+test("oeffneOrdner mit Git-Einschalten: läuft die Frist ab, wird nur Eigenes zurückgenommen (.git, neue .gitignore) — Dateien des Nutzers bleiben, kein Eintrag", { skip: nurUnix("hängendes git: PID aus sh-Skript (MSYS-PID) und Prozessgruppen-Ende lassen sich unter Windows nicht prüfen") }, async () => {
   const a = tmp(); registriere(a); waehleAktiv(a);
   const ohneIgnore = tmp("brain-frist3-"), mitIgnore = tmp("brain-frist3b-");
   for (const d of [ohneIgnore, mitIgnore]) { schreibe(d, "a.md", "# a\n"); schreibe(d, "sub/b.txt", "b"); }
@@ -1007,7 +1010,7 @@ test("oeffneOrdner mit Git-Einschalten: läuft die Frist ab, wird nur Eigenes zu
   }
 });
 
-test("oeffneOrdner ohne Git-Wunsch startet gar kein git (Workspace-Trust: ein von außen geöffneter Ordner ist nicht vertraut) — ein hängendes git stört nicht; mit Git-Wunsch kommt nach der Frist ein klarer Fehler und kein Eintrag", async () => {
+test("oeffneOrdner ohne Git-Wunsch startet gar kein git (Workspace-Trust: ein von außen geöffneter Ordner ist nicht vertraut) — ein hängendes git stört nicht; mit Git-Wunsch kommt nach der Frist ein klarer Fehler und kein Eintrag", { skip: nurUnix("hängendes git: PID aus sh-Skript (MSYS-PID) und Prozessgruppen-Ende lassen sich unter Windows nicht prüfen") }, async () => {
   const d = tmp("brain-frist4-"); schreibe(d, "a.md", "# a\n");
   const f = attrappeMit({ "rev-parse": HAENGT });
   const r = await mitPfad(f.dir, () => oeffneOrdner({ pfad: d }, { ...OPT, frist: 700 }));
@@ -1022,7 +1025,7 @@ test("oeffneOrdner ohne Git-Wunsch startet gar kein git (Workspace-Trust: ein vo
   assert.deepEqual(leseVaults(), LEER);
 });
 
-test("klone: die Gesamtfrist gilt auch nach dem Herunterladen (Einrichten) — Ablauf entfernt den fertigen Klon wieder", async () => {
+test("klone: die Gesamtfrist gilt auch nach dem Herunterladen (Einrichten) — Ablauf entfernt den fertigen Klon wieder", { skip: nurUnix("hängendes git: PID aus sh-Skript (MSYS-PID) und Prozessgruppen-Ende lassen sich unter Windows nicht prüfen") }, async () => {
   const bare = bareMitInhalt();
   const basis = tmp("brain-frist5-");
   const f = attrappeMit({ config: HAENGT }); // das Herunterladen klappt, die Identität im neuen Klon hängt
@@ -1143,7 +1146,7 @@ test("Hinweis defekt: leseVaults() trägt defekt:true, solange vaults.json die n
 
 // ---------------------------------------------------------------- Laden: Ortsregeln, Doppelte, aktiv
 
-test("Laden: Einträge mit unzulässigem Ort werden übersprungen (wie beim Hinzufügen) und bleiben bis zum nächsten Schreiben in der Datei", () => {
+test("Laden: Einträge mit unzulässigem Ort werden übersprungen (wie beim Hinzufügen) und bleiben bis zum nächsten Schreiben in der Datei", { skip: nurUnix("W2: Vault-Pfadregeln für Windows (die Regeln selbst — /System, /Volumes, Library, iCloud — sind macOS-Entscheidungen)") }, () => {
   const gut = tmp(), gut2 = tmp();
   const unzul = ["/", "/Users", HOME, join(HOME, ".ssh"), join(HOME, "Library", "Caches", "x"), "/System", "/usr/local/x", "/private/etc/ssh", "/Library", "/Applications/Foo",
     "/Volumes", "/opt/homebrew", "/private", "/var", SUPPORT(), join(SUPPORT(), "x"), join(gut, ".git", "x"), join(gut, "node_modules"), join(gut, "Programm.app")];
@@ -1188,7 +1191,7 @@ test("Laden: Doppelte (Schrägstrich, .., Verweis, Groß/klein) zählen einmal �
   assert.equal(l2.aktiv, link);
 });
 
-test("Laden: aktiv muss einer der übernommenen Einträge sein, sonst null; Grenzfälle der Struktur", () => {
+test("Laden: aktiv muss einer der übernommenen Einträge sein, sonst null; Grenzfälle der Struktur", { skip: nurUnix("W2: Vault-Pfadregeln für Windows (die Regeln selbst — /System, /Volumes, Library, iCloud — sind macOS-Entscheidungen)") }, () => {
   const d = tmp(), e = tmp();
   const link = join(tmp(), "ln"); symlinkSync(d, link);
   const liest = (wert) => { schreibeJson(VAULTS_JSON(), wert); return leseVaults(); };
@@ -1212,7 +1215,7 @@ test("Laden: aktiv muss einer der übernommenen Einträge sein, sonst null; Gren
   }
 });
 
-test("config.json-Übernahme: ein unzulässiger Ort (Home selbst, Systemordner, versteckter Ordner) wird nicht übernommen", () => {
+test("config.json-Übernahme: ein unzulässiger Ort (Home selbst, Systemordner, versteckter Ordner) wird nicht übernommen", { skip: nurUnix("W2: Vault-Pfadregeln für Windows (die Regeln selbst — /System, /Volumes, Library, iCloud — sind macOS-Entscheidungen)") }, () => {
   mkdirSync(join(HOME, ".ssh"), { recursive: true });
   for (const v of [HOME, "/usr", "/", join(HOME, ".ssh"), "/System"]) {
     writeFileSync(join(SUPPORT(), "config.json"), JSON.stringify({ vault: v }));
@@ -1223,7 +1226,7 @@ test("config.json-Übernahme: ein unzulässiger Ort (Home selbst, Systemordner, 
 
 // ---------------------------------------------------------------- Zu breite Ordner (gleiche Fälle wie VaultAuswahlTests in Swift)
 
-test("Zu breite Orte: Anlegen und Öffnen werden mit Erklärung und Unterordner-Vorschlag verweigert, Unterordner sind erlaubt", async () => {
+test("Zu breite Orte: Anlegen und Öffnen werden mit Erklärung und Unterordner-Vorschlag verweigert, Unterordner sind erlaubt", { skip: nurUnix("W2: Vault-Pfadregeln für Windows (die Regeln selbst — /System, /Volumes, Library, iCloud — sind macOS-Entscheidungen)") }, async () => {
   const breit = ["Desktop", "Documents", "Downloads", "Pictures", "Movies", "Music", "Public", "Applications",
     "Library/Mobile Documents", "Library/Mobile Documents/com~apple~CloudDocs", "Library/CloudStorage", "Library/CloudStorage/Dropbox"];
   for (const rel of breit) {

@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { tmp, schreibe, pfad } from "./hilfe.mjs";
 
 for (const k of ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "CURSOR_CONFIG_DIR", "GEMINI_CLI_HOME", "XDG_CONFIG_HOME", "GIT_CONFIG_GLOBAL"]) delete process.env[k];
-process.env.HOME = tmp("brain-home-");
+process.env.HOME = tmp("brain-home-"); if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME || ""; 
 
 const K = await import(pfad("gemeinsam", "ki-konten.mjs"));
 const { erzeugeKonten } = await import(pfad("werkstatt", "konten.mjs"));
@@ -19,7 +19,7 @@ const { TK } = await import(pfad("studio", "texte-konten.js"));
 const neuesVault = () => { const d = tmp("brain-vault-"); schreibe(d, "brain.config.json", "{}\n"); schreibe(d, "00_inbox/n.md", "# N\n"); return realpathSync(d); };
 const HOOKS = JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: "command", command: "[ -x '/x/bin/kortex' ] && exec '/x/bin/kortex' hook session-start || exit 0" }] }] } });
 const profil = (home, name, verbunden) => { const p = join(home, `.claude-${name}`); mkdirSync(p, { recursive: true }); writeFileSync(join(p, "settings.json"), verbunden ? HOOKS : "{}\n"); return realpathSync(p); };
-const erzeuge = (home, support, vaults, quelle) => erzeugeKonten({ support, home: () => home, vaults: () => vaults.map((p) => ({ pfad: p, name: p.split("/").pop() })),
+const erzeuge = (home, support, vaults, quelle) => erzeugeKonten({ support, home: () => home, vaults: () => vaults.map((p) => ({ pfad: p, name: p.split(/[\\/]/).pop() })),
   erkennung: () => erkenneKonten({ home, programme: [] }), quelleVon: () => quelle });
 const startetVon = (stand, ordner) => stand.neu.find((k) => k.ordner.endsWith(ordner))?.startet;
 

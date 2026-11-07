@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmp, schreibe, repo, g, pfad } from "./hilfe.mjs";
-process.env.HOME = tmp("brain-home-");
+process.env.HOME = tmp("brain-home-"); if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME; /* Windows: os.homedir() liest USERPROFILE */
 process.env.GIT_CONFIG_NOSYSTEM = "1";
 
 const { oeffneVault, HttpFehler } = await import(pfad("gemeinsam", "vault.mjs"));
@@ -22,7 +22,7 @@ function mitRemote({ bestaetigt = true } = {}) {
   g(a, "push", "-q", "-u", "origin", "main");
   const b = tmp("brain-klon-");
   g(b, "clone", "-q", bare, ".");
-  g(b, "config", "user.name", "B"); g(b, "config", "user.email", "b@Fabios-iPhone.local");
+  g(b, "config", "core.autocrlf", "false"); /* Windows: Git for Windows stellt sonst CRLF her */ g(b, "config", "user.name", "B"); g(b, "config", "user.email", "b@Fabios-iPhone.local");
   if (bestaetigt) merkeRemoteBestaetigt(a, bare, { support: process.env.BRAIN_APP_SUPPORT }); // das Ziel ist vom Nutzer bestätigt (Assistent „Sicherung“)
   return { bare, a, b, v: oeffneVault(a) };
 }

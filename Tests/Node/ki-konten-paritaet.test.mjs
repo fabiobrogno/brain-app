@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, mkdirSync, realpathSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmp, schreibe, pfad } from "./hilfe.mjs";
+import { nurUnix } from "./attrappe.mjs";
 
 const abschnitt = (datei) => { const t = readFileSync(datei, "utf8"); const a = t.indexOf("// LESEN-BEGINN"), b = t.indexOf("// LESEN-ENDE"); assert.ok(a >= 0 && b > a, `Marken fehlen in ${datei}`); return t.slice(a, b); };
 
@@ -12,7 +13,7 @@ test("Der lesende Abschnitt ist in beiden Dateien wortgleich", () => {
   assert.equal(abschnitt(pfad("kern", "ki-konten.mjs")), abschnitt(pfad("gemeinsam", "ki-konten.mjs")));
 });
 
-test("Beide Hälften ergeben bei denselben Eingaben dieselben Zustände und Stufen (fehlt · defekt · Link · ok, Argument, Umgebung, Widerspruch, Altform)", async () => {
+test("Beide Hälften ergeben bei denselben Eingaben dieselben Zustände und Stufen (fehlt · defekt · Link · ok, Argument, Umgebung, Widerspruch, Altform)", { skip: nurUnix("Symlinks brauchen unter Windows besondere Rechte") }, async () => {
   const G = await import(pfad("gemeinsam", "ki-konten.mjs"));
   const KERN = await import(pfad("kern", "ki-konten.mjs"));
   assert.deepEqual(Object.keys(KERN).sort(), Object.keys(G).filter((k) => Object.hasOwn(KERN, k)).sort(), "die Kern-Hälfte exportiert nur, was die gemeinsame auch hat");

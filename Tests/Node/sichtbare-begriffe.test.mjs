@@ -52,7 +52,7 @@ function dateien(ordner, endungen, aus = []) {
       const p = join(d, n);
       const s = statSync(p);
       if (s.isDirectory()) geh(p);
-      else if (endungen.includes(extname(n)) && !aus.some((a) => relative(WURZEL, p).startsWith(a))) r.push(p);
+      else if (endungen.includes(extname(n)) && !aus.some((a) => relative(WURZEL, p).split("\\").join("/").startsWith(a))) r.push(p);
     }
   };
   geh(join(WURZEL, ordner));
@@ -81,7 +81,7 @@ function ausgenommen(rel, text) {
 
 // Findet sichtbare „Brain“ in Textliteralen (Code) bzw. in ganzen Zeilen (Markdown, HTML).
 function funde(datei) {
-  const rel = relative(WURZEL, datei);
+  const rel = relative(WURZEL, datei).split("\\").join("/"); // Windows: Pfade der Ausnahmeliste haben Slashes
   const ext = extname(datei);
   const out = [];
   const zeilen = readFileSync(datei, "utf8").split("\n");

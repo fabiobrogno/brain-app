@@ -5,7 +5,8 @@ import assert from "node:assert/strict";
 import { writeFileSync, mkdirSync, chmodSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { tmp, pfad } from "./hilfe.mjs";
-process.env.HOME = tmp("brain-home-"); // os.homedir() liest $HOME: nichts aus dem echten Home
+import { legeProgramm } from "./attrappe.mjs";
+process.env.HOME = tmp("brain-home-"); if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME || "";  // os.homedir() liest $HOME: nichts aus dem echten Home
 
 const { ladeKatalog, pruefeKatalog, logoVon, KATALOG_DATEI, LOGO_ORDNER } = await import(pfad("gemeinsam", "ki-katalog.mjs"));
 const { erkenneKatalog } = await import(pfad("gemeinsam", "ki.mjs"));
@@ -99,7 +100,7 @@ test("Studio: ki-katalog.js ist genau das, was der Erzeuger aus Katalog und Logo
 
 test("Erkennung: Befehle und Apps des Katalogs werden gefunden, die Version kommt aus --version bzw. Info.plist", async () => {
   const bin = tmp("brain-kat-bin-"), apps = tmp("brain-kat-apps-"), home = tmp("brain-kat-home-");
-  const skript = (name, ausgabe) => { const p = join(bin, name); writeFileSync(p, `#!/bin/sh\necho "${ausgabe}"\n`); chmodSync(p, 0o755); };
+  const skript = (name, ausgabe) => { legeProgramm(join(bin, name), `#!/bin/sh\necho "${ausgabe}"\n`); };
   skript("aider", "aider 0.86.1"); skript("claude", "2.1.310 (Claude Code)"); skript("qodercli", "qoder 1.2.3");
   mkdirSync(join(apps, "Windsurf.app", "Contents"), { recursive: true });
   writeFileSync(join(apps, "Windsurf.app", "Contents", "Info.plist"), "<plist><dict><key>CFBundleShortVersionString</key><string>1.9.0</string></dict></plist>");

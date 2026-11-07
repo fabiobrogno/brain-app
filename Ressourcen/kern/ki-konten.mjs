@@ -171,7 +171,7 @@ export function stufeFuerBestimmung(daten, vault, ids) {
 // leeren Ordner zeigen („Datei fehlt“ = offen). Darum zählt außerhalb von Tests und Vorschau immer auch der Standardort (aus dem Benutzereintrag des Systems, nicht aus HOME), und bei mehreren Orten gilt das
 // strengere Ergebnis. Im Test (BRAIN_TESTMODUS, Kern-Testläufer, HOME im Temp-Ordner) und in der Vorschau gilt nur der übergebene Ordner: kein Zugriff auf den echten Support-Ordner des Rechners.
 const tempWurzel = () => { try { return realpathSync(tmpdir()); } catch { return tmpdir(); } };
-const homeImTemp = () => { try { const h = realpathSync(homedir()); const t = tempWurzel(); return h === t || h.startsWith(`${t}/`); } catch { return false; } };
+const homeImTemp = () => { try { const h = realpathSync(homedir()); const t = tempWurzel(); return h === t || h.startsWith(t + (process.platform === "win32" ? "\\" : "/")); } catch { return false; } };
 const abgeschottet = () => process.env.BRAIN_TESTMODUS === "1" || process.env.KORTEX_KERN_UNSTABIL_ERLAUBT === "1" || (typeof process.env.KORTEX_VORSCHAU === "string" && process.env.KORTEX_VORSCHAU !== "") || homeImTemp();
 export function standardSupport() { return plattformStandardSupport(); }
 export function kontenOrte(support, { standard = undefined, abgeschottet: ab = undefined } = {}) {

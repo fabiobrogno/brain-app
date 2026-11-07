@@ -35,7 +35,7 @@ function szenario({ standardProfil = false } = {}) {
   return { home, support, vault, a, c, std };
 }
 const neuGemeldet = (s) => erzeugeKonten({ support: s.support, home: () => s.home, vaults: () => [{ pfad: s.vault, name: "Offen" }], erkennung: () => erkenneKonten({ home: s.home, programme: [] }), quelleVon: () => "bestaetigt" })
-  .stand({ lesend: true }).neu.map((k) => k.ordner.replace(/^.*\//, ""));
+  .stand({ lesend: true }).neu.map((k) => k.ordner.replace(/^.*[\\/]/, ""));
 
 function starteMcp(s, args = [], envExtra = {}) {
   const env = baueTestUmgebung({ HOME: s.home, BRAIN_APP_SUPPORT: s.support, KORTEX_VAULT_VERTRAUT: "alle", ...envExtra });

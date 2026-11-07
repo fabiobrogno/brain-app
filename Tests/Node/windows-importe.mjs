@@ -11,6 +11,12 @@ const nativ = fs.realpathSync.native;
 fs.realpathSync = Object.assign((p, o) => nativ(p, o), { native: nativ });
 syncBuiltinESMExports();
 
+// Windows: os.homedir() liest USERPROFILE; die Tests setzen HOME (wie auf macOS). Ein HOME mit Laufwerksbuchstaben gilt darum auch als Home (Git Bash setzt HOME in MSYS-Form /c/…, das zählt nicht).
+import os from "node:os";
+const echtHome = os.homedir;
+os.homedir = () => (/^[A-Za-z]:[\\/]/.test(process.env.HOME || "") ? process.env.HOME : echtHome());
+syncBuiltinESMExports();
+
 registerHooks({
   resolve(spezifizierer, kontext, weiter) {
     if (/^[A-Za-z]:[\\/]/.test(spezifizierer)) spezifizierer = pathToFileURL(spezifizierer).href;

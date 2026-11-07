@@ -9,6 +9,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, statSync, chmodSync, lstatSync } from "node:fs";
 import { join } from "node:path";
 import { tmp, schreibe, pfad } from "./hilfe.mjs";
+import { nurUnix } from "./attrappe.mjs";
 
 const { vorschauOrdner, vorschauFehler } = await import(pfad("gemeinsam", "basis.mjs"));
 const { erzeugeGitHub } = await import(pfad("gemeinsam", "github.mjs"));
@@ -58,7 +59,7 @@ function echtesHome() {
 }
 
 // ── Pfad-Prüfung ──
-test("vorschauOrdner/vorschauFehler: nur gültige Pfade, HOME muss im Vorschau-Ordner liegen", async () => {
+test("vorschauOrdner/vorschauFehler: nur gültige Pfade, HOME muss im Vorschau-Ordner liegen", { skip: nurUnix("Vorschau (scripts/vorschau.sh) ist ein macOS-Entwicklungswerkzeug; KORTEX_VORSCHAU erlaubt nur /…-Pfade und der Platzhalter ist ein sh-Skript") }, async () => {
   const vo = vorschauAnlegen();
   await mit({ KORTEX_VORSCHAU: undefined }, () => { assert.equal(vorschauOrdner(), null); assert.equal(vorschauFehler(), null); });
   await mit({ KORTEX_VORSCHAU: vo, HOME: join(vo, "home") }, () => { assert.equal(vorschauOrdner(), vo); assert.equal(vorschauFehler(), null); });
@@ -72,7 +73,7 @@ test("vorschauOrdner/vorschauFehler: nur gültige Pfade, HOME muss im Vorschau-O
 });
 
 // ── GitHub-Token: Datei im Vorschau-Ordner statt Schlüsselbund ──
-test("GitHub-Anmeldung in der Vorschau: das Token landet in der Zugangsdatei des Vorschau-Ordners, nicht im Schlüsselbund", async () => {
+test("GitHub-Anmeldung in der Vorschau: das Token landet in der Zugangsdatei des Vorschau-Ordners, nicht im Schlüsselbund", { skip: nurUnix("Vorschau (scripts/vorschau.sh) ist ein macOS-Entwicklungswerkzeug; KORTEX_VORSCHAU erlaubt nur /…-Pfade und der Platzhalter ist ein sh-Skript") }, async () => {
   const vo = vorschauAnlegen();
   const echt = echtesHome();
   const vorher = abdruck(echt);
@@ -106,7 +107,7 @@ test("GitHub-Anmeldung in der Vorschau: das Token landet in der Zugangsdatei des
 });
 
 // ── KI-Suche ──
-test("KI-Suche in der Vorschau: nur PATH und das Vorschau-Home, nie die Systemorte dieses Rechners", async () => {
+test("KI-Suche in der Vorschau: nur PATH und das Vorschau-Home, nie die Systemorte dieses Rechners", { skip: nurUnix("Vorschau (scripts/vorschau.sh) ist ein macOS-Entwicklungswerkzeug; KORTEX_VORSCHAU erlaubt nur /…-Pfade und der Platzhalter ist ein sh-Skript") }, async () => {
   const vo = vorschauAnlegen();
   await mit({ ...vorschauEnv(vo), BRAIN_TESTMODUS: undefined, BRAIN_CLAUDE_EXTRA: undefined }, () => {
     assert.equal(findeProgramm("claude", { PATH: "" }), null, "frisch installiert: keine KI");
@@ -117,7 +118,7 @@ test("KI-Suche in der Vorschau: nur PATH und das Vorschau-Home, nie die Systemor
 });
 
 // ── Vault-Orte ──
-test("Vaults in der Vorschau: nur im Vorschau-Ordner; Standardort ist <home>/Kortex", async () => {
+test("Vaults in der Vorschau: nur im Vorschau-Ordner; Standardort ist <home>/Kortex", { skip: nurUnix("Vorschau (scripts/vorschau.sh) ist ein macOS-Entwicklungswerkzeug; KORTEX_VORSCHAU erlaubt nur /…-Pfade und der Platzhalter ist ein sh-Skript") }, async () => {
   const vo = vorschauAnlegen();
   const draussen = tmp("kortex-draussen-");
   await mit(vorschauEnv(vo), async () => {
@@ -166,7 +167,7 @@ test("Werkstatt startet in der Vorschau nur mit umgelenktem HOME (sonst Abbruch 
   assert.deepEqual(readdirSync(join(vo, "support")), []);
 });
 
-test("Assistenten-Ablauf in der Vorschau bis „Vault angelegt“ mit Fake-claude: außerhalb des Vorschau-Ordners ändert sich nichts", async (t) => {
+test("Assistenten-Ablauf in der Vorschau bis „Vault angelegt“ mit Fake-claude: außerhalb des Vorschau-Ordners ändert sich nichts", { skip: nurUnix("Vorschau (scripts/vorschau.sh) ist ein macOS-Entwicklungswerkzeug; KORTEX_VORSCHAU erlaubt nur /…-Pfade und der Platzhalter ist ein sh-Skript") }, async (t) => {
   const vo = vorschauAnlegen();
   const echt = echtesHome();
   const vorher = abdruck(echt);
@@ -214,7 +215,7 @@ esac
 });
 
 // ── Cursor.app dieses Rechners zählt in der Vorschau nicht ──
-test("Cursor-Erkennung in der Vorschau: nur das Vorschau-Home, nicht /Applications", async () => {
+test("Cursor-Erkennung in der Vorschau: nur das Vorschau-Home, nicht /Applications", { skip: nurUnix("Vorschau (scripts/vorschau.sh) ist ein macOS-Entwicklungswerkzeug; KORTEX_VORSCHAU erlaubt nur /…-Pfade und der Platzhalter ist ein sh-Skript") }, async () => {
   const vo = vorschauAnlegen();
   const apps = tmp("kortex-apps-");
   mkdirSync(join(apps, "Cursor.app"));

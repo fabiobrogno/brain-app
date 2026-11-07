@@ -7,6 +7,8 @@ import { tmpdir } from "node:os";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { tmp, schreibe, pfad, repo, g } from "./hilfe.mjs";
+import { systemPfad } from "./attrappe.mjs";
+import { heim, istAbsturz } from "./umgebung-win.mjs";
 
 const { oeffneVault, HttpFehler } = await import(pfad("gemeinsam", "vault.mjs"));
 const KIND = join(dirname(fileURLToPath(import.meta.url)), "umbenennen-kind.mjs");
@@ -23,10 +25,10 @@ const manifestPfad = (d, id) => join(vorgangsDir(d, id), "manifest.json");
 function setze(d, id, f) { const mf = manifestPfad(d, id); const m = JSON.parse(readFileSync(mf, "utf8")); f(m); writeFileSync(mf, JSON.stringify(m)); }
 function absturz({ d, support, methode, eingabe, punkt }) {
   return new Promise((ok, nein) => {
-    const env = { PATH: "/usr/bin:/bin", HOME: tmp("r5-home-"), TMPDIR: process.env.TMPDIR || tmpdir(), BRAIN_APP_SUPPORT: support, BRAIN_TESTMODUS: "1", KORTEX_VAULT_VERTRAUT: "alle", TZ: "Europe/Berlin" };
+    const env = { PATH: systemPfad(), ...heim(tmp("r5-home-")), TMPDIR: process.env.TMPDIR || tmpdir(), BRAIN_APP_SUPPORT: support, BRAIN_TESTMODUS: "1", KORTEX_VAULT_VERTRAUT: "alle", TZ: "Europe/Berlin" };
     const k = spawn(process.execPath, [KIND, JSON.stringify({ vault: d, support, methode, eingabe, punkt })], { env, stdio: ["ignore", "pipe", "pipe"] });
     let err = ""; k.stderr.on("data", (x) => { err += x; });
-    k.on("exit", (code, signal) => (signal === "SIGKILL" ? ok() : nein(new Error(`Kind: ${code} ${signal} ${err}`))));
+    k.on("exit", (code, signal) => (istAbsturz(code, signal) ? ok() : nein(new Error(`Kind: ${code} ${signal} ${err}`))));
   });
 }
 

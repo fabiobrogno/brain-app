@@ -6,7 +6,7 @@ import { writeFileSync, readFileSync, existsSync, chmodSync, mkdirSync, readdirS
 import { join } from "node:path";
 import { tmp, repo, g, pfad } from "./hilfe.mjs";
 
-process.env.HOME = tmp("brain-home-");
+process.env.HOME = tmp("brain-home-"); if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME; /* Windows: os.homedir() liest USERPROFILE */
 process.env.GIT_CONFIG_NOSYSTEM = "1";
 const SUPPORT = tmp("brain-support-");
 process.env.BRAIN_APP_SUPPORT = SUPPORT; // der Kern liest den Support-Ordner aus der Umgebung
@@ -46,11 +46,11 @@ test("der Merker behält den Sicherungsordner, lehnt Müll ab und wirft nie", ()
 test("die Route /api/git/remote und /api/sicherung/verbinden setzen den Merker; eine abgelehnte Eingabe nicht", async () => {
   const support = tmp("brain-support2-");
   // Schein-Schlüsselbund (wie in sicherung.test.mjs): antwortet nur auf protocol=https + host=github.com
-  const bund = tmp("brain-bund-"), helper = join(bund, "git-credential-fake");
+  const bund = tmp("brain-bund-"), helper = join(bund, "git-credential-fake").split("\\").join("/");
   writeFileSync(join(bund, "konto.txt"), "username=anna-test\npassword=gho_NUR_FUER_DEN_TEST\n");
-  writeFileSync(helper, `#!/bin/sh\n[ "$1" = get ] || exit 0\neingabe=$(cat)\necho "$eingabe" | grep -qx 'protocol=https' && echo "$eingabe" | grep -qx 'host=github.com' || exit 1\ncat "${join(bund, "konto.txt")}"\n`);
+  writeFileSync(helper, `#!/bin/sh\n[ "$1" = get ] || exit 0\neingabe=$(cat)\necho "$eingabe" | grep -qx 'protocol=https' && echo "$eingabe" | grep -qx 'host=github.com' || exit 1\ncat "${join(bund, "konto.txt").split("\\").join("/")}"\n`);
   chmodSync(helper, 0o755);
-  const bare = () => { const b = tmp("brain-bare-"); g(b, "init", "-q", "--bare", "-b", "main"); return b; };
+  const bare = () => { const b = tmp("brain-bare-").split("\\").join("/"); g(b, "init", "-q", "--bare", "-b", "main"); return b; };
   const privat = { name: "mein-brain", private: true, archived: false, owner: { login: "anna-test" }, permissions: { push: true } };
   const baue = (v, ziel) => {
     const github = erzeugeGitHub({ clientId: "Iv1.t", apiBasis: "http://127.0.0.1:1", helper, fetch: async () => new Response(JSON.stringify(privat), { status: 200 }), log: () => {}, repoAdresse: () => ziel });

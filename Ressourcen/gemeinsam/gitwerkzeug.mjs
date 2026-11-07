@@ -15,7 +15,7 @@ export function pruefeGitUrl(roh) {
   if (/[\s\0-\x1f\x7f\\"'`$;|&<>]/.test(url)) throw new HttpFehler(400, "Die Adresse enthält ungültige Zeichen.");
   if (url.startsWith("-")) throw new HttpFehler(400, "Das ist keine gültige Adresse.");
   if (/^[A-Za-z][A-Za-z0-9+.-]*::/.test(url)) throw new HttpFehler(400, "Dieser Adressentyp ist nicht erlaubt. Erlaubt sind https://…, ssh://… und git@host:pfad.");
-  if (testmodus() && (/^\//.test(url) || /^file:\/\/\//i.test(url))) return url;
+  if (testmodus() && (/^\//.test(url) || /^file:\/\/\//i.test(url) || (process.platform === "win32" && /^[A-Za-z]:\//.test(url)))) return url; // Windows: Laufwerkspfad mit „/“ (Testmodus)
 
   const host = "[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?";
   let m = new RegExp(`^https://(?:([^/@:]+)(:[^/@]*)?@)?(${host})(?::\\d{1,5})?/([^/].*)$`, "i").exec(url);

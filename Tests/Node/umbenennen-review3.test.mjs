@@ -9,6 +9,8 @@ import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { tmp, schreibe, pfad, repo, g } from "./hilfe.mjs";
+import { systemPfad } from "./attrappe.mjs";
+import { heim, istAbsturz } from "./umgebung-win.mjs";
 
 const { oeffneVault, HttpFehler } = await import(pfad("gemeinsam", "vault.mjs"));
 const A = await import(pfad("gemeinsam", "aktivitaet.mjs"));
@@ -30,12 +32,12 @@ function aufbau(dateien = {}, opts = {}, mitId = true) {
   return { d, support, v };
 }
 const anderesGeraet = (support) => (p) => (String(p).startsWith(support) ? 2 : 1);
-const kindEnv = (support, extra = {}) => ({ PATH: "/usr/bin:/bin", HOME: tmp("r3-home-"), TMPDIR: process.env.TMPDIR || tmpdir(), BRAIN_APP_SUPPORT: support, BRAIN_TESTMODUS: "1", KORTEX_VAULT_VERTRAUT: "alle", ...extra });
+const kindEnv = (support, extra = {}) => ({ PATH: systemPfad(), ...heim(tmp("r3-home-")), TMPDIR: process.env.TMPDIR || tmpdir(), BRAIN_APP_SUPPORT: support, BRAIN_TESTMODUS: "1", KORTEX_VAULT_VERTRAUT: "alle", ...extra });
 function absturz({ d, support, methode, eingabe, punkt }) {
   return new Promise((ok, nein) => {
     const k = spawn(process.execPath, [KIND, JSON.stringify({ vault: d, support, methode, eingabe, punkt })], { env: kindEnv(support, { TZ: "Europe/Berlin" }), stdio: ["ignore", "pipe", "pipe"] });
     let err = ""; k.stderr.on("data", (x) => { err += x; });
-    k.on("exit", (code, signal) => (signal === "SIGKILL" ? ok() : nein(new Error(`Kind: ${code} ${signal} ${err}`))));
+    k.on("exit", (code, signal) => (istAbsturz(code, signal) ? ok() : nein(new Error(`Kind: ${code} ${signal} ${err}`))));
   });
 }
 

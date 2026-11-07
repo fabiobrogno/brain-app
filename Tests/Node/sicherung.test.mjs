@@ -7,7 +7,7 @@ import { writeFileSync, readFileSync, existsSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 import { tmp, repo, g, pfad, echt } from "./hilfe.mjs";
 
-process.env.HOME = tmp("brain-home-");
+process.env.HOME = tmp("brain-home-"); if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME; /* Windows: os.homedir() liest USERPROFILE */
 process.env.GIT_CONFIG_NOSYSTEM = "1";
 const TOKEN = "gho_GEHEIMESTOKEN_sicherung_0123456789";
 
@@ -18,17 +18,17 @@ const { githubHelperArgs, remoteHinzufuegen } = await import(pfad("gemeinsam", "
 
 // Schein-Schlüsselbund: antwortet nur auf protocol=https + host=github.com
 const BUND = tmp("brain-bund-");
-const HELPER = join(BUND, "git-credential-fake");
+const HELPER = join(BUND, "git-credential-fake").split("\\").join("/"); // Windows: Git ruft den Helper über sh auf (Slashes statt Backslashes)
 writeFileSync(join(BUND, "konto.txt"), `username=anna-test\npassword=${TOKEN}\n`);
 writeFileSync(HELPER, `#!/bin/sh
 [ "$1" = get ] || exit 0
 eingabe=$(cat)
 echo "$eingabe" | grep -qx 'protocol=https' && echo "$eingabe" | grep -qx 'host=github.com' || exit 1
-cat "${join(BUND, "konto.txt")}"
+cat "${join(BUND, "konto.txt").split("\\").join("/")}"
 `);
 chmodSync(HELPER, 0o755);
 
-const bare = () => { const b = tmp("brain-sbare-"); g(b, "init", "-q", "--bare", "-b", "main"); return b; };
+const bare = () => { const b = tmp("brain-sbare-").split("\\").join("/"); g(b, "init", "-q", "--bare", "-b", "main"); return b; }; // Windows: Adresse mit Slashes
 const refsVon = (b) => g(b, "for-each-ref").trim();
 
 // GitHub: antwortet auf GET /repos/<besitzer>/<name> mit `repoJson`; merkt sich die Aufrufe.
@@ -167,7 +167,7 @@ test("githubHelperArgs: nur github.com, vorherige Helper werden geleert; Studio 
   assert.throws(() => githubHelperArgs("osxkeychain; rm -rf /"));
   assert.throws(() => githubHelperArgs("!echo"));
   // Wirkung mit echtem git und Schein-Helpern: ein anderer Helper des Nutzers (global) wird für github.com ersetzt, für andere Server nicht.
-  const fremd = join(BUND, "git-credential-fremd");
+  const fremd = join(BUND, "git-credential-fremd").split("\\").join("/");
   writeFileSync(fremd, "#!/bin/sh\n[ \"$1\" = get ] && printf 'username=falsch\\npassword=FALSCH\\n'\nexit 0\n"); chmodSync(fremd, 0o755);
   const env = { ...process.env }; for (const k of Object.keys(env)) if (k.startsWith("GIT_") && k !== "GIT_CONFIG_NOSYSTEM") delete env[k];
   const fill = (host, extra) => execFileSync("git", ["-c", `credential.helper=${fremd}`, ...extra, "credential", "fill"], { input: `protocol=https\nhost=${host}\n\n`, env, encoding: "utf8" });

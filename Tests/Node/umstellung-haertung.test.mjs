@@ -6,8 +6,9 @@ import { writeFileSync, chmodSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { pfad } from "./hilfe.mjs";
 import { altvault } from "../Kern/fixture-altvault.mjs";
+import { legeProgramm, programmPfad } from "./attrappe.mjs";
 
-const MERKEN = ["HOME", "KORTEX_KERN_UNSTABIL_ERLAUBT", "KORTEX_KERN_TEMP_WURZELN", "KORTEX_KERN_PFAD", "BRAIN_LAUNCHCTL", "BRAIN_CLAUDE", "KORTEX_CODEX_PROGRAMM", "GIT_CONFIG_GLOBAL", "BRAIN_APP_SUPPORT", "KORTEX_VAULT_VERTRAUT",
+const MERKEN = ["HOME", "USERPROFILE", "KORTEX_KERN_UNSTABIL_ERLAUBT", "KORTEX_KERN_TEMP_WURZELN", "KORTEX_KERN_PFAD", "BRAIN_LAUNCHCTL", "BRAIN_CLAUDE", "KORTEX_CODEX_PROGRAMM", "GIT_CONFIG_GLOBAL", "BRAIN_APP_SUPPORT", "KORTEX_VAULT_VERTRAUT",
   "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "FAKE_LAUNCHCTL_LOG", "FAKE_MCP_LOG", "CLAUDE_CONFIG_DIR", "KORTEX_DIENST_PLATTFORM"];
 const fake = (n) => pfad("..", "Tests", "Kern", n);
 const { erzeugeHandler } = await import(pfad("werkstatt", "handler.mjs"));
@@ -28,14 +29,12 @@ function mitFixture(faelle) {
   symlinkSync(pfad("kern", "git-hooks"), hooks);
   const global = join(a.basis, "gitconfig-global");
   writeFileSync(global, "[user]\n\tname = T\n\temail = t@example.org\n");
-  const starter = join(a.basis, "starter.sh");
-  writeFileSync(starter, `#!/bin/sh\nKORTEX_KERN_PFAD=${q(join(a.support, "bin", "kern"))}\nexport KORTEX_KERN_PFAD\nexec ${q(process.execPath)} ${q(pfad("kern", "brain.mjs"))} "$@"\n`);
-  chmodSync(starter, 0o755);
+  const starter = programmPfad(legeProgramm(join(a.basis, "starter.sh"), `#!/bin/sh\nKORTEX_KERN_PFAD=${q(join(a.support, "bin", "kern"))}\nexport KORTEX_KERN_PFAD\nexec ${q(process.execPath)} ${q(pfad("kern", "brain.mjs"))} "$@"\n`));
   delete process.env.CLAUDE_CONFIG_DIR;
   delete process.env.KORTEX_VAULT_VERTRAUT;   // Workspace-Trust (P5): der Vault ist über den ECHTEN Merker im Temp-Support vertraut, nicht über den Testschalter
   erlaube(a.vault, { support: a.support, quelle: "geklont" });
   Object.assign(process.env, {
-    HOME: a.home, KORTEX_DIENST_PLATTFORM: "darwin", KORTEX_KERN_UNSTABIL_ERLAUBT: "1", KORTEX_KERN_TEMP_WURZELN: "", BRAIN_APP_SUPPORT: a.support, GIT_CONFIG_GLOBAL: global,
+    HOME: a.home, ...(process.platform === "win32" ? { USERPROFILE: a.home } : {}), KORTEX_DIENST_PLATTFORM: "darwin", KORTEX_KERN_UNSTABIL_ERLAUBT: "1", KORTEX_KERN_TEMP_WURZELN: "", BRAIN_APP_SUPPORT: a.support, GIT_CONFIG_GLOBAL: global,
     BRAIN_LAUNCHCTL: fake("fake-launchctl.mjs"), FAKE_LAUNCHCTL_LOG: join(a.basis, "launchctl.log"), FAKE_MCP_LOG: join(a.basis, "mcp.log"),
     BRAIN_CLAUDE: fake("fake-claude-mcp.mjs"), KORTEX_CODEX_PROGRAMM: fake("fake-codex-mcp.mjs"),
     GIT_AUTHOR_NAME: "T", GIT_AUTHOR_EMAIL: "t@example.org", GIT_COMMITTER_NAME: "T", GIT_COMMITTER_EMAIL: "t@example.org",
@@ -48,9 +47,7 @@ test("Fehlercodes des Kerns: „nicht vertraut“ (Exit 6) und „läuft schon�
   const f = mitFixture([]);
   try {
     const stub = (code, fehler, meldung) => {
-      const s = join(f.a.basis, `stub-${code}-${fehler}.sh`);
-      writeFileSync(s, `#!/bin/sh\nprintf '%s\\n' '${JSON.stringify({ ok: false, fehler, meldung })}'\nexit ${code}\n`);
-      chmodSync(s, 0o755);
+      const s = programmPfad(legeProgramm(join(f.a.basis, `stub-${code}-${fehler}.sh`), `#!/bin/sh\nprintf '%s\\n' '${JSON.stringify({ ok: false, fehler, meldung })}'\nexit ${code}\n`));
       return aufruf(erzeugeHandler({ vault: f.a.vault, vaultOptionen: { support: f.a.support }, starter: s }));
     };
     const vt = await stub(6, "nicht-vertraut", "Bestätige den Vault zuerst.")("POST", "/api/umstellung/phase-a", { bestaetigt: true });

@@ -438,7 +438,7 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
       try { mkdirSync(nachAbs, { mode: 0o700 }); }
       catch (e) { if (e.code === "EEXIST") throw new HttpFehler(409, "Einen Ordner mit diesem Namen gibt es dort schon.", { art: "belegt" }); throw e; }
       punkt("nach-mkdir");
-      try { renameSync(vonAbs, nachAbs); }
+      try { if (process.platform === "win32") rmdirSync(nachAbs); /* Windows ersetzt auch keinen leeren Ordner per rename (EPERM) */ renameSync(vonAbs, nachAbs); }
       catch (e) { try { rmdirSync(nachAbs); } catch { /* nicht leer: nicht anfassen */ } throw e; }
     }
   }
@@ -705,7 +705,7 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
     } else {
       try { mkdirSync(nachAbs, { mode: 0o700 }); } catch (e) { if (e.code === "EEXIST") throw belegt(); throw e; }
       punkt("restore-nach-mkdir");
-      try { verschiebeLokal(vonAbs, nachAbs); } catch (e) { try { rmdirSync(nachAbs); } catch { /* nicht leer */ } throw e; }
+      try { if (process.platform === "win32") rmdirSync(nachAbs); /* Windows ersetzt auch keinen leeren Ordner per rename (EPERM) */ verschiebeLokal(vonAbs, nachAbs); } catch (e) { try { rmdirSync(nachAbs); } catch { /* nicht leer */ } throw e; }
     }
   }
   function wechsleLoeschen(m, zurueck, { name: neuerName = null, ziel: neuerOrdner = null } = {}) {

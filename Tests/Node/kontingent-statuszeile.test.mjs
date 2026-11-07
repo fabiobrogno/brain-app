@@ -6,6 +6,7 @@ import { spawnSync } from "node:child_process";
 import { writeFileSync, mkdirSync, readFileSync, readdirSync, statSync, copyFileSync, existsSync, utimesSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 import { tmp, pfad } from "./hilfe.mjs";
+import { shPfad, systemPfad, nurUnix, WIN, modus } from "./attrappe.mjs";
 
 const QUELLE = pfad("gemeinsam", "kortex-statuszeile.mjs");
 const { leseStatuszeile, leseFenster, zeichneAuf, MIN_SCHREIB_ABSTAND_MS } = await import(QUELLE);
@@ -20,7 +21,7 @@ function aufbau() {
 }
 const kette = (a, id, command) => { mkdirSync(join(a.k, "kette"), { recursive: true }); writeFileSync(join(a.k, "kette", `${id}.json`), JSON.stringify({ command, original: { type: "command", command } })); };
 const lauf = (a, id, eingabe, env = {}) => spawnSync(process.execPath, [a.skript, "--konto", id], {
-  input: eingabe, env: { PATH: "/usr/bin:/bin", HOME: a.home, ...env }, cwd: a.home, timeout: 20_000,
+  input: eingabe, env: { PATH: systemPfad(), HOME: a.home, ...(WIN ? { USERPROFILE: a.home, SystemRoot: process.env.SystemRoot } : {}), ...env }, cwd: a.home, timeout: 20_000,
 });
 const AUS = { rate_limits: { five_hour: { used_percentage: 42, resets_at: 1893456000 }, seven_day: { used_percentage: 18.5, resets_at: 1893888000 } } };
 const ID = "k_aaaa0001";
@@ -40,7 +41,7 @@ test("Ohne frühere Statuszeile: die Ausgabe bleibt leer, Exit 0 — und die Wer
   assert.deepEqual(j.weekly, { usedPercent: 18.5, windowMinutes: 10080, resetsAt: 1893888000 * 1000 });
   assert.deepEqual(Object.keys(j).sort(), ["geschrieben", "session", "v", "weekly"]);
   for (const s of ["GEHEIM", "sk-ant", "transcript", "session_id", "Opus", "Firma", "cost"]) assert.ok(!roh.includes(s), `„${s}“ darf nie in der Datei stehen`);
-  assert.equal(statSync(datei).mode & 0o777, 0o600);
+  assert.equal(modus(datei, 0o600), 0o600);
   assert.deepEqual(readdirSync(a.k).filter((n) => n.includes(".tmp-")), [], "keine Temp-Reste");
 });
 
@@ -49,7 +50,7 @@ test("Eine vorhandene Statuszeile wird mit derselben Eingabe aufgerufen und ihre
   const eingabe = JSON.stringify({ ...AUS, hallo: "Grüße ✓" });
   const befehl = "printf '\\033[32mOK\\033[0m Grüße ✓ ohne Zeilenende'; cat >&2; exit 3";
   kette(a, ID, befehl);
-  const direkt = spawnSync("/bin/sh", ["-c", befehl], { input: eingabe, env: { PATH: "/usr/bin:/bin" } });
+  const direkt = spawnSync(shPfad(), ["-c", befehl], { input: eingabe, env: { PATH: systemPfad(), ...(WIN ? { SystemRoot: process.env.SystemRoot } : {}) } });
   const r = lauf(a, ID, eingabe);
   assert.equal(r.status, 3);
   assert.ok(r.stdout.equals(direkt.stdout), "stdout muss byteweise gleich sein");
@@ -103,7 +104,7 @@ test("Kein Konto-Name, der aus dem Ordner herausführt: ungültige Kennungen sch
   const a = aufbau();
   kette(a, "k_aaaa0001", "echo kette");
   for (const bose of ["../x", "a/b", "", "k..", "x y", "a".repeat(80)]) {
-    const r = spawnSync(process.execPath, [a.skript, "--konto", bose], { input: JSON.stringify(AUS), env: { PATH: "/usr/bin:/bin", HOME: a.home }, cwd: a.home });
+    const r = spawnSync(process.execPath, [a.skript, "--konto", bose], { input: JSON.stringify(AUS), env: { PATH: systemPfad(), HOME: a.home, ...(WIN ? { SystemRoot: process.env.SystemRoot } : {}) }, cwd: a.home });
     assert.equal(r.status, 0);
     assert.equal(r.stdout.length, 0, "ohne gültige Kennung auch keine Kette");
   }
@@ -132,7 +133,7 @@ test("Kaputte Kette-Datei oder fehlender Befehl: das Skript gibt nichts aus und 
   assert.equal(r.status, 0); assert.equal(r.stdout.length, 0);
 });
 
-test("Eine hängende frühere Statuszeile hält die Anzeige nicht ewig auf: nach dem Zeitlimit endet die Kette samt allem, was sie gestartet hat", async () => {
+test("Eine hängende frühere Statuszeile hält die Anzeige nicht ewig auf: nach dem Zeitlimit endet die Kette samt allem, was sie gestartet hat", { skip: nurUnix("der Prozessbaum wird über ps gesucht, das gibt es unter Windows nicht"), timeout: 30_000 }, async () => {
   const a = aufbau();
   const pidDatei = join(a.home, "kind.pid");
   kette(a, ID, `sleep 61 & echo $! > '${pidDatei}'; wait`);
@@ -144,7 +145,7 @@ test("Eine hängende frühere Statuszeile hält die Anzeige nicht ewig auf: nach
   assert.ok(pid > 1);
   await new Promise((ok) => setTimeout(ok, 300));
   assert.throws(() => process.kill(pid, 0), { code: "ESRCH" }, "auch der Enkelprozess ist beendet — es bleibt nichts im Hintergrund");
-}, { timeout: 30_000 });
+});
 
 // ---------- Der Leser (Orcas Fälle: claude-statusline-rate-limits.ts) ----------
 test("Parser: fehlende Felder, ISO-Zeit, utilization, Grenzen, falsche Typen", () => {
@@ -209,7 +210,7 @@ test("Eine Eingabe ohne rate_limits (frische Sitzung) überschreibt NIE gute Wer
   assert.equal(JSON.parse(readFileSync(d2, "utf8")).ohne, true);
 });
 
-test("Eine Statuszeile, die das Terminal braucht (/dev/tty, tput, stty), sieht es auch in der Kette: die Kette läuft NICHT in einer eigenen Sitzung", { skip: spawnSync("python3", ["--version"]).error ? "python3 fehlt" : false }, () => {
+test("Eine Statuszeile, die das Terminal braucht (/dev/tty, tput, stty), sieht es auch in der Kette: die Kette läuft NICHT in einer eigenen Sitzung", { skip: WIN ? nurUnix("/dev/tty und python3-Hilfsprozess gibt es unter Windows nicht") : spawnSync("python3", ["--version"]).error ? "python3 fehlt" : false }, () => {
   const a = aufbau();
   const befehl = "if (exec 3>/dev/tty) 2>/dev/null; then printf tty; else printf kein-tty; fi";
   kette(a, ID, befehl);

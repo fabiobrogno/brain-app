@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, symlinkSync, unlinkSync, utimesSync } from "node:fs";
 import { join } from "node:path";
 import { tmp, schreibe, repo, g, pfad } from "./hilfe.mjs";
-process.env.HOME = tmp("brain-home-");  // keine echte ~/.gitconfig
+process.env.HOME = tmp("brain-home-"); if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME; /* Windows: os.homedir() liest USERPROFILE */  // keine echte ~/.gitconfig
 process.env.GIT_CONFIG_NOSYSTEM = "1";
 
 const { oeffneVault, HttpFehler } = await import(pfad("gemeinsam", "vault.mjs"));
@@ -22,7 +22,7 @@ function mitRemote() {
   g(a, "push", "-q", "-u", "origin", "main");
   const b = tmp("brain-klon-");
   g(b, "clone", "-q", bare, ".");
-  g(b, "config", "user.name", "B"); g(b, "config", "user.email", "b@example.org");
+  g(b, "config", "core.autocrlf", "false"); g(b, "config", "user.name", "B"); g(b, "config", "user.email", "b@example.org");
   return { bare, a, b, v: oeffneVault(a) };
 }
 const commitIn = (d, datei, inhalt, msg, push = false) => {
@@ -116,6 +116,7 @@ test("Nachsehen: ohne Remote kein Fehler; Server weg → 502 ohne Zugangsdaten i
 
 function dreiFassungen() {
   const d = repo();
+  g(d, "config", "core.autocrlf", "false"); // Windows: Git for Windows stellt sonst CRLF her
   const v = oeffneVault(d);
   commitIn(d, "notiz.md", "# Notiz\nErste Fassung\n", "n1");
   const sha1 = g(d, "rev-parse", "HEAD").trim();
@@ -234,7 +235,7 @@ test("Pfade strikt im Vault: Traversal, absolute Pfade, .git, Punkt-Ordner, Syml
 
 test("Keine Optionen oder Transporte durchschleusbar: ext::, -o…, --output, Hex-Falle — nichts wird ausgeführt oder geschrieben", async () => {
   const { d, v, sha1 } = dreiFassungen();
-  const marke = join(tmp("brain-marke-"), "gehackt");
+  const marke = join(tmp("brain-marke-"), "gehackt").split("\\").join("/"); // Windows: Slashes (Backslashes sind in Pfaden unzulässig)
   const boese = [`ext::sh -c "touch ${marke}" x`, `--output=${marke}`, `-o${marke}`, "--upload-pack=touch x", "-c core.fsmonitor=x", "HEAD", "main", "HEAD~1", "@{u}", ":/n1", "--", "-n", "zzzz", "", null, undefined, 7, ["abc"]];
   for (const sha of boese) {
     for (const f of [() => v.gitWiederherstellen({ pfad: "notiz.md", sha }), () => v.gitWiederherstellenVorschau("notiz.md", sha)]) {

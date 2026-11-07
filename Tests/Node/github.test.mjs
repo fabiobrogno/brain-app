@@ -7,7 +7,7 @@ import { writeFileSync, readFileSync, existsSync, readdirSync, statSync, chmodSy
 import { join } from "node:path";
 import { tmp, schreibe, pfad } from "./hilfe.mjs";
 
-process.env.HOME = tmp("brain-home-");          // keine echte ~/.gitconfig
+process.env.HOME = tmp("brain-home-"); if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME; /* Windows: os.homedir() liest USERPROFILE */          // keine echte ~/.gitconfig
 process.env.GIT_CONFIG_NOSYSTEM = "1";
 const SUPPORT = process.env.BRAIN_APP_SUPPORT;
 const TOKEN = "gho_GEHEIMESTOKEN1234567890abcdefABCDEF";
@@ -19,7 +19,7 @@ const { erzeugeHandler } = await import(pfad("werkstatt", "handler.mjs"));
 const BUND = tmp("brain-bund-");
 const BUNDDATEI = join(BUND, "schluesselbund.txt");
 process.env.FAKE_BUND = BUNDDATEI;
-const HELPER = join(BUND, "git-credential-fake");
+const HELPER = join(BUND, "git-credential-fake").split("\\").join("/"); // Windows: Git ruft den Helper über sh auf, Backslashes gingen dort verloren
 writeFileSync(HELPER, `#!/bin/sh
 case "$1" in
   store) grep -E '^(username|password)=' > "$FAKE_BUND" ;;

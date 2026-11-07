@@ -1,11 +1,14 @@
 import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, cpSync, mkdirSync, chmodSync, existsSync, realpathSync, symlinkSync } from "node:fs";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { createHash } from "node:crypto";
 import { tmp, schreibe, repo, g, pfad } from "./hilfe.mjs";
+import { legeProgramm, pfadMit, WIN } from "./attrappe.mjs";
+// wie shellText in werkstatt/handler.mjs: unverdächtige Texte bleiben, alles andere in '…'
+const sh = (t) => (/^[\w@%+=:,./-]+$/.test(t) ? t : `'${t.replace(/'/g, `'\\''`)}'`);
 
 const { erzeugeHandler } = await import(pfad("werkstatt", "handler.mjs"));
 const kinder = [];
@@ -149,30 +152,29 @@ test("MCP verbinden: Fake-claude im PATH wird mit dem richtigen Befehl aufgerufe
   const bin = tmp("brain-bin-");
   const log = join(bin, "aufruf.txt");
   // Attrappe: „mcp get brain“ → nicht vorhanden (Exit 1), „mcp add …“ → angelegt; jeder Aufruf steht als eine Zeile im Log
-  writeFileSync(join(bin, "claude"), `#!/bin/sh\necho "$*" >> "${log}"\nif [ "$2" = "get" ]; then echo "No MCP server found with name: brain" >&2; exit 1; fi\necho "Added stdio MCP server brain"\nexit 0\n`);
-  chmodSync(join(bin, "claude"), 0o755);
+  legeProgramm(join(bin, "claude"), `#!/bin/sh\necho "$*" >> "${log}"\nif [ "$2" = "get" ]; then echo "No MCP server found with name: brain" >&2; exit 1; fi\necho "Added stdio MCP server brain"\nexit 0\n`);
   const alt = { PATH: process.env.PATH, EXTRA: process.env.BRAIN_CLAUDE_EXTRA };
   try {
     process.env.BRAIN_CLAUDE_EXTRA = "";
     const h = aufruf(erzeugeHandler({ vault: d, studioDir: studioOrdner(), mcpPfad: join(mcp, "brain-mcp.mjs") }));
     const info = (await h("GET", "/api/info")).j;
     const mcpReal = realpathSync(join(mcp, "brain-mcp.mjs"));
-    assert.equal(info.mcpBefehl, `claude mcp add -s user brain -- ${process.execPath} ${mcpReal}`, "Vertrauen v2 (§8): der Eintrag nennt keinen Vault, der MCP-Server folgt dem aktiven");
+    assert.equal(info.mcpBefehl, `claude mcp add -s user brain -- ${sh(process.execPath)} ${sh(mcpReal)}`, "Vertrauen v2 (§8): der Eintrag nennt keinen Vault, der MCP-Server folgt dem aktiven");
 
     process.env.PATH = bin;
     const r = await h("POST", "/api/mcp/verbinden", { ziel: "claude" });
     assert.equal(r.status, 200); assert.equal(r.j.ok, true); assert.match(r.j.ausgabe, /Added/);
-    assert.deepEqual(readFileSync(log, "utf8").trim().split("\n"), ["mcp get brain", `mcp add -s user brain -- ${process.execPath} ${mcpReal}`]);
+    assert.deepEqual(readFileSync(log, "utf8").trim().split("\n"), ["mcp get brain", `mcp add -s user brain -- ${sh(process.execPath)} ${sh(mcpReal)}`]);
 
     process.env.PATH = tmp("brain-leer-"); // kein claude
     const n = await h("POST", "/api/mcp/verbinden", { ziel: "claude" });
     assert.equal(n.status, 404); assert.equal(n.j.befehl, info.mcpBefehl); assert.ok(n.j.fehler);
 
-    writeFileSync(join(bin, "claude"), `#!/bin/sh\nif [ "$2" = "get" ]; then exit 1; fi\necho "MCP server brain already exists in user config" >&2\nexit 1\n`);
+    legeProgramm(join(bin, "claude"), `#!/bin/sh\nif [ "$2" = "get" ]; then exit 1; fi\necho "MCP server brain already exists in user config" >&2\nexit 1\n`);
     process.env.PATH = bin;
     const e = await h("POST", "/api/mcp/verbinden", { ziel: "claude" });
     assert.equal(e.status, 409); assert.equal(e.j.art, "anders");
-    writeFileSync(join(bin, "claude"), `#!/bin/sh\nif [ "$2" = "get" ]; then exit 1; fi\necho "kaputt" >&2\nexit 2\n`);
+    legeProgramm(join(bin, "claude"), `#!/bin/sh\nif [ "$2" = "get" ]; then exit 1; fi\necho "kaputt" >&2\nexit 2\n`);
     const f = await h("POST", "/api/mcp/verbinden", { ziel: "claude" });
     assert.equal(f.status, 502); assert.match(f.j.ausgabe, /kaputt/);
   } finally {
@@ -186,7 +188,7 @@ test("Info: Pfade mit Leerzeichen werden im Befehl gequotet; ohne MCP-Datei mcpB
   const x = tmp("brain-x-"); mkdirSync(join(x, "Application Support"));
   schreibe(join(x, "Application Support"), "brain-mcp.mjs", "//\n");
   const h = aufruf(erzeugeHandler({ vault: d, studioDir: studioOrdner(), mcpPfad: join(x, "Application Support", "brain-mcp.mjs") }));
-  assert.match((await h("GET", "/api/info")).j.mcpBefehl, /-- \S+ '.*Application Support\/brain-mcp\.mjs'$/);
+  assert.match((await h("GET", "/api/info")).j.mcpBefehl, /-- \S+ '.*Application Support[\\/]brain-mcp\.mjs'$/);
   const h2 = aufruf(erzeugeHandler({ vault: d, studioDir: studioOrdner(), mcpPfad: join(x, "gibtsnicht.mjs") }));
   assert.equal((await h2("GET", "/api/info")).j.mcpBefehl, null);
 });
@@ -265,6 +267,7 @@ test("Brücke: POST /api/stopp antwortet und beendet; SIGTERM beendet", async ()
   assert.equal(r.id, 1); assert.equal(r.status, 200); assert.deepEqual(aus(r), { ok: true });
   assert.equal((await a.ende).code, 0);
 
+  if (WIN) return; // SIGTERM beendet unter Windows hart (Exit-Code null statt geordnetem 0)
   const b = starteBruecke(d, anlage);
   await b.naechste();
   b.p.kill("SIGTERM");

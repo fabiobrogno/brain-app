@@ -147,8 +147,10 @@ test("Link-Erkennung: eingerückte Code-Blöcke, Zäune in Listen, HTML-Kommenta
 
 test("Markdown-Links: #, % und ? im neuen Dateinamen werden kodiert", async () => {
   const { d, v } = aufbau({ "a/Alt.md": "# Alt\n", "l.md": "[x](a/Alt.md#k) ![y](a/Alt.md)\n" });
-  await v.umbenennen({ pfad: "a/Alt.md", dateiname: "A#B%C?.md" });
-  assert.equal(lies(d, "l.md"), "[x](a/A%23B%25C%3F.md#k) ![y](a/A%23B%25C%3F.md)\n");
+  const win = process.platform === "win32"; // „?“ ist in Windows-Dateinamen verboten
+  await v.umbenennen({ pfad: "a/Alt.md", dateiname: win ? "A#B%C.md" : "A#B%C?.md" });
+  const kodiert = win ? "A%23B%25C.md" : "A%23B%25C%3F.md";
+  assert.equal(lies(d, "l.md"), `[x](a/${kodiert}#k) ![y](a/${kodiert})\n`);
 });
 
 test("dateiname „x.txt“ ändert die Endung .md nicht: 400; ohne Endung bleibt sie", async () => {
@@ -182,7 +184,7 @@ test("Journale ohne lesbares Manifest: fehlt oder unlesbar (Sync, Rechte) bleibt
   liste = await oeffneVault(d, { support }).papierkorb();
   assert.equal(liste.eintraege.length, 1); assert.deepEqual(liste.hinweise, []);
   // (2) Manifest unlesbar (Rechte)
-  if (!(typeof process.getuid === "function" && process.getuid() === 0)) {
+  if (process.platform !== "win32" && !(typeof process.getuid === "function" && process.getuid() === 0)) { // Windows: chmod 0 macht nichts unlesbar
     chmodSync(mf, 0);
     try { liste = await oeffneVault(d, { support }).papierkorb(); assert.equal(liste.hinweise.length, 1); assert.equal(liste.hinweise[0].unvollstaendig, true); }
     finally { chmodSync(mf, 0o600); }
