@@ -459,6 +459,7 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
   }
 
   const textFuer = (art, typ, plan) => {
+    if (art === "verlinken") return `${plan.verweise} ${plan.verweise === 1 ? "Erwähnung" : "Erwähnungen"} von „${plan.zielTitel || "einer Notiz"}“ verlinkt · ${plan.notizen} ${plan.notizen === 1 ? "Notiz" : "Notizen"} angepasst`;
     const was = typ === "ordner" ? "Ordner" : "Notiz";
     const v = plan.verweise ? ` · ${plan.verweise} ${plan.verweise === 1 ? "Verweis" : "Verweise"} in ${plan.notizen} ${plan.notizen === 1 ? "Notiz" : "Notizen"} angepasst` : "";
     if (art === "loeschen") return `${was} in den Papierkorb gelegt${plan.verweise ? ` · von ${plan.notizen} ${plan.notizen === 1 ? "Notiz" : "Notizen"} verlinkt` : ""}`;
@@ -468,7 +469,8 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
   // Die eigene Aktion steht im Protokoll, ist aber schon gelesen: sie soll die Glocke nicht als „neu“ anzeigen
   const alsGelesen = (e) => { try { if (e) aendereZustand(support, kennung, (s) => { if (!s.gelesen.includes(e.id)) s.gelesen.push(e.id); }); } catch { /* das Protokoll ist Beiwerk */ } return e; };
   function protokolliere(m, plan) {
-    const pfade = plan.art === "loeschen" ? [plan.von] : [plan.nach, plan.von];
+    // Verlinken: nie genau zwei Pfade (zwei Pfade heißen für offene Studios „[jetzt, vorher]“: die Notiz wurde verschoben)
+    const pfade = plan.art === "verlinken" ? (plan.dateien.length === 2 ? [...plan.dateien.map((d) => d.pfad), plan.ziel] : plan.dateien.map((d) => d.pfad)) : plan.art === "loeschen" ? [plan.von] : [plan.nach, plan.von];
     const e = alsGelesen(melde(wurzel, { art: "datei-aktion", wer, vaultName: name, text: textFuer(plan.art, plan.typ, plan), pfade, rueckgaengig: { art: "vorgang", id: m.id } }, { support }));
     return e ? e.id : null;
   }
@@ -632,6 +634,56 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
     });
   }
 
+  // ───────────── Verlinken (ungelinkte Erwähnungen, gemeinsam/erwaehnungen-index.mjs) ─────────────
+  // Dieselbe Sicherheit wie Umbenennen: Vorschau mit Token, Journal (vorher/nachher), Hash-Prüfung je Datei (409, wenn sich eine Notiz inzwischen geändert hat; nichts wird geschrieben),
+  // ein Eintrag im Aktivitätsprotokoll mit Rückgängig. Den Text je Notiz liefert `bauePlan(lies)` (läuft unter der Sperre); `lies(rel)` liest EINE Notiz mit allen Schutzprüfungen.
+  const liesNotiz = (rel) => {
+    const l = loese(wurzel, rel);
+    let st;
+    try { st = lstatSync(l.abs); } catch { throw new HttpFehler(404, "gibt es nicht mehr"); }
+    if (st.isSymbolicLink()) throw new HttpFehler(403, "ist ein Verweis (Symlink)");
+    if (!st.isFile() || !BEARBEITBAR.test(l.rel)) throw new HttpFehler(415, "ist keine Notiz");
+    if (ueberspringeOrdner(l.abs) || l.segmente.slice(0, -1).some((_, i) => ueberspringeOrdner(join(wurzel, ...l.segmente.slice(0, i + 1))))) throw new HttpFehler(404, "gibt es nicht mehr");
+    const n = { pfad: l.rel, abs: l.abs, symbol: false, mehrfach: st.nlink > 1 };
+    const grund = schreibbarGrund(n);
+    if (grund) throw new HttpFehler(403, grund);
+    if (st.size > MAX_DATEI) throw new HttpFehler(413, "ist zu groß");
+    const buf = readFileSync(l.abs);
+    const text = buf.toString("utf8");
+    if (Buffer.compare(Buffer.from(text, "utf8"), buf) !== 0) throw new HttpFehler(415, "ist kein gültiger UTF-8-Text");
+    return { ...n, buf, text, hash: HASH(buf), modus: st.mode & 0o777 };
+  };
+  async function planeVerlinkenAktion(bauePlan) {
+    const gelesen = new Map();
+    const lies = (rel) => { const n = liesNotiz(rel); gelesen.set(n.pfad, n); return n; };
+    const r = await bauePlan(lies);
+    const plan = { art: "verlinken", typ: "datei", von: "", nach: "", vonAbs: wurzel, nachAbs: wurzel, keinUmzug: true, casePur: false, dateien: [], uebersprungen: (r.uebersprungen || []).slice(0, MAX_LISTE), verlinktVon: [],
+      notizenImOrdner: 0, titelAlt: null, titelNeu: null, hash: null, ziel: r.ziel || null, zielTitel: r.zielTitel || null };
+    const liste = [];
+    for (const d of r.dateien) {
+      const n = gelesen.get(d.pfad);
+      const nachher = Buffer.from(d.text, "utf8");
+      plan.dateien.push({ pfad: n.pfad, vorher: n.buf, hashVorher: n.hash, modus: n.modus, nachher, hashNachher: HASH(nachher), anzahl: d.anzahl });
+      liste.push({ pfad: n.pfad, alterPfad: n.pfad, titel: d.titel || titelAus(n.pfad, n.text), anzahl: d.anzahl, zeilen: d.zeilen || [] });
+    }
+    plan.verweise = plan.dateien.reduce((a, d) => a + d.anzahl, 0);
+    plan.notizen = plan.dateien.length;
+    plan.liste = liste.slice(0, MAX_LISTE);
+    plan.mehrListe = Math.max(0, liste.length - MAX_LISTE);
+    plan.token = token(plan, [], { rel: "" });
+    return plan;
+  }
+  async function verlinke(eingabe, bauePlan) {
+    const e = gemeinsamEin(eingabe);
+    return mitSperre(async () => {
+      const plan = await planeVerlinkenAktion(bauePlan);
+      if (flag(e)) return { ...vorschauVon(plan), ziel: plan.ziel, zielTitel: plan.zielTitel };
+      if (!plan.dateien.length) return { ok: true, unveraendert: true, art: "verlinken", typ: "datei", verweise: 0, notizen: 0, dateien: [], geaendert: [], uebersprungen: plan.uebersprungen };
+      const erg = await fuehreAus(plan, e);
+      return { ...erg, geaendert: (erg.geaendert || []).filter(Boolean), uebersprungen: plan.uebersprungen, ziel: plan.ziel };
+    });
+  }
+
   // ───────────── Rückgängig / Wiederherstellen ─────────────
   // richtung "zurueck": Zustand von vor der Aktion herstellen · "vor": die Aktion noch einmal ausführen (nach einem Rückgängig)
   function wechsle(m, richtung, { teilweise = false } = {}) {
@@ -774,7 +826,7 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
       try { erg = wechsle(m, "zurueck", { teilweise: eingabe.teilweise === true }); } catch (e) { loescheMarke(); throw e; } // ein Fehler (409 …) heißt: nichts angefasst; nur ein Absturz lässt die Marke stehen
       m.status = "zurueck"; schreibeManifest(m);
       loescheMarke();
-      eintragLog(m, m.art === "loeschen" ? "Rückgängig: Aus dem Papierkorb zurückgelegt." : `Rückgängig: ${m.art === "umbenennen" ? "Umbenennen" : "Verschieben"} zurückgenommen.`, [erg.nach || erg.pfad, erg.von].filter(Boolean)); // [jetziger Ort, voriger Ort]: offene Studios folgen
+      eintragLog(m, m.art === "loeschen" ? "Rückgängig: Aus dem Papierkorb zurückgelegt." : `Rückgängig: ${m.art === "umbenennen" ? "Umbenennen" : m.art === "verlinken" ? "Verlinken" : "Verschieben"} zurückgenommen.`, [erg.nach || erg.pfad, erg.von].filter(Boolean)); // [jetziger Ort, voriger Ort]: offene Studios folgen
       return { ...erg, ok: true, art: m.art === "loeschen" ? "wiederhergestellt" : "zurueck", vorgangArt: m.art };
     });
   }
@@ -1041,5 +1093,5 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
     }
   }
 
-  return { sperreAktiv, aktionenOrt: () => { setzeAktionen(); return aktionen; }, papierkorbHinweisErledigt, umbenennen, verschieben, loeschen, papierkorbListe, papierkorbWiederherstellen, papierkorbEndgueltig, vorgangZurueck, vorgangWieder, vorgangMoeglich, kennung, korb };
+  return { sperreAktiv, aktionenOrt: () => { setzeAktionen(); return aktionen; }, papierkorbHinweisErledigt, umbenennen, verschieben, verlinke, loeschen, papierkorbListe, papierkorbWiederherstellen, papierkorbEndgueltig, vorgangZurueck, vorgangWieder, vorgangMoeglich, kennung, korb };
 }

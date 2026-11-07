@@ -1,0 +1,75 @@
+/* Ungelinkte Erwähnungen (erwaehnungen.js, Info-Spalte) und die Karte „Was ist neu“ (neuigkeiten.js, oben im Posteingang).
+   Nur Bausteine und Werte des Design-Systems (studio.css, bausteine.css); nichts Eigenes bei Farben und Maßen. */
+
+/* ───── Info-Spalte: zwei Abschnitte ───── */
+.erw-kopf { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.erw-summe { min-width: 0; font-size: 12.5px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.erw-leer, .erw-weiter { margin: 0; font-size: 12.5px; line-height: 1.5; text-wrap: pretty; }
+.erw-weiter { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.erw-liste { display: grid; gap: 10px; }
+.erw-notiz { display: grid; gap: 4px; min-width: 0; }
+.erw-titel {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 28px; padding: 2px 4px; border: 0; border-radius: var(--r); background: transparent; color: var(--text);
+  cursor: pointer; text-align: left; font: inherit; font-size: 13px; font-weight: 600; transition: background var(--t);
+}
+.erw-titel:hover { background: var(--hover); }
+.erw-titel .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.erw-titel svg { flex: none; color: var(--text-3); }
+.erw-zahl { flex: none; min-width: 20px; padding: 1px 6px; border-radius: var(--r-pille); background: var(--hover-2); color: var(--text-2); font-size: 11.5px; font-weight: 500; text-align: center; font-variant-numeric: tabular-nums; }
+.erw-stellen { display: grid; gap: 4px; }
+.erw-stelle {
+  display: flex; align-items: flex-start; gap: 8px; padding: 6px 6px 6px 8px; border-radius: var(--r); background: var(--erhoben); box-shadow: inset 0 0 0 1px var(--linie);
+}
+.erw-stelle:hover { box-shadow: inset 0 0 0 1px var(--linie-stark); }
+.erw-auszug-knopf { flex: 1; min-width: 0; display: grid; gap: 1px; padding: 0; border: 0; background: transparent; color: var(--text); cursor: pointer; text-align: left; font: inherit; }
+.erw-zeile { font-size: 10.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.erw-auszug { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; font-size: 12.5px; line-height: 1.45; color: var(--text-2); overflow-wrap: anywhere; }
+.erw-auszug mark { padding: 0 2px; border-radius: 3px; background: var(--akzent-weich); color: var(--text); box-shadow: inset 0 -1px 0 var(--akzent-rand); }
+.erw-stelle .knopf { flex: none; }
+.erw-mehr { justify-self: start; }
+
+/* ───── Karte „Was ist neu“ ───── */
+.nk {
+  margin: 10px 10px 4px; padding: 12px 12px 10px; border-radius: var(--r-l); background: var(--erhoben); border: 1px solid var(--linie); box-shadow: var(--schatten-klein);
+  display: grid; gap: 8px; min-width: 0;
+}
+.nk[hidden] { display: none; }
+.nk-kopf { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.nk-titel { margin: 0; min-width: 0; font-size: 13.5px; font-weight: 600; letter-spacing: -.005em; color: var(--text); }
+.nk-unter { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: -2px; }
+.nk-seit { font-size: 11.5px; color: var(--text-3); }
+.nk-zeilen { display: grid; gap: 2px; }
+.nk-leer { margin: 0 0 2px; font-size: 12.5px; line-height: 1.45; text-wrap: pretty; }
+.nk-block { display: grid; min-width: 0; }
+.nk-zeile {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 30px; padding: 3px 6px; border: 0; border-radius: var(--r); background: transparent; color: var(--text);
+  cursor: pointer; text-align: left; font: inherit; font-size: 12.5px; transition: background var(--t);
+}
+.nk-zeile:hover { background: var(--hover); }
+.nk-sym { flex: none; display: grid; color: var(--text-3); }
+.nk-name { flex: none; width: 76px; font-weight: 600; color: var(--text-2); }
+.nk-teile { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.nk-text { color: var(--text-2); min-width: 0; overflow-wrap: anywhere; }
+.nk-chip { padding: 1px 8px; border-radius: var(--r-pille); background: var(--hover-2); color: var(--text); font-size: 11.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.nk-chip.warn { background: color-mix(in srgb, var(--rot) 12%, transparent); color: var(--rot); }
+.nk-pfeil { flex: none; display: grid; color: var(--text-3); transition: transform var(--d-fast) var(--ease-out); }
+.nk-zeile[aria-expanded="true"] .nk-pfeil { transform: rotate(180deg); }
+.nk-liste { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1px; margin: 0 0 4px 34px; }
+.nk-eintrag {
+  box-sizing: border-box; display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-width: 0; min-height: 26px; padding: 2px 8px; border: 0; border-radius: var(--r); background: transparent;
+  color: var(--text); cursor: pointer; text-align: left; font: inherit; font-size: 12.5px; transition: background var(--t);
+}
+.nk-eintrag:hover { background: var(--hover); }
+.nk-eintrag-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nk-eintrag-klein { flex: none; font-size: 11px; color: var(--text-3); }
+.nk-mehr { justify-self: start; margin: 2px 0 0 8px; }
+.nk-fuss { display: grid; gap: 6px; padding-top: 6px; border-top: 1px solid var(--linie); }
+.nk-ki {
+  display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 2px 10px; white-space: nowrap; border: 1px dashed var(--linie-stark); border-radius: var(--r); background: transparent;
+  color: var(--text-2); cursor: pointer; font: inherit; font-size: 12.5px; transition: background var(--t), border-color var(--t);
+}
+.nk-ki:hover { background: var(--hover); border-color: var(--text-3); }
+.nk-bald { margin-left: auto; padding: 1px 7px; border-radius: var(--r-pille); background: var(--akzent-weich); color: var(--akzent-tinte); font-size: 10.5px; font-weight: 600; letter-spacing: .02em; }
+.nk-ki-text { margin: 0; font-size: 12px; line-height: 1.5; text-wrap: pretty; }
+.nk button:focus-visible, .erw-titel:focus-visible, .erw-auszug-knopf:focus-visible, .nk-ki:focus-visible { outline: 0; box-shadow: var(--fokus-ring); }
+@media (prefers-reduced-motion: reduce) { .nk-pfeil { transition: none; } }
