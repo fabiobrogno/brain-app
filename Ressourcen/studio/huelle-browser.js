@@ -36,6 +36,18 @@
     return OK;
   }
 
+  // Anhang öffnen: der Browser zeigt PDF und Bilder selbst, alles andere lädt er herunter (die Werkstatt liefert es mit Content-Disposition). Nur Endungen der Anhang-Liste; synchron wie `extern`.
+  var ANHANG_ENDUNGEN = ["png", "jpg", "jpeg", "gif", "webp", "svg", "pdf", "txt", "csv", "rtf", "zip", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp", "mp3", "m4a", "wav", "mp4", "mov", "webm"];
+  function anhangOeffnen(pfad) {
+    var p = String(pfad == null ? "" : pfad), m = /\.([A-Za-z0-9]{1,8})$/.exec(p);
+    if (!p || p.indexOf("..") >= 0 || p.charAt(0) === "/" || /[\0\\]/.test(p) || !m || ANHANG_ENDUNGEN.indexOf(m[1].toLowerCase()) < 0) return nicht("ungueltig");
+    var w = null;
+    try { w = window.open("/_anhang?ziel=" + encodeURIComponent(p), "_blank"); } catch (e) { w = null; }
+    if (!w) return nicht("popup-blockiert");
+    try { w.opener = null; } catch (e) { /* egal */ }
+    return OK;
+  }
+
   function kopieren(text) {
     var t = String(text == null ? "" : text);
     if (!t || t.length > 400 || /[\r\n]/.test(t)) return Promise.resolve(nicht("text-nicht-erlaubt"));
@@ -61,6 +73,7 @@
   var AKTIONEN = {
     "ansicht": function () { return { ok: false, grund: "kein-kit" }; },
     "ordner-zeigen": function () { return nicht(); },
+    "anhang-oeffnen": anhangOeffnen,
     "extern": extern,
     "ordner-waehlen": function (w) { return import("./huelle-browser-ordner.js").then(function (m) { return m.waehleOrdner(w || {}); }); },
     "vault-gewechselt": function () { return OK; },

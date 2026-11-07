@@ -18,6 +18,7 @@ import { kennungVault, melde, aendereZustand, leseZustand } from "./aktivitaet.m
 import { planeVerweise, setzeTitel, verlinktVon } from "./linkpflege.mjs";
 import { titelAus } from "./notizen.mjs";
 import { ordnerVonPfad } from "./wikilink.mjs";
+import { istAnhangName } from "./anhang-regeln.mjs";
 
 const HASH = (buf) => createHash("sha256").update(buf).digest("hex");
 export const PAPIERKORB_TAGE = 30;
@@ -240,7 +241,8 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
   }
 
   // ───────────── Ziel prüfen ─────────────
-  async function pruefeZiel(pfad, erwartet) {
+  // anhang: ein Anhang (Bild, PDF …) statt einer Notiz; nur zum Löschen (in den Papierkorb), nur Dateien mit erlaubter Anhang-Endung (gemeinsam/anhang-regeln.mjs)
+  async function pruefeZiel(pfad, erwartet, anhang = false) {
     if (typeof pfad !== "string") throw new HttpFehler(400, "Der Pfad fehlt.");
     const l = loese(wurzel, pfad);
     let st;
@@ -250,7 +252,10 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
     const typ = st.isDirectory() ? "ordner" : st.isFile() ? "datei" : null;
     if (!typ) throw new HttpFehler(400, "Das ist weder Datei noch Ordner.");
     if (erwartet && typ !== erwartet) throw new HttpFehler(400, erwartet === "datei" ? "Das ist ein Ordner, keine Notiz." : "Das ist eine Datei, kein Ordner.");
-    if (typ === "datei") {
+    if (typ === "datei" && anhang) {
+      if (!istAnhangName(l.rel)) throw new HttpFehler(415, "Das ist kein Anhang, den Kortex kennt.");
+      if (st.nlink > 1) throw new HttpFehler(423, "Diese Datei ist mehrfach verknüpft (derselbe Inhalt liegt unter einem zweiten Namen). Kortex fasst sie hier nicht an.");
+    } else if (typ === "datei") {
       if (!BEARBEITBAR.test(l.rel)) throw new HttpFehler(415, "Nur Markdown- und Textdateien lassen sich hier umbenennen, verschieben oder löschen.");
       if (istGeneriert(l.rel, l.abs)) throw new HttpFehler(403, "Diese Datei wird automatisch erzeugt und ist geschützt.");
       if (st.nlink > 1) throw new HttpFehler(423, "Diese Datei ist mehrfach verknüpft (derselbe Inhalt liegt unter einem zweiten Namen). Kortex fasst sie hier nicht an.");
@@ -323,15 +328,17 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
   }
 
   // art: "umbenennen" | "verschieben" | "loeschen";  typ: "datei" | "ordner"
-  async function plane({ art, typ, pfad, nachRel = null, titel = null, basisHash = null }) {
-    const von = await pruefeZiel(pfad, typ);
-    const { notizen, uebersprungen: uebersp } = sammle();
+  async function plane({ art, typ, pfad, nachRel = null, titel = null, basisHash = null, anhang = false }) {
+    if (anhang && (art !== "loeschen" || typ !== "datei")) throw new HttpFehler(400, "Anhänge lassen sich nur in den Papierkorb legen.");
+    const von = await pruefeZiel(pfad, typ, anhang);
+    const { notizen, uebersprungen: uebersp } = anhang ? { notizen: [], uebersprungen: new Map() } : sammle();
     const mapNotiz = new Map(notizen.map((n) => [n.pfad, n]));
-    const selbst = typ === "datei" ? mapNotiz.get(von.rel) : null;
-    if (typ === "datei" && !selbst) throw new HttpFehler(415, "Diese Datei lässt sich nicht lesen.");
+    const selbst = typ === "datei" && !anhang ? mapNotiz.get(von.rel) : null;
+    if (typ === "datei" && !selbst && !anhang) throw new HttpFehler(415, "Diese Datei lässt sich nicht lesen.");
     if (selbst && basisHash !== null && basisHash !== undefined && selbst.hash !== basisHash) throw new HttpFehler(409, "Die Notiz wurde inzwischen geändert (zum Beispiel von einem anderen Programm).", { aktuellerHash: selbst.hash, art: "geaendert" });
-    const plan = { art, typ, von: von.rel, nach: null, vonAbs: von.abs, dateien: [], uebersprungen: [], verlinktVon: [], notizenImOrdner: 0, casePur: false, titelAlt: null, titelNeu: null, hash: selbst ? selbst.hash : null };
-    if (typ === "datei") plan.titelAlt = titelAus(von.rel, selbst.text);
+    const plan = { art, typ, von: von.rel, nach: null, vonAbs: von.abs, dateien: [], uebersprungen: [], verlinktVon: [], notizenImOrdner: 0, casePur: false, titelAlt: null, titelNeu: null, hash: selbst ? selbst.hash : null, ...(anhang ? { anhang: true } : {}) };
+    if (anhang) { plan.hash = HASH(readFileSync(von.abs)); plan.titelAlt = basename(von.rel); }
+    else if (typ === "datei") plan.titelAlt = titelAus(von.rel, selbst.text);
     if (typ === "ordner") plan.notizenImOrdner = notizen.filter((n) => falte(n.pfad).startsWith(falte(von.rel) + "/")).length;
 
     if (art === "loeschen") {
@@ -459,7 +466,7 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
   }
 
   const textFuer = (art, typ, plan) => {
-    const was = typ === "ordner" ? "Ordner" : "Notiz";
+    const was = typ === "ordner" ? "Ordner" : plan.anhang ? "Anhang" : "Notiz";
     const v = plan.verweise ? ` · ${plan.verweise} ${plan.verweise === 1 ? "Verweis" : "Verweise"} in ${plan.notizen} ${plan.notizen === 1 ? "Notiz" : "Notizen"} angepasst` : "";
     if (art === "loeschen") return `${was} in den Papierkorb gelegt${plan.verweise ? ` · von ${plan.notizen} ${plan.notizen === 1 ? "Notiz" : "Notizen"} verlinkt` : ""}`;
     return `${was} ${art === "umbenennen" ? "umbenannt" : "verschoben"}${v}`;
@@ -626,7 +633,7 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
     const e = gemeinsamEin(eingabe);
     const typ = e.typ === "ordner" ? "ordner" : "datei";
     return mitSperre(async () => {
-      const plan = await plane({ art: "loeschen", typ, pfad: e.pfad, basisHash: e.basisHash ?? null });
+      const plan = await plane({ art: "loeschen", typ, pfad: e.pfad, basisHash: e.basisHash ?? null, anhang: e.anhang === true });
       if (flag(e)) return vorschauVon(plan);
       return fuehreAus(plan, e);
     });

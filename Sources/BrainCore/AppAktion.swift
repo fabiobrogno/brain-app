@@ -9,6 +9,9 @@ import Foundation
 public enum AppAktion: Equatable, Sendable {
     case ansicht
     case ordnerZeigen(URL)
+    /// Anhang (PDF, Office-Datei, Bild …) mit dem Standardprogramm des Systems öffnen (Chip in der Notiz). Nur Dateien im Vault mit einer Endung aus `anhangEndungen`
+    /// (nie Ausführbares: kein .app, .command, .sh, .html …), nur wenn es die Datei gibt. Nur das Studio.
+    case anhangOeffnen(URL)
     case extern(URL)
     /// Ordner-Dialog (nur Ordner, „Neuer Ordner“ erlaubt) als Sheet am Studio; Antwort `{pfad}` oder `null`.
     case ordnerWaehlen(titel: String?, vorschlag: URL?)
@@ -63,6 +66,12 @@ public enum AppAktion: Equatable, Sendable {
     /// Durchscheinende Seitenleiste (Einstellungen → Darstellung): die App schaltet `data-glas` der Seite sofort um. Antwort `{ok:true, wirkt}` bzw. `{ok:false, grund:"nicht-verfuegbar"}` (kein Glas möglich). Nur das Studio.
     case fensterDurchscheinend(Bool)
 
+    /// Endungen, die `anhang-oeffnen` öffnet: dieselbe Liste wie ANHANG_TYPEN in gemeinsam/anhang-regeln.mjs (Tests/Node/huellen-vertrag.test.mjs vergleicht sie).
+    public static let anhangEndungen: Set<String> = [
+        "png", "jpg", "jpeg", "gif", "webp", "svg", "pdf", "txt", "csv", "rtf", "zip", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
+        "odt", "ods", "odp", "mp3", "m4a", "wav", "mp4", "mov", "webm",
+    ]
+
     /// Längen- und Zeichenbegrenzung für Texte der Seite (Fenstertitel, Dialog-Hinweis).
     static let maxTitel = 120
     static let maxHinweis = 200
@@ -89,6 +98,12 @@ public enum AppAktion: Equatable, Sendable {
         case "ordner-zeigen":
             guard let vault, let relativ = wert as? String else { return nil }
             return ortImVault(relativ, vault: vault).map { .ordnerZeigen($0) }
+        case "anhang-oeffnen":
+            guard oberflaeche == .studio, let vault, let relativ = wert as? String,
+                  anhangEndungen.contains((relativ as NSString).pathExtension.lowercased()),
+                  let ort = ortImVault(relativ, vault: vault),
+                  FileManager.default.fileExists(atPath: ort.path) else { return nil }
+            return .anhangOeffnen(ort)
         case "extern":
             guard let w = wert as? String, let u = URL(string: w), u.scheme?.lowercased() == "https",
                   let h = u.host, !h.isEmpty else { return nil }

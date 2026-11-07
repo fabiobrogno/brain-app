@@ -15,12 +15,14 @@ export const NUR_EINRICHTUNG = ["git-pruefen", "git-installieren", "kopieren", "
 export const SCHRITTE = ["vault", "ki", "sicherung"];
 const EINSTIEGE = ["vault", "sicherung", "ki"];
 const WEGE = ["neu", "beispiel", "oeffnen", "klonen"];
+// Endungen, die „anhang-oeffnen“ öffnet: dieselbe Liste wie ANHANG_TYPEN in gemeinsam/anhang-regeln.mjs (der Vertragstest vergleicht sie; hier ohne Import, die Hülle lädt nichts aus Ressourcen/)
+export const ANHANG_ENDUNGEN = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "pdf", "txt", "csv", "rtf", "zip", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp", "mp3", "m4a", "wav", "mp4", "mov", "webm"]);
 const DARSTELLUNGEN = { hell: "light", dunkel: "dark", system: "system" };
 const APP_SYMBOLE = ["standard", "dunkel", "graphit", "papier", "smaragd"];
 export const MAX_TITEL = 120, MAX_HINWEIS = 200, MAX_FEHLERTEXT = 300, MAX_FEHLERORT = 120, MAX_KOPIEREN = 400, MAX_FEHLER_JE_FENSTER = 20;
 // Aktionen, die auf Dialoge, Dateisystem oder Prozesse warten: die Seite bekommt ein Versprechen. Alle anderen antworten sofort (das Preload nimmt dafür den synchronen Weg,
 // damit `aktion("extern", …)` wie in der App gleich meldet, ob die Aktion angenommen wurde).
-export const ASYNCHRON = ["ordner-waehlen", "ordner-zeigen", "git-pruefen", "git-installieren", "mitteilung-probe"];
+export const ASYNCHRON = ["ordner-waehlen", "ordner-zeigen", "anhang-oeffnen", "git-pruefen", "git-installieren", "mitteilung-probe"];
 
 // Wo die Einrichtung einsteigt (wie EinrichtungsOverlay.einstieg in Swift): ein verlangter Einstieg gilt immer; mit gewähltem Weg oder ohne Vault beginnt die Seite beim Vault (kein `ab`);
 // sonst macht sie nach dem zuletzt erledigten Schritt weiter: nach „ki“ bei der Sicherung, sonst (auch nach „sicherung“ = alles erledigt) bei der KI.
@@ -69,7 +71,7 @@ export function ortImVault(relativ, vault, { plattform = process.platform } = {}
 }
 
 /**
- * abh: { support, vaultPfad(): Promise<string|null>, openExternal(url), showItemInFolder(pfad), schreibeZwischenablage(text), waehleOrdner({titel, vorschlag}): Promise<string|null>,
+ * abh: { support, vaultPfad(): Promise<string|null>, openExternal(url), showItemInFolder(pfad), oeffneDatei(pfad) → Fehlertext oder "" (shell.openPath), schreibeZwischenablage(text), waehleOrdner({titel, vorschlag}): Promise<string|null>,
  *        mitteilung({probe: true}): boolean, darstellung(themeSource), fensterTitel(text|null), fensterZoom(), befehlAnStudio(name, wert), protokoll(zeile),
  *        W2b (alle optional): statusAuffrischen(), kuerzel: { pruefeGlobal(id, text|null), neuLesen() }, appSymbol(name) → boolean, fensterGlas(an) → null | wirkt:boolean,
  *        einrichtung: { lese(support), schreibe(support, o) }, ordner: { pruefeOrdner(pfad) }, git: { pruefen(), hinweis() }, plattform? }
@@ -89,6 +91,15 @@ export function erzeugeAktionen(abh) {
       abh.protokoll("aktion ordner-zeigen");
       abh.showItemInFolder(ort);
       return OK;
+    },
+    // Anhang mit dem Programm des Systems öffnen (Chip in der Notiz): nur Endungen der Anhang-Liste, nur im Vault, nie Ausführbares
+    "anhang-oeffnen": async (w) => {
+      const vault = await abh.vaultPfad();
+      const ort = vault && typeof w === "string" && ANHANG_ENDUNGEN.has((/\.([A-Za-z0-9]{1,8})$/.exec(w) || [, ""])[1].toLowerCase()) ? ortImVault(w, vault, { plattform }) : null;
+      if (!ort) return UNGUELTIG();
+      if (!existsSync(ort)) return nein("fehlt");
+      abh.protokoll("aktion anhang-oeffnen");
+      try { return (await abh.oeffneDatei(ort)) ? nein("nicht-verfuegbar") : OK; } catch { return nein("nicht-verfuegbar"); }
     },
     "extern": (w) => {
       const r = externPruefen(w, { nurHttps: true, einrichtungOffen });

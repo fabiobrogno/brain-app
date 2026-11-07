@@ -206,6 +206,13 @@ export const api = {
   aktivitaetWiederherstellen: (id, vault, teilweise) => anfrage("POST", "/api/aktivitaet/wiederherstellen", { id, ...(vault ? { vault } : {}), ...(teilweise ? { teilweise: true } : {}) }),
   // ---- Umbenennen, Verschieben, Papierkorb (gemeinsam/dateiaktionen.mjs). vorschau: true → nur „N Verweise in M Notizen“ und ein Token; token + basisHash prüfen den gesehenen Stand (409)
   dateiAktion: (typ, art, daten) => anfrage("POST", `/api/${typ === "ordner" ? "ordner" : "notiz"}/${art}`, daten),
+  // Anhänge (Paket 3a): in Stücken hochladen (start → teil … → ende), Ziel auflösen, unbenutzte Anhänge einer Notiz, in den Papierkorb legen
+  anhangStart: (name, groesse, notiz) => anfrage("POST", "/api/anhang/start", { name, groesse, ...(notiz ? { notiz } : {}) }),
+  anhangTeil: (id, nr, daten) => anfrage("POST", "/api/anhang/teil", { id, nr, daten }),
+  anhangEnde: (id) => anfrage("POST", "/api/anhang/ende", { id }),
+  anhangAufloesen: (ziel, von) => anfrage("GET", "/api/anhang/aufloesen" + q({ ziel, von })),
+  anhangUnbenutzt: (pfad) => anfrage("GET", "/api/anhang/unbenutzt" + q({ pfad })),
+  anhangLoeschen: (pfade) => anfrage("POST", "/api/anhang/loeschen", { pfade }),
   papierkorb: () => anfrage("GET", "/api/papierkorb"),
   papierkorbWiederherstellen: (id, name) => anfrage("POST", "/api/papierkorb/wiederherstellen", { id, ...(name ? { name } : {}) }),
   papierkorbEndgueltig: (daten) => anfrage("POST", "/api/papierkorb/endgueltig", daten),
