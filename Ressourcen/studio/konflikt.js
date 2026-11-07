@@ -562,9 +562,9 @@ export function zeigeKonflikt(host, ctx) {
     schrittSetzen(2, "ok"); schrittSetzen(3, "laeuft"); await warte(wenigBewegung() ? 60 : 320);
     if (r.abgleich && r.abgleich.ok === false) schrittSetzen(3, ""); else schrittSetzen(3, "ok");
     await warte(wenigBewegung() ? 60 : 280);
-    KS.laeuft = false; KS.phase = "fertig"; zeichne();
+    KS.laeuft = false; KS.phase = "fertig"; KS.zurueckgenommen = false; zeichne();
     wurzel.querySelector('[data-aktion="konflikt-zurueck"]')?.focus();
-    try { await ctx.beiFertig?.({ ergebnis: r, anzahl: items.length, rueckgaengig: () => rueckgaengig() }); } catch (x) { console.error(x); }
+    try { await ctx.beiFertig?.({ ergebnis: r, anzahl: items.length, rueckgaengig: () => rueckgaengig(), zurueckgenommen: () => KS.zurueckgenommen }); } catch (x) { console.error(x); }
   }
   async function rueckgaengig() {
     if (KS.phase !== "fertig" || KS.laeuft) return;
@@ -572,7 +572,7 @@ export function zeigeKonflikt(host, ctx) {
     try {
       const r = await api.gitKonfliktRueckgaengig();
       KS.laeuft = false;
-      KS.phase = "liste"; KS.sel = 0;
+      KS.phase = "liste"; KS.sel = 0; KS.zurueckgenommen = true;
       toast(TK.rueck.ok, { ms: 6000 });
       await ctx.beiZurueck?.(r);
       zeichne();
