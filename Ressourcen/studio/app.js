@@ -3,6 +3,7 @@
 import { T, PRODUKT } from "./texte.js";
 import { api, aktion, aktionMitAntwort, inApp, imElectron, kannGlobaleKuerzel, browserModus, mitHuelle, kannOrdnerZeigen, gitGesperrt, andererVault, nichtVertraut, ausgangUnklar, zeitText as zeitFehlerText, ladeStandNeu } from "./api.js";
 import { erstelleEditor } from "./editor.js";
+import { erzeugeAnhaenge } from "./anhaenge.js"; // Bilder und Anhänge (Paket 3a)
 import { h, dialog, dialogOffen, schliesseDialoge, toast, vorMinuten, dateiName, ohneEndung, ordnerVon, istBearbeitbar, speichereLokal, leseLokal, leseEntwurf, speichereEntwurf, sucheGrad, suchFormen, ausTabelle, arbeitBeginnt, laufendeArbeiten } from "./hilfen.js";
 import { symbol, GROESSE } from "./symbole.js";
 import { STANDARD as DARST_STANDARD, DARSTELLUNGS_SCHLUESSEL, wendeDarstellungAn, leseCache as leseDarstellungCache, schreibeCache as schreibeDarstellungCache, migriereAlteWahl } from "./darstellung.js"; // Farbschema, Akzent, Dichte, Schrift, Größe, Zeilenbreite, Symbole
@@ -83,8 +84,13 @@ const lokal = {
   schreib: (n, v) => speichereLokal(lokal.k(n), v),
 };
 
+// Bilder und Anhänge (anhaenge.js, editor-anhaenge.js): Einfügen und Ziehen, Anzeige im Editor und in „Frag deinen Vault“, Lightbox, Rückfrage beim Löschen einer Notiz
+const anhaenge = erzeugeAnhaenge({ api, aktionMitAntwort, pfad: () => S.pfad || "", darfSchreiben: () => !S.schutz && S.bearbeitbar && !S.konflikt, ansicht: () => ed.view,
+  shell: () => (inApp() ? "app" : imElectron() ? "electron" : "browser") });
+
 // Umbenennen, Verschieben, Papierkorb (dateiaktionen.js): Kontextmenü, Umbenennen an Ort und Stelle, Ziehen und Ablegen, F2 und ⌘⌫, Ansicht „Papierkorb“
 const daCtx = {
+  anhaenge,
   S, ladeBaum: () => ladeBaum(), oeffne: (p) => oeffne(p), waehleSicht: (s) => waehleSicht(s), schliesseDatei: () => schliesseDatei(), sichereVorWechsel: () => sichereVorWechsel(),
   // Die offene Notiz bleibt während einer Aktion schreibgeschützt (der Pfad kann sich dabei ändern, darum kein posteingangCtx.sperre)
   sperre: () => sperreNotiz(),
@@ -164,7 +170,7 @@ $("vault-pfeil").replaceChildren(symbol("chevron-auf-ab", 14));
 $("au-zurueck").replaceChildren(symbol("pfeil-links", 14), h("span", { text: TAUF.zurueck }));
 $("au-zurueck").addEventListener("click", () => zurueckZumBoard());
 // Frag deinen Vault (P4): Panel rechts, Knopf in der Kopfzeile, ⌘J und Befehlspalette. Die KI liest nur über Kortex, nichts wird gespeichert (frage.js).
-const frage = erzeugeFragePanel({ vaultPfad: () => S.info?.vault || null, oeffneSeite: (p) => oeffne(p), oeffneVertrauen: () => oeffneVertrauen(), oeffneKi: () => oeffneKi(),
+const frage = erzeugeFragePanel({ anhaenge, vaultPfad: () => S.info?.vault || null, oeffneSeite: (p) => oeffne(p), oeffneVertrauen: () => oeffneVertrauen(), oeffneKi: () => oeffneKi(),
   beiUmschalten: (offen) => { glatt(() => { S.frageAn = offen; begrenzeBreiten(); }); zeichneBereiche(); } });
 $("knopf-frage").addEventListener("click", () => { if (S.info?.vault) frage.umschalten(); });
 
@@ -216,6 +222,7 @@ function wendeEinstellungenAn(w) {
   if (!darstSchreibt && DARSTELLUNGS_SCHLUESSEL.some((k) => neuD[k] !== undefined && neuD[k] !== S.darst[k])) { S.darst = { ...S.darst, ...neuD }; wendeDarstellung(); }
   // Statusleiste und Kontingent (Rechtsklick auf die Leiste, Popover, Einstellungen): eine Quelle, alle Anzeigen hören mit (kontingent.js#kontingentOptionen)
   kontingentOptionen.setze(w);
+  anhaenge.setzeEinstellungen(w); // Anhänge: Ort, Ordner, Größe, externe Bilder
   // Schreiben: Tagesnotiz und Vorlagen (leer = Standard)
   const alt = S.schreibEinst;
   const neu = { ...SCHREIB_STANDARD };
@@ -284,6 +291,8 @@ const FORMAT_BEFEHLE = [["format-fett", "fett"], ["format-kursiv", "kursiv"], ["
   ["format-liste-punkt", "listePunkt"], ["format-liste-nummer", "listeNummer"], ["format-liste-aufgabe", "listeAufgabe"]];
 const ed = erstelleEditor($("editor"), {
   roh: () => S.roh,
+  pfad: () => S.pfad || "",
+  anhaenge,
   formatLeiste: () => S.darst.formatLeiste !== false, // Einstellungen → Darstellung → Format-Leiste
   wikiAufloesen: (ziel) => loeseWikiAuf(ziel),
   wikiFarbe: (pfad) => { const n = S.nMap.get(pfad); const typ = n?.typ ? (S.typMap.get(n.typ) || { name: n.typ }) : null; return typ ? typTextFarbe(typ) : null; },

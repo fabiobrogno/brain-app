@@ -4,6 +4,8 @@ import * as CM from "./vendor/codemirror.bundle.js";
 import { T } from "./texte.js";
 import { falteText, WORT } from "./suchfalte.js";
 import { tagQuelle } from "./tags-quelle.js"; // Vervollständigung für #tag
+import { anhangErweiterung } from "./editor-anhaenge.js"; // Bilder und Anhänge (Paket 3a): Einfügen/Ziehen, Bild und Chip im Text
+import { istAnhangName } from "./anhang-regeln.js";
 import { tabellenErweiterung, fuegeTabelleEin, zelleUmschalten } from "./tabellen.js"; // Runde 3b: Tabellen, Formatieren, Einfügen, Format-Leiste (eigene Module)
 import * as FM from "./formatieren.js";
 import { formatLeiste } from "./format-leiste.js";
@@ -199,6 +201,7 @@ function vorschau(view, ctx) {
       const a = von + m.index, b = a + m[0].length;
       wiki.push([a, b]);
       const ziel = m[1].trim();
+      if (text[m.index - 1] === "!" && istAnhangName(ziel)) continue; // ![[bild.png]] / ![[datei.pdf]]: Einbettung, kein Wikilink (zeichnet editor-anhaenge.js)
       const da = ctx.wikiAufloesen(ziel);
       const innen = zeileAktiv(a);
       const klassen = "cm-wiki" + (da ? "" : " cm-wiki-fehlt");
@@ -221,6 +224,7 @@ function vorschau(view, ctx) {
         const name = n.name;
         if (n.from < fmBis + 1 && fm) return;
         if ((name === "Link" || name === "Image") && imWiki(n.from)) return false;
+        if (name === "Image" && ctx.anhaenge) return false; // Bilder zeichnet editor-anhaenge.js
         if (/^ATXHeading[1-6]$/.test(name)) { klasse(n.from, "cm-h" + name.slice(10)); return; }
         if (name === "SetextHeading1") { klasse(n.from, "cm-h1"); return; }
         if (name === "SetextHeading2") { klasse(n.from, "cm-h2"); return; }
@@ -617,6 +621,7 @@ export function erstelleEditor(eltern, ctx) {
     FM.einfuegenErweiterung(ctx),
     formatLeiste(ctx),
     vorschauPlugin(ctx),
+    ...(ctx.anhaenge ? anhangErweiterung(ctx.anhaenge, ctx) : []),
     CM.autocompletion({ override: [wikiQuelle(ctx), ...(ctx.tagVorschlaege ? [tagQuelle(ctx)] : [])], icons: false, tooltipClass: () => "cm-wikiliste" }),
     keymap.of([
       { key: "Mod-s", run: () => { ctx.speichernJetzt(); return true; }, preventDefault: true },

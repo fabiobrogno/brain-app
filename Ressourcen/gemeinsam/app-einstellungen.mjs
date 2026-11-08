@@ -57,6 +57,12 @@ export const APP_SCHEMA = {
   tagesnotizOrdner: { typ: "pfad", standard: "Tagebuch" },
   tagesnotizFormat: { typ: "pfad", standard: "JJJJ-MM-TT" },
   tagesnotizVorlage: { typ: "pfad", standard: "" },
+  // Anhänge (Runde 3, Paket 3a; gemeinsam/anhaenge.mjs): Ort „vault“ = <Ordner> an der Wurzel des Vaults, „notiz“ = <Ordner> im Ordner der Notiz; größte Datei in MB; externe Bilder (https) nur laden, wenn das hier an ist
+  // (sonst Platzhalter mit Klick). Der Ordnername ist ein einfacher Pfad im Vault.
+  anhaengeOrt: { werte: ["vault", "notiz"], standard: "vault" },
+  anhaengeOrdner: { typ: "pfad", standard: "_anhaenge" },
+  anhaengeMaxMB: { typ: "ganzzahl", min: 1, max: 100, standard: 20 },
+  externeBilder: { typ: "boolean", standard: false },
   // Sicherung: Fassungen automatisch anlegen = nach dem Speichern im Studio legt Kortex lokal eine Version an (nur Notizen; die Hintergrund-Sicherung lädt sie danach hoch, wenn GitHub eingerichtet ist).
   // Automatisch abgleichen = vorbereitet, Standard aus und noch ohne Wirkung („kommt bald“): gemerkt wird die Wahl, ausgelöst wird nichts.
   fassungenAutomatisch: { typ: "boolean", standard: true },

@@ -104,6 +104,7 @@ const aktionen = erzeugeAktionen({
   vaultPfad,
   openExternal: (url) => { shell.openExternal(url).catch(() => {}); },
   showItemInFolder: (pfad) => shell.showItemInFolder(pfad),
+  oeffneDatei: (pfad) => shell.openPath(pfad),
   schreibeZwischenablage: (text) => clipboard.writeText(text),
   waehleOrdner: async ({ titel, vorschlag }) => {
     const r = await dialog.showOpenDialog(...(fenster ? [fenster] : []), {

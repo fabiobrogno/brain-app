@@ -144,6 +144,9 @@ export function erzeugeDateiaktionen(ctx) {
       if (beruehrtTagOrdner(spec) && !(await bestaetigeTagOrdner(spec.art))) return false;
       frei = ctx.sperre();
       const anzeigeName = notiz(spec.pfad)?.titel || dateiName(spec.pfad);
+      // Anhänge, die nur diese Notiz benutzt: Kortex fragt, was damit geschehen soll (mit in den Papierkorb oder behalten), nie endgültig löschen
+      let anhangWahl = { anhaenge: [] };
+      if (spec.art === "loeschen" && spec.typ === "datei" && ctx.anhaenge) { anhangWahl = await ctx.anhaenge.vorLoeschen(spec.pfad); if (anhangWahl.abbruch) return false; }
       let vorschau;
       for (let versuch = 0; versuch < 2; versuch++) {
         vorschau = await rufe(spec.typ, spec.art, { ...spec.daten, pfad: spec.pfad, vorschau: true });
@@ -162,6 +165,7 @@ export function erzeugeDateiaktionen(ctx) {
           return false;
         }
         await nachErfolg(spec, erg);
+        if (anhangWahl.anhaenge.length) await ctx.anhaenge.nachLoeschen(anhangWahl.anhaenge);
         return true;
       }
       return false;

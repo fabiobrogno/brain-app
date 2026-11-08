@@ -15,7 +15,7 @@ test("erzeugte Studio-Kopien passen zu den Quellen (node scripts/erzeuge-gemeins
 });
 
 test("jede Kopie trägt den Hinweis „ERZEUGT“, und die Importe zeigen auf Kopien (.js) statt auf Quellen (.mjs)", () => {
-  assert.deepEqual(MODULE, ["zeit", "wikilink", "kurzformen", "vorlagen", "kontingent-regeln"]);
+  assert.deepEqual(MODULE, ["zeit", "wikilink", "kurzformen", "vorlagen", "kontingent-regeln", "anhang-regeln"]);
   for (const name of MODULE) {
     const kopie = readFileSync(ziel(name), "utf8");
     assert.equal(kopie, baueKopie(name));

@@ -2,7 +2,7 @@
 // Reine Logik OHNE `import "electron"`: alles, was das System anfasst (Dateimanager, Browser, Zwischenablage, Dialog, Mitteilung, Fenster), kommt über `abh` hinein —
 // so prüft Tests/Node/electron-huelle.test.mjs die Werte-Prüfung und die Antworten ohne Electron. Die Prüfung der Werte entspricht AppAktion.pruefe (Swift): bekannte Aktionen,
 // Pfade nur im Vault, extern nur https, Texte einzeilig und gekürzt. Ungültiger Wert → { ok:false, grund:"ungueltig" } (nie ein Fehler, nie eine Wirkung).
-import { realpathSync, existsSync } from "node:fs";
+import { realpathSync, existsSync, lstatSync } from "node:fs";
 import { join, dirname, basename, sep, isAbsolute } from "node:path";
 import { externPruefen } from "./navigation.mjs";
 import { pruefeBuendel, pruefePdf, schreibeBuendel, schreibeAtomar, liegtImVault } from "./export-schreiben.mjs";
@@ -16,12 +16,14 @@ export const NUR_EINRICHTUNG = ["git-pruefen", "git-installieren", "kopieren", "
 export const SCHRITTE = ["vault", "ki", "sicherung"];
 const EINSTIEGE = ["vault", "sicherung", "ki"];
 const WEGE = ["neu", "beispiel", "oeffnen", "klonen"];
+// Endungen, die „anhang-oeffnen“ öffnet: dieselbe Liste wie ANHANG_TYPEN in gemeinsam/anhang-regeln.mjs (der Vertragstest vergleicht sie; hier ohne Import, die Hülle lädt nichts aus Ressourcen/)
+export const ANHANG_ENDUNGEN = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "pdf", "txt", "csv", "rtf", "zip", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp", "mp3", "m4a", "wav", "mp4", "mov", "webm"]);
 const DARSTELLUNGEN = { hell: "light", dunkel: "dark", system: "system" };
 const APP_SYMBOLE = ["standard", "dunkel", "graphit", "papier", "smaragd"];
 export const MAX_TITEL = 120, MAX_HINWEIS = 200, MAX_FEHLERTEXT = 300, MAX_FEHLERORT = 120, MAX_KOPIEREN = 400, MAX_FEHLER_JE_FENSTER = 20;
 // Aktionen, die auf Dialoge, Dateisystem oder Prozesse warten: die Seite bekommt ein Versprechen. Alle anderen antworten sofort (das Preload nimmt dafür den synchronen Weg,
 // damit `aktion("extern", …)` wie in der App gleich meldet, ob die Aktion angenommen wurde).
-export const ASYNCHRON = ["ordner-waehlen", "ordner-zeigen", "git-pruefen", "git-installieren", "mitteilung-probe", "export-speichern", "export-pdf"];
+export const ASYNCHRON = ["ordner-waehlen", "ordner-zeigen", "anhang-oeffnen", "git-pruefen", "git-installieren", "mitteilung-probe", "export-speichern", "export-pdf"];
 
 // Wo die Einrichtung einsteigt (wie EinrichtungsOverlay.einstieg in Swift): ein verlangter Einstieg gilt immer; mit gewähltem Weg oder ohne Vault beginnt die Seite beim Vault (kein `ab`);
 // sonst macht sie nach dem zuletzt erledigten Schritt weiter: nach „ki“ bei der Sicherung, sonst (auch nach „sicherung“ = alles erledigt) bei der KI.
@@ -57,6 +59,23 @@ function aufgeloest(pfad) {
   let r; try { r = realpathSync.native(p); } catch { r = p; }
   return join(r, ...rest);
 }
+// Anhang im Vault für „anhang-oeffnen“: einfach statt klug. Keine Verknüpfung (Symlink, Junction) an irgendeiner Stelle des Pfads, nur eine gewöhnliche Datei (kein Ordner, kein Bundle wie .app),
+// kein versteckter Teil (.git, .kortex-lokal …), Endung aus der Anhang-Liste — am Namen UND am Ziel. → absoluter Pfad oder null.
+export function anhangImVault(relativ, vault, { plattform = process.platform } = {}) {
+  const endungVon = (n) => (/\.([A-Za-z0-9]{1,8})$/.exec(String(n)) || [, ""])[1].toLowerCase();
+  if (typeof relativ !== "string" || !ANHANG_ENDUNGEN.has(endungVon(relativ)) || !ortImVault(relativ, vault, { plattform })) return null;
+  const teile = relativ.split(/[\\/]/).filter(Boolean);
+  if (teile.some((t) => t.startsWith("."))) return null;
+  let p = aufgeloest(vault);
+  for (let i = 0; i < teile.length; i++) {
+    p = join(p, teile[i]);
+    let st; try { st = lstatSync(p); } catch { return null; }
+    if (st.isSymbolicLink()) return null;
+    if (i === teile.length - 1) { if (!st.isFile()) return null; } else if (!st.isDirectory()) return null;
+  }
+  try { if (!ANHANG_ENDUNGEN.has(endungVon(realpathSync.native(p)))) return null; } catch { return null; }
+  return p;
+}
 // Relativer Pfad → absoluter Pfad im Vault, sonst null. Kein absoluter Pfad, kein `..`, kein NUL; nach dem Auflösen der Verknüpfungen muss das Ziel im (aufgelösten) Vault liegen.
 export function ortImVault(relativ, vault, { plattform = process.platform } = {}) {
   if (typeof relativ !== "string" || !relativ || relativ.includes("\0") || relativ.startsWith("/") || relativ.startsWith("\\") || /^[A-Za-z]:/.test(relativ)) return null;
@@ -70,7 +89,7 @@ export function ortImVault(relativ, vault, { plattform = process.platform } = {}
 }
 
 /**
- * abh: { support, vaultPfad(): Promise<string|null>, openExternal(url), showItemInFolder(pfad), schreibeZwischenablage(text), waehleOrdner({titel, vorschlag}): Promise<string|null>,
+ * abh: { support, vaultPfad(): Promise<string|null>, openExternal(url), showItemInFolder(pfad), oeffneDatei(pfad) → Fehlertext oder "" (shell.openPath), schreibeZwischenablage(text), waehleOrdner({titel, vorschlag}): Promise<string|null>,
  *        mitteilung({probe: true}): boolean, darstellung(themeSource), fensterTitel(text|null), fensterZoom(), befehlAnStudio(name, wert), protokoll(zeile),
  *        W2b (alle optional): statusAuffrischen(), kuerzel: { pruefeGlobal(id, text|null), neuLesen() }, appSymbol(name) → boolean, fensterGlas(an) → null | wirkt:boolean,
  *        waehleSpeichern({name, ordner, endung?}): Promise<string|null>, pdfRendern(html): Promise<Buffer|null>, schreibeBuendel? (Ersatz für Tests),
@@ -91,6 +110,18 @@ export function erzeugeAktionen(abh) {
       abh.protokoll("aktion ordner-zeigen");
       abh.showItemInFolder(ort);
       return OK;
+    },
+    // Anhang mit dem Programm des Systems öffnen (Chip in der Notiz): nur Endungen der Anhang-Liste, nur im Vault, nie Ausführbares
+    "anhang-oeffnen": async (w) => {
+      const vault = await abh.vaultPfad();
+      if (!vault || typeof w !== "string") return UNGUELTIG();
+      const ort = anhangImVault(w, vault, { plattform });
+      if (!ort) { // nur „gibt es nicht“ (bei erlaubter Endung) heißt fehlt; Verknüpfung, Ordner, Verstecktes, fremde Endung: ungültig
+        const o = ANHANG_ENDUNGEN.has((/\.([A-Za-z0-9]{1,8})$/.exec(w) || [, ""])[1].toLowerCase()) ? ortImVault(w, vault, { plattform }) : null;
+        return o && !existsSync(o) ? nein("fehlt") : UNGUELTIG();
+      }
+      abh.protokoll("aktion anhang-oeffnen");
+      try { return (await abh.oeffneDatei(ort)) ? nein("nicht-verfuegbar") : OK; } catch { return nein("nicht-verfuegbar"); }
     },
     "extern": (w) => {
       const r = externPruefen(w, { nurHttps: true, einrichtungOffen });

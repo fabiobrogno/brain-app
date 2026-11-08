@@ -526,6 +526,9 @@ final class AppZustand: ObservableObject {
             log.schreibe("aktion ordner-zeigen")
             NSWorkspace.shared.activateFileViewerSelecting([url])
             return ok
+        case .anhangOeffnen(let url):
+            log.schreibe("aktion anhang-oeffnen")
+            return NSWorkspace.shared.open(url) ? ok : ["ok": false, "grund": "nicht-verfuegbar"] as [String: Any]
         case .extern(let url):
             log.schreibe("aktion extern")
             NSWorkspace.shared.open(url)
