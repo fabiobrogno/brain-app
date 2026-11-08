@@ -31,26 +31,26 @@
 /* ───── Karte „Was ist neu“ ───── */
 .nk {
   margin: 10px 10px 4px; padding: 12px 12px 10px; border-radius: var(--r-l); background: var(--erhoben); border: 1px solid var(--linie); box-shadow: var(--schatten-klein);
-  display: grid; gap: 8px; min-width: 0;
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; min-width: 0; box-sizing: border-box;
 }
 .nk[hidden] { display: none; }
 .nk-kopf { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .nk-titel { margin: 0; min-width: 0; font-size: 13.5px; font-weight: 600; letter-spacing: -.005em; color: var(--text); }
 .nk-unter { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: -2px; }
 .nk-seit { font-size: 11.5px; color: var(--text-3); }
-.nk-zeilen { display: grid; gap: 2px; }
+.nk-zeilen { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; min-width: 0; }
 .nk-leer { margin: 0 0 2px; font-size: 12.5px; line-height: 1.45; text-wrap: pretty; }
-.nk-block { display: grid; min-width: 0; }
+.nk-block { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; }
 .nk-zeile {
-  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 30px; padding: 3px 6px; border: 0; border-radius: var(--r); background: transparent; color: var(--text);
+  box-sizing: border-box; display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; min-height: 30px; padding: 3px 6px; border: 0; border-radius: var(--r); background: transparent; color: var(--text);
   cursor: pointer; text-align: left; font: inherit; font-size: 12.5px; transition: background var(--t);
 }
 .nk-zeile:hover { background: var(--hover); }
 .nk-sym { flex: none; display: grid; color: var(--text-3); }
-.nk-name { flex: none; width: 76px; font-weight: 600; color: var(--text-2); }
+.nk-name { flex: none; width: 70px; font-weight: 600; color: var(--text-2); }
 .nk-teile { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .nk-text { color: var(--text-2); min-width: 0; overflow-wrap: anywhere; }
-.nk-chip { padding: 1px 8px; border-radius: var(--r-pille); background: var(--hover-2); color: var(--text); font-size: 11.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.nk-chip { padding: 1px 8px; border-radius: var(--r-pille); background: var(--hover-2); color: var(--text); font-size: 11.5px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .nk-chip.warn { background: color-mix(in srgb, var(--rot) 12%, transparent); color: var(--rot); }
 .nk-pfeil { flex: none; display: grid; color: var(--text-3); transition: transform var(--d-fast) var(--ease-out); }
 .nk-zeile[aria-expanded="true"] .nk-pfeil { transform: rotate(180deg); }
