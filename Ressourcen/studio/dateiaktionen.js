@@ -377,6 +377,8 @@ export function erzeugeDateiaktionen(ctx) {
   function notizEintraege(pfad, { oeffnen = true, ort = "karte" } = {}) {
     const aus = [];
     if (oeffnen) aus.push({ name: TD.menue.oeffnen, symbol: "notiz", id: "oeffnen", tun: () => ctx.oeffne(pfad) });
+    const extra = ctx.zusatzEintraege?.("notiz", pfad) || []; // Export, Kopieren, Teilen (export.js): nur lesend, darum auch bei geschützten Notizen
+    if (extra.length) { if (aus.length) aus.push({ trenner: true }); aus.push(...extra); }
     if (!geschuetzt(pfad)) {
       if (aus.length) aus.push({ trenner: true });
       aus.push({ name: TD.menue.umbenennen, symbol: "stift", sub: "F2", id: "umbenennen", tun: () => umbenennenNotiz(pfad, ort) });
@@ -390,7 +392,7 @@ export function erzeugeDateiaktionen(ctx) {
   // Titel im Editor: das Menü gilt der offenen Notiz; „Umbenennen“ ändert den Titel dort, wo er steht
   const titelMenue = (ev) => { if (S.pfad) menueBei(ev, notizEintraege(S.pfad, { oeffnen: false, ort: "titel" })); };
   function ordnerMenue(ev, pfad) {
-    const aus = [{ name: TD.menue.oeffnen, symbol: "ordner-offen", id: "oeffnen", tun: () => ctx.waehleSicht({ art: "ordner", id: pfad }) }];
+    const aus = [{ name: TD.menue.oeffnen, symbol: "ordner-offen", id: "oeffnen", tun: () => ctx.waehleSicht({ art: "ordner", id: pfad }) }, ...(ctx.zusatzEintraege?.("ordner", pfad) || [])];
     if (istFest(pfad)) aus.push({ trenner: true }, { leer: TD.schutz.festerOrdner });
     else aus.push({ trenner: true },
       { name: TD.menue.umbenennen, symbol: "stift", sub: "F2", id: "umbenennen", tun: () => umbenennenOrdner(pfad) },

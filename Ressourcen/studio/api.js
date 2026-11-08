@@ -51,6 +51,11 @@ const mitWarnung = (p) => p.then((r) => { if (r && typeof r.warnung === "string"
 export const api = {
   info: () => anfrage("GET", "/api/info"),
   baum: () => anfrage("GET", "/api/baum"),
+  // Tags (gemeinsam/tags.mjs) und Export (gemeinsam/export.mjs)
+  tags: () => anfrage("GET", "/api/tags"),
+  tagNotizen: (tag) => anfrage("GET", "/api/tags/notizen" + q({ tag })),
+  tagUmbenennen: (daten) => anfrage("POST", "/api/tags/umbenennen", daten),
+  exportiere: (daten) => anfrage("POST", "/api/export", daten),
   datei: (pfad) => anfrage("GET", "/api/datei" + q({ pfad })),
   speichern: (pfad, inhalt, basisHash) => anfrage("PUT", "/api/datei", { pfad, inhalt, basisHash }),
   // Fremdänderung bei offener Notiz: Drei-Wege-Zusammenführung. basis = Text, auf dem die Eingaben aufbauen; meine = Text im Editor; ohne auswahl: zusammenführen oder die Konfliktblöcke liefern;

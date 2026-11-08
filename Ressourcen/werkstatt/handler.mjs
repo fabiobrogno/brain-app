@@ -380,6 +380,12 @@ export function erzeugeHandler(o) {
       case "/api/ordner/umbenennen": nur("POST"); return V().umbenennen({ ...eingabe(), typ: "ordner" });
       case "/api/ordner/verschieben": nur("POST"); return V().verschieben({ ...eingabe(), typ: "ordner" });
       case "/api/ordner/loeschen": nur("POST"); return V().loeschen({ ...eingabe(), typ: "ordner" });
+      // Tags (gemeinsam/tags.mjs): GET /api/tags → Zähler; GET /api/tags/notizen?tag= → Notizen mit dem Tag; POST /api/tags/umbenennen { alt, neu, vorschau?, token? } (ein Vorgang mit Rückgängig)
+      case "/api/tags": nur("GET"); return V().tags({ zuordnung: q.get("zuordnung") === "1" }); // zuordnung (Notiz → Tags) nur auf Wunsch: bei großen Vaults über 1 MB
+      case "/api/tags/notizen": nur("GET"); return { notizen: await V().tagNotizen(q.get("tag") || "") };
+      case "/api/tags/umbenennen": nur("POST"); return V().tagUmbenennen(eingabe());
+      // Export (gemeinsam/export.mjs): POST /api/export { pfade?, ordner?, format: markdown|html|fragment, schrift?, zip? } → Bündel; geschrieben wird von der Hülle (Speichern-Dialog), nie von der Werkstatt
+      case "/api/export": nur("POST"); return V().exportiere(eingabe());
       case "/api/papierkorb": nur("GET"); return V().papierkorb();
       case "/api/papierkorb/wiederherstellen": nur("POST"); return V().papierkorbWiederherstellen(eingabe());
       case "/api/papierkorb/endgueltig": nur("POST"); return V().papierkorbEndgueltig(eingabe());

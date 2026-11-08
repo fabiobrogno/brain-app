@@ -23,6 +23,8 @@ import { erzeugeAufgaben } from "./aufgaben-vault.mjs";
 import { erzeugeDateiaktionen } from "./dateiaktionen.mjs";
 import { SUCHE_STANDARD, SUCHE_MAX, sucheWoerter, suchAuszug, sucheText } from "./ki-antworten.mjs";
 import { erzeugeSuchindex } from "./suchindex.mjs";
+import { erzeugeTagIndex } from "./tags.mjs";
+import { erzeugeExport } from "./export.mjs";
 import { erzeugeErwaehnungen } from "./erwaehnungen-index.mjs";
 import { baueNeuigkeiten, leseMarke, setzeMarke, STANDARD_TAGE } from "./neuigkeiten.mjs";
 import * as merge3 from "./merge3.mjs";
@@ -209,7 +211,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
       if (alt) renameSync(tmp, abs); // atomar ersetzen
       else { try { linkSync(tmp, abs); } catch (e) { if (e.code === "EEXIST") throw new HttpFehler(409, "Diese Datei gibt es schon."); throw e; } unlinkSync(tmp); }
     } catch (e) { try { unlinkSync(tmp); } catch { /* schon weg */ } throw e; }
-    suchindex?.aendere(rel);
+    suchindex?.aendere(rel); tagIndex.aendere(rel);
     return { hash: HASH(buf), geaendert: statSync(abs).mtime.toISOString() };
   }
 
@@ -308,7 +310,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
       writeFileSync(tmp, inhalt, { flag: "wx", mode: 0o644 });
       for (let i = 1; i < 1000; i++) {
         const name = `${stamm}${i === 1 ? "" : "-" + i}.md`;
-        try { linkSync(tmp, join(ordnerAbs, name)); const neuRel = relOrdner ? `${relOrdner}/${name}` : name; suchindex?.aendere(neuRel); return neuRel; }
+        try { linkSync(tmp, join(ordnerAbs, name)); const neuRel = relOrdner ? `${relOrdner}/${name}` : name; suchindex?.aendere(neuRel); tagIndex.aendere(neuRel); return neuRel; }
         catch (e) { if (e.code !== "EEXIST") throw e; }
       }
     } finally { try { unlinkSync(tmp); } catch { /* schon weg */ } }
@@ -428,8 +430,8 @@ export function oeffneVault(vaultPfad, opts = {}) {
   let suchindex = null;
   const holeSuchindex = () => suchindex || (suchindex = erzeugeSuchindex({ wurzel, unterVault: istUnterVaultOrdner }));
   function sucheIndex(opt = {}) { return holeSuchindex().sucheWarte(opt, opt.frist); }
-  const suchindexAendere = (pfade) => { if (suchindex) suchindex.aendere(pfade); };
-  const suchindexPruefeNeu = () => { if (suchindex) suchindex.pruefeNeu(); };
+  const suchindexAendere = (pfade) => { if (suchindex) suchindex.aendere(pfade); tagIndex.aendere(pfade); }; // dasselbe Änderungssignal hält auch den Tag-Index aktuell
+  const suchindexPruefeNeu = () => { if (suchindex) suchindex.pruefeNeu(); tagIndex.markiereVoll(); };
   const sucheVorwaermen = () => holeSuchindex().starte();
   const suchindexBeende = () => { if (suchindex) suchindex.beende(); if (erwaehnungsDienst) erwaehnungsDienst.beende(); verwaltetKonfig = null; };
 
@@ -662,6 +664,11 @@ export function oeffneVault(vaultPfad, opts = {}) {
     return fn(a);
   };
 
+  // Tags (gemeinsam/tags.mjs): Zähler für Seitenleiste, Vervollständigung und MCP; liest nur geänderte Notizen neu
+  const tagIndex = erzeugeTagIndex({ wurzel, gesperrt: gesperrterName, generiert: istGeneriert, ueberspringeOrdner: istUnterVaultOrdner });
+  // Export (gemeinsam/export.mjs): Markdown, HTML und Druck-HTML aus Notizen des Vaults; liest nur, schreibt nie in den Vault
+  const exportFn = erzeugeExport({ wurzel, lies, istGeneriert, ueberspringeOrdner: istUnterVaultOrdner, tagIndex });
+
   // Dieselbe Suche für MCP brain_suchen und die Probe-Frage: strukturiert (treffer) und als Text, wie ihn die KI sieht.
   // Rangfolge wie die CLI-Suche (`brain search`, Profil minimal): BM25 aus dem gebündelten Kern (minisuche.mjs), ODER über die Wörter der
   // Frage statt „jedes Wort muss vorkommen“. Fehlt der Kern (oder wirft er), gilt die UND-Suche der Oberfläche (suche()).
@@ -733,6 +740,14 @@ export function oeffneVault(vaultPfad, opts = {}) {
     wurzel, name: basename(wurzel), heute: () => opts.heute || heuteIso(jetzt()), rueckfragen, kitVersion, kitVorhanden, kit, vertrauen, vertrauenStand: stand, baum, lies, imUnterVault: (rel) => { try { return imUnterVault(loese(wurzel, rel).abs); } catch { return false; } }, schreibe, zusammenfuehren, ablageListe, ablageLese, ablageLegeAb, entwurfPruefen,
     entwurfSchreiben: (a) => entwurfFn.schreibeEntwurf(supportOrdnerV(), wurzel, a || {}), entwurfLoeschen: (pfad) => ({ ok: entwurfFn.loescheEntwurf(supportOrdnerV(), wurzel, pfad) }), entwurfVerschieben: (a) => entwurfFn.verschiebeEntwuerfe(supportOrdnerV(), wurzel, a?.von, a?.nach), entwuerfe: () => ({ entwuerfe: entwurfFn.listeEntwuerfe(supportOrdnerV(), wurzel) }),
     neu, wikiAnlegen, wikiLoese: (ziel, von) => notizIndex.loeseWiki(ziel, ordnerVonPfad(von || "")), merken, suche, sucheIndex, sucheVorwaermen, suchindexBeende, suchindexAendere, suchindexPruefeNeu, suchindexStand: () => (suchindex ? suchindex.stand() : null), suchindexRuhe: () => (suchindex ? suchindex.ruhe() : Promise.resolve()), suchenFuerKi, pruefung, gesundheit, nutzung,
+    tags: (o) => tagIndex.liste(o), tagNotizen: (tag) => tagIndex.notizen(tag),
+    // Tag umbenennen: nie mitten in einem Abgleich oder einer offenen Zusammenführung (auch die Vorschau nicht) — dann ändert Kortex nichts am Arbeitsbaum
+    tagUmbenennen: mitRuhe(async (a) => {
+      if (await selbst.abgleichBeschaeftigt()) throw new HttpFehler(409, "Kortex gleicht gerade ab oder eine Zusammenführung ist offen. Versuche es danach noch einmal — es wurde nichts verändert.", { art: "beschaeftigt" });
+      const r = await dateiAktionen.tagUmbenennen(a);
+      if (Array.isArray(r.geaendert) && r.geaendert.length) tagIndex.aendere(r.geaendert);
+      return r;
+    }), exportiere: exportFn.exportiere,
     erwaehnungen, erwaehntVon, erwaehnungenLinks, verlinke: mitRuhe(verlinke), neuigkeiten, neuigkeitenGelesen, umbenennen: mitRuhe(dateiAktionen.umbenennen), verschieben: mitRuhe(dateiAktionen.verschieben), loeschen: mitRuhe(dateiAktionen.loeschen),
     papierkorb: dateiAktionen.papierkorbListe, papierkorbWiederherstellen: mitRuhe(dateiAktionen.papierkorbWiederherstellen), papierkorbEndgueltig: dateiAktionen.papierkorbEndgueltig, papierkorbHinweisErledigt: dateiAktionen.papierkorbHinweisErledigt, aktionenOrt: dateiAktionen.aktionenOrt,
     vorgangZurueck: mitRuhe((a) => nichtImAbgleich(() => dateiAktionen.vorgangZurueck(a.id, a))), vorgangWieder: mitRuhe((a) => nichtImAbgleich(() => dateiAktionen.vorgangWieder(a.id, a))), vorgangMoeglich: dateiAktionen.vorgangMoeglich,

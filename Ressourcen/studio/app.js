@@ -35,6 +35,9 @@ import { baueKiZeile } from "./ki-zeile.js";
 import { ruhenetz, kantenInstallieren, tippsInstallieren, huepfe, fliege, blendeEin, klappeZu, ruhig, dauer } from "./bewegung.js"; // P4: Bewegung mit Bedeutung
 import { windungLaden } from "./windung.js";
 import { erzeugeDateiaktionen } from "./dateiaktionen.js"; // Umbenennen, Verschieben, Papierkorb
+import { erzeugeTags } from "./tags.js"; // Tags: Seitenleiste, Filter, Umbenennen
+import { erzeugeExport } from "./export.js"; // Export, Kopieren, Teilen
+import { TTG } from "./texte-tags.js";
 import { installiereFensterKopf, vorschauPille } from "./fenster.js"; // Titelleiste der App: Kopfzeile greifbar, Plakette „Vorschau“
 import { erzeugeEinrichtungImStudio } from "./einrichtung-studio.js"; // Einrichtung als Overlay im Studio (nie ein zweites Fenster), Hinweise der App beim Start
 import { erzeugeEinrichtungsListe } from "./einrichtung-liste.js"; // Checkliste „Einrichtung n/4“ in der Seitenleiste
@@ -88,17 +91,12 @@ const anhaenge = erzeugeAnhaenge({ api, aktionMitAntwort, pfad: () => S.pfad || 
   shell: () => (inApp() ? "app" : imElectron() ? "electron" : "browser") });
 
 // Umbenennen, Verschieben, Papierkorb (dateiaktionen.js): Kontextmenü, Umbenennen an Ort und Stelle, Ziehen und Ablegen, F2 und ⌘⌫, Ansicht „Papierkorb“
-const da = erzeugeDateiaktionen({
+const daCtx = {
   anhaenge,
   S, ladeBaum: () => ladeBaum(), oeffne: (p) => oeffne(p), waehleSicht: (s) => waehleSicht(s), schliesseDatei: () => schliesseDatei(), sichereVorWechsel: () => sichereVorWechsel(),
   // Die offene Notiz bleibt während einer Aktion schreibgeschützt (der Pfad kann sich dabei ändern, darum kein posteingangCtx.sperre)
-  sperre: () => {
-    if (!S.pfad || S.konflikt) return () => {};
-    clearTimeout(speicherTimer);
-    const vorher = S.schutz;
-    S.schutz = true; ed.setzeText(ed.text(), { nurLesen: true });
-    return () => { S.schutz = vorher; if (S.pfad) ed.setzeText(ed.text(), { nurLesen: vorher || !S.bearbeitbar }); };
-  },
+  sperre: () => sperreNotiz(),
+  zusatzEintraege: (art, pfad) => exportInst.eintraege(art, pfad), // Export, Kopieren, Teilen im Kontextmenü (export.js)
   tagesnotizOrdner: () => S.schreibEinst.tagesnotizOrdner,
   setzeTagesnotizOrdner: async (ordner) => {
     for (let i = 0; i < 2; i++) { // einmal neu lesen, wenn die Einstellungen zwischendurch geändert wurden (Stand veraltet)
@@ -121,7 +119,23 @@ const da = erzeugeDateiaktionen({
     zeichnePfad(); setzeFenstertitel(); markiereAuswahl(); aktualisiereStatusDatei();
     if (speichern) { lokal.schreib("pfad", S.pfad); lokal.schreib("zuletzt", S.zuletzt); lokal.schreib("favoriten", [...S.favoriten]); lokal.schreib("offen", [...S.offen]); lokal.schreib("sicht", S.sicht); }
   },
+};
+const da = erzeugeDateiaktionen(daCtx);
+// Die offene Notiz bleibt während einer Aktion am ganzen Vault schreibgeschützt (Umbenennen, Tag umbenennen): der Pfad oder der Text kann sich dabei ändern
+function sperreNotiz() {
+  if (!S.pfad || S.konflikt) return () => {};
+  clearTimeout(speicherTimer);
+  const vorher = S.schutz;
+  S.schutz = true; ed.setzeText(ed.text(), { nurLesen: true });
+  return () => { S.schutz = vorher; if (S.pfad) ed.setzeText(ed.text(), { nurLesen: vorher || !S.bearbeitbar }); };
+}
+// Tags (tags.js): Bereich der Seitenleiste, Filter der Liste, Vervollständigung, Umbenennen · Export (export.js): Exportieren, Kopieren, Teilen
+const tags = erzeugeTags({
+  S, lokal, abschnitt: (...a) => abschnitt(...a), waehleSicht: (s) => waehleSicht(s), ladeBaum: () => ladeBaum(), sichereVorWechsel: () => sichereVorWechsel(), sperre: () => sperreNotiz(),
+  offeneNeuLaden: () => konfliktNeuLaden(), planeGit: () => planeGitRefresh(), nachAenderung: (o) => daCtx.nachAenderung(o), merkeSicht: () => lokal.schreib("sicht", S.sicht),
+  oeffneSuche: (q) => sucheMit(q), zeichneSeite: () => zeichneSeite(), nachTags: () => { if (S.sicht.art === "tag" && S.sicht.art !== "verlauf") zeichneListe({ behalte: true }); },
 });
+const exportInst = erzeugeExport({ S, sichereVorWechsel: () => sichereVorWechsel(), editorText: () => ed.text() });
 
 document.title = PRODUKT;
 // Nach einem Absturz des Fenster-Prozesses lädt die App die Seite mit ?nachAbsturz=1 neu (WebProzessSchutz.swift): einmal melden, die Marke wieder aus der Adresse nehmen.
@@ -285,6 +299,7 @@ const ed = erstelleEditor($("editor"), {
   wikiAufloesen: (ziel) => loeseWikiAuf(ziel),
   wikiFarbe: (pfad) => { const n = S.nMap.get(pfad); const typ = n?.typ ? (S.typMap.get(n.typ) || { name: n.typ }) : null; return typ ? typTextFarbe(typ) : null; },
   wikiVorschlaege: (getippt) => wikiVorschlaege(getippt),
+  tagVorschlaege: (getippt) => tags.vorschlaege(getippt),
   wikiOeffnen: (ziel) => { const d = loeseWikiAuf(ziel); if (d) oeffne(d); else toast(T.wiki.fehlt(ziel), { aktion: { text: T.wiki.anlegen, tun: () => legeWikiZielAn(ziel) } }); },
   speichernJetzt: () => { clearTimeout(speicherTimer); speichere(); },
   geaendert: () => {
@@ -1006,6 +1021,7 @@ async function ladeBaum() {
 }
 // Nur neu zeichnen, wenn sich am Index etwas geändert hat (Fokuswechsel und Speichern lassen die Liste sonst flackern)
 function zeichneNachIndex() {
+  tags.planeLaden(); // Tags der Seitenleiste folgen dem Index (gebündelt)
   const sig = S.notizen.length + ":" + S.notizen.map((n) => `${n.pfad}|${n.geaendert}|${n.titel}|${n.stufe}|${n.typ}|${n.felder?.spaeter_bis || ""}`).join(";") + "#" + S.baum.length;
   const geaendert = sig !== S.sig; S.sig = sig;
   if (geaendert) { zeichneSeite(); if (S.sicht.art !== "verlauf") zeichneListe({ behalte: true }); zeichnePfad(); ed.zeichneNeu(); } // zeichneNeu: [[Links]] im Editor neu prüfen (eine angelegte Notiz macht einen offenen Link zu)
@@ -1084,6 +1100,7 @@ function waehleSicht(sicht, { merken = true } = {}) {
   if (!gleicheSicht(S.sicht, sicht)) S.zeigeZurueckgestellt = false;
   const vorherModus = $("app").dataset.modus, vorherId = S.sicht.id;
   S.sicht = sicht;
+  if (sicht.art === "tag") { tags.klappeAuf(sicht.id); tags.ladeMitglieder(sicht.id); }
   S.aufgabeDatei = false;
   if (merken && sicht.art !== "verlauf") lokal.schreib("sicht", sicht);
   if (vorherModus !== (S.sicht.art === "verlauf" ? "verlauf" : istAufgabenSicht() ? "aufgaben" : "liste") || vorherId !== sicht.id) weicherWechsel();
@@ -1111,6 +1128,7 @@ function sichtNotizen() {
   if (art === "ansicht") return S.ansichtMitglieder[id] || [];
   if (art === "typ") return l.filter((n) => n.typ === id && istNotiz(n));
   if (art === "ordner") return l.filter((n) => n.pfad.startsWith(id + "/"));
+  if (art === "tag") return l.filter((n) => tags.hat(n.pfad, id));
   if (art === "favoriten") return l.filter((n) => S.favoriten.has(n.pfad));
   return l;
 }
@@ -1129,6 +1147,7 @@ function sichtTitel() {
   if (art === "ansicht") return { text: T.ansichten[id], symbol: "filter" };
   if (art === "typ") return { text: typName(id), symbol: typSymbol(S.typMap.get(id)?.symbol) };
   if (art === "ordner") return { text: dateiName(id), symbol: "ordner" };
+  if (art === "tag") return { text: TTG.listeTitel(tags.anzeigeName(id)), symbol: "filter" };
   if (art === "favoriten") return { text: T.abschnitte.favoriten, symbol: "stern" };
   if (art === "verlauf") return { text: T.liste.verlauf, symbol: "verlauf" };
   return { text: "", symbol: null };
@@ -1257,7 +1276,7 @@ function klappeAuf(pfad) {
   if (geaendert) { lokal.schreib("offen", [...S.offen]); }
 }
 function zeichneSeite() {
-  zeichneBereiche(); zeichneFavoriten(); zeichneAnsichten(); zeichneTypen(); zeichneOrdner(); kiZeile.zeichne();
+  zeichneBereiche(); zeichneFavoriten(); zeichneAnsichten(); zeichneTypen(); tags.zeichne(); zeichneOrdner(); kiZeile.zeichne();
 }
 // Einrichtung wieder öffnen (nur in der App: git, Ordnerdialog und Browser kommen von dort); führt im selben Fenster zu Sicherung und KI
 { const z = $("einrichtung-zeile"); z.append(symbol("marke", 16), h("span", { klasse: "ki-text", text: T.seitenleiste.einrichtung })); z.hidden = !mitHuelle(); z.addEventListener("click", () => einrichtung.anfordern()); }
@@ -1577,6 +1596,13 @@ function zeichneSuchergebnisse() {
   if (r.mehr) teile.push(h("div", { klasse: "such-mehr" }, baueKnopf({ text: TX.mehr, variante: "sekundaer", groesse: "s", aktion: "such-mehr", aufKlick: () => fuehreSucheAus({ mehr: true }) })));
   host.replaceChildren(...teile);
   host.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
+}
+// Suche mit vorgegebenem Text öffnen (zum Beispiel „tag:projekt/atlas“ aus der Tag-Liste)
+function sucheMit(q) {
+  if (istAufgabenSicht()) waehleSicht({ art: "bereich", id: "alle" });
+  oeffneSuche();
+  sucheEl.value = q;
+  sucheEl.dispatchEvent(new Event("input"));
 }
 function fokusSuche() {
   if (istAufgabenSicht()) waehleSicht({ art: "bereich", id: "alle" }); // die Notizliste ist im Board nicht sichtbar
@@ -2745,13 +2771,14 @@ function oeffnePalette(vorgabe = "") {
     const q = eingabe.value.trim();
     const nur = q.startsWith(">");
     const qq = nur ? q.slice(1).trim() : q;
-    const notizen = nur ? [] : (qq ? findeNotizen(qq) : S.zuletzt.filter((p) => S.eintraege.has(p)).slice(0, 6).map((p) => S.eintraege.get(p)));
-    const bef = befehle.filter(([t]) => !qq || sucheGrad(t, qq));
+    const notizen = nur || tags.paletteTreffer(q).nur ? [] : (qq ? findeNotizen(qq) : S.zuletzt.filter((p) => S.eintraege.has(p)).slice(0, 6).map((p) => S.eintraege.get(p)));
+    const tt = nur ? { nur: false, liste: [] } : tags.paletteTreffer(q);
+    const bef = tt.nur ? [] : [...befehle, ...exportInst.befehle()].filter(([t]) => !qq || sucheGrad(t, qq));
     const gezeigt = new Set(notizen.map((d) => d.pfad));
     // Treffer einer früheren Frage bleiben nur stehen, solange die neue sie fortführt (weitertippen, Zurücknehmen); eine ganz andere Frage leert sie sofort
     const gilt = inhaltFrage && (qq.startsWith(inhaltFrage) || inhaltFrage.startsWith(qq));
     const imInhalt = nur || !qq || !gilt ? [] : inhalt.filter((t) => !gezeigt.has(t.pfad)).slice(0, 5);
-    eintraege = [...notizen.map((d) => ({ typ: "notiz", p: d.pfad, titel: S.nMap.get(d.pfad)?.titel || d.titel })), ...bef.map(([t, k, f]) => ({ typ: "befehl", t, k, f })),
+    eintraege = [...notizen.map((d) => ({ typ: "notiz", p: d.pfad, titel: S.nMap.get(d.pfad)?.titel || d.titel })), ...tt.liste.map((x) => ({ typ: "tag", name: x.name, anzahl: x.anzahl })), ...bef.map(([t, k, f]) => ({ typ: "befehl", t, k, f })),
       ...imInhalt.map((t) => ({ typ: "inhalt", p: t.pfad, t, stelle: t.stellen?.[0] || null }))];
     // Ausdrückliche Einträge am Ende: nie still „Neue Notiz“ öffnen; „Frag deinen Vault“ als Ausweg, wenn nichts passt (⌘↩ fragt gleich mit dem getippten Text)
     if (qq && !nur) eintraege.push({ typ: "anlegen", t: T.palette.anlegen(qq), k: "", titel: qq });
@@ -2762,7 +2789,8 @@ function oeffnePalette(vorgabe = "") {
     if (notizen.length) teile.push(h("div", { klasse: "pal-gruppe", text: qq ? T.palette.notizen : T.palette.zuletzt }));
     let i = 0;
     for (const e of eintraege) {
-      if (e.typ === "befehl" && i === notizen.length) teile.push(h("div", { klasse: "pal-gruppe", text: T.palette.befehle }));
+      if (e.typ === "tag" && eintraege[i - 1]?.typ !== "tag") teile.push(h("div", { klasse: "pal-gruppe", "data-pal-gruppe": "tags", text: TTG.palette.gruppe }));
+      if (e.typ === "befehl" && eintraege[i - 1]?.typ !== "befehl") teile.push(h("div", { klasse: "pal-gruppe", text: T.palette.befehle }));
       if (e.typ === "inhalt" && eintraege[i - 1]?.typ !== "inhalt") teile.push(h("div", { klasse: "pal-gruppe", "data-pal-gruppe": "inhalt", text: T.volltext.palette.gruppe }));
       if (e.typ === "anlegen" && (i > 0 || nurAnlegen)) teile.push(h("div", { klasse: "pal-gruppe", text: T.palette.nichtsGefunden && nurAnlegen ? T.palette.nichtsGefunden : "Anlegen" }));
       if (e.typ === "frage" && !nurAnlegen && eintraege[i - 1]?.typ !== "anlegen") teile.push(h("div", { klasse: "pal-gruppe", text: T.palette.frageGruppe }));
@@ -2777,19 +2805,19 @@ function oeffnePalette(vorgabe = "") {
         i++;
         continue;
       }
-      const name = e.typ === "notiz" ? (e.titel || ohneEndung(dateiName(e.p))) : e.t;
-      const symName = e.typ === "notiz" ? "notiz" : e.typ === "anlegen" ? "stift" : e.typ === "frage" ? "funke" : (PAL_SYM.get(e.t) || "pfeil");
+      const name = e.typ === "notiz" ? (e.titel || ohneEndung(dateiName(e.p))) : e.typ === "tag" ? "#" + e.name : e.t;
+      const symName = e.typ === "notiz" ? "notiz" : e.typ === "tag" ? "filter" : e.typ === "anlegen" ? "stift" : e.typ === "frage" ? "funke" : (PAL_SYM.get(e.t) || "pfeil");
       const taste = e.typ === "notiz" ? null : e.k ? h("span", { klasse: "r tasten" }, ...Array.from(e.k).map((c) => h("kbd", { text: c }))) : null;
       teile.push(h("div", { klasse: "pal-eintrag", role: "option", "aria-selected": String(i === idx), "data-pal": e.typ, aufMouseenter: () => { idx = mein; markiere(); }, aufClick: () => waehle(mein) },
         symName ? symbol(symName, 16) : null,
         h("span", { klasse: "n", text: name }),
-        e.typ === "notiz" ? h("span", { klasse: "r", text: e.p }) : (taste || h("span", { klasse: "r", text: "" }))));
+        e.typ === "notiz" ? h("span", { klasse: "r", text: e.p }) : e.typ === "tag" ? h("span", { klasse: "r", text: String(e.anzahl) }) : (taste || h("span", { klasse: "r", text: "" }))));
       i++;
     }
     liste.replaceChildren(...teile);
   };
   const markiere = () => { [...liste.querySelectorAll(".pal-eintrag")].forEach((el, i) => el.setAttribute("aria-selected", String(i === idx))); liste.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" }); };
-  const waehle = (i) => { const e = eintraege[i]; if (!e) return; d.schliessen(); setTimeout(() => (e.typ === "inhalt" ? oeffne(e.p, { zeile: e.stelle?.zeile ?? e.t.zeile, spalte: e.stelle?.spalte, laenge: e.stelle?.laenge, begriffe: inhaltBegriffe }) : e.typ === "notiz" ? oeffne(e.p) : e.typ === "anlegen" ? oeffneNeu(e.titel) : e.typ === "frage" ? frage.oeffneMit(e.text) : e.f()), 0); };
+  const waehle = (i) => { const e = eintraege[i]; if (!e) return; d.schliessen(); setTimeout(() => (e.typ === "inhalt" ? oeffne(e.p, { zeile: e.stelle?.zeile ?? e.t.zeile, spalte: e.stelle?.spalte, laenge: e.stelle?.laenge, begriffe: inhaltBegriffe }) : e.typ === "notiz" ? oeffne(e.p) : e.typ === "tag" ? waehleSicht({ art: "tag", id: e.name }) : e.typ === "anlegen" ? oeffneNeu(e.titel) : e.typ === "frage" ? frage.oeffneMit(e.text) : e.f()), 0); };
   const fragen = () => { const q = eingabe.value.trim().replace(/^>\s*/, ""); d.schliessen(); setTimeout(() => (q ? frage.oeffneMit(q) : frage.oeffne()), 0); };
   const planeInhalt = () => {
     clearTimeout(inhaltTimer);
@@ -3365,6 +3393,7 @@ async function ladeAlles() {
   await ladeBaum();
   if (S.sicht.art === "ordner" && !S.eintraege.has(S.sicht.id)) S.sicht = { art: "bereich", id: "alle" };
   if (S.sicht.art === "typ" && !S.typMap.has(S.sicht.id)) S.sicht = { art: "bereich", id: "alle" };
+  if (S.sicht.art === "tag") { await tags.laden(); tags.ladeMitglieder(S.sicht.id); if (!tags.anzahlVon(S.sicht.id)) S.sicht = { art: "bereich", id: "alle" }; }
   S.papierkorbAnzahl = 0; da.ladeKorbZahl();
   zeichneSeite(); zeichneListe();
   fragVertrauenEinmal();

@@ -18,12 +18,14 @@ import { kennungVault, melde, aendereZustand, leseZustand } from "./aktivitaet.m
 import { planeVerweise, setzeTitel, verlinktVon } from "./linkpflege.mjs";
 import { titelAus } from "./notizen.mjs";
 import { ordnerVonPfad } from "./wikilink.mjs";
+import { benenneTagUm, pruefeTagName, findeTags, schluesselVon } from "./tags.mjs";
 import { istAnhangName } from "./anhang-regeln.mjs";
 
 const HASH = (buf) => createHash("sha256").update(buf).digest("hex");
 export const PAPIERKORB_TAGE = 30;
 const TAG_MS = 86400e3;
 const MAX_DATEIEN_ORDNER = 100000;
+const TAG_MAX_NOTIZEN = 200, TAG_MAX_BYTES = 20 * 1024 * 1024; // so viele Notizen und Bytes darf EIN Tag-Umbenennen ändern (Journal, Speicher, Dauer)
 const MAX_LISTE = 200;
 const ID = /^v_[0-9a-f]{12}$/;
 const SPERRE_FRIST_MS = 60_000;
@@ -469,6 +471,7 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
     if (art === "verlinken") return `${plan.verweise} ${plan.verweise === 1 ? "Erwähnung" : "Erwähnungen"} von „${plan.zielTitel || "einer Notiz"}“ verlinkt · ${plan.notizen} ${plan.notizen === 1 ? "Notiz" : "Notizen"} angepasst`;
     const was = typ === "ordner" ? "Ordner" : plan.anhang ? "Anhang" : "Notiz";
     const v = plan.verweise ? ` · ${plan.verweise} ${plan.verweise === 1 ? "Verweis" : "Verweise"} in ${plan.notizen} ${plan.notizen === 1 ? "Notiz" : "Notizen"} angepasst` : "";
+    if (art === "tag-umbenennen") return `Tag #${plan.tagAlt} in #${plan.tagNeu} umbenannt · ${plan.verweise} ${plan.verweise === 1 ? "Stelle" : "Stellen"} in ${plan.notizen} ${plan.notizen === 1 ? "Notiz" : "Notizen"}`;
     if (art === "loeschen") return `${was} in den Papierkorb gelegt${plan.verweise ? ` · von ${plan.notizen} ${plan.notizen === 1 ? "Notiz" : "Notizen"} verlinkt` : ""}`;
     return `${was} ${art === "umbenennen" ? "umbenannt" : "verschoben"}${v}`;
   };
@@ -492,7 +495,7 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
     mkdirSync(join(dir, "vorher"), { recursive: true, mode: 0o700 });
     mkdirSync(join(dir, "nachher"), { recursive: true, mode: 0o700 });
     const m = { v: 1, id, geraet: eigenesGeraet(), art: plan.art, typ: plan.typ, zeit: jetzt().toISOString(), status: "laeuft", von: plan.von, nach: plan.nach, casePur: plan.casePur, titelAlt: plan.titelAlt, titelNeu: plan.titelNeu,
-      verweise: plan.verweise || 0, notizen: plan.notizen || 0, eintrag: null,
+      verweise: plan.verweise || 0, notizen: plan.notizen || 0, eintrag: null, ...(plan.art === "tag-umbenennen" ? { tagAlt: plan.tagAlt, tagNeu: plan.tagNeu } : {}),
       dateien: plan.dateien.map((d, i) => ({ n: i, pfad: d.pfad, hashVorher: d.hashVorher, hashNachher: d.hashNachher, modus: d.modus })),
       groesse: plan.dateien.reduce((a, d) => a + d.vorher.length + d.nachher.length, 0) };
     try {
@@ -647,6 +650,54 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
     });
   }
 
+
+  // ───────────── Tag im ganzen Vault umbenennen (ein Vorgang, ein Eintrag im Verlauf, Rückgängig wie beim Umbenennen) ─────────────
+  // Der Vorgang ist ein „Umbenennen ohne Umzug“: von = nach = erste geänderte Notiz, dateien = alle umgeschriebenen Notizen. Alt und Neu stehen im Manifest.
+  async function planeTag({ alt, neu }) {
+    const a = pruefeTagName(alt), n = pruefeTagName(neu);
+    if (!a) throw new HttpFehler(400, "Bitte den bisherigen Tag angeben.");
+    if (!n) throw new HttpFehler(400, "Der neue Tag darf Buchstaben, Ziffern, _ , - und / (für Unterthemen) enthalten und nicht nur aus Ziffern bestehen.");
+    const { notizen, uebersprungen: uebersp } = sammle();
+    const plan = { art: "tag-umbenennen", typ: "datei", tagAlt: a, tagNeu: n, von: null, nach: null, dateien: [], uebersprungen: [], verlinktVon: [], notizenImOrdner: 0, casePur: false, titelAlt: null, titelNeu: null, hash: null, keinUmzug: true };
+    const liste = [];
+    let stellen = 0, vorhanden = false;
+    const neuK = schluesselVon(n);
+    for (const nz of notizen) {
+      if (istGeneriert(nz.pfad, nz.abs)) continue;
+      if (findeTags(nz.text).some((s) => { const k = schluesselVon(s.tag); return k === neuK || k.startsWith(neuK + "/"); })) vorhanden = true;
+      const r = benenneTagUm(nz.text, a, n);
+      if (!r.anzahl || r.text === nz.text) continue;
+      const grund = schreibbarGrund(nz);
+      if (grund) { plan.uebersprungen.push({ pfad: nz.pfad, grund }); continue; }
+      plan.dateien.push({ pfad: nz.pfad, vorher: nz.buf, hashVorher: nz.hash, modus: nz.modus, nachher: Buffer.from(r.text, "utf8"), anzahl: r.anzahl });
+      stellen += r.anzahl;
+      liste.push({ pfad: nz.pfad, titel: titelAus(nz.pfad, nz.text), anzahl: r.anzahl });
+    }
+    for (const d of plan.dateien) d.hashNachher = HASH(d.nachher);
+    const bytes = plan.dateien.reduce((a, d) => a + d.vorher.length + d.nachher.length, 0);
+    if (plan.dateien.length > TAG_MAX_NOTIZEN || bytes > TAG_MAX_BYTES) {
+      throw new HttpFehler(413, `Dieser Tag kommt in ${plan.dateien.length} Notizen vor${bytes > TAG_MAX_BYTES ? " (zu viele Daten)" : ""}; auf einmal lassen sich höchstens ${TAG_MAX_NOTIZEN} ändern. Benenne ihn in Teilen um: zuerst die Unterthemen (zum Beispiel #${a}/…), dann den Rest.`, { art: "zu-gross", notizen: plan.dateien.length });
+    }
+    for (const [p, grund] of uebersp) plan.uebersprungen.push({ pfad: p, grund });
+    liste.sort((x, y) => x.pfad.localeCompare(y.pfad, "de"));
+    plan.verweise = stellen; plan.notizen = liste.length; plan.liste = liste.slice(0, MAX_LISTE); plan.mehrListe = Math.max(0, liste.length - MAX_LISTE);
+    plan.zusammen = vorhanden && schluesselVon(a) !== neuK;
+    plan.unveraendert = !plan.dateien.length;
+    if (plan.dateien.length) { plan.von = plan.nach = plan.dateien[0].pfad; plan.vonAbs = plan.nachAbs = absVon(plan.von); }
+    plan.token = token(plan, notizen, { rel: plan.von });
+    return plan;
+  }
+  async function tagUmbenennen(eingabe) {
+    const e = gemeinsamEin(eingabe);
+    return mitSperre(async () => {
+      const plan = await planeTag({ alt: e.alt, neu: e.neu });
+      if (flag(e)) return { ok: true, art: plan.art, alt: plan.tagAlt, neu: plan.tagNeu, unveraendert: plan.unveraendert, zusammen: plan.zusammen, verweise: plan.verweise, notizen: plan.notizen, liste: plan.liste, mehr: plan.mehrListe, uebersprungen: plan.uebersprungen.slice(0, MAX_LISTE), token: plan.token };
+      if (plan.unveraendert) return { ok: true, unveraendert: true, art: plan.art, alt: plan.tagAlt, neu: plan.tagNeu, verweise: 0, notizen: 0, geaendert: [] };
+      const r = await fuehreAus(plan, e);
+      return { ...r, alt: plan.tagAlt, neu: plan.tagNeu };
+    });
+  }
+
   // ───────────── Verlinken (ungelinkte Erwähnungen, gemeinsam/erwaehnungen-index.mjs) ─────────────
   // Dieselbe Sicherheit wie Umbenennen: Vorschau mit Token, Journal (vorher/nachher), Hash-Prüfung je Datei (409, wenn sich eine Notiz inzwischen geändert hat; nichts wird geschrieben),
   // ein Eintrag im Aktivitätsprotokoll mit Rückgängig. Den Text je Notiz liefert `bauePlan(lies)` (läuft unter der Sperre); `lies(rel)` liest EINE Notiz mit allen Schutzprüfungen.
@@ -707,7 +758,7 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
     const quelle = zurueck ? m.nach : m.von, ziel = zurueck ? m.von : m.nach;
     const quelleAbs = absVon(quelle), zielAbs = absVon(ziel);
     const gleich = m.von === m.nach; // nur Titel geändert, Datei blieb
-    if (!existsSync(quelleAbs) && !(() => { try { lstatSync(quelleAbs); return true; } catch { return false; } })()) throw new HttpFehler(409, `„${basename(quelle)}“ gibt es nicht mehr an dieser Stelle. Kortex nimmt nichts zurück.`, { art: "fehlt" });
+    if (m.art !== "tag-umbenennen" && !existsSync(quelleAbs) && !(() => { try { lstatSync(quelleAbs); return true; } catch { return false; } })()) throw new HttpFehler(409, `„${basename(quelle)}“ gibt es nicht mehr an dieser Stelle. Kortex nimmt nichts zurück.`, { art: "fehlt" });
     let casePur = false;
     if (!gleich && existsSync(zielAbs)) { if (gleicheDatei(quelleAbs, zielAbs)) casePur = true; else throw new HttpFehler(409, `Am Ursprungsort liegt inzwischen etwas anderes („${basename(ziel)}“). Kortex überschreibt nichts.`, { art: "belegt" }); }
     // Dateien prüfen
@@ -839,7 +890,7 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
       try { erg = wechsle(m, "zurueck", { teilweise: eingabe.teilweise === true }); } catch (e) { loescheMarke(); throw e; } // ein Fehler (409 …) heißt: nichts angefasst; nur ein Absturz lässt die Marke stehen
       m.status = "zurueck"; schreibeManifest(m);
       loescheMarke();
-      eintragLog(m, m.art === "loeschen" ? "Rückgängig: Aus dem Papierkorb zurückgelegt." : `Rückgängig: ${m.art === "umbenennen" ? "Umbenennen" : m.art === "verlinken" ? "Verlinken" : "Verschieben"} zurückgenommen.`, [erg.nach || erg.pfad, erg.von].filter(Boolean)); // [jetziger Ort, voriger Ort]: offene Studios folgen
+      eintragLog(m, m.art === "loeschen" ? "Rückgängig: Aus dem Papierkorb zurückgelegt." : (m.art === "tag-umbenennen" ? `Rückgängig: Tag #${m.tagNeu} heißt wieder #${m.tagAlt}.` : `Rückgängig: ${m.art === "umbenennen" ? "Umbenennen" : m.art === "verlinken" ? "Verlinken" : "Verschieben"} zurückgenommen.`), [erg.nach || erg.pfad, erg.von].filter(Boolean)); // [jetziger Ort, voriger Ort]: offene Studios folgen
       return { ...erg, ok: true, art: m.art === "loeschen" ? "wiederhergestellt" : "zurueck", vorgangArt: m.art };
     });
   }
@@ -854,7 +905,7 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
       m.status = "fertig"; if (m.art === "loeschen") m.zeit = jetzt().toISOString(); // „gelöscht vor N Tagen“ beginnt neu
       schreibeManifest(m);
       loescheMarke();
-      eintragLog(m, "Wiederhergestellt: Die Aktion gilt wieder.", [erg.nach || erg.pfad, erg.von].filter(Boolean));
+      eintragLog(m, m.art === "tag-umbenennen" ? `Wiederhergestellt: Tag #${m.tagAlt} heißt jetzt #${m.tagNeu}.` : "Wiederhergestellt: Die Aktion gilt wieder.", [erg.nach || erg.pfad, erg.von].filter(Boolean));
       return { ...erg, ok: true, art: "wieder", vorgangArt: m.art };
     });
   }
@@ -878,7 +929,7 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
   function begrenzeJournale(ausser = null) {
     const kand = alleManifeste().filter(istRueckgaengigJournal).filter((m) => m.id !== ausser).sort((a, b) => (a.zeit < b.zeit ? 1 : -1)); // die laufende Aktion bleibt immer und zählt nicht gegen die anderen
     const jetztMs = Date.now();
-    let bytes = 0;
+    let bytes = ausser ? (leseManifest(ausser)?.groesse || 0) : 0;
     kand.forEach((m, i) => {
       bytes += m.groesse || 0;
       if (i >= JOURNAL_MAX - 1 || jetztMs - Date.parse(m.zeit) > JOURNAL_TAGE * TAG_MS || bytes > JOURNAL_BYTES) { try { rmSync(vorgangDir(m.id), { recursive: true, force: true }); } catch { /* egal */ } }
@@ -1105,5 +1156,5 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
     }
   }
 
-  return { sperreAktiv, aktionenOrt: () => { setzeAktionen(); return aktionen; }, papierkorbHinweisErledigt, umbenennen, verschieben, verlinke, loeschen, papierkorbListe, papierkorbWiederherstellen, papierkorbEndgueltig, vorgangZurueck, vorgangWieder, vorgangMoeglich, kennung, korb };
+  return { sperreAktiv, aktionenOrt: () => { setzeAktionen(); return aktionen; }, papierkorbHinweisErledigt, umbenennen, verschieben, verlinke, loeschen, tagUmbenennen, papierkorbListe, papierkorbWiederherstellen, papierkorbEndgueltig, vorgangZurueck, vorgangWieder, vorgangMoeglich, kennung, korb };
 }

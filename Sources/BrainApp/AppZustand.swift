@@ -37,6 +37,8 @@ final class AppZustand: ObservableObject {
     }
     /// Studio (Editor, Werkstatt-Brücke) und Übersicht (Kit-Ansicht, Kit-Brücke).
     private let studio: FensterSteuerung
+    /// Export und Teilen (Speichern-Dialog, PDF, Teilen-Menü): ExportSteuerung.swift
+    private let exportSteuerung = ExportSteuerung()
     private let uebersicht: FensterSteuerung
     private var node: URL?
     private var brainNode = ""
@@ -623,6 +625,39 @@ final class AppZustand: ObservableObject {
         case .fensterDurchscheinend(let an):
             guard let wirkt = von.setzeGlas(an) else { return ["ok": false, "grund": "nicht-verfuegbar"] as [String: Any] }
             return ["ok": true, "wirkt": wirkt] as [String: Any]
+        case .exportSpeichern(let buendel):
+            // Namen und Inhalte gehören nicht ins Protokoll
+            log.schreibe("aktion export-speichern")
+            guard let ziel = await exportSteuerung.speichernDialog(fenster: von.fensterFuerDialoge, name: buendel.name, typ: nil) else { return ["ok": false, "grund": "abgebrochen"] as [String: Any] }
+            do {
+                let vault = von.aktuellerVault?()
+                let name = try await Task.detached(priority: .userInitiated) { try buendel.schreibe(nach: ziel, ausserhalbVon: vault) }.value
+                return ["ok": true, "name": name] as [String: Any]
+            } catch ExportFehler.imVault {
+                return ["ok": false, "grund": "im-vault"] as [String: Any]
+            } catch ExportFehler.ordnerNichtLeer {
+                return ["ok": false, "grund": "ordner-nicht-leer"] as [String: Any]
+            } catch {
+                log.schreibe("export-speichern fehler")
+                return ["ok": false, "grund": "fehler"] as [String: Any]
+            }
+        case .exportPdf(let pdf):
+            log.schreibe("aktion export-pdf")
+            guard let ziel = await exportSteuerung.speichernDialog(fenster: von.fensterFuerDialoge, name: pdf.name, typ: .pdf) else { return ["ok": false, "grund": "abgebrochen"] as [String: Any] }
+            if ExportBuendel.liegtImVault(ziel, vault: von.aktuellerVault?()) { return ["ok": false, "grund": "im-vault"] as [String: Any] }
+            guard let daten = await exportSteuerung.erzeugePdf(html: pdf.html) else {
+                log.schreibe("export-pdf fehler erzeugen")
+                return ["ok": false, "grund": "fehler"] as [String: Any]
+            }
+            do { try daten.write(to: ziel, options: .atomic) } catch {
+                log.schreibe("export-pdf fehler schreiben")
+                return ["ok": false, "grund": "fehler"] as [String: Any]
+            }
+            return ["ok": true, "name": ziel.lastPathComponent] as [String: Any]
+        case .teilen(let name, let text):
+            log.schreibe("aktion teilen")
+            guard exportSteuerung.teile(fenster: von.fensterFuerDialoge, name: name, text: text) else { return ["ok": false, "grund": "nicht-verfuegbar"] as [String: Any] }
+            return ok
         }
     }
 

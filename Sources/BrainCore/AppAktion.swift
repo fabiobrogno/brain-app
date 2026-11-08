@@ -65,6 +65,12 @@ public enum AppAktion: Equatable, Sendable {
     case appSymbol(AppSymbol)
     /// Durchscheinende Seitenleiste (Einstellungen → Darstellung): die App schaltet `data-glas` der Seite sofort um. Antwort `{ok:true, wirkt}` bzw. `{ok:false, grund:"nicht-verfuegbar"}` (kein Glas möglich). Nur das Studio.
     case fensterDurchscheinend(Bool)
+    /// Export (Studio): ein Bündel aus Dateien (Markdown mit Bildern, HTML, ZIP) nach einem Speichern-Dialog schreiben. Antwort `{ok:true, name}` oder `{ok:false, grund:"abgebrochen"|"fehler"}`. Nur das Studio.
+    case exportSpeichern(ExportBuendel)
+    /// Export als PDF (Studio): das HTML wird in einer unsichtbaren Seite ohne JavaScript und ohne Netz zu einem PDF und nach dem Speichern-Dialog geschrieben. Antwort wie `exportSpeichern`.
+    case exportPdf(ExportPdf)
+    /// Teilen (Studio): Teilen-Menü des Systems für den Text einer Notiz (als .md-Datei im Temp-Ordner). Antwort `{ok:true}` oder `{ok:false, grund}`. Nur das Studio.
+    case teilen(name: String, text: String)
 
     /// Endungen, die `anhang-oeffnen` öffnet: dieselbe Liste wie ANHANG_TYPEN in gemeinsam/anhang-regeln.mjs (Tests/Node/huellen-vertrag.test.mjs vergleicht sie).
     public static let anhangEndungen: Set<String> = [
@@ -153,6 +159,15 @@ public enum AppAktion: Equatable, Sendable {
         case "fenster-durchscheinend":
             guard oberflaeche == .studio, let an = strengBool(wert) else { return nil }
             return .fensterDurchscheinend(an)
+        case "export-speichern":
+            guard oberflaeche == .studio, let b = ExportBuendel.pruefe(wert) else { return nil }
+            return .exportSpeichern(b)
+        case "export-pdf":
+            guard oberflaeche == .studio, let p = ExportPdf.pruefe(wert) else { return nil }
+            return .exportPdf(p)
+        case "teilen":
+            guard oberflaeche == .studio, let t = ExportTeilen.pruefe(wert) else { return nil }
+            return .teilen(name: t.name, text: t.text)
         default:
             return nil
         }

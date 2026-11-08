@@ -3,6 +3,7 @@
 import * as CM from "./vendor/codemirror.bundle.js";
 import { T } from "./texte.js";
 import { falteText, WORT } from "./suchfalte.js";
+import { tagQuelle } from "./tags-quelle.js"; // Vervollständigung für #tag
 import { anhangErweiterung } from "./editor-anhaenge.js"; // Bilder und Anhänge (Paket 3a): Einfügen/Ziehen, Bild und Chip im Text
 import { istAnhangName } from "./anhang-regeln.js";
 import { tabellenErweiterung, fuegeTabelleEin, zelleUmschalten } from "./tabellen.js"; // Runde 3b: Tabellen, Formatieren, Einfügen, Format-Leiste (eigene Module)
@@ -621,7 +622,7 @@ export function erstelleEditor(eltern, ctx) {
     formatLeiste(ctx),
     vorschauPlugin(ctx),
     ...(ctx.anhaenge ? anhangErweiterung(ctx.anhaenge, ctx) : []),
-    CM.autocompletion({ override: [wikiQuelle(ctx)], icons: false, tooltipClass: () => "cm-wikiliste" }),
+    CM.autocompletion({ override: [wikiQuelle(ctx), ...(ctx.tagVorschlaege ? [tagQuelle(ctx)] : [])], icons: false, tooltipClass: () => "cm-wikiliste" }),
     keymap.of([
       { key: "Mod-s", run: () => { ctx.speichernJetzt(); return true; }, preventDefault: true },
       ...CM.closeBracketsKeymap, ...CM.completionKeymap, ...CM.searchKeymap, ...CM.historyKeymap, ...CM.defaultKeymap, CM.indentWithTab,

@@ -1,0 +1,10 @@
+/* Tags (tags.js) und Export (export.js). Die Zeilen des Tag-Baums nutzen die Maße der Ordnerzeilen (.baum .zeile); hier nur, was dazukommt. */
+.baum .tag-zeile .tag-raute { width: 16px; flex: none; text-align: center; color: var(--text-3); font-size: 13px; font-weight: 600; line-height: 1; }
+.baum .tag-zeile[aria-current="true"] .tag-raute { color: var(--akzent); }
+.tag-vorschau { margin-top: 12px; min-height: 0; }
+.tag-vorschau .da-satz { margin: 0 0 8px; }
+.tag-vorschau .da-vorschau { margin-bottom: 8px; }
+.cm-tooltip-autocomplete li[aria-selected] .cm-completionDetail { opacity: .85; }
+/* Export */
+.ex-format { margin-bottom: 12px; }
+.ex-beschreibung { margin: 0; color: var(--text-2); font-size: 13px; line-height: 1.5; min-height: 2.8em; }
