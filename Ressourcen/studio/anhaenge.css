@@ -1,0 +1,58 @@
+/* Bilder und Anhänge (Paket 3a, Runde 3): Bild und Chip im Editor, Platzhalter für externe Bilder, Lightbox, Bilder in „Frag deinen Vault“, Rückfrage beim Löschen.
+   Farben nur aus den Variablen von studio.css/schemata.css (hell und dunkel, jedes Schema). */
+
+/* ---------- Im Editor ---------- */
+.cm-anhang { display: inline-block; vertical-align: bottom; max-width: 100%; margin: 2px 0; border-radius: var(--r); }
+.cm-anhang-dahinter { display: block; margin-top: 6px; }
+.cm-anhang-bild { cursor: zoom-in; line-height: 0; background: var(--seite); border: 1px solid var(--linie); overflow: hidden; }
+.cm-anhang-bild.geladen { background: transparent; }
+.cm-anhang-img { display: block; max-width: 100%; max-height: min(70vh, 640px); width: auto; height: auto; object-fit: contain; }
+/* Ein Bild mit fester Breite (![[x.png|300]]) bleibt höchstens so breit wie die Spalte */
+.cm-anhang-bild[data-ziel] .cm-anhang-img[style*="width"] { max-width: 100%; }
+.cm-anhang-bild.fehlt, .cm-anhang-chip, .cm-anhang-extern { display: inline-flex; align-items: center; gap: 8px; line-height: 1.35; padding: 5px 10px 5px 8px; font: 500 12.5px/1.35 var(--schrift); }
+.cm-anhang-bild.fehlt { cursor: default; color: var(--text-2); background: color-mix(in srgb, var(--gelb) 10%, var(--papier)); border-color: color-mix(in srgb, var(--gelb) 35%, var(--linie)); }
+.cm-anhang-chip, .cm-anhang-extern { cursor: pointer; color: var(--text); background: var(--seite); border: 1px solid var(--linie); transition: background var(--d-fast), border-color var(--d-fast); }
+.cm-anhang-chip:hover, .cm-anhang-extern:hover { background: var(--hover); border-color: var(--linie-stark); }
+.cm-anhang-chip > svg, .cm-anhang-extern > svg, .cm-anhang-bild.fehlt > svg { flex: none; color: var(--text-3); }
+.cm-anhang-text { display: inline-flex; flex-direction: column; min-width: 0; }
+.cm-anhang-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 46ch; }
+.cm-anhang-zusatz { font-size: 11px; font-weight: 400; color: var(--text-3); }
+.cm-anhang-chip.fehlt { cursor: default; color: var(--text-2); border-style: dashed; }
+.cm-anhang-extern { border-style: dashed; color: var(--text-2); }
+.cm-anhang-extern.gesperrt { cursor: default; opacity: .8; }
+.cm-anhang-extern:not(.gesperrt):hover .cm-anhang-zusatz { color: var(--akzent-tinte); }
+/* Ziehen von Dateien über den Editor */
+.cm-editor.anhang-ziehen { outline: 2px dashed var(--akzent); outline-offset: -6px; background: color-mix(in srgb, var(--akzent) 4%, var(--papier)); }
+
+/* ---------- Lightbox ---------- */
+.anhang-lightbox { position: fixed; inset: 0; z-index: 400; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 28px 24px 20px;
+  background: color-mix(in srgb, var(--text) 62%, transparent); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); cursor: zoom-out; animation: anhang-lb-ein var(--d-2) var(--ease-out) both; }
+.anhang-lb-bild { display: block; max-width: min(94vw, 1600px); max-height: calc(100vh - 110px); width: auto; height: auto; object-fit: contain; border-radius: var(--r); background: var(--papier);
+  box-shadow: var(--schatten-float); cursor: default; animation: anhang-lb-bild var(--d-3) var(--ease-out) both; }
+.anhang-lb-zu { position: absolute; top: 14px; right: 14px; width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid var(--linie-stark); border-radius: var(--r-pille);
+  background: var(--erhoben); color: var(--text); cursor: pointer; box-shadow: var(--schatten-float); }
+.anhang-lb-zu:hover { background: var(--hover); }
+.anhang-lb-zu:focus-visible { outline: 0; box-shadow: var(--fokus-ring); }
+.anhang-lb-unter { display: flex; align-items: baseline; gap: 12px; max-width: 94vw; padding: 5px 12px; border-radius: var(--r-pille); background: var(--erhoben); color: var(--text-2); font-size: 12px; box-shadow: var(--schatten-float); }
+.anhang-lb-name { color: var(--text); font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60ch; }
+.anhang-lb-hinweis { color: var(--text-3); white-space: nowrap; }
+@keyframes anhang-lb-ein { from { opacity: 0; } to { opacity: 1; } }
+@keyframes anhang-lb-bild { from { opacity: 0; transform: scale(.97); } to { opacity: 1; transform: none; } }
+
+/* ---------- Frag deinen Vault ---------- */
+.frage-antwort .md-bild { display: block; max-width: 100%; max-height: 320px; width: auto; height: auto; margin: 6px 0; border-radius: var(--r); border: 1px solid var(--linie); cursor: zoom-in; background: var(--seite); }
+.frage-antwort .md-bild:focus-visible { outline: 0; box-shadow: var(--fokus-ring); }
+.frage-antwort .md-bild-fehlt, .frage-antwort .md-bild-extern, .frage-antwort .md-anhang { display: inline-block; padding: 0 6px; border: 1px dashed var(--linie-stark); border-radius: 5px; color: var(--text-3); font-size: 12.5px; }
+.frage-antwort .md-bild-extern { cursor: help; }
+.frage-antwort .md-anhang { border-style: solid; background: var(--seite); color: var(--text-2); }
+
+/* ---------- Rückfrage beim Löschen einer Notiz ---------- */
+.anhang-loeschen-liste { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.anhang-loeschen-zeile { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--linie); border-radius: var(--r); background: var(--seite); font-size: 12.5px; color: var(--text); }
+.anhang-loeschen-zeile > svg { flex: none; color: var(--text-3); }
+.anhang-loeschen-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.anhang-loeschen-groesse { flex: none; color: var(--text-3); font-size: 11.5px; }
+.anhang-loeschen-mehr { padding: 2px 10px; color: var(--text-3); font-size: 12px; }
+
+@media (prefers-reduced-motion: reduce) { .anhang-lightbox, .anhang-lb-bild { animation: none; } }
+:root[data-bewegung="reduziert"] .anhang-lightbox, :root[data-bewegung="reduziert"] .anhang-lb-bild { animation: none; }

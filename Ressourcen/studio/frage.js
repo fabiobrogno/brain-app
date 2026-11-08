@@ -156,7 +156,8 @@ export function erzeugeFragePanel(z) {
     }
     if (l.antwort) {
       const a = h("div", { klasse: "frage-antwort", "data-frage": "antwort", "aria-busy": String(!l.fertig) });
-      a.append(rendereMarkdown(l.antwort, { verweise: l.verweise, oeffne: (p) => z.oeffneSeite(p) }));
+      a.append(rendereMarkdown(l.antwort, { verweise: l.verweise, oeffne: (p) => z.oeffneSeite(p),
+        bild: z.anhaenge ? { url: (ziel) => z.anhaenge.bildUrl(ziel, ""), lightbox: (src, alt) => z.anhaenge.lightbox(src, alt) } : null })); // lokale Bilder des Vaults; externe nie (frage-markdown.js)
       l.gezeigt = worteEinblenden(a, l.gezeigt || 0); // nur die Wörter, die seit der letzten Zeichnung dazukamen, blenden weich ein (der Text steht sofort da, nichts wird zurückgehalten)
       teile.push(h("section", { klasse: "frage-block" }, h("h3", { klasse: "frage-label", text: TF.antwort }), a, l.gekuerzt ? h("p", { klasse: "frage-hinweis", text: TF.gekuerzt }) : null));
     }

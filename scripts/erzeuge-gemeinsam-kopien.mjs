@@ -10,7 +10,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const WURZEL = join(dirname(fileURLToPath(import.meta.url)), "..");
-export const MODULE = ["zeit", "wikilink", "kurzformen", "vorlagen", "kontingent-regeln"];
+export const MODULE = ["zeit", "wikilink", "kurzformen", "vorlagen", "kontingent-regeln", "anhang-regeln"];
 export const quelle = (name) => join(WURZEL, "Ressourcen", "gemeinsam", `${name}.mjs`);
 export const ziel = (name) => join(WURZEL, "Ressourcen", "studio", `${name}.js`);
 export const baueKopie = (name) =>

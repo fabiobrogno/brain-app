@@ -112,3 +112,67 @@ test("Electron-Hülle: Preload gibt der Seite genau window.kortexHuelle (Sandbox
   const haupt = readFileSync(join(W, "electron/haupt.mjs"), "utf8");
   for (const [schluessel, soll] of [["contextIsolation", "true"], ["nodeIntegration", "false"], ["sandbox", "true"], ["webSecurity", "true"]]) assert.match(haupt, new RegExp(`${schluessel}: ${soll}`), schluessel);
 });
+
+// ───────────── Anhänge (Runde 3, Paket 3a): anhang-oeffnen ─────────────
+test("anhang-oeffnen: Swift, Electron und Browser öffnen genau die Endungen der Anhang-Liste (gemeinsam/anhang-regeln.mjs), nie Ausführbares", async () => {
+  const { ANHANG_TYPEN } = await import(pathToFileURL(join(W, "Ressourcen/gemeinsam/anhang-regeln.mjs")).href);
+  const soll = Object.keys(ANHANG_TYPEN).sort();
+  const swift = readFileSync(join(W, "Sources/BrainCore/AppAktion.swift"), "utf8");
+  const ausSwift = [...(/anhangEndungen: Set<String> = \[([^\]]*)\]/.exec(swift)?.[1] ?? "").matchAll(/"([a-z0-9]+)"/g)].map((m) => m[1]).sort();
+  assert.deepEqual(ausSwift, soll, "Swift");
+  const { ANHANG_ENDUNGEN } = await import(pathToFileURL(join(W, "electron/aktionen.mjs")).href);
+  assert.deepEqual([...ANHANG_ENDUNGEN].sort(), soll, "Electron");
+  const browser = readFileSync(join(W, "Ressourcen/studio/huelle-browser.js"), "utf8");
+  const ausBrowser = [...(/var ANHANG_ENDUNGEN = \[([^\]]*)\]/.exec(browser)?.[1] ?? "").matchAll(/"([a-z0-9]+)"/g)].map((m) => m[1]).sort();
+  assert.deepEqual(ausBrowser, soll, "Browser");
+  for (const gefaehrlich of ["html", "htm", "js", "mjs", "exe", "app", "command", "sh", "bat", "cmd", "ps1", "jar", "dmg", "pkg", "svgz", "xhtml"]) assert.ok(!soll.includes(gefaehrlich), gefaehrlich);
+  assert.ok(vertrag.aktionen.find((a) => a.name === "anhang-oeffnen")?.electron.includes("shell.openPath"));
+});
+
+test("anhang-oeffnen (Electron): nur Anhang-Endungen im Vault, fehlende Datei, Systemfehler — nie eine Wirkung bei ungültigem Wert", async () => {
+  const { erzeugeAktionen } = await import(pathToFileURL(join(W, "electron/aktionen.mjs")).href);
+  const { mkdtempSync, mkdirSync, writeFileSync, realpathSync, symlinkSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const vault = realpathSync(mkdtempSync(join(tmpdir(), "kortex-anhang-"))), aussen = realpathSync(mkdtempSync(join(tmpdir(), "kortex-aussen-")));
+  mkdirSync(join(vault, "_anhaenge"));
+  for (const n of ["a.pdf", "x.command", "s.html", "n.md"]) writeFileSync(join(vault, "_anhaenge", n), "x");
+  writeFileSync(join(aussen, "g.pdf"), "x");
+  let verknuepft = true; try { symlinkSync(aussen, join(vault, "raus"), "junction"); } catch { verknuepft = false; }
+  const geoeffnet = []; let fehler = "";
+  const stumm = () => {};
+  const h = erzeugeAktionen({ support: "/x", vaultPfad: async () => vault, openExternal: stumm, showItemInFolder: stumm, oeffneDatei: async (p) => { geoeffnet.push(p); return fehler; }, schreibeZwischenablage: stumm, waehleOrdner: async () => null, mitteilung: () => true,
+    darstellung: stumm, fensterTitel: stumm, fensterZoom: stumm, befehlAnStudio: stumm, protokoll: stumm, einrichtung: { lese: () => ({}), schreibe: stumm }, ordner: { pruefeOrdner: () => ({ ok: false }) }, git: { pruefen: () => ({}), hinweis: () => "" } });
+  assert.deepEqual(await h.aktion("anhang-oeffnen", "_anhaenge/a.pdf"), { ok: true });
+  assert.deepEqual(geoeffnet, [join(vault, "_anhaenge", "a.pdf")]);
+  const schlecht = ["_anhaenge/x.command", "_anhaenge/s.html", "_anhaenge/n.md", "../x.pdf", "/etc/x.pdf", "", "_anhaenge", 5, null, undefined, "a\0.pdf", ...(verknuepft ? ["raus/g.pdf"] : [])];
+  for (const s of schlecht) assert.deepEqual(await h.aktion("anhang-oeffnen", s), { ok: false, grund: "ungueltig" }, String(s));
+  assert.deepEqual(await h.aktion("anhang-oeffnen", "_anhaenge/fehlt.pdf"), { ok: false, grund: "fehlt" });
+  fehler = "kein Programm";
+  assert.deepEqual(await h.aktion("anhang-oeffnen", "_anhaenge/a.pdf"), { ok: false, grund: "nicht-verfuegbar" });
+  assert.equal(geoeffnet.length, 2, "nur die zwei gültigen Aufrufe erreichten das System");
+});
+
+test("anhang-oeffnen (Electron, K1): Verknüpfungen, Ordner/Bundles und Verstecktes öffnen nie etwas — der Name „doc.pdf“ darf kein Ziel „tool.command“ verbergen", async (t) => {
+  const { erzeugeAktionen, anhangImVault } = await import(pathToFileURL(join(W, "electron/aktionen.mjs")).href);
+  const { mkdtempSync, mkdirSync, writeFileSync, realpathSync, symlinkSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const vault = realpathSync(mkdtempSync(join(tmpdir(), "kortex-k1-")));
+  mkdirSync(join(vault, "_anhaenge")); mkdirSync(join(vault, "Evil.app/Contents"), { recursive: true }); mkdirSync(join(vault, ".git")); mkdirSync(join(vault, "ordner.pdf")); mkdirSync(join(vault, ".versteckt"));
+  writeFileSync(join(vault, "_anhaenge/a.pdf"), "x"); writeFileSync(join(vault, "_anhaenge/start.command"), "#!/bin/sh\n"); writeFileSync(join(vault, ".git/config"), "x"); writeFileSync(join(vault, ".versteckt/a.pdf"), "x");
+  const link = (ziel, name, typ) => symlinkSync(ziel, join(vault, name), typ);
+  try {
+    link(join(vault, "_anhaenge/start.command"), "doc.pdf", "file"); link(join(vault, "Evil.app"), "bundle.pdf", "junction"); link(join(vault, ".git/config"), "x.txt", "file");
+    link(join(vault, "_anhaenge"), "innen", "junction"); link(join(vault, "_anhaenge/a.pdf"), "_anhaenge/gleich.pdf", "file");
+  } catch { return t.skip("keine Verknüpfungen möglich"); }
+  assert.equal(anhangImVault("_anhaenge/a.pdf", vault), join(vault, "_anhaenge", "a.pdf"));
+  const geoeffnet = [], stumm = () => {};
+  const h = erzeugeAktionen({ support: "/x", vaultPfad: async () => vault, openExternal: stumm, showItemInFolder: stumm, oeffneDatei: async (p) => { geoeffnet.push(p); return ""; }, schreibeZwischenablage: stumm, waehleOrdner: async () => null, mitteilung: () => true,
+    darstellung: stumm, fensterTitel: stumm, fensterZoom: stumm, befehlAnStudio: stumm, protokoll: stumm, einrichtung: { lese: () => ({}), schreibe: stumm }, ordner: { pruefeOrdner: () => ({ ok: false }) }, git: { pruefen: () => ({}), hinweis: () => "" } });
+  for (const s of ["doc.pdf", "bundle.pdf", "x.txt", "innen/a.pdf", "_anhaenge/gleich.pdf", "ordner.pdf", ".git/config", ".versteckt/a.pdf", "Evil.app", "_anhaenge/start.command"]) {
+    assert.deepEqual(await h.aktion("anhang-oeffnen", s), { ok: false, grund: "ungueltig" }, s);
+    assert.equal(anhangImVault(s, vault), null, s);
+  }
+  assert.deepEqual(geoeffnet, [], "nichts erreichte das System");
+  assert.deepEqual(await h.aktion("anhang-oeffnen", "_anhaenge/a.pdf"), { ok: true });
+  assert.deepEqual(await h.aktion("anhang-oeffnen", "_anhaenge/weg.pdf"), { ok: false, grund: "fehlt" });
+});

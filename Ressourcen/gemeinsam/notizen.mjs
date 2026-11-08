@@ -12,6 +12,7 @@ import { pruefeText, istDatum, plusTage } from "./pruefung.mjs";
 import { heuteIso } from "./zeit.mjs";
 import { baueWikiIndex, findeWikiZiel } from "./wikilink.mjs";
 import { git } from "./git.mjs";
+import { istAnhangName } from "./anhang-regeln.mjs";
 
 const GROSS = 1024 * 1024;        // größere Dateien: nur der Anfang wird gelesen (Titel/Vorschau/Kopf)
 const ANFANG = 64 * 1024;
@@ -126,7 +127,7 @@ export function wikilinkZiele(zeile) {
   const s = zeile.replace(/`[^`]*`/g, "");
   for (const m of s.matchAll(WIKI)) {
     const t = m[2].split(/\\?\|/)[0].replace(/[#^].*$/, "").replace(/\\+$/, "").trim();
-    if (t) aus.push(t);
+    if (t && !istAnhangName(t)) aus.push(t); // ![[bild.png]] / ![[datei.pdf]] ist ein Anhang, kein Link auf eine Notiz (sonst stünde er als „offener Link“ im Index)
   }
   return aus;
 }

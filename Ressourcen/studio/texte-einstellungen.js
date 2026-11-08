@@ -107,6 +107,12 @@ export const BEREICHE = plattformTexte([
         { id: "tag-format", schluessel: "tagesnotizFormat", art: "pfad", titel: "Name der Tagesnotiz", text: "Zum Beispiel JJJJ-MM-TT (2026-11-05) oder TT.MM.JJJJ. Weitere Zeichen: MMMM (November), WWWW (Donnerstag), KW (Kalenderwoche). Text in [eckigen Klammern] bleibt, wie er ist.", woerter: ["format", "datum", "name", "tag", "jjjj"] },
         { id: "tag-vorlage", schluessel: "tagesnotizVorlage", art: "pfad", titel: "Vorlage für die Tagesnotiz", text: "Name einer Notiz im Vorlagenordner. Leer: die Vorlage „Tagesnotiz“, wenn es sie gibt, sonst eine leere Seite.", woerter: ["vorlage", "tagesnotiz", "template"] },
       ] },
+      { id: "anhaenge", titel: "Bilder und Anhänge", text: "Bilder und Dateien, die du in eine Notiz einfügst oder hineinziehst. In der Notiz steht ![[datei.png]] (wie in Obsidian); die Datei bekommt Datum und Uhrzeit im Namen und wird nie überschrieben.", zeilen: [
+        { id: "anhaenge-ort", schluessel: "anhaengeOrt", art: "segment", optionen: [["vault", "Im ganzen Vault"], ["notiz", "Neben der Notiz"]], titel: "Wohin mit Anhängen", text: "„Im ganzen Vault“ sammelt alles in einem Ordner an der Wurzel. „Neben der Notiz“ legt den Ordner in den Ordner der jeweiligen Notiz an.", woerter: ["anhang", "anhänge", "bild", "bilder", "ordner", "datei", "ablage", "einfügen"] },
+        { id: "anhaenge-ordner", schluessel: "anhaengeOrdner", art: "pfad", titel: "Anhänge-Ordner", text: "Name des Ordners im Vault; er entsteht beim ersten Mal von selbst. Standard: _anhaenge.", woerter: ["anhang", "anhänge", "ordner", "bilder", "medien"] },
+        { id: "anhaenge-max", schluessel: "anhaengeMaxMB", art: "zahl", stufen: [5, 10, 20, 50, 100], einheit: "MB", einheitEin: "MB", nullText: "Aus", titel: "Größte erlaubte Datei", text: "Größere Dateien legt Kortex nicht ab und sagt es dir. Große Dateien machen Sicherung und Abgleich langsamer.", woerter: ["größe", "limit", "grenze", "mb", "anhang", "bild"] },
+        { id: "externe-bilder", schluessel: "externeBilder", art: "schalter", titel: "Bilder aus dem Internet laden", text: "Aus: Kortex zeigt einen Platzhalter, bis du darauf klickst. Beim Laden erfährt der Server, dass du die Notiz öffnest. Antworten der KI laden nie Bilder von außen.", woerter: ["extern", "internet", "bild", "laden", "tracking", "datenschutz", "https"] },
+      ] },
     ],
   },
   {

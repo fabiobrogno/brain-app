@@ -25,6 +25,7 @@ import { erzeugeAnmelden } from "./anmelden.mjs";
 import { erzeugeFrage } from "./frage.mjs";
 import { erzeugeKontingent } from "./kontingent.mjs";
 import { erzeugeEinstellungen } from "./einstellungen.mjs";
+import { erzeugeAnhaenge } from "./anhaenge.mjs";
 import { erzeugeAktivitaet } from "./aktivitaet.mjs";
 import { erzeugeTastenkuerzel } from "./tastenkuerzel.mjs";
 import { erzeugeAutoFassungen } from "./auto-fassungen.mjs";
@@ -237,6 +238,8 @@ export function erzeugeHandler(o) {
     vaultFuer: () => (aktuell ? { wurzel: aktuell.wurzel, name: aktuell.name } : null), ...(o.kontingentLauf ? { codexLauf: o.kontingentLauf } : {}), ...(o.kontingentZeit ? { jetzt: o.kontingentZeit } : {}) });
   // Seite „Einstellungen“ (P5): GET/PUT /api/einstellungen führt die Werte eines Vaults (kern/einstellungen.mjs, wie `brain einstellungen`) und die der App (<support>/einstellungen.json) zusammen.
   const einstellungen = erzeugeEinstellungen({ support: vaultOpt.support || supportOrdner(), kern: () => o.kern || kernOrdner() });
+  // Anhänge (Runde 3, Paket 3a): Hochladen in Stücken, Ausliefern unter /_anhang, externe Bilder unter /_extern-bild — werkstatt/anhaenge.mjs
+  const anhaenge = erzeugeAnhaenge({ support: vaultOpt.support || supportOrdner() });
   // Aktivitätsprotokoll (P8a): Liste, „gelesen“, Rückgängig für KI-Ablagen — werkstatt/aktivitaet.mjs. Das Protokoll schreiben MCP-Server, Hooks und Kern.
   const aktivitaet = erzeugeAktivitaet({ support: vaultOpt.support || supportOrdner(), konten, vaults: () => vaultsFn.leseVaults(optV()).vaults, oeffne: (pfad) => oeffne(pfad), ereignisse });
   // Eigene Tastenkürzel (P10): GET/PUT /api/tastenkuerzel auf <support>/tastenkuerzel.json (nur Abweichungen vom Register gemeinsam/tastenkuerzel-register.json), mit `stand`.
@@ -366,7 +369,14 @@ export function erzeugeHandler(o) {
       // Umbenennen, Verschieben, Papierkorb (gemeinsam/dateiaktionen.mjs): mit { vorschau: true } nur die Vorschau („N Verweise in M Notizen“) samt Token; token + basisHash prüfen den gesehenen Stand (409)
       case "/api/notiz/umbenennen": nur("POST"); return V().umbenennen({ ...eingabe(), typ: "datei" });
       case "/api/notiz/verschieben": nur("POST"); return V().verschieben({ ...eingabe(), typ: "datei" });
-      case "/api/notiz/loeschen": nur("POST"); return V().loeschen({ ...eingabe(), typ: "datei" });
+      case "/api/notiz/loeschen": nur("POST"); return V().loeschen({ ...eingabe(), typ: "datei", anhang: false }); // Anhänge nur über /api/anhang/loeschen
+      // Anhänge (Paket 3a): erst start, dann Stücke, dann ende; unbenutzt/loeschen für die Rückfrage beim Löschen einer Notiz
+      case "/api/anhang/start": nur("POST"); V(); return anhaenge.start(eingabe());
+      case "/api/anhang/teil": nur("POST"); V(); return anhaenge.teil(eingabe());
+      case "/api/anhang/ende": nur("POST"); return anhaenge.ende(V(), eingabe());
+      case "/api/anhang/aufloesen": nur("GET"); return anhaenge.aufloesen(V(), q.get("ziel"), q.get("von"));
+      case "/api/anhang/unbenutzt": nur("GET"); return anhaenge.unbenutzt(V(), q.get("pfad"));
+      case "/api/anhang/loeschen": nur("POST"); return anhaenge.loeschen(V(), eingabe());
       case "/api/ordner/umbenennen": nur("POST"); return V().umbenennen({ ...eingabe(), typ: "ordner" });
       case "/api/ordner/verschieben": nur("POST"); return V().verschieben({ ...eingabe(), typ: "ordner" });
       case "/api/ordner/loeschen": nur("POST"); return V().loeschen({ ...eingabe(), typ: "ordner" });
@@ -877,6 +887,11 @@ export function erzeugeHandler(o) {
     methode = String(methode).toUpperCase();
     if (!pfad.startsWith("/api/") && pfad !== "/api") {
       if (methode !== "GET" && methode !== "HEAD") return fehler(405, "Diese Methode ist hier nicht erlaubt.");
+      // Anhänge und externe Bilder (nicht unter /api/: die Mac-App reicht nur solche Pfade als Seitenabruf durch). Die Antwort ist Binärdatei, nie die Studio-Seite.
+      if (pfad === "/_anhang" || pfad === "/_extern-bild") {
+        const q = query instanceof URLSearchParams ? query : new URLSearchParams(query || "");
+        return pfad === "/_anhang" ? anhaenge.liefere(aktuell, q) : anhaenge.extern(q);
+      }
       return statisch(pfad, studioDir);
     }
     const q = query instanceof URLSearchParams ? query : new URLSearchParams(query || "");
