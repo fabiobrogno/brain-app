@@ -98,11 +98,16 @@ export function pruefeAnhang({ name, buf, maxBytes = MAX_MB_STANDARD * 1024 * 10
 // Whitelist: nur Zeichen- und Formelemente. Skripte, Fremdinhalt (foreignObject, iframe …), Animationen (SMIL kann Adressen ändern), Links (a) und alles mit Adresse nach außen entfällt;
 // Attribute `on…`, Adressen außer `#id` und Rasterbildern als data:, `url(…)` außer `url(#id)`, `javascript:` und `@import` entfallen.
 const SVG_ELEMENTE = new Set(["svg", "g", "defs", "symbol", "use", "path", "rect", "circle", "ellipse", "line", "polyline", "polygon", "text", "tspan", "textpath", "lineargradient", "radialgradient", "stop",
-  "clippath", "mask", "pattern", "marker", "title", "desc", "image", "filter", "feblend", "fecolormatrix", "fecomponenttransfer", "fecomposite", "feconvolvematrix", "fediffuselighting",
+  "clippath", "mask", "pattern", "marker", "title", "desc", "image", "style", "filter", "feblend", "fecolormatrix", "fecomponenttransfer", "fecomposite", "feconvolvematrix", "fediffuselighting",
   "fedisplacementmap", "fedistantlight", "fedropshadow", "feflood", "fefunca", "fefuncb", "fefuncg", "fefuncr", "fegaussianblur", "femerge", "femergenode", "femorphology", "feoffset", "fepointlight",
   "fespecularlighting", "fespotlight", "fetile", "feturbulence"]);
-// <style> entfällt samt Inhalt (CSS lässt sich mit Escapes, image-set(), @import … nicht sicher prüfen); ebenso jedes style-Attribut mit „(“, „\“ oder „@“ (siehe bereinigeAttribute)
-const SVG_MIT_INHALT_WEG = new Set(["style", "script", "foreignobject", "iframe", "object", "embed", "audio", "video", "canvas", "animate", "set", "animatetransform", "animatemotion", "handler", "listener", "feimage", "html", "head"]);
+// <style> und style-Attribute bleiben nur, wenn cssErlaubt() sie durchlässt (kein „@“, kein „\“, kein url() außer url(#id), kein image()/…-set()/cross-fade()/element()/src()); sonst entfallen sie ganz
+const SVG_MIT_INHALT_WEG = new Set(["script", "foreignobject", "iframe", "object", "embed", "audio", "video", "canvas", "animate", "set", "animatetransform", "animatemotion", "handler", "listener", "feimage", "html", "head"]);
+// SVG-Elementnamen unterscheiden Groß und Klein (linearGradient, clipPath, feGaussianBlur …): die Ausgabe nimmt die kanonische Schreibweise
+const KANONISCH = new Map(["linearGradient", "radialGradient", "clipPath", "textPath", "feBlend", "feColorMatrix", "feComponentTransfer", "feComposite", "feConvolveMatrix", "feDiffuseLighting", "feDisplacementMap",
+  "feDistantLight", "feDropShadow", "feFlood", "feFuncA", "feFuncB", "feFuncG", "feFuncR", "feGaussianBlur", "feMerge", "feMergeNode", "feMorphology", "feOffset", "fePointLight", "feSpecularLighting",
+  "feSpotLight", "feTile", "feTurbulence"].map((n) => [n.toLowerCase(), n]));
+const kanon = (n) => KANONISCH.get(n) ?? n;
 const ENTITAETEN = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", colon: ":", tab: "\t", newline: "\n" };
 function entkodiere(s) {
   return String(s).replace(/&(?:#x([0-9a-f]+)|#(\d+)|([a-z]+));?/gi, (m, h, d, n) => {
@@ -119,6 +124,15 @@ const gefaehrlicherWert = (wert) => {
   for (const m of k.matchAll(/url\(([^)]*)\)/g)) { const u = m[1].replace(/^["']|["']$/g, ""); if (!u.startsWith("#")) return true; }
   return false;
 };
+// CSS (Inhalt von <style> oder style-Attribut) prüfen: nach dem Auflösen von Entitäten und Escapes kein „@“ (@import, @font-face …), kein url() außer url(#id), kein image()/…-set()/cross-fade()/element()/src(),
+// keine Skript- und Bindungs-Muster. Ein Rest-Backslash (Escape, den wir nicht eindeutig wie ein Browser lesen) lässt das Ganze ebenfalls entfallen. rgb(…), hsl(…), calc(…), var(…), url(#g) sind in Ordnung.
+export function cssErlaubt(css) {
+  const roh = entkodiere(css);
+  if (roh.includes("\\")) return false;
+  const k = klar(css);
+  if (k.includes("@") || /url\((?!["']?#)/.test(k) || /image\(|-set\(|cross-fade\(|element\(|src\(|expression\(|javascript:|vbscript:|-moz-binding|behavior:|data:/.test(k)) return false;
+  return true;
+}
 const RASTER_DATA = /^data:image\/(png|jpe?g|gif|webp);base64,[a-z0-9+/=]+$/;
 const esc = (s) => String(s).replace(/&(?!#?\w+;)/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const textEsc = (s) => String(s).replace(/&(?!#?\w+;)/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -136,7 +150,7 @@ function bereinigeAttribute(roh, element) {
       continue;
     }
     if (n.startsWith("xmlns")) { if (n === "xmlns" && wert === "http://www.w3.org/2000/svg") aus.push(`xmlns="${wert}"`); else if (n === "xmlns:xlink" && wert === "http://www.w3.org/1999/xlink") aus.push(`xmlns:xlink="${wert}"`); continue; }
-    if (n === "style" && /[(\\@]/.test(entkodiere(wert))) continue; // Style-Attribut mit Funktion, Escape oder @-Regel: weg
+    if (n === "style") { if (cssErlaubt(wert)) aus.push(`style="${esc(entkodiere(wert))}"`); continue; } // Style-Attribut: nur nach der CSS-Prüfung
     if (n === "src" || n === "action" || n === "formaction" || n === "begin" || n === "end" || n === "from" || n === "to" || n === "values") continue;
     if (gefaehrlicherWert(wert)) continue;
     aus.push(wert === "" && m[2] === undefined && m[3] === undefined && m[4] === undefined ? name : `${name}="${esc(entkodiere(wert))}"`);
@@ -152,7 +166,7 @@ export function bereinigeSvg(text) {
   const aus = [];
   const stapel = []; // geöffnete, behaltene Elemente
   let weg = 0, wegName = null; // Tiefe eines verworfenen Elements samt Inhalt
-  let imStyle = 0, hatSvg = false, gesehen = false; // hatSvg: gerade im Wurzelelement
+  let imStyle = 0, styleBuf = "", styleStart = 0, hatSvg = false, gesehen = false; // hatSvg: gerade im Wurzelelement
   for (const m of quelle.matchAll(TOKEN)) {
     const t = m[0];
     const istTag = m[3] !== undefined;
@@ -161,7 +175,7 @@ export function bereinigeSvg(text) {
       if (t.startsWith("<!--") || t.startsWith("<!") && !t.startsWith("<![CDATA[") || t.startsWith("<?")) continue; // Kommentar, DOCTYPE/ENTITY, Verarbeitungsanweisung
       if (t === "<") { aus.push("&lt;"); continue; }
       const inhalt = t.startsWith("<![CDATA[") ? m[1] : t;
-      if (imStyle) { const css = entkodiere(inhalt); if (!gefaehrlicherWert(css)) aus.push(textEsc(css)); continue; }
+      if (imStyle) { styleBuf += t.startsWith("<![CDATA[") ? inhalt : entkodiere(inhalt); continue; } // der ganze Inhalt wird erst beim schließenden Tag geprüft
       aus.push(textEsc(t.startsWith("<![CDATA[") ? inhalt : t));
       continue;
     }
@@ -175,22 +189,23 @@ export function bereinigeSvg(text) {
     if (schliessend) {
       const i = stapel.lastIndexOf(n);
       if (i < 0) continue;
-      while (stapel.length > i + 1) aus.push(`</${stapel.pop()}>`);
+      while (stapel.length > i + 1) aus.push(`</${kanon(stapel.pop())}>`);
       stapel.pop();
-      if (n === "style") imStyle = 0;
-      aus.push(`</${n}>`);
+      if (n === "style") { imStyle = 0; if (cssErlaubt(styleBuf)) aus.push(textEsc(styleBuf), "</style>"); else aus.length = styleStart; continue; } // unsicheres CSS: das ganze Element entfällt
+      aus.push(`</${kanon(n)}>`);
       if (!stapel.length) hatSvg = false; // das Wurzelelement ist zu: danach steht nichts mehr
       continue;
     }
     if (n === "svg") { hatSvg = true; gesehen = true; }
     if (!hatSvg) continue; // vor dem Wurzelelement steht nichts
     const attr = bereinigeAttribute(m[4], n);
-    if (selbst) { aus.push(`<${n}${attr}/>`); if (!stapel.length) hatSvg = false; continue; }
+    if (selbst) { if (n !== "style") aus.push(`<${kanon(n)}${attr}/>`); if (!stapel.length) hatSvg = false; continue; }
     stapel.push(n);
-    if (n === "style") imStyle = 1;
-    aus.push(`<${n}${attr}>`);
+    if (n === "style") { imStyle = 1; styleBuf = ""; styleStart = aus.length; }
+    aus.push(`<${kanon(n)}${attr}>`);
   }
-  while (stapel.length) aus.push(`</${stapel.pop()}>`);
+  if (imStyle) aus.length = styleStart; // ein nie geschlossenes <style> entfällt
+  while (stapel.length) { const n = stapel.pop(); if (n !== "style") aus.push(`</${kanon(n)}>`); }
   const ergebnis = aus.join("");
   if (!gesehen || !/<svg[\s>]/.test(ergebnis)) throw new HttpFehler(415, "Das ist keine gültige SVG-Datei.", { art: "svg" });
   return ergebnis;
@@ -367,7 +382,7 @@ export function unbenutzteAnhaenge({ wurzel, notiz, einstellungen }) {
   let eigener;
   try { eigener = readFileSync(loese(wurzel, notiz).abs, "utf8"); } catch { return { anhaenge: [], unsicher: false }; }
   const meine = new Map();
-  for (const z of anhangKandidaten(eigener)) { const rel = loeseZiel(notiz, z); if (rel) meine.set(falte(rel), rel); }
+  for (const z of anhangZieleIn(eigener)) { const rel = loeseZiel(notiz, z.ziel); if (rel) meine.set(falte(rel), rel); }
   if (!meine.size) return { anhaenge: [], unsicher: false };
   const uebrig = new Map(meine);
   const { dateien, vollstaendig } = alleTextDateien(wurzel);

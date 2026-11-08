@@ -93,21 +93,55 @@ test("SVG: Skripte, Fremdinhalt, Ereignisse und Adressen nach außen entfallen, 
   const aus = A.bereinigeSvg(boese);
   for (const verboten of ["script", "onload", "onclick", "onmouseover", "foreignObject", "iframe", "javascript", "e.example", "ENTITY", "DOCTYPE", "/etc/passwd", "animate", "<set", "@import", "<a "]) assert.ok(!aus.toLowerCase().includes(verboten.toLowerCase()), `${verboten} in ${aus}`);
   for (const bleibt of ["<svg", "<rect", "<circle", '<use xlink:href="#ok"', "<path", 'data:image/png;base64,AAAA', 'fill="url(#g)"']) assert.ok(aus.includes(bleibt), `${bleibt} fehlt in ${aus}`);
-  assert.ok(!aus.includes(".a{fill:red}") && !aus.includes(".b{fill:url(#g)}") && !/<style/i.test(aus), "jeder Style-Block entfällt ganz");
+  assert.ok(!aus.includes(".a{fill:red}") && !aus.includes("@import"), "ein Style-Block mit @import entfällt ganz");
+  assert.ok(aus.includes("<style>.b{fill:url(#g)}</style>"), "ein harmloser Style-Block (url(#id)) bleibt");
   assert.doesNotThrow(() => A.bereinigeSvg(SVG.toString()));
 });
 
-test("SVG (k2): CSS-Escapes, image-set(), image(), Style-Attribute mit Funktion und jede <style> entfallen", () => {
+test("SVG (k2): CSS-Escapes, image-set(), image(), unsichere Style-Attribute und <style> entfallen", () => {
   const boese = [
     '<rect style="fill:\\75 rl(http://e.example/x)"/>', '<rect style="background:image-set(url(http://e.example/x) 1x)"/>', '<rect style="fill:image(http://e.example/x)"/>',
     '<rect style="fill:red;@import url(x)"/>', '<rect style="fill:u\\72l(//e.example/x)"/>', '<rect filter="u&#92;72l(http://e.example/x)"/>', '<rect fill="image-set(http://e.example/x 1x)"/>',
-    '<rect fill="\\75 rl(http://e.example/x)"/>', '<style>rect{fill:\\75 rl(http://e.example/x)}</style>', '<style>a{color:red}</style>', '<style><![CDATA[rect{fill:url(http://e.example/x)}]]></style>'];
+    '<rect fill="\\75 rl(http://e.example/x)"/>', '<style>rect{fill:\\75 rl(http://e.example/x)}</style>', '<style>@font-face{src:url(#x)}</style>', '<style>rect{fill:url(\'http://e.example/x\')}</style>', '<style>rect{fill:url(http://e.example/x</style>', '<style>a{b:cross-fade(red,blue)}</style>', '<style>a{b:-webkit-image-set(x 1x)}</style>', '<style>a{b:element(#x)}</style>', '<style>a{b:src(x)}</style>', '<rect style="fill:url(  http://e.example/x)"/>', '<style><![CDATA[rect{fill:url(http://e.example/x)}]]></style>'];
   for (const b of boese) {
     const aus = A.bereinigeSvg(`<svg xmlns="http://www.w3.org/2000/svg">${b}<circle r="1" fill="#fff"/></svg>`);
     assert.ok(!/e\.example|image-set|image\(|@import|\\|<style|style="/i.test(aus), `${b} → ${aus}`);
     assert.ok(aus.includes("<circle"), aus);
   }
   assert.ok(A.bereinigeSvg('<svg><rect style="fill:red;stroke:#000"/></svg>').includes('style="fill:red;stroke:#000"'), "ein einfaches Style-Attribut ohne Funktion bleibt");
+});
+
+test("SVG (w2): echte Exporte behalten ihr Aussehen — Illustrator (.cls-1), Inkscape (style mit url(#g), rgb()), calc/var", () => {
+  const illustrator = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><defs><style>.cls-1{fill:#e63946;stroke:#1d3557;stroke-width:2px}.cls-2,.cls-3{fill:none}.cls-1:hover>.x{opacity:.5}</style></defs><rect class="cls-1" width="10" height="10"/></svg>';
+  const a = A.bereinigeSvg(illustrator);
+  assert.ok(a.includes("<style>.cls-1{fill:#e63946;stroke:#1d3557;stroke-width:2px}.cls-2,.cls-3{fill:none}.cls-1:hover&gt;.x{opacity:.5}</style>"), a); // „>“ als &gt; (gültiges XML)
+  assert.ok(a.includes('class="cls-1"'));
+  const inkscape = '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 10 10"><defs><linearGradient id="g"><stop offset="0" style="stop-color:rgb(255, 0, 0);stop-opacity:1"/></linearGradient></defs>'
+    + '<rect style="fill:url(#g);stroke:rgba(0,0,0,.5);width:calc(10px + 2px)" width="10" height="10"/><circle style="fill:var(--x, #333);filter:url(#f)" r="2"/></svg>';
+  const b = A.bereinigeSvg(inkscape);
+  for (const bleibt of ['style="stop-color:rgb(255, 0, 0);stop-opacity:1"', 'style="fill:url(#g);stroke:rgba(0,0,0,.5);width:calc(10px + 2px)"', 'style="fill:var(--x, #333);filter:url(#f)"']) assert.ok(b.includes(bleibt), `${bleibt} fehlt in ${b}`);
+  // dieselben Formen mit Angriff dazwischen: nur der Angriff entfällt
+  const mix = A.bereinigeSvg('<svg><style>.a{fill:red}</style><style>.b{fill:\\75 rl(http://e.example/x)}</style><rect class="a" style="fill:url(#g)"/><rect style="fill:url(http://e.example/y)"/></svg>');
+  assert.ok(mix.includes("<style>.a{fill:red}</style>") && mix.includes('style="fill:url(#g)"') && !/e\.example|\\/.test(mix), mix);
+  assert.equal((mix.match(/<style>/g) || []).length, 1);
+});
+
+test("SVG (w1): Elementnamen behalten ihre Schreibweise — linearGradient, radialGradient, clipPath, textPath, Filter", () => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 100 100"><defs>'
+    + '<linearGradient id="l" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f00"/></linearGradient><radialGradient id="r" gradientTransform="scale(2)"><stop offset="1" stop-color="#00f"/></radialGradient>'
+    + '<clipPath id="c" clipPathUnits="userSpaceOnUse"><rect width="50" height="50"/></clipPath><path id="p" d="M0 0L9 9"/>'
+    + '<filter id="f" filterUnits="objectBoundingBox"><feGaussianBlur in="SourceGraphic" stdDeviation="2"/><feOffset dx="1" dy="1" result="o"/><feMerge><feMergeNode in="o"/><feMergeNode in="SourceGraphic"/></feMerge><feColorMatrix type="saturate" values="0.5"/></filter></defs>'
+    + '<rect fill="url(#l)" clip-path="url(#c)" filter="url(#f)" width="50" height="50"/><text><textPath xlink:href="#p">Hallo</textPath></text></svg>';
+  const aus = A.bereinigeSvg(svg);
+  for (const n of ["linearGradient", "radialGradient", "clipPath", "textPath", "feGaussianBlur", "feOffset", "feMerge", "feMergeNode", "feColorMatrix"]) {
+    assert.ok(aus.includes(`<${n}`), `<${n} fehlt in ${aus}`);
+    assert.ok(!aus.includes(`<${n.toLowerCase()}`) || n === n.toLowerCase(), `${n} kleingeschrieben in ${aus}`);
+  }
+  assert.ok(aus.includes("</linearGradient>") && aus.includes("</clipPath>") && aus.includes("</filter>") && aus.includes("</feMerge>") && aus.includes("</textPath>"), aus);
+  for (const attr of ['gradientUnits="userSpaceOnUse"', 'gradientTransform="scale(2)"', 'clipPathUnits="userSpaceOnUse"', 'filterUnits="objectBoundingBox"', 'viewBox="0 0 100 100"', 'stdDeviation="2"', 'xlink:href="#p"']) assert.ok(aus.includes(attr), attr);
+  // Großgeschriebene Quelle („LINEARGRADIENT“) wird kanonisch ausgegeben, unbekannte Elemente bleiben draußen
+  assert.ok(A.bereinigeSvg("<svg><LINEARGRADIENT id='g'/><Bogus/></svg>").includes("<linearGradient id=\"g\"/>"));
+  assert.ok(!A.bereinigeSvg("<svg><Bogus/></svg>").includes("Bogus"));
 });
 
 test("SVG: Text vor und nach dem Wurzelelement entfällt, kein <svg> = Fehler, Sonderzeichen bleiben gültig", async () => {
@@ -240,9 +274,9 @@ test("unbenutzteAnhaenge: nur, was keine andere Notiz benutzt (Kopf-Werte, <img>
     writeFileSync(join(d, datei), datei === "c.md" ? "# C\nkein Bild\n" : "{}");
   }
   assert.deepEqual(nurA(), ["_anhaenge/nur-a.png", "bilder/nur-a2.png"]);
-  // Ein Wert im eigenen Datei-Kopf zählt als Benutzung durch diese Notiz
-  writeFileSync(join(d, "a.md"), '---\ncover: "[[frei.png]]"\n---\n# A\n');
-  assert.deepEqual(nurA(), ["_anhaenge/frei.png"]);
+  // Die gelöschte Notiz selbst: nur echte Einbettungen und Links zählen — nicht Datei-Kopf, Code oder Erwähnung im Fließtext (sonst bot Kortex fremde Dateien zum Mitlöschen an)
+  writeFileSync(join(d, "a.md"), '---\ncover: "[[frei.png]]"\n---\n# A\nSiehe frei.png und `frei.png`.\n```\n![[frei.png]]\n```\n<img src="frei.png">\n![[nur-a.png]]\n');
+  assert.deepEqual(nurA(), ["_anhaenge/nur-a.png"]);
 });
 
 test("unbenutzteAnhaenge (k4): konnte nicht alles gelesen werden, ist das Ergebnis unsicher und es wird nichts angeboten", () => {
