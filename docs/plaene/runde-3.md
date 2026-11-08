@@ -20,6 +20,8 @@ eigenen Modul. Wer später merged, holt `origin/main` und löst nur diese Zeilen
 
 ## Später: KI-Vorschläge (nicht in Runde 3)
 
+**Plan:** [`ki-runde.md`](ki-runde.md) (Bedrohungsmodell, Pakete K0–K4, Entscheidungen).
+
 Zwei Ideen, die auf Runde 3 aufbauen, aber noch nicht gebaut werden:
 
 - **Vorschlagskarten im Posteingang:** die KI schlägt vor (Tags, Verknüpfungen, Zusammenfassung, Ablageort), der Nutzer übernimmt oder verwirft.
