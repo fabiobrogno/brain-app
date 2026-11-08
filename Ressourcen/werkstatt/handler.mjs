@@ -890,7 +890,8 @@ export function erzeugeHandler(o) {
     const q = query instanceof URLSearchParams ? query : new URLSearchParams(query || "");
     const v = aktuell; // dieser Vault gilt für die ganze Anfrage, auch wenn währenddessen gewechselt wird
     // Schreibende Anfragen der Oberfläche sind keine „externen Änderungen“: Die Meldung wartet, bis die Anfrage fertig ist, und die berührten Dateien gelten als eigen.
-    const schreibt = methode !== "GET" && methode !== "HEAD";
+    // POST, die nur lesen (Erwähnungen im offenen Text), sind keine Schreibvorgänge: sonst gälte eine gleichzeitige Änderung von außen an dieser Notiz als „eigen“ und ginge verloren
+    const schreibt = methode !== "GET" && methode !== "HEAD" && pfad !== "/api/erwaehnungen/aus" && pfad !== "/api/erwaehnungen/links";
     if (schreibt) ereignisse.beginneEigenes();
     let eigen = [], eigenKopf = false;
     try {

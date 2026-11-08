@@ -169,3 +169,20 @@ test("MCP: die Werkzeugliste bleibt unter 4400 Zeichen und enthält brain_neuigk
   assert.ok(n <= 4400, `${n} Zeichen`);
   assert.ok(WERKZEUGE.some((w) => w.name === "brain_neuigkeiten"));
 });
+
+test("Lesende POSTs (/aus, /links) gelten nicht als eigene Schreibvorgänge: eine Änderung von außen an derselben Notiz meldet die Werkstatt weiterhin", async () => {
+  const support = tmp("erwh-e-support-"), d = tmp("erwh-e-vault-");
+  schreibe(d, "brain.config.json", "{}\n"); schreibe(d, KAFFEE, "# Kaffee\n"); schreibe(d, "n/a.md", "# A\n\nKaffee.\n");
+  writeFileSync(join(support, "vaults.json"), JSON.stringify({ vaults: [{ name: "Haupt", pfad: d, farbe: "#5B8DEF" }], aktiv: d }));
+  const h = erzeugeHandler({ vault: d, vaultOptionen: { support }, ereignisse: { entprellMs: 60, maxWarteMs: 300 } });
+  const rufe = async (methode, p, daten, query) => { const r = await h({ methode, pfad: p, query: query ?? null, body: daten === undefined ? undefined : Buffer.from(JSON.stringify(daten)) }); return { status: r.status, j: JSON.parse(r.body.toString("utf8")) }; };
+  const s = (await rufe("GET", "/api/ereignisse")).j;
+  const text = lies(d, "n/a.md");
+  // Die Anfrage läuft noch (der Index baut sich erst auf), während die Notiz von außen geändert wird — genau so trifft es die Oberfläche beim Öffnen einer Notiz
+  const laufend = [rufe("POST", "/api/erwaehnungen/aus", { pfad: "n/a.md", text }), rufe("POST", "/api/erwaehnungen/links", { pfad: "n/a.md", text, alle: true })];
+  writeFileSync(join(d, "n/a.md"), "# A\n\nKaffee, von außen geändert.\n");
+  assert.deepEqual((await Promise.all(laufend)).map((x) => x.status), [200, 200]);
+  const r = (await rufe("GET", "/api/ereignisse", undefined, `seit=0&epoche=${s.epoche}&warte=5`)).j;
+  assert.ok(r.ereignisse.some((e) => e.pfad === "n/a.md"), "die Änderung von außen wird gemeldet: " + JSON.stringify(r.ereignisse));
+  h.ereignisse.beende?.();
+});

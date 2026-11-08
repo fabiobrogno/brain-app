@@ -67,8 +67,11 @@ test(`Messung bei ${N} Notizen: Aufruf-Dauer beider Richtungen, kalt, warm, häu
   const ziel = streu[3];
   writeFileSync(join(g.vault, ziel), "# Neu geschrieben\n\nHier steht kein Name mehr.\n");
   v.suchindexAendere([ziel]); await v.suchindexRuhe();
-  const [tc, rc] = await ms(() => v.erwaehnungen("ziele/zebrafink.md"));
-  mess.nachAenderung = { ms: rund(tc), notizen: rc.anzahlNotizen, offen: rc.offen };
+  // ein Aufruf ist durch sein Zeitbudget begrenzt (auf langsamen Läufern reicht es nicht für alle Kandidaten): wiederholen, bis nichts mehr offen ist; gemessen wird jeder Aufruf
+  const nach = [];
+  let rc;
+  for (let i = 0; i < 400; i++) { const [tc, r] = await ms(() => v.erwaehnungen("ziele/zebrafink.md")); nach.push(tc); rc = r; if (!r.offen) break; await atme(); }
+  mess.nachAenderung = { ms: rund(Math.max(...nach)), aufrufe: nach.length, notizen: rc.anzahlNotizen, offen: rc.offen };
   assert.equal(rc.anzahlNotizen, letzte.anzahlNotizen - 1);
 
   // 7) Link setzen („Alle“-Vorschau über 200 Notizen)
