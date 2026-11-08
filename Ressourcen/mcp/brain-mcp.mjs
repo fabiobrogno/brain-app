@@ -21,6 +21,7 @@ import { leseKopf } from "../gemeinsam/pruefung.mjs";
 import { protokolliere } from "../gemeinsam/nutzung.mjs";
 import { melde as meldeAktivitaet, werText } from "../gemeinsam/aktivitaet.mjs";
 import { leseAntwort, begrenzeKontext } from "../gemeinsam/ki-antworten.mjs";
+import { neuigkeitenText } from "../gemeinsam/neuigkeiten.mjs";
 import { AUFGABEN_WERKZEUGE, istAufgabenWerkzeug, rufeAufgabenWerkzeug, quelleVon } from "./aufgaben-werkzeuge.mjs";
 
 const VERSIONEN = ["2025-06-18", "2025-03-26", "2024-11-05"];
@@ -31,20 +32,22 @@ export const WERKZEUGE = [
     inputSchema: { type: "object", properties: { pfad: { type: "string", description: "Pfad relativ zum Vault (auch Titel oder Alias wie bei [[Links]])" }, abschnitt: { type: "string", description: "Nur dieser Abschnitt (Nummer oder Überschrift aus der Gliederung)" }, von: { type: "integer", minimum: 1, description: "Erste Zeile" }, bis: { type: "integer", minimum: 1, description: "Letzte Zeile" } }, required: ["pfad"], additionalProperties: false } },
   { name: "brain_merken", description: "Legt eine Notiz im Posteingang ab (00_inbox/). Schreibt nie ins Wiki; erst /ingest macht Wissen daraus.",
     inputSchema: { type: "object", properties: { text: { type: "string" }, titel: { type: "string" } }, required: ["text"], additionalProperties: false } },
-  { name: "brain_gesundheit", description: "Kurzfassung der Vault-Gesundheit (Ampel und Befunde), falls der Vault ein Kortex-Vault ist.",
+  { name: "brain_gesundheit", description: "Vault-Gesundheit (Ampel, Befunde); nur Kortex-Vaults.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false } },
-  { name: "brain_vaults", description: "Listet die eingerichteten Vaults und nennt den genutzten.",
+  { name: "brain_vaults", description: "Listet die Vaults und nennt den genutzten.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false } },
   { name: "brain_verlauf", description: "Git-Verlauf einer Datei (neueste zuerst).",
     inputSchema: { type: "object", properties: { pfad: { type: "string" }, max: { type: "integer", minimum: 1, maximum: 100, description: "Standard 20" } }, required: ["pfad"], additionalProperties: false } },
-  { name: "brain_kontext", description: "Kontext-Paket zum Projekt: bis zu 4 passende Seiten (Pfad, Titel, Stand, Stufe, ein Satz). Zu Beginn einer Sitzung aufrufen.",
-    inputSchema: { type: "object", properties: { projekt: { type: "string", description: "Repo- oder Ordnername des Projekts" }, cwd: { type: "string", description: "Arbeitsordner (optional); schärft die Zuordnung über `pfade`" } }, required: ["projekt"], additionalProperties: false } },
+  { name: "brain_kontext", description: "Kontext zum Projekt: bis zu 4 passende Seiten (Pfad, Titel, Stand, Stufe, ein Satz). Zu Sitzungsbeginn aufrufen.",
+    inputSchema: { type: "object", properties: { projekt: { type: "string", description: "Repo- oder Ordnername" }, cwd: { type: "string", description: "Arbeitsordner (optional)" } }, required: ["projekt"], additionalProperties: false } },
   { name: "brain_tags", description: "Tags des Vaults mit Zahl der Notizen; mit tag: die Notizen dazu.",
-    inputSchema: { type: "object", properties: { tag: { type: "string", description: "z. B. projekt/atlas" } }, additionalProperties: false } },
-  { name: "brain_umbenennen", description: "Benennt eine Notiz um (Titel und/oder Dateiname); Verweise folgen. Nur bestätigte Vaults.",
+    inputSchema: { type: "object", properties: { tag: { type: "string" } }, additionalProperties: false } },
+  { name: "brain_umbenennen", description: "Benennt eine Notiz um (Titel, Dateiname); Verweise folgen. Nur bestätigte Vaults.",
     inputSchema: { type: "object", properties: { pfad: { type: "string" }, titel: { type: "string" }, dateiname: { type: "string" } }, required: ["pfad"], additionalProperties: false } },
   { name: "brain_verschieben", description: "Verschiebt eine Notiz in einen vorhandenen Ordner; Verweise folgen. Nur bestätigte Vaults.",
-    inputSchema: { type: "object", properties: { pfad: { type: "string" }, ziel: { type: "string", description: "Zielordner, leer = oberste Ebene" } }, required: ["pfad", "ziel"], additionalProperties: false } },
+    inputSchema: { type: "object", properties: { pfad: { type: "string" }, ziel: { type: "string", description: "leer = oberste Ebene" } }, required: ["pfad", "ziel"], additionalProperties: false } },
+  { name: "brain_neuigkeiten", description: "Neu seit 7 Tagen oder „seit“ (ISO): Notizen, Aufgaben, KI, Abgleich.",
+    inputSchema: { type: "object", properties: { seit: { type: "string" } }, additionalProperties: false } },
   ...AUFGABEN_WERKZEUGE,   // Aufgaben-Board (eigene Datei, damit der konto-bewusste Umbau sie leicht einbinden kann)
 ];
 
@@ -264,6 +267,12 @@ async function rufe(vArg, name, a, spur = { seiten: [] }, sitzung = standardSitz
       spur.seiten = liste.slice(0, 30);
       if (!liste.length) return text(`${kopf}Keine Notiz mit dem Tag #${tag}.`);
       return text(`${kopf}#${tag}: ${liste.length} Notiz${liste.length === 1 ? "" : "en"}${liste.length > 30 ? " (die ersten 30)" : ""}\n${liste.slice(0, 30).join("\n")}`);
+    }
+    // „Was ist neu“ (gemeinsam/neuigkeiten.mjs): nur Zahlen und höchstens fünf Titel, nur lesend, Stufe „lesen“ genügt; ohne Angabe die letzten 7 Tage (der Merker des Nutzers bleibt unberührt)
+    case "brain_neuigkeiten": {
+      const seit = typeof a.seit === "string" && a.seit.trim() ? a.seit.trim() : new Date(Date.now() - 7 * 86400e3).toISOString();
+      if (!Number.isFinite(Date.parse(seit))) throw new HttpFehler(400, "„seit“ ist eine Zeitangabe (ISO).");
+      return text(`${vertraut(v) ? "" : `${DATEN_HINWEIS}\n\n`}${neuigkeitenText(await v.neuigkeiten({ seit }))}`);
     }
     case "brain_gesundheit": {
       const g = await v.gesundheit();

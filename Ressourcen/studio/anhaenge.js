@@ -132,8 +132,8 @@ export function erzeugeAnhaenge(z) {
         const d = dialog({ titel: TAN.loeschen.titel, satz: TAN.loeschen.satz(liste.length), rumpf: [h("ul", { klasse: "anhang-loeschen-liste" }, zeilen, liste.length > 5 ? h("li", { klasse: "anhang-loeschen-mehr", text: TAN.loeschen.mehr(liste.length - 5) }) : null),
           h("p", { klasse: "leise da-hinweis", text: TAN.loeschen.hinweis })], knoepfe: [
           baueKnopf({ text: TAN.loeschen.abbrechen, aktion: "abbrechen", aufKlick: () => { antwort = "abbruch"; d.schliessen(); } }),
-          baueKnopf({ text: TAN.loeschen.behalten, aktion: "anhaenge-behalten", aufKlick: () => { antwort = "behalten"; d.schliessen(); } }),
-          baueKnopf({ text: TAN.loeschen.mit, variante: "primaer", aktion: "anhaenge-mitloeschen", aufKlick: () => { antwort = "mit"; d.schliessen(); } })], beiSchliessen: () => fertig(antwort) });
+          baueKnopf({ text: TAN.loeschen.behalten, variante: "primaer", aktion: "anhaenge-behalten", aufKlick: () => { antwort = "behalten"; d.schliessen(); } }),
+          baueKnopf({ text: TAN.loeschen.mit, aktion: "anhaenge-mitloeschen", aufKlick: () => { antwort = "mit"; d.schliessen(); } })], beiSchliessen: () => fertig(antwort) });
         d.box.setAttribute("data-dialog", "anhaenge-loeschen");
       });
       if (wahl === "abbruch") return { abbruch: true };

@@ -382,6 +382,8 @@ test("Löschen einer Notiz: Anhänge, die nur sie benutzt, fragen nach — mit i
   await expect(dlg).toBeVisible();
   await expect(dlg).toContainText("nur-hier.png");
   await expect(dlg).not.toContainText("geteilt.png");
+  await expect(dlg.locator('[data-aktion="anhaenge-behalten"]')).toHaveClass(/primaer/); // „Behalten“ ist die Vorgabe (Enter), „Mit löschen“ nicht
+  await expect(dlg.locator('[data-aktion="anhaenge-mitloeschen"]')).not.toHaveClass(/primaer/);
   await foto(page, "12-loeschen-frage");
   await dlg.locator('[data-aktion="abbrechen"]').click();
   await page.waitForTimeout(300);
