@@ -25,6 +25,8 @@ export const APP_SCHEMA = {
   oberflaeche: { werte: [90, 100, 110, 125], standard: 100 },
   zeilenbreite: { werte: ["schmal", "normal", "breit", "voll"], standard: "normal" },
   codeSchrift: { werte: ["geist", "system", "menlo"], standard: "geist" },
+  // Format-Leiste über markiertem Text im Editor (Runde 3b)
+  formatLeiste: { typ: "boolean", standard: true },
   symbole: { werte: ["einfarbig", "farbig"], standard: "einfarbig" },
   // Seitenleiste durchscheinend (Fenstermaterial der Hülle; ohne Hülle-Fähigkeit blendet die Oberfläche die Zeile aus, der Wert bleibt gemerkt)
   seitenleisteDurchscheinend: { typ: "boolean", standard: true },

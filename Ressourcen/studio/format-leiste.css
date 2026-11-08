@@ -1,0 +1,37 @@
+/* Format-Leiste und Tabellen im Editor (Runde 3b). Alle Farben sind Tokens aus schemata.css; hell, dunkel und die Kontrast-Schemata folgen von selbst. */
+
+/* ---- Schwebende Format-Leiste ---- */
+.format-leiste { position: fixed; z-index: 60; display: flex; align-items: center; gap: 1px; padding: 3px; border-radius: var(--r-l); background: var(--erhoben); box-shadow: 0 0 0 1px var(--linie-stark), var(--schatten-float); color: var(--text); opacity: 0; transform: translateY(3px); pointer-events: none; transition: opacity var(--d-fast, 120ms) ease-out, transform var(--d-fast, 120ms) ease-out; user-select: none; -webkit-user-select: none; }
+.format-leiste[data-offen="ja"] { opacity: 1; transform: none; pointer-events: auto; }
+:root[data-bewegung="reduziert"] .format-leiste { transition: none; transform: none; }
+.fl-knopf { display: inline-grid; place-items: center; min-width: 28px; height: 28px; padding: 0 6px; border: 0; border-radius: var(--r); background: transparent; color: inherit; font: 600 13px/1 var(--schrift-ui, inherit); cursor: pointer; }
+.fl-knopf:hover { background: var(--hover); }
+.fl-knopf:active { background: var(--hover-2); }
+.fl-knopf[aria-pressed="true"] { background: var(--akzent-weich); color: var(--akzent-tinte); }
+.fl-fett { font-weight: 800; }
+.fl-kursiv { font-style: italic; font-family: ui-serif, "New York", Georgia, serif; font-size: 15px; }
+.fl-durch { text-decoration: line-through; }
+.fl-text { font-size: 12px; letter-spacing: -.01em; }
+.fl-trenner { width: 1px; height: 16px; margin: 0 3px; background: var(--linie); }
+.fl-knopf svg { display: block; }
+
+/* ---- Tabellen ---- */
+.cm-tabelle-huelle { position: relative; padding: 6px 0 22px; }
+.cm-tabelle { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: auto; font-size: .95em; line-height: 1.5; border: 1px solid var(--linie-stark); border-radius: var(--r-l); overflow: hidden; background: var(--papier); }
+.cm-tabelle th, .cm-tabelle td { padding: 0; border-right: 1px solid var(--linie); border-bottom: 1px solid var(--linie); vertical-align: top; min-width: 3em; }
+.cm-tabelle th:last-child, .cm-tabelle td:last-child { border-right: 0; }
+.cm-tabelle tbody tr:last-child td { border-bottom: 0; }
+.cm-tabelle thead th { background: var(--seite-2); border-bottom-color: var(--linie-stark); font-weight: 600; }
+.cm-tz { display: block; min-height: 1.5em; padding: 6px 10px; outline: none; white-space: pre-wrap; overflow-wrap: anywhere; caret-color: var(--akzent); cursor: text; border-radius: 0; }
+.cm-tz:empty::before { content: "\200b"; }
+.cm-tabelle td:hover .cm-tz, .cm-tabelle th:hover .cm-tz { background: var(--hover); }
+.cm-tz:focus, .cm-tabelle td:hover .cm-tz:focus, .cm-tabelle th:hover .cm-tz:focus { background: var(--papier); box-shadow: inset 0 0 0 2px var(--akzent); }
+.cm-tabelle thead .cm-tz:focus { background: var(--seite-2); }
+.cm-tz .cm-code { background: var(--seite-2); border-radius: 4px; padding: 0 3px; font-family: var(--mono); font-size: .92em; }
+.cm-tz .cm-link, .cm-tz .cm-wiki { color: var(--akzent-tinte); text-decoration: underline; text-underline-offset: 2px; }
+.cm-tz .cm-fett { font-weight: 700; }
+.cm-tz .cm-kursiv { font-style: italic; }
+.cm-tz .cm-durch { text-decoration: line-through; }
+.cm-tab-plus { position: absolute; left: 0; right: 0; bottom: 2px; height: 18px; padding: 0; border: 0; border-radius: var(--r); background: transparent; color: var(--text-3); font: 500 14px/1 var(--schrift-ui, inherit); cursor: pointer; opacity: 0; transition: opacity var(--d-fast, 120ms) ease-out, background-color var(--d-fast, 120ms) ease-out; }
+.cm-tabelle-huelle:hover .cm-tab-plus, .cm-tabelle-aktiv .cm-tab-plus, .cm-tab-plus:focus-visible { opacity: 1; }
+.cm-tab-plus:hover { background: var(--hover); color: var(--text); }

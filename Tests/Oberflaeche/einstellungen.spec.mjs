@@ -317,7 +317,7 @@ test("Suche: Wertung, Markierung, Zählung je Bereich, Sortierung; Klick auf ein
   await expect(page.locator('.e-bereich[data-bereich="darstellung"] mark').first()).toHaveText("Schrift");
   // Bereichsname getroffen: der ganze Bereich
   await page.locator('[data-einst="suche"]').fill("Darstellung");
-  await expect(page.locator('.e-bereich[data-bereich="darstellung"] [data-zeile]:visible')).toHaveCount(15);
+  await expect(page.locator('.e-bereich[data-bereich="darstellung"] [data-zeile]:visible')).toHaveCount(16);
   expect(await page.locator(".e-bereich:visible").first().getAttribute("data-bereich")).toBe("darstellung");
   // ohne Umlaut, Groß/Klein egal
   await page.locator('[data-einst="suche"]').fill("KURZEL");

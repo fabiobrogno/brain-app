@@ -4,6 +4,9 @@ import * as CM from "./vendor/codemirror.bundle.js";
 import { T } from "./texte.js";
 import { falteText, WORT } from "./suchfalte.js";
 import { tagQuelle } from "./tags-quelle.js"; // Vervollständigung für #tag
+import { tabellenErweiterung, fuegeTabelleEin, zelleUmschalten } from "./tabellen.js"; // Runde 3b: Tabellen, Formatieren, Einfügen, Format-Leiste (eigene Module)
+import * as FM from "./formatieren.js";
+import { formatLeiste } from "./format-leiste.js";
 
 const { EditorState, EditorSelection, EditorView, Decoration, ViewPlugin, WidgetType, StateField, StateEffect, GutterMarker, MapMode, gutter, keymap } = CM;
 
@@ -610,6 +613,9 @@ export function erstelleEditor(eltern, ctx) {
     signaleFeld,
     signalRand,
     absatzFeld(ctx),
+    ...tabellenErweiterung(ctx, { neuZeichnen, fokusGeaendert }),
+    FM.einfuegenErweiterung(ctx),
+    formatLeiste(ctx),
     vorschauPlugin(ctx),
     CM.autocompletion({ override: [wikiQuelle(ctx), ...(ctx.tagVorschlaege ? [tagQuelle(ctx)] : [])], icons: false, tooltipClass: () => "cm-wikiliste" }),
     keymap.of([
@@ -714,6 +720,24 @@ export function erstelleEditor(eltern, ctx) {
     },
     loescheFundstellen() { view.dispatch({ effects: fundstellenSetzen.of(Decoration.none) }); },
     suchen() { view.focus(); CM.openSearchPanel(view); },
+    // Formatieren (Runde 3b): name = Schlüssel aus formatieren.js#BEFEHLE (fett, kursiv, code, durchgestrichen, link, ueberschrift1–4, listePunkt, listeNummer, listeAufgabe).
+    // Steht der Cursor in einer Tabellenzelle, wirkt der Befehl auf den Text der Zelle (fett, kursiv, code, durchgestrichen, link). → true, wenn etwas geschah
+    formatiere(name) {
+      const zelle = { fett: "fett", kursiv: "kursiv", code: "code", durchgestrichen: "durch", link: "link" }[name];
+      if (zelle && zelleUmschalten(zelle)) return true;
+      if (document.activeElement?.classList?.contains("cm-tz")) return false;
+      return !!FM.BEFEHLE[name]?.(view);
+    },
+    fuegeTabelleEin() { return fuegeTabelleEin(view, !!ctx.roh?.()); },
+    // ⇧⌘V: das nächste Einfügen ist reiner Text (Browser, Electron: die Zwischenablage wird gelesen und als Text eingefügt)
+    merkeNurText: FM.merkeNurText, // Test: das nächste Einfügen ist reiner Text, ohne die Zwischenablage zu lesen
+    async einfuegenAlsText() {
+      FM.merkeNurText();
+      let ok = false;
+      try { ok = document.execCommand("paste"); } catch { /* nicht erlaubt */ }
+      if (!ok) { FM.vergissNurText(); try { const t = await navigator.clipboard.readText(); if (t) FM.fuegeTextEin(view, t); } catch { /* keine Erlaubnis zum Lesen */ } }
+    },
+    editorHatFokus: () => view.hasFocus || !!document.activeElement?.classList?.contains("cm-tz"),
     fokus() { view.focus(); },
     // Rohtext: alle Markierungen sichtbar, Datei-Kopf aufgeklappt (der Text selbst bleibt unverändert)
     // Zurück zur Vorschau klappt der Kopf zu; ein Cursor darin kommt dabei hinter ihn
