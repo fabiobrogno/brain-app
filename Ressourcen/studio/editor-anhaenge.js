@@ -6,6 +6,7 @@
 import * as CM from "./vendor/codemirror.bundle.js";
 import { EINBETTUNG, einbettungAus, lokalerPfad, istBildName, istAnhangName, groesseText } from "./anhang-regeln.js";
 import { TAN } from "./texte-anhaenge.js";
+import { nurTextAktiv } from "./formatieren.js";
 import { h } from "./hilfen.js";
 import { symbol, GROESSE } from "./symbole.js";
 
@@ -157,7 +158,7 @@ export function anhangErweiterung(A, ctx) {
   const handler = EditorView.domEventHandlers({
     paste(e, view) {
       const dt = e.clipboardData;
-      if (!dt) return false;
+      if (!dt || nurTextAktiv()) return false; // ⇧⌘V „als reiner Text einfügen“ (Paket 3b): dann keine Dateien ablegen
       const dateien = [...(dt.files || [])];
       if (!dateien.length) for (const it of dt.items || []) if (it.kind === "file") { const f = it.getAsFile(); if (f) dateien.push(f); }
       if (dateien.length) {

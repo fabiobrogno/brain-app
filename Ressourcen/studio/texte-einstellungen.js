@@ -41,6 +41,7 @@ export const BEREICHE = plattformTexte([
         { id: "schrift", schluessel: "editorSchrift", art: "schriftWahl", titel: "Editor-Schrift", text: "Gilt für Notizen, nicht für Menüs und Listen.", woerter: ["schrift", "font", "geist", "new york", "serif", "mono", "sf mono", "editor"] },
         { id: "schriftgroesse", schluessel: "schriftgroesse", art: "groesse", titel: "Schriftgröße im Editor", text: "Gilt für Notizen, nicht für Menüs und Listen.", woerter: ["schrift", "größe", "text", "font", "lesbar", "zoom"] },
         { id: "zeilenbreite", schluessel: "zeilenbreite", art: "zeilenbreite", titel: "Zeilenbreite", text: "Wie breit eine Zeile im Editor wird. „Voll“ nutzt die ganze Breite des Fensters statt einer schmalen Lesespalte.", woerter: ["breit", "lesespalte", "textspalte", "editor", "fenster", "schmal", "spalte", "zeile"] },
+        { id: "format-leiste", schluessel: "formatLeiste", art: "schalter", titel: "Format-Leiste", text: "Zeigt über markiertem Text eine kleine Leiste für Fett, Kursiv, Link, Überschrift und Liste.", woerter: ["format", "leiste", "markieren", "fett", "kursiv", "werkzeugleiste", "schweben", "toolbar"] },
         { id: "codeschrift", schluessel: "codeSchrift", art: "codeWahl", titel: "Code-Schrift", text: "Für Codeblöcke und Code im Text.", woerter: ["code", "mono", "monospace", "geist mono", "menlo", "sf mono", "schrift"] },
       ] },
       { id: "oberflaeche", titel: "Oberfläche", zeilen: [

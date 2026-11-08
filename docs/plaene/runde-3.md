@@ -74,15 +74,20 @@ und in „Frag deinen Vault“ als Bild bzw. als Chip und überstehen Umbenennen
 
 ---
 
-## 3b: Tabellen, ⌘B/⌘I, HTML einfügen
+## 3b – Tabellen, Formatierung, Einfügen
 
-### Ziel
-Markdown-Tabellen lassen sich bequem bearbeiten (Tab zwischen Zellen, Zeile/Spalte einfügen), ⌘B und ⌘I setzen Fett und Kursiv um die Auswahl,
-und eingefügtes HTML (aus Web, Mail, Word) wird als sauberes Markdown eingefügt.
-### Prüfkriterien
-Tabellenbefehle ändern nur die Tabelle; ⌘B/⌘I wirken auf Auswahl und Wort und lassen sich rückgängig machen; HTML wird nie als HTML eingefügt (nur Markdown, Skripte und Stile entfallen).
-### Risiken
-Wettbewerb um den Paste-Handler mit 3a (Bilder in der Zwischenablage haben Vorrang, HTML mit `<img>` nicht automatisch laden); Tabellen mit `|` in Zellen.
+**Ziel:** Tabellen wie in Notion bearbeiten, Text mit Kürzeln und einer kleinen Leiste formatieren, Fremdes (Web, Word, Notion) sauber als Markdown einfügen. Die Datei bleibt immer gewöhnliches Markdown.
+
+| Teil | Ergebnis |
+|---|---|
+| Tabellen | Anzeige als Tabelle (Live-Vorschau), Zellen direkt bearbeiten, Tab/⇧Tab/Enter, Ausrichtung der Spalten beim Schreiben, Kontextmenü (Zeile/Spalte einfügen/löschen, Ausrichtung), Befehl „Tabelle einfügen“ (Palette, ⌥⇧⌘T); Rohtext-Modus bleibt |
+| Formatierung | ⌘B, ⌘I, ⇧⌘C (Code), ⇧⌘X, Link ⌘L, Überschriften ⌥⇧⌘1–4, Listen ⇧⌘8/7/9, alle im Kürzel-Register (änderbar, Konfliktprüfung) |
+| Einfügen | HTML → Markdown (Überschriften, Listen, Tabellen, Links, fett/kursiv, Code), ⇧⌘V als reiner Text, Adresse über Auswahl = Link, Bild-Hook für die Anhänge aus 3a |
+| Format-Leiste | kleine Leiste über markiertem Text, abschaltbar (Einstellungen → Darstellung) |
+
+**Entscheidungen bei Konflikten im Kürzel-Register:** ⌘E ist „Kortex einrichten“ → Code liegt auf ⇧⌘C. ⌘K ist die Palette und ⇧⌘K löscht die Zeile (CodeMirror) → Link auf ⌘L. ⌥⌘1/⌥⌘2 sind „Studio öffnen“/„Übersicht öffnen“ → Überschriften auf ⌥⇧⌘1–4. ⌘1–4 sind „Gehe zu“.
+
+**Offen / Übergabe:** Bilder aus der Zwischenablage legt erst die Anhang-Logik aus 3a ab (`ctx.bildEinfuegen`); ein Schrägstrich-Menü gibt es noch nicht (der Befehl „Tabelle einfügen“ steht in der Palette).
 
 ## 3c: Tags und Export/Teilen
 

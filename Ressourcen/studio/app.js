@@ -271,10 +271,15 @@ const entwurfJournal = (() => {
     warte: () => reihe,
   };
 })();
+// Formatierbefehle des Registers (id → Name in editor.js#formatiere)
+const FORMAT_BEFEHLE = [["format-fett", "fett"], ["format-kursiv", "kursiv"], ["format-code", "code"], ["format-durchgestrichen", "durchgestrichen"], ["format-link", "link"],
+  ["format-ueberschrift-1", "ueberschrift1"], ["format-ueberschrift-2", "ueberschrift2"], ["format-ueberschrift-3", "ueberschrift3"], ["format-ueberschrift-4", "ueberschrift4"],
+  ["format-liste-punkt", "listePunkt"], ["format-liste-nummer", "listeNummer"], ["format-liste-aufgabe", "listeAufgabe"]];
 const ed = erstelleEditor($("editor"), {
   roh: () => S.roh,
   pfad: () => S.pfad || "",
   anhaenge,
+  formatLeiste: () => S.darst.formatLeiste !== false, // Einstellungen → Darstellung → Format-Leiste
   wikiAufloesen: (ziel) => loeseWikiAuf(ziel),
   wikiFarbe: (pfad) => { const n = S.nMap.get(pfad); const typ = n?.typ ? (S.typMap.get(n.typ) || { name: n.typ }) : null; return typ ? typTextFarbe(typ) : null; },
   wikiVorschlaege: (getippt) => wikiVorschlaege(getippt),
@@ -2694,6 +2699,7 @@ function oeffnePalette(vorgabe = "") {
     [TF.befehl, kz.anzeige("frage"), () => frage.oeffne()], [T.befehle.suche, kz.anzeige("suche-vault"), fokusSuche], [T.befehle.inNotiz, kz.anzeige("suche-notiz"), () => ed.suchen()], [T.befehle.info, kz.anzeige("info"), umschalteInfo], [T.befehle.gesundheit, "", oeffneGesundheit], [T.befehle.nutzung, "", oeffneNutzung],
     [T.befehle.posteingang, kz.anzeige("gehe-posteingang"), () => waehleSicht({ art: "bereich", id: "inbox" })], [T.befehle.alleNotizen, kz.anzeige("gehe-alle"), () => waehleSicht({ art: "bereich", id: "alle" })], [T.befehle.aufgaben, kz.anzeige("gehe-aufgaben"), () => waehleSicht({ art: "bereich", id: "aufgaben" })],
     [T.liste.verlauf, kz.anzeige("verlauf"), oeffneVerlauf], [TG.titel, kz.anzeige("mitteilungen"), () => glocke.oeffne()],
+    ...(S.pfad && S.bearbeitbar ? [["tabelle-einfuegen", () => ed.fuegeTabelleEin()], ...FORMAT_BEFEHLE.map(([id, name]) => [id, () => ed.formatiere(name)])].map(([id, tun]) => [kz.REGISTER.befehle.find((b) => b.id === id).name, kz.anzeige(id), () => { ed.fokus(); tun(); }]) : []),
     ...(kannOrdnerZeigen() ? [[ordnerBefehlName(), "", () => aktion("ordner-zeigen", S.pfad || undefined)]] : []),
     ...(inApp() ? [[T.befehle.ansicht, "", oeffneUebersicht]] : []),
     [T.befehle.mcp, "", oeffneKi], [T.befehle.konten, "", oeffneKonten],
@@ -2937,6 +2943,11 @@ kz.anmelden("info", () => umschalteInfo());
 kz.anmelden("seitenleiste", () => umschalteInfo(), () => !!S.info?.vault); // ⌘\ (P3): dieselbe rechte Spalte wie „info“, der Knopf neben „Frag“
 kz.anmelden("commit", () => oeffneCommit());
 kz.anmelden("kuerzel-hilfe", () => oeffneKuerzel());
+// Formatieren, Tabelle, Einfügen (Runde 3b): gelten nur, wenn der Editor (oder eine Tabellenzelle) den Fokus hat
+const imEditor = () => !dialogOffen() && !!S.pfad && S.bearbeitbar && ed.editorHatFokus();
+for (const [id, name] of FORMAT_BEFEHLE) kz.anmelden(id, () => ed.formatiere(name), imEditor);
+kz.anmelden("tabelle-einfuegen", () => ed.fuegeTabelleEin(), imEditor);
+kz.anmelden("einfuegen-text", () => ed.einfuegenAlsText(), imEditor);
 kz.anmelden("mitteilungen", () => glocke.umschalten(), () => !!S.info?.vault && !dialogOffen());
 
 window.addEventListener("beforeunload", () => { if (S.dirty) { clearTimeout(speicherTimer); speichere(); } });
