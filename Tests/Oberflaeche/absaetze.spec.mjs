@@ -105,12 +105,14 @@ test("nicht verbunden: Code, Tabelle, Zitat/Callout, Überschrift, harter Umbruc
     "<div>", "html", "</div>", "",
     "Setext", "Titel", "=====", "",
   ].join("\n"));
+  await page.setViewportSize({ width: 1440, height: 1400 }); // die Tabelle ist ein Widget (Runde 3b) und höher als ihre drei Textzeilen: alles muss im Fenster liegen
   await oeffne(page, "10_notizen/block.md");
+  await expect(page.locator(".cm-tabelle")).toHaveCount(1); // Tabelle: wird als Tabelle gezeigt, ihre Zeilen sind keine Textzeilen mehr (nie verbunden)
   await expect.poll(() => zeilen(page)).toEqual([
     "Probe", "",
     "Absatz vorher mit zwei Zeilen.", "",                                  // zum Vergleich: der gewöhnliche Absatz fließt
     "> Zitat oder Callout über", "> mehrere Zeilen.", "",              // Zitat/Callout
-    "| A | B |", "|---|---|", "| 1 | 2 |", "",                            // Tabelle
+    "",                                                                    // (Tabelle: Widget)
     "```js", "const a = 1;", "const b = 2;", "```", "",                    // eingezäunter Code
     "    eingerückter Code", "    zweite Zeile", "",                        // eingerückter Code
     "Harter Umbruch  ", "bleibt sichtbar und der Rest fließt weiter.", "", // harter Umbruch bleibt, der Rest fließt
