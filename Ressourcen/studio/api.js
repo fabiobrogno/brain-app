@@ -201,6 +201,13 @@ export const api = {
   kiHinweis: () => anfrage("POST", "/api/ki/hinweis", {}),
   kiVorher: () => anfrage("POST", "/api/ki/vorher", { bestaetigt: true }),
   // ---- Aktivitätsprotokoll (P8a): { art (Liste oder „abweisungen“), seit (ISO), nur: "ungelesen", vault: "alle" | Pfad, limit }; Rückgängig löscht nur unveränderte Ablagen von Kortex; gelesen: { ids } | { alle: true }
+  // Ungelinkte Erwähnungen (gemeinsam/erwaehnungen-index.mjs) und „Was ist neu“ (gemeinsam/neuigkeiten.mjs)
+  erwaehnungen: (pfad) => anfrage("GET", "/api/erwaehnungen" + q({ pfad })),
+  erwaehntVon: (pfad, text) => anfrage("POST", "/api/erwaehnungen/aus", { pfad, text }),
+  erwaehnungenLinks: (daten) => anfrage("POST", "/api/erwaehnungen/links", daten),
+  verlinke: (daten) => anfrage("POST", "/api/erwaehnungen/verlinken", daten),
+  neuigkeiten: (seit) => anfrage("GET", "/api/neuigkeiten" + q({ seit })),
+  neuigkeitenGelesen: (bis) => anfrage("POST", "/api/neuigkeiten/gelesen", bis ? { bis } : {}),
   aktivitaet: ({ art, seit, nur, vault, limit } = {}) => anfrage("GET", "/api/aktivitaet" + q({ seit, art: Array.isArray(art) ? art.join(",") : art, limit, vault, nur })),
   aktivitaetRueckgaengig: (id, vault, teilweise) => anfrage("POST", "/api/aktivitaet/rueckgaengig", { id, ...(vault ? { vault } : {}), ...(teilweise ? { teilweise: true } : {}) }),
   aktivitaetWiederherstellen: (id, vault, teilweise) => anfrage("POST", "/api/aktivitaet/wiederherstellen", { id, ...(vault ? { vault } : {}), ...(teilweise ? { teilweise: true } : {}) }),

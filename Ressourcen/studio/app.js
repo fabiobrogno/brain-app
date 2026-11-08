@@ -27,6 +27,8 @@ import { baueKonfliktAnsicht, baueVergleich } from "./fremd-ansicht.js";
 import { erzeugeJournal, entwurfSchluessel } from "./entwurf.js";
 import { starteLive, planeAus, kiHinweis, hebeHervor } from "./live.js";
 import { erzeugeMitteilungen } from "./mitteilungen.js"; // P8a: Hinweise unten rechts zu Ereignissen des Aktivitätsprotokolls
+import { erzeugeErwaehnungen } from "./erwaehnungen.js"; // Runde 3d: ungelinkte Erwähnungen in der Info-Spalte
+import { erzeugeNeuigkeiten } from "./neuigkeiten.js";   // Runde 3d: Karte „Was ist neu“ im Posteingang
 import { erzeugeGlocke } from "./glocke.js"; // P8b: Glocke in der Kopfzeile mit Mitteilungsliste
 import { TG } from "./texte-glocke.js";
 import { baueKiZeile } from "./ki-zeile.js";
@@ -1361,6 +1363,7 @@ function zeichneListe({ behalte = false } = {}) {
   host.replaceChildren();
   const leiste = posteingangLeiste();
   if (leiste) host.append(leiste);
+  if (S.sicht.art === "bereich" && S.sicht.id === "inbox") { host.append(neuKarte.knoten); neuKarte.lade(); } // „Was ist neu“ ganz oben im Posteingang
   if (!S.sichtListe.length) { host.append(S.zeigeZurueckgestellt ? h("div", { klasse: "leer-liste", "data-leer": "zurueckgestellt" }, h("p", { text: T.posteingang.leerZurueckgestellt })) : leerZustand()); return; }
   const bisAuswahl = S.pfad ? S.sichtListe.findIndex((n) => n.pfad === S.pfad) : -1;
   rendereMehr(Math.max(CHUNK, scroll ? Math.ceil((scroll + host.clientHeight) / 90) + 20 : 0, bisAuswahl >= 0 ? bisAuswahl + 5 : 0));
@@ -1793,6 +1796,10 @@ function zielKnopf(ziel) {
   const knopf = h("button", { klasse: "ziel", type: "button", "data-ziel": pfad, title: pfad, aufClick: () => oeffne(pfad, { ausListe: true }) }, symbol(typ ? typSymbol(typ.symbol) : "notiz", 14), h("span", { klasse: "t", text: n?.titel || ohneEndung(dateiName(pfad)) }));
   return typ ? setzeTypFarbe(knopf, typ) : knopf;
 }
+// Ungelinkte Erwähnungen (erwaehnungen.js) und „Was ist neu“ (neuigkeiten.js): beide ohne KI, nur lokale Daten
+const erw = erzeugeErwaehnungen({ S, ed, oeffne: (p) => oeffne(p), sichereVorWechsel: () => sichereVorWechsel(), ladeBaum: () => ladeBaum(), planeGit: () => planeGitRefresh(), offeneNeuLaden: () => konfliktNeuLaden(), ladeInfo: (o) => ladeInfo(o) });
+const neuKarte = erzeugeNeuigkeiten({ S, oeffne: (p) => oeffne(p), waehleSicht: (s) => waehleSicht(s), oeffneAktivitaet: () => ansehenAktivitaet("protokoll"), oeffneAbgleich: () => oeffneCommit(), ersteKarte: () => { const k = $("liste-koerper").querySelector("[data-karte]"); k?.scrollIntoView({ block: "nearest" }); k?.focus?.({ preventScroll: true }); } });
+
 // leise: der Inhalt wird nur gebaut; inhalt._tausch() setzt ihn an die Stelle des alten (Bildlauf bleibt)
 function infoGeruest(leise = false) {
   const kopf = h("div", { klasse: "info-kopf" }, h("h2", { text: T.eigenschaften.titel }),
@@ -1826,11 +1833,13 @@ async function ladeInfo({ leise = false } = {}) {
   const bezSek = sektion("beziehungen", T.eigenschaften.beziehungen);
   const verwSek = sektion("verweise", T.eigenschaften.verweise);
   const rueckSek = sektion("rueck", T.eigenschaften.rueck);
+  const erwSek = erw.sektionen({ pfad, aktuell: () => nr === infoNr && pfad === S.pfad }); // Runde 3d: ungelinkte Erwähnungen (beide Richtungen)
   const infoSek = sektion("info", T.eigenschaften.info);
   const verlaufSek = sektion("verlauf", T.eigenschaften.verlauf);
   const ablageSek = sektion("ablage", null);
   bezSek.hidden = verwSek.hidden = rueckSek.hidden = ablageSek.hidden = true;
-  inhalt.append(wahrheit, feldSek, bezSek, verwSek, rueckSek, infoSek, verlaufSek, ablageSek);
+  inhalt.append(wahrheit, feldSek, bezSek, verwSek, rueckSek, erwSek.ein, erwSek.aus, infoSek, verlaufSek, ablageSek);
+  aufgaben.push(erwSek.lade());
 
   // Wahrheitsstatus
   aufgaben.push(api.pruefung(pfad).then((pr) => {

@@ -393,6 +393,14 @@ export function erzeugeHandler(o) {
       case "/api/posteingang/spaeter": nur("POST"); return V().posteingangSpaeter(eingabe());
       case "/api/posteingang/uebernehmen": nur("POST"); return V().posteingangUebernehmen(eingabe());
       // Volltext über den Index: q (Wörter, "Phrase", -ausschluss, ordner: typ: tag: status: geaendert:<7d), limit (Standard 30, höchstens 50), offset, facetten=1 (Zahlen für die Filter)
+      // Ungelinkte Erwähnungen (gemeinsam/erwaehnungen-index.mjs): wo steht diese Notiz im Klartext · welche Notizen nennt dieser Text · Links setzen (Vorschau, Journal, Rückgängig)
+      case "/api/erwaehnungen": nur("GET"); return V().erwaehnungen(q.get("pfad"));
+      case "/api/erwaehnungen/aus": { nur("POST"); const e = eingabe(); return V().erwaehntVon(e.pfad, e.text); }
+      case "/api/erwaehnungen/links": nur("POST"); return V().erwaehnungenLinks(eingabe());
+      case "/api/erwaehnungen/verlinken": { nur("POST"); const r = await V().verlinke(eingabe()); if (r.geaendert && r.geaendert.length) auto.vermerke(V(), r.geaendert); return r; }
+      // „Was ist neu“ (gemeinsam/neuigkeiten.mjs): Zusammenfassung seit dem Merker oder seit ?seit=<ISO>; „gelesen“ setzt den Merker. Nur lokale Daten.
+      case "/api/neuigkeiten": nur("GET"); return V().neuigkeiten({ seit: q.get("seit") || "" });
+      case "/api/neuigkeiten/gelesen": { nur("POST"); const e = koerper && koerper.length ? eingabe() : {}; return V().neuigkeitenGelesen(e.bis); }
       case "/api/suche": nur("GET"); return V().sucheIndex({ q: q.get("q"), limit: q.get("limit"), offset: q.get("offset"), facetten: q.get("facetten") === "1" });
       case "/api/pruefung": nur("GET"); return V().pruefung(q.get("pfad"));
       case "/api/gesundheit": nur("GET"); return V().gesundheit();
@@ -897,7 +905,8 @@ export function erzeugeHandler(o) {
     const q = query instanceof URLSearchParams ? query : new URLSearchParams(query || "");
     const v = aktuell; // dieser Vault gilt für die ganze Anfrage, auch wenn währenddessen gewechselt wird
     // Schreibende Anfragen der Oberfläche sind keine „externen Änderungen“: Die Meldung wartet, bis die Anfrage fertig ist, und die berührten Dateien gelten als eigen.
-    const schreibt = methode !== "GET" && methode !== "HEAD";
+    // POST, die nur lesen (Erwähnungen im offenen Text), sind keine Schreibvorgänge: sonst gälte eine gleichzeitige Änderung von außen an dieser Notiz als „eigen“ und ginge verloren
+    const schreibt = methode !== "GET" && methode !== "HEAD" && pfad !== "/api/erwaehnungen/aus" && pfad !== "/api/erwaehnungen/links";
     if (schreibt) ereignisse.beginneEigenes();
     let eigen = [], eigenKopf = false;
     try {

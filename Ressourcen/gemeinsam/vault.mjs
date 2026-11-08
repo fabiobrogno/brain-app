@@ -23,6 +23,8 @@ import { erzeugeAufgaben } from "./aufgaben-vault.mjs";
 import { erzeugeDateiaktionen } from "./dateiaktionen.mjs";
 import { SUCHE_STANDARD, SUCHE_MAX, sucheWoerter, suchAuszug, sucheText } from "./ki-antworten.mjs";
 import { erzeugeSuchindex } from "./suchindex.mjs";
+import { erzeugeErwaehnungen } from "./erwaehnungen-index.mjs";
+import { baueNeuigkeiten, leseMarke, setzeMarke, STANDARD_TAGE } from "./neuigkeiten.mjs";
 import * as merge3 from "./merge3.mjs";
 import * as ablageFn from "./ablage.mjs";
 import * as entwurfFn from "./entwurf.mjs";
@@ -429,7 +431,59 @@ export function oeffneVault(vaultPfad, opts = {}) {
   const suchindexAendere = (pfade) => { if (suchindex) suchindex.aendere(pfade); };
   const suchindexPruefeNeu = () => { if (suchindex) suchindex.pruefeNeu(); };
   const sucheVorwaermen = () => holeSuchindex().starte();
-  const suchindexBeende = () => { if (suchindex) suchindex.beende(); };
+  const suchindexBeende = () => { if (suchindex) suchindex.beende(); if (erwaehnungsDienst) erwaehnungsDienst.beende(); verwaltetKonfig = null; };
+
+  // Ungelinkte Erwähnungen (erwaehnungen-index.mjs): läuft auf dem Suchindex. Quelle (hier darf Kortex einen Link einfügen) und Ziel (darauf darf verlinkt werden) schließen
+  // verwaltete Orte aus: Archiv, Vorlagen, maschinelle Ordner im Posteingang, Systemdateien; Ziele zusätzlich den Posteingang und Dateien mit „_“ am Anfang.
+  let verwaltetKonfig = null, erwaehnungsDienst = null;
+  const verwaltet = (rel) => {
+    verwaltetKonfig ??= { inbox: falte(inboxOrdnerVon(wurzel)), vorlagen: falte(vorlagenOrdnerVon(wurzel)) };
+    const t = rel.split("/"), erste = falte(t[0]);
+    return /^90_/.test(erste) || erste === verwaltetKonfig.vorlagen || (erste === verwaltetKonfig.inbox && t.length > 2 && t[1].startsWith("_")) || /(^|\/)((claude|agents|gemini)\.md|\.cursorrules|copilot-instructions\.md)$/i.test(rel);
+  };
+  const darfQuelle = (rel) => !verwaltet(rel);
+  const darfZiel = (rel) => !verwaltet(rel) && falte(rel.split("/")[0]) !== (verwaltetKonfig?.inbox ?? falte(inboxOrdnerVon(wurzel))) && !rel.split("/").pop().startsWith("_");
+  const holeErwaehnungen = () => erwaehnungsDienst || (erwaehnungsDienst = erzeugeErwaehnungen({ wurzel, index: holeSuchindex, darfZiel, darfQuelle }));
+  const erwPfad = (p) => { if (typeof p !== "string" || !p) throw new HttpFehler(400, "Der Pfad fehlt."); const l = loese(wurzel, p); if (!BEARBEITBAR.test(l.rel)) throw new HttpFehler(415, "Das ist keine Notiz."); return l.rel; };
+  const erwaehnungen = (p, opt) => holeErwaehnungen().erwaehnungen(erwPfad(p), opt);
+  async function erwaehntVon(p, text) {
+    if (typeof text !== "string") throw new HttpFehler(400, "Der Text fehlt.");
+    if (text.length > 1024 * 1024) throw new HttpFehler(413, "Der Text ist zu groß.");
+    return holeErwaehnungen().erwaehntVon(erwPfad(p), text);
+  }
+  // a: { pfad, text, stellen: [{ ziel, start, treffer, vor, nach }] | alle: true } — Links für den offenen (auch ungespeicherten) Text; geschrieben wird nichts
+  async function erwaehnungenLinks(a) {
+    if (!a || typeof a !== "object" || typeof a.text !== "string") throw new HttpFehler(400, "Der Text fehlt.");
+    if (a.text.length > 1024 * 1024) throw new HttpFehler(413, "Der Text ist zu groß.");
+    const pfad = erwPfad(a.pfad);
+    let stellen = "alle";
+    if (a.alle !== true) {
+      if (!Array.isArray(a.stellen) || !a.stellen.length || a.stellen.length > 500) throw new HttpFehler(400, "Bitte die Stellen angeben (höchstens 500).");
+      stellen = a.stellen.map((s) => {
+        if (!s || !Number.isInteger(s.start) || s.start < 0 || typeof s.treffer !== "string" || s.treffer.length > 200) throw new HttpFehler(400, "Eine Stelle ist unvollständig.");
+        return { ziel: erwPfad(s.ziel), start: s.start, treffer: s.treffer, vor: typeof s.vor === "string" ? s.vor.slice(0, 40) : "", nach: typeof s.nach === "string" ? s.nach.slice(0, 40) : "" };
+      });
+    }
+    return holeErwaehnungen().linksFuerText(pfad, a.text, stellen);
+  }
+  // a: { ziel, stellen: [{ pfad, start, treffer, vor, nach }] | alle: true, vorschau?, token? }
+  async function verlinke(a) {
+    if (!a || typeof a !== "object") throw new HttpFehler(400, "Die Anfrage ist leer.");
+    const ziel = erwPfad(a.ziel);
+    let auswahl;
+    if (a.alle === true) auswahl = "alle";
+    else {
+      if (!Array.isArray(a.stellen) || !a.stellen.length || a.stellen.length > 500) throw new HttpFehler(400, "Bitte die Stellen angeben (höchstens 500).");
+      auswahl = a.stellen.map((s) => {
+        if (!s || typeof s.pfad !== "string" || !Number.isInteger(s.start) || s.start < 0 || typeof s.treffer !== "string" || s.treffer.length > 200) throw new HttpFehler(400, "Eine Stelle ist unvollständig.");
+        return { pfad: erwPfad(s.pfad), start: s.start, treffer: s.treffer, vor: typeof s.vor === "string" ? s.vor.slice(0, 40) : "", nach: typeof s.nach === "string" ? s.nach.slice(0, 40) : "", ...(typeof s.hash === "string" && /^[0-9a-f]{64}$/.test(s.hash) ? { hash: s.hash } : {}) };
+      });
+    }
+    if (await selbst.abgleichBeschaeftigt()) throw new HttpFehler(409, "Gerade läuft ein Abgleich oder eine Zusammenführung. Kortex verlinkt nichts, bis sie abgeschlossen ist.", { art: "beschaeftigt" });
+    const r = await dateiAktionen.verlinke({ vorschau: a.vorschau === true, ...(typeof a.token === "string" ? { token: a.token } : {}) }, (lies) => holeErwaehnungen().planeVerlinken(ziel, auswahl, lies));
+    if (r.geaendert && r.geaendert.length && suchindex) suchindex.aendere(r.geaendert);
+    return r;
+  }
 
   function pruefung(rel) {
     const d = lies(rel);
@@ -646,13 +700,42 @@ export function oeffneVault(vaultPfad, opts = {}) {
     return { treffer, text };
   }
 
-  return {
+  // „Was ist neu“ (neuigkeiten.mjs): nur lokale Daten. seit: ISO | leer → der Merker „gelesen bis“, sonst die letzten Tage. Eine Quelle, die gerade nicht lesbar ist, fehlt in der Antwort (null), statt zu raten.
+  async function neuigkeiten(o = {}) {
+    const marke = leseMarke(supportOrdnerV(), kennungVault(wurzel));
+    let seit = null, seitArt = "standard";
+    if (typeof o.seit === "string" && o.seit) { if (!Number.isFinite(Date.parse(o.seit))) throw new HttpFehler(400, "„seit“ ist eine Zeitangabe (ISO)."); seit = o.seit; seitArt = "gewaehlt"; }
+    else if (marke) { seit = marke; seitArt = "besuch"; }
+    const frueh = seit ? new Date(Date.parse(seit)).toISOString() : new Date(jetzt().getTime() - STANDARD_TAGE * 86400e3).toISOString();
+    const mitFrist = (p, ms = 2000) => Promise.race([p, new Promise((ok) => setTimeout(() => ok(null), ms))]).catch(() => null);
+    const [zeilen, aufgaben, git] = await Promise.all([
+      mitFrist(notizIndex.notizen().then((r) => r.notizen)),
+      mitFrist(aufgabenFn.aufgaben().then((r) => r.aufgaben)),
+      mitFrist(selbst.gitStatus()),
+    ]);
+    let ereignisse = null; try { ereignisse = leseEreignisse(supportOrdnerV(), kennungVault(wurzel), { seit: new Date(Date.parse(frueh) - 1).toISOString() }); } catch { ereignisse = null; }
+    const heute = opts.heute || heuteIso(jetzt());
+    return { ...baueNeuigkeiten({ seit: frueh, jetzt: jetzt(), heute, notizen: zeilen, aufgaben, ereignisse, git }), marke, seitArt };
+  }
+  function neuigkeitenGelesen(bis) {
+    const t = bis === undefined || bis === null ? jetzt().toISOString() : bis;
+    if (typeof t !== "string" || !Number.isFinite(Date.parse(t))) throw new HttpFehler(400, "„bis“ ist eine Zeitangabe (ISO).");
+    return { ok: true, gelesenBis: setzeMarke(supportOrdnerV(), kennungVault(wurzel), t) };
+  }
+
+  // Rückgängig und Wiederholen fassen Dateien an: nicht während eines offenen Abgleichs (MERGE_HEAD, gemerkter Konfliktstand, Sperre)
+  const nichtImAbgleich = async (fn) => {
+    if (await selbst.abgleichBeschaeftigt()) throw new HttpFehler(409, "Gerade läuft ein Abgleich oder eine Zusammenführung. Versuche es danach noch einmal — es wurde nichts verändert.", { art: "beschaeftigt" });
+    return fn();
+  };
+  let selbst = null;
+  return selbst = {
     wurzel, name: basename(wurzel), heute: () => opts.heute || heuteIso(jetzt()), rueckfragen, kitVersion, kitVorhanden, kit, vertrauen, vertrauenStand: stand, baum, lies, imUnterVault: (rel) => { try { return imUnterVault(loese(wurzel, rel).abs); } catch { return false; } }, schreibe, zusammenfuehren, ablageListe, ablageLese, ablageLegeAb, entwurfPruefen,
     entwurfSchreiben: (a) => entwurfFn.schreibeEntwurf(supportOrdnerV(), wurzel, a || {}), entwurfLoeschen: (pfad) => ({ ok: entwurfFn.loescheEntwurf(supportOrdnerV(), wurzel, pfad) }), entwurfVerschieben: (a) => entwurfFn.verschiebeEntwuerfe(supportOrdnerV(), wurzel, a?.von, a?.nach), entwuerfe: () => ({ entwuerfe: entwurfFn.listeEntwuerfe(supportOrdnerV(), wurzel) }),
     neu, wikiAnlegen, wikiLoese: (ziel, von) => notizIndex.loeseWiki(ziel, ordnerVonPfad(von || "")), merken, suche, sucheIndex, sucheVorwaermen, suchindexBeende, suchindexAendere, suchindexPruefeNeu, suchindexStand: () => (suchindex ? suchindex.stand() : null), suchindexRuhe: () => (suchindex ? suchindex.ruhe() : Promise.resolve()), suchenFuerKi, pruefung, gesundheit, nutzung,
-    umbenennen: mitRuhe(dateiAktionen.umbenennen), verschieben: mitRuhe(dateiAktionen.verschieben), loeschen: mitRuhe(dateiAktionen.loeschen),
+    erwaehnungen, erwaehntVon, erwaehnungenLinks, verlinke: mitRuhe(verlinke), neuigkeiten, neuigkeitenGelesen, umbenennen: mitRuhe(dateiAktionen.umbenennen), verschieben: mitRuhe(dateiAktionen.verschieben), loeschen: mitRuhe(dateiAktionen.loeschen),
     papierkorb: dateiAktionen.papierkorbListe, papierkorbWiederherstellen: mitRuhe(dateiAktionen.papierkorbWiederherstellen), papierkorbEndgueltig: dateiAktionen.papierkorbEndgueltig, papierkorbHinweisErledigt: dateiAktionen.papierkorbHinweisErledigt, aktionenOrt: dateiAktionen.aktionenOrt,
-    vorgangZurueck: mitRuhe((a) => dateiAktionen.vorgangZurueck(a.id, a)), vorgangWieder: mitRuhe((a) => dateiAktionen.vorgangWieder(a.id, a)), vorgangMoeglich: dateiAktionen.vorgangMoeglich,
+    vorgangZurueck: mitRuhe((a) => nichtImAbgleich(() => dateiAktionen.vorgangZurueck(a.id, a))), vorgangWieder: mitRuhe((a) => nichtImAbgleich(() => dateiAktionen.vorgangWieder(a.id, a))), vorgangMoeglich: dateiAktionen.vorgangMoeglich,
     posteingangVerwerfen: posteingang.verwerfen, posteingangSpaeter: posteingang.spaeter, posteingangUebernehmen: posteingang.uebernehmen,
     aufgaben: aufgabenFn.aufgaben, aufgabeAnlegen: aufgabenFn.anlegen, aufgabeAendern: aufgabenFn.aendern, aufgabenArchivieren: aufgabenFn.archivieren, aufgabenFuerKi: aufgabenFn.fuerKi, aufgabenOrdnerName: aufgabenFn.ordnerName, aufgabePfad: aufgabenFn.findePfad,
     notizen: async () => ({ ...(await notizIndex.notizen()), aufgabenOrdner: await aufgabenFn.ordnerName(), inboxOrdner: inboxOrdnerVon(wurzel), vorlagenOrdner: vorlagenOrdnerVon(wurzel), ...hinweisFeld() }), notizKontext: notizIndex.kontext, typen: notizIndex.typen, ansichten: notizIndex.ansichten,

@@ -224,7 +224,7 @@ export function analysiere(rel, textRoh) {
   const tagListe = [...tags].slice(0, 30).map((t) => t.toLowerCase());
   return {
     doc: {
-      titel, titelF: falteText(titel), aliasF: aliasse.map(falteText), typ, typF: falteText(typ), status, statusF: falteText(status),
+      titel, titelF: falteText(titel), aliasse: aliasse.slice(0, 20), aliasF: aliasse.map(falteText), typ, typF: falteText(typ), status, statusF: falteText(status),
       tags: tagListe, tagsF: tagListe.map(falteText), ordnerF: falteText(ordner), ordner0: teile.length > 1 ? teile[0] : "", segF: null, laenge,
     },
     zaehl,
@@ -341,6 +341,7 @@ export function erzeugeSuchindex(o) {
   // Tote Einträge verzerren die Wort-Häufigkeiten (df) leicht; ab einem Viertel der Notizen (mindestens 200) baut ein Hintergrundlauf einen frischen Index.
   const totGrenze = () => o.totSchwelle ?? Math.max(200, Math.floor(z.nLebend * 0.25));
   let z = new Zustand();
+  let epoche = 1; // zählt jeden Austausch von z (Neubau, Vault-Wechsel): wer Teilstände mitführt (Erwähnungen), beginnt dann von vorn
   let gestartet = false, fertig = false, abgebrochen = false;
   let bauStart = 0, bauZeit = 0, anteil = 0, entdeckt = 0, letzterAbgleich = 0, neubau = null;
   const schmutzig = new Set();
@@ -459,7 +460,7 @@ export function erzeugeSuchindex(o) {
     const frisch = new Zustand();
     neubau = frisch;
     // Was sich während des Neubaus ändert, hat der frische Index vielleicht schon (alt) gelesen: nach dem Tausch folgt ein Abgleich
-    einreihen(abgleichen(frisch, true), (fehler) => { const gebaut = neubau === frisch; if (gebaut && !fehler) { z = frisch; nochAbgleich = true; } if (gebaut) neubau = null; nochmalPruefen(); });
+    einreihen(abgleichen(frisch, true), (fehler) => { const gebaut = neubau === frisch; if (gebaut && !fehler) { z = frisch; epoche++; nochAbgleich = true; } if (gebaut) neubau = null; nochmalPruefen(); });
   }
 
   // Einzelne Dateien neu lesen (eigene Schreibvorgänge, Live-Ereignisse)
@@ -883,7 +884,7 @@ export function erzeugeSuchindex(o) {
   function beende() {
     aufgaben.length = 0; laeuft = null; schmutzig.clear();
     gestartet = false; fertig = false; abgleichOffen = false; leerenGeplant = false; nochAbgleich = false; neubau = null;
-    z = new Zustand(); anteil = 0; entdeckt = 0;
+    z = new Zustand(); epoche++; anteil = 0; entdeckt = 0;
   }
 
   function stand() {
@@ -893,5 +894,32 @@ export function erzeugeSuchindex(o) {
   function ruhe() {
     return new Promise((ok) => { const pruef = () => (!laeuft && !aufgaben.length && !geplant ? ok() : setTimeout(pruef, 2)); pruef(); });
   }
-  return { starte, suche, sucheWarte, beende, aendere, pruefeNeu, stand, ruhe, istFertig: () => fertig };
+
+  // ----- Für Erwähnungen (gemeinsam/erwaehnungen-index.mjs): Kandidaten und Namen, ohne Texte zu lesen -----
+  // gruppen: [[Wortvarianten …] …] — innerhalb einer Gruppe ODER, über die Gruppen UND (jedes Wort muss irgendwo in der Notiz vorkommen: Titel, Text, Pfad …).
+  // → [{ rel, mtimeMs, groesse }] lebender Notizen, neueste zuerst. Die Posting-Listen liegen im Speicher: kein Plattenzugriff.
+  function kandidaten(gruppen) {
+    const zz = z;
+    const listen = gruppen.map((g) => g.map((w) => zz.vok.get(w)).filter((id) => id !== undefined));
+    if (!listen.length || listen.some((l) => !l.length)) return [];
+    const df = (l) => l.reduce((a, id) => a + zz.df[id], 0);
+    listen.sort((a, b) => df(a) - df(b));
+    const erste = new Set();
+    for (const id of listen[0]) zz.fuerEintraege(id, (e) => { const nr = e >>> 8; if (zz.lebt[nr]) erste.add(nr); });
+    let kand = [...erste];
+    for (let k = 1; k < listen.length && kand.length; k++) {
+      const m = new Uint8Array(zz.docs.length);
+      for (const id of listen[k]) zz.fuerEintraege(id, (e) => { m[e >>> 8] = 1; });
+      kand = kand.filter((nr) => m[nr] === 1);
+    }
+    return kand.map((nr) => zz.docs[nr]).sort((a, b) => b.mtimeMs - a.mtimeMs).map((d) => ({ rel: d.rel, mtimeMs: d.mtimeMs, groesse: d.groesse }));
+  }
+  // Notizen ab Nummer `ab` (neue Einträge hängen nur hinten an; ersetzte und gelöschte sind tot): der Namenssatz führt sich so selbst fort.
+  function dokumente(ab = 0) {
+    const zz = z, aus = [];
+    for (let nr = Math.max(0, ab); nr < zz.docs.length; nr++) { const d = zz.docs[nr]; if (zz.lebt[nr] && !d.tot) aus.push({ nr, rel: d.rel, titel: d.titel, aliasse: d.aliasse || [] }); }
+    return { epoche, bis: zz.docs.length, dokumente: aus };
+  }
+  const lebtNr = (nr) => !!z.lebt[nr] && !z.docs[nr]?.tot;
+  return { starte, suche, sucheWarte, beende, aendere, pruefeNeu, stand, ruhe, istFertig: () => fertig, kandidaten, dokumente, lebtNr, epoche: () => epoche, anteil: () => anteil };
 }
