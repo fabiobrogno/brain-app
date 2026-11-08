@@ -177,6 +177,7 @@ test("Lesende POSTs (/aus, /links) gelten nicht als eigene Schreibvorgänge: ein
   const h = erzeugeHandler({ vault: d, vaultOptionen: { support }, ereignisse: { entprellMs: 60, maxWarteMs: 300 } });
   const rufe = async (methode, p, daten, query) => { const r = await h({ methode, pfad: p, query: query ?? null, body: daten === undefined ? undefined : Buffer.from(JSON.stringify(daten)) }); return { status: r.status, j: JSON.parse(r.body.toString("utf8")) }; };
   const s = (await rufe("GET", "/api/ereignisse")).j;
+  await new Promise((ok) => setTimeout(ok, 700)); // der Beobachter hat den Ausgangsstand sicher gelesen, bevor von außen geschrieben wird (langsame Läufer)
   const text = lies(d, "n/a.md");
   // Die Anfrage läuft noch (der Index baut sich erst auf), während die Notiz von außen geändert wird — genau so trifft es die Oberfläche beim Öffnen einer Notiz
   const laufend = [rufe("POST", "/api/erwaehnungen/aus", { pfad: "n/a.md", text }), rufe("POST", "/api/erwaehnungen/links", { pfad: "n/a.md", text, alle: true })];

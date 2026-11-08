@@ -21,7 +21,7 @@ const zeitText = (iso) => new Intl.DateTimeFormat("de-DE", { weekday: "short", d
 export function erzeugeNeuigkeiten(ctx) {
   const { S } = ctx;
   const karte = h("section", { klasse: "nk", "data-nk": "", "aria-label": TN.titel, hidden: true });
-  let letzteSig = null, zeitraum = "besuch", daten = null, geladen = 0, nr = 0, offen = new Set(), kiOk = null, kiVault = null, kiHinweis = false;
+  let aufgeklappt = false, letzteSig = null, zeitraum = "besuch", daten = null, geladen = 0, nr = 0, offen = new Set(), kiOk = null, kiVault = null, kiHinweis = false;
 
   async function kiPruefen() {
     const vault = S.info?.vault || null;
@@ -47,6 +47,13 @@ export function erzeugeNeuigkeiten(ctx) {
     return wurzel;
   }
 
+  // Immer dieselbe Höhe (eine Zeile): die Karte schiebt die Liste nicht, wenn Daten eintreffen oder sich ändern. Die Einzelheiten klappen darunter auf.
+  function kopfZeile({ zusammen, gelesen = null }) {
+    const umschalter = h("button", { type: "button", klasse: "nk-umschalter", "data-nk-kopf": "", "aria-expanded": String(aufgeklappt), title: aufgeklappt ? TN.einklappen : TN.aufklappen,
+      aufClick: () => { aufgeklappt = !aufgeklappt; if (daten) zeichne(daten); } },
+      h("span", { klasse: "nk-titel", text: TN.titel }), h("span", { klasse: "nk-zusammen", "data-nk-zusammen": "", text: zusammen }), h("span", { klasse: "nk-pfeil", "aria-hidden": "true" }, symbol("chevron-unten", 12)));
+    return h("div", { klasse: "nk-kopf" }, umschalter, gelesen);
+  }
   function zeichne(r) {
     daten = r;
     if (!r) { karte.hidden = true; return; }
@@ -74,7 +81,8 @@ export function erzeugeNeuigkeiten(ctx) {
       const b = ev.currentTarget; setzeLaedt(b, true);
       try { await api.neuigkeitenGelesen(); zeitraum = "besuch"; await lade({ erzwingen: true }); } catch { /* der Merker bleibt, wie er war */ } finally { setzeLaedt(b, false); }
     } });
-    const kopf = h("div", { klasse: "nk-kopf" }, h("h3", { klasse: "nk-titel", text: TN.titel }), gelesen);
+    const teileKurz = [n && n.neu ? TN.notizen.neu(n.neu) : null, a && a.ueberfaellig ? TN.aufgaben.ueberfaellig(a.ueberfaellig) : null, k && k.abgelegt ? TN.ki.abgelegt(k.abgelegt) : null, inbox && inbox.anzahl ? `${TN.inbox.name} ${TN.inbox.offen(inbox.anzahl)}` : null].filter(Boolean);
+    const kopf = kopfZeile({ zusammen: r.leer && !teileKurz.length ? TN.nichtsNeuKurz : teileKurz.slice(0, 3).join(" · "), gelesen });
     const unter = h("div", { klasse: "nk-unter" }, wahl, h("span", { klasse: "nk-seit", "data-nk-seit": r.seit, text: TN.seit(zeitText(r.seit)) }));
     const rumpf = r.leer
       ? [h("p", { klasse: "nk-leer leise", "data-nk-leer": "", text: TN.nichtsNeu(zeitText(r.seit)) }), ...zeilen]
@@ -82,7 +90,8 @@ export function erzeugeNeuigkeiten(ctx) {
     const fuss = kiOk ? h("div", { klasse: "nk-fuss" },
       h("button", { type: "button", klasse: "nk-ki", "data-aktion": "nk-ki", "aria-expanded": String(kiHinweis), aufClick: () => { kiHinweis = !kiHinweis; zeichne(daten); } }, symbol("funke", 14), h("span", { text: TN.ki_zusammenfassen.knopf }), h("span", { klasse: "nk-bald", text: TN.ki_zusammenfassen.bald })),
       kiHinweis ? h("p", { klasse: "nk-ki-text leise", "data-nk-ki-text": "", text: TN.ki_zusammenfassen.text }) : null) : null;
-    karte.replaceChildren(kopf, unter, h("div", { klasse: "nk-zeilen" }, rumpf), ...(fuss ? [fuss] : []));
+    karte.classList.toggle("offen", aufgeklappt);
+    karte.replaceChildren(kopf, ...(aufgeklappt ? [h("div", { klasse: "nk-inhalt", "data-nk-inhalt": "" }, unter, h("div", { klasse: "nk-zeilen" }, rumpf), ...(fuss ? [fuss] : []))] : []));
   }
 
   let vaultMerk = null;
@@ -90,6 +99,7 @@ export function erzeugeNeuigkeiten(ctx) {
     if (vaultMerk !== (S.info?.vault || null)) { vergiss(); vaultMerk = S.info?.vault || null; } // anderer Vault: alles von vorn
     if (!erzwingen && daten && Date.now() - geladen < FRISCH_MS) { if (!karte.childElementCount) zeichne(daten); return; } // frisch genug: nichts neu zeichnen (ein offenes Auswahlfeld bleibt)
     const mein = ++nr;
+    if (!daten && !karte.childElementCount) { karte.hidden = false; karte.replaceChildren(kopfZeile({ zusammen: TN.laedt })); } // sofort in der endgültigen Höhe da
     try {
       const [r] = await Promise.all([api.neuigkeiten(seitVon(zeitraum)), kiPruefen()]);
       if (mein !== nr) return;
@@ -98,7 +108,7 @@ export function erzeugeNeuigkeiten(ctx) {
       if (sig === letzteSig && karte.childElementCount) return; // unverändert: kein Neuzeichnen
       letzteSig = sig;
       zeichne(r);
-    } catch { if (mein === nr && !daten) karte.hidden = true; }
+    } catch { if (mein === nr && !daten) { karte.hidden = true; karte.replaceChildren(); } }
   }
   // Vault gewechselt oder Karte weg: alles vergessen
   function vergiss() { nr++; letzteSig = null; daten = null; geladen = 0; kiOk = null; kiHinweis = false; offen = new Set(); zeitraum = "besuch"; karte.replaceChildren(); karte.hidden = true; }

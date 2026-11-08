@@ -147,6 +147,9 @@ test("Karte „Was ist neu“: Zeilen mit Zahlen, anklickbar, Zeitraum wählbar,
   const karte = page.locator("[data-nk]");
   await expect(karte).toBeVisible();
   await expect(karte.locator(".nk-titel")).toHaveText("Was ist neu");
+  await expect(karte.locator("[data-nk-zusammen]")).toContainText("neue Notizen"); // eingeklappt: eine Zeile mit der Kurzfassung
+  await expect(karte.locator('[data-nk-zeile="notizen"]')).toHaveCount(0);
+  await karte.locator("[data-nk-kopf]").click();
   await expect(karte.locator('[data-nk-zeile="notizen"] [data-nk-chip="neu"]')).toContainText("neue Notizen");
   await expect(karte.locator('[data-nk-zeile="abgleich"]')).toBeVisible();
   await expect(karte.locator('[data-nk-zeile="inbox"] [data-nk-chip="offen"]')).toHaveText("3 offen");
@@ -172,6 +175,8 @@ test("Karte „Was ist neu“: Zeilen mit Zahlen, anklickbar, Zeitraum wählbar,
   await page.reload();
   await page.waitForSelector("[data-karte], [data-leer]", { timeout: 10000 });
   await page.click('[data-bereich="inbox"]');
+  await expect(page.locator("[data-nk] [data-nk-zusammen]")).toHaveText("Posteingang 3 offen");
+  await page.locator("[data-nk] [data-nk-kopf]").click();
   await expect(page.locator("[data-nk] [data-nk-leer]")).toBeVisible();
 });
 
@@ -187,6 +192,8 @@ test("Karte: Aufgaben (neu, überfällig) und KI-Aktivität aus dem Protokoll, K
   await page.waitForSelector("[data-karte], [data-leer]", { timeout: 10000 });
   await page.click('[data-bereich="inbox"]');
   const karte = page.locator("[data-nk]");
+  await expect(karte.locator("[data-nk-zusammen]")).toContainText("überfällig");
+  await karte.locator("[data-nk-kopf]").click();
   await expect(karte.locator('[data-nk-zeile="aufgaben"] [data-nk-chip="neu"]')).toHaveText("1 neu");
   await expect(karte.locator('[data-nk-zeile="aufgaben"] [data-nk-chip="ueberfaellig"]')).toHaveText("1 überfällig");
   await expect(karte.locator('[data-nk-zeile="ki"] [data-nk-chip="abgelegt"]')).toHaveText("1 abgelegt");
@@ -199,16 +206,21 @@ test("„Mit KI zusammenfassen“: ohne KI-Konto unsichtbar, mit Konto ab Stufe 
   await start(page);
   await page.click('[data-bereich="inbox"]');
   await expect(page.locator("[data-nk]")).toBeVisible();
+  await page.locator("[data-nk-kopf]").click();
   await expect(page.locator('[data-aktion="nk-ki"]')).toHaveCount(0);
+  await expect(page.locator("[data-nk-inhalt]")).toBeVisible();
   // ein Konto mit Stufe „gesperrt“ reicht nicht, eines mit „lesen“ schon
   const antwort = (stufe) => ({ zustand: "ok", stufen: ["gesperrt", "lesen", "posteingang", "erweitert"], konten: [], vaults: [], aktiv: {}, zugriff: { k_aaaaaaaa: { [vault]: stufe } } });
   await page.route("**/api/ki/konten", (route) => route.fulfill({ json: antwort("gesperrt") }));
   await page.reload(); await page.waitForSelector("[data-karte], [data-leer]", { timeout: 10000 }); await page.click('[data-bereich="inbox"]');
   await expect(page.locator("[data-nk]")).toBeVisible();
+  await page.locator("[data-nk-kopf]").click();
+  await expect(page.locator("[data-nk-inhalt]")).toBeVisible();
   await expect(page.locator('[data-aktion="nk-ki"]')).toHaveCount(0);
   await page.unroute("**/api/ki/konten");
   await page.route("**/api/ki/konten", (route) => route.fulfill({ json: antwort("lesen") }));
   await page.reload(); await page.waitForSelector("[data-karte], [data-leer]", { timeout: 10000 }); await page.click('[data-bereich="inbox"]');
+  await page.locator("[data-nk-kopf]").click();
   const knopf = page.locator('[data-aktion="nk-ki"]');
   await expect(knopf).toBeVisible();
   await expect(knopf).toContainText("kommt bald");
@@ -224,6 +236,8 @@ for (const [schema, farbe] of schemata) {
     await start(page);
     await page.click('[data-bereich="inbox"]');
     await expect(page.locator("[data-nk]")).toBeVisible();
+    await bild(page, "karte-eingeklappt", schema);
+    await page.locator("[data-nk-kopf]").click();
     await page.locator('[data-nk-zeile="notizen"]').click();
     await page.locator('[data-aktion="nk-ki"]').click();
     await bild(page, "karte", schema);
