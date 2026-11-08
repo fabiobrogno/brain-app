@@ -122,3 +122,30 @@ test("Aktion export-pdf: Dialog mit Endung pdf, dann Erzeugung aus dem HTML (Inj
 test("Aktion teilen: in der Electron-Hülle nicht verfügbar (ehrlich), nie ein Fehler", async () => {
   assert.deepEqual(await huelle().h.aktion("teilen", { name: "A", text: "t" }), { ok: false, grund: "nicht-verfuegbar" });
 });
+
+test("Export schreibt nie in den offenen Vault (auch nicht über Symlink) und Ordner nur neu oder leer; Aktion meldet die Gründe", async () => {
+  const wurzel = tmp("exp-v-");
+  const vault = join(wurzel, "vault"), nachbar = join(wurzel, "vault-2");
+  mkdirSync(join(vault, "unter"), { recursive: true }); mkdirSync(nachbar);
+  const b = X.pruefeBuendel(buendel([{ pfad: "Atlas.md", text: "x" }]));
+  assert.throws(() => X.schreibeBuendel(b, join(vault, "unter/Atlas.md"), { vault }), (e) => e.grund === "im-vault");
+  assert.throws(() => X.schreibeBuendel(b, join(vault, "neu/Atlas.md"), { vault }), (e) => e.grund === "im-vault");
+  assert.equal(existsSync(join(vault, "neu")), false, "nichts angelegt");
+  assert.equal(X.liegtImVault(join(nachbar, "a.md"), vault), false, "Nachbar mit gleichem Namensanfang liegt nicht im Vault");
+  assert.equal(X.schreibeBuendel(b, join(nachbar, "Atlas.md"), { vault }), "Atlas.md");
+  if (process.platform !== "win32") { symlinkSync(vault, join(wurzel, "link")); assert.equal(X.liegtImVault(join(wurzel, "link", "x.md"), vault), true); }
+  const o = X.pruefeBuendel(buendel([{ pfad: "n/eins.md", text: "1" }], { name: "n", haupt: "n/eins.md", ordner: true }));
+  const voll = join(wurzel, "voll"); mkdirSync(voll); writeFileSync(join(voll, "vorhanden.txt"), "x");
+  assert.throws(() => X.schreibeBuendel(o, voll), (e) => e.grund === "ordner-nicht-leer");
+  assert.equal(existsSync(join(voll, "eins.md")), false);
+  const leer = join(wurzel, "leer"); mkdirSync(leer);
+  X.schreibeBuendel(o, leer);
+  assert.ok(existsSync(join(leer, "eins.md")));
+  // über die Aktion: die Gründe kommen bei der Seite an; PDF in den Vault wird vor dem Erzeugen abgelehnt
+  const a = huelle({ vaultPfad: async () => vault, waehleSpeichern: async () => join(vault, "Atlas.md"), pdfRendern: async () => assert.fail("nicht erzeugen") });
+  assert.deepEqual(await a.h.aktion("export-speichern", buendel(ok)), { ok: false, grund: "im-vault" });
+  const p = huelle({ vaultPfad: async () => vault, waehleSpeichern: async () => join(vault, "A.pdf"), pdfRendern: async () => assert.fail("nicht erzeugen") });
+  assert.deepEqual(await p.h.aktion("export-pdf", { name: "A", html: "x" }), { ok: false, grund: "im-vault" });
+  const f = huelle({ vaultPfad: async () => vault, waehleSpeichern: async () => voll });
+  assert.deepEqual(await f.h.aktion("export-speichern", buendel([{ pfad: "n/eins.md", text: "1" }], { name: "n", haupt: "n/eins.md", ordner: true })), { ok: false, grund: "ordner-nicht-leer" });
+});

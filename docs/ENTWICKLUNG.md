@@ -113,6 +113,12 @@ Alles Aussehen kommt aus den App-Einstellungen (`einstellungen.json`, Schlüssel
 Tags werden nie verschoben oder ersetzt. Ist ein Release fehlerhaft, folgt eine neue Version
 (`v0.2.0-beta.2`, `v0.2.1`). Tags werden nur vom CEO gesetzt.
 
+## Tags im Vault und Export (Paket 3c)
+- **Tag-Index** (`gemeinsam/tags.mjs`): hält je Notiz die Tags im Speicher und bleibt über dasselbe Änderungssignal aktuell wie der Suchindex (`suchindexAendere`, `schreibe`, `neu`, Live-Ereignisse); `markiereVoll` bei „alles“-Ereignissen. Der erste Lauf und jeder Abgleich arbeiten in 6-ms-Scheiben; ohne Meldung (MCP-Server) gleicht ein Lauf höchstens alle 30 s nach. `GET /api/tags` liefert nur Zähler, `?zuordnung=1` auch die Zuordnung; das Studio holt die Notizen eines gewählten Tags über `/api/tags/notizen`.
+- **Tag umbenennen**: höchstens 200 Notizen und 20 MB je Vorgang (sonst 413 schon in der Vorschau: in Teilen umbenennen); 409 „beschaeftigt“ bei laufendem Abgleich oder offener Zusammenführung (auch in der Vorschau); ein Journal-Vorgang (`art: "tag-umbenennen"`, `tagAlt`/`tagNeu` im Manifest); teilweises Rückgängig prüft die Quelle der ersten Notiz nicht.
+- **Parser**: Marken (NFD) gehören zum Tag, Namen kommen als NFC; eingerückter Code (außerhalb von Listen) und HTML-Blöcke zählen nie und werden nie umgeschrieben; beim Zusammenführen entfallen doppelte Einträge im Kopf.
+- **Export**: HTML mit Content-Security-Policy (`default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:`); höchstens 60 MB Text und 24 MB Bilder (413 bzw. sichtbarer Hinweis); Teilen gibt nur den Text (`ohneBilder`: Bilder werden zu „[Bild: …]“). Die Hüllen schreiben nie in den offenen Vault und Ordner nur neu oder leer (`im-vault`, `ordner-nicht-leer`). Die Druckansicht im Browser druckt vom Studio aus (`w.print()`), das Dokument enthält kein Skript.
+
 ## Flakes
 Ein roter Lauf darf höchstens 2× neu gestartet werden. Den ersten Fehler verlinkt man im PR
 (Lauf-URL und Zeile), damit er nicht verschwindet. Tritt er wieder auf, wird er behoben, nicht wegrestartet.

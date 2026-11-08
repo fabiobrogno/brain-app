@@ -16,7 +16,7 @@ import { HttpFehler, loese, imVault, BEARBEITBAR, gesperrterName } from "./basis
 import { parseKopf, titelAus } from "./notizen.mjs";
 
 const BILD_TYPEN = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml", ".avif": "image/avif" };
-const MAX_BILD = 6 * 1024 * 1024, MAX_BILDER_GESAMT = 24 * 1024 * 1024, MAX_NOTIZEN = 500;
+const MAX_BILD = 6 * 1024 * 1024, MAX_BILDER_GESAMT = 24 * 1024 * 1024, MAX_NOTIZEN = 500, MAX_TEXT_GESAMT = 60 * 1024 * 1024, MAX_BILDSUCHE = 20000;
 const SCHRIFTEN = {
   geist: '"Geist", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif',
   serif: 'ui-serif, "New York", "Iowan Old Style", Georgia, serif',
@@ -60,7 +60,7 @@ export function inlineZuHtml(roh, opt = {}) {
   s = s.replace(/\*\*(?=\S)([\s\S]*?\S)\*\*/g, "<strong>$1</strong>").replace(/(^|[^\w])__(?=\S)([\s\S]*?\S)__(?!\w)/g, "$1<strong>$2</strong>");
   s = s.replace(/\*(?=[^\s*])([\s\S]*?[^\s*])\*/g, "<em>$1</em>").replace(/(^|[^\w])_(?=[^\s_])([\s\S]*?[^\s_])_(?!\w)/g, "$1<em>$2</em>");
   s = s.replace(/~~(?=\S)([\s\S]*?\S)~~/g, "<del>$1</del>").replace(/==(?=\S)([\s\S]*?\S)==/g, "<mark>$1</mark>");
-  s = s.replace(/(?<=^|[\s(,;])#((?:[\p{L}\p{N}_-]+)(?:\/[\p{L}\p{N}_-]+)*)/gu, (m, t) => (/[^\p{N}\/]/u.test(t) ? `<span class="tag">#${t}</span>` : m));
+  s = s.replace(/(?<=^|[\s(,;])#((?:[\p{L}\p{N}_-][\p{L}\p{M}\p{N}_-]*)(?:\/[\p{L}\p{N}_-][\p{L}\p{M}\p{N}_-]*)*)/gu, (m, t) => (/[^\p{N}\/]/u.test(t) ? `<span class="tag">#${t}</span>` : m));
   s = s.replace(/ {2,}\n|\\\n/g, "<br>\n");
   return s.replace(/\u0000(\d+)\u0000/g, (_, i) => merk[+i]);
 }
@@ -212,7 +212,7 @@ nav.inhalt{margin:0 0 2em}nav.inhalt h2{margin-top:0}nav.inhalt ol{margin:.3em 0
 
 export function baueHtmlSeite({ titel, abschnitte, schrift = "geist", schriftDatei = "", inhaltsverzeichnis = false }) {
   const verz = inhaltsverzeichnis ? `<nav class="inhalt"><h2>Inhalt</h2><ol>${abschnitte.map((a) => `<li>${esc(a.titel)}</li>`).join("")}</ol></nav>` : "";
-  return `<!doctype html>\n<html lang="de">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1">\n<meta name="generator" content="Kortex">\n<title>${esc(titel)}</title>\n<style>\n${seitenStil({ schrift, schriftDatei })}\n</style>\n</head>\n<body>\n<main>\n${verz}${abschnitte.map((a) => `<section class="notiz">\n${a.html}\n</section>`).join("\n")}\n</main>\n</body>\n</html>\n`;
+  return `<!doctype html>\n<html lang="de">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1">\n<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:">\n<meta name="generator" content="Kortex">\n<title>${esc(titel)}</title>\n<style>\n${seitenStil({ schrift, schriftDatei })}\n</style>\n</head>\n<body>\n<main>\n${verz}${abschnitte.map((a) => `<section class="notiz">\n${a.html}\n</section>`).join("\n")}\n</main>\n</body>\n</html>\n`;
 }
 
 // ───────────────────────── ZIP (ohne Kompression der Bilder, Text mit deflate) ─────────────────────────
@@ -264,15 +264,16 @@ export function ersetzeBilder(md, fn) {
 
 // ───────────────────────── Export ─────────────────────────
 export function erzeugeExport({ wurzel, lies, istGeneriert = () => false, ueberspringeOrdner = () => false, tagIndex = null, studioOrdner = null }) {
-  let bilderIndex = null; // Dateiname (klein) → rel, für ![[bild.png]]
+  let bilderIndex = null, bilderAbgeschnitten = false; // Dateiname (klein) → rel, für ![[bild.png]]; gilt nur für einen Export (Bilder kommen und gehen)
   const bildSuche = () => {
     if (bilderIndex) return bilderIndex;
-    bilderIndex = new Map();
+    bilderIndex = new Map(); bilderAbgeschnitten = false;
     let n = 0;
     const geh = (rel) => {
       let l; try { l = readdirSync(rel ? join(wurzel, rel) : wurzel, { withFileTypes: true }); } catch { return; }
       for (const d of l) {
-        if (gesperrterName(d.name) || n > 20000) continue;
+        if (gesperrterName(d.name)) continue;
+        if (n > MAX_BILDSUCHE) { bilderAbgeschnitten = true; continue; }
         const r = rel ? `${rel}/${d.name}` : d.name;
         if (d.isDirectory()) { if (!ueberspringeOrdner(join(wurzel, r))) geh(r); continue; }
         n++;
@@ -306,7 +307,7 @@ export function erzeugeExport({ wurzel, lies, istGeneriert = () => false, uebers
         return { buf, typ, name: basename(l.rel) };
       } catch { /* nächster Kandidat */ }
     }
-    hinweise.push(`Bild „${basename(z)}“ gibt es im Vault nicht und fehlt im Export.`);
+    hinweise.push(`Bild „${basename(z)}“ gibt es im Vault nicht${bilderAbgeschnitten ? " (oder die Bildsuche brach bei 20.000 Dateien ab)" : ""} und fehlt im Export.`);
     return null;
   }
 
@@ -342,21 +343,29 @@ export function erzeugeExport({ wurzel, lies, istGeneriert = () => false, uebers
   }
 
   /**
-   * a: { pfade?: string[], ordner?: string, format: "markdown"|"html"|"fragment", schrift?: "geist"|"serif"|"mono", zip?: boolean }
+   * a: { pfade?: string[], ordner?: string, format: "markdown"|"html"|"fragment", schrift?: "geist"|"serif"|"mono", zip?: boolean, ohneBilder?: boolean (Markdown: Bilder werden zu „[Bild: …]“, für Teilen) }
    */
   function exportiere(a) {
     if (!a || typeof a !== "object") throw new HttpFehler(400, "Die Anfrage ist leer.");
     const format = EXPORT_FORMATE.includes(a.format) ? a.format : null;
     if (!format) throw new HttpFehler(400, "Unbekanntes Format.");
     const rels = notizenAus({ pfade: a.pfade || [], ordner: a.ordner ?? null });
+    bilderIndex = null; // jeder Export sucht Bilder frisch
     const hinweise = [], gesamt = { bytes: 0 };
-    const notizen = rels.map((rel) => { const d = lies(rel); return { rel, text: d.inhalt, titel: titelAus(rel, d.inhalt) }; });
+    let textBytes = 0;
+    const notizen = rels.map((rel) => {
+      const d = lies(rel);
+      textBytes += Buffer.byteLength(d.inhalt);
+      if (textBytes > MAX_TEXT_GESAMT) throw new HttpFehler(413, "Der Export wäre zu groß (über 60 MB Text). Exportiere weniger Notizen auf einmal, zum Beispiel einen Unterordner.", { art: "zu-gross" });
+      return { rel, text: d.inhalt, titel: titelAus(rel, d.inhalt) };
+    });
     const einzeln = notizen.length === 1 && a.ordner == null;
     const hauptName = dateiNameAus(einzeln ? notizen[0].titel : (a.ordner ? basename(String(a.ordner)) : "Kortex-Export"), "Kortex-Export");
     let erg;
 
     if (format === "markdown") {
       const dateien = [], bilder = new Map(); // name → true
+      let weggelassen = 0;
       const wurzelName = einzeln ? "" : hauptName + "/";
       const benutzt = new Set();
       const basisOrdner = einzeln ? "" : gemeinsamerOrdner(rels);
@@ -365,6 +374,7 @@ export function erzeugeExport({ wurzel, lies, istGeneriert = () => false, uebers
         const rel = einzeln ? hauptName + ".md" : n.rel.slice(basisOrdner ? basisOrdner.length + 1 : 0);
         const tiefe = einzeln ? 0 : rel.split("/").length - 1;
         const text = ersetzeBilder(n.text, (ziel, alt) => {
+          if (a.ohneBilder === true) { if (!/^([a-z][a-z0-9+.-]*:|\/\/)/i.test(ziel) && BILD_TYPEN[extname(String(ziel).split(/[?#]/)[0]).toLowerCase()]) { weggelassen++; return `*[Bild: ${alt || basename(ziel)}]*`; } return null; }
           const b = ladeBild(dir, ziel, gesamt, hinweise);
           if (!b) return null;
           const name = `${kurzHash(b.buf)}-${dateiNameAus(b.name, "bild").replace(/\s+/g, "-")}`;
@@ -378,7 +388,7 @@ export function erzeugeExport({ wurzel, lies, istGeneriert = () => false, uebers
       }
       // die Notizen zuerst in Vault-Reihenfolge, Bilder danach
       const md = dateien.filter((d) => d.text !== undefined).reverse(), rest = dateien.filter((d) => d.text === undefined);
-      erg = { dateien: [...md, ...rest], haupt: md[0].pfad, name: einzeln ? hauptName + ".md" : hauptName, ordner: !einzeln };
+      erg = { dateien: [...md, ...rest], haupt: md[0].pfad, name: einzeln ? hauptName + ".md" : hauptName, ordner: !einzeln, ...(a.ohneBilder === true ? { bilderWeggelassen: weggelassen } : {}) };
     } else {
       const schrift = SCHRIFTEN[a.schrift] ? a.schrift : "geist";
       let schriftDatei = "";

@@ -1,7 +1,7 @@
 // electron/export-schreiben.mjs — Export für die Electron-Hülle (Aktionen `export-speichern`, `export-pdf`): Prüfung des Bündels und Schreiben nach dem Speichern-Dialog.
 // Dieselben Regeln wie Sources/BrainCore/ExportBuendel.swift (Mac-App): nur relative, harmlose Pfade, begrenzte Größe, nie durch einen Symlink und nie aus dem gewählten Ort heraus.
 // Reine Logik ohne `import "electron"`: Tests/Node/export-huelle.test.mjs prüft sie ohne Electron.
-import { mkdirSync, writeFileSync, renameSync, lstatSync, realpathSync, existsSync, unlinkSync } from "node:fs";
+import { mkdirSync, writeFileSync, renameSync, lstatSync, realpathSync, existsSync, unlinkSync, readdirSync } from "node:fs";
 import { join, dirname, basename } from "node:path";
 import { randomBytes } from "node:crypto";
 
@@ -63,6 +63,13 @@ const istVerweis = (p) => { try { return lstatSync(p).isSymbolicLink(); } catch 
 function echt(p) { try { return realpathSync.native(p); } catch { return p; } }
 const innerhalb = (p, wurzel) => { const a = echt(p), b = echt(wurzel); return a === b || a.startsWith(b.endsWith("/") || b.endsWith("\\") ? b : b + (process.platform === "win32" ? "\\" : "/")); };
 
+// Liegt der Zielort im offenen Vault (nach dem Auflösen von Verknüpfungen, auch wenn Datei oder Ordner noch fehlen)? Dorthin schreibt ein Export nie.
+export function liegtImVault(ziel, vault) {
+  if (typeof vault !== "string" || !vault) return false;
+  const aufgeloest = (p) => { const rest = []; let q = p; while (!existsSync(q)) { const d = dirname(q); if (d === q) break; rest.unshift(basename(q)); q = d; } return join(echt(q), ...rest); };
+  return innerhalb(aufgeloest(ziel), aufgeloest(vault));
+}
+
 // Schreibt atomar (Temp-Datei im selben Ordner, dann umbenennen)
 export function schreibeAtomar(ziel, daten) {
   const tmp = join(dirname(ziel), `.kortex-export-${process.pid}-${randomBytes(4).toString("hex")}`);
@@ -75,8 +82,11 @@ export function schreibeAtomar(ziel, daten) {
  * Ordner: `ziel` wird der Ordner, der erste Pfadteil jeder Datei steht für ihn. Texte (.md .html .pdf .zip) werden ersetzt (der Dialog hat bestätigt); alles andere (Bilder mit Kurz-Hash)
  * nur, wenn es fehlt. Wirft { grund: "ausserhalb" | "verweis" }.
  */
-export function schreibeBuendel(b, ziel) {
+export function schreibeBuendel(b, ziel, { vault = null } = {}) {
+  if (liegtImVault(ziel, vault)) throw Object.assign(new Error("im-vault"), { grund: "im-vault" });
   const basis = b.ordner ? ziel : dirname(ziel);
+  // Ordner nur neu oder leer: ein Export mischt sich nie in vorhandene Dateien
+  if (b.ordner && existsSync(ziel) && readdirSync(ziel).some((n) => n !== ".DS_Store" && n !== "Thumbs.db")) throw Object.assign(new Error("ordner-nicht-leer"), { grund: "ordner-nicht-leer" });
   if (b.ordner) mkdirSync(ziel, { recursive: true });
   for (const d of b.dateien) {
     let teile = d.pfad.split("/");

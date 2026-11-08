@@ -195,7 +195,9 @@ test("Export Markdown: Notiz mit Bild kommt als ZIP (Browser), Ordner ebenfalls;
   expect(zip.toString("latin1")).toMatch(/bilder\/[0-9a-f]{8}-karte\.png/);
 });
 
-test("PDF im Browser: die Druckansicht öffnet sich in einem neuen Fenster", async ({ page, context }) => {
+test("PDF im Browser: die Druckansicht öffnet sich in einem neuen Fenster und druckt (vom Studio ausgelöst, kein Skript im Dokument)", async ({ page, context }) => {
+  // print() des neuen Fensters zählen statt den Druckdialog zu öffnen
+  await context.addInitScript(() => { window.__gedruckt = 0; window.print = () => { window.__gedruckt++; }; });
   await oeffne(page);
   await rechtsklick(page, karte(page, "20_projekte/Plan.md"));
   await menueEintrag(page, "exportieren").click();
@@ -205,6 +207,9 @@ test("PDF im Browser: die Druckansicht öffnet sich in einem neuen Fenster", asy
   await popup.waitForLoadState("domcontentloaded");
   await expect(popup.locator("h1")).toHaveText("Plan");
   await expect(popup.locator("body")).toContainText("dann #projekt/zeitplan");
+  await popup.waitForFunction(() => window.__gedruckt === 1, null, { timeout: 5000 });
+  expect(await popup.evaluate(() => document.querySelectorAll("script").length)).toBe(0);
+  expect(await popup.evaluate(() => document.querySelector('meta[http-equiv="Content-Security-Policy"]')?.content)).toContain("default-src 'none'");
 });
 
 test("Kopieren: als Markdown (roh) und formatiert (HTML + Text in der Zwischenablage)", async ({ page, context }) => {

@@ -53,6 +53,7 @@ export const api = {
   baum: () => anfrage("GET", "/api/baum"),
   // Tags (gemeinsam/tags.mjs) und Export (gemeinsam/export.mjs)
   tags: () => anfrage("GET", "/api/tags"),
+  tagNotizen: (tag) => anfrage("GET", "/api/tags/notizen" + q({ tag })),
   tagUmbenennen: (daten) => anfrage("POST", "/api/tags/umbenennen", daten),
   exportiere: (daten) => anfrage("POST", "/api/export", daten),
   datei: (pfad) => anfrage("GET", "/api/datei" + q({ pfad })),

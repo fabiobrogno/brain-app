@@ -81,8 +81,11 @@ public struct ExportBuendel: Equatable, Sendable {
     /// Texte (.md, .html, .pdf, .zip) werden ersetzt (der Dialog hat das Überschreiben bestätigt); alles andere (Bilder, Namen mit Kurz-Hash) nur, wenn es noch fehlt.
     /// Nie durch einen Symlink, nie aus dem Zielordner heraus.
     @discardableResult
-    public func schreibe(nach ziel: URL, fm: FileManager = .default) throws -> String {
+    public func schreibe(nach ziel: URL, ausserhalbVon vault: URL? = nil, fm: FileManager = .default) throws -> String {
+        if Self.liegtImVault(ziel, vault: vault) { throw ExportFehler.imVault }
         let basis = ordner ? ziel : ziel.deletingLastPathComponent()
+        // Ordner nur neu oder leer: ein Export mischt sich nie in vorhandene Dateien
+        if ordner, let inhalt = try? fm.contentsOfDirectory(atPath: ziel.path), !inhalt.filter({ $0 != ".DS_Store" }).isEmpty { throw ExportFehler.ordnerNichtLeer }
         if ordner { try fm.createDirectory(at: ziel, withIntermediateDirectories: true) }
         let echteBasis = basis.resolvingSymlinksInPath().standardizedFileURL
         for d in dateien {
@@ -96,7 +99,7 @@ public struct ExportBuendel: Equatable, Sendable {
             }
             let ordnerDavor = ist.deletingLastPathComponent()
             try fm.createDirectory(at: ordnerDavor, withIntermediateDirectories: true)
-            guard ordnerDavor.resolvingSymlinksInPath().standardizedFileURL.path.hasPrefix(echteBasis.path) else { throw ExportFehler.ausserhalb }
+            guard ordnerDavor.resolvingSymlinksInPath().standardizedFileURL.path.liegtUnter(echteBasis.path) else { throw ExportFehler.ausserhalb }
             if let attr = try? fm.attributesOfItem(atPath: ist.path) {
                 if (attr[.type] as? FileAttributeType) == .typeSymbolicLink { throw ExportFehler.verweis }
                 let istText = [".md", ".html", ".pdf", ".zip"].contains { ist.lastPathComponent.lowercased().hasSuffix($0) }
@@ -108,7 +111,20 @@ public struct ExportBuendel: Equatable, Sendable {
     }
 }
 
-public enum ExportFehler: Error, Equatable { case ausserhalb, verweis }
+public enum ExportFehler: Error, Equatable { case ausserhalb, verweis, imVault, ordnerNichtLeer }
+
+extension String {
+    /// Ist dieser Pfad gleich `basis` oder liegt er darunter? Mit Trennzeichen geprüft: „/a/vault-2“ liegt nicht unter „/a/vault“.
+    func liegtUnter(_ basis: String) -> Bool { self == basis || hasPrefix(basis.hasSuffix("/") ? basis : basis + "/") }
+}
+
+extension ExportBuendel {
+    /// Liegt der Zielort im offenen Vault (nach dem Auflösen von Verknüpfungen)? Dorthin schreibt ein Export nie: er mischte Dateien unter die Notizen.
+    public static func liegtImVault(_ ziel: URL, vault: URL?) -> Bool {
+        guard let vault else { return false }
+        return AppAktion.aufgeloest(ziel).path.liegtUnter(AppAktion.aufgeloest(vault).path)
+    }
+}
 
 /// `export-pdf`: ein fertiges, eigenständiges HTML (Bilder und Schrift als data:) und der Vorschlagsname; die App macht daraus ein PDF (WKWebView.createPDF).
 public struct ExportPdf: Equatable, Sendable {

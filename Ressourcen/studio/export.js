@@ -15,6 +15,7 @@ export const kannTeilen = () => inApp();
 
 // Fehlertext der Werkstatt oder der Hülle
 const fehlerText = (e) => (e && e.message && e.status ? e.message : TEX.toast.fehler);
+const GRUENDE = { "im-vault": "imVault", "ordner-nicht-leer": "ordnerNichtLeer" }; // Gründe der Hülle, die der Nutzer lesen soll
 
 function ladeHerunter(name, daten, typ) {
   const blob = new Blob([daten], { type: typ });
@@ -29,7 +30,9 @@ const ausBase64 = (b64) => { const bin = atob(b64); const u = new Uint8Array(bin
 function druckeImBrowser(html) {
   const w = window.open("", "_blank");
   if (!w) return false;
-  w.document.open(); w.document.write(html.replace("</body>", `<script>addEventListener("load",function(){setTimeout(function(){focus();print()},300)})<\/script></body>`)); w.document.close();
+  w.document.open(); w.document.write(html); w.document.close();
+  // Gedruckt wird vom Studio aus (das Exportdokument hat eine CSP ohne Skripte): kurz warten, bis Bilder und Schrift stehen
+  setTimeout(() => { try { w.focus(); w.print(); } catch { /* Fenster schon zu */ } }, 400);
   return true;
 }
 
@@ -99,6 +102,7 @@ export function erzeugeExport(ctx) {
           if (r.hinweise?.length) toast(TEX.toast.hinweis(r.hinweise.length), { ms: 8000, unter: r.hinweise.slice(0, 3).join(" ") });
         } else if (r.grund === "abgebrochen") { /* Dialog des Systems abgebrochen: der Export-Dialog bleibt offen */ }
         else if (r.grund === "popup") toast(TEX.toast.druckPopup, { fehler: true });
+        else if (GRUENDE[r.grund]) toast(TEX.toast[GRUENDE[r.grund]], { fehler: true, ms: 8000 });
         else if (r.grund !== "abbruch") toast(TEX.toast.fehler, { fehler: true });
       } catch (e) { toast(fehlerText(e), { fehler: true }); }
       finally { laeuft = false; setzeLaedt(ok, false); }
@@ -152,10 +156,12 @@ export function erzeugeExport(ctx) {
   async function teilen(pfad) {
     try {
       if (!(await sichere([pfad]))) return;
-      const r = await api.exportiere({ pfade: [pfad], format: "markdown" });
+      // geteilt wird nur der Text: Bilder lägen sonst als tote Verweise darin (bilder/…); sie werden zu „[Bild: …]“
+      const r = await api.exportiere({ pfade: [pfad], format: "markdown", ohneBilder: true });
       const md = r.dateien.find((x) => x.pfad === r.haupt);
       const a = await aktionMitAntwort("teilen", { name: r.name, text: md.text });
       if (!a?.ok) toast(TEX.toast.teilenFehler, { fehler: true });
+      else if (r.bilderWeggelassen) toast(TEX.toast.teilenOhneBilder(r.bilderWeggelassen), { ms: 6000 });
     } catch (e) { toast(fehlerText(e), { fehler: true }); }
   }
 

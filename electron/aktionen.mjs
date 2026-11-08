@@ -5,7 +5,7 @@
 import { realpathSync, existsSync } from "node:fs";
 import { join, dirname, basename, sep, isAbsolute } from "node:path";
 import { externPruefen } from "./navigation.mjs";
-import { pruefeBuendel, pruefePdf, schreibeBuendel, schreibeAtomar } from "./export-schreiben.mjs";
+import { pruefeBuendel, pruefePdf, schreibeBuendel, schreibeAtomar, liegtImVault } from "./export-schreiben.mjs";
 
 const OK = Object.freeze({ ok: true });
 const nein = (grund) => ({ ok: false, grund });
@@ -190,8 +190,12 @@ export function erzeugeAktionen(abh) {
       abh.protokoll("aktion export-speichern");
       const ziel = await abh.waehleSpeichern({ name: b.name, ordner: b.ordner });
       if (!ziel) return nein("abgebrochen");
-      try { return { ok: true, name: (abh.schreibeBuendel || schreibeBuendel)(b, ziel) }; }
-      catch (e) { abh.protokoll(`export-speichern fehler ${e?.grund || "schreiben"}`); return nein("fehler"); }
+      const vault = await abh.vaultPfad().catch(() => null);
+      try { return { ok: true, name: (abh.schreibeBuendel || schreibeBuendel)(b, ziel, { vault }) }; }
+      catch (e) {
+        if (e?.grund === "im-vault" || e?.grund === "ordner-nicht-leer") return nein(e.grund); // Gründe, die die Seite dem Nutzer zeigt
+        abh.protokoll(`export-speichern fehler ${e?.grund || "schreiben"}`); return nein("fehler");
+      }
     },
     "export-pdf": async (w) => {
       const p = pruefePdf(w);
@@ -199,6 +203,7 @@ export function erzeugeAktionen(abh) {
       abh.protokoll("aktion export-pdf");
       const ziel = await abh.waehleSpeichern({ name: p.name, ordner: false, endung: "pdf" });
       if (!ziel) return nein("abgebrochen");
+      if (liegtImVault(ziel, await abh.vaultPfad().catch(() => null))) return nein("im-vault");
       const daten = await abh.pdfRendern(p.html);
       if (!daten || !daten.length) { abh.protokoll("export-pdf fehler erzeugen"); return nein("fehler"); }
       try { schreibeAtomar(ziel, daten); } catch { abh.protokoll("export-pdf fehler schreiben"); return nein("fehler"); }

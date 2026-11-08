@@ -102,3 +102,33 @@ private let png = Data([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).base64E
     #expect((pdf.string ?? "").contains("Absatz 1:"))
     #expect((pdf.string ?? "").contains("Absatz 120:"))
 }
+
+@Test func buendelSchreibtNieInDenOffenenVaultUndNurInNeueOderLeereOrdner() throws {
+    let wurzel = try temp(); defer { try? FileManager.default.removeItem(at: wurzel) }
+    let vault = wurzel.appendingPathComponent("vault", isDirectory: true)
+    let nachbar = wurzel.appendingPathComponent("vault-2", isDirectory: true)
+    try FileManager.default.createDirectory(at: vault.appendingPathComponent("unter"), withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: nachbar, withIntermediateDirectories: true)
+    let b = try #require(ExportBuendel.pruefe(buendel([["pfad": "Atlas.md", "text": "x"]])["wert"]))
+    #expect(throws: ExportFehler.imVault) { try b.schreibe(nach: vault.appendingPathComponent("unter/Atlas.md"), ausserhalbVon: vault) }
+    #expect(throws: ExportFehler.imVault) { try b.schreibe(nach: vault.appendingPathComponent("neu/Atlas.md"), ausserhalbVon: vault) }
+    #expect(!FileManager.default.fileExists(atPath: vault.appendingPathComponent("neu").path), "nichts angelegt")
+    // ein Nachbar mit gleichem Namensanfang liegt NICHT im Vault (Pfadprüfung mit Trennzeichen)
+    #expect(!ExportBuendel.liegtImVault(nachbar.appendingPathComponent("a.md"), vault: vault))
+    #expect(try b.schreibe(nach: nachbar.appendingPathComponent("Atlas.md"), ausserhalbVon: vault) == "Atlas.md")
+    // ein Symlink in den Vault zählt als Vault
+    let link = wurzel.appendingPathComponent("link")
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: vault)
+    #expect(ExportBuendel.liegtImVault(link.appendingPathComponent("x.md"), vault: vault))
+    // Ordner: neu oder leer ja, mit Inhalt nein
+    let o = try #require(ExportBuendel.pruefe(buendel([["pfad": "n/eins.md", "text": "1"]], name: "n", haupt: "n/eins.md", ordner: true)["wert"]))
+    let voll = wurzel.appendingPathComponent("voll", isDirectory: true)
+    try FileManager.default.createDirectory(at: voll, withIntermediateDirectories: true)
+    try Data("x".utf8).write(to: voll.appendingPathComponent("vorhanden.txt"))
+    #expect(throws: ExportFehler.ordnerNichtLeer) { try o.schreibe(nach: voll) }
+    #expect(!FileManager.default.fileExists(atPath: voll.appendingPathComponent("eins.md").path))
+    let leer = wurzel.appendingPathComponent("leer", isDirectory: true)
+    try FileManager.default.createDirectory(at: leer, withIntermediateDirectories: true)
+    _ = try o.schreibe(nach: leer)
+    #expect(FileManager.default.fileExists(atPath: leer.appendingPathComponent("eins.md").path))
+}

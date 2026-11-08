@@ -1089,7 +1089,7 @@ function waehleSicht(sicht, { merken = true } = {}) {
   if (!gleicheSicht(S.sicht, sicht)) S.zeigeZurueckgestellt = false;
   const vorherModus = $("app").dataset.modus, vorherId = S.sicht.id;
   S.sicht = sicht;
-  if (sicht.art === "tag") tags.klappeAuf(sicht.id);
+  if (sicht.art === "tag") { tags.klappeAuf(sicht.id); tags.ladeMitglieder(sicht.id); }
   S.aufgabeDatei = false;
   if (merken && sicht.art !== "verlauf") lokal.schreib("sicht", sicht);
   if (vorherModus !== (S.sicht.art === "verlauf" ? "verlauf" : istAufgabenSicht() ? "aufgaben" : "liste") || vorherId !== sicht.id) weicherWechsel();
@@ -3375,7 +3375,7 @@ async function ladeAlles() {
   await ladeBaum();
   if (S.sicht.art === "ordner" && !S.eintraege.has(S.sicht.id)) S.sicht = { art: "bereich", id: "alle" };
   if (S.sicht.art === "typ" && !S.typMap.has(S.sicht.id)) S.sicht = { art: "bereich", id: "alle" };
-  if (S.sicht.art === "tag") { await tags.laden(); if (!tags.anzahlVon(S.sicht.id)) S.sicht = { art: "bereich", id: "alle" }; }
+  if (S.sicht.art === "tag") { await tags.laden(); tags.ladeMitglieder(S.sicht.id); if (!tags.anzahlVon(S.sicht.id)) S.sicht = { art: "bereich", id: "alle" }; }
   S.papierkorbAnzahl = 0; da.ladeKorbZahl();
   zeichneSeite(); zeichneListe();
   fragVertrauenEinmal();

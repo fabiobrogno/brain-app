@@ -209,7 +209,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
       if (alt) renameSync(tmp, abs); // atomar ersetzen
       else { try { linkSync(tmp, abs); } catch (e) { if (e.code === "EEXIST") throw new HttpFehler(409, "Diese Datei gibt es schon."); throw e; } unlinkSync(tmp); }
     } catch (e) { try { unlinkSync(tmp); } catch { /* schon weg */ } throw e; }
-    suchindex?.aendere(rel);
+    suchindex?.aendere(rel); tagIndex.aendere(rel);
     return { hash: HASH(buf), geaendert: statSync(abs).mtime.toISOString() };
   }
 
@@ -308,7 +308,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
       writeFileSync(tmp, inhalt, { flag: "wx", mode: 0o644 });
       for (let i = 1; i < 1000; i++) {
         const name = `${stamm}${i === 1 ? "" : "-" + i}.md`;
-        try { linkSync(tmp, join(ordnerAbs, name)); const neuRel = relOrdner ? `${relOrdner}/${name}` : name; suchindex?.aendere(neuRel); return neuRel; }
+        try { linkSync(tmp, join(ordnerAbs, name)); const neuRel = relOrdner ? `${relOrdner}/${name}` : name; suchindex?.aendere(neuRel); tagIndex.aendere(neuRel); return neuRel; }
         catch (e) { if (e.code !== "EEXIST") throw e; }
       }
     } finally { try { unlinkSync(tmp); } catch { /* schon weg */ } }
@@ -428,8 +428,8 @@ export function oeffneVault(vaultPfad, opts = {}) {
   let suchindex = null;
   const holeSuchindex = () => suchindex || (suchindex = erzeugeSuchindex({ wurzel, unterVault: istUnterVaultOrdner }));
   function sucheIndex(opt = {}) { return holeSuchindex().sucheWarte(opt, opt.frist); }
-  const suchindexAendere = (pfade) => { if (suchindex) suchindex.aendere(pfade); };
-  const suchindexPruefeNeu = () => { if (suchindex) suchindex.pruefeNeu(); };
+  const suchindexAendere = (pfade) => { if (suchindex) suchindex.aendere(pfade); tagIndex.aendere(pfade); }; // dasselbe Änderungssignal hält auch den Tag-Index aktuell
+  const suchindexPruefeNeu = () => { if (suchindex) suchindex.pruefeNeu(); tagIndex.markiereVoll(); };
   const sucheVorwaermen = () => holeSuchindex().starte();
   const suchindexBeende = () => { if (suchindex) suchindex.beende(); };
 
@@ -653,11 +653,19 @@ export function oeffneVault(vaultPfad, opts = {}) {
     return { treffer, text };
   }
 
+  let abgleichBesch; // wird in der Rückgabe gesetzt (abgleichBeschaeftigt)
   return {
     wurzel, name: basename(wurzel), heute: () => opts.heute || heuteIso(jetzt()), rueckfragen, kitVersion, kitVorhanden, kit, vertrauen, vertrauenStand: stand, baum, lies, imUnterVault: (rel) => { try { return imUnterVault(loese(wurzel, rel).abs); } catch { return false; } }, schreibe, zusammenfuehren, ablageListe, ablageLese, ablageLegeAb, entwurfPruefen,
     entwurfSchreiben: (a) => entwurfFn.schreibeEntwurf(supportOrdnerV(), wurzel, a || {}), entwurfLoeschen: (pfad) => ({ ok: entwurfFn.loescheEntwurf(supportOrdnerV(), wurzel, pfad) }), entwurfVerschieben: (a) => entwurfFn.verschiebeEntwuerfe(supportOrdnerV(), wurzel, a?.von, a?.nach), entwuerfe: () => ({ entwuerfe: entwurfFn.listeEntwuerfe(supportOrdnerV(), wurzel) }),
     neu, wikiAnlegen, wikiLoese: (ziel, von) => notizIndex.loeseWiki(ziel, ordnerVonPfad(von || "")), merken, suche, sucheIndex, sucheVorwaermen, suchindexBeende, suchindexAendere, suchindexPruefeNeu, suchindexStand: () => (suchindex ? suchindex.stand() : null), suchindexRuhe: () => (suchindex ? suchindex.ruhe() : Promise.resolve()), suchenFuerKi, pruefung, gesundheit, nutzung,
-    tags: (o) => tagIndex.liste(o), tagNotizen: (tag, o) => tagIndex.notizen(tag, o), tagUmbenennen: mitRuhe(async (a) => { const r = await dateiAktionen.tagUmbenennen(a); tagIndex.eintraege({ frisch: true }); return r; }), exportiere: exportFn.exportiere,
+    tags: (o) => tagIndex.liste(o), tagNotizen: (tag) => tagIndex.notizen(tag),
+    // Tag umbenennen: nie mitten in einem Abgleich oder einer offenen Zusammenführung (auch die Vorschau nicht) — dann ändert Kortex nichts am Arbeitsbaum
+    tagUmbenennen: mitRuhe(async (a) => {
+      if (await abgleichBesch()) throw new HttpFehler(409, "Kortex gleicht gerade ab oder eine Zusammenführung ist offen. Versuche es danach noch einmal — es wurde nichts verändert.", { art: "beschaeftigt" });
+      const r = await dateiAktionen.tagUmbenennen(a);
+      if (Array.isArray(r.geaendert) && r.geaendert.length) tagIndex.aendere(r.geaendert);
+      return r;
+    }), exportiere: exportFn.exportiere,
     umbenennen: mitRuhe(dateiAktionen.umbenennen), verschieben: mitRuhe(dateiAktionen.verschieben), loeschen: mitRuhe(dateiAktionen.loeschen),
     papierkorb: dateiAktionen.papierkorbListe, papierkorbWiederherstellen: mitRuhe(dateiAktionen.papierkorbWiederherstellen), papierkorbEndgueltig: dateiAktionen.papierkorbEndgueltig, papierkorbHinweisErledigt: dateiAktionen.papierkorbHinweisErledigt, aktionenOrt: dateiAktionen.aktionenOrt,
     vorgangZurueck: mitRuhe((a) => dateiAktionen.vorgangZurueck(a.id, a)), vorgangWieder: mitRuhe((a) => dateiAktionen.vorgangWieder(a.id, a)), vorgangMoeglich: dateiAktionen.vorgangMoeglich,
@@ -677,7 +685,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
     // Aktivitätsprotokoll (P8a, Rückgängig): Ordnername des Posteingangs; Git beschäftigt?; ist die Datei versioniert UND unverändert gegenüber HEAD (ls-files + diff, ohne Hooks)?
     mitAbgleichSperre, warteBisStabil, inboxOrdnerName: inboxOrdner, umstellungLaeuft: () => umstellungLaeuft(wurzel),
     // Läuft oder wartet gerade ein Abgleich? (Git beschäftigt · die gemeinsame Sperre aller Abgleiche · ein gemerkter Konfliktstand „konfliktBasis“) — dann ändert Kortex nichts am Arbeitsbaum.
-    abgleichBeschaeftigt: async () => {
+    abgleichBeschaeftigt: abgleichBesch = async () => {
       if (gitFn.gitBeschaeftigt(wurzel)) return true;
       // offene Zusammenführung: den Ort von MERGE_HEAD fragt Git selbst (verknüpfte Arbeitsbäume und andere Git-Ordner haben ihn nicht unter .git/)
       try {

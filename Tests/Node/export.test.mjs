@@ -158,3 +158,40 @@ test("Route POST /api/export: Bündel als JSON, nur POST", async () => {
   assert.equal(JSON.parse(a.body.toString()).dateien[0].pfad, "zwei.md");
   assert.equal((await h({ methode: "GET", pfad: "/api/export", query: null })).status, 405);
 });
+
+test("HTML-Export hat eine Content-Security-Policy ohne Skripte und ohne Netz", () => {
+  const { v } = aufbau();
+  const h = v.exportiere({ pfade: ["n/eins.md"], format: "html" }).dateien[0].text;
+  assert.match(h, /<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:">/);
+  assert.doesNotMatch(h, /<script/i);
+});
+test("Teilen: Markdown ohne Bilder (ohneBilder) — Bilder werden zu „[Bild: …]“, keine bilder/-Dateien, Code bleibt", () => {
+  const { v } = aufbau();
+  const r = v.exportiere({ pfade: ["n/eins.md"], format: "markdown", ohneBilder: true });
+  assert.equal(r.dateien.length, 1);
+  const md = r.dateien[0].text;
+  assert.match(md, /\*\[Bild: Bild A\]\*/);
+  assert.match(md, /\*\[Bild: gross name\.png\]\*/);
+  assert.doesNotMatch(md, /bilder\/[0-9a-f]{8}/);
+  assert.match(md, /!\[z\]\(https:\/\/evil\.example\/p\.png\)/, "Netzbilder bleiben unberührt");
+  assert.match(md, /```\n!\[code\]\(bilder\/a\.png\)\n```/);
+  assert.equal(r.bilderWeggelassen, 5);
+});
+test("Zu viel Text: über 60 MB gibt 413 mit klarer Meldung (nichts wird abgeschnitten)", () => {
+  const { d, v } = aufbau();
+  const gross = "x".repeat(4_900_000);
+  for (let i = 0; i < 13; i++) writeFileSync(join(d, `n/gross${i}.md`), `# G${i}\n${gross}\n`);
+  const e = (() => { try { v.exportiere({ ordner: "n", format: "html" }); } catch (x) { return x; } })();
+  assert.ok(e instanceof HttpFehler && e.status === 413 && /60 MB/.test(e.message), String(e));
+});
+test("Bildsuche für ![[Name]] gilt nur für einen Export: ein später hinzugefügtes Bild wird beim nächsten gefunden", () => {
+  const { d, v } = aufbau();
+  schreibe(d, "n/spaeter.md", "# S\n\n![[neu-bild.png]]\n");
+  const vorher = v.exportiere({ pfade: ["n/spaeter.md"], format: "html" });
+  assert.ok(vorher.hinweise.some((x) => /neu-bild\.png/.test(x)));
+  mkdirSync(join(d, "n/frisch"), { recursive: true });
+  writeFileSync(join(d, "n/frisch/neu-bild.png"), PNG);
+  const nachher = v.exportiere({ pfade: ["n/spaeter.md"], format: "html" });
+  assert.deepEqual(nachher.hinweise, []);
+  assert.match(nachher.html, /data:image\/png/);
+});

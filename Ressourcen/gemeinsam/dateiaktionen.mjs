@@ -24,6 +24,7 @@ const HASH = (buf) => createHash("sha256").update(buf).digest("hex");
 export const PAPIERKORB_TAGE = 30;
 const TAG_MS = 86400e3;
 const MAX_DATEIEN_ORDNER = 100000;
+const TAG_MAX_NOTIZEN = 200, TAG_MAX_BYTES = 20 * 1024 * 1024; // so viele Notizen und Bytes darf EIN Tag-Umbenennen ändern (Journal, Speicher, Dauer)
 const MAX_LISTE = 200;
 const ID = /^v_[0-9a-f]{12}$/;
 const SPERRE_FRIST_MS = 60_000;
@@ -485,7 +486,7 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
     mkdirSync(join(dir, "vorher"), { recursive: true, mode: 0o700 });
     mkdirSync(join(dir, "nachher"), { recursive: true, mode: 0o700 });
     const m = { v: 1, id, geraet: eigenesGeraet(), art: plan.art, typ: plan.typ, zeit: jetzt().toISOString(), status: "laeuft", von: plan.von, nach: plan.nach, casePur: plan.casePur, titelAlt: plan.titelAlt, titelNeu: plan.titelNeu,
-      verweise: plan.verweise || 0, notizen: plan.notizen || 0, eintrag: null,
+      verweise: plan.verweise || 0, notizen: plan.notizen || 0, eintrag: null, ...(plan.art === "tag-umbenennen" ? { tagAlt: plan.tagAlt, tagNeu: plan.tagNeu } : {}),
       dateien: plan.dateien.map((d, i) => ({ n: i, pfad: d.pfad, hashVorher: d.hashVorher, hashNachher: d.hashNachher, modus: d.modus })),
       groesse: plan.dateien.reduce((a, d) => a + d.vorher.length + d.nachher.length, 0) };
     try {
@@ -658,6 +659,10 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
       liste.push({ pfad: nz.pfad, titel: titelAus(nz.pfad, nz.text), anzahl: r.anzahl });
     }
     for (const d of plan.dateien) d.hashNachher = HASH(d.nachher);
+    const bytes = plan.dateien.reduce((a, d) => a + d.vorher.length + d.nachher.length, 0);
+    if (plan.dateien.length > TAG_MAX_NOTIZEN || bytes > TAG_MAX_BYTES) {
+      throw new HttpFehler(413, `Dieser Tag kommt in ${plan.dateien.length} Notizen vor${bytes > TAG_MAX_BYTES ? " (zu viele Daten)" : ""}; auf einmal lassen sich höchstens ${TAG_MAX_NOTIZEN} ändern. Benenne ihn in Teilen um: zuerst die Unterthemen (zum Beispiel #${a}/…), dann den Rest.`, { art: "zu-gross", notizen: plan.dateien.length });
+    }
     for (const [p, grund] of uebersp) plan.uebersprungen.push({ pfad: p, grund });
     liste.sort((x, y) => x.pfad.localeCompare(y.pfad, "de"));
     plan.verweise = stellen; plan.notizen = liste.length; plan.liste = liste.slice(0, MAX_LISTE); plan.mehrListe = Math.max(0, liste.length - MAX_LISTE);
@@ -688,7 +693,7 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
     const quelle = zurueck ? m.nach : m.von, ziel = zurueck ? m.von : m.nach;
     const quelleAbs = absVon(quelle), zielAbs = absVon(ziel);
     const gleich = m.von === m.nach; // nur Titel geändert, Datei blieb
-    if (!existsSync(quelleAbs) && !(() => { try { lstatSync(quelleAbs); return true; } catch { return false; } })()) throw new HttpFehler(409, `„${basename(quelle)}“ gibt es nicht mehr an dieser Stelle. Kortex nimmt nichts zurück.`, { art: "fehlt" });
+    if (m.art !== "tag-umbenennen" && !existsSync(quelleAbs) && !(() => { try { lstatSync(quelleAbs); return true; } catch { return false; } })()) throw new HttpFehler(409, `„${basename(quelle)}“ gibt es nicht mehr an dieser Stelle. Kortex nimmt nichts zurück.`, { art: "fehlt" });
     let casePur = false;
     if (!gleich && existsSync(zielAbs)) { if (gleicheDatei(quelleAbs, zielAbs)) casePur = true; else throw new HttpFehler(409, `Am Ursprungsort liegt inzwischen etwas anderes („${basename(ziel)}“). Kortex überschreibt nichts.`, { art: "belegt" }); }
     // Dateien prüfen
@@ -820,7 +825,7 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
       try { erg = wechsle(m, "zurueck", { teilweise: eingabe.teilweise === true }); } catch (e) { loescheMarke(); throw e; } // ein Fehler (409 …) heißt: nichts angefasst; nur ein Absturz lässt die Marke stehen
       m.status = "zurueck"; schreibeManifest(m);
       loescheMarke();
-      eintragLog(m, m.art === "loeschen" ? "Rückgängig: Aus dem Papierkorb zurückgelegt." : `Rückgängig: ${m.art === "umbenennen" ? "Umbenennen" : "Verschieben"} zurückgenommen.`, [erg.nach || erg.pfad, erg.von].filter(Boolean)); // [jetziger Ort, voriger Ort]: offene Studios folgen
+      eintragLog(m, m.art === "loeschen" ? "Rückgängig: Aus dem Papierkorb zurückgelegt." : (m.art === "tag-umbenennen" ? `Rückgängig: Tag #${m.tagNeu} heißt wieder #${m.tagAlt}.` : `Rückgängig: ${m.art === "umbenennen" ? "Umbenennen" : "Verschieben"} zurückgenommen.`), [erg.nach || erg.pfad, erg.von].filter(Boolean)); // [jetziger Ort, voriger Ort]: offene Studios folgen
       return { ...erg, ok: true, art: m.art === "loeschen" ? "wiederhergestellt" : "zurueck", vorgangArt: m.art };
     });
   }
@@ -835,7 +840,7 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
       m.status = "fertig"; if (m.art === "loeschen") m.zeit = jetzt().toISOString(); // „gelöscht vor N Tagen“ beginnt neu
       schreibeManifest(m);
       loescheMarke();
-      eintragLog(m, "Wiederhergestellt: Die Aktion gilt wieder.", [erg.nach || erg.pfad, erg.von].filter(Boolean));
+      eintragLog(m, m.art === "tag-umbenennen" ? `Wiederhergestellt: Tag #${m.tagAlt} heißt jetzt #${m.tagNeu}.` : "Wiederhergestellt: Die Aktion gilt wieder.", [erg.nach || erg.pfad, erg.von].filter(Boolean));
       return { ...erg, ok: true, art: "wieder", vorgangArt: m.art };
     });
   }
@@ -857,13 +862,14 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
   // Nie ein laufender oder „unklar“-Vorgang, nie der neueste. Echte Papierkorb-Einträge werden nie automatisch gelöscht.
   const istRueckgaengigJournal = (m) => m.art !== "loeschen" && (m.status === "fertig" || m.status === "zurueck") && !imAltenKorb(m);
   function begrenzeJournale(ausser = null) {
-    const kand = alleManifeste().filter(istRueckgaengigJournal).sort((a, b) => (a.zeit < b.zeit ? 1 : -1));
+    // Der laufende Vorgang (`ausser`) bleibt immer und zählt mit: von den übrigen bleiben höchstens JOURNAL_MAX - 1
+    const kand = alleManifeste().filter(istRueckgaengigJournal).filter((m) => m.id !== ausser).sort((a, b) => (a.zeit < b.zeit ? 1 : -1));
     const jetztMs = Date.now();
-    let bytes = 0;
+    let bytes = ausser ? (leseManifest(ausser)?.groesse || 0) : 0;
     kand.forEach((m, i) => {
       bytes += m.groesse || 0;
-      if (i === 0 || m.id === ausser) return;
-      if (i >= JOURNAL_MAX || jetztMs - Date.parse(m.zeit) > JOURNAL_TAGE * TAG_MS || bytes > JOURNAL_BYTES) { try { rmSync(vorgangDir(m.id), { recursive: true, force: true }); } catch { /* egal */ } }
+      if (i === 0 && !ausser) return;
+      if (i >= JOURNAL_MAX - 1 || jetztMs - Date.parse(m.zeit) > JOURNAL_TAGE * TAG_MS || bytes > JOURNAL_BYTES) { try { rmSync(vorgangDir(m.id), { recursive: true, force: true }); } catch { /* egal */ } }
     });
   }
   const ID_NAME = /^v_[0-9a-f]{12}$/;

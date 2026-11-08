@@ -55,11 +55,36 @@ test("Parser: pruefeTagName und Zählung mit Eltern, Schreibweisen, Notizen ohne
 test("benenneTagUm: Inline und Kopf, Unterthemen folgen, Rest bleibt bytegleich (CRLF, Quotes, Code)", () => {
   const t = "---\r\ntags: [\"Alt\", alt/kind, #alt, anders]\r\n---\r\nText #alt und #ALT/zwei, #altmodisch `#alt` #anders\r\n```\r\n#alt\r\n```\r\n";
   const r = T.benenneTagUm(t, "alt", "neu/ort");
-  assert.equal(r.text, "---\r\ntags: [\"neu/ort\", neu/ort/kind, #neu/ort, anders]\r\n---\r\nText #neu/ort und #neu/ort/zwei, #altmodisch `#alt` #anders\r\n```\r\n#alt\r\n```\r\n");
+  assert.equal(r.text, "---\r\ntags: [\"neu/ort\", neu/ort/kind, anders]\r\n---\r\nText #neu/ort und #neu/ort/zwei, #altmodisch `#alt` #anders\r\n```\r\n#alt\r\n```\r\n");
   assert.equal(r.anzahl, 5);
   assert.equal(T.benenneTagUm("nichts #anders", "alt", "neu").text, "nichts #anders");
   // zurück: gleiche Stellen
   assert.equal(T.benenneTagUm(r.text, "neu/ort", "alt").text.replace(/#ALT/, "#alt").includes("#altmodisch"), true);
+});
+
+test("Parser: NFD-Umlaute (kombinierende Marken) sind Teil des Tags, nie am Anfang; Namen kommen als NFC", () => {
+  const nfd = "Übung".normalize("NFD");
+  assert.deepEqual(T.extrahiereTags(`Text #${nfd} und #${nfd}/Teil`), ["Übung", "Übung/Teil"]);
+  assert.deepEqual(T.extrahiereTags("#\u0301x"), [], "Marke am Anfang ist kein Tag");
+  const r = T.benenneTagUm(`Text #${nfd} und #${nfd}/teil`, "Übung", "Praxis");
+  assert.equal(r.text, "Text #Praxis und #Praxis/teil");
+  assert.equal(T.pruefeTagName(`#${nfd}`), "Übung");
+});
+test("Parser: eingerückter Code und HTML-Blöcke zählen nicht und werden nie umgeschrieben; in Listen zählt Einrückung als Inhalt", () => {
+  const t = "Absatz #echt\n\n    #im-code\n    #auch-code\n\n- Punkt\n\n    #in-liste\n\n<pre>\n#in-pre\n</pre>\n\n<div class=\"x\">\n#in-div\n\n#nach-div\n";
+  assert.deepEqual(T.extrahiereTags(t), ["echt", "in-liste", "nach-div"]);
+  const r = T.benenneTagUm(t, "im-code", "x").text;
+  assert.equal(r, t);
+  assert.equal(T.benenneTagUm(t, "in-pre", "x").anzahl, 0);
+  assert.equal(T.benenneTagUm("<pre>a #q</pre> #q", "q", "z").text, "<pre>a #q</pre> #q", "eine Zeile mit HTML-Block-Anfang bleibt ganz unberührt");
+});
+test("benenneTagUm: Zusammenführen entfernt doppelte Einträge im Kopf ([beta, beta], Blockliste, Anführungszeichen)", () => {
+  assert.equal(T.benenneTagUm("---\ntags: [alpha, beta]\n---\n", "alpha", "beta").text, "---\ntags: [beta]\n---\n");
+  assert.equal(T.benenneTagUm("---\ntags: [beta, alpha, gamma]\n---\n", "alpha", "beta").text, "---\ntags: [beta, gamma]\n---\n");
+  assert.equal(T.benenneTagUm("---\ntags: [alpha, \"beta\"]\n---\n", "alpha", "BETA").text, "---\ntags: [\"beta\"]\n---\n");
+  assert.equal(T.benenneTagUm("---\ntags:\n  - alpha\n  - beta\n---\ntext #alpha\n", "alpha", "beta").text, "---\ntags:\n  - beta\n---\ntext #beta\n");
+  assert.equal(T.benenneTagUm("---\ntags: [a, a]\n---\n", "a", "b").text, "---\ntags: [b]\n---\n", "zwei umbenannte Einträge werden einer");
+  assert.equal(T.benenneTagUm("---\ntags: [alpha]\n---\n#beta #alpha\n", "alpha", "beta").text, "---\ntags: [beta]\n---\n#beta #beta\n", "Inline bleibt, nur der Kopf wird dedupliziert");
 });
 
 // ───────────── Vault: Index, Umbenennen, Rückgängig ─────────────
@@ -77,13 +102,13 @@ function aufbau() {
 }
 const lies = (d, p) => readFileSync(join(d, p), "utf8");
 
-test("Vault.tags: zählt Notizen, überspringt generierte Dateien und Punkt-Ordner", () => {
+test("Vault.tags: zählt Notizen, überspringt generierte Dateien und Punkt-Ordner", async () => {
   const { v } = aufbau();
-  const { tags, notizen } = v.tags({ frisch: true });
+  const { tags, notizen } = await v.tags();
   const m = Object.fromEntries(tags.map((t) => [t.name, [t.anzahl, t.direkt]]));
   assert.deepEqual(m, { alt: [3, 3], "alt/kind": [1, 1], keep: [2, 2], anders: [1, 1] });
   assert.equal(notizen, 4);
-  assert.deepEqual(v.tagNotizen("alt", { frisch: true }).map((e) => e.pfad).sort(), ["a.md", "ink/d.md", "ordner/b.md"]);
+  assert.deepEqual((await v.tagNotizen("alt")).map((e) => e.pfad).sort(), ["a.md", "ink/d.md", "ordner/b.md"]);
 });
 
 test("tagUmbenennen: Vorschau schreibt nichts, Ausführen ist EIN Verlaufseintrag, Rückgängig stellt jedes Byte her, Wieder wiederholt", async () => {
@@ -104,7 +129,7 @@ test("tagUmbenennen: Vorschau schreibt nichts, Ausführen ist EIN Verlaufseintra
   assert.equal(lies(d, "ink/d.md"), "# D\n#neu `#alt`\n");
   assert.equal(lies(d, "c.md"), vorher[3]);
   assert.equal(lies(d, "09_wiki/_index.md"), vorher[4], "generierte Datei bleibt");
-  assert.deepEqual(v.tags({ frisch: true }).tags.map((t) => t.name).sort(), ["anders", "keep", "neu", "neu/kind"]);
+  assert.deepEqual((await v.tags()).tags.map((t) => t.name).sort(), ["anders", "keep", "neu", "neu/kind"]);
 
   // genau ein Verlaufseintrag
   const e = A.leseEreignisse(support, A.kennungVault(v.wurzel), { arten: ["datei-aktion"] });

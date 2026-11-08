@@ -255,12 +255,12 @@ async function rufe(vArg, name, a, spur = { seiten: [] }, sitzung = standardSitz
       const tag = typeof a.tag === "string" ? a.tag.trim().replace(/^#/, "") : "";
       const kopf = vertraut(v) ? "" : `${DATEN_HINWEIS}\n\n`;
       if (!tag) {
-        const { tags, notizen } = v.tags();
+        const { tags, notizen } = await v.tags();
         if (!tags.length) return text(`${kopf}Keine Tags im Vault.`);
         const top = tags.slice().sort((x, y) => y.anzahl - x.anzahl || (x.name < y.name ? -1 : 1)).slice(0, 80);
         return text(`${kopf}${tags.length} Tags in ${notizen} Notizen${top.length < tags.length ? ` (die häufigsten ${top.length})` : ""}:\n${top.map((t) => `#${t.name} ${t.anzahl}`).join("\n")}`);
       }
-      const liste = v.tagNotizen(tag).map((e) => e.pfad).sort();
+      const liste = (await v.tagNotizen(tag)).map((e) => e.pfad).sort();
       spur.seiten = liste.slice(0, 30);
       if (!liste.length) return text(`${kopf}Keine Notiz mit dem Tag #${tag}.`);
       return text(`${kopf}#${tag}: ${liste.length} Notiz${liste.length === 1 ? "" : "en"}${liste.length > 30 ? " (die ersten 30)" : ""}\n${liste.slice(0, 30).join("\n")}`);

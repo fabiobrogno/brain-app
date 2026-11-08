@@ -9,9 +9,9 @@ import { api } from "./api.js";
 import { TTG } from "./texte-tags.js";
 
 export const schluessel = (t) => String(t).normalize("NFC").toLowerCase();
-const TEIL = "[\\p{L}\\p{N}_-]+";
+const TEIL = "[\\p{L}\\p{N}_-][\\p{L}\\p{M}\\p{N}_-]*"; // wie gemeinsam/tags.mjs (Marken, nie am Anfang)
 const NAME_GANZ = new RegExp(`^${TEIL}(?:\\/${TEIL})*$`, "u");
-export const pruefeName = (roh) => { const n = String(roh || "").normalize("NFC").trim().replace(/^#/, ""); return n.length <= 100 && /[^\p{N}\/]/u.test(n) && NAME_GANZ.test(n) ? n : null; };
+export const pruefeName = (roh) => { const n = String(roh || "").normalize("NFC").trim().replace(/^#/, ""); return n.length <= 100 && /[^\p{N}\p{M}\/]/u.test(n) && NAME_GANZ.test(n) ? n : null; };
 const unter = (t, alt) => { const a = schluessel(t), b = schluessel(alt); return a === b || a.startsWith(b + "/"); };
 
 // Baum aus der flachen Liste [{ name, anzahl, direkt }]: Eltern stehen schon darin (mit direkt 0)
@@ -38,7 +38,8 @@ export function schlageTagsVor(liste, getippt, max = 30) {
 
 export function erzeugeTags(ctx) {
   const { S } = ctx;
-  let daten = { tags: [], zuordnung: {}, notizen: 0 };
+  let daten = { tags: [], notizen: 0 };
+  const mitgl = new Map(); // Tag (Schlüssel) → Menge der Pfade; wird nur für die gewählte Sicht geholt (die Werkstatt schickt keine Gesamtzuordnung)
   let nr = 0, timer = 0;
   const offen = new Set();
   let offenGeladen = null, gezeichnet = "";
@@ -46,20 +47,31 @@ export function erzeugeTags(ctx) {
   const speichereOffen = () => ctx.lokal.schreib("tagOffen", [...offen]);
 
   async function laden() {
-    if (!S.info?.vault) { daten = { tags: [], zuordnung: {}, notizen: 0 }; ctx.zeichneSeite?.(); return; }
+    if (!S.info?.vault) { daten = { tags: [], notizen: 0 }; mitgl.clear(); ctx.zeichneSeite?.(); return; }
     const mein = ++nr;
     let r;
     try { r = await api.tags(); } catch { return; } // ältere Werkstatt oder Fehler: der Bereich bleibt, wie er war
     if (mein !== nr || !r || !Array.isArray(r.tags)) return;
-    const sig = JSON.stringify([r.tags, r.zuordnung]);
+    const sig = JSON.stringify(r.tags);
     const alt = daten.sig;
-    daten = { tags: r.tags, zuordnung: r.zuordnung || {}, notizen: r.notizen || 0, sig };
-    if (sig !== alt) { zeichne(); ctx.nachTags?.(); }
+    daten = { tags: r.tags, notizen: r.notizen || 0, sig };
+    if (sig !== alt) zeichne();
+    if (S.sicht.art === "tag") ladeMitglieder(S.sicht.id); // die Liste der gewählten Sicht folgt den Änderungen
   }
   // gebündelt: viele Ereignisse hintereinander (Live, Speichern) → ein Abruf
   function planeLaden(ms) { clearTimeout(timer); timer = setTimeout(laden, ms ?? (daten.sig === undefined ? 0 : 500)); } // der erste Abruf sofort
 
-  const hat = (pfad, tag) => (daten.zuordnung[pfad] || []).some((t) => unter(t, tag));
+  const hat = (pfad, tag) => !!mitgl.get(schluessel(tag))?.has(pfad);
+  async function ladeMitglieder(tag) {
+    const k = schluessel(tag);
+    let r;
+    try { r = await api.tagNotizen(tag); } catch { return; }
+    if (S.sicht.art !== "tag" || schluessel(S.sicht.id) !== k) return; // inzwischen eine andere Sicht
+    const neu = new Set((r.notizen || []).map((e) => e.pfad));
+    const alt = mitgl.get(k);
+    mitgl.clear(); mitgl.set(k, neu);
+    if (!alt || alt.size !== neu.size || [...neu].some((p) => !alt.has(p))) ctx.nachTags?.();
+  }
   const liste = () => daten.tags;
   const anzahlVon = (tag) => daten.tags.find((t) => schluessel(t.name) === schluessel(tag))?.anzahl || 0;
   const anzeigeName = (tag) => daten.tags.find((t) => schluessel(t.name) === schluessel(tag))?.name || tag;
@@ -215,5 +227,5 @@ export function erzeugeTags(ctx) {
     return { nur, liste };
   }
 
-  return { laden, planeLaden, zeichne, hat, liste, anzahlVon, anzeigeName, umbenennen, paletteTreffer, klappeAuf, vorschlaege: (getippt) => schlageTagsVor(daten.tags, getippt), vorhanden: () => daten.tags.length > 0 };
+  return { laden, planeLaden, zeichne, hat, ladeMitglieder, liste, anzahlVon, anzeigeName, umbenennen, paletteTreffer, klappeAuf, vorschlaege: (getippt) => schlageTagsVor(daten.tags, getippt), vorhanden: () => daten.tags.length > 0 };
 }

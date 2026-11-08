@@ -66,5 +66,8 @@ export const TEX = {
     druckPopup: "Die Druckansicht wurde vom Browser blockiert. Erlaube Pop-ups für diese Seite.",
     geteilt: "Teilen geöffnet",
     teilenFehler: "Teilen geht hier nicht.",
+    teilenOhneBilder: (n) => `Geteilt wurde nur der Text; ${n === 1 ? "ein Bild steht" : `${n} Bilder stehen`} als „[Bild: …]“ darin.`,
+    imVault: "Dieser Ort liegt im Vault. Wähle einen Ort außerhalb, damit der Export keine Notizen vermischt.",
+    ordnerNichtLeer: "Dieser Ordner ist nicht leer. Wähle einen neuen oder leeren Ordner.",
   },
 };
