@@ -2,7 +2,10 @@
 // einer festen Liste (p, h3–h6, ul, ol, li, blockquote, pre, code, strong, em, del, hr, table, br, span, button), Inhalte gelangen nur über createTextNode/textContent
 // hinein. Kein innerHTML, keine Attribute aus dem Text, keine Links: ein Markdown-Link zeigt nur den Text (und die Adresse als Text), nichts ist anklickbar außer
 // Verweisen auf Seiten dieses Vaults ([[Seite]], aufgelöst von der Werkstatt: nur Seiten, die es gibt).
-//   rendereMarkdown(text, { verweise: { "<Ziel im Text>": "<Pfad im Vault>"|null }, oeffne: (pfad) => … }) → DocumentFragment
+//   rendereMarkdown(text, { verweise: { "<Ziel im Text>": "<Pfad im Vault>"|null }, oeffne: (pfad) => …, bild?: { url(ziel) → Adresse in der Werkstatt, lightbox(src, alt) } }) → DocumentFragment
+//   Mit `bild` erscheinen lokale Bilder des Vaults; externe Bild-Adressen nie (nur ein Hinweis).
+import { istBildName, istAnhangName, istAdresse, lokalerPfad } from "./anhang-regeln.js";
+import { TAN } from "./texte-anhaenge.js";
 const MAX_TIEFE = 4;
 const MAX_ZEILE = 20_000; // eine längere Zeile wird als reiner Text gezeigt (die Muster unten sind begrenzt, das hier ist die zweite Absicherung gegen Rechenzeit)
 const el = (tag, klasse, ...kinder) => {
@@ -13,10 +16,58 @@ const el = (tag, klasse, ...kinder) => {
 };
 const basis = (p) => p.split("/").pop().replace(/\.(md|txt)$/i, "");
 
+// ---------- Bilder (nur mit opt.bild) ----------
+// Lokale Bilder und Anhänge des Vaults (![[datei.png]], ![Alt](pfad.png)) erscheinen als Bild bzw. Chip; die Werkstatt liefert sie aus dem Vault (kein Weg nach außen).
+// Externe Adressen (![](https://…)) lädt dieses Fenster NIE: Die Antwort ist Text von außen, ein Bild-Link darin könnte Inhalte des Vaults in der Adresse mitschicken. Es erscheint nur ein Hinweis.
+const BILD = /!\[\[([^\[\]\n|#]{1,300}?)(?:#[^\[\]\n|]*)?(?:\|[^\[\]\n]*)?\]\]|!\[([^\[\]\n]{0,200})\]\(\s*(<[^>\n]{1,500}>|[^()\s]{1,500})(?:\s+"[^"\n]*")?\s*\)/g;
+function bildElement(m, b) {
+  if (m[1] !== undefined) {
+    const z = m[1].trim();
+    if (!istAnhangName(z)) return null;
+    const name = z.split("/").pop();
+    if (!istBildName(z)) return el("span", "md-anhang", name);
+    return bild(b, z, name);
+  }
+  const roh = m[3].replace(/^<|>$/g, "");
+  if (istAdresse(roh)) {
+    if (!/^https?:\/\//i.test(roh)) return null;
+    let host = ""; try { host = new URL(roh).hostname; } catch { host = ""; }
+    const s = el("span", "md-bild-extern", TAN.externPlatzhalter(host || "…"));
+    s.title = TAN.externKi;
+    return s;
+  }
+  const pfad = lokalerPfad(roh);
+  if (!pfad || !istBildName(pfad)) return null;
+  return bild(b, pfad, (m[2] || "").trim() || pfad.split("/").pop());
+}
+function bild(b, ziel, name) {
+  const img = el("img", "md-bild");
+  img.alt = name; img.loading = "lazy"; img.decoding = "async"; img.draggable = false;
+  img.tabIndex = 0; img.setAttribute("role", "button"); img.title = TAN.bildOeffnen(name);
+  img.addEventListener("error", () => { const f = el("span", "md-bild-fehlt", TAN.bildFehlt(ziel.split("/").pop())); img.replaceWith(f); });
+  const auf = () => b.lightbox(img.currentSrc || img.src, name);
+  img.addEventListener("click", auf);
+  img.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); auf(); } });
+  img.src = b.url(ziel);
+  return img;
+}
+
 // ---------- Inline ----------
 const INLINE = /(?<!`)(`{1,2})(?!`)([^`\n]{1,500}?)\1(?!`)|\[\[([^\[\]\n]{1,300})\]\]|\*\*([^*\n]+?)\*\*|(?<![\p{L}\p{N}_])__([^_\n]+?)__(?![\p{L}\p{N}_])|~~([^~\n]+?)~~|(?<![\p{L}\p{N}*])\*([^*\s][^*\n]*?)\*(?![\p{L}\p{N}*])|(?<![\p{L}\p{N}_])_([^_\s][^_\n]*?)_(?![\p{L}\p{N}_])|\[([^\]\n]{1,300})\]\(([^)\s]{1,500})\)/gu;
 function inline(text, ziel, opt, tiefe = 0) {
   if (tiefe > MAX_TIEFE || text.length > MAX_ZEILE) { ziel.append(document.createTextNode(text)); return; }
+  if (opt.bild && text.includes("![")) { // Bilder herausnehmen, der Rest läuft ohne Bildregel (kein Kreis) durch die übliche Behandlung
+    const rest = { ...opt, bild: null };
+    let pos = 0;
+    for (const m of text.matchAll(BILD)) {
+      const e = bildElement(m, opt.bild);
+      if (!e) continue;
+      if (m.index > pos) inline(text.slice(pos, m.index), ziel, rest, tiefe);
+      ziel.append(e);
+      pos = m.index + m[0].length;
+    }
+    if (pos > 0) { if (pos < text.length) inline(text.slice(pos), ziel, rest, tiefe); return; }
+  }
   let pos = 0;
   const re = new RegExp(INLINE.source, INLINE.flags);
   for (let m; (m = re.exec(text)); ) {
@@ -141,6 +192,7 @@ function bloecke(text, ziel, opt, tiefe = 0) {
 
 export function rendereMarkdown(text, opt = {}) {
   const f = document.createDocumentFragment();
-  bloecke(String(text ?? "").slice(0, 100_000), f, { verweise: opt.verweise || {}, oeffne: typeof opt.oeffne === "function" ? opt.oeffne : null });
+  bloecke(String(text ?? "").slice(0, 100_000), f, { verweise: opt.verweise || {}, oeffne: typeof opt.oeffne === "function" ? opt.oeffne : null,
+    bild: opt.bild && typeof opt.bild.url === "function" && typeof opt.bild.lightbox === "function" ? opt.bild : null });
   return f;
 }
