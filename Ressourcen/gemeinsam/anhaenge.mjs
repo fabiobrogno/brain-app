@@ -8,7 +8,7 @@
 //   holeExternBild    ein Bild von einer https-Adresse holen (nur nach Zustimmung; keine privaten Adressen, begrenzt)
 import { readdirSync, readFileSync, statSync, lstatSync, mkdirSync, writeFileSync, openSync, closeSync, constants as fsKonst } from "node:fs";
 import { join, basename } from "node:path";
-import { isIP } from "node:net";
+import { isIP, BlockList } from "node:net";
 import { lookup as dnsLookup } from "node:dns";
 import https from "node:https";
 import http from "node:http";
@@ -98,10 +98,11 @@ export function pruefeAnhang({ name, buf, maxBytes = MAX_MB_STANDARD * 1024 * 10
 // Whitelist: nur Zeichen- und Formelemente. Skripte, Fremdinhalt (foreignObject, iframe …), Animationen (SMIL kann Adressen ändern), Links (a) und alles mit Adresse nach außen entfällt;
 // Attribute `on…`, Adressen außer `#id` und Rasterbildern als data:, `url(…)` außer `url(#id)`, `javascript:` und `@import` entfallen.
 const SVG_ELEMENTE = new Set(["svg", "g", "defs", "symbol", "use", "path", "rect", "circle", "ellipse", "line", "polyline", "polygon", "text", "tspan", "textpath", "lineargradient", "radialgradient", "stop",
-  "clippath", "mask", "pattern", "marker", "title", "desc", "image", "style", "filter", "feblend", "fecolormatrix", "fecomponenttransfer", "fecomposite", "feconvolvematrix", "fediffuselighting",
+  "clippath", "mask", "pattern", "marker", "title", "desc", "image", "filter", "feblend", "fecolormatrix", "fecomponenttransfer", "fecomposite", "feconvolvematrix", "fediffuselighting",
   "fedisplacementmap", "fedistantlight", "fedropshadow", "feflood", "fefunca", "fefuncb", "fefuncg", "fefuncr", "fegaussianblur", "femerge", "femergenode", "femorphology", "feoffset", "fepointlight",
   "fespecularlighting", "fespotlight", "fetile", "feturbulence"]);
-const SVG_MIT_INHALT_WEG = new Set(["script", "foreignobject", "iframe", "object", "embed", "audio", "video", "canvas", "animate", "set", "animatetransform", "animatemotion", "handler", "listener", "feimage", "html", "head"]);
+// <style> entfällt samt Inhalt (CSS lässt sich mit Escapes, image-set(), @import … nicht sicher prüfen); ebenso jedes style-Attribut mit „(“, „\“ oder „@“ (siehe bereinigeAttribute)
+const SVG_MIT_INHALT_WEG = new Set(["style", "script", "foreignobject", "iframe", "object", "embed", "audio", "video", "canvas", "animate", "set", "animatetransform", "animatemotion", "handler", "listener", "feimage", "html", "head"]);
 const ENTITAETEN = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", colon: ":", tab: "\t", newline: "\n" };
 function entkodiere(s) {
   return String(s).replace(/&(?:#x([0-9a-f]+)|#(\d+)|([a-z]+));?/gi, (m, h, d, n) => {
@@ -109,10 +110,12 @@ function entkodiere(s) {
     return Object.hasOwn(ENTITAETEN, n.toLowerCase()) ? ENTITAETEN[n.toLowerCase()] : m;
   });
 }
-const klar = (s) => entkodiere(s).replace(/[\u0000-\u0020\u007f-\u009f\u200b-\u200f\u2028\u2029\ufeff]+/g, "").toLowerCase();
+// CSS-Escapes („\75 rl(“ = „url(“) vor der Prüfung auflösen
+const cssKlar = (s) => String(s).replace(/\\([0-9a-fA-F]{1,6})[ \t\r\n\f]?/g, (m, h) => { const c = Number.parseInt(h, 16); return c > 0 && c <= 0x10ffff ? String.fromCodePoint(c) : ""; }).replace(/\\(.)/gs, "$1");
+const klar = (s) => cssKlar(entkodiere(s)).replace(/[\u0000-\u0020\u007f-\u009f\u200b-\u200f\u2028\u2029\ufeff]+/g, "").toLowerCase();
 const gefaehrlicherWert = (wert) => {
   const k = klar(wert);
-  if (/javascript:|vbscript:|data:text|data:application|data:image\/svg|@import|expression\(|-moz-binding|behavior:/.test(k)) return true;
+  if (/javascript:|vbscript:|data:text|data:application|data:image\/svg|@import|expression\(|-moz-binding|behavior:|image-set\(|image\(|cross-fade\(|element\(|src\(/.test(k)) return true;
   for (const m of k.matchAll(/url\(([^)]*)\)/g)) { const u = m[1].replace(/^["']|["']$/g, ""); if (!u.startsWith("#")) return true; }
   return false;
 };
@@ -133,6 +136,7 @@ function bereinigeAttribute(roh, element) {
       continue;
     }
     if (n.startsWith("xmlns")) { if (n === "xmlns" && wert === "http://www.w3.org/2000/svg") aus.push(`xmlns="${wert}"`); else if (n === "xmlns:xlink" && wert === "http://www.w3.org/1999/xlink") aus.push(`xmlns:xlink="${wert}"`); continue; }
+    if (n === "style" && /[(\\@]/.test(entkodiere(wert))) continue; // Style-Attribut mit Funktion, Escape oder @-Regel: weg
     if (n === "src" || n === "action" || n === "formaction" || n === "begin" || n === "end" || n === "from" || n === "to" || n === "values") continue;
     if (gefaehrlicherWert(wert)) continue;
     aus.push(wert === "" && m[2] === undefined && m[3] === undefined && m[4] === undefined ? name : `${name}="${esc(entkodiere(wert))}"`);
@@ -220,7 +224,19 @@ export function baueAnhangIndex(wurzel, { frisch = false } = {}) {
 }
 
 const ordnerVon = (p) => { const i = String(p).lastIndexOf("/"); return i < 0 ? "" : String(p).slice(0, i); };
-const istDatei = (abs) => { try { return lstatSync(abs).isFile() || (lstatSync(abs).isSymbolicLink() && statSync(abs).isFile()); } catch { return false; } };
+// Einfach statt klug: eine Verknüpfung (Symlink) ist nie ein Anhang — weder die Datei selbst noch ein Ordner davor. Nur eine gewöhnliche Datei zählt (kein Ordner, kein Bundle).
+// Kein Auflösen: sonst käme über „doc.pdf → tool.command“ oder „x.txt → .git/config“ etwas in die Anzeige oder zum Öffnen, das der Name verschweigt.
+function reineDatei(wurzel, segmente) {
+  let p = wurzel;
+  for (let i = 0; i < segmente.length; i++) {
+    p = join(p, segmente[i]);
+    let st; try { st = lstatSync(p); } catch { return false; }
+    if (st.isSymbolicLink()) return false;
+    if (i === segmente.length - 1) return st.isFile();
+    if (!st.isDirectory()) return false;
+  }
+  return false;
+}
 
 /**
  * Wohin zeigt dieses Ziel einer Einbettung? → { rel, abs } oder null (gibt es nicht, kein Anhang-Typ, außerhalb des Vaults).
@@ -233,7 +249,7 @@ export function loeseAnhang(wurzel, { von = "", ziel, ordner = ORDNER_STANDARD, 
   const vonDir = ordnerVon(von);
   const pruefe = (rel) => {
     if (!rel || rel.split("/").some((t) => !t || t === "." || t === ".." || gesperrterName(t))) return null;
-    try { const l = loese(wurzel, rel); return istDatei(l.abs) && istAnhangName(l.abs) ? { rel: l.rel, abs: l.abs } : null; } catch { return null; }
+    try { const l = loese(wurzel, rel); return l.segmente.every((t) => !gesperrterName(t)) && reineDatei(wurzel, l.segmente) && istAnhangName(l.rel) ? { rel: l.rel, abs: l.abs } : null; } catch { return null; }
   };
   const kandidaten = [];
   if (z.includes("/")) {
@@ -303,24 +319,45 @@ export function anhangZieleIn(text) {
 }
 
 const MAX_NOTIZEN = 50_000, MAX_NOTIZ_BYTES = 5 * 1024 * 1024;
-function alleNotizen(wurzel) {
+const TEXT_DATEI = /\.(md|txt|canvas)$/i; // Notizen und Obsidian-Canvas (JSON mit Dateipfaden)
+// → { dateien, vollstaendig }: false, wenn die Obergrenze erreicht wurde (dann kennt Kortex nicht alle Verweise)
+function alleTextDateien(wurzel) {
   const aus = [];
+  let vollstaendig = true;
   const geh = (rel) => {
-    let liste; try { liste = readdirSync(rel ? join(wurzel, rel) : wurzel, { withFileTypes: true }); } catch { return; }
+    let liste; try { liste = readdirSync(rel ? join(wurzel, rel) : wurzel, { withFileTypes: true }); } catch { vollstaendig = false; return; }
     for (const d of liste) {
-      if (aus.length >= MAX_NOTIZEN) return;
+      if (aus.length >= MAX_NOTIZEN) { vollstaendig = false; return; }
       if (gesperrterName(d.name)) continue;
       const r = rel ? `${rel}/${d.name}` : d.name;
       if (d.isDirectory()) geh(r);
-      else if (d.isFile() && BEARBEITBAR.test(d.name)) aus.push(r);
+      else if (d.isFile() && TEXT_DATEI.test(d.name)) aus.push(r);
     }
   };
   geh("");
-  return aus;
+  return { dateien: aus, vollstaendig };
 }
 
+// Alles, was nach einem Anhang-Namen aussieht (Wikilink, Markdown, Kopf-Wert wie cover: "[[x.png]]", <img src>, Canvas), nicht nur Einbettungen: für „wer benutzt das?“ lieber zu viel als zu wenig
+const ENDUNGEN_MUSTER = Object.keys(ANHANG_TYPEN).join("|");
+const KANDIDAT = new RegExp(`[^\\s"'()\\[\\]<>|\`\\\\{}]+\\.(?:${ENDUNGEN_MUSTER})(?![A-Za-z0-9])`, "gi");
+export function anhangKandidaten(text) {
+  const aus = new Set();
+  for (const m of String(text).matchAll(KANDIDAT)) { let t = m[0].replace(/^[:,;=]+/, ""); try { t = decodeURIComponent(t); } catch { /* bleibt */ } aus.add(t); }
+  for (const z of anhangZieleIn(text)) aus.add(z.ziel);
+  return [...aus];
+}
+const kommtVor = (kleinText, rel) => {
+  const name = basename(rel).toLowerCase();
+  if (kleinText.includes(name)) return true;
+  let dekodiert = ""; try { dekodiert = decodeURIComponent(kleinText); } catch { dekodiert = kleinText.replace(/%([0-9a-f]{2})/g, (m, h) => String.fromCharCode(Number.parseInt(h, 16))); } // „nur%2Da.png“, „a%20b.png“
+  return dekodiert.includes(name);
+};
+
 /**
- * Anhänge, die NUR diese Notiz benutzt (keine andere Notiz im Vault verweist darauf) → [{ pfad, name, art, groesse }].
+ * Anhänge, die NUR diese Notiz benutzt → { anhaenge: [{ pfad, name, art, groesse }], unsicher }.
+ * „Benutzt“ ist weit gefasst: jede andere Notiz oder Canvas-Datei, in der der Dateiname irgendwo steht (auch im Datei-Kopf, in <img>, im Code), zählt. Konnte Kortex nicht alles lesen
+ * (Datei über 5 MB, mehr als 50 000 Dateien, Lesefehler), ist das Ergebnis „unsicher“ und es wird nichts zum Löschen angeboten.
  * Für die Rückfrage beim Löschen einer Notiz: Kortex fragt, was damit geschehen soll, und löscht nie von allein.
  */
 export function unbenutzteAnhaenge({ wurzel, notiz, einstellungen }) {
@@ -328,23 +365,25 @@ export function unbenutzteAnhaenge({ wurzel, notiz, einstellungen }) {
   const index = baueAnhangIndex(wurzel, { frisch: true });
   const loeseZiel = (von, ziel) => loeseAnhang(wurzel, { von, ziel, ordner: e.ordner, index })?.rel ?? null;
   let eigener;
-  try { eigener = readFileSync(loese(wurzel, notiz).abs, "utf8"); } catch { return []; }
+  try { eigener = readFileSync(loese(wurzel, notiz).abs, "utf8"); } catch { return { anhaenge: [], unsicher: false }; }
   const meine = new Map();
-  for (const z of anhangZieleIn(eigener)) { const rel = loeseZiel(notiz, z.ziel); if (rel) meine.set(falte(rel), rel); }
-  if (!meine.size) return [];
+  for (const z of anhangKandidaten(eigener)) { const rel = loeseZiel(notiz, z); if (rel) meine.set(falte(rel), rel); }
+  if (!meine.size) return { anhaenge: [], unsicher: false };
   const uebrig = new Map(meine);
-  for (const rel of alleNotizen(wurzel)) {
+  const { dateien, vollstaendig } = alleTextDateien(wurzel);
+  let unsicher = !vollstaendig;
+  for (const rel of dateien) {
     if (!uebrig.size) break;
     if (falte(rel) === falte(notiz)) continue;
     let text;
-    try { const abs = join(wurzel, rel); if (statSync(abs).size > MAX_NOTIZ_BYTES) continue; text = readFileSync(abs, "utf8"); } catch { continue; }
-    if (!text.includes("![") && !text.includes("](") && !text.includes("[[")) continue;
-    for (const z of anhangZieleIn(text)) { const r = loeseZiel(rel, z.ziel); if (r) uebrig.delete(falte(r)); }
+    try { const abs = join(wurzel, rel); if (statSync(abs).size > MAX_NOTIZ_BYTES) { unsicher = true; continue; } text = readFileSync(abs, "utf8").toLowerCase(); } catch { unsicher = true; continue; }
+    for (const [k, r] of uebrig) if (kommtVor(text, r)) uebrig.delete(k);
   }
-  return [...uebrig.values()].map((rel) => {
+  if (unsicher) return { anhaenge: [], unsicher: true };
+  return { unsicher: false, anhaenge: [...uebrig.values()].map((rel) => {
     let groesse = 0; try { groesse = statSync(join(wurzel, rel)).size; } catch { /* weg */ }
     return { pfad: rel, name: basename(rel), art: istBildName(rel) ? "bild" : "datei", groesse };
-  });
+  }) };
 }
 
 // ───────────────────────────── Externe Bilder ─────────────────────────────
@@ -364,17 +403,13 @@ export function istOeffentlicheIp(ip) {
     if ((a === 198 && b === 51 && c === 100) || (a === 203 && b === 0 && c === 113)) return false;
     return true;
   }
-  const s = ip.toLowerCase();
-  const abgebildet = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(s);
-  if (abgebildet) return istOeffentlicheIp(abgebildet[1]);
-  const hex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(s);
-  if (hex) { const x = Number.parseInt(hex[1], 16), y = Number.parseInt(hex[2], 16); return istOeffentlicheIp(`${x >> 8}.${x & 255}.${y >> 8}.${y & 255}`); }
-  if (s === "::" || s === "::1") return false;
-  const erst = Number.parseInt(s.split(":")[0] || "0", 16);
-  if ((erst & 0xfe00) === 0xfc00 || (erst & 0xffc0) === 0xfe80 || (erst & 0xff00) === 0xff00) return false; // fc00::/7, fe80::/10, ff00::/8
-  if (s.startsWith("2001:db8:") || s.startsWith("64:ff9b:")) return false;
-  return true;
+  // IPv6: nur globale Unicast-Adressen (2000::/3), und davon nicht die Übergangs-, Test- und Dokumentationsbereiche. Alles andere (auch ::ffff:…, ::1, fc00::/7, fe80::/10) ist nicht öffentlich.
+  return V6_ERLAUBT.check(ip, "ipv6") && !V6_GESPERRT.check(ip, "ipv6");
 }
+const V6_ERLAUBT = new BlockList();
+V6_ERLAUBT.addSubnet("2000::", 3, "ipv6");
+const V6_GESPERRT = new BlockList();
+for (const [netz, laenge] of [["2002::", 16], ["2001::", 32], ["2001:2::", 48], ["2001:10::", 28], ["2001:db8::", 32], ["3fff::", 20], ["100::", 64], ["::", 96], ["::ffff:0:0", 96], ["fec0::", 10]]) V6_GESPERRT.addSubnet(netz, laenge, "ipv6");
 
 const EXTERN_TYPEN = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp", "image/svg+xml": "svg" };
 export const EXTERN_MAX_BYTES = 10 * 1024 * 1024;
@@ -430,7 +465,9 @@ function eineAnfrage(url, { maxBytes, zeitMs, erlaubeLokal }) {
         const inhalt = erkenneInhalt(body);
         const erwartet = EXTERN_TYPEN[typ];
         if (inhalt !== erwartet && !(erwartet === "jpg" && inhalt === "jpg")) return ende(nein, new HttpFehler(415, "Der Inhalt ist kein Bild.", { art: "typ-passt-nicht" }));
-        ende(ok, { typ, body });
+        let aus = body;
+        if (erwartet === "svg") { try { aus = Buffer.from(bereinigeSvg(body.toString("utf8")), "utf8"); } catch { return ende(nein, new HttpFehler(415, "Das ist keine gültige SVG-Datei.", { art: "svg" })); } } // auch fremde SVG nur bereinigt
+        ende(ok, { typ, body: aus });
       });
       res.on("error", () => ende(nein, new HttpFehler(502, "Das Bild konnte nicht geladen werden.", { art: "netz" })));
     });

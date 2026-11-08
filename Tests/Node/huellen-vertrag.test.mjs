@@ -151,3 +151,28 @@ test("anhang-oeffnen (Electron): nur Anhang-Endungen im Vault, fehlende Datei, S
   assert.deepEqual(await h.aktion("anhang-oeffnen", "_anhaenge/a.pdf"), { ok: false, grund: "nicht-verfuegbar" });
   assert.equal(geoeffnet.length, 2, "nur die zwei gültigen Aufrufe erreichten das System");
 });
+
+test("anhang-oeffnen (Electron, K1): Verknüpfungen, Ordner/Bundles und Verstecktes öffnen nie etwas — der Name „doc.pdf“ darf kein Ziel „tool.command“ verbergen", async (t) => {
+  const { erzeugeAktionen, anhangImVault } = await import(pathToFileURL(join(W, "electron/aktionen.mjs")).href);
+  const { mkdtempSync, mkdirSync, writeFileSync, realpathSync, symlinkSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const vault = realpathSync(mkdtempSync(join(tmpdir(), "kortex-k1-")));
+  mkdirSync(join(vault, "_anhaenge")); mkdirSync(join(vault, "Evil.app/Contents"), { recursive: true }); mkdirSync(join(vault, ".git")); mkdirSync(join(vault, "ordner.pdf")); mkdirSync(join(vault, ".versteckt"));
+  writeFileSync(join(vault, "_anhaenge/a.pdf"), "x"); writeFileSync(join(vault, "_anhaenge/start.command"), "#!/bin/sh\n"); writeFileSync(join(vault, ".git/config"), "x"); writeFileSync(join(vault, ".versteckt/a.pdf"), "x");
+  const link = (ziel, name, typ) => symlinkSync(ziel, join(vault, name), typ);
+  try {
+    link(join(vault, "_anhaenge/start.command"), "doc.pdf", "file"); link(join(vault, "Evil.app"), "bundle.pdf", "junction"); link(join(vault, ".git/config"), "x.txt", "file");
+    link(join(vault, "_anhaenge"), "innen", "junction"); link(join(vault, "_anhaenge/a.pdf"), "_anhaenge/gleich.pdf", "file");
+  } catch { return t.skip("keine Verknüpfungen möglich"); }
+  assert.equal(anhangImVault("_anhaenge/a.pdf", vault), join(vault, "_anhaenge", "a.pdf"));
+  const geoeffnet = [], stumm = () => {};
+  const h = erzeugeAktionen({ support: "/x", vaultPfad: async () => vault, openExternal: stumm, showItemInFolder: stumm, oeffneDatei: async (p) => { geoeffnet.push(p); return ""; }, schreibeZwischenablage: stumm, waehleOrdner: async () => null, mitteilung: () => true,
+    darstellung: stumm, fensterTitel: stumm, fensterZoom: stumm, befehlAnStudio: stumm, protokoll: stumm, einrichtung: { lese: () => ({}), schreibe: stumm }, ordner: { pruefeOrdner: () => ({ ok: false }) }, git: { pruefen: () => ({}), hinweis: () => "" } });
+  for (const s of ["doc.pdf", "bundle.pdf", "x.txt", "innen/a.pdf", "_anhaenge/gleich.pdf", "ordner.pdf", ".git/config", ".versteckt/a.pdf", "Evil.app", "_anhaenge/start.command"]) {
+    assert.deepEqual(await h.aktion("anhang-oeffnen", s), { ok: false, grund: "ungueltig" }, s);
+    assert.equal(anhangImVault(s, vault), null, s);
+  }
+  assert.deepEqual(geoeffnet, [], "nichts erreichte das System");
+  assert.deepEqual(await h.aktion("anhang-oeffnen", "_anhaenge/a.pdf"), { ok: true });
+  assert.deepEqual(await h.aktion("anhang-oeffnen", "_anhaenge/weg.pdf"), { ok: false, grund: "fehlt" });
+});

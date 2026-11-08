@@ -36,7 +36,7 @@
     return OK;
   }
 
-  // Anhang öffnen: der Browser zeigt PDF und Bilder selbst, alles andere lädt er herunter (die Werkstatt liefert es mit Content-Disposition). Nur Endungen der Anhang-Liste; synchron wie `extern`.
+  // Anhang öffnen: der Browser zeigt Bilder selbst, PDF und alles andere lädt er herunter (die Werkstatt liefert es mit Content-Disposition). Nur Endungen der Anhang-Liste; synchron wie `extern`.
   var ANHANG_ENDUNGEN = ["png", "jpg", "jpeg", "gif", "webp", "svg", "pdf", "txt", "csv", "rtf", "zip", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp", "mp3", "m4a", "wav", "mp4", "mov", "webm"];
   function anhangOeffnen(pfad) {
     var p = String(pfad == null ? "" : pfad), m = /\.([A-Za-z0-9]{1,8})$/.exec(p);

@@ -2,7 +2,7 @@
 // Reine Logik OHNE `import "electron"`: alles, was das System anfasst (Dateimanager, Browser, Zwischenablage, Dialog, Mitteilung, Fenster), kommt über `abh` hinein —
 // so prüft Tests/Node/electron-huelle.test.mjs die Werte-Prüfung und die Antworten ohne Electron. Die Prüfung der Werte entspricht AppAktion.pruefe (Swift): bekannte Aktionen,
 // Pfade nur im Vault, extern nur https, Texte einzeilig und gekürzt. Ungültiger Wert → { ok:false, grund:"ungueltig" } (nie ein Fehler, nie eine Wirkung).
-import { realpathSync, existsSync } from "node:fs";
+import { realpathSync, existsSync, lstatSync } from "node:fs";
 import { join, dirname, basename, sep, isAbsolute } from "node:path";
 import { externPruefen } from "./navigation.mjs";
 
@@ -58,6 +58,23 @@ function aufgeloest(pfad) {
   let r; try { r = realpathSync.native(p); } catch { r = p; }
   return join(r, ...rest);
 }
+// Anhang im Vault für „anhang-oeffnen“: einfach statt klug. Keine Verknüpfung (Symlink, Junction) an irgendeiner Stelle des Pfads, nur eine gewöhnliche Datei (kein Ordner, kein Bundle wie .app),
+// kein versteckter Teil (.git, .kortex-lokal …), Endung aus der Anhang-Liste — am Namen UND am Ziel. → absoluter Pfad oder null.
+export function anhangImVault(relativ, vault, { plattform = process.platform } = {}) {
+  const endungVon = (n) => (/\.([A-Za-z0-9]{1,8})$/.exec(String(n)) || [, ""])[1].toLowerCase();
+  if (typeof relativ !== "string" || !ANHANG_ENDUNGEN.has(endungVon(relativ)) || !ortImVault(relativ, vault, { plattform })) return null;
+  const teile = relativ.split(/[\\/]/).filter(Boolean);
+  if (teile.some((t) => t.startsWith("."))) return null;
+  let p = aufgeloest(vault);
+  for (let i = 0; i < teile.length; i++) {
+    p = join(p, teile[i]);
+    let st; try { st = lstatSync(p); } catch { return null; }
+    if (st.isSymbolicLink()) return null;
+    if (i === teile.length - 1) { if (!st.isFile()) return null; } else if (!st.isDirectory()) return null;
+  }
+  try { if (!ANHANG_ENDUNGEN.has(endungVon(realpathSync.native(p)))) return null; } catch { return null; }
+  return p;
+}
 // Relativer Pfad → absoluter Pfad im Vault, sonst null. Kein absoluter Pfad, kein `..`, kein NUL; nach dem Auflösen der Verknüpfungen muss das Ziel im (aufgelösten) Vault liegen.
 export function ortImVault(relativ, vault, { plattform = process.platform } = {}) {
   if (typeof relativ !== "string" || !relativ || relativ.includes("\0") || relativ.startsWith("/") || relativ.startsWith("\\") || /^[A-Za-z]:/.test(relativ)) return null;
@@ -95,9 +112,12 @@ export function erzeugeAktionen(abh) {
     // Anhang mit dem Programm des Systems öffnen (Chip in der Notiz): nur Endungen der Anhang-Liste, nur im Vault, nie Ausführbares
     "anhang-oeffnen": async (w) => {
       const vault = await abh.vaultPfad();
-      const ort = vault && typeof w === "string" && ANHANG_ENDUNGEN.has((/\.([A-Za-z0-9]{1,8})$/.exec(w) || [, ""])[1].toLowerCase()) ? ortImVault(w, vault, { plattform }) : null;
-      if (!ort) return UNGUELTIG();
-      if (!existsSync(ort)) return nein("fehlt");
+      if (!vault || typeof w !== "string") return UNGUELTIG();
+      const ort = anhangImVault(w, vault, { plattform });
+      if (!ort) { // nur „gibt es nicht“ (bei erlaubter Endung) heißt fehlt; Verknüpfung, Ordner, Verstecktes, fremde Endung: ungültig
+        const o = ANHANG_ENDUNGEN.has((/\.([A-Za-z0-9]{1,8})$/.exec(w) || [, ""])[1].toLowerCase()) ? ortImVault(w, vault, { plattform }) : null;
+        return o && !existsSync(o) ? nein("fehlt") : UNGUELTIG();
+      }
       abh.protokoll("aktion anhang-oeffnen");
       try { return (await abh.oeffneDatei(ort)) ? nein("nicht-verfuegbar") : OK; } catch { return nein("nicht-verfuegbar"); }
     },

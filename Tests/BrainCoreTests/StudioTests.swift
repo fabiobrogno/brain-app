@@ -83,6 +83,23 @@ private func url(_ s: String) -> URL { URL(string: s)! }
     #expect(AppAktion.pruefe(["aktion": "anhang-oeffnen", "wert": "_anhaenge/a.pdf"], vault: v, oberflaeche: .app) == nil)
     #expect(AppAktion.pruefe(["aktion": "anhang-oeffnen", "wert": "_anhaenge/a.pdf"], vault: nil, oberflaeche: .studio) == nil)
     #expect(AppAktion.pruefe(["aktion": "anhang-oeffnen", "wert": 5], vault: v, oberflaeche: .studio) == nil)
+    // Sicherheitsprüfung K1: eine Verknüpfung im Vault darf nichts öffnen, was der Name verschweigt
+    let fm = FileManager.default
+    try fm.createDirectory(at: v.appendingPathComponent("Evil.app/Contents"), withIntermediateDirectories: true)
+    try fm.createDirectory(at: v.appendingPathComponent(".git"), withIntermediateDirectories: true)
+    try fm.createDirectory(at: v.appendingPathComponent("ordner.pdf"), withIntermediateDirectories: true)
+    try fm.createDirectory(at: v.appendingPathComponent(".versteckt"), withIntermediateDirectories: true)
+    try "x".write(to: v.appendingPathComponent(".git/config"), atomically: true, encoding: .utf8)
+    try "x".write(to: v.appendingPathComponent(".versteckt/a.pdf"), atomically: true, encoding: .utf8)
+    try fm.createSymbolicLink(at: v.appendingPathComponent("doc.pdf"), withDestinationURL: anh.appendingPathComponent("start.command"))
+    try fm.createSymbolicLink(at: v.appendingPathComponent("bundle.pdf"), withDestinationURL: v.appendingPathComponent("Evil.app"))
+    try fm.createSymbolicLink(at: v.appendingPathComponent("x.txt"), withDestinationURL: v.appendingPathComponent(".git/config"))
+    try fm.createSymbolicLink(at: v.appendingPathComponent("innen"), withDestinationURL: anh) // Verknüpfung auf einen Ordner im Vault
+    try fm.createSymbolicLink(at: anh.appendingPathComponent("gleich.pdf"), withDestinationURL: anh.appendingPathComponent("a.pdf")) // selbst eine Verknüpfung auf eine harmlose Datei
+    for s in ["doc.pdf", "bundle.pdf", "x.txt", "innen/a.pdf", "_anhaenge/gleich.pdf", "ordner.pdf", ".git/config", ".versteckt/a.pdf", "Evil.app"] {
+        #expect(AppAktion.pruefe(["aktion": "anhang-oeffnen", "wert": s], vault: v, oberflaeche: .studio) == nil, "\(s)")
+    }
+    #expect(AppAktion.pruefe(["aktion": "anhang-oeffnen", "wert": "_anhaenge/a.pdf"], vault: v, oberflaeche: .studio) != nil)
     // Eine Verknüpfung aus dem Vault heraus bleibt draußen
     let draussen = tempOrdner("Draussen")
     try "x".write(to: draussen.appendingPathComponent("geheim.pdf"), atomically: true, encoding: .utf8)

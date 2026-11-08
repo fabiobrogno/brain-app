@@ -92,9 +92,22 @@ test("SVG: Skripte, Fremdinhalt, Ereignisse und Adressen nach außen entfallen, 
 <style>@import url(http://e.example/x.css); .a{fill:red}</style><style>.b{fill:url(#g)}</style><path d="M0 0L5 5"/></svg>`;
   const aus = A.bereinigeSvg(boese);
   for (const verboten of ["script", "onload", "onclick", "onmouseover", "foreignObject", "iframe", "javascript", "e.example", "ENTITY", "DOCTYPE", "/etc/passwd", "animate", "<set", "@import", "<a "]) assert.ok(!aus.toLowerCase().includes(verboten.toLowerCase()), `${verboten} in ${aus}`);
-  for (const bleibt of ["<svg", "<rect", "<circle", '<use xlink:href="#ok"', "<path", 'data:image/png;base64,AAAA', 'fill="url(#g)"', ".b{fill:url(#g)}"]) assert.ok(aus.includes(bleibt), `${bleibt} fehlt in ${aus}`);
-  assert.ok(!aus.includes(".a{fill:red}"), "ein Style-Block mit @import entfällt ganz");
+  for (const bleibt of ["<svg", "<rect", "<circle", '<use xlink:href="#ok"', "<path", 'data:image/png;base64,AAAA', 'fill="url(#g)"']) assert.ok(aus.includes(bleibt), `${bleibt} fehlt in ${aus}`);
+  assert.ok(!aus.includes(".a{fill:red}") && !aus.includes(".b{fill:url(#g)}") && !/<style/i.test(aus), "jeder Style-Block entfällt ganz");
   assert.doesNotThrow(() => A.bereinigeSvg(SVG.toString()));
+});
+
+test("SVG (k2): CSS-Escapes, image-set(), image(), Style-Attribute mit Funktion und jede <style> entfallen", () => {
+  const boese = [
+    '<rect style="fill:\\75 rl(http://e.example/x)"/>', '<rect style="background:image-set(url(http://e.example/x) 1x)"/>', '<rect style="fill:image(http://e.example/x)"/>',
+    '<rect style="fill:red;@import url(x)"/>', '<rect style="fill:u\\72l(//e.example/x)"/>', '<rect filter="u&#92;72l(http://e.example/x)"/>', '<rect fill="image-set(http://e.example/x 1x)"/>',
+    '<rect fill="\\75 rl(http://e.example/x)"/>', '<style>rect{fill:\\75 rl(http://e.example/x)}</style>', '<style>a{color:red}</style>', '<style><![CDATA[rect{fill:url(http://e.example/x)}]]></style>'];
+  for (const b of boese) {
+    const aus = A.bereinigeSvg(`<svg xmlns="http://www.w3.org/2000/svg">${b}<circle r="1" fill="#fff"/></svg>`);
+    assert.ok(!/e\.example|image-set|image\(|@import|\\|<style|style="/i.test(aus), `${b} → ${aus}`);
+    assert.ok(aus.includes("<circle"), aus);
+  }
+  assert.ok(A.bereinigeSvg('<svg><rect style="fill:red;stroke:#000"/></svg>').includes('style="fill:red;stroke:#000"'), "ein einfaches Style-Attribut ohne Funktion bleibt");
 });
 
 test("SVG: Text vor und nach dem Wurzelelement entfällt, kein <svg> = Fehler, Sonderzeichen bleiben gültig", async () => {
@@ -180,6 +193,19 @@ test("loeseAnhang: Name (Notiz-Ordner, Anhänge-Ordner, überall), relative Pfad
   const aussen = tmp("anh-aussen-"); writeFileSync(join(aussen, "geheim.png"), PNG);
   try { symlinkSync(join(aussen, "geheim.png"), join(d, "n/link.png")); } catch { return t.skip("keine Verknüpfungen möglich (der Rest ist geprüft)"); }
   assert.equal(r("link.png"), null, "eine Verknüpfung aus dem Vault heraus wird nicht ausgeliefert");
+  // K1/k6: auch Verknüpfungen INNERHALB des Vaults sind nie ein Anhang (der Name verschwiege das Ziel)
+  mkdirSync(join(d, "Evil.app/Contents"), { recursive: true }); mkdirSync(join(d, ".git"), { recursive: true });
+  writeFileSync(join(d, ".git/config"), "[core]"); writeFileSync(join(d, "n/start.command"), "#!/bin/sh\n");
+  for (const [ziel, name, typ] of [["start.command", "n/doc.pdf", "file"], ["../Evil.app", "n/bundle.pdf", "junction"], ["../.git/config", "n/x.txt", "file"], ["a.png", "_anhaenge/gleich.png", "file"], ["../_anhaenge", "n/innen", "junction"]]) {
+    try { symlinkSync(ziel.startsWith("..") && typ === "junction" ? join(d, ziel.slice(3)) : ziel, join(d, name), typ); } catch { return t.skip("keine Verknüpfungen möglich (der Rest ist geprüft)"); }
+  }
+  for (const nein of ["doc.pdf", "bundle.pdf", "x.txt", "gleich.png", "n/doc.pdf", ".git/config", "Evil.app"]) assert.equal(r(nein), null, nein);
+  assert.equal(r("a.png"), "_anhaenge/a.png", "die echte Datei bleibt erreichbar");
+  assert.equal(r("innen/a.png"), "_anhaenge/a.png", "über eine Ordner-Verknüpfung nie: gefunden wird nur die echte Datei nach Name");
+  assert.equal(r("n/innen/a.png"), "_anhaenge/a.png");
+  // Ein Ordner mit Anhang-Endung ist keine Datei
+  mkdirSync(join(d, "n/ordner.pdf"), { recursive: true });
+  assert.equal(r("ordner.pdf"), null);
 });
 
 test("anhangZieleIn: Wikilink und Markdown, nicht in Code und nicht im Kopf", () => {
@@ -192,23 +218,39 @@ test("Notiz-Index: Anhänge sind keine Links auf Notizen (kein „offener Link�
   assert.deepEqual(wikilinkZiele("![[a.png]] [[Notiz]] ![[b.pdf|x]] [[Ordner/Seite#Kopf]] ![[Einbettung]]"), ["Notiz", "Ordner/Seite", "Einbettung"]);
 });
 
-test("unbenutzteAnhaenge: nur, was keine andere Notiz benutzt", () => {
+test("unbenutzteAnhaenge: nur, was keine andere Notiz benutzt (Kopf-Werte, <img>, Canvas und Code zählen als Benutzung)", () => {
   const d = vault({
     "a.md": "# A\n![[nur-a.png]] ![[geteilt.png]] ![](bilder/nur-a2.png) ![](https://e.example/x.png)\n",
     "b.md": "# B\n![[geteilt.png]]\n",
     "c.md": "# C\nkein Bild\n",
   });
-  schreibe(d, "_anhaenge/nur-a.png", PNG); schreibe(d, "_anhaenge/geteilt.png", PNG); schreibe(d, "bilder/nur-a2.png", PNG); schreibe(d, "_anhaenge/frei.png", PNG);
+  for (const p of ["_anhaenge/nur-a.png", "_anhaenge/geteilt.png", "bilder/nur-a2.png", "_anhaenge/frei.png"]) schreibe(d, p, PNG);
   const u = A.unbenutzteAnhaenge({ wurzel: d, notiz: "a.md", einstellungen: {} });
-  assert.deepEqual(u.map((x) => x.pfad).sort(), ["_anhaenge/nur-a.png", "bilder/nur-a2.png"]);
-  assert.equal(u[0].art, "bild"); assert.ok(u[0].groesse > 0);
-  assert.deepEqual(A.unbenutzteAnhaenge({ wurzel: d, notiz: "c.md", einstellungen: {} }), []);
-  assert.deepEqual(A.unbenutzteAnhaenge({ wurzel: d, notiz: "fehlt.md", einstellungen: {} }), []);
-  // Ein Link in einem Code-Block zählt nicht als Benutzung
-  writeFileSync(join(d, "c.md"), "# C\n```\n![[nur-a.png]]\n```\n");
-  assert.equal(A.unbenutzteAnhaenge({ wurzel: d, notiz: "a.md", einstellungen: {} }).length, 2);
-  writeFileSync(join(d, "c.md"), "# C\n![[nur-a.png]]\n");
-  assert.deepEqual(A.unbenutzteAnhaenge({ wurzel: d, notiz: "a.md", einstellungen: {} }).map((x) => x.pfad), ["bilder/nur-a2.png"]);
+  assert.equal(u.unsicher, false);
+  assert.deepEqual(u.anhaenge.map((x) => x.pfad).sort(), ["_anhaenge/nur-a.png", "bilder/nur-a2.png"]);
+  assert.equal(u.anhaenge[0].art, "bild"); assert.ok(u.anhaenge[0].groesse > 0);
+  assert.deepEqual(A.unbenutzteAnhaenge({ wurzel: d, notiz: "c.md", einstellungen: {} }), { anhaenge: [], unsicher: false });
+  assert.deepEqual(A.unbenutzteAnhaenge({ wurzel: d, notiz: "fehlt.md", einstellungen: {} }), { anhaenge: [], unsicher: false });
+  const nurA = () => A.unbenutzteAnhaenge({ wurzel: d, notiz: "a.md", einstellungen: {} }).anhaenge.map((x) => x.pfad).sort();
+  // k4: jede Erwähnung in einer anderen Datei zählt — Datei-Kopf, <img src>, Code, Canvas
+  for (const [text, datei] of [['---\ncover: "[[nur-a.png]]"\n---\n# C\n', "c.md"], ['# C\n<img src="_anhaenge/nur-a.png" width=50>\n', "c.md"], ["# C\n```\n![[nur-a.png]]\n```\n", "c.md"],
+    ['{"nodes":[{"id":"1","type":"file","file":"_anhaenge/nur-a.png"}]}', "tafel.canvas"], ["# C\n![x](_anhaenge/nur%2Da.png)\n", "c.md"], ["# C\n![x](_anhaenge/NUR-A.PNG)\n", "c.md"]]) {
+    writeFileSync(join(d, datei), text);
+    assert.deepEqual(nurA(), ["bilder/nur-a2.png"], text);
+    writeFileSync(join(d, datei), datei === "c.md" ? "# C\nkein Bild\n" : "{}");
+  }
+  assert.deepEqual(nurA(), ["_anhaenge/nur-a.png", "bilder/nur-a2.png"]);
+  // Ein Wert im eigenen Datei-Kopf zählt als Benutzung durch diese Notiz
+  writeFileSync(join(d, "a.md"), '---\ncover: "[[frei.png]]"\n---\n# A\n');
+  assert.deepEqual(nurA(), ["_anhaenge/frei.png"]);
+});
+
+test("unbenutzteAnhaenge (k4): konnte nicht alles gelesen werden, ist das Ergebnis unsicher und es wird nichts angeboten", () => {
+  const d = vault({ "a.md": "# A\n![[x.png]]\n" });
+  schreibe(d, "_anhaenge/x.png", PNG);
+  assert.equal(A.unbenutzteAnhaenge({ wurzel: d, notiz: "a.md", einstellungen: {} }).anhaenge.length, 1);
+  writeFileSync(join(d, "riesig.md"), "x".repeat(5 * 1024 * 1024 + 1)); // über 5 MB: nicht gelesen, also unbekannt
+  assert.deepEqual(A.unbenutzteAnhaenge({ wurzel: d, notiz: "a.md", einstellungen: {} }), { anhaenge: [], unsicher: true });
 });
 
 // ───────────────────────────── Umbenennen und Verschieben ─────────────────────────────
@@ -308,7 +350,7 @@ test("Werkstatt: PDF wird als Chip-Datei abgelegt und beim Ausliefern nicht inli
   const p = await w.lade(PDF, "Rechnung 2026.pdf");
   assert.equal(p.status, 200); assert.equal(p.j.art, "datei");
   const g = await w.rufe("GET", "/_anhang", undefined, new URLSearchParams({ ziel: p.j.name }));
-  assert.equal(g.headers["Content-Type"], "application/pdf"); assert.match(g.headers["Content-Disposition"], /^inline; filename="[\x20-\x7e]+"$/);
+  assert.equal(g.headers["Content-Type"], "application/pdf"); assert.match(g.headers["Content-Disposition"], /^attachment; filename="[\x20-\x7e]+"$/, "PDF lädt der Browser herunter: Chromium zeigt keine PDFs unter CSP sandbox");
   const z = await w.lade(ZIP, "Daten.docx");
   const gz = await w.rufe("GET", "/_anhang", undefined, new URLSearchParams({ ziel: z.j.name }));
   assert.match(gz.headers["Content-Disposition"], /^attachment;/);
@@ -370,6 +412,18 @@ test("Werkstatt: Rückfrage beim Löschen einer Notiz (unbenutzt) und Löschen i
   assert.equal(x.status, 415); assert.ok(existsSync(join(w.d, "_anhaenge/geteilt.png")));
 });
 
+test("Werkstatt (k5): alle laufenden Uploads zusammen sind begrenzt, ein beendeter gibt den Platz frei", async () => {
+  const w = server({}, { anhaengeMaxMB: 100 });
+  const gross = 90 * 1024 * 1024;
+  const a = await w.rufe("POST", "/api/anhang/start", { name: "a.pdf", groesse: gross });
+  const b = await w.rufe("POST", "/api/anhang/start", { name: "b.pdf", groesse: gross });
+  assert.equal(a.status, 200); assert.equal(b.status, 200);
+  const c = await w.rufe("POST", "/api/anhang/start", { name: "c.pdf", groesse: gross });
+  assert.equal(c.status, 429); assert.equal(c.j.art, "voll");
+  assert.equal((await w.rufe("POST", "/api/anhang/ende", { id: a.j.id })).status, 400, "unvollständig beendet die Sitzung");
+  assert.equal((await w.rufe("POST", "/api/anhang/start", { name: "c.pdf", groesse: gross })).status, 200, "Platz wieder frei");
+});
+
 test("Werkstatt: ohne Vault geht nichts (409), /_anhang antwortet 404", async () => {
   const h = erzeugeHandler({ vault: null, studioDir: studio(), appVersion: "9.9.9", vaultOptionen: { support: tmp("anh-support-") } });
   const r = await h({ methode: "POST", pfad: "/api/anhang/start", query: null, body: Buffer.from(JSON.stringify({ name: "x.png", groesse: 5 })) });
@@ -381,7 +435,9 @@ test("Werkstatt: ohne Vault geht nichts (409), /_anhang antwortet 404", async ()
 
 test("IP-Prüfung: privat, Loopback, Link-Local, Carrier und Dokumentation sind nicht öffentlich", () => {
   for (const nein of ["127.0.0.1", "10.1.2.3", "172.16.0.1", "172.31.255.255", "192.168.1.1", "169.254.169.254", "0.0.0.0", "100.64.0.1", "224.0.0.1", "198.18.0.1", "::1", "::", "fe80::1", "fc00::1", "fd12::1", "ff02::1", "::ffff:127.0.0.1", "::ffff:10.0.0.1", "::ffff:7f00:1", "2001:db8::1", "keine ip", ""]) assert.equal(A.istOeffentlicheIp(nein), false, nein);
-  for (const ja of ["8.8.8.8", "1.1.1.1", "172.15.0.1", "172.32.0.1", "93.184.216.34", "2606:4700:4700::1111", "::ffff:8.8.8.8"]) assert.equal(A.istOeffentlicheIp(ja), true, ja);
+  for (const ja of ["8.8.8.8", "1.1.1.1", "172.15.0.1", "172.32.0.1", "93.184.216.34", "2606:4700:4700::1111", "2a00:1450:4001:81b::200e", "2001:4860:4860::8888", "2400:cb00::1", "3000::1", "3ffe::1"]) assert.equal(A.istOeffentlicheIp(ja), true, ja);
+  // k3: IPv6 nur global (2000::/3) ohne Übergangs-, Test- und Dokumentationsbereiche
+  for (const nein of ["2002::1", "2002:808:808::1", "2001::1", "2001:0:4136:e378:8000:63bf:3fff:fdd2", "2001:db8::1", "2001:2::1", "2001:10::1", "3fff::1", "fec0::1", "100::1", "::2", "::8.8.8.8", "::ffff:8.8.8.8", "::ffff:0808:0808", "64:ff9b::808:808", "1000::1", "4000::1", "8000::1", "e000::1", "fe80::1%1"]) assert.equal(A.istOeffentlicheIp(nein), false, nein);
 });
 
 function bildServer(routen) {
@@ -395,7 +451,7 @@ test("Externe Bilder: ohne Erlaubnis nur https und nie private Adressen; mit Tes
     ["https://127.0.0.1/a.png", 403], ["https://[::1]/a.png", 403], ["https://10.0.0.5/a.png", 403], ["https://169.254.169.254/latest/meta-data", 403], ["https://localhost/a.png", 403], ["https://drucker.local/a.png", 403], ["https://intern.internal/a.png", 403]]) {
     assert.equal((await fehler(() => A.holeExternBild(adresse))).status, status, adresse);
   }
-  const b = await bildServer({ "/a.png": liefere("image/png", PNG), "/html": liefere("text/html", "<script>alert(1)</script>"), "/falsch.png": liefere("image/png", "<html>"), "/svg": liefere("image/svg+xml", SVG),
+  const b = await bildServer({ "/a.png": liefere("image/png", PNG), "/html": liefere("text/html", "<script>alert(1)</script>"), "/falsch.png": liefere("image/png", "<html>"), "/svg": liefere("image/svg+xml", SVG), "/boese-svg": liefere("image/svg+xml", '<svg xmlns="http://www.w3.org/2000/svg" onload="x()"><script>1</script><rect style="fill:url(http://e.example/x)"/></svg>'), "/kein-svg": liefere("image/svg+xml", "<svg"),
     "/gross": liefere("image/png", Buffer.concat([PNG, Buffer.alloc(2000)])), "/weg": (req, res) => { res.statusCode = 302; res.setHeader("Location", "/a.png"); res.end(); },
     "/intern": (req, res) => { res.statusCode = 302; res.setHeader("Location", "http://127.0.0.1:1/x.png"); res.end(); }, "/schleife": (req, res) => { res.statusCode = 302; res.setHeader("Location", "/schleife"); res.end(); } });
   try {
@@ -404,6 +460,9 @@ test("Externe Bilder: ohne Erlaubnis nur https und nie private Adressen; mit Tes
     const r = await A.holeExternBild(`${b.basis}/a.png`, o);
     assert.equal(r.typ, "image/png"); assert.ok(r.body.equals(PNG));
     assert.equal((await A.holeExternBild(`${b.basis}/svg`, o)).typ, "image/svg+xml");
+    const boeseSvg = await A.holeExternBild(`${b.basis}/boese-svg`, o); // k1: auch fremde SVG kommt nur bereinigt an
+    assert.equal(boeseSvg.typ, "image/svg+xml"); assert.ok(boeseSvg.body.toString().includes("<rect") && !/script|onload|e\.example/.test(boeseSvg.body.toString()), boeseSvg.body.toString());
+    assert.equal((await fehler(() => A.holeExternBild(`${b.basis}/kein-svg`, o))).status, 415);
     assert.equal((await A.holeExternBild(`${b.basis}/weg`, o)).typ, "image/png", "Weiterleitung folgt");
     assert.equal((await fehler(() => A.holeExternBild(`${b.basis}/html`, o))).status, 415, "kein Bildtyp");
     assert.equal((await fehler(() => A.holeExternBild(`${b.basis}/falsch.png`, o))).status, 415, "Typ gesagt, Inhalt kein Bild");

@@ -16,7 +16,10 @@ import { anhangEinstellungen, speichereAnhang, loeseAnhang, unbenutzteAnhaenge, 
 
 const FRIST_MS = 120_000, MAX_SITZUNGEN = 8, MAX_STUECK = 6 * 1024 * 1024, MAX_AUSLIEFERN = 256 * 1024 * 1024, MAX_LOESCHEN = 100;
 const SICHER = "sandbox; default-src 'none'; style-src 'unsafe-inline'";
-const INLINE = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "pdf", "mp3", "m4a", "wav", "mp4", "mov", "webm"]);
+// PDF bewusst nicht inline: Chromium zeigt PDFs nicht unter „Content-Security-Policy: sandbox“ (der Viewer ist eine Erweiterung im eingebetteten Rahmen); statt die Sandbox für PDFs zu lockern, lädt der Browser sie herunter
+// (Mac-App und Electron öffnen sie mit dem Programm des Systems, anhang-oeffnen). Nicht prüfbar in der Test-Chromium (Headless-Shell ohne PDF-Viewer).
+const INLINE = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "mp3", "m4a", "wav", "mp4", "mov", "webm"]);
+const MAX_GESAMT = 200 * 1024 * 1024; // alle laufenden Uploads zusammen
 
 const kopf = (typ, extra = {}) => ({ "Content-Type": typ, "X-Content-Type-Options": "nosniff", "Content-Security-Policy": SICHER, "Referrer-Policy": "no-referrer", "Cache-Control": "private, max-age=300", ...extra });
 const JSON_KOPF = { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" };
@@ -46,6 +49,8 @@ export function erzeugeAnhaenge({ support }) {
       if (/\.[A-Za-z0-9]{1,8}$/.test(name) && !Object.hasOwn(ANHANG_TYPEN, endung)) {
         throw new HttpFehler(415, `Dateien vom Typ „.${endung}“ legt Kortex nicht ab (erlaubt: Bilder, PDF, Office-Dateien, Text, Archive, Audio und Video).`, { art: "typ", endung });
       }
+      let belegt = 0; for (const s of sitzungen.values()) belegt += s.groesse;
+      if (belegt + groesse > MAX_GESAMT) throw new HttpFehler(429, "Es laufen gerade zu viele große Uploads. Bitte kurz warten.", { art: "voll" });
       if (sitzungen.size >= MAX_SITZUNGEN) throw new HttpFehler(429, "Es laufen schon mehrere Uploads. Bitte kurz warten.", { art: "voll" });
       const id = randomBytes(8).toString("hex");
       sitzungen.set(id, { name, groesse, notiz, stuecke: [], summe: 0, zeit: Date.now() });
@@ -74,7 +79,7 @@ export function erzeugeAnhaenge({ support }) {
 
     unbenutzt(v, pfad) {
       if (typeof pfad !== "string" || !pfad) throw new HttpFehler(400, "Bitte eine Notiz angeben.");
-      return { anhaenge: unbenutzteAnhaenge({ wurzel: v.wurzel, notiz: pfad, einstellungen: leseApp(support).werte }) };
+      return unbenutzteAnhaenge({ wurzel: v.wurzel, notiz: pfad, einstellungen: leseApp(support).werte }); // { anhaenge, unsicher }
     },
 
     // Wohin zeigt dieses Ziel (für Chips: Pfad im Vault für „anhang-oeffnen“, Größe, Art)? 404, wenn es den Anhang nicht gibt.

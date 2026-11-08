@@ -100,9 +100,7 @@ public enum AppAktion: Equatable, Sendable {
             return ortImVault(relativ, vault: vault).map { .ordnerZeigen($0) }
         case "anhang-oeffnen":
             guard oberflaeche == .studio, let vault, let relativ = wert as? String,
-                  anhangEndungen.contains((relativ as NSString).pathExtension.lowercased()),
-                  let ort = ortImVault(relativ, vault: vault),
-                  FileManager.default.fileExists(atPath: ort.path) else { return nil }
+                  let ort = anhangImVault(relativ, vault: vault) else { return nil }
             return .anhangOeffnen(ort)
         case "extern":
             guard let w = wert as? String, let u = URL(string: w), u.scheme?.lowercased() == "https",
@@ -280,6 +278,23 @@ public enum AppAktion: Equatable, Sendable {
             ordner = darueber
         }
         return ordner
+    }
+
+    /// Anhang im Vault für `anhang-oeffnen`: einfach statt klug. Keine Verknüpfung (Symlink) an irgendeiner Stelle des Pfads, nur eine gewöhnliche Datei (kein Ordner, kein Bundle wie .app),
+    /// kein versteckter Teil (.git, .kortex-lokal …), Endung aus `anhangEndungen` am Namen und am Ziel. Gibt es die Datei nicht, ist das Ergebnis nil.
+    static func anhangImVault(_ relativ: String, vault: URL) -> URL? {
+        guard anhangEndungen.contains((relativ as NSString).pathExtension.lowercased()), ortImVault(relativ, vault: vault) != nil else { return nil }
+        let teile = relativ.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+        guard !teile.isEmpty, !teile.contains(where: { $0.hasPrefix(".") }) else { return nil }
+        var p = aufgeloest(vault)
+        for (i, teil) in teile.enumerated() {
+            p = p.appendingPathComponent(teil)
+            guard let w = try? p.resourceValues(forKeys: [.isSymbolicLinkKey, .isRegularFileKey, .isDirectoryKey]) else { return nil }
+            if w.isSymbolicLink == true { return nil }
+            if i == teile.count - 1 { guard w.isRegularFile == true else { return nil } } else { guard w.isDirectory == true else { return nil } }
+        }
+        guard anhangEndungen.contains(p.resolvingSymlinksInPath().pathExtension.lowercased()) else { return nil }
+        return p
     }
 
     /// Relativer Pfad → Datei im Vault. Kein absoluter Pfad, kein `..`, kein NUL; nach dem Auflösen von Symlinks
