@@ -38,9 +38,10 @@ export function kontingentZeile({ api, konto, abo = null, beiAenderung = null, n
     ergebnis.stufe = k.voll ? "voll" : k.hatWerte && proz >= 80 ? "fast" : "grau";
     const satz = k.voll ? TV.kontingent.voll(TKO.wiederAb(k.wiederAb, jetzt)) : ergebnis.stufe === "fast" ? TV.kontingent.fastVoll : abo === "api" ? TV.kontingent.zaehltApi : TV.kontingent.zaehlt;
     el.dataset.stufe = ergebnis.stufe;
-    el.replaceChildren(...[
-      k.hatWerte ? miniBalken(e, jetzt) : null,
-      h("span", { klasse: "kiv-kt-text", "data-kiv": `${name}-text`, text: !kt.state.daten || k.hatWerte ? satz : TV.kontingent.ohneWert })].filter(Boolean)); // ohne Wert: nur der ehrliche Satz, kein Sperren; kein null als Text
+    // Die Zeile erscheint nur mit einer echten Zahl; ohne Stand bleibt sie leer und unsichtbar (kein Sperren, kein Platzhaltertext)
+    if (!k.hatWerte) { el.dataset.leer = "1"; el.replaceChildren(); beiAenderung?.(ergebnis); return; }
+    delete el.dataset.leer;
+    el.replaceChildren(miniBalken(e, jetzt), h("span", { klasse: "kiv-kt-text", "data-kiv": `${name}-text`, text: satz }));
     beiAenderung?.(ergebnis);
   }
   const ab = kt.abonniere(() => zeichne());
@@ -101,7 +102,7 @@ export function oeffneEinwilligung({ api, bereit, vault, vaultName, funktionen =
     kontoKnoten = h("div", { klasse: "kiv-konto", "data-kiv": "konto" }, h("div", { klasse: "kiv-konto-kopf" }, h("b", { text: konto.name }), h("span", { klasse: "kiv-leise", text: E.konto(E.stufeLesen) })), kz.knoten);
     rumpf.push(kontoKnoten);
   }
-  rumpf.push(h("p", { klasse: "kiv-leise", text: konto && konto.abo === "api" ? E.kontingentApi : E.kontingent }));
+  rumpf.push(h("p", { klasse: "kiv-leise", text: `${konto && konto.abo === "api" ? E.kontingentApi : E.kontingent} ${E.jederzeit}` }));
   const ja = baueKnopf({ text: E.einschalten, variante: "primaer", aktion: "kiv-einschalten", disabled: !konto, aufKlick: async () => {
     if (!konto) return;
     try {

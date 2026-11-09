@@ -10,6 +10,7 @@ export const TV = {
     gespeichertTitel: "Nichts gespeichert",
     gespeichert: "Kortex speichert keine Anfrage und keine Antwort. Was Anthropic damit tut, regeln die Bedingungen deines Kontos.",
     kontingent: "Jede Anfrage zählt zum Kontingent deines Abos.",
+    jederzeit: "Du kannst das jederzeit in den Einstellungen (KI & Konten) wieder ausschalten.",
     kontingentApi: "Jede Anfrage kostet etwas auf deinem API-Konto (grob 0,01 $, eine Schätzung).",
     konto: (stufe) => `Claude Code · darf diesen Vault ${stufe}`,
     stufeLesen: "lesen",
@@ -23,6 +24,13 @@ export const TV = {
     zusammenfassung: { titel: "„Was ist neu“ zusammenfassen", text: "Titel, Art und Zeit der Zeilen aus der Karte und ein paar Zahlen. Keine Inhalte von Notizen.", symbol: "inbox" },
     posteingang: { titel: "Vorschläge im Posteingang", text: "Den Eintrag selbst sowie Titel und Anfänge von bis zu 12 passenden Notizen, deine Ordner und die Tags dieser Notizen.", symbol: "inbox" },
     text: { titel: "Aktionen im Editor", text: "Nur den markierten Text und die Überschrift darüber.", symbol: "stift" },
+  },
+  einstellung: {
+    titel: "KI-Vorschläge in diesem Vault",
+    an: (konto, seit) => `Eingeschaltet über das Konto „${konto}“${seit ? `, seit ${seit}` : ""}. Eine KI schickt nur auf deinen Klick Daten einer Anfrage an Anthropic.`,
+    aus: (vault) => `Aus${vault ? ` für „${vault}“` : ""}: Es gibt keine KI-Knöpfe, nichts geht an eine KI. Einschalten fragt dich vorher.`,
+    ausgeschaltet: "KI-Vorschläge sind aus. Eine laufende Anfrage wurde abgebrochen.",
+    fehler: "Das hat nicht geklappt. Es wurde nichts geändert.",
   },
   gesendetBlock: {
     knopf: "Was wird gesendet?",

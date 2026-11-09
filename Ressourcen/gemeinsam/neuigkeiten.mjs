@@ -113,3 +113,21 @@ export function neuigkeitenText(r) {
   if (r.inbox) z.push(`Posteingang: ${r.inbox.anzahl} offen${r.inbox.zurueckgestellt ? `, ${r.inbox.zurueckgestellt} zurückgestellt` : ""}`);
   return z.join("\n");
 }
+
+/**
+ * Für die KI-Zusammenfassung: welche Pfade bleiben draußen? Notizen mit `ki: nein` (istKiNein(zeile)) und Aufgaben, die sich auf eine solche Notiz beziehen (Dateiname, Pfad oder Titel im `bezug`):
+ * eine Aufgabe „Antwort an Anwalt“ mit Bezug auf die geheime Notiz verriete sie sonst. Ist der Notiz-Index nicht lesbar (zeilen = null), gibt es auch keine Aufgaben (fail-closed).
+ * → { ausnehmen: Set<Pfad>, aufgaben: Array | null }
+ */
+export function ausnehmenFuerKi(zeilen, aufgaben, istKiNein) {
+  if (!Array.isArray(zeilen)) return { ausnehmen: new Set(), aufgaben: null };
+  const nein = zeilen.filter(istKiNein);
+  const ausnehmen = new Set(nein.map((z) => z.pfad));
+  const name = (t) => String(t ?? "").replace(/^\[\[|\]\]$/g, "").split("|")[0].replace(/\.(md|txt)$/i, "").normalize("NFC").trim().toLowerCase();
+  const namen = new Set(nein.flatMap((z) => [name(z.pfad), name(String(z.pfad).split("/").pop()), name(z.titel)]).filter(Boolean));
+  const ziel = (b) => (typeof b === "string" ? b : (b && (b.pfad || b.ziel || b.titel)) || "");
+  for (const a of Array.isArray(aufgaben) ? aufgaben : []) {
+    if (Array.isArray(a.bezug) && a.bezug.some((b) => namen.has(name(ziel(b))) || namen.has(name(String(ziel(b)).split("/").pop())))) ausnehmen.add(a.pfad);
+  }
+  return { ausnehmen, aufgaben: Array.isArray(aufgaben) ? aufgaben : null };
+}
