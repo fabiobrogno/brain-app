@@ -252,17 +252,26 @@ for (const [schema, farbe] of schemata) {
     await aufbauen({ einwilligung: false });
     szenario({ szenario: "langsam", warteMs: 1500 });
     await zurKarte(page);
+    await expect(knopf(page)).toBeVisible();
+    await bild(page, `k1-karte-${schema}-v2`);
     await knopf(page).click();
     await expect(page.locator('[data-dialog="ki-einwilligung"]')).toBeVisible();
-    await bild(page, `k1-einwilligung-${schema}`);
+    await bild(page, `k1-einwilligung-${schema}-v2`);
     await page.locator('[data-aktion="kiv-einschalten"]').click();
     await phase(page, "laeuft");
-    await bild(page, `k1-lauf-${schema}`);
+    await bild(page, `k1-lauf-${schema}-v2`);
     await phase(page, "ergebnis");
+    await bild(page, `k1-ergebnis-${schema}-v2`);
     await panel(page).locator('[data-aktion="kiv-gesendet"]').click();
-    await bild(page, `k1-ergebnis-${schema}`);
+    await bild(page, `k1-ergebnis-gesendet-${schema}-v2`);
     const ueber = await page.evaluate(() => { const k = document.querySelector("[data-nk]").getBoundingClientRect(); return [...document.querySelectorAll("[data-nk] .nk-beleg, [data-nk] .nk-kip-satz-text, [data-nk] .kiv-paket, [data-nk] .nk-ki-zeile")].filter((e) => e.getBoundingClientRect().right > k.right + 1).length; });
     expect(ueber).toBe(0);
+    await page.goto(server.url + "#einstellungen/ki");
+    await page.waitForFunction(() => window.__studioBereit === true);
+    await page.locator('[data-unter-wahl="pflege"]').click();
+    await expect(page.locator('[data-kk="vorschlag-schalter"]')).toBeVisible();
+    await page.locator('[data-zeile="ki-vorschlaege"]').scrollIntoViewIfNeeded();
+    await bild(page, `k1-einstellungen-${schema}-v2`);
   });
 }
 
