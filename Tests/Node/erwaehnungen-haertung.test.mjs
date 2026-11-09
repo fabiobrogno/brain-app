@@ -66,7 +66,7 @@ test("Ereignisschleife: eine 1-MB-Notiz mit 40.000 Treffern bremst die Werkstatt
   assert.equal(antworten[1].status, 413, "über 256 KB: abgewiesen");
   assert.ok(maxVerzug < 80, `die Ereignisschleife stand ${Math.round(maxVerzug)} ms still`);
   const t0 = performance.now(); const info = await rufe("GET", "/api/info"); const dauer = performance.now() - t0;
-  assert.equal(info.status, 200); assert.ok(dauer < 50, `/api/info brauchte ${Math.round(dauer)} ms`);
+  assert.equal(info.status, 200); assert.ok(dauer < (process.platform === "win32" ? 150 : 50), `/api/info brauchte ${Math.round(dauer)} ms`); // Windows-Runner: 51 ms gemessen bei leerer Schleife
   const links = await rufe("POST", "/api/erwaehnungen/links", { pfad: "n/x.md", text: grossText, alle: true });
   assert.equal(links.status, 200); assert.equal(links.j.aenderungen.length, 500, "höchstens 500 Änderungen auf einmal"); assert.equal(links.j.uebersprungen, 29_500);
   assert.equal((await rufe("POST", "/api/erwaehnungen/aus", { pfad: "n/x.md", text: "x".repeat(1_100_000) })).status, 413);
