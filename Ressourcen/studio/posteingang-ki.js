@@ -97,7 +97,7 @@ export function erzeugePosteingangKi({ S, ctx, oeffne, liste }) {
     pruefeVault();
     const w = h("div", { klasse: "pk", "data-pk": "", "data-pk-pfad": n.pfad, role: "group", "aria-label": TK.bereich });
     w._n = n;
-    for (const ev of ["click", "dblclick", "mousedown", "contextmenu", "keydown"]) w.addEventListener(ev, (e) => e.stopPropagation()); // gehört nicht der Karte: kein Öffnen, kein Ziehen, keine Pfeiltasten der Liste
+    for (const ev of ["click", "dblclick", "contextmenu"]) w.addEventListener(ev, (e) => e.stopPropagation()); // gehört nicht der Karte: kein Öffnen der Notiz, kein Kartenmenü (die Pfeiltasten der Liste ignorieren .pk selbst)
     w.addEventListener("dragstart", (e) => { e.preventDefault(); e.stopPropagation(); });
     fordereLokal(n);
     zeichneWurzel(w);

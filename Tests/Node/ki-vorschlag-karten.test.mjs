@@ -63,6 +63,18 @@ test("Verlinken ohne Stelle im Text: Kortex hängt „Siehe auch: [[…]]“ an 
   assert.equal((await zurueck(s, vs)).status, 409, "nur einmal");
 });
 
+test("Verlinken auf eine Notiz, die der Eintrag schon verlinkt (Titel, Alias oder Pfad), ist kein Vorschlag mehr; „Siehe auch“ wird nie doppelt angehängt", async () => {
+  const s = szenarioV();
+  for (const [name, link] of [["T", "[[Atlas]]"], ["A", "[[Atlas|das Projekt]]"], ["P", "[[10_projekte/Atlas]]"], ["H", "[[atlas#Termine]]"]]) {
+    schreibe(s.vault, `00_inbox/V${name}.md`, `# Verlinkt ${name}\n\nSiehe ${link} und Planung.\n`);
+    const liste = await arten(s, ["verlinken", "tags"], { kandidatTitel: "Atlas" }, { funktion: "posteingang", pfad: `00_inbox/V${name}.md` });
+    assert.deepEqual(liste.map((x) => x.art), ["tags"], `${link}: schon verlinkt`);
+  }
+  schreibe(s.vault, "00_inbox/Doppelt.md", "# Doppelt\n\nTermine und Planung.\n\nSiehe auch: [[Atlas]]\n");
+  const [vs] = await arten(s, ["verlinken"], { kandidatTitel: "Atlas", beleg: "Termine und Planung" }, { funktion: "posteingang", pfad: "00_inbox/Doppelt.md" });
+  assert.equal(vs, undefined, "auch ein angehängter Link zählt");
+});
+
 test("Tags: im Kopf ergänzt (Kopf neu oder erweitert), Journal, Rückgängig; vorhandene Tags nie doppelt; ein nicht lesbarer Kopf ändert nichts", async () => {
   const s = szenarioV();
   const [vs] = await arten(s, ["tags"], { tags: ["atlas", "Neu-Test", "atlas"] });

@@ -532,7 +532,7 @@ export function erzeugeHandler(o) {
       case "/api/ki/vorschlag/start": nur("POST"); return vorschlag.start(eingabe(), V());
       case "/api/ki/vorschlag/stand": nur("GET"); return vorschlag.stand(q, V());
       case "/api/ki/vorschlag/abbrechen": nur("POST"); return vorschlag.abbrechen(eingabe(), V());
-      case "/api/ki/vorschlag/anwenden": nur("POST"); return vorschlag.anwenden(eingabe(), V());
+      case "/api/ki/vorschlag/anwenden": { nur("POST"); const r = await vorschlag.anwenden(eingabe(), V()); if ((r.art === "verlinken" || r.art === "tags") && r.geaendert && r.geaendert.length) auto.vermerke(V(), r.geaendert); return r; } // wie „Verlinken“: die geänderte Notiz kommt in die automatische Fassung
       case "/api/ki/vorschlag/zurueck": nur("POST"); return vorschlag.zurueck(eingabe(), V());   // eine Übernahme zurücknehmen (nur Kennung)
       case "/api/ki/vorschlag/lokal": nur("POST"); return vorschlag.lokal(eingabe(), V());       // Vorschläge ohne KI für Posteingangs-Einträge (nichts verlässt den Mac)
       case "/api/ki/standard": nur("PUT"); return konten.setzeStandard(eingabe());

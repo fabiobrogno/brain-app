@@ -16,7 +16,7 @@ import { randomBytes, createHmac, createHash, timingSafeEqual } from "node:crypt
 import { HttpFehler, inboxOrdnerVon, vorlagenOrdnerVon, falte, vorschauOrdnerAus } from "../gemeinsam/basis.mjs";
 import { aktivesKonto, vorschlaegeFuer, setzeVorschlaege, echterOrt } from "../gemeinsam/ki-konten.mjs";
 import { kennungVault, melde } from "../gemeinsam/aktivitaet.mjs";
-import { titelAus } from "../gemeinsam/notizen.mjs";
+import { titelAus, wikilinkZiele } from "../gemeinsam/notizen.mjs";
 import { extrahiereTags, fuegeTagsHinzu } from "../gemeinsam/tags.mjs";
 import { baueWikiIndex, linkText, ordnerVonPfad } from "../gemeinsam/wikilink.mjs";
 import { VERSION, TEXT_AKTIONEN, SPRACHEN, LIMITS, schemaFuer, pruefeAntwort, parseJsonAntwort, istKiNein, istKiNeinWert, kandidatIds, ordnerIds, belegStelle } from "../gemeinsam/ki-schema.mjs";
@@ -92,6 +92,12 @@ const ordnerAus = (pool) => {
     zaehl.set(ord, (zaehl.get(ord) || 0) + 1);
   }
   return [...zaehl].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).map(([pfad, n]) => ({ pfad, n }));
+};
+// Verlinkt der Text die Notiz schon? ([[Titel]], [[Pfad]] oder [[Dateiname]], auch mit Alias oder Anker) — dann ist „Verlinken“ kein Vorschlag mehr
+const bereitsVerlinkt = (text, kand) => {
+  const namen = new Set([flachTitel(kand.titel), flachTitel(kand.pfad.replace(/\.(md|txt)$/i, "")), flachTitel(kand.pfad.split("/").pop().replace(/\.(md|txt)$/i, ""))]);
+  for (const zeile of String(text).split(/\r?\n/)) if (zeile.includes("[[")) for (const z of wikilinkZiele(zeile)) if (namen.has(flachTitel(z))) return true;
+  return false;
 };
 const flachTitel = (s) => nfc(s).toLowerCase().replace(/\s+/g, " ").trim();
 
@@ -439,6 +445,7 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     for (const x of p.daten.vorschlaege) {
       const kand = x.ziel && run.s.ziele.kandidaten.get(x.ziel);
       const ord = x.ziel && run.s.ziele.ordner.get(x.ziel);
+      if (x.art === "verlinken" && kand && bereitsVerlinkt(run.s.ctx.eintrag, kand)) continue; // schon verlinkt: nichts vorzuschlagen
       liste.push(legeVorschlagAn({ kennung: run.kennung, pfad: run.s.pfad, inhaltHash: run.s.inhaltHash, kandidatenHash, ablauf, eintragText: run.s.ctx.eintrag, quelle: "ki" },
         { ...x, kand: kand || null, ord: ord || null, anhaengen: !!kand && x.art === "verlinken" && !run.s.ziele.erwaehnt.has(kand.pfad) }));
     }
@@ -609,7 +616,7 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
           let index = []; try { index = (await v.notizen()).notizen || []; } catch { index = []; }
           const wiki = baueWikiIndex(index.filter((z) => z && typeof z.pfad === "string").map((z) => ({ pfad: z.pfad, titel: z.titel, aliasse: z.aliasse })));
           const link = `[[${linkText(wiki, r.ziel.pfad, ordnerVonPfad(r.pfad))}]]`;
-          ergebnis = await v.aendereNotiz({ pfad: r.pfad, basisHash: n.hash, beschreibung: `${wer}: Link angehängt`, aendere: (t) => haengeAn(t, `Siehe auch: ${link}`) });
+          ergebnis = await v.aendereNotiz({ pfad: r.pfad, basisHash: n.hash, beschreibung: `${wer}: Link angehängt`, aendere: (t) => (t.includes(link) || t.includes(`${link.slice(0, -2)}|`) ? t : haengeAn(t, `Siehe auch: ${link}`)) });
         }
         if (!ergebnis.vorgang) throw new HttpFehler(409, "Der Eintrag ist schon so, wie der Vorschlag ihn haben will.", { art: "nichts-zu-tun" });
         rueck = { art: "verlinken", vorgang: ergebnis.vorgang }; eintragGeaendert = true;
@@ -644,7 +651,9 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
         if (o.pfad === r.pfad && !o.angewendet && jetzt() <= o.ablauf) { o.inhaltHash = neu.hash; geschwister.push({ id: o.id, token: tokenFuer(o) }); }
       }
     }
-    return { ok: true, art: r.art, quelle: r.quelle, rueckgaengig: !!rueck, ...(ergebnis && ergebnis.nach ? { nach: ergebnis.nach } : {}), ...(ergebnis && ergebnis.pfad ? { pfad: ergebnis.pfad } : {}), ...(ergebnis && ergebnis.von ? { von: ergebnis.von } : {}),
+    // `geaendert`: alle berührten Pfade — der Handler zählt sie als eigene Änderungen (sonst meldete der Wächter dem offenen Editor eine „fremde“ Änderung)
+    const geaendert = [...new Set([r.pfad, ergebnis && ergebnis.nach, ergebnis && ergebnis.von, ergebnis && ergebnis.pfad, ergebnis && ergebnis.ziel, ...((ergebnis && ergebnis.geaendert) || [])].filter((x) => typeof x === "string" && x))];
+    return { ok: true, art: r.art, quelle: r.quelle, rueckgaengig: !!rueck, geaendert, ...(ergebnis && ergebnis.nach ? { nach: ergebnis.nach } : {}), ...(ergebnis && ergebnis.pfad ? { pfad: ergebnis.pfad } : {}), ...(ergebnis && ergebnis.von ? { von: ergebnis.von } : {}),
       ...(ergebnis && ergebnis.ziel && r.art === "duplikat" ? { archiv: ergebnis.ziel } : {}), ...(ergebnis && ergebnis.aktivitaetId ? { aktivitaetId: ergebnis.aktivitaetId } : {}), ...(ergebnis && ergebnis.vorgang ? { vorgang: ergebnis.vorgang } : {}),
       ...(geschwister.length ? { geschwister } : {}) };
   }
@@ -666,7 +675,8 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
       else erg = await v.vorgangZurueck({ id: rr.vorgang });
     } finally { rr.laeuft = false; }
     rr.zurueck = true;
-    return { ok: true, art: rr.art, ...(erg && erg.nach ? { nach: erg.nach } : {}), ...(erg && erg.pfad ? { pfad: erg.pfad } : {}) };
+    const geaendert = [...new Set([erg && erg.nach, erg && erg.von, erg && erg.pfad, ...((erg && erg.geaendert) || [])].filter((x) => typeof x === "string" && x))];
+    return { ok: true, art: rr.art, geaendert, ...(erg && erg.nach ? { nach: erg.nach } : {}), ...(erg && erg.pfad ? { pfad: erg.pfad } : {}) };
   }
 
   return { bereit, einwilligung, setzeEinwilligung, start, stand, abbrechen, anwenden, zurueck, lokal, brichAb, laeuft: () => startet || !!(aktiv && !aktiv.fertig) || !!(stapel && !stapel.fertig), _speicherGroesse: (v) => (speicher.get(kennungVault(v.wurzel)) || new Map()).size };
