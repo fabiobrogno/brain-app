@@ -100,6 +100,9 @@ test("Alle verlinken: Vorschau mit Vorher/Nachher, ein Eintrag, alles auf einmal
 });
 
 test("Fremdänderung zwischen Anzeige und Klick: eine umgeschriebene Stelle wird nicht verlinkt, nichts Falsches geschrieben", async ({ page }) => {
+  // Live-Aktualisierung anhalten (Long-Poll bleibt offen): sonst zeigt das Studio je nach Takt schon die neue Stelle, und der Klick verlinkt richtigerweise sie –
+  // geprüft wird hier genau der veraltete Stand zwischen Anzeige und Klick.
+  await page.route("**/api/ereignisse**", () => {});
   await start(page);
   await waehle(page, KAFFEE);
   await expect(ein(page).locator("[data-erw-summe]")).toHaveText("3 Stellen in 3 Notizen");
