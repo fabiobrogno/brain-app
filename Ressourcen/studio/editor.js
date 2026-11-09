@@ -632,8 +632,10 @@ export function erstelleEditor(eltern, ctx) {
     EditorView.updateListener.of((u) => {
       if (u.docChanged) ctx.geaendert();
       if (u.selectionSet) ctx.cursor?.(u.state);
+      if (u.docChanged || u.selectionSet) ctx.kiText?.beiUpdate?.(u);
     }),
     EditorView.domEventHandlers({
+      contextmenu(e) { return ctx.kiText?.kontextmenu?.(e) === true; }, // KI-Aktionen auf markiertem Text (ki-text.js); sonst bleibt das Systemmenü
       mousedown(e) {
         const t = e.target.closest?.(".cm-wiki");
         if (t && e.button === 0 && !e.altKey) {
@@ -665,6 +667,7 @@ export function erstelleEditor(eltern, ctx) {
       if (alt) state = state.update({ selection: { anchor: Math.min(state.doc.length, alt.anchor), head: Math.min(state.doc.length, alt.head) } }).state;
       else if (cursor !== null && Number.isInteger(cursor)) state = state.update({ selection: { anchor: Math.max(0, Math.min(state.doc.length, cursor)) } }).state;
       else if (b) state = state.update({ selection: { anchor: Math.min(state.doc.length, b.bis + 1) } }).state;
+      ctx.kiText?.textGeladen?.({ behalte }); // ein offenes KI-Popover gehörte zum alten Text
       view.setState(state);
       if (alt) view.scrollDOM.scrollTop = scroll;
       if (ctx.roh?.()) view.dispatch({ effects: fmUmschalten.of(false) });

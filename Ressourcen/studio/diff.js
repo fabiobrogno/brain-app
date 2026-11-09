@@ -10,3 +10,20 @@ export function diffAnsicht(text) {
     return h("div", { klasse: k, text: z || " " });
   }));
 }
+
+// ---- Wort-Diff (KI-Text-Aktionen, K2): die Teile aus wort-diff.js#wortDiff als DOM, nur über textContent. „weg“ in <del>, „neu“ in <ins>, Gleiches als Text.
+// Zeilenenden werden nur für die Anzeige vereinheitlicht (CRLF → ein Umbruch); die Daten bleiben byte-treu. Reiner Leerraum in einer Änderung bekommt Zeichen
+// („·“ für Leerzeichen, „⏎“ für Umbrüche), damit man sieht, was sich ändert.
+export { wortDiff, wortDiffAnzeige, hatAenderung, textAlt, textNeu } from "./wort-diff.js";
+const anzeige = (s) => s.replace(/\r\n|\r/g, "\n");
+export function wortDiffAnsicht(teile, { label = "" } = {}) {
+  const wurzel = h("div", { klasse: "wd", "data-wort-diff": "", role: "group", ...(label ? { "aria-label": label } : {}) });
+  for (const x of teile) {
+    if (x.t === "gleich") { wurzel.append(document.createTextNode(anzeige(x.s))); continue; }
+    const nurLeer = /^\s+$/.test(x.s);
+    const el = h(x.t === "weg" ? "del" : "ins", { klasse: x.t === "weg" ? "wd-weg" : "wd-neu", "data-wd": x.t });
+    el.textContent = nurLeer ? anzeige(x.s).replace(/ /g, "·").replace(/\n/g, "⏎\n") : anzeige(x.s);
+    wurzel.append(el);
+  }
+  return wurzel;
+}

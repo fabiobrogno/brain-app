@@ -1,6 +1,6 @@
 # KI-Runde: Vorschläge statt Handlungen
 
-Stand: 09.11.2026 · Plan; K0, K1 und K3 gebaut (siehe Abschnitt 9 bis 11), K2 und K4 offen. Baut auf Runde 3 (`runde-3.md`, Abschnitt „Später: KI-Vorschläge“), den KI-Konten (`ki-konten.md`, P1–P4, E4/E5) und „Frag deinen Vault“ (`werkstatt/frage.mjs`) auf.
+Stand: 09.11.2026 · Plan; K0 und K1 gebaut (siehe Abschnitt 9 und 10), K2 bis K4 offen. Baut auf Runde 3 (`runde-3.md`, Abschnitt „Später: KI-Vorschläge“), den KI-Konten (`ki-konten.md`, P1–P4, E4/E5) und „Frag deinen Vault“ (`werkstatt/frage.mjs`) auf.
 Klickbarer Prototyp: [`docs/prototypen/ki-runde/kortex-ki-vorschlaege.html`](../prototypen/ki-runde/kortex-ki-vorschlaege.html) (im Browser öffnen), Schlüsselbilder (hell, 1440 px): [Posteingang](../prototypen/ki-runde/r2-1440-light-01-posteingang.png) · [Einwilligung](../prototypen/ki-runde/r2-1440-light-02-einwilligung.png) · [Vorschlagskarten](../prototypen/ki-runde/r2-1440-light-04-vorschlagskarten.png) · [Einschleusung](../prototypen/ki-runde/r2-1440-light-05-injektion.png) · [Diff mit Link-Warnung](../prototypen/ki-runde/r2-1440-light-09-diff-link-warnung.png).
 
 ## 0. Worum es geht
@@ -249,7 +249,18 @@ Zwei echte Aufrufe, beide ohne Modellantwort (der erste lief ohne Konto-Ordner, 
 - **Vorschau-Platzhalter (#88):** deterministische Antwort für `zusammenfassung` (ein Satz, Belege `z1`, `z2`, `"vorschau": true`).
 - **Offen:** Der Schalter „KI-Vorschläge in diesem Vault“ in Einstellungen → KI & Konten (Abschnitt 4) fehlt noch; bis dahin lässt sich die Einwilligung nur über `PUT /api/ki/vorschlag/einwilligung` zurücknehmen, und der Dialog verspricht diesen Weg bewusst nicht.
 
-## 11. Stand K3 „Vorschlagskarten im Posteingang“ (09.11.2026)
+## 11. Stand K2 „Text-Aktionen“ (09.11.2026)
+
+- **Werkstatt:** aus K0 (neu: Warnzeilen auch für Aufgabentexte) (`funktion: "text"`: Umschreiben, Kürzen, Übersetzen DE/EN/FR/ES/IT, Aufgaben; Sammler schickt nur Auswahl und die Überschrift darüber, `ki: nein` blockt, „Gründlicher“ = sonnet nur hier). Neu getestet (`Tests/Node/ki-text-aktionen.test.mjs`): Paket byte-treu mit CRLF und Umlauten, keine Fremdteile der Notiz, Warnzeilen, Aufgaben ohne wörtlichen Beleg fallen weg.
+- **Studio:** `ki-text.js` (ein Popover am Text für Menü → Lauf → Diff/Aufgaben/Fehler; Einwilligung, „Was wird gesendet?“, Kontingent-Zeile und Lauf kommen aus `ki-vorschlag.js`), `ki-text-logik.js` (rein: Sperrgründe der Auswahl, Aufgaben unter der Auswahl, Zeilenende), `wort-diff.js` (rein, byte-treu; `diff.js` zeigt ihn als `<del>`/`<ins>` über `textContent`), `texte-ki-text.js`, `ki-text.css`.
+- **Einstiege:** KI-Knopf in der Format-Leiste (nur mit Konto der Stufe „lesen“; aus mit Grund im Tooltip), Kontextmenü auf der Auswahl (mit Ausschneiden/Kopieren/Einfügen), Befehlspalette ⌘K („KI: Kürzen …“, solange Text markiert ist).
+- **Sicherheit im Editor:** Das Ergebnis erscheint immer zuerst als Wort-Diff mit Warnzeilen (Link nach außen, Bild, HTML, Code-Block, Front-Matter, neue Verknüpfung). „Übernehmen“ ist EINE Transaktion (`userEvent: input.ki`, ⌘Z in einem Schritt). Ändert sich der markierte Text (Änderungen davor oder danach verschieben nur die Position), ist „Übernehmen“ gesperrt mit Hinweis und „Neu anfragen“. Vor dem Senden wird gespeichert (die Werkstatt liest aus der Datei). Auswahl in Code-Block, Tabelle, Datei-Kopf, über 8000 Zeichen oder in einer ungespeicherten Notiz: Aktion aus.
+- **Aufgaben:** „Unter Auswahl einfügen“ (`- [ ] …`, eine Transaktion) oder „Als Aufgabe anlegen“ über `/api/aufgaben`.
+- **Vorschau-Platzhalter (#88):** `text` war seit K0 deterministisch (gibt die Auswahl zurück, Aufgabe mit gültigem Beleg); in der Vorschau steht dann „Die KI würde nichts ändern“.
+- **Eingepasst:** unsichtbare Zeichen im Ersatz (ZWJ, weiches Trennzeichen …) nur mit Vorbild in der Auswahl oder als ZWJ zwischen Emojis; Unicode-Tags und bidi-Überschreibungen nie. Der Diff vergleicht NFC-normalisiert (nur Anzeige). Aufgaben stehen nach dem ganzen Block (Absatz, Liste, Zitat).
+- **Offen:** ⌘Z kann direkt nach dem Übernehmen eingetipptes Zeichen mit zurücknehmen (CodeMirror-History gruppiert; `isolateHistory` ist im Bündel nicht exportiert); keine eigene Tastenkombination (⌘K gehört der Befehlspalette); Übersetzen nach „Deutsch“ aus deutschem Text liefert in der Praxis einen leeren Diff.
+
+## 12. Stand K3 „Vorschlagskarten im Posteingang“ (09.11.2026)
 
 - **Oberfläche** (`studio/posteingang-ki.js`, `.css`, `texte-posteingang-ki.js`): Unter jedem Eintrag liegt eine Zeile mit fester Höhe: „n Vorschläge“ (lokal berechnet) und „Mit KI“. Ein Klick klappt die Karten auf (Übernehmen · „Warum?“ mit wörtlich hervorgehobenem Beleg · Verwerfen); die Karten gleiten auf und zu, nie unter der Maus weg (Zeile und Leiste halten ihren Platz, ehe die Werkstatt geantwortet hat). Duplikat: „Vergleichen“ (beide Texte nebeneinander) und „Als Duplikat ablegen“. Zustand „veraltet“ (409): Hinweis, Übernehmen aus, „Neu holen“. Die Leiste über der Liste („Für alle holen (n)“, höchstens 10) zeigt Fortschritt, Abbrechen und die Kontingent-Zeile. Kein KI-Knopf ohne Konto mit `lesen`; ein Eintrag mit `ki: nein` hat ihn aus (mit Grund).
 - **Lokale Vorschläge ohne KI** (`POST /api/ki/vorschlag/lokal`, kein Konto, keine Einwilligung, kein Aufruf): gleicher Titel → Duplikat · der Eintrag nennt den Titel einer Notiz → Verlinken · ein Tag des Eintrags heißt wie ein Ordner → Verschieben. Marke „ohne KI“; dieselben Karten und dieselbe Übernahme über id + Token.

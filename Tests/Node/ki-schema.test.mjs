@@ -169,3 +169,15 @@ test("Schemas für --json-schema: fest, ohne Zusatzfelder, Kennungen als Aufzäh
   assert.equal(schemaFuer("gibt-es-nicht"), null);
   for (const f of S.FUNKTIONEN) JSON.stringify(schemaFuer(f, {})); // lässt sich als JSON schreiben (Argument der CLI)
 });
+
+test("Ersatz: unsichtbare Zeichen nur mit Vorbild in der Auswahl; ZWJ zwischen Emojis immer; Tags und bidi nie", () => {
+  const ausw = "Team 👨‍👩‍👧 ❤️ trifft\u00ADsich.";
+  const Er = (e, a = ausw) => pruefeAntwort("ersatz", { ersatz: e }, { auswahl: a }).ok;
+  assert.equal(Er("Das Team 👨‍👩‍👧 ❤️ trifft\u00ADsich bald."), true, "Zeichen mit Vorbild");
+  assert.equal(Er("Neu 👩‍💻 hier", "ohne Vorbild"), true, "ZWJ zwischen zwei Emojis");
+  assert.equal(Er("trifft\u00ADsich", "ohne Vorbild"), false, "weiches Trennzeichen ohne Vorbild");
+  assert.equal(Er("a\u200Db", "ohne Vorbild"), false, "ZWJ zwischen Buchstaben ohne Vorbild");
+  assert.equal(Er("x\u{E0041}y", "x\u{E0041}y"), false, "Tag nie, auch mit Vorbild");
+  assert.equal(Er("x\u202Ey", "x\u202Ey"), false, "bidi-Override nie");
+  assert.equal(Er("x\u2066y", "x\u2066y"), false);
+});

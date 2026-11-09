@@ -32,8 +32,25 @@ export const normText = (s) => String(s ?? "").normalize("NFC").replace(/\s+/g, 
 // Zeichen, die in KI-Text nie vorkommen dürfen: Steuerzeichen (außer \n \t bei mehrzeiligem Text), Unicode-Tags (versteckte Anweisungen), bidi-Steuerung, Null-Breite, BOM.
 const GEFAEHRLICH = /(?![\n\r\t])[\p{Cc}\p{Cf}\p{Co}\p{Cn}\u{FE00}-\u{FE0E}\u{E0100}-\u{E01EF}\u{115F}\u{1160}\u{3164}\u{FFA0}\u{34F}]/u;
 const ZEILENUMBRUCH = /[\n\r\t\u2028\u2029]/;
-const gueltigerText = (s, max, { mehrzeilig = false, min = 1 } = {}) =>
-  typeof s === "string" && s.length >= min && s.length <= max && !GEFAEHRLICH.test(s) && (mehrzeilig || !ZEILENUMBRUCH.test(s));
+// Immer verboten, auch wenn die Auswahl sie hat: Unicode-Tags (versteckte Anweisungen) und bidi-Überschreibungen
+const IMMER_VERBOTEN = /[\u{E0000}-\u{E007F}\u202A-\u202E\u2066-\u2069]/u;
+const BILD = /\p{Extended_Pictographic}/u;
+// Nur Text-Ersatz: unsichtbare Zeichen (z. B. ZWJ, weiches Trennzeichen) sind erlaubt, wenn genau dieses Zeichen schon in der gesendeten Auswahl steht;
+// ein ZWJ zwischen zwei Emojis (ggf. mit Variationsselektor) immer. Alles andere bleibt verboten.
+function nurErlaubtesUnsichtbar(s, vorbild) {
+  if (IMMER_VERBOTEN.test(s)) return false;
+  const z = [...s];
+  for (let i = 0; i < z.length; i++) {
+    const c = z[i];
+    if (!GEFAEHRLICH.test(c)) continue;
+    if (vorbild.includes(c)) continue;
+    if (c === "\u200D") { let j = i - 1; while (j >= 0 && z[j] === "\uFE0F") j--; if (j >= 0 && BILD.test(z[j]) && i + 1 < z.length && BILD.test(z[i + 1])) continue; }
+    return false;
+  }
+  return true;
+}
+const gueltigerText = (s, max, { mehrzeilig = false, min = 1, vorbild = null } = {}) =>
+  typeof s === "string" && s.length >= min && s.length <= max && (vorbild === null ? !GEFAEHRLICH.test(s) : nurErlaubtesUnsichtbar(s, String(vorbild))) && (mehrzeilig || !ZEILENUMBRUCH.test(s));
 const istObj = (x) => !!x && typeof x === "object" && !Array.isArray(x);
 const nurFelder = (o, erlaubt) => istObj(o) && Object.keys(o).every((k) => erlaubt.includes(k));
 const istDatum = (s) => {
@@ -41,8 +58,8 @@ const istDatum = (s) => {
   const d = new Date(`${s}T00:00:00Z`);
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
 };
-const istBeleg = (beleg, text) => {
-  if (!gueltigerText(beleg, LIMITS.beleg)) return false;
+const istBeleg = (beleg, text, vorbild = null) => {
+  if (!gueltigerText(beleg, LIMITS.beleg, { vorbild })) return false;
   const b = normText(beleg);
   return b.length >= 3 && normText(text).includes(b);
 };
@@ -143,7 +160,7 @@ export function pruefeAntwort(funktion, roh, ctx = {}) {
   if (funktion === "ersatz") {
     const auswahl = String(ctx.auswahl ?? "");
     const max = auswahl.length * 2 + LIMITS.ersatzZuschlag;
-    if (!gueltigerText(roh.ersatz, max, { mehrzeilig: true, min: 0 })) return { ok: false, grund: "ersatz" };
+    if (!gueltigerText(roh.ersatz, max, { mehrzeilig: true, min: 0, vorbild: auswahl })) return { ok: false, grund: "ersatz" };
     return { ok: true, daten: { ersatz: roh.ersatz.normalize("NFC"), warnungen: warnungenFuerErsatz(auswahl, roh.ersatz) }, verworfen: 0, ...marke };
   }
   const liste = roh[feld];
@@ -178,7 +195,7 @@ function pruefeEinzel(funktion, x, ctx) {
     return { id: x.id, gemeint: x.gemeint, grund: x.grund.normalize("NFC"), schluessel: x.id };
   }
   if (funktion === "aufgaben") {
-    if (!nurFelder(x, ["text", "beleg", "faellig"]) || !gueltigerText(x.text, LIMITS.aufgabeText) || !istBeleg(x.beleg, ctx.auswahl)) return null;
+    if (!nurFelder(x, ["text", "beleg", "faellig"]) || !gueltigerText(x.text, LIMITS.aufgabeText) || !istBeleg(x.beleg, ctx.auswahl, ctx.auswahl ?? "")) return null;
     if (x.faellig !== undefined && !istDatum(x.faellig)) return null;
     return { text: x.text.normalize("NFC"), beleg: x.beleg.normalize("NFC"), ...(x.faellig ? { faellig: x.faellig } : {}) };
   }

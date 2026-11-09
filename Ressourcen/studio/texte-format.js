@@ -12,7 +12,7 @@ export const TF3 = {
   format: {
     fett: "Fett", kursiv: "Kursiv", code: "Code", durchgestrichen: "Durchgestrichen", link: "Link",
     ueberschrift: (n) => `Überschrift ${n}`, listePunkt: "Aufzählung", listeNummer: "Nummerierte Liste", listeAufgabe: "Aufgabenliste",
-    leiste: "Textformat", leisteEinstellung: "Format-Leiste", leisteEinstellungText: "Zeigt über markiertem Text eine kleine Leiste für Fett, Kursiv, Link, Überschrift und Liste.",
+    leiste: "Textformat", ki: "Mit KI bearbeiten", leisteEinstellung: "Format-Leiste", leisteEinstellungText: "Zeigt über markiertem Text eine kleine Leiste für Fett, Kursiv, Link, Überschrift und Liste.",
     einfuegenText: "Als reinen Text einfügen",
   },
 };
