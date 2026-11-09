@@ -88,3 +88,7 @@ function glaette(ops) {
 export const textAlt = (teile) => teile.filter((x) => x.t !== "neu").map((x) => x.s).join("");
 export const textNeu = (teile) => teile.filter((x) => x.t !== "weg").map((x) => x.s).join("");
 export const hatAenderung = (teile) => teile.some((x) => x.t !== "gleich");
+
+// Nur für die Anzeige: beide Seiten vor dem Vergleich NFC-normalisiert, damit „é“ (zusammengesetzt) und „é“ (e + Akzent) nicht als Änderung erscheinen.
+// Übernommen wird immer der Text der KI, nie diese Anzeige.
+export const wortDiffAnzeige = (alt, neu) => wortDiff(String(alt ?? "").normalize("NFC"), String(neu ?? "").normalize("NFC"));

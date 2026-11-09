@@ -78,11 +78,29 @@ test("Aufgaben unter der Auswahl: Absatz → Leerzeile davor; Liste → direkt d
   assert.equal(e.einfuegen, "\n\n- [ ] Käse kaufen (fällig 2026-12-01)\n- [ ] Brötchen holen");
   doc = "Absatz\nGleich weiter.\n";
   e = L.aufgabenEinfuegung(doc, 3, A);
-  assert.equal(doc.slice(0, e.pos) + e.einfuegen + doc.slice(e.pos), "Absatz\n\n- [ ] Käse kaufen (fällig 2026-12-01)\n- [ ] Brötchen holen\n\nGleich weiter.\n");
-  doc = "- Punkt eins\n  - Unterpunkt\n- Punkt zwei\n";
+  assert.equal(doc.slice(0, e.pos) + e.einfuegen + doc.slice(e.pos), "Absatz\nGleich weiter.\n\n- [ ] Käse kaufen (fällig 2026-12-01)\n- [ ] Brötchen holen\n");
+  // Liste: nach der ganzen Liste (samt Fortsetzungen und Unterpunkten), mit dem Einzug der Liste
+  doc = "- Punkt eins\n  - Unterpunkt\n  fortsetzung\n- Punkt zwei\n\nDanach.\n";
   e = L.aufgabenEinfuegung(doc, doc.indexOf("Unterpunkt") + 3, [{ text: "A" }]);
-  assert.equal(doc.slice(0, e.pos) + e.einfuegen + doc.slice(e.pos), "- Punkt eins\n  - Unterpunkt\n  - [ ] A\n- Punkt zwei\n");
+  assert.equal(doc.slice(0, e.pos) + e.einfuegen + doc.slice(e.pos), "- Punkt eins\n  - Unterpunkt\n  fortsetzung\n- Punkt zwei\n- [ ] A\n\nDanach.\n");
+  doc = "1. eins\n2. zwei\nText";
+  e = L.aufgabenEinfuegung(doc, 3, [{ text: "A" }]);
+  assert.ok(doc.slice(0, e.pos).endsWith("2. zwei"), "Nummerierung bleibt zusammen");
+  // Absatz über mehrere Zeilen: nach dem ganzen Absatz; Zitat: nach dem ganzen Zitat
+  doc = "Erste Zeile\nZweite Zeile\n\nNächster.\n";
+  e = L.aufgabenEinfuegung(doc, 3, [{ text: "A" }]);
+  assert.equal(doc.slice(0, e.pos) + e.einfuegen + doc.slice(e.pos), "Erste Zeile\nZweite Zeile\n\n- [ ] A\n\nNächster.\n");
+  doc = "> zitat\n> weiter\n\nEnde\n";
+  e = L.aufgabenEinfuegung(doc, 4, [{ text: "A" }]);
+  assert.equal(e.pos, "> zitat\n> weiter".length);
   doc = "Satz.\nZweite Zeile.\n";
   e = L.aufgabenEinfuegung(doc, "Satz.\n".length, [{ text: "A" }]); // Auswahl nimmt den Zeilenumbruch mit
-  assert.equal(e.pos, "Satz.".length);
+  assert.equal(e.pos, "Satz.\nZweite Zeile.".length); // der ganze Absatz
+});
+
+test("Anzeige-Diff: NFC und NFD gleicher Wörter erscheinen nicht als Änderung; der rohe Diff bleibt byte-treu", () => {
+  const nfd = "Caf\u0065\u0301 au lait", nfc = "Caf\u00e9 au lait";
+  assert.equal(D.hatAenderung(D.wortDiffAnzeige(nfd, nfc)), false);
+  assert.equal(D.hatAenderung(D.wortDiffAnzeige(nfd, nfc + " noch")), true);
+  treu(nfd, nfc);
 });

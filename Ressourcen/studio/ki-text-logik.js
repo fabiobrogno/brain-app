@@ -44,21 +44,34 @@ export function pruefeAuswahl(doc, von, bis, { laenge = bis - von, bereiche = nu
 // Das Zeilenende der Datei auf einen Text der KI anwenden (die KI liefert „\n“): so ist der Diff frei von Zeilenende-Rauschen und das Einfügen passt zur Datei
 export const mitZeilenende = (text, zeilenende) => String(text ?? "").replace(/\r\n|\r|\n/g, zeilenende === "\r\n" || zeilenende === "\r" ? zeilenende : "\n");
 
-// „Aufgaben herausziehen“ als Markdown unter der Auswahl: → { pos, einfuegen } (Zeilenende „\n“; der Aufrufer wendet das der Datei an).
-// Steht die Auswahl in einer Liste, folgt die Aufgabenliste mit demselben Einzug direkt darunter; sonst mit einer Leerzeile davor (und danach, wenn gleich Text folgt).
+// „Aufgaben herausziehen“ als Markdown NACH dem Block der Auswahl: → { pos, einfuegen } (Zeilenende „\n“; der Aufrufer wendet das der Datei an).
+// Block = Absatz (bis Leerzeile oder nächster Blockanfang), Liste (zusammenhängende Listen- und eingerückte Zeilen, samt Fortsetzungen), Zitat (zusammenhängende „>“-Zeilen).
+// Nach einer Liste folgt die Aufgabenliste mit dem Einzug der Liste direkt darunter, sonst mit einer Leerzeile davor; folgt gleich Text, bleibt eine Leerzeile danach.
+const LISTE = /^(\s*)(?:[-*+]|\d+[.)])\s/;
+const ZITAT = /^\s*>/;
+const BLOCKANFANG = /^( {0,3}#{1,6}\s|\s*(?:[-*+]|\d+[.)])\s|\s*>|\s*\||\s{0,3}(?:`{3,}|~{3,})|\s{0,3}(?:[-*_][ \t]*){3,}$)/;
 export function aufgabenEinfuegung(doc, bis, aufgaben) {
   const text = String(doc ?? "");
-  const ende = bis > 0 && text[bis - 1] === "\n" ? bis - 1 : bis; // eine Auswahl, die den Zeilenumbruch am Ende mitnimmt, gehört noch zur Zeile davor
-  const zeilenStart = text.lastIndexOf("\n", Math.max(0, ende - 1)) + 1;
-  let zeilenEnde = text.indexOf("\n", ende);
-  if (zeilenEnde < 0) zeilenEnde = text.length;
-  const zeile = text.slice(zeilenStart, zeilenEnde);
-  const liste = /^(\s*)(?:[-*+]|\d+[.)])\s/.exec(zeile);
-  const einzug = liste ? liste[1] : "";
-  const zeilen = aufgaben.map((a) => `${einzug}- [ ] ${aufgabeAlsText(a)}`);
-  let naechste = null;
-  if (zeilenEnde < text.length) { const e2 = text.indexOf("\n", zeilenEnde + 1); naechste = text.slice(zeilenEnde + 1, e2 < 0 ? text.length : e2); }
-  const folgtText = naechste !== null && naechste.trim() !== "" && !/^\s*(?:[-*+]|\d+[.)])\s/.test(naechste);
-  return { pos: zeilenEnde, einfuegen: (liste ? "\n" : "\n\n") + zeilen.join("\n") + (!liste && folgtText ? "\n" : "") + (liste && folgtText ? "\n" : "") };
+  const zeilen = [];
+  for (let pos = 0; ; ) { const e = text.indexOf("\n", pos); const ende = e < 0 ? text.length : e; zeilen.push({ von: pos, ende, t: text.slice(pos, ende) }); if (e < 0) break; pos = e + 1; }
+  const ref = bis > 0 && text[bis - 1] === "\n" ? bis - 1 : bis; // eine Auswahl, die den Zeilenumbruch am Ende mitnimmt, gehört noch zur Zeile davor
+  let i = Math.max(0, zeilen.findIndex((z) => ref >= z.von && ref <= z.ende));
+  const leer = (z) => !z || z.t.trim() === "";
+  let einzug = "", istListe = false, letzte = i;
+  if (LISTE.test(zeilen[i].t) || (i > 0 && !leer(zeilen[i]) && /^\s+\S/.test(zeilen[i].t))) {
+    // Liste: zurück bis zum Anfang des zusammenhängenden Blocks, vor bis zu dessen Ende
+    let a = i; while (a > 0 && !leer(zeilen[a - 1]) && (LISTE.test(zeilen[a - 1].t) || /^\s+\S/.test(zeilen[a - 1].t))) a--;
+    const m = LISTE.exec(zeilen[a].t);
+    if (m) { istListe = true; einzug = m[1]; let b = i; while (b + 1 < zeilen.length && !leer(zeilen[b + 1]) && (LISTE.test(zeilen[b + 1].t) || /^\s+\S/.test(zeilen[b + 1].t))) b++; letzte = b; }
+  }
+  if (!istListe) {
+    if (ZITAT.test(zeilen[i].t)) { while (letzte + 1 < zeilen.length && ZITAT.test(zeilen[letzte + 1].t)) letzte++; }
+    else while (letzte + 1 < zeilen.length && !leer(zeilen[letzte + 1]) && !BLOCKANFANG.test(zeilen[letzte + 1].t)) letzte++;
+  }
+  const zeile = zeilen[letzte];
+  const naechste = zeilen[letzte + 1];
+  const folgtText = !!naechste && !leer(naechste) && !LISTE.test(naechste.t);
+  const items = aufgaben.map((a) => `${einzug}- [ ] ${aufgabeAlsText(a)}`);
+  return { pos: zeile.ende, einfuegen: (istListe ? "\n" : "\n\n") + items.join("\n") + (folgtText ? "\n" : "") };
 }
 export const aufgabeAlsText = (a) => String(a.text).replace(/\s*\n\s*/g, " ").trim() + (a.faellig ? ` (fällig ${a.faellig})` : "");

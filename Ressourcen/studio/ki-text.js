@@ -11,7 +11,7 @@ import { TK } from "./texte-ki-text.js";
 import { TV } from "./texte-ki-vorschlag.js";
 import { TN } from "./texte-erwaehnungen.js";
 import { kiStatus, oeffneEinwilligung, kontingentZeile, wasWirdGesendet, starteVorschlag } from "./ki-vorschlag.js";
-import { wortDiff, hatAenderung, wortDiffAnsicht } from "./diff.js";
+import { wortDiffAnzeige, hatAenderung, wortDiffAnsicht } from "./diff.js";
 import * as L from "./ki-text-logik.js";
 
 const AKTION_SYMBOL = { umschreiben: "stift", kuerzen: "gliederung", aufgaben: "aufgaben" };
@@ -286,8 +286,8 @@ export function erzeugeKiText({ S, ed, speichereWarte, nachAufgaben }) {
       if (ergebnis.funktion === "ersatz") {
         mein.funktion = "ersatz";
         mein.ersatz = L.mitZeilenende(ergebnis.ersatz, snap.lb);
-        mein.teile = wortDiff(snap.text, mein.ersatz);
-        mein.leer = !hatAenderung(mein.teile);
+        mein.teile = wortDiffAnzeige(snap.text, mein.ersatz);
+        mein.leer = mein.ersatz === snap.text; // „keine Änderung“ nur bei exakt gleichen Zeichen; reine NFC/NFD-Unterschiede zeigt der Diff ohne Markierung
         mein.warnungen = Array.isArray(ergebnis.warnungen) ? ergebnis.warnungen : [];
       } else { mein.funktion = "aufgaben"; mein.aufgaben = Array.isArray(ergebnis.aufgaben) ? ergebnis.aufgaben : []; mein.warnungen = Array.isArray(ergebnis.warnungen) ? ergebnis.warnungen : []; }
       mein.phase = "ergebnis";
