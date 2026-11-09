@@ -135,6 +135,8 @@ test("Duplikat: „Vergleichen“ zeigt beide Texte nebeneinander, „Als Duplik
   await expect(dlg).toBeVisible();
   await expect(dlg.locator(".pk-vgl-text").first()).toContainText("Mietwagen buchen bis 14.11.");
   await expect(dlg.locator(".pk-vgl-text").nth(1)).toContainText("Mietwagen nicht nötig");
+  await expect(dlg.locator(".pk-vgl-text").first().locator(".wd-weg").filter({ hasText: "buchen" })).toHaveCount(1); // Unterschiede sind markiert (Wort-Diff)
+  await expect(dlg.locator(".pk-vgl-text").nth(1).locator(".wd-neu").filter({ hasText: "nicht" })).toHaveCount(1);
   await bild(page, "k3-vergleich-hell");
   await dlg.locator('[data-aktion="pk-vgl-ok"]').click();
   await expect(dlg).toHaveCount(0);

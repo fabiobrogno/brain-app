@@ -8,6 +8,7 @@ import { knopf as baueKnopf } from "./bausteine.js";
 import { symbol } from "./symbole.js";
 import { api } from "./api.js";
 import { ruhig } from "./bewegung.js";
+import { wortDiffAnzeige, wortDiffAnsicht, hatAenderung } from "./diff.js";
 import { TK } from "./texte-posteingang-ki.js";
 import { TV } from "./texte-ki-vorschlag.js";
 import { TN } from "./texte-erwaehnungen.js";
@@ -235,12 +236,19 @@ export function erzeugePosteingangKi({ S, ctx, oeffne, liste }) {
 
   // ---------- Duplikat: beide Texte nebeneinander ----------
   function oeffneVergleich(n, z, v) {
-    const spalte = (titel, pfad) => {
-      const pre = h("pre", { klasse: "pk-vgl-text", tabindex: "0", text: TK.vergleich.laedt });
-      api.datei(pfad).then((r) => { pre.textContent = String(r?.inhalt ?? "").slice(0, 30000); }).catch(() => { pre.textContent = TK.vergleich.fehler; });
-      return h("section", { klasse: "pk-vgl-spalte" }, h("div", { klasse: "pk-vgl-kopf" }, h("b", { text: titel }), h("span", { klasse: "pk-vgl-pfad", text: pfad })), pre);
-    };
-    const d = dialog({ titel: TK.vergleich.titel, satz: TK.vergleich.hinweis, breit: true, rumpf: h("div", { klasse: "pk-vgl" }, spalte(TK.vergleich.dieser, n.pfad), spalte(TK.vergleich.anderer, v.ziel.pfad)),
+    // Beide Texte werden geladen und auf Wortebene verglichen: links steht, was nur in diesem Eintrag steht, rechts, was nur in der vorhandenen Notiz steht (Wort-Diff aus K2; nur Anzeige, geändert wird nichts)
+    const pre = (text) => h("pre", { klasse: "pk-vgl-text", tabindex: "0", text });
+    const links = pre(TK.vergleich.laedt), rechts = pre(TK.vergleich.laedt);
+    const spalte = (titel, pfad, el) => h("section", { klasse: "pk-vgl-spalte" }, h("div", { klasse: "pk-vgl-kopf" }, h("b", { text: titel }), h("span", { klasse: "pk-vgl-pfad", text: pfad })), el);
+    const lade = (pfad) => api.datei(pfad).then((r) => String(r?.inhalt ?? "").slice(0, 30000));
+    Promise.all([lade(n.pfad), lade(v.ziel.pfad)]).then(([x, y]) => {
+      const teile = wortDiffAnzeige(x, y);
+      links.replaceChildren(wortDiffAnsicht(teile.filter((t) => t.t !== "neu"), { label: TK.vergleich.dieser }));
+      rechts.replaceChildren(wortDiffAnsicht(teile.filter((t) => t.t !== "weg"), { label: TK.vergleich.anderer }));
+      if (!hatAenderung(teile)) hinweis.hidden = false;
+    }).catch(() => { links.textContent = rechts.textContent = TK.vergleich.fehler; });
+    const hinweis = h("p", { klasse: "kiv-leise", "data-pk-gleich": "", hidden: true, text: TK.vergleich.gleich });
+    const d = dialog({ titel: TK.vergleich.titel, satz: TK.vergleich.hinweis, breit: true, rumpf: h("div", { klasse: "pk-vgl-ganz" }, h("div", { klasse: "pk-vgl" }, spalte(TK.vergleich.dieser, n.pfad, links), spalte(TK.vergleich.anderer, v.ziel.pfad, rechts)), hinweis),
       knoepfe: [baueKnopf({ text: TK.vergleich.schliessen, aktion: "pk-vgl-zu", aufKlick: () => d.schliessen() }), baueKnopf({ text: TK.art.duplikat.uebernehmen, variante: "primaer", aktion: "pk-vgl-ok", aufKlick: () => { d.schliessen(); uebernehmen(n, z, v); } })] });
     d.box.dataset.dialog = "pk-vergleich";
   }
