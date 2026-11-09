@@ -8,7 +8,7 @@ import { pfad } from "./hilfe.mjs";
 import { szenarioV } from "./ki-vorschlag-hilfe.mjs";
 
 const { beendeAlleProzesse } = await import(pfad("gemeinsam", "prozess.mjs"));
-const { baueNeuigkeiten } = await import(pfad("gemeinsam", "neuigkeiten.mjs"));
+const { baueNeuigkeiten, ausnehmenFuerKi } = await import(pfad("gemeinsam", "neuigkeiten.mjs"));
 after(() => { beendeAlleProzesse(); });
 
 const SEIT = "2020-01-01T00:00:00.000Z";
@@ -142,4 +142,17 @@ test("baueNeuigkeiten mit `ausnehmen`: ausgenommene Pfade erscheinen nirgends, w
   assert.equal(r.inbox.anzahl, 0);
   assert.equal(r.ausgenommen, 3, "b, c und t (t steht in „neu“ und „überfällig“, zählt einmal)");
   assert.equal(baueNeuigkeiten({ seit: "2026-11-01T00:00:00Z", jetzt, heute: "2026-11-09", notizen, aufgaben }).ausgenommen, undefined, "ohne `ausnehmen` bleibt alles wie vorher");
+});
+
+test("ausnehmenFuerKi: Index nicht lesbar → keine Aufgaben (fail-closed); Bezug nach Dateiname, Pfad oder Titel; ohne Bezug bleibt die Aufgabe", () => {
+  const nein = (z) => z.kiNein === true;
+  const zeilen = [{ pfad: "10/Geheim.md", titel: "Streng Vertraulich", kiNein: true }, { pfad: "10/Offen.md", titel: "Offen" }];
+  const aufgaben = [{ pfad: "a1.md", bezug: ["[[Geheim]]"] }, { pfad: "a2.md", bezug: ["10/Geheim.md"] }, { pfad: "a3.md", bezug: [{ titel: "Streng Vertraulich" }] }, { pfad: "a4.md", bezug: ["[[Offen]]"] }, { pfad: "a5.md", bezug: [] }];
+  const k = ausnehmenFuerKi(zeilen, aufgaben, nein);
+  assert.deepEqual([...k.ausnehmen].sort(), ["10/Geheim.md", "a1.md", "a2.md", "a3.md"]);
+  assert.equal(k.aufgaben.length, 5);
+  for (const kaputt of [null, undefined, "x"]) { const r = ausnehmenFuerKi(kaputt, aufgaben, nein); assert.equal(r.aufgaben, null); assert.equal(r.ausnehmen.size, 0); }
+  // durch baueNeuigkeiten: ohne Zeilen (null) und ohne Aufgaben erscheint nichts davon
+  const r = baueNeuigkeiten({ seit: "2020-01-01T00:00:00Z", jetzt: new Date("2026-11-09T12:00:00Z"), heute: "2026-11-09", notizen: null, aufgaben: ausnehmenFuerKi(null, aufgaben, nein).aufgaben, ausnehmen: new Set() });
+  assert.equal(r.notizen, null); assert.equal(r.aufgaben, null);
 });

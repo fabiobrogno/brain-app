@@ -19,6 +19,8 @@ import { kontingentStand, kontingentBlock, kontoAnsicht, kontingentEinwilligung,
 import { uebernehmeLokaleWahl } from "./ki-aktiv.js";
 import { TKO } from "./texte-kontingent.js";
 import { popoverOffen } from "./popover.js";
+import { oeffneEinwilligung } from "./ki-vorschlag.js";
+import { TV } from "./texte-ki-vorschlag.js";
 import { baueAnmeldung, pruefeKontoAnmeldung, ANMELDBAR } from "./ki-verbinden.js";
 import { baueAnmeldungImFenster } from "./anmeldung-fenster.js";
 
@@ -186,8 +188,34 @@ export function erzeugeKi(o) {
       try { S.pflege[v.pfad] = await api.kiPflege(v.pfad); delete S.pflegeFehler[v.pfad]; }
       catch (e) { S.pflegeFehler[v.pfad] = e; }
     }));
+    await ladeVorschlag();
+  }
+  // KI-Vorschläge (Einwilligung je Vault, nur für den geöffneten Vault): Zustand lesen, ein-/ausschalten
+  async function ladeVorschlag() {
+    try { S.vorschlag = await api.kiVorschlagEinwilligungLesen(); } catch { S.vorschlag = null; }
     if (zu()) return;
     zeichne("pflege");
+  }
+  async function schalteVorschlag(an) {
+    const vault = offenerVaultPfad(), name = offenerVault()?.name || "";
+    if (!vault) { zeichne("pflege"); return; }
+    if (an) {
+      let bereit = null;
+      try { bereit = await api.kiVorschlagBereit(); } catch { /* ohne Angaben kein Dialog */ }
+      if (!bereit) { toast(TV.einstellung.fehler, { fehler: true }); zeichne("pflege"); return; }
+      const fkt = (bereit.funktionen || []).filter((f) => ["zusammenfassung", "posteingang", "text"].includes(f));
+      oeffneEinwilligung({ api, bereit, vault, vaultName: name, funktionen: fkt.length ? fkt : ["zusammenfassung"], nachher: ladeVorschlag, beiAbbruch: () => zeichne("pflege") });
+      return;
+    }
+    try { await api.kiVorschlagEinwilligung({ an: false, vault }); toast(TV.einstellung.ausgeschaltet, { ms: 4000 }); }
+    catch (e) { toast(e?.message || TV.einstellung.fehler, { fehler: true }); }
+    await ladeVorschlag();
+  }
+  function vorschlagZeile() {
+    const v = S.vorschlag, an = !!v?.an, name = offenerVault()?.name || "";
+    const sch = umschalter({ an, label: TV.einstellung.titel, daten: { "data-kk": "vorschlag-schalter" }, aufAenderung: (w) => schalteVorschlag(w) });
+    return einstellKarte(einstellZeile({ id: "ki-vorschlaege", titel: TV.einstellung.titel, steuerung: sch, klasse: "kx-vorschlag-zeile",
+      text: v ? (an ? TV.einstellung.an(v.kontoName || "", v.seit ? zeitText(v.seit) : "") : TV.einstellung.aus(name)) : "" }));
   }
   // Anmeldestand je Claude-/Codex-Konto: das Programm selbst fragen (App), das Ergebnis der Werkstatt melden (sie merkt sich, ob das Konto früher angemeldet war)
   const identAn = () => o.einstellung?.lies?.("kiKontonamen") !== false; // Schalter „Kontonamen vom Programm zeigen“ (Standard an)
@@ -757,11 +785,12 @@ export function erzeugeKi(o) {
   }
   zeichner.pflege = (el) => {
     if (!S.konten) { el.replaceChildren(skelett("ez-skelett", 90)); return; }
-    if (!vaults().length) { el.replaceChildren(h("p", { klasse: "kx-leer", text: TK.vault.keinVault })); return; }
+    if (!vaults().length) { el.replaceChildren(h("p", { klasse: "kx-leer", text: TK.vault.keinVault }), ...(S.vorschlag && offenerVaultPfad() ? [vorschlagZeile()] : [])); return; }
     const teile = [];
     if (S.konten.pflegePlist?.offen) teile.push(h("div", { klasse: "kx-hinweis warn", role: "status", "data-kk": "pflege-plist", "data-grund": S.konten.pflegePlist.grund }, symbol("warnung", GROESSE.text),
       h("span", {}, h("b", { text: `${TK.pflege.plist.titel}. ` }), TK.pflege.plist.text, " ", TK.pflege.plist.grund[S.konten.pflegePlist.grund] || TK.pflege.plist.grund.fehler)));
     teile.push(...vaults().map(pflegeZeile));
+    if (S.vorschlag && offenerVaultPfad()) teile.push(vorschlagZeile());
     // Was die Pflege tut (für den geöffneten Vault)
     const v = vaults().find((x) => gleich(x.pfad, offenerVaultPfad())) || vaults()[0];
     const p = v.pflege || {}, stufe = S.pflegeEntwurf[v.pfad]?.stufe || (p.gesetzt ? p.stufe : "mittel");
