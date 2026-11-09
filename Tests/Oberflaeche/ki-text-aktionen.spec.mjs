@@ -83,7 +83,7 @@ test("Ohne Konto mit Stufe „lesen“ gibt es keine KI-Aktionen: kein Knopf in 
   await expect(pop(page)).toHaveCount(0);
   await page.keyboard.press("Escape");
   await waehleAbsatz(page);
-  await page.keyboard.press("ControlOrMeta+k");
+  await page.keyboard.press("Meta+k");
   await expect(page.locator(".palette")).toBeVisible();
   await page.locator(".pal-feld input, .palette input").first().fill("KI: Kürzen");
   await expect(page.locator(".pal-eintrag").filter({ hasText: /^\s*KI: / })).toHaveCount(0);
@@ -150,7 +150,7 @@ for (const [name, schema] of schemata) {
     expect(await selText(page)).toBe(ERSATZ);
     await expect(page.locator(".cm-content")).toBeFocused();
     // ⌘Z: ein Schritt, alles wieder da
-    await page.keyboard.press("ControlOrMeta+z");
+    await page.keyboard.press("Meta+z");
     expect(await dok(page)).toBe(NOTIZ);
   });
 }
@@ -298,7 +298,7 @@ test("Aufgaben herausziehen: Liste im Popover; „Unter der Auswahl einfügen“
   await expect(pop(page)).toHaveCount(0);
   const neu = await dok(page);
   expect(neu).toContain(`${ABSATZ}\n\n- [ ] Käse kaufen (fällig 2026-12-01)\n- [ ] Brötchen holen\n\n## Technik`);
-  await page.keyboard.press("ControlOrMeta+z");
+  await page.keyboard.press("Meta+z");
   expect(await dok(page)).toBe(NOTIZ);
   // Über die Aufgaben-Liste des Vaults
   await waehleAbsatz(page);
@@ -333,7 +333,7 @@ test("Kontextmenü auf der Auswahl und Befehlspalette (⌘K) bieten dieselben Ak
   // Befehlspalette
   await waehleAbsatz(page);
   await page.waitForTimeout(300);
-  await page.keyboard.press("ControlOrMeta+k");
+  await page.keyboard.press("Meta+k");
   await page.locator(".pal-feld input, .palette input").first().fill("KI: Kürzen");
   const eintrag = page.locator(".pal-eintrag").filter({ hasText: /^\s*KI: Kürzen/ });
   await expect(eintrag).toBeVisible();
@@ -376,7 +376,7 @@ test("CRLF-Notiz: die Auswahl geht byte-treu an die KI, Übernehmen behält CRLF
   await expect(pop(page)).toHaveCount(0);
   const roh = await imEditor(page, ({ view }) => view.state.sliceDoc(0, view.state.doc.length, view.state.lineBreak));
   expect(roh).toBe("# Plan\r\n\r\nKäse und Brötchen kaufen.\r\nDanke 🙂\r\n\r\nEnde.\r\n");
-  await page.keyboard.press("ControlOrMeta+z");
+  await page.keyboard.press("Meta+z");
   expect(await imEditor(page, ({ view }) => view.state.sliceDoc(0, view.state.doc.length, view.state.lineBreak))).toBe(crlf);
 });
 
