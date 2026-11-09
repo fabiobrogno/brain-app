@@ -77,7 +77,7 @@ const SUBTYP_TEXT = {
   error_during_execution: "Claude Code ist bei der Arbeit auf einen Fehler gestoßen.",
 };
 
-export function erzeugeFrage({ support, konten, mcpBasis, basisEnv = process.env, home, grenzen: g = {}, tempBasis = null }) {
+export function erzeugeFrage({ support, konten, mcpBasis, basisEnv = process.env, home, grenzen: g = {}, tempBasis = null, anderesLaeuft = () => false }) {
   const G = { ...GRENZEN, ...g };
   let aktiv = null; // höchstens eine Frage: die laufende oder zuletzt beendete
 
@@ -268,6 +268,7 @@ export function erzeugeFrage({ support, konten, mcpBasis, basisEnv = process.env
     if (e.modell !== undefined && !Object.hasOwn(MODELLE, e.modell)) throw new HttpFehler(400, `Das Modell muss eines von ${Object.keys(MODELLE).join(", ")} sein.`);
     const modell = MODELLE[e.modell ?? "klein"];
     const { konto } = pruefeKonto(v, e.konto, { vertrauensText: "Dieser Vault ist noch nicht als dein eigener bestätigt. Bestätige ihn zuerst; bis dahin geht keine Frage an eine KI.", programmText: "Fragen geht bisher nur mit Claude Code. Wähle ein Claude-Konto." });
+    if (anderesLaeuft()) throw new HttpFehler(409, "Es läuft gerade eine KI-Anfrage für Vorschläge. Warte auf sie.", { art: "laeuft" });
     // Eine Frage, die schon abgebrochen wird (endet) oder zu einem anderen Vault gehört, sperrt nicht: ihr Prozess ist unterwegs zum Ende (SIGINT, spätestens nach 5 s SIGKILL)
     if (aktiv && !aktiv.fertig && !aktiv.endet && aktiv.vault === v.wurzel) throw new HttpFehler(409, "Es läuft schon eine Frage. Warte auf die Antwort oder brich sie ab.", { art: "laeuft" });
     const basis = mcpBasis();

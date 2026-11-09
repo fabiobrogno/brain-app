@@ -44,7 +44,7 @@ for (const fall of KORPUS) {
       for (const v of stand.ergebnis.vorschlaege) {
         // Die Beschriftung nennt eigene Titel aus dem Vault (bei „titel-eines-kandidaten“ trägt ein Titel selbst den Angriffstext; er wird nur als Text gezeigt) — sonst keine fremden Pfade
         if (!fall.extra) assert.ok(!/(\.\.|\/etc|\/tmp|\/Users)/.test(v.beschriftung), `${name}: Beschriftung ohne fremde Pfade (${v.beschriftung})`);
-        assert.ok(v.beschriftung.startsWith("Verschiebt nach „") || v.beschriftung.startsWith("Verlinkt mit „") || v.beschriftung.startsWith("Legt die Aufgabe") || v.beschriftung.startsWith("Setzt die Tags") || v.beschriftung.startsWith("Markiert als Duplikat"), `${name}: Beschriftung baut Kortex (${v.beschriftung})`);
+        assert.ok(v.beschriftung.startsWith("Verschiebt nach „") || v.beschriftung.startsWith("Verlinkt mit „") || v.beschriftung === "Legt eine Aufgabe an" || v.beschriftung.startsWith("Setzt die Tags") || v.beschriftung.startsWith("Markiert als Duplikat"), `${name}: Beschriftung baut Kortex (${v.beschriftung})`);
         assert.ok(!ergebnis.includes("../") || fall.eintrag.includes("../"), `${name}: kein Pfad aus der Antwort im Ergebnis`);
       }
       if (name === "fremdes-ziel") assert.deepEqual(stand.ergebnis.vorschlaege, [], "kein Ziel außerhalb der Liste kommt durch");

@@ -73,7 +73,9 @@ test("Beleg: wörtlich im gesendeten Text (NFC und Leerraum normalisiert), minde
 test("Steuer- und Formatzeichen (Unicode-Tags, bidi, Null-Breite, Steuerzeichen) und Zeilenumbrüche in einzeiligen Texten: Vorschlag fällt weg", () => {
   const tag = String.fromCodePoint(0xe0041), zw = String.fromCodePoint(0x200b), bidi = String.fromCodePoint(0x202e), bom = String.fromCodePoint(0xfeff), nul = String.fromCodePoint(0);
   for (const b of [`ok${tag}`, `ok${zw}`, `ok${bidi}`, `${bom}ok`, `ok${nul}`, "ok\nzwei", "ok\ttab", "ok x", "ok\u001bx"]) assert.equal(anzahl({ ...gut, begruendung: b }), 0, JSON.stringify(b));
-  assert.equal(anzahl({ ...gut, begruendung: "Mit Emoji 👨‍👩‍👧 und Umlauten äöü." }), 1, "Emoji mit Zeichenverbinder und Umlaute sind erlaubt");
+  // weitere unsichtbare Träger: Variation Selectors, Zeichenverbinder, Füllzeichen, weiches Trennzeichen, Hangul-Filler, Bidi-Marke
+  for (const c of [0xfe00, 0xfe01, 0xe0100, 0x200d, 0x200c, 0xad, 0x180e, 0x206a, 0xfff9, 0x3164, 0x61c, 0x34f, 0xffa0, 0x115f]) assert.equal(anzahl({ ...gut, begruendung: `ok${String.fromCodePoint(c)}` }), 0, c.toString(16));
+  assert.equal(anzahl({ ...gut, begruendung: "Mit Emoji 😀 ❤\ufe0f und Umlauten äöü." }), 1, "Emoji (mit Darstellungsauswahl) und Umlaute sind erlaubt");
 });
 
 test("Anzahl: höchstens 3 Vorschläge, Dubletten fallen weg, der Rest zählt als verworfen", () => {

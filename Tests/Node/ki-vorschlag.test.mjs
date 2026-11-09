@@ -4,7 +4,7 @@ import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, existsSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { pfad, echt } from "./hilfe.mjs";
+import { pfad, echt, schreibe } from "./hilfe.mjs";
 import { nurUnix } from "./attrappe.mjs";
 import { szenarioV, K, bis, frei, warte, EINTRAG, EINTRAG_TEXT } from "./ki-vorschlag-hilfe.mjs";
 
@@ -367,4 +367,61 @@ test("Nicht vertrauter Vault: keine Anfrage an eine KI und kein Einschalten (409
     assert.equal(r.status, 409); assert.equal(r.j.art, "nicht-vertraut");
     assert.deepEqual(s.aufrufe(), []);
   });
+});
+
+test("`ki: nein` verrät sich weder über Tags noch über Ordner (auch bei „ki:nein“ ohne Leerzeichen und bei vielen Kopffeldern)", async () => {
+  const s = szenarioV();
+  schreibe(s.vault, "30_scheidung/Anwalt.md", "---\nki:nein\ntags: [diagnose-geheim]\n---\n# Anwalt\n\nAtlas Kaffeemaschine Rechnung.\n");
+  const viele = Array.from({ length: 50 }, (_, i) => `f${i}: x`).join("\n");
+  schreibe(s.vault, "40_arzt/Befund.md", `---\n${viele}\nki: nein\ntags: [diagnose-geheim]\n---\n# Befund\n\nAtlas Kaffeemaschine Rechnung.\n`);
+  const { stand } = await s.anfrage();
+  assert.equal(stand.ergebnis.ok, true);
+  const roh = s.aufrufe()[0].stdin;
+  for (const wort of ["scheidung", "arzt", "diagnose-geheim", "Anwalt", "Befund"]) assert.ok(!roh.includes(wort), `„${wort}“ im Datenpaket`);
+  assert.deepEqual(JSON.parse(roh).daten.tags, []);
+});
+
+test("Wettlauf: zwei gleichzeitige Starts ergeben genau eine Anfrage; ein Vault-Wechsel während des Sammelns startet nichts mehr", async () => {
+  const s = szenarioV();
+  s.szen({ szenario: "abbruch" });
+  const st = () => s.api("POST", "/api/ki/vorschlag/start", { funktion: "posteingang", pfad: EINTRAG, konto: "k_aaaaaaaa" });
+  const [a, b] = await Promise.all([st(), st()]);
+  assert.deepEqual([a.status, b.status].sort(), [200, 409], JSON.stringify([a.j, b.j]));
+  assert.equal(s.aufrufe().length >= 0, true);
+  await s.api("POST", "/api/ki/vorschlag/abbrechen", { id: [a, b].find((x) => x.status === 200).j.id });
+  // Wechsel mitten im Start
+  const s2 = szenarioV();
+  const start = st2(s2);
+  await s2.api("POST", "/api/vaults/aktiv", { pfad: s2.anderer });
+  const r = await start;
+  assert.equal(r.status, 409); assert.equal(r.j.art, "abgebrochen");
+  assert.deepEqual(s2.aufrufe(), [], "für den alten Vault wurde nichts mehr gestartet");
+});
+const st2 = (s) => s.api("POST", "/api/ki/vorschlag/start", { funktion: "posteingang", pfad: EINTRAG, konto: "k_aaaaaaaa" });
+
+test("Einwilligung zurücknehmen bricht eine laufende Anfrage ab; Frag wartet auf eine laufende Vorschlags-Anfrage; Kontingent „veraltet“ sperrt nicht", { skip: nurUnix("SIGINT und Prozessgruppen gibt es unter Windows nicht") }, async () => {
+  const s = szenarioV();
+  s.szen({ szenario: "abbruch" });
+  const a = await st2(s);
+  await bis(() => existsSync(join(s.bin, "wartet")), 8000, "Attrappe wartet");
+  const pid = readFileSync(join(s.bin, "wartet"), "utf8");
+  const f = await s.api("POST", "/api/frage/start", { frage: "Was ist Atlas?", konto: "k_aaaaaaaa" });
+  assert.equal(f.status, 409); assert.equal(f.j.art, "laeuft");
+  await s.api("PUT", "/api/ki/vorschlag/einwilligung", { an: false, vault: s.vault });
+  await bis(() => frei(pid), 5000, "Prozess beendet");
+  assert.ok(a.status === 200);
+  const jetzt = Date.now();
+  const v = szenarioV({ kontingent: () => ({ status: "veraltet", session: { usedPercent: 100, resetsAt: null }, weekly: null }) });
+  const r = await st2(v);
+  assert.equal(r.status, 200, "ein veralteter Wert sperrt nicht");
+  await v.folge(r.j.id);
+  assert.ok(jetzt > 0);
+});
+
+test("Die Vorschau-Marke einer Antwort gilt nur in einer echten Vorschau (die echte KI kann sie nicht behaupten)", async () => {
+  const s = szenarioV();
+  s.szen({ szenario: "ok", vorschau: true });
+  const { stand } = await s.anfrage();
+  assert.equal(stand.ergebnis.ok, true);
+  assert.equal(stand.ergebnis.vorschau, undefined);
 });

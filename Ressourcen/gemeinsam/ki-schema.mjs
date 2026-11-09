@@ -5,7 +5,7 @@
 //   · ein „Beleg“ muss wörtlich (nach NFC- und Leerraum-Normalisierung) im gesendeten Text stehen
 //   · ist die Antwort als Ganzes kaputt (kein JSON, falsche Form, Zusatzfelder auf oberster Ebene) → { ok: false } und nichts wird gezeigt
 import { pruefeTagName } from "./tags.mjs";
-import { parseKopf } from "./notizen.mjs";
+import { istKiNein, istKiNeinWert } from "./notizen.mjs";
 
 export const VERSION = "KORTEX-VORSCHLAG/1";
 export const FUNKTIONEN = ["zusammenfassung", "posteingang", "ersatz", "aufgaben", "erwaehnungen"];
@@ -30,7 +30,7 @@ export const fundstellenIds = (n) => Array.from({ length: Math.min(n, LIMITS.fun
 // ---------- Text-Hilfen ----------
 export const normText = (s) => String(s ?? "").normalize("NFC").replace(/\s+/g, " ").trim();
 // Zeichen, die in KI-Text nie vorkommen dürfen: Steuerzeichen (außer \n \t bei mehrzeiligem Text), Unicode-Tags (versteckte Anweisungen), bidi-Steuerung, Null-Breite, BOM.
-const GEFAEHRLICH = /[\u{0}-\u{8}\u{b}\u{c}\u{e}-\u{1f}\u{7f}-\u{9f}\u{200b}\u{200e}\u{200f}\u{202a}-\u{202e}\u{2060}-\u{2064}\u{2066}-\u{2069}\u{feff}\u{e0000}-\u{e007f}]/u;
+const GEFAEHRLICH = /(?![\n\r\t])[\p{Cc}\p{Cf}\p{Co}\p{Cn}\u{FE00}-\u{FE0E}\u{E0100}-\u{E01EF}\u{115F}\u{1160}\u{3164}\u{FFA0}\u{34F}]/u;
 const ZEILENUMBRUCH = /[\n\r\t\u2028\u2029]/;
 const gueltigerText = (s, max, { mehrzeilig = false, min = 1 } = {}) =>
   typeof s === "string" && s.length >= min && s.length <= max && !GEFAEHRLICH.test(s) && (mehrzeilig || !ZEILENUMBRUCH.test(s));
@@ -48,30 +48,8 @@ const istBeleg = (beleg, text) => {
 };
 
 // ---------- ki: nein ----------
-// Eine Notiz mit `ki: nein` (auch „no“, „false“, „aus“, „off“, „0“; Groß-/Kleinschreibung egal; mit Anführungszeichen) im Kopf geht nie an eine KI. Im Zweifel (Kopf nicht lesbar, aber die Zeile
-// steht in den ersten Zeilen des Kopfes) gilt es als „nein“.
-const KI_NEIN = /^(?:nein|no|false|aus|off|0|n)$/i;
-// Wert eines `ki`-Feldes (Text oder Liste) → true, wenn er „nein“ heißt. Auch für die Felder aus dem Notiz-Index (vor dem Lesen der Datei).
-export function istKiNeinWert(v) {
-  const w = String(Array.isArray(v) ? v[0] ?? "" : v ?? "").trim().replace(/^(["'])(.*)\1$/, "$2").trim();
-  return KI_NEIN.test(w);
-}
-export function istKiNein(text) {
-  const t = String(text ?? "").replace(/^\ufeff/, "");
-  try {
-    const { felder, bis } = parseKopf(t);
-    if (bis > 0) for (const [k, v] of Object.entries(felder)) if (k.normalize("NFC").trim().toLowerCase() === "ki" && istKiNeinWert(v)) return true;
-  } catch { /* unten */ }
-  // Zusätzlich immer die einfache Zeilensuche im Kopf-Bereich (fail-closed): fängt auch Schreibweisen wie „ki:nein“ ab, die der Kopf-Leser nicht als Feld liest
-  const z = t.split(/\r?\n/);
-  if (!/^---\s*$/.test(z[0] ?? "")) return false;
-  for (let i = 1; i < Math.min(z.length, 80); i++) {
-    if (/^(---|\.\.\.)\s*$/.test(z[i])) break;
-    const m = /^\s*["']?ki["']?\s*:\s*["']?([^"'#\s]+)/i.exec(z[i]);
-    if (m && KI_NEIN.test(m[1])) return true;
-  }
-  return false;
-}
+// Die Prüfung steht in notizen.mjs (der Notiz-Index merkt sich das Ergebnis je Notiz); hier nur weitergereicht.
+export { istKiNein, istKiNeinWert };
 
 // ---------- JSON aus Text lesen (Rückfall, wenn `structured_output` fehlt) ----------
 export function parseJsonAntwort(roh) {

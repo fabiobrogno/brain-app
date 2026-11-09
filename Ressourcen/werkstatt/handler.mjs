@@ -231,7 +231,7 @@ export function erzeugeHandler(o) {
   // „Frag deinen Vault“ (P4): eine Frage an Claude Code, die den Vault nur über den Kortex-MCP liest — werkstatt/frage.mjs. o.frageEnv / o.frageGrenzen / o.frageTemp: Ersatz für Tests
   // (Umgebung für Programmsuche und Kindprozess, kürzere Grenzen, Temp-Ordner); sonst gilt die Umgebung dieser Werkstatt als Quelle für PATH/HOME/LANG, nie mehr.
   const frage = erzeugeFrage({ support: vaultOpt.support || supportOrdner(), konten, mcpBasis: () => mcpArgs(), basisEnv: o.frageEnv || process.env,
-    home: () => o.kontenHome || homedir(), grenzen: o.frageGrenzen || {}, tempBasis: o.frageTemp || null });
+    home: () => o.kontenHome || homedir(), grenzen: o.frageGrenzen || {}, tempBasis: o.frageTemp || null, anderesLaeuft: () => vorschlag.laeuft() });
   // KI-Vorschläge (K0, docs/plaene/ki-runde.md): ohne Werkzeuge, nur nach Klick, nur mit Einwilligung je Vault — werkstatt/ki-vorschlag.mjs, gemeinsamer Kern mit Frag (ki-kern.mjs).
   // o.vorschlagGrenzen / o.vorschlagTemp / o.vorschlagJetzt / o.vorschlagGeheimnis / o.vorschlagKontingent: Ersatz für Tests. Das Kontingent liest den Stand der Statuszeile (nie eine eigene Anfrage).
   const vorschlag = erzeugeVorschlag({ support: vaultOpt.support || supportOrdner(), konten, basisEnv: o.frageEnv || process.env, home: () => o.kontenHome || homedir(), grenzen: o.vorschlagGrenzen || {},

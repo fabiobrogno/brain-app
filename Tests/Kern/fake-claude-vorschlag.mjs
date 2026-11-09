@@ -155,7 +155,8 @@ if (szenario === "offline") {
   process.exit(1);
 }
 if (szenario === "budget") { aus(ergebnis({ is_error: true, subtype: "error_max_budget_usd", result: "" })); process.exit(1); }
-const a = antwort();
+let a = antwort();
+if (szen.vorschau && a && typeof a === "object") a = { ...a, vorschau: true };
 const text = typeof a === "string" ? a : JSON.stringify(a);
 if (szenario === "stream") {
   aus({ type: "system", subtype: "init", session_id: "fake" });

@@ -17,7 +17,8 @@ async function mitVorschlaegen(s) {
   const [verschieben, aufgabe] = stand.ergebnis.vorschlaege;
   assert.equal(verschieben.art, "verschieben"); assert.equal(aufgabe.art, "aufgabe");
   assert.equal(verschieben.beschriftung, "Verschiebt nach „10_projekte“");
-  assert.equal(aufgabe.beschriftung, "Legt die Aufgabe „Rechnung März ablegen“ an");
+  assert.equal(aufgabe.beschriftung, "Legt eine Aufgabe an", "KI-Text steht nie in der Beschriftung");
+  assert.deepEqual(aufgabe.aufgabe, { text: "Rechnung März ablegen", faellig: "2026-11-30" }, "der Aufgabentext kommt als eigenes Feld (KI-Text)");
   return { verschieben, aufgabe };
 }
 const anwenden = (s, v, extra = {}) => s.api("POST", "/api/ki/vorschlag/anwenden", { id: v.id, token: v.token, ...extra });
@@ -64,7 +65,7 @@ test("Aufgabe: legt über die Aufgaben-API eine Aufgabe an (Quelle „mensch“)
   const e = l.j.ereignisse.filter((x) => x.art === "datei-aktion");
   assert.equal(e.length, 1);
   assert.equal(e[0].text, "KI-Vorschlag übernommen: Aufgabe angelegt");
-  assert.deepEqual(e[0].pfade, [r.j.pfad]);
+  assert.equal(e[0].pfade, undefined, "kein Dateiname aus KI-Text im Protokoll");
 });
 
 test("Veraltet: ändert jemand den Eintrag nach der Anfrage, geschieht nichts (409); der Vorschlag bleibt unangewendet", async () => {

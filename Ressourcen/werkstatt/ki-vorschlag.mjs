@@ -89,6 +89,7 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
   const G = { ...GRENZEN, ...g };
   const zugriff = erzeugeKontenZugriff({ support, konten, basisEnv });
   const { claudePfad, vertraut, darfLesen, pruefeKonto, claudeBereit } = zugriff;
+  let startet = false, epoche = 0; // Anfrage im Sammeln der Daten · zählt jeden Abbruch von außen (Vault-Wechsel, Ende, Einwilligung weg)
   let aktiv = null;           // höchstens eine Anfrage: die laufende oder zuletzt beendete
   const speicher = new Map(); // Vault-Kennung → Map(id → Vorschlag); lebt nur im Prozess, nie auf der Platte
 
@@ -147,7 +148,7 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
       setzeVorschlaege(support, v.wurzel, { an: true, konto: e.konto, jetzt: new Date(jetzt()) });
     } else {
       setzeVorschlaege(support, v.wurzel, { an: false });
-      verwirfAlle(); // ohne Einwilligung bleibt nichts liegen
+      brichAb("nutzer"); // ohne Einwilligung läuft nichts weiter und bleibt nichts liegen
     }
     return einwilligung(v);
   }
@@ -169,7 +170,7 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     const inbox = falte(inboxOrdnerVon(v.wurzel)), vorlagen = falte(vorlagenOrdnerVon(v.wurzel));
     let aufgaben = ""; try { aufgaben = falte(await v.aufgabenOrdnerName()); } catch { /* ohne */ }
     // `ki: nein` schon im Index erkennen: solche Notizen zählen weder für Kandidaten noch für Ordner (ein Ordner, den nur sie füllen, verriete sonst ihr Dasein)
-    const keinNein = (z) => !(z.felder && Object.entries(z.felder).some(([k, w]) => k.normalize("NFC").trim().toLowerCase() === "ki" && istKiNeinWert(w)));
+    const keinNein = (z) => z.kiNein !== true && !(z.felder && Object.entries(z.felder).some(([k, w]) => k.normalize("NFC").trim().toLowerCase() === "ki" && istKiNeinWert(w)));
     const sonst = index.filter((z) => z && typeof z.pfad === "string" && z.pfad !== n.pfad && !z.generiert && keinNein(z));
     const kandidatenPool = sonst.filter((z) => { const f = falte(z.pfad); return !f.startsWith(`${inbox}/`) && !f.startsWith(`${vorlagen}/`) && !(aufgaben && f.startsWith(`${aufgaben}/`)); });
     const woerter = wortSet(`${titel} ${text}`);
@@ -191,8 +192,8 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
       zaehl.set(ord, (zaehl.get(ord) || 0) + 1);
     }
     const ordner = [...zaehl].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).slice(0, LIMITS.ordner).map(([name], i) => ({ id: `o${i + 1}`, pfad: name, name: sauberText(name, 120) }));
-    let tags = [];
-    try { tags = ((await v.tags()).tags || []).map((t) => String(t.name)).slice(0, 40); } catch { tags = []; }
+    // Tags: in K0 keine Liste. Der Tag-Zähler des Vaults filtert `ki: nein` nicht; die Art „tags“ lässt sich ohnehin erst in K3 übernehmen (dort nur Tags aus Notizen ohne `ki: nein`).
+    const tags = [];
     const paket = { aufgabe: "posteingang", daten: { heute: leseDatum(v), eintrag: { titel, text }, kandidaten: kandidaten.map(({ id, titel: t, anfang }) => ({ id, titel: t, anfang })), ordner: ordner.map(({ id, name }) => ({ id, name })), tags } };
     return {
       art: "posteingang", schluesselFunktion: "posteingang", paket, pfad: n.pfad, inhaltHash: n.hash,
@@ -241,10 +242,16 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     if (aktiv && !aktiv.fertig && !aktiv.endet && aktiv.vault === v.wurzel) throw new HttpFehler(409, "Es läuft schon eine Anfrage. Warte auf die Antwort oder brich sie ab.", { art: "laeuft" });
     // Kontingent: bei 100 % keine Anfrage (ohne Wert: kein Sperren)
     const kg = kontingentKurz(kontoId);
-    if (kg) for (const f of [kg.session, kg.weekly]) if (f && f.usedPercent >= 100 && (f.resetsAt === null || f.resetsAt > jetzt())) throw new HttpFehler(409, "Das Kontingent dieses Kontos ist erschöpft.", { art: "kontingent", ...(f.resetsAt ? { bis: new Date(f.resetsAt).toISOString() } : {}) });
+    if (kg) for (const f of [kg.session, kg.weekly]) if (f && kg.status === "ok" && f.usedPercent >= 100 && (f.resetsAt === null || f.resetsAt > jetzt())) throw new HttpFehler(409, "Das Kontingent dieses Kontos ist erschöpft.", { art: "kontingent", ...(f.resetsAt ? { bis: new Date(f.resetsAt).toISOString() } : {}) });
     const claude = claudeBereit(konto);
 
-    const s = e.funktion === "posteingang" ? await sammlePosteingang(e, v) : sammleText(e, v);
+    // Den Platz SYNCHRON belegen, bevor das erste await kommt (sonst starten zwei Anfragen, oder ein Vault-Wechsel mitten im Sammeln läuft ins Leere); brichAb zählt die Epoche hoch
+    if (startet) throw new HttpFehler(409, "Es läuft schon eine Anfrage. Warte auf die Antwort oder brich sie ab.", { art: "laeuft" });
+    startet = true;
+    const epocheStart = epoche;
+    let s;
+    try { s = e.funktion === "posteingang" ? await sammlePosteingang(e, v) : sammleText(e, v); } finally { startet = false; }
+    if (epoche !== epocheStart || aktiv && !aktiv.fertig && !aktiv.endet && aktiv.vault === v.wurzel) throw new HttpFehler(409, "Abgebrochen, weil sich inzwischen etwas geändert hat. Bitte noch einmal versuchen.", { art: "abgebrochen" });
     const schema = schemaFuer(s.schluesselFunktion, s.schemaCtx);
     const stdin = JSON.stringify(s.paket);
     const kennung = kennungVault(v.wurzel);
@@ -296,7 +303,7 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
 
   const q = (s) => `„${s}“`;
   function baueErgebnis(run, p) {
-    const marke = p.vorschau ? { vorschau: true } : {};
+    const marke = p.vorschau && vorschauOrdnerAus(basisEnv, run.home) ? { vorschau: true } : {}; // die Marke gilt nur in einer echten Vorschau, nie als Behauptung der KI
     if (run.art === "text") {
       if (run.funktion === "ersatz") return { funktion: "ersatz", ersatz: p.daten.ersatz, warnungen: p.daten.warnungen, verworfen: p.verworfen, ...marke };
       return { funktion: "aufgaben", aufgaben: p.daten.aufgaben, verworfen: p.verworfen, ...marke };
@@ -310,11 +317,11 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
       const ord = x.ziel && run.s.ziele.ordner.get(x.ziel);
       // Die Beschriftung baut Kortex aus geprüften Feldern und eigenen Namen, nie die KI (Plan, Schicht E)
       const beschriftung = x.art === "verlinken" ? `Verlinkt mit ${q(kand.titel)}` : x.art === "duplikat" ? `Markiert als Duplikat von ${q(kand.titel)}` : x.art === "verschieben" ? `Verschiebt nach ${q(ord.name)}`
-        : x.art === "aufgabe" ? `Legt die Aufgabe ${q(x.aufgabe.text)} an` : `Setzt die Tags ${x.tags.map((t) => `#${t}`).join(", ")}`;
+        : x.art === "aufgabe" ? "Legt eine Aufgabe an" : `Setzt die Tags ${x.tags.map((t) => `#${t}`).join(", ")}`;
       const rec = { id, vault: run.kennung, pfad: run.s.pfad, inhaltHash: run.s.inhaltHash, kandidatenHash, ablauf, art: x.art, ziel: kand ? { art: "notiz", pfad: kand.pfad, hash: kand.hash } : ord ? { art: "ordner", pfad: ord.pfad } : null,
         aufgabe: x.aufgabe || null, tags: x.tags || null, beschriftung, angewendet: false };
       merke(run.kennung, rec);
-      liste.push({ id, token: tokenFuer(rec), art: x.art, beschriftung, beleg: x.beleg, begruendung: x.begruendung, sicherheit: x.sicherheit, ablauf: new Date(ablauf).toISOString() });
+      liste.push({ id, token: tokenFuer(rec), art: x.art, beschriftung, ...(x.aufgabe ? { aufgabe: x.aufgabe } : {}), ...(x.tags ? { tags: x.tags } : {}), beleg: x.beleg, begruendung: x.begruendung, sicherheit: x.sicherheit, ablauf: new Date(ablauf).toISOString() });
     }
     return { funktion: "posteingang", vorschlaege: liste, verworfen: p.verworfen, ...marke };
   }
@@ -347,7 +354,7 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     return { ok: true };
   }
   // Vault gewechselt, Werkstatt beendet, Fenster zu: eine laufende Anfrage endet, alle Vorschläge sind verworfen (Plan 2.4 Nr. 5).
-  const brichAb = (grund) => { if (aktiv && !aktiv.fertig) aktiv.stopp(grund); verwirfAlle(); };
+  const brichAb = (grund) => { epoche++; if (aktiv && !aktiv.fertig) aktiv.stopp(grund); verwirfAlle(); };
 
   // ---------- Anwenden ----------
   // NUR id und token kommen von außen. Pfad, Ziel und Text stammen aus dem Speicher der Werkstatt; geschrieben wird über die vorhandenen Wege (dateiaktionen mit Journal und Rückgängig,
@@ -376,7 +383,7 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
         ergebnis = await v.verschieben({ pfad: r.pfad, ziel: r.ziel.pfad, basisHash: r.inhaltHash, token: vorschau.token }); // eigener Plan-Token der Werkstatt; Journal, Rückgängig, ein Protokolleintrag
       } else if (r.art === "aufgabe") {
         const a = await v.aufgabeAnlegen({ titel: r.aufgabe.text, ...(r.aufgabe.faellig ? { faellig: r.aufgabe.faellig } : {}), quelle: "mensch" });
-        melde(v.wurzel, { art: "datei-aktion", wer: "KI-Vorschlag", vaultName: v.name, text: "KI-Vorschlag übernommen: Aufgabe angelegt", pfade: [a.pfad] }, { support });
+        melde(v.wurzel, { art: "datei-aktion", wer: "KI-Vorschlag", vaultName: v.name, text: "KI-Vorschlag übernommen: Aufgabe angelegt" }, { support });
         ergebnis = { pfad: a.pfad };
       } else {
         throw new HttpFehler(409, "Diese Art von Vorschlag lässt sich noch nicht übernehmen.", { art: "noch-nicht" });
@@ -386,5 +393,5 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     return { ok: true, art: r.art, ...(ergebnis && ergebnis.nach ? { nach: ergebnis.nach } : {}), ...(ergebnis && ergebnis.pfad ? { pfad: ergebnis.pfad } : {}), ...(ergebnis && ergebnis.von ? { von: ergebnis.von } : {}) };
   }
 
-  return { bereit, einwilligung, setzeEinwilligung, start, stand, abbrechen, anwenden, brichAb, laeuft: () => !!(aktiv && !aktiv.fertig), _speicherGroesse: (v) => (speicher.get(kennungVault(v.wurzel)) || new Map()).size };
+  return { bereit, einwilligung, setzeEinwilligung, start, stand, abbrechen, anwenden, brichAb, laeuft: () => startet || !!(aktiv && !aktiv.fertig), _speicherGroesse: (v) => (speicher.get(kennungVault(v.wurzel)) || new Map()).size };
 }
