@@ -45,6 +45,18 @@ test("Sammler: nur Titel, Art, Zeit und Zahlen; keine Inhalte, keine Pfade; `ki:
   assert.ok(!JSON.stringify(stand.ergebnis).includes("GEHEIM"), "auch nicht im Ergebnis");
 });
 
+test("Sammler: eine Aufgabe mit Bezug auf eine `ki: nein`-Notiz bleibt draußen (auch ihr Titel); die Zahlen aus dem Aktivitätsprotokoll gehen nicht mit", async () => {
+  const s = szenarioV();
+  const r = await s.api("POST", "/api/aufgaben", { titel: "Antwort an Anwalt BEZUG-TITEL", bezug: ["[[Geheim]]"] });
+  assert.equal(r.status, 200, JSON.stringify(r.j));
+  assert.ok(JSON.stringify(r.j).includes("Geheim"), "Bezug gespeichert");
+  const { stand } = await s.anfrage(ZUSAMMEN);
+  assert.equal(stand.ergebnis.ok, true, JSON.stringify(stand.ergebnis));
+  const roh = s.aufrufe()[0].stdin;
+  assert.ok(!roh.includes("BEZUG-TITEL"), "Aufgabe mit Bezug auf ki:nein im Paket");
+  assert.ok(!roh.includes("kiAbgelegt") && !roh.includes("kiAbgewiesen"));
+});
+
 test("Sammler: Ergebnis — Sätze mit Beleg-Chips, die Kortex aus seinem Speicher baut (Titel, Pfad, Art); nichts im Vault geändert, kein Pfad aus der Antwort", async () => {
   const s = szenarioV();
   const vorher = s.abbild(s.vault);

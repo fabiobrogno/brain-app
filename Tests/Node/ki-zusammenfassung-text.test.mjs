@@ -20,8 +20,8 @@ test("linkTitel: keine Zeichen, die einen Wikilink sprengen oder umlenken", () =
 });
 
 test("baueMerkText: Titel und Text von Kortex, ein Satz je Zeile mit [[Links]] auf die Belege, Hinweis „von einer KI“", () => {
-  const { titel, text } = baueMerkText({ saetze: [{ text: "Neu: [x](http://e.example)", belege: [{ titel: "Atlas" }, { titel: "Atlas" }, { titel: "Kaffee]]" }] }] }, { seitText: "Mo., 9. Nov.", datum: "2026-11-09" });
+  const { titel, text } = baueMerkText({ saetze: [{ text: "Neu: [x](http://e.example)", belege: [{ titel: "Atlas" }, { titel: "Atlas" }, { titel: "Kaffee]]", pfad: "10/Kaffee-Notiz.md" }] }] }, { seitText: "Mo., 9. Nov.", datum: "2026-11-09" });
   assert.equal(titel, "KI-Zusammenfassung: Was ist neu (2026-11-09)");
   assert.match(text, /^Von einer KI zusammengefasst, was seit Mo\., 9\. Nov\. neu ist\./);
-  assert.match(text, /\n- Neu: \\\[x\\\]\(http\\:\/\/e\.example\) \(\[\[Atlas\]\], \[\[Kaffee\]\]\)$/);
+  assert.match(text, /\n- Neu: \\\[x\\\]\(http\\:\/\/e\.example\) \(\[\[Atlas\]\], \[\[Kaffee-Notiz\|Kaffee\]\]\)$/);
 });

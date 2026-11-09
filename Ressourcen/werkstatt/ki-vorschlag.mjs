@@ -207,7 +207,7 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     };
   }
 
-  // „Was ist neu“ für die KI: nur Titel, Art, Zeit und Zahlen aus baueNeuigkeiten, nie Inhalte; Notizen mit `ki: nein` (und Aufgaben dazu) kommen nirgends vor, auch nicht als Zahl im Paket (nur `ausgenommen` für die Anzeige).
+  // „Was ist neu“ für die KI: nur Titel, Art, Zeit und Zahlen aus baueNeuigkeiten, nie Inhalte; Notizen mit `ki: nein`, Aufgaben mit Bezug auf sie und die Aufgaben selbst kommen nirgends vor, auch nicht als Zahl im Paket (nur `ausgenommen` für die Anzeige).
   async function sammleZusammenfassung(e, v) {
     if (e.seit !== undefined && e.seit !== null && e.seit !== "" && (typeof e.seit !== "string" || !Number.isFinite(Date.parse(e.seit)))) throw new HttpFehler(400, "„seit“ ist eine Zeitangabe (ISO).");
     const r = await v.neuigkeiten({ seit: typeof e.seit === "string" ? e.seit : "", fuerKi: true });
@@ -229,7 +229,7 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     const z = (k, w) => { if (Number.isFinite(w)) zahlen[k] = w; };
     if (r.notizen) { z("notizenNeu", r.notizen.neu); z("notizenGeaendert", r.notizen.geaendert); }
     if (r.aufgaben) { z("aufgabenNeu", r.aufgaben.neu); z("aufgabenErledigt", r.aufgaben.erledigt); z("aufgabenUeberfaellig", r.aufgaben.ueberfaellig); }
-    if (r.ki) { z("kiAbgelegt", r.ki.abgelegt); z("kiAbgewiesen", r.ki.abgewiesen); }
+    // Die Zahlen aus dem Aktivitätsprotokoll bleiben draußen: sie könnten Notizen mit `ki: nein` mitzählen
     if (r.inbox) { z("posteingangOffen", r.inbox.anzahl); z("posteingangZurueckgestellt", r.inbox.zurueckgestellt); }
     if (!zeilen.length) throw new HttpFehler(409, "Es gibt nichts Neues zum Zusammenfassen.", { art: "nichts-neu", ausgenommen: r.ausgenommen || 0 });
     const paket = { aufgabe: "zusammenfassung", daten: { heute: leseDatum(v), zeitraum: { seit: r.seit, bis: r.bis }, zeilen, zahlen } };

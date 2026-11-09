@@ -16,7 +16,9 @@ export const linkTitel = (s) => String(s ?? "").replace(STEUER, " ").replace(/[\
 export function baueMerkText(ergebnis, { seitText = "", datum = "" } = {}) {
   const saetze = Array.isArray(ergebnis?.saetze) ? ergebnis.saetze : [];
   const zeilen = saetze.map((s) => {
-    const links = [...new Set((s.belege || []).map((b) => linkTitel(b.titel)).filter(Boolean))].map((t) => `[[${t}]]`);
+    // Der Link zeigt auf den Dateinamen (der löst immer auf), der Titel steht als Anzeige dahinter
+    const name = (b) => linkTitel(String(b.pfad || "").split("/").pop().replace(/\.(md|txt)$/i, ""));
+    const links = [...new Set((s.belege || []).map((b) => { const n = name(b), t = linkTitel(b.titel); return n && t && n !== t ? `[[${n}|${t}]]` : `[[${n || t}]]`; }).filter((l) => l !== "[[]]"))];
     return `- ${markdownSicher(s.text)}${links.length ? ` (${links.join(", ")})` : ""}`;
   });
   const kopf = `Von einer KI zusammengefasst${seitText ? `, was seit ${markdownSicher(seitText)} neu ist` : ""}. Grundlage waren nur Titel, Art und Zeit, nicht die Inhalte der Notizen. Prüfe es, bevor du dich darauf verlässt.`;

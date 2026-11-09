@@ -21,7 +21,7 @@ export function erzeugeKiZusammenfassung({ S, oeffne, daten, zeitText }) {
   const panel = h("section", { klasse: "nk-kip", "data-nk-kip": "", "aria-label": TN.ki_zusammenfassen.panel, hidden: true });
   wurzel.append(zeile, panel);
 
-  let bereit = null, st = kiStatus(null), sigZeile = "", ktVoll = false, knopfEl = null;
+  let bereit = null, st = kiStatus(null), sigZeile = "", ktVoll = false, knopfEl = null, ktZeile = null, prueft = false;
   let zustand = { phase: "ruhig" }, lauf = null, nr = 0, gesendetOffen = false, uhr = 0, vaultMerk = null;
 
   // ---------- Status (Konto, Einwilligung, Sperre) ----------
@@ -47,9 +47,10 @@ export function erzeugeKiZusammenfassung({ S, oeffne, daten, zeitText }) {
     const sig = JSON.stringify([st.sichtbar, st.gesperrt, st.konto?.id, st.konto?.abo, st.einwilligung, !!grund]);
     if (sig === sigZeile) { if (knopfEl) setzeSperre(); return; }
     sigZeile = sig;
-    if (!st.sichtbar) { zeile.replaceChildren(); knopfEl = null; return; }
+    if (!st.sichtbar) { ktZeile?.stopp(); ktZeile = null; zeile.replaceChildren(); knopfEl = null; return; }
     knopfEl = h("button", { type: "button", klasse: "nk-ki", "data-aktion": "nk-ki", aufClick: () => klick() }, symbol("funke", 14), h("span", { text: TN.ki_zusammenfassen.knopf }));
-    const kz = kontingentZeile({ api, konto: st.konto.id, abo: st.konto.abo || null, beiAenderung: (z) => { ktVoll = !!z.voll; setzeSperre(); } });
+    ktZeile?.stopp();
+    const kz = ktZeile = kontingentZeile({ api, konto: st.konto.id, abo: st.konto.abo || null, beiAenderung: (z) => { ktVoll = !!z.voll; setzeSperre(); } });
     zeile.replaceChildren(knopfEl, h("span", { klasse: "nk-ki-grund", "data-nk-ki-grund": "", hidden: true }), kz.knoten);
     setzeSperre();
   }
@@ -65,11 +66,14 @@ export function erzeugeKiZusammenfassung({ S, oeffne, daten, zeitText }) {
 
   // ---------- Klick: Einwilligung → Lauf ----------
   async function klick() {
-    if (zustand.phase === "laeuft") return;
-    await frisch();
+    if (zustand.phase === "laeuft" || prueft) return;
+    prueft = true;
+    try { await frisch(); } finally { prueft = false; }
     if (!st.sichtbar || sperrGrund()) return;
     if (!st.einwilligung) {
-      oeffneEinwilligung({ api, bereit, vault: S.info?.vault || "", vaultName: S.info?.name || "", funktionen: ["zusammenfassung"], nachher: async () => { await frisch(); if (st.einwilligung && !sperrGrund()) starte(); } });
+      // Die Einwilligung gilt je Vault für alle KI-Vorschläge, darum nennt der Dialog alles, was die Werkstatt anbietet
+      const funktionen = (bereit?.funktionen || []).filter((f) => f === "zusammenfassung" || f === "posteingang" || f === "text");
+      oeffneEinwilligung({ api, bereit, vault: S.info?.vault || "", vaultName: S.info?.name || "", funktionen: funktionen.length ? funktionen : ["zusammenfassung"], nachher: async () => { await frisch(); if (st.einwilligung && !sperrGrund()) starte(); } });
       return;
     }
     starte();
@@ -80,7 +84,7 @@ export function erzeugeKiZusammenfassung({ S, oeffne, daten, zeitText }) {
     zustand = { phase: "laeuft", seit: d?.seit || null, start: Date.now(), gesendet: null, ausgenommen: 0, wirdAbgebrochen: false };
     zeichnePanel(); zeichneZeile();
     clearInterval(uhr); uhr = setInterval(() => { const z = panel.querySelector("[data-nk-kip-zeit]"); if (z && zustand.phase === "laeuft" && zustand.gesendet) z.textContent = TV.lauf.arbeitet(Math.floor((Date.now() - zustand.start) / 1000)); }, 1000);
-    const l = starteVorschlag({ api, eingabe: { funktion: "zusammenfassung", konto: st.konto.id, ...(d?.seit ? { seit: d.seit } : {}) },
+    const l = starteVorschlag({ api, wiederholeBeiLaeuft: true, eingabe: { funktion: "zusammenfassung", konto: st.konto.id, ...(d?.seit ? { seit: d.seit } : {}) },
       beiStart: (s) => { if (mein !== nr) return; zustand.gesendet = s.gesendet; zustand.ausgenommen = s.ausgenommen || 0; zeichnePanel(); } });
     lauf = l;
     l.fertig.then(({ ergebnis }) => {
@@ -158,7 +162,7 @@ export function erzeugeKiZusammenfassung({ S, oeffne, daten, zeitText }) {
 
   // Vault gewechselt oder Zeitraum geändert: ein laufender Lauf endet, alles Gezeigte gehört zum alten Stand
   function zuruecksetzen() { lauf?.abbrechen(); lauf = null; schliesse(); }
-  function vergessen() { zuruecksetzen(); bereit = null; st = kiStatus(null); sigZeile = ""; ktVoll = false; knopfEl = null; vaultMerk = null; zeile.replaceChildren(); wurzel.hidden = true; gesendetOffen = false; }
+  function vergessen() { zuruecksetzen(); ktZeile?.stopp(); ktZeile = null; prueft = false; bereit = null; st = kiStatus(null); sigZeile = ""; ktVoll = false; knopfEl = null; vaultMerk = null; zeile.replaceChildren(); wurzel.hidden = true; gesendetOffen = false; }
   window.addEventListener("pagehide", () => { if (zustand.phase === "laeuft") lauf?.abbrechen(); });
 
   return { knoten: wurzel, laden: frisch, verfuegbar, aktualisiere: zeichneZeile, zuruecksetzen, vergessen, _zustand: () => zustand };

@@ -43,8 +43,8 @@ export function kontingentZeile({ api, konto, abo = null, beiAenderung = null } 
       h("span", { klasse: "kiv-kt-text", "data-kiv": "kontingent-text", text: !kt.state.daten || k.hatWerte ? satz : TV.kontingent.ohneWert })); // ohne Wert: nur der ehrliche Satz, kein Sperren
     beiAenderung?.(ergebnis);
   }
-  const ab = kt.abonniere(() => { if (!el.isConnected && el.dataset.wurzel) { ab(); return; } zeichne(); });
-  el.dataset.wurzel = "1";
+  const ab = kt.abonniere(() => zeichne());
+  ergebnis.stopp = () => ab(); // wer die Zeile ersetzt oder wegwirft, meldet sie ab (nie beim bloßen Abhängen: eine zugeklappte Karte hält sie trotzdem aktuell)
   zeichne();
   kt.holen().catch(() => {});
   return ergebnis;
@@ -87,6 +87,8 @@ export function oeffneEinwilligung({ api, bereit, vault, vaultName, funktionen =
   const konto = st.konto;
   const E = TV.einwilligung;
   let erledigt = false;
+  const stopps = [];
+  const beiSchliessenKt = (kz) => { stopps.push(kz.stopp); };
   const zeile = (sym, titel, text) => h("div", { klasse: "kiv-punkt" }, h("span", { klasse: "kiv-punkt-sym", "aria-hidden": "true" }, symbol(sym, 14)), h("div", {}, h("b", { text: titel }), h("p", { text })));
   const rumpf = [
     h("div", { klasse: "kiv-karte", "data-kiv": "gesendet-liste" }, funktionen.filter((f) => TV.gesendet[f]).map((f) => zeile(TV.gesendet[f].symbol, TV.gesendet[f].titel, TV.gesendet[f].text))),
@@ -95,6 +97,7 @@ export function oeffneEinwilligung({ api, bereit, vault, vaultName, funktionen =
   let kontoKnoten = null;
   if (konto) {
     const kz = kontingentZeile({ api, konto: konto.id, abo: konto.abo || null });
+    const zuKt = beiSchliessenKt(kz);
     kontoKnoten = h("div", { klasse: "kiv-konto", "data-kiv": "konto" }, h("div", { klasse: "kiv-konto-kopf" }, h("b", { text: konto.name }), h("span", { klasse: "kiv-leise", text: E.konto(E.stufeLesen) })), kz.knoten);
     rumpf.push(kontoKnoten);
   }
@@ -110,7 +113,7 @@ export function oeffneEinwilligung({ api, bereit, vault, vaultName, funktionen =
     }
   } });
   const d = dialogFn({ titel: E.titel(vaultName || ""), satz: konto ? E.satz(konto.name) : "", rumpf: h("div", { klasse: "kiv-rumpf" }, rumpf), breit: true,
-    knoepfe: [baueKnopf({ text: E.abbrechen, aktion: "kiv-abbrechen", aufKlick: () => d.schliessen() }), ja], beiSchliessen: () => { if (!erledigt) beiAbbruch?.(); } });
+    knoepfe: [baueKnopf({ text: E.abbrechen, aktion: "kiv-abbrechen", aufKlick: () => d.schliessen() }), ja], beiSchliessen: () => { stopps.forEach((f) => f()); if (!erledigt) beiAbbruch?.(); } });
   d.box.dataset.dialog = "ki-einwilligung";
   return d;
 }
@@ -118,14 +121,19 @@ export function oeffneEinwilligung({ api, bereit, vault, vaultName, funktionen =
 // ---------- Lauf ----------
 // eingabe: Rumpf von POST /api/ki/vorschlag/start (funktion, konto, … – die Werkstatt prüft alles selbst). beiStart(start): sobald die Werkstatt die Daten gesammelt hat (start.gesendet = das Paket).
 // → { fertig: Promise<{ start, ergebnis }>, abbrechen() }. `fertig` wirft nur, wenn der Start selbst abgelehnt wird (err.message ist ein deutscher Satz der Werkstatt); ein Fehler des Laufs steht in ergebnis (ok:false).
-export function starteVorschlag({ api, eingabe, beiStart } = {}) {
+export function starteVorschlag({ api, eingabe, beiStart, wiederholeBeiLaeuft = false } = {}) {
   let id = null, abgebrochen = false, ende = false;
   const abbrechen = async () => {
     abgebrochen = true;
     if (id && !ende) { try { await api.kiVorschlagAbbrechen(id); } catch { /* die Werkstatt beendet den Lauf sonst nach der Frist */ } }
   };
   const fertig = (async () => {
-    const start = await api.kiVorschlagStart(eingabe);
+    // Ein eben abgebrochener Lauf braucht ein paar Sekunden zum Beenden: „läuft noch“ wird kurz wiederholt, statt als Fehler zu erscheinen
+    let start;
+    for (let versuch = 0; ; versuch++) {
+      try { start = await api.kiVorschlagStart(eingabe); break; }
+      catch (e) { if (!(wiederholeBeiLaeuft && e?.daten?.art === "laeuft" && versuch < 8 && !abgebrochen)) throw e; await new Promise((ok) => setTimeout(ok, 800)); }
+    }
     id = start.id;
     try { beiStart?.(start); } catch (e) { console.error(e); }
     if (abgebrochen) await abbrechen();
