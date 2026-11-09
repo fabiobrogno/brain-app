@@ -135,7 +135,7 @@ test("Duplikat: „Vergleichen“ zeigt beide Texte nebeneinander, „Als Duplik
   await bild(page, "k3-vergleich-hell");
   await dlg.locator('[data-aktion="pk-vgl-ok"]').click();
   await expect(dlg).toHaveCount(0);
-  await expect(toastMit(page, "Als Duplikat abgelegt")).toBeVisible({ timeout: 20000 });
+  await expect(page.locator(".toast").first()).toContainText("Als Duplikat abgelegt", { timeout: 20000 }); // zeigt bei einem Fehler dessen Text
   expect(existsSync(join(vault, REISE))).toBe(false);
   expect(readFileSync(join(vault, "90_archiv/verworfen/Reise nach Lissabon.md"), "utf8")).toBe(REISE_TEXT);
   await expect(page.locator(`[data-karte][data-pfad="${REISE}"]`)).toHaveCount(0);
