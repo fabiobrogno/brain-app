@@ -27,7 +27,7 @@ import { erzeugeTagIndex } from "./tags.mjs";
 import { erzeugeExport } from "./export.mjs";
 import { erzeugeErwaehnungen } from "./erwaehnungen-index.mjs";
 import { zeileIstKiNein } from "./ki-schema.mjs";
-import { baueNeuigkeiten, leseMarke, setzeMarke, STANDARD_TAGE } from "./neuigkeiten.mjs";
+import { baueNeuigkeiten, ausnehmenFuerKi, leseMarke, setzeMarke, STANDARD_TAGE } from "./neuigkeiten.mjs";
 import * as merge3 from "./merge3.mjs";
 import * as ablageFn from "./ablage.mjs";
 import * as entwurfFn from "./entwurf.mjs";
@@ -724,16 +724,8 @@ export function oeffneVault(vaultPfad, opts = {}) {
     let ereignisse = null; try { ereignisse = leseEreignisse(supportOrdnerV(), kennungVault(wurzel), { seit: new Date(Date.parse(frueh) - 1).toISOString() }); } catch { ereignisse = null; }
     const heute = opts.heute || heuteIso(jetzt());
     // fuerKi (nur intern, nie über die Route): Notizen mit `ki: nein` erscheinen nirgends, nur als Zahl `ausgenommen`; ist der Index nicht lesbar, gibt es auch keine Aufgaben (fail-closed)
-    let ausnehmen = null;
-    if (o.fuerKi === true) {
-      const nein = (zeilen || []).filter(zeileIstKiNein);
-      ausnehmen = new Set(nein.map((z) => z.pfad));
-      // Aufgaben, die sich auf eine solche Notiz beziehen (Dateiname, Pfad oder Titel), verraten sie mit ihrem Titel: auch sie bleiben draußen
-      const name = (t) => String(t ?? "").replace(/^\[\[|\]\]$/g, "").split("|")[0].replace(/\.(md|txt)$/i, "").normalize("NFC").trim().toLowerCase();
-      const namen = new Set(nein.flatMap((z) => [name(z.pfad), name(String(z.pfad).split("/").pop()), name(z.titel)]).filter(Boolean));
-      for (const a of Array.isArray(aufgaben) ? aufgaben : []) if (Array.isArray(a.bezug) && a.bezug.some((b) => namen.has(name(typeof b === "string" ? b : b && (b.pfad || b.ziel || b.titel))) || namen.has(name(String(typeof b === "string" ? b : b && (b.pfad || b.ziel || "")).split("/").pop())))) ausnehmen.add(a.pfad);
-    }
-    const aufgabenQuelle = o.fuerKi === true && !zeilen ? null : aufgaben;
+    const k = o.fuerKi === true ? ausnehmenFuerKi(zeilen, aufgaben, zeileIstKiNein) : { ausnehmen: null, aufgaben };
+    const ausnehmen = k.ausnehmen, aufgabenQuelle = k.aufgaben;
     return { ...baueNeuigkeiten({ seit: frueh, jetzt: jetzt(), heute, notizen: zeilen, aufgaben: aufgabenQuelle, ereignisse, git, ausnehmen }), marke, seitArt };
   }
   function neuigkeitenGelesen(bis) {

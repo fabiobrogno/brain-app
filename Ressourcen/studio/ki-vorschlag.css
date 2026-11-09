@@ -16,7 +16,7 @@
 
 /* Kontingent-Zeile: immer eine Zeile hoch, ruhig; ab 80 % gelb, bei 100 % rot */
 .kiv-kt { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 20px; font-size: 12px; line-height: 1.4; color: var(--text-3); }
-.kiv-kt[hidden] { display: none; }
+.kiv-kt[hidden], .kiv-kt[data-leer] { display: none; }
 .kiv-kt .kt-mini { flex: none; }
 .kiv-kt-text { min-width: 0; overflow-wrap: anywhere; }
 .kiv-kt[data-stufe="fast"] .kiv-kt-text { color: color-mix(in srgb, var(--gelb) 65%, var(--text)); }
@@ -45,8 +45,6 @@
 .nk-ki-zeile { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-height: 28px; min-width: 0; }
 .nk-ki-grund { font-size: 12px; color: var(--text-3); min-width: 0; }
 .nk-ki-grund[hidden] { display: none; }
-.nk-ki:disabled { opacity: .55; cursor: default; }
-.nk-ki:disabled:hover { background: transparent; border-color: var(--linie-stark); }
 
 /* Feste Höhe vom ersten Klick an: Fortschritt, Ergebnis und Fehler wechseln darin, die Liste darunter bleibt, wo sie ist */
 .nk-kip { box-sizing: border-box; height: 252px; display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--linie-stark); border-radius: var(--r-xl); background: var(--erhoben); min-width: 0; }
@@ -60,6 +58,9 @@
 .nk-kip-kopf .nk-kip-klein + .nk-kip-zu { margin-left: 0; }
 .nk-kip-zu { flex: none; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: var(--r); background: transparent; color: var(--text-3); cursor: pointer; transition: background var(--t), color var(--t); }
 .nk-kip-zu:hover { background: var(--hover); color: var(--text); }
+.nk-kip-mitte[data-oben="ja"][data-unten="ja"] { -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%); mask-image: linear-gradient(to bottom, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%); }
+.nk-kip-mitte[data-oben="nein"][data-unten="ja"] { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent 100%); mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent 100%); }
+.nk-kip-mitte[data-oben="ja"][data-unten="nein"] { -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 16px); mask-image: linear-gradient(to bottom, transparent 0, #000 16px); }
 .nk-kip-mitte { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; display: grid; align-content: start; gap: 8px; padding-right: 2px; }
 .nk-kip-fuss { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 28px; }
 .nk-kip-lauf, .nk-kip-meldung, .nk-kip-ergebnis { display: grid; gap: 8px; min-width: 0; align-content: start; }
@@ -77,7 +78,7 @@
 }
 .nk-beleg > span { min-width: 0; max-width: 26ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nk-beleg:hover { background: var(--hover-2); color: var(--text); border-color: var(--linie-stark); }
-.nk-kip button:focus-visible, .nk-ki:focus-visible { outline: 0; box-shadow: var(--fokus-ring); }
+.nk-kip button:focus-visible, 
 @media (prefers-reduced-motion: reduce) {
   .nk-kip-balken > i { animation: none; width: 100%; opacity: .45; }
   .kiv-pfeil { transition: none; }

@@ -191,6 +191,7 @@ export const api = {
   // ---- KI-Konten und Vault-Zugriff (Paket P2). Das Leseverbot in Claude Code wird nur mit claudeSperre: true geschrieben, der Strenge Schutz nur mit bestaetigt: true — beides setzt die Oberfläche erst nach dem Klick.
   // KI-Vorschläge (werkstatt/ki-vorschlag.mjs): bereit → Konten, Einwilligung, Kontingent · Einwilligung je Vault · start → { id, gesendet } · stand (Long-Poll) · abbrechen · anwenden (nur Kennung und Token)
   kiVorschlagBereit: () => anfrage("GET", "/api/ki/vorschlag/bereit"),
+  kiVorschlagEinwilligungLesen: () => anfrage("GET", "/api/ki/vorschlag/einwilligung"),
   kiVorschlagEinwilligung: ({ an, konto, vault }) => anfrage("PUT", "/api/ki/vorschlag/einwilligung", { an: !!an, ...(konto ? { konto } : {}), vault }),
   kiVorschlagStart: (daten) => anfrage("POST", "/api/ki/vorschlag/start", daten),
   kiVorschlagStand: (id) => anfrage("GET", "/api/ki/vorschlag/stand" + q({ id })),

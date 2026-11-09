@@ -265,3 +265,69 @@ for (const [schema, farbe] of schemata) {
     expect(ueber).toBe(0);
   });
 }
+
+test("Kein „null“ und kein Platzhaltertext ohne Kontingent-Stand: weder in der Karte noch im Einwilligungsdialog", async ({ page }) => {
+  await aufbauen({ einwilligung: false });
+  await zurKarte(page);
+  await expect(knopf(page)).toBeVisible();
+  const karte = await page.locator("[data-nk]").innerText();
+  for (const verboten of ["null", "undefined", "Der Stand erscheint"]) expect(karte).not.toContain(verboten);
+  await expect(page.locator('[data-kiv="kontingent"]').first()).toBeHidden();
+  await knopf(page).click();
+  const dlg = page.locator('[data-dialog="ki-einwilligung"]');
+  await expect(dlg).toBeVisible();
+  const text = await dlg.innerText();
+  for (const verboten of ["null", "undefined", "Der Stand erscheint"]) expect(text).not.toContain(verboten);
+  await expect(dlg).toContainText("jederzeit in den Einstellungen");
+});
+
+test("Einstellungen → KI & Konten → Pflege & Frag: Schalter „KI-Vorschläge in diesem Vault“ zeigt das Konto; Ausschalten nimmt die Einwilligung zurück, der Knopf führt wieder zum Dialog", async ({ page }) => {
+  await aufbauen();
+  await page.goto(server.url + "#einstellungen/ki");
+  await page.waitForFunction(() => window.__studioBereit === true);
+  await page.locator('[data-unter-wahl="pflege"]').click();
+  const sch = page.locator('[data-kk="vorschlag-schalter"]');
+  await expect(sch).toBeVisible();
+  await expect(sch).toHaveAttribute("aria-checked", "true");
+  const zeile = page.locator('[data-zeile="ki-vorschlaege"]');
+  await expect(zeile).toContainText("Arbeit");
+  await bild(page, "einstellungen-schalter-an");
+  await sch.click();
+  await expect(page.locator('[data-kk="vorschlag-schalter"]')).toHaveAttribute("aria-checked", "false");
+  await expect(zeile).toContainText("Einschalten fragt dich vorher");
+  expect((await (await page.request.get(server.url + "api/ki/vorschlag/einwilligung")).json()).an).toBe(false);
+  await bild(page, "einstellungen-schalter-aus");
+  // wieder an: der Dialog kommt zuerst, Abbrechen lässt den Schalter aus
+  await page.locator('[data-kk="vorschlag-schalter"]').click();
+  const dlg = page.locator('[data-dialog="ki-einwilligung"]');
+  await expect(dlg).toBeVisible();
+  await dlg.locator('[data-aktion="kiv-abbrechen"]').click();
+  await expect(page.locator('[data-kk="vorschlag-schalter"]')).toHaveAttribute("aria-checked", "false");
+  // die Karte fragt wieder
+  await page.goto(server.url);
+  await page.waitForSelector("[data-karte], [data-leer]", { timeout: 15000 });
+  await page.click('[data-bereich="inbox"]');
+  await page.locator("[data-nk-kopf]").click();
+  await knopf(page).click();
+  await expect(dlg).toBeVisible();
+  expect(aufrufe()).toEqual([]);
+});
+
+test("Zu- und Aufklappen der Karte: die Kontingent-Zeile bleibt aktuell (100 % sperrt den Knopf auch, wenn die Karte zu war)", async ({ page }) => {
+  await aufbauen();
+  const jetzt = Date.now();
+  let p = 50;
+  const antwort = () => ({ jetzt: new Date(jetzt).toISOString(), takt: { abfrageMs: 900_000, neuFruehestensMs: 300_000, veraltetMs: 1_800_000 },
+    konten: [{ id: "k_aaaaaaaa", programm: "claude", name: "Arbeit", standard: false, quelle: "statuszeile", verwaltet: false, status: "ok", session: { usedPercent: p, windowMinutes: 300, resetsAt: jetzt + 2 * 3_600_000 }, weekly: { usedPercent: 10, windowMinutes: 10080, resetsAt: jetzt + 30 * 3_600_000 }, aktualisiert: new Date(jetzt).toISOString() }] });
+  await page.route(/\/api\/ki\/kontingent(\?.*)?$/, (route) => route.fulfill({ json: antwort() }));
+  await zurKarte(page);
+  await expect(knopf(page)).toBeEnabled();
+  await page.locator("[data-nk-kopf]").click(); // zu
+  await expect(page.locator("[data-nk-inhalt]")).toHaveCount(0);
+  p = 100;
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  await page.waitForTimeout(600);
+  await page.locator("[data-nk-kopf]").click(); // auf
+  await expect(knopf(page)).toBeDisabled();
+  await expect(page.locator("[data-nk-fuss]")).toContainText("erschöpft");
+});

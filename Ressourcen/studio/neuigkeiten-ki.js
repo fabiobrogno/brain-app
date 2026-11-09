@@ -48,7 +48,7 @@ export function erzeugeKiZusammenfassung({ S, oeffne, daten, zeitText }) {
     if (sig === sigZeile) { if (knopfEl) setzeSperre(); return; }
     sigZeile = sig;
     if (!st.sichtbar) { ktZeile?.stopp(); ktZeile = null; zeile.replaceChildren(); knopfEl = null; return; }
-    knopfEl = h("button", { type: "button", klasse: "nk-ki", "data-aktion": "nk-ki", aufClick: () => klick() }, symbol("funke", 14), h("span", { text: TN.ki_zusammenfassen.knopf }));
+    knopfEl = baueKnopf({ text: TN.ki_zusammenfassen.knopf, groesse: "s", symbol: "funke", aktion: "nk-ki", aufKlick: () => klick() }); // ein gewöhnlicher Knopf wie „Gelesen“
     ktZeile?.stopp();
     const kz = ktZeile = kontingentZeile({ api, konto: st.konto.id, abo: st.konto.abo || null, beiAenderung: (z) => { ktVoll = !!z.voll; setzeSperre(); } });
     zeile.replaceChildren(knopfEl, h("span", { klasse: "nk-ki-grund", "data-nk-ki-grund": "", hidden: true }), kz.knoten);
@@ -151,13 +151,19 @@ export function erzeugeKiZusammenfassung({ S, oeffne, daten, zeitText }) {
         h("p", { klasse: "nk-kip-klein", text: TN.ki_zusammenfassen.pruefHinweis }), gesendet);
       fuss = [
         baueKnopf({ text: zustand.abgelegt ? TN.ki_zusammenfassen.imPosteingang : TN.ki_zusammenfassen.ablegen, groesse: "s", variante: zustand.abgelegt ? "sekundaer" : "primaer", symbol: zustand.abgelegt ? "haken" : "inbox", aktion: "nk-ki-ablegen", disabled: !!zustand.abgelegt, aufKlick: (ev) => ablegen(ev.currentTarget) }),
-        baueKnopf({ text: TN.ki_zusammenfassen.neu, groesse: "s", aktion: "nk-ki-neu", disabled: !!sperrGrund(), aufKlick: () => klick() }),
+        baueKnopf({ text: TN.ki_zusammenfassen.neu, groesse: "s", variante: "leise", aktion: "nk-ki-neu", disabled: !!sperrGrund(), aufKlick: () => klick() }),
       ];
     } else {
       mitte = h("div", { klasse: "nk-kip-meldung", role: "status" }, h("p", { klasse: "nk-kip-text", "data-nk-kip-meldung": "", text: p === "abgebrochen" ? TV.lauf.abgebrochen : zustand.text }), gesendet);
       fuss = [baueKnopf({ text: TV.lauf.nochEinmal, groesse: "s", aktion: "nk-ki-neu", disabled: !!sperrGrund(), aufKlick: () => klick() })];
     }
-    panel.replaceChildren(kopf, h("div", { klasse: "nk-kip-mitte", "aria-live": "polite" }, mitte), h("div", { klasse: "nk-kip-fuss" }, fuss));
+    const flaeche = h("div", { klasse: "nk-kip-mitte", "aria-live": "polite", "data-nk-kip-mitte": "" }, mitte);
+    // Weiches Ausblenden nur an den Rändern, hinter denen noch Inhalt liegt (kein angeschnittener Text am Rand, solange nichts zu scrollen ist)
+    const raender = () => { flaeche.dataset.oben = flaeche.scrollTop > 2 ? "ja" : "nein"; flaeche.dataset.unten = flaeche.scrollHeight - flaeche.clientHeight - flaeche.scrollTop > 2 ? "ja" : "nein"; };
+    flaeche.addEventListener("scroll", raender, { passive: true });
+    panel.replaceChildren(kopf, flaeche, h("div", { klasse: "nk-kip-fuss" }, fuss));
+    flaeche.scrollTop = 0; raender();
+    if (typeof ResizeObserver === "function") new ResizeObserver(raender).observe(flaeche);
   }
 
   // Vault gewechselt oder Zeitraum geändert: ein laufender Lauf endet, alles Gezeigte gehört zum alten Stand
