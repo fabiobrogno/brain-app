@@ -256,6 +256,34 @@ export function pflegeWirksam(daten, vault) {
   return { modus: "konto", stufe: p.stufe, konto: p.konto, bewusst: false, problem: null };
 }
 
+// KI-Vorschläge (docs/plaene/ki-runde.md, Abschnitt 4): Einwilligung je Vault. vaults[<pfad>].vorschlaege = { an: true, seit: ISO, konto: "<kontoId>" }. Nur die Werkstatt schreibt.
+// Fail-closed: alles, was nicht genau { an: true, konto: <bekanntes Konto> } ist, heißt „aus“. Die Einwilligung gilt für das genannte Konto (der Dialog hat genau dieses genannt).
+export function vorschlaegeFuer(daten, vault) {
+  const aus = { an: false, seit: null, konto: null };
+  try {
+    const t = vaultEintrag(daten, vault);
+    const w = t && t.eintrag ? t.eintrag.vorschlaege : undefined;
+    if (!istObj(w) || w.an !== true || typeof w.konto !== "string" || !KONTO_ID.test(w.konto) || !Object.hasOwn(daten.konten, w.konto)) return aus;
+    return { an: true, seit: typeof w.seit === "string" ? w.seit : null, konto: w.konto };
+  } catch { return aus; }
+}
+// an=true: konto = Kennung des Kontos aus dem Dialog; an=false: Einwilligung zurücknehmen. → { geaendert }
+export function setzeVorschlaege(support, vault, { an, konto = null, jetzt = new Date() }) {
+  return aendere(support, (alt) => {
+    if (!alt) throw new HttpFehler(409, "Die Liste der KI-Konten ist gerade nicht verfügbar. Öffne Kortex neu und versuche es noch einmal.", { art: "konten" });
+    const t = vaultEintrag(alt, vault);
+    if (!t || !t.eintrag) throw new HttpFehler(409, "Für diesen Vault ist noch kein KI-Konto freigegeben.", { art: "kein-zugriff" });
+    if (an) {
+      if (typeof konto !== "string" || !KONTO_ID.test(konto) || !Object.hasOwn(alt.konten, konto)) throw new HttpFehler(400, "Das KI-Konto ist unbekannt.");
+      t.eintrag.vorschlaege = { an: true, seit: jetzt.toISOString(), konto };
+    } else {
+      if (t.eintrag.vorschlaege === undefined) return null;
+      t.eintrag.vorschlaege = { an: false, seit: jetzt.toISOString(), konto: null };
+    }
+    return alt;
+  });
+}
+
 // ───────────────────────────── Schreiben (nur Werkstatt) ─────────────────────────────
 export const leerDaten = () => ({ version: 1, konten: {}, vaults: {} });
 export const pruefeDaten = (j) => formOk(j);

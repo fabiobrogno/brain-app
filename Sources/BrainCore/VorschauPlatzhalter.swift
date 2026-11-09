@@ -99,10 +99,40 @@ enum VorschauPlatzhalter {
       printf '{"type":"result","subtype":"success","is_error":false,"result":"%s","num_turns":1,"duration_ms":300,"total_cost_usd":0,"usage":{"input_tokens":420,"output_tokens":96}}\n' "$alles"
     }
 
+    # ---- KI-Vorschläge: claude -p … (Systemprompt mit KORTEX-VORSCHLAG/1, das Datenpaket kommt über stdin) ----
+    # Eine feste, gekennzeichnete Antwort aus dem Datenpaket, ohne Dateien zu lesen: erster Kandidat als Verlinkungs-Vorschlag, Text-Aktionen geben die Auswahl unverändert zurück.
+    # Der „Beleg“ ist ein wörtlicher Anfang aus dem gesendeten Text (nur einfache Zeichen), damit er Kortex' Prüfung besteht. Jede Antwort trägt "vorschau": true.
+    vorschlagantwort() {
+      export LC_ALL=en_US.UTF-8
+      paket="$(head -c 100000)"
+      aufgabe="$(printf '%s' "$paket" | sed -n 's/^{"aufgabe":"\([a-z]*\)".*/\1/p')"
+      case "$aufgabe" in
+        posteingang)
+          ziel="$(printf '%s' "$paket" | sed -n 's/.*"kandidaten":\[{"id":"\(k[0-9]*\)".*/\1/p')"
+          beleg="$(printf '%s' "$paket" | sed -nE 's/.*"text":"(([^"\\]|\\.)*)".*/\1/p' | sed -E 's/\\./|/g' | grep -oE '[A-Za-z0-9 ]{3,40}' | head -1)"
+          if [ -n "$ziel" ] && [ -n "$beleg" ]; then
+            antwort="{\"vorschlaege\":[{\"art\":\"verlinken\",\"ziel\":\"$ziel\",\"beleg\":\"$beleg\",\"begruendung\":\"Vorschau-Beispiel: der erste passende Kandidat.\",\"sicherheit\":\"mittel\"}],\"vorschau\":true}"
+          else
+            antwort='{"vorschlaege":[],"vorschau":true}'
+          fi ;;
+        aufgaben)
+          ausw="$(printf '%s' "$paket" | sed -nE 's/.*"auswahl":"(([^"\\]|\\.)*)".*/\1/p')"
+          beleg="$(printf '%s' "$ausw" | sed -E 's/\\./|/g' | grep -oE '[A-Za-z0-9 ]{3,30}' | head -1)"
+          if [ -n "$beleg" ]; then antwort="{\"aufgaben\":[{\"text\":\"Vorschau-Beispiel: Aufgabe\",\"beleg\":\"$beleg\"}],\"vorschau\":true}"; else antwort='{"aufgaben":[],"vorschau":true}'; fi ;;
+        umschreiben|kuerzen|uebersetzen)
+          ausw="$(printf '%s' "$paket" | sed -nE 's/.*"auswahl":"(([^"\\]|\\.)*)".*/\1/p')"
+          antwort="{\"ersatz\":\"$ausw\",\"vorschau\":true}" ;;
+        *) echo "Platzhalter der Kortex-Vorschau: unbekannte Aufgabe" >&2; exit 1 ;;
+      esac
+      res="$(printf '%s' "$antwort" | json)"
+      printf '{"type":"result","subtype":"success","is_error":false,"result":"%s","structured_output":%s,"num_turns":1,"duration_ms":120,"total_cost_usd":0,"usage":{"input_tokens":300,"output_tokens":60}}\n' "$res" "$antwort"
+    }
+
     case "${1:-}" in
       --version|-v|version) echo "2.1.0 (Claude Code)"; exit 0 ;;
       mcp) ;;
       *)
+        case "$*" in *KORTEX-VORSCHLAG/1*) vorschlagantwort; exit 0 ;; esac
         for a in "$@"; do
           case "$a" in -p|--print) beispielantwort "$@"; exit 0 ;; esac
         done

@@ -203,6 +203,33 @@ export function titelAus(rel, text) {
   return ohneMarkdown(schneide(String(erster(fl.title) || erster(fl.titel) || erster(fl.name) || ""), 500)) || rel.split("/").pop().replace(/\.(md|txt)$/i, "");
 }
 
+// ---------- ki: nein (KI-Vorschläge, docs/plaene/ki-runde.md) ----------
+// Eine Notiz mit `ki: nein` (auch „no“, „false“, „aus“, „off“, „0“; Groß-/Kleinschreibung egal; mit Anführungszeichen) im Kopf geht nie an eine KI. Im Zweifel (Kopf nicht lesbar, aber die Zeile
+// steht in den ersten Zeilen des Kopfes) gilt es als „nein“.
+const KI_NEIN = /^(?:nein|no|false|aus|off|0|n)$/i;
+// Wert eines `ki`-Feldes (Text oder Liste) → true, wenn er „nein“ heißt. Auch für die Felder aus dem Notiz-Index (vor dem Lesen der Datei).
+export function istKiNeinWert(v) {
+  const w = String(Array.isArray(v) ? v[0] ?? "" : v ?? "").trim().replace(/^(["'])(.*)\1$/, "$2").trim();
+  return KI_NEIN.test(w);
+}
+export function istKiNein(text) {
+  const t = String(text ?? "").replace(/^\ufeff/, "");
+  try {
+    const { felder, bis } = parseKopf(t);
+    if (bis > 0) for (const [k, v] of Object.entries(felder)) if (k.normalize("NFC").trim().toLowerCase() === "ki" && istKiNeinWert(v)) return true;
+  } catch { /* unten */ }
+  // Zusätzlich immer die einfache Zeilensuche im Kopf-Bereich (fail-closed): fängt auch Schreibweisen wie „ki:nein“ ab, die der Kopf-Leser nicht als Feld liest
+  const z = t.split(/\r?\n/);
+  if (!/^---\s*$/.test(z[0] ?? "")) return false;
+  for (let i = 1; i < Math.min(z.length, 80); i++) {
+    if (/^(---|\.\.\.)\s*$/.test(z[i])) break;
+    const m = /^\s*["']?ki["']?\s*:\s*["']?([^"'#\s]+)/i.exec(z[i]);
+    if (m && KI_NEIN.test(m[1])) return true;
+  }
+  return false;
+}
+
+
 const KOPF_GENERIERT = /generiert\s+—\s+nicht\s+editieren/i;
 
 // text ohne BOM; heute = "JJJJ-MM-TT". Reine Funktion (kein Plattenzugriff) — wird je Datei gecacht.
@@ -244,7 +271,7 @@ export function analysiere(rel, text, heute) {
   if (verfall !== null && istDatum(stand) && plusTage(stand, verfall) < heute) abgelaufen = true;
 
   return {
-    titel, vorschau, typ, felder: kappe(k.felder), links,
+    titel, vorschau, typ, felder: kappe(k.felder), links, kiNein: istKiNein(text),
     stufe: pr ? pr.stufe : null,
     belegt: !!pr && pr.signale.some((s) => s.art === "belegt"),
     hatStand: !!stand.trim(),
@@ -448,7 +475,7 @@ export function erzeugeNotizIndex({ wurzel, jetzt = () => new Date(), heute, git
       if (geaendertMs >= zuletztAb) ansichten.push("zuletzt");
     }
     return { pfad: e.rel, titel: c.titel, vorschau: c.vorschau, typ: c.typ, bereich, geaendert, erstellt, stufe: c.stufe,
-      links: e.ziele, aliasse: c.aliasse, felder: c.felder, generiert: c.generiert, ansichten, _offen: e.offen }; // aliasse: das Studio löst [[Links]] mit derselben Regel auf (wikilink.mjs)
+      links: e.ziele, aliasse: c.aliasse, felder: c.felder, generiert: c.generiert, ...(c.kiNein ? { kiNein: true } : {}), ansichten, _offen: e.offen }; // aliasse: das Studio löst [[Links]] mit derselben Regel auf (wikilink.mjs)
   }
 
   // ----- Hauptlauf -----

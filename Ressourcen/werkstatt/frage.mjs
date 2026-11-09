@@ -10,15 +10,12 @@
 // keine eingebauten Werkzeuge (`--tools ""`), nur drei MCP-Werkzeuge erlaubt, `--permission-mode dontAsk` · MCP fest an Konto und Vault gebunden, `--nur-lesen`, ohne
 // Nutzungsprotokoll (`BRAIN_NUTZUNG=aus`: nichts wird im Vault angelegt) · Hooks des Profils aus (`disableAllHooks`) · cwd = leerer Temp-Ordner außerhalb des Vaults ·
 // Frage über stdin · Umgebung ausdrücklich gebaut (nie die der Werkstatt geerbt) · harte Grenzen für Zeit, Ausgabe, Zeilen, Ereignisse · Prozessgruppe wird sicher beendet.
-import { mkdtempSync, rmSync, realpathSync, lstatSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, dirname, delimiter, sep } from "node:path";
+import { HttpFehler, vorschauOrdnerAus } from "../gemeinsam/basis.mjs";
+import { rmSync } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { HttpFehler, bereinigterPfad, vorschauOrdnerAus } from "../gemeinsam/basis.mjs";
-import { starteStrom } from "../gemeinsam/prozess.mjs";
-import { findeProgramm } from "../gemeinsam/ki.mjs";
-import { stufeFuer, darfMindestens, kontoStufe, aktivesKonto } from "../gemeinsam/ki-konten.mjs";
-import { mitProfil } from "./profile.mjs";
+import { aktivesKonto } from "../gemeinsam/ki-konten.mjs";
+import { MODELLE, baueFrageUmgebung, nfc, sauberText, ganz, ABBRUCH_TEXT, erzeugeKontenZugriff, legeTempAn, starteKiLauf } from "./ki-kern.mjs";
+export { baueFrageUmgebung, MODELLE }; // bleiben hier erreichbar (Tests, Vorschau): der gemeinsame Kern liegt in ki-kern.mjs
 
 export const MCP_NAME = "brain";
 export const FRAGE_WERKZEUGE = ["brain_suchen", "brain_lesen", "brain_kontext"];
@@ -26,7 +23,6 @@ const ERLAUBT = FRAGE_WERKZEUGE.map((n) => `mcp__${MCP_NAME}__${n}`);
 // Zusätzlich zu `--tools ""` ausdrücklich entfernt (Gürtel und Hosenträger): eingebaute Werkzeuge und alle übrigen Kortex-Werkzeuge (schreibende und solche mit Git/Gesundheit).
 const ENTFERNT = ["Bash", "Edit", "MultiEdit", "Write", "NotebookEdit", "Read", "Glob", "Grep", "WebFetch", "WebSearch", "Task", "Agent",
   ...["brain_merken", "brain_gesundheit", "brain_vaults", "brain_verlauf", "brain_aufgaben", "brain_aufgabe_anlegen", "brain_aufgabe_status"].map((n) => `mcp__${MCP_NAME}__${n}`)];
-export const MODELLE = { klein: "haiku", mittel: "sonnet" }; // CLI-Aliasse (bleiben aktuell, keine festen ids)
 export const GRENZEN = {
   frageMax: 2000,            // Zeichen der Frage
   frist: 120_000,            // ms, Gesamtdauer eines Laufs
@@ -73,38 +69,6 @@ export function baueClaudeArgs({ modell, mcpKonfig, grenzen = GRENZEN }) {
   ];
 }
 
-// Umgebung des Kindprozesses: AUSDRÜCKLICH gebaut, nie die der Werkstatt geerbt (kein API-Schlüssel, kein BRAIN_VAULT, kein GITHUB_TOKEN …). Das Konto wählt CLAUDE_CONFIG_DIR.
-export function baueFrageUmgebung({ basis, home, claudePfad, konto }) {
-  const e = {
-    PATH: [dirname(claudePfad), bereinigterPfad(basis.PATH), "/usr/bin", "/bin"].filter(Boolean).join(delimiter),
-    HOME: home,
-    LANG: basis.LANG || "en_US.UTF-8",
-    BRAIN_ERNTE: "1", // Selbstaufruf-Schutz: sollte doch ein Kortex-Hook laufen, endet er sofort
-    CLAUDE_CODE_DISABLE_CLAUDE_MDS: "1", CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1", // persönliche CLAUDE.md und Memory des Profils bleiben draußen (Doku „env-vars“); die Anmeldung ist davon unberührt
-  };
-  if (basis.TMPDIR) e.TMPDIR = basis.TMPDIR;
-  if (basis.NODE_EXTRA_CA_CERTS) e.NODE_EXTRA_CA_CERTS = basis.NODE_EXTRA_CA_CERTS; // Firmen-Zertifikate bleiben (wie kindUmgebung)
-  if (basis.BRAIN_TESTMODUS === "1") e.BRAIN_TESTMODUS = "1";
-  // Nur in der Vorschau (Marke im Ordner, HOME darin) und nur diese eine Variable: die Platzhalter der KI-Programme verlangen sie, sonst verweigern sie die Arbeit.
-  const vorschau = vorschauOrdnerAus(basis, home);
-  if (vorschau) e.KORTEX_VORSCHAU = vorschau;
-  return mitProfil(e, { pfad: konto.ordner, standard: konto.standard === true });
-}
-
-const nfc = (s) => String(s).normalize("NFC");
-const kuerze = (s, n) => (String(s).length <= n ? String(s) : `${String(s).slice(0, n - 1)}…`);
-const sauberText = (s, n) => kuerze(String(s ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim(), n);
-const ganz = (w) => { const n = Number.parseInt(w, 10); return Number.isInteger(n) && n >= 0 ? n : 0; };
-
-const ABBRUCH_TEXT = {
-  nutzer: "Abgebrochen.",
-  frist: "Die Frage hat zu lange gedauert und wurde beendet.",
-  vault: "Abgebrochen, weil ein anderer Vault geöffnet wurde.",
-  leerlauf: "Abgebrochen, weil das Studio nicht mehr nachgefragt hat.",
-  ausgabe: "Die Ausgabe wurde zu groß und die Frage deshalb abgebrochen.",
-  zeile: "Die Ausgabe wurde zu groß und die Frage deshalb abgebrochen.",
-  ende: "Abgebrochen, weil Kortex beendet wird.",
-};
 // In der Vorschau antwortet ein Platzhalter statt Claude Code: scheitert die Frage dort, ist das kein Fehler der App.
 export const VORSCHAU_FRAGE_TEXT = "In der Vorschau antwortet ein Platzhalter statt Claude Code, darum klappt diese Frage hier nicht. In der installierten App antwortet Claude Code richtig.";
 const SUBTYP_TEXT = {
@@ -113,24 +77,12 @@ const SUBTYP_TEXT = {
   error_during_execution: "Claude Code ist bei der Arbeit auf einen Fehler gestoßen.",
 };
 
-export function erzeugeFrage({ support, konten, mcpBasis, basisEnv = process.env, home, grenzen: g = {}, tempBasis = null }) {
+export function erzeugeFrage({ support, konten, mcpBasis, basisEnv = process.env, home, grenzen: g = {}, tempBasis = null, anderesLaeuft = () => false }) {
   const G = { ...GRENZEN, ...g };
   let aktiv = null; // höchstens eine Frage: die laufende oder zuletzt beendete
 
-  // ---------- Konten ----------
-  // lesend: das Bereit-Signal (GET) legt nie eine Liste an; erst eine gestellte Frage (POST) darf sie anlegen, wenn sie fehlt
-  const ladeKonten = ({ lesend = false } = {}) => {
-    let d = konten.lade();
-    if (!d && !lesend) { try { konten.synchronisiere(); } catch { /* unten */ } d = konten.lade(); }
-    return d;
-  };
-  const claudePfad = () => findeProgramm("claude", basisEnv);
-  const vertraut = (v) => { try { return v.vertrauenStand().erlaubt === true; } catch { return false; } };
-
-  // Darf dieses Konto den Vault lesen? Zwei Fragen an die gemeinsame Logik (gemeinsam/ki-konten.mjs, keine eigene Kopie): die Stufe in der Liste der Werkstatt, und dieselbe Bestimmung, die
-  // der MCP-Server später selbst macht (Konto aus --konto UND CLAUDE_CONFIG_DIR/CODEX_HOME, alle Orte der Liste inkl. Standard-Support, strengstes Ergebnis). Beides muss „lesen“ oder mehr sagen.
-  const darfLesen = (v, id, k, daten) => darfMindestens(stufeFuer(daten, v.wurzel, id), "lesen")
-    && darfMindestens(kontoStufe(v.wurzel, { support, arg: id, env: k.standard === true ? {} : { [k.programm === "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR"]: k.ordner } }), "lesen");
+  // ---------- Konten ---------- (gemeinsamer Kern: ki-kern.mjs)
+  const { ladeKonten, claudePfad, vertraut, darfLesen, pruefeKonto, claudeBereit } = erzeugeKontenZugriff({ support, konten, basisEnv });
 
   function bereit(v) {
     const daten = ladeKonten({ lesend: true });
@@ -283,9 +235,7 @@ export function erzeugeFrage({ support, konten, mcpBasis, basisEnv = process.env
   }
 
   function beende(run, ende) {
-    clearInterval(run.wache);
-    try { rmSync(run.temp, { recursive: true, force: true }); } catch { /* bleibt im Temp-Ordner liegen */ }
-    run.ergebnis = ergebnisAus(run, ende);
+    run.ergebnis = ergebnisAus(run, ende); // Wache und Temp-Ordner hat der Kern schon aufgeräumt
     // Vorschau: ein gescheiterter Lauf (der Platzhalter kann nicht alles) ist verständlich erklärt, kein interner Fehler. Abbrüche des Nutzers und Grenzen bleiben, wie sie sind.
     if (!run.ergebnis.ok && !run.ergebnis.abgebrochen && vorschauOrdnerAus(basisEnv, run.home)) run.ergebnis = { ...run.ergebnis, fehler: VORSCHAU_FRAGE_TEXT, vorschau: true };
     if (run.ergebnis.ok && run.ergebnis.text) { run.antwort = run.ergebnis.text; run.epoche++; }
@@ -317,25 +267,16 @@ export function erzeugeFrage({ support, konten, mcpBasis, basisEnv = process.env
     if (!frage || frage.length > G.frageMax) throw new HttpFehler(400, `Bitte eine Frage eingeben (höchstens ${G.frageMax} Zeichen).`);
     if (e.modell !== undefined && !Object.hasOwn(MODELLE, e.modell)) throw new HttpFehler(400, `Das Modell muss eines von ${Object.keys(MODELLE).join(", ")} sein.`);
     const modell = MODELLE[e.modell ?? "klein"];
-    if (!vertraut(v)) throw new HttpFehler(409, "Dieser Vault ist noch nicht als dein eigener bestätigt. Bestätige ihn zuerst; bis dahin geht keine Frage an eine KI.", { art: "nicht-vertraut" });
-    const daten = ladeKonten();
-    if (!daten) throw new HttpFehler(409, "Die Liste der KI-Konten ist gerade nicht verfügbar. Öffne Kortex neu und versuche es noch einmal.", { art: "konten" });
-    const keinZugriff = new HttpFehler(409, "Dieses KI-Konto darf diesen Vault nicht lesen. Gib ihn unter „KI-Konten“ frei oder wähle ein anderes Konto.", { art: "kein-zugriff" });
-    if (typeof e.konto !== "string" || !Object.hasOwn(daten.konten, e.konto)) throw keinZugriff;
-    if (!darfLesen(v, e.konto, daten.konten[e.konto], daten)) throw keinZugriff; // die Stufe kommt aus der Liste der Werkstatt, nie aus der Anfrage
-    const konto = daten.konten[e.konto];
-    if (konto.programm !== "claude") throw new HttpFehler(409, "Fragen geht bisher nur mit Claude Code. Wähle ein Claude-Konto.", { art: "programm" });
+    const { konto } = pruefeKonto(v, e.konto, { vertrauensText: "Dieser Vault ist noch nicht als dein eigener bestätigt. Bestätige ihn zuerst; bis dahin geht keine Frage an eine KI.", programmText: "Fragen geht bisher nur mit Claude Code. Wähle ein Claude-Konto." });
+    if (anderesLaeuft()) throw new HttpFehler(409, "Es läuft gerade eine KI-Anfrage für Vorschläge. Warte auf sie.", { art: "laeuft" });
     // Eine Frage, die schon abgebrochen wird (endet) oder zu einem anderen Vault gehört, sperrt nicht: ihr Prozess ist unterwegs zum Ende (SIGINT, spätestens nach 5 s SIGKILL)
     if (aktiv && !aktiv.fertig && !aktiv.endet && aktiv.vault === v.wurzel) throw new HttpFehler(409, "Es läuft schon eine Frage. Warte auf die Antwort oder brich sie ab.", { art: "laeuft" });
     const basis = mcpBasis();
     if (!basis) throw new HttpFehler(404, "Der MCP-Server von Kortex wurde nicht gefunden.", { art: "mcp" });
-    const claude = claudePfad();
-    if (!claude) throw new HttpFehler(404, "Claude Code wurde nicht gefunden. Installiere es und öffne Kortex neu.", { art: "kein-claude" });
-    if (konto.standard !== true) { let ok = false; try { ok = lstatSync(konto.ordner).isDirectory(); } catch { /* fehlt */ } if (!ok) throw new HttpFehler(409, "Der Ordner dieses KI-Kontos fehlt.", { art: "konto-ordner" }); }
+    const claude = claudeBereit(konto);
 
-    const temp = realpathSync(mkdtempSync(join(tempBasis || tmpdir(), "kortex-frage-"))); // leer, nur für diese Frage, nie der Vault
+    const temp = legeTempAn(v, tempBasis, "kortex-frage-"); // leer, nur für diese Frage, nie der Vault
     try {
-      if (temp === v.wurzel || temp.startsWith(v.wurzel + sep)) throw new HttpFehler(500, "Der Temp-Ordner liegt im Vault. Die Frage wurde nicht gestartet.");
       const h = home();
       const env = baueFrageUmgebung({ basis: basisEnv, home: h, claudePfad: claude, konto });
       const mcpEnv = { BRAIN_APP_SUPPORT: support, BRAIN_NUTZUNG: "aus", HOME: h, PATH: env.PATH, LANG: env.LANG, ...(env.CLAUDE_CONFIG_DIR ? { CLAUDE_CONFIG_DIR: env.CLAUDE_CONFIG_DIR } : {}),
@@ -345,12 +286,8 @@ export function erzeugeFrage({ support, konten, mcpBasis, basisEnv = process.env
       const run = { id: randomBytes(16).toString("hex"), v, home: h, vault: v.wurzel, konto: e.konto, kontoName: konto.name, modell, temp, start: Date.now(), letzterAbruf: Date.now(), endet: false,
         ereignisse: [], zaehler: 0, verworfen: 0, antwort: "", epoche: 0, gekuerzt: false, nachrichtId: null, mitWerkzeug: false, deltaGesehen: false, abgelehnt: 0,
         werkzeuge: new Map(), quellen: new Map(), baum: null, resultat: null, fertig: false, ergebnis: null, warter: new Set(), stopp: () => {}, wache: null };
-      const lauf = starteStrom(claude, baueClaudeArgs({ modell, mcpKonfig, grenzen: G }), { cwd: temp, env, stdin: frage, frist: G.frist, maxBytes: G.ausgabe, maxZeile: G.zeile, onZeile: (z) => verarbeite(run, z) });
+      starteKiLauf({ run, claude, args: baueClaudeArgs({ modell, mcpKonfig, grenzen: G }), env, stdin: frage, grenzen: G, onZeile: (z) => verarbeite(run, z), beiEnde: (ende) => beende(run, ende) });
       aktiv = run;
-      run.stopp = (grund) => { run.endet = true; lauf.stopp(grund); }; // ab jetzt „endet“: eine neue Frage ist sofort möglich, der Prozess folgt SIGINT → SIGTERM → SIGKILL
-      run.wache = setInterval(() => { if (!run.fertig && Date.now() - run.letzterAbruf > G.leerlauf) run.stopp("leerlauf"); }, Math.min(2000, Math.max(50, G.leerlauf / 2)));
-      run.wache.unref?.();
-      lauf.fertig.then((ende) => beende(run, ende), () => beende(run, { code: null, grund: "start", stderr: "" }));
       return { id: run.id };
     } catch (err) {
       try { rmSync(temp, { recursive: true, force: true }); } catch { /* bleibt im Temp-Ordner liegen */ }
