@@ -106,10 +106,11 @@ catch (e) {
   fehler(`Start fehlgeschlagen: ${e instanceof HttpFehler ? e.message : e?.message || e}`);
   process.exit(e instanceof HttpFehler ? 2 : 1);
 }
-aus(`Bereit: ${dienst.adresse}`);
-aus("Beenden mit Strg+C.");
-if (o.oeffnen) await oeffneBrowser(dienst.port, () => dienst.zugang.neueKarte());
+// Signale VOR „Bereit“ abfangen: Wer auf „Bereit“ wartet und sofort SIGTERM schickt, darf nie das Standardverhalten (sofortiges Ende ohne Aufräumen, Sperre bleibt liegen) treffen.
 const ab = () => { dienst.stoppe().then(() => process.exit(0)); setTimeout(() => process.exit(0), 3000).unref(); };
 process.on("SIGTERM", ab);
 process.on("SIGINT", ab);
+aus(`Bereit: ${dienst.adresse}`);
+aus("Beenden mit Strg+C.");
+if (o.oeffnen) await oeffneBrowser(dienst.port, () => dienst.zugang.neueKarte());
 dienst.beendet.then(() => process.exit(0));
