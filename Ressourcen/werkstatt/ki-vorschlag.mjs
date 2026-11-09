@@ -251,7 +251,17 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     const stelle = n.inhalt.indexOf(e.auswahl);
     if (stelle < 0) throw new HttpFehler(409, "Der markierte Text steht nicht (mehr) in der Notiz. Markiere ihn noch einmal.", { art: "veraltet" });
     let ueberschrift = "";
-    for (const z of n.inhalt.slice(0, stelle).split(/\r?\n/)) { const m = /^ {0,3}#{1,6}\s+(.+?)\s*#*\s*$/.exec(z); if (m) ueberschrift = m[1]; }
+    // Nur echte Überschriften: Zeilen im Datei-Kopf (Front-Matter) und in Code-Zäunen zählen nicht (dort stehen „# …“-Kommentare, die nie an eine KI gehen)
+    let zaun = null, kopf = false;
+    const zeilenDavor = n.inhalt.slice(0, stelle).split(/\r?\n/);
+    zeilenDavor.forEach((z, i) => {
+      if (i === 0 && /^---[ \t]*$/.test(z)) { kopf = true; return; }
+      if (kopf) { if (/^(---|\.\.\.)[ \t]*$/.test(z)) kopf = false; return; }
+      const f = /^ {0,3}(`{3,}|~{3,})/.exec(z);
+      if (zaun) { if (f && f[1][0] === zaun[0] && f[1].length >= zaun.length && /^ {0,3}[`~]+\s*$/.test(z)) zaun = null; return; }
+      if (f) { zaun = f[1]; return; }
+      const m = /^ {0,3}#{1,6}\s+(.+?)\s*#*\s*$/.exec(z); if (m) ueberschrift = m[1];
+    });
     const funktion = TEXT_AKTIONEN[e.aktion];
     const daten = { auswahl: e.auswahl, ...(ueberschrift ? { ueberschrift: sauberText(ueberschrift, 200) } : {}), ...(e.aktion === "uebersetzen" ? { sprache: e.sprache } : {}) };
     return {

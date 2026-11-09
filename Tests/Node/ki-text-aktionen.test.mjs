@@ -64,3 +64,12 @@ test("Ersatz mit neuem Link nach außen: die Werkstatt liefert die Warnzeile (Zi
   ({ stand } = await s.anfrage({ funktion: "text", aktion: "aufgaben", pfad: "10_projekte/Plan.md", auswahl: AUSWAHL }));
   assert.deepEqual(stand.ergebnis.warnungen.map((w) => w.art), ["link-extern"]);
 });
+
+test("Überschrift darüber: „# …“-Zeilen in Code-Zäunen und im Datei-Kopf werden nie gesendet", async () => {
+  const s = szenarioV();
+  schreibe(s.vault, "10_projekte/Zaun.md", "---\n# YAML-KOMMENTAR-GEHEIM\ntitel: x\n---\n## Echte Überschrift\n\n```sh\n# API-KOMMENTAR-GEHEIM\n```\n\nZiel Absatz hier.\n");
+  await s.anfrage({ funktion: "text", aktion: "kuerzen", pfad: "10_projekte/Zaun.md", auswahl: "Ziel Absatz hier." });
+  const roh = s.aufrufe()[0].stdin;
+  assert.equal(JSON.parse(roh).daten.ueberschrift, "Echte Überschrift");
+  assert.ok(!roh.includes("GEHEIM"));
+});

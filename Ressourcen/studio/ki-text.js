@@ -248,16 +248,17 @@ export function erzeugeKiText({ S, ed, speichereWarte, nachAufgaben }) {
     return true;
   }
   async function waehle(aktion, sprache = null) {
-    if (!z || z.phase !== "menu") return;
+    if (!z || z.phase !== "menu" || z.startet) return;
     const mein = z;
+    mein.startet = true; // ein Klick, ein Start (Doppelklick, Klick plus ⏎)
     await frisch(true);
     if (z !== mein) return;
-    if (!st.sichtbar || st.gesperrt) { zeichne(); return; }
+    if (!st.sichtbar || st.gesperrt) { mein.startet = false; zeichne(); return; }
     if (!st.einwilligung) {
       // Die Einwilligung gilt je Vault für alle KI-Vorschläge; der Dialog nennt alles, was die Werkstatt anbietet
       const funktionen = (bereit?.funktionen || []).filter((f) => f === "zusammenfassung" || f === "posteingang" || f === "text");
       oeffneEinwilligung({ api, bereit, vault: S.info?.vault || "", vaultName: S.info?.name || "", funktionen: funktionen.length ? funktionen : ["text"],
-        nachher: async () => { await frisch(true); if (z === mein && st.einwilligung) starte(aktion, sprache); }, beiAbbruch: () => { if (z === mein) ed.view.focus(); } });
+        nachher: async () => { await frisch(true); if (z === mein && st.einwilligung) starte(aktion, sprache); else if (z === mein) mein.startet = false; }, beiAbbruch: () => { if (z === mein) { mein.startet = false; ed.view.focus(); } } });
       return;
     }
     starte(aktion, sprache);
@@ -269,6 +270,7 @@ export function erzeugeKiText({ S, ed, speichereWarte, nachAufgaben }) {
     if (S.dirty) { try { await speichereWarte?.(); } catch { /* unten geprüft */ } }
     if (z !== mein) return;
     const snap = mein.snap;
+    if (S.dirty) { Object.assign(mein, { phase: "fehler", aktion, sprache, fehler: TK.grund.ungespeichert, startet: false }); zeichne(); return; }
     if (S.pfad !== snap.pfad || ed.view.state.sliceDoc(klemme(snap.von), klemme(snap.bis), snap.lb) !== snap.text) { schliesse(); return; }
     Object.assign(mein, { phase: "laeuft", aktion, sprache, start: Date.now(), gesendet: null, wirdAbgebrochen: false, gesperrt: false, gesperrtVorher: false, uebernimmt: false, beschaeftigt: false, funktion: aktion === "aufgaben" ? "aufgaben" : "ersatz", warnungen: [], vorschau: false });
     zeichne();
@@ -298,8 +300,9 @@ export function erzeugeKiText({ S, ed, speichereWarte, nachAufgaben }) {
   function abbrechenUndZu() { if (z?.phase === "laeuft") { z.wirdAbgebrochen = true; const l = lauf; lauf = null; l?.abbrechen(); } schliesse(); ed.view.focus(); }
   function nochEinmal() {
     if (!z) return;
-    const snap = snapshot();
-    // Gleiche Aktion auf dem Text, wie er jetzt markiert ist (hat sich der Text geändert, gilt die neue Auswahl)
+    // Gleiche Aktion auf dem Text, wie er jetzt markiert ist; ist nichts markiert (z. B. nach Tippen), gilt die nachgeführte Stelle
+    let snap = snapshot();
+    if (!snap) { const s = z.snap, st2 = ed.view.state; if (s.bis > s.von && s.bis <= st2.doc.length) snap = { von: s.von, bis: s.bis, text: st2.sliceDoc(s.von, s.bis, st2.lineBreak), lb: st2.lineBreak, pfad: S.pfad || "" }; }
     const { aktion, sprache } = z;
     if (!snap) { schliesse(); return; }
     const grund = grundGesamt(snap);
@@ -324,7 +327,7 @@ export function erzeugeKiText({ S, ed, speichereWarte, nachAufgaben }) {
     toast(TK.diff.uebernommen, { ms: 5000 });
   }
   function fuegeAufgabenEin() {
-    if (!z || z.phase !== "ergebnis" || z.funktion !== "aufgaben" || z.gesperrt || !z.aufgaben.length) return;
+    if (!z || z.phase !== "ergebnis" || z.funktion !== "aufgaben" || z.gesperrt || z.beschaeftigt || !z.aufgaben.length) return;
     if (!textNochDa()) { z.gesperrt = true; zeichne(); return; }
     const v = ed.view, s = z.snap;
     const { pos, einfuegen } = L.aufgabenEinfuegung(v.state.doc.toString(), s.bis, z.aufgaben);
@@ -343,6 +346,7 @@ export function erzeugeKiText({ S, ed, speichereWarte, nachAufgaben }) {
       try { await api.aufgabeNeu({ titel: a.text, ...(a.faellig ? { faellig: a.faellig } : {}) }); ok++; } catch { break; }
     }
     mein.beschaeftigt = false;
+    mein.aufgaben = liste.slice(ok); // nach einem Teilfehler nur noch den Rest (kein doppeltes Anlegen)
     if (ok) nachAufgaben?.();
     if (z === mein) { if (ok === liste.length) { schliesse(); ed.view.focus(); } else zeichne(); }
     toast(ok === liste.length ? TK.aufgaben.angelegt(ok) : ok ? TK.aufgaben.teilweise(ok, liste.length) : TK.aufgaben.anlegenFehler, { fehler: ok !== liste.length, ms: ok === liste.length ? 5000 : 8000 });
@@ -355,8 +359,9 @@ export function erzeugeKiText({ S, ed, speichereWarte, nachAufgaben }) {
     if (z.phase === "menu") { if (u.docChanged || (u.selectionSet && !(u.state.selection.main.from === z.snap.von && u.state.selection.main.to === z.snap.bis))) schliesse(); return; }
     if (!u.docChanged || z.uebernimmt) return;
     const s = z.snap;
-    if (u.changes.touchesRange(s.von, s.bis) !== false) { z.gesperrt = true; z.gesperrtVorher = z.phase === "laeuft"; if (z.phase === "ergebnis") zeichne(); }
-    else { s.von = u.changes.mapPos(s.von, 1); s.bis = u.changes.mapPos(s.bis, -1); setzePos(); }
+    const beruehrt = u.changes.touchesRange(s.von, s.bis) !== false;
+    s.von = u.changes.mapPos(s.von, 1); s.bis = Math.max(s.von, u.changes.mapPos(s.bis, -1));
+    if (beruehrt) { z.gesperrt = true; z.gesperrtVorher = z.phase === "laeuft"; if (z.phase === "ergebnis") zeichne(); } else setzePos();
   }
   // Neue Notiz geladen (nicht „Live-Aktualisierung“ derselben): alles Gezeigte gehört zur alten
   function textGeladen({ behalte = false } = {}) { if (!behalte && z) schliesse(); }
@@ -364,7 +369,13 @@ export function erzeugeKiText({ S, ed, speichereWarte, nachAufgaben }) {
 
   // ---------- Tastatur ----------
   function taste(e) {
-    if (!z || !pop || dialogOffen() || e.isComposing) return;
+    if (!z || !pop || dialogOffen() || e.isComposing || e.keyCode === 229) return;
+    // Nur Tasten, die zu diesem Popover oder zur markierten Stelle gehören: ⏎/Esc in anderen Feldern oder an anderer Stelle der Notiz bleiben unberührt
+    const t = e.target, sel = ed.view.state.selection.main;
+    const imPop = pop.el.contains(t), imEd = ed.view.contentDOM.contains(t), lose = t === document.body || t === document.documentElement;
+    const anDerStelle = z.phase === "menu" || (sel.from === z.snap.von && sel.to === z.snap.bis);
+    if (!(imPop || lose || (imEd && (e.key === "Escape" || anDerStelle)))) return;
+    if (imEd && e.key !== "Escape" && !anDerStelle) return;
     if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); if (z.phase === "laeuft") abbrechenUndZu(); else { schliesse(); ed.view.focus(); } return; }
     const ohne = !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey;
     if (z.phase === "menu" && pop.knoepfe?.length) {
@@ -384,6 +395,7 @@ export function erzeugeKiText({ S, ed, speichereWarte, nachAufgaben }) {
   // Kontextmenü im Editor: auf der Auswahl ein Menü mit den KI-Aktionen (der Rest des Systemmenüs fehlt dann bewusst nicht: Ausschneiden, Kopieren, Einfügen stehen darunter)
   function kontextmenu(e) {
     if (!sichtbar()) return false;
+    if (z && z.phase !== "menu") return false; // ein Lauf oder Diff steht: das Systemmenü bleibt
     const snap = snapshot();
     if (!snap) return false;
     const pos = ed.view.posAtCoords({ x: e.clientX, y: e.clientY });
@@ -392,7 +404,7 @@ export function erzeugeKiText({ S, ed, speichereWarte, nachAufgaben }) {
     const ok = oeffne({ anker: { x: e.clientX, y: e.clientY } });
     if (ok && pop) {
       const fuss = h("div", { klasse: "kit-fuss", "data-ki-text-kontext": "" }, [["ausschneiden", "cut"], ["kopieren", "copy"], ["einfuegen", "paste"]].map(([k, befehl]) => baueKnopf({ text: TK.kontext[k], groesse: "s", variante: "leise", aktion: `ki-text-${k}`,
-        aufKlick: async () => { const v = ed.view; v.focus(); schliesse(); let tat = false; try { tat = document.execCommand(befehl); } catch { /* unten */ } if (!tat && befehl === "paste") { try { const t = await navigator.clipboard.readText(); if (t) v.dispatch(v.state.replaceSelection(t)); } catch { /* keine Erlaubnis */ } } } })));
+        aufKlick: async () => { const v = ed.view; v.focus(); schliesse(); let tat = false; try { tat = document.execCommand(befehl); } catch { /* unten */ } if (!tat && befehl === "paste") { try { const t = await navigator.clipboard.readText(); if (t) v.dispatch({ ...v.state.replaceSelection(t.replace(/\r\n|\r|\n/g, v.state.lineBreak)), userEvent: "input.paste" }); } catch { /* keine Erlaubnis */ } } } })));
       pop.kontextFuss = fuss; pop.el.append(fuss);
     }
     return true;

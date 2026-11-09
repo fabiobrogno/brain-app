@@ -1076,6 +1076,7 @@ function weicherWechsel() {
 function setzeModus() {
   const vorher = $("app").dataset.modus;
   $("app").dataset.modus = konfliktInst ? "konflikt" : S.sicht.art === "verlauf" ? "verlauf" : istAufgabenSicht() ? (S.aufgabeDatei ? "aufgaben-datei" : "aufgaben") : "liste";
+  if (vorher !== $("app").dataset.modus) kiTextRef.schliesse?.(); // ein KI-Popover gehört zum Editor
   if (vorher !== $("app").dataset.modus) aktualisiereStatusDatei(); // Wörter und Format gelten nur für eine Notiz im Editor, nicht im Board
   $("knopf-verlauf").setAttribute("aria-pressed", String(S.sicht.art === "verlauf"));
   zeichnePfad();

@@ -405,3 +405,20 @@ test("Layout: das Popover liegt im Fenster, ist nicht abgeschnitten, Knöpfe sin
   r = await pop(page).boundingBox();
   expect(r.x).toBeGreaterThanOrEqual(0); expect(r.x + r.width).toBeLessThanOrEqual(760); expect(r.y).toBeGreaterThanOrEqual(0); expect(r.y + r.height).toBeLessThanOrEqual(560);
 });
+
+test("⏎ gehört nur zum Popover und zur markierten Stelle (anderswo gibt es einen Zeilenumbruch); Doppelklick startet nur eine Anfrage", async ({ page }) => {
+  await aufbauen();
+  szenario({ ersatz: ERSATZ, warteMs: 600, szenario: "langsam" });
+  await oeffne(page);
+  await waehleAbsatz(page);
+  await kiKnopf(page).click();
+  await pop(page).locator('[data-ki-aktion="kuerzen"]').dblclick();
+  await phase(page, "ergebnis");
+  expect(aufrufe().length).toBe(1);
+  await imEditor(page, ({ view }) => { const a = view.state.doc.toString().indexOf("Letzter Absatz"); view.focus(); view.dispatch({ selection: { anchor: a + 4 } }); });
+  await page.keyboard.press("Enter");
+  const d = await dok(page);
+  expect(d).toContain("Letz\nter Absatz");
+  expect(d).not.toContain(ERSATZ);
+  await expect(pop(page)).toHaveAttribute("data-phase", "ergebnis");
+});
