@@ -22,7 +22,9 @@ test("Tags ergänzen: kein Kopf → neuer Kopf; Kopf ohne Tags → Zeile vor dem
 });
 
 test("Tags ergänzen: was sich nicht sicher ändern lässt, wirft (nichts wird „repariert“)", () => {
-  for (const t of ["---\ntitel: x\n# nie geschlossen\n", "---\ntags: [a\n, b]\n---\n", "---\ntags: [a] # Kommentar\n---\n", "---\ntags: \"a\"\n---\n", "---\ntags: a # k\n---\n", "---\ntags:\n  unter: x\n---\n"]) {
+  assert.equal(fuegeTagsHinzu("---\ntags:\n\n  - a\n---\nx", ["neu"]).text, "---\ntags:\n\n  - a\n  - neu\n---\nx", "Leerzeile vor der Liste: nichts geht verloren");
+  assert.deepEqual(fuegeTagsHinzu("x", ["null", "yes", "ok"]).neu, ["null", "yes", "ok"], "die Rohfunktion setzt, was sie bekommt; die KI-Prüfung lässt solche Wörter gar nicht erst zu");
+  for (const t of ["---\ntags: {a: b}\n---\n", "---\nkeywords: [a]\ntags: [b]\n---\n", "---\ntags: &x [a]\n---\n", "---\ntitel: x\n# nie geschlossen\n", "---\ntags: [a\n, b]\n---\n", "---\ntags: [a] # Kommentar\n---\n", "---\ntags: \"a\"\n---\n", "---\ntags: a # k\n---\n", "---\ntags:\n  unter: x\n---\n"]) {
     assert.throws(() => fuegeTagsHinzu(t, ["neu"]), /kopf-/, JSON.stringify(t));
   }
 });

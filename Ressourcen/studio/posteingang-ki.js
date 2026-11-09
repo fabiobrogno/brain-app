@@ -49,6 +49,7 @@ export function erzeugePosteingangKi({ S, ctx, oeffne, liste }) {
     return null;
   }
   const kiBeschaeftigt = () => !!stapel && stapel.phase === "laeuft";
+  const einzelLaeuft = () => [...zu.values()].some((z) => z.ki?.phase === "laeuft" && !z.ki.ausStapel);
 
   // ---------- Lokale Vorschläge (ohne KI, ohne Konto): gesammelt abgefragt ----------
   let warteschlange = new Map(), lokalTimer = 0;
@@ -116,7 +117,7 @@ export function erzeugePosteingangKi({ S, ctx, oeffne, liste }) {
     const chip = h("button", { type: "button", klasse: "pk-chip" + (sicht.length ? " hat" : "") + (arbeitet ? " arbeitet" : ""), "data-aktion": "pk-auf", "data-pk-fokus": "auf", disabled: !klickbar || null, "aria-expanded": String(offen), "aria-controls": panelId,
       title: klickbar ? (offen ? TK.zeile.zuTitel : TK.zeile.aufTitel) : null,
       aufClick: () => { z.offen = !z.offen; zeichneWurzel(w, { animiere: true }); } },
-      h("span", { klasse: "pk-chip-sym", "aria-hidden": "true" }, symbol(arbeitet ? "funke" : "inbox", 12)), h("span", { klasse: "pk-chip-text", text }), klickbar ? h("span", { klasse: "pk-pfeil", "aria-hidden": "true" }, symbol("chevron-unten", 11)) : null);
+      h("span", { klasse: "pk-chip-sym", "aria-hidden": "true" }, symbol(arbeitet ? "funke" : "inbox", 12)), h("span", { klasse: "pk-chip-text", text }), klickbar ? h("span", { klasse: "pk-pfeil", "aria-hidden": "true" }, symbol("chevron-unten", 12)) : null);
     let kiKnopf = null;
     if (st.sichtbar) {
       const grund = sperrGrund(n);
@@ -265,6 +266,7 @@ export function erzeugePosteingangKi({ S, ctx, oeffne, liste }) {
     const z = ZU(n.pfad);
     if (phasen.has(z.ki?.phase) || kiBeschaeftigt()) return;
     await frisch();
+    if (kiBeschaeftigt()) return;
     if (!st.sichtbar || sperrGrund(n)) return;
     if (!st.einwilligung) { einwilligen(() => startEinzeln(n)); return; }
     startEinzeln(n);
@@ -331,14 +333,14 @@ export function erzeugePosteingangKi({ S, ctx, oeffne, liste }) {
     leiste.classList.remove("platz");
     const laeuft = kiBeschaeftigt();
     const sichtbar = st.sichtbar && (sp.gesamt > 0 || !!stapel);
-    const sig = JSON.stringify([sichtbar, st.sichtbar, st.konto?.id, st.konto?.abo, st.gesperrt, laeuft, sp.gesamt, sp.alleHaben, ktVoll, stapel && [stapel.phase, stapel.erledigt, stapel.von, stapel.text, stapel.wirdAbgebrochen, stapel.ausgenommen, stapel.vorschlaege], gerade.size]);
+    const sig = JSON.stringify([sichtbar, st.sichtbar, st.konto?.id, st.konto?.abo, st.gesperrt, laeuft, sp.gesamt, sp.alleHaben, ktVoll, stapel && [stapel.phase, stapel.erledigt, stapel.von, stapel.text, stapel.wirdAbgebrochen, stapel.ausgenommen, stapel.vorschlaege], gerade.size, einzelLaeuft()]);
     leiste.hidden = !sichtbar;
     if (sig === sigLeiste) return;
     sigLeiste = sig;
     if (!st.sichtbar) { ktZeile?.stopp(); ktZeile = null; leiste.replaceChildren(); return; }
     if (!ktZeile || ktZeile.konto !== st.konto?.id) {
       ktZeile?.stopp();
-      const kz = ktZeile = kontingentZeile({ api, konto: st.konto.id, abo: st.konto.abo || null, name: "pk-kontingent", beiAenderung: (x) => { const alt = ktVoll; ktVoll = !!x.voll; if (alt !== ktVoll) { zeichneLeiste(); alleZeichnen(); } } });
+      const kz = ktZeile = kontingentZeile({ api, konto: st.konto.id, abo: st.konto.abo || null, name: "pk-kontingent", beiAenderung: (x) => { x.knoten.removeAttribute("data-leer"); /* data-leer meint sonst „leere Liste“ */ const alt = ktVoll; ktVoll = !!x.voll; if (alt !== ktVoll) { zeichneLeiste(); alleZeichnen(); } } });
       kz.konto = st.konto.id;
     }
     const grund = st.gesperrt ? TN.ki_zusammenfassen.gesperrt[st.gesperrt] : ktVoll ? TK.zeile.voll : null;
@@ -350,13 +352,13 @@ export function erzeugePosteingangKi({ S, ctx, oeffne, liste }) {
       fuss = h("span", { klasse: "pk-fuss-text", role: "status", "data-pk-fortschritt": "", text: stapel.wirdAbgebrochen ? TK.stapel.wirdAbgebrochen : TK.stapel.arbeitet(Math.min(stapel.erledigt + 1, stapel.von), stapel.von) });
     } else {
       const text = sp.alleHaben ? TK.stapel.knopfNoch(sp.pfade.length) : sp.gesamt > grenze() ? TK.stapel.knopfGekappt(grenze()) : TK.stapel.knopf(sp.pfade.length);
-      kopf = [h("button", { type: "button", klasse: "pk-alle", "data-aktion": "pk-alle", disabled: !!grund || !sp.pfade.length || gerade.size > 0 || null, title: grund || TK.stapel.titel(grenze()), aufClick: klickStapel }, symbol("funke", 13), h("span", { text }))];
+      kopf = [h("button", { type: "button", klasse: "pk-alle", "data-aktion": "pk-alle", disabled: !!grund || !sp.pfade.length || gerade.size > 0 || einzelLaeuft() || null, title: grund || TK.stapel.titel(grenze()), aufClick: klickStapel }, symbol("funke", 14), h("span", { text }))];
       fuss = stapel && stapel.text ? h("span", { klasse: "pk-fuss-text", "data-pk-stapel-text": "", role: "status", text: stapel.text }) : grund ? h("span", { klasse: "pk-fuss-text", text: grund }) : ktZeile.knoten;
     }
     leiste.replaceChildren(h("div", { klasse: "pk-leiste-kopf" }, kopf), h("div", { klasse: "pk-leiste-fuss" }, fuss));
   }
   async function klickStapel() {
-    if (kiBeschaeftigt()) return;
+    if (kiBeschaeftigt() || einzelLaeuft()) return;
     await frisch();
     if (!st.sichtbar || st.gesperrt || ktVoll) return;
     if (!st.einwilligung) { einwilligen(() => starteAlle()); return; }
@@ -365,7 +367,7 @@ export function erzeugePosteingangKi({ S, ctx, oeffne, liste }) {
   function starteAlle() {
     const { pfade } = stapelPfade();
     if (!pfade.length || kiBeschaeftigt()) return;
-    const mein = { phase: "laeuft", von: pfade.length, erledigt: 0, pfade, wirdAbgebrochen: false, ausgenommen: 0, vorschlaege: 0, text: "", handle: null, konto: st.konto?.name || "" };
+    const mein = { uebernommen: new Set(), phase: "laeuft", von: pfade.length, erledigt: 0, pfade, wirdAbgebrochen: false, ausgenommen: 0, vorschlaege: 0, text: "", handle: null, konto: st.konto?.name || "" };
     stapel = mein;
     for (const p of pfade) { const z = ZU(p); z.nr++; z.ki = { phase: "wartet", ausStapel: true, start: Date.now(), modell: "haiku", konto: mein.konto }; z.veraltet = false; }
     zeichneLeiste(); alleZeichnen();
@@ -387,8 +389,9 @@ export function erzeugePosteingangKi({ S, ctx, oeffne, liste }) {
     for (const p of mein.pfade) {
       const z = ZU(p), e = s.eintraege?.[p];
       if (e) {
-        if (z.ki && z.ki.stapelErg === e) { if (e.ok) vorschlaege += (e.vorschlaege || []).length; continue; }
-        const start = { start: z.ki?.start || Date.now(), gesendet: null, modell: "haiku", konto: s.konto?.name || mein.konto, stapelErg: e };
+        if (mein.uebernommen.has(p)) { if (e.ok) vorschlaege += (e.vorschlaege || []).length; continue; } // jedes Ergebnis nur einmal: spätere Stände bauen Karten und Token nicht neu
+        mein.uebernommen.add(p);
+        const start = { start: z.ki?.start || Date.now(), gesendet: null, modell: "haiku", konto: s.konto?.name || mein.konto };
         if (e.ausgenommen) z.ki = null;
         else setzeErgebnis(z, e, start);
         if (z.ki && z.ki.phase === "abgebrochen") z.ki = null;

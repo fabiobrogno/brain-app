@@ -280,7 +280,7 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
 
   // ---------- Start ----------
   // Eine einzelne Anfrage: prüft alles (Funktion, Konto, Einwilligung, Kontingent), sammelt die Daten und startet die KI. → { run, info }
-  async function starteIntern(e, v) {
+  async function starteIntern(e, v, { abbruch = null } = {}) {
     if (!e || typeof e !== "object") throw new HttpFehler(400, "Die Anfrage ist leer.");
     if (typeof e.funktion !== "string" || !FUNKTIONEN_K0.includes(e.funktion)) throw new HttpFehler(400, "Diese KI-Funktion gibt es noch nicht.", { art: "funktion" });
     if (e.modell !== undefined && !Object.hasOwn(MODELLE, e.modell)) throw new HttpFehler(400, `Das Modell muss eines von ${Object.keys(MODELLE).join(", ")} sein.`);
@@ -307,6 +307,7 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     let s;
     try { s = e.funktion === "posteingang" ? await sammlePosteingang(e, v) : e.funktion === "zusammenfassung" ? await sammleZusammenfassung(e, v) : sammleText(e, v); } finally { startet = false; }
     if (epoche !== epocheStart || aktiv && !aktiv.fertig && !aktiv.endet && aktiv.vault === v.wurzel) throw new HttpFehler(409, "Abgebrochen, weil sich inzwischen etwas geändert hat. Bitte noch einmal versuchen.", { art: "abgebrochen" });
+    if (abbruch && abbruch()) throw new HttpFehler(409, "Abgebrochen.", { art: "abgebrochen" }); // der Stapel wurde während des Sammelns abgebrochen: kein Prozess, kein Datenpaket
     const schema = schemaFuer(s.schluesselFunktion, s.schemaCtx);
     const stdin = JSON.stringify(s.paket);
     const kennung = kennungVault(v.wurzel);
@@ -353,7 +354,8 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     const abschluss = (run) => new Promise((ok) => { if (run.fertig) ok(); else run.warter.add(ok); });
     const weiter = () => { s.version++; for (const f of [...s.warter]) f(); s.warter.clear(); };
     let erste;
-    try { erste = await starteIntern({ funktion: "posteingang", pfad: pfade[0], konto: e.konto, modell: "klein" }, v); }
+    const abbruch = () => s.abgebrochen || epoche !== epocheStart;
+    try { erste = await starteIntern({ funktion: "posteingang", pfad: pfade[0], konto: e.konto, modell: "klein" }, v, { abbruch }); }
     catch (err) {
       if (err instanceof HttpFehler && err.extra && err.extra.art === "ki-nein") erste = null; // der erste Eintrag ist ausgenommen: weiter mit dem nächsten
       else { stapel = null; throw err; }
@@ -367,7 +369,7 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
           s.aktuell = pfad; weiter();
           let r = i === 0 ? erste : null;
           if (i > 0 || !erste) {
-            try { r = await starteIntern({ funktion: "posteingang", pfad, konto: e.konto, modell: "klein" }, v); s.konto ??= r.info.konto; }
+            try { r = await starteIntern({ funktion: "posteingang", pfad, konto: e.konto, modell: "klein" }, v, { abbruch }); s.konto ??= r.info.konto; }
             catch (err) {
               const art = err instanceof HttpFehler && err.extra ? err.extra.art : null;
               if (art === "ki-nein") { s.ausgenommen++; s.ergebnisse.set(pfad, { ok: false, ausgenommen: true, fehler: err.message }); weiter(); continue; }
@@ -508,12 +510,13 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
 
   // ---------- Erwähnungen im Eintrag (für „Verlinken“) ----------
   // Welche Notizen nennt der Eintrag im Klartext, ohne Link? → Map(Pfad → Stelle { start, treffer, vor, nach }), je Notiz die erste Stelle. Ohne Suchindex: leer (dann hängt Kortex einen Link an).
-  async function erwaehnungenFuer(v, n) {
+  async function erwaehnungenFuer(v, n, warte = { aufgegeben: false }) {
     const m = new Map();
     try {
       // Der Erwähnungs-Index baut nach dem Öffnen im Hintergrund auf: kurz warten (höchstens ~2 s), statt „keine Stelle“ zu raten
       let r = await v.erwaehntVon(n.pfad, n.inhalt);
-      for (let i = 0; i < 8 && !(r.aufbau && r.aufbau.index && r.aufbau.namen); i++) { await new Promise((ok) => setTimeout(ok, 250)); r = await v.erwaehntVon(n.pfad, n.inhalt); }
+      for (let i = 0; i < 6 && !warte.aufgegeben && !(r.aufbau && r.aufbau.index && r.aufbau.namen); i++) { await new Promise((ok) => setTimeout(ok, 250)); r = await v.erwaehntVon(n.pfad, n.inhalt); }
+      if (!(r.aufbau && r.aufbau.index && r.aufbau.namen)) warte.aufgegeben = true; // nicht für jeden weiteren Eintrag noch einmal warten
       for (const x of r.notizen || []) { const st = x.stellen && x.stellen[0]; if (st && typeof st.treffer === "string") m.set(x.pfad, { start: st.start, treffer: st.treffer, vor: st.vor || "", nach: st.nach || "" }); }
     } catch { /* ohne Index: keine Stelle */ }
     return m;
@@ -562,11 +565,11 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     let aufgaben = ""; try { aufgaben = falte(await v.aufgabenOrdnerName()); } catch { /* ohne */ }
     const ort = { inbox: falte(inboxOrdnerVon(v.wurzel)), vorlagen: falte(vorlagenOrdnerVon(v.wurzel)), aufgaben };
     const kennung = kennungVault(v.wurzel);
-    const eintraege = {};
+    const eintraege = {}, warte = { aufgegeben: false };
     for (const pfad of new Set(e.pfade)) {
       let n; try { n = v.lies(pfad); } catch { continue; }
       if (!inInbox(v, n.pfad)) continue;
-      const gefunden = lokaleVorschlaege(v, n, index, await erwaehnungenFuer(v, n), ort);
+      const gefunden = lokaleVorschlaege(v, n, index, await erwaehnungenFuer(v, n, warte), ort);
       for (const [id, o] of speicher.get(kennung) || []) if (o.quelle === "lokal" && o.pfad === n.pfad && !o.angewendet) speicher.get(kennung).delete(id); // der neue Stand ersetzt den alten
       const ablauf = jetzt() + G.ablauf;
       const kHash = sha(JSON.stringify(gefunden.map((x) => [x.art, x.kand ? x.kand.pfad : null, x.ord ? x.ord.pfad : null])));
@@ -636,7 +639,8 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
         const a = await v.aufgabeAnlegen({ titel: r.aufgabe.text, ...(r.aufgabe.faellig ? { faellig: r.aufgabe.faellig } : {}), quelle: "mensch" });
         melde(v.wurzel, { art: "datei-aktion", wer: "KI-Vorschlag", vaultName: v.name, text: `${wer}: Aufgabe angelegt` }, { support });
         ergebnis = { pfad: a.pfad };
-        rueck = { art: "aufgabe", pfad: a.pfad };
+        let hash = null; try { hash = v.lies(a.pfad).hash; } catch { hash = null; }
+        rueck = { art: "aufgabe", pfad: a.pfad, hash };
       } else {
         throw new HttpFehler(409, "Diese Art von Vorschlag lässt sich nicht übernehmen.", { art: "unbekannte-art" });
       }
@@ -652,7 +656,7 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
       }
     }
     // `geaendert`: alle berührten Pfade — der Handler zählt sie als eigene Änderungen (sonst meldete der Wächter dem offenen Editor eine „fremde“ Änderung)
-    const geaendert = [...new Set([r.pfad, ergebnis && ergebnis.nach, ergebnis && ergebnis.von, ergebnis && ergebnis.pfad, ergebnis && ergebnis.ziel, ...((ergebnis && ergebnis.geaendert) || [])].filter((x) => typeof x === "string" && x))];
+    const geaendert = [...new Set([r.pfad, ergebnis && ergebnis.nach, ergebnis && ergebnis.von, ergebnis && ergebnis.pfad, r.art === "duplikat" && ergebnis && ergebnis.ziel, ...((ergebnis && ergebnis.geaendert) || [])].filter((x) => typeof x === "string" && x))];
     return { ok: true, art: r.art, quelle: r.quelle, rueckgaengig: !!rueck, geaendert, ...(ergebnis && ergebnis.nach ? { nach: ergebnis.nach } : {}), ...(ergebnis && ergebnis.pfad ? { pfad: ergebnis.pfad } : {}), ...(ergebnis && ergebnis.von ? { von: ergebnis.von } : {}),
       ...(ergebnis && ergebnis.ziel && r.art === "duplikat" ? { archiv: ergebnis.ziel } : {}), ...(ergebnis && ergebnis.aktivitaetId ? { aktivitaetId: ergebnis.aktivitaetId } : {}), ...(ergebnis && ergebnis.vorgang ? { vorgang: ergebnis.vorgang } : {}),
       ...(geschwister.length ? { geschwister } : {}) };
@@ -670,7 +674,7 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     rr.laeuft = true;
     let erg;
     try {
-      if (rr.art === "aufgabe") erg = await v.loeschen({ pfad: rr.pfad });
+      if (rr.art === "aufgabe") erg = await v.loeschen({ pfad: rr.pfad, ...(rr.hash ? { basisHash: rr.hash } : {}) }); // ist die Aufgabe inzwischen bearbeitet, bleibt sie (409)
       else if (rr.art === "duplikat") erg = await v.verschieben({ pfad: rr.archiv, ziel: rr.ordner });
       else erg = await v.vorgangZurueck({ id: rr.vorgang });
     } finally { rr.laeuft = false; }

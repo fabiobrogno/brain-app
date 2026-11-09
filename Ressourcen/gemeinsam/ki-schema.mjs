@@ -202,7 +202,7 @@ function pruefeEinzel(funktion, x, ctx) {
     if (hat("ziel") || hat("aufgabe") || !Array.isArray(x.tags) || x.tags.length < 1 || x.tags.length > LIMITS.tags) return null;
     const tags = [];
     // Ein Tag der KI beginnt mit einem Buchstaben oder einer Ziffer und enthält einen Buchstaben (nie „---“ oder „_“: ein Tag wird in den Kopf der Notiz geschrieben)
-    for (const t of x.tags) { const n = pruefeTagName(typeof t === "string" && !GEFAEHRLICH.test(t) ? t : null); if (n === null || !/^[\p{L}\p{N}]/u.test(n) || !/\p{L}/u.test(n)) return null; if (!tags.includes(n)) tags.push(n); }
+    for (const t of x.tags) { const n = pruefeTagName(typeof t === "string" && !GEFAEHRLICH.test(t) ? t : null); if (n === null || !/^[\p{L}\p{N}]/u.test(n) || !/\p{L}/u.test(n) || /^(?:null|true|false|yes|no|on|off|y|n)$/i.test(n)) return null; if (!tags.includes(n)) tags.push(n); }
     aus.tags = tags;
   }
   aus.schluessel = `${aus.art}|${aus.ziel ?? ""}|${aus.aufgabe ? aus.aufgabe.text : ""}|${aus.tags ? aus.tags.join(",") : ""}`;
