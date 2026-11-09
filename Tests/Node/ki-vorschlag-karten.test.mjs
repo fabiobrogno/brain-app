@@ -2,7 +2,7 @@
 // Nie das echte `claude`: die Attrappe Tests/Kern/fake-claude-vorschlag.mjs (Szenario „arten“) prüft bei jedem Aufruf die Schutzgeländer.
 import test, { after } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, writeFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { pfad, schreibe } from "./hilfe.mjs";
 import { szenarioV, EINTRAG, EINTRAG_TEXT, frei, bis, warte } from "./ki-vorschlag-hilfe.mjs";
@@ -328,4 +328,56 @@ test("Für alle: Vault-Wechsel beendet den Stapel und verwirft alles; ein Fehler
   await bis(() => frei(pid), 10000, "Prozess beendet");
   assert.equal((await s.api("GET", `/api/ki/vorschlag/stand?id=${r2.j.id}`)).status, 404, "im anderen Vault ist der Stapel unbekannt");
   assert.equal(readdirSync(join(s.vault, "00_inbox")).length >= 4, true);
+});
+
+// ---------- Review-Fixes (W1, W2, K2, K3) ----------
+test("W1 Verwaltete Orte: Archiv, Wiki (auch aus der Konfiguration), CLAUDE.md sind weder im Paket noch Kandidat noch Ordner noch lokales Ziel", async () => {
+  const s = szenarioV();
+  schreibe(s.vault, "90_archiv/verworfen/Atlas Alt.md", "# Atlas Alt\n\nATLAS-ARCHIV-GEHEIM Atlas Kaffeemaschine Rechnung.\n");
+  schreibe(s.vault, "09_wiki/Atlas Wiki.md", "# Atlas Wiki\n\nATLAS-WIKI-GEHEIM Atlas Kaffeemaschine.\n");
+  schreibe(s.vault, "Wissen/Atlas Wissen.md", "# Atlas Wissen\n\nATLAS-WISSEN-GEHEIM Atlas Kaffeemaschine.\n");
+  schreibe(s.vault, "brain.config.json", JSON.stringify({ ordner: { wiki: "Wissen" } }));
+  schreibe(s.vault, "CLAUDE.md", "# Atlas Regeln\n\nCLAUDE-GEHEIM Atlas Kaffeemaschine Rechnung.\n");
+  schreibe(s.vault, "10_projekte/_intern/Atlas Intern.md", "# Atlas Intern\n\nINTERN-GEHEIM Atlas Kaffeemaschine.\n");
+  await arten(s, ["verlinken"]);
+  const roh = s.aufrufe().at(-1).stdin;
+  for (const v of ["ATLAS-ARCHIV-GEHEIM", "ATLAS-WIKI-GEHEIM", "ATLAS-WISSEN-GEHEIM", "CLAUDE-GEHEIM", "INTERN-GEHEIM", "90_archiv", "09_wiki", "Wissen", "CLAUDE", "_intern", "Atlas Alt", "Atlas Wiki", "Atlas Wissen"]) assert.ok(!roh.includes(v), `„${v}“ darf nicht im Paket stehen`);
+  // lokal: Duplikat, Verlinken, Verschieben treffen nie dorthin
+  schreibe(s.vault, "00_inbox/Lokal.md", "# Atlas Wiki\n\nSiehe Atlas Alt und Atlas Wissen. #verworfen #Wissen #09_wiki\n");
+  const r = await s.api("POST", "/api/ki/vorschlag/lokal", { pfade: ["00_inbox/Lokal.md"] });
+  assert.equal(r.status, 200, JSON.stringify(r.j));
+  const ziele = JSON.stringify(r.j.eintraege["00_inbox/Lokal.md"].map((x) => [x.art, x.ziel, x.beschriftung])); // der Text des Eintrags selbst darf vorkommen, die Ziele nicht
+  for (const v of ["90_archiv", "09_wiki", "Wissen", "Atlas Alt", "Atlas Wiki", "Atlas Wissen"]) assert.ok(!ziele.includes(v), `lokal nie ${v}: ${ziele}`);
+});
+
+test("W2 Lokale Vorschläge verdrängen die der KI nicht (Grenze je Quelle)", async () => {
+  const s = szenarioV({ grenzen: { speicher: 3 } });
+  for (let i = 0; i < 4; i++) { schreibe(s.vault, `10_projekte/Titel ${i}.md`, `# Titel ${i}\n\nText.\n`); schreibe(s.vault, `00_inbox/Dopp ${i}.md`, `# Titel ${i}\n\nAnderer Text ${i}.\n`); }
+  const ki = await arten(s, ["tags", "aufgabe", "verschieben"], { ordnerName: "10_projekte" });
+  assert.equal(ki.length, 3);
+  const l = await s.api("POST", "/api/ki/vorschlag/lokal", { pfade: [0, 1, 2, 3].map((i) => `00_inbox/Dopp ${i}.md`) });
+  assert.equal(l.status, 200);
+  const anzahl = Object.values(l.j.eintraege).flat().length;
+  assert.ok(anzahl >= 4, `mehr lokale als die Grenze: ${anzahl}`);
+  for (const v of ki) assert.notEqual((await anwenden(s, v)).status, 404, `${v.art}: der KI-Vorschlag ist nicht verdrängt`);
+});
+
+test("K2 Duplikat zurücknehmen: genau an den Ursprungspfad (auch bei Namenskollision im Archiv), 409 wenn belegt", async () => {
+  const s = szenarioV();
+  schreibe(s.vault, "90_archiv/verworfen/Atlas-Idee.md", "# Alt im Archiv\n"); // Kollision: der Eintrag wird Atlas-Idee-2.md
+  const [vs] = await arten(s, ["duplikat"], { kandidatTitel: "Atlas", beleg: "Atlas Projekt" });
+  const r = await anwenden(s, vs);
+  assert.equal(r.status, 200, JSON.stringify(r.j));
+  assert.equal(r.j.archiv, "90_archiv/verworfen/Atlas-Idee-2.md");
+  assert.equal(existsSync(join(s.vault, EINTRAG)), false);
+  writeFileSync(join(s.vault, EINTRAG), "Etwas Neues am alten Ort.\n");
+  const belegt = await zurueck(s, vs);
+  assert.equal(belegt.status, 409, JSON.stringify(belegt.j)); assert.equal(belegt.j.art, "belegt");
+  assert.equal(lesen(s, "90_archiv/verworfen/Atlas-Idee-2.md"), EINTRAG_TEXT);
+  unlinkSync(join(s.vault, EINTRAG));
+  const z = await zurueck(s, vs);
+  assert.equal(z.status, 200, JSON.stringify(z.j));
+  assert.equal(lesen(s, EINTRAG), EINTRAG_TEXT, "genau am Ursprungspfad, nicht als Atlas-Idee-2.md");
+  assert.equal(existsSync(join(s.vault, "00_inbox/Atlas-Idee-2.md")), false);
+  assert.equal(lesen(s, "90_archiv/verworfen/Atlas-Idee.md"), "# Alt im Archiv\n", "die ältere Archivdatei bleibt");
 });

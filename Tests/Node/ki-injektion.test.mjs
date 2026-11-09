@@ -128,3 +128,10 @@ for (const fall of KORPUS.filter((f) => !f.erwartet && !f.beleglos)) {
     assert.equal(readFileSync(join(s.vault, ENTRY), "utf8"), alt, "Rückgängig stellt jedes Byte wieder her");
   });
 }
+
+test("K3 Tags, die YAML als Zahl oder Sonderwert liest (1e5, 0x1f, 0o7, 0b1, 1_000, 3.14, -2, .inf, .nan), sind nie ein Vorschlag; ähnliche Wörter schon", () => {
+  const ctx = { eintrag: "Wir sollten das Atlas Projekt besprechen.", kandidaten: ["k1"], ordner: ["o1"] };
+  const mit = (tags) => pruefeAntwort("posteingang", { vorschlaege: [{ art: "tags", tags, beleg: "Atlas Projekt", begruendung: "Passt.", sicherheit: "hoch" }] }, ctx).daten.vorschlaege.length;
+  for (const z of ["1e5", "1E5", "0x1f", "0o7", "0b1", "1_000", "3.14", "-2", "+7", ".inf", "-.inf", ".NaN", "1e-3", "a/1e5"]) assert.equal(mit(["gut", z]), 0, z);
+  for (const ok of ["e5", "x1f", "v2", "atlas2026", "2026-plan", "a/b"]) assert.equal(mit([ok]), 1, ok);
+});

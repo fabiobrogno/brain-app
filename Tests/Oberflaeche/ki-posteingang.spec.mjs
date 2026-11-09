@@ -20,7 +20,7 @@ const bild = async (page, name) => { if (BILDER) { await page.waitForTimeout(400
 
 const REISE = "00_inbox/Reise nach Lissabon.md", PLANUNG = "00_inbox/Planung.md", NEIN = "00_inbox/Nein.md", GEDANKE = "00_inbox/2026-10-23_gedanke.md";
 const REISE_TEXT = "# Reise nach Lissabon\n\nFlug im Mai, Hotel in der Alfama. Mietwagen buchen bis 14.11.\n";
-const PLANUNG_TEXT = "# Planung\n\nDie Reise nach Lissabon und ein Termin zum Espresso nächste Woche.\n";
+const PLANUNG_TEXT = "# Planung\n\nDie Reise nach Lissabon und ein Termin zum Mietwagen nächste Woche.\n";
 
 let vault, server, bin, home, support;
 async function aufbauen({ stufe = "lesen", mitClaude = true, einwilligung = true, viele = 0 } = {}) {
@@ -28,9 +28,10 @@ async function aufbauen({ stufe = "lesen", mitClaude = true, einwilligung = true
   vault = realpathSync.native(vault);
   writeFileSync(join(vault, REISE), REISE_TEXT);
   writeFileSync(join(vault, PLANUNG), PLANUNG_TEXT);
+  writeFileSync(join(vault, "10_notizen/Mietwagen.md"), "# Mietwagen\n\nBuchung und Abholung.\n"); // Wiki-Seiten sind nie Ziel von Vorschlägen: eine zweite eindeutige Notiz außerhalb des Wikis
   writeFileSync(join(vault, NEIN), "---\nki: nein\n---\n# Nein\n\nNIE-AN-DIE-KI Kaffee Reise Planung.\n");
   for (let i = 0; i < viele; i++) writeFileSync(join(vault, `00_inbox/Viel-${String(i + 1).padStart(2, "0")}.md`), `# Viel ${i + 1}\n\nGedanke Nummer ${i + 1} über Kaffee.\n`);
-  git(vault, "add", "--", "00_inbox"); git(vault, "commit", "-q", "-m", "Einträge im Posteingang"); // wie im Alltag: die Einträge sind schon versioniert
+  git(vault, "add", "--", "00_inbox", "10_notizen/Mietwagen.md"); git(vault, "commit", "-q", "-m", "Einträge im Posteingang"); // wie im Alltag: die Einträge sind schon versioniert
   const wurzel = realpathSync.native(mkdtempSync(join(tmpdir(), "brain-ui-kipe-")));
   home = join(wurzel, "home"); bin = join(wurzel, "bin"); support = join(wurzel, "support");
   for (const d of [home, bin, support]) mkdirSync(d);
@@ -73,7 +74,7 @@ test("Ohne Konto: nur lokale Vorschläge (Karten mit „ohne KI“), kein KI-Kno
   await expect(page.locator("[data-pk-leiste]")).toBeHidden();
   await expect(page.locator('[data-aktion="pk-ki"]')).toHaveCount(0);
   await expect(chip(page, PLANUNG)).toContainText("2 Vorschläge", { timeout: 15000 });
-  await expect(chip(page, REISE)).toContainText("1 Vorschlag");
+  await expect(chip(page, REISE)).toContainText("2 Vorschläge");
   await expect(chip(page, GEDANKE)).toHaveCount(0); // nichts zu sagen: kein Chip, kein „Keine Vorschläge“
   await oeffneChip(page, PLANUNG);
   await expect(panel(page, PLANUNG).locator(".pk-marke.ohne")).toHaveCount(2);
@@ -95,8 +96,8 @@ test("Karten: „Warum?“ hebt den Beleg wörtlich hervor, Verwerfen blendet di
   await k.locator('[data-aktion="pk-warum"]').click();
   const w = k.locator("[data-pk-warum]");
   await expect(w).toBeVisible();
-  await expect(w.locator("mark")).toHaveText(/Reise nach Lissabon|Espresso/);
-  await expect(w.locator(".pk-zitat")).toContainText("Die Reise nach Lissabon und ein Termin zum Espresso");
+  await expect(w.locator("mark")).toHaveText(/Reise nach Lissabon|Mietwagen/);
+  await expect(w.locator(".pk-zitat")).toContainText("Die Reise nach Lissabon und ein Termin zum Mietwagen");
   await expect(w).toContainText("Begründung");
   await expect(w).not.toContainText("der KI"); // lokal: keine KI im Spiel
   await k.locator('[data-aktion="pk-warum"]').click();

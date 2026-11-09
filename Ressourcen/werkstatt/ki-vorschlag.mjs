@@ -128,7 +128,9 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     let m = speicher.get(vaultKennung);
     if (!m) { m = new Map(); speicher.set(vaultKennung, m); }
     m.set(r.id, r);
-    while (m.size > G.speicher) m.delete(m.keys().next().value); // die ältesten fallen heraus
+    // Die Grenze gilt je Quelle: lokale Vorschläge (viele Einträge auf einmal) verdrängen nie die der KI und umgekehrt
+    const gleiche = [...m.values()].filter((x) => x.quelle === r.quelle);
+    for (let i = 0; gleiche.length - i > G.speicher; i++) m.delete(gleiche[i].id); // die ältesten dieser Quelle fallen heraus
   }
   const rueckSpeicher = new Map(); // Vault-Kennung → Map(Vorschlags-Id → was nötig ist, um die Übernahme zurückzunehmen); nur im Prozess
   const verwirfAlle = () => { speicher.clear(); rueckSpeicher.clear(); };
@@ -199,7 +201,7 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     // `ki: nein` schon im Index erkennen: solche Notizen zählen weder für Kandidaten noch für Ordner (ein Ordner, den nur sie füllen, verriete sonst ihr Dasein)
     const keinNein = (z) => z.kiNein !== true && !(z.felder && Object.entries(z.felder).some(([k, w]) => k.normalize("NFC").trim().toLowerCase() === "ki" && istKiNeinWert(w)));
     const sonst = index.filter((z) => z && typeof z.pfad === "string" && z.pfad !== n.pfad && !z.generiert && keinNein(z));
-    const kandidatenPool = sonst.filter((z) => { const f = falte(z.pfad); return !f.startsWith(`${inbox}/`) && !f.startsWith(`${vorlagen}/`) && !(aufgaben && f.startsWith(`${aufgaben}/`)); });
+    const kandidatenPool = sonst.filter((z) => { const f = falte(z.pfad); return v.kiOrtErlaubt(z.pfad) && !f.startsWith(`${inbox}/`) && !f.startsWith(`${vorlagen}/`) && !(aufgaben && f.startsWith(`${aufgaben}/`)); });
     const woerter = wortSet(`${titel} ${text}`);
     const punkte = (z) => { let p = 0; for (const w of wortSet(z.titel || "")) if (woerter.has(w)) p += 3; for (const w of wortSet(z.vorschau || "")) if (woerter.has(w)) p += 1; return p; };
     const rang = kandidatenPool.map((z) => ({ z, p: punkte(z) })).filter((x) => x.p > 0).sort((a, b) => b.p - a.p || (a.z.pfad < b.z.pfad ? -1 : 1)).slice(0, LIMITS.kandidaten * 3);
@@ -211,7 +213,7 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
       kandidaten.push({ id: `k${kandidaten.length + 1}`, pfad: k.pfad, hash: k.hash, inhalt: k.inhalt, titel: sauberText(titelAus(k.pfad, k.inhalt), 120), anfang: sauberText(schneide(k.inhalt.replace(/^---[\s\S]*?\n---\s*\n/, ""), 1200), G.eingabe.kandidatAnfang) });
     }
     // Ordner: die am häufigsten benutzten außerhalb von Posteingang, Vorlagen, Aufgaben und versteckten/generierten Bereichen — gezählt wird nur aus Notizen OHNE `ki: nein` (kandidatenPool), sonst verriete ein Ordner sie
-    const ordner = ordnerAus(kandidatenPool).slice(0, LIMITS.ordner).map((o, i) => ({ id: `o${i + 1}`, pfad: o.pfad, name: sauberText(o.pfad, 120) }));
+    const ordner = ordnerAus(kandidatenPool).filter((o) => v.kiOrtErlaubt(`${o.pfad}/x.md`)).slice(0, LIMITS.ordner).map((o, i) => ({ id: `o${i + 1}`, pfad: o.pfad, name: sauberText(o.pfad, 120) }));
     // Tags: nur die Tags der ausgewählten Kandidaten (schon ohne `ki: nein` geprüft) — nie der Tag-Zähler des Vaults, der auch `ki: nein`-Notizen mitzählt und sie so verriete. Häufigste zuerst, höchstens 40.
     const tagZaehl = new Map();
     for (const k of kandidaten) for (const t of extrahiereTags(k.inhalt)) { const s = t.normalize("NFC"); const e = tagZaehl.get(s.toLowerCase()); if (e) e.n++; else tagZaehl.set(s.toLowerCase(), { name: s, n: 1 }); }
@@ -539,7 +541,7 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
   // Dieselben Karten, derselbe Speicher, dieselbe Übernahme über id + Token wie bei der KI (Marke „ohne KI“).
   function lokaleVorschlaege(v, n, index, erwaehnt, ort) {
     const titel = titelAus(n.pfad, n.inhalt), nt = flachTitel(titel);
-    const verwaltet = (pfad) => { const f = falte(pfad); return f.startsWith(`${ort.vorlagen}/`) || /^90_/.test(f) || (ort.aufgaben && f.startsWith(`${ort.aufgaben}/`)) || f.split("/").some((t) => t.startsWith("_") || t.startsWith(".")); };
+    const verwaltet = (pfad) => { const f = falte(pfad); return !v.kiOrtErlaubt(pfad, true) || f.startsWith(`${ort.vorlagen}/`) || (ort.aufgaben && f.startsWith(`${ort.aufgaben}/`)); }; // dieselbe Regel wie für die KI (Wiki, Archiv, CLAUDE.md … nie ein Ziel)
     const pool = index.filter((z) => z && typeof z.pfad === "string" && z.pfad !== n.pfad && !z.generiert && !verwaltet(z.pfad));
     const zielVon = (pfad) => { try { const k = v.lies(pfad); return { pfad: k.pfad, hash: k.hash, titel: sauberText(titelAus(k.pfad, k.inhalt), 120) }; } catch { return null; } };
     const aus = [];
@@ -561,7 +563,7 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
       aus.push({ art: "verlinken", kand, beleg: sauberText(st.treffer, 200), begruendung: `Der Eintrag nennt ${q(sauberText(st.treffer, 60))} — so heißt eine andere Notiz.`, sicherheit: "hoch", anhaengen: false });
     }
     if (aus.length < 3) {
-      const ordnerPool = ordnerAus(pool.filter((z) => !falte(z.pfad).startsWith(`${ort.inbox}/`)));
+      const ordnerPool = ordnerAus(pool.filter((z) => !falte(z.pfad).startsWith(`${ort.inbox}/`))).filter((o) => v.kiOrtErlaubt(`${o.pfad}/x.md`));
       for (const tag of extrahiereTags(n.inhalt)) {
         const o = ordnerPool.find((x) => falte(x.pfad.split("/").pop()) === falte(tag.split("/").pop()));
         if (!o) continue;
@@ -609,6 +611,7 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     let n; try { n = v.lies(r.pfad); } catch { throw veraltet(); }
     if (n.hash !== r.inhaltHash || !inInbox(v, n.pfad)) throw veraltet();
     if (r.quelle !== "lokal" && istKiNein(n.inhalt)) throw KI_NEIN_FEHLER();
+    if (r.ziel && !v.kiOrtErlaubt(r.ziel.art === "ordner" ? `${r.ziel.pfad}/x.md` : r.ziel.pfad)) throw new HttpFehler(409, "Dieses Ziel ist für Vorschläge nicht erlaubt (verwalteter Ort). Es wurde nichts geändert.", { art: "ziel-verwaltet" });
     if (r.ziel && r.ziel.art === "notiz") { let z; try { z = v.lies(r.ziel.pfad); } catch { throw veraltet(); } if (z.hash !== r.ziel.hash) throw veraltet(); }
     const wer = r.quelle === "lokal" ? "Vorschlag übernommen" : "KI-Vorschlag übernommen";
     // Der Vorschlag ist ab jetzt „in Arbeit“: zwei gleichzeitige Klicks führen die Aktion nie zweimal aus; scheitert sie, wird er wieder frei
@@ -646,7 +649,7 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
         const x = await v.posteingangVerwerfen({ pfad: r.pfad }); // Archiv „verworfen“, ein Git-Commit; nichts wird gelöscht
         melde(v.wurzel, { art: "datei-aktion", wer: "Du", vaultName: v.name, text: `${wer}: als Duplikat abgelegt` }, { support });
         ergebnis = { ziel: x.ziel, pfad: x.pfad };
-        rueck = { art: "duplikat", archiv: x.ziel, ordner: ordnerVonPfad(r.pfad) };
+        rueck = { art: "duplikat", archiv: x.ziel, pfad: r.pfad };
       } else if (r.art === "aufgabe") {
         const a = await v.aufgabeAnlegen({ titel: r.aufgabe.text, ...(r.aufgabe.faellig ? { faellig: r.aufgabe.faellig } : {}), quelle: "mensch" });
         melde(v.wurzel, { art: "datei-aktion", wer: "KI-Vorschlag", vaultName: v.name, text: `${wer}: Aufgabe angelegt` }, { support });
@@ -687,7 +690,7 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     let erg;
     try {
       if (rr.art === "aufgabe") erg = await v.loeschen({ pfad: rr.pfad, ...(rr.hash ? { basisHash: rr.hash } : {}) }); // ist die Aufgabe inzwischen bearbeitet, bleibt sie (409)
-      else if (rr.art === "duplikat") erg = await v.verschieben({ pfad: rr.archiv, ziel: rr.ordner });
+      else if (rr.art === "duplikat") erg = await v.posteingangZuruecklegen({ archiv: rr.archiv, pfad: rr.pfad }); // genau an den Ursprungspfad (409, wenn belegt), mit Commit
       else erg = await v.vorgangZurueck({ id: rr.vorgang });
     } finally { rr.laeuft = false; }
     rr.zurueck = true;

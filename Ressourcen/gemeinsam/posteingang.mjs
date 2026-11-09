@@ -253,5 +253,30 @@ export function erzeugePosteingang(deps) {
     });
   }
 
-  return { verwerfen, spaeter, uebernehmen };
+  // Ein verworfener Eintrag geht genau an seinen Ursprungspfad zurück (nie an einen anderen Namen); ist der Pfad belegt: 409. Ein Git-Commit wie beim Verwerfen.
+  // archiv: Pfad unter 90_archiv/verworfen/ (so, wie verwerfen ihn zurückgab) · pfad: der Ursprungspfad (nur im Posteingang)
+  function zuruecklegen({ archiv, pfad } = {}) {
+    return seriell(async () => {
+      if (typeof archiv !== "string" || typeof pfad !== "string") throw new HttpFehler(400, "Archivpfad und Ursprungspfad fehlen.");
+      const repo = await bereit();
+      const von = loese(wurzel, archiv), nach = loese(wurzel, pfad);
+      if (!von.rel.startsWith(ARCHIV_VERWORFEN + "/") || !BEARBEITBAR.test(nach.rel)) throw new HttpFehler(400, "Das lässt sich hier nicht zurücklegen.");
+      let st; try { st = lstatSync(von.abs); } catch { throw new HttpFehler(404, "Der Eintrag liegt nicht mehr im Archiv.", { art: "fehlt" }); }
+      if (st.isSymbolicLink() || !st.isFile()) throw new HttpFehler(400, "Das ist keine gewöhnliche Datei.");
+      let belegt = true; try { lstatSync(nach.abs); } catch { belegt = false; }
+      if (belegt) throw new HttpFehler(409, "Am ursprünglichen Ort liegt inzwischen etwas anderes. Es wurde nichts zurückgelegt.", { art: "belegt" });
+      const titel = einzeilig(nach.rel.split("/").pop().replace(/\.[^.]+$/, ""));
+      return atomar(async (merke) => {
+        mkdirSync(dirname(nach.abs), { recursive: true });
+        linkSync(von.abs, nach.abs); // EEXIST: jemand war schneller → Fehler, nichts wird überschrieben
+        try { unlinkSync(von.abs); } catch (e) { try { unlinkSync(nach.abs); } catch { /* bleibt als Kopie liegen: nichts geht verloren */ } throw e; }
+        merke(() => { linkSync(nach.abs, von.abs); unlinkSync(nach.abs); });
+        for (let o = dirname(von.abs); o.length > wurzel.length && o.startsWith(join(wurzel, "90_archiv")); o = dirname(o)) { try { rmdirSync(o); } catch { break; } }
+        const c = await festhalten(repo, `Posteingang: „${titel}“ zurückgelegt`, [von.rel, nach.rel], [nach.rel]);
+        return { pfad: nach.rel, von: von.rel, commit: c.sha, git: c.git };
+      });
+    });
+  }
+
+  return { verwerfen, spaeter, uebernehmen, zuruecklegen };
 }
