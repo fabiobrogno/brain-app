@@ -48,6 +48,7 @@ import { erzeugeSchreiben } from "./schreiben.js"; // Neue Notiz (sofort), Tages
 import { titelAusText, hatInhalt, ERSATZTITEL, kopfGrenzen, imOrdner as imVorlagenOrdner, STANDARD as SCHREIB_STANDARD, VORLAGENORDNER_STANDARD } from "./vorlagen.js";
 import { TS } from "./texte-schreiben.js";
 import { neutralerText } from "./plattform-texte.js";
+import { erzeugeKiText } from "./ki-text.js"; // KI-Aktionen auf markiertem Text (K2): Format-Leiste, Kontextmenü, Befehlspalette
 // „Vault im Finder zeigen“ heißt außerhalb der Mac-App „… im Dateimanager zeigen“
 const ordnerBefehlName = () => (inApp() ? T.befehle.ordner : neutralerText(T.befehle.ordner));
 import { datumKurz, datumLang, datumZeit, istDatumText, bytesText, setzeTypFarbe, typSymbol, typName, wortAnzahl, relativ, pluralisiere, vorschauText, typTextFarbe } from "./format.js";
@@ -291,7 +292,9 @@ const entwurfJournal = (() => {
 const FORMAT_BEFEHLE = [["format-fett", "fett"], ["format-kursiv", "kursiv"], ["format-code", "code"], ["format-durchgestrichen", "durchgestrichen"], ["format-link", "link"],
   ["format-ueberschrift-1", "ueberschrift1"], ["format-ueberschrift-2", "ueberschrift2"], ["format-ueberschrift-3", "ueberschrift3"], ["format-ueberschrift-4", "ueberschrift4"],
   ["format-liste-punkt", "listePunkt"], ["format-liste-nummer", "listeNummer"], ["format-liste-aufgabe", "listeAufgabe"]];
+const kiTextRef = {}; // wird gleich nach dem Editor gefüllt (der Editor ruft kiText?.… erst bei Ereignissen)
 const ed = erstelleEditor($("editor"), {
+  kiText: kiTextRef,
   roh: () => S.roh,
   pfad: () => S.pfad || "",
   anhaenge,
@@ -324,6 +327,7 @@ const ed = erstelleEditor($("editor"), {
     speicherTimer = setTimeout(speichere, 800);
   },
 });
+Object.assign(kiTextRef, erzeugeKiText({ S, ed, speichereWarte: () => { clearTimeout(speicherTimer); return speichere(); }, nachAufgaben: () => { ladeBaum(); planeGitRefresh(); } }));
 // Entwurfs-Journal: ungespeicherter Text überlebt einen Absturz (entwurf.js, gemeinsam/entwurf.mjs). window.__journalMs: nur Tests.
 const journal = erzeugeJournal({ api, intervallMs: Number(window.__journalMs) > 0 ? Number(window.__journalMs) : 5000,
   vault: () => S.info?.vault || "",
@@ -2735,6 +2739,7 @@ function oeffnePalette(vorgabe = "") {
     [T.befehle.posteingang, kz.anzeige("gehe-posteingang"), () => waehleSicht({ art: "bereich", id: "inbox" })], [T.befehle.alleNotizen, kz.anzeige("gehe-alle"), () => waehleSicht({ art: "bereich", id: "alle" })], [T.befehle.aufgaben, kz.anzeige("gehe-aufgaben"), () => waehleSicht({ art: "bereich", id: "aufgaben" })],
     [T.liste.verlauf, kz.anzeige("verlauf"), oeffneVerlauf], [TG.titel, kz.anzeige("mitteilungen"), () => glocke.oeffne()],
     ...(S.pfad && S.bearbeitbar ? [["tabelle-einfuegen", () => ed.fuegeTabelleEin()], ...FORMAT_BEFEHLE.map(([id, name]) => [id, () => ed.formatiere(name)])].map(([id, tun]) => [kz.REGISTER.befehle.find((b) => b.id === id).name, kz.anzeige(id), () => { ed.fokus(); tun(); }]) : []),
+    ...(S.pfad && S.bearbeitbar ? kiTextRef.paletteBefehle() : []), // KI-Aktionen, solange im Editor Text markiert ist
     ...(kannOrdnerZeigen() ? [[ordnerBefehlName(), "", () => aktion("ordner-zeigen", S.pfad || undefined)]] : []),
     ...(inApp() ? [[T.befehle.ansicht, "", oeffneUebersicht]] : []),
     [T.befehle.mcp, "", oeffneKi], [T.befehle.konten, "", oeffneKonten],

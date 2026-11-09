@@ -1,0 +1,76 @@
+/* Kortex Studio — KI-Aktionen auf markiertem Text (K2): ein Popover am Text für Menü, Lauf, Diff und Sperre (kit-), der Wort-Diff (wd-) und der KI-Knopf der Format-Leiste.
+   Nur Tokens aus studio.css/schemata.css (hell, dunkel und alle Schemas wechseln dort). Kein natives Feld. Kein Layoutsprung: feste Breite, Lauf und Fehler teilen eine Höhe. */
+
+.kit {
+  position: fixed; z-index: 48; box-sizing: border-box; width: min(440px, calc(100vw - 16px)); display: flex; flex-direction: column; min-width: 0;
+  border-radius: var(--r-xl); background: color-mix(in srgb, var(--erhoben) 97%, transparent); -webkit-backdrop-filter: blur(18px) saturate(1.3); backdrop-filter: blur(18px) saturate(1.3);
+  box-shadow: 0 0 0 1px var(--linie-stark), var(--schatten-float); color: var(--text); font-size: 13px;
+  opacity: 0; transform: translateY(4px) scale(.985); transform-origin: top left; transition: opacity var(--d-fast, 120ms) ease-out, transform var(--d-fast, 120ms) ease-out;
+}
+.kit[data-seite="oben"] { transform-origin: bottom left; transform: translateY(-4px) scale(.985); }
+.kit[data-offen="ja"] { opacity: 1; transform: none; }
+.kit[hidden] { display: none; }
+:root[data-bewegung="reduziert"] .kit { transition: none; transform: none; }
+
+.kit-kopf { flex: none; display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 8px 0 14px; border-bottom: 1px solid var(--linie); }
+.kit-kopf-sym { display: grid; color: var(--akzent-tinte, var(--akzent)); }
+.kit-titel { font-size: 12.5px; font-weight: 600; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kit-marke { flex: none; padding: 1px 7px; border-radius: var(--r-pille); background: var(--akzent-weich); color: var(--akzent-tinte); font-size: 10.5px; font-weight: 600; letter-spacing: .02em; }
+.kit-zu { flex: none; margin-left: auto; display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: var(--r); background: transparent; color: var(--text-3); cursor: pointer; transition: background var(--t), color var(--t); }
+.kit-zu:hover { background: var(--hover); color: var(--text); }
+.kit-mitte { flex: 1 1 auto; min-height: 0; display: grid; align-content: start; gap: 8px; padding: 8px; overflow: auto; overscroll-behavior: contain; }
+.kit-fuss { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 48px; padding: 8px 10px 8px 14px; border-top: 1px solid var(--linie); }
+.kit-fuss-spalte { display: grid; gap: 8px; align-items: stretch; }
+.kit-fuss .kit-abstand { flex: 1 1 0; min-width: 0; }
+.kit-leise { margin: 0; font-size: 12px; line-height: 1.45; color: var(--text-2); text-wrap: pretty; }
+.kit-klein { margin: 0; font-size: 11.5px; line-height: 1.45; color: var(--text-3); text-wrap: pretty; }
+
+/* Menü */
+.kit-gruppe { padding: 6px 8px 2px; font-size: 11px; font-weight: 500; color: var(--text-3); }
+.kit-eintrag { box-sizing: border-box; display: flex; align-items: center; gap: 10px; width: 100%; min-height: 40px; padding: 0 10px; border: 0; border-radius: var(--r); background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; transition: background var(--t); }
+.kit-eintrag[data-aktiv="true"], .kit-eintrag:hover { background: var(--hover); }
+.kit-eintrag .sym { flex: none; color: var(--text-2); }
+.kit-eintrag-text { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.kit-eintrag-name { font-size: 13px; font-weight: 500; }
+.kit-eintrag-hinweis { font-size: 11.5px; color: var(--text-3); }
+.kit-eintrag[aria-disabled="true"] { opacity: .5; cursor: default; }
+.kit-eintrag[aria-disabled="true"]:hover { background: transparent; }
+.kit-sprachen { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 8px 6px; }
+.kit-chip { box-sizing: border-box; display: inline-flex; align-items: center; min-height: 28px; padding: 0 11px; border: 1px solid var(--linie-stark); border-radius: var(--r-pille); background: transparent; color: var(--text-2); font: inherit; font-size: 12.5px; cursor: pointer; transition: background var(--t), color var(--t), border-color var(--t); }
+.kit-chip[data-aktiv="true"], .kit-chip:hover { background: var(--hover); color: var(--text); }
+.kit-chip[aria-disabled="true"] { opacity: .5; cursor: default; }
+.kit-chip[aria-disabled="true"]:hover { background: transparent; color: var(--text-2); }
+.kit-grund { margin: 0 8px; padding: 7px 10px; border-radius: var(--r); background: var(--gelb-weich); color: var(--text-2); font-size: 12px; line-height: 1.45; }
+.kit-gruendlich { display: grid; gap: 2px; }
+
+/* Lauf und Fehler: gleiche Höhe, damit nichts springt */
+.kit[data-phase="laeuft"] .kit-mitte, .kit[data-phase="fehler"] .kit-mitte { min-height: 112px; align-content: center; padding: 14px; }
+.kit-balken { position: relative; height: 4px; border-radius: var(--r-pille); background: var(--hover-2); overflow: hidden; }
+.kit-balken > i { position: absolute; inset: 0 auto 0 0; width: 34%; border-radius: inherit; background: var(--akzent); animation: kit-lauf 1.5s var(--ease-out) infinite; }
+@keyframes kit-lauf { from { transform: translateX(-110%); } to { transform: translateX(310%); } }
+.kit-text { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--text-2); font-variant-numeric: tabular-nums; text-wrap: pretty; }
+
+/* Ergebnis: Diff, Warnzeilen, Aufgaben */
+.kit[data-phase="ergebnis"] .kit-mitte { max-height: min(300px, 50vh); }
+.kit-warn { display: flex; gap: 8px; align-items: flex-start; margin: 0; padding: 7px 10px; border-radius: var(--r); background: var(--gelb-weich); box-shadow: inset 0 0 0 1px var(--gelb-rand); color: var(--text); font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+.kit-warn .sym { flex: none; margin-top: 1px; color: color-mix(in srgb, var(--gelb) 70%, var(--text)); }
+.kit-sperre { display: flex; gap: 8px; align-items: flex-start; margin: 0; padding: 7px 10px; border-radius: var(--r); background: var(--rot-weich); box-shadow: inset 0 0 0 1px var(--rot-rand); color: var(--text); font-size: 12px; line-height: 1.45; }
+.kit-sperre .sym { flex: none; margin-top: 1px; color: var(--rot); }
+.kit-tasten { display: inline-flex; gap: 10px; font-size: 11.5px; color: var(--text-3); }
+.kit-aufgaben { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.kit-aufgabe { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 9px; align-items: start; }
+.kit-aufgabe-kaestchen { box-sizing: border-box; width: 15px; height: 15px; margin-top: 2px; border: 1.5px solid var(--text-3); border-radius: 4px; }
+.kit-aufgabe-text { font-size: 13px; line-height: 1.45; color: var(--text); overflow-wrap: anywhere; }
+.kit-aufgabe-text small { display: block; margin-top: 1px; font-size: 11.5px; color: var(--text-3); }
+.kit button:focus-visible { outline: 0; box-shadow: var(--fokus-ring); }
+
+/* Wort-Diff */
+.wd { box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--linie); border-radius: var(--r); background: var(--papier); font-size: 13px; line-height: 1.6; color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }
+.wd del, .wd ins { text-decoration: none; border-radius: 3px; padding: 0 1px; }
+.wd .wd-weg { background: var(--rot-weich); color: color-mix(in srgb, var(--rot) 75%, var(--text)); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--rot) 55%, transparent); }
+.wd .wd-neu { background: var(--gruen-weich); color: color-mix(in srgb, var(--gruen) 70%, var(--text)); }
+
+/* KI-Knopf in der Format-Leiste */
+.fl-ki { color: var(--akzent-tinte, var(--akzent)); }
+.fl-ki[aria-disabled="true"] { opacity: .4; cursor: default; }
+.fl-ki[aria-disabled="true"]:hover { background: transparent; }
