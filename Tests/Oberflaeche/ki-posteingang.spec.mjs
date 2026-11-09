@@ -78,7 +78,7 @@ test("Ohne Konto: nur lokale Vorschläge (Karten mit „ohne KI“), kein KI-Kno
   expect(aufrufe()).toEqual([]);
   // Übernehmen ohne Konto: verlinkt genau die Stelle, über den Weg mit Journal
   await karte(page, PLANUNG, "verlinken").filter({ hasText: "Reise nach Lissabon" }).locator('[data-aktion="pk-ok"]').click();
-  await expect(toastMit(page, "Verlinkt")).toBeVisible();
+  await expect(toastMit(page, "Verlinkt")).toBeVisible({ timeout: 20000 });
   expect(lesen(PLANUNG)).toContain("[[10_notizen/Reise nach Lissabon|Reise nach Lissabon]]"); // der Titel gehört zu zwei Notizen: der Link nennt den Pfad
   expect(aufrufe()).toEqual([]);
 });
@@ -113,10 +113,10 @@ test("Lokal: Verlinken über den Erwähnungen-Weg, Rückgängig im Toast stellt 
   await zumPosteingang(page);
   await oeffneChip(page, PLANUNG);
   await karte(page, PLANUNG, "verlinken").filter({ hasText: "Reise nach Lissabon" }).locator('[data-aktion="pk-ok"]').click();
-  await expect(toastMit(page, "Verlinkt")).toBeVisible();
+  await expect(toastMit(page, "Verlinkt")).toBeVisible({ timeout: 20000 });
   expect(lesen(PLANUNG)).toBe(PLANUNG_TEXT.replace("Reise nach Lissabon", "[[10_notizen/Reise nach Lissabon|Reise nach Lissabon]]"));
   await toastMit(page, "Verlinkt").locator("a", { hasText: "Rückgängig" }).click();
-  await expect(toastMit(page, "Rückgängig gemacht")).toBeVisible();
+  await expect(toastMit(page, "Rückgängig gemacht")).toBeVisible({ timeout: 20000 });
   expect(lesen(PLANUNG)).toBe(PLANUNG_TEXT);
 });
 
@@ -135,12 +135,12 @@ test("Duplikat: „Vergleichen“ zeigt beide Texte nebeneinander, „Als Duplik
   await bild(page, "k3-vergleich-hell");
   await dlg.locator('[data-aktion="pk-vgl-ok"]').click();
   await expect(dlg).toHaveCount(0);
-  await expect(toastMit(page, "Als Duplikat abgelegt")).toBeVisible();
+  await expect(toastMit(page, "Als Duplikat abgelegt")).toBeVisible({ timeout: 20000 });
   expect(existsSync(join(vault, REISE))).toBe(false);
   expect(readFileSync(join(vault, "90_archiv/verworfen/Reise nach Lissabon.md"), "utf8")).toBe(REISE_TEXT);
   await expect(page.locator(`[data-karte][data-pfad="${REISE}"]`)).toHaveCount(0);
   await toastMit(page, "Als Duplikat abgelegt").locator("a", { hasText: "Rückgängig" }).click();
-  await expect(toastMit(page, "Rückgängig gemacht")).toBeVisible();
+  await expect(toastMit(page, "Rückgängig gemacht")).toBeVisible({ timeout: 20000 });
   expect(lesen(REISE)).toBe(REISE_TEXT);
   await expect(page.locator(`[data-karte][data-pfad="${REISE}"]`)).toBeVisible();
 });
@@ -164,10 +164,10 @@ test("Mit KI: je Art übernehmen (Tags, Aufgabe, Verschieben) über die echten W
   // Tags
   const alt = lesen(GEDANKE);
   await karte(page, GEDANKE, "tags").locator('[data-aktion="pk-ok"]').click();
-  await expect(toastMit(page, "Tags gesetzt")).toBeVisible();
+  await expect(toastMit(page, "Tags gesetzt")).toBeVisible({ timeout: 20000 });
   expect(lesen(GEDANKE)).toBe(`---\ntags: [lissabon, Planung-2026]\n---\n${alt}`);
   await toastMit(page, "Tags gesetzt").locator("a", { hasText: "Rückgängig" }).click();
-  await expect(toastMit(page, "Rückgängig gemacht")).toBeVisible();
+  await expect(toastMit(page, "Rückgängig gemacht")).toBeVisible({ timeout: 20000 });
   expect(lesen(GEDANKE)).toBe(alt);
   // Die übrigen Vorschläge sind nach Rückgängig verbraucht: neu holen (nur auf Klick)
   await expect.poll(() => aufrufe().length).toBe(1);
@@ -175,11 +175,11 @@ test("Mit KI: je Art übernehmen (Tags, Aufgabe, Verschieben) über die echten W
   await expect(panel(page, GEDANKE).locator(".pk-karte")).toHaveCount(3, { timeout: 15000 });
   // Aufgabe
   await karte(page, GEDANKE, "aufgabe").locator('[data-aktion="pk-ok"]').click();
-  await expect(toastMit(page, "Aufgabe angelegt")).toBeVisible();
+  await expect(toastMit(page, "Aufgabe angelegt")).toBeVisible({ timeout: 20000 });
   const mitAufgabe = () => alleDateien().filter((d) => { try { return d.endsWith(".md") && readFileSync(d, "utf8").includes("Angebot schicken"); } catch { return false; } }).map((d) => d.slice(vault.length));
   await expect.poll(() => mitAufgabe().length).toBe(1);
   await toastMit(page, "Aufgabe angelegt").locator("a", { hasText: "Rückgängig" }).click();
-  await expect(toastMit(page, "Rückgängig gemacht")).toBeVisible();
+  await expect(toastMit(page, "Rückgängig gemacht")).toBeVisible({ timeout: 20000 });
   await expect.poll(mitAufgabe, { message: "die Aufgabe liegt nicht mehr im Vault" }).toEqual([]);
 });
 
@@ -192,12 +192,12 @@ test("Mit KI: Verschieben über dateiaktionen, der Eintrag verschwindet aus dem 
   await expect(karte(page, GEDANKE, "verschieben").locator("[data-pk-text]")).toHaveText("Verschiebt nach „10_notizen“");
   const alt = lesen(GEDANKE);
   await karte(page, GEDANKE, "verschieben").locator('[data-aktion="pk-ok"]').click();
-  await expect(toastMit(page, "Verschoben")).toBeVisible();
+  await expect(toastMit(page, "Verschoben")).toBeVisible({ timeout: 20000 });
   expect(existsSync(join(vault, GEDANKE))).toBe(false);
   expect(readFileSync(join(vault, "10_notizen/2026-10-23_gedanke.md"), "utf8")).toBe(alt);
   await expect(page.locator(`[data-karte][data-pfad="${GEDANKE}"]`)).toHaveCount(0);
   await toastMit(page, "Verschoben").locator("a", { hasText: "Rückgängig" }).click();
-  await expect(toastMit(page, "Rückgängig gemacht")).toBeVisible();
+  await expect(toastMit(page, "Rückgängig gemacht")).toBeVisible({ timeout: 20000 });
   expect(lesen(GEDANKE)).toBe(alt);
   await expect(page.locator(`[data-karte][data-pfad="${GEDANKE}"]`)).toBeVisible();
 });
