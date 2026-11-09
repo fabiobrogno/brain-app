@@ -468,6 +468,7 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
   }
 
   const textFuer = (art, typ, plan) => {
+    if (art === "aendern") return plan.beschreibung;
     if (art === "verlinken") return `${plan.verweise} ${plan.verweise === 1 ? "Erwähnung" : "Erwähnungen"} von „${plan.zielTitel || "einer Notiz"}“ verlinkt · ${plan.notizen} ${plan.notizen === 1 ? "Notiz" : "Notizen"} angepasst`;
     const was = typ === "ordner" ? "Ordner" : plan.anhang ? "Anhang" : "Notiz";
     const v = plan.verweise ? ` · ${plan.verweise} ${plan.verweise === 1 ? "Verweis" : "Verweise"} in ${plan.notizen} ${plan.notizen === 1 ? "Notiz" : "Notizen"} angepasst` : "";
@@ -480,7 +481,7 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
   const alsGelesen = (e) => { try { if (e) aendereZustand(support, kennung, (s) => { if (!s.gelesen.includes(e.id)) s.gelesen.push(e.id); }); } catch { /* das Protokoll ist Beiwerk */ } return e; };
   function protokolliere(m, plan) {
     // Verlinken: nie genau zwei Pfade (zwei Pfade heißen für offene Studios „[jetzt, vorher]“: die Notiz wurde verschoben)
-    const pfade = plan.art === "verlinken" ? (plan.dateien.length === 2 ? [...plan.dateien.map((d) => d.pfad), plan.ziel] : plan.dateien.map((d) => d.pfad)) : plan.art === "loeschen" ? [plan.von] : [plan.nach, plan.von];
+    const pfade = plan.art === "aendern" ? plan.dateien.map((d) => d.pfad) : plan.art === "verlinken" ? (plan.dateien.length === 2 ? [...plan.dateien.map((d) => d.pfad), plan.ziel] : plan.dateien.map((d) => d.pfad)) : plan.art === "loeschen" ? [plan.von] : [plan.nach, plan.von];
     const e = alsGelesen(melde(wurzel, { art: "datei-aktion", wer, vaultName: name, text: textFuer(plan.art, plan.typ, plan), pfade, rueckgaengig: { art: "vorgang", id: m.id } }, { support }));
     return e ? e.id : null;
   }
@@ -721,7 +722,8 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
     const gelesen = new Map();
     const lies = (rel) => { const n = liesNotiz(rel); gelesen.set(n.pfad, n); return n; };
     const r = await bauePlan(lies);
-    const plan = { art: "verlinken", typ: "datei", von: "", nach: "", vonAbs: wurzel, nachAbs: wurzel, keinUmzug: true, casePur: false, dateien: [], uebersprungen: (r.uebersprungen || []).slice(0, MAX_LISTE), verlinktVon: [],
+    // `beschreibung` (nur von Kortex-eigenen Modulen, nie von außen): die Änderung einer Notiz, die kein Verlinken im engeren Sinn ist (Tags setzen, Link anhängen) — sonst gleicher Weg
+    const plan = { art: r.beschreibung ? "aendern" : "verlinken", beschreibung: r.beschreibung || null, typ: "datei", von: "", nach: "", vonAbs: wurzel, nachAbs: wurzel, keinUmzug: true, casePur: false, dateien: [], uebersprungen: (r.uebersprungen || []).slice(0, MAX_LISTE), verlinktVon: [],
       notizenImOrdner: 0, titelAlt: null, titelNeu: null, hash: null, ziel: r.ziel || null, zielTitel: r.zielTitel || null };
     const liste = [];
     for (const d of r.dateien) {
@@ -890,7 +892,7 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
       try { erg = wechsle(m, "zurueck", { teilweise: eingabe.teilweise === true }); } catch (e) { loescheMarke(); throw e; } // ein Fehler (409 …) heißt: nichts angefasst; nur ein Absturz lässt die Marke stehen
       m.status = "zurueck"; schreibeManifest(m);
       loescheMarke();
-      eintragLog(m, m.art === "loeschen" ? "Rückgängig: Aus dem Papierkorb zurückgelegt." : (m.art === "tag-umbenennen" ? `Rückgängig: Tag #${m.tagNeu} heißt wieder #${m.tagAlt}.` : `Rückgängig: ${m.art === "umbenennen" ? "Umbenennen" : m.art === "verlinken" ? "Verlinken" : "Verschieben"} zurückgenommen.`), [erg.nach || erg.pfad, erg.von].filter(Boolean)); // [jetziger Ort, voriger Ort]: offene Studios folgen
+      eintragLog(m, m.art === "loeschen" ? "Rückgängig: Aus dem Papierkorb zurückgelegt." : (m.art === "tag-umbenennen" ? `Rückgängig: Tag #${m.tagNeu} heißt wieder #${m.tagAlt}.` : `Rückgängig: ${m.art === "umbenennen" ? "Umbenennen" : m.art === "verlinken" ? "Verlinken" : m.art === "aendern" ? "Änderung" : "Verschieben"} zurückgenommen.`), [erg.nach || erg.pfad, erg.von].filter(Boolean)); // [jetziger Ort, voriger Ort]: offene Studios folgen
       return { ...erg, ok: true, art: m.art === "loeschen" ? "wiederhergestellt" : "zurueck", vorgangArt: m.art };
     });
   }

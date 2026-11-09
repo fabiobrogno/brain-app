@@ -1,0 +1,99 @@
+/* Kortex Studio — Vorschlagskarten im Posteingang (K3, KI-Runde). Nur Tokens aus studio.css/schemata.css (hell, dunkel und alle Farbschemas wechseln dort). Kein natives Feld.
+   Die Zeile unter jedem Eintrag hat von Anfang an eine feste Höhe; die Karten klappen nur auf Klick auf und gleiten dabei. */
+
+/* Die Aktionen der Karte (Übernehmen, Später, Verwerfen) liegen über der Fußzeile; die Vorschlagszeile darunter bleibt frei */
+.karte-fuss:has(> .karte-aktionen) { position: relative; }
+.karte-fuss > .karte-aktionen { right: 0; bottom: -5px; }
+
+.pk { margin-top: 8px; min-width: 0; cursor: default; -webkit-user-select: text; user-select: text; }
+.pk-zeile { display: flex; align-items: center; gap: 6px; min-height: 26px; min-width: 0; }
+.pk-chip, .pk-ki, .pk-alle {
+  box-sizing: border-box; display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border-radius: var(--r-pille); font: inherit; font-size: 11.5px; line-height: 1;
+  cursor: pointer; white-space: nowrap; transition: background var(--t), color var(--t), border-color var(--t), opacity var(--t);
+}
+.pk-chip { min-width: 0; max-width: 100%; border: 1px solid var(--linie); background: transparent; color: var(--text-3); }
+.pk-chip:hover:not(:disabled) { background: var(--hover); color: var(--text-2); }
+.pk-chip:disabled { cursor: default; }
+.pk-chip.hat { background: var(--akzent-weich); border-color: color-mix(in srgb, var(--akzent) 26%, transparent); color: var(--akzent-tinte); font-weight: 500; }
+.pk-chip.hat:hover:not(:disabled) { background: color-mix(in srgb, var(--akzent) 20%, transparent); color: var(--akzent-tinte); }
+.pk-chip-sym { display: grid; flex: none; }
+.pk-chip-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.pk-pfeil { display: grid; flex: none; transition: transform var(--d-fast) var(--ease-out); }
+.pk-chip[aria-expanded="true"] .pk-pfeil { transform: rotate(180deg); }
+.pk-chip.arbeitet .pk-chip-sym { animation: pk-puls 1.3s ease-in-out infinite; }
+@keyframes pk-puls { 50% { opacity: .35; } }
+.pk-ki { flex: none; margin-left: auto; border: 1px solid var(--linie-stark); background: transparent; color: var(--text-2); }
+.pk-ki:hover:not(:disabled), .pk-alle:hover:not(:disabled) { background: var(--hover); color: var(--text); }
+.pk-ki:disabled, .pk-alle:disabled { opacity: .5; cursor: default; }
+.pk-chip:focus-visible, .pk-ki:focus-visible, .pk-alle:focus-visible, .pk-link:focus-visible, .pk-x:focus-visible, .pk-panel button:focus-visible { outline: 0; box-shadow: var(--fokus-ring); }
+
+/* Panel: nur offen, wenn der Nutzer es aufgeklappt hat (oder seine KI-Anfrage läuft) */
+.pk-panel { display: grid; gap: 8px; margin-top: 8px; min-width: 0; }
+.pk-panel[hidden] { display: none; }
+.pk-karte { display: grid; gap: 7px; min-width: 0; padding: 9px 10px 10px; border: 1px solid var(--linie); border-radius: var(--r-l); background: var(--erhoben); }
+.pk-karte[data-zustand="veraltet"] { opacity: .6; }
+.pk-kopf { display: grid; grid-template-columns: 24px minmax(0, 1fr) 24px; gap: 8px; align-items: start; min-width: 0; }
+.pk-sym { display: grid; place-items: center; width: 24px; height: 24px; border-radius: var(--r); background: var(--akzent-weich); color: var(--akzent-tinte); }
+.pk-titel { display: grid; gap: 1px; min-width: 0; }
+.pk-art { font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--text-3); }
+.pk-text { font-size: 12.5px; line-height: 1.4; font-weight: 500; color: var(--text); overflow-wrap: anywhere; text-wrap: pretty; }
+.pk-detail { margin: 0 0 0 32px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 12px; line-height: 1.45; color: var(--text-2); min-width: 0; }
+.pk-detail b { font-weight: 500; color: var(--text); overflow-wrap: anywhere; }
+.pk-faellig { padding: 1px 7px; border-radius: var(--r-pille); background: var(--hover); font-size: 11px; color: var(--text-2); }
+.pk-tag { padding: 1px 7px; border-radius: var(--r-pille); background: var(--hover); font-size: 11.5px; color: var(--text-2); overflow-wrap: anywhere; }
+.pk-marken { margin-left: 32px; display: flex; flex-wrap: wrap; gap: 4px; min-height: 18px; }
+.pk-marke { padding: 1px 7px; border-radius: var(--r-pille); background: var(--hover); font-size: 10.5px; font-weight: 500; color: var(--text-3); }
+.pk-marke.hoch { background: var(--gruen-weich); color: color-mix(in srgb, var(--gruen) 70%, var(--text)); }
+.pk-marke.mittel { background: var(--gelb-weich); color: color-mix(in srgb, var(--gelb) 55%, var(--text)); }
+.pk-knoepfe { margin-left: 32px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-width: 0; }
+.pk-link { padding: 0 2px; min-height: 24px; border: 0; background: transparent; color: var(--akzent-tinte, var(--akzent)); font: inherit; font-size: 12px; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); border-radius: var(--r-s); }
+.pk-link:hover { text-decoration-color: currentColor; }
+.pk-x { display: grid; place-items: center; width: 24px; height: 24px; margin: -3px -3px 0 0; padding: 0; border: 0; border-radius: var(--r); background: transparent; color: var(--text-3); cursor: pointer; transition: background var(--t), color var(--t); }
+.pk-x:hover:not(:disabled) { background: var(--hover); color: var(--text); }
+
+/* „Warum?“: der Beleg wörtlich hervorgehoben */
+.pk-warum { margin-left: 32px; display: grid; gap: 4px; padding-top: 7px; border-top: 1px solid var(--linie); min-width: 0; }
+.pk-label { margin: 0; font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--text-3); }
+.pk-zitat { margin: 0; padding: 3px 0 3px 9px; border-left: 2px solid var(--linie-stark); font-size: 12px; line-height: 1.5; color: var(--text-2); white-space: pre-wrap; overflow-wrap: anywhere; text-wrap: pretty; }
+.pk-zitat mark { padding: 0 2px; border-radius: 3px; background: color-mix(in srgb, var(--akzent) 22%, transparent); color: var(--text); font-weight: 500; }
+.pk-begruendung { margin: 0; font-size: 12px; line-height: 1.5; font-style: italic; color: var(--text-2); overflow-wrap: anywhere; text-wrap: pretty; }
+.pk-warum .pk-link { justify-self: start; }
+
+/* Lauf, Meldung, Fußzeile */
+.pk-lauf, .pk-meldung { display: grid; gap: 7px; padding: 9px 10px; border: 1px solid var(--linie); border-radius: var(--r-l); background: var(--hover); min-width: 0; }
+.pk-lauf .knopf, .pk-meldung .knopf { justify-self: start; }
+.pk-meldung { grid-template-columns: minmax(0, 1fr); }
+.pk-meldung p, .pk-lauf-text, .pk-leer { margin: 0; font-size: 12px; line-height: 1.5; color: var(--text-2); font-variant-numeric: tabular-nums; text-wrap: pretty; }
+.pk-meldung-sym { display: none; }
+[data-pk-veraltet] { background: var(--gelb-weich); border-color: var(--gelb-rand); }
+[data-pk-veraltet] .pk-meldung-sym { display: inline-grid; color: color-mix(in srgb, var(--gelb) 70%, var(--text)); }
+.pk-balken { position: relative; height: 4px; border-radius: var(--r-pille); background: var(--hover-2); overflow: hidden; }
+.pk-lauf .pk-balken > i { position: absolute; inset: 0 auto 0 0; width: 34%; border-radius: inherit; background: var(--akzent); animation: pk-lauf 1.5s var(--ease-out) infinite; }
+@keyframes pk-lauf { from { transform: translateX(-110%); } to { transform: translateX(310%); } }
+.pk-fuss { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-width: 0; }
+.pk-meta { font-size: 11.5px; line-height: 1.45; color: var(--text-3); text-wrap: pretty; }
+.pk-marke { white-space: nowrap; }
+.pk-fuss .pk-marke { background: var(--akzent-weich); color: var(--akzent-tinte); font-weight: 600; letter-spacing: .02em; }
+.pk-fuss .kiv-gesendet { flex-basis: 100%; }
+
+/* Leiste „Für alle“: immer zwei Zeilen hoch, ruhig */
+.pk-leiste { display: grid; gap: 4px; margin: 6px 8px 8px; padding: 8px 10px; border: 1px solid var(--linie); border-radius: var(--r-l); background: var(--erhoben); min-width: 0; }
+.pk-leiste[hidden] { display: none; }
+.pk-leiste.platz { visibility: hidden; }
+.pk-leiste-kopf { display: flex; align-items: center; gap: 10px; min-height: 28px; min-width: 0; }
+.pk-leiste-fuss { display: flex; align-items: center; min-height: 20px; min-width: 0; }
+.pk-alle { height: 28px; padding: 0 11px; font-size: 12px; border: 1px solid color-mix(in srgb, var(--akzent) 30%, transparent); background: var(--akzent-weich); color: var(--akzent-tinte); font-weight: 500; }
+.pk-alle:hover:not(:disabled) { background: color-mix(in srgb, var(--akzent) 20%, transparent); color: var(--akzent-tinte); }
+.pk-leiste .pk-balken { flex: 1; min-width: 40px; }
+.pk-leiste .pk-balken > i { position: absolute; inset: 0 auto 0 0; border-radius: inherit; background: var(--akzent); transition: width var(--d-2) var(--ease-out); }
+.pk-fuss-text { font-size: 12px; line-height: 1.4; color: var(--text-3); font-variant-numeric: tabular-nums; min-width: 0; overflow-wrap: anywhere; }
+
+/* Duplikat vergleichen: zwei Spalten */
+.pk-vgl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; min-width: 0; }
+.pk-vgl-spalte { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 6px; min-width: 0; }
+.pk-vgl-kopf { display: grid; gap: 1px; min-width: 0; }
+.pk-vgl-kopf b { font-size: 13px; font-weight: 600; color: var(--text); }
+.pk-vgl-pfad { font-size: 11.5px; color: var(--text-3); overflow-wrap: anywhere; }
+.pk-vgl-text { box-sizing: border-box; margin: 0; height: 280px; overflow: auto; padding: 10px 12px; border: 1px solid var(--linie); border-radius: var(--r); background: var(--code); font-family: var(--mono); font-size: 11.5px; line-height: 1.55; color: var(--text-2); white-space: pre-wrap; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }
+.pk-vgl-text:focus-visible { outline: 0; box-shadow: var(--fokus-ring); }
+@media (max-width: 720px) { .pk-vgl { grid-template-columns: minmax(0, 1fr); } .pk-vgl-text { height: 160px; } }

@@ -3,7 +3,7 @@
 // nichts wird ohne „anwenden“ geschrieben, und ein „anwenden“ trifft nur Ziele aus dem Speicher der Werkstatt (innerhalb des Vaults).
 import test, { after } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, dirname, sep } from "node:path";
 import { pfad } from "./hilfe.mjs";
 import { schreibe } from "./hilfe.mjs";
@@ -44,7 +44,7 @@ for (const fall of KORPUS) {
       for (const v of stand.ergebnis.vorschlaege) {
         // Die Beschriftung nennt eigene Titel aus dem Vault (bei „titel-eines-kandidaten“ trägt ein Titel selbst den Angriffstext; er wird nur als Text gezeigt) — sonst keine fremden Pfade
         if (!fall.extra) assert.ok(!/(\.\.|\/etc|\/tmp|\/Users)/.test(v.beschriftung), `${name}: Beschriftung ohne fremde Pfade (${v.beschriftung})`);
-        assert.ok(v.beschriftung.startsWith("Verschiebt nach „") || v.beschriftung.startsWith("Verlinkt mit „") || v.beschriftung === "Legt eine Aufgabe an" || v.beschriftung.startsWith("Setzt die Tags") || v.beschriftung.startsWith("Markiert als Duplikat"), `${name}: Beschriftung baut Kortex (${v.beschriftung})`);
+        assert.ok(v.beschriftung.startsWith("Verschiebt nach „") || v.beschriftung.startsWith("Verlinkt mit „") || v.beschriftung.startsWith("Hängt einen Link auf „") || v.beschriftung === "Legt eine Aufgabe an" || v.beschriftung.startsWith("Setzt die Tags") || v.beschriftung.startsWith("Legt den Eintrag als Duplikat von „"), `${name}: Beschriftung baut Kortex (${v.beschriftung})`);
         assert.ok(!ergebnis.includes("../") || fall.eintrag.includes("../"), `${name}: kein Pfad aus der Antwort im Ergebnis`);
       }
       if (name === "fremdes-ziel") assert.deepEqual(stand.ergebnis.vorschlaege, [], "kein Ziel außerhalb der Liste kommt durch");
@@ -92,3 +92,39 @@ test("Schema-Ebene: Pfade, ../, absolute Pfade, Kennung eines anderen Typs oder 
   for (const x of boese) assert.equal(pruefe(x), 0, JSON.stringify(x));
   assert.equal(pruefe(JSON.parse('{"art":"verlinken","ziel":"k1","beleg":"Atlas Projekt","begruendung":"Passt.","sicherheit":"hoch","__proto__":{"x":1}}')), 0, "__proto__ als Schlüssel ist ein unbekanntes Feld");
 });
+
+// ---------- K3: neue Arten (Tags, Duplikat, Verlinken, Aufgabe) ----------
+test("Tags aus der Antwort: Zeilenumbruch, Klammern, Doppelpunkt, Pfade, Kommas, Leerzeichen, zu lang, Steuerzeichen — der Vorschlag fällt ganz weg (kein YAML-Ausbruch im Kopf)", () => {
+  const ctx = { eintrag: "Wir sollten das Atlas Projekt besprechen.", kandidaten: ["k1"], ordner: ["o1"] };
+  const mit = (tags) => pruefeAntwort("posteingang", { vorschlaege: [{ art: "tags", tags, beleg: "Atlas Projekt", begruendung: "Passt.", sicherheit: "hoch" }] }, ctx).daten.vorschlaege.length;
+  assert.equal(mit(["atlas", "projekt/atlas"]), 1);
+  for (const boese of ["a]\nx: y", "a]", "[a", "a: b", "a,b", "a b", "../x", "/etc", "a\nb", "---", "x".repeat(101), "a‮b", "a\u{e0041}", "{{x}}", "#a#b", "a#b", "123", "", " ", "a\tb", "<b>", "a`b"]) assert.equal(mit(["gut", boese]), 0, JSON.stringify(boese));
+  assert.equal(mit(Array.from({ length: 6 }, (_, i) => `t${i}`)), 0, "höchstens 5");
+  assert.equal(mit([]), 0);
+});
+
+for (const fall of KORPUS.filter((f) => !f.erwartet && !f.beleglos)) {
+  test(`Injektion „${fall.name}“ + Tags übernehmen: nur eine Tag-Zeile kommt in den Kopf, sonst bleibt jedes Byte; Rückgängig stellt alles her`, async () => {
+    const s = szenarioV();
+    schreibe(s.vault, ENTRY, fall.eintrag);
+    for (const [p, t] of fall.extra || []) schreibe(s.vault, p, t);
+    s.szen({ szenario: "arten", arten: ["tags"], tags: ["passwort", "geheim/alles"] });
+    const { stand } = await s.anfrage({ funktion: "posteingang", pfad: ENTRY });
+    const vs = stand.ergebnis.vorschlaege.find((x) => x.art === "tags");
+    if (!vs) { assert.deepEqual(stand.ergebnis.vorschlaege, [], "ein Beleg, der nicht stimmt, ist nie ein Vorschlag"); return; }
+    const alt = readFileSync(join(s.vault, ENTRY), "utf8");
+    const r = await s.api("POST", "/api/ki/vorschlag/anwenden", { id: vs.id, token: vs.token });
+    if (r.status === 422) { assert.equal(readFileSync(join(s.vault, ENTRY), "utf8"), alt, "ein Kopf, den Kortex nicht sicher ändern kann, bleibt unberührt"); return; }
+    assert.equal(r.status, 200, JSON.stringify(r.j));
+    const neu = readFileSync(join(s.vault, ENTRY), "utf8");
+    // die alten Zeilen stehen unverändert und in derselben Reihenfolge in der neuen Datei; hinzugekommen sind nur die Tag-Zeile(n) (und bei einem neuen Kopf zwei „---“)
+    const altZ = alt.split("\n"), neuZ = neu.split("\n");
+    let i = 0; const dazu = [];
+    for (const z of neuZ) { if (i < altZ.length && z === altZ[i]) i++; else dazu.push(z); }
+    assert.equal(i, altZ.length, "alle alten Zeilen unverändert");
+    assert.ok(dazu.length >= 1 && dazu.length <= 4 && dazu.every((z) => z === "---" || z.startsWith("tags:") || /^ {0,4}- (passwort|geheim\/alles)$/.test(z)), `nur Tag-Zeilen: ${JSON.stringify(dazu)}`);
+    const e = (await s.api("GET", "/api/aktivitaet?art=datei-aktion")).j.ereignisse.find((x) => x.rueckgaengigMoeglich);
+    assert.equal((await s.api("POST", "/api/aktivitaet/rueckgaengig", { id: e.id })).status, 200);
+    assert.equal(readFileSync(join(s.vault, ENTRY), "utf8"), alt, "Rückgängig stellt jedes Byte wieder her");
+  });
+}

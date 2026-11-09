@@ -533,6 +533,8 @@ export function erzeugeHandler(o) {
       case "/api/ki/vorschlag/stand": nur("GET"); return vorschlag.stand(q, V());
       case "/api/ki/vorschlag/abbrechen": nur("POST"); return vorschlag.abbrechen(eingabe(), V());
       case "/api/ki/vorschlag/anwenden": nur("POST"); return vorschlag.anwenden(eingabe(), V());
+      case "/api/ki/vorschlag/zurueck": nur("POST"); return vorschlag.zurueck(eingabe(), V());   // eine Übernahme zurücknehmen (nur Kennung)
+      case "/api/ki/vorschlag/lokal": nur("POST"); return vorschlag.lokal(eingabe(), V());       // Vorschläge ohne KI für Posteingangs-Einträge (nichts verlässt den Mac)
       case "/api/ki/standard": nur("PUT"); return konten.setzeStandard(eingabe());
       // Pflege je Vault: Konto und KI-Stufe setzen · Stand lesen (letzter/nächster Lauf) · jetzt einmal pflegen
       case "/api/ki/pflege":

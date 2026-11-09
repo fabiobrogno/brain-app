@@ -193,7 +193,9 @@ export const api = {
   kiVorschlagBereit: () => anfrage("GET", "/api/ki/vorschlag/bereit"),
   kiVorschlagEinwilligung: ({ an, konto, vault }) => anfrage("PUT", "/api/ki/vorschlag/einwilligung", { an: !!an, ...(konto ? { konto } : {}), vault }),
   kiVorschlagStart: (daten) => anfrage("POST", "/api/ki/vorschlag/start", daten),
-  kiVorschlagStand: (id) => anfrage("GET", "/api/ki/vorschlag/stand" + q({ id })),
+  kiVorschlagStand: (id, version) => anfrage("GET", "/api/ki/vorschlag/stand" + q(version === undefined ? { id } : { id, v: version })),
+  kiVorschlagZurueck: (id) => anfrage("POST", "/api/ki/vorschlag/zurueck", { id }),
+  kiVorschlagLokal: (pfade) => anfrage("POST", "/api/ki/vorschlag/lokal", { pfade }),
   kiVorschlagAbbrechen: (id) => anfrage("POST", "/api/ki/vorschlag/abbrechen", { id }),
   kiVorschlagAnwenden: (id, token) => anfrage("POST", "/api/ki/vorschlag/anwenden", { id, token }),
   kiKonten: () => anfrage("GET", "/api/ki/konten"), // rein lesend; neu erkannte Konten stehen unter `neu`

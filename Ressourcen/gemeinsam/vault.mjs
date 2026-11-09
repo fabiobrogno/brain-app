@@ -488,6 +488,22 @@ export function oeffneVault(vaultPfad, opts = {}) {
     return r;
   }
 
+  // Nur für Kortex-eigene Module (KI-Vorschläge, nie eine Route): EINE Notiz ändern, über denselben sicheren Weg wie Verlinken — Inhalts-Hash muss stimmen (sonst 409), Journal mit vorher/nachher,
+  // ein Eintrag im Aktivitätsprotokoll mit Rückgängig. a: { pfad, basisHash, aendere(text) → neuer Text, beschreibung } — `aendere` und `beschreibung` kommen aus dem Code, nie aus einer Anfrage.
+  async function aendereNotiz(a) {
+    const rel = erwPfad(a.pfad);
+    if (await selbst.abgleichBeschaeftigt()) throw new HttpFehler(409, "Gerade läuft ein Abgleich oder eine Zusammenführung. Kortex ändert nichts, bis sie abgeschlossen ist.", { art: "beschaeftigt" });
+    const r = await dateiAktionen.verlinke({}, async (lies) => {
+      const n = lies(rel);
+      if (n.hash !== a.basisHash) throw new HttpFehler(409, "Die Notiz hat sich geändert. Hole den Vorschlag neu.", { art: "veraltet" });
+      const neu = a.aendere(n.text);
+      if (typeof neu !== "string" || neu === n.text) return { dateien: [], uebersprungen: [] };
+      return { dateien: [{ pfad: n.pfad, text: neu, anzahl: 1, zeilen: [], titel: titelAus(n.pfad, n.text) }], ziel: null, zielTitel: null, beschreibung: a.beschreibung };
+    });
+    if (r.geaendert && r.geaendert.length && suchindex) suchindex.aendere(r.geaendert);
+    return r;
+  }
+
   function pruefung(rel) {
     const d = lies(rel);
     return pruefeText(d.pfad, d.inhalt, { heute: opts.heute || heuteIso(jetzt()) });
@@ -760,7 +776,7 @@ export function oeffneVault(vaultPfad, opts = {}) {
       if (Array.isArray(r.geaendert) && r.geaendert.length) tagIndex.aendere(r.geaendert);
       return r;
     }), exportiere: exportFn.exportiere,
-    erwaehnungen, erwaehntVon, erwaehnungenLinks, verlinke: mitRuhe(verlinke), neuigkeiten, neuigkeitenGelesen, umbenennen: mitRuhe(dateiAktionen.umbenennen), verschieben: mitRuhe(dateiAktionen.verschieben), loeschen: mitRuhe(dateiAktionen.loeschen),
+    erwaehnungen, erwaehntVon, erwaehnungenLinks, verlinke: mitRuhe(verlinke), aendereNotiz: mitRuhe(aendereNotiz), neuigkeiten, neuigkeitenGelesen, umbenennen: mitRuhe(dateiAktionen.umbenennen), verschieben: mitRuhe(dateiAktionen.verschieben), loeschen: mitRuhe(dateiAktionen.loeschen),
     papierkorb: dateiAktionen.papierkorbListe, papierkorbWiederherstellen: mitRuhe(dateiAktionen.papierkorbWiederherstellen), papierkorbEndgueltig: dateiAktionen.papierkorbEndgueltig, papierkorbHinweisErledigt: dateiAktionen.papierkorbHinweisErledigt, aktionenOrt: dateiAktionen.aktionenOrt,
     vorgangZurueck: mitRuhe((a) => nichtImAbgleich(() => dateiAktionen.vorgangZurueck(a.id, a))), vorgangWieder: mitRuhe((a) => nichtImAbgleich(() => dateiAktionen.vorgangWieder(a.id, a))), vorgangMoeglich: dateiAktionen.vorgangMoeglich,
     posteingangVerwerfen: posteingang.verwerfen, posteingangSpaeter: posteingang.spaeter, posteingangUebernehmen: posteingang.uebernehmen,

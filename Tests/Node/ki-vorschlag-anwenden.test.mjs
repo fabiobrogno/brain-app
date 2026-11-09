@@ -90,18 +90,16 @@ test("Der Eintrag wurde inzwischen gelöscht: 409 veraltet, keine neue Datei", a
   assert.equal(readdirSync(join(s.vault, "10_projekte")).filter((n) => n.startsWith("Atlas-Idee")).length, 0);
 });
 
-test("Nicht-übernehmbare Arten (verlinken, duplikat, tags) schreiben in K0 nichts: 409 noch-nicht; Einwilligung zurückgenommen verwirft alle Vorschläge", async () => {
+test("Einwilligung zurückgenommen verwirft alle Vorschläge (nichts bleibt liegen, nichts wird geschrieben)", async () => {
   const s = szenarioV();
   s.szen({ szenario: "ok" });
   const { stand } = await s.anfrage();
   const vs = stand.ergebnis.vorschlaege[0];
   assert.equal(vs.art, "verlinken");
   const vorher = s.abbild(s.vault);
-  const r = await anwenden(s, vs);
-  assert.equal(r.status, 409); assert.equal(r.j.art, "noch-nicht");
-  assert.deepEqual(s.abbild(s.vault), vorher);
   await s.api("PUT", "/api/ki/vorschlag/einwilligung", { an: false, vault: s.vault });
   assert.equal((await anwenden(s, vs)).status, 404, "ohne Einwilligung bleibt nichts liegen");
+  assert.deepEqual(s.abbild(s.vault), vorher);
 });
 
 test("Beim Vault-Wechsel und bei /api/stopp sind alle Vorschläge verworfen", async () => {

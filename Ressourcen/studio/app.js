@@ -29,6 +29,7 @@ import { starteLive, planeAus, kiHinweis, hebeHervor } from "./live.js";
 import { erzeugeMitteilungen } from "./mitteilungen.js"; // P8a: Hinweise unten rechts zu Ereignissen des Aktivitätsprotokolls
 import { erzeugeErwaehnungen } from "./erwaehnungen.js"; // Runde 3d: ungelinkte Erwähnungen in der Info-Spalte
 import { erzeugeNeuigkeiten } from "./neuigkeiten.js";   // Runde 3d: Karte „Was ist neu“ im Posteingang
+import { erzeugePosteingangKi } from "./posteingang-ki.js"; // KI-Runde K3: Vorschlagskarten unter den Einträgen des Posteingangs
 import { erzeugeGlocke } from "./glocke.js"; // P8b: Glocke in der Kopfzeile mit Mitteilungsliste
 import { TG } from "./texte-glocke.js";
 import { baueKiZeile } from "./ki-zeile.js";
@@ -1325,7 +1326,11 @@ function baueKarte(n) {
     h("div", { klasse: "karte-vorschau", text: vorschauText(n.vorschau) }),
     h("div", { klasse: "karte-fuss" }, h("span", { text: datumKurz(n.geaendert) }),
       istZurueckgestellt(n) ? h("span", { klasse: "pe-marke", "data-spaeter": spaeterBis(n), text: T.posteingang.bis(datumKurz(spaeterBis(n))) }) : n.erstellt ? h("span", { text: `${T.liste.erstellt} ${datumKurz(n.erstellt)}` }) : null),
-    n.bereich === "inbox" && !n.generiert && S.sicht.art === "bereich" && S.sicht.id === "inbox" ? baueAktionen(n, posteingangCtx) : null);
+    n.bereich === "inbox" && !n.generiert && S.sicht.art === "bereich" && S.sicht.id === "inbox" ? baueAktionen(n, posteingangCtx) : null,
+    n.bereich === "inbox" && !n.generiert && S.sicht.art === "bereich" && S.sicht.id === "inbox" ? pkKi.bereich(n) : null); // Vorschläge (lokal und KI) unter dem Eintrag
+  // Mit Vorschlagszeile darunter liegen die Aktionen in der Fußzeile (nicht am Ende der Karte): sie bleiben auch bei aufgeklappten Vorschlägen an derselben Stelle
+  const akt = karte.querySelector(":scope > .karte-aktionen");
+  if (akt && karte.querySelector(":scope > .pk")) karte.querySelector(".karte-fuss").append(akt);
   if (!n.generiert) da.ziehbar(karte, "datei", n.pfad);
   return typ ? setzeTypFarbe(karte, typ) : karte;
 }
@@ -1382,12 +1387,13 @@ function zeichneListe({ behalte = false } = {}) {
   host.replaceChildren();
   const leiste = posteingangLeiste();
   if (leiste) host.append(leiste);
-  if (S.sicht.art === "bereich" && S.sicht.id === "inbox") { host.append(neuKarte.knoten); neuKarte.lade(); } // „Was ist neu“ ganz oben im Posteingang
-  if (!S.sichtListe.length) { host.append(S.zeigeZurueckgestellt ? h("div", { klasse: "leer-liste", "data-leer": "zurueckgestellt" }, h("p", { text: T.posteingang.leerZurueckgestellt })) : leerZustand()); return; }
+  if (S.sicht.art === "bereich" && S.sicht.id === "inbox") { host.append(neuKarte.knoten); neuKarte.lade(); host.append(pkKi.leiste); pkKi.laden(); } // „Was ist neu“ ganz oben im Posteingang, darunter die Leiste „Für alle“
+  if (!S.sichtListe.length) { pkKi.aktualisiere(); host.append(S.zeigeZurueckgestellt ? h("div", { klasse: "leer-liste", "data-leer": "zurueckgestellt" }, h("p", { text: T.posteingang.leerZurueckgestellt })) : leerZustand()); return; }
   const bisAuswahl = S.pfad ? S.sichtListe.findIndex((n) => n.pfad === S.pfad) : -1;
   rendereMehr(Math.max(CHUNK, scroll ? Math.ceil((scroll + host.clientHeight) / 90) + 20 : 0, bisAuswahl >= 0 ? bisAuswahl + 5 : 0));
   host.scrollTop = scroll;
   if (alt) listenUebergang(host, alt);
+  if (S.sicht.art === "bereich" && S.sicht.id === "inbox") pkKi.aktualisiere();
 }
 $("liste-koerper").addEventListener("scroll", (e) => {
   const el = e.currentTarget;
@@ -1413,7 +1419,7 @@ const host_fokus = () => { if (!S.suche.aktiv) $("liste-koerper").focus({ preven
 $("liste-koerper").addEventListener("keydown", (e) => {
   if (S.sicht.art === "verlauf") return;
   if (!["ArrowDown", "ArrowUp", "Home", "End", "Enter"].includes(e.key)) return;
-  if (e.target.closest?.(".karte-aktionen, .pe-leiste")) return; // Enter/Pfeile gehören den Knöpfen dort
+  if (e.target.closest?.(".karte-aktionen, .pe-leiste, .pk, .pk-leiste")) return; // Enter/Pfeile gehören den Knöpfen dort
   const liste = S.suche.aktiv ? S.suche.treffer : S.sichtListe;
   if (!liste.length) return;
   e.preventDefault();
@@ -1470,6 +1476,8 @@ const posteingangCtx = {
     planeGitRefresh();
   },
 };
+// KI-Runde K3: Vorschlagskarten (lokal und KI) unter den Einträgen des Posteingangs; nutzt dieselben sicheren Wege wie die Knöpfe an der Karte (posteingangCtx)
+const pkKi = erzeugePosteingangKi({ S, ctx: posteingangCtx, oeffne: (p) => oeffne(p), liste: () => S.sichtListe });
 function zeichneRueckfragenKarte() {
   const host = $("liste-koerper");
   const n = Number(S.rueckfragen?.offen) || 0;
