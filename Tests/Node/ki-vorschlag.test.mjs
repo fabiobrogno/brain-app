@@ -64,7 +64,7 @@ test("Aufruf: genau die dokumentierten Optionen, Daten über stdin, cwd leer und
   assert.ok(!a.args.some((x) => x.includes("Kaffeemaschine besprechen")), "der Eintrag steht nicht in den Argumenten");
   assert.ok(a.cwd !== s.vault && !a.cwd.startsWith(s.vault), "cwd liegt außerhalb des Vaults");
   assert.equal(a.claudeConfigDir, s.a, "das Konto wählt CLAUDE_CONFIG_DIR");
-  const erlaubt = new Set(["PATH", "HOME", "LANG", "BRAIN_ERNTE", "CLAUDE_CODE_DISABLE_CLAUDE_MDS", "CLAUDE_CODE_DISABLE_AUTO_MEMORY", "CLAUDE_CONFIG_DIR", "BRAIN_TESTMODUS", "TMPDIR", "NODE_EXTRA_CA_CERTS", "SystemRoot", "SYSTEMROOT", "USERPROFILE", "TEMP", "TMP", "ComSpec", "PATHEXT", "SystemDrive", "LC_CTYPE", "__CF_USER_TEXT_ENCODING"]);
+  const erlaubt = new Set(["PATH", "HOME", "LANG", "BRAIN_ERNTE", "CLAUDE_CODE_DISABLE_CLAUDE_MDS", "CLAUDE_CODE_DISABLE_AUTO_MEMORY", "CLAUDE_CONFIG_DIR", "BRAIN_TESTMODUS", "TMPDIR", "NODE_EXTRA_CA_CERTS", "SystemRoot", "SYSTEMROOT", "USERPROFILE", "TEMP", "TMP", "ComSpec", "PATHEXT", "SystemDrive", "LC_CTYPE", "__CF_USER_TEXT_ENCODING", "HOMEDRIVE", "HOMEPATH", "LOGONSERVER", "USERDOMAIN", "USERNAME", "WINDIR"]);
   for (const k of a.envSchluessel) assert.ok(erlaubt.has(k), `unerlaubte Umgebungsvariable: ${k}`);
   // baueVorschlagArgs liefert dieselbe Liste wie der Lauf (Argumente bis auf Schema und Systemprompt)
   const direkt = baueVorschlagArgs({ modell: "haiku", art: "posteingang", schema, system: opt("--append-system-prompt"), grenzen: GRENZEN });

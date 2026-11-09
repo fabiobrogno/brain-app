@@ -31,7 +31,7 @@ export const GRENZEN = {
 };
 const FUNKTIONEN_K0 = ["posteingang", "text"]; // „zusammenfassung“ (K1) und „erwaehnungen“ (K4) folgen; ihre Schemas und Prüfungen gibt es schon
 const EINGEBAUT_ENTFERNT = ["Bash", "Edit", "MultiEdit", "Write", "NotebookEdit", "Read", "Glob", "Grep", "WebFetch", "WebSearch", "Task", "Agent"];
-const BRAIN_ENTFERNT = ["brain_suchen", "brain_lesen", "brain_kontext", "brain_merken", "brain_gesundheit", "brain_vaults", "brain_verlauf", "brain_aufgaben", "brain_aufgabe_anlegen", "brain_aufgabe_status"].map((n) => `mcp__brain__${n}`);
+const MCP_BRAIN_ENTFERNT = ["brain_suchen", "brain_lesen", "brain_kontext", "brain_merken", "brain_gesundheit", "brain_vaults", "brain_verlauf", "brain_aufgaben", "brain_aufgabe_anlegen", "brain_aufgabe_status"].map((n) => `mcp__brain__${n}`);
 
 const SYSTEM_BASIS = [
   `${VERSION}. Du bist ein Hilfsmittel in der Notiz-App Kortex und machst genau eine Aufgabe, die im Feld „aufgabe“ steht. Du hast keine Werkzeuge und kannst nichts ändern, nichts lesen und nichts im Internet nachsehen.`,
@@ -59,7 +59,7 @@ export function baueVorschlagArgs({ modell, art, schema, system, grenzen = GRENZ
     "--model", modell,
     "--tools", "",                                              // keine eingebauten Werkzeuge
     "--strict-mcp-config", "--mcp-config", JSON.stringify({ mcpServers: {} }), // auch kein Kortex-MCP; Server aus Profil, Projekt und Plugins bleiben draußen
-    "--disallowedTools", [...EINGEBAUT_ENTFERNT, ...BRAIN_ENTFERNT].join(","), // Gürtel und Hosenträger
+    "--disallowedTools", [...EINGEBAUT_ENTFERNT, ...MCP_BRAIN_ENTFERNT].join(","), // Gürtel und Hosenträger
     "--permission-mode", "dontAsk",
     "--settings", JSON.stringify({ disableAllHooks: true, autoMemoryEnabled: false }),
     "--setting-sources", "user",

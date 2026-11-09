@@ -4,7 +4,7 @@
 import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readdirSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, sep } from "node:path";
 import { pfad } from "./hilfe.mjs";
 import { schreibe } from "./hilfe.mjs";
 import { szenarioV } from "./ki-vorschlag-hilfe.mjs";
@@ -15,7 +15,7 @@ const { pruefeAntwort } = await import(pfad("gemeinsam", "ki-schema.mjs"));
 after(() => { beendeAlleProzesse(); });
 
 const ENTRY = "00_inbox/Korpus.md";
-const alleDateien = (wurzel) => { const r = []; const geh = (d) => { for (const n of readdirSync(d, { withFileTypes: true })) { const p = join(d, n.name); if (n.isDirectory()) geh(p); else r.push(p); } }; geh(wurzel); return r; };
+const alleDateien = (wurzel) => { const r = []; const geh = (d) => { for (const n of readdirSync(d, { withFileTypes: true })) { const p = join(d, n.name); if (n.isDirectory()) geh(p); else r.push(p.split(sep).join("/")); } }; geh(wurzel); return r; };
 
 for (const fall of KORPUS) {
   test(`Injektion „${fall.name}“: nichts ohne Klick geschrieben, Ziele nur aus der Liste, Pfade der Antwort nie benutzt`, async () => {
@@ -69,9 +69,9 @@ for (const fall of KORPUS) {
     assert.equal(z.status, 200, JSON.stringify(z.j));
     assert.match(z.j.nach, /^(10_projekte|20_finanzen)\/Korpus\.md$/, "nur ein Ordner aus der gesendeten Liste, innerhalb des Vaults");
     assert.ok(existsSync(join(s.vault, z.j.nach)));
-    const neu = alleDateien(s.vault).filter((d) => !d.includes("/.kortex-lokal/")).filter((d) => !vorher.some((x) => x.startsWith(d.slice(s.vault.length + 1) + " ")));
-    assert.deepEqual(neu.map((d) => d.slice(s.vault.length + 1)), [z.j.nach], "genau eine Datei ist dazugekommen (die verschobene; das Journal liegt in .kortex-lokal)");
-    assert.ok(neu.every((d) => d.startsWith(s.vault)), "nichts außerhalb des Vaults");
+    const neu = alleDateien(s.vault).filter((d) => !d.includes("/.kortex-lokal/")).filter((d) => !vorher.some((x) => x.split(sep).join("/").startsWith(d.slice(s.vault.split(sep).join("/").length + 1) + " ")));
+    assert.deepEqual(neu.map((d) => d.slice(s.vault.split(sep).join("/").length + 1)), [z.j.nach], "genau eine Datei ist dazugekommen (die verschobene; das Journal liegt in .kortex-lokal)");
+    assert.ok(neu.every((d) => d.startsWith(s.vault.split(sep).join("/"))), "nichts außerhalb des Vaults");
     assert.equal(dirname(join(s.vault, z.j.nach)).startsWith(s.vault), true);
   });
 }
