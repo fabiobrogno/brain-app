@@ -109,7 +109,8 @@ test("Tag-Index bei 20.000 Notizen: erster Lauf in kleinen Scheiben, Speichern b
   assert.equal(erst.notizen, 20000);
   assert.equal(erst.tags.find((t) => t.name === "alle").anzahl, 20000);
   console.log(`# erster Lauf ${Date.now() - t0} ms, längste Lücke ${maxLuecke} ms`);
-  assert.ok(maxLuecke < 150, `Lücke ${maxLuecke} ms: der erste Lauf blockiert`);
+  // Windows-Runner: Lücken 39–184 ms bei gleichem Code gemessen (Mac 8 ms); ein Lauf ohne Scheiben bräuchte dort Sekunden
+  assert.ok(maxLuecke < (process.platform === "win32" ? 500 : 150), `Lücke ${maxLuecke} ms: der erste Lauf blockiert`);
   // Speichern: schreibe() meldet nur diese Notiz; die nächste Zählung rechnet aus dem Speicher
   const zeiten = [];
   for (let i = 0; i < 5; i++) {
