@@ -59,4 +59,8 @@ test("Ersatz mit neuem Link nach außen: die Werkstatt liefert die Warnzeile (Zi
   assert.equal(stand.ergebnis.funktion, "aufgaben");
   assert.deepEqual(stand.ergebnis.aufgaben.map((a) => a.text), ["Käse kaufen", "Brötchen holen"], "eine Aufgabe ohne wörtlichen Beleg fällt weg");
   assert.equal(stand.ergebnis.verworfen, 1);
+  // Aufgaben landen als Markdown in der Notiz: ein Link nach außen im Aufgabentext bekommt dieselbe Warnzeile
+  s.szen({ aufgabenListe: [{ text: "Bestellen bei [Laden](https://beispiel.example/shop)", beleg: "Käse kaufen" }] });
+  ({ stand } = await s.anfrage({ funktion: "text", aktion: "aufgaben", pfad: "10_projekte/Plan.md", auswahl: AUSWAHL }));
+  assert.deepEqual(stand.ergebnis.warnungen.map((w) => w.art), ["link-extern"]);
 });

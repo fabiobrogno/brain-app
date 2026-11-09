@@ -17,7 +17,7 @@ import { HttpFehler, inboxOrdnerVon, vorlagenOrdnerVon, falte, vorschauOrdnerAus
 import { aktivesKonto, vorschlaegeFuer, setzeVorschlaege, echterOrt } from "../gemeinsam/ki-konten.mjs";
 import { kennungVault, melde } from "../gemeinsam/aktivitaet.mjs";
 import { titelAus } from "../gemeinsam/notizen.mjs";
-import { VERSION, TEXT_AKTIONEN, SPRACHEN, LIMITS, schemaFuer, pruefeAntwort, parseJsonAntwort, istKiNein, istKiNeinWert, kandidatIds, ordnerIds } from "../gemeinsam/ki-schema.mjs";
+import { VERSION, TEXT_AKTIONEN, SPRACHEN, LIMITS, schemaFuer, pruefeAntwort, warnungenFuerErsatz, parseJsonAntwort, istKiNein, istKiNeinWert, kandidatIds, ordnerIds } from "../gemeinsam/ki-schema.mjs";
 import { MODELLE, ABBRUCH_TEXT, sauberText, ganz, nfc, erzeugeKontenZugriff, legeTempAn, starteKiLauf, baueFrageUmgebung } from "./ki-kern.mjs";
 
 export { VERSION };
@@ -347,7 +347,9 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     }
     if (run.art === "text") {
       if (run.funktion === "ersatz") return { funktion: "ersatz", ersatz: p.daten.ersatz, warnungen: p.daten.warnungen, verworfen: p.verworfen, ...marke };
-      return { funktion: "aufgaben", aufgaben: p.daten.aufgaben, verworfen: p.verworfen, ...marke };
+      // Aufgaben landen als Markdown in der Notiz: dieselben Warnzeilen wie beim Ersatztext (Link nach außen, Bild, HTML …), gemessen an der Auswahl
+      const warnungen = warnungenFuerErsatz(run.s.ctx.auswahl, p.daten.aufgaben.map((a) => a.text).join("\n"));
+      return { funktion: "aufgaben", aufgaben: p.daten.aufgaben, warnungen, verworfen: p.verworfen, ...marke };
     }
     const ablauf = jetzt() + G.ablauf;
     const kandidatenHash = sha(JSON.stringify([[...run.s.ziele.kandidaten].map(([id, k]) => [id, k.pfad, k.hash]), [...run.s.ziele.ordner].map(([id, o]) => [id, o.pfad])]));

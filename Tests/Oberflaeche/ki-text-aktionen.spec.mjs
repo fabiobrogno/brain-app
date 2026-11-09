@@ -85,8 +85,8 @@ test("Ohne Konto mit Stufe „lesen“ gibt es keine KI-Aktionen: kein Knopf in 
   await waehleAbsatz(page);
   await page.keyboard.press("ControlOrMeta+k");
   await expect(page.locator(".palette")).toBeVisible();
-  await page.locator(".pal-feld input, .palette input").first().fill("KI:");
-  await expect(page.locator(".pal-eintrag", { hasText: "KI:" })).toHaveCount(0);
+  await page.locator(".pal-feld input, .palette input").first().fill("KI: Kürzen");
+  await expect(page.locator(".pal-eintrag").filter({ hasText: /^\s*KI: / })).toHaveCount(0);
   expect(aufrufe()).toEqual([]);
 });
 
@@ -116,7 +116,7 @@ for (const [name, schema] of schemata) {
     await expect(pop(page).locator('[data-ki-aktion="kuerzen"]')).toBeVisible();
     await expect(pop(page).locator('[data-ki-aktion="aufgaben"]')).toBeVisible();
     await expect(pop(page).locator("[data-ki-sprache]")).toHaveCount(5);
-    await expect(pop(page).locator('[data-kiv="kontingent"]')).toBeVisible();
+    await expect(pop(page).locator('[data-kiv="kontingent"]')).toHaveCount(1); // ohne Stand von Claude Code bleibt die Zeile leer (K1)
     await ohneMuell(pop(page));
     await bild(page, `menue-${name}`);
     const kasten0 = await pop(page).boundingBox();
@@ -214,6 +214,7 @@ for (const [name, schema] of schemata) {
     await expect(pop(page)).toHaveAttribute("data-phase", "ergebnis");
     // Neu anfragen: Auswahl ist beim Tippen weg → Hinweis; mit neuer Auswahl läuft es wieder
     await pop(page).locator('[data-aktion="ki-text-neu"]').click();
+    await expect.poll(() => aufrufe().length).toBe(2);
     await phase(page, "ergebnis"); // die Auswahl gilt weiter (mit dem geänderten Text); die Notiz wurde vorher gespeichert und neu gesendet
     expect(aufrufe().length).toBe(2);
     expect(JSON.parse(aufrufe()[1].stdin).daten.auswahl).toContain("sehr dringend");
@@ -333,8 +334,8 @@ test("Kontextmenü auf der Auswahl und Befehlspalette (⌘K) bieten dieselben Ak
   await waehleAbsatz(page);
   await page.waitForTimeout(300);
   await page.keyboard.press("ControlOrMeta+k");
-  await page.locator(".pal-feld input, .palette input").first().fill("KI:");
-  const eintrag = page.locator(".pal-eintrag", { hasText: "KI: Kürzen" });
+  await page.locator(".pal-feld input, .palette input").first().fill("KI: Kürzen");
+  const eintrag = page.locator(".pal-eintrag").filter({ hasText: /^\s*KI: Kürzen/ });
   await expect(eintrag).toBeVisible();
   await eintrag.click();
   await phase(page, "ergebnis");

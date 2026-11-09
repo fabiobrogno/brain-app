@@ -215,8 +215,9 @@ export function erzeugeKiText({ S, ed, speichereWarte, nachAufgaben }) {
         fuss = [h("span", { klasse: "kit-abstand" }), baueKnopf({ text: TK.schliessen, groesse: "s", aktion: "ki-text-schliessen", aufKlick: () => { schliesse(); ed.view.focus(); } })];
       } else {
         mitte = [h("ul", { klasse: "kit-aufgaben", "data-ki-text-aufgaben": "", "aria-label": TK.aufgaben.liste }, z.aufgaben.map((a) => h("li", { klasse: "kit-aufgabe", "data-ki-text-aufgabe": "" }, h("span", { klasse: "kit-aufgabe-kaestchen", "aria-hidden": "true" }),
-          h("span", { klasse: "kit-aufgabe-text" }, a.text, a.faellig ? h("small", { text: TK.aufgaben.faellig(a.faellig) }) : null)))), sperre, gesendet];
-        fuss = [z.gesperrt ? neu : tasten, h("span", { klasse: "kit-abstand" }), verwerfen,
+          h("span", { klasse: "kit-aufgabe-text" }, a.text, a.faellig ? h("small", { text: TK.aufgaben.faellig(a.faellig) }) : null)))), sperre,
+          ...warn, z.gesperrt ? null : h("p", { klasse: "kit-klein", "data-ki-text-tasten": "", text: TK.aufgaben.tasten }), gesendet];
+        fuss = [z.gesperrt ? neu : null, h("span", { klasse: "kit-abstand" }), verwerfen,
           baueKnopf({ text: TK.aufgaben.anlegen(z.aufgaben.length), groesse: "s", aktion: "ki-text-anlegen", disabled: !!z.beschaeftigt, aufKlick: legeAufgabenAn }),
           baueKnopf({ text: TK.aufgaben.einfuegen, groesse: "s", variante: "primaer", aktion: "ki-text-uebernehmen", disabled: !!z.gesperrt || !!z.beschaeftigt, titel: z.gesperrt ? TK.diff.geaendert : undefined, aufKlick: fuegeAufgabenEin })];
       }
@@ -237,6 +238,7 @@ export function erzeugeKiText({ S, ed, speichereWarte, nachAufgaben }) {
     const snap = snapshot();
     if (!snap) return false;
     if (z) schliesse();
+    gruendlich = false; // Standard ist das kleine Modell; „Gründlicher“ gilt nur für diese Anfrage
     z = { phase: "menu", snap, anker, seite: null, aktion: null, gesperrt: false };
     oeffnePop();
     const vorher = sig();
@@ -285,7 +287,7 @@ export function erzeugeKiText({ S, ed, speichereWarte, nachAufgaben }) {
         mein.teile = wortDiff(snap.text, mein.ersatz);
         mein.leer = !hatAenderung(mein.teile);
         mein.warnungen = Array.isArray(ergebnis.warnungen) ? ergebnis.warnungen : [];
-      } else { mein.funktion = "aufgaben"; mein.aufgaben = Array.isArray(ergebnis.aufgaben) ? ergebnis.aufgaben : []; }
+      } else { mein.funktion = "aufgaben"; mein.aufgaben = Array.isArray(ergebnis.aufgaben) ? ergebnis.aufgaben : []; mein.warnungen = Array.isArray(ergebnis.warnungen) ? ergebnis.warnungen : []; }
       mein.phase = "ergebnis";
       if (mein.gesperrtVorher) mein.gesperrt = true;
     })).catch(async (err) => {

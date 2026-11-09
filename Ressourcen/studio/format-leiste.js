@@ -138,6 +138,7 @@ export function formatLeiste(ctx = {}) {
       let links = Math.min(Math.max(mitte - w / 2, rand.left + 8), Math.max(rand.left + 8, rand.right - w - 8));
       let oben = a.top - h - 8;
       if (oben < rand.top + 4) oben = Math.min(b.bottom + 8, rand.bottom - h - 4);
+      links = Math.max(8, Math.min(links, window.innerWidth - w - 8)); // nie aus dem Fenster (schmale Fenster: die Leiste ist breiter als die Spalte)
       el.style.left = Math.round(links) + "px";
       el.style.top = Math.round(oben) + "px";
     }
