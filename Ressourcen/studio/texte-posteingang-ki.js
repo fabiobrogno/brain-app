@@ -64,7 +64,7 @@ export const TK = {
     knopfGekappt: (n) => `Für die ersten ${n} holen`,
     knopfNoch: (n) => `Noch einmal für alle (${n})`,
     titel: (max) => `Holt Vorschläge von einer KI, einen Eintrag nach dem anderen (höchstens ${max}). Du kannst jederzeit abbrechen.`,
-    arbeitet: (i, n) => `Eintrag ${i} von ${n} …`,
+    arbeitet: (i, n) => `Eintrag ${i} von ${n}`,
     abbrechen: "Abbrechen",
     wirdAbgebrochen: "Wird abgebrochen …",
     fertig: (eintraege, vorschlaege) => (vorschlaege ? `Fertig: ${nz(vorschlaege, "Vorschlag", "Vorschläge")} für ${nz(eintraege, "Eintrag", "Einträge")}.` : "Fertig: keine Vorschläge der KI."),

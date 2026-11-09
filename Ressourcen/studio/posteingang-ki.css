@@ -8,7 +8,9 @@
 .pk { min-width: 0; cursor: default; -webkit-user-select: text; user-select: text; }
 /* Chip in der Datumszeile: die Zeile ist bei jeder Karte gleich hoch, ob der Chip da ist oder nicht */
 .karte-fuss:has(> .pk-chipslot) { align-items: center; min-height: 20px; }
-.pk-chipslot { display: flex; flex: none; align-items: center; margin-right: auto; max-width: 70%; }
+.pk-chipslot { display: flex; flex: 0 1 auto; align-items: center; margin-right: auto; min-width: 0; }
+.karte-fuss:has(> .pk-chipslot) > :first-child { flex: none; }
+.karte-fuss:has(.pk-chip) > span:nth-of-type(2) { display: none; } /* mit Chip entfällt „Erstellt …“ ganz, statt mitten im Text gekappt zu werden */
 .pk-kislot { display: contents; }
 .pk-chip { box-sizing: border-box; display: inline-flex; align-items: center; gap: 4px; height: 18px; min-width: 0; max-width: 100%; padding: 0 7px; border: 1px solid var(--linie); border-radius: var(--r-pille); background: transparent; color: var(--text-3);
   font: inherit; font-size: 11px; line-height: 1; cursor: pointer; white-space: nowrap; transition: background var(--t), color var(--t), border-color var(--t); }

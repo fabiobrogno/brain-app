@@ -62,6 +62,9 @@ const selText = (page) => imEditor(page, ({ view }) => { const r = view.state.se
 const leiste = (page) => page.locator(".format-leiste");
 const kiKnopf = (page) => page.locator('.format-leiste [data-befehl="ki"]');
 const pop = (page) => page.locator("[data-ki-text]");
+// Animationen (außer endlosen wie dem Balken) abwarten, bevor gemessen wird: sonst steht das Popover noch in der Einblendung
+const ruhigPop = (page) => pop(page).evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).filter((a) => !(a.effect?.getTiming?.().iterations === Infinity)).map((a) => a.finished.catch(() => {}))));
+const kasten = async (page) => { await ruhigPop(page); return pop(page).boundingBox(); };
 const phase = (page, p) => expect(pop(page)).toHaveAttribute("data-phase", p, { timeout: 15000 });
 const bild = async (page, name) => {
   if (!BILDER) return;
@@ -119,16 +122,16 @@ for (const [name, schema] of schemata) {
     await expect(pop(page).locator('[data-kiv="kontingent"]')).toHaveCount(1); // ohne Stand von Claude Code bleibt die Zeile leer (K1)
     await ohneMuell(pop(page));
     await bild(page, `menue-${name}`);
-    const kasten0 = await pop(page).boundingBox();
+    const kasten0 = await kasten(page);
     await pop(page).locator('[data-ki-aktion="umschreiben"]').click();
     await phase(page, "laeuft");
     await expect(pop(page).locator(".kit-balken")).toBeVisible();
     await expect(pop(page).locator("[data-ki-text-zeit]")).toContainText("Die KI arbeitet");
     await bild(page, `lauf-${name}`);
-    const kasten1 = await pop(page).boundingBox();
+    const kasten1 = await kasten(page);
     expect(Math.abs(kasten1.x - kasten0.x) < 1 && Math.abs(kasten1.y - kasten0.y) < 1, "das Popover bleibt am Text, wo es ist").toBe(true);
     await phase(page, "ergebnis");
-    const kasten2 = await pop(page).boundingBox();
+    const kasten2 = await kasten(page);
     expect(Math.abs(kasten2.x - kasten0.x) < 1 && Math.abs(kasten2.y - kasten0.y) < 1, "kein Sprung beim Ergebnis").toBe(true);
     // Diff zuerst: Wörter entfernt und neu, die Notiz ist noch unverändert
     await expect(pop(page).locator('[data-wd="weg"]').first()).toBeVisible();

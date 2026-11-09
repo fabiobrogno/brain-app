@@ -16,7 +16,7 @@ const K = await import(pathToFileURL(join(WURZEL, "Ressourcen/gemeinsam/ki-konte
 const FAKE = join(WURZEL, "Tests/Kern/fake-claude-vorschlag.mjs");
 const BILDER = process.env.KI_KARTEN_BILDER;
 if (BILDER) mkdirSync(BILDER, { recursive: true });
-const bild = async (page, name) => { if (BILDER) { await page.waitForTimeout(400); await page.screenshot({ path: join(BILDER, `${name}-v2.png`) }); } };
+const bild = async (page, name) => { if (BILDER) { await page.waitForTimeout(400); await page.screenshot({ path: join(BILDER, `${name}-v3.png`) }); } };
 
 const REISE = "00_inbox/Reise nach Lissabon.md", PLANUNG = "00_inbox/Planung.md", NEIN = "00_inbox/Nein.md", GEDANKE = "00_inbox/2026-10-23_gedanke.md";
 const REISE_TEXT = "# Reise nach Lissabon\n\nFlug im Mai, Hotel in der Alfama. Mietwagen buchen bis 14.11.\n";
@@ -389,6 +389,8 @@ for (const [schema, farbe] of schemata) {
       const ueber = [...document.querySelectorAll("#liste-koerper .pk-karte, #liste-koerper .pk-chip, #liste-koerper .pk-leiste, #liste-koerper .pk-zitat")].filter((e) => e.getBoundingClientRect().right > liste.right + 1).length;
       return { ueber, bad: /\bnull\b|\bundefined\b|NaN/.test(text) };
     });
+    const gekappt = await page.evaluate(() => [...document.querySelectorAll("#liste-koerper .karte-fuss")].filter((f) => f.querySelector(".pk-chip")).map((f) => [f.offsetHeight, [...f.children].filter((c) => c.tagName === "SPAN" && getComputedStyle(c).display !== "none" && c.scrollWidth > c.clientWidth + 1).length]));
+    for (const [hoehe, abgeschnitten] of gekappt) { expect(hoehe).toBe(20); expect(abgeschnitten).toBe(0); } // nie mitten im Text gekappt
     expect(problem.ueber).toBe(0);
     expect(problem.bad).toBe(false);
   });

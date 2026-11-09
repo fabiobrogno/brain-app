@@ -106,6 +106,7 @@ test("Fremdänderung zwischen Anzeige und Klick: eine umgeschriebene Stelle wird
   await start(page);
   await waehle(page, KAFFEE);
   await expect(ein(page).locator("[data-erw-summe]")).toHaveText("3 Stellen in 3 Notizen");
+  await page.route((u) => u.pathname === "/api/erwaehnungen", () => {}); // auch weitere Listenabrufe (z. B. nach „focus“) anhalten: der Server prüft den veralteten Stand
   writeFileSync(join(vault, TIPPS), "# Lissabon-Tipps\n\nIn Lissabon trinkt man guten Kaffee mit Zimt und besucht eine alte Mühle.\n"); // anderer Satz, der Name steht noch da
   const vorher = lese(TIPPS);
   await ein(page).locator(`[data-erw-notiz="${TIPPS}"] [data-aktion="erw-verlinken"]`).click();
