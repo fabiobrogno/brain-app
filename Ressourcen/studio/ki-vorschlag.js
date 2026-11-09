@@ -24,6 +24,10 @@ export function kiStatus(bereit) {
   return { sichtbar: !!konto, gesperrt, konto, einwilligung: !!(ein && konto && ein.konto === konto.id) };
 }
 
+// EINE Liste der KI-Funktionen, die ein Einwilligungsdialog nennt (in der Reihenfolge von TV.gesendet); nur, was die Werkstatt anbietet.
+export const KI_FUNKTIONEN = ["zusammenfassung", "posteingang", "text", "erwaehnungen"];
+export const kiFunktionen = (bereit) => KI_FUNKTIONEN.filter((f) => (bereit?.funktionen || []).includes(f));
+
 // ---------- Kontingent-Zeile ----------
 // Ruhig und immer gleich hoch (eine Zeile): Mini-Balken + Satz. ab 80 % ein Satz in Gelb, bei 100 % mit Rücksetzzeit. `voll` sagt, ob der Knopf aus sein soll.
 export function kontingentZeile({ api, konto, abo = null, beiAenderung = null } = {}) {

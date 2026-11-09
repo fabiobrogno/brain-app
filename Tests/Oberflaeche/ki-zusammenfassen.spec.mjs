@@ -136,7 +136,9 @@ test("„Was wird gesendet?“ zeigt das Paket genau so, wie es an die KI ging: 
   await expect(paket).toBeVisible();
   const text = await paket.innerText();
   expect(text).toContain('"aufgabe": "zusammenfassung"');
-  expect(text).toContain("Reise nach Lissabon");
+  // Welche Titel in den neuesten Zeilen landen, hängt bei gleicher Git-Zeit (alle Testnotizen in einer Sekunde) von der Reihenfolge ab –
+  // kein fester Titel; unten wird die Anzeige mit dem verglichen, was die Attrappe wirklich bekam.
+  expect(text).toMatch(/"titel": "[^"]+"/);
   expect(text).not.toContain("NICHT-SENDEN-TITEL");
   expect(text).not.toContain("INHALT-GEHEIM");
   expect(text).not.toContain("Kaffee ist ein"); // keine Inhalte

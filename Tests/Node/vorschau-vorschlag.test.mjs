@@ -125,3 +125,16 @@ test("Vorschau: Zusammenfassung — ein Beispielsatz mit gültigen Belegen aus d
   assert.deepEqual(r2.ergebnis.saetze, r1.ergebnis.saetze, "deterministisch: zweimal dieselbe Antwort");
   rmSync(p.vo, { recursive: true, force: true });
 });
+
+test("Vorschau: Erwähnungen prüfen — ein Beispielurteil „unklar“ für f1 (gesendete Kennung), deterministisch, mit Marke „Vorschau“", { skip: SKIP }, async () => {
+  const p = vorschau();
+  for (const n of [1, 2, 3]) schreibe(p.vault, `20_notizen/Quelle ${n}.md`, `# Quelle ${n}\n\nHeute sprechen wir über Atlas in Runde ${n} und planen die nächsten Schritte.\n`);
+  const r1 = await anfrage(p, werkstattEnv(p), { funktion: "erwaehnungen", pfad: "10_projekte/Atlas.md" });
+  assert.equal(r1.ergebnis.ok, true, JSON.stringify(r1.ergebnis));
+  assert.equal(r1.ergebnis.vorschau, true);
+  assert.deepEqual(r1.ergebnis.urteile.map((u) => [u.id, u.gemeint]), [["f1", "unklar"]]);
+  assert.match(r1.ergebnis.urteile[0].grund, /^Vorschau-Beispiel/);
+  const r2 = await anfrage(p, werkstattEnv(p), { funktion: "erwaehnungen", pfad: "10_projekte/Atlas.md" });
+  assert.deepEqual(r2.ergebnis.urteile, r1.ergebnis.urteile, "deterministisch");
+  rmSync(p.vo, { recursive: true, force: true });
+});
