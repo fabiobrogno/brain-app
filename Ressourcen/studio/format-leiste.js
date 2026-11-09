@@ -41,6 +41,9 @@ export function formatLeiste(ctx = {}) {
       this.hoch = () => { if (this.gedrueckt) { this.gedrueckt = false; this.plane(); } };
       this.runter = (e) => { if (e.button === 0 && !this.el?.contains(e.target)) { this.gedrueckt = true; this.verberge(); } };
       this.scroll = () => { if (this.el?.dataset.offen === "ja") this.plane(); };
+      this.kiEreignis = () => this.plane(); // Stand der KI-Aktionen (Konto, Popover offen) hat sich geändert
+      this.kiEl = null; this.kiTitel = "";
+      window.addEventListener("kortex-ki-text", this.kiEreignis);
       view.dom.addEventListener("mousedown", this.runter);
       view.dom.ownerDocument.addEventListener("mouseup", this.hoch, true);
       view.scrollDOM.addEventListener("scroll", this.scroll, { passive: true });
@@ -55,6 +58,7 @@ export function formatLeiste(ctx = {}) {
       this.view.dom.ownerDocument.removeEventListener("mouseup", this.hoch, true);
       this.view.scrollDOM.removeEventListener("scroll", this.scroll);
       window.removeEventListener("resize", this.scroll);
+      window.removeEventListener("kortex-ki-text", this.kiEreignis);
       this.el?.remove();
     }
     plane() {
@@ -88,18 +92,36 @@ export function formatLeiste(ctx = {}) {
       document.body.append(el);
       return el;
     }
+    // KI-Knopf (K2): nur da, wenn es ein Konto mit Stufe „lesen“ gibt (sonst nicht im DOM); aus mit Grund im Tooltip, wenn die Auswahl nicht geht (Code-Block, Tabelle, zu lang …)
+    zeigeKi() {
+      const ki = ctx.kiText, zu = ki?.leisteZustand?.() || { sichtbar: false };
+      if (!zu.sichtbar) { if (this.kiEl) { this.kiEl.previousSibling?.remove(); this.kiEl.remove(); this.kiEl = null; } return; }
+      if (!this.kiEl) {
+        const t = document.createElement("span"); t.className = "fl-trenner"; t.setAttribute("role", "separator");
+        const b = document.createElement("button");
+        b.type = "button"; b.className = "fl-knopf fl-ki"; b.dataset.befehl = "ki"; b.tabIndex = -1; b.setAttribute("aria-haspopup", "dialog");
+        b.append(symbol("funke", 14));
+        b.addEventListener("mousedown", (e) => { e.preventDefault(); if (e.button === 0 && b.getAttribute("aria-disabled") !== "true") { if (ki.istOffen()) ki.schliesse(); else ki.oeffne(); } });
+        b.addEventListener("click", (e) => e.preventDefault());
+        this.el.append(t, b); this.kiEl = b;
+      }
+      const text = zu.grund || TX.ki;
+      if (this.kiTitel !== text) { this.kiTitel = text; this.kiEl.title = text; this.kiEl.setAttribute("aria-label", TX.ki); }
+      this.kiEl.setAttribute("aria-disabled", zu.grund ? "true" : "false");
+    }
     verberge() {
       cancelAnimationFrame(this.plan);
       if (this.el && this.el.dataset.offen !== "nein") this.el.dataset.offen = "nein";
     }
     zeige() {
       const v = this.view, st = v.state, r = st.selection.main;
-      const an = ctx.formatLeiste?.() !== false && !r.empty && !this.gedrueckt && v.hasFocus && !st.readOnly && st.selection.ranges.length === 1 && r.to - r.from <= MAX_ZEICHEN
+      const an = ctx.formatLeiste?.() !== false && document.documentElement.dataset.kiTextOffen !== "ja" && !r.empty && !this.gedrueckt && v.hasFocus && !st.readOnly && st.selection.ranges.length === 1 && r.to - r.from <= MAX_ZEICHEN
         && document.documentElement.dataset.einrichtung !== "offen";
       if (!an || !st.doc.sliceString(r.from, r.to).trim()) { this.verberge(); return; }
       const a = v.coordsAtPos(r.from, 1), b = v.coordsAtPos(r.to, -1);
       if (!a || !b) { this.verberge(); return; }
       if (!this.el) this.el = this.baue();
+      this.zeigeKi();
       const z = zustandAnAuswahl(st);
       for (const [knopf, s] of this.knoepfe) {
         const an2 = Array.isArray(s) ? z[s[0]] === s[1] : !!z[s];
@@ -116,6 +138,7 @@ export function formatLeiste(ctx = {}) {
       let links = Math.min(Math.max(mitte - w / 2, rand.left + 8), Math.max(rand.left + 8, rand.right - w - 8));
       let oben = a.top - h - 8;
       if (oben < rand.top + 4) oben = Math.min(b.bottom + 8, rand.bottom - h - 4);
+      links = Math.max(8, Math.min(links, window.innerWidth - w - 8)); // nie aus dem Fenster (schmale Fenster: die Leiste ist breiter als die Spalte)
       el.style.left = Math.round(links) + "px";
       el.style.top = Math.round(oben) + "px";
     }

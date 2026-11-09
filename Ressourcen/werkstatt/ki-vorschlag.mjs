@@ -17,7 +17,7 @@ import { HttpFehler, inboxOrdnerVon, vorlagenOrdnerVon, falte, vorschauOrdnerAus
 import { aktivesKonto, vorschlaegeFuer, setzeVorschlaege, echterOrt } from "../gemeinsam/ki-konten.mjs";
 import { kennungVault, melde } from "../gemeinsam/aktivitaet.mjs";
 import { titelAus } from "../gemeinsam/notizen.mjs";
-import { VERSION, TEXT_AKTIONEN, SPRACHEN, LIMITS, schemaFuer, pruefeAntwort, parseJsonAntwort, istKiNein, istKiNeinWert, kandidatIds, ordnerIds } from "../gemeinsam/ki-schema.mjs";
+import { VERSION, TEXT_AKTIONEN, SPRACHEN, LIMITS, schemaFuer, pruefeAntwort, warnungenFuerErsatz, parseJsonAntwort, istKiNein, istKiNeinWert, kandidatIds, ordnerIds } from "../gemeinsam/ki-schema.mjs";
 import { MODELLE, ABBRUCH_TEXT, sauberText, ganz, nfc, erzeugeKontenZugriff, legeTempAn, starteKiLauf, baueFrageUmgebung } from "./ki-kern.mjs";
 
 export { VERSION };
@@ -251,7 +251,17 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     const stelle = n.inhalt.indexOf(e.auswahl);
     if (stelle < 0) throw new HttpFehler(409, "Der markierte Text steht nicht (mehr) in der Notiz. Markiere ihn noch einmal.", { art: "veraltet" });
     let ueberschrift = "";
-    for (const z of n.inhalt.slice(0, stelle).split(/\r?\n/)) { const m = /^ {0,3}#{1,6}\s+(.+?)\s*#*\s*$/.exec(z); if (m) ueberschrift = m[1]; }
+    // Nur echte Überschriften: Zeilen im Datei-Kopf (Front-Matter) und in Code-Zäunen zählen nicht (dort stehen „# …“-Kommentare, die nie an eine KI gehen)
+    let zaun = null, kopf = false;
+    const zeilenDavor = n.inhalt.slice(0, stelle).split(/\r?\n/);
+    zeilenDavor.forEach((z, i) => {
+      if (i === 0 && /^---[ \t]*$/.test(z)) { kopf = true; return; }
+      if (kopf) { if (/^(---|\.\.\.)[ \t]*$/.test(z)) kopf = false; return; }
+      const f = /^ {0,3}(`{3,}|~{3,})/.exec(z);
+      if (zaun) { if (f && f[1][0] === zaun[0] && f[1].length >= zaun.length && /^ {0,3}[`~]+\s*$/.test(z)) zaun = null; return; }
+      if (f) { zaun = f[1]; return; }
+      const m = /^ {0,3}#{1,6}\s+(.+?)\s*#*\s*$/.exec(z); if (m) ueberschrift = m[1];
+    });
     const funktion = TEXT_AKTIONEN[e.aktion];
     const daten = { auswahl: e.auswahl, ...(ueberschrift ? { ueberschrift: sauberText(ueberschrift, 200) } : {}), ...(e.aktion === "uebersetzen" ? { sprache: e.sprache } : {}) };
     return {
@@ -347,7 +357,9 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     }
     if (run.art === "text") {
       if (run.funktion === "ersatz") return { funktion: "ersatz", ersatz: p.daten.ersatz, warnungen: p.daten.warnungen, verworfen: p.verworfen, ...marke };
-      return { funktion: "aufgaben", aufgaben: p.daten.aufgaben, verworfen: p.verworfen, ...marke };
+      // Aufgaben landen als Markdown in der Notiz: dieselben Warnzeilen wie beim Ersatztext (Link nach außen, Bild, HTML …), gemessen an der Auswahl
+      const warnungen = warnungenFuerErsatz(run.s.ctx.auswahl, p.daten.aufgaben.map((a) => a.text).join("\n"));
+      return { funktion: "aufgaben", aufgaben: p.daten.aufgaben, warnungen, verworfen: p.verworfen, ...marke };
     }
     const ablauf = jetzt() + G.ablauf;
     const kandidatenHash = sha(JSON.stringify([[...run.s.ziele.kandidaten].map(([id, k]) => [id, k.pfad, k.hash]), [...run.s.ziele.ordner].map(([id, o]) => [id, o.pfad])]));

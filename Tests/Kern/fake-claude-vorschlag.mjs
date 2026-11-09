@@ -19,6 +19,7 @@
 //   budget             result mit subtype error_max_budget_usd
 //   zaun               gültige Antwort, aber als JSON-Text im `result` mit Code-Zaun (kein structured_output)
 //   stream             Ausgabe als stream-json-Zeilen (system, assistant, result) statt eines Objekts
+//   (Text-Aktionen) szenario.json darf zusätzlich "ersatz" (feste Antwort für Umschreiben/Kürzen/Übersetzen) und "aufgabenListe" (feste Aufgaben mit Beleg) tragen; ohne beides: Antwort aus dem Datenpaket
 // Protokoll: jede Zeile in <ordner>/aufrufe.jsonl: { args, cwd, envSchluessel, claudeConfigDir, stdin, verletzt }.
 import { parseArgs } from "node:util";
 import { readFileSync, appendFileSync, writeFileSync, readdirSync, realpathSync } from "node:fs";
@@ -106,6 +107,8 @@ function gueltig() {
     const ziel = erst(daten.kandidaten);
     return { vorschlaege: ziel ? [{ art: "verlinken", ziel, beleg, begruendung: "Der Titel kommt im Eintrag vor.", sicherheit: "mittel" }] : [] };
   }
+  if (aufgabe === "aufgaben" && Array.isArray(szen.aufgabenListe)) return { aufgaben: szen.aufgabenListe };
+  if (typeof szen.ersatz === "string" && ["umschreiben", "kuerzen", "uebersetzen"].includes(aufgabe)) return { ersatz: szen.ersatz };
   if (aufgabe === "aufgaben") {
     const a = String(daten.auswahl || "").replace(/\s+/g, " ").trim();
     return { aufgaben: a ? [{ text: "Erledigen: " + a.slice(0, 40), beleg: a.slice(0, Math.min(a.length, 30)) }] : [] };
