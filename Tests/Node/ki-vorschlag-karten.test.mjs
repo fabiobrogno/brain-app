@@ -381,3 +381,18 @@ test("K2 Duplikat zurücknehmen: genau an den Ursprungspfad (auch bei Namenskoll
   assert.equal(existsSync(join(s.vault, "00_inbox/Atlas-Idee-2.md")), false);
   assert.equal(lesen(s, "90_archiv/verworfen/Atlas-Idee.md"), "# Alt im Archiv\n", "die ältere Archivdatei bleibt");
 });
+
+test("K1 Kandidaten-Anfang: der Kopf (auch mit BOM, CRLF und „...“ als Ende) geht nie an die KI, nur der Text danach", async () => {
+  const s = szenarioV();
+  schreibe(s.vault, "10_projekte/Kopf Bom.md", "﻿---\ntitel: Kopf Bom\ngeheim: KOPF-BOM-GEHEIM\n---\n# Kopf Bom Atlas\n\nSichtbarer Text Atlas Kaffeemaschine.\n");
+  schreibe(s.vault, "10_projekte/Kopf Punkte.md", "---\ntitel: Kopf Punkte\ngeheim: KOPF-PUNKTE-GEHEIM\n...\n# Kopf Punkte Atlas\n\nSichtbarer Text Atlas Kaffeemaschine.\n");
+  schreibe(s.vault, "10_projekte/Kopf Crlf.md", "---\r\ntitel: Kopf Crlf\r\ngeheim: KOPF-CRLF-GEHEIM\r\n---\r\n# Kopf Crlf Atlas\r\n\r\nSichtbarer Text Atlas Kaffeemaschine.\r\n");
+  await arten(s, ["verlinken"]);
+  const roh = s.aufrufe().at(-1).stdin;
+  for (const g of ["KOPF-BOM-GEHEIM", "KOPF-PUNKTE-GEHEIM", "KOPF-CRLF-GEHEIM"]) assert.ok(!roh.includes(g), `${g} darf nie im Paket stehen`);
+  const paket = JSON.parse(roh);
+  for (const t of ["Kopf Bom", "Kopf Punkte", "Kopf Crlf"]) {
+    const k = paket.daten.kandidaten.find((x) => x.titel === t || x.titel.startsWith(t));
+    assert.ok(!k || /Sichtbarer Text/.test(k.anfang) || /Atlas/.test(k.anfang), `${t}: der Anfang beginnt nach dem Kopf`);
+  }
+});

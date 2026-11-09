@@ -28,6 +28,38 @@
 .erw-stelle .knopf { flex: none; }
 .erw-mehr { justify-self: start; }
 
+/* ───── „Mit KI prüfen“ (erwaehnungen-ki.js): Knopf, Status, Badges, Filter ───── */
+.erw-stelle[hidden], .erw-notiz[hidden] { display: none; }
+.erw-ki { display: grid; gap: 6px; min-width: 0; margin-bottom: 8px; }
+.erw-ki[hidden] { display: none; }
+.erw-ki-zeile { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-height: 28px; min-width: 0; }
+.erw-ki-grund { font-size: 12px; color: var(--text-3); min-width: 0; }
+.erw-ki-grund[hidden] { display: none; }
+.erw-ki-status { position: relative; display: grid; gap: 8px; min-width: 0; padding: 8px 10px; border: 1px solid var(--linie-stark); border-radius: var(--r-l); background: var(--erhoben); }
+.erw-ki-status[hidden] { display: none; }
+.erw-ki-reihe { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; padding-right: 22px; }
+.erw-ki-status[data-phase="laeuft"] .erw-ki-reihe { padding-right: 0; justify-content: space-between; }
+.erw-ki-text { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--text-2); font-variant-numeric: tabular-nums; text-wrap: pretty; min-width: 0; }
+.erw-ki-klein { margin: 0; font-size: 11.5px; line-height: 1.45; color: var(--text-3); font-variant-numeric: tabular-nums; text-wrap: pretty; }
+.erw-ki-klein[hidden] { display: none; }
+.erw-ki-marke { padding: 1px 7px; border-radius: var(--r-pille); background: var(--akzent-weich); color: var(--akzent-tinte); font-size: 10.5px; font-weight: 600; letter-spacing: .02em; }
+.erw-ki-zu { position: absolute; top: 6px; right: 6px; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: var(--r); background: transparent; color: var(--text-3); cursor: pointer; transition: background var(--t), color var(--t); }
+.erw-ki-zu:hover { background: var(--hover); color: var(--text); }
+.erw-ki-balken { position: relative; height: 4px; border-radius: var(--r-pille); background: var(--hover-2); overflow: hidden; }
+.erw-ki-balken > i { position: absolute; inset: 0 auto 0 0; width: 34%; border-radius: inherit; background: var(--akzent); animation: erw-ki-lauf 1.5s var(--ease-out) infinite; }
+@keyframes erw-ki-lauf { from { transform: translateX(-110%); } to { transform: translateX(310%); } }
+.erw-ki .bs-schalter-zeile { justify-content: space-between; font-size: 12.5px; color: var(--text); }
+/* Badge in der Zeile „Z. 12“: die Zeile ist ohnehin da, der Platz springt nicht; neue Badges blenden sanft ein */
+.erw-zeile { display: flex; align-items: center; gap: 6px; min-height: 16px; }
+.erw-badge-platz { display: inline-flex; align-items: center; min-width: 0; }
+.erw-badge { display: inline-flex; align-items: center; height: 16px; padding: 0 7px; border-radius: var(--r-pille); font-size: 10.5px; font-weight: 600; line-height: 1; letter-spacing: .01em; white-space: nowrap; cursor: default; transition: opacity var(--d-fast) var(--ease-out); }
+.erw-badge.neu { opacity: 0; }
+.erw-badge[data-erw-badge="ja"] { background: var(--gruen-weich); color: var(--gruen); box-shadow: inset 0 0 0 1px var(--gruen-rand); }
+.erw-badge[data-erw-badge="nein"] { background: var(--hover-2); color: var(--text-3); box-shadow: inset 0 0 0 1px var(--linie); }
+.erw-badge[data-erw-badge="unklar"] { background: var(--gelb-weich); color: var(--text-2); box-shadow: inset 0 0 0 1px var(--gelb-rand); }
+.erw-ki-zu:focus-visible, .erw-ki .bs-schalter-zeile button:focus-visible { outline: 0; box-shadow: var(--fokus-ring); }
+@media (prefers-reduced-motion: reduce) { .erw-badge, .erw-ki-balken > i { transition: none; animation: none; } }
+
 /* ───── Karte „Was ist neu“ ───── */
 .nk {
   margin: 10px 10px 4px; padding: 6px 8px; border-radius: var(--r-l); background: var(--erhoben); border: 1px solid var(--linie); box-shadow: var(--schatten-klein);

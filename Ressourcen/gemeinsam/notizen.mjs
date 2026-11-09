@@ -51,6 +51,13 @@ function inlineListe(s) {
   return aus.map(skalar).filter((x) => x !== "");
 }
 
+// Länge des Datei-Kopfs (Front-Matter) in Zeichen: ein optionales BOM, beide ---/...-Zeilen und der Zeilenumbruch danach; 0 = kein (geschlossener) Kopf.
+// EINE Regel für alles, was „der Kopf geht nie an eine KI“ prüft (Sammler der KI-Vorschläge). Text davor und Zeilenenden (LF/CRLF) bleiben, wie sie sind.
+export function kopfLaenge(text) {
+  const m = /^\uFEFF?---[ \t]*\r?\n(?:[\s\S]*?\r?\n)?(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/.exec(String(text ?? ""));
+  return m ? m[0].length : 0;
+}
+
 // → { felder: {schluessel: text | [text]}, roh: {schluessel: rohtext}, bis } — bis = Zahl der Kopfzeilen inkl. beider ---, 0 = kein Kopf.
 // Liest Text, Inline-Listen [a, b], Block-Listen (- a) und Blocktexte (> / |); Verschachteltes wird übersprungen.
 export function parseKopf(text) {

@@ -13,7 +13,7 @@ export function gesperrteBereiche(doc) {
   const aus = [];
   const zeilen = text.split("\n");
   let pos = 0, zaun = null, kopfEnde = -1;
-  if (/^---[ \t]*(\n|$)/.test(text)) {
+  if (/^\uFEFF?---[ \t]*(\n|$)/.test(text)) { // auch mit BOM (wie gemeinsam/notizen.mjs#kopfLaenge)
     let p = text.indexOf("\n") + 1;
     for (const z of zeilen.slice(1)) { if (/^---[ \t]*$/.test(z) || /^\.\.\.[ \t]*$/.test(z)) { kopfEnde = p + z.length; break; } p += z.length + 1; }
     if (kopfEnde >= 0) aus.push({ von: 0, bis: kopfEnde, art: "kopf" });

@@ -10,7 +10,7 @@ import { api } from "./api.js";
 import { TK } from "./texte-ki-text.js";
 import { TV } from "./texte-ki-vorschlag.js";
 import { TN } from "./texte-erwaehnungen.js";
-import { kiStatus, oeffneEinwilligung, kontingentZeile, wasWirdGesendet, starteVorschlag } from "./ki-vorschlag.js";
+import { kiStatus, kiFunktionen, oeffneEinwilligung, kontingentZeile, wasWirdGesendet, starteVorschlag } from "./ki-vorschlag.js";
 import { wortDiffAnzeige, hatAenderung, wortDiffAnsicht } from "./diff.js";
 import * as L from "./ki-text-logik.js";
 
@@ -256,7 +256,7 @@ export function erzeugeKiText({ S, ed, speichereWarte, nachAufgaben }) {
     if (!st.sichtbar || st.gesperrt) { mein.startet = false; zeichne(); return; }
     if (!st.einwilligung) {
       // Die Einwilligung gilt je Vault für alle KI-Vorschläge; der Dialog nennt alles, was die Werkstatt anbietet
-      const funktionen = (bereit?.funktionen || []).filter((f) => f === "zusammenfassung" || f === "posteingang" || f === "text");
+      const funktionen = kiFunktionen(bereit);
       oeffneEinwilligung({ api, bereit, vault: S.info?.vault || "", vaultName: S.info?.name || "", funktionen: funktionen.length ? funktionen : ["text"],
         nachher: async () => { await frisch(true); if (z === mein && st.einwilligung) starte(aktion, sprache); else if (z === mein) mein.startet = false; }, beiAbbruch: () => { if (z === mein) { mein.startet = false; ed.view.focus(); } } });
       return;
@@ -276,7 +276,7 @@ export function erzeugeKiText({ S, ed, speichereWarte, nachAufgaben }) {
     zeichne();
     clearInterval(uhr); uhr = setInterval(() => { const el = pop?.el.querySelector("[data-ki-text-zeit]"); if (el && z === mein && mein.phase === "laeuft" && mein.gesendet && !mein.wirdAbgebrochen) el.textContent = TK.lauf.zeit(Math.floor((Date.now() - mein.start) / 1000)); }, 1000);
     const l = lauf = starteVorschlag({ api, wiederholeBeiLaeuft: true,
-      eingabe: { funktion: "text", aktion, ...(aktion === "uebersetzen" ? { sprache } : {}), pfad: snap.pfad, auswahl: snap.text, konto: st.konto.id, ...(gruendlich ? { modell: "mittel" } : {}) },
+      eingabe: { funktion: "text", aktion, ...(aktion === "uebersetzen" ? { sprache } : {}), pfad: snap.pfad, auswahl: snap.text, von: ed.view.state.sliceDoc(0, snap.von, snap.lb).length, konto: st.konto.id, ...(gruendlich ? { modell: "mittel" } : {}) },
       beiStart: (s) => { if (z !== mein) return; mein.gesendet = s.gesendet; zeichne(); } });
     const fertig = (f) => { if (z !== mein) return; clearInterval(uhr); lauf = null; f(); zeichne(); };
     l.fertig.then(({ ergebnis }) => fertig(() => {

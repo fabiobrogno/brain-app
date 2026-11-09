@@ -73,3 +73,23 @@ test("Überschrift darüber: „# …“-Zeilen in Code-Zäunen und im Datei-Kop
   assert.equal(JSON.parse(roh).daten.ueberschrift, "Echte Überschrift");
   assert.ok(!roh.includes("GEHEIM"));
 });
+
+test("Werkstatt-Sperre: Auswahl im Datei-Kopf wird abgelehnt (auch mit BOM), `von` muss genau auf den Text zeigen, ein YAML-Kommentar im Kopf ist nie die Überschrift", async () => {
+  const s = szenarioV();
+  const kopf = "﻿---\ntitel: Plan\n# KOPF-KOMMENTAR-GEHEIM\nbeschreibung: Plan Plan\n---\n";
+  const text = `${kopf}Erster Absatz mit Plan darin.\n\nZweiter Plan folgt.\n`;
+  schreibe(s.vault, "10_projekte/Bom.md", text);
+  const start = (extra) => s.api("POST", "/api/ki/vorschlag/start", { konto: "k_aaaaaaaa", funktion: "text", aktion: "kuerzen", pfad: "10_projekte/Bom.md", ...extra });
+  let r = await start({ auswahl: "Plan Plan", von: text.indexOf("Plan Plan") });
+  assert.equal(r.status, 409); assert.equal(r.j.art, "kopf");
+  r = await start({ auswahl: "beschreibung: Plan Plan" });
+  assert.equal(r.status, 409);
+  assert.deepEqual(s.aufrufe(), []);
+  r = await start({ auswahl: "Plan", von: text.indexOf("Zweiter") });
+  assert.equal(r.status, 409); assert.equal(r.j.art, "veraltet");
+  const { stand } = await s.anfrage({ funktion: "text", aktion: "kuerzen", pfad: "10_projekte/Bom.md", auswahl: "Plan", von: text.lastIndexOf("Plan") });
+  assert.equal(stand.ergebnis.ok, true, JSON.stringify(stand.ergebnis));
+  const roh = s.aufrufe()[0].stdin;
+  assert.ok(!roh.includes("KOPF-KOMMENTAR-GEHEIM") && !roh.includes("titel: Plan"), "Kopf und YAML-Kommentar gehen nie hinaus");
+  assert.deepEqual(Object.keys(JSON.parse(roh).daten), ["auswahl"], "keine Überschrift aus dem Kopf");
+});

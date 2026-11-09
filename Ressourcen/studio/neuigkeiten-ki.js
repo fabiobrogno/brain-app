@@ -9,7 +9,7 @@ import { symbol } from "./symbole.js";
 import { api } from "./api.js";
 import { TN } from "./texte-erwaehnungen.js";
 import { TV } from "./texte-ki-vorschlag.js";
-import { kiStatus, oeffneEinwilligung, kontingentZeile, wasWirdGesendet, starteVorschlag } from "./ki-vorschlag.js";
+import { kiStatus, kiFunktionen, oeffneEinwilligung, kontingentZeile, wasWirdGesendet, starteVorschlag } from "./ki-vorschlag.js";
 import { baueMerkText } from "./ki-zusammenfassung-text.js";
 
 const runden = (n) => Math.max(100, Math.round(n / 100) * 100);
@@ -72,7 +72,7 @@ export function erzeugeKiZusammenfassung({ S, oeffne, daten, zeitText }) {
     if (!st.sichtbar || sperrGrund()) return;
     if (!st.einwilligung) {
       // Die Einwilligung gilt je Vault für alle KI-Vorschläge, darum nennt der Dialog alles, was die Werkstatt anbietet
-      const funktionen = (bereit?.funktionen || []).filter((f) => f === "zusammenfassung" || f === "posteingang" || f === "text");
+      const funktionen = kiFunktionen(bereit);
       oeffneEinwilligung({ api, bereit, vault: S.info?.vault || "", vaultName: S.info?.name || "", funktionen: funktionen.length ? funktionen : ["zusammenfassung"], nachher: async () => { await frisch(); if (st.einwilligung && !sperrGrund()) starte(); } });
       return;
     }

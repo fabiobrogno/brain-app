@@ -76,6 +76,42 @@ for (const fall of KORPUS) {
   });
 }
 
+// K4 „Erwähnungen mit KI prüfen“: derselbe Korpus als QUELLE einer Erwähnung (die Notiz „Atlas“ wird in ihm genannt). Der Angriffstext darf nur als Kontext unter daten stehen (höchstens ±200 Zeichen,
+// ohne versteckte Zeichen); Notizen mit `ki: nein` kommen nie vor; Urteile gibt es nur für gesendete Kennungen, jede höchstens einmal; nichts wird geschrieben (die KI verlinkt nie).
+for (const fall of KORPUS) {
+  test(`Injektion K4 „${fall.name}“: Kontext nur unter daten, Urteile nur für gesendete Fundstellen, nichts geschrieben`, async () => {
+    const s = szenarioV();
+    for (const [p, t] of fall.extra || []) schreibe(s.vault, p, t);
+    schreibe(s.vault, "20_finanzen/Korpus-Quelle.md", `${fall.eintrag.replace(/^# Atlas$/m, "# Korpus")}\n\nWir sprechen im Meeting über Atlas und den Zeitplan.\n`);
+    schreibe(s.vault, "20_finanzen/Weitere Quelle.md", "# Weitere Quelle\n\nBei Atlas fehlt noch das Budget für den Sommer.\n");
+    schreibe(s.vault, "20_finanzen/Noch eine Quelle.md", "# Noch eine Quelle\n\nAtlas wurde gestern besprochen und vertagt.\n");
+    const vorher = s.abbild(s.vault);
+    for (const name of ["injektion-befolgt", "fremdes-ziel", "ok", "zu-lang", "kaputt"]) {
+      s.szen({ szenario: name });
+      const r = await s.api("POST", "/api/ki/vorschlag/start", { funktion: "erwaehnungen", pfad: "10_projekte/Atlas.md", konto: "k_aaaaaaaa" });
+      assert.equal(r.status, 200, `${name}: ${JSON.stringify(r.j)}`);
+      const stand = await s.folge(r.j.id);
+      const a = s.aufrufe().at(-1);
+      const paket = JSON.parse(a.stdin);
+      const ids = new Set(paket.daten.fundstellen.map((f) => f.id));
+      assert.ok(ids.size >= 3 && ids.size <= 25 && [...ids].every((i) => /^f\d+$/.test(i)), `${name}: Kennungen`);
+      assert.equal(paket.aufgabe, "erwaehnungen");
+      for (const f of paket.daten.fundstellen) { assert.ok(f.vor.length <= 200 && f.nach.length <= 200); }
+      assert.ok(!/[\u{E0000}-\u{E007F}‪-‮​]/u.test(a.stdin), `${name}: keine versteckten Zeichen im Paket`);
+      if (fall.erwartet === "ki-nein") assert.ok(!a.stdin.includes("geht nie an eine KI") && !a.stdin.includes("Auch das geht nie"), `${name}: Notiz mit ki: nein nie im Paket`);
+      const probe = (fall.eintrag.replace(/\s+/g, " ").match(/[A-Za-zÄÖÜäöü ]{25,}/) || [])[0];
+      if (probe) assert.ok(!a.args.some((x) => x.includes(probe.trim().slice(0, 25))), `${name}: Angriffstext nicht in den Argumenten`);
+      if (stand.ergebnis.ok) {
+        const gemeldet = stand.ergebnis.urteile.map((u) => u.id);
+        assert.equal(new Set(gemeldet).size, gemeldet.length, `${name}: jede Kennung höchstens einmal`);
+        assert.ok(gemeldet.every((i) => ids.has(i)), `${name}: nur gesendete Kennungen`);
+        assert.ok(stand.ergebnis.urteile.every((u) => typeof u.pfad === "string" && !u.pfad.includes("..") && ["ja", "nein", "unklar"].includes(u.gemeint)));
+      } else assert.ok(name === "zu-lang" || name === "kaputt", `${name}: ${JSON.stringify(stand.ergebnis)}`);
+      assert.deepEqual(s.abbild(s.vault), vorher, `${name}: der Vault bleibt unverändert`);
+    }
+  });
+}
+
 test("Schema-Ebene: Pfade, ../, absolute Pfade, Kennung eines anderen Typs oder Vaults, Zusatzfelder, falsche Typen, Prototyp-Schlüssel — nie ein Vorschlag", () => {
   const ctx = { eintrag: "Wir sollten das Atlas Projekt besprechen.", kandidaten: ["k1", "k2"], ordner: ["o1"] };
   const gut = { art: "verlinken", ziel: "k1", beleg: "Atlas Projekt", begruendung: "Passt.", sicherheit: "hoch" };

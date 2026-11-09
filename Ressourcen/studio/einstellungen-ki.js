@@ -19,7 +19,7 @@ import { kontingentStand, kontingentBlock, kontoAnsicht, kontingentEinwilligung,
 import { uebernehmeLokaleWahl } from "./ki-aktiv.js";
 import { TKO } from "./texte-kontingent.js";
 import { popoverOffen } from "./popover.js";
-import { oeffneEinwilligung } from "./ki-vorschlag.js";
+import { oeffneEinwilligung, kiFunktionen } from "./ki-vorschlag.js";
 import { TV } from "./texte-ki-vorschlag.js";
 import { baueAnmeldung, pruefeKontoAnmeldung, ANMELDBAR } from "./ki-verbinden.js";
 import { baueAnmeldungImFenster } from "./anmeldung-fenster.js";
@@ -203,7 +203,7 @@ export function erzeugeKi(o) {
       let bereit = null;
       try { bereit = await api.kiVorschlagBereit(); } catch { /* ohne Angaben kein Dialog */ }
       if (!bereit) { toast(TV.einstellung.fehler, { fehler: true }); zeichne("pflege"); return; }
-      const fkt = (bereit.funktionen || []).filter((f) => ["zusammenfassung", "posteingang", "text"].includes(f));
+      const fkt = kiFunktionen(bereit);
       oeffneEinwilligung({ api, bereit, vault, vaultName: name, funktionen: fkt.length ? fkt : ["zusammenfassung"], nachher: ladeVorschlag, beiAbbruch: () => zeichne("pflege") });
       return;
     }
