@@ -283,6 +283,30 @@ private func vorschauVault(_ v: VorschauModus) throws -> URL {
     #expect(ohne.code == 97 && ohne.fehler.contains("KORTEX_VORSCHAU fehlt"))
 }
 
+// MARK: KI-Vorschläge (claude -p … KORTEX-VORSCHLAG/1)
+
+/// Argumente wie `werkstatt/ki-vorschlag.mjs` sie baut (ohne Werkzeuge, leere MCP-Liste, Systemprompt mit der Kennung). Das Datenpaket käme über stdin;
+/// `ProzessLauf` gibt keine Eingabe mit, darum prüft dieser Test den Weg im Platzhalter (kein Frag-Zweig, eigene Antwort), die JSON-Antworten prüft Tests/Node/vorschau-vorschlag.test.mjs.
+private func vorschlagArgumente() -> [String] {
+    return ["-p", "--output-format", "json", "--model", "haiku", "--tools", "", "--strict-mcp-config", "--mcp-config", "{\"mcpServers\":{}}",
+            "--json-schema", "{\"type\":\"object\"}", "--append-system-prompt", "KORTEX-VORSCHLAG/1. Antworte nur im Schema."]
+}
+
+@Test func claudePlatzhalterErkenntKiVorschlaegeUndLiestKeinenVault() async throws {
+    let v = vorschau(mitKi: true)
+    try v.vorbereiten()
+    // Ohne Datenpaket (leere Eingabe) kennt der Platzhalter keine Aufgabe: eigener Zweig (Exit 1, eigene Meldung), nicht der Frag-Zweig (der würde einen Vault verlangen und mit 97 enden)
+    let r = try await lauf(v, "claude", vorschlagArgumente())
+    #expect(r.code == 1, Comment(rawValue: r.fehler))
+    #expect(r.fehler.contains("unbekannte Aufgabe"))
+    #expect(r.ausgabe.isEmpty)
+    // Der Schutz gilt auch hier: ohne KORTEX_VORSCHAU geschieht nichts
+    var env = v.kindVorgaben
+    env["KORTEX_VORSCHAU"] = nil
+    let ohne = try await ProzessLauf.starte(v.bin.appendingPathComponent("claude"), vorschlagArgumente(), umgebung: env, zeitlimit: .seconds(10))
+    #expect(ohne.code == 97 && ohne.fehler.contains("KORTEX_VORSCHAU fehlt"))
+}
+
 // MARK: git
 
 @Test func ohneGitMeldetFehltUndInstalliertNie() async {

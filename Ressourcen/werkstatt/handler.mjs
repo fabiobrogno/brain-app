@@ -23,6 +23,7 @@ import { profilZuPfad, mitProfil, mitCodexHome } from "./profile.mjs";
 import { erzeugeKonten } from "./konten.mjs";
 import { erzeugeAnmelden } from "./anmelden.mjs";
 import { erzeugeFrage } from "./frage.mjs";
+import { erzeugeVorschlag } from "./ki-vorschlag.mjs";
 import { erzeugeKontingent } from "./kontingent.mjs";
 import { erzeugeEinstellungen } from "./einstellungen.mjs";
 import { erzeugeAnhaenge } from "./anhaenge.mjs";
@@ -124,7 +125,7 @@ export function erzeugeHandler(o) {
   // Automatische lokale Fassungen (auto-fassungen.mjs): nach dem Speichern im Studio und 2 Minuten Ruhe ein Commit „Automatisch gesichert: N Notizen“. Nur lokal. o.auto / KORTEX_AUTO_LEERLAUF_MS (nur Testmodus): kürzere Zeiten für Tests.
   const autoMs = testmodus() && Number(process.env.KORTEX_AUTO_LEERLAUF_MS) > 0 ? Number(process.env.KORTEX_AUTO_LEERLAUF_MS) : undefined;
   const auto = erzeugeAutoFassungen({ support: vaultOpt.support || supportOrdner(), ...(autoMs ? { leerlaufMs: autoMs, wiederholMs: autoMs } : {}), ...(o.auto || {}) });
-  const wechsleZu = (pfad) => { frage.brichAb("vault"); try { aktuell?.suchindexBeende?.(); } catch { /* egal */ } const alt = aktuell; aktuell = pfad ? oeffne(pfad) : null; ereignisse.richteAuf(aktuell ? aktuell.wurzel : null); waermeAuf(); if (alt && (!aktuell || alt.wurzel !== aktuell.wurzel)) auto.beiWechsel(alt).catch(() => {}); };
+  const wechsleZu = (pfad) => { frage.brichAb("vault"); vorschlag.brichAb("vault"); try { aktuell?.suchindexBeende?.(); } catch { /* egal */ } const alt = aktuell; aktuell = pfad ? oeffne(pfad) : null; ereignisse.richteAuf(aktuell ? aktuell.wurzel : null); waermeAuf(); if (alt && (!aktuell || alt.wurzel !== aktuell.wurzel)) auto.beiWechsel(alt).catch(() => {}); };
   if (o.vault) aktuell = oeffne(o.vault); // falscher Ordner → HttpFehler wie bisher
   else {
     const p = vaultsFn.aktiverVaultPfad(optV());
@@ -231,6 +232,11 @@ export function erzeugeHandler(o) {
   // (Umgebung für Programmsuche und Kindprozess, kürzere Grenzen, Temp-Ordner); sonst gilt die Umgebung dieser Werkstatt als Quelle für PATH/HOME/LANG, nie mehr.
   const frage = erzeugeFrage({ support: vaultOpt.support || supportOrdner(), konten, mcpBasis: () => mcpArgs(), basisEnv: o.frageEnv || process.env,
     home: () => o.kontenHome || homedir(), grenzen: o.frageGrenzen || {}, tempBasis: o.frageTemp || null });
+  // KI-Vorschläge (K0, docs/plaene/ki-runde.md): ohne Werkzeuge, nur nach Klick, nur mit Einwilligung je Vault — werkstatt/ki-vorschlag.mjs, gemeinsamer Kern mit Frag (ki-kern.mjs).
+  // o.vorschlagGrenzen / o.vorschlagTemp / o.vorschlagJetzt / o.vorschlagGeheimnis / o.vorschlagKontingent: Ersatz für Tests. Das Kontingent liest den Stand der Statuszeile (nie eine eigene Anfrage).
+  const vorschlag = erzeugeVorschlag({ support: vaultOpt.support || supportOrdner(), konten, basisEnv: o.frageEnv || process.env, home: () => o.kontenHome || homedir(), grenzen: o.vorschlagGrenzen || {},
+    tempBasis: o.vorschlagTemp || o.frageTemp || null, ...(o.vorschlagJetzt ? { jetzt: o.vorschlagJetzt } : {}), ...(o.vorschlagGeheimnis ? { geheimnis: o.vorschlagGeheimnis } : {}),
+    frageLaeuft: () => frage.laeuft(), kontingent: o.vorschlagKontingent || ((id) => (kontingent.stand({}).konten || []).find((k) => k.id === id) || null) });
   // Kontingent der KI-Konten (P7, 5 Std / Woche): Claude über die Statuszeile (nur nach Klick eingetragen, als Kette), Codex über das Programm selbst. Nie ein Token, nie ein Schlüsselbund, nie eine eigene
   // Anfrage an Anthropic oder OpenAI. o.kontingentCodex (Pfad oder null) / o.kontingentLauf / o.kontingentZeit = Ersatz für Tests (im Testmodus sonst kein echtes Codex).
   const kontingent = erzeugeKontingent({ support: vaultOpt.support || supportOrdner(), konten, nodePfad,
@@ -518,6 +524,15 @@ export function erzeugeHandler(o) {
       case "/api/frage/start": nur("POST"); return frage.start(eingabe(), V());
       case "/api/frage/stand": nur("GET"); return frage.stand(q, V());
       case "/api/frage/abbrechen": nur("POST"); return frage.abbrechen(eingabe(), V());
+      // KI-Vorschläge (K0): Einwilligung je Vault, Anfrage nur auf Klick, Anwenden nur mit Kennung und Token (die Aktion baut die Werkstatt aus ihrem eigenen Speicher)
+      case "/api/ki/vorschlag/bereit": nur("GET"); return vorschlag.bereit(V());
+      case "/api/ki/vorschlag/einwilligung":
+        if (methode === "GET") return vorschlag.einwilligung(V());
+        nur("PUT"); return vorschlag.setzeEinwilligung(eingabe(), V());
+      case "/api/ki/vorschlag/start": nur("POST"); return vorschlag.start(eingabe(), V());
+      case "/api/ki/vorschlag/stand": nur("GET"); return vorschlag.stand(q, V());
+      case "/api/ki/vorschlag/abbrechen": nur("POST"); return vorschlag.abbrechen(eingabe(), V());
+      case "/api/ki/vorschlag/anwenden": nur("POST"); return vorschlag.anwenden(eingabe(), V());
       case "/api/ki/standard": nur("PUT"); return konten.setzeStandard(eingabe());
       // Pflege je Vault: Konto und KI-Stufe setzen · Stand lesen (letzter/nächster Lauf) · jetzt einmal pflegen
       case "/api/ki/pflege":
@@ -551,7 +566,7 @@ export function erzeugeHandler(o) {
         if (v && weg === v.wurzel) { // der offene Vault wurde aus der Liste genommen → nächster oder Willkommen
           // Der Nachfolger ist schon gespeichert: lässt er sich nicht öffnen, ist jetzt eben kein Vault offen (200, aktiv: null — die
           // Oberfläche zeigt Willkommen). Ein 400 NACH dem Speichern ließe die Oberfläche beim entfernten Vault stehen.
-          try { wechsleZu(l.aktiv); } catch { frage.brichAb("vault"); aktuell = null; }
+          try { wechsleZu(l.aktiv); } catch { frage.brichAb("vault"); vorschlag.brichAb("vault"); aktuell = null; }
         }
         return vaultListe(aktuell);
       }
@@ -576,7 +591,7 @@ export function erzeugeHandler(o) {
         merkeRemote(V().wurzel, repo.url);
         return erg;
       }
-      case "/api/stopp": nur("POST"); frage.brichAb("ende"); return { __stopp: true };
+      case "/api/stopp": nur("POST"); frage.brichAb("ende"); vorschlag.brichAb("ende"); return { __stopp: true };
       default: throw new HttpFehler(404, "nicht gefunden");
     }
   }
