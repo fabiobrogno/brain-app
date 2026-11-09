@@ -55,7 +55,6 @@ export function erzeugePosteingangKi({ S, ctx, oeffne, liste }) {
   let warteschlange = new Map(), lokalTimer = 0;
   function fordereLokal(n) {
     const z = ZU(n.pfad);
-    if (z.lokal !== null && z.stamp !== (n.geaendert ?? null)) { z.lokal = null; z.lokalLaedt = false; } // der Eintrag hat sich geändert: neu berechnen
     if (z.lokal !== null || z.lokalLaedt) return;
     z.lokalLaedt = true; z.stampWar = n.geaendert ?? null;
     warteschlange.set(n.pfad, true);
