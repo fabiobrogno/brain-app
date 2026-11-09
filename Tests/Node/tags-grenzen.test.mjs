@@ -125,6 +125,7 @@ test("Tag-Index bei 20.000 Notizen: erster Lauf in kleinen Scheiben, Speichern b
   const dauer = Date.now() - t2;
   console.log(`# Zählung nach Speichern ${dauer} ms, schreibe ${zeiten.map((z) => z.toFixed(1)).join("/")} ms`);
   assert.ok(nach.tags.some((t) => t.name === "neu4"));
-  assert.ok(dauer < 100, `Zählung ${dauer} ms`);
+  // Windows-Runner schwanken stark (69–150 ms gemessen, Mac 14 ms); die Grenze fängt dort nur den Gang durch den Vault (Sekunden)
+  assert.ok(dauer < (process.platform === "win32" ? 400 : 100), `Zählung ${dauer} ms`);
   assert.equal(laeuft, false);
 });
