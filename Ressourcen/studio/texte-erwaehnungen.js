@@ -74,5 +74,13 @@ export const TN = {
   inbox: { name: "Posteingang", offen: (n) => `${n} offen`, zurueckgestellt: (n) => `${n} zurückgestellt`, leer: "leer" },
   alleZeigen: "Alle zeigen",
   mehrZeigen: "Ansehen",
-  ki_zusammenfassen: { knopf: "Mit KI zusammenfassen", bald: "kommt bald", text: "Kommt bald: Eine KI fasst dann auf Wunsch zusammen, was neu ist. Das Ergebnis erscheint als Vorschlag, den du prüfst, und ändert nichts von selbst. Bis dahin zeigt diese Karte alles aus deinen eigenen Daten, ohne KI." },
+  ki_zusammenfassen: {
+    knopf: "Mit KI zusammenfassen", panel: "Zusammenfassung", schliessen: "Schließen", brichAb: "Wird abgebrochen …",
+    gesperrt: { "nicht-vertraut": "Bestätige zuerst, dass dieser Vault deiner ist.", "kein-claude": "Claude Code ist nicht installiert.", "konten-defekt": "Die KI-Konten sind gerade nicht lesbar." },
+    nichtsNeu: "Nichts Neues zum Zusammenfassen.", kontingentVoll: "Das Kontingent ist erschöpft.",
+    ablegen: "In den Posteingang legen", imPosteingang: "Im Posteingang", neu: "Neu zusammenfassen", oeffnen: "Öffnen",
+    abgelegt: "Zusammenfassung im Posteingang abgelegt.", ablegenFehler: "Das Ablegen hat nicht geklappt.",
+    belegOeffnen: "Notiz öffnen", vorschauMarke: "Vorschau-Beispiel",
+    pruefHinweis: "Aus Titeln und Zeiten abgeleitet, nicht aus den Inhalten der Notizen. Die Chips zeigen, worauf sich ein Satz stützt.",
+  },
 };

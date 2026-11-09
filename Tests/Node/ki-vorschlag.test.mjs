@@ -163,7 +163,7 @@ test("Stufe: gesperrt → 409 kein-zugriff; lesen genügt; ein Konto, das nicht 
 test("Eingabe: unbekannte Funktion, falsches Modell, „gründlicher“ nur für Text, Pfad außerhalb des Posteingangs, zu viel Text, Text steht nicht in der Notiz", async () => {
   const s = szenarioV();
   const st = (e) => s.api("POST", "/api/ki/vorschlag/start", { konto: "k_aaaaaaaa", ...e });
-  assert.equal((await st({ funktion: "zusammenfassung" })).status, 400, "K1 gibt es noch nicht");
+  assert.equal((await st({ funktion: "erwaehnungen" })).status, 400, "K4 gibt es noch nicht");
   assert.equal((await st({ funktion: "frei" })).status, 400);
   assert.equal((await st({ funktion: "posteingang", pfad: EINTRAG, modell: "riesig" })).status, 400);
   assert.equal((await st({ funktion: "posteingang", pfad: EINTRAG, modell: "mittel" })).status, 400, "gründlicher nur für Text-Aktionen");
@@ -346,7 +346,7 @@ test("bereit: Konten ohne Zugriff fehlen, Einwilligung und Grenzen stehen drin; 
   const b = (await s.api("GET", "/api/ki/vorschlag/bereit")).j;
   assert.equal(b.vertraut, true); assert.equal(b.claude, true);
   assert.equal(b.einwilligung.an, true); assert.equal(b.einwilligung.kontoName, "Arbeit");
-  assert.deepEqual(b.funktionen, ["posteingang", "text"]);
+  assert.deepEqual(b.funktionen, ["posteingang", "text", "zusammenfassung"]);
   assert.equal(b.aktiv, null, "mehrere Claude-Konten und keins als aktiv gewählt: keine Vorgabe");
   assert.ok(b.konten.some((k) => k.id === "k_aaaaaaaa" && k.erlaubt));
   assert.ok(!b.konten.some((k) => k.id === "k_bbbbbbbb"));

@@ -1,6 +1,6 @@
 # KI-Runde: Vorschläge statt Handlungen
 
-Stand: 09.11.2026 · Plan; K0 gebaut (siehe Abschnitt 9), K1 bis K4 offen. Baut auf Runde 3 (`runde-3.md`, Abschnitt „Später: KI-Vorschläge“), den KI-Konten (`ki-konten.md`, P1–P4, E4/E5) und „Frag deinen Vault“ (`werkstatt/frage.mjs`) auf.
+Stand: 09.11.2026 · Plan; K0 und K1 gebaut (siehe Abschnitt 9 und 10), K2 bis K4 offen. Baut auf Runde 3 (`runde-3.md`, Abschnitt „Später: KI-Vorschläge“), den KI-Konten (`ki-konten.md`, P1–P4, E4/E5) und „Frag deinen Vault“ (`werkstatt/frage.mjs`) auf.
 Klickbarer Prototyp: [`docs/prototypen/ki-runde/kortex-ki-vorschlaege.html`](../prototypen/ki-runde/kortex-ki-vorschlaege.html) (im Browser öffnen), Schlüsselbilder (hell, 1440 px): [Posteingang](../prototypen/ki-runde/r2-1440-light-01-posteingang.png) · [Einwilligung](../prototypen/ki-runde/r2-1440-light-02-einwilligung.png) · [Vorschlagskarten](../prototypen/ki-runde/r2-1440-light-04-vorschlagskarten.png) · [Einschleusung](../prototypen/ki-runde/r2-1440-light-05-injektion.png) · [Diff mit Link-Warnung](../prototypen/ki-runde/r2-1440-light-09-diff-link-warnung.png).
 
 ## 0. Worum es geht
@@ -241,3 +241,10 @@ Zwei echte Aufrufe, beide ohne Modellantwort (der erste lief ohne Konto-Ordner, 
 - Einwilligung je Vault in `ki-konten.json` → `vaults[v].vorschlaege = { an, seit, konto }`, fail-closed, gilt nur für das genannte Konto.
 - Attrappe `Tests/Kern/fake-claude-vorschlag.mjs` (Szenarien ok, injektion-befolgt, fremdes-ziel, kaputt, schema-falsch, zu-lang, beleg-erfunden, unicode-tags, langsam, abbruch, offline, budget, zaun, stream, anwenden), Injektions-Korpus `Tests/Node/ki-injektion/korpus.mjs`, Vorschau-Platzhalter (#88) mit deterministischen Antworten (`"vorschau": true`).
 - Noch nicht in K0: Studio-Bausteine (Einwilligungsdialog, „Was wird gesendet?“, Kontingent-Zeile). Die Werkstatt liefert dafür schon `bereit`, `gesendet` im Start-Ergebnis und das Kontingent; die Oberfläche kommt mit K1.
+
+## 10. Stand K1 „Mit KI zusammenfassen“ (09.11.2026)
+
+- **Werkstatt:** `zusammenfassung` in `ki-vorschlag.mjs` (`POST …/start { funktion: "zusammenfassung", seit? }`). Der Sammler nimmt `v.neuigkeiten({ fuerKi: true })`, also `baueNeuigkeiten` mit `ausnehmen` (Pfade mit `ki: nein`): solche Notizen und Aufgaben erscheinen weder mit Titel noch als Zahl im Paket; `start` und das Ergebnis nennen nur `ausgenommen` (für die Anzeige). Ist der Index nicht lesbar, gibt es auch keine Aufgaben (fail-closed). Im Paket stehen nur `heute`, `zeitraum`, `zeilen` (`z1` … höchstens 60: Kennung, Art, Titel, Zeit/fällig) und `zahlen`, keine Pfade, keine Inhalte. Ohne etwas Neues: 409 `nichts-neu`, kein Aufruf. Sätze ohne gültigen Beleg (Kennung aus der gesendeten Liste) fallen weg; die Beleg-Chips (Titel, Pfad, Art) baut Kortex aus dem eigenen Speicher. Frist 45 s, Budget 0,10 $, nur „klein“.
+- **Studio-Bausteine** (für K2/K3 wiederverwendbar): `studio/ki-vorschlag.js` (`kiStatus`, `oeffneEinwilligung`, `wasWirdGesendet`, `kontingentZeile`, `starteVorschlag`), Texte `texte-ki-vorschlag.js`, Stile `ki-vorschlag.css`. Die Karte: `neuigkeiten-ki.js` (Knopf, Lauf, Ergebnis, „In den Posteingang legen“ über `api.merken` mit entschärftem Text aus `ki-zusammenfassung-text.js`). Der Bereich unter dem Knopf hat vom Klick an eine feste Höhe und liegt in einem dauerhaften Knoten (kein Layoutsprung).
+- **Vorschau-Platzhalter (#88):** deterministische Antwort für `zusammenfassung` (ein Satz, Belege `z1`, `z2`, `"vorschau": true`).
+- **Offen:** Der Schalter „KI-Vorschläge in diesem Vault“ in Einstellungen → KI & Konten (Abschnitt 4) fehlt noch; bis dahin lässt sich die Einwilligung nur über `PUT /api/ki/vorschlag/einwilligung` zurücknehmen, und der Dialog verspricht diesen Weg bewusst nicht.

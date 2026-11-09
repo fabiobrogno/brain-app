@@ -22,14 +22,14 @@ import { MODELLE, ABBRUCH_TEXT, sauberText, ganz, nfc, erzeugeKontenZugriff, leg
 
 export { VERSION };
 export const GRENZEN = {
-  frist: { posteingang: 45_000, text: 60_000 },   // ms je Lauf
+  frist: { posteingang: 45_000, text: 60_000, zusammenfassung: 45_000 },   // ms je Lauf
   eingabe: { eintrag: 6000, auswahl: 8000, kandidatAnfang: 300 },
   ausgabe: 256 * 1024, zeile: 128 * 1024,           // Bytes von stdout insgesamt / je Zeile
   leerlauf: 20_000, longPoll: 800, turns: 3,
   ablauf: 15 * 60_000, speicher: 200,               // Vorschläge: Gültigkeit, höchstens je Vault
-  budgetUsd: { posteingang: { haiku: 0.15, sonnet: 0.15 }, text: { haiku: 0.15, sonnet: 0.6 } },
+  budgetUsd: { posteingang: { haiku: 0.15, sonnet: 0.15 }, text: { haiku: 0.15, sonnet: 0.6 }, zusammenfassung: { haiku: 0.10, sonnet: 0.10 } },
 };
-const FUNKTIONEN_K0 = ["posteingang", "text"]; // „zusammenfassung“ (K1) und „erwaehnungen“ (K4) folgen; ihre Schemas und Prüfungen gibt es schon
+const FUNKTIONEN_K0 = ["posteingang", "text", "zusammenfassung"]; // „erwaehnungen“ (K4) folgt; Schema und Prüfung gibt es schon
 const EINGEBAUT_ENTFERNT = ["Bash", "Edit", "MultiEdit", "Write", "NotebookEdit", "Read", "Glob", "Grep", "WebFetch", "WebSearch", "Task", "Agent"];
 const MCP_BRAIN_ENTFERNT = ["brain_suchen", "brain_lesen", "brain_kontext", "brain_merken", "brain_gesundheit", "brain_vaults", "brain_verlauf", "brain_aufgaben", "brain_aufgabe_anlegen", "brain_aufgabe_status"].map((n) => `mcp__brain__${n}`);
 
@@ -49,6 +49,10 @@ const SYSTEM_JE = {
     "Aufgabe „aufgaben“: ziehe konkrete Aufgaben aus daten.auswahl (höchstens 10) als { aufgaben: [{ text, beleg, faellig? }] }; beleg ist ein wörtliches Zitat aus daten.auswahl.",
   ],
 };
+SYSTEM_JE.zusammenfassung = [
+  "Aufgabe „zusammenfassung“: Fasse in 3 bis 5 kurzen Sätzen zusammen, was seit daten.zeitraum.seit im Vault neu ist. Grundlage sind nur daten.zeilen (Kennung, Art, Titel, Zeit) und daten.zahlen; Inhalte der Notizen siehst du nicht und rätst sie nicht.",
+  "Jeder Satz hat „belege“: 1 bis 4 Kennungen aus daten.zeilen (z1 …), auf die er sich stützt. Sage nur, was aus Titeln, Art und Zeit erkennbar ist; erfinde keine Zusammenhänge. Gibt es nichts Sinnvolles, antworte mit einer leeren Liste.",
+];
 const systemFuer = (funktion) => [...SYSTEM_BASIS, ...SYSTEM_JE[funktion]].join("\n");
 
 const budgetFuer = (art, modell, g) => (g.budgetUsd[art] || g.budgetUsd.posteingang)[modell] ?? 0.15;
@@ -203,6 +207,38 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     };
   }
 
+  // „Was ist neu“ für die KI: nur Titel, Art, Zeit und Zahlen aus baueNeuigkeiten, nie Inhalte; Notizen mit `ki: nein`, Aufgaben mit Bezug auf sie und die Aufgaben selbst kommen nirgends vor, auch nicht als Zahl im Paket (nur `ausgenommen` für die Anzeige).
+  async function sammleZusammenfassung(e, v) {
+    if (e.seit !== undefined && e.seit !== null && e.seit !== "" && (typeof e.seit !== "string" || !Number.isFinite(Date.parse(e.seit)))) throw new HttpFehler(400, "„seit“ ist eine Zeitangabe (ISO).");
+    const r = await v.neuigkeiten({ seit: typeof e.seit === "string" ? e.seit : "", fuerKi: true });
+    const zeilen = [], ziele = new Map();
+    const titelVon = (x) => sauberText(x.titel || String(x.pfad).split("/").pop().replace(/\.(md|txt)$/i, ""), 120);
+    const zeile = (art, x, extra = {}) => {
+      if (zeilen.length >= LIMITS.zeilen || typeof x.pfad !== "string") return;
+      const id = `z${zeilen.length + 1}`, titel = titelVon(x);
+      zeilen.push({ id, art, titel, ...extra });
+      ziele.set(id, { pfad: x.pfad, titel, art });
+    };
+    if (r.notizen) { for (const x of r.notizen.neuListe) zeile("notiz-neu", x, { zeit: x.zeit }); for (const x of r.notizen.geaendertListe) zeile("notiz-geaendert", x, { zeit: x.zeit }); }
+    if (r.aufgaben) {
+      for (const x of r.aufgaben.neuListe) zeile("aufgabe-neu", x, x.faellig ? { faellig: x.faellig } : {});
+      for (const x of r.aufgaben.erledigtListe) zeile("aufgabe-erledigt", x);
+      for (const x of r.aufgaben.ueberfaelligListe) zeile("aufgabe-ueberfaellig", x, x.faellig ? { faellig: x.faellig } : {});
+    }
+    const zahlen = {};
+    const z = (k, w) => { if (Number.isFinite(w)) zahlen[k] = w; };
+    if (r.notizen) { z("notizenNeu", r.notizen.neu); z("notizenGeaendert", r.notizen.geaendert); }
+    if (r.aufgaben) { z("aufgabenNeu", r.aufgaben.neu); z("aufgabenErledigt", r.aufgaben.erledigt); z("aufgabenUeberfaellig", r.aufgaben.ueberfaellig); }
+    // Die Zahlen aus dem Aktivitätsprotokoll bleiben draußen: sie könnten Notizen mit `ki: nein` mitzählen
+    if (r.inbox) { z("posteingangOffen", r.inbox.anzahl); z("posteingangZurueckgestellt", r.inbox.zurueckgestellt); }
+    if (!zeilen.length) throw new HttpFehler(409, "Es gibt nichts Neues zum Zusammenfassen.", { art: "nichts-neu", ausgenommen: r.ausgenommen || 0 });
+    const paket = { aufgabe: "zusammenfassung", daten: { heute: leseDatum(v), zeitraum: { seit: r.seit, bis: r.bis }, zeilen, zahlen } };
+    return {
+      art: "zusammenfassung", schluesselFunktion: "zusammenfassung", paket, pfad: null, inhaltHash: sha(JSON.stringify(zeilen)),
+      ziele: { kandidaten: new Map(), ordner: new Map(), zeilen: ziele }, ctx: { zeilen: zeilen.map((x) => x.id) }, schemaCtx: { zeilen: zeilen.map((x) => x.id) }, ausgenommen: r.ausgenommen || 0,
+    };
+  }
+
   function sammleText(e, v) {
     if (typeof e.pfad !== "string" || !e.pfad) throw new HttpFehler(400, "Bitte die Notiz angeben.");
     if (typeof e.aktion !== "string" || !Object.hasOwn(TEXT_AKTIONEN, e.aktion)) throw new HttpFehler(400, `Die Aktion muss eine von ${Object.keys(TEXT_AKTIONEN).join(", ")} sein.`);
@@ -250,7 +286,7 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     startet = true;
     const epocheStart = epoche;
     let s;
-    try { s = e.funktion === "posteingang" ? await sammlePosteingang(e, v) : sammleText(e, v); } finally { startet = false; }
+    try { s = e.funktion === "posteingang" ? await sammlePosteingang(e, v) : e.funktion === "zusammenfassung" ? await sammleZusammenfassung(e, v) : sammleText(e, v); } finally { startet = false; }
     if (epoche !== epocheStart || aktiv && !aktiv.fertig && !aktiv.endet && aktiv.vault === v.wurzel) throw new HttpFehler(409, "Abgebrochen, weil sich inzwischen etwas geändert hat. Bitte noch einmal versuchen.", { art: "abgebrochen" });
     const schema = schemaFuer(s.schluesselFunktion, s.schemaCtx);
     const stdin = JSON.stringify(s.paket);
@@ -262,10 +298,10 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
       const art = s.art;
       const run = { id: randomBytes(16).toString("hex"), v, home: h, vault: v.wurzel, kennung, konto: kontoId, kontoName: konto.name, modell, funktion: s.schluesselFunktion, art, temp, start: jetzt(), letzterAbruf: Date.now(), endet: false,
         s, resultat: null, retries: 0, fertig: false, ergebnis: null, warter: new Set(), stopp: () => {}, wache: null };
-      const args = baueVorschlagArgs({ modell, art, schema, system: systemFuer(art === "text" ? "text" : "posteingang"), grenzen: { ...G, turns: G.turns } });
+      const args = baueVorschlagArgs({ modell, art, schema, system: systemFuer(art), grenzen: { ...G, turns: G.turns } });
       starteKiLauf({ run, claude, args, env, stdin, grenzen: { frist: typeof G.frist === "number" ? G.frist : (G.frist[art] ?? 45_000), ausgabe: G.ausgabe, zeile: G.zeile, leerlauf: G.leerlauf }, onZeile: (z) => verarbeite(run, z), beiEnde: (ende) => beende(run, ende) });
       aktiv = run;
-      return { id: run.id, funktion: e.funktion, gesendet: stdin, konto: { id: kontoId, name: konto.name }, modell };
+      return { id: run.id, funktion: e.funktion, gesendet: stdin, konto: { id: kontoId, name: konto.name }, modell, ...(art === "zusammenfassung" ? { ausgenommen: s.ausgenommen } : {}) };
     } catch (err) {
       try { rmSync(temp, { recursive: true, force: true }); } catch { /* bleibt im Temp-Ordner liegen */ }
       throw err;
@@ -297,13 +333,18 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     // Wo das Ergebnis steht: `structured_output` (mit --json-schema), sonst als JSON-Text im `result` (Rückfall; Code-Zaun wird entfernt). Geprüft wird in beiden Fällen gleich streng.
     const roh = m.structured_output && typeof m.structured_output === "object" && !Array.isArray(m.structured_output) ? m.structured_output : parseJsonAntwort(m.result);
     const p = pruefeAntwort(run.funktion, roh, run.s.ctx);
-    if (!p.ok) return { ok: false, fehler: KEIN_VORSCHLAG, grund: p.grund, ...rest };
+    if (!p.ok || (run.funktion === "zusammenfassung" && p.daten.saetze.length === 0)) return { ok: false, fehler: KEIN_VORSCHLAG, grund: p.ok ? "leer" : p.grund, ...rest };
     return { ok: true, ...rest, ...baueErgebnis(run, p) };
   }
 
   const q = (s) => `„${s}“`;
   function baueErgebnis(run, p) {
     const marke = p.vorschau && vorschauOrdnerAus(basisEnv, run.home) ? { vorschau: true } : {}; // die Marke gilt nur in einer echten Vorschau, nie als Behauptung der KI
+    if (run.art === "zusammenfassung") {
+      // Die Beleg-Chips baut Kortex aus seinem eigenen Speicher (Titel, Pfad, Art je Kennung), nie aus der Antwort der KI
+      const saetze = p.daten.saetze.map((s) => ({ text: s.text, belege: s.belege.map((id) => ({ id, ...run.s.ziele.zeilen.get(id) })) }));
+      return { funktion: "zusammenfassung", saetze, ausgenommen: run.s.ausgenommen, verworfen: p.verworfen, ...marke };
+    }
     if (run.art === "text") {
       if (run.funktion === "ersatz") return { funktion: "ersatz", ersatz: p.daten.ersatz, warnungen: p.daten.warnungen, verworfen: p.verworfen, ...marke };
       return { funktion: "aufgaben", aufgaben: p.daten.aufgaben, verworfen: p.verworfen, ...marke };

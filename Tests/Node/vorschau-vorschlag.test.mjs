@@ -111,3 +111,17 @@ test("Vorschau: ohne KORTEX_VORSCHAU verweigert der Platzhalter die Arbeit; sche
   assert.doesNotMatch(f.ergebnis.fehler, /interner Fehler/);
   rmSync(p.vo, { recursive: true, force: true });
 });
+
+test("Vorschau: Zusammenfassung — ein Beispielsatz mit gültigen Belegen aus dem Paket (z1, z2), deterministisch, mit Marke „Vorschau“", { skip: SKIP }, async () => {
+  const p = vorschau();
+  const r1 = await anfrage(p, werkstattEnv(p), { funktion: "zusammenfassung", seit: "2020-01-01T00:00:00.000Z" });
+  assert.equal(r1.ergebnis.ok, true, JSON.stringify(r1.ergebnis));
+  assert.equal(r1.ergebnis.vorschau, true);
+  assert.equal(r1.ergebnis.saetze.length, 1);
+  assert.match(r1.ergebnis.saetze[0].text, /^Vorschau-Beispiel: Neu ist unter anderem .+\.$/);
+  assert.deepEqual(r1.ergebnis.saetze[0].belege.map((b) => b.id), ["z1", "z2"]);
+  for (const b of r1.ergebnis.saetze[0].belege) assert.ok(b.pfad && b.titel, "Chips mit Titel und Pfad von Kortex");
+  const r2 = await anfrage(p, werkstattEnv(p), { funktion: "zusammenfassung", seit: "2020-01-01T00:00:00.000Z" });
+  assert.deepEqual(r2.ergebnis.saetze, r1.ergebnis.saetze, "deterministisch: zweimal dieselbe Antwort");
+  rmSync(p.vo, { recursive: true, force: true });
+});

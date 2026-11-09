@@ -115,6 +115,11 @@ enum VorschauPlatzhalter {
           else
             antwort='{"vorschlaege":[],"vorschau":true}'
           fi ;;
+        zusammenfassung)
+          # „Was ist neu“: ein Beispielsatz, belegt mit den ersten beiden Zeilen des Pakets (Kennungen z1, z2); ohne Zeilen eine leere Liste
+          ids="$(printf '%s' "$paket" | grep -oE '"id":"z[0-9]+"' | head -2 | sed -E 's/"id"://' | paste -sd, -)"
+          titel="$(printf '%s' "$paket" | sed -nE 's/.*"zeilen":\[\{"id":"z1","art":"[a-z-]*","titel":"(([^"\\]|\\.)*)".*/\1/p' | sed -E 's/\\./|/g' | grep -oE '[A-Za-z0-9 ]{3,40}' | head -1)"
+          if [ -n "$ids" ]; then antwort="{\"saetze\":[{\"text\":\"Vorschau-Beispiel: Neu ist unter anderem ${titel:-eine Notiz}.\",\"belege\":[$ids]}],\"vorschau\":true}"; else antwort='{"saetze":[],"vorschau":true}'; fi ;;
         aufgaben)
           ausw="$(printf '%s' "$paket" | sed -nE 's/.*"auswahl":"(([^"\\]|\\.)*)".*/\1/p')"
           beleg="$(printf '%s' "$ausw" | sed -E 's/\\./|/g' | grep -oE '[A-Za-z0-9 ]{3,30}' | head -1)"

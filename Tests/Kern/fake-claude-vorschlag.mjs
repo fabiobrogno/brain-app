@@ -11,7 +11,7 @@
 //   kaputt             kein JSON
 //   schema-falsch      Zusatzfelder und falsche Typen
 //   zu-lang            Texte über den Grenzen
-//   beleg-erfunden     Beleg steht nicht im gesendeten Text
+//   beleg-erfunden     Beleg steht nicht im gesendeten Text (Zusammenfassung: ein gültiger Satz, einer mit Kennung z99, einer mit Pfad statt Kennung, einer ohne Beleg)
 //   unicode-tags       Begründung mit versteckten Unicode-Tag-Zeichen
 //   langsam            wartet `warteMs` (Frist-Test); SIGINT → Exit 130
 //   abbruch            schreibt die PID in „wartet“ und wartet lange; SIGINT → Exit 130
@@ -93,6 +93,15 @@ const eintragText = daten.eintrag && daten.eintrag.text ? String(daten.eintrag.t
 const beleg = (eintragText.replace(/\s+/g, " ").trim().slice(0, 25)) || "Notiz";
 const erst = (l) => (Array.isArray(l) && l[0] ? l[0].id : null);
 function gueltig() {
+  if (aufgabe === "zusammenfassung") {
+    const z = Array.isArray(daten.zeilen) ? daten.zeilen : [];
+    if (!z.length) return { saetze: [] };
+    const namen = z.slice(0, 2).map((x) => x.titel).join(" und ");
+    return { saetze: [
+      { text: `Neu sind unter anderem ${namen}.`, belege: z.slice(0, 2).map((x) => x.id) },
+      ...(z[2] ? [{ text: `Außerdem gibt es ${z[2].titel}.`, belege: [z[2].id] }] : []),
+    ] };
+  }
   if (aufgabe === "posteingang") {
     const ziel = erst(daten.kandidaten);
     return { vorschlaege: ziel ? [{ art: "verlinken", ziel, beleg, begruendung: "Der Titel kommt im Eintrag vor.", sicherheit: "mittel" }] : [] };
@@ -128,14 +137,20 @@ function antwort() {
       { art: "verschieben", ziel: "/etc", beleg, begruendung: "Absoluter Pfad.", sicherheit: "hoch" },
       { art: "verlinken", ziel: "o1", beleg, begruendung: "Falsche Art von Kennung (Ordner statt Notiz).", sicherheit: "hoch" },
     ] };
-    case "schema-falsch": return aufgabe === "posteingang"
+    case "schema-falsch": if (aufgabe === "zusammenfassung") return { saetze: "kein Array", zusatz: true }; return aufgabe === "posteingang"
       ? { vorschlaege: [{ art: "verlinken", ziel: erst(daten.kandidaten) || "k1", beleg, begruendung: 7, sicherheit: "mittel", extra: "x" }], zusatz: true }
       : { ersatz: 42, zusatz: true };
     case "zu-lang": return aufgabe === "posteingang"
       ? { vorschlaege: [{ art: "verlinken", ziel: erst(daten.kandidaten) || "k1", beleg, begruendung: "x".repeat(500), sicherheit: "mittel" }] }
       : aufgabe === "aufgaben" ? { aufgaben: Array.from({ length: 30 }, (_, i) => ({ text: `Aufgabe ${i}`, beleg: String(daten.auswahl || "").slice(0, 10) })) }
       : { ersatz: "y".repeat(String(daten.auswahl || "").length * 2 + 600) };
-    case "beleg-erfunden": return aufgabe === "posteingang"
+    case "beleg-erfunden": if (aufgabe === "zusammenfassung") { const z0 = (daten.zeilen || [])[0]; return { saetze: [
+      { text: "Gültiger Satz.", belege: [z0 ? z0.id : "z1"] },
+      { text: "Erfundene Kennung.", belege: ["z99"] },
+      { text: "Pfad statt Kennung.", belege: ["../geheim.md"] },
+      { text: "Ohne Beleg.", belege: [] },
+      { text: "Zusatzfeld.", belege: [z0 ? z0.id : "z1"], extra: "x" },
+    ] }; } return aufgabe === "posteingang"
       ? { vorschlaege: [{ art: "verlinken", ziel: erst(daten.kandidaten) || "k1", beleg: "dieser Satz steht nirgends im Eintrag", begruendung: "Erfundener Beleg.", sicherheit: "hoch" }] }
       : { aufgaben: [{ text: "Etwas tun", beleg: "dieser Satz steht nirgends in der Auswahl" }] };
     case "unicode-tags": return { vorschlaege: [{ art: "verlinken", ziel: erst(daten.kandidaten) || "k1", beleg, begruendung: "Normal" + String.fromCodePoint(0xe0041, 0xe0042) + " versteckt", sicherheit: "mittel" }] };
