@@ -16,7 +16,7 @@ import { randomBytes, createHmac, createHash, timingSafeEqual } from "node:crypt
 import { HttpFehler, inboxOrdnerVon, vorlagenOrdnerVon, falte, vorschauOrdnerAus } from "../gemeinsam/basis.mjs";
 import { aktivesKonto, vorschlaegeFuer, setzeVorschlaege, echterOrt } from "../gemeinsam/ki-konten.mjs";
 import { kennungVault, melde } from "../gemeinsam/aktivitaet.mjs";
-import { titelAus } from "../gemeinsam/notizen.mjs";
+import { titelAus, kopfLaenge } from "../gemeinsam/notizen.mjs";
 import { VERSION, TEXT_AKTIONEN, SPRACHEN, LIMITS, schemaFuer, pruefeAntwort, warnungenFuerErsatz, parseJsonAntwort, istKiNein, istKiNeinWert, kandidatIds, ordnerIds } from "../gemeinsam/ki-schema.mjs";
 import { MODELLE, ABBRUCH_TEXT, sauberText, ganz, nfc, erzeugeKontenZugriff, legeTempAn, starteKiLauf, baueFrageUmgebung } from "./ki-kern.mjs";
 
@@ -256,14 +256,13 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     const fundstellen = [], ziele = new Map();
     let ausgenommen = 0, gesamt = 0;
     const kontext = (t) => sauberText(t.replace(/[\u{E0000}-\u{E007F}\u202A-\u202E\u2066-\u2069\u200B-\u200F\u2060\uFEFF]/gu, ""), 2000); // versteckte Zeichen (Unicode-Tags, bidi, Null-Breite) gehen nie hinaus
-    const kopfEnde = (t) => { const m = /^---[ \t]*\r?\n[\s\S]*?\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/.exec(t); return m ? m[0].length : 0; };
     for (const n of Array.isArray(r.notizen) ? r.notizen : []) {
       const stellen = Array.isArray(n.stellen) ? n.stellen : [];
       gesamt += stellen.length;
       if (fundstellen.length >= LIMITS.fundstellen) continue;
       let q; try { q = v.lies(n.pfad); } catch { continue; }
       if (istKiNein(q.inhalt)) { ausgenommen += stellen.length; gesamt -= stellen.length; continue; }
-      const text = q.inhalt, body = kopfEnde(text);
+      const text = q.inhalt, body = kopfLaenge(text);
       for (const s of stellen) {
         if (fundstellen.length >= LIMITS.fundstellen) break;
         if (!Number.isInteger(s.start) || !Number.isInteger(s.ende) || s.start < body || s.ende <= s.start || text.slice(s.start, s.ende) !== s.treffer) continue; // die Stelle gibt es so nicht mehr: nicht senden
@@ -291,16 +290,21 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     if (e.auswahl.length > G.eingabe.auswahl) throw new HttpFehler(413, `Das ist zu viel auf einmal – markiere weniger Text (höchstens ${G.eingabe.auswahl} Zeichen).`, { art: "zu-gross" });
     const n = v.lies(e.pfad);
     if (istKiNein(n.inhalt)) throw KI_NEIN_FEHLER();
-    // Der markierte Text muss in der Notiz stehen: die Werkstatt schickt nur, was wirklich dort steht (und merkt sich, dass es dort stand)
-    const stelle = n.inhalt.indexOf(e.auswahl);
+    // Der markierte Text muss in der Notiz stehen: die Werkstatt schickt nur, was wirklich dort steht, und nie etwas aus dem Datei-Kopf. Das Studio nennt die Stelle (`von`, Zeichenposition in der Datei);
+    // sie muss genau diesen Text enthalten. Ohne `von` gilt das erste Vorkommen hinter dem Kopf.
+    const kopf = kopfLaenge(n.inhalt);
+    let stelle;
+    if (e.von !== undefined) {
+      if (!Number.isInteger(e.von) || e.von < 0) throw new HttpFehler(400, "„von“ ist eine Zeichenposition.");
+      stelle = n.inhalt.slice(e.von, e.von + e.auswahl.length) === e.auswahl ? e.von : -1;
+    } else stelle = n.inhalt.indexOf(e.auswahl, kopf);
     if (stelle < 0) throw new HttpFehler(409, "Der markierte Text steht nicht (mehr) in der Notiz. Markiere ihn noch einmal.", { art: "veraltet" });
+    if (stelle < kopf) throw new HttpFehler(409, "Im Datei-Kopf (Front-Matter) läuft keine KI-Aktion.", { art: "kopf" });
     let ueberschrift = "";
-    // Nur echte Überschriften: Zeilen im Datei-Kopf (Front-Matter) und in Code-Zäunen zählen nicht (dort stehen „# …“-Kommentare, die nie an eine KI gehen)
-    let zaun = null, kopf = false;
-    const zeilenDavor = n.inhalt.slice(0, stelle).split(/\r?\n/);
-    zeilenDavor.forEach((z, i) => {
-      if (i === 0 && /^---[ \t]*$/.test(z)) { kopf = true; return; }
-      if (kopf) { if (/^(---|\.\.\.)[ \t]*$/.test(z)) kopf = false; return; }
+    // Nur echte Überschriften: Zeilen im Datei-Kopf (Front-Matter, auch mit BOM) und in Code-Zäunen zählen nicht
+    let zaun = null;
+    const hinter = n.inhalt.slice(kopf, stelle).split(/\r?\n/);
+    hinter.forEach((z) => {
       const f = /^ {0,3}(`{3,}|~{3,})/.exec(z);
       if (zaun) { if (f && f[1][0] === zaun[0] && f[1].length >= zaun.length && /^ {0,3}[`~]+\s*$/.test(z)) zaun = null; return; }
       if (f) { zaun = f[1]; return; }

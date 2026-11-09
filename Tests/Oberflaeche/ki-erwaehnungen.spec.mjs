@@ -116,6 +116,20 @@ test("Einwilligung: Dialog mit ehrlichem Text, nennt die Erwähnungen; Abbrechen
   expect(aufrufe().length).toBe(1);
 });
 
+test("Der Einwilligungsdialog aus den Einstellungen nennt die Erwähnungen ebenfalls (eine Liste für alle Einstiege)", async ({ page }) => {
+  await aufbauen({ einwilligung: false });
+  await page.goto(server.url + "#einstellungen/ki");
+  await page.waitForFunction(() => window.__studioBereit === true);
+  await page.locator('[data-unter-wahl="pflege"]').click();
+  await page.locator('[data-kk="vorschlag-schalter"]').click();
+  const dlg = page.locator('[data-dialog="ki-einwilligung"]');
+  await expect(dlg).toBeVisible();
+  await expect(dlg).toContainText("Erwähnungen prüfen");
+  await expect(dlg).toContainText("Aktionen im Editor");
+  await dlg.locator('[data-aktion="kiv-abbrechen"]').click();
+  expect(aufrufe()).toEqual([]);
+});
+
 test("Ergebnis: Badge je Treffer (gemeint, wohl nicht, unklar) mit Grund; Zahlen; nur gesendete Notizen; `ki: nein` geht nie hinaus", async ({ page }) => {
   await aufbauen({ nein: true });
   await oeffne(page);

@@ -156,3 +156,16 @@ test("Nichts wird geschrieben: kein Verlinken durch die KI, der Vault bleibt unv
   assert.ok(z.status >= 400);
   assert.deepEqual(s.abbild(s.vault), vorher);
 });
+
+test("BOM vor dem Datei-Kopf: der Kopf der Quelle geht nie in den Kontext (CRLF ebenso)", async () => {
+  const s = szenarioV();
+  schreibe(s.vault, ZIEL, "# Zebraquarz\n\nDas Projekt.\n");
+  schreibe(s.vault, "20_finanzen/Bom Eins.md", `﻿---\ntelefon: KOPF-GEHEIM-0171\n---\n# Bom Eins\n\n${satz(1)}\n`);
+  schreibe(s.vault, "20_finanzen/Bom Zwei.md", `﻿---\r\ntelefon: KOPF-GEHEIM-0172\r\n---\r\n# Bom Zwei\r\n\r\n${satz(2)}\r\n`);
+  schreibe(s.vault, "20_finanzen/Bom Drei.md", `---\ntelefon: KOPF-GEHEIM-0173\n---\n${satz(3)}\n`);
+  const { stand } = await s.anfrage(START);
+  assert.equal(stand.ergebnis.ok, true, JSON.stringify(stand.ergebnis));
+  const roh = s.aufrufe()[0].stdin;
+  assert.equal(JSON.parse(roh).daten.fundstellen.length, 3);
+  assert.ok(!roh.includes("KOPF-GEHEIM") && !roh.includes("telefon"), "kein Kopf im Paket");
+});

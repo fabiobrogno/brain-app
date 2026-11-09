@@ -10,7 +10,7 @@ import { symbol } from "./symbole.js";
 import { api } from "./api.js";
 import { TE } from "./texte-erwaehnungen.js";
 import { TV } from "./texte-ki-vorschlag.js";
-import { kiStatus, oeffneEinwilligung, kontingentZeile, wasWirdGesendet, starteVorschlag } from "./ki-vorschlag.js";
+import { kiStatus, kiFunktionen, oeffneEinwilligung, kontingentZeile, wasWirdGesendet, starteVorschlag } from "./ki-vorschlag.js";
 
 export const MIN_TREFFER = 3; // darunter lohnt sich der Aufruf nicht: kein Knopf
 const schluessel = (pfad, start, treffer) => `${pfad}\u0000${start}\u0000${treffer}`;
@@ -75,7 +75,7 @@ export function erzeugeKiErwaehnungen({ S }) {
     try { await frisch(); } finally { prueft = false; }
     if (!sichtbar() || sperrGrund()) return;
     if (!st.einwilligung) {
-      const funktionen = (bereit?.funktionen || []).filter((f) => f === "zusammenfassung" || f === "posteingang" || f === "text" || f === "erwaehnungen");
+      const funktionen = kiFunktionen(bereit);
       oeffneEinwilligung({ api, bereit, vault: S.info?.vault || "", vaultName: S.info?.name || "", funktionen: funktionen.length ? funktionen : ["erwaehnungen"], nachher: async () => { await frisch(); if (st.einwilligung && !sperrGrund()) starte(); } });
       return;
     }
