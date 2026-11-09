@@ -256,7 +256,7 @@ export function erzeugeKiText({ S, ed, speichereWarte, nachAufgaben }) {
     if (!st.sichtbar || st.gesperrt) { mein.startet = false; zeichne(); return; }
     if (!st.einwilligung) {
       // Die Einwilligung gilt je Vault für alle KI-Vorschläge; der Dialog nennt alles, was die Werkstatt anbietet
-      const funktionen = (bereit?.funktionen || []).filter((f) => f === "zusammenfassung" || f === "posteingang" || f === "text");
+      const funktionen = (bereit?.funktionen || []).filter((f) => f === "zusammenfassung" || f === "posteingang" || f === "text" || f === "erwaehnungen");
       oeffneEinwilligung({ api, bereit, vault: S.info?.vault || "", vaultName: S.info?.name || "", funktionen: funktionen.length ? funktionen : ["text"],
         nachher: async () => { await frisch(true); if (z === mein && st.einwilligung) starte(aktion, sprache); else if (z === mein) mein.startet = false; }, beiAbbruch: () => { if (z === mein) { mein.startet = false; ed.view.focus(); } } });
       return;

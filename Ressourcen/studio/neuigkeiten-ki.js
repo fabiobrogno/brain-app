@@ -72,7 +72,7 @@ export function erzeugeKiZusammenfassung({ S, oeffne, daten, zeitText }) {
     if (!st.sichtbar || sperrGrund()) return;
     if (!st.einwilligung) {
       // Die Einwilligung gilt je Vault für alle KI-Vorschläge, darum nennt der Dialog alles, was die Werkstatt anbietet
-      const funktionen = (bereit?.funktionen || []).filter((f) => f === "zusammenfassung" || f === "posteingang" || f === "text");
+      const funktionen = (bereit?.funktionen || []).filter((f) => f === "zusammenfassung" || f === "posteingang" || f === "text" || f === "erwaehnungen");
       oeffneEinwilligung({ api, bereit, vault: S.info?.vault || "", vaultName: S.info?.name || "", funktionen: funktionen.length ? funktionen : ["zusammenfassung"], nachher: async () => { await frisch(); if (st.einwilligung && !sperrGrund()) starte(); } });
       return;
     }

@@ -22,14 +22,14 @@ import { MODELLE, ABBRUCH_TEXT, sauberText, ganz, nfc, erzeugeKontenZugriff, leg
 
 export { VERSION };
 export const GRENZEN = {
-  frist: { posteingang: 45_000, text: 60_000, zusammenfassung: 45_000 },   // ms je Lauf
-  eingabe: { eintrag: 6000, auswahl: 8000, kandidatAnfang: 300 },
+  frist: { posteingang: 45_000, text: 60_000, zusammenfassung: 45_000, erwaehnungen: 45_000 },   // ms je Lauf
+  eingabe: { eintrag: 6000, auswahl: 8000, kandidatAnfang: 300, kontext: 200 },
   ausgabe: 256 * 1024, zeile: 128 * 1024,           // Bytes von stdout insgesamt / je Zeile
   leerlauf: 20_000, longPoll: 800, turns: 3,
   ablauf: 15 * 60_000, speicher: 200,               // Vorschläge: Gültigkeit, höchstens je Vault
-  budgetUsd: { posteingang: { haiku: 0.15, sonnet: 0.15 }, text: { haiku: 0.15, sonnet: 0.6 }, zusammenfassung: { haiku: 0.10, sonnet: 0.10 } },
+  budgetUsd: { posteingang: { haiku: 0.15, sonnet: 0.15 }, text: { haiku: 0.15, sonnet: 0.6 }, zusammenfassung: { haiku: 0.10, sonnet: 0.10 }, erwaehnungen: { haiku: 0.10, sonnet: 0.10 } },
 };
-const FUNKTIONEN_K0 = ["posteingang", "text", "zusammenfassung"]; // „erwaehnungen“ (K4) folgt; Schema und Prüfung gibt es schon
+const FUNKTIONEN_K0 = ["posteingang", "text", "zusammenfassung", "erwaehnungen"];
 const EINGEBAUT_ENTFERNT = ["Bash", "Edit", "MultiEdit", "Write", "NotebookEdit", "Read", "Glob", "Grep", "WebFetch", "WebSearch", "Task", "Agent"];
 const MCP_BRAIN_ENTFERNT = ["brain_suchen", "brain_lesen", "brain_kontext", "brain_merken", "brain_gesundheit", "brain_vaults", "brain_verlauf", "brain_aufgaben", "brain_aufgabe_anlegen", "brain_aufgabe_status"].map((n) => `mcp__brain__${n}`);
 
@@ -52,6 +52,10 @@ const SYSTEM_JE = {
 SYSTEM_JE.zusammenfassung = [
   "Aufgabe „zusammenfassung“: Fasse in 3 bis 5 kurzen Sätzen zusammen, was seit daten.zeitraum.seit im Vault neu ist. Grundlage sind nur daten.zeilen (Kennung, Art, Titel, Zeit) und daten.zahlen; Inhalte der Notizen siehst du nicht und rätst sie nicht.",
   "Jeder Satz hat „belege“: 1 bis 4 Kennungen aus daten.zeilen (z1 …), auf die er sich stützt. Sage nur, was aus Titeln, Art und Zeit erkennbar ist; erfinde keine Zusammenhänge. Gibt es nichts Sinnvolles, antworte mit einer leeren Liste.",
+];
+SYSTEM_JE.erwaehnungen = [
+  "Aufgabe „erwaehnungen“: daten.ziel.titel ist der Titel einer Notiz. Jede Fundstelle in daten.fundstellen nennt Text davor (vor), das gefundene Wort (treffer) und Text danach (nach) aus einer anderen Notiz. Urteile je Fundstelle, ob dort genau diese Notiz gemeint ist.",
+  "Antwort: { urteile: [{ id, gemeint, grund }] } mit der Kennung (f1 …) genau so, wie sie in daten.fundstellen steht, gemeint = ja (diese Notiz ist gemeint), nein (etwas anderes, z. B. ein gewöhnliches Wort) oder unklar, und einem kurzen Grund (höchstens 120 Zeichen). Jede Fundstelle höchstens einmal. Du verlinkst nichts und änderst nichts.",
 ];
 const systemFuer = (funktion) => [...SYSTEM_BASIS, ...SYSTEM_JE[funktion]].join("\n");
 
@@ -78,6 +82,7 @@ export function baueVorschlagArgs({ modell, art, schema, system, grenzen = GRENZ
 const sha = (x) => createHash("sha256").update(x).digest("hex");
 const leseDatum = (v) => { try { return v.heute(); } catch { return ""; } };
 const wortSet = (s) => new Set(nfc(s).toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 4));
+const schneideVorn = (s, n) => { if (s.length <= n) return s; const a = s.slice(s.length - n); return /^[\uDC00-\uDFFF]/.test(a) ? a.slice(1) : a; };
 const schneide = (s, n) => (s.length <= n ? s : s.slice(0, /[\uD800-\uDBFF]/.test(s[n - 1]) ? n - 1 : n));
 
 const SUBTYP_TEXT = {
@@ -239,6 +244,45 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     };
   }
 
+
+  // Fundstellen der „Ungelinkten Erwähnungen“ (Richtung: wo steht der Titel DIESER Notiz in anderen Notizen im Klartext?). Der Client schickt nur den Notizpfad; Kortex bestimmt die Fundstellen selbst aus dem Index,
+  // liest jede Quelle und schickt je Stelle höchstens ±200 Zeichen Kontext (ohne Datei-Kopf) und den Titel der Zielnotiz. Quellen mit `ki: nein` kommen nirgends vor (nur als Zahl `ausgenommen` für die Anzeige).
+  async function sammleErwaehnungen(e, v) {
+    if (typeof e.pfad !== "string" || !e.pfad) throw new HttpFehler(400, "Bitte die Notiz angeben.");
+    const ziel = v.lies(e.pfad);
+    if (istKiNein(ziel.inhalt)) throw KI_NEIN_FEHLER();
+    const r = await v.erwaehnungen(ziel.pfad, { budgetMs: 200, warteMs: 1500 });
+    const breite = G.eingabe.kontext;
+    const fundstellen = [], ziele = new Map();
+    let ausgenommen = 0, gesamt = 0;
+    const kontext = (t) => sauberText(t.replace(/[\u{E0000}-\u{E007F}\u202A-\u202E\u2066-\u2069\u200B-\u200F\u2060\uFEFF]/gu, ""), 2000); // versteckte Zeichen (Unicode-Tags, bidi, Null-Breite) gehen nie hinaus
+    const kopfEnde = (t) => { const m = /^---[ \t]*\r?\n[\s\S]*?\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/.exec(t); return m ? m[0].length : 0; };
+    for (const n of Array.isArray(r.notizen) ? r.notizen : []) {
+      const stellen = Array.isArray(n.stellen) ? n.stellen : [];
+      gesamt += stellen.length;
+      if (fundstellen.length >= LIMITS.fundstellen) continue;
+      let q; try { q = v.lies(n.pfad); } catch { continue; }
+      if (istKiNein(q.inhalt)) { ausgenommen += stellen.length; gesamt -= stellen.length; continue; }
+      const text = q.inhalt, body = kopfEnde(text);
+      for (const s of stellen) {
+        if (fundstellen.length >= LIMITS.fundstellen) break;
+        if (!Number.isInteger(s.start) || !Number.isInteger(s.ende) || s.start < body || s.ende <= s.start || text.slice(s.start, s.ende) !== s.treffer) continue; // die Stelle gibt es so nicht mehr: nicht senden
+        const id = `f${fundstellen.length + 1}`;
+        const vor = text.slice(Math.max(body, s.start - breite), s.start), nach = text.slice(s.ende, s.ende + breite);
+        fundstellen.push({ id, vor: schneideVorn(kontext(vor), breite), treffer: kontext(s.treffer).slice(0, 120), nach: schneide(kontext(nach), breite) });
+        ziele.set(id, { pfad: n.pfad, start: s.start, ende: s.ende, treffer: s.treffer, zeile: s.zeile, vor: s.vor ?? "", nach: s.nach ?? "" });
+      }
+    }
+    if (!fundstellen.length) throw new HttpFehler(409, ausgenommen ? "Alle Fundstellen stehen in Notizen mit „ki: nein“ und gehen nie an eine KI." : "Es gibt keine Fundstellen zum Prüfen.", { art: "nichts-zu-pruefen", ausgenommen });
+    const titel = sauberText(titelAus(ziel.pfad, ziel.inhalt), 120);
+    const paket = { aufgabe: "erwaehnungen", daten: { ziel: { titel }, fundstellen } };
+    const ids = fundstellen.map((f) => f.id);
+    return {
+      art: "erwaehnungen", schluesselFunktion: "erwaehnungen", paket, pfad: ziel.pfad, inhaltHash: sha(JSON.stringify([ziel.hash, [...ziele].map(([id, z]) => [id, z.pfad, z.start]) ])),
+      ziele: { kandidaten: new Map(), ordner: new Map(), fundstellen: ziele }, ctx: { fundstellen: ids }, schemaCtx: { fundstellen: ids }, ausgenommen, gesamt, gesendetAnzahl: fundstellen.length,
+    };
+  }
+
   function sammleText(e, v) {
     if (typeof e.pfad !== "string" || !e.pfad) throw new HttpFehler(400, "Bitte die Notiz angeben.");
     if (typeof e.aktion !== "string" || !Object.hasOwn(TEXT_AKTIONEN, e.aktion)) throw new HttpFehler(400, `Die Aktion muss eine von ${Object.keys(TEXT_AKTIONEN).join(", ")} sein.`);
@@ -296,7 +340,7 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     startet = true;
     const epocheStart = epoche;
     let s;
-    try { s = e.funktion === "posteingang" ? await sammlePosteingang(e, v) : e.funktion === "zusammenfassung" ? await sammleZusammenfassung(e, v) : sammleText(e, v); } finally { startet = false; }
+    try { s = e.funktion === "posteingang" ? await sammlePosteingang(e, v) : e.funktion === "zusammenfassung" ? await sammleZusammenfassung(e, v) : e.funktion === "erwaehnungen" ? await sammleErwaehnungen(e, v) : sammleText(e, v); } finally { startet = false; }
     if (epoche !== epocheStart || aktiv && !aktiv.fertig && !aktiv.endet && aktiv.vault === v.wurzel) throw new HttpFehler(409, "Abgebrochen, weil sich inzwischen etwas geändert hat. Bitte noch einmal versuchen.", { art: "abgebrochen" });
     const schema = schemaFuer(s.schluesselFunktion, s.schemaCtx);
     const stdin = JSON.stringify(s.paket);
@@ -311,7 +355,7 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
       const args = baueVorschlagArgs({ modell, art, schema, system: systemFuer(art), grenzen: { ...G, turns: G.turns } });
       starteKiLauf({ run, claude, args, env, stdin, grenzen: { frist: typeof G.frist === "number" ? G.frist : (G.frist[art] ?? 45_000), ausgabe: G.ausgabe, zeile: G.zeile, leerlauf: G.leerlauf }, onZeile: (z) => verarbeite(run, z), beiEnde: (ende) => beende(run, ende) });
       aktiv = run;
-      return { id: run.id, funktion: e.funktion, gesendet: stdin, konto: { id: kontoId, name: konto.name }, modell, ...(art === "zusammenfassung" ? { ausgenommen: s.ausgenommen } : {}) };
+      return { id: run.id, funktion: e.funktion, gesendet: stdin, konto: { id: kontoId, name: konto.name }, modell, ...(art === "zusammenfassung" ? { ausgenommen: s.ausgenommen } : {}), ...(art === "erwaehnungen" ? { ausgenommen: s.ausgenommen, gesamt: s.gesamt, geprueft: s.gesendetAnzahl } : {}) };
     } catch (err) {
       try { rmSync(temp, { recursive: true, force: true }); } catch { /* bleibt im Temp-Ordner liegen */ }
       throw err;
@@ -343,7 +387,7 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     // Wo das Ergebnis steht: `structured_output` (mit --json-schema), sonst als JSON-Text im `result` (Rückfall; Code-Zaun wird entfernt). Geprüft wird in beiden Fällen gleich streng.
     const roh = m.structured_output && typeof m.structured_output === "object" && !Array.isArray(m.structured_output) ? m.structured_output : parseJsonAntwort(m.result);
     const p = pruefeAntwort(run.funktion, roh, run.s.ctx);
-    if (!p.ok || (run.funktion === "zusammenfassung" && p.daten.saetze.length === 0)) return { ok: false, fehler: KEIN_VORSCHLAG, grund: p.ok ? "leer" : p.grund, ...rest };
+    if (!p.ok || (run.funktion === "zusammenfassung" && p.daten.saetze.length === 0) || (run.funktion === "erwaehnungen" && p.daten.urteile.length === 0)) return { ok: false, fehler: KEIN_VORSCHLAG, grund: p.ok ? "leer" : p.grund, ...rest };
     return { ok: true, ...rest, ...baueErgebnis(run, p) };
   }
 
@@ -354,6 +398,11 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
       // Die Beleg-Chips baut Kortex aus seinem eigenen Speicher (Titel, Pfad, Art je Kennung), nie aus der Antwort der KI
       const saetze = p.daten.saetze.map((s) => ({ text: s.text, belege: s.belege.map((id) => ({ id, ...run.s.ziele.zeilen.get(id) })) }));
       return { funktion: "zusammenfassung", saetze, ausgenommen: run.s.ausgenommen, verworfen: p.verworfen, ...marke };
+    }
+    if (run.art === "erwaehnungen") {
+      // Zu jedem Urteil ergänzt Kortex Notiz und Stelle aus dem eigenen Speicher (nie aus der Antwort); nur gesendete Kennungen kommen durch (pruefeAntwort), jede höchstens einmal
+      const urteile = p.daten.urteile.map((u) => ({ id: u.id, gemeint: u.gemeint, grund: u.grund, ...run.s.ziele.fundstellen.get(u.id) }));
+      return { funktion: "erwaehnungen", pfad: run.s.pfad, urteile, geprueft: run.s.gesendetAnzahl, gesamt: run.s.gesamt, ausgenommen: run.s.ausgenommen, verworfen: p.verworfen, ...marke };
     }
     if (run.art === "text") {
       if (run.funktion === "ersatz") return { funktion: "ersatz", ersatz: p.daten.ersatz, warnungen: p.daten.warnungen, verworfen: p.verworfen, ...marke };

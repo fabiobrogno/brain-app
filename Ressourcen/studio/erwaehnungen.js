@@ -10,6 +10,7 @@ import { knopf as baueKnopf, setzeLaedt } from "./bausteine.js";
 import { api } from "./api.js";
 import { TE } from "./texte-erwaehnungen.js";
 import { TD } from "./texte-dateiaktionen.js";
+import { erzeugeKiErwaehnungen } from "./erwaehnungen-ki.js"; // K4: „Mit KI prüfen“ (Badges und Filter über der Liste; verlinkt wird nie von der KI)
 
 // Vorher/Nachher um die Änderung herum zeigen (die Stelle steht sonst oft hinter dem Zeilenende des Auszugs)
 function fensterPaar(v, n) {
@@ -24,6 +25,7 @@ const NOTIZEN_ZUERST = 6, STELLEN_ZUERST = 3, AUTOMATISCH = 6;
 
 export function erzeugeErwaehnungen(ctx) {
   const { S, ed } = ctx;
+  const ki = erzeugeKiErwaehnungen({ S });
 
   // Auszug mit markiertem Treffer
   const auszugEl = (st) => {
@@ -114,7 +116,7 @@ export function erzeugeErwaehnungen(ctx) {
   }
 
   // eine Notiz (mit ihren Stellen) als Block; aus: false = andere Notiz (Stelle liegt dort), true = Ziel (Stelle liegt in dieser Notiz)
-  function notizBlock(n, { aus, zeigeVerlinken, beiVerlinken, beiOeffnen }) {
+  function notizBlock(n, { aus, zeigeVerlinken, beiVerlinken, beiOeffnen, mitKi = false }) {
     const offen = { alle: false };
     const stellenHost = h("div", { klasse: "erw-stellen" });
     const zeichne = () => {
@@ -122,9 +124,12 @@ export function erzeugeErwaehnungen(ctx) {
       const rest = n.anzahl - liste.length;
       stellenHost.replaceChildren(...[...liste.map((s) => {
         const verl = zeigeVerlinken ? baueKnopf({ text: (aus ? TE.aus : TE.ein).verlinken, groesse: "s", aktion: "erw-verlinken", aufKlick: (ev) => beiVerlinken(s, ev.currentTarget) }) : null;
-        return h("div", { klasse: "erw-stelle", "data-erw-stelle": "" },
-          h("button", { type: "button", klasse: "erw-auszug-knopf", title: aus ? undefined : TE.ein.oeffnen(n.titel), aufClick: () => beiOeffnen(s) }, h("span", { klasse: "erw-zeile", text: `Z. ${s.zeile}` }), auszugEl(s)), verl);
+        // Mit KI-Prüfung: Pfad, Start, Treffer und Umgebung der Stelle als Daten, damit ein Urteil ihr zugeordnet wird; der Platz für den Badge liegt in der Zeile „Z. 12“ (kein Sprung)
+        const daten = mitKi ? { "data-erw-pfad": n.pfad, "data-erw-start": String(s.start), "data-erw-treffer": s.treffer, "data-erw-vor": s.vor ?? "", "data-erw-nach": s.nach ?? "" } : {};
+        return h("div", { klasse: "erw-stelle", "data-erw-stelle": "", ...daten },
+          h("button", { type: "button", klasse: "erw-auszug-knopf", title: aus ? undefined : TE.ein.oeffnen(n.titel), aufClick: () => beiOeffnen(s) }, h("span", { klasse: "erw-zeile" }, h("span", { text: `Z. ${s.zeile}` }), mitKi ? h("span", { klasse: "erw-badge-platz", "data-erw-badge-platz": "" }) : null), auszugEl(s)), verl);
       }), rest > 0 ? h("button", { type: "button", klasse: "wert-mehr erw-mehr", text: TE.ein.weitereStellen(rest), aufClick: () => { offen.alle = true; zeichne(); } }) : null].filter(Boolean));
+      if (mitKi) ki.anwenden(stellenHost);
     };
     zeichne();
     return h("div", { klasse: "erw-notiz", "data-erw-notiz": n.pfad },
@@ -134,29 +139,30 @@ export function erzeugeErwaehnungen(ctx) {
 
   function zeichneEin(host, r, { pfad, aktuell, pruefeWeiter }) {
     if (!aktuell()) return;
-    if (!r.namen.length && !r.mehrdeutig) { host.hidden = true; return; }
+    if (!r.namen.length && !r.mehrdeutig) { host.hidden = true; ki.keineListe(pfad); return; }
     host.hidden = false;
     const kinder = [];
-    if (r.mehrdeutig) { fuelle(host, TE.ein.titel, h("p", { klasse: "leise erw-leer", text: TE.ein.mehrdeutig })); return; }
+    if (r.mehrdeutig) { ki.keineListe(pfad); fuelle(host, TE.ein.titel, h("p", { klasse: "leise erw-leer", text: TE.ein.mehrdeutig })); return; }
     const weiter = r.offen > 0 || !r.vollstaendig;
     if (r.notizen.length) {
       const alle = abgleichOffen() ? null : baueKnopf({ text: TE.ein.alleVerlinken, groesse: "s", aktion: "erw-alle", aufKlick: (ev) => verlinkeAlle(pfad, r.titel, ev.currentTarget) });
-      kinder.push(h("div", { klasse: "erw-kopf" }, h("span", { klasse: "erw-summe", "data-erw-summe": "", text: TE.ein.zusammen(r.anzahlStellen, r.anzahlNotizen) }), alle));
+      kinder.push(h("div", { klasse: "erw-kopf" }, h("span", { klasse: "erw-summe", "data-erw-summe": "", text: TE.ein.zusammen(r.anzahlStellen, r.anzahlNotizen) }), alle), ki.knoten);
       const wurzel = h("div", { klasse: "erw-liste" });
       const zeichneListe = (alleNotizen) => {
         const zeig = alleNotizen ? r.notizen : r.notizen.slice(0, NOTIZEN_ZUERST);
         wurzel.replaceChildren(...[...zeig.map((n) => notizBlock(n, {
-          aus: false, zeigeVerlinken: !abgleichOffen(),
+          aus: false, mitKi: true, zeigeVerlinken: !abgleichOffen(),
           beiVerlinken: (s, knopf) => verlinkeStellen(pfad, r.titel, [{ pfad: n.pfad, start: s.start, treffer: s.treffer, vor: s.vor, nach: s.nach, hash: n.hash }], knopf),
           beiOeffnen: async (s) => { if (!(await ctx.oeffne(n.pfad))) { /* oeffne meldet selbst */ } if (S.pfad === n.pfad && s) ed.springeZu(s.zeile, { spalte: s.spalte, laenge: s.ende - s.start }); },
         })), !alleNotizen && r.notizen.length > NOTIZEN_ZUERST ? h("button", { type: "button", klasse: "wert-mehr erw-mehr", text: TE.ein.weitereNotizen(r.notizen.length - NOTIZEN_ZUERST), aufClick: () => zeichneListe(true) }) : null].filter(Boolean));
       };
       zeichneListe(false);
       kinder.push(wurzel);
-    } else if (!weiter) kinder.push(h("p", { klasse: "leise erw-leer", text: TE.ein.leer }));
+    } else { ki.keineListe(pfad); if (!weiter) kinder.push(h("p", { klasse: "leise erw-leer", text: TE.ein.leer })); }
     if (weiter) kinder.push(h("p", { klasse: "leise erw-weiter", "data-erw-weiter": "" }, TE.ein.weiter, r.automatischVorbei ? baueKnopf({ text: TE.ein.mehrPruefen, groesse: "s", aufKlick: pruefeWeiter }) : null));
     if (r.abgeschnitten) kinder.push(h("p", { klasse: "leise erw-weiter", text: TE.ein.nurErste(1500) }));
     fuelle(host, TE.ein.titel, ...kinder);
+    if (r.notizen.length) { ki.melde({ pfad, zahl: r.anzahlStellen, host }); ki.anwenden(host); }
   }
 
   // Der erste Abruf wird abgewartet (die Spalte zeigt sofort etwas), weitere laufen im Hintergrund, solange die Werkstatt noch Kandidaten prüft
