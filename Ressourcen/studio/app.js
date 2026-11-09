@@ -1329,8 +1329,8 @@ function baueKarte(n) {
     n.bereich === "inbox" && !n.generiert && S.sicht.art === "bereich" && S.sicht.id === "inbox" ? baueAktionen(n, posteingangCtx) : null,
     n.bereich === "inbox" && !n.generiert && S.sicht.art === "bereich" && S.sicht.id === "inbox" ? pkKi.bereich(n) : null); // Vorschläge (lokal und KI) unter dem Eintrag
   // Mit Vorschlagszeile darunter liegen die Aktionen in der Fußzeile (nicht am Ende der Karte): sie bleiben auch bei aufgeklappten Vorschlägen an derselben Stelle
-  const akt = karte.querySelector(":scope > .karte-aktionen");
-  if (akt && karte.querySelector(":scope > .pk")) karte.querySelector(".karte-fuss").append(akt);
+  const akt = karte.querySelector(":scope > .karte-aktionen"), pk = karte.querySelector(":scope > .pk");
+  if (akt && pk) { karte.querySelector(".karte-fuss").append(akt); pkKi.einhaengen(karte, pk); }
   if (!n.generiert) da.ziehbar(karte, "datei", n.pfad);
   return typ ? setzeTypFarbe(karte, typ) : karte;
 }
@@ -1374,6 +1374,7 @@ function zeichneListe({ behalte = false } = {}) {
   queueMicrotask(() => da.nachZeichnen()); // eine Umbenennung an Ort und Stelle übersteht das Neuzeichnen
   const host = $("liste-koerper");
   const scroll = behalte ? host.scrollTop : 0;
+  pkKi.laden(); // KI-Status früh holen: die Leiste im Posteingang ist dann sofort da oder nie, ohne die Liste zu verschieben
   if (S.sicht.art === "verlauf") { listeSchluessel = null; zeichneVerlauf(); return; }
   verlaufInst?.zerstoere?.(); verlaufInst = null;
   if (S.suche.aktiv) { listeSchluessel = null; zeichneSuchergebnisse(); return; }

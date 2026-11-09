@@ -22,7 +22,7 @@ const phasen = new Set(["laeuft", "wartet"]);
 export function erzeugePosteingangKi({ S, ctx, oeffne, liste }) {
   const zu = new Map(); // Pfad → Zustand dieses Eintrags (lebt, solange derselbe Vault offen ist)
   const ZU = (pfad) => { let z = zu.get(pfad); if (!z) zu.set(pfad, z = neuZ()); return z; };
-  let bereit = null, bereitFehler = false, st = kiStatus(null), vaultMerk = null, vaultNr = 0, ktVoll = false, ktZeile = null, sigLeiste = "";
+  let letzteAbfrage = 0, bereit = null, bereitFehler = false, st = kiStatus(null), vaultMerk = null, vaultNr = 0, ktVoll = false, ktZeile = null, sigLeiste = "";
   let stapel = null, uhr = 0, gerade = new Set(); // gerade: Pfade mit laufender Übernahme
 
   // ---------- Status (Konto, Einwilligung, Sperre) ----------
@@ -35,7 +35,7 @@ export function erzeugePosteingangKi({ S, ctx, oeffne, liste }) {
     let neu = null;
     try { neu = await api.kiVorschlagBereit(); } catch { neu = null; }
     if (nr !== vaultNr) return st;
-    bereit = neu; bereitFehler = neu === null; st = kiStatus(bereit);
+    bereit = neu; bereitFehler = neu === null; letzteAbfrage = Date.now(); st = kiStatus(bereit);
     zeichneLeiste();
     if (sigStatus() !== davor) alleZeichnen(); // nur wenn sich für die Knöpfe etwas ändert
     return st;
@@ -97,6 +97,8 @@ export function erzeugePosteingangKi({ S, ctx, oeffne, liste }) {
     pruefeVault();
     const w = h("div", { klasse: "pk", "data-pk": "", "data-pk-pfad": n.pfad, role: "group", "aria-label": TK.bereich });
     w._n = n;
+    w._chipSlot = h("div", { klasse: "pk-chipslot" }); // der Chip „n Vorschläge“ sitzt in der Datumszeile der Karte
+    w._kiSlot = h("span", { klasse: "pk-kislot" });    // „Mit KI“ sitzt als Symbol in der Hover-Leiste der Karte
     for (const ev of ["click", "dblclick", "contextmenu"]) w.addEventListener(ev, (e) => e.stopPropagation()); // gehört nicht der Karte: kein Öffnen der Notiz, kein Kartenmenü (die Pfeiltasten der Liste ignorieren .pk selbst)
     w.addEventListener("dragstart", (e) => { e.preventDefault(); e.stopPropagation(); });
     fordereLokal(n);
@@ -104,34 +106,43 @@ export function erzeugePosteingangKi({ S, ctx, oeffne, liste }) {
     return w;
   }
 
+  // Hängt Chip und KI-Knopf in die Karte: Chip hinter das Datum, KI-Knopf an den Anfang der Aktionsleiste (keine eigene Zeile)
+  function einhaengen(karte, w) {
+    const fuss = karte.querySelector(".karte-fuss");
+    if (fuss && fuss.firstElementChild) fuss.firstElementChild.after(w._chipSlot); else fuss?.append(w._chipSlot);
+    (karte.querySelector(".karte-aktionen") || karte).prepend(w._kiSlot);
+  }
+  const inWurzel = (w, el) => !!el && (w.contains(el) || w._chipSlot.contains(el) || w._kiSlot.contains(el));
+
   function zeichneWurzel(w, { animiere = false } = {}) {
     const n = w._n, z = ZU(n.pfad);
     const sicht = sichtbare(z), kiP = z.ki?.phase;
     const panelId = w.dataset.pkId || (w.dataset.pkId = `pk-${Math.random().toString(36).slice(2, 8)}`);
     const offen = z.offen && hatPanel(z);
-    // Zeile
+    // Chip (nur wenn es etwas zu sagen gibt) und KI-Symbol
     const arbeitet = phasen.has(kiP);
-    const text = z.lokal === null ? TK.zeile.laedt : sicht.length ? TK.zeile.anzahl(sicht.length) : kiP === "laeuft" ? TK.zeile.arbeitet : kiP === "wartet" ? TK.zeile.wartet : TK.zeile.keine;
+    const text = sicht.length ? TK.zeile.anzahl(sicht.length) : kiP === "laeuft" ? TK.zeile.arbeitet : kiP === "wartet" ? TK.zeile.wartet : kiP === "fehler" ? TK.zeile.fehler : kiP === "abgebrochen" ? TK.zeile.abgebrochen : kiP === "ergebnis" ? TK.zeile.keineKi : null;
     const klickbar = hatPanel(z);
-    const chip = h("button", { type: "button", klasse: "pk-chip" + (sicht.length ? " hat" : "") + (arbeitet ? " arbeitet" : ""), "data-aktion": "pk-auf", "data-pk-fokus": "auf", disabled: !klickbar || null, "aria-expanded": String(offen), "aria-controls": panelId,
+    const chip = text === null ? null : h("button", { type: "button", klasse: "pk-chip" + (sicht.length ? " hat" : "") + (arbeitet ? " arbeitet" : ""), "data-aktion": "pk-auf", "data-pk-fokus": "auf", disabled: !klickbar || null, "aria-expanded": String(offen), "aria-controls": panelId,
       title: klickbar ? (offen ? TK.zeile.zuTitel : TK.zeile.aufTitel) : null,
-      aufClick: () => { z.offen = !z.offen; zeichneWurzel(w, { animiere: true }); } },
-      h("span", { klasse: "pk-chip-sym", "aria-hidden": "true" }, symbol(arbeitet ? "funke" : "inbox", 12)), h("span", { klasse: "pk-chip-text", text }), klickbar ? h("span", { klasse: "pk-pfeil", "aria-hidden": "true" }, symbol("chevron-unten", 12)) : null);
+      aufClick: (e) => { e.stopPropagation(); z.offen = !z.offen; zeichneWurzel(w, { animiere: true }); } },
+      h("span", { klasse: "pk-chip-text", text }), klickbar ? h("span", { klasse: "pk-pfeil", "aria-hidden": "true" }, symbol("chevron-unten", 12)) : null);
     let kiKnopf = null;
     if (st.sichtbar) {
       const grund = sperrGrund(n);
-      kiKnopf = h("button", { type: "button", klasse: "pk-ki", "data-aktion": "pk-ki", "data-pk-fokus": "ki", disabled: !!grund || arbeitet || kiBeschaeftigt() || gerade.has(n.pfad) || null, title: grund || TK.zeile.kiTitel,
-        aufClick: () => klickKi(n) }, symbol("funke", 12), h("span", { text: kiP === "ergebnis" ? TK.zeile.kiNoch : TK.zeile.ki }));
+      kiKnopf = h("button", { type: "button", klasse: "knopf-icon klein pk-ki", "data-aktion": "pk-ki", "data-pk-fokus": "ki", disabled: !!grund || arbeitet || kiBeschaeftigt() || gerade.has(n.pfad) || einzelLaeuft() || null, title: grund || (kiP === "ergebnis" ? TK.zeile.kiNoch : TK.zeile.kiTitel),
+        "aria-label": `${kiP === "ergebnis" ? TK.zeile.kiNoch : TK.zeile.kiTitel}: ${n.titel || ""}`, aufClick: (e) => { e.stopPropagation(); klickKi(n); } }, symbol("funke", 14));
     }
-    const zeile = h("div", { klasse: "pk-zeile" }, chip, kiKnopf);
+    w._chipSlot.replaceChildren(...[chip].filter(Boolean));
+    w._kiSlot.replaceChildren(...[kiKnopf].filter(Boolean));
     // Panel
-    const fokus = document.activeElement && w.contains(document.activeElement) ? document.activeElement.dataset?.pkFokus || document.activeElement.dataset?.pkId || null : null;
+    const fokus = document.activeElement && inWurzel(w, document.activeElement) ? document.activeElement.dataset?.pkFokus || document.activeElement.dataset?.pkId || null : null;
     const altPanel = w.querySelector(".pk-panel");
     const vorher = altPanel && !altPanel.hidden ? altPanel.offsetHeight : 0;
     const panel = h("div", { klasse: "pk-panel", id: panelId, role: "region", "aria-label": TK.bereich, hidden: !offen });
     if (offen) panel.append(...baueInhalt(n, z, w));
-    w.replaceChildren(zeile, panel);
-    if (fokus) { const ziel = [...w.querySelectorAll("[data-pk-fokus],[data-pk-id]")].find((e) => (e.dataset.pkFokus || e.dataset.pkId) === fokus); ziel?.focus?.({ preventScroll: true }); }
+    w.replaceChildren(panel);
+    if (fokus) { const ziel = [...w.querySelectorAll("[data-pk-fokus]"), ...w._chipSlot.querySelectorAll("[data-pk-fokus]"), ...w._kiSlot.querySelectorAll("[data-pk-fokus]")].find((e) => e.dataset.pkFokus === fokus); ziel?.focus?.({ preventScroll: true }); }
     // Gleiten statt springen: nur, wenn der Nutzer selbst auf- oder zuklappt oder sich ein offenes Panel ändert
     if (!ruhig() && w.isConnected && (animiere || vorher) && (offen || vorher)) {
       const nachher = offen ? panel.offsetHeight : 0;
@@ -186,7 +197,7 @@ export function erzeugePosteingangKi({ S, ctx, oeffne, liste }) {
     el.append(h("div", { klasse: "pk-kopf" }, h("span", { klasse: "pk-sym", "aria-hidden": "true" }, symbol(A.symbol, 14)),
       h("div", { klasse: "pk-titel" }, h("span", { klasse: "pk-art", text: A.titel }), h("span", { klasse: "pk-text", "data-pk-text": "", text: v.beschriftung })),
       h("button", { type: "button", klasse: "pk-x", "data-aktion": "pk-verwerfen", "data-pk-fokus": `x-${v.id}`, "aria-label": TK.karte.verwerfen, title: TK.karte.verwerfen, disabled: arbeitet || null,
-        aufClick: () => { z.verworfen.add(v.schluessel); zeichne(n.pfad, { animiere: true }); } }, symbol("schliessen", 12))));
+        aufClick: () => verwirf(n, z, v) }, symbol("schliessen", 12))));
     if (v.art === "aufgabe" && v.aufgabe) el.append(h("p", { klasse: "pk-detail", "data-pk-detail": "" }, h("b", { text: `„${v.aufgabe.text}“` }), v.aufgabe.faellig ? h("span", { klasse: "pk-faellig", text: TK.karte.faellig(datumKurz(v.aufgabe.faellig)) }) : null));
     if (v.art === "tags" && v.tags) el.append(h("p", { klasse: "pk-detail pk-tags", "data-pk-detail": "" }, v.tags.map((t) => h("span", { klasse: "pk-tag", text: `#${t}` }))));
     el.append(h("div", { klasse: "pk-marken" },
@@ -210,6 +221,16 @@ export function erzeugePosteingangKi({ S, ctx, oeffne, liste }) {
     }
     return el;
   }
+  // Nach dem Verwerfen oder Übernehmen geht der Fokus nicht verloren: auf die Karte an derselben Stelle (sonst die davor), zuletzt auf den Chip
+  function fokusWeiter(pfad, index) {
+    if (document.activeElement && document.activeElement !== document.body && document.activeElement.isConnected) return;
+    for (const w of alleWurzeln(pfad)) {
+      const karten = [...w.querySelectorAll(".pk-karte")];
+      const ziel = karten.length ? karten[Math.min(index, karten.length - 1)].querySelector('[data-aktion="pk-ok"]') : w._chipSlot.querySelector("button") || w._kiSlot.querySelector("button:not(:disabled)");
+      ziel?.focus?.({ preventScroll: true }); if (ziel) return;
+    }
+  }
+  const verwirf = (n, z, v) => { const i = Math.max(0, sichtbare(z).findIndex((x) => x.id === v.id)); z.verworfen.add(v.schluessel); zeichne(n.pfad, { animiere: true }); fokusWeiter(n.pfad, i); };
   function datumKurz(iso) { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso); return m ? `${Number(m[3])}.${Number(m[2])}.` : iso; }
 
   // ---------- Duplikat: beide Texte nebeneinander ----------
@@ -248,7 +269,7 @@ export function erzeugePosteingangKi({ S, ctx, oeffne, liste }) {
       } else if (art === "nichts-zu-tun") { z.verworfen.add(v.schluessel); toast(err.message || TK.toast.schonDa); }
       else toast(err?.message || TK.toast.fehler, { fehler: true });
       await ctx.nachAktion({}); // Stand neu holen
-    } finally { v.arbeitet = false; gerade.delete(pfad); zeichne(pfad); zeichneLeiste(); }
+    } finally { const i = Math.max(0, sichtbare(z).findIndex((x) => x.id === v.id)); v.arbeitet = false; gerade.delete(pfad); zeichne(pfad); zeichneLeiste(); fokusWeiter(pfad, i); }
   }
   async function zurueckNehmen(n, z, v) {
     try {
@@ -323,13 +344,8 @@ export function erzeugePosteingangKi({ S, ctx, oeffne, liste }) {
   function zeichneLeiste() {
     pruefeVault();
     const sp = stapelPfade();
-    // Solange die Werkstatt noch nicht geantwortet hat, hält die Leiste ihren Platz (unsichtbar): kommt das Konto dazu, springt die Liste nicht
-    if (bereit === null && !bereitFehler) {
-      leiste.hidden = sp.gesamt === 0; leiste.classList.add("platz");
-      if (sigLeiste !== "platz") { sigLeiste = "platz"; leiste.replaceChildren(h("div", { klasse: "pk-leiste-kopf" }), h("div", { klasse: "pk-leiste-fuss" })); }
-      return;
-    }
-    leiste.classList.remove("platz");
+    // Solange die Werkstatt noch nicht geantwortet hat, bleibt die Leiste weg (der Status wird schon beim ersten Zeichnen einer Liste geholt, nicht erst im Posteingang)
+    if (bereit === null) { leiste.hidden = true; return; }
     const laeuft = kiBeschaeftigt();
     const sichtbar = st.sichtbar && (sp.gesamt > 0 || !!stapel);
     const sig = JSON.stringify([sichtbar, st.sichtbar, st.konto?.id, st.konto?.abo, st.gesperrt, laeuft, sp.gesamt, sp.alleHaben, ktVoll, stapel && [stapel.phase, stapel.erledigt, stapel.von, stapel.text, stapel.wirdAbgebrochen, stapel.ausgenommen, stapel.vorschlaege], gerade.size, einzelLaeuft()]);
@@ -430,5 +446,5 @@ export function erzeugePosteingangKi({ S, ctx, oeffne, liste }) {
   }
   window.addEventListener("pagehide", () => { stapel?.handle?.abbrechen(); for (const z of zu.values()) z.ki?.lauf?.abbrechen?.(); });
 
-  return { leiste, bereich, laden: frisch, aktualisiere: zeichneLeiste, vergessen, _zustand: () => ({ zu, stapel, st }) };
+  return { leiste, bereich, einhaengen, laden: () => (bereit !== null && Date.now() - letzteAbfrage < 15_000 ? Promise.resolve(st) : frisch()), aktualisiere: zeichneLeiste, vergessen, _zustand: () => ({ zu, stapel, st }) };
 }

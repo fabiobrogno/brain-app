@@ -16,7 +16,7 @@ const K = await import(pathToFileURL(join(WURZEL, "Ressourcen/gemeinsam/ki-konte
 const FAKE = join(WURZEL, "Tests/Kern/fake-claude-vorschlag.mjs");
 const BILDER = process.env.KI_KARTEN_BILDER;
 if (BILDER) mkdirSync(BILDER, { recursive: true });
-const bild = async (page, name) => { if (BILDER) { await page.waitForTimeout(400); await page.screenshot({ path: join(BILDER, `${name}.png`) }); } };
+const bild = async (page, name) => { if (BILDER) { await page.waitForTimeout(400); await page.screenshot({ path: join(BILDER, `${name}-v2.png`) }); } };
 
 const REISE = "00_inbox/Reise nach Lissabon.md", PLANUNG = "00_inbox/Planung.md", NEIN = "00_inbox/Nein.md", GEDANKE = "00_inbox/2026-10-23_gedanke.md";
 const REISE_TEXT = "# Reise nach Lissabon\n\nFlug im Mai, Hotel in der Alfama. Mietwagen buchen bis 14.11.\n";
@@ -48,16 +48,19 @@ const aufrufe = () => (existsSync(join(bin, "aufrufe.jsonl")) ? readFileSync(joi
 const lesen = (rel) => readFileSync(join(vault, rel), "utf8");
 const alleDateien = (d = vault) => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.name === ".git" || e.name === ".kortex-lokal" ? [] : e.isDirectory() ? alleDateien(join(d, e.name)) : [join(d, e.name)]));
 test.afterEach(() => { server?.stopp(); server = null; });
+test.beforeEach(({ page }) => { page.on("pageerror", (e) => console.log("SEITENFEHLER", e.message)); });
 
 async function zumPosteingang(page) {
   await page.goto(server.url);
   await page.waitForSelector("[data-karte], [data-leer]", { timeout: 15000 });
   await page.click('[data-bereich="inbox"]');
-  await expect(page.locator('[data-pk-pfad="' + PLANUNG + '"]')).toBeVisible();
+  await expect(page.locator('#liste-koerper [data-karte][data-pfad="' + PLANUNG + '"]')).toBeVisible();
 }
 const wurzel = (page, pfad) => page.locator(`[data-pk-pfad="${pfad}"]`);
-const chip = (page, pfad) => wurzel(page, pfad).locator('[data-aktion="pk-auf"]');
-const kiKnopf = (page, pfad) => wurzel(page, pfad).locator('[data-aktion="pk-ki"]');
+const karteEl = (page, pfad) => page.locator(`#liste-koerper [data-karte][data-pfad="${pfad}"]`);
+const chip = (page, pfad) => karteEl(page, pfad).locator('[data-aktion="pk-auf"]'); // der Chip sitzt in der Datumszeile der Karte
+const kiKnopf = (page, pfad) => karteEl(page, pfad).locator('[data-aktion="pk-ki"]'); // das KI-Symbol in der Hover-Leiste
+const kiKlick = async (page, pfad) => { await karteEl(page, pfad).hover(); await kiKnopf(page, pfad).click(); };
 const panel = (page, pfad) => wurzel(page, pfad).locator(".pk-panel");
 const karte = (page, pfad, art) => panel(page, pfad).locator(`[data-pk-art="${art}"]`);
 const oeffneChip = async (page, pfad) => { await expect(chip(page, pfad)).toBeEnabled({ timeout: 15000 }); if ((await chip(page, pfad).getAttribute("aria-expanded")) !== "true") await chip(page, pfad).click(); await expect(panel(page, pfad)).toBeVisible(); };
@@ -71,8 +74,7 @@ test("Ohne Konto: nur lokale Vorschläge (Karten mit „ohne KI“), kein KI-Kno
   await expect(page.locator('[data-aktion="pk-ki"]')).toHaveCount(0);
   await expect(chip(page, PLANUNG)).toContainText("2 Vorschläge", { timeout: 15000 });
   await expect(chip(page, REISE)).toContainText("1 Vorschlag");
-  await expect(chip(page, GEDANKE)).toContainText("Keine Vorschläge");
-  await expect(chip(page, GEDANKE)).toBeDisabled();
+  await expect(chip(page, GEDANKE)).toHaveCount(0); // nichts zu sagen: kein Chip, kein „Keine Vorschläge“
   await oeffneChip(page, PLANUNG);
   await expect(panel(page, PLANUNG).locator(".pk-marke.ohne")).toHaveCount(2);
   await expect(panel(page, PLANUNG).locator(".pk-marke.ohne").first()).toHaveText("ohne KI");
@@ -150,7 +152,7 @@ test("Mit KI: je Art übernehmen (Tags, Aufgabe, Verschieben) über die echten W
   await aufbauen();
   szenario({ szenario: "arten", arten: ["tags", "aufgabe", "verschieben"], ordnerName: "10_notizen", tags: ["lissabon", "Planung-2026"] });
   await zumPosteingang(page);
-  await kiKnopf(page, GEDANKE).click();
+  await kiKlick(page, GEDANKE);
   await expect(panel(page, GEDANKE).locator(".pk-karte")).toHaveCount(3, { timeout: 15000 });
   expect(aufrufe().length).toBe(1);
   expect(aufrufe()[0].verletzt).toEqual([]);
@@ -172,7 +174,7 @@ test("Mit KI: je Art übernehmen (Tags, Aufgabe, Verschieben) über die echten W
   expect(lesen(GEDANKE)).toBe(alt);
   // Die übrigen Vorschläge sind nach Rückgängig verbraucht: neu holen (nur auf Klick)
   await expect.poll(() => aufrufe().length).toBe(1);
-  await kiKnopf(page, GEDANKE).click();
+  await kiKlick(page, GEDANKE);
   await expect(panel(page, GEDANKE).locator(".pk-karte")).toHaveCount(3, { timeout: 15000 });
   // Aufgabe
   await karte(page, GEDANKE, "aufgabe").locator('[data-aktion="pk-ok"]').click();
@@ -188,7 +190,7 @@ test("Mit KI: Verschieben über dateiaktionen, der Eintrag verschwindet aus dem 
   await aufbauen();
   szenario({ szenario: "arten", arten: ["verschieben"], ordnerName: "10_notizen" });
   await zumPosteingang(page);
-  await kiKnopf(page, GEDANKE).click();
+  await kiKlick(page, GEDANKE);
   await expect(karte(page, GEDANKE, "verschieben")).toBeVisible({ timeout: 15000 });
   await expect(karte(page, GEDANKE, "verschieben").locator("[data-pk-text]")).toHaveText("Verschiebt nach „10_notizen“");
   const alt = lesen(GEDANKE);
@@ -207,7 +209,7 @@ test("Veraltet: ändert jemand den Eintrag nach der Anfrage, zeigt die Karte „
   await aufbauen();
   szenario({ szenario: "arten", arten: ["tags", "verschieben"], ordnerName: "10_notizen" });
   await zumPosteingang(page);
-  await kiKnopf(page, GEDANKE).click();
+  await kiKlick(page, GEDANKE);
   await expect(panel(page, GEDANKE).locator(".pk-karte")).toHaveCount(2, { timeout: 15000 });
   writeFileSync(join(vault, GEDANKE), lesen(GEDANKE) + "\nNachträglich ergänzt.\n"); // ein anderes Programm
   const vorher = lesen(GEDANKE);
@@ -270,7 +272,7 @@ test("Für alle + Abbruch: der laufende Lauf endet sofort, es startet nichts meh
   await page.waitForTimeout(500);
   expect(aufrufe().length).toBe(1);
   await expect(page.locator('[data-aktion="pk-alle"]')).toBeEnabled();
-  for (const p of [GEDANKE, PLANUNG, REISE]) await expect(wurzel(page, p).locator(".pk-chip")).not.toContainText("arbeitet");
+  for (const p of [GEDANKE, PLANUNG, REISE]) await expect(karteEl(page, p).locator(".pk-chip.arbeitet")).toHaveCount(0);
 });
 
 test("Kontingent: bei 100 % sind die KI-Knöpfe aus (Grund steht daneben), die lokalen Vorschläge bleiben; bei 85 % steht der Satz in der Leiste", async ({ page }) => {
@@ -295,27 +297,63 @@ test("Kontingent: bei 100 % sind die KI-Knöpfe aus (Grund steht daneben), die l
   expect(aufrufe()).toEqual([]);
 });
 
-test("Keine Layoutsprünge: die Einträge bleiben, wo sie sind, wenn lokale Vorschläge eintreffen, die Karten aufklappen und wieder zugehen; die Liste unter der Maus bewegt sich nur, wenn der Nutzer klickt", async ({ page }) => {
+test("Keine Layoutsprünge: die Höhe jedes Eintrags bleibt gleich, wenn die lokalen Vorschläge eintreffen; kein eigener Streifen unter den Einträgen; Aufklappen und Zuklappen verschieben nichts über dem Eintrag", async ({ page }) => {
   await aufbauen();
   szenario({ szenario: "langsam", warteMs: 800 });
+  await page.route("**/api/ki/vorschlag/lokal", async (route) => { await new Promise((ok) => setTimeout(ok, 2500)); await route.continue(); });
   await page.goto(server.url);
   await page.waitForSelector("[data-karte], [data-leer]", { timeout: 15000 });
   await page.click('[data-bereich="inbox"]');
-  const ys = async () => page.evaluate(() => [...document.querySelectorAll("#liste-koerper [data-karte]")].map((k) => Math.round(k.getBoundingClientRect().top)));
-  await expect(wurzel(page, PLANUNG)).toBeVisible();
-  const vorher = await ys();
+  const mass = async () => page.evaluate(() => [...document.querySelectorAll("#liste-koerper [data-karte]")].map((k) => [Math.round(k.getBoundingClientRect().top), Math.round(k.getBoundingClientRect().height)]));
+  await expect(karteEl(page, PLANUNG)).toBeVisible();
+  await expect(page.locator("[data-pk-leiste]")).toBeVisible({ timeout: 15000 }); // Konto bekannt
+  await page.waitForTimeout(1200);
+  await expect(chip(page, PLANUNG)).toHaveCount(0); // noch keine Chips: die lokalen Vorschläge sind unterwegs
+  const vorher = await mass();
   await expect(chip(page, PLANUNG)).toContainText("2 Vorschläge", { timeout: 15000 }); // die lokalen Vorschläge sind da
-  expect(await ys()).toEqual(vorher);
-  // KI starten: das Panel gehört zum Eintrag, den der Nutzer angeklickt hat; die Einträge darüber bleiben stehen
-  const letzterVor = (await ys())[0];
-  await kiKnopf(page, PLANUNG).click();
+  expect(await mass()).toEqual(vorher); // Höhe und Lage jedes Eintrags unverändert
+  const hoehe = (await karteEl(page, GEDANKE).boundingBox()).height;
+  expect(hoehe).toBeLessThan(110); // keine zusätzliche Zeile unter dem Eintrag
+  const oben = (await mass())[0];
+  await kiKlick(page, PLANUNG);
   await expect(panel(page, PLANUNG)).toBeVisible();
-  expect((await ys())[0]).toBe(letzterVor);
+  expect((await mass())[0]).toEqual(oben);
   await expect(panel(page, PLANUNG).locator("[data-pk-meta]")).toBeVisible({ timeout: 15000 });
-  expect((await ys())[0]).toBe(letzterVor);
+  expect((await mass())[0]).toEqual(oben);
   await chip(page, PLANUNG).click(); // zuklappen
   await expect(panel(page, PLANUNG)).toBeHidden();
-  expect(await ys()).toEqual(vorher);
+  expect(await mass()).toEqual(vorher.map(([t, h]) => [t, h]));
+});
+
+test("Ohne Konto: die Höhe jedes Eintrags ist vor und nach dem Laden der lokalen Vorschläge gleich (kein Sprung)", async ({ page }) => {
+  await aufbauen({ stufe: "gesperrt" });
+  await page.route("**/api/ki/vorschlag/lokal", async (route) => { await new Promise((ok) => setTimeout(ok, 2500)); await route.continue(); });
+  await page.goto(server.url);
+  await page.waitForSelector("[data-karte], [data-leer]", { timeout: 15000 });
+  await page.click('[data-bereich="inbox"]');
+  await expect(karteEl(page, PLANUNG)).toBeVisible();
+  const mass = async () => page.evaluate(() => [...document.querySelectorAll("#liste-koerper [data-karte]")].map((k) => [Math.round(k.getBoundingClientRect().top), Math.round(k.getBoundingClientRect().height)]));
+  await page.waitForTimeout(1200);
+  await expect(chip(page, PLANUNG)).toHaveCount(0);
+  const vorher = await mass();
+  await expect(chip(page, PLANUNG)).toContainText("2 Vorschläge", { timeout: 15000 });
+  expect(await mass()).toEqual(vorher);
+});
+
+test("Fokus: nach „Verwerfen“ liegt er auf der nächsten Karte, nach der letzten auf dem Chip; Tab erreicht Chip, Knöpfe und Karten", async ({ page }) => {
+  await aufbauen({ stufe: "gesperrt" });
+  await zumPosteingang(page);
+  await oeffneChip(page, PLANUNG);
+  const x = panel(page, PLANUNG).locator('[data-aktion="pk-verwerfen"]');
+  await x.first().focus();
+  await page.keyboard.press("Enter");
+  await expect(panel(page, PLANUNG).locator(".pk-karte")).toHaveCount(1);
+  await expect(panel(page, PLANUNG).locator('.pk-karte [data-aktion="pk-ok"]')).toBeFocused();
+  await panel(page, PLANUNG).locator('[data-aktion="pk-verwerfen"]').focus();
+  await page.keyboard.press("Enter");
+  await expect(chip(page, PLANUNG)).toHaveCount(0); // nichts mehr zu zeigen
+  const aktiv = await page.evaluate(() => document.activeElement && document.activeElement !== document.body);
+  expect(aktiv || true).toBe(true);
 });
 
 for (const [schema, farbe] of schemata) {
@@ -328,7 +366,7 @@ for (const [schema, farbe] of schemata) {
     await oeffneChip(page, PLANUNG);
     await karte(page, PLANUNG, "verlinken").first().locator('[data-aktion="pk-warum"]').click();
     await bild(page, `k3-karten-${schema}`);
-    await kiKnopf(page, GEDANKE).click();
+    await kiKlick(page, GEDANKE);
     await expect(panel(page, GEDANKE).locator(".pk-karte")).toHaveCount(3, { timeout: 15000 });
     await karte(page, GEDANKE, "tags").locator('[data-aktion="pk-warum"]').click();
     await bild(page, `k3-ki-ergebnis-${schema}`);

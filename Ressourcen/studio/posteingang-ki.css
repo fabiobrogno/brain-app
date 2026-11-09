@@ -5,30 +5,31 @@
 .karte-fuss:has(> .karte-aktionen) { position: relative; }
 .karte-fuss > .karte-aktionen { right: 0; bottom: -5px; }
 
-.pk { margin-top: 8px; min-width: 0; cursor: default; -webkit-user-select: text; user-select: text; }
-.pk-zeile { display: flex; align-items: center; gap: 6px; min-height: 26px; min-width: 0; }
-.pk-chip, .pk-ki, .pk-alle {
-  box-sizing: border-box; display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border-radius: var(--r-pille); font: inherit; font-size: 11.5px; line-height: 1;
-  cursor: pointer; white-space: nowrap; transition: background var(--t), color var(--t), border-color var(--t), opacity var(--t);
-}
-.pk-chip { min-width: 0; max-width: 100%; border: 1px solid var(--linie); background: transparent; color: var(--text-3); }
+.pk { min-width: 0; cursor: default; -webkit-user-select: text; user-select: text; }
+/* Chip in der Datumszeile: die Zeile ist bei jeder Karte gleich hoch, ob der Chip da ist oder nicht */
+.karte-fuss:has(> .pk-chipslot) { align-items: center; min-height: 20px; }
+.pk-chipslot { display: flex; flex: none; align-items: center; margin-right: auto; max-width: 70%; }
+.pk-kislot { display: contents; }
+.pk-chip { box-sizing: border-box; display: inline-flex; align-items: center; gap: 4px; height: 18px; min-width: 0; max-width: 100%; padding: 0 7px; border: 1px solid var(--linie); border-radius: var(--r-pille); background: transparent; color: var(--text-3);
+  font: inherit; font-size: 11px; line-height: 1; cursor: pointer; white-space: nowrap; transition: background var(--t), color var(--t), border-color var(--t); }
 .pk-chip:hover:not(:disabled) { background: var(--hover); color: var(--text-2); }
 .pk-chip:disabled { cursor: default; }
 .pk-chip.hat { background: var(--akzent-weich); border-color: color-mix(in srgb, var(--akzent) 26%, transparent); color: var(--akzent-tinte); font-weight: 500; }
 .pk-chip.hat:hover:not(:disabled) { background: color-mix(in srgb, var(--akzent) 20%, transparent); color: var(--akzent-tinte); }
-.pk-chip-sym { display: grid; flex: none; }
 .pk-chip-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .pk-pfeil { display: grid; flex: none; transition: transform var(--d-fast) var(--ease-out); }
 .pk-chip[aria-expanded="true"] .pk-pfeil { transform: rotate(180deg); }
-.pk-chip.arbeitet .pk-chip-sym { animation: pk-puls 1.3s ease-in-out infinite; }
-@keyframes pk-puls { 50% { opacity: .35; } }
-.pk-ki { flex: none; margin-left: auto; border: 1px solid var(--linie-stark); background: transparent; color: var(--text-2); }
-.pk-ki:hover:not(:disabled), .pk-alle:hover:not(:disabled) { background: var(--hover); color: var(--text); }
-.pk-ki:disabled, .pk-alle:disabled { opacity: .5; cursor: default; }
-.pk-chip:focus-visible, .pk-ki:focus-visible, .pk-alle:focus-visible, .pk-link:focus-visible, .pk-x:focus-visible, .pk-panel button:focus-visible { outline: 0; box-shadow: var(--fokus-ring); }
+.pk-chip.arbeitet { animation: pk-puls 1.3s ease-in-out infinite; }
+@keyframes pk-puls { 50% { opacity: .45; } }
+.pk-ki:disabled { opacity: .4; cursor: default; }
+.pk-ki:disabled:hover { background: transparent; color: var(--text-2); }
+.pk-alle { box-sizing: border-box; display: inline-flex; align-items: center; gap: 5px; border-radius: var(--r-pille); font: inherit; line-height: 1; cursor: pointer; white-space: nowrap; transition: background var(--t), color var(--t), opacity var(--t); }
+.pk-alle:disabled { opacity: .5; cursor: default; }
+.pk-chip:focus-visible, .pk-alle:focus-visible, .pk-link:focus-visible, .pk-x:focus-visible, .pk-panel button:focus-visible { outline: 0; box-shadow: var(--fokus-ring); }
 
 /* Panel: nur offen, wenn der Nutzer es aufgeklappt hat (oder seine KI-Anfrage läuft) */
 .pk-panel { display: grid; gap: 8px; margin-top: 8px; min-width: 0; }
+.pk-panel[hidden] { margin: 0; }
 .pk-panel[hidden] { display: none; }
 .pk-karte { display: grid; gap: 7px; min-width: 0; padding: 9px 10px 10px; border: 1px solid var(--linie); border-radius: var(--r-l); background: var(--erhoben); }
 .pk-karte[data-zustand="veraltet"] { opacity: .6; }
@@ -94,6 +95,6 @@
 .pk-vgl-kopf { display: grid; gap: 1px; min-width: 0; }
 .pk-vgl-kopf b { font-size: 13px; font-weight: 600; color: var(--text); }
 .pk-vgl-pfad { font-size: 11.5px; color: var(--text-3); overflow-wrap: anywhere; }
-.pk-vgl-text { box-sizing: border-box; margin: 0; height: 280px; overflow: auto; padding: 10px 12px; border: 1px solid var(--linie); border-radius: var(--r); background: var(--code); font-family: var(--mono); font-size: 11.5px; line-height: 1.55; color: var(--text-2); white-space: pre-wrap; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }
+.pk-vgl-text { box-sizing: border-box; margin: 0; height: 280px; overflow: auto; padding: 10px 12px; border: 1px solid var(--linie); border-radius: var(--r); background: var(--code); font-family: var(--schrift-text); font-size: 12.5px; line-height: 1.6; color: var(--text-2); white-space: pre-wrap; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }
 .pk-vgl-text:focus-visible { outline: 0; box-shadow: var(--fokus-ring); }
 @media (max-width: 720px) { .pk-vgl { grid-template-columns: minmax(0, 1fr); } .pk-vgl-text { height: 160px; } }
