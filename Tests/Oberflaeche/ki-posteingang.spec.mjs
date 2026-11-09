@@ -7,7 +7,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, realpathSync, existsSync, readFi
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { baueVault } from "./vault.mjs";
+import { baueVault, git } from "./vault.mjs";
 import { starteServer } from "./start.mjs";
 import { legeProgramm, pfadMit } from "../Node/attrappe.mjs";
 
@@ -30,6 +30,7 @@ async function aufbauen({ stufe = "lesen", mitClaude = true, einwilligung = true
   writeFileSync(join(vault, PLANUNG), PLANUNG_TEXT);
   writeFileSync(join(vault, NEIN), "---\nki: nein\n---\n# Nein\n\nNIE-AN-DIE-KI Kaffee Reise Planung.\n");
   for (let i = 0; i < viele; i++) writeFileSync(join(vault, `00_inbox/Viel-${String(i + 1).padStart(2, "0")}.md`), `# Viel ${i + 1}\n\nGedanke Nummer ${i + 1} über Kaffee.\n`);
+  git(vault, "add", "--", "00_inbox"); git(vault, "commit", "-q", "-m", "Einträge im Posteingang"); // wie im Alltag: die Einträge sind schon versioniert
   const wurzel = realpathSync.native(mkdtempSync(join(tmpdir(), "brain-ui-kipe-")));
   home = join(wurzel, "home"); bin = join(wurzel, "bin"); support = join(wurzel, "support");
   for (const d of [home, bin, support]) mkdirSync(d);
