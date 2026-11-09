@@ -1,6 +1,6 @@
 // Runde 3d im echten Studio, gegen die echte Werkstatt mit Wegwerf-Vault und Wegwerf-Support-Ordner (nie echte Nutzerorte):
 //   · Info-Spalte: „Ungelinkte Erwähnungen“ (Stellen, Verlinken mit Rückgängig, „Alle verlinken“ mit Vorschau, Fremdänderung) und „Diese Notiz erwähnt …“ (Verlinken im Editor, Rückgängig)
-//   · Karte „Was ist neu“ im Posteingang: Zeilen, Klicks, „Gelesen“, Zeitraum, „Mit KI zusammenfassen“ nur mit KI-Konto (Platzhalter „kommt bald“)
+//   · Karte „Was ist neu“ im Posteingang: Zeilen, Klicks, „Gelesen“, Zeitraum, „Mit KI zusammenfassen“ nur mit KI-Konto
 //   · hell und dunkel; Bilder nur, wenn ERW_BILDER auf einen Ordner zeigt.
 import { test, expect } from "./basis.mjs";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, realpathSync } from "node:fs";
@@ -202,44 +202,38 @@ test("Karte: Aufgaben (neu, überfällig) und KI-Aktivität aus dem Protokoll, K
   await expect(page.locator('[data-bereich="aufgaben"]')).toHaveAttribute("aria-current", /.*/);
 });
 
-test("„Mit KI zusammenfassen“: ohne KI-Konto unsichtbar, mit Konto ab Stufe „lesen“ ein ehrlicher Platzhalter (kommt bald)", async ({ page }) => {
+// Die Oberfläche der KI-Zusammenfassung selbst (Einwilligung, Lauf, Ergebnis) prüft ki-zusammenfassen.spec.mjs gegen die echte Werkstatt; hier nur das Sichtbarwerden des Knopfes (Mock von „bereit“).
+const bereit = (stufeOk) => ({ vault: "Test", vertraut: true, claude: true, kontenDefekt: false, konten: stufeOk ? [{ id: "k_aaaaaaaa", name: "Arbeit", programm: "claude", erlaubt: true }] : [], aktiv: stufeOk ? "k_aaaaaaaa" : null,
+  einwilligung: { an: false, seit: null, konto: null, kontoName: null }, laeuft: false, frageLaeuft: false, kontingent: null, funktionen: ["posteingang", "text", "zusammenfassung"], modelle: ["klein", "mittel"], grenzen: {} });
+test("„Mit KI zusammenfassen“: ohne Claude-Konto mit Stufe „lesen“ unsichtbar, mit Konto ein Knopf (kein „kommt bald“ mehr)", async ({ page }) => {
+  await page.route("**/api/ki/vorschlag/bereit", (route) => route.fulfill({ json: bereit(false) }));
   await start(page);
   await page.click('[data-bereich="inbox"]');
   await expect(page.locator("[data-nk]")).toBeVisible();
   await page.locator("[data-nk-kopf]").click();
-  await expect(page.locator('[data-aktion="nk-ki"]')).toHaveCount(0);
-  await expect(page.locator("[data-nk-inhalt]")).toBeVisible();
-  // ein Konto mit Stufe „gesperrt“ reicht nicht, eines mit „lesen“ schon
-  const antwort = (stufe) => ({ zustand: "ok", stufen: ["gesperrt", "lesen", "posteingang", "erweitert"], konten: [], vaults: [], aktiv: {}, zugriff: { k_aaaaaaaa: { [vault]: stufe } } });
-  await page.route("**/api/ki/konten", (route) => route.fulfill({ json: antwort("gesperrt") }));
-  await page.reload(); await page.waitForSelector("[data-karte], [data-leer]", { timeout: 10000 }); await page.click('[data-bereich="inbox"]');
-  await expect(page.locator("[data-nk]")).toBeVisible();
-  await page.locator("[data-nk-kopf]").click();
   await expect(page.locator("[data-nk-inhalt]")).toBeVisible();
   await expect(page.locator('[data-aktion="nk-ki"]')).toHaveCount(0);
-  await page.unroute("**/api/ki/konten");
-  await page.route("**/api/ki/konten", (route) => route.fulfill({ json: antwort("lesen") }));
+  await page.unroute("**/api/ki/vorschlag/bereit");
+  await page.route("**/api/ki/vorschlag/bereit", (route) => route.fulfill({ json: bereit(true) }));
   await page.reload(); await page.waitForSelector("[data-karte], [data-leer]", { timeout: 10000 }); await page.click('[data-bereich="inbox"]');
   await page.locator("[data-nk-kopf]").click();
   const knopf = page.locator('[data-aktion="nk-ki"]');
   await expect(knopf).toBeVisible();
-  await expect(knopf).toContainText("kommt bald");
-  await knopf.click();
-  await expect(page.locator("[data-nk-ki-text]")).toContainText("Kommt bald");
-  await expect(page.locator("[data-nk-ki-text]")).toContainText("ändert nichts von selbst");
+  await expect(knopf).toContainText("Mit KI zusammenfassen");
+  await expect(knopf).not.toContainText("kommt bald");
 });
 
 for (const [schema, farbe] of schemata) {
   test(`hell und dunkel (${schema}): Info-Spalte und Karte`, async ({ page }) => {
     await page.emulateMedia({ colorScheme: farbe, reducedMotion: "reduce" });
-    await page.route("**/api/ki/konten", (route) => route.fulfill({ json: { zustand: "ok", stufen: ["gesperrt", "lesen", "posteingang", "erweitert"], konten: [], vaults: [], aktiv: {}, zugriff: { k_aaaaaaaa: { [vault]: "lesen" } } } }));
+    await page.route("**/api/ki/vorschlag/bereit", (route) => route.fulfill({ json: bereit(true) }));
     await start(page);
     await page.click('[data-bereich="inbox"]');
     await expect(page.locator("[data-nk]")).toBeVisible();
     await bild(page, "karte-eingeklappt", schema);
     await page.locator("[data-nk-kopf]").click();
     await page.locator('[data-nk-zeile="notizen"]').click();
-    await page.locator('[data-aktion="nk-ki"]').click();
+    await expect(page.locator('[data-aktion="nk-ki"]')).toBeVisible();
     await bild(page, "karte", schema);
     await waehle(page, KAFFEE);
     await expect(ein(page).locator("[data-erw-summe]")).toHaveText("3 Stellen in 3 Notizen");

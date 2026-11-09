@@ -50,6 +50,8 @@ const istBeleg = (beleg, text) => {
 // ---------- ki: nein ----------
 // Die Prüfung steht in notizen.mjs (der Notiz-Index merkt sich das Ergebnis je Notiz); hier nur weitergereicht.
 export { istKiNein, istKiNeinWert };
+// Zeile des Notiz-Index: ist die Notiz mit `ki: nein` markiert? (der Index merkt sich das Ergebnis; sonst aus den Front-Matter-Feldern)
+export const zeileIstKiNein = (z) => !!z && (z.kiNein === true || (!!z.felder && Object.entries(z.felder).some(([k, w]) => k.normalize("NFC").trim().toLowerCase() === "ki" && istKiNeinWert(w))));
 
 // ---------- JSON aus Text lesen (Rückfall, wenn `structured_output` fehlt) ----------
 export function parseJsonAntwort(roh) {

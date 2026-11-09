@@ -47,29 +47,33 @@ export function syncZustand(git) {
 
 /**
  * eingabe: { seit (ISO | null), jetzt (Date), heute ("JJJJ-MM-TT"), notizen: [Zeilen des Notiz-Index] | null, aufgaben: [Aufgaben] | null, ereignisse: [Einträge des Protokolls] | null, git: Antwort von git.status | null }
+ * ausnehmen (optional): Set von Pfaden, die nirgends erscheinen (z. B. Notizen mit `ki: nein` für die KI-Zusammenfassung); sie zählen nicht und tauchen nie mit Titel auf. Die Antwort nennt dann
+ * `ausgenommen` = Zahl der Notizen/Aufgaben, die sonst in „neu“, „geändert“, „erledigt“ oder „überfällig“ gestanden hätten.
  * → { seit, bis, notizen, aufgaben, ki, sync, inbox, leer }   (null-Quellen werden als „nicht verfügbar“ gemeldet, nie erfunden)
  */
-export function baueNeuigkeiten({ seit, jetzt = new Date(), heute, notizen = null, aufgaben = null, ereignisse = null, git = null }) {
+export function baueNeuigkeiten({ seit, jetzt = new Date(), heute, notizen = null, aufgaben = null, ereignisse = null, git = null, ausnehmen = null }) {
   const bis = jetzt.getTime();
   const seitMs = ms(seit) ?? bis - STANDARD_TAGE * TAG_MS;
   const nach = (iso) => { const t = ms(iso); return t !== null && t > seitMs; };
   const kurz = (liste, abbilden) => liste.slice(0, MAX_LISTE).map(abbilden);
+  const aus = ausnehmen instanceof Set ? ausnehmen : null, ausPfade = new Set();
+  const sieb = (liste) => (aus ? liste.filter((x) => { if (aus.has(x.pfad)) { ausPfade.add(x.pfad); return false; } return true; }) : liste);
 
   let n = null;
   if (Array.isArray(notizen)) {
     const alle = notizen.filter(istNotiz);
-    const neu = alle.filter((x) => nach(x.erstellt)).sort((a, b) => (a.erstellt < b.erstellt ? 1 : -1));
+    const neu = sieb(alle.filter((x) => nach(x.erstellt))).sort((a, b) => (a.erstellt < b.erstellt ? 1 : -1));
     const neuSet = new Set(neu.map((x) => x.pfad));
-    const geaendert = alle.filter((x) => !neuSet.has(x.pfad) && nach(x.geaendert)).sort((a, b) => (a.geaendert < b.geaendert ? 1 : -1));
+    const geaendert = sieb(alle.filter((x) => !neuSet.has(x.pfad) && nach(x.geaendert))).sort((a, b) => (a.geaendert < b.geaendert ? 1 : -1));
     n = { neu: neu.length, geaendert: geaendert.length,
       neuListe: kurz(neu, (x) => ({ pfad: x.pfad, titel: x.titel, zeit: x.erstellt })), geaendertListe: kurz(geaendert, (x) => ({ pfad: x.pfad, titel: x.titel, zeit: x.geaendert })) };
   }
 
   let a = null;
   if (Array.isArray(aufgaben)) {
-    const neu = aufgaben.filter((x) => nach(x.erstellt)).sort((p, q) => ((p.erstellt || "") < (q.erstellt || "") ? 1 : -1));
-    const erledigt = aufgaben.filter((x) => x.status === "erledigt" && nach(x.geaendert)).sort((p, q) => ((p.geaendert || "") < (q.geaendert || "") ? 1 : -1));
-    const ueber = aufgaben.filter((x) => x.status !== "erledigt" && typeof x.faellig === "string" && heute && x.faellig < heute).sort((p, q) => (p.faellig < q.faellig ? -1 : 1));
+    const neu = sieb(aufgaben.filter((x) => nach(x.erstellt))).sort((p, q) => ((p.erstellt || "") < (q.erstellt || "") ? 1 : -1));
+    const erledigt = sieb(aufgaben.filter((x) => x.status === "erledigt" && nach(x.geaendert))).sort((p, q) => ((p.geaendert || "") < (q.geaendert || "") ? 1 : -1));
+    const ueber = sieb(aufgaben.filter((x) => x.status !== "erledigt" && typeof x.faellig === "string" && heute && x.faellig < heute)).sort((p, q) => (p.faellig < q.faellig ? -1 : 1));
     const zeile = (x) => ({ pfad: x.pfad, titel: x.titel, ...(x.faellig ? { faellig: x.faellig } : {}) });
     a = { neu: neu.length, erledigt: erledigt.length, ueberfaellig: ueber.length, neuListe: kurz(neu, zeile), erledigtListe: kurz(erledigt, zeile), ueberfaelligListe: kurz(ueber, zeile) };
   }
@@ -88,13 +92,13 @@ export function baueNeuigkeiten({ seit, jetzt = new Date(), heute, notizen = nul
 
   let inbox = null;
   if (Array.isArray(notizen)) {
-    const im = notizen.filter((x) => x.bereich === "inbox" && !x.generiert);
+    const im = notizen.filter((x) => x.bereich === "inbox" && !x.generiert && !(aus && aus.has(x.pfad)));
     const spaeter = im.filter((x) => heute && spaeterBis(x) && spaeterBis(x) > heute).length;
     inbox = { anzahl: im.length - spaeter, zurueckgestellt: spaeter };
   }
 
   const leer = !((n && (n.neu || n.geaendert)) || (a && (a.neu || a.erledigt)) || (ki && (ki.abgelegt || ki.abgewiesen)));
-  return { seit: new Date(seitMs).toISOString(), bis: new Date(bis).toISOString(), notizen: n, aufgaben: a, ki, sync, inbox, leer };
+  return { seit: new Date(seitMs).toISOString(), bis: new Date(bis).toISOString(), notizen: n, aufgaben: a, ki, sync, inbox, leer, ...(aus ? { ausgenommen: ausPfade.size } : {}) };
 }
 
 /** Kurztext für den MCP-Server (brain_neuigkeiten): wenige Zeilen, ohne Inhalte der Notizen. */

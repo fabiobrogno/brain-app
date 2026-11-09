@@ -26,6 +26,7 @@ import { erzeugeSuchindex } from "./suchindex.mjs";
 import { erzeugeTagIndex } from "./tags.mjs";
 import { erzeugeExport } from "./export.mjs";
 import { erzeugeErwaehnungen } from "./erwaehnungen-index.mjs";
+import { zeileIstKiNein } from "./ki-schema.mjs";
 import { baueNeuigkeiten, leseMarke, setzeMarke, STANDARD_TAGE } from "./neuigkeiten.mjs";
 import * as merge3 from "./merge3.mjs";
 import * as ablageFn from "./ablage.mjs";
@@ -722,7 +723,10 @@ export function oeffneVault(vaultPfad, opts = {}) {
     ]);
     let ereignisse = null; try { ereignisse = leseEreignisse(supportOrdnerV(), kennungVault(wurzel), { seit: new Date(Date.parse(frueh) - 1).toISOString() }); } catch { ereignisse = null; }
     const heute = opts.heute || heuteIso(jetzt());
-    return { ...baueNeuigkeiten({ seit: frueh, jetzt: jetzt(), heute, notizen: zeilen, aufgaben, ereignisse, git }), marke, seitArt };
+    // fuerKi (nur intern, nie über die Route): Notizen mit `ki: nein` erscheinen nirgends, nur als Zahl `ausgenommen`; ist der Index nicht lesbar, gibt es auch keine Aufgaben (fail-closed)
+    const ausnehmen = o.fuerKi === true ? new Set((zeilen || []).filter(zeileIstKiNein).map((z) => z.pfad)) : null;
+    const aufgabenQuelle = o.fuerKi === true && !zeilen ? null : aufgaben;
+    return { ...baueNeuigkeiten({ seit: frueh, jetzt: jetzt(), heute, notizen: zeilen, aufgaben: aufgabenQuelle, ereignisse, git, ausnehmen }), marke, seitArt };
   }
   function neuigkeitenGelesen(bis) {
     const t = bis === undefined || bis === null ? jetzt().toISOString() : bis;
