@@ -198,3 +198,25 @@ Abschluss der Runde: Vorschau für den Nutzer neu starten (hell, dunkel, großer
 
 - Offene KI-Kleinigkeiten aus `ki-runde.md` §11–§13 (Übersetzen ins Deutsche aus deutschem Text leer, K4 ohne Nachladen über 25 Stellen, `ki: nein`-Schalter im Studio, Richtung „Diese Notiz erwähnt …“ mit KI): klein, eigene Folge-PR bei Bedarf.
 - Tabs/geteilte Ansicht, Graph-Ansicht, iPhone/iPad, Team-Vault (`vision-team.md`): erst nach v1.
+
+## Stand R4-1 (Ruhiger Editor)
+
+**Entscheidung 1 = A umgesetzt.** Gemessen mit `Tests/Oberflaeche/ruhe.spec.mjs` (Chromium, 1440 px, 1700 px hoch, hell + dunkel; Δy = Verschiebung der Zeile „ENDE“ unter allen Blöcken, wenn der Cursor in einen Block geht):
+
+| Block | vorher | nachher |
+|---|---|---|
+| Absatz (3 fest umbrochene Zeilen) | +26,9 px | 0 (beide Modi) |
+| Überschrift | −3,1 px | 0 |
+| Liste, Aufgabe, Zitat, Callout, Code | 0 | 0 |
+| Tabelle: Zelle anklicken | 0 | 0 |
+| Bild: anklicken | 0 | 0 |
+
+- **Umbrüche:** Standard „wie getippt“ (jede Zeile des Absatzes steht, wie sie in der Datei steht). Schalter „Zeilenumbrüche fließend“ (Einstellungen → Darstellung → Text und Editor, Schlüssel `zeilenFliessend`, Standard aus; `app-einstellungen.mjs`, `darstellung.js`) zeigt fest umbrochene Absätze als Textfluss und klappt sie beim Betreten **nicht** mehr auf; Umschalten wirkt sofort im offenen Editor. Enter mitten in einem fließenden Absatz auf oberster Ebene beginnt einen neuen Absatz (ein einfacher Umbruch bliebe unsichtbar). Datei bleibt bytegleich (Byte-Tests in `absaetze.spec.mjs` laufen jetzt mit eingeschaltetem Schalter und sind auf „bleibt fließend“ umgestellt).
+- **Überschrift:** die 3 px kamen von zwei Puffer-Bildern (`cm-widgetBuffer`, 1 em hoch), die CodeMirror um das versteckte „# “ legt und die in der großen Schrift über die Zeilenbox ragten (`studio.css`).
+- **Kopfzeile:** Speicherstand ist ein Symbol fester Größe (16 px: Häkchen, Ring, Spinner, Ausrufezeichen), Text bleibt im Element (`aria-live`) und im Tooltip (`tooltip()` aus `bausteine.js`); ein Fehler erscheint zusätzlich als Toast. Der Titel behält Platz (`.kopf-links { min-width: 260px }`: bei Platzmangel schrumpft zuerst das Suchfeld). Gemessen beim Tippen über 3 s: Suchfeld-x, Suchfeld-Breite, Titelbreite und Breite des Speicherstands Δ = 0; Titel bei 1440 px mit Info-Spalte nicht gekürzt (vorher: Suchfeld rutschte um 86 px).
+- **WebKit:** `playwright.webkit.config.mjs` + CI-Schritt in Shard 1 (`ci.yml`). Lokal war WebKit in der Agenten-Umgebung nicht startbar (Browser schließt sich sofort); der erste Lauf ist der in der CI.
+
+**Offen / bewusst nicht in R4-1:**
+- **Tabelle und Bild beim Hineinlaufen mit den Pfeiltasten** zeigen den Quelltext: Tabelle −20 px (3 Zeilen statt Gitter), Bild +37,8 px (Rohzeile + Bild). Das ist die Quelltext-Bearbeitung dieser Blöcke, kein Layoutfehler; wer sie bedient (Zelle, Klick auf das Bild), sieht keinen Sprung. Die Spec protokolliert die Werte. Wollen wir 0 px auch dort, braucht es einen anderen Weg (Fokus in die erste Zelle statt Quelltext; Rohzeile als Überlagerung des Bildes) – Vorschlag für R4-2.
+- **Datei-Kopf (Front Matter):** der zugeklappte Kopf ist ein atomares Kästchen und öffnet nur durch ausdrückliche Handlung (Klick); Pfeiltasten springen darüber. Kein Cursor-Eintritt, daher nicht in der Messreihe.
+- Die Mac-App und der Browser-Modus teilen sich dieselben Dateien; der neue Schalter steht im Schema (`app-einstellungen.mjs`), Swift muss nichts wissen.

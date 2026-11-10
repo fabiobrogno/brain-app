@@ -10,7 +10,7 @@ import { tabellenErweiterung, fuegeTabelleEin, zelleUmschalten } from "./tabelle
 import * as FM from "./formatieren.js";
 import { formatLeiste } from "./format-leiste.js";
 
-const { EditorState, EditorSelection, EditorView, Decoration, ViewPlugin, WidgetType, StateField, StateEffect, GutterMarker, MapMode, gutter, keymap } = CM;
+const { EditorState, EditorSelection, EditorView, Decoration, ViewPlugin, WidgetType, StateField, StateEffect, GutterMarker, MapMode, gutter, keymap, Prec } = CM;
 
 const WIKI = /\[\[([^\[\]\n|#]+)(#[^\[\]\n|]*)?(\|[^\[\]\n]*)?\]\]/g;
 
@@ -408,10 +408,12 @@ function dateiZeilen(state) {
 }
 
 // ---------- Fließende Absätze ----------
-// Fest umbrochene Absätze (Zeilen à ~100 Zeichen, Fortsetzungen eingerückt) werden als fließender Text gezeigt: jeder weiche
-// Zeilenumbruch samt Einrückung der Folgezeile erscheint als EIN Leerzeichen. Reine Darstellung, der Text im Dokument bleibt
-// wie er ist (Speichern, Zeilenenden, Rückgängig). Ersetzungen über Zeilenumbrüche dürfen nicht aus einem ViewPlugin kommen,
-// darum ein StateField; der Fokus gehört nicht zum State und kommt per focusChangeEffect hinein.
+// Standard: fest umbrochene Absätze erscheinen wie getippt (jede Zeile für sich, wie in Obsidian). Mit dem Schalter „Zeilenumbrüche
+// fließend“ (Einstellungen → Darstellung, ctx.fliessend) werden Zeilen à ~100 Zeichen mit eingerückten Fortsetzungen als fließender Text
+// gezeigt: jeder weiche Zeilenumbruch samt Einrückung der Folgezeile erscheint als EIN Leerzeichen – immer, auch mit dem Cursor im Absatz,
+// damit sich beim Betreten nichts bewegt. Reine Darstellung, der Text im Dokument bleibt wie er ist (Speichern, Zeilenenden, Rückgängig).
+// Ersetzungen über Zeilenumbrüche dürfen nicht aus einem ViewPlugin kommen, darum ein StateField. Der Fokus gehört nicht zum State
+// und kommt per focusChangeEffect hinein (die Tabellen brauchen ihn).
 const fokusGeaendert = StateEffect.define();
 
 class Leerzeichen extends WidgetType {
@@ -480,21 +482,16 @@ function absatzSpannen(state) {
   return liste;
 }
 
-// Aktiver Absatz bleibt roh: Auswahl im Absatz bei Fokus im Editor; Rohmodus verbindet gar nichts.
-const absatzAktiv = (w, state, a) => w.fokus && state.selection.ranges.some((r) => r.from <= a.bis && r.to >= a.von);
-function absatzDeko(w, state) {
-  if (w.roh) return Decoration.none;
+// Rohmodus und Schalter „aus“ verbinden gar nichts; sonst alle Absätze, auch der mit dem Cursor.
+function absatzDeko(w) {
+  if (w.roh || !w.fliessend) return Decoration.none;
   const bereiche = [];
-  for (const a of w.absaetze) {
-    if (absatzAktiv(w, state, a)) continue;
-    for (const [von, bis] of a.umbrueche) bereiche.push(weicherUmbruch.range(von, bis));
-  }
+  for (const a of w.absaetze) for (const [von, bis] of a.umbrueche) bereiche.push(weicherUmbruch.range(von, bis));
   return Decoration.set(bereiche, true);
 }
 
-// Doppel-/Dreifachklick in einem verbundenen Absatz: der erste Klick schaltet ihn auf roh, der Text darunter springt. Ab dem
-// zweiten Klick träfe man sonst das neue Bild statt des Wortes, auf das man gezeigt hat; darum zählt die Stelle des ersten Klicks
-// (Doppelklick = Wort, Dreifachklick = der Absatz, wie ihn der erste Klick zeigte). Alles andere bleibt Standard.
+// Dreifachklick in einem verbundenen Absatz wählt den ganzen Absatz (samt Listenmarke und Einrückung), nicht nur die eine Zeile des
+// Dokuments, die CodeMirror sonst nähme; Doppelklick wählt das Wort an der Stelle des ersten Klicks. Alles andere bleibt Standard.
 function mehrfachKlick(feld) {
   let erster = null; // { pos, x, y, absatz } des ersten Klicks einer Folge; absatz nur, wenn er in einen verbundenen Absatz ging
   return [
@@ -504,7 +501,7 @@ function mehrfachKlick(feld) {
         const w = view.state.field(feld);
         const pos = view.posAtCoords({ x: e.clientX, y: e.clientY }, false);
         const a = pos == null ? null : w.absaetze.find((x) => x.von <= pos && pos <= x.bis);
-        erster = { pos, x: e.clientX, y: e.clientY, absatz: a && !w.roh && !absatzAktiv(w, view.state, a) ? a : null };
+        erster = { pos, x: e.clientX, y: e.clientY, absatz: a && !w.roh && w.fliessend ? a : null };
         return false;
       },
     }),
@@ -518,31 +515,47 @@ function mehrfachKlick(feld) {
   ];
 }
 
+// Enter mitten in einem fließend gezeigten Absatz: ein einfacher Zeilenumbruch bliebe unsichtbar (er erscheint als Leerzeichen), darum beginnt
+// Enter hier einen neuen Absatz (Leerzeile). Gilt nur für Absätze auf oberster Ebene; Listen, Zitate usw. behalten das Standardverhalten.
+function enterImFluss(feld) {
+  return (view) => {
+    const { state } = view, w = state.field(feld);
+    if (w.roh || !w.fliessend || state.readOnly || state.selection.ranges.length !== 1 || !state.selection.main.empty) return false;
+    const pos = state.selection.main.head;
+    if (!w.absaetze.some((a) => a.von <= pos && pos <= a.bis)) return false;
+    let n = CM.syntaxTree(state).resolveInner(pos, -1);
+    while (n && n.name !== "Paragraph") n = n.parent;
+    if (!n || n.parent?.name !== "Document") return false;
+    const lb = state.lineBreak;
+    let bis = pos;
+    while (leerzeichen(state.sliceDoc(bis, bis + 1))) bis++; // wie bei Enter üblich: Leerzeichen am neuen Absatzanfang entfallen
+    view.dispatch({ changes: { from: pos, to: bis, insert: lb + lb }, selection: { anchor: pos + 2 * lb.length }, scrollIntoView: true, userEvent: "input" });
+    return true;
+  };
+}
+
 function absatzFeld(ctx) {
   return StateField.define({
     create(state) {
-      const w = { roh: !!ctx.roh?.(), fokus: false, signale: state.field(signaleFeld), absaetze: absatzSpannen(state) };
-      w.deko = absatzDeko(w, state);
+      const w = { roh: !!ctx.roh?.(), fliessend: !!ctx.fliessend?.(), signale: state.field(signaleFeld), absaetze: absatzSpannen(state) };
+      w.deko = absatzDeko(w);
       return w;
     },
     update(w, tr) {
-      let { roh, fokus } = w, neuDeko = false;
-      for (const e of tr.effects) {
-        if (e.is(fokusGeaendert) && e.value !== fokus) { fokus = e.value; neuDeko = true; }
-        else if (e.is(neuZeichnen)) { roh = !!ctx.roh?.(); neuDeko = true; }
-      }
+      let { roh, fliessend } = w, neuDeko = false;
+      for (const e of tr.effects) if (e.is(neuZeichnen)) { roh = !!ctx.roh?.(); fliessend = !!ctx.fliessend?.(); neuDeko = true; }
       const signale = tr.state.field(signaleFeld);
       const neuBerechnen = tr.docChanged || signale !== w.signale || CM.syntaxTree(tr.state) !== CM.syntaxTree(tr.startState);
-      const auswahl = fokus && !roh && !tr.startState.selection.eq(tr.state.selection);
-      if (!neuBerechnen && !neuDeko && !auswahl) return w;
-      const neu = { roh, fokus, signale, absaetze: neuBerechnen ? absatzSpannen(tr.state) : w.absaetze };
-      neu.deko = absatzDeko(neu, tr.state);
+      if (!neuBerechnen && !neuDeko) return w;
+      const neu = { roh, fliessend, signale, absaetze: neuBerechnen ? absatzSpannen(tr.state) : w.absaetze };
+      neu.deko = absatzDeko(neu);
       return neu;
     },
     provide: (f) => [
       EditorView.decorations.from(f, (w) => w.deko),
       EditorView.atomicRanges.of((view) => view.state.field(f).deko), // Cursor springt über den versteckten Umbruch samt Einrückung
       EditorView.focusChangeEffect.of((_state, fokus) => fokusGeaendert.of(fokus)),
+      Prec.high(keymap.of([{ key: "Enter", run: enterImFluss(f) }])),
       mehrfachKlick(f),
     ],
   });

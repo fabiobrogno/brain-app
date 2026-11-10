@@ -1,14 +1,21 @@
 // Fließende Absätze: fest umbrochene Absätze erscheinen als ein Textfluss, die Datei bleibt Byte für Byte gleich.
 // Echter Server, echter Vault (Wegwerf-Kopie), echter Editor; die View wird über das Bundle erreicht (dasselbe Modul wie die App).
 import { test, expect } from "./basis.mjs";
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, mkdtempSync } from "node:fs";
 import { join, dirname } from "node:path";
+import { tmpdir } from "node:os";
 import { baueVault } from "./vault.mjs";
 import { starteServer } from "./start.mjs";
 import { mockeV2 } from "./mocks.mjs";
 
 let vault, server, seitenfehler;
-test.beforeEach(async () => { seitenfehler = []; ({ vault } = baueVault()); server = await starteServer(vault); });
+// Diese Datei prüft das fließende Anzeigen fest umbrochener Absätze: der Schalter „Zeilenumbrüche fließend“ (Standard aus) steht in der Support-Datei an.
+test.beforeEach(async () => {
+  seitenfehler = []; ({ vault } = baueVault());
+  const support = mkdtempSync(join(tmpdir(), "brain-ui-support-"));
+  writeFileSync(join(support, "einstellungen.json"), JSON.stringify({ zeilenFliessend: true }));
+  server = await starteServer(vault, { support });
+});
 test.afterEach(() => { server?.stopp(); expect(seitenfehler, "Fehler in der Seite").toEqual([]); });
 
 const lese = (p) => readFileSync(join(vault, p));
@@ -161,45 +168,42 @@ test("Absatz mit Prüf-Signal bleibt unverbunden, Randmarke und andere Absätze 
   expect(marke).toBeLessThan(letzte);
 });
 
-test("Klick in den Absatz (Fokus) zeigt ihn roh, Fokus weg verbindet ihn wieder", async ({ page }) => {
+test("Klick in den Absatz (Fokus) klappt ihn nicht auf: er bleibt fließend, auch mit dem Cursor darin und nach Fokusverlust", async ({ page }) => {
   schreibe("10_notizen/fliess.md", FLIESS);
   await oeffne(page, "10_notizen/fliess.md");
   await expect.poll(() => zeilen(page).then((z) => z.length)).toBe(6);
   await klicke(page, "bewusst fest");
-  await expect.poll(() => zeilen(page)).toEqual(["Fließtext", "", "Der erste Satz steht in der ersten Zeile und ist", "bewusst fest umbrochen, so wie es die Wiki-Seiten", "  im Brain haben, mit mehreren Zeilen pro Absatz.", "", "Zweiter Absatz.", ""]);
-  expect(await versteckt(page)).toEqual([]);
-  await ohneFokus(page);
-  await expect.poll(() => zeilen(page)).toEqual(["Fließtext", "", FLIESS_ABSATZ, "", "Zweiter Absatz.", ""]);
+  expect(await imEditor(page, ({ view }) => view.hasFocus)).toBe(true);
+  await page.waitForTimeout(200);
+  expect(await zeilen(page)).toEqual(["Fließtext", "", FLIESS_ABSATZ, "", "Zweiter Absatz.", ""]);
   expect((await versteckt(page)).length).toBe(2);
+  await ohneFokus(page);
+  expect(await zeilen(page)).toEqual(["Fließtext", "", FLIESS_ABSATZ, "", "Zweiter Absatz.", ""]);
 });
 
-test("Enter im Absatz: die neue Zeile ist sofort sichtbar, nur dieser Absatz ist roh", async ({ page }) => {
+test("Enter im fließenden Absatz beginnt einen neuen Absatz (ein einfacher Umbruch bliebe unsichtbar)", async ({ page }) => {
   schreibe("10_notizen/zwei.md", "# Zwei\n\nAbsatz eins mit\nzwei Zeilen.\n\nAbsatz zwei mit\nzwei Zeilen.\n");
   await oeffne(page, "10_notizen/zwei.md");
   await klicke(page, "Absatz eins mit zwei Zeilen.");
   // Cursor hinter „Absatz“ setzen (Home/End und Klicks in die Zeilenmitte sind unter einer H1 wegen des 14px-Versatzes unzuverlässig)
   await imEditor(page, ({ view }, p) => view.dispatch({ selection: { anchor: p } }), "# Zwei\n\nAbsatz".length);
   await page.keyboard.press("Enter");
-  await expect.poll(() => docZeilen(page)).toBe(9);
-  // Absatz eins roh mit der neuen Zeile (Enter nimmt das Leerzeichen nach dem Cursor mit), Absatz zwei fließt weiter
-  expect(await zeilen(page)).toEqual(["Zwei", "", "Absatz", "eins mit", "zwei Zeilen.", "", "Absatz zwei mit zwei Zeilen.", ""]);
-  // Cursor weg: auch der neue Umbruch wird zu einem Leerzeichen
-  await ohneFokus(page);
-  await expect.poll(() => zeilen(page)).toEqual(["Zwei", "", "Absatz eins mit zwei Zeilen.", "", "Absatz zwei mit zwei Zeilen.", ""]);
+  await expect.poll(() => docZeilen(page)).toBe(10);
+  // Leerzeile eingefügt (das Leerzeichen nach dem Cursor entfällt), der Rest bildet einen eigenen, weiter fließenden Absatz
+  expect(await zeilen(page)).toEqual(["Zwei", "", "Absatz", "", "eins mit zwei Zeilen.", "", "Absatz zwei mit zwei Zeilen.", ""]);
+  expect(await imEditor(page, ({ view }) => view.state.doc.toString())).toBe("# Zwei\n\nAbsatz\n\neins mit\nzwei Zeilen.\n\nAbsatz zwei mit\nzwei Zeilen.\n");
 });
 
-test("Auswahl über mehrere Absätze zeigt alle berührten roh, den Rest nicht", async ({ page }) => {
+test("Auswahl über mehrere Absätze ändert die Anzeige nicht: alle bleiben fließend", async ({ page }) => {
   schreibe("10_notizen/drei.md", "# Drei\n\nAbsatz eins mit\nzwei Zeilen.\n\nAbsatz zwei mit\nzwei Zeilen.\n\nAbsatz drei mit\nzwei Zeilen.\n");
   await oeffne(page, "10_notizen/drei.md");
   await klicke(page, "Absatz eins mit zwei Zeilen.");
   await page.keyboard.press("Meta+ArrowUp"); // ganz nach oben, dann bis in Absatz zwei auswählen
   await page.keyboard.press("Shift+ArrowDown"); await page.keyboard.press("Shift+ArrowDown"); await page.keyboard.press("Shift+ArrowDown");
   await page.keyboard.press("Shift+ArrowDown"); await page.keyboard.press("Shift+ArrowDown"); await page.keyboard.press("Shift+ArrowDown");
-  await expect.poll(() => imEditor(page, ({ CM, view }) => view.state.doc.lineAt(view.state.selection.main.head).number)).toBe(7);
+  await expect.poll(() => imEditor(page, ({ CM, view }) => view.state.selection.main.to - view.state.selection.main.from)).toBeGreaterThan(20); // die Auswahl reicht über mehrere Absätze
   const z = await zeilen(page);
-  expect(z).toContain("Absatz eins mit");                  // roh
-  expect(z).toContain("Absatz zwei mit");                  // roh
-  expect(z).toContain("Absatz drei mit zwei Zeilen.");     // fließt weiter
+  expect(z).toEqual(["# Drei", "", "Absatz eins mit zwei Zeilen.", "", "Absatz zwei mit zwei Zeilen.", "", "Absatz drei mit zwei Zeilen.", ""]);
 });
 
 test("Rohmodus verbindet nichts, zurück stellt den Fluss wieder her", async ({ page }) => {
@@ -282,7 +286,7 @@ test("CRLF-Datei: fließend angezeigt, Laden/Tippen/Löschen speichert dieselben
   expect(nachher.replace(/\r\n/g, "")).not.toMatch(/[\r\n]/);
 });
 
-test("Doppel- und Dreifachklick wählen Wort bzw. Absatz, auf die man gezeigt hat, obwohl der erste Klick den Absatz auf roh schaltet", async ({ page }) => {
+test("Doppel- und Dreifachklick wählen Wort bzw. Absatz, auf die man gezeigt hat, ohne dass sich der Absatz dabei bewegt", async ({ page }) => {
   // Zeilen von ~100 Zeichen wie im Brain: roh bricht der Editor sie anders um als verbunden, der Text springt beim ersten Klick.
   // Bewusst ohne H1 davor (der Versatz unter einer H1 würde schon die Position des ersten Klicks verfälschen, das ist ein eigener Befund).
   const absatz = (n) => `Absatz ${n}: Der Hinweis-Hook fragt bei jedem Prompt einen warmen Suchdienst im Speicher und, wenn der\nnicht antwortet, läuft ein Rückfall im Kindprozess, der den Reranker einmalig laden muss, danach geht es\nweiter mit Timeouts in Folge, die als Hänger gelten: Dienst wird hart beendet und zehn Minuten gesperrt.\n`;
@@ -353,15 +357,15 @@ test("versteckte Umbrüche sind atomar: Pfeil rechts/links und Auswahl springen 
   expect(await lauf("ArrowLeft")).toEqual([erwartet[1][0], erwartet[1][0]]);     // von der Fortsetzungszeile zurück an das Zeilenende davor
 });
 
-test("Wechsel der Datei bei fokussiertem Editor: der Absatz am Cursor ist sofort roh", async ({ page }) => {
+test("Wechsel der Datei bei fokussiertem Editor: auch der Absatz am Cursor bleibt fließend", async ({ page }) => {
   schreibe("10_notizen/start.md", "# Start\n\nSiehe [[Ziel-Seite]] für mehr.\n");
   schreibe("10_notizen/Ziel-Seite.md", "Erste Zeile des Absatzes,\nzweite Zeile des Absatzes.\n\nSpäterer Absatz mit\nzwei Zeilen.\n");
   await oeffne(page, "10_notizen/start.md");
   await klicke(page, "Siehe"); // Editor fokussiert
   await page.locator('.cm-wiki[data-ziel="Ziel-Seite"]').click(); // Wikilink im Text: Datei wechselt, der Fokus bleibt im Editor
   await expect(page.locator("#pfad")).toContainText("Ziel-Seite");
-  // Cursor steht am Anfang des ersten Absatzes: dieser ist roh, der spätere fließt
-  await expect.poll(() => zeilen(page)).toEqual(["Erste Zeile des Absatzes,", "zweite Zeile des Absatzes.", "", "Späterer Absatz mit zwei Zeilen.", ""]);
+  // Cursor steht am Anfang des ersten Absatzes: beide Absätze fließen
+  await expect.poll(() => zeilen(page)).toEqual(["Erste Zeile des Absatzes, zweite Zeile des Absatzes.", "", "Späterer Absatz mit zwei Zeilen.", ""]);
   expect(await imEditor(page, ({ CM, view }) => view.hasFocus)).toBe(true);
 });
 
