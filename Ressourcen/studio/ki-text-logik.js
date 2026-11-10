@@ -49,6 +49,7 @@ export const mitZeilenende = (text, zeilenende) => String(text ?? "").replace(/\
 // Nach einer Liste folgt die Aufgabenliste mit dem Einzug der Liste direkt darunter, sonst mit einer Leerzeile davor; folgt gleich Text, bleibt eine Leerzeile danach.
 const LISTE = /^(\s*)(?:[-*+]|\d+[.)])\s/;
 const ZITAT = /^\s*>/;
+const SETEXT = /^ {0,3}(?:=+|-+)[ \t]*$/; // Unterstreichung einer Setext-Überschrift („Titel“ / „---“ oder „===“): gehört zur Absatzzeile davor
 const BLOCKANFANG = /^( {0,3}#{1,6}\s|\s*(?:[-*+]|\d+[.)])\s|\s*>|\s*\||\s{0,3}(?:`{3,}|~{3,})|\s{0,3}(?:[-*_][ \t]*){3,}$)/;
 export function aufgabenEinfuegung(doc, bis, aufgaben) {
   const text = String(doc ?? "");
@@ -66,7 +67,18 @@ export function aufgabenEinfuegung(doc, bis, aufgaben) {
   }
   if (!istListe) {
     if (ZITAT.test(zeilen[i].t)) { while (letzte + 1 < zeilen.length && ZITAT.test(zeilen[letzte + 1].t)) letzte++; }
-    else while (letzte + 1 < zeilen.length && !leer(zeilen[letzte + 1]) && !BLOCKANFANG.test(zeilen[letzte + 1].t)) letzte++;
+    else {
+      const absatz = (z) => !!z && !leer(z) && !BLOCKANFANG.test(z.t);
+      if (SETEXT.test(zeilen[i].t) && absatz(zeilen[i - 1])) { /* die Auswahl endet auf der Unterstreichung: der Block endet hier */ }
+      else {
+        while (letzte + 1 < zeilen.length && !leer(zeilen[letzte + 1])) {
+          const n = zeilen[letzte + 1];
+          if (SETEXT.test(n.t) && absatz(zeilen[letzte])) { letzte++; break; } // „---“ direkt unter einer Absatzzeile ist Teil der Überschrift, kein Trennstrich
+          if (BLOCKANFANG.test(n.t)) break;
+          letzte++;
+        }
+      }
+    }
   }
   const zeile = zeilen[letzte];
   const naechste = zeilen[letzte + 1];

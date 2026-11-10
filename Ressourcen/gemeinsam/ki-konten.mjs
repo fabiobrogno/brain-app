@@ -258,24 +258,31 @@ export function pflegeWirksam(daten, vault) {
 
 // KI-Vorschläge (docs/plaene/ki-runde.md, Abschnitt 4): Einwilligung je Vault. vaults[<pfad>].vorschlaege = { an: true, seit: ISO, konto: "<kontoId>" }. Nur die Werkstatt schreibt.
 // Fail-closed: alles, was nicht genau { an: true, konto: <bekanntes Konto> } ist, heißt „aus“. Die Einwilligung gilt für das genannte Konto (der Dialog hat genau dieses genannt).
+// Die KI-Funktionen, für die ein Einwilligungsdialog gilt (EINE Quelle: Werkstatt und Studio lesen sie; die Werkstatt meldet sie in „bereit“). Kommt eine Funktion hinzu, gilt eine ältere Einwilligung für sie NICHT:
+// vorschlaege.funktionen merkt, was der Dialog genannt hat; fehlt das Feld (Einwilligung vor dieser Regel), gelten genau die vier ALTE_KI_FUNKTIONEN. Alles andere ist fail-closed.
+export const KI_FUNKTIONEN = ["posteingang", "text", "zusammenfassung", "erwaehnungen"];
+export const ALTE_KI_FUNKTIONEN = ["posteingang", "text", "zusammenfassung", "erwaehnungen"];
+// → { an, seit, konto, funktionen: [bekannte Funktionen, für die die Einwilligung gilt], fehlend: [Funktionen von heute, die sie nicht deckt] }
 export function vorschlaegeFuer(daten, vault) {
-  const aus = { an: false, seit: null, konto: null };
+  const aus = { an: false, seit: null, konto: null, funktionen: [], fehlend: [] };
   try {
     const t = vaultEintrag(daten, vault);
     const w = t && t.eintrag ? t.eintrag.vorschlaege : undefined;
     if (!istObj(w) || w.an !== true || typeof w.konto !== "string" || !KONTO_ID.test(w.konto) || !Object.hasOwn(daten.konten, w.konto)) return aus;
-    return { an: true, seit: typeof w.seit === "string" ? w.seit : null, konto: w.konto };
+    const roh = w.funktionen === undefined ? ALTE_KI_FUNKTIONEN : Array.isArray(w.funktionen) ? w.funktionen : [];
+    const funktionen = KI_FUNKTIONEN.filter((f) => roh.includes(f));
+    return { an: true, seit: typeof w.seit === "string" ? w.seit : null, konto: w.konto, funktionen, fehlend: KI_FUNKTIONEN.filter((f) => !funktionen.includes(f)) };
   } catch { return aus; }
 }
-// an=true: konto = Kennung des Kontos aus dem Dialog; an=false: Einwilligung zurücknehmen. → { geaendert }
-export function setzeVorschlaege(support, vault, { an, konto = null, jetzt = new Date() }) {
+// an=true: konto = Kennung des Kontos aus dem Dialog; an=false: Einwilligung zurücknehmen. Beim Einschalten wird die Liste der Funktionen mitgespeichert, die der Dialog genannt hat. → { geaendert }
+export function setzeVorschlaege(support, vault, { an, konto = null, jetzt = new Date(), funktionen = KI_FUNKTIONEN }) {
   return aendere(support, (alt) => {
     if (!alt) throw new HttpFehler(409, "Die Liste der KI-Konten ist gerade nicht verfügbar. Öffne Kortex neu und versuche es noch einmal.", { art: "konten" });
     const t = vaultEintrag(alt, vault);
     if (!t || !t.eintrag) throw new HttpFehler(409, "Für diesen Vault ist noch kein KI-Konto freigegeben.", { art: "kein-zugriff" });
     if (an) {
       if (typeof konto !== "string" || !KONTO_ID.test(konto) || !Object.hasOwn(alt.konten, konto)) throw new HttpFehler(400, "Das KI-Konto ist unbekannt.");
-      t.eintrag.vorschlaege = { an: true, seit: jetzt.toISOString(), konto };
+      t.eintrag.vorschlaege = { an: true, seit: jetzt.toISOString(), konto, funktionen: KI_FUNKTIONEN.filter((f) => funktionen.includes(f)) };
     } else {
       if (t.eintrag.vorschlaege === undefined) return null;
       t.eintrag.vorschlaege = { an: false, seit: jetzt.toISOString(), konto: null };

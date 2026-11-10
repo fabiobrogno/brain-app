@@ -121,3 +121,13 @@ test("Zwei gleichzeitige Klicks auf „Übernehmen“ führen die Aktion nur ein
   const dateien = readdirSync(join(s.vault, "05_aufgaben")).filter((n) => n.endsWith(".md"));
   assert.equal(dateien.length, 1, "genau eine Aufgabe");
 });
+
+test("K2 „Als Aufgabe anlegen“: Protokolleintrag „KI-Vorschlag übernommen“ mit Quelle, ohne Inhalt; die Zahl wird geprüft", async () => {
+  const s = szenarioV();
+  for (const falsch of [0, 11, 1.5, "2", null, undefined]) assert.equal((await s.api("POST", "/api/ki/vorschlag/aufgaben-angelegt", { anzahl: falsch })).status, 400);
+  assert.equal((await s.api("POST", "/api/ki/vorschlag/aufgaben-angelegt", { anzahl: 1 })).status, 200);
+  assert.equal((await s.api("POST", "/api/ki/vorschlag/aufgaben-angelegt", { anzahl: 3 })).status, 200);
+  const e = (await s.api("GET", "/api/aktivitaet?art=datei-aktion")).j.ereignisse.filter((x) => x.art === "datei-aktion");
+  assert.deepEqual(e.map((x) => x.text).sort(), ["KI-Vorschlag übernommen: 3 Aufgaben angelegt", "KI-Vorschlag übernommen: Aufgabe angelegt"]);
+  assert.ok(e.every((x) => x.wer === "KI-Vorschlag" && x.pfade === undefined));
+});

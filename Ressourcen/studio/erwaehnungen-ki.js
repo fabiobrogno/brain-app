@@ -25,7 +25,7 @@ export function erzeugeKiErwaehnungen({ S }) {
   knoten.append(zeile, status);
 
   let pfad = null, zahl = 0, host = null;
-  let bereit = null, bereitFuer = null, st = kiStatus(null), ktVoll = false, knopfEl = null, ktZeile = null, sigZeile = "", prueft = false;
+  let bereit = null, bereitFuer = null, st = kiStatus(null, "erwaehnungen"), ktVoll = false, knopfEl = null, ktZeile = null, sigZeile = "", prueft = false;
   let zustand = { phase: "ruhig" }, lauf = null, nr = 0, uhr = 0, gesendetOffen = false;
   let urteile = new Map(), urteile2 = new Map(), filter = false;
 
@@ -33,7 +33,7 @@ export function erzeugeKiErwaehnungen({ S }) {
   async function frisch() {
     try { bereit = await api.kiVorschlagBereit(); } catch { bereit = null; }
     bereitFuer = `${S.info?.vault || ""}|${pfad}`;
-    st = kiStatus(bereit);
+    st = kiStatus(bereit, "erwaehnungen");
     zeichneZeile();
     return st;
   }
@@ -105,7 +105,7 @@ export function erzeugeKiErwaehnungen({ S }) {
       clearInterval(uhr);
       zustand = { ...zustand, phase: "fehler", text: err?.message || TV.lauf.fehlerAllgemein };
       zeichneStatus(); zeichneZeile();
-      if (err?.daten?.art === "einwilligung" || err?.daten?.art === "einwilligung-konto") await frisch();
+      if (String(err?.daten?.art || "").startsWith("einwilligung")) await frisch();
     });
   }
   function abbrechen() {
@@ -183,7 +183,10 @@ export function erzeugeKiErwaehnungen({ S }) {
       b.hidden = alle.length > 0 && [...alle].every((s) => s.hidden) && !b.querySelector(".erw-mehr");
     }
     zeichneZahl();
+    try { schnittstelle.beiAenderung?.(); } catch (e) { console.error(e); }
   }
+  // Ist die Stelle (Daten wie in den data-erw-Feldern) durch den Filter „wohl nicht“ ausgeblendet? Auch für Stellen, die gerade nicht gezeichnet sind (hinter „weitere Notizen“).
+  const ausgeblendet = (s) => !!(filter && zustand.phase === "ergebnis" && (urteile.get(schluessel(s.pfad, s.start, s.treffer)) || urteile2.get(schluessel2(s.pfad, s.treffer, s.vor ?? "", s.nach ?? "")))?.gemeint === "nein");
 
   // ---------- Schnittstelle zu erwaehnungen.js ----------
   // melde: bei jedem Zeichnen der Liste (zahl = Stellen insgesamt; host = der Abschnitt). Wechselt die Notiz, gehört alles Gezeigte zum alten Stand.
@@ -194,8 +197,9 @@ export function erzeugeKiErwaehnungen({ S }) {
     if (n >= MIN_TREFFER && bereitFuer !== `${S.info?.vault || ""}|${pfad}`) { bereitFuer = `${S.info?.vault || ""}|${pfad}`; frisch(); }
   }
   function keineListe(p) { if (p !== pfad) melde({ pfad: p, zahl: 0, host: null }); else { zahl = 0; zeichneZeile(); } }
-  function vergessen() { lauf?.abbrechen(); lauf = null; nr++; clearInterval(uhr); ktZeile?.stopp(); ktZeile = null; pfad = null; zahl = 0; host = null; bereit = null; bereitFuer = null; st = kiStatus(null); sigZeile = ""; knopfEl = null; zustand = { phase: "ruhig" }; urteile = new Map(); urteile2 = new Map(); filter = false; zeile.replaceChildren(); status.replaceChildren(); knoten.hidden = true; }
+  function vergessen() { lauf?.abbrechen(); lauf = null; nr++; clearInterval(uhr); ktZeile?.stopp(); ktZeile = null; pfad = null; zahl = 0; host = null; bereit = null; bereitFuer = null; st = kiStatus(null, "erwaehnungen"); sigZeile = ""; knopfEl = null; zustand = { phase: "ruhig" }; urteile = new Map(); urteile2 = new Map(); filter = false; zeile.replaceChildren(); status.replaceChildren(); knoten.hidden = true; }
   window.addEventListener("pagehide", () => { if (zustand.phase === "laeuft") lauf?.abbrechen(); });
 
-  return { knoten, melde, keineListe, anwenden, vergessen, _zustand: () => zustand };
+  const schnittstelle = { knoten, melde, keineListe, anwenden, vergessen, ausgeblendet, beiAenderung: null, _zustand: () => zustand };
+  return schnittstelle;
 }

@@ -15,16 +15,21 @@ import { TV } from "./texte-ki-vorschlag.js";
 // ---------- Status aus GET /api/ki/vorschlag/bereit ----------
 // → { sichtbar, gesperrt: null | "nicht-vertraut" | "kein-claude" | "konten-defekt", konto: {id,name,abo}|null, einwilligung: bool }
 // Ohne Claude-Konto mit Stufe „lesen“ oder höher in diesem Vault: nicht sichtbar (kein Knopf, kein Hinweis auf gesperrte Konten).
-export function kiStatus(bereit) {
-  if (!bereit || typeof bereit !== "object") return { sichtbar: false, gesperrt: null, konto: null, einwilligung: false };
+// funktion: die Funktion des Knopfes; die Einwilligung gilt für ihn nur, wenn sie genau diese Funktion deckt (`einwilligung.funktionen`; eine später dazugekommene Funktion fragt neu, fail-closed).
+// `neu`: Funktionen, die die bestehende Einwilligung nicht deckt (der Dialog nennt sie).
+export function kiStatus(bereit, funktion = null) {
+  if (!bereit || typeof bereit !== "object") return { sichtbar: false, gesperrt: null, konto: null, einwilligung: false, neu: [] };
   const erlaubte = (bereit.konten || []).filter((k) => k && k.erlaubt);
   const ein = bereit.einwilligung && bereit.einwilligung.an ? bereit.einwilligung : null;
   const konto = (ein && erlaubte.find((k) => k.id === ein.konto)) || erlaubte.find((k) => k.id === bereit.aktiv) || erlaubte[0] || null;
   const gesperrt = bereit.kontenDefekt ? "konten-defekt" : !bereit.vertraut ? "nicht-vertraut" : !bereit.claude ? "kein-claude" : null;
-  return { sichtbar: !!konto, gesperrt, konto, einwilligung: !!(ein && konto && ein.konto === konto.id) };
+  const gedeckt = !!(ein && konto && ein.konto === konto.id);
+  const deckt = (f) => Array.isArray(ein?.funktionen) && ein.funktionen.includes(f);
+  const neu = gedeckt ? (Array.isArray(ein.fehlend) ? ein.fehlend : []).filter((f) => !funktion || f === funktion) : [];
+  return { sichtbar: !!konto, gesperrt, konto, einwilligung: gedeckt && (funktion === null || deckt(funktion)), neu };
 }
 
-// EINE Liste der KI-Funktionen, die ein Einwilligungsdialog nennt (in der Reihenfolge von TV.gesendet); nur, was die Werkstatt anbietet.
+// Die Liste der Funktionen kommt aus der Werkstatt (`bereit.funktionen`, eine Quelle: gemeinsam/ki-konten.mjs); hier nur die Reihenfolge der Dialogzeilen (TV.gesendet) — nur, was die Werkstatt anbietet.
 export const KI_FUNKTIONEN = ["zusammenfassung", "posteingang", "text", "erwaehnungen"];
 export const kiFunktionen = (bereit) => KI_FUNKTIONEN.filter((f) => (bereit?.funktionen || []).includes(f));
 
@@ -58,9 +63,20 @@ export function kontingentZeile({ api, konto, abo = null, beiAenderung = null, n
 // ---------- „Was wird gesendet?“ ----------
 // gesendet: der Text, der auf stdin der KI ging (JSON); ohne ihn: die Liste vorab (funktionen = Schlüssel aus TV.gesendet). Anzeige gekürzt, „Kopieren“ übernimmt alles.
 const MAX_ANZEIGE = 4000;
+// Unsichtbare Zeichen (Steuer-, Format-, Privat-, nicht belegte Zeichen, Variationsselektoren außer dem Emoji-Selektor) werden als ⟦U+E0041⟧ gezeigt; Zeilenumbrüche bleiben
+const UNSICHTBAR = /[\p{Cc}\p{Cf}\p{Co}\p{Cn}\u{FE00}-\u{FE0E}\u{E0100}-\u{E01EF}\u{115F}\u{1160}\u{3164}\u{FFA0}\u{34F}\u2028\u2029]/gu;
+export function zeigeUnsichtbares(s) {
+  let n = 0;
+  const text = String(s).replace(UNSICHTBAR, (c) => { if (c === "\n") return c; n++; return `⟦U+${c.codePointAt(0).toString(16).toUpperCase().padStart(4, "0")}⟧`; });
+  return { text, anzahl: n };
+}
 export function wasWirdGesendet({ gesendet = null, funktionen = [], ausgenommen = 0, offen = false, beiUmschalten = null } = {}) {
   let schoen = null;
-  if (typeof gesendet === "string") { try { schoen = JSON.stringify(JSON.parse(gesendet), null, 2); } catch { schoen = gesendet; } }
+  let versteckt = 0;
+  if (typeof gesendet === "string") {
+    try { schoen = JSON.stringify(JSON.parse(gesendet), null, 2); } catch { schoen = gesendet; }
+    ({ text: schoen, anzahl: versteckt } = zeigeUnsichtbares(schoen));
+  }
   const wurzel = h("div", { klasse: "kiv-gesendet", "data-kiv": "gesendet" });
   let auf = offen;
   const koerper = h("div", { klasse: "kiv-gesendet-koerper", id: `kiv-g-${Math.random().toString(36).slice(2, 8)}`, hidden: !auf });
@@ -69,14 +85,16 @@ export function wasWirdGesendet({ gesendet = null, funktionen = [], ausgenommen 
   } }, h("span", { text: TV.gesendetBlock.knopf }), h("span", { klasse: "kiv-pfeil", "aria-hidden": "true" }, symbol("chevron-unten", 12)));
   if (schoen !== null) {
     const kurz = schoen.length > MAX_ANZEIGE ? schoen.slice(0, MAX_ANZEIGE) : schoen;
-    koerper.append(
+    koerper.append(...[
       h("p", { klasse: "kiv-leise", text: TV.gesendetBlock.jetzt }),
+      versteckt > 0 ? h("p", { klasse: "kiv-leise", "data-kiv": "unsichtbar", text: TV.gesendetBlock.unsichtbar(versteckt) }) : null,
       h("pre", { klasse: "kiv-paket", "data-kiv": "paket", tabindex: "0", text: kurz }),
       schoen.length > MAX_ANZEIGE ? h("p", { klasse: "kiv-leise", text: TV.gesendetBlock.gekuerzt(schoen.length) }) : null,
       ausgenommen > 0 ? h("p", { klasse: "kiv-leise", "data-kiv": "ausgenommen", text: TV.gesendetBlock.ausgenommen(ausgenommen) }) : null,
       baueKnopf({ text: TV.gesendetBlock.kopieren, groesse: "s", symbol: "kopieren", aktion: "kiv-kopieren", aufKlick: async () => {
         try { await navigator.clipboard.writeText(schoen); toast(TV.gesendetBlock.kopiert, { ms: 1800 }); } catch { toast(TV.gesendetBlock.kopierFehler, { fehler: true }); }
-      } }));
+      } }),
+    ].filter(Boolean));
   } else {
     koerper.append(h("p", { klasse: "kiv-leise", text: TV.gesendetBlock.vorab }), h("ul", { klasse: "kiv-liste" }, funktionen.filter((f) => TV.gesendet[f]).map((f) => h("li", {}, h("b", { text: TV.gesendet[f].titel }), " – ", TV.gesendet[f].text))));
   }
@@ -91,11 +109,14 @@ export function oeffneEinwilligung({ api, bereit, vault, vaultName, funktionen =
   const st = kiStatus(bereit);
   const konto = st.konto;
   const E = TV.einwilligung;
+  // Gilt schon eine Einwilligung, die später dazugekommene Funktionen nicht deckt, nennt der Dialog genau diese (und fragt neu für alle)
+  const neu = st.neu.filter((f) => TV.gesendet[f]);
   let erledigt = false;
   const stopps = [];
   const beiSchliessenKt = (kz) => { stopps.push(kz.stopp); };
   const zeile = (sym, titel, text) => h("div", { klasse: "kiv-punkt" }, h("span", { klasse: "kiv-punkt-sym", "aria-hidden": "true" }, symbol(sym, 14)), h("div", {}, h("b", { text: titel }), h("p", { text })));
   const rumpf = [
+    neu.length ? h("p", { klasse: "kiv-neu", "data-kiv": "neu", text: E.neuHinweis(neu.map((f) => TV.gesendet[f].titel)) }) : null,
     h("div", { klasse: "kiv-karte", "data-kiv": "gesendet-liste" }, funktionen.filter((f) => TV.gesendet[f]).map((f) => zeile(TV.gesendet[f].symbol, TV.gesendet[f].titel, TV.gesendet[f].text))),
     h("div", { klasse: "kiv-karte" }, zeile("haken", E.nieTitel, E.nie), zeile("haken", E.gespeichertTitel, E.gespeichert)),
   ];
@@ -117,7 +138,7 @@ export function oeffneEinwilligung({ api, bereit, vault, vaultName, funktionen =
       toast(err?.daten?.art === "anderer-vault" ? E.anderesFenster : (err?.message || E.fehler), { fehler: true, ms: 8000 });
     }
   } });
-  const d = dialogFn({ titel: E.titel(vaultName || ""), satz: konto ? E.satz(konto.name) : "", rumpf: h("div", { klasse: "kiv-rumpf" }, rumpf), breit: true,
+  const d = dialogFn({ titel: neu.length ? E.titelNeu(vaultName || "") : E.titel(vaultName || ""), satz: konto ? E.satz(konto.name) : "", rumpf: h("div", { klasse: "kiv-rumpf" }, rumpf.filter(Boolean)), breit: true,
     knoepfe: [baueKnopf({ text: E.abbrechen, aktion: "kiv-abbrechen", aufKlick: () => d.schliessen() }), ja], beiSchliessen: () => { stopps.forEach((f) => f()); if (!erledigt) beiAbbruch?.(); } });
   d.box.dataset.dialog = "ki-einwilligung";
   return d;

@@ -3380,6 +3380,7 @@ function zuruecksetzen() {
   S.sichtListe = []; S.gerendert = 0;
   ed.setzeText("", { nurLesen: false });
   schliesseDialoge(); // offene Dialoge (Vertrauen, Sichern, Neue Notiz …) gehören zum alten Vault; für den neuen fragt ladeAlles selbst
+  neuKarte.vergiss(); // eine KI-Zusammenfassung gehört zum alten Vault
   frage.zuruecksetzen(); // eine Frage gehört zum alten Vault (die Werkstatt hat sie beim Wechsel schon beendet)
   schliesseDiff(); schliesseSuche(false);
   S.umstellung = null; $("umstellung-host").replaceChildren();

@@ -144,6 +144,13 @@ test("baueNeuigkeiten mit `ausnehmen`: ausgenommene Pfade erscheinen nirgends, w
   assert.equal(baueNeuigkeiten({ seit: "2026-11-01T00:00:00Z", jetzt, heute: "2026-11-09", notizen, aufgaben }).ausgenommen, undefined, "ohne `ausnehmen` bleibt alles wie vorher");
 });
 
+test("ausnehmenFuerKi: Bezug über Alias oder mit #Abschnitt/^Block rutscht nicht durch", () => {
+  const nein = (z) => z.kiNein === true;
+  const zeilen = [{ pfad: "10/Geheim.md", titel: "Streng Vertraulich", aliasse: ["Anwalt"], kiNein: true }];
+  const aufgaben = [{ pfad: "a1.md", bezug: ["[[Anwalt]]"] }, { pfad: "a2.md", bezug: ["Geheim#Abschnitt"] }, { pfad: "a3.md", bezug: ["Geheim^abc123"] }, { pfad: "a4.md", bezug: ["anwalt#x|Text"] }, { pfad: "a5.md", bezug: ["Anwaltskanzlei"] }];
+  assert.deepEqual([...ausnehmenFuerKi(zeilen, aufgaben, nein).ausnehmen].sort(), ["10/Geheim.md", "a1.md", "a2.md", "a3.md", "a4.md"]);
+});
+
 test("ausnehmenFuerKi: Index nicht lesbar → keine Aufgaben (fail-closed); Bezug nach Dateiname, Pfad oder Titel; ohne Bezug bleibt die Aufgabe", () => {
   const nein = (z) => z.kiNein === true;
   const zeilen = [{ pfad: "10/Geheim.md", titel: "Streng Vertraulich", kiNein: true }, { pfad: "10/Offen.md", titel: "Offen" }];
@@ -155,4 +162,10 @@ test("ausnehmenFuerKi: Index nicht lesbar → keine Aufgaben (fail-closed); Bezu
   // durch baueNeuigkeiten: ohne Zeilen (null) und ohne Aufgaben erscheint nichts davon
   const r = baueNeuigkeiten({ seit: "2020-01-01T00:00:00Z", jetzt: new Date("2026-11-09T12:00:00Z"), heute: "2026-11-09", notizen: null, aufgaben: ausnehmenFuerKi(null, aufgaben, nein).aufgaben, ausnehmen: new Set() });
   assert.equal(r.notizen, null); assert.equal(r.aufgaben, null);
+});
+
+test("Titel im Paket: versteckte Zeichen (Unicode-Tags, bidi, Null-Breite) gehen nie hinaus", async () => {
+  const { sauberText } = await import(pfad("werkstatt", "ki-kern.mjs"));
+  const tag = String.fromCodePoint(0xe0041, 0xe0042);
+  assert.equal(sauberText(`Plan${tag} \u202Eevil\u202C\u200Bfrei\u00AD \uFEFFEnde`, 100), "Plan evilfrei Ende");
 });

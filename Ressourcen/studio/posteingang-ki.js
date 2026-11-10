@@ -23,7 +23,7 @@ const phasen = new Set(["laeuft", "wartet"]);
 export function erzeugePosteingangKi({ S, ctx, oeffne, liste }) {
   const zu = new Map(); // Pfad → Zustand dieses Eintrags (lebt, solange derselbe Vault offen ist)
   const ZU = (pfad) => { let z = zu.get(pfad); if (!z) zu.set(pfad, z = neuZ()); return z; };
-  let letzteAbfrage = 0, bereit = null, bereitFehler = false, st = kiStatus(null), vaultMerk = null, vaultNr = 0, ktVoll = false, ktZeile = null, sigLeiste = "";
+  let letzteAbfrage = 0, bereit = null, bereitFehler = false, st = kiStatus(null, "posteingang"), vaultMerk = null, vaultNr = 0, ktVoll = false, ktZeile = null, sigLeiste = "";
   let stapel = null, uhr = 0, gerade = new Set(); // gerade: Pfade mit laufender Übernahme
 
   // ---------- Status (Konto, Einwilligung, Sperre) ----------
@@ -36,7 +36,7 @@ export function erzeugePosteingangKi({ S, ctx, oeffne, liste }) {
     let neu = null;
     try { neu = await api.kiVorschlagBereit(); } catch { neu = null; }
     if (nr !== vaultNr) return st;
-    bereit = neu; bereitFehler = neu === null; letzteAbfrage = Date.now(); st = kiStatus(bereit);
+    bereit = neu; bereitFehler = neu === null; letzteAbfrage = Date.now(); st = kiStatus(bereit, "posteingang");
     zeichneLeiste();
     if (sigStatus() !== davor) alleZeichnen(); // nur wenn sich für die Knöpfe etwas ändert
     return st;
@@ -337,7 +337,7 @@ export function erzeugePosteingangKi({ S, ctx, oeffne, liste }) {
       if (z.nr !== mein) return;
       z.ki = { ...start, phase: "fehler", text: err?.message || TV.lauf.fehlerAllgemein, lauf: null };
       zeichne(pfad, { animiere: true }); zeichneLeiste();
-      if (err?.daten?.art === "einwilligung" || err?.daten?.art === "einwilligung-konto") await frisch();
+      if (String(err?.daten?.art || "").startsWith("einwilligung")) await frisch();
     });
   }
 
@@ -402,7 +402,7 @@ export function erzeugePosteingangKi({ S, ctx, oeffne, liste }) {
         for (const p of pfade) { const z = ZU(p); if (phasen.has(z.ki?.phase)) z.ki = null; }
         mein.phase = "fertig"; mein.text = err?.message || TV.lauf.fehlerAllgemein; mein.handle = null;
         zeichneLeiste(); alleZeichnen();
-        if (err?.daten?.art === "einwilligung" || err?.daten?.art === "einwilligung-konto") await frisch();
+        if (String(err?.daten?.art || "").startsWith("einwilligung")) await frisch();
       });
   }
   function wendeStandAn(mein, s) {
@@ -450,7 +450,7 @@ export function erzeugePosteingangKi({ S, ctx, oeffne, liste }) {
     for (const z of zu.values()) z.ki?.lauf?.abbrechen?.();
     zu.clear(); gerade = new Set(); warteschlange = new Map(); clearTimeout(lokalTimer);
     clearInterval(uhr); uhr = 0; ktVoll = false; ktZeile?.stopp(); ktZeile = null; sigLeiste = ""; leiste.replaceChildren(); leiste.hidden = true;
-    bereit = null; bereitFehler = false; st = kiStatus(null);
+    bereit = null; bereitFehler = false; st = kiStatus(null, "posteingang");
   }
   window.addEventListener("pagehide", () => { stapel?.handle?.abbrechen(); for (const z of zu.values()) z.ki?.lauf?.abbrechen?.(); });
 

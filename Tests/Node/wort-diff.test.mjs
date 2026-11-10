@@ -104,3 +104,15 @@ test("Anzeige-Diff: NFC und NFD gleicher Wörter erscheinen nicht als Änderung;
   assert.equal(D.hatAenderung(D.wortDiffAnzeige(nfd, nfc + " noch")), true);
   treu(nfd, nfc);
 });
+
+test("Aufgaben unter Setext-Überschriften: die Unterstreichung gehört zum Block, die Aufgaben stehen dahinter", () => {
+  const A = [{ text: "A" }];
+  const nach = (doc, pos) => { const e = L.aufgabenEinfuegung(doc, pos, A); return doc.slice(0, e.pos) + e.einfuegen + doc.slice(e.pos); };
+  const doc = "Titel\n---\nText danach.\n";
+  assert.equal(nach(doc, 2), "Titel\n---\n\n- [ ] A\n\nText danach.\n", "Auswahl in der Titelzeile");
+  assert.equal(nach(doc, doc.indexOf("---") + 1), "Titel\n---\n\n- [ ] A\n\nText danach.\n", "Auswahl auf der Unterstreichung");
+  assert.equal(nach("Titel\n===\nText\n", 2), "Titel\n===\n\n- [ ] A\n\nText\n");
+  assert.equal(nach("Zwei\nZeilen\n---\n\nEnde\n", 2), "Zwei\nZeilen\n---\n\n- [ ] A\n\nEnde\n");
+  assert.equal(nach("Absatz\n\n---\n\nEnde\n", 2), "Absatz\n\n- [ ] A\n\n---\n\nEnde\n", "Trennstrich nach Leerzeile bleibt ein Trennstrich");
+  assert.equal(nach("# Titel\n---\nText\n", 3), "# Titel\n\n- [ ] A\n\n---\nText\n", "ATX-Überschrift ist keine Absatzzeile");
+});

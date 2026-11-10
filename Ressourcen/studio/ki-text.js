@@ -18,7 +18,7 @@ const AKTION_SYMBOL = { umschreiben: "stift", kuerzen: "gliederung", aufgaben: "
 
 // S: Zustand des Studios (pfad, bearbeitbar, dirty, info) · ed: der Editor (ed.view) · speichereWarte(): speichert die offene Notiz und wartet · nachAufgaben(): Baum/Git neu lesen
 export function erzeugeKiText({ S, ed, speichereWarte, nachAufgaben }) {
-  let bereit = null, st = kiStatus(null), geholt = 0, holt = null, vaultMerk = null, ktVoll = false;
+  let bereit = null, st = kiStatus(null, "text"), geholt = 0, holt = null, vaultMerk = null, ktVoll = false;
   let gruendlich = false, gesendetOffen = false;
   let z = null, pop = null, uhr = 0, lauf = null, kt = null, idx = 0, merkDoc = null, merkBereiche = null;
 
@@ -27,12 +27,12 @@ export function erzeugeKiText({ S, ed, speichereWarte, nachAufgaben }) {
   const sig = () => JSON.stringify([st.sichtbar, st.gesperrt, st.konto?.id, st.einwilligung]);
   function frisch(erzwingen = false) {
     const vault = S.info?.vault || null;
-    if (vaultMerk !== vault) { vaultMerk = vault; bereit = null; st = kiStatus(null); geholt = 0; }
+    if (vaultMerk !== vault) { vaultMerk = vault; bereit = null; st = kiStatus(null, "text"); geholt = 0; }
     if (holt) return holt;
     if (!erzwingen && Date.now() - geholt < 20_000) return Promise.resolve(st);
     const vorher = sig();
     holt = api.kiVorschlagBereit().then((b) => b, () => null).then((b) => {
-      bereit = b; st = kiStatus(b); geholt = Date.now(); holt = null;
+      bereit = b; st = kiStatus(b, "text"); geholt = Date.now(); holt = null;
       if (vorher !== sig()) melde();
       return st;
     });
@@ -347,7 +347,7 @@ export function erzeugeKiText({ S, ed, speichereWarte, nachAufgaben }) {
     }
     mein.beschaeftigt = false;
     mein.aufgaben = liste.slice(ok); // nach einem Teilfehler nur noch den Rest (kein doppeltes Anlegen)
-    if (ok) nachAufgaben?.();
+    if (ok) { nachAufgaben?.(); api.kiVorschlagAufgabenAngelegt(ok).catch(() => {}); } // Protokoll wie bei „Übernehmen“ (nur die Zahl)
     if (z === mein) { if (ok === liste.length) { schliesse(); ed.view.focus(); } else zeichne(); }
     toast(ok === liste.length ? TK.aufgaben.angelegt(ok) : ok ? TK.aufgaben.teilweise(ok, liste.length) : TK.aufgaben.anlegenFehler, { fehler: ok !== liste.length, ms: ok === liste.length ? 5000 : 8000 });
   }
@@ -365,7 +365,7 @@ export function erzeugeKiText({ S, ed, speichereWarte, nachAufgaben }) {
   }
   // Neue Notiz geladen (nicht „Live-Aktualisierung“ derselben): alles Gezeigte gehört zur alten
   function textGeladen({ behalte = false } = {}) { if (!behalte && z) schliesse(); }
-  function vergessen() { schliesse(); bereit = null; st = kiStatus(null); geholt = 0; vaultMerk = null; ktVoll = false; }
+  function vergessen() { schliesse(); bereit = null; st = kiStatus(null, "text"); geholt = 0; vaultMerk = null; ktVoll = false; }
 
   // ---------- Tastatur ----------
   function taste(e) {

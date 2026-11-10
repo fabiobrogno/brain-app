@@ -15,7 +15,9 @@ export const MODELLE = { klein: "haiku", mittel: "sonnet" }; // CLI-Aliasse (ble
 
 export const nfc = (s) => String(s).normalize("NFC");
 export const kuerze = (s, n) => (String(s).length <= n ? String(s) : `${String(s).slice(0, n - 1)}…`);
-export const sauberText = (s, n) => kuerze(String(s ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim(), n);
+// Versteckte Zeichen (Unicode-Tags, bidi, Null-Breite, weiches Trennzeichen, BOM) gehen nie hinaus: Titel und Überschriften wandern als Text ins Paket
+const VERSTECKT = /[\u{E0000}-\u{E007F}\u202A-\u202E\u2066-\u2069\u200B-\u200F\u2060\u00AD\uFEFF]/gu;
+export const sauberText = (s, n) => kuerze(String(s ?? "").replace(VERSTECKT, "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim(), n);
 export const ganz = (w) => { const n = Number.parseInt(w, 10); return Number.isInteger(n) && n >= 0 ? n : 0; };
 
 // Umgebung des Kindprozesses: AUSDRÜCKLICH gebaut, nie die der Werkstatt geerbt (kein API-Schlüssel, kein BRAIN_VAULT, kein GITHUB_TOKEN …). Das Konto wählt CLAUDE_CONFIG_DIR.

@@ -3,6 +3,8 @@
 export const TV = {
   einwilligung: {
     titel: (vault) => `KI-Vorschläge für „${vault}“ einschalten?`,
+    titelNeu: (vault) => `Neue KI-Funktion für „${vault}“ zulassen?`,
+    neuHinweis: (namen) => `Neu seit deiner letzten Zustimmung: ${namen.join(", ")}. Deine bisherige Einwilligung gilt dafür nicht; ohne dein Ja geht nichts an eine KI.`,
     satz: (konto) => `Wenn du einen KI-Knopf drückst, schickt Kortex genau die Daten dieser einen Anfrage über dein Claude-Code-Konto „${konto}“ an Anthropic. Die KI ändert nichts selbst: Du siehst jeden Vorschlag und entscheidest.`,
     gesendetTitel: "Das geht an die KI",
     nieTitel: "Nie gesendet",
@@ -30,6 +32,7 @@ export const TV = {
     titel: "KI-Vorschläge in diesem Vault",
     an: (konto, seit) => `Eingeschaltet über das Konto „${konto}“${seit ? `, seit ${seit}` : ""}. Eine KI schickt nur auf deinen Klick Daten einer Anfrage an Anthropic.`,
     aus: (vault) => `Aus${vault ? ` für „${vault}“` : ""}: Es gibt keine KI-Knöpfe, nichts geht an eine KI. Einschalten fragt dich vorher.`,
+    neueFunktion: (namen) => ` Neue Funktion wartet auf dein Ja: ${namen.join(", ")}. Beim nächsten Klick fragt Kortex dich.`,
     ausgeschaltet: "KI-Vorschläge sind aus. Eine laufende Anfrage wurde abgebrochen.",
     fehler: "Das hat nicht geklappt. Es wurde nichts geändert.",
   },
@@ -41,6 +44,7 @@ export const TV = {
     kopiert: "Kopiert",
     kopierFehler: "Kopieren hat nicht geklappt.",
     gekuerzt: (n) => `… gekürzt, ${n.toLocaleString("de-DE")} Zeichen insgesamt; „Kopieren“ übernimmt alles.`,
+    unsichtbar: (n) => (n === 1 ? "1 unsichtbares Zeichen im Paket ist als ⟦U+…⟧ sichtbar gemacht; die KI bekommt es unsichtbar." : `${n} unsichtbare Zeichen im Paket sind als ⟦U+…⟧ sichtbar gemacht; die KI bekommt sie unsichtbar.`),
     ausgenommen: (n) => (n === 1 ? "1 Notiz mit „ki: nein“ ist ausgenommen und kommt nicht vor." : `${n} Notizen mit „ki: nein“ sind ausgenommen und kommen nicht vor.`),
   },
   kontingent: {
