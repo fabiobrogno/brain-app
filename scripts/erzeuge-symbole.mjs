@@ -44,6 +44,9 @@ export const ABBILDUNG = {
   "wolke-aus": "cloud-off", "ansicht-zeilen": "rows-3", "ansicht-spalten": "columns-2", pfeil: "arrow-right",
   "pfeil-oben": "arrow-up", "pfeil-unten": "arrow-down", glocke: "bell", handy: "smartphone", zuruecksetzen: "rotate-ccw",
   tastatur: "keyboard",
+  // Schrägstrich-Menü im Editor
+  "text-absatz": "pilcrow", "ueberschrift-1": "heading-1", "ueberschrift-2": "heading-2", "ueberschrift-3": "heading-3", "liste-aufgabe": "list-todo", "liste-nummer": "list-ordered",
+  trennlinie: "minus", tabelle: "table", bild: "image-plus", "kalender-tag": "calendar-days",
 };
 
 // Eigene Zeichen im Lucide-Raster. Die Spirale ist fest gerechnet (zwei Windungen, nach außen wachsend), damit der Pfad stabil bleibt.
